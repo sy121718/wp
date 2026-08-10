@@ -1,0 +1,5 @@
+/* Spacer 组件 */
+.cmp-spacer {
+    width: 100%;
+    pointer-events: none;
+}

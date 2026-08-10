@@ -1,0 +1,75 @@
+{
+  "version": "1.0",
+  "description": "权限系统初始数据，用于导入到新环境",
+  "export_time": "2026-06-17",
+  "data": {
+    "sys_permission": [
+      {
+        "permission_code": "admin:login",
+        "permission_name": "管理员登录",
+        "module": "admin",
+        "api_path": "/api/admin/login",
+        "api_method": "GET",
+        "status": 1,
+        "remark": "登录接口不需要鉴权"
+      },
+      {
+        "permission_code": "admin:list",
+        "permission_name": "管理员列表",
+        "module": "admin",
+        "api_path": "/api/admin/list",
+        "api_method": "GET",
+        "status": 1,
+        "remark": "分页查询管理员"
+      },
+      {
+        "permission_code": "admin:detail",
+        "permission_name": "管理员详情",
+        "module": "admin",
+        "api_path": "/api/admin/detail",
+        "api_method": "GET",
+        "status": 1,
+        "remark": "查看管理员详细信息"
+      },
+      {
+        "permission_code": "admin:create",
+        "permission_name": "新增管理员",
+        "module": "admin",
+        "api_path": "/api/admin/create",
+        "api_method": "POST",
+        "status": 1,
+        "remark": "创建新管理员"
+      },
+      {
+        "permission_code": "admin:edit",
+        "permission_name": "编辑管理员",
+        "module": "admin",
+        "api_path": "/api/admin/edit",
+        "api_method": "POST",
+        "status": 1,
+        "remark": "编辑管理员信息"
+      },
+      {
+        "permission_code": "admin:profile",
+        "permission_name": "个人信息",
+        "module": "admin",
+        "api_path": "/api/admin/profile",
+        "api_method": "GET",
+        "status": 1,
+        "remark": "当前登录用户信息"
+      },
+      {
+        "permission_code": "captcha:get",
+        "permission_name": "获取验证码",
+        "module": "common",
+        "api_path": "/api/captcha",
+        "api_method": "GET",
+        "status": 1,
+        "remark": "图形验证码，不需要鉴权"
+      }
+    ],
+    "sys_role": [],
+    "sys_menus": [],
+    "sys_casbin_rule": []
+  }
+}

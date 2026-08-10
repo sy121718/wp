@@ -1,0 +1,35 @@
+/* Toggle 组件 */
+.cmp-toggle {
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    margin: 16px 0;
+    overflow: hidden;
+}
+
+.cmp-toggle-title {
+    display: block;
+    padding: 16px 20px;
+    background: #f8fafc;
+    cursor: pointer;
+    font-weight: 500;
+    user-select: none;
+    transition: background 0.2s;
+}
+
+.cmp-toggle-title:hover {
+    background: #f1f5f9;
+}
+
+.cmp-toggle-title::marker {
+    content: '▶ ';
+}
+
+.cmp-toggle[open] .cmp-toggle-title::marker {
+    content: '▼ ';
+}
+
+.cmp-toggle-content {
+    padding: 16px 20px;
+    line-height: 1.6;
+    color: #64748b;
+}

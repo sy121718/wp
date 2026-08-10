@@ -1,0 +1,35 @@
+/* Tabs 组件 */
+.cmp-tabs {
+    width: 100%;
+}
+
+.cmp-tabs-list {
+    display: flex;
+    gap: 4px;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+.cmp-tabs-list button {
+    margin: 0 0 -1px;
+    padding: 10px 16px;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    color: #6b7280;
+    background: transparent;
+    cursor: pointer;
+    font: inherit;
+}
+
+.cmp-tabs-list button[aria-selected="true"] {
+    border-bottom-color: #3d444f;
+    color: #3d444f;
+}
+
+.cmp-tabs-list button:focus-visible {
+    outline: 2px solid #3d444f;
+    outline-offset: 2px;
+}
+
+.cmp-tabs-panels {
+    padding: 20px 4px;
+}

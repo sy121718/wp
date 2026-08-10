@@ -1,0 +1,39 @@
+/* Button 组件 */
+.cmp-button {
+    display: inline-flex;
+    min-height: 40px;
+    padding: 8px 16px;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid transparent;
+    border-radius: 9999px;
+    font-size: 15px;
+    font-weight: 400;
+    line-height: 1;
+    text-decoration: none;
+    cursor: pointer;
+}
+
+.cmp-button--primary {
+    color: #ffffff;
+    background: #3d444f;
+}
+
+.cmp-button--primary:hover {
+    background: #2f353d;
+}
+
+.cmp-button--secondary {
+    color: #3d444f;
+    background: #ffffff;
+    border-color: #3d444f;
+}
+
+.cmp-button--ghost {
+    color: #4b5563;
+    background: transparent;
+}
+
+.cmp-button--ghost:hover {
+    background: #f4f5f6;
+}

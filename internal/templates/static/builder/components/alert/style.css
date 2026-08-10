@@ -1,0 +1,55 @@
+/* Alert 组件 */
+.cmp-alert {
+    position: relative;
+    padding: 16px 20px;
+    margin: 16px 0;
+    border-radius: 6px;
+    border-left: 4px solid;
+}
+
+.cmp-alert--info {
+    background: #dbeafe;
+    border-color: #3d444f;
+    color: #1e3a8a;
+}
+
+.cmp-alert--success {
+    background: #d1fae5;
+    border-color: #10b981;
+    color: #065f46;
+}
+
+.cmp-alert--warning {
+    background: #fef3c7;
+    border-color: #f59e0b;
+    color: #78350f;
+}
+
+.cmp-alert--danger {
+    background: #fee2e2;
+    border-color: #ef4444;
+    color: #7f1d1d;
+}
+
+.cmp-alert-title {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: 600;
+}
+
+.cmp-alert-close {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    padding: 4px 8px;
+    border: 0;
+    background: transparent;
+    font-size: 20px;
+    line-height: 1;
+    cursor: pointer;
+    opacity: 0.5;
+}
+
+.cmp-alert-close:hover {
+    opacity: 1;
+}

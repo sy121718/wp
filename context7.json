@@ -1,0 +1,24 @@
+{
+  "version": "1.0",
+  "comment": "项目主要库的 context7 ID 映射。优先查本地，未命中再调 context7 API，查询后回填。",
+  "libraries": {
+    "gin": "/gin-gonic/gin",
+    "gorm": "/go-gorm/gorm",
+    "go-redis": "/redis/go-redis",
+    "casbin": "/apache/casbin",
+    "viper": "/spf13/viper",
+    "golang-jwt": "/golang-jwt/jwt",
+    "validator": "/go-playground/validator",
+    "asynq": "/hibiken/asynq",
+    "zap": "/uber-go/zap",
+    "lumberjack": "/natefinch/lumberjack",
+    "cron": "/robfig/cron",
+    "gh": "/cli/cli",
+    "miniredis": "/alicebob/miniredis",
+    "jet": "/cloudykit/jet",
+    "htmx": "/bigskysoftware/htmx",
+    "tinymce": "/tinymce/tinymce-docs",
+    "tailwindcss": "/tailwindlabs/tailwindcss.com",
+    "echarts": "/apache/echarts-doc"
+  }
+}

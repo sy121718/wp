@@ -1,0 +1,10 @@
+/* Audio 组件 */
+.cmp-audio {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+}
+
+.cmp-audio-placeholder {
+    min-height: 54px;
+}

@@ -1,0 +1,30 @@
+# 本地开发配置与密钥
+config.yaml
+.env
+.env.*
+!.env.example
+
+# 编辑器和代码图谱本地状态
+.cursor/
+.code-review-graph/
+graphify-out/
+
+# 构建输出和可执行文件
+/dist/
+/app
+/builder
+coverage.out
+
+# 运行时数据和测试生成物
+public/logs/
+public/storage/
+public/builder-preview/
+public/wp/
+
+# 操作系统附加元数据
+*:Zone.Identifier
+.DS_Store
+
+# 临时文件
+*.log
+*.tmp

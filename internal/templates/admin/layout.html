@@ -1,0 +1,71 @@
+{* layout.jet — 后台布局骨架，所有后台页面继承此模板 *}
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{.title}} — go_wp 管理后台</title>
+    <script>
+        {* 防止主题闪烁：在 CSS 加载前就从 localStorage 读取主题 *}
+        (function() {
+            var t = localStorage.getItem('theme') || 'light';
+            document.documentElement.setAttribute('data-theme', t);
+        })();
+    </script>
+    <link rel="stylesheet" href="/static/css/theme.css">
+    <script src="https://cdn.jsdelivr.net/npm/htmx.org@2.0.4/dist/htmx.min.js"></script>
+</head>
+<body>
+    <div class="admin-layout">
+        {* ===== 侧栏 ===== *}
+        <aside class="admin-sidebar">
+            <div class="sidebar-brand">go<span>_wp</span></div>
+            <nav class="sidebar-nav">
+                <div class="sidebar-section">
+                    <div class="sidebar-section-title">概览</div>
+                    <a href="/admin" class="sidebar-link{{if .menu == "dashboard"}} active{{end}}">仪表盘</a>
+                </div>
+                <div class="sidebar-section">
+                    <div class="sidebar-section-title">管理</div>
+                    <a href="/admin/administrators" class="sidebar-link{{if .menu == "admins"}} active{{end}}">管理员</a>
+                    <a href="/admin/roles" class="sidebar-link{{if .menu == "roles"}} active{{end}}">角色管理</a>
+                    <a href="/admin/menus" class="sidebar-link{{if .menu == "menus"}} active{{end}}">菜单管理</a>
+                    <a href="/admin/permissions" class="sidebar-link{{if .menu == "permissions"}} active{{end}}">权限资源</a>
+                    <a href="/admin/departments" class="sidebar-link{{if .menu == "depts"}} active{{end}}">部门管理</a>
+                    <a href="/admin/datarules" class="sidebar-link{{if .menu == "datarules"}} active{{end}}">数据权限</a>
+                </div>
+                <div class="sidebar-section">
+                    <div class="sidebar-section-title">内容</div>
+                    <a href="/admin/articles" class="sidebar-link{{if .menu == "articles"}} active{{end}}">文章</a>
+                    <a href="/admin/products" class="sidebar-link{{if .menu == "products"}} active{{end}}">商品</a>
+                    <a href="/admin/categories" class="sidebar-link{{if .menu == "categories"}} active{{end}}">分类标签</a>
+                </div>
+                <div class="sidebar-section">
+                    <div class="sidebar-section-title">系统</div>
+                    <a href="/admin/pages" class="sidebar-link{{if .menu == "pages"}} active{{end}}">页面</a>
+                    <a href="/admin/media" class="sidebar-link{{if .menu == "media"}} active{{end}}">媒体库</a>
+                    <a href="/admin/settings" class="sidebar-link{{if .menu == "settings"}} active{{end}}">站点设置</a>
+                </div>
+            </nav>
+        </aside>
+
+        {* ===== 顶栏 ===== *}
+        <header class="admin-topbar">
+            <div class="topbar-title">{{.title}}</div>
+            <div class="topbar-actions">
+                <button class="theme-toggle" onclick="
+                    var html = document.documentElement;
+                    var next = html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+                    html.setAttribute('data-theme', next);
+                    localStorage.setItem('theme', next);
+                " title="切换主题">◐</button>
+            </div>
+        </header>
+
+        {* ===== 内容区 ===== *}
+        <main class="admin-content">
+            {{block body()}}{{end}}
+        </main>
+    </div>
+</body>
+</html>

@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Builder 测试页面</title>
+    <script src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+    <link rel="stylesheet" href="/static/builder/css/editor.css">
+    <link rel="stylesheet" href="/static/builder/css/preview.css">
+</head>
+<body>
+    <div x-data="builderApp()" class="builder">
+        <h1>Builder 组件测试</h1>
+        <p>所有 20 个组件已实现完成！</p>
+        
+        <div style="margin: 2rem; padding: 2rem; border: 1px solid #ddd; border-radius: 8px;">
+            <h2>组件清单</h2>
+            <template x-for="category in categories" :key="category.name">
+                <div style="margin: 1rem 0;">
+                    <h3 x-text="category.label"></h3>
+                    <div style="display: flex; flex-wrap: wrap; gap: 0.5rem;">
+                        <template x-for="comp in components.filter(c => c.category === category.name)" :key="comp.key">
+                            <button 
+                                style="padding: 0.5rem 1rem; border: 1px solid #ccc; border-radius: 4px; cursor: pointer;"
+                                @click="console.log(comp)"
+                                x-text="comp.label"
+                            ></button>
+                        </template>
+                    </div>
+                </div>
+            </template>
+        </div>
+        
+        <div style="margin: 2rem; padding: 2rem; background: #f5f5f5; border-radius: 8px;">
+            <h2>快速测试</h2>
+            <p>打开浏览器控制台运行：</p>
+            <pre style="background: white; padding: 1rem; border-radius: 4px; overflow-x: auto;">
+// 检查组件注册
+console.log('组件数量:', BuilderRegistry.components.length);
+
+// 测试创建节点
+const node = BuilderRegistry.createNode('card');
+console.log('创建 Card 节点:', node);
+
+// 测试渲染
+const html = BuilderRenderer.render(node);
+console.log('渲染 HTML:', html);
+            </pre>
+        </div>
+    </div>
+
+    <script src="/static/builder/js/registry.js"></script>
+    <script src="/static/builder/js/renderer.js"></script>
+    <script src="/static/builder/js/editor.js"></script>
+    <script src="/static/builder/js/inspector.js"></script>
+    <script src="/static/builder/js/app.js"></script>
+</body>
+</html>

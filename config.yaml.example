@@ -1,0 +1,98 @@
+# 服务配置
+server:
+  port: 8080
+  mode: debug  # debug, release, test
+  app_name: go_wp
+  read_header_timeout: 3s
+  read_timeout: 15s
+  write_timeout: 30s
+  idle_timeout: 60s
+  request_body_limit: 2MB
+  upload_body_limit: 32MB
+  rate_limit_enabled: true
+  rate_limit_limit: 120
+  rate_limit_window: 1m
+  port_strategy: ""  # auto_release / report_only；留空时按 mode 推导
+
+# 数据库配置
+database:
+  driver: mysql  # mysql, postgres, sqlite, sqlserver
+  host: 127.0.0.1
+  port: 3306
+  user: root
+  password: "your-database-password"
+  dbname: go_mvc
+  max_idle_conns: 10
+  max_open_conns: 100
+  log_level: ""  # 留空时按 server.mode 推导
+  prepare_stmt: false
+  skip_default_transaction: false
+  slow_threshold: 200ms
+  resolver:
+    enabled: false
+    policy: ""        # round_robin / random / weight
+    sources: []       # 主库地址列表，预留结构
+    replicas: []      # 从库地址列表，预留结构
+
+# Redis配置
+redis:
+  provider: redis
+  host: 127.0.0.1
+  port: 6379
+  password: ""
+  db: 0
+  addrs: []  # 集群/哨兵可填写多个地址，留空时使用 host:port
+  enabled: true
+
+# JWT配置
+jwt:
+  secret: your-jwt-secret-key-change-this
+  expire_time: 24  # 过期时间（小时）
+  issuer: go_wp
+
+# Casbin 配置
+casbin:
+  enabled: true
+
+# i18n 配置（数据库为唯一数据源）
+i18n:
+  default_lang: zh-CN
+  auto_refresh: true
+  refresh_interval: 20s
+
+# 队列配置
+queue:
+  enabled: false
+  provider: asynq
+  run_worker: false
+  concurrency: 10
+  queues:
+    critical: 6
+    default: 3
+    low: 1
+
+# 日志配置
+log:
+  level: info  # debug, info, warn, error
+  filename: public/logs/app.log
+  base_dir: public/logs  # 日志基础目录
+  capture:
+    sql: false       # 是否开启 SQL 全局捕获（目录由入口传入）
+    http: false      # 是否开启 HTTP 全局捕获（目录由入口传入）
+  max_size: 100  # 日志文件最大大小（MB）
+  max_backups: 10  # 最多保留旧文件数
+  max_age: 30  # 最多保留天数
+  compress: false  # 是否压缩
+  sample:
+    enabled: false
+    initial: 100
+    thereafter: 100
+  scene_levels: {}  # 例如: { sql: error, http: warn }
+
+# 上传配置
+upload:
+  enabled: true
+  default_provider: local
+  max_size: 10MB
+  allowed_extensions: [".jpg", ".jpeg", ".png", ".gif", ".pdf", ".txt"]
+  allowed_mime_types: ["image/jpeg", "image/png", "image/gif", "application/pdf", "text/plain"]

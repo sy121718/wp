@@ -1,0 +1,1 @@
+import{bc as t}from"./index-BLUpqbpn.js";const r=()=>t.request("get","/api/dept/tree"),s=e=>t.request("post","/api/dept/create",{data:e}),a=e=>t.request("post","/api/dept/update",{data:e}),u=e=>t.request("post","/api/dept/delete",{data:{id:e}});export{s as c,u as d,r as g,a as u};

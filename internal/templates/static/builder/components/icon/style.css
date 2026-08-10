@@ -1,0 +1,12 @@
+/* Icon 组件 */
+.cmp-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: currentColor;
+}
+
+.cmp-icon svg {
+    width: 100%;
+    height: 100%;
+}

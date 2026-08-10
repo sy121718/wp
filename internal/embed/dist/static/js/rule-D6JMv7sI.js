@@ -1,0 +1,1 @@
+const e={username:[{required:!0,message:"请输入用户名",trigger:"blur"}],email:[{required:!0,message:"请输入邮箱",trigger:"blur"}],password:[{required:!0,message:"请输入密码",trigger:"blur"}]},r={};export{e as c,r as e};

@@ -1,0 +1,84 @@
+/* Modal 组件 */
+.cmp-modal-trigger-button {
+    display: inline-block;
+    padding: 10px 20px;
+    border-radius: 6px;
+    background: #3d444f;
+    color: #ffffff;
+    text-decoration: none;
+    font-weight: 500;
+    transition: background 0.2s;
+}
+
+.cmp-modal-trigger-button:hover {
+    background: #2f353d;
+}
+
+.cmp-modal-trigger-text {
+    color: #3d444f;
+    text-decoration: underline;
+    cursor: pointer;
+}
+
+.cmp-modal-overlay {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 1000;
+    padding: 20px;
+    overflow-y: auto;
+}
+
+.cmp-modal-overlay:target {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.cmp-modal-dialog {
+    position: relative;
+    width: 100%;
+    max-width: 600px;
+    background: #ffffff;
+    border-radius: 8px;
+    padding: 24px;
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.3);
+}
+
+.cmp-modal-close {
+    position: absolute;
+    top: 16px;
+    right: 16px;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    background: #f1f5f9;
+    color: #64748b;
+    text-decoration: none;
+    font-size: 24px;
+    line-height: 1;
+    transition: background 0.2s;
+}
+
+.cmp-modal-close:hover {
+    background: #e2e8f0;
+}
+
+.cmp-modal-title {
+    margin: 0 0 16px 0;
+    font-size: 24px;
+    font-weight: 600;
+    color: #1e293b;
+}
+
+.cmp-modal-content {
+    color: #64748b;
+    line-height: 1.6;
+}

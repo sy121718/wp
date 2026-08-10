@@ -1,0 +1,21 @@
+/* Container 组件 */
+.cmp-container {
+    min-height: 80px;
+}
+
+.cmp-container.is-drop-target {
+    box-shadow: inset 0 0 0 3px rgba(61, 68, 79, 0.35);
+}
+
+.cmp-div {
+    min-height: 96px;
+    padding: 16px;
+}
+
+.cmp-flexbox {
+    display: flex;
+    min-height: 120px;
+    padding: 24px;
+    flex-direction: column;
+    gap: 16px;
+}
