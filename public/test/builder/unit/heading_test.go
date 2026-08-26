@@ -124,15 +124,15 @@ func TestHeadingXSS(t *testing.T) {
 func TestHeadingValidateErrors(t *testing.T) {
 	cases := []struct{ name, props, want string }{
 		{"无内容", `{"tag":"h2"}`, "必须提供静态文本或 CMS 绑定"},
-		{"非法标签", `{"text":"x","tag":"p"}`, "无效的语义标签"},
+		{"非法标签", `{"text":"x","tag":"p"}`, "不在选项内"},
 		{"非法字号", `{"text":"x","typography":{"desktop":{"fontSize":"2url"}}}`, "无效的"},
 		{"非法对齐", `{"text":"x","typography":{"desktop":{"textAlign":"middle"}}}`, "无效的"},
 		{"非法字重", `{"text":"x","weight":"bolder"}`, "无效的字重"},
-		{"非法转换", `{"text":"x","transform":"titlecase"}`, "无效的文字转换"},
+		{"非法转换", `{"text":"x","transform":"titlecase"}`, "不在选项内"},
 		{"非法装饰", `{"text":"x","decor":{"decoration":"blink"}}`, "无效的文本装饰"},
-		{"非法颜色", `{"text":"x","color":"red}body{y:1}"}`, "无效的文字颜色"},
-		{"截断越界", `{"text":"x","lineClamp":9}`, "1~6"},
-		{"非法文字阴影", `{"text":"x","textShadow":"glow"}`, "无效的文字阴影"},
+		{"非法颜色", `{"text":"x","color":"red}body{y:1}"}`, "值非法"},
+		{"截断越界", `{"text":"x","lineClamp":9}`, "超出上限 6"},
+		{"非法文字阴影", `{"text":"x","textShadow":"glow"}`, "不在选项内"},
 		{"非法绑定路径", `{"binding":{"field":"Post.Title"}}`, "无效的绑定字段路径"},
 	}
 	for _, tc := range cases {

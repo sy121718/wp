@@ -86,32 +86,37 @@ type Binding struct {
 }
 
 // Props core.heading 特有属性 + Advanced 通用层。
+// 声明式 Controls（docs/02-C3）：字段 ct tag 自动生成校验与面板 schema；
+// 关系性校验（文本/绑定二选一、叶子节点、Advanced）仍在 Validate 中手写。
 type Props struct {
 	// Text 静态文本（与 Binding 二选一，两者都空报错）。
-	Text string `json:"text,omitempty"`
+	Text string `json:"text,omitempty" ct:"text,maxlen=500"`
 	// Binding CMS 字段绑定（优先于 Text；发布期静态填入）。
 	Binding *Binding `json:"binding,omitempty"`
 	// Tag 语义标签：h1~h6 / div / span（默认 h2）。
-	Tag string `json:"tag,omitempty"`
+	Tag string `json:"tag,omitempty" ct:"select,h1,h2,h3,h4,h5,h6,div,span,default=h2"`
 	// Typography 字体排版（三端独立）。
 	Typography ResponsiveTypography `json:"typography,omitempty"`
 	// Weight 字重：100~900 或 token（regular/medium/semibold/bold）。
-	Weight string `json:"weight,omitempty"`
+	Weight string `json:"weight,omitempty" ct:"string,maxlen=10"`
 	// LetterSpacing 字间距。
-	LetterSpacing string `json:"letterSpacing,omitempty"`
+	LetterSpacing string `json:"letterSpacing,omitempty" ct:"safe,maxlen=20"`
 	// Transform 文字转换：none/uppercase/lowercase/capitalize。
-	Transform string `json:"transform,omitempty"`
+	Transform string `json:"transform,omitempty" ct:"select,none,uppercase,lowercase,capitalize"`
 	// Decor 文本装饰。
 	Decor DecorProps `json:"decor,omitempty"`
 	// Color 文字颜色：色值或主题 Token（var(--color-primary)）。
-	Color string `json:"color,omitempty"`
+	Color string `json:"color,omitempty" ct:"safe,maxlen=200"`
 	// LineClamp 多行截断行数 1~6；0 表示不截断。
-	LineClamp int `json:"lineClamp,omitempty"`
+	LineClamp int `json:"lineClamp,omitempty" ct:"int,min=0,max=6"`
 	// TextShadow 文字阴影预设：subtle/strong；空为无。
-	TextShadow string `json:"textShadow,omitempty"`
+	TextShadow string `json:"textShadow,omitempty" ct:"select,subtle,strong"`
 	// Advanced 通用高级属性（规范 docs/02-C0）。
 	Advanced core.AdvancedProps `json:"advanced"`
 }
+
+// PropsSpec 实现 core.SpecProvider：声明式 Controls 的 props 模板。
+func (Heading) PropsSpec() any { return &Props{} }
 
 // Heading core.heading 组件实现。
 type Heading struct{}
@@ -165,9 +170,6 @@ func (Heading) Validate(node *core.Node, ids map[string]bool) (err error) {
 	if !hasText && !hasBinding {
 		return fmt.Errorf("节点 %s: 必须提供静态文本或 CMS 绑定", node.ID)
 	}
-	if len(p.Text) > maxTextLen {
-		return fmt.Errorf("节点 %s: 文本过长（上限 %d 字符）", node.ID, maxTextLen)
-	}
 	if p.Binding != nil && p.Binding.Field != "" {
 		if !fieldPathRe.MatchString(p.Binding.Field) {
 			return fmt.Errorf("节点 %s: 无效的绑定字段路径: %q", node.ID, p.Binding.Field)
@@ -177,13 +179,13 @@ func (Heading) Validate(node *core.Node, ids map[string]bool) (err error) {
 		}
 	}
 
-	// 语义标签。
-	if p.Tag == "" {
-		p.Tag = "h2"
+	// 声明式 Controls：字段级校验（Text maxlen、Tag 选项、Transform select、
+	// LetterSpacing safe 白名单等），由 ct tag 自动生成。
+	if err = core.ValidateSpec(&p, node.ID); err != nil {
+		return err
 	}
-	if !allowedTags[p.Tag] {
-		return fmt.Errorf("节点 %s: 无效的语义标签: %q", node.ID, p.Tag)
-	}
+
+	// 语义标签（Tag 已由声明式校验，此处仅默认值补全不再校验）。
 
 	// 排版（三端）。
 	for bp, t := range map[string]Typography{
@@ -202,31 +204,13 @@ func (Heading) Validate(node *core.Node, ids map[string]bool) (err error) {
 	if _, err = resolveWeight(p.Weight); err != nil {
 		return fmt.Errorf("节点 %s: %w", node.ID, err)
 	}
-	if p.LetterSpacing != "" && (!core.IsSafeCSSValue(p.LetterSpacing) || len(p.LetterSpacing) > 20) {
-		return fmt.Errorf("节点 %s: 无效的字间距: %q", node.ID, p.LetterSpacing)
-	}
-	if p.Transform != "" {
-		if _, ok := transformMap[p.Transform]; !ok {
-			return fmt.Errorf("节点 %s: 无效的文字转换: %q", node.ID, p.Transform)
-		}
-	}
 	if p.Decor.Decoration != "" && !decorationMap[p.Decor.Decoration] {
 		return fmt.Errorf("节点 %s: 无效的文本装饰: %q", node.ID, p.Decor.Decoration)
 	}
 	if p.Decor.DecorationColor != "" && !core.IsSafeCSSValue(p.Decor.DecorationColor) {
 		return fmt.Errorf("节点 %s: 无效的装饰颜色: %q", node.ID, p.Decor.DecorationColor)
 	}
-	if p.Color != "" && !core.IsSafeCSSValue(p.Color) {
-		return fmt.Errorf("节点 %s: 无效的文字颜色: %q", node.ID, p.Color)
-	}
-	if p.LineClamp < 0 || p.LineClamp > 6 {
-		return fmt.Errorf("节点 %s: 截断行数必须在 1~6 之间: %d", node.ID, p.LineClamp)
-	}
-	if p.TextShadow != "" {
-		if _, ok := textShadowPresets[p.TextShadow]; !ok {
-			return fmt.Errorf("节点 %s: 无效的文字阴影: %q", node.ID, p.TextShadow)
-		}
-	}
+	// 颜色/截断/文字阴影由声明式 Controls 校验（safe/int/select tag）。
 
 	return core.ValidateAdvanced(&p.Advanced, node.ID, ids)
 }
