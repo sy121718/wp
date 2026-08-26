@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
-	"strings"
 
 	"go_wp/internal/builder/core"
 )
@@ -214,7 +213,7 @@ func (Container) Validate(node *core.Node, ids map[string]bool) (err error) {
 }
 
 // Render 渲染容器：单层原生语义标签，样式全部编译进 CSS。
-func (Container) Render(node *core.Node, topLevel bool, html *strings.Builder, css *core.CSSBuckets) (err error) {
+func (Container) Render(node *core.Node, topLevel bool, ctx *core.RenderContext) (err error) {
 	var p Props
 	if len(node.Props) > 0 {
 		if err = json.Unmarshal(node.Props, &p); err != nil {
@@ -226,21 +225,21 @@ func (Container) Render(node *core.Node, topLevel bool, html *strings.Builder, c
 	if topLevel {
 		cls += " " + core.SectionClass
 	}
-	html.WriteString("<")
-	html.WriteString(p.Tag)
-	html.WriteString(" class=\"")
-	html.WriteString(cls)
-	html.WriteString("\">")
+	ctx.HTML.WriteString("<")
+	ctx.HTML.WriteString(p.Tag)
+	ctx.HTML.WriteString(" class=\"")
+	ctx.HTML.WriteString(cls)
+	ctx.HTML.WriteString("\">")
 	for _, child := range node.Children {
-		if err = core.RenderNode(child, false, html, css); err != nil {
+		if err = core.RenderNode(child, false, ctx); err != nil {
 			return err
 		}
 	}
-	html.WriteString("</")
-	html.WriteString(p.Tag)
-	html.WriteString(">")
+	ctx.HTML.WriteString("</")
+	ctx.HTML.WriteString(p.Tag)
+	ctx.HTML.WriteString(">")
 
-	compileCSS(node.ID, &p, css)
+	compileCSS(node.ID, &p, ctx.CSS)
 	return nil
 }
 

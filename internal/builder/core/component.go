@@ -7,7 +7,6 @@ package core
 import (
 	"encoding/json"
 	"fmt"
-	"strings"
 )
 
 // Node 组件树节点通用结构。Props 由各组件自行解码为自己的 props 类型。
@@ -28,7 +27,7 @@ type Component interface {
 	// Validate 校验节点（含解码并校验自身 props、递归校验子树）。
 	Validate(node *Node, ids map[string]bool) error
 	// Render 渲染节点 HTML 并编译 CSS。topLevel 表示是否为页面第一层顶级 Section。
-	Render(node *Node, topLevel bool, html *strings.Builder, css *CSSBuckets) error
+	Render(node *Node, topLevel bool, ctx *RenderContext) error
 }
 
 // registry 组件注册表。
@@ -49,7 +48,7 @@ func Lookup(typeName string) (c Component, err error) {
 }
 
 // RenderNode 渲染单个节点：按类型分发到已注册组件。
-func RenderNode(node *Node, topLevel bool, html *strings.Builder, css *CSSBuckets) (err error) {
+func RenderNode(node *Node, topLevel bool, ctx *RenderContext) (err error) {
 	if node == nil {
 		return fmt.Errorf("节点为空")
 	}
@@ -57,7 +56,7 @@ func RenderNode(node *Node, topLevel bool, html *strings.Builder, css *CSSBucket
 	if err != nil {
 		return fmt.Errorf("节点 %s: %w", node.ID, err)
 	}
-	return comp.Render(node, topLevel, html, css)
+	return comp.Render(node, topLevel, ctx)
 }
 
 // ValidateNode 校验单个节点：按类型分发到已注册组件。

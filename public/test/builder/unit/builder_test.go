@@ -243,7 +243,7 @@ func TestValidateErrors(t *testing.T) {
 		{"非法阴影级别", `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"a","type":"core.container","props":{"tag":"div","layout":{"engine":"flex","flex":{}},"visual":{"shadow":"xxl"}}}]}`, "无效的阴影级别"},
 		{"非法入场动效", `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"a","type":"core.container","props":{"tag":"div","layout":{"engine":"flex","flex":{}},"interaction":{"entrance":"spin"}}}]}`, "无效的入场动效"},
 		{"节点ID重复", `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"a","type":"core.container","props":{"tag":"div","layout":{"engine":"flex","flex":{}}},"children":[{"id":"a","type":"core.container","props":{"tag":"div","layout":{"engine":"flex","flex":{}}}}]}]}`, "ID 重复"},
-		{"未知组件类型", `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"a","type":"core.image","props":{}}]}`, "不支持的组件类型"},
+		{"未知组件类型", `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"a","type":"core.weather","props":{}}]}`, "不支持的组件类型"},
 		{"非法body class", `{"settings":{"layout":{"mode":"full"},"bodyClasses":["a b"]},"root":[]}`, "无效的 body 自定义 class"},
 	}
 	for _, tc := range cases {
