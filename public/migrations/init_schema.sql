@@ -1,6 +1,6 @@
 -- ========================================
 -- go_wp — PostgreSQL 建表 DDL（11 张表）
--- 与 WSL_PostgreSQL@16.14 / base 库实际结构对齐
+-- 与本地 PostgreSQL / wp 库实际结构对齐
 -- 由 GORM model tag 翻译为 PostgreSQL DDL
 -- ========================================
 
@@ -187,7 +187,52 @@ COMMENT ON TABLE sys_rule_assignment IS '数据规则分配表';
 COMMENT ON COLUMN sys_rule_assignment.target_type IS '目标类型：1角色 2用户 3部门';
 COMMENT ON COLUMN sys_rule_assignment.target_scope IS '作用范围：0仅本部门 1本部门及子部门';
 
--- 8. 系统附件表
+-- 8. Casbin 策略表（gormadapter 自动建表约定，保持与 pkg/casbin 一致）
+CREATE TABLE IF NOT EXISTS sys_casbin_rule (
+    id    BIGSERIAL    PRIMARY KEY,
+    ptype VARCHAR(100),
+    v0    VARCHAR(100),
+    v1    VARCHAR(100),
+    v2    VARCHAR(100),
+    v3    VARCHAR(100),
+    v4    VARCHAR(100),
+    v5    VARCHAR(100)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_sys_casbin_rule ON sys_casbin_rule(ptype, v0, v1, v2, v3, v4, v5);
+
+-- 9. 文件分类表
+CREATE TABLE IF NOT EXISTS sys_file_category (
+    id            BIGSERIAL    PRIMARY KEY,
+    category_name VARCHAR(100) NOT NULL,
+    category_code VARCHAR(50)  NOT NULL,
+    parent_id     BIGINT       NOT NULL DEFAULT 0,
+    sort_order    INTEGER      NOT NULL DEFAULT 0,
+    icon          VARCHAR(50),
+    status        SMALLINT     NOT NULL DEFAULT 1,
+    create_by     BIGINT,
+    update_by     BIGINT,
+    create_time   TIMESTAMP,
+    update_time   TIMESTAMP,
+    CONSTRAINT sys_file_category_category_code_unique UNIQUE (category_code)
+);
+CREATE INDEX IF NOT EXISTS idx_fc_create_by ON sys_file_category(create_by);
+CREATE INDEX IF NOT EXISTS idx_fc_parent_id ON sys_file_category(parent_id);
+CREATE INDEX IF NOT EXISTS idx_fc_status ON sys_file_category(status);
+CREATE INDEX IF NOT EXISTS idx_fc_update_by ON sys_file_category(update_by);
+
+COMMENT ON TABLE sys_file_category IS '文件分类表';
+COMMENT ON COLUMN sys_file_category.category_name IS '分类名称';
+COMMENT ON COLUMN sys_file_category.category_code IS '分类编码';
+COMMENT ON COLUMN sys_file_category.parent_id IS '父级ID';
+COMMENT ON COLUMN sys_file_category.sort_order IS '排序';
+COMMENT ON COLUMN sys_file_category.icon IS '图标';
+COMMENT ON COLUMN sys_file_category.status IS '状态';
+COMMENT ON COLUMN sys_file_category.create_by IS '创建人';
+COMMENT ON COLUMN sys_file_category.update_by IS '更新人';
+COMMENT ON COLUMN sys_file_category.create_time IS '创建时间';
+COMMENT ON COLUMN sys_file_category.update_time IS '更新时间';
+
+-- 10. 系统附件表
 CREATE TABLE IF NOT EXISTS sys_attachment (
     id           BIGSERIAL    PRIMARY KEY,
     category_id  BIGINT,
@@ -235,51 +280,6 @@ COMMENT ON COLUMN sys_attachment.create_by IS '创建人ID';
 COMMENT ON COLUMN sys_attachment.update_by IS '更新人ID';
 COMMENT ON COLUMN sys_attachment.create_time IS '创建时间';
 COMMENT ON COLUMN sys_attachment.update_time IS '更新时间';
-
--- 9. Casbin 策略表（gormadapter 自动建表约定，保持与 pkg/casbin 一致）
-CREATE TABLE IF NOT EXISTS sys_casbin_rule (
-    id    BIGSERIAL    PRIMARY KEY,
-    ptype VARCHAR(100),
-    v0    VARCHAR(100),
-    v1    VARCHAR(100),
-    v2    VARCHAR(100),
-    v3    VARCHAR(100),
-    v4    VARCHAR(100),
-    v5    VARCHAR(100)
-);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_sys_casbin_rule ON sys_casbin_rule(ptype, v0, v1, v2, v3, v4, v5);
-
--- 10. 文件分类表
-CREATE TABLE IF NOT EXISTS sys_file_category (
-    id            BIGSERIAL    PRIMARY KEY,
-    category_name VARCHAR(100) NOT NULL,
-    category_code VARCHAR(50)  NOT NULL,
-    parent_id     BIGINT       NOT NULL DEFAULT 0,
-    sort_order    INTEGER      NOT NULL DEFAULT 0,
-    icon          VARCHAR(50),
-    status        SMALLINT     NOT NULL DEFAULT 1,
-    create_by     BIGINT,
-    update_by     BIGINT,
-    create_time   TIMESTAMP,
-    update_time   TIMESTAMP,
-    CONSTRAINT sys_file_category_category_code_unique UNIQUE (category_code)
-);
-CREATE INDEX IF NOT EXISTS idx_fc_create_by ON sys_file_category(create_by);
-CREATE INDEX IF NOT EXISTS idx_fc_parent_id ON sys_file_category(parent_id);
-CREATE INDEX IF NOT EXISTS idx_fc_status ON sys_file_category(status);
-CREATE INDEX IF NOT EXISTS idx_fc_update_by ON sys_file_category(update_by);
-
-COMMENT ON TABLE sys_file_category IS '文件分类表';
-COMMENT ON COLUMN sys_file_category.category_name IS '分类名称';
-COMMENT ON COLUMN sys_file_category.category_code IS '分类编码';
-COMMENT ON COLUMN sys_file_category.parent_id IS '父级ID';
-COMMENT ON COLUMN sys_file_category.sort_order IS '排序';
-COMMENT ON COLUMN sys_file_category.icon IS '图标';
-COMMENT ON COLUMN sys_file_category.status IS '状态';
-COMMENT ON COLUMN sys_file_category.create_by IS '创建人';
-COMMENT ON COLUMN sys_file_category.update_by IS '更新人';
-COMMENT ON COLUMN sys_file_category.create_time IS '创建时间';
-COMMENT ON COLUMN sys_file_category.update_time IS '更新时间';
 
 -- 11. i18n 国际化配置表
 CREATE TABLE IF NOT EXISTS sys_i18n (
