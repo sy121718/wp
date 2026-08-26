@@ -7,6 +7,8 @@ import (
 	"errors"
 	"time"
 
+	adminenums "go_wp/internal/module/admin/enums"
+
 	"gorm.io/gorm"
 )
 
@@ -95,6 +97,11 @@ func (m *AdminModel) DB(ctx context.Context) *gorm.DB {
 	return m.db.WithContext(ctx).Model(&AdminEntity{})
 }
 
+// DialectName 返回当前数据库方言名（如 mysql / postgres），用于 SQL 方言差异分支。
+func (m *AdminModel) DialectName() string {
+	return m.db.Dialector.Name()
+}
+
 // GetByID 根据 ID 查询管理员，不存在返回 nil。
 func (m *AdminModel) GetByID(ctx context.Context, id uint64) (*AdminEntity, error) {
 	var entity AdminEntity
@@ -162,7 +169,7 @@ func (a *AdminEntity) BeforeCreate(tx *gorm.DB) error {
 			return err
 		}
 		if count > 0 {
-			return errors.New("系统已存在超级管理员，不能重复创建")
+			return errors.New(adminenums.ErrSuperAdminExists)
 		}
 	}
 	return nil
@@ -175,7 +182,7 @@ func (a *AdminEntity) BeforeUpdate(tx *gorm.DB) error {
 
 	if tx.Statement.Changed("IsAdmin") {
 		if !allowModifyIsAdmin(tx.Statement.Context) {
-			return errors.New("不允许外部修改")
+			return errors.New(adminenums.ErrFieldProtected)
 		}
 	}
 	return nil

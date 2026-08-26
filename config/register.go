@@ -64,7 +64,6 @@ var runtimeComponents = []runtimeComponent{
 		Name:     "i18n",
 		Critical: true,
 		Init: func(cfg *viper.Viper) error {
-			i18n.SetDBProvider(database.GetDB)
 			return i18n.Init(cfg)
 		},
 		Ready: i18n.Ready,

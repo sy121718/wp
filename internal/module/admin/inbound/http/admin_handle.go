@@ -4,30 +4,57 @@ import (
 	admincontract "go_wp/internal/module/admin/contract"
 	admindto "go_wp/internal/module/admin/dto"
 	adminenums "go_wp/internal/module/admin/enums"
+	adminservice "go_wp/internal/module/admin/service"
 	"go_wp/pkg/auth"
 	r "go_wp/pkg/response"
 
 	"github.com/gin-gonic/gin"
 )
 
+// Handle admin 模块统一 HTTP 处理器。
+// 持有按领域拆分的契约接口，便于 mock 测试与多实现替换。
 type Handle struct {
-	as admincontract.AdminService
+	admin admincontract.AdminService
+	role  admincontract.RoleService
+	perm  admincontract.PermService
+	menu  admincontract.MenuService
+	dept  admincontract.DeptService
+	rule  admincontract.RuleService
 }
 
-func NewHandle(as admincontract.AdminService) *Handle {
+// NewHandle 创建 admin HTTP 处理器，注入合并后的 Service 实现。
+func NewHandle(svc *adminservice.Service) *Handle {
 	return &Handle{
-		as: as,
+		admin: svc,
+		role:  svc,
+		perm:  svc,
+		menu:  svc,
+		dept:  svc,
+		rule:  svc,
 	}
 }
 
-func (h *Handle) List(c *gin.Context) {
-	var req admindto.ListReq
+// NewHandleWithDeps 显式注入各领域契约（测试 mock 与特殊装配用）。
+func NewHandleWithDeps(
+	admin admincontract.AdminService,
+	role admincontract.RoleService,
+	perm admincontract.PermService,
+	menu admincontract.MenuService,
+	dept admincontract.DeptService,
+	rule admincontract.RuleService,
+) *Handle {
+	return &Handle{admin: admin, role: role, perm: perm, menu: menu, dept: dept, rule: rule}
+}
+
+// AdminList 管理员分页列表。
+func (h *Handle) AdminList(c *gin.Context) {
+	var req admindto.AdminListReq
 	if err := c.ShouldBindQuery(&req); err != nil {
 		r.ErrorWithMessage(c, 400, adminenums.MsgBadRequest+":"+err.Error())
 		return
 	}
 
-	res, err := h.as.List(c.Request.Context(), &req)
+	res, err := h.admin.AdminList(c.Request.Context(), &req)
 	if err != nil {
 		r.ErrorWithMessage(c, 500, err.Error())
 		return
@@ -36,15 +63,15 @@ func (h *Handle) List(c *gin.Context) {
 	r.Success(c, res)
 }
 
-// Login 管理员登录
-func (h *Handle) Login(c *gin.Context) {
-	var req admindto.LoginReq
+// AdminLogin 管理员登录
+func (h *Handle) AdminLogin(c *gin.Context) {
+	var req admindto.AdminLoginReq
 	if err := c.ShouldBindJSON(&req); err != nil {
 		r.ErrorWithMessage(c, 400, adminenums.MsgBadRequest+"："+err.Error())
 		return
 	}
 
-	res, err := h.as.Login(c.Request.Context(), &req, c.ClientIP())
+	res, err := h.admin.AdminLogin(c.Request.Context(), &req, c.ClientIP())
 	if err != nil {
 		r.ErrorWithMessage(c, 400, err.Error())
 		return
@@ -54,8 +81,8 @@ func (h *Handle) Login(c *gin.Context) {
 	r.SuccessWithMessage(c, adminenums.MsgSuccess, res)
 }
 
-// Logout 注销当前登录会话。
-func (h *Handle) Logout(c *gin.Context) {
+// AdminLogout 注销当前登录会话。
+func (h *Handle) AdminLogout(c *gin.Context) {
 	userID, exists := c.Get("user_id")
 	if !exists {
 		r.ErrorWithMessage(c, 401, adminenums.MsgUnauthorized)
@@ -66,7 +93,7 @@ func (h *Handle) Logout(c *gin.Context) {
 		r.ErrorWithMessage(c, 500, adminenums.MsgWrongUserType)
 		return
 	}
-	if err := h.as.Logout(c.Request.Context(), uint64(uid)); err != nil {
+	if err := h.admin.AdminLogout(c.Request.Context(), uint64(uid)); err != nil {
 		r.ErrorWithMessage(c, 500, err.Error())
 		return
 	}
@@ -75,8 +102,8 @@ func (h *Handle) Logout(c *gin.Context) {
 	r.SuccessWithMessage(c, adminenums.MsgLogoutSuccess, nil)
 }
 
-// Profile 获取当前登录用户信息。
-func (h *Handle) Profile(c *gin.Context) {
+// AdminProfile 获取当前登录用户信息。
+func (h *Handle) AdminProfile(c *gin.Context) {
 	userID, exists := c.Get("user_id")
 	if !exists {
 		r.ErrorWithMessage(c, 401, adminenums.MsgUnauthorized)
@@ -89,7 +116,7 @@ func (h *Handle) Profile(c *gin.Context) {
 		return
 	}
 
-	res, err := h.as.Profile(c.Request.Context(), uint64(uid))
+	res, err := h.admin.AdminProfile(c.Request.Context(), uint64(uid))
 	if err != nil {
 		r.ErrorWithMessage(c, 500, err.Error())
 		return
@@ -98,37 +125,29 @@ func (h *Handle) Profile(c *gin.Context) {
 	r.Success(c, res)
 }
 
-// 新增管理员控制器
-// h 代表指针类型的控制器服务，c是必备的上下文go没有全局共享
-func (h *Handle) Create(c *gin.Context) {
-	//变量 接收dto规则
-	var req admindto.CreateReq
-	//绑定规则，进行校验
+// AdminCreate 新增管理员
+func (h *Handle) AdminCreate(c *gin.Context) {
+	var req admindto.AdminCreateReq
 	if err := c.ShouldBindJSON(&req); err != nil {
 		r.ErrorWithMessage(c, 400, adminenums.MsgBadRequest+"："+err.Error())
 		return
 	}
-	//h是控制器服务，as是adminService服务，Create是具体方法，然后传递具体参数
-	res, err := h.as.Create(c.Request.Context(), &req)
-	// 捕获错误
+	res, err := h.admin.AdminCreate(c.Request.Context(), &req)
 	if err != nil {
 		r.ErrorWithMessage(c, 500, err.Error())
 		return
 	}
-	//最终返回给用户信息
 	r.Success(c, res)
-
 }
 
-func (h *Handle) Edit(c *gin.Context) {
-
-	var req admindto.EditReq
+// AdminEdit 修改管理员
+func (h *Handle) AdminEdit(c *gin.Context) {
+	var req admindto.AdminEditReq
 	if err := c.ShouldBindJSON(&req); err != nil {
-
 		r.ErrorWithMessage(c, 400, adminenums.MsgBadRequest+":"+err.Error())
 		return
 	}
-	res, err := h.as.Edit(c.Request.Context(), &req)
+	res, err := h.admin.AdminEdit(c.Request.Context(), &req)
 	if err != nil {
 		r.ErrorWithMessage(c, 500, err.Error())
 		return
@@ -136,14 +155,15 @@ func (h *Handle) Edit(c *gin.Context) {
 	r.Success(c, res)
 }
 
-func (h *Handle) Detail(c *gin.Context) {
-	var req admindto.DetailReq
+// AdminDetail 管理员详情
+func (h *Handle) AdminDetail(c *gin.Context) {
+	var req admindto.AdminDetailReq
 	if err := c.ShouldBindQuery(&req); err != nil {
 		r.ErrorWithMessage(c, 400, adminenums.MsgBadRequest+"："+err.Error())
 		return
 	}
 
-	res, err := h.as.Detail(c.Request.Context(), &req)
+	res, err := h.admin.AdminDetail(c.Request.Context(), &req)
 	if err != nil {
 		r.ErrorWithMessage(c, 500, err.Error())
 		return
@@ -152,8 +172,9 @@ func (h *Handle) Detail(c *gin.Context) {
 	r.Success(c, res)
 }
 
-func (h *Handle) Delete(c *gin.Context) {
-	var req admindto.DeleteReq
+// AdminDelete 删除管理员
+func (h *Handle) AdminDelete(c *gin.Context) {
+	var req admindto.AdminDeleteReq
 	if err := c.ShouldBindJSON(&req); err != nil {
 		r.ErrorWithMessage(c, 400, adminenums.MsgBadRequest+"："+err.Error())
 		return
@@ -167,7 +188,7 @@ func (h *Handle) Delete(c *gin.Context) {
 	}
 	req.OperatorID = uint64(uid)
 
-	res, err := h.as.Delete(c.Request.Context(), &req)
+	res, err := h.admin.AdminDelete(c.Request.Context(), &req)
 	if err != nil {
 		r.ErrorWithMessage(c, 500, err.Error())
 		return
@@ -176,15 +197,14 @@ func (h *Handle) Delete(c *gin.Context) {
 	r.Success(c, res)
 }
 
-// --- 角色绑定 ---
-
-func (h *Handle) RoleList(c *gin.Context) {
-	var req admindto.RoleListReq
+// AdminRoleList 查询用户绑定的角色列表。
+func (h *Handle) AdminRoleList(c *gin.Context) {
+	var req admindto.AdminRoleListReq
 	if err := c.ShouldBindQuery(&req); err != nil {
 		r.ErrorWithMessage(c, 400, adminenums.MsgBadRequest+": "+err.Error())
 		return
 	}
-	res, err := h.as.RoleList(c.Request.Context(), &req)
+	res, err := h.admin.AdminRoleList(c.Request.Context(), &req)
 	if err != nil {
 		r.ErrorWithMessage(c, 500, err.Error())
 		return
@@ -192,13 +212,14 @@ func (h *Handle) RoleList(c *gin.Context) {
 	r.Success(c, res)
 }
 
-func (h *Handle) RoleSave(c *gin.Context) {
-	var req admindto.RoleSaveReq
+// AdminRoleSave 保存用户角色绑定。
+func (h *Handle) AdminRoleSave(c *gin.Context) {
+	var req admindto.AdminRoleSaveReq
 	if err := c.ShouldBindJSON(&req); err != nil {
 		r.ErrorWithMessage(c, 400, adminenums.MsgBadRequest+": "+err.Error())
 		return
 	}
-	res, err := h.as.RoleSave(c.Request.Context(), &req)
+	res, err := h.admin.AdminRoleSave(c.Request.Context(), &req)
 	if err != nil {
 		r.ErrorWithMessage(c, 400, err.Error())
 		return
@@ -206,15 +227,14 @@ func (h *Handle) RoleSave(c *gin.Context) {
 	r.SuccessWithMessage(c, adminenums.MsgSuccess, res)
 }
 
-// --- 直接额外权限 ---
-
-func (h *Handle) MenuList(c *gin.Context) {
-	var req admindto.MenuListReq
+// AdminMenuList 查询用户直接额外菜单。
+func (h *Handle) AdminMenuList(c *gin.Context) {
+	var req admindto.AdminMenuListReq
 	if err := c.ShouldBindQuery(&req); err != nil {
 		r.ErrorWithMessage(c, 400, adminenums.MsgBadRequest+": "+err.Error())
 		return
 	}
-	res, err := h.as.MenuList(c.Request.Context(), &req)
+	res, err := h.admin.AdminMenuList(c.Request.Context(), &req)
 	if err != nil {
 		r.ErrorWithMessage(c, 500, err.Error())
 		return
@@ -222,13 +242,14 @@ func (h *Handle) MenuList(c *gin.Context) {
 	r.Success(c, res)
 }
 
-func (h *Handle) MenuSave(c *gin.Context) {
-	var req admindto.MenuSaveReq
+// AdminMenuSave 保存用户直接额外权限。
+func (h *Handle) AdminMenuSave(c *gin.Context) {
+	var req admindto.AdminMenuSaveReq
 	if err := c.ShouldBindJSON(&req); err != nil {
 		r.ErrorWithMessage(c, 400, adminenums.MsgBadRequest+": "+err.Error())
 		return
 	}
-	res, err := h.as.MenuSave(c.Request.Context(), &req)
+	res, err := h.admin.AdminMenuSave(c.Request.Context(), &req)
 	if err != nil {
 		r.ErrorWithMessage(c, 400, err.Error())
 		return
@@ -236,9 +257,8 @@ func (h *Handle) MenuSave(c *gin.Context) {
 	r.SuccessWithMessage(c, adminenums.MsgSuccess, res)
 }
 
-// --- 动态路由权限投影 ---
-
-func (h *Handle) Routes(c *gin.Context) {
+// AdminRoutes 动态路由权限投影。
+func (h *Handle) AdminRoutes(c *gin.Context) {
 	userID, exists := c.Get("user_id")
 	if !exists {
 		r.ErrorWithMessage(c, 401, adminenums.MsgUnauthorized)
@@ -249,7 +269,7 @@ func (h *Handle) Routes(c *gin.Context) {
 		r.ErrorWithMessage(c, 500, adminenums.MsgWrongUserType)
 		return
 	}
-	res, err := h.as.Routes(c.Request.Context(), uint64(uid))
+	res, err := h.admin.AdminRoutes(c.Request.Context(), uint64(uid), r.RequestLanguage(c))
 	if err != nil {
 		r.ErrorWithMessage(c, 500, err.Error())
 		return

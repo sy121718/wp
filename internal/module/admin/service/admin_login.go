@@ -16,7 +16,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// Login 管理员登录，返回 token 和用户信息。
+// AdminLogin 管理员登录，返回 token 和用户信息。
 //
 // 流程：
 //  1. 验证图形验证码
@@ -25,7 +25,7 @@ import (
 //  4. bcrypt 对比密码
 //  5. 失败：累加失败次数，连续 5 次后封禁 30 分钟
 //  6. 成功：清空失败状态，记录登录 IP 和时间，生成 token 对
-func (s *Service) Login(ctx context.Context, req *admindto.LoginReq, clientIP string) (*admindto.LoginResp, error) {
+func (s *Service) AdminLogin(ctx context.Context, req *admindto.AdminLoginReq, clientIP string) (*admindto.AdminLoginResp, error) {
 	// 1) 验证验证码
 	var captchaSvc = captcha.Get()
 	// Verify-验证验证码是否正确
@@ -35,9 +35,14 @@ func (s *Service) Login(ctx context.Context, req *admindto.LoginReq, clientIP st
 
 	// 2) 按用户名查用户（区分大小写）
 	var entity adminmodel.AdminEntity
-	//go特色，if先写短函数，然后再定义条件，当前是捕获err，如果err不为空，那就找错误，
-	// 第一层错误是发牛的nil和系统报错，第二层是捕获gorm的报错然后替代默认的err
-	if err := s.am.DB(ctx).Where("(BINARY username = ? OR email = ?)", req.Username, req.Username).First(&entity).Error; err != nil {
+	// 二进制比较保证大小写敏感：MySQL 用 BINARY；
+	// PostgreSQL 默认 collation 本身大小写敏感，直接等值比较。
+	binaryExpr := "CAST(username AS BINARY) = CAST(? AS BINARY)"
+	switch s.am.DialectName() {
+	case "postgres":
+		binaryExpr = "username = ?"
+	}
+	if err := s.am.DB(ctx).Where(binaryExpr+" OR email = ?", req.Username, req.Username).First(&entity).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, errors.New(adminenums.ErrBadCredentials)
 		}
@@ -46,7 +51,8 @@ func (s *Service) Login(ctx context.Context, req *admindto.LoginReq, clientIP st
 
 	// 3) 检查是否被锁定
 	if entity.IsLocked() {
-		return nil, fmt.Errorf(adminenums.ErrAccountLocked,
+		// key|param 协议：ErrAccountLocked 翻译模板含 %s，参数随错误消息传递（pkg/response 统一格式化）
+		return nil, fmt.Errorf("%s|%s", adminenums.ErrAccountLocked,
 			time.Until(*entity.LockedUntilTime).Round(time.Minute).String())
 	}
 
@@ -121,8 +127,82 @@ func (s *Service) Login(ctx context.Context, req *admindto.LoginReq, clientIP st
 		return nil, fmt.Errorf("刷新在线状态失败: %w", err)
 	}
 
-	return &admindto.LoginResp{
+	return &admindto.AdminLoginResp{
 		AccessToken: accessToken,
+	}, nil
+}
+
+// AdminLogout 注销当前管理员会话，使该会话签发的 JWT 立即失效。
+func (s *Service) AdminLogout(ctx context.Context, userID uint64) (err error) {
+	return auth.DeleteUserSession(ctx, userID)
+}
+
+// AdminProfile 获取当前登录用户信息。
+// 优先从 Redis 读取，不存在时查询数据库并回填 Redis。
+func (s *Service) AdminProfile(ctx context.Context, userID uint64) (*admindto.AdminProfileResp, error) {
+	// 1) 优先从 Redis 获取会话
+	session, err := auth.GetUserSession(ctx, userID)
+	if err == nil && session != nil {
+		return &admindto.AdminProfileResp{
+			ID:       session.ID,
+			Username: session.Username,
+			Name:     session.Name,
+			Avatar:   session.Avatar,
+			Email:    session.Email,
+			Phone:    session.Phone,
+			Status:   session.Status,
+		}, nil
+	}
+
+	// 2) Redis 未命中，查询数据库
+	entity, err := s.am.GetByID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	if entity == nil {
+		return nil, fmt.Errorf(adminenums.ErrUserNotFound)
+	}
+
+	name := ""
+	if entity.Name != nil {
+		name = *entity.Name
+	}
+	avatar := ""
+	if entity.Avatar != nil {
+		avatar = *entity.Avatar
+	}
+	email := ""
+	if entity.Email != nil {
+		email = *entity.Email
+	}
+	phone := ""
+	if entity.Phone != nil {
+		phone = *entity.Phone
+	}
+
+	// 3) 回填 Redis
+	if err := auth.SaveUserSession(ctx, &auth.UserSession{
+		ID:       entity.ID,
+		Username: entity.Username,
+		Name:     name,
+		Avatar:   avatar,
+		Email:    email,
+		Phone:    phone,
+		Status:   entity.Status,
+		IsAdmin:  entity.IsAdmin,
+		DeptID:   entity.DeptID,
+	}, 0); err != nil {
+		return nil, fmt.Errorf("写入用户会话失败: %w", err)
+	}
+
+	return &admindto.AdminProfileResp{
+		ID:       entity.ID,
+		Username: entity.Username,
+		Name:     name,
+		Avatar:   avatar,
+		Email:    email,
+		Phone:    phone,
+		Status:   entity.Status,
 	}, nil
 }
 

@@ -6,14 +6,8 @@ import (
 
 	adminhttp "go_wp/internal/module/admin/inbound/http"
 	captcharouter "go_wp/internal/module/common/captcha/router"
-	datarulehttp "go_wp/internal/module/datarule/inbound/http"
-	depthttp "go_wp/internal/module/dept/inbound/http"
+	dashboardhttp "go_wp/internal/module/dashboard/inbound/http"
 	mediahttp "go_wp/internal/module/media/inbound/http"
-	menuhttp "go_wp/internal/module/menu/inbound/http"
-	permissionhttp "go_wp/internal/module/permission/inbound/http"
-	permissionservice "go_wp/internal/module/permission/service"
-	rolehttp "go_wp/internal/module/role/inbound/http"
-	roleservice "go_wp/internal/module/role/service"
 	"go_wp/internal/templates"
 	"go_wp/pkg/database"
 	"go_wp/pkg/response"
@@ -22,6 +16,9 @@ import (
 )
 
 // SetupRoutes 注册全部路由。
+//
+// 装配说明：管理面六领域（管理员/角色/权限/菜单/部门/数据权限）合并为 admin 大模块，
+// 模块内部同包直调、自包含装配；media、dashboard、captcha 为独立模块。
 func SetupRoutes(router *gin.Engine, ready func() error) {
 	if router == nil {
 		return
@@ -36,22 +33,8 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 	// 媒体上传存储（pkg/upload local provider 默认 public/storage）
 	router.Static("/storage", "public/storage")
 
-	// 页面路由
-	router.GET("/", func(c *gin.Context) {
-		c.HTML(http.StatusOK, "admin/dashboard", gin.H{
-			"title": "仪表盘",
-			"menu":  "dashboard",
-		})
-	})
-	router.GET("/admin", func(c *gin.Context) {
-		c.HTML(http.StatusOK, "admin/dashboard", gin.H{
-			"title": "仪表盘",
-			"menu":  "dashboard",
-		})
-	})
-	router.GET("/builder", func(c *gin.Context) {
-		c.HTML(http.StatusOK, "builder/builder", gin.H{})
-	})
+	// 后台页面路由（需要后端逻辑的页面入口，归 dashboard 模块）
+	dashboardhttp.SetupDashboardRoutes(router)
 
 	// 健康检查
 	router.GET("/livez", func(c *gin.Context) {
@@ -91,23 +74,7 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 	api := router.Group("/api")
 	captcharouter.SetupCaptchaRoutes(api)
 	mediahttp.SetupMediaRoutes(api, db)
-
-	perm := permissionhttp.SetupPermissionRoutes(api, db)
-	menu := menuhttp.SetupMenuRoutes(api, db, perm.Service)
-
-	if ps, ok := perm.Service.(*permissionservice.Service); ok {
-		ps.SetMenuService(menu.Service)
-	}
-
-	role := rolehttp.SetupRoleRoutes(api, db, perm.Service, menu.Service)
-	adminResult := adminhttp.SetupAdminRoutes(api, db, menu.Service, role.Service, perm.Service)
-
-	if rs, ok := role.Service.(*roleservice.Service); ok {
-		rs.SetAdminService(adminResult.Service)
-	}
-
-	dept := depthttp.SetupDeptRoutes(api, db, adminResult.Service)
-	datarulehttp.SetupDataRuleRoutes(api, db, role.Service, dept)
+	adminhttp.SetupAdminRoutes(api, db)
 
 	// 未匹配路由返回 404
 	router.NoRoute(func(c *gin.Context) {

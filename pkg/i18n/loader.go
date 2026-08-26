@@ -3,41 +3,22 @@ package i18n
 import (
 	"context"
 	"fmt"
-	"log"
 	"sync"
 	"time"
 
-	"gorm.io/gorm"
+	"go_wp/pkg/database"
+	"go_wp/pkg/logger"
 )
 
-// DBProvider 由外部注入的数据库获取函数。
-// 调用方在初始化阶段通过 SetDBProvider 注入，解耦 i18n 包对具体 database 包的依赖。
 var (
-	dbProvider     func() (*gorm.DB, error)
-	dbProviderMu   sync.Mutex
-	refreshMu      sync.Mutex
-	refreshCancel  context.CancelFunc
-	refreshWG      sync.WaitGroup
+	refreshMu     sync.Mutex
+	refreshCancel context.CancelFunc
+	refreshWG     sync.WaitGroup
 )
-
-// SetDBProvider 注入数据库获取函数。
-func SetDBProvider(fn func() (*gorm.DB, error)) {
-	dbProviderMu.Lock()
-	defer dbProviderMu.Unlock()
-	dbProvider = fn
-}
 
 // LoadCache 从数据库加载多语言数据到内存
 func LoadCache() error {
-	dbProviderMu.Lock()
-	provider := dbProvider
-	dbProviderMu.Unlock()
-
-	if provider == nil {
-		return fmt.Errorf("i18n: DBProvider 未注入，请先调用 SetDBProvider()")
-	}
-
-	db, err := provider()
+	db, err := database.GetDB()
 	if err != nil {
 		return fmt.Errorf("获取数据库实例失败: %w", err)
 	}
@@ -72,7 +53,11 @@ func LoadCache() error {
 	}
 
 	cache.Update(newData, newHttpCodes)
-	log.Printf("[i18n] Loaded %d keys, %d records, version: %d", len(newData), len(rows), cache.GetVersion())
+	logger.WithFields(map[string]any{
+		"keys":    len(newData),
+		"records": len(rows),
+		"version": cache.GetVersion(),
+	}).Info("i18n 缓存加载完成")
 	return nil
 }
 
@@ -102,17 +87,17 @@ func StartAutoRefresh(interval time.Duration) {
 		for {
 			select {
 			case <-ctx.Done():
-				log.Println("[i18n] Auto refresh stopped")
+				logger.Info("i18n 自动刷新已停止")
 				return
 			case <-ticker.C:
 				if err := LoadCache(); err != nil {
-					log.Printf("[i18n] Auto refresh failed: %v", err)
+					logger.Error(err, "i18n 自动刷新失败")
 				}
 			}
 		}
 	}()
 
-	log.Printf("[i18n] Auto refresh started, interval: %s", interval)
+	logger.WithFields(map[string]any{"interval": interval.String()}).Info("i18n 自动刷新已启动")
 }
 
 // StopAutoRefresh 停止自动刷新
@@ -130,7 +115,7 @@ func StopAutoRefresh() {
 	refreshWG.Wait()
 }
 
-// ValidateReady 检查 i18n 是否已完成初始化
+// ValidateReady 检查 i18n 是否已经完成初始化
 func ValidateReady() error {
 	if !IsInited() {
 		return fmt.Errorf("i18n 未初始化")
@@ -138,7 +123,7 @@ func ValidateReady() error {
 	return nil
 }
 
-// Ready 检查 i18n 组件是否可用
+// Ready 检查 i18n 组件是否可用。
 func Ready() error {
 	return ValidateReady()
 }

@@ -8,6 +8,14 @@ const (
 	ErrInvalidParams = "ErrInvalidParams" // 请求参数错误
 	ErrInvalidBody   = "ErrInvalidBody"   // 请求体格式错误
 	ErrNotFound      = "ErrNotFound"      // 请求资源不存在
+	// 签名中间件补充（API 对接错误）
+	ErrMissingTimestamp = "ErrMissingTimestamp" // 缺少时间戳参数
+	ErrInvalidTimestamp = "ErrInvalidTimestamp" // 时间戳格式错误
+	ErrRequestExpired   = "ErrRequestExpired"   // 请求已过期
+	ErrMissingSignature = "ErrMissingSignature" // 缺少签名参数
+	ErrMissingNonce     = "ErrMissingNonce"     // 缺少 nonce 参数
+	ErrSignatureFailed  = "ErrSignatureFailed"  // 签名验证失败
+	ErrDuplicateRequest = "ErrDuplicateRequest" // 请求重复提交
 )
 
 // 认证错误码（90xxx）
@@ -18,6 +26,14 @@ const (
 	ErrPermissionDenied      = "ErrPermissionDenied"      // 无权限访问
 	ErrRateLimited           = "ErrRateLimited"           // 请求触发限流
 	ErrRequestEntityTooLarge = "ErrRequestEntityTooLarge" // 请求体过大
+	// JWT 中间件补充（用户可见的认证失败消息）
+	ErrEnvironmentAbnormal = "ErrEnvironmentAbnormal" // 环境异常，请重新登录（token 解析失败）
+	ErrAuthUnavailable     = "ErrAuthUnavailable"     // 认证状态暂时不可用（503，依赖 Redis 时）
+	ErrForcedLogout        = "ErrForcedLogout"        // 账号已被强制下线
+	ErrSessionExpired      = "ErrSessionExpired"      // 登录会话已失效，请重新登录
+	ErrUserInfoMissing     = "ErrUserInfoMissing"     // 未获取到用户信息（未挂 JWT 中间件）
+	ErrAuthzNotReady       = "ErrAuthzNotReady"       // 权限系统未初始化
+	ErrAuthzFailed         = "ErrAuthzFailed"         // 权限验证失败
 )
 
 // 用户模块错误码（20xxx）

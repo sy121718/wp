@@ -1,7 +1,3 @@
-// Package i18n 提供基于内存缓存的多语言文本查询能力。
-//
-// 核心结构：key → lang → value，支持 HTTP 状态码映射和分类。
-// 数据从数据库加载到内存，支持定时自动刷新。
 package i18n
 
 import "sync"

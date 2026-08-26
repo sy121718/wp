@@ -23,7 +23,7 @@ type initConfig struct {
 	refreshInterval time.Duration
 }
 
-// Init 初始化 i18n 缓存数据和运行时行为。
+// Init initializes i18n cache data and runtime behaviors from config.
 func Init(v *viper.Viper) error {
 	cfg, err := parseInitConfig(v)
 	if err != nil {
@@ -37,7 +37,7 @@ func Init(v *viper.Viper) error {
 
 	if !alreadyInited {
 		if err := LoadCache(); err != nil {
-			return fmt.Errorf("i18n 缓存加载失败: %w", err)
+			return fmt.Errorf("failed to load i18n cache: %w", err)
 		}
 
 		initMu.Lock()
@@ -52,29 +52,36 @@ func Init(v *viper.Viper) error {
 	return nil
 }
 
-// SetDefaultLang 设置默认语言代码。
+// SetDefaultLang sets default language code.
 func SetDefaultLang(lang string) {
 	initMu.Lock()
 	defer initMu.Unlock()
 	setDefaultLangLocked(lang)
 }
 
-// GetDefaultLang 返回默认语言代码。
+// GetDefaultLang returns default language code.
 func GetDefaultLang() string {
 	initMu.Lock()
 	defer initMu.Unlock()
 	return defaultLang
 }
 
-// Get 返回完整的 i18n 查询结果。
+// Get returns full i18n result.
 //
-// 示例:
+// Example:
 //
 //	result := i18n.Get("ErrUploadConfigMissing", "zh-CN")
 //	// result.Key      == "ErrUploadConfigMissing"
 //	// result.Value    == "上传配置缺失"
 //	// result.HttpCode == 400
 //	// result.Lang     == "zh-CN"
+//
+// Fields:
+//   - Key: code/text key
+//   - Value: localized text
+//   - Lang: matched language
+//   - HttpCode: mapped HTTP status
+//   - AllLangs: all language versions for this key
 func Get(key, lang string) *I18nResult {
 	lang = strings.TrimSpace(lang)
 	if lang == "" {
@@ -83,7 +90,7 @@ func Get(key, lang string) *I18nResult {
 	return cache.Get(key, lang)
 }
 
-// GetText 只返回本地化文本。
+// GetText returns localized text only.
 func GetText(key, lang string) string {
 	result := Get(key, lang)
 	if result == nil {
@@ -92,7 +99,7 @@ func GetText(key, lang string) string {
 	return result.Value
 }
 
-// GetHttpCode 返回 key 对应的 HTTP 状态码。
+// GetHttpCode returns mapped HTTP status code for key.
 func GetHttpCode(key string) int {
 	result := Get(key, GetDefaultLang())
 	if result == nil {
@@ -101,7 +108,7 @@ func GetHttpCode(key string) int {
 	return result.HttpCode
 }
 
-// Reload 重新加载 i18n 缓存。
+// Reload reloads i18n cache.
 func Reload() error {
 	if err := LoadCache(); err != nil {
 		return err
@@ -113,14 +120,14 @@ func Reload() error {
 	return nil
 }
 
-// IsInited 报告 i18n 是否已完成初始化。
+// IsInited reports whether i18n has been initialized.
 func IsInited() bool {
 	initMu.Lock()
 	defer initMu.Unlock()
 	return inited
 }
 
-// Close 停止后台刷新并重置运行时状态。
+// Close stops background refresh and resets runtime state.
 func Close() error {
 	StopAutoRefresh()
 
@@ -159,7 +166,7 @@ func parseInitConfig(v *viper.Viper) (initConfig, error) {
 	if raw := strings.TrimSpace(v.GetString("i18n.refresh_interval")); raw != "" {
 		duration, err := time.ParseDuration(raw)
 		if err != nil {
-			return initConfig{}, fmt.Errorf("i18n 刷新间隔解析失败: %w", err)
+			return initConfig{}, fmt.Errorf("failed to parse i18n refresh interval: %w", err)
 		}
 		cfg.refreshInterval = duration
 	}

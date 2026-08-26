@@ -20,12 +20,12 @@ import (
 // Upload 上传文件并记录附件元数据。
 func (s *Service) Upload(ctx context.Context, file *multipart.FileHeader, categoryID *uint64) (*mediato.AttachmentResp, error) {
 	if file == nil {
-		return nil, fmt.Errorf(mediaenums.ErrUploadEmpty)
+		return nil, errors.New(mediaenums.ErrUploadEmpty)
 	}
 
 	src, err := file.Open()
 	if err != nil {
-		return nil, fmt.Errorf(mediaenums.ErrUploadFailed + ": " + err.Error())
+		return nil, fmt.Errorf("%s: %w", mediaenums.ErrUploadFailed, err)
 	}
 	defer src.Close()
 
@@ -39,7 +39,7 @@ func (s *Service) Upload(ctx context.Context, file *multipart.FileHeader, catego
 		ContentType: file.Header.Get("Content-Type"),
 	}, upload.Request{})
 	if err != nil {
-		return nil, fmt.Errorf(mediaenums.ErrUploadFailed + ": " + err.Error())
+		return nil, fmt.Errorf("%s: %w", mediaenums.ErrUploadFailed, err)
 	}
 
 	now := time.Now()
@@ -59,7 +59,7 @@ func (s *Service) Upload(ctx context.Context, file *multipart.FileHeader, catego
 	}
 
 	if err := s.am.Create(ctx, entity); err != nil {
-		return nil, fmt.Errorf(mediaenums.ErrUploadFailed + ": " + err.Error())
+		return nil, fmt.Errorf("%s: %w", mediaenums.ErrUploadFailed, err)
 	}
 
 	return entityToResp(entity), nil
@@ -90,7 +90,7 @@ func (s *Service) Detail(ctx context.Context, req *mediato.DetailReq) (*mediato.
 	e, err := s.am.GetByID(ctx, req.ID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, fmt.Errorf(mediaenums.ErrAttachmentNotFound)
+			return nil, errors.New(mediaenums.ErrAttachmentNotFound)
 		}
 		return nil, err
 	}
@@ -102,7 +102,7 @@ func (s *Service) Delete(ctx context.Context, req *mediato.DeleteReq) error {
 	_, err := s.am.GetByID(ctx, req.ID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return fmt.Errorf(mediaenums.ErrAttachmentNotFound)
+			return errors.New(mediaenums.ErrAttachmentNotFound)
 		}
 		return err
 	}

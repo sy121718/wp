@@ -46,7 +46,6 @@ func TestI18nInitUsesConfigAndAutoRefresh(t *testing.T) {
 	if err := database.Init(cfg); err != nil {
 		t.Fatalf("初始化数据库失败: %v", err)
 	}
-	i18n.SetDBProvider(database.GetDB)
 
 	db, err := database.GetDB()
 	if err != nil {
@@ -111,7 +110,6 @@ func TestI18nReinitAppliesLatestRuntimeConfig(t *testing.T) {
 	if err := database.Init(cfg); err != nil {
 		t.Fatalf("初始化数据库失败: %v", err)
 	}
-	i18n.SetDBProvider(database.GetDB)
 
 	db, err := database.GetDB()
 	if err != nil {
@@ -184,7 +182,6 @@ func TestI18nGetDoesNotExposeMutableAllLangsMap(t *testing.T) {
 	if err := database.Init(cfg); err != nil {
 		t.Fatalf("初始化数据库失败: %v", err)
 	}
-	i18n.SetDBProvider(database.GetDB)
 
 	db, err := database.GetDB()
 	if err != nil {
