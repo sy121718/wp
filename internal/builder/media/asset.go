@@ -240,7 +240,11 @@ func (s *Store) RecordRef(assetID string, ref Reference) (err error) {
 	if s.refs[assetID] == nil {
 		s.refs[assetID] = map[string]Reference{}
 	}
-	s.refs[assetID][ref.Kind+":"+ref.ID] = ref
+	key := ref.Kind + ":" + ref.ID
+	// 幂等登记：已存在时不覆盖（避免后到的空 Title 降级已有引用信息）。
+	if _, ok := s.refs[assetID][key]; !ok {
+		s.refs[assetID][key] = ref
+	}
 	return nil
 }
 

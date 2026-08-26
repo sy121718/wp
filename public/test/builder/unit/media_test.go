@@ -2,6 +2,7 @@
 package unit
 
 import (
+	"hash/fnv"
 	"strings"
 	"testing"
 
@@ -10,13 +11,17 @@ import (
 	"go_wp/internal/builder/media"
 )
 
-// hash64 生成 64 位十六进制测试哈希。
+// hash64 由种子生成 64 位十六进制测试哈希（满足媒体域 hex 白名单）。
 func hash64(seed string) string {
-	h := make([]byte, 64)
-	for i := range h {
-		h[i] = seed[i%len(seed)]
+	h := fnv.New64a()
+	_, _ = h.Write([]byte(seed))
+	sum := h.Sum64()
+	// 循环扩展为 64 个十六进制字符。
+	out := make([]byte, 64)
+	for i := range out {
+		out[i] = "0123456789abcdef"[(sum>>uint(4*(i%16)))&0xF]
 	}
-	return string(h)
+	return string(out)
 }
 
 // seedImageAsset 构造带完整变体集合的图片资产。
@@ -133,7 +138,7 @@ func TestDeleteReferenceProtection(t *testing.T) {
 	id2 := seedImageAsset(t, s, hash64("qq"), "受保护图2")
 	_ = s.RecordRef(id2, media.Reference{Kind: "article", ID: "a9", Title: "新品发布"})
 	_ = s.RecordRef(id2, media.Reference{Kind: "page", ID: "p1", Title: "首页"})
-	_ = s.RecordRef(id2, media.Reference{Kind: "article", ID: "a9"}) // 幂等
+	_ = s.RecordRef(id2, media.Reference{Kind: "article", ID: "a9"}) // 幂等（无 Title，不覆盖已有标题）
 
 	err := s.Delete(id2)
 	if err == nil {
@@ -211,8 +216,8 @@ func TestResolveMediaVariants(t *testing.T) {
 	if meta.Srcset != wantSrcset {
 		t.Errorf("srcset 异常:\nwant %s\ngot  %s", wantSrcset, meta.Srcset)
 	}
-	// AVIF source 存在。
-	if len(meta.Sources) != 1 || meta.Sources[0].Type != "image/avif" {
+	// 现代格式 source：AVIF + WebP 各一条，AVIF 优先声明。
+	if len(meta.Sources) != 2 || meta.Sources[0].Type != "image/avif" || meta.Sources[1].Type != "image/webp" {
 		t.Errorf("现代格式 source 异常: %+v", meta.Sources)
 	}
 }
@@ -252,7 +257,7 @@ func TestImageCompilePipeline(t *testing.T) {
 
 	for _, want := range []string{
 		"<picture>",
-		`<source type="image/avif" srcset="/m/hero-320.avif 320w">`,
+		`<source type="image/avif" srcset="/m/hero-320.avif 320w" sizes="50vw">`,
 		`<img src="/m/hero-768.webp"`,
 		`width="768" height="432"`,
 		`loading="lazy"`,

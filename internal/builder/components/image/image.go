@@ -1,13 +1,16 @@
-// Package image 实现 core.image 图片组件（规范 docs/02-B §3/§4）：
+// Package image 实现 core.image 图片组件（规范 docs/02-B §3/§4、docs/02-C0）：
 // 编辑器中仅记录 assetId（禁止硬编码临时物理路径），构建期通过媒体解析器
-// 解析实际 URL、宽高、srcset 变体集合与全局 Alt，编译为标准响应式图片标签。
+// 解析实际 URL、宽高、srcset 变体集合与全局 Alt，编译为标准响应式图片标签；
+// 通用高级属性（间距/宽度对齐/边框圆角/阴影/透明度/显隐/class+ID）走 Advanced 层。
 package image
 
 import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html"
 	"regexp"
+	"strings"
 
 	"go_wp/internal/builder/core"
 	"go_wp/internal/builder/media"
@@ -22,7 +25,7 @@ var assetIDRe = regexp.MustCompile(`^[A-Za-z0-9_-]{4,64}$`)
 // urlRe 链接白名单：常见 URL 安全字符，禁止引号/尖括号/空白。
 var urlRe = regexp.MustCompile(`^[A-Za-z0-9./:?=&%~#+_-]{1,500}$`)
 
-// Props 图片组件能力描述。
+// Props 图片组件能力描述：内容专属配置 + Advanced 通用层。
 type Props struct {
 	// AssetID 媒体资产稳定标识（组件树中唯一允许的图片引用方式）。
 	AssetID string `json:"assetId"`
@@ -36,6 +39,8 @@ type Props struct {
 	Sizes string `json:"sizes,omitempty"`
 	// Link 可选包裹链接（点击跳转）。
 	Link string `json:"link,omitempty"`
+	// Advanced 通用高级属性（规范 docs/02-C0，全原子组件统一）。
+	Advanced core.AdvancedProps `json:"advanced"`
 }
 
 // Image core.image 组件实现。
@@ -46,13 +51,9 @@ func (Image) Type() string { return Type }
 
 // Validate 校验图片节点。叶子组件，不允许子节点。
 func (Image) Validate(node *core.Node, ids map[string]bool) (err error) {
-	if !assetIDRe.MatchString(node.ID) {
-		return fmt.Errorf("无效的节点 ID: %q", node.ID)
+	if err := validateNodeID(node.ID, ids); err != nil {
+		return err
 	}
-	if ids[node.ID] {
-		return fmt.Errorf("节点 ID 重复: %q", node.ID)
-	}
-	ids[node.ID] = true
 	if len(node.Children) > 0 {
 		return errors.New("图片组件为叶子节点，不允许子节点")
 	}
@@ -86,10 +87,34 @@ func (Image) Validate(node *core.Node, ids map[string]bool) (err error) {
 	if p.Link != "" && !urlRe.MatchString(p.Link) {
 		return fmt.Errorf("节点 %s: 无效的链接: %q", node.ID, p.Link)
 	}
+
+	// 通用高级属性校验（全原子组件共用一份规则）。
+	return core.ValidateAdvanced(&p.Advanced, node.ID, ids)
+}
+
+// validateNodeID 节点 ID 白名单与唯一性。
+func validateNodeID(id string, ids map[string]bool) (err error) {
+	if len(id) < 1 || len(id) > 64 || !isIDChar(id) {
+		return fmt.Errorf("无效的节点 ID: %q", id)
+	}
+	if ids[id] {
+		return fmt.Errorf("节点 ID 重复: %q", id)
+	}
+	ids[id] = true
 	return nil
 }
 
-// Render 渲染图片：assetId → 媒体解析器 → 标准响应式 HTML。
+// isIDChar 节点 ID 字符集校验（字母数字下划线连字符）。
+func isIDChar(s string) bool {
+	for _, r := range s {
+		if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '_' || r == '-') {
+			return false
+		}
+	}
+	return true
+}
+
+// Render 渲染图片：assetId → 媒体解析器 → 标准响应式 HTML + Advanced CSS。
 func (Image) Render(node *core.Node, topLevel bool, ctx *core.RenderContext) (err error) {
 	var p Props
 	if len(node.Props) > 0 {
@@ -111,13 +136,33 @@ func (Image) Render(node *core.Node, topLevel bool, ctx *core.RenderContext) (er
 		return fmt.Errorf("节点 %s: 媒体资产类型为 %s，图片组件仅支持图片类资产", node.ID, meta.Type)
 	}
 
+	// Advanced 层：编译通用 CSS，取附加 class 与自定义 ID。
+	extraClasses, customID := core.CompileAdvanced(node.ID, &p.Advanced, ctx.CSS)
+
+	classes := []string{core.NodeClass(node.ID)}
+	classes = append(classes, extraClasses...)
+
 	// 懒加载为默认开启（ImageHTMLOptions 零值即 lazy）。
 	imgHTML, err := media.RenderImageHTML(meta, p.Alt, p.Title, media.ImageHTMLOptions{
-		Class: core.NodeClass(node.ID),
+		Class: strings.Join(classes, " "),
 		Sizes: p.Sizes,
 	})
 	if err != nil {
 		return fmt.Errorf("节点 %s: %w", node.ID, err)
+	}
+
+	// 自定义 Element ID 附加在包裹链接上（若配置），否则注入 <img>。
+	// RenderImageHTML 不支持 id 属性，这里以最小改动在后处理注入。
+	if customID != "" && p.Link == "" {
+		imgHTML = strings.Replace(imgHTML, "<img ", "<img id=\""+html.EscapeString(customID)+"\" ", 1)
+	}
+
+	if p.Link != "" {
+		linkAttrs := `href="` + html.EscapeString(p.Link) + `"`
+		if customID != "" {
+			linkAttrs += ` id="` + html.EscapeString(customID) + `"`
+		}
+		imgHTML = `<a ` + linkAttrs + `>` + imgHTML + `</a>`
 	}
 
 	ctx.HTML.WriteString(imgHTML)
