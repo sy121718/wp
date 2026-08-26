@@ -17,6 +17,8 @@ import (
 
 	// 内置组件注册（core.container 为组件树唯一结构载体，包 init 自注册）。
 	_ "go_wp/internal/builder/components/container"
+	// core.heading：标题组件（CMS 绑定发布期静态填入）。
+	_ "go_wp/internal/builder/components/heading"
 	// core.image：媒体引用组件（构建期经解析器注入变体）。
 	_ "go_wp/internal/builder/components/image"
 	"go_wp/internal/builder/core"
@@ -67,12 +69,18 @@ type CompileOption func(*compileConfig)
 
 // compileConfig 编译配置。
 type compileConfig struct {
-	media core.MediaResolver
+	media   core.MediaResolver
+	content core.ContentResolver
 }
 
 // WithMediaResolver 注入媒体解析器（构建期媒体元数据注入，规范 docs/02-B §4）。
 func WithMediaResolver(r core.MediaResolver) CompileOption {
 	return func(c *compileConfig) { c.media = r }
+}
+
+// WithContentResolver 注入 CMS 内容解析器（构建期动态绑定静态填入，规范 docs/02-C1）。
+func WithContentResolver(r core.ContentResolver) CompileOption {
+	return func(c *compileConfig) { c.content = r }
 }
 
 // Compile 编译页面文档。确定性保证：同一输入产生完全相同的输出。
@@ -98,7 +106,7 @@ func Compile(p *Page, opts ...CompileOption) (res *CompiledPage, err error) {
 	compileSettingsCSS(&p.Settings, &b)
 
 	var htmlBuf strings.Builder
-	ctx := &core.RenderContext{HTML: &htmlBuf, CSS: &b, Media: cfg.media}
+	ctx := &core.RenderContext{HTML: &htmlBuf, CSS: &b, Media: cfg.media, Content: cfg.content}
 	for _, n := range p.Root {
 		if err = core.RenderNode(n, true, ctx); err != nil {
 			return nil, err

@@ -9,6 +9,9 @@ type RenderContext struct {
 	// Media 媒体解析器（构建期元数据注入）。使用媒体引用的组件（core.image、
 	// 后续 core.video 等）依赖它；未注入时相关组件渲染将返回明确错误。
 	Media MediaResolver
+	// Content CMS 内容解析器（构建期动态绑定注入）。使用字段绑定的组件
+	// （core.heading 的 post.title 等）依赖它；未注入时绑定组件渲染返回明确错误。
+	Content ContentResolver
 }
 
 // 媒体类型常量（与媒体模块资产类型一致）。
@@ -59,4 +62,11 @@ type MediaResolver interface {
 	// ResolveMedia 按资产 ID 与变体规格（original/large/medium/thumbnail）解析媒体元数据。
 	// 非图片类资产忽略 variant。
 	ResolveMedia(assetID, variant string) (*MediaMeta, error)
+}
+// ContentResolver CMS 内容解析契约：绑定字段 → 构建期字符串值。
+// 规范 docs/02-C1 §2（Dynamic Binding）：发布期数据完全静态填入。
+// 实现方由 CMS 模块提供（Phase 0-A2）；core.heading 等绑定组件经此解析。
+type ContentResolver interface {
+	// ResolveString 按字段路径（如 "post.title"）解析字符串值；不存在返回空串。
+	ResolveString(field string) (string, error)
 }

@@ -27,7 +27,7 @@ func TestAdvancedSpacingCompile(t *testing.T) {
 		"margin: -12px 0 24px auto",
 		"padding: 8px 16px 8px 16px",
 		"@media (max-width: 1024px)",
-		"margin: 8px", // tablet 简写：仅 top 时其余空
+		"margin-top: 8px", // tablet 部分设置输出长属性
 		"@media (max-width: 767px)",
 	} {
 		if !strings.Contains(c.CSS, want) {

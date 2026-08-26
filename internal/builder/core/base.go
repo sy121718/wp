@@ -283,24 +283,46 @@ func CompileAdvanced(nodeID string, a *AdvancedProps, b *CSSBuckets) (extraClass
 
 	var desktop, tablet, mobile []string
 
-	// 间距：四向 → CSS 简写。
-	if v := a.Margin.Desktop.CSS(); v != "" {
-		desktop = append(desktop, "margin: "+v)
+// 间距：部分设置时输出长属性（margin-top 等），避免简写空槽改变语义；四值全设才输出简写。
+	appendSpacing := func(prop string, s Spacing) {
+		set := 0
+		for _, v := range []string{s.Top, s.Right, s.Bottom, s.Left} {
+			if v != "" {
+				set++
+			}
+		}
+		switch set {
+		case 0:
+		case 4:
+			desktop = append(desktop, prop+": "+s.CSS())
+		default:
+			if s.Top != "" {
+				desktop = append(desktop, prop+"-top: "+s.Top)
+			}
+			if s.Right != "" {
+				desktop = append(desktop, prop+"-right: "+s.Right)
+			}
+			if s.Bottom != "" {
+				desktop = append(desktop, prop+"-bottom: "+s.Bottom)
+			}
+			if s.Left != "" {
+				desktop = append(desktop, prop+"-left: "+s.Left)
+			}
+		}
 	}
-	if v := a.Margin.Tablet.CSS(); v != "" {
-		tablet = append(tablet, "margin: "+v)
+	appendSpacing("margin", a.Margin.Desktop)
+	if v := a.Margin.Tablet; !v.IsEmpty() {
+		tablet = append(tablet, spacingDecls("margin", v)...)
 	}
-	if v := a.Margin.Mobile.CSS(); v != "" {
-		mobile = append(mobile, "margin: "+v)
+	if v := a.Margin.Mobile; !v.IsEmpty() {
+		mobile = append(mobile, spacingDecls("margin", v)...)
 	}
-	if v := a.Padding.Desktop.CSS(); v != "" {
-		desktop = append(desktop, "padding: "+v)
+	appendSpacing("padding", a.Padding.Desktop)
+	if v := a.Padding.Tablet; !v.IsEmpty() {
+		tablet = append(tablet, spacingDecls("padding", v)...)
 	}
-	if v := a.Padding.Tablet.CSS(); v != "" {
-		tablet = append(tablet, "padding: "+v)
-	}
-	if v := a.Padding.Mobile.CSS(); v != "" {
-		mobile = append(mobile, "padding: "+v)
+	if v := a.Padding.Mobile; !v.IsEmpty() {
+		mobile = append(mobile, spacingDecls("padding", v)...)
 	}
 
 	// 宽度与对齐。
@@ -349,4 +371,20 @@ func CompileAdvanced(nodeID string, a *AdvancedProps, b *CSSBuckets) (extraClass
 	}
 
 	return a.CustomClasses, a.CustomID
+}
+// spacingDecls 生成单端间距声明（tablet/mobile 复用长属性逻辑）。
+func spacingDecls(prop string, s Spacing) (decls []string) {
+	if s.Top != "" {
+		decls = append(decls, prop+"-top: "+s.Top)
+	}
+	if s.Right != "" {
+		decls = append(decls, prop+"-right: "+s.Right)
+	}
+	if s.Bottom != "" {
+		decls = append(decls, prop+"-bottom: "+s.Bottom)
+	}
+	if s.Left != "" {
+		decls = append(decls, prop+"-left: "+s.Left)
+	}
+	return decls
 }
