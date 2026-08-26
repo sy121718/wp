@@ -76,3 +76,15 @@ internal/builder/
 | 单元测试 | `public/test/builder/unit/media_test.go` |
 
 命名约定：解析契约为**媒体级** `MediaResolver`（覆盖图片/视频/SVG/文档）；`core.image` 是消费它的**图片展示组件**（渲染 `<img>`），后续 `core.video` 等组件复用同一解析器。视频/文档资产解析返回稳定 URL 与 SEO 元数据（变体语义不适用）。
+
+## 7. 数据库表结构（wp 库，PostgreSQL）
+
+| 表 | 职责 | 对应规范条目 |
+|---|---|---|
+| `media_asset` | 媒体资产主表：`id`（稳定 assetId）、`content_hash` 唯一约束（去重）、宽高、SEO 元数据、`tags`(JSONB)、`generation`（替换代数） | §1 不可变资产与稳定引用、§2 去重/替换/SEO |
+| `media_asset_variant` | 变体表：`kind`（规格）+ `format`（格式）+ `url` + 宽高，`asset_id` 级联删除 | §2 自动变体生成 |
+| `media_reference` | 引用表：`(asset_id, ref_kind, ref_id)` 唯一约束（幂等登记），`ref_title` 供拦截警告展示 | §2 引用追踪与保护 |
+
+与旧附件表的关系：`sys_attachment` / `sys_file_category` 为 go-mvc 时代的传统附件表（自增 ID、单文件单记录、无变体/引用概念），由现有后台媒体管理模块继续使用；02-B 媒体中心以 `media_*` 三表为持久化落点，媒体业务模块（Phase 0-B/0-C）落地时在此表上实现 `media.Store` 的 GORM 版本，`sys_attachment` 届时评估废弃或保留为后台附件历史数据。
+
+域内核（`internal/builder/media`）与表的字段一一对应：`Asset.ID/Hash/FileName/MimeType/Type/Width/Height/Size/Alt/Title/Caption/CategoryID/Tags/Generation`、`Variant.Kind/Format/URL/Width/Height`、`Reference.Kind/ID/Title`。

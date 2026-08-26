@@ -301,3 +301,70 @@ COMMENT ON COLUMN sys_i18n.lang IS '语言代码';
 COMMENT ON COLUMN sys_i18n.item_value IS '文案值';
 COMMENT ON COLUMN sys_i18n.http_code IS 'HTTP 状态码';
 COMMENT ON COLUMN sys_i18n.status IS '状态：0禁用 1启用';
+-- 12. 媒体资产表（02-B 媒体中心：不可变资产与稳定引用）
+CREATE TABLE IF NOT EXISTS media_asset (
+    id            VARCHAR(64)  PRIMARY KEY,          -- 稳定 assetId（内容哈希派生，如 ast_<hash前24位>）
+    content_hash  VARCHAR(128) NOT NULL,             -- 内容哈希（去重与版本替换依据）
+    file_name     VARCHAR(255) NOT NULL,             -- 原始文件名
+    mime_type     VARCHAR(100),                      -- MIME 类型
+    media_type    VARCHAR(20)  NOT NULL,             -- image / video / svg / document
+    width         INTEGER,                           -- 原始宽高（图片类必填，杜绝 CLS）
+    height        INTEGER,
+    size_bytes    BIGINT       NOT NULL,             -- 文件字节数
+    alt           VARCHAR(500),                      -- 全局 SEO 元数据（组件可局部覆盖）
+    title         VARCHAR(500),
+    caption       VARCHAR(500),
+    category_id   BIGINT,                            -- 逻辑分类（纯元数据，与物理存储无关）
+    tags          JSONB        NOT NULL DEFAULT '[]',
+    generation    INTEGER      NOT NULL DEFAULT 1,   -- 版本替换代数（+1 触发全站静态产物刷新）
+    create_time   TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_time   TIMESTAMP(3),
+    CONSTRAINT uk_media_asset_hash UNIQUE (content_hash)
+);
+CREATE INDEX IF NOT EXISTS idx_media_asset_type ON media_asset(media_type);
+CREATE INDEX IF NOT EXISTS idx_media_asset_category ON media_asset(category_id);
+CREATE INDEX IF NOT EXISTS idx_media_asset_create_time ON media_asset(create_time);
+
+COMMENT ON TABLE media_asset IS '媒体资产表（02-B：assetId 稳定引用，替换保留 ID）';
+COMMENT ON COLUMN media_asset.id IS '稳定标识，内容哈希派生';
+COMMENT ON COLUMN media_asset.content_hash IS '内容哈希（上传去重、替换检测）';
+COMMENT ON COLUMN media_asset.media_type IS '类型：image/video/svg/document';
+COMMENT ON COLUMN media_asset.width IS '原始宽度（图片类必填）';
+COMMENT ON COLUMN media_asset.tags IS '标签（纯元数据）';
+COMMENT ON COLUMN media_asset.generation IS '替换代数，+1 触发全站该资产静态产物刷新';
+
+-- 13. 媒体变体表（尺寸裁剪 / WebP/AVIF 转码产物）
+CREATE TABLE IF NOT EXISTS media_asset_variant (
+    id         BIGSERIAL    PRIMARY KEY,
+    asset_id   VARCHAR(64)  NOT NULL,
+    kind       VARCHAR(20)  NOT NULL,                -- thumbnail / medium / large / original
+    format     VARCHAR(20)  NOT NULL,                -- jpeg / png / webp / avif
+    url        VARCHAR(500) NOT NULL,                -- 变体稳定访问地址
+    width      INTEGER      NOT NULL,
+    height     INTEGER      NOT NULL,
+    create_time TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_media_variant_asset FOREIGN KEY (asset_id) REFERENCES media_asset(id) ON UPDATE CASCADE ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_media_variant_asset ON media_asset_variant(asset_id);
+CREATE INDEX IF NOT EXISTS idx_media_variant_kind ON media_asset_variant(asset_id, kind);
+
+COMMENT ON TABLE media_asset_variant IS '媒体变体表（上传/后台异步生成）';
+COMMENT ON COLUMN media_asset_variant.kind IS '规格：thumbnail/medium/large/original';
+COMMENT ON COLUMN media_asset_variant.format IS '格式：jpeg/png/webp/avif';
+
+-- 14. 媒体引用表（引用追踪与删除保护）
+CREATE TABLE IF NOT EXISTS media_reference (
+    id           BIGSERIAL   PRIMARY KEY,
+    asset_id     VARCHAR(64) NOT NULL,
+    ref_kind     VARCHAR(30) NOT NULL,               -- page / product / article / global_component / site_setting
+    ref_id       VARCHAR(64) NOT NULL,               -- 引用方标识
+    ref_title    VARCHAR(200),                       -- 引用方标题（拦截警告展示）
+    create_time  TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uk_media_ref UNIQUE (asset_id, ref_kind, ref_id),
+    CONSTRAINT fk_media_ref_asset FOREIGN KEY (asset_id) REFERENCES media_asset(id) ON UPDATE CASCADE ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_media_ref_asset ON media_reference(asset_id);
+CREATE INDEX IF NOT EXISTS idx_media_ref_target ON media_reference(ref_kind, ref_id);
+
+COMMENT ON TABLE media_reference IS '媒体引用表（被引用资产删除强制拦截）';
+COMMENT ON COLUMN media_reference.ref_kind IS '引用方类型：page/product/article/global_component/site_setting';
