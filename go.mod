@@ -3,6 +3,7 @@ module go_wp
 go 1.26
 
 require (
+	github.com/CloudyKit/jet/v6 v6.3.2
 	github.com/alicebob/miniredis/v2 v2.37.0
 	github.com/casbin/casbin/v3 v3.10.0
 	github.com/casbin/gorm-adapter/v3 v3.41.0
@@ -20,10 +21,7 @@ require (
 	gorm.io/gorm v1.31.1
 )
 
-require (
-	github.com/CloudyKit/fastprinter v0.0.0-20200109182630-33d98a066a53 // indirect
-	github.com/CloudyKit/jet/v6 v6.3.2 // indirect
-)
+require github.com/CloudyKit/fastprinter v0.0.0-20200109182630-33d98a066a53 // indirect
 
 require (
 	filippo.io/edwards25519 v1.2.0 // indirect
@@ -86,7 +84,7 @@ require (
 	golang.org/x/arch v0.25.0 // indirect
 	golang.org/x/crypto v0.49.0
 	golang.org/x/exp v0.0.0-20251219203646-944ab1f22d93 // indirect
-	golang.org/x/net v0.52.0 // indirect
+	golang.org/x/net v0.52.0
 	golang.org/x/sync v0.20.0
 	golang.org/x/sys v0.42.0 // indirect
 	golang.org/x/text v0.35.0 // indirect

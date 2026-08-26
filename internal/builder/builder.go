@@ -19,6 +19,8 @@ import (
 	_ "go_wp/internal/builder/components/container"
 	// core.heading：标题组件（CMS 绑定发布期静态填入）。
 	_ "go_wp/internal/builder/components/heading"
+	// core.text：正文组件（纯文本/富文本双模式，富文本白名单清洗）。
+	_ "go_wp/internal/builder/components/text"
 	// core.image：媒体引用组件（构建期经解析器注入变体）。
 	_ "go_wp/internal/builder/components/image"
 	"go_wp/internal/builder/core"
