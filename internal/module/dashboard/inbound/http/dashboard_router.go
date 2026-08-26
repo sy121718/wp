@@ -16,5 +16,4 @@ func SetupDashboardRoutes(router *gin.Engine) {
 	// 页面路由
 	router.GET("/", handle.Dashboard)
 	router.GET("/admin", handle.Dashboard)
-	router.GET("/builder", handle.Builder)
 }

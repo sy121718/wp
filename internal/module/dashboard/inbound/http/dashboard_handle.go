@@ -1,6 +1,7 @@
-// Package dashboardhttp 承载需要后端逻辑的后台页面入口（仪表盘、可视化编辑器）。
+// Package dashboardhttp 承载需要后端逻辑的后台页面入口（当前为仪表盘）。
 //
 // 纯静态模板直接放 internal/templates；只有需要后端数据/逻辑的页面才落到本模块。
+// 可视化编辑器前端组件已废弃移除，待按设计文档（docs/）重新实现后再挂载页面入口。
 package dashboardhttp
 
 import (
@@ -25,9 +26,4 @@ func (h *Handle) Dashboard(c *gin.Context) {
 		"title": dashboardenums.MsgDashboardTitle,
 		"menu":  "dashboard",
 	})
-}
-
-// Builder 可视化编辑器页面。
-func (h *Handle) Builder(c *gin.Context) {
-	c.HTML(http.StatusOK, "builder/builder", gin.H{})
 }
