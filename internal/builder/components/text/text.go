@@ -35,33 +35,15 @@ var allowedPlainTags = map[string]bool{"p": true, "span": true}
 
 // 常量上限。
 const (
-	maxPlainLen = 2000      // 纯文本长度上限
-	maxExcerpt  = 400       // 摘要截取字符上限
-	maxClamp    = 10        // line clamp 上限
-	maxWeight   = 900       // 字重上限（文本不支持粗体时排版字重仍可用）
-	minWeight   = 100       // 字重下限
-	stepWeight  = 100       // 字重步进
+	maxPlainLen = 2000 // 纯文本长度上限
+	maxExcerpt  = 400  // 摘要截取字符上限
+	maxClamp    = 10   // line clamp 上限
+	maxWeight   = 900  // 字重上限（文本不支持粗体时排版字重仍可用）
+	minWeight   = 100  // 字重下限
+	stepWeight  = 100  // 字重步进
 )
 
-// Typography 单端排版参数。
-type Typography struct {
-	FontSize   string `json:"fontSize,omitempty"`   // 基准字号：px/rem
-	LineHeight string `json:"lineHeight,omitempty"` // 行高
-	TextAlign  string `json:"textAlign,omitempty"`  // left/center/right/justify
-}
-
-// ResponsiveTypography 三端排版（与 02-C1 同构，正文组件自带一份）。
-type ResponsiveTypography struct {
-	Desktop Typography `json:"desktop,omitempty"`
-	Tablet  Typography `json:"tablet,omitempty"`
-	Mobile  Typography `json:"mobile,omitempty"`
-}
-
-// alignMap 对齐关键字白名单。
-var alignMap = map[string]bool{"left": true, "center": true, "right": true, "justify": true}
-
-// lenValueRe 排版长度值白名单（px/rem，正文不启用 clamp 流式）。
-var lenValueRe = regexpCompile(`^[0-9.]+(px|rem)?$`)
+// 排版组：core.TextStyle（groups.go 共享组，三端字号/行高/对齐）。
 
 // Binding 字段绑定。
 type Binding struct {
@@ -79,8 +61,8 @@ type Props struct {
 	Text string `json:"text,omitempty"`
 	// Binding CMS 字段绑定（优先于 Text）。
 	Binding *Binding `json:"binding,omitempty"`
-	// Typography 基准字号行高与对齐（三端独立）。
-	Typography ResponsiveTypography `json:"typography,omitempty"`
+	// Typography 基准字号行高与对齐（三端独立，core.TextStyle 共享组）。
+	Typography core.TextStyle `json:"typography,omitempty"`
 	// ParagraphSpacing 段间距（富文本模式下的段落上下留白）。
 	ParagraphSpacing string `json:"paragraphSpacing,omitempty"`
 	// Color 文字颜色（色值或主题 Token）。
@@ -166,19 +148,9 @@ func (Text) Validate(node *core.Node, ids map[string]bool) (err error) {
 		return fmt.Errorf("节点 %s: 无效的绑定字段路径: %q", node.ID, p.Binding.Field)
 	}
 
-	// 排版三端。
-	for bp, t := range map[string]Typography{
-		"desktop": p.Typography.Desktop, "tablet": p.Typography.Tablet, "mobile": p.Typography.Mobile,
-	} {
-		if t.FontSize != "" && !lenValueRe.MatchString(t.FontSize) {
-			return fmt.Errorf("节点 %s: 无效的 %s 端字号: %q", node.ID, bp, t.FontSize)
-		}
-		if t.LineHeight != "" && !lenValueRe.MatchString(t.LineHeight) {
-			return fmt.Errorf("节点 %s: 无效的 %s 端行高: %q", node.ID, bp, t.LineHeight)
-		}
-		if t.TextAlign != "" && !alignMap[t.TextAlign] {
-			return fmt.Errorf("节点 %s: 无效的 %s 端对齐: %q", node.ID, bp, t.TextAlign)
-		}
+	// 排版三端（共享组校验 core.TextStyle）。
+	if err = core.ValidateTextStyle(node.ID, &p.Typography); err != nil {
+		return err
 	}
 
 	// 段落间距 / 颜色 / 链接色。
@@ -319,20 +291,9 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	sel := "." + core.NodeClass(id)
 
 	var desktop, tablet, mobile []string
-	appendTypography := func(target *[]string, t Typography) {
-		if t.FontSize != "" {
-			*target = append(*target, "font-size: "+t.FontSize)
-		}
-		if t.LineHeight != "" {
-			*target = append(*target, "line-height: "+t.LineHeight)
-		}
-		if t.TextAlign != "" {
-			*target = append(*target, "text-align: "+t.TextAlign)
-		}
-	}
-	appendTypography(&desktop, p.Typography.Desktop)
-	appendTypography(&tablet, p.Typography.Tablet)
-	appendTypography(&mobile, p.Typography.Mobile)
+	desktop = append(desktop, p.Typography.BreakpointDecls(core.BreakpointDesktop)...)
+	tablet = append(tablet, p.Typography.BreakpointDecls(core.BreakpointTablet)...)
+	mobile = append(mobile, p.Typography.BreakpointDecls(core.BreakpointMobile)...)
 
 	if p.Color != "" {
 		desktop = append(desktop, "color: "+p.Color)

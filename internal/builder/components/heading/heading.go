@@ -30,8 +30,8 @@ var (
 	transformMap = map[string]string{
 		"none": "none", "uppercase": "uppercase", "lowercase": "lowercase", "capitalize": "capitalize",
 	}
-	// alignMap 文字对齐关键字。
-	alignMap = map[string]bool{"left": true, "center": true, "right": true, "justify": true}
+	// Transform 文字转换：none/uppercase/lowercase/capitalize 白名单。
+	// typography 白名单：core.TextStyle 共享组（groups.go）。
 	// decorationMap 文本装饰关键字。
 	decorationMap = map[string]bool{"none": true, "underline": true, "line-through": true}
 	// weightTokenMap 主题字重 Token 到数值。
@@ -43,31 +43,10 @@ var (
 	}
 	// fieldPathRe 绑定字段路径白名单：实体.字段 形式（如 post.title）。
 	fieldPathRe = regexp.MustCompile(`^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$`)
-	// clampRe clamp() 流式字号白名单：clamp(数字单位, 数字单位, 数字单位)。
-	clampRe = regexp.MustCompile(`^clamp\([0-9.]+(px|rem|em|vw),\s*[0-9.]+(px|rem|em|vw),\s*[0-9.]+(px|rem|em|vw)\)$`)
-	// lenValueRe 普通长度值（字号/行高/字间距）：可带单位或纯数字（行高）。
-	lenValueRe = regexp.MustCompile(`^[0-9.]+(px|rem|em|vw|%)?$`)
 )
 
 // maxTextLen 文本长度上限。
 const maxTextLen = 500
-
-// ResponsiveTypography 三端排版值。
-type ResponsiveTypography struct {
-	Desktop Typography `json:"desktop,omitempty"`
-	Tablet  Typography `json:"tablet,omitempty"`
-	Mobile  Typography `json:"mobile,omitempty"`
-}
-
-// Typography 单端排版参数。
-type Typography struct {
-	// FontSize 字号：px/rem/em/vw 或 clamp() 流式字号。
-	FontSize string `json:"fontSize,omitempty"`
-	// LineHeight 行高：倍数（如 1.2）或长度值。
-	LineHeight string `json:"lineHeight,omitempty"`
-	// TextAlign 文字对齐（三端独立）：left/center/right/justify。
-	TextAlign string `json:"textAlign,omitempty"`
-}
 
 // DecorProps 文本装饰。
 type DecorProps struct {
@@ -96,21 +75,21 @@ type Props struct {
 	// Tag 语义标签：h1~h6 / div / span（默认 h2）。
 	Tag string `json:"tag,omitempty" ct:"select,h1,h2,h3,h4,h5,h6,div,span,default=h2"`
 	// Typography 字体排版（三端独立）。
-	Typography ResponsiveTypography `json:"typography,omitempty"`
+	Typography core.TextStyle `json:"typography,omitempty"`
 	// Weight 字重：100~900 或 token（regular/medium/semibold/bold）。
-	Weight string `json:"weight,omitempty" ct:"string,maxlen=10"`
+	Weight string `json:"weight,omitempty" ct:"string,maxlen=10,sec=style"`
 	// LetterSpacing 字间距。
-	LetterSpacing string `json:"letterSpacing,omitempty" ct:"safe,maxlen=20"`
+	LetterSpacing string `json:"letterSpacing,omitempty" ct:"safe,maxlen=20,sec=style"`
 	// Transform 文字转换：none/uppercase/lowercase/capitalize。
 	Transform string `json:"transform,omitempty" ct:"select,none,uppercase,lowercase,capitalize"`
 	// Decor 文本装饰。
 	Decor DecorProps `json:"decor,omitempty"`
 	// Color 文字颜色：色值或主题 Token（var(--color-primary)）。
-	Color string `json:"color,omitempty" ct:"safe,maxlen=200"`
+	Color string `json:"color,omitempty" ct:"safe,maxlen=200,sec=style"`
 	// LineClamp 多行截断行数 1~6；0 表示不截断。
-	LineClamp int `json:"lineClamp,omitempty" ct:"int,min=0,max=6"`
+	LineClamp int `json:"lineClamp,omitempty" ct:"int,min=0,max=6,sec=style"`
 	// TextShadow 文字阴影预设：subtle/strong；空为无。
-	TextShadow string `json:"textShadow,omitempty" ct:"select,subtle,strong"`
+	TextShadow string `json:"textShadow,omitempty" ct:"select,subtle,strong,sec=style"`
 	// Advanced 通用高级属性（规范 docs/02-C0）。
 	Advanced core.AdvancedProps `json:"advanced"`
 }
@@ -137,11 +116,6 @@ func resolveWeight(w string) (value string, err error) {
 		return "", fmt.Errorf("无效的字重: %q", w)
 	}
 	return w, nil
-}
-
-// isTypographyValue 排版值白名单：长度值或 clamp()。
-func isTypographyValue(v string) bool {
-	return len(v) <= 40 && (lenValueRe.MatchString(v) || clampRe.MatchString(v))
 }
 
 // Validate 校验标题节点。叶子组件。
@@ -187,19 +161,9 @@ func (Heading) Validate(node *core.Node, ids map[string]bool) (err error) {
 
 	// 语义标签（Tag 已由声明式校验，此处仅默认值补全不再校验）。
 
-	// 排版（三端）。
-	for bp, t := range map[string]Typography{
-		"desktop": p.Typography.Desktop, "tablet": p.Typography.Tablet, "mobile": p.Typography.Mobile,
-	} {
-		if t.FontSize != "" && !isTypographyValue(t.FontSize) {
-			return fmt.Errorf("节点 %s: 无效的 %s 端字号: %q", node.ID, bp, t.FontSize)
-		}
-		if t.LineHeight != "" && !isTypographyValue(t.LineHeight) {
-			return fmt.Errorf("节点 %s: 无效的 %s 端行高: %q", node.ID, bp, t.LineHeight)
-		}
-		if t.TextAlign != "" && !alignMap[t.TextAlign] {
-			return fmt.Errorf("节点 %s: 无效的 %s 端对齐: %q", node.ID, bp, t.TextAlign)
-		}
+	// 排版（三端，共享组校验 core.TextStyle）。
+	if err = core.ValidateTextStyle(node.ID, &p.Typography); err != nil {
+		return err
 	}
 	if _, err = resolveWeight(p.Weight); err != nil {
 		return fmt.Errorf("节点 %s: %w", node.ID, err)
@@ -291,21 +255,10 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 
 	var desktop, tablet, mobile []string
 
-	// 排版三端。
-	appendTypography := func(target *[]string, t Typography) {
-		if t.FontSize != "" {
-			*target = append(*target, "font-size: "+t.FontSize)
-		}
-		if t.LineHeight != "" {
-			*target = append(*target, "line-height: "+t.LineHeight)
-		}
-		if t.TextAlign != "" {
-			*target = append(*target, "text-align: "+t.TextAlign)
-		}
-	}
-	appendTypography(&desktop, p.Typography.Desktop)
-	appendTypography(&tablet, p.Typography.Tablet)
-	appendTypography(&mobile, p.Typography.Mobile)
+	// 排版三端（共享组生成逻辑 core.TextStyle）。
+	desktop = append(desktop, p.Typography.BreakpointDecls(core.BreakpointDesktop)...)
+	tablet = append(tablet, p.Typography.BreakpointDecls(core.BreakpointTablet)...)
+	mobile = append(mobile, p.Typography.BreakpointDecls(core.BreakpointMobile)...)
 
 	// 字重 / 字间距 / 转换。
 	if w, err := resolveWeight(p.Weight); err == nil && w != "" {

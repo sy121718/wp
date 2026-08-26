@@ -16,16 +16,19 @@ type ControlKind string
 const (
 	ControlString ControlKind = "string" // 字符串（maxlen 可选）
 	ControlBool   ControlKind = "bool"
-	ControlInt    ControlKind = "int" // min/max 可选
+	ControlInt    ControlKind = "int"    // min/max 可选
+	ControlSlider ControlKind = "slider" // 滑块：int 语义 + step（编辑器交互）
 	ControlSelect ControlKind = "select"
 	ControlSafe   ControlKind = "safe"  // CSS 值白名单校验（IsSafeCSSValue）
 	ControlText   ControlKind = "text"  // 富文本/长文本（长度上限 maxlen，存原始 HTML 由组件自行处理）
-	ControlRegex  ControlKind = "regex" // 正则校验（pattern 来自 ctTag 选项第 1 项）
+	ControlRegex  ControlKind = "regex" // 正则校验（pattern 来自独立 ctRegex tag）
+	ControlURL    ControlKind = "url"   // 链接：协议白名单（http/https/mailto/相对路径/#）
 )
 
 // ctTag / ctRegexTag 字段标签：
-//   `ct:"select,h1,h2,default=h2"` 声明控件类型与参数；
-//   `ctRegex:"^[a-z]{2,4}$"` 单独存放正则模式（模式内含逗号，不能走 ct 分片）。
+//
+//	`ct:"select,h1,h2,default=h2"` 声明控件类型与参数；
+//	`ctRegex:"^[a-z]{2,4}$"` 单独存放正则模式（模式内含逗号，不能走 ct 分片）。
 const (
 	ctTagName     = "ct"
 	ctRegexTagKey = "ctRegex"
@@ -33,15 +36,17 @@ const (
 
 // Control 单个控件的规范化描述符（由结构体 tag 解析生成，组件作者不手动维护）。
 type Control struct {
-	Key     string       `json:"key"`
-	Kind    ControlKind  `json:"kind"`
-	Default string       `json:"default,omitempty"`
-	Min     int          `json:"min,omitempty"`
-	Max     int          `json:"max,omitempty"`
-	MaxLen  int          `json:"maxLen,omitempty"`
-	Options []string     `json:"options,omitempty"` // select 选项
-	Pattern string       `json:"pattern,omitempty"` // regex 模式
-	label   string       // 面板标签（来自 ct 之外的补充字段不生成，保持 tag 单一来源）
+	Key     string      `json:"key"`
+	Kind    ControlKind `json:"kind"`
+	Default string      `json:"default,omitempty"`
+	Min     int         `json:"min,omitempty"`
+	Max     int         `json:"max,omitempty"`
+	Step    int         `json:"step,omitempty"` // slider 步进（编辑器交互；默认 1）
+	MaxLen  int         `json:"maxLen,omitempty"`
+	Options []string    `json:"options,omitempty"` // select 选项
+	Pattern string      `json:"pattern,omitempty"` // regex 模式
+	// Section 面板分组：content / style / advanced（默认 content）。
+	Section string `json:"section,omitempty"`
 }
 
 // SortKey 确定性输出键。
@@ -103,9 +108,18 @@ func parseControlTag(fieldName, tag string) (c Control, err error) {
 			if c.MaxLen, err = strconv.Atoi(strings.TrimPrefix(part, "maxlen=")); err != nil {
 				return c, fmt.Errorf("maxlen 非法: %s", part)
 			}
+		case strings.HasPrefix(part, "step="):
+			if c.Step, err = strconv.Atoi(strings.TrimPrefix(part, "step=")); err != nil || c.Step < 1 {
+				return c, fmt.Errorf("step 非法: %s", part)
+			}
+		case strings.HasPrefix(part, "sec="):
+			c.Section = strings.TrimPrefix(part, "sec=")
 		default:
 			c.Options = append(c.Options, part) // select 选项
 		}
+	}
+	if c.Section == "" {
+		c.Section = "content"
 	}
 	if c.Kind == ControlSelect && len(c.Options) == 0 {
 		return c, fmt.Errorf("select 控件必须提供选项")
@@ -171,10 +185,15 @@ func validateControlValue(c Control, fv reflect.Value, nodeID string) (err error
 			if c.Pattern != "" && !regexp.MustCompile(c.Pattern).MatchString(s) {
 				return msg("值不匹配模式: %q", s)
 			}
+		case ControlURL:
+			if !isSafeHrefURL(s) {
+				return msg("链接协议非法: %q", s)
+			}
 		}
 	case reflect.Bool:
 		// bool 无值域。
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		// slider 与 int 值域语义一致（step 仅编辑器交互元数据）。
 		n := fv.Int()
 		if n == 0 {
 			return nil // 零值=未设置，放行（omitempty 语义）
@@ -185,14 +204,29 @@ func validateControlValue(c Control, fv reflect.Value, nodeID string) (err error
 		if c.Max != 0 && n > int64(c.Max) {
 			return msg("超出上限 %d: %d", c.Max, n)
 		}
-	default:
-		return msg("暂不支持的类型 %s", fv.Kind())
 	}
 	return nil
 }
 
+// urlSafeRe URL 白名单字符集（禁引号/尖括号/空白；@ 供 mailto）。
+var urlSafeRe = regexp.MustCompile(`^[A-Za-z0-9./:?=&%~#+_@-]{1,500}$`)
+
+// isSafeHrefURL 链接协议白名单：http/https/mailto/相对路径/# 锚点。
+func isSafeHrefURL(s string) bool {
+	if !urlSafeRe.MatchString(s) {
+		return false
+	}
+	if strings.HasPrefix(s, "#") || strings.HasPrefix(s, "/") {
+		return true
+	}
+	return strings.HasPrefix(s, "http://") || strings.HasPrefix(s, "https://") || strings.HasPrefix(s, "mailto:")
+}
+
+// sectionOrder 面板分组固定输出顺序（content → style → advanced）。
+var sectionOrder = map[string]int{"content": 0, "style": 1, "advanced": 2}
+
 // SchemaJSON 生成 Inspector 面板 schema（供编辑器渲染控件表单）。
-// 输出按字段声明序，确定性排序。
+// 输出按分组（content/style/advanced）→ 字段声明序，确定性排序。
 func SchemaJSON(props any) (data []byte, err error) {
 	controls, err := ParseControls(props)
 	if err != nil {
@@ -201,18 +235,25 @@ func SchemaJSON(props any) (data []byte, err error) {
 	type schemaItem struct {
 		Key     string   `json:"key"`
 		Kind    string   `json:"kind"`
+		Section string   `json:"section,omitempty"`
 		Default string   `json:"default,omitempty"`
 		Min     int      `json:"min,omitempty"`
 		Max     int      `json:"max,omitempty"`
+		Step    int      `json:"step,omitempty"`
 		MaxLen  int      `json:"maxLen,omitempty"`
 		Options []string `json:"options,omitempty"`
 	}
-	items := make([]schemaItem, 0, len(controls))
+	// 按 section 分桶，桶内保持字段声明序。
+	buckets := map[string][]schemaItem{}
 	for _, c := range controls {
-		items = append(items, schemaItem{
-			Key: c.Key, Kind: string(c.Kind), Default: c.Default,
-			Min: c.Min, Max: c.Max, MaxLen: c.MaxLen, Options: c.Options,
+		buckets[c.Section] = append(buckets[c.Section], schemaItem{
+			Key: c.Key, Kind: string(c.Kind), Section: c.Section, Default: c.Default,
+			Min: c.Min, Max: c.Max, Step: c.Step, MaxLen: c.MaxLen, Options: c.Options,
 		})
+	}
+	var items []schemaItem
+	for sec := range sectionOrder {
+		items = append(items, buckets[sec]...)
 	}
 	return json.Marshal(items)
 }
