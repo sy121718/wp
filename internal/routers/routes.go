@@ -8,6 +8,8 @@ import (
 	captcharouter "go_wp/internal/module/common/captcha/router"
 	dashboardhttp "go_wp/internal/module/dashboard/inbound/http"
 	mediahttp "go_wp/internal/module/media/inbound/http"
+	pagehttp "go_wp/internal/module/page/inbound/http"
+	projecthttp "go_wp/internal/module/project/inbound/http"
 	"go_wp/internal/templates"
 	"go_wp/pkg/database"
 	"go_wp/pkg/response"
@@ -74,6 +76,8 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 	api := router.Group("/api")
 	captcharouter.SetupCaptchaRoutes(api)
 	mediahttp.SetupMediaRoutes(api, db)
+	projectService := projecthttp.SetupProjectRoutes(api, db)
+	pagehttp.SetupPageRoutes(api, db, projectService)
 	adminhttp.SetupAdminRoutes(api, db)
 
 	// 未匹配路由返回 404

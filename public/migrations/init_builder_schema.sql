@@ -130,6 +130,18 @@ CREATE TABLE IF NOT EXISTS pages (
     )
 );
 
+-- 5.1 Page 草稿修订（每次保存追加不可变快照）
+CREATE TABLE IF NOT EXISTS page_revisions (
+    id              uuid PRIMARY KEY,
+    page_id         uuid NOT NULL REFERENCES pages(id),
+    version         bigint NOT NULL,
+    draft_path      text NOT NULL,
+    draft_document  jsonb NOT NULL,
+    source_hash     text NOT NULL,
+    created_at      timestamptz NOT NULL,
+    UNIQUE (page_id, version)
+);
+
 -- 6. PresentationInstance（自动页面实例）
 CREATE TABLE IF NOT EXISTS presentation_instances (
     id                    uuid PRIMARY KEY,

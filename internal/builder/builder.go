@@ -93,23 +93,33 @@ func WithContentResolver(r core.ContentResolver) CompileOption {
 	return func(c *compileConfig) { c.content = r }
 }
 
-// Compile 编译页面文档。确定性保证：同一输入产生完全相同的输出。
-func Compile(p *Page, opts ...CompileOption) (res *CompiledPage, err error) {
+// ValidatePage 只校验页面文档结构，不执行 HTML/CSS 渲染与外部解析。
+// 草稿保存入口使用它拒绝非法 Layout、重复 Node ID、未知组件与非法 Props；
+// 媒体/CMS Binding 在正式 Build 阶段由注入的 Resolver 解析。
+func ValidatePage(p *Page) (err error) {
 	if p == nil {
-		return nil, errors.New("页面文档为空")
-	}
-	cfg := &compileConfig{}
-	for _, opt := range opts {
-		opt(cfg)
+		return errors.New("页面文档为空")
 	}
 	if err = validateSettings(&p.Settings); err != nil {
-		return nil, fmt.Errorf("页面设置: %w", err)
+		return fmt.Errorf("页面设置: %w", err)
 	}
 	ids := map[string]bool{}
 	for i, n := range p.Root {
 		if err = core.ValidateNode(n, ids); err != nil {
-			return nil, fmt.Errorf("顶级节点 %d: %w", i, err)
+			return fmt.Errorf("顶级节点 %d: %w", i, err)
 		}
+	}
+	return nil
+}
+
+// Compile 编译页面文档。确定性保证：同一输入产生完全相同的输出。
+func Compile(p *Page, opts ...CompileOption) (res *CompiledPage, err error) {
+	if err = ValidatePage(p); err != nil {
+		return nil, err
+	}
+	cfg := &compileConfig{}
+	for _, opt := range opts {
+		opt(cfg)
 	}
 
 	var b core.CSSBuckets

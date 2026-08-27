@@ -1,0 +1,25 @@
+package pagehttp
+
+import (
+	pagecontract "go_wp/internal/module/page/contract"
+	pagemodel "go_wp/internal/module/page/model"
+	pageservice "go_wp/internal/module/page/service"
+	projectcontract "go_wp/internal/module/project/contract"
+
+	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
+)
+
+// SetupPageRoutes 自装配 page 模块并注册草稿与修订路由。
+func SetupPageRoutes(rg *gin.RouterGroup, db *gorm.DB, projectService projectcontract.ProjectService) pagecontract.PageService {
+	model := pagemodel.NewPageModel(db)
+	svc := pageservice.NewService(model, projectService)
+	handle := NewHandle(svc)
+
+	g := rg.Group("/page")
+	g.POST("/create", handle.Create)
+	g.GET("/detail", handle.Detail)
+	g.POST("/draft/save", handle.SaveDraft)
+	g.GET("/revision/list", handle.ListRevisions)
+	return svc
+}
