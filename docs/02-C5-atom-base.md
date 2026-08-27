@@ -68,4 +68,9 @@ func init() { core.Register(Widget) }
 | 首个基座组件 | `components/spacer`（间隔，~75 行含注释） |
 | 单元测试 | `public/test/builder/unit/spacer_test.go`（编译/校验管线/确定性） |
 
-存量组件（heading/text/image）维持手写形态正常工作；新组件一律走基座，存量按需逐步迁移。
+存量组件已全部迁移到基座（`core.heading` / `core.text` / `core.image`）：
+基座吸收 ID 校验/叶子约束/解码/声明式校验/Advanced/class 织入；组件仅保留关系性校验
+（ValidateExtra：文本二选一、绑定路径、模式限制、排版组校验）与业务渲染。
+
+容器 `core.container` 为组件树唯一结构载体（递归子节点 + 布局引擎），不迁移到原子基座，
+保持独立实现（docs/02-A）。

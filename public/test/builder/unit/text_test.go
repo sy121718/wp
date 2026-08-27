@@ -144,15 +144,15 @@ func TestTextLineClampSpacing(t *testing.T) {
 func TestTextValidateErrors(t *testing.T) {
 	cases := []struct{ name, props, want string }{
 		{"无内容", `{"mode":"plaintext"}`, "必须提供内容"},
-		{"非法模式", `{"mode":"markdown","text":"x"}`, "无效的内容模式"},
-		{"非法纯文本标签", `{"mode":"plaintext","plainTag":"div","text":"x"}`, "无效的纯文本标签"},
+		{"非法模式", `{"mode":"markdown","text":"x"}`, "不在选项内"},
+		{"非法纯文本标签", `{"mode":"plaintext","plainTag":"div","text":"x"}`, "不在选项内"},
 		{"纯文本过长", `{"mode":"plaintext","text":"` + strings.Repeat("很", 2001) + `"}`, "纯文本过长"},
 		{"非法绑定路径", `{"mode":"plaintext","binding":{"field":"Post.x"}}`, "无效的绑定字段路径"},
 		{"非法字号", `{"mode":"plaintext","text":"x","typography":{"desktop":{"fontSize":"2url"}}}`, "无效的"},
 		{"非法对齐", `{"mode":"plaintext","text":"x","typography":{"desktop":{"textAlign":"middle"}}}`, "无效的"},
-		{"非法颜色", `{"mode":"plaintext","text":"x","color":"red}body{y:1}"}`, "无效的文字颜色"},
-		{"截断越界", `{"mode":"plaintext","text":"x","lineClamp":12}`, "1~10"},
-		{"摘要越界", `{"mode":"richtext","text":"<p>x</p>","excerpt":500}`, "1~400"},
+		{"非法颜色", `{"mode":"plaintext","text":"x","color":"red}body{y:1}"}`, "值非法"},
+		{"截断越界", `{"mode":"plaintext","text":"x","lineClamp":12}`, "超出上限 10"},
+		{"摘要越界", `{"mode":"richtext","text":"<p>x</p>","excerpt":500}`, "超出上限 400"},
 		{"摘要限富文本", `{"mode":"plaintext","text":"x","excerpt":10}`, "仅限富文本"},
 	}
 	for _, tc := range cases {

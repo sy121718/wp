@@ -303,8 +303,8 @@ func TestImageWrongAssetType(t *testing.T) {
 // TestImageValidateProps 图片组件校验：非法 assetId/变体/叶子约束。
 func TestImageValidateProps(t *testing.T) {
 	cases := []struct{ name, json, want string }{
-		{"非法assetId", `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"i1","type":"core.image","props":{"assetId":"a b"}}]}`, "无效的 assetId"},
-		{"非法变体", `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"i1","type":"core.image","props":{"assetId":"ast_x","variant":"huge"}}]}`, "无效的变体规格"},
+		{"非法assetId", `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"i1","type":"core.image","props":{"assetId":"a b"}}]}`, "不匹配模式"},
+		{"非法变体", `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"i1","type":"core.image","props":{"assetId":"ast_x","variant":"huge"}}]}`, "不在选项内"},
 		{"图片带子节点", `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"i1","type":"core.image","props":{"assetId":"ast_x"},"children":[{"id":"c1","type":"core.image","props":{"assetId":"ast_y"}}]}]}`, "叶子节点"},
 	}
 	for _, tc := range cases {
