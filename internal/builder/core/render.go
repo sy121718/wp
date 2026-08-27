@@ -53,6 +53,15 @@ type MediaMeta struct {
 	// Alt / Title 全局默认替代文本与标题（组件可局部覆盖）。
 	Alt   string
 	Title string
+	// Caption 全局默认图注（组件可局部覆盖；非空时编译为 <figure>/<figcaption>）。
+	Caption string
+
+	// --- 矢量内联载体（Type 为 svg 时有效） ---
+
+	// SrcHTML 内联内容：SVG 源码等原始可内联标记。
+	// 由媒体存储提供（内存实现以 variant.URL 承载源码字符串，生产实现由媒体服务填充）。
+	// 组件开启 InlineSVG 时以其替代 <img> 输出，fill/stroke 可经 CSS 控制。
+	SrcHTML string
 }
 
 // MediaResolver 媒体解析契约（媒体级，非图片级）：assetId + 期望规格 → 编译期元数据。

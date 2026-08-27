@@ -48,6 +48,16 @@ func (s *Store) ResolveMedia(assetID, variant string) (meta *core.MediaMeta, err
 	meta.Width = base.Width
 	meta.Height = base.Height
 
+	// SVG：以 svg 格式的原尺寸变体为内联载体（SrcHTML 由媒体存储提供；内存实现 variant.URL 即源码）。
+	if asset.Type == core.MediaTypeSVG {
+		for _, v := range asset.Variants {
+			if v.Format == "svg" {
+				meta.SrcHTML = v.URL
+				break
+			}
+		}
+	}
+
 	// srcset：与选中变体同格式的全部尺寸，按宽度升序（浏览器自选最优）。
 	meta.Srcset = buildSrcset(asset.Variants, base.Format)
 

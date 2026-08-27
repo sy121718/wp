@@ -67,15 +67,15 @@ type Props struct {
 // Widget 泛型基座实例。
 var Widget = core.Atom[Props]{
 	Spec: core.AtomSpec[Props]{
-		TypeName:     Type,
+		TypeName:      Type,
 		ValidateExtra: validateExtra,
-		Render:       render,
+		Render:        render,
 	},
 }
 
 // 字重 Token 与文字阴影预设。
 var (
-	weightTokenMap = map[string]int{"regular": 400, "medium": 500, "semibold": 600, "bold": 700}
+	weightTokenMap    = map[string]int{"regular": 400, "medium": 500, "semibold": 600, "bold": 700}
 	textShadowPresets = map[string]string{
 		"subtle": "0 1px 2px rgba(0,0,0,0.45)",
 		"strong": "0 2px 6px rgba(0,0,0,0.6)",
@@ -83,7 +83,7 @@ var (
 	// decorMap 装饰白名单（ct select 外的手写映射作用于渲染取值）。
 	decorationMap = map[string]bool{"none": true, "underline": true, "line-through": true}
 	// fieldPathRe 绑定字段路径白名单。
-	fieldPathRe = regexpCompile(`^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$`)
+	fieldPathRe = regexpCompile(`^[a-z][a-z0-9_]*\.[a-zA-Z][a-zA-Z0-9_]*$`)
 )
 
 // regexpCompile 包内正则编译。

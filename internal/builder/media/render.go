@@ -19,6 +19,10 @@ type ImageHTMLOptions struct {
 	Lazy bool
 	// lazySet 显式标记 Lazy 是否被设置（零值默认开启）。
 	lazySet bool
+	// Loading 显式加载策略：lazy / eager（空 = 默认 lazy）。
+	Loading string
+	// FetchPriority 加载优先级：high / auto（空 = 不输出）。
+	FetchPriority string
 }
 
 // WithLazy 设置懒加载开关。
@@ -28,8 +32,14 @@ func (o *ImageHTMLOptions) WithLazy(v bool) *ImageHTMLOptions {
 	return o
 }
 
-// lazyValue 解析懒加载最终取值（默认开启）。
+// lazyValue 解析懒加载最终取值（显式 Loading 优先，其次默认开启）。
 func (o ImageHTMLOptions) lazyValue() bool {
+	if o.Loading == "eager" {
+		return false
+	}
+	if o.Loading != "" {
+		return true
+	}
 	if o.lazySet {
 		return o.Lazy
 	}
@@ -101,7 +111,13 @@ func renderImgTag(meta *core.MediaMeta, alt, title string, opts ImageHTMLOptions
 	sb.WriteString("\"")
 	if opts.lazyValue() {
 		sb.WriteString(" loading=\"lazy\"")
+	} else if opts.Loading == "eager" {
+		sb.WriteString(" loading=\"eager\"")
 	}
+	if opts.FetchPriority == "high" {
+		sb.WriteString(" fetchpriority=\"high\"")
+	}
+	sb.WriteString(" decoding=\"async\"")
 	if meta.Srcset != "" {
 		sb.WriteString(" srcset=\"")
 		sb.WriteString(html.EscapeString(meta.Srcset))

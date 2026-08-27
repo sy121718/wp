@@ -70,7 +70,7 @@ var Widget = core.Atom[Props]{
 }
 
 // fieldPathRe 绑定字段路径白名单。
-var fieldPathRe = regexp.MustCompile(`^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$`)
+var fieldPathRe = regexp.MustCompile(`^[a-z][a-z0-9_]*\.[a-zA-Z][a-zA-Z0-9_]*$`)
 
 // validateExtra 关系性校验：绑定路径、富文本长度、摘要模式限制、排版组。
 func validateExtra(p *Props, nodeID string) (err error) {

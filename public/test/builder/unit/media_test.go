@@ -295,7 +295,7 @@ func TestImageWrongAssetType(t *testing.T) {
 	}
 	doc := `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"pic","type":"core.image","props":{"assetId":"` + id + `"}}]}`
 	_, err = builder.Compile(mustParse(t, doc), builder.WithMediaResolver(s))
-	if err == nil || !strings.Contains(err.Error(), "仅支持图片类资产") {
+	if err == nil || !strings.Contains(err.Error(), "仅接受图片类媒体") {
 		t.Errorf("类型不匹配应报错: %v", err)
 	}
 }
