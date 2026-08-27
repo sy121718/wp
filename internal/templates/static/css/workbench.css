@@ -46,6 +46,19 @@
 }
 .wb-tabs button.is-active { border-color: var(--c-primary, #2563eb); color: var(--c-primary, #2563eb); }
 .wb-inspector-body { display: flex; flex-direction: column; gap: 10px; }
+.wb-palette { padding-bottom: 10px; border-bottom: 1px solid var(--c-border, #e5e7eb); }
+.wb-palette-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
+.wb-palette-head span { color: var(--c-text-mute, #6b7280); font-size: 11px; }
+.wb-palette-head span::after { content: '，也可直接拖到画布或结构树'; }
+.wb-palette-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.wb-palette-item {
+    min-height: 54px; padding: 7px 8px; text-align: left; cursor: pointer;
+    border: 1px solid var(--c-border, #e5e7eb); border-radius: 7px; background: var(--c-surface, #fff);
+}
+.wb-palette-item:hover { border-color: var(--c-primary, #2563eb); background: rgba(37,99,235,.05); }
+.wb-palette-item strong, .wb-palette-item span { display: block; }
+.wb-palette-item strong { font-size: 13px; }
+.wb-palette-item span { margin-top: 2px; color: var(--c-text-mute, #6b7280); font-size: 11px; }
 .wb-field label { display: block; font-size: 12px; color: var(--c-text-mute, #6b7280); margin-bottom: 4px; }
 .wb-field input, .wb-field select, .wb-field textarea {
     width: 100%; box-sizing: border-box; padding: 6px 8px; font-size: 13px;
@@ -68,6 +81,7 @@
     background: var(--c-surface, #fff); border: 1px solid var(--c-border, #e5e7eb);
     border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.08);
 }
+.wb-navigator.is-hidden { display: none; }
 .wb-navigator-head { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; }
 .wb-search { margin: 0 12px 8px; padding: 6px 8px; font-size: 13px;
              border: 1px solid var(--c-border, #e5e7eb); border-radius: 6px; }
@@ -79,6 +93,15 @@
 }
 .wb-node:hover { background: rgba(37,99,235,.08); }
 .wb-node.is-selected { background: rgba(37,99,235,.14); outline: 1px solid var(--c-primary, #2563eb); }
+.wb-node.is-drop-target { background: rgba(37,99,235,.11); position: relative; }
+.wb-node.is-drop-before::before, .wb-node.is-drop-after::after {
+    content: ''; position: absolute; left: 4px; right: 4px; height: 2px;
+    background: var(--c-primary, #2563eb); border-radius: 2px;
+}
+.wb-node.is-drop-before::before { top: -2px; }
+.wb-node.is-drop-after::after { bottom: -2px; }
+.wb-node.is-drop-inside { outline: 1px dashed var(--c-primary, #2563eb); }
+.wb-node.is-drop-inside::after { content: '放入容器'; margin-left: auto; color: var(--c-primary, #2563eb); font-size: 10px; }
 .wb-node .wb-node-type { color: var(--c-text-mute, #6b7280); font-size: 11px; }
 .wb-node .wb-node-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wb-caret { border: none; background: none; cursor: pointer; width: 16px; text-align: center; }

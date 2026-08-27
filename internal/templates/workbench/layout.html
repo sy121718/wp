@@ -8,10 +8,8 @@
     <title>{{.title}} — go_wp 工作台</title>
     <link rel="stylesheet" href="/static/css/theme.css">
     <link rel="stylesheet" href="/static/css/workbench.css">
-    <script src="https://cdn.jsdelivr.net/npm/htmx.org@2.0.4/dist/htmx.min.js"></script>
-    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.9/dist/cdn.min.js"></script>
 </head>
-<body x-data="workbench()" class="wb-body">
+<body class="wb-body">
 
     {* ===== 顶栏 ===== *}
     <header class="wb-topbar">
@@ -21,51 +19,54 @@
         </div>
 
         <div class="wb-topbar-center" role="tablist" aria-label="响应式断点">
-            <button type="button" class="wb-btn wb-chip" :class="device==='desktop' && 'is-active'" @click="setDevice('desktop')">桌面</button>
-            <button type="button" class="wb-btn wb-chip" :class="device==='tablet' && 'is-active'" @click="setDevice('tablet')">平板 768</button>
-            <button type="button" class="wb-btn wb-chip" :class="device==='mobile' && 'is-active'" @click="setDevice('mobile')">手机 375</button>
+            <button type="button" class="wb-btn wb-chip is-active" id="wb-device-desktop">桌面</button>
+            <button type="button" class="wb-btn wb-chip" id="wb-device-tablet">平板 768</button>
+            <button type="button" class="wb-btn wb-chip" id="wb-device-mobile">手机 375</button>
         </div>
 
         <div class="wb-topbar-right">
-            <span class="wb-status" x-text="statusText()"></span>
+            <span class="wb-status" id="wb-status">就绪</span>
             <a class="wb-btn wb-btn-ghost" id="wb-preview-link" href="/workbench/preview?id={{.pageId}}" target="_blank">预览</a>
-            <button type="button" class="wb-btn wb-btn-primary" @click="buildAndPublish()" :disabled="busy">
-                <span x-text="busy ? '处理中…' : '发布'"></span>
-            </button>
-            <button type="button" class="wb-btn wb-btn-secondary" @click="saveDraft()" :disabled="busy">存草稿</button>
+            <button type="button" class="wb-btn wb-btn-primary" id="wb-publish">发布</button>
+            <button type="button" class="wb-btn wb-btn-secondary" id="wb-save-draft">存草稿</button>
         </div>
     </header>
 
-    <div class="wb-main" :class="immersive && 'is-immersive'">
+    <div class="wb-main" id="wb-main">
 
         {* ===== 左侧检查器 ===== *}
-        <aside class="wb-inspector" x-show="!immersive">
+        <aside class="wb-inspector">
+            <section class="wb-palette" aria-labelledby="wb-palette-title">
+                <div class="wb-palette-head">
+                    <strong id="wb-palette-title">组件</strong>
+                    <span>点击或拖到页面</span>
+                </div>
+                <div class="wb-palette-grid" id="wb-palette"></div>
+            </section>
             <div class="wb-tabs" role="tablist">
-                <button type="button" role="tab" :class="tab==='layout' && 'is-active'" @click="tab='layout'">布局</button>
-                <button type="button" role="tab" :class="tab==='style' && 'is-active'" @click="tab='style'">样式</button>
-                <button type="button" role="tab" :class="tab==='advanced' && 'is-active'" @click="tab='advanced'">扩展</button>
+                <button type="button" class="is-active">布局</button>
+                <button type="button">样式</button>
+                <button type="button">扩展</button>
             </div>
-            <div class="wb-inspector-body" x-show="selectedId" id="inspector-panel">
-                {* 表单由 workbench.js 按选中节点动态绑定 AST 字段 *}
-                <p class="wb-empty" x-show="!selectedId">在画布或大纲树中选择节点</p>
+            <div class="wb-inspector-body" id="inspector-panel">
+                <p class="wb-empty">在画布或大纲树中选择节点</p>
             </div>
-            <p class="wb-empty" x-show="!selectedId" style="margin:auto;">未选中节点</p>
         </aside>
 
         {* ===== 中央画布 ===== *}
         <section class="wb-canvas-wrap">
-            <div class="wb-canvas-frame" :class="'is-'+device">
-                <iframe id="wb-canvas" title="画布" src="/workbench/preview?id={{.pageId}}&editor=1"></iframe>
+            <div class="wb-canvas-frame" id="wb-canvas-frame">
+                <iframe id="wb-canvas" name="wb-canvas" title="画布" src="/workbench/preview?id={{.pageId}}&editor=1"></iframe>
             </div>
         </section>
 
         {* ===== 浮动大纲树 ===== *}
-        <aside class="wb-navigator" x-show="navigatorOpen && !immersive" id="wb-navigator">
+        <aside class="wb-navigator" id="wb-navigator">
             <div class="wb-navigator-head">
                 <strong>结构</strong>
-                <button type="button" class="wb-icon-btn" @click="navigatorOpen=false" title="收起">×</button>
+                <button type="button" class="wb-icon-btn" id="wb-navigator-close" title="收起">×</button>
             </div>
-            <input type="search" class="wb-search" placeholder="搜索组件或 ID…" x-model="filter">
+            <input type="search" class="wb-search" placeholder="搜索组件或 ID…">
             <ul class="wb-tree" id="wb-tree">
                 {* 大纲树由 workbench.js 按 AST 渲染 *}
             </ul>
@@ -74,13 +75,12 @@
 
     {* ===== 底栏 ===== *}
     <footer class="wb-bottombar">
-        <button type="button" class="wb-btn wb-btn-ghost" @click="saveDraft()">页面设置</button>
-        <button type="button" class="wb-btn wb-btn-ghost" @click="navigatorOpen=!navigatorOpen">大纲树</button>
-        <button type="button" class="wb-btn wb-btn-ghost" @click="undo()" :disabled="!canUndo">撤销</button>
-        <button type="button" class="wb-btn wb-btn-ghost" @click="redo()" :disabled="!canRedo">重做</button>
+        <button type="button" class="wb-btn wb-btn-ghost" id="wb-page-settings">页面设置</button>
+        <button type="button" class="wb-btn wb-btn-ghost" id="wb-navigator-toggle">大纲树</button>
+        <button type="button" class="wb-btn wb-btn-ghost" id="wb-undo">撤销</button>
+        <button type="button" class="wb-btn wb-btn-ghost" id="wb-redo">重做</button>
         <span class="wb-flex-spacer"></span>
-        <button type="button" class="wb-btn wb-btn-ghost" @click="immersive=!immersive"
-                x-text="immersive ? '退出沉浸模式' : '沉浸模式 (Ctrl+P)'"></button>
+        <button type="button" class="wb-btn wb-btn-ghost" id="wb-immersive">沉浸模式 (Ctrl+P)</button>
     </footer>
 
     {* 草稿数据岛：workbench.js 读取并初始化前端状态机 *}

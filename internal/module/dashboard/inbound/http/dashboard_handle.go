@@ -8,6 +8,7 @@ package dashboardhttp
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"strings"
 
 	dashboardenums "go_wp/internal/module/dashboard/enums"
@@ -72,11 +73,8 @@ func (h *Handle) Workbench(c *gin.Context) {
 	})
 }
 
-// Preview 基于当前草稿轻量编译并在独立响应中输出完整 HTML 文档
+// Preview 基于已保存草稿轻量编译并在独立响应中输出完整 HTML 文档
 // （0-A1 §4.2 隔离预览：不落盘、不影响线上产物）。
-//
-// 编辑器 iframe 刷新时始终使用数据库草稿；未保存修改只停留在外壳 AST 状态。
-// 保存成功后前端刷新 iframe，确保预览和可发布草稿一致。
 func (h *Handle) Preview(c *gin.Context) {
 	pageID := strings.TrimSpace(c.Query("id"))
 	if pageID == "" {
@@ -88,24 +86,44 @@ func (h *Handle) Preview(c *gin.Context) {
 		c.String(http.StatusNotFound, "页面不存在")
 		return
 	}
-	document := page.DraftDocument
+	h.renderPreview(c, page.DraftDocument, c.Query("editor") == "1")
+}
 
-	var docPage *builder.Page
-	if parseErr := json.Unmarshal(document, &docPage); parseErr != nil || docPage == nil {
+// PreviewDraft 基于未保存 AST 返回临时预览，不持久化、不写 Artifact、不影响发布指针。
+func (h *Handle) PreviewDraft(c *gin.Context) {
+	pageID := strings.TrimSpace(c.PostForm("id"))
+	document := json.RawMessage(c.PostForm("draftDocument"))
+	version, err := strconv.ParseInt(c.PostForm("expectedVersion"), 10, 64)
+	if pageID == "" || err != nil || len(document) == 0 {
 		c.String(http.StatusBadRequest, "草稿文档解析失败")
 		return
 	}
-	compiled, compileErr := builder.Compile(docPage)
-	if compileErr != nil {
-		c.String(http.StatusUnprocessableEntity, "编译失败: %s", compileErr.Error())
+	page, err := h.pages.Detail(c.Request.Context(), &pagedto.DetailReq{ID: pageID})
+	if err != nil {
+		c.String(http.StatusNotFound, "页面不存在")
+		return
+	}
+	if version != page.DraftVersion {
+		c.String(http.StatusConflict, "草稿版本已更新，请刷新后重试")
+		return
+	}
+	h.renderPreview(c, document, true)
+}
+
+// renderPreview 只完成 AST 校验与编译，响应生命周期结束即丢弃结果。
+func (h *Handle) renderPreview(c *gin.Context, document json.RawMessage, withEditorBridge bool) {
+	var docPage *builder.Page
+	if err := json.Unmarshal(document, &docPage); err != nil || docPage == nil {
+		c.String(http.StatusBadRequest, "草稿文档解析失败")
+		return
+	}
+	compiled, err := builder.Compile(docPage)
+	if err != nil {
+		c.String(http.StatusUnprocessableEntity, "编译失败: %s", err.Error())
 		return
 	}
 	html := builder.RenderDocument(compiled)
-
-	// 编辑器 iframe 场景：注入 data-wp-id 标记与选中高亮样式 + 一个极小桥接脚本，
-	// 供外壳 workbench.js 实现画布点击选中（规范 §4.1/§5.1）。
-	// 注入只发生在内存响应中；产物落盘路径（pipeline Publish）不经过这里，保持纯净。
-	if c.Query("editor") == "1" {
+	if withEditorBridge {
 		html = injectEditorBridge(html)
 	}
 	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(html))

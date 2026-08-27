@@ -34,7 +34,8 @@ func TestWorkbenchPageShell(t *testing.T) {
 	}
 	body := recorder.Body.String()
 	for _, fragment := range []string{
-		"wb-topbar", "wb-inspector", "wb-canvas", "wb-navigator", "wb-bottombar",
+		"wb-topbar", "wb-inspector", "wb-palette", "组件", "wb-canvas", "wb-canvas-frame", "wb-navigator", "wb-bottombar",
+		"wb-save-draft", "wb-publish", "wb-device-desktop",
 		`id="wb-bootstrap"`, `{"settings":{},"root":[]}`,
 		`id="wb-meta"`, `{"pageId":"p-1","draftPath":"/about","version":3}`,
 		"/static/js/workbench.js", "存草稿", "editor=1",
