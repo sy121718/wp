@@ -20,7 +20,9 @@ import (
 	"go_wp/config"
 	"go_wp/internal/middleware"
 	"go_wp/internal/routers"
+	"go_wp/pkg/database"
 	"go_wp/pkg/utils"
+	migrations "go_wp/public/migrations"
 	"log"
 	"net/http"
 	"os"
@@ -45,6 +47,11 @@ func run() error {
 	// 1) 加载配置 + 初始化组件（数据库、JWT、日志、缓存、队列等）。
 	serverCfg, err := loadAndPrepareRuntime("config.yaml")
 	if err != nil {
+		return err
+	}
+
+	// 1.5) 数据库结构迁移：按版本幂等执行建表语句（空库可重建，重复执行跳过）。
+	if err := runMigrations(); err != nil {
 		return err
 	}
 
@@ -105,6 +112,15 @@ func run() error {
 
 	log.Println("服务已退出")
 	return nil
+}
+
+// runMigrations 在数据库组件就绪后执行结构迁移。
+func runMigrations() error {
+	db, err := database.GetDB()
+	if err != nil {
+		return fmt.Errorf("迁移前置检查失败: %w", err)
+	}
+	return migrations.Run(db)
 }
 
 // loadAndPrepareRuntime 加载配置并初始化运行时组件。

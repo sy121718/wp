@@ -81,13 +81,12 @@ func apply(db *gorm.DB, m Migration) error {
 		return nil
 	}
 
-	parts := strings.Split(m.SQL, ";")
+	parts := SplitStatements(m.SQL)
 	for _, part := range parts {
-		part = strings.TrimSpace(part)
 		if part == "" {
 			continue
 		}
-		if err := db.Exec(part + ";").Error; err != nil {
+		if err := db.Exec(part).Error; err != nil {
 			return fmt.Errorf("执行 %s (%s) 失败: %w", m.Version, m.TableName, err)
 		}
 	}
@@ -122,4 +121,67 @@ func applySeed(db *gorm.DB, s Seed) error {
 
 	log.Printf("完成种子 %s (%s)", s.Version, s.TableName)
 	return nil
+}
+
+// SplitStatements 按语句边界拆分 SQL 文本。
+//
+// 语义：
+//   - 尊重 PostgreSQL 美元引用块（$$...$$，如 DO 块），块内分号不构成语句边界；
+//   - 跳过 -- 行注释与 '...' 字符串字面量内的分号；
+//   - 丢弃空语句；返回的语句不带结尾分号。
+func SplitStatements(sqlText string) []string {
+	var stmts []string
+	var current strings.Builder
+
+	appendCurrent := func() {
+		s := strings.TrimSpace(current.String())
+		s = strings.TrimSuffix(s, ";")
+		if s != "" {
+			stmts = append(stmts, s)
+		}
+		current.Reset()
+	}
+
+	i := 0
+	for i < len(sqlText) {
+		rest := sqlText[i:]
+		switch {
+		case strings.HasPrefix(rest, "$$"):
+			end := strings.Index(rest[2:], "$$")
+			if end < 0 {
+				current.WriteString(rest)
+				i = len(sqlText)
+				continue
+			}
+			current.WriteString(rest[:2+end+2])
+			i += 2 + end + 2
+		case strings.HasPrefix(rest, "--"):
+			nl := strings.IndexByte(rest, '\n')
+			if nl < 0 {
+				current.WriteString(rest)
+				i = len(sqlText)
+				continue
+			}
+			current.WriteString(rest[:nl])
+			i += nl
+		case rest[0] == '\'':
+			end := strings.IndexByte(rest[1:], '\'')
+			if end < 0 {
+				current.WriteString(rest)
+				i = len(sqlText)
+				continue
+			}
+			current.WriteString(rest[:end+2])
+			i += end + 2
+		default:
+			ch := rest[0]
+			current.WriteByte(ch)
+			i++
+			if ch == ';' {
+				appendCurrent()
+			}
+		}
+	}
+	appendCurrent()
+	return stmts
 }

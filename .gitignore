@@ -20,6 +20,7 @@ public/logs/
 public/storage/
 public/builder-preview/
 public/wp/
+public/runtime/
 
 # 操作系统附加元数据
 *:Zone.Identifier
