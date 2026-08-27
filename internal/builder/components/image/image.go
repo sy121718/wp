@@ -83,8 +83,8 @@ type Props struct {
 	AspectRatio      string `json:"aspectRatio,omitempty" ct:"select,original,1:1,4:3,16:9,21:9,3:4,custom,sec=style"`
 	AspectRatioValue string `json:"aspectRatioValue,omitempty" ct:"safe,maxlen=20,sec=style"` // custom 的 w/h 值，如 3 / 2
 	ObjectFit        string `json:"objectFit,omitempty" ct:"select,cover,contain,fill,default=cover,sec=style"`
-	Align            Align  `json:"align,omitempty"` // 三端对齐：left/center/right
-	Width            string `json:"width,omitempty" ct:"safe,maxlen=30,sec=style"`     // auto / 百分比 / px / rem
+	Align            Align  `json:"align,omitempty"`                                  // 三端对齐：left/center/right
+	Width            string `json:"width,omitempty" ct:"safe,maxlen=30,sec=style"`    // auto / 百分比 / px / rem
 	MaxWidth         string `json:"maxWidth,omitempty" ct:"safe,maxlen=30,sec=style"` // 如 480px
 
 	// --- CSS 滤镜与悬浮 ---
@@ -132,8 +132,8 @@ func validateExtra(p *Props, nodeID string) (err error) {
 		}
 	}
 	for _, f := range []struct {
-		name   string
-		value  int
+		name  string
+		value int
 	}{
 		{"亮度", p.Filters.Brightness}, {"对比度", p.Filters.Contrast},
 		{"饱和度", p.Filters.Saturation}, {"灰阶", p.Filters.Grayscale}, {"模糊", p.Filters.Blur},
