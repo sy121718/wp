@@ -43,9 +43,6 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 	// ActiveRoot 位于产物根下两级（{root}/public/active），符号链接目标相对可达。
 	setupStaticFace(router)
 
-	// 后台页面路由（需要后端逻辑的页面入口，归 dashboard 模块）
-	dashboardhttp.SetupDashboardRoutes(router)
-
 	// 健康检查
 	router.GET("/livez", func(c *gin.Context) {
 		c.JSON(http.StatusOK, response.Response{
@@ -87,8 +84,11 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 	projectService := projecthttp.SetupProjectRoutes(api, db)
 	artifactSvc := artifacthttp.SetupArtifactRoutes(api, db)
 	publicationSvc := pubhttp.SetupPublicationRoutes(api, db)
-	pagehttp.SetupPageRoutes(api, db, artifactSvc, publicationSvc, projectService)
+	pageService := pagehttp.SetupPageRoutes(api, db, artifactSvc, publicationSvc, projectService)
 	adminhttp.SetupAdminRoutes(api, db)
+
+	// 页面路由（编辑器外壳依赖 page 契约，置于 API 装配之后）
+	dashboardhttp.SetupDashboardRoutes(router, pageService)
 
 	// 未匹配路由返回 404
 	router.NoRoute(func(c *gin.Context) {

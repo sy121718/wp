@@ -1,0 +1,92 @@
+/* workbench.css — 可视化编辑器四区布局样式（docs/03-A §1）。
+   变量沿用后台 theme.css 的设计 Token。 */
+
+.wb-body { display: flex; flex-direction: column; height: 100vh; margin: 0; overflow: hidden; }
+
+/* ===== 顶栏 ===== */
+.wb-topbar {
+    display: flex; align-items: center; justify-content: space-between; gap: 16px;
+    padding: 8px 16px; border-bottom: 1px solid var(--c-border, #e5e7eb);
+    background: var(--c-surface, #fff);
+}
+.wb-topbar-left, .wb-topbar-right { display: flex; align-items: center; gap: 8px; }
+.wb-topbar-center { display: flex; gap: 4px; }
+.wb-brand { font-weight: 600; letter-spacing: -0.2px; }
+.wb-brand span { color: var(--c-primary, #2563eb); }
+.wb-status { color: var(--c-text-mute, #6b7280); font-size: 12px; margin-right: 4px; }
+
+/* ===== 按钮 ===== */
+.wb-btn {
+    border: 1px solid transparent; border-radius: 8px; cursor: pointer;
+    padding: 6px 12px; font-size: 13px; background: transparent;
+    text-decoration: none; display: inline-flex; align-items: center;
+}
+.wb-btn:disabled { opacity: .5; cursor: not-allowed; }
+.wb-btn-primary { background: var(--c-primary, #2563eb); color: #fff; }
+.wb-btn-secondary { border-color: var(--c-border, #e5e7eb); background: var(--c-surface, #fff); }
+.wb-btn-ghost:hover { background: rgba(0,0,0,.05); }
+.wb-chip.is-active { border-color: var(--c-primary, #2563eb); color: var(--c-primary, #2563eb); }
+.wb-icon-btn { border: none; background: none; cursor: pointer; font-size: 15px; }
+
+/* ===== 主区三栏 ===== */
+.wb-main { display: flex; flex: 1; min-height: 0; position: relative; }
+.wb-main.is-immersive .wb-inspector,
+.wb-main.is-immersive .wb-navigator { display: none; }
+
+/* 左检查器 */
+.wb-inspector {
+    width: 300px; min-width: 300px; overflow-y: auto;
+    border-right: 1px solid var(--c-border, #e5e7eb); padding: 12px;
+    display: flex; flex-direction: column; gap: 12px;
+}
+.wb-tabs { display: flex; gap: 4px; }
+.wb-tabs button {
+    flex: 1; padding: 6px 0; border: none; background: none; cursor: pointer;
+    border-bottom: 2px solid transparent; font-size: 13px;
+}
+.wb-tabs button.is-active { border-color: var(--c-primary, #2563eb); color: var(--c-primary, #2563eb); }
+.wb-inspector-body { display: flex; flex-direction: column; gap: 10px; }
+.wb-field label { display: block; font-size: 12px; color: var(--c-text-mute, #6b7280); margin-bottom: 4px; }
+.wb-field input, .wb-field select, .wb-field textarea {
+    width: 100%; box-sizing: border-box; padding: 6px 8px; font-size: 13px;
+    border: 1px solid var(--c-border, #e5e7eb); border-radius: 6px;
+}
+
+/* 中央画布 */
+.wb-canvas-wrap { flex: 1; min-width: 0; background: var(--c-canvas-bg, #f3f4f6);
+                  display: flex; justify-content: center; padding: 16px; overflow: auto; }
+.wb-canvas-frame { width: 100%; transition: max-width .25s ease; }
+.wb-canvas-frame.is-tablet { max-width: 768px; }
+.wb-canvas-frame.is-mobile { max-width: 375px; }
+#wb-canvas { width: 100%; height: 100%; min-height: 60vh; border: 1px solid var(--c-border, #e5e7eb);
+             border-radius: 8px; background: #fff; }
+
+/* 浮动大纲树 */
+.wb-navigator {
+    position: absolute; right: 12px; top: 12px; width: 280px; max-height: calc(100% - 24px);
+    display: flex; flex-direction: column; z-index: 30;
+    background: var(--c-surface, #fff); border: 1px solid var(--c-border, #e5e7eb);
+    border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.08);
+}
+.wb-navigator-head { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; }
+.wb-search { margin: 0 12px 8px; padding: 6px 8px; font-size: 13px;
+             border: 1px solid var(--c-border, #e5e7eb); border-radius: 6px; }
+.wb-tree { list-style: none; margin: 0; padding: 4px 6px 10px; overflow-y: auto; font-size: 13px; }
+.wb-tree ul { list-style: none; padding-left: 16px; }
+.wb-node {
+    display: flex; align-items: center; gap: 6px; padding: 4px 6px;
+    border-radius: 6px; cursor: pointer; user-select: none;
+}
+.wb-node:hover { background: rgba(37,99,235,.08); }
+.wb-node.is-selected { background: rgba(37,99,235,.14); outline: 1px solid var(--c-primary, #2563eb); }
+.wb-node .wb-node-type { color: var(--c-text-mute, #6b7280); font-size: 11px; }
+.wb-node .wb-node-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wb-caret { border: none; background: none; cursor: pointer; width: 16px; text-align: center; }
+
+/* ===== 底栏 ===== */
+.wb-bottombar {
+    display: flex; align-items: center; gap: 8px; padding: 6px 16px;
+    border-top: 1px solid var(--c-border, #e5e7eb); background: var(--c-surface, #fff);
+}
+.wb-flex-spacer { flex: 1; }
+.wb-empty { color: var(--c-text-mute, #6b7280); font-size: 12px; }
