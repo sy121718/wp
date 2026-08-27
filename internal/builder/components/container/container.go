@@ -96,10 +96,10 @@ type ResponsiveInt struct {
 // Props 标准容器能力描述（规范 docs/02-A §3 + docs/03-A 面板能力）。
 type Props struct {
 	// Tag 原生语义标签：div/section/article/aside/nav/header/footer/main。
-	Tag         string          `json:"tag"`
-	Layout      LayoutProps     `json:"layout"`
-	Box         BoxProps        `json:"box"`
-	Visual      VisualProps     `json:"visual"`
+	Tag         string           `json:"tag"`
+	Layout      LayoutProps      `json:"layout"`
+	Box         BoxProps         `json:"box"`
+	Visual      VisualProps      `json:"visual"`
 	Interaction InteractionProps `json:"interaction"`
 	// Position 定位系统（03-A §3.1 Tab1）：static/relative/absolute/sticky/drawer。
 	Position PositionProps `json:"position,omitempty"`
@@ -234,7 +234,7 @@ func IsSafeCSSValue(v string) bool {
 
 // shapeDividers 形状分隔线白名单（03-A §3.1 Tab2，纯 SVG 装饰）。
 var shapeDividers = map[string]string{
-	"wave": `<svg viewBox="0 0 1440 64" preserveAspectRatio="none" aria-hidden="true"><path fill="currentColor" d="M0 32c120-32 240-32 360 0s240 32 360 0 240-32 360 0 240 32 360 0v64H0z"/></svg>`,
+	"wave":  `<svg viewBox="0 0 1440 64" preserveAspectRatio="none" aria-hidden="true"><path fill="currentColor" d="M0 32c120-32 240-32 360 0s240 32 360 0 240-32 360 0 240 32 360 0v64H0z"/></svg>`,
 	"slant": `<svg viewBox="0 0 1440 64" preserveAspectRatio="none" aria-hidden="true"><path fill="currentColor" d="M0 64L1440 0v64H0z"/></svg>`,
 	"curve": `<svg viewBox="0 0 1440 64" preserveAspectRatio="none" aria-hidden="true"><path fill="currentColor" d="M0 64C360 0 1080 0 1440 64H0z"/></svg>`,
 }
