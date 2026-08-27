@@ -111,7 +111,7 @@ type Reference struct {
 type Store struct {
 	mu     sync.RWMutex
 	assets map[string]*Asset
-	byHash map[string][]string        // hash → asset IDs（去重检测）
+	byHash map[string][]string             // hash → asset IDs（去重检测）
 	refs   map[string]map[string]Reference // assetID → 引用方（kind:id 去重）
 }
 

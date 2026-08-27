@@ -14,10 +14,10 @@ var allowedRichTags = map[string]bool{
 	"strong": true, "b": true, "em": true, "i": true,
 	"u": true, "s": true, "del": true,
 	"code": true,
-	"ul": true, "ol": true, "li": true,
+	"ul":   true, "ol": true, "li": true,
 	"blockquote": true,
-	"a": true,
-	"h2": true, "h3": true, "h4": true,
+	"a":          true,
+	"h2":         true, "h3": true, "h4": true,
 }
 
 // linkTargetMap 链接 rel 白名单：nofollow / noreferrer / noopener。

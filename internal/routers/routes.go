@@ -3,13 +3,17 @@ package routers
 import (
 	"log"
 	"net/http"
+	"os"
+	"path/filepath"
 
 	adminhttp "go_wp/internal/module/admin/inbound/http"
+	artifacthttp "go_wp/internal/module/artifact/inbound/http"
 	captcharouter "go_wp/internal/module/common/captcha/router"
 	dashboardhttp "go_wp/internal/module/dashboard/inbound/http"
 	mediahttp "go_wp/internal/module/media/inbound/http"
 	pagehttp "go_wp/internal/module/page/inbound/http"
 	projecthttp "go_wp/internal/module/project/inbound/http"
+	pubhttp "go_wp/internal/module/publication/inbound/http"
 	"go_wp/internal/templates"
 	"go_wp/pkg/database"
 	"go_wp/pkg/response"
@@ -34,6 +38,10 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 
 	// 媒体上传存储（pkg/upload local provider 默认 public/storage）
 	router.Static("/storage", "public/storage")
+
+	// 静态访问面：已发布站点直出激活产物（只读文件系统，零查库零模板）。
+	// ActiveRoot 位于产物根下两级（{root}/public/active），符号链接目标相对可达。
+	setupStaticFace(router)
 
 	// 后台页面路由（需要后端逻辑的页面入口，归 dashboard 模块）
 	dashboardhttp.SetupDashboardRoutes(router)
@@ -72,16 +80,31 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 		return
 	}
 
-	// 业务 API 路由
+	// 业务 API 路由（依赖顺序：project → artifact → publication → page）
 	api := router.Group("/api")
 	captcharouter.SetupCaptchaRoutes(api)
 	mediahttp.SetupMediaRoutes(api, db)
 	projectService := projecthttp.SetupProjectRoutes(api, db)
-	pagehttp.SetupPageRoutes(api, db, projectService)
+	artifactSvc := artifacthttp.SetupArtifactRoutes(api, db)
+	publicationSvc := pubhttp.SetupPublicationRoutes(api, db)
+	pagehttp.SetupPageRoutes(api, db, artifactSvc, publicationSvc, projectService)
 	adminhttp.SetupAdminRoutes(api, db)
 
 	// 未匹配路由返回 404
 	router.NoRoute(func(c *gin.Context) {
 		response.NotFound(c, "请求的资源不存在")
 	})
+}
+
+// setupStaticFace 挂载静态访问面（docs/03-pipeline.md §5）。
+//
+// ActiveRoot 的 symlink 目标为相对路径（../../artifacts/{hash}），
+// 因此访问面根必须是 active 目录本身；文件由 StaticFS 只读直出，
+// / 落到 index 入口。目录不存在时跳过挂载（尚未有发布产物属正常态）。
+func setupStaticFace(router *gin.Engine) {
+	activeRoot := filepath.Join("public", "runtime", "artifacts", "public", "active")
+	if _, err := os.Stat(activeRoot); err != nil {
+		return
+	}
+	router.StaticFS("/site", http.Dir(activeRoot))
 }

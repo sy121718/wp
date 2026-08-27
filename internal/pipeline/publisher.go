@@ -428,5 +428,28 @@ func (p *Publisher) Status(pageID string) (*PageRecord, error) {
 	}
 	copyRec := *rec
 	copyRec.DocumentJSON = append([]byte(nil), rec.DocumentJSON...)
+	copyRec.Histories = append([]*HistoryEntry(nil), rec.Histories...)
 	return &copyRec, nil
+}
+
+// LoadRecord 恢复进程内页面记录（控制面重启或回滚目标注入时使用）。
+//
+// 持久化产物在 ArtifactStore 中永不消失，因此内核内存态可随时由
+// 控制面用数据库指针重建；本方法整体替换同 ID 记录。
+func (p *Publisher) LoadRecord(rec *PageRecord) {
+	if rec == nil || rec.ID == "" {
+		return
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	snap := append([]byte(nil), rec.DocumentJSON...)
+	histories := make([]*HistoryEntry, len(rec.Histories))
+	for i, h := range rec.Histories {
+		copied := *h
+		histories[i] = &copied
+	}
+	restored := *rec
+	restored.DocumentJSON = snap
+	restored.Histories = histories
+	p.pages[rec.ID] = &restored
 }

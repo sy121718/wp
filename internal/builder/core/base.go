@@ -283,7 +283,7 @@ func CompileAdvanced(nodeID string, a *AdvancedProps, b *CSSBuckets) (extraClass
 
 	var desktop, tablet, mobile []string
 
-// 间距：部分设置时输出长属性（margin-top 等），避免简写空槽改变语义；四值全设才输出简写。
+	// 间距：部分设置时输出长属性（margin-top 等），避免简写空槽改变语义；四值全设才输出简写。
 	appendSpacing := func(prop string, s Spacing) {
 		set := 0
 		for _, v := range []string{s.Top, s.Right, s.Bottom, s.Left} {
@@ -372,6 +372,7 @@ func CompileAdvanced(nodeID string, a *AdvancedProps, b *CSSBuckets) (extraClass
 
 	return a.CustomClasses, a.CustomID
 }
+
 // spacingDecls 生成单端间距声明（tablet/mobile 复用长属性逻辑）。
 func spacingDecls(prop string, s Spacing) (decls []string) {
 	if s.Top != "" {

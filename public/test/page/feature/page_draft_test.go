@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 
+	artifactmodel "go_wp/internal/module/artifact/model"
+	artifactservice "go_wp/internal/module/artifact/service"
 	pagecontract "go_wp/internal/module/page/contract"
 	pagedto "go_wp/internal/module/page/dto"
 	pageenums "go_wp/internal/module/page/enums"
@@ -14,6 +16,8 @@ import (
 	projectdto "go_wp/internal/module/project/dto"
 	projectmodel "go_wp/internal/module/project/model"
 	projectservice "go_wp/internal/module/project/service"
+	pubmodel "go_wp/internal/module/publication/model"
+	pubservice "go_wp/internal/module/publication/service"
 
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
@@ -23,15 +27,20 @@ const pageDocument = `{"settings":{"layout":{"mode":"full"}},"root":[]}`
 
 func newPageService(t *testing.T) (*gorm.DB, pagecontract.PageService, string) {
 	t.Helper()
+	t.Setenv("GO_WP_ARTIFACT_ROOT", t.TempDir())
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("打开测试数据库失败: %v", err)
 	}
 	for _, statement := range []string{
 		`CREATE TABLE projects (id TEXT PRIMARY KEY, name TEXT NOT NULL, settings JSON NOT NULL, created_at DATETIME NOT NULL, updated_at DATETIME NOT NULL)`,
-		`CREATE TABLE pages (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, kind TEXT NOT NULL, content_target_type TEXT NOT NULL, content_target_id TEXT, draft_path TEXT NOT NULL, active_path TEXT, draft_document JSON NOT NULL, draft_version INTEGER NOT NULL, stale BOOLEAN NOT NULL, deleted_at DATETIME, created_at DATETIME NOT NULL, updated_at DATETIME NOT NULL)`,
+		`CREATE TABLE pages (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, kind TEXT NOT NULL, content_target_type TEXT NOT NULL, content_target_id TEXT, draft_path TEXT NOT NULL, active_path TEXT, draft_document JSON NOT NULL, draft_version INTEGER NOT NULL, staged_artifact_id TEXT, active_artifact_id TEXT, stale BOOLEAN NOT NULL, deleted_at DATETIME, published_at DATETIME, created_at DATETIME NOT NULL, updated_at DATETIME NOT NULL)`,
 		`CREATE TABLE page_revisions (id TEXT PRIMARY KEY, page_id TEXT NOT NULL, version INTEGER NOT NULL, draft_path TEXT NOT NULL, draft_document JSON NOT NULL, source_hash TEXT NOT NULL, created_at DATETIME NOT NULL, UNIQUE(page_id, version))`,
-		`CREATE TABLE page_routes (project_id TEXT NOT NULL, path TEXT NOT NULL, page_id TEXT, route_kind TEXT NOT NULL, updated_at DATETIME NOT NULL, PRIMARY KEY(project_id, path))`,
+		`CREATE TABLE page_routes (project_id TEXT NOT NULL, path TEXT NOT NULL, page_id TEXT, presentation_id TEXT, route_kind TEXT NOT NULL, artifact_id TEXT, updated_at DATETIME NOT NULL, PRIMARY KEY(project_id, path))`,
+		`CREATE TABLE page_artifacts (id TEXT PRIMARY KEY, page_id TEXT NOT NULL, version INTEGER NOT NULL, source_document JSON NOT NULL, page_document_schema_version INTEGER NOT NULL, source_hash TEXT NOT NULL, build_input_manifest JSON NOT NULL, build_input_hash TEXT NOT NULL, artifact_provider TEXT NOT NULL, artifact_key TEXT NOT NULL, artifact_hash TEXT NOT NULL, compiler_version TEXT NOT NULL, registry_version TEXT NOT NULL, manifest JSON NOT NULL, payload_state TEXT NOT NULL, payload_deleted_at DATETIME, note TEXT NOT NULL, created_by TEXT NOT NULL, created_at DATETIME NOT NULL, UNIQUE(page_id, version), UNIQUE(id, page_id))`,
+		`CREATE TABLE content_objects (content_hash TEXT PRIMARY KEY, provider TEXT NOT NULL, object_key TEXT NOT NULL, byte_size INTEGER NOT NULL, created_at DATETIME NOT NULL, deleted_at DATETIME)`,
+		`CREATE TABLE page_artifact_objects (artifact_id TEXT NOT NULL, content_hash TEXT NOT NULL, PRIMARY KEY(artifact_id, content_hash))`,
+		`CREATE TABLE publication_receipts (id TEXT PRIMARY KEY, source_type TEXT NOT NULL, source_id TEXT NOT NULL, action TEXT NOT NULL, path TEXT NOT NULL, from_artifact_id TEXT, to_artifact_id TEXT, receipt_state TEXT NOT NULL, receipt_data JSON NOT NULL, created_at DATETIME NOT NULL, completed_at DATETIME)`,
 	} {
 		if err := db.Exec(statement).Error; err != nil {
 			t.Fatalf("创建测试表失败: %v", err)
@@ -42,7 +51,10 @@ func newPageService(t *testing.T) (*gorm.DB, pagecontract.PageService, string) {
 	if err != nil {
 		t.Fatalf("创建测试工程失败: %v", err)
 	}
-	return db, pageservice.NewService(pagemodel.NewPageModel(db), projects), project.ID
+	pageModel := pagemodel.NewPageModel(db)
+	artifacts := artifactservice.NewService(artifactmodel.NewArtifactModel(db))
+	routes := pubservice.NewService(pubmodel.NewPublicationModel(db))
+	return db, pageservice.NewService(pageModel, artifacts, routes, projects), project.ID
 }
 
 func TestPageDraftLifecycle(t *testing.T) {

@@ -67,6 +67,66 @@ func (h *Handle) SaveDraft(c *gin.Context) {
 	response.SuccessWithMessage(c, pageenums.MsgDraftSaved, res)
 }
 
+// Build 基于当前草稿构建并暂存产物。
+func (h *Handle) Build(c *gin.Context) {
+	var req pagedto.BuildReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ParamError(c, pageenums.ErrPageNotFound)
+		return
+	}
+	res, err := h.svc.Build(c.Request.Context(), &req)
+	if err != nil {
+		response.ErrorWithMessage(c, pageErrorStatus(err), err.Error())
+		return
+	}
+	response.SuccessWithMessage(c, pageenums.MsgBuildReady, res)
+}
+
+// Publish 激活暂存产物。
+func (h *Handle) Publish(c *gin.Context) {
+	var req pagedto.PublishReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ParamError(c, pageenums.ErrPageNotFound)
+		return
+	}
+	res, err := h.svc.Publish(c.Request.Context(), &req)
+	if err != nil {
+		response.ErrorWithMessage(c, pageErrorStatus(err), err.Error())
+		return
+	}
+	response.SuccessWithMessage(c, pageenums.MsgPublished, res)
+}
+
+// Rollback 回滚到历史产物。
+func (h *Handle) Rollback(c *gin.Context) {
+	var req pagedto.RollbackReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ParamError(c, pageenums.ErrPageNotFound)
+		return
+	}
+	res, err := h.svc.Rollback(c.Request.Context(), &req)
+	if err != nil {
+		response.ErrorWithMessage(c, pageErrorStatus(err), err.Error())
+		return
+	}
+	response.SuccessWithMessage(c, pageenums.MsgRollbackDone, res)
+}
+
+// UpdateURL 修改访问路径，旧路径 301 或取消激活。
+func (h *Handle) UpdateURL(c *gin.Context) {
+	var req pagedto.UpdateURLReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ParamError(c, pageenums.ErrInvalidPath)
+		return
+	}
+	res, err := h.svc.UpdateURL(c.Request.Context(), &req)
+	if err != nil {
+		response.ErrorWithMessage(c, pageErrorStatus(err), err.Error())
+		return
+	}
+	response.SuccessWithMessage(c, pageenums.MsgURLUpdated, res)
+}
+
 // ListRevisions 查询 Page 草稿修订历史。
 func (h *Handle) ListRevisions(c *gin.Context) {
 	var req pagedto.RevisionReq
@@ -85,9 +145,14 @@ func (h *Handle) ListRevisions(c *gin.Context) {
 func pageErrorStatus(err error) int {
 	message := err.Error()
 	switch {
-	case strings.Contains(message, pageenums.ErrPageNotFound), strings.Contains(message, pageenums.ErrProjectNotFound):
+	case strings.Contains(message, pageenums.ErrPageNotFound), strings.Contains(message, pageenums.ErrProjectNotFound),
+		strings.Contains(message, pageenums.ErrRollbackTargetMiss), strings.Contains(message, pageenums.ErrNoStagedArtifact):
+		if strings.Contains(message, pageenums.ErrNoStagedArtifact) {
+			return http.StatusConflict
+		}
 		return http.StatusNotFound
-	case strings.Contains(message, pageenums.ErrDraftVersionConflict), strings.Contains(message, pageenums.ErrPathOccupied):
+	case strings.Contains(message, pageenums.ErrDraftVersionConflict), strings.Contains(message, pageenums.ErrPathOccupied),
+		strings.Contains(message, pageenums.ErrRebuildRequired):
 		return http.StatusConflict
 	case strings.Contains(message, pageenums.ErrInvalidKind), strings.Contains(message, pageenums.ErrInvalidDocument), strings.Contains(message, pageenums.ErrInvalidPath):
 		return http.StatusBadRequest

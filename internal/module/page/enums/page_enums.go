@@ -9,6 +9,9 @@ const (
 	ErrInvalidPath          = "页面访问路径不合法"
 	ErrDraftVersionConflict = "草稿版本已更新，请刷新后重试"
 	ErrPathOccupied         = "页面访问路径已被占用"
+	ErrNoStagedArtifact     = "无暂存产物，请先构建"
+	ErrRollbackTargetMiss   = "回滚目标产物不存在"
+	ErrRebuildRequired      = "草稿已变更，请重新构建后再发布"
 )
 
 const (
@@ -16,4 +19,8 @@ const (
 	MsgDraftSaved      = "草稿保存成功"
 	MsgPageDetail      = "页面查询成功"
 	MsgRevisionsListed = "页面修订查询成功"
+	MsgBuildReady      = "构建完成，产物已暂存"
+	MsgPublished       = "发布成功"
+	MsgRollbackDone    = "回滚成功"
+	MsgURLUpdated      = "访问路径已更新"
 )

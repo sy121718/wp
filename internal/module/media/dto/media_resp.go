@@ -25,10 +25,10 @@ type ListResp struct {
 
 // CategoryTreeNode 分类树节点。
 type CategoryTreeNode struct {
-	ID           uint64              `json:"id"`
-	CategoryName string              `json:"category_name"`
-	CategoryCode string              `json:"category_code"`
-	ParentID     uint64              `json:"parent_id"`
-	SortOrder    int                 `json:"sort_order"`
-	Children     []CategoryTreeNode  `json:"children,omitempty"`
+	ID           uint64             `json:"id"`
+	CategoryName string             `json:"category_name"`
+	CategoryCode string             `json:"category_code"`
+	ParentID     uint64             `json:"parent_id"`
+	SortOrder    int                `json:"sort_order"`
+	Children     []CategoryTreeNode `json:"children,omitempty"`
 }

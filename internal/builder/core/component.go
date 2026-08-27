@@ -79,6 +79,7 @@ func ValidateNode(node *Node, ids map[string]bool) (err error) {
 	}
 	return comp.Validate(node, ids)
 }
+
 // SpecProvider 可选接口：组件通过 PropsSpec() 暴露一个带 ct tag 的 props 结构体，
 // 声明式 Controls 据此自动生成校验与 Inspector 面板 schema（docs/02-C3）。
 // 未实现本接口的组件保留手写校验（兼容阶段）。

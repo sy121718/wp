@@ -32,8 +32,11 @@ type PageEntity struct {
 	ActivePath        *string         `gorm:"column:active_path;type:text"`
 	DraftDocument     json.RawMessage `gorm:"column:draft_document;type:jsonb;not null"`
 	DraftVersion      int64           `gorm:"column:draft_version;not null"`
+	StagedArtifactID  *string         `gorm:"column:staged_artifact_id;type:uuid"`
+	ActiveArtifactID  *string         `gorm:"column:active_artifact_id;type:uuid"`
 	Stale             bool            `gorm:"column:stale;not null"`
 	DeletedAt         *time.Time      `gorm:"column:deleted_at"`
+	PublishedAt       *time.Time      `gorm:"column:published_at"`
 	CreatedAt         time.Time       `gorm:"column:created_at;not null"`
 	UpdatedAt         time.Time       `gorm:"column:updated_at;not null"`
 }
@@ -182,4 +185,52 @@ func (m *Model) SaveDraftWithRevision(
 		}
 		return tx.Create(revision).Error
 	})
+}
+
+// MarkStaged 回写暂存产物指针（构建成功，尚未激活）。
+func (m *Model) MarkStaged(ctx context.Context, pageID, artifactID string, at time.Time) (err error) {
+	return m.DB(ctx).Where("id = ? AND deleted_at IS NULL", pageID).
+		Updates(map[string]any{"staged_artifact_id": artifactID, "stale": false, "updated_at": at}).Error
+}
+
+// MarkPublished 回写活跃产物指针与发布元数据（发布/回滚共用）。
+func (m *Model) MarkPublished(ctx context.Context, pageID, path, artifactID string, at time.Time) (err error) {
+	return m.DB(ctx).Where("id = ? AND deleted_at IS NULL", pageID).
+		Updates(map[string]any{
+			"active_artifact_id": artifactID,
+			"active_path":        path,
+			"published_at":       at,
+			"stale":              false,
+			"updated_at":         at,
+		}).Error
+}
+
+// MoveDraftPath 发布改 URL 后同步草稿路径与活跃路径。
+func (m *Model) MoveDraftPath(ctx context.Context, pageID, newPath string, at time.Time) (err error) {
+	return m.DB(ctx).Where("id = ? AND deleted_at IS NULL", pageID).
+		Updates(map[string]any{"draft_path": newPath, "active_path": newPath, "updated_at": at}).Error
+}
+
+// DraftPathValue 返回草稿访问路径（空安全）。
+func (e *PageEntity) DraftPathValue() string {
+	if e == nil {
+		return ""
+	}
+	return e.DraftPath
+}
+
+// ActivePathValue 返回当前线上路径（未发布为空）。
+func (e *PageEntity) ActivePathValue() string {
+	if e == nil || e.ActivePath == nil {
+		return ""
+	}
+	return *e.ActivePath
+}
+
+// DraftDocumentFor 优先返回产物冻结源文档，回退到当前草稿。
+func (e *PageEntity) DraftDocumentFor(source json.RawMessage) json.RawMessage {
+	if len(source) > 0 {
+		return source
+	}
+	return e.DraftDocument
 }

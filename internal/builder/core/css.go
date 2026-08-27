@@ -20,8 +20,8 @@ var breakpointMedia = map[string]string{
 
 // keyframesCSS 通用入场动效关键帧，仅在实际被使用时输出。
 var keyframesCSS = map[string]string{
-	"wp-fade-in":   "@keyframes wp-fade-in {\n  from { opacity: 0 }\n  to { opacity: 1 }\n}",
-	"wp-slide-up":  "@keyframes wp-slide-up {\n  from { opacity: 0; transform: translateY(24px) }\n  to { opacity: 1; transform: none }\n}",
+	"wp-fade-in":  "@keyframes wp-fade-in {\n  from { opacity: 0 }\n  to { opacity: 1 }\n}",
+	"wp-slide-up": "@keyframes wp-slide-up {\n  from { opacity: 0; transform: translateY(24px) }\n  to { opacity: 1; transform: none }\n}",
 }
 
 // keyframesOrder 关键帧输出顺序（保证确定性）。

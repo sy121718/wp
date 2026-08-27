@@ -72,6 +72,7 @@ type MediaResolver interface {
 	// 非图片类资产忽略 variant。
 	ResolveMedia(assetID, variant string) (*MediaMeta, error)
 }
+
 // ContentResolver CMS 内容解析契约：绑定字段 → 构建期字符串值。
 // 规范 docs/02-C1 §2（Dynamic Binding）：发布期数据完全静态填入。
 // 实现方由 CMS 模块提供（Phase 0-A2）；core.heading 等绑定组件经此解析。
