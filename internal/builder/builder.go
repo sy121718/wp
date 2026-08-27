@@ -27,6 +27,8 @@ import (
 	_ "go_wp/internal/builder/components/gallery"
 	// core.button：按钮与 CTA 组件（统一链接协议 + 双态外观范式）。
 	_ "go_wp/internal/builder/components/button"
+	// core.divider：分割线组件（纯线 hr 直出 / Flex 嵌入文本或图标）。
+	_ "go_wp/internal/builder/components/divider"
 	// core.image：媒体引用组件（构建期经解析器注入变体）。
 	_ "go_wp/internal/builder/components/image"
 	"go_wp/internal/builder/core"
