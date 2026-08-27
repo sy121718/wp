@@ -7,7 +7,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html"
 	"regexp"
+	"strings"
 
 	"go_wp/internal/builder/core"
 )
@@ -31,7 +33,7 @@ var (
 // allowedContainerTags 容器允许的原生语义标签。
 var allowedContainerTags = map[string]bool{
 	"div": true, "section": true, "article": true, "aside": true,
-	"nav": true, "header": true, "footer": true,
+	"nav": true, "header": true, "footer": true, "main": true,
 }
 
 // justifyMap 主轴对齐关键字到 CSS 值的映射。
@@ -91,14 +93,59 @@ type ResponsiveInt struct {
 	Mobile  int `json:"mobile,omitempty"`
 }
 
-// Props 标准容器能力描述（规范 docs/02-A §3）。
+// Props 标准容器能力描述（规范 docs/02-A §3 + docs/03-A 面板能力）。
 type Props struct {
-	// Tag 原生语义标签：div/section/article/aside/nav/header/footer。
+	// Tag 原生语义标签：div/section/article/aside/nav/header/footer/main。
 	Tag         string          `json:"tag"`
 	Layout      LayoutProps     `json:"layout"`
 	Box         BoxProps        `json:"box"`
 	Visual      VisualProps     `json:"visual"`
 	Interaction InteractionProps `json:"interaction"`
+	// Position 定位系统（03-A §3.1 Tab1）：static/relative/absolute/sticky/drawer。
+	Position PositionProps `json:"position,omitempty"`
+	// StyleEx 样式扩展（03-A §3.1 Tab2）：背景双态/遮罩/形状分隔线/顺序/组父联动/属性。
+	StyleEx StyleExProps `json:"styleEx,omitempty"`
+}
+
+// PositionProps 定位系统。
+type PositionProps struct {
+	// Type 定位类型：static（默认）/ relative / absolute / sticky / drawer。
+	Type string `json:"type,omitempty"`
+	// Top/Right/Bottom/Left absolute 精准坐标（CSS 长度值）。
+	Top    string `json:"top,omitempty"`
+	Right  string `json:"right,omitempty"`
+	Bottom string `json:"bottom,omitempty"`
+	Left   string `json:"left,omitempty"`
+	// DrawerSide drawer 抽屉滑出边：left / right / bottom。
+	DrawerSide string `json:"drawerSide,omitempty"`
+	// DrawerOverlay 抽屉遮罩（:target 显隐，零 JS）。
+	DrawerOverlay bool `json:"drawerOverlay,omitempty"`
+	// DrawerTriggerID 唯一触发元素 ID（配合 button 等触发协议）。
+	DrawerTriggerID string `json:"drawerTriggerId,omitempty"`
+}
+
+// StyleExProps 样式扩展。
+type StyleExProps struct {
+	// BackgroundHover 悬停背景（纯色/渐变；继承 Background 的缺省语义）。
+	BackgroundHover string `json:"backgroundHover,omitempty"`
+	// Overlay 背景覆盖层（纯色/渐变半透明遮罩，保障文本可读）。
+	Overlay string `json:"overlay,omitempty"`
+	// ShapeDivider 形状分隔线：wave / slant / curve；空=关闭。
+	ShapeDivider string `json:"shapeDivider,omitempty"`
+	// ShapeDividerPosition 形状位置：top / bottom（默认 bottom）。
+	ShapeDividerPosition string `json:"shapeDividerPosition,omitempty"`
+	// Order 子项顺序（flex/grid 中 -1~99）。
+	Order int `json:"order,omitempty"`
+	// GroupParent 父子悬停联动：父容器 hover 时子组件可触发联动样式。
+	GroupParent bool `json:"groupParent,omitempty"`
+	// Attributes 自定义 HTML 键值对（白名单 key + 安全 value）。
+	Attributes []AttributeKV `json:"attributes,omitempty"`
+}
+
+// AttributeKV 自定义属性键值对。
+type AttributeKV struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
 }
 
 // LayoutProps 双排版引擎（Flexbox / Grid）。
@@ -185,10 +232,36 @@ func IsSafeCSSValue(v string) bool {
 	return len(v) <= 500 && cssValueRe.MatchString(v)
 }
 
+// shapeDividers 形状分隔线白名单（03-A §3.1 Tab2，纯 SVG 装饰）。
+var shapeDividers = map[string]string{
+	"wave": `<svg viewBox="0 0 1440 64" preserveAspectRatio="none" aria-hidden="true"><path fill="currentColor" d="M0 32c120-32 240-32 360 0s240 32 360 0 240-32 360 0 240 32 360 0v64H0z"/></svg>`,
+	"slant": `<svg viewBox="0 0 1440 64" preserveAspectRatio="none" aria-hidden="true"><path fill="currentColor" d="M0 64L1440 0v64H0z"/></svg>`,
+	"curve": `<svg viewBox="0 0 1440 64" preserveAspectRatio="none" aria-hidden="true"><path fill="currentColor" d="M0 64C360 0 1080 0 1440 64H0z"/></svg>`,
+}
+
+// attrKeyRe 自定义属性 key 白名单（data-* / aria-* / 常见属性）。
+var attrKeyRe = regexp.MustCompile(`^(data-[a-z0-9-]{1,32}|aria-[a-z0-9-]{1,32}|role|title|tabindex)$`)
+
+// attrValueSafe 属性值白名单：允许中文与常见符号，禁引号/尖括号/花括号/@（防属性逃逸）。
+func attrValueSafe(v string) bool {
+	if len(v) > 200 {
+		return false
+	}
+	for _, r := range v {
+		if r == '"' || r == '\'' || r == '<' || r == '>' || r == '\\' || r == '`' {
+			return false
+		}
+	}
+	return true
+}
+
 // Validate 校验容器节点及整棵子树。
 func (Container) Validate(node *core.Node, ids map[string]bool) (err error) {
 	if !nodeIDRe.MatchString(node.ID) {
 		return fmt.Errorf("无效的节点 ID: %q", node.ID)
+	}
+	if err = core.ValidateNodeName(node.Name); err != nil {
+		return err
 	}
 	if ids[node.ID] {
 		return fmt.Errorf("节点 ID 重复: %q", node.ID)
@@ -225,16 +298,59 @@ func (Container) Render(node *core.Node, topLevel bool, ctx *core.RenderContext)
 	if topLevel {
 		cls += " " + core.SectionClass
 	}
+
+	var attrs strings.Builder
+	// 组父联动标记（03-A：子组件可经 [data-wp-group] 联动）。
+	if p.StyleEx.GroupParent {
+		attrs.WriteString(` data-wp-group="true"`)
+	}
+	// 自定义属性键值对（白名单 key + 安全 value）。
+	for _, kv := range p.StyleEx.Attributes {
+		attrs.WriteString(" ")
+		attrs.WriteString(kv.Key)
+		attrs.WriteString(`="`)
+		attrs.WriteString(html.EscapeString(kv.Value))
+		attrs.WriteString(`"`)
+	}
+	// 抽屉协议（:target 显隐，零 JS）。
+	if p.Position.Type == "drawer" {
+		attrs.WriteString(` id="wp-drawer-`)
+		attrs.WriteString(node.ID)
+		attrs.WriteString(`" data-drawer-side="`)
+		attrs.WriteString(p.Position.DrawerSide)
+		attrs.WriteString(`"`)
+		if p.Position.DrawerOverlay {
+			attrs.WriteString(` data-drawer-overlay="true"`)
+		}
+	}
+
 	ctx.HTML.WriteString("<")
 	ctx.HTML.WriteString(p.Tag)
 	ctx.HTML.WriteString(" class=\"")
 	ctx.HTML.WriteString(cls)
-	ctx.HTML.WriteString("\">")
+	ctx.HTML.WriteString("\"")
+	ctx.HTML.WriteString(attrs.String())
+	ctx.HTML.WriteString(">")
+
+	// 形状分隔线（顶部）：内嵌纯 SVG 装饰。
+	if p.StyleEx.ShapeDivider != "" && p.StyleEx.ShapeDividerPosition == "top" {
+		ctx.HTML.WriteString(`<span class="wp-shape wp-shape-top">`)
+		ctx.HTML.WriteString(shapeDividers[p.StyleEx.ShapeDivider])
+		ctx.HTML.WriteString(`</span>`)
+	}
+
 	for _, child := range node.Children {
 		if err = core.RenderNode(child, false, ctx); err != nil {
 			return err
 		}
 	}
+
+	if p.StyleEx.ShapeDivider != "" && p.StyleEx.ShapeDividerPosition != "top" {
+		ctx.HTML.WriteString(`<span class="wp-shape wp-shape-bottom">`)
+		ctx.HTML.WriteString(shapeDividers[p.StyleEx.ShapeDivider])
+		ctx.HTML.WriteString(`</span>`)
+	}
+
 	ctx.HTML.WriteString("</")
 	ctx.HTML.WriteString(p.Tag)
 	ctx.HTML.WriteString(">")
@@ -369,6 +485,95 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 			"box-shadow: " + shadowLevels[shadowUpgrade[p.Visual.Shadow]],
 		})
 	}
+
+	// --- 定位系统（03-A） ---
+	switch p.Position.Type {
+	case "relative":
+		b.Add(core.BreakpointDesktop, sel, []string{"position: relative"})
+	case "absolute":
+		abs := []string{"position: absolute"}
+		if p.Position.Top != "" {
+			abs = append(abs, "top: "+p.Position.Top)
+		}
+		if p.Position.Right != "" {
+			abs = append(abs, "right: "+p.Position.Right)
+		}
+		if p.Position.Bottom != "" {
+			abs = append(abs, "bottom: "+p.Position.Bottom)
+		}
+		if p.Position.Left != "" {
+			abs = append(abs, "left: "+p.Position.Left)
+		}
+		b.Add(core.BreakpointDesktop, sel, abs)
+	case "sticky":
+		b.Add(core.BreakpointDesktop, sel, []string{"position: sticky", "top: 0"})
+	case "drawer":
+		// 抽屉：fixed + 移出视口，:target 滑入（触发协议 `href="#wp-drawer-<id>"`，零 JS）。
+		var drawer []string
+		drawer = append(drawer, "position: fixed", "transition: transform 0.3s ease", "z-index: 900")
+		switch p.Position.DrawerSide {
+		case "left":
+			drawer = append(drawer, "left: 0", "top: 0", "bottom: 0", "width: 300px", "transform: translateX(-100%)")
+		case "right":
+			drawer = append(drawer, "right: 0", "top: 0", "bottom: 0", "width: 300px", "transform: translateX(100%)")
+		case "bottom":
+			drawer = append(drawer, "left: 0", "right: 0", "bottom: 0", "transform: translateY(100%)")
+		}
+		b.Add(core.BreakpointDesktop, sel, drawer)
+		b.Add(core.BreakpointDesktop, sel+":target", []string{"transform: none"})
+	}
+
+	// --- 样式扩展（03-A） ---
+	if p.StyleEx.Order != 0 {
+		b.Add(core.BreakpointDesktop, sel, []string{fmt.Sprintf("order: %d", p.StyleEx.Order)})
+	}
+	if p.StyleEx.BackgroundHover != "" {
+		b.Add(core.BreakpointDesktop, sel, []string{"transition: background 0.2s ease"})
+		b.Add(core.BreakpointDesktop, sel+":hover", []string{"background: " + p.StyleEx.BackgroundHover})
+	}
+	if p.StyleEx.Overlay != "" {
+		if p.Position.Type == "static" {
+			b.Add(core.BreakpointDesktop, sel, []string{"position: relative"})
+		}
+		b.Add(core.BreakpointDesktop, sel+"::before", []string{
+			"content: \"\"",
+			"position: absolute",
+			"inset: 0",
+			"pointer-events: none",
+			"background: " + p.StyleEx.Overlay,
+			"z-index: 0",
+		})
+		b.Add(core.BreakpointDesktop, sel+" > *", []string{"position: relative", "z-index: 1"})
+	}
+	// 形状分隔线样式。
+	if p.StyleEx.ShapeDivider != "" {
+		shapePos := p.StyleEx.ShapeDividerPosition
+		if shapePos == "" {
+			shapePos = "bottom"
+		}
+		b.Add(core.BreakpointDesktop, sel+" .wp-shape", []string{
+			"position: absolute",
+			"left: 0", "right: 0",
+			"height: 48px",
+			"line-height: 0",
+			"z-index: 2",
+			"pointer-events: none",
+		})
+		b.Add(core.BreakpointDesktop, sel+" .wp-shape svg", []string{"width: 100%", "height: 100%", "display: block"})
+		b.Add(core.BreakpointDesktop, sel+" .wp-shape-"+shapePos, []string{shapePos + ": 0"})
+		b.Add(core.BreakpointDesktop, sel+" .wp-shape svg", []string{"color: " + shapeColor(p)})
+		if p.Position.Type == "static" {
+			b.Add(core.BreakpointDesktop, sel, []string{"position: relative"})
+		}
+	}
+}
+
+// shapeColor 形状分隔线颜色（跟随容器背景反色缺省：当前色）。
+func shapeColor(p *Props) string {
+	if p.Visual.BgColor != "" {
+		return p.Visual.BgColor
+	}
+	return "currentColor"
 }
 
 // validateProps 校验容器能力参数。
@@ -474,6 +679,66 @@ func validateProps(p *Props) (err error) {
 	}
 	if !allowedEntrance[p.Interaction.Entrance] {
 		return fmt.Errorf("无效的入场动效: %q", p.Interaction.Entrance)
+	}
+
+	// 定位系统（03-A）。
+	switch p.Position.Type {
+	case "", "static":
+	case "relative":
+	case "absolute":
+		// 绝对定位至少一个坐标。
+		if p.Position.Top == "" && p.Position.Right == "" && p.Position.Bottom == "" && p.Position.Left == "" {
+			return fmt.Errorf("绝对定位必须提供至少一个坐标（top/right/bottom/left）")
+		}
+	case "sticky":
+		// 与 Interaction.Sticky 兼容并存。
+	case "drawer":
+		if p.Position.DrawerSide == "" {
+			return fmt.Errorf("drawer 定位必须提供滑出方向（left/right/bottom）")
+		}
+		if p.Position.DrawerSide != "left" && p.Position.DrawerSide != "right" && p.Position.DrawerSide != "bottom" {
+			return fmt.Errorf("无效的抽屉方向: %q", p.Position.DrawerSide)
+		}
+		if !nodeIDRe.MatchString(p.Position.DrawerTriggerID) {
+			return fmt.Errorf("抽屉必须提供唯一触发 ID")
+		}
+	default:
+		return fmt.Errorf("无效的定位类型: %q", p.Position.Type)
+	}
+	for name, v := range map[string]string{
+		"top 坐标": p.Position.Top, "right 坐标": p.Position.Right,
+		"bottom 坐标": p.Position.Bottom, "left 坐标": p.Position.Left,
+	} {
+		if v != "" && !IsSafeCSSValue(v) {
+			return fmt.Errorf("无效的%s: %q", name, v)
+		}
+	}
+
+	// 样式扩展（03-A）。
+	if p.StyleEx.BackgroundHover != "" && !IsSafeCSSValue(p.StyleEx.BackgroundHover) {
+		return fmt.Errorf("无效的悬停背景: %q", p.StyleEx.BackgroundHover)
+	}
+	if p.StyleEx.Overlay != "" && !IsSafeCSSValue(p.StyleEx.Overlay) {
+		return fmt.Errorf("无效的背景覆盖层: %q", p.StyleEx.Overlay)
+	}
+	if p.StyleEx.ShapeDivider != "" {
+		if _, ok := shapeDividers[p.StyleEx.ShapeDivider]; !ok {
+			return fmt.Errorf("无效的形状分隔线: %q（仅 wave/slant/curve）", p.StyleEx.ShapeDivider)
+		}
+	}
+	if p.StyleEx.ShapeDividerPosition != "" && p.StyleEx.ShapeDividerPosition != "top" && p.StyleEx.ShapeDividerPosition != "bottom" {
+		return fmt.Errorf("形状分隔线位置仅支持 top/bottom: %q", p.StyleEx.ShapeDividerPosition)
+	}
+	if p.StyleEx.Order < -1 || p.StyleEx.Order > 99 {
+		return fmt.Errorf("顺序值必须在 -1~99 之间: %d", p.StyleEx.Order)
+	}
+	for _, kv := range p.StyleEx.Attributes {
+		if !attrKeyRe.MatchString(kv.Key) {
+			return fmt.Errorf("无效的自定义属性 key: %q（仅 data-*/aria-*/role/title/tabindex）", kv.Key)
+		}
+		if !attrValueSafe(kv.Value) {
+			return fmt.Errorf("无效的自定义属性 value: %q", kv.Value)
+		}
 	}
 	return nil
 }

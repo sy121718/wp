@@ -1,8 +1,8 @@
 // Package divider 实现 core.divider 分割线组件（规范《02-C6 分割线组件规范》）。
 //
 // 极轻量装饰性原子组件：区块/列表/表单内水平视觉分隔，支持嵌入微型文本或图标
-//（"或者"、OR、品牌小标志）。纯线输出单层原生 <hr>；嵌入场景输出紧凑 Flex 结构
-//（两侧线 + 中间元素），零客户端 JS。基础盒模型与通用样式继承自 02-C0。
+// （"或者"、OR、品牌小标志）。纯线输出单层原生 <hr>；嵌入场景输出紧凑 Flex 结构
+// （两侧线 + 中间元素），零客户端 JS。基础盒模型与通用样式继承自 02-C0。
 package divider
 
 import (
@@ -272,7 +272,6 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		b.Add(core.BreakpointMobile, sel, decls)
 	}
 }
-
 
 // lineColor 线条颜色（主题 Token 或自定义）。
 func lineColor(p *Props) string {

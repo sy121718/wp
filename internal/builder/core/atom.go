@@ -51,7 +51,7 @@ func (a Atom[P]) Type() string { return a.Spec.TypeName }
 
 // Validate 实现组件接口：公共校验管线 + 声明式 + 组件关系性 + Advanced。
 func (a Atom[P]) Validate(node *Node, ids map[string]bool) (err error) {
-	if err = ValidateNodeID(node.ID, ids); err != nil {
+	if err = ValidateNodeID(node.ID, node.Name, ids); err != nil {
 		return err
 	}
 	if len(node.Children) > 0 {
@@ -127,8 +127,8 @@ func AdvancedOf[P any](p *P) *AdvancedProps {
 	return f.Addr().Interface().(*AdvancedProps)
 }
 
-// ValidateNodeID 节点 ID 白名单与全文档唯一性（基座与容器共用）。
-func ValidateNodeID(id string, ids map[string]bool) (err error) {
+// ValidateNodeID 节点 ID 白名单与全文档唯一性，并顺带校验编辑元数据 Name（03-A）。
+func ValidateNodeID(id, name string, ids map[string]bool) (err error) {
 	if len(id) < 1 || len(id) > 64 {
 		return fmt.Errorf("无效的节点 ID: %q", id)
 	}
@@ -141,5 +141,16 @@ func ValidateNodeID(id string, ids map[string]bool) (err error) {
 		return fmt.Errorf("节点 ID 重复: %q", id)
 	}
 	ids[id] = true
+	if err = ValidateNodeName(name); err != nil {
+		return err
+	}
+	return nil
+}
+
+// ValidateNodeName 编辑元数据 Name 白名单（仅编辑器显示名，最长为 100 可见字符）。
+func ValidateNodeName(name string) (err error) {
+	if len([]rune(name)) > 100 {
+		return fmt.Errorf("节点名称过长（上限 100 字符）")
+	}
 	return nil
 }

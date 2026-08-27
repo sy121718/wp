@@ -15,6 +15,15 @@ type Node struct {
 	Type     string          `json:"type"`
 	Props    json.RawMessage `json:"props"`
 	Children []*Node         `json:"children"`
+
+	// --- 编辑元数据（Visual Workbench 03-A，持久化于 Page Document，不参与编译产物） ---
+
+	// Name 大纲树重命名显示名（如 "首屏 Banner 容器"），仅编辑器可读性。
+	Name string `json:"name,omitempty"`
+	// Hidden 编辑期临时显隐（遮挡编辑辅助），不影响最终发布产物。
+	Hidden bool `json:"hidden,omitempty"`
+	// Locked 编辑期锁定防误触（禁止画布选中/拖拽）。
+	Locked bool `json:"locked,omitempty"`
 }
 
 // SectionClass 顶级容器附加 class，用于页面版心约束选择器。
