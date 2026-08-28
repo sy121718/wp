@@ -286,3 +286,15 @@
 .wb-typo-group { border: 1px solid var(--c-border, #e5e7eb); border-radius: 8px; padding: 10px; }
 .wb-typo-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
 
+
+/* ===== gallery repeater ===== */
+.wb-repeater-row { display: flex; gap: 6px; align-items: center; border: 1px solid var(--c-border, #e5e7eb); border-radius: 8px; padding: 6px; margin-bottom: 6px; }
+.wb-repeater-thumb { width: 44px; height: 44px; object-fit: cover; border-radius: 6px; background: #f3f4f6; flex: none; }
+.wb-repeater-mid { flex: 1 1 auto; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.wb-repeater-mid input { width: 100%; box-sizing: border-box; padding: 4px 6px; font-size: 12px; border: 1px solid var(--c-border, #e5e7eb); border-radius: 5px; }
+.wb-repeater-add { width: 100%; }
+/* ===== 颜色行 ===== */
+.wb-color-row { display: flex; gap: 6px; align-items: center; }
+.wb-color-row .wb-color-text { flex: 1 1 auto; }
+.wb-color-swatch { width: 34px; height: 32px; padding: 2px; border: 1px solid var(--c-border, #e5e7eb); border-radius: 6px; background: var(--c-surface, #fff); cursor: pointer; flex: none; }
+

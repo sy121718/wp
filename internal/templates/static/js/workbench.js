@@ -819,6 +819,23 @@
                         commit(path, value, after);
                     });
                     wrap.appendChild(input);
+                    // 颜色类字段：色板 + 文本组合（支持 var(--token) 主题变量）。
+                    var colorKeyMatch = path.match(/\.(color|bgColor|borderColor|titleColor|border)$/i) || /^props\.(color|bgColor|background)$/.test(path);
+                    if (kind === 'input' && colorKeyMatch) {
+                        var cWrap = document.createElement('div'); cWrap.className = 'wb-color-row';
+                        var swatch = document.createElement('input'); swatch.type = 'color'; swatch.className = 'wb-color-swatch';
+                        var raw = get(path) == null ? '' : String(get(path)).trim();
+                        swatch.value = /^#[0-9a-fA-F]{3,8}$/.test(raw) ? raw : '#2563eb';
+                        input.classList.add('wb-color-text');
+                        swatch.addEventListener('input', function () {
+                            input.value = swatch.value;
+                            input.dispatchEvent(new Event('change'));
+                        });
+                        cWrap.appendChild(input); cWrap.appendChild(swatch);
+                        wrap.appendChild(cWrap);
+                        panel.appendChild(wrap);
+                        return;
+                    }
                     // 图片类字段附「媒体库」按钮：弹层点选或上传后回填 URL。
                     if (kind === 'input' && /\.(src|bgImage)$/.test(path)) {
                         var mediaBtn = document.createElement('button');
@@ -1214,6 +1231,57 @@
                     field('手机端高度', 'props.height.mobile', 'input');
                 }
 
+                // gallery 图片列表 repeater:逐项媒体库选图/alt/删除,底部添加。
+                function galleryItemsPanel(itemsPath) {
+                    if (!Array.isArray(get(itemsPath))) set(itemsPath, []);
+                    var items = get(itemsPath);
+                    function save() {
+                        commit(itemsPath, items);
+                    }
+                    items.forEach(function (item, idx) {
+                        var row = document.createElement('div'); row.className = 'wb-repeater-row';
+                        var thumb = document.createElement('img');
+                        thumb.className = 'wb-repeater-thumb';
+                        var res = self.resolveAssetUrl(item.assetId);
+                        if (res) thumb.src = res;
+                        row.appendChild(thumb);
+                        var mid = document.createElement('div'); mid.className = 'wb-repeater-mid';
+                        var pick = document.createElement('button');
+                        pick.type = 'button'; pick.className = 'wb-btn wb-btn-secondary wb-btn-sm';
+                        pick.textContent = '选图';
+                        pick.addEventListener('click', function () {
+                            self.openMediaPicker(function (url, assetId) {
+                                item.assetId = assetId || String(url);
+                                save();
+                            });
+                        });
+                        mid.appendChild(pick);
+                        var alt = document.createElement('input');
+                        alt.type = 'text'; alt.placeholder = '替代文字'; alt.value = item.alt || '';
+                        alt.addEventListener('change', function () { item.alt = alt.value; save(); });
+                        mid.appendChild(alt);
+                        row.appendChild(mid);
+                        var del = document.createElement('button');
+                        del.type = 'button'; del.className = 'wb-icon-btn'; del.textContent = '✕'; del.title = '删除此项';
+                        del.addEventListener('click', function () {
+                            items.splice(idx, 1);
+                            save();
+                            self.syncInspector();
+                        });
+                        row.appendChild(del);
+                        panel.appendChild(row);
+                    });
+                    var add = document.createElement('button');
+                    add.type = 'button'; add.className = 'wb-btn wb-btn-secondary wb-btn-sm wb-repeater-add';
+                    add.textContent = '+ 添加图片';
+                    add.addEventListener('click', function () {
+                        items.push({ assetId: '', alt: '', caption: '', link: '' });
+                        save();
+                        self.syncInspector();
+                    });
+                    panel.appendChild(add);
+                }
+
                 var schema = componentSchemas[node.type] || [];
                 var groups = { content: [], style: [], advanced: [] };
                 schema.forEach(function (ctl) { (groups[ctl.section] || groups.content).push(ctl); });
@@ -1247,6 +1315,11 @@
                     if (node.type === 'core.container') containerLayout();
                     if (node.type === 'core.divider') dividerInset();
                     if (node.type === 'core.spacer') spacerPanel();
+                    if (node.type === 'core.gallery') {
+                        heading('图片列表');
+                        galleryItemsPanel('props.items');
+                        heading('其余设置');
+                    }
                     groups.content.forEach(schemaField);
                     if (!groups.content.length && node.type !== 'core.container' && node.type !== 'core.divider' && node.type !== 'core.spacer') {
                         var none2 = document.createElement('p'); none2.className = 'wb-empty'; none2.textContent = '该组件暂无内容项'; panel.appendChild(none2);
@@ -1256,6 +1329,16 @@
 
             // ---------------- 媒体库选择器 ----------------
             _mediaPickTarget: null,
+            _mediaCache: null,
+            resolveAssetUrl(assetIdOrUrl) {
+                if (!assetIdOrUrl) return '';
+                if (/^https?:|^\//.test(assetIdOrUrl)) return assetIdOrUrl;
+                var list = this._mediaCache || [];
+                for (var i = 0; i < list.length; i++) {
+                    if (String(list[i].id) === String(assetIdOrUrl)) return list[i].url;
+                }
+                return '';
+            },
             openMediaPicker(onPick) {
                 this._mediaPickTarget = onPick;
                 var modal = document.getElementById('wb-media-modal');
@@ -1278,6 +1361,7 @@
                     .then(function (j) {
                         grid.innerHTML = '';
                         var list = (j.data && j.data.list) || [];
+                        self._mediaCache = list;
                         if (!list.length) {
                             grid.innerHTML = '<p class="wb-empty">媒体库为空，点右上「上传图片」</p>';
                             return;
