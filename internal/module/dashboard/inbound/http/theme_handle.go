@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"strings"
 
+	blockdto "go_wp/internal/module/block/dto"
 	dashboardenums "go_wp/internal/module/dashboard/enums"
 	projectdto "go_wp/internal/module/project/dto"
 
@@ -160,7 +161,7 @@ func (h *Handle) backToThemes(c *gin.Context) string {
 
 // ---- 单主题设置页（GET /admin/themes/settings?id=X） ----
 
-// themeSettingsData 单主题设置页数据（全局颜色/字体/页眉页脚引用）。
+// themeSettingsData 单主题设置页数据（全局颜色/字体/页眉页脚块绑定）。
 type themeSettingsData struct {
 	Title      string
 	Menu       string
@@ -173,17 +174,18 @@ type themeSettingsData struct {
 	SColor     string
 	BdColor    string
 	FontFamily string
-	// HeaderPageID/FooterPageID 全局页眉/页脚引用的页面 id（编译装配待接入，当前仅存储）。
-	HeaderPageID string
-	FooterPageID string
-	// Pages 该主题下页面列表，作为页眉/页脚引用候选。
-	Pages []pageOption
+	// HeaderBlockID/FooterBlockID 全局页眉/页脚块绑定（编译期内联装配）。
+	HeaderBlockID string
+	FooterBlockID string
+	// HeaderBlocks/FooterBlocks 该工程页眉/页脚候选块列表。
+	HeaderBlocks []blockOption
+	FooterBlocks []blockOption
 }
 
-// pageOption 页眉/页脚引用候选下拉项。
-type pageOption struct {
+// blockOption 页眉/页脚绑定候选下拉项。
+type blockOption struct {
 	ID   string
-	Path string
+	Name string
 	Kind string
 }
 
@@ -201,18 +203,20 @@ func (d *themeSettingsData) templateMap() gin.H {
 		"SColor":       d.SColor,
 		"BdColor":      d.BdColor,
 		"FontFamily":   d.FontFamily,
-		"HeaderPageID": d.HeaderPageID,
-		"FooterPageID": d.FooterPageID,
-		"Pages":        d.Pages,
+		"HeaderBlock":  d.HeaderBlockID,
+		"FooterBlock":  d.FooterBlockID,
+		"HeaderBlocks": d.HeaderBlocks,
+		"FooterBlocks": d.FooterBlocks,
 	}
 }
 
-// themeSettingsJSON 与 020_themes.sql 注释约定的 settings 结构对齐。
+// themeSettingsJSON 与主题设置结构约定对齐（020_themes.sql / 021_blocks.sql 方案 C）：
+// 颜色/字体为站点设计 Token；headerBlockId/footerBlockId 为全局块槽位绑定。
 type themeSettingsJSON struct {
-	Colors       map[string]string `json:"colors,omitempty"`
-	FontFamily   string            `json:"fontFamily,omitempty"`
-	HeaderPageID string            `json:"headerPageId,omitempty"`
-	FooterPageID string            `json:"footerPageId,omitempty"`
+	Colors        map[string]string `json:"colors,omitempty"`
+	FontFamily    string            `json:"fontFamily,omitempty"`
+	HeaderBlockID string            `json:"headerBlockId,omitempty"`
+	FooterBlockID string            `json:"footerBlockId,omitempty"`
 }
 
 // ThemeSettings 单主题设置页。
@@ -253,21 +257,29 @@ func (h *Handle) loadThemeSettings(c *gin.Context, themeID string) *themeSetting
 		data.BdColor = s.Colors["border"]
 	}
 	data.FontFamily = s.FontFamily
-	data.HeaderPageID = s.HeaderPageID
-	data.FooterPageID = s.FooterPageID
-	// 页眉/页脚引用候选：挂在该主题下的页面。
-	if pages, err := h.pages.List(ctx, theme.ID); err == nil {
-		data.Pages = make([]pageOption, 0, len(pages))
-		for _, p := range pages {
-			data.Pages = append(data.Pages, pageOption{ID: p.ID, Path: p.DraftPath, Kind: p.Kind})
+	data.HeaderBlockID = s.HeaderBlockID
+	data.FooterBlockID = s.FooterBlockID
+	// 页眉/页脚绑定候选：本工程的页眉/页脚类全局块。
+	if blocks, err := h.blocks.List(ctx, &blockdto.ListReq{ProjectID: theme.ProjectID}); err == nil {
+		data.HeaderBlocks = []blockOption{{ID: "", Name: "（未设置）"}}
+		data.FooterBlocks = []blockOption{{ID: "", Name: "（未设置）"}}
+		for _, b := range blocks {
+			opt := blockOption{ID: b.ID, Name: b.Name, Kind: b.Kind}
+			switch b.Kind {
+			case "header":
+				data.HeaderBlocks = append(data.HeaderBlocks, opt)
+			case "footer":
+				data.FooterBlocks = append(data.FooterBlocks, opt)
+			}
 		}
 	}
 	return data
 }
 
 // SaveThemeSettings 保存单主题设置（POST /admin/themes/settings/save）：
-// 写回 themes.settings；颜色/字体批量合入该主题下全部页面文档（settings.theme 快照）。
-// 页眉页脚引用是编译装配元数据，仅存储不合入页面文档。
+// 写回 themes.settings（颜色/字体/页眉页脚块绑定）；颜色/字体批量合入该主题下
+// 全部页面文档（settings.theme 快照），结构绑定合入 settings.structure；
+// 保存后该主题下页面全部标待重建（新颜色/结构与块内容需重新构建生效）。
 func (h *Handle) SaveThemeSettings(c *gin.Context) {
 	themeID := strings.TrimSpace(c.PostForm("id"))
 	if themeID == "" {
@@ -286,10 +298,10 @@ func (h *Handle) SaveThemeSettings(c *gin.Context) {
 		}
 	}
 	settings := themeSettingsJSON{
-		Colors:       colors,
-		FontFamily:   strings.TrimSpace(c.PostForm("fontFamily")),
-		HeaderPageID: strings.TrimSpace(c.PostForm("headerPageId")),
-		FooterPageID: strings.TrimSpace(c.PostForm("footerPageId")),
+		Colors:        colors,
+		FontFamily:    strings.TrimSpace(c.PostForm("fontFamily")),
+		HeaderBlockID: strings.TrimSpace(c.PostForm("headerBlockId")),
+		FooterBlockID: strings.TrimSpace(c.PostForm("footerBlockId")),
 	}
 	settingsJSON, err := json.Marshal(settings)
 	if err != nil {
@@ -305,6 +317,20 @@ func (h *Handle) SaveThemeSettings(c *gin.Context) {
 	// 颜色/字体快照合入该主题下全部页面（编译端 ThemeSettings 只认这两个键）。
 	snapshot, _ := json.Marshal(map[string]any{"colors": colors, "fontFamily": settings.FontFamily})
 	if err := h.pages.RefreshThemeForTheme(c.Request.Context(), themeID, snapshot); err != nil {
+		c.String(http.StatusInternalServerError, err.Error())
+		return
+	}
+	// 页眉/页脚块绑定合入 settings.structure（编译装配层按此内联）。
+	structureJSON, _ := json.Marshal(map[string]any{
+		"headerBlockId": settings.HeaderBlockID,
+		"footerBlockId": settings.FooterBlockID,
+	})
+	if err := h.pages.RefreshStructureForTheme(c.Request.Context(), themeID, structureJSON); err != nil {
+		c.String(http.StatusInternalServerError, err.Error())
+		return
+	}
+	// 保存后该主题页面全部待重建（新颜色/结构与块内容进入产物）。
+	if err := h.pages.MarkStaleForTheme(c.Request.Context(), themeID); err != nil {
 		c.String(http.StatusInternalServerError, err.Error())
 		return
 	}

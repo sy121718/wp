@@ -1401,7 +1401,8 @@
                 var self = this;
                 self.busy = true;
                 self.renderUI();
-                fetch('/api/page/' + path, {
+                // saveBase='block'（全局块编辑）时走 /api/block/ 前缀，默认页面 /api/page/。
+                fetch('/api/' + (meta.saveBase || 'page') + '/' + path, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(body)
@@ -1422,6 +1423,27 @@
             },
             saveDraft() {
                 var self = this;
+                // 全局块编辑：保存到 dashboard 编排端点（保存后自动传播 stale）。
+                if (meta.saveBase === 'block') {
+                    self.busy = true; self.renderUI();
+                    fetch('/admin/blocks/save-content', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ id: meta.pageId, name: meta.blockName, document: this.doc })
+                    }).then(function (r) { return r.json(); })
+                      .then(function (j) {
+                          self.busy = false;
+                          if (j.code && j.code >= 400) {
+                              self.saveState = 'error'; self.renderUI();
+                              alert(j.message || '保存失败');
+                              return;
+                          }
+                          self.saveState = 'saved';
+                          self.refreshCanvas();
+                      })
+                      .catch(function () { self.busy = false; self.saveState = 'error'; self.renderUI(); });
+                    return;
+                }
                 this.api('draft/save', {
                     id: meta.pageId,
                     expectedVersion: this.draftVersion,
@@ -1435,6 +1457,7 @@
             },
             publishFlow() {
                 var self = this;
+                if (meta.saveBase === 'block') { this.saveDraft(); return; }
                 // 先保存草稿 → Build（预期版本为服务端新版本）→ Publish。
                 this.api('draft/save', {
                     id: meta.pageId,
@@ -1451,6 +1474,7 @@
                 });
             },
             buildAndPublish() {
+                if (meta.saveBase === 'block') { this.saveDraft(); return; }
                 if (confirm('将保存当前草稿并构建发布到线上，确认？')) this.publishFlow();
             },
 

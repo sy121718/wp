@@ -1,6 +1,7 @@
 package pagehttp
 
 import (
+	blockcontract "go_wp/internal/module/block/contract"
 	pagecontract "go_wp/internal/module/page/contract"
 	pagemodel "go_wp/internal/module/page/model"
 	pageservice "go_wp/internal/module/page/service"
@@ -17,9 +18,10 @@ import (
 func SetupPageRoutes(rg *gin.RouterGroup, db *gorm.DB,
 	artifacts artifactcontract.ArtifactService,
 	routes pubcontract.PublicationService,
-	projectService projectcontract.ProjectService) pagecontract.PageService {
+	projectService projectcontract.ProjectService,
+	blocks blockcontract.BlockService) pagecontract.PageService {
 	model := pagemodel.NewPageModel(db)
-	svc := pageservice.NewService(model, artifacts, routes, projectService)
+	svc := pageservice.NewService(model, artifacts, routes, projectService, blocks)
 	handle := NewHandle(svc)
 
 	g := rg.Group("/page")

@@ -19,21 +19,19 @@
             </div>
             <h3>字体</h3>
             <input type="text" name="fontFamily" class="theme-font-input" placeholder="正文字体栈，如：system-ui, sans-serif" value="{{.FontFamily}}">
-            <h3>全局页眉 / 页脚</h3>
+            <h3>全局页眉 / 页脚块</h3>
             <div class="theme-color-grid">
-                <label>页眉页面
-                    <select name="headerPageId" class="theme-font-input">
-                        <option value="">（未设置）</option>
-                        {{range _, p := .Pages}}
-                        <option value="{{p.ID}}" {{if p.ID == .HeaderPageID}}selected{{end}}>{{p.Path}}（{{p.Kind}}）</option>
+                <label>页眉块
+                    <select name="headerBlockId" class="theme-font-input">
+                        {{range _, b := .HeaderBlocks}}
+                        <option value="{{b.ID}}" {{if b.ID == .HeaderBlock}}selected{{end}}>{{b.Name}}</option>
                         {{end}}
                     </select>
                 </label>
-                <label>页脚页面
-                    <select name="footerPageId" class="theme-font-input">
-                        <option value="">（未设置）</option>
-                        {{range _, p := .Pages}}
-                        <option value="{{p.ID}}" {{if p.ID == .FooterPageID}}selected{{end}}>{{p.Path}}（{{p.Kind}}）</option>
+                <label>页脚块
+                    <select name="footerBlockId" class="theme-font-input">
+                        {{range _, b := .FooterBlocks}}
+                        <option value="{{b.ID}}" {{if b.ID == .FooterBlock}}selected{{end}}>{{b.Name}}</option>
                         {{end}}
                     </select>
                 </label>
@@ -48,7 +46,8 @@
         <p class="pages-empty">
             颜色与字体保存后合入该主题下全部页面的文档（settings.theme），构建产物注入 :root CSS 变量——
             组件中 var(--color-primary) 等变量全局生效；已发布页面需重新构建才会带新主题。
-            页眉/页脚引用当前仅保存，整站装配将在后续构建流程接入。
+            页眉/页脚块在构建页面时编译期内联进产物（访问面保持纯静态），保存后该主题下页面将标记为待重建。
+            没有候选块？先到「全局块」新建页眉/页脚块。
         </p>
     </section>
 </div>

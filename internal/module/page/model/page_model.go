@@ -117,6 +117,25 @@ func (m *Model) RefreshThemeForTheme(ctx context.Context, themeID string, themeJ
 	return err
 }
 
+// RefreshStructureForTheme 把主题的页眉/页脚块绑定批量合入挂在该主题下
+// 全部页面的 settings.structure（主题换绑全局块后调用，页面需重新构建生效）。
+func (m *Model) RefreshStructureForTheme(ctx context.Context, themeID string, structureJSON []byte) (err error) {
+	err = m.DB(ctx).Exec(
+		"UPDATE pages SET draft_document = jsonb_set(draft_document, '{settings,structure}', ?, true), updated_at = ? WHERE theme_id = ? AND deleted_at IS NULL",
+		structureJSON, time.Now().UTC(), themeID,
+	).Error
+	return err
+}
+
+// MarkStaleForTheme 把挂在该主题下全部页面标记为待重建（页眉/页脚块内容变更后调用）。
+func (m *Model) MarkStaleForTheme(ctx context.Context, themeID string) (err error) {
+	err = m.DB(ctx).Exec(
+		"UPDATE pages SET stale = true, updated_at = ? WHERE theme_id = ? AND deleted_at IS NULL",
+		time.Now().UTC(), themeID,
+	).Error
+	return err
+}
+
 // AttachThemeToUnassigned 把工程内尚未挂主题的页面挂到指定主题。
 // 工程首个主题创建时回填历史页面（迁移 020 的运行时兜底）。
 func (m *Model) AttachThemeToUnassigned(ctx context.Context, projectID, themeID string) (err error) {

@@ -37,7 +37,7 @@ func (s *Service) Create(ctx context.Context, req *pagedto.CreateReq) (res *page
 		return nil, err
 	}
 	// 站点主题合入页面文档（保存时快照，改主题时批量刷新）。
-	if doc, err = s.mergeProjectTheme(ctx, req.ProjectID, doc); err != nil {
+	if doc, err = s.mergeActiveTheme(ctx, req.ProjectID, doc); err != nil {
 		return nil, err
 	}
 	now := time.Now().UTC()
@@ -97,7 +97,7 @@ func (s *Service) SaveDraft(ctx context.Context, req *pagedto.SaveDraftReq) (res
 		return nil, errors.New(pageenums.ErrDraftVersionConflict)
 	}
 	// 站点主题合入（保存时快照）。
-	if doc, err = s.mergeProjectTheme(ctx, page.ProjectID, doc); err != nil {
+	if doc, err = s.mergeActiveTheme(ctx, page.ProjectID, doc); err != nil {
 		return nil, err
 	}
 

@@ -27,8 +27,10 @@
 
         <div class="wb-topbar-right">
             <span class="wb-status" id="wb-status">就绪</span>
+            {{if not .isBlock}}
             <a class="wb-btn wb-btn-ghost" id="wb-preview-link" href="/workbench/preview?id={{.pageId}}" target="_blank">预览</a>
             <button type="button" class="wb-btn wb-btn-primary" id="wb-publish">发布</button>
+            {{end}}
             <button type="button" class="wb-btn wb-btn-secondary" id="wb-save-draft">存草稿</button>
         </div>
     </header>
@@ -70,7 +72,7 @@
         {* ===== 中央画布 ===== *}
         <section class="wb-canvas-wrap">
             <div class="wb-canvas-frame" id="wb-canvas-frame">
-                <iframe id="wb-canvas" name="wb-canvas" title="画布" src="/workbench/preview?id={{.pageId}}&editor=1"></iframe>
+                <iframe id="wb-canvas" name="wb-canvas" title="画布" src="{{if .isBlock}}/workbench/block/preview?id={{.pageId}}&editor=1{{else}}/workbench/preview?id={{.pageId}}&editor=1{{end}}"></iframe>
             </div>
         </section>
 

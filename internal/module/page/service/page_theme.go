@@ -1,50 +1,61 @@
 package pageservice
 
-// 站点主题合并：project.settings.theme → 页面文档 settings.theme。
+// 站点主题与全局结构合入：激活主题 settings → 页面文档快照。
+//   - settings.theme     ← 主题 colors/fontFamily（展示层快照，构建注入 :root 变量）
+//   - settings.structure ← 主题 headerBlockId/footerBlockId（全局块槽位绑定快照，
+//     构建期由 assembleCompile 内联页眉/页脚块）
 // 页面保存/创建时快照合入（保证单页构建确定性）；
-// 项目主题变更时由设置页触发批量刷新（UpdateThemeForAllPages）。
+// 主题设置/绑定变更时由主题设置页触发批量刷新（RefreshThemeForTheme）。
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 
-	projectdto "go_wp/internal/module/project/dto"
+	"go_wp/internal/builder"
+	blockdto "go_wp/internal/module/block/dto"
 )
 
-// mergeProjectTheme 从站点工程 settings 读取 theme 并合入页面文档 settings.theme。
-func (s *Service) mergeProjectTheme(ctx context.Context, projectID string, doc json.RawMessage) (json.RawMessage, error) {
-	proj, err := s.project.Detail(ctx, &projectdto.DetailReq{ID: projectID})
-	if err != nil || proj == nil {
-		// 工程缺失不阻塞页面保存（主题为可选增强）。
+// mergeActiveTheme 把工程激活主题的设置合入页面文档：
+// settings.theme（颜色/字体）与 settings.structure（页眉/页脚块绑定）。
+// 无激活主题或查询失败时不合入（主题为可选增强，不阻塞页面保存）。
+func (s *Service) mergeActiveTheme(ctx context.Context, projectID string, doc json.RawMessage) (json.RawMessage, error) {
+	theme, err := s.project.GetActiveTheme(ctx, projectID)
+	if err != nil || theme == nil {
 		return doc, nil
 	}
-	theme, err := extractTheme(proj.Settings)
-	if err != nil || theme == nil {
-		return doc, err
+	var settings struct {
+		Colors     json.RawMessage `json:"colors"`
+		FontFamily string          `json:"fontFamily"`
+		Header     string          `json:"headerBlockId"`
+		Footer     string          `json:"footerBlockId"`
 	}
-	return mergeThemeIntoDoc(doc, theme)
+	if len(theme.Settings) > 0 {
+		if err := json.Unmarshal(theme.Settings, &settings); err != nil {
+			return doc, nil // 主题设置非法时忽略
+		}
+	}
+	// settings.theme 快照（仅当主题含颜色/字体设置）。
+	if len(settings.Colors) > 0 || settings.FontFamily != "" {
+		themeJSON, _ := json.Marshal(map[string]any{
+			"colors":     settings.Colors,
+			"fontFamily": settings.FontFamily,
+		})
+		if doc, err = mergeSettingsKey(doc, "theme", themeJSON); err != nil {
+			return nil, err
+		}
+	}
+	// settings.structure 快照（页眉/页脚块绑定）。
+	structureJSON, _ := json.Marshal(map[string]any{
+		"headerBlockId": settings.Header,
+		"footerBlockId": settings.Footer,
+	})
+	return mergeSettingsKey(doc, "structure", structureJSON)
 }
 
-// extractTheme 从 project settings JSON 提取 theme 字段。
-func extractTheme(settings json.RawMessage) (json.RawMessage, error) {
-	if len(settings) == 0 {
-		return nil, nil
-	}
-	var s struct {
-		Theme json.RawMessage `json:"theme"`
-	}
-	if err := json.Unmarshal(settings, &s); err != nil {
-		return nil, nil // settings 非法时忽略主题
-	}
-	if len(s.Theme) == 0 {
-		return nil, nil
-	}
-	return s.Theme, nil
-}
-
-// mergeThemeIntoDoc 把 theme 合入页面文档 settings.theme（深覆盖 settings 键，其余不动）。
-func mergeThemeIntoDoc(doc json.RawMessage, theme json.RawMessage) (json.RawMessage, error) {
+// mergeSettingsKey 深覆盖页面文档 settings 的单个键（theme/structure），其余键不动。
+func mergeSettingsKey(doc json.RawMessage, key string, value json.RawMessage) (json.RawMessage, error) {
 	var page struct {
 		Settings map[string]json.RawMessage `json:"settings"`
 		Root     json.RawMessage            `json:"root"`
@@ -55,7 +66,7 @@ func mergeThemeIntoDoc(doc json.RawMessage, theme json.RawMessage) (json.RawMess
 	if page.Settings == nil {
 		page.Settings = map[string]json.RawMessage{}
 	}
-	page.Settings["theme"] = theme
+	page.Settings[key] = value
 	settingsBytes, err := json.Marshal(page.Settings)
 	if err != nil {
 		return nil, err
@@ -82,7 +93,42 @@ func (s *Service) RefreshThemeForTheme(ctx context.Context, themeID string, them
 	return s.model.RefreshThemeForTheme(ctx, themeID, theme)
 }
 
+// RefreshStructureForTheme 把主题的页眉/页脚块绑定批量合入挂在该主题下全部页面。
+// 主题换绑全局块后调用；页面已发布产物需重新构建才会带新结构。
+func (s *Service) RefreshStructureForTheme(ctx context.Context, themeID string, structure json.RawMessage) error {
+	return s.model.RefreshStructureForTheme(ctx, themeID, structure)
+}
+
+// MarkStaleForTheme 把挂在该主题下全部页面标记为待重建（页眉/页脚块内容变更后调用）。
+func (s *Service) MarkStaleForTheme(ctx context.Context, themeID string) error {
+	return s.model.MarkStaleForTheme(ctx, themeID)
+}
+
 // AttachThemeToUnassigned 把工程内未挂主题的页面挂到指定主题（工程首个主题创建后回填历史页面）。
 func (s *Service) AttachThemeToUnassigned(ctx context.Context, projectID, themeID string) error {
 	return s.model.AttachThemeToUnassigned(ctx, projectID, themeID)
+}
+
+// compileBlockFragment 编译单个全局块为片段（HTML/CSS）；块缺失或非法时降级为空片段。
+// 绑定被删除的块不阻塞构建：页面产物退化为无页眉/页脚，保存主题绑定即可恢复。
+func (s *Service) compileBlockFragment(ctx context.Context, blockID string) (html, css string) {
+	if blockID == "" {
+		return "", ""
+	}
+	block, err := s.blocks.Detail(ctx, &blockdto.DetailReq{ID: blockID})
+	if err != nil || block == nil || len(block.Document) == 0 {
+		log.Printf("[assemble] 页眉/页脚块不可用 block=%s: %v", blockID, err)
+		return "", ""
+	}
+	page, err := builder.ParsePage(block.Document)
+	if err != nil {
+		log.Printf("[assemble] 块文档解析失败 block=%s: %v", blockID, err)
+		return "", ""
+	}
+	compiled, err := builder.Compile(page)
+	if err != nil {
+		log.Printf("[assemble] 块编译失败 block=%s: %v", blockID, err)
+		return "", ""
+	}
+	return compiled.HTML, compiled.CSS
 }

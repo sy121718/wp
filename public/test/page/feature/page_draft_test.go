@@ -8,6 +8,8 @@ import (
 
 	artifactmodel "go_wp/internal/module/artifact/model"
 	artifactservice "go_wp/internal/module/artifact/service"
+	blockmodel "go_wp/internal/module/block/model"
+	blockservice "go_wp/internal/module/block/service"
 	pagecontract "go_wp/internal/module/page/contract"
 	pagedto "go_wp/internal/module/page/dto"
 	pageenums "go_wp/internal/module/page/enums"
@@ -55,7 +57,8 @@ func newPageService(t *testing.T) (*gorm.DB, pagecontract.PageService, string) {
 	pageModel := pagemodel.NewPageModel(db)
 	artifacts := artifactservice.NewService(artifactmodel.NewArtifactModel(db))
 	routes := pubservice.NewService(pubmodel.NewPublicationModel(db))
-	return db, pageservice.NewService(pageModel, artifacts, routes, projects), project.ID
+	blocks := blockservice.NewService(blockmodel.NewBlockModel(db), projects)
+	return db, pageservice.NewService(pageModel, artifacts, routes, projects, blocks), project.ID
 }
 
 func TestPageDraftLifecycle(t *testing.T) {

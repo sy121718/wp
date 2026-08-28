@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	blockcontract "go_wp/internal/module/block/contract"
 	pagecontract "go_wp/internal/module/page/contract"
 	pagemodel "go_wp/internal/module/page/model"
 	projectcontract "go_wp/internal/module/project/contract"
@@ -31,28 +32,34 @@ type Service struct {
 	project   projectcontract.ProjectService
 	artifacts artifactcontract.ArtifactService
 	routes    pubcontract.PublicationService
+	blocks    blockcontract.BlockService
 
 	publisher *pipeline.Publisher
 	store     *pipeline.LocalStore
 }
 
 // NewService 创建 Page 服务；同时初始化本地产物根（GO_WP_ARTIFACT_ROOT 可覆盖）。
+// 构建注入装配感知编译器：页眉/页脚块按 settings.structure 快照内联（方案 C）。
 func NewService(model *pagemodel.Model, artifacts artifactcontract.ArtifactService,
-	routes pubcontract.PublicationService, project projectcontract.ProjectService) *Service {
+	routes pubcontract.PublicationService, project projectcontract.ProjectService,
+	blocks blockcontract.BlockService) *Service {
 	root := strings.TrimSpace(os.Getenv("GO_WP_ARTIFACT_ROOT"))
 	if root == "" {
 		root = filepath.Join("public", "runtime", "artifacts")
 	}
 	store := &pipeline.LocalStore{Root: root}
 	publication := &pipeline.LocalPublicationStore{ActiveRoot: filepath.Join(root, "public", "active")}
-	return &Service{
+	s := &Service{
 		model:     model,
 		artifacts: artifacts,
 		routes:    routes,
 		project:   project,
+		blocks:    blocks,
 		publisher: pipeline.NewPublisher(store, publication),
 		store:     store,
 	}
+	s.publisher.SetCompile(s.assembleCompile)
+	return s
 }
 
 // getExistingPage 查询未删除页面，统一映射未找到错误。

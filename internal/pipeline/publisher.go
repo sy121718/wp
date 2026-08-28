@@ -122,6 +122,15 @@ func NewPublisher(store Store, pub PublicationStore, opts ...Option) *Publisher 
 	return p
 }
 
+// SetCompile 运行时替换编译函数（装配感知编译注入，方案 C：页眉/页脚块内联）。
+func (p *Publisher) SetCompile(fn CompileFn) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if fn != nil {
+		p.compile = fn
+	}
+}
+
 // SaveDraft 保存草稿（0-A1 §4.1：仅更新草稿字段并追加历史版本快照，返回新版本号）。
 // expectedVersion 为乐观锁：页面不存在时为 0（创建），否则必须等于当前版本。
 func (p *Publisher) SaveDraft(pageID string, expectedVersion int, path string, docJSON []byte) (version int, err error) {

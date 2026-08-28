@@ -36,6 +36,15 @@ func (m *Model) ListThemes(ctx context.Context, projectID string) (list []ThemeE
 	return list, err
 }
 
+// ListThemesByBlockID 列出页眉/页脚槽位绑定了指定全局块的全部主题。
+// 用于全局块内容变更后的 stale 传播（调用方逐主题标记页面待重建）。
+func (m *Model) ListThemesByBlockID(ctx context.Context, blockID string) (list []ThemeEntity, err error) {
+	err = m.ThemeDB(ctx).
+		Where("settings->>'headerBlockId' = ? OR settings->>'footerBlockId' = ?", blockID, blockID).
+		Order("created_at ASC").Find(&list).Error
+	return list, err
+}
+
 // GetTheme 按 ID 查询主题。
 func (m *Model) GetTheme(ctx context.Context, id string) (e *ThemeEntity, err error) {
 	e = &ThemeEntity{}

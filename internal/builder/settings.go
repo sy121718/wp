@@ -33,6 +33,17 @@ type PageSettings struct {
 	Theme       ThemeSettings `json:"theme,omitempty"`
 	SEO         SEO        `json:"seo"`
 	BodyClasses []string   `json:"bodyClasses,omitempty"`
+	// Structure 全局结构绑定快照（保存时从激活主题 settings 合入）：
+	// 编译装配层读取，构建期内联页眉/页脚块（021_blocks.sql 方案 C）。
+	Structure StructureBindings `json:"structure,omitempty"`
+}
+
+// StructureBindings 页面对全局块的槽位绑定快照。
+type StructureBindings struct {
+	// HeaderBlockID 页眉全局块 ID（空 = 无页眉）。
+	HeaderBlockID string `json:"headerBlockId,omitempty"`
+	// FooterBlockID 页脚全局块 ID（空 = 无页脚）。
+	FooterBlockID string `json:"footerBlockId,omitempty"`
 }
 
 // PageLayout 页面版心控制。

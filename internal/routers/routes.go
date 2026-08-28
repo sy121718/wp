@@ -7,6 +7,7 @@ import (
 
 	adminhttp "go_wp/internal/module/admin/inbound/http"
 	artifacthttp "go_wp/internal/module/artifact/inbound/http"
+	blockhttp "go_wp/internal/module/block/inbound/http"
 	captcharouter "go_wp/internal/module/common/captcha/router"
 	dashboardhttp "go_wp/internal/module/dashboard/inbound/http"
 	mediahttp "go_wp/internal/module/media/inbound/http"
@@ -76,18 +77,19 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 		return
 	}
 
-	// 业务 API 路由（依赖顺序：project → artifact → publication → page）
+	// 业务 API 路由（依赖顺序：project → block → artifact → publication → page）
 	api := router.Group("/api")
 	captcharouter.SetupCaptchaRoutes(api)
 	mediahttp.SetupMediaRoutes(api, db)
 	projectService := projecthttp.SetupProjectRoutes(api, db)
+	blockSvc := blockhttp.SetupBlockRoutes(api, db, projectService)
 	artifactSvc := artifacthttp.SetupArtifactRoutes(api, db)
 	publicationSvc := pubhttp.SetupPublicationRoutes(api, db)
-	pageService := pagehttp.SetupPageRoutes(api, db, artifactSvc, publicationSvc, projectService)
+	pageService := pagehttp.SetupPageRoutes(api, db, artifactSvc, publicationSvc, projectService, blockSvc)
 	adminhttp.SetupAdminRoutes(api, db)
 
-	// 页面路由（编辑器外壳依赖 page 契约，置于 API 装配之后）
-	dashboardhttp.SetupDashboardRoutes(router, pageService, projectService)
+	// 页面路由（编辑器外壳依赖 page/block 契约，置于 API 装配之后）
+	dashboardhttp.SetupDashboardRoutes(router, pageService, projectService, blockSvc)
 
 	// 未匹配路由返回 404
 	router.NoRoute(func(c *gin.Context) {

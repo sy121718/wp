@@ -20,6 +20,8 @@ type ProjectService interface {
 
 	// ListThemes 列出工程全部主题（激活在前）。
 	ListThemes(ctx context.Context, projectID string) (res []projectdto.ThemeResp, err error)
+	// ListThemesByBlockID 列出绑定了指定全局块（页眉/页脚槽位）的全部主题。
+	ListThemesByBlockID(ctx context.Context, blockID string) (res []projectdto.ThemeResp, err error)
 	// GetTheme 按 ID 取单个主题。
 	GetTheme(ctx context.Context, id string) (res *projectdto.ThemeResp, err error)
 	// CreateTheme 新建主题（同工程名称唯一；工程首个主题自动激活）。

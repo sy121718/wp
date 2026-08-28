@@ -27,6 +27,11 @@ type PageService interface {
 	UpdateURL(ctx context.Context, req *pagedto.UpdateURLReq) (res *pagedto.PublishResp, err error)
 	// RefreshThemeForTheme 把主题设置批量合入挂在该主题下全部页面（主题设置保存后调用）。
 	RefreshThemeForTheme(ctx context.Context, themeID string, theme json.RawMessage) error
+	// RefreshStructureForTheme 把主题的页眉/页脚块绑定批量合入挂在该主题下
+	// 全部页面的 settings.structure（主题换绑全局块后调用）。
+	RefreshStructureForTheme(ctx context.Context, themeID string, structure json.RawMessage) error
+	// MarkStaleForTheme 把挂在该主题下全部页面标记为待重建（页眉/页脚块内容变更后调用）。
+	MarkStaleForTheme(ctx context.Context, themeID string) error
 	// AttachThemeToUnassigned 把工程内未挂主题的页面挂到指定主题（工程首个主题创建后回填历史页面）。
 	AttachThemeToUnassigned(ctx context.Context, projectID, themeID string) error
 }

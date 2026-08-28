@@ -1,0 +1,128 @@
+{* admin/blocks.html — 全局块管理：页眉/页脚/内容块（编辑进工作台） *}
+{* Jet 方言：range 用 range 关键字；方法调用圆括号；extends 相对本目录 *}
+{{extends "layout.html"}}
+{{block body()}}
+<div class="pages-wrap">
+    {{if len(.Projects) == 0}}
+    <section class="pages-card">
+        <p class="pages-empty">请先在「页面」里创建一个站点工程，再管理全局块。</p>
+    </section>
+    {{else}}
+    <section class="pages-card">
+        <h2>全局块</h2>
+        {* 工程切换 *}
+        <form method="get" action="/admin/blocks" class="pages-form">
+            <select name="project" onchange="this.form.submit()">
+                {{range _, p := .Projects}}
+                <option value="{{p.ID}}" {{if p.ID == .SelectedProject}}selected{{end}}>{{p.Name}}</option>
+                {{end}}
+            </select>
+        </form>
+        {* 新建块 *}
+        <form method="post" action="/admin/blocks/create" class="pages-form mt-md">
+            <input type="hidden" name="projectId" value="{{.SelectedProject}}">
+            <input type="text" name="name" placeholder="块名称，如：站点页眉" required>
+            <select name="kind">
+                <option value="header">页眉</option>
+                <option value="footer">页脚</option>
+                <option value="block">内容块</option>
+            </select>
+            <button type="submit" class="btn btn-primary">新建并编辑</button>
+        </form>
+    </section>
+
+    <section class="pages-card">
+        <h2>页眉</h2>
+        {{if len(.Headers) == 0}}
+        <p class="pages-empty">还没有页眉块。在「主题管理 → 设置」里把页眉块绑定到主题后，整站页面构建时自动内联。</p>
+        {{else}}
+        <table class="pages-table">
+            <thead><tr><th>名称</th><th>更新时间</th><th>操作</th></tr></thead>
+            <tbody>
+            {{range _, b := .Headers}}
+            <tr>
+                <td>{{b.Name}}</td>
+                <td>{{b.UpdatedAt}}</td>
+                <td class="pages-actions">
+                    <a class="btn" href="/workbench?block={{b.ID}}">编辑</a>
+                    <form method="post" action="/admin/blocks/delete" class="pages-form" style="display:inline"
+                          onsubmit="return confirm('确定删除块「{{b.Name}}」？绑定了它的主题下页面将重新构建。')">
+                        <input type="hidden" name="id" value="{{b.ID}}">
+                        <input type="hidden" name="projectId" value="{{.SelectedProject}}">
+                        <button type="submit" class="btn">删除</button>
+                    </form>
+                </td>
+            </tr>
+            {{end}}
+            </tbody>
+        </table>
+        {{end}}
+    </section>
+
+    <section class="pages-card">
+        <h2>页脚</h2>
+        {{if len(.Footers) == 0}}
+        <p class="pages-empty">还没有页脚块。</p>
+        {{else}}
+        <table class="pages-table">
+            <thead><tr><th>名称</th><th>更新时间</th><th>操作</th></tr></thead>
+            <tbody>
+            {{range _, b := .Footers}}
+            <tr>
+                <td>{{b.Name}}</td>
+                <td>{{b.UpdatedAt}}</td>
+                <td class="pages-actions">
+                    <a class="btn" href="/workbench?block={{b.ID}}">编辑</a>
+                    <form method="post" action="/admin/blocks/delete" class="pages-form" style="display:inline"
+                          onsubmit="return confirm('确定删除块「{{b.Name}}」？绑定了它的主题下页面将重新构建。')">
+                        <input type="hidden" name="id" value="{{b.ID}}">
+                        <input type="hidden" name="projectId" value="{{.SelectedProject}}">
+                        <button type="submit" class="btn">删除</button>
+                    </form>
+                </td>
+            </tr>
+            {{end}}
+            </tbody>
+        </table>
+        {{end}}
+    </section>
+
+    <section class="pages-card">
+        <h2>内容块</h2>
+        {{if len(.Blocks) == 0}}
+        <p class="pages-empty">还没有内容块。内容块用于跨页面复用的结构片段（对应 WP 的同步块），页面内引用将在组件体系（0-B）接入。</p>
+        {{else}}
+        <table class="pages-table">
+            <thead><tr><th>名称</th><th>更新时间</th><th>操作</th></tr></thead>
+            <tbody>
+            {{range _, b := .Blocks}}
+            <tr>
+                <td>{{b.Name}}</td>
+                <td>{{b.UpdatedAt}}</td>
+                <td class="pages-actions">
+                    <a class="btn" href="/workbench?block={{b.ID}}">编辑</a>
+                    <form method="post" action="/admin/blocks/delete" class="pages-form" style="display:inline"
+                          onsubmit="return confirm('确定删除块「{{b.Name}}」？')">
+                        <input type="hidden" name="id" value="{{b.ID}}">
+                        <input type="hidden" name="projectId" value="{{.SelectedProject}}">
+                        <button type="submit" class="btn">删除</button>
+                    </form>
+                </td>
+            </tr>
+            {{end}}
+            </tbody>
+        </table>
+        {{end}}
+    </section>
+
+    <section class="pages-card">
+        <h2>说明</h2>
+        <p class="pages-empty">
+            全局块 = 跨页面复用的结构片段（对应 WP 的 HTML 块 / template part）。页眉/页脚块在
+            「主题管理 → 设置」里绑定到主题，构建页面时编译期内联进产物——访问面保持纯静态；
+            块内容变更后，绑定了它的主题下页面自动标为待重建。
+        </p>
+    </section>
+    {{end}}
+</div>
+{{end}}

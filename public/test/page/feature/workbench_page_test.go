@@ -20,6 +20,7 @@ func TestWorkbenchPageShell(t *testing.T) {
 		c.HTML(http.StatusOK, "workbench/layout", gin.H{
 			"title":     "测试页",
 			"pageId":    "p-1",
+			"isBlock":   false,
 			"draftPath": "/about",
 			"version":   3,
 			"document":  `{"settings":{},"root":[]}`,

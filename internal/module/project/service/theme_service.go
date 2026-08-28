@@ -34,6 +34,19 @@ func (s *Service) ListThemes(ctx context.Context, projectID string) (res []proje
 	return res, nil
 }
 
+// ListThemesByBlockID 列出页眉/页脚槽位绑定了指定全局块的全部主题。
+func (s *Service) ListThemesByBlockID(ctx context.Context, blockID string) (res []projectdto.ThemeResp, err error) {
+	entities, err := s.model.ListThemesByBlockID(ctx, blockID)
+	if err != nil {
+		return nil, err
+	}
+	res = make([]projectdto.ThemeResp, 0, len(entities))
+	for i := range entities {
+		res = append(res, toThemeResp(&entities[i]))
+	}
+	return res, nil
+}
+
 // GetTheme 按 ID 取单个主题。
 func (s *Service) GetTheme(ctx context.Context, id string) (res *projectdto.ThemeResp, err error) {
 	entity, err := s.model.GetTheme(ctx, id)

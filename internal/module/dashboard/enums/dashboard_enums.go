@@ -13,3 +13,6 @@ const MsgThemesTitle = "主题管理"
 
 // MsgThemeSettingsTitle 单主题设置页标题。
 const MsgThemeSettingsTitle = "主题设置"
+
+// MsgBlocksTitle 全局块管理页标题。
+const MsgBlocksTitle = "全局块"

@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 
+	blockcontract "go_wp/internal/module/block/contract"
+	blockdto "go_wp/internal/module/block/dto"
 	dashboardenums "go_wp/internal/module/dashboard/enums"
 	pagecontract "go_wp/internal/module/page/contract"
 	pagedto "go_wp/internal/module/page/dto"
@@ -25,11 +27,13 @@ import (
 type Handle struct {
 	pages    pagecontract.PageService
 	projects projectcontract.ProjectService
+	blocks   blockcontract.BlockService
 }
 
-// NewHandle 创建页面处理器；pages/projects 为 page 与 project 模块契约。
-func NewHandle(pages pagecontract.PageService, projects projectcontract.ProjectService) *Handle {
-	return &Handle{pages: pages, projects: projects}
+// NewHandle 创建页面处理器；pages/projects/blocks 为 page、project 与 block 模块契约。
+func NewHandle(pages pagecontract.PageService, projects projectcontract.ProjectService,
+	blocks blockcontract.BlockService) *Handle {
+	return &Handle{pages: pages, projects: projects, blocks: blocks}
 }
 
 // Dashboard 仪表盘页面。
@@ -41,7 +45,12 @@ func (h *Handle) Dashboard(c *gin.Context) {
 }
 
 // Workbench 可视化编辑器外壳：注入 Page 草稿 AST 与保存接口所需元数据。
+// ?block=ID 进入全局块编辑模式（同一画布，保存走块接口、无发布链）。
 func (h *Handle) Workbench(c *gin.Context) {
+	if blockID := strings.TrimSpace(c.Query("block")); blockID != "" {
+		h.workbenchBlock(c, blockID)
+		return
+	}
 	pageID := strings.TrimSpace(c.Query("id"))
 	if pageID == "" {
 		c.String(http.StatusBadRequest, "缺少页面 id")
@@ -81,11 +90,57 @@ func (h *Handle) Workbench(c *gin.Context) {
 	c.HTML(http.StatusOK, "workbench/layout", gin.H{
 		"title":     workbenchTitle(page),
 		"pageId":    page.ID,
+		"isBlock":   false,
 		"draftPath": page.DraftPath,
 		"version":   page.DraftVersion,
 		"document":  string(documentJSON),
 		"meta":      string(metaJSON),
 		"schemas":   string(schemasJSON),
+	})
+}
+
+// workbenchBlock 全局块编辑模式：复用工作台画布与检查器，
+// 保存走 /api/block/update（无发布链、无 URL），meta.saveBase 指示前端切换接口前缀。
+func (h *Handle) workbenchBlock(c *gin.Context, blockID string) {
+	block, err := h.blocks.Detail(c.Request.Context(), &blockdto.DetailReq{ID: blockID})
+	if err != nil || block == nil {
+		c.String(http.StatusNotFound, "全局块不存在")
+		return
+	}
+	documentJSON, err := json.Marshal(block.Document)
+	if err != nil {
+		c.String(http.StatusInternalServerError, "块文档序列化失败")
+		return
+	}
+	metaJSON, err := json.Marshal(gin.H{
+		"pageId":    block.ID, // 复用键名：前端保存逻辑按 saveBase 切换接口
+		"saveBase":  "block",
+		"blockName": block.Name,
+		"kind":      block.Kind,
+		"draftPath": "",
+		"version":   0,
+	})
+	if err != nil {
+		c.String(http.StatusInternalServerError, "编辑器元数据序列化失败")
+		return
+	}
+	schemas, err := builder.ComponentSchemas()
+	if err != nil {
+		c.String(http.StatusInternalServerError, "组件 schema 生成失败")
+		return
+	}
+	schemasJSON, err := json.Marshal(schemas)
+	if err != nil {
+		c.String(http.StatusInternalServerError, "组件 schema 序列化失败")
+		return
+	}
+	c.HTML(http.StatusOK, "workbench/layout", gin.H{
+		"title":    "编辑块：" + block.Name,
+		"pageId":   block.ID,
+		"isBlock":  true,
+		"document": string(documentJSON),
+		"meta":     string(metaJSON),
+		"schemas":  string(schemasJSON),
 	})
 }
 
@@ -103,6 +158,21 @@ func (h *Handle) Preview(c *gin.Context) {
 		return
 	}
 	h.renderPreview(c, page.DraftDocument, c.Query("editor") == "1")
+}
+
+// BlockPreview 全局块画布预览（工作台块编辑模式 iframe 内嵌）。
+func (h *Handle) BlockPreview(c *gin.Context) {
+	blockID := strings.TrimSpace(c.Query("id"))
+	if blockID == "" {
+		c.String(http.StatusBadRequest, "缺少块 id")
+		return
+	}
+	block, err := h.blocks.Detail(c.Request.Context(), &blockdto.DetailReq{ID: blockID})
+	if err != nil || block == nil {
+		c.String(http.StatusNotFound, "全局块不存在")
+		return
+	}
+	h.renderPreview(c, block.Document, c.Query("editor") == "1")
 }
 
 // PreviewDraft 基于未保存 AST 返回临时预览，不持久化、不写 Artifact、不影响发布指针。
