@@ -88,6 +88,48 @@ func (m *Model) GetByHash(ctx context.Context, pageID, hash string) (e *PageArti
 	return e, nil
 }
 
+// GetByPageVersion 按 (pageID, version) 查询产物记录。
+// page_artifacts 以 (page_id, version) 唯一：同一草稿版本重构建（编译器升级
+// 导致 hash 变化）时应替换该行产物指针，而非插入新行。
+func (m *Model) GetByPageVersion(ctx context.Context, pageID string, version int64) (e *PageArtifactEntity, err error) {
+	e = &PageArtifactEntity{}
+	if err = m.DB(ctx).Where("page_id = ? AND version = ?", pageID, version).First(e).Error; err != nil {
+		return nil, err
+	}
+	return e, nil
+}
+
+// ReplaceArtifactContent 同版本重构建时替换产物指针与归档内容（含对象闭包重建）。
+func (m *Model) ReplaceArtifactContent(ctx context.Context, id string, entity *PageArtifactEntity, objects []PageArtifactObjectEntity) (err error) {
+	return m.Transaction(ctx, func(tx *gorm.DB) error {
+		if err = tx.Model(&PageArtifactEntity{}).Where("id = ?", id).Updates(map[string]interface{}{
+			"source_document":             entity.SourceDocument,
+			"page_document_schema_version": entity.PageDocumentSchemaVersion,
+			"source_hash":                 entity.SourceHash,
+			"build_input_manifest":        entity.BuildInputManifest,
+			"build_input_hash":            entity.BuildInputHash,
+			"artifact_provider":           entity.ArtifactProvider,
+			"artifact_key":                entity.ArtifactKey,
+			"artifact_hash":               entity.ArtifactHash,
+			"compiler_version":            entity.CompilerVersion,
+			"registry_version":            entity.RegistryVersion,
+			"manifest":                    entity.Manifest,
+		}).Error; err != nil {
+			return err
+		}
+		if err = tx.Where("artifact_id = ?", id).Delete(&PageArtifactObjectEntity{}).Error; err != nil {
+			return err
+		}
+		for i := range objects {
+			objects[i].ArtifactID = id
+			if err = tx.Create(&objects[i]).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
 // GetByID 按产物行 ID 查询产物记录。
 func (m *Model) GetByID(ctx context.Context, id string) (e *PageArtifactEntity, err error) {
 	e = &PageArtifactEntity{}

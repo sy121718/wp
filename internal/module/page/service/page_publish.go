@@ -306,7 +306,7 @@ func (s *Service) ensureArtifactRow(ctx context.Context, page *pagemodel.PageEnt
 	if err != nil {
 		return "", err
 	}
-	recorded, err := s.artifacts.Record(ctx, &artifactdto.RecordReq{
+	recorded, err := s.artifacts.EnsureRecord(ctx, &artifactdto.RecordReq{
 		ArtifactID:       uuid.NewString(),
 		PageID:           page.ID,
 		Version:          page.DraftVersion,

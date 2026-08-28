@@ -631,7 +631,21 @@
                         if (kind === 'number') value = input.value === '' ? '' : Number(input.value);
                         commit(path, value, after);
                     });
-                    wrap.appendChild(input); panel.appendChild(wrap);
+                    wrap.appendChild(input);
+                    // 图片类字段附「媒体库」按钮：弹层点选或上传后回填 URL。
+                    if (kind === 'input' && /\.(src|bgImage)$/.test(path)) {
+                        var mediaBtn = document.createElement('button');
+                        mediaBtn.type = 'button'; mediaBtn.className = 'wb-btn wb-btn-secondary wb-btn-sm wb-media-pick';
+                        mediaBtn.textContent = '媒体库';
+                        mediaBtn.addEventListener('click', function () {
+                            self.openMediaPicker(function (url) {
+                                input.value = url;
+                                input.dispatchEvent(new Event('change'));
+                            });
+                        });
+                        wrap.appendChild(mediaBtn);
+                    }
+                    panel.appendChild(wrap);
                 }
                 function checkbox(label, path) {
                     var wrap = document.createElement('label'); wrap.className = 'wb-check-field';
@@ -753,6 +767,64 @@
                         var none2 = document.createElement('p'); none2.className = 'wb-empty'; none2.textContent = '该组件暂无内容项'; panel.appendChild(none2);
                     }
                 }
+            },
+
+            // ---------------- 媒体库选择器 ----------------
+            _mediaPickTarget: null,
+            openMediaPicker(onPick) {
+                this._mediaPickTarget = onPick;
+                var modal = document.getElementById('wb-media-modal');
+                if (!modal) return;
+                modal.hidden = false;
+                this.loadMediaList();
+            },
+            closeMediaPicker() {
+                var modal = document.getElementById('wb-media-modal');
+                if (modal) modal.hidden = true;
+                this._mediaPickTarget = null;
+            },
+            loadMediaList() {
+                var grid = document.getElementById('wb-media-grid');
+                if (!grid) return;
+                var self = this;
+                grid.innerHTML = '<p class="wb-empty">加载中…</p>';
+                fetch('/api/media/list?page=1&limit=60&file_type=image')
+                    .then(function (r) { return r.json(); })
+                    .then(function (j) {
+                        grid.innerHTML = '';
+                        var list = (j.data && j.data.list) || [];
+                        if (!list.length) {
+                            grid.innerHTML = '<p class="wb-empty">媒体库为空，点右上「上传图片」</p>';
+                            return;
+                        }
+                        list.forEach(function (item) {
+                            if (!item.url) return;
+                            var cell = document.createElement('button');
+                            cell.type = 'button'; cell.className = 'wb-media-cell'; cell.title = item.file_name || '';
+                            var img = document.createElement('img'); img.src = item.url; img.alt = item.file_name || '';
+                            cell.appendChild(img);
+                            var cap = document.createElement('span'); cap.textContent = item.file_name || ''; cell.appendChild(cap);
+                            cell.addEventListener('click', function () {
+                                if (self._mediaPickTarget) self._mediaPickTarget(item.url);
+                                self.closeMediaPicker();
+                            });
+                            grid.appendChild(cell);
+                        });
+                    })
+                    .catch(function () { grid.innerHTML = '<p class="wb-empty">加载失败</p>'; });
+            },
+            uploadMedia(file) {
+                if (!file) return;
+                var self = this;
+                var form = new FormData();
+                form.append('file', file);
+                fetch('/api/media/upload', { method: 'POST', body: form })
+                    .then(function (r) { return r.json(); })
+                    .then(function (j) {
+                        if (j.code && j.code >= 400) { alert(j.message || '上传失败'); return; }
+                        self.loadMediaList();
+                    })
+                    .catch(function () { alert('上传失败'); });
             },
 
             // ---------------- API 接线（草稿保存 / 构建 / 发布） ----------------
@@ -890,6 +962,20 @@
                     self.libraryFilter = libSearch.value;
                     self.renderPalette();
                 });
+                // 媒体库弹层：关闭/遮罩/上传。
+                var mediaClose = document.getElementById('wb-media-close');
+                if (mediaClose) mediaClose.addEventListener('click', function () { self.closeMediaPicker(); });
+                var mediaMask = document.querySelector('#wb-media-modal .wb-media-mask');
+                if (mediaMask) mediaMask.addEventListener('click', function () { self.closeMediaPicker(); });
+                var mediaUpBtn = document.getElementById('wb-media-upload-btn');
+                var mediaUpInput = document.getElementById('wb-media-upload-input');
+                if (mediaUpBtn && mediaUpInput) {
+                    mediaUpBtn.addEventListener('click', function () { mediaUpInput.click(); });
+                    mediaUpInput.addEventListener('change', function () {
+                        if (mediaUpInput.files && mediaUpInput.files[0]) self.uploadMedia(mediaUpInput.files[0]);
+                        mediaUpInput.value = '';
+                    });
+                }
                 var controls = {
                     'wb-device-desktop': function () { self.setDevice('desktop'); },
                     'wb-device-tablet': function () { self.setDevice('tablet'); },

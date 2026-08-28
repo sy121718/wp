@@ -103,12 +103,18 @@ func renderImgTag(meta *core.MediaMeta, alt, title string, opts ImageHTMLOptions
 		sb.WriteString(html.EscapeString(opts.Class))
 		sb.WriteString("\"")
 	}
-	// 宽高必写：浏览器预留排版空间，杜绝前端排版抖动。
-	sb.WriteString(" width=\"")
-	sb.WriteString(strconv.Itoa(meta.Width))
-	sb.WriteString("\" height=\"")
-	sb.WriteString(strconv.Itoa(meta.Height))
-	sb.WriteString("\"")
+	// 宽高已知时必写：浏览器预留排版空间，杜绝前端排版抖动。
+	// 未知（0）时不输出：写 0 会让图片不可见且制造 CLS。
+	if meta.Width > 0 {
+		sb.WriteString(" width=\"")
+		sb.WriteString(strconv.Itoa(meta.Width))
+		sb.WriteString("\"")
+	}
+	if meta.Height > 0 {
+		sb.WriteString(" height=\"")
+		sb.WriteString(strconv.Itoa(meta.Height))
+		sb.WriteString("\"")
+	}
 	if opts.lazyValue() {
 		sb.WriteString(" loading=\"lazy\"")
 	} else if opts.Loading == "eager" {

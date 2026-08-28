@@ -7,7 +7,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{.title}} — go_wp 工作台</title>
     <link rel="stylesheet" href="/static/css/theme.css">
-    <link rel="stylesheet" href="/static/css/workbench.css?v=20260828b">
+    <link rel="stylesheet" href="/static/css/workbench.css?v=20260828c">
 </head>
 <body class="wb-body">
 
@@ -96,9 +96,24 @@
     </footer>
 
     {* 草稿数据岛：workbench.js 读取并初始化前端状态机 *}
+    {* 媒体库选择器弹层：图片字段点击「媒体库」打开,点选回填,支持直接上传 *}
+    <div id="wb-media-modal" hidden>
+        <div class="wb-media-mask"></div>
+        <div class="wb-media-panel">
+            <div class="wb-media-head">
+                <strong>媒体库</strong>
+                <span class="wb-flex-spacer"></span>
+                <button type="button" class="wb-btn wb-btn-secondary wb-btn-sm" id="wb-media-upload-btn">上传图片</button>
+                <input type="file" id="wb-media-upload-input" accept="image/*" hidden>
+                <button type="button" class="wb-icon-btn" id="wb-media-close" title="关闭">×</button>
+            </div>
+            <div class="wb-media-grid" id="wb-media-grid"><p class="wb-empty">加载中…</p></div>
+        </div>
+    </div>
+
     <script type="application/json" id="wb-bootstrap">{{ .document | unsafe }}</script>
     <script type="application/json" id="wb-meta">{{ .meta | unsafe }}</script>
     <script type="application/json" id="wb-schemas">{{ .schemas | unsafe }}</script>
-    <script src="/static/js/workbench.js?v=20260828"></script>
+    <script src="/static/js/workbench.js?v=20260828c"></script>
 </body>
 </html>

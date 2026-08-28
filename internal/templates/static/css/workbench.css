@@ -167,3 +167,33 @@
 }
 .wb-node.is-selected .wb-node-actions { background: #eaf1fe; }
 
+
+/* ===== 媒体库选择器弹层 ===== */
+#wb-media-modal { position: fixed; inset: 0; z-index: 100; }
+#wb-media-modal[hidden] { display: none; }
+.wb-media-mask { position: absolute; inset: 0; background: rgba(15,23,42,.45); }
+.wb-media-panel {
+    position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+    width: min(640px, 92vw); max-height: 80vh;
+    display: flex; flex-direction: column;
+    background: var(--c-surface, #fff); border-radius: 12px;
+    box-shadow: 0 20px 60px rgba(0,0,0,.25); overflow: hidden;
+}
+.wb-media-head { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--c-border, #e5e7eb); }
+.wb-media-head strong { font-size: 14px; }
+.wb-media-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    gap: 10px; padding: 14px 16px; overflow-y: auto;
+}
+.wb-media-cell {
+    border: 1px solid var(--c-border, #e5e7eb); border-radius: 8px; cursor: pointer;
+    background: var(--c-surface, #fff); padding: 6px; text-align: left;
+}
+.wb-media-cell:hover { border-color: var(--c-primary, #2563eb); box-shadow: 0 2px 8px rgba(37,99,235,.15); }
+.wb-media-cell img { width: 100%; height: 84px; object-fit: cover; border-radius: 5px; display: block; background: #f3f4f6; }
+.wb-media-cell span { display: block; margin-top: 4px; font-size: 11px; color: var(--c-text-mute, #6b7280); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wb-field { position: relative; }
+.wb-media-pick { margin-top: 6px; }
+/* 输入框与媒体按钮同行:按钮绝对定位右侧,输入框留出空间 */
+.wb-field .wb-media-pick { position: absolute; right: 6px; bottom: 6px; padding: 2px 8px; font-size: 11px; }
+

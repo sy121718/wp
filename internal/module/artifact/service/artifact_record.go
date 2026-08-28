@@ -126,6 +126,70 @@ func (s *Service) findByHash(ctx context.Context, pageID, hash string) (e *artif
 	return e, true, nil
 }
 
+// EnsureRecord 幂等归档：同 (pageID, hash) 直接返回；同 (pageID, version)
+// 重构建（编译器升级导致 hash 变化）时替换该行产物指针与对象闭包；
+// 否则新建。确定性构建模型下同版本产物的唯一正确语义。
+func (s *Service) EnsureRecord(ctx context.Context, req *artifactdto.RecordReq) (res *artifactdto.ArtifactResp, err error) {
+	if req == nil {
+		return nil, errors.New(artifactenums.ErrInvalidArtifact)
+	}
+	if e, exists, err := s.findByHash(ctx, req.PageID, req.ArtifactHash); err != nil {
+		return nil, err
+	} else if exists {
+		return toResp(e), nil
+	}
+	// 同版本已有记录：替换产物内容（UNIQUE(page_id, version) 允许恰好一行）。
+	if e, err := s.model.GetByPageVersion(ctx, req.PageID, req.Version); err == nil {
+		var parsedManifest struct {
+			Files map[string]string `json:"files"`
+		}
+		if err = json.Unmarshal(req.Manifest, &parsedManifest); err != nil || parsedManifest.Files == nil {
+			return nil, errors.New(artifactenums.ErrInvalidArtifact)
+		}
+		now := time.Now().UTC()
+		newEntity := &artifactmodel.PageArtifactEntity{
+			ID:                        e.ID,
+			PageID:                    req.PageID,
+			Version:                   req.Version,
+			SourceDocument:            req.SourceDocument,
+			PageDocumentSchemaVersion: req.SchemaVersion,
+			SourceHash:                req.SourceHash,
+			BuildInputManifest:        req.Manifest,
+			BuildInputHash:            req.BuildInputHash,
+			ArtifactProvider:          req.ArtifactProvider,
+			ArtifactKey:               req.ArtifactKey,
+			ArtifactHash:              req.ArtifactHash,
+			CompilerVersion:           req.CompilerVersion,
+			RegistryVersion:           req.RegistryVersion,
+			Manifest:                  req.Manifest,
+			PayloadState:              e.PayloadState,
+			Note:                      e.Note,
+			CreatedBy:                 e.CreatedBy,
+			CreatedAt:                 e.CreatedAt,
+		}
+		objects := make([]artifactmodel.PageArtifactObjectEntity, 0, len(parsedManifest.Files))
+		for fileHash := range parsedManifest.Files {
+			if strings.TrimSpace(fileHash) == "" {
+				continue
+			}
+			objects = append(objects, artifactmodel.PageArtifactObjectEntity{
+				ArtifactID: e.ID, ContentHash: fileHash,
+			})
+			if err = ensureContentObject(s.model.DB(ctx), fileHash, req.ArtifactProvider, req.ArtifactKey, now); err != nil {
+				return nil, err
+			}
+		}
+		if err = s.model.ReplaceArtifactContent(ctx, e.ID, newEntity, objects); err != nil {
+			return nil, mapPersistenceError(err)
+		}
+		return toResp(newEntity), nil
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
+	}
+	// 全新记录。
+	return s.Record(ctx, req)
+}
+
 // ensureContentObject 幂等写入共享内容对象。
 func ensureContentObject(tx *gorm.DB, contentHash, provider, objectKey string, now time.Time) error {
 	var count int64
