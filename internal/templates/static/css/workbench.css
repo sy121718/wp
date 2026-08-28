@@ -248,3 +248,20 @@
 .wb-dev-btn.is-active { border-color: var(--c-primary, #2563eb); color: var(--c-primary, #2563eb); }
 .wb-dev-btn.has-val { font-weight: 700; color: var(--c-primary, #2563eb); }
 
+
+/* ===== 四向维度控件 ===== */
+.wb-field-dims .wb-dims-grid {
+    display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)) auto auto;
+    gap: 4px; align-items: center; width: 100%;
+}
+.wb-dims-input {
+    width: 100%; box-sizing: border-box; padding: 6px 4px; font-size: 12px;
+    border: 1px solid var(--c-border, #e5e7eb); border-radius: 6px; text-align: center;
+}
+.wb-dims-input:focus { border-color: var(--c-primary, #2563eb); outline: none; }
+.wb-dims-link {
+    border: 1px solid var(--c-border, #e5e7eb); background: var(--c-surface, #fff);
+    border-radius: 6px; cursor: pointer; font-size: 12px; padding: 5px 6px;
+}
+.wb-dims-link.is-linked { background: rgba(37,99,235,.1); border-color: var(--c-primary, #2563eb); }
+

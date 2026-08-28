@@ -935,6 +935,107 @@
                     wrap.appendChild(row2); panel.appendChild(wrap);
                     load(device);
                 }
+                // 四向维度输入(WP 式):上右下左 + 链接联动 + 三端切换。
+                // 值形态为 CSS 简写字符串(单值/两值/四值),编译端 padding/margin 直接输出,
+                // 后端零改动。继承语义:某端未设置则回退桌面值。
+                function dimensionsField(label, objPath, units) {
+                    units = units || ['px', '%', 'em', 'rem', 'vw'];
+                    var wrap = document.createElement('div'); wrap.className = 'wb-field wb-field-dims';
+                    var caption = document.createElement('label'); caption.textContent = label; wrap.appendChild(caption);
+                    var device = 'desktop';
+                    var linked = true;
+                    var inputs = [];  // [top, right, bottom, left]
+                    var unitSel = document.createElement('select'); unitSel.className = 'wb-unit-select';
+                    units.forEach(function (u) {
+                        var o = document.createElement('option'); o.value = u; o.textContent = u; unitSel.appendChild(o);
+                    });
+                    var linkBtn = document.createElement('button');
+                    linkBtn.type = 'button'; linkBtn.className = 'wb-dims-link is-linked'; linkBtn.textContent = '🔗'; linkBtn.title = '四边联动';
+                    linkBtn.addEventListener('click', function () {
+                        linked = !linked;
+                        linkBtn.classList.toggle('is-linked', linked);
+                        linkBtn.textContent = linked ? '🔗' : '⛓️‍💥';
+                    });
+                    function parseShorthand(raw) {
+                        var parts = String(raw || '').trim().split(/\s+/).filter(Boolean);
+                        if (!parts.length) return ['', '', '', ''];
+                        function strip(v) { var m = v.match(/^(-?[0-9.]+)\s*([a-z%]+)$/i); return m ? m[1] : v; }
+                        var unitSeen = null;
+                        parts.forEach(function (v) { var m = v.match(/^(-?[0-9.]+)\s*([a-z%]+)$/i); if (m) { unitSeen = m[2].toLowerCase(); } });
+                        if (unitSeen) unitSel.value = unitSeen;
+                        var t = strip(parts[0]);
+                        var r2 = parts.length > 1 ? strip(parts[1]) : t;
+                        var b = parts.length > 2 ? strip(parts[2]) : t;
+                        var l = parts.length > 3 ? strip(parts[3]) : r2;
+                        return [t, r2, b, l];
+                    }
+                    function readRaw(dev) {
+                        var v = get(objPath + '.' + dev);
+                        return v == null ? '' : String(v).trim();
+                    }
+                    var devBtns = [];
+                    var grid = document.createElement('div'); grid.className = 'wb-dims-grid';
+                    function buildInputs() {
+                        grid.innerHTML = '';
+                        inputs = [];
+                        var sides = ['上', '右', '下', '左'];
+                        for (var i = 0; i < 4; i++) {
+                            var inp = document.createElement('input');
+                            inp.type = 'text'; inp.className = 'wb-dims-input'; inp.placeholder = sides[i];
+                            inp.dataset.side = String(i);
+                            inp.addEventListener('change', function (ev) { onInput(ev.target.dataset.side); });
+                            inputs.push(inp); grid.appendChild(inp);
+                        }
+                        grid.appendChild(linkBtn);
+                        grid.appendChild(unitSel);
+                    }
+                    function syncSides() {
+                        // 联动:任一输入变化同步其余(仅链接开时)。
+                        if (linked) {
+                            var v = inputs[0].value;
+                            for (var i = 1; i < 4; i++) inputs[i].value = v;
+                        }
+                    }
+                    function onInput(sideIdx) {
+                        if (linked) syncSides();
+                        write();
+                    }
+                    function write() {
+                        var t = inputs[0].value.trim(), r2 = inputs[1].value.trim(), b = inputs[2].value.trim(), l = inputs[3].value.trim();
+                        var u = unitSel.value;
+                        function fmt(v) { if (v === '') return ''; return isNaN(parseFloat(v)) ? v : v + u; }
+                        var ft = fmt(t), fr = fmt(r2), fb = fmt(b), fl = fmt(l);
+                        var out;
+                        if (linked || (t === b && r2 === l)) out = ft || (fr || fb || fl);
+                        else if (t === b) out = ft + ' ' + fr;
+                        else out = [ft, fr, fb, fl].join(' ');
+                        if (out === undefined) out = '';
+                        commit(objPath + '.' + device, out.trim());
+                        devBtns.forEach(function (btn) { btn.classList.toggle('has-val', !!readRaw(btn.dataset.dev)); });
+                    }
+                    function load(dev) {
+                        device = dev;
+                        buildInputs();
+                        var four = parseShorthand(readRaw(dev));
+                        for (var i = 0; i < 4; i++) inputs[i].value = four[i];
+                        devBtns.forEach(function (btn) { btn.classList.toggle('is-active', btn.dataset.dev === device); btn.classList.toggle('has-val', !!readRaw(btn.dataset.dev)); });
+                    }
+                    var devRow = document.createElement('div'); devRow.className = 'wb-device-row';
+                    [['desktop', '🖥'], ['tablet', '▭'], ['mobile', '📱']].forEach(function (d) {
+                        var b = document.createElement('button');
+                        b.type = 'button'; b.className = 'wb-dev-btn'; b.textContent = d[1]; b.title = d[0]; b.dataset.dev = d[0];
+                        b.addEventListener('click', function () { load(d[0]); });
+                        devBtns.push(b); devRow.appendChild(b);
+                    });
+                    var row = document.createElement('div'); row.className = 'wb-unit-row';
+                    row.appendChild(grid);
+                    wrap.appendChild(row);
+                    var row2 = document.createElement('div'); row2.className = 'wb-unit-row';
+                    row2.appendChild(devRow);
+                    wrap.appendChild(row2);
+                    panel.appendChild(wrap);
+                    load(device);
+                }
                 // 富文本编辑器（TinyMCE）：工具条与构建期白名单对齐
                 // （加粗/斜体/下划线/删除线/代码/列表/引用/链接），
                 // 提交 HTML 在发布构建时经 sanitizeRichHTML 白名单清洗。
@@ -1012,8 +1113,8 @@
                     checkbox('允许换行', 'props.layout.flex.wrap');
                     unitInput('组件间距', 'props.layout.flex.gap');
                     heading('尺寸与留白');
-                    responsiveUnitField('内边距（三端）', 'props.box.padding');
-                    responsiveUnitField('外边距（三端）', 'props.box.margin');
+                    dimensionsField('内边距（三端）', 'props.box.padding');
+                    dimensionsField('外边距（三端）', 'props.box.margin');
                     unitInput('最小高度', 'props.box.minHeight');
                 }
                 // container 视觉面板。
