@@ -1,0 +1,55 @@
+{* admin/theme_settings.html — 单主题设置：全局颜色/字体/页眉页脚引用 *}
+{* Jet 方言：range 用 range 关键字；方法调用圆括号；extends 相对本目录 *}
+{{extends "layout.html"}}
+{{block body()}}
+<div class="pages-wrap">
+    <section class="pages-card">
+        <h2>主题设置：{{.ThemeName}}
+            <a class="btn" href="/admin/themes?project={{.ProjectID}}" style="float:right">返回列表</a>
+        </h2>
+        <form method="post" action="/admin/themes/settings/save" class="theme-form">
+            <input type="hidden" name="id" value="{{.ThemeID}}">
+            <h3>全局颜色</h3>
+            <div class="theme-color-grid">
+                <label>主色<input type="color" name="primary" value="{{.PColor}}"></label>
+                <label>文本色<input type="color" name="text" value="{{.TColor}}"></label>
+                <label>页面背景<input type="color" name="background" value="{{.BgColor}}"></label>
+                <label>卡片底色<input type="color" name="surface" value="{{.SColor}}"></label>
+                <label>边框色<input type="color" name="border" value="{{.BdColor}}"></label>
+            </div>
+            <h3>字体</h3>
+            <input type="text" name="fontFamily" class="theme-font-input" placeholder="正文字体栈，如：system-ui, sans-serif" value="{{.FontFamily}}">
+            <h3>全局页眉 / 页脚</h3>
+            <div class="theme-color-grid">
+                <label>页眉页面
+                    <select name="headerPageId" class="theme-font-input">
+                        <option value="">（未设置）</option>
+                        {{range _, p := .Pages}}
+                        <option value="{{p.ID}}" {{if p.ID == .HeaderPageID}}selected{{end}}>{{p.Path}}（{{p.Kind}}）</option>
+                        {{end}}
+                    </select>
+                </label>
+                <label>页脚页面
+                    <select name="footerPageId" class="theme-font-input">
+                        <option value="">（未设置）</option>
+                        {{range _, p := .Pages}}
+                        <option value="{{p.ID}}" {{if p.ID == .FooterPageID}}selected{{end}}>{{p.Path}}（{{p.Kind}}）</option>
+                        {{end}}
+                    </select>
+                </label>
+            </div>
+            <div class="theme-actions">
+                <button type="submit" class="btn btn-primary">保存并应用到该主题页面</button>
+            </div>
+        </form>
+    </section>
+    <section class="pages-card">
+        <h2>说明</h2>
+        <p class="pages-empty">
+            颜色与字体保存后合入该主题下全部页面的文档（settings.theme），构建产物注入 :root CSS 变量——
+            组件中 var(--color-primary) 等变量全局生效；已发布页面需重新构建才会带新主题。
+            页眉/页脚引用当前仅保存，整站装配将在后续构建流程接入。
+        </p>
+    </section>
+</div>
+{{end}}

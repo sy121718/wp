@@ -7,3 +7,9 @@ const MsgDashboardTitle = "仪表盘"
 
 // MsgPagesTitle 页面列表页标题。
 const MsgPagesTitle = "页面管理"
+
+// MsgThemesTitle 主题管理页标题。
+const MsgThemesTitle = "主题管理"
+
+// MsgThemeSettingsTitle 单主题设置页标题。
+const MsgThemeSettingsTitle = "主题设置"

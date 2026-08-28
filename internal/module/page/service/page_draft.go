@@ -36,12 +36,20 @@ func (s *Service) Create(ctx context.Context, req *pagedto.CreateReq) (res *page
 	if err != nil {
 		return nil, err
 	}
+	// 站点主题合入页面文档（保存时快照，改主题时批量刷新）。
+	if doc, err = s.mergeProjectTheme(ctx, req.ProjectID, doc); err != nil {
+		return nil, err
+	}
 	now := time.Now().UTC()
 	page := &pagemodel.PageEntity{
 		ID: uuid.NewString(), ProjectID: req.ProjectID, Kind: req.Kind,
 		ContentTargetType: req.ContentTargetType, ContentTargetID: req.ContentTargetID,
 		DraftPath: path, DraftDocument: doc, DraftVersion: 1, Stale: true,
 		CreatedAt: now, UpdatedAt: now,
+	}
+	// 新页面自动挂到工程当前激活主题（无主题时保持空，由主题创建后回填）。
+	if themeID := s.ActiveThemeID(ctx, req.ProjectID); themeID != "" {
+		page.ThemeID = &themeID
 	}
 	revision := &pagemodel.RevisionEntity{
 		ID: uuid.NewString(), PageID: page.ID, Version: page.DraftVersion,
@@ -87,6 +95,10 @@ func (s *Service) SaveDraft(ctx context.Context, req *pagedto.SaveDraftReq) (res
 	}
 	if req.ExpectedVersion != page.DraftVersion {
 		return nil, errors.New(pageenums.ErrDraftVersionConflict)
+	}
+	// 站点主题合入（保存时快照）。
+	if doc, err = s.mergeProjectTheme(ctx, page.ProjectID, doc); err != nil {
+		return nil, err
 	}
 
 	nextVersion := page.DraftVersion + 1
@@ -209,8 +221,12 @@ func mapPersistenceError(err error) error {
 }
 
 func pageResp(page *pagemodel.PageEntity) *pagedto.PageResp {
+	themeID := ""
+	if page.ThemeID != nil {
+		themeID = *page.ThemeID
+	}
 	return &pagedto.PageResp{
-		ID: page.ID, ProjectID: page.ProjectID, Kind: page.Kind, ContentTargetType: page.ContentTargetType,
+		ID: page.ID, ProjectID: page.ProjectID, ThemeID: themeID, Kind: page.Kind, ContentTargetType: page.ContentTargetType,
 		ContentTargetID: page.ContentTargetID, DraftPath: page.DraftPath, ActivePath: page.ActivePath,
 		StagedArtifactID: page.StagedArtifactID, ActiveArtifactID: page.ActiveArtifactID,
 		DraftDocument: page.DraftDocument, DraftVersion: page.DraftVersion, Stale: page.Stale,

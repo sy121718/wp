@@ -30,6 +30,7 @@ var bodyClassRe = regexp.MustCompile(`^[A-Za-z0-9_-]{1,100}$`)
 type PageSettings struct {
 	Layout      PageLayout `json:"layout"`
 	Base        BaseStyle  `json:"base"`
+	Theme       ThemeSettings `json:"theme,omitempty"`
 	SEO         SEO        `json:"seo"`
 	BodyClasses []string   `json:"bodyClasses,omitempty"`
 }
@@ -120,6 +121,29 @@ func safeCSS(v string) bool {
 
 // compileSettingsCSS 编译页面设置为 CSS：body 基底样式与版心约束。
 func compileSettingsCSS(s *PageSettings, b *core.CSSBuckets) {
+	// 主题 Token → :root CSS 变量（组件统一用 var(--color-*) 取色）。
+	var root []string
+	if v := s.Theme.Colors.Primary; v != "" {
+		root = append(root, "--color-primary: "+v)
+	}
+	if v := s.Theme.Colors.Text; v != "" {
+		root = append(root, "--color-text: "+v)
+	}
+	if v := s.Theme.Colors.Background; v != "" {
+		root = append(root, "--color-bg: "+v)
+	}
+	if v := s.Theme.Colors.Surface; v != "" {
+		root = append(root, "--color-surface: "+v)
+	}
+	if v := s.Theme.Colors.Border; v != "" {
+		root = append(root, "--color-border: "+v)
+	}
+	if len(root) > 0 {
+		b.Add(core.BreakpointDesktop, ":root", root)
+	}
+	if v := s.Theme.FontFamily; v != "" {
+		b.Add(core.BreakpointDesktop, "body", []string{"font-family: "+v})
+	}
 	var body []string
 	if v := s.Base.BackgroundColor; v != "" {
 		body = append(body, "background-color: "+v)
@@ -157,4 +181,17 @@ func compileSettingsCSS(s *PageSettings, b *core.CSSBuckets) {
 			"padding-left: " + v, "padding-right: " + v,
 		})
 	}
+}
+
+// ThemeSettings 站点级设计 Token（来自 project settings，保存页面/改主题时合入页面文档）。
+type ThemeSettings struct {
+	Colors struct {
+		Primary    string `json:"primary,omitempty"`
+		Text       string `json:"text,omitempty"`
+		Background string `json:"background,omitempty"`
+		Surface    string `json:"surface,omitempty"`
+		Border     string `json:"border,omitempty"`
+	} `json:"colors,omitempty"`
+	// FontFamily 正文字体栈。
+	FontFamily string `json:"fontFamily,omitempty"`
 }

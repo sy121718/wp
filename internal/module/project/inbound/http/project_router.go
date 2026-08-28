@@ -15,6 +15,7 @@ func SetupProjectRoutes(rg *gin.RouterGroup, db *gorm.DB) projectcontract.Projec
 	svc := projectservice.NewService(model)
 	handle := NewHandle(svc)
 
+	SetupThemeRoutes(rg, db)
 	g := rg.Group("/project")
 	g.POST("/create", handle.Create)
 	g.GET("/list", handle.List)

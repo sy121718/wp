@@ -15,6 +15,9 @@ var initBuilderSchemaSQL string
 //go:embed 010_page_revisions.sql
 var pageRevisionsSQL string
 
+//go:embed 020_themes.sql
+var themesSQL string
+
 func init() {
 	register(Migration{
 		Version:   "001-init-schema",
@@ -30,5 +33,10 @@ func init() {
 		Version:   "010-page-revisions",
 		TableName: "page_revisions",
 		SQL:       pageRevisionsSQL,
+	})
+	register(Migration{
+		Version:   "020-themes",
+		TableName: "themes",
+		SQL:       themesSQL,
 	})
 }

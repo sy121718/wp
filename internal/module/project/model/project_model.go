@@ -37,6 +37,13 @@ func (m *Model) DB(ctx context.Context) *gorm.DB {
 	return m.db.WithContext(ctx).Model(&ProjectEntity{})
 }
 
+// ThemeDB 返回已绑定 themes 表的 GORM 实例。
+// 主题查询必须走本绑定：混用 DB(ctx)（已绑定 projects）会让 GORM
+// 把 ThemeEntity 字段投影到 projects 表上，产生错误 SQL。
+func (m *Model) ThemeDB(ctx context.Context) *gorm.DB {
+	return m.db.WithContext(ctx).Model(&ThemeEntity{})
+}
+
 // Create 新增工程。
 func (m *Model) Create(ctx context.Context, e *ProjectEntity) (err error) {
 	return m.DB(ctx).Create(e).Error

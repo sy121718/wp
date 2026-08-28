@@ -60,12 +60,24 @@ func (h *Handle) PagesList(c *gin.Context) {
 }
 
 // buildPagesData 组装列表页数据。
+//
+// 页面按主题浏览（020_themes.sql：主题下面才是页面）：取第一个工程的
+// 激活主题过滤页面；无工程或无主题时 themeID 为空列全部页面。
 func (h *Handle) buildPagesData(c *gin.Context) (*pagesPageData, error) {
-	projects, err := h.projects.List(c.Request.Context())
+	ctx := c.Request.Context()
+	projects, err := h.projects.List(ctx)
 	if err != nil {
 		return nil, err
 	}
-	pages, err := h.pages.List(c.Request.Context())
+	// 第一步：取当前聚焦工程的激活主题。
+	themeID := ""
+	if len(projects) > 0 {
+		if theme, err := h.projects.GetActiveTheme(ctx, projects[0].ID); err == nil && theme != nil {
+			themeID = theme.ID
+		}
+	}
+	// 第二步：按激活主题过滤页面（themeID 为空列全部）。
+	pages, err := h.pages.List(ctx, themeID)
 	if err != nil {
 		return nil, err
 	}

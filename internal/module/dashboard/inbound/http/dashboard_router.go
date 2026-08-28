@@ -29,4 +29,13 @@ func SetupDashboardRoutes(router *gin.Engine,
 	router.GET("/admin/pages", handle.PagesList)
 	router.POST("/admin/pages/create", handle.CreatePage)
 	router.POST("/admin/projects/create", handle.CreateProject)
+	// 主题管理（多主题：列表/新建/激活/删除 + 单主题设置）。
+	router.GET("/admin/themes", handle.ThemeManage)
+	router.POST("/admin/themes/create", handle.CreateTheme)
+	router.POST("/admin/themes/activate", handle.ActivateTheme)
+	router.POST("/admin/themes/delete", handle.DeleteTheme)
+	router.GET("/admin/themes/settings", handle.ThemeSettings)
+	router.POST("/admin/themes/settings/save", handle.SaveThemeSettings)
+	// 旧单主题设置入口 → 新主题管理页。
+	router.GET("/admin/theme", handle.ThemeRedirect)
 }

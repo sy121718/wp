@@ -54,7 +54,7 @@ func (h *Handle) Detail(c *gin.Context) {
 
 // List 列出全部页面摘要。
 func (h *Handle) List(c *gin.Context) {
-	res, err := h.svc.List(c.Request.Context())
+	res, err := h.svc.List(c.Request.Context(), c.Query("themeId"))
 	if err != nil {
 		response.ErrorWithMessage(c, http.StatusInternalServerError, err.Error())
 		return

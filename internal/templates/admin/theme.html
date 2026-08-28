@@ -1,0 +1,84 @@
+{* admin/theme.html — 主题管理：站点前端主题（多套并存，单套激活，页面挂接主题） *}
+{* Jet 方言：range 用 range 关键字；方法调用圆括号；extends 相对本目录 *}
+{{extends "layout.html"}}
+{{block body()}}
+<div class="pages-wrap">
+    {{if len(.Projects) == 0}}
+    <section class="pages-card">
+        <p class="pages-empty">请先在「页面」里创建一个站点工程，再管理主题。</p>
+    </section>
+    {{else}}
+    <section class="pages-card">
+        <h2>主题管理</h2>
+        {* 工程切换（聚焦工程的主题列表） *}
+        <form method="get" action="/admin/themes" class="pages-form">
+            <select name="project" onchange="this.form.submit()">
+                {{range _, p := .Projects}}
+                <option value="{{p.ID}}" {{if p.ID == .SelectedProject}}selected{{end}}>{{p.Name}}</option>
+                {{end}}
+            </select>
+        </form>
+        {* 新建主题 *}
+        <form method="post" action="/admin/themes/create" class="pages-form mt-md">
+            <input type="hidden" name="projectId" value="{{.SelectedProject}}">
+            <input type="text" name="name" placeholder="主题名称，如：春季促销版" required>
+            <button type="submit" class="btn btn-primary">新建主题</button>
+        </form>
+    </section>
+
+    <section class="pages-card">
+        <h2>主题列表</h2>
+        {{if len(.Themes) == 0}}
+        <p class="pages-empty">还没有主题，用上方表单创建第一个（首个主题自动激活）。</p>
+        {{else}}
+        <table class="pages-table">
+            <thead>
+            <tr><th>名称</th><th>状态</th><th>创建时间</th><th>更新时间</th><th>操作</th></tr>
+            </thead>
+            <tbody>
+            {{range _, t := .Themes}}
+            <tr>
+                <td>{{t.Name}}</td>
+                <td>
+                    {{if t.IsActive}}
+                    <span class="pages-badge pages-badge-ok">激活中</span>
+                    {{else}}<span class="pages-badge">未激活</span>{{end}}
+                </td>
+                <td>{{t.CreatedAt}}</td>
+                <td>{{t.UpdatedAt}}</td>
+                <td class="pages-actions">
+                    <a class="btn" href="/admin/themes/settings?id={{t.ID}}">设置</a>
+                    {{if !t.IsActive}}
+                    <form method="post" action="/admin/themes/activate" class="pages-form" style="display:inline">
+                        <input type="hidden" name="id" value="{{t.ID}}">
+                        <input type="hidden" name="projectId" value="{{t.ProjectID}}">
+                        <button type="submit" class="btn">激活</button>
+                    </form>
+                    {{end}}
+                    {{if !t.IsActive}}
+                    <form method="post" action="/admin/themes/delete" class="pages-form" style="display:inline"
+                          onsubmit="return confirm('确定删除主题「{{t.Name}}」？')">
+                        <input type="hidden" name="id" value="{{t.ID}}">
+                        <input type="hidden" name="projectId" value="{{t.ProjectID}}">
+                        <button type="submit" class="btn">删除</button>
+                    </form>
+                    {{end}}
+                </td>
+            </tr>
+            {{end}}
+            </tbody>
+        </table>
+        {{end}}
+    </section>
+
+    <section class="pages-card">
+        <h2>说明</h2>
+        <p class="pages-empty">
+            主题 = 站点前端项目（全局颜色/字体/页眉页脚引用），一次一套激活；页面挂在主题下。
+            切换激活主题即整站前端换皮，页面内容不动。「设置」里编辑颜色与字体，保存后合入该主题下全部页面，
+            构建产物注入 :root CSS 变量——已发布页面需重新构建才会带新主题。
+        </p>
+    </section>
+    {{end}}
+    </div>
+{{end}}

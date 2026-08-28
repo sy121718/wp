@@ -9,6 +9,7 @@ import (
 type PageResp struct {
 	ID                string          `json:"id"`
 	ProjectID         string          `json:"projectId"`
+	ThemeID           string          `json:"themeId,omitempty"`
 	Kind              string          `json:"kind"`
 	ContentTargetType string          `json:"contentTargetType"`
 	ContentTargetID   *string         `json:"contentTargetId,omitempty"`

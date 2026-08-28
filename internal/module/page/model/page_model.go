@@ -25,6 +25,7 @@ const (
 type PageEntity struct {
 	ID                string          `gorm:"column:id;type:uuid;primaryKey"`
 	ProjectID         string          `gorm:"column:project_id;type:uuid;not null"`
+	ThemeID           *string         `gorm:"column:theme_id;type:uuid"`
 	Kind              string          `gorm:"column:kind;type:text;not null"`
 	ContentTargetType string          `gorm:"column:content_target_type;type:text;not null"`
 	ContentTargetID   *string         `gorm:"column:content_target_id;type:uuid"`
@@ -95,10 +96,35 @@ func (m *Model) Transaction(ctx context.Context, fn func(tx *gorm.DB) error) err
 	return m.db.WithContext(ctx).Transaction(fn)
 }
 
-// ListAll 列出全部未删除页面（排除大字段 draft_document，供列表页使用）。
-func (m *Model) ListAll(ctx context.Context) (list []PageEntity, err error) {
-	err = m.DB(ctx).Omit("draft_document").Order("updated_at DESC").Find(&list).Error
+// ListAll 列出未删除页面（排除大字段 draft_document，供列表页使用）。
+// themeID 为空时列全部；非空时只列挂在该主题下的页面（020_themes.sql：主题下面才是页面）。
+func (m *Model) ListAll(ctx context.Context, themeID string) (list []PageEntity, err error) {
+	q := m.DB(ctx).Omit("draft_document")
+	if themeID != "" {
+		q = q.Where("theme_id = ?", themeID)
+	}
+	err = q.Order("updated_at DESC").Find(&list).Error
 	return list, err
+}
+
+// RefreshThemeForTheme 把主题设置批量合入挂在该主题下全部页面的 settings.theme。
+// 使用 jsonb_set 只替换 settings.theme 键，不动内容与版本（主题是展示层快照）。
+func (m *Model) RefreshThemeForTheme(ctx context.Context, themeID string, themeJSON []byte) (err error) {
+	err = m.DB(ctx).Exec(
+		"UPDATE pages SET draft_document = jsonb_set(draft_document, '{settings,theme}', ?, true), updated_at = ? WHERE theme_id = ? AND deleted_at IS NULL",
+		themeJSON, time.Now().UTC(), themeID,
+	).Error
+	return err
+}
+
+// AttachThemeToUnassigned 把工程内尚未挂主题的页面挂到指定主题。
+// 工程首个主题创建时回填历史页面（迁移 020 的运行时兜底）。
+func (m *Model) AttachThemeToUnassigned(ctx context.Context, projectID, themeID string) (err error) {
+	err = m.DB(ctx).Exec(
+		"UPDATE pages SET theme_id = ?, updated_at = ? WHERE project_id = ? AND theme_id IS NULL AND deleted_at IS NULL",
+		themeID, time.Now().UTC(), projectID,
+	).Error
+	return err
 }
 
 // GetByID 按 ID 查询未删除的 Page。
