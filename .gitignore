@@ -29,3 +29,5 @@ public/runtime/
 # 临时文件
 *.log
 *.tmp
+# 本地凭据与参考站点存档
+.wp-credentials.local

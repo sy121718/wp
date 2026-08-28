@@ -7,7 +7,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{.title}} — go_wp 工作台</title>
     <link rel="stylesheet" href="/static/css/theme.css">
-    <link rel="stylesheet" href="/static/css/workbench.css?v=20260828f">
+    <link rel="stylesheet" href="/static/css/workbench.css?v=20260828g">
 </head>
 <body class="wb-body">
 
@@ -53,12 +53,13 @@
                     <button type="button" class="wb-icon-btn" id="wb-back-library" title="打开组件库">+</button>
                     <strong id="wb-edit-title">组件</strong>
                     <span class="wb-flex-spacer"></span>
+                    <button type="button" class="wb-icon-btn" id="wb-edit-hide" title="编辑期隐藏/显示">👁</button>
+                    <button type="button" class="wb-icon-btn" id="wb-edit-lock" title="锁定/解锁">🔓</button>
                     <button type="button" class="wb-icon-btn" id="wb-edit-delete" title="删除组件">🗑</button>
                 </div>
                 <div class="wb-tabs" role="tablist">
-                    <button type="button" class="is-active">布局</button>
+                    <button type="button" class="is-active">内容</button>
                     <button type="button">样式</button>
-                    <button type="button">扩展</button>
                 </div>
                 <div class="wb-inspector-body" id="inspector-panel">
                     <p class="wb-empty">在画布或大纲树中选择节点</p>
@@ -117,6 +118,6 @@
     <script type="application/json" id="wb-schemas">{{ .schemas | unsafe }}</script>
     {* TinyMCE 富文本编辑器（text 组件 richtext 模式）；jsdelivr 在 CSP script-src 白名单内 *}
     <script src="https://cdn.jsdelivr.net/npm/tinymce@7/tinymce.min.js" referrerpolicy="origin"></script>
-    <script src="/static/js/workbench.js?v=20260828e"></script>
+    <script src="/static/js/workbench.js?v=20260828g"></script>
 </body>
 </html>

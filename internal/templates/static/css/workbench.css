@@ -219,3 +219,18 @@
 
 .wb-inspector { overflow-x: hidden; }
 
+
+/* ===== 组件库分组与区块卡片 ===== */
+.wb-palette-group {
+    margin: 10px 0 6px; font-size: 11px; color: var(--c-text-mute, #6b7280);
+    text-transform: none; letter-spacing: .5px; border-bottom: 1px solid var(--c-border, #e5e7eb); padding-bottom: 4px;
+}
+.wb-palette-group:first-child { margin-top: 0; }
+.wb-block-card {
+    grid-column: 1 / -1; display: block; text-align: left; cursor: pointer;
+    border: 1px solid var(--c-border, #e5e7eb); border-radius: 8px; background: var(--c-surface, #fff); padding: 10px 12px;
+}
+.wb-block-card:hover { border-color: var(--c-primary, #2563eb); background: rgba(37,99,235,.05); }
+.wb-block-card strong { display: block; font-size: 13px; }
+.wb-block-card span { display: block; margin-top: 2px; color: var(--c-text-mute, #6b7280); font-size: 11px; }
+

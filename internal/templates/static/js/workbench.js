@@ -77,6 +77,68 @@
      * 工作台状态机：AST 为唯一事实源；画布 iframe 与大纲树均为其投影。
      * Undo 栈保存全量快照（页面规模可控，简单可靠）。
      */
+    /** 组件三层分类：基础(原子) / 进阶(组合件)。区块见 BLOCK_PRESETS。 */
+    var paletteGroups = {
+        basic: ['core.container', 'core.heading', 'core.text', 'core.button', 'core.image', 'core.divider', 'core.spacer'],
+        advanced: ['core.gallery']
+    };
+
+    /** 区块预设（预组合的全局 section，一键插入整个容器）。
+     *  结构与 Page Document 一致：JSON AST 片段。 */
+    var BLOCK_PRESETS = [
+        {
+            name: 'Hero 首屏',
+            desc: '标题 + 文本 + 按钮',
+            build: function (wb) {
+                return {
+                    id: wb.newId('section'), type: 'core.container', name: 'Hero 首屏',
+                    props: { tag: 'section', layout: { engine: 'flex', flex: { direction: 'column', justify: 'center', align: 'center', gap: '16px' } }, box: { padding: { desktop: '96px 24px' }, minHeight: '60vh' } },
+                    children: [
+                        { id: wb.newId('heading'), type: 'core.heading', name: '主标题', props: { text: '在这里写下你的主标题', tag: 'h1', typography: { desktop: { textAlign: 'center', fontSize: 'clamp(2rem, 5vw, 3.5rem)' } } } },
+                        { id: wb.newId('text'), type: 'core.text', name: '副标题', props: { mode: 'plaintext', plainTag: 'p', text: '一句话说明你的产品或服务，让访客一眼明白价值。', typography: { desktop: { textAlign: 'center', fontSize: '1.1rem' } } } },
+                        { id: wb.newId('button'), type: 'core.button', name: '行动按钮', props: { text: '立即开始', action: 'internal', value: '/', variant: 'solid', size: 'lg' } }
+                    ]
+                };
+            }
+        },
+        {
+            name: '图文两栏',
+            desc: '图片 + 文本左右排布',
+            build: function (wb) {
+                var inner = function (dir, name) {
+                    return { id: wb.newId('section'), type: 'core.container', name: name, props: { tag: 'div', layout: { engine: 'flex', flex: { direction: 'column', justify: 'center', gap: '12px' } } }, children: [] };
+                };
+                var left = inner(false, '文字栏');
+                left.children = [
+                    { id: wb.newId('heading'), type: 'core.heading', name: '小标题', props: { text: '功能亮点', tag: 'h3' } },
+                    { id: wb.newId('text'), type: 'core.text', name: '说明', props: { mode: 'plaintext', plainTag: 'p', text: '用一段话描述这个功能的价值与使用场景。' } }
+                ];
+                return {
+                    id: wb.newId('section'), type: 'core.container', name: '图文两栏',
+                    props: { tag: 'section', layout: { engine: 'flex', flex: { direction: 'row', align: 'center', gap: '32px' } }, box: { padding: { desktop: '64px 24px' } } },
+                    children: [
+                        { id: wb.newId('image'), type: 'core.image', name: '配图', props: { src: 'https://placehold.co/800x600/png', alt: '配图', objectFit: 'cover', width: '50%' } },
+                        left
+                    ]
+                };
+            }
+        },
+        {
+            name: 'CTA 行动条',
+            desc: '横幅 + 双按钮',
+            build: function (wb) {
+                return {
+                    id: wb.newId('section'), type: 'core.container', name: 'CTA 行动条',
+                    props: { tag: 'section', layout: { engine: 'flex', flex: { direction: 'row', justify: 'space-between', align: 'center', gap: '16px', wrap: true } }, box: { padding: { desktop: '48px 32px' } }, visual: { bgColor: 'var(--color-primary, #2563eb)', radius: '16px' } },
+                    children: [
+                        { id: wb.newId('heading'), type: 'core.heading', name: '行动标题', props: { text: '准备好开始了吗？', tag: 'h3', color: '#ffffff' } },
+                        { id: wb.newId('button'), type: 'core.button', name: '主按钮', props: { text: '免费试用', action: 'internal', value: '/', variant: 'solid' } }
+                    ]
+                };
+            }
+        }
+    ];
+
     function workbench() {
         return {
             pageId: meta.pageId,
@@ -145,8 +207,14 @@
                 root.innerHTML = '';
                 var self = this;
                 var f = (this.libraryFilter || '').toLowerCase();
-                paletteItems.forEach(function (item) {
-                    if (f && (item.label + item.hint + item.type).toLowerCase().indexOf(f) < 0) return;
+                function match(text) { return !f || text.toLowerCase().indexOf(f) >= 0; }
+                function addHeader(text) {
+                    var h = document.createElement('div');
+                    h.className = 'wb-palette-group';
+                    h.textContent = text;
+                    root.appendChild(h);
+                }
+                function addItem(item) {
                     var button = document.createElement('button');
                     button.type = 'button';
                     button.className = 'wb-palette-item';
@@ -158,20 +226,54 @@
                     button.addEventListener('click', function () {
                         var pending = self.pendingInsertTarget;
                         if (pending && self.findNode(pending.id)) {
-                            // 画布浮标指定的插入位置。
                             self.insertComponent(item, pending.id, pending.placement);
                             self.pendingInsertTarget = null;
                         } else {
                             self.insertComponent(item);
                         }
-                        self.showEdit(); // 插入后直接进入新组件的编辑面板
+                        self.showEdit();
                     });
                     button.addEventListener('dragstart', function (event) {
                         event.dataTransfer.effectAllowed = 'copy';
                         event.dataTransfer.setData('application/x-wb-component', item.type);
                     });
                     root.appendChild(button);
+                }
+                // 分层:基础(原子) / 进阶(组合件);区块预设独立卡片区。
+                addHeader('基础组件');
+                paletteGroups.basic.forEach(function (type) {
+                    var item = paletteItems.filter(function (e) { return e.type === type; })[0];
+                    if (item && match(item.label + item.hint + item.type)) addItem(item);
                 });
+                addHeader('进阶组件');
+                paletteGroups.advanced.forEach(function (type) {
+                    var item = paletteItems.filter(function (e) { return e.type === type; })[0];
+                    if (item && match(item.label + item.hint + item.type)) addItem(item);
+                });
+                // 区块(预组合 section):整块一键插入。
+                var blockHits = BLOCK_PRESETS.filter(function (b) { return match(b.name + b.desc); });
+                if (blockHits.length) {
+                    addHeader('区块（整段插入）');
+                    blockHits.forEach(function (b) {
+                        var card = document.createElement('button');
+                        card.type = 'button';
+                        card.className = 'wb-block-card';
+                        card.innerHTML = '<strong></strong><span></span>';
+                        card.querySelector('strong').textContent = b.name;
+                        card.querySelector('span').textContent = b.desc;
+                        card.addEventListener('click', function () {
+                            self.snapshot();
+                            var node = b.build(self);
+                            self.ensureRootContainer().children.push(node);
+                            self.selectedId = node.id;
+                            self.renderTree();
+                            self.showEdit();
+                            self.refreshCanvas();
+                            self.renderUI();
+                        });
+                        root.appendChild(card);
+                    });
+                }
                 if (!root.children.length) {
                     var none = document.createElement('p');
                     none.className = 'wb-empty';
@@ -681,6 +783,25 @@
                 }
                 function field(label, path, kind, choices, after, extra) {
                     var wrap = document.createElement('div'); wrap.className = 'wb-field';
+                    if (kind === 'segment') {
+                        // 分段按钮组:choices = [[value, text]],当前值高亮。
+                        var seg = document.createElement('div'); seg.className = 'wb-seg';
+                        var current = get(path) == null ? '' : String(get(path));
+                        var segBtns = [];
+                        choices.forEach(function (ch) {
+                            var b = document.createElement('button');
+                            b.type = 'button'; b.className = 'wb-seg-btn'; b.textContent = ch[1]; b.title = ch[0];
+                            if (ch[0] === current || (!current && ch[2])) b.classList.add('is-active');
+                            b.addEventListener('click', function () {
+                                commit(path, ch[0], after);
+                                segBtns.forEach(function (x) { x.classList.toggle('is-active', x === b); });
+                            });
+                            segBtns.push(b); seg.appendChild(b);
+                        });
+                        var cap = document.createElement('label'); cap.textContent = label;
+                        wrap.appendChild(cap); wrap.appendChild(seg); panel.appendChild(wrap);
+                        return;
+                    }
                     var caption = document.createElement('label'); caption.textContent = label; wrap.appendChild(caption);
                     var input = document.createElement(kind === 'textarea' ? 'textarea' : kind === 'select' ? 'select' : 'input');
                     if (kind === 'textarea') input.rows = 4;
@@ -810,11 +931,11 @@
                 }
                 // container 布局面板（嵌套结构未走 ct 声明，字段路径与编译端手写对齐）。
                 function containerLayout() {
-                    field('语义标签', 'props.tag', 'select', [['div', '容器'], ['section', '区块'], ['article', '文章'], ['header', '页头'], ['footer', '页脚'], ['main', '主体']]);
+                    field('语义标签', 'props.tag', 'segment', [['div', '容器'], ['section', '区块'], ['article', '文章'], ['header', '页头'], ['footer', '页脚'], ['main', '主体']]);
                     heading('Flex 布局');
-                    field('排列方向', 'props.layout.flex.direction', 'select', [['column', '纵向'], ['row', '横向']], function () { set('props.layout.engine', 'flex'); });
-                    field('主轴分布', 'props.layout.flex.justify', 'select', [['', '（默认）'], ['flex-start', '起始对齐'], ['center', '居中'], ['flex-end', '末端对齐'], ['space-between', '两端分布'], ['space-around', '环绕分布']]);
-                    field('交叉对齐', 'props.layout.flex.align', 'select', [['', '（默认）'], ['stretch', '拉伸'], ['center', '居中'], ['flex-start', '起始'], ['flex-end', '末端']]);
+                    field('排列方向', 'props.layout.flex.direction', 'segment', [['column', '纵向'], ['row', '横向']], function () { set('props.layout.engine', 'flex'); });
+                    field('主轴分布', 'props.layout.flex.justify', 'segment', [['flex-start', '起始'], ['center', '居中'], ['flex-end', '末端'], ['space-between', '两端'], ['space-around', '环绕']]);
+                    field('交叉对齐', 'props.layout.flex.align', 'segment', [['stretch', '拉伸'], ['center', '居中'], ['flex-start', '起始'], ['flex-end', '末端']]);
                     checkbox('允许换行', 'props.layout.flex.wrap');
                     field('组件间距', 'props.layout.flex.gap', 'input');
                     heading('尺寸与留白');
@@ -847,7 +968,7 @@
                     field('嵌入类型', 'props.inset.kind', 'select', [['none', '无'], ['text', '文本'], ['icon', '图标']]);
                     field('嵌入文本', 'props.inset.text', 'input');
                     field('图标样式', 'props.inset.iconName', 'select', [['star', '星形'], ['diamond', '菱形'], ['dot', '圆点']]);
-                    field('嵌入位置', 'props.inset.position', 'select', [['center', '居中'], ['left', '靠左'], ['right', '靠右']]);
+                    field('嵌入位置', 'props.inset.position', 'segment', [['center', '居中'], ['left', '靠左'], ['right', '靠右']]);
                     field('两侧留白', 'props.inset.spacing', 'input');
                 }
                 // divider 嵌入文本样式。
@@ -870,21 +991,14 @@
                 schema.forEach(function (ctl) { (groups[ctl.section] || groups.content).push(ctl); });
 
                 var nodeTitle = node.name || String(node.type).replace('core.', '');
+                // 两页签：内容 / 样式（对齐用户设计：样式类属性全部归样式，不单设「高级」）。
                 if (this.tab === 'style') {
                     heading(nodeTitle + ' · 样式');
                     if (node.type === 'core.container') containerVisual();
                     if (node.type === 'core.divider') dividerInsetStyle();
                     groups.style.forEach(schemaField);
-                    if (!groups.style.length && node.type !== 'core.container' && node.type !== 'core.divider') {
-                        var none1 = document.createElement('p'); none1.className = 'wb-empty'; none1.textContent = '该组件暂无独立样式项'; panel.appendChild(none1);
-                    }
-                } else if (this.tab === 'extend') {
-                    heading('编辑元数据');
-                    field('显示名称', 'name', 'input');
-                    checkbox('在编辑器中隐藏', 'hidden');
-                    checkbox('锁定，禁止误选', 'locked');
                     if (groups.advanced.length) {
-                        heading('高级属性');
+                        heading('高级');
                         groups.advanced.forEach(schemaField);
                     }
                     var actions = document.createElement('div'); actions.className = 'wb-inspector-actions';
@@ -893,8 +1007,12 @@
                         button.addEventListener('click', pair[1]); actions.appendChild(button);
                     });
                     panel.appendChild(actions);
+                    if (!groups.style.length && !groups.advanced.length && node.type !== 'core.container' && node.type !== 'core.divider') {
+                        var none1 = document.createElement('p'); none1.className = 'wb-empty'; none1.textContent = '该组件暂无独立样式项'; panel.appendChild(none1);
+                    }
                 } else {
-                    heading(nodeTitle + ' · 布局与内容');
+                    heading(nodeTitle + ' · 内容');
+                    field('显示名称', 'name', 'input');
                     if (node.type === 'core.container') containerLayout();
                     if (node.type === 'core.divider') dividerInset();
                     if (node.type === 'core.spacer') spacerPanel();
@@ -1086,14 +1204,30 @@
                     self.renderTree();
                 });
                 // 检查器三个页签：布局(内容) / 样式 / 扩展——切换后重渲染面板。
-                var tabKeys = ['layout', 'style', 'extend'];
+                // 检查器两个页签：内容 / 样式（样式类属性全部归样式页签）。
+                var tabKeys = ['content', 'style'];
                 var tabButtons = document.querySelectorAll('.wb-tabs button');
                 tabButtons.forEach(function (button, index) {
                     button.addEventListener('click', function () {
-                        self.tab = tabKeys[index] || 'layout';
+                        self.tab = tabKeys[index] || 'content';
                         tabButtons.forEach(function (b, i) { b.classList.toggle('is-active', i === index); });
                         self.syncInspector();
                     });
+                });
+                // 面板头部显隐/锁定快捷开关。
+                var editHideBtn = document.getElementById('wb-edit-hide');
+                if (editHideBtn) editHideBtn.addEventListener('click', function () {
+                    var n = self.findNode(self.selectedId);
+                    if (!n) return;
+                    self.toggleHidden(n.id);
+                    editHideBtn.textContent = n.hidden ? '🚫' : '👁';
+                });
+                var editLockBtn = document.getElementById('wb-edit-lock');
+                if (editLockBtn) editLockBtn.addEventListener('click', function () {
+                    var n = self.findNode(self.selectedId);
+                    if (!n) return;
+                    self.toggleLocked(n.id);
+                    editLockBtn.textContent = n.locked ? '🔒' : '🔓';
                 });
                 // 左侧双视图：+ 打开组件库；× 收起面板；🗑 删除选中组件。
                 var back = document.getElementById('wb-back-library');
