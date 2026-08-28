@@ -113,3 +113,57 @@
 }
 .wb-flex-spacer { flex: 1; }
 .wb-empty { color: var(--c-text-mute, #6b7280); font-size: 12px; }
+/* ===== 左侧双视图（组件库 / 组件编辑，对标 WP 编辑器范式） ===== */
+.wb-panel { display: flex; flex-direction: column; gap: 10px; min-height: 0; }
+.wb-panel[hidden] { display: none; }
+.wb-panel-head { display: flex; align-items: center; gap: 8px; }
+.wb-panel-head strong { font-size: 14px; }
+.wb-panel-head .wb-icon-btn { font-size: 18px; line-height: 1; padding: 2px 6px; }
+.wb-library-search { margin: 0; }
+.wb-inspector > .wb-panel { flex: 1; overflow-y: auto; }
+.wb-inspector-body { flex: 1; min-height: 0; overflow-y: auto; }
+
+/* ===== 大纲树行修复：caret 单行不折行、行操作悬浮显示 ===== */
+.wb-caret { white-space: nowrap; font-size: 11px; color: var(--c-text-mute, #6b7280); }
+.wb-node-flag { font-size: 10px; color: var(--c-text-mute, #6b7280); border: 1px solid var(--c-border, #e5e7eb); border-radius: 4px; padding: 0 3px; flex: none; }
+.wb-node-actions { margin-left: auto; display: none; gap: 2px; flex: none; }
+.wb-node:hover .wb-node-actions, .wb-node:focus-within .wb-node-actions { display: inline-flex; }
+.wb-node-action {
+    border: none; background: none; cursor: pointer; font-size: 12px; line-height: 1;
+    padding: 2px 4px; border-radius: 4px; color: var(--c-text-mute, #6b7280);
+}
+.wb-node-action:hover { background: rgba(37,99,235,.12); color: var(--c-primary, #2563eb); }
+.wb-tree li.is-collapsed > ul { display: none; }
+/* 大纲树在窄屏下不被画布挤压：允许自身横向滚动 */
+.wb-navigator { overflow: hidden; }
+.wb-tree { min-width: 0; }
+
+/* ===== 窄屏适配：左侧变覆盖抽屉、画布保持可横向滚动，不塌缩 ===== */
+@media (max-width: 900px) {
+    .wb-main { position: relative; }
+    .wb-inspector {
+        position: absolute; left: 0; top: 0; bottom: 0; z-index: 40;
+        width: min(320px, 88vw); min-width: 0;
+        background: var(--c-surface, #fff);
+        box-shadow: 4px 0 20px rgba(0,0,0,.12);
+        transform: translateX(-100%); transition: transform .2s ease;
+    }
+    .wb-inspector.is-open { transform: translateX(0); }
+    .wb-canvas-wrap { overflow-x: auto; padding: 10px; }
+    .wb-canvas-frame { min-width: 375px; }
+    .wb-topbar { flex-wrap: wrap; gap: 6px; padding: 6px 10px; }
+    .wb-navigator { width: min(280px, 92vw); }
+}
+
+
+/* ===== 大纲树操作按钮：悬浮浮层,不挤压节点名 ===== */
+.wb-node { position: relative; }
+.wb-node .wb-node-name { flex: 1 1 auto; min-width: 0; }
+.wb-node-actions {
+    position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+    margin-left: 0; padding: 1px 3px; border-radius: 5px;
+    background: var(--c-surface, #fff);
+    box-shadow: 0 1px 6px rgba(0,0,0,.18);
+}
+.wb-node.is-selected .wb-node-actions { background: #eaf1fe; }
+
