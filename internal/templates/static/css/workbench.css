@@ -281,3 +281,8 @@
     background: var(--c-primary, #2563eb); color: #fff; border-color: var(--c-primary, #2563eb);
 }
 
+
+/* ===== 排版组 ===== */
+.wb-typo-group { border: 1px solid var(--c-border, #e5e7eb); border-radius: 8px; padding: 10px; }
+.wb-typo-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+

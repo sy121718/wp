@@ -879,8 +879,9 @@
                     if (m) unitSel.value = m[2].toLowerCase(); else unitSel.value = units[0];
                     function push() {
                         var v = input.value.trim();
-                        var u = unitSel.value;
-                        commit(path, v === '' ? '' : v + (isNaN(parseFloat(v)) ? '' : u));
+                        if (v === '') { commit(path, ''); return; }
+                        // 已带单位(或 clamp()/字母开头)则原样存;纯数字才追加单位。
+                        commit(path, /^-?[0-9.]+$/.test(v) ? v + unitSel.value : v);
                     }
                     input.addEventListener('change', push);
                     unitSel.addEventListener('change', function () { if (input.value.trim() !== '') push(); });
@@ -914,8 +915,7 @@
                     }
                     function push() {
                         var v = input.value.trim();
-                        var u = unitSel.value;
-                        var val = v === '' ? '' : v + (isNaN(parseFloat(v)) ? '' : u);
+                        var val = v === '' ? '' : (/^-?[0-9.]+$/.test(v) ? v + unitSel.value : v);
                         commit(objPath + '.' + device, val);
                         devBtns.forEach(function (b) { b.classList.toggle('has-val', !!readVal(b.dataset.dev)); });
                     }
@@ -1036,6 +1036,60 @@
                     panel.appendChild(wrap);
                     load(device);
                 }
+                // 排版组：组级设备切换，字号/行高/对齐绑 TextStyle 三端
+                // (fontSize 校验支持 clamp() 流式字号，输入以字母开头时不追加单位)。
+                function typographyPanel(typoPath) {
+                    var device = 'desktop';
+                    var devices = [['desktop', '🖥'], ['tablet', '▭'], ['mobile', '📱']];
+                    var devRow = document.createElement('div'); devRow.className = 'wb-device-row';
+                    var devBtns = [];
+                    devices.forEach(function (d) {
+                        var b = document.createElement('button');
+                        b.type = 'button'; b.className = 'wb-dev-btn'; b.textContent = d[1]; b.title = d[0]; b.dataset.dev = d[0];
+                        b.addEventListener('click', function () {
+                            device = d[0];
+                            devBtns.forEach(function (x) { x.classList.toggle('is-active', x.dataset.dev === device); });
+                            rebuild();
+                        });
+                        devBtns.push(b); devRow.appendChild(b);
+                    });
+                    var host = document.createElement('div');
+                    var wrapAll = document.createElement('div'); wrapAll.className = 'wb-field wb-typo-group';
+                    var head = document.createElement('div'); head.className = 'wb-typo-head';
+                    var cap = document.createElement('label'); cap.textContent = '排版';
+                    head.appendChild(cap); head.appendChild(devRow);
+                    wrapAll.appendChild(head); wrapAll.appendChild(host);
+                    panel.appendChild(wrapAll);
+
+                    function base() { return typoPath + '.' + device; }
+                    function rebuild() {
+                        host.innerHTML = '';
+                        devBtns.forEach(function (x) { x.classList.toggle('is-active', x.dataset.dev === device); });
+                        var save = panel;
+                        panel = host;
+                        unitInput('字号', base() + '.fontSize', ['px', 'rem', 'em', 'vw']);
+                        unitInput('行高', base() + '.lineHeight', ['', 'px', 'rem']);
+                        var alignSeg = document.createElement('div'); alignSeg.className = 'wb-seg';
+                        var aligns = [['left', '左'], ['center', '中'], ['right', '右'], ['justify', '两端']];
+                        var cur = get(base() + '.textAlign') || '';
+                        var btns = [];
+                        aligns.forEach(function (a) {
+                            var b = document.createElement('button');
+                            b.type = 'button'; b.className = 'wb-seg-btn'; b.textContent = a[1];
+                            if (cur === a[0]) b.classList.add('is-active');
+                            b.addEventListener('click', function () {
+                                commit(base() + '.textAlign', a[0]);
+                                btns.forEach(function (x) { x.classList.toggle('is-active', x === b); });
+                            });
+                            btns.push(b); alignSeg.appendChild(b);
+                        });
+                        var aw = document.createElement('div'); aw.className = 'wb-field wb-field-seg';
+                        var ac = document.createElement('label'); ac.textContent = '对齐';
+                        aw.appendChild(ac); aw.appendChild(alignSeg); host.appendChild(aw);
+                        panel = save;
+                    }
+                    rebuild();
+                }
                 // 富文本编辑器（TinyMCE）：工具条与构建期白名单对齐
                 // （加粗/斜体/下划线/删除线/代码/列表/引用/链接），
                 // 提交 HTML 在发布构建时经 sanitizeRichHTML 白名单清洗。
@@ -1080,13 +1134,13 @@
                     if (ctl.kind === 'select') {
                         // 短枚举(≤6 项)用分段按钮组(WP 式节省空间),长列表保留下拉。
                         if ((ctl.options || []).length <= 6) {
-                            segmentedField(label, path, ctl, after);
+                            segmentedField(label, path, ctl, (node.type === 'core.text' && ctl.key === 'mode') ? modeAfter : null);
                             return;
                         }
                         var choices = (ctl.options || []).map(function (o) { return [o, o === '' ? '（无）' : optionLabel(o)]; });
                         if (ctl.default) choices.unshift(['', ctl.default + '（默认）']);
                         // text.mode 切换后重建面板，切换富文本/纯文本编辑形态。
-                        var afterSel = (node.type === 'core.text' && ctl.key === 'mode') ? modeAfter : after;
+                        var afterSel = (node.type === 'core.text' && ctl.key === 'mode') ? modeAfter : null;
                         field(label, path, 'select', choices, afterSel);
                     } else if (ctl.kind === 'text') {
                         field(label, path, 'textarea');
@@ -1170,6 +1224,9 @@
                     heading(nodeTitle + ' · 样式');
                     if (node.type === 'core.container') containerVisual();
                     if (node.type === 'core.divider') dividerInsetStyle();
+                    if (node.type === 'core.heading' || node.type === 'core.text') {
+                        typographyPanel('props.typography');
+                    }
                     groups.style.forEach(schemaField);
                     if (groups.advanced.length) {
                         heading('高级');
