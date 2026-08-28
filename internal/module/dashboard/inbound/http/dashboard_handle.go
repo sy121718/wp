@@ -160,6 +160,62 @@ const editorBridgeScript = `<script>
   document.querySelectorAll('[id]').forEach(function(el){
     if (!el.getAttribute('data-wp-id')) el.setAttribute('data-wp-id', el.id);
   });
+  document.querySelectorAll('[data-wp-id]').forEach(function(el){ el.setAttribute('draggable', 'true'); });
+
+  // 画布内元素可直接拖动重排：与大纲树/组件库共用同一数据键。
+  // 拖放落点在本桥接内计算（iframe 每次刷新必然重新注入，
+  // 不依赖父窗口绑定时序），通过 wb-canvas-drop 消息交父窗口执行 AST 变更。
+  var dropCtx = null;
+  function clearDropMarks(){
+    document.querySelectorAll('.wb-drop-before,.wb-drop-after,.wb-drop-inside').forEach(function(el){
+      el.classList.remove('wb-drop-before','wb-drop-after','wb-drop-inside');
+    });
+  }
+  document.addEventListener('dragstart', function(ev){
+    var target = ev.target.closest ? ev.target.closest('[data-wp-id]') : null;
+    if(!target) return;
+    ev.dataTransfer.effectAllowed = 'move';
+    ev.dataTransfer.setData('application/x-wb-node', target.getAttribute('data-wp-id'));
+    target.style.opacity = '0.4';
+    setTimeout(function(){ target.style.opacity = ''; }, 0);
+  }, true);
+  document.addEventListener('dragover', function(ev){
+    var target = ev.target.closest ? ev.target.closest('[data-wp-id]') : null;
+    clearDropMarks();
+    if(!target) return;
+    ev.preventDefault();
+    var rect = target.getBoundingClientRect();
+    var offset = ev.clientY - rect.top;
+    var inMiddle = offset > rect.height * .3 && offset < rect.height * .7;
+    var placement = inMiddle ? 'inside' : (offset < rect.height / 2 ? 'before' : 'after');
+    // 容器判定由父窗口按 AST 进行；桥接按「有子元素且中带」粗略显示内部虚线。
+    target.classList.add(placement === 'inside' ? 'wb-drop-inside' : (placement === 'before' ? 'wb-drop-before' : 'wb-drop-after'));
+    dropCtx = { targetID: target.getAttribute('data-wp-id'), placement: placement, inMiddle: inMiddle, hasChildren: target.children.length > 0 };
+  });
+  document.addEventListener('dragleave', function(ev){
+    if (!ev.relatedTarget) { clearDropMarks(); dropCtx = null; }
+  });
+  document.addEventListener('drop', function(ev){
+    ev.preventDefault();
+    clearDropMarks();
+    var componentType = ev.dataTransfer.getData('application/x-wb-component');
+    if (componentType) {
+      // 组件库拖入：DataTransfer 归父窗口所有，交父窗口 bindCanvasDrop 处理。
+      return;
+    }
+    var nodeID = ev.dataTransfer.getData('application/x-wb-node');
+    if (!nodeID) return;
+    var ctx = dropCtx || {};
+    dropCtx = null;
+    parent.postMessage({
+      type: 'wb-canvas-drop',
+      nodeID: nodeID,
+      targetID: ctx.targetID || '',
+      placement: ctx.placement || 'after',
+      inMiddle: !!ctx.inMiddle,
+      hasChildren: !!ctx.hasChildren
+    }, location.origin);
+  });
 
   var style = document.createElement('style');
   style.textContent = [

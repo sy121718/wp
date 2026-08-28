@@ -539,22 +539,18 @@
                     var target = event.target.closest && event.target.closest('[data-wp-id]');
                     var targetID = target && target.getAttribute('data-wp-id');
                     var type = event.dataTransfer.getData('application/x-wb-component');
-                    var nodeID = event.dataTransfer.getData('application/x-wb-node');
-                    if (type) {
-                        var item = paletteItems.filter(function (entry) { return entry.type === type; })[0];
-                        if (targetID) {
-                            var targetNode = self.findNode(targetID);
-                            var isContainer = targetNode && targetNode.type === 'core.container';
-                            var bounds = target.getBoundingClientRect();
-                            var offset = event.clientY - bounds.top;
-                            var placement = isContainer && offset > bounds.height * .25 && offset < bounds.height * .75 ? 'inside' : (offset < bounds.height / 2 ? 'before' : 'after');
-                            self.insertComponent(item, targetID, placement);
-                        } else {
-                            self.insertComponent(item);
-                        }
-                    } else if (nodeID && targetID) {
-                        var targetNode2 = self.findNode(targetID);
-                        self.moveNode(nodeID, targetID, targetNode2 && targetNode2.type === 'core.container' ? 'inside' : 'after');
+                    // 树/画布内元素拖动(x-wb-node)由 iframe 桥接统一处理,此处只接组件库拖入。
+                    if (!type) return;
+                    var item = paletteItems.filter(function (entry) { return entry.type === type; })[0];
+                    if (targetID) {
+                        var targetNode = self.findNode(targetID);
+                        var isContainer = targetNode && targetNode.type === 'core.container';
+                        var bounds = target.getBoundingClientRect();
+                        var offset = event.clientY - bounds.top;
+                        var placement = isContainer && offset > bounds.height * .25 && offset < bounds.height * .75 ? 'inside' : (offset < bounds.height / 2 ? 'before' : 'after');
+                        self.insertComponent(item, targetID, placement);
+                    } else {
+                        self.insertComponent(item);
                     }
                 });
             },
@@ -630,6 +626,8 @@
             syncInspector() {
                 var panel = document.getElementById('inspector-panel');
                 if (!panel) return;
+                // 面板重建前销毁富文本编辑器实例，避免残留 DOM 与事件。
+                if (window.tinymce) { try { window.tinymce.remove(); } catch (e) {} }
                 var node = this.findNode(this.selectedId);
                 panel.innerHTML = '';
                 var self = this;
@@ -702,14 +700,53 @@
                     input.addEventListener('change', function () { commit(path, input.checked); });
                     wrap.appendChild(input); wrap.appendChild(document.createTextNode(label)); panel.appendChild(wrap);
                 }
+                // 富文本编辑器（TinyMCE）：工具条与构建期白名单对齐
+                // （加粗/斜体/下划线/删除线/代码/列表/引用/链接），
+                // 提交 HTML 在发布构建时经 sanitizeRichHTML 白名单清洗。
+                function richTextField(label, path) {
+                    var wrap = document.createElement('div'); wrap.className = 'wb-field wb-field-richtext';
+                    var caption = document.createElement('label'); caption.textContent = label + '（富文本）'; wrap.appendChild(caption);
+                    var ta = document.createElement('textarea'); ta.rows = 8;
+                    ta.value = get(path) == null ? '' : String(get(path));
+                    wrap.appendChild(ta); panel.appendChild(wrap);
+                    if (!window.tinymce) {
+                        ta.addEventListener('change', function () { commit(path, ta.value); });
+                        return;
+                    }
+                    window.tinymce.init({
+                        target: ta,
+                        height: 220,
+                        menubar: false,
+                        branding: false,
+                        plugins: 'lists link autolink code',
+                        toolbar: 'undo redo | bold italic underline strikethrough | bullist numlist blockquote | link code',
+                        link_default_protocol: 'https',
+                        setup: function (editor) {
+                            editor.on('init', function () { editor.setContent(ta.value || ''); });
+                            editor.on('change input', function () {
+                                // 输入即写回 AST（节流由 TinyMCE change 触发频率保证）。
+                                self.snapshot();
+                                set(path, editor.getContent());
+                                self.renderTree(); self.refreshCanvas(); self.renderUI();
+                            });
+                        }
+                    });
+                }
                 // schema 控件 → 表单字段（key 即 props 顶层键，与后端 JSON 序列化一致）。
                 function schemaField(ctl) {
                     var label = controlLabel(ctl.key);
                     var path = 'props.' + ctl.key;
+                    // text 组件富文本模式：正文内容用 TinyMCE 渲染。
+                    if (node.type === 'core.text' && ctl.key === 'text' && (get('props.mode') || 'richtext') !== 'plaintext') {
+                        richTextField(label, path);
+                        return;
+                    }
                     if (ctl.kind === 'select') {
                         var choices = (ctl.options || []).map(function (o) { return [o, o === '' ? '（无）' : o]; });
                         if (ctl.default) choices.unshift(['', ctl.default + '（默认）']);
-                        field(label, path, 'select', choices);
+                        // text.mode 切换后重建面板，切换富文本/纯文本编辑形态。
+                        var after = (node.type === 'core.text' && ctl.key === 'mode') ? modeAfter : null;
+                        field(label, path, 'select', choices, after);
                     } else if (ctl.kind === 'text') {
                         field(label, path, 'textarea');
                     } else if (ctl.kind === 'int' || ctl.kind === 'slider') {
@@ -720,6 +757,10 @@
                         // string / safe / url / regex：文本输入。
                         field(label, path, 'input');
                     }
+                }
+                // mode 切换(richtext/plaintext)后重建检查器以切换编辑形态。
+                function modeAfter() {
+                    self.syncInspector();
                 }
                 // container 布局面板（嵌套结构未走 ct 声明，字段路径与编译端手写对齐）。
                 function containerLayout() {
@@ -982,6 +1023,15 @@
                             placement: node && node.type === 'core.container' ? 'inside' : 'after'
                         };
                         self.showLibrary();
+                        return;
+                    }
+                    if (ev.data.type === 'wb-canvas-drop' && ev.data.nodeID) {
+                        // 画布内元素拖动重排：桥接已算好落点，容器中带按内部插入。
+                        var t = ev.data.targetID ? self.findNode(ev.data.targetID) : null;
+                        var placement = ev.data.placement;
+                        if (t && t.type === 'core.container' && ev.data.inMiddle) placement = 'inside';
+                        if (!t) return;
+                        self.moveNode(ev.data.nodeID, ev.data.targetID, placement);
                     }
                 });
                 var search = document.querySelector('#wb-navigator .wb-search');

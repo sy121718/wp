@@ -204,3 +204,18 @@
     background: rgba(37,99,235,.08); color: var(--c-primary, #2563eb);
 }
 
+
+/* ===== 富文本编辑器字段 ===== */
+.wb-field-richtext .tox-tinymce { border-radius: 6px; border-color: var(--c-border, #e5e7eb); }
+.wb-field-richtext textarea { width: 100%; box-sizing: border-box; padding: 6px 8px; font-size: 13px; border: 1px solid var(--c-border, #e5e7eb); border-radius: 6px; font-family: monospace; }
+
+
+/* TinyMCE 宽度约束:工具条换行,编辑器不超面板宽 */
+.wb-field-richtext { max-width: 100%; overflow: hidden; }
+.wb-field-richtext .tox-tinymce { width: 100% !important; max-width: 100%; }
+.wb-field-richtext .tox-toolbar__group { flex-wrap: wrap; }
+.wb-inspector-body { overflow-x: hidden; }
+
+
+.wb-inspector { overflow-x: hidden; }
+
