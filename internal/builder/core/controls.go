@@ -47,6 +47,9 @@ type Control struct {
 	Pattern string      `json:"pattern,omitempty"` // regex 模式
 	// Section 面板分组：content / style / advanced（默认 content）。
 	Section string `json:"section,omitempty"`
+	// goName 反射字段名（Go 导出字段），ValidateSpec 按它定位字段值；
+	// Key 优先取 json tag（前端 AST props 的真实键），无 json tag 时两者一致。
+	goName string
 }
 
 // SortKey 确定性输出键。
@@ -65,7 +68,7 @@ func ParseControls(props any) (controls []Control, err error) {
 		if !ok || strings.TrimSpace(tag) == "" {
 			continue
 		}
-		c, parseErr := parseControlTag(f.Name, tag)
+		c, parseErr := parseControlTag(f, tag)
 		if parseErr != nil {
 			return nil, fmt.Errorf("字段 %s tag 解析失败: %w", f.Name, parseErr)
 		}
@@ -83,12 +86,18 @@ func ParseControls(props any) (controls []Control, err error) {
 }
 
 // parseControlTag 解析单个字段的 ct tag。
-func parseControlTag(fieldName, tag string) (c Control, err error) {
+// jsonKey 来自 json tag（前端 Page Document props 的真实键）；
+// 无 json tag 或 "-" 时退回 Go 字段名。
+func parseControlTag(f reflect.StructField, tag string) (c Control, err error) {
 	parts := strings.Split(tag, ",")
 	if len(parts) == 0 || parts[0] == "" {
 		return c, fmt.Errorf("缺少控件类型")
 	}
-	c.Key = fieldName
+	c.goName = f.Name
+	c.Key = f.Name
+	if j := strings.Split(f.Tag.Get("json"), ",")[0]; j != "" && j != "-" {
+		c.Key = j
+	}
 	c.Kind = ControlKind(strings.TrimSpace(parts[0]))
 	for _, part := range parts[1:] {
 		part = strings.TrimSpace(part)
@@ -139,9 +148,9 @@ func ValidateSpec(props any, nodeID string) (err error) {
 		v = v.Elem()
 	}
 	for _, c := range controls {
-		fv := v.FieldByName(c.Key)
+		fv := v.FieldByName(c.goName)
 		if !fv.IsValid() {
-			return fmt.Errorf("节点 %s: 字段 %s 不存在", nodeID, c.Key)
+			return fmt.Errorf("节点 %s: 字段 %s 不存在", nodeID, c.goName)
 		}
 		if err = validateControlValue(c, fv, nodeID); err != nil {
 			return err

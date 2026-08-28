@@ -63,6 +63,18 @@ func (h *Handle) Workbench(c *gin.Context) {
 		c.String(http.StatusInternalServerError, "编辑器元数据序列化失败")
 		return
 	}
+	// 组件 Inspector 面板 schema（docs/02-C3）：声明式 Controls 驱动检查器表单，
+	// 前端按 content/style/advanced 分组渲染，替代硬编码字段。
+	schemas, err := builder.ComponentSchemas()
+	if err != nil {
+		c.String(http.StatusInternalServerError, "组件 schema 生成失败")
+		return
+	}
+	schemasJSON, err := json.Marshal(schemas)
+	if err != nil {
+		c.String(http.StatusInternalServerError, "组件 schema 序列化失败")
+		return
+	}
 	c.HTML(http.StatusOK, "workbench/layout", gin.H{
 		"title":     workbenchTitle(page),
 		"pageId":    page.ID,
@@ -70,6 +82,7 @@ func (h *Handle) Workbench(c *gin.Context) {
 		"version":   page.DraftVersion,
 		"document":  string(documentJSON),
 		"meta":      string(metaJSON),
+		"schemas":   string(schemasJSON),
 	})
 }
 

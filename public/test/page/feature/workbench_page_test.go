@@ -24,6 +24,7 @@ func TestWorkbenchPageShell(t *testing.T) {
 			"version":   3,
 			"document":  `{"settings":{},"root":[]}`,
 			"meta":      `{"pageId":"p-1","draftPath":"/about","version":3}`,
+			"schemas":   `{"core.heading":[{"key":"text","kind":"text","section":"content"}]}`,
 		})
 	})
 
@@ -38,6 +39,7 @@ func TestWorkbenchPageShell(t *testing.T) {
 		"wb-save-draft", "wb-publish", "wb-device-desktop",
 		`id="wb-bootstrap"`, `{"settings":{},"root":[]}`,
 		`id="wb-meta"`, `{"pageId":"p-1","draftPath":"/about","version":3}`,
+		`id="wb-schemas"`, `"core.heading"`,
 		"/static/js/workbench.js", "存草稿", "editor=1",
 	} {
 		if !strings.Contains(body, fragment) {

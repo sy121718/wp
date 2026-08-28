@@ -27,7 +27,10 @@ import (
 //
 // 内核 pipeline.Publisher 的内存态可由数据库随时重建（LoadRecord），
 // 因此进程重启不影响发布正确性；多实例队列化属后续 build 模块。
-const systemCreator = "system"
+// page_artifacts.created_by 为 uuid 列：系统操作留空，
+// artifact.Record 的 defaultCreator 会兜底为全零 UUID。
+// 此前写入 "system" 字面量导致构建入库 500（uuid 解析失败），发布主链无法走通。
+const systemCreator = ""
 
 // syncKernel 把页面当前草稿同步进内核记录（幂等；版本号以内核为准续增）。
 func (s *Service) syncKernel(path string, doc json.RawMessage, pageID string) error {

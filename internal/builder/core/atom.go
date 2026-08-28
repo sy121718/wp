@@ -49,6 +49,10 @@ type Atom[P any] struct{ Spec AtomSpec[P] }
 // Type 实现组件接口。
 func (a Atom[P]) Type() string { return a.Spec.TypeName }
 
+// PropsSpec 实现 SpecProvider：返回 Props 零值实例供声明式 Controls
+// 生成 Inspector 面板 schema（docs/02-C3）。组件作者零配置。
+func (a Atom[P]) PropsSpec() any { var p P; return &p }
+
 // Validate 实现组件接口：公共校验管线 + 声明式 + 组件关系性 + Advanced。
 func (a Atom[P]) Validate(node *Node, ids map[string]bool) (err error) {
 	if err = ValidateNodeID(node.ID, node.Name, ids); err != nil {

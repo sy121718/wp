@@ -3,7 +3,6 @@ package routers
 import (
 	"log"
 	"net/http"
-	"os"
 	"path/filepath"
 
 	adminhttp "go_wp/internal/module/admin/inbound/http"
@@ -98,13 +97,13 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 
 // setupStaticFace 挂载静态访问面（docs/03-pipeline.md §5）。
 //
-// ActiveRoot 的 symlink 目标为相对路径（../../artifacts/{hash}），
+// ActiveRoot 位于产物根下两级（{root}/public/active），符号链接目标相对可达。
 // 因此访问面根必须是 active 目录本身；文件由 StaticFS 只读直出，
-// / 落到 index 入口。目录不存在时跳过挂载（尚未有发布产物属正常态）。
+// / 落到 index 入口。
+// 注意必须无条件挂载：首次发布发生在启动之后，启动时目录必然不存在，
+// 若按目录存在与否跳过挂载，静态访问面将永远无法生效（每次请求动态读盘，
+// 目录与产物在首次发布后即时生效）。
 func setupStaticFace(router *gin.Engine) {
 	activeRoot := filepath.Join("public", "runtime", "artifacts", "public", "active")
-	if _, err := os.Stat(activeRoot); err != nil {
-		return
-	}
 	router.StaticFS("/site", http.Dir(activeRoot))
 }

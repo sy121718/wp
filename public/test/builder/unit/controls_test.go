@@ -33,13 +33,13 @@ func TestParseControls(t *testing.T) {
 	for _, c := range controls {
 		byKey[c.Key] = c
 	}
-	if c := byKey["Level"]; c.Kind != core.ControlSelect || c.Default != "h2" || len(c.Options) != 3 {
+	if c := byKey["level"]; c.Kind != core.ControlSelect || c.Default != "h2" || len(c.Options) != 3 {
 		t.Errorf("Level 控件异常: %+v", c)
 	}
-	if c := byKey["Times"]; c.Kind != core.ControlInt || c.Min != 1 || c.Max != 5 {
+	if c := byKey["times"]; c.Kind != core.ControlInt || c.Min != 1 || c.Max != 5 {
 		t.Errorf("Times 控件异常: %+v", c)
 	}
-	if c := byKey["Code"]; c.Kind != core.ControlRegex || c.Pattern != "^[a-z]{2,4}$" {
+	if c := byKey["code"]; c.Kind != core.ControlRegex || c.Pattern != "^[a-z]{2,4}$" {
 		t.Errorf("Code 控件异常: %+v", c)
 	}
 }
@@ -92,7 +92,7 @@ func TestSchemaJSON(t *testing.T) {
 		t.Fatalf("schema 项数异常: %d", len(items))
 	}
 	first := items[0]
-	if first["key"] != "Title" || first["kind"] != "text" || first["maxLen"] != float64(10) {
+	if first["key"] != "title" || first["kind"] != "text" || first["maxLen"] != float64(10) {
 		t.Errorf("首个 schema 项异常: %+v", first)
 	}
 	// 确定性：两次生成一致。
@@ -111,10 +111,10 @@ func TestHeadingSpecIntegration(t *testing.T) {
 	if len(controls) < 6 {
 		t.Errorf("heading 声明式控件数异常: %d", len(controls))
 	}
-	// Tag 的默认值与选项完整性。
+	// Tag 的默认值与选项完整性（Key 取 json tag：heading.Props.Tag 序列化为 tag）。
 	var found bool
 	for _, c := range controls {
-		if c.Key == "Tag" {
+		if c.Key == "tag" {
 			found = true
 			if c.Default != "h2" || len(c.Options) != 8 {
 				t.Errorf("Tag 声明异常: %+v", c)

@@ -7,6 +7,7 @@ package core
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
 )
 
 // Node 组件树节点通用结构。Props 由各组件自行解码为自己的 props 类型。
@@ -54,6 +55,17 @@ func Lookup(typeName string) (c Component, err error) {
 		return nil, fmt.Errorf("不支持的组件类型: %s", typeName)
 	}
 	return c, nil
+}
+
+// Types 返回注册表全部组件类型标识（字典序，确定性输出）。
+// 供编辑器侧一次性拉取组件元数据（Inspector 面板 schema）。
+func Types() (types []string) {
+	types = make([]string, 0, len(registry))
+	for name := range registry {
+		types = append(types, name)
+	}
+	sort.Strings(types)
+	return types
 }
 
 // RenderNode 渲染单个节点：按类型分发到已注册组件。

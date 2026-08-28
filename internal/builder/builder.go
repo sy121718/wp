@@ -112,6 +112,29 @@ func ValidatePage(p *Page) (err error) {
 	return nil
 }
 
+// ComponentSchemas 生成全部已注册组件的 Inspector 面板 schema（docs/02-C3）。
+// 键为组件类型（core.container 等），值为 core.Control 描述符数组 JSON。
+// 未实现 SpecProvider 的组件跳过（兼容手写校验阶段）。
+// 输出确定性：Types 字典序，桶内字段声明序。
+func ComponentSchemas() (map[string]json.RawMessage, error) {
+	out := make(map[string]json.RawMessage, 8)
+	for _, typeName := range core.Types() {
+		comp, err := core.Lookup(typeName)
+		if err != nil {
+			continue
+		}
+		sp, ok := comp.(core.SpecProvider)
+		if !ok {
+			continue
+		}
+		schema, err := core.SchemaJSON(sp.PropsSpec())
+		if err != nil {
+			return nil, fmt.Errorf("组件 %s schema 生成失败: %w", typeName, err)
+		}
+		out[typeName] = schema
+	}
+	return out, nil
+}
 // Compile 编译页面文档。确定性保证：同一输入产生完全相同的输出。
 func Compile(p *Page, opts ...CompileOption) (res *CompiledPage, err error) {
 	if err = ValidatePage(p); err != nil {

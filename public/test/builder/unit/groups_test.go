@@ -26,13 +26,14 @@ func TestGroupSectionParse(t *testing.T) {
 	for _, c := range controls {
 		byKey[c.Key] = c
 	}
-	if byKey["Content"].Section != "content" {
-		t.Errorf("默认分组异常: %+v", byKey["Content"])
+	// Key 语义：优先 json tag（与前端 Page Document props 键一致），无 json tag 退回 Go 字段名。
+	if byKey["content"].Section != "content" {
+		t.Errorf("默认分组异常: %+v", byKey["content"])
 	}
-	if byKey["Level"].Section != "style" {
-		t.Errorf("sec=style 未生效: %+v", byKey["Level"])
+	if byKey["level"].Section != "style" {
+		t.Errorf("sec=style 未生效: %+v", byKey["level"])
 	}
-	if c := byKey["Opacity"]; c.Kind != core.ControlSlider || c.Step != 5 || c.Min != 0 || c.Max != 100 {
+	if c := byKey["opacity"]; c.Kind != core.ControlSlider || c.Step != 5 || c.Min != 0 || c.Max != 100 {
 		t.Errorf("slider 参数异常: %+v", c)
 	}
 }
@@ -59,7 +60,7 @@ func TestGroupSectionSchema(t *testing.T) {
 	}
 	// step 透出。
 	for _, it := range items {
-		if it["key"] == "Opacity" && it["step"] != float64(5) {
+		if it["key"] == "opacity" && it["step"] != float64(5) {
 			t.Errorf("step 未输出: %v", it)
 		}
 	}

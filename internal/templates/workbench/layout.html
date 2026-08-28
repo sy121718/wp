@@ -86,6 +86,7 @@
     {* 草稿数据岛：workbench.js 读取并初始化前端状态机 *}
     <script type="application/json" id="wb-bootstrap">{{ .document | unsafe }}</script>
     <script type="application/json" id="wb-meta">{{ .meta | unsafe }}</script>
+    <script type="application/json" id="wb-schemas">{{ .schemas | unsafe }}</script>
     <script src="/static/js/workbench.js"></script>
 </body>
 </html>

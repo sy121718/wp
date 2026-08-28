@@ -15,6 +15,31 @@
     if (!Array.isArray(initialDoc.root)) initialDoc.root = [];
     if (!initialDoc.settings) initialDoc.settings = {};
 
+    /** 组件 Inspector 面板 schema（docs/02-C3 声明式 Controls，后端 ComponentSchemas 注入）。 */
+    var componentSchemas = {};
+    try { componentSchemas = JSON.parse(document.getElementById('wb-schemas').textContent || '{}'); } catch (e) { componentSchemas = {}; }
+
+    /** schema key → 面板中文标签（缺省回退 key 本身）。 */
+    var CONTROL_LABELS = {
+        text: '文本内容', tag: '语义标签', color: '颜色', weight: '字重',
+        letterSpacing: '字间距', transform: '大小写转换', lineClamp: '多行截断',
+        textShadow: '文字阴影', fontSize: '字号', fontWeight: '字重',
+        background: '背景色', border: '边框颜色', shadow: '阴影级别',
+        variant: '外观风格', radius: '圆角', hoverLift: '悬停上浮', spacing: '间距',
+        hoverShift: '悬停位移', action: '点击动作', value: '跳转地址', target: '打开方式',
+        rel: '链接关系', source: '图标来源', name: '名称', assetId: '媒体资源 ID',
+        position: '位置', kind: '类型', iconName: '图标样式', align: '对齐',
+        style: '样式', mode: '展示模式', aspectRatio: '宽高比', aspectRatioValue: '自定义宽高比',
+        objectFit: '填充方式', borderWidth: '边框宽度', borderColor: '边框颜色',
+        clickAction: '点击行为', defaultLink: '默认链接', captionMode: '说明方式',
+        caption: '说明文字', fallback: '兜底文本', title: '标题', sizes: '响应式尺寸',
+        src: '图片地址', alt: '替代文字', width: '宽度', height: '高度',
+        inlineSvg: '内联 SVG', sticky: '滚动吸顶', stickyTop: '吸顶偏移',
+        entrance: '入场动画', bgGradient: '背景渐变', bgImage: '背景图',
+        borderStyle: '边框样式', overlay: '遮罩强度', columns: '栅格列数'
+    };
+    function controlLabel(key) { return CONTROL_LABELS[key] || key; }
+
     /** 深拷贝（结构化克隆不可用时的兜底）。 */
     function clone(v) { return v === undefined ? undefined : JSON.parse(JSON.stringify(v)); }
 
@@ -488,20 +513,20 @@
                 this.renderTree(); this.refreshCanvas(); this.syncInspector();
             },
 
-            // ---------------- 可视化属性检查器 ----------------
+            // ---------------- 可视化属性检查器（docs/02-C3 schema 驱动） ----------------
             syncInspector() {
                 var panel = document.getElementById('inspector-panel');
                 if (!panel) return;
                 var node = this.findNode(this.selectedId);
                 panel.innerHTML = '';
+                var self = this;
                 if (!node) {
                     var empty = document.createElement('p');
                     empty.className = 'wb-empty';
-                    empty.textContent = '在画布或结构树中选择组件';
+                    empty.textContent = '在画布或大纲树中选择组件';
                     panel.appendChild(empty);
                     return;
                 }
-                var self = this;
                 node.props = node.props || {};
 
                 function get(path) {
@@ -524,16 +549,24 @@
                 function heading(text) {
                     var h = document.createElement('h3'); h.className = 'wb-inspector-section'; h.textContent = text; panel.appendChild(h);
                 }
-                function field(label, path, kind, choices, after) {
+                function field(label, path, kind, choices, after, extra) {
                     var wrap = document.createElement('div'); wrap.className = 'wb-field';
                     var caption = document.createElement('label'); caption.textContent = label; wrap.appendChild(caption);
                     var input = document.createElement(kind === 'textarea' ? 'textarea' : kind === 'select' ? 'select' : 'input');
                     if (kind === 'textarea') input.rows = 4;
-                    if (kind === 'select') choices.forEach(function (choice) {
-                        var option = document.createElement('option'); option.value = choice[0]; option.textContent = choice[1]; input.appendChild(option);
+                    if (kind === 'number') { input.type = 'number'; }
+                    if (extra) { if (extra.min !== undefined) input.min = extra.min; if (extra.max !== undefined) input.max = extra.max; if (extra.step !== undefined) input.step = extra.step; }
+                    if (kind === 'select') {
+                        choices.forEach(function (choice) {
+                            var option = document.createElement('option'); option.value = choice[0]; option.textContent = choice[1]; input.appendChild(option);
+                        });
+                    }
+                    input.value = get(path) == null ? '' : String(get(path));
+                    input.addEventListener('change', function () {
+                        var value = input.value;
+                        if (kind === 'number') value = input.value === '' ? '' : Number(input.value);
+                        commit(path, value, after);
                     });
-                    input.value = get(path) == null ? '' : get(path);
-                    input.addEventListener('change', function () { commit(path, input.value, after); });
                     wrap.appendChild(input); panel.appendChild(wrap);
                 }
                 function checkbox(label, path) {
@@ -542,55 +575,120 @@
                     input.addEventListener('change', function () { commit(path, input.checked); });
                     wrap.appendChild(input); wrap.appendChild(document.createTextNode(label)); panel.appendChild(wrap);
                 }
-
-                heading(String(node.type).replace('core.', '') + ' 组件');
-                field('显示名称', 'name', 'input');
-                checkbox('在编辑器中隐藏', 'hidden');
-                checkbox('锁定，禁止误选', 'locked');
-                heading('内容与样式');
-                switch (node.type) {
-                case 'core.container':
-                    field('语义标签', 'props.tag', 'select', [['div', '容器'], ['section', '区块'], ['article', '文章'], ['header', '页头'], ['footer', '页脚'], ['main', '主体']]);
-                    field('布局方向', 'props.layout.flex.direction', 'select', [['column', '纵向排列'], ['row', '横向排列']], function () { set('props.layout.engine', 'flex'); });
-                    field('组件间距', 'props.layout.flex.gap', 'input');
-                    field('内边距', 'props.box.padding.desktop', 'input');
-                    break;
-                case 'core.heading':
-                    field('标题文字', 'props.text', 'textarea');
-                    field('标题级别', 'props.tag', 'select', [['h1', 'H1'], ['h2', 'H2'], ['h3', 'H3'], ['h4', 'H4'], ['h5', 'H5'], ['h6', 'H6']]);
-                    field('文字颜色', 'props.color', 'input');
-                    break;
-                case 'core.text':
-                    field('正文内容', 'props.text', 'textarea');
-                    field('内容格式', 'props.mode', 'select', [['plaintext', '纯文本'], ['richtext', '富文本']], function (value) { if (value === 'plaintext') set('props.plainTag', 'p'); });
-                    field('文字颜色', 'props.color', 'input');
-                    break;
-                case 'core.button':
-                    field('按钮文案', 'props.text', 'input');
-                    field('点击动作', 'props.action', 'select', [['internal', '站内页面'], ['external', '外部链接'], ['anchor', '页面锚点'], ['native', '电话或邮件']], function (value) { set('props.value', { internal: '/', external: 'https://example.com', anchor: 'section', native: 'tel:+8613800000000' }[value]); });
-                    field('跳转地址', 'props.value', 'input');
-                    field('按钮样式', 'props.variant', 'select', [['solid', '填充'], ['outline', '描边'], ['ghost', '文字']]);
-                    break;
-                case 'core.image':
-                    field('图片地址', 'props.src', 'input');
-                    field('替代文字', 'props.alt', 'input');
-                    field('显示宽度', 'props.width', 'input');
-                    break;
-                case 'core.divider':
-                    field('线条样式', 'props.style', 'select', [['solid', '实线'], ['dashed', '虚线'], ['dotted', '点线'], ['double', '双线']]);
-                    field('线条粗细', 'props.weight', 'input');
-                    field('线条颜色', 'props.color', 'input');
-                    break;
-                case 'core.spacer':
-                    field('间隔高度', 'props.height.desktop', 'input');
-                    break;
+                // schema 控件 → 表单字段（key 即 props 顶层键，与后端 JSON 序列化一致）。
+                function schemaField(ctl) {
+                    var label = controlLabel(ctl.key);
+                    var path = 'props.' + ctl.key;
+                    if (ctl.kind === 'select') {
+                        var choices = (ctl.options || []).map(function (o) { return [o, o === '' ? '（无）' : o]; });
+                        if (ctl.default) choices.unshift(['', ctl.default + '（默认）']);
+                        field(label, path, 'select', choices);
+                    } else if (ctl.kind === 'text') {
+                        field(label, path, 'textarea');
+                    } else if (ctl.kind === 'int' || ctl.kind === 'slider') {
+                        field(label, path, 'number', null, null, { min: ctl.min, max: ctl.max, step: ctl.step || 1 });
+                    } else if (ctl.kind === 'bool') {
+                        checkbox(label, path);
+                    } else {
+                        // string / safe / url / regex：文本输入。
+                        field(label, path, 'input');
+                    }
                 }
-                var actions = document.createElement('div'); actions.className = 'wb-inspector-actions';
-                [['复制组件', self.copyNode.bind(self)], ['粘贴样式', self.pasteStyle.bind(self)]].forEach(function (pair) {
-                    var button = document.createElement('button'); button.type = 'button'; button.className = 'wb-btn wb-btn-secondary wb-btn-sm'; button.textContent = pair[0];
-                    button.addEventListener('click', pair[1]); actions.appendChild(button);
-                });
-                panel.appendChild(actions);
+                // container 布局面板（嵌套结构未走 ct 声明，字段路径与编译端手写对齐）。
+                function containerLayout() {
+                    field('语义标签', 'props.tag', 'select', [['div', '容器'], ['section', '区块'], ['article', '文章'], ['header', '页头'], ['footer', '页脚'], ['main', '主体']]);
+                    heading('Flex 布局');
+                    field('排列方向', 'props.layout.flex.direction', 'select', [['column', '纵向'], ['row', '横向']], function () { set('props.layout.engine', 'flex'); });
+                    field('主轴分布', 'props.layout.flex.justify', 'select', [['', '（默认）'], ['flex-start', '起始对齐'], ['center', '居中'], ['flex-end', '末端对齐'], ['space-between', '两端分布'], ['space-around', '环绕分布']]);
+                    field('交叉对齐', 'props.layout.flex.align', 'select', [['', '（默认）'], ['stretch', '拉伸'], ['center', '居中'], ['flex-start', '起始'], ['flex-end', '末端']]);
+                    checkbox('允许换行', 'props.layout.flex.wrap');
+                    field('组件间距', 'props.layout.flex.gap', 'input');
+                    heading('尺寸与留白');
+                    field('内边距（桌面）', 'props.box.padding.desktop', 'input');
+                    field('外边距（桌面）', 'props.box.margin.desktop', 'input');
+                    field('最小高度', 'props.box.minHeight', 'input');
+                }
+                // container 视觉面板。
+                function containerVisual() {
+                    heading('背景');
+                    field('背景颜色', 'props.visual.bgColor', 'input');
+                    field('背景渐变', 'props.visual.bgGradient', 'input');
+                    field('背景图片', 'props.visual.bgImage', 'input');
+                    heading('边框与圆角');
+                    field('边框宽度', 'props.visual.borderWidth', 'input');
+                    field('边框样式', 'props.visual.borderStyle', 'select', [['', '（默认）'], ['solid', '实线'], ['dashed', '虚线'], ['dotted', '点线']]);
+                    field('边框颜色', 'props.visual.borderColor', 'input');
+                    field('圆角', 'props.visual.radius', 'input');
+                    field('阴影', 'props.visual.shadow', 'select', [['', '无'], ['sm', '小'], ['md', '中'], ['lg', '大'], ['xl', '特大']]);
+                    heading('交互');
+                    checkbox('滚动吸顶', 'props.interaction.sticky');
+                    field('吸顶偏移', 'props.interaction.stickyTop', 'input');
+                    checkbox('悬停上浮', 'props.interaction.hoverLift');
+                    field('入场动画', 'props.interaction.entrance', 'select', [['', '无'], ['fade-in', '淡入'], ['slide-up', '上滑进入']]);
+                }
+
+                // divider 嵌入元素面板（Inset 嵌套结构未走 ct 顶层声明）。
+                function dividerInset() {
+                    heading('嵌入元素');
+                    field('嵌入类型', 'props.inset.kind', 'select', [['none', '无'], ['text', '文本'], ['icon', '图标']]);
+                    field('嵌入文本', 'props.inset.text', 'input');
+                    field('图标样式', 'props.inset.iconName', 'select', [['star', '星形'], ['diamond', '菱形'], ['dot', '圆点']]);
+                    field('嵌入位置', 'props.inset.position', 'select', [['center', '居中'], ['left', '靠左'], ['right', '靠右']]);
+                    field('两侧留白', 'props.inset.spacing', 'input');
+                }
+                // divider 嵌入文本样式。
+                function dividerInsetStyle() {
+                    heading('嵌入文本样式');
+                    field('字号', 'props.inset.fontSize', 'input');
+                    field('字重', 'props.inset.fontWeight', 'select', [['', '（默认）'], ['400', '常规'], ['500', '中等'], ['600', '半粗'], ['700', '粗体']]);
+                    field('颜色', 'props.inset.color', 'input');
+                }
+                // spacer 高度面板（Responsive 嵌套结构）。
+                function spacerPanel() {
+                    heading('留白高度');
+                    field('桌面端高度', 'props.height.desktop', 'input');
+                    field('平板高度', 'props.height.tablet', 'input');
+                    field('手机端高度', 'props.height.mobile', 'input');
+                }
+
+                var schema = componentSchemas[node.type] || [];
+                var groups = { content: [], style: [], advanced: [] };
+                schema.forEach(function (ctl) { (groups[ctl.section] || groups.content).push(ctl); });
+
+                var nodeTitle = node.name || String(node.type).replace('core.', '');
+                if (this.tab === 'style') {
+                    heading(nodeTitle + ' · 样式');
+                    if (node.type === 'core.container') containerVisual();
+                    if (node.type === 'core.divider') dividerInsetStyle();
+                    groups.style.forEach(schemaField);
+                    if (!groups.style.length && node.type !== 'core.container' && node.type !== 'core.divider') {
+                        var none1 = document.createElement('p'); none1.className = 'wb-empty'; none1.textContent = '该组件暂无独立样式项'; panel.appendChild(none1);
+                    }
+                } else if (this.tab === 'extend') {
+                    heading('编辑元数据');
+                    field('显示名称', 'name', 'input');
+                    checkbox('在编辑器中隐藏', 'hidden');
+                    checkbox('锁定，禁止误选', 'locked');
+                    if (groups.advanced.length) {
+                        heading('高级属性');
+                        groups.advanced.forEach(schemaField);
+                    }
+                    var actions = document.createElement('div'); actions.className = 'wb-inspector-actions';
+                    [['复制组件', self.copyNode.bind(self)], ['粘贴样式', self.pasteStyle.bind(self)]].forEach(function (pair) {
+                        var button = document.createElement('button'); button.type = 'button'; button.className = 'wb-btn wb-btn-secondary wb-btn-sm'; button.textContent = pair[0];
+                        button.addEventListener('click', pair[1]); actions.appendChild(button);
+                    });
+                    panel.appendChild(actions);
+                } else {
+                    heading(nodeTitle + ' · 布局与内容');
+                    if (node.type === 'core.container') containerLayout();
+                    if (node.type === 'core.divider') dividerInset();
+                    if (node.type === 'core.spacer') spacerPanel();
+                    groups.content.forEach(schemaField);
+                    if (!groups.content.length && node.type !== 'core.container' && node.type !== 'core.divider' && node.type !== 'core.spacer') {
+                        var none2 = document.createElement('p'); none2.className = 'wb-empty'; none2.textContent = '该组件暂无内容项'; panel.appendChild(none2);
+                    }
+                }
             },
 
             // ---------------- API 接线（草稿保存 / 构建 / 发布） ----------------
@@ -696,6 +794,16 @@
                 if (search) search.addEventListener('input', function () {
                     self.filter = search.value;
                     self.renderTree();
+                });
+                // 检查器三个页签：布局(内容) / 样式 / 扩展——切换后重渲染面板。
+                var tabKeys = ['layout', 'style', 'extend'];
+                var tabButtons = document.querySelectorAll('.wb-tabs button');
+                tabButtons.forEach(function (button, index) {
+                    button.addEventListener('click', function () {
+                        self.tab = tabKeys[index] || 'layout';
+                        tabButtons.forEach(function (b, i) { b.classList.toggle('is-active', i === index); });
+                        self.syncInspector();
+                    });
                 });
                 var controls = {
                     'wb-device-desktop': function () { self.setDevice('desktop'); },
