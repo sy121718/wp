@@ -40,6 +40,25 @@
     };
     function controlLabel(key) { return CONTROL_LABELS[key] || key; }
 
+    /** 枚举值 → 面板显示名(分段按钮用);缺省回退原值。 */
+    var OPTION_LABELS = {
+        h1: 'H1', h2: 'H2', h3: 'H3', h4: 'H4', h5: 'H5', h6: 'H6',
+        div: '容器', section: '区块', article: '文章', header: '页头', footer: '页脚', main: '主体',
+        solid: '实线', dashed: '虚线', dotted: '点线', double: '双线',
+        column: '纵向', row: '横向',
+        'flex-start': '起始', center: '居中', 'flex-end': '末端',
+        'space-between': '两端', 'space-around': '环绕', stretch: '拉伸',
+        internal: '站内', external: '外链', anchor: '锚点', native: '电话邮件', modal: '弹窗', link: '链接',
+        self: '当前页', blank: '新窗口', none: '无', nofollow: 'nofollow',
+        grid: '网格', carousel: '轮播', original: '原始', cover: '填充', contain: '包含', fill: '拉伸满',
+        lightbox: '灯箱', sm: '小', md: '中', lg: '大', xl: '特大', xs: '特小',
+        solid2: '', underline: '下划线', 'line-through': '删除线',
+        uppercase: '大写', lowercase: '小写', capitalize: '首字母',
+        richtext: '富文本', plaintext: '纯文本',
+        'fade-in': '淡入', 'slide-up': '上滑'
+    };
+    function optionLabel(v) { return OPTION_LABELS[v] || v; }
+
     /** 深拷贝（结构化克隆不可用时的兜底）。 */
     function clone(v) { return v === undefined ? undefined : JSON.parse(JSON.stringify(v)); }
 
@@ -700,6 +719,28 @@
                     input.addEventListener('change', function () { commit(path, input.checked); });
                     wrap.appendChild(input); wrap.appendChild(document.createTextNode(label)); panel.appendChild(wrap);
                 }
+                // 分段按钮组(WP 式):短枚举平铺,点选即提交,当前值高亮。
+                function segmentedField(label, path, ctl, after) {
+                    var wrap = document.createElement('div'); wrap.className = 'wb-field wb-field-seg';
+                    var caption = document.createElement('label'); caption.textContent = label; wrap.appendChild(caption);
+                    var seg = document.createElement('div'); seg.className = 'wb-seg';
+                    var current = get(path) == null ? '' : String(get(path));
+                    var buttons = [];
+                    (ctl.options || []).forEach(function (o) {
+                        var b = document.createElement('button');
+                        b.type = 'button'; b.className = 'wb-seg-btn';
+                        b.textContent = optionLabel(o);
+                        b.title = o;
+                        if (o === current || (!current && ctl.default && o === ctl.default)) b.classList.add('is-active');
+                        b.addEventListener('click', function () {
+                            commit(path, o, after);
+                            buttons.forEach(function (x) { x.classList.toggle('is-active', x === b); });
+                        });
+                        buttons.push(b);
+                        seg.appendChild(b);
+                    });
+                    wrap.appendChild(seg); panel.appendChild(wrap);
+                }
                 // 富文本编辑器（TinyMCE）：工具条与构建期白名单对齐
                 // （加粗/斜体/下划线/删除线/代码/列表/引用/链接），
                 // 提交 HTML 在发布构建时经 sanitizeRichHTML 白名单清洗。
@@ -742,11 +783,16 @@
                         return;
                     }
                     if (ctl.kind === 'select') {
-                        var choices = (ctl.options || []).map(function (o) { return [o, o === '' ? '（无）' : o]; });
+                        // 短枚举(≤6 项)用分段按钮组(WP 式节省空间),长列表保留下拉。
+                        if ((ctl.options || []).length <= 6) {
+                            segmentedField(label, path, ctl, after);
+                            return;
+                        }
+                        var choices = (ctl.options || []).map(function (o) { return [o, o === '' ? '（无）' : optionLabel(o)]; });
                         if (ctl.default) choices.unshift(['', ctl.default + '（默认）']);
                         // text.mode 切换后重建面板，切换富文本/纯文本编辑形态。
-                        var after = (node.type === 'core.text' && ctl.key === 'mode') ? modeAfter : null;
-                        field(label, path, 'select', choices, after);
+                        var afterSel = (node.type === 'core.text' && ctl.key === 'mode') ? modeAfter : after;
+                        field(label, path, 'select', choices, afterSel);
                     } else if (ctl.kind === 'text') {
                         field(label, path, 'textarea');
                     } else if (ctl.kind === 'int' || ctl.kind === 'slider') {
