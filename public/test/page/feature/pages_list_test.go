@@ -18,10 +18,12 @@ func TestPagesListTemplate(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	now := time.Now()
 	router := gin.New()
-	router.HTMLRender = templates.NewJetHTMLRender("../../../internal/templates", true)
+	router.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
 	router.GET("/admin/pages", func(c *gin.Context) {
 		c.HTML(http.StatusOK, "admin/pages", map[string]any{
-			"Title": "页面管理", "Menu": "pages",
+			// 键名与生产 templateMap() 对齐：title/menu 小写(layout 取值)，
+			// Pages/Projects 大写(模板 range 取值)。
+			"title": "页面管理", "menu": "pages",
 			"Projects": []map[string]any{{"ID": "p1", "Name": "站点A"}},
 			"Pages": []map[string]any{
 				{"ID": "pg1", "ProjectID": "p1", "Kind": "home", "DraftPath": "/demo", "Active": true, "Staged": true, "Stale": true, "Version": int64(3), "UpdatedAt": now},

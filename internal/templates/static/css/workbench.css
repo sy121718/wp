@@ -197,3 +197,10 @@
 /* 输入框与媒体按钮同行:按钮绝对定位右侧,输入框留出空间 */
 .wb-field .wb-media-pick { position: absolute; right: 6px; bottom: 6px; padding: 2px 8px; font-size: 11px; }
 
+
+/* ===== 组件库插入位置提示 ===== */
+.wb-library-hint {
+    margin: 0; padding: 6px 10px; font-size: 12px; border-radius: 6px;
+    background: rgba(37,99,235,.08); color: var(--c-primary, #2563eb);
+}
+

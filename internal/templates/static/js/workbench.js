@@ -69,6 +69,7 @@
             tab: 'layout',
             view: 'edit',           // 左侧面板视图：edit=组件编辑 / library=组件库（互斥，对标 WP）
             libraryFilter: '',
+            pendingInsertTarget: null, // 画布「+ 插入组件」浮标记住的插入位置
             immersive: false,
             navigatorOpen: true,
             filter: '',
@@ -136,7 +137,14 @@
                     button.querySelector('strong').textContent = item.label;
                     button.querySelector('span').textContent = item.hint;
                     button.addEventListener('click', function () {
-                        self.insertComponent(item);
+                        var pending = self.pendingInsertTarget;
+                        if (pending && self.findNode(pending.id)) {
+                            // 画布浮标指定的插入位置。
+                            self.insertComponent(item, pending.id, pending.placement);
+                            self.pendingInsertTarget = null;
+                        } else {
+                            self.insertComponent(item);
+                        }
                         self.showEdit(); // 插入后直接进入新组件的编辑面板
                     });
                     button.addEventListener('dragstart', function (event) {
@@ -308,6 +316,17 @@
                 this.view = 'library';
                 document.getElementById('wb-panel-library').hidden = false;
                 document.getElementById('wb-panel-edit').hidden = true;
+                var hint = document.getElementById('wb-library-hint');
+                if (hint) {
+                    var pending = this.pendingInsertTarget;
+                    if (pending) {
+                        var node = this.findNode(pending.id);
+                        hint.textContent = '点击组件，插入到「' + (node ? (node.name || node.id) : pending.id) + '」' + (pending.placement === 'inside' ? '内部' : '之后');
+                        hint.style.display = 'block';
+                    } else {
+                        hint.style.display = 'none';
+                    }
+                }
                 var search = document.getElementById('wb-library-search');
                 if (search) search.focus();
             },
@@ -495,19 +514,47 @@
                 if (!doc || doc.__wbDropBound) return;
                 doc.__wbDropBound = true;
                 var self = this;
-                doc.addEventListener('dragover', function (event) { event.preventDefault(); });
+                function clearDropMarks(scope) {
+                    (scope || doc).querySelectorAll('.wb-drop-before,.wb-drop-after,.wb-drop-inside').forEach(function (el) {
+                        el.classList.remove('wb-drop-before', 'wb-drop-after', 'wb-drop-inside');
+                    });
+                }
+                doc.addEventListener('dragover', function (event) {
+                    event.preventDefault();
+                    var target = event.target.closest && event.target.closest('[data-wp-id]');
+                    clearDropMarks();
+                    if (!target) return;
+                    var bounds = target.getBoundingClientRect();
+                    var offset = event.clientY - bounds.top;
+                    var isContainer = (target.getAttribute('data-wp-id') && (self.findNode(target.getAttribute('data-wp-id')) || {}).type === 'core.container');
+                    var placement = isContainer && offset > bounds.height * .25 && offset < bounds.height * .75 ? 'inside' : (offset < bounds.height / 2 ? 'before' : 'after');
+                    target.classList.add('wb-drop-' + placement);
+                });
+                doc.addEventListener('dragleave', function (event) {
+                    if (!event.relatedTarget) clearDropMarks();
+                });
                 doc.addEventListener('drop', function (event) {
                     event.preventDefault();
+                    clearDropMarks();
                     var target = event.target.closest && event.target.closest('[data-wp-id]');
                     var targetID = target && target.getAttribute('data-wp-id');
                     var type = event.dataTransfer.getData('application/x-wb-component');
                     var nodeID = event.dataTransfer.getData('application/x-wb-node');
                     if (type) {
                         var item = paletteItems.filter(function (entry) { return entry.type === type; })[0];
-                        self.insertComponent(item, targetID, targetID ? undefined : 'inside');
+                        if (targetID) {
+                            var targetNode = self.findNode(targetID);
+                            var isContainer = targetNode && targetNode.type === 'core.container';
+                            var bounds = target.getBoundingClientRect();
+                            var offset = event.clientY - bounds.top;
+                            var placement = isContainer && offset > bounds.height * .25 && offset < bounds.height * .75 ? 'inside' : (offset < bounds.height / 2 ? 'before' : 'after');
+                            self.insertComponent(item, targetID, placement);
+                        } else {
+                            self.insertComponent(item);
+                        }
                     } else if (nodeID && targetID) {
-                        var targetNode = self.findNode(targetID);
-                        self.moveNode(nodeID, targetID, targetNode && targetNode.type === 'core.container' ? 'inside' : 'after');
+                        var targetNode2 = self.findNode(targetID);
+                        self.moveNode(nodeID, targetID, targetNode2 && targetNode2.type === 'core.container' ? 'inside' : 'after');
                     }
                 });
             },
@@ -516,6 +563,8 @@
                 if (!win || !win.document) return;
                 var el = win.document.querySelector('[data-wp-id="' + id + '"]');
                 if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                // 通知 iframe 桥接层更新选中描边与「+ 插入组件」浮标位置。
+                win.postMessage({ type: 'wb-mark-selected', id: id }, window.location.origin);
             },
 
             // ---------------- 剪贴板 ----------------
@@ -923,8 +972,17 @@
                 document.addEventListener('keydown', function (e) { self.onKeydown(e); });
                 // iframe 内点击经 postMessage 上报选中（editor=1 注入桥接脚本）。
                 window.addEventListener('message', function (ev) {
-                    if (ev.origin !== window.location.origin || !ev.data || ev.data.type !== 'wb-select' || !ev.data.id) return;
-                    self.select(ev.data.id);
+                    if (ev.origin !== window.location.origin || !ev.data) return;
+                    if (ev.data.type === 'wb-select' && ev.data.id) { self.select(ev.data.id); return; }
+                    if (ev.data.type === 'wb-insert-here' && ev.data.id) {
+                        // 画布「+ 插入组件」浮标：目标是容器则插入其内部，否则插到其后。
+                        var node = self.findNode(ev.data.id);
+                        self.pendingInsertTarget = {
+                            id: ev.data.id,
+                            placement: node && node.type === 'core.container' ? 'inside' : 'after'
+                        };
+                        self.showLibrary();
+                    }
                 });
                 var search = document.querySelector('#wb-navigator .wb-search');
                 if (search) search.addEventListener('input', function () {

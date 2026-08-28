@@ -44,6 +44,7 @@
                     <button type="button" class="wb-icon-btn" id="wb-library-close" title="收起">×</button>
                 </div>
                 <input type="search" class="wb-search wb-library-search" id="wb-library-search" placeholder="搜索组件…">
+                <p class="wb-library-hint" id="wb-library-hint" style="display:none"></p>
                 <div class="wb-palette-grid" id="wb-palette"></div>
             </section>
             {* 编辑视图：选中组件后显示 *}
@@ -114,6 +115,6 @@
     <script type="application/json" id="wb-bootstrap">{{ .document | unsafe }}</script>
     <script type="application/json" id="wb-meta">{{ .meta | unsafe }}</script>
     <script type="application/json" id="wb-schemas">{{ .schemas | unsafe }}</script>
-    <script src="/static/js/workbench.js?v=20260828c"></script>
+    <script src="/static/js/workbench.js?v=20260828d"></script>
 </body>
 </html>

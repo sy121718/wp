@@ -145,7 +145,9 @@ func (h *Handle) renderPreview(c *gin.Context, document json.RawMessage, withEdi
 	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(html))
 }
 
-// editorBridgeScript 在 iframe 内运行的选中联动脚本（仅编辑器预览注入）。
+// editorBridgeScript 在 iframe 内运行的编辑器桥接脚本（仅编辑器预览注入）。
+// 职责：节点选择标记还原、点击选中上报、选中高亮、容器/元素下方
+// 「+ 插入组件」浮标、拖放落点指示线样式。
 const editorBridgeScript = `<script>
 (function(){
   // 编译器把节点 ID 编入 wp-c-* CSS 类；编辑器桥接层将其还原为选择标记。
@@ -158,15 +160,66 @@ const editorBridgeScript = `<script>
   document.querySelectorAll('[id]').forEach(function(el){
     if (!el.getAttribute('data-wp-id')) el.setAttribute('data-wp-id', el.id);
   });
+
+  var style = document.createElement('style');
+  style.textContent = [
+    '[data-wp-id]:hover{outline:1px solid rgba(37,99,235,.45);outline-offset:-1px;cursor:pointer;}',
+    '[data-wp-id].wb-selected{outline:2px solid #2563eb;outline-offset:-2px;}',
+    '.wb-bridge-insert{',
+    '  position:absolute;z-index:99998;left:50%;transform:translateX(-50%);',
+    '  padding:4px 12px;font-size:12px;line-height:1.6;white-space:nowrap;',
+    '  color:#fff;background:#2563eb;border:none;border-radius:999px;cursor:pointer;',
+    '  box-shadow:0 2px 10px rgba(37,99,235,.45);',
+    '}',
+    '.wb-bridge-insert:hover{background:#1d4ed8;}',
+    '[data-wp-id].wb-drop-before{box-shadow:0 -3px 0 0 #2563eb;}',
+    '[data-wp-id].wb-drop-after{box-shadow:0 3px 0 0 #2563eb;}',
+    '[data-wp-id].wb-drop-inside{outline:2px dashed #2563eb;outline-offset:-2px;}'
+  ].join('');
+  document.head.appendChild(style);
+
   document.addEventListener('click', function(ev){
     var target = ev.target.closest('[data-wp-id]');
     if(!target) return;
     ev.preventDefault(); ev.stopPropagation();
     parent.postMessage({type:'wb-select', id: target.getAttribute('data-wp-id')}, location.origin);
   }, true);
-  var style = document.createElement('style');
-  style.textContent = '[data-wp-id]:hover{outline:1px solid rgba(37,99,235,.45);outline-offset:-1px;cursor:pointer;}';
-  document.head.appendChild(style);
+
+  // 「+ 插入组件」浮标：父窗口在选中变化时发 wb-mark-selected，
+  // 此处把浮标定位到选中元素底部中央；点击上报插入意图，
+  // 由父窗口根据 AST 判断目标是容器(inside)还是普通元素(after)。
+  var insertBtn = document.createElement('button');
+  insertBtn.type = 'button';
+  insertBtn.className = 'wb-bridge-insert';
+  insertBtn.textContent = '+ 插入组件';
+  insertBtn.style.display = 'none';
+  document.body.appendChild(insertBtn);
+  insertBtn.addEventListener('click', function(ev){
+    ev.preventDefault(); ev.stopPropagation();
+    var id = insertBtn.getAttribute('data-target-id') || '';
+    if (id) parent.postMessage({type:'wb-insert-here', id: id}, location.origin);
+  });
+
+  window.addEventListener('message', function(ev){
+    if (ev.origin !== location.origin || !ev.data) return;
+    if (ev.data.type === 'wb-mark-selected') {
+      var prev = document.querySelector('[data-wp-id].wb-selected');
+      if (prev) prev.classList.remove('wb-selected');
+      var el = ev.data.id ? document.querySelector('[data-wp-id="' + ev.data.id + '"]') : null;
+      if (el) {
+        el.classList.add('wb-selected');
+        var rect = el.getBoundingClientRect();
+        insertBtn.style.display = 'block';
+        insertBtn.setAttribute('data-target-id', ev.data.id);
+        insertBtn.style.top = (rect.bottom + window.scrollY + 4) + 'px';
+      } else {
+        insertBtn.style.display = 'none';
+      }
+    }
+  });
+
+  // 拖放落点指示：父窗口 bindCanvasDrop 在 dragover 时给目标加类，
+  // 这里只负责样式；drop/dragleave 时父窗口负责移除。
 })();
 </script>`
 
