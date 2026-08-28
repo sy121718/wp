@@ -17,6 +17,7 @@ func SetupProjectRoutes(rg *gin.RouterGroup, db *gorm.DB) projectcontract.Projec
 
 	g := rg.Group("/project")
 	g.POST("/create", handle.Create)
+	g.GET("/list", handle.List)
 	g.GET("/detail", handle.Detail)
 	g.POST("/update", handle.Update)
 	return svc

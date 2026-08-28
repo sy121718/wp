@@ -14,6 +14,8 @@ type PageResp struct {
 	ContentTargetID   *string         `json:"contentTargetId,omitempty"`
 	DraftPath         string          `json:"draftPath"`
 	ActivePath        *string         `json:"activePath,omitempty"`
+	StagedArtifactID  *string         `json:"stagedArtifactId,omitempty"`
+	ActiveArtifactID  *string         `json:"activeArtifactId,omitempty"`
 	DraftDocument     json.RawMessage `json:"draftDocument"`
 	DraftVersion      int64           `json:"draftVersion"`
 	Stale             bool            `json:"stale"`

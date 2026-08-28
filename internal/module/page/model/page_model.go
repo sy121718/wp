@@ -95,6 +95,12 @@ func (m *Model) Transaction(ctx context.Context, fn func(tx *gorm.DB) error) err
 	return m.db.WithContext(ctx).Transaction(fn)
 }
 
+// ListAll 列出全部未删除页面（排除大字段 draft_document，供列表页使用）。
+func (m *Model) ListAll(ctx context.Context) (list []PageEntity, err error) {
+	err = m.DB(ctx).Omit("draft_document").Order("updated_at DESC").Find(&list).Error
+	return list, err
+}
+
 // GetByID 按 ID 查询未删除的 Page。
 func (m *Model) GetByID(ctx context.Context, id string) (e *PageEntity, err error) {
 	e = &PageEntity{}

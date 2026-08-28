@@ -12,7 +12,9 @@ import (
 	"strings"
 
 	dashboardenums "go_wp/internal/module/dashboard/enums"
+	pagecontract "go_wp/internal/module/page/contract"
 	pagedto "go_wp/internal/module/page/dto"
+	projectcontract "go_wp/internal/module/project/contract"
 
 	"go_wp/internal/builder"
 
@@ -21,12 +23,13 @@ import (
 
 // Handle 页面处理器，聚合 dashboard 相关 handler。
 type Handle struct {
-	pages PageReader
+	pages    pagecontract.PageService
+	projects projectcontract.ProjectService
 }
 
-// NewHandle 创建页面处理器；pages 为 page 模块草稿契约。
-func NewHandle(pages PageReader) *Handle {
-	return &Handle{pages: pages}
+// NewHandle 创建页面处理器；pages/projects 为 page 与 project 模块契约。
+func NewHandle(pages pagecontract.PageService, projects projectcontract.ProjectService) *Handle {
+	return &Handle{pages: pages, projects: projects}
 }
 
 // Dashboard 仪表盘页面。

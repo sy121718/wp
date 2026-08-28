@@ -42,6 +42,12 @@ func (m *Model) Create(ctx context.Context, e *ProjectEntity) (err error) {
 	return m.DB(ctx).Create(e).Error
 }
 
+// ListAll 按创建时间列出全部项目。
+func (m *Model) ListAll(ctx context.Context) (list []ProjectEntity, err error) {
+	err = m.DB(ctx).Order("created_at ASC").Find(&list).Error
+	return list, err
+}
+
 // GetByID 按 ID 查询工程。
 func (m *Model) GetByID(ctx context.Context, id string) (e *ProjectEntity, err error) {
 	e = &ProjectEntity{}

@@ -473,3 +473,39 @@ table.data-table {
     transition: background var(--tr-fast), border-color var(--tr-fast);
 }
 .theme-toggle:hover { background: var(--c-bg-hover); }
+/* ===== 后台页面管理列表（admin/pages.html） ===== */
+.pages-wrap { display: flex; flex-direction: column; gap: 20px; max-width: 960px; }
+.pages-card {
+    background: var(--c-surface, #fff); border: 1px solid var(--c-border, #e5e7eb);
+    border-radius: 12px; padding: 20px 24px;
+}
+.pages-card h2 { margin: 0 0 14px; font-size: 16px; }
+.pages-form { display: flex; flex-wrap: wrap; gap: 8px; }
+.pages-form input, .pages-form select {
+    padding: 8px 10px; font-size: 13px; border: 1px solid var(--c-border, #e5e7eb);
+    border-radius: 8px; background: var(--c-surface, #fff); color: inherit; min-width: 220px;
+}
+.pages-form .btn {
+    padding: 8px 16px; font-size: 13px; border-radius: 8px; cursor: pointer;
+    border: 1px solid var(--c-border, #e5e7eb); background: var(--c-surface, #fff);
+}
+.pages-form .btn-primary { background: var(--c-primary, #2563eb); color: #fff; border-color: transparent; }
+.pages-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.pages-table th, .pages-table td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--c-border, #e5e7eb); }
+.pages-table th { color: var(--c-text-mute, #6b7280); font-weight: 500; font-size: 12px; }
+.pages-path { font-family: monospace; }
+.pages-badge {
+    display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px;
+    background: rgba(107,114,128,.12); color: var(--c-text-mute, #6b7280); margin-right: 4px;
+}
+.pages-badge-ok { background: rgba(16,185,129,.14); color: #059669; }
+.pages-badge-warn { background: rgba(245,158,11,.16); color: #b45309; }
+.pages-badge-info { background: rgba(37,99,235,.12); color: var(--c-primary, #2563eb); }
+.pages-actions { display: flex; gap: 6px; }
+.pages-actions .btn {
+    padding: 4px 10px; font-size: 12px; border: 1px solid var(--c-border, #e5e7eb);
+    border-radius: 6px; text-decoration: none; color: inherit; background: var(--c-surface, #fff);
+}
+.pages-actions .btn:hover { border-color: var(--c-primary, #2563eb); color: var(--c-primary, #2563eb); }
+.pages-empty { color: var(--c-text-mute, #6b7280); font-size: 13px; }
+

@@ -212,6 +212,7 @@ func pageResp(page *pagemodel.PageEntity) *pagedto.PageResp {
 	return &pagedto.PageResp{
 		ID: page.ID, ProjectID: page.ProjectID, Kind: page.Kind, ContentTargetType: page.ContentTargetType,
 		ContentTargetID: page.ContentTargetID, DraftPath: page.DraftPath, ActivePath: page.ActivePath,
+		StagedArtifactID: page.StagedArtifactID, ActiveArtifactID: page.ActiveArtifactID,
 		DraftDocument: page.DraftDocument, DraftVersion: page.DraftVersion, Stale: page.Stale,
 		CreatedAt: page.CreatedAt, UpdatedAt: page.UpdatedAt,
 	}

@@ -10,6 +10,8 @@ import (
 // ProjectService 站点工程与 SiteSettings 业务能力。
 type ProjectService interface {
 	Create(ctx context.Context, req *projectdto.CreateReq) (res *projectdto.ProjectResp, err error)
+	// List 列出全部站点工程。
+	List(ctx context.Context) (res []projectdto.ProjectResp, err error)
 	Detail(ctx context.Context, req *projectdto.DetailReq) (res *projectdto.ProjectResp, err error)
 	Update(ctx context.Context, req *projectdto.UpdateReq) (res *projectdto.ProjectResp, err error)
 	Exists(ctx context.Context, id string) (exists bool, err error)

@@ -36,7 +36,7 @@ func TestWorkbenchPreviewDraft(t *testing.T) {
 		t.Fatalf("查询初始草稿失败: %v", err)
 	}
 
-	handle := dashboardhttp.NewHandle(svc)
+	handle := dashboardhttp.NewHandle(svc, nil)
 	router := gin.New()
 	router.GET("/workbench/preview", handle.Preview)
 	router.POST("/workbench/preview", handle.PreviewDraft)
@@ -90,7 +90,7 @@ func TestWorkbenchPreviewDraftRejectsStaleVersion(t *testing.T) {
 		t.Fatalf("创建测试页面失败: %v", err)
 	}
 
-	handle := dashboardhttp.NewHandle(svc)
+	handle := dashboardhttp.NewHandle(svc, nil)
 	router := gin.New()
 	router.POST("/workbench/preview", handle.PreviewDraft)
 	body := url.Values{

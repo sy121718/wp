@@ -38,6 +38,16 @@ func (h *Handle) Create(c *gin.Context) {
 	response.SuccessWithMessage(c, projectenums.MsgProjectCreated, res)
 }
 
+// List 列出全部站点工程。
+func (h *Handle) List(c *gin.Context) {
+	res, err := h.svc.List(c.Request.Context())
+	if err != nil {
+		response.ErrorWithMessage(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Success(c, res)
+}
+
 // Detail 查询站点工程。
 func (h *Handle) Detail(c *gin.Context) {
 	var req projectdto.DetailReq

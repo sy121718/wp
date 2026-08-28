@@ -52,6 +52,16 @@ func (h *Handle) Detail(c *gin.Context) {
 	response.SuccessWithMessage(c, pageenums.MsgPageDetail, res)
 }
 
+// List 列出全部页面摘要。
+func (h *Handle) List(c *gin.Context) {
+	res, err := h.svc.List(c.Request.Context())
+	if err != nil {
+		response.ErrorWithMessage(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.Success(c, res)
+}
+
 // SaveDraft 保存完整 Page AST 并追加不可变 Revision。
 func (h *Handle) SaveDraft(c *gin.Context) {
 	var req pagedto.SaveDraftReq

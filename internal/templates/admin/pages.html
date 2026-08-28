@@ -1,0 +1,68 @@
+{* admin/pages.html — 页面管理列表：站点工程/页面新建与工作台入口 *}
+{* Jet 方言：range 用 range 关键字；方法调用圆括号；extends 相对本目录 *}
+{{extends "layout.html"}}
+{{block body()}}
+<div class="pages-wrap">
+    <section class="pages-card">
+        <h2>新建站点工程</h2>
+        <form method="post" action="/admin/projects/create" class="pages-form">
+            <input type="text" name="name" placeholder="站点工程名称，如：官网" required>
+            <button type="submit" class="btn btn-primary">创建工程</button>
+        </form>
+    </section>
+
+    <section class="pages-card">
+        <h2>新建页面</h2>
+        {{if len(.Projects) > 0}}
+        <form method="post" action="/admin/pages/create" class="pages-form">
+            <select name="projectId" required>
+                {{range _, p := .Projects}}
+                <option value="{{p.ID}}">{{p.Name}}</option>
+                {{end}}
+            </select>
+            <input type="text" name="draftPath" placeholder="页面路径，如 /about" required>
+            <button type="submit" class="btn btn-primary">创建页面</button>
+        </form>
+        {{else}}
+        <p class="pages-empty">先创建一个站点工程，再新建页面。</p>
+        {{end}}
+    </section>
+
+    <section class="pages-card">
+        <h2>页面列表</h2>
+        {{if len(.Pages) == 0}}
+        <p class="pages-empty">还没有页面，先用上方表单创建一个。</p>
+        {{else}}
+        <table class="pages-table">
+            <thead>
+            <tr><th>路径</th><th>类型</th><th>状态</th><th>草稿版本</th><th>更新时间</th><th>操作</th></tr>
+            </thead>
+            <tbody>
+            {{range _, p := .Pages}}
+            <tr>
+                <td class="pages-path">{{p.DraftPath}}</td>
+                <td>{{p.Kind}}</td>
+                <td>
+                    {{if p.Active}}
+                    <span class="pages-badge pages-badge-ok">已发布</span>
+                    {{if p.Stale}}<span class="pages-badge pages-badge-warn">有更新未发布</span>{{end}}
+                    {{else if p.Staged}}<span class="pages-badge pages-badge-info">已暂存待发布</span>
+                    {{else}}<span class="pages-badge">草稿</span>{{end}}
+                </td>
+                <td>v{{p.Version}}</td>
+                <td>{{p.UpdatedAt}}</td>
+                <td class="pages-actions">
+                    <a class="btn" href="/workbench?id={{p.ID}}">编辑</a>
+                    <a class="btn" href="/workbench/preview?id={{p.ID}}" target="_blank">预览</a>
+                    {{if p.Active}}
+                    <a class="btn" href="/site{{p.DraftPath}}/" target="_blank">线上</a>
+                    {{end}}
+                </td>
+            </tr>
+            {{end}}
+            </tbody>
+        </table>
+        {{end}}
+    </section>
+</div>
+{{end}}

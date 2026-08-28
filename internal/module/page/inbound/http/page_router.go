@@ -24,6 +24,7 @@ func SetupPageRoutes(rg *gin.RouterGroup, db *gorm.DB,
 
 	g := rg.Group("/page")
 	g.POST("/create", handle.Create)
+	g.GET("/list", handle.List)
 	g.GET("/detail", handle.Detail)
 	g.POST("/draft/save", handle.SaveDraft)
 	g.GET("/revision/list", handle.ListRevisions)

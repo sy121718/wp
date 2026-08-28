@@ -4,3 +4,6 @@ package enums
 
 // MsgDashboardTitle 仪表盘页面标题。
 const MsgDashboardTitle = "仪表盘"
+
+// MsgPagesTitle 页面列表页标题。
+const MsgPagesTitle = "页面管理"

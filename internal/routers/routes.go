@@ -87,7 +87,7 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 	adminhttp.SetupAdminRoutes(api, db)
 
 	// 页面路由（编辑器外壳依赖 page 契约，置于 API 装配之后）
-	dashboardhttp.SetupDashboardRoutes(router, pageService)
+	dashboardhttp.SetupDashboardRoutes(router, pageService, projectService)
 
 	// 未匹配路由返回 404
 	router.NoRoute(func(c *gin.Context) {
