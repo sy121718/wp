@@ -862,6 +862,79 @@
                     });
                     wrap.appendChild(seg); panel.appendChild(wrap);
                 }
+                // 单位值输入：解析 "16px" -> 值+单位；紧凑一行。
+                function unitInput(label, path, units) {
+                    units = units || ['px', '%', 'em', 'rem', 'vw'];
+                    var wrap = document.createElement('div'); wrap.className = 'wb-field wb-field-unit';
+                    var caption = document.createElement('label'); caption.textContent = label; wrap.appendChild(caption);
+                    var row = document.createElement('div'); row.className = 'wb-unit-row';
+                    var input = document.createElement('input'); input.type = 'text'; input.className = 'wb-unit-value';
+                    var unitSel = document.createElement('select'); unitSel.className = 'wb-unit-select';
+                    units.forEach(function (u) {
+                        var o = document.createElement('option'); o.value = u; o.textContent = u; unitSel.appendChild(o);
+                    });
+                    var raw = get(path) == null ? '' : String(get(path)).trim();
+                    var m = raw.match(/^(-?[0-9.]+)\s*([a-z%]+)$/i);
+                    input.value = m ? m[1] : (raw && !m ? raw : '');
+                    if (m) unitSel.value = m[2].toLowerCase(); else unitSel.value = units[0];
+                    function push() {
+                        var v = input.value.trim();
+                        var u = unitSel.value;
+                        commit(path, v === '' ? '' : v + (isNaN(parseFloat(v)) ? '' : u));
+                    }
+                    input.addEventListener('change', push);
+                    unitSel.addEventListener('change', function () { if (input.value.trim() !== '') push(); });
+                    row.appendChild(input); row.appendChild(unitSel); wrap.appendChild(row); panel.appendChild(wrap);
+                }
+                // 三端响应式单位输入(同类型合并):一个控件 + 设备图标切换,绑 Responsive{desktop,tablet,mobile}。
+                function responsiveUnitField(label, objPath, units) {
+                    units = units || ['px', '%', 'em', 'rem', 'vw'];
+                    var wrap = document.createElement('div'); wrap.className = 'wb-field wb-field-unit';
+                    var caption = document.createElement('label'); caption.textContent = label; wrap.appendChild(caption);
+                    var row = document.createElement('div'); row.className = 'wb-unit-row';
+                    var input = document.createElement('input'); input.type = 'text'; input.className = 'wb-unit-value';
+                    var unitSel = document.createElement('select'); unitSel.className = 'wb-unit-select';
+                    units.forEach(function (u) {
+                        var o = document.createElement('option'); o.value = u; o.textContent = u; unitSel.appendChild(o);
+                    });
+                    var device = 'desktop';
+                    var devices = [['desktop', '🖥'], ['tablet', '▭'], ['mobile', '📱']];
+                    var devRow = document.createElement('div'); devRow.className = 'wb-device-row';
+                    function readVal(dev) {
+                        var v = get(objPath + '.' + dev);
+                        return v == null ? '' : String(v).trim();
+                    }
+                    function load(dev) {
+                        device = dev;
+                        var raw = readVal(dev);
+                        var m = raw.match(/^(-?[0-9.]+)\s*([a-z%]+)$/i);
+                        input.value = m ? m[1] : (raw && !m ? raw : '');
+                        unitSel.value = m ? m[2].toLowerCase() : units[0];
+                        devBtns.forEach(function (b) { b.classList.toggle('is-active', b.dataset.dev === device); b.classList.toggle('has-val', !!readVal(b.dataset.dev)); });
+                    }
+                    function push() {
+                        var v = input.value.trim();
+                        var u = unitSel.value;
+                        var val = v === '' ? '' : v + (isNaN(parseFloat(v)) ? '' : u);
+                        commit(objPath + '.' + device, val);
+                        devBtns.forEach(function (b) { b.classList.toggle('has-val', !!readVal(b.dataset.dev)); });
+                    }
+                    input.addEventListener('change', push);
+                    unitSel.addEventListener('change', function () { if (input.value.trim() !== '') push(); });
+                    var devBtns = [];
+                    devices.forEach(function (d) {
+                        var b = document.createElement('button');
+                        b.type = 'button'; b.className = 'wb-dev-btn'; b.textContent = d[1]; b.title = d[0]; b.dataset.dev = d[0];
+                        b.addEventListener('click', function () { load(d[0]); });
+                        devBtns.push(b); devRow.appendChild(b);
+                    });
+                    row.appendChild(input); row.appendChild(unitSel);
+                    wrap.appendChild(row);
+                    var row2 = document.createElement('div'); row2.className = 'wb-unit-row';
+                    row2.appendChild(devRow);
+                    wrap.appendChild(row2); panel.appendChild(wrap);
+                    load(device);
+                }
                 // 富文本编辑器（TinyMCE）：工具条与构建期白名单对齐
                 // （加粗/斜体/下划线/删除线/代码/列表/引用/链接），
                 // 提交 HTML 在发布构建时经 sanitizeRichHTML 白名单清洗。
@@ -937,11 +1010,11 @@
                     field('主轴分布', 'props.layout.flex.justify', 'segment', [['flex-start', '起始'], ['center', '居中'], ['flex-end', '末端'], ['space-between', '两端'], ['space-around', '环绕']]);
                     field('交叉对齐', 'props.layout.flex.align', 'segment', [['stretch', '拉伸'], ['center', '居中'], ['flex-start', '起始'], ['flex-end', '末端']]);
                     checkbox('允许换行', 'props.layout.flex.wrap');
-                    field('组件间距', 'props.layout.flex.gap', 'input');
+                    unitInput('组件间距', 'props.layout.flex.gap');
                     heading('尺寸与留白');
-                    field('内边距（桌面）', 'props.box.padding.desktop', 'input');
-                    field('外边距（桌面）', 'props.box.margin.desktop', 'input');
-                    field('最小高度', 'props.box.minHeight', 'input');
+                    responsiveUnitField('内边距（三端）', 'props.box.padding');
+                    responsiveUnitField('外边距（三端）', 'props.box.margin');
+                    unitInput('最小高度', 'props.box.minHeight');
                 }
                 // container 视觉面板。
                 function containerVisual() {
@@ -969,7 +1042,7 @@
                     field('嵌入文本', 'props.inset.text', 'input');
                     field('图标样式', 'props.inset.iconName', 'select', [['star', '星形'], ['diamond', '菱形'], ['dot', '圆点']]);
                     field('嵌入位置', 'props.inset.position', 'segment', [['center', '居中'], ['left', '靠左'], ['right', '靠右']]);
-                    field('两侧留白', 'props.inset.spacing', 'input');
+                    unitInput('两侧留白', 'props.inset.spacing');
                 }
                 // divider 嵌入文本样式。
                 function dividerInsetStyle() {
@@ -982,7 +1055,7 @@
                 function spacerPanel() {
                     heading('留白高度');
                     field('桌面端高度', 'props.height.desktop', 'input');
-                    field('平板高度', 'props.height.tablet', 'input');
+                    field('平板端高度', 'props.height.tablet', 'input');
                     field('手机端高度', 'props.height.mobile', 'input');
                 }
 

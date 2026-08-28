@@ -234,3 +234,17 @@
 .wb-block-card strong { display: block; font-size: 13px; }
 .wb-block-card span { display: block; margin-top: 2px; color: var(--c-text-mute, #6b7280); font-size: 11px; }
 
+
+/* ===== 单位值输入与三端切换 ===== */
+.wb-unit-row { display: flex; gap: 6px; align-items: center; }
+.wb-unit-value { flex: 1 1 auto; min-width: 0; }
+.wb-unit-select { flex: 0 0 64px; }
+.wb-device-row { display: flex; gap: 4px; }
+.wb-dev-btn {
+    border: 1px solid var(--c-border, #e5e7eb); background: var(--c-surface, #fff);
+    border-radius: 6px; cursor: pointer; font-size: 11px; padding: 2px 8px;
+    color: var(--c-text-mute, #6b7280);
+}
+.wb-dev-btn.is-active { border-color: var(--c-primary, #2563eb); color: var(--c-primary, #2563eb); }
+.wb-dev-btn.has-val { font-weight: 700; color: var(--c-primary, #2563eb); }
+
