@@ -274,12 +274,51 @@
                         root.appendChild(card);
                     });
                 }
+                // 全局块（同步复用：core.globalref 引用，改一处处处生效）。
+                var blockHits = (meta.blocks || []).filter(function (b) { return match(b.name); });
+                if (blockHits.length) {
+                    addHeader('全局块');
+                    blockHits.forEach(function (b) {
+                        var button = document.createElement('button');
+                        button.type = 'button';
+                        button.className = 'wb-palette-item';
+                        button.draggable = true;
+                        button.dataset.type = 'core.globalref';
+                        button.innerHTML = '<strong></strong><span></span>';
+                        button.querySelector('strong').textContent = b.name;
+                        button.querySelector('span').textContent = '全局块 · ' + (b.kind === 'header' ? '页眉' : b.kind === 'footer' ? '页脚' : '内容块');
+                        button.addEventListener('click', function () {
+                            self.insertComponent(self.globalRefItem(b));
+                            self.showEdit();
+                        });
+                        button.addEventListener('dragstart', function (event) {
+                            event.dataTransfer.effectAllowed = 'copy';
+                            event.dataTransfer.setData('application/x-wb-component', 'core.globalref');
+                            event.dataTransfer.setData('application/x-wb-block', b.id);
+                        });
+                        root.appendChild(button);
+                    });
+                }
                 if (!root.children.length) {
                     var none = document.createElement('p');
                     none.className = 'wb-empty';
                     none.textContent = '没有匹配的组件';
                     root.appendChild(none);
                 }
+            },
+            // globalRefItem 全局块的插入描述（引用节点只带 blockId）。
+            globalRefItem(b) {
+                return { type: 'core.globalref', label: b.name, hint: '全局块', props: { blockId: b.id } };
+            },
+            // resolveDropItem 拖入落点解析：全局块按 DataTransfer 里的块 ID 匹配。
+            resolveDropItem(type, dataTransfer) {
+                var self = this;
+                if (type === 'core.globalref') {
+                    var bid = dataTransfer.getData('application/x-wb-block');
+                    return (meta.blocks || []).filter(function (b) { return b.id === bid; })
+                        .map(function (b) { return self.globalRefItem(b); })[0];
+                }
+                return paletteItems.filter(function (entry) { return entry.type === type; })[0];
             },
             insertComponent(item, targetID, placement) {
                 if (!item) return;
@@ -521,8 +560,8 @@
                                 var type = event.dataTransfer.getData('application/x-wb-component');
                                 var nodeID = event.dataTransfer.getData('application/x-wb-node');
                                 if (type) {
-                                    var item = paletteItems.filter(function (entry) { return entry.type === type; })[0];
-                                    self.insertComponent(item, n.id, placement);
+                                    var item = self.resolveDropItem(type, event.dataTransfer);
+                                    if (item) self.insertComponent(item, n.id, placement);
                                 } else if (nodeID) {
                                     self.moveNode(nodeID, n.id, placement);
                                 }
@@ -662,7 +701,8 @@
                     var type = event.dataTransfer.getData('application/x-wb-component');
                     // 树/画布内元素拖动(x-wb-node)由 iframe 桥接统一处理,此处只接组件库拖入。
                     if (!type) return;
-                    var item = paletteItems.filter(function (entry) { return entry.type === type; })[0];
+                    var item = self.resolveDropItem(type, event.dataTransfer);
+                    if (!item) return;
                     if (targetID) {
                         var targetNode = self.findNode(targetID);
                         var isContainer = targetNode && targetNode.type === 'core.container';

@@ -5,6 +5,7 @@ package feature
 // 块变更 stale 传播。
 
 import (
+	"fmt"
 	"context"
 	"encoding/json"
 	"os"
@@ -126,4 +127,42 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// TestGlobalRefNodeInlinesBlockContent 页面文档内 core.globalref 引用节点
+// 构建期内联展开块内容（WP synced pattern 的等价物）。
+func TestGlobalRefNodeInlinesBlockContent(t *testing.T) {
+	db, svc, projectID := newPageService(t)
+	ctx := context.Background()
+	if err := db.Exec(`CREATE TABLE blocks (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, name TEXT NOT NULL, kind TEXT NOT NULL, document JSON NOT NULL, created_at DATETIME NOT NULL, updated_at DATETIME NOT NULL)`).Error; err != nil {
+		t.Fatalf("创建 blocks 表失败: %v", err)
+	}
+	blocks := blockservice.NewService(blockmodel.NewBlockModel(db), projectservice.NewService(projectmodel.NewProjectModel(db)))
+	block, err := blocks.Create(ctx, &blockdto.CreateReq{
+		ProjectID: projectID, Name: "促销横幅", Kind: "block",
+		Document: json.RawMessage(`{"settings":{"layout":{"mode":"full"}},"root":[{"type":"core.text","id":"promo1","props":{"text":"PROMO-REF-MARK"}}]}`),
+	})
+	if err != nil {
+		t.Fatalf("创建内容块失败: %v", err)
+	}
+
+	doc := fmt.Sprintf(`{"settings":{"layout":{"mode":"full"}},"root":[{"type":"core.globalref","id":"ref1","props":{"blockId":"%s"}}]}`, block.ID)
+	page, err := svc.Create(ctx, &pagedto.CreateReq{
+		ProjectID: projectID, Kind: "home", ContentTargetType: "none",
+		DraftPath: "/with-ref", DraftDocument: json.RawMessage(doc),
+	})
+	if err != nil {
+		t.Fatalf("创建含引用节点页面失败: %v", err)
+	}
+	built, err := svc.Build(ctx, &pagedto.BuildReq{ID: page.ID})
+	if err != nil {
+		t.Fatalf("构建失败: %v", err)
+	}
+	html, err := os.ReadFile(filepath.Join(os.Getenv("GO_WP_ARTIFACT_ROOT"), "artifacts", built.StagedHash, "index.html"))
+	if err != nil {
+		t.Fatalf("读取产物失败: %v", err)
+	}
+	if !containsBytes(html, []byte("PROMO-REF-MARK")) {
+		t.Fatalf("产物应内联引用块内容: %s", string(html[:min(len(html), 400)]))
+	}
 }

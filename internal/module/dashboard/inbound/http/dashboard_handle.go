@@ -70,6 +70,8 @@ func (h *Handle) Workbench(c *gin.Context) {
 		"pageId":    page.ID,
 		"draftPath": page.DraftPath,
 		"version":   page.DraftVersion,
+		// 全局块引用（core.globalref）候选：本工程全部块（组件库「全局块」分组）。
+		"blocks": h.blockSummaries(c, page.ProjectID),
 	})
 	if err != nil {
 		c.String(http.StatusInternalServerError, "编辑器元数据序列化失败")
@@ -142,6 +144,19 @@ func (h *Handle) workbenchBlock(c *gin.Context, blockID string) {
 		"meta":     string(metaJSON),
 		"schemas":  string(schemasJSON),
 	})
+}
+
+// blockSummaries 工程块列表的轻量投影（id/name/kind，不含文档大字段）。
+func (h *Handle) blockSummaries(c *gin.Context, projectID string) []gin.H {
+	blocks, err := h.blocks.List(c.Request.Context(), &blockdto.ListReq{ProjectID: projectID})
+	if err != nil {
+		return []gin.H{}
+	}
+	out := make([]gin.H, 0, len(blocks))
+	for _, b := range blocks {
+		out = append(out, gin.H{"id": b.ID, "name": b.Name, "kind": b.Kind})
+	}
+	return out
 }
 
 // Preview 基于已保存草稿轻量编译并在独立响应中输出完整 HTML 文档
