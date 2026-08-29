@@ -3,6 +3,7 @@ package dashboardhttp
 
 import (
 	blockcontract "go_wp/internal/module/block/contract"
+	mediacontract "go_wp/internal/module/media/contract"
 	pagecontract "go_wp/internal/module/page/contract"
 	projectcontract "go_wp/internal/module/project/contract"
 
@@ -13,12 +14,13 @@ import (
 func SetupDashboardRoutes(router *gin.Engine,
 	pages pagecontract.PageService,
 	projects projectcontract.ProjectService,
-	blocks blockcontract.BlockService) {
+	blocks blockcontract.BlockService,
+	media mediacontract.MediaService) {
 	if router == nil {
 		return
 	}
 
-	handle := NewHandle(pages, projects, blocks)
+	handle := NewHandle(pages, projects, blocks, media)
 
 	// 页面路由
 	router.GET("/", handle.Dashboard)

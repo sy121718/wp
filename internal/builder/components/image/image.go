@@ -63,7 +63,8 @@ type Binding struct {
 // Props 图片组件属性：媒体源/规格 + 尺寸排版 + 视觉（滤镜/悬浮）+ 交互 + 绑定 + Advanced。
 type Props struct {
 	// AssetID 媒体资产稳定标识（与 Src 二选一，AssetID 优先）。
-	AssetID string `json:"assetId,omitempty" ct:"regex,sec=content" ctRegex:"^[A-Za-z0-9_-]{4,64}$"`
+	// 媒体库附件为自增数字 ID（最短 1 位），故下限取 1。
+	AssetID string `json:"assetId,omitempty" ct:"regex,sec=content" ctRegex:"^[A-Za-z0-9_-]{1,64}$"`
 	// Src 外部绝对 URL（第三方 CDN / 站外图片；与 AssetID 二选一）。
 	Src string `json:"src,omitempty" ct:"url,sec=content"`
 	// Variant 媒体库变体规格：original / large / medium / thumbnail（默认 original）。
@@ -83,9 +84,11 @@ type Props struct {
 	AspectRatio      string `json:"aspectRatio,omitempty" ct:"select,original,1:1,4:3,16:9,21:9,3:4,custom,sec=style"`
 	AspectRatioValue string `json:"aspectRatioValue,omitempty" ct:"safe,maxlen=20,sec=style"` // custom 的 w/h 值，如 3 / 2
 	ObjectFit        string `json:"objectFit,omitempty" ct:"select,cover,contain,fill,default=cover,sec=style"`
-	Align            Align  `json:"align,omitempty"`                                  // 三端对齐：left/center/right
-	Width            string `json:"width,omitempty" ct:"safe,maxlen=30,sec=style"`    // auto / 百分比 / px / rem
-	MaxWidth         string `json:"maxWidth,omitempty" ct:"safe,maxlen=30,sec=style"` // 如 480px
+	// ObjectPosition 对象定位（object-fit 裁剪基准点），如 "center center" / "50% 20%"。
+	ObjectPosition string `json:"objectPosition,omitempty" ct:"safe,maxlen=40,sec=style"`
+	Align          Align  `json:"align,omitempty"` // 三端对齐：left/center/right
+	Width          string `json:"width,omitempty" ct:"safe,maxlen=30,sec=style"`    // auto / 百分比 / px / rem
+	MaxWidth       string `json:"maxWidth,omitempty" ct:"safe,maxlen=30,sec=style"` // 如 480px
 
 	// --- CSS 滤镜与悬浮 ---
 	Filters Filters `json:"filters,omitempty"`
@@ -275,6 +278,9 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	var desktop, tablet, mobile []string
 	if p.ObjectFit != "" && p.ObjectFit != "cover" {
 		desktop = append(desktop, "object-fit: "+p.ObjectFit)
+	}
+	if p.ObjectPosition != "" {
+		desktop = append(desktop, "object-position: "+p.ObjectPosition)
 	}
 	if ar, ok := presetRatios[p.AspectRatio]; ok && ar != "" {
 		desktop = append(desktop, "aspect-ratio: "+ar)

@@ -8,6 +8,8 @@ package dashboardhttp
 import (
 	"encoding/json"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -19,6 +21,8 @@ import (
 	projectcontract "go_wp/internal/module/project/contract"
 
 	"go_wp/internal/builder"
+	buildermedia "go_wp/internal/builder/media"
+	mediacontract "go_wp/internal/module/media/contract"
 
 	"github.com/gin-gonic/gin"
 )
@@ -28,12 +32,13 @@ type Handle struct {
 	pages    pagecontract.PageService
 	projects projectcontract.ProjectService
 	blocks   blockcontract.BlockService
+	media    mediacontract.MediaService
 }
 
-// NewHandle 创建页面处理器；pages/projects/blocks 为 page、project 与 block 模块契约。
+// NewHandle 创建页面处理器；pages/projects/blocks/media 为各模块契约。
 func NewHandle(pages pagecontract.PageService, projects projectcontract.ProjectService,
-	blocks blockcontract.BlockService) *Handle {
-	return &Handle{pages: pages, projects: projects, blocks: blocks}
+	blocks blockcontract.BlockService, media mediacontract.MediaService) *Handle {
+	return &Handle{pages: pages, projects: projects, blocks: blocks, media: media}
 }
 
 // Dashboard 仪表盘页面。
@@ -98,7 +103,16 @@ func (h *Handle) Workbench(c *gin.Context) {
 		"document":  string(documentJSON),
 		"meta":      string(metaJSON),
 		"schemas":   string(schemasJSON),
+		"jsVer":     workbenchJsVer(),
 	})
+}
+
+// jsVer 工作台脚本的缓存版本（文件 mtime），开发期改 JS 无需手动升版本号。
+func workbenchJsVer() string {
+	if fi, err := os.Stat(filepath.Join("internal", "templates", "static", "js", "workbench.js")); err == nil {
+		return strconv.FormatInt(fi.ModTime().Unix(), 10)
+	}
+	return "0"
 }
 
 // workbenchBlock 全局块编辑模式：复用工作台画布与检查器，
@@ -143,6 +157,7 @@ func (h *Handle) workbenchBlock(c *gin.Context, blockID string) {
 		"document": string(documentJSON),
 		"meta":     string(metaJSON),
 		"schemas":  string(schemasJSON),
+		"jsVer":    workbenchJsVer(),
 	})
 }
 
@@ -218,7 +233,13 @@ func (h *Handle) renderPreview(c *gin.Context, document json.RawMessage, withEdi
 		c.String(http.StatusBadRequest, "草稿文档解析失败")
 		return
 	}
-	compiled, err := builder.Compile(docPage)
+	// 预览与正式构建同源：媒体库附件（assetId）解析为可显示 URL，
+	// 全局块引用按需展开——画布所见与产物一致。
+	opts := []builder.CompileOption{}
+	if h.media != nil {
+		opts = append(opts, builder.WithMediaResolver(buildermedia.NewContractResolver(h.media)))
+	}
+	compiled, err := builder.Compile(docPage, opts...)
 	if err != nil {
 		c.String(http.StatusUnprocessableEntity, "编译失败: %s", err.Error())
 		return

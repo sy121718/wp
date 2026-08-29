@@ -13,11 +13,13 @@ import (
 
 	"go_wp/internal/builder"
 	"go_wp/internal/builder/core"
+	buildermedia "go_wp/internal/builder/media"
 	blockdto "go_wp/internal/module/block/dto"
 	"go_wp/internal/pipeline"
 )
 
 // assembleCompile 装配感知编译：页眉块 + 页面主体 + 页脚块。
+// 注入媒体解析器：image 组件的 assetId 构建期解析为附件 URL（媒体库联动）。
 // 无绑定无引用时输出与默认编译字节一致（hash 兼容历史产物）；
 // 块文档缺失/非法降级为空片段，不阻塞构建主链。
 func (s *Service) assembleCompile(docJSON []byte) ([]byte, error) {
@@ -27,7 +29,11 @@ func (s *Service) assembleCompile(docJSON []byte) ([]byte, error) {
 		return pipeline.DefaultCompile(docJSON)
 	}
 	resolver := blockResolverAdapter{s: s}
-	compiled, err := builder.Compile(page, builder.WithBlockResolver(resolver))
+	opts := []builder.CompileOption{builder.WithBlockResolver(resolver)}
+	if s.media != nil {
+		opts = append(opts, builder.WithMediaResolver(buildermedia.NewContractResolver(s.media)))
+	}
+	compiled, err := builder.Compile(page, opts...)
 	if err != nil {
 		return nil, err
 	}

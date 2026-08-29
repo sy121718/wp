@@ -8,6 +8,7 @@ import (
 	projectcontract "go_wp/internal/module/project/contract"
 
 	artifactcontract "go_wp/internal/module/artifact/contract"
+	mediacontract "go_wp/internal/module/media/contract"
 	pubcontract "go_wp/internal/module/publication/contract"
 
 	"github.com/gin-gonic/gin"
@@ -19,9 +20,10 @@ func SetupPageRoutes(rg *gin.RouterGroup, db *gorm.DB,
 	artifacts artifactcontract.ArtifactService,
 	routes pubcontract.PublicationService,
 	projectService projectcontract.ProjectService,
-	blocks blockcontract.BlockService) pagecontract.PageService {
+	blocks blockcontract.BlockService,
+	media mediacontract.MediaService) pagecontract.PageService {
 	model := pagemodel.NewPageModel(db)
-	svc := pageservice.NewService(model, artifacts, routes, projectService, blocks)
+	svc := pageservice.NewService(model, artifacts, routes, projectService, blocks, media)
 	handle := NewHandle(svc)
 
 	g := rg.Group("/page")

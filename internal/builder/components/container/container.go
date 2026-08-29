@@ -198,7 +198,19 @@ type BoxProps struct {
 type VisualProps struct {
 	BgColor    string `json:"bgColor,omitempty"`
 	BgGradient string `json:"bgGradient,omitempty"` // 如 "linear-gradient(to right, #fff, #000)"
-	BgImage    string `json:"bgImage,omitempty"`    // 背景图 URL
+	BgImage    string `json:"bgImage,omitempty"`    // 背景图 URL（媒体库选择回填；画布/产物直出）
+	// BgPosition 背景定位（default=浏览器默认）：center / left top 等关键词组合；custom 时取 BgPositionXY。
+	BgPosition string `json:"bgPosition,omitempty" ct:"select,default,custom,center,center top,center bottom,left top,left center,left bottom,right top,right center,right bottom,default=default,sec=style"`
+	// BgPositionXY 自定义定位值（BgPosition=custom 时生效），如 "50% 20%"。
+	BgPositionXY string `json:"bgPositionXY,omitempty" ct:"safe,maxlen=40,sec=style"`
+	// BgAttachment 背景附着方式：default / scroll / fixed / local。
+	BgAttachment string `json:"bgAttachment,omitempty" ct:"select,default,scroll,fixed,local,default=default,sec=style"`
+	// BgRepeat 背景重复：default / no-repeat / repeat / repeat-x / repeat-y。
+	BgRepeat string `json:"bgRepeat,omitempty" ct:"select,default,no-repeat,repeat,repeat-x,repeat-y,default=default,sec=style"`
+	// BgSize 显示尺寸：default / auto / contain / cover / custom（取 BgSizeValue）。
+	BgSize string `json:"bgSize,omitempty" ct:"select,default,auto,contain,cover,custom,default=default,sec=style"`
+	// BgSizeValue 自定义尺寸值（BgSize=custom 时生效），如 "100% auto"。
+	BgSizeValue string `json:"bgSizeValue,omitempty" ct:"safe,maxlen=40,sec=style"`
 	// 边框三要素，需同时提供才生效。
 	BorderWidth string `json:"borderWidth,omitempty"`
 	BorderStyle string `json:"borderStyle,omitempty"`
@@ -445,6 +457,27 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		desktop = append(desktop, "background-image: "+v)
 	} else if v := p.Visual.BgImage; v != "" {
 		desktop = append(desktop, "background-image: url("+v+")")
+		// 背景显示控制（对齐 Elementor：定位/附着/重复/尺寸），仅背景图存在时输出。
+		if v := p.Visual.BgPosition; v != "" && v != "default" {
+			if v == "custom" && p.Visual.BgPositionXY != "" {
+				desktop = append(desktop, "background-position: "+p.Visual.BgPositionXY)
+			} else if v != "custom" {
+				desktop = append(desktop, "background-position: "+v)
+			}
+		}
+		if v := p.Visual.BgAttachment; v != "" && v != "default" {
+			desktop = append(desktop, "background-attachment: "+v)
+		}
+		if v := p.Visual.BgRepeat; v != "" && v != "default" {
+			desktop = append(desktop, "background-repeat: "+v)
+		}
+		if v := p.Visual.BgSize; v != "" && v != "default" {
+			if v == "custom" && p.Visual.BgSizeValue != "" {
+				desktop = append(desktop, "background-size: "+p.Visual.BgSizeValue)
+			} else if v != "custom" {
+				desktop = append(desktop, "background-size: "+v)
+			}
+		}
 	}
 	if p.Visual.BorderStyle != "" {
 		desktop = append(desktop, "border: "+p.Visual.BorderWidth+" "+p.Visual.BorderStyle+" "+p.Visual.BorderColor)
@@ -652,6 +685,8 @@ func validateProps(p *Props) (err error) {
 		{"背景颜色", p.Visual.BgColor},
 		{"背景渐变", p.Visual.BgGradient},
 		{"背景图", p.Visual.BgImage},
+		{"背景自定义定位", p.Visual.BgPositionXY},
+		{"背景自定义尺寸", p.Visual.BgSizeValue},
 		{"边框粗细", p.Visual.BorderWidth},
 		{"边框颜色", p.Visual.BorderColor},
 		{"圆角", p.Visual.Radius},

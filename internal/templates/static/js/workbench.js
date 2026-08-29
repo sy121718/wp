@@ -876,18 +876,54 @@
                         panel.appendChild(wrap);
                         return;
                     }
-                    // 图片类字段附「媒体库」按钮：弹层点选或上传后回填 URL。
-                    if (kind === 'input' && /\.(src|bgImage)$/.test(path)) {
-                        var mediaBtn = document.createElement('button');
-                        mediaBtn.type = 'button'; mediaBtn.className = 'wb-btn wb-btn-secondary wb-btn-sm wb-media-pick';
-                        mediaBtn.textContent = '媒体库';
-                        mediaBtn.addEventListener('click', function () {
-                            self.openMediaPicker(function (url) {
-                                input.value = url;
-                                input.dispatchEvent(new Event('change'));
-                            });
+                    // 媒体类字段：缩略图预览 + 媒体库选择 + 清除（对齐 Elementor 图片控件）。
+                    // assetId 尾缀回填附件 ID（构建期解析变体），src/bgImage 尾缀回填 URL 直出。
+                    if (kind === 'input' && /\.(assetId|src|bgImage)$/.test(path)) {
+                        var isAssetID = /\.assetId$/.test(path);
+                        var applyPick = function (url, assetId) {
+                            var value = isAssetID ? assetId : url;
+                            input.value = value;
+                            commit(path, value);
+                            previewImg.src = url || '';
+                            previewImg.classList.toggle('is-empty', !previewImg.src);
+                            previewTip.textContent = url ? '' : '点击选择图片';
+                        };
+                        var previewBox = document.createElement('div');
+                        previewBox.className = 'wb-media-field' + (input.value ? ' has-image' : '');
+                        var previewImg = document.createElement('img');
+                        previewImg.alt = '';
+                        var initialURL = self.resolveAssetUrl(input.value);
+                        if (initialURL) previewImg.src = initialURL; else previewImg.classList.add('is-empty');
+                        var pickFromPreview = function () {
+                            self.openMediaPicker(applyPick);
+                        };
+                        previewBox.appendChild(previewImg);
+                        var previewTip = document.createElement('span');
+                        previewTip.className = 'wb-media-tip';
+                        previewTip.textContent = initialURL ? '' : '点击选择图片';
+                        previewBox.appendChild(previewTip);
+                        previewBox.addEventListener('click', pickFromPreview);
+                        var pickBtn = document.createElement('button');
+                        pickBtn.type = 'button'; pickBtn.className = 'wb-btn wb-btn-secondary wb-btn-sm';
+                        pickBtn.textContent = '媒体库';
+                        pickBtn.addEventListener('click', pickFromPreview);
+                        var clearBtn = document.createElement('button');
+                        clearBtn.type = 'button'; clearBtn.className = 'wb-btn wb-btn-ghost wb-btn-sm';
+                        clearBtn.textContent = '清除';
+                        clearBtn.addEventListener('click', function () {
+                            input.value = '';
+                            commit(path, '');
+                            previewImg.src = '';
+                            previewImg.classList.add('is-empty');
+                            previewTip.textContent = '点击选择图片';
                         });
-                        wrap.appendChild(mediaBtn);
+                        var row = document.createElement('div'); row.className = 'wb-media-row';
+                        row.appendChild(pickBtn); row.appendChild(clearBtn);
+                        wrap.removeChild(input);
+                        wrap.appendChild(previewBox);
+                        wrap.appendChild(row);
+                        panel.appendChild(wrap);
+                        return;
                     }
                     panel.appendChild(wrap);
                 }
@@ -1234,6 +1270,17 @@
                     field('背景颜色', 'props.visual.bgColor', 'input');
                     field('背景渐变', 'props.visual.bgGradient', 'input');
                     field('背景图片', 'props.visual.bgImage', 'input');
+                    // 背景显示控制（对齐 Elementor：定位/附着/重复/尺寸）。
+                    field('背景定位', 'props.visual.bgPosition', 'select', [['default', '（默认）'], ['center', '居中'], ['center top', '中上'], ['center bottom', '中下'], ['left top', '左上'], ['left center', '左中'], ['left bottom', '左下'], ['right top', '右上'], ['right center', '右中'], ['right bottom', '右下'], ['custom', '自定义']]);
+                    if (get('props.visual.bgPosition') === 'custom') {
+                        field('定位值', 'props.visual.bgPositionXY', 'input');
+                    }
+                    field('背景附着方式', 'props.visual.bgAttachment', 'select', [['default', '（默认）'], ['scroll', '随页面滚动'], ['fixed', '固定（视差）'], ['local', '随内容滚动']]);
+                    field('背景重复', 'props.visual.bgRepeat', 'select', [['default', '（默认）'], ['no-repeat', '不重复'], ['repeat', '平铺'], ['repeat-x', '横向平铺'], ['repeat-y', '纵向平铺']]);
+                    field('显示尺寸', 'props.visual.bgSize', 'select', [['default', '（默认）'], ['auto', '原始'], ['contain', '完整包含'], ['cover', '铺满裁剪'], ['custom', '自定义']]);
+                    if (get('props.visual.bgSize') === 'custom') {
+                        field('尺寸值', 'props.visual.bgSizeValue', 'input');
+                    }
                     heading('边框与圆角');
                     field('边框宽度', 'props.visual.borderWidth', 'input');
                     field('边框样式', 'props.visual.borderStyle', 'select', [['', '（默认）'], ['solid', '实线'], ['dashed', '虚线'], ['dotted', '点线']]);
@@ -1414,7 +1461,7 @@
                             cell.appendChild(img);
                             var cap = document.createElement('span'); cap.textContent = item.file_name || ''; cell.appendChild(cap);
                             cell.addEventListener('click', function () {
-                                if (self._mediaPickTarget) self._mediaPickTarget(item.url);
+                                if (self._mediaPickTarget) self._mediaPickTarget(item.url, String(item.id), item);
                                 self.closeMediaPicker();
                             });
                             grid.appendChild(cell);
@@ -1553,6 +1600,8 @@
                 this.renderPalette();
                 this.renderTree();
                 this.renderUI();
+                // 预载媒体库列表：检查器 assetId 字段的缩略图解析依赖 _mediaCache。
+                this.loadMediaList();
                 document.addEventListener('keydown', function (e) { self.onKeydown(e); });
                 // iframe 内点击经 postMessage 上报选中（editor=1 注入桥接脚本）。
                 window.addEventListener('message', function (ev) {
