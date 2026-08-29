@@ -200,15 +200,15 @@ type VisualProps struct {
 	BgGradient string `json:"bgGradient,omitempty"` // 如 "linear-gradient(to right, #fff, #000)"
 	BgImage    string `json:"bgImage,omitempty"`    // 背景图 URL（媒体库选择回填；画布/产物直出）
 	// BgPosition 背景定位（default=浏览器默认）：center / left top 等关键词组合；custom 时取 BgPositionXY。
-	BgPosition string `json:"bgPosition,omitempty" ct:"select,default,custom,center,center top,center bottom,left top,left center,left bottom,right top,right center,right bottom,default=default,sec=style"`
+	BgPosition string `json:"bgPosition,omitempty" ct:"select,default=（默认）,custom=自定义,center=居中,center top=中上,center bottom=中下,left top=左上,left center=左中,left bottom=左下,right top=右上,right center=右中,right bottom=右下,default=default,sec=style,label=背景定位"`
 	// BgPositionXY 自定义定位值（BgPosition=custom 时生效），如 "50% 20%"。
 	BgPositionXY string `json:"bgPositionXY,omitempty" ct:"safe,maxlen=40,sec=style"`
 	// BgAttachment 背景附着方式：default / scroll / fixed / local。
-	BgAttachment string `json:"bgAttachment,omitempty" ct:"select,default,scroll,fixed,local,default=default,sec=style"`
+	BgAttachment string `json:"bgAttachment,omitempty" ct:"select,default=（默认）,scroll=随页面滚动,fixed=固定（视差）,local=随内容滚动,default=default,sec=style,label=背景附着方式"`
 	// BgRepeat 背景重复：default / no-repeat / repeat / repeat-x / repeat-y。
-	BgRepeat string `json:"bgRepeat,omitempty" ct:"select,default,no-repeat,repeat,repeat-x,repeat-y,default=default,sec=style"`
+	BgRepeat string `json:"bgRepeat,omitempty" ct:"select,default=（默认）,no-repeat=不重复,repeat=平铺,repeat-x=横向平铺,repeat-y=纵向平铺,default=default,sec=style,label=背景重复"`
 	// BgSize 显示尺寸：default / auto / contain / cover / custom（取 BgSizeValue）。
-	BgSize string `json:"bgSize,omitempty" ct:"select,default,auto,contain,cover,custom,default=default,sec=style"`
+	BgSize string `json:"bgSize,omitempty" ct:"select,default=（默认）,auto=原始,contain=完整包含,cover=铺满裁剪,custom=自定义,default=default,sec=style,label=显示尺寸"`
 	// BgSizeValue 自定义尺寸值（BgSize=custom 时生效），如 "100% auto"。
 	BgSizeValue string `json:"bgSizeValue,omitempty" ct:"safe,maxlen=40,sec=style"`
 	// 边框三要素，需同时提供才生效。

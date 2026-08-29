@@ -55,17 +55,17 @@ type Width struct {
 // Inset 嵌入元素配置。
 type Inset struct {
 	// Kind 嵌入类型：none / text / icon（默认 none）。
-	Kind string `json:"kind,omitempty" ct:"select,none,text,icon,default=none,sec=content"`
+	Kind string `json:"kind,omitempty" ct:"select,none=纯线,text=嵌入文本,icon=嵌入图标,default=none,sec=content,label=样式"`
 	// Text 嵌入文本。
 	Text string `json:"text,omitempty" ct:"text,maxlen=50,sec=content"`
 	// FontSize / FontWeight / Color 嵌入文本样式。
 	FontSize   string `json:"fontSize,omitempty" ct:"safe,maxlen=30,sec=style"`
-	FontWeight string `json:"fontWeight,omitempty" ct:"select,400,500,600,700,sec=style"`
+	FontWeight string `json:"fontWeight,omitempty" ct:"select,400=常规,500=中等,600=半粗,700=粗体,sec=style,label=字重"`
 	Color      string `json:"color,omitempty" ct:"safe,maxlen=200,sec=style"`
 	// IconName 内置图标（kind=icon）。
-	IconName string `json:"iconName,omitempty" ct:"select,star,diamond,dot,sec=content"`
+	IconName string `json:"iconName,omitempty" ct:"select,star=星形,diamond=菱形,dot=圆点,sec=content,label=图标样式"`
 	// Position 嵌入位置：center / left / right（默认 center）。
-	Position string `json:"position,omitempty" ct:"select,center,left,right,default=center,sec=content"`
+	Position string `json:"position,omitempty" ct:"select,center=居中,left=靠左,right=靠右,default=center,sec=content,label=位置"`
 	// Spacing 元素与两侧线条的留白。
 	Spacing string `json:"spacing,omitempty" ct:"safe,maxlen=20,sec=style"`
 }
@@ -73,13 +73,13 @@ type Inset struct {
 // Props divider 属性。
 type Props struct {
 	// Style 线条类型：solid / dashed / dotted / double（默认 solid）。
-	Style string `json:"style,omitempty" ct:"select,solid,dashed,dotted,double,default=solid,sec=style"`
+	Style string `json:"style,omitempty" ct:"select,solid=实线,dashed=虚线,dotted=点线,double=双线,default=solid,sec=style,label=线型"`
 	// Weight 线粗（height），如 "1px" / "2px"。
 	Weight string `json:"weight,omitempty" ct:"safe,maxlen=20,sec=style"`
 	// Width 总宽度三端（百分比或固定像素；空=100%）。
 	Width Width `json:"width,omitempty"`
 	// Align 对齐（宽度非 100% 时）：left / center / right（默认 center）。
-	Align string `json:"align,omitempty" ct:"select,left,center,right,default=center,sec=style"`
+	Align string `json:"align,omitempty" ct:"select,left=左对齐,center=居中,right=右对齐,default=center,sec=style,label=对齐"`
 	// Color 线条颜色或主题 Token。
 	Color string `json:"color,omitempty" ct:"safe,maxlen=200,sec=style"`
 	// Inset 嵌入元素。

@@ -877,16 +877,28 @@
                         return;
                     }
                     // 媒体类字段：缩略图预览 + 媒体库选择 + 清除（对齐 Elementor 图片控件）。
-                    // assetId 尾缀回填附件 ID（构建期解析变体），src/bgImage 尾缀回填 URL 直出。
+                    // assetId 尾缀：媒体库回填 ID（构建期解析变体），并提供「外部地址」次级输入（写 src 互斥清空）。
+                    // src/bgImage 尾缀：直接回填 URL（画布/产物直出）。
                     if (kind === 'input' && /\.(assetId|src|bgImage)$/.test(path)) {
                         var isAssetID = /\.assetId$/.test(path);
-                        var applyPick = function (url, assetId) {
-                            var value = isAssetID ? assetId : url;
-                            input.value = value;
-                            commit(path, value);
+                        var srcPath = path.replace(/\.assetId$/, '.src');
+                        var setPreview = function (url) {
                             previewImg.src = url || '';
                             previewImg.classList.toggle('is-empty', !previewImg.src);
-                            previewTip.textContent = url ? '' : '点击选择图片';
+                            previewTip.textContent = previewImg.src ? '' : '点击选择图片';
+                        };
+                        var applyPick = function (url, assetId) {
+                            if (isAssetID) {
+                                // 媒体库选择与外部地址互斥：选库清外部地址，反之亦然。
+                                commit(path, assetId);
+                                commit(srcPath, '');
+                                input.value = assetId;
+                                setPreview(url);
+                            } else {
+                                commit(path, url);
+                                input.value = url;
+                                setPreview(url);
+                            }
                         };
                         var previewBox = document.createElement('div');
                         previewBox.className = 'wb-media-field' + (input.value ? ' has-image' : '');
@@ -922,6 +934,25 @@
                         wrap.removeChild(input);
                         wrap.appendChild(previewBox);
                         wrap.appendChild(row);
+                        if (isAssetID) {
+                            // 外部图片地址（次级输入）：填写写 src 并清 assetId，与媒体库选择互斥。
+                            var extInput = document.createElement('input');
+                            extInput.type = 'text';
+                            extInput.placeholder = '或输入外部图片地址（https://…）';
+                            extInput.value = String(get(srcPath) || '');
+                            extInput.addEventListener('change', function () {
+                                var v = extInput.value.trim();
+                                if (v) {
+                                    commit(srcPath, v);
+                                    commit(path, '');
+                                    input.value = '';
+                                    setPreview(v);
+                                } else {
+                                    commit(srcPath, '');
+                                }
+                            });
+                            wrap.appendChild(extInput);
+                        }
                         panel.appendChild(wrap);
                         return;
                     }
@@ -940,14 +971,17 @@
                     var seg = document.createElement('div'); seg.className = 'wb-seg';
                     var current = get(path) == null ? '' : String(get(path));
                     var buttons = [];
+                    // 选项支持 {value,label} 对象（ct tag 声明中文标签）或纯字符串。
                     (ctl.options || []).forEach(function (o) {
+                        var value = (o && typeof o === 'object') ? o.value : o;
+                        var text = (o && typeof o === 'object' && o.label) ? o.label : optionLabel(value);
                         var b = document.createElement('button');
                         b.type = 'button'; b.className = 'wb-seg-btn';
-                        b.textContent = optionLabel(o);
-                        b.title = o;
-                        if (o === current || (!current && ctl.default && o === ctl.default)) b.classList.add('is-active');
+                        b.textContent = text;
+                        b.title = value;
+                        if (value === current || (!current && ctl.default && value === ctl.default)) b.classList.add('is-active');
                         b.addEventListener('click', function () {
-                            commit(path, o, after);
+                            commit(path, value, after);
                             buttons.forEach(function (x) { x.classList.toggle('is-active', x === b); });
                         });
                         buttons.push(b);
@@ -1217,7 +1251,10 @@
                 }
                 // schema 控件 → 表单字段（key 即 props 顶层键，与后端 JSON 序列化一致）。
                 function schemaField(ctl) {
-                    var label = controlLabel(ctl.key);
+                    // hidden 控件不渲染（如 image 的外部地址字段，由媒体控件内嵌输入承担）。
+                    if (ctl.hidden) return;
+                    // 显示名优先用 ct tag 声明的中文标签，其次字段名映射表。
+                    var label = ctl.label || controlLabel(ctl.key);
                     var path = 'props.' + ctl.key;
                     // text 组件富文本模式：正文内容用 TinyMCE 渲染。
                     if (node.type === 'core.text' && ctl.key === 'text' && (get('props.mode') || 'richtext') !== 'plaintext') {
@@ -1225,13 +1262,19 @@
                         return;
                     }
                     if (ctl.kind === 'select') {
+                        // 选项归一为 [value, label]：ct tag 已声明中文标签时优先。
+                        var opts = (ctl.options || []).map(function (o) {
+                            var value = (o && typeof o === 'object') ? o.value : o;
+                            var text = (o && typeof o === 'object' && o.label) ? o.label : optionLabel(value);
+                            return [value, text || (value === '' ? '（无）' : value)];
+                        });
                         // 短枚举(≤6 项)用分段按钮组(WP 式节省空间),长列表保留下拉。
-                        if ((ctl.options || []).length <= 6) {
+                        if (opts.length <= 6) {
                             segmentedField(label, path, ctl, (node.type === 'core.text' && ctl.key === 'mode') ? modeAfter : null);
                             return;
                         }
-                        var choices = (ctl.options || []).map(function (o) { return [o, o === '' ? '（无）' : optionLabel(o)]; });
-                        if (ctl.default) choices.unshift(['', ctl.default + '（默认）']);
+                        var choices = opts;
+                        if (ctl.default) choices.unshift(['', '（默认）']);
                         // text.mode 切换后重建面板，切换富文本/纯文本编辑形态。
                         var afterSel = (node.type === 'core.text' && ctl.key === 'mode') ? modeAfter : null;
                         field(label, path, 'select', choices, afterSel);

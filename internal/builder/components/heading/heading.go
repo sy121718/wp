@@ -23,7 +23,7 @@ const maxTextLen = 500
 // DecorProps 文本装饰。
 type DecorProps struct {
 	// Decoration 文本装饰：none/underline/line-through。
-	Decoration string `json:"decoration,omitempty" ct:"select,none,underline,line-through"`
+	Decoration string `json:"decoration,omitempty" ct:"select,none=无,underline=下划线,line-through=删除线,label=文字装饰"`
 	// DecorationColor 装饰线颜色微调。
 	DecorationColor string `json:"decorationColor,omitempty" ct:"safe,maxlen=100"`
 }
@@ -43,7 +43,7 @@ type Props struct {
 	// Binding CMS 字段绑定（优先于 Text；发布期静态填入）。
 	Binding *Binding `json:"binding,omitempty"`
 	// Tag 语义标签：h1~h6 / div / span（默认 h2）。
-	Tag string `json:"tag,omitempty" ct:"select,h1,h2,h3,h4,h5,h6,div,span,default=h2,sec=content"`
+	Tag string `json:"tag,omitempty" ct:"select,h1=一级标题,h2=二级标题,h3=三级标题,h4=四级标题,h5=五级标题,h6=六级标题,div=区块,span=行内,default=h2,sec=content,label=语义标签"`
 	// Typography 字体排版（三端独立，core.TextStyle 共享组）。
 	Typography core.TextStyle `json:"typography,omitempty"`
 	// Weight 字重：100~900 或 token（regular/medium/semibold/bold）。
@@ -51,7 +51,7 @@ type Props struct {
 	// LetterSpacing 字间距。
 	LetterSpacing string `json:"letterSpacing,omitempty" ct:"safe,maxlen=20,sec=style"`
 	// Transform 文字转换：none/uppercase/lowercase/capitalize。
-	Transform string `json:"transform,omitempty" ct:"select,none,uppercase,lowercase,capitalize,sec=style"`
+	Transform string `json:"transform,omitempty" ct:"select,none=无,uppercase=全大写,lowercase=全小写,capitalize=首字母大写,sec=style,label=大小写转换"`
 	// Decor 文本装饰。
 	Decor DecorProps `json:"decor,omitempty"`
 	// Color 文字颜色：色值或主题 Token（var(--color-primary)）。
@@ -59,7 +59,7 @@ type Props struct {
 	// LineClamp 多行截断行数 1~6；0 表示不截断。
 	LineClamp int `json:"lineClamp,omitempty" ct:"slider,min=0,max=6,step=1,sec=style"`
 	// TextShadow 文字阴影预设：subtle/strong；空为无。
-	TextShadow string `json:"textShadow,omitempty" ct:"select,subtle,strong,sec=style"`
+	TextShadow string `json:"textShadow,omitempty" ct:"select,subtle=轻阴影,strong=重阴影,sec=style,label=文字阴影"`
 	// Advanced 通用高级属性（规范 docs/02-C0）。
 	Advanced core.AdvancedProps `json:"advanced"`
 }

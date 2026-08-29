@@ -37,9 +37,9 @@ type Binding struct {
 // Props core.text 特有属性 + 共享排版组 + Advanced 通用层。
 type Props struct {
 	// Mode 内容模式：richtext（默认）/ plaintext。
-	Mode string `json:"mode,omitempty" ct:"select,richtext,plaintext,default=richtext,sec=content"`
+	Mode string `json:"mode,omitempty" ct:"select,richtext=富文本,plaintext=纯文本,default=richtext,sec=content,label=内容模式"`
 	// PlainTag 纯文本模式的包裹标签：p（默认）/ span。
-	PlainTag string `json:"plainTag,omitempty" ct:"select,p,span,default=p,sec=content"`
+	PlainTag string `json:"plainTag,omitempty" ct:"select,p=段落,span=行内,default=p,sec=content,label=包裹标签"`
 	// Text 内容：纯文本模式为纯字符串；富文本模式为 HTML 片段（编译期白名单清洗）。
 	Text string `json:"text,omitempty" ct:"text,maxlen=30000,sec=content"`
 	// Binding CMS 字段绑定（优先于 Text）。

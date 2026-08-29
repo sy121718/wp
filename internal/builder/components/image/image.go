@@ -64,43 +64,43 @@ type Binding struct {
 type Props struct {
 	// AssetID 媒体资产稳定标识（与 Src 二选一，AssetID 优先）。
 	// 媒体库附件为自增数字 ID（最短 1 位），故下限取 1。
-	AssetID string `json:"assetId,omitempty" ct:"regex,sec=content" ctRegex:"^[A-Za-z0-9_-]{1,64}$"`
+	AssetID string `json:"assetId,omitempty" ct:"regex,sec=content,label=图片" ctRegex:"^[A-Za-z0-9_-]{1,64}$"`
 	// Src 外部绝对 URL（第三方 CDN / 站外图片；与 AssetID 二选一）。
-	Src string `json:"src,omitempty" ct:"url,sec=content"`
+	Src string `json:"src,omitempty" ct:"url,sec=content,label=外部图片地址,hidden"`
 	// Variant 媒体库变体规格：original / large / medium / thumbnail（默认 original）。
-	Variant string `json:"variant,omitempty" ct:"select,original,large,medium,thumbnail,default=original,sec=content"`
+	Variant string `json:"variant,omitempty" ct:"select,original=原始,large=大图,medium=中图,thumbnail=缩略图,default=original,sec=content,label=图片分辨率"`
 	// InlineSVG 矢量内联开关：开启时以 SVG 源码内联输出（CSS 可控制 fill/stroke）。
-	InlineSVG bool `json:"inlineSvg,omitempty" ct:"bool,sec=style"`
+	InlineSVG bool `json:"inlineSvg,omitempty" ct:"bool,sec=style,label=内联 SVG"`
 	// Alt 局部替代文本（默认继承媒体库全局 Alt）。
-	Alt string `json:"alt,omitempty" ct:"text,maxlen=500,sec=content"`
+	Alt string `json:"alt,omitempty" ct:"text,maxlen=500,sec=content,label=替代文字"`
 	// Title 局部标题。
-	Title string `json:"title,omitempty" ct:"text,maxlen=500,sec=content"`
+	Title string `json:"title,omitempty" ct:"text,maxlen=500,sec=content,label=标题"`
 	// Caption 图注（非空时输出 <figure>/<figcaption>）。
-	Caption string `json:"caption,omitempty" ct:"text,maxlen=500,sec=content"`
+	Caption string `json:"caption,omitempty" ct:"text,maxlen=500,sec=content,label=图注"`
 	// Sizes srcset 的 sizes 提示。
-	Sizes string `json:"sizes,omitempty" ct:"safe,maxlen=200,sec=content"`
+	Sizes string `json:"sizes,omitempty" ct:"safe,maxlen=200,sec=content,label=响应式尺寸提示"`
 
 	// --- 尺寸、排版与对齐 ---
-	AspectRatio      string `json:"aspectRatio,omitempty" ct:"select,original,1:1,4:3,16:9,21:9,3:4,custom,sec=style"`
-	AspectRatioValue string `json:"aspectRatioValue,omitempty" ct:"safe,maxlen=20,sec=style"` // custom 的 w/h 值，如 3 / 2
-	ObjectFit        string `json:"objectFit,omitempty" ct:"select,cover,contain,fill,default=cover,sec=style"`
+	AspectRatio      string `json:"aspectRatio,omitempty" ct:"select,original=原图,1:1=1:1,4:3=4:3,16:9=16:9,21:9=21:9,3:4=3:4,custom=自定义,sec=style,label=宽高比"`
+	AspectRatioValue string `json:"aspectRatioValue,omitempty" ct:"safe,maxlen=20,sec=style,label=自定义宽高比"` // custom 的 w/h 值，如 3 / 2
+	ObjectFit        string `json:"objectFit,omitempty" ct:"select,cover=铺满裁剪,contain=完整包含,fill=拉伸,default=cover,sec=style,label=填充方式"`
 	// ObjectPosition 对象定位（object-fit 裁剪基准点），如 "center center" / "50% 20%"。
-	ObjectPosition string `json:"objectPosition,omitempty" ct:"safe,maxlen=40,sec=style"`
+	ObjectPosition string `json:"objectPosition,omitempty" ct:"safe,maxlen=40,sec=style,label=对象定位"`
 	Align          Align  `json:"align,omitempty"` // 三端对齐：left/center/right
-	Width          string `json:"width,omitempty" ct:"safe,maxlen=30,sec=style"`    // auto / 百分比 / px / rem
-	MaxWidth       string `json:"maxWidth,omitempty" ct:"safe,maxlen=30,sec=style"` // 如 480px
+	Width          string `json:"width,omitempty" ct:"safe,maxlen=30,sec=style,label=宽度"`    // auto / 百分比 / px / rem
+	MaxWidth       string `json:"maxWidth,omitempty" ct:"safe,maxlen=30,sec=style,label=最大宽度"` // 如 480px
 
 	// --- CSS 滤镜与悬浮 ---
 	Filters Filters `json:"filters,omitempty"`
 	Hover   Hover   `json:"hover,omitempty"`
 
 	// --- 性能与交互 ---
-	Loading       string `json:"loading,omitempty" ct:"select,lazy,eager,default=lazy,sec=content"` // 默认 lazy
-	FetchPriority string `json:"fetchPriority,omitempty" ct:"select,high,auto,sec=content"`
-	ClickAction   string `json:"clickAction,omitempty" ct:"select,none,link,lightbox,default=none,sec=content"`
-	Link          string `json:"link,omitempty" ct:"url,sec=content"`
-	LinkTarget    string `json:"linkTarget,omitempty" ct:"select,blank,self,default=self,sec=content"`
-	LinkRel       string `json:"linkRel,omitempty" ct:"select,nofollow,none,default=none,sec=content"`
+	Loading       string `json:"loading,omitempty" ct:"select,lazy=懒加载,eager=立即加载,default=lazy,sec=content,label=加载策略"` // 默认 lazy
+	FetchPriority string `json:"fetchPriority,omitempty" ct:"select,high=高,auto=自动,sec=content,label=加载优先级"`
+	ClickAction   string `json:"clickAction,omitempty" ct:"select,none=无,link=打开链接,lightbox=灯箱放大,default=none,sec=content,label=点击动作"`
+	Link          string `json:"link,omitempty" ct:"url,sec=content,label=链接地址"`
+	LinkTarget    string `json:"linkTarget,omitempty" ct:"select,blank=新窗口,self=当前窗口,default=self,sec=content,label=打开方式"`
+	LinkRel       string `json:"linkRel,omitempty" ct:"select,nofollow=加 nofollow,none=默认,default=none,sec=content,label=链接关系"`
 
 	// --- CMS 绑定 ---
 	Binding *Binding `json:"binding,omitempty" sec:"content"`

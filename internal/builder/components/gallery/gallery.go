@@ -114,24 +114,24 @@ type Props struct {
 	// Binding CMS 图集字段绑定。
 	Binding *Binding `json:"binding,omitempty"`
 	// Mode 展示模式：grid / carousel（默认 grid）。
-	Mode string `json:"mode,omitempty" ct:"select,grid,carousel,default=grid,sec=content"`
+	Mode string `json:"mode,omitempty" ct:"select,grid=网格,carousel=轮播,default=grid,sec=content,label=展示模式"`
 	// Grid 栅格配置。
 	Grid Grid `json:"grid,omitempty"`
 	// Carousel 轮播配置。
 	Carousel Carousel `json:"carousel,omitempty"`
 
 	// --- 全局统一样式 ---
-	AspectRatio string `json:"aspectRatio,omitempty" ct:"select,original,1:1,4:3,16:9,3:2,3:4,default=original,sec=style"`
-	ObjectFit   string `json:"objectFit,omitempty" ct:"select,cover,contain,default=cover,sec=style"`
+	AspectRatio string `json:"aspectRatio,omitempty" ct:"select,original=原图,1:1=1:1,4:3=4:3,16:9=16:9,3:2=3:2,3:4=3:4,default=original,sec=style,label=宽高比"`
+	ObjectFit   string `json:"objectFit,omitempty" ct:"select,cover=铺满裁剪,contain=完整包含,default=cover,sec=style,label=填充方式"`
 	Radius      string `json:"radius,omitempty" ct:"safe,maxlen=30,sec=style"`
 	BorderWidth string `json:"borderWidth,omitempty" ct:"safe,maxlen=20,sec=style"`
 	BorderColor string `json:"borderColor,omitempty" ct:"safe,maxlen=100,sec=style"`
 	Hover       Hover  `json:"hover,omitempty"`
 
 	// --- 点击动作与图注 ---
-	ClickAction string `json:"clickAction,omitempty" ct:"select,lightbox,link,none,default=lightbox,sec=content"`
+	ClickAction string `json:"clickAction,omitempty" ct:"select,lightbox=灯箱放大,link=打开链接,none=无,default=lightbox,sec=content,label=点击动作"`
 	DefaultLink string `json:"defaultLink,omitempty" ct:"url,sec=content"`
-	CaptionMode string `json:"captionMode,omitempty" ct:"select,none,below,hover,default=none,sec=style"`
+	CaptionMode string `json:"captionMode,omitempty" ct:"select,none=不显示,below=图下方,hover=悬停显示,default=none,sec=style,label=说明方式"`
 
 	// Advanced 通用高级属性（docs/02-C0）。
 	Advanced core.AdvancedProps `json:"advanced"`

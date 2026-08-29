@@ -35,16 +35,24 @@ const (
 )
 
 // Control 单个控件的规范化描述符（由结构体 tag 解析生成，组件作者不手动维护）。
+// ControlOption select 选项：值 + 可选中文标签（ct tag 里 `值=中文` 声明）。
+type ControlOption struct {
+	Value string `json:"value"`
+	Label string `json:"label,omitempty"` // 空时前端直接显示 Value
+}
+
 type Control struct {
-	Key     string      `json:"key"`
-	Kind    ControlKind `json:"kind"`
-	Default string      `json:"default,omitempty"`
-	Min     int         `json:"min,omitempty"`
-	Max     int         `json:"max,omitempty"`
-	Step    int         `json:"step,omitempty"` // slider 步进（编辑器交互；默认 1）
-	MaxLen  int         `json:"maxLen,omitempty"`
-	Options []string    `json:"options,omitempty"` // select 选项
-	Pattern string      `json:"pattern,omitempty"` // regex 模式
+	Key     string          `json:"key"`
+	Kind    ControlKind     `json:"kind"`
+	Label   string          `json:"label,omitempty"`   // 控件显示名（中文）；缺省由前端字段映射兜底
+	Default string          `json:"default,omitempty"`
+	Min     int             `json:"min,omitempty"`
+	Max     int             `json:"max,omitempty"`
+	Step    int             `json:"step,omitempty"` // slider 步进（编辑器交互；默认 1）
+	MaxLen  int             `json:"maxLen,omitempty"`
+	Options []ControlOption `json:"options,omitempty"` // select/segment 选项
+	Pattern string          `json:"pattern,omitempty"` // regex 模式
+	Hidden  bool            `json:"hidden,omitempty"`  // 检查器隐藏（如二选一字段的另一侧、内部实现字段）
 	// Section 面板分组：content / style / advanced（默认 content）。
 	Section string `json:"section,omitempty"`
 	// goName 反射字段名（Go 导出字段），ValidateSpec 按它定位字段值；
@@ -103,6 +111,10 @@ func parseControlTag(f reflect.StructField, tag string) (c Control, err error) {
 		part = strings.TrimSpace(part)
 		switch {
 		case part == "":
+		case part == "hidden":
+			c.Hidden = true
+		case strings.HasPrefix(part, "label="):
+			c.Label = strings.TrimPrefix(part, "label=")
 		case strings.HasPrefix(part, "default="):
 			c.Default = strings.TrimPrefix(part, "default=")
 		case strings.HasPrefix(part, "min="):
@@ -124,7 +136,12 @@ func parseControlTag(f reflect.StructField, tag string) (c Control, err error) {
 		case strings.HasPrefix(part, "sec="):
 			c.Section = strings.TrimPrefix(part, "sec=")
 		default:
-			c.Options = append(c.Options, part) // select 选项
+			// select/segment 选项：`值=中文` 声明显示标签，纯值则前端直接显示值。
+			if kv := strings.SplitN(part, "=", 2); len(kv) == 2 {
+				c.Options = append(c.Options, ControlOption{Value: kv[0], Label: kv[1]})
+			} else {
+				c.Options = append(c.Options, ControlOption{Value: part})
+			}
 		}
 	}
 	if c.Section == "" {
@@ -177,14 +194,16 @@ func validateControlValue(c Control, fv reflect.Value, nodeID string) (err error
 		switch c.Kind {
 		case ControlSelect:
 			found := false
+			values := make([]string, 0, len(c.Options))
 			for _, opt := range c.Options {
-				if opt == s {
+				values = append(values, opt.Value)
+				if opt.Value == s {
 					found = true
 					break
 				}
 			}
 			if !found {
-				return msg("值 %q 不在选项内（有效值: %s）", s, strings.Join(c.Options, "/"))
+				return msg("值 %q 不在选项内（有效值: %s）", s, strings.Join(values, "/"))
 			}
 		case ControlSafe:
 			if !IsSafeCSSValue(s) {
@@ -242,22 +261,24 @@ func SchemaJSON(props any) (data []byte, err error) {
 		return nil, err
 	}
 	type schemaItem struct {
-		Key     string   `json:"key"`
-		Kind    string   `json:"kind"`
-		Section string   `json:"section,omitempty"`
-		Default string   `json:"default,omitempty"`
-		Min     int      `json:"min,omitempty"`
-		Max     int      `json:"max,omitempty"`
-		Step    int      `json:"step,omitempty"`
-		MaxLen  int      `json:"maxLen,omitempty"`
-		Options []string `json:"options,omitempty"`
+		Key     string          `json:"key"`
+		Kind    string          `json:"kind"`
+		Label   string          `json:"label,omitempty"` // 控件显示名（中文）
+		Section string          `json:"section,omitempty"`
+		Default string          `json:"default,omitempty"`
+		Min     int             `json:"min,omitempty"`
+		Max     int             `json:"max,omitempty"`
+		Step    int             `json:"step,omitempty"`
+		MaxLen  int             `json:"maxLen,omitempty"`
+		Options []ControlOption `json:"options,omitempty"`
+		Hidden  bool            `json:"hidden,omitempty"`
 	}
 	// 按 section 分桶，桶内保持字段声明序。
 	buckets := map[string][]schemaItem{}
 	for _, c := range controls {
 		buckets[c.Section] = append(buckets[c.Section], schemaItem{
-			Key: c.Key, Kind: string(c.Kind), Section: c.Section, Default: c.Default,
-			Min: c.Min, Max: c.Max, Step: c.Step, MaxLen: c.MaxLen, Options: c.Options,
+			Key: c.Key, Kind: string(c.Kind), Label: c.Label, Section: c.Section, Default: c.Default,
+			Min: c.Min, Max: c.Max, Step: c.Step, MaxLen: c.MaxLen, Options: c.Options, Hidden: c.Hidden,
 		})
 	}
 	var items []schemaItem

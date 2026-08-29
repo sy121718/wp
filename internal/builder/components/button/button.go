@@ -73,13 +73,13 @@ var builtinIcons = map[string]string{
 // Icon 图标配置。
 type Icon struct {
 	// Source 图标源：builtin（内置白名单）/ media（媒体库 SVG，assetId）。
-	Source string `json:"source,omitempty" ct:"select,builtin,media,sec=content"`
+	Source string `json:"source,omitempty" ct:"select,builtin=内置图标,media=媒体库图片,sec=content,label=图标来源"`
 	// Name builtin 图标名（source=builtin）。
-	Name string `json:"name,omitempty" ct:"select,arrow-right,arrow-left,arrow-up,arrow-down,check,chevron-right,phone,mail,sec=content"`
+	Name string `json:"name,omitempty" ct:"select,arrow-right=右箭头,arrow-left=左箭头,arrow-up=上箭头,arrow-down=下箭头,check=对勾,chevron-right=右尖括号,phone=电话,mail=邮件,sec=content,label=图标样式"`
 	// AssetID 媒体库 SVG assetId（source=media）。
-	AssetID string `json:"assetId,omitempty" ct:"regex,sec=content" ctRegex:"^[A-Za-z0-9_-]{4,64}$"`
+	AssetID string `json:"assetId,omitempty" ct:"regex,sec=content,label=图标图片" ctRegex:"^[A-Za-z0-9_-]{1,64}$"`
 	// Position 位置：prefix（前置）/ suffix（后置）。
-	Position string `json:"position,omitempty" ct:"select,prefix,suffix,sec=content"`
+	Position string `json:"position,omitempty" ct:"select,prefix=图标在前,suffix=图标在后,sec=content,label=图标位置"`
 	// Spacing 图标与文案间距。
 	Spacing string `json:"spacing,omitempty" ct:"safe,maxlen=20,sec=style"`
 	// HoverShift 悬停时图标水平位移动画值（如 "4px"）。
@@ -93,7 +93,7 @@ type State struct {
 	Background string `json:"background,omitempty" ct:"safe,maxlen=200,sec=style"`
 	Color      string `json:"color,omitempty" ct:"safe,maxlen=200,sec=style"`
 	Border     string `json:"border,omitempty" ct:"safe,maxlen=200,sec=style"` // 边框颜色
-	Shadow     string `json:"shadow,omitempty" ct:"select,sm,md,lg,xl,sec=style"`
+	Shadow     string `json:"shadow,omitempty" ct:"select,sm=小,md=中,lg=大,xl=特大,sec=style,label=阴影级别"`
 }
 
 // Block 三端块级铺满。
@@ -115,24 +115,24 @@ type Props struct {
 	// Binding 动态 CMS 链接绑定（如 post.permalink）。
 	Binding *Binding `json:"binding,omitempty"`
 	// Action 动作类型：internal/external/anchor/native/modal/link（默认 external）。
-	Action string `json:"action,omitempty" ct:"select,internal,external,anchor,native,modal,link,default=external,sec=content"`
+	Action string `json:"action,omitempty" ct:"select,internal=站内链接,external=外部链接,anchor=页内锚点,native=电话/邮件,modal=弹窗,link=自定义链接,default=external,sec=content,label=点击动作"`
 	// Value 动作值：internal 站内路径 / external URL / anchor 元素ID / native tel-mailto / modal 目标ID。
 	Value string `json:"value,omitempty" ct:"safe,maxlen=500,sec=content"`
 	// Target 外部链接打开方式：self / blank（blank 自动 rel=noopener noreferrer）。
-	Target string `json:"target,omitempty" ct:"select,self,blank,sec=content"`
+	Target string `json:"target,omitempty" ct:"select,self=当前窗口,blank=新窗口,sec=content,label=打开方式"`
 	// Rel SEO 策略：none / nofollow / sponsored。
-	Rel string `json:"rel,omitempty" ct:"select,none,nofollow,sponsored,sec=content"`
+	Rel string `json:"rel,omitempty" ct:"select,none=默认,nofollow=加 nofollow,sponsored=赞助链接,sec=content,label=链接关系"`
 
 	// --- 文本排版 ---
 	FontSize      string `json:"fontSize,omitempty" ct:"safe,maxlen=30,sec=style"`
-	FontWeight    string `json:"fontWeight,omitempty" ct:"select,400,500,600,700,800,sec=style"`
+	FontWeight    string `json:"fontWeight,omitempty" ct:"select,400=常规,500=中等,600=半粗,700=粗体,800=特粗,sec=style,label=字重"`
 	LetterSpacing string `json:"letterSpacing,omitempty" ct:"safe,maxlen=20,sec=style"`
-	Transform     string `json:"transform,omitempty" ct:"select,none,uppercase,lowercase,capitalize,sec=style"`
+	Transform     string `json:"transform,omitempty" ct:"select,none=无,uppercase=全大写,lowercase=全小写,capitalize=首字母大写,sec=style,label=大小写转换"`
 	// Icon 图标配置（可选）。
 	Icon *Icon `json:"icon,omitempty"`
 
 	// --- 尺寸/变体/双态外观 ---
-	Size    string `json:"size,omitempty" ct:"select,xs,sm,md,lg,xl,default=md,sec=style"`
+	Size    string `json:"size,omitempty" ct:"select,xs=特小,sm=小,md=中,lg=大,xl=特大,default=md,sec=style,label=按钮尺寸"`
 	Block   Block  `json:"block,omitempty"`
 	Variant string `json:"variant,omitempty" ct:"select,solid,outline,ghost,default=solid,sec=style"`
 	Radius  string `json:"radius,omitempty" ct:"select,0,6,8,9999,default=8,sec=style"`
