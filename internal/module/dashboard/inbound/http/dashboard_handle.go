@@ -77,6 +77,9 @@ func (h *Handle) Workbench(c *gin.Context) {
 		"version":   page.DraftVersion,
 		// 全局块引用（core.globalref）候选：本工程全部块（组件库「全局块」分组）。
 		"blocks": h.blockSummaries(c, page.ProjectID),
+		// 全局设置面板：页面挂接的主题与当前设置（颜色/字体），可就地修改保存。
+		"themeId":       h.themeIDOf(c, page),
+		"themeSettings": h.themeSettingsOf(c, page),
 	})
 	if err != nil {
 		c.String(http.StatusInternalServerError, "编辑器元数据序列化失败")
@@ -172,6 +175,26 @@ func (h *Handle) blockSummaries(c *gin.Context, projectID string) []gin.H {
 		out = append(out, gin.H{"id": b.ID, "name": b.Name, "kind": b.Kind})
 	}
 	return out
+}
+
+// themeIDOf 页面挂接的主题 ID（未挂接返回空串）。
+func (h *Handle) themeIDOf(c *gin.Context, page *pagedto.PageResp) string {
+	if page.ThemeID == "" {
+		return ""
+	}
+	return page.ThemeID
+}
+
+// themeSettingsOf 页面挂接主题的 settings（colors/fontFamily 等），未挂接或查询失败返回 nil。
+func (h *Handle) themeSettingsOf(c *gin.Context, page *pagedto.PageResp) json.RawMessage {
+	if page.ThemeID == "" {
+		return nil
+	}
+	theme, err := h.projects.GetTheme(c.Request.Context(), page.ThemeID)
+	if err != nil || theme == nil {
+		return nil
+	}
+	return theme.Settings
 }
 
 // Preview 基于已保存草稿轻量编译并在独立响应中输出完整 HTML 文档

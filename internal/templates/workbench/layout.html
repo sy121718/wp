@@ -37,17 +37,38 @@
 
     <div class="wb-main" id="wb-main">
 
-        {* ===== 左侧面板：组件库 / 组件编辑 两个互斥视图（对标 WP 编辑器范式） ===== *}
+        {* ===== 左侧图标栏：组件 / 页面设置 / 全局设置 / 修订历史（对标 Elementor） ===== *}
+        <nav class="wb-rail" aria-label="面板切换">
+            <button type="button" class="wb-rail-btn is-active" id="wb-rail-library" title="组件">▦</button>
+            <button type="button" class="wb-rail-btn" id="wb-rail-settings" title="页面设置">⚙</button>
+            <button type="button" class="wb-rail-btn" id="wb-rail-global" title="全局设置（主题）">◐</button>
+            <button type="button" class="wb-rail-btn" id="wb-rail-history" title="修订历史">↺</button>
+            <span class="wb-rail-spacer"></span>
+            <button type="button" class="wb-rail-btn" id="wb-rail-navigator" title="结构树">☰</button>
+        </nav>
+
+        {* ===== 左侧面板：组件库 / 组件编辑 / 页面设置 / 全局设置 / 修订历史 ===== *}
         <aside class="wb-inspector">
-            {* 组件库视图 *}
+            {* 组件库视图：页签（组件 | 全局块 | SEO） *}
             <section class="wb-panel" id="wb-panel-library" aria-label="组件库">
                 <div class="wb-panel-head">
                     <strong>组件库</strong>
                     <button type="button" class="wb-icon-btn" id="wb-library-close" title="收起">×</button>
                 </div>
+                <div class="wb-lib-tabs" role="tablist">
+                    <button type="button" class="is-active" data-libtab="components">组件</button>
+                    <button type="button" data-libtab="blocks">全局块</button>
+                    <button type="button" data-libtab="seo">SEO</button>
+                </div>
                 <input type="search" class="wb-search wb-library-search" id="wb-library-search" placeholder="搜索组件…">
                 <p class="wb-library-hint" id="wb-library-hint" style="display:none"></p>
-                <div class="wb-palette-grid" id="wb-palette"></div>
+                <div class="wb-inspector-body" id="wb-library-body">
+                    <div class="wb-palette-accordion" id="wb-palette"></div>
+                    <div class="wb-palette-blocks" id="wb-palette-blocks" hidden></div>
+                    <div class="wb-palette-seo" id="wb-palette-seo" hidden>
+                        <p class="wb-empty">SEO 设置即将上线，敬请期待。</p>
+                    </div>
+                </div>
             </section>
             {* 编辑视图：选中组件后显示 *}
             <section class="wb-panel" id="wb-panel-edit" aria-label="组件编辑" hidden>
@@ -65,6 +86,25 @@
                 </div>
                 <div class="wb-inspector-body" id="inspector-panel">
                     <p class="wb-empty">在画布或大纲树中选择节点</p>
+                </div>
+            </section>
+            {* 页面设置视图：SEO / 版心 / body class *}
+            <section class="wb-panel" id="wb-panel-settings" aria-label="页面设置" hidden>
+                <div class="wb-panel-head"><strong>页面设置</strong></div>
+                <div class="wb-inspector-body" id="wb-settings-body"></div>
+            </section>
+            {* 全局设置视图：站点主题（颜色/字体），保存后合入全部页面 *}
+            <section class="wb-panel" id="wb-panel-global" aria-label="全局设置" hidden>
+                <div class="wb-panel-head"><strong>全局设置（主题）</strong></div>
+                <div class="wb-inspector-body" id="wb-global-body">
+                    <p class="wb-empty">当前页面未挂接主题。</p>
+                </div>
+            </section>
+            {* 修订历史视图：草稿快照列表 + 恢复 *}
+            <section class="wb-panel" id="wb-panel-history" aria-label="修订历史" hidden>
+                <div class="wb-panel-head"><strong>修订历史</strong></div>
+                <div class="wb-inspector-body" id="wb-history-body">
+                    <p class="wb-empty">加载中…</p>
                 </div>
             </section>
         </aside>

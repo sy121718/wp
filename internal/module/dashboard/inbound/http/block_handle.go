@@ -1,6 +1,6 @@
 package dashboardhttp
 
-// 全局块管理页（后台「全局块」入口）：页眉/页脚/内容块的列表、新建与删除。
+// 全局块管理页（后台「全局块」入口）：页眉/页脚/区块的列表、新建与删除。
 // 块内容编辑复用工作台（/workbench?block=ID）；块保存后的 stale 传播在本模块编排：
 // block 模块不感知主题/页面，跨模块组合只能依赖双方契约（模块表隔离规范）。
 
@@ -56,7 +56,7 @@ func kindLabel(kind string) string {
 	case "footer":
 		return "页脚"
 	default:
-		return "内容块"
+		return "区块"
 	}
 }
 

@@ -21,6 +21,8 @@
 
     /** schema key → 面板中文标签（缺省回退 key 本身）。 */
     var CONTROL_LABELS = {
+        container: '容器', heading: '标题', text2: '文本', image: '图片', gallery: '图集',
+        button: '按钮', divider: '分隔线', spacer: '间隔', globalref: '全局块',
         text: '文本内容', tag: '语义标签', color: '颜色', weight: '字重',
         letterSpacing: '字间距', transform: '大小写转换', lineClamp: '多行截断',
         textShadow: '文字阴影', fontSize: '字号', fontWeight: '字重',
@@ -77,68 +79,14 @@
      * 工作台状态机：AST 为唯一事实源；画布 iframe 与大纲树均为其投影。
      * Undo 栈保存全量快照（页面规模可控，简单可靠）。
      */
-    /** 组件三层分类：基础(原子) / 进阶(组合件)。区块见 BLOCK_PRESETS。 */
-    var paletteGroups = {
-        basic: ['core.container', 'core.heading', 'core.text', 'core.button', 'core.image', 'core.divider', 'core.spacer'],
-        advanced: ['core.gallery']
-    };
+    /** 组件库分组：基础组件大分类平铺（细分类留给进阶组件，当前无进阶内容）；
+     *  「区块」概念归全局块（页眉/页脚/区块）。 */
+    var paletteGroups = [
+        { key: 'basic', title: '基础组件', types: ['core.container', 'core.heading', 'core.text', 'core.button', 'core.image', 'core.gallery', 'core.divider', 'core.spacer'] }
+    ];
 
     /** 区块预设（预组合的全局 section，一键插入整个容器）。
      *  结构与 Page Document 一致：JSON AST 片段。 */
-    var BLOCK_PRESETS = [
-        {
-            name: 'Hero 首屏',
-            desc: '标题 + 文本 + 按钮',
-            build: function (wb) {
-                return {
-                    id: wb.newId('section'), type: 'core.container', name: 'Hero 首屏',
-                    props: { tag: 'section', layout: { engine: 'flex', flex: { direction: 'column', justify: 'center', align: 'center', gap: '16px' } }, box: { padding: { desktop: '96px 24px' }, minHeight: '60vh' } },
-                    children: [
-                        { id: wb.newId('heading'), type: 'core.heading', name: '主标题', props: { text: '在这里写下你的主标题', tag: 'h1', typography: { desktop: { textAlign: 'center', fontSize: 'clamp(2rem, 5vw, 3.5rem)' } } } },
-                        { id: wb.newId('text'), type: 'core.text', name: '副标题', props: { mode: 'plaintext', plainTag: 'p', text: '一句话说明你的产品或服务，让访客一眼明白价值。', typography: { desktop: { textAlign: 'center', fontSize: '1.1rem' } } } },
-                        { id: wb.newId('button'), type: 'core.button', name: '行动按钮', props: { text: '立即开始', action: 'internal', value: '/', variant: 'solid', size: 'lg' } }
-                    ]
-                };
-            }
-        },
-        {
-            name: '图文两栏',
-            desc: '图片 + 文本左右排布',
-            build: function (wb) {
-                var inner = function (dir, name) {
-                    return { id: wb.newId('section'), type: 'core.container', name: name, props: { tag: 'div', layout: { engine: 'flex', flex: { direction: 'column', justify: 'center', gap: '12px' } } }, children: [] };
-                };
-                var left = inner(false, '文字栏');
-                left.children = [
-                    { id: wb.newId('heading'), type: 'core.heading', name: '小标题', props: { text: '功能亮点', tag: 'h3' } },
-                    { id: wb.newId('text'), type: 'core.text', name: '说明', props: { mode: 'plaintext', plainTag: 'p', text: '用一段话描述这个功能的价值与使用场景。' } }
-                ];
-                return {
-                    id: wb.newId('section'), type: 'core.container', name: '图文两栏',
-                    props: { tag: 'section', layout: { engine: 'flex', flex: { direction: 'row', align: 'center', gap: '32px' } }, box: { padding: { desktop: '64px 24px' } } },
-                    children: [
-                        { id: wb.newId('image'), type: 'core.image', name: '配图', props: { src: 'https://placehold.co/800x600/png', alt: '配图', objectFit: 'cover', width: '50%' } },
-                        left
-                    ]
-                };
-            }
-        },
-        {
-            name: 'CTA 行动条',
-            desc: '横幅 + 双按钮',
-            build: function (wb) {
-                return {
-                    id: wb.newId('section'), type: 'core.container', name: 'CTA 行动条',
-                    props: { tag: 'section', layout: { engine: 'flex', flex: { direction: 'row', justify: 'space-between', align: 'center', gap: '16px', wrap: true } }, box: { padding: { desktop: '48px 32px' } }, visual: { bgColor: 'var(--color-primary, #2563eb)', radius: '16px' } },
-                    children: [
-                        { id: wb.newId('heading'), type: 'core.heading', name: '行动标题', props: { text: '准备好开始了吗？', tag: 'h3', color: '#ffffff' } },
-                        { id: wb.newId('button'), type: 'core.button', name: '主按钮', props: { text: '免费试用', action: 'internal', value: '/', variant: 'solid' } }
-                    ]
-                };
-            }
-        }
-    ];
-
     function workbench() {
         return {
             pageId: meta.pageId,
@@ -148,7 +96,8 @@
             // 视图状态
             device: 'desktop',
             tab: 'layout',
-            view: 'edit',           // 左侧面板视图：edit=组件编辑 / library=组件库（互斥，对标 WP）
+            view: 'edit',           // 左侧面板视图：edit / library / settings / global / history
+            paletteOpen: { basic: true },  // 组件库手风琴展开状态（默认展开基础组件）
             libraryFilter: '',
             pendingInsertTarget: null, // 画布「+ 插入组件」浮标记住的插入位置
             immersive: false,
@@ -202,19 +151,39 @@
 
             // ---------------- 组件库与插入 ----------------
             renderPalette() {
+                this.renderPaletteComponents();
+                this.renderPaletteBlocks();
+            },
+            // 组件页签：按类型手风琴分组（布局/文本/媒体/元素/区块），点击标题展开收起。
+            renderPaletteComponents() {
                 var root = document.getElementById('wb-palette');
                 if (!root) return;
                 root.innerHTML = '';
                 var self = this;
                 var f = (this.libraryFilter || '').toLowerCase();
                 function match(text) { return !f || text.toLowerCase().indexOf(f) >= 0; }
-                function addHeader(text) {
-                    var h = document.createElement('div');
-                    h.className = 'wb-palette-group';
-                    h.textContent = text;
-                    root.appendChild(h);
+                function makeGroup(title, key, fill) {
+                    var hits = fill();
+                    if (!hits.length) return;
+                    var open = !!f || !!self.paletteOpen[key]; // 搜索时全部展开
+                    var head = document.createElement('button');
+                    head.type = 'button';
+                    head.className = 'wb-palette-group' + (open ? ' is-open' : '');
+                    head.innerHTML = '<span class="wb-palette-caret"></span>';
+                    head.appendChild(document.createTextNode(title));
+                    var body = document.createElement('div');
+                    body.className = 'wb-palette-group-body';
+                    if (!open) body.style.display = 'none';
+                    head.addEventListener('click', function () {
+                        self.paletteOpen[key] = !self.paletteOpen[key];
+                        head.classList.toggle('is-open', self.paletteOpen[key]);
+                        body.style.display = self.paletteOpen[key] ? '' : 'none';
+                    });
+                    hits.forEach(function (el) { body.appendChild(el); });
+                    root.appendChild(head);
+                    root.appendChild(body);
                 }
-                function addItem(item) {
+                function makeItem(item) {
                     var button = document.createElement('button');
                     button.type = 'button';
                     button.className = 'wb-palette-item';
@@ -237,74 +206,62 @@
                         event.dataTransfer.effectAllowed = 'copy';
                         event.dataTransfer.setData('application/x-wb-component', item.type);
                     });
-                    root.appendChild(button);
+                    return button;
                 }
-                // 分层:基础(原子) / 进阶(组合件);区块预设独立卡片区。
-                addHeader('基础组件');
-                paletteGroups.basic.forEach(function (type) {
-                    var item = paletteItems.filter(function (e) { return e.type === type; })[0];
-                    if (item && match(item.label + item.hint + item.type)) addItem(item);
-                });
-                addHeader('进阶组件');
-                paletteGroups.advanced.forEach(function (type) {
-                    var item = paletteItems.filter(function (e) { return e.type === type; })[0];
-                    if (item && match(item.label + item.hint + item.type)) addItem(item);
-                });
-                // 区块(预组合 section):整块一键插入。
-                var blockHits = BLOCK_PRESETS.filter(function (b) { return match(b.name + b.desc); });
-                if (blockHits.length) {
-                    addHeader('区块（整段插入）');
-                    blockHits.forEach(function (b) {
-                        var card = document.createElement('button');
-                        card.type = 'button';
-                        card.className = 'wb-block-card';
-                        card.innerHTML = '<strong></strong><span></span>';
-                        card.querySelector('strong').textContent = b.name;
-                        card.querySelector('span').textContent = b.desc;
-                        card.addEventListener('click', function () {
-                            self.snapshot();
-                            var node = b.build(self);
-                            self.ensureRootContainer().children.push(node);
-                            self.selectedId = node.id;
-                            self.renderTree();
-                            self.showEdit();
-                            self.refreshCanvas();
-                            self.renderUI();
-                        });
-                        root.appendChild(card);
+                var any = false;
+                paletteGroups.forEach(function (group) {
+                    makeGroup(group.title, group.key, function () {
+                        return group.types.map(function (type) {
+                            return paletteItems.filter(function (e) { return e.type === type; })[0];
+                        }).filter(function (item) { return item && match(item.label + item.hint + item.type); })
+                          .map(makeItem);
                     });
+                    any = any || root.lastChild !== null;
+                });
+                if (root.children.length === 0) {
+                    root.innerHTML = '<p class="wb-empty">没有匹配的组件</p>';
                 }
-                // 全局块（同步复用：core.globalref 引用，改一处处处生效）。
-                var blockHits = (meta.blocks || []).filter(function (b) { return match(b.name); });
-                if (blockHits.length) {
-                    addHeader('全局块');
-                    blockHits.forEach(function (b) {
-                        var button = document.createElement('button');
-                        button.type = 'button';
-                        button.className = 'wb-palette-item';
-                        button.draggable = true;
-                        button.dataset.type = 'core.globalref';
-                        button.innerHTML = '<strong></strong><span></span>';
-                        button.querySelector('strong').textContent = b.name;
-                        button.querySelector('span').textContent = '全局块 · ' + (b.kind === 'header' ? '页眉' : b.kind === 'footer' ? '页脚' : '内容块');
-                        button.addEventListener('click', function () {
-                            self.insertComponent(self.globalRefItem(b));
-                            self.showEdit();
-                        });
-                        button.addEventListener('dragstart', function (event) {
-                            event.dataTransfer.effectAllowed = 'copy';
-                            event.dataTransfer.setData('application/x-wb-component', 'core.globalref');
-                            event.dataTransfer.setData('application/x-wb-block', b.id);
-                        });
-                        root.appendChild(button);
+            },
+            // 全局块页签：页眉/页脚/区块分组（拖拽或点击插入 globalref 引用）。
+            renderPaletteBlocks() {
+                var root = document.getElementById('wb-palette-blocks');
+                if (!root) return;
+                root.innerHTML = '';
+                var self = this;
+                var f = (this.libraryFilter || '').toLowerCase();
+                function match(text) { return !f || text.toLowerCase().indexOf(f) >= 0; }
+                function makeBlockButton(b) {
+                    var button = document.createElement('button');
+                    button.type = 'button';
+                    button.className = 'wb-palette-item';
+                    button.draggable = true;
+                    button.dataset.type = 'core.globalref';
+                    button.innerHTML = '<strong></strong><span></span>';
+                    button.querySelector('strong').textContent = b.name;
+                    button.querySelector('span').textContent = '全局块 · ' + (b.kind === 'header' ? '页眉' : b.kind === 'footer' ? '页脚' : '区块');
+                    button.addEventListener('click', function () {
+                        self.insertComponent(self.globalRefItem(b));
+                        self.showEdit();
                     });
+                    button.addEventListener('dragstart', function (event) {
+                        event.dataTransfer.effectAllowed = 'copy';
+                        event.dataTransfer.setData('application/x-wb-component', 'core.globalref');
+                        event.dataTransfer.setData('application/x-wb-block', b.id);
+                    });
+                    return button;
                 }
-                if (!root.children.length) {
-                    var none = document.createElement('p');
-                    none.className = 'wb-empty';
-                    none.textContent = '没有匹配的组件';
-                    root.appendChild(none);
-                }
+                var any = false;
+                [['header', '页眉'], ['footer', '页脚'], ['block', '区块']].forEach(function (g) {
+                    var hits = (meta.blocks || []).filter(function (b) { return b.kind === g[0] && match(b.name); });
+                    if (!hits.length) return;
+                    any = true;
+                    var h = document.createElement('div');
+                    h.className = 'wb-palette-group';
+                    h.textContent = g[1];
+                    root.appendChild(h);
+                    hits.forEach(function (b) { root.appendChild(makeBlockButton(b)); });
+                });
+                if (!any) root.innerHTML = '<p class="wb-empty">还没有全局块。到后台「全局块」创建页眉/页脚/区块后，这里可一键引用。</p>';
             },
             // globalRefItem 全局块的插入描述（引用节点只带 blockId）。
             globalRefItem(b) {
@@ -447,9 +404,57 @@
                 this.renderUI();
             },
 
+            // ---------------- 结构树右键菜单（对标 Elementor） ----------------
+            // 复制/粘贴/剪切复用既有剪贴板（copyNode/pasteInto 支持子树深拷贝与 ID 重写）。
+
+            // showNodeMenu 渲染右键菜单（单例浮层，点击别处关闭）。
+            showNodeMenu(x, y, node) {
+                var self = this;
+                var old = document.getElementById('wb-context-menu');
+                if (old) old.remove();
+                var isContainer = node.type === 'core.container';
+                var items = [
+                    { label: '编辑', action: function () { self.select(node.id); self.showPanel('edit'); } },
+                    { label: '复制', action: function () { self.selectedId = node.id; self.copyNode(); } },
+                    { label: '剪切', action: function () { self.selectedId = node.id; self.cutNode(); } },
+                    { label: '粘贴到内部', enabled: !!self.clipboard && isContainer, action: function () { self.pasteInto(node.id); } },
+                    { label: '粘贴到下方', enabled: !!self.clipboard, action: function () { self.pasteAfter(node.id); } },
+                    { label: isContainer ? '在内部插入组件' : '在下方插入组件', action: function () {
+                        self.pendingInsertTarget = { id: node.id, placement: isContainer ? 'inside' : 'after' };
+                        self.showPanel('library');
+                    } },
+                    { label: '删除', danger: true, action: function () { self.selectedId = node.id; self.deleteSelected(); } }
+                ];
+                var menu = document.createElement('div');
+                menu.id = 'wb-context-menu';
+                menu.className = 'wb-context-menu';
+                items.forEach(function (item) {
+                    var b = document.createElement('button');
+                    b.type = 'button';
+                    b.textContent = item.label;
+                    if (item.danger) b.classList.add('is-danger');
+                    if (item.enabled === false) { b.disabled = true; }
+                    else b.addEventListener('click', function () { menu.remove(); item.action(); });
+                    menu.appendChild(b);
+                });
+                document.body.appendChild(menu);
+                // 边界收拢：避免超出视口。
+                var rect = menu.getBoundingClientRect();
+                menu.style.left = Math.min(x, window.innerWidth - rect.width - 8) + 'px';
+                menu.style.top = Math.min(y, window.innerHeight - rect.height - 8) + 'px';
+                setTimeout(function () {
+                    document.addEventListener('click', function closer() {
+                        menu.remove();
+                        document.removeEventListener('click', closer);
+                    });
+                    document.addEventListener('contextmenu', function closer2(ev) {
+                        if (!menu.contains(ev.target)) { menu.remove(); document.removeEventListener('contextmenu', closer2); }
+                    });
+                }, 0);
+            },
+
             // 同层上移/下移（dir: -1 上移, 1 下移）。
-            moveNodeOrder(id, dir) {
-                var loc = this.findLocation(id);
+            moveNodeOrder(id, dir) {                var loc = this.findLocation(id);
                 if (!loc) return;
                 var target = loc.index + dir;
                 if (target < 0 || target >= loc.siblings.length) return;
@@ -472,10 +477,25 @@
                 this.showEdit();
             },
             // ---- 左侧面板双视图切换 ----
-            showLibrary() {
-                this.view = 'library';
-                document.getElementById('wb-panel-library').hidden = false;
-                document.getElementById('wb-panel-edit').hidden = true;
+            // ---- 左侧面板统一切换（library/edit/settings/global/history） ----
+            showPanel(view) {
+                var views = ['library', 'edit', 'settings', 'global', 'history'];
+                views.forEach(function (v) {
+                    var el = document.getElementById('wb-panel-' + v);
+                    if (el) el.hidden = (v !== view);
+                });
+                // 图标栏高亮：编辑视图归入「组件」入口。
+                var railView = (view === 'edit') ? 'library' : view;
+                document.querySelectorAll('.wb-rail-btn').forEach(function (b) {
+                    b.classList.toggle('is-active', b.id === 'wb-rail-' + railView);
+                });
+                if (view === 'library') this.showLibraryPanel();
+                if (view === 'edit') this.showEditPanel();
+                if (view === 'settings') this.renderSettingsPanel();
+                if (view === 'global') this.renderGlobalPanel();
+                if (view === 'history') this.loadHistory();
+            },
+            showLibraryPanel() {
                 var hint = document.getElementById('wb-library-hint');
                 if (hint) {
                     var pending = this.pendingInsertTarget;
@@ -490,17 +510,208 @@
                 var search = document.getElementById('wb-library-search');
                 if (search) search.focus();
             },
-            showEdit() {
-                this.view = 'edit';
-                var lib = document.getElementById('wb-panel-library');
-                var edit = document.getElementById('wb-panel-edit');
-                if (!lib || !edit) return;
-                lib.hidden = true;
-                edit.hidden = false;
+            showEditPanel() {
                 var node = this.findNode(this.selectedId);
                 var title = document.getElementById('wb-edit-title');
                 if (title) title.textContent = node ? (controlLabel(String(node.type).replace('core.', '')) + ' · ' + (node.name || node.id)) : '组件';
                 this.syncInspector();
+            },
+            showLibrary() { this.showPanel('library'); },
+            showEdit() { this.showPanel('edit'); },
+
+            // ---- 页面设置面板：SEO / 版心 / body 类名（改动写入草稿） ----
+            renderSettingsPanel() {
+                var body = document.getElementById('wb-settings-body');
+                if (!body) return;
+                var self = this;
+                var doc = this.doc;
+                if (!doc.settings) doc.settings = {};
+                if (!doc.settings.seo) doc.settings.seo = {};
+                if (!doc.settings.layout) doc.settings.layout = {};
+                body.innerHTML = '';
+
+                function setByPath(path, value) {
+                    var parts = path.split('.'); var target = doc;
+                    for (var i = 0; i < parts.length - 1; i++) {
+                        if (!target[parts[i]]) target[parts[i]] = {};
+                        target = target[parts[i]];
+                    }
+                    target[parts[parts.length - 1]] = value;
+                    self.saveState = 'dirty';
+                    self.refreshCanvas();
+                }
+                function bind(labelText, path, kind, placeholder) {
+                    var wrap = document.createElement('div'); wrap.className = 'wb-field';
+                    var label = document.createElement('label'); label.textContent = labelText; wrap.appendChild(label);
+                    var input = document.createElement(kind === 'textarea' ? 'textarea' : 'input');
+                    if (kind === 'textarea') input.rows = 3;
+                    input.placeholder = placeholder || '';
+                    var parts = path.split('.'); var cur = doc;
+                    for (var i = 0; i < parts.length; i++) { cur = cur == null ? undefined : cur[parts[i]]; }
+                    input.value = cur == null ? '' : String(cur);
+                    input.addEventListener('change', function () {
+                        self.snapshot();
+                        setByPath(path, input.value);
+                    });
+                    wrap.appendChild(input);
+                    body.appendChild(wrap);
+                }
+                // 版心模式。
+                var modeWrap = document.createElement('div'); modeWrap.className = 'wb-field wb-field-seg';
+                var modeLabel = document.createElement('label'); modeLabel.textContent = '版心模式'; modeWrap.appendChild(modeLabel);
+                var seg = document.createElement('div'); seg.className = 'wb-seg';
+                [['full', '全宽'], ['boxed', '定宽']].forEach(function (pair) {
+                    var b = document.createElement('button'); b.type = 'button'; b.className = 'wb-seg-btn';
+                    b.textContent = pair[1];
+                    if ((doc.settings.layout.mode || 'full') === pair[0]) b.classList.add('is-active');
+                    b.addEventListener('click', function () {
+                        self.snapshot();
+                        doc.settings.layout.mode = pair[0];
+                        seg.querySelectorAll('.wb-seg-btn').forEach(function (x) { x.classList.toggle('is-active', x === b); });
+                        self.saveState = 'dirty';
+                        self.refreshCanvas();
+                    });
+                    seg.appendChild(b);
+                });
+                modeWrap.appendChild(seg); body.appendChild(modeWrap);
+
+                bind('SEO 标题', 'settings.seo.title', 'input', '浏览器标签页与搜索结果标题');
+                bind('SEO 描述', 'settings.seo.description', 'textarea', '搜索结果里的摘要文案');
+                // Body 附加类名（数组存储，输入以空格分隔）。
+                var bcWrap = document.createElement('div'); bcWrap.className = 'wb-field';
+                var bcLabel = document.createElement('label'); bcLabel.textContent = 'Body 附加类名'; bcWrap.appendChild(bcLabel);
+                var bcInput = document.createElement('input'); bcInput.type = 'text';
+                bcInput.placeholder = '空格分隔，如 hero dark';
+                bcInput.value = (doc.settings.bodyClasses || []).join(' ');
+                bcInput.addEventListener('change', function () {
+                    self.snapshot();
+                    setByPath('settings.bodyClasses', bcInput.value.split(/\s+/).filter(Boolean));
+                });
+                bcWrap.appendChild(bcInput); body.appendChild(bcWrap);
+
+                var tip = document.createElement('p'); tip.className = 'wb-empty';
+                tip.textContent = '改动已写入草稿，点右上「存草稿」保存；发布后生效。';
+                body.appendChild(tip);
+            },
+
+            // ---- 全局设置面板：站点主题颜色/字体（保存后合入全部页面） ----
+            renderGlobalPanel() {
+                var body = document.getElementById('wb-global-body');
+                if (!body) return;
+                var self = this;
+                body.innerHTML = '';
+                if (!meta.themeId) {
+                    body.innerHTML = '<p class="wb-empty">当前页面未挂接主题。<br>到后台「主题管理」创建并激活主题后，这里可就地调整。</p>';
+                    return;
+                }
+                var t = meta.themeSettings || {};
+                var colors = t.colors || {};
+                var colorDefs = [['primary', '主色'], ['text', '文本色'], ['background', '页面背景'], ['surface', '卡片底色'], ['border', '边框色']];
+                var inputs = {};
+                colorDefs.forEach(function (def) {
+                    var wrap = document.createElement('div'); wrap.className = 'wb-field wb-color-row';
+                    var label = document.createElement('label'); label.textContent = def[1];
+                    label.style.flex = '0 0 72px';
+                    wrap.appendChild(label);
+                    var text = document.createElement('input'); text.type = 'text'; text.className = 'wb-color-text';
+                    text.value = colors[def[0]] || '';
+                    var swatch = document.createElement('input'); swatch.type = 'color'; swatch.className = 'wb-color-swatch';
+                    swatch.value = /^#[0-9a-fA-F]{3,8}$/.test(text.value) ? text.value : '#2563eb';
+                    swatch.addEventListener('input', function () { text.value = swatch.value; });
+                    wrap.appendChild(text); wrap.appendChild(swatch);
+                    body.appendChild(wrap);
+                    inputs[def[0]] = text;
+                });
+                var fontWrap = document.createElement('div'); fontWrap.className = 'wb-field';
+                var fontLabel = document.createElement('label'); fontLabel.textContent = '正文字体栈'; fontWrap.appendChild(fontLabel);
+                var fontInput = document.createElement('input'); fontInput.type = 'text';
+                fontInput.placeholder = '如：system-ui, sans-serif';
+                fontInput.value = t.fontFamily || '';
+                fontWrap.appendChild(fontInput); body.appendChild(fontWrap);
+
+                var saveBtn = document.createElement('button'); saveBtn.type = 'button';
+                saveBtn.className = 'btn btn-primary'; saveBtn.textContent = '保存并应用到全部页面';
+                saveBtn.addEventListener('click', function () {
+                    var form = new URLSearchParams();
+                    form.append('id', meta.themeId);
+                    colorDefs.forEach(function (def) { form.append(def[0], inputs[def[0]].value.trim()); });
+                    form.append('fontFamily', fontInput.value.trim());
+                    // 透传页眉页脚块绑定（本面板不改，避免被覆盖清空）。
+                    form.append('headerBlockId', t.headerBlockId || '');
+                    form.append('footerBlockId', t.footerBlockId || '');
+                    saveBtn.disabled = true; saveBtn.textContent = '保存中…';
+                    fetch('/admin/themes/settings/save', { method: 'POST', body: form })
+                        .then(function (r) {
+                            saveBtn.disabled = false; saveBtn.textContent = '保存并应用到全部页面';
+                            if (!r.ok) { alert('保存失败，请重试'); return; }
+                            meta.themeSettings = {
+                                colors: (function () { var c = {}; colorDefs.forEach(function (d) { c[d[0]] = inputs[d[0]].value.trim(); }); return c; })(),
+                                fontFamily: fontInput.value.trim(),
+                                headerBlockId: t.headerBlockId || '',
+                                footerBlockId: t.footerBlockId || ''
+                            };
+                            alert('已保存，主题将合入全部页面；页面需重新构建后生效。');
+                        })
+                        .catch(function () { saveBtn.disabled = false; saveBtn.textContent = '保存并应用到全部页面'; alert('保存失败，请重试'); });
+                });
+                body.appendChild(saveBtn);
+                var tip = document.createElement('p'); tip.className = 'wb-empty';
+                tip.textContent = '保存后主题设置批量合入全部页面文档，已发布页面需重新构建才会带新主题。';
+                body.appendChild(tip);
+            },
+
+            // ---- 修订历史面板：草稿快照列表 + 一键恢复 ----
+            loadHistory() {
+                var body = document.getElementById('wb-history-body');
+                if (!body) return;
+                var self = this;
+                body.innerHTML = '<p class="wb-empty">加载中…</p>';
+                fetch('/api/page/revision/list?pageId=' + encodeURIComponent(meta.pageId))
+                    .then(function (r) { return r.json(); })
+                    .then(function (j) {
+                        if (j.code && j.code >= 400) {
+                            body.innerHTML = '<p class="wb-empty">' + (j.message || '加载失败') + '</p>';
+                            return;
+                        }
+                        var list = j.data || [];
+                        body.innerHTML = '';
+                        if (!list.length) {
+                            body.innerHTML = '<p class="wb-empty">还没有修订历史。每次保存草稿都会生成一条快照。</p>';
+                            return;
+                        }
+                        list.forEach(function (rev) {
+                            var row = document.createElement('div'); row.className = 'wb-history-row';
+                            var head = document.createElement('div'); head.className = 'wb-history-head';
+                            var v = document.createElement('strong'); v.textContent = 'v' + rev.version; head.appendChild(v);
+                            var info = document.createElement('span'); info.className = 'wb-history-info';
+                            info.textContent = (rev.draftPath || '') + ' · ' + new Date(rev.createdAt).toLocaleString();
+                            head.appendChild(info);
+                            var restore = document.createElement('button');
+                            restore.type = 'button'; restore.className = 'btn btn-secondary btn-sm'; restore.textContent = '恢复';
+                            restore.addEventListener('click', function () {
+                                if (!confirm('恢复到 v' + rev.version + '？当前草稿将覆盖保存为新修订。')) return;
+                                self.api('draft/save', {
+                                    id: meta.pageId,
+                                    expectedVersion: self.draftVersion,
+                                    draftPath: rev.draftPath || meta.draftPath,
+                                    draftDocument: rev.draftDocument
+                                }, function (data) {
+                                    self.draftVersion = data.draftVersion || (self.draftVersion + 1);
+                                    self.doc = rev.draftDocument;
+                                    self.ensureRootContainer();
+                                    self.selectedId = null;
+                                    self.renderTree();
+                                    self.refreshCanvas();
+                                    self.renderUI();
+                                    self.loadHistory();
+                                });
+                            });
+                            head.appendChild(restore);
+                            row.appendChild(head);
+                            body.appendChild(row);
+                        });
+                    })
+                    .catch(function () { body.innerHTML = '<p class="wb-empty">加载失败</p>'; });
             },
             markTreeSelection() {
                 document.querySelectorAll('#wb-tree .wb-node').forEach(function (el) {
@@ -517,8 +728,8 @@
                 var f = (this.filter || '').toLowerCase();
 
                 function label(n) {
-                    var title = n.name || (n.props && (n.props.text || n.props.alt)) || n.id;
-                    return '[' + String(n.type || '').replace('core.', '') + '] ' + title;
+                    // 结构树只显示一层名称：用户命名 > 组件中文名 > 节点 ID。
+                    return n.name || controlLabel(String(n.type || '').replace('core.', '')) || n.id;
                 }
 
                 function build(nodes, ul, visibleParent) {
@@ -582,16 +793,19 @@
 
                             var nameSpan = document.createElement('span');
                             nameSpan.className = 'wb-node-name';
-                            nameSpan.textContent = label(n).replace(/^\[[^]]+\] /, '');
+                            nameSpan.textContent = label(n);
                             row.appendChild(nameSpan);
 
-                            var typeSpan = document.createElement('span');
-                            typeSpan.className = 'wb-node-type';
-                            typeSpan.textContent = String(n.type || '').replace('core.', '');
-                            row.appendChild(typeSpan);
-
                             if (n.hidden) { var eh = document.createElement('span'); eh.textContent = '隐'; eh.className = 'wb-node-flag'; eh.title = '编辑期隐藏'; row.appendChild(eh); }
-                            if (n.locked) { var el = document.createElement('span'); el.textContent = '锁'; el.className = 'wb-node-flag'; el.title = '已锁定'; row.appendChild(el); }
+                            if (n.locked) { var el = document.createElement('span'); el.textContent = '锁'; el.className = 'wb-node-flag'; eh.title = '已锁定'; row.appendChild(el); }
+
+                            // 右键菜单（对标 Elementor）：编辑/复制/粘贴/复制到此下/下方插入/删除。
+                            row.addEventListener('contextmenu', function (event) {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                self.select(n.id);
+                                self.showNodeMenu(event.clientX, event.clientY, n);
+                            });
 
                             // 悬浮操作:上移/下移/复制/删除(触屏与鼠标通用,不依赖拖拽)。
                             var actions = document.createElement('span');
@@ -759,6 +973,20 @@
                 } else { this.doc.root.push(node); }
                 if (this.clipboard.mode === 'cut') { this.removeById(this.clipboard.node.id); this.clipboard = null; }
                 this.renderTree(); this.refreshCanvas();
+            },
+            // pasteAfter 把剪贴板内容粘贴为目标节点之后的兄弟（对标 Elementor 粘贴语义）。
+            pasteAfter(nodeId) {
+                if (!this.clipboard) return;
+                this.snapshot();
+                var node = this.deepCopyStripMeta(this.clipboard.node);
+                var self = this;
+                (function assign(list) { (list || []).forEach(function (c) { c.id = self.newId(c.id || 'node'); assign(c.children); }); })([node]);
+                var loc = this.findLocation(nodeId);
+                if (!loc) return;
+                loc.siblings.splice(loc.index + 1, 0, node);
+                if (this.clipboard.mode === 'cut') { this.removeById(this.clipboard.node.id); this.clipboard = null; }
+                this.selectedId = node.id;
+                this.renderTree(); this.syncInspector(); this.refreshCanvas(); this.renderUI();
             },
             pasteStyle() {
                 var node = this.findNode(this.selectedId);
@@ -1721,6 +1949,30 @@
                     self.libraryFilter = libSearch.value;
                     self.renderPalette();
                 });
+                // 左侧图标栏：面板切换（编辑视图归入「组件」入口）。
+                [['wb-rail-library', 'library'], ['wb-rail-settings', 'settings'],
+                 ['wb-rail-global', 'global'], ['wb-rail-history', 'history']].forEach(function (pair) {
+                    var b = document.getElementById(pair[0]);
+                    if (b) b.addEventListener('click', function () { self.showPanel(pair[1]); });
+                });
+                var railNav = document.getElementById('wb-rail-navigator');
+                if (railNav) railNav.addEventListener('click', function () {
+                    self.navigatorOpen = !self.navigatorOpen;
+                    document.getElementById('wb-navigator').classList.toggle('is-hidden', !self.navigatorOpen);
+                });
+                // 组件库页签：组件 | 全局块 | SEO。
+                document.querySelectorAll('.wb-lib-tabs button').forEach(function (btn) {
+                    btn.addEventListener('click', function () {
+                        document.querySelectorAll('.wb-lib-tabs button').forEach(function (b) { b.classList.toggle('is-active', b === btn); });
+                        var tab = btn.dataset.libtab;
+                        var p1 = document.getElementById('wb-palette');
+                        var p2 = document.getElementById('wb-palette-blocks');
+                        var p3 = document.getElementById('wb-palette-seo');
+                        if (p1) p1.hidden = tab !== 'components';
+                        if (p2) p2.hidden = tab !== 'blocks';
+                        if (p3) p3.hidden = tab !== 'seo';
+                    });
+                });
                 // 媒体库弹层：关闭/遮罩/上传。
                 var mediaClose = document.getElementById('wb-media-close');
                 if (mediaClose) mediaClose.addEventListener('click', function () { self.closeMediaPicker(); });
@@ -1741,7 +1993,7 @@
                     'wb-device-mobile': function () { self.setDevice('mobile'); },
                     'wb-save-draft': function () { self.saveDraft(); },
                     'wb-publish': function () { self.buildAndPublish(); },
-                    'wb-page-settings': function () { self.saveDraft(); },
+                    'wb-page-settings': function () { self.showPanel('settings'); },
                     'wb-navigator-toggle': function () {
                         self.navigatorOpen = !self.navigatorOpen;
                         document.getElementById('wb-navigator').classList.toggle('is-hidden', !self.navigatorOpen);

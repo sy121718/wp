@@ -147,7 +147,8 @@ var Widget = core.Atom[Props]{
 }
 
 var (
-	assetIDRe   = regexp.MustCompile(`^[A-Za-z0-9_-]{4,64}$`)
+	// assetIDRe 媒体库附件为自增数字 ID（最短 1 位）。
+	assetIDRe   = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 	fieldPathRe = regexp.MustCompile(`^[a-z][a-z0-9_]*\.[a-zA-Z][a-zA-Z0-9_]*$`)
 )
 

@@ -7,7 +7,7 @@ import (
 	blockdto "go_wp/internal/module/block/dto"
 )
 
-// BlockService 全局块能力：跨页面复用的结构片段（页眉/页脚/内容块）。
+// BlockService 全局块能力：跨页面复用的结构片段（页眉/页脚/区块）。
 type BlockService interface {
 	// List 列出工程全部块（kind 可选过滤：block/header/footer）。
 	List(ctx context.Context, req *blockdto.ListReq) (res []blockdto.BlockResp, err error)

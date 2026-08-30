@@ -35,7 +35,7 @@ func SetupDashboardRoutes(router *gin.Engine,
 	router.GET("/admin/pages", handle.PagesList)
 	router.POST("/admin/pages/create", handle.CreatePage)
 	router.POST("/admin/projects/create", handle.CreateProject)
-	// 全局块管理：页眉/页脚/内容块（编辑进工作台；stale 传播在本模块编排）。
+	// 全局块管理：页眉/页脚/区块（编辑进工作台；stale 传播在本模块编排）。
 	router.GET("/admin/blocks", handle.BlocksList)
 	router.POST("/admin/blocks/create", handle.CreateBlock)
 	router.POST("/admin/blocks/delete", handle.DeleteBlock)

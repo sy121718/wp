@@ -1,4 +1,4 @@
-{* admin/blocks.html — 全局块管理：页眉/页脚/内容块（编辑进工作台） *}
+{* admin/blocks.html — 全局块管理：页眉/页脚/区块（编辑进工作台） *}
 {* Jet 方言：range 用 range 关键字；方法调用圆括号；extends 相对本目录 *}
 {{extends "layout.html"}}
 {{block body()}}
@@ -25,7 +25,7 @@
             <select name="kind">
                 <option value="header">页眉</option>
                 <option value="footer">页脚</option>
-                <option value="block">内容块</option>
+                <option value="block">区块</option>
             </select>
             <button type="submit" class="btn btn-primary">新建并编辑</button>
         </form>
@@ -88,9 +88,9 @@
     </section>
 
     <section class="pages-card">
-        <h2>内容块</h2>
+        <h2>区块</h2>
         {{if len(.Blocks) == 0}}
-        <p class="pages-empty">还没有内容块。内容块用于跨页面复用的结构片段（对应 WP 的同步块），页面内引用将在组件体系（0-B）接入。</p>
+        <p class="pages-empty">还没有区块。区块用于跨页面复用的结构片段（对应 WP 的同步块），工作台「全局块」页签可一键引用。</p>
         {{else}}
         <table class="pages-table">
             <thead><tr><th>名称</th><th>更新时间</th><th>操作</th></tr></thead>

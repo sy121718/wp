@@ -21,7 +21,7 @@ import (
 
 var _ blockcontract.BlockService = (*Service)(nil)
 
-// Service 全局块业务服务：跨页面复用的结构片段（页眉/页脚/内容块）。
+// Service 全局块业务服务：跨页面复用的结构片段（页眉/页脚/区块）。
 type Service struct {
 	model    *blockmodel.Model
 	projects projectcontract.ProjectService

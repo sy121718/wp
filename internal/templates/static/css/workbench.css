@@ -333,3 +333,72 @@
 }
 .wb-media-field.has-image .wb-media-tip { display: none; }
 .wb-media-row { display: flex; gap: 6px; }
+
+/* ===== 左侧图标栏（组件/页面设置/全局设置/修订历史/结构树） ===== */
+.wb-main { display: flex; }
+.wb-rail {
+    display: flex; flex-direction: column; align-items: center;
+    gap: 6px; padding: 10px 6px;
+    border-right: 1px solid var(--c-border, #e5e7eb);
+    background: var(--c-surface, #fff);
+}
+.wb-rail-btn {
+    width: 38px; height: 38px; border: none; border-radius: 8px;
+    background: transparent; cursor: pointer; font-size: 18px;
+    color: var(--c-text-secondary, #4b5563);
+    display: flex; align-items: center; justify-content: center;
+}
+.wb-rail-btn:hover { background: var(--c-bg-hover, #f3f4f6); }
+.wb-rail-btn.is-active { background: var(--c-primary-bg, #eff6ff); color: var(--c-primary, #2563eb); }
+.wb-rail-spacer { flex: 1 1 auto; }
+
+/* ===== 组件库页签（组件 | 全局块 | SEO） ===== */
+.wb-lib-tabs { display: flex; border-bottom: 1px solid var(--c-border, #e5e7eb); }
+.wb-lib-tabs button {
+    flex: 1; padding: 9px 0; border: none; background: transparent;
+    font-size: 13px; cursor: pointer; color: var(--c-text-secondary, #4b5563);
+    border-bottom: 2px solid transparent;
+}
+.wb-lib-tabs button.is-active { color: var(--c-primary, #2563eb); border-bottom-color: var(--c-primary, #2563eb); font-weight: 500; }
+
+/* ===== 手风琴分组 ===== */
+.wb-palette-accordion, .wb-palette-blocks { padding: 8px; overflow-y: auto; flex: 1; }
+.wb-palette-group {
+    display: flex; align-items: center; gap: 6px; width: 100%;
+    padding: 8px 6px; margin-top: 4px;
+    border: none; background: transparent; text-align: left;
+    font-size: 12px; font-weight: 600; color: var(--c-text-mute, #6b7280);
+    cursor: pointer;
+}
+button.wb-palette-group:hover { color: var(--c-primary, #2563eb); }
+.wb-palette-caret::before { content: '▾'; display: inline-block; transition: transform .15s; }
+.wb-palette-group:not(.is-open) .wb-palette-caret::before { transform: rotate(-90deg); }
+.wb-palette-group-body { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 2px 0 8px; }
+
+/* ===== 结构树右键菜单 ===== */
+.wb-context-menu {
+    position: fixed; z-index: 1000; min-width: 168px;
+    background: var(--c-surface, #fff);
+    border: 1px solid var(--c-border, #e5e7eb);
+    border-radius: 10px; padding: 6px;
+    box-shadow: 0 10px 30px rgba(0,0,0,.14);
+}
+.wb-context-menu button {
+    display: block; width: 100%; text-align: left;
+    padding: 8px 10px; border: none; background: transparent;
+    font-size: 13px; border-radius: 6px; cursor: pointer; color: inherit;
+}
+.wb-context-menu button:hover:not(:disabled) { background: var(--c-bg-hover, #f3f4f6); }
+.wb-context-menu button:disabled { color: var(--c-text-mute, #9ca3af); cursor: default; }
+.wb-context-menu button.is-danger { color: var(--c-danger, #dc2626); }
+
+/* ===== 修订历史 ===== */
+.wb-history-row { border-bottom: 1px solid var(--c-border, #e5e7eb); padding: 10px 0; }
+.wb-history-head { display: flex; align-items: center; gap: 8px; }
+.wb-history-head strong { font-size: 13px; }
+.wb-history-info { flex: 1; font-size: 12px; color: var(--c-text-mute, #6b7280); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* 全局设置面板颜色行 */
+#wb-global-body .wb-color-row { display: flex; align-items: center; gap: 6px; }
+#wb-global-body .wb-color-row label { font-size: 13px; }
+#wb-global-body .btn { width: 100%; margin-top: 6px; }
