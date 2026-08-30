@@ -1298,7 +1298,7 @@
                     field('语义标签', 'props.tag', 'segment', [['div', '容器'], ['section', '区块'], ['article', '文章'], ['header', '页头'], ['footer', '页脚'], ['main', '主体']]);
                     heading('Flex 布局');
                     field('排列方向', 'props.layout.flex.direction', 'segment', [['column', '纵向'], ['row', '横向']], function () { set('props.layout.engine', 'flex'); });
-                    field('主轴分布', 'props.layout.flex.justify', 'segment', [['flex-start', '起始'], ['center', '居中'], ['flex-end', '末端'], ['space-between', '两端'], ['space-around', '环绕']]);
+                    field('主轴分布', 'props.layout.flex.justify', 'segment', [['flex-start', '起始'], ['center', '居中'], ['flex-end', '末端'], ['space-between', '两端'], ['space-around', '环绕'], ['space-evenly', '均分']]);
                     field('交叉对齐', 'props.layout.flex.align', 'segment', [['stretch', '拉伸'], ['center', '居中'], ['flex-start', '起始'], ['flex-end', '末端']]);
                     checkbox('允许换行', 'props.layout.flex.wrap');
                     unitInput('组件间距', 'props.layout.flex.gap');

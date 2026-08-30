@@ -37,15 +37,22 @@ var allowedContainerTags = map[string]bool{
 }
 
 // justifyMap 主轴对齐关键字到 CSS 值的映射。
+// 同时接受 CSS 标准值（检查器提交）与旧简写（兼容历史文档）。
 var justifyMap = map[string]string{
-	"start": "flex-start", "center": "center", "end": "flex-end",
+	// CSS 标准值直通。
+	"flex-start": "flex-start", "center": "center", "flex-end": "flex-end",
+	"space-between": "space-between", "space-around": "space-around", "space-evenly": "space-evenly",
+	// 旧简写兼容。
+	"start": "flex-start", "end": "flex-end",
 	"between": "space-between", "around": "space-around", "evenly": "space-evenly",
 }
 
 // alignMap 交叉轴对齐关键字到 CSS 值的映射。
+// 同时接受 CSS 标准值与旧简写（兼容历史文档）。
 var alignMap = map[string]string{
-	"start": "flex-start", "center": "center", "end": "flex-end",
-	"stretch": "stretch", "baseline": "baseline",
+	"stretch": "stretch", "center": "center", "baseline": "baseline",
+	"flex-start": "flex-start", "flex-end": "flex-end",
+	"start": "flex-start", "end": "flex-end",
 }
 
 // allowedFlexDirection Flex 主轴方向白名单。
@@ -160,9 +167,11 @@ type LayoutProps struct {
 type FlexProps struct {
 	// Direction 主轴方向：row / row-reverse / column / column-reverse。
 	Direction string `json:"direction,omitempty"`
-	// Justify 主轴对齐：start / center / end / between / around / evenly。
+	// Justify 主轴对齐：CSS 标准值 flex-start / center / flex-end /
+	// space-between / space-around / space-evenly（旧简写 start/end/between/around/evenly 兼容）。
 	Justify string `json:"justify,omitempty"`
-	// Align 交叉轴对齐：start / center / end / stretch / baseline。
+	// Align 交叉轴对齐：CSS 标准值 stretch / center / baseline /
+	// flex-start / flex-end（旧简写 start/end 兼容）。
 	Align string `json:"align,omitempty"`
 	// Wrap 是否允许自动换行。
 	Wrap bool `json:"wrap,omitempty"`
