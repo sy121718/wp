@@ -31,3 +31,6 @@ public/runtime/
 *.tmp
 # 本地凭据与参考站点存档
 .wp-credentials.local
+
+# archify 视觉检查产物
+public/docs/*.visual-check.*
