@@ -67,7 +67,7 @@ func (s *Service) Upload(ctx context.Context, file *multipart.FileHeader, catego
 
 // List 分页查询附件列表。
 func (s *Service) List(ctx context.Context, req *mediato.ListReq) (*mediato.ListResp, error) {
-	list, total, err := s.am.List(ctx, req.FileType, req.CategoryID, req.GetOffset(), req.GetLimit())
+	list, total, err := s.am.List(ctx, req.FileType, req.CategoryID, req.Search, req.GetOffset(), req.GetLimit())
 	if err != nil {
 		return nil, err
 	}

@@ -102,3 +102,60 @@ func (h *Handle) CategoryTree(c *gin.Context) {
 	}
 	response.Success(c, tree)
 }
+
+// CategoryCreate 新建分类（POST /api/media/category/create）。
+func (h *Handle) CategoryCreate(c *gin.Context) {
+	var req mediadto.CategoryCreateReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ParamError(c, err.Error())
+		return
+	}
+	res, err := h.svc.CreateCategory(c.Request.Context(), &req)
+	if err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	response.Success(c, res)
+}
+
+// CategoryUpdate 更新分类（POST /api/media/category/update）。
+func (h *Handle) CategoryUpdate(c *gin.Context) {
+	var req mediadto.CategoryUpdateReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ParamError(c, err.Error())
+		return
+	}
+	if err := h.svc.UpdateCategory(c.Request.Context(), &req); err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	response.Success(c, nil)
+}
+
+// CategoryDelete 删除分类（POST /api/media/category/delete）。
+func (h *Handle) CategoryDelete(c *gin.Context) {
+	var req mediadto.CategoryDeleteReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ParamError(c, err.Error())
+		return
+	}
+	if err := h.svc.DeleteCategory(c.Request.Context(), &req); err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	response.Success(c, nil)
+}
+
+// UpdateAttachment 更新附件元数据（POST /api/media/update）。
+func (h *Handle) UpdateAttachment(c *gin.Context) {
+	var req mediadto.AttachmentUpdateReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ParamError(c, err.Error())
+		return
+	}
+	if err := h.svc.UpdateAttachment(c.Request.Context(), &req); err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	response.Success(c, nil)
+}

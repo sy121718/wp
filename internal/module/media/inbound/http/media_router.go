@@ -22,7 +22,11 @@ func SetupMediaRoutes(rg *gin.RouterGroup, db *gorm.DB) mediacontract.MediaServi
 		g.GET("/list", handle.List)
 		g.GET("/detail", handle.Detail)
 		g.POST("/delete", handle.Delete)
+		g.POST("/update", handle.UpdateAttachment)
 		g.GET("/category/tree", handle.CategoryTree)
+		g.POST("/category/create", handle.CategoryCreate)
+		g.POST("/category/update", handle.CategoryUpdate)
+		g.POST("/category/delete", handle.CategoryDelete)
 	}
 	return svc
 }

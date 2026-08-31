@@ -1,0 +1,100 @@
+{* admin/media.html — 媒体库：左侧无限级分类树（可搜索/管理）+ 右侧 WP 式媒体库 *}
+{* Jet 方言：range 用 range 关键字；extends 相对本目录 *}
+{{extends "layout.html"}}
+{{block body()}}
+<div class="media-lib" id="media-lib" data-page="1" data-type="all" data-category="0">
+    {* ===== 左侧：分类树 ===== *}
+    <aside class="media-tree-panel">
+        <div class="media-tree-head">
+            <strong>分类</strong>
+            <button type="button" class="btn btn-sm" id="ml-category-add" title="新建分类">＋ 新建</button>
+        </div>
+        <input type="search" class="media-tree-search" id="ml-tree-search" placeholder="搜索分类…">
+        <div class="media-tree" id="ml-tree">
+            <div class="media-tree-node is-root" data-id="0">
+                <span class="media-tree-label" data-id="0">全部</span>
+                <span class="media-tree-count" id="ml-count-all"></span>
+            </div>
+        </div>
+    </aside>
+
+    {* ===== 右侧：媒体库 ===== *}
+    <section class="media-main">
+        {* 顶栏：名称搜索 / 上传 / 视图切换（分类维度在左侧树） *}
+        <div class="media-toolbar">
+            <input type="search" class="media-search" id="ml-search" placeholder="搜索文件名…">
+            <span class="media-flex-spacer"></span>
+            <button type="button" class="btn btn-secondary btn-sm" id="ml-upload-btn">上传文件</button>
+            <div class="media-view-toggle">
+                <button type="button" class="is-active" id="ml-view-grid" title="网格视图">▦</button>
+                <button type="button" id="ml-view-list" title="列表视图">☰</button>
+            </div>
+        </div>
+
+        {* 网格 / 列表容器 *}
+        <div class="media-grid" id="ml-grid"></div>
+        <div class="media-table-wrap" id="ml-table" hidden>
+            <table class="data-table">
+                <thead><tr><th>文件</th><th>分类</th><th>类型</th><th>大小</th><th>上传时间</th><th></th></tr></thead>
+                <tbody id="ml-table-body"></tbody>
+            </table>
+        </div>
+
+        {* 空态与分页 *}
+        <p class="media-empty" id="ml-empty" hidden>还没有文件，点右上「上传文件」。</p>
+        <div class="media-pager" id="ml-pager" hidden>
+            <button type="button" class="btn btn-sm" id="ml-prev">上一页</button>
+            <span id="ml-page-info"></span>
+            <button type="button" class="btn btn-sm" id="ml-next">下一页</button>
+        </div>
+    </section>
+
+    {* ===== 详情侧栏（点击卡片打开） ===== *}
+    <aside class="media-detail" id="ml-detail" hidden>
+        <div class="media-detail-head">
+            <strong>附件详情</strong>
+            <button type="button" class="wb-icon-btn" id="ml-detail-close">×</button>
+        </div>
+        <div class="media-detail-body" id="ml-detail-body"></div>
+    </aside>
+</div>
+
+{* 上传弹窗 *}
+<div class="wb-media-mask" id="ml-upload-mask" hidden></div>
+<div class="wb-media-modal" id="ml-upload-modal" hidden>
+    <div class="wb-media-head">
+        <strong>上传文件</strong>
+        <button type="button" class="wb-icon-btn" id="ml-upload-close">×</button>
+    </div>
+    <div class="wb-media-drop" id="ml-drop">拖拽文件到此处，或点击选择</div>
+    <input type="file" id="ml-file-input" multiple hidden>
+    <div class="media-upload-list" id="ml-upload-list"></div>
+    <div class="media-upload-actions">
+        <label>归类到分类：</label>
+        <select id="ml-upload-category" class="media-select"></select>
+    </div>
+</div>
+
+{* 分类弹窗（新建/改名） *}
+<div class="wb-media-mask" id="ml-cat-mask" hidden></div>
+<div class="wb-media-modal media-cat-modal" id="ml-cat-modal" hidden>
+    <div class="wb-media-head">
+        <strong id="ml-cat-title">新建分类</strong>
+        <button type="button" class="wb-icon-btn" id="ml-cat-close">×</button>
+    </div>
+    <div class="wb-media-body">
+        <input type="hidden" id="ml-cat-id">
+        <label>上级分类</label>
+        <select id="ml-cat-parent" class="media-select"></select>
+        <label>分类名称</label>
+        <input type="text" id="ml-cat-name" class="media-select" placeholder="分类名称">
+    </div>
+    <div class="media-upload-actions">
+        <button type="button" class="btn btn-primary" id="ml-cat-save">保存</button>
+    </div>
+</div>
+
+<link rel="stylesheet" href="/static/css/media-lib.css">
+<script src="/static/js/media-lib.js?v={{.jsVer}}"></script>
+<script src="/static/js/media-admin.js?v={{.jsVer}}"></script>
+{{end}}

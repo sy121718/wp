@@ -106,13 +106,16 @@ func (m *AttachmentModel) GetByID(ctx context.Context, id uint64) (*AttachmentEn
 }
 
 // List 分页查询附件，支持按文件类型和分类过滤。
-func (m *AttachmentModel) List(ctx context.Context, fileType string, categoryID *uint64, offset, limit int) ([]AttachmentEntity, int64, error) {
+func (m *AttachmentModel) List(ctx context.Context, fileType string, categoryID *uint64, search string, offset, limit int) ([]AttachmentEntity, int64, error) {
 	q := m.attrDB(ctx).Where("status = ?", AttachmentStatusEnabled)
 	if fileType != "" {
 		q = q.Where("file_type = ?", fileType)
 	}
 	if categoryID != nil && *categoryID > 0 {
 		q = q.Where("category_id = ?", *categoryID)
+	}
+	if search != "" {
+		q = q.Where("file_name LIKE ?", "%"+search+"%")
 	}
 
 	var total int64
@@ -139,4 +142,47 @@ func (m *FileCategoryModel) ListAll(ctx context.Context) ([]FileCategoryEntity, 
 	var list []FileCategoryEntity
 	err := m.catDB(ctx).Where("status = ?", 1).Order("sort_order ASC, id ASC").Find(&list).Error
 	return list, err
+}
+
+// --- 分类 CRUD（媒体库左树管理） ---
+
+// CreateCategory 新建分类（ParentID=0 为顶级）。
+func (m *FileCategoryModel) CreateCategory(ctx context.Context, e *FileCategoryEntity) error {
+	return m.catDB(ctx).Create(e).Error
+}
+
+// GetCategory 按 ID 查询分类。
+func (m *FileCategoryModel) GetCategory(ctx context.Context, id uint64) (*FileCategoryEntity, error) {
+	e := &FileCategoryEntity{}
+	if err := m.catDB(ctx).Where("id = ?", id).First(e).Error; err != nil {
+		return nil, err
+	}
+	return e, nil
+}
+
+// UpdateCategory 更新分类（仅非 nil 字段）。
+func (m *FileCategoryModel) UpdateCategory(ctx context.Context, id uint64, updates map[string]any) error {
+	return m.catDB(ctx).Where("id = ?", id).Updates(updates).Error
+}
+
+// HasChildren 判断分类是否存在启用子级。
+func (m *FileCategoryModel) HasChildren(ctx context.Context, id uint64) (bool, error) {
+	var n int64
+	err := m.catDB(ctx).Where("parent_id = ? AND status = ?", id, 1).Count(&n).Error
+	return n > 0, err
+}
+
+// DeleteCategory 软删除分类（status=0）。
+func (m *FileCategoryModel) DeleteCategory(ctx context.Context, id uint64) error {
+	return m.catDB(ctx).Where("id = ?", id).Update("status", 0).Error
+}
+
+// AttachmentUpdate 更新附件字段（文件名 / 分类 / ExtraInfo JSON）。
+func (m *AttachmentModel) AttachmentUpdate(ctx context.Context, id uint64, updates map[string]any) error {
+	return m.attrDB(ctx).Where("id = ?", id).Updates(updates).Error
+}
+
+// DetachAttachments 把分类下的全部附件移入未分类（category_id=NULL，分类删除前的级联动作）。
+func (m *AttachmentModel) DetachAttachments(ctx context.Context, categoryID uint64) error {
+	return m.attrDB(ctx).Where("category_id = ?", categoryID).Update("category_id", nil).Error
 }

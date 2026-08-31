@@ -402,3 +402,30 @@ button.wb-palette-group:hover { color: var(--c-primary, #2563eb); }
 #wb-global-body .wb-color-row { display: flex; align-items: center; gap: 6px; }
 #wb-global-body .wb-color-row label { font-size: 13px; }
 #wb-global-body .btn { width: 100%; margin-top: 6px; }
+
+/* ===== 工作台媒体弹窗：左树右库 ===== */
+.wb-media-panel { display: flex; flex-direction: column; max-height: 70vh; }
+.wb-media-body { display: flex; gap: 10px; min-height: 0; }
+.wb-media-tree {
+    flex: 0 0 180px;
+    border-right: 1px solid var(--c-border, #e5e7eb);
+    padding-right: 10px;
+    display: flex; flex-direction: column; gap: 6px;
+    overflow-y: auto;
+}
+.wb-media-tree-list { font-size: 13px; }
+.wb-media-tree-children { list-style: none; margin: 0; padding: 0 0 0 12px; }
+.wb-media-tree-node {
+    padding: 5px 8px; border-radius: 6px; cursor: pointer;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.wb-media-tree-node:hover { background: var(--c-bg-hover, #f3f4f6); }
+.wb-media-tree-node.is-selected { background: var(--c-primary-bg, #eff6ff); color: var(--c-primary, #2563eb); font-weight: 500; }
+.wb-media-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.wb-media-toolbar { display: flex; }
+.wb-media-type {
+    padding: 5px 8px; font-size: 13px;
+    border: 1px solid var(--c-border, #e5e7eb); border-radius: 6px;
+    background: var(--c-surface, #fff); color: inherit;
+}
+.wb-media-grid { overflow-y: auto; }

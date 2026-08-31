@@ -140,7 +140,7 @@
     </footer>
 
     {* 草稿数据岛：workbench.js 读取并初始化前端状态机 *}
-    {* 媒体库选择器弹层：图片字段点击「媒体库」打开,点选回填,支持直接上传 *}
+    {* 媒体库选择器弹层：左树右库（分类筛选），点选回填，支持直接上传 *}
     <div id="wb-media-modal" hidden>
         <div class="wb-media-mask"></div>
         <div class="wb-media-panel">
@@ -151,7 +151,18 @@
                 <input type="file" id="wb-media-upload-input" accept="image/*" hidden>
                 <button type="button" class="wb-icon-btn" id="wb-media-close" title="关闭">×</button>
             </div>
-            <div class="wb-media-grid" id="wb-media-grid"><p class="wb-empty">加载中…</p></div>
+            <div class="wb-media-body">
+                <aside class="wb-media-tree">
+                    <input type="search" class="wb-search" id="wb-media-tree-search" placeholder="搜索分类…">
+                    <div class="wb-media-tree-list" id="wb-media-tree-list"></div>
+                </aside>
+                <section class="wb-media-main">
+                    <div class="wb-media-toolbar">
+                        <input type="search" class="wb-search" id="wb-media-search" placeholder="搜索文件名…">
+                    </div>
+                    <div class="wb-media-grid" id="wb-media-grid"><p class="wb-empty">加载中…</p></div>
+                </section>
+            </div>
         </div>
     </div>
 
@@ -160,6 +171,7 @@
     <script type="application/json" id="wb-schemas">{{ .schemas | unsafe }}</script>
     {* TinyMCE 富文本编辑器（text 组件 richtext 模式）；jsdelivr 在 CSP script-src 白名单内 *}
     <script src="https://cdn.jsdelivr.net/npm/tinymce@7/tinymce.min.js" referrerpolicy="origin"></script>
+    <script src="/static/js/media-lib.js"></script>
     <script src="/static/js/workbench.js?v={{.jsVer}}"></script>
 </body>
 </html>

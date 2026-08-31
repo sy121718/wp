@@ -1688,6 +1688,9 @@
             // ---------------- 媒体库选择器 ----------------
             _mediaPickTarget: null,
             _mediaCache: null,
+            _mediaCategory: 0,   // 媒体弹窗当前分类筛选（0=全部）
+            _mediaSearch: '',    // 媒体弹窗名称搜索
+            _mediaTree: [],
             resolveAssetUrl(assetIdOrUrl) {
                 if (!assetIdOrUrl) return '';
                 if (/^https?:|^\//.test(assetIdOrUrl)) return assetIdOrUrl;
@@ -1702,7 +1705,56 @@
                 var modal = document.getElementById('wb-media-modal');
                 if (!modal) return;
                 modal.hidden = false;
+                this.loadMediaTree();
                 this.loadMediaList();
+            },
+            // 媒体弹窗：加载分类树（左栏，复用 MediaLib 渲染；可搜索过滤）。
+            loadMediaTree() {
+                var self = this;
+                fetch('/api/media/category/tree')
+                    .then(function (r) { return r.json(); })
+                    .then(function (j) {
+                        self._mediaTree = (j.data && j.data) || [];
+                        self.renderMediaTree();
+                    })
+                    .catch(function () { /* 树加载失败不阻塞网格 */ });
+            },
+            renderMediaTree() {
+                var box = document.getElementById('wb-media-tree-list');
+                if (!box) return;
+                if (!window.MediaLib) return;
+                var kw = (document.getElementById('wb-media-tree-search').value || '').trim().toLowerCase();
+                var tree = MediaLib.filterTree(this._mediaTree, kw);
+                box.innerHTML = '';
+                // 「全部」根节点。
+                var all = document.createElement('div');
+                all.className = 'wb-media-tree-node' + (this._mediaCategory === 0 ? ' is-selected' : '');
+                all.textContent = '全部';
+                all.addEventListener('click', function () {
+                    self._mediaCategory = 0;
+                    self.renderMediaTree();
+                    self.loadMediaList();
+                });
+                box.appendChild(all);
+                var ul = document.createElement('ul');
+                ul.className = 'wb-media-tree-children';
+                if (!this._mediaCollapsed) this._mediaCollapsed = {};
+                MediaLib.renderTree(ul, tree, {
+                    selectedId: this._mediaCategory,
+                    collapsed: this._mediaCollapsed,
+                    onToggle: function (id, caret) {
+                        self._mediaCollapsed[id] = !self._mediaCollapsed[id];
+                        caret.classList.toggle('is-collapsed', self._mediaCollapsed[id]);
+                        var sub = caret.parentElement.nextElementSibling;
+                        if (sub) sub.classList.toggle('is-collapsed', self._mediaCollapsed[id]);
+                    },
+                    onSelect: function (id) {
+                        self._mediaCategory = id;
+                        self.renderMediaTree();
+                        self.loadMediaList();
+                    }
+                });
+                box.appendChild(ul);
             },
             closeMediaPicker() {
                 var modal = document.getElementById('wb-media-modal');
@@ -1714,7 +1766,10 @@
                 if (!grid) return;
                 var self = this;
                 grid.innerHTML = '<p class="wb-empty">加载中…</p>';
-                fetch('/api/media/list?page=1&limit=60&file_type=image')
+                var qs = 'page=1&limit=120';
+                if (self._mediaCategory > 0) qs += '&category_id=' + self._mediaCategory;
+                if (self._mediaSearch) qs += '&search=' + encodeURIComponent(self._mediaSearch);
+                fetch('/api/media/list?' + qs)
                     .then(function (r) { return r.json(); })
                     .then(function (j) {
                         grid.innerHTML = '';
@@ -1976,6 +2031,20 @@
                 // 媒体库弹层：关闭/遮罩/上传。
                 var mediaClose = document.getElementById('wb-media-close');
                 if (mediaClose) mediaClose.addEventListener('click', function () { self.closeMediaPicker(); });
+                // 媒体弹窗：名称搜索（防抖）与分类树搜索。
+                var mediaSearch = document.getElementById('wb-media-search');
+                var mediaSearchTimer = null;
+                if (mediaSearch) mediaSearch.addEventListener('input', function () {
+                    clearTimeout(mediaSearchTimer);
+                    mediaSearchTimer = setTimeout(function () {
+                        self._mediaSearch = mediaSearch.value.trim();
+                        self.loadMediaList();
+                    }, 300);
+                });
+                var mediaTreeSearch = document.getElementById('wb-media-tree-search');
+                if (mediaTreeSearch) mediaTreeSearch.addEventListener('input', function () {
+                    self.renderMediaTree();
+                });
                 var mediaMask = document.querySelector('#wb-media-modal .wb-media-mask');
                 if (mediaMask) mediaMask.addEventListener('click', function () { self.closeMediaPicker(); });
                 var mediaUpBtn = document.getElementById('wb-media-upload-btn');

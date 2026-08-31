@@ -41,6 +41,8 @@ func SetupDashboardRoutes(router *gin.Engine,
 	router.POST("/admin/blocks/delete", handle.DeleteBlock)
 	// 工作台保存块内容（保存后编排 stale 传播）。
 	router.POST("/admin/blocks/save-content", handle.SaveBlockContent)
+	// 媒体库（左树右库：分类树筛选 + WP 式网格/列表 + 详情编辑）。
+	router.GET("/admin/media", handle.MediaPage)
 	// 主题管理（多主题：列表/新建/激活/删除 + 单主题设置）。
 	router.GET("/admin/themes", handle.ThemeManage)
 	router.POST("/admin/themes/create", handle.CreateTheme)
