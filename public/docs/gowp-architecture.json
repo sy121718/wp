@@ -1,0 +1,312 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "go_wp 发布架构：控制面 → 构建管线 → 静态访问面",
+    "quality_profile": "showcase",
+    "viewBox": [
+      1330,
+      560
+    ],
+    "views": [
+      {
+        "id": "visitor-path",
+        "label": "访客路径",
+        "focus": [
+          "visitor",
+          "static",
+          "artifacts",
+          "cdn"
+        ],
+        "note": "访客请求不查库、不执行模板，URL 到文件的映射由激活结果决定。"
+      },
+      {
+        "id": "publish-pipeline",
+        "label": "发布管线",
+        "focus": [
+          "db",
+          "compiler",
+          "artifacts",
+          "publication",
+          "static"
+        ],
+        "note": "build → artifact → publication 单向流水线，后者不得反向导入前者。"
+      },
+      {
+        "id": "control-plane",
+        "label": "控制面编辑流",
+        "focus": [
+          "admin",
+          "workbench",
+          "db"
+        ],
+        "note": "后台与可视化工作台只读写数据库，不直接触碰产物。"
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "admin",
+      "type": "backend",
+      "label": "后台 Admin",
+      "sublabel": "Jet + HTMX",
+      "pos": [
+        60,
+        40
+      ],
+      "size": [
+        150,
+        64
+      ],
+      "tag": "Session + Casbin"
+    },
+    {
+      "id": "workbench",
+      "type": "frontend",
+      "label": "可视化工作台",
+      "sublabel": "Visual Workbench",
+      "pos": [
+        60,
+        130
+      ],
+      "size": [
+        150,
+        64
+      ],
+      "tag": "草稿 AST 编辑"
+    },
+    {
+      "id": "db",
+      "type": "database",
+      "label": "PostgreSQL",
+      "sublabel": "页面 / 修订 / 主题 / 全局块",
+      "pos": [
+        330,
+        85
+      ],
+      "size": [
+        190,
+        72
+      ]
+    },
+    {
+      "id": "compiler",
+      "type": "backend",
+      "label": "Publish Compiler",
+      "sublabel": "internal/builder",
+      "pos": [
+        640,
+        220
+      ],
+      "size": [
+        180,
+        64
+      ],
+      "tag": "页眉页脚装配"
+    },
+    {
+      "id": "artifacts",
+      "type": "database",
+      "label": "Artifact Store",
+      "sublabel": "不可变产物 + manifest",
+      "pos": [
+        920,
+        220
+      ],
+      "size": [
+        160,
+        64
+      ]
+    },
+    {
+      "id": "publication",
+      "type": "backend",
+      "label": "PublicationStore",
+      "sublabel": "激活 / 回滚",
+      "pos": [
+        1150,
+        220
+      ],
+      "size": [
+        120,
+        64
+      ]
+    },
+    {
+      "id": "visitor",
+      "type": "external",
+      "label": "访客",
+      "sublabel": "浏览器 / 移动端",
+      "pos": [
+        60,
+        360
+      ],
+      "size": [
+        130,
+        64
+      ]
+    },
+    {
+      "id": "cdn",
+      "type": "cloud",
+      "label": "CDN",
+      "sublabel": "边缘缓存（规划）",
+      "pos": [
+        300,
+        462
+      ],
+      "size": [
+        140,
+        64
+      ]
+    },
+    {
+      "id": "static",
+      "type": "backend",
+      "label": "静态访问面",
+      "sublabel": "Static Server /site",
+      "pos": [
+        620,
+        360
+      ],
+      "size": [
+        180,
+        64
+      ]
+    },
+    {
+      "id": "fragment",
+      "type": "backend",
+      "label": "Runtime Fragment",
+      "sublabel": "HTMX 动态片段（规划 0-D）",
+      "pos": [
+        620,
+        470
+      ],
+      "size": [
+        200,
+        64
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "控制面：Database + CMS + Builder + Build Worker",
+      "wraps": [
+        "admin",
+        "workbench",
+        "db",
+        "compiler",
+        "artifacts",
+        "publication"
+      ]
+    },
+    {
+      "kind": "region",
+      "label": "访问面：激活结果 + Static Server / CDN",
+      "wraps": [
+        "visitor",
+        "cdn",
+        "static",
+        "fragment"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "visitor-to-static",
+      "from": "visitor",
+      "to": "static",
+      "label": "HTTPS GET /site",
+      "variant": "emphasis",
+      "labelDy": -20
+    },
+    {
+      "id": "cdn-to-static",
+      "from": "cdn",
+      "to": "static",
+      "label": "回源（规划）",
+      "variant": "dashed"
+    },
+    {
+      "id": "admin-to-db",
+      "from": "admin",
+      "to": "db",
+      "label": "内容读写"
+    },
+    {
+      "id": "workbench-to-db",
+      "from": "workbench",
+      "to": "db",
+      "label": "草稿保存"
+    },
+    {
+      "id": "db-to-compiler",
+      "from": "db",
+      "to": "compiler",
+      "label": "草稿 + 主题 + 块快照"
+    },
+    {
+      "id": "compiler-to-artifacts",
+      "from": "compiler",
+      "to": "artifacts",
+      "label": "编译产物",
+      "labelDy": -18
+    },
+    {
+      "id": "artifacts-to-publication",
+      "from": "artifacts",
+      "to": "publication",
+      "label": "激活 / 回滚",
+      "labelDy": -18
+    },
+    {
+      "id": "static-to-artifacts",
+      "from": "static",
+      "to": "artifacts",
+      "label": "符号链接读取"
+    },
+    {
+      "id": "publication-to-static",
+      "from": "publication",
+      "to": "static",
+      "label": "激活 / 回滚切换",
+      "variant": "emphasis"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "控制面",
+      "items": [
+        "后台与工作台只读写数据库，不直接触碰产物",
+        "构建管线单向：build → artifact → publication"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "访问面",
+      "items": [
+        "访客请求不查库、不执行模板、不解释 AST",
+        "URL → 文件映射由 PublicationStore 的激活结果决定"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "确定性构建",
+      "items": [
+        "同一 Page Document + BuildContext 产出相同字节",
+        "发布秒级回滚到历史产物"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "规划中",
+      "items": [
+        "CDN 边缘缓存接入静态访问面",
+        "Runtime Fragment：白名单 HTMX 动态片段（Phase 0-D）"
+      ]
+    }
+  ]
+}
