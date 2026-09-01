@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"html"
+	"strings"
 
 	"go_wp/internal/builder/core"
 )
@@ -67,6 +68,20 @@ var brandColors = map[string]string{
 	"whatsapp":  "#25d366",
 	"pinterest": "#bd081c",
 	"linkedin":  "#0a66c2",
+	"threads":   "#000000",
+	"vimeo":     "#1ab7ea",
+	"flickr":    "#0063dc",
+	"github":    "#181717",
+	"dribbble":  "#ea4c89",
+	"behance":   "#1769ff",
+	"soundcloud": "#ff5500",
+	"spotify":   "#1db954",
+	"snapchat":  "#fffc00",
+	"discord":   "#5865f2",
+	"tumblr":    "#36465d",
+	"viber":     "#7360f2",
+	"vk":        "#0077ff",
+	"bluesky":   "#0a7aff",
 }
 
 // platformIcons 平台内联 SVG（fill=currentColor）。
@@ -133,15 +148,19 @@ func (c *Component) Render(node *core.Node, topLevel bool, ctx *core.RenderConte
 	ctx.HTML.WriteString(`">`)
 	for _, it := range p.Items {
 		svg, ok := platformIcons[it.Platform]
-		if !ok {
-			continue
-		}
 		ctx.HTML.WriteString(`<a class="wp-social-btn" href="`)
 		ctx.HTML.WriteString(html.EscapeString(it.URL))
 		ctx.HTML.WriteString(`" target="_blank" rel="noopener nofollow" aria-label="`)
 		ctx.HTML.WriteString(html.EscapeString(it.Platform))
 		ctx.HTML.WriteString(`">`)
-		ctx.HTML.WriteString(svg)
+		if ok {
+			ctx.HTML.WriteString(svg)
+		} else {
+			// 无专属 SVG 的平台：首字母圆形兜底（品牌色已按平台映射）。
+			ctx.HTML.WriteString(`<span class="wp-social-fallback">`)
+			ctx.HTML.WriteString(html.EscapeString(strings.ToUpper(it.Platform[:1])))
+			ctx.HTML.WriteString(`</span>`)
+		}
 		ctx.HTML.WriteString(`</a>`)
 	}
 	ctx.HTML.WriteString(`</div>`)

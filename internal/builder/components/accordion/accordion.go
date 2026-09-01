@@ -39,6 +39,12 @@ type Props struct {
 	OneOpen bool `json:"oneOpen,omitempty" ct:"bool,sec=style,label=同时只开一个"`
 	// Borderless 无边框样式（简单分隔线）。
 	Borderless bool `json:"borderless,omitempty" ct:"bool,sec=style,label=无边框"`
+	// TitleAlign 标题对齐：left / center / right。
+	TitleAlign string `json:"titleAlign,omitempty" ct:"select,left=左对齐,center=居中,right=右对齐,default=left,sec=style,label=标题对齐"`
+	// BgColor 项背景色。
+	BgColor string `json:"bgColor,omitempty" ct:"safe,maxlen=200,sec=style,label=项背景色"`
+	// TitleSize 标题字号。
+	TitleSize string `json:"titleSize,omitempty" ct:"safe,maxlen=20,sec=style,label=标题字号"`
 	// Advanced 通用高级属性。
 	Advanced core.AdvancedProps `json:"advanced"`
 }
@@ -129,13 +135,23 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	b.Add(core.BreakpointDesktop, sel, []string{"display: flex", "flex-direction: column", "gap: 8px"})
 
 	head := sel + " .wp-accordion-head"
-	b.Add(core.BreakpointDesktop, head, []string{
+	headRules := []string{
 		"list-style: none", "cursor: pointer", "user-select: none",
 		"display: flex", "align-items: center", "justify-content: space-between",
 		"padding: 14px 18px", "font-size: 15px", "font-weight: 600",
 		"background: var(--c-surface, #fff)",
 		"border: 1px solid rgba(0,0,0,.1)", "border-radius: 10px",
-	})
+	}
+	if p.BgColor != "" {
+		headRules = append(headRules, "background: "+p.BgColor)
+	}
+	if p.TitleAlign == "center" || p.TitleAlign == "right" {
+		headRules = append(headRules, "justify-content: "+map[string]string{"center": "center", "right": "flex-end"}[p.TitleAlign])
+	}
+	if p.TitleSize != "" {
+		headRules = append(headRules, "font-size: "+p.TitleSize)
+	}
+	b.Add(core.BreakpointDesktop, head, headRules)
 	// 展开箭头（summary 伪元素）。
 	b.Add(core.BreakpointDesktop, head+"::-webkit-details-marker", []string{"display: none"})
 	b.Add(core.BreakpointDesktop, head+"::after", []string{

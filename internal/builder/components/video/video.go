@@ -46,6 +46,12 @@ type Props struct {
 	Muted bool `json:"muted,omitempty" ct:"bool,sec=content,label=静音"`
 	// Controls 显示播放控件。
 	Controls bool `json:"controls,omitempty" ct:"bool,sec=content,label=播放控件"`
+	// Preload 预加载策略：metadata（默认）/ auto / none。
+	Preload string `json:"preload,omitempty" ct:"select,metadata=元数据,auto=全部预加载,none=不预加载,default=metadata,sec=content,label=预加载"`
+	// Align 对齐：left / center / right。
+	Align string `json:"align,omitempty" ct:"select,left=左对齐,center=居中,right=右对齐,default=center,sec=style,label=对齐"`
+	// FullWidth 全宽。
+	FullWidth bool `json:"fullWidth,omitempty" ct:"bool,sec=style,label=全宽"`
 	// Ratio 宽高比：16:9 / 4:3 / 1:1 / 自适应。
 	Ratio string `json:"ratio,omitempty" ct:"select,16:9=16:9,4:3=4:3,1:1=1:1,auto=自适应,default=16:9,sec=style,label=宽高比"`
 	// Radius 圆角。
@@ -129,7 +135,11 @@ func (c *Component) Render(node *core.Node, topLevel bool, ctx *core.RenderConte
 		if p.Controls {
 			ctx.HTML.WriteString(` controls`)
 		}
-		ctx.HTML.WriteString(` playsinline preload="metadata">`)
+		preload := p.Preload
+		if preload == "" {
+			preload = "metadata"
+		}
+		ctx.HTML.WriteString(` playsinline preload="` + preload + `">`)
 		ctx.HTML.WriteString(`<source src="`)
 		ctx.HTML.WriteString(html.EscapeString(videoURL))
 		ctx.HTML.WriteString(`">`)
@@ -184,6 +194,17 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	}
 
 	desktop := []string{"position: relative", "overflow: hidden", "max-width: 100%"}
+	switch p.Align {
+	case "left":
+		desktop = append(desktop, "margin-left: 0", "margin-right: auto")
+	case "right":
+		desktop = append(desktop, "margin-left: auto", "margin-right: 0")
+	default:
+		desktop = append(desktop, "margin-left: auto", "margin-right: auto")
+	}
+	if p.FullWidth {
+		desktop = append(desktop, "width: 100%")
+	}
 	if p.Radius != "" {
 		desktop = append(desktop, "border-radius: "+p.Radius)
 	}

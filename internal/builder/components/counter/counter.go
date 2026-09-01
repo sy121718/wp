@@ -34,6 +34,8 @@ type Props struct {
 	Prefix string `json:"prefix,omitempty" ct:"safe,maxlen=20,sec=content,label=前缀"`
 	// Suffix 后缀（如 % / + / 万）。
 	Suffix string `json:"suffix,omitempty" ct:"safe,maxlen=20,sec=content,label=后缀"`
+	// Label 底部标签（如「满意客户」）。
+	Label string `json:"label,omitempty" ct:"safe,maxlen=100,sec=content,label=标签"`
 	// Duration 动画时长（秒，默认 2）。
 	Duration float64 `json:"duration,omitempty"`
 	// Color 数字颜色。
@@ -118,6 +120,13 @@ func (c *Component) Render(node *core.Node, topLevel bool, ctx *core.RenderConte
 		ctx.HTML.WriteString(`</span>`)
 	}
 	ctx.HTML.WriteString(`</div>`)
+	if p.Label != "" {
+		ctx.HTML.WriteString(`<div class="`)
+		ctx.HTML.WriteString(cls)
+		ctx.HTML.WriteString(`-label wp-counter-label">`)
+		ctx.HTML.WriteString(html.EscapeString(p.Label))
+		ctx.HTML.WriteString(`</div>`)
+	}
 
 	compileCSS(node.ID, &p, ctx.CSS)
 	return nil
@@ -155,5 +164,9 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	b.Add(core.BreakpointDesktop, sel, desktop)
 
 	b.Add(core.BreakpointDesktop, sel+" .wp-counter-value", []string{"font-variant-numeric: tabular-nums"})
+	b.Add(core.BreakpointDesktop, "div"+sel+"-label.wp-counter-label, .wp-counter-label", []string{
+		"font-size: 0.85rem", "font-weight: 400", "opacity: .7",
+		"margin-top: 6px", "text-align: " + textAlign,
+	})
 }
 

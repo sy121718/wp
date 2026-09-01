@@ -48,6 +48,22 @@ type Props struct {
 	Padding string `json:"padding,omitempty" ct:"safe,maxlen=30,sec=style,label=内边距"`
 	// Background 卡片背景色。
 	Background string `json:"background,omitempty" ct:"safe,maxlen=200,sec=style,label=背景色"`
+	// HoverBg 悬停背景色。
+	HoverBg string `json:"hoverBg,omitempty" ct:"safe,maxlen=200,sec=style,label=悬停背景色"`
+	// Radius 圆角。
+	Radius string `json:"radius,omitempty" ct:"safe,maxlen=30,sec=style,label=圆角"`
+	// Subtitle 副标题（图标与标题之间）。
+	Subtitle string `json:"subtitle,omitempty" ct:"text,maxlen=200,sec=content,label=副标题"`
+	// SubtitleColor 副标题颜色。
+	SubtitleColor string `json:"subtitleColor,omitempty" ct:"safe,maxlen=200,sec=style,label=副标题颜色"`
+	// IconBgColor 图标背景色。
+	IconBgColor string `json:"iconBgColor,omitempty" ct:"safe,maxlen=200,sec=style,label=图标背景色"`
+	// IconBorderColor 图标边框色。
+	IconBorderColor string `json:"iconBorderColor,omitempty" ct:"safe,maxlen=200,sec=style,label=图标边框色"`
+	// TitleTag 标题标签（h2/h3/h4/div，默认 h3）。
+	TitleTag string `json:"titleTag,omitempty" ct:"select,h2=H2,h3=H3,h4=H4,div=区块,default=h3,sec=style,label=标题标签"`
+	// BtnText 按钮文字（与 Link 配合）。
+	BtnText string `json:"btnText,omitempty" ct:"safe,maxlen=100,sec=content,label=按钮文字"`
 	// Advanced 通用高级属性。
 	Advanced core.AdvancedProps `json:"advanced"`
 }
@@ -115,10 +131,19 @@ func (c *Component) Render(node *core.Node, topLevel bool, ctx *core.RenderConte
 		body.WriteString(builtinIcons[p.Icon])
 		body.WriteString(`</span>`)
 	}
+	if p.Subtitle != "" {
+		body.WriteString(`<span class="wp-infobox-subtitle">`)
+		body.WriteString(html.EscapeString(p.Subtitle))
+		body.WriteString(`</span>`)
+	}
 	if p.Title != "" {
-		body.WriteString(`<h3 class="wp-infobox-title">`)
+		tag := p.TitleTag
+		if tag == "" {
+			tag = "h3"
+		}
+		body.WriteString("<" + tag + ` class="wp-infobox-title">`)
 		body.WriteString(html.EscapeString(p.Title))
-		body.WriteString(`</h3>`)
+		body.WriteString("</" + tag + ">")
 	}
 	if p.Text != "" {
 		body.WriteString(`<div class="wp-infobox-text">`)
@@ -127,6 +152,21 @@ func (c *Component) Render(node *core.Node, topLevel bool, ctx *core.RenderConte
 	}
 
 	if strings.TrimSpace(p.Link) != "" {
+		if strings.TrimSpace(p.BtnText) != "" {
+			// 按钮模式：内容 + 底部按钮。
+			ctx.HTML.WriteString(`<div class="`)
+			ctx.HTML.WriteString(cls)
+			ctx.HTML.WriteString(` wp-infobox">`)
+			ctx.HTML.WriteString(body.String())
+			ctx.HTML.WriteString(`<a class="wp-infobox-btn" href="`)
+			ctx.HTML.WriteString(html.EscapeString(p.Link))
+			ctx.HTML.WriteString(`">`)
+			ctx.HTML.WriteString(html.EscapeString(p.BtnText))
+			ctx.HTML.WriteString(`</a>`)
+			ctx.HTML.WriteString(`</div>`)
+			compileCSS(node.ID, &p, ctx.CSS)
+			return nil
+		}
 		ctx.HTML.WriteString(`<a class="`)
 		ctx.HTML.WriteString(cls)
 		ctx.HTML.WriteString(` wp-infobox" href="`)
@@ -208,5 +248,39 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	})
 	if p.TextColor != "" {
 		b.Add(core.BreakpointDesktop, sel+" .wp-infobox-text", []string{"color: " + p.TextColor, "opacity: 1"})
+	}
+	if p.Subtitle != "" {
+		sub := []string{
+			"display: inline-block", "font-size: 0.75em", "font-weight: 600",
+			"letter-spacing: 0.06em", "text-transform: uppercase",
+			"padding: 3px 10px", "border-radius: 999px",
+			"background: rgba(0,0,0,.06)",
+		}
+		b.Add(core.BreakpointDesktop, sel+" .wp-infobox-subtitle", sub)
+		if p.SubtitleColor != "" {
+			b.Add(core.BreakpointDesktop, sel+" .wp-infobox-subtitle", []string{"color: " + p.SubtitleColor})
+		}
+	}
+	if p.Radius != "" {
+		b.Add(core.BreakpointDesktop, sel, []string{"border-radius: " + p.Radius, "overflow: hidden"})
+	}
+	if p.HoverBg != "" {
+		b.Add(core.BreakpointDesktop, sel+".wp-infobox:hover", []string{"background: " + p.HoverBg})
+	}
+	if p.IconBgColor != "" {
+		b.Add(core.BreakpointDesktop, sel+" .wp-infobox-icon", []string{"background: " + p.IconBgColor})
+	}
+	if p.IconBorderColor != "" {
+		b.Add(core.BreakpointDesktop, sel+" .wp-infobox-icon", []string{"border: 1px solid " + p.IconBorderColor})
+	}
+	if p.BtnText != "" {
+		b.Add(core.BreakpointDesktop, sel+" .wp-infobox-btn", []string{
+			"display: inline-flex", "align-items: center", "justify-content: center",
+			"padding: 10px 22px", "border-radius: 999px",
+			"background: var(--c-primary, #2563eb)", "color: #fff",
+			"text-decoration: none", "font-size: 0.9em", "font-weight: 500",
+			"margin-top: 6px", "transition: opacity .15s",
+		})
+		b.Add(core.BreakpointDesktop, sel+" .wp-infobox-btn:hover", []string{"opacity: .85"})
 	}
 }

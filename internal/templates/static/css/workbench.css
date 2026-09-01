@@ -438,3 +438,6 @@ button.wb-palette-group:hover { color: var(--c-primary, #2563eb); }
     font-size: 12px; color: var(--c-text-mute, #6b7280);
     background: var(--c-bg-hover, #f3f4f6); border-radius: 8px;
 }
+
+/* 社交按钮首字母兜底 */
+.wp-social-fallback { font-weight: 700; font-size: 0.9em; }

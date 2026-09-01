@@ -53,6 +53,20 @@ type Props struct {
 	IconSize string `json:"iconSize,omitempty" ct:"safe,maxlen=20,sec=style,label=图标尺寸"`
 	// TextColor 文本颜色。
 	TextColor string `json:"textColor,omitempty" ct:"safe,maxlen=200,sec=style,label=文本颜色"`
+	// TextSize 文本字号。
+	TextSize string `json:"textSize,omitempty" ct:"safe,maxlen=20,sec=style,label=文本字号"`
+	// LinkColor 链接颜色。
+	LinkColor string `json:"linkColor,omitempty" ct:"safe,maxlen=200,sec=style,label=链接颜色"`
+	// LinkColorHover 链接悬停颜色。
+	LinkColorHover string `json:"linkColorHover,omitempty" ct:"safe,maxlen=200,sec=style,label=链接悬停颜色"`
+	// IconBgColor 图标背景色（圆形底）。
+	IconBgColor string `json:"iconBgColor,omitempty" ct:"safe,maxlen=200,sec=style,label=图标背景色"`
+	// IconBgColorHover 图标悬停背景色。
+	IconBgColorHover string `json:"iconBgColorHover,omitempty" ct:"safe,maxlen=200,sec=style,label=图标悬停背景色"`
+	// IconColorHover 图标悬停颜色。
+	IconColorHover string `json:"iconColorHover,omitempty" ct:"safe,maxlen=200,sec=style,label=图标悬停颜色"`
+	// Align 对齐：left / center / right。
+	Align string `json:"align,omitempty" ct:"select,left=左对齐,center=居中,right=右对齐,default=left,sec=style,label=对齐"`
 	// Spacing 项间距（px）。
 	Spacing string `json:"spacing,omitempty" ct:"safe,maxlen=20,sec=style,label=项间距"`
 	// Advanced 通用高级属性。
@@ -204,10 +218,44 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	if p.IconColor != "" {
 		b.Add(core.BreakpointDesktop, sel+" .wp-list-marker", []string{"color: " + p.IconColor})
 	}
+	if p.IconBgColor != "" {
+		b.Add(core.BreakpointDesktop, sel+" .wp-list-marker", []string{
+			"background: " + p.IconBgColor, "border-radius: 999px",
+			"width: 1.8em", "height: 1.8em",
+		})
+	}
+	if p.IconColorHover != "" || p.IconBgColorHover != "" {
+		var hv []string
+		if p.IconColorHover != "" {
+			hv = append(hv, "color: "+p.IconColorHover)
+		}
+		if p.IconBgColorHover != "" {
+			hv = append(hv, "background: "+p.IconBgColorHover)
+		}
+		b.Add(core.BreakpointDesktop, sel+" .wp-list-item:hover .wp-list-marker", hv)
+	}
 	if p.TextColor != "" {
 		b.Add(core.BreakpointDesktop, sel+" .wp-list-text", []string{"color: " + p.TextColor})
 	}
+	if p.TextSize != "" {
+		b.Add(core.BreakpointDesktop, sel+" .wp-list-text", []string{"font-size: " + p.TextSize})
+	}
+	if p.LinkColor != "" {
+		b.Add(core.BreakpointDesktop, sel+" a.wp-list-text", []string{"color: " + p.LinkColor})
+	}
+	if p.LinkColorHover != "" {
+		b.Add(core.BreakpointDesktop, sel+" a.wp-list-text:hover", []string{"color: " + p.LinkColorHover})
+	}
 	if p.IconSize != "" {
 		b.Add(core.BreakpointDesktop, sel+" .wp-list-marker", []string{"font-size: " + p.IconSize})
+	}
+	if p.Align == "center" || p.Align == "right" {
+		j := "flex-start"
+		if p.Align == "center" {
+			j = "center"
+		} else {
+			j = "flex-end"
+		}
+		b.Add(core.BreakpointDesktop, sel, []string{"align-items: " + j})
 	}
 }

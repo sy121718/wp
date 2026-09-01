@@ -1691,9 +1691,11 @@
                     });
                     field('图片（选填，优先于图标）', 'props.mediaImage', 'input');
                     heading('内容');
+                    field('副标题', 'props.subtitle', 'input');
                     field('标题', 'props.title', 'input');
                     field('描述', 'props.text', 'textarea');
                     field('链接', 'props.link', 'input');
+                    field('按钮文字（填写后链接显示为按钮）', 'props.btnText', 'input');
                 }
                 // social_buttons 面板：平台 repeater。
                 function socialPanel() {

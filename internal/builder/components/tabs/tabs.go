@@ -37,6 +37,12 @@ type Props struct {
 	Tabs []Tab `json:"tabs,omitempty"`
 	// Vertical 竖向布局（标签在左）。
 	Vertical bool `json:"vertical,omitempty" ct:"bool,sec=style,label=竖向页签"`
+	// NavAlign 标签对齐：left / center / right。
+	NavAlign string `json:"navAlign,omitempty" ct:"select,left=左对齐,center=居中,right=右对齐,default=left,sec=style,label=标签对齐"`
+	// ActiveColor 激活页签背景色。
+	ActiveColor string `json:"activeColor,omitempty" ct:"safe,maxlen=200,sec=style,label=激活页签背景色"`
+	// BorderColor 导航底边框色。
+	BorderColor string `json:"borderColor,omitempty" ct:"safe,maxlen=200,sec=style,label=导航边框色"`
 	// Advanced 通用高级属性。
 	Advanced core.AdvancedProps `json:"advanced"`
 }
@@ -163,10 +169,30 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	}
 
 	// 基础样式。
+	borderColor := p.BorderColor
+	if borderColor == "" {
+		borderColor = "rgba(0,0,0,.1)"
+	}
+	navJustify := "flex-start"
+	if p.NavAlign == "center" {
+		navJustify = "center"
+	} else if p.NavAlign == "right" {
+		navJustify = "flex-end"
+	}
 	b.Add(core.BreakpointDesktop, sel+" .wp-tabs-nav", []string{
 		"display: flex", "gap: 4px", "flex-wrap: wrap",
-		"border-bottom: 1px solid rgba(0,0,0,.1)", "padding: 0 4px",
+		"justify-content: " + navJustify,
+		"border-bottom: 1px solid " + borderColor, "padding: 0 4px",
 	})
+	if p.ActiveColor != "" {
+		for i := range p.Tabs {
+			radio := "#wp-tabs-" + id + "-" + fmt.Sprintf("%d", i)
+			label := sel + " .wp-tabs-nav label:nth-of-type(" + fmt.Sprintf("%d", i+1) + ")"
+			b.Add(core.BreakpointDesktop, radio+":checked ~ "+label, []string{
+				"background: " + p.ActiveColor,
+			})
+		}
+	}
 	b.Add(core.BreakpointDesktop, sel+" .wp-tabs-nav label", []string{
 		"padding: 9px 18px", "cursor: pointer", "font-size: 14px",
 		"border-radius: 8px 8px 0 0", "transition: background .15s, color .15s",
