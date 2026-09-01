@@ -226,8 +226,14 @@ type VisualProps struct {
 	BorderColor string `json:"borderColor,omitempty"`
 	// Radius 圆角弧度。
 	Radius string `json:"radius,omitempty"`
-	// Shadow 阴影级别：sm / md / lg / xl。
+	// Shadow 阴影级别：sm / md / lg / xl；custom 时取 ShadowCustom。
 	Shadow string `json:"shadow,omitempty"`
+	// ShadowCustom 自定义阴影四参 + 颜色（Shadow=custom 时生效）。
+	ShadowX      string `json:"shadowX,omitempty" ct:"safe,maxlen=20,sec=style,label=阴影 X"`
+	ShadowY      string `json:"shadowY,omitempty" ct:"safe,maxlen=20,sec=style,label=阴影 Y"`
+	ShadowBlur   string `json:"shadowBlur,omitempty" ct:"safe,maxlen=20,sec=style,label=阴影模糊"`
+	ShadowSpread string `json:"shadowSpread,omitempty" ct:"safe,maxlen=20,sec=style,label=阴影扩散"`
+	ShadowColor  string `json:"shadowColor,omitempty" ct:"safe,maxlen=200,sec=style,label=阴影颜色"`
 }
 
 // InteractionProps 交互状态与动画。
@@ -494,7 +500,26 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	if v := p.Visual.Radius; v != "" {
 		desktop = append(desktop, "border-radius: "+v)
 	}
-	if v, ok := shadowLevels[p.Visual.Shadow]; p.Visual.Shadow != "" && ok {
+	if p.Visual.Shadow == "custom" {
+		x, y, blur, spread := p.Visual.ShadowX, p.Visual.ShadowY, p.Visual.ShadowBlur, p.Visual.ShadowSpread
+		if x == "" {
+			x = "0"
+		}
+		if y == "" {
+			y = "4px"
+		}
+		if blur == "" {
+			blur = "12px"
+		}
+		if spread == "" {
+			spread = "0"
+		}
+		color := p.Visual.ShadowColor
+		if color == "" {
+			color = "rgba(0,0,0,.12)"
+		}
+		desktop = append(desktop, "box-shadow: "+x+" "+y+" "+blur+" "+spread+" "+color)
+	} else if v, ok := shadowLevels[p.Visual.Shadow]; p.Visual.Shadow != "" && ok {
 		desktop = append(desktop, "box-shadow: "+v)
 	}
 
@@ -695,6 +720,11 @@ func validateProps(p *Props) (err error) {
 		{"背景渐变", p.Visual.BgGradient},
 		{"背景图", p.Visual.BgImage},
 		{"背景自定义定位", p.Visual.BgPositionXY},
+		{"阴影 X", p.Visual.ShadowX},
+		{"阴影 Y", p.Visual.ShadowY},
+		{"阴影模糊", p.Visual.ShadowBlur},
+		{"阴影扩散", p.Visual.ShadowSpread},
+		{"阴影颜色", p.Visual.ShadowColor},
 		{"背景自定义尺寸", p.Visual.BgSizeValue},
 		{"边框粗细", p.Visual.BorderWidth},
 		{"边框颜色", p.Visual.BorderColor},
@@ -711,7 +741,7 @@ func validateProps(p *Props) (err error) {
 	if p.Visual.BorderStyle != "" && !allowedBorderStyle[p.Visual.BorderStyle] {
 		return fmt.Errorf("无效的边框线型: %q", p.Visual.BorderStyle)
 	}
-	if p.Visual.Shadow != "" {
+	if p.Visual.Shadow != "" && p.Visual.Shadow != "custom" {
 		if _, ok := shadowLevels[p.Visual.Shadow]; !ok {
 			return fmt.Errorf("无效的阴影级别: %q", p.Visual.Shadow)
 		}

@@ -1582,7 +1582,14 @@
                     field('边框样式', 'props.visual.borderStyle', 'select', [['', '（默认）'], ['solid', '实线'], ['dashed', '虚线'], ['dotted', '点线']]);
                     field('边框颜色', 'props.visual.borderColor', 'input');
                     field('圆角', 'props.visual.radius', 'input');
-                    field('阴影', 'props.visual.shadow', 'select', [['', '无'], ['sm', '小'], ['md', '中'], ['lg', '大'], ['xl', '特大']]);
+                    field('阴影', 'props.visual.shadow', 'select', [['', '无'], ['sm', '小'], ['md', '中'], ['lg', '大'], ['xl', '特大'], ['custom', '自定义']]);
+                    if (get('props.visual.shadow') === 'custom') {
+                        unitInput('阴影 X', 'props.visual.shadowX', ['px']);
+                        unitInput('阴影 Y', 'props.visual.shadowY', ['px']);
+                        unitInput('阴影模糊', 'props.visual.shadowBlur', ['px']);
+                        unitInput('阴影扩散', 'props.visual.shadowSpread', ['px']);
+                        field('阴影颜色', 'props.visual.shadowColor', 'input');
+                    }
                     heading('交互');
                     checkbox('滚动吸顶', 'props.interaction.sticky');
                     field('吸顶偏移', 'props.interaction.stickyTop', 'input');
