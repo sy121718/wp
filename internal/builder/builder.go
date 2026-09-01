@@ -9,6 +9,7 @@
 package builder
 
 import (
+	_ "embed"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -225,6 +226,11 @@ func RenderDocument(c *CompiledPage) string {
 	}
 	sb.WriteString(">\n")
 	sb.WriteString(c.HTML)
-	sb.WriteString("\n</body>\n</html>\n")
+	sb.WriteString("\n<script>")
+	sb.WriteString(enhanceScript)
+	sb.WriteString("</script>\n</body>\n</html>\n")
 	return sb.String()
 }
+
+//go:embed enhance.js
+var enhanceScript string

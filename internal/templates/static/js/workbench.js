@@ -1709,9 +1709,10 @@
                     add.addEventListener('click', function () { items.push({ platform: 'facebook', url: '' }); save(); self.syncInspector(); });
                     panel.appendChild(add);
                 }
-                // video 视频面板：地址 + 封面 + 播放选项。
+                // video 视频面板：媒体库选文件（assetId 自动触发媒体控件）+ 外链 + 封面 + 播放选项。
                 function videoPanel() {
-                    field('视频地址', 'props.url', 'input');
+                    field('视频文件', 'props.assetId', 'input');
+                    field('外链地址（YouTube/本地 URL）', 'props.url', 'input');
                     field('封面图', 'props.poster', 'input');
                     checkbox('自动播放', 'props.autoplay');
                     checkbox('循环播放', 'props.loop');
@@ -1954,6 +1955,7 @@
                     .catch(function () { /* 树加载失败不阻塞网格 */ });
             },
             renderMediaTree() {
+                var self = this;
                 var box = document.getElementById('wb-media-tree-list');
                 if (!box) return;
                 if (!window.MediaLib) return;
@@ -2017,8 +2019,16 @@
                             if (!item.url) return;
                             var cell = document.createElement('button');
                             cell.type = 'button'; cell.className = 'wb-media-cell'; cell.title = item.file_name || '';
-                            var img = document.createElement('img'); img.src = item.url; img.alt = item.file_name || '';
-                            cell.appendChild(img);
+                            // 图片显示缩略图；非图片显示类型角标（视频/文档等）。
+                            var isImg = /^image\//.test(item.mime_type || '') || item.file_type === 'image';
+                            if (isImg) {
+                                var img = document.createElement('img'); img.src = item.url; img.alt = item.file_name || '';
+                                cell.appendChild(img);
+                            } else {
+                                var badge = document.createElement('span'); badge.className = 'wb-media-cell-badge';
+                                badge.textContent = { video: '视频', document: '文档', other: '文件' }[item.file_type] || '文件';
+                                cell.appendChild(badge);
+                            }
                             var cap = document.createElement('span'); cap.textContent = item.file_name || ''; cell.appendChild(cap);
                             cell.addEventListener('click', function () {
                                 if (self._mediaPickTarget) self._mediaPickTarget(item.url, String(item.id), item);
