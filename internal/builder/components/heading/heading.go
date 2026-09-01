@@ -60,8 +60,34 @@ type Props struct {
 	LineClamp int `json:"lineClamp,omitempty" ct:"slider,min=0,max=6,step=1,sec=style"`
 	// TextShadow 文字阴影预设：subtle/strong；空为无。
 	TextShadow string `json:"textShadow,omitempty" ct:"select,subtle=轻阴影,strong=重阴影,sec=style,label=文字阴影"`
+	// Subtitle 副标题文本（显示于主标题之上，小字）。
+	Subtitle string `json:"subtitle,omitempty" ct:"text,maxlen=200,sec=content,label=副标题"`
+	// SubtitleColor 副标题颜色。
+	SubtitleColor string `json:"subtitleColor,omitempty" ct:"safe,maxlen=200,sec=style,label=副标题颜色"`
+	// Align 三端对齐：left/center/right。
+	Align Align `json:"align,omitempty"`
+	// Width 宽度（CSS 长度，三端）。
+	Width Responsive `json:"width,omitempty"`
+	// Highlight 高亮背景盒（WD 标题高亮装饰）：背景色/内边距/圆角。
+	HighlightColor   string `json:"highlightColor,omitempty" ct:"safe,maxlen=200,sec=style,label=高亮背景色"`
+	HighlightPadding string `json:"highlightPadding,omitempty" ct:"safe,maxlen=30,sec=style,label=高亮内边距"`
+	HighlightRadius  string `json:"highlightRadius,omitempty" ct:"safe,maxlen=30,sec=style,label=高亮圆角"`
 	// Advanced 通用高级属性（规范 docs/02-C0）。
 	Advanced core.AdvancedProps `json:"advanced"`
+}
+
+// Align 三端对齐。
+type Align struct {
+	Desktop string `json:"desktop,omitempty"`
+	Tablet  string `json:"tablet,omitempty"`
+	Mobile  string `json:"mobile,omitempty"`
+}
+
+// Responsive 三端值。
+type Responsive struct {
+	Desktop string `json:"desktop,omitempty"`
+	Tablet  string `json:"tablet,omitempty"`
+	Mobile  string `json:"mobile,omitempty"`
 }
 
 // Widget 泛型基座实例。
@@ -149,6 +175,12 @@ func render(node *core.Node, p *Props, h *core.AtomRender) (string, error) {
 	}
 
 	var sb strings.Builder
+	// 副标题（主标题之上，小字）。
+	if p.Subtitle != "" {
+		sb.WriteString(`<span class="wp-heading-sub">`)
+		sb.WriteString(html.EscapeString(p.Subtitle))
+		sb.WriteString(`</span>`)
+	}
 	sb.WriteString("<")
 	sb.WriteString(p.Tag)
 	sb.WriteString(" class=\"")
@@ -160,7 +192,14 @@ func render(node *core.Node, p *Props, h *core.AtomRender) (string, error) {
 		sb.WriteString("\"")
 	}
 	sb.WriteString(">")
-	sb.WriteString(html.EscapeString(text))
+	// 高亮背景盒（套在主标题文本上）。
+	if p.HighlightColor != "" {
+		sb.WriteString(`<span class="wp-heading-highlight">`)
+		sb.WriteString(html.EscapeString(text))
+		sb.WriteString(`</span>`)
+	} else {
+		sb.WriteString(html.EscapeString(text))
+	}
 	sb.WriteString("</")
 	sb.WriteString(p.Tag)
 	sb.WriteString(">")
@@ -200,6 +239,49 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	if v, ok := textShadowPresets[p.TextShadow]; p.TextShadow != "" && ok {
 		desktop = append(desktop, "text-shadow: "+v)
 	}
+
+	// 副标题样式。
+	b.Add(core.BreakpointDesktop, sel+" .wp-heading-sub", []string{
+		"display: block", "font-size: 0.62em", "font-weight: 500",
+		"letter-spacing: 0.08em", "text-transform: uppercase",
+		"margin-bottom: 0.4em", "opacity: .7",
+	})
+	if p.SubtitleColor != "" {
+		b.Add(core.BreakpointDesktop, sel+" .wp-heading-sub", []string{"color: " + p.SubtitleColor, "opacity: 1"})
+	}
+	// 高亮背景盒。
+	if p.HighlightColor != "" {
+		hl := []string{"background: " + p.HighlightColor}
+		if p.HighlightPadding != "" {
+			hl = append(hl, "padding: "+p.HighlightPadding)
+		}
+		if p.HighlightRadius != "" {
+			hl = append(hl, "border-radius: "+p.HighlightRadius)
+		}
+		b.Add(core.BreakpointDesktop, sel+" .wp-heading-highlight", hl)
+	}
+	// 对齐与宽度（三端）。
+	appendAlign := func(target *[]string, a string) {
+		switch a {
+		case "left":
+			*target = append(*target, "text-align: left")
+		case "center":
+			*target = append(*target, "text-align: center")
+		case "right":
+			*target = append(*target, "text-align: right")
+		}
+	}
+	appendAlign(&desktop, p.Align.Desktop)
+	appendAlign(&tablet, p.Align.Tablet)
+	appendAlign(&mobile, p.Align.Mobile)
+	appendWidth := func(target *[]string, w string) {
+		if w != "" {
+			*target = append(*target, "width: "+w)
+		}
+	}
+	appendWidth(&desktop, p.Width.Desktop)
+	appendWidth(&tablet, p.Width.Tablet)
+	appendWidth(&mobile, p.Width.Mobile)
 
 	b.Add(core.BreakpointDesktop, sel, desktop)
 	b.Add(core.BreakpointTablet, sel, tablet)

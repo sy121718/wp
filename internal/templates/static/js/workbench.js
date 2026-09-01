@@ -1402,6 +1402,22 @@
                 }
                 // 排版组：组级设备切换，字号/行高/对齐绑 TextStyle 三端
                 // (fontSize 校验支持 clamp() 流式字号，输入以字母开头时不追加单位)。
+                // image 样式：固定高度三端（结构字段 schema 管不到）。
+                function imageStylePanel() {
+                    heading('尺寸');
+                    [['desktop', '桌面'], ['tablet', '平板'], ['mobile', '手机']].forEach(function (d) {
+                        unitInput(d[1] + '高度', 'props.height.' + d[0], ['px', '%', 'vh']);
+                    });
+                }
+                // heading 样式：对齐/宽度三端。
+                function headingStylePanel() {
+                    heading('对齐与宽度');
+                    [['desktop', '桌面'], ['tablet', '平板'], ['mobile', '手机']].forEach(function (d) {
+                        field(d[1] + '对齐', 'props.align.' + d[0], 'select', [['', '默认'], ['left', '左对齐'], ['center', '居中'], ['right', '右对齐']]);
+                        unitInput(d[1] + '宽度', 'props.width.' + d[0], ['px', '%', 'vw']);
+                    });
+                }
+
                 function typographyPanel(typoPath) {
                     var device = 'desktop';
                     var devices = [['desktop', '🖥'], ['tablet', '▭'], ['mobile', '📱']];
@@ -1879,6 +1895,8 @@
                     if (node.type === 'core.heading' || node.type === 'core.text') {
                         typographyPanel('props.typography');
                     }
+                    if (node.type === 'core.image') imageStylePanel();
+                    if (node.type === 'core.heading') headingStylePanel();
                     groups.style.forEach(schemaField);
                     if (groups.advanced.length) {
                         heading('高级');

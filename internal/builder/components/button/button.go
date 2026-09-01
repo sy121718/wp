@@ -133,6 +133,18 @@ type Props struct {
 
 	// --- 尺寸/变体/双态外观 ---
 	Size    string `json:"size,omitempty" ct:"select,xs=特小,sm=小,md=中,lg=大,xl=特大,default=md,sec=style,label=按钮尺寸"`
+	// Shape 形状预设：rect 直角 / rounded 圆角 / pill 胶囊。
+	Shape string `json:"shape,omitempty" ct:"select,rect=直角,rounded=圆角,pill=胶囊,default=rounded,sec=style,label=形状"`
+	// FontFamily 字体族（可选覆盖）。
+	FontFamily string `json:"fontFamily,omitempty" ct:"safe,maxlen=200,sec=style,label=字体族"`
+	// FullWidth 全宽按钮。
+	FullWidth bool `json:"fullWidth,omitempty" ct:"bool,sec=style,label=全宽"`
+	// HoverBg 悬停背景色。
+	HoverBg string `json:"hoverBg,omitempty" ct:"safe,maxlen=200,sec=style,label=悬停背景色"`
+	// HoverColor 悬停文字色。
+	HoverColor string `json:"hoverColor,omitempty" ct:"safe,maxlen=200,sec=style,label=悬停文字色"`
+	// LineHeight 行高（可选覆盖）。
+	LineHeight string `json:"lineHeight,omitempty" ct:"safe,maxlen=20,sec=style,label=行高"`
 	Block   Block  `json:"block,omitempty"`
 	Variant string `json:"variant,omitempty" ct:"select,solid,outline,ghost,default=solid,sec=style"`
 	Radius  string `json:"radius,omitempty" ct:"select,0,6,8,9999,default=8,sec=style"`
@@ -367,13 +379,40 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	if p.Transform != "" && p.Transform != "none" {
 		base = append(base, "text-transform: "+p.Transform)
 	}
-	switch p.Radius {
-	case "0":
-		base = append(base, "border-radius: 0")
-	case "9999":
+	// 形状预设（Radius 显式设置时优先）。
+	if p.Shape == "pill" {
 		base = append(base, "border-radius: 9999px")
-	default:
-		base = append(base, "border-radius: "+p.Radius+"px")
+	} else if p.Shape == "rect" {
+		base = append(base, "border-radius: 0")
+	} else {
+		switch p.Radius {
+		case "0":
+			base = append(base, "border-radius: 0")
+		case "9999":
+			base = append(base, "border-radius: 9999px")
+		default:
+			base = append(base, "border-radius: "+p.Radius+"px")
+		}
+	}
+	if p.FontFamily != "" {
+		base = append(base, "font-family: "+p.FontFamily)
+	}
+	if p.LineHeight != "" {
+		base = append(base, "line-height: "+p.LineHeight)
+	}
+	if p.FullWidth {
+		base = append(base, "width: 100%")
+	}
+	// 悬停态（颜色由增强层之外的 CSS :hover 处理，零 JS）。
+	if p.HoverBg != "" || p.HoverColor != "" {
+		var hv []string
+		if p.HoverBg != "" {
+			hv = append(hv, "background: "+p.HoverBg)
+		}
+		if p.HoverColor != "" {
+			hv = append(hv, "color: "+p.HoverColor)
+		}
+		b.Add(core.BreakpointDesktop, sel+":hover", hv)
 	}
 
 	// 图标间距。

@@ -28,6 +28,13 @@ var presetRatios = map[string]string{
 	"3:4":      "3 / 4",
 }
 
+// Responsive 三端值（桌面/平板/手机，空值沿用上一档）。
+type Responsive struct {
+	Desktop string `json:"desktop,omitempty"`
+	Tablet  string `json:"tablet,omitempty"`
+	Mobile  string `json:"mobile,omitempty"`
+}
+
 // Align 组件对齐（块级对齐用 margin；左对齐=右 auto）。
 type Align struct {
 	Desktop string `json:"desktop,omitempty"`
@@ -89,6 +96,10 @@ type Props struct {
 	Align          Align  `json:"align,omitempty"` // 三端对齐：left/center/right
 	Width          string `json:"width,omitempty" ct:"safe,maxlen=30,sec=style,label=宽度"`    // auto / 百分比 / px / rem
 	MaxWidth       string `json:"maxWidth,omitempty" ct:"safe,maxlen=30,sec=style,label=最大宽度"` // 如 480px
+	// Height 固定高度（三端独立；设置后配合 object-fit 控制裁切）。
+	Height Responsive `json:"height,omitempty"`
+	// BorderRadius 圆角（CSS 简写，如 "12px" 或 "12px 0"）。
+	BorderRadius string `json:"borderRadius,omitempty" ct:"safe,maxlen=30,sec=style,label=圆角"`
 
 	// --- CSS 滤镜与悬浮 ---
 	Filters Filters `json:"filters,omitempty"`
@@ -292,6 +303,18 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	}
 	if p.MaxWidth != "" {
 		desktop = append(desktop, "max-width: "+p.MaxWidth)
+	}
+	// 固定高度（三端独立）。
+	appendHeight := func(target *[]string, h string) {
+		if h != "" {
+			*target = append(*target, "height: "+h)
+		}
+	}
+	appendHeight(&desktop, p.Height.Desktop)
+	appendHeight(&tablet, p.Height.Tablet)
+	appendHeight(&mobile, p.Height.Mobile)
+	if p.BorderRadius != "" {
+		desktop = append(desktop, "border-radius: "+p.BorderRadius)
 	}
 
 	// 对齐：块级 margin 控制。
