@@ -23,6 +23,9 @@ type Component struct{}
 // Type 实现组件接口。
 func (c *Component) Type() string { return Type }
 
+// PropsSpec 实现 SpecProvider：暴露 Props 生成检查器 schema（样式字段声明式）。
+func (c *Component) PropsSpec() any { return &Props{} }
+
 // Tab 页签标签项。
 type Tab struct {
 	// Label 标签文案。

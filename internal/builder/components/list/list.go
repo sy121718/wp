@@ -22,6 +22,9 @@ type Component struct{}
 // Type 实现组件接口。
 func (c *Component) Type() string { return Type }
 
+// PropsSpec 实现 SpecProvider：暴露 Props 生成检查器 schema（样式字段声明式）。
+func (c *Component) PropsSpec() any { return &Props{} }
+
 // Item 列表项。
 type Item struct {
 	// Icon 自定义图标名（内置图标集：check/star/arrow-right/cross 等；空则用样式默认）。
@@ -73,16 +76,6 @@ type Props struct {
 	Advanced core.AdvancedProps `json:"advanced"`
 }
 
-// builtinIcons 内置图标（内联 SVG path，fill=currentColor）。
-var builtinIcons = map[string]string{
-	"check":  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="1em" height="1em"><polyline points="20 6 9 17 4 12"/></svg>`,
-	"star":   `<svg viewBox="0 0 24 24" fill="currentColor" width="1em" height="1em"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>`,
-	"arrow":  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="1em" height="1em"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>`,
-	"cross":  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" width="1em" height="1em"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`,
-	"shield": `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="1em" height="1em"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>`,
-	"truck":  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="1em" height="1em"><rect x="1" y="3" width="15" height="13" rx="1"/><path d="M16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>`,
-}
-
 // Validate 校验。
 func (c *Component) Validate(node *core.Node, ids map[string]bool) (err error) {
 	if err = core.ValidateNodeID(node.ID, node.Name, ids); err != nil {
@@ -105,7 +98,7 @@ func (c *Component) Validate(node *core.Node, ids map[string]bool) (err error) {
 	if p.Style == StyleIcon {
 		for _, it := range p.Items {
 			if it.Icon != "" {
-				if _, ok := builtinIcons[it.Icon]; !ok {
+				if _, ok := core.IconSVG(it.Icon); !ok {
 					return fmt.Errorf("节点 %s: 未知图标 %q", node.ID, it.Icon)
 				}
 			}
@@ -142,13 +135,11 @@ func (c *Component) Render(node *core.Node, topLevel bool, ctx *core.RenderConte
 		ctx.HTML.WriteString(`<span class="wp-list-marker" aria-hidden="true">`)
 		switch style {
 		case StyleIcon:
-			if svg, ok := builtinIcons[item.Icon]; ok {
-				ctx.HTML.WriteString(svg)
-			} else if item.Icon != "" {
-				ctx.HTML.WriteString(html.EscapeString(item.Icon))
-			} else {
-				ctx.HTML.WriteString(builtinIcons["check"])
+			svg, ok := core.IconSVG(item.Icon)
+			if !ok {
+				svg, _ = core.IconSVG("check")
 			}
+			ctx.HTML.WriteString(svg)
 		case StyleNumber:
 			ctx.HTML.WriteString(fmt.Sprintf("%d", i+1))
 		default: // dot

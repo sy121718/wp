@@ -254,6 +254,9 @@ type Container struct{}
 // Type 实现组件接口。
 func (Container) Type() string { return Type }
 
+// PropsSpec 实现 SpecProvider：暴露 Props 生成检查器 schema（声明式控件）。
+func (Container) PropsSpec() any { return &Props{} }
+
 // IsSafeCSSValue 校验 CSS 值是否在安全白名单内（长度上限 500）。导出供其他组件复用。
 func IsSafeCSSValue(v string) bool {
 	return len(v) <= 500 && cssValueRe.MatchString(v)

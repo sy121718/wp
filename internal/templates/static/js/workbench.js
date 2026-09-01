@@ -1502,6 +1502,89 @@
                         }
                     });
                 }
+                // iconPopupPicker 弹层图标选择：点击小图标按钮弹出 SVG 网格，选后回填。
+                // onPick(value) 回调；当前值 current。
+                function iconPopupPicker(triggerLabel, current, onPick, opts) {
+                    opts = opts || {};
+                    var names = opts.names || (window.WPIcons ? window.WPIcons.names : []);
+                    var btn = document.createElement('button');
+                    btn.type = 'button';
+                    btn.className = 'wb-icon-pop';
+                    btn.innerHTML = (current && window.WPIcons) ? window.WPIcons.svg(current) : (current || '＋');
+                    btn.title = '选择图标';
+                    // 浮层。
+                    var pop = document.createElement('div');
+                    pop.className = 'wb-icon-pop-menu';
+                    pop.style.display = 'none';
+                    var grid = document.createElement('div');
+                    grid.className = 'wb-icon-grid';
+                    function buildGrid() {
+                        grid.innerHTML = '';
+                        var cur = current;
+                        if (opts.allowEmpty) {
+                            var n0 = document.createElement('button'); n0.type='button'; n0.className='wb-icon-cell'+(cur===''?' is-active':'');
+                            n0.textContent='无'; n0.addEventListener('click', function(){ pop.style.display='none'; onPick(''); });
+                            grid.appendChild(n0);
+                        }
+                        names.forEach(function(nm){
+                            var b=document.createElement('button'); b.type='button';
+                            b.className='wb-icon-cell'+(cur===nm?' is-active':'');
+                            b.title=window.WPIcons?window.WPIcons.label(nm):nm;
+                            b.innerHTML=window.WPIcons?window.WPIcons.svg(nm):'';
+                            b.addEventListener('click', function(){ pop.style.display='none'; onPick(nm); });
+                            grid.appendChild(b);
+                        });
+                    }
+                    buildGrid();
+                    pop.appendChild(grid);
+                    btn.addEventListener('click', function(){
+                        pop.style.display = (pop.style.display==='none') ? 'block' : 'none';
+                        if (pop.style.display==='block') buildGrid();
+                    });
+                    // 点击别处关闭。
+                    document.addEventListener('click', function closer(ev){
+                        if (!pop.contains(ev.target) && ev.target!==btn) { pop.style.display='none'; }
+                    });
+                    return { btn: btn, pop: pop, refresh: function(v){ current=v; if(window.WPIcons) btn.innerHTML=window.WPIcons.svg(v); } };
+                }
+
+                // iconPicker 视觉化图标选择：SVG 网格点选（无文字按钮）。
+                // opts.names 可用图标名列表（默认 WPIcons 全部）；opts.allowEmpty 首位加「无」。
+                function iconPicker(label, path, opts) {
+                    opts = opts || {};
+                    var wrap = document.createElement('div'); wrap.className = 'wb-field';
+                    var caption = document.createElement('label'); caption.textContent = label; wrap.appendChild(caption);
+                    var grid = document.createElement('div'); grid.className = 'wb-icon-grid';
+                    var names = opts.names || (window.WPIcons ? window.WPIcons.names : []);
+                    var current = get(path) == null ? '' : String(get(path));
+                    function paint() {
+                        grid.innerHTML = '';
+                        if (opts.allowEmpty) {
+                            var none = document.createElement('button');
+                            none.type = 'button'; none.className = 'wb-icon-cell' + (current === '' ? ' is-active' : '');
+                            none.textContent = '无';
+                            none.addEventListener('click', function () { current = ''; commit(path, ''); paint(); });
+                            grid.appendChild(none);
+                        }
+                        names.forEach(function (name) {
+                            var b = document.createElement('button');
+                            b.type = 'button';
+                            b.className = 'wb-icon-cell' + (current === name ? ' is-active' : '');
+                            b.title = window.WPIcons ? window.WPIcons.label(name) : name;
+                            b.innerHTML = window.WPIcons ? window.WPIcons.svg(name) : '';
+                            b.addEventListener('click', function () {
+                                current = name;
+                                commit(path, name);
+                                paint();
+                            });
+                            grid.appendChild(b);
+                        });
+                    }
+                    paint();
+                    wrap.appendChild(grid);
+                    panel.appendChild(wrap);
+                }
+
                 // schema 控件 → 表单字段（key 即 props 顶层键，与后端 JSON 序列化一致）。
                 function schemaField(ctl) {
                     // hidden 控件不渲染（如 image 的外部地址字段，由媒体控件内嵌输入承担）。
@@ -1647,13 +1730,15 @@
                 function listPanel() {
                     heading('列表项');
                     var st = get('props.style') || 'icon';
+                    var segRow = document.createElement('div'); segRow.className = 'wb-inline-btns';
                     [['icon', '图标'], ['number', '序号'], ['dot', '圆点']].forEach(function (pair) {
                         var row = document.createElement('button'); row.type = 'button';
                         row.className = 'wb-btn wb-btn-sm' + (st === pair[0] ? ' wb-btn-primary' : '');
                         row.textContent = pair[1];
                         row.addEventListener('click', function () { commit('props.style', pair[0]); self.syncInspector(); });
-                        panel.appendChild(row);
+                        segRow.appendChild(row);
                     });
+                    panel.appendChild(segRow);
                     if (!Array.isArray(get('props.items'))) set('props.items', []);
                     var items = get('props.items');
                     function save() { commit('props.items', items); }
@@ -1661,14 +1746,17 @@
                         var row = document.createElement('div'); row.className = 'wb-repeater-row';
                         var mid = document.createElement('div'); mid.className = 'wb-repeater-mid';
                         if (get('props.style') === 'icon') {
-                            var iconSel = document.createElement('select');
-                            [['', '默认对勾'], ['check', '对勾'], ['star', '星形'], ['arrow', '箭头'], ['shield', '盾牌'], ['truck', '卡车'], ['cross', '叉形']].forEach(function (o) {
-                                var opt = document.createElement('option'); opt.value = o[0]; opt.textContent = o[1];
-                                iconSel.appendChild(opt);
-                            });
-                            iconSel.value = item.icon || '';
-                            iconSel.addEventListener('change', function () { item.icon = iconSel.value; save(); });
-                            mid.appendChild(iconSel);
+                            // 弹层图标选择：点击图标按钮弹出 SVG 网格，点选回填。
+                            var ipo = iconPopupPicker('图标', item.icon || 'check', function (v) {
+                                item.icon = v;
+                                save();
+                                ipo.refresh(v);
+                            }, { allowEmpty: true });
+                            var ipoWrap = document.createElement('div');
+                            ipoWrap.className = 'wb-icon-pop-wrap';
+                            ipoWrap.appendChild(ipo.btn);
+                            ipoWrap.appendChild(ipo.pop);
+                            mid.appendChild(ipoWrap);
                         }
                         var text = document.createElement('input'); text.type = 'text'; text.placeholder = '列表项文本'; text.value = item.text || '';
                         text.addEventListener('change', function () { item.text = text.value; save(); });
@@ -1686,16 +1774,10 @@
                     add.addEventListener('click', function () { items.push({ icon: 'check', text: '新列表项', link: '' }); save(); self.syncInspector(); });
                     panel.appendChild(add);
                 }
-                // infobox 信息框面板：图标/图片 + 标题/文本 + 链接。
+                // infobox 信息框面板：视觉化图标选择 + 图片 + 内容 + 链接按钮。
                 function infoboxPanel() {
                     heading('图标 / 图片');
-                    var cur = get('props.icon') || '';
-                    [['', '无'], ['check', '对勾'], ['star', '星形'], ['arrow', '箭头'], ['shield', '盾牌'], ['truck', '卡车'], ['cross', '叉形']].forEach(function (o) {
-                        var b = document.createElement('button'); b.type = 'button'; b.className = 'wb-btn wb-btn-sm' + (cur === o[0] ? ' wb-btn-primary' : '');
-                        b.textContent = o[1];
-                        b.addEventListener('click', function () { commit('props.icon', o[0]); self.syncInspector(); });
-                        panel.appendChild(b);
-                    });
+                    iconPicker('图标', 'props.icon', { allowEmpty: true });
                     field('图片（选填，优先于图标）', 'props.mediaImage', 'input');
                     heading('内容');
                     field('副标题', 'props.subtitle', 'input');
@@ -2165,6 +2247,10 @@
             // ---------------- 快捷键体系（§5.2） ----------------
             onKeydown(e) {
                 var mod = e.ctrlKey || e.metaKey;
+                // 焦点在输入控件内时不触发任何组件快捷键（否则输入框里按退格会误删组件）。
+                var ae = document.activeElement;
+                var inField = ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.tagName === 'SELECT' || ae.isContentEditable);
+                if (inField) return;
                 if (!mod) {
                     if (e.key === 'Delete' || e.key === 'Backspace') { this.deleteSelected(); e.preventDefault(); }
                     if (e.key === 'Escape') {
