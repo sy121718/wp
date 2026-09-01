@@ -2,6 +2,7 @@ package core
 
 import (
 	"encoding/json"
+	"sort"
 	"fmt"
 	"reflect"
 	"regexp"
@@ -23,6 +24,11 @@ const (
 	ControlText   ControlKind = "text"  // 富文本/长文本（长度上限 maxlen，存原始 HTML 由组件自行处理）
 	ControlRegex  ControlKind = "regex" // 正则校验（pattern 来自独立 ctRegex tag）
 	ControlURL    ControlKind = "url"   // 链接：协议白名单（http/https/mailto/相对路径/#）
+	// UI 声明式控件（检查器渲染；ValidateSpec 仅做 maxlen，不校验值域）：
+	ControlMedia    ControlKind = "media"    // 媒体选择（预览缩略图 + 媒体库选择 + 清除）
+	ControlColor    ControlKind = "color"    // 颜色（色板 + 文本，支持 var(--token)）
+	ControlDimension ControlKind = "dimension" // 数值 + 单位（px/%/em/rem/vw）
+	ControlMargin   ControlKind = "margin"   // 四向边距（上右下左 + 联动 + 单位）
 )
 
 // ctTag / ctRegexTag 字段标签：
@@ -50,6 +56,7 @@ type Control struct {
 	Max     int             `json:"max,omitempty"`
 	Step    int             `json:"step,omitempty"` // slider 步进（编辑器交互；默认 1）
 	MaxLen  int             `json:"maxLen,omitempty"`
+	Unit    string          `json:"unit,omitempty"` // dimension/margin 单位（如 px；缺省前端默认）
 	Options []ControlOption `json:"options,omitempty"` // select/segment 选项
 	Pattern string          `json:"pattern,omitempty"` // regex 模式
 	Hidden  bool            `json:"hidden,omitempty"`  // 检查器隐藏（如二选一字段的另一侧、内部实现字段）
@@ -133,6 +140,8 @@ func parseControlTag(f reflect.StructField, tag string) (c Control, err error) {
 			if c.Step, err = strconv.Atoi(strings.TrimPrefix(part, "step=")); err != nil || c.Step < 1 {
 				return c, fmt.Errorf("step 非法: %s", part)
 			}
+		case strings.HasPrefix(part, "unit="):
+			c.Unit = strings.TrimPrefix(part, "unit=")
 		case strings.HasPrefix(part, "sec="):
 			c.Section = strings.TrimPrefix(part, "sec=")
 		default:
@@ -205,7 +214,12 @@ func validateControlValue(c Control, fv reflect.Value, nodeID string) (err error
 			if !found {
 				return msg("值 %q 不在选项内（有效值: %s）", s, strings.Join(values, "/"))
 			}
-		case ControlSafe:
+		case ControlMedia:
+			// 媒体值：媒体库数字 id 或 URL/路径；拒绝空白与危险字符（防属性注入）。
+			if strings.ContainsAny(s, " \t\"'<>`;") {
+				return msg("媒体值非法: %q", s)
+			}
+		case ControlSafe, ControlColor, ControlDimension, ControlMargin:
 			if !IsSafeCSSValue(s) {
 				return msg("值非法: %q", s)
 			}
@@ -270,6 +284,7 @@ func SchemaJSON(props any) (data []byte, err error) {
 		Max     int             `json:"max,omitempty"`
 		Step    int             `json:"step,omitempty"`
 		MaxLen  int             `json:"maxLen,omitempty"`
+		Unit    string          `json:"unit,omitempty"`
 		Options []ControlOption `json:"options,omitempty"`
 		Hidden  bool            `json:"hidden,omitempty"`
 	}
@@ -278,11 +293,16 @@ func SchemaJSON(props any) (data []byte, err error) {
 	for _, c := range controls {
 		buckets[c.Section] = append(buckets[c.Section], schemaItem{
 			Key: c.Key, Kind: string(c.Kind), Label: c.Label, Section: c.Section, Default: c.Default,
-			Min: c.Min, Max: c.Max, Step: c.Step, MaxLen: c.MaxLen, Options: c.Options, Hidden: c.Hidden,
+			Min: c.Min, Max: c.Max, Step: c.Step, MaxLen: c.MaxLen, Unit: c.Unit, Options: c.Options, Hidden: c.Hidden,
 		})
 	}
 	var items []schemaItem
+	secs := make([]string, 0, len(sectionOrder))
 	for sec := range sectionOrder {
+		secs = append(secs, sec)
+	}
+	sort.Slice(secs, func(i, j int) bool { return sectionOrder[secs[i]] < sectionOrder[secs[j]] })
+	for _, sec := range secs {
 		items = append(items, buckets[sec]...)
 	}
 	return json.Marshal(items)

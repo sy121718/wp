@@ -43,9 +43,9 @@ type Props struct {
 	// NavAlign 标签对齐：left / center / right。
 	NavAlign string `json:"navAlign,omitempty" ct:"select,left=左对齐,center=居中,right=右对齐,default=left,sec=style,label=标签对齐"`
 	// ActiveColor 激活页签背景色。
-	ActiveColor string `json:"activeColor,omitempty" ct:"safe,maxlen=200,sec=style,label=激活页签背景色"`
+	ActiveColor string `json:"activeColor,omitempty" ct:"color,maxlen=200,sec=style,label=激活页签背景色"`
 	// BorderColor 导航底边框色。
-	BorderColor string `json:"borderColor,omitempty" ct:"safe,maxlen=200,sec=style,label=导航边框色"`
+	BorderColor string `json:"borderColor,omitempty" ct:"color,maxlen=200,sec=style,label=导航边框色"`
 	// Advanced 通用高级属性。
 	Advanced core.AdvancedProps `json:"advanced"`
 }

@@ -49,7 +49,7 @@ type Props struct {
 	// Color 配色模式：brand / mono / custom。
 	Color ColorMode `json:"color,omitempty" ct:"select,brand=品牌色,mono=灰色,custom=自定义,default=brand,sec=style,label=配色"`
 	// CustomColor 自定义图标颜色（color=custom 时）。
-	CustomColor string `json:"customColor,omitempty" ct:"safe,maxlen=200,sec=style,label=图标颜色"`
+	CustomColor string `json:"customColor,omitempty" ct:"color,maxlen=200,sec=style,label=图标颜色"`
 	// Size 图标尺寸（px，默认 40）。
 	Size string `json:"size,omitempty" ct:"safe,maxlen=20,sec=style,label=尺寸"`
 	// Shape 形状：circle 圆形 / rounded 圆角 / square 方形。

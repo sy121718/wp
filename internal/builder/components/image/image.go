@@ -71,9 +71,9 @@ type Binding struct {
 type Props struct {
 	// AssetID 媒体资产稳定标识（与 Src 二选一，AssetID 优先）。
 	// 媒体库附件为自增数字 ID（最短 1 位），故下限取 1。
-	AssetID string `json:"assetId,omitempty" ct:"regex,sec=content,label=图片" ctRegex:"^[A-Za-z0-9_-]{1,64}$"`
+	AssetID string `json:"assetId,omitempty" ct:"media,sec=content,label=图片"`
 	// Src 外部绝对 URL（第三方 CDN / 站外图片；与 AssetID 二选一）。
-	Src string `json:"src,omitempty" ct:"url,sec=content,label=外部图片地址,hidden"`
+	Src string `json:"src,omitempty" ct:"media,sec=content,label=外部图片地址,hidden"`
 	// Variant 媒体库变体规格：original / large / medium / thumbnail（默认 original）。
 	Variant string `json:"variant,omitempty" ct:"select,original=原始,large=大图,medium=中图,thumbnail=缩略图,default=original,sec=content,label=图片分辨率"`
 	// InlineSVG 矢量内联开关：开启时以 SVG 源码内联输出（CSS 可控制 fill/stroke）。
@@ -206,11 +206,15 @@ func render(node *core.Node, p *Props, h *core.AtomRender) (string, error) {
 			// 绑定值为外部 URL 的场景：解析失败回退为 URL 直载。
 			if src == "" && p.Binding != nil && p.Binding.Field != "" && looksLikeURL(assetID) {
 				src = assetID
+				meta = &core.MediaMeta{Type: core.MediaTypeImage, URL: src, Alt: p.Alt, Title: p.Title}
 			} else {
-				return "", err
+				// 媒体资产缺失/被删除：降级渲染占位，不阻塞整页编译（生产事故防护）。
+				meta = &core.MediaMeta{Type: core.MediaTypeImage, URL: "", Alt: p.Alt, Title: p.Title}
+				meta.Missing = true
 			}
+		} else {
+			meta = m
 		}
-		meta = m
 	}
 	if src != "" {
 		if meta != nil {
@@ -218,6 +222,11 @@ func render(node *core.Node, p *Props, h *core.AtomRender) (string, error) {
 		} else {
 			meta = &core.MediaMeta{Type: core.MediaTypeImage, URL: src, Alt: p.Alt, Title: p.Title}
 		}
+	}
+
+	// 媒体资产缺失：输出可编辑占位框（编辑画布可见，不阻塞编译）。
+	if meta != nil && meta.Missing {
+		return `<div class="` + h.Classes + ` wp-image-missing" data-wp-id="` + html.EscapeString(node.ID) + `"><span>图片缺失（媒体库已删除）</span></div>`, nil
 	}
 
 	// 组装 img / 内联 SVG。

@@ -233,7 +233,7 @@ type VisualProps struct {
 	ShadowY      string `json:"shadowY,omitempty" ct:"safe,maxlen=20,sec=style,label=阴影 Y"`
 	ShadowBlur   string `json:"shadowBlur,omitempty" ct:"safe,maxlen=20,sec=style,label=阴影模糊"`
 	ShadowSpread string `json:"shadowSpread,omitempty" ct:"safe,maxlen=20,sec=style,label=阴影扩散"`
-	ShadowColor  string `json:"shadowColor,omitempty" ct:"safe,maxlen=200,sec=style,label=阴影颜色"`
+	ShadowColor  string `json:"shadowColor,omitempty" ct:"color,maxlen=200,sec=style,label=阴影颜色"`
 }
 
 // InteractionProps 交互状态与动画。

@@ -59,15 +59,15 @@ type Inset struct {
 	// Text 嵌入文本。
 	Text string `json:"text,omitempty" ct:"text,maxlen=50,sec=content"`
 	// FontSize / FontWeight / Color 嵌入文本样式。
-	FontSize   string `json:"fontSize,omitempty" ct:"safe,maxlen=30,sec=style"`
+	FontSize   string `json:"fontSize,omitempty" ct:"dimension,maxlen=30,sec=style"`
 	FontWeight string `json:"fontWeight,omitempty" ct:"select,400=常规,500=中等,600=半粗,700=粗体,sec=style,label=字重"`
-	Color      string `json:"color,omitempty" ct:"safe,maxlen=200,sec=style"`
+	Color      string `json:"color,omitempty" ct:"color,maxlen=200,sec=style"`
 	// IconName 内置图标（kind=icon）。
 	IconName string `json:"iconName,omitempty" ct:"select,star=星形,diamond=菱形,dot=圆点,sec=content,label=图标样式"`
 	// Position 嵌入位置：center / left / right（默认 center）。
 	Position string `json:"position,omitempty" ct:"select,center=居中,left=靠左,right=靠右,default=center,sec=content,label=位置"`
 	// Spacing 元素与两侧线条的留白。
-	Spacing string `json:"spacing,omitempty" ct:"safe,maxlen=20,sec=style"`
+	Spacing string `json:"spacing,omitempty" ct:"dimension,maxlen=20,sec=style"`
 }
 
 // Props divider 属性。
@@ -81,7 +81,7 @@ type Props struct {
 	// Align 对齐（宽度非 100% 时）：left / center / right（默认 center）。
 	Align string `json:"align,omitempty" ct:"select,left=左对齐,center=居中,right=右对齐,default=center,sec=style,label=对齐"`
 	// Color 线条颜色或主题 Token。
-	Color string `json:"color,omitempty" ct:"safe,maxlen=200,sec=style"`
+	Color string `json:"color,omitempty" ct:"color,maxlen=200,sec=style"`
 	// Inset 嵌入元素。
 	Inset Inset `json:"inset,omitempty"`
 	// Advanced 通用高级属性（docs/02-C0）。

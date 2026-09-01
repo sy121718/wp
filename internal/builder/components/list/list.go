@@ -51,27 +51,27 @@ type Props struct {
 	// Style 列表样式：icon / number / dot。
 	Style Style `json:"style,omitempty" ct:"select,icon=图标,number=序号,dot=圆点,default=icon,sec=content,label=列表样式"`
 	// IconColor 图标颜色（样式为 icon 时）。
-	IconColor string `json:"iconColor,omitempty" ct:"safe,maxlen=200,sec=style,label=图标颜色"`
+	IconColor string `json:"iconColor,omitempty" ct:"color,maxlen=200,sec=style,label=图标颜色"`
 	// IconSize 图标尺寸（px，样式为 icon 时）。
-	IconSize string `json:"iconSize,omitempty" ct:"safe,maxlen=20,sec=style,label=图标尺寸"`
+	IconSize string `json:"iconSize,omitempty" ct:"dimension,maxlen=20,sec=style,label=图标尺寸"`
 	// TextColor 文本颜色。
-	TextColor string `json:"textColor,omitempty" ct:"safe,maxlen=200,sec=style,label=文本颜色"`
+	TextColor string `json:"textColor,omitempty" ct:"color,maxlen=200,sec=style,label=文本颜色"`
 	// TextSize 文本字号。
 	TextSize string `json:"textSize,omitempty" ct:"safe,maxlen=20,sec=style,label=文本字号"`
 	// LinkColor 链接颜色。
-	LinkColor string `json:"linkColor,omitempty" ct:"safe,maxlen=200,sec=style,label=链接颜色"`
+	LinkColor string `json:"linkColor,omitempty" ct:"color,maxlen=200,sec=style,label=链接颜色"`
 	// LinkColorHover 链接悬停颜色。
-	LinkColorHover string `json:"linkColorHover,omitempty" ct:"safe,maxlen=200,sec=style,label=链接悬停颜色"`
+	LinkColorHover string `json:"linkColorHover,omitempty" ct:"color,maxlen=200,sec=style,label=链接悬停颜色"`
 	// IconBgColor 图标背景色（圆形底）。
-	IconBgColor string `json:"iconBgColor,omitempty" ct:"safe,maxlen=200,sec=style,label=图标背景色"`
+	IconBgColor string `json:"iconBgColor,omitempty" ct:"color,maxlen=200,sec=style,label=图标背景色"`
 	// IconBgColorHover 图标悬停背景色。
-	IconBgColorHover string `json:"iconBgColorHover,omitempty" ct:"safe,maxlen=200,sec=style,label=图标悬停背景色"`
+	IconBgColorHover string `json:"iconBgColorHover,omitempty" ct:"color,maxlen=200,sec=style,label=图标悬停背景色"`
 	// IconColorHover 图标悬停颜色。
-	IconColorHover string `json:"iconColorHover,omitempty" ct:"safe,maxlen=200,sec=style,label=图标悬停颜色"`
+	IconColorHover string `json:"iconColorHover,omitempty" ct:"color,maxlen=200,sec=style,label=图标悬停颜色"`
 	// Align 对齐：left / center / right。
 	Align string `json:"align,omitempty" ct:"select,left=左对齐,center=居中,right=右对齐,default=left,sec=style,label=对齐"`
 	// Spacing 项间距（px）。
-	Spacing string `json:"spacing,omitempty" ct:"safe,maxlen=20,sec=style,label=项间距"`
+	Spacing string `json:"spacing,omitempty" ct:"dimension,maxlen=20,sec=style,label=项间距"`
 	// Advanced 通用高级属性。
 	Advanced core.AdvancedProps `json:"advanced"`
 }

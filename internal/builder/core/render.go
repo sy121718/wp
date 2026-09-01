@@ -40,6 +40,8 @@ type MediaMeta struct {
 	URL string
 	// MimeType MIME 类型。
 	MimeType string
+	// Missing 媒体资产缺失/被删除（渲染方降级为占位，不阻塞编译）。
+	Missing bool
 
 	// --- 图片类字段（Type 为 image/svg 时有效） ---
 

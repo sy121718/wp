@@ -30,7 +30,7 @@ type Props struct {
 	// Icon 内置图标名（check/star/arrow/shield/truck/cross 等；与 MediaImage 二选一）。
 	Icon string `json:"icon,omitempty" ct:"select,,check=对勾,star=星形,arrow=箭头,shield=盾牌,truck=卡车,cross=叉形,sec=content,label=图标"`
 	// MediaImage 媒体图 URL（与 Icon 二选一，优先于 Icon）。
-	MediaImage string `json:"mediaImage,omitempty" ct:"url,sec=content,label=图片"`
+	MediaImage string `json:"mediaImage,omitempty" ct:"media,sec=content,label=图片"`
 	// Title 标题。
 	Title string `json:"title,omitempty" ct:"text,maxlen=200,sec=content,label=标题"`
 	// Text 描述文本。
@@ -38,31 +38,31 @@ type Props struct {
 	// Link 整卡链接（可选）。
 	Link string `json:"link,omitempty" ct:"url,sec=content,label=链接"`
 	// IconColor 图标颜色。
-	IconColor string `json:"iconColor,omitempty" ct:"safe,maxlen=200,sec=style,label=图标颜色"`
+	IconColor string `json:"iconColor,omitempty" ct:"color,maxlen=200,sec=style,label=图标颜色"`
 	// TitleColor 标题颜色。
-	TitleColor string `json:"titleColor,omitempty" ct:"safe,maxlen=200,sec=style,label=标题颜色"`
+	TitleColor string `json:"titleColor,omitempty" ct:"color,maxlen=200,sec=style,label=标题颜色"`
 	// TextColor 文本颜色。
-	TextColor string `json:"textColor,omitempty" ct:"safe,maxlen=200,sec=style,label=文本颜色"`
+	TextColor string `json:"textColor,omitempty" ct:"color,maxlen=200,sec=style,label=文本颜色"`
 	// Align 内容对齐：left / center / right。
 	Align string `json:"align,omitempty" ct:"select,left=左对齐,center=居中,right=右对齐,default=center,sec=style,label=对齐"`
 	// IconSize 图标尺寸（px，默认 40）。
-	IconSize string `json:"iconSize,omitempty" ct:"safe,maxlen=20,sec=style,label=图标尺寸"`
+	IconSize string `json:"iconSize,omitempty" ct:"dimension,maxlen=20,sec=style,label=图标尺寸"`
 	// Padding 内边距（CSS 简写）。
-	Padding string `json:"padding,omitempty" ct:"safe,maxlen=30,sec=style,label=内边距"`
+	Padding string `json:"padding,omitempty" ct:"margin,maxlen=30,sec=style,label=内边距"`
 	// Background 卡片背景色。
-	Background string `json:"background,omitempty" ct:"safe,maxlen=200,sec=style,label=背景色"`
+	Background string `json:"background,omitempty" ct:"color,maxlen=200,sec=style,label=背景色"`
 	// HoverBg 悬停背景色。
-	HoverBg string `json:"hoverBg,omitempty" ct:"safe,maxlen=200,sec=style,label=悬停背景色"`
+	HoverBg string `json:"hoverBg,omitempty" ct:"color,maxlen=200,sec=style,label=悬停背景色"`
 	// Radius 圆角。
 	Radius string `json:"radius,omitempty" ct:"safe,maxlen=30,sec=style,label=圆角"`
 	// Subtitle 副标题（图标与标题之间）。
 	Subtitle string `json:"subtitle,omitempty" ct:"text,maxlen=200,sec=content,label=副标题"`
 	// SubtitleColor 副标题颜色。
-	SubtitleColor string `json:"subtitleColor,omitempty" ct:"safe,maxlen=200,sec=style,label=副标题颜色"`
+	SubtitleColor string `json:"subtitleColor,omitempty" ct:"color,maxlen=200,sec=style,label=副标题颜色"`
 	// IconBgColor 图标背景色。
-	IconBgColor string `json:"iconBgColor,omitempty" ct:"safe,maxlen=200,sec=style,label=图标背景色"`
+	IconBgColor string `json:"iconBgColor,omitempty" ct:"color,maxlen=200,sec=style,label=图标背景色"`
 	// IconBorderColor 图标边框色。
-	IconBorderColor string `json:"iconBorderColor,omitempty" ct:"safe,maxlen=200,sec=style,label=图标边框色"`
+	IconBorderColor string `json:"iconBorderColor,omitempty" ct:"color,maxlen=200,sec=style,label=图标边框色"`
 	// TitleTag 标题标签（h2/h3/h4/div，默认 h3）。
 	TitleTag string `json:"titleTag,omitempty" ct:"select,h2=H2,h3=H3,h4=H4,div=区块,default=h3,sec=style,label=标题标签"`
 	// BtnText 按钮文字（与 Link 配合）。

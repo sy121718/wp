@@ -1585,6 +1585,129 @@
                     panel.appendChild(wrap);
                 }
 
+                // mediaControl 媒体选择控件：缩略图预览 + 媒体库选择 + 清除（显式 kind）。
+                function mediaControl(label, path, ctl) {
+                    var wrap = document.createElement('div'); wrap.className = 'wb-field';
+                    var caption = document.createElement('label'); caption.textContent = label; wrap.appendChild(caption);
+                    var val = get(path) == null ? '' : String(get(path));
+                    var isAssetID = /assetId$/i.test(path);
+                    var box = document.createElement('div');
+                    box.className = 'wb-media-field' + (val ? ' has-image' : '');
+                    var img = document.createElement('img'); img.alt = '';
+                    var src = self.resolveAssetUrl(val);
+                    if (src) img.src = src; else img.classList.add('is-empty');
+                    var tip = document.createElement('span'); tip.className = 'wb-media-tip';
+                    tip.textContent = src ? '' : '点击选择图片';
+                    box.appendChild(img); box.appendChild(tip);
+                    function set(v, url) {
+                        commit(path, v);
+                        if (url) { img.src = url; img.classList.remove('is-empty'); tip.textContent = ''; }
+                        else { img.src = ''; img.classList.add('is-empty'); tip.textContent = '点击选择图片'; }
+                        box.classList.toggle('has-image', !!url);
+                    }
+                    box.addEventListener('click', function () {
+                        self.openMediaPicker(function (u, aid) {
+                            set(isAssetID ? aid : u, u);
+                        });
+                    });
+                    wrap.appendChild(box);
+                    var row = document.createElement('div'); row.className = 'wb-media-row';
+                    var pick = document.createElement('button'); pick.type='button'; pick.className='wb-btn wb-btn-secondary wb-btn-sm'; pick.textContent='媒体库';
+                    pick.addEventListener('click', function(){ self.openMediaPicker(function(u, aid){ set(isAssetID?aid:u, u); }); });
+                    var clear = document.createElement('button'); clear.type='button'; clear.className='wb-btn wb-btn-ghost wb-btn-sm'; clear.textContent='清除';
+                    clear.addEventListener('click', function(){ set('', ''); });
+                    row.appendChild(pick); row.appendChild(clear);
+                    wrap.appendChild(row);
+                    // 外部地址次级输入。
+                    var ext = document.createElement('input'); ext.type='text'; ext.placeholder='或粘贴图片地址（https://…）';
+                    ext.value = isAssetID ? (get(path.replace(/assetId$/i,'src')) || '') : '';
+                    ext.addEventListener('change', function(){
+                        var v = ext.value.trim();
+                        if (v) { if (isAssetID) { commit(path, ''); commit(path.replace(/assetId$/i,'src'), v); set('', v); } else { set(v, v); } }
+                    });
+                    wrap.appendChild(ext);
+                    panel.appendChild(wrap);
+                }
+                // colorControl 颜色控件：色板 + 文本（支持 var(--token)）。
+                function colorControl(label, path, ctl) {
+                    var wrap = document.createElement('div'); wrap.className = 'wb-field';
+                    var caption = document.createElement('label'); caption.textContent = label; wrap.appendChild(caption);
+                    var row = document.createElement('div'); row.className = 'wb-color-row';
+                    var input = document.createElement('input'); input.type='text'; input.className='wb-color-text';
+                    input.value = get(path) == null ? '' : String(get(path));
+                    var swatch = document.createElement('input'); swatch.type='color'; swatch.className='wb-color-swatch';
+                    swatch.value = /^#[0-9a-fA-F]{3,8}$/.test(input.value) ? input.value : '#2563eb';
+                    swatch.addEventListener('input', function(){ input.value = swatch.value; input.dispatchEvent(new Event('change')); });
+                    input.addEventListener('change', function(){ commit(path, input.value); });
+                    row.appendChild(input); row.appendChild(swatch);
+                    wrap.appendChild(row);
+                    panel.appendChild(wrap);
+                }
+                // dimensionControl 数值+单位。
+                function dimensionControl(label, path, ctl) {
+                    var wrap = document.createElement('div'); wrap.className = 'wb-field wb-field-unit';
+                    var caption = document.createElement('label'); caption.textContent = label; wrap.appendChild(caption);
+                    var row = document.createElement('div'); row.className = 'wb-unit-row';
+                    var input = document.createElement('input'); input.type='text'; input.className='wb-unit-value';
+                    var unitSel = document.createElement('select'); unitSel.className='wb-unit-select';
+                    var units = (ctl.unit ? [ctl.unit] : ['px','%','em','rem','vw']);
+                    units.forEach(function(u){ var o=document.createElement('option'); o.value=u; o.textContent=u; unitSel.appendChild(o); });
+                    var raw = get(path)==null ? '' : String(get(path)).trim();
+                    var m = raw.match(/^(-?[0-9.]+)\s*([a-z%]+)$/i);
+                    input.value = m ? m[1] : (raw && !m ? raw : '');
+                    if (m) unitSel.value = m[2].toLowerCase(); else unitSel.value = units[0];
+                    function push(){ var v=input.value.trim(); if(!v){ commit(path,''); return; } var u=unitSel.value||''; commit(path, v + (u==='px'?'':u)); }
+                    input.addEventListener('change', push);
+                    unitSel.addEventListener('change', push);
+                    row.appendChild(input); row.appendChild(unitSel);
+                    wrap.appendChild(row);
+                    panel.appendChild(wrap);
+                }
+                // marginControl 四向边距：上右下左 + 联动 + 单位。
+                function marginControl(label, path, ctl) {
+                    var wrap = document.createElement('div'); wrap.className = 'wb-field';
+                    var caption = document.createElement('label'); caption.textContent = label; wrap.appendChild(caption);
+                    var unit = ctl.unit || 'px';
+                    var sides = [['top','上'],['right','右'],['bottom','下'],['left','左']];
+                    var raw = get(path) == null ? '' : String(get(path)).trim();
+                    // 支持简写：拆成四边或联动值。
+                    var linked = '';
+                    var m = raw.match(/^([0-9.]+)(px|em|rem|%|vw)?$/);
+                    if (m) linked = m[1] + (m[2] || unit);
+                    var row = document.createElement('div'); row.className = 'wb-margin-row';
+                    var inputs = {};
+                    var linkBtn = document.createElement('button'); linkBtn.type='button';
+                    linkBtn.className = 'wb-margin-link' + (linked ? ' is-on' : '');
+                    linkBtn.textContent = '🔗';
+                    linkBtn.title = '四边联动';
+                    sides.forEach(function(sd){
+                        var box = document.createElement('div'); box.className='wb-margin-side';
+                        var lb = document.createElement('span'); lb.textContent = sd[1];
+                        var inp = document.createElement('input'); inp.type='text'; inp.placeholder='—';
+                        inp.value = linked ? '' : (function(){ var mm=raw.match(new RegExp(sd[0]+':([^;]+)')); return mm?mm[1]:''; })();
+                        inp.addEventListener('change', function(){
+                            var vals = sides.map(function(sd2){ return inputs[sd2[0]].value.trim(); });
+                            var all = vals.every(function(v){ return v==='' || v===vals[0]; });
+                            if (all && vals[0]!=='') { commit(path, vals[0]); }
+                            else { commit(path, sides.map(function(sd2,i){ return inputs[sd2[0]].value.trim()? sd2[0]+':'+inputs[sd2[0]].value.trim() : (vals[0]?sd2[0]+':'+vals[0]:''); }).filter(Boolean).join(';')); }
+                        });
+                        box.appendChild(lb); box.appendChild(inp);
+                        inputs[sd[0]] = inp;
+                        row.appendChild(box);
+                    });
+                    // 联动值输入（四边一致）。
+                    var linkedInput = document.createElement('input'); linkedInput.type='text';
+                    linkedInput.className='wb-margin-linked'; linkedInput.placeholder='四边统一（如 16px）';
+                    linkedInput.value = linked;
+                    linkedInput.addEventListener('change', function(){ commit(path, linkedInput.value.trim()); });
+                    row.appendChild(linkBtn);
+                    wrap.appendChild(row);
+                    panel.appendChild(wrap);
+                    var lw = document.createElement('div'); lw.className='wb-margin-linked-row';
+                    lw.appendChild(linkedInput);
+                    wrap.appendChild(lw);
+                }
+
                 // schema 控件 → 表单字段（key 即 props 顶层键，与后端 JSON 序列化一致）。
                 function schemaField(ctl) {
                     // hidden 控件不渲染（如 image 的外部地址字段，由媒体控件内嵌输入承担）。
@@ -1597,6 +1720,11 @@
                         richTextField(label, path);
                         return;
                     }
+                    // 显式控件类型（ct tag 声明）：媒体/颜色/数值单位/四向边距。
+                    if (ctl.kind === 'media') { mediaControl(label, path, ctl); return; }
+                    if (ctl.kind === 'color') { colorControl(label, path, ctl); return; }
+                    if (ctl.kind === 'dimension') { dimensionControl(label, path, ctl); return; }
+                    if (ctl.kind === 'margin') { marginControl(label, path, ctl); return; }
                     if (ctl.kind === 'select') {
                         // 选项归一为 [value, label]：ct tag 已声明中文标签时优先。
                         var opts = (ctl.options || []).map(function (o) {
@@ -1774,17 +1902,10 @@
                     add.addEventListener('click', function () { items.push({ icon: 'check', text: '新列表项', link: '' }); save(); self.syncInspector(); });
                     panel.appendChild(add);
                 }
-                // infobox 信息框面板：视觉化图标选择 + 图片 + 内容 + 链接按钮。
+                // infobox 信息框面板：仅图标选择（其余字段 schema 驱动）。
                 function infoboxPanel() {
                     heading('图标 / 图片');
                     iconPicker('图标', 'props.icon', { allowEmpty: true });
-                    field('图片（选填，优先于图标）', 'props.mediaImage', 'input');
-                    heading('内容');
-                    field('副标题', 'props.subtitle', 'input');
-                    field('标题', 'props.title', 'input');
-                    field('描述', 'props.text', 'textarea');
-                    field('链接', 'props.link', 'input');
-                    field('按钮文字（填写后链接显示为按钮）', 'props.btnText', 'input');
                 }
                 // social_buttons 面板：平台 repeater。
                 function socialPanel() {
@@ -2012,7 +2133,7 @@
                     if (node.type === 'core.list') listPanel();
                     if (node.type === 'core.infobox') infoboxPanel();
                     if (node.type === 'core.social_buttons') socialPanel();
-                    if (node.type === 'core.video') videoPanel();
+                    // video：全部字段 schema 驱动（media/url/poster/播放选项）。
                     if (node.type === 'core.tabs') tabsPanel();
                     if (node.type === 'core.accordion') accordionPanel();
                     if (node.type === 'core.marquee') marqueePanel();

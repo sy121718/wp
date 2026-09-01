@@ -6,7 +6,9 @@
 package dashboardhttp
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -21,6 +23,7 @@ import (
 	projectcontract "go_wp/internal/module/project/contract"
 
 	"go_wp/internal/builder"
+	"go_wp/internal/builder/core"
 	buildermedia "go_wp/internal/builder/media"
 	mediacontract "go_wp/internal/module/media/contract"
 
@@ -164,6 +167,24 @@ func (h *Handle) workbenchBlock(c *gin.Context, blockID string) {
 	})
 }
 
+// blockResolverAdapter 适配 block 契约为 builder.BlockResolver（预览内联 globalref）。
+type blockResolverAdapter struct {
+	h *Handle
+}
+
+// ResolveBlockRoot 按块 ID 返回块文档 root 节点。
+func (a blockResolverAdapter) ResolveBlockRoot(blockID string) ([]*core.Node, error) {
+	block, err := a.h.blocks.Detail(context.Background(), &blockdto.DetailReq{ID: blockID})
+	if err != nil || block == nil {
+		return nil, fmt.Errorf("全局块 %s 不可用", blockID)
+	}
+	page, err := builder.ParsePage(block.Document)
+	if err != nil {
+		return nil, err
+	}
+	return page.Root, nil
+}
+
 // blockSummaries 工程块列表的轻量投影（id/name/kind，不含文档大字段）。
 func (h *Handle) blockSummaries(c *gin.Context, projectID string) []gin.H {
 	blocks, err := h.blocks.List(c.Request.Context(), &blockdto.ListReq{ProjectID: projectID})
@@ -261,6 +282,9 @@ func (h *Handle) renderPreview(c *gin.Context, document json.RawMessage, withEdi
 	opts := []builder.CompileOption{}
 	if h.media != nil {
 		opts = append(opts, builder.WithMediaResolver(buildermedia.NewContractResolver(h.media)))
+	}
+	if h.blocks != nil {
+		opts = append(opts, builder.WithBlockResolver(blockResolverAdapter{h}))
 	}
 	compiled, err := builder.Compile(docPage, opts...)
 	if err != nil {

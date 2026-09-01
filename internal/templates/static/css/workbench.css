@@ -500,3 +500,16 @@ button.wb-palette-group:hover { color: var(--c-primary, #2563eb); }
     border: 1px solid var(--c-border, #e5e7eb); border-radius: 10px;
     padding: 8px; box-shadow: 0 12px 32px rgba(0,0,0,.14);
 }
+
+/* 媒体缺失占位（媒体库已删除时渲染，不阻塞编译） */
+.wp-image-missing, .wp-video-missing {
+    display: flex; align-items: center; justify-content: center;
+    min-height: 120px;
+    border: 1px dashed var(--c-border, #d1d5db);
+    border-radius: 8px;
+    background: var(--c-bg-hover, #f3f4f6);
+    color: var(--c-text-mute, #9ca3af);
+    font-size: 12px;
+    padding: 16px;
+    box-sizing: border-box;
+}

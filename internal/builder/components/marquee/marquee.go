@@ -44,9 +44,9 @@ type Props struct {
 	// Gap 内容间距（px）。
 	Gap string `json:"gap,omitempty"`
 	// Background 背景色。
-	Background string `json:"background,omitempty" ct:"safe,maxlen=200,sec=style,label=背景色"`
+	Background string `json:"background,omitempty" ct:"color,maxlen=200,sec=style,label=背景色"`
 	// Padding 内边距。
-	Padding string `json:"padding,omitempty" ct:"safe,maxlen=30,sec=style,label=内边距"`
+	Padding string `json:"padding,omitempty" ct:"margin,maxlen=30,sec=style,label=内边距"`
 	// Advanced 通用高级属性。
 	Advanced core.AdvancedProps `json:"advanced"`
 }

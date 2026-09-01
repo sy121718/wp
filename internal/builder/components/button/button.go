@@ -81,7 +81,7 @@ type Icon struct {
 	// Position 位置：prefix（前置）/ suffix（后置）。
 	Position string `json:"position,omitempty" ct:"select,prefix=图标在前,suffix=图标在后,sec=content,label=图标位置"`
 	// Spacing 图标与文案间距。
-	Spacing string `json:"spacing,omitempty" ct:"safe,maxlen=20,sec=style"`
+	Spacing string `json:"spacing,omitempty" ct:"dimension,maxlen=20,sec=style"`
 	// HoverShift 悬停时图标水平位移动画值（如 "4px"）。
 	HoverShift string `json:"hoverShift,omitempty" ct:"safe,maxlen=20,sec=style"`
 	// Size 图标尺寸。
@@ -90,9 +90,9 @@ type Icon struct {
 
 // State 正常/悬浮双态外观。
 type State struct {
-	Background string `json:"background,omitempty" ct:"safe,maxlen=200,sec=style"`
-	Color      string `json:"color,omitempty" ct:"safe,maxlen=200,sec=style"`
-	Border     string `json:"border,omitempty" ct:"safe,maxlen=200,sec=style"` // 边框颜色
+	Background string `json:"background,omitempty" ct:"color,maxlen=200,sec=style"`
+	Color      string `json:"color,omitempty" ct:"color,maxlen=200,sec=style"`
+	Border     string `json:"border,omitempty" ct:"color,maxlen=200,sec=style"` // 边框颜色
 	Shadow     string `json:"shadow,omitempty" ct:"select,sm=小,md=中,lg=大,xl=特大,sec=style,label=阴影级别"`
 }
 
@@ -124,9 +124,9 @@ type Props struct {
 	Rel string `json:"rel,omitempty" ct:"select,none=默认,nofollow=加 nofollow,sponsored=赞助链接,sec=content,label=链接关系"`
 
 	// --- 文本排版 ---
-	FontSize      string `json:"fontSize,omitempty" ct:"safe,maxlen=30,sec=style"`
+	FontSize      string `json:"fontSize,omitempty" ct:"dimension,maxlen=30,sec=style"`
 	FontWeight    string `json:"fontWeight,omitempty" ct:"select,400=常规,500=中等,600=半粗,700=粗体,800=特粗,sec=style,label=字重"`
-	LetterSpacing string `json:"letterSpacing,omitempty" ct:"safe,maxlen=20,sec=style"`
+	LetterSpacing string `json:"letterSpacing,omitempty" ct:"dimension,maxlen=20,sec=style"`
 	Transform     string `json:"transform,omitempty" ct:"select,none=无,uppercase=全大写,lowercase=全小写,capitalize=首字母大写,sec=style,label=大小写转换"`
 	// Icon 图标配置（可选）。
 	Icon *Icon `json:"icon,omitempty"`
@@ -140,11 +140,11 @@ type Props struct {
 	// FullWidth 全宽按钮。
 	FullWidth bool `json:"fullWidth,omitempty" ct:"bool,sec=style,label=全宽"`
 	// HoverBg 悬停背景色。
-	HoverBg string `json:"hoverBg,omitempty" ct:"safe,maxlen=200,sec=style,label=悬停背景色"`
+	HoverBg string `json:"hoverBg,omitempty" ct:"color,maxlen=200,sec=style,label=悬停背景色"`
 	// HoverColor 悬停文字色。
-	HoverColor string `json:"hoverColor,omitempty" ct:"safe,maxlen=200,sec=style,label=悬停文字色"`
+	HoverColor string `json:"hoverColor,omitempty" ct:"color,maxlen=200,sec=style,label=悬停文字色"`
 	// LineHeight 行高（可选覆盖）。
-	LineHeight string `json:"lineHeight,omitempty" ct:"safe,maxlen=20,sec=style,label=行高"`
+	LineHeight string `json:"lineHeight,omitempty" ct:"dimension,maxlen=20,sec=style,label=行高"`
 	Block   Block  `json:"block,omitempty"`
 	Variant string `json:"variant,omitempty" ct:"select,solid,outline,ghost,default=solid,sec=style"`
 	Radius  string `json:"radius,omitempty" ct:"select,0,6,8,9999,default=8,sec=style"`

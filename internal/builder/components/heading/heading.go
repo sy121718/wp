@@ -25,7 +25,7 @@ type DecorProps struct {
 	// Decoration 文本装饰：none/underline/line-through。
 	Decoration string `json:"decoration,omitempty" ct:"select,none=无,underline=下划线,line-through=删除线,label=文字装饰"`
 	// DecorationColor 装饰线颜色微调。
-	DecorationColor string `json:"decorationColor,omitempty" ct:"safe,maxlen=100"`
+	DecorationColor string `json:"decorationColor,omitempty" ct:"color,maxlen=100"`
 }
 
 // Binding CMS 字段绑定（规范 §2 Dynamic Binding）。
@@ -49,13 +49,13 @@ type Props struct {
 	// Weight 字重：100~900 或 token（regular/medium/semibold/bold）。
 	Weight string `json:"weight,omitempty" ct:"string,maxlen=10,sec=style"`
 	// LetterSpacing 字间距。
-	LetterSpacing string `json:"letterSpacing,omitempty" ct:"safe,maxlen=20,sec=style"`
+	LetterSpacing string `json:"letterSpacing,omitempty" ct:"dimension,maxlen=20,sec=style"`
 	// Transform 文字转换：none/uppercase/lowercase/capitalize。
 	Transform string `json:"transform,omitempty" ct:"select,none=无,uppercase=全大写,lowercase=全小写,capitalize=首字母大写,sec=style,label=大小写转换"`
 	// Decor 文本装饰。
 	Decor DecorProps `json:"decor,omitempty"`
 	// Color 文字颜色：色值或主题 Token（var(--color-primary)）。
-	Color string `json:"color,omitempty" ct:"safe,maxlen=200,sec=style"`
+	Color string `json:"color,omitempty" ct:"color,maxlen=200,sec=style"`
 	// LineClamp 多行截断行数 1~6；0 表示不截断。
 	LineClamp int `json:"lineClamp,omitempty" ct:"slider,min=0,max=6,step=1,sec=style"`
 	// TextShadow 文字阴影预设：subtle/strong；空为无。
@@ -63,13 +63,13 @@ type Props struct {
 	// Subtitle 副标题文本（显示于主标题之上，小字）。
 	Subtitle string `json:"subtitle,omitempty" ct:"text,maxlen=200,sec=content,label=副标题"`
 	// SubtitleColor 副标题颜色。
-	SubtitleColor string `json:"subtitleColor,omitempty" ct:"safe,maxlen=200,sec=style,label=副标题颜色"`
+	SubtitleColor string `json:"subtitleColor,omitempty" ct:"color,maxlen=200,sec=style,label=副标题颜色"`
 	// Align 三端对齐：left/center/right。
 	Align Align `json:"align,omitempty"`
 	// Width 宽度（CSS 长度，三端）。
 	Width Responsive `json:"width,omitempty"`
 	// Highlight 高亮背景盒（WD 标题高亮装饰）：背景色/内边距/圆角。
-	HighlightColor   string `json:"highlightColor,omitempty" ct:"safe,maxlen=200,sec=style,label=高亮背景色"`
+	HighlightColor   string `json:"highlightColor,omitempty" ct:"color,maxlen=200,sec=style,label=高亮背景色"`
 	HighlightPadding string `json:"highlightPadding,omitempty" ct:"safe,maxlen=30,sec=style,label=高亮内边距"`
 	HighlightRadius  string `json:"highlightRadius,omitempty" ct:"safe,maxlen=30,sec=style,label=高亮圆角"`
 	// Advanced 通用高级属性（规范 docs/02-C0）。

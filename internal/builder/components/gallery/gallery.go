@@ -125,7 +125,7 @@ type Props struct {
 	ObjectFit   string `json:"objectFit,omitempty" ct:"select,cover=铺满裁剪,contain=完整包含,default=cover,sec=style,label=填充方式"`
 	Radius      string `json:"radius,omitempty" ct:"safe,maxlen=30,sec=style"`
 	BorderWidth string `json:"borderWidth,omitempty" ct:"safe,maxlen=20,sec=style"`
-	BorderColor string `json:"borderColor,omitempty" ct:"safe,maxlen=100,sec=style"`
+	BorderColor string `json:"borderColor,omitempty" ct:"color,maxlen=100,sec=style"`
 	Hover       Hover  `json:"hover,omitempty"`
 
 	// --- 点击动作与图注 ---

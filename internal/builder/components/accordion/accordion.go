@@ -45,7 +45,7 @@ type Props struct {
 	// TitleAlign 标题对齐：left / center / right。
 	TitleAlign string `json:"titleAlign,omitempty" ct:"select,left=左对齐,center=居中,right=右对齐,default=left,sec=style,label=标题对齐"`
 	// BgColor 项背景色。
-	BgColor string `json:"bgColor,omitempty" ct:"safe,maxlen=200,sec=style,label=项背景色"`
+	BgColor string `json:"bgColor,omitempty" ct:"color,maxlen=200,sec=style,label=项背景色"`
 	// TitleSize 标题字号。
 	TitleSize string `json:"titleSize,omitempty" ct:"safe,maxlen=20,sec=style,label=标题字号"`
 	// Advanced 通用高级属性。

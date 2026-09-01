@@ -42,9 +42,9 @@ type Props struct {
 	// Duration 动画时长（秒，默认 2）。
 	Duration float64 `json:"duration,omitempty"`
 	// Color 数字颜色。
-	Color string `json:"color,omitempty" ct:"safe,maxlen=200,sec=style,label=数字颜色"`
+	Color string `json:"color,omitempty" ct:"color,maxlen=200,sec=style,label=数字颜色"`
 	// FontSize 数字字号。
-	FontSize string `json:"fontSize,omitempty" ct:"safe,maxlen=30,sec=style,label=字号"`
+	FontSize string `json:"fontSize,omitempty" ct:"dimension,maxlen=30,sec=style,label=字号"`
 	// Align 对齐：left / center / right。
 	Align string `json:"align,omitempty" ct:"select,left=左对齐,center=居中,right=右对齐,default=center,sec=style,label=对齐"`
 	// Advanced 通用高级属性。

@@ -36,11 +36,11 @@ var (
 // Props 视频属性。
 type Props struct {
 	// AssetID 媒体库视频资产 ID（优先于 URL；构建期经 MediaResolver 解析为文件 URL）。
-	AssetID string `json:"assetId,omitempty" ct:"regex,sec=content,label=视频文件" ctRegex:"^[A-Za-z0-9_-]{1,64}$"`
+	AssetID string `json:"assetId,omitempty" ct:"media,sec=content,label=图片"`
 	// URL 视频地址：YouTube/Vimeo 链接（嵌入）或本地 MP4（/storage/…）。
 	URL string `json:"url,omitempty" ct:"url,sec=content,label=外链地址"`
 	// Poster 封面图 URL（本地视频时显示）。
-	Poster string `json:"poster,omitempty" ct:"url,sec=content,label=封面图"`
+	Poster string `json:"poster,omitempty" ct:"media,sec=content,label=封面图"`
 	// Autoplay 自动播放。
 	Autoplay bool `json:"autoplay,omitempty" ct:"bool,sec=content,label=自动播放"`
 	// Loop 循环播放。
@@ -109,7 +109,12 @@ func (c *Component) Render(node *core.Node, topLevel bool, ctx *core.RenderConte
 		}
 		meta, err := ctx.Media.ResolveMedia(p.AssetID, "")
 		if err != nil {
-			return fmt.Errorf("节点 %s: 视频资产解析失败: %w", node.ID, err)
+			// 视频资产缺失：降级渲染占位，不阻塞整页编译。
+			ctx.HTML.WriteString(`<div class="`)
+			ctx.HTML.WriteString(core.NodeClass(node.ID))
+			ctx.HTML.WriteString(` wp-video-missing"><span>视频缺失（媒体库已删除）</span></div></div>`)
+			compileCSS(node.ID, &p, ctx.CSS)
+			return nil
 		}
 		videoURL = meta.URL
 	}

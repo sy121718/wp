@@ -49,9 +49,9 @@ type Props struct {
 	// ParagraphSpacing 段间距（富文本模式下的段落上下留白）。
 	ParagraphSpacing string `json:"paragraphSpacing,omitempty" ct:"safe,maxlen=30,sec=style"`
 	// Color 文字颜色（色值或主题 Token）。
-	Color string `json:"color,omitempty" ct:"safe,maxlen=200,sec=style"`
+	Color string `json:"color,omitempty" ct:"color,maxlen=200,sec=style"`
 	// LinkColor 链接颜色（色值或主题 Token，富文本模式）。
-	LinkColor string `json:"linkColor,omitempty" ct:"safe,maxlen=200,sec=style"`
+	LinkColor string `json:"linkColor,omitempty" ct:"color,maxlen=200,sec=style"`
 	// LineClamp 多行截断 1~10；0 关闭。
 	LineClamp int `json:"lineClamp,omitempty" ct:"slider,min=0,max=10,step=1,sec=style"`
 	// Excerpt 富文本绑定长文时仅取纯文本截前 N 字；0 关闭（仅 binding 时生效）。
