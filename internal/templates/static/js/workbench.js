@@ -77,7 +77,11 @@
         { type: 'core.list', label: '列表', hint: '图标/序号/圆点列表', props: { style: 'icon', items: [{ icon: 'check', text: '列表项内容' }] } },
         { type: 'core.infobox', label: '信息框', hint: '图标+标题+文本', props: { icon: 'shield', title: '信息框标题', text: '一句话描述你的服务或卖点。', align: 'center' } },
         { type: 'core.social_buttons', label: '社交图标', hint: '社交平台图标组', props: { color: 'brand', size: '40px', shape: 'circle', items: [{ platform: 'facebook', url: 'https://facebook.com' }, { platform: 'x', url: 'https://x.com' }, { platform: 'instagram', url: 'https://instagram.com' }] } },
-        { type: 'core.video', label: '视频', hint: '外链嵌入/本地 MP4', props: { url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ', controls: true, ratio: '16:9' } }
+        { type: 'core.video', label: '视频', hint: '外链嵌入/本地 MP4', props: { url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ', controls: true, ratio: '16:9' } },
+        { type: 'core.tabs', label: '页签', hint: '多面板切换', props: { tabs: [{ label: '页签一' }, { label: '页签二' }] } },
+        { type: 'core.accordion', label: '手风琴', hint: '折叠展开', props: { items: [{ title: '折叠项一', open: true }, { title: '折叠项二' }] } },
+        { type: 'core.marquee', label: '跑马灯', hint: '无缝滚动内容', props: { speed: 12, direction: 'left', gap: '24px' } },
+        { type: 'core.counter', label: '计数器', hint: '数字统计', props: { start: 0, end: 100, suffix: '+' } }
     ];
 
     /**
@@ -87,7 +91,7 @@
     /** 组件库分组：基础组件大分类平铺（细分类留给进阶组件，当前无进阶内容）；
      *  「区块」概念归全局块（页眉/页脚/区块）。 */
     var paletteGroups = [
-        { key: 'basic', title: '基础组件', types: ['core.container', 'core.heading', 'core.text', 'core.button', 'core.image', 'core.gallery', 'core.divider', 'core.spacer', 'core.slider', 'core.list', 'core.infobox', 'core.social_buttons', 'core.video'] }
+        { key: 'basic', title: '基础组件', types: ['core.container', 'core.heading', 'core.text', 'core.button', 'core.image', 'core.gallery', 'core.divider', 'core.spacer', 'core.slider', 'core.list', 'core.infobox', 'core.social_buttons', 'core.video', 'core.tabs', 'core.accordion', 'core.marquee', 'core.counter'] }
     ];
 
     /** 区块预设（预组合的全局 section，一键插入整个容器）。
@@ -1715,6 +1719,93 @@
                     checkbox('播放控件', 'props.controls');
                 }
 
+                // tabs 页签面板：标签列表 repeater（与 children 面板一一对应）。
+                function tabsPanel() {
+                    if (!Array.isArray(get('props.tabs'))) set('props.tabs', []);
+                    var tabs = get('props.tabs');
+                    var kids = node.children || [];
+                    function save() { commit('props.tabs', tabs); }
+                    tabs.forEach(function (t, idx) {
+                        var row = document.createElement('div'); row.className = 'wb-repeater-row';
+                        var mid = document.createElement('div'); mid.className = 'wb-repeater-mid';
+                        var input = document.createElement('input'); input.type = 'text'; input.placeholder = '页签' + (idx + 1) + ' 标签';
+                        input.value = t.label || '';
+                        input.addEventListener('change', function () { t.label = input.value; save(); });
+                        mid.appendChild(input);
+                        var del = document.createElement('button'); del.type = 'button'; del.className = 'wb-icon-btn'; del.textContent = '✕';
+                        del.addEventListener('click', function () { tabs.splice(idx, 1); save(); self.syncInspector(); });
+                        row.appendChild(mid); row.appendChild(del);
+                        panel.appendChild(row);
+                    });
+                    var add = document.createElement('button'); add.type = 'button'; add.className = 'wb-btn wb-btn-secondary wb-btn-sm wb-repeater-add';
+                    add.textContent = '+ 添加页签（同时拖入一个面板）';
+                    add.addEventListener('click', function () { tabs.push({ label: '新页签' }); save(); self.syncInspector(); });
+                    panel.appendChild(add);
+                    var tip = document.createElement('p'); tip.className = 'wb-empty';
+                    tip.textContent = '面板数需与页签数一致：在画布中向 tabs 内部拖入组件即新增一个面板。';
+                    panel.appendChild(tip);
+                }
+                // accordion 面板：折叠项标题 repeater。
+                function accordionPanel() {
+                    if (!Array.isArray(get('props.items'))) set('props.items', []);
+                    var items = get('props.items');
+                    function save() { commit('props.items', items); }
+                    items.forEach(function (it, idx) {
+                        var row = document.createElement('div'); row.className = 'wb-repeater-row';
+                        var mid = document.createElement('div'); mid.className = 'wb-repeater-mid';
+                        var input = document.createElement('input'); input.type = 'text'; input.placeholder = '折叠项' + (idx + 1) + ' 标题';
+                        input.value = it.title || '';
+                        input.addEventListener('change', function () { it.title = input.value; save(); });
+                        mid.appendChild(input);
+                        var openCk = document.createElement('label'); openCk.className = 'wb-check-field';
+                        var ck = document.createElement('input'); ck.type = 'checkbox'; ck.checked = !!it.open;
+                        ck.addEventListener('change', function () { it.open = ck.checked; save(); });
+                        openCk.appendChild(ck); openCk.appendChild(document.createTextNode('默认展开'));
+                        mid.appendChild(openCk);
+                        var del = document.createElement('button'); del.type = 'button'; del.className = 'wb-icon-btn'; del.textContent = '✕';
+                        del.addEventListener('click', function () { items.splice(idx, 1); save(); self.syncInspector(); });
+                        row.appendChild(mid); row.appendChild(del);
+                        panel.appendChild(row);
+                    });
+                    var add = document.createElement('button'); add.type = 'button'; add.className = 'wb-btn wb-btn-secondary wb-btn-sm wb-repeater-add';
+                    add.textContent = '+ 添加折叠项（同时拖入一个内容）';
+                    add.addEventListener('click', function () { items.push({ title: '新折叠项', open: false }); save(); self.syncInspector(); });
+                    panel.appendChild(add);
+                    checkbox('同时只开一个', 'props.oneOpen');
+                    checkbox('无边框', 'props.borderless');
+                }
+                // marquee 面板。
+                function marqueePanel() {
+                    heading('滚动设置');
+                    var spWrap = document.createElement('div'); spWrap.className = 'wb-field';
+                    var spLabel = document.createElement('label'); spLabel.textContent = '滚动速度（秒）'; spWrap.appendChild(spLabel);
+                    var spInput = document.createElement('input'); spInput.type = 'number'; spInput.min = 1; spInput.step = 1;
+                    spInput.value = get('props.speed') || 12;
+                    spInput.addEventListener('change', function () { commit('props.speed', Number(spInput.value) || 12); });
+                    spWrap.appendChild(spInput); panel.appendChild(spWrap);
+                    field('滚动方向', 'props.direction', 'select', [['left', '向左'], ['right', '向右']]);
+                    unitInput('内容间距', 'props.gap', ['px']);
+                    checkbox('悬停暂停', 'props.pauseOnHover');
+                    var tip = document.createElement('p'); tip.className = 'wb-empty';
+                    tip.textContent = '向跑马灯内部拖入任意组件（文本/Logo/卡片），内容将无缝滚动。';
+                    panel.appendChild(tip);
+                }
+                // counter 面板。
+                function counterPanel() {
+                    heading('数值');
+                    field('起始值', 'props.start', 'input');
+                    field('结束值', 'props.end', 'input');
+                    field('小数位', 'props.decimals', 'input');
+                    field('前缀', 'props.prefix', 'input');
+                    field('后缀', 'props.suffix', 'input');
+                    var durWrap = document.createElement('div'); durWrap.className = 'wb-field';
+                    var durLabel = document.createElement('label'); durLabel.textContent = '动画时长（秒）'; durWrap.appendChild(durLabel);
+                    var durInput = document.createElement('input'); durInput.type = 'number'; durInput.min = 0.5; durInput.step = 0.5;
+                    durInput.value = get('props.duration') || 2;
+                    durInput.addEventListener('change', function () { commit('props.duration', Number(durInput.value) || 2); });
+                    durWrap.appendChild(durInput); panel.appendChild(durWrap);
+                }
+
                 // spacer 高度面板（Responsive 嵌套结构）。
                 function spacerPanel() {
                     heading('留白高度');
@@ -1812,13 +1903,17 @@
                     if (node.type === 'core.infobox') infoboxPanel();
                     if (node.type === 'core.social_buttons') socialPanel();
                     if (node.type === 'core.video') videoPanel();
+                    if (node.type === 'core.tabs') tabsPanel();
+                    if (node.type === 'core.accordion') accordionPanel();
+                    if (node.type === 'core.marquee') marqueePanel();
+                    if (node.type === 'core.counter') counterPanel();
                     if (node.type === 'core.gallery') {
                         heading('图片列表');
                         galleryItemsPanel('props.items');
                         heading('其余设置');
                     }
                     groups.content.forEach(schemaField);
-                    if (!groups.content.length && node.type !== 'core.container' && node.type !== 'core.divider' && node.type !== 'core.spacer' && node.type !== 'core.slider' && node.type !== 'core.list' && node.type !== 'core.infobox' && node.type !== 'core.social_buttons' && node.type !== 'core.video' && node.type !== 'core.gallery') {
+                    if (!groups.content.length && node.type !== 'core.container' && node.type !== 'core.divider' && node.type !== 'core.spacer' && node.type !== 'core.slider' && node.type !== 'core.list' && node.type !== 'core.infobox' && node.type !== 'core.social_buttons' && node.type !== 'core.video' && node.type !== 'core.gallery' && node.type !== 'core.tabs' && node.type !== 'core.accordion' && node.type !== 'core.marquee' && node.type !== 'core.counter') {
                         var none2 = document.createElement('p'); none2.className = 'wb-empty'; none2.textContent = '该组件暂无内容项'; panel.appendChild(none2);
                     }
                 }

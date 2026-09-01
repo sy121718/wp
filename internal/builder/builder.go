@@ -43,6 +43,14 @@ import (
 	_ "go_wp/internal/builder/components/socialbuttons"
 	// core.video：视频（外链嵌入/本地 MP4，WD wd_video）。
 	_ "go_wp/internal/builder/components/video"
+	// core.tabs：页签（结构型，radio hack 零 JS 切换，WD wd_tabs）。
+	_ "go_wp/internal/builder/components/tabs"
+	// core.accordion：手风琴（结构型，details/summary 原生，WD wd_accordion）。
+	_ "go_wp/internal/builder/components/accordion"
+	// core.marquee：跑马灯（容器型，双份内容无缝滚动，WD wd_marquee）。
+	_ "go_wp/internal/builder/components/marquee"
+	// core.counter：数字计数器（滚动动画增强，WD wd_counter）。
+	_ "go_wp/internal/builder/components/counter"
 	"go_wp/internal/builder/core"
 )
 

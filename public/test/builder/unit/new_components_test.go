@@ -146,3 +146,84 @@ func TestNewComponentsRegistered(t *testing.T) {
 		}
 	}
 }
+
+func TestTabsRendersRadioHack(t *testing.T) {
+	doc := `{"settings":{"layout":{"mode":"full"}},"root":[{"type":"core.tabs","id":"tb1","props":{"tabs":[{"label":"参数"},{"label":"评价"}]},"children":[
+		{"type":"core.text","id":"tp1","props":{"mode":"plaintext","text":"参数面板"}},
+		{"type":"core.text","id":"tp2","props":{"mode":"plaintext","text":"评价面板"}}
+	]}]}`
+	html, css := compileDoc(t, doc)
+
+	if !strings.Contains(html, "wp-tabs-radio") || !strings.Contains(html, "参数面板") || !strings.Contains(html, "评价面板") {
+		t.Fatalf("页签结构缺失: %s", html[:400])
+	}
+	if !strings.Contains(css, ":checked ~") {
+		t.Fatalf("radio hack 切换 CSS 缺失: %s", css[:300])
+	}
+	if !strings.Contains(html, "参数") || !strings.Contains(html, "评价") {
+		t.Fatalf("页签标签缺失: %s", html[:400])
+	}
+}
+
+func TestAccordionRendersDetails(t *testing.T) {
+	doc := `{"settings":{"layout":{"mode":"full"}},"root":[{"type":"core.accordion","id":"ac1","props":{"items":[{"title":"问题一","open":true},{"title":"问题二"}]},"children":[
+		{"type":"core.text","id":"ap1","props":{"mode":"plaintext","text":"答案一"}},
+		{"type":"core.text","id":"ap2","props":{"mode":"plaintext","text":"答案二"}}
+	]}]}`
+	html, _ := compileDoc(t, doc)
+
+	if !strings.Contains(html, "<details") || !strings.Contains(html, "问题一</summary>") {
+		t.Fatalf("details/summary 缺失: %s", html[:400])
+	}
+	if !strings.Contains(html, " open") {
+		t.Fatalf("默认展开项应带 open: %s", html[:400])
+	}
+	if !strings.Contains(html, "答案一") || !strings.Contains(html, "答案二") {
+		t.Fatalf("折叠内容缺失: %s", html[:400])
+	}
+}
+
+func TestMarqueeRendersDuplicateTracks(t *testing.T) {
+	doc := `{"settings":{"layout":{"mode":"full"}},"root":[{"type":"core.marquee","id":"mq1","props":{"speed":10,"direction":"left"},"children":[
+		{"type":"core.text","id":"mt1","props":{"mode":"plaintext","text":"促销横幅"}}
+	]}]}`
+	html, css := compileDoc(t, doc)
+
+	if strings.Count(html, "wp-marquee-track") < 2 {
+		t.Fatalf("应渲染双份轨道: %s", html[:300])
+	}
+	if !strings.Contains(css, "@keyframes wp-marquee-mq1") {
+		t.Fatalf("滚动动画缺失: %s", css[:300])
+	}
+}
+
+func TestCounterRendersValue(t *testing.T) {
+	doc := `{"settings":{"layout":{"mode":"full"}},"root":[{"type":"core.counter","id":"ct1","props":{"start":0,"end":100,"suffix":"+"}}]}`
+	html, css := compileDoc(t, doc)
+
+	if !strings.Contains(html, "wp-counter") || !strings.Contains(html, "100") {
+		t.Fatalf("计数器渲染缺失: %s", html[:300])
+	}
+	if !strings.Contains(html, `data-end="100"`) {
+		t.Fatalf("增强数据缺失: %s", html[:400])
+	}
+	if !strings.Contains(css, "wp-counter") {
+		t.Fatalf("计数器样式缺失: %s", css[:200])
+	}
+}
+
+func TestBatch2ComponentsRegistered(t *testing.T) {
+	types := core.Types()
+	for _, want := range []string{"core.tabs", "core.accordion", "core.marquee", "core.counter"} {
+		found := false
+		for _, ty := range types {
+			if ty == want {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("组件 %s 未注册", want)
+		}
+	}
+}
