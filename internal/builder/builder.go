@@ -33,6 +33,16 @@ import (
 	_ "go_wp/internal/builder/components/image"
 	// core.globalref：全局块引用组件（构建期经 BlockResolver 内联展开，方案 C）。
 	_ "go_wp/internal/builder/components/globalref"
+	// core.slider：容器型轮播（children 即各 slide，可嵌套任意组件，WD wd_slider）。
+	_ "go_wp/internal/builder/components/slider"
+	// core.list：列表（图标/序号/圆点，WD wd_list）。
+	_ "go_wp/internal/builder/components/list"
+	// core.infobox：信息框（图标/图+标题+文本+链接，WD wd_infobox）。
+	_ "go_wp/internal/builder/components/infobox"
+	// core.social_buttons：社交图标组（内联 SVG 品牌图标，WD wd_social_buttons）。
+	_ "go_wp/internal/builder/components/socialbuttons"
+	// core.video：视频（外链嵌入/本地 MP4，WD wd_video）。
+	_ "go_wp/internal/builder/components/video"
 	"go_wp/internal/builder/core"
 )
 

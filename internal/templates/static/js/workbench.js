@@ -72,7 +72,12 @@
         { type: 'core.button', label: '按钮', hint: '行动按钮', props: { text: '了解更多', action: 'internal', value: '/' } },
         { type: 'core.image', label: '图片', hint: '外部图片', props: { src: 'https://placehold.co/1200x800/png', alt: '图片占位符', objectFit: 'cover', width: '100%' } },
         { type: 'core.divider', label: '分隔线', hint: '内容分隔', props: { style: 'solid', weight: '1px' } },
-        { type: 'core.spacer', label: '间隔', hint: '留白空间', props: { height: { desktop: '32px' } } }
+        { type: 'core.spacer', label: '间隔', hint: '留白空间', props: { height: { desktop: '32px' } } },
+        { type: 'core.slider', label: '轮播', hint: '多屏滑动（可嵌套）', props: { perView: { desktop: 1 }, autoplay: 0, showArrows: true, showDots: true, gap: '16px' } },
+        { type: 'core.list', label: '列表', hint: '图标/序号/圆点列表', props: { style: 'icon', items: [{ icon: 'check', text: '列表项内容' }] } },
+        { type: 'core.infobox', label: '信息框', hint: '图标+标题+文本', props: { icon: 'shield', title: '信息框标题', text: '一句话描述你的服务或卖点。', align: 'center' } },
+        { type: 'core.social_buttons', label: '社交图标', hint: '社交平台图标组', props: { color: 'brand', size: '40px', shape: 'circle', items: [{ platform: 'facebook', url: 'https://facebook.com' }, { platform: 'x', url: 'https://x.com' }, { platform: 'instagram', url: 'https://instagram.com' }] } },
+        { type: 'core.video', label: '视频', hint: '外链嵌入/本地 MP4', props: { url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ', controls: true, ratio: '16:9' } }
     ];
 
     /**
@@ -82,7 +87,7 @@
     /** 组件库分组：基础组件大分类平铺（细分类留给进阶组件，当前无进阶内容）；
      *  「区块」概念归全局块（页眉/页脚/区块）。 */
     var paletteGroups = [
-        { key: 'basic', title: '基础组件', types: ['core.container', 'core.heading', 'core.text', 'core.button', 'core.image', 'core.gallery', 'core.divider', 'core.spacer'] }
+        { key: 'basic', title: '基础组件', types: ['core.container', 'core.heading', 'core.text', 'core.button', 'core.image', 'core.gallery', 'core.divider', 'core.spacer', 'core.slider', 'core.list', 'core.infobox', 'core.social_buttons', 'core.video'] }
     ];
 
     /** 区块预设（预组合的全局 section，一键插入整个容器）。
@@ -1581,6 +1586,135 @@
                     field('字重', 'props.inset.fontWeight', 'select', [['', '（默认）'], ['400', '常规'], ['500', '中等'], ['600', '半粗'], ['700', '粗体']]);
                     field('颜色', 'props.inset.color', 'input');
                 }
+                // slider 轮播面板：每屏显示数（三端）+ 开关组。
+                function sliderPanel() {
+                    heading('每屏显示数');
+                    [['desktop', '桌面'], ['tablet', '平板'], ['mobile', '手机']].forEach(function (d) {
+                        var seg = document.createElement('div'); seg.className = 'wb-field wb-field-seg';
+                        var cap = document.createElement('label'); cap.textContent = d[1]; seg.appendChild(cap);
+                        var inner = document.createElement('div'); inner.className = 'wb-seg';
+                        var cur = get('props.perView.' + d[0]) || 1;
+                        [1, 2, 3, 4].forEach(function (n) {
+                            var b = document.createElement('button'); b.type = 'button'; b.className = 'wb-seg-btn';
+                            b.textContent = n;
+                            if (cur === n) b.classList.add('is-active');
+                            b.addEventListener('click', function () {
+                                commit('props.perView.' + d[0], n);
+                                inner.querySelectorAll('.wb-seg-btn').forEach(function (x) { x.classList.toggle('is-active', x === b); });
+                            });
+                            inner.appendChild(b);
+                        });
+                        seg.appendChild(inner); panel.appendChild(seg);
+                    });
+                    var autoWrap = document.createElement('div'); autoWrap.className = 'wb-field';
+                    var autoLabel = document.createElement('label'); autoLabel.textContent = '自动播放间隔（秒，0=关）'; autoWrap.appendChild(autoLabel);
+                    var autoInput = document.createElement('input'); autoInput.type = 'number'; autoInput.min = 0; autoInput.step = 0.5;
+                    autoInput.value = get('props.autoplay') || 0;
+                    autoInput.addEventListener('change', function () { commit('props.autoplay', Number(autoInput.value) || 0); });
+                    autoWrap.appendChild(autoInput); panel.appendChild(autoWrap);
+                    checkbox('显示箭头', 'props.showArrows');
+                    checkbox('显示圆点', 'props.showDots');
+                    unitInput('slide 间距', 'props.gap', ['px']);
+                }
+                // list 列表面板：样式 + 项 repeater。
+                function listPanel() {
+                    heading('列表项');
+                    var st = get('props.style') || 'icon';
+                    [['icon', '图标'], ['number', '序号'], ['dot', '圆点']].forEach(function (pair) {
+                        var row = document.createElement('button'); row.type = 'button';
+                        row.className = 'wb-btn wb-btn-sm' + (st === pair[0] ? ' wb-btn-primary' : '');
+                        row.textContent = pair[1];
+                        row.addEventListener('click', function () { commit('props.style', pair[0]); self.syncInspector(); });
+                        panel.appendChild(row);
+                    });
+                    if (!Array.isArray(get('props.items'))) set('props.items', []);
+                    var items = get('props.items');
+                    function save() { commit('props.items', items); }
+                    items.forEach(function (item, idx) {
+                        var row = document.createElement('div'); row.className = 'wb-repeater-row';
+                        var mid = document.createElement('div'); mid.className = 'wb-repeater-mid';
+                        if (get('props.style') === 'icon') {
+                            var iconSel = document.createElement('select');
+                            [['', '默认对勾'], ['check', '对勾'], ['star', '星形'], ['arrow', '箭头'], ['shield', '盾牌'], ['truck', '卡车'], ['cross', '叉形']].forEach(function (o) {
+                                var opt = document.createElement('option'); opt.value = o[0]; opt.textContent = o[1];
+                                iconSel.appendChild(opt);
+                            });
+                            iconSel.value = item.icon || '';
+                            iconSel.addEventListener('change', function () { item.icon = iconSel.value; save(); });
+                            mid.appendChild(iconSel);
+                        }
+                        var text = document.createElement('input'); text.type = 'text'; text.placeholder = '列表项文本'; text.value = item.text || '';
+                        text.addEventListener('change', function () { item.text = text.value; save(); });
+                        mid.appendChild(text);
+                        var link = document.createElement('input'); link.type = 'text'; link.placeholder = '链接（可选）'; link.value = item.link || '';
+                        link.addEventListener('change', function () { item.link = link.value; save(); });
+                        mid.appendChild(link);
+                        var del = document.createElement('button'); del.type = 'button'; del.className = 'wb-icon-btn'; del.textContent = '✕';
+                        del.addEventListener('click', function () { items.splice(idx, 1); save(); self.syncInspector(); });
+                        row.appendChild(mid); row.appendChild(del);
+                        panel.appendChild(row);
+                    });
+                    var add = document.createElement('button'); add.type = 'button'; add.className = 'wb-btn wb-btn-secondary wb-btn-sm wb-repeater-add';
+                    add.textContent = '+ 添加列表项';
+                    add.addEventListener('click', function () { items.push({ icon: 'check', text: '新列表项', link: '' }); save(); self.syncInspector(); });
+                    panel.appendChild(add);
+                }
+                // infobox 信息框面板：图标/图片 + 标题/文本 + 链接。
+                function infoboxPanel() {
+                    heading('图标 / 图片');
+                    var cur = get('props.icon') || '';
+                    [['', '无'], ['check', '对勾'], ['star', '星形'], ['arrow', '箭头'], ['shield', '盾牌'], ['truck', '卡车'], ['cross', '叉形']].forEach(function (o) {
+                        var b = document.createElement('button'); b.type = 'button'; b.className = 'wb-btn wb-btn-sm' + (cur === o[0] ? ' wb-btn-primary' : '');
+                        b.textContent = o[1];
+                        b.addEventListener('click', function () { commit('props.icon', o[0]); self.syncInspector(); });
+                        panel.appendChild(b);
+                    });
+                    field('图片（选填，优先于图标）', 'props.mediaImage', 'input');
+                    heading('内容');
+                    field('标题', 'props.title', 'input');
+                    field('描述', 'props.text', 'textarea');
+                    field('链接', 'props.link', 'input');
+                }
+                // social_buttons 面板：平台 repeater。
+                function socialPanel() {
+                    if (!Array.isArray(get('props.items'))) set('props.items', []);
+                    var items = get('props.items');
+                    function save() { commit('props.items', items); }
+                    var platforms = ['facebook', 'x', 'instagram', 'youtube', 'tiktok', 'telegram', 'whatsapp', 'pinterest', 'linkedin'];
+                    var labels = { facebook: 'Facebook', x: 'X', instagram: 'Instagram', youtube: 'YouTube', tiktok: 'TikTok', telegram: 'Telegram', whatsapp: 'WhatsApp', pinterest: 'Pinterest', linkedin: 'LinkedIn' };
+                    items.forEach(function (item, idx) {
+                        var row = document.createElement('div'); row.className = 'wb-repeater-row';
+                        var mid = document.createElement('div'); mid.className = 'wb-repeater-mid';
+                        var sel = document.createElement('select');
+                        platforms.forEach(function (pl) {
+                            var opt = document.createElement('option'); opt.value = pl; opt.textContent = labels[pl];
+                            sel.appendChild(opt);
+                        });
+                        sel.value = item.platform || 'facebook';
+                        sel.addEventListener('change', function () { item.platform = sel.value; save(); });
+                        var link = document.createElement('input'); link.type = 'text'; link.placeholder = '链接地址'; link.value = item.url || '';
+                        link.addEventListener('change', function () { item.url = link.value; save(); });
+                        mid.appendChild(sel); mid.appendChild(link);
+                        var del = document.createElement('button'); del.type = 'button'; del.className = 'wb-icon-btn'; del.textContent = '✕';
+                        del.addEventListener('click', function () { items.splice(idx, 1); save(); self.syncInspector(); });
+                        row.appendChild(mid); row.appendChild(del);
+                        panel.appendChild(row);
+                    });
+                    var add = document.createElement('button'); add.type = 'button'; add.className = 'wb-btn wb-btn-secondary wb-btn-sm wb-repeater-add';
+                    add.textContent = '+ 添加平台';
+                    add.addEventListener('click', function () { items.push({ platform: 'facebook', url: '' }); save(); self.syncInspector(); });
+                    panel.appendChild(add);
+                }
+                // video 视频面板：地址 + 封面 + 播放选项。
+                function videoPanel() {
+                    field('视频地址', 'props.url', 'input');
+                    field('封面图', 'props.poster', 'input');
+                    checkbox('自动播放', 'props.autoplay');
+                    checkbox('循环播放', 'props.loop');
+                    checkbox('静音', 'props.muted');
+                    checkbox('播放控件', 'props.controls');
+                }
+
                 // spacer 高度面板（Responsive 嵌套结构）。
                 function spacerPanel() {
                     heading('留白高度');
@@ -1664,7 +1798,7 @@
                         button.addEventListener('click', pair[1]); actions.appendChild(button);
                     });
                     panel.appendChild(actions);
-                    if (!groups.style.length && !groups.advanced.length && node.type !== 'core.container' && node.type !== 'core.divider') {
+                    if (!groups.style.length && !groups.advanced.length && node.type !== 'core.container' && node.type !== 'core.divider' && node.type !== 'core.list' && node.type !== 'core.infobox' && node.type !== 'core.social_buttons' && node.type !== 'core.video' && node.type !== 'core.slider') {
                         var none1 = document.createElement('p'); none1.className = 'wb-empty'; none1.textContent = '该组件暂无独立样式项'; panel.appendChild(none1);
                     }
                 } else {
@@ -1673,13 +1807,18 @@
                     if (node.type === 'core.container') containerLayout();
                     if (node.type === 'core.divider') dividerInset();
                     if (node.type === 'core.spacer') spacerPanel();
+                    if (node.type === 'core.slider') sliderPanel();
+                    if (node.type === 'core.list') listPanel();
+                    if (node.type === 'core.infobox') infoboxPanel();
+                    if (node.type === 'core.social_buttons') socialPanel();
+                    if (node.type === 'core.video') videoPanel();
                     if (node.type === 'core.gallery') {
                         heading('图片列表');
                         galleryItemsPanel('props.items');
                         heading('其余设置');
                     }
                     groups.content.forEach(schemaField);
-                    if (!groups.content.length && node.type !== 'core.container' && node.type !== 'core.divider' && node.type !== 'core.spacer') {
+                    if (!groups.content.length && node.type !== 'core.container' && node.type !== 'core.divider' && node.type !== 'core.spacer' && node.type !== 'core.slider' && node.type !== 'core.list' && node.type !== 'core.infobox' && node.type !== 'core.social_buttons' && node.type !== 'core.video' && node.type !== 'core.gallery') {
                         var none2 = document.createElement('p'); none2.className = 'wb-empty'; none2.textContent = '该组件暂无内容项'; panel.appendChild(none2);
                     }
                 }

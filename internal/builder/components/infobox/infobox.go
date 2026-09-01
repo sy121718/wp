@@ -1,0 +1,212 @@
+// Package infobox 实现 core.infobox：信息框组件（对标 WD wd_infobox）。
+// 图标（或媒体图）+ 标题 + 文本 + 可选链接，常用于服务/卖点卡片。
+package infobox
+
+import (
+	"encoding/json"
+	"fmt"
+	"html"
+	"strings"
+
+	"go_wp/internal/builder/core"
+)
+
+// Type 组件类型标识。
+const Type = "core.infobox"
+
+func init() { core.Register(&Component{}) }
+
+// Component 信息框组件（原子）。
+type Component struct{}
+
+// Type 实现组件接口。
+func (c *Component) Type() string { return Type }
+
+// Props 信息框属性。
+type Props struct {
+	// Icon 内置图标名（check/star/arrow/shield/truck/cross 等；与 MediaImage 二选一）。
+	Icon string `json:"icon,omitempty" ct:"select,,check=对勾,star=星形,arrow=箭头,shield=盾牌,truck=卡车,cross=叉形,sec=content,label=图标"`
+	// MediaImage 媒体图 URL（与 Icon 二选一，优先于 Icon）。
+	MediaImage string `json:"mediaImage,omitempty" ct:"url,sec=content,label=图片"`
+	// Title 标题。
+	Title string `json:"title,omitempty" ct:"text,maxlen=200,sec=content,label=标题"`
+	// Text 描述文本。
+	Text string `json:"text,omitempty" ct:"text,maxlen=2000,sec=content,label=描述"`
+	// Link 整卡链接（可选）。
+	Link string `json:"link,omitempty" ct:"url,sec=content,label=链接"`
+	// IconColor 图标颜色。
+	IconColor string `json:"iconColor,omitempty" ct:"safe,maxlen=200,sec=style,label=图标颜色"`
+	// TitleColor 标题颜色。
+	TitleColor string `json:"titleColor,omitempty" ct:"safe,maxlen=200,sec=style,label=标题颜色"`
+	// TextColor 文本颜色。
+	TextColor string `json:"textColor,omitempty" ct:"safe,maxlen=200,sec=style,label=文本颜色"`
+	// Align 内容对齐：left / center / right。
+	Align string `json:"align,omitempty" ct:"select,left=左对齐,center=居中,right=右对齐,default=center,sec=style,label=对齐"`
+	// IconSize 图标尺寸（px，默认 40）。
+	IconSize string `json:"iconSize,omitempty" ct:"safe,maxlen=20,sec=style,label=图标尺寸"`
+	// Padding 内边距（CSS 简写）。
+	Padding string `json:"padding,omitempty" ct:"safe,maxlen=30,sec=style,label=内边距"`
+	// Background 卡片背景色。
+	Background string `json:"background,omitempty" ct:"safe,maxlen=200,sec=style,label=背景色"`
+	// Advanced 通用高级属性。
+	Advanced core.AdvancedProps `json:"advanced"`
+}
+
+// builtinIcons 内置图标（与 list 一致，独立维护避免跨包依赖）。
+var builtinIcons = map[string]string{
+	"check":  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="1em" height="1em"><polyline points="20 6 9 17 4 12"/></svg>`,
+	"star":   `<svg viewBox="0 0 24 24" fill="currentColor" width="1em" height="1em"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>`,
+	"arrow":  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="1em" height="1em"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>`,
+	"shield": `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="1em" height="1em"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>`,
+	"truck":  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="1em" height="1em"><rect x="1" y="3" width="15" height="13" rx="1"/><path d="M16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>`,
+	"cross":  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" width="1em" height="1em"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`,
+}
+
+// Validate 校验。
+func (c *Component) Validate(node *core.Node, ids map[string]bool) (err error) {
+	if err = core.ValidateNodeID(node.ID, node.Name, ids); err != nil {
+		return err
+	}
+	if len(node.Children) > 0 {
+		return fmt.Errorf("节点 %s: 信息框为原子组件，不允许子节点", node.ID)
+	}
+	var p Props
+	if len(node.Props) > 0 {
+		if err = json.Unmarshal(node.Props, &p); err != nil {
+			return fmt.Errorf("节点 %s props 反序列化失败: %w", node.ID, err)
+		}
+	}
+	if p.Icon != "" {
+		if _, ok := builtinIcons[p.Icon]; !ok {
+			return fmt.Errorf("节点 %s: 未知图标 %q", node.ID, p.Icon)
+		}
+	}
+	switch p.Align {
+	case "", "left", "center", "right":
+	default:
+		return fmt.Errorf("节点 %s: 无效的对齐 %q", node.ID, p.Align)
+	}
+	if adv := core.AdvancedOf(&p); adv != nil {
+		return core.ValidateAdvanced(adv, node.ID, ids)
+	}
+	return nil
+}
+
+// Render 渲染信息框。
+func (c *Component) Render(node *core.Node, topLevel bool, ctx *core.RenderContext) (err error) {
+	var p Props
+	if len(node.Props) > 0 {
+		if err = json.Unmarshal(node.Props, &p); err != nil {
+			return fmt.Errorf("节点 %s props 反序列化失败: %w", node.ID, err)
+		}
+	}
+	cls := core.NodeClass(node.ID)
+
+	body := strings.Builder{}
+	// 图标 / 媒体图。
+	if p.MediaImage != "" {
+		body.WriteString(`<span class="wp-infobox-media">`)
+		body.WriteString(`<img src="`)
+		body.WriteString(html.EscapeString(p.MediaImage))
+		body.WriteString(`" alt="" loading="lazy">`)
+		body.WriteString(`</span>`)
+	} else if p.Icon != "" {
+		body.WriteString(`<span class="wp-infobox-icon">`)
+		body.WriteString(builtinIcons[p.Icon])
+		body.WriteString(`</span>`)
+	}
+	if p.Title != "" {
+		body.WriteString(`<h3 class="wp-infobox-title">`)
+		body.WriteString(html.EscapeString(p.Title))
+		body.WriteString(`</h3>`)
+	}
+	if p.Text != "" {
+		body.WriteString(`<div class="wp-infobox-text">`)
+		body.WriteString(html.EscapeString(p.Text))
+		body.WriteString(`</div>`)
+	}
+
+	if strings.TrimSpace(p.Link) != "" {
+		ctx.HTML.WriteString(`<a class="`)
+		ctx.HTML.WriteString(cls)
+		ctx.HTML.WriteString(` wp-infobox" href="`)
+		ctx.HTML.WriteString(html.EscapeString(p.Link))
+		ctx.HTML.WriteString(`">`)
+		ctx.HTML.WriteString(body.String())
+		ctx.HTML.WriteString(`</a>`)
+	} else {
+		ctx.HTML.WriteString(`<div class="`)
+		ctx.HTML.WriteString(cls)
+		ctx.HTML.WriteString(` wp-infobox">`)
+		ctx.HTML.WriteString(body.String())
+		ctx.HTML.WriteString(`</div>`)
+	}
+
+	compileCSS(node.ID, &p, ctx.CSS)
+	return nil
+}
+
+// compileCSS 信息框样式。
+func compileCSS(id string, p *Props, b *core.CSSBuckets) {
+	sel := "." + core.NodeClass(id)
+
+	var desktop []string
+	desktop = append(desktop, "display: flex", "flex-direction: column", "gap: 10px")
+	align := p.Align
+	if align == "" {
+		align = "center"
+	}
+	switch align {
+	case "left":
+		desktop = append(desktop, "align-items: flex-start", "text-align: left")
+	case "right":
+		desktop = append(desktop, "align-items: flex-end", "text-align: right")
+	default:
+		desktop = append(desktop, "align-items: center", "text-align: center")
+	}
+	if p.Padding != "" {
+		desktop = append(desktop, "padding: "+p.Padding)
+	}
+	if p.Background != "" {
+		desktop = append(desktop, "background: "+p.Background)
+	}
+	b.Add(core.BreakpointDesktop, sel, desktop)
+	b.Add(core.BreakpointDesktop, sel+".wp-infobox", []string{
+		"text-decoration: none", "color: inherit",
+		"transition: transform .18s, box-shadow .18s",
+	})
+	b.Add(core.BreakpointDesktop, sel+".wp-infobox:hover", []string{
+		"transform: translateY(-2px)",
+	})
+
+	iconSize := p.IconSize
+	if iconSize == "" {
+		iconSize = "40px"
+	}
+	b.Add(core.BreakpointDesktop, sel+" .wp-infobox-icon", []string{
+		"width: " + iconSize, "height: " + iconSize,
+		"display: inline-flex", "align-items: center", "justify-content: center",
+		"font-size: calc(" + iconSize + " * 0.6)",
+		"border-radius: 999px",
+		"background: rgba(0,0,0,.05)",
+	})
+	if p.IconColor != "" {
+		b.Add(core.BreakpointDesktop, sel+" .wp-infobox-icon", []string{"color: " + p.IconColor})
+	}
+	b.Add(core.BreakpointDesktop, sel+" .wp-infobox-media img", []string{
+		"max-width: 100%", "height: auto", "border-radius: 8px",
+	})
+	b.Add(core.BreakpointDesktop, sel+" .wp-infobox-title", []string{
+		"margin: 0", "font-size: 1.15em", "line-height: 1.3",
+	})
+	if p.TitleColor != "" {
+		b.Add(core.BreakpointDesktop, sel+" .wp-infobox-title", []string{"color: " + p.TitleColor})
+	}
+	b.Add(core.BreakpointDesktop, sel+" .wp-infobox-text", []string{
+		"font-size: 0.92em", "line-height: 1.6",
+		"opacity: .85",
+	})
+	if p.TextColor != "" {
+		b.Add(core.BreakpointDesktop, sel+" .wp-infobox-text", []string{"color: " + p.TextColor, "opacity: 1"})
+	}
+}
