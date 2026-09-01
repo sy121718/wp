@@ -51,7 +51,7 @@ type Props struct {
 	// CustomColor 自定义图标颜色（color=custom 时）。
 	CustomColor string `json:"customColor,omitempty" ct:"color,maxlen=200,sec=style,label=图标颜色"`
 	// Size 图标尺寸（px，默认 40）。
-	Size string `json:"size,omitempty" ct:"safe,maxlen=20,sec=style,label=尺寸"`
+	Size string `json:"size,omitempty" ct:"dimension,maxlen=20,sec=style,label=尺寸"`
 	// Shape 形状：circle 圆形 / rounded 圆角 / square 方形。
 	Shape string `json:"shape,omitempty" ct:"select,circle=圆形,rounded=圆角,square=方形,default=circle,sec=style,label=形状"`
 	// Align 对齐：left / center / right。

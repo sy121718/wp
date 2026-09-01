@@ -57,7 +57,7 @@ type Props struct {
 	// TextColor 文本颜色。
 	TextColor string `json:"textColor,omitempty" ct:"color,maxlen=200,sec=style,label=文本颜色"`
 	// TextSize 文本字号。
-	TextSize string `json:"textSize,omitempty" ct:"safe,maxlen=20,sec=style,label=文本字号"`
+	TextSize string `json:"textSize,omitempty" ct:"dimension,maxlen=20,sec=style,label=文本字号"`
 	// LinkColor 链接颜色。
 	LinkColor string `json:"linkColor,omitempty" ct:"color,maxlen=200,sec=style,label=链接颜色"`
 	// LinkColorHover 链接悬停颜色。

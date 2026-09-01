@@ -75,7 +75,7 @@ type Props struct {
 	// Style 线条类型：solid / dashed / dotted / double（默认 solid）。
 	Style string `json:"style,omitempty" ct:"select,solid=实线,dashed=虚线,dotted=点线,double=双线,default=solid,sec=style,label=线型"`
 	// Weight 线粗（height），如 "1px" / "2px"。
-	Weight string `json:"weight,omitempty" ct:"safe,maxlen=20,sec=style"`
+	Weight string `json:"weight,omitempty" ct:"dimension,maxlen=20,sec=style"`
 	// Width 总宽度三端（百分比或固定像素；空=100%）。
 	Width Width `json:"width,omitempty"`
 	// Align 对齐（宽度非 100% 时）：left / center / right（默认 center）。

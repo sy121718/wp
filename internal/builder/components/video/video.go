@@ -58,7 +58,7 @@ type Props struct {
 	// Ratio 宽高比：16:9 / 4:3 / 1:1 / 自适应。
 	Ratio string `json:"ratio,omitempty" ct:"select,16:9=16:9,4:3=4:3,1:1=1:1,auto=自适应,default=16:9,sec=style,label=宽高比"`
 	// Radius 圆角。
-	Radius string `json:"radius,omitempty" ct:"safe,maxlen=20,sec=style,label=圆角"`
+	Radius string `json:"radius,omitempty" ct:"dimension,maxlen=20,sec=style,label=圆角"`
 	// Advanced 通用高级属性。
 	Advanced core.AdvancedProps `json:"advanced"`
 }

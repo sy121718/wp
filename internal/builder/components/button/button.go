@@ -83,9 +83,9 @@ type Icon struct {
 	// Spacing 图标与文案间距。
 	Spacing string `json:"spacing,omitempty" ct:"dimension,maxlen=20,sec=style"`
 	// HoverShift 悬停时图标水平位移动画值（如 "4px"）。
-	HoverShift string `json:"hoverShift,omitempty" ct:"safe,maxlen=20,sec=style"`
+	HoverShift string `json:"hoverShift,omitempty" ct:"dimension,maxlen=20,sec=style"`
 	// Size 图标尺寸。
-	Size string `json:"size,omitempty" ct:"safe,maxlen=20,sec=style"`
+	Size string `json:"size,omitempty" ct:"dimension,maxlen=20,sec=style"`
 }
 
 // State 正常/悬浮双态外观。
@@ -152,7 +152,7 @@ type Props struct {
 	Normal State `json:"normal,omitempty"`
 	Hover  State `json:"hover,omitempty"`
 	// HoverLift 悬浮上浮距离（如 "-2px"）。
-	HoverLift string `json:"hoverLift,omitempty" ct:"safe,maxlen=20,sec=style"`
+	HoverLift string `json:"hoverLift,omitempty" ct:"dimension,maxlen=20,sec=style"`
 
 	// Advanced 通用高级属性（docs/02-C0）。
 	Advanced core.AdvancedProps `json:"advanced"`

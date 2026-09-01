@@ -229,10 +229,10 @@ type VisualProps struct {
 	// Shadow 阴影级别：sm / md / lg / xl；custom 时取 ShadowCustom。
 	Shadow string `json:"shadow,omitempty"`
 	// ShadowCustom 自定义阴影四参 + 颜色（Shadow=custom 时生效）。
-	ShadowX      string `json:"shadowX,omitempty" ct:"safe,maxlen=20,sec=style,label=阴影 X"`
-	ShadowY      string `json:"shadowY,omitempty" ct:"safe,maxlen=20,sec=style,label=阴影 Y"`
-	ShadowBlur   string `json:"shadowBlur,omitempty" ct:"safe,maxlen=20,sec=style,label=阴影模糊"`
-	ShadowSpread string `json:"shadowSpread,omitempty" ct:"safe,maxlen=20,sec=style,label=阴影扩散"`
+	ShadowX      string `json:"shadowX,omitempty" ct:"dimension,maxlen=20,sec=style,label=阴影 X"`
+	ShadowY      string `json:"shadowY,omitempty" ct:"dimension,maxlen=20,sec=style,label=阴影 Y"`
+	ShadowBlur   string `json:"shadowBlur,omitempty" ct:"dimension,maxlen=20,sec=style,label=阴影模糊"`
+	ShadowSpread string `json:"shadowSpread,omitempty" ct:"dimension,maxlen=20,sec=style,label=阴影扩散"`
 	ShadowColor  string `json:"shadowColor,omitempty" ct:"color,maxlen=200,sec=style,label=阴影颜色"`
 }
 

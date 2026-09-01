@@ -123,8 +123,8 @@ type Props struct {
 	// --- 全局统一样式 ---
 	AspectRatio string `json:"aspectRatio,omitempty" ct:"select,original=原图,1:1=1:1,4:3=4:3,16:9=16:9,3:2=3:2,3:4=3:4,default=original,sec=style,label=宽高比"`
 	ObjectFit   string `json:"objectFit,omitempty" ct:"select,cover=铺满裁剪,contain=完整包含,default=cover,sec=style,label=填充方式"`
-	Radius      string `json:"radius,omitempty" ct:"safe,maxlen=30,sec=style"`
-	BorderWidth string `json:"borderWidth,omitempty" ct:"safe,maxlen=20,sec=style"`
+	Radius      string `json:"radius,omitempty" ct:"dimension,maxlen=30,sec=style"`
+	BorderWidth string `json:"borderWidth,omitempty" ct:"dimension,maxlen=20,sec=style"`
 	BorderColor string `json:"borderColor,omitempty" ct:"color,maxlen=100,sec=style"`
 	Hover       Hover  `json:"hover,omitempty"`
 

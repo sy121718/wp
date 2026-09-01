@@ -54,7 +54,7 @@ type Props struct {
 	// HoverBg 悬停背景色。
 	HoverBg string `json:"hoverBg,omitempty" ct:"color,maxlen=200,sec=style,label=悬停背景色"`
 	// Radius 圆角。
-	Radius string `json:"radius,omitempty" ct:"safe,maxlen=30,sec=style,label=圆角"`
+	Radius string `json:"radius,omitempty" ct:"dimension,maxlen=30,sec=style,label=圆角"`
 	// Subtitle 副标题（图标与标题之间）。
 	Subtitle string `json:"subtitle,omitempty" ct:"text,maxlen=200,sec=content,label=副标题"`
 	// SubtitleColor 副标题颜色。

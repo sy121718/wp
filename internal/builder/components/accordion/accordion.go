@@ -47,7 +47,7 @@ type Props struct {
 	// BgColor 项背景色。
 	BgColor string `json:"bgColor,omitempty" ct:"color,maxlen=200,sec=style,label=项背景色"`
 	// TitleSize 标题字号。
-	TitleSize string `json:"titleSize,omitempty" ct:"safe,maxlen=20,sec=style,label=标题字号"`
+	TitleSize string `json:"titleSize,omitempty" ct:"dimension,maxlen=20,sec=style,label=标题字号"`
 	// Advanced 通用高级属性。
 	Advanced core.AdvancedProps `json:"advanced"`
 }

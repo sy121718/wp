@@ -1793,6 +1793,7 @@
                     field('边框样式', 'props.visual.borderStyle', 'select', [['', '（默认）'], ['solid', '实线'], ['dashed', '虚线'], ['dotted', '点线']]);
                     field('边框颜色', 'props.visual.borderColor', 'input');
                     field('圆角', 'props.visual.radius', 'input');
+                    // 阴影下拉选择器 + 自定义四参（VisualProps 嵌套，schema 不递归渲染）。
                     field('阴影', 'props.visual.shadow', 'select', [['', '无'], ['sm', '小'], ['md', '中'], ['lg', '大'], ['xl', '特大'], ['custom', '自定义']]);
                     if (get('props.visual.shadow') === 'custom') {
                         unitInput('阴影 X', 'props.visual.shadowX', ['px']);

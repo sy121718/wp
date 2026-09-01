@@ -70,8 +70,8 @@ type Props struct {
 	Width Responsive `json:"width,omitempty"`
 	// Highlight 高亮背景盒（WD 标题高亮装饰）：背景色/内边距/圆角。
 	HighlightColor   string `json:"highlightColor,omitempty" ct:"color,maxlen=200,sec=style,label=高亮背景色"`
-	HighlightPadding string `json:"highlightPadding,omitempty" ct:"safe,maxlen=30,sec=style,label=高亮内边距"`
-	HighlightRadius  string `json:"highlightRadius,omitempty" ct:"safe,maxlen=30,sec=style,label=高亮圆角"`
+	HighlightPadding string `json:"highlightPadding,omitempty" ct:"dimension,maxlen=30,sec=style,label=高亮内边距"`
+	HighlightRadius  string `json:"highlightRadius,omitempty" ct:"dimension,maxlen=30,sec=style,label=高亮圆角"`
 	// Advanced 通用高级属性（规范 docs/02-C0）。
 	Advanced core.AdvancedProps `json:"advanced"`
 }

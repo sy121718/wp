@@ -47,7 +47,7 @@ type Props struct {
 	// Typography 基准字号行高与对齐（三端独立，core.TextStyle 共享组）。
 	Typography core.TextStyle `json:"typography,omitempty"`
 	// ParagraphSpacing 段间距（富文本模式下的段落上下留白）。
-	ParagraphSpacing string `json:"paragraphSpacing,omitempty" ct:"safe,maxlen=30,sec=style"`
+	ParagraphSpacing string `json:"paragraphSpacing,omitempty" ct:"dimension,maxlen=30,sec=style"`
 	// Color 文字颜色（色值或主题 Token）。
 	Color string `json:"color,omitempty" ct:"color,maxlen=200,sec=style"`
 	// LinkColor 链接颜色（色值或主题 Token，富文本模式）。
