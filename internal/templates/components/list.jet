@@ -1,0 +1,1 @@
+<ul class="{{ .Classes }} wp-list wp-list-{{ .V.Style }}">{{ range _, item := .V.Items }}<li class="wp-list-item"><span class="wp-list-marker" aria-hidden="true">{{ unsafe(item.MarkerHTML) }}</span>{{ if item.IsLink }}<a class="wp-list-text" href="{{ item.LinkHref }}">{{ item.Text }}</a>{{ else }}<span class="wp-list-text">{{ item.Text }}</span>{{ end }}</li>{{ end }}</ul>

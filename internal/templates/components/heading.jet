@@ -1,0 +1,1 @@
+{{ if .V.Subtitle }}<span class="wp-heading-sub">{{ .V.Subtitle }}</span>{{ end }}<{{ .V.Tag }} class="{{ .Classes }}"{{ if .CustomID }} id="{{ .CustomID }}"{{ end }}>{{ if .V.Highlight }}<span class="wp-heading-highlight">{{ .V.Text }}</span>{{ else }}{{ .V.Text }}{{ end }}</{{ .V.Tag }}>

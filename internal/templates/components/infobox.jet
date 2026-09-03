@@ -1,0 +1,1 @@
+{{ if .V.HasLink }}{{ if .V.HasBtn }}<div class="{{ .Classes }} wp-infobox">{{ unsafe(.V.BodyHTML) }}<a class="wp-infobox-btn" href="{{ .V.Link }}">{{ .V.BtnText }}</a></div>{{ else }}<a class="{{ .Classes }} wp-infobox" href="{{ .V.Link }}">{{ unsafe(.V.BodyHTML) }}</a>{{ end }}{{ else }}<div class="{{ .Classes }} wp-infobox">{{ unsafe(.V.BodyHTML) }}</div>{{ end }}

@@ -1,0 +1,1 @@
+<div class="{{ .Classes }} wp-social wp-social-{{ .V.Color }}">{{ range _, item := .V.Items }}<a class="wp-social-btn" href="{{ item.URL }}" target="_blank" rel="noopener nofollow" aria-label="{{ item.Platform }}">{{ unsafe(item.InnerHTML) }}</a>{{ end }}</div>
