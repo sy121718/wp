@@ -32,7 +32,7 @@ type FilterCondition struct {
 	Args  []any
 }
 
-// UserContext 用户身份上下文，由 JWT 中间件解析 Token 后填充，
+// UserContext 用户身份上下文，由认证中间件解析会话后填充，
 // 通过 context.Context 传递给 GORM 插件，供数据权限过滤使用。
 type UserContext struct {
 	UserID  uint64   // 当前用户 ID

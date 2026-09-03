@@ -28,11 +28,16 @@ type AdminCreateResp struct {
 	Username string `json:"username"`
 }
 
-// AdminLoginResp 管理员登录响应
+// AdminLoginResp 管理员登录结果。
 //
-// token 同时通过响应头和响应体下发，避免跨域场景下前端读不到自定义响应头。
+// 认证走 Session + Cookie：服务端通过 Set-Cookie 下发认证会话，响应体不再返回 JWT token。
+// 以下字段仅供 handler 组装 cookie session（通过 json:"-" 从响应体隐藏，不下发前端）。
 type AdminLoginResp struct {
-	AccessToken string `json:"accessToken"` // JWT token
+	UserID     uint64 `json:"-"`
+	Username   string `json:"-"`
+	SessionID  string `json:"-"`
+	IssuedAt   int64  `json:"-"`
+	RememberMe bool   `json:"-"`
 }
 
 // AdminDetailResp 管理员详情响应

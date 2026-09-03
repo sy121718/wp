@@ -41,6 +41,7 @@ func defaultCORSConfig() CORSConfig {
 			"X-Timestamp",
 			"X-Signature",
 			"X-Nonce",
+			"X-CSRF-Token",
 		},
 	}
 }
@@ -111,7 +112,6 @@ func setCORSHeaders(c *gin.Context, origin string, config CORSConfig) {
 
 	c.Header("Access-Control-Allow-Methods", strings.Join(config.AllowedMethods, ", "))
 	c.Header("Access-Control-Allow-Headers", strings.Join(config.AllowedHeaders, ", "))
-	c.Header("Access-Control-Expose-Headers", "X-New-Token")
 	c.Header("Access-Control-Allow-Credentials", "true")
 	c.Header("Access-Control-Max-Age", "86400")
 }

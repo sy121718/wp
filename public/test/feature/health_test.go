@@ -141,12 +141,12 @@ func TestDefaultRoutesSetSecurityHeaders(t *testing.T) {
 	}
 }
 
-func TestJWTAuthMiddlewareAbortsOnMissingAuthorization(t *testing.T) {
+func TestSessionAuthMiddlewareAbortsOnMissingSession(t *testing.T) {
 	engine, cleanup, err := support.SetupTestBootstrap(support.BootstrapOptions{
 		UseDefaultRoute: false,
 		InitComponents:  false,
 		RouteRegistrar: func(engine *gin.Engine) {
-			engine.GET("/protected", builtin.JWTAuthMiddleware(), func(c *gin.Context) {
+			engine.GET("/protected", builtin.SessionAuthMiddleware(), func(c *gin.Context) {
 				response.Success(c, gin.H{"reached": true})
 			})
 		},
@@ -186,12 +186,12 @@ func TestJWTAuthMiddlewareAbortsOnMissingAuthorization(t *testing.T) {
 	}
 }
 
-func TestJWTAuthMiddlewareReturnsUnifiedUnauthorizedOnInvalidToken(t *testing.T) {
+func TestSessionAuthMiddlewareReturnsUnauthorizedOnInvalidSession(t *testing.T) {
 	engine, cleanup, err := support.SetupTestBootstrap(support.BootstrapOptions{
 		UseDefaultRoute: false,
 		InitComponents:  false,
 		RouteRegistrar: func(engine *gin.Engine) {
-			engine.GET("/protected", builtin.JWTAuthMiddleware(), func(c *gin.Context) {
+			engine.GET("/protected", builtin.SessionAuthMiddleware(), func(c *gin.Context) {
 				response.Success(c, gin.H{"reached": true})
 			})
 		},
@@ -210,7 +210,7 @@ func TestJWTAuthMiddlewareReturnsUnifiedUnauthorizedOnInvalidToken(t *testing.T)
 		Method: http.MethodGet,
 		Path:   "/protected",
 		Headers: map[string]string{
-			"Authorization": "Bearer invalid-token",
+			"Cookie": "gowp_session=invalid-tampered-value",
 		},
 	})
 	if err != nil {

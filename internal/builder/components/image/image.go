@@ -83,8 +83,8 @@ type Props struct {
 	ObjectFit        string `json:"objectFit,omitempty" ct:"select,cover=铺满裁剪,contain=完整包含,fill=拉伸,default=cover,sec=style,label=填充方式"`
 	// ObjectPosition 对象定位（object-fit 裁剪基准点），如 "center center" / "50% 20%"。
 	ObjectPosition string `json:"objectPosition,omitempty" ct:"safe,maxlen=40,sec=style,label=对象定位"`
-	Align          Align  `json:"align,omitempty"` // 三端对齐：left/center/right
-	Width          string `json:"width,omitempty" ct:"safe,maxlen=30,sec=style,label=宽度"`    // auto / 百分比 / px / rem
+	Align          Align  `json:"align,omitempty"`                                             // 三端对齐：left/center/right
+	Width          string `json:"width,omitempty" ct:"safe,maxlen=30,sec=style,label=宽度"`      // auto / 百分比 / px / rem
 	MaxWidth       string `json:"maxWidth,omitempty" ct:"safe,maxlen=30,sec=style,label=最大宽度"` // 如 480px
 	// Height 固定高度（三端独立；设置后配合 object-fit 控制裁切）。
 	Height Responsive `json:"height,omitempty"`
@@ -169,33 +169,33 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 
 	var desktop, tablet, mobile []string
 	if p.ObjectFit != "" && p.ObjectFit != "cover" {
-		desktop = append(desktop, "object-fit: "+p.ObjectFit)
+		desktop = append(desktop, core.CSSDecl("object-fit", p.ObjectFit))
 	}
 	if p.ObjectPosition != "" {
-		desktop = append(desktop, "object-position: "+p.ObjectPosition)
+		desktop = append(desktop, core.CSSDecl("object-position", p.ObjectPosition))
 	}
 	if ar, ok := presetRatios[p.AspectRatio]; ok && ar != "" {
-		desktop = append(desktop, "aspect-ratio: "+ar)
+		desktop = append(desktop, core.CSSDecl("aspect-ratio", ar))
 	} else if p.AspectRatio == "custom" {
-		desktop = append(desktop, "aspect-ratio: "+p.AspectRatioValue)
+		desktop = append(desktop, core.CSSDecl("aspect-ratio", p.AspectRatioValue))
 	}
 	if p.Width != "" {
-		desktop = append(desktop, "width: "+p.Width)
+		desktop = append(desktop, core.CSSDecl("width", p.Width))
 	}
 	if p.MaxWidth != "" {
-		desktop = append(desktop, "max-width: "+p.MaxWidth)
+		desktop = append(desktop, core.CSSDecl("max-width", p.MaxWidth))
 	}
 	// 固定高度（三端独立）。
 	appendHeight := func(target *[]string, h string) {
 		if h != "" {
-			*target = append(*target, "height: "+h)
+			*target = append(*target, core.CSSDecl("height", h))
 		}
 	}
 	appendHeight(&desktop, p.Height.Desktop)
 	appendHeight(&tablet, p.Height.Tablet)
 	appendHeight(&mobile, p.Height.Mobile)
 	if p.BorderRadius != "" {
-		desktop = append(desktop, "border-radius: "+p.BorderRadius)
+		desktop = append(desktop, core.CSSDecl("border-radius", p.BorderRadius))
 	}
 
 	// 对齐：块级 margin 控制。
@@ -231,7 +231,7 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		if p.Hover.RestoreColor {
 			transition = append(transition, "filter "+p.Hover.DurationOr("300ms")+" ease")
 		}
-		b.Add(core.BreakpointDesktop, sel, []string{"transition: " + strings.Join(transition, ", ")})
+		b.Add(core.BreakpointDesktop, sel, []string{core.CSSDecl("transition", strings.Join(transition, ", "))})
 
 		var hoverDecls []string
 		if p.Hover.Scale != "" {
@@ -296,7 +296,7 @@ func filterDecls(f Filters) string {
 	if len(parts) == 0 {
 		return ""
 	}
-	return "filter: " + strings.Join(parts, " ")
+	return core.CSSDecl("filter", strings.Join(parts, " "))
 }
 
 // DurationOr 悬浮过渡默认值。

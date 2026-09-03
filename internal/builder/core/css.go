@@ -30,6 +30,19 @@ var keyframesOrder = []string{"wp-fade-in", "wp-slide-up"}
 // CSSBuckets 三端 CSS 规则集合。
 // 规则按文档序（前序遍历）追加，最终按 关键帧 → 桌面 → 平板 → 手机 的固定顺序拼接，
 // 保证确定性输出（同一 Page Document 产生相同字节）。
+// CSSDecl 构造单条 CSS 声明：property: v1 v2 v3。
+// 跳过空值（空值不参与拼接，避免产生 "prop:  " 这类无效声明）。
+// 例：CSSDecl("border-top", "1px", "solid", "red") → "border-top: 1px solid red"
+func CSSDecl(prop string, values ...string) string {
+	parts := make([]string, 0, len(values))
+	for _, v := range values {
+		if v != "" {
+			parts = append(parts, v)
+		}
+	}
+	return prop + ": " + strings.Join(parts, " ")
+}
+
 type CSSBuckets struct {
 	desktop   []string
 	tablet    []string

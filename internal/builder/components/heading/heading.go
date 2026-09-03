@@ -159,26 +159,26 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	mobile = append(mobile, p.Typography.BreakpointDecls(core.BreakpointMobile)...)
 
 	if w, err := resolveWeight(p.Weight); err == nil && w != "" {
-		desktop = append(desktop, "font-weight: "+w)
+		desktop = append(desktop, core.CSSDecl("font-weight", w))
 	}
 	if p.LetterSpacing != "" {
-		desktop = append(desktop, "letter-spacing: "+p.LetterSpacing)
+		desktop = append(desktop, core.CSSDecl("letter-spacing", p.LetterSpacing))
 	}
 	if p.Transform != "" && p.Transform != "none" {
-		desktop = append(desktop, "text-transform: "+p.Transform)
+		desktop = append(desktop, core.CSSDecl("text-transform", p.Transform))
 	}
 	if p.Decor.Decoration != "" && p.Decor.Decoration != "none" {
-		decl := "text-decoration: " + p.Decor.Decoration
+		decl := core.CSSDecl("text-decoration", p.Decor.Decoration)
 		if p.Decor.DecorationColor != "" {
 			decl += " " + p.Decor.DecorationColor
 		}
 		desktop = append(desktop, decl)
 	}
 	if p.Color != "" {
-		desktop = append(desktop, "color: "+p.Color)
+		desktop = append(desktop, core.CSSDecl("color", p.Color))
 	}
 	if v, ok := textShadowPresets[p.TextShadow]; p.TextShadow != "" && ok {
-		desktop = append(desktop, "text-shadow: "+v)
+		desktop = append(desktop, core.CSSDecl("text-shadow", v))
 	}
 
 	// 副标题样式。
@@ -188,16 +188,16 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		"margin-bottom: 0.4em", "opacity: .7",
 	})
 	if p.SubtitleColor != "" {
-		b.Add(core.BreakpointDesktop, sel+" .wp-heading-sub", []string{"color: " + p.SubtitleColor, "opacity: 1"})
+		b.Add(core.BreakpointDesktop, sel+" .wp-heading-sub", []string{core.CSSDecl("color", p.SubtitleColor), "opacity: 1"})
 	}
 	// 高亮背景盒。
 	if p.HighlightColor != "" {
-		hl := []string{"background: " + p.HighlightColor}
+		hl := []string{core.CSSDecl("background", p.HighlightColor)}
 		if p.HighlightPadding != "" {
-			hl = append(hl, "padding: "+p.HighlightPadding)
+			hl = append(hl, core.CSSDecl("padding", p.HighlightPadding))
 		}
 		if p.HighlightRadius != "" {
-			hl = append(hl, "border-radius: "+p.HighlightRadius)
+			hl = append(hl, core.CSSDecl("border-radius", p.HighlightRadius))
 		}
 		b.Add(core.BreakpointDesktop, sel+" .wp-heading-highlight", hl)
 	}
@@ -217,7 +217,7 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	appendAlign(&mobile, p.Align.Mobile)
 	appendWidth := func(target *[]string, w string) {
 		if w != "" {
-			*target = append(*target, "width: "+w)
+			*target = append(*target, core.CSSDecl("width", w))
 		}
 	}
 	appendWidth(&desktop, p.Width.Desktop)

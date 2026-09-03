@@ -148,16 +148,16 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 				weight = "3px" // 双实线最小辨识度
 			}
 		}
-		return "border-top: " + weight + " " + borderStyle + " " + lineColor(p)
+		return core.CSSDecl("border-top", weight, borderStyle, lineColor(p))
 	}
 
 	// 无嵌入：hr 直用线样式。
 	if p.Inset.Kind == InsetNone || p.Inset.Kind == "" {
 		var decls []string
 		if color := lineColor(p); color != "" {
-			decls = append(decls, "border-top: "+strWeight(p)+" "+p.StyleOr(LineSolid)+" "+color)
+			decls = append(decls, core.CSSDecl("border-top", strWeight(p), p.StyleOr(LineSolid), color))
 		} else {
-			decls = append(decls, "border-top: "+strWeight(p)+" "+p.StyleOr(LineSolid))
+			decls = append(decls, core.CSSDecl("border-top", strWeight(p), p.StyleOr(LineSolid)))
 		}
 		decls = append(decls, "margin: 0")
 		b.Add(core.BreakpointDesktop, sel, decls)
@@ -179,23 +179,23 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		default:
 			leftFlex, rightFlex = "1", "1"
 		}
-		b.Add(core.BreakpointDesktop, sel+" .dt-line", append([]string{"flex: " + leftFlex}, lineBase...))
+		b.Add(core.BreakpointDesktop, sel+" .dt-line", append([]string{core.CSSDecl("flex", leftFlex)}, lineBase...))
 		b.Add(core.BreakpointDesktop, sel+" .dt-line + .dt-inset + .dt-line", nil)
-		b.Add(core.BreakpointDesktop, sel+" .dt-line:last-child", append([]string{"flex: " + rightFlex}, lineBase...))
+		b.Add(core.BreakpointDesktop, sel+" .dt-line:last-child", append([]string{core.CSSDecl("flex", rightFlex)}, lineBase...))
 
 		insetDecls := []string{"display: inline-flex", "align-items: center"}
 		if p.Inset.Spacing != "" {
-			insetDecls = append(insetDecls, "padding: 0 "+p.Inset.Spacing)
+			insetDecls = append(insetDecls, core.CSSDecl("padding", "0", p.Inset.Spacing))
 		}
 		insetDecls = append(insetDecls, "white-space: nowrap")
 		if p.Inset.FontSize != "" {
-			insetDecls = append(insetDecls, "font-size: "+p.Inset.FontSize)
+			insetDecls = append(insetDecls, core.CSSDecl("font-size", p.Inset.FontSize))
 		}
 		if p.Inset.FontWeight != "" {
-			insetDecls = append(insetDecls, "font-weight: "+p.Inset.FontWeight)
+			insetDecls = append(insetDecls, core.CSSDecl("font-weight", p.Inset.FontWeight))
 		}
 		if p.Inset.Color != "" {
-			insetDecls = append(insetDecls, "color: "+p.Inset.Color)
+			insetDecls = append(insetDecls, core.CSSDecl("color", p.Inset.Color))
 		}
 		b.Add(core.BreakpointDesktop, sel+" .dt-inset", insetDecls)
 		b.Add(core.BreakpointDesktop, sel+" .dt-inset svg", []string{"width: 1em", "height: 1em"})
@@ -206,7 +206,7 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		if w == "" {
 			return nil
 		}
-		out := []string{"width: " + w}
+		out := []string{core.CSSDecl("width", w)}
 		switch p.Align {
 		case "left":
 			out = append(out, "margin-left: 0", "margin-right: auto")

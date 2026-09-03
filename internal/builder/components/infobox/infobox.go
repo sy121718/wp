@@ -96,10 +96,10 @@ func (c *Component) Validate(node *core.Node, ids map[string]bool) (err error) {
 	if adv := core.AdvancedOf(&p); adv != nil {
 		return core.ValidateAdvanced(adv, node.ID, ids)
 	}
-		if err = core.ValidateSpec(&p, node.ID); err != nil {
+	if err = core.ValidateSpec(&p, node.ID); err != nil {
 		return err
 	}
-return nil
+	return nil
 }
 
 // compileCSS 信息框样式。
@@ -121,10 +121,10 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		desktop = append(desktop, "align-items: center", "text-align: center")
 	}
 	if p.Padding != "" {
-		desktop = append(desktop, "padding: "+p.Padding)
+		desktop = append(desktop, core.CSSDecl("padding", p.Padding))
 	}
 	if p.Background != "" {
-		desktop = append(desktop, "background: "+p.Background)
+		desktop = append(desktop, core.CSSDecl("background", p.Background))
 	}
 	b.Add(core.BreakpointDesktop, sel, desktop)
 	b.Add(core.BreakpointDesktop, sel+".wp-infobox", []string{
@@ -140,14 +140,14 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		iconSize = "40px"
 	}
 	b.Add(core.BreakpointDesktop, sel+" .wp-infobox-icon", []string{
-		"width: " + iconSize, "height: " + iconSize,
+		core.CSSDecl("width", iconSize), core.CSSDecl("height", iconSize),
 		"display: inline-flex", "align-items: center", "justify-content: center",
 		"font-size: calc(" + iconSize + " * 0.6)",
 		"border-radius: 999px",
 		"background: rgba(0,0,0,.05)",
 	})
 	if p.IconColor != "" {
-		b.Add(core.BreakpointDesktop, sel+" .wp-infobox-icon", []string{"color: " + p.IconColor})
+		b.Add(core.BreakpointDesktop, sel+" .wp-infobox-icon", []string{core.CSSDecl("color", p.IconColor)})
 	}
 	b.Add(core.BreakpointDesktop, sel+" .wp-infobox-media img", []string{
 		"max-width: 100%", "height: auto", "border-radius: 8px",
@@ -156,14 +156,14 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		"margin: 0", "font-size: 1.15em", "line-height: 1.3",
 	})
 	if p.TitleColor != "" {
-		b.Add(core.BreakpointDesktop, sel+" .wp-infobox-title", []string{"color: " + p.TitleColor})
+		b.Add(core.BreakpointDesktop, sel+" .wp-infobox-title", []string{core.CSSDecl("color", p.TitleColor)})
 	}
 	b.Add(core.BreakpointDesktop, sel+" .wp-infobox-text", []string{
 		"font-size: 0.92em", "line-height: 1.6",
 		"opacity: .85",
 	})
 	if p.TextColor != "" {
-		b.Add(core.BreakpointDesktop, sel+" .wp-infobox-text", []string{"color: " + p.TextColor, "opacity: 1"})
+		b.Add(core.BreakpointDesktop, sel+" .wp-infobox-text", []string{core.CSSDecl("color", p.TextColor), "opacity: 1"})
 	}
 	if p.Subtitle != "" {
 		sub := []string{
@@ -174,20 +174,20 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		}
 		b.Add(core.BreakpointDesktop, sel+" .wp-infobox-subtitle", sub)
 		if p.SubtitleColor != "" {
-			b.Add(core.BreakpointDesktop, sel+" .wp-infobox-subtitle", []string{"color: " + p.SubtitleColor})
+			b.Add(core.BreakpointDesktop, sel+" .wp-infobox-subtitle", []string{core.CSSDecl("color", p.SubtitleColor)})
 		}
 	}
 	if p.Radius != "" {
-		b.Add(core.BreakpointDesktop, sel, []string{"border-radius: " + p.Radius, "overflow: hidden"})
+		b.Add(core.BreakpointDesktop, sel, []string{core.CSSDecl("border-radius", p.Radius), "overflow: hidden"})
 	}
 	if p.HoverBg != "" {
-		b.Add(core.BreakpointDesktop, sel+".wp-infobox:hover", []string{"background: " + p.HoverBg})
+		b.Add(core.BreakpointDesktop, sel+".wp-infobox:hover", []string{core.CSSDecl("background", p.HoverBg)})
 	}
 	if p.IconBgColor != "" {
-		b.Add(core.BreakpointDesktop, sel+" .wp-infobox-icon", []string{"background: " + p.IconBgColor})
+		b.Add(core.BreakpointDesktop, sel+" .wp-infobox-icon", []string{core.CSSDecl("background", p.IconBgColor)})
 	}
 	if p.IconBorderColor != "" {
-		b.Add(core.BreakpointDesktop, sel+" .wp-infobox-icon", []string{"border: 1px solid " + p.IconBorderColor})
+		b.Add(core.BreakpointDesktop, sel+" .wp-infobox-icon", []string{core.CSSDecl("border", "1px", "solid", p.IconBorderColor)})
 	}
 	if p.BtnText != "" {
 		b.Add(core.BreakpointDesktop, sel+" .wp-infobox-btn", []string{

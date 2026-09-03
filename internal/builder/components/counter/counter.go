@@ -75,10 +75,10 @@ func (c *Component) Validate(node *core.Node, ids map[string]bool) (err error) {
 	if adv := core.AdvancedOf(&p); adv != nil {
 		return core.ValidateAdvanced(adv, node.ID, ids)
 	}
-		if err = core.ValidateSpec(&p, node.ID); err != nil {
+	if err = core.ValidateSpec(&p, node.ID); err != nil {
 		return err
 	}
-return nil
+	return nil
 }
 
 func formatNum(v float64, decimals int) string {
@@ -96,16 +96,16 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	textAlign := align
 
 	desktop := []string{
-		"display: flex", "align-items: baseline", "justify-content: " + align,
-		"gap: 4px", "text-align: " + textAlign,
+		"display: flex", "align-items: baseline", core.CSSDecl("justify-content", align),
+		"gap: 4px", core.CSSDecl("text-align", textAlign),
 	}
 	if p.FontSize != "" {
-		desktop = append(desktop, "font-size: "+p.FontSize)
+		desktop = append(desktop, core.CSSDecl("font-size", p.FontSize))
 	} else {
 		desktop = append(desktop, "font-size: 2rem")
 	}
 	if p.Color != "" {
-		desktop = append(desktop, "color: "+p.Color)
+		desktop = append(desktop, core.CSSDecl("color", p.Color))
 	} else {
 		desktop = append(desktop, "color: inherit")
 	}
@@ -115,7 +115,6 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	b.Add(core.BreakpointDesktop, sel+" .wp-counter-value", []string{"font-variant-numeric: tabular-nums"})
 	b.Add(core.BreakpointDesktop, "div"+sel+"-label.wp-counter-label, .wp-counter-label", []string{
 		"font-size: 0.85rem", "font-weight: 400", "opacity: .7",
-		"margin-top: 6px", "text-align: " + textAlign,
+		"margin-top: 6px", core.CSSDecl("text-align", textAlign),
 	})
 }
-

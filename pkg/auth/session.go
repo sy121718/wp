@@ -1,6 +1,6 @@
-// Package auth JWT 认证 + Redis 用户会话管理。
+// Package auth Session + Cookie 认证 + Redis 用户会话管理。
 //
-// JWT 只管认证（验签 + 过期），无状态。
+// Cookie 会话（cookie_session.go）只管认证（识别当前用户），无服务端状态。
 // Redis 管理用户信息、封禁标记、在线心跳。
 package auth
 
@@ -84,19 +84,17 @@ func DeleteUserSession(ctx context.Context, userID uint64) error {
 	return client.Del(ctx, sessionKey(userID), onlineKey(userID)).Err()
 }
 
-// RevokeUserSession 撤销当前用户已签发的 token，并清理会话与在线状态。
+// RevokeUserSession 撤销当前用户已建立的会话，并清理会话与在线状态。
+//
+// 封禁时间设为当前时间：所有此前建立的 cookie 会话（issued_at < now）立即失效。
 func RevokeUserSession(ctx context.Context, userID uint64) error {
-	expireHours := GetExpireTime()
-	if expireHours <= 0 {
-		expireHours = defaultJWTExpireTime
-	}
-	if err := BlockUser(ctx, userID, time.Now().Add(time.Duration(expireHours)*time.Hour)); err != nil {
+	if err := BlockUser(ctx, userID, time.Now()); err != nil {
 		return err
 	}
 	return DeleteUserSession(ctx, userID)
 }
 
-// BlockUser 封禁用户，token 在此时间之前签发的都会被拒绝。
+// BlockUser 封禁用户，在此时间之前建立的会话都会被拒绝。
 func BlockUser(ctx context.Context, userID uint64, blockedUntil time.Time) error {
 	client, err := cache.GetRedis()
 	if err != nil {
@@ -115,8 +113,8 @@ func UnblockUser(ctx context.Context, userID uint64) error {
 }
 
 // IsBlocked 检查用户是否被封禁。
-// tokenIat 为 token 签发时间戳，0 表示不检查。
-func IsBlocked(ctx context.Context, userID uint64, tokenIat int64) (bool, error) {
+// sessionIssuedAt 为会话建立时间戳，0 表示不检查。
+func IsBlocked(ctx context.Context, userID uint64, sessionIssuedAt int64) (bool, error) {
 	client, err := cache.GetRedis()
 	if err != nil {
 		return false, err
@@ -127,7 +125,7 @@ func IsBlocked(ctx context.Context, userID uint64, tokenIat int64) (bool, error)
 		return false, nil
 	}
 
-	if tokenIat > 0 && blockedAt > tokenIat {
+	if sessionIssuedAt > 0 && blockedAt > sessionIssuedAt {
 		return true, nil
 	}
 	return false, nil

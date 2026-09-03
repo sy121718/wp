@@ -26,12 +26,12 @@ const (
 	ErrPermissionDenied      = "ErrPermissionDenied"      // 无权限访问
 	ErrRateLimited           = "ErrRateLimited"           // 请求触发限流
 	ErrRequestEntityTooLarge = "ErrRequestEntityTooLarge" // 请求体过大
-	// JWT 中间件补充（用户可见的认证失败消息）
-	ErrEnvironmentAbnormal = "ErrEnvironmentAbnormal" // 环境异常，请重新登录（token 解析失败）
+	// 认证中间件补充（用户可见的认证失败消息）
+	ErrEnvironmentAbnormal = "ErrEnvironmentAbnormal" // 环境异常，请重新登录（会话解析失败）
 	ErrAuthUnavailable     = "ErrAuthUnavailable"     // 认证状态暂时不可用（503，依赖 Redis 时）
 	ErrForcedLogout        = "ErrForcedLogout"        // 账号已被强制下线
 	ErrSessionExpired      = "ErrSessionExpired"      // 登录会话已失效，请重新登录
-	ErrUserInfoMissing     = "ErrUserInfoMissing"     // 未获取到用户信息（未挂 JWT 中间件）
+	ErrUserInfoMissing     = "ErrUserInfoMissing"     // 未获取到用户信息（未挂认证中间件）
 	ErrAuthzNotReady       = "ErrAuthzNotReady"       // 权限系统未初始化
 	ErrAuthzFailed         = "ErrAuthzFailed"         // 权限验证失败
 )

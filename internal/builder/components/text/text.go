@@ -113,10 +113,10 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	mobile = append(mobile, p.Typography.BreakpointDecls(core.BreakpointMobile)...)
 
 	if p.Color != "" {
-		desktop = append(desktop, "color: "+p.Color)
+		desktop = append(desktop, core.CSSDecl("color", p.Color))
 	}
 	if p.LinkColor != "" {
-		desktop = append(desktop, "color: "+p.LinkColor)
+		desktop = append(desktop, core.CSSDecl("color", p.LinkColor))
 	}
 
 	b.Add(core.BreakpointDesktop, sel, desktop)
@@ -126,8 +126,8 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	// 段间距：富文本模式下内部块级元素。
 	if p.ParagraphSpacing != "" {
 		b.Add(core.BreakpointDesktop, sel+" p, "+sel+" ul, "+sel+" blockquote", []string{
-			"margin-top: " + p.ParagraphSpacing,
-			"margin-bottom: " + p.ParagraphSpacing,
+			core.CSSDecl("margin-top", p.ParagraphSpacing),
+			core.CSSDecl("margin-bottom", p.ParagraphSpacing),
 		})
 	}
 

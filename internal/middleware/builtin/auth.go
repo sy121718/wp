@@ -1,9 +1,6 @@
 package builtin
 
 import (
-	"strings"
-	"time"
-
 	"go_wp/pkg/auth"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
@@ -11,53 +8,39 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// JWTAuthMiddleware JWT 认证与自动续期中间件。
+// SessionAuthMiddleware Session + Cookie 认证中间件。
 //
 // 认证校验：
-//  1. 从 Authorization 头中提取 Bearer token
-//  2. 调用 auth.ParseToken() 解析 JWT，验证签名和过期时间
-//  3. 解析成功后，将 user_id 和 username 写入 gin.Context
+//  1. 从 cookie session 读取认证会话（auth.GetCookieSession），替代旧的 Authorization 头 + JWT
+//  2. 检查 Redis 封禁标记（auth.IsBlocked）
+//  3. 校验 Redis 用户会话（auth.GetUserSession）与 cookie 中的 SessionID 是否一致
+//  4. 通过后把 user_id（int64）和 username 写入 gin.Context，保持旧 context key 不变，
+//     避免下游 casbin / datarule 改动
 //
-// 自动续期：
-//
-//	请求处理完成后，若 token 剩余有效期不足 1 小时，
-//	自动生成新 token 并通过 X-New-Token 响应头返回前端。
-//	前端 Axios 拦截器检测到此头后自动更新本地存储，实现无感续期。
+// 请求处理完成后刷新在线心跳（auth.RefreshOnline）。
+// 无需 JWT 自动续期：cookie 由浏览器自动携带，过期由 Cookie MaxAge 控制。
 //
 // 失败场景：
-//   - 未携带 Authorization 头 → 返回 401 "未登录或登录已过期"
-//   - Authorization 格式错误（非 Bearer） → 返回 401
-//   - token 无效或已过期 → 返回 401
+//   - 无 cookie session / session 无效 → 返回 401 "未登录或登录已过期"
+//   - Redis 不可用 → 返回 503 "认证状态暂时不可用"
+//   - 账号被封禁 → 返回 401 "账号已被强制下线"
 //
 // 适用位置：需要登录认证的路由组或单路由。
-func JWTAuthMiddleware() gin.HandlerFunc {
+func SessionAuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		//提取请求头中的 Authorization 字段
-		authHeader := c.GetHeader("Authorization")
-		if authHeader == "" {
+		// 1) 从 cookie session 读取用户（替代 Authorization 头 + JWT）
+		cs, err := auth.GetCookieSession(c)
+		if err != nil || cs == nil {
+			if err != nil {
+				logger.Scene("middleware").With("reason", "会话读取失败").With("err", err).Warn("认证失败")
+			}
 			response.ErrorWithMessage(c, 401, "未登录或登录已过期")
 			c.Abort()
 			return
 		}
 
-		//分割 Authorization 字段，格式为 Bearer <token>
-		parts := strings.SplitN(authHeader, " ", 2)
-		if len(parts) != 2 || parts[0] != "Bearer" {
-			response.ErrorWithMessage(c, 401, "未登录或登录已过期")
-			c.Abort()
-			return
-		}
-		claims, err := auth.ParseToken(parts[1])
-		//解析 token 失败
-		if err != nil {
-			logger.Scene("middleware").With("reason", "token 解析失败").With("err", err).Warn("认证失败")
-			response.ErrorWithMessage(c, 401, "环境异常,请重新登录")
-			c.Abort()
-			return
-		}
-		//blocked 封禁标记
-		// 检查 Redis 封禁标记
-		blocked, err := auth.IsBlocked(c.Request.Context(), uint64(claims.UserID), claims.IssuedAt.Unix())
+		// 2) 检查 Redis 封禁标记
+		blocked, err := auth.IsBlocked(c.Request.Context(), cs.UserID, cs.IssuedAt)
 		if err != nil {
 			response.ErrorWithMessage(c, 503, "认证状态暂时不可用")
 			c.Abort()
@@ -70,39 +53,31 @@ func JWTAuthMiddleware() gin.HandlerFunc {
 			return
 		}
 
-		session, err := auth.GetUserSession(c.Request.Context(), uint64(claims.UserID))
+		// 3) 校验 Redis 用户会话与会话 ID
+		session, err := auth.GetUserSession(c.Request.Context(), cs.UserID)
 		if err != nil {
 			response.ErrorWithMessage(c, 503, "认证状态暂时不可用")
 			c.Abort()
 			return
 		}
-		if session == nil || claims.SessionID == "" || session.SessionID != claims.SessionID {
+		if session == nil || cs.SessionID == "" || session.SessionID != cs.SessionID {
 			logger.Scene("middleware").With("reason", "登录会话已失效").Warn("认证失败")
 			response.ErrorWithMessage(c, 401, "登录会话已失效，请重新登录")
 			c.Abort()
 			return
 		}
 
-		c.Set("user_id", claims.UserID)
-		c.Set("username", claims.Username)
+		// 4) 写入 context（key 与旧 JWT 中间件保持一致）
+		c.Set("user_id", int64(cs.UserID))
+		c.Set("username", cs.Username)
 		c.Next()
 
 		if c.GetBool(auth.ContextSessionRevokedKey) {
 			return
 		}
 
-		// 自动续期：token 剩余不足 10 分钟，生成新 token 通过响应头返回
-		if claims.ExpiresAt != nil && time.Until(claims.ExpiresAt.Time) <= 10*time.Minute {
-			newToken, _, err := auth.GenerateSessionToken(claims.UserID, claims.Username, claims.RememberMe, claims.SessionID)
-			if err != nil {
-				logger.Scene("middleware").Error(err, "JWT 自动续期失败")
-				return
-			}
-			c.Header("X-New-Token", newToken)
-		}
-
-		// 刷新在线心跳
-		if err := auth.RefreshOnline(c.Request.Context(), uint64(claims.UserID), 0); err != nil {
+		// 5) 刷新在线心跳
+		if err := auth.RefreshOnline(c.Request.Context(), cs.UserID, 0); err != nil {
 			logger.Scene("middleware").With("err", err).Warn("刷新在线心跳失败")
 		}
 	}

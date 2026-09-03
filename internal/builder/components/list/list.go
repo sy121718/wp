@@ -111,10 +111,10 @@ func (c *Component) Validate(node *core.Node, ids map[string]bool) (err error) {
 	if adv := core.AdvancedOf(&p); adv != nil {
 		return core.ValidateAdvanced(adv, node.ID, ids)
 	}
-		if err = core.ValidateSpec(&p, node.ID); err != nil {
+	if err = core.ValidateSpec(&p, node.ID); err != nil {
 		return err
 	}
-return nil
+	return nil
 }
 
 // compileCSS 列表样式。
@@ -158,38 +158,38 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	})
 
 	if p.IconColor != "" {
-		b.Add(core.BreakpointDesktop, sel+" .wp-list-marker", []string{"color: " + p.IconColor})
+		b.Add(core.BreakpointDesktop, sel+" .wp-list-marker", []string{core.CSSDecl("color", p.IconColor)})
 	}
 	if p.IconBgColor != "" {
 		b.Add(core.BreakpointDesktop, sel+" .wp-list-marker", []string{
-			"background: " + p.IconBgColor, "border-radius: 999px",
+			core.CSSDecl("background", p.IconBgColor), "border-radius: 999px",
 			"width: 1.8em", "height: 1.8em",
 		})
 	}
 	if p.IconColorHover != "" || p.IconBgColorHover != "" {
 		var hv []string
 		if p.IconColorHover != "" {
-			hv = append(hv, "color: "+p.IconColorHover)
+			hv = append(hv, core.CSSDecl("color", p.IconColorHover))
 		}
 		if p.IconBgColorHover != "" {
-			hv = append(hv, "background: "+p.IconBgColorHover)
+			hv = append(hv, core.CSSDecl("background", p.IconBgColorHover))
 		}
 		b.Add(core.BreakpointDesktop, sel+" .wp-list-item:hover .wp-list-marker", hv)
 	}
 	if p.TextColor != "" {
-		b.Add(core.BreakpointDesktop, sel+" .wp-list-text", []string{"color: " + p.TextColor})
+		b.Add(core.BreakpointDesktop, sel+" .wp-list-text", []string{core.CSSDecl("color", p.TextColor)})
 	}
 	if p.TextSize != "" {
-		b.Add(core.BreakpointDesktop, sel+" .wp-list-text", []string{"font-size: " + p.TextSize})
+		b.Add(core.BreakpointDesktop, sel+" .wp-list-text", []string{core.CSSDecl("font-size", p.TextSize)})
 	}
 	if p.LinkColor != "" {
-		b.Add(core.BreakpointDesktop, sel+" a.wp-list-text", []string{"color: " + p.LinkColor})
+		b.Add(core.BreakpointDesktop, sel+" a.wp-list-text", []string{core.CSSDecl("color", p.LinkColor)})
 	}
 	if p.LinkColorHover != "" {
-		b.Add(core.BreakpointDesktop, sel+" a.wp-list-text:hover", []string{"color: " + p.LinkColorHover})
+		b.Add(core.BreakpointDesktop, sel+" a.wp-list-text:hover", []string{core.CSSDecl("color", p.LinkColorHover)})
 	}
 	if p.IconSize != "" {
-		b.Add(core.BreakpointDesktop, sel+" .wp-list-marker", []string{"font-size: " + p.IconSize})
+		b.Add(core.BreakpointDesktop, sel+" .wp-list-marker", []string{core.CSSDecl("font-size", p.IconSize)})
 	}
 	if p.Align == "center" || p.Align == "right" {
 		j := "flex-start"
@@ -198,6 +198,6 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		} else {
 			j = "flex-end"
 		}
-		b.Add(core.BreakpointDesktop, sel, []string{"align-items: " + j})
+		b.Add(core.BreakpointDesktop, sel, []string{core.CSSDecl("align-items", j)})
 	}
 }

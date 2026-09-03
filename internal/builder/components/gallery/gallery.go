@@ -277,16 +277,16 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	// 统一子图样式。
 	var base []string
 	if ar, ok := presetRatios[p.AspectRatio]; ok && ar != "" {
-		base = append(base, "aspect-ratio: "+ar)
+		base = append(base, core.CSSDecl("aspect-ratio", ar))
 	}
 	if p.ObjectFit != "" && p.ObjectFit != "cover" {
-		base = append(base, "object-fit: "+p.ObjectFit)
+		base = append(base, core.CSSDecl("object-fit", p.ObjectFit))
 	}
 	if p.Radius != "" {
-		base = append(base, "border-radius: "+p.Radius)
+		base = append(base, core.CSSDecl("border-radius", p.Radius))
 	}
 	if p.BorderWidth != "" && p.BorderColor != "" {
-		base = append(base, "border: "+p.BorderWidth+" solid "+p.BorderColor)
+		base = append(base, core.CSSDecl("border", p.BorderWidth, "solid", p.BorderColor))
 	}
 	b.Add(core.BreakpointDesktop, sel+" .gi", base)
 
@@ -302,10 +302,10 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		gaps := func() []string {
 			var g []string
 			if p.Grid.ColumnGap != "" {
-				g = append(g, "column-gap: "+p.Grid.ColumnGap)
+				g = append(g, core.CSSDecl("column-gap", p.Grid.ColumnGap))
 			}
 			if p.Grid.RowGap != "" {
-				g = append(g, "row-gap: "+p.Grid.RowGap)
+				g = append(g, core.CSSDecl("row-gap", p.Grid.RowGap))
 			}
 			return g
 		}
@@ -328,7 +328,7 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 			"scrollbar-width: none",
 		})
 		if p.Grid.ColumnGap != "" {
-			b.Add(core.BreakpointDesktop, sel+" .gallery-track", []string{"column-gap: " + p.Grid.ColumnGap, "gap: " + p.Grid.ColumnGap})
+			b.Add(core.BreakpointDesktop, sel+" .gallery-track", []string{core.CSSDecl("column-gap", p.Grid.ColumnGap), core.CSSDecl("gap", p.Grid.ColumnGap)})
 		}
 		slideW := func(n float64) string {
 			if n <= 0 {
@@ -393,7 +393,7 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 			"background: transparent",
 			"transition: background " + defaultDur(p.Hover.Duration) + " ease",
 		})
-		b.Add(core.BreakpointDesktop, sel+" .gi:hover::after", []string{"background: " + overlayColor})
+		b.Add(core.BreakpointDesktop, sel+" .gi:hover::after", []string{core.CSSDecl("background", overlayColor)})
 	}
 
 	// 图注 hover 模式：常显于底部滑出。

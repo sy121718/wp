@@ -5,6 +5,7 @@ import (
 	admindto "go_wp/internal/module/admin/dto"
 	adminenums "go_wp/internal/module/admin/enums"
 	adminservice "go_wp/internal/module/admin/service"
+	"go_wp/internal/middleware/builtin"
 	"go_wp/pkg/auth"
 	r "go_wp/pkg/response"
 
@@ -77,8 +78,24 @@ func (h *Handle) AdminLogin(c *gin.Context) {
 		return
 	}
 
-	c.Header("X-New-Token", res.AccessToken)
-	r.SuccessWithMessage(c, adminenums.MsgSuccess, res)
+	// 写 cookie session（认证载体；HTMX 请求自动携带 Cookie，无需前端手动带 Authorization 头）
+	if err := auth.SaveCookieSession(c, &auth.CookieSession{
+		UserID:    res.UserID,
+		Username:  res.Username,
+		SessionID: res.SessionID,
+		IssuedAt:  res.IssuedAt,
+	}, res.RememberMe); err != nil {
+		r.ErrorWithMessage(c, 500, err.Error())
+		return
+	}
+
+	// 登录即生成 CSRF token，供后续 POST 写操作校验
+	if _, err := builtin.EnsureCSRFToken(c); err != nil {
+		r.ErrorWithMessage(c, 500, err.Error())
+		return
+	}
+
+	r.SuccessWithMessage(c, adminenums.MsgSuccess, nil)
 }
 
 // AdminLogout 注销当前登录会话。
@@ -94,6 +111,12 @@ func (h *Handle) AdminLogout(c *gin.Context) {
 		return
 	}
 	if err := h.admin.AdminLogout(c.Request.Context(), uint64(uid)); err != nil {
+		r.ErrorWithMessage(c, 500, err.Error())
+		return
+	}
+
+	// 清空 cookie session（Redis 会话已在 service 层删除）
+	if err := auth.ClearSession(c); err != nil {
 		r.ErrorWithMessage(c, 500, err.Error())
 		return
 	}

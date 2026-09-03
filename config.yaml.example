@@ -44,11 +44,9 @@ redis:
   addrs: []  # 集群/哨兵可填写多个地址，留空时使用 host:port
   enabled: true
 
-# JWT配置
-jwt:
-  secret: your-jwt-secret-key-change-this
-  expire_time: 24  # 过期时间（小时）
-  issuer: go_wp
+# 认证配置（Session + Cookie）
+auth:
+  session_secret: your-session-secret-key-change-this  # Cookie 会话签名密钥，生产环境必须修改
 
 # Casbin 配置
 casbin:

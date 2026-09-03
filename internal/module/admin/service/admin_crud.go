@@ -232,7 +232,7 @@ func (s *Service) AdminDelete(ctx context.Context, req *admindto.AdminDeleteReq)
 		}
 	}
 
-	// 先撤销旧 JWT，确保后续任一步骤失败时都不会继续放行已删除账号。
+	// 先撤销旧会话，确保后续任一步骤失败时都不会继续放行已删除账号。
 	for _, id := range ids {
 		if err = auth.RevokeUserSession(ctx, id); err != nil {
 			return nil, err

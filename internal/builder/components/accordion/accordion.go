@@ -81,10 +81,10 @@ func (c *Component) Validate(node *core.Node, ids map[string]bool) (err error) {
 	if adv := core.AdvancedOf(&p); adv != nil {
 		return core.ValidateAdvanced(adv, node.ID, ids)
 	}
-		if err = core.ValidateSpec(&p, node.ID); err != nil {
+	if err = core.ValidateSpec(&p, node.ID); err != nil {
 		return err
 	}
-return nil
+	return nil
 }
 
 // compileCSS 手风琴样式。
@@ -102,13 +102,13 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		"border: 1px solid rgba(0,0,0,.1)", "border-radius: 10px",
 	}
 	if p.BgColor != "" {
-		headRules = append(headRules, "background: "+p.BgColor)
+		headRules = append(headRules, core.CSSDecl("background", p.BgColor))
 	}
 	if p.TitleAlign == "center" || p.TitleAlign == "right" {
-		headRules = append(headRules, "justify-content: "+map[string]string{"center": "center", "right": "flex-end"}[p.TitleAlign])
+		headRules = append(headRules, core.CSSDecl("justify-content", map[string]string{"center": "center", "right": "flex-end"}[p.TitleAlign]))
 	}
 	if p.TitleSize != "" {
-		headRules = append(headRules, "font-size: "+p.TitleSize)
+		headRules = append(headRules, core.CSSDecl("font-size", p.TitleSize))
 	}
 	b.Add(core.BreakpointDesktop, head, headRules)
 	// 展开箭头（summary 伪元素）。

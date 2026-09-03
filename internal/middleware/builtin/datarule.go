@@ -14,7 +14,7 @@ import (
 
 // DataRuleContextMiddleware 将当前用户上下文注入 request context，供 datarule GORM 插件读取。
 //
-// 前置条件：必须在 JWTAuthMiddleware 之后注册（需要 user_id）。
+// 前置条件：必须在 SessionAuthMiddleware 之后注册（需要 user_id）。
 //
 // 流程：
 //  1. 从 gin.Context 获取 user_id

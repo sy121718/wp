@@ -78,10 +78,10 @@ func (c *Component) Validate(node *core.Node, ids map[string]bool) (err error) {
 	if adv := core.AdvancedOf(&p); adv != nil {
 		return core.ValidateAdvanced(adv, node.ID, ids)
 	}
-		if err = core.ValidateSpec(&p, node.ID); err != nil {
+	if err = core.ValidateSpec(&p, node.ID); err != nil {
 		return err
 	}
-return nil
+	return nil
 }
 
 // compileCSS 跑马灯样式（位移动画）。
@@ -114,7 +114,7 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	})
 	b.Add(core.BreakpointDesktop, sel+" .wp-marquee-track", []string{
 		"display: flex", "align-items: center", "flex: none",
-		"gap: " + gap, "padding-right: " + gap,
+		core.CSSDecl("gap", gap), core.CSSDecl("padding-right", gap),
 		"animation: wp-marquee-" + id + " " + strconv.FormatFloat(speed, 'f', -1, 64) + "s linear infinite",
 	})
 	// keyframes：整个轨道位移自身宽度一半（双份内容无缝衔接）。
@@ -129,9 +129,9 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		b.Add(core.BreakpointDesktop, sel+":hover .wp-marquee-track", []string{"animation-play-state: paused"})
 	}
 	if p.Background != "" {
-		b.Add(core.BreakpointDesktop, sel, []string{"background: " + p.Background})
+		b.Add(core.BreakpointDesktop, sel, []string{core.CSSDecl("background", p.Background)})
 	}
 	if p.Padding != "" {
-		b.Add(core.BreakpointDesktop, sel+" .wp-marquee-track", []string{"padding-top: " + p.Padding, "padding-bottom: " + p.Padding})
+		b.Add(core.BreakpointDesktop, sel+" .wp-marquee-track", []string{core.CSSDecl("padding-top", p.Padding), core.CSSDecl("padding-bottom", p.Padding)})
 	}
 }

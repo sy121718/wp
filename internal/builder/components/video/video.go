@@ -80,10 +80,10 @@ func (c *Component) Validate(node *core.Node, ids map[string]bool) (err error) {
 	if adv := core.AdvancedOf(&p); adv != nil {
 		return core.ValidateAdvanced(adv, node.ID, ids)
 	}
-		if err = core.ValidateSpec(&p, node.ID); err != nil {
+	if err = core.ValidateSpec(&p, node.ID); err != nil {
 		return err
 	}
-return nil
+	return nil
 }
 
 // embedURL 识别外链平台并返回可嵌入 URL；无法识别返回 ok=false。
@@ -140,13 +140,13 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		desktop = append(desktop, "width: 100%")
 	}
 	if p.Radius != "" {
-		desktop = append(desktop, "border-radius: "+p.Radius)
+		desktop = append(desktop, core.CSSDecl("border-radius", p.Radius))
 	}
 	b.Add(core.BreakpointDesktop, sel, desktop)
 
 	frame := []string{"position: relative", "width: 100%"}
 	if pad != "" {
-		frame = append(frame, "padding-top: "+pad)
+		frame = append(frame, core.CSSDecl("padding-top", pad))
 	}
 	b.Add(core.BreakpointDesktop, sel+" .wp-video-frame", frame)
 	b.Add(core.BreakpointDesktop, sel+" .wp-video-frame iframe, "+sel+" .wp-video-frame video", []string{

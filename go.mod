@@ -7,10 +7,11 @@ require (
 	github.com/alicebob/miniredis/v2 v2.37.0
 	github.com/casbin/casbin/v3 v3.10.0
 	github.com/casbin/gorm-adapter/v3 v3.41.0
+	github.com/gin-contrib/sessions v1.1.0
 	github.com/gin-gonic/gin v1.12.0
 	github.com/glebarez/sqlite v1.11.0
 	github.com/go-playground/validator/v10 v10.30.1
-	github.com/golang-jwt/jwt/v5 v5.3.1
+	github.com/gorilla/sessions v1.4.0
 	github.com/hibiken/asynq v0.26.0
 	github.com/redis/go-redis/v9 v9.18.0
 	github.com/spf13/viper v1.21.0
@@ -22,6 +23,9 @@ require (
 
 require (
 	github.com/CloudyKit/fastprinter v0.0.0-20200109182630-33d98a066a53 // indirect
+	github.com/golang-jwt/jwt/v5 v5.3.1 // indirect
+	github.com/gorilla/context v1.1.2 // indirect
+	github.com/gorilla/securecookie v1.1.2 // indirect
 	gorm.io/driver/sqlserver v1.6.3 // indirect
 )
 

@@ -24,9 +24,9 @@ type Component struct{}
 
 // Type 组件类型标识。
 func (c *Component) Type() string { return Type }
+
 // PropsSpec 实现 SpecProvider：暴露 globalrefProps 生成检查器 schema（blockId 引用）。
 func (c *Component) PropsSpec() any { return &globalrefProps{} }
-
 
 // globalrefProps 节点 props。
 type globalrefProps struct {

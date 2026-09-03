@@ -31,7 +31,11 @@ func SetupAdminRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 	admin := rg.Group("/admin")
 	admin.POST("/login", handle.AdminLogin)
 
-	auth := admin.Group("").Use(builtin.JWTAuthMiddleware(), builtin.DataRuleContextMiddleware())
+	auth := admin.Group("").Use(
+		builtin.SessionAuthMiddleware(),
+		builtin.CSRFMiddleware(),
+		builtin.DataRuleContextMiddleware(),
+	)
 	{
 		auth.POST("/logout", handle.AdminLogout)
 		auth.GET("/profile", handle.AdminProfile)
@@ -39,7 +43,8 @@ func SetupAdminRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 	}
 
 	authorized := admin.Group("").Use(
-		builtin.JWTAuthMiddleware(),
+		builtin.SessionAuthMiddleware(),
+		builtin.CSRFMiddleware(),
 		builtin.CasbinMiddleware(),
 		builtin.DataRuleContextMiddleware(),
 	)
@@ -57,7 +62,8 @@ func SetupAdminRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 
 	// --- 角色 ---
 	role := rg.Group("/role").Use(
-		builtin.JWTAuthMiddleware(),
+		builtin.SessionAuthMiddleware(),
+		builtin.CSRFMiddleware(),
 		builtin.CasbinMiddleware(),
 	)
 	{
@@ -74,7 +80,8 @@ func SetupAdminRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 
 	// --- 权限点 ---
 	perm := rg.Group("/permission").Use(
-		builtin.JWTAuthMiddleware(),
+		builtin.SessionAuthMiddleware(),
+		builtin.CSRFMiddleware(),
 		builtin.CasbinMiddleware(),
 	)
 	{
@@ -88,7 +95,8 @@ func SetupAdminRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 
 	// --- 菜单 ---
 	menu := rg.Group("/menu").Use(
-		builtin.JWTAuthMiddleware(),
+		builtin.SessionAuthMiddleware(),
+		builtin.CSRFMiddleware(),
 		builtin.CasbinMiddleware(),
 	)
 	{
@@ -101,7 +109,8 @@ func SetupAdminRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 
 	// --- 部门 ---
 	dept := rg.Group("/dept").Use(
-		builtin.JWTAuthMiddleware(),
+		builtin.SessionAuthMiddleware(),
+		builtin.CSRFMiddleware(),
 		builtin.CasbinMiddleware(),
 	)
 	{
@@ -117,7 +126,8 @@ func SetupAdminRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 	// --- 数据权限规则 ---
 	registerDomains()
 	datarule := rg.Group("/datarule").Use(
-		builtin.JWTAuthMiddleware(),
+		builtin.SessionAuthMiddleware(),
+		builtin.CSRFMiddleware(),
 		builtin.CasbinMiddleware(),
 	)
 	{

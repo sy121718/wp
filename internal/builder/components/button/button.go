@@ -131,7 +131,7 @@ type Props struct {
 	Icon *Icon `json:"icon,omitempty"`
 
 	// --- 尺寸/变体/双态外观 ---
-	Size    string `json:"size,omitempty" ct:"select,xs=特小,sm=小,md=中,lg=大,xl=特大,default=md,sec=style,label=按钮尺寸"`
+	Size string `json:"size,omitempty" ct:"select,xs=特小,sm=小,md=中,lg=大,xl=特大,default=md,sec=style,label=按钮尺寸"`
 	// Shape 形状预设：rect 直角 / rounded 圆角 / pill 胶囊。
 	Shape string `json:"shape,omitempty" ct:"select,rect=直角,rounded=圆角,pill=胶囊,default=rounded,sec=style,label=形状"`
 	// FontFamily 字体族（可选覆盖）。
@@ -144,9 +144,9 @@ type Props struct {
 	HoverColor string `json:"hoverColor,omitempty" ct:"color,maxlen=200,sec=style,label=悬停文字色"`
 	// LineHeight 行高（可选覆盖）。
 	LineHeight string `json:"lineHeight,omitempty" ct:"dimension,maxlen=20,sec=style,label=行高"`
-	Block   Block  `json:"block,omitempty"`
-	Variant string `json:"variant,omitempty" ct:"select,solid,outline,ghost,default=solid,sec=style"`
-	Radius  string `json:"radius,omitempty" ct:"select,0,6,8,9999,default=8,sec=style"`
+	Block      Block  `json:"block,omitempty"`
+	Variant    string `json:"variant,omitempty" ct:"select,solid,outline,ghost,default=solid,sec=style"`
+	Radius     string `json:"radius,omitempty" ct:"select,0,6,8,9999,default=8,sec=style"`
 	// Normal 正常态；Hover 悬浮/聚焦态（缺省继承 Normal）。
 	Normal State `json:"normal,omitempty"`
 	Hover  State `json:"hover,omitempty"`
@@ -269,21 +269,21 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		"border: none",
 	)
 	if preset, ok := sizePresets[p.Size]; ok {
-		base = append(base, "padding: "+preset[0], "font-size: "+preset[1])
+		base = append(base, core.CSSDecl("padding", preset[0]), core.CSSDecl("font-size", preset[1]))
 	} else {
 		base = append(base, "padding: 10px 20px", "font-size: 1rem")
 	}
 	if p.FontSize != "" {
-		base = append(base, "font-size: "+p.FontSize)
+		base = append(base, core.CSSDecl("font-size", p.FontSize))
 	}
 	if p.FontWeight != "" {
-		base = append(base, "font-weight: "+p.FontWeight)
+		base = append(base, core.CSSDecl("font-weight", p.FontWeight))
 	}
 	if p.LetterSpacing != "" {
-		base = append(base, "letter-spacing: "+p.LetterSpacing)
+		base = append(base, core.CSSDecl("letter-spacing", p.LetterSpacing))
 	}
 	if p.Transform != "" && p.Transform != "none" {
-		base = append(base, "text-transform: "+p.Transform)
+		base = append(base, core.CSSDecl("text-transform", p.Transform))
 	}
 	// 形状预设（Radius 显式设置时优先）。
 	if p.Shape == "pill" {
@@ -297,14 +297,14 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		case "9999":
 			base = append(base, "border-radius: 9999px")
 		default:
-			base = append(base, "border-radius: "+p.Radius+"px")
+			base = append(base, core.CSSDecl("border-radius", p.Radius+"px"))
 		}
 	}
 	if p.FontFamily != "" {
-		base = append(base, "font-family: "+p.FontFamily)
+		base = append(base, core.CSSDecl("font-family", p.FontFamily))
 	}
 	if p.LineHeight != "" {
-		base = append(base, "line-height: "+p.LineHeight)
+		base = append(base, core.CSSDecl("line-height", p.LineHeight))
 	}
 	if p.FullWidth {
 		base = append(base, "width: 100%")
@@ -313,10 +313,10 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	if p.HoverBg != "" || p.HoverColor != "" {
 		var hv []string
 		if p.HoverBg != "" {
-			hv = append(hv, "background: "+p.HoverBg)
+			hv = append(hv, core.CSSDecl("background", p.HoverBg))
 		}
 		if p.HoverColor != "" {
-			hv = append(hv, "color: "+p.HoverColor)
+			hv = append(hv, core.CSSDecl("color", p.HoverColor))
 		}
 		b.Add(core.BreakpointDesktop, sel+":hover", hv)
 	}
@@ -324,7 +324,7 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	// 图标间距。
 	if p.Icon != nil && p.Icon.Spacing != "" {
 		gap := p.Icon.Spacing
-		base = append(base, "gap: "+gap)
+		base = append(base, core.CSSDecl("gap", gap))
 	}
 
 	// 变体基础。
@@ -337,26 +337,26 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	case VariantOutline:
 		base = append(base, "background: transparent")
 		if p.Normal.Border != "" {
-			base = append(base, "border: 1px solid "+p.Normal.Border)
+			base = append(base, core.CSSDecl("border", "1px", "solid", p.Normal.Border))
 		} else {
 			base = append(base, "border: 1px solid currentColor")
 		}
 		if p.Normal.Color != "" {
-			base = append(base, "color: "+p.Normal.Color)
+			base = append(base, core.CSSDecl("color", p.Normal.Color))
 		}
 	default: // solid
 		if p.Normal.Background != "" {
-			base = append(base, "background: "+p.Normal.Background)
+			base = append(base, core.CSSDecl("background", p.Normal.Background))
 		}
 		if p.Normal.Color != "" {
-			base = append(base, "color: "+p.Normal.Color)
+			base = append(base, core.CSSDecl("color", p.Normal.Color))
 		}
 		if p.Normal.Border != "" {
-			base = append(base, "border: 1px solid "+p.Normal.Border)
+			base = append(base, core.CSSDecl("border", "1px", "solid", p.Normal.Border))
 		}
 	}
 	if v, ok := core.ShadowPresets[p.Normal.Shadow]; ok {
-		base = append(base, "box-shadow: "+v)
+		base = append(base, core.CSSDecl("box-shadow", v))
 	}
 	b.Add(core.BreakpointDesktop, sel, base)
 
@@ -374,17 +374,17 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		}
 	}
 	if hoverBase.Background != "" {
-		hoverDecls = append(hoverDecls, "background: "+hoverBase.Background)
+		hoverDecls = append(hoverDecls, core.CSSDecl("background", hoverBase.Background))
 	}
 	if hoverBase.Color != "" {
-		hoverDecls = append(hoverDecls, "color: "+hoverBase.Color)
+		hoverDecls = append(hoverDecls, core.CSSDecl("color", hoverBase.Color))
 	}
 	if hoverBase.Border != "" {
-		hoverDecls = append(hoverDecls, "border-color: "+hoverBase.Border)
+		hoverDecls = append(hoverDecls, core.CSSDecl("border-color", hoverBase.Border))
 	}
 	if hoverBase.Shadow != "" {
 		if v, ok := core.ShadowPresets[hoverBase.Shadow]; ok {
-			hoverDecls = append(hoverDecls, "box-shadow: "+v)
+			hoverDecls = append(hoverDecls, core.CSSDecl("box-shadow", v))
 		}
 	}
 	if p.HoverLift != "" {

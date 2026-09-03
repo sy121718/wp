@@ -7,6 +7,7 @@
 //   - 轨道横向 flex + CSS scroll-snap（原生滑动，零 JS 也可用）
 //   - 自动播放用 CSS 动画（可选）
 //   - 箭头/圆点为轻量 Client Enhancement（纯客户端交互，允许）
+//
 // 组件通过自定义元素 + 渲染上下文输出结构，增强脚本由
 // builder 的客户端增强注入点挂载（workbench 画布与产物共用）。
 package slider
@@ -83,10 +84,10 @@ func (c *Component) Validate(node *core.Node, ids map[string]bool) (err error) {
 	if adv := core.AdvancedOf(&p); adv != nil {
 		return core.ValidateAdvanced(adv, node.ID, ids)
 	}
-		if err = core.ValidateSpec(&p, node.ID); err != nil {
+	if err = core.ValidateSpec(&p, node.ID); err != nil {
 		return err
 	}
-return nil
+	return nil
 }
 
 // compileCSS 编译轮播样式（轨道 scroll-snap + slide 宽度 + 自动播放动画）。

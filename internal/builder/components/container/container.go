@@ -325,19 +325,19 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		desktop = append(desktop, "display: flex")
 		if f := p.Layout.Flex; f != nil {
 			if f.Direction != "" {
-				desktop = append(desktop, "flex-direction: "+f.Direction)
+				desktop = append(desktop, core.CSSDecl("flex-direction", f.Direction))
 			}
 			if f.Justify != "" {
-				desktop = append(desktop, "justify-content: "+justifyMap[f.Justify])
+				desktop = append(desktop, core.CSSDecl("justify-content", justifyMap[f.Justify]))
 			}
 			if f.Align != "" {
-				desktop = append(desktop, "align-items: "+alignMap[f.Align])
+				desktop = append(desktop, core.CSSDecl("align-items", alignMap[f.Align]))
 			}
 			if f.Wrap {
 				desktop = append(desktop, "flex-wrap: wrap")
 			}
 			if f.Gap != "" {
-				desktop = append(desktop, "gap: "+f.Gap)
+				desktop = append(desktop, core.CSSDecl("gap", f.Gap))
 			}
 		}
 	case EngineGrid:
@@ -353,79 +353,79 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 				mobile = append(mobile, fmt.Sprintf("grid-template-columns: repeat(%d, 1fr)", g.Columns.Mobile))
 			}
 			if g.ColumnGap != "" {
-				desktop = append(desktop, "column-gap: "+g.ColumnGap)
+				desktop = append(desktop, core.CSSDecl("column-gap", g.ColumnGap))
 			}
 			if g.RowGap != "" {
-				desktop = append(desktop, "row-gap: "+g.RowGap)
+				desktop = append(desktop, core.CSSDecl("row-gap", g.RowGap))
 			}
 		}
 	}
 
 	// --- 盒模型（三端独立） ---
 	if v := p.Box.Padding.Desktop; v != "" {
-		desktop = append(desktop, "padding: "+v)
+		desktop = append(desktop, core.CSSDecl("padding", v))
 	}
 	if v := p.Box.Padding.Tablet; v != "" {
-		tablet = append(tablet, "padding: "+v)
+		tablet = append(tablet, core.CSSDecl("padding", v))
 	}
 	if v := p.Box.Padding.Mobile; v != "" {
-		mobile = append(mobile, "padding: "+v)
+		mobile = append(mobile, core.CSSDecl("padding", v))
 	}
 	if v := p.Box.Margin.Desktop; v != "" {
-		desktop = append(desktop, "margin: "+v)
+		desktop = append(desktop, core.CSSDecl("margin", v))
 	}
 	if v := p.Box.Margin.Tablet; v != "" {
-		tablet = append(tablet, "margin: "+v)
+		tablet = append(tablet, core.CSSDecl("margin", v))
 	}
 	if v := p.Box.Margin.Mobile; v != "" {
-		mobile = append(mobile, "margin: "+v)
+		mobile = append(mobile, core.CSSDecl("margin", v))
 	}
 	if v := p.Box.MinHeight; v != "" {
-		desktop = append(desktop, "min-height: "+v)
+		desktop = append(desktop, core.CSSDecl("min-height", v))
 	}
 	if v := p.Box.MaxHeight; v != "" {
-		desktop = append(desktop, "max-height: "+v)
+		desktop = append(desktop, core.CSSDecl("max-height", v))
 	}
 	if v := p.Box.Overflow; v != "" {
-		desktop = append(desktop, "overflow: "+v)
+		desktop = append(desktop, core.CSSDecl("overflow", v))
 	}
 
 	// --- 视觉装饰 ---
 	if v := p.Visual.BgColor; v != "" {
-		desktop = append(desktop, "background-color: "+v)
+		desktop = append(desktop, core.CSSDecl("background-color", v))
 	}
 	// 渐变优先于背景图。
 	if v := p.Visual.BgGradient; v != "" {
-		desktop = append(desktop, "background-image: "+v)
+		desktop = append(desktop, core.CSSDecl("background-image", v))
 	} else if v := p.Visual.BgImage; v != "" {
 		desktop = append(desktop, "background-image: url("+v+")")
 		// 背景显示控制（对齐 Elementor：定位/附着/重复/尺寸），仅背景图存在时输出。
 		if v := p.Visual.BgPosition; v != "" && v != "default" {
 			if v == "custom" && p.Visual.BgPositionXY != "" {
-				desktop = append(desktop, "background-position: "+p.Visual.BgPositionXY)
+				desktop = append(desktop, core.CSSDecl("background-position", p.Visual.BgPositionXY))
 			} else if v != "custom" {
-				desktop = append(desktop, "background-position: "+v)
+				desktop = append(desktop, core.CSSDecl("background-position", v))
 			}
 		}
 		if v := p.Visual.BgAttachment; v != "" && v != "default" {
-			desktop = append(desktop, "background-attachment: "+v)
+			desktop = append(desktop, core.CSSDecl("background-attachment", v))
 		}
 		if v := p.Visual.BgRepeat; v != "" && v != "default" {
-			desktop = append(desktop, "background-repeat: "+v)
+			desktop = append(desktop, core.CSSDecl("background-repeat", v))
 		}
 		if v := p.Visual.BgSize; v != "" && v != "default" {
 			if v == "custom" && p.Visual.BgSizeValue != "" {
-				desktop = append(desktop, "background-size: "+p.Visual.BgSizeValue)
+				desktop = append(desktop, core.CSSDecl("background-size", p.Visual.BgSizeValue))
 			} else if v != "custom" {
-				desktop = append(desktop, "background-size: "+v)
+				desktop = append(desktop, core.CSSDecl("background-size", v))
 			}
 		}
 	}
 	if p.Visual.BorderStyle != "" {
-		desktop = append(desktop, "border: "+p.Visual.BorderWidth+" "+p.Visual.BorderStyle+" "+p.Visual.BorderColor)
+		desktop = append(desktop, core.CSSDecl("border", p.Visual.BorderWidth, p.Visual.BorderStyle, p.Visual.BorderColor))
 	}
 	if v := p.Visual.Radius; v != "" {
-		desktop = append(desktop, "border-radius: "+v)
+		desktop = append(desktop, core.CSSDecl("border-radius", v))
 	}
 	if p.Visual.Shadow == "custom" {
 		x, y, blur, spread := p.Visual.ShadowX, p.Visual.ShadowY, p.Visual.ShadowBlur, p.Visual.ShadowSpread
@@ -445,9 +445,9 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		if color == "" {
 			color = "rgba(0,0,0,.12)"
 		}
-		desktop = append(desktop, "box-shadow: "+x+" "+y+" "+blur+" "+spread+" "+color)
+		desktop = append(desktop, core.CSSDecl("box-shadow", x, y, blur, spread, color))
 	} else if v, ok := shadowLevels[p.Visual.Shadow]; p.Visual.Shadow != "" && ok {
-		desktop = append(desktop, "box-shadow: "+v)
+		desktop = append(desktop, core.CSSDecl("box-shadow", v))
 	}
 
 	// --- 交互状态与动画 ---
@@ -457,7 +457,7 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		if top == "" {
 			top = "0"
 		}
-		desktop = append(desktop, "top: "+top)
+		desktop = append(desktop, core.CSSDecl("top", top))
 	}
 	if p.Interaction.HoverLift {
 		// 过渡声明入基础规则，触发态入 :hover 规则。
@@ -476,7 +476,7 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	if p.Interaction.HoverLift {
 		b.Add(core.BreakpointDesktop, sel+":hover", []string{
 			"transform: translateY(-6px)",
-			"box-shadow: " + shadowLevels[shadowUpgrade[p.Visual.Shadow]],
+			core.CSSDecl("box-shadow", shadowLevels[shadowUpgrade[p.Visual.Shadow]]),
 		})
 	}
 
@@ -487,16 +487,16 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	case "absolute":
 		abs := []string{"position: absolute"}
 		if p.Position.Top != "" {
-			abs = append(abs, "top: "+p.Position.Top)
+			abs = append(abs, core.CSSDecl("top", p.Position.Top))
 		}
 		if p.Position.Right != "" {
-			abs = append(abs, "right: "+p.Position.Right)
+			abs = append(abs, core.CSSDecl("right", p.Position.Right))
 		}
 		if p.Position.Bottom != "" {
-			abs = append(abs, "bottom: "+p.Position.Bottom)
+			abs = append(abs, core.CSSDecl("bottom", p.Position.Bottom))
 		}
 		if p.Position.Left != "" {
-			abs = append(abs, "left: "+p.Position.Left)
+			abs = append(abs, core.CSSDecl("left", p.Position.Left))
 		}
 		b.Add(core.BreakpointDesktop, sel, abs)
 	case "sticky":
@@ -523,7 +523,7 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	}
 	if p.StyleEx.BackgroundHover != "" {
 		b.Add(core.BreakpointDesktop, sel, []string{"transition: background 0.2s ease"})
-		b.Add(core.BreakpointDesktop, sel+":hover", []string{"background: " + p.StyleEx.BackgroundHover})
+		b.Add(core.BreakpointDesktop, sel+":hover", []string{core.CSSDecl("background", p.StyleEx.BackgroundHover)})
 	}
 	if p.StyleEx.Overlay != "" {
 		if p.Position.Type == "static" {
@@ -534,7 +534,7 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 			"position: absolute",
 			"inset: 0",
 			"pointer-events: none",
-			"background: " + p.StyleEx.Overlay,
+			core.CSSDecl("background", p.StyleEx.Overlay),
 			"z-index: 0",
 		})
 		b.Add(core.BreakpointDesktop, sel+" > *", []string{"position: relative", "z-index: 1"})
@@ -555,7 +555,7 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		})
 		b.Add(core.BreakpointDesktop, sel+" .wp-shape svg", []string{"width: 100%", "height: 100%", "display: block"})
 		b.Add(core.BreakpointDesktop, sel+" .wp-shape-"+shapePos, []string{shapePos + ": 0"})
-		b.Add(core.BreakpointDesktop, sel+" .wp-shape svg", []string{"color: " + shapeColor(p)})
+		b.Add(core.BreakpointDesktop, sel+" .wp-shape svg", []string{core.CSSDecl("color", shapeColor(p))})
 		if p.Position.Type == "static" {
 			b.Add(core.BreakpointDesktop, sel, []string{"position: relative"})
 		}

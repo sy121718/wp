@@ -46,7 +46,7 @@ func main() {
 // run 是实际的主流程函数。
 // 返回 error 即可让 main() 终止进程，组件自身不调用 os.Exit。
 func run() error {
-	// 1) 加载配置 + 初始化组件（数据库、JWT、日志、缓存、队列等）。
+	// 1) 加载配置 + 初始化组件（数据库、会话存储、日志、缓存、队列等）。
 	serverCfg, err := loadAndPrepareRuntime("config.yaml")
 	if err != nil {
 		return err

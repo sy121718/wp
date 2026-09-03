@@ -79,10 +79,10 @@ func (c *Component) Validate(node *core.Node, ids map[string]bool) (err error) {
 	if adv := core.AdvancedOf(&p); adv != nil {
 		return core.ValidateAdvanced(adv, node.ID, ids)
 	}
-		if err = core.ValidateSpec(&p, node.ID); err != nil {
+	if err = core.ValidateSpec(&p, node.ID); err != nil {
 		return err
 	}
-return nil
+	return nil
 }
 
 // compileCSS 页签样式（radio hack 显隐 + 高亮）。
@@ -123,15 +123,15 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	}
 	b.Add(core.BreakpointDesktop, sel+" .wp-tabs-nav", []string{
 		"display: flex", "gap: 4px", "flex-wrap: wrap",
-		"justify-content: " + navJustify,
-		"border-bottom: 1px solid " + borderColor, "padding: 0 4px",
+		core.CSSDecl("justify-content", navJustify),
+		core.CSSDecl("border-bottom", "1px", "solid", borderColor), "padding: 0 4px",
 	})
 	if p.ActiveColor != "" {
 		for i := range p.Tabs {
 			radio := "#wp-tabs-" + id + "-" + fmt.Sprintf("%d", i)
 			label := sel + " .wp-tabs-nav label:nth-of-type(" + fmt.Sprintf("%d", i+1) + ")"
 			b.Add(core.BreakpointDesktop, radio+":checked ~ "+label, []string{
-				"background: " + p.ActiveColor,
+				core.CSSDecl("background", p.ActiveColor),
 			})
 		}
 	}

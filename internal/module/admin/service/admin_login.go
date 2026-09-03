@@ -17,7 +17,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// AdminLogin 管理员登录，返回 token 和用户信息。
+// AdminLogin 管理员登录，返回会话信息（由 handler 写入 cookie session）。
 //
 // 流程：
 //  1. 验证图形验证码
@@ -25,7 +25,7 @@ import (
 //  3. 检查是否被锁定 / 被动禁用
 //  4. bcrypt 对比密码
 //  5. 失败：累加失败次数，连续 5 次后封禁 30 分钟
-//  6. 成功：清空失败状态，记录登录 IP 和时间，生成 token 对
+//  6. 成功：清空失败状态，记录登录 IP 和时间，生成会话 ID 并写入 Redis
 func (s *Service) AdminLogin(ctx context.Context, req *admindto.AdminLoginReq, clientIP string) (*admindto.AdminLoginResp, error) {
 	// 1) 验证验证码
 	var captchaSvc = captcha.Get()
@@ -88,10 +88,10 @@ func (s *Service) AdminLogin(ctx context.Context, req *admindto.AdminLoginReq, c
 		return nil, err
 	}
 
-	// 7) 生成 token
-	accessToken, sessionID, err := auth.GenerateSessionToken(int64(entity.ID), entity.Username, req.RememberMe, "")
+	// 7) 生成会话 ID（cookie 会话与 Redis 用户会话绑定）
+	sessionID, err := auth.NewSessionID()
 	if err != nil {
-		return nil, fmt.Errorf("生成 token 失败: %w", err)
+		return nil, fmt.Errorf("生成会话 ID 失败: %w", err)
 	}
 
 	// 8) 写入 Redis 会话
@@ -134,11 +134,15 @@ func (s *Service) AdminLogin(ctx context.Context, req *admindto.AdminLoginReq, c
 
 	logger.Scene("admin").With("username", entity.Username).Info("登录成功")
 	return &admindto.AdminLoginResp{
-		AccessToken: accessToken,
+		UserID:     entity.ID,
+		Username:   entity.Username,
+		SessionID:  sessionID,
+		IssuedAt:   time.Now().Unix(),
+		RememberMe: req.RememberMe,
 	}, nil
 }
 
-// AdminLogout 注销当前管理员会话，使该会话签发的 JWT 立即失效。
+// AdminLogout 注销当前管理员会话，使该会话立即失效。
 func (s *Service) AdminLogout(ctx context.Context, userID uint64) (err error) {
 	return auth.DeleteUserSession(ctx, userID)
 }

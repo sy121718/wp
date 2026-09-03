@@ -1,12 +1,12 @@
-# pkg/auth — JWT 认证 + Redis 会话管理
+# pkg/auth — Session + Cookie 认证 + Redis 会话管理
 
 ## 设计原则
 
-**JWT 只管认证，Redis 管用户数据**，互不耦合。
+**Cookie 会话只管认证，Redis 管用户数据**，互不耦合。
 
 | 职责 | 技术 | 特点 |
 |---|---|---|
-| 你是谁 | JWT | 无状态，验签名 + 过期时间 |
+| 你是谁 | Cookie 会话（gin-contrib/sessions） | 签名防篡改，HTMX 请求自动携带 |
 | 你能做什么 | Casbin | 策略引擎，独立于认证 |
 | 你叫什么/权限/头像 | Redis | 有状态，可查可改 |
 | 你还在不在 | Redis | 心跳 TTL 自动过期 |
@@ -16,158 +16,91 @@
 
 ```
 pkg/auth/
-├── jwt.go          # JWT 签发、解析、配置
-├── session.go      # Redis 用户会话管理
-└── README.md       # 本文件
+├── cookie_session.go  # Cookie 会话存储（认证载体 + Init/Ready/Close）
+├── session.go         # Redis 用户会话管理
+└── README.md          # 本文件
 ```
 
-## Redis 数据结构
-
-### 1. 用户会话 — `user:session:{id}`
-
-登录成功后写入，profile 接口从此读取。
-
-```
-Key:   user:session:1
-Type:  String（JSON）
-Value: {
-  "id": 1,
-  "username": "admin",
-  "name": "管理员",
-  "avatar": "https://...",
-  "email": "admin@example.com",
-  "phone": "13800138000",
-  "status": 1,
-  "is_admin": 1,
-  "permissions": ["user:list", "user:create"]
-}
-TTL:   24h（登录时刷新）
-```
-
-### 2. 封禁标记 — `user:blocked:{id}`
-
-管理员踢人时写入，JWT 中间件每次请求检查。
-
-```
-Key:   user:blocked:1
-Type:  String
-Value: 1740384000  （封禁时的 Unix 时间戳）
-TTL:   到封禁到期自动删除
-```
-
-校验逻辑：`token 签发时间 < 封禁时间` → 拒绝。
-
-### 3. 在线心跳 — `online:{id}`
-
-每次请求由 JWT 中间件刷新。
-
-```
-Key:   online:1
-Type:  String
-Value: "1"
-TTL:   5 分钟（每次请求刷新）
-```
-
-在线用户列表通过 `SCAN online:*` 获取。
-
-## 数据流
+## 认证流程
 
 ### 登录
 
 ```
 POST /api/admin/login
   ↓
-验证密码 → auth.GenerateToken() → JWT
+验证密码 → auth.NewSessionID() 生成会话 ID
   ↓
-查数据库获取用户信息 + 权限
+auth.SaveUserSession() → 写入 Redis（user:session:{id}）
   ↓
-auth.SaveUserSession() → 写入 Redis
+auth.SaveCookieSession() → Set-Cookie: gowp_session=...
   ↓
-响应头 X-New-Token: eyJ...
-响应体 {code:200, message:"success"}
+builtin.EnsureCSRFToken() → 在 cookie session 中写入 CSRF token
+  ↓
+响应体只返回成功，不再下发 token
 ```
 
 ### 日常请求
 
 ```
-请求 → Authorization: Bearer eyJ...
+请求 → Cookie: gowp_session=...
   ↓
-JWTAuthMiddleware:
-  1. ParseToken → 验签名 + 过期
-  2. IsBlocked → 查 Redis 是否被封
-  3. 放行 → c.Set("user_id", ...)
+SessionAuthMiddleware:
+  1. GetCookieSession → 读 user_id / username / session_id / issued_at
+  2. IsBlocked → 查 Redis 是否被封禁
+  3. GetUserSession → 校验 Redis 会话与会话 ID 一致
+  4. 放行 → c.Set("user_id", int64) / c.Set("username")
   ↓
 c.Next() 后:
-  token 剩余 < 10min → 续期 X-New-Token
   RefreshOnline() → 刷新在线心跳
 ```
 
-### 踢下线
+### 登出
 
 ```
-管理员点击"踢下线"
+POST /api/admin/logout
   ↓
-auth.BlockUser(userID, time.Now())
-  ↓
-用户下次请求 → IsBlocked = true → 401
-  ↓
-前端收到 401 → 清内存变量 → 跳登录
+auth.DeleteUserSession() → 删除 Redis 会话
+auth.ClearSession() → 删除 cookie（MaxAge=-1）
 ```
 
-### 获取用户信息
+## Cookie 属性
 
-```
-GET /api/admin/profile
-  ↓
-从 token 解析 user_id
-  ↓
-auth.GetUserSession(userID) → 读 Redis
-  ├─ 命中 → 返回
-  └─ 未命中 → 查数据库回源 → 写入 Redis → 返回
-```
+| 属性 | 值 |
+|---|---|
+| HttpOnly | true（防 XSS 偷 cookie） |
+| Secure | release 模式 true（生产环境） |
+| SameSite | Lax（防 CSRF） |
+| Path | / |
+| 有效期 | 默认 24h，勾选记住我 7d |
 
 ## 函数清单
 
 | 函数 | 文件 | 用途 |
 |---|---|---|
-| `GenerateToken` | jwt.go | 签发单 token |
-| `ParseToken` | jwt.go | 解析验证 JWT |
+| `Init` / `Ready` / `Close` | cookie_session.go | 会话存储生命周期 |
+| `SaveCookieSession` | cookie_session.go | 登录成功写 cookie |
+| `GetCookieSession` | cookie_session.go | 读 cookie 认证会话 |
+| `ClearSession` | cookie_session.go | 退出登录清 cookie |
+| `NewSessionID` | cookie_session.go | 生成会话 ID |
 | `SaveUserSession` | session.go | 登录成功写入 Redis |
 | `GetUserSession` | session.go | 读用户信息（profile） |
-| `DeleteUserSession` | session.go | 退出登录清理 |
-| `BlockUser` | session.go | 封禁用户 |
-| `UnblockUser` | session.go | 解封用户 |
+| `DeleteUserSession` | session.go | 退出登录清理 Redis |
+| `BlockUser` / `UnblockUser` | session.go | 封禁 / 解封用户 |
 | `IsBlocked` | session.go | 检查封禁状态 |
 | `RefreshOnline` | session.go | 刷新在线心跳 |
-| `GetOnlineUsers` | session.go | 获取在线用户列表 |
 
 ## 配置
 
-JWT 配置在 `config.yaml`：
-
 ```yaml
-jwt:
-  secret: your-secret-key
-  expire_time: 24       # 小时，默认 24h
-  issuer: go_wp
+auth:
+  session_secret: your-secret-key  # Cookie 会话签名密钥，生产环境必须修改
 ```
 
-Redis 配置同样在 `config.yaml`：
+Redis 配置：
 
 ```yaml
 redis:
   host: 127.0.0.1
   port: 6379
-  password: ""
-  db: 0
   enabled: true
 ```
-
-## 封禁 vs 等过期
-
-| 方式 | 即时性 | 依赖 |
-|---|---|---|
-| Redis 封禁（当前方案） | 即时 | Redis |
-| 等 JWT 自然过期 | 最长 24h | 无 |
-
-Redis 不可用时，封禁功能暂时失效，但 JWT 认证不受影响。
