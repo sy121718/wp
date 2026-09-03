@@ -6,6 +6,8 @@
 package builder
 
 import (
+	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -255,4 +257,134 @@ func TestJetViewCounterByteEquivalent(t *testing.T) {
 		{"id":"c1","type":"core.counter","props":{"start":0,"end":12345,"decimals":2,"prefix":"$","suffix":"+","label":"满意客户","duration":3,"color":"#111"}},
 		{"id":"c2","type":"core.counter","props":{"end":99,"label":"百分比","suffix":"%"}}
 	]`)
+}
+
+// --- Phase 2 结构型/复杂组件字节等价测试 ---
+
+// TestJetViewGalleryByteEquivalent 图集组件：grid（lightbox/链接/图注）+ carousel（轮播 data 属性/箭头/圆点/悬浮）。
+func TestJetViewGalleryByteEquivalent(t *testing.T) {
+	assertJetByteEquivalent(t, `[
+		{"id":"ga1","type":"core.gallery","props":{"mode":"grid","items":[{"url":"https://example.com/a.jpg","alt":"图一 & 说明","caption":"图注一"},{"url":"https://example.com/b.jpg","alt":"图二","link":"https://example.com/t1"}],"grid":{"columns":{"desktop":3,"tablet":2,"mobile":1},"columnGap":"16px","rowGap":"16px"},"aspectRatio":"16:9","radius":"8px","captionMode":"below"}},
+		{"id":"ga2","type":"core.gallery","props":{"mode":"carousel","items":[{"url":"https://example.com/c.jpg","alt":"轮播一"},{"url":"https://example.com/d.jpg","alt":"轮播二"}],"carousel":{"autoplay":true,"interval":3000,"infinite":true,"pauseOnHover":true,"slidesPerView":{"desktop":2,"tablet":1,"mobile":1},"arrows":true,"dots":true},"captionMode":"hover","hover":{"scale":"1.05","overlay":"dark"}}}
+	]`)
+}
+
+// TestJetViewSliderByteEquivalent 轮播容器组件：children 即 slide + data-slider/自动播放/循环/箭头/圆点。
+func TestJetViewSliderByteEquivalent(t *testing.T) {
+	assertJetByteEquivalent(t, `[
+		{"id":"sl1","type":"core.slider","props":{"perView":{"desktop":2,"tablet":1,"mobile":1},"autoplay":3.5,"showArrows":true,"showDots":true,"loop":true,"gap":"24px"},"children":[
+			{"id":"sl1a","type":"core.text","props":{"mode":"plaintext","text":"第一屏"}},
+			{"id":"sl1b","type":"core.text","props":{"mode":"plaintext","text":"第二屏 & 更多"}}
+		]}
+	]`)
+}
+
+// TestJetViewTabsByteEquivalent 页签组件：radio hack（radio 在 nav 前）+ 标签列表 + children 即面板。
+func TestJetViewTabsByteEquivalent(t *testing.T) {
+	assertJetByteEquivalent(t, `[
+		{"id":"tb1","type":"core.tabs","props":{"tabs":[{"label":"标签一"},{"label":"标签二 & 更多"},{"label":"标签三"}],"navAlign":"center","activeColor":"#2563eb"},"children":[
+			{"id":"tb1a","type":"core.text","props":{"mode":"plaintext","text":"面板一"}},
+			{"id":"tb1b","type":"core.text","props":{"mode":"plaintext","text":"面板二"}},
+			{"id":"tb1c","type":"core.text","props":{"mode":"plaintext","text":"面板三"}}
+		]},
+		{"id":"tb2","type":"core.tabs","props":{"tabs":[{"label":"竖排"},{"label":"第二"}],"vertical":true},"children":[
+			{"id":"tb2a","type":"core.text","props":{"mode":"plaintext","text":"竖一"}},
+			{"id":"tb2b","type":"core.text","props":{"mode":"plaintext","text":"竖二"}}
+		]}
+	]`)
+}
+
+// TestJetViewAccordionByteEquivalent 手风琴组件：details/summary + 默认展开 + 严格模式 + 无边框。
+func TestJetViewAccordionByteEquivalent(t *testing.T) {
+	assertJetByteEquivalent(t, `[
+		{"id":"ac1","type":"core.accordion","props":{"items":[{"title":"第一个","open":true},{"title":"第二个 & 更多"}],"oneOpen":true,"bgColor":"#f9f9f9"},"children":[
+			{"id":"ac1a","type":"core.text","props":{"mode":"plaintext","text":"内容一"}},
+			{"id":"ac1b","type":"core.text","props":{"mode":"plaintext","text":"内容二"}}
+		]},
+		{"id":"ac2","type":"core.accordion","props":{"items":[{"title":"无边框"}],"borderless":true},"children":[
+			{"id":"ac2a","type":"core.text","props":{"mode":"plaintext","text":"内容"}}
+		]}
+	]`)
+}
+
+// TestJetViewMarqueeByteEquivalent 跑马灯组件：双份内容无缝滚动 + 方向/速度/悬停暂停。
+func TestJetViewMarqueeByteEquivalent(t *testing.T) {
+	assertJetByteEquivalent(t, `[
+		{"id":"mq1","type":"core.marquee","props":{"speed":15,"direction":"right","pauseOnHover":true,"gap":"32px","background":"#111","padding":"12px"},"children":[
+			{"id":"mq1a","type":"core.text","props":{"mode":"plaintext","text":"滚动内容一"}},
+			{"id":"mq1b","type":"core.text","props":{"mode":"plaintext","text":"滚动内容二 & 更多"}}
+		]}
+	]`)
+}
+
+// TestJetViewGlobalrefPlaceholderByteEquivalent 全局块引用占位：Block 未注入时降级为可选中占位 div。
+func TestJetViewGlobalrefPlaceholderByteEquivalent(t *testing.T) {
+	assertJetByteEquivalent(t, `[
+		{"id":"gr1","type":"core.globalref","props":{"blockId":"shared-header"}}
+	]`)
+}
+
+// mockBlockResolver 测试用全局块解析器：块 ID → 块文档 root 节点。
+type mockBlockResolver struct {
+	roots map[string][]*core.Node
+}
+
+func (m *mockBlockResolver) ResolveBlockRoot(blockID string) ([]*core.Node, error) {
+	roots, ok := m.roots[blockID]
+	if !ok {
+		return nil, fmt.Errorf("block not found: %s", blockID)
+	}
+	return roots, nil
+}
+
+// TestJetViewGlobalrefExpandByteEquivalent 全局块引用展开：BlockResolver 注入时递归展开块 root（ID 加前缀）。
+func TestJetViewGlobalrefExpandByteEquivalent(t *testing.T) {
+	doc := `{"settings": {"layout": {"mode": "full"}, "seo": {"title": "等价测试"}}, "root": [
+		{"id":"gr1","type":"core.globalref","props":{"blockId":"shared-header"}}
+	]}`
+	page, err := ParsePage([]byte(doc))
+	if err != nil {
+		t.Fatalf("ParsePage: %v", err)
+	}
+
+	block := &mockBlockResolver{roots: map[string][]*core.Node{
+		"shared-header": {
+			{ID: "block-text", Type: "core.text", Props: json.RawMessage(`{"mode":"plaintext","text":"块内容 & 更多"}`)},
+		},
+	}}
+
+	oldRes, err := Compile(page, WithBlockResolver(block))
+	if err != nil {
+		t.Fatalf("Compile: %v", err)
+	}
+	if oldRes.HTML == "" {
+		t.Fatal("旧输出 HTML 为空，测试用例无意义（防「空==空」假通过）")
+	}
+
+	set, err := templates.NewComponentSet("../templates/components")
+	if err != nil {
+		t.Fatalf("NewComponentSet: %v", err)
+	}
+
+	var b core.CSSBuckets
+	compileSettingsCSS(&page.Settings, &b)
+	ctx := &core.RenderContext{CSS: &b, Block: block}
+
+	var htmlBuf strings.Builder
+	for _, n := range page.Root {
+		v, err := nodeViewOf(n, true, ctx)
+		if err != nil {
+			t.Fatalf("nodeViewOf: %v", err)
+		}
+		if err := renderView(v, set, &htmlBuf); err != nil {
+			t.Fatalf("renderView(%s): %v", v.Template, err)
+		}
+	}
+
+	if got, want := htmlBuf.String(), oldRes.HTML; got != want {
+		t.Errorf("HTML 字节不一致:\n--- 旧输出 ---\n%s\n--- 新输出 ---\n%s", want, got)
+	}
+	if got, want := b.String(), oldRes.CSS; got != want {
+		t.Errorf("CSS 字节不一致:\n--- 旧输出 ---\n%s\n--- 新输出 ---\n%s", want, got)
+	}
 }

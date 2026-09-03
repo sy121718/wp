@@ -17,16 +17,22 @@ import (
 
 	"github.com/CloudyKit/jet/v6"
 
+	accordionPkg "go_wp/internal/builder/components/accordion"
 	buttonPkg "go_wp/internal/builder/components/button"
 	containerPkg "go_wp/internal/builder/components/container"
 	counterPkg "go_wp/internal/builder/components/counter"
 	dividerPkg "go_wp/internal/builder/components/divider"
+	galleryPkg "go_wp/internal/builder/components/gallery"
+	globalrefPkg "go_wp/internal/builder/components/globalref"
 	headingPkg "go_wp/internal/builder/components/heading"
 	imagePkg "go_wp/internal/builder/components/image"
 	infoboxPkg "go_wp/internal/builder/components/infobox"
 	listPkg "go_wp/internal/builder/components/list"
+	marqueePkg "go_wp/internal/builder/components/marquee"
+	sliderPkg "go_wp/internal/builder/components/slider"
 	socialbuttonsPkg "go_wp/internal/builder/components/socialbuttons"
 	spacerPkg "go_wp/internal/builder/components/spacer"
+	tabsPkg "go_wp/internal/builder/components/tabs"
 	textPkg "go_wp/internal/builder/components/text"
 	videoPkg "go_wp/internal/builder/components/video"
 	"go_wp/internal/builder/core"
@@ -87,6 +93,18 @@ func nodeViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeV
 		return videoViewOf(node, topLevel, ctx)
 	case counterPkg.Type:
 		return counterViewOf(node, topLevel, ctx)
+	case galleryPkg.Type:
+		return galleryViewOf(node, topLevel, ctx)
+	case sliderPkg.Type:
+		return sliderViewOf(node, topLevel, ctx)
+	case tabsPkg.Type:
+		return tabsViewOf(node, topLevel, ctx)
+	case accordionPkg.Type:
+		return accordionViewOf(node, topLevel, ctx)
+	case marqueePkg.Type:
+		return marqueeViewOf(node, topLevel, ctx)
+	case globalrefPkg.Type:
+		return globalrefViewOf(node, topLevel, ctx)
 	default:
 		return nil, fmt.Errorf("nodeView: 不支持的组件类型 %q", node.Type)
 	}
@@ -467,6 +485,222 @@ func counterViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*no
 		Classes:  core.NodeClass(node.ID),
 		TopLevel: topLevel,
 		Props:    p,
+		V:        view,
+	}, nil
+}
+
+// galleryViewOf 转换 gallery 节点（对应 core.Atom 基座的 Render 流程）。
+func galleryViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeView, error) {
+	var p galleryPkg.Props
+	if len(node.Props) > 0 {
+		if err := json.Unmarshal(node.Props, &p); err != nil {
+			return nil, fmt.Errorf("节点 %s props 反序列化失败: %w", node.ID, err)
+		}
+	}
+
+	var extraClasses []string
+	var customID string
+	if adv := core.AdvancedOf(&p); adv != nil {
+		extraClasses, customID = core.CompileAdvanced(node.ID, adv, ctx.CSS)
+	}
+	classes := []string{core.NodeClass(node.ID)}
+	classes = append(classes, extraClasses...)
+
+	view, err := galleryPkg.BuildView(&p, ctx.Content)
+	if err != nil {
+		return nil, fmt.Errorf("节点 %s: %w", node.ID, err)
+	}
+
+	// 隐藏（空图集且无占位）时旧路径不编译组件样式；可见才编译。
+	if view.Visible {
+		galleryPkg.CompileCSS(node.ID, &p, ctx.CSS)
+	}
+
+	return &nodeView{
+		Type:     galleryPkg.Type,
+		Template: "gallery",
+		NodeID:   node.ID,
+		Classes:  strings.Join(classes, " "),
+		CustomID: customID,
+		TopLevel: topLevel,
+		Props:    p,
+		V:        view,
+	}, nil
+}
+
+// sliderViewOf 转换 slider 节点（对应 Component.Render 流程，children 为各 slide）。
+func sliderViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeView, error) {
+	var p sliderPkg.Props
+	if len(node.Props) > 0 {
+		if err := json.Unmarshal(node.Props, &p); err != nil {
+			return nil, fmt.Errorf("节点 %s props 反序列化失败: %w", node.ID, err)
+		}
+	}
+
+	cls := core.NodeClass(node.ID)
+	if topLevel {
+		cls += " " + core.SectionClass
+	}
+
+	// 先递归 children：CSS 加入顺序为「子节点先、组件自身后」，与 Render 一致。
+	children := make([]*nodeView, 0, len(node.Children))
+	for _, child := range node.Children {
+		cv, err := nodeViewOf(child, false, ctx)
+		if err != nil {
+			return nil, err
+		}
+		children = append(children, cv)
+	}
+
+	sliderPkg.CompileCSS(node.ID, &p, ctx.CSS)
+	view := sliderPkg.BuildView(node, &p)
+
+	return &nodeView{
+		Type:     sliderPkg.Type,
+		Template: "slider",
+		NodeID:   node.ID,
+		Classes:  cls,
+		TopLevel: topLevel,
+		Props:    p,
+		Children: children,
+		V:        view,
+	}, nil
+}
+
+// tabsViewOf 转换 tabs 节点（对应 Component.Render 流程，children 为各面板）。
+func tabsViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeView, error) {
+	var p tabsPkg.Props
+	if len(node.Props) > 0 {
+		if err := json.Unmarshal(node.Props, &p); err != nil {
+			return nil, fmt.Errorf("节点 %s props 反序列化失败: %w", node.ID, err)
+		}
+	}
+
+	children := make([]*nodeView, 0, len(node.Children))
+	for _, child := range node.Children {
+		cv, err := nodeViewOf(child, false, ctx)
+		if err != nil {
+			return nil, err
+		}
+		children = append(children, cv)
+	}
+
+	tabsPkg.CompileCSS(node.ID, &p, ctx.CSS)
+	view := tabsPkg.BuildView(node, &p)
+
+	return &nodeView{
+		Type:     tabsPkg.Type,
+		Template: "tabs",
+		NodeID:   node.ID,
+		Classes:  core.NodeClass(node.ID),
+		TopLevel: topLevel,
+		Props:    p,
+		Children: children,
+		V:        view,
+	}, nil
+}
+
+// accordionViewOf 转换 accordion 节点（对应 Component.Render 流程，children 为各折叠内容）。
+func accordionViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeView, error) {
+	var p accordionPkg.Props
+	if len(node.Props) > 0 {
+		if err := json.Unmarshal(node.Props, &p); err != nil {
+			return nil, fmt.Errorf("节点 %s props 反序列化失败: %w", node.ID, err)
+		}
+	}
+
+	children := make([]*nodeView, 0, len(node.Children))
+	for _, child := range node.Children {
+		cv, err := nodeViewOf(child, false, ctx)
+		if err != nil {
+			return nil, err
+		}
+		children = append(children, cv)
+	}
+
+	accordionPkg.CompileCSS(node.ID, &p, ctx.CSS)
+	view := accordionPkg.BuildView(&p)
+
+	return &nodeView{
+		Type:     accordionPkg.Type,
+		Template: "accordion",
+		NodeID:   node.ID,
+		Classes:  core.NodeClass(node.ID),
+		TopLevel: topLevel,
+		Props:    p,
+		Children: children,
+		V:        view,
+	}, nil
+}
+
+// marqueeViewOf 转换 marquee 节点（对应 Component.Render 流程，children 为滚动内容）。
+func marqueeViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeView, error) {
+	var p marqueePkg.Props
+	if len(node.Props) > 0 {
+		if err := json.Unmarshal(node.Props, &p); err != nil {
+			return nil, fmt.Errorf("节点 %s props 反序列化失败: %w", node.ID, err)
+		}
+	}
+
+	children := make([]*nodeView, 0, len(node.Children))
+	for _, child := range node.Children {
+		cv, err := nodeViewOf(child, false, ctx)
+		if err != nil {
+			return nil, err
+		}
+		children = append(children, cv)
+	}
+
+	marqueePkg.CompileCSS(node.ID, &p, ctx.CSS)
+	view := marqueePkg.BuildView(&p)
+
+	return &nodeView{
+		Type:     marqueePkg.Type,
+		Template: "marquee",
+		NodeID:   node.ID,
+		Classes:  core.NodeClass(node.ID),
+		TopLevel: topLevel,
+		Props:    p,
+		Children: children,
+		V:        view,
+	}, nil
+}
+
+// globalrefViewOf 转换 globalref 节点（对应 Component.Render 流程：占位或展开）。
+func globalrefViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeView, error) {
+	view, roots, err := globalrefPkg.BuildView(node, ctx.Block)
+	if err != nil {
+		return nil, fmt.Errorf("节点 %s: %w", node.ID, err)
+	}
+
+	if view.IsPlaceholder {
+		return &nodeView{
+			Type:     globalrefPkg.Type,
+			Template: "globalref",
+			NodeID:   node.ID,
+			Classes:  core.NodeClass(node.ID),
+			TopLevel: topLevel,
+			V:        view,
+		}, nil
+	}
+
+	// 展开：递归块 root children（ID 前缀已由 BuildView 重写）。
+	children := make([]*nodeView, 0, len(roots))
+	for _, r := range roots {
+		cv, err := nodeViewOf(r, false, ctx)
+		if err != nil {
+			return nil, err
+		}
+		children = append(children, cv)
+	}
+
+	return &nodeView{
+		Type:     globalrefPkg.Type,
+		Template: "globalref",
+		NodeID:   node.ID,
+		Classes:  core.NodeClass(node.ID),
+		TopLevel: topLevel,
+		Children: children,
 		V:        view,
 	}, nil
 }

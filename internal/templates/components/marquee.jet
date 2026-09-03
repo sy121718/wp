@@ -1,0 +1,1 @@
+<div class="{{ .Classes }} wp-marquee"{{ if .V.PauseOnHover }} data-pause-on-hover="1"{{ end }}>{{ range _, copyIdx := .V.Copies }}<div class="wp-marquee-track" data-copy="{{ copyIdx }}">{{ range _, child := .Children }}<div class="wp-marquee-item">{{ include child.Template child }}</div>{{ end }}</div>{{ end }}</div>

@@ -1,0 +1,1 @@
+{{ if .V.IsPlaceholder }}<div class="wp-globalref {{ .Classes }}" data-wp-id="{{ .V.NodeID }}"><!-- 全局块引用 --></div>{{ else }}{{ range _, child := .Children }}{{ include child.Template child }}{{ end }}{{ end }}
