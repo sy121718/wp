@@ -10,7 +10,6 @@ import (
 
 	casbinlib "github.com/casbin/casbin/v3"
 	"github.com/casbin/casbin/v3/model"
-	gormadapter "github.com/casbin/gorm-adapter/v3"
 	"github.com/spf13/viper"
 	"gorm.io/gorm"
 )
@@ -133,7 +132,7 @@ func Ready() error {
 }
 
 func initCasbin(db *gorm.DB) (*casbinlib.Enforcer, error) {
-	a, err := gormadapter.NewAdapterByDBUseTableName(db, "", "sys_casbin_rule")
+	a, err := NewAdapter(db)
 	if err != nil {
 		return nil, fmt.Errorf("创建 Casbin 适配器失败: %w", err)
 	}

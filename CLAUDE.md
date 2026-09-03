@@ -329,3 +329,18 @@ type Response struct {
 | `pkg/` | 可复用基础组件（facade + provider/driver） |
 | `public/` | 日志、存储、文档、测试资源 |
 
+
+## Agent skills
+
+### Issue tracker
+
+Issues and specs for this repo live as GitHub Issues (uses the `gh` CLI). See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The five canonical triage roles map to the default labels (`needs-triage` / `needs-info` / `ready-for-agent` / `ready-for-human` / `wontfix`); `/wayfinder` additionally uses `wayfinder:map` and the `wayfinder:<type>` ticket labels. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context layout. See `docs/agents/domain.md`.
+
