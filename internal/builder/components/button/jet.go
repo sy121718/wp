@@ -71,6 +71,12 @@ func buildAttrs(p *Props, content core.ContentResolver) (tag, attrs string, err 
 		if v == "" {
 			return "", "", fmt.Errorf("绑定字段 %q 为空，无 fallback 兜底", p.Binding.Field)
 		}
+		// 绑定值协议白名单校验：CMS 内容属不受信输入，渲染 href 前必须过协议校验，
+		// 拒绝 javascript:/data: 等危险协议。校验失败时安全降级为无 href（不可点击），
+		// 不阻断整页编译（绑定值是 CMS 内容，不应让整页编译失败）。
+		if !core.IsSafeURL(v) {
+			return tag, "", nil
+		}
 		attrs = ` href="` + html.EscapeString(v) + `"`
 	case ActionAnchor:
 		attrs = ` href="#` + html.EscapeString(p.Value) + `"`

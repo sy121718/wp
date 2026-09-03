@@ -103,17 +103,17 @@ func (m *Model) GetByPageVersion(ctx context.Context, pageID string, version int
 func (m *Model) ReplaceArtifactContent(ctx context.Context, id string, entity *PageArtifactEntity, objects []PageArtifactObjectEntity) (err error) {
 	return m.Transaction(ctx, func(tx *gorm.DB) error {
 		if err = tx.Model(&PageArtifactEntity{}).Where("id = ?", id).Updates(map[string]interface{}{
-			"source_document":             entity.SourceDocument,
+			"source_document":              entity.SourceDocument,
 			"page_document_schema_version": entity.PageDocumentSchemaVersion,
-			"source_hash":                 entity.SourceHash,
-			"build_input_manifest":        entity.BuildInputManifest,
-			"build_input_hash":            entity.BuildInputHash,
-			"artifact_provider":           entity.ArtifactProvider,
-			"artifact_key":                entity.ArtifactKey,
-			"artifact_hash":               entity.ArtifactHash,
-			"compiler_version":            entity.CompilerVersion,
-			"registry_version":            entity.RegistryVersion,
-			"manifest":                    entity.Manifest,
+			"source_hash":                  entity.SourceHash,
+			"build_input_manifest":         entity.BuildInputManifest,
+			"build_input_hash":             entity.BuildInputHash,
+			"artifact_provider":            entity.ArtifactProvider,
+			"artifact_key":                 entity.ArtifactKey,
+			"artifact_hash":                entity.ArtifactHash,
+			"compiler_version":             entity.CompilerVersion,
+			"registry_version":             entity.RegistryVersion,
+			"manifest":                     entity.Manifest,
 		}).Error; err != nil {
 			return err
 		}

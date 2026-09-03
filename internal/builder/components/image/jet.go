@@ -46,6 +46,10 @@ func BuildView(node *core.Node, p *Props, class, customID string, content core.C
 	if src == "" {
 		return View{}, fmt.Errorf("图片地址为空")
 	}
+	// 协议白名单校验：拒绝 javascript:/data:/vbscript: 等危险协议（降级为空 src，不阻断编译）。
+	if !core.IsSafeURL(src) {
+		src = ""
+	}
 
 	// 组装 <img>：URL 直出，宽高由 CSS 控制，无媒体库变体解析。
 	var sb strings.Builder

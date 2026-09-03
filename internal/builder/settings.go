@@ -28,11 +28,11 @@ var bodyClassRe = regexp.MustCompile(`^[A-Za-z0-9_-]{1,100}$`)
 // PageSettings 页面级全局环境配置（规范 docs/02-A §2）。
 // 不是可视化 DOM 节点，由独立的"页面设置面板"维护，编译期直接作用于 <head> 与 <body>。
 type PageSettings struct {
-	Layout      PageLayout `json:"layout"`
-	Base        BaseStyle  `json:"base"`
+	Layout      PageLayout    `json:"layout"`
+	Base        BaseStyle     `json:"base"`
 	Theme       ThemeSettings `json:"theme,omitempty"`
-	SEO         SEO        `json:"seo"`
-	BodyClasses []string   `json:"bodyClasses,omitempty"`
+	SEO         SEO           `json:"seo"`
+	BodyClasses []string      `json:"bodyClasses,omitempty"`
 	// Structure 全局结构绑定快照（保存时从激活主题 settings 合入）：
 	// 编译装配层读取，构建期内联页眉/页脚块（021_blocks.sql 方案 C）。
 	Structure StructureBindings `json:"structure,omitempty"`
@@ -153,7 +153,7 @@ func compileSettingsCSS(s *PageSettings, b *core.CSSBuckets) {
 		b.Add(core.BreakpointDesktop, ":root", root)
 	}
 	if v := s.Theme.FontFamily; v != "" {
-		b.Add(core.BreakpointDesktop, "body", []string{"font-family: "+v})
+		b.Add(core.BreakpointDesktop, "body", []string{"font-family: " + v})
 	}
 	var body []string
 	if v := s.Base.BackgroundColor; v != "" {

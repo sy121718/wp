@@ -43,11 +43,11 @@ type themeManageData struct {
 // templateMap 转 Jet 模板键 map（layout 以小写 title/menu 取值）。
 func (d *themeManageData) templateMap() gin.H {
 	return gin.H{
-		"title":            d.Title,
-		"menu":             d.Menu,
-		"Projects":         d.Projects,
-		"SelectedProject":  d.SelectedProjectID,
-		"Themes":           d.Themes,
+		"title":           d.Title,
+		"menu":            d.Menu,
+		"Projects":        d.Projects,
+		"SelectedProject": d.SelectedProjectID,
+		"Themes":          d.Themes,
 	}
 }
 

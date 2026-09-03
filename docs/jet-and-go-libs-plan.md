@@ -97,7 +97,7 @@ loader 用 jet.NewOSFileSystemLoader 指到 internal/templates/<子目录>
 | `hibiken/asynq` + `go-redis/v9` | 保留 | Build Worker 任务队列（Redis broker） |
 | `alicebob/miniredis/v2` | 保留 | 测试 mock |
 | `go-playground/validator/v10` | 保留 | Gin 参数校验 |
-| `golang-jwt/jwt/v5` | **待迁移后清理** | CLAUDE.md 已定「Session 替代 JWT」，但 `pkg/auth/jwt.go` + 中间件仍在使用——迁移完成前保留 |
+| `golang-jwt/jwt/v5` | **已从直接依赖移除（Session 迁移完成），indirect 残留** | 认证已迁 Session+Cookie，`pkg/auth/jwt.go`（313 行）已删除，本项目代码零引用。go.mod 仍以 `// indirect` 残留，是 `gorm sqlserver 驱动 → Azure MSAL` 的传递依赖；彻底清除需替换 casbin/gorm-adapter（无条件 import 全驱动），维护负担大于收益，故保留 indirect 并在此标注 |
 | `glebarez/sqlite` + `modernc.org/sqlite` | **待确认用途** | `pkg/database/driver/sqlite.go` 业务驱动 + 测试；确认是「轻量部署」还是「仅测试」再定去留 |
 | `gorm.io/driver/sqlserver` + mssqldb | **待确认** | `pkg/database/driver/sqlserver.go` 存在，但 CLAUDE.md 技术栈只列 MySQL/PostgreSQL；若不需要 SQL Server 可移出核心依赖 |
 

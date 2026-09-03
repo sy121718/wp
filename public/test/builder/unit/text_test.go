@@ -59,7 +59,30 @@ func TestTextRichMode(t *testing.T) {
 			t.Errorf("HTML 缺少 %q: %s", want, c.HTML)
 		}
 	}
-	for _, bad := range []string{"<script", "<img", "onerror=", "<input"} {
+	// img 属白名单标签：标签本身保留，但非法 src（src=x）与 onerror 事件属性被剥离。
+	if !strings.Contains(c.HTML, "<img>") {
+		t.Errorf("合法 img 标签应保留（属性剥离后）: %s", c.HTML)
+	}
+	for _, bad := range []string{"<script", "onerror=", "<input", "src=x"} {
+		if strings.Contains(c.HTML, bad) {
+			t.Errorf("危险内容未被清洗: %q in %s", bad, c.HTML)
+		}
+	}
+}
+
+// TestTextRichImg 富文本图片：合法 img 保留，javascript:/data: 协议 src 与事件属性剥离。
+func TestTextRichImg(t *testing.T) {
+	props := `{"mode":"richtext","text":"<p><img src=\"https://example.com/a.jpg\" alt=\"说明\" width=\"300\" loading=\"lazy\"></p><p><img src=\"javascript:alert(1)\" onerror=\"alert(2)\"></p>"}`
+	c, err := compile(t, textDoc(t, props))
+	if err != nil {
+		t.Fatalf("编译失败: %v", err)
+	}
+	// 合法 img 完整保留。
+	if !strings.Contains(c.HTML, `<img src="https://example.com/a.jpg" alt="说明" width="300" loading="lazy">`) {
+		t.Errorf("合法 img 未保留: %s", c.HTML)
+	}
+	// 危险协议与事件属性剥离。
+	for _, bad := range []string{"javascript:", "onerror="} {
 		if strings.Contains(c.HTML, bad) {
 			t.Errorf("危险内容未被清洗: %q in %s", bad, c.HTML)
 		}

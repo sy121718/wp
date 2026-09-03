@@ -168,6 +168,7 @@ func ComponentSchemas() (map[string]json.RawMessage, error) {
 	}
 	return out, nil
 }
+
 // Compile 编译页面文档。确定性保证：同一输入产生完全相同的输出。
 func Compile(p *Page, opts ...CompileOption) (res *CompiledPage, err error) {
 	if err = ValidatePage(p); err != nil {

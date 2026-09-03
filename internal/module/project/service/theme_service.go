@@ -16,9 +16,9 @@ import (
 )
 
 var (
-	ErrThemeNameRequired  = errors.New("主题名称不能为空")
-	ErrThemeNotFound      = errors.New("主题不存在")
-	ErrThemeIsActive      = errors.New("激活主题不可删除，请先切换到其他主题")
+	ErrThemeNameRequired = errors.New("主题名称不能为空")
+	ErrThemeNotFound     = errors.New("主题不存在")
+	ErrThemeIsActive     = errors.New("激活主题不可删除，请先切换到其他主题")
 )
 
 // ListThemes 列出工程全部主题。

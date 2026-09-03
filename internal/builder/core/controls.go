@@ -2,10 +2,10 @@ package core
 
 import (
 	"encoding/json"
-	"sort"
 	"fmt"
 	"reflect"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -25,10 +25,10 @@ const (
 	ControlRegex  ControlKind = "regex" // 正则校验（pattern 来自独立 ctRegex tag）
 	ControlURL    ControlKind = "url"   // 链接：协议白名单（http/https/mailto/tel/相对路径/#）
 	// UI 声明式控件（检查器渲染；ValidateSpec 仅做 maxlen，不校验值域）：
-	ControlMedia    ControlKind = "media"    // 媒体选择（预览缩略图 + 媒体库选择 + 清除）
-	ControlColor    ControlKind = "color"    // 颜色（色板 + 文本，支持 var(--token)）
+	ControlMedia     ControlKind = "media"     // 媒体选择（预览缩略图 + 媒体库选择 + 清除）
+	ControlColor     ControlKind = "color"     // 颜色（色板 + 文本，支持 var(--token)）
 	ControlDimension ControlKind = "dimension" // 数值 + 单位（px/%/em/rem/vw）
-	ControlMargin   ControlKind = "margin"   // 四向边距（上右下左 + 联动 + 单位）
+	ControlMargin    ControlKind = "margin"    // 四向边距（上右下左 + 联动 + 单位）
 )
 
 // ctTag / ctRegexTag 字段标签：
@@ -50,13 +50,13 @@ type ControlOption struct {
 type Control struct {
 	Key     string          `json:"key"`
 	Kind    ControlKind     `json:"kind"`
-	Label   string          `json:"label,omitempty"`   // 控件显示名（中文）；缺省由前端字段映射兜底
+	Label   string          `json:"label,omitempty"` // 控件显示名（中文）；缺省由前端字段映射兜底
 	Default string          `json:"default,omitempty"`
 	Min     int             `json:"min,omitempty"`
 	Max     int             `json:"max,omitempty"`
 	Step    int             `json:"step,omitempty"` // slider 步进（编辑器交互；默认 1）
 	MaxLen  int             `json:"maxLen,omitempty"`
-	Unit    string          `json:"unit,omitempty"` // dimension/margin 单位（如 px；缺省前端默认）
+	Unit    string          `json:"unit,omitempty"`    // dimension/margin 单位（如 px；缺省前端默认）
 	Options []ControlOption `json:"options,omitempty"` // select/segment 选项
 	Pattern string          `json:"pattern,omitempty"` // regex 模式
 	Hidden  bool            `json:"hidden,omitempty"`  // 检查器隐藏（如二选一字段的另一侧、内部实现字段）
