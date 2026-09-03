@@ -84,45 +84,6 @@ func (c *Component) Validate(node *core.Node, ids map[string]bool) (err error) {
 return nil
 }
 
-// Render 渲染跑马灯（双份内容无缝滚动）。
-func (c *Component) Render(node *core.Node, topLevel bool, ctx *core.RenderContext) (err error) {
-	var p Props
-	if len(node.Props) > 0 {
-		if err = json.Unmarshal(node.Props, &p); err != nil {
-			return fmt.Errorf("节点 %s props 反序列化失败: %w", node.ID, err)
-		}
-	}
-	cls := core.NodeClass(node.ID)
-
-	ctx.HTML.WriteString(`<div class="`)
-	ctx.HTML.WriteString(cls)
-	ctx.HTML.WriteString(` wp-marquee"`)
-	if p.PauseOnHover {
-		ctx.HTML.WriteString(` data-pause-on-hover="1"`)
-	}
-	ctx.HTML.WriteString(`>`)
-
-	// 双份内容（无缝循环）。
-	for copyIdx := 0; copyIdx < 2; copyIdx++ {
-		ctx.HTML.WriteString(`<div class="wp-marquee-track" data-copy="`)
-		ctx.HTML.WriteString(strconv.Itoa(copyIdx))
-		ctx.HTML.WriteString(`">`)
-		for _, child := range node.Children {
-			ctx.HTML.WriteString(`<div class="wp-marquee-item">`)
-			if err = core.RenderNode(child, false, ctx); err != nil {
-				return err
-			}
-			ctx.HTML.WriteString(`</div>`)
-		}
-		ctx.HTML.WriteString(`</div>`)
-	}
-
-	ctx.HTML.WriteString(`</div>`)
-
-	compileCSS(node.ID, &p, ctx.CSS)
-	return nil
-}
-
 // compileCSS 跑马灯样式（位移动画）。
 func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	sel := "." + core.NodeClass(id)

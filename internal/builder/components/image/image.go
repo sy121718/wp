@@ -115,7 +115,6 @@ var Widget = core.Atom[Props]{
 	Spec: core.AtomSpec[Props]{
 		TypeName:      Type,
 		ValidateExtra: validateExtra,
-		Render:        render,
 	},
 }
 
@@ -157,88 +156,6 @@ func validateExtra(p *Props, nodeID string) (err error) {
 
 // fieldPathRe 绑定路径白名单。
 var fieldPathRe = regexp.MustCompile(`^[a-z][a-z0-9_]*\.[a-zA-Z][a-zA-Z0-9_]*$`)
-
-// render 图片 URL 直出（媒体库/外链统一，构建期零解析）→
-// 标准 img HTML → 图注 / 链接 / 零 JS 灯箱包裹。
-func render(node *core.Node, p *Props, h *core.AtomRender) (string, error) {
-	// 图片地址：CMS 绑定优先，否则手填 Src（媒体库/外链统一 URL）。
-	src := p.Src
-	if p.Binding != nil && p.Binding.Field != "" {
-		if h.Content == nil {
-			return "", fmt.Errorf("编译上下文缺少内容解析器，无法解析绑定 %q", p.Binding.Field)
-		}
-		v, err := h.Content.ResolveString(p.Binding.Field)
-		if err != nil {
-			return "", fmt.Errorf("解析绑定 %q 失败: %w", p.Binding.Field, err)
-		}
-		if v != "" {
-			src = v
-		} else if p.Binding.Fallback != "" {
-			src = p.Binding.Fallback
-		}
-	}
-	if src == "" {
-		return "", fmt.Errorf("图片地址为空")
-	}
-
-	// 组装 <img>：URL 直出，宽高由 CSS 控制，无媒体库变体解析。
-	var sb strings.Builder
-	sb.WriteString(`<img src="`)
-	sb.WriteString(html.EscapeString(src))
-	sb.WriteString(`"`)
-	if h.Classes != "" {
-		sb.WriteString(` class="`)
-		sb.WriteString(html.EscapeString(h.Classes))
-		sb.WriteString(`"`)
-	}
-	if p.Loading == "eager" {
-		sb.WriteString(` loading="eager"`)
-	} else {
-		sb.WriteString(` loading="lazy"`)
-	}
-	if p.FetchPriority == "high" {
-		sb.WriteString(` fetchpriority="high"`)
-	}
-	sb.WriteString(` decoding="async" alt="`)
-	sb.WriteString(html.EscapeString(p.Alt))
-	sb.WriteString(`"`)
-	if p.Title != "" {
-		sb.WriteString(` title="`)
-		sb.WriteString(html.EscapeString(p.Title))
-		sb.WriteString(`"`)
-	}
-	sb.WriteString(`>`)
-	imgHTML := sb.String()
-
-	// 点击动作：lightbox 零 JS 实现（CSS :target 浮层）。
-	if p.ClickAction == "lightbox" {
-		imgHTML = `<a href="#wp-lb-` + node.ID + `">` + imgHTML + `</a>` +
-			lightboxHTML(node.ID, src)
-	} else if p.Link != "" || p.ClickAction == "link" {
-		linkAttrs := `href="` + html.EscapeString(p.Link) + `"`
-		if p.LinkTarget == "blank" {
-			linkAttrs += ` target="_blank"`
-		}
-		if p.LinkRel == "nofollow" {
-			linkAttrs += ` rel="nofollow"`
-		}
-		if h.CustomID != "" {
-			linkAttrs += ` id="` + h.CustomID + `"`
-		}
-		imgHTML = `<a ` + linkAttrs + `>` + imgHTML + `</a>`
-	} else if h.CustomID != "" {
-		imgHTML = strings.Replace(imgHTML, "<img ", "<img id=\""+h.CustomID+"\" ", 1)
-	}
-
-	// 图注包裹。
-	if p.Caption != "" {
-		tmp := imgHTML
-		imgHTML = `<figure>` + tmp + `<figcaption>` + html.EscapeString(p.Caption) + `</figcaption></figure>`
-	}
-
-	compileCSS(node.ID, p, h.CSS)
-	return imgHTML, nil
-}
 
 // lightboxHTML 零 JS 灯箱浮层：CSS :target 显隐（docs/02-C6 说明约束内实现）。
 func lightboxHTML(nodeID, src string) string {

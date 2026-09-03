@@ -16,7 +16,7 @@ func textDoc(t *testing.T, props string) *builder.Page {
 // TestTextPlainMode 纯文本模式：单层 <p>/<span> 直出 + 转义。
 func TestTextPlainMode(t *testing.T) {
 	props := `{"mode":"plaintext","plainTag":"p","text":"这是一款兼顾便携与降噪的日常通勤耳机。","typography":{"desktop":{"fontSize":"0.875rem","textAlign":"center"}}}`
-	c, err := builder.Compile(textDoc(t, props))
+	c, err := compile(t, textDoc(t, props))
 	if err != nil {
 		t.Fatalf("编译失败: %v", err)
 	}
@@ -32,7 +32,7 @@ func TestTextPlainMode(t *testing.T) {
 // TestTextPlainSpan 纯文本 span 标签 + XSS 转义。
 func TestTextPlainSpan(t *testing.T) {
 	props := `{"mode":"plaintext","plainTag":"span","text":"<script>alert(1)</script>"}`
-	c, err := builder.Compile(textDoc(t, props))
+	c, err := compile(t, textDoc(t, props))
 	if err != nil {
 		t.Fatalf("编译失败: %v", err)
 	}
@@ -47,7 +47,7 @@ func TestTextPlainSpan(t *testing.T) {
 // TestTextRichMode 富文本模式：结构化片段 + 白名单清洗。
 func TestTextRichMode(t *testing.T) {
 	props := `{"mode":"richtext","text":"<p>核心使用指南：</p><ul><li>长按 3 秒开启蓝牙配对。</li></ul><script>alert(1)</script><img src=x onerror=alert(2)>"}`
-	c, err := builder.Compile(textDoc(t, props))
+	c, err := compile(t, textDoc(t, props))
 	if err != nil {
 		t.Fatalf("编译失败: %v", err)
 	}
@@ -69,7 +69,7 @@ func TestTextRichMode(t *testing.T) {
 // TestTextRichLink 富文本链接：白名单协议 + target/rel。
 func TestTextRichLink(t *testing.T) {
 	props := `{"mode":"richtext","text":"<p>查看<a href=\"javascript:alert(1)\">坏链接</a>与<a href=\"https://example.com\" target=\"_blank\" rel=\"nofollow\">好链接</a></p>"}`
-	c, err := builder.Compile(textDoc(t, props))
+	c, err := compile(t, textDoc(t, props))
 	if err != nil {
 		t.Fatalf("编译失败: %v", err)
 	}
@@ -88,7 +88,7 @@ func TestTextRichLink(t *testing.T) {
 func TestTextBinding(t *testing.T) {
 	resolver := mapResolver{"post.content": "<p>绑定正文内容</p>"}
 	props := `{"mode":"richtext","binding":{"field":"post.content","fallback":"<p>兜底</p>"}}`
-	c, err := builder.Compile(textDoc(t, props), builder.WithContentResolver(resolver))
+	c, err := compile(t, textDoc(t, props), builder.WithContentResolver(resolver))
 	if err != nil {
 		t.Fatalf("编译失败: %v", err)
 	}
@@ -97,7 +97,7 @@ func TestTextBinding(t *testing.T) {
 	}
 
 	// 空值回退 Fallback。
-	c2, err := builder.Compile(textDoc(t, props), builder.WithContentResolver(mapResolver{"post.content": ""}))
+	c2, err := compile(t, textDoc(t, props), builder.WithContentResolver(mapResolver{"post.content": ""}))
 	if err != nil {
 		t.Fatalf("编译失败: %v", err)
 	}
@@ -110,7 +110,7 @@ func TestTextBinding(t *testing.T) {
 func TestTextExcerpt(t *testing.T) {
 	resolver := mapResolver{"product.description": "<p>第一段产品说明文字</p><p>第二段内容</p>"}
 	props := `{"mode":"richtext","binding":{"field":"product.description"},"excerpt":6}`
-	c, err := builder.Compile(textDoc(t, props), builder.WithContentResolver(resolver))
+	c, err := compile(t, textDoc(t, props), builder.WithContentResolver(resolver))
 	if err != nil {
 		t.Fatalf("编译失败: %v", err)
 	}
@@ -125,7 +125,7 @@ func TestTextExcerpt(t *testing.T) {
 // TestTextLineClampSpacing 截断 + 段落间距。
 func TestTextLineClampSpacing(t *testing.T) {
 	props := `{"mode":"richtext","text":"<p>长文</p>","lineClamp":3,"paragraphSpacing":"0.75rem","color":"#444"}`
-	c, err := builder.Compile(textDoc(t, props))
+	c, err := compile(t, textDoc(t, props))
 	if err != nil {
 		t.Fatalf("编译失败: %v", err)
 	}
@@ -157,7 +157,7 @@ func TestTextValidateErrors(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := builder.Compile(textDoc(t, tc.props))
+			_, err := compile(t, textDoc(t, tc.props))
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("期望错误含 %q，实际: %v", tc.want, err)
 			}
@@ -167,7 +167,7 @@ func TestTextValidateErrors(t *testing.T) {
 	// 带子节点：children 在节点层，叶子组件应拒绝。
 	t.Run("带子节点", func(t *testing.T) {
 		doc := `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"t1","type":"core.text","props":{"mode":"plaintext","text":"x"},"children":[{"id":"c1","type":"core.text","props":{"mode":"plaintext","text":"y"}}]}]}`
-		_, err := builder.Compile(mustParse(t, doc))
+		_, err := compile(t, mustParse(t, doc))
 		if err == nil || !strings.Contains(err.Error(), "叶子节点") {
 			t.Errorf("期望叶子节点错误，实际: %v", err)
 		}
@@ -177,7 +177,7 @@ func TestTextValidateErrors(t *testing.T) {
 // TestTextRichTagStripping 非白名单标签剥壳保留文本（如自定义 block 标签）。
 func TestTextRichTagStripping(t *testing.T) {
 	props := `{"mode":"richtext","text":"<div><p>保留文本</p><em>斜体</em></div><div>尾段</div>"}`
-	c, err := builder.Compile(textDoc(t, props))
+	c, err := compile(t, textDoc(t, props))
 	if err != nil {
 		t.Fatalf("编译失败: %v", err)
 	}

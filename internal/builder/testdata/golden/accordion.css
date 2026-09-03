@@ -1,0 +1,117 @@
+.wp-c-ac1 {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.wp-c-ac1 .wp-accordion-head {
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  font-size: 15px;
+  font-weight: 600;
+  background: var(--c-surface, #fff);
+  border: 1px solid rgba(0,0,0,.1);
+  border-radius: 10px;
+  background: #f9f9f9;
+}
+
+.wp-c-ac1 .wp-accordion-head::-webkit-details-marker {
+  display: none;
+}
+
+.wp-c-ac1 .wp-accordion-head::after {
+  content: '＋';
+  font-size: 14px;
+  color: rgba(0,0,0,.4);
+  transition: transform .2s;
+  margin-left: 12px;
+}
+
+.wp-c-ac1 details[open] .wp-c-ac1 .wp-accordion-head::after {
+  transform: rotate(45deg);
+}
+
+.wp-c-ac1 .wp-accordion-head:hover {
+  background: var(--c-bg-hover, #f3f4f6);
+}
+
+.wp-c-ac1 .wp-accordion-body {
+  padding: 14px 18px;
+  border: 1px solid rgba(0,0,0,.08);
+  border-top: 0;
+  border-radius: 0 0 10px 10px;
+  margin-top: -8px;
+}
+
+.wp-c-ac2 {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.wp-c-ac2 .wp-accordion-head {
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  font-size: 15px;
+  font-weight: 600;
+  background: var(--c-surface, #fff);
+  border: 1px solid rgba(0,0,0,.1);
+  border-radius: 10px;
+}
+
+.wp-c-ac2 .wp-accordion-head::-webkit-details-marker {
+  display: none;
+}
+
+.wp-c-ac2 .wp-accordion-head::after {
+  content: '＋';
+  font-size: 14px;
+  color: rgba(0,0,0,.4);
+  transition: transform .2s;
+  margin-left: 12px;
+}
+
+.wp-c-ac2 details[open] .wp-c-ac2 .wp-accordion-head::after {
+  transform: rotate(45deg);
+}
+
+.wp-c-ac2 .wp-accordion-head:hover {
+  background: var(--c-bg-hover, #f3f4f6);
+}
+
+.wp-c-ac2 .wp-accordion-body {
+  padding: 14px 18px;
+  border: 1px solid rgba(0,0,0,.08);
+  border-top: 0;
+  border-radius: 0 0 10px 10px;
+  margin-top: -8px;
+}
+
+.wp-c-ac2.wp-accordion-borderless {
+  gap: 0;
+}
+
+.wp-c-ac2.wp-accordion-borderless .wp-accordion-head {
+  border: 0;
+  border-bottom: 1px solid rgba(0,0,0,.1);
+  border-radius: 0;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.wp-c-ac2.wp-accordion-borderless .wp-accordion-body {
+  border: 0;
+  border-radius: 0;
+  padding-left: 0;
+  padding-right: 0;
+}

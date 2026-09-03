@@ -1,0 +1,86 @@
+.wp-lightbox {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.85);
+  z-index: 1000;
+  align-items: center;
+  justify-content: center;
+}
+
+.wp-lightbox:target {
+  display: flex;
+}
+
+.wp-lightbox img {
+  max-width: 90vw;
+  max-height: 90vh;
+}
+
+.wp-lightbox-close {
+  position: absolute;
+  top: 16px;
+  right: 24px;
+  color: #fff;
+  font-size: 2rem;
+  line-height: 1;
+  text-decoration: none;
+}
+
+.wp-lightbox {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.85);
+  z-index: 1000;
+  align-items: center;
+  justify-content: center;
+}
+
+.wp-lightbox:target {
+  display: flex;
+}
+
+.wp-lightbox img {
+  max-width: 90vw;
+  max-height: 90vh;
+}
+
+.wp-lightbox-close {
+  position: absolute;
+  top: 16px;
+  right: 24px;
+  color: #fff;
+  font-size: 2rem;
+  line-height: 1;
+  text-decoration: none;
+}
+
+.wp-lightbox {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.85);
+  z-index: 1000;
+  align-items: center;
+  justify-content: center;
+}
+
+.wp-lightbox:target {
+  display: flex;
+}
+
+.wp-lightbox img {
+  max-width: 90vw;
+  max-height: 90vh;
+}
+
+.wp-lightbox-close {
+  position: absolute;
+  top: 16px;
+  right: 24px;
+  color: #fff;
+  font-size: 2rem;
+  line-height: 1;
+  text-decoration: none;
+}

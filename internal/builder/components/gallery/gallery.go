@@ -141,7 +141,6 @@ var Widget = core.Atom[Props]{
 	Spec: core.AtomSpec[Props]{
 		TypeName:      Type,
 		ValidateExtra: validateExtra,
-		Render:        render,
 	},
 }
 
@@ -216,66 +215,6 @@ func validateExtra(p *Props, nodeID string) (err error) {
 	return nil
 }
 
-// render 数据源解析 → Grid/Carousel 组装（URL 直出，构建期零解析）。
-func render(node *core.Node, p *Props, h *core.AtomRender) (string, error) {
-	if p.Mode == "" {
-		p.Mode = LayoutGrid
-	}
-
-	items, err := resolveSource(p, h)
-	if err != nil {
-		return "", err
-	}
-	if items == nil {
-		return "", nil // 空图集 + 无占位：组件隐藏（Fallback 默认）
-	}
-
-	var body strings.Builder
-	switch p.Mode {
-	case LayoutCarousel:
-		body.WriteString(renderCarousel(node.ID, p, items))
-	default:
-		body.WriteString(renderGrid(p, items))
-	}
-
-	var out strings.Builder
-	out.WriteString(`<div class="`)
-	out.WriteString(h.Classes)
-	out.WriteString(`"`)
-	if h.CustomID != "" {
-		out.WriteString(` id="`)
-		out.WriteString(h.CustomID)
-		out.WriteString(`"`)
-	}
-	out.WriteString(">")
-	out.WriteString(body.String())
-	out.WriteString("</div>")
-
-	compileCSS(node.ID, p, h.CSS)
-	return out.String(), nil
-}
-
-// resolveSource 图集数据源：绑定优先（JSON 数组/对象数组/逗号分隔），静态兜底；空+无占位返回 nil。
-func resolveSource(p *Props, h *core.AtomRender) (items []Item, err error) {
-	if p.Binding == nil || p.Binding.Field == "" {
-		return p.Items, nil
-	}
-	if h.Content == nil {
-		return nil, fmt.Errorf("编译上下文缺少内容解析器")
-	}
-	v, err := h.Content.ResolveString(p.Binding.Field)
-	if err != nil {
-		return nil, fmt.Errorf("解析绑定 %q 失败: %w", p.Binding.Field, err)
-	}
-	if v != "" {
-		return parseValues(v)
-	}
-	if p.Binding.Placeholder != "" {
-		return []Item{{URL: p.Binding.Placeholder}}, nil
-	}
-	return nil, nil // 隐藏组件
-}
-
 // parseValues 解析绑定值：字符串数组 / 对象数组 / 逗号分隔。
 func parseValues(v string) (items []Item, err error) {
 	var raw []json.RawMessage
@@ -300,48 +239,6 @@ func parseValues(v string) (items []Item, err error) {
 		}
 	}
 	return items, nil
-}
-
-// renderGrid 网格模式：纯 CSS Grid 直出。
-func renderGrid(p *Props, list []Item) string {
-	var sb strings.Builder
-	for _, r := range list {
-		sb.WriteString(renderItem(p, r))
-	}
-	return sb.String()
-}
-
-// renderCarousel 轮播骨架：语义静态结构 + data-carousel 增强属性。
-func renderCarousel(galleryID string, p *Props, list []Item) string {
-	c := p.Carousel
-	interval := c.Interval
-	if interval == 0 {
-		interval = 4000
-	}
-	attr := fmt.Sprintf(`data-carousel='{"autoplay":%t,"interval":%d,"infinite":%t,"pauseOnHover":%t,"slidesPerView":{"desktop":%s,"tablet":%s,"mobile":%s}}'`,
-		c.Autoplay, interval, c.Infinite, c.PauseOnHover,
-		slideNum(c.SlidesPerView.Desktop, 1), slideNum(c.SlidesPerView.Tablet, 1), slideNum(c.SlidesPerView.Mobile, 1))
-
-	var sb strings.Builder
-	sb.WriteString(`<div class="gallery-carousel" `)
-	sb.WriteString(attr)
-	sb.WriteString(`>`)
-	sb.WriteString(`<div class="gallery-track">`)
-	for _, r := range list {
-		sb.WriteString(`<div class="gallery-slide">`)
-		sb.WriteString(renderItem(p, r))
-		sb.WriteString(`</div>`)
-	}
-	sb.WriteString(`</div>`)
-	if c.Arrows {
-		sb.WriteString(`<button class="gallery-prev" aria-label="上一张" type="button">‹</button>`)
-		sb.WriteString(`<button class="gallery-next" aria-label="下一张" type="button">›</button>`)
-	}
-	if c.Dots {
-		sb.WriteString(`<div class="gallery-dots" aria-hidden="true"></div>`)
-	}
-	sb.WriteString(`</div>`)
-	return sb.String()
 }
 
 // renderItem 单图项：img（URL 直出）+ 点击动作包裹 + 图注结构。

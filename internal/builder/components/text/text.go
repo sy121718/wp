@@ -5,9 +5,7 @@ package text
 
 import (
 	"fmt"
-	"html"
 	"regexp"
-	"strings"
 
 	"go_wp/internal/builder/core"
 )
@@ -65,7 +63,6 @@ var Widget = core.Atom[Props]{
 	Spec: core.AtomSpec[Props]{
 		TypeName:      Type,
 		ValidateExtra: validateExtra,
-		Render:        render,
 	},
 }
 
@@ -95,65 +92,6 @@ func validateExtra(p *Props, nodeID string) (err error) {
 		return fmt.Errorf("摘要模式仅限富文本绑定场景")
 	}
 	return core.ValidateTextStyle(nodeID, &p.Typography)
-}
-
-// render 内容解析（绑定/Fallback/静态内容）→ 纯文本转义 / 富文本清洗摘要 → 包裹输出。
-func render(node *core.Node, p *Props, h *core.AtomRender) (string, error) {
-	if p.Mode == "" {
-		p.Mode = ModeRichText
-	}
-	if p.Mode == ModePlainText && p.PlainTag == "" {
-		p.PlainTag = "p"
-	}
-
-	// 内容解析：绑定优先，空值回退 Fallback，再回退静态内容。
-	content := p.Text
-	if p.Binding != nil && p.Binding.Field != "" {
-		if h.Content == nil {
-			return "", fmt.Errorf("编译上下文缺少内容解析器，无法解析绑定 %q", p.Binding.Field)
-		}
-		v, err := h.Content.ResolveString(p.Binding.Field)
-		if err != nil {
-			return "", fmt.Errorf("解析绑定 %q 失败: %w", p.Binding.Field, err)
-		}
-		if v != "" {
-			content = v
-		} else if p.Binding.Fallback != "" {
-			content = p.Binding.Fallback
-		}
-	}
-
-	var sb strings.Builder
-	sb.WriteString(`<div class="`)
-	sb.WriteString(h.Classes)
-	sb.WriteString(`"`)
-	if h.CustomID != "" {
-		sb.WriteString(` id="`)
-		sb.WriteString(h.CustomID)
-		sb.WriteString(`"`)
-	}
-	sb.WriteString(">")
-
-	switch p.Mode {
-	case ModePlainText:
-		sb.WriteString("<")
-		sb.WriteString(p.PlainTag)
-		sb.WriteString(">")
-		sb.WriteString(html.EscapeString(content))
-		sb.WriteString("</")
-		sb.WriteString(p.PlainTag)
-		sb.WriteString(">")
-	case ModeRichText:
-		rich := sanitizeRichHTML(content)
-		if p.Excerpt > 0 {
-			rich = html.EscapeString(truncateRunes(stripRichTags(content), p.Excerpt))
-		}
-		sb.WriteString(rich)
-	}
-	sb.WriteString("</div>")
-
-	compileCSS(node.ID, p, h.CSS)
-	return sb.String(), nil
 }
 
 // truncateRunes 按字符数截断（摘要）。

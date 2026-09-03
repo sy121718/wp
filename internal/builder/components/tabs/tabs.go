@@ -7,7 +7,6 @@ package tabs
 import (
 	"encoding/json"
 	"fmt"
-	"html"
 
 	"go_wp/internal/builder/core"
 )
@@ -84,69 +83,6 @@ func (c *Component) Validate(node *core.Node, ids map[string]bool) (err error) {
 		return err
 	}
 return nil
-}
-
-// Render 渲染页签（radio + label hack，零 JS）。
-func (c *Component) Render(node *core.Node, topLevel bool, ctx *core.RenderContext) (err error) {
-	var p Props
-	if len(node.Props) > 0 {
-		if err = json.Unmarshal(node.Props, &p); err != nil {
-			return fmt.Errorf("节点 %s props 反序列化失败: %w", node.ID, err)
-		}
-	}
-	cls := core.NodeClass(node.ID)
-
-	ctx.HTML.WriteString(`<div class="`)
-	ctx.HTML.WriteString(cls)
-	ctx.HTML.WriteString(` wp-tabs`)
-	if p.Vertical {
-		ctx.HTML.WriteString(` wp-tabs-vertical`)
-	}
-	ctx.HTML.WriteString(`">`)
-
-	// 所有 radio 置于 nav 之前（CSS 兄弟选择器 ~ 需要 radio 在 panel 前）。
-	for i := range p.Tabs {
-		ctx.HTML.WriteString(`<input type="radio" class="wp-tabs-radio" id="wp-tabs-`)
-		ctx.HTML.WriteString(html.EscapeString(node.ID))
-		ctx.HTML.WriteString(`-`)
-		ctx.HTML.WriteString(fmt.Sprintf("%d", i))
-		ctx.HTML.WriteString(`" name="wp-tabs-`)
-		ctx.HTML.WriteString(html.EscapeString(node.ID))
-		ctx.HTML.WriteString(`"`)
-		if i == 0 {
-			ctx.HTML.WriteString(` checked`)
-		}
-		ctx.HTML.WriteString(`>`)
-	}
-
-	// 标签导航。
-	ctx.HTML.WriteString(`<div class="wp-tabs-nav" role="tablist">`)
-	for i, t := range p.Tabs {
-		ctx.HTML.WriteString(`<label for="wp-tabs-`)
-		ctx.HTML.WriteString(html.EscapeString(node.ID))
-		ctx.HTML.WriteString(`-`)
-		ctx.HTML.WriteString(fmt.Sprintf("%d", i))
-		ctx.HTML.WriteString(`" role="tab">`)
-		ctx.HTML.WriteString(html.EscapeString(t.Label))
-		ctx.HTML.WriteString(`</label>`)
-	}
-	ctx.HTML.WriteString(`</div>`)
-
-	// 面板（与 radio 同层，~ 选择器作用）。
-	for i, child := range node.Children {
-		ctx.HTML.WriteString(`<div class="wp-tab-panel" data-index="`)
-		ctx.HTML.WriteString(fmt.Sprintf("%d", i))
-		ctx.HTML.WriteString(`">`)
-		if err = core.RenderNode(child, false, ctx); err != nil {
-			return err
-		}
-		ctx.HTML.WriteString(`</div>`)
-	}
-
-	ctx.HTML.WriteString(`</div>`)
-
-	compileCSS(node.ID, &p, ctx.CSS)
-	return nil
 }
 
 // compileCSS 页签样式（radio hack 显隐 + 高亮）。

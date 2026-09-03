@@ -18,7 +18,7 @@ func TestGalleryGrid(t *testing.T) {
 	items := `[{"url":"/storage/1.jpg","alt":"角图A","caption":"细节A"},{"url":"/storage/2.jpg"},{"url":"/storage/3.jpg"}]`
 	props := `{"mode":"grid","items":` + items + `,"grid":{"columns":{"desktop":3,"tablet":2,"mobile":1},"columnGap":"12px","rowGap":"8px"},"aspectRatio":"1:1","objectFit":"cover","radius":"8px","captionMode":"below"}`
 
-	c, err := builder.Compile(galleryDoc(t, props))
+	c, err := compile(t, galleryDoc(t, props))
 	if err != nil {
 		t.Fatalf("编译失败: %v", err)
 	}
@@ -55,7 +55,7 @@ func TestGalleryCarousel(t *testing.T) {
 	items := `[{"url":"/storage/1.jpg"},{"url":"/storage/2.jpg"},{"url":"/storage/3.jpg"}]`
 	props := `{"mode":"carousel","items":` + items + `,"carousel":{"autoplay":true,"interval":3000,"infinite":true,"pauseOnHover":true,"slidesPerView":{"desktop":2.5,"tablet":2,"mobile":1},"arrows":true,"dots":true}}`
 
-	c, err := builder.Compile(galleryDoc(t, props))
+	c, err := compile(t, galleryDoc(t, props))
 	if err != nil {
 		t.Fatalf("编译失败: %v", err)
 	}
@@ -77,7 +77,7 @@ func TestGalleryCarousel(t *testing.T) {
 // TestGalleryBinding CMS 图集绑定：字符串数组解析；空值占位兜底；空值无占位隐藏。
 func TestGalleryBinding(t *testing.T) {
 	bindJSON := `["/storage/1.jpg","/storage/2.jpg"]`
-	c, err := builder.Compile(galleryDoc(t, `{"binding":{"field":"product.gallery"}}`),
+	c, err := compile(t, galleryDoc(t, `{"binding":{"field":"product.gallery"}}`),
 		builder.WithContentResolver(mapResolver{"product.gallery": bindJSON}))
 	if err != nil {
 		t.Fatalf("编译失败: %v", err)
@@ -87,7 +87,7 @@ func TestGalleryBinding(t *testing.T) {
 	}
 
 	// 空值 + 占位图：输出占位。
-	c2, err := builder.Compile(galleryDoc(t, `{"binding":{"field":"product.gallery","placeholder":"/storage/3.jpg"}}`),
+	c2, err := compile(t, galleryDoc(t, `{"binding":{"field":"product.gallery","placeholder":"/storage/3.jpg"}}`),
 		builder.WithContentResolver(mapResolver{"product.gallery": ""}))
 	if err != nil {
 		t.Fatalf("编译失败: %v", err)
@@ -97,7 +97,7 @@ func TestGalleryBinding(t *testing.T) {
 	}
 
 	// 空值 + 无占位：组件隐藏（空 HTML）。
-	c3, err := builder.Compile(galleryDoc(t, `{"binding":{"field":"product.gallery"}}`),
+	c3, err := compile(t, galleryDoc(t, `{"binding":{"field":"product.gallery"}}`),
 		builder.WithContentResolver(mapResolver{"product.gallery": ""}))
 	if err != nil {
 		t.Fatalf("编译失败: %v", err)
@@ -109,7 +109,7 @@ func TestGalleryBinding(t *testing.T) {
 
 // TestGalleryHover 悬浮反馈：缩放/遮罩/阴影加深。
 func TestGalleryHover(t *testing.T) {
-	c, err := builder.Compile(galleryDoc(t, `{"items":[{"url":"/storage/1.jpg"}],"hover":{"scale":"1.05","overlay":"dark","deepen":true,"duration":"400ms"}}`))
+	c, err := compile(t, galleryDoc(t, `{"items":[{"url":"/storage/1.jpg"}],"hover":{"scale":"1.05","overlay":"dark","deepen":true,"duration":"400ms"}}`))
 	if err != nil {
 		t.Fatalf("编译失败: %v", err)
 	}
@@ -136,7 +136,7 @@ func TestGalleryValidate(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := builder.Compile(galleryDoc(t, tc.props))
+			_, err := compile(t, galleryDoc(t, tc.props))
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("期望错误含 %q，实际: %v", tc.want, err)
 			}
@@ -147,11 +147,11 @@ func TestGalleryValidate(t *testing.T) {
 // TestGalleryDeterministic 确定性构建。
 func TestGalleryDeterministic(t *testing.T) {
 	props := `{"items":[{"url":"/storage/det.jpg"}],"mode":"carousel","carousel":{"autoplay":true}}`
-	c1, err := builder.Compile(galleryDoc(t, props))
+	c1, err := compile(t, galleryDoc(t, props))
 	if err != nil {
 		t.Fatalf("编译失败: %v", err)
 	}
-	c2, err := builder.Compile(galleryDoc(t, props))
+	c2, err := compile(t, galleryDoc(t, props))
 	if err != nil {
 		t.Fatalf("编译失败: %v", err)
 	}

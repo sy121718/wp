@@ -6,7 +6,6 @@ package heading
 
 import (
 	"fmt"
-	"html"
 	"regexp"
 	"strconv"
 	"strings"
@@ -95,7 +94,6 @@ var Widget = core.Atom[Props]{
 	Spec: core.AtomSpec[Props]{
 		TypeName:      Type,
 		ValidateExtra: validateExtra,
-		Render:        render,
 	},
 }
 
@@ -149,63 +147,6 @@ func validateExtra(p *Props, nodeID string) (err error) {
 		return err
 	}
 	return core.ValidateTextStyle(nodeID, &p.Typography)
-}
-
-// render 内容解析（绑定/Fallback/静态文本）+ 语义标签 + 样式编译。
-func render(node *core.Node, p *Props, h *core.AtomRender) (string, error) {
-	if p.Tag == "" {
-		p.Tag = "h2"
-	}
-
-	// 内容解析：绑定优先，空值回退 Fallback，再回退静态文本。
-	text := p.Text
-	if p.Binding != nil && p.Binding.Field != "" {
-		if h.Content == nil {
-			return "", fmt.Errorf("编译上下文缺少内容解析器，无法解析绑定 %q", p.Binding.Field)
-		}
-		v, err := h.Content.ResolveString(p.Binding.Field)
-		if err != nil {
-			return "", fmt.Errorf("解析绑定 %q 失败: %w", p.Binding.Field, err)
-		}
-		if v != "" {
-			text = v
-		} else if p.Binding.Fallback != "" {
-			text = p.Binding.Fallback
-		}
-	}
-
-	var sb strings.Builder
-	// 副标题（主标题之上，小字）。
-	if p.Subtitle != "" {
-		sb.WriteString(`<span class="wp-heading-sub">`)
-		sb.WriteString(html.EscapeString(p.Subtitle))
-		sb.WriteString(`</span>`)
-	}
-	sb.WriteString("<")
-	sb.WriteString(p.Tag)
-	sb.WriteString(" class=\"")
-	sb.WriteString(h.Classes)
-	sb.WriteString("\"")
-	if h.CustomID != "" {
-		sb.WriteString(" id=\"")
-		sb.WriteString(h.CustomID)
-		sb.WriteString("\"")
-	}
-	sb.WriteString(">")
-	// 高亮背景盒（套在主标题文本上）。
-	if p.HighlightColor != "" {
-		sb.WriteString(`<span class="wp-heading-highlight">`)
-		sb.WriteString(html.EscapeString(text))
-		sb.WriteString(`</span>`)
-	} else {
-		sb.WriteString(html.EscapeString(text))
-	}
-	sb.WriteString("</")
-	sb.WriteString(p.Tag)
-	sb.WriteString(">")
-
-	compileCSS(node.ID, p, h.CSS)
-	return sb.String(), nil
 }
 
 // compileCSS 标题样式：排版组三端声明 + 字重/间距/转换/装饰/颜色/截断/阴影。

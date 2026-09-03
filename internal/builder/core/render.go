@@ -1,11 +1,12 @@
 package core
 
-import "strings"
-
-// RenderContext 单次编译的渲染上下文：HTML 缓冲、CSS 收集器与编译期外部服务。
+// RenderContext 单次编译的渲染上下文：CSS 收集器与编译期外部服务。
+//
+// 说明：HTML 渲染已迁移到 Jet 模板路径（builder/jetview.go 的 renderView 直接
+// 写入 strings.Builder），故移除了原 HTML 字段；nodeViewOf 只经 CSS/Content/Block
+// 编译 CSS 与驱动递归。
 type RenderContext struct {
-	HTML *strings.Builder
-	CSS  *CSSBuckets
+	CSS *CSSBuckets
 	// Content CMS 内容解析器（构建期动态绑定注入）。使用字段绑定的组件
 	// （core.heading 的 post.title 等）依赖它；未注入时绑定组件渲染返回明确错误。
 	Content ContentResolver

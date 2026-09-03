@@ -14,7 +14,6 @@ package slider
 import (
 	"encoding/json"
 	"fmt"
-	"html"
 	"strconv"
 
 	"go_wp/internal/builder/core"
@@ -88,62 +87,6 @@ func (c *Component) Validate(node *core.Node, ids map[string]bool) (err error) {
 		return err
 	}
 return nil
-}
-
-// Render 渲染轮播结构。
-func (c *Component) Render(node *core.Node, topLevel bool, ctx *core.RenderContext) (err error) {
-	var p Props
-	if len(node.Props) > 0 {
-		if err = json.Unmarshal(node.Props, &p); err != nil {
-			return fmt.Errorf("节点 %s props 反序列化失败: %w", node.ID, err)
-		}
-	}
-	cls := core.NodeClass(node.ID)
-	if topLevel {
-		cls += " " + core.SectionClass
-	}
-
-	// 轨道：横向 flex + scroll-snap。
-	ctx.HTML.WriteString(`<div class="`)
-	ctx.HTML.WriteString(cls)
-	ctx.HTML.WriteString(` wp-slider" data-slider="`)
-	ctx.HTML.WriteString(html.EscapeString(node.ID))
-	ctx.HTML.WriteString(`"`)
-	if p.Autoplay > 0 {
-		ctx.HTML.WriteString(` data-autoplay="`)
-		ctx.HTML.WriteString(strconv.FormatFloat(p.Autoplay, 'f', -1, 64))
-		ctx.HTML.WriteString(`"`)
-	}
-	if p.Loop {
-		ctx.HTML.WriteString(` data-loop="1"`)
-	}
-	ctx.HTML.WriteString(`>`)
-
-	// 滑动轨道。
-	ctx.HTML.WriteString(`<div class="wp-slider-track" data-track="1">`)
-	for _, child := range node.Children {
-		ctx.HTML.WriteString(`<div class="wp-slide">`)
-		if err = core.RenderNode(child, false, ctx); err != nil {
-			return err
-		}
-		ctx.HTML.WriteString(`</div>`)
-	}
-	ctx.HTML.WriteString(`</div>`)
-
-	// 箭头（增强按钮；无 JS 时隐藏）。
-	if p.ShowArrows {
-		ctx.HTML.WriteString(`<button type="button" class="wp-slider-arrow wp-slider-prev" data-prev="1" aria-label="上一张">‹</button>`)
-		ctx.HTML.WriteString(`<button type="button" class="wp-slider-arrow wp-slider-next" data-next="1" aria-label="下一张">›</button>`)
-	}
-	// 圆点指示器（增强填充）。
-	if p.ShowDots {
-		ctx.HTML.WriteString(`<div class="wp-slider-dots" data-dots="1"></div>`)
-	}
-
-	ctx.HTML.WriteString(`</div>`)
-
-	compileCSS(node.ID, &p, ctx.CSS)
-	return nil
 }
 
 // compileCSS 编译轮播样式（轨道 scroll-snap + slide 宽度 + 自动播放动画）。

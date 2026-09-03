@@ -1,14 +1,20 @@
-// jetview_test.go — 组件渲染「旧 Go 字符串拼接」vs「新 Jet 模板」字节等价测试（Phase 0 样板）。
+// jetview_test.go — 组件渲染迁移的字节等价测试（Phase 3 切换验收）。
 //
-// 用同一 Page Document（顶级 container + button + 嵌套 container + button），
-// 分别跑 builder.Compile（旧输出）与 nodeViewOf + renderView + templates.NewComponentSet（新输出），
-// 断言 HTML 与 CSS 字节完全一致。
+// 切换 Compile 到 Jet 路径后，「旧 Go render 路径」与「新 Jet 路径」不再是两条
+// 并行的生产路径，因此原「旧 Compile vs 新 nodeViewOf+renderView」对比不再成立。
+// 本文件改为 golden 对比：
+//
+//   - testdata/golden/ 下的 golden 文件由切换前的旧 render 路径（core.RenderNode）
+//     一次性生成并固化，作为「切换前产物」的字节基准；
+//   - TestJetViewByteEquivalent 断言新 Compile 产物与 golden 字节一致，
+//     证明「Compile 切换到 Jet 路径后，产物与切换前完全一致」。
 package builder
 
 import (
 	"encoding/json"
 	"fmt"
-	"strings"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"go_wp/internal/builder/core"
@@ -83,245 +89,9 @@ const jetDocJSON = `{
   ]
 }`
 
-// TestJetViewByteEquivalent 断言新旧渲染路径的 HTML 与 CSS 字节完全一致。
-func TestJetViewByteEquivalent(t *testing.T) {
-	page, err := ParsePage([]byte(jetDocJSON))
-	if err != nil {
-		t.Fatalf("ParsePage: %v", err)
-	}
-
-	// --- 旧路径：builder.Compile ---
-	oldRes, err := Compile(page)
-	if err != nil {
-		t.Fatalf("Compile: %v", err)
-	}
-	if oldRes.HTML == "" || oldRes.CSS == "" {
-		t.Fatal("旧输出为空，测试用例无意义（防「空==空」假通过）")
-	}
-
-	// --- 新路径：nodeViewOf + Jet 模板 ---
-	set, err := templates.NewComponentSet("../templates/components")
-	if err != nil {
-		t.Fatalf("NewComponentSet: %v", err)
-	}
-
-	var b core.CSSBuckets
-	compileSettingsCSS(&page.Settings, &b)
-	ctx := &core.RenderContext{CSS: &b}
-
-	var htmlBuf strings.Builder
-	for _, n := range page.Root {
-		v, err := nodeViewOf(n, true, ctx)
-		if err != nil {
-			t.Fatalf("nodeViewOf: %v", err)
-		}
-		if err := renderView(v, set, &htmlBuf); err != nil {
-			t.Fatalf("renderView(%s): %v", v.Template, err)
-		}
-	}
-
-	if got, want := htmlBuf.String(), oldRes.HTML; got != want {
-		t.Errorf("HTML 字节不一致:\n--- 旧输出 ---\n%s\n--- 新输出 ---\n%s", want, got)
-	}
-	if got, want := b.String(), oldRes.CSS; got != want {
-		t.Errorf("CSS 字节不一致:\n--- 旧输出 ---\n%s\n--- 新输出 ---\n%s", want, got)
-	}
-}
-
-// --- Phase 1 叶子组件字节等价测试 ---
-
-// assertJetByteEquivalent 用同一组 root 节点（JSON）分别跑旧 Compile 与新 nodeViewOf+renderView，
-// 断言 HTML 与 CSS 字节完全一致。
-func assertJetByteEquivalent(t *testing.T, rootJSON string) {
-	t.Helper()
-	doc := `{"settings": {"layout": {"mode": "full"}, "seo": {"title": "等价测试"}}, "root": ` + rootJSON + `}`
-	page, err := ParsePage([]byte(doc))
-	if err != nil {
-		t.Fatalf("ParsePage: %v", err)
-	}
-
-	oldRes, err := Compile(page)
-	if err != nil {
-		t.Fatalf("Compile: %v", err)
-	}
-	if oldRes.HTML == "" {
-		t.Fatal("旧输出 HTML 为空，测试用例无意义（防「空==空」假通过）")
-	}
-
-	set, err := templates.NewComponentSet("../templates/components")
-	if err != nil {
-		t.Fatalf("NewComponentSet: %v", err)
-	}
-
-	var b core.CSSBuckets
-	compileSettingsCSS(&page.Settings, &b)
-	ctx := &core.RenderContext{CSS: &b}
-
-	var htmlBuf strings.Builder
-	for _, n := range page.Root {
-		v, err := nodeViewOf(n, true, ctx)
-		if err != nil {
-			t.Fatalf("nodeViewOf: %v", err)
-		}
-		if err := renderView(v, set, &htmlBuf); err != nil {
-			t.Fatalf("renderView(%s): %v", v.Template, err)
-		}
-	}
-
-	if got, want := htmlBuf.String(), oldRes.HTML; got != want {
-		t.Errorf("HTML 字节不一致:\n--- 旧输出 ---\n%s\n--- 新输出 ---\n%s", want, got)
-	}
-	if got, want := b.String(), oldRes.CSS; got != want {
-		t.Errorf("CSS 字节不一致:\n--- 旧输出 ---\n%s\n--- 新输出 ---\n%s", want, got)
-	}
-}
-
-// TestJetViewHeadingByteEquivalent 标题组件：副标题/高亮盒/字重/装饰/自定义 class 与 ID/特殊字符转义。
-func TestJetViewHeadingByteEquivalent(t *testing.T) {
-	assertJetByteEquivalent(t, `[
-		{"id":"h1","type":"core.heading","props":{"text":"标题 <b>&</b>","tag":"h2","subtitle":"副标题 & 更多","highlightColor":"#fff000","highlightPadding":"4px 8px","highlightRadius":"6px","advanced":{"customClasses":["my-cls"],"customId":"my-heading"}}},
-		{"id":"h2","type":"core.heading","props":{"text":"二级","tag":"h3","weight":"bold","transform":"uppercase","decor":{"decoration":"underline","decorationColor":"#f00"},"color":"#333"}}
-	]`)
-}
-
-// TestJetViewTextByteEquivalent 正文组件：纯文本转义 / 富文本 sanitize。
-func TestJetViewTextByteEquivalent(t *testing.T) {
-	assertJetByteEquivalent(t, `[
-		{"id":"t1","type":"core.text","props":{"mode":"plaintext","plainTag":"p","text":"纯文本 <b>&</b> 特殊"}},
-		{"id":"t2","type":"core.text","props":{"mode":"richtext","text":"<p>富文本 <strong>加粗</strong> & 更多</p><script>alert(1)</script>"}}
-	]`)
-}
-
-// TestJetViewImageByteEquivalent 图片组件：懒加载/立即加载、链接/灯箱/图注、customId 分支。
-func TestJetViewImageByteEquivalent(t *testing.T) {
-	assertJetByteEquivalent(t, `[
-		{"id":"img1","type":"core.image","props":{"src":"https://example.com/a.jpg","alt":"图片 & 说明","loading":"eager","fetchPriority":"high"}},
-		{"id":"img2","type":"core.image","props":{"src":"https://example.com/b.jpg","alt":"链接图","clickAction":"link","link":"https://example.com/t?x=1&y=2","linkTarget":"blank","linkRel":"nofollow","advanced":{"customId":"img-link"}}},
-		{"id":"img3","type":"core.image","props":{"src":"https://example.com/c.jpg","alt":"灯箱","clickAction":"lightbox","caption":"图注 & 内容"}}
-	]`)
-}
-
-// TestJetViewDividerByteEquivalent 分割线组件：纯线 / 文本嵌入 / 图标嵌入 / 自定义 ID。
-func TestJetViewDividerByteEquivalent(t *testing.T) {
-	assertJetByteEquivalent(t, `[
-		{"id":"d1","type":"core.divider","props":{"style":"solid","weight":"2px","color":"#ccc"}},
-		{"id":"d2","type":"core.divider","props":{"inset":{"kind":"text","text":"或者 & 更多","position":"left","spacing":"8px","fontSize":"14px"}}},
-		{"id":"d3","type":"core.divider","props":{"inset":{"kind":"icon","iconName":"star","position":"right"},"advanced":{"customClasses":["x"],"customId":"div-id"}}}
-	]`)
-}
-
-// TestJetViewSpacerByteEquivalent 间隔组件：三端高度 + Advanced 外边距。
-func TestJetViewSpacerByteEquivalent(t *testing.T) {
-	assertJetByteEquivalent(t, `[
-		{"id":"s1","type":"core.spacer","props":{"height":{"desktop":"80px","tablet":"40px","mobile":"20px"},"advanced":{"margin":{"desktop":{"top":"10px","bottom":"20px"}}}}}
-	]`)
-}
-
-// TestJetViewListByteEquivalent 列表组件：图标/序号/圆点三种样式 + repeater items + 链接。
-func TestJetViewListByteEquivalent(t *testing.T) {
-	assertJetByteEquivalent(t, `[
-		{"id":"l1","type":"core.list","props":{"style":"icon","items":[{"icon":"check","text":"第一项 & 特殊","link":"https://example.com/1"},{"icon":"star","text":"第二项"},{"text":"无图标项"}]}},
-		{"id":"l2","type":"core.list","props":{"style":"number","items":[{"text":"甲"},{"text":"乙"}]}},
-		{"id":"l3","type":"core.list","props":{"style":"dot","items":[{"text":"点1"},{"text":"点2"}]}}
-	]`)
-}
-
-// TestJetViewInfoboxByteEquivalent 信息框组件：图标/媒体图 + 按钮化/纯链接/无链接三分支。
-func TestJetViewInfoboxByteEquivalent(t *testing.T) {
-	assertJetByteEquivalent(t, `[
-		{"id":"ib1","type":"core.infobox","props":{"icon":"check","title":"标题 & 内容","text":"描述","subtitle":"副标题","link":"https://example.com","btnText":"了解更多"}},
-		{"id":"ib2","type":"core.infobox","props":{"mediaImage":"https://example.com/m.jpg","title":"媒体图","text":"文本"}},
-		{"id":"ib3","type":"core.infobox","props":{"icon":"star","title":"链接卡","link":"https://example.com/2"}}
-	]`)
-}
-
-// TestJetViewSocialbuttonsByteEquivalent 社交按钮组件：品牌色有序 / 自定义色 + 多平台 repeater。
-func TestJetViewSocialbuttonsByteEquivalent(t *testing.T) {
-	assertJetByteEquivalent(t, `[
-		{"id":"sb1","type":"core.social_buttons","props":{"color":"brand","items":[{"platform":"facebook","url":"https://facebook.com/x"},{"platform":"x","url":"https://x.com/y"}]}},
-		{"id":"sb2","type":"core.social_buttons","props":{"color":"custom","customColor":"#123456","items":[{"platform":"youtube","url":"https://youtube.com/z"}]}}
-	]`)
-}
-
-// TestJetViewVideoByteEquivalent 视频组件：iframe 嵌入 / 本地 video 双形态。
-func TestJetViewVideoByteEquivalent(t *testing.T) {
-	assertJetByteEquivalent(t, `[
-		{"id":"v1","type":"core.video","props":{"url":"https://www.youtube.com/watch?v=abc12345","ratio":"16:9"}},
-		{"id":"v2","type":"core.video","props":{"url":"https://example.com/storage/v.mp4","poster":"https://example.com/p.jpg","controls":true,"muted":true,"loop":true,"preload":"auto","ratio":"4:3","fullWidth":true}}
-	]`)
-}
-
-// TestJetViewCounterByteEquivalent 计数器组件：数据属性 + 前缀/后缀/标签。
-func TestJetViewCounterByteEquivalent(t *testing.T) {
-	assertJetByteEquivalent(t, `[
-		{"id":"c1","type":"core.counter","props":{"start":0,"end":12345,"decimals":2,"prefix":"$","suffix":"+","label":"满意客户","duration":3,"color":"#111"}},
-		{"id":"c2","type":"core.counter","props":{"end":99,"label":"百分比","suffix":"%"}}
-	]`)
-}
-
-// --- Phase 2 结构型/复杂组件字节等价测试 ---
-
-// TestJetViewGalleryByteEquivalent 图集组件：grid（lightbox/链接/图注）+ carousel（轮播 data 属性/箭头/圆点/悬浮）。
-func TestJetViewGalleryByteEquivalent(t *testing.T) {
-	assertJetByteEquivalent(t, `[
-		{"id":"ga1","type":"core.gallery","props":{"mode":"grid","items":[{"url":"https://example.com/a.jpg","alt":"图一 & 说明","caption":"图注一"},{"url":"https://example.com/b.jpg","alt":"图二","link":"https://example.com/t1"}],"grid":{"columns":{"desktop":3,"tablet":2,"mobile":1},"columnGap":"16px","rowGap":"16px"},"aspectRatio":"16:9","radius":"8px","captionMode":"below"}},
-		{"id":"ga2","type":"core.gallery","props":{"mode":"carousel","items":[{"url":"https://example.com/c.jpg","alt":"轮播一"},{"url":"https://example.com/d.jpg","alt":"轮播二"}],"carousel":{"autoplay":true,"interval":3000,"infinite":true,"pauseOnHover":true,"slidesPerView":{"desktop":2,"tablet":1,"mobile":1},"arrows":true,"dots":true},"captionMode":"hover","hover":{"scale":"1.05","overlay":"dark"}}}
-	]`)
-}
-
-// TestJetViewSliderByteEquivalent 轮播容器组件：children 即 slide + data-slider/自动播放/循环/箭头/圆点。
-func TestJetViewSliderByteEquivalent(t *testing.T) {
-	assertJetByteEquivalent(t, `[
-		{"id":"sl1","type":"core.slider","props":{"perView":{"desktop":2,"tablet":1,"mobile":1},"autoplay":3.5,"showArrows":true,"showDots":true,"loop":true,"gap":"24px"},"children":[
-			{"id":"sl1a","type":"core.text","props":{"mode":"plaintext","text":"第一屏"}},
-			{"id":"sl1b","type":"core.text","props":{"mode":"plaintext","text":"第二屏 & 更多"}}
-		]}
-	]`)
-}
-
-// TestJetViewTabsByteEquivalent 页签组件：radio hack（radio 在 nav 前）+ 标签列表 + children 即面板。
-func TestJetViewTabsByteEquivalent(t *testing.T) {
-	assertJetByteEquivalent(t, `[
-		{"id":"tb1","type":"core.tabs","props":{"tabs":[{"label":"标签一"},{"label":"标签二 & 更多"},{"label":"标签三"}],"navAlign":"center","activeColor":"#2563eb"},"children":[
-			{"id":"tb1a","type":"core.text","props":{"mode":"plaintext","text":"面板一"}},
-			{"id":"tb1b","type":"core.text","props":{"mode":"plaintext","text":"面板二"}},
-			{"id":"tb1c","type":"core.text","props":{"mode":"plaintext","text":"面板三"}}
-		]},
-		{"id":"tb2","type":"core.tabs","props":{"tabs":[{"label":"竖排"},{"label":"第二"}],"vertical":true},"children":[
-			{"id":"tb2a","type":"core.text","props":{"mode":"plaintext","text":"竖一"}},
-			{"id":"tb2b","type":"core.text","props":{"mode":"plaintext","text":"竖二"}}
-		]}
-	]`)
-}
-
-// TestJetViewAccordionByteEquivalent 手风琴组件：details/summary + 默认展开 + 严格模式 + 无边框。
-func TestJetViewAccordionByteEquivalent(t *testing.T) {
-	assertJetByteEquivalent(t, `[
-		{"id":"ac1","type":"core.accordion","props":{"items":[{"title":"第一个","open":true},{"title":"第二个 & 更多"}],"oneOpen":true,"bgColor":"#f9f9f9"},"children":[
-			{"id":"ac1a","type":"core.text","props":{"mode":"plaintext","text":"内容一"}},
-			{"id":"ac1b","type":"core.text","props":{"mode":"plaintext","text":"内容二"}}
-		]},
-		{"id":"ac2","type":"core.accordion","props":{"items":[{"title":"无边框"}],"borderless":true},"children":[
-			{"id":"ac2a","type":"core.text","props":{"mode":"plaintext","text":"内容"}}
-		]}
-	]`)
-}
-
-// TestJetViewMarqueeByteEquivalent 跑马灯组件：双份内容无缝滚动 + 方向/速度/悬停暂停。
-func TestJetViewMarqueeByteEquivalent(t *testing.T) {
-	assertJetByteEquivalent(t, `[
-		{"id":"mq1","type":"core.marquee","props":{"speed":15,"direction":"right","pauseOnHover":true,"gap":"32px","background":"#111","padding":"12px"},"children":[
-			{"id":"mq1a","type":"core.text","props":{"mode":"plaintext","text":"滚动内容一"}},
-			{"id":"mq1b","type":"core.text","props":{"mode":"plaintext","text":"滚动内容二 & 更多"}}
-		]}
-	]`)
-}
-
-// TestJetViewGlobalrefPlaceholderByteEquivalent 全局块引用占位：Block 未注入时降级为可选中占位 div。
-func TestJetViewGlobalrefPlaceholderByteEquivalent(t *testing.T) {
-	assertJetByteEquivalent(t, `[
-		{"id":"gr1","type":"core.globalref","props":{"blockId":"shared-header"}}
-	]`)
+// rootDoc 把 root JSON 包装为完整页面文档。
+func rootDoc(rootJSON string) string {
+	return `{"settings": {"layout": {"mode": "full"}, "seo": {"title": "等价测试"}}, "root": ` + rootJSON + `}`
 }
 
 // mockBlockResolver 测试用全局块解析器：块 ID → 块文档 root 节点。
@@ -337,54 +107,149 @@ func (m *mockBlockResolver) ResolveBlockRoot(blockID string) ([]*core.Node, erro
 	return roots, nil
 }
 
-// TestJetViewGlobalrefExpandByteEquivalent 全局块引用展开：BlockResolver 注入时递归展开块 root（ID 加前缀）。
-func TestJetViewGlobalrefExpandByteEquivalent(t *testing.T) {
-	doc := `{"settings": {"layout": {"mode": "full"}, "seo": {"title": "等价测试"}}, "root": [
-		{"id":"gr1","type":"core.globalref","props":{"blockId":"shared-header"}}
-	]}`
-	page, err := ParsePage([]byte(doc))
-	if err != nil {
-		t.Fatalf("ParsePage: %v", err)
-	}
+// goldenCase 单个字节等价用例（name 唯一，对应 golden 文件名）。
+type goldenCase struct {
+	name  string
+	doc   string
+	block core.BlockResolver
+}
 
-	block := &mockBlockResolver{roots: map[string][]*core.Node{
+// goldenCases 全部字节等价用例（主用例 + 18 组件 + globalref 展开）。
+var goldenCases = []goldenCase{
+	{name: "main", doc: jetDocJSON},
+	{name: "heading", doc: rootDoc(`[
+		{"id":"h1","type":"core.heading","props":{"text":"标题 <b>&</b>","tag":"h2","subtitle":"副标题 & 更多","highlightColor":"#fff000","highlightPadding":"4px 8px","highlightRadius":"6px","advanced":{"customClasses":["my-cls"],"customId":"my-heading"}}},
+		{"id":"h2","type":"core.heading","props":{"text":"二级","tag":"h3","weight":"bold","transform":"uppercase","decor":{"decoration":"underline","decorationColor":"#f00"},"color":"#333"}}
+	]`)},
+	{name: "text", doc: rootDoc(`[
+		{"id":"t1","type":"core.text","props":{"mode":"plaintext","plainTag":"p","text":"纯文本 <b>&</b> 特殊"}},
+		{"id":"t2","type":"core.text","props":{"mode":"richtext","text":"<p>富文本 <strong>加粗</strong> & 更多</p><script>alert(1)</script>"}}
+	]`)},
+	{name: "image", doc: rootDoc(`[
+		{"id":"img1","type":"core.image","props":{"src":"https://example.com/a.jpg","alt":"图片 & 说明","loading":"eager","fetchPriority":"high"}},
+		{"id":"img2","type":"core.image","props":{"src":"https://example.com/b.jpg","alt":"链接图","clickAction":"link","link":"https://example.com/t?x=1&y=2","linkTarget":"blank","linkRel":"nofollow","advanced":{"customId":"img-link"}}},
+		{"id":"img3","type":"core.image","props":{"src":"https://example.com/c.jpg","alt":"灯箱","clickAction":"lightbox","caption":"图注 & 内容"}}
+	]`)},
+	{name: "divider", doc: rootDoc(`[
+		{"id":"d1","type":"core.divider","props":{"style":"solid","weight":"2px","color":"#ccc"}},
+		{"id":"d2","type":"core.divider","props":{"inset":{"kind":"text","text":"或者 & 更多","position":"left","spacing":"8px","fontSize":"14px"}}},
+		{"id":"d3","type":"core.divider","props":{"inset":{"kind":"icon","iconName":"star","position":"right"},"advanced":{"customClasses":["x"],"customId":"div-id"}}}
+	]`)},
+	{name: "spacer", doc: rootDoc(`[
+		{"id":"s1","type":"core.spacer","props":{"height":{"desktop":"80px","tablet":"40px","mobile":"20px"},"advanced":{"margin":{"desktop":{"top":"10px","bottom":"20px"}}}}}
+	]`)},
+	{name: "list", doc: rootDoc(`[
+		{"id":"l1","type":"core.list","props":{"style":"icon","items":[{"icon":"check","text":"第一项 & 特殊","link":"https://example.com/1"},{"icon":"star","text":"第二项"},{"text":"无图标项"}]}},
+		{"id":"l2","type":"core.list","props":{"style":"number","items":[{"text":"甲"},{"text":"乙"}]}},
+		{"id":"l3","type":"core.list","props":{"style":"dot","items":[{"text":"点1"},{"text":"点2"}]}}
+	]`)},
+	{name: "infobox", doc: rootDoc(`[
+		{"id":"ib1","type":"core.infobox","props":{"icon":"check","title":"标题 & 内容","text":"描述","subtitle":"副标题","link":"https://example.com","btnText":"了解更多"}},
+		{"id":"ib2","type":"core.infobox","props":{"mediaImage":"https://example.com/m.jpg","title":"媒体图","text":"文本"}},
+		{"id":"ib3","type":"core.infobox","props":{"icon":"star","title":"链接卡","link":"https://example.com/2"}}
+	]`)},
+	{name: "socialbuttons", doc: rootDoc(`[
+		{"id":"sb1","type":"core.social_buttons","props":{"color":"brand","items":[{"platform":"facebook","url":"https://facebook.com/x"},{"platform":"x","url":"https://x.com/y"}]}},
+		{"id":"sb2","type":"core.social_buttons","props":{"color":"custom","customColor":"#123456","items":[{"platform":"youtube","url":"https://youtube.com/z"}]}}
+	]`)},
+	{name: "video", doc: rootDoc(`[
+		{"id":"v1","type":"core.video","props":{"url":"https://www.youtube.com/watch?v=abc12345","ratio":"16:9"}},
+		{"id":"v2","type":"core.video","props":{"url":"https://example.com/storage/v.mp4","poster":"https://example.com/p.jpg","controls":true,"muted":true,"loop":true,"preload":"auto","ratio":"4:3","fullWidth":true}}
+	]`)},
+	{name: "counter", doc: rootDoc(`[
+		{"id":"c1","type":"core.counter","props":{"start":0,"end":12345,"decimals":2,"prefix":"$","suffix":"+","label":"满意客户","duration":3,"color":"#111"}},
+		{"id":"c2","type":"core.counter","props":{"end":99,"label":"百分比","suffix":"%"}}
+	]`)},
+	{name: "gallery", doc: rootDoc(`[
+		{"id":"ga1","type":"core.gallery","props":{"mode":"grid","items":[{"url":"https://example.com/a.jpg","alt":"图一 & 说明","caption":"图注一"},{"url":"https://example.com/b.jpg","alt":"图二","link":"https://example.com/t1"}],"grid":{"columns":{"desktop":3,"tablet":2,"mobile":1},"columnGap":"16px","rowGap":"16px"},"aspectRatio":"16:9","radius":"8px","captionMode":"below"}},
+		{"id":"ga2","type":"core.gallery","props":{"mode":"carousel","items":[{"url":"https://example.com/c.jpg","alt":"轮播一"},{"url":"https://example.com/d.jpg","alt":"轮播二"}],"carousel":{"autoplay":true,"interval":3000,"infinite":true,"pauseOnHover":true,"slidesPerView":{"desktop":2,"tablet":1,"mobile":1},"arrows":true,"dots":true},"captionMode":"hover","hover":{"scale":"1.05","overlay":"dark"}}}
+	]`)},
+	{name: "slider", doc: rootDoc(`[
+		{"id":"sl1","type":"core.slider","props":{"perView":{"desktop":2,"tablet":1,"mobile":1},"autoplay":3.5,"showArrows":true,"showDots":true,"loop":true,"gap":"24px"},"children":[
+			{"id":"sl1a","type":"core.text","props":{"mode":"plaintext","text":"第一屏"}},
+			{"id":"sl1b","type":"core.text","props":{"mode":"plaintext","text":"第二屏 & 更多"}}
+		]}
+	]`)},
+	{name: "tabs", doc: rootDoc(`[
+		{"id":"tb1","type":"core.tabs","props":{"tabs":[{"label":"标签一"},{"label":"标签二 & 更多"},{"label":"标签三"}],"navAlign":"center","activeColor":"#2563eb"},"children":[
+			{"id":"tb1a","type":"core.text","props":{"mode":"plaintext","text":"面板一"}},
+			{"id":"tb1b","type":"core.text","props":{"mode":"plaintext","text":"面板二"}},
+			{"id":"tb1c","type":"core.text","props":{"mode":"plaintext","text":"面板三"}}
+		]},
+		{"id":"tb2","type":"core.tabs","props":{"tabs":[{"label":"竖排"},{"label":"第二"}],"vertical":true},"children":[
+			{"id":"tb2a","type":"core.text","props":{"mode":"plaintext","text":"竖一"}},
+			{"id":"tb2b","type":"core.text","props":{"mode":"plaintext","text":"竖二"}}
+		]}
+	]`)},
+	{name: "accordion", doc: rootDoc(`[
+		{"id":"ac1","type":"core.accordion","props":{"items":[{"title":"第一个","open":true},{"title":"第二个 & 更多"}],"oneOpen":true,"bgColor":"#f9f9f9"},"children":[
+			{"id":"ac1a","type":"core.text","props":{"mode":"plaintext","text":"内容一"}},
+			{"id":"ac1b","type":"core.text","props":{"mode":"plaintext","text":"内容二"}}
+		]},
+		{"id":"ac2","type":"core.accordion","props":{"items":[{"title":"无边框"}],"borderless":true},"children":[
+			{"id":"ac2a","type":"core.text","props":{"mode":"plaintext","text":"内容"}}
+		]}
+	]`)},
+	{name: "marquee", doc: rootDoc(`[
+		{"id":"mq1","type":"core.marquee","props":{"speed":15,"direction":"right","pauseOnHover":true,"gap":"32px","background":"#111","padding":"12px"},"children":[
+			{"id":"mq1a","type":"core.text","props":{"mode":"plaintext","text":"滚动内容一"}},
+			{"id":"mq1b","type":"core.text","props":{"mode":"plaintext","text":"滚动内容二 & 更多"}}
+		]}
+	]`)},
+	{name: "globalref_placeholder", doc: rootDoc(`[
+		{"id":"gr1","type":"core.globalref","props":{"blockId":"shared-header"}}
+	]`)},
+	{name: "globalref_expand", doc: rootDoc(`[
+		{"id":"gr1","type":"core.globalref","props":{"blockId":"shared-header"}}
+	]`), block: &mockBlockResolver{roots: map[string][]*core.Node{
 		"shared-header": {
 			{ID: "block-text", Type: "core.text", Props: json.RawMessage(`{"mode":"plaintext","text":"块内容 & 更多"}`)},
 		},
-	}}
+	}}},
+}
 
-	oldRes, err := Compile(page, WithBlockResolver(block))
+// goldenDir golden 文件目录。
+const goldenDir = "testdata/golden"
+
+// readGolden 读取 golden 文件内容（不存在时给出明确错误）。
+// golden 由切换前旧 render 路径生成并固化，作为「切换前产物」基准。
+func readGolden(t *testing.T, name string) string {
+	t.Helper()
+	b, err := os.ReadFile(filepath.Join(goldenDir, name))
 	if err != nil {
-		t.Fatalf("Compile: %v", err)
+		t.Fatalf("读取 golden %s 失败: %v", name, err)
 	}
-	if oldRes.HTML == "" {
-		t.Fatal("旧输出 HTML 为空，测试用例无意义（防「空==空」假通过）")
-	}
+	return string(b)
+}
 
+// TestJetViewByteEquivalent 断言新 Compile（Jet 路径）产物与 golden（切换前旧产物）字节一致。
+func TestJetViewByteEquivalent(t *testing.T) {
 	set, err := templates.NewComponentSet("../templates/components")
 	if err != nil {
 		t.Fatalf("NewComponentSet: %v", err)
 	}
 
-	var b core.CSSBuckets
-	compileSettingsCSS(&page.Settings, &b)
-	ctx := &core.RenderContext{CSS: &b, Block: block}
-
-	var htmlBuf strings.Builder
-	for _, n := range page.Root {
-		v, err := nodeViewOf(n, true, ctx)
-		if err != nil {
-			t.Fatalf("nodeViewOf: %v", err)
-		}
-		if err := renderView(v, set, &htmlBuf); err != nil {
-			t.Fatalf("renderView(%s): %v", v.Template, err)
-		}
-	}
-
-	if got, want := htmlBuf.String(), oldRes.HTML; got != want {
-		t.Errorf("HTML 字节不一致:\n--- 旧输出 ---\n%s\n--- 新输出 ---\n%s", want, got)
-	}
-	if got, want := b.String(), oldRes.CSS; got != want {
-		t.Errorf("CSS 字节不一致:\n--- 旧输出 ---\n%s\n--- 新输出 ---\n%s", want, got)
+	for _, c := range goldenCases {
+		c := c
+		t.Run(c.name, func(t *testing.T) {
+			page, err := ParsePage([]byte(c.doc))
+			if err != nil {
+				t.Fatalf("ParsePage: %v", err)
+			}
+			opts := []CompileOption{WithComponentSet(set)}
+			if c.block != nil {
+				opts = append(opts, WithBlockResolver(c.block))
+			}
+			got, err := Compile(page, opts...)
+			if err != nil {
+				t.Fatalf("Compile: %v", err)
+			}
+			if want := readGolden(t, c.name+".html"); got.HTML != want {
+				t.Errorf("HTML 字节不一致（与切换前产物）:\n--- golden ---\n%s\n--- 新输出 ---\n%s", want, got.HTML)
+			}
+			if want := readGolden(t, c.name+".css"); got.CSS != want {
+				t.Errorf("CSS 字节不一致（与切换前产物）:\n--- golden ---\n%s\n--- 新输出 ---\n%s", want, got.CSS)
+			}
+		})
 	}
 }

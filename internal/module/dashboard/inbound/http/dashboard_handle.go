@@ -24,6 +24,7 @@ import (
 
 	"go_wp/internal/builder"
 	"go_wp/internal/builder/core"
+	"go_wp/internal/templates"
 
 	"github.com/gin-gonic/gin"
 )
@@ -275,7 +276,13 @@ func (h *Handle) renderPreview(c *gin.Context, document json.RawMessage, withEdi
 		return
 	}
 	// 预览与正式构建同源：全局块引用按需展开——画布所见与产物一致。
-	opts := []builder.CompileOption{}
+	// 组件模板 Set（Jet 渲染路径必需；embed 加载，不依赖进程工作目录）。
+	set, serr := templates.NewEmbeddedComponentSet()
+	if serr != nil {
+		c.String(http.StatusInternalServerError, "组件模板 Set 加载失败: %s", serr.Error())
+		return
+	}
+	opts := []builder.CompileOption{builder.WithComponentSet(set)}
 	if h.blocks != nil {
 		opts = append(opts, builder.WithBlockResolver(blockResolverAdapter{h}))
 	}

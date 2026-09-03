@@ -7,8 +7,6 @@ package divider
 
 import (
 	"fmt"
-	"html"
-	"strings"
 
 	"go_wp/internal/builder/core"
 )
@@ -93,7 +91,6 @@ var Widget = core.Atom[Props]{
 	Spec: core.AtomSpec[Props]{
 		TypeName:      Type,
 		ValidateExtra: validateExtra,
-		Render:        render,
 	},
 }
 
@@ -128,48 +125,6 @@ func validateExtra(p *Props, nodeID string) (err error) {
 		return fmt.Errorf("无效的嵌入颜色: %q", p.Inset.Color)
 	}
 	return nil
-}
-
-// render 无嵌入 → 单层 <hr>；有嵌入 → Flex 三段结构。样式全部进 CSS。
-func render(node *core.Node, p *Props, h *core.AtomRender) (string, error) {
-	var sb strings.Builder
-	if p.Inset.Kind == InsetNone || p.Inset.Kind == "" {
-		sb.WriteString(`<hr class="`)
-		sb.WriteString(h.Classes)
-		sb.WriteString(`"`)
-		if h.CustomID != "" {
-			sb.WriteString(` id="`)
-			sb.WriteString(h.CustomID)
-			sb.WriteString(`"`)
-		}
-		sb.WriteString("/>")
-	} else {
-		sb.WriteString(`<div class="`)
-		sb.WriteString(h.Classes)
-		sb.WriteString(`">`)
-		if h.CustomID != "" {
-			sb.WriteString(` id="`)
-			sb.WriteString(h.CustomID)
-			sb.WriteString(`"`)
-		}
-		// 三段：左线 / 元素 / 右线（position 决定比例）。
-		sb.WriteString(`<span class="dt-line"></span>`)
-		if p.Inset.Kind == InsetText {
-			sb.WriteString(`<span class="dt-inset dt-inset-text">`)
-			sb.WriteString(html.EscapeString(p.Inset.Text))
-			sb.WriteString(`</span>`)
-		} else {
-			path := builtinInsetIcons[p.Inset.IconName]
-			sb.WriteString(`<span class="dt-inset"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">`)
-			sb.WriteString(path)
-			sb.WriteString(`</svg></span>`)
-		}
-		sb.WriteString(`<span class="dt-line"></span>`)
-		sb.WriteString(`</div>`)
-	}
-
-	compileCSS(node.ID, p, h.CSS)
-	return sb.String(), nil
 }
 
 // compileCSS 线条/嵌入/对齐/宽度三端样式。

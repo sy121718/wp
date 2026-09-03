@@ -5,7 +5,6 @@ package list
 import (
 	"encoding/json"
 	"fmt"
-	"html"
 	"strings"
 
 	"go_wp/internal/builder/core"
@@ -116,62 +115,6 @@ func (c *Component) Validate(node *core.Node, ids map[string]bool) (err error) {
 		return err
 	}
 return nil
-}
-
-// Render 渲染列表。
-func (c *Component) Render(node *core.Node, topLevel bool, ctx *core.RenderContext) (err error) {
-	var p Props
-	if len(node.Props) > 0 {
-		if err = json.Unmarshal(node.Props, &p); err != nil {
-			return fmt.Errorf("节点 %s props 反序列化失败: %w", node.ID, err)
-		}
-	}
-	style := p.Style
-	if style == "" {
-		style = StyleIcon
-	}
-	cls := core.NodeClass(node.ID)
-
-	ctx.HTML.WriteString(`<ul class="`)
-	ctx.HTML.WriteString(cls)
-	ctx.HTML.WriteString(` wp-list wp-list-`)
-	ctx.HTML.WriteString(string(style))
-	ctx.HTML.WriteString(`">`)
-	for i, item := range p.Items {
-		ctx.HTML.WriteString(`<li class="wp-list-item">`)
-		// 前缀：图标 / 序号 / 圆点。
-		ctx.HTML.WriteString(`<span class="wp-list-marker" aria-hidden="true">`)
-		switch style {
-		case StyleIcon:
-			svg, ok := core.IconSVG(item.Icon)
-			if !ok {
-				svg, _ = core.IconSVG("check")
-			}
-			ctx.HTML.WriteString(svg)
-		case StyleNumber:
-			ctx.HTML.WriteString(fmt.Sprintf("%d", i+1))
-		default: // dot
-			ctx.HTML.WriteString(`<i class="wp-list-dot"></i>`)
-		}
-		ctx.HTML.WriteString(`</span>`)
-		// 文本（可链接）。
-		if strings.TrimSpace(item.Link) != "" {
-			ctx.HTML.WriteString(`<a class="wp-list-text" href="`)
-			ctx.HTML.WriteString(html.EscapeString(item.Link))
-			ctx.HTML.WriteString(`">`)
-			ctx.HTML.WriteString(html.EscapeString(item.Text))
-			ctx.HTML.WriteString(`</a>`)
-		} else {
-			ctx.HTML.WriteString(`<span class="wp-list-text">`)
-			ctx.HTML.WriteString(html.EscapeString(item.Text))
-			ctx.HTML.WriteString(`</span>`)
-		}
-		ctx.HTML.WriteString(`</li>`)
-	}
-	ctx.HTML.WriteString(`</ul>`)
-
-	compileCSS(node.ID, &p, ctx.CSS)
-	return nil
 }
 
 // compileCSS 列表样式。

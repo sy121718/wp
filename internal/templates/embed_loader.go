@@ -7,6 +7,7 @@ package templates
 import (
 	"io"
 	"io/fs"
+	"path"
 )
 
 // embedLoader 把 embed.FS 适配为 jet.Loader。
@@ -25,12 +26,18 @@ func newEmbedLoader(fsys fs.FS, files []string) *embedLoader {
 	return &embedLoader{fsys: fsys, paths: paths}
 }
 
+// normalize 把 jet 传入的模板路径规范化：去前导斜杠（jet 经 path.Join 后形如 "/text.jet"），
+// 与 embed 清单中的相对键对齐。
+func (l *embedLoader) normalize(templatePath string) string {
+	return path.Clean(path.Join("/", templatePath))[1:]
+}
+
 // Exists 判断模板路径是否存在于 embed 清单。
 func (l *embedLoader) Exists(templatePath string) bool {
-	return l.paths[templatePath]
+	return l.paths[l.normalize(templatePath)]
 }
 
 // Open 返回模板内容；调用方负责关闭。
 func (l *embedLoader) Open(templatePath string) (io.ReadCloser, error) {
-	return l.fsys.Open(templatePath)
+	return l.fsys.Open(l.normalize(templatePath))
 }

@@ -1,0 +1,47 @@
+.wp-c-c1 {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 4px;
+  text-align: center;
+  font-size: 2rem;
+  color: #111;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.wp-c-c1 .wp-counter-value {
+  font-variant-numeric: tabular-nums;
+}
+
+div.wp-c-c1-label.wp-counter-label, .wp-counter-label {
+  font-size: 0.85rem;
+  font-weight: 400;
+  opacity: .7;
+  margin-top: 6px;
+  text-align: center;
+}
+
+.wp-c-c2 {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 4px;
+  text-align: center;
+  font-size: 2rem;
+  color: inherit;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.wp-c-c2 .wp-counter-value {
+  font-variant-numeric: tabular-nums;
+}
+
+div.wp-c-c2-label.wp-counter-label, .wp-counter-label {
+  font-size: 0.85rem;
+  font-weight: 400;
+  opacity: .7;
+  margin-top: 6px;
+  text-align: center;
+}

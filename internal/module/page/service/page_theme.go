@@ -15,6 +15,7 @@ import (
 
 	"go_wp/internal/builder"
 	blockdto "go_wp/internal/module/block/dto"
+	"go_wp/internal/templates"
 )
 
 // mergeActiveTheme 把工程激活主题的设置合入页面文档：
@@ -125,7 +126,12 @@ func (s *Service) compileBlockFragment(ctx context.Context, blockID string) (htm
 		log.Printf("[assemble] 块文档解析失败 block=%s: %v", blockID, err)
 		return "", ""
 	}
-	compiled, err := builder.Compile(page)
+	set, serr := templates.NewEmbeddedComponentSet()
+	if serr != nil {
+		log.Printf("[assemble] 组件模板 Set 加载失败 block=%s: %v", blockID, serr)
+		return "", ""
+	}
+	compiled, err := builder.Compile(page, builder.WithComponentSet(set))
 	if err != nil {
 		log.Printf("[assemble] 块编译失败 block=%s: %v", blockID, err)
 		return "", ""

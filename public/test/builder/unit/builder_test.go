@@ -58,7 +58,7 @@ func parse(t *testing.T, jsonStr string) *builder.Page {
 
 // TestPageSettingsCompile 页面设置：版心/基底样式/SEO/body class 全部生效。
 func TestPageSettingsCompile(t *testing.T) {
-	c, err := builder.Compile(parse(t, validPageJSON))
+	c, err := compile(t, parse(t, validPageJSON))
 	if err != nil {
 		t.Fatalf("编译失败: %v", err)
 	}
@@ -100,7 +100,7 @@ func TestPageSettingsCompile(t *testing.T) {
 
 // TestContainerHTMLStructure 单层干净结构：语义标签直出，无内联样式、无多余 wrapper。
 func TestContainerHTMLStructure(t *testing.T) {
-	c, err := builder.Compile(parse(t, validPageJSON))
+	c, err := compile(t, parse(t, validPageJSON))
 	if err != nil {
 		t.Fatalf("编译失败: %v", err)
 	}
@@ -119,7 +119,7 @@ func TestContainerHTMLStructure(t *testing.T) {
 
 // TestContainerFlexAndGrid 双排版引擎的关键属性编译。
 func TestContainerFlexAndGrid(t *testing.T) {
-	c, err := builder.Compile(parse(t, validPageJSON))
+	c, err := compile(t, parse(t, validPageJSON))
 	if err != nil {
 		t.Fatalf("编译失败: %v", err)
 	}
@@ -146,7 +146,7 @@ func TestContainerFlexAndGrid(t *testing.T) {
 
 // TestContainerBoxVisualInteraction 盒模型三端、视觉装饰与交互状态。
 func TestContainerBoxVisualInteraction(t *testing.T) {
-	c, err := builder.Compile(parse(t, validPageJSON))
+	c, err := compile(t, parse(t, validPageJSON))
 	if err != nil {
 		t.Fatalf("编译失败: %v", err)
 	}
@@ -181,7 +181,7 @@ func TestContainerBoxVisualInteraction(t *testing.T) {
 // TestEntranceDefaultOff 入场微动默认关闭：未配置时不输出动画与关键帧。
 func TestEntranceDefaultOff(t *testing.T) {
 	doc := `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"s1","type":"core.container","props":{"tag":"div","layout":{"engine":"flex","flex":{}}}}]}`
-	c, err := builder.Compile(parse(t, doc))
+	c, err := compile(t, parse(t, doc))
 	if err != nil {
 		t.Fatalf("编译失败: %v", err)
 	}
@@ -194,11 +194,11 @@ func TestEntranceDefaultOff(t *testing.T) {
 func TestDeterministicBuild(t *testing.T) {
 	p1 := parse(t, validPageJSON)
 	p2 := parse(t, validPageJSON)
-	c1, err := builder.Compile(p1)
+	c1, err := compile(t, p1)
 	if err != nil {
 		t.Fatalf("第一次编译失败: %v", err)
 	}
-	c2, err := builder.Compile(p2)
+	c2, err := compile(t, p2)
 	if err != nil {
 		t.Fatalf("第二次编译失败: %v", err)
 	}
@@ -209,7 +209,7 @@ func TestDeterministicBuild(t *testing.T) {
 
 // TestRenderDocument 完整文档组装：head 注入 SEO，body 注入 class 与组件树。
 func TestRenderDocument(t *testing.T) {
-	c, err := builder.Compile(parse(t, validPageJSON))
+	c, err := compile(t, parse(t, validPageJSON))
 	if err != nil {
 		t.Fatalf("编译失败: %v", err)
 	}
@@ -248,7 +248,7 @@ func TestValidateErrors(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := builder.Compile(parse(t, tc.json))
+			_, err := compile(t, parse(t, tc.json))
 			if err == nil {
 				t.Fatalf("期望校验失败，实际通过")
 			}
@@ -272,7 +272,7 @@ func TestMaliciousCSSInjection(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := builder.Compile(parse(t, tc.json))
+			_, err := compile(t, parse(t, tc.json))
 			if err == nil {
 				t.Error("恶意输入未被拦截")
 			}
@@ -283,7 +283,7 @@ func TestMaliciousCSSInjection(t *testing.T) {
 // TestMarginAuto 盒模型 margin auto 居中支持。
 func TestMarginAuto(t *testing.T) {
 	doc := `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"m1","type":"core.container","props":{"tag":"div","layout":{"engine":"flex","flex":{}},"box":{"margin":{"desktop":"0 auto"}}}}]}`
-	c, err := builder.Compile(parse(t, doc))
+	c, err := compile(t, parse(t, doc))
 	if err != nil {
 		t.Fatalf("编译失败: %v", err)
 	}

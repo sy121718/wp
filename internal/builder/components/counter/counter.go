@@ -5,7 +5,6 @@ package counter
 import (
 	"encoding/json"
 	"fmt"
-	"html"
 	"strconv"
 
 	"go_wp/internal/builder/core"
@@ -80,62 +79,6 @@ func (c *Component) Validate(node *core.Node, ids map[string]bool) (err error) {
 		return err
 	}
 return nil
-}
-
-// Render 渲染计数器。
-func (c *Component) Render(node *core.Node, topLevel bool, ctx *core.RenderContext) (err error) {
-	var p Props
-	if len(node.Props) > 0 {
-		if err = json.Unmarshal(node.Props, &p); err != nil {
-			return fmt.Errorf("节点 %s props 反序列化失败: %w", node.ID, err)
-		}
-	}
-	cls := core.NodeClass(node.ID)
-	duration := p.Duration
-	if duration <= 0 {
-		duration = 2
-	}
-	end := formatNum(p.End, p.Decimals)
-
-	ctx.HTML.WriteString(`<div class="`)
-	ctx.HTML.WriteString(cls)
-	ctx.HTML.WriteString(` wp-counter"`)
-	// 增强数据：视口进入时从 start 递增到 end。
-	ctx.HTML.WriteString(` data-counter="1"`)
-	ctx.HTML.WriteString(` data-start="`)
-	ctx.HTML.WriteString(strconv.FormatFloat(p.Start, 'f', -1, 64))
-	ctx.HTML.WriteString(`" data-end="`)
-	ctx.HTML.WriteString(strconv.FormatFloat(p.End, 'f', -1, 64))
-	ctx.HTML.WriteString(`" data-decimals="`)
-	ctx.HTML.WriteString(strconv.Itoa(p.Decimals))
-	ctx.HTML.WriteString(`" data-duration="`)
-	ctx.HTML.WriteString(strconv.FormatFloat(duration, 'f', -1, 64))
-	ctx.HTML.WriteString(`">`)
-	if p.Prefix != "" {
-		ctx.HTML.WriteString(`<span class="wp-counter-prefix">`)
-		ctx.HTML.WriteString(html.EscapeString(p.Prefix))
-		ctx.HTML.WriteString(`</span>`)
-	}
-	// 无 JS 时显示结束值（最终态）。
-	ctx.HTML.WriteString(`<span class="wp-counter-value">`)
-	ctx.HTML.WriteString(end)
-	ctx.HTML.WriteString(`</span>`)
-	if p.Suffix != "" {
-		ctx.HTML.WriteString(`<span class="wp-counter-suffix">`)
-		ctx.HTML.WriteString(html.EscapeString(p.Suffix))
-		ctx.HTML.WriteString(`</span>`)
-	}
-	ctx.HTML.WriteString(`</div>`)
-	if p.Label != "" {
-		ctx.HTML.WriteString(`<div class="`)
-		ctx.HTML.WriteString(cls)
-		ctx.HTML.WriteString(`-label wp-counter-label">`)
-		ctx.HTML.WriteString(html.EscapeString(p.Label))
-		ctx.HTML.WriteString(`</div>`)
-	}
-
-	compileCSS(node.ID, &p, ctx.CSS)
-	return nil
 }
 
 func formatNum(v float64, decimals int) string {

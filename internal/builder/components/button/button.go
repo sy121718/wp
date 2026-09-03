@@ -162,7 +162,6 @@ var Widget = core.Atom[Props]{
 	Spec: core.AtomSpec[Props]{
 		TypeName:      Type,
 		ValidateExtra: validateExtra,
-		Render:        render,
 	},
 }
 
@@ -227,85 +226,6 @@ func validateExtra(p *Props, nodeID string) (err error) {
 		}
 	}
 	return nil
-}
-
-// render 标签选择（a/button）+ 链接协议 → 文案 + 图标 + CSS 编译。
-func render(node *core.Node, p *Props, h *core.AtomRender) (string, error) {
-	// 图标 HTML。
-	iconHTML, err := renderIcon(p)
-	if err != nil {
-		return "", err
-	}
-
-	// 标签与属性选择：modal → <button>；其余 → <a href>。
-	tag := "a"
-	var attrsStr string
-	switch p.Action {
-	case ActionModal:
-		tag = "button"
-		attrsStr = ` type="button" data-modal-target="` + html.EscapeString(p.Value) + `"`
-	case ActionLink:
-		// 动态链接绑定。
-		if h.Content == nil {
-			return "", fmt.Errorf("编译上下文缺少内容解析器，无法解析动态链接")
-		}
-		v, err := h.Content.ResolveString(p.Binding.Field)
-		if err != nil {
-			return "", fmt.Errorf("解析绑定 %q 失败: %w", p.Binding.Field, err)
-		}
-		if v == "" {
-			return "", fmt.Errorf("绑定字段 %q 为空，无 fallback 兜底", p.Binding.Field)
-		}
-		attrsStr = ` href="` + html.EscapeString(v) + `"`
-	case ActionAnchor:
-		attrsStr = ` href="#` + html.EscapeString(p.Value) + `"`
-	case ActionNative, ActionInternal:
-		attrsStr = ` href="` + html.EscapeString(p.Value) + `"`
-	default: // external
-		attrsStr = ` href="` + html.EscapeString(p.Value) + `"`
-		relParts := []string{}
-		if p.Target == "blank" {
-			attrsStr += ` target="_blank"`
-			relParts = append(relParts, "noopener", "noreferrer")
-		}
-		if p.Rel == "nofollow" || p.Rel == "sponsored" {
-			relParts = append(relParts, p.Rel)
-		}
-		if len(relParts) > 0 {
-			attrsStr += ` rel="` + strings.Join(relParts, " ") + `"`
-		}
-	}
-
-	var sb strings.Builder
-	sb.WriteString("<")
-	sb.WriteString(tag)
-	sb.WriteString(` class="`)
-	sb.WriteString(h.Classes)
-	sb.WriteString(`"`)
-	if h.CustomID != "" {
-		sb.WriteString(` id="`)
-		sb.WriteString(h.CustomID)
-		sb.WriteString(`"`)
-	}
-	sb.WriteString(attrsStr)
-	sb.WriteString(">")
-
-	// 前缀图标 + 文案 + 后缀图标。
-	if p.Icon != nil && p.Icon.Position != "suffix" {
-		sb.WriteString(iconHTML)
-	}
-	sb.WriteString(`<span class="bt-text">`)
-	sb.WriteString(html.EscapeString(p.Text))
-	sb.WriteString(`</span>`)
-	if p.Icon != nil && p.Icon.Position == "suffix" {
-		sb.WriteString(iconHTML)
-	}
-	sb.WriteString("</")
-	sb.WriteString(tag)
-	sb.WriteString(">")
-
-	compileCSS(node.ID, p, h.CSS)
-	return sb.String(), nil
 }
 
 // renderIcon 图标输出：内置 SVG 或媒体库/外链图标（img 直引）。

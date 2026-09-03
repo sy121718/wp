@@ -7,7 +7,6 @@ package accordion
 import (
 	"encoding/json"
 	"fmt"
-	"html"
 
 	"go_wp/internal/builder/core"
 )
@@ -86,52 +85,6 @@ func (c *Component) Validate(node *core.Node, ids map[string]bool) (err error) {
 		return err
 	}
 return nil
-}
-
-// Render 渲染手风琴（details/summary）。
-func (c *Component) Render(node *core.Node, topLevel bool, ctx *core.RenderContext) (err error) {
-	var p Props
-	if len(node.Props) > 0 {
-		if err = json.Unmarshal(node.Props, &p); err != nil {
-			return fmt.Errorf("节点 %s props 反序列化失败: %w", node.ID, err)
-		}
-	}
-	cls := core.NodeClass(node.ID)
-
-	ctx.HTML.WriteString(`<div class="`)
-	ctx.HTML.WriteString(cls)
-	ctx.HTML.WriteString(` wp-accordion`)
-	if p.Borderless {
-		ctx.HTML.WriteString(` wp-accordion-borderless`)
-	}
-	ctx.HTML.WriteString(`"`)
-	if p.OneOpen {
-		// 严格手风琴：details 互斥需要 JS 增强（原生 details 允许多开）。
-		ctx.HTML.WriteString(` data-one-open="1"`)
-	}
-	ctx.HTML.WriteString(`>`)
-
-	for i, child := range node.Children {
-		ctx.HTML.WriteString(`<details class="wp-accordion-item"`)
-		if p.Items[i].Open {
-			ctx.HTML.WriteString(` open`)
-		}
-		ctx.HTML.WriteString(`>`)
-		ctx.HTML.WriteString(`<summary class="wp-accordion-head">`)
-		ctx.HTML.WriteString(html.EscapeString(p.Items[i].Title))
-		ctx.HTML.WriteString(`</summary>`)
-		ctx.HTML.WriteString(`<div class="wp-accordion-body">`)
-		if err = core.RenderNode(child, false, ctx); err != nil {
-			return err
-		}
-		ctx.HTML.WriteString(`</div>`)
-		ctx.HTML.WriteString(`</details>`)
-	}
-
-	ctx.HTML.WriteString(`</div>`)
-
-	compileCSS(node.ID, &p, ctx.CSS)
-	return nil
 }
 
 // compileCSS 手风琴样式。

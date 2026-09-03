@@ -16,7 +16,7 @@ func dividerDoc(t *testing.T, props string) *builder.Page {
 // TestDividerPlain 纯线模式：单层 <hr> 直出 + 线型/宽度三端/对齐 CSS。
 func TestDividerPlain(t *testing.T) {
 	props := `{"style":"dashed","weight":"2px","color":"var(--color-border)","width":{"desktop":"80%","mobile":"100%"},"align":"center","advanced":{"margin":{"desktop":{"top":"24px","bottom":"24px"}}}}`
-	c, err := builder.Compile(dividerDoc(t, props))
+	c, err := compile(t, dividerDoc(t, props))
 	if err != nil {
 		t.Fatalf("编译失败: %v", err)
 	}
@@ -40,7 +40,7 @@ func TestDividerPlain(t *testing.T) {
 // TestDividerTextInset 嵌入文本：Flex 三段结构 + 文本样式。
 func TestDividerTextInset(t *testing.T) {
 	props := `{"inset":{"kind":"text","text":"或者","fontSize":"0.75rem","fontWeight":"500","color":"#9ca3af","spacing":"12px","position":"left"}}`
-	c, err := builder.Compile(dividerDoc(t, props))
+	c, err := compile(t, dividerDoc(t, props))
 	if err != nil {
 		t.Fatalf("编译失败: %v", err)
 	}
@@ -62,7 +62,7 @@ func TestDividerTextInset(t *testing.T) {
 // TestDividerIconInset 嵌入图标（内置白名单，svg 内联）。
 func TestDividerIconInset(t *testing.T) {
 	props := `{"inset":{"kind":"icon","iconName":"star"}}`
-	c, err := builder.Compile(dividerDoc(t, props))
+	c, err := compile(t, dividerDoc(t, props))
 	if err != nil {
 		t.Fatalf("编译失败: %v", err)
 	}
@@ -84,7 +84,7 @@ func TestDividerValidate(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := builder.Compile(dividerDoc(t, tc.props))
+			_, err := compile(t, dividerDoc(t, tc.props))
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("期望错误含 %q，实际: %v", tc.want, err)
 			}
@@ -95,11 +95,11 @@ func TestDividerValidate(t *testing.T) {
 // TestDividerDeterministic 确定性构建。
 func TestDividerDeterministic(t *testing.T) {
 	props := `{"inset":{"kind":"text","text":"OR"},"width":{"desktop":"60%"}}`
-	c1, err := builder.Compile(dividerDoc(t, props))
+	c1, err := compile(t, dividerDoc(t, props))
 	if err != nil {
 		t.Fatalf("编译失败: %v", err)
 	}
-	c2, err := builder.Compile(dividerDoc(t, props))
+	c2, err := compile(t, dividerDoc(t, props))
 	if err != nil {
 		t.Fatalf("编译失败: %v", err)
 	}

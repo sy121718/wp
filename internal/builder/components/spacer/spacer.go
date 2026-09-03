@@ -5,7 +5,6 @@ package spacer
 
 import (
 	"fmt"
-	"strings"
 
 	"go_wp/internal/builder/core"
 )
@@ -40,34 +39,7 @@ var Widget = core.Atom[Props]{
 			}
 			return nil
 		},
-		Render: render,
 	},
-}
-
-// render 单层 div 直出（高度进 CSS，无内联样式）。
-func render(node *core.Node, p *Props, h *core.AtomRender) (string, error) {
-	var sb strings.Builder
-	sb.WriteString(`<div class="`)
-	sb.WriteString(h.Classes)
-	sb.WriteString(`"`)
-	if h.CustomID != "" {
-		sb.WriteString(` id="`)
-		sb.WriteString(h.CustomID)
-		sb.WriteString(`"`)
-	}
-	sb.WriteString(`></div>`)
-
-	sel := "." + core.NodeClass(node.ID)
-	if v := p.Height.Desktop; v != "" {
-		h.CSS.Add(core.BreakpointDesktop, sel, []string{"height: " + v})
-	}
-	if v := p.Height.Tablet; v != "" {
-		h.CSS.Add(core.BreakpointTablet, sel, []string{"height: " + v})
-	}
-	if v := p.Height.Mobile; v != "" {
-		h.CSS.Add(core.BreakpointMobile, sel, []string{"height: " + v})
-	}
-	return sb.String(), nil
 }
 
 // init 注册组件。

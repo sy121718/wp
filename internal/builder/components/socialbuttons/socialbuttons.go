@@ -5,7 +5,6 @@ package socialbuttons
 import (
 	"encoding/json"
 	"fmt"
-	"html"
 	"strings"
 
 	"go_wp/internal/builder/core"
@@ -142,48 +141,6 @@ func (c *Component) Validate(node *core.Node, ids map[string]bool) (err error) {
 		return err
 	}
 return nil
-}
-
-// Render 渲染社交按钮组。
-func (c *Component) Render(node *core.Node, topLevel bool, ctx *core.RenderContext) (err error) {
-	var p Props
-	if len(node.Props) > 0 {
-		if err = json.Unmarshal(node.Props, &p); err != nil {
-			return fmt.Errorf("节点 %s props 反序列化失败: %w", node.ID, err)
-		}
-	}
-	cls := core.NodeClass(node.ID)
-	color := p.Color
-	if color == "" {
-		color = ColorBrand
-	}
-
-	ctx.HTML.WriteString(`<div class="`)
-	ctx.HTML.WriteString(cls)
-	ctx.HTML.WriteString(` wp-social wp-social-`)
-	ctx.HTML.WriteString(string(color))
-	ctx.HTML.WriteString(`">`)
-	for _, it := range p.Items {
-		svg, ok := platformIcons[it.Platform]
-		ctx.HTML.WriteString(`<a class="wp-social-btn" href="`)
-		ctx.HTML.WriteString(html.EscapeString(it.URL))
-		ctx.HTML.WriteString(`" target="_blank" rel="noopener nofollow" aria-label="`)
-		ctx.HTML.WriteString(html.EscapeString(it.Platform))
-		ctx.HTML.WriteString(`">`)
-		if ok {
-			ctx.HTML.WriteString(svg)
-		} else {
-			// 无专属 SVG 的平台：首字母圆形兜底（品牌色已按平台映射）。
-			ctx.HTML.WriteString(`<span class="wp-social-fallback">`)
-			ctx.HTML.WriteString(html.EscapeString(strings.ToUpper(it.Platform[:1])))
-			ctx.HTML.WriteString(`</span>`)
-		}
-		ctx.HTML.WriteString(`</a>`)
-	}
-	ctx.HTML.WriteString(`</div>`)
-
-	compileCSS(node.ID, &p, ctx.CSS)
-	return nil
 }
 
 // compileCSS 社交按钮样式。

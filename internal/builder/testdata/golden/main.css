@@ -1,0 +1,133 @@
+@keyframes wp-fade-in {
+  from { opacity: 0 }
+  to { opacity: 1 }
+}
+
+.wp-c-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  cursor: pointer;
+  border: none;
+  padding: 12px 26px;
+  font-size: 1.125rem;
+  border-radius: 9999px;
+  gap: 8px;
+  background: #111111;
+  color: #ffffff;
+}
+
+.wp-c-cta {
+  transition: all 0.2s ease;
+}
+
+.wp-c-cta:hover, .wp-c-cta:focus {
+  background: #333333;
+}
+
+.wp-c-ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  cursor: pointer;
+  border: none;
+  padding: 10px 20px;
+  font-size: 1rem;
+  border-radius: px;
+  background: transparent;
+}
+
+.wp-c-ghost .bt-icon-shift {
+  transition: transform 0.2s ease;
+}
+
+.wp-c-ghost:hover .bt-icon-shift {
+  transform: translateX(4px);
+}
+
+.wp-c-inner {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  column-gap: 16px;
+  row-gap: 16px;
+  padding: 20px;
+  border: 1px solid #e0e0e0;
+}
+
+.wp-c-inner .wp-shape {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 48px;
+  line-height: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.wp-c-inner .wp-shape svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.wp-c-inner .wp-shape-top {
+  top: 0;
+}
+
+.wp-c-inner .wp-shape svg {
+  color: currentColor;
+}
+
+.wp-c-hero {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: stretch;
+  gap: 24px;
+  padding: 40px;
+  background-color: #f7f7f8;
+  border-radius: 16px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+  animation: wp-fade-in 0.6s ease backwards;
+}
+
+.wp-c-hero .wp-shape {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 48px;
+  line-height: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.wp-c-hero .wp-shape svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.wp-c-hero .wp-shape-bottom {
+  bottom: 0;
+}
+
+.wp-c-hero .wp-shape svg {
+  color: #f7f7f8;
+}
+
+@media (max-width: 1024px) {
+.wp-c-inner {
+  grid-template-columns: repeat(1, 1fr);
+}
+.wp-c-hero {
+  padding: 24px;
+}
+}
+
+@media (max-width: 767px) {
+.wp-c-hero {
+  padding: 16px;
+}
+}

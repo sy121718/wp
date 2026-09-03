@@ -706,10 +706,11 @@ func globalrefViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*
 }
 
 // renderView 用 Jet 渲染单个 nodeView 树到 w（递归由 container.jet 的 include 驱动）。
-func renderView(v *nodeView, set *jet.Set, w io.Writer) error {
-	tpl, err := set.GetTemplate(v.Template)
+// Go 侧只渲染根 view：子节点由 Jet 模板内的 include 递归展开，等价旧 render 的递归。
+func renderView(set *jet.Set, root *nodeView, w io.Writer) error {
+	tpl, err := set.GetTemplate(root.Template)
 	if err != nil {
-		return err
+		return fmt.Errorf("获取组件模板 %q 失败: %w", root.Template, err)
 	}
-	return tpl.Execute(w, nil, v)
+	return tpl.Execute(w, nil, root)
 }

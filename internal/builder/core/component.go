@@ -31,13 +31,14 @@ type Node struct {
 const SectionClass = "wp-section"
 
 // Component 组件接口。每种可视化组件实现本接口并注册到 Registry。
+//
+// 说明：HTML 渲染已迁移到 Jet 模板路径（builder/jetview.go 的 nodeViewOf + renderView），
+// 组件不再承担 HTML 拼装，故接口只保留 Type + Validate 两项。
 type Component interface {
 	// Type 组件类型标识，如 "core.container"。
 	Type() string
 	// Validate 校验节点（含解码并校验自身 props、递归校验子树）。
 	Validate(node *Node, ids map[string]bool) error
-	// Render 渲染节点 HTML 并编译 CSS。topLevel 表示是否为页面第一层顶级 Section。
-	Render(node *Node, topLevel bool, ctx *RenderContext) error
 }
 
 // registry 组件注册表。
@@ -66,18 +67,6 @@ func Types() (types []string) {
 	}
 	sort.Strings(types)
 	return types
-}
-
-// RenderNode 渲染单个节点：按类型分发到已注册组件。
-func RenderNode(node *Node, topLevel bool, ctx *RenderContext) (err error) {
-	if node == nil {
-		return fmt.Errorf("节点为空")
-	}
-	comp, err := Lookup(node.Type)
-	if err != nil {
-		return fmt.Errorf("节点 %s: %w", node.ID, err)
-	}
-	return comp.Render(node, topLevel, ctx)
 }
 
 // ValidateNode 校验单个节点：按类型分发到已注册组件。

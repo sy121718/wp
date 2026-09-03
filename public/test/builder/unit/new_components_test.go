@@ -20,7 +20,7 @@ func compileDoc(t *testing.T, doc string) (html string, css string) {
 	if err := builder.ValidatePage(page); err != nil {
 		t.Fatalf("校验失败: %v", err)
 	}
-	compiled, err := builder.Compile(page)
+	compiled, err := compile(t, page)
 	if err != nil {
 		t.Fatalf("编译失败: %v", err)
 	}

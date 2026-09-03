@@ -4,28 +4,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
-	"strings"
 )
 
-// AtomRender 基座传给组件渲染函数的辅助产物（公共接线已由基座完成）。
-type AtomRender struct {
-	NodeID   string
-	Classes  string // 已合并的 class 列表（节点类 wp-c-<id> + Advanced 自定义类）
-	CustomID string // 自定义 Element ID（可空，已过白名单与全文档查重）
-	CSS      *CSSBuckets
-	TopLevel bool
-	// Content CMS 内容解析器（透传自 RenderContext）：绑定组件（heading/text）经此解析字段。
-	Content ContentResolver
-}
-
-// AtomSpec 原子组件规格：组件作者只填这三项（对标 WP Widget 三件套）。
+// AtomSpec 原子组件规格：组件作者只填这两项（对标 WP Widget 三件套）。
+//
+// 说明：HTML 渲染已迁移到 Jet 模板路径，Atom 基座不再负责 HTML 拼装，
+// 故移除了原 Render 字段（组件经 jet.go 的 BuildView + CompileCSS 提供新路径数据）。
 type AtomSpec[P any] struct {
 	// TypeName 组件类型标识（如 "core.spacer"）。
 	TypeName string
-	// Render 组件 HTML 渲染：返回该节点的完整 HTML 字符串。
-	// 公共产物（class 合并/自定义 ID/Advanced CSS 编译）由基座完成后经 h 传入；
-	// 组件自身样式经 h.CSS 追加。
-	Render func(node *Node, p *P, h *AtomRender) (string, error)
 	// ValidateExtra 关系性校验（可选）：互斥/依赖等字段级（ct tag）之外的规则。
 	ValidateExtra func(p *P, nodeID string) error
 }
@@ -76,38 +63,6 @@ func (a Atom[P]) Validate(node *Node, ids map[string]bool) (err error) {
 	if adv := AdvancedOf(&p); adv != nil {
 		return ValidateAdvanced(adv, node.ID, ids)
 	}
-	return nil
-}
-
-// Render 实现组件接口：解码 → Advanced 编译 → 组件渲染 → 写出。
-func (a Atom[P]) Render(node *Node, topLevel bool, ctx *RenderContext) (err error) {
-	var p P
-	if len(node.Props) > 0 {
-		if err = json.Unmarshal(node.Props, &p); err != nil {
-			return fmt.Errorf("节点 %s props 反序列化失败: %w", node.ID, err)
-		}
-	}
-	var extraClasses []string
-	var customID string
-	if adv := AdvancedOf(&p); adv != nil {
-		extraClasses, customID = CompileAdvanced(node.ID, adv, ctx.CSS)
-	}
-	classes := []string{NodeClass(node.ID)}
-	classes = append(classes, extraClasses...)
-
-	h := &AtomRender{
-		NodeID:   node.ID,
-		Classes:  strings.Join(classes, " "),
-		CustomID: customID,
-		CSS:      ctx.CSS,
-		TopLevel: topLevel,
-		Content:  ctx.Content,
-	}
-	out, err := a.Spec.Render(node, &p, h)
-	if err != nil {
-		return fmt.Errorf("节点 %s: %w", node.ID, err)
-	}
-	ctx.HTML.WriteString(out)
 	return nil
 }
 

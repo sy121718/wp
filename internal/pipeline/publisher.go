@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"go_wp/internal/builder"
+	"go_wp/internal/templates"
 )
 
 // 状态常量（规范 0-A1 §2 发布生命周期，docs/03-pipeline.md §6）。
@@ -80,7 +81,12 @@ func DefaultCompile(docJSON []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	compiled, err := builder.Compile(page)
+	// 组件模板 Set（Jet 渲染路径必需；embed 加载，不依赖进程工作目录）。
+	set, err := templates.NewEmbeddedComponentSet()
+	if err != nil {
+		return nil, err
+	}
+	compiled, err := builder.Compile(page, builder.WithComponentSet(set))
 	if err != nil {
 		return nil, err
 	}

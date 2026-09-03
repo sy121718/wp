@@ -7,9 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"html"
 	"regexp"
-	"strings"
 
 	"go_wp/internal/builder/core"
 )
@@ -312,80 +310,6 @@ func (Container) Validate(node *core.Node, ids map[string]bool) (err error) {
 			return fmt.Errorf("节点 %s 子节点 %d: %w", node.ID, i, err)
 		}
 	}
-	return nil
-}
-
-// Render 渲染容器：单层原生语义标签，样式全部编译进 CSS。
-func (Container) Render(node *core.Node, topLevel bool, ctx *core.RenderContext) (err error) {
-	var p Props
-	if len(node.Props) > 0 {
-		if err = json.Unmarshal(node.Props, &p); err != nil {
-			return fmt.Errorf("节点 %s props 反序列化失败: %w", node.ID, err)
-		}
-	}
-
-	cls := core.NodeClass(node.ID)
-	if topLevel {
-		cls += " " + core.SectionClass
-	}
-
-	var attrs strings.Builder
-	// 组父联动标记（03-A：子组件可经 [data-wp-group] 联动）。
-	if p.StyleEx.GroupParent {
-		attrs.WriteString(` data-wp-group="true"`)
-	}
-	// 自定义属性键值对（白名单 key + 安全 value）。
-	for _, kv := range p.StyleEx.Attributes {
-		attrs.WriteString(" ")
-		attrs.WriteString(kv.Key)
-		attrs.WriteString(`="`)
-		attrs.WriteString(html.EscapeString(kv.Value))
-		attrs.WriteString(`"`)
-	}
-	// 抽屉协议（:target 显隐，零 JS）。
-	if p.Position.Type == "drawer" {
-		attrs.WriteString(` id="wp-drawer-`)
-		attrs.WriteString(node.ID)
-		attrs.WriteString(`" data-drawer-side="`)
-		attrs.WriteString(p.Position.DrawerSide)
-		attrs.WriteString(`"`)
-		if p.Position.DrawerOverlay {
-			attrs.WriteString(` data-drawer-overlay="true"`)
-		}
-	}
-
-	ctx.HTML.WriteString("<")
-	ctx.HTML.WriteString(p.Tag)
-	ctx.HTML.WriteString(" class=\"")
-	ctx.HTML.WriteString(cls)
-	ctx.HTML.WriteString("\"")
-	ctx.HTML.WriteString(attrs.String())
-	ctx.HTML.WriteString(">")
-
-	// 形状分隔线（顶部）：内嵌纯 SVG 装饰。
-	if p.StyleEx.ShapeDivider != "" && p.StyleEx.ShapeDividerPosition == "top" {
-		ctx.HTML.WriteString(`<span class="wp-shape wp-shape-top">`)
-		ctx.HTML.WriteString(shapeDividers[p.StyleEx.ShapeDivider])
-		ctx.HTML.WriteString(`</span>`)
-	}
-
-	for _, child := range node.Children {
-		if err = core.RenderNode(child, false, ctx); err != nil {
-			return err
-		}
-	}
-
-	if p.StyleEx.ShapeDivider != "" && p.StyleEx.ShapeDividerPosition != "top" {
-		ctx.HTML.WriteString(`<span class="wp-shape wp-shape-bottom">`)
-		ctx.HTML.WriteString(shapeDividers[p.StyleEx.ShapeDivider])
-		ctx.HTML.WriteString(`</span>`)
-	}
-
-	ctx.HTML.WriteString("</")
-	ctx.HTML.WriteString(p.Tag)
-	ctx.HTML.WriteString(">")
-
-	compileCSS(node.ID, &p, ctx.CSS)
 	return nil
 }
 

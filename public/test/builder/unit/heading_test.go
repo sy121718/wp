@@ -39,7 +39,7 @@ func TestHeadingStaticCompile(t *testing.T) {
 		"textShadow": "subtle",
 		"advanced": {"margin": {"desktop": {"bottom": "24px"}}, "customClasses": ["custom-heading"]}
 	}`
-	c, err := builder.Compile(headingDoc(t, props))
+	c, err := compile(t, headingDoc(t, props))
 	if err != nil {
 		t.Fatalf("编译失败: %v", err)
 	}
@@ -77,7 +77,7 @@ func TestHeadingBindingCompile(t *testing.T) {
 	resolver := mapResolver{"post.title": "2026 年度旗舰款无线降噪耳机"}
 	props := `{"binding":{"field":"post.title","fallback":"默认标题"},"tag":"h1"}`
 
-	c, err := builder.Compile(headingDoc(t, props), builder.WithContentResolver(resolver))
+	c, err := compile(t, headingDoc(t, props), builder.WithContentResolver(resolver))
 	if err != nil {
 		t.Fatalf("编译失败: %v", err)
 	}
@@ -87,7 +87,7 @@ func TestHeadingBindingCompile(t *testing.T) {
 
 	// 字段为空 → Fallback。
 	empty := mapResolver{"post.title": ""}
-	c2, err := builder.Compile(headingDoc(t, props), builder.WithContentResolver(empty))
+	c2, err := compile(t, headingDoc(t, props), builder.WithContentResolver(empty))
 	if err != nil {
 		t.Fatalf("编译失败: %v", err)
 	}
@@ -99,7 +99,7 @@ func TestHeadingBindingCompile(t *testing.T) {
 // TestHeadingBindingMissingResolver 缺内容解析器报明确错误。
 func TestHeadingBindingMissingResolver(t *testing.T) {
 	props := `{"binding":{"field":"post.title"}}`
-	_, err := builder.Compile(headingDoc(t, props))
+	_, err := compile(t, headingDoc(t, props))
 	if err == nil || !strings.Contains(err.Error(), "内容解析器") {
 		t.Errorf("缺少解析器应报错: %v", err)
 	}
@@ -108,7 +108,7 @@ func TestHeadingBindingMissingResolver(t *testing.T) {
 // TestHeadingXSS 文本内容转义。
 func TestHeadingXSS(t *testing.T) {
 	props := `{"text":"<script>alert(1)</script>","tag":"h3"}`
-	c, err := builder.Compile(headingDoc(t, props))
+	c, err := compile(t, headingDoc(t, props))
 	if err != nil {
 		t.Fatalf("编译失败: %v", err)
 	}
@@ -137,7 +137,7 @@ func TestHeadingValidateErrors(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := builder.Compile(headingDoc(t, tc.props))
+			_, err := compile(t, headingDoc(t, tc.props))
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("期望错误含 %q，实际: %v", tc.want, err)
 			}
@@ -147,7 +147,7 @@ func TestHeadingValidateErrors(t *testing.T) {
 	// 带子节点：children 在节点层（与 props 平级），叶子组件应拒绝。
 	t.Run("带子节点", func(t *testing.T) {
 		doc := `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"h1","type":"core.heading","props":{"text":"x"},"children":[{"id":"c1","type":"core.heading","props":{"text":"y"}}]}]}`
-		_, err := builder.Compile(mustParse(t, doc))
+		_, err := compile(t, mustParse(t, doc))
 		if err == nil || !strings.Contains(err.Error(), "叶子节点") {
 			t.Errorf("期望叶子节点错误，实际: %v", err)
 		}
@@ -156,7 +156,7 @@ func TestHeadingValidateErrors(t *testing.T) {
 
 // TestHeadingWeightNumeric 字重直接数值 100~900。
 func TestHeadingWeightNumeric(t *testing.T) {
-	c, err := builder.Compile(headingDoc(t, `{"text":"x","weight":"800"}`))
+	c, err := compile(t, headingDoc(t, `{"text":"x","weight":"800"}`))
 	if err != nil {
 		t.Fatalf("编译失败: %v", err)
 	}
@@ -167,7 +167,7 @@ func TestHeadingWeightNumeric(t *testing.T) {
 
 // TestHeadingDefaultTag 默认标签 h2。
 func TestHeadingDefaultTag(t *testing.T) {
-	c, err := builder.Compile(headingDoc(t, `{"text":"标题"}`))
+	c, err := compile(t, headingDoc(t, `{"text":"标题"}`))
 	if err != nil {
 		t.Fatalf("编译失败: %v", err)
 	}

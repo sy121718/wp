@@ -1,0 +1,169 @@
+.wp-c-sb1 {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-start;
+}
+
+.wp-c-sb1 .wp-social-btn {
+  width: 40px;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: calc(40px * 0.55);
+  text-decoration: none;
+  transition: transform .15s, opacity .15s;
+}
+
+.wp-c-sb1 .wp-social-btn:hover {
+  transform: translateY(-2px);
+}
+
+.wp-c-sb1 .wp-social-btn {
+  border-radius: 999px;
+}
+
+.wp-c-sb1 a[aria-label="facebook"] {
+  color: #fff;
+  background: #1877f2;
+}
+
+.wp-c-sb1 a[aria-label="x"] {
+  color: #fff;
+  background: #000000;
+}
+
+.wp-c-sb1 a[aria-label="instagram"] {
+  color: #fff;
+  background: #e4405f;
+}
+
+.wp-c-sb1 a[aria-label="youtube"] {
+  color: #fff;
+  background: #ff0000;
+}
+
+.wp-c-sb1 a[aria-label="tiktok"] {
+  color: #fff;
+  background: #000000;
+}
+
+.wp-c-sb1 a[aria-label="telegram"] {
+  color: #fff;
+  background: #229ed9;
+}
+
+.wp-c-sb1 a[aria-label="whatsapp"] {
+  color: #fff;
+  background: #25d366;
+}
+
+.wp-c-sb1 a[aria-label="pinterest"] {
+  color: #fff;
+  background: #bd081c;
+}
+
+.wp-c-sb1 a[aria-label="linkedin"] {
+  color: #fff;
+  background: #0a66c2;
+}
+
+.wp-c-sb1 a[aria-label="threads"] {
+  color: #fff;
+  background: #000000;
+}
+
+.wp-c-sb1 a[aria-label="vimeo"] {
+  color: #fff;
+  background: #1ab7ea;
+}
+
+.wp-c-sb1 a[aria-label="flickr"] {
+  color: #fff;
+  background: #0063dc;
+}
+
+.wp-c-sb1 a[aria-label="github"] {
+  color: #fff;
+  background: #181717;
+}
+
+.wp-c-sb1 a[aria-label="dribbble"] {
+  color: #fff;
+  background: #ea4c89;
+}
+
+.wp-c-sb1 a[aria-label="behance"] {
+  color: #fff;
+  background: #1769ff;
+}
+
+.wp-c-sb1 a[aria-label="soundcloud"] {
+  color: #fff;
+  background: #ff5500;
+}
+
+.wp-c-sb1 a[aria-label="spotify"] {
+  color: #fff;
+  background: #1db954;
+}
+
+.wp-c-sb1 a[aria-label="snapchat"] {
+  color: #fff;
+  background: #fffc00;
+}
+
+.wp-c-sb1 a[aria-label="discord"] {
+  color: #fff;
+  background: #5865f2;
+}
+
+.wp-c-sb1 a[aria-label="tumblr"] {
+  color: #fff;
+  background: #36465d;
+}
+
+.wp-c-sb1 a[aria-label="viber"] {
+  color: #fff;
+  background: #7360f2;
+}
+
+.wp-c-sb1 a[aria-label="vk"] {
+  color: #fff;
+  background: #0077ff;
+}
+
+.wp-c-sb1 a[aria-label="bluesky"] {
+  color: #fff;
+  background: #0a7aff;
+}
+
+.wp-c-sb2 {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-start;
+}
+
+.wp-c-sb2 .wp-social-btn {
+  width: 40px;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: calc(40px * 0.55);
+  text-decoration: none;
+  transition: transform .15s, opacity .15s;
+}
+
+.wp-c-sb2 .wp-social-btn:hover {
+  transform: translateY(-2px);
+}
+
+.wp-c-sb2 .wp-social-btn {
+  border-radius: 999px;
+}
+
+.wp-c-sb2 .wp-social-btn {
+  color: #123456;
+  background: rgba(0,0,0,.06);
+}

@@ -16,6 +16,8 @@ import (
 	"html"
 	"strings"
 
+	"github.com/CloudyKit/jet/v6"
+
 	// 内置组件注册（core.container 为组件树唯一结构载体，包 init 自注册）。
 	_ "go_wp/internal/builder/components/container"
 	// core.heading：标题组件（CMS 绑定发布期静态填入）。
@@ -102,6 +104,7 @@ type CompileOption func(*compileConfig)
 type compileConfig struct {
 	content core.ContentResolver
 	block   core.BlockResolver
+	set     *jet.Set
 }
 
 // WithContentResolver 注入 CMS 内容解析器（构建期动态绑定静态填入，规范 docs/02-C1）。
@@ -112,6 +115,15 @@ func WithContentResolver(r core.ContentResolver) CompileOption {
 // WithBlockResolver 注入全局块解析器（构建期内联展开 core.globalref 引用，方案 C）。
 func WithBlockResolver(r core.BlockResolver) CompileOption {
 	return func(c *compileConfig) { c.block = r }
+}
+
+// WithComponentSet 注入组件模板 Set（构建期组件渲染专用）。
+//
+// builder 包不直接依赖 internal/templates（后者含 gin 依赖），改为由调用方
+// （page service / dashboard / pipeline / 测试）用 templates.NewComponentSet(...)
+// 创建后注入。未注入时 Compile 返回明确错误，避免静默走旧路径。
+func WithComponentSet(set *jet.Set) CompileOption {
+	return func(c *compileConfig) { c.set = set }
 }
 
 // ValidatePage 只校验页面文档结构，不执行 HTML/CSS 渲染与外部解析。
@@ -165,15 +177,23 @@ func Compile(p *Page, opts ...CompileOption) (res *CompiledPage, err error) {
 	for _, opt := range opts {
 		opt(cfg)
 	}
+	if cfg.set == nil {
+		return nil, errors.New("编译缺少组件模板 Set：请通过 WithComponentSet 注入（templates.NewComponentSet）")
+	}
 
 	var b core.CSSBuckets
 	compileSettingsCSS(&p.Settings, &b)
 
 	var htmlBuf strings.Builder
-	ctx := &core.RenderContext{HTML: &htmlBuf, CSS: &b, Content: cfg.content, Block: cfg.block}
+	ctx := &core.RenderContext{CSS: &b, Content: cfg.content, Block: cfg.block}
 	for _, n := range p.Root {
-		if err = core.RenderNode(n, true, ctx); err != nil {
-			return nil, err
+		// Jet 路径：nodeViewOf 把 Node 转 view 树（含 CSS 编译与递归），renderView 渲染根 view。
+		v, verr := nodeViewOf(n, true, ctx)
+		if verr != nil {
+			return nil, verr
+		}
+		if verr = renderView(cfg.set, v, &htmlBuf); verr != nil {
+			return nil, verr
 		}
 	}
 

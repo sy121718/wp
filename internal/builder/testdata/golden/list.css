@@ -1,0 +1,155 @@
+.wp-c-l1 {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.wp-c-l1 .wp-list-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: calc(10px / 2) 0;
+}
+
+.wp-c-l1 .wp-list-marker {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.3em;
+  height: 1.3em;
+  margin-top: 2px;
+}
+
+.wp-c-l1 .wp-list-marker svg {
+  width: 1em;
+  height: 1em;
+  display: block;
+}
+
+.wp-c-l1 .wp-list-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.wp-c-l1 a.wp-list-text {
+  text-decoration: none;
+  color: inherit;
+}
+
+.wp-c-l1 a.wp-list-text:hover {
+  text-decoration: underline;
+}
+
+.wp-c-l1 .wp-list-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: currentColor;
+  display: block;
+  margin-top: 6px;
+}
+
+.wp-c-l2 {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.wp-c-l2 .wp-list-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: calc(10px / 2) 0;
+}
+
+.wp-c-l2 .wp-list-marker {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.3em;
+  height: 1.3em;
+  margin-top: 2px;
+}
+
+.wp-c-l2 .wp-list-marker svg {
+  width: 1em;
+  height: 1em;
+  display: block;
+}
+
+.wp-c-l2 .wp-list-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.wp-c-l2 a.wp-list-text {
+  text-decoration: none;
+  color: inherit;
+}
+
+.wp-c-l2 a.wp-list-text:hover {
+  text-decoration: underline;
+}
+
+.wp-c-l2 .wp-list-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: currentColor;
+  display: block;
+  margin-top: 6px;
+}
+
+.wp-c-l3 {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.wp-c-l3 .wp-list-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: calc(10px / 2) 0;
+}
+
+.wp-c-l3 .wp-list-marker {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.3em;
+  height: 1.3em;
+  margin-top: 2px;
+}
+
+.wp-c-l3 .wp-list-marker svg {
+  width: 1em;
+  height: 1em;
+  display: block;
+}
+
+.wp-c-l3 .wp-list-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.wp-c-l3 a.wp-list-text {
+  text-decoration: none;
+  color: inherit;
+}
+
+.wp-c-l3 a.wp-list-text:hover {
+  text-decoration: underline;
+}
+
+.wp-c-l3 .wp-list-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: currentColor;
+  display: block;
+  margin-top: 6px;
+}

@@ -3,8 +3,6 @@ package unit
 import (
 	"strings"
 	"testing"
-
-	"go_wp/internal/builder"
 )
 
 // TestWorkbenchMetadata 编辑元数据：Name/Hidden/Locked 持久化且不进入编译产物。
@@ -14,7 +12,7 @@ func TestWorkbenchMetadata(t *testing.T) {
 		 "props":{"tag":"section","layout":{"engine":"flex","flex":{}}}},
 		{"id":"head1","type":"core.heading","props":{"text":"标题"}}
 	]}`
-	c, err := builder.Compile(mustParse(t, doc))
+	c, err := compile(t, mustParse(t, doc))
 	if err != nil {
 		t.Fatalf("编译失败: %v", err)
 	}
@@ -37,7 +35,7 @@ func TestWorkbenchPosition(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			doc := `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"sec1","type":"core.container","props":` + tc.props + `}]}`
-			c, err := builder.Compile(mustParse(t, doc))
+			c, err := compile(t, mustParse(t, doc))
 			if err != nil {
 				t.Fatalf("编译失败: %v", err)
 			}
@@ -48,7 +46,7 @@ func TestWorkbenchPosition(t *testing.T) {
 	}
 	// drawer :target 显隐。
 	doc := `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"d1","type":"core.container","props":{"tag":"aside","layout":{"engine":"flex","flex":{}},"position":{"type":"drawer","drawerSide":"right","drawerTriggerId":"trig-1"}}}]}`
-	c, err := builder.Compile(mustParse(t, doc))
+	c, err := compile(t, mustParse(t, doc))
 	if err != nil {
 		t.Fatalf("编译失败: %v", err)
 	}
@@ -68,7 +66,7 @@ func TestWorkbenchStyleEx(t *testing.T) {
 		"attributes":[{"key":"data-track","value":"banner"},{"key":"aria-label","value":"首屏"}]
 	}}`
 	doc := `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"sec1","type":"core.container","props":` + props + `}]}`
-	c, err := builder.Compile(mustParse(t, doc))
+	c, err := compile(t, mustParse(t, doc))
 	if err != nil {
 		t.Fatalf("编译失败: %v", err)
 	}
@@ -107,7 +105,7 @@ func TestWorkbenchValidate(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			doc := `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"sec1","type":"core.container","props":` + tc.props + `}]}`
-			_, err := builder.Compile(mustParse(t, doc))
+			_, err := compile(t, mustParse(t, doc))
 			if tc.want == "" {
 				return
 			}
@@ -122,7 +120,7 @@ func TestWorkbenchValidate(t *testing.T) {
 func TestWorkbenchNodeName(t *testing.T) {
 	long := strings.Repeat("很", 101)
 	doc := `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"sec1","type":"core.container","name":"` + long + `","props":{"tag":"div","layout":{"engine":"flex","flex":{}}}}]}`
-	_, err := builder.Compile(mustParse(t, doc))
+	_, err := compile(t, mustParse(t, doc))
 	if err == nil || !strings.Contains(err.Error(), "节点名称过长") {
 		t.Errorf("超长名称应拒绝: %v", err)
 	}

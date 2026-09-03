@@ -15,6 +15,7 @@ import (
 	"go_wp/internal/builder/core"
 	blockdto "go_wp/internal/module/block/dto"
 	"go_wp/internal/pipeline"
+	"go_wp/internal/templates"
 )
 
 // assembleCompile 装配感知编译：页眉块 + 页面主体 + 页脚块。
@@ -27,8 +28,13 @@ func (s *Service) assembleCompile(docJSON []byte) ([]byte, error) {
 	if err != nil {
 		return pipeline.DefaultCompile(docJSON)
 	}
+	// 组件模板 Set（Jet 渲染路径必需；embed 加载，不依赖进程工作目录）。
+	set, err := templates.NewEmbeddedComponentSet()
+	if err != nil {
+		return nil, err
+	}
 	resolver := blockResolverAdapter{s: s}
-	opts := []builder.CompileOption{builder.WithBlockResolver(resolver)}
+	opts := []builder.CompileOption{builder.WithBlockResolver(resolver), builder.WithComponentSet(set)}
 	compiled, err := builder.Compile(page, opts...)
 	if err != nil {
 		return nil, err

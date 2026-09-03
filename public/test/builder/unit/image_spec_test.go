@@ -15,7 +15,7 @@ func svgImageDoc(t *testing.T, props string) *builder.Page {
 
 // TestImagePhotoCompile 照片全流程：比例/适应/对齐/宽度/滤镜/悬浮/懒加载/图注。
 func TestImagePhotoCompile(t *testing.T) {
-	c, err := builder.Compile(svgImageDoc(t, `{
+	c, err := compile(t, svgImageDoc(t, `{
 		"src":"/storage/hero.jpg",
 		"aspectRatio":"16:9",
 		"objectFit":"cover",
@@ -51,7 +51,7 @@ func TestImagePhotoCompile(t *testing.T) {
 
 // TestImageExternalURL 外部 URL 源：直接使用，宽高缺省不报错。
 func TestImageExternalURL(t *testing.T) {
-	c, err := builder.Compile(svgImageDoc(t, `{"src":"https://cdn.example.com/hero.jpg","width":"100%","alt":"外链图"}`))
+	c, err := compile(t, svgImageDoc(t, `{"src":"https://cdn.example.com/hero.jpg","width":"100%","alt":"外链图"}`))
 	if err != nil {
 		t.Fatalf("编译失败: %v", err)
 	}
@@ -65,7 +65,7 @@ func TestImageExternalURL(t *testing.T) {
 
 // TestImageLightbox 零 JS 灯箱：拉链式 :target 浮层。
 func TestImageLightbox(t *testing.T) {
-	c, err := builder.Compile(svgImageDoc(t, `{"src":"/storage/lightbox.jpg","clickAction":"lightbox"}`))
+	c, err := compile(t, svgImageDoc(t, `{"src":"/storage/lightbox.jpg","clickAction":"lightbox"}`))
 	if err != nil {
 		t.Fatalf("编译失败: %v", err)
 	}
@@ -84,7 +84,7 @@ func TestImageLightbox(t *testing.T) {
 // TestImageCMSBinding CMS 图片字段绑定：解析 URL；空值回退 fallback（URL）。
 func TestImageCMSBinding(t *testing.T) {
 	resolver := mapResolver{"post.featuredImage": "/storage/bind.jpg"}
-	c, err := builder.Compile(svgImageDoc(t, `{"binding":{"field":"post.featuredImage","fallback":"/storage/fallback.jpg"}}`),
+	c, err := compile(t, svgImageDoc(t, `{"binding":{"field":"post.featuredImage","fallback":"/storage/fallback.jpg"}}`),
 		builder.WithContentResolver(resolver))
 	if err != nil {
 		t.Fatalf("编译失败: %v", err)
@@ -105,7 +105,7 @@ func TestImageValidate(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := builder.Compile(svgImageDoc(t, tc.props))
+			_, err := compile(t, svgImageDoc(t, tc.props))
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("期望错误含 %q，实际: %v", tc.want, err)
 			}

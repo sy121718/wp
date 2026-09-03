@@ -16,7 +16,7 @@ func buttonDoc(t *testing.T, props string) *builder.Page {
 // TestButtonExternal 外部链接：单层 <a> + target/rel + 图标（内置 SVG）+ 双态 CSS。
 func TestButtonExternal(t *testing.T) {
 	props := `{"text":"立即抢购","action":"external","value":"https://example.com/checkout","target":"blank","rel":"nofollow","size":"lg","variant":"solid","radius":"9999","normal":{"background":"#2563eb","color":"#fff","shadow":"sm"},"hover":{"background":"#1d4ed8","color":"#fff","shadow":"md"},"hoverLift":"-2px","icon":{"source":"builtin","name":"arrow-right","position":"suffix","spacing":"8px","hoverShift":"4px"}}`
-	c, err := builder.Compile(buttonDoc(t, props))
+	c, err := compile(t, buttonDoc(t, props))
 	if err != nil {
 		t.Fatalf("编译失败: %v", err)
 	}
@@ -46,7 +46,7 @@ func TestButtonExternal(t *testing.T) {
 // TestButtonModal 弹窗触发：原生 <button> + data-modal-target，无 href。
 func TestButtonModal(t *testing.T) {
 	props := `{"text":"联系商务合作","action":"modal","value":"contact-modal"}`
-	c, err := builder.Compile(buttonDoc(t, props))
+	c, err := compile(t, buttonDoc(t, props))
 	if err != nil {
 		t.Fatalf("编译失败: %v", err)
 	}
@@ -73,7 +73,7 @@ func TestButtonActions(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			c, err := builder.Compile(buttonDoc(t, tc.props))
+			c, err := compile(t, buttonDoc(t, tc.props))
 			if err != nil {
 				t.Fatalf("编译失败: %v", err)
 			}
@@ -87,7 +87,7 @@ func TestButtonActions(t *testing.T) {
 // TestButtonLinkBinding 动态链接绑定：ContentResolver 解析。
 func TestButtonLinkBinding(t *testing.T) {
 	resolver := mapResolver{"product.permalink": "/products/keyboard-pro"}
-	c, err := builder.Compile(buttonDoc(t, `{"text":"查看商品","action":"link","binding":{"field":"product.permalink"}}`),
+	c, err := compile(t, buttonDoc(t, `{"text":"查看商品","action":"link","binding":{"field":"product.permalink"}}`),
 		builder.WithContentResolver(resolver))
 	if err != nil {
 		t.Fatalf("编译失败: %v", err)
@@ -99,7 +99,7 @@ func TestButtonLinkBinding(t *testing.T) {
 
 // TestButtonMediaIcon 媒体库/外链图标：img 直引。
 func TestButtonMediaIcon(t *testing.T) {
-	c, err := builder.Compile(buttonDoc(t, `{"text":"确认","action":"external","value":"https://a.com/ok","icon":{"source":"media","url":"/storage/check.svg","position":"prefix"}}`))
+	c, err := compile(t, buttonDoc(t, `{"text":"确认","action":"external","value":"https://a.com/ok","icon":{"source":"media","url":"/storage/check.svg","position":"prefix"}}`))
 	if err != nil {
 		t.Fatalf("编译失败: %v", err)
 	}
@@ -110,7 +110,7 @@ func TestButtonMediaIcon(t *testing.T) {
 
 // TestButtonBlock 块级铺满三端。
 func TestButtonBlock(t *testing.T) {
-	c, err := builder.Compile(buttonDoc(t, `{"text":"加入购物车","action":"external","value":"https://a.com/cart","block":{"desktop":true,"mobile":true}}`))
+	c, err := compile(t, buttonDoc(t, `{"text":"加入购物车","action":"external","value":"https://a.com/cart","block":{"desktop":true,"mobile":true}}`))
 	if err != nil {
 		t.Fatalf("编译失败: %v", err)
 	}
@@ -133,7 +133,7 @@ func TestButtonValidate(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := builder.Compile(buttonDoc(t, tc.props))
+			_, err := compile(t, buttonDoc(t, tc.props))
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("期望错误含 %q，实际: %v", tc.want, err)
 			}
@@ -144,11 +144,11 @@ func TestButtonValidate(t *testing.T) {
 // TestButtonDeterministic 确定性构建。
 func TestButtonDeterministic(t *testing.T) {
 	props := `{"text":"确定","action":"external","value":"https://a.com/ok","icon":{"source":"builtin","name":"check"}}`
-	c1, err := builder.Compile(buttonDoc(t, props))
+	c1, err := compile(t, buttonDoc(t, props))
 	if err != nil {
 		t.Fatalf("编译失败: %v", err)
 	}
-	c2, err := builder.Compile(buttonDoc(t, props))
+	c2, err := compile(t, buttonDoc(t, props))
 	if err != nil {
 		t.Fatalf("编译失败: %v", err)
 	}

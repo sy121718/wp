@@ -5,8 +5,6 @@ package infobox
 import (
 	"encoding/json"
 	"fmt"
-	"html"
-	"strings"
 
 	"go_wp/internal/builder/core"
 )
@@ -102,86 +100,6 @@ func (c *Component) Validate(node *core.Node, ids map[string]bool) (err error) {
 		return err
 	}
 return nil
-}
-
-// Render 渲染信息框。
-func (c *Component) Render(node *core.Node, topLevel bool, ctx *core.RenderContext) (err error) {
-	var p Props
-	if len(node.Props) > 0 {
-		if err = json.Unmarshal(node.Props, &p); err != nil {
-			return fmt.Errorf("节点 %s props 反序列化失败: %w", node.ID, err)
-		}
-	}
-	cls := core.NodeClass(node.ID)
-
-	body := strings.Builder{}
-	// 图标 / 媒体图。
-	if p.MediaImage != "" {
-		body.WriteString(`<span class="wp-infobox-media">`)
-		body.WriteString(`<img src="`)
-		body.WriteString(html.EscapeString(p.MediaImage))
-		body.WriteString(`" alt="" loading="lazy">`)
-		body.WriteString(`</span>`)
-	} else if p.Icon != "" {
-		body.WriteString(`<span class="wp-infobox-icon">`)
-		if svg, ok := core.IconSVG(p.Icon); ok {
-			body.WriteString(svg)
-		}
-		body.WriteString(`</span>`)
-	}
-	if p.Subtitle != "" {
-		body.WriteString(`<span class="wp-infobox-subtitle">`)
-		body.WriteString(html.EscapeString(p.Subtitle))
-		body.WriteString(`</span>`)
-	}
-	if p.Title != "" {
-		tag := p.TitleTag
-		if tag == "" {
-			tag = "h3"
-		}
-		body.WriteString("<" + tag + ` class="wp-infobox-title">`)
-		body.WriteString(html.EscapeString(p.Title))
-		body.WriteString("</" + tag + ">")
-	}
-	if p.Text != "" {
-		body.WriteString(`<div class="wp-infobox-text">`)
-		body.WriteString(html.EscapeString(p.Text))
-		body.WriteString(`</div>`)
-	}
-
-	if strings.TrimSpace(p.Link) != "" {
-		if strings.TrimSpace(p.BtnText) != "" {
-			// 按钮模式：内容 + 底部按钮。
-			ctx.HTML.WriteString(`<div class="`)
-			ctx.HTML.WriteString(cls)
-			ctx.HTML.WriteString(` wp-infobox">`)
-			ctx.HTML.WriteString(body.String())
-			ctx.HTML.WriteString(`<a class="wp-infobox-btn" href="`)
-			ctx.HTML.WriteString(html.EscapeString(p.Link))
-			ctx.HTML.WriteString(`">`)
-			ctx.HTML.WriteString(html.EscapeString(p.BtnText))
-			ctx.HTML.WriteString(`</a>`)
-			ctx.HTML.WriteString(`</div>`)
-			compileCSS(node.ID, &p, ctx.CSS)
-			return nil
-		}
-		ctx.HTML.WriteString(`<a class="`)
-		ctx.HTML.WriteString(cls)
-		ctx.HTML.WriteString(` wp-infobox" href="`)
-		ctx.HTML.WriteString(html.EscapeString(p.Link))
-		ctx.HTML.WriteString(`">`)
-		ctx.HTML.WriteString(body.String())
-		ctx.HTML.WriteString(`</a>`)
-	} else {
-		ctx.HTML.WriteString(`<div class="`)
-		ctx.HTML.WriteString(cls)
-		ctx.HTML.WriteString(` wp-infobox">`)
-		ctx.HTML.WriteString(body.String())
-		ctx.HTML.WriteString(`</div>`)
-	}
-
-	compileCSS(node.ID, &p, ctx.CSS)
-	return nil
 }
 
 // compileCSS 信息框样式。

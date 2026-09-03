@@ -1,0 +1,48 @@
+.wp-c-v1 {
+  position: relative;
+  overflow: hidden;
+  max-width: 100%;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.wp-c-v1 .wp-video-frame {
+  position: relative;
+  width: 100%;
+  padding-top: 56.25%;
+}
+
+.wp-c-v1 .wp-video-frame iframe, .wp-c-v1 .wp-video-frame video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  border-radius: inherit;
+  display: block;
+}
+
+.wp-c-v2 {
+  position: relative;
+  overflow: hidden;
+  max-width: 100%;
+  margin-left: auto;
+  margin-right: auto;
+  width: 100%;
+}
+
+.wp-c-v2 .wp-video-frame {
+  position: relative;
+  width: 100%;
+  padding-top: 75%;
+}
+
+.wp-c-v2 .wp-video-frame iframe, .wp-c-v2 .wp-video-frame video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  border-radius: inherit;
+  display: block;
+}

@@ -16,7 +16,7 @@ func spacerDoc(t *testing.T, props string) *builder.Page {
 // TestSpacerCompile 基座组件全链路：三端高度 CSS + 单层 div + Advanced 织入。
 func TestSpacerCompile(t *testing.T) {
 	props := `{"height":{"desktop":"80px","tablet":"48px","mobile":"24px"},"advanced":{"margin":{"desktop":{"bottom":"16px"}},"customClasses":["gap-fix"],"customId":"anchor-gap"}}`
-	c, err := builder.Compile(spacerDoc(t, props))
+	c, err := compile(t, spacerDoc(t, props))
 	if err != nil {
 		t.Fatalf("编译失败: %v", err)
 	}
@@ -51,7 +51,7 @@ func TestSpacerValidate(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := builder.Compile(spacerDoc(t, tc.props))
+			_, err := compile(t, spacerDoc(t, tc.props))
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("期望错误含 %q，实际: %v", tc.want, err)
 			}
@@ -61,7 +61,7 @@ func TestSpacerValidate(t *testing.T) {
 	// 叶子约束：children 在节点层。
 	t.Run("叶子约束", func(t *testing.T) {
 		doc := `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"sp1","type":"core.spacer","props":{},"children":[{"id":"c1","type":"core.spacer","props":{}}]}]}`
-		_, err := builder.Compile(mustParse(t, doc))
+		_, err := compile(t, mustParse(t, doc))
 		if err == nil || !strings.Contains(err.Error(), "叶子节点") {
 			t.Errorf("期望叶子节点错误，实际: %v", err)
 		}
@@ -70,7 +70,7 @@ func TestSpacerValidate(t *testing.T) {
 	// ID 查重（基座 ValidateNodeID）。
 	t.Run("ID查重", func(t *testing.T) {
 		doc := `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"sp1","type":"core.spacer","props":{}},{"id":"sp1","type":"core.spacer","props":{}}]}`
-		_, err := builder.Compile(mustParse(t, doc))
+		_, err := compile(t, mustParse(t, doc))
 		if err == nil || !strings.Contains(err.Error(), "ID 重复") {
 			t.Errorf("期望 ID 重复错误，实际: %v", err)
 		}
@@ -80,11 +80,11 @@ func TestSpacerValidate(t *testing.T) {
 // TestSpacerDeterministic 确定性构建。
 func TestSpacerDeterministic(t *testing.T) {
 	props := `{"height":{"desktop":"40px"}}`
-	c1, err := builder.Compile(spacerDoc(t, props))
+	c1, err := compile(t, spacerDoc(t, props))
 	if err != nil {
 		t.Fatalf("编译失败: %v", err)
 	}
-	c2, err := builder.Compile(spacerDoc(t, props))
+	c2, err := compile(t, spacerDoc(t, props))
 	if err != nil {
 		t.Fatalf("编译失败: %v", err)
 	}

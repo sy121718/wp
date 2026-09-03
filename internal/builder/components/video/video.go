@@ -5,7 +5,6 @@ package video
 import (
 	"encoding/json"
 	"fmt"
-	"html"
 	"net/url"
 	"regexp"
 	"strings"
@@ -85,65 +84,6 @@ func (c *Component) Validate(node *core.Node, ids map[string]bool) (err error) {
 		return err
 	}
 return nil
-}
-
-// Render 渲染视频。
-func (c *Component) Render(node *core.Node, topLevel bool, ctx *core.RenderContext) (err error) {
-	var p Props
-	if len(node.Props) > 0 {
-		if err = json.Unmarshal(node.Props, &p); err != nil {
-			return fmt.Errorf("节点 %s props 反序列化失败: %w", node.ID, err)
-		}
-	}
-	cls := core.NodeClass(node.ID)
-
-	ctx.HTML.WriteString(`<div class="`)
-	ctx.HTML.WriteString(cls)
-	ctx.HTML.WriteString(` wp-video">`)
-	ctx.HTML.WriteString(`<div class="wp-video-frame">`)
-
-	// 视频地址：URL 直出（媒体库/外链统一，构建期零解析）。
-	videoURL := p.URL
-	// 本地文件（.mp4/.webm/.ogg 或 /storage/）→ video 标签；否则尝试外链嵌入。
-	if embedSrc, ok := embedURL(videoURL); ok {
-		// iframe 嵌入（YouTube/Vimeo）。
-		ctx.HTML.WriteString(`<iframe src="`)
-		ctx.HTML.WriteString(html.EscapeString(embedSrc))
-		ctx.HTML.WriteString(`" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen loading="lazy" title="视频"></iframe>`)
-	} else {
-		ctx.HTML.WriteString(`<video`)
-		if p.Poster != "" {
-			ctx.HTML.WriteString(` poster="`)
-			ctx.HTML.WriteString(html.EscapeString(p.Poster))
-			ctx.HTML.WriteString(`"`)
-		}
-		if p.Autoplay {
-			ctx.HTML.WriteString(` autoplay`)
-		}
-		if p.Loop {
-			ctx.HTML.WriteString(` loop`)
-		}
-		if p.Muted || p.Autoplay {
-			ctx.HTML.WriteString(` muted`)
-		}
-		if p.Controls {
-			ctx.HTML.WriteString(` controls`)
-		}
-		preload := p.Preload
-		if preload == "" {
-			preload = "metadata"
-		}
-		ctx.HTML.WriteString(` playsinline preload="` + preload + `">`)
-		ctx.HTML.WriteString(`<source src="`)
-		ctx.HTML.WriteString(html.EscapeString(videoURL))
-		ctx.HTML.WriteString(`">`)
-		ctx.HTML.WriteString(`</video>`)
-	}
-
-	ctx.HTML.WriteString(`</div></div>`)
-
-	compileCSS(node.ID, &p, ctx.CSS)
-	return nil
 }
 
 // embedURL 识别外链平台并返回可嵌入 URL；无法识别返回 ok=false。

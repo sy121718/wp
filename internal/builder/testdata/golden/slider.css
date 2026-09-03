@@ -1,0 +1,87 @@
+.wp-c-sl1 {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+  overflow-x: auto;
+  scrollbar-width: none;
+  scroll-behavior: smooth;
+  margin: 0 calc(-24px / 2);
+}
+
+.wp-c-sl1 .wp-slide {
+  flex: 0 0 50.0000%;
+  scroll-snap-align: start;
+  min-width: 0;
+  padding: 0 calc(24px / 2);
+}
+
+.wp-c-sl1 .wp-slide > * {
+  height: 100%;
+  margin: 0;
+}
+
+.wp-c-sl1 .wp-slider-arrow {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  border: 1px solid rgba(0,0,0,.12);
+  background: #fff;
+  cursor: pointer;
+  font-size: 20px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2;
+  box-shadow: 0 2px 8px rgba(0,0,0,.1);
+}
+
+.wp-c-sl1 .wp-slider-prev {
+  left: 12px;
+}
+
+.wp-c-sl1 .wp-slider-next {
+  right: 12px;
+}
+
+.wp-c-sl1 .wp-slider-dots {
+  position: absolute;
+  bottom: 10px;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  z-index: 2;
+}
+
+.wp-c-sl1 .wp-slider-dots button {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  border: none;
+  background: rgba(0,0,0,.25);
+  cursor: pointer;
+  padding: 0;
+}
+
+.wp-c-sl1 .wp-slider-dots button.is-active {
+  background: currentColor;
+}
+
+@media (max-width: 1024px) {
+.wp-c-sl1 .wp-slide {
+  flex: 0 0 100.0000%;
+}
+}
+
+@media (max-width: 767px) {
+.wp-c-sl1 .wp-slide {
+  flex: 0 0 100.0000%;
+}
+}

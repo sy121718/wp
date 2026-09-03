@@ -9,7 +9,6 @@ package globalref
 import (
 	"encoding/json"
 	"fmt"
-	"html"
 	"strings"
 
 	"go_wp/internal/builder/core"
@@ -57,39 +56,6 @@ func (c *Component) Validate(node *core.Node, ids map[string]bool) (err error) {
 	if _, err = decode(node); err != nil {
 		return err
 	}
-	return nil
-}
-
-// Render 展开引用块：解析器可用时深拷贝块 root 并重写 ID 前缀后渲染；
-// 不可用时渲染可选中占位（编辑画布可看到并选中引用节点）。
-func (c *Component) Render(node *core.Node, topLevel bool, ctx *core.RenderContext) (err error) {
-	props, err := decode(node)
-	if err != nil {
-		return err
-	}
-	if ctx.Block == nil {
-		return renderPlaceholder(node, ctx)
-	}
-	roots, err := ctx.Block.ResolveBlockRoot(props.BlockID)
-	if err != nil || len(roots) == 0 {
-		return renderPlaceholder(node, ctx)
-	}
-	// 块节点 ID 统一加前缀，保证文档内唯一、wp-c-<id> CSS 类不冲突。
-	prefix := node.ID + "-b-"
-	for _, child := range roots {
-		if err = core.RenderNode(cloneWithIDPrefix(child, prefix), false, ctx); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func renderPlaceholder(node *core.Node, ctx *core.RenderContext) error {
-	ctx.HTML.WriteString(`<div class="wp-globalref `)
-	ctx.HTML.WriteString(core.NodeClass(node.ID))
-	ctx.HTML.WriteString(`" data-wp-id="`)
-	ctx.HTML.WriteString(html.EscapeString(node.ID))
-	ctx.HTML.WriteString(`"><!-- 全局块引用 --></div>`)
 	return nil
 }
 

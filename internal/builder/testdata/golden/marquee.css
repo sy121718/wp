@@ -1,0 +1,38 @@
+.wp-c-mq1 {
+  display: flex;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.wp-c-mq1 .wp-marquee-track {
+  display: flex;
+  align-items: center;
+  flex: none;
+  gap: 32px;
+  padding-right: 32px;
+  animation: wp-marquee-mq1 15s linear infinite;
+}
+
+@keyframes wp-marquee-mq1 {
+  from { transform: translateX(-50%) };
+  to { transform: translateX(0) };
+}
+
+.wp-c-mq1 .wp-marquee-item {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+}
+
+.wp-c-mq1:hover .wp-marquee-track {
+  animation-play-state: paused;
+}
+
+.wp-c-mq1 {
+  background: #111;
+}
+
+.wp-c-mq1 .wp-marquee-track {
+  padding-top: 12px;
+  padding-bottom: 12px;
+}

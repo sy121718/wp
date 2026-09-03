@@ -194,7 +194,7 @@ func TestSearch(t *testing.T) {
 // TestImageCompilePipeline 数据流闭环：Page Document（仅 src URL）→ 编译 → <img> 直出。
 func TestImageCompilePipeline(t *testing.T) {
 	doc := `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"pic","type":"core.image","props":{"src":"/storage/hero.jpg","alt":"局部覆盖","title":"标题"}}]}`
-	c, err := builder.Compile(mustParse(t, doc))
+	c, err := compile(t, mustParse(t, doc))
 	if err != nil {
 		t.Fatalf("编译失败: %v", err)
 	}
@@ -220,7 +220,7 @@ func TestImageValidateProps(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := builder.Compile(mustParse(t, tc.json))
+			_, err := compile(t, mustParse(t, tc.json))
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("期望错误含 %q，实际: %v", tc.want, err)
 			}
