@@ -1,7 +1,6 @@
 package routers
 
 import (
-	"log"
 	"net/http"
 	"path/filepath"
 
@@ -16,6 +15,7 @@ import (
 	pubhttp "go_wp/internal/module/publication/inbound/http"
 	"go_wp/internal/templates"
 	"go_wp/pkg/database"
+	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
 
 	"github.com/gin-gonic/gin"
@@ -73,7 +73,7 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 	// 通用依赖
 	db, err := database.GetDB()
 	if err != nil {
-		log.Printf("数据库未就绪: %v", err)
+		logger.Scene("init").Error(err, "数据库未就绪，业务路由未装配")
 		return
 	}
 

@@ -21,6 +21,7 @@ import (
 	"go_wp/internal/middleware"
 	"go_wp/internal/routers"
 	"go_wp/pkg/database"
+	"go_wp/pkg/logger"
 	"go_wp/pkg/utils"
 	migrations "go_wp/public/migrations"
 	"log"
@@ -37,7 +38,8 @@ import (
 // 所有错误上报到 run() 后统一由此处 log.Fatalf 终止进程。
 func main() {
 	if err := run(); err != nil {
-		log.Fatalf("服务启动失败: %v", err)
+		logger.Scene("init").Error(err, "服务启动失败")
+		log.Fatal("服务启动失败")
 	}
 }
 
@@ -68,7 +70,7 @@ func run() error {
 	}
 
 	addr := fmt.Sprintf(":%d", serverCfg.Port)
-	log.Printf("服务启动: http://localhost%s", addr)
+	logger.Scene("init").With("addr", addr).Info("服务启动")
 
 	// 4) 创建 http.Server 实例，配置超时参数。
 	srv := buildHTTPServer(serverCfg, router)
@@ -88,13 +90,13 @@ func run() error {
 		// 服务启动或运行期间发生非预期错误。
 		if err != nil {
 			if closeErr := config.CloseComponents(); closeErr != nil {
-				log.Printf("组件关闭失败: %v", closeErr)
+				logger.Scene("init").Error(closeErr, "组件关闭失败")
 			}
 			return fmt.Errorf("HTTP 服务启动失败: %w", err)
 		}
 		return nil
 	case <-quit:
-		log.Println("收到退出信号，开始关闭...")
+		logger.Scene("init").Info("收到退出信号，开始关闭...")
 	}
 
 	// 7) 优雅关闭 HTTP 服务：给在途请求最多 5 秒完成。
@@ -102,15 +104,15 @@ func run() error {
 	defer cancel()
 
 	if err := srv.Shutdown(ctx); err != nil {
-		log.Printf("HTTP Server 关闭失败: %v", err)
+		logger.Scene("init").Error(err, "HTTP Server 关闭失败")
 	}
 
 	// 8) 按逆序关闭所有已初始化的组件（数据库连接、Redis、队列、日志等）。
 	if err := config.CloseComponents(); err != nil {
-		log.Printf("组件关闭失败: %v", err)
+		logger.Scene("init").Error(err, "组件关闭失败")
 	}
 
-	log.Println("服务已退出")
+	logger.Scene("init").Info("服务已退出")
 	return nil
 }
 

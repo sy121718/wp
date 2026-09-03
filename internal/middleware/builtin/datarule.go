@@ -7,6 +7,7 @@ import (
 	"go_wp/pkg/auth"
 	"go_wp/pkg/casbin"
 	"go_wp/pkg/datarule"
+	"go_wp/pkg/logger"
 
 	"github.com/gin-gonic/gin"
 )
@@ -38,12 +39,16 @@ func DataRuleContextMiddleware() gin.HandlerFunc {
 		// 从 Redis 获取会话
 		session, err := auth.GetUserSession(c.Request.Context(), userID)
 		if err != nil || session == nil {
+			logger.Scene("middleware").With("user_id", userID).With("err", err).Warn("会话读取失败，数据规则降级")
 			c.Next()
 			return
 		}
 
 		// 从 Casbin 获取角色 codes
-		roleCodes, _ := casbin.GetRoleCodesByUserID(strconv.FormatUint(userID, 10))
+		roleCodes, roleErr := casbin.GetRoleCodesByUserID(strconv.FormatUint(userID, 10))
+		if roleErr != nil {
+			logger.Scene("middleware").With("user_id", userID).With("err", roleErr).Warn("角色读取失败，数据规则降级")
+		}
 
 		uc := &datarule.UserContext{
 			UserID:  userID,

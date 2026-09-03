@@ -7,6 +7,7 @@ import (
 
 	"go_wp/internal/builder"
 	"go_wp/internal/templates"
+	"go_wp/pkg/logger"
 )
 
 // 状态常量（规范 0-A1 §2 发布生命周期，docs/03-pipeline.md §6）。
@@ -216,6 +217,7 @@ func (p *Publisher) Publish(pageID string) (hash string, err error) {
 
 	if err = p.pub.Activate(rec.Path, loc); err != nil {
 		// 激活失败线上保持不变（保持 ready）。
+		logger.Scene("build").With("pageId", rec.ID).Error(err, "激活失败（线上保持不变）")
 		rec.Status = rec.currentStatus()
 		return "", fmt.Errorf("激活失败（线上版本保持不变）: %w", err)
 	}
@@ -250,6 +252,7 @@ func (p *Publisher) Rollback(pageID string, targetHash string) (err error) {
 		return err
 	}
 	if err = p.pub.Activate(rec.Path, loc); err != nil {
+		logger.Scene("build").With("pageId", rec.ID).Error(err, "回滚失败")
 		return fmt.Errorf("回滚激活失败（线上版本保持不变）: %w", err)
 	}
 
@@ -326,6 +329,7 @@ func (p *Publisher) buildLocked(rec *PageRecord, expectedVersion int) (hash stri
 
 	html, err := p.compile(rec.DocumentJSON)
 	if err != nil {
+		logger.Scene("build").With("pageId", rec.ID).Error(err, "页面编译失败")
 		rec.FailedReason = err.Error()
 		rec.Status = rec.currentStatus()
 		return "", fmt.Errorf("编译失败: %w", err)
@@ -347,6 +351,7 @@ func (p *Publisher) buildLocked(rec *PageRecord, expectedVersion int) (hash stri
 		return "", err
 	}
 	if _, err = p.store.PutArtifact(a); err != nil {
+		logger.Scene("build").With("pageId", rec.ID).Error(err, "产物落盘失败")
 		rec.FailedReason = err.Error()
 		rec.Status = rec.currentStatus()
 		return "", err
@@ -358,6 +363,7 @@ func (p *Publisher) buildLocked(rec *PageRecord, expectedVersion int) (hash stri
 	rec.Histories = append(rec.Histories, &HistoryEntry{
 		Hash: a.Hash, Path: rec.Path, Status: StateReady, Order: p.order,
 	})
+	logger.Scene("build").With("pageId", rec.ID).With("hash", a.Hash).Info("构建完成")
 	return a.Hash, nil
 }
 

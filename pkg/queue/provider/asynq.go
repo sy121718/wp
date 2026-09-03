@@ -9,6 +9,8 @@ import (
 	"sync"
 	"time"
 
+	"go_wp/pkg/logger"
+
 	"github.com/hibiken/asynq"
 	"github.com/spf13/viper"
 )
@@ -186,7 +188,7 @@ func (p *asynqProvider) Start() error {
 
 	go func() {
 		if err := s.Start(m); err != nil {
-			fmt.Printf("队列 worker 异常退出: %v\n", err)
+			logger.Scene("queue").Error(err, "队列 worker 异常退出")
 		}
 	}()
 	return nil

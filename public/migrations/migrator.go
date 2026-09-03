@@ -6,9 +6,10 @@ package migrations
 
 import (
 	"fmt"
-	"log"
 	"sort"
 	"strings"
+
+	"go_wp/pkg/logger"
 
 	"gorm.io/gorm"
 )
@@ -77,7 +78,7 @@ func apply(db *gorm.DB, m Migration) error {
 		return err
 	}
 	if count > 0 {
-		log.Printf("跳过 %s (%s)：迁移对象已存在", m.Version, m.TableName)
+		logger.Scene("init").With("version", m.Version).With("table", m.TableName).Info("迁移对象已存在，跳过")
 		return nil
 	}
 
@@ -91,7 +92,7 @@ func apply(db *gorm.DB, m Migration) error {
 		}
 	}
 
-	log.Printf("完成 %s (%s)", m.Version, m.TableName)
+	logger.Scene("init").With("version", m.Version).With("table", m.TableName).Info("迁移完成")
 	return nil
 }
 
@@ -111,7 +112,7 @@ func applySeed(db *gorm.DB, s Seed) error {
 		return fmt.Errorf("检查种子数据 %s (%s) 失败: %w", s.Version, s.TableName, err)
 	}
 	if count > 0 {
-		log.Printf("跳过种子 %s (%s)：数据已存在", s.Version, s.TableName)
+		logger.Scene("init").With("version", s.Version).With("table", s.TableName).Info("种子数据已存在，跳过")
 		return nil
 	}
 
@@ -119,7 +120,7 @@ func applySeed(db *gorm.DB, s Seed) error {
 		return fmt.Errorf("执行种子 %s (%s) 失败: %w", s.Version, s.TableName, err)
 	}
 
-	log.Printf("完成种子 %s (%s)", s.Version, s.TableName)
+	logger.Scene("init").With("version", s.Version).With("table", s.TableName).Info("种子数据完成")
 	return nil
 }
 

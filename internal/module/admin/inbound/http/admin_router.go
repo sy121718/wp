@@ -1,11 +1,10 @@
 package adminhttp
 
 import (
-	"log"
-
 	"go_wp/internal/middleware/builtin"
 	adminservice "go_wp/internal/module/admin/service"
 	datarulepkg "go_wp/pkg/datarule"
+	"go_wp/pkg/logger"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -25,7 +24,7 @@ func SetupAdminRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 	// 注册数据权限 RuleProvider 到 datarule 引擎
 	datarulepkg.SetProvider(svc)
 	if err := datarulepkg.RegisterPluginWithDB(db); err != nil {
-		log.Printf("注册 datarule GORM 插件失败: %v", err)
+		logger.Scene("init").Error(err, "注册 datarule GORM 插件失败")
 	}
 
 	// --- 管理员 ---

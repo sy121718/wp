@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
 
 	"github.com/gin-gonic/gin"
@@ -66,6 +67,7 @@ func RequestRateLimitMiddleware(limit int, window time.Duration) gin.HandlerFunc
 		rateLimitMu.Unlock()
 
 		if entry.count > limit {
+			logger.Scene("middleware").With("key", key).Warn("请求被限流")
 			c.AbortWithStatusJSON(http.StatusTooManyRequests, response.Response{
 				Code:    http.StatusTooManyRequests,
 				Message: "请求过于频繁",

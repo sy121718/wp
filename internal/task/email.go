@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"go_wp/pkg/logger"
 	"go_wp/pkg/queue"
 )
 
@@ -30,7 +31,7 @@ func HandleEmailSend(ctx context.Context, data []byte) error {
 	}
 
 	// 这里写发送邮件的逻辑
-	fmt.Printf("发送邮件: To=%s, Subject=%s\n", payload.To, payload.Subject)
+	logger.Scene("task").With("to", payload.To).With("subject", payload.Subject).Info("发送邮件")
 
 	return nil
 }

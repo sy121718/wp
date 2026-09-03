@@ -10,6 +10,7 @@ import (
 	pubdto "go_wp/internal/module/publication/dto"
 	pubenums "go_wp/internal/module/publication/enums"
 	pubmodel "go_wp/internal/module/publication/model"
+	"go_wp/pkg/logger"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -98,6 +99,7 @@ func (s *Service) Activate(ctx context.Context, req *pubdto.ActivateReq) (res *p
 		return nil, errors.New(pubenums.ErrRouteNotFound)
 	}
 	if err != nil {
+		logger.Scene("publication").With("url", path).With("kind", "activate").Error(err, "路由激活失败")
 		return nil, err
 	}
 	route, err := s.model.GetRoute(ctx, req.ProjectID, path)
@@ -120,6 +122,7 @@ func (s *Service) Deactivate(ctx context.Context, req *pubdto.DeactivateReq) (er
 		Where("project_id = ? AND path = ? AND page_id IS NOT NULL", req.ProjectID, path).
 		Delete(&pubmodel.RouteEntity{})
 	if result.Error != nil {
+		logger.Scene("publication").With("url", path).With("kind", "deactivate").Error(result.Error, "路由取消失败")
 		return result.Error
 	}
 	return nil
@@ -175,6 +178,7 @@ func (s *Service) Redirect(ctx context.Context, req *pubdto.RedirectReq) (res *p
 		return nil, errors.New(pubenums.ErrRouteNotFound)
 	}
 	if err != nil {
+		logger.Scene("publication").With("url", oldPath).With("kind", "redirect").Error(err, "路由重定向失败")
 		return nil, err
 	}
 	route, err := s.model.GetRoute(ctx, req.ProjectID, oldPath)

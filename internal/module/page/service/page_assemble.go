@@ -16,6 +16,7 @@ import (
 	blockdto "go_wp/internal/module/block/dto"
 	"go_wp/internal/pipeline"
 	"go_wp/internal/templates"
+	"go_wp/pkg/logger"
 )
 
 // assembleCompile 装配感知编译：页眉块 + 页面主体 + 页脚块。
@@ -26,6 +27,7 @@ func (s *Service) assembleCompile(docJSON []byte) ([]byte, error) {
 	ctx := context.Background()
 	page, err := builder.ParsePage(docJSON)
 	if err != nil {
+		logger.Scene("build").With("err", err).Warn("页面文档解析失败，回退默认编译")
 		return pipeline.DefaultCompile(docJSON)
 	}
 	// 组件模板 Set（Jet 渲染路径必需；embed 加载，不依赖进程工作目录）。
@@ -37,6 +39,7 @@ func (s *Service) assembleCompile(docJSON []byte) ([]byte, error) {
 	opts := []builder.CompileOption{builder.WithBlockResolver(resolver), builder.WithComponentSet(set)}
 	compiled, err := builder.Compile(page, opts...)
 	if err != nil {
+		logger.Scene("build").Error(err, "页面编译失败")
 		return nil, err
 	}
 	structure, err := parseStructureBindings(docJSON)

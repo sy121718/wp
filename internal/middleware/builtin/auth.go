@@ -1,11 +1,11 @@
 package builtin
 
 import (
-	"log"
 	"strings"
 	"time"
 
 	"go_wp/pkg/auth"
+	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
 
 	"github.com/gin-gonic/gin"
@@ -50,6 +50,7 @@ func JWTAuthMiddleware() gin.HandlerFunc {
 		claims, err := auth.ParseToken(parts[1])
 		//解析 token 失败
 		if err != nil {
+			logger.Scene("middleware").With("reason", "token 解析失败").With("err", err).Warn("认证失败")
 			response.ErrorWithMessage(c, 401, "环境异常,请重新登录")
 			c.Abort()
 			return
@@ -63,6 +64,7 @@ func JWTAuthMiddleware() gin.HandlerFunc {
 			return
 		}
 		if blocked {
+			logger.Scene("middleware").With("reason", "账号被封禁下线").Warn("认证失败")
 			response.ErrorWithMessage(c, 401, "账号已被强制下线")
 			c.Abort()
 			return
@@ -75,6 +77,7 @@ func JWTAuthMiddleware() gin.HandlerFunc {
 			return
 		}
 		if session == nil || claims.SessionID == "" || session.SessionID != claims.SessionID {
+			logger.Scene("middleware").With("reason", "登录会话已失效").Warn("认证失败")
 			response.ErrorWithMessage(c, 401, "登录会话已失效，请重新登录")
 			c.Abort()
 			return
@@ -92,7 +95,7 @@ func JWTAuthMiddleware() gin.HandlerFunc {
 		if claims.ExpiresAt != nil && time.Until(claims.ExpiresAt.Time) <= 10*time.Minute {
 			newToken, _, err := auth.GenerateSessionToken(claims.UserID, claims.Username, claims.RememberMe, claims.SessionID)
 			if err != nil {
-				log.Printf("JWT 自动续期失败: %v", err)
+				logger.Scene("middleware").Error(err, "JWT 自动续期失败")
 				return
 			}
 			c.Header("X-New-Token", newToken)
@@ -100,7 +103,7 @@ func JWTAuthMiddleware() gin.HandlerFunc {
 
 		// 刷新在线心跳
 		if err := auth.RefreshOnline(c.Request.Context(), uint64(claims.UserID), 0); err != nil {
-			log.Printf("刷新在线心跳失败: %v", err)
+			logger.Scene("middleware").With("err", err).Warn("刷新在线心跳失败")
 		}
 	}
 }

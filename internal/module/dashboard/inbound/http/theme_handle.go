@@ -8,13 +8,13 @@ package dashboardhttp
 
 import (
 	"encoding/json"
-	"log"
 	"net/http"
 	"strings"
 
 	blockdto "go_wp/internal/module/block/dto"
 	dashboardenums "go_wp/internal/module/dashboard/enums"
 	projectdto "go_wp/internal/module/project/dto"
+	"go_wp/pkg/logger"
 
 	"github.com/gin-gonic/gin"
 )
@@ -104,7 +104,7 @@ func (h *Handle) CreateTheme(c *gin.Context) {
 	}
 	// 回填：该工程 theme_id 为空的历史页面挂到新主题（失败不阻塞，可再次保存触发）。
 	if err := h.pages.AttachThemeToUnassigned(c.Request.Context(), projectID, theme.ID); err != nil {
-		log.Printf("[theme] 回填未挂主题页面失败 project=%s theme=%s: %v", projectID, theme.ID, err)
+		logger.Scene("page").With("project", projectID).With("theme", theme.ID).Warn("回填未挂主题页面失败")
 	}
 	c.Redirect(http.StatusSeeOther, "/admin/themes?project="+projectID)
 }
@@ -144,7 +144,7 @@ func (h *Handle) DeleteTheme(c *gin.Context) {
 	if projectID != "" {
 		if active, err := h.projects.GetActiveTheme(c.Request.Context(), projectID); err == nil && active != nil {
 			if err := h.pages.AttachThemeToUnassigned(c.Request.Context(), projectID, active.ID); err != nil {
-				log.Printf("[theme] 删除主题后转挂页面失败 project=%s theme=%s: %v", projectID, active.ID, err)
+				logger.Scene("page").With("project", projectID).With("theme", active.ID).Warn("删除主题后转挂页面失败")
 			}
 		}
 	}
@@ -247,7 +247,9 @@ func (h *Handle) loadThemeSettings(c *gin.Context, themeID string) *themeSetting
 	}
 	var s themeSettingsJSON
 	if len(theme.Settings) > 0 {
-		_ = json.Unmarshal(theme.Settings, &s)
+		if err := json.Unmarshal(theme.Settings, &s); err != nil {
+			logger.Scene("page").With("theme_id", themeID).Error(err, "解析主题设置 JSON 失败")
+		}
 	}
 	if s.Colors != nil {
 		data.PColor = s.Colors["primary"]
@@ -315,16 +317,22 @@ func (h *Handle) SaveThemeSettings(c *gin.Context) {
 		return
 	}
 	// 颜色/字体快照合入该主题下全部页面（编译端 ThemeSettings 只认这两个键）。
-	snapshot, _ := json.Marshal(map[string]any{"colors": colors, "fontFamily": settings.FontFamily})
+	snapshot, err := json.Marshal(map[string]any{"colors": colors, "fontFamily": settings.FontFamily})
+	if err != nil {
+		logger.Scene("page").With("theme_id", themeID).Error(err, "序列化主题快照失败")
+	}
 	if err := h.pages.RefreshThemeForTheme(c.Request.Context(), themeID, snapshot); err != nil {
 		c.String(http.StatusInternalServerError, err.Error())
 		return
 	}
 	// 页眉/页脚块绑定合入 settings.structure（编译装配层按此内联）。
-	structureJSON, _ := json.Marshal(map[string]any{
+	structureJSON, err := json.Marshal(map[string]any{
 		"headerBlockId": settings.HeaderBlockID,
 		"footerBlockId": settings.FooterBlockID,
 	})
+	if err != nil {
+		logger.Scene("page").With("theme_id", themeID).Error(err, "序列化结构绑定失败")
+	}
 	if err := h.pages.RefreshStructureForTheme(c.Request.Context(), themeID, structureJSON); err != nil {
 		c.String(http.StatusInternalServerError, err.Error())
 		return

@@ -19,12 +19,12 @@
 package middleware
 
 import (
-	"log"
 	"strings"
 	"time"
 
 	"go_wp/config"
 	"go_wp/internal/middleware/builtin"
+	"go_wp/pkg/logger"
 
 	"github.com/gin-gonic/gin"
 	"github.com/spf13/viper"
@@ -48,7 +48,7 @@ func Setup(engine *gin.Engine) {
 
 	cfg, err := config.GetViper()
 	if err != nil {
-		log.Printf("中间件: 获取配置失败，使用默认值: %v", err)
+		logger.Scene("init").With("err", err).Warn("中间件配置读取失败，使用默认值")
 		cfg = nil
 	}
 

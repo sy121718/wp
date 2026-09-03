@@ -2,11 +2,12 @@ package config
 
 import (
 	"fmt"
-	"log"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"go_wp/pkg/logger"
 
 	"github.com/spf13/viper"
 )
@@ -48,7 +49,7 @@ func Init(configPath string) error {
 	}
 
 	v = cfg
-	log.Printf("配置加载成功: %s", configPath)
+	logger.Scene("init").With("path", configPath).Info("配置加载成功")
 	return nil
 }
 

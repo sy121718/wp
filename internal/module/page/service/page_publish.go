@@ -14,6 +14,7 @@ import (
 	pubdto "go_wp/internal/module/publication/dto"
 
 	"go_wp/internal/pipeline"
+	"go_wp/pkg/logger"
 
 	"github.com/google/uuid"
 )
@@ -64,11 +65,13 @@ func (s *Service) Build(ctx context.Context, req *pagedto.BuildReq) (res *pagedt
 	if req.ExpectedVersion > 0 && req.ExpectedVersion != page.DraftVersion {
 		return nil, errors.New(pageenums.ErrDraftVersionConflict)
 	}
+	logger.Scene("build").With("pageId", page.ID).Info("开始构建")
 	if err = s.syncKernel(page.DraftPath, page.DraftDocument, page.ID); err != nil {
 		return nil, err
 	}
 	hash, err := s.publisher.Build(page.ID, s.kernelVersion(page.ID))
 	if err != nil {
+		logger.Scene("build").With("pageId", page.ID).Error(err, "构建失败")
 		return nil, mapPublishError(err)
 	}
 
@@ -80,6 +83,7 @@ func (s *Service) Build(ctx context.Context, req *pagedto.BuildReq) (res *pagedt
 	if err = s.model.MarkStaged(ctx, page.ID, artifactID, now); err != nil {
 		return nil, err
 	}
+	logger.Scene("build").With("pageId", page.ID).With("hash", hash).Info("构建完成")
 	return &pagedto.PublishResp{
 		PageID: page.ID, Status: pipeline.StateReady,
 		StagedHash: hash, DraftPath: page.DraftPath,
@@ -95,6 +99,7 @@ func (s *Service) Publish(ctx context.Context, req *pagedto.PublishReq) (res *pa
 	if err != nil {
 		return nil, err
 	}
+	logger.Scene("publication").With("pageId", page.ID).Info("开始发布")
 	if page.StagedArtifactID == nil || *page.StagedArtifactID == "" {
 		return nil, errors.New(pageenums.ErrNoStagedArtifact)
 	}
@@ -113,6 +118,7 @@ func (s *Service) Publish(ctx context.Context, req *pagedto.PublishReq) (res *pa
 	version := s.kernelVersionOrOne(page.ID)
 	built, buildErr := s.publisher.Build(page.ID, version)
 	if buildErr != nil {
+		logger.Scene("build").With("pageId", page.ID).Error(buildErr, "发布前复构建失败")
 		return nil, mapPublishError(buildErr)
 	}
 	if built != stagedArt.ArtifactHash {
@@ -120,6 +126,7 @@ func (s *Service) Publish(ctx context.Context, req *pagedto.PublishReq) (res *pa
 	}
 	hash, err := s.publisher.Publish(page.ID)
 	if err != nil {
+		logger.Scene("publication").With("pageId", page.ID).Error(err, "发布失败")
 		return nil, mapPublishError(err)
 	}
 
@@ -132,9 +139,11 @@ func (s *Service) Publish(ctx context.Context, req *pagedto.PublishReq) (res *pa
 			ProjectID: page.ProjectID, Path: page.DraftPath,
 			PageID: page.ID, ArtifactID: stagedArt.ID,
 		}); err != nil {
+			logger.Scene("publication").With("pageId", page.ID).Error(err, "发布路由激活失败")
 			return nil, err
 		}
 	}
+	logger.Scene("publication").With("pageId", page.ID).With("hash", hash).Info("发布完成")
 	return &pagedto.PublishResp{
 		PageID: page.ID, Status: pipeline.StatePublished, ActiveHash: hash,
 		DraftPath: page.DraftPath, PublishedAt: now.Format(time.RFC3339),
@@ -150,14 +159,17 @@ func (s *Service) Rollback(ctx context.Context, req *pagedto.RollbackReq) (res *
 	if err != nil {
 		return nil, err
 	}
+	logger.Scene("page").With("pageId", page.ID).With("targetHash", req.TargetHash).Info("开始回滚")
 	targetArt, err := s.artifacts.Detail(ctx, &artifactdto.DetailReq{PageID: page.ID, Hash: req.TargetHash})
 	if err != nil {
+		logger.Scene("page").With("pageId", page.ID).Error(err, "回滚目标产物缺失")
 		return nil, errors.New(pageenums.ErrRollbackTargetMiss)
 	}
 	if err = s.restoreKernelForHistory(page, targetArt); err != nil {
 		return nil, err
 	}
 	if err = s.publisher.Rollback(page.ID, req.TargetHash); err != nil {
+		logger.Scene("page").With("pageId", page.ID).Error(err, "回滚失败")
 		return nil, mapPublishError(err)
 	}
 
@@ -170,6 +182,7 @@ func (s *Service) Rollback(ctx context.Context, req *pagedto.RollbackReq) (res *
 			ProjectID: page.ProjectID, Path: targetArt.CanonicalPath,
 			PageID: page.ID, ArtifactID: targetArt.ID,
 		}); err != nil {
+			logger.Scene("page").With("pageId", page.ID).Error(err, "回滚路由激活失败")
 			return nil, err
 		}
 	}
@@ -178,6 +191,7 @@ func (s *Service) Rollback(ctx context.Context, req *pagedto.RollbackReq) (res *
 	if st != nil && st.Status != "" {
 		respStatus = st.Status
 	}
+	logger.Scene("page").With("pageId", page.ID).With("targetHash", req.TargetHash).Info("回滚完成")
 	return &pagedto.PublishResp{
 		PageID: page.ID, Status: respStatus, ActiveHash: req.TargetHash,
 		DraftPath: page.DraftPath, PublishedAt: now.Format(time.RFC3339),
@@ -197,6 +211,7 @@ func (s *Service) UpdateURL(ctx context.Context, req *pagedto.UpdateURLReq) (res
 	if err != nil {
 		return nil, err
 	}
+	logger.Scene("page").With("pageId", page.ID).With("newPath", newPath).Info("开始修改 URL")
 	oldPath := page.DraftPathValue()
 	publishedPath := oldPath
 	if page.ActivePath != nil && *page.ActivePath != "" {
@@ -208,33 +223,40 @@ func (s *Service) UpdateURL(ctx context.Context, req *pagedto.UpdateURLReq) (res
 		return nil, err
 	}
 	if _, err = s.publisher.UpdateURL(page.ID, newPath, req.WithRedirect); err != nil {
+		logger.Scene("page").With("pageId", page.ID).Error(err, "URL 修改失败")
 		return nil, mapPublishError(err)
 	}
 	st, _ := s.publisher.Status(page.ID)
 
 	now := time.Now().UTC()
 	if err = s.model.MoveDraftPath(ctx, page.ID, newPath, now); err != nil {
+		logger.Scene("page").With("pageId", page.ID).Error(err, "草稿路径迁移失败")
 		return nil, err
 	}
 	if s.routes != nil {
-		_ = s.routes.RenameReserved(ctx, &pubdto.RenameReservedReq{
+		if rerr := s.routes.RenameReserved(ctx, &pubdto.RenameReservedReq{
 			ProjectID: page.ProjectID, PageID: page.ID,
 			OldPath: oldPath, NewPath: newPath,
-		})
+		}); rerr != nil {
+			logger.Scene("page").With("pageId", page.ID).Error(rerr, "URL 修改后重命名保留路由失败")
+		}
 		if _, err = s.routes.Activate(ctx, &pubdto.ActivateReq{
 			ProjectID: page.ProjectID, Path: newPath,
 			PageID: page.ID, ArtifactID: artifactIDOf(st),
 		}); err != nil {
+			logger.Scene("page").With("pageId", page.ID).Error(err, "URL 修改后路由激活失败")
 			return nil, err
 		}
 		if oldPath != newPath {
 			if req.WithRedirect {
 				if err = s.ensureRedirectRoute(ctx, page, publishedPath); err != nil {
+					logger.Scene("page").With("pageId", page.ID).Error(err, "重定向路由注册失败")
 					return nil, err
 				}
 			} else if err = s.routes.Deactivate(ctx, &pubdto.DeactivateReq{
 				ProjectID: page.ProjectID, Path: publishedPath,
 			}); err != nil {
+				logger.Scene("page").With("pageId", page.ID).Error(err, "旧 URL 取消激活失败")
 				return nil, err
 			}
 		}
@@ -243,6 +265,7 @@ func (s *Service) UpdateURL(ctx context.Context, req *pagedto.UpdateURLReq) (res
 	if st != nil && st.Status != "" {
 		status = st.Status
 	}
+	logger.Scene("page").With("pageId", page.ID).With("oldPath", publishedPath).With("newPath", newPath).Info("URL 修改完成")
 	return &pagedto.PublishResp{
 		PageID: page.ID, Status: status, ActiveHash: activeHashOf(st),
 		OldPath: publishedPath, DraftPath: newPath,
@@ -281,6 +304,8 @@ func (s *Service) restoreKernelForUpdate(ctx context.Context, page *pagemodel.Pa
 				Status: pipeline.StatePublished, Order: 1,
 			})
 			doc = page.DraftDocumentFor(art.SourceDocument)
+		} else {
+			logger.Scene("page").With("pageId", page.ID).With("artifactID", *page.ActiveArtifactID).With("err", err).Warn("回滚/改URL 时活动产物缺失")
 		}
 	}
 	rec := &pipeline.PageRecord{

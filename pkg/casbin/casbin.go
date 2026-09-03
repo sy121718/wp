@@ -2,11 +2,11 @@ package casbin
 
 import (
 	"fmt"
-	"log"
 	"strings"
 	"sync"
 
 	"go_wp/pkg/database"
+	"go_wp/pkg/logger"
 
 	casbinlib "github.com/casbin/casbin/v3"
 	"github.com/casbin/casbin/v3/model"
@@ -111,7 +111,7 @@ func InitCasbin(db *gorm.DB) error {
 	}
 
 	enforcer = instance
-	log.Println("Casbin 初始化成功")
+	logger.Scene("casbin").Info("Casbin 初始化成功")
 	return nil
 }
 
@@ -163,7 +163,7 @@ func rebuildURLCodeMap(e *casbinlib.Enforcer) {
 
 	policies, err := e.GetPolicy()
 	if err != nil {
-		log.Printf("Casbin 获取策略失败: %v", err)
+		logger.Scene("casbin").Error(err, "Casbin 获取策略失败")
 		return
 	}
 
@@ -180,11 +180,9 @@ func rebuildURLCodeMap(e *casbinlib.Enforcer) {
 		}
 		urlCodeMap.Store(urlCodeKey(url, method), code)
 	}
-	log.Printf("Casbin URL→code 映射已加载: %d 条", func() int {
-		count := 0
-		urlCodeMap.Range(func(_, _ interface{}) bool { count++; return true })
-		return count
-	}())
+	count := 0
+	urlCodeMap.Range(func(_, _ interface{}) bool { count++; return true })
+	logger.Scene("casbin").With("count", count).Info("Casbin URL→code 映射已加载")
 }
 
 // ============================
@@ -264,12 +262,16 @@ func ReplacePermissionDefinition(code, path, method string) error {
 }
 
 func restorePermissionPolicies(e *casbinlib.Enforcer, code string, rules [][]string, cause error) error {
-	_, _ = e.RemoveFilteredPolicy(3, code)
+	if _, err := e.RemoveFilteredPolicy(3, code); err != nil {
+		logger.Scene("casbin").Error(err, "权限策略替换后恢复失败")
+	}
 	for _, rule := range rules {
 		if len(rule) < 4 {
 			continue
 		}
-		_, _ = e.AddPolicy(rule[0], rule[1], rule[2], rule[3])
+		if _, err := e.AddPolicy(rule[0], rule[1], rule[2], rule[3]); err != nil {
+			logger.Scene("casbin").Error(err, "权限策略替换后恢复失败")
+		}
 	}
 	if err := ReloadPolicy(); err != nil {
 		return fmt.Errorf("替换权限策略失败: %v；恢复策略失败: %w", cause, err)

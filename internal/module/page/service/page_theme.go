@@ -11,11 +11,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 
 	"go_wp/internal/builder"
 	blockdto "go_wp/internal/module/block/dto"
 	"go_wp/internal/templates"
+	"go_wp/pkg/logger"
 )
 
 // mergeActiveTheme 把工程激活主题的设置合入页面文档：
@@ -34,6 +34,7 @@ func (s *Service) mergeActiveTheme(ctx context.Context, projectID string, doc js
 	}
 	if len(theme.Settings) > 0 {
 		if err := json.Unmarshal(theme.Settings, &settings); err != nil {
+			logger.Scene("page").With("err", err).Warn("主题设置解析失败")
 			return doc, nil // 主题设置非法时忽略
 		}
 	}
@@ -118,23 +119,24 @@ func (s *Service) compileBlockFragment(ctx context.Context, blockID string) (htm
 	}
 	block, err := s.blocks.Detail(ctx, &blockdto.DetailReq{ID: blockID})
 	if err != nil || block == nil || len(block.Document) == 0 {
-		log.Printf("[assemble] 页眉/页脚块不可用 block=%s: %v", blockID, err)
+		logger.Scene("build").With("block", blockID).Error(err, "页眉/页脚块不可用")
 		return "", ""
 	}
 	page, err := builder.ParsePage(block.Document)
 	if err != nil {
-		log.Printf("[assemble] 块文档解析失败 block=%s: %v", blockID, err)
+		logger.Scene("build").With("block", blockID).Error(err, "块文档解析失败")
 		return "", ""
 	}
 	set, serr := templates.NewEmbeddedComponentSet()
 	if serr != nil {
-		log.Printf("[assemble] 组件模板 Set 加载失败 block=%s: %v", blockID, serr)
+		logger.Scene("build").With("block", blockID).Error(serr, "组件模板 Set 加载失败")
 		return "", ""
 	}
 	compiled, err := builder.Compile(page, builder.WithComponentSet(set))
 	if err != nil {
-		log.Printf("[assemble] 块编译失败 block=%s: %v", blockID, err)
+		logger.Scene("build").With("block", blockID).Error(err, "块编译失败")
 		return "", ""
 	}
+	logger.Scene("build").With("block", blockID).Info("块编译成功")
 	return compiled.HTML, compiled.CSS
 }

@@ -11,6 +11,7 @@ import (
 	adminmodel "go_wp/internal/module/admin/model"
 	"go_wp/pkg/auth"
 	"go_wp/pkg/captcha"
+	"go_wp/pkg/logger"
 
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
@@ -43,6 +44,7 @@ func (s *Service) AdminLogin(ctx context.Context, req *admindto.AdminLoginReq, c
 		binaryExpr = "username = ?"
 	}
 	if err := s.am.DB(ctx).Where(binaryExpr+" OR email = ?", req.Username, req.Username).First(&entity).Error; err != nil {
+		logger.Scene("admin").With("username", req.Username).With("reason", "用户不存在").Warn("登录失败")
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, errors.New(adminenums.ErrBadCredentials)
 		}
@@ -51,6 +53,7 @@ func (s *Service) AdminLogin(ctx context.Context, req *admindto.AdminLoginReq, c
 
 	// 3) 检查是否被锁定
 	if entity.IsLocked() {
+		logger.Scene("admin").With("username", req.Username).With("reason", "账号已封禁").Warn("登录失败")
 		// key|param 协议：ErrAccountLocked 翻译模板含 %s，参数随错误消息传递（pkg/response 统一格式化）
 		return nil, fmt.Errorf("%s|%s", adminenums.ErrAccountLocked,
 			time.Until(*entity.LockedUntilTime).Round(time.Minute).String())
@@ -58,11 +61,13 @@ func (s *Service) AdminLogin(ctx context.Context, req *admindto.AdminLoginReq, c
 
 	// 4) 检查是否被禁用
 	if !entity.IsActive() {
+		logger.Scene("admin").With("username", req.Username).With("reason", "账号已禁用").Warn("登录失败")
 		return nil, errors.New(adminenums.ErrAccountDisabled)
 	}
 
 	// 5) 密码校验
 	if err := bcrypt.CompareHashAndPassword([]byte(entity.Password), []byte(req.Password)); err != nil {
+		logger.Scene("admin").With("username", req.Username).With("reason", "密码错误").Warn("登录失败")
 		recordLoginFailure(ctx, s.am, &entity)
 		return nil, errors.New(adminenums.ErrBadCredentials)
 	}
@@ -127,6 +132,7 @@ func (s *Service) AdminLogin(ctx context.Context, req *admindto.AdminLoginReq, c
 		return nil, fmt.Errorf("刷新在线状态失败: %w", err)
 	}
 
+	logger.Scene("admin").With("username", entity.Username).Info("登录成功")
 	return &admindto.AdminLoginResp{
 		AccessToken: accessToken,
 	}, nil
@@ -218,7 +224,9 @@ func recordLoginFailure(ctx context.Context, am *adminmodel.AdminModel, entity *
 		entity.LockedUntilTime = &lockedUntil
 	}
 
-	am.DB(ctx).Where("id = ?", entity.ID).
+	if err := am.DB(ctx).Where("id = ?", entity.ID).
 		Select("login_failure_count", "last_failure_time", "status", "locked_until_time").
-		Updates(entity)
+		Updates(entity).Error; err != nil {
+		logger.Scene("admin").Error(err, "记录登录失败状态失败")
+	}
 }

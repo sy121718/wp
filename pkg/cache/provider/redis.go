@@ -3,8 +3,9 @@ package cacheprovider
 import (
 	"context"
 	"fmt"
-	"log"
 	"sync"
+
+	"go_wp/pkg/logger"
 
 	"github.com/redis/go-redis/v9"
 	"github.com/spf13/viper"
@@ -59,7 +60,7 @@ func (p *redisProvider) initRedis(v *viper.Viper) (redis.UniversalClient, error)
 	cfg := getDefaultConfig()
 	if v != nil {
 		if err := v.UnmarshalKey("redis", &cfg); err != nil {
-			log.Printf("解析 redis 配置失败，使用默认配置: %v", err)
+			logger.Scene("init").With("err", err).Warn("解析 redis 配置失败，使用默认配置")
 			cfg = getDefaultConfig()
 		}
 	}
@@ -77,7 +78,7 @@ func (p *redisProvider) initRedis(v *viper.Viper) (redis.UniversalClient, error)
 		return nil, fmt.Errorf("redis 连接失败: %w", err)
 	}
 
-	log.Println("redis 初始化成功")
+	logger.Scene("init").Info("redis 初始化成功")
 	return client, nil
 }
 

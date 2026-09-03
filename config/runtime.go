@@ -3,8 +3,9 @@ package config
 import (
 	"errors"
 	"fmt"
-	"log"
 	"sync"
+
+	"go_wp/pkg/logger"
 )
 
 var (
@@ -37,7 +38,7 @@ func InitComponents() error {
 
 	initialized := make([]runtimeComponent, 0, len(runtimeComponents))
 
-	log.Println("开始初始化组件...")
+	logger.Scene("init").Info("开始初始化组件...")
 	for _, critical := range []bool{true, false} {
 		for _, component := range runtimeComponents {
 			if component.Critical != critical {
@@ -48,6 +49,7 @@ func InitComponents() error {
 			}
 
 			if err := component.Init(cfg); err != nil {
+				logger.Scene("init").With("component", component.Name).Error(err, "组件初始化失败")
 				initErr := fmt.Errorf("%s [%s]: %w", errComponentInitFailedPrefix, component.Name, err)
 				closeErr := closeComponents(initialized)
 				if closeErr != nil {
@@ -61,7 +63,7 @@ func InitComponents() error {
 
 	initializedRegistry = initialized
 	runtimeInited = true
-	log.Println("组件初始化完成")
+	logger.Scene("init").Info("组件初始化完成")
 	return nil
 }
 
@@ -73,7 +75,7 @@ func CloseComponents() error {
 		return nil
 	}
 
-	log.Println("开始关闭组件...")
+	logger.Scene("init").Info("开始关闭组件...")
 	closeErr := closeComponents(initializedRegistry)
 	initializedRegistry = nil
 	runtimeInited = false
@@ -82,7 +84,7 @@ func CloseComponents() error {
 		return closeErr
 	}
 
-	log.Println("组件关闭完成")
+	logger.Scene("init").Info("组件关闭完成")
 	return nil
 }
 
@@ -115,6 +117,7 @@ func closeComponents(components []runtimeComponent) error {
 			continue
 		}
 		if err := component.Close(); err != nil {
+			logger.Scene("init").With("component", component.Name).Error(err, "组件关闭失败")
 			closeErr = errors.Join(closeErr, fmt.Errorf("关闭组件 %s 失败: %w", component.Name, err))
 		}
 	}

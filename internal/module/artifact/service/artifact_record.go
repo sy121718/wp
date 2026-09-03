@@ -10,6 +10,7 @@ import (
 	artifactdto "go_wp/internal/module/artifact/dto"
 	artifactenums "go_wp/internal/module/artifact/enums"
 	artifactmodel "go_wp/internal/module/artifact/model"
+	"go_wp/pkg/logger"
 
 	"gorm.io/gorm"
 )
@@ -228,7 +229,9 @@ func toResp(e *artifactmodel.PageArtifactEntity) *artifactdto.ArtifactResp {
 	var meta struct {
 		CanonicalPath string `json:"canonicalPath"`
 	}
-	_ = json.Unmarshal(e.Manifest, &meta)
+	if err := json.Unmarshal(e.Manifest, &meta); err != nil {
+		logger.Scene("artifact").With("err", err).Warn("产物 manifest 解析失败")
+	}
 	return &artifactdto.ArtifactResp{
 		ID:               e.ID,
 		PageID:           e.PageID,

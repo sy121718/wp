@@ -5,10 +5,11 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"log"
 	"strings"
 	"sync"
 	"time"
+
+	"go_wp/pkg/logger"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/spf13/viper"
@@ -100,7 +101,7 @@ func Init(v *viper.Viper) error {
 	defaultCfg := getDefaultConfig()
 	if cfg.Secret == "" {
 		cfg.Secret = defaultCfg.Secret
-		log.Println("警告: JWT secret 未配置，使用默认值（生产环境请修改）")
+		logger.Scene("init").Warn("JWT secret 未配置，使用默认值")
 	}
 	if cfg.ExpireTime <= 0 {
 		cfg.ExpireTime = defaultCfg.ExpireTime
@@ -112,7 +113,7 @@ func Init(v *viper.Viper) error {
 	jwtConfig = cfg
 	jwtSecret = []byte(cfg.Secret)
 	inited = true
-	log.Println("JWT 初始化成功")
+	logger.Scene("init").Info("JWT 初始化成功")
 	return nil
 }
 

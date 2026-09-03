@@ -4,6 +4,7 @@ import (
 	"strconv"
 
 	"go_wp/pkg/casbin"
+	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
 
 	"github.com/gin-gonic/gin"
@@ -47,12 +48,14 @@ func CasbinMiddleware() gin.HandlerFunc {
 
 		ok, err := enforcer.Enforce(sub, obj, act)
 		if err != nil {
+			logger.Scene("middleware").With("sub", sub).With("obj", obj).With("act", act).Error(err, "鉴权失败")
 			response.ErrorWithMessage(c, 500, "权限验证失败")
 			c.Abort()
 			return
 		}
 
 		if !ok {
+			logger.Scene("middleware").With("sub", sub).With("obj", obj).With("act", act).Warn("鉴权失败")
 			response.ErrorWithMessage(c, 403, "无权限访问")
 			c.Abort()
 			return

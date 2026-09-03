@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"go_wp/pkg/logger"
 	"go_wp/pkg/queue"
 )
 
@@ -28,7 +29,7 @@ func HandleOrderCancel(ctx context.Context, data []byte) error {
 	}
 
 	// 这里写订单取消的逻辑
-	fmt.Printf("取消订单: OrderID=%d\n", payload.OrderID)
+	logger.Scene("task").With("order_id", payload.OrderID).Info("取消订单")
 
 	return nil
 }

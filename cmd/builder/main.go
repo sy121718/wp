@@ -16,6 +16,7 @@ import (
 	"sync"
 
 	"go_wp/internal/templates"
+	"go_wp/pkg/logger"
 
 	"github.com/gin-gonic/gin"
 )
@@ -103,7 +104,8 @@ func main() {
 	// 静态文件
 	router.Static("/static", "internal/templates/static")
 	if err := os.MkdirAll(previewArtifactRoot, 0o755); err != nil {
-		log.Fatalf("创建测试产物目录失败: %v", err)
+		logger.Scene("build").Error(err, "创建测试产物目录失败")
+		log.Fatal("创建测试产物目录失败")
 	}
 	router.StaticFS("/builder-preview", http.Dir(previewArtifactRoot))
 
@@ -152,8 +154,9 @@ func main() {
 	})
 
 	addr := ":8080"
-	log.Printf("构建器启动: http://localhost%s/builder", addr)
+	logger.Scene("build").With("addr", addr).Info("构建器启动")
 	if err := http.ListenAndServe(addr, router); err != nil {
-		log.Fatalf("启动失败: %v", err)
+		logger.Scene("build").Error(err, "构建器启动失败")
+		log.Fatal("启动失败")
 	}
 }

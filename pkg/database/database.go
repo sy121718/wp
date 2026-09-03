@@ -3,12 +3,12 @@ package database
 
 import (
 	"fmt"
-	"log"
 	"strings"
 	"sync"
 	"time"
 
 	dbdriver "go_wp/pkg/database/driver"
+	"go_wp/pkg/logger"
 
 	"github.com/spf13/viper"
 	"gorm.io/gorm"
@@ -201,7 +201,7 @@ func initDB(v *viper.Viper) (*gorm.DB, error) {
 	cfg := getDefaultConfig()
 	if v != nil {
 		if err := v.UnmarshalKey("database", &cfg); err != nil {
-			log.Printf("解析数据库配置失败，使用默认配置: %v", err)
+			logger.Scene("init").With("err", err).Warn("解析数据库配置失败，使用默认配置")
 			cfg = getDefaultConfig()
 		}
 	}
@@ -260,7 +260,7 @@ func initDB(v *viper.Viper) (*gorm.DB, error) {
 		return nil, fmt.Errorf("数据库连接测试失败: %w", err)
 	}
 
-	log.Printf("数据库初始化成功，driver=%s", strings.ToLower(cfg.Driver))
+	logger.Scene("init").With("driver", strings.ToLower(cfg.Driver)).Info("数据库初始化成功")
 	return gormDB, nil
 }
 
