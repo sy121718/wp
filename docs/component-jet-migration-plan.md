@@ -45,7 +45,7 @@ render(node) 流程（改造后）：
      nodeView{ Type, Template, Classes, Props..., Children:[nodeView] }
   2. Go 递归把整棵 Node 树转成 nodeView 树（每节点带 Template 名）
   3. set.GetTemplate("components/node.jet").Execute(buf, nil, rootNodeView)
-     —— 模板内部 {{ range .Children }}{{ include child.Template child }}{{ end }} 递归
+     —— 模板内部 {{ range _, child := .Children }}{{ include child.Template child }}{{ end }} 递归
   4. Go 遍历树，对每节点调用 compileCSS(node.ID, props, ctx.CSS)  —— CSS 与 HTML 分离
 ```
 
@@ -69,7 +69,7 @@ render(node) 流程（改造后）：
 ```html
 {# components/container.jet #}
 <{{ .Tag }} class="{{ .Classes }}"{{ .Attrs | unsafe }}>
-  {{ range child := .Children }}
+  {{ range _, child := .Children }}
     {{ include child.Template child }}  {* 运行时动态模板名 + 递归 *}
   {{ end }}
 </{{ .Tag }}>
@@ -80,7 +80,7 @@ globalref——占位/展开分支，展开时模板内递归引用块 root：
 ```html
 {# components/globalref.jet #}
 {{ if .Resolved }}
-  {{ range child := .ResolvedChildren }}
+  {{ range _, child := .ResolvedChildren }}
     {{ include child.Template child }}
   {{ end }}
 {{ else }}
@@ -130,7 +130,7 @@ heading / text（含富文本 unsafe）/ image / divider / spacer / list / infob
 ### Phase 2：结构型组件（含递归）
 slider / tabs / accordion / marquee / globalref
 
-- 模板内 `{{ range .Children }}{{ include child.Template child }}{{ end }}` 递归
+- 模板内 `{{ range _, child := .Children }}{{ include child.Template child }}{{ end }}` 递归
 - marquee：双份内容循环在模板内（两份 track 各 range 一次 children）
 - globalref：占位↔展开分支，展开时模板内递归引用块 root（Go 预解析块 root → nodeView）
 

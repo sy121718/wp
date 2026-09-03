@@ -1,0 +1,1 @@
+<{{ .Tag }} class="{{ .Classes }}"{{ if .CustomID }} id="{{ .CustomID }}"{{ end }}{{ unsafe(.Attrs) }}>{{ if .IconPrefix }}{{ unsafe(.IconPrefix) }}{{ end }}<span class="bt-text">{{ .Text }}</span>{{ if .IconSuffix }}{{ unsafe(.IconSuffix) }}{{ end }}</{{ .Tag }}>

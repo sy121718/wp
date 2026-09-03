@@ -1,0 +1,1 @@
+<{{ .Tag }} class="{{ .Classes }}"{{ unsafe(.Attrs) }}>{{ if .ShapeTop }}<span class="wp-shape wp-shape-top">{{ unsafe(.ShapeTop) }}</span>{{ end }}{{ range _, child := .Children }}{{ include child.Template child }}{{ end }}{{ if .ShapeBottom }}<span class="wp-shape wp-shape-bottom">{{ unsafe(.ShapeBottom) }}</span>{{ end }}</{{ .Tag }}>
