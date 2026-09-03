@@ -190,8 +190,6 @@ func buildDialector(cfg Config) (gorm.Dialector, error) {
 		return dbdriver.OpenMySQL(driverCfg), nil
 	case "postgres", "postgresql":
 		return dbdriver.OpenPostgres(driverCfg), nil
-	case "sqlite":
-		return dbdriver.OpenSQLite(driverCfg), nil
 	default:
 		return nil, fmt.Errorf("不支持的数据库驱动: %s", driverCfg.Driver)
 	}

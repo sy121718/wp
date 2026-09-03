@@ -4,27 +4,27 @@ import (
 	"context"
 	"encoding/json"
 	"testing"
+	"time"
 
 	artifactdto "go_wp/internal/module/artifact/dto"
 	artifactenums "go_wp/internal/module/artifact/enums"
 	artifactmodel "go_wp/internal/module/artifact/model"
 	artifactservice "go_wp/internal/module/artifact/service"
+	"go_wp/public/test/support"
 
-	"github.com/glebarez/sqlite"
-	"gorm.io/gorm"
 )
 
 const recordManifest = `{"files":{"index.html":"hash-html","manifest.json":"hash-manifest"}}`
 
 func newArtifactService(t *testing.T) *artifactservice.Service {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := support.NewPGTestDB(t)
 	if err != nil {
-		t.Fatalf("打开测试数据库失败: %v", err)
+		t.Skipf("本地 PostgreSQL 不可用，跳过产物链路测试：%v", err)
 	}
 	for _, statement := range []string{
-		`CREATE TABLE page_artifacts (id TEXT PRIMARY KEY, page_id TEXT NOT NULL, version INTEGER NOT NULL, source_document JSON NOT NULL, page_document_schema_version INTEGER NOT NULL, source_hash TEXT NOT NULL, build_input_manifest JSON NOT NULL, build_input_hash TEXT NOT NULL, artifact_provider TEXT NOT NULL, artifact_key TEXT NOT NULL, artifact_hash TEXT NOT NULL, compiler_version TEXT NOT NULL, registry_version TEXT NOT NULL, manifest JSON NOT NULL, payload_state TEXT NOT NULL, payload_deleted_at DATETIME, note TEXT NOT NULL, created_by TEXT NOT NULL, created_at DATETIME NOT NULL, UNIQUE(page_id, version), UNIQUE(id, page_id))`,
-		`CREATE TABLE content_objects (content_hash TEXT PRIMARY KEY, provider TEXT NOT NULL, object_key TEXT NOT NULL, byte_size INTEGER NOT NULL, created_at DATETIME NOT NULL, deleted_at DATETIME)`,
+		`CREATE TABLE page_artifacts (id TEXT PRIMARY KEY, page_id TEXT NOT NULL, version INTEGER NOT NULL, source_document JSON NOT NULL, page_document_schema_version INTEGER NOT NULL, source_hash TEXT NOT NULL, build_input_manifest JSON NOT NULL, build_input_hash TEXT NOT NULL, artifact_provider TEXT NOT NULL, artifact_key TEXT NOT NULL, artifact_hash TEXT NOT NULL, compiler_version TEXT NOT NULL, registry_version TEXT NOT NULL, manifest JSON NOT NULL, payload_state TEXT NOT NULL, payload_deleted_at TIMESTAMPTZ, note TEXT NOT NULL, created_by TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL, UNIQUE(page_id, version), UNIQUE(id, page_id))`,
+		`CREATE TABLE content_objects (content_hash TEXT PRIMARY KEY, provider TEXT NOT NULL, object_key TEXT NOT NULL, byte_size INTEGER NOT NULL, created_at TIMESTAMPTZ NOT NULL, deleted_at TIMESTAMPTZ)`,
 		`CREATE TABLE page_artifact_objects (artifact_id TEXT NOT NULL, content_hash TEXT NOT NULL, PRIMARY KEY(artifact_id, content_hash))`,
 	} {
 		if err := db.Exec(statement).Error; err != nil {
@@ -69,7 +69,7 @@ func TestArtifactRecordAndDetail(t *testing.T) {
 	if err != nil {
 		t.Fatalf("重复归档应幂等: %v", err)
 	}
-	if repeated.ID != first.ID || !repeated.CreatedAt.Equal(first.CreatedAt) {
+	if repeated.ID != first.ID || !repeated.CreatedAt.Truncate(time.Microsecond).Equal(first.CreatedAt.Truncate(time.Microsecond)) {
 		t.Fatalf("重复归档返回了不同记录: %+v vs %+v", repeated, first)
 	}
 

@@ -4,8 +4,8 @@ import (
 	"testing"
 
 	"go_wp/pkg/validate"
+	"go_wp/public/test/support"
 
-	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 )
 
@@ -96,9 +96,9 @@ func TestValidateReturnsErrorWhenDatabaseUnavailable(t *testing.T) {
 
 func openValidateDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := support.NewPGTestDB(t)
 	if err != nil {
-		t.Fatalf("初始化 sqlite 失败: %v", err)
+		t.Skipf("本地 PostgreSQL 不可用，跳过校验链路测试：%v", err)
 	}
 	if err := db.AutoMigrate(&validateUser{}); err != nil {
 		t.Fatalf("迁移测试表失败: %v", err)

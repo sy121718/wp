@@ -3,11 +3,13 @@ package datarule
 import (
 	"context"
 	"errors"
+	"fmt"
+	"os"
 	"reflect"
 	"strings"
 	"testing"
 
-	"github.com/glebarez/sqlite"
+	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
 
@@ -118,6 +120,28 @@ type testRuleProvider struct {
 	err   error
 }
 
+// openTestDB 打开本地 PostgreSQL 测试连接（DryRun 即可，无需建表）。
+// 连接信息默认对齐 config.yaml（127.0.0.1:5432 root/root wp），可用
+// PGHOST/PGPORT/PGUSER/PGPASSWORD/PGDATABASE 覆盖。本地 PostgreSQL 不可用时
+// 返回 error，由测试方决定 t.Skip —— 避免依赖环境导致的 CI 误报失败。
+func openTestDB() (*gorm.DB, error) {
+	host := envOr("PGHOST", "127.0.0.1")
+	port := envOr("PGPORT", "5432")
+	user := envOr("PGUSER", "root")
+	password := envOr("PGPASSWORD", "root")
+	dbname := envOr("PGDATABASE", "wp")
+	dsn := fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%s sslmode=disable TimeZone=Asia/Shanghai",
+		host, user, password, dbname, port)
+	return gorm.Open(postgres.Open(dsn), &gorm.Config{DryRun: true})
+}
+
+func envOr(key, fallback string) string {
+	if v := strings.TrimSpace(os.Getenv(key)); v != "" {
+		return v
+	}
+	return fallback
+}
+
 func (p testRuleProvider) GetRules(context.Context, *UserContext, string) ([]RuleConfig, error) {
 	return p.rules, p.err
 }
@@ -143,9 +167,9 @@ func TestPluginInjectsSQLAndArguments(t *testing.T) {
 			},
 		}},
 	}}}
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{DryRun: true})
+	db, err := openTestDB()
 	if err != nil {
-		t.Fatalf("打开测试数据库失败：%v", err)
+		t.Skipf("本地 PostgreSQL 不可用，跳过数据规则注入测试：%v", err)
 	}
 	if err = db.Use(NewDataRulePlugin(provider)); err != nil {
 		t.Fatalf("注册插件失败：%v", err)
@@ -157,7 +181,8 @@ func TestPluginInjectsSQLAndArguments(t *testing.T) {
 		t.Fatalf("生成查询失败：%v", result.Error)
 	}
 	query := result.Statement.SQL.String()
-	if !strings.Contains(query, "`status` IN (?,?)") || !strings.Contains(query, "`username` LIKE ?") {
+	// postgres 方言把占位符渲染为 $1/$2…，IN 展开为 ($1,$2)；条件标识与注入逻辑不变。
+	if !strings.Contains(query, "`status` IN ($1,$2)") || !strings.Contains(query, "`username` LIKE $3") {
 		t.Fatalf("数据规则未注入 SQL：%s", query)
 	}
 	if !reflect.DeepEqual(result.Statement.Vars, []any{"1", "2", "%admin%"}) {
@@ -168,9 +193,9 @@ func TestPluginInjectsSQLAndArguments(t *testing.T) {
 func TestPluginFailsClosedWhenProviderErrors(t *testing.T) {
 	RegisterDomain(DomainConfig{Domain: "TEST_ERROR", TableName: "protected_record_error"})
 	providerErr := errors.New("规则查询失败")
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{DryRun: true})
+	db, err := openTestDB()
 	if err != nil {
-		t.Fatalf("打开测试数据库失败：%v", err)
+		t.Skipf("本地 PostgreSQL 不可用，跳过数据规则 fail-closed 测试：%v", err)
 	}
 	if err = db.Use(NewDataRulePlugin(testRuleProvider{err: providerErr})); err != nil {
 		t.Fatalf("注册插件失败：%v", err)

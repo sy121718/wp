@@ -21,8 +21,12 @@ func TestCasbinInitAndCloseWithSQLite(t *testing.T) {
 
 	cfg := viper.New()
 	cfg.Set("server.mode", "test")
-	cfg.Set("database.driver", "sqlite")
-	cfg.Set("database.dbname", ":memory:")
+	cfg.Set("database.driver", "postgres")
+	cfg.Set("database.dbname", "wp_test")
+		cfg.Set("database.host", "127.0.0.1")
+		cfg.Set("database.port", 5432)
+		cfg.Set("database.user", "root")
+		cfg.Set("database.password", "root")
 	cfg.Set("database.max_idle_conns", 1)
 	cfg.Set("database.max_open_conns", 1)
 

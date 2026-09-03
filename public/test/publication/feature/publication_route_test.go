@@ -8,8 +8,7 @@ import (
 	pubmodel "go_wp/internal/module/publication/model"
 	pubservice "go_wp/internal/module/publication/service"
 
-	"github.com/glebarez/sqlite"
-	"gorm.io/gorm"
+	"go_wp/public/test/support"
 )
 
 const (
@@ -19,13 +18,14 @@ const (
 
 func newPublicationService(t *testing.T) *pubservice.Service {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := support.NewPGTestDB(t)
 	if err != nil {
-		t.Fatalf("打开测试数据库失败: %v", err)
+		t.Skipf("本地 PostgreSQL 不可用，跳过测试：%v", err)
+		return nil
 	}
 	for _, statement := range []string{
-		`CREATE TABLE page_routes (project_id TEXT NOT NULL, path TEXT NOT NULL, page_id TEXT, presentation_id TEXT, route_kind TEXT NOT NULL, artifact_id TEXT, updated_at DATETIME NOT NULL, PRIMARY KEY(project_id, path))`,
-		`CREATE TABLE publication_receipts (id TEXT PRIMARY KEY, source_type TEXT NOT NULL, source_id TEXT NOT NULL, action TEXT NOT NULL, path TEXT NOT NULL, from_artifact_id TEXT, to_artifact_id TEXT, receipt_state TEXT NOT NULL, receipt_data JSON NOT NULL, created_at DATETIME NOT NULL, completed_at DATETIME)`,
+		`CREATE TABLE page_routes (project_id TEXT NOT NULL, path TEXT NOT NULL, page_id TEXT, presentation_id TEXT, route_kind TEXT NOT NULL, artifact_id TEXT, updated_at TIMESTAMPTZ NOT NULL, PRIMARY KEY(project_id, path))`,
+		`CREATE TABLE publication_receipts (id TEXT PRIMARY KEY, source_type TEXT NOT NULL, source_id TEXT NOT NULL, action TEXT NOT NULL, path TEXT NOT NULL, from_artifact_id TEXT, to_artifact_id TEXT, receipt_state TEXT NOT NULL, receipt_data JSON NOT NULL, created_at TIMESTAMPTZ NOT NULL, completed_at TIMESTAMPTZ)`,
 	} {
 		if err := db.Exec(statement).Error; err != nil {
 			t.Fatalf("创建测试表失败: %v", err)

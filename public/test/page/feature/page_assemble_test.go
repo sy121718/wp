@@ -28,7 +28,7 @@ func TestPageAssembleInlinesHeaderBlock(t *testing.T) {
 	ctx := context.Background()
 
 	// 夹具补建 blocks 表（newPageService 只建页面链路表）。
-	if err := db.Exec(`CREATE TABLE blocks (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, name TEXT NOT NULL, kind TEXT NOT NULL, document JSON NOT NULL, created_at DATETIME NOT NULL, updated_at DATETIME NOT NULL)`).Error; err != nil {
+	if err := db.Exec(`CREATE TABLE blocks (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, name TEXT NOT NULL, kind TEXT NOT NULL, document JSON NOT NULL, created_at TIMESTAMPTZ NOT NULL, updated_at TIMESTAMPTZ NOT NULL)`).Error; err != nil {
 		t.Fatalf("创建 blocks 表失败: %v", err)
 	}
 	projects := projectservice.NewService(projectmodel.NewProjectModel(db))
@@ -134,7 +134,7 @@ func min(a, b int) int {
 func TestGlobalRefNodeInlinesBlockContent(t *testing.T) {
 	db, svc, projectID := newPageService(t)
 	ctx := context.Background()
-	if err := db.Exec(`CREATE TABLE blocks (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, name TEXT NOT NULL, kind TEXT NOT NULL, document JSON NOT NULL, created_at DATETIME NOT NULL, updated_at DATETIME NOT NULL)`).Error; err != nil {
+	if err := db.Exec(`CREATE TABLE blocks (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, name TEXT NOT NULL, kind TEXT NOT NULL, document JSON NOT NULL, created_at TIMESTAMPTZ NOT NULL, updated_at TIMESTAMPTZ NOT NULL)`).Error; err != nil {
 		t.Fatalf("创建 blocks 表失败: %v", err)
 	}
 	blocks := blockservice.NewService(blockmodel.NewBlockModel(db), projectservice.NewService(projectmodel.NewProjectModel(db)))

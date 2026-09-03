@@ -12,19 +12,19 @@ import (
 	projectmodel "go_wp/internal/module/project/model"
 	projectservice "go_wp/internal/module/project/service"
 
-	"github.com/glebarez/sqlite"
-	"gorm.io/gorm"
+	"go_wp/public/test/support"
 )
 
 func newProjectThemeService(t *testing.T) *projectservice.Service {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := support.NewPGTestDB(t)
 	if err != nil {
-		t.Fatalf("打开测试数据库失败: %v", err)
+		t.Skipf("本地 PostgreSQL 不可用，跳过测试：%v", err)
+		return nil
 	}
 	for _, statement := range []string{
-		`CREATE TABLE projects (id TEXT PRIMARY KEY, name TEXT NOT NULL, settings JSON NOT NULL, created_at DATETIME NOT NULL, updated_at DATETIME NOT NULL)`,
-		`CREATE TABLE themes (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, name TEXT NOT NULL, settings JSON NOT NULL, is_active BOOLEAN NOT NULL, created_at DATETIME NOT NULL, updated_at DATETIME NOT NULL)`,
+		`CREATE TABLE projects (id TEXT PRIMARY KEY, name TEXT NOT NULL, settings JSON NOT NULL, created_at TIMESTAMPTZ NOT NULL, updated_at TIMESTAMPTZ NOT NULL)`,
+		`CREATE TABLE themes (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, name TEXT NOT NULL, settings JSON NOT NULL, is_active BOOLEAN NOT NULL, created_at TIMESTAMPTZ NOT NULL, updated_at TIMESTAMPTZ NOT NULL)`,
 	} {
 		if err := db.Exec(statement).Error; err != nil {
 			t.Fatalf("创建测试表失败: %v", err)

@@ -12,19 +12,20 @@ import (
 	mediamodel "go_wp/internal/module/media/model"
 	mediaservice "go_wp/internal/module/media/service"
 
-	"github.com/glebarez/sqlite"
+	"go_wp/public/test/support"
 	"gorm.io/gorm"
 )
 
 func newMediaService(t *testing.T) (*gorm.DB, *mediaservice.Service) {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := support.NewPGTestDB(t)
 	if err != nil {
-		t.Fatalf("打开测试数据库失败: %v", err)
+		t.Skipf("本地 PostgreSQL 不可用，跳过测试：%v", err)
+		return nil, nil
 	}
 	for _, stmt := range []string{
-		`CREATE TABLE sys_file_category (id INTEGER PRIMARY KEY AUTOINCREMENT, category_name TEXT NOT NULL, category_code TEXT NOT NULL, parent_id INTEGER DEFAULT 0, sort_order INTEGER DEFAULT 0, icon TEXT, status INTEGER DEFAULT 1, create_by INTEGER, update_by INTEGER, create_time DATETIME, update_time DATETIME)`,
-		`CREATE TABLE sys_attachment (id INTEGER PRIMARY KEY AUTOINCREMENT, category_id INTEGER, file_name TEXT NOT NULL, file_path TEXT NOT NULL, file_size INTEGER, file_type TEXT, mime_type TEXT, storage_type TEXT DEFAULT 'local', storage_path TEXT, url TEXT, md5 TEXT, extra_info TEXT, status INTEGER DEFAULT 1, create_by INTEGER, update_by INTEGER, create_time DATETIME, update_time DATETIME)`,
+		`CREATE TABLE sys_file_category (id BIGSERIAL PRIMARY KEY, category_name TEXT NOT NULL, category_code TEXT NOT NULL, parent_id INTEGER DEFAULT 0, sort_order INTEGER DEFAULT 0, icon TEXT, status INTEGER DEFAULT 1, create_by INTEGER, update_by INTEGER, create_time TIMESTAMPTZ, update_time TIMESTAMPTZ)`,
+		`CREATE TABLE sys_attachment (id BIGSERIAL PRIMARY KEY, category_id INTEGER, file_name TEXT NOT NULL, file_path TEXT NOT NULL, file_size INTEGER, file_type TEXT, mime_type TEXT, storage_type TEXT DEFAULT 'local', storage_path TEXT, url TEXT, md5 TEXT, extra_info TEXT, status INTEGER DEFAULT 1, create_by INTEGER, update_by INTEGER, create_time TIMESTAMPTZ, update_time TIMESTAMPTZ)`,
 	} {
 		if err := db.Exec(stmt).Error; err != nil {
 			t.Fatalf("创建测试表失败: %v", err)
