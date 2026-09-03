@@ -17,7 +17,6 @@ import (
 	"strings"
 
 	"go_wp/internal/builder/core"
-	"go_wp/internal/builder/media"
 )
 
 // Type 组件类型标识。
@@ -72,12 +71,12 @@ var builtinIcons = map[string]string{
 
 // Icon 图标配置。
 type Icon struct {
-	// Source 图标源：builtin（内置白名单）/ media（媒体库 SVG，assetId）。
+	// Source 图标源：builtin（内置白名单）/ media（媒体库/外链 URL）。
 	Source string `json:"source,omitempty" ct:"select,builtin=内置图标,media=媒体库图片,sec=content,label=图标来源"`
 	// Name builtin 图标名（source=builtin）。
 	Name string `json:"name,omitempty" ct:"select,arrow-right=右箭头,arrow-left=左箭头,arrow-up=上箭头,arrow-down=下箭头,check=对勾,chevron-right=右尖括号,phone=电话,mail=邮件,sec=content,label=图标样式"`
-	// AssetID 媒体库 SVG assetId（source=media）。
-	AssetID string `json:"assetId,omitempty" ct:"regex,sec=content,label=图标图片" ctRegex:"^[A-Za-z0-9_-]{1,64}$"`
+	// URL 媒体库/外链图标 URL（source=media，img 直引）。
+	URL string `json:"url,omitempty" ct:"media,sec=content,label=图标图片"`
 	// Position 位置：prefix（前置）/ suffix（后置）。
 	Position string `json:"position,omitempty" ct:"select,prefix=图标在前,suffix=图标在后,sec=content,label=图标位置"`
 	// Spacing 图标与文案间距。
@@ -217,8 +216,8 @@ func validateExtra(p *Props, nodeID string) (err error) {
 				return fmt.Errorf("无效的内置图标: %q（白名单见规范）", p.Icon.Name)
 			}
 		} else if p.Icon.Source == "media" {
-			if !assetIDRe.MatchString(p.Icon.AssetID) {
-				return fmt.Errorf("无效的图标 assetId: %q", p.Icon.AssetID)
+			if p.Icon.URL == "" || strings.ContainsAny(p.Icon.URL, " \t\"'<>`;") {
+				return fmt.Errorf("无效的图标地址: %q", p.Icon.URL)
 			}
 		} else {
 			return fmt.Errorf("无效的图标源: %q", p.Icon.Source)
@@ -230,13 +229,10 @@ func validateExtra(p *Props, nodeID string) (err error) {
 	return nil
 }
 
-// assetIDRe 资产白名单。
-var assetIDRe = regexp.MustCompile(`^[A-Za-z0-9_-]{4,64}$`)
-
 // render 标签选择（a/button）+ 链接协议 → 文案 + 图标 + CSS 编译。
 func render(node *core.Node, p *Props, h *core.AtomRender) (string, error) {
 	// 图标 HTML。
-	iconHTML, err := renderIcon(p, h)
+	iconHTML, err := renderIcon(p)
 	if err != nil {
 		return "", err
 	}
@@ -312,8 +308,8 @@ func render(node *core.Node, p *Props, h *core.AtomRender) (string, error) {
 	return sb.String(), nil
 }
 
-// renderIcon 图标输出：内置 SVG 或媒体库 SVG 内联。
-func renderIcon(p *Props, h *core.AtomRender) (string, error) {
+// renderIcon 图标输出：内置 SVG 或媒体库/外链图标（img 直引）。
+func renderIcon(p *Props) (string, error) {
 	if p.Icon == nil {
 		return "", nil
 	}
@@ -329,18 +325,8 @@ func renderIcon(p *Props, h *core.AtomRender) (string, error) {
 		}
 		inner = path
 	} else {
-		if h.Media == nil {
-			return "", fmt.Errorf("编译上下文缺少媒体解析器，无法解析图标 assetId")
-		}
-		meta, err := h.Media.ResolveMedia(p.Icon.AssetID, media.VariantOriginal)
-		if err != nil {
-			return "", fmt.Errorf("图标解析失败: %w", err)
-		}
-		if meta.SrcHTML == "" {
-			// 非内联源：img 直引。
-			return `<img class="bt-icon" src="` + html.EscapeString(meta.URL) + `" alt="" style="width:` + html.EscapeString(size) + `;height:` + html.EscapeString(size) + `">`, nil
-		}
-		inner = meta.SrcHTML
+		// 媒体库/外链图标：URL 直引 img（构建期零解析，不内联 SVG 源码）。
+		return `<img class="bt-icon" src="` + html.EscapeString(p.Icon.URL) + `" alt="" style="width:` + html.EscapeString(size) + `;height:` + html.EscapeString(size) + `">`, nil
 	}
 	class := "bt-icon"
 	if p.Icon.HoverShift != "" {

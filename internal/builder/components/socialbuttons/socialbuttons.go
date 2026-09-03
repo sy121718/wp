@@ -122,9 +122,12 @@ func (c *Component) Validate(node *core.Node, ids map[string]bool) (err error) {
 			return fmt.Errorf("节点 %s props 反序列化失败: %w", node.ID, err)
 		}
 	}
-	for _, it := range p.Items {
+	for i, it := range p.Items {
 		if _, ok := platformIcons[it.Platform]; !ok {
 			return fmt.Errorf("节点 %s: 未知社交平台 %q", node.ID, it.Platform)
+		}
+		if url := strings.TrimSpace(it.URL); url != "" && !core.IsSafeURL(url) {
+			return fmt.Errorf("节点 %s: 第 %d 个社交按钮链接含危险协议: %q", node.ID, i+1, it.URL)
 		}
 	}
 	switch p.Color {

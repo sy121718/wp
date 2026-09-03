@@ -23,7 +23,7 @@ const (
 	ControlSafe   ControlKind = "safe"  // CSS 值白名单校验（IsSafeCSSValue）
 	ControlText   ControlKind = "text"  // 富文本/长文本（长度上限 maxlen，存原始 HTML 由组件自行处理）
 	ControlRegex  ControlKind = "regex" // 正则校验（pattern 来自独立 ctRegex tag）
-	ControlURL    ControlKind = "url"   // 链接：协议白名单（http/https/mailto/相对路径/#）
+	ControlURL    ControlKind = "url"   // 链接：协议白名单（http/https/mailto/tel/相对路径/#）
 	// UI 声明式控件（检查器渲染；ValidateSpec 仅做 maxlen，不校验值域）：
 	ControlMedia    ControlKind = "media"    // 媒体选择（预览缩略图 + 媒体库选择 + 清除）
 	ControlColor    ControlKind = "color"    // 颜色（色板 + 文本，支持 var(--token)）
@@ -228,7 +228,7 @@ func validateControlValue(c Control, fv reflect.Value, nodeID string) (err error
 				return msg("值不匹配模式: %q", s)
 			}
 		case ControlURL:
-			if !isSafeHrefURL(s) {
+			if !IsSafeURL(s) {
 				return msg("链接协议非法: %q", s)
 			}
 		}
@@ -250,18 +250,22 @@ func validateControlValue(c Control, fv reflect.Value, nodeID string) (err error
 	return nil
 }
 
-// urlSafeRe URL 白名单字符集（禁引号/尖括号/空白；@ 供 mailto）。
+// urlSafeRe URL 白名单字符集（禁引号/尖括号/空白；@ 供 mailto，+ 供 tel）。
 var urlSafeRe = regexp.MustCompile(`^[A-Za-z0-9./:?=&%~#+_@-]{1,500}$`)
 
-// isSafeHrefURL 链接协议白名单：http/https/mailto/相对路径/# 锚点。
-func isSafeHrefURL(s string) bool {
+// IsSafeURL 链接协议白名单：http/https/mailto/tel/相对路径/# 锚点。
+// 拒绝 javascript:/data:/vbscript: 等危险协议与属性注入字符。
+func IsSafeURL(s string) bool {
 	if !urlSafeRe.MatchString(s) {
 		return false
 	}
 	if strings.HasPrefix(s, "#") || strings.HasPrefix(s, "/") {
 		return true
 	}
-	return strings.HasPrefix(s, "http://") || strings.HasPrefix(s, "https://") || strings.HasPrefix(s, "mailto:")
+	return strings.HasPrefix(s, "http://") ||
+		strings.HasPrefix(s, "https://") ||
+		strings.HasPrefix(s, "mailto:") ||
+		strings.HasPrefix(s, "tel:")
 }
 
 // sectionOrder 面板分组固定输出顺序（content → style → advanced）。

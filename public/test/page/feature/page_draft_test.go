@@ -58,7 +58,7 @@ func newPageService(t *testing.T) (*gorm.DB, pagecontract.PageService, string) {
 	artifacts := artifactservice.NewService(artifactmodel.NewArtifactModel(db))
 	routes := pubservice.NewService(pubmodel.NewPublicationModel(db))
 	blocks := blockservice.NewService(blockmodel.NewBlockModel(db), projects)
-	return db, pageservice.NewService(pageModel, artifacts, routes, projects, blocks, nil), project.ID
+	return db, pageservice.NewService(pageModel, artifacts, routes, projects, blocks), project.ID
 }
 
 func TestPageDraftLifecycle(t *testing.T) {

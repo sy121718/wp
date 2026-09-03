@@ -104,6 +104,11 @@ func (c *Component) Validate(node *core.Node, ids map[string]bool) (err error) {
 			}
 		}
 	}
+	for i, it := range p.Items {
+		if link := strings.TrimSpace(it.Link); link != "" && !core.IsSafeURL(link) {
+			return fmt.Errorf("节点 %s: 第 %d 项链接含危险协议: %q", node.ID, i+1, it.Link)
+		}
+	}
 	if adv := core.AdvancedOf(&p); adv != nil {
 		return core.ValidateAdvanced(adv, node.ID, ids)
 	}

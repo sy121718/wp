@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"go_wp/internal/builder"
-	"go_wp/internal/builder/media"
 )
 
 // buttonDoc 构造 button 节点文档。
@@ -98,24 +97,14 @@ func TestButtonLinkBinding(t *testing.T) {
 	}
 }
 
-// TestButtonMediaIcon 媒体库 SVG 图标内联。
+// TestButtonMediaIcon 媒体库/外链图标：img 直引。
 func TestButtonMediaIcon(t *testing.T) {
-	s := media.NewStore()
-	id, _, err := s.Upload(media.Asset{
-		Hash: hash64("bic"), FileName: "check.svg", MimeType: "image/svg+xml",
-		Type: media.TypeSVG, Width: 24, Height: 24,
-		Variants: []media.Variant{{Kind: media.VariantOriginal, Format: "svg", URL: `<svg xmlns="http://www.w3.org/2000/svg"><path d="M1 1"/></svg>`, Width: 24, Height: 24}},
-	})
-	if err != nil {
-		t.Fatalf("上传失败: %v", err)
-	}
-	c, err := builder.Compile(buttonDoc(t, `{"text":"确认","action":"external","value":"https://a.com/ok","icon":{"source":"media","assetId":"`+id+`","position":"prefix"}}`),
-		builder.WithMediaResolver(s))
+	c, err := builder.Compile(buttonDoc(t, `{"text":"确认","action":"external","value":"https://a.com/ok","icon":{"source":"media","url":"/storage/check.svg","position":"prefix"}}`))
 	if err != nil {
 		t.Fatalf("编译失败: %v", err)
 	}
-	if !strings.Contains(c.HTML, "<svg") || !strings.Contains(c.HTML, "bt-icon") {
-		t.Errorf("媒体 SVG 图标未内联: %s", c.HTML)
+	if !strings.Contains(c.HTML, "<img") || !strings.Contains(c.HTML, "bt-icon") {
+		t.Errorf("媒体图标未直引: %s", c.HTML)
 	}
 }
 

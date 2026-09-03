@@ -16,7 +16,6 @@ import (
 
 	artifactcontract "go_wp/internal/module/artifact/contract"
 	pageenums "go_wp/internal/module/page/enums"
-	mediacontract "go_wp/internal/module/media/contract"
 	pubcontract "go_wp/internal/module/publication/contract"
 
 	"gorm.io/gorm"
@@ -34,17 +33,16 @@ type Service struct {
 	artifacts artifactcontract.ArtifactService
 	routes    pubcontract.PublicationService
 	blocks    blockcontract.BlockService
-	media     mediacontract.MediaService
 
 	publisher *pipeline.Publisher
 	store     *pipeline.LocalStore
 }
 
 // NewService 创建 Page 服务；同时初始化本地产物根（GO_WP_ARTIFACT_ROOT 可覆盖）。
-// 构建注入装配感知编译器：页眉/页脚块内联（方案 C）+ 媒体库附件解析（assetId → URL）。
+// 构建注入装配感知编译器：页眉/页脚块内联（方案 C）。
 func NewService(model *pagemodel.Model, artifacts artifactcontract.ArtifactService,
 	routes pubcontract.PublicationService, project projectcontract.ProjectService,
-	blocks blockcontract.BlockService, media mediacontract.MediaService) *Service {
+	blocks blockcontract.BlockService) *Service {
 	root := strings.TrimSpace(os.Getenv("GO_WP_ARTIFACT_ROOT"))
 	if root == "" {
 		root = filepath.Join("public", "runtime", "artifacts")
@@ -57,7 +55,6 @@ func NewService(model *pagemodel.Model, artifacts artifactcontract.ArtifactServi
 		routes:    routes,
 		project:   project,
 		blocks:    blocks,
-		media:     media,
 		publisher: pipeline.NewPublisher(store, publication),
 		store:     store,
 	}

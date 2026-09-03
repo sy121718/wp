@@ -16,12 +16,12 @@ server:
 
 # 数据库配置
 database:
-  driver: mysql  # mysql, postgres, sqlite, sqlserver
+  driver: postgres  # mysql, postgres, sqlite
   host: 127.0.0.1
-  port: 3306
+  port: 5432
   user: root
   password: "your-database-password"
-  dbname: go_mvc
+  dbname: wp
   max_idle_conns: 10
   max_open_conns: 100
   log_level: ""  # 留空时按 server.mode 推导

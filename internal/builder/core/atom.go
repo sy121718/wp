@@ -14,8 +14,6 @@ type AtomRender struct {
 	CustomID string // 自定义 Element ID（可空，已过白名单与全文档查重）
 	CSS      *CSSBuckets
 	TopLevel bool
-	// Media 媒体解析器（透传自 RenderContext）：媒体引用组件（core.image）经此解析 assetId。
-	Media MediaResolver
 	// Content CMS 内容解析器（透传自 RenderContext）：绑定组件（heading/text）经此解析字段。
 	Content ContentResolver
 }
@@ -103,7 +101,6 @@ func (a Atom[P]) Render(node *Node, topLevel bool, ctx *RenderContext) (err erro
 		CustomID: customID,
 		CSS:      ctx.CSS,
 		TopLevel: topLevel,
-		Media:    ctx.Media,
 		Content:  ctx.Content,
 	}
 	out, err := a.Spec.Render(node, &p, h)

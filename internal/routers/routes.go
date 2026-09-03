@@ -80,16 +80,16 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 	// 业务 API 路由（依赖顺序：media → project → block → artifact → publication → page）
 	api := router.Group("/api")
 	captcharouter.SetupCaptchaRoutes(api)
-	mediaSvc := mediahttp.SetupMediaRoutes(api, db)
+	mediahttp.SetupMediaRoutes(api, db)
 	projectService := projecthttp.SetupProjectRoutes(api, db)
 	blockSvc := blockhttp.SetupBlockRoutes(api, db, projectService)
 	artifactSvc := artifacthttp.SetupArtifactRoutes(api, db)
 	publicationSvc := pubhttp.SetupPublicationRoutes(api, db)
-	pageService := pagehttp.SetupPageRoutes(api, db, artifactSvc, publicationSvc, projectService, blockSvc, mediaSvc)
+	pageService := pagehttp.SetupPageRoutes(api, db, artifactSvc, publicationSvc, projectService, blockSvc)
 	adminhttp.SetupAdminRoutes(api, db)
 
-	// 页面路由（编辑器外壳依赖 page/block/media 契约，置于 API 装配之后）
-	dashboardhttp.SetupDashboardRoutes(router, pageService, projectService, blockSvc, mediaSvc)
+	// 页面路由（编辑器外壳依赖 page/block 契约，置于 API 装配之后）
+	dashboardhttp.SetupDashboardRoutes(router, pageService, projectService, blockSvc)
 
 	// 未匹配路由返回 404
 	router.NoRoute(func(c *gin.Context) {

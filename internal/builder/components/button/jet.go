@@ -33,8 +33,8 @@ type View struct {
 }
 
 // BuildView 生成按钮渲染视图：标签选择 + 链接协议 + 图标（与 render 输出结构一致）。
-func BuildView(p *Props, content core.ContentResolver, media core.MediaResolver) (View, error) {
-	iconHTML, err := renderIcon(p, &core.AtomRender{Media: media})
+func BuildView(p *Props, content core.ContentResolver) (View, error) {
+	iconHTML, err := renderIcon(p)
 	if err != nil {
 		return View{}, err
 	}

@@ -106,6 +106,38 @@ func TestSocialButtonsRenderBrandIcons(t *testing.T) {
 	}
 }
 
+func TestListRejectsDangerousLink(t *testing.T) {
+	doc := `{"settings":{"layout":{"mode":"full"}},"root":[{"type":"core.list","id":"l1","props":{"style":"icon","items":[{"icon":"check","text":"x","link":"javascript:alert(1)"}]}}]}`
+	page, err := builder.ParsePage([]byte(doc))
+	if err != nil {
+		t.Fatalf("解析失败: %v", err)
+	}
+	if err := builder.ValidatePage(page); err == nil {
+		t.Fatalf("应拒绝 javascript: 链接")
+	}
+}
+
+func TestListAcceptsSafeLinks(t *testing.T) {
+	doc := `{"settings":{"layout":{"mode":"full"}},"root":[{"type":"core.list","id":"l1","props":{"style":"icon","items":[{"icon":"check","text":"a","link":"https://example.com"},{"icon":"check","text":"b","link":"mailto:a@b.com"},{"icon":"check","text":"c","link":"tel:+8613800138000"},{"icon":"check","text":"d","link":"/about"},{"icon":"check","text":"e","link":"#sec"}]}}]}`
+	html, _ := compileDoc(t, doc)
+	for _, want := range []string{"https://example.com", "mailto:a@b.com", "tel:+8613800138000", "/about", "#sec"} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("安全链接应渲染: %s", want)
+		}
+	}
+}
+
+func TestSocialButtonsRejectDangerousURL(t *testing.T) {
+	doc := `{"settings":{"layout":{"mode":"full"}},"root":[{"type":"core.social_buttons","id":"so1","props":{"items":[{"platform":"facebook","url":"javascript:alert(1)"}]}}]}`
+	page, err := builder.ParsePage([]byte(doc))
+	if err != nil {
+		t.Fatalf("解析失败: %v", err)
+	}
+	if err := builder.ValidatePage(page); err == nil {
+		t.Fatalf("应拒绝 javascript: 链接")
+	}
+}
+
 func TestVideoEmbedYoutube(t *testing.T) {
 	doc := `{"settings":{"layout":{"mode":"full"}},"root":[{"type":"core.video","id":"v1","props":{"url":"https://www.youtube.com/watch?v=dQw4w9WgXcQ","controls":true}}]}`
 	html, _ := compileDoc(t, doc)

@@ -1,13 +1,11 @@
 // Package media 实现 go_wp 媒体中心的领域内核（规范 docs/02-B）：
 //
-//   - 不可变资产与稳定引用：文件上传生成唯一 assetId（内容哈希派生）与内容哈希，
-//     Page Document / CMS 内容仅保存 assetId，禁止硬编码临时物理路径；
+//   - 不可变资产与稳定引用：文件上传生成唯一 assetId（内容哈希派生）与内容哈希；
 //   - 物理存储与逻辑分类解耦：分类/标签是纯元数据，调整分类不改变物理路径与 URL；
-//   - 构建期变体注入：实现 core.ImageMediaResolver，Publish Compiler 按 assetId
-//     解析实际 URL、宽高、srcset 变体集合与 Alt，编译为标准响应式图片标签；
 //   - 引用追踪与保护：记录资产的引用方，被引用资产删除强制拦截并列出引用清单。
 //
-// 本包为纯领域实现（内存存储），媒体业务模块（上传/转码/持久化）在其上对接。
+// 自「WordPress 真实模式」起，内容引用面（组件）只存 URL 快照，构建期零解析；
+// 本包保留资产/变体/引用追踪领域模型，供未来 media_asset 三表落地对接。
 package media
 
 import (
@@ -37,14 +35,6 @@ const (
 
 // assetIDPrefix 本包派生 assetId 的前缀。
 const assetIDPrefix = "ast_"
-
-// 变体规格宽度基准（选择与排序用，实际以变体记录的 Width 为准）。
-var variantWidthRank = map[string]int{
-	VariantThumbnail: 320,
-	VariantMedium:    768,
-	VariantLarge:     1280,
-	VariantOriginal:  1 << 30,
-}
 
 var (
 	// hashRe 内容哈希白名单：十六进制 32~128 位。

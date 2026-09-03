@@ -29,7 +29,7 @@
         background: '背景色', border: '边框颜色', shadow: '阴影级别',
         variant: '外观风格', radius: '圆角', hoverLift: '悬停上浮', spacing: '间距',
         hoverShift: '悬停位移', action: '点击动作', value: '跳转地址', target: '打开方式',
-        rel: '链接关系', source: '图标来源', name: '名称', assetId: '媒体资源 ID',
+        rel: '链接关系', source: '图标来源', name: '名称',
         position: '位置', kind: '类型', iconName: '图标样式', align: '对齐',
         style: '样式', mode: '展示模式', aspectRatio: '宽高比', aspectRatioValue: '自定义宽高比',
         objectFit: '填充方式', borderWidth: '边框宽度', borderColor: '边框颜色',
@@ -1114,28 +1114,17 @@
                         return;
                     }
                     // 媒体类字段：缩略图预览 + 媒体库选择 + 清除（对齐 Elementor 图片控件）。
-                    // assetId 尾缀：媒体库回填 ID（构建期解析变体），并提供「外部地址」次级输入（写 src 互斥清空）。
-                    // src/bgImage 尾缀：直接回填 URL（画布/产物直出）。
-                    if (kind === 'input' && /\.(assetId|src|bgImage)$/.test(path)) {
-                        var isAssetID = /\.assetId$/.test(path);
-                        var srcPath = path.replace(/\.assetId$/, '.src');
+                    // src/bgImage 尾缀：直接回填 URL（画布/产物直出，构建期零解析）。
+                    if (kind === 'input' && /\.(src|bgImage)$/.test(path)) {
                         var setPreview = function (url) {
                             previewImg.src = url || '';
                             previewImg.classList.toggle('is-empty', !previewImg.src);
                             previewTip.textContent = previewImg.src ? '' : '点击选择图片';
                         };
-                        var applyPick = function (url, assetId) {
-                            if (isAssetID) {
-                                // 媒体库选择与外部地址互斥：选库清外部地址，反之亦然。
-                                commit(path, assetId);
-                                commit(srcPath, '');
-                                input.value = assetId;
-                                setPreview(url);
-                            } else {
-                                commit(path, url);
-                                input.value = url;
-                                setPreview(url);
-                            }
+                        var applyPick = function (url) {
+                            commit(path, url);
+                            input.value = url;
+                            setPreview(url);
                         };
                         var previewBox = document.createElement('div');
                         previewBox.className = 'wb-media-field' + (input.value ? ' has-image' : '');
@@ -1171,25 +1160,6 @@
                         wrap.removeChild(input);
                         wrap.appendChild(previewBox);
                         wrap.appendChild(row);
-                        if (isAssetID) {
-                            // 外部图片地址（次级输入）：填写写 src 并清 assetId，与媒体库选择互斥。
-                            var extInput = document.createElement('input');
-                            extInput.type = 'text';
-                            extInput.placeholder = '或输入外部图片地址（https://…）';
-                            extInput.value = String(get(srcPath) || '');
-                            extInput.addEventListener('change', function () {
-                                var v = extInput.value.trim();
-                                if (v) {
-                                    commit(srcPath, v);
-                                    commit(path, '');
-                                    input.value = '';
-                                    setPreview(v);
-                                } else {
-                                    commit(srcPath, '');
-                                }
-                            });
-                            wrap.appendChild(extInput);
-                        }
                         panel.appendChild(wrap);
                         return;
                     }
@@ -1585,12 +1555,11 @@
                     panel.appendChild(wrap);
                 }
 
-                // mediaControl 媒体选择控件：缩略图预览 + 媒体库选择 + 清除（显式 kind）。
+                // mediaControl 媒体选择控件：缩略图预览 + 媒体库选择 + 清除 + 外链粘贴（统一回填 URL）。
                 function mediaControl(label, path, ctl) {
                     var wrap = document.createElement('div'); wrap.className = 'wb-field';
                     var caption = document.createElement('label'); caption.textContent = label; wrap.appendChild(caption);
                     var val = get(path) == null ? '' : String(get(path));
-                    var isAssetID = /assetId$/i.test(path);
                     var box = document.createElement('div');
                     box.className = 'wb-media-field' + (val ? ' has-image' : '');
                     var img = document.createElement('img'); img.alt = '';
@@ -1599,31 +1568,31 @@
                     var tip = document.createElement('span'); tip.className = 'wb-media-tip';
                     tip.textContent = src ? '' : '点击选择图片';
                     box.appendChild(img); box.appendChild(tip);
+                    var ext = document.createElement('input'); ext.type='text'; ext.placeholder='或粘贴图片地址（https://…）';
+                    ext.value = val;
                     function set(v, url) {
                         commit(path, v);
+                        ext.value = v;
                         if (url) { img.src = url; img.classList.remove('is-empty'); tip.textContent = ''; }
                         else { img.src = ''; img.classList.add('is-empty'); tip.textContent = '点击选择图片'; }
                         box.classList.toggle('has-image', !!url);
                     }
                     box.addEventListener('click', function () {
-                        self.openMediaPicker(function (u, aid) {
-                            set(isAssetID ? aid : u, u);
+                        self.openMediaPicker(function (u) {
+                            set(u, u);
                         });
                     });
                     wrap.appendChild(box);
                     var row = document.createElement('div'); row.className = 'wb-media-row';
                     var pick = document.createElement('button'); pick.type='button'; pick.className='wb-btn wb-btn-secondary wb-btn-sm'; pick.textContent='媒体库';
-                    pick.addEventListener('click', function(){ self.openMediaPicker(function(u, aid){ set(isAssetID?aid:u, u); }); });
+                    pick.addEventListener('click', function(){ self.openMediaPicker(function(u){ set(u, u); }); });
                     var clear = document.createElement('button'); clear.type='button'; clear.className='wb-btn wb-btn-ghost wb-btn-sm'; clear.textContent='清除';
                     clear.addEventListener('click', function(){ set('', ''); });
                     row.appendChild(pick); row.appendChild(clear);
                     wrap.appendChild(row);
-                    // 外部地址次级输入。
-                    var ext = document.createElement('input'); ext.type='text'; ext.placeholder='或粘贴图片地址（https://…）';
-                    ext.value = isAssetID ? (get(path.replace(/assetId$/i,'src')) || '') : '';
                     ext.addEventListener('change', function(){
                         var v = ext.value.trim();
-                        if (v) { if (isAssetID) { commit(path, ''); commit(path.replace(/assetId$/i,'src'), v); set('', v); } else { set(v, v); } }
+                        set(v, v);
                     });
                     wrap.appendChild(ext);
                     panel.appendChild(wrap);
@@ -1938,17 +1907,6 @@
                     add.addEventListener('click', function () { items.push({ platform: 'facebook', url: '' }); save(); self.syncInspector(); });
                     panel.appendChild(add);
                 }
-                // video 视频面板：媒体库选文件（assetId 自动触发媒体控件）+ 外链 + 封面 + 播放选项。
-                function videoPanel() {
-                    field('视频文件', 'props.assetId', 'input');
-                    field('外链地址（YouTube/本地 URL）', 'props.url', 'input');
-                    field('封面图', 'props.poster', 'input');
-                    checkbox('自动播放', 'props.autoplay');
-                    checkbox('循环播放', 'props.loop');
-                    checkbox('静音', 'props.muted');
-                    checkbox('播放控件', 'props.controls');
-                }
-
                 // tabs 页签面板：标签列表 repeater（与 children 面板一一对应）。
                 function tabsPanel() {
                     if (!Array.isArray(get('props.tabs'))) set('props.tabs', []);
@@ -2055,7 +2013,7 @@
                         var row = document.createElement('div'); row.className = 'wb-repeater-row';
                         var thumb = document.createElement('img');
                         thumb.className = 'wb-repeater-thumb';
-                        var res = self.resolveAssetUrl(item.assetId);
+                        var res = self.resolveAssetUrl(item.url);
                         if (res) thumb.src = res;
                         row.appendChild(thumb);
                         var mid = document.createElement('div'); mid.className = 'wb-repeater-mid';
@@ -2063,8 +2021,8 @@
                         pick.type = 'button'; pick.className = 'wb-btn wb-btn-secondary wb-btn-sm';
                         pick.textContent = '选图';
                         pick.addEventListener('click', function () {
-                            self.openMediaPicker(function (url, assetId) {
-                                item.assetId = assetId || String(url);
+                            self.openMediaPicker(function (url) {
+                                item.url = url;
                                 save();
                             });
                         });
@@ -2088,7 +2046,7 @@
                     add.type = 'button'; add.className = 'wb-btn wb-btn-secondary wb-btn-sm wb-repeater-add';
                     add.textContent = '+ 添加图片';
                     add.addEventListener('click', function () {
-                        items.push({ assetId: '', alt: '', caption: '', link: '' });
+                        items.push({ url: '', alt: '', caption: '', link: '' });
                         save();
                         self.syncInspector();
                     });
@@ -2405,7 +2363,7 @@
                 this.renderPalette();
                 this.renderTree();
                 this.renderUI();
-                // 预载媒体库列表：检查器 assetId 字段的缩略图解析依赖 _mediaCache。
+                // 预载媒体库列表：检查器媒体字段缩略图解析依赖 _mediaCache（URL 直出）。
                 this.loadMediaList();
                 document.addEventListener('keydown', function (e) { self.onKeydown(e); });
                 // iframe 内点击经 postMessage 上报选中（editor=1 注入桥接脚本）。

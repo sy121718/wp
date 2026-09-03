@@ -1,6 +1,6 @@
 // Package image 实现 core.image 图片与矢量图组件（规范《02-C3 图片与矢量图组件规范》）。
-// 基座 core.Atom 吸收公共样板；本文件为业务本体：媒体源（媒体库 assetId / 外部 URL）、
-// SVG 内联、变体规格、尺寸比例与适应模式、CSS 滤镜与悬浮微动、
+// 基座 core.Atom 吸收公共样板；本文件为业务本体：媒体源（媒体库/外链统一 URL）、
+// 尺寸比例与适应模式、CSS 滤镜与悬浮微动、
 // 懒加载策略、图注（figure/figcaption）、点击动作（链接 / 零 JS 灯箱）、
 // CMS 图片字段绑定与占位图兜底。
 package image
@@ -12,7 +12,6 @@ import (
 	"strings"
 
 	"go_wp/internal/builder/core"
-	"go_wp/internal/builder/media"
 )
 
 // Type 组件类型标识。
@@ -61,31 +60,22 @@ type Hover struct {
 	Duration string `json:"duration,omitempty"`
 }
 
-// Binding CMS 图片字段绑定：解析结果为 assetId 或 URL；为空回退 Fallback。
+// Binding CMS 图片字段绑定：解析结果为图片 URL；为空回退 Fallback（同为 URL）。
 type Binding struct {
 	Field    string `json:"field,omitempty"`
 	Fallback string `json:"fallback,omitempty"`
 }
 
-// Props 图片组件属性：媒体源/规格 + 尺寸排版 + 视觉（滤镜/悬浮）+ 交互 + 绑定 + Advanced。
+// Props 图片组件属性：媒体源（媒体库/外链统一 URL）+ 尺寸排版 + 视觉（滤镜/悬浮）+ 交互 + 绑定 + Advanced。
 type Props struct {
-	// AssetID 媒体资产稳定标识（与 Src 二选一，AssetID 优先）。
-	// 媒体库附件为自增数字 ID（最短 1 位），故下限取 1。
-	AssetID string `json:"assetId,omitempty" ct:"media,sec=content,label=图片"`
-	// Src 外部绝对 URL（第三方 CDN / 站外图片；与 AssetID 二选一）。
-	Src string `json:"src,omitempty" ct:"media,sec=content,label=外部图片地址,hidden"`
-	// Variant 媒体库变体规格：original / large / medium / thumbnail（默认 original）。
-	Variant string `json:"variant,omitempty" ct:"select,original=原始,large=大图,medium=中图,thumbnail=缩略图,default=original,sec=content,label=图片分辨率"`
-	// InlineSVG 矢量内联开关：开启时以 SVG 源码内联输出（CSS 可控制 fill/stroke）。
-	InlineSVG bool `json:"inlineSvg,omitempty" ct:"bool,sec=style,label=内联 SVG"`
-	// Alt 局部替代文本（默认继承媒体库全局 Alt）。
+	// Src 图片地址：媒体库选择回填 URL 或外部绝对 URL（媒体库/外链统一，构建期直出）。
+	Src string `json:"src,omitempty" ct:"media,sec=content,label=图片地址"`
+	// Alt 局部替代文本。
 	Alt string `json:"alt,omitempty" ct:"text,maxlen=500,sec=content,label=替代文字"`
 	// Title 局部标题。
 	Title string `json:"title,omitempty" ct:"text,maxlen=500,sec=content,label=标题"`
 	// Caption 图注（非空时输出 <figure>/<figcaption>）。
 	Caption string `json:"caption,omitempty" ct:"text,maxlen=500,sec=content,label=图注"`
-	// Sizes srcset 的 sizes 提示。
-	Sizes string `json:"sizes,omitempty" ct:"safe,maxlen=200,sec=content,label=响应式尺寸提示"`
 
 	// --- 尺寸、排版与对齐 ---
 	AspectRatio      string `json:"aspectRatio,omitempty" ct:"select,original=原图,1:1=1:1,4:3=4:3,16:9=16:9,21:9=21:9,3:4=3:4,custom=自定义,sec=style,label=宽高比"`
@@ -131,11 +121,8 @@ var Widget = core.Atom[Props]{
 
 // validateExtra 关系性校验：媒体源互斥、比例取值、滤镜/缩放值域、绑定路径。
 func validateExtra(p *Props, nodeID string) (err error) {
-	if p.AssetID == "" && p.Src == "" && (p.Binding == nil || p.Binding.Field == "") {
-		return fmt.Errorf("必须提供媒体库 assetId、外部 URL 或 CMS 绑定")
-	}
-	if p.AssetID != "" && p.Src != "" {
-		return fmt.Errorf("assetId 与外部 URL 只能二选一")
+	if p.Src == "" && (p.Binding == nil || p.Binding.Field == "") {
+		return fmt.Errorf("必须提供图片地址或 CMS 绑定")
 	}
 	if p.AspectRatio == "custom" && p.AspectRatioValue == "" {
 		return fmt.Errorf("自定义比例必须提供 w / h 值")
@@ -171,15 +158,11 @@ func validateExtra(p *Props, nodeID string) (err error) {
 // fieldPathRe 绑定路径白名单。
 var fieldPathRe = regexp.MustCompile(`^[a-z][a-z0-9_]*\.[a-zA-Z][a-zA-Z0-9_]*$`)
 
-// render 媒体源解析（绑定 → assetId → MediaResolver；或外部 URL）→
-// SVG 内联 / 标准响应式 HTML → 图注 / 链接 / 零 JS 灯箱包裹。
+// render 图片 URL 直出（媒体库/外链统一，构建期零解析）→
+// 标准 img HTML → 图注 / 链接 / 零 JS 灯箱包裹。
 func render(node *core.Node, p *Props, h *core.AtomRender) (string, error) {
-	if p.Variant == "" {
-		p.Variant = media.VariantOriginal
-	}
-
-	// CMS 绑定优先：解析结果视为 assetId 或 URL。
-	assetID, src := p.AssetID, p.Src
+	// 图片地址：CMS 绑定优先，否则手填 Src（媒体库/外链统一 URL）。
+	src := p.Src
 	if p.Binding != nil && p.Binding.Field != "" {
 		if h.Content == nil {
 			return "", fmt.Errorf("编译上下文缺少内容解析器，无法解析绑定 %q", p.Binding.Field)
@@ -189,68 +172,48 @@ func render(node *core.Node, p *Props, h *core.AtomRender) (string, error) {
 			return "", fmt.Errorf("解析绑定 %q 失败: %w", p.Binding.Field, err)
 		}
 		if v != "" {
-			assetID, src = v, "" // 绑定值优先视为 assetId（MediaResolver 失败再当 URL 用）
+			src = v
 		} else if p.Binding.Fallback != "" {
-			assetID = p.Binding.Fallback
+			src = p.Binding.Fallback
 		}
+	}
+	if src == "" {
+		return "", fmt.Errorf("图片地址为空")
 	}
 
-	// 解析媒体元数据（宽高/srcset/源码），或构造纯 URL 元数据。
-	var meta *core.MediaMeta
-	if assetID != "" {
-		if h.Media == nil {
-			return "", fmt.Errorf("编译上下文缺少媒体解析器，无法解析 assetId")
-		}
-		m, err := h.Media.ResolveMedia(assetID, p.Variant)
-		if err != nil {
-			// 绑定值为外部 URL 的场景：解析失败回退为 URL 直载。
-			if src == "" && p.Binding != nil && p.Binding.Field != "" && looksLikeURL(assetID) {
-				src = assetID
-				meta = &core.MediaMeta{Type: core.MediaTypeImage, URL: src, Alt: p.Alt, Title: p.Title}
-			} else {
-				// 媒体资产缺失/被删除：降级渲染占位，不阻塞整页编译（生产事故防护）。
-				meta = &core.MediaMeta{Type: core.MediaTypeImage, URL: "", Alt: p.Alt, Title: p.Title}
-				meta.Missing = true
-			}
-		} else {
-			meta = m
-		}
+	// 组装 <img>：URL 直出，宽高由 CSS 控制，无媒体库变体解析。
+	var sb strings.Builder
+	sb.WriteString(`<img src="`)
+	sb.WriteString(html.EscapeString(src))
+	sb.WriteString(`"`)
+	if h.Classes != "" {
+		sb.WriteString(` class="`)
+		sb.WriteString(html.EscapeString(h.Classes))
+		sb.WriteString(`"`)
 	}
-	if src != "" {
-		if meta != nil {
-			meta.URL = src
-		} else {
-			meta = &core.MediaMeta{Type: core.MediaTypeImage, URL: src, Alt: p.Alt, Title: p.Title}
-		}
-	}
-
-	// 媒体资产缺失：输出可编辑占位框（编辑画布可见，不阻塞编译）。
-	if meta != nil && meta.Missing {
-		return `<div class="` + h.Classes + ` wp-image-missing" data-wp-id="` + html.EscapeString(node.ID) + `"><span>图片缺失（媒体库已删除）</span></div>`, nil
-	}
-
-	// 组装 img / 内联 SVG。
-	var imgHTML string
-	if meta.SrcHTML != "" && p.InlineSVG {
-		imgHTML = `<span class="` + h.Classes + `">` + meta.SrcHTML + `</span>`
+	if p.Loading == "eager" {
+		sb.WriteString(` loading="eager"`)
 	} else {
-		var err error
-		imgHTML, err = media.RenderImageHTML(meta, p.Alt, p.Title, media.ImageHTMLOptions{
-			Class: h.Classes, Sizes: p.Sizes,
-			Loading: p.Loading, FetchPriority: p.FetchPriority,
-		})
-		if err != nil {
-			return "", err
-		}
+		sb.WriteString(` loading="lazy"`)
 	}
-	if meta.Caption != "" && p.Caption == "" {
-		p.Caption = meta.Caption
+	if p.FetchPriority == "high" {
+		sb.WriteString(` fetchpriority="high"`)
 	}
+	sb.WriteString(` decoding="async" alt="`)
+	sb.WriteString(html.EscapeString(p.Alt))
+	sb.WriteString(`"`)
+	if p.Title != "" {
+		sb.WriteString(` title="`)
+		sb.WriteString(html.EscapeString(p.Title))
+		sb.WriteString(`"`)
+	}
+	sb.WriteString(`>`)
+	imgHTML := sb.String()
 
 	// 点击动作：lightbox 零 JS 实现（CSS :target 浮层）。
 	if p.ClickAction == "lightbox" {
 		imgHTML = `<a href="#wp-lb-` + node.ID + `">` + imgHTML + `</a>` +
-			lightboxHTML(node.ID, meta)
+			lightboxHTML(node.ID, src)
 	} else if p.Link != "" || p.ClickAction == "link" {
 		linkAttrs := `href="` + html.EscapeString(p.Link) + `"`
 		if p.LinkTarget == "blank" {
@@ -277,18 +240,10 @@ func render(node *core.Node, p *Props, h *core.AtomRender) (string, error) {
 	return imgHTML, nil
 }
 
-// looksLikeURL 粗判是否为外部 URL（回退直载用）。
-func looksLikeURL(s string) bool {
-	return strings.HasPrefix(s, "http://") || strings.HasPrefix(s, "https://") || strings.HasPrefix(s, "/")
-}
-
 // lightboxHTML 零 JS 灯箱浮层：CSS :target 显隐（docs/02-C6 说明约束内实现）。
-func lightboxHTML(nodeID string, meta *core.MediaMeta) string {
-	if meta == nil {
-		return ""
-	}
+func lightboxHTML(nodeID, src string) string {
 	return `<div id="wp-lb-` + nodeID + `" class="wp-lightbox"><a href="#` + nodeID + `" class="wp-lightbox-close">×</a><img src="` +
-		html.EscapeString(meta.URL) + `" alt=""></div>`
+		html.EscapeString(src) + `" alt=""></div>`
 }
 
 // compileCSS 图片样式：比例/适应/对齐/尺寸/滤镜/悬浮过渡/灯箱浮层。

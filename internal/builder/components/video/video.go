@@ -35,10 +35,8 @@ var (
 
 // Props 视频属性。
 type Props struct {
-	// AssetID 媒体库视频资产 ID（优先于 URL；构建期经 MediaResolver 解析为文件 URL）。
-	AssetID string `json:"assetId,omitempty" ct:"media,sec=content,label=图片"`
-	// URL 视频地址：YouTube/Vimeo 链接（嵌入）或本地 MP4（/storage/…）。
-	URL string `json:"url,omitempty" ct:"url,sec=content,label=外链地址"`
+	// URL 视频地址：媒体库回填 URL / YouTube/Vimeo 链接（嵌入）或本地 MP4（/storage/…）。
+	URL string `json:"url,omitempty" ct:"media,sec=content,label=视频地址"`
 	// Poster 封面图 URL（本地视频时显示）。
 	Poster string `json:"poster,omitempty" ct:"media,sec=content,label=封面图"`
 	// Autoplay 自动播放。
@@ -77,8 +75,8 @@ func (c *Component) Validate(node *core.Node, ids map[string]bool) (err error) {
 			return fmt.Errorf("节点 %s props 反序列化失败: %w", node.ID, err)
 		}
 	}
-	if p.AssetID == "" && p.URL == "" {
-		return fmt.Errorf("节点 %s: 请选择视频文件或填写外链地址", node.ID)
+	if p.URL == "" {
+		return fmt.Errorf("节点 %s: 请选择视频文件或填写视频地址", node.ID)
 	}
 	if adv := core.AdvancedOf(&p); adv != nil {
 		return core.ValidateAdvanced(adv, node.ID, ids)
@@ -104,23 +102,8 @@ func (c *Component) Render(node *core.Node, topLevel bool, ctx *core.RenderConte
 	ctx.HTML.WriteString(` wp-video">`)
 	ctx.HTML.WriteString(`<div class="wp-video-frame">`)
 
-	// 媒体库资产优先：构建期解析为文件 URL（video 类返回原文件）。
+	// 视频地址：URL 直出（媒体库/外链统一，构建期零解析）。
 	videoURL := p.URL
-	if p.AssetID != "" {
-		if ctx.Media == nil {
-			return fmt.Errorf("节点 %s: 编译上下文缺少媒体解析器，无法解析视频资产", node.ID)
-		}
-		meta, err := ctx.Media.ResolveMedia(p.AssetID, "")
-		if err != nil {
-			// 视频资产缺失：降级渲染占位，不阻塞整页编译。
-			ctx.HTML.WriteString(`<div class="`)
-			ctx.HTML.WriteString(core.NodeClass(node.ID))
-			ctx.HTML.WriteString(` wp-video-missing"><span>视频缺失（媒体库已删除）</span></div></div>`)
-			compileCSS(node.ID, &p, ctx.CSS)
-			return nil
-		}
-		videoURL = meta.URL
-	}
 	// 本地文件（.mp4/.webm/.ogg 或 /storage/）→ video 标签；否则尝试外链嵌入。
 	if embedSrc, ok := embedURL(videoURL); ok {
 		// iframe 嵌入（YouTube/Vimeo）。

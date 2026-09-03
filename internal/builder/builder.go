@@ -30,7 +30,7 @@ import (
 	_ "go_wp/internal/builder/components/button"
 	// core.divider：分割线组件（纯线 hr 直出 / Flex 嵌入文本或图标）。
 	_ "go_wp/internal/builder/components/divider"
-	// core.image：媒体引用组件（构建期经解析器注入变体）。
+	// core.image：媒体引用组件（构建期 URL 直出，零解析）。
 	_ "go_wp/internal/builder/components/image"
 	// core.globalref：全局块引用组件（构建期经 BlockResolver 内联展开，方案 C）。
 	_ "go_wp/internal/builder/components/globalref"
@@ -100,14 +100,8 @@ type CompileOption func(*compileConfig)
 
 // compileConfig 编译配置。
 type compileConfig struct {
-	media   core.MediaResolver
 	content core.ContentResolver
 	block   core.BlockResolver
-}
-
-// WithMediaResolver 注入媒体解析器（构建期媒体元数据注入，规范 docs/02-B §4）。
-func WithMediaResolver(r core.MediaResolver) CompileOption {
-	return func(c *compileConfig) { c.media = r }
 }
 
 // WithContentResolver 注入 CMS 内容解析器（构建期动态绑定静态填入，规范 docs/02-C1）。
@@ -176,7 +170,7 @@ func Compile(p *Page, opts ...CompileOption) (res *CompiledPage, err error) {
 	compileSettingsCSS(&p.Settings, &b)
 
 	var htmlBuf strings.Builder
-	ctx := &core.RenderContext{HTML: &htmlBuf, CSS: &b, Media: cfg.media, Content: cfg.content, Block: cfg.block}
+	ctx := &core.RenderContext{HTML: &htmlBuf, CSS: &b, Content: cfg.content, Block: cfg.block}
 	for _, n := range p.Root {
 		if err = core.RenderNode(n, true, ctx); err != nil {
 			return nil, err

@@ -1,6 +1,6 @@
 // Package gallery 实现 core.gallery 图集与画廊组件（规范《02-C4 图集与画廊组件规范》）。
 //
-// 数据源：静态图集（assetId 列表 + 单图 alt/caption/link 覆盖）或 CMS 图集字段绑定
+// 数据源：静态图集（URL 列表 + 单图 alt/caption/link 覆盖）或 CMS 图集字段绑定
 // （兼容字符串数组/对象数组/逗号分隔三种形态，空时隐藏或占位图兜底）。
 //
 // 展示模式：
@@ -20,7 +20,6 @@ import (
 	"strings"
 
 	"go_wp/internal/builder/core"
-	"go_wp/internal/builder/media"
 )
 
 // Type 组件类型标识。
@@ -52,9 +51,9 @@ var presetRatios = map[string]string{
 	"16:9": "16 / 9", "3:2": "3 / 2", "3:4": "3 / 4",
 }
 
-// Item 单图项：assetId + 单图覆盖元数据。
+// Item 单图项：URL + 单图覆盖元数据。
 type Item struct {
-	AssetID string `json:"assetId"`
+	URL     string `json:"url"`
 	Alt     string `json:"alt,omitempty"`
 	Caption string `json:"caption,omitempty"`
 	Link    string `json:"link,omitempty"`
@@ -104,7 +103,7 @@ type Hover struct {
 type Binding struct {
 	Field       string `json:"field,omitempty"`
 	Fallback    bool   `json:"fallback,omitempty"`    // 空时隐藏组件（默认）
-	Placeholder string `json:"placeholder,omitempty"` // fallback=false 时使用的占位图 assetId
+	Placeholder string `json:"placeholder,omitempty"` // fallback=false 时使用的占位图 URL
 }
 
 // Props gallery 属性：数据源 + 展示模式 + 统一样式 + 交互 + Advanced。
@@ -147,8 +146,6 @@ var Widget = core.Atom[Props]{
 }
 
 var (
-	// assetIDRe 媒体库附件为自增数字 ID（最短 1 位）。
-	assetIDRe   = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 	fieldPathRe = regexp.MustCompile(`^[a-z][a-z0-9_]*\.[a-zA-Z][a-zA-Z0-9_]*$`)
 )
 
@@ -162,13 +159,13 @@ func validateExtra(p *Props, nodeID string) (err error) {
 	if hasBinding && !fieldPathRe.MatchString(p.Binding.Field) {
 		return fmt.Errorf("无效的绑定字段路径: %q", p.Binding.Field)
 	}
-	if p.Binding != nil && p.Binding.Placeholder != "" && !assetIDRe.MatchString(p.Binding.Placeholder) {
-		return fmt.Errorf("无效的占位图 assetId: %q", p.Binding.Placeholder)
+	if p.Binding != nil && p.Binding.Placeholder != "" && !isSafeURL(p.Binding.Placeholder) {
+		return fmt.Errorf("无效的占位图 URL: %q", p.Binding.Placeholder)
 	}
 
 	for i := range p.Items {
-		if !assetIDRe.MatchString(p.Items[i].AssetID) {
-			return fmt.Errorf("第 %d 张图无效的 assetId: %q", i+1, p.Items[i].AssetID)
+		if p.Items[i].URL == "" || !isSafeURL(p.Items[i].URL) {
+			return fmt.Errorf("第 %d 张图无效的图片地址: %q", i+1, p.Items[i].URL)
 		}
 		if p.Items[i].Link != "" && !isSafeURL(p.Items[i].Link) {
 			return fmt.Errorf("第 %d 张图无效的链接: %q", i+1, p.Items[i].Link)
@@ -219,13 +216,7 @@ func validateExtra(p *Props, nodeID string) (err error) {
 	return nil
 }
 
-// resolvedItem 解析后的单图。
-type resolvedItem struct {
-	asset Item
-	meta  *core.MediaMeta
-}
-
-// render 数据源解析 → 逐项媒体解析 → Grid/Carousel 组装。
+// render 数据源解析 → Grid/Carousel 组装（URL 直出，构建期零解析）。
 func render(node *core.Node, p *Props, h *core.AtomRender) (string, error) {
 	if p.Mode == "" {
 		p.Mode = LayoutGrid
@@ -239,27 +230,12 @@ func render(node *core.Node, p *Props, h *core.AtomRender) (string, error) {
 		return "", nil // 空图集 + 无占位：组件隐藏（Fallback 默认）
 	}
 
-	var resolved []resolvedItem
-	for i := range items {
-		if h.Media == nil {
-			return "", fmt.Errorf("编译上下文缺少媒体解析器")
-		}
-		meta, err := h.Media.ResolveMedia(items[i].AssetID, media.VariantLarge)
-		if err != nil {
-			return "", fmt.Errorf("第 %d 张图解析失败: %w", i+1, err)
-		}
-		if meta.Type != core.MediaTypeImage && meta.Type != core.MediaTypeSVG {
-			return "", fmt.Errorf("第 %d 张图不是图片类型: %s", i+1, meta.Type)
-		}
-		resolved = append(resolved, resolvedItem{asset: items[i], meta: meta})
-	}
-
 	var body strings.Builder
 	switch p.Mode {
 	case LayoutCarousel:
-		body.WriteString(renderCarousel(node.ID, p, resolved))
+		body.WriteString(renderCarousel(node.ID, p, items))
 	default:
-		body.WriteString(renderGrid(p, resolved))
+		body.WriteString(renderGrid(p, items))
 	}
 
 	var out strings.Builder
@@ -295,7 +271,7 @@ func resolveSource(p *Props, h *core.AtomRender) (items []Item, err error) {
 		return parseValues(v)
 	}
 	if p.Binding.Placeholder != "" {
-		return []Item{{AssetID: p.Binding.Placeholder}}, nil
+		return []Item{{URL: p.Binding.Placeholder}}, nil
 	}
 	return nil, nil // 隐藏组件
 }
@@ -307,7 +283,7 @@ func parseValues(v string) (items []Item, err error) {
 		// 逗号分隔兜底。
 		for _, s := range strings.Split(v, ",") {
 			if s = strings.TrimSpace(s); s != "" {
-				items = append(items, Item{AssetID: s})
+				items = append(items, Item{URL: s})
 			}
 		}
 		return items, nil
@@ -315,7 +291,7 @@ func parseValues(v string) (items []Item, err error) {
 	for _, r := range raw {
 		var s string
 		if json.Unmarshal(r, &s) == nil {
-			items = append(items, Item{AssetID: s})
+			items = append(items, Item{URL: s})
 			continue
 		}
 		var it Item
@@ -327,7 +303,7 @@ func parseValues(v string) (items []Item, err error) {
 }
 
 // renderGrid 网格模式：纯 CSS Grid 直出。
-func renderGrid(p *Props, list []resolvedItem) string {
+func renderGrid(p *Props, list []Item) string {
 	var sb strings.Builder
 	for _, r := range list {
 		sb.WriteString(renderItem(p, r))
@@ -336,7 +312,7 @@ func renderGrid(p *Props, list []resolvedItem) string {
 }
 
 // renderCarousel 轮播骨架：语义静态结构 + data-carousel 增强属性。
-func renderCarousel(galleryID string, p *Props, list []resolvedItem) string {
+func renderCarousel(galleryID string, p *Props, list []Item) string {
 	c := p.Carousel
 	interval := c.Interval
 	if interval == 0 {
@@ -368,17 +344,11 @@ func renderCarousel(galleryID string, p *Props, list []resolvedItem) string {
 	return sb.String()
 }
 
-// renderItem 单图项：img + 点击动作包裹 + 图注结构。
-func renderItem(p *Props, r resolvedItem) string {
-	imgHTML, err := media.RenderImageHTML(r.meta, r.asset.Alt, "", media.ImageHTMLOptions{
-		Class: "gi",
-		Sizes: "(max-width: 768px) 100vw, 300px",
-	})
-	if err != nil {
-		return ""
-	}
+// renderItem 单图项：img（URL 直出）+ 点击动作包裹 + 图注结构。
+func renderItem(p *Props, r Item) string {
+	imgHTML := `<img class="gi" src="` + html.EscapeString(r.URL) + `" loading="lazy" decoding="async" alt="` + html.EscapeString(r.Alt) + `">`
 
-	href := r.asset.Link
+	href := r.Link
 	if href == "" {
 		href = p.DefaultLink
 	}
@@ -386,8 +356,8 @@ func renderItem(p *Props, r resolvedItem) string {
 	switch {
 	case p.ClickAction == ClickLightbox && href == "":
 		// 默认相册灯箱：点击打开原图（客户端增强脚本接管为滑动相册；无脚本时浏览器直开图片）。
-		item = `<a href="` + html.EscapeString(r.meta.URL) + `" data-lightbox="wp-g-` + "" + `">` + imgHTML + `</a>`
-	case (p.ClickAction == ClickLink || r.asset.Link != "") && href != "":
+		item = `<a href="` + html.EscapeString(r.URL) + `" data-lightbox="wp-g-">` + imgHTML + `</a>`
+	case (p.ClickAction == ClickLink || r.Link != "") && href != "":
 		item = `<a href="` + html.EscapeString(href) + `">` + imgHTML + `</a>`
 	default:
 		item = imgHTML
@@ -395,10 +365,7 @@ func renderItem(p *Props, r resolvedItem) string {
 
 	switch p.CaptionMode {
 	case CaptionBelow, CaptionHover:
-		caption := r.asset.Caption
-		if caption == "" {
-			caption = r.meta.Caption
-		}
+		caption := r.Caption
 		if caption != "" {
 			return `<figure>` + item + `<figcaption>` + html.EscapeString(caption) + `</figcaption></figure>`
 		}

@@ -17,9 +17,9 @@ type Config struct {
 // NormalizeConfig 归一化数据库配置
 func NormalizeConfig(cfg Config) Config {
 	defaultCfg := Config{
-		Driver:       "mysql",
+		Driver:       "postgres",
 		Host:         "127.0.0.1",
-		Port:         3306,
+		Port:         5432,
 		User:         "root",
 		Password:     "",
 		DBName:       "test",

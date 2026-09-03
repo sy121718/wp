@@ -16,9 +16,9 @@ import (
 )
 
 const (
-	defaultDatabaseDriver       = "mysql"
+	defaultDatabaseDriver       = "postgres"
 	defaultDatabaseHost         = "127.0.0.1"
-	defaultDatabasePort         = 3306
+	defaultDatabasePort         = 5432
 	defaultDatabaseUser         = "root"
 	defaultDatabasePassword     = ""
 	defaultDatabaseName         = ""
@@ -190,8 +190,6 @@ func buildDialector(cfg Config) (gorm.Dialector, error) {
 		return dbdriver.OpenMySQL(driverCfg), nil
 	case "postgres", "postgresql":
 		return dbdriver.OpenPostgres(driverCfg), nil
-	case "sqlserver", "mssql":
-		return dbdriver.OpenSQLServer(driverCfg), nil
 	case "sqlite":
 		return dbdriver.OpenSQLite(driverCfg), nil
 	default:

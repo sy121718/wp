@@ -5,21 +5,18 @@ import (
 	"testing"
 
 	"go_wp/internal/builder"
-	"go_wp/internal/builder/media"
 )
 
 // advancedImageDoc 构造带 Advanced 配置的图片文档。
-func advancedImageDoc(t *testing.T, assetID, advanced string) *builder.Page {
+func advancedImageDoc(t *testing.T, src, advanced string) *builder.Page {
 	t.Helper()
-	return mustParse(t, `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"pic","type":"core.image","props":{"assetId":"` + assetID + `","advanced":` + advanced + `}}]}`)
+	return mustParse(t, `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"pic","type":"core.image","props":{"src":"` + src + `","advanced":` + advanced + `}}]}`)
 }
 
 // TestAdvancedSpacingCompile 四向间距 + 三端响应式 + 负边距编译。
 func TestAdvancedSpacingCompile(t *testing.T) {
-	s := media.NewStore()
-	id := seedImageAsset(t, s, hash64("adv1"), "图")
 	advanced := `{"margin":{"desktop":{"top":"-12px","right":"0","bottom":"24px","left":"auto"},"tablet":{"top":"8px"},"mobile":{"left":"16px"}},"padding":{"desktop":{"top":"8px","right":"16px","bottom":"8px","left":"16px"}}}`
-	c, err := builder.Compile(advancedImageDoc(t, id, advanced), builder.WithMediaResolver(s))
+	c, err := builder.Compile(advancedImageDoc(t, "/storage/adv.jpg", advanced))
 	if err != nil {
 		t.Fatalf("编译失败: %v", err)
 	}
@@ -38,10 +35,8 @@ func TestAdvancedSpacingCompile(t *testing.T) {
 
 // TestAdvancedWidthAlignShadowOpacity 宽度/对齐/阴影/透明度/层级。
 func TestAdvancedWidthAlignShadowOpacity(t *testing.T) {
-	s := media.NewStore()
-	id := seedImageAsset(t, s, hash64("adv2"), "图")
 	advanced := `{"widthMode":"fixed","widthValue":"320px","alignSelf":"center","shadow":"lg","opacity":60,"zIndex":10}`
-	c, err := builder.Compile(advancedImageDoc(t, id, advanced), builder.WithMediaResolver(s))
+	c, err := builder.Compile(advancedImageDoc(t, "/storage/adv.jpg", advanced))
 	if err != nil {
 		t.Fatalf("编译失败: %v", err)
 	}
@@ -60,9 +55,7 @@ func TestAdvancedWidthAlignShadowOpacity(t *testing.T) {
 
 // TestAdvancedFullWidth 铺满父容器。
 func TestAdvancedFullWidth(t *testing.T) {
-	s := media.NewStore()
-	id := seedImageAsset(t, s, hash64("adv3"), "图")
-	c, err := builder.Compile(advancedImageDoc(t, id, `{"widthMode":"full"}`), builder.WithMediaResolver(s))
+	c, err := builder.Compile(advancedImageDoc(t, "/storage/adv.jpg", `{"widthMode":"full"}`))
 	if err != nil {
 		t.Fatalf("编译失败: %v", err)
 	}
@@ -73,10 +66,8 @@ func TestAdvancedFullWidth(t *testing.T) {
 
 // TestAdvancedBorderRadius 四向边框 + 四角独立圆角。
 func TestAdvancedBorderRadius(t *testing.T) {
-	s := media.NewStore()
-	id := seedImageAsset(t, s, hash64("adv4"), "图")
 	advanced := `{"border":{"width":"1px","style":"dashed","color":"#999"},"radius":{"topLeft":"16px","topRight":"16px","bottomRight":"0","bottomLeft":"0"}}`
-	c, err := builder.Compile(advancedImageDoc(t, id, advanced), builder.WithMediaResolver(s))
+	c, err := builder.Compile(advancedImageDoc(t, "/storage/adv.jpg", advanced))
 	if err != nil {
 		t.Fatalf("编译失败: %v", err)
 	}
@@ -92,9 +83,7 @@ func TestAdvancedBorderRadius(t *testing.T) {
 
 // TestAdvancedVisibility 三端显隐：桌面直出，平板/手机进媒体查询。
 func TestAdvancedVisibility(t *testing.T) {
-	s := media.NewStore()
-	id := seedImageAsset(t, s, hash64("adv5"), "图")
-	c, err := builder.Compile(advancedImageDoc(t, id, `{"hideOn":{"tablet":true,"mobile":true}}`), builder.WithMediaResolver(s))
+	c, err := builder.Compile(advancedImageDoc(t, "/storage/adv.jpg", `{"hideOn":{"tablet":true,"mobile":true}}`))
 	if err != nil {
 		t.Fatalf("编译失败: %v", err)
 	}
@@ -115,9 +104,7 @@ func TestAdvancedVisibility(t *testing.T) {
 
 // TestAdvancedAllHidden 三端全隐藏：编译器照常输出（哑与确定性）。
 func TestAdvancedAllHidden(t *testing.T) {
-	s := media.NewStore()
-	id := seedImageAsset(t, s, hash64("adv6"), "图")
-	c, err := builder.Compile(advancedImageDoc(t, id, `{"hideOn":{"desktop":true,"tablet":true,"mobile":true}}`), builder.WithMediaResolver(s))
+	c, err := builder.Compile(advancedImageDoc(t, "/storage/adv.jpg", `{"hideOn":{"desktop":true,"tablet":true,"mobile":true}}`))
 	if err != nil {
 		t.Fatalf("三端全隐藏不应编译失败: %v", err)
 	}
@@ -128,10 +115,8 @@ func TestAdvancedAllHidden(t *testing.T) {
 
 // TestAdvancedCustomAttributes 自定义 class 织入与自定义 ID 注入。
 func TestAdvancedCustomAttributes(t *testing.T) {
-	s := media.NewStore()
-	id := seedImageAsset(t, s, hash64("adv7"), "图")
 	advanced := `{"customClasses":["promo-hero","dark"],"customId":"hero-anchor"}`
-	c, err := builder.Compile(advancedImageDoc(t, id, advanced), builder.WithMediaResolver(s))
+	c, err := builder.Compile(advancedImageDoc(t, "/storage/adv.jpg", advanced))
 	if err != nil {
 		t.Fatalf("编译失败: %v", err)
 	}
@@ -145,10 +130,8 @@ func TestAdvancedCustomAttributes(t *testing.T) {
 
 // TestAdvancedLinkWithID 自定义 ID + 包裹链接：ID 落在 <a> 上。
 func TestAdvancedLinkWithID(t *testing.T) {
-	s := media.NewStore()
-	id := seedImageAsset(t, s, hash64("adv8"), "图")
-	doc := mustParse(t, `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"pic","type":"core.image","props":{"assetId":"`+id+`","link":"https://example.com","advanced":{"customId":"go-link"}}}]}`)
-	c, err := builder.Compile(doc, builder.WithMediaResolver(s))
+	doc := mustParse(t, `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"pic","type":"core.image","props":{"src":"/storage/adv.jpg","link":"https://example.com","advanced":{"customId":"go-link"}}}]}`)
+	c, err := builder.Compile(doc)
 	if err != nil {
 		t.Fatalf("编译失败: %v", err)
 	}
@@ -159,8 +142,6 @@ func TestAdvancedLinkWithID(t *testing.T) {
 
 // TestAdvancedValidateErrors Advanced 层校验拒绝。
 func TestAdvancedValidateErrors(t *testing.T) {
-	s := media.NewStore()
-	id := seedImageAsset(t, s, hash64("adv9"), "图")
 	cases := []struct{ name, advanced, want string }{
 		{"负内边距", `{"padding":{"desktop":{"top":"-8px"}}}`, "不允许负值"},
 		{"外边距超下限", `{"margin":{"desktop":{"top":"-500px"}}}`, "负值超出下限"},
@@ -178,7 +159,7 @@ func TestAdvancedValidateErrors(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := builder.Compile(advancedImageDoc(t, id, tc.advanced), builder.WithMediaResolver(s))
+			_, err := builder.Compile(advancedImageDoc(t, "/storage/adv.jpg", tc.advanced))
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("期望错误含 %q，实际: %v", tc.want, err)
 			}
@@ -188,12 +169,10 @@ func TestAdvancedValidateErrors(t *testing.T) {
 
 // TestAdvancedCustomIDDuplicate 自定义 ID 全文档唯一。
 func TestAdvancedCustomIDDuplicate(t *testing.T) {
-	s := media.NewStore()
-	id := seedImageAsset(t, s, hash64("adv10"), "图")
 	doc := mustParse(t, `{"settings":{"layout":{"mode":"full"}},"root":[`+
-		`{"id":"p1","type":"core.image","props":{"assetId":"`+id+`","advanced":{"customId":"same"}}},`+
-		`{"id":"p2","type":"core.image","props":{"assetId":"`+id+`","advanced":{"customId":"same"}}}]}`)
-	_, err := builder.Compile(doc, builder.WithMediaResolver(s))
+		`{"id":"p1","type":"core.image","props":{"src":"/storage/adv.jpg","advanced":{"customId":"same"}}},`+
+		`{"id":"p2","type":"core.image","props":{"src":"/storage/adv.jpg","advanced":{"customId":"same"}}}]}`)
+	_, err := builder.Compile(doc)
 	if err == nil || !strings.Contains(err.Error(), "自定义 ID 重复") {
 		t.Errorf("自定义 ID 重复应报错: %v", err)
 	}

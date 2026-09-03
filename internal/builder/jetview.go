@@ -81,7 +81,7 @@ func buttonViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nod
 	buttonPkg.CompileCSS(node.ID, &p, ctx.CSS)
 
 	// 渲染视图数据（标签 + 属性 + 图标）。
-	view, err := buttonPkg.BuildView(&p, ctx.Content, ctx.Media)
+	view, err := buttonPkg.BuildView(&p, ctx.Content)
 	if err != nil {
 		return nil, fmt.Errorf("节点 %s: %w", node.ID, err)
 	}

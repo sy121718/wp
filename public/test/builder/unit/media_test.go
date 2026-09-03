@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"go_wp/internal/builder"
-	"go_wp/internal/builder/core"
 	"go_wp/internal/builder/media"
 )
 
@@ -192,80 +191,20 @@ func TestSearch(t *testing.T) {
 	}
 }
 
-// TestResolveMediaVariants 构建期解析：变体选择、srcset、现代格式 source、全局 SEO。
-func TestResolveMediaVariants(t *testing.T) {
-	s := media.NewStore()
-	id := seedImageAsset(t, s, hash64("rv"), "响应式主图")
-
-	meta, err := s.ResolveMedia(id, media.VariantMedium)
-	if err != nil {
-		t.Fatalf("解析失败: %v", err)
-	}
-	if meta.Type != core.MediaTypeImage {
-		t.Errorf("类型异常: %s", meta.Type)
-	}
-	// 期望 medium 规格：精确命中 768 宽。
-	if meta.URL != "/m/hero-768.webp" || meta.Width != 768 || meta.Height != 432 {
-		t.Errorf("变体选择异常: %s %dx%d", meta.URL, meta.Width, meta.Height)
-	}
-	if meta.Alt != "响应式主图" || meta.Title != "全局标题" {
-		t.Errorf("全局 SEO 元数据丢失: %q %q", meta.Alt, meta.Title)
-	}
-	// 同格式（webp）srcset 按宽度升序。
-	wantSrcset := "/m/hero-320.webp 320w, /m/hero-768.webp 768w, /m/hero-1280.webp 1280w"
-	if meta.Srcset != wantSrcset {
-		t.Errorf("srcset 异常:\nwant %s\ngot  %s", wantSrcset, meta.Srcset)
-	}
-	// 现代格式 source：AVIF + WebP 各一条，AVIF 优先声明。
-	if len(meta.Sources) != 2 || meta.Sources[0].Type != "image/avif" || meta.Sources[1].Type != "image/webp" {
-		t.Errorf("现代格式 source 异常: %+v", meta.Sources)
-	}
-}
-
-// TestResolveMediaNonImage 非图片资产解析：返回稳定 URL 基础元数据。
-func TestResolveMediaNonImage(t *testing.T) {
-	s := media.NewStore()
-	id, _, err := s.Upload(media.Asset{
-		Hash: hash64("pdf"), FileName: "manual.pdf", MimeType: "application/pdf",
-		Type: media.TypeDocument, Size: 100, Alt: "产品手册",
-	})
-	if err != nil {
-		t.Fatalf("上传失败: %v", err)
-	}
-	meta, err := s.ResolveMedia(id, media.VariantOriginal)
-	if err != nil {
-		t.Fatalf("解析失败: %v", err)
-	}
-	if meta.Type != core.MediaTypeDocument || meta.URL == "" || meta.Alt != "产品手册" {
-		t.Errorf("文档解析异常: %+v", meta)
-	}
-	if meta.Srcset != "" || meta.Sources != nil {
-		t.Errorf("文档不应携带图片变体: %+v", meta)
-	}
-}
-
-// TestImageCompilePipeline 数据流闭环：Page Document（仅 assetId）→ 编译 → 响应式 <picture>。
+// TestImageCompilePipeline 数据流闭环：Page Document（仅 src URL）→ 编译 → <img> 直出。
 func TestImageCompilePipeline(t *testing.T) {
-	s := media.NewStore()
-	id := seedImageAsset(t, s, hash64("pipe"), "产品图")
-
-	doc := `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"pic","type":"core.image","props":{"assetId":"` + id + `","variant":"medium","alt":"局部覆盖","sizes":"50vw"}}]}`
-	c, err := builder.Compile(mustParse(t, doc), builder.WithMediaResolver(s))
+	doc := `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"pic","type":"core.image","props":{"src":"/storage/hero.jpg","alt":"局部覆盖","title":"标题"}}]}`
+	c, err := builder.Compile(mustParse(t, doc))
 	if err != nil {
 		t.Fatalf("编译失败: %v", err)
 	}
 
 	for _, want := range []string{
-		"<picture>",
-		`<source type="image/avif" srcset="/m/hero-320.avif 320w" sizes="50vw">`,
-		`<img src="/m/hero-768.webp"`,
-		`width="768" height="432"`,
+		`<img src="/storage/hero.jpg"`,
 		`loading="lazy"`,
-		`srcset="/m/hero-320.webp 320w, /m/hero-768.webp 768w, /m/hero-1280.webp 1280w"`,
-		`sizes="50vw"`,
-		`alt="局部覆盖"`,   // 局部覆盖全局
-		`title="全局标题"`, // 未覆盖时继承
-		"</picture>",
+		`decoding="async"`,
+		`alt="局部覆盖"`,
+		`title="标题"`,
 	} {
 		if !strings.Contains(c.HTML, want) {
 			t.Errorf("HTML 缺少 %q\n实际: %s", want, c.HTML)
@@ -273,39 +212,11 @@ func TestImageCompilePipeline(t *testing.T) {
 	}
 }
 
-// TestImageMissingResolver 缺少解析器：报明确错误而非静默。
-func TestImageMissingResolver(t *testing.T) {
-	s := media.NewStore()
-	id := seedImageAsset(t, s, hash64("nr"), "无解析器")
-	doc := `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"pic","type":"core.image","props":{"assetId":"` + id + `"}}]}`
-	_, err := builder.Compile(mustParse(t, doc))
-	if err == nil || !strings.Contains(err.Error(), "媒体解析器") {
-		t.Errorf("缺少解析器应报明确错误: %v", err)
-	}
-}
-
-// TestImageWrongAssetType 类型断言：文档资产挂到图片组件必须报错。
-func TestImageWrongAssetType(t *testing.T) {
-	s := media.NewStore()
-	id, _, err := s.Upload(media.Asset{
-		Hash: hash64("d2"), FileName: "b.pdf", MimeType: "application/pdf", Type: media.TypeDocument, Size: 1,
-	})
-	if err != nil {
-		t.Fatalf("上传失败: %v", err)
-	}
-	doc := `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"pic","type":"core.image","props":{"assetId":"` + id + `"}}]}`
-	_, err = builder.Compile(mustParse(t, doc), builder.WithMediaResolver(s))
-	if err == nil || !strings.Contains(err.Error(), "仅接受图片类媒体") {
-		t.Errorf("类型不匹配应报错: %v", err)
-	}
-}
-
-// TestImageValidateProps 图片组件校验：非法 assetId/变体/叶子约束。
+// TestImageValidateProps 图片组件校验：非法地址/叶子约束。
 func TestImageValidateProps(t *testing.T) {
 	cases := []struct{ name, json, want string }{
-		{"非法assetId", `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"i1","type":"core.image","props":{"assetId":"a b"}}]}`, "媒体值非法"},
-		{"非法变体", `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"i1","type":"core.image","props":{"assetId":"ast_x","variant":"huge"}}]}`, "不在选项内"},
-		{"图片带子节点", `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"i1","type":"core.image","props":{"assetId":"ast_x"},"children":[{"id":"c1","type":"core.image","props":{"assetId":"ast_y"}}]}]}`, "叶子节点"},
+		{"非法地址", `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"i1","type":"core.image","props":{"src":"a b"}}]}`, "媒体值非法"},
+		{"图片带子节点", `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"i1","type":"core.image","props":{"src":"/x.jpg"},"children":[{"id":"c1","type":"core.image","props":{"src":"/y.jpg"}}]}]}`, "叶子节点"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
