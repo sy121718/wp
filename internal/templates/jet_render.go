@@ -26,6 +26,8 @@ func NewJetHTMLRender(viewDir string, isDev bool) ginrender.HTMLRender {
 		jet.DevelopmentMode(isDev),
 		jet.WithTemplateNameExtensions([]string{"", ".html"}),
 	)
+	// 注入全局函数（formatNumber/formatBytes/assetURL），后台与工作台模板统一可用。
+	injectGlobals(set)
 	return &jetHTMLRender{set: set}
 }
 

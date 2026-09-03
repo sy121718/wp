@@ -84,7 +84,10 @@ func (c *Component) Validate(node *core.Node, ids map[string]bool) (err error) {
 	if adv := core.AdvancedOf(&p); adv != nil {
 		return core.ValidateAdvanced(adv, node.ID, ids)
 	}
-	return nil
+		if err = core.ValidateSpec(&p, node.ID); err != nil {
+		return err
+	}
+return nil
 }
 
 // Render 渲染轮播结构。

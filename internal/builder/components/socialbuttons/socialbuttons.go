@@ -87,6 +87,14 @@ var brandColors = map[string]string{
 	"bluesky":   "#0a7aff",
 }
 
+// brandOrder 平台品牌色 CSS 输出的固定顺序（确定性构建，避免 map 遍历随机）。
+var brandOrder = []string{
+	"facebook", "x", "instagram", "youtube", "tiktok", "telegram",
+	"whatsapp", "pinterest", "linkedin", "threads", "vimeo", "flickr",
+	"github", "dribbble", "behance", "soundcloud", "spotify", "snapchat",
+	"discord", "tumblr", "viber", "vk", "bluesky",
+}
+
 // platformIcons 平台内联 SVG（fill=currentColor）。
 var platformIcons = map[string]string{
 	"facebook": `<svg viewBox="0 0 24 24" fill="currentColor" width="1em" height="1em"><path d="M22 12.06C22 6.5 17.52 2 12 2S2 6.5 2 12.06c0 5.02 3.66 9.18 8.44 9.94v-7.03H7.9v-2.91h2.54V9.85c0-2.52 1.49-3.91 3.77-3.91 1.09 0 2.24.2 2.24.2v2.47h-1.26c-1.24 0-1.63.78-1.63 1.57v1.88h2.78l-.45 2.9h-2.33V22c4.78-.75 8.44-4.9 8.44-9.94z"/></svg>`,
@@ -127,7 +135,10 @@ func (c *Component) Validate(node *core.Node, ids map[string]bool) (err error) {
 	if adv := core.AdvancedOf(&p); adv != nil {
 		return core.ValidateAdvanced(adv, node.ID, ids)
 	}
-	return nil
+		if err = core.ValidateSpec(&p, node.ID); err != nil {
+		return err
+	}
+return nil
 }
 
 // Render 渲染社交按钮组。
@@ -231,12 +242,14 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		b.Add(core.BreakpointDesktop, sel+" .wp-social-btn", []string{
 			"color: " + col, "background: rgba(0,0,0,.06)",
 		})
-	default: // brand
-		var rules []string
-		for platform, color := range brandColors {
+	default: // brand（有序输出，保证确定性构建）
+		for _, platform := range brandOrder {
+			color, ok := brandColors[platform]
+			if !ok {
+				continue
+			}
 			cls := sel + " a[aria-label=\"" + platform + "\"]"
 			b.Add(core.BreakpointDesktop, cls, []string{"color: #fff", "background: " + color})
 		}
-		_ = rules
 	}
 }

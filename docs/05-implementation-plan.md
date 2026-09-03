@@ -73,7 +73,7 @@
 - [ ] 加入 CSRF 中间件依赖
 - [ ] 建立 `internal/templates/admin/` 目录结构和 Jet 渲染 facade
   - 实现 `gin.HTMLRender` 接口封装 Jet `*jet.Set`
-  - 开发模式 `SetDevelopmentMode(true)`
+  - 开发模式 `DevelopmentMode(true)`
 - [ ] 建立 `internal/templates/publish/` 目录（构建期模板，与 Admin 模板隔离）
 - [ ] 修复 `public/migrations/`：当前只有 runner 无迁移文件
   - 增加独立 migration 命令

@@ -20,7 +20,7 @@ go_wp 是 `CMS + Visual Website Builder + Static Publishing Engine`。
 | 鉴权 | Casbin | Enforce(user_id, path, method) |
 | 公开动态片段 | HTMX + Go Handler | 按 Registry capability 返回受控 HTML Fragment |
 | 富文本编辑器 | TinyMCE（CDN） | 文章内容编辑 |
-| 数据库 | MySQL | CMS 内容、Page 草稿、Artifact 元数据和依赖索引 |
+| 数据库 | PostgreSQL（主库） | CMS 内容、Page 草稿、Artifact 元数据和依赖索引；MySQL 为历史兼容、SQLite 为轻量部署/测试、SQL Server 为预留可选（暂无部署场景） |
 | Artifact 存储 | 本地文件系统 / 对象存储 | 不可变构建文件与内容寻址资源 |
 | 访问（公开站点） | Static Server / CDN | 直接提供激活后的 Artifact |
 
@@ -135,8 +135,7 @@ import "github.com/CloudyKit/jet/v6"
 
 func NewJetRender(viewDir string, isDev bool) gin.HTMLRender {
     loader := jet.NewOSFileSystemLoader(viewDir)
-    set := jet.NewSet(loader)
-    set.SetDevelopmentMode(isDev)
+    set := jet.NewSet(loader, jet.DevelopmentMode(isDev))
     return &jetRender{set: set}
 }
 
@@ -158,7 +157,7 @@ func (r *jetRender) Instance(name string, data any) gin.Render {
 | 特性 | 语法 |
 |------|------|
 | 输出变量 | `{{ varName }}` |
-| 原始 HTML | `{{ unsafe.HTML(varName) }}` |
+| 原始 HTML | `{{ unsafe(varName) }}` |
 | 条件判断 | `{{ if condition }}...{{ end }}` |
 | 循环 | `{{ for _, item := range items }}...{{ end }}` |
 | 继承布局 | `{{ extends "./layout.html" }}` |
