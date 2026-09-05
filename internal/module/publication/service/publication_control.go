@@ -205,12 +205,21 @@ func (s *Service) Redirect(ctx context.Context, req *pubdto.RedirectReq) (res *p
 				return err
 			}
 		}
+		// ArtifactID 允许为空（重定向产物不入库，DTO 契约）：回执不得写入空串 uuid。
+		var toArtifact *string
+		if strings.TrimSpace(req.ArtifactID) != "" {
+			toArtifact = strPtr(req.ArtifactID)
+		}
+		receiptData, err := json.Marshal(map[string]string{"redirect": req.ArtifactID})
+		if err != nil {
+			return err
+		}
 		return tx.Create(&pubmodel.ReceiptEntity{
 			ID: uuid.NewString(), SourceType: "page", SourceID: req.PageID,
 			Action: "redirect", Path: oldPath,
-			FromArtifact: nil, ToArtifact: strPtr(req.ArtifactID),
+			FromArtifact: nil, ToArtifact: toArtifact,
 			ReceiptState: pubmodel.ReceiptCommitted,
-			ReceiptData:  json.RawMessage(`{"redirect":"` + req.ArtifactID + `"}`),
+			ReceiptData:  receiptData,
 			CreatedAt:    now, CompletedAt: &now,
 		}).Error
 	})

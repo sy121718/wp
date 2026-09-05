@@ -4,12 +4,12 @@ package projectservice
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 
 	projectdto "go_wp/internal/module/project/dto"
 	projectmodel "go_wp/internal/module/project/model"
@@ -50,8 +50,11 @@ func (s *Service) ListThemesByBlockID(ctx context.Context, blockID string) (res 
 // GetTheme 按 ID 取单个主题。
 func (s *Service) GetTheme(ctx context.Context, id string) (res *projectdto.ThemeResp, err error) {
 	entity, err := s.model.GetTheme(ctx, id)
-	if err != nil {
+	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, ErrThemeNotFound
+	}
+	if err != nil {
+		return nil, err // 基础设施故障原样上抛，不吞成业务错误
 	}
 	return toThemeRespPtr(entity), nil
 }
@@ -60,6 +63,14 @@ func (s *Service) GetTheme(ctx context.Context, id string) (res *projectdto.Them
 func (s *Service) CreateTheme(ctx context.Context, req *projectdto.ThemeCreateReq) (res *projectdto.ThemeResp, err error) {
 	if req == nil || strings.TrimSpace(req.Name) == "" {
 		return nil, ErrThemeNameRequired
+	}
+	if strings.TrimSpace(req.ProjectID) == "" {
+		return nil, errors.New("工程 ID 不能为空")
+	}
+	// settings 必须是 JSON 对象：空值兜底 {}，null/数组/字符串等拒绝（复用工程侧校验）。
+	settings, err := normalizeSettings(req.Settings)
+	if err != nil {
+		return nil, errors.New("无效的主题设置")
 	}
 	existing, err := s.model.ListThemes(ctx, req.ProjectID)
 	if err != nil {
@@ -72,11 +83,6 @@ func (s *Service) CreateTheme(ctx context.Context, req *projectdto.ThemeCreateRe
 	}
 	isFirst := len(existing) == 0
 	now := time.Now().UTC()
-	// settings 为空时兜底空对象：themes.settings NOT NULL，且后续合并读取依赖对象结构。
-	settings := req.Settings
-	if len(settings) == 0 {
-		settings = json.RawMessage("{}")
-	}
 	entity := &projectmodel.ThemeEntity{
 		ID: uuid.NewString(), ProjectID: req.ProjectID, Name: strings.TrimSpace(req.Name),
 		Settings: settings, IsActive: isFirst, CreatedAt: now, UpdatedAt: now,
@@ -103,7 +109,11 @@ func (s *Service) UpdateTheme(ctx context.Context, req *projectdto.ThemeUpdateRe
 	}
 	settings := entity.Settings
 	if len(req.Settings) > 0 {
-		settings = req.Settings
+		normalized, err := normalizeSettings(req.Settings)
+		if err != nil {
+			return nil, errors.New("无效的主题设置")
+		}
+		settings = normalized
 	}
 	if err = s.model.UpdateTheme(ctx, entity.ID, name, settings, time.Now().UTC()); err != nil {
 		return nil, err
@@ -127,6 +137,9 @@ func (s *Service) ActivateTheme(ctx context.Context, req *projectdto.ThemeActiva
 
 // DeleteTheme 删除主题(激活态拒绝)。
 func (s *Service) DeleteTheme(ctx context.Context, id string) (err error) {
+	if strings.TrimSpace(id) == "" {
+		return ErrThemeNotFound
+	}
 	entity, err := s.model.GetTheme(ctx, id)
 	if err != nil {
 		return ErrThemeNotFound
@@ -138,8 +151,12 @@ func (s *Service) DeleteTheme(ctx context.Context, id string) (err error) {
 }
 
 // GetActiveTheme 取工程当前激活主题。
+// 工程尚无主题属合法状态：返回 (nil, nil)，调用方以 theme == nil 判断。
 func (s *Service) GetActiveTheme(ctx context.Context, projectID string) (res *projectdto.ThemeResp, err error) {
 	entity, err := s.model.GetActiveTheme(ctx, projectID)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
 	if err != nil {
 		return nil, err
 	}
