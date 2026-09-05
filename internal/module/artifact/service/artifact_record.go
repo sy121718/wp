@@ -169,7 +169,8 @@ func (s *Service) EnsureRecord(ctx context.Context, req *artifactdto.RecordReq) 
 			CreatedAt:                 e.CreatedAt,
 		}
 		objects := make([]artifactmodel.PageArtifactObjectEntity, 0, len(parsedManifest.Files))
-		for fileHash := range parsedManifest.Files {
+		// 遍历 VALUE（内容哈希）而非 map KEY（文件名）：内容寻址语义。
+		for _, fileHash := range parsedManifest.Files {
 			if strings.TrimSpace(fileHash) == "" {
 				continue
 			}
