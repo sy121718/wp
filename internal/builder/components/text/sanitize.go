@@ -29,6 +29,8 @@ var allowedLinkRel = map[string]bool{
 
 // sanitizeRichHTML 富文本安全白名单清洗：
 //   - 非白名单标签：剥壳保留其文本内容（脚本/事件全部剥离）；
+//   - 文本节点统一 HTML 转义后输出（防止 &lt;script&gt; 等实体被 tokenizer 解码后
+//     以原始文本复活为真标签，见 C2 存储型 XSS 修复）；
 //   - a 标签仅保留 href（http/https/mailto/相对路径/#）、target、rel；
 //   - img 标签仅保留 src（过协议白名单，拒 javascript:/data:）、alt、width/height、loading；
 //   - 其余属性一律剥离；注释与声明剥离。
@@ -47,7 +49,10 @@ func sanitizeRichHTML(src string) string {
 		case html.ErrorToken:
 			return out.String()
 		case html.TextToken:
-			out.WriteString(z.Token().Data)
+			// Tokenizer 已把 &lt; 等实体解码为原始字符；此处必须重新转义，
+			// 否则 &lt;script&gt; 会以真标签输出（存储型 XSS）。
+			// （stripRichTags 的同名分支不转义：其输出侧已由调用方 html.EscapeString 包裹。）
+			out.WriteString(html.EscapeString(z.Token().Data))
 		case html.StartTagToken:
 			tok := z.Token()
 			if !allowedRichTags[tok.Data] {

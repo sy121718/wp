@@ -96,15 +96,26 @@ func embedURL(raw string) (string, bool) {
 	if m := vimeoRe.FindStringSubmatch(raw); len(m) > 1 {
 		return "https://player.vimeo.com/video/" + m[1], true
 	}
-	// 已是 /embed/ 形式的外链 iframe 直通（白名单域名）。
+	// 已是 /embed/ 形式的外链 iframe 直通（白名单域名精确匹配，防 evilyoutube.com 后缀绕过）。
 	if u, err := url.Parse(raw); err == nil && strings.HasPrefix(raw, "https://") {
-		host := u.Hostname()
-		if strings.HasSuffix(host, "youtube.com") || strings.HasSuffix(host, "youtu.be") ||
-			strings.HasSuffix(host, "vimeo.com") || strings.HasSuffix(host, "player.vimeo.com") {
+		if embedHostAllowed(u.Hostname()) {
 			return raw, true
 		}
 	}
 	return "", false
+}
+
+// embedHostAllowed 嵌入域名白名单：host 等于白名单域或为白名单域的子域。
+// 必须精确匹配（suffix 前补 '.'），裸 strings.HasSuffix(host, "youtube.com")
+// 会放行 evilyoutube.com / notyoutube.com；host 统一小写（URL host 大小写不敏感）。
+func embedHostAllowed(host string) bool {
+	host = strings.ToLower(host)
+	for _, allowed := range []string{"youtube.com", "youtu.be", "vimeo.com", "player.vimeo.com"} {
+		if host == allowed || strings.HasSuffix(host, "."+allowed) {
+			return true
+		}
+	}
+	return false
 }
 
 // compileCSS 视频样式。

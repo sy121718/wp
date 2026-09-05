@@ -11,7 +11,13 @@ import (
 
 var (
 	// SafeValueRe CSS 值白名单：字母数字与常见安全符号，禁止引号/分号/花括号/@/反斜杠/尖括号等注入载体。
+	// 注意：括号整体保留 —— rgba() 等合法 CSS 函数值（容器 Overlay 等控件的既有取值）依赖括号，
+	// 无法一刀切禁止；url() 外联注入风险由 cssExternalURLRe 单独封禁（见 IsSafeCSSValue）。
 	SafeValueRe = regexp.MustCompile(`^[A-Za-z0-9#%.,()\-+/:?=&_~ ]*$`)
+	// cssExternalURLRe CSS 值中的外联资源引用：url() 内以 // 或 http(s):// 开头的绝对外部地址
+	// （background-image: url(//attacker) 外联注入载体）。大小写不敏感，兼容 url( 与 url (、
+	// 引号包裹等 CSS 语法变体；站内相对路径 url(/img/a.jpg) 不受影响。
+	cssExternalURLRe = regexp.MustCompile(`(?i)url\s*\(\s*['"]?\s*(?:https?:|//)`)
 	// CustomClassRe 自定义 class 白名单：禁止 wp- 前缀之外的注入字符（wp- 前缀由 ValidateAdvanced 单独拦截）。
 	CustomClassRe = regexp.MustCompile(`^[A-Za-z0-9_-]{1,100}$`)
 	// CustomIDRe 自定义 Element ID 白名单（锚点）。
@@ -35,8 +41,12 @@ const negMarginLimit = 300
 const zIndexLimit = 100
 
 // IsSafeCSSValue CSS 值白名单校验（长度上限 500）。全组件共用的唯一入口。
+// 收紧取舍说明（M 级 url() 外联注入修复）：SafeValueRe 字符集保留括号（rgba() 等
+// 合法函数取值依赖，见容器 Overlay 控件），故不做「仅放行 ^url\(站内路径\)$」的
+// 全量收紧，而是单独封禁外联形式：url(//…) 与 url(http(s)://…) 一律拒绝，
+// 站内相对路径 url(/img/a.jpg) 与函数值 rgba(…) 保持既有行为。
 func IsSafeCSSValue(v string) bool {
-	return len(v) <= 500 && SafeValueRe.MatchString(v)
+	return len(v) <= 500 && !cssExternalURLRe.MatchString(v) && SafeValueRe.MatchString(v)
 }
 
 // ---------- 结构化四向值（面板四输入框 + 锁定联动的数据模型） ----------
