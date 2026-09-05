@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"go_wp/pkg/database"
 	"go_wp/pkg/logger"
@@ -32,13 +33,18 @@ import (
 //   - sys_role.role_code 建议使用字母前缀 + 可选数字，如 editor、viewer、role_01。
 
 var (
-	enforcer *casbinlib.Enforcer
+	// enforcer 使用 SyncedEnforcer：Enforce 读与 AddPolicy/RemovePolicy/LoadPolicy
+	// 等写操作内部通过 RWMutex 同步，保证热路径读与管理写并发时的数据安全（审计 C1）。
+	// 多步策略写序列的原子性由 policyMu 统一保证（审计 H2），本锁只解决单条 API 级竞态。
+	enforcer *casbinlib.SyncedEnforcer
 	mu       sync.RWMutex
 	policyMu sync.Mutex
 
 	// urlCodeMap 内存映射：URL+Method → code
-	// 用于例外查询时快速找到请求 URL 对应的 code，避免每次 deny 都查数据库
-	urlCodeMap sync.Map
+	// 用于例外查询时快速找到请求 URL 对应的 code，避免每次 deny 都查数据库。
+	// 通过 atomic.Pointer 原子替换整体快照：rebuild 构建新 map 后 Store，
+	// 读端 Load 指针后查询，杜绝对 sync.Map 结构体值的整体赋值竞态（审计 H1）。
+	urlCodeMap atomic.Pointer[sync.Map]
 )
 
 // urlCodeKey 生成 URL+Method 的映射 key
@@ -68,8 +74,10 @@ e = some(where (p.eft == allow))
 m = (r.sub == p.sub || (g(r.sub, p.sub) && g2(p.sub, "active"))) && r.obj == p.obj && r.act == p.act
 `
 
-// GetEnforcer 获取 Casbin Enforcer 实例
-func GetEnforcer() *casbinlib.Enforcer {
+// GetEnforcer 获取 Casbin Enforcer 实例。
+// 返回 *casbinlib.SyncedEnforcer，其方法签名与 *casbinlib.Enforcer 兼容，
+// 调用方（如鉴权中间件）可直接链式调用 Enforce 等方法，无需感知类型变化。
+func GetEnforcer() *casbinlib.SyncedEnforcer {
 	mu.RLock()
 	defer mu.RUnlock()
 	return enforcer
@@ -79,7 +87,11 @@ func GetEnforcer() *casbinlib.Enforcer {
 // 从内存映射中查找，不涉及数据库查询。
 // 返回 code 和是否存在。用于例外查询场景：Casbin deny 后查此映射拿到 code，再查例外表。
 func GetCodeByURL(url, method string) (string, bool) {
-	val, ok := urlCodeMap.Load(urlCodeKey(url, method))
+	m := urlCodeMap.Load()
+	if m == nil {
+		return "", false
+	}
+	val, ok := m.Load(urlCodeKey(url, method))
 	if !ok {
 		return "", false
 	}
@@ -131,7 +143,7 @@ func Ready() error {
 	return nil
 }
 
-func initCasbin(db *gorm.DB) (*casbinlib.Enforcer, error) {
+func initCasbin(db *gorm.DB) (*casbinlib.SyncedEnforcer, error) {
 	a, err := NewAdapter(db)
 	if err != nil {
 		return nil, fmt.Errorf("创建 Casbin 适配器失败: %w", err)
@@ -142,7 +154,7 @@ func initCasbin(db *gorm.DB) (*casbinlib.Enforcer, error) {
 		return nil, fmt.Errorf("创建 Casbin 模型失败: %w", err)
 	}
 
-	instance, err := casbinlib.NewEnforcer(m, a)
+	instance, err := casbinlib.NewSyncedEnforcer(m, a)
 	if err != nil {
 		return nil, fmt.Errorf("创建 Casbin Enforcer 失败: %w", err)
 	}
@@ -157,8 +169,11 @@ func initCasbin(db *gorm.DB) (*casbinlib.Enforcer, error) {
 
 // rebuildURLCodeMap 从 Casbin p 策略中重建 URL+Method → code 内存映射。
 // 遍历所有 p 规则，提取 v1（URL）、v2（Method）、v3（code）建立映射。
-func rebuildURLCodeMap(e *casbinlib.Enforcer) {
-	urlCodeMap = sync.Map{}
+// 先在独立的 sync.Map 上构建完整快照，再通过 urlCodeMap.Store 原子替换，
+// 读端始终看到一致的新旧映射之一，不会读到撕裂的中间态（审计 H1）。
+// 获取策略失败时保留旧映射不清空，避免 reload 失败导致例外查询全部落空。
+func rebuildURLCodeMap(e *casbinlib.SyncedEnforcer) {
+	nm := &sync.Map{}
 
 	policies, err := e.GetPolicy()
 	if err != nil {
@@ -166,6 +181,7 @@ func rebuildURLCodeMap(e *casbinlib.Enforcer) {
 		return
 	}
 
+	count := 0
 	for _, rule := range policies {
 		// p 规则格式：[sub, obj, act, code]
 		if len(rule) < 4 {
@@ -177,10 +193,10 @@ func rebuildURLCodeMap(e *casbinlib.Enforcer) {
 		if code == "" {
 			continue
 		}
-		urlCodeMap.Store(urlCodeKey(url, method), code)
+		nm.Store(urlCodeKey(url, method), code)
+		count++
 	}
-	count := 0
-	urlCodeMap.Range(func(_, _ interface{}) bool { count++; return true })
+	urlCodeMap.Store(nm)
 	logger.Scene("casbin").With("count", count).Info("Casbin URL→code 映射已加载")
 }
 
@@ -190,7 +206,17 @@ func rebuildURLCodeMap(e *casbinlib.Enforcer) {
 
 // ReloadPolicy 重新加载内存策略并重建 URL→code 映射。
 // 任何 p/g/g2 写操作后必须调用，否则变更不生效。
+// 所有策略写入口共用同一把 policyMu，本函数作为独立入口时自行加锁；
+// 已持有 policyMu 的多步写序列内部请改调 reloadPolicyLocked，避免重入死锁。
 func ReloadPolicy() error {
+	policyMu.Lock()
+	defer policyMu.Unlock()
+	return reloadPolicyLocked()
+}
+
+// reloadPolicyLocked 是 ReloadPolicy 的无锁内部变体，
+// 约定：调用方必须已持有 policyMu。
+func reloadPolicyLocked() error {
 	e := GetEnforcer()
 	if e == nil {
 		return fmt.Errorf("casbin 未初始化")
@@ -257,10 +283,10 @@ func ReplacePermissionDefinition(code, path, method string) error {
 		}
 	}
 
-	return ReloadPolicy()
+	return reloadPolicyLocked()
 }
 
-func restorePermissionPolicies(e *casbinlib.Enforcer, code string, rules [][]string, cause error) error {
+func restorePermissionPolicies(e *casbinlib.SyncedEnforcer, code string, rules [][]string, cause error) error {
 	if _, err := e.RemoveFilteredPolicy(3, code); err != nil {
 		logger.Scene("casbin").Error(err, "权限策略替换后恢复失败")
 	}
@@ -272,7 +298,7 @@ func restorePermissionPolicies(e *casbinlib.Enforcer, code string, rules [][]str
 			logger.Scene("casbin").Error(err, "权限策略替换后恢复失败")
 		}
 	}
-	if err := ReloadPolicy(); err != nil {
+	if err := reloadPolicyLocked(); err != nil {
 		return fmt.Errorf("替换权限策略失败: %v；恢复策略失败: %w", cause, err)
 	}
 	return fmt.Errorf("替换权限策略失败: %w", cause)
@@ -296,6 +322,10 @@ func ReplaceRolePermissions(roleCode string, policies [][3]string) error {
 		return fmt.Errorf("角色编码不能为空")
 	}
 
+	// 多步写序列统一纳入 policyMu，保证对读者原子、与其他管理写互斥（审计 H2）
+	policyMu.Lock()
+	defer policyMu.Unlock()
+
 	// 删除该角色所有旧 p 策略（按 sub=roleCode 过滤）
 	if _, err := e.RemoveFilteredPolicy(0, roleCode); err != nil {
 		return fmt.Errorf("删除角色旧权限失败: %w", err)
@@ -308,7 +338,7 @@ func ReplaceRolePermissions(roleCode string, policies [][3]string) error {
 		}
 	}
 
-	return ReloadPolicy()
+	return reloadPolicyLocked()
 }
 
 // ReplaceUserRoleBindings 全量替换某用户绑定的角色列表。
@@ -326,6 +356,10 @@ func ReplaceUserRoleBindings(userID string, roleCodes []string) error {
 		return fmt.Errorf("用户 ID 不能为空")
 	}
 
+	// 多步写序列统一纳入 policyMu，保证对读者原子、与其他管理写互斥（审计 H2）
+	policyMu.Lock()
+	defer policyMu.Unlock()
+
 	// 删除该用户所有旧 g 策略（按 sub=userID 过滤）
 	if _, err := e.RemoveFilteredGroupingPolicy(0, userID); err != nil {
 		return fmt.Errorf("删除用户旧角色绑定失败: %w", err)
@@ -341,7 +375,7 @@ func ReplaceUserRoleBindings(userID string, roleCodes []string) error {
 		}
 	}
 
-	return ReloadPolicy()
+	return reloadPolicyLocked()
 }
 
 // ReplaceRoleUsers 全量替换某角色下的用户列表。
@@ -359,6 +393,10 @@ func ReplaceRoleUsers(roleCode string, userIDs []string) error {
 		return fmt.Errorf("角色编码不能为空")
 	}
 
+	// 多步写序列统一纳入 policyMu，保证对读者原子、与其他管理写互斥（审计 H2）
+	policyMu.Lock()
+	defer policyMu.Unlock()
+
 	// 删除该角色所有旧 g 策略（按 obj=roleCode 过滤，即第 1 个字段）
 	if _, err := e.RemoveFilteredGroupingPolicy(1, roleCode); err != nil {
 		return fmt.Errorf("删除角色旧用户绑定失败: %w", err)
@@ -374,7 +412,7 @@ func ReplaceRoleUsers(roleCode string, userIDs []string) error {
 		}
 	}
 
-	return ReloadPolicy()
+	return reloadPolicyLocked()
 }
 
 // ReplaceUserPermissions 全量替换用户的直接额外权限。
@@ -392,6 +430,10 @@ func ReplaceUserPermissions(userID string, policies [][3]string) error {
 		return fmt.Errorf("用户 ID 不能为空")
 	}
 
+	// 多步写序列统一纳入 policyMu，保证对读者原子、与其他管理写互斥（审计 H2）
+	policyMu.Lock()
+	defer policyMu.Unlock()
+
 	// 删除该用户所有直接 p 策略（按 sub=userID 过滤）
 	if _, err := e.RemoveFilteredPolicy(0, userID); err != nil {
 		return fmt.Errorf("删除用户直接权限失败: %w", err)
@@ -404,7 +446,7 @@ func ReplaceUserPermissions(userID string, policies [][3]string) error {
 		}
 	}
 
-	return ReloadPolicy()
+	return reloadPolicyLocked()
 }
 
 // ActivateRole 启用角色：写入 g2, roleCode, active。
@@ -418,6 +460,10 @@ func ActivateRole(roleCode string) error {
 		return fmt.Errorf("角色编码不能为空")
 	}
 
+	// 写入统一纳入 policyMu，保证与其他管理写互斥（审计 H2）
+	policyMu.Lock()
+	defer policyMu.Unlock()
+
 	exists, err := e.HasNamedGroupingPolicy("g2", roleCode, "active")
 	if err != nil {
 		return fmt.Errorf("检查角色启用状态失败: %w", err)
@@ -428,7 +474,7 @@ func ActivateRole(roleCode string) error {
 	if _, err := e.AddNamedGroupingPolicy("g2", roleCode, "active"); err != nil {
 		return fmt.Errorf("启用角色失败: %w", err)
 	}
-	return ReloadPolicy()
+	return reloadPolicyLocked()
 }
 
 // DeactivateRole 禁用角色：删除 g2, roleCode, active。
@@ -442,10 +488,14 @@ func DeactivateRole(roleCode string) error {
 		return fmt.Errorf("角色编码不能为空")
 	}
 
+	// 写入统一纳入 policyMu，保证与其他管理写互斥（审计 H2）
+	policyMu.Lock()
+	defer policyMu.Unlock()
+
 	if _, err := e.RemoveNamedGroupingPolicy("g2", roleCode, "active"); err != nil {
 		return fmt.Errorf("禁用角色失败: %w", err)
 	}
-	return ReloadPolicy()
+	return reloadPolicyLocked()
 }
 
 // DeleteRoleAllPolicies 删除角色关联的全部策略。
@@ -464,6 +514,10 @@ func DeleteRoleAllPolicies(roleCode string) error {
 		return fmt.Errorf("角色编码不能为空")
 	}
 
+	// 多步删除序列统一纳入 policyMu，保证对读者原子、与其他管理写互斥（审计 H2）
+	policyMu.Lock()
+	defer policyMu.Unlock()
+
 	// 删除该角色所有 p 策略
 	if _, err := e.RemoveFilteredPolicy(0, roleCode); err != nil {
 		return fmt.Errorf("删除角色权限策略失败: %w", err)
@@ -479,7 +533,7 @@ func DeleteRoleAllPolicies(roleCode string) error {
 		return fmt.Errorf("删除角色启用状态失败: %w", err)
 	}
 
-	return ReloadPolicy()
+	return reloadPolicyLocked()
 }
 
 // DeleteUserAllPolicies 删除用户的直接权限和角色绑定。
@@ -501,7 +555,7 @@ func DeleteUserAllPolicies(userID string) error {
 	if _, err := e.RemoveFilteredGroupingPolicy(0, userID); err != nil {
 		return fmt.Errorf("删除用户角色绑定失败: %w", err)
 	}
-	return ReloadPolicy()
+	return reloadPolicyLocked()
 }
 
 // GetRoleCodesByUserID 查询用户绑定的角色编码列表。
