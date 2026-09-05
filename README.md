@@ -112,7 +112,7 @@ module_name/
 - `model` 只访问本模块数据表
 - 通用技术能力放入 `pkg/`，不得扩散业务语义
 
-当前管理控制面模块包括 `admin`、`permission`、`role`、`menu`、`dept`、`datarule` 和 `common`。具体约束见 `internal/module/CLAUDE.md`。
+当前已实现模块包括 `admin`（六领域合并）、`common`、`dashboard`、`media`、`project`、`page`、`block`、`artifact`、`publication`。具体约束见 `internal/module/CLAUDE.md`，完整约定见 [AGENTS.md](./AGENTS.md)。
 
 ## 启动链路
 

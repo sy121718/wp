@@ -2,14 +2,20 @@
 
 `internal/module/` 存放业务模块代码。模块直接平铺在本目录下，不区分前后台。
 
-当前已有模块：
+当前已有模块（2025-09 核对）：
 
 - `admin/` — 管理控制面大模块（管理员、角色、权限点、菜单、部门、数据权限）；模块内部同包直调，自包含装配，不拆子模块
-- `common/` — 公共业务能力（当前包含验证码）
-- `dashboard/` — 需要后端逻辑的后台页面入口（仪表盘、可视化编辑器）
-- `media/` — 附件与文件分类
+- `common/` — 公共业务能力（当前为验证码：标准库自绘 PNG 图片化，答案绝不下发）
+- `dashboard/` — 需要后端逻辑的后台页面入口（仪表盘、可视化工作台 Workbench、媒体库、主题管理）
+- `media/` — 附件与文件分类（LIKE 通配符转义、软删除过滤）
+- `project/` — 站点工程、SiteSettings、多主题 Theme（list/activate/delete/settings）
+- `page/` — 手工 Page 与 Page Document：草稿/构建/发布/回滚/改 URL
+- `block/` — 全局块（页眉/页脚/区块）与 stale 传播编排
+- `artifact/` — Artifact 元数据与内容对象闭包
+- `publication/` — URL 占用、激活（两段式回执）、回滚
 
-CMS、Visual Builder、构建发布等 go_wp 核心模块按设计文档逐阶段落地，不应在实现前写入"当前已有模块"。
+> `build` 无独立模块目录：编译内核在 `internal/builder`，发布内核在 `internal/pipeline`。
+> 规划模块（0-A2 content/contenttemplate/presentation、0-B blueprint/component、0-C navigation、0-D runtimefragment）尚未落地，不预建空目录。
 
 > 管理面六领域（管理员/角色/权限/菜单/部门/数据权限）已合并为 `admin` 大模块：
 > 每个领域占 model/dto/handle/service 下的一个文件（如 `role_model.go`、`role_crud.go`），
@@ -98,6 +104,12 @@ func SetupXxxRoutes(rg *gin.RouterGroup, db *gorm.DB, ...契约参数) {
 - `DB(ctx)` 返回 `m.db.WithContext(ctx).Model(&Entity{})`
 - 禁止在 model 层写：条件筛选、分页、排序、聚合、多表关联
 - 不放业务规则
+
+### model 层定位（Repository，非 DDD Domain Model）
+
+- ✅ 允许：单表 CRUD、单表聚合、单表内的原子组合操作（如全量替换 `Delete+Create` 在同一事务内）
+- ❌ 禁止：跨 model 调用、业务规则/决策（谁能删、状态机）、跨表事务（两个 model 各自开事务无法共享）
+- 跨表事务必须在 service 层编排：model 方法接受外部 `*gorm.DB`/`*gorm.Session`（或 model 暴露 `Transaction()` 透传），由 service 决定事务边界与回滚
 
 ## outbound
 

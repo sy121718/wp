@@ -6,21 +6,25 @@
 
 ```text
 pkg/
-├── auth/          # 待重构：从 JWT 迁移到 Session + Cookie
-├── casbin/
-├── crypto/
-├── database/
-├── enums/
-├── i18n/
-├── logger/
-├── queue/
-├── response/
-├── upload/
-├── utils/
-└── validate/
+├── auth/          # Session + Cookie 认证 + Redis 会话/封禁/心跳（已完成 JWT 迁移）
+├── cache/         # Redis 会话存储（Critical：auth 依赖，config 必启用；见 config/register.go）
+├── captcha/       # 验证码（标准库自绘 PNG，GenerateImage；答案不下发）
+├── casbin/        # 鉴权（自研 persist.Adapter，SyncedEnforcer）
+├── crypto/        # 签名与哈希
+├── database/      # 数据库（PostgreSQL 主库 / MySQL 兼容）
+├── datarule/      # 数据权限（方言引用符 + 部门整段匹配）
+├── enums/         # 历史兼容常量仓库
+├── i18n/          # 文案直查
+├── lock/          # 已无调用方（遗留，可清理）
+├── logger/        # 结构化日志
+├── queue/         # asynq 任务队列
+├── response/      # 统一响应结构
+├── upload/        # 上传（local/qiniu，Windows 保留名与 O_NOFOLLOW 已加固）
+├── utils/         # 工具
+└── validate/      # 校验
 ```
 
-> ~~`cache/`~~、~~`lock/`~~ 已废弃（不再使用 Redis）。待代码清理后移除。
+> `cache` 不再是废弃组件：auth 的会话/封禁/心跳硬依赖它，`config/register.go` 中为 Critical 且置于 auth 之前初始化，`redis.enabled=false` 时启动 fail-fast（`auth.RequireSessionStorage`）。`lock/` 已无 import 方，待清理。
 
 ## 总体原则
 
