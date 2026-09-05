@@ -64,12 +64,24 @@ func (s *Service) CreateCategory(ctx context.Context, req *mediadto.CategoryCrea
 
 // UpdateCategory 更新分类（改名 / 移动父级 / 排序；移动防环：新父级不能是自己或自己的后代）。
 func (s *Service) UpdateCategory(ctx context.Context, req *mediadto.CategoryUpdateReq) error {
-	if _, err := s.cm.GetCategory(ctx, req.ID); err != nil {
+	current, err := s.cm.GetCategory(ctx, req.ID)
+	if err != nil {
 		return errors.New("分类不存在")
 	}
 	updates := map[string]any{"update_time": time.Now()}
 	if req.CategoryName != nil && strings.TrimSpace(*req.CategoryName) != "" {
-		updates["category_name"] = strings.TrimSpace(*req.CategoryName)
+		name := strings.TrimSpace(*req.CategoryName)
+		// 改名同级查重（与 CreateCategory 约束一致，排除自身）。
+		siblings, err := s.cm.ListAll(ctx)
+		if err != nil {
+			return err
+		}
+		for _, c := range siblings {
+			if c.ID != req.ID && c.ParentID == current.ParentID && strings.EqualFold(c.CategoryName, name) {
+				return errors.New("同级分类下已存在同名分类")
+			}
+		}
+		updates["category_name"] = name
 	}
 	if req.SortOrder != nil {
 		updates["sort_order"] = *req.SortOrder
@@ -162,8 +174,12 @@ func (s *Service) UpdateAttachment(ctx context.Context, req *mediadto.Attachment
 	}
 	// ExtraInfo JSON 合并（alt/title/description）。
 	extra := map[string]any{}
+	skipExtra := false
 	if e.ExtraInfo != nil && *e.ExtraInfo != "" {
-		_ = json.Unmarshal([]byte(*e.ExtraInfo), &extra)
+		// 原 ExtraInfo 非 JSON 对象（如数组/标量）时跳过合并，保留原数据防覆盖丢失。
+		if err := json.Unmarshal([]byte(*e.ExtraInfo), &extra); err != nil || extra == nil {
+			skipExtra = true
+		}
 	}
 	changed := false
 	for _, pair := range []struct {
@@ -180,7 +196,7 @@ func (s *Service) UpdateAttachment(ctx context.Context, req *mediadto.Attachment
 			changed = true
 		}
 	}
-	if changed {
+	if changed && !skipExtra {
 		raw, err := json.Marshal(extra)
 		if err != nil {
 			return err

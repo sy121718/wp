@@ -3,6 +3,7 @@ package mediamodel
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -95,10 +96,10 @@ func (m *AttachmentModel) Create(ctx context.Context, e *AttachmentEntity) error
 	return m.attrDB(ctx).Create(e).Error
 }
 
-// GetByID 根据 ID 查询附件。
+// GetByID 根据 ID 查询附件（仅启用记录，软删除后不可见）。
 func (m *AttachmentModel) GetByID(ctx context.Context, id uint64) (*AttachmentEntity, error) {
 	var e AttachmentEntity
-	err := m.attrDB(ctx).Where("id = ?", id).First(&e).Error
+	err := m.attrDB(ctx).Where("id = ? AND status = ?", id, AttachmentStatusEnabled).First(&e).Error
 	if err != nil {
 		return nil, err
 	}
@@ -115,7 +116,9 @@ func (m *AttachmentModel) List(ctx context.Context, fileType string, categoryID 
 		q = q.Where("category_id = ?", *categoryID)
 	}
 	if search != "" {
-		q = q.Where("file_name LIKE ?", "%"+search+"%")
+		// LIKE 通配符转义：_ / % 按字面匹配（ESCAPE '\'）。
+		escaped := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(search)
+		q = q.Where("file_name LIKE ? ESCAPE '\\'", "%"+escaped+"%")
 	}
 
 	var total int64
@@ -151,10 +154,10 @@ func (m *FileCategoryModel) CreateCategory(ctx context.Context, e *FileCategoryE
 	return m.catDB(ctx).Create(e).Error
 }
 
-// GetCategory 按 ID 查询分类。
+// GetCategory 按 ID 查询分类（仅启用记录，软删除分类不可作父级/目标）。
 func (m *FileCategoryModel) GetCategory(ctx context.Context, id uint64) (*FileCategoryEntity, error) {
 	e := &FileCategoryEntity{}
-	if err := m.catDB(ctx).Where("id = ?", id).First(e).Error; err != nil {
+	if err := m.catDB(ctx).Where("id = ? AND status = ?", id, 1).First(e).Error; err != nil {
 		return nil, err
 	}
 	return e, nil

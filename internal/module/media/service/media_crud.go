@@ -22,6 +22,11 @@ func (s *Service) Upload(ctx context.Context, file *multipart.FileHeader, catego
 	if file == nil {
 		return nil, errors.New(mediaenums.ErrUploadEmpty)
 	}
+	if categoryID != nil && *categoryID > 0 {
+		if _, err := s.cm.GetCategory(ctx, *categoryID); err != nil {
+			return nil, errors.New("目标分类不存在")
+		}
+	}
 
 	src, err := file.Open()
 	if err != nil {
