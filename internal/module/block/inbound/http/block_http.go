@@ -12,6 +12,8 @@ import (
 	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/pkg/response"
 
+	"go_wp/internal/middleware/builtin"
+
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
@@ -26,7 +28,7 @@ func SetupBlockRoutes(rg *gin.RouterGroup, db *gorm.DB, projects projectcontract
 	svc := blockservice.NewService(blockmodel.NewBlockModel(db), projects)
 	h := &Handle{svc: svc}
 
-	g := rg.Group("/block")
+	g := rg.Group("/block", builtin.SessionAuthMiddleware())
 	g.GET("/list", h.List)
 	g.GET("/detail", h.Detail)
 	g.POST("/create", h.Create)

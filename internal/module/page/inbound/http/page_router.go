@@ -1,6 +1,8 @@
 package pagehttp
 
 import (
+	"go_wp/internal/middleware/builtin"
+
 	blockcontract "go_wp/internal/module/block/contract"
 	pagecontract "go_wp/internal/module/page/contract"
 	pagemodel "go_wp/internal/module/page/model"
@@ -24,7 +26,7 @@ func SetupPageRoutes(rg *gin.RouterGroup, db *gorm.DB,
 	svc := pageservice.NewService(model, artifacts, routes, projectService, blocks)
 	handle := NewHandle(svc)
 
-	g := rg.Group("/page")
+	g := rg.Group("/page", builtin.SessionAuthMiddleware())
 	g.POST("/create", handle.Create)
 	g.GET("/list", handle.List)
 	g.GET("/detail", handle.Detail)

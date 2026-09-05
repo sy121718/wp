@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"path/filepath"
 
+	"go_wp/internal/middleware/builtin"
 	adminhttp "go_wp/internal/module/admin/inbound/http"
 	artifacthttp "go_wp/internal/module/artifact/inbound/http"
 	blockhttp "go_wp/internal/module/block/inbound/http"
@@ -78,15 +79,23 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 	}
 
 	// 业务 API 路由（依赖顺序：media → project → block → artifact → publication → page）
+	//
+	// 认证装配（SessionAuthMiddleware 统一收口）：
+	//   - 豁免：GET /api/captcha（登录前置依赖）与 admin 模块路由
+	//     （admin 内部已对六领域分组挂 SessionAuthMiddleware，POST /api/admin/login 保持匿名可达）
+	//   - 其余业务 API 统一挂 builtin.SessionAuthMiddleware()
+	//   - CSRF / Casbin 不在此处挂载：业务 API 暂无策略与 Token 数据，待后续迭代
 	api := router.Group("/api")
 	captcharouter.SetupCaptchaRoutes(api)
-	mediahttp.SetupMediaRoutes(api, db)
-	projectService := projecthttp.SetupProjectRoutes(api, db)
-	blockSvc := blockhttp.SetupBlockRoutes(api, db, projectService)
-	artifactSvc := artifacthttp.SetupArtifactRoutes(api, db)
-	publicationSvc := pubhttp.SetupPublicationRoutes(api, db)
-	pageService := pagehttp.SetupPageRoutes(api, db, artifactSvc, publicationSvc, projectService, blockSvc)
 	adminhttp.SetupAdminRoutes(api, db)
+
+	authorizedAPI := api.Group("", builtin.SessionAuthMiddleware())
+	mediahttp.SetupMediaRoutes(authorizedAPI, db)
+	projectService := projecthttp.SetupProjectRoutes(authorizedAPI, db)
+	blockSvc := blockhttp.SetupBlockRoutes(authorizedAPI, db, projectService)
+	artifactSvc := artifacthttp.SetupArtifactRoutes(authorizedAPI, db)
+	publicationSvc := pubhttp.SetupPublicationRoutes(authorizedAPI, db)
+	pageService := pagehttp.SetupPageRoutes(authorizedAPI, db, artifactSvc, publicationSvc, projectService, blockSvc)
 
 	// 页面路由（编辑器外壳依赖 page/block 契约，置于 API 装配之后）
 	dashboardhttp.SetupDashboardRoutes(router, pageService, projectService, blockSvc)

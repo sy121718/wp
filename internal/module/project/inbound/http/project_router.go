@@ -1,6 +1,7 @@
 package projecthttp
 
 import (
+	"go_wp/internal/middleware/builtin"
 	projectcontract "go_wp/internal/module/project/contract"
 	projectmodel "go_wp/internal/module/project/model"
 	projectservice "go_wp/internal/module/project/service"
@@ -16,7 +17,7 @@ func SetupProjectRoutes(rg *gin.RouterGroup, db *gorm.DB) projectcontract.Projec
 	handle := NewHandle(svc)
 
 	SetupThemeRoutes(rg, db)
-	g := rg.Group("/project")
+	g := rg.Group("/project", builtin.SessionAuthMiddleware())
 	g.POST("/create", handle.Create)
 	g.GET("/list", handle.List)
 	g.GET("/detail", handle.Detail)

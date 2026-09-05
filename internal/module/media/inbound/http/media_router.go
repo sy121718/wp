@@ -1,6 +1,7 @@
 package mediahttp
 
 import (
+	"go_wp/internal/middleware/builtin"
 	mediacontract "go_wp/internal/module/media/contract"
 	mediamodel "go_wp/internal/module/media/model"
 	mediaservice "go_wp/internal/module/media/service"
@@ -16,7 +17,7 @@ func SetupMediaRoutes(rg *gin.RouterGroup, db *gorm.DB) mediacontract.MediaServi
 	svc := mediaservice.NewService(am, cm)
 	handle := NewHandle(svc)
 
-	g := rg.Group("/media")
+	g := rg.Group("/media", builtin.SessionAuthMiddleware())
 	{
 		g.POST("/upload", handle.Upload)
 		g.GET("/list", handle.List)

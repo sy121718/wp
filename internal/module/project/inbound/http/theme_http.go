@@ -5,6 +5,7 @@ package projecthttp
 import (
 	"net/http"
 
+	"go_wp/internal/middleware/builtin"
 	projectdto "go_wp/internal/module/project/dto"
 	projectmodel "go_wp/internal/module/project/model"
 	service "go_wp/internal/module/project/service"
@@ -25,7 +26,7 @@ func SetupThemeRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 	svc := service.NewService(model)
 	h := &ThemeHandle{svc: svc}
 
-	g := rg.Group("/theme")
+	g := rg.Group("/theme", builtin.SessionAuthMiddleware())
 	g.GET("/list", h.List)
 	g.POST("/create", h.Create)
 	g.POST("/update", h.Update)
