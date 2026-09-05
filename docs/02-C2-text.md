@@ -40,12 +40,13 @@
 
 | 类别 | 规则 |
 |---|---|
-| 标签白名单 | `p br strong b em i u s del code ul ol li blockquote a h2 h3 h4`（正文禁 h1 保 SEO 层级） |
-| 非白名单标签 | 剥壳保留内部文本（`<div>/<script>/<img>` 标签剥离） |
+| 标签白名单 | `p br strong b em i u s del code ul ol li blockquote a h2 h3 h4 img figure figcaption`（正文禁 h1 保 SEO 层级；`img` 一族见下） |
+| 非白名单标签 | 剥壳保留内部文本（`<div>/<script>` 等标签剥离） |
 | a 属性 | 仅 `href`（http/https/mailto/站内相对路径/`#` 锚点）、`target="_blank"`、`rel`（nofollow/noreferrer/noopener 白名单拆分校验） |
+| img 属性 | 仅 `src`（过协议白名单，拒 `javascript:`/`data:`）、`alt`、`width`/`height`（纯数字或常见 CSS 单位）、`loading`（lazy/eager） |
 | 其余属性 | 一律剥离（`onerror=` 等事件属性、class/style 注入全部清除） |
 | 注释/声明 | 剥离 |
-| 文本输出 | 纯文本 `html.EscapeString`；属性值 `&amp;/&quot;` 转义 |
+| 文本输出 | 文本节点统一 `html.EscapeString`（防 `&lt;script&gt;` 实体经 tokenizer 解码后复活为真标签，见 sanitize.go 存储型 XSS 修复）；属性值 `&amp;/&quot;` 转义 |
 
 ## 5. 编译输出规则与产物示例
 
@@ -61,4 +62,4 @@
 | 富文本 XSS 清洗 | `internal/builder/components/text/sanitize.go`（tokenizer 白名单过滤，`golang.org/x/net/html`） |
 | 摘要模式 | `stripRichTags` + `truncateRunes`（strip 标签截前 N 字符） |
 | 段落间距 / 截断 | `compileCSS`（内部块级规则 + `-webkit-box` 四件套） |
-| 单元测试 | `public/test/builder/unit/text_test.go`（9 组 + 12 个校验拒绝场景 + 注入载体拦截） |
+| 单元测试 | `internal/builder/components/text/sanitize_test.go` + `sanitize_fuzz_test.go`（组件包内，含白名单/注入拦截、fuzz 与确定性测试） |

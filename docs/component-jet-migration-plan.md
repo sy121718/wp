@@ -6,6 +6,12 @@
 > 同时本计划对齐 CLAUDE.md 既有约定——「构建期模板 Jet v6：发布阶段把受限 Fragment 与
 > BuildContext 渲染为最终 HTML」，组件渲染本就该用 Jet，当前 Go 拼字符串是实现偏离。
 
+> **✅ 已完成（2025-09）**：18 个组件已全部 Jet 化——每个组件目录均有配套 `jet.go`（BuildView / View 导出），
+> `internal/templates/components/*.jet` 每组件一个模板（另有 `_placeholder.jet`），`builder.Compile` / `RenderDocument`
+> 经 `nodeViewOf` + Jet 渲染（`builder/jetview.go`），旧 render 字符串拼接死代码已删除，转义交 Jet 默认 HTML 转义
+> （`unsafe` 仅用于 sanitize 后富文本与 Go 拼好的安全属性串），`go test` 全绿。
+> 以下迁移计划内容保留作为历史记录。
+
 ## 零、Jet v6 能力结论（技术依据，已实测源码 v6.3.2）
 
 | 能力 | 结论 | 证据 |
@@ -107,7 +113,7 @@ globalref——占位/展开分支，展开时模板内递归引用块 root：
 
 ## 三、分阶段实施
 
-### Phase 0：样板验证（等价性地基）
+### Phase 0：样板验证（等价性地基）✅ 已完成
 1. 建 `internal/templates/components/` 目录 + `node.jet` 递归入口 + 各组件模板
 2. 建 `nodeView` 结构 + `nodeViewOf(node, ctx)` 转换器（复用 core.Lookup 派发模板名）
 3. 组件 Jet 模板加载器挂进构建路径（**非 dev 模式**缓存模板）
@@ -115,9 +121,9 @@ globalref——占位/展开分支，展开时模板内递归引用块 root：
 5. **字节等价测试**：同一 Document，旧 render 输出 vs 新 Jet 输出，断言完全一致
 6. 验证：确定性不破坏、IDE 高亮、递归深度正常、转义正确
 
-**验收**：button + container 新旧输出字节相同，递归 children 正确展开，`go test` 全过。
+- [x] **验收（已完成）**：button + container 新旧输出字节相同，递归 children 正确展开，`go test` 全过。
 
-### Phase 1：叶子组件（无递归，最简单）
+### Phase 1：叶子组件（无递归，最简单）✅ 已完成
 heading / text（含富文本 unsafe）/ image / divider / spacer / list / infobox / socialbuttons / video / counter
 
 - 每个组件：写 `.jet` 模板 + nodeView 挂接 + render 改「组装 view + compileCSS」
@@ -125,18 +131,18 @@ heading / text（含富文本 unsafe）/ image / divider / spacer / list / infob
 - video：模板 `{{ if .IsEmbed }}iframe{{ else }}video{{ end }}`，Go 只算 IsEmbed
 - infobox：按钮化提前 return 改为模板 if/else 嵌套
 
-**验收**：10 个叶子组件迁移完，字节等价测试全过。
+- [x] **验收（已完成）**：10 个叶子组件迁移完，字节等价测试全过。
 
-### Phase 2：结构型组件（含递归）
+### Phase 2：结构型组件（含递归）✅ 已完成
 slider / tabs / accordion / marquee / globalref
 
 - 模板内 `{{ range _, child := .Children }}{{ include child.Template child }}{{ end }}` 递归
 - marquee：双份内容循环在模板内（两份 track 各 range 一次 children）
 - globalref：占位↔展开分支，展开时模板内递归引用块 root（Go 预解析块 root → nodeView）
 
-**验收**：6 个结构型组件迁移完，递归等价测试全过。
+- [x] **验收（已完成）**：6 个结构型组件迁移完，递归等价测试全过。
 
-### Phase 3：收尾
+### Phase 3：收尾 ✅ 已完成
 1. 删除组件 render 里残留的 WriteString/EscapeString（转义全交 Jet）
 2. 可选：`builder.RenderDocument` 页面骨架也模板化（`page.jet`）
 3. 全量 `go test -count=1` + 现有页面构建冒烟（字节与迁移前一致）
@@ -166,14 +172,14 @@ slider / tabs / accordion / marquee / globalref
 | include 动态模板名未命中 | nodeView 组装时用 core.Lookup 保证模板名合法，加 fallback 占位 |
 | 迁移量大（18 组件） | 分 Phase 逐批提交，每批独立可回滚（git） |
 
-## 六、验收标准
+## 六、验收标准 ✅ 已完成（当前代码满足以下全部验收项）
 
-1. `go test -count=1` 全过（含新增字节等价测试）
-2. 现有已发布页面构建产物字节与迁移前**完全一致**（确定性不破坏）
-3. 组件 HTML 全部在 `.jet` 文件，IDE 可高亮/校验
-4. 手写 `EscapeString` 清零（转义全由 Jet 承担）
-5. 递归 children 由 Jet include 完成（结构型组件模板内可见）
-6. 构建性能无感知变化（非 dev 模式缓存模板）
+- [x] 1. `go test -count=1` 全过（含新增字节等价测试）
+- [x] 2. 现有已发布页面构建产物字节与迁移前**完全一致**（确定性不破坏）
+- [x] 3. 组件 HTML 全部在 `.jet` 文件，IDE 可高亮/校验
+- [x] 4. 手写 `EscapeString` 清零（转义全由 Jet 承担）
+- [x] 5. 递归 children 由 Jet include 完成（结构型组件模板内可见）
+- [x] 6. 构建性能无感知变化（非 dev 模式缓存模板）
 
 ## 七、工作量估算
 

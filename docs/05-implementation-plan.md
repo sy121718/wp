@@ -1,6 +1,8 @@
 # 05 · 全阶段实施与验收计划
 
 > 本文是 go_wp 从当前状态到完整交付的执行路线。每个阶段有明确的验收门禁，未通过不得进入下一阶段。
+>
+> **状态更新于 2025-09：阶段 0-3 已完成，4-7 待办。**
 
 ## 冻结决策
 
@@ -9,9 +11,9 @@
 | 管理后台 | Go + Jet SSR 渲染页面/片段，HTMX 负责交互；不再维护 Vue SPA |
 | 认证 | Session + Cookie（gin-contrib/sessions + Cookie 存储），不用 JWT |
 | 鉴权 | Casbin（Enforce(user_id, path, method)） |
-| CSRF | 所有 POST 写操作强制 CSRF Token 校验 |
-| 数据库 | MySQL（唯一领域 SQL 基线） |
-| 缓存 | 不使用 Redis；Session 走 Cookie 存储 |
+| CSRF | 所有 POST 写操作强制 CSRF Token 校验（已实现并全局挂载） |
+| 数据库 | PostgreSQL（主库，唯一领域 SQL 基线）；MySQL 历史兼容；SQLite/SQL Server 驱动已移除 |
+| 会话存储 | Redis（pkg/cache，Critical：认证会话/封禁/心跳硬依赖） |
 | 公共前台 | Jet 只在 Preview/Publish 构建阶段执行，访客读取静态 Artifact |
 | 富文本 | TinyMCE（先 CDN 跑通，后期按需自托管） |
 | 设计系统 | Stripe 风格，亮暗双主题，详见 [DESIGN.md](../DESIGN.md) |
@@ -20,7 +22,7 @@
 
 ```text
 管理后台：
-  Admin Jet 页面 → HTMX 请求 → Gin inbound/http → 模块 Service → MySQL
+  Admin Jet 页面 → HTMX 请求 → Gin inbound/http → 模块 Service → PostgreSQL
                                                               ↓
                                                      Casbin 鉴权
                                                               ↓
@@ -51,12 +53,12 @@
 
 | 阶段 | 状态 | 说明 |
 |------|------|------|
-| 阶段 0 | 待开始 | 基线搭建 |
-| 阶段 1 | 待开始 | 后台壳 + Session + 安全 |
-| 阶段 2 | 待开始 | 现有模块迁移到 HTMX |
-| 阶段 3 | 待开始 | 0-A1 Page 静态发布主链 |
+| 阶段 0 | 已完成 | 基线搭建 |
+| 阶段 1 | 已完成 | 后台壳 + Session + 安全 |
+| 阶段 2 | 已完成 | 模块 HTMX 迁移（admin 六领域合并大模块，SPA/JWT 已清理） |
+| 阶段 3 | 已完成 | 0-A1 Page 静态发布主链（project/page/artifact/publication 模块落地，两段式回执/占用前置/activating 随机化） |
 | 阶段 4 | 待开始 | 0-A2 CMS 内容 + 自动发布 |
-| 阶段 5 | 待开始 | 0-B Blueprint + Component + Media |
+| 阶段 5 | 待开始 | 0-B Blueprint + Component + Media（media 已部分落地，blueprint/component 未落地） |
 | 阶段 6 | 待开始 | 0-C Navigation |
 | 阶段 7 | 待开始 | 0-D Runtime Fragment |
 
@@ -68,17 +70,17 @@
 
 **任务**：
 
-- [ ] `go.mod` 确认 Jet v6 依赖已引入
-- [ ] 加入 HTML sanitize 依赖（ bluemonday 或类似），用于 TinyMCE 内容白名单清洗
-- [ ] 加入 CSRF 中间件依赖
-- [ ] 建立 `internal/templates/admin/` 目录结构和 Jet 渲染 facade
+- [x] `go.mod` 确认 Jet v6 依赖已引入
+- [x] 加入 HTML sanitize 依赖（实现为自研 sanitize：基于 x/net/html 白名单，非 bluemonday），用于 TinyMCE 内容白名单清洗
+- [x] 加入 CSRF 中间件依赖
+- [x] 建立 `internal/templates/admin/` 目录结构和 Jet 渲染 facade
   - 实现 `gin.HTMLRender` 接口封装 Jet `*jet.Set`
   - 开发模式 `DevelopmentMode(true)`
-- [ ] 建立 `internal/templates/publish/` 目录（构建期模板，与 Admin 模板隔离）
-- [ ] 修复 `public/migrations/`：当前只有 runner 无迁移文件
+- [x] 建立 `internal/templates/publish/` 目录（构建期模板实际位于 `internal/templates/components/`，go:embed，与 Admin 模板隔离）
+- [x] 修复 `public/migrations/`：当前只有 runner 无迁移文件
   - 增加独立 migration 命令
   - 确保 runner 接入启动流程
-- [ ] 加入 `gin-contrib/sessions` 依赖
+- [x] 加入 `gin-contrib/sessions` 依赖
 
 **验收门禁**：
 
@@ -88,7 +90,7 @@
 | `go test ./...` | 现有测试全绿 |
 | `go vet ./...` | 无警告 |
 | Jet 渲染 | 最小模板渲染 + 自动转义测试通过 |
-| MySQL 迁移 | 空库迁移成功，第二次幂等 |
+| PostgreSQL 迁移 | 空库迁移成功，第二次幂等 |
 
 ---
 
@@ -98,21 +100,21 @@
 
 **任务**：
 
-- [ ] 在 `routes.go` 注册 `/admin/*` 页面路由和 `/admin/fragments/*` 片段路由
-- [ ] 实现 Session 认证中间件（`SessionAuthMiddleware`）
+- [x] 在 `routes.go` 注册 `/admin/*` 页面路由和 `/admin/fragments/*` 片段路由
+- [x] 实现 Session 认证中间件（`SessionAuthMiddleware`）
   - gin-contrib/sessions + Cookie 存储
   - Cookie 属性：`HttpOnly`、`Secure`（生产）、`SameSite=Lax`
   - Session ID 随机不透明，Cookie 不保存用户资料
-- [ ] 实现 CSRF 中间件
+- [x] 实现 CSRF 中间件
   - 所有 POST 请求强制 CSRF Token
   - Token 通过 Jet 模板注入到表单隐藏域
-- [ ] 登录页 Jet 模板（`admin/login.jet`）
-- [ ] 后台布局 Jet 模板（`admin/layout.jet`）
+- [x] 登录页 Jet 模板（`admin/login.jet`）
+- [x] 后台布局 Jet 模板（`admin/layout.jet`）
   - 侧栏导航、顶栏、主题切换按钮
   - HTMX CDN 引入
   - 主题初始化脚本（防 FOUC）
-- [ ] HTMX 请求区分：`HX-Request: true` 返回片段，否则返回完整页面
-- [ ] 安全头中间件复用现有 `security_headers.go`
+- [x] HTMX 请求区分：`HX-Request: true` 返回片段，否则返回完整页面
+- [x] 安全头中间件复用现有 `security_headers.go`
 
 **验收门禁**：
 
@@ -133,22 +135,22 @@
 
 **目标**：管理控制面所有功能无需 Vue/Node 即可操作。
 
-**迁移顺序**：`admin → permission → menu → role → dept → datarule`
+**迁移顺序**：`admin → permission → menu → role → dept → datarule`（注：六领域已合并为 `admin` 大模块，不再独立目录，迁移顺序为历史记录）
 
 **每个模块的任务**：
 
-- [ ] 列表页：Jet 表格 + HTMX 分页（`hx-get` + Query 参数）
-- [ ] 搜索筛选：`hx-trigger="keyup delay:500ms"`
-- [ ] 新增/编辑：弹窗式 fragment（`hx-get` 加载表单 → `hx-post` 提交）
-- [ ] 删除：`hx-confirm` 确认 → `hx-post` 提交
-- [ ] 权限相关：Casbin 鉴权保持不变，复用现有 service/contract/model
-- [ ] 响应模式：HTMX 请求返回 HTML 片段，非 HTMX 返回完整页面
+- [x] 列表页：Jet 表格 + HTMX 分页（`hx-get` + Query 参数）
+- [x] 搜索筛选：`hx-trigger="keyup delay:500ms"`
+- [x] 新增/编辑：弹窗式 fragment（`hx-get` 加载表单 → `hx-post` 提交）
+- [x] 删除：`hx-confirm` 确认 → `hx-post` 提交
+- [x] 权限相关：Casbin 鉴权保持不变，复用现有 service/contract/model
+- [x] 响应模式：HTMX 请求返回 HTML 片段，非 HTMX 返回完整页面
 
 **迁移完成后清理**：
 
-- [ ] 删除 `internal/embed/dist/` 及 `setupEmbeddedFrontend`
-- [ ] 清理旧 JWT 相关代码（`pkg/auth/jwt.go`、`internal/middleware/builtin/auth.go` 中的 JWT 逻辑）
-- [ ] 移除 `internal/embed/embed.go` 的 SPA 入口
+- [x] 删除 `internal/embed/dist/` 及 `setupEmbeddedFrontend`（embed SPA 已移除）
+- [x] 清理旧 JWT 相关代码（`pkg/auth/jwt.go`、`internal/middleware/builtin/auth.go` 中的 JWT 逻辑）
+- [x] 移除 `internal/embed/embed.go` 的 SPA 入口
 
 **验收门禁**：
 
@@ -169,26 +171,26 @@
 
 ### 3.1 Project 与 Page
 
-- [ ] 创建 `project` 模块：Project / SiteSettings / 构建所需 Project 快照
-- [ ] 创建 `page` 模块：Page Draft / Page Document / 版本与乐观锁
-- [ ] 实现 `PageKind + ContentTarget` 封闭枚举、ThemeNode AST、Binding 协议
-- [ ] MySQL 迁移：`projects`、`pages`、`page_documents` 表
+- [x] 创建 `project` 模块：Project / SiteSettings / 构建所需 Project 快照
+- [x] 创建 `page` 模块：Page Draft / Page Document / 版本与乐观锁
+- [x] 实现 `PageKind + ContentTarget` 封闭枚举、ThemeNode AST、Binding 协议
+- [x] PostgreSQL 迁移：`projects`、`pages`、`page_documents` 表（主库 PostgreSQL，MySQL 历史兼容）
 
 **验收**：合法 Draft 可往返序列化；非法 kind/target、重复 Node ID、旧版本写入被拒绝。
 
 ### 3.2 Publish Compiler
 
-- [ ] 创建 `build` 模块：BuildContext Resolver → Migrate → Normalize → Validate → Lowering → Fragment → Style → Asset → Diagnostics → Jet Build-time Render
-- [ ] BuildContext 固定后禁止读数据库、网络和当前时间
-- [ ] map/集合/资源路径必须稳定排序与规范化
+- [x] 创建构建内核：BuildContext Resolver → Migrate → Normalize → Validate → Lowering → Fragment → Style → Asset → Diagnostics → Jet Build-time Render（落地于 `internal/builder`，发布内核在 `internal/pipeline`，非独立 module/build）
+- [x] BuildContext 固定后禁止读数据库、网络和当前时间
+- [x] map/集合/资源路径必须稳定排序与规范化
 
 **验收**：同一输入重复构建字节完全相同；最终 HTML 不含 Jet 表达式、Binding 或编辑属性。
 
 ### 3.3 Artifact 与 Publication
 
-- [ ] 创建 `artifact` 模块：不可变写入、内容对象闭包、ArtifactStore 契约与本地实现
-- [ ] 创建 `publication` 模块：URL 占用、stage、activate、rollback、receipt 恢复
-- [ ] 静态访问面只读取 PublicationStore 文件状态
+- [x] 创建 `artifact` 模块：不可变写入、内容对象闭包、ArtifactStore 契约与本地实现
+- [x] 创建 `publication` 模块：URL 占用、stage、activate、rollback、receipt 恢复（两段式回执 pending→committed/rolled_back、占用前置检查）
+- [x] 静态访问面只读取 PublicationStore 文件状态
 
 **验收**：Page 可发布、二次发布、单页回滚；任一步失败旧页面仍可访问。
 

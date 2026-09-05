@@ -2,6 +2,16 @@
 
 > 本文覆盖从编辑到访问的完整控制面流水线：Editor Kernel → Preview Build → Publish Compiler → Artifact → PublicationStore → 生命周期（Draft/Build/Stage/Publish/Rollback/删除/GC）→ 依赖失效与构建队列。流水线相关的数据库表集中在文末。
 
+> **实现状态（2025-09 核对）**
+>
+> - ✅ **已实现**（`internal/pipeline` + `internal/module/publication` 模块）：
+>   - §4.3 ArtifactStore 契约：`internal/pipeline/store.go`（Put/Get/Verify/Delete，删除需 expectedHash 幂等）；
+>   - §5 PublicationStore 符号链接激活：`internal/pipeline/publication.go`（原子 symlink 切换、activating 临时名随机化 `activatingSeq`）；
+>   - §6.5 UpdateURL：`internal/module/page/service/page_publish.go`（新 URL 构建激活 + 旧 URL 301/取消激活，传 artifact uuid 而非内容 hash、占用前置检查 `ensureRouteNotOccupied`）；
+>   - §9 两段式发布回执：`publication_control.go`（pending → committed / rolled_back 补偿，含占用归属校验）。
+> - 🟡 **部分实现**：§4.4 Redirect Artifact——`redirect.json` 落盘与 symlink 激活已有（`store.go` PutRedirect/GetRedirect/DeleteRedirect），对象存储/CDN 等价实现仍为规划。
+> - ⏳ **规划态**：§7 删除/取消发布与 GC 保留期（删除/取消发布流程有，GC 保留期调度未完整模块化）、§8 依赖 fan-out 与构建队列（Revision/依赖记录/stale 状态机为协议描述，队列消费端未完整落地）。
+
 ## 1. Editor Kernel
 
 ```text

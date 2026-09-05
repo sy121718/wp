@@ -97,9 +97,9 @@ loader 用 jet.NewOSFileSystemLoader 指到 internal/templates/<子目录>
 | `hibiken/asynq` + `go-redis/v9` | 保留 | Build Worker 任务队列（Redis broker） |
 | `alicebob/miniredis/v2` | 保留 | 测试 mock |
 | `go-playground/validator/v10` | 保留 | Gin 参数校验 |
-| `golang-jwt/jwt/v5` | **已从直接依赖移除（Session 迁移完成），indirect 残留** | 认证已迁 Session+Cookie，`pkg/auth/jwt.go`（313 行）已删除，本项目代码零引用。go.mod 仍以 `// indirect` 残留，是 `gorm sqlserver 驱动 → Azure MSAL` 的传递依赖；彻底清除需替换 casbin/gorm-adapter（无条件 import 全驱动），维护负担大于收益，故保留 indirect 并在此标注 |
-| `glebarez/sqlite` + `modernc.org/sqlite` | **待确认用途** | `pkg/database/driver/sqlite.go` 业务驱动 + 测试；确认是「轻量部署」还是「仅测试」再定去留 |
-| `gorm.io/driver/sqlserver` + mssqldb | **待确认** | `pkg/database/driver/sqlserver.go` 存在，但 CLAUDE.md 技术栈只列 MySQL/PostgreSQL；若不需要 SQL Server 可移出核心依赖 |
+| `golang-jwt/jwt/v5` | **已彻底移除（含 indirect）** | 认证已迁 Session+Cookie，`pkg/auth/jwt.go` 已删除，本项目代码零引用；sqlserver 驱动移除后连 indirect 传递依赖也已清除，go.mod / go.sum 均无 `golang-jwt` |
+| `glebarez/sqlite` + `modernc.org/sqlite` | **已移除** | `pkg/database/driver/sqlite.go` 已删除，go.mod 已无 sqlite 驱动（主库为 PostgreSQL，测试基建也已迁本地 PG） |
+| `gorm.io/driver/sqlserver` + mssqldb | **已移除** | `pkg/database/driver/sqlserver.go` 已删除，go.mod 已无 sqlserver 驱动（按 §2 决策执行） |
 
 ### 2. 数据库驱动面的矛盾点（需决策）
 
@@ -111,7 +111,7 @@ loader 用 jet.NewOSFileSystemLoader 指到 internal/templates/<子目录>
 | dbx MCP 约定 | PostgreSQL 默认（127.0.0.1:5432） |
 | config.yaml 实际 | PostgreSQL（wp 库） |
 
-**决策建议**：实际部署是 PostgreSQL，文档三处口径不一。建议统一为「PostgreSQL 主库 + MySQL 兼容（历史）+ SQLite 仅测试」，sqlserver 若确无场景则从核心驱动移出（或标注 optional）。
+**决策建议（✅ 已执行）**：实际部署是 PostgreSQL，文档三处口径已统一为「PostgreSQL 主库 + MySQL 兼容（历史）」；sqlite / sqlserver 驱动已从 `pkg/database/driver/`（现仅 mysql / postgres）与 go.mod 完全移除，与 go.mod 现状一致。
 
 ### 3. 内部库开源拆分建议（builder 面）
 
@@ -143,7 +143,7 @@ builder（顶层编排）
 ### 4. 依赖治理原则（落地 checklist）
 
 1. **控制面/访问面依赖隔离**：构建期引 jet，访问面 runtime fragment 不引 jet/gorm。
-2. **清理遗留**：JWT→Session 迁移完成后删 `jwt/v5`；确认 sqlite/sqlserver 去留。
+2. **清理遗留**：JWT→Session 迁移完成后删 `jwt/v5`；确认 sqlite/sqlserver 去留。（✅ 已执行：三者均已从 go.mod / go.sum 与 `pkg/database/driver/` 移除）
 3. **文档口径统一**：数据库主库统一 PostgreSQL，修正 CLAUDE.md 技术栈表。
 4. **builder 解耦**：`core` 只依赖 stdlib + jet，为未来抽库/开源铺路。
 5. **go 版本**：`go.mod` 声明 `go 1.26`，确认 vfox 管理的 Go 版本与之匹配（避免 CI/本地版本漂移）。
@@ -152,11 +152,13 @@ builder（顶层编排）
 
 ## 待办优先级建议
 
-| 优先级 | 事项 | 依据 |
-|---|---|---|
-| P0 | 组件渲染 Jet 化（迁移计划 Phase 0~3） | 架构回归 CLAUDE.md 约定 |
-| P1 | 三层 Set 隔离 + AddGlobalFunc 注入 | Jet 融入地基 |
-| P1 | 数据库文档口径统一（PostgreSQL） | 三处矛盾 |
-| P2 | JWT→Session 迁移收尾 + 清 jwt 依赖 | CLAUDE.md 已定 |
-| P2 | sqlite/sqlserver 驱动去留决策 | 依赖精简 |
-| P3 | builder/core 抽库（拆 internal） | 开源复用 |
+> 状态核对（2025-09）：P0 组件 Jet 化、P2 JWT 清理、P2 驱动去留、P1 数据库口径均已落地；仅剩 P1 三层 Set 与 P3 抽库两项待办。
+
+| 优先级 | 事项 | 依据 | 状态 |
+|---|---|---|---|
+| P0 | 组件渲染 Jet 化（迁移计划 Phase 0~3） | 架构回归 CLAUDE.md 约定 | ✅ 已完成（18 组件全 Jet，见 component-jet-migration-plan） |
+| P1 | 三层 Set 隔离 + AddGlobalFunc 注入 | Jet 融入地基 | 待办 |
+| P1 | 数据库文档口径统一（PostgreSQL） | 三处矛盾 | ✅ 已执行（go.mod / driver 面已按决策收敛） |
+| P2 | JWT→Session 迁移收尾 + 清 jwt 依赖 | CLAUDE.md 已定 | ✅ 已完成（golang-jwt 已不在 go.mod / go.sum） |
+| P2 | sqlite/sqlserver 驱动去留决策 | 依赖精简 | ✅ 已执行（驱动已移除） |
+| P3 | builder/core 抽库（拆 internal） | 开源复用 | 待办 |

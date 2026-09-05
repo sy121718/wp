@@ -115,6 +115,16 @@ type RuntimeCapabilityRequirement =
 - 页面 bundle 按实际组件集合生成，避免每个组件一个请求，也避免每页携带全部组件代码。
 - Build fan-out 有上限、队列与 backpressure，禁止同步内容保存阻塞全站重建。
 
+### 2.4 运行时路由表
+
+| 路由 | 语义 |
+|---|---|
+| `GET /livez` | 存活探针：进程存活 |
+| `GET /readyz` | 就绪探针：组件级就绪（数据库 / Redis / Casbin 等） |
+| `/static` | 后台静态资源（`internal/templates/static`） |
+| `/storage` | 媒体上传存储，静态直出（`public/storage`） |
+| `/site` | 激活产物静态面（`http.Dir` 只读，零查库零模板） |
+
 ## 3. Phase 交付顺序
 
 ### 3.1 Phase 0-A1：Page 手工页面静态发布主链
@@ -133,7 +143,7 @@ type RuntimeCapabilityRequirement =
 - Page Draft / Stage / Publish / Rollback
 - 静态 HTTP 访问
 
-不实现 Builder UI、依赖 fan-out、Runtime Fragment、Client Enhancement、PresentationInstance、ContentTemplate。
+0-A1 已实现可视化工作台外壳（`/workbench` 画布、拖拽、检查器 schema、块编辑、预览编译）；依赖 fan-out、Runtime Fragment、Client Enhancement、PresentationInstance、ContentTemplate 仍属规划，E2E 验收清单保持规划态。
 
 验收：手写 Page Document 可以确定性生成 Artifact，发布到一个 URL，修改后再次发布，并只回滚该 Page。同一 Document + BuildContext 两次构建产生相同 hash。
 

@@ -240,26 +240,22 @@ go_wp/
 │   ├── routers/                      # 顶层路由与模块装配
 │   ├── task/                         # 异步任务注册和处理器
 │   └── module/
-│       ├── admin/                    # 已有：后台管理员、认证与会话
-│       ├── role/                     # 已有：后台角色
-│       ├── permission/               # 已有：后台权限点
-│       ├── menu/                     # 已有：后台权限菜单，不存放公开站点导航
-│       ├── dept/                     # 已有：后台部门
-│       ├── datarule/                 # 已有：后台数据权限
-│       ├── common/                   # 已有：公共业务入口（当前仅验证码）
-│       ├── project/                  # 0-A1：站点工程与 SiteSettings
-│       ├── page/                     # 0-A1：手工 Page 与 Page Document
-│       ├── build/                    # 0-A1：BuildContext Resolver 与 Publish Compiler
-│       ├── artifact/                 # 0-A1：Artifact 元数据与 ArtifactStore
-│       ├── publication/              # 0-A1：URL 占用、激活、回滚与恢复
-│       ├── content/                  # 0-A2：固定 CMS 内容与 revision
-│       ├── contenttemplate/          # 0-A2：ContentTemplate 与版本
-│       ├── presentation/             # 0-A2：PresentationInstance / DocumentSnapshot
-│       ├── blueprint/                # 0-B：Blueprint 与版本
-│       ├── component/                # 0-B：Global Component、版本、策略与 Registry
-│       ├── media/                    # 0-B/0-C：媒体元数据、变体与内容引用
-│       ├── navigation/               # 0-C：公开站点菜单及其 revision
-│       └── runtimefragment/          # 0-D：白名单动态片段
+│       ├── admin/                    # 已实现：后台管理员、角色、权限点、菜单、部门、数据权限（六领域合并大模块）
+│       ├── common/                   # 已实现：公共业务入口（当前为验证码：标准库自绘 PNG 图片化，答案绝不下发）
+│       ├── dashboard/                # 已实现：仪表盘、可视化工作台 Workbench、媒体库、主题管理等后台页面入口
+│       ├── media/                    # 已实现：附件与文件分类（LIKE 通配符转义、软删除过滤）
+│       ├── project/                  # 已实现：站点工程、SiteSettings、多主题 Theme
+│       ├── page/                     # 已实现：手工 Page 与 Page Document（草稿/构建/发布/回滚/改 URL）
+│       ├── block/                    # 已实现：全局块（页眉/页脚/区块）与 stale 传播编排
+│       ├── artifact/                 # 已实现：Artifact 元数据与内容对象闭包
+│       ├── publication/              # 已实现：URL 占用、激活、回滚与恢复
+│       ├── content/                  # 规划 0-A2：固定 CMS 内容与 revision
+│       ├── contenttemplate/          # 规划 0-A2：ContentTemplate 与版本
+│       ├── presentation/             # 规划 0-A2：PresentationInstance / DocumentSnapshot
+│       ├── blueprint/                # 规划 0-B：Blueprint 与版本
+│       ├── component/                # 规划 0-B：Global Component、版本、策略与 Registry
+│       ├── navigation/               # 规划 0-C：公开站点菜单及其 revision
+│       └── runtimefragment/          # 规划 0-D：白名单动态片段
 ├── pkg/                              # 通用基础组件（facade + provider/driver）
 ├── public/
 │   ├── migrations/                   # 数据迁移
@@ -267,34 +263,36 @@ go_wp/
 │   └── test/                         # 集成测试与 fixtures
 ```
 
-目录树同时表达“已有基础模块”和“按 Phase 创建的目标模块”；当前尚不存在的模块不得提前创建空目录。`internal/embed/dist/` 下的既有 Vue SPA 构建产物在后台全部改为 HTMX 后移除。
+目录树中「已实现」模块已落地；「规划 0-X」模块尚未创建，不预建空目录。`build` 无独立 module 目录：编译内核在 `internal/builder`，发布内核在 `internal/pipeline`。原 `internal/embed/dist/` 下的 Vue SPA 构建产物已移除（后台全部改为 HTMX + Jet SSR）。
 
 ### 4.1 现有模块与 go_wp 核心模块映射
 
 | 模块组 | 状态 / Phase | 负责 | 明确不负责 |
 |---|---|---|---|
-| `admin` / `role` / `permission` / `menu` / `dept` / `datarule` | 已有 | 管理控制面的身份、授权、组织和数据权限 | CMS 内容、公开站点用户、公开站点导航 |
-| `common` | 已有 | 暂存尚未形成独立领域的业务入口；当前仅验证码 | 通用基础设施、持续膨胀的共享业务逻辑 |
-| `project` | 0-A1 | `projects`、站点级设置和构建所需 Project 快照 | Page AST、Artifact 文件、发布激活 |
-| `page` | 0-A1 | `pages`、Page Document、草稿版本和 Page 用例 | 编译器实现、文件存储、URL 原子激活 |
-| `build` | 0-A1 | BuildContext 解析、Normalize/Validate/Lowering/Render 管线、构建任务 | 持久化 CMS 实体、直接切换线上 URL |
-| `artifact` | 0-A1 | Artifact 元数据、内容对象闭包、`ArtifactStore` 契约与实现 | URL 占用、发布状态机 |
-| `publication` | 0-A1 | `page_routes`、激活/回滚/取消发布、event/receipt 与恢复任务 | 编译 Document、修改 Artifact 内容 |
-| `content` | 0-A2 | 固定 Article/Product/Category/Tag 等 CMS 内容及单调 revision | 页面 AST、访问时模板解释、库存等实时状态 |
-| `contenttemplate` | 0-A2 | ContentTemplate 草稿、不可变版本和 Binding 约束 | CMS 内容实例、运行时渲染 |
-| `presentation` | 0-A2 | PresentationInstance、DocumentSnapshot 及内容驱动的发布入口 | 手工 Page 编辑、模板版本管理 |
-| `blueprint` | 0-B | Blueprint 草稿、不可变版本和 Page 初始化 | 构建期继承、自动传播 |
-| `component` | 0-B | Global Component、版本、更新策略、pins 与 Registry manifest | Publish Compiler 的树遍历和产物组装 |
-| `media` | 0-B/0-C | 媒体元数据、变体、内容 hash 和稳定 `assetId` | Page Document、公开 URL 激活 |
-| `navigation` | 0-C | 公开站点菜单、位置和 revision | 后台权限菜单；后者始终属于 `menu` |
-| `runtimefragment` | 0-D | capability 白名单、受控 HTML Fragment handler | 读取 Page Document、执行 Jet、接受任意 endpoint |
+| `admin`（六领域合并：角色 / 权限点 / 菜单 / 部门 / 数据权限） | 已实现 | 管理控制面大模块：管理员、角色、权限点、菜单、部门、数据权限（同包直调） | CMS 内容、公开站点用户、公开站点导航 |
+| `common` | 已实现 | 暂存尚未形成独立领域的业务入口；当前为验证码（标准库自绘 PNG 图片化，答案绝不下发） | 通用基础设施、持续膨胀的共享业务逻辑 |
+| `dashboard` | 已实现 | 需要后端逻辑的后台页面入口（仪表盘、可视化工作台 Workbench、媒体库、主题管理） | — |
+| `project` | 已实现 | `projects`、站点级设置、构建所需 Project 快照、多主题 Theme（list/activate/delete/settings） | Page AST、Artifact 文件、发布激活 |
+| `page` | 已实现 | `pages`、Page Document、草稿版本、Page 用例与改 URL | 编译器实现、文件存储、URL 原子激活 |
+| `block` | 已实现 | 全局块（页眉/页脚/区块）与 block→page 的 stale 传播编排 | CMS 内容、公开站点导航 |
+| `build` | 非独立模块 | BuildContext 解析、Normalize/Validate/Lowering/Render 管线与构建任务；编译内核在 `internal/builder`，发布内核在 `internal/pipeline` | 持久化 CMS 实体、直接切换线上 URL |
+| `artifact` | 已实现 | Artifact 元数据、内容对象闭包、`ArtifactStore` 契约与实现 | URL 占用、发布状态机 |
+| `publication` | 已实现 | `page_routes`、激活/回滚/取消发布、event/receipt 与恢复任务（两段式回执、占用前置） | 编译 Document、修改 Artifact 内容 |
+| `content` | 规划 0-A2 | 固定 Article/Product/Category/Tag 等 CMS 内容及单调 revision | 页面 AST、访问时模板解释、库存等实时状态 |
+| `contenttemplate` | 规划 0-A2 | ContentTemplate 草稿、不可变版本和 Binding 约束 | CMS 内容实例、运行时渲染 |
+| `presentation` | 规划 0-A2 | PresentationInstance、DocumentSnapshot 及内容驱动的发布入口 | 手工 Page 编辑、模板版本管理 |
+| `blueprint` | 规划 0-B | Blueprint 草稿、不可变版本和 Page 初始化 | 构建期继承、自动传播 |
+| `component` | 规划 0-B | Global Component、版本、更新策略、pins 与 Registry manifest | Publish Compiler 的树遍历和产物组装 |
+| `media` | 已实现 | 媒体元数据、变体、内容 hash 和稳定 `assetId`（LIKE 通配符转义、软删除过滤） | Page Document、公开 URL 激活 |
+| `navigation` | 规划 0-C | 公开站点菜单、位置和 revision | 后台权限菜单；后者始终属于 `menu` |
+| `runtimefragment` | 规划 0-D | capability 白名单、受控 HTML Fragment handler | 读取 Page Document、执行 Jet、接受任意 endpoint |
 
 关键命名约束：
 
 - `menu` 固定表示管理后台权限菜单；公开站点的 Header/Footer 导航统一属于 `navigation`。
 - `admin` 固定表示管理控制面账号；未来访客账号或客户账号必须另建明确领域模块，不能复用 `admin` 表和会话语义。
 - `content` 只聚合共享同一发布/revision 生命周期的固定 CMS 内容。若 Product、Article 后续出现独立事务和高频跨模块参数，应拆为独立模块，而不是让 `content/service` 演变为总控层。
-- `build`、`artifact`、`publication` 是单向流水线边界：`build → artifact → publication`。后者不得反向导入前者实现；跨模块只使用 `contract` 和不可变 DTO。
+- `build` 内核（`internal/builder` 编译 + `internal/pipeline` 发布）、`artifact`、`publication` 是单向流水线边界：`build → artifact → publication`。后者不得反向导入前者实现；跨模块只使用 `contract` 和不可变 DTO。
 
 每个业务模块沿用统一分层：
 
@@ -310,7 +308,7 @@ internal/module/{module}/
 ```
 
 - `service` 只能直接访问本模块 `model`；跨模块调用只依赖目标模块 `contract`，不得导入其他模块的 `service/model/dto`。
-- `internal/module/build` 是 Publish Compiler 唯一实现。
+- `internal/builder` 是 Publish Compiler 唯一实现（发布内核在 `internal/pipeline`，非独立 module）。
 - `internal/module/artifact` 管理不可变文件，不管理 URL 激活。
 - `internal/module/publication` 管理 URL 激活、回滚、取消发布和 Receipt 恢复，不解释 Page Document。
 - `internal/module/contenttemplate` 管理 ContentTemplate 与版本，不参与运行时渲染。

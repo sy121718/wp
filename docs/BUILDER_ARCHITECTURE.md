@@ -1,5 +1,7 @@
 # Builder 架构方案对比
 
+> **已归档（2025-09）**：本文为工作台选型纪要，保留作为历史记录。所选方案已落地——iframe 隔离 + Jet 预览/发布一致渲染已实现：可视化工作台（`/workbench`）已实装，构建期组件渲染走 Jet（`internal/templates/components/*.jet` + `builder/jetview.go`，预览即发布）。文中「20 个组件」为当时估算，实际组件数为 **18 个**（`internal/builder/components/` 目录：accordion/button/container/counter/divider/gallery/globalref/heading/image/infobox/list/marquee/slider/socialbuttons/spacer/tabs/text/video）。以下方案对比与优化讨论不再代表当前实现状态。
+
 ## 当前方案：iframe 隔离
 
 ### 为什么选择 iframe
@@ -26,7 +28,7 @@ go_wp Builder 使用 **iframe 隔离方案**，这是经过深思熟虑的架构
   - 右侧 Inspector 面板样式
 
 iframe 内（预览区）：
-  - 20 个组件的独立样式
+  - 18 个组件的独立样式
   - 用户自定义 CSS（未来）
   - 第三方库样式（未来）
 ```
@@ -122,7 +124,7 @@ shadow.innerHTML = `
 
 **缺点**：
 - ❌ **无 HTML**：需要自己实现所有渲染
-- ❌ **无法复用 CSS**：go_wp 的 20 个组件都用 CSS，全部重写成本巨大
+- ❌ **无法复用 CSS**：go_wp 的 18 个组件都用 CSS，全部重写成本巨大
 - ❌ **文本编辑困难**：需要自己实现光标、选区
 - ❌ **无障碍性差**：屏幕阅读器无法识别
 

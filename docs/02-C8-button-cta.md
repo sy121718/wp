@@ -15,7 +15,7 @@
 | 动态 CMS 链接绑定 | `binding.field`（仅 link 动作；绑定空值无 fallback 时编译报错） |
 | 按钮文本 | 静态 `text`（html 转义；绑定场景按规范定位为链接绑定，文本仍静态） |
 | 字号/字重/字距/大小写 | `fontSize`/`fontWeight`(400~800 select)/`letterSpacing`/`transform` |
-| 图标集成 | `icon`：builtin 白名单 SVG（8 个箭头/对勾/电话/邮件，24 viewBox stroke=currentColor）/ media 库 SVG 内联；prefix/suffix 位置；spacing 间距；hoverShift 悬停位移（`translateX` 过渡） |
+| 图标集成 | `icon`：builtin 白名单 SVG（8 个箭头/对勾/电话/邮件，24 viewBox stroke=currentColor）/ media 库图标以 `<img>` 直引 URL 输出；prefix/suffix 位置；spacing 间距；hoverShift 悬停位移（`translateX` 过渡） |
 | 尺寸预设 | `size`：xs/sm/md/lg/xl（padding+font-size 预设表） |
 | 块级铺满 | `block` 三端独立（display:flex + width:100% 分断点） |
 | 变体 | `variant`：solid（填充）/ outline（描边，悬停填充）/ ghost（透明文本） |
@@ -30,8 +30,8 @@
 - **rel 合并规则**：blank 自动包含 noopener noreferrer；nofollow/sponsored 追加于同一 `rel` 属性。
 - **绑定语义**：link 动作绑定的是**链接**（如 post.permalink），非文本；
   文本绑定（如 "立即购买 $${price}"）属 02-C1 ContentResolver 体系的字段模板场景，body 后续扩展。
-- **内置图标库为白名单常量表**（确定性、零外部依赖）；媒体库图标走 SrcHTML 内联，
-  无法内联时降级 `<img>`（fill/stroke 主题化受限但引用稳定）。
+- **内置图标库为白名单常量表**（确定性、零外部依赖）；媒体库图标由 `button.go:renderIcon` 对 `source=media` 直接输出
+  `<img class="bt-icon" src="...">`（URL 直引、构建期零解析、不内联 SVG 源码；fill/stroke 主题化受限但引用稳定）。
 
 ## 3. 实现位置
 

@@ -73,13 +73,13 @@
 
 | 规范条目 | 实现 / 计划 |
 |---|---|
-| 生命周期状态机（Draft/Building/Ready/Failed/Published/Superseded） | `docs/03-pipeline.md` §6（Draft/Build/Stage/Publish/Rollback 流程）、§7（删除、取消发布与 GC）；落地为 Phase 0-A1 `publication` 模块（`05-implementation-plan.md` 阶段 3.3） |
-| 不可变产物 + SHA256 + 版本包 | `docs/03-pipeline.md` §4（Page Artifact、§4.2 Artifact Manifest、§4.3 ArtifactStore 契约）；落地为 Phase 0-A1 `artifact` 模块 |
-| 指针式激活 / 秒级回滚 | `docs/03-pipeline.md` §5（PublicationStore 符号链接原子激活）、§6.4（Rollback）；落地为 Phase 0-A1 `publication` 模块 |
+| 生命周期状态机（Draft/Building/Ready/Failed/Published/Superseded） | `docs/03-pipeline.md` §6（Draft/Build/Stage/Publish/Rollback 流程）、§7（删除、取消发布与 GC）；已落地于 `publication` 模块（`05-implementation-plan.md` 阶段 3.3） |
+| 不可变产物 + SHA256 + 版本包 | `docs/03-pipeline.md` §4（Page Artifact、§4.2 Artifact Manifest、§4.3 ArtifactStore 契约）；已落地于 `artifact` 模块 |
+| 指针式激活 / 秒级回滚 | `docs/03-pipeline.md` §5（PublicationStore 符号链接原子激活）、§6.4（Rollback）；已落地于 `publication` 模块 |
 | 路由直出（<5ms，无 DB/模板） | `docs/03-pipeline.md` §5（URL → 文件映射由 PublicationStore 文件状态决定）；`docs/04-runtime-and-delivery.md` §2.3（访客请求不查库、不执行 Jet） |
-| 草稿保存 / 修订快照 Revision | `docs/03-pipeline.md` §6.1（Draft 与乐观锁）、§8.1（Revision 机制）；落地为 Phase 0-A1 `page` 模块 |
+| 草稿保存 / 修订快照 Revision | `docs/03-pipeline.md` §6.1（Draft 与乐观锁）、§8.1（Revision 机制）；已落地于 `page` 模块 |
 | 预览（轻量编译 + 隔离预览页） | `docs/03-pipeline.md` §2（Preview Build）；编译器内核已实现于 `internal/builder` |
-| 构建快照防撕裂（冻结 AST） | `docs/03-pipeline.md` §6.2（Build 与 Stage 的版本校验）；落地为 Phase 0-A1 `build` 模块 |
+| 构建快照防撕裂（冻结 AST） | `docs/03-pipeline.md` §6.2（Build 与 Stage 的版本校验）；已落地于 `internal/builder` + `internal/pipeline`（无独立 module/build） |
 | 生产持久化 | `docs/03-pipeline.md` §9（流水线层持久化投影，pipeline 表 schema 已建）：`projects`/`pages`/`page_documents`/`artifacts`/`page_routes` 等 |
 
-编译器内核（Draft AST → 静态 HTML/CSS）已落地于 `internal/builder`（`builder.go` 入口 + `core/` 内核 + `components/` 组件库），是「Build Job Engine → Go Publish Compiler」的执行者；Page/Build/Artifact/Publication 四个 module 尚未创建，属于 Phase 0-A1 计划范围。
+编译器内核（Draft AST → 静态 HTML/CSS）已落地于 `internal/builder`（`builder.go` 入口 + `core/` 内核 + `components/` 组件库），是「Build Job Engine → Go Publish Compiler」的执行者；Page/Artifact/Publication 三个 module 已落地；Build 由 `internal/builder`（编译内核）+ `internal/pipeline`（发布内核）承担，无独立 module/build。
