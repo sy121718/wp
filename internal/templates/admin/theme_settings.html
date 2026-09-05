@@ -8,6 +8,7 @@
             <a class="btn" href="/admin/themes?project={{.ProjectID}}" style="float:right">返回列表</a>
         </h2>
         <form method="post" action="/admin/themes/settings/save" class="theme-form">
+            <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
             <input type="hidden" name="id" value="{{.ThemeID}}">
             <h3>全局颜色</h3>
             <div class="theme-color-grid">

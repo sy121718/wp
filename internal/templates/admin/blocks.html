@@ -18,8 +18,9 @@
                 {{end}}
             </select>
         </form>
-        {* 新建块 *}
+        {* 新建块（原生 POST 提交，携带 CSRF 隐藏域；hx-headers 只对 htmx 请求生效） *}
         <form method="post" action="/admin/blocks/create" class="pages-form mt-md">
+            <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
             <input type="hidden" name="projectId" value="{{.SelectedProject}}">
             <input type="text" name="name" placeholder="块名称，如：站点页眉" required>
             <select name="kind">
@@ -47,6 +48,7 @@
                     <a class="btn" href="/workbench?block={{b.ID}}">编辑</a>
                     <form method="post" action="/admin/blocks/delete" class="pages-form" style="display:inline"
                           onsubmit="return confirm('确定删除块「{{b.Name}}」？绑定了它的主题下页面将重新构建。')">
+                        <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
                         <input type="hidden" name="id" value="{{b.ID}}">
                         <input type="hidden" name="projectId" value="{{.SelectedProject}}">
                         <button type="submit" class="btn">删除</button>
@@ -75,6 +77,7 @@
                     <a class="btn" href="/workbench?block={{b.ID}}">编辑</a>
                     <form method="post" action="/admin/blocks/delete" class="pages-form" style="display:inline"
                           onsubmit="return confirm('确定删除块「{{b.Name}}」？绑定了它的主题下页面将重新构建。')">
+                        <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
                         <input type="hidden" name="id" value="{{b.ID}}">
                         <input type="hidden" name="projectId" value="{{.SelectedProject}}">
                         <button type="submit" class="btn">删除</button>
@@ -103,6 +106,7 @@
                     <a class="btn" href="/workbench?block={{b.ID}}">编辑</a>
                     <form method="post" action="/admin/blocks/delete" class="pages-form" style="display:inline"
                           onsubmit="return confirm('确定删除块「{{b.Name}}」？')">
+                        <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
                         <input type="hidden" name="id" value="{{b.ID}}">
                         <input type="hidden" name="projectId" value="{{.SelectedProject}}">
                         <button type="submit" class="btn">删除</button>

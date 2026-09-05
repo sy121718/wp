@@ -15,9 +15,11 @@ import (
 	projecthttp "go_wp/internal/module/project/inbound/http"
 	pubhttp "go_wp/internal/module/publication/inbound/http"
 	"go_wp/internal/templates"
+	"go_wp/pkg/casbin"
 	"go_wp/pkg/database"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
+	"go_wp/public/migrations"
 
 	"github.com/gin-gonic/gin"
 )
@@ -78,18 +80,31 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 		return
 	}
 
+	// 业务权限 seed：权限点（sys_permission）、菜单（sys_menus）与默认超管策略（sys_casbin_rule）。
+	// 表结构迁移由 cmd/main.go runMigrations 负责；此处幂等执行 seed（ConditionSQL 已存在则跳过），
+	// seed 直写 sys_casbin_rule 后重载 Casbin 内存策略与 urlCodeMap，保证启动时策略即生效。
+	if err := migrations.RunSeeds(db); err != nil {
+		logger.Scene("init").Error(err, "业务权限 seed 失败")
+	} else if err := casbin.ReloadPolicy(); err != nil {
+		logger.Scene("init").With("err", err).Warn("业务权限策略重载失败（Casbin 未初始化时忽略）")
+	}
+
 	// 业务 API 路由（依赖顺序：media → project → block → artifact → publication → page）
 	//
-	// 认证装配（SessionAuthMiddleware 统一收口）：
+	// 认证 + 鉴权装配（SessionAuthMiddleware + CSRFMiddleware + CasbinMiddleware 统一收口）：
 	//   - 豁免：GET /api/captcha（登录前置依赖）与 admin 模块路由
-	//     （admin 内部已对六领域分组挂 SessionAuthMiddleware，POST /api/admin/login 保持匿名可达）
-	//   - 其余业务 API 统一挂 builtin.SessionAuthMiddleware()
-	//   - CSRF / Casbin 不在此处挂载：业务 API 暂无策略与 Token 数据，待后续迭代
+	//     （admin 内部已对六领域分组挂中间件，POST /api/admin/login 保持匿名可达）
+	//   - 其余业务 API 统一挂 builtin.SessionAuthMiddleware() + builtin.CSRFMiddleware()
+	//     + builtin.CasbinMiddleware()
+	//   - CSRF 校验：POST/PUT/PATCH/DELETE 必须携带 X-CSRF-Token 头或 csrf_token 表单字段，
+	//     token 在登录成功时生成并随响应下发（登录页写入 sessionStorage），GET 等安全方法直接放行
+	//   - Casbin 鉴权：权限点定义与默认超管策略见 public/migrations/030/031 业务权限 seed；
+	//     超管（is_admin=1）由 seed 全量授权，非超管需经角色/用户授权接口分配
 	api := router.Group("/api")
 	captcharouter.SetupCaptchaRoutes(api)
 	adminhttp.SetupAdminRoutes(api, db)
 
-	authorizedAPI := api.Group("", builtin.SessionAuthMiddleware())
+	authorizedAPI := api.Group("", builtin.SessionAuthMiddleware(), builtin.CSRFMiddleware(), builtin.CasbinMiddleware())
 	mediahttp.SetupMediaRoutes(authorizedAPI, db)
 	projectService := projecthttp.SetupProjectRoutes(authorizedAPI, db)
 	blockSvc := blockhttp.SetupBlockRoutes(authorizedAPI, db, projectService)

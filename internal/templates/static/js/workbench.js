@@ -15,6 +15,25 @@
     if (!Array.isArray(initialDoc.root)) initialDoc.root = [];
     if (!initialDoc.settings) initialDoc.settings = {};
 
+    /**
+     * CSRF token 统一获取：优先服务端注入（<meta name="csrf-token">，每次页面渲染新鲜，
+     * 由 workbench/layout.html 输出 withCSRF 注入的 token）；兜底登录时写入的 sessionStorage
+     * （login.html 登录成功回调里存的 csrf_token，适用于 meta 缺失/旧的场景）。
+     */
+    function getCSRFToken() {
+        var m = document.querySelector('meta[name="csrf-token"]');
+        if (m && m.getAttribute('content')) return m.getAttribute('content');
+        try { return sessionStorage.getItem('csrf_token') || ''; } catch (e) { return ''; }
+    }
+
+    /** 给写请求附上 X-CSRF-Token 头；extra 中的既有头保留（调用方负责 Content-Type）。 */
+    function csrfHeaders(extra) {
+        var h = extra || {};
+        var t = getCSRFToken();
+        if (t) h['X-CSRF-Token'] = t;
+        return h;
+    }
+
     /** 组件 Inspector 面板 schema（docs/02-C3 声明式 Controls，后端 ComponentSchemas 注入）。 */
     var componentSchemas = {};
     try { componentSchemas = JSON.parse(document.getElementById('wb-schemas').textContent || '{}'); } catch (e) { componentSchemas = {}; }
@@ -649,7 +668,7 @@
                     form.append('headerBlockId', t.headerBlockId || '');
                     form.append('footerBlockId', t.footerBlockId || '');
                     saveBtn.disabled = true; saveBtn.textContent = '保存中…';
-                    fetch('/admin/themes/settings/save', { method: 'POST', body: form })
+                    fetch('/admin/themes/settings/save', { method: 'POST', headers: csrfHeaders({}), body: form })
                         .then(function (r) {
                             saveBtn.disabled = false; saveBtn.textContent = '保存并应用到全部页面';
                             if (!r.ok) { alert('保存失败，请重试'); return; }
@@ -884,11 +903,14 @@
                     var id = document.createElement('input'); id.name = 'id'; form.appendChild(id);
                     var version = document.createElement('input'); version.name = 'expectedVersion'; form.appendChild(version);
                     var draft = document.createElement('input'); draft.name = 'draftDocument'; form.appendChild(draft);
+                    // 原生表单提交无法携带自定义头，CSRF token 走隐藏域（中间件支持表单字段校验）。
+                    var csrf = document.createElement('input'); csrf.type = 'hidden'; csrf.name = 'csrf_token'; form.appendChild(csrf);
                     document.body.appendChild(form);
                 }
                 form.elements.id.value = meta.pageId;
                 form.elements.expectedVersion.value = this.draftVersion;
                 form.elements.draftDocument.value = JSON.stringify(this.doc);
+                form.elements.csrf_token.value = getCSRFToken();
                 form.submit();
             },
             bindCanvasDrop() {
@@ -2233,7 +2255,7 @@
                 var self = this;
                 var form = new FormData();
                 form.append('file', file);
-                fetch('/api/media/upload', { method: 'POST', body: form })
+                fetch('/api/media/upload', { method: 'POST', headers: csrfHeaders({}), body: form })
                     .then(function (r) { return r.json(); })
                     .then(function (j) {
                         if (j.code && j.code >= 400) { alert(j.message || '上传失败'); return; }
@@ -2250,7 +2272,7 @@
                 // saveBase='block'（全局块编辑）时走 /api/block/ 前缀，默认页面 /api/page/。
                 fetch('/api/' + (meta.saveBase || 'page') + '/' + path, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: csrfHeaders({ 'Content-Type': 'application/json' }),
                     body: JSON.stringify(body)
                 }).then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
                   .then(function (res) {
@@ -2274,7 +2296,7 @@
                     self.busy = true; self.renderUI();
                     fetch('/admin/blocks/save-content', {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
+                        headers: csrfHeaders({ 'Content-Type': 'application/json' }),
                         body: JSON.stringify({ id: meta.pageId, name: meta.blockName, document: this.doc })
                     }).then(function (r) { return r.json(); })
                       .then(function (j) {

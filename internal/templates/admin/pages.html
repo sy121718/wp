@@ -6,6 +6,7 @@
     <section class="pages-card">
         <h2>新建站点工程</h2>
         <form method="post" action="/admin/projects/create" class="pages-form">
+            <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
             <input type="text" name="name" placeholder="站点工程名称，如：官网" required>
             <button type="submit" class="btn btn-primary">创建工程</button>
         </form>
@@ -15,6 +16,7 @@
         <h2>新建页面</h2>
         {{if len(.Projects) > 0}}
         <form method="post" action="/admin/pages/create" class="pages-form">
+            <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
             <select name="projectId" required>
                 {{range _, p := .Projects}}
                 <option value="{{p.ID}}">{{p.Name}}</option>

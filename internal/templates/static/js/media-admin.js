@@ -286,7 +286,8 @@
         var list = document.getElementById('ml-upload-list');
         var row = document.createElement('div'); row.textContent = '上传中 ' + files.length + ' 个文件…';
         if (list) list.appendChild(row);
-        fetch('/api/media/upload', { method: 'POST', body: form })
+        // FormData 提交不设 Content-Type（浏览器自动带 boundary）；写请求必须带 CSRF token。
+        fetch('/api/media/upload', { method: 'POST', headers: M.apiHeaders({}), body: form })
             .then(function (r) { return r.json(); })
             .then(function (j) {
                 row.textContent = '上传完成';

@@ -21,6 +21,12 @@ var themesSQL string
 //go:embed 021_blocks.sql
 var blocksSQL string
 
+//go:embed 030_business_permissions.sql
+var businessPermSQL string
+
+//go:embed 031_business_permissions_superadmin.sql
+var businessPermSuperAdminSQL string
+
 func init() {
 	register(Migration{
 		Version:   "001-init-schema",
@@ -46,5 +52,20 @@ func init() {
 		Version:   "021-blocks",
 		TableName: "blocks",
 		SQL:       blocksSQL,
+	})
+
+	// 业务权限 seed（权限点 + 菜单 + 超管全量策略）。
+	// 执行入口：internal/routers/routes.go 路由装配时调用 RunSeeds（幂等）。
+	registerSeed(Seed{
+		Version:      "030-business-permissions",
+		TableName:    "sys_permission",
+		ConditionSQL: "SELECT COUNT(*) FROM sys_permission WHERE module IN ('page','project','block','media','artifact','publication')",
+		SQL:          businessPermSQL,
+	})
+	registerSeed(Seed{
+		Version:      "031-business-permissions-superadmin",
+		TableName:    "sys_casbin_rule",
+		ConditionSQL: "SELECT COUNT(*) FROM sys_casbin_rule WHERE ptype = 'p' AND v1 = '/api/page/list' AND v0 IN (SELECT CAST(id AS VARCHAR) FROM sys_admin WHERE is_admin = 1)",
+		SQL:          businessPermSuperAdminSQL,
 	})
 }

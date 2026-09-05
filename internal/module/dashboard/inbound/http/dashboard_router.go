@@ -26,7 +26,9 @@ func SetupDashboardRoutes(router *gin.Engine,
 	router.GET("/admin/login", handle.LoginPage)
 
 	// 页面路由（全部挂 Session 认证：未登录的页面请求由中间件 302 到 /admin/login）。
-	authPages := router.Group("", builtin.SessionAuthMiddleware())
+	// 组级再挂 CSRFMiddleware：GET 直接放行，仅保护 POST /workbench/preview（草稿预览渲染）。
+	// 前端刷新画布用原生表单 POST 提交（workbench.js refreshCanvas），已带 csrf_token 隐藏域。
+	authPages := router.Group("", builtin.SessionAuthMiddleware(), builtin.CSRFMiddleware())
 	authPages.GET("/", handle.Dashboard)
 	authPages.GET("/workbench", handle.Workbench)
 	authPages.GET("/workbench/preview", handle.Preview)
@@ -34,8 +36,9 @@ func SetupDashboardRoutes(router *gin.Engine,
 	// 全局块画布预览（工作台块编辑模式 iframe 内嵌）。
 	authPages.GET("/workbench/block/preview", handle.BlockPreview)
 
-	// /admin/* 后台页面统一挂 Session 认证。
-	adminPages := router.Group("/admin", builtin.SessionAuthMiddleware())
+	// /admin/* 后台页面统一挂 Session 认证 + CSRF 校验。
+	// 页面内原生 POST 表单已注入 csrf_token 隐藏域（模板），JS fetch 请求统一带 X-CSRF-Token 头。
+	adminPages := router.Group("/admin", builtin.SessionAuthMiddleware(), builtin.CSRFMiddleware())
 	adminPages.GET("", handle.Dashboard)
 	// 页面管理列表：列出/新建站点工程与页面。
 	adminPages.GET("/pages", handle.PagesList)

@@ -163,9 +163,30 @@ func SeedTestAdmin(t *testing.T, db *gorm.DB, username, password string) error {
 // 调用方按环境不可用处理（t.Skip）或按用例语义断言。
 func LoginAdmin(t *testing.T, engine *gin.Engine, username, password string) (string, error) {
 	t.Helper()
+	sess, err := LoginAdminSession(t, engine, username, password)
+	if err != nil {
+		return "", err
+	}
+	return sess.Cookie, nil
+}
+
+// AdminSession 已登录管理员会话：Cookie 与登录响应下发的 CSRF token。
+// 业务 API 与后台页面写路由挂载 CSRFMiddleware 后，
+// 后续 POST 请求必须携带 X-CSRF-Token 头（或表单字段 csrf_token），
+// 否则被 403 拦截——测试请用 CSRFToken 构造写请求。
+type AdminSession struct {
+	Cookie    string
+	CSRFToken string
+}
+
+// LoginAdminSession 通过真实登录链路获取已登录会话 Cookie 与 CSRF token。
+// 与 LoginAdmin 同一实现；登录成功后从响应 data.csrf_token 提取 token
+// （admin_handle.go 登录成功响应注入，与 cookie session 绑定）。
+func LoginAdminSession(t *testing.T, engine *gin.Engine, username, password string) (*AdminSession, error) {
+	t.Helper()
 
 	if engine == nil {
-		return "", errors.New("engine 不能为空")
+		return nil, errors.New("engine 不能为空")
 	}
 
 	// 同进程生成验证码：MemoryStore 与 handler 共享，code 直接可用于登录。
@@ -182,17 +203,34 @@ func LoginAdmin(t *testing.T, engine *gin.Engine, username, password string) (st
 		},
 	})
 	if err != nil {
-		return "", fmt.Errorf("发送登录请求失败: %w", err)
+		return nil, fmt.Errorf("发送登录请求失败: %w", err)
 	}
 	if recorder.Code != http.StatusOK {
-		return "", fmt.Errorf("登录接口返回 %d: %s", recorder.Code, recorder.Body.String())
+		return nil, fmt.Errorf("登录接口返回 %d: %s", recorder.Code, recorder.Body.String())
 	}
 
+	sess := &AdminSession{}
 	for _, ck := range recorder.Result().Cookies() {
 		if ck.Name == "gowp_session" && ck.Value != "" {
 			// cookie 名对齐 pkg/auth cookie_session.go 的 sessionName（包内私有常量）。
-			return ck.Name + "=" + ck.Value, nil
+			sess.Cookie = ck.Name + "=" + ck.Value
 		}
 	}
-	return "", errors.New("登录响应未写入 gowp_session cookie")
+	if sess.Cookie == "" {
+		return nil, errors.New("登录响应未写入 gowp_session cookie")
+	}
+
+	var loginResp struct {
+		Data struct {
+			CSRFToken string `json:"csrf_token"`
+		} `json:"data"`
+	}
+	if err := DecodeResponseBody(recorder, &loginResp); err != nil {
+		return nil, fmt.Errorf("解析登录响应失败: %w", err)
+	}
+	sess.CSRFToken = loginResp.Data.CSRFToken
+	if sess.CSRFToken == "" {
+		return nil, errors.New("登录响应未下发 csrf_token")
+	}
+	return sess, nil
 }

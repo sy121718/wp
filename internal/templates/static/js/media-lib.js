@@ -9,10 +9,31 @@
     var MediaLib = {};
 
     // ---------- 工具 ----------
+    // csrfToken()：CSRF token 统一获取——优先页面注入的 <meta name="csrf-token">
+    // （/admin/media 由 withCSRF 注入渲染数据），兜底登录时写入 sessionStorage 的 csrf_token。
+    function csrfToken() {
+        var m = document.querySelector('meta[name="csrf-token"]');
+        if (m && m.getAttribute('content')) return m.getAttribute('content');
+        try { return sessionStorage.getItem('csrf_token') || ''; } catch (e) { return ''; }
+    }
+
+    // apiHeaders(extra)：给写请求附 X-CSRF-Token 头，extra 既有头保留。
+    function apiHeaders(extra) {
+        var h = extra || {};
+        var t = csrfToken();
+        if (t) h['X-CSRF-Token'] = t;
+        return h;
+    }
+
     function api(path, opts) {
         opts = opts || {};
         var url = '/api/media/' + path;
         var init = { method: opts.method || 'GET', headers: { 'Content-Type': 'application/json' } };
+        // 写操作（POST 等）必须带 CSRF token，否则 authorizedAPI 组的 CSRFMiddleware 返回 403。
+        if (init.method && init.method.toUpperCase() !== 'GET') {
+            var t = csrfToken();
+            if (t) init.headers['X-CSRF-Token'] = t;
+        }
         if (opts.body) init.body = JSON.stringify(opts.body);
         return fetch(url, init).then(function (r) { return r.json(); }).then(function (j) {
             if (j.code && j.code >= 400) { var err = new Error(j.message || '请求失败'); err.code = j.code; throw err; }
@@ -142,6 +163,10 @@
 
     // api(path, opts)：统一 /api/media/* 请求（返回 data 或抛错）。
     MediaLib.api = api;
+
+    // csrfToken / apiHeaders：供同页脚本（media-admin.js 等）复用写请求头。
+    MediaLib.csrfToken = csrfToken;
+    MediaLib.apiHeaders = apiHeaders;
 
     // parseExtra(item)：解析 ExtraInfo JSON（alt/title/description）。
     MediaLib.parseExtra = function (item) {

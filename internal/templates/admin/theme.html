@@ -20,6 +20,7 @@
         </form>
         {* 新建主题 *}
         <form method="post" action="/admin/themes/create" class="pages-form mt-md">
+            <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
             <input type="hidden" name="projectId" value="{{.SelectedProject}}">
             <input type="text" name="name" placeholder="主题名称，如：春季促销版" required>
             <button type="submit" class="btn btn-primary">新建主题</button>
@@ -50,6 +51,7 @@
                     <a class="btn" href="/admin/themes/settings?id={{t.ID}}">设置</a>
                     {{if !t.IsActive}}
                     <form method="post" action="/admin/themes/activate" class="pages-form" style="display:inline">
+                        <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
                         <input type="hidden" name="id" value="{{t.ID}}">
                         <input type="hidden" name="projectId" value="{{t.ProjectID}}">
                         <button type="submit" class="btn">激活</button>
@@ -58,6 +60,7 @@
                     {{if !t.IsActive}}
                     <form method="post" action="/admin/themes/delete" class="pages-form" style="display:inline"
                           onsubmit="return confirm('确定删除主题「{{t.Name}}」？')">
+                        <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
                         <input type="hidden" name="id" value="{{t.ID}}">
                         <input type="hidden" name="projectId" value="{{t.ProjectID}}">
                         <button type="submit" class="btn">删除</button>
