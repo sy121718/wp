@@ -2,6 +2,8 @@
 package pageenums
 
 const (
+	// ErrInvalidParam 请求本身不合法（nil 请求、空/空白 ID 等），与资源存在性无关。
+	ErrInvalidParam         = "请求参数无效"
 	ErrPageNotFound         = "页面不存在"
 	ErrProjectNotFound      = "站点工程不存在"
 	ErrInvalidKind          = "页面类型与内容目标不匹配"

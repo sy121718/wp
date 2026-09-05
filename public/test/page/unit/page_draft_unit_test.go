@@ -99,11 +99,11 @@ func TestPageCreateKindMatrix(t *testing.T) {
 
 // ---- 创建：输入校验与恶意输入 ----
 
-// TestPageCreateNilRequest nil 请求应返回非法文档错误。
+// TestPageCreateNilRequest nil 请求应返回参数无效错误。
 func TestPageCreateNilRequest(t *testing.T) {
 	_, svc, _, _ := newPageService(t)
-	if _, err := svc.Create(context.Background(), nil); err == nil || err.Error() != pageenums.ErrInvalidDocument {
-		t.Fatalf("nil 请求应返回 %q: %v", pageenums.ErrInvalidDocument, err)
+	if _, err := svc.Create(context.Background(), nil); err == nil || err.Error() != pageenums.ErrInvalidParam {
+		t.Fatalf("nil 请求应返回 %q: %v", pageenums.ErrInvalidParam, err)
 	}
 }
 
@@ -172,7 +172,7 @@ func TestPageCreateOversizeDocument(t *testing.T) {
 	}
 }
 
-// TestPageCreateUnknownProject 工程不存在 / 空工程 ID 应返回工程不存在。
+// TestPageCreateUnknownProject 工程不存在返回工程不存在；空工程 ID 属于参数错误。
 func TestPageCreateUnknownProject(t *testing.T) {
 	_, svc, _, _ := newPageService(t)
 	ctx := context.Background()
@@ -185,8 +185,8 @@ func TestPageCreateUnknownProject(t *testing.T) {
 	if _, err := svc.Create(ctx, &pagedto.CreateReq{
 		ProjectID: "  ", Kind: "home", ContentTargetType: "none",
 		DraftPath: "/nop2", DraftDocument: json.RawMessage(pageDocument),
-	}); err == nil || err.Error() != pageenums.ErrProjectNotFound {
-		t.Errorf("空工程 ID 应返回 %q: %v", pageenums.ErrProjectNotFound, err)
+	}); err == nil || err.Error() != pageenums.ErrInvalidParam {
+		t.Errorf("空工程 ID 应返回 %q: %v", pageenums.ErrInvalidParam, err)
 	}
 }
 
@@ -317,16 +317,16 @@ func TestPageSaveDraftNotFound(t *testing.T) {
 	}
 }
 
-// TestPageSaveDraftNilRequest nil / 空 ID 请求应被拒绝。
+// TestPageSaveDraftNilRequest nil / 空 ID 请求属于参数错误。
 func TestPageSaveDraftNilRequest(t *testing.T) {
 	_, svc, _, _ := newPageService(t)
-	if _, err := svc.SaveDraft(context.Background(), nil); err == nil || err.Error() != pageenums.ErrPageNotFound {
-		t.Errorf("nil 请求应返回 %q: %v", pageenums.ErrPageNotFound, err)
+	if _, err := svc.SaveDraft(context.Background(), nil); err == nil || err.Error() != pageenums.ErrInvalidParam {
+		t.Errorf("nil 请求应返回 %q: %v", pageenums.ErrInvalidParam, err)
 	}
 	if _, err := svc.SaveDraft(context.Background(), &pagedto.SaveDraftReq{
 		ExpectedVersion: 1, DraftPath: "/x", DraftDocument: json.RawMessage(pageDocument),
-	}); err == nil || err.Error() != pageenums.ErrPageNotFound {
-		t.Errorf("空 ID 应返回 %q: %v", pageenums.ErrPageNotFound, err)
+	}); err == nil || err.Error() != pageenums.ErrInvalidParam {
+		t.Errorf("空 ID 应返回 %q: %v", pageenums.ErrInvalidParam, err)
 	}
 }
 

@@ -12,15 +12,16 @@ import (
 
 // ---- 删除 ----
 
-// TestPageDeleteNotFound 不存在 / nil / 空 ID 的删除请求应返回页面不存在。
+// TestPageDeleteNotFound nil / 空 ID 删除请求属于参数错误；
+// 不存在的页面（合法 ID）才返回页面不存在。
 func TestPageDeleteNotFound(t *testing.T) {
 	_, svc, _, _ := newPageService(t)
 	ctx := context.Background()
-	if err := svc.Delete(ctx, nil); err == nil || err.Error() != pageenums.ErrPageNotFound {
-		t.Errorf("nil 请求应返回 %q: %v", pageenums.ErrPageNotFound, err)
+	if err := svc.Delete(ctx, nil); err == nil || err.Error() != pageenums.ErrInvalidParam {
+		t.Errorf("nil 请求应返回 %q: %v", pageenums.ErrInvalidParam, err)
 	}
-	if err := svc.Delete(ctx, &pagedto.DeleteReq{}); err == nil || err.Error() != pageenums.ErrPageNotFound {
-		t.Errorf("空 ID 应返回 %q: %v", pageenums.ErrPageNotFound, err)
+	if err := svc.Delete(ctx, &pagedto.DeleteReq{}); err == nil || err.Error() != pageenums.ErrInvalidParam {
+		t.Errorf("空 ID 应返回 %q: %v", pageenums.ErrInvalidParam, err)
 	}
 	if err := svc.Delete(ctx, &pagedto.DeleteReq{ID: "6f2c9d0e-1a2b-3c4d-8e9f-0a1b2c3d4e5f"}); err == nil || err.Error() != pageenums.ErrPageNotFound {
 		t.Errorf("不存在页面应返回 %q: %v", pageenums.ErrPageNotFound, err)

@@ -9,7 +9,6 @@ import (
 
 	artifactdto "go_wp/internal/module/artifact/dto"
 	pagedto "go_wp/internal/module/page/dto"
-	pageenums "go_wp/internal/module/page/enums"
 	pagemodel "go_wp/internal/module/page/model"
 	pubdto "go_wp/internal/module/publication/dto"
 
@@ -54,16 +53,17 @@ func (s *Service) syncKernel(path string, doc json.RawMessage, pageID string) er
 }
 
 // Build 基于当前草稿构建并暂存产物。
+// nil/空 ID 属于请求不合法（ErrInvalidParam）；合法 ID 无页面才返回 ErrPageNotFound。
 func (s *Service) Build(ctx context.Context, req *pagedto.BuildReq) (res *pagedto.PublishResp, err error) {
 	if req == nil || strings.TrimSpace(req.ID) == "" {
-		return nil, errors.New(pageenums.ErrPageNotFound)
+		return nil, ErrInvalidParam
 	}
 	page, err := s.getExistingPage(ctx, req.ID)
 	if err != nil {
 		return nil, err
 	}
 	if req.ExpectedVersion > 0 && req.ExpectedVersion != page.DraftVersion {
-		return nil, errors.New(pageenums.ErrDraftVersionConflict)
+		return nil, ErrDraftVersionConflict
 	}
 	logger.Scene("build").With("pageId", page.ID).Info("开始构建")
 	if err = s.syncKernel(page.DraftPath, page.DraftDocument, page.ID); err != nil {
@@ -91,9 +91,10 @@ func (s *Service) Build(ctx context.Context, req *pagedto.BuildReq) (res *pagedt
 }
 
 // Publish 激活暂存产物：二次构建校验一致性后原子切换活跃指针。
+// nil/空 ID 属于请求不合法（ErrInvalidParam）；合法 ID 无页面才返回 ErrPageNotFound。
 func (s *Service) Publish(ctx context.Context, req *pagedto.PublishReq) (res *pagedto.PublishResp, err error) {
 	if req == nil || strings.TrimSpace(req.ID) == "" {
-		return nil, errors.New(pageenums.ErrPageNotFound)
+		return nil, ErrInvalidParam
 	}
 	page, err := s.getExistingPage(ctx, req.ID)
 	if err != nil {
@@ -101,14 +102,14 @@ func (s *Service) Publish(ctx context.Context, req *pagedto.PublishReq) (res *pa
 	}
 	logger.Scene("publication").With("pageId", page.ID).Info("开始发布")
 	if page.StagedArtifactID == nil || *page.StagedArtifactID == "" {
-		return nil, errors.New(pageenums.ErrNoStagedArtifact)
+		return nil, ErrNoStagedArtifact
 	}
 	stagedArt, err := s.artifacts.DetailByID(ctx, &artifactdto.DetailByIDReq{ID: *page.StagedArtifactID})
 	if err != nil {
-		return nil, errors.New(pageenums.ErrNoStagedArtifact)
+		return nil, ErrNoStagedArtifact
 	}
 	if stagedArt.ArtifactKey == "" || stagedArt.PageID != page.ID {
-		return nil, errors.New(pageenums.ErrNoStagedArtifact)
+		return nil, ErrNoStagedArtifact
 	}
 
 	// FS 激活前预检：目标路径被其他页面/展示实例占用时提前失败（H7），
@@ -131,7 +132,7 @@ func (s *Service) Publish(ctx context.Context, req *pagedto.PublishReq) (res *pa
 		return nil, mapPublishError(buildErr)
 	}
 	if built != stagedArt.ArtifactHash {
-		return nil, errors.New(pageenums.ErrRebuildRequired)
+		return nil, ErrRebuildRequired
 	}
 	hash, err := s.publisher.Publish(page.ID)
 	if err != nil {
@@ -170,9 +171,11 @@ func (s *Service) Publish(ctx context.Context, req *pagedto.PublishReq) (res *pa
 }
 
 // Rollback 秒级回滚到历史产物：指针切换，不重新编译。
+// nil 请求 / 空 ID / 空 TargetHash 属于请求不合法（ErrInvalidParam）；
+// 合法 ID 无页面才返回 ErrPageNotFound，目标 hash 无产物返回 ErrRollbackTargetMiss。
 func (s *Service) Rollback(ctx context.Context, req *pagedto.RollbackReq) (res *pagedto.PublishResp, err error) {
 	if req == nil || strings.TrimSpace(req.ID) == "" || strings.TrimSpace(req.TargetHash) == "" {
-		return nil, errors.New(pageenums.ErrPageNotFound)
+		return nil, ErrInvalidParam
 	}
 	page, err := s.getExistingPage(ctx, req.ID)
 	if err != nil {
@@ -182,7 +185,7 @@ func (s *Service) Rollback(ctx context.Context, req *pagedto.RollbackReq) (res *
 	targetArt, err := s.artifacts.Detail(ctx, &artifactdto.DetailReq{PageID: page.ID, Hash: req.TargetHash})
 	if err != nil {
 		logger.Scene("page").With("pageId", page.ID).Error(err, "回滚目标产物缺失")
-		return nil, errors.New(pageenums.ErrRollbackTargetMiss)
+		return nil, ErrRollbackTargetMiss
 	}
 	if err = s.restoreKernelForHistory(page, targetArt); err != nil {
 		return nil, err
@@ -218,11 +221,12 @@ func (s *Service) Rollback(ctx context.Context, req *pagedto.RollbackReq) (res *
 }
 
 // UpdateURL 修改访问路径：新 URL 构建激活后，旧 URL 注册 301 或取消激活。
+// nil/空 ID 属于请求不合法（ErrInvalidParam）；合法 ID 无页面才返回 ErrPageNotFound。
 // FS 激活发生在 publisher.UpdateURL 内部（先于 DB 路由写入），因此新路径
 // 占用检查必须在此之前完成，避免「FS 先覆盖、DB 后报错」的状态分裂（H2/H7）。
 func (s *Service) UpdateURL(ctx context.Context, req *pagedto.UpdateURLReq) (res *pagedto.PublishResp, err error) {
 	if req == nil || strings.TrimSpace(req.ID) == "" {
-		return nil, errors.New(pageenums.ErrPageNotFound)
+		return nil, ErrInvalidParam
 	}
 	newPath, err := normalizePagePath(req.NewPath)
 	if err != nil {
@@ -254,6 +258,36 @@ func (s *Service) UpdateURL(ctx context.Context, req *pagedto.UpdateURLReq) (res
 		return nil, mapPublishError(err)
 	}
 	st, _ := s.publisher.Status(page.ID)
+
+	// 纯草稿（从未发布）页面：内核 UpdateURL 已只迁移草稿路径（未构建未激活）。
+	// 此处同步 DB 侧：只迁 draft_path 与 reserved 路由，不归档产物、不激活路由、
+	// 不建重定向（线上从未存在，无旧路径可处置）——审计 Medium：UpdateURL 纯草稿。
+	if !pageHasPublishedState(st) {
+		now := time.Now().UTC()
+		if err = s.model.MoveDraftPath(ctx, page.ID, newPath, now); err != nil {
+			logger.Scene("page").With("pageId", page.ID).Error(err, "纯草稿路径迁移失败")
+			return nil, err
+		}
+		if s.routes != nil {
+			if rerr := s.routes.RenameReserved(ctx, &pubdto.RenameReservedReq{
+				ProjectID: page.ProjectID, PageID: page.ID,
+				OldPath: oldPath, NewPath: newPath,
+			}); rerr != nil {
+				logger.Scene("page").With("pageId", page.ID).Error(rerr, "URL 修改后重命名保留路由失败，中止流程")
+				return nil, rerr
+			}
+		}
+		status := pipeline.StateDraft
+		if st != nil && st.Status != "" {
+			status = st.Status
+		}
+		logger.Scene("page").With("pageId", page.ID).With("oldPath", publishedPath).With("newPath", newPath).
+			Info("纯草稿 URL 修改完成（仅迁移路径与保留路由）")
+		return &pagedto.PublishResp{
+			PageID: page.ID, Status: status, DraftPath: newPath,
+			PublishedAt: now.Format(time.RFC3339),
+		}, nil
+	}
 
 	// 新产物归档换取 page_artifacts 行 ID：路由 artifact_id 是 uuid 列，
 	// 必须写产物行主键而非内容 hash（生产 DDL 下写 hash 必然 22P02 失败）。
@@ -420,6 +454,23 @@ func (s *Service) kernelVersion(pageID string) int {
 	return 1
 }
 
+// pageHasPublishedState 判断页面是否曾上线（与 pipeline.PageRecord.hasPublishedHistory 口径一致）。
+// UpdateURL 对纯草稿（从未发布）页面只迁移路径与保留路由，不构建不激活。
+func pageHasPublishedState(rec *pipeline.PageRecord) bool {
+	if rec == nil {
+		return false
+	}
+	if rec.ActiveHash != "" {
+		return true
+	}
+	for _, h := range rec.Histories {
+		if h.Status == pipeline.StatePublished {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *Service) kernelVersionOrOne(pageID string) int { return s.kernelVersion(pageID) }
 
 // ensureRouteNotOccupied 校验目标路径未被其他页面/展示实例占用
@@ -435,7 +486,7 @@ func (s *Service) ensureRouteNotOccupied(ctx context.Context, projectID, path, s
 		return err
 	}
 	if foreign > 0 {
-		return errors.New(pageenums.ErrPathOccupied)
+		return ErrPathOccupied
 	}
 	return nil
 }
@@ -450,13 +501,13 @@ func activeHashOf(rec *pipeline.PageRecord) string {
 func mapPublishError(err error) error {
 	switch {
 	case errors.Is(err, pipeline.ErrVersionConflict):
-		return errors.New(pageenums.ErrDraftVersionConflict)
+		return ErrDraftVersionConflict
 	case errors.Is(err, pipeline.ErrNoStagedArtifact):
-		return errors.New(pageenums.ErrNoStagedArtifact)
+		return ErrNoStagedArtifact
 	case errors.Is(err, pipeline.ErrRollbackPathMismatch):
-		return errors.New(pageenums.ErrRebuildRequired)
+		return ErrRebuildRequired
 	case errors.Is(err, pipeline.ErrPageNotFound):
-		return errors.New(pageenums.ErrPageNotFound)
+		return ErrPageNotFound
 	default:
 		return err
 	}

@@ -304,11 +304,11 @@ func TestBlockCreateInvalidRequest(t *testing.T) {
 	})
 	t.Run("ProjectNotExist", func(t *testing.T) {
 		_, err := e.svc.Create(ctx, &blockdto.CreateReq{ProjectID: uuid.NewString(), Name: "孤儿块"})
-		errContains(t, err, "工程不存在")
+		errContains(t, err, blockenums.ErrProjectNotFound)
 	})
 	t.Run("EmptyProjectID", func(t *testing.T) {
 		_, err := e.svc.Create(ctx, &blockdto.CreateReq{ProjectID: "", Name: "无归属块"})
-		errContains(t, err, "工程不存在")
+		errContains(t, err, blockenums.ErrProjectNotFound)
 	})
 }
 
@@ -319,11 +319,11 @@ func TestBlockCreateDuplicateName(t *testing.T) {
 
 	t.Run("ExactDuplicateRejected", func(t *testing.T) {
 		_, err := e.svc.Create(ctx, &blockdto.CreateReq{ProjectID: e.projectID, Name: "Hero"})
-		errContains(t, err, "同名块已存在")
+		errContains(t, err, blockenums.ErrBlockDuplicate)
 	})
 	t.Run("CaseAndWhitespaceInsensitive", func(t *testing.T) {
 		_, err := e.svc.Create(ctx, &blockdto.CreateReq{ProjectID: e.projectID, Name: "  hero  "})
-		errContains(t, err, "同名块已存在")
+		errContains(t, err, blockenums.ErrBlockDuplicate)
 	})
 	t.Run("SameNameOtherProjectAllowed", func(t *testing.T) {
 		pid := e.newProject(t)

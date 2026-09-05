@@ -152,9 +152,11 @@ func (m *RoleModel) Create(ctx context.Context, e *RoleEntity) error {
 // Update 更新角色元信息。
 // 显式指定列（含 status 零值），否则 gorm 结构体更新会跳过零值字段，
 // 导致停用角色（status=0）落库失败、重新启用时状态比对失真。
+// update_time 由 BeforeUpdate hook 刷新为当前时间；update_by 保留调用方传入值
+// （service 层未传时沿用实体原值），与 SysRule/Permission 的 Update 模式一致。
 func (m *RoleModel) Update(ctx context.Context, e *RoleEntity) error {
 	return m.DB(ctx).Where("id = ?", e.ID).
-		Select("role_name", "status", "sort_order", "remark").Updates(e).Error
+		Select("role_name", "status", "sort_order", "remark", "update_by", "update_time").Updates(e).Error
 }
 
 // Delete 删除角色记录。

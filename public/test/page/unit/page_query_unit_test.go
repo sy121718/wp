@@ -25,17 +25,17 @@ func TestPageDetailNotFound(t *testing.T) {
 	}
 }
 
-// TestPageDetailEmptyID nil / 空 ID 详情请求应被拒绝。
+// TestPageDetailEmptyID nil / 空 ID / 空白 ID 详情请求属于参数错误。
 func TestPageDetailEmptyID(t *testing.T) {
 	_, svc, _, _ := newPageService(t)
-	if _, err := svc.Detail(context.Background(), nil); err == nil || err.Error() != pageenums.ErrPageNotFound {
-		t.Errorf("nil 请求应返回 %q: %v", pageenums.ErrPageNotFound, err)
+	if _, err := svc.Detail(context.Background(), nil); err == nil || err.Error() != pageenums.ErrInvalidParam {
+		t.Errorf("nil 请求应返回 %q: %v", pageenums.ErrInvalidParam, err)
 	}
-	if _, err := svc.Detail(context.Background(), &pagedto.DetailReq{}); err == nil || err.Error() != pageenums.ErrPageNotFound {
-		t.Errorf("空 ID 应返回 %q: %v", pageenums.ErrPageNotFound, err)
+	if _, err := svc.Detail(context.Background(), &pagedto.DetailReq{}); err == nil || err.Error() != pageenums.ErrInvalidParam {
+		t.Errorf("空 ID 应返回 %q: %v", pageenums.ErrInvalidParam, err)
 	}
-	if _, err := svc.Detail(context.Background(), &pagedto.DetailReq{ID: "   "}); err == nil || err.Error() != pageenums.ErrPageNotFound {
-		t.Errorf("空白 ID 应返回 %q: %v", pageenums.ErrPageNotFound, err)
+	if _, err := svc.Detail(context.Background(), &pagedto.DetailReq{ID: "   "}); err == nil || err.Error() != pageenums.ErrInvalidParam {
+		t.Errorf("空白 ID 应返回 %q: %v", pageenums.ErrInvalidParam, err)
 	}
 }
 
@@ -165,14 +165,14 @@ func TestPageListRevisionsNotFound(t *testing.T) {
 	}
 }
 
-// TestPageListRevisionsNilRequest nil / 空 PageID 应被拒绝。
+// TestPageListRevisionsNilRequest nil / 空 PageID 属于参数错误。
 func TestPageListRevisionsNilRequest(t *testing.T) {
 	_, svc, _, _ := newPageService(t)
-	if _, err := svc.ListRevisions(context.Background(), nil); err == nil || err.Error() != pageenums.ErrPageNotFound {
-		t.Errorf("nil 请求应返回 %q: %v", pageenums.ErrPageNotFound, err)
+	if _, err := svc.ListRevisions(context.Background(), nil); err == nil || err.Error() != pageenums.ErrInvalidParam {
+		t.Errorf("nil 请求应返回 %q: %v", pageenums.ErrInvalidParam, err)
 	}
-	if _, err := svc.ListRevisions(context.Background(), &pagedto.RevisionReq{}); err == nil || err.Error() != pageenums.ErrPageNotFound {
-		t.Errorf("空 PageID 应返回 %q: %v", pageenums.ErrPageNotFound, err)
+	if _, err := svc.ListRevisions(context.Background(), &pagedto.RevisionReq{}); err == nil || err.Error() != pageenums.ErrInvalidParam {
+		t.Errorf("空 PageID 应返回 %q: %v", pageenums.ErrInvalidParam, err)
 	}
 }
 

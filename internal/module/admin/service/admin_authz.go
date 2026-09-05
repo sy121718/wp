@@ -26,7 +26,23 @@ func (s *Service) AdminRoleList(ctx context.Context, req *admindto.AdminRoleList
 
 // AdminRoleSave 全量替换用户绑定的角色。
 // 前端直接传 role_codes，写入 Casbin g 策略。
+//
+// 超管保护（审计项「RBAC 提权无超管保护」）：目标用户是超管账号（is_admin=1）
+// 或目标角色含超管权限（权限集覆盖全部启用权限点）时，仅超管可操作——
+// 防止普通管理员借「替换角色绑定」把超管账号降权，或给自己绑定超管角色提权。
 func (s *Service) AdminRoleSave(ctx context.Context, req *admindto.AdminRoleSaveReq) (res *admindto.AdminRoleSaveResp, err error) {
+	targetSuper, err := s.isSuperAdmin(ctx, req.UserID)
+	if err != nil {
+		return nil, err
+	}
+	roleSuper, err := s.roleHasSuperAdminPermission(ctx, req.RoleCodes)
+	if err != nil {
+		return nil, err
+	}
+	if err = s.requireSuperAdminForSensitiveTarget(ctx, req.OperatorID, targetSuper || roleSuper); err != nil {
+		return nil, err
+	}
+
 	userIDStr := strconv.FormatUint(req.UserID, 10)
 	if err = casbin.ReplaceUserRoleBindings(userIDStr, req.RoleCodes); err != nil {
 		return nil, err

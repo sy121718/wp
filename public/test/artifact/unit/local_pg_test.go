@@ -12,18 +12,23 @@ import (
 	"gorm.io/gorm"
 )
 
-// 本文件提供与 public/test/support.NewPGTestDB 等价的隔离 PG 测试基建。
+// 本文件提供与 public/test/support.NewPGTestDB 等价的隔离 PG 测试基建，
+// 并有意图保留（不切回 support），理由见下方差异说明。
 //
-// 背景：support 包 import 了 go_wp/internal/routers 与 go_wp/config，而当前
-// 工作区存在他人未提交的 WIP 修改（internal/middleware/builtin/cors.go、
-// internal/module/project/service/theme_service.go 等）处于编译失败中间态，
-// 导致 support 包整体无法编译。为不触碰 internal/ 生产代码，这里在测试包内
-// 复刻同等语义：每次调用创建独立 schema（search_path 隔离），测试结束
-// DROP SCHEMA；PG 不可达时由调用方 t.Skip。
+// 语义：每次调用创建独立 schema（search_path 隔离），测试结束 DROP SCHEMA
+// ... CASCADE；PG 不可达时由调用方 t.Skip。
 //
-// 与 support 版本的差异：直接用 gorm.Config{TranslateError:true} 打开连接，
-// 与生产数据库配置（pkg/database/database.go:240）一致，避免 gorm 错误翻译
-// 语义偏差。待工作区 WIP 修复后可切回 support.NewPGTestDB。
+// 与 support.NewPGTestDB 的关键差异：本实现以 gorm.Config{TranslateError:true}
+// 打开测试连接，对齐生产数据库配置（pkg/database/database.go）；support 使用
+// 默认 gorm.Config{}（TranslateError=false）。实证（唯一约束冲突场景）：
+//   - TranslateError=true  → errors.Is(err, gorm.ErrDuplicatedKey) = true
+//   - TranslateError=false → 返回原始 PG 错误（SQLSTATE 23505），Is 判 false
+//
+// artifact service 的 mapPersistenceError 依赖 gorm.ErrDuplicatedKey 将冲突
+// 归一化为 ErrArtifactMismatch；unit 包 6 处断言 ErrArtifactMismatch 的测试
+// （prod_schema_test.go、pure_logic_test.go、record_test.go、
+// ensure_record_test.go）在 support 连接下会因分支不命中而断言失败。因此保留
+// 本基建。若日后 support 开启 TranslateError 对齐生产，可切回并删除本文件。
 
 const (
 	localPGHost     = "127.0.0.1"

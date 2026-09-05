@@ -26,6 +26,7 @@ const (
 	ErrUserNotFound     = "ErrUserNotFound"           // 用户不存在
 	ErrDeleteSelf       = "ErrAdminDeleteSelf"        // 不能删除当前登录管理员
 	ErrDeleteSuperAdmin = "ErrAdminDeleteSuperAdmin"  // 不能删除超级管理员
+	ErrSuperAdminOnly   = "ErrSuperAdminOnly"         // 无权操作超管账号（仅超管可操作超管账号/超管角色）
 	MsgLogoutSuccess    = "msg_admin_logout_success"  // 退出成功
 	MsgWrongUserType    = "ErrAdminInvalidUserIDType" // 用户ID类型错误
 )

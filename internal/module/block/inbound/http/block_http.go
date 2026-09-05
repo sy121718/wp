@@ -70,7 +70,7 @@ func (h *Handle) Create(c *gin.Context) {
 	}
 	res, err := h.svc.Create(c.Request.Context(), &req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorWithMessage(c, blockErrorStatus(err), err.Error())
 		return
 	}
 	response.Success(c, res)
@@ -106,17 +106,18 @@ func (h *Handle) Delete(c *gin.Context) {
 }
 
 // blockErrorStatus 按错误消息映射 HTTP 状态码（沿用 page 模块 pageErrorStatus 风格）：
-// 参数/校验错误 → 400，资源不存在 → 404，其余未知错误 → 500。
+// 参数/校验错误 → 400，资源不存在（块/工程）→ 404，同名冲突 → 409，其余未知错误 → 500。
 func blockErrorStatus(err error) int {
 	message := err.Error()
 	switch {
-	case strings.Contains(message, blockenums.ErrBlockNotFound):
+	case strings.Contains(message, blockenums.ErrBlockNotFound), strings.Contains(message, blockenums.ErrProjectNotFound):
 		return http.StatusNotFound
+	case strings.Contains(message, blockenums.ErrBlockDuplicate):
+		return http.StatusConflict
 	case strings.Contains(message, blockenums.ErrBlockParamRequired),
 		strings.Contains(message, blockenums.ErrBlockNameRequired),
 		strings.Contains(message, blockenums.ErrBlockInvalidDoc),
-		strings.Contains(message, blockenums.ErrBlockInvalidKind),
-		strings.Contains(message, blockenums.ErrBlockDuplicate):
+		strings.Contains(message, blockenums.ErrBlockInvalidKind):
 		return http.StatusBadRequest
 	default:
 		return http.StatusInternalServerError

@@ -1,12 +1,13 @@
 package pagehttp
 
 import (
+	"errors"
 	"net/http"
-	"strings"
 
 	pagecontract "go_wp/internal/module/page/contract"
 	pagedto "go_wp/internal/module/page/dto"
 	pageenums "go_wp/internal/module/page/enums"
+	pageservice "go_wp/internal/module/page/service"
 	"go_wp/pkg/response"
 
 	"github.com/gin-gonic/gin"
@@ -26,7 +27,7 @@ func NewHandle(svc pagecontract.PageService) *Handle {
 func (h *Handle) Create(c *gin.Context) {
 	var req pagedto.CreateReq
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.ParamError(c, pageenums.ErrInvalidDocument)
+		response.ParamError(c, pageenums.ErrInvalidParam)
 		return
 	}
 	res, err := h.svc.Create(c.Request.Context(), &req)
@@ -41,7 +42,7 @@ func (h *Handle) Create(c *gin.Context) {
 func (h *Handle) Detail(c *gin.Context) {
 	var req pagedto.DetailReq
 	if err := c.ShouldBindQuery(&req); err != nil {
-		response.ParamError(c, pageenums.ErrPageNotFound)
+		response.ParamError(c, pageenums.ErrInvalidParam)
 		return
 	}
 	res, err := h.svc.Detail(c.Request.Context(), &req)
@@ -66,7 +67,7 @@ func (h *Handle) List(c *gin.Context) {
 func (h *Handle) SaveDraft(c *gin.Context) {
 	var req pagedto.SaveDraftReq
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.ParamError(c, pageenums.ErrInvalidDocument)
+		response.ParamError(c, pageenums.ErrInvalidParam)
 		return
 	}
 	res, err := h.svc.SaveDraft(c.Request.Context(), &req)
@@ -81,7 +82,7 @@ func (h *Handle) SaveDraft(c *gin.Context) {
 func (h *Handle) Build(c *gin.Context) {
 	var req pagedto.BuildReq
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.ParamError(c, pageenums.ErrPageNotFound)
+		response.ParamError(c, pageenums.ErrInvalidParam)
 		return
 	}
 	res, err := h.svc.Build(c.Request.Context(), &req)
@@ -96,7 +97,7 @@ func (h *Handle) Build(c *gin.Context) {
 func (h *Handle) Publish(c *gin.Context) {
 	var req pagedto.PublishReq
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.ParamError(c, pageenums.ErrPageNotFound)
+		response.ParamError(c, pageenums.ErrInvalidParam)
 		return
 	}
 	res, err := h.svc.Publish(c.Request.Context(), &req)
@@ -111,7 +112,7 @@ func (h *Handle) Publish(c *gin.Context) {
 func (h *Handle) Rollback(c *gin.Context) {
 	var req pagedto.RollbackReq
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.ParamError(c, pageenums.ErrPageNotFound)
+		response.ParamError(c, pageenums.ErrInvalidParam)
 		return
 	}
 	res, err := h.svc.Rollback(c.Request.Context(), &req)
@@ -126,7 +127,7 @@ func (h *Handle) Rollback(c *gin.Context) {
 func (h *Handle) UpdateURL(c *gin.Context) {
 	var req pagedto.UpdateURLReq
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.ParamError(c, pageenums.ErrInvalidPath)
+		response.ParamError(c, pageenums.ErrInvalidParam)
 		return
 	}
 	res, err := h.svc.UpdateURL(c.Request.Context(), &req)
@@ -141,7 +142,7 @@ func (h *Handle) UpdateURL(c *gin.Context) {
 func (h *Handle) Delete(c *gin.Context) {
 	var req pagedto.DeleteReq
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.ParamError(c, pageenums.ErrPageNotFound)
+		response.ParamError(c, pageenums.ErrInvalidParam)
 		return
 	}
 	if err := h.svc.Delete(c.Request.Context(), &req); err != nil {
@@ -155,7 +156,7 @@ func (h *Handle) Delete(c *gin.Context) {
 func (h *Handle) ListRevisions(c *gin.Context) {
 	var req pagedto.RevisionReq
 	if err := c.ShouldBindQuery(&req); err != nil {
-		response.ParamError(c, pageenums.ErrPageNotFound)
+		response.ParamError(c, pageenums.ErrInvalidParam)
 		return
 	}
 	res, err := h.svc.ListRevisions(c.Request.Context(), &req)
@@ -166,19 +167,26 @@ func (h *Handle) ListRevisions(c *gin.Context) {
 	response.SuccessWithMessage(c, pageenums.MsgRevisionsListed, res)
 }
 
+// pageErrorStatus 把 page service 返回的错误分类映射为 HTTP 状态码。
+// 修复前按 err.Error() 中文文案 strings.Contains 匹配（文案改动即失效）；
+// 修复后基于本包 sentinel error 精确 errors.Is 判定（文案与 pageenums 一致）。
+// ErrInvalidParam（nil/空 ID 等参数错误）映射 400，与资源不存在（404）区分。
 func pageErrorStatus(err error) int {
-	message := err.Error()
 	switch {
-	case strings.Contains(message, pageenums.ErrPageNotFound), strings.Contains(message, pageenums.ErrProjectNotFound),
-		strings.Contains(message, pageenums.ErrRollbackTargetMiss), strings.Contains(message, pageenums.ErrNoStagedArtifact):
-		if strings.Contains(message, pageenums.ErrNoStagedArtifact) {
-			return http.StatusConflict
-		}
-		return http.StatusNotFound
-	case strings.Contains(message, pageenums.ErrDraftVersionConflict), strings.Contains(message, pageenums.ErrPathOccupied),
-		strings.Contains(message, pageenums.ErrRebuildRequired):
+	case errors.Is(err, pageservice.ErrNoStagedArtifact):
 		return http.StatusConflict
-	case strings.Contains(message, pageenums.ErrInvalidKind), strings.Contains(message, pageenums.ErrInvalidDocument), strings.Contains(message, pageenums.ErrInvalidPath):
+	case errors.Is(err, pageservice.ErrPageNotFound),
+		errors.Is(err, pageservice.ErrProjectNotFound),
+		errors.Is(err, pageservice.ErrRollbackTargetMiss):
+		return http.StatusNotFound
+	case errors.Is(err, pageservice.ErrDraftVersionConflict),
+		errors.Is(err, pageservice.ErrPathOccupied),
+		errors.Is(err, pageservice.ErrRebuildRequired):
+		return http.StatusConflict
+	case errors.Is(err, pageservice.ErrInvalidParam),
+		errors.Is(err, pageservice.ErrInvalidKind),
+		errors.Is(err, pageservice.ErrInvalidDocument),
+		errors.Is(err, pageservice.ErrInvalidPath):
 		return http.StatusBadRequest
 	default:
 		return http.StatusInternalServerError

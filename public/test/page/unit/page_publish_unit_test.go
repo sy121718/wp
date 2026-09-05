@@ -94,14 +94,14 @@ func TestPageBuildNotFound(t *testing.T) {
 	}
 }
 
-// TestPageBuildNilRequest nil / 空 ID 构建请求应被拒绝。
+// TestPageBuildNilRequest nil / 空 ID 构建请求属于参数错误。
 func TestPageBuildNilRequest(t *testing.T) {
 	_, svc, _, _ := newPageService(t)
-	if _, err := svc.Build(context.Background(), nil); err == nil || err.Error() != pageenums.ErrPageNotFound {
-		t.Errorf("nil 请求应返回 %q: %v", pageenums.ErrPageNotFound, err)
+	if _, err := svc.Build(context.Background(), nil); err == nil || err.Error() != pageenums.ErrInvalidParam {
+		t.Errorf("nil 请求应返回 %q: %v", pageenums.ErrInvalidParam, err)
 	}
-	if _, err := svc.Build(context.Background(), &pagedto.BuildReq{}); err == nil || err.Error() != pageenums.ErrPageNotFound {
-		t.Errorf("空 ID 应返回 %q: %v", pageenums.ErrPageNotFound, err)
+	if _, err := svc.Build(context.Background(), &pagedto.BuildReq{}); err == nil || err.Error() != pageenums.ErrInvalidParam {
+		t.Errorf("空 ID 应返回 %q: %v", pageenums.ErrInvalidParam, err)
 	}
 }
 
@@ -144,11 +144,14 @@ func TestPagePublishNotFound(t *testing.T) {
 	}
 }
 
-// TestPagePublishNilRequest nil / 空 ID 发布请求应被拒绝。
+// TestPagePublishNilRequest nil / 空 ID 发布请求属于参数错误。
 func TestPagePublishNilRequest(t *testing.T) {
 	_, svc, _, _ := newPageService(t)
-	if _, err := svc.Publish(context.Background(), nil); err == nil || err.Error() != pageenums.ErrPageNotFound {
-		t.Errorf("nil 请求应返回 %q: %v", pageenums.ErrPageNotFound, err)
+	if _, err := svc.Publish(context.Background(), nil); err == nil || err.Error() != pageenums.ErrInvalidParam {
+		t.Errorf("nil 请求应返回 %q: %v", pageenums.ErrInvalidParam, err)
+	}
+	if _, err := svc.Publish(context.Background(), &pagedto.PublishReq{}); err == nil || err.Error() != pageenums.ErrInvalidParam {
+		t.Errorf("空 ID 应返回 %q: %v", pageenums.ErrInvalidParam, err)
 	}
 }
 
@@ -276,14 +279,17 @@ func TestPageRollbackSuccess(t *testing.T) {
 	}
 }
 
-// TestPageRollbackNilRequest nil / 空 ID / 空 hash 回滚请求应被拒绝。
+// TestPageRollbackNilRequest nil / 空 ID / 空 hash 回滚请求属于参数错误。
 func TestPageRollbackNilRequest(t *testing.T) {
 	_, svc, _, _ := newPageService(t)
-	if _, err := svc.Rollback(context.Background(), nil); err == nil || err.Error() != pageenums.ErrPageNotFound {
-		t.Errorf("nil 请求应返回 %q: %v", pageenums.ErrPageNotFound, err)
+	if _, err := svc.Rollback(context.Background(), nil); err == nil || err.Error() != pageenums.ErrInvalidParam {
+		t.Errorf("nil 请求应返回 %q: %v", pageenums.ErrInvalidParam, err)
 	}
-	if _, err := svc.Rollback(context.Background(), &pagedto.RollbackReq{ID: "x"}); err == nil || err.Error() != pageenums.ErrPageNotFound {
-		t.Errorf("空 hash 应返回 %q: %v", pageenums.ErrPageNotFound, err)
+	if _, err := svc.Rollback(context.Background(), &pagedto.RollbackReq{ID: "x"}); err == nil || err.Error() != pageenums.ErrInvalidParam {
+		t.Errorf("空 hash 应返回 %q: %v", pageenums.ErrInvalidParam, err)
+	}
+	if _, err := svc.Rollback(context.Background(), &pagedto.RollbackReq{TargetHash: "hash"}); err == nil || err.Error() != pageenums.ErrInvalidParam {
+		t.Errorf("空 ID 应返回 %q: %v", pageenums.ErrInvalidParam, err)
 	}
 }
 
@@ -337,14 +343,14 @@ func TestPageUpdateURLWithRedirect301(t *testing.T) {
 	}
 }
 
-// TestPageUpdateURLNilRequest nil / 空 ID / 空路径请求应被拒绝。
+// TestPageUpdateURLNilRequest nil / 空 ID / 空路径请求属于参数错误。
 func TestPageUpdateURLNilRequest(t *testing.T) {
 	_, svc, _, _ := newPageService(t)
-	if _, err := svc.UpdateURL(context.Background(), nil); err == nil || err.Error() != pageenums.ErrPageNotFound {
-		t.Errorf("nil 请求应返回 %q: %v", pageenums.ErrPageNotFound, err)
+	if _, err := svc.UpdateURL(context.Background(), nil); err == nil || err.Error() != pageenums.ErrInvalidParam {
+		t.Errorf("nil 请求应返回 %q: %v", pageenums.ErrInvalidParam, err)
 	}
-	if _, err := svc.UpdateURL(context.Background(), &pagedto.UpdateURLReq{NewPath: "/x"}); err == nil || err.Error() != pageenums.ErrPageNotFound {
-		t.Errorf("空 ID 应返回 %q: %v", pageenums.ErrPageNotFound, err)
+	if _, err := svc.UpdateURL(context.Background(), &pagedto.UpdateURLReq{NewPath: "/x"}); err == nil || err.Error() != pageenums.ErrInvalidParam {
+		t.Errorf("空 ID 应返回 %q: %v", pageenums.ErrInvalidParam, err)
 	}
 }
 

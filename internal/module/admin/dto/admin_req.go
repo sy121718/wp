@@ -116,6 +116,8 @@ type AdminRoleListReq struct {
 type AdminRoleSaveReq struct {
 	UserID    uint64   `json:"user_id" binding:"required" validate:"required"`
 	RoleCodes []string `json:"role_codes"`
+	// OperatorID 当前操作者（handler 从会话注入，禁止前端传入）。
+	OperatorID uint64 `json:"-"`
 }
 
 // --- 用户直接额外权限 ---

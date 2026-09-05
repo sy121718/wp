@@ -3,6 +3,7 @@ package unit
 import (
 	"context"
 	"testing"
+	"time"
 
 	admindto "go_wp/internal/module/admin/dto"
 	adminenums "go_wp/internal/module/admin/enums"
@@ -123,6 +124,43 @@ func TestRoleUpdateSuccess(t *testing.T) {
 	}
 	if role.RoleName != "新名称" || role.SortOrder != 9 || role.Remark == nil || *role.Remark != remark {
 		t.Fatalf("角色更新不符: %+v", role)
+	}
+}
+
+// TestRoleUpdateRefreshesUpdateTime 角色更新后 update_time 被刷新、update_by 保留原值。
+// 修复前 RoleModel.Update 的 Select 列缺 update_by/update_time：
+// BeforeUpdate hook 虽刷新实体字段但不写库，DB 中 update_time 保持旧值。
+func TestRoleUpdateRefreshesUpdateTime(t *testing.T) {
+	e := setupEnv(t)
+	ctx := context.Background()
+
+	code := "role_ref_" + uniq("")
+	roleID := createRole(t, e, code, "刷新时间角色")
+
+	// 把 update_time 改成过去时间、update_by 改成历史操作人，模拟旧审计字段
+	past := time.Now().Add(-time.Hour)
+	if err := e.db.Model(&adminmodel.RoleEntity{}).Where("id = ?", roleID).
+		Updates(map[string]interface{}{"update_time": past, "update_by": 10086}).Error; err != nil {
+		t.Fatalf("改写审计字段失败: %v", err)
+	}
+
+	err := e.svc.RoleUpdate(ctx, &admindto.RoleUpdateReq{
+		ID: roleID, RoleName: "刷新时间后", Status: 1,
+	})
+	wantErr(t, err, "")
+
+	var role adminmodel.RoleEntity
+	if err := e.db.First(&role, roleID).Error; err != nil {
+		t.Fatalf("查询角色失败: %v", err)
+	}
+	if role.UpdateTime == nil {
+		t.Fatalf("更新后 update_time 不应为 nil")
+	}
+	if !role.UpdateTime.After(past) {
+		t.Fatalf("更新后 update_time 应被刷新为当前时间: got=%v want after %v", role.UpdateTime, past)
+	}
+	if role.UpdateBy != 10086 {
+		t.Fatalf("update_by 应保留原值: got=%d want=10086", role.UpdateBy)
 	}
 }
 

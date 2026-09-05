@@ -142,6 +142,10 @@ func (s *Service) RoleUserList(ctx context.Context, req *admindto.RoleUserListRe
 }
 
 // RoleUserSave 全量替换角色用户绑定。
+//
+// 超管保护（审计项「RBAC 提权无超管保护」）：目标角色含超管权限
+// （权限集覆盖全部启用权限点），或目标用户列表含超管账号时，仅超管可操作——
+// 防止普通管理员把任意账号加进超管角色提权，或改绑超管账号。
 func (s *Service) RoleUserSave(ctx context.Context, req *admindto.RoleUserSaveReq) (res *admindto.RoleUserSaveResp, err error) {
 	role, err := s.rm.GetByID(ctx, req.RoleID)
 	if err != nil {
@@ -149,6 +153,25 @@ func (s *Service) RoleUserSave(ctx context.Context, req *admindto.RoleUserSaveRe
 	}
 	if role == nil {
 		return nil, errors.New(adminenums.ErrRoleNotFound)
+	}
+
+	roleSuper, err := s.roleHasSuperAdminPermission(ctx, []string{role.RoleCode})
+	if err != nil {
+		return nil, err
+	}
+	targetSuper := false
+	for _, id := range req.UserIDs {
+		super, err := s.isSuperAdmin(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		if super {
+			targetSuper = true
+			break
+		}
+	}
+	if err = s.requireSuperAdminForSensitiveTarget(ctx, req.OperatorID, roleSuper || targetSuper); err != nil {
+		return nil, err
 	}
 
 	// 转换 userIDs → string

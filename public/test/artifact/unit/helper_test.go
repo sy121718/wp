@@ -46,8 +46,11 @@ func newServiceWithProdConstraint(t *testing.T) *artifactservice.Service {
 func newMigratedDB(t *testing.T, withProdConstraint bool) *gorm.DB {
 	t.Helper()
 	// 测试基建：NewPGTestDB 语义的隔离 schema 连接（见 local_pg_test.go）。
-	// 说明：support.NewPGTestDB 因工作区他人 WIP 编译失败暂不可用，这里使用
-	// 等价实现，且直接以生产同款 gorm.Config{TranslateError:true} 打开。
+	// 有意保留 local_pg 基建而非切回 support.NewPGTestDB：本包 6 处断言
+	// ErrArtifactMismatch 的测试依赖 gorm.Config{TranslateError:true}（对齐生产
+	// pkg/database），而 support 未开启 TranslateError——唯一约束冲突返回原始
+	// PG 23505，mapPersistenceError 的 gorm.ErrDuplicatedKey 分支不命中
+	// （实证结论见 local_pg_test.go 头部说明）。
 	db, err := newLocalPGDB(t)
 	if err != nil {
 		t.Skipf("本地 PostgreSQL 不可用，跳过测试：%v", err)

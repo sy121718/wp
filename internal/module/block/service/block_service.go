@@ -159,7 +159,7 @@ func (s *Service) requireProject(ctx context.Context, projectID string) error {
 		return err
 	}
 	if !exists {
-		return errors.New("工程不存在")
+		return errors.New(blockenums.ErrProjectNotFound)
 	}
 	return nil
 }

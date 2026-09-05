@@ -82,4 +82,6 @@ type RoleUserListReq struct {
 type RoleUserSaveReq struct {
 	RoleID  uint64   `json:"role_id" binding:"required" validate:"required"`
 	UserIDs []uint64 `json:"user_ids"`
+	// OperatorID 当前操作者（handler 从会话注入，禁止前端传入）。
+	OperatorID uint64 `json:"-"`
 }

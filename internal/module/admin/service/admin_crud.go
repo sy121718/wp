@@ -350,3 +350,73 @@ func uniqueAdminIDs(ids []uint64) []uint64 {
 	}
 	return result
 }
+
+// --- 超管判定 helper（RBAC 提权保护共用） ---
+
+// isSuperAdmin 查询指定管理员是否为超管（is_admin=1）。
+// 用户不存在或 userID 为 0 时按非超管处理（存在性由调用方自行校验）。
+func (s *Service) isSuperAdmin(ctx context.Context, userID uint64) (bool, error) {
+	if userID == 0 {
+		return false, nil
+	}
+	entity, err := s.am.GetByID(ctx, userID)
+	if err != nil {
+		return false, err
+	}
+	if entity == nil {
+		return false, nil
+	}
+	return entity.IsSuperAdmin(), nil
+}
+
+// roleHasSuperAdminPermission 判定目标角色是否「含超管权限」：
+// 角色的权限点集合覆盖全部启用权限点（sys_permission.status=1）时视为超管角色，
+// 与 031 迁移「超管 is_admin=1 全量业务策略」的语义对齐。
+// 权限点全集为空（权限体系未配置/未 seed）时保守判定为 false，
+// 避免空集被任意角色恒真覆盖导致保护失效。
+func (s *Service) roleHasSuperAdminPermission(ctx context.Context, roleCodes []string) (bool, error) {
+	if len(roleCodes) == 0 {
+		return false, nil
+	}
+	all, err := s.pm.IsEnabledAll(ctx)
+	if err != nil {
+		return false, err
+	}
+	if len(all) == 0 {
+		return false, nil
+	}
+
+	codes := make(map[string]struct{})
+	for _, rc := range roleCodes {
+		perms, err := casbin.GetRolePermissions(rc)
+		if err != nil {
+			return false, err
+		}
+		for _, p := range perms {
+			codes[p[2]] = struct{}{}
+		}
+	}
+	for _, p := range all {
+		if _, ok := codes[p.PermissionCode]; !ok {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+// requireSuperAdminForSensitiveTarget 目标敏感（超管账号或超管角色）时，
+// 当前操作者必须也是超管，否则返回 ErrSuperAdminOnly 拒绝操作。
+// 目标不敏感时直接放行（不要求操作者为超管，保持既有普通授权流程）。
+func (s *Service) requireSuperAdminForSensitiveTarget(ctx context.Context, operatorID uint64, targetSensitive bool) error {
+	if !targetSensitive {
+		return nil
+	}
+	opSuper, err := s.isSuperAdmin(ctx, operatorID)
+	if err != nil {
+		return err
+	}
+	if !opSuper {
+		return errors.New(adminenums.ErrSuperAdminOnly)
+	}
+	return nil
+}

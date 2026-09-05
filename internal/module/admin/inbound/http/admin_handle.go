@@ -244,6 +244,14 @@ func (h *Handle) AdminRoleSave(c *gin.Context) {
 		r.ErrorWithMessage(c, 400, adminenums.MsgBadRequest+": "+err.Error())
 		return
 	}
+	// 注入当前操作者（超管保护判定依据，禁止前端伪造）。
+	userID, exists := c.Get("user_id")
+	uid, ok := userID.(int64)
+	if !exists || !ok || uid <= 0 {
+		r.ErrorWithMessage(c, 401, adminenums.MsgUnauthorized)
+		return
+	}
+	req.OperatorID = uint64(uid)
 	res, err := h.admin.AdminRoleSave(c.Request.Context(), &req)
 	if err != nil {
 		r.ErrorWithMessage(c, 400, err.Error())

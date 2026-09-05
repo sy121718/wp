@@ -45,9 +45,6 @@ func defaultCORSConfig() CORSConfig {
 			"Accept",
 			"Authorization",
 			"X-Requested-With",
-			"X-Timestamp",
-			"X-Signature",
-			"X-Nonce",
 			"X-CSRF-Token",
 		},
 	}

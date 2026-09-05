@@ -13,7 +13,6 @@ import (
 	"go_wp/internal/builder"
 	pagecontract "go_wp/internal/module/page/contract"
 	pagedto "go_wp/internal/module/page/dto"
-	pageenums "go_wp/internal/module/page/enums"
 	pagemodel "go_wp/internal/module/page/model"
 	"go_wp/internal/pipeline"
 
@@ -22,9 +21,10 @@ import (
 )
 
 // Create 创建 Page、初始 Draft 与 Revision，并原子保留路径。
+// nil 请求属于请求不合法（ErrInvalidParam）；文档非法仍返回 ErrInvalidDocument。
 func (s *Service) Create(ctx context.Context, req *pagedto.CreateReq) (res *pagedto.PageResp, err error) {
 	if req == nil {
-		return nil, errors.New(pageenums.ErrInvalidDocument)
+		return nil, ErrInvalidParam
 	}
 	if err = s.requireProject(ctx, req.ProjectID); err != nil {
 		return nil, err
@@ -62,13 +62,14 @@ func (s *Service) Create(ctx context.Context, req *pagedto.CreateReq) (res *page
 }
 
 // Detail 查询当前 Page Draft。
+// nil/空 ID 属于请求不合法（ErrInvalidParam）；合法 ID 无页面才返回 ErrPageNotFound。
 func (s *Service) Detail(ctx context.Context, req *pagedto.DetailReq) (res *pagedto.PageResp, err error) {
 	if req == nil || strings.TrimSpace(req.ID) == "" {
-		return nil, errors.New(pageenums.ErrPageNotFound)
+		return nil, ErrInvalidParam
 	}
 	page, err := s.model.GetByID(ctx, req.ID)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, errors.New(pageenums.ErrPageNotFound)
+		return nil, ErrPageNotFound
 	}
 	if err != nil {
 		return nil, err
@@ -78,9 +79,10 @@ func (s *Service) Detail(ctx context.Context, req *pagedto.DetailReq) (res *page
 
 // SaveDraft 使用 draftVersion 乐观锁保存完整 Draft AST，并追加不可变 Revision。
 // 本方法不会修改 active/staged Artifact；任何 URL 新旧占用变化与 Revision 在同一事务提交。
+// nil/空 ID 属于请求不合法（ErrInvalidParam）；合法 ID 无页面才返回 ErrPageNotFound。
 func (s *Service) SaveDraft(ctx context.Context, req *pagedto.SaveDraftReq) (res *pagedto.PageResp, err error) {
 	if req == nil || strings.TrimSpace(req.ID) == "" {
-		return nil, errors.New(pageenums.ErrPageNotFound)
+		return nil, ErrInvalidParam
 	}
 	path, doc, err := validateDraft(req.DraftPath, req.DraftDocument)
 	if err != nil {
@@ -88,13 +90,13 @@ func (s *Service) SaveDraft(ctx context.Context, req *pagedto.SaveDraftReq) (res
 	}
 	page, err := s.model.GetByID(ctx, req.ID)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, errors.New(pageenums.ErrPageNotFound)
+		return nil, ErrPageNotFound
 	}
 	if err != nil {
 		return nil, err
 	}
 	if req.ExpectedVersion != page.DraftVersion {
-		return nil, errors.New(pageenums.ErrDraftVersionConflict)
+		return nil, ErrDraftVersionConflict
 	}
 	// 站点主题合入（保存时快照）。
 	if doc, err = s.mergeActiveTheme(ctx, page.ProjectID, doc); err != nil {
@@ -121,12 +123,13 @@ func (s *Service) SaveDraft(ctx context.Context, req *pagedto.SaveDraftReq) (res
 }
 
 // ListRevisions 查询 Page 历史草稿快照（最新在前）。
+// nil/空 PageID 属于请求不合法（ErrInvalidParam）；合法 ID 无页面才返回 ErrPageNotFound。
 func (s *Service) ListRevisions(ctx context.Context, req *pagedto.RevisionReq) (res []pagedto.RevisionResp, err error) {
 	if req == nil || strings.TrimSpace(req.PageID) == "" {
-		return nil, errors.New(pageenums.ErrPageNotFound)
+		return nil, ErrInvalidParam
 	}
 	if _, err = s.model.GetByID(ctx, req.PageID); errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, errors.New(pageenums.ErrPageNotFound)
+		return nil, ErrPageNotFound
 	} else if err != nil {
 		return nil, err
 	}
@@ -145,15 +148,16 @@ func (s *Service) ListRevisions(ctx context.Context, req *pagedto.RevisionReq) (
 }
 
 func (s *Service) requireProject(ctx context.Context, projectID string) error {
+	// 空/空白工程 ID 属于参数错误（ErrInvalidParam）；合法 ID 无工程才返回 ErrProjectNotFound。
 	if strings.TrimSpace(projectID) == "" {
-		return errors.New(pageenums.ErrProjectNotFound)
+		return ErrInvalidParam
 	}
 	exists, err := s.project.Exists(ctx, projectID)
 	if err != nil {
 		return err
 	}
 	if !exists {
-		return errors.New(pageenums.ErrProjectNotFound)
+		return ErrProjectNotFound
 	}
 	return nil
 }
@@ -161,7 +165,7 @@ func (s *Service) requireProject(ctx context.Context, projectID string) error {
 // validateKind 执行 pages 表同等领域约束，防止无效 Kind/ContentTarget 入库。
 func validateKind(kind, targetType string, targetID *string) error {
 	if targetID != nil && strings.TrimSpace(*targetID) == "" {
-		return errors.New(pageenums.ErrInvalidKind)
+		return ErrInvalidKind
 	}
 	noTarget := func() bool { return targetType == "none" && targetID == nil }
 	target := func(expected string) bool { return targetType == expected && targetID != nil }
@@ -175,7 +179,7 @@ func validateKind(kind, targetType string, targetID *string) error {
 			return nil
 		}
 	}
-	return errors.New(pageenums.ErrInvalidKind)
+	return ErrInvalidKind
 }
 
 // validateDraft 解析并验证 Page Document，再规范化 URL。
@@ -186,15 +190,15 @@ func validateDraft(rawPath string, rawDoc json.RawMessage) (path string, doc jso
 	}
 	page, err := builder.ParsePage(rawDoc)
 	if err != nil {
-		return "", nil, errors.New(pageenums.ErrInvalidDocument)
+		return "", nil, ErrInvalidDocument
 	}
 	if err = builder.ValidatePage(page); err != nil {
-		return "", nil, fmt.Errorf("%s: %w", pageenums.ErrInvalidDocument, err)
+		return "", nil, fmt.Errorf("%w: %v", ErrInvalidDocument, err)
 	}
 	// 重新编码保证存储 JSON 的规范格式；Document 不接受任意散乱字节。
 	doc, err = json.Marshal(page)
 	if err != nil {
-		return "", nil, errors.New(pageenums.ErrInvalidDocument)
+		return "", nil, ErrInvalidDocument
 	}
 	return path, doc, nil
 }
@@ -202,20 +206,20 @@ func validateDraft(rawPath string, rawDoc json.RawMessage) (path string, doc jso
 func normalizePagePath(raw string) (string, error) {
 	path, err := pipeline.NormalizeURL(raw)
 	if err != nil {
-		return "", errors.New(pageenums.ErrInvalidPath)
+		return "", ErrInvalidPath
 	}
 	return path, nil
 }
 
 func mapPersistenceError(err error) error {
 	if errors.Is(err, pagemodel.ErrDraftVersionConflict) {
-		return errors.New(pageenums.ErrDraftVersionConflict)
+		return ErrDraftVersionConflict
 	}
 	if errors.Is(err, gorm.ErrDuplicatedKey) || strings.Contains(strings.ToLower(err.Error()), "duplicate key") || strings.Contains(strings.ToLower(err.Error()), "unique constraint") {
-		return errors.New(pageenums.ErrPathOccupied)
+		return ErrPathOccupied
 	}
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return errors.New(pageenums.ErrPageNotFound)
+		return ErrPageNotFound
 	}
 	return err
 }
