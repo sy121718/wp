@@ -15,7 +15,7 @@ type ThemeCreateReq struct {
 // ThemeUpdateReq 更新主题请求。
 type ThemeUpdateReq struct {
 	ID       string          `json:"id" binding:"required"`
-	Name     string          `json:"name" max=100`
+	Name     string          `json:"name" binding:"required,max=100"`
 	Settings json.RawMessage `json:"settings"`
 }
 

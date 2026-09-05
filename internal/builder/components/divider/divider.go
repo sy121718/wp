@@ -131,35 +131,9 @@ func validateExtra(p *Props, nodeID string) (err error) {
 func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	sel := "." + core.NodeClass(id)
 
-	lineDecl := func() string {
-		style := p.Style
-		if style == "" {
-			style = LineSolid
-		}
-		weight := p.Weight
-		if weight == "" {
-			weight = "1px"
-		}
-		// 使用 border-top 绘制（.dt-line 及 hr）。
-		borderStyle := style
-		if style == LineDouble {
-			borderStyle = "double"
-			if weight == "1px" {
-				weight = "3px" // 双实线最小辨识度
-			}
-		}
-		return core.CSSDecl("border-top", weight, borderStyle, lineColor(p))
-	}
-
 	// 无嵌入：hr 直用线样式。
 	if p.Inset.Kind == InsetNone || p.Inset.Kind == "" {
-		var decls []string
-		if color := lineColor(p); color != "" {
-			decls = append(decls, core.CSSDecl("border-top", strWeight(p), p.StyleOr(LineSolid), color))
-		} else {
-			decls = append(decls, core.CSSDecl("border-top", strWeight(p), p.StyleOr(LineSolid)))
-		}
-		decls = append(decls, "margin: 0")
+		decls := []string{lineDecl(p), "margin: 0"}
 		b.Add(core.BreakpointDesktop, sel, decls)
 	} else {
 		// 有嵌入：flex 容器 + 两段线。
@@ -169,7 +143,7 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 			"width: 100%",
 		})
 		// 线段基础（flex 比例由 position 决定：center 等分，left 左短右长，right 反之）。
-		lineBase := []string{"height: 0", lineDecl()}
+		lineBase := []string{"height: 0", lineDecl(p)}
 		var leftFlex, rightFlex string
 		switch p.Inset.Position {
 		case PosLeft:
@@ -228,28 +202,28 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	}
 }
 
+// lineDecl 统一线声明（border-top；double 缺省权重提升到 3px 保证最小辨识度）。
+func lineDecl(p *Props) string {
+	style := p.Style
+	if style == "" {
+		style = LineSolid
+	}
+	weight := p.Weight
+	if weight == "" {
+		weight = "1px"
+	}
+	if style == LineDouble && weight == "1px" {
+		weight = "3px"
+	}
+	return core.CSSDecl("border-top", weight, style, lineColor(p))
+}
+
 // lineColor 线条颜色（主题 Token 或自定义）。
 func lineColor(p *Props) string {
 	if p.Color == "" {
 		return "currentColor"
 	}
 	return p.Color
-}
-
-// StyleOr 线条类型缺省。
-func (p *Props) StyleOr(def string) string {
-	if p.Style == "" {
-		return def
-	}
-	return p.Style
-}
-
-// strWeight 线粗缺省。
-func strWeight(p *Props) string {
-	if p.Weight == "" {
-		return "1px"
-	}
-	return p.Weight
 }
 
 // init 注册分割线组件。

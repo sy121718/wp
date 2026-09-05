@@ -8,6 +8,7 @@ import (
 	"go_wp/pkg/i18n"
 
 	"github.com/spf13/viper"
+	"gorm.io/gorm"
 )
 
 type testI18nRecord struct {
@@ -21,6 +22,16 @@ type testI18nRecord struct {
 
 func (testI18nRecord) TableName() string {
 	return "sys_i18n"
+}
+
+// cleanI18nData 清理指定 item_key 的测试数据，保证测试可重复执行（幂等）。
+func cleanI18nData(t *testing.T, db *gorm.DB, keys ...string) {
+	t.Helper()
+	for _, k := range keys {
+		if err := db.Where("item_key = ?", k).Delete(&testI18nRecord{}).Error; err != nil {
+			t.Fatalf("清理 i18n 测试数据失败 key=%s: %v", k, err)
+		}
+	}
 }
 
 func TestI18nInitUsesConfigAndAutoRefresh(t *testing.T) {
@@ -59,6 +70,7 @@ func TestI18nInitUsesConfigAndAutoRefresh(t *testing.T) {
 	if err := db.AutoMigrate(&testI18nRecord{}); err != nil {
 		t.Fatalf("迁移 sys_i18n 失败: %v", err)
 	}
+	cleanI18nData(t, db, "msg_operation_success")
 
 	seed := []testI18nRecord{
 		{ItemKey: "msg_operation_success", Lang: "zh-CN", ItemValue: "操作成功", HttpCode: 200, Status: 1},
@@ -127,6 +139,7 @@ func TestI18nReinitAppliesLatestRuntimeConfig(t *testing.T) {
 	if err := db.AutoMigrate(&testI18nRecord{}); err != nil {
 		t.Fatalf("迁移 sys_i18n 失败: %v", err)
 	}
+	cleanI18nData(t, db, "msg_reinit")
 
 	seed := []testI18nRecord{
 		{ItemKey: "msg_reinit", Lang: "zh-CN", ItemValue: "初始中文", HttpCode: 200, Status: 1},
@@ -202,6 +215,7 @@ func TestI18nGetDoesNotExposeMutableAllLangsMap(t *testing.T) {
 	if err := db.AutoMigrate(&testI18nRecord{}); err != nil {
 		t.Fatalf("迁移 sys_i18n 失败: %v", err)
 	}
+	cleanI18nData(t, db, "msg_copy")
 
 	seed := []testI18nRecord{
 		{ItemKey: "msg_copy", Lang: "zh-CN", ItemValue: "中文", HttpCode: 200, Status: 1},
