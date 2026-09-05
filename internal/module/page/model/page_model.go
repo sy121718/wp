@@ -146,6 +146,17 @@ func (m *Model) AttachThemeToUnassigned(ctx context.Context, projectID, themeID 
 	return err
 }
 
+// ReattachProjectPagesToTheme 把工程内全部页面（含已挂其他主题的）转挂到指定主题。
+// 切换激活主题时调用，是「整站换皮」的前置：只有转挂后批量刷新（Refresh*/MarkStale*）
+// 才能以该主题为键命中整站页面。不改 draft_document 内容，也不 bump 版本。
+func (m *Model) ReattachProjectPagesToTheme(ctx context.Context, projectID, themeID string) (err error) {
+	err = m.DB(ctx).Exec(
+		"UPDATE pages SET theme_id = ?, updated_at = ? WHERE project_id = ? AND deleted_at IS NULL",
+		themeID, time.Now().UTC(), projectID,
+	).Error
+	return err
+}
+
 // GetByID 按 ID 查询未删除的 Page。
 func (m *Model) GetByID(ctx context.Context, id string) (e *PageEntity, err error) {
 	e = &PageEntity{}

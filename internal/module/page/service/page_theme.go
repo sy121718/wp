@@ -111,6 +111,12 @@ func (s *Service) AttachThemeToUnassigned(ctx context.Context, projectID, themeI
 	return s.model.AttachThemeToUnassigned(ctx, projectID, themeID)
 }
 
+// ReattachProjectPagesToTheme 把工程内全部页面（含已挂其他主题的）转挂到指定主题。
+// 切换激活主题时调用：使整站页面以新激活主题为键，后续批量刷新快照/标重建可命中全部页面。
+func (s *Service) ReattachProjectPagesToTheme(ctx context.Context, projectID, themeID string) error {
+	return s.model.ReattachProjectPagesToTheme(ctx, projectID, themeID)
+}
+
 // compileBlockFragment 编译单个全局块为片段（HTML/CSS）；块缺失或非法时降级为空片段。
 // 绑定被删除的块不阻塞构建：页面产物退化为无页眉/页脚，保存主题绑定即可恢复。
 func (s *Service) compileBlockFragment(ctx context.Context, blockID string) (html, css string) {

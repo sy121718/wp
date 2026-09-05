@@ -110,7 +110,12 @@ func (h *Handle) CreateTheme(c *gin.Context) {
 }
 
 // ActivateTheme 激活主题（POST /admin/themes/activate）。
-// 页面内容不动：页面挂接各自主题，编译取页面文档内 settings.theme 快照。
+// 激活成功后对该主题所在工程的整站页面执行「换皮」：
+//   1) 全部页面转挂到新激活主题（ReattachProjectPagesToTheme）；
+//   2) 颜色/字体快照合入 settings.theme（RefreshThemeForTheme）；
+//   3) 页眉/页脚绑定合入 settings.structure（RefreshStructureForTheme）；
+//   4) 全部页面标记待重建（MarkStaleForTheme），下次构建即以新主题换皮。
+// 已发布产物静态面不变，草稿重建即新主题；刷新失败不使激活回滚（激活已提交），仅记日志。
 func (h *Handle) ActivateTheme(c *gin.Context) {
 	id := strings.TrimSpace(c.PostForm("id"))
 	if id == "" {
@@ -121,7 +126,95 @@ func (h *Handle) ActivateTheme(c *gin.Context) {
 		c.String(http.StatusBadRequest, err.Error())
 		return
 	}
+	// 激活已提交：取新激活主题的 ProjectID 与 Settings，编排刷新整站页面。
+	theme, err := h.projects.GetTheme(c.Request.Context(), id)
+	if err != nil || theme == nil {
+		logger.Scene("theme").With("theme_id", id).Error(err, "激活后取主题失败，整站换皮未执行")
+		c.Redirect(http.StatusSeeOther, h.backToThemes(c))
+		return
+	}
+	// 换皮：整站页面转挂新激活主题 + 刷新快照 + 标待重建（激活不因刷新失败而回滚）。
+	h.reskinProjectPages(c, theme.ID, theme.ProjectID, theme.Settings)
 	c.Redirect(http.StatusSeeOther, h.backToThemes(c))
+}
+
+// reskinProjectPages 切换激活主题后的「整站换皮」编排：
+// 1) 工程内全部页面转挂到新激活主题（ReattachProjectPagesToTheme）；
+// 2) 刷新 settings.theme / settings.structure 快照（新主题设置）；
+// 3) 全部页面标记待重建，下次构建即以新主题换皮。
+// 每一步失败都只记日志并继续（激活已提交，不做回滚），保证激活结果页正常返回。
+func (h *Handle) reskinProjectPages(c *gin.Context, themeID, projectID string, settings json.RawMessage) {
+	ctx := c.Request.Context()
+	if err := h.pages.ReattachProjectPagesToTheme(ctx, projectID, themeID); err != nil {
+		logger.Scene("theme").With("theme_id", themeID).With("project", projectID).Error(err, "转挂页面到新主题失败")
+	}
+	themeJSON, structureJSON, err := themeSnapshots(settings)
+	if err != nil {
+		logger.Scene("theme").With("theme_id", themeID).Error(err, "序列化主题快照失败")
+		return
+	}
+	if err := h.pages.RefreshThemeForTheme(ctx, themeID, themeJSON); err != nil {
+		logger.Scene("theme").With("theme_id", themeID).Error(err, "刷新 settings.theme 快照失败")
+		return
+	}
+	if err := h.pages.RefreshStructureForTheme(ctx, themeID, structureJSON); err != nil {
+		logger.Scene("theme").With("theme_id", themeID).Error(err, "刷新 settings.structure 快照失败")
+		return
+	}
+	if err := h.pages.MarkStaleForTheme(ctx, themeID); err != nil {
+		logger.Scene("theme").With("theme_id", themeID).Error(err, "标记页面待重建失败")
+	}
+}
+
+// refreshThemePages 把主题设置应用到已挂该主题的页面（主题设置保存路径）：
+// 刷新 settings.theme/structure 快照后标记待重建；失败返回非 0 状态码。
+func (h *Handle) refreshThemePages(c *gin.Context, themeID string, settingsJSON json.RawMessage) int {
+	ctx := c.Request.Context()
+	themeJSON, structureJSON, err := themeSnapshots(settingsJSON)
+	if err != nil {
+		logger.Scene("theme").With("theme_id", themeID).Error(err, "序列化主题快照失败")
+		return http.StatusInternalServerError
+	}
+	// 先刷新快照，再标记待重建。
+	if err := h.pages.RefreshThemeForTheme(ctx, themeID, themeJSON); err != nil {
+		return http.StatusInternalServerError
+	}
+	if err := h.pages.RefreshStructureForTheme(ctx, themeID, structureJSON); err != nil {
+		return http.StatusInternalServerError
+	}
+	if err := h.pages.MarkStaleForTheme(ctx, themeID); err != nil {
+		return http.StatusInternalServerError
+	}
+	return 0
+}
+
+// themeSnapshots 从主题设置构造页面文档快照：
+// settings.theme（colors/fontFamily，编译端 :root 变量）与
+// settings.structure（headerBlockId/footerBlockId，全局块槽位）。
+// settings 非法时返回可读错误。
+func themeSnapshots(settings json.RawMessage) (themeJSON, structureJSON json.RawMessage, err error) {
+	s := themeSettingsJSON{}
+	if len(settings) > 0 {
+		if err = json.Unmarshal(settings, &s); err != nil {
+			return nil, nil, err
+		}
+	}
+	colors := s.Colors
+	if colors == nil {
+		colors = map[string]string{}
+	}
+	themeJSON, err = json.Marshal(map[string]any{"colors": colors, "fontFamily": s.FontFamily})
+	if err != nil {
+		return nil, nil, err
+	}
+	structureJSON, err = json.Marshal(map[string]any{
+		"headerBlockId": s.HeaderBlockID,
+		"footerBlockId": s.FooterBlockID,
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	return themeJSON, structureJSON, nil
 }
 
 // DeleteTheme 删除主题（POST /admin/themes/delete；激活态由 service 拒绝）。
@@ -316,30 +409,10 @@ func (h *Handle) SaveThemeSettings(c *gin.Context) {
 		c.String(http.StatusInternalServerError, err.Error())
 		return
 	}
-	// 颜色/字体快照合入该主题下全部页面（编译端 ThemeSettings 只认这两个键）。
-	snapshot, err := json.Marshal(map[string]any{"colors": colors, "fontFamily": settings.FontFamily})
-	if err != nil {
-		logger.Scene("page").With("theme_id", themeID).Error(err, "序列化主题快照失败")
-	}
-	if err := h.pages.RefreshThemeForTheme(c.Request.Context(), themeID, snapshot); err != nil {
-		c.String(http.StatusInternalServerError, err.Error())
-		return
-	}
-	// 页眉/页脚块绑定合入 settings.structure（编译装配层按此内联）。
-	structureJSON, err := json.Marshal(map[string]any{
-		"headerBlockId": settings.HeaderBlockID,
-		"footerBlockId": settings.FooterBlockID,
-	})
-	if err != nil {
-		logger.Scene("page").With("theme_id", themeID).Error(err, "序列化结构绑定失败")
-	}
-	if err := h.pages.RefreshStructureForTheme(c.Request.Context(), themeID, structureJSON); err != nil {
-		c.String(http.StatusInternalServerError, err.Error())
-		return
-	}
-	// 保存后该主题页面全部待重建（新颜色/结构与块内容进入产物）。
-	if err := h.pages.MarkStaleForTheme(c.Request.Context(), themeID); err != nil {
-		c.String(http.StatusInternalServerError, err.Error())
+	// 颜色/字体快照合入 settings.theme + 页眉/页脚绑定合入 settings.structure，
+	// 再标记待重建（新颜色/结构与块内容需重新构建生效）。
+	if code := h.refreshThemePages(c, themeID, settingsJSON); code != 0 {
+		c.String(code, "主题设置保存成功，但页面刷新失败")
 		return
 	}
 	c.Redirect(http.StatusSeeOther, "/admin/themes/settings?id="+themeID)

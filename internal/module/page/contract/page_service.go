@@ -37,4 +37,8 @@ type PageService interface {
 	MarkStaleForTheme(ctx context.Context, themeID string) error
 	// AttachThemeToUnassigned 把工程内未挂主题的页面挂到指定主题（工程首个主题创建后回填历史页面）。
 	AttachThemeToUnassigned(ctx context.Context, projectID, themeID string) error
+	// ReattachProjectPagesToTheme 把工程内全部页面（含已挂其他主题的）转挂到指定主题，
+	// 用于切换激活主题后的「整站换皮」：使后续 RefreshThemeForTheme/RefreshStructureForTheme/
+	// MarkStaleForTheme 以该主题为键命中全部页面。
+	ReattachProjectPagesToTheme(ctx context.Context, projectID, themeID string) error
 }
