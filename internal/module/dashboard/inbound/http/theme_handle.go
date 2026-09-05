@@ -83,7 +83,7 @@ func (h *Handle) ThemeManage(c *gin.Context) {
 			})
 		}
 	}
-	c.HTML(http.StatusOK, "admin/theme", data.templateMap())
+	c.HTML(http.StatusOK, "admin/theme", withCSRF(c, data.templateMap()))
 }
 
 // CreateTheme 新建主题（POST /admin/themes/create）。
@@ -231,7 +231,7 @@ func (h *Handle) ThemeSettings(c *gin.Context) {
 		c.String(http.StatusNotFound, "主题不存在")
 		return
 	}
-	c.HTML(http.StatusOK, "admin/theme_settings", data.templateMap())
+	c.HTML(http.StatusOK, "admin/theme_settings", withCSRF(c, data.templateMap()))
 }
 
 // loadThemeSettings 组装单主题设置页数据；主题不存在返回 nil。

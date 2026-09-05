@@ -101,7 +101,7 @@ func (h *Handle) BlocksList(c *gin.Context) {
 		data.Footers = toBlockRows(blocks, "footer")
 		data.Blocks = toBlockRows(blocks, "block")
 	}
-	c.HTML(http.StatusOK, "admin/blocks", data.templateMap())
+	c.HTML(http.StatusOK, "admin/blocks", withCSRF(c, data.templateMap()))
 }
 
 // CreateBlock 新建全局块（POST /admin/blocks/create），成功后进工作台编辑内容。

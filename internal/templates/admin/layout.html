@@ -15,7 +15,11 @@
     <link rel="stylesheet" href="/static/css/theme.css">
     <script src="https://cdn.jsdelivr.net/npm/htmx.org@2.0.4/dist/htmx.min.js"></script>
 </head>
-<body>
+{* hx-headers 全局注入 CSRF token（HTMX 2.0 属性继承，页面内所有 hx-post 自动携带 X-CSRF-Token）。
+   渲染数据未传 csrf_token 时输出空串（chain 索引写法对 map 缺 key 安全，不会渲染报错），
+   此时请求不带 token、由 CSRF 中间件按未授权处理；各页面 handler 应在渲染数据中
+   传入 gin.H{"csrf_token": builtin.GetCSRFToken(c)} 的 token 值。 *}
+<body hx-headers='{"X-CSRF-Token":"{{ .["csrf_token"] }}"}'>
     <div class="admin-layout">
         {* ===== 侧栏 ===== *}
         <aside class="admin-sidebar">

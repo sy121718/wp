@@ -24,7 +24,7 @@ import (
 //  2. 查数据库，找不到用户返回模糊错误
 //  3. 检查是否被锁定 / 被动禁用
 //  4. bcrypt 对比密码
-//  5. 失败：累加失败次数，连续 5 次后封禁 30 分钟
+//  5. 失败：累加失败次数，连续 5 次锁定 30 分钟（只写 locked_until_time，到期自动解锁，不改 status）
 //  6. 成功：清空失败状态，记录登录 IP 和时间，生成会话 ID 并写入 Redis
 func (s *Service) AdminLogin(ctx context.Context, req *admindto.AdminLoginReq, clientIP string) (*admindto.AdminLoginResp, error) {
 	// 1) 验证验证码
@@ -53,7 +53,7 @@ func (s *Service) AdminLogin(ctx context.Context, req *admindto.AdminLoginReq, c
 
 	// 3) 检查是否被锁定
 	if entity.IsLocked() {
-		logger.Scene("admin").With("username", req.Username).With("reason", "账号已封禁").Warn("登录失败")
+		logger.Scene("admin").With("username", req.Username).With("reason", "账号已锁定").Warn("登录失败")
 		// key|param 协议：ErrAccountLocked 翻译模板含 %s，参数随错误消息传递（pkg/response 统一格式化）
 		return nil, fmt.Errorf("%s|%s", adminenums.ErrAccountLocked,
 			time.Until(*entity.LockedUntilTime).Round(time.Minute).String())
@@ -216,20 +216,24 @@ func (s *Service) AdminProfile(ctx context.Context, userID uint64) (*admindto.Ad
 	}, nil
 }
 
-// recordLoginFailure 记录登录失败：累加次数，连续 5 次封禁 30 分钟。
+// recordLoginFailure 记录登录失败：累加次数，连续 5 次锁定 30 分钟。
+//
+// 失败锁定只写 locked_until_time，绝不修改 status：
+// status 表达管理员启用/禁用/封禁的管理状态，若被改为 Banned，
+// 30 分钟锁定过期后 IsActive() 仍为 false，账号将永久无法登录（DoS）。
+// IsLocked() 基于 locked_until_time 与当前时间比较，到期自动解锁。
 func recordLoginFailure(ctx context.Context, am *adminmodel.AdminModel, entity *adminmodel.AdminEntity) {
 	now := time.Now()
 	entity.LoginFailureCount++
 	entity.LastFailureTime = &now
 
 	if entity.LoginFailureCount >= 5 {
-		entity.Status = adminmodel.AdminStatusBanned
 		lockedUntil := now.Add(30 * time.Minute)
 		entity.LockedUntilTime = &lockedUntil
 	}
 
 	if err := am.DB(ctx).Where("id = ?", entity.ID).
-		Select("login_failure_count", "last_failure_time", "status", "locked_until_time").
+		Select("login_failure_count", "last_failure_time", "locked_until_time").
 		Updates(entity).Error; err != nil {
 		logger.Scene("admin").Error(err, "记录登录失败状态失败")
 	}

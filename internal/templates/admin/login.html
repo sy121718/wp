@@ -1,0 +1,156 @@
+{* login.html — 后台登录页（独立布局，无侧栏/顶栏）。
+   渲染数据可传 captcha_image（chain 索引写法对 map 缺 key 安全，缺失时由 JS 兜底拉取）：
+     c.HTML(200, "admin/login", gin.H{"captcha_image": ..., "csrf_token": ...})
+   登录接口 POST /api/admin/login 返回 JSON，成功后 data.csrf_token 为
+   后续 POST 写操作的 CSRF token，此处写入 sessionStorage 供前端复用。 *}
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>登录 — go_wp 管理后台</title>
+    <script>
+        {* 防止主题闪烁：在 CSS 加载前就从 localStorage 读取主题 *}
+        (function() {
+            var t = localStorage.getItem('theme') || 'light';
+            document.documentElement.setAttribute('data-theme', t);
+        })();
+    </script>
+    <link rel="stylesheet" href="/static/css/theme.css">
+    <style>
+        body {
+            margin: 0;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: var(--c-bg-soft, #f4f5f6);
+            color: var(--c-text, #1a1d21);
+            font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+        }
+        .login-card {
+            width: 360px;
+            padding: 32px 28px;
+            background: var(--c-bg, #fff);
+            border: 1px solid var(--c-border, #e5e7eb);
+            border-radius: 12px;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, .06);
+        }
+        .login-brand { text-align: center; font-size: 22px; font-weight: 600; margin-bottom: 4px; }
+        .login-brand span { color: var(--c-primary-soft, #5b6572); }
+        .login-sub { text-align: center; color: var(--c-text-mute, #6b7280); font-size: 13px; margin-bottom: 24px; }
+        .login-field { margin-bottom: 16px; }
+        .login-field label { display: block; font-size: 13px; color: var(--c-text-secondary, #4b5563); margin-bottom: 6px; }
+        .login-field input {
+            width: 100%;
+            box-sizing: border-box;
+            padding: 9px 12px;
+            font-size: 14px;
+            color: var(--c-text, #1a1d21);
+            background: var(--c-bg, #fff);
+            border: 1px solid var(--c-border-input, #c6ccd4);
+            border-radius: 8px;
+            outline: none;
+        }
+        .login-field input:focus { border-color: var(--c-primary-soft, #5b6572); }
+        .captcha-row { display: flex; gap: 8px; align-items: stretch; }
+        .captcha-row input { flex: 1; min-width: 0; }
+        .captcha-img {
+            height: 40px;
+            border: 1px solid var(--c-border, #e5e7eb);
+            border-radius: 8px;
+            cursor: pointer;
+            display: block;
+        }
+        .login-btn {
+            width: 100%;
+            padding: 10px 0;
+            font-size: 15px;
+            color: #fff;
+            background: var(--c-primary, #3d444f);
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+        }
+        .login-btn:hover { background: var(--c-primary-deep, #2f353d); }
+        .login-msg { min-height: 18px; margin-top: 12px; font-size: 13px; color: var(--c-danger, #b42318); text-align: center; }
+    </style>
+</head>
+<body>
+    <div class="login-card">
+        <div class="login-brand">go<span>_wp</span></div>
+        <div class="login-sub">管理后台</div>
+        <form id="login-form">
+            <div class="login-field">
+                <label for="username">用户名</label>
+                <input id="username" name="username" type="text" autocomplete="username" required>
+            </div>
+            <div class="login-field">
+                <label for="password">密码</label>
+                <input id="password" name="password" type="password" autocomplete="current-password" required>
+            </div>
+            <div class="login-field">
+                <label for="captcha">验证码</label>
+                <div class="captcha-row">
+                    <input id="captcha" name="captcha" type="text" maxlength="10" autocomplete="off" required>
+                    {* 服务端渲染了验证码图则直接展示；点击图片或图缺失时经 /api/captcha 刷新 *}
+                    <img id="captcha-img" class="captcha-img" src="{{ .["captcha_image"] }}" alt="验证码" title="点击刷新">
+                </div>
+            </div>
+            <input type="hidden" name="captcha_id" id="captcha-id" value="">
+            <button class="login-btn" type="submit">登 录</button>
+            <div class="login-msg" id="login-msg"></div>
+        </form>
+    </div>
+
+    <script>
+        var captchaImg = document.getElementById('captcha-img');
+        var captchaIdInput = document.getElementById('captcha-id');
+        var msgEl = document.getElementById('login-msg');
+
+        // 拉取新验证码：接口只回 captcha_id 与图片，答案不下发
+        function refreshCaptcha() {
+            fetch('/api/captcha')
+                .then(function (resp) { return resp.json(); })
+                .then(function (body) {
+                    var data = body.data || {};
+                    if (data.captcha_image) { captchaImg.src = data.captcha_image; }
+                    if (data.captcha_id) { captchaIdInput.value = data.captcha_id; }
+                })
+                .catch(function () { msgEl.textContent = '验证码加载失败，请重试'; });
+        }
+
+        if (!captchaImg.getAttribute('src')) { refreshCaptcha(); }
+        captchaImg.addEventListener('click', refreshCaptcha);
+
+        document.getElementById('login-form').addEventListener('submit', function (e) {
+            e.preventDefault();
+            msgEl.textContent = '';
+            var payload = {
+                username: document.getElementById('username').value.trim(),
+                password: document.getElementById('password').value,
+                captcha_id: captchaIdInput.value,
+                captcha: document.getElementById('captcha').value.trim()
+            };
+            fetch('/api/admin/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            }).then(function (resp) { return resp.json().then(function (body) { return { ok: resp.ok, body: body }; }); })
+              .then(function (result) {
+                  if (!result.ok) {
+                      msgEl.textContent = (result.body && result.body.message) || '登录失败';
+                      document.getElementById('captcha').value = '';
+                      refreshCaptcha();
+                      return;
+                  }
+                  // 登录成功：服务端已将 token 写入会话，此处留存供后续 POST 写操作复用
+                  var data = result.body.data || {};
+                  if (data.csrf_token) { sessionStorage.setItem('csrf_token', data.csrf_token); }
+                  window.location.href = '/admin';
+              })
+              .catch(function () { msgEl.textContent = '网络异常，请重试'; });
+        });
+    </script>
+</body>
+</html>

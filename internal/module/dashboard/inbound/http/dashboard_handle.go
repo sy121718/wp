@@ -24,7 +24,9 @@ import (
 
 	"go_wp/internal/builder"
 	"go_wp/internal/builder/core"
+	"go_wp/internal/middleware/builtin"
 	"go_wp/internal/templates"
+	"go_wp/pkg/captcha"
 
 	"github.com/gin-gonic/gin"
 )
@@ -44,10 +46,37 @@ func NewHandle(pages pagecontract.PageService, projects projectcontract.ProjectS
 
 // Dashboard 仪表盘页面。
 func (h *Handle) Dashboard(c *gin.Context) {
-	c.HTML(http.StatusOK, "admin/dashboard", gin.H{
+	c.HTML(http.StatusOK, "admin/dashboard", withCSRF(c, gin.H{
 		"title": dashboardenums.MsgDashboardTitle,
 		"menu":  "dashboard",
+	}))
+}
+
+// LoginPage 后台登录页（独立布局，供未登录的页面请求 302 跳转，也支持直接访问）。
+// 验证码经 /api/captcha 返回图片（答案不下发），此处渲染页面骨架即可；
+// 若渲染入口已生成验证码图片则直接注入，避免首屏额外请求。
+func (h *Handle) LoginPage(c *gin.Context) {
+	id, image := captcha.Get().GenerateImage()
+	c.HTML(http.StatusOK, "admin/login", gin.H{
+		"title":         "登录",
+		"captcha_id":    id,
+		"captcha_image": image,
 	})
+}
+
+// withCSRF 向模板数据注入当前会话的 CSRF token（layout 的 hx-headers 使用）。
+// token 获取失败时置空串：Jet 的 {{ .["csrf_token"] }} 对缺 key 安全输出空值，
+// 不阻塞页面渲染；已登录用户正常流程下 token 必然存在（登录时已生成）。
+func withCSRF(c *gin.Context, data gin.H) gin.H {
+	if data == nil {
+		data = gin.H{}
+	}
+	if tok, err := builtin.GetCSRFToken(c); err == nil {
+		data["csrf_token"] = tok
+	} else {
+		data["csrf_token"] = ""
+	}
+	return data
 }
 
 // Workbench 可视化编辑器外壳：注入 Page 草稿 AST 与保存接口所需元数据。
@@ -98,7 +127,7 @@ func (h *Handle) Workbench(c *gin.Context) {
 		c.String(http.StatusInternalServerError, "组件 schema 序列化失败")
 		return
 	}
-	c.HTML(http.StatusOK, "workbench/layout", gin.H{
+	c.HTML(http.StatusOK, "workbench/layout", withCSRF(c, gin.H{
 		"title":     workbenchTitle(page),
 		"pageId":    page.ID,
 		"isBlock":   false,
@@ -108,7 +137,7 @@ func (h *Handle) Workbench(c *gin.Context) {
 		"meta":      string(metaJSON),
 		"schemas":   string(schemasJSON),
 		"jsVer":     workbenchJsVer(),
-	})
+	}))
 }
 
 // jsVer 工作台脚本的缓存版本（文件 mtime），开发期改 JS 无需手动升版本号。
@@ -154,7 +183,7 @@ func (h *Handle) workbenchBlock(c *gin.Context, blockID string) {
 		c.String(http.StatusInternalServerError, "组件 schema 序列化失败")
 		return
 	}
-	c.HTML(http.StatusOK, "workbench/layout", gin.H{
+	c.HTML(http.StatusOK, "workbench/layout", withCSRF(c, gin.H{
 		"title":    "编辑块：" + block.Name,
 		"pageId":   block.ID,
 		"isBlock":  true,
@@ -162,7 +191,7 @@ func (h *Handle) workbenchBlock(c *gin.Context, blockID string) {
 		"meta":     string(metaJSON),
 		"schemas":  string(schemasJSON),
 		"jsVer":    workbenchJsVer(),
-	})
+	}))
 }
 
 // blockResolverAdapter 适配 block 契约为 builder.BlockResolver（预览内联 globalref）。
@@ -462,11 +491,11 @@ func workbenchTitle(page *pagedto.PageResp) string {
 // MediaPage 媒体库页面（左树右库：无限级分类筛选 + WP 式媒体网格/列表）。
 // 页面骨架由模板渲染，数据与交互由 media-admin.js 驱动（复用 /api/media/*）。
 func (h *Handle) MediaPage(c *gin.Context) {
-	c.HTML(http.StatusOK, "admin/media", gin.H{
+	c.HTML(http.StatusOK, "admin/media", withCSRF(c, gin.H{
 		"title": "媒体库",
 		"menu":  "media",
 		"jsVer": mediaLibJsVer(),
-	})
+	}))
 }
 
 // mediaLibJsVer 媒体库脚本缓存版本（media-lib.js / media-admin.js 中较新的 mtime）。

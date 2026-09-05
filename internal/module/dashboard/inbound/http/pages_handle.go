@@ -56,7 +56,7 @@ func (h *Handle) PagesList(c *gin.Context) {
 		c.String(http.StatusInternalServerError, err.Error())
 		return
 	}
-	c.HTML(http.StatusOK, "admin/pages", data.templateMap())
+	c.HTML(http.StatusOK, "admin/pages", withCSRF(c, data.templateMap()))
 }
 
 // buildPagesData 组装列表页数据。
