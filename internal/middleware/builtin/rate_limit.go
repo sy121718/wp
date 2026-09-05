@@ -18,6 +18,12 @@ type rateLimitEntry struct {
 	resetAt time.Time
 }
 
+// rateLimitMaxEntries rateLimitStore 的条数上限。
+// 防止高基数 key（攻击者伪造大量 X-Forwarded-For 客户端 IP）把进程内 map 撑爆；
+// 达到上限后先清理过期项，仍满（同窗口内超上限个唯一 key）则新 key 放行不计数，
+// map 大小被钳制在上限附近，不会无限增长。
+const rateLimitMaxEntries = 10000
+
 var (
 	rateLimitMu    sync.Mutex
 	rateLimitStore = map[string]rateLimitEntry{}
@@ -57,6 +63,17 @@ func RequestRateLimitMiddleware(limit int, window time.Duration) gin.HandlerFunc
 		rateLimitMu.Lock()
 		entry, exists := rateLimitStore[key]
 		if !exists || !entry.resetAt.After(now) {
+			// 新 key 且已达条数上限：先清理过期项；仍满（同窗口内超上限个唯一 key）
+			// 则拒绝写入，放行不计数，防止 map 无限增长（保持锁内操作）。
+			if !exists && len(rateLimitStore) >= rateLimitMaxEntries {
+				sweepRateLimitExpired(now)
+				if len(rateLimitStore) >= rateLimitMaxEntries {
+					rateLimitMu.Unlock()
+					logger.Scene("middleware").Warn("限流存储达到上限且无过期项，新 key 放行不计数")
+					c.Next()
+					return
+				}
+			}
 			entry = rateLimitEntry{
 				count:   0,
 				resetAt: now.Add(window),
@@ -101,6 +118,17 @@ func buildRateLimitKey(c *gin.Context) string {
 		path = strings.TrimSpace(c.Request.URL.Path)
 	}
 	return c.ClientIP() + "|" + path
+}
+
+// sweepRateLimitExpired 删除所有已过期（窗口已结束）的限流记录。
+// 必须在持有 rateLimitMu 时调用：清除长期累积的过期 key，
+// 防止高基数 key 撑爆进程内 map。
+func sweepRateLimitExpired(now time.Time) {
+	for key, entry := range rateLimitStore {
+		if !entry.resetAt.After(now) {
+			delete(rateLimitStore, key)
+		}
+	}
 }
 
 // ResetRateLimitStore 清空限流计数存储。

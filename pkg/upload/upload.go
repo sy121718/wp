@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -248,9 +249,20 @@ func uploadWithProvider(ctx context.Context, providerName string, runtime Runtim
 		return Result{}, err
 	}
 
+	// 大小校验的流式兜底：file.Size <= 0（调用方未声明大小或谎报 0）时
+	// 不得跳过限制——把 Reader 截断到 maxSize+1 字节，实际大小由 provider
+	// 写完后返回的 Size 判定，超限则整体报错（由 provider 清理已落盘文件）。
+	sizeUnknown := uploadRules.maxSize > 0 && file.Size <= 0
+	if sizeUnknown {
+		file.Reader = io.LimitReader(file.Reader, uploadRules.maxSize+1)
+	}
+
 	result, err := provider.Upload(ctx, runtime, file, req)
 	if err != nil {
 		return Result{}, err
+	}
+	if sizeUnknown && result.Size > uploadRules.maxSize {
+		return Result{}, fmt.Errorf("上传文件大小超限: max=%d current=%d", uploadRules.maxSize, result.Size)
 	}
 	if strings.TrimSpace(result.Provider) == "" {
 		result.Provider = name
@@ -380,6 +392,9 @@ func parseValidationRules(v *viper.Viper) (validationRules, error) {
 }
 
 func validateFile(file File) error {
+	// file.Size > 0：头部声明的大小直接比对（快速拒绝路径）。
+	// file.Size <= 0：此处不拒绝，由 uploadWithProvider 的流式 LimitReader 兜底，
+	// 按实际读取字节判定是否超限——保证「谎报 Size=0」也绕不过大小校验。
 	if file.Size > 0 && uploadRules.maxSize > 0 && file.Size > uploadRules.maxSize {
 		return fmt.Errorf("上传文件大小超限: max=%d current=%d", uploadRules.maxSize, file.Size)
 	}

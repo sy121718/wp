@@ -1,7 +1,9 @@
 package feature
 
 import (
+	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -121,5 +123,52 @@ func TestRequestRateLimitBlocksRepeatedRequests(t *testing.T) {
 	}
 	if resp.Code != http.StatusTooManyRequests {
 		t.Fatalf("错误码不正确: got=%d want=%d", resp.Code, http.StatusTooManyRequests)
+	}
+}
+
+// chunked 传输（Content-Length = -1）超限：不得依赖不可信的 Content-Length 头，
+// MaxBytesReader 读取时强制截断，读取方收到 *http.MaxBytesError 应判定为 413。
+func TestRequestBodyLimitRejectsChunkedBodyOverLimit(t *testing.T) {
+	engine := gin.New()
+	engine.POST("/limited", builtin.RequestBodyLimitMiddleware(10, 100), func(c *gin.Context) {
+		_, err := io.ReadAll(c.Request.Body)
+		if err != nil {
+			c.String(http.StatusRequestEntityTooLarge, "body too large")
+			return
+		}
+		response.Success(c, gin.H{"reached": true})
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/limited", strings.NewReader(strings.Repeat("a", 11)))
+	req.ContentLength = -1 // 模拟 chunked / 未知长度
+
+	recorder := httptest.NewRecorder()
+	engine.ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("chunked 超限应 413: got=%d want=%d", recorder.Code, http.StatusRequestEntityTooLarge)
+	}
+}
+
+// chunked 传输未超限：应正常放行，读取内容完整。
+func TestRequestBodyLimitAcceptsChunkedBodyWithinLimit(t *testing.T) {
+	engine := gin.New()
+	engine.POST("/limited", builtin.RequestBodyLimitMiddleware(10, 100), func(c *gin.Context) {
+		body, err := io.ReadAll(c.Request.Body)
+		if err != nil {
+			c.String(http.StatusBadRequest, err.Error())
+			return
+		}
+		response.Success(c, gin.H{"len": len(body)})
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/limited", strings.NewReader(strings.Repeat("a", 5)))
+	req.ContentLength = -1 // 模拟 chunked / 未知长度
+
+	recorder := httptest.NewRecorder()
+	engine.ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("chunked 未超限应放行: got=%d want=%d", recorder.Code, http.StatusOK)
 	}
 }

@@ -14,6 +14,7 @@ func TestUploadRejectsFileOverMaxSize(t *testing.T) {
 	cfg := viper.New()
 	cfg.Set("upload.enabled", true)
 	cfg.Set("upload.default_provider", "local")
+	cfg.Set("upload.local_dir", t.TempDir())
 	cfg.Set("upload.max_size", "10B")
 	cfg.Set("upload.allowed_extensions", []string{".txt"})
 	cfg.Set("upload.allowed_mime_types", []string{"text/plain"})
@@ -42,6 +43,7 @@ func TestUploadRejectsDisallowedExtension(t *testing.T) {
 	cfg := viper.New()
 	cfg.Set("upload.enabled", true)
 	cfg.Set("upload.default_provider", "local")
+	cfg.Set("upload.local_dir", t.TempDir())
 	cfg.Set("upload.max_size", "1MB")
 	cfg.Set("upload.allowed_extensions", []string{".txt"})
 	cfg.Set("upload.allowed_mime_types", []string{"text/plain"})
@@ -70,6 +72,7 @@ func TestUploadRejectsDisallowedMimeType(t *testing.T) {
 	cfg := viper.New()
 	cfg.Set("upload.enabled", true)
 	cfg.Set("upload.default_provider", "local")
+	cfg.Set("upload.local_dir", t.TempDir())
 	cfg.Set("upload.max_size", "1MB")
 	cfg.Set("upload.allowed_extensions", []string{".txt"})
 	cfg.Set("upload.allowed_mime_types", []string{"text/plain"})
@@ -98,6 +101,7 @@ func TestUploaderFacadeUsesFixedRequestAndProvider(t *testing.T) {
 	cfg := viper.New()
 	cfg.Set("upload.enabled", true)
 	cfg.Set("upload.default_provider", "local")
+	cfg.Set("upload.local_dir", t.TempDir())
 	cfg.Set("upload.max_size", "1MB")
 	cfg.Set("upload.allowed_extensions", []string{".txt"})
 	cfg.Set("upload.allowed_mime_types", []string{"text/plain"})
@@ -129,5 +133,68 @@ func TestUploaderFacadeUsesFixedRequestAndProvider(t *testing.T) {
 
 	if !strings.Contains(result.Key, "docs/reports/") {
 		t.Fatalf("结果 key 不包含固定 request 路径: %s", result.Key)
+	}
+}
+
+// Size 谎报 0（未知大小）：不得绕过大小校验——流式读取实际 11B > 10B 应报错。
+func TestUploadRejectsUnknownSizeFileOverMaxSize(t *testing.T) {
+	cfg := viper.New()
+	cfg.Set("upload.enabled", true)
+	cfg.Set("upload.default_provider", "local")
+	cfg.Set("upload.local_dir", t.TempDir())
+	cfg.Set("upload.max_size", "10B")
+	cfg.Set("upload.allowed_extensions", []string{".txt"})
+	cfg.Set("upload.allowed_mime_types", []string{"text/plain"})
+
+	if err := upload.Init(cfg); err != nil {
+		t.Fatalf("初始化上传组件失败: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := upload.Close(); err != nil {
+			t.Fatalf("关闭上传组件失败: %v", err)
+		}
+	})
+
+	_, err := upload.Upload(context.Background(), upload.File{
+		Filename:    "sneaky.txt",
+		Reader:      strings.NewReader("01234567890"),
+		Size:        0,
+		ContentType: "text/plain",
+	}, upload.Request{})
+	if err == nil {
+		t.Fatalf("Size=0 时仍应按实际读取限制大小，超限应返回错误")
+	}
+}
+
+// Size 为 0 但实际未超限：流式限制不应误伤，上传成功且返回实际大小。
+func TestUploadAcceptsUnknownSizeFileWithinLimit(t *testing.T) {
+	cfg := viper.New()
+	cfg.Set("upload.enabled", true)
+	cfg.Set("upload.default_provider", "local")
+	cfg.Set("upload.local_dir", t.TempDir())
+	cfg.Set("upload.max_size", "10B")
+	cfg.Set("upload.allowed_extensions", []string{".txt"})
+	cfg.Set("upload.allowed_mime_types", []string{"text/plain"})
+
+	if err := upload.Init(cfg); err != nil {
+		t.Fatalf("初始化上传组件失败: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := upload.Close(); err != nil {
+			t.Fatalf("关闭上传组件失败: %v", err)
+		}
+	})
+
+	result, err := upload.Upload(context.Background(), upload.File{
+		Filename:    "small.txt",
+		Reader:      strings.NewReader("abc"),
+		Size:        0,
+		ContentType: "text/plain",
+	}, upload.Request{})
+	if err != nil {
+		t.Fatalf("Size=0 且实际未超限应成功: %v", err)
+	}
+	if result.Size != 3 {
+		t.Fatalf("结果大小不正确: got=%d want=%d", result.Size, 3)
 	}
 }

@@ -153,10 +153,27 @@ func loadAndPrepareRuntime(configPath string) (config.ServerConfig, error) {
 
 // buildHTTPRouter 创建 Gin 引擎并完成路由装配。
 // ready 函数用于 /readyz 的健康检查，由 config.ValidateReady() 提供。
+//
+// TrustedProxies 说明（影响 ClientIP，进而影响限流 key 与登录审计 IP）：
+//   - release：SetTrustedProxies(nil) —— 直连部署，不信任任何代理，
+//     c.ClientIP() 恒等于连接对端 RemoteAddr，X-Forwarded-For 无法伪造。
+//     因此 rate_limit 的 ClientIP 维度与登录审计 IP 均为真实对端地址。
+//   - debug / test：保持 Gin 默认（信任所有代理，0.0.0.0/0），便于本地经
+//     反向代理调试；代价是 X-Forwarded-For 可被客户端伪造进而污染
+//     rate_limit 计数（绕过限流）与登录审计 IP，仅限开发环境。
 func buildHTTPRouter(
 	ready func() error,
 ) *gin.Engine {
 	router := gin.New()
+	if gin.Mode() == gin.ReleaseMode {
+		if err := router.SetTrustedProxies(nil); err != nil {
+			logger.Scene("init").Error(err, "设置 TrustedProxies 失败")
+		} else {
+			logger.Scene("init").Info("release 模式：不信任任何代理，ClientIP 取直连 RemoteAddr")
+		}
+	} else {
+		logger.Scene("init").Info("debug/test 模式：保持 Gin 默认信任所有代理，X-Forwarded-For 可伪造 ClientIP，仅供本地调试")
+	}
 	//  1. middleware.Setup()     — 挂载全局中间件（Recovery → CORS → 安全头 → BodyLimit → RateLimit → LogCapture）
 	middleware.Setup(router)
 	//  2. routers.SetupRoutes() — 注册健康检查路由（/livez、/readyz）和业务路由（/api/*）

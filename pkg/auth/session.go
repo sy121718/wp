@@ -25,6 +25,13 @@ const (
 
 	defaultSessionTTL = 24 * time.Hour
 	defaultOnlineTTL  = 5 * time.Minute
+
+	// blockedTTL 封禁标记的固定存活时长。
+	// RevokeUserSession 传 time.Now() 时 time.Until(blockedUntil) 为负值，Redis 会报
+	// "invalid expire time in 'set' command" 导致强制下线写不进去（M 级缺陷）。
+	// 改用固定 7 天：覆盖最长会话有效期（rememberMe=7d），key 到期自然消失，
+	// 封禁语义由 IsBlocked 的 blockedAt > sessionIssuedAt 判断，与 TTL 长短解耦。
+	blockedTTL = 7 * 24 * time.Hour
 )
 
 // UserSession 用户会话信息，登录成功后写入 Redis。
@@ -100,7 +107,9 @@ func BlockUser(ctx context.Context, userID uint64, blockedUntil time.Time) error
 	if err != nil {
 		return err
 	}
-	return client.Set(ctx, blockedKey(userID), blockedUntil.Unix(), time.Until(blockedUntil)).Err()
+	// 固定 TTL：不随 blockedUntil 变化。若用 time.Until(blockedUntil)，
+	// 调用方传 time.Now() 时 TTL 为负，Redis 直接报错（见 blockedTTL 注释）。
+	return client.Set(ctx, blockedKey(userID), blockedUntil.Unix(), blockedTTL).Err()
 }
 
 // UnblockUser 解封用户。
@@ -114,6 +123,10 @@ func UnblockUser(ctx context.Context, userID uint64) error {
 
 // IsBlocked 检查用户是否被封禁。
 // sessionIssuedAt 为会话建立时间戳，0 表示不检查。
+//
+// fail-closed：只有 redis.Nil（key 不存在）才视为未封禁返回 (false, nil)；
+// 其他错误（连接失败、超时等）原样返回 err，由调用方（SessionAuthMiddleware）
+// 返回 503，避免 Redis 故障时把封禁用户误放行。
 func IsBlocked(ctx context.Context, userID uint64, sessionIssuedAt int64) (bool, error) {
 	client, err := cache.GetRedis()
 	if err != nil {
@@ -121,8 +134,11 @@ func IsBlocked(ctx context.Context, userID uint64, sessionIssuedAt int64) (bool,
 	}
 
 	blockedAt, err := client.Get(ctx, blockedKey(userID)).Int64()
-	if err != nil {
+	if errors.Is(err, redis.Nil) {
 		return false, nil
+	}
+	if err != nil {
+		return false, err
 	}
 
 	if sessionIssuedAt > 0 && blockedAt > sessionIssuedAt {
