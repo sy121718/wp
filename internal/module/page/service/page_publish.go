@@ -118,8 +118,10 @@ func (s *Service) Publish(ctx context.Context, req *pagedto.PublishReq) (res *pa
 		return nil, err
 	}
 
-	// 确定性构建保证与暂存一致；不一致说明草稿在构建后又被保存，需要重新构建。
-	if err = s.syncKernel(stagedArt.CanonicalPath, page.DraftDocumentFor(stagedArt.SourceDocument), page.ID); err != nil {
+	// 确定性构建保证与暂存一致；用「当前草稿」（路径+文档）重建内核——
+	// 若草稿在构建后又被 SaveDraft 修改（含改路径），重建 hash 必与暂存不同，
+	// 走 ErrRebuildRequired 拒绝发布，避免发布旧内容后界面误报「已发布最新」。
+	if err = s.syncKernel(page.DraftPath, page.DraftDocument, page.ID); err != nil {
 		return nil, err
 	}
 	version := s.kernelVersionOrOne(page.ID)

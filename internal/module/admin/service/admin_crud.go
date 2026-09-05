@@ -134,7 +134,7 @@ func (s *Service) AdminDetail(ctx context.Context, req *admindto.AdminDetailReq)
 	res = &admindto.AdminDetailResp{}
 
 	err = s.am.DB(ctx).
-		Select("id", "username", "avatar", "email", "phone", "status", "is_admin",
+		Select("id", "username", "name", "avatar", "email", "phone", "status", "is_admin",
 			"register_ip", "register_location", "last_login_ip", "last_login_location",
 			"last_login_time", "create_by", "create_time", "remark").
 		Where("id = ?", req.Id).
@@ -144,6 +144,11 @@ func (s *Service) AdminDetail(ctx context.Context, req *admindto.AdminDetailReq)
 			return nil, errors.New(adminenums.ErrAdminNotFound)
 		}
 		return nil, err
+	}
+	// Scan 不命中不返回 gorm.ErrRecordNotFound（RowsAffected=0），须显式判空：
+	// 避免查询不存在返回空结构 + nil error（对比 perm_crud.go 同款检查）。
+	if res.ID == 0 {
+		return nil, errors.New(adminenums.ErrAdminNotFound)
 	}
 
 	res.Roles = []any{}

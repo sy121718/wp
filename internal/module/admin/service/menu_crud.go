@@ -283,32 +283,38 @@ func (s *Service) MenuTree(ctx context.Context, req *admindto.MenuTreeReq) ([]ad
 }
 
 // buildMenuTree 将扁平列表构建为树结构。
+//
+// 递归构建：先完整构建子树，再组装父节点——Children 是值切片
+// （[]MenuTreeNode），若用「roots 值拷贝 + nodeMap 指针挂载」的两遍组装，
+// 顶级节点副本的 Children 恒为空（子节点挂在指针上，拷贝时未完成），
+// 整棵菜单树会丢失全部子树。
 func buildMenuTree(list []adminmodel.MenuEntity) []admindto.MenuTreeNode {
-	nodeMap := make(map[uint64]*admindto.MenuTreeNode, len(list))
-	var roots []admindto.MenuTreeNode
-
-	// 第一遍：创建所有节点
+	childrenOf := make(map[uint64][]adminmodel.MenuEntity, len(list))
+	ids := make(map[uint64]bool, len(list))
 	for _, m := range list {
-		node := menuEntityToNode(m)
-		nodeMap[m.ID] = &node
+		childrenOf[m.ParentID] = append(childrenOf[m.ParentID], m)
+		ids[m.ID] = true
 	}
-
-	// 第二遍：组装父子关系
+	// 孤儿节点（ParentID 非 0 但父不在列表中）归入顶级分组，与旧行为一致。
+	var orphans []adminmodel.MenuEntity
 	for _, m := range list {
-		node := nodeMap[m.ID]
-		if m.ParentID == 0 {
-			roots = append(roots, *node)
-		} else {
-			if parent, ok := nodeMap[m.ParentID]; ok {
-				parent.Children = append(parent.Children, *node)
-			} else {
-				// 父节点不在列表中（被过滤），作为顶级
-				roots = append(roots, *node)
-			}
+		if m.ParentID != 0 && !ids[m.ParentID] {
+			orphans = append(orphans, m)
 		}
 	}
+	childrenOf[0] = append(childrenOf[0], orphans...)
 
-	return roots
+	var build func(parentID uint64) []admindto.MenuTreeNode
+	build = func(parentID uint64) []admindto.MenuTreeNode {
+		var nodes []admindto.MenuTreeNode
+		for _, m := range childrenOf[parentID] {
+			n := menuEntityToNode(m)
+			n.Children = build(m.ID)
+			nodes = append(nodes, n)
+		}
+		return nodes
+	}
+	return build(0)
 }
 
 // menuEntityToNode MenuEntity 转树节点 MenuTreeNode。

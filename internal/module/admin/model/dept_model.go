@@ -129,10 +129,13 @@ func (m *DeptModel) Update(ctx context.Context, e *DeptEntity) error {
 
 // UpdateAncestors 批量更新子孙节点的 ancestors 前缀（移动部门时使用）。
 // 将 oldPrefix 开头的 ancestors 替换为 newPrefix。
+//
+// 逗号边界匹配：直属子 ancestors = oldPrefix，更深层以 oldPrefix+"," 开头。
+// 旧实现用 `LIKE oldPrefix%` 会把 ID 前缀重叠的无关部门卷进来
+// （如移动部门 2 时误匹配部门 21 的 ancestors "0,20"），损坏部门树。
 func (m *DeptModel) UpdateAncestors(ctx context.Context, oldPrefix, newPrefix string) error {
-	// 批量替换子孙的 ancestors 前缀
 	return m.DB(ctx).Model(&DeptEntity{}).
-		Where("ancestors LIKE ?", oldPrefix+"%").
+		Where("ancestors = ? OR ancestors LIKE ?", oldPrefix, oldPrefix+",%").
 		Update("ancestors", gorm.Expr("REPLACE(ancestors, ?, ?)", oldPrefix, newPrefix)).Error
 }
 
