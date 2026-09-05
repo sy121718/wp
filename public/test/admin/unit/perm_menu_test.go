@@ -103,6 +103,30 @@ func TestPermUpdateDisableAssignedRejected(t *testing.T) {
 	wantErr(t, err, adminenums.ErrPermissionAssigned)
 }
 
+// TestPermUpdateDisablePersists 未分配权限点显式更新为 status=0（禁用）落库为禁用。
+// 修复前：PermissionModel.Update 用裸 Updates(struct)，零值 status=0 被跳过，
+// 禁用不落库，权限点保持启用（同 SysRuleEntity.Status default tag 一族的改写问题）。
+func TestPermUpdateDisablePersists(t *testing.T) {
+	e := setupEnv(t)
+	ctx := context.Background()
+
+	code := "perm_dis:" + uniq("")
+	permID := createPerm(t, e, code, "/api/dis")
+	_, err := e.svc.PermUpdate(ctx, &admindto.PermUpdateReq{
+		ID: permID, PermissionCode: code, PermissionName: "禁用权限", Module: "admin",
+		APIPath: "/api/dis", APIMethod: "GET", Status: adminmodel.PermissionStatusDisabled,
+	})
+	wantErr(t, err, "")
+
+	var perm adminmodel.PermissionEntity
+	if err := e.db.First(&perm, permID).Error; err != nil {
+		t.Fatalf("查询权限点失败: %v", err)
+	}
+	if perm.Status != adminmodel.PermissionStatusDisabled {
+		t.Fatalf("显式禁用应落库 status=0: got=%d", perm.Status)
+	}
+}
+
 // TestPermUpdateDefinitionSyncCasbin 更新已分配权限的 path/method 会同步 Casbin 策略。
 func TestPermUpdateDefinitionSyncCasbin(t *testing.T) {
 	e := setupEnv(t)

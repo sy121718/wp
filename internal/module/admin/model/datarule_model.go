@@ -41,11 +41,14 @@ const (
 
 // SysRuleEntity 对应 sys_rule 表。
 type SysRuleEntity struct {
-	ID         uint64     `gorm:"column:id;primaryKey"`
-	RuleName   string     `gorm:"column:rule_name;type:varchar(100)"`
-	Domain     string     `gorm:"column:domain;type:varchar(50);index"`
-	Config     string     `gorm:"column:config;type:json"`
-	Status     int        `gorm:"column:status;type:tinyint;default:1;index"`
+	ID       uint64 `gorm:"column:id;primaryKey"`
+	RuleName string `gorm:"column:rule_name;type:varchar(100)"`
+	Domain   string `gorm:"column:domain;type:varchar(50);index"`
+	Config   string `gorm:"column:config;type:json"`
+	// Status 不带 gorm default tag：gorm 对带 default 的字段在零值时会用 DB 默认值
+	// 替换并回写 struct，导致显式传入的 status=0（禁用）被改写成 1（启用）。
+	// service 层总是显式设置 Status（RuleCreate/RuleUpdate），DB 列 DEFAULT 1 仅兜底直接 SQL 插入。
+	Status     int        `gorm:"column:status;type:tinyint;index"`
 	Remark     *string    `gorm:"column:remark;type:varchar(200)"`
 	CreateBy   uint64     `gorm:"column:create_by;type:bigint unsigned"`
 	CreateTime *time.Time `gorm:"column:create_time;type:datetime(3)"`

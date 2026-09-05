@@ -22,7 +22,7 @@ type PermissionEntity struct {
 	Module         string     `gorm:"column:module;type:varchar(50);index"`                 // 所属模块，如 admin
 	APIPath        string     `gorm:"column:api_path;type:varchar(200)"`                    // 后端接口路径
 	APIMethod      string     `gorm:"column:api_method;type:varchar(10);default:GET"`       // 请求方法 GET/POST
-	Status         int        `gorm:"column:status;type:tinyint;default:1;index"`           // 状态：0=禁用 1=启用
+	Status         int        `gorm:"column:status;type:tinyint;index"`                     // 状态：0=禁用 1=启用；不带 default tag，避免 gorm 把显式 0（禁用）改写为 1（见 SysRuleEntity.Status 注释）
 	Remark         *string    `gorm:"column:remark;type:varchar(200)"`                      // 备注
 	CreateBy       uint64     `gorm:"column:create_by;type:bigint unsigned"`                // 创建人ID
 	CreateTime     *time.Time `gorm:"column:create_time;type:datetime(3)"`                  // 创建时间
@@ -137,8 +137,12 @@ func (m *PermissionModel) Create(ctx context.Context, e *PermissionEntity) error
 }
 
 // Update 全量更新权限点。
+// 显式 Select 列（含 status 零值）：否则 Updates(struct) 跳过零值字段，
+// 显式禁用（status=0）不落库，权限点保持启用。
 func (m *PermissionModel) Update(ctx context.Context, e *PermissionEntity) error {
-	return m.DB(ctx).Where("id = ?", e.ID).Updates(e).Error
+	return m.DB(ctx).Where("id = ?", e.ID).
+		Select("permission_code", "permission_name", "module", "api_path", "api_method", "status", "remark", "update_by", "update_time").
+		Updates(e).Error
 }
 
 // DeleteByIDs 批量删除权限点。

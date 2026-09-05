@@ -438,11 +438,11 @@ func TestBlockUpdateInvalidRequest(t *testing.T) {
 
 	t.Run("NilRequest", func(t *testing.T) {
 		_, err := e.svc.Update(ctx, nil)
-		errContains(t, err, blockenums.ErrBlockNotFound)
+		errContains(t, err, blockenums.ErrBlockParamRequired)
 	})
 	t.Run("EmptyID", func(t *testing.T) {
 		_, err := e.svc.Update(ctx, &blockdto.UpdateReq{ID: ""})
-		errContains(t, err, blockenums.ErrBlockNotFound)
+		errContains(t, err, blockenums.ErrBlockParamRequired)
 	})
 	t.Run("NotExist", func(t *testing.T) {
 		_, err := e.svc.Update(ctx, &blockdto.UpdateReq{ID: uuid.NewString(), Name: "无名氏"})
@@ -493,12 +493,12 @@ func TestBlockDeleteInvalidRequest(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("NilRequest", func(t *testing.T) {
-		errContains(t, e.svc.Delete(ctx, nil), blockenums.ErrBlockNotFound)
+		errContains(t, e.svc.Delete(ctx, nil), blockenums.ErrBlockParamRequired)
 	})
 	t.Run("EmptyID", func(t *testing.T) {
-		errContains(t, e.svc.Delete(ctx, &blockdto.DeleteReq{ID: ""}), blockenums.ErrBlockNotFound)
+		errContains(t, e.svc.Delete(ctx, &blockdto.DeleteReq{ID: ""}), blockenums.ErrBlockParamRequired)
 	})
 	t.Run("WhitespaceID", func(t *testing.T) {
-		errContains(t, e.svc.Delete(ctx, &blockdto.DeleteReq{ID: "  "}), blockenums.ErrBlockNotFound)
+		errContains(t, e.svc.Delete(ctx, &blockdto.DeleteReq{ID: "  "}), blockenums.ErrBlockParamRequired)
 	})
 }

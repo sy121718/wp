@@ -4,9 +4,11 @@ package blockhttp
 
 import (
 	"net/http"
+	"strings"
 
 	blockcontract "go_wp/internal/module/block/contract"
 	blockdto "go_wp/internal/module/block/dto"
+	blockenums "go_wp/internal/module/block/enums"
 	blockmodel "go_wp/internal/module/block/model"
 	blockservice "go_wp/internal/module/block/service"
 	projectcontract "go_wp/internal/module/project/contract"
@@ -43,7 +45,7 @@ func (h *Handle) List(c *gin.Context) {
 		ProjectID: c.Query("projectId"), Kind: c.Query("kind"),
 	})
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusInternalServerError, err.Error())
+		response.ErrorWithMessage(c, blockErrorStatus(err), err.Error())
 		return
 	}
 	response.Success(c, res)
@@ -53,7 +55,7 @@ func (h *Handle) List(c *gin.Context) {
 func (h *Handle) Detail(c *gin.Context) {
 	res, err := h.svc.Detail(c.Request.Context(), &blockdto.DetailReq{ID: c.Query("id")})
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusNotFound, err.Error())
+		response.ErrorWithMessage(c, blockErrorStatus(err), err.Error())
 		return
 	}
 	response.Success(c, res)
@@ -83,7 +85,7 @@ func (h *Handle) Update(c *gin.Context) {
 	}
 	res, err := h.svc.Update(c.Request.Context(), &req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusInternalServerError, err.Error())
+		response.ErrorWithMessage(c, blockErrorStatus(err), err.Error())
 		return
 	}
 	response.Success(c, res)
@@ -97,8 +99,26 @@ func (h *Handle) Delete(c *gin.Context) {
 		return
 	}
 	if err := h.svc.Delete(c.Request.Context(), &req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorWithMessage(c, blockErrorStatus(err), err.Error())
 		return
 	}
 	response.Success(c, nil)
+}
+
+// blockErrorStatus 按错误消息映射 HTTP 状态码（沿用 page 模块 pageErrorStatus 风格）：
+// 参数/校验错误 → 400，资源不存在 → 404，其余未知错误 → 500。
+func blockErrorStatus(err error) int {
+	message := err.Error()
+	switch {
+	case strings.Contains(message, blockenums.ErrBlockNotFound):
+		return http.StatusNotFound
+	case strings.Contains(message, blockenums.ErrBlockParamRequired),
+		strings.Contains(message, blockenums.ErrBlockNameRequired),
+		strings.Contains(message, blockenums.ErrBlockInvalidDoc),
+		strings.Contains(message, blockenums.ErrBlockInvalidKind),
+		strings.Contains(message, blockenums.ErrBlockDuplicate):
+		return http.StatusBadRequest
+	default:
+		return http.StatusInternalServerError
+	}
 }

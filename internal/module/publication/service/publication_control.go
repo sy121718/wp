@@ -63,6 +63,11 @@ func (s *Service) RenameReserved(ctx context.Context, req *pubdto.RenameReserved
 			Where("project_id = ? AND path = ? AND page_id = ?", req.ProjectID, oldPath, req.PageID).
 			Updates(map[string]any{"path": newPath, "updated_at": now})
 		if result.Error != nil {
+			// 新路径被他人占用时 UPDATE 撞 (project_id, path) 唯一约束——
+			// 归一为 ErrRouteOccupied（语义：改名目标路径已被其他页面占用）。
+			if errors.Is(result.Error, gorm.ErrDuplicatedKey) || strings.Contains(result.Error.Error(), "23505") {
+				return errRouteOccupied
+			}
 			return result.Error
 		}
 		if result.RowsAffected != 1 {
@@ -226,6 +231,11 @@ func (s *Service) Redirect(ctx context.Context, req *pubdto.RedirectReq) (res *p
 				ProjectID: req.ProjectID, Path: oldPath, PageID: &pageIDCopy,
 				RouteKind: pubmodel.RouteRedirect, UpdatedAt: now,
 			}).Error; err != nil {
+				// 对他人占用路径建 redirect 行撞 (project_id, path) 唯一约束——
+				// 归一为 ErrRouteOccupied（语义：重定向目标路径已被其他页面占用）。
+				if errors.Is(err, gorm.ErrDuplicatedKey) || strings.Contains(err.Error(), "23505") {
+					return errRouteOccupied
+				}
 				return err
 			}
 		}
@@ -303,24 +313,25 @@ const maxRoutePathLen = 500
 
 // normalizePath 规范化路径：连续去除结尾斜杠（根路径除外），
 // 并拒绝长度超限、含空格/URL 分隔符/引号/控制字符、路径穿越的输入。
+// 非法输入属于参数格式错误，统一返回 ErrInvalidParam（与资源占用语义区分）。
 func normalizePath(raw string) (string, error) {
 	if raw == "" || !strings.HasPrefix(raw, "/") {
-		return "", errors.New(pubenums.ErrRouteNotFound)
+		return "", errors.New(pubenums.ErrInvalidParam)
 	}
 	for len(raw) > 1 && strings.HasSuffix(raw, "/") {
 		raw = strings.TrimSuffix(raw, "/")
 	}
 	if len(raw) > maxRoutePathLen {
-		return "", errors.New(pubenums.ErrRouteNotFound)
+		return "", errors.New(pubenums.ErrInvalidParam)
 	}
 	for _, r := range raw {
 		if r == ' ' || r == '?' || r == '#' || r == '"' || r == '\'' || r == '\\' || r < 0x20 || r == 0x7f {
-			return "", errors.New(pubenums.ErrRouteNotFound)
+			return "", errors.New(pubenums.ErrInvalidParam)
 		}
 	}
 	if strings.Contains(raw, "/../") || strings.Contains(raw, "/./") ||
 		strings.HasSuffix(raw, "/..") || strings.HasSuffix(raw, "/.") {
-		return "", errors.New(pubenums.ErrRouteNotFound)
+		return "", errors.New(pubenums.ErrInvalidParam)
 	}
 	return raw, nil
 }

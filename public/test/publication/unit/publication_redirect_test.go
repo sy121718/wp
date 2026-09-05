@@ -49,8 +49,8 @@ func TestPublicationRedirectMissing(t *testing.T) {
 	}
 }
 
-// TestPublicationRedirectConflict 目标路径被其他页面占用时重定向失败且原占用不变。
-// 当前实现返回原始 DB 主键冲突而非 ErrRouteOccupied（错误映射缺陷，见报告）。
+// TestPublicationRedirectConflict 目标路径被其他页面占用时重定向失败，
+// 错误归一为 ErrRouteOccupied 且原占用不变。
 func TestPublicationRedirectConflict(t *testing.T) {
 	svc := newUnitService(t)
 	seedRoute(t, svc, "/other", pubmodel.RouteActive, strPtr(otherPageID), strPtr(artifactUUID))
@@ -58,10 +58,7 @@ func TestPublicationRedirectConflict(t *testing.T) {
 	_, err := svc.Redirect(context.Background(), &pubdto.RedirectReq{
 		ProjectID: projectID, OldPath: "/other", PageID: pageID, ArtifactID: artifactUUID,
 	})
-	if err == nil {
-		t.Fatal("他人占用时重定向应失败")
-	}
-	t.Logf("他人占用重定向错误类型: %v", err)
+	containsErr(t, err, pubenums.ErrRouteOccupied)
 	route := mustRoute(t, svc, "/other")
 	if route.PageID == nil || *route.PageID != otherPageID || route.RouteKind != pubmodel.RouteActive {
 		t.Fatalf("原占用应保持不变: %+v", route)

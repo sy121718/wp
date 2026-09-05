@@ -395,6 +395,62 @@ func TestRuleUpdateInvalidDomain(t *testing.T) {
 	}
 }
 
+// TestRuleCreateDisabledExplicit 显式传 status=0（禁用）创建数据规则，落库为禁用且不被 GetRules 命中。
+// 修复前：SysRuleEntity.Status 带 gorm default:1 tag，gorm 对零值字段（status=0）用 DB 默认值
+// 替换并回写 struct，显式禁用被改写成启用（1），"创建禁用数据规则"失效。
+func TestRuleCreateDisabledExplicit(t *testing.T) {
+	e := setupEnv(t)
+	ctx := context.Background()
+
+	ruleID := ruleCreate(t, e, "禁用规则"+uniq(""), "ORDER", adminmodel.RuleStatusDisabled, datarule.RuleConfig{})
+
+	var rule adminmodel.SysRuleEntity
+	if err := e.db.First(&rule, ruleID).Error; err != nil {
+		t.Fatalf("查询规则失败: %v", err)
+	}
+	if rule.Status != adminmodel.RuleStatusDisabled {
+		t.Fatalf("显式禁用应落库 status=0: got=%d", rule.Status)
+	}
+
+	// 分配给用户后，禁用规则仍不应被 GetRules 命中
+	if err := e.svc.RuleAssignmentSave(ctx, &admindto.RuleAssignmentSaveReq{
+		RuleID: ruleID,
+		Assignments: []admindto.RuleAssignmentItem{
+			{TargetType: adminmodel.AssignmentTargetTypeUser, TargetID: 100},
+		},
+	}); err != nil {
+		t.Fatalf("分配失败: %v", err)
+	}
+	rules, err := e.svc.GetRules(ctx, &datarule.UserContext{UserID: 100, Roles: []string{}}, "ORDER")
+	wantErr(t, err, "")
+	if len(rules) != 0 {
+		t.Fatalf("禁用规则不应命中: %+v", rules)
+	}
+}
+
+// TestRuleUpdateDisablePersists 启用规则显式更新为 status=0（禁用）落库为禁用。
+// 回归覆盖：RuleUpdate 显式赋值 status=0 + SysRuleModel.Update 显式 Select 含 status 列，
+// 禁用状态在更新路径同样不被跳过。
+func TestRuleUpdateDisablePersists(t *testing.T) {
+	e := setupEnv(t)
+	ctx := context.Background()
+
+	ruleID := ruleCreate(t, e, "待禁用规则"+uniq(""), "ORDER", adminmodel.RuleStatusEnabled, datarule.RuleConfig{})
+	err := e.svc.RuleUpdate(ctx, &admindto.RuleUpdateReq{
+		ID: ruleID, RuleName: "已禁用规则", Domain: "ORDER",
+		Config: datarule.RuleConfig{}, Status: adminmodel.RuleStatusDisabled,
+	})
+	wantErr(t, err, "")
+
+	var rule adminmodel.SysRuleEntity
+	if err := e.db.First(&rule, ruleID).Error; err != nil {
+		t.Fatalf("查询规则失败: %v", err)
+	}
+	if rule.Status != adminmodel.RuleStatusDisabled {
+		t.Fatalf("更新为禁用应落库 status=0: got=%d", rule.Status)
+	}
+}
+
 // --- helpers ---
 
 func ruleCreate(t *testing.T, e *env, name, domain string, status int, config datarule.RuleConfig) uint64 {

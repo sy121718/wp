@@ -108,9 +108,11 @@ func (s *Service) Record(ctx context.Context, req *artifactdto.RecordReq) (res *
 }
 
 // Detail 按 (pageId, hash) 查询产物元数据。
+// nil/空参数属于请求不合法（ErrInvalidParam），与产物是否存在无关；
+// 只有参数合法但查询无结果才返回 ErrArtifactNotFound。
 func (s *Service) Detail(ctx context.Context, req *artifactdto.DetailReq) (res *artifactdto.ArtifactResp, err error) {
 	if req == nil || strings.TrimSpace(req.PageID) == "" || strings.TrimSpace(req.Hash) == "" {
-		return nil, errors.New(artifactenums.ErrArtifactNotFound)
+		return nil, errors.New(artifactenums.ErrInvalidParam)
 	}
 	entity, exists, err := s.findByHash(ctx, req.PageID, req.Hash)
 	if err != nil {
@@ -123,9 +125,10 @@ func (s *Service) Detail(ctx context.Context, req *artifactdto.DetailReq) (res *
 }
 
 // DetailByID 按产物行 ID 查询产物元数据。
+// nil/空 ID 属于请求不合法（ErrInvalidParam）；合法 ID 无记录才返回 ErrArtifactNotFound。
 func (s *Service) DetailByID(ctx context.Context, req *artifactdto.DetailByIDReq) (res *artifactdto.ArtifactResp, err error) {
 	if req == nil || strings.TrimSpace(req.ID) == "" {
-		return nil, errors.New(artifactenums.ErrArtifactNotFound)
+		return nil, errors.New(artifactenums.ErrInvalidParam)
 	}
 	entity, err := s.model.GetByID(ctx, req.ID)
 	if errors.Is(err, gorm.ErrRecordNotFound) {

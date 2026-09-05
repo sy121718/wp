@@ -118,7 +118,8 @@ func TestPublicationActivateRejectsForeignRoute(t *testing.T) {
 }
 
 // TestPublicationRenameReservedConflict 新路径已被其他页面占用时
-// RenameReserved 必须返回错误并保持原占用不变（M8：改名失败上游中止流程）。
+// RenameReserved 必须返回 ErrRouteOccupied 并保持原占用不变
+// （M8：改名失败上游中止流程）。
 func TestPublicationRenameReservedConflict(t *testing.T) {
 	svc := newPublicationService(t)
 	ctx := context.Background()
@@ -128,8 +129,8 @@ func TestPublicationRenameReservedConflict(t *testing.T) {
 	err := svc.RenameReserved(ctx, &pubdto.RenameReservedReq{
 		ProjectID: projectID, PageID: pageID, OldPath: "/old", NewPath: "/new",
 	})
-	if err == nil {
-		t.Fatal("新路径被他人占用时改名应失败")
+	if err == nil || !strings.Contains(err.Error(), pubenums.ErrRouteOccupied) {
+		t.Fatalf("新路径被他人占用时应返回 ErrRouteOccupied: %v", err)
 	}
 	route, gerr := svc.Model().GetRoute(ctx, projectID, "/old")
 	if gerr != nil || route.RouteKind != pubmodel.RouteReserved || route.PageID == nil || *route.PageID != pageID {

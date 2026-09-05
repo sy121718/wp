@@ -60,8 +60,10 @@ func newMigratedDB(t *testing.T, withProdConstraint bool) *gorm.DB {
 		t.Fatalf("AutoMigrate 建表失败: %v", err)
 	}
 	if withProdConstraint {
-		// 生产 DDL（public/migrations/init_builder_schema.sql）声明了该唯一约束，
-		// 而 PageArtifactEntity 的 gorm 标签未声明 uniqueIndex —— 见 bug 报告。
+		// PageArtifactEntity 的 gorm 标签已声明 uniqueIndex:uk_page_version
+		// （page_id, version 复合），AutoMigrate 即生成该约束；此处再以生产 DDL
+		// （public/migrations/init_builder_schema.sql:238）同款语句幂等补建，
+		// 显式对齐生产 schema 语义。
 		if err := db.Exec(
 			`CREATE UNIQUE INDEX IF NOT EXISTS uq_page_artifacts_page_version
 			 ON page_artifacts (page_id, version)`,
@@ -182,6 +184,7 @@ func assertEnums(t *testing.T) {
 		artifactenums.ErrArtifactNotFound,
 		artifactenums.ErrArtifactMismatch,
 		artifactenums.ErrInvalidArtifact,
+		artifactenums.ErrInvalidParam,
 	} {
 		if msg == "" {
 			t.Fatalf("enums 常量不应为空")

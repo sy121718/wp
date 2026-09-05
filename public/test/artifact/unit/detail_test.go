@@ -38,29 +38,29 @@ func TestArtifactDetailEmptyInputs(t *testing.T) {
 	svc := newService(t)
 	ctx := context.Background()
 
-	t.Run("nil请求返回ErrArtifactNotFound", func(t *testing.T) {
+	t.Run("nil请求返回ErrInvalidParam", func(t *testing.T) {
 		_, err := svc.Detail(ctx, nil)
-		requireErrMsg(t, err, artifactenums.ErrArtifactNotFound)
+		requireErrMsg(t, err, artifactenums.ErrInvalidParam)
 	})
 
-	t.Run("空PageID返回ErrArtifactNotFound", func(t *testing.T) {
+	t.Run("空PageID返回ErrInvalidParam", func(t *testing.T) {
 		_, err := svc.Detail(ctx, &artifactdto.DetailReq{PageID: "", Hash: "h"})
-		requireErrMsg(t, err, artifactenums.ErrArtifactNotFound)
+		requireErrMsg(t, err, artifactenums.ErrInvalidParam)
 	})
 
-	t.Run("空白PageID返回ErrArtifactNotFound", func(t *testing.T) {
+	t.Run("空白PageID返回ErrInvalidParam", func(t *testing.T) {
 		_, err := svc.Detail(ctx, &artifactdto.DetailReq{PageID: "   ", Hash: "h"})
-		requireErrMsg(t, err, artifactenums.ErrArtifactNotFound)
+		requireErrMsg(t, err, artifactenums.ErrInvalidParam)
 	})
 
-	t.Run("空Hash返回ErrArtifactNotFound", func(t *testing.T) {
+	t.Run("空Hash返回ErrInvalidParam", func(t *testing.T) {
 		_, err := svc.Detail(ctx, &artifactdto.DetailReq{PageID: testPageID, Hash: ""})
-		requireErrMsg(t, err, artifactenums.ErrArtifactNotFound)
+		requireErrMsg(t, err, artifactenums.ErrInvalidParam)
 	})
 
-	t.Run("空白Hash返回ErrArtifactNotFound", func(t *testing.T) {
+	t.Run("空白Hash返回ErrInvalidParam", func(t *testing.T) {
 		_, err := svc.Detail(ctx, &artifactdto.DetailReq{PageID: testPageID, Hash: " \t "})
-		requireErrMsg(t, err, artifactenums.ErrArtifactNotFound)
+		requireErrMsg(t, err, artifactenums.ErrInvalidParam)
 	})
 }
 
@@ -103,19 +103,19 @@ func TestArtifactDetailByIDEmptyInputs(t *testing.T) {
 	svc := newService(t)
 	ctx := context.Background()
 
-	t.Run("nil请求返回ErrArtifactNotFound", func(t *testing.T) {
+	t.Run("nil请求返回ErrInvalidParam", func(t *testing.T) {
 		_, err := svc.DetailByID(ctx, nil)
-		requireErrMsg(t, err, artifactenums.ErrArtifactNotFound)
+		requireErrMsg(t, err, artifactenums.ErrInvalidParam)
 	})
 
-	t.Run("空ID返回ErrArtifactNotFound", func(t *testing.T) {
+	t.Run("空ID返回ErrInvalidParam", func(t *testing.T) {
 		_, err := svc.DetailByID(ctx, &artifactdto.DetailByIDReq{ID: ""})
-		requireErrMsg(t, err, artifactenums.ErrArtifactNotFound)
+		requireErrMsg(t, err, artifactenums.ErrInvalidParam)
 	})
 
-	t.Run("空白ID返回ErrArtifactNotFound", func(t *testing.T) {
+	t.Run("空白ID返回ErrInvalidParam", func(t *testing.T) {
 		_, err := svc.DetailByID(ctx, &artifactdto.DetailByIDReq{ID: "  "})
-		requireErrMsg(t, err, artifactenums.ErrArtifactNotFound)
+		requireErrMsg(t, err, artifactenums.ErrInvalidParam)
 	})
 }
 

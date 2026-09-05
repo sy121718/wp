@@ -62,8 +62,8 @@ func TestPublicationRenameReservedMissing(t *testing.T) {
 }
 
 // TestPublicationRenameReservedConflict 新路径已被其他页面占用：
-// 改名必须失败且原占用保持不变。当前实现返回原始 DB 主键冲突
-// （23505）而非 ErrRouteOccupied（错误映射缺陷，见报告）。
+// 改名必须失败且错误归一为 ErrRouteOccupied（目标路径已被其他页面占用），
+// 原占用保持不变。
 func TestPublicationRenameReservedConflict(t *testing.T) {
 	svc := newUnitService(t)
 	seedRoute(t, svc, "/mine", pubmodel.RouteReserved, strPtr(pageID), nil)
@@ -72,10 +72,7 @@ func TestPublicationRenameReservedConflict(t *testing.T) {
 	err := svc.RenameReserved(context.Background(), &pubdto.RenameReservedReq{
 		ProjectID: projectID, PageID: pageID, OldPath: "/mine", NewPath: "/occupied",
 	})
-	if err == nil {
-		t.Fatal("新路径被他人占用时改名应失败")
-	}
-	t.Logf("改名冲突错误类型: %v", err)
+	containsErr(t, err, pubenums.ErrRouteOccupied)
 	// 原占用均保持不变。
 	if routeMissing(t, svc, "/mine") {
 		t.Fatal("失败后旧路径不应消失")

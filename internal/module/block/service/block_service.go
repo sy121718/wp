@@ -98,8 +98,9 @@ func (s *Service) Create(ctx context.Context, req *blockdto.CreateReq) (res *blo
 
 // Update 更新块（名称/类型/文档整树保存）。
 func (s *Service) Update(ctx context.Context, req *blockdto.UpdateReq) (res *blockdto.BlockResp, err error) {
+	// 参数缺失（nil/空 ID）是调用方错误，与「ID 对应块不存在」区分开（与 List/Detail 语义一致）。
 	if req == nil || strings.TrimSpace(req.ID) == "" {
-		return nil, errors.New(blockenums.ErrBlockNotFound)
+		return nil, errors.New(blockenums.ErrBlockParamRequired)
 	}
 	entity, err := s.getExistingBlock(ctx, req.ID)
 	if err != nil {
@@ -129,8 +130,9 @@ func (s *Service) Update(ctx context.Context, req *blockdto.UpdateReq) (res *blo
 
 // Delete 删除块。引用方（主题槽位/页面引用）由调用方编排标 stale。
 func (s *Service) Delete(ctx context.Context, req *blockdto.DeleteReq) (err error) {
+	// 参数缺失（nil/空 ID）是调用方错误，与「ID 对应块不存在」区分开（与 List/Detail 语义一致）。
 	if req == nil || strings.TrimSpace(req.ID) == "" {
-		return errors.New(blockenums.ErrBlockNotFound)
+		return errors.New(blockenums.ErrBlockParamRequired)
 	}
 	// 先确认存在：避免 model.Delete RowsAffected=0 静默成功，
 	// 与 Detail/Update 的「不存在 → ErrBlockNotFound」语义保持一致。

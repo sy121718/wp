@@ -13,7 +13,8 @@ import (
 // 间接验证其行为，覆盖：空、无前导斜杠、尾斜杠裁剪、根路径、非法字符、超长。
 
 // TestPublicationNormalizePathInvalid 空路径与无前导斜杠的路径必须被拒绝
-// （normalizePath 返回 ErrRouteNotFound 且不产生任何副作用）。
+// （normalizePath 返回 ErrInvalidParam——参数格式错误，与资源占用语义区分——
+// 且不产生任何副作用）。
 func TestPublicationNormalizePathInvalid(t *testing.T) {
 	cases := []struct {
 		name string
@@ -31,7 +32,7 @@ func TestPublicationNormalizePathInvalid(t *testing.T) {
 			_, err := svc.Activate(context.Background(), &pubdto.ActivateReq{
 				ProjectID: projectID, Path: tc.path, PageID: pageID, ArtifactID: artifactUUID,
 			})
-			containsErr(t, err, pubenums.ErrRouteNotFound)
+			containsErr(t, err, pubenums.ErrInvalidParam)
 			if n := countReceipts(t, svc, "1 = 1"); n != 0 {
 				t.Fatalf("非法路径不应写入回执: %d", n)
 			}
@@ -87,11 +88,11 @@ func TestPublicationNormalizePathTrailingSlash(t *testing.T) {
 	})
 }
 
-// TestPublicationNormalizePathAccepted 当前 normalizePath 不校验非法字符与长度，
-// 含空格/中文/保留字符/超长路径均被接受。此测试固化当前行为，
-// 缺陷判定见报告（缺少路径字符与长度校验）。
+// TestPublicationNormalizePathRejected normalizePath 拒绝危险/非法路径：
+// 空格、URL 分隔符、穿越、引号、超长一律返回 ErrInvalidParam（参数格式错误）。
 func TestPublicationNormalizePathRejected(t *testing.T) {
-	// 修复语义：危险/非法路径一律拒绝（空格、URL 分隔符、穿越、引号、超长）。
+	// 修复语义：危险/非法路径一律拒绝（空格、URL 分隔符、穿越、引号、超长），
+	// 错误语义为 ErrInvalidParam（参数格式错误），而非 ErrRouteNotFound。
 	cases := []struct {
 		name string
 		path string
@@ -109,9 +110,7 @@ func TestPublicationNormalizePathRejected(t *testing.T) {
 			_, err := svc.Activate(context.Background(), &pubdto.ActivateReq{
 				ProjectID: projectID, Path: tc.path, PageID: pageID, ArtifactID: artifactUUID,
 			})
-			if err == nil {
-				t.Fatalf("路径 %q 应被拒绝", tc.path)
-			}
+			containsErr(t, err, pubenums.ErrInvalidParam)
 		})
 	}
 }
