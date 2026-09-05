@@ -51,8 +51,16 @@ func (s *Service) RenameReserved(ctx context.Context, req *pubdto.RenameReserved
 	return err
 }
 
-// Activate 把路径占用切换为 active：先写 pending 回执，更新路由，再落 committed；
-// 任一步失败回执保持 pending 供恢复流程处理。
+// Activate 把路径占用切换为 active（两段式回执，docs/03-pipeline.md §9）：
+//
+//	第一段：pending 回执在独立事务中先行持久化并提交——进程在后续任一步
+//	崩溃时，恢复流程（RollbackReceipts）有据可查；
+//	第二段：路由事务内完成占用归属校验 + 路由切换 + 置 committed，三者原子；
+//	路由事务失败时把 pending 回执补偿为 rolled_back（补偿失败则保持
+//	pending 供下次恢复处理）。
+//
+// 占用归属校验：目标路径已被其他页面（或展示实例，page_id 为空）占用时
+// 返回 ErrRouteOccupied，绝不覆盖他人占用（H2/H7 的 DB 层兜底）。
 func (s *Service) Activate(ctx context.Context, req *pubdto.ActivateReq) (res *pubdto.RouteResp, err error) {
 	if req == nil {
 		return nil, errors.New(pubenums.ErrRouteNotFound)
@@ -62,16 +70,39 @@ func (s *Service) Activate(ctx context.Context, req *pubdto.ActivateReq) (res *p
 		return nil, err
 	}
 	now := time.Now().UTC()
+	receiptData, merr := json.Marshal(receiptPayload{To: req.ArtifactID})
+	if merr != nil {
+		receiptData = json.RawMessage(`{}`)
+	}
 	receipt := &pubmodel.ReceiptEntity{
 		ID: uuid.NewString(), SourceType: "page", SourceID: req.PageID,
 		Action: receiptAction(req.Action, "activate"), Path: path,
 		ToArtifact: strPtr(req.ArtifactID), ReceiptState: pubmodel.ReceiptPending,
-		ReceiptData: json.RawMessage(`{"to":"` + req.ArtifactID + `"}`), CreatedAt: now,
+		ReceiptData: receiptData, CreatedAt: now,
 	}
 
+	// 第一段：pending 回执独立事务提交（故障恢复依据，H1）。
+	if cerr := s.model.Transaction(ctx, func(tx *gorm.DB) error {
+		return tx.Create(receipt).Error
+	}); cerr != nil {
+		logger.Scene("publication").With("url", path).With("kind", "activate").Error(cerr, "pending 回执写入失败")
+		return nil, cerr
+	}
+
+	// 第二段：路由事务（占用归属校验 + 路由切换 + 置 committed）。
 	err = s.model.Transaction(ctx, func(tx *gorm.DB) error {
-		if err := tx.Create(receipt).Error; err != nil {
-			return err
+		var existing pubmodel.RouteEntity
+		switch ferr := tx.Where("project_id = ? AND path = ?", req.ProjectID, path).
+			First(&existing).Error; {
+		case ferr == nil:
+			// 已有占用：只允许归属者本人升级；page_id 为空表示展示实例占用。
+			if existing.PageID == nil || *existing.PageID != req.PageID {
+				return errRouteOccupied
+			}
+		case errors.Is(ferr, gorm.ErrRecordNotFound):
+			// 无既有占用：下面直接建立 active 行（幂等激活）。
+		default:
+			return ferr
 		}
 		result := tx.Model(&pubmodel.RouteEntity{}).
 			Where("project_id = ? AND path = ? AND page_id = ?", req.ProjectID, path, req.PageID).
@@ -84,7 +115,6 @@ func (s *Service) Activate(ctx context.Context, req *pubdto.ActivateReq) (res *p
 			return result.Error
 		}
 		if result.RowsAffected == 0 {
-			// 无既有占用时直接建立 active 行（幂等激活）。
 			pageIDCopy := req.PageID
 			if err := tx.Create(&pubmodel.RouteEntity{
 				ProjectID: req.ProjectID, Path: path, PageID: &pageIDCopy,
@@ -95,10 +125,20 @@ func (s *Service) Activate(ctx context.Context, req *pubdto.ActivateReq) (res *p
 		}
 		return markReceipt(tx, receipt.ID, pubmodel.ReceiptCommitted, now)
 	})
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, errors.New(pubenums.ErrRouteNotFound)
-	}
 	if err != nil {
+		// 路由事务失败：pending → rolled_back（补偿失败保持 pending 供恢复）。
+		if rberr := s.model.Transaction(ctx, func(tx *gorm.DB) error {
+			return markReceipt(tx, receipt.ID, pubmodel.ReceiptRolledBack, time.Now().UTC())
+		}); rberr != nil {
+			logger.Scene("publication").With("url", path).With("receiptId", receipt.ID).
+				Error(rberr, "pending 回执补偿失败（保持 pending 供恢复流程处理）")
+		}
+		if errors.Is(err, errRouteOccupied) {
+			return nil, errors.New(pubenums.ErrRouteOccupied)
+		}
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, errors.New(pubenums.ErrRouteNotFound)
+		}
 		logger.Scene("publication").With("url", path).With("kind", "activate").Error(err, "路由激活失败")
 		return nil, err
 	}
@@ -202,6 +242,14 @@ func receiptAction(action, fallback string) string {
 		return fallback
 	}
 	return action
+}
+
+// errRouteOccupied 事务内占位冲突哨兵，外层映射为 pubenums.ErrRouteOccupied。
+var errRouteOccupied = errors.New(pubenums.ErrRouteOccupied)
+
+// receiptPayload 回执数据结构化序列化（替代手工拼接 JSON，避免特殊字符生成非法 jsonb）。
+type receiptPayload struct {
+	To string `json:"to,omitempty"`
 }
 
 func markReceipt(tx *gorm.DB, id, state string, now time.Time) error {

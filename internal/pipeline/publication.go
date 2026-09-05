@@ -1,11 +1,17 @@
 package pipeline
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 )
+
+// activatingSeq 激活临时名的进程内唯一序列：pid + 原子递增计数。
+// 同内容并发激活（重试、双击、双 worker）不再生成同名临时链接互相干扰。
+var activatingSeq atomic.Uint64
 
 // 访问面激活状态类型。
 const (
@@ -72,22 +78,34 @@ func (s *LocalPublicationStore) Activate(path string, loc Locator) error {
 	// （root 下：public/active/{path 段-1}，即 段数 + 1）。
 	up := strings.Split(relActivePath(p), "/")
 	target := strings.Repeat("../", len(up)+1) + loc.Key
-	tmp := link + ".activating-" + locatorHash(loc)
+	// 临时名 = 内容 hash + 进程内唯一序列（pid + 递增计数），
+	// 保证同进程并发激活各自持有独立临时链接（H8）。
+	tmp := fmt.Sprintf("%s.activating-%d-%d-%s", link, os.Getpid(), activatingSeq.Add(1), locatorHash(loc))
 
 	if err = os.Symlink(target, tmp); err != nil {
-		return err
+		if !errors.Is(err, os.ErrExist) {
+			return err
+		}
+		// 同名残留仅可能是历史异常中断遗留：确认为链接/普通文件后
+		// 清理并重试一次；被目录占位时直接失败，不做递归清理。
+		if fi, serr := os.Lstat(tmp); serr == nil {
+			if fi.IsDir() {
+				return fmt.Errorf("激活 %s 失败: 临时名 %s 已被目录占用", p, tmp)
+			}
+			if rerr := os.Remove(tmp); rerr != nil && !os.IsNotExist(rerr) {
+				return fmt.Errorf("激活 %s 失败: 清理残留临时链接 %s: %w", p, tmp, rerr)
+			}
+		}
+		if err = os.Symlink(target, tmp); err != nil {
+			return err
+		}
 	}
 	// 原子覆盖：unix rename 直接替换已有 symlink/文件。
 	if err = os.Rename(tmp, link); err != nil {
 		_ = os.Remove(tmp)
-		// 异常中间态：旧位置是目录（非 symlink）时清理后重试一次。
-		if fi, serr := os.Lstat(link); serr == nil && fi.IsDir() {
-			if rerr := os.RemoveAll(link); rerr == nil {
-				if rerr2 := os.Rename(tmp, link); rerr2 == nil {
-					return nil
-				}
-			}
-		}
+		// 父子路径互斥（如 /products 与 /products/phone 同时激活）属上游
+		// Normalize/占用检查职责：此处必须明确失败，禁止递归删除子路径
+		// 激活树（H9：不得 RemoveAll 静默破坏已激活子路径）。
 		return fmt.Errorf("激活 %s 失败: %w", p, err)
 	}
 	return nil

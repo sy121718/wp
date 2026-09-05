@@ -111,6 +111,13 @@ func (s *Service) Publish(ctx context.Context, req *pagedto.PublishReq) (res *pa
 		return nil, errors.New(pageenums.ErrNoStagedArtifact)
 	}
 
+	// FS 激活前预检：目标路径被其他页面/展示实例占用时提前失败（H7），
+	// 避免内核先把 FS 覆盖成本页产物、DB 路由写入才报错的状态分裂。
+	if err = s.ensureRouteNotOccupied(ctx, page.ProjectID, page.DraftPath, page.ID); err != nil {
+		logger.Scene("publication").With("pageId", page.ID).With("path", page.DraftPath).Warn("发布被拒绝：路径已被占用")
+		return nil, err
+	}
+
 	// 确定性构建保证与暂存一致；不一致说明草稿在构建后又被保存，需要重新构建。
 	if err = s.syncKernel(stagedArt.CanonicalPath, page.DraftDocumentFor(stagedArt.SourceDocument), page.ID); err != nil {
 		return nil, err
@@ -199,6 +206,8 @@ func (s *Service) Rollback(ctx context.Context, req *pagedto.RollbackReq) (res *
 }
 
 // UpdateURL 修改访问路径：新 URL 构建激活后，旧 URL 注册 301 或取消激活。
+// FS 激活发生在 publisher.UpdateURL 内部（先于 DB 路由写入），因此新路径
+// 占用检查必须在此之前完成，避免「FS 先覆盖、DB 后报错」的状态分裂（H2/H7）。
 func (s *Service) UpdateURL(ctx context.Context, req *pagedto.UpdateURLReq) (res *pagedto.PublishResp, err error) {
 	if req == nil || strings.TrimSpace(req.ID) == "" {
 		return nil, errors.New(pageenums.ErrPageNotFound)
@@ -209,6 +218,12 @@ func (s *Service) UpdateURL(ctx context.Context, req *pagedto.UpdateURLReq) (res
 	}
 	page, err := s.getExistingPage(ctx, req.ID)
 	if err != nil {
+		return nil, err
+	}
+	// FS 激活前预检：新路径已被其他页面/展示实例占用（active/redirect/
+	// reserved 任一 kind）时提前失败，绝不触发内核的 FS 覆盖。
+	if err = s.ensureRouteNotOccupied(ctx, page.ProjectID, newPath, page.ID); err != nil {
+		logger.Scene("page").With("pageId", page.ID).With("newPath", newPath).Warn("改 URL 被拒绝：新路径已被占用")
 		return nil, err
 	}
 	logger.Scene("page").With("pageId", page.ID).With("newPath", newPath).Info("开始修改 URL")
@@ -228,21 +243,32 @@ func (s *Service) UpdateURL(ctx context.Context, req *pagedto.UpdateURLReq) (res
 	}
 	st, _ := s.publisher.Status(page.ID)
 
+	// 新产物归档换取 page_artifacts 行 ID：路由 artifact_id 是 uuid 列，
+	// 必须写产物行主键而非内容 hash（生产 DDL 下写 hash 必然 22P02 失败）。
+	artifactRowID, err := s.ensureArtifactRow(ctx, page, activeHashOf(st))
+	if err != nil {
+		logger.Scene("page").With("pageId", page.ID).With("hash", activeHashOf(st)).Error(err, "URL 修改后产物归档失败")
+		return nil, err
+	}
+
 	now := time.Now().UTC()
 	if err = s.model.MoveDraftPath(ctx, page.ID, newPath, now); err != nil {
 		logger.Scene("page").With("pageId", page.ID).Error(err, "草稿路径迁移失败")
 		return nil, err
 	}
 	if s.routes != nil {
+		// 改名失败必须中止：reserved 行滞留旧路径会让路由表与 pages 表脱节，
+		// 后续 SaveDraft 基于错误基线增删路由（不得仅记日志继续）。
 		if rerr := s.routes.RenameReserved(ctx, &pubdto.RenameReservedReq{
 			ProjectID: page.ProjectID, PageID: page.ID,
 			OldPath: oldPath, NewPath: newPath,
 		}); rerr != nil {
-			logger.Scene("page").With("pageId", page.ID).Error(rerr, "URL 修改后重命名保留路由失败")
+			logger.Scene("page").With("pageId", page.ID).Error(rerr, "URL 修改后重命名保留路由失败，中止流程")
+			return nil, rerr
 		}
 		if _, err = s.routes.Activate(ctx, &pubdto.ActivateReq{
 			ProjectID: page.ProjectID, Path: newPath,
-			PageID: page.ID, ArtifactID: artifactIDOf(st),
+			PageID: page.ID, ArtifactID: artifactRowID,
 		}); err != nil {
 			logger.Scene("page").With("pageId", page.ID).Error(err, "URL 修改后路由激活失败")
 			return nil, err
@@ -378,11 +404,22 @@ func (s *Service) kernelVersion(pageID string) int {
 
 func (s *Service) kernelVersionOrOne(pageID string) int { return s.kernelVersion(pageID) }
 
-func artifactIDOf(rec *pipeline.PageRecord) string {
-	if rec == nil || rec.ActiveHash == "" {
-		return ""
+// ensureRouteNotOccupied 校验目标路径未被其他页面/展示实例占用
+// （page_routes 中 active/redirect/reserved 任一 kind；page_id 为空即展示
+// 实例占用）。本页面自己的占用行不算冲突。
+// 该检查必须在触发 FS 激活的 publisher 调用之前执行（H7 前置防线），
+// 并发抢占窗口由 publication Activate 事务内的归属校验兜底。
+func (s *Service) ensureRouteNotOccupied(ctx context.Context, projectID, path, selfPageID string) error {
+	var foreign int64
+	if err := s.model.RouteDB(ctx).
+		Where("project_id = ? AND path = ? AND (page_id IS NULL OR page_id <> ?)", projectID, path, selfPageID).
+		Count(&foreign).Error; err != nil {
+		return err
 	}
-	return rec.ActiveHash
+	if foreign > 0 {
+		return errors.New(pageenums.ErrPathOccupied)
+	}
+	return nil
 }
 
 func activeHashOf(rec *pipeline.PageRecord) string {

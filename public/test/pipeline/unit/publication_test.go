@@ -3,6 +3,7 @@ package unit
 import (
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"go_wp/internal/pipeline"
@@ -152,6 +153,67 @@ func TestLocalPublicationInspectGuards(t *testing.T) {
 	}
 	if _, err := pub.Inspect("/occupied"); err == nil {
 		t.Error("非 symlink 占位应报错")
+	}
+}
+
+// TestLocalPublicationConcurrentActivate 同内容并发激活互不干扰（H8 回归）：
+// 临时名含 pid + 进程内唯一序列后，并发 rename 原子竞争，不得因临时链接
+// 同名 EEXIST 而失败；完成后不残留 .activating- 临时链接。
+func TestLocalPublicationConcurrentActivate(t *testing.T) {
+	store, pub, _ := newPublicationEnv(t)
+	loc1 := putTestArtifact(t, store, "<html>v1</html>", "/hot")
+	loc2 := putTestArtifact(t, store, "<html>v2</html>", "/hot")
+
+	const workers = 32
+	errs := make([]error, workers)
+	var wg sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			loc := loc1
+			if i%2 == 1 {
+				loc = loc2
+			}
+			errs[i] = pub.Activate("/hot", loc)
+		}(i)
+	}
+	wg.Wait()
+	for i, err := range errs {
+		if err != nil {
+			t.Fatalf("并发激活 #%d 失败: %v", i, err)
+		}
+	}
+	leftovers, err := filepath.Glob(filepath.Join(pub.ActiveRoot, "*activating*"))
+	if err != nil || len(leftovers) != 0 {
+		t.Errorf("激活后不应残留临时链接: %v err=%v", leftovers, err)
+	}
+	st, err := pub.Inspect("/hot")
+	if err != nil || st.Kind != pipeline.PublicationPage {
+		t.Fatalf("并发激活后状态错误: %+v err=%v", st, err)
+	}
+}
+
+// TestLocalPublicationKeepsChildSubtreeOnFailure 父路径激活失败不得删除
+// 子路径激活树（H9 回归）：/products/phone 已激活时再激活 /products 因
+// FS 目录/符号链接互斥而失败，子路径激活必须原样保留。
+func TestLocalPublicationKeepsChildSubtreeOnFailure(t *testing.T) {
+	store, pub, root := newPublicationEnv(t)
+	child := putTestArtifact(t, store, "<html>child</html>", "/products/phone")
+	if err := pub.Activate("/products/phone", child); err != nil {
+		t.Fatalf("子路径激活失败: %v", err)
+	}
+	parent := putTestArtifact(t, store, "<html>parent</html>", "/products")
+	if err := pub.Activate("/products", parent); err == nil {
+		t.Fatal("父子路径在 FS 上互斥，父路径激活应失败")
+	}
+	st, err := pub.Inspect("/products/phone")
+	if err != nil || st.Kind != pipeline.PublicationPage || st.Locator == nil || st.Locator.Key != child.Key {
+		t.Fatalf("父路径激活失败后子路径激活树被破坏: %+v err=%v", st, err)
+	}
+	data, rerr := os.ReadFile(filepath.Join(root, "public", "active", "products", "phone", "index.html"))
+	if rerr != nil || string(data) != "<html>child</html>" {
+		t.Errorf("子路径激活入口应保持可读: %v %q", rerr, data)
 	}
 }
 
