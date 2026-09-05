@@ -300,11 +300,11 @@ func TestBlockCreateInvalidRequest(t *testing.T) {
 	})
 	t.Run("ProjectNotExist", func(t *testing.T) {
 		_, err := e.svc.Create(ctx, &blockdto.CreateReq{ProjectID: uuid.NewString(), Name: "孤儿块"})
-		errContains(t, err, blockenums.ErrBlockNotFound)
+		errContains(t, err, "工程不存在")
 	})
 	t.Run("EmptyProjectID", func(t *testing.T) {
 		_, err := e.svc.Create(ctx, &blockdto.CreateReq{ProjectID: "", Name: "无归属块"})
-		errContains(t, err, blockenums.ErrBlockNotFound)
+		errContains(t, err, "工程不存在")
 	})
 }
 
@@ -477,9 +477,10 @@ func TestBlockDeleteSuccess(t *testing.T) {
 func TestBlockDeleteNotExist(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()
-	// 观察：删除不存在的块当前静默成功（model.Delete RowsAffected=0 不报错）。
-	if err := e.svc.Delete(ctx, &blockdto.DeleteReq{ID: uuid.NewString()}); err != nil {
-		t.Fatalf("删除不存在的块: %v", err)
+	// 修复语义：删除不存在的块应报 ErrBlockNotFound（与 Detail/Update 一致，
+	// 此前 model.Delete RowsAffected=0 静默成功）。
+	if err := e.svc.Delete(ctx, &blockdto.DeleteReq{ID: uuid.NewString()}); err == nil {
+		t.Fatalf("删除不存在的块应报错")
 	}
 }
 

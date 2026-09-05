@@ -8,4 +8,5 @@ const (
 	ErrBlockNameRequired = "块名称不能为空"
 	ErrBlockInvalidDoc   = "块文档不合法"
 	ErrBlockInvalidKind  = "块类型不合法"
+	ErrBlockDuplicate    = "同名块已存在"
 )

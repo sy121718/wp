@@ -79,7 +79,7 @@ func (s *Service) Create(ctx context.Context, req *blockdto.CreateReq) (res *blo
 	}
 	for _, e := range existing {
 		if strings.EqualFold(e.Name, strings.TrimSpace(req.Name)) {
-			return nil, errors.New("同名块已存在")
+			return nil, errors.New(blockenums.ErrBlockDuplicate)
 		}
 	}
 	now := time.Now().UTC()
@@ -130,6 +130,11 @@ func (s *Service) Delete(ctx context.Context, req *blockdto.DeleteReq) (err erro
 	if req == nil || strings.TrimSpace(req.ID) == "" {
 		return errors.New(blockenums.ErrBlockNotFound)
 	}
+	// 先确认存在：避免 model.Delete RowsAffected=0 静默成功，
+	// 与 Detail/Update 的「不存在 → ErrBlockNotFound」语义保持一致。
+	if _, err := s.getExistingBlock(ctx, req.ID); err != nil {
+		return err
+	}
 	return s.model.Delete(ctx, req.ID)
 }
 
@@ -150,7 +155,7 @@ func (s *Service) requireProject(ctx context.Context, projectID string) error {
 		return err
 	}
 	if !exists {
-		return errors.New(blockenums.ErrBlockNotFound)
+		return errors.New("工程不存在")
 	}
 	return nil
 }
