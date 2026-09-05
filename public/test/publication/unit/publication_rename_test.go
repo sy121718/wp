@@ -86,30 +86,50 @@ func TestPublicationRenameReservedConflict(t *testing.T) {
 	}
 }
 
-// TestPublicationRenameReservedActive 对 active 行改名（非法转移）：
-// 当前实现 UPDATE 因 route_kind=reserved 条件不命中，RowsAffected=0
-// 被当作幂等成功返回 nil，静默无操作。固化当前行为；状态机判定见报告。
-func TestPublicationRenameReservedActive(t *testing.T) {
+// TestPublicationRenameReservedOwnActive 本页 active 行改名（页面改 URL 流程的
+// DB 同步步骤）：发布时 reserved 被原地升级为 active，无独立 reserved 行，
+// 本页 active 行必须允许迁移到新路径。
+func TestPublicationRenameReservedOwnActive(t *testing.T) {
 	svc := newUnitService(t)
 	seedRoute(t, svc, "/live", pubmodel.RouteActive, strPtr(pageID), strPtr(artifactUUID))
 
-	if err := svc.RenameReserved(context.Background(), &pubdto.RenameReservedReq{
+	err := svc.RenameReserved(context.Background(), &pubdto.RenameReservedReq{
 		ProjectID: projectID, PageID: pageID, OldPath: "/live", NewPath: "/renamed",
-	}); err != nil {
-		t.Fatalf("当前实现对 active 行改名返回 nil: %v", err)
+	})
+	if err != nil {
+		t.Fatalf("本页 active 行改名应成功（UpdateURL 流程 DB 同步）: %v", err)
 	}
-	// active 行未被动过，也没有新行。
+	if routeMissing(t, svc, "/renamed") {
+		t.Fatal("active 行应迁移到新路径")
+	}
+	if n := countRoutes(t, svc, "path = ?", "/live"); n != 0 {
+		t.Fatalf("旧路径行应被迁移: %d", n)
+	}
+}
+
+// TestPublicationRenameReservedForeignActive 他人 active 行改名（非法状态转移）
+// 必须报错：不应触碰他人线上路径。
+func TestPublicationRenameReservedForeignActive(t *testing.T) {
+	svc := newUnitService(t)
+	other := "eeeeeeee-0000-0000-0000-000000000099"
+	seedRoute(t, svc, "/live", pubmodel.RouteActive, strPtr(other), strPtr(artifactUUID))
+
+	err := svc.RenameReserved(context.Background(), &pubdto.RenameReservedReq{
+		ProjectID: projectID, PageID: pageID, OldPath: "/live", NewPath: "/renamed",
+	})
+	containsErr(t, err, pubenums.ErrRouteActiveRename)
 	if routeMissing(t, svc, "/live") {
-		t.Fatal("active 行不应被移动")
+		t.Fatal("他人 active 行不应被移动")
 	}
 	if n := countRoutes(t, svc, "path = ?", "/renamed"); n != 0 {
 		t.Fatalf("不应建立新行: %d", n)
 	}
 }
 
-// TestPublicationRenameReservedNilRequest 空请求返回 ErrRouteNotFound。
+// TestPublicationRenameReservedNilRequest 空请求返回 ErrInvalidParam（参数错误，
+// 与路径占用无关）。
 func TestPublicationRenameReservedNilRequest(t *testing.T) {
 	svc := newUnitService(t)
 	err := svc.RenameReserved(context.Background(), nil)
-	containsErr(t, err, pubenums.ErrRouteNotFound)
+	containsErr(t, err, pubenums.ErrInvalidParam)
 }

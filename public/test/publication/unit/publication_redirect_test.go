@@ -122,9 +122,10 @@ func TestPublicationRedirectMalformedArtifact(t *testing.T) {
 	}
 }
 
-// TestPublicationRedirectNilRequest 空请求返回 ErrRouteNotFound。
+// TestPublicationRedirectNilRequest 空请求返回 ErrInvalidParam（参数错误，
+// 与路径占用不存在语义无关）。
 func TestPublicationRedirectNilRequest(t *testing.T) {
 	svc := newUnitService(t)
 	_, err := svc.Redirect(context.Background(), nil)
-	containsErr(t, err, pubenums.ErrRouteNotFound)
+	containsErr(t, err, pubenums.ErrInvalidParam)
 }

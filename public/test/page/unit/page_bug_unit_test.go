@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"go_wp/internal/module/page/dto"
+	pageenums "go_wp/internal/module/page/enums"
 	pubmodel "go_wp/internal/module/publication/model"
 )
 
@@ -175,8 +176,9 @@ func TestPageBuildEmptyDocForced(t *testing.T) {
 	}
 }
 
-// TestPageSaveDraftOversizePath 超长路径（>2000 字符）保存行为观察：
-// NormalizeURL 无长度上限，超长路径可入库（低严重度观察，见报告）。
+// TestPageSaveDraftOversizePath 超长路径（3001 字符）必须被拒绝：
+// NormalizeURL 长度上限 500 与 publication normalizePath 对齐，
+// 超长路径入库会导致后续 FS 激活 ENAMETOOLONG。
 func TestPageSaveDraftOversizePath(t *testing.T) {
 	_, svc, _, projectID := newPageService(t)
 	ctx := context.Background()
@@ -187,9 +189,9 @@ func TestPageSaveDraftOversizePath(t *testing.T) {
 		DraftPath: longPath, DraftDocument: []byte(pageDocument),
 	})
 	if err == nil {
-		// 观察点：超长路径未被拦截即入库（NormalizeURL 无长度限制）。
-		t.Logf("观察点：3001 字符路径保存成功（NormalizeURL 无长度限制）")
-		return
+		t.Fatalf("3001 字符路径应被拒绝（NormalizeURL 长度上限）")
 	}
-	t.Logf("超长路径行为: %v", err)
+	if err.Error() != pageenums.ErrInvalidPath {
+		t.Errorf("应返回 %q: %v", pageenums.ErrInvalidPath, err)
+	}
 }

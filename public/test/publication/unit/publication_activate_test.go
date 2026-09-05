@@ -135,11 +135,12 @@ func TestPublicationActivateMissingArtifact(t *testing.T) {
 	}
 }
 
-// TestPublicationActivateNilRequest 空请求返回 ErrRouteNotFound（错误映射待议，见报告）。
+// TestPublicationActivateNilRequest 空请求返回 ErrInvalidParam（参数错误，
+// 与路径占用不存在语义无关）。
 func TestPublicationActivateNilRequest(t *testing.T) {
 	svc := newUnitService(t)
 	_, err := svc.Activate(context.Background(), nil)
-	containsErr(t, err, pubenums.ErrRouteNotFound)
+	containsErr(t, err, pubenums.ErrInvalidParam)
 }
 
 // TestPublicationActivateConcurrentSamePath 两个页面并发激活同一路径：

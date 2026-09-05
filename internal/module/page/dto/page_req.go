@@ -29,3 +29,8 @@ type DetailReq struct {
 type RevisionReq struct {
 	PageID string `form:"pageId" json:"pageId" binding:"required"`
 }
+
+// DeleteReq 软删 Page（释放其路径占用，同路径可被新页面重新占用）。
+type DeleteReq struct {
+	ID string `json:"id" binding:"required"`
+}

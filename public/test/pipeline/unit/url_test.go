@@ -29,7 +29,7 @@ func TestNormalizeURLValid(t *testing.T) {
 	}
 }
 
-// TestNormalizeURLInvalid 非法路径：穿越、分隔符、控制字符、保留路径等全部拒绝。
+// TestNormalizeURLInvalid 非法路径：穿越、分隔符、空格、控制字符、保留路径等全部拒绝。
 func TestNormalizeURLInvalid(t *testing.T) {
 	cases := []string{
 		"",
@@ -40,6 +40,8 @@ func TestNormalizeURLInvalid(t *testing.T) {
 		"/a/%2e%2e/b",        // 编码后穿越
 		"/a/%2E/b",           // 编码后穿越（大写）
 		"/a\\b",              // 反斜杠
+		"/a b",               // 空格
+		"/a b/c",             // 段内空格
 		"/a\x00b",            // 控制字符
 		"/a\x1fb",            // 控制字符
 		"/admin",             // 保留路径
@@ -53,6 +55,18 @@ func TestNormalizeURLInvalid(t *testing.T) {
 		if _, err := pipeline.NormalizeURL(in); err == nil {
 			t.Errorf("NormalizeURL(%q) 应被拒绝", in)
 		}
+	}
+}
+
+// TestNormalizeURLLengthBoundary 长度边界：恰 500 字符接受，501 字符拒绝。
+func TestNormalizeURLLengthBoundary(t *testing.T) {
+	ok := "/" + strings.Repeat("a", 499)
+	if got, err := pipeline.NormalizeURL(ok); err != nil || got != ok {
+		t.Errorf("500 字符路径应接受: got=%q err=%v", got, err)
+	}
+	tooLong := "/" + strings.Repeat("a", 500)
+	if _, err := pipeline.NormalizeURL(tooLong); err == nil {
+		t.Errorf("501 字符路径应被拒绝")
 	}
 }
 

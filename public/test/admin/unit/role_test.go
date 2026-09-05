@@ -16,8 +16,9 @@ func TestRoleCreateSuccess(t *testing.T) {
 	ctx := context.Background()
 
 	code := "role_" + uniq("")
+	enabled := adminmodel.RoleStatusEnabled
 	err := e.svc.RoleCreate(ctx, &admindto.RoleCreateReq{
-		RoleCode: code, RoleName: "测试角色", Status: 1, SortOrder: 2,
+		RoleCode: code, RoleName: "测试角色", Status: &enabled, SortOrder: 2,
 	})
 	wantErr(t, err, "")
 
@@ -36,7 +37,7 @@ func TestRoleCreateSuccess(t *testing.T) {
 	}
 }
 
-// TestRoleCreateStatusZeroDefaultsEnabled status 未传（0）时默认启用。
+// TestRoleCreateStatusZeroDefaultsEnabled status 未传（nil）时默认启用。
 func TestRoleCreateStatusZeroDefaultsEnabled(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
@@ -50,7 +51,35 @@ func TestRoleCreateStatusZeroDefaultsEnabled(t *testing.T) {
 		t.Fatalf("查询角色失败: %v", err)
 	}
 	if role.Status != adminmodel.RoleStatusEnabled {
-		t.Fatalf("status=0 应默认启用: got=%d", role.Status)
+		t.Fatalf("status 未传应默认启用: got=%d", role.Status)
+	}
+}
+
+// TestRoleCreateDisabledExplicit 显式传 status=0（禁用）时创建禁用角色，且不写入 Casbin g2 active。
+// 修复前：DTO Status 为 int，0 被强制改写为启用，无法创建禁用角色。
+func TestRoleCreateDisabledExplicit(t *testing.T) {
+	e := setupEnv(t)
+	ctx := context.Background()
+
+	code := "role_disabled_" + uniq("")
+	disabled := adminmodel.RoleStatusDisabled
+	err := e.svc.RoleCreate(ctx, &admindto.RoleCreateReq{
+		RoleCode: code, RoleName: "禁用角色", Status: &disabled,
+	})
+	wantErr(t, err, "")
+
+	var role adminmodel.RoleEntity
+	if err := e.db.Where("role_code = ?", code).First(&role).Error; err != nil {
+		t.Fatalf("查询角色失败: %v", err)
+	}
+	if role.Status != adminmodel.RoleStatusDisabled {
+		t.Fatalf("显式禁用应落库 status=0: got=%d", role.Status)
+	}
+	// g2 不应写入 active
+	ok, err := pkgcasbin.GetEnforcer().HasNamedGroupingPolicy("g2", code, "active")
+	wantErr(t, err, "")
+	if ok {
+		t.Fatalf("新建禁用角色不应写入 g2 active")
 	}
 }
 

@@ -51,7 +51,10 @@ func (s *Service) Record(ctx context.Context, req *artifactdto.RecordReq) (res *
 	var parsedManifest struct {
 		Files map[string]string `json:"files"`
 	}
-	if err = json.Unmarshal(req.Manifest, &parsedManifest); err != nil || parsedManifest.Files == nil {
+	// manifest.files 是内容闭包来源：空闭包没有意义，统一拒绝
+	// {"files":{}}、{"files":null} 与 {}（缺 files 键）三种形态
+	// （此前仅 nil 被拒，空对象会静默建出无闭包记录，行为不一致）。
+	if err = json.Unmarshal(req.Manifest, &parsedManifest); err != nil || len(parsedManifest.Files) == 0 {
 		return nil, errors.New(artifactenums.ErrInvalidArtifact)
 	}
 
@@ -162,7 +165,8 @@ func (s *Service) EnsureRecord(ctx context.Context, req *artifactdto.RecordReq) 
 		var parsedManifest struct {
 			Files map[string]string `json:"files"`
 		}
-		if err = json.Unmarshal(req.Manifest, &parsedManifest); err != nil || parsedManifest.Files == nil {
+		// 与 Record 同一校验语义：空 files（{} / null / 缺键）一律拒绝。
+		if err = json.Unmarshal(req.Manifest, &parsedManifest); err != nil || len(parsedManifest.Files) == 0 {
 			return nil, errors.New(artifactenums.ErrInvalidArtifact)
 		}
 		now := time.Now().UTC()
@@ -210,7 +214,20 @@ func (s *Service) EnsureRecord(ctx context.Context, req *artifactdto.RecordReq) 
 	return s.Record(ctx, req)
 }
 
-// ensureContentObject 幂等写入共享内容对象。
+// ensureContentObject 幂等写入共享内容对象（content_objects，content_hash 为主键）。
+//
+// 语义：内容寻址下同一 content_hash 代表同一内容字节，其物理位置应当唯一，
+// 因此采用 first-writer-wins —— 首个引用该 hash 的 (provider, object_key)
+// 即该对象的规范 Locator，后续引用（即使 provider/object_key 不同）只共享
+// 对象行，不更新、不覆盖。这是有意的设计权衡而非缺陷：
+//   - content_hash 主键约束保证一行一对象，位置唯一，不做多存储冗余登记；
+//   - 确定性构建不变量（同输入同产物）保证正常路径下同内容同位置，
+//     不同 provider 引用同一 hash 是跨存储冗余信号，首个写入即权威；
+//   - 若改为 last-writer-wins，同一对象位置会随引用顺序漂移，
+//     破坏内容寻址的不可变语义，且并发写入存在竞态。
+//
+// 产物行（page_artifacts.artifact_provider/artifact_key）各自记录其自身位置，
+// 不受本函数的 first-writer-wins 影响。
 func ensureContentObject(tx *gorm.DB, contentHash, provider, objectKey string, now time.Time) error {
 	var count int64
 	if err := tx.Model(&artifactmodel.ContentObjectEntity{}).

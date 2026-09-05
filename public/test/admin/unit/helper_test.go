@@ -197,7 +197,8 @@ func setupEnv(t *testing.T) *env {
 		t.Fatalf("建表失败: %v", err)
 	}
 
-	// 注册测试数据域（生产由 admin_router.registerDomains 装配时注册；此处幂等注册）
+	// 注册测试数据域（生产由 admin_router.registerDomains 装配时注册；此处幂等注册）。
+	// ADMIN 与生产一致；ORDER 为测试模拟的第二个业务域（datarule 测试大量使用）。
 	datarule.RegisterDomain(datarule.DomainConfig{
 		Domain:      "ADMIN",
 		DomainLabel: "管理员",
@@ -208,6 +209,15 @@ func setupEnv(t *testing.T) *env {
 			{Field: "phone", Label: "手机号", DataType: "varchar", Operators: []string{"EQ", "NEQ"}},
 			{Field: "status", Label: "状态", DataType: "tinyint", Operators: []string{"EQ", "NEQ", "IN", "NOT_IN"}},
 			{Field: "dept_id", Label: "所属部门", DataType: "bigint", Operators: []string{"EQ", "NEQ", "IN", "NOT_IN"}},
+		},
+	})
+	datarule.RegisterDomain(datarule.DomainConfig{
+		Domain:      "ORDER",
+		DomainLabel: "订单",
+		TableName:   "sys_order",
+		WhiteList: []datarule.FieldDef{
+			{Field: "order_no", Label: "订单号", DataType: "varchar", Operators: []string{"EQ", "NEQ", "LIKE"}},
+			{Field: "price", Label: "金额", DataType: "decimal", Operators: []string{"EQ", "NEQ", "GT", "GTE", "LT", "LTE"}},
 		},
 	})
 
@@ -311,10 +321,11 @@ func createPerm(t *testing.T, e *env, code, path string) uint64 {
 // createRole 快速创建启用角色（service RoleCreate），返回角色 ID。
 func createRole(t *testing.T, e *env, code, name string) uint64 {
 	t.Helper()
+	enabled := adminmodel.RoleStatusEnabled
 	err := e.svc.RoleCreate(context.Background(), &admindto.RoleCreateReq{
 		RoleCode: code,
 		RoleName: name,
-		Status:   1,
+		Status:   &enabled,
 	})
 	wantErr(t, err, "")
 	// 直接查 DB 拿 ID

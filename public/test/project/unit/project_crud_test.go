@@ -55,12 +55,12 @@ func assertJSONEqual(t *testing.T, got json.RawMessage, want string) {
 	}
 }
 
-// TestProjectCreateNilRejected 创建工程：nil 请求被拒绝。
+// TestProjectCreateNilRejected 创建工程：nil 请求被拒绝，返回参数错误
+// （ErrInvalidParam）而非名称校验错误（ErrInvalidName 语义只针对名称本身）。
 func TestProjectCreateNilRejected(t *testing.T) {
 	svc := newProjectService(t)
 	_, err := svc.Create(context.Background(), nil)
-	// 观察：nil 请求返回的是名称校验错误（ErrInvalidName），语义不精确 —— 记录为 bug。
-	wantErrContain(t, err, projectenums.ErrInvalidName)
+	wantErrContain(t, err, projectenums.ErrInvalidParam)
 }
 
 // TestProjectCreateBlankNameRejected 创建工程：空白名被拒绝。
@@ -200,7 +200,7 @@ func TestProjectUpdateEdge(t *testing.T) {
 
 	t.Run("Nil请求", func(t *testing.T) {
 		_, err := svc.Update(ctx, nil)
-		wantErrContain(t, err, projectenums.ErrProjectNotFound)
+		wantErrContain(t, err, projectenums.ErrInvalidParam)
 	})
 
 	t.Run("空ID", func(t *testing.T) {

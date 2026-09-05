@@ -82,9 +82,10 @@ func TestPublicationDeactivatePresentationRow(t *testing.T) {
 	}
 }
 
-// TestPublicationDeactivateNilRequest 空请求返回 ErrRouteNotFound。
+// TestPublicationDeactivateNilRequest 空请求返回 ErrInvalidParam（参数错误，
+// 与路径占用不存在语义无关）。
 func TestPublicationDeactivateNilRequest(t *testing.T) {
 	svc := newUnitService(t)
 	err := svc.Deactivate(context.Background(), nil)
-	containsErr(t, err, pubenums.ErrRouteNotFound)
+	containsErr(t, err, pubenums.ErrInvalidParam)
 }

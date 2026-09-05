@@ -37,10 +37,12 @@ type RoleDetailReq struct {
 }
 
 // RoleCreateReq 新建角色。
+// Status 用 *int：nil 表示未传（service 默认启用），显式传 0 表示禁用，
+// 避免 int 零值 0 无法区分「未传」与「显式禁用」。
 type RoleCreateReq struct {
 	RoleCode  string `json:"role_code" binding:"required,max=50" validate:"required,max=50"`
 	RoleName  string `json:"role_name" binding:"required,max=100" validate:"required,max=100"`
-	Status    int    `json:"status"`
+	Status    *int   `json:"status"`
 	SortOrder int    `json:"sort_order"`
 	Remark    string `json:"remark" binding:"omitempty,max=200" validate:"omitempty,max=200"`
 }

@@ -34,8 +34,9 @@ func NewService(model *blockmodel.Model, projects projectcontract.ProjectService
 
 // List 列出工程全部块（kind 可选过滤）。
 func (s *Service) List(ctx context.Context, req *blockdto.ListReq) (res []blockdto.BlockResp, err error) {
+	// 参数缺失（nil/空 projectID）是调用方错误，与「工程下无块」/资源不存在区分开。
 	if req == nil || strings.TrimSpace(req.ProjectID) == "" {
-		return nil, errors.New(blockenums.ErrBlockNotFound)
+		return nil, errors.New(blockenums.ErrBlockParamRequired)
 	}
 	entities, err := s.model.ListByProject(ctx, req.ProjectID, strings.TrimSpace(req.Kind))
 	if err != nil {
@@ -50,8 +51,9 @@ func (s *Service) List(ctx context.Context, req *blockdto.ListReq) (res []blockd
 
 // Detail 按 ID 查询块。
 func (s *Service) Detail(ctx context.Context, req *blockdto.DetailReq) (res *blockdto.BlockResp, err error) {
+	// 参数缺失（nil/空 ID）是调用方错误，与「ID 对应块不存在」区分开。
 	if req == nil || strings.TrimSpace(req.ID) == "" {
-		return nil, errors.New(blockenums.ErrBlockNotFound)
+		return nil, errors.New(blockenums.ErrBlockParamRequired)
 	}
 	entity, err := s.getExistingBlock(ctx, req.ID)
 	if err != nil {

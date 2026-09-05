@@ -403,6 +403,61 @@ func TestAdminEditNotFound(t *testing.T) {
 	wantErr(t, err, adminenums.ErrAdminNotFound)
 }
 
+// TestAdminEditInvalidatesOldSession 编辑管理员成功后旧会话被删除（强制重新登录）。
+func TestAdminEditInvalidatesOldSession(t *testing.T) {
+	e := setupEnv(t)
+	ctx := context.Background()
+
+	id := createAdminDB(t, e.db, uniq("editse"), uniq("editse")+"@example.com")
+	// 前置：模拟已登录，会话写入 Redis
+	err := auth.SaveUserSession(ctx, &auth.UserSession{ID: id, SessionID: "sess-1", Username: uniq("editse")}, 0)
+	wantErr(t, err, "")
+	session, err := auth.GetUserSession(ctx, id)
+	wantErr(t, err, "")
+	if session == nil {
+		t.Fatalf("前置条件：会话应已写入")
+	}
+
+	newName := uniq("edited2")
+	_, err = e.svc.AdminEdit(ctx, &admindto.AdminEditReq{
+		Id: id, Username: newName, Email: newName + "@example.com",
+	})
+	wantErr(t, err, "")
+
+	after, err := auth.GetUserSession(ctx, id)
+	wantErr(t, err, "")
+	if after != nil {
+		t.Fatalf("编辑成功后旧会话应被删除")
+	}
+}
+
+// TestAdminEditSessionRevokeFailureKeepsSuccess 会话失效失败（Redis 不可用）时，
+// 编辑仍返回成功且 DB 改动已生效。
+// 修复前：DB 更新已提交但 DeleteUserSession 失败会返回错误，调用方误判整个操作失败（部分失败）。
+func TestAdminEditSessionRevokeFailureKeepsSuccess(t *testing.T) {
+	e := setupEnv(t)
+	ctx := context.Background()
+
+	id := createAdminDB(t, e.db, uniq("editfail"), uniq("editfail")+"@example.com")
+
+	// 关闭 miniredis 模拟会话存储不可用（DeleteUserSession 必然失败）
+	e.mini.Close()
+
+	newName := uniq("editedfail")
+	_, err := e.svc.AdminEdit(ctx, &admindto.AdminEditReq{
+		Id: id, Username: newName, Email: newName + "@example.com",
+	})
+	wantErr(t, err, "")
+
+	var entity adminmodel.AdminEntity
+	if err := e.db.First(&entity, id).Error; err != nil {
+		t.Fatalf("查询用户失败: %v", err)
+	}
+	if entity.Username != newName {
+		t.Fatalf("DB 更新应已生效: got=%s want=%s", entity.Username, newName)
+	}
+}
+
 // TestAdminEditUsernameExists 编辑为他人已占用用户名被拒绝。
 func TestAdminEditUsernameExists(t *testing.T) {
 	e := setupEnv(t)

@@ -136,16 +136,19 @@ func TestArtifactRecordInvalidInputs(t *testing.T) {
 		requireErrMsg(t, err, artifactenums.ErrInvalidArtifact)
 	})
 
-	t.Run("空对象Manifest被接受但无闭包", func(t *testing.T) {
-		// 行为记录：{"files":{}} 的 Files 是非 nil 空 map，可通过校验；
-		// 与 {"files":null} 被拒绝不一致（见 bug 报告，低严重度）。
+	t.Run("空对象Manifest被拒绝", func(t *testing.T) {
+		// 修复语义：{"files":{}} 与 {"files":null} / {} 统一拒绝 ——
+		// manifest.files 是内容闭包来源，空闭包无意义，不应静默建无闭包记录
+		// （此前空对象可通过校验并建无闭包记录，与 null 被拒不一致，见 bug 报告）。
 		req := validReq()
 		req.ArtifactID = testArtifactID2
 		req.ArtifactHash = "hash-empty-files"
 		req.Manifest = json.RawMessage(`{"files":{}}`)
-		res := mustRecord(t, svc, req)
-		if n := closureCount(t, svc, res.ID); n != 0 {
-			t.Fatalf("空 files 闭包应为 0: %d", n)
+		_, err := svc.Record(ctx, req)
+		requireErrMsg(t, err, artifactenums.ErrInvalidArtifact)
+		// 拒绝后不留半条记录。
+		if n := artifactRowCount(t, svc); n != 0 {
+			t.Fatalf("空 files 被拒后不应留行: %d", n)
 		}
 	})
 

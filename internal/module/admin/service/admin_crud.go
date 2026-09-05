@@ -12,6 +12,7 @@ import (
 	"go_wp/pkg/auth"
 	"go_wp/pkg/casbin"
 	"go_wp/pkg/database"
+	"go_wp/pkg/logger"
 
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
@@ -215,8 +216,10 @@ func (s *Service) AdminEdit(ctx context.Context, req *admindto.AdminEditReq) (re
 	if err := s.am.DB(ctx).Where("id = ?", req.Id).Updates(entity).Error; err != nil {
 		return nil, err
 	}
+	// 使旧会话失效：管理员资料已保存成功，这是主操作；会话失效失败只记日志，
+	// 不将整个操作视为失败（避免调用方收到错误但改动已生效的部分失败语义）。
 	if err := auth.DeleteUserSession(ctx, req.Id); err != nil {
-		return nil, err
+		logger.Scene("admin").With("user_id", req.Id).Error(err, "编辑管理员后失效旧会话失败")
 	}
 
 	res = &admindto.AdminEditResp{

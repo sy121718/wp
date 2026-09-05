@@ -20,7 +20,10 @@ type RoleEntity struct {
 	ID         uint64     `gorm:"column:id;primaryKey"`
 	RoleCode   string     `gorm:"column:role_code;type:varchar(50);uniqueIndex"`
 	RoleName   string     `gorm:"column:role_name;type:varchar(100)"`
-	Status     int        `gorm:"column:status;type:tinyint;default:1"`
+	// Status 不带 gorm default tag：gorm 对带 default 的字段在零值时会用 DB 默认值
+	// 替换并回写 struct，导致显式传入的 status=0（禁用）被改写成 1（启用）。
+	// service 层总是显式设置 Status，DB 列 DEFAULT 1 仅兜底直接 SQL 插入。
+	Status int `gorm:"column:status;type:tinyint"`
 	IsSystem   int        `gorm:"column:is_system;type:tinyint;default:0"`
 	SortOrder  int        `gorm:"column:sort_order;default:0"`
 	Remark     *string    `gorm:"column:remark;type:varchar(200)"`
@@ -141,6 +144,7 @@ func (m *RoleModel) GetEnabledIDsByCodes(ctx context.Context, codes []string) (i
 }
 
 // Create 新建角色。
+// Status 已无 default tag（见字段注释），零值 0（禁用）可直接落库，无需显式 Select 列。
 func (m *RoleModel) Create(ctx context.Context, e *RoleEntity) error {
 	return m.DB(ctx).Create(e).Error
 }

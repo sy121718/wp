@@ -221,12 +221,11 @@ func TestPageCreateXSSDocument(t *testing.T) {
 
 // ---- 创建：路径校验 ----
 
-// TestPageCreateInvalidPath 保留路径、路径穿越、非法字符应被拒绝。
-// 观察点：NormalizeURL 允许路径含空格（"/a b" 可入库，见报告低严重度项）。
+// TestPageCreateInvalidPath 保留路径、路径穿越、空格、非法字符应被拒绝。
 func TestPageCreateInvalidPath(t *testing.T) {
 	_, svc, _, projectID := newPageService(t)
 	ctx := context.Background()
-	for _, path := range []string{"/admin", "/admin/console", "/api/users", "/assets/x", "/%2e%2e/escape", "/a/../b", "/a//b", "/a\\b", "relative", ""} {
+	for _, path := range []string{"/admin", "/admin/console", "/api/users", "/assets/x", "/%2e%2e/escape", "/a/../b", "/a//b", "/a\\b", "/a b", "relative", ""} {
 		_, err := svc.Create(ctx, &pagedto.CreateReq{
 			ProjectID: projectID, Kind: "home", ContentTargetType: "none",
 			DraftPath: path, DraftDocument: json.RawMessage(pageDocument),
@@ -234,15 +233,6 @@ func TestPageCreateInvalidPath(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), pageenums.ErrInvalidPath) {
 			t.Errorf("路径 %q 应被拒绝为 %q: %v", path, pageenums.ErrInvalidPath, err)
 		}
-	}
-	// 观察点：空格路径未被拦截。
-	if _, err := svc.Create(ctx, &pagedto.CreateReq{
-		ProjectID: projectID, Kind: "home", ContentTargetType: "none",
-		DraftPath: "/a b", DraftDocument: json.RawMessage(pageDocument),
-	}); err == nil {
-		t.Logf("观察点：含空格路径可入库（NormalizeURL 无空格限制）")
-	} else {
-		t.Logf("含空格路径被拒绝: %v", err)
 	}
 }
 

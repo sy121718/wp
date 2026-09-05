@@ -19,7 +19,7 @@ import (
 // Create 创建站点工程与初始 SiteSettings。
 func (s *Service) Create(ctx context.Context, req *projectdto.CreateReq) (res *projectdto.ProjectResp, err error) {
 	if req == nil {
-		return nil, errors.New(projectenums.ErrInvalidName)
+		return nil, errors.New(projectenums.ErrInvalidParam)
 	}
 	name := strings.TrimSpace(req.Name)
 	if name == "" || utf8.RuneCountInString(name) > 200 {
@@ -56,7 +56,10 @@ func (s *Service) Detail(ctx context.Context, req *projectdto.DetailReq) (res *p
 
 // Update 更新站点工程名称与 SiteSettings。
 func (s *Service) Update(ctx context.Context, req *projectdto.UpdateReq) (res *projectdto.ProjectResp, err error) {
-	if req == nil || strings.TrimSpace(req.ID) == "" {
+	if req == nil {
+		return nil, errors.New(projectenums.ErrInvalidParam)
+	}
+	if strings.TrimSpace(req.ID) == "" {
 		return nil, errors.New(projectenums.ErrProjectNotFound)
 	}
 	name := strings.TrimSpace(req.Name)

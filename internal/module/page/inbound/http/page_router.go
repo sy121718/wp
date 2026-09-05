@@ -36,5 +36,6 @@ func SetupPageRoutes(rg *gin.RouterGroup, db *gorm.DB,
 	g.POST("/publish", handle.Publish)
 	g.POST("/rollback", handle.Rollback)
 	g.POST("/url/update", handle.UpdateURL)
+	g.POST("/delete", handle.Delete)
 	return svc
 }

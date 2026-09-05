@@ -354,6 +354,47 @@ func TestRuleSchemaListDetail(t *testing.T) {
 	}
 }
 
+// TestRuleCreateInvalidDomain 未注册 domain 被拒绝（ErrInvalidDomain）。
+// 修复前：RuleCreate 不校验 domain 注册，任意 domain 均可落库。
+func TestRuleCreateInvalidDomain(t *testing.T) {
+	e := setupEnv(t)
+	ctx := context.Background()
+
+	err := e.svc.RuleCreate(ctx, &admindto.RuleCreateReq{
+		RuleName: "非法域规则", Domain: "NOT_REGISTERED",
+		Config: datarule.RuleConfig{}, Status: 1,
+	})
+	wantErr(t, err, adminenums.ErrInvalidDomain)
+
+	// 不应落库
+	var count int64
+	if err := e.db.Model(&adminmodel.SysRuleEntity{}).Where("domain = ?", "NOT_REGISTERED").Count(&count).Error; err != nil {
+		t.Fatalf("查询失败: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("非法 domain 规则不应落库: %d", count)
+	}
+}
+
+// TestRuleUpdateInvalidDomain 更新为未注册 domain 被拒绝，且原规则不被改动。
+func TestRuleUpdateInvalidDomain(t *testing.T) {
+	e := setupEnv(t)
+	ctx := context.Background()
+
+	ruleID := ruleCreate(t, e, "合法规则", "ORDER", 1, datarule.RuleConfig{})
+	err := e.svc.RuleUpdate(ctx, &admindto.RuleUpdateReq{
+		ID: ruleID, RuleName: "改名", Domain: "NOT_REGISTERED",
+		Config: datarule.RuleConfig{}, Status: 1,
+	})
+	wantErr(t, err, adminenums.ErrInvalidDomain)
+
+	detail, err := e.svc.RuleDetail(ctx, &admindto.RuleDetailReq{ID: ruleID})
+	wantErr(t, err, "")
+	if detail.RuleName != "合法规则" || detail.Domain != "ORDER" {
+		t.Fatalf("非法 domain 更新不应改动原规则: %+v", detail)
+	}
+}
+
 // --- helpers ---
 
 func ruleCreate(t *testing.T, e *env, name, domain string, status int, config datarule.RuleConfig) uint64 {

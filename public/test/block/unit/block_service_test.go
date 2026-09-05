@@ -172,17 +172,19 @@ func TestBlockListInvalidRequest(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()
 
+	// 修复语义：nil/空 projectID 是参数错误（ErrBlockParamRequired），
+	// 与「工程下无块」（正常空列表）及资源不存在（ErrBlockNotFound）区分开。
 	t.Run("NilRequest", func(t *testing.T) {
 		_, err := e.svc.List(ctx, nil)
-		errContains(t, err, blockenums.ErrBlockNotFound)
+		errContains(t, err, blockenums.ErrBlockParamRequired)
 	})
 	t.Run("EmptyProjectID", func(t *testing.T) {
 		_, err := e.svc.List(ctx, &blockdto.ListReq{ProjectID: ""})
-		errContains(t, err, blockenums.ErrBlockNotFound)
+		errContains(t, err, blockenums.ErrBlockParamRequired)
 	})
 	t.Run("WhitespaceProjectID", func(t *testing.T) {
 		_, err := e.svc.List(ctx, &blockdto.ListReq{ProjectID: "   "})
-		errContains(t, err, blockenums.ErrBlockNotFound)
+		errContains(t, err, blockenums.ErrBlockParamRequired)
 	})
 }
 
@@ -209,17 +211,19 @@ func TestBlockDetailInvalidRequest(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()
 
+	// 修复语义：nil/空 ID 是参数错误（ErrBlockParamRequired），
+	// 与「ID 对应块不存在」（ErrBlockNotFound，见 TestBlockDetailNotFound）区分开。
 	t.Run("NilRequest", func(t *testing.T) {
 		_, err := e.svc.Detail(ctx, nil)
-		errContains(t, err, blockenums.ErrBlockNotFound)
+		errContains(t, err, blockenums.ErrBlockParamRequired)
 	})
 	t.Run("EmptyID", func(t *testing.T) {
 		_, err := e.svc.Detail(ctx, &blockdto.DetailReq{ID: ""})
-		errContains(t, err, blockenums.ErrBlockNotFound)
+		errContains(t, err, blockenums.ErrBlockParamRequired)
 	})
 	t.Run("WhitespaceID", func(t *testing.T) {
 		_, err := e.svc.Detail(ctx, &blockdto.DetailReq{ID: "  "})
-		errContains(t, err, blockenums.ErrBlockNotFound)
+		errContains(t, err, blockenums.ErrBlockParamRequired)
 	})
 }
 

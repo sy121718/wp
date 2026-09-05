@@ -19,7 +19,7 @@ import (
 // RenameReserved 修改页面的草稿路径占用；仅允许 reserved 状态改名。
 func (s *Service) RenameReserved(ctx context.Context, req *pubdto.RenameReservedReq) (err error) {
 	if req == nil {
-		return errors.New(pubenums.ErrRouteNotFound)
+		return errors.New(pubenums.ErrInvalidParam)
 	}
 	oldPath, err := normalizePath(req.OldPath)
 	if err != nil {
@@ -34,19 +34,43 @@ func (s *Service) RenameReserved(ctx context.Context, req *pubdto.RenameReserved
 	}
 	now := time.Now().UTC()
 	err = s.model.Transaction(ctx, func(tx *gorm.DB) error {
+		// 区分「旧路径无任何占用」与「旧路径不是 reserved」：
+		// 前者视为幂等成功（草稿路由可能尚未建立）；后者需按归属判断——
+		// 本页 active/redirect 行是页面改 URL 流程（UpdateURL）的 DB 同步步骤
+		// （发布时 reserved 被原地升级为 active，无独立 reserved 行），必须允许迁移；
+		// 他人 active/redirect 行禁止直接改名（不应触碰他人线上路径）。
+		var existing pubmodel.RouteEntity
+		switch ferr := tx.Where("project_id = ? AND path = ?", req.ProjectID, oldPath).
+			First(&existing).Error; {
+		case errors.Is(ferr, gorm.ErrRecordNotFound):
+			return nil
+		case ferr != nil:
+			return ferr
+		}
+		if existing.RouteKind != pubmodel.RouteReserved {
+			if existing.PageID == nil || *existing.PageID != req.PageID {
+				return errors.New(pubenums.ErrRouteActiveRename)
+			}
+		}
+		// 先清理新路径上本页 active 残留（避免迁移行与 (project_id, path)
+		// 唯一约束冲突），再迁移旧路径行（reserved 或本页 active）。
+		if err := tx.Where("project_id = ? AND path = ? AND page_id = ? AND route_kind = ?",
+			req.ProjectID, newPath, req.PageID, pubmodel.RouteActive).
+			Delete(&pubmodel.RouteEntity{}).Error; err != nil {
+			return err
+		}
 		result := tx.Model(&pubmodel.RouteEntity{}).
-			Where("project_id = ? AND path = ? AND page_id = ? AND route_kind = ?", req.ProjectID, oldPath, req.PageID, pubmodel.RouteReserved).
+			Where("project_id = ? AND path = ? AND page_id = ?", req.ProjectID, oldPath, req.PageID).
 			Updates(map[string]any{"path": newPath, "updated_at": now})
 		if result.Error != nil {
 			return result.Error
 		}
 		if result.RowsAffected != 1 {
-			// 无占用视为幂等成功（草稿路由可能尚未建立）。
+			// 旧路径被其他页面 reserved 占用（page_id 不匹配）：保持幂等成功，
+			// 不触碰他人草稿占用。
 			return nil
 		}
-		return tx.Where("project_id = ? AND path = ? AND page_id = ? AND route_kind = ?",
-			req.ProjectID, newPath, req.PageID, pubmodel.RouteActive).
-			Delete(&pubmodel.RouteEntity{}).Error
+		return nil
 	})
 	return err
 }
@@ -63,7 +87,7 @@ func (s *Service) RenameReserved(ctx context.Context, req *pubdto.RenameReserved
 // 返回 ErrRouteOccupied，绝不覆盖他人占用（H2/H7 的 DB 层兜底）。
 func (s *Service) Activate(ctx context.Context, req *pubdto.ActivateReq) (res *pubdto.RouteResp, err error) {
 	if req == nil {
-		return nil, errors.New(pubenums.ErrRouteNotFound)
+		return nil, errors.New(pubenums.ErrInvalidParam)
 	}
 	path, err := normalizePath(req.Path)
 	if err != nil {
@@ -158,7 +182,7 @@ func (s *Service) Activate(ctx context.Context, req *pubdto.ActivateReq) (res *p
 // Deactivate 取消路径占用；路由不存在时幂等返回。
 func (s *Service) Deactivate(ctx context.Context, req *pubdto.DeactivateReq) (err error) {
 	if req == nil {
-		return errors.New(pubenums.ErrRouteNotFound)
+		return errors.New(pubenums.ErrInvalidParam)
 	}
 	path, err := normalizePath(req.Path)
 	if err != nil {
@@ -178,7 +202,7 @@ func (s *Service) Deactivate(ctx context.Context, req *pubdto.DeactivateReq) (er
 // Redirect 把旧路径占用改为 redirect 并指向重定向产物。
 func (s *Service) Redirect(ctx context.Context, req *pubdto.RedirectReq) (res *pubdto.RouteResp, err error) {
 	if req == nil {
-		return nil, errors.New(pubenums.ErrRouteNotFound)
+		return nil, errors.New(pubenums.ErrInvalidParam)
 	}
 	oldPath, err := normalizePath(req.OldPath)
 	if err != nil {

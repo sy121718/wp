@@ -262,6 +262,27 @@ func (m *Model) MoveDraftPath(ctx context.Context, pageID, newPath string, at ti
 		Updates(map[string]any{"draft_path": newPath, "active_path": newPath, "updated_at": at}).Error
 }
 
+// SoftDeleteWithRoutes 软删 Page（deleted_at 置时间，审计留痕）并原子清理该页面
+// 全部路径占用（reserved/active/redirect 任一 kind）；页面不存在或已软删返回
+// gorm.ErrRecordNotFound。清理路由是释放路径占用的关键：否则软删后同路径
+// 新页面永远创建不了（routeCount==1 残留）。
+func (m *Model) SoftDeleteWithRoutes(ctx context.Context, pageID string, at time.Time) (err error) {
+	return m.Transaction(ctx, func(tx *gorm.DB) error {
+		result := tx.Model(&PageEntity{}).
+			Where("id = ? AND deleted_at IS NULL", pageID).
+			Update("deleted_at", at)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return gorm.ErrRecordNotFound
+		}
+		// page_routes 按 page_id 全量清理（reserved/active/redirect），
+		// presentation 实例占用（page_id 为空）不受影响。
+		return tx.Where("page_id = ?", pageID).Delete(&RouteEntity{}).Error
+	})
+}
+
 // DraftPathValue 返回草稿访问路径（空安全）。
 func (e *PageEntity) DraftPathValue() string {
 	if e == nil {

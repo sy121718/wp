@@ -25,6 +25,9 @@ type PageService interface {
 	Rollback(ctx context.Context, req *pagedto.RollbackReq) (res *pagedto.PublishResp, err error)
 	// UpdateURL 修改访问路径，旧路径按策略 301 或取消激活。
 	UpdateURL(ctx context.Context, req *pagedto.UpdateURLReq) (res *pagedto.PublishResp, err error)
+	// Delete 软删页面（deleted_at 置时间，审计留痕）并释放其全部路径占用
+	// （reserved/active/redirect），同路径可被新页面重新占用。
+	Delete(ctx context.Context, req *pagedto.DeleteReq) (err error)
 	// RefreshThemeForTheme 把主题设置批量合入挂在该主题下全部页面（主题设置保存后调用）。
 	RefreshThemeForTheme(ctx context.Context, themeID string, theme json.RawMessage) error
 	// RefreshStructureForTheme 把主题的页眉/页脚块绑定批量合入挂在该主题下

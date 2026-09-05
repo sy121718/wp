@@ -16,6 +16,7 @@ const (
 
 const (
 	MsgPageCreated     = "页面创建成功"
+	MsgPageDeleted     = "页面删除成功"
 	MsgDraftSaved      = "草稿保存成功"
 	MsgPageDetail      = "页面查询成功"
 	MsgRevisionsListed = "页面修订查询成功"

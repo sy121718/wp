@@ -137,6 +137,20 @@ func (h *Handle) UpdateURL(c *gin.Context) {
 	response.SuccessWithMessage(c, pageenums.MsgURLUpdated, res)
 }
 
+// Delete 软删页面并释放其全部路径占用。
+func (h *Handle) Delete(c *gin.Context) {
+	var req pagedto.DeleteReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ParamError(c, pageenums.ErrPageNotFound)
+		return
+	}
+	if err := h.svc.Delete(c.Request.Context(), &req); err != nil {
+		response.ErrorWithMessage(c, pageErrorStatus(err), err.Error())
+		return
+	}
+	response.SuccessWithMessage(c, pageenums.MsgPageDeleted, nil)
+}
+
 // ListRevisions 查询 Page 草稿修订历史。
 func (h *Handle) ListRevisions(c *gin.Context) {
 	var req pagedto.RevisionReq

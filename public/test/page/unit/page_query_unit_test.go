@@ -176,10 +176,13 @@ func TestPageListRevisionsNilRequest(t *testing.T) {
 	}
 }
 
-// ---- 软删语义（service 层无删除能力，用 DB 软删验证查询侧行为）----
+// ---- 软删语义（查询侧行为；正式软删走 service.Delete，此处用 DB 直删模拟
+// 历史/外部软删，验证查询侧对软删行的防御）----
 
-// TestPageDetailAfterSoftDelete 软删后的页面：详情不可见，但列表仍返回
-// （ListAll 缺 deleted_at 过滤——与 GetByID 不一致，见报告 bug 项）。
+// TestPageDetailAfterSoftDelete 软删后的页面：详情、列表、保存均不可见
+// （GetByID 与 ListAll 均过滤 deleted_at）。直接 SQL 软删绕过 service.Delete，
+// 故 reserved 路由行仍残留为 1（预期：路由清理只发生在 service.Delete 内，
+// 见 page_delete_unit_test.go 的 Delete 用例）。
 func TestPageDetailAfterSoftDelete(t *testing.T) {
 	db, svc, _, projectID := newPageService(t)
 	ctx := context.Background()
@@ -206,8 +209,8 @@ func TestPageDetailAfterSoftDelete(t *testing.T) {
 	}); err == nil || err.Error() != pageenums.ErrPageNotFound {
 		t.Errorf("软删后保存应不可见: %v", err)
 	}
-	// 软删行本身保留（审计留痕），但路由占用未清理（service 无删除能力，
-	// 该路径被永久占用，见报告「能力缺口」项）。
+	// 软删行本身保留（审计留痕）。直接 SQL 软删不走 service.Delete，
+	// 路由占用不清理属预期（清理能力见 page_delete_unit_test.go）。
 	var routeCount int64
 	db.Table("page_routes").Where("project_id = ? AND path = ?", projectID, "/gone").Count(&routeCount)
 	if routeCount != 1 {

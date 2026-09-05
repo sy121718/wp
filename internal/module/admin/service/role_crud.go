@@ -58,10 +58,12 @@ func (s *Service) RoleCreate(ctx context.Context, req *admindto.RoleCreateReq) e
 	entity := &adminmodel.RoleEntity{
 		RoleCode:  req.RoleCode,
 		RoleName:  req.RoleName,
-		Status:    req.Status,
 		SortOrder: req.SortOrder,
 	}
-	if entity.Status == 0 {
+	// Status 未显式传（nil）时默认启用；显式传 0（禁用）尊重之，不再强制改写。
+	if req.Status != nil {
+		entity.Status = *req.Status
+	} else {
 		entity.Status = adminmodel.RoleStatusEnabled
 	}
 	if req.Remark != "" {

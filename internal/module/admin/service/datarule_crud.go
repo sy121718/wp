@@ -57,6 +57,11 @@ func (s *Service) RuleDetail(ctx context.Context, req *admindto.RuleDetailReq) (
 
 // RuleCreate 新建数据规则。
 func (s *Service) RuleCreate(ctx context.Context, req *admindto.RuleCreateReq) error {
+	// domain 必须已注册（pkg/datarule 注册中心），否则规则落库后无引擎消费。
+	if !isRegisteredDomain(req.Domain) {
+		return errors.New(adminenums.ErrInvalidDomain)
+	}
+
 	config, err := encodeRuleConfig(req.Config)
 	if err != nil {
 		return err
@@ -85,6 +90,10 @@ func (s *Service) RuleUpdate(ctx context.Context, req *admindto.RuleUpdateReq) e
 	}
 	if entity == nil {
 		return errors.New(adminenums.ErrRuleNotFound)
+	}
+	// domain 必须已注册；先查存在性（规则不存在语义优先），再校验 domain。
+	if !isRegisteredDomain(req.Domain) {
+		return errors.New(adminenums.ErrInvalidDomain)
 	}
 
 	config, err := encodeRuleConfig(req.Config)
@@ -118,6 +127,17 @@ func (s *Service) RuleDelete(ctx context.Context, req *admindto.RuleDeleteReq) e
 	// 再批量删除规则本身
 	_, err := s.drm.DeleteByIDs(ctx, req.IDs)
 	return err
+}
+
+// isRegisteredDomain 校验 domain 是否已在 pkg/datarule 注册中心注册。
+// 与 RuleSchemaList/RuleSchemaDetail 同一数据源（GetRegisteredDomains）。
+func isRegisteredDomain(domain string) bool {
+	for _, d := range datarule.GetRegisteredDomains() {
+		if d.Domain == domain {
+			return true
+		}
+	}
+	return false
 }
 
 func encodeRuleConfig(config datarule.RuleConfig) (string, error) {

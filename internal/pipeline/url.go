@@ -24,12 +24,17 @@ var reservedPrefixes = []string{
 	"/objects",
 }
 
+// maxURLPathLen 路径长度上限（与 publication normalizePath 的 500 对齐，
+// docs/03-pipeline.md §5.1）：超长路径会导致 FS 激活 ENAMETOOLONG 与 DB 行膨胀。
+const maxURLPathLen = 500
+
 // NormalizeURL 规范化页面访问路径（docs/03-pipeline.md §5.1）。
 //
 // 规则：
 //   - 只保存 path，不含 scheme/host/query；
 //   - 必须以 "/" 开头；根路径保留 "/"，其余去除结尾斜杠；
-//   - 拒绝 ".." 段、重复分隔符、控制字符、反斜杠与编码后的路径穿越（%2e）；
+//   - 拒绝 ".." 段、重复分隔符、控制字符、空格、反斜杠与编码后的路径穿越（%2e）；
+//   - 拒绝超过 maxURLPathLen（500）的路径；
 //   - 拒绝系统保留路径（/admin、/api、/_fragments、/assets、/objects 及子路径）。
 func NormalizeURL(raw string) (string, error) {
 	if raw == "" {
@@ -45,6 +50,9 @@ func NormalizeURL(raw string) (string, error) {
 		if r < 0x20 || r == 0x7f {
 			return "", fmt.Errorf("路径含控制字符: %q", raw)
 		}
+		if r == ' ' {
+			return "", fmt.Errorf("路径含空格: %q", raw)
+		}
 	}
 
 	// 根路径直接放行。
@@ -54,6 +62,9 @@ func NormalizeURL(raw string) (string, error) {
 
 	// 去除结尾斜杠（根路径已提前放行；重复分隔符在分段时拒绝）。
 	p := strings.TrimSuffix(raw, "/")
+	if len(p) > maxURLPathLen {
+		return "", fmt.Errorf("路径过长（最大 %d 字符）: %q", maxURLPathLen, raw)
+	}
 
 	segs := strings.Split(strings.TrimPrefix(p, "/"), "/")
 	for _, seg := range segs {
