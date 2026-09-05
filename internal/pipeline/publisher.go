@@ -285,6 +285,21 @@ func (p *Publisher) UpdateURL(pageID string, newPath string, withRedirect bool) 
 		return oldPath, errors.New("新路径与当前路径相同")
 	}
 
+	// 纯草稿（从未发布，含已构建未发布）页面：只迁移草稿路径（内核 Path 字段），
+	// 不构建、不激活、不写 active_path；旧路径从未在访问面激活，也无需
+	// 301 / 取消激活处理。DB 侧迁移（draft_path 与 reserved 路由）由调用方
+	// 负责（page service MoveDraftPath / RenameReserved）。
+	// 修复前该分支固定执行 构建+激活+置 published，未发布页面被直接推上线
+	// （审计 Medium：UpdateURL 纯草稿问题）。
+	if !rec.hasPublishedHistory() {
+		if _, err = p.saveDraftLocked(pageID, rec.Version, nPath, rec.DocumentJSON); err != nil {
+			return oldPath, err
+		}
+		logger.Scene("build").With("pageId", pageID).With("oldPath", oldPath).With("newPath", nPath).
+			Info("纯草稿改 URL：仅迁移草稿路径，未构建未激活")
+		return oldPath, nil
+	}
+
 	// 1. 将新 URL 写入草稿路径；2. 基于新 URL 构建；3. 原子激活新 URL。
 	if _, err = p.saveDraftLocked(pageID, rec.Version, nPath, rec.DocumentJSON); err != nil {
 		return oldPath, err
@@ -423,6 +438,22 @@ func (rec *PageRecord) findHistory(hash string) *HistoryEntry {
 		}
 	}
 	return nil
+}
+
+// hasPublishedHistory 判断页面是否曾上线：活跃产物指针非空，或历史条目
+// 中出现过 published 状态（回滚/改 URL 重建的内核记录依赖后者）。
+// 注意不能用 Status 字段判断：restoreKernelForUpdate 重建的纯草稿记录
+// 会把 Status 硬编码为 published，而 ActiveHash/Histories 才是真实依据。
+func (rec *PageRecord) hasPublishedHistory() bool {
+	if rec.ActiveHash != "" {
+		return true
+	}
+	for _, h := range rec.Histories {
+		if h.Status == StatePublished {
+			return true
+		}
+	}
+	return false
 }
 
 // currentStatus 派生页面当前状态（published > ready > failed > draft）。

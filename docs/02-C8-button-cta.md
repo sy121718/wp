@@ -38,4 +38,4 @@
 | 文件 | 内容 |
 |---|---|
 | `components/button/button.go` | 组件本体（协议校验/标签选择/图标/双态/尺寸预设/块级） |
-| `public/test/builder/unit/button_test.go` | 8 组测试（外链+图标+双态/弹窗 button/三动作/动态绑定/媒体图标/块级/8 项校验拒绝/确定性） |
+| `components/button/jet_test.go` | 8 组测试（外链+图标+双态/弹窗 button/三动作/动态绑定/媒体图标/块级/8 项校验拒绝/确定性） |

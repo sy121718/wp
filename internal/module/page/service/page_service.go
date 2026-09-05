@@ -3,9 +3,6 @@ package pageservice
 import (
 	"context"
 	"errors"
-	"os"
-	"path/filepath"
-	"strings"
 
 	blockcontract "go_wp/internal/module/block/contract"
 	pagecontract "go_wp/internal/module/page/contract"
@@ -15,7 +12,6 @@ import (
 	"go_wp/internal/pipeline"
 
 	artifactcontract "go_wp/internal/module/artifact/contract"
-	pageenums "go_wp/internal/module/page/enums"
 	pubcontract "go_wp/internal/module/publication/contract"
 
 	"gorm.io/gorm"
@@ -38,17 +34,14 @@ type Service struct {
 	store     *pipeline.LocalStore
 }
 
-// NewService 创建 Page 服务；同时初始化本地产物根（GO_WP_ARTIFACT_ROOT 可覆盖）。
+// NewService 创建 Page 服务；同时初始化本地产物根（GO_WP_ARTIFACT_ROOT 可覆盖，
+// 默认与访问面一致，经 pipeline.DefaultArtifactRoot/ActiveRoot 单源取值）。
 // 构建注入装配感知编译器：页眉/页脚块内联（方案 C）。
 func NewService(model *pagemodel.Model, artifacts artifactcontract.ArtifactService,
 	routes pubcontract.PublicationService, project projectcontract.ProjectService,
 	blocks blockcontract.BlockService) *Service {
-	root := strings.TrimSpace(os.Getenv("GO_WP_ARTIFACT_ROOT"))
-	if root == "" {
-		root = filepath.Join("public", "runtime", "artifacts")
-	}
-	store := &pipeline.LocalStore{Root: root}
-	publication := &pipeline.LocalPublicationStore{ActiveRoot: filepath.Join(root, "public", "active")}
+	store := &pipeline.LocalStore{Root: pipeline.DefaultArtifactRoot()}
+	publication := &pipeline.LocalPublicationStore{ActiveRoot: pipeline.ActiveRoot()}
 	s := &Service{
 		model:     model,
 		artifacts: artifacts,
@@ -66,7 +59,7 @@ func NewService(model *pagemodel.Model, artifacts artifactcontract.ArtifactServi
 func (s *Service) getExistingPage(ctx context.Context, id string) (page *pagemodel.PageEntity, err error) {
 	page, err = s.model.GetByID(ctx, id)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, errors.New(pageenums.ErrPageNotFound)
+		return nil, ErrPageNotFound
 	}
 	if err != nil {
 		return nil, err

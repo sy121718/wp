@@ -2,7 +2,6 @@ package routers
 
 import (
 	"net/http"
-	"path/filepath"
 
 	"go_wp/internal/middleware/builtin"
 	adminhttp "go_wp/internal/module/admin/inbound/http"
@@ -14,6 +13,7 @@ import (
 	pagehttp "go_wp/internal/module/page/inbound/http"
 	projecthttp "go_wp/internal/module/project/inbound/http"
 	pubhttp "go_wp/internal/module/publication/inbound/http"
+	"go_wp/internal/pipeline"
 	"go_wp/internal/templates"
 	"go_wp/pkg/casbin"
 	"go_wp/pkg/database"
@@ -36,11 +36,14 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 	// Jet 模板渲染器（根目录 internal/templates，开发模式即时生效）
 	router.HTMLRender = templates.NewJetHTMLRender("internal/templates", true)
 
-	// 静态文件服务（admin CSS + builder JS/CSS 统一在此）
-	router.Static("/static", "internal/templates/static")
+	// 静态文件服务（admin CSS + builder JS/CSS 统一在此）。
+	// gin.Dir(listDirectory=false) 禁目录列表：无 index 文件时返回空列表而非
+	// 泄漏目录清单（审计 Low：/static 目录列表开启）。
+	router.StaticFS("/static", gin.Dir("internal/templates/static", false))
 
-	// 媒体上传存储（pkg/upload local provider 默认 public/storage）
-	router.Static("/storage", "public/storage")
+	// 媒体上传存储（pkg/upload local provider 默认 public/storage）。
+	// 同样禁目录列表（审计 Low：/storage 目录列表开启）。
+	router.StaticFS("/storage", gin.Dir("public/storage", false))
 
 	// 静态访问面：已发布站点直出激活产物（只读文件系统，零查库零模板）。
 	// ActiveRoot 位于产物根下两级（{root}/public/active），符号链接目标相对可达。
@@ -123,13 +126,16 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 
 // setupStaticFace 挂载静态访问面（docs/03-pipeline.md §5）。
 //
-// ActiveRoot 位于产物根下两级（{root}/public/active），符号链接目标相对可达。
-// 因此访问面根必须是 active 目录本身；文件由 StaticFS 只读直出，
-// / 落到 index 入口。
+// ActiveRoot 位于产物根下两级（{root}/public/active，pipeline.ActiveRoot() 单源），
+// 符号链接目标相对可达。因此访问面根必须是 active 目录本身；文件由 StaticFS
+// 只读直出，/ 落到 index 入口。
 // 注意必须无条件挂载：首次发布发生在启动之后，启动时目录必然不存在，
 // 若按目录存在与否跳过挂载，静态访问面将永远无法生效（每次请求动态读盘，
 // 目录与产物在首次发布后即时生效）。
+//
+// gin.Dir(listDirectory=false) 底层仍是 http.Dir（符号链接跟随行为不变，
+// 不限制 activeRoot 的 symlink 访问面），仅禁用 Readdir 以阻止目录列表
+// （审计 Low：/site 目录列表开启）。
 func setupStaticFace(router *gin.Engine) {
-	activeRoot := filepath.Join("public", "runtime", "artifacts", "public", "active")
-	router.StaticFS("/site", http.Dir(activeRoot))
+	router.StaticFS("/site", gin.Dir(pipeline.ActiveRoot(), false))
 }
