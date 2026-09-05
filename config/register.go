@@ -1,7 +1,6 @@
 package config
 
 import (
-	internaltask "go_wp/internal/task"
 	"go_wp/pkg/auth"
 	"go_wp/pkg/cache"
 	"go_wp/pkg/captcha"
@@ -25,9 +24,8 @@ type runtimeComponent struct {
 	Close    func() error
 }
 
-var runtimePreparers = []func(){
-	internaltask.RegisterHandlers,
-}
+// runtimePreparers 组件初始化前的准备工作（当前无注册项；任务注册随 internal/task 示例移除）。
+var runtimePreparers = []func(){}
 
 var runtimeComponents = []runtimeComponent{
 	{
