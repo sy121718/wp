@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
-	"gorm.io/gorm"
 
 	projectdto "go_wp/internal/module/project/dto"
 	projectservice "go_wp/internal/module/project/service"
@@ -47,13 +46,12 @@ func TestThemeCreateEdge(t *testing.T) {
 		}
 	})
 
-	t.Run("空ProjectID缺校验", func(t *testing.T) {
-		// 观察：service 层未校验 ProjectID 必填；"" 直接落到 uuid 列报 PG 原始错误。
+	t.Run("空ProjectID拒绝", func(t *testing.T) {
+		// 修复语义：service 层校验 ProjectID 必填，不再泄漏 PG uuid 原始错误。
 		_, err := svc.CreateTheme(ctx, &projectdto.ThemeCreateReq{ProjectID: "", Name: "孤儿主题"})
-		if err == nil {
-			t.Fatalf("空 ProjectID 落 uuid 列应报错（校验缺失，错误来自 DB 层）")
+		if err == nil || !strings.Contains(err.Error(), "工程 ID 不能为空") {
+			t.Fatalf("空 ProjectID 应返回「工程 ID 不能为空」，实际: %v", err)
 		}
-		t.Logf("空 ProjectID 报错来源为 DB 层: %v", err)
 	})
 
 	t.Run("同名拒绝大小写不敏感", func(t *testing.T) {
@@ -88,20 +86,20 @@ func TestThemeCreateEdge(t *testing.T) {
 		}
 	})
 
-	t.Run("Settings为null字面量不兜底", func(t *testing.T) {
-		// 观察：兜底仅判断 len==0；json 字面量 "null" 原样入库（非 JSON 对象）。
-		res := mustCreateTheme(t, svc, newProjectID(), "null设置", json.RawMessage("null"))
-		assertJSONEqual(t, res.Settings, `null`)
+	t.Run("Settings为null字面量拒绝", func(t *testing.T) {
+		// 修复语义：settings 必须是 JSON 对象，"null" 字面量被拒绝，不再绕过兜底入库。
+		_, err := svc.CreateTheme(ctx, &projectdto.ThemeCreateReq{ProjectID: newProjectID(), Name: "null设置", Settings: json.RawMessage("null")})
+		if err == nil || !strings.Contains(err.Error(), "无效的主题设置") {
+			t.Fatalf("「null」设置应被拒绝为「无效的主题设置」，实际: %v", err)
+		}
 	})
 
-	t.Run("Settings非法JSON返回DB错误", func(t *testing.T) {
-		// 观察：CreateTheme 无 settings JSON 校验，非法 JSON 落到 jsonb 列，
-		// 返回 PG 原始错误而非业务错误。
+	t.Run("Settings非法JSON拒绝", func(t *testing.T) {
+		// 修复语义：service 层校验 settings 为合法 JSON 对象，返回业务错误而非 PG 原始错误。
 		_, err := svc.CreateTheme(ctx, &projectdto.ThemeCreateReq{ProjectID: newProjectID(), Name: "坏设置", Settings: json.RawMessage(`{bad`)})
-		if err == nil {
-			t.Fatalf("非法 JSON 应被拒绝")
+		if err == nil || !strings.Contains(err.Error(), "无效的主题设置") {
+			t.Fatalf("非法 JSON 应返回「无效的主题设置」，实际: %v", err)
 		}
-		t.Logf("非法 JSON 报错来源为 DB 层: %v", err)
 	})
 }
 
@@ -172,13 +170,12 @@ func TestThemeUpdateEdge(t *testing.T) {
 		assertJSONEqual(t, got.Settings, `{"color":"blue"}`)
 	})
 
-	t.Run("Settings数组未校验", func(t *testing.T) {
-		// 观察：UpdateTheme 无 settings 对象校验，[] 可原样写入 jsonb。
-		res, err := svc.UpdateTheme(ctx, &projectdto.ThemeUpdateReq{ID: th.ID, Settings: json.RawMessage(`[]`)})
-		if err != nil {
-			t.Fatalf("[] 竟被拒绝（观察点：当前未校验）: %v", err)
+	t.Run("Settings数组拒绝", func(t *testing.T) {
+		// 修复语义：UpdateTheme settings 非对象被拒绝，不再原样写入 jsonb。
+		_, err := svc.UpdateTheme(ctx, &projectdto.ThemeUpdateReq{ID: th.ID, Settings: json.RawMessage(`[]`)})
+		if err == nil || !strings.Contains(err.Error(), "无效的主题设置") {
+			t.Fatalf("settings 数组应被拒绝为「无效的主题设置」，实际: %v", err)
 		}
-		assertJSONEqual(t, res.Settings, `[]`)
 	})
 }
 
@@ -324,15 +321,12 @@ func TestThemeGetActiveThemeEdge(t *testing.T) {
 	svc := newProjectService(t)
 	ctx := context.Background()
 
-	t.Run("无主题返回原始错误", func(t *testing.T) {
-		// 观察：GetActiveTheme 无主题时原样返回 gorm.ErrRecordNotFound，
-		// 未映射为业务错误（与 GetTheme 的 ErrThemeNotFound 不一致）。
-		_, err := svc.GetActiveTheme(ctx, newProjectID())
-		if err == nil {
-			t.Fatalf("无主题应报错")
-		}
-		if !errors.Is(err, gorm.ErrRecordNotFound) {
-			t.Fatalf("观察点：返回 gorm.ErrRecordNotFound，实际: %v", err)
+	t.Run("无主题返回空", func(t *testing.T) {
+		// 修复语义：工程尚无主题是合法状态，返回 (nil, nil) 由调用方判断，
+		// 不再泄漏 gorm.ErrRecordNotFound。
+		got, err := svc.GetActiveTheme(ctx, newProjectID())
+		if err != nil || got != nil {
+			t.Fatalf("无主题应返回 (nil, nil)，实际: got=%v err=%v", got, err)
 		}
 	})
 

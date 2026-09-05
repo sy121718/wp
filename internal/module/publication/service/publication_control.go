@@ -120,6 +120,12 @@ func (s *Service) Activate(ctx context.Context, req *pubdto.ActivateReq) (res *p
 				ProjectID: req.ProjectID, Path: path, PageID: &pageIDCopy,
 				RouteKind: pubmodel.RouteActive, ArtifactID: strPtr(req.ArtifactID), UpdatedAt: now,
 			}).Error; err != nil {
+				// 并发抢占同一路径：两个事务都通过上面的无占用检查（READ COMMITTED
+				// 无行锁），后提交者 CREATE 撞 (project_id, path) 唯一约束——
+				// 归一为 ErrRouteOccupied（TranslateError 未开启时是原始 23505）。
+				if errors.Is(err, gorm.ErrDuplicatedKey) || strings.Contains(err.Error(), "23505") {
+					return errRouteOccupied
+				}
 				return err
 			}
 		}

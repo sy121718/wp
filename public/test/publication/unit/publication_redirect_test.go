@@ -70,26 +70,31 @@ func TestPublicationRedirectConflict(t *testing.T) {
 
 // TestPublicationRedirectNoArtifact 空 ArtifactID 是 DTO 文档化的合法输入
 // （「ArtifactID 允许为空（重定向产物不入库）」），但当前实现无条件
-// 将 ToArtifact 绑定为空串写入 uuid 列，导致 SQLSTATE 22P02 解析失败、
-// 整个事务回滚（高严重度 bug，见报告）。本测试固化该失败行为。
+// 修复语义：ArtifactID 允许为空（重定向产物不入库，DTO 契约），
+// 回执 ToArtifact 置 NULL 而非空串 uuid；Redirect 必须成功且路由转 redirect。
 func TestPublicationRedirectNoArtifact(t *testing.T) {
 	svc := newUnitService(t)
 	seedRoute(t, svc, "/noart", pubmodel.RouteActive, strPtr(pageID), strPtr(artifactUUID))
 
-	_, err := svc.Redirect(context.Background(), &pubdto.RedirectReq{
+	res, err := svc.Redirect(context.Background(), &pubdto.RedirectReq{
 		ProjectID: projectID, OldPath: "/noart", PageID: pageID,
 	})
-	if err == nil {
-		t.Fatal("空 ArtifactID 当前实现必然失败（to_artifact_id='' 写入 uuid 列）")
+	if err != nil {
+		t.Fatalf("空 ArtifactID 重定向应成功（产物不入库），实际: %v", err)
 	}
-	t.Logf("空 ArtifactID 错误类型: %v", err)
-	// 事务必须整体回滚：路由保持 active，无回执残留。
-	route := mustRoute(t, svc, "/noart")
-	if route.RouteKind != pubmodel.RouteActive {
-		t.Fatalf("失败事务应整体回滚，路由保持 active: %+v", route)
+	// 路由已转 redirect。
+	if res.RouteKind != pubmodel.RouteRedirect {
+		t.Fatalf("路由应转 redirect: %+v", res)
 	}
-	if n := countReceipts(t, svc, "1 = 1"); n != 0 {
-		t.Fatalf("失败事务不应残留回执: %d", n)
+	// 回执已提交且 ToArtifact 为 NULL（不写空串 uuid）。
+	var receipt pubmodel.ReceiptEntity
+	if err := svc.Model().ReceiptDB(context.Background()).
+		Where("action = ?", "redirect").Order("created_at DESC").Limit(1).
+		First(&receipt).Error; err != nil {
+		t.Fatalf("查询回执失败: %v", err)
+	}
+	if receipt.ToArtifact != nil {
+		t.Fatalf("空 ArtifactID 回执 to_artifact_id 应为 NULL，实际: %v", *receipt.ToArtifact)
 	}
 }
 
