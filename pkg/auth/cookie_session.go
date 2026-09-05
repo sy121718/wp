@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync"
 
+	"go_wp/pkg/cache"
 	"go_wp/pkg/logger"
 
 	"github.com/gin-contrib/sessions"
@@ -55,9 +56,29 @@ type CookieSession struct {
 	IssuedAt  int64  `json:"issued_at"` // 会话建立时间戳（秒），用于封禁判断
 }
 
+// weakSessionSecrets 生产环境（server.mode=release）禁止使用的弱密钥集合，
+// 包含开发默认值与常见示例密钥。
+var weakSessionSecrets = map[string]struct{}{
+	defaultSessionSecret:                  {},
+	"your-session-secret-key-change-this": {},
+	"your-secret-key":                     {},
+}
+
+// weakSessionSecret 判断会话密钥是否为空或命中弱密钥集合。
+func weakSessionSecret(secret string) bool {
+	if secret == "" {
+		return true
+	}
+	_, ok := weakSessionSecrets[secret]
+	return ok
+}
+
 // Init 初始化 Cookie 会话存储。
 //
-// 从配置读取 auth.session_secret；未配置或使用开发默认值时输出 Warn。
+// 从配置读取 auth.session_secret：
+//   - M6：server.mode=release 时，密钥为空或命中弱密钥集合直接返回错误拒绝启动；debug 模式维持告警。
+//   - H3 防御：配置已启用 redis 但 cache 组件未就绪时返回错误，避免「启动正常、登录后全站 503」。
+//
 // Secure 属性按 server.mode 推导：release 时启用，避免生产环境明文 HTTP 泄露 cookie。
 func Init(v *viper.Viper) error {
 	sessionMu.Lock()
@@ -67,20 +88,38 @@ func Init(v *viper.Viper) error {
 		return nil
 	}
 
-	secret := defaultSessionSecret
-	secure := false
+	configured := ""
+	release := false
 	if v != nil {
-		if s := strings.TrimSpace(v.GetString("auth.session_secret")); s != "" {
-			secret = s
-		} else {
-			logger.Scene("init").Warn("auth.session_secret 未配置，使用开发默认值，生产环境必须修改")
-		}
-		secure = strings.EqualFold(strings.TrimSpace(v.GetString("server.mode")), "release")
-	}
-	if secret == defaultSessionSecret {
-		logger.Scene("init").Warn("auth.session_secret 使用开发默认值，生产环境必须修改")
+		configured = strings.TrimSpace(v.GetString("auth.session_secret"))
+		release = strings.EqualFold(strings.TrimSpace(v.GetString("server.mode")), "release")
 	}
 
+	secret := configured
+	if secret == "" {
+		secret = defaultSessionSecret
+	}
+
+	// M6：release 模式弱密钥 fail-fast；debug 模式仅告警，保持本地开发零配置可用。
+	if weakSessionSecret(secret) {
+		if release {
+			return errors.New("生产环境（server.mode=release）auth.session_secret 未配置或使用了弱默认值，拒绝启动：请配置高强度随机密钥")
+		}
+		if configured == "" {
+			logger.Scene("init").Warn("auth.session_secret 未配置，使用开发默认值，生产环境必须修改")
+		} else {
+			logger.Scene("init").Warn("auth.session_secret 为已知弱值，生产环境必须更换")
+		}
+	}
+
+	// H3 防御：认证会话（session.go）、封禁标记、在线心跳均走 pkg/cache（Redis）。
+	// 配置声称启用 redis 但 cache 组件未就绪（如组件编排顺序被破坏）时拒绝启动。
+	// redis.enabled=false 的完整 fail-fast 校验由组件编排层在 Init 后调用 RequireSessionStorage 完成。
+	if v != nil && v.GetBool("redis.enabled") && !cache.IsInited() {
+		return errors.New("认证会话存储不可用：cache（Redis）组件未就绪，请检查 redis 配置与组件初始化顺序")
+	}
+
+	secure := release
 	store := cookie.NewStore([]byte(secret))
 	store.Options(sessions.Options{
 		Path:     "/",

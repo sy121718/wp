@@ -85,9 +85,10 @@ func (p *DataRulePlugin) beforeQuery(db *gorm.DB) {
 		db.Statement.Omits = merged.OmitFields
 	}
 
-	// 6. 注入 WHERE 条件
+	// 6. 注入 WHERE 条件（方言决定标识符引用符与部门范围子查询写法）
+	dialect := dialectOf(db)
 	for _, group := range merged.ConditionGroups {
-		condition, ok := buildConditions(group, uc)
+		condition, ok := buildConditions(group, uc, dialect)
 		if !ok {
 			continue
 		}
@@ -95,6 +96,26 @@ func (p *DataRulePlugin) beforeQuery(db *gorm.DB) {
 			clause.Expr{SQL: "(" + condition.Query + ")", Vars: condition.Args},
 		}})
 	}
+}
+
+// dialectOf 返回当前查询所属数据库的方言名（postgres/mysql/sqlite/sqlserver...）。
+// Dialector 缺失或名称为空时回退 postgres（本项目主库），保证标识符引用符安全。
+func dialectOf(db *gorm.DB) string {
+	if db != nil && db.Dialector != nil {
+		if name := strings.TrimSpace(db.Dialector.Name()); name != "" {
+			return strings.ToLower(name)
+		}
+	}
+	return "postgres"
+}
+
+// quoteField 按方言为已白名单化的字段名选择标识符引用符：
+// mysql 使用反引号；postgres/sqlite/sqlserver 等使用标准双引号（H4：反引号在 PostgreSQL 上非法）。
+func quoteField(dialect, field string) string {
+	if dialect == "mysql" {
+		return "`" + field + "`"
+	}
+	return `"` + field + `"`
 }
 
 // getTableName 通过 TableName() 接口获取模型的数据库表名。
@@ -135,11 +156,12 @@ func mergeRules(rules []RuleConfig) RuleConfig {
 }
 
 // buildConditions 将条件组中的有效条件合并为一个参数化 SQL 条件。
-func buildConditions(group ConditionGroup, uc *UserContext) (FilterCondition, bool) {
+// dialect 决定标识符引用符与部门范围子查询的字符串拼接写法。
+func buildConditions(group ConditionGroup, uc *UserContext, dialect string) (FilterCondition, bool) {
 	queries := make([]string, 0, len(group.Conditions))
 	args := make([]any, 0, len(group.Conditions))
 	for _, item := range group.Conditions {
-		condition, ok := buildCondition(item, uc)
+		condition, ok := buildCondition(item, uc, dialect)
 		if !ok {
 			continue
 		}
@@ -161,13 +183,13 @@ func buildConditions(group ConditionGroup, uc *UserContext) (FilterCondition, bo
 }
 
 // buildCondition 将单条过滤条件转换为参数化 SQL 与参数列表。
-func buildCondition(c Condition, uc *UserContext) (FilterCondition, bool) {
+func buildCondition(c Condition, uc *UserContext, dialect string) (FilterCondition, bool) {
 	fieldName := escapeField(c.Field)
 	if fieldName == "" || !validOp(c.Op) {
 		return FilterCondition{}, false
 	}
 
-	field := "`" + fieldName + "`"
+	field := quoteField(dialect, fieldName)
 	value := strings.TrimSpace(c.Value)
 
 	if m := deptScopeRe.FindStringSubmatch(value); len(m) >= 2 {
@@ -175,10 +197,7 @@ func buildCondition(c Condition, uc *UserContext) (FilterCondition, bool) {
 		case "SELF":
 			return FilterCondition{Query: field + " = ?", Args: []any{uc.DeptID}}, true
 		case "SELF_AND_CHILDREN":
-			return FilterCondition{
-				Query: field + " IN (SELECT id FROM sys_dept WHERE ancestors LIKE ? OR id = ?)",
-				Args:  []any{fmt.Sprintf("%%%d%%", uc.DeptID), uc.DeptID},
-			}, true
+			return deptScopeCondition(dialect, field, uc)
 		case "ALL":
 			return FilterCondition{}, false
 		default:
@@ -226,6 +245,33 @@ func buildCondition(c Condition, uc *UserContext) (FilterCondition, bool) {
 	default:
 		return FilterCondition{}, false
 	}
+}
+
+// deptScopeCondition 构建「本部门及全部子部门」过滤条件（H5）。
+//
+// sys_dept.ancestors 以逗号分隔存储祖先链（如 "0,1,14"）。旧实现
+// `ancestors LIKE '%{DeptID}%'` 做的是子串匹配：部门 1 会误命中祖先链
+// "0,14,41"（"1" 是 "14"/"41" 的子串）。这里对 ancestors 首尾补逗号后整段精确匹配：
+//   - PostgreSQL（|| 拼接）：(',' || ancestors || ',') LIKE ('%,' || ? || ',%')
+//   - MySQL（CONCAT 拼接）：CONCAT(',', ancestors, ',') LIKE CONCAT('%,', ?, ',%')
+//
+// OR id = ? 保留本部门自身命中。
+func deptScopeCondition(dialect, field string, uc *UserContext) (FilterCondition, bool) {
+	deptID := fmt.Sprintf("%d", uc.DeptID)
+	if dialect == "mysql" {
+		return FilterCondition{
+			Query: field + " IN (SELECT " + quoteField(dialect, "id") + " FROM sys_dept WHERE " +
+				"CONCAT(',', " + quoteField(dialect, "ancestors") + ", ',') LIKE CONCAT('%,', ?, ',%') OR " +
+				quoteField(dialect, "id") + " = ?)",
+			Args: []any{deptID, uc.DeptID},
+		}, true
+	}
+	return FilterCondition{
+		Query: field + " IN (SELECT " + quoteField(dialect, "id") + " FROM sys_dept WHERE " +
+			"(',' || " + quoteField(dialect, "ancestors") + " || ',') LIKE ('%,' || ? || ',%') OR " +
+			quoteField(dialect, "id") + " = ?)",
+		Args: []any{deptID, uc.DeptID},
+	}, true
 }
 
 func splitConditionValues(value string) []string {

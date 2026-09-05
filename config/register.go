@@ -70,7 +70,12 @@ var runtimeComponents = []runtimeComponent{
 		Close: i18n.Close,
 	},
 	{
-		Name: "cache",
+		// H3：认证会话/封禁/心跳硬依赖 cache（Redis）。
+		// 升级为 Critical 并置于 auth 之前（InitComponents 按 slice 顺序初始化 Critical 组件）：
+		// redis.enabled=true 时先就绪 cache，auth 组件 Init 阶段的 RequireSessionStorage 才能通过；
+		// redis.enabled=false 时本组件跳过，由 auth 组件 Init 的 RequireSessionStorage fail-fast 终止启动。
+		Name:     "cache",
+		Critical: true,
 		Enabled: func(cfg *viper.Viper) bool {
 			return cfg.GetBool("redis.enabled")
 		},
@@ -81,9 +86,15 @@ var runtimeComponents = []runtimeComponent{
 	{
 		Name:     "auth",
 		Critical: true,
-		Init:     auth.Init,
-		Ready:    auth.Ready,
-		Close:    auth.Close,
+		Init: func(cfg *viper.Viper) error {
+			if err := auth.Init(cfg); err != nil {
+				return err
+			}
+			// H3 fail-fast：会话后端存储必须就绪，避免「启动正常、登录后全站 503」。
+			return auth.RequireSessionStorage()
+		},
+		Ready: auth.Ready,
+		Close: auth.Close,
 	},
 	{
 		Name: "upload",
