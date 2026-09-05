@@ -149,55 +149,47 @@ func TestArtifactRecordInvalidInputs(t *testing.T) {
 		}
 	})
 
-	t.Run("空ArtifactHash可入库", func(t *testing.T) {
-		// 行为记录/bug：artifact_hash 未校验非空，空字符串能成功入库，
-		// 破坏内容寻址语义（后续按该空 hash 可查出记录）。
+	t.Run("空ArtifactHash拒绝", func(t *testing.T) {
+		// 修复语义：service 层校验 ArtifactHash 必填，拒绝空值入库
+		// （此前空 hash 可入库，破坏内容寻址语义）。
 		req := validReq()
 		req.ArtifactHash = ""
-		res, err := svc.Record(ctx, req)
-		if err != nil {
-			t.Fatalf("空 ArtifactHash 当前行为是插入成功（bug 证据）: %v", err)
-		}
-		if res.ArtifactHash != "" {
-			t.Fatalf("入库 hash 应为空: %q", res.ArtifactHash)
+		_, err := svc.Record(ctx, req)
+		if err == nil {
+			t.Fatalf("空 ArtifactHash 应被拒绝")
 		}
 	})
 
 	t.Run("空ArtifactID报底层DB错误", func(t *testing.T) {
 		// 行为记录/bug：空 ID 走 uuid 列插入触发 PG 22P02，
-		// 错误未归一化为 ErrInvalidArtifact。
+		// 修复语义：service 层参数校验归一化为 ErrInvalidArtifact，不泄漏 PG 22P02。
 		req := validReq()
 		req.ArtifactID = ""
 		_, err := svc.Record(ctx, req)
-		requireAnyErr(t, err, "空 ArtifactID")
-		if err != nil && err.Error() == artifactenums.ErrInvalidArtifact {
-			t.Fatalf("空 ArtifactID 实际未走参数校验")
+		if err == nil || err.Error() != artifactenums.ErrInvalidArtifact {
+			t.Fatalf("空 ArtifactID 应返回 ErrInvalidArtifact，实际: %v", err)
 		}
 	})
 
-	t.Run("空PageID报底层DB错误", func(t *testing.T) {
-		// 行为记录/bug：空 PageID 在 findByHash 查询 uuid 列时即报 22P02。
+	t.Run("空PageID拒绝", func(t *testing.T) {
+		// 修复语义：空 PageID 走参数校验（此前在 findByHash 查询 uuid 列报 22P02）。
 		req := validReq()
 		req.PageID = ""
 		_, err := svc.Record(ctx, req)
-		requireAnyErr(t, err, "空 PageID")
-		if err != nil && err.Error() == artifactenums.ErrInvalidArtifact {
-			t.Fatalf("空 PageID 实际未走参数校验")
+		if err == nil || err.Error() != artifactenums.ErrInvalidArtifact {
+			t.Fatalf("空 PageID 应返回 ErrInvalidArtifact，实际: %v", err)
 		}
 	})
 
-	t.Run("零值Version可入库", func(t *testing.T) {
-		// 行为记录/bug：Version 无 min 校验，0 能入库（DTO 的 min=1 仅 HTTP 层生效）。
+	t.Run("零值Version拒绝", func(t *testing.T) {
+		// 修复语义：Version 必须 > 0（此前 0 可入库，DTO min=1 仅 HTTP 层生效）。
 		req := validReq()
 		req.ArtifactID = testArtifactID3
 		req.ArtifactHash = "hash-version-zero"
 		req.Version = 0
-		res, err := svc.Record(ctx, req)
-		if err != nil {
-			t.Fatalf("零值 Version 当前行为是插入成功（bug 证据）: %v", err)
-		}
-		if res.Version != 0 {
-			t.Fatalf("入库 Version 应为 0: %d", res.Version)
+		_, err := svc.Record(ctx, req)
+		if err == nil || err.Error() != artifactenums.ErrInvalidArtifact {
+			t.Fatalf("零值 Version 应返回 ErrInvalidArtifact，实际: %v", err)
 		}
 	})
 

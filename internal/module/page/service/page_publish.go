@@ -144,6 +144,16 @@ func (s *Service) Publish(ctx context.Context, req *pagedto.PublishReq) (res *pa
 		return nil, err
 	}
 	if s.routes != nil {
+		// 旧路径 active 行处置：SaveDraft 改草稿路径后直接发布时，
+		// 若不取消旧路径激活，会残留同页双 active 占用（旧路径继续出旧产物）。
+		if old := page.ActivePathValue(); old != "" && old != page.DraftPath {
+			if derr := s.routes.Deactivate(ctx, &pubdto.DeactivateReq{
+				ProjectID: page.ProjectID, Path: old,
+			}); derr != nil {
+				logger.Scene("publication").With("pageId", page.ID).With("oldPath", old).Error(derr, "发布前取消旧路径激活失败")
+				return nil, derr
+			}
+		}
 		if _, err = s.routes.Activate(ctx, &pubdto.ActivateReq{
 			ProjectID: page.ProjectID, Path: page.DraftPath,
 			PageID: page.ID, ArtifactID: stagedArt.ID,
@@ -383,6 +393,12 @@ func (s *Service) ensureArtifactRow(ctx context.Context, page *pagemodel.PageEnt
 
 // ensureRedirectRoute 把旧发布路径占用标记为 redirect 并落盘重定向产物。
 func (s *Service) ensureRedirectRoute(ctx context.Context, page *pagemodel.PageEntity, publishedPath string) error {
+	// 未发布页面没有旧线上路径：无法（也无需）创建 301 重定向产物。
+	// 旧实现无条件用 ActivePathValue()（未发布为空串）构造产物，
+	// 在 FS/DB 已迁移后报「路径不能为空」，造成状态分裂。
+	if page.ActivePathValue() == "" {
+		return nil
+	}
 	ra, raErr := pipeline.NewRedirectArtifact(page.ActivePathValue(), 301)
 	if raErr != nil {
 		return raErr

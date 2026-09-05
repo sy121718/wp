@@ -41,9 +41,20 @@ func (s *Service) AdminList(ctx context.Context, req *admindto.AdminListReq) (re
 		return nil, err
 	}
 
+	// 排序字段/方向白名单：禁止直接拼接请求值进 ORDER BY（SQL 注入）。
 	orderClause := "id DESC"
 	if req.SortField != "" && req.SortOrder != "" {
-		orderClause = string(req.SortField) + " " + strings.ToUpper(string(req.SortOrder))
+		field := strings.ToLower(strings.TrimSpace(req.SortField))
+		dir := strings.ToUpper(strings.TrimSpace(req.SortOrder))
+		if dir != "ASC" && dir != "DESC" {
+			return nil, errors.New("无效的排序方向")
+		}
+		switch field {
+		case "id", "username", "name", "email", "phone", "status", "create_time", "last_login_time":
+			orderClause = field + " " + dir
+		default:
+			return nil, errors.New("无效的排序字段")
+		}
 	}
 
 	list := make([]adminmodel.AdminEntity, 0, limit)

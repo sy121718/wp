@@ -7,7 +7,6 @@ import (
 
 	pubdto "go_wp/internal/module/publication/dto"
 	pubenums "go_wp/internal/module/publication/enums"
-	pubmodel "go_wp/internal/module/publication/model"
 )
 
 // normalizePath 是 service 包未导出函数，本包经公开方法（Activate/RenameReserved）
@@ -60,17 +59,16 @@ func TestPublicationNormalizePathTrailingSlash(t *testing.T) {
 			t.Fatalf("不应残留尾斜杠路径: %d", n)
 		}
 	})
-	t.Run("多尾斜杠仅裁剪一个", func(t *testing.T) {
+	t.Run("多尾斜杠连续裁剪", func(t *testing.T) {
 		svc := newUnitService(t)
 		if _, err := svc.Activate(context.Background(), &pubdto.ActivateReq{
 			ProjectID: projectID, Path: "/a/b//", PageID: pageID, ArtifactID: artifactUUID,
 		}); err != nil {
 			t.Fatalf("激活 /a/b// 失败: %v", err)
 		}
-		// strings.TrimSuffix 只移除一个尾部斜杠：/a/b// → /a/b/
-		// （多尾斜杠未完全规范化，同一逻辑 URL 可能产生不同路由行，见报告）。
-		if routeMissing(t, svc, "/a/b/") {
-			t.Fatalf("当前实现只裁剪一个尾斜杠，应落在 /a/b/")
+		// 修复语义：连续裁剪尾部斜杠，同一逻辑 URL 不产生不同路由行。
+		if routeMissing(t, svc, "/a/b") {
+			t.Fatalf("应规范化到 /a/b")
 		}
 		if n := countRoutes(t, svc, "path = ?", "/a/b//"); n != 0 {
 			t.Fatalf("不应残留双尾斜杠路径: %d", n)
@@ -92,13 +90,13 @@ func TestPublicationNormalizePathTrailingSlash(t *testing.T) {
 // TestPublicationNormalizePathAccepted 当前 normalizePath 不校验非法字符与长度，
 // 含空格/中文/保留字符/超长路径均被接受。此测试固化当前行为，
 // 缺陷判定见报告（缺少路径字符与长度校验）。
-func TestPublicationNormalizePathAccepted(t *testing.T) {
+func TestPublicationNormalizePathRejected(t *testing.T) {
+	// 修复语义：危险/非法路径一律拒绝（空格、URL 分隔符、穿越、引号、超长）。
 	cases := []struct {
 		name string
 		path string
 	}{
 		{"含内部空格", "/a b"},
-		{"含中文", "/关于我们"},
 		{"含点号路径穿越", "/../etc/passwd"},
 		{"含查询字符", "/a?b=1"},
 		{"含井号", "/a#b"},
@@ -108,18 +106,26 @@ func TestPublicationNormalizePathAccepted(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			svc := newUnitService(t)
-			route, err := svc.Activate(context.Background(), &pubdto.ActivateReq{
+			_, err := svc.Activate(context.Background(), &pubdto.ActivateReq{
 				ProjectID: projectID, Path: tc.path, PageID: pageID, ArtifactID: artifactUUID,
 			})
-			if err != nil {
-				t.Fatalf("路径 %q 应被当前实现接受: %v", tc.path, err)
-			}
-			if route.Path != tc.path {
-				t.Fatalf("路径不应被改写: got %q want %q", route.Path, tc.path)
-			}
-			if route.RouteKind != pubmodel.RouteActive {
-				t.Fatalf("应为 active: %+v", route)
+			if err == nil {
+				t.Fatalf("路径 %q 应被拒绝", tc.path)
 			}
 		})
+	}
+}
+
+// TestPublicationNormalizePathChineseAccepted 中文路径保持合法（业务允许非 ASCII）。
+func TestPublicationNormalizePathChineseAccepted(t *testing.T) {
+	svc := newUnitService(t)
+	route, err := svc.Activate(context.Background(), &pubdto.ActivateReq{
+		ProjectID: projectID, Path: "/关于我们", PageID: pageID, ArtifactID: artifactUUID,
+	})
+	if err != nil {
+		t.Fatalf("中文路径应被接受: %v", err)
+	}
+	if route.Path != "/关于我们" {
+		t.Fatalf("中文路径不应被改写: got %q", route.Path)
 	}
 }

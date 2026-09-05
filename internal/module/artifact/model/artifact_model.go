@@ -17,10 +17,12 @@ const (
 )
 
 // PageArtifactEntity 对应 page_artifacts 表：构建产物的数据库元数据投影。
+// UNIQUE(page_id, version) 对齐生产 DDL（init_builder_schema.sql:238），
+// AutoMigrate 亦生成该约束——同版本产物恰一行，替换语义的 DB 层兜底。
 type PageArtifactEntity struct {
 	ID                        string          `gorm:"column:id;type:uuid;primaryKey"`
-	PageID                    string          `gorm:"column:page_id;type:uuid;not null"`
-	Version                   int64           `gorm:"column:version;not null"`
+	PageID                    string          `gorm:"column:page_id;type:uuid;not null;uniqueIndex:uk_page_version"`
+	Version                   int64           `gorm:"column:version;not null;uniqueIndex:uk_page_version"`
 	SourceDocument            json.RawMessage `gorm:"column:source_document;type:jsonb;not null"`
 	PageDocumentSchemaVersion int             `gorm:"column:page_document_schema_version;not null"`
 	SourceHash                string          `gorm:"column:source_hash;type:text;not null"`

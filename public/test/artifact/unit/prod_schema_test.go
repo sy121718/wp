@@ -42,16 +42,13 @@ func TestArtifactRecordSameVersionDifferentHashNoConstraint(t *testing.T) {
 	reqB.ArtifactID = "aaaaaaaa-0000-0000-0000-000000000002"
 	reqB.ArtifactHash = artifactHashV2
 
-	// 行为记录/bug：当前 model 标签下不报错，插入了第二行同版本记录。
-	res, err := svc.Record(ctx, reqB)
-	if err != nil {
-		t.Fatalf("AutoMigrate 无唯一约束时应插入成功（bug 证据）: %v", err)
+	// 修复语义：model 标签已对齐生产 UNIQUE(page_id, version)，
+	// AutoMigrate 亦生成约束，同版本第二行插入必须失败。
+	if _, err := svc.Record(ctx, reqB); err == nil {
+		t.Fatalf("同版本不同 hash 插入应被唯一约束拒绝")
 	}
-	if res.ArtifactHash != artifactHashV2 {
-		t.Fatalf("第二行 hash 应为 v2: %s", res.ArtifactHash)
-	}
-	if n := artifactRowCount(t, svc); n != 2 {
-		t.Fatalf("无唯一约束下应存在 2 行同版本记录（bug 证据）: %d", n)
+	if n := artifactRowCount(t, svc); n != 1 {
+		t.Fatalf("应保持 1 行同版本记录: %d", n)
 	}
 	// 连锁影响：findByHash 用 First，同 (page, hash) 唯一性依赖约束，
 	// 同版本多行时 Detail 返回的行不确定。此处仅验证行数行为。

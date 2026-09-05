@@ -61,8 +61,9 @@ func TestPublicationDeactivateReserved(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("停用 reserved 路径: %v", err)
 	}
-	if n := countRoutes(t, svc, "path = ?", "/draft"); n != 0 {
-		t.Fatalf("当前实现会删除 reserved 行: %d", n)
+	// 修复语义：Deactivate 只取消 active 占用，不得误删 reserved（草稿占用）行。
+	if n := countRoutes(t, svc, "path = ?", "/draft"); n != 1 {
+		t.Fatalf("reserved 行应保留: %d", n)
 	}
 }
 

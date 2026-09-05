@@ -68,9 +68,9 @@ func newLocalPGDB(t *testing.T) (*gorm.DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", errPGUnavailable, err)
 	}
-	defer adminSQL.Close()
 
 	if err := adminSQL.Ping(); err != nil {
+		adminSQL.Close()
 		return nil, fmt.Errorf("%w: %v", errPGUnavailable, err)
 	}
 
@@ -89,10 +89,15 @@ func newLocalPGDB(t *testing.T) (*gorm.DB, error) {
 	}
 
 	t.Cleanup(func() {
+		// 顺序：先关测试连接 → 再 DROP schema → 最后关 admin 连接池
+		// （旧实现 defer 提前关闭 adminSQL，DROP 用已关闭的池必然失败）。
 		if sqlDB, err := db.DB(); err == nil {
 			sqlDB.Close()
 		}
-		adminDB.Exec(fmt.Sprintf("DROP SCHEMA IF EXISTS %s CASCADE", schema))
+		if err := adminDB.Exec(fmt.Sprintf("DROP SCHEMA IF EXISTS %s CASCADE", schema)).Error; err != nil {
+			t.Logf("清理测试 schema %s 失败: %v", schema, err)
+		}
+		adminSQL.Close()
 	})
 	return db, nil
 }

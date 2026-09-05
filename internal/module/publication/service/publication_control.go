@@ -165,7 +165,8 @@ func (s *Service) Deactivate(ctx context.Context, req *pubdto.DeactivateReq) (er
 		return err
 	}
 	result := s.model.RouteDB(ctx).
-		Where("project_id = ? AND path = ? AND page_id IS NOT NULL", req.ProjectID, path).
+		Where("project_id = ? AND path = ? AND page_id IS NOT NULL AND route_kind = ?",
+			req.ProjectID, path, pubmodel.RouteActive).
 		Delete(&pubmodel.RouteEntity{})
 	if result.Error != nil {
 		logger.Scene("publication").With("url", path).With("kind", "deactivate").Error(result.Error, "路由取消失败")
@@ -273,13 +274,29 @@ func markReceipt(tx *gorm.DB, id, state string, now time.Time) error {
 		Updates(map[string]any{"receipt_state": state, "completed_at": now}).Error
 }
 
-// normalizePath 规范化路径：根之外的结尾斜杠去除，保证与 page_routes 主键一致。
+// maxRoutePathLen 路由路径长度上限（超长路径会导致 FS 激活 ENAMETOOLONG 与 DB 行膨胀）。
+const maxRoutePathLen = 500
+
+// normalizePath 规范化路径：连续去除结尾斜杠（根路径除外），
+// 并拒绝长度超限、含空格/URL 分隔符/引号/控制字符、路径穿越的输入。
 func normalizePath(raw string) (string, error) {
 	if raw == "" || !strings.HasPrefix(raw, "/") {
 		return "", errors.New(pubenums.ErrRouteNotFound)
 	}
-	if raw != "/" {
+	for len(raw) > 1 && strings.HasSuffix(raw, "/") {
 		raw = strings.TrimSuffix(raw, "/")
+	}
+	if len(raw) > maxRoutePathLen {
+		return "", errors.New(pubenums.ErrRouteNotFound)
+	}
+	for _, r := range raw {
+		if r == ' ' || r == '?' || r == '#' || r == '"' || r == '\'' || r == '\\' || r < 0x20 || r == 0x7f {
+			return "", errors.New(pubenums.ErrRouteNotFound)
+		}
+	}
+	if strings.Contains(raw, "/../") || strings.Contains(raw, "/./") ||
+		strings.HasSuffix(raw, "/..") || strings.HasSuffix(raw, "/.") {
+		return "", errors.New(pubenums.ErrRouteNotFound)
 	}
 	return raw, nil
 }

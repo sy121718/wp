@@ -15,13 +15,31 @@ import (
 	"gorm.io/gorm"
 )
 
+// validateRecordReq 必填/格式校验（DTO binding 仅 HTTP 层生效，契约层直调必须自校验，
+// 否则空 ArtifactHash/PageID/Version=0 直接落库抛 PG 原始错误）。
+func validateRecordReq(req *artifactdto.RecordReq) error {
+	if req == nil {
+		return errors.New(artifactenums.ErrInvalidArtifact)
+	}
+	if strings.TrimSpace(req.ArtifactID) == "" || strings.TrimSpace(req.PageID) == "" {
+		return errors.New(artifactenums.ErrInvalidArtifact)
+	}
+	if strings.TrimSpace(req.ArtifactHash) == "" {
+		return errors.New(artifactenums.ErrInvalidArtifact)
+	}
+	if req.Version <= 0 {
+		return errors.New(artifactenums.ErrInvalidArtifact)
+	}
+	return nil
+}
+
 // Record 归档产物元数据与内容对象闭包（docs/03-pipeline.md §4）。
 // 产物字节由 pipeline.ArtifactStore 在构建期落盘，本方法只做数据库投影：
 // 元数据行 + manifest 内文件闭包写入 content_objects / page_artifact_objects，
 // 三者同一事务提交；hash 重复时按产物不可变语义幂等返回现有记录。
 func (s *Service) Record(ctx context.Context, req *artifactdto.RecordReq) (res *artifactdto.ArtifactResp, err error) {
-	if req == nil {
-		return nil, errors.New(artifactenums.ErrInvalidArtifact)
+	if err = validateRecordReq(req); err != nil {
+		return nil, err
 	}
 	if existing, exists, existsErr := s.findByHash(ctx, req.PageID, req.ArtifactHash); existsErr != nil {
 		return nil, existsErr
@@ -131,8 +149,8 @@ func (s *Service) findByHash(ctx context.Context, pageID, hash string) (e *artif
 // 重构建（编译器升级导致 hash 变化）时替换该行产物指针与对象闭包；
 // 否则新建。确定性构建模型下同版本产物的唯一正确语义。
 func (s *Service) EnsureRecord(ctx context.Context, req *artifactdto.RecordReq) (res *artifactdto.ArtifactResp, err error) {
-	if req == nil {
-		return nil, errors.New(artifactenums.ErrInvalidArtifact)
+	if err = validateRecordReq(req); err != nil {
+		return nil, err
 	}
 	if e, exists, err := s.findByHash(ctx, req.PageID, req.ArtifactHash); err != nil {
 		return nil, err

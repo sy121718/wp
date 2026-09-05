@@ -115,8 +115,9 @@ func TestPagePublishAfterDraftPathChangeLeavesOldActiveRoute(t *testing.T) {
 			news++
 		}
 	}
-	if olds != 1 || news != 1 {
-		t.Errorf("分裂证据：期望旧路径与新路径各一条 active，实际 old=%d new=%d (rows=%+v)",
+	// 修复语义：发布到新路径时旧路径 active 行必须被取消（不残留双 active）。
+	if olds != 0 || news != 1 {
+		t.Errorf("旧路径 active 应被取消、新路径恰一条 active，实际 old=%d new=%d (rows=%+v)",
 			olds, news, activeRows)
 	}
 }

@@ -15,6 +15,7 @@ func TestArtifactDefaultCreator(t *testing.T) {
 
 	t.Run("空CreatedBy回填零UUID", func(t *testing.T) {
 		req := validReq()
+		req.PageID = "bbbbbbbb-0000-0000-0000-000000000011"
 		req.CreatedBy = ""
 		res := mustRecord(t, svc, req)
 		if res.CreatedBy != zeroUUID {
@@ -24,6 +25,7 @@ func TestArtifactDefaultCreator(t *testing.T) {
 
 	t.Run("空白CreatedBy回填零UUID", func(t *testing.T) {
 		req := validReq()
+		req.PageID = "bbbbbbbb-0000-0000-0000-000000000012"
 		req.ArtifactID = testArtifactID2
 		req.ArtifactHash = "hash-blank-creator"
 		req.CreatedBy = "   "
@@ -35,6 +37,7 @@ func TestArtifactDefaultCreator(t *testing.T) {
 
 	t.Run("非空CreatedBy原样保留", func(t *testing.T) {
 		req := validReq()
+		req.PageID = "bbbbbbbb-0000-0000-0000-000000000013"
 		req.ArtifactID = testArtifactID3
 		req.ArtifactHash = "hash-keep-creator"
 		req.CreatedBy = testCreatedBy

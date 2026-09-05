@@ -11,6 +11,8 @@ import (
 	admindto "go_wp/internal/module/admin/dto"
 	adminenums "go_wp/internal/module/admin/enums"
 	adminmodel "go_wp/internal/module/admin/model"
+
+	"gorm.io/gorm"
 	"go_wp/pkg/datarule"
 )
 
@@ -141,6 +143,13 @@ func (s *Service) RuleAssignmentList(ctx context.Context, req *admindto.RuleAssi
 
 // RuleAssignmentSave 批量保存规则分配（全量替换）。
 func (s *Service) RuleAssignmentSave(ctx context.Context, req *admindto.RuleAssignmentSaveReq) error {
+	// 校验规则存在：避免产生孤儿分配记录（GetRules 对未命中 ruleMap 静默 continue）。
+	if _, err := s.drm.GetByID(ctx, req.RuleID); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return errors.New(adminenums.ErrRuleNotFound)
+		}
+		return err
+	}
 	seen := make(map[[2]uint64]struct{}, len(req.Assignments))
 	now := time.Now()
 	entities := make([]adminmodel.SysRuleAssignmentEntity, 0, len(req.Assignments))

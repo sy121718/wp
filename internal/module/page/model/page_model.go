@@ -99,7 +99,7 @@ func (m *Model) Transaction(ctx context.Context, fn func(tx *gorm.DB) error) err
 // ListAll 列出未删除页面（排除大字段 draft_document，供列表页使用）。
 // themeID 为空时列全部；非空时只列挂在该主题下的页面（020_themes.sql：主题下面才是页面）。
 func (m *Model) ListAll(ctx context.Context, themeID string) (list []PageEntity, err error) {
-	q := m.DB(ctx).Omit("draft_document")
+	q := m.DB(ctx).Omit("draft_document").Where("deleted_at IS NULL")
 	if themeID != "" {
 		q = q.Where("theme_id = ?", themeID)
 	}
