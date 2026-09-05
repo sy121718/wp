@@ -114,6 +114,19 @@ func NewStore() *Store {
 	}
 }
 
+// clone 深拷贝资产：切片字段（Tags/Variants）不共享底层数组，
+// 防止调用方修改返回值污染内部存储。
+func (a *Asset) clone() *Asset {
+	cp := *a
+	if a.Tags != nil {
+		cp.Tags = append([]string(nil), a.Tags...)
+	}
+	if a.Variants != nil {
+		cp.Variants = append([]Variant(nil), a.Variants...)
+	}
+	return &cp
+}
+
 // Upload 上传资产：基于内容哈希派生稳定 assetId；
 // duplicateOf 非空表示同哈希资产已存在（重复上传，调用方可提示"替换原文件"）。
 func (s *Store) Upload(a Asset) (assetID, duplicateOf string, err error) {
@@ -160,8 +173,7 @@ func (s *Store) Get(assetID string) (a *Asset, err error) {
 	if !ok {
 		return nil, fmt.Errorf("媒体资产不存在: %s", assetID)
 	}
-	cp := *asset
-	return &cp, nil
+	return asset.clone(), nil
 }
 
 // FindByHash 按内容哈希查找已存在资产（上传去重检测）。
@@ -173,8 +185,7 @@ func (s *Store) FindByHash(hash string) (a *Asset, found bool) {
 		return nil, false
 	}
 	asset := s.assets[ids[0]]
-	cp := *asset
-	return &cp, true
+	return asset.clone(), true
 }
 
 // Replace 版本替换：保留原 assetId 与引用关系，仅更新内容与变体；
@@ -295,8 +306,7 @@ func (s *Store) Search(f SearchFilter) (results []*Asset) {
 				continue
 			}
 		}
-		cp := *a
-		results = append(results, &cp)
+		results = append(results, a.clone())
 	}
 	sort.Slice(results, func(i, j int) bool { return results[i].ID < results[j].ID })
 	return results
