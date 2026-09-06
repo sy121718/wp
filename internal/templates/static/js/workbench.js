@@ -57,7 +57,12 @@
         src: '图片地址', alt: '替代文字', width: '宽度', height: '高度',
         inlineSvg: '内联 SVG', sticky: '滚动吸顶', stickyTop: '吸顶偏移',
         entrance: '入场动画', bgGradient: '背景渐变', bgImage: '背景图',
-        borderStyle: '边框样式', overlay: '遮罩强度', columns: '栅格列数'
+        borderStyle: '边框样式', overlay: '遮罩强度', columns: '栅格列数',
+        headers: '表头列', rows: '数据行', striped: '斑马纹', bordered: '边框',
+        question: '问题', answer: '回答', open: '默认展开', author: '作者',
+        targetDate: '目标时间', showDays: '显示天', submitLabel: '提交文字',
+        method: '提交方式', action2: '提交地址', fields: '表单字段',
+        placeholder: '占位提示', required: '必填', options: '选项', label2: '字段标签'
     };
     function controlLabel(key) { return CONTROL_LABELS[key] || key; }
 
@@ -100,7 +105,17 @@
         { type: 'core.tabs', label: '页签', hint: '多面板切换', props: { tabs: [{ label: '页签一' }, { label: '页签二' }] } },
         { type: 'core.accordion', label: '手风琴', hint: '折叠展开', props: { items: [{ title: '折叠项一', open: true }, { title: '折叠项二' }] } },
         { type: 'core.marquee', label: '跑马灯', hint: '无缝滚动内容', props: { speed: 12, direction: 'left', gap: '24px' } },
-        { type: 'core.counter', label: '计数器', hint: '数字统计', props: { start: 0, end: 100, suffix: '+' } }
+        { type: 'core.counter', label: '计数器', hint: '数字统计', props: { start: 0, end: 100, suffix: '+' } },
+        { type: 'core.table', label: '表格', hint: '数据表格', props: { caption: '数据表格', headers: ['列一', '列二'], rows: [['A', 'B'], ['C', 'D']], striped: true, bordered: true } },
+        { type: 'core.card', label: '卡片', hint: '标题+正文+按钮', props: { title: '卡片标题', text: '卡片正文内容。', buttonText: '了解更多', buttonLink: '/' } },
+        { type: 'core.faq', label: '常见问题', hint: '问答折叠', props: { items: [{ question: '常见问题一？', answer: '这里是回答内容。', open: true }, { question: '常见问题二？', answer: '这里是回答内容。' }] } },
+        { type: 'core.quote', label: '引用', hint: '引用块', props: { text: '引用一段有力量的话。', author: '作者名', align: 'left' } },
+        { type: 'core.countdown', label: '倒计时', hint: '营销倒计时', props: { targetDate: '2030-01-01 00:00:00', showDays: true } },
+        { type: 'core.icon', label: '图标', hint: '通用 SVG 图标', props: { iconName: 'star', size: '24px' } },
+        { type: 'core.badge', label: '徽章', hint: '文本徽章', props: { text: '新品', variant: 'solid' } },
+        { type: 'core.progress', label: '进度条', hint: '数据进度', props: { value: 60, max: 100, label: '完成度' } },
+        { type: 'core.rating', label: '评分', hint: '星形评分', props: { value: 4.5, max: 5 } },
+        { type: 'core.form', label: '表单', hint: '联系/订阅表单', props: { fields: [{ type: 'text', label: '姓名', name: 'name', required: true }, { type: 'email', label: '邮箱', name: 'email', required: true }], submitLabel: '提交' } }
     ];
 
     /**
@@ -110,7 +125,7 @@
     /** 组件库分组：基础组件大分类平铺（细分类留给进阶组件，当前无进阶内容）；
      *  「区块」概念归全局块（页眉/页脚/区块）。 */
     var paletteGroups = [
-        { key: 'basic', title: '基础组件', types: ['core.container', 'core.heading', 'core.text', 'core.button', 'core.image', 'core.gallery', 'core.divider', 'core.spacer', 'core.slider', 'core.list', 'core.infobox', 'core.social_buttons', 'core.video', 'core.tabs', 'core.accordion', 'core.marquee', 'core.counter'] }
+        { key: 'basic', title: '基础组件', types: ['core.container', 'core.heading', 'core.text', 'core.button', 'core.image', 'core.gallery', 'core.divider', 'core.spacer', 'core.slider', 'core.list', 'core.infobox', 'core.social_buttons', 'core.video', 'core.tabs', 'core.accordion', 'core.marquee', 'core.counter', 'core.table', 'core.card', 'core.faq', 'core.quote', 'core.countdown', 'core.icon', 'core.badge', 'core.progress', 'core.rating', 'core.form'] }
     ];
 
     /** 区块预设（预组合的全局 section，一键插入整个容器）。

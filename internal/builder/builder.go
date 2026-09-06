@@ -55,6 +55,27 @@ import (
 	_ "go_wp/internal/builder/components/marquee"
 	// core.counter：数字计数器（滚动动画增强，WD wd_counter）。
 	_ "go_wp/internal/builder/components/counter"
+	// 组件库补齐（对标 GrapesJS 组件生态）：
+	// core.table：表格（表头/数据行/斑马纹/边框）。
+	_ "go_wp/internal/builder/components/table"
+	// core.card：卡片（标题/正文/图片/按钮）。
+	_ "go_wp/internal/builder/components/card"
+	// core.faq：常见问题（details/summary 原生折叠）。
+	_ "go_wp/internal/builder/components/faq"
+	// core.quote：引用块（blockquote/cite）。
+	_ "go_wp/internal/builder/components/quote"
+	// core.countdown：倒计时（客户端增强，构建期零 time.Now）。
+	_ "go_wp/internal/builder/components/countdown"
+	// core.icon：通用 SVG 图标（白名单）。
+	_ "go_wp/internal/builder/components/icon"
+	// core.badge：徽章（solid/outline/soft 三态）。
+	_ "go_wp/internal/builder/components/badge"
+	// core.progress：进度条（role=progressbar）。
+	_ "go_wp/internal/builder/components/progress"
+	// core.rating：评分（星形填充，支持半星）。
+	_ "go_wp/internal/builder/components/rating"
+	// core.form：表单（字段白名单/提交）。
+	_ "go_wp/internal/builder/components/form"
 	"go_wp/internal/builder/core"
 )
 

@@ -18,20 +18,30 @@ import (
 	"github.com/CloudyKit/jet/v6"
 
 	accordionPkg "go_wp/internal/builder/components/accordion"
+	badgePkg "go_wp/internal/builder/components/badge"
 	buttonPkg "go_wp/internal/builder/components/button"
+	cardPkg "go_wp/internal/builder/components/card"
 	containerPkg "go_wp/internal/builder/components/container"
+	countdownPkg "go_wp/internal/builder/components/countdown"
 	counterPkg "go_wp/internal/builder/components/counter"
 	dividerPkg "go_wp/internal/builder/components/divider"
+	faqPkg "go_wp/internal/builder/components/faq"
+	formPkg "go_wp/internal/builder/components/form"
 	galleryPkg "go_wp/internal/builder/components/gallery"
 	globalrefPkg "go_wp/internal/builder/components/globalref"
 	headingPkg "go_wp/internal/builder/components/heading"
+	iconPkg "go_wp/internal/builder/components/icon"
 	imagePkg "go_wp/internal/builder/components/image"
 	infoboxPkg "go_wp/internal/builder/components/infobox"
 	listPkg "go_wp/internal/builder/components/list"
 	marqueePkg "go_wp/internal/builder/components/marquee"
+	progressPkg "go_wp/internal/builder/components/progress"
+	quotePkg "go_wp/internal/builder/components/quote"
+	ratingPkg "go_wp/internal/builder/components/rating"
 	sliderPkg "go_wp/internal/builder/components/slider"
 	socialbuttonsPkg "go_wp/internal/builder/components/socialbuttons"
 	spacerPkg "go_wp/internal/builder/components/spacer"
+	tablePkg "go_wp/internal/builder/components/table"
 	tabsPkg "go_wp/internal/builder/components/tabs"
 	textPkg "go_wp/internal/builder/components/text"
 	videoPkg "go_wp/internal/builder/components/video"
@@ -105,6 +115,26 @@ func nodeViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeV
 		return marqueeViewOf(node, topLevel, ctx)
 	case globalrefPkg.Type:
 		return globalrefViewOf(node, topLevel, ctx)
+	case tablePkg.Type:
+		return tableViewOf(node, topLevel, ctx)
+	case cardPkg.Type:
+		return cardViewOf(node, topLevel, ctx)
+	case faqPkg.Type:
+		return faqViewOf(node, topLevel, ctx)
+	case quotePkg.Type:
+		return quoteViewOf(node, topLevel, ctx)
+	case countdownPkg.Type:
+		return countdownViewOf(node, topLevel, ctx)
+	case iconPkg.Type:
+		return iconViewOf(node, topLevel, ctx)
+	case badgePkg.Type:
+		return badgeViewOf(node, topLevel, ctx)
+	case progressPkg.Type:
+		return progressViewOf(node, topLevel, ctx)
+	case ratingPkg.Type:
+		return ratingViewOf(node, topLevel, ctx)
+	case formPkg.Type:
+		return formViewOf(node, topLevel, ctx)
 	default:
 		// 插件组件（plugin.{id}.{name}）：经 RenderContext.Plugin 取规格渲染。
 		if strings.HasPrefix(node.Type, pluginTypePrefix) {
@@ -376,6 +406,190 @@ func spacerViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nod
 		Props:    p,
 		V:        view,
 	}, nil
+}
+
+// 以下 10 个 ViewOf 为新组件库补齐（对标 GrapesJS 组件生态），
+// 均为叶子原子组件（core.Atom 基座），模式与 spacer/divider 一致：
+// props 解码 → Advanced 编译 → 组件 CSS → BuildView → nodeView。
+
+func tableViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeView, error) {
+	var p tablePkg.Props
+	if len(node.Props) > 0 {
+		if err := json.Unmarshal(node.Props, &p); err != nil {
+			return nil, fmt.Errorf("节点 %s props 反序列化失败: %w", node.ID, err)
+		}
+	}
+	var extraClasses []string
+	var customID string
+	if adv := core.AdvancedOf(&p); adv != nil {
+		extraClasses, customID = core.CompileAdvanced(node.ID, adv, ctx.CSS)
+	}
+	classes := append([]string{core.NodeClass(node.ID)}, extraClasses...)
+	tablePkg.CompileCSS(node.ID, &p, ctx.CSS)
+	return &nodeView{Type: tablePkg.Type, Template: "table", NodeID: node.ID,
+		Classes: strings.Join(classes, " "), CustomID: customID, TopLevel: topLevel, Props: p, V: tablePkg.BuildView(&p)}, nil
+}
+
+func cardViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeView, error) {
+	var p cardPkg.Props
+	if len(node.Props) > 0 {
+		if err := json.Unmarshal(node.Props, &p); err != nil {
+			return nil, fmt.Errorf("节点 %s props 反序列化失败: %w", node.ID, err)
+		}
+	}
+	var extraClasses []string
+	var customID string
+	if adv := core.AdvancedOf(&p); adv != nil {
+		extraClasses, customID = core.CompileAdvanced(node.ID, adv, ctx.CSS)
+	}
+	classes := append([]string{core.NodeClass(node.ID)}, extraClasses...)
+	cardPkg.CompileCSS(node.ID, &p, ctx.CSS)
+	return &nodeView{Type: cardPkg.Type, Template: "card", NodeID: node.ID,
+		Classes: strings.Join(classes, " "), CustomID: customID, TopLevel: topLevel, Props: p, V: cardPkg.BuildView(&p)}, nil
+}
+
+func faqViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeView, error) {
+	var p faqPkg.Props
+	if len(node.Props) > 0 {
+		if err := json.Unmarshal(node.Props, &p); err != nil {
+			return nil, fmt.Errorf("节点 %s props 反序列化失败: %w", node.ID, err)
+		}
+	}
+	var extraClasses []string
+	var customID string
+	if adv := core.AdvancedOf(&p); adv != nil {
+		extraClasses, customID = core.CompileAdvanced(node.ID, adv, ctx.CSS)
+	}
+	classes := append([]string{core.NodeClass(node.ID)}, extraClasses...)
+	faqPkg.CompileCSS(node.ID, &p, ctx.CSS)
+	return &nodeView{Type: faqPkg.Type, Template: "faq", NodeID: node.ID,
+		Classes: strings.Join(classes, " "), CustomID: customID, TopLevel: topLevel, Props: p, V: faqPkg.BuildView(&p)}, nil
+}
+
+func quoteViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeView, error) {
+	var p quotePkg.Props
+	if len(node.Props) > 0 {
+		if err := json.Unmarshal(node.Props, &p); err != nil {
+			return nil, fmt.Errorf("节点 %s props 反序列化失败: %w", node.ID, err)
+		}
+	}
+	var extraClasses []string
+	var customID string
+	if adv := core.AdvancedOf(&p); adv != nil {
+		extraClasses, customID = core.CompileAdvanced(node.ID, adv, ctx.CSS)
+	}
+	classes := append([]string{core.NodeClass(node.ID)}, extraClasses...)
+	quotePkg.CompileCSS(node.ID, &p, ctx.CSS)
+	return &nodeView{Type: quotePkg.Type, Template: "quote", NodeID: node.ID,
+		Classes: strings.Join(classes, " "), CustomID: customID, TopLevel: topLevel, Props: p, V: quotePkg.BuildView(&p)}, nil
+}
+
+func countdownViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeView, error) {
+	var p countdownPkg.Props
+	if len(node.Props) > 0 {
+		if err := json.Unmarshal(node.Props, &p); err != nil {
+			return nil, fmt.Errorf("节点 %s props 反序列化失败: %w", node.ID, err)
+		}
+	}
+	var extraClasses []string
+	var customID string
+	if adv := core.AdvancedOf(&p); adv != nil {
+		extraClasses, customID = core.CompileAdvanced(node.ID, adv, ctx.CSS)
+	}
+	classes := append([]string{core.NodeClass(node.ID)}, extraClasses...)
+	countdownPkg.CompileCSS(node.ID, &p, ctx.CSS)
+	return &nodeView{Type: countdownPkg.Type, Template: "countdown", NodeID: node.ID,
+		Classes: strings.Join(classes, " "), CustomID: customID, TopLevel: topLevel, Props: p, V: countdownPkg.BuildView(&p)}, nil
+}
+
+func iconViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeView, error) {
+	var p iconPkg.Props
+	if len(node.Props) > 0 {
+		if err := json.Unmarshal(node.Props, &p); err != nil {
+			return nil, fmt.Errorf("节点 %s props 反序列化失败: %w", node.ID, err)
+		}
+	}
+	var extraClasses []string
+	var customID string
+	if adv := core.AdvancedOf(&p); adv != nil {
+		extraClasses, customID = core.CompileAdvanced(node.ID, adv, ctx.CSS)
+	}
+	classes := append([]string{core.NodeClass(node.ID)}, extraClasses...)
+	iconPkg.CompileCSS(node.ID, &p, ctx.CSS)
+	return &nodeView{Type: iconPkg.Type, Template: "icon", NodeID: node.ID,
+		Classes: strings.Join(classes, " "), CustomID: customID, TopLevel: topLevel, Props: p, V: iconPkg.BuildView(&p)}, nil
+}
+
+func badgeViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeView, error) {
+	var p badgePkg.Props
+	if len(node.Props) > 0 {
+		if err := json.Unmarshal(node.Props, &p); err != nil {
+			return nil, fmt.Errorf("节点 %s props 反序列化失败: %w", node.ID, err)
+		}
+	}
+	var extraClasses []string
+	var customID string
+	if adv := core.AdvancedOf(&p); adv != nil {
+		extraClasses, customID = core.CompileAdvanced(node.ID, adv, ctx.CSS)
+	}
+	classes := append([]string{core.NodeClass(node.ID)}, extraClasses...)
+	badgePkg.CompileCSS(node.ID, &p, ctx.CSS)
+	return &nodeView{Type: badgePkg.Type, Template: "badge", NodeID: node.ID,
+		Classes: strings.Join(classes, " "), CustomID: customID, TopLevel: topLevel, Props: p, V: badgePkg.BuildView(&p)}, nil
+}
+
+func progressViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeView, error) {
+	var p progressPkg.Props
+	if len(node.Props) > 0 {
+		if err := json.Unmarshal(node.Props, &p); err != nil {
+			return nil, fmt.Errorf("节点 %s props 反序列化失败: %w", node.ID, err)
+		}
+	}
+	var extraClasses []string
+	var customID string
+	if adv := core.AdvancedOf(&p); adv != nil {
+		extraClasses, customID = core.CompileAdvanced(node.ID, adv, ctx.CSS)
+	}
+	classes := append([]string{core.NodeClass(node.ID)}, extraClasses...)
+	progressPkg.CompileCSS(node.ID, &p, ctx.CSS)
+	return &nodeView{Type: progressPkg.Type, Template: "progress", NodeID: node.ID,
+		Classes: strings.Join(classes, " "), CustomID: customID, TopLevel: topLevel, Props: p, V: progressPkg.BuildView(&p)}, nil
+}
+
+func ratingViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeView, error) {
+	var p ratingPkg.Props
+	if len(node.Props) > 0 {
+		if err := json.Unmarshal(node.Props, &p); err != nil {
+			return nil, fmt.Errorf("节点 %s props 反序列化失败: %w", node.ID, err)
+		}
+	}
+	var extraClasses []string
+	var customID string
+	if adv := core.AdvancedOf(&p); adv != nil {
+		extraClasses, customID = core.CompileAdvanced(node.ID, adv, ctx.CSS)
+	}
+	classes := append([]string{core.NodeClass(node.ID)}, extraClasses...)
+	ratingPkg.CompileCSS(node.ID, &p, ctx.CSS)
+	return &nodeView{Type: ratingPkg.Type, Template: "rating", NodeID: node.ID,
+		Classes: strings.Join(classes, " "), CustomID: customID, TopLevel: topLevel, Props: p, V: ratingPkg.BuildView(&p)}, nil
+}
+
+func formViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeView, error) {
+	var p formPkg.Props
+	if len(node.Props) > 0 {
+		if err := json.Unmarshal(node.Props, &p); err != nil {
+			return nil, fmt.Errorf("节点 %s props 反序列化失败: %w", node.ID, err)
+		}
+	}
+	var extraClasses []string
+	var customID string
+	if adv := core.AdvancedOf(&p); adv != nil {
+		extraClasses, customID = core.CompileAdvanced(node.ID, adv, ctx.CSS)
+	}
+	classes := append([]string{core.NodeClass(node.ID)}, extraClasses...)
+	formPkg.CompileCSS(node.ID, &p, ctx.CSS)
+	return &nodeView{Type: formPkg.Type, Template: "form", NodeID: node.ID,
+		Classes: strings.Join(classes, " "), CustomID: customID, TopLevel: topLevel, Props: p, V: formPkg.BuildView(&p)}, nil
 }
 
 // listViewOf 转换 list 节点（对应 Component.Render 流程，无 Advanced 层）。

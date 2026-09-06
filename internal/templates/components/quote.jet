@@ -1,0 +1,1 @@
+<blockquote class="{{ .Classes }}"{{ if .CustomID }} id="{{ .CustomID }}"{{ end }}><p>{{ .V.Text }}</p>{{ if .V.HasAuthor }}<cite>{{ if .V.HasSource }}<a href="{{ .V.Source }}">{{ .V.Author }}</a>{{ else }}{{ .V.Author }}{{ end }}</cite>{{ end }}</blockquote>

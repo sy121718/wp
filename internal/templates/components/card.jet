@@ -1,0 +1,1 @@
+<article class="{{ .Classes }}"{{ if .CustomID }} id="{{ .CustomID }}"{{ end }}>{{ if .V.HasImage }}<img src="{{ .V.ImageSrc }}" alt="{{ .V.Title }}">{{ end }}<h3>{{ .V.Title }}</h3><p>{{ .V.Text }}</p>{{ if .V.HasButton }}<a class="wp-card-btn" href="{{ .V.ButtonLink }}">{{ .V.ButtonText }}</a>{{ end }}</article>

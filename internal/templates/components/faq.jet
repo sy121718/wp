@@ -1,0 +1,1 @@
+<div class="{{ .Classes }}"{{ if .CustomID }} id="{{ .CustomID }}"{{ end }}>{{ range $item := .V.Items }}<details class="wp-faq-item"{{ if $item.Open }} open{{ end }}><summary>{{ $item.Question }}</summary><div class="wp-faq-answer">{{ $item.Answer }}</div></details>{{ end }}</div>

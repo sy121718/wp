@@ -1,0 +1,1 @@
+<span class="{{ .Classes }} wp-badge"{{ if .CustomID }} id="{{ .CustomID }}"{{ end }}>{{ .V.Text }}</span>

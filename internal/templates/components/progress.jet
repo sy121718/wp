@@ -1,0 +1,1 @@
+<div class="{{ .Classes }} wp-progress" role="progressbar" aria-valuenow="{{ .V.ValueNow }}" aria-valuemax="{{ .V.ValueMax }}" aria-valuemin="0"{{ if .CustomID }} id="{{ .CustomID }}"{{ end }}>{{ if .V.HasLabel }}<span class="wp-progress-label">{{ .V.Label }}</span>{{ end }}<div class="wp-progress-track"><div class="wp-progress-bar"></div></div></div>
