@@ -143,9 +143,14 @@ func TestPublicationActivateNilRequest(t *testing.T) {
 	containsErr(t, err, pubenums.ErrInvalidParam)
 }
 
-// TestPublicationActivateConcurrentSamePath 两个页面并发激活同一路径：
-// 必须恰好一个成功；失败者若在唯一约束上竞争，错误是原始 DB 主键冲突
-// 而非 ErrRouteOccupied（并发错误映射缺陷，见报告）。
+// TestPublicationActivateConcurrentSamePath 多个不同页面并发激活同一路径：
+// 必须恰好一个成功；其余失败者拿到 ErrRouteOccupied（或唯一约束竞争时的
+// 原始 DB 错误，见下方日志统计）。
+//
+// 注意：所有 goroutine 必须使用互不相同的 pageID。旧实现里 goroutine 1 用
+// otherPageID[:len-2]+"01" 恰好拼回 pageID（……0001），与 goroutine 0 同归属，
+// 触发的是「同一页面幂等激活」（Activate 对同 page 重复激活放行，可全部成功），
+// 而非本测试要验证的「跨页面路径抢占」——因此断言会随机出现 2 成功。
 func TestPublicationActivateConcurrentSamePath(t *testing.T) {
 	svc := newUnitService(t)
 	ctx := context.Background()
@@ -157,11 +162,8 @@ func TestPublicationActivateConcurrentSamePath(t *testing.T) {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
-			// 每个 goroutine 用不同 page（并发抢占同一路径的归属者不同）。
-			pID := pageID
-			if idx > 0 {
-				pID = otherPageID[:len(otherPageID)-2] + fmt.Sprintf("%02d", idx)
-			}
+			// 每个 goroutine 用互不相同的 page（真实「不同页面抢占同一路径」竞争）。
+			pID := fmt.Sprintf("dddddddd-0000-0000-0000-0000000000%02d", idx+1)
 			_, err := svc.Activate(ctx, &pubdto.ActivateReq{
 				ProjectID: projectID, Path: "/race", PageID: pID, ArtifactID: artifactUUID,
 			})
