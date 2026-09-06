@@ -21,6 +21,7 @@ import (
 	presentationhttp "go_wp/internal/module/presentation/inbound/http"
 	projecthttp "go_wp/internal/module/project/inbound/http"
 	pubhttp "go_wp/internal/module/publication/inbound/http"
+	runtimefragment "go_wp/internal/module/runtimefragment"
 	"go_wp/internal/pipeline"
 	"go_wp/internal/templates"
 	"go_wp/pkg/casbin"
@@ -143,6 +144,9 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 
 	// 页面路由（编辑器外壳依赖 page/block/plugin 契约，置于 API 装配之后）
 	dashboardhttp.SetupDashboardRoutes(router, pageService, projectService, blockSvc, pluginSvc, collectionResolver)
+
+	// 运行时片段端点（0-D，公开路由：capability 白名单 + 认证策略在 handler 内）。
+	runtimefragment.SetupFragmentRoutes(router)
 
 	// 未匹配路由返回 404
 	router.NoRoute(func(c *gin.Context) {
