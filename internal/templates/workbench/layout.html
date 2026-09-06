@@ -1,7 +1,7 @@
 {* workbench/layout.html — 可视化编辑器四区布局外壳（docs/03-A §1） *}
 {* 独立于后台 admin 布局：顶栏 / 左检查器 / 画布 / 大纲树 / 底栏 *}
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="light">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -10,7 +10,7 @@
        渲染数据由 withCSRF 注入，缺 key 时输出空串（chain 索引安全），JS 兜底 sessionStorage。 *}
     <meta name="csrf-token" content="{{ .["csrf_token"] }}">
     <link rel="stylesheet" href="/static/css/theme.css">
-    <link rel="stylesheet" href="/static/css/workbench.css?v=20260828l">
+    <link rel="stylesheet" href="/static/css/workbench.css?v=20260906b">
 </head>
 <body class="wb-body">
 

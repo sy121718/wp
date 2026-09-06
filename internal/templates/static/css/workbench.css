@@ -1,5 +1,11 @@
 /* workbench.css — 可视化编辑器四区布局样式（docs/03-A §1）。
-   变量沿用后台 theme.css 的设计 Token。 */
+   变量沿用后台 theme.css 的设计 Token（颜色在 [data-theme] 下，
+   页面 <html data-theme="light"> 生效）。 */
+
+/* 编辑器专属 token（theme.css 未覆盖，补在此处） */
+:root {
+    --c-canvas-bg: #ececec; /* 画布工作区背景（中性灰，非主题色） */
+}
 
 .wb-body { display: flex; flex-direction: column; height: 100vh; margin: 0; overflow: hidden; }
 
@@ -12,7 +18,7 @@
 .wb-topbar-left, .wb-topbar-right { display: flex; align-items: center; gap: 8px; }
 .wb-topbar-center { display: flex; gap: 4px; }
 .wb-brand { font-weight: 600; letter-spacing: -0.2px; }
-.wb-brand span { color: var(--c-primary, #2563eb); }
+.wb-brand span { color: var(--c-primary, #3d444f); }
 .wb-status { color: var(--c-text-mute, #6b7280); font-size: 12px; margin-right: 4px; }
 
 /* ===== 按钮 ===== */
@@ -22,10 +28,10 @@
     text-decoration: none; display: inline-flex; align-items: center;
 }
 .wb-btn:disabled { opacity: .5; cursor: not-allowed; }
-.wb-btn-primary { background: var(--c-primary, #2563eb); color: #fff; }
+.wb-btn-primary { background: var(--c-primary, #3d444f); color: #fff; }
 .wb-btn-secondary { border-color: var(--c-border, #e5e7eb); background: var(--c-surface, #fff); }
 .wb-btn-ghost:hover { background: rgba(0,0,0,.05); }
-.wb-chip.is-active { border-color: var(--c-primary, #2563eb); color: var(--c-primary, #2563eb); }
+.wb-chip.is-active { border-color: var(--c-primary, #3d444f); color: var(--c-primary, #3d444f); }
 .wb-icon-btn { border: none; background: none; cursor: pointer; font-size: 15px; }
 
 /* ===== 主区三栏 ===== */
@@ -44,7 +50,7 @@
     flex: 1; padding: 6px 0; border: none; background: none; cursor: pointer;
     border-bottom: 2px solid transparent; font-size: 13px;
 }
-.wb-tabs button.is-active { border-color: var(--c-primary, #2563eb); color: var(--c-primary, #2563eb); }
+.wb-tabs button.is-active { border-color: var(--c-primary, #3d444f); color: var(--c-primary, #3d444f); }
 .wb-inspector-body { display: flex; flex-direction: column; gap: 10px; }
 .wb-palette { padding-bottom: 10px; border-bottom: 1px solid var(--c-border, #e5e7eb); }
 .wb-palette-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
@@ -55,7 +61,7 @@
     min-height: 54px; padding: 7px 8px; text-align: left; cursor: pointer;
     border: 1px solid var(--c-border, #e5e7eb); border-radius: 7px; background: var(--c-surface, #fff);
 }
-.wb-palette-item:hover { border-color: var(--c-primary, #2563eb); background: rgba(37,99,235,.05); }
+.wb-palette-item:hover { border-color: var(--c-primary, #3d444f); background: var(--c-primary-bg, #eceef1); }
 .wb-palette-item strong, .wb-palette-item span { display: block; }
 .wb-palette-item strong { font-size: 13px; }
 .wb-palette-item span { margin-top: 2px; color: var(--c-text-mute, #6b7280); font-size: 11px; }
@@ -91,17 +97,17 @@
     display: flex; align-items: center; gap: 6px; padding: 4px 6px;
     border-radius: 6px; cursor: pointer; user-select: none;
 }
-.wb-node:hover { background: rgba(37,99,235,.08); }
-.wb-node.is-selected { background: rgba(37,99,235,.14); outline: 1px solid var(--c-primary, #2563eb); }
-.wb-node.is-drop-target { background: rgba(37,99,235,.11); position: relative; }
+.wb-node:hover { background: var(--c-bg-hover, #ececec); }
+.wb-node.is-selected { background: var(--c-primary-bg, #eceef1); outline: 1px solid var(--c-primary, #3d444f); }
+.wb-node.is-drop-target { background: var(--c-primary-bg, #eceef1); position: relative; }
 .wb-node.is-drop-before::before, .wb-node.is-drop-after::after {
     content: ''; position: absolute; left: 4px; right: 4px; height: 2px;
-    background: var(--c-primary, #2563eb); border-radius: 2px;
+    background: var(--c-primary, #3d444f); border-radius: 2px;
 }
 .wb-node.is-drop-before::before { top: -2px; }
 .wb-node.is-drop-after::after { bottom: -2px; }
-.wb-node.is-drop-inside { outline: 1px dashed var(--c-primary, #2563eb); }
-.wb-node.is-drop-inside::after { content: '放入容器'; margin-left: auto; color: var(--c-primary, #2563eb); font-size: 10px; }
+.wb-node.is-drop-inside { outline: 1px dashed var(--c-primary, #3d444f); }
+.wb-node.is-drop-inside::after { content: '放入容器'; margin-left: auto; color: var(--c-primary, #3d444f); font-size: 10px; }
 .wb-node .wb-node-type { color: var(--c-text-mute, #6b7280); font-size: 11px; }
 .wb-node .wb-node-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wb-caret { border: none; background: none; cursor: pointer; width: 16px; text-align: center; }
@@ -132,7 +138,7 @@
     border: none; background: none; cursor: pointer; font-size: 12px; line-height: 1;
     padding: 2px 4px; border-radius: 4px; color: var(--c-text-mute, #6b7280);
 }
-.wb-node-action:hover { background: rgba(37,99,235,.12); color: var(--c-primary, #2563eb); }
+.wb-node-action:hover { background: var(--c-primary-bg, #eceef1); color: var(--c-primary, #3d444f); }
 .wb-tree li.is-collapsed > ul { display: none; }
 /* 大纲树在窄屏下不被画布挤压：允许自身横向滚动 */
 .wb-navigator { overflow: hidden; }
@@ -189,7 +195,7 @@
     border: 1px solid var(--c-border, #e5e7eb); border-radius: 8px; cursor: pointer;
     background: var(--c-surface, #fff); padding: 6px; text-align: left;
 }
-.wb-media-cell:hover { border-color: var(--c-primary, #2563eb); box-shadow: 0 2px 8px rgba(37,99,235,.15); }
+.wb-media-cell:hover { border-color: var(--c-primary, #3d444f); box-shadow: 0 2px 8px var(--c-primary-bg, #eceef1); }
 .wb-media-cell img { width: 100%; height: 84px; object-fit: cover; border-radius: 5px; display: block; background: #f3f4f6; }
 .wb-media-cell span { display: block; margin-top: 4px; font-size: 11px; color: var(--c-text-mute, #6b7280); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wb-field { position: relative; }
@@ -201,7 +207,7 @@
 /* ===== 组件库插入位置提示 ===== */
 .wb-library-hint {
     margin: 0; padding: 6px 10px; font-size: 12px; border-radius: 6px;
-    background: rgba(37,99,235,.08); color: var(--c-primary, #2563eb);
+    background: var(--c-primary-bg, #eceef1); color: var(--c-primary, #3d444f);
 }
 
 
@@ -230,7 +236,7 @@
     grid-column: 1 / -1; display: block; text-align: left; cursor: pointer;
     border: 1px solid var(--c-border, #e5e7eb); border-radius: 8px; background: var(--c-surface, #fff); padding: 10px 12px;
 }
-.wb-block-card:hover { border-color: var(--c-primary, #2563eb); background: rgba(37,99,235,.05); }
+.wb-block-card:hover { border-color: var(--c-primary, #3d444f); background: var(--c-primary-bg, #eceef1); }
 .wb-block-card strong { display: block; font-size: 13px; }
 .wb-block-card span { display: block; margin-top: 2px; color: var(--c-text-mute, #6b7280); font-size: 11px; }
 
@@ -245,8 +251,8 @@
     border-radius: 6px; cursor: pointer; font-size: 11px; padding: 2px 8px;
     color: var(--c-text-mute, #6b7280);
 }
-.wb-dev-btn.is-active { border-color: var(--c-primary, #2563eb); color: var(--c-primary, #2563eb); }
-.wb-dev-btn.has-val { font-weight: 700; color: var(--c-primary, #2563eb); }
+.wb-dev-btn.is-active { border-color: var(--c-primary, #3d444f); color: var(--c-primary, #3d444f); }
+.wb-dev-btn.has-val { font-weight: 700; color: var(--c-primary, #3d444f); }
 
 
 /* ===== 四向维度控件 ===== */
@@ -258,12 +264,12 @@
     width: 100%; box-sizing: border-box; padding: 6px 4px; font-size: 12px;
     border: 1px solid var(--c-border, #e5e7eb); border-radius: 6px; text-align: center;
 }
-.wb-dims-input:focus { border-color: var(--c-primary, #2563eb); outline: none; }
+.wb-dims-input:focus { border-color: var(--c-primary, #3d444f); outline: none; }
 .wb-dims-link {
     border: 1px solid var(--c-border, #e5e7eb); background: var(--c-surface, #fff);
     border-radius: 6px; cursor: pointer; font-size: 12px; padding: 5px 6px;
 }
-.wb-dims-link.is-linked { background: rgba(37,99,235,.1); border-color: var(--c-primary, #2563eb); }
+.wb-dims-link.is-linked { background: var(--c-primary-bg, #eceef1); border-color: var(--c-primary, #3d444f); }
 
 
 /* ===== 分段按钮组(短枚举) ===== */
@@ -276,9 +282,9 @@
     border-radius: 6px; cursor: pointer; font-size: 12px; padding: 5px 10px;
     color: inherit; transition: all .12s ease;
 }
-.wb-seg-btn:hover { border-color: var(--c-primary, #2563eb); color: var(--c-primary, #2563eb); }
+.wb-seg-btn:hover { border-color: var(--c-primary, #3d444f); color: var(--c-primary, #3d444f); }
 .wb-seg-btn.is-active {
-    background: var(--c-primary, #2563eb); color: #fff; border-color: var(--c-primary, #2563eb);
+    background: var(--c-primary, #3d444f); color: #fff; border-color: var(--c-primary, #3d444f);
 }
 
 
@@ -349,7 +355,7 @@
     display: flex; align-items: center; justify-content: center;
 }
 .wb-rail-btn:hover { background: var(--c-bg-hover, #f3f4f6); }
-.wb-rail-btn.is-active { background: var(--c-primary-bg, #eff6ff); color: var(--c-primary, #2563eb); }
+.wb-rail-btn.is-active { background: var(--c-primary-bg, #eff6ff); color: var(--c-primary, #3d444f); }
 .wb-rail-spacer { flex: 1 1 auto; }
 
 /* ===== 组件库页签（组件 | 全局块 | SEO） ===== */
@@ -359,7 +365,7 @@
     font-size: 13px; cursor: pointer; color: var(--c-text-secondary, #4b5563);
     border-bottom: 2px solid transparent;
 }
-.wb-lib-tabs button.is-active { color: var(--c-primary, #2563eb); border-bottom-color: var(--c-primary, #2563eb); font-weight: 500; }
+.wb-lib-tabs button.is-active { color: var(--c-primary, #3d444f); border-bottom-color: var(--c-primary, #3d444f); font-weight: 500; }
 
 /* ===== 手风琴分组 ===== */
 .wb-palette-accordion, .wb-palette-blocks { padding: 8px; overflow-y: auto; flex: 1; }
@@ -370,7 +376,7 @@
     font-size: 12px; font-weight: 600; color: var(--c-text-mute, #6b7280);
     cursor: pointer;
 }
-button.wb-palette-group:hover { color: var(--c-primary, #2563eb); }
+button.wb-palette-group:hover { color: var(--c-primary, #3d444f); }
 .wb-palette-caret::before { content: '▾'; display: inline-block; transition: transform .15s; }
 .wb-palette-group:not(.is-open) .wb-palette-caret::before { transform: rotate(-90deg); }
 .wb-palette-group-body { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 2px 0 8px; }
@@ -420,7 +426,7 @@ button.wb-palette-group:hover { color: var(--c-primary, #2563eb); }
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .wb-media-tree-node:hover { background: var(--c-bg-hover, #f3f4f6); }
-.wb-media-tree-node.is-selected { background: var(--c-primary-bg, #eff6ff); color: var(--c-primary, #2563eb); font-weight: 500; }
+.wb-media-tree-node.is-selected { background: var(--c-primary-bg, #eff6ff); color: var(--c-primary, #3d444f); font-weight: 500; }
 .wb-media-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
 .wb-media-toolbar { display: flex; }
 .wb-media-type {
@@ -458,11 +464,11 @@ button.wb-palette-group:hover { color: var(--c-primary, #2563eb); }
     font-size: 20px; color: var(--c-text-secondary, #4b5563);
 }
 .wb-icon-cell svg { width: 22px; height: 22px; }
-.wb-icon-cell:hover { border-color: var(--c-primary, #2563eb); }
+.wb-icon-cell:hover { border-color: var(--c-primary, #3d444f); }
 .wb-icon-cell.is-active {
-    border-color: var(--c-primary, #2563eb);
+    border-color: var(--c-primary, #3d444f);
     background: var(--c-primary-bg, #eff6ff);
-    color: var(--c-primary, #2563eb);
+    color: var(--c-primary, #3d444f);
 }
 .wb-icon-inline {
     width: 32px; height: 32px; flex: none;
@@ -472,7 +478,7 @@ button.wb-palette-group:hover { color: var(--c-primary, #2563eb); }
     font-size: 16px; color: var(--c-text-secondary, #4b5563);
 }
 .wb-icon-inline svg { width: 16px; height: 16px; }
-.wb-icon-inline:hover { border-color: var(--c-primary, #2563eb); color: var(--c-primary, #2563eb); }
+.wb-icon-inline:hover { border-color: var(--c-primary, #3d444f); color: var(--c-primary, #3d444f); }
 
 /* ===== 检查器紧凑化（减少松散留白） ===== */
 .wb-field { margin-bottom: 2px; }
@@ -492,7 +498,7 @@ button.wb-palette-group:hover { color: var(--c-primary, #2563eb); }
     font-size: 18px; color: var(--c-text-secondary, #4b5563);
 }
 .wb-icon-pop svg { width: 18px; height: 18px; }
-.wb-icon-pop:hover { border-color: var(--c-primary, #2563eb); color: var(--c-primary, #2563eb); }
+.wb-icon-pop:hover { border-color: var(--c-primary, #3d444f); color: var(--c-primary, #3d444f); }
 .wb-icon-pop-menu {
     position: absolute; z-index: 300; top: calc(100% + 6px); left: 0;
     width: 220px;
@@ -526,3 +532,87 @@ button.wb-palette-group:hover { color: var(--c-primary, #2563eb); }
     font-size: 13px; line-height: 1.5;
 }
 .wb-backup-banner span { flex: 1; min-width: 0; }
+
+/* ===== 动效增强（2026-09 重设计：统一缓动 + 微交互） ===== */
+/* 缓动曲线 token（theme.css 已有 --tr-fast/--tr-norm，这里统一定义质量感） */
+:root {
+    --ease-out: cubic-bezier(0.16, 1, 0.3, 1);   /* 快速缓出，编辑器 UI 主力 */
+    --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1); /* 轻微回弹，用于浮层/选中 */
+}
+
+/* —— 通用元素过渡基线：color/背景/边框/阴影 统一 150ms 缓出 —— */
+.wb-btn, .wb-icon-btn, .wb-chip, .wb-seg-btn, .wb-dev-btn,
+.wb-rail-btn, .wb-node-action, .wb-dims-link, .wb-unit-select {
+    transition: background-color var(--tr-fast, 120ms) var(--ease-out),
+                color var(--tr-fast, 120ms) var(--ease-out),
+                border-color var(--tr-fast, 120ms) var(--ease-out),
+                box-shadow var(--tr-fast, 120ms) var(--ease-out),
+                transform var(--tr-fast, 120ms) var(--ease-out);
+}
+
+/* —— 组件库项：hover 上浮 + 阴影（GrapesJS 式拖拽卡片感） —— */
+.wb-palette-item {
+    transition: transform 150ms var(--ease-out),
+                box-shadow 150ms var(--ease-out),
+                border-color 150ms var(--ease-out),
+                background-color 150ms var(--ease-out);
+}
+.wb-palette-item:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, .08);
+    border-color: var(--c-primary, #3d444f);
+    background: var(--c-primary-bg, #eceef1);
+}
+
+/* —— 结构树节点：背景过渡 + 选中弹簧感 —— */
+.wb-node { transition: background-color 120ms var(--ease-out), outline-color 120ms var(--ease-out); }
+.wb-node.is-selected {
+    transition: background-color 180ms var(--ease-spring), outline-color 120ms var(--ease-out);
+}
+
+/* —— 左侧图标栏：hover 背景 + 激活指示条滑入 —— */
+.wb-rail-btn { position: relative; }
+.wb-rail-btn::before {
+    content: ''; position: absolute; left: 0; top: 50%;
+    width: 3px; height: 0; border-radius: 0 3px 3px 0;
+    background: var(--c-primary, #3d444f);
+    transform: translateY(-50%);
+    transition: height 150ms var(--ease-out);
+}
+.wb-rail-btn:hover::before { height: 55%; }
+.wb-rail-btn.is-active::before { height: 70%; }
+
+/* —— 面板切换：淡入 + 轻微上移（不闪烁） —— */
+.wb-panel { animation: wb-panel-in 180ms var(--ease-out); }
+@keyframes wb-panel-in {
+    from { opacity: 0; transform: translateY(3px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+/* —— 检查器字段：焦点高亮过渡 —— */
+.wb-field input[type="text"], .wb-field input[type="number"], .wb-field textarea,
+.wb-field select, .wb-unit-value, .wb-color-text {
+    transition: border-color 150ms var(--ease-out), box-shadow 150ms var(--ease-out);
+}
+.wb-field input:focus, .wb-field textarea:focus, .wb-field select:focus,
+.wb-unit-value:focus, .wb-color-text:focus {
+    border-color: var(--c-primary, #3d444f);
+    box-shadow: 0 0 0 3px var(--c-primary-bg, #eceef1);
+    outline: none;
+}
+
+/* —— 分段按钮/色板选中态 —— */
+.wb-seg-btn.is-active {
+    transition: background-color 120ms var(--ease-out), color 120ms var(--ease-out);
+}
+
+/* —— 滚动条美化（编辑器质感） —— */
+.wb-inspector::-webkit-scrollbar, .wb-navigator::-webkit-scrollbar,
+.wb-canvas-frame::-webkit-scrollbar { width: 8px; height: 8px; }
+.wb-inspector::-webkit-scrollbar-thumb, .wb-navigator::-webkit-scrollbar-thumb,
+.wb-canvas-frame::-webkit-scrollbar-thumb {
+    background: var(--c-border-strong, #d1d5db); border-radius: 4px;
+}
+.wb-inspector::-webkit-scrollbar-thumb:hover, .wb-navigator::-webkit-scrollbar-thumb:hover {
+    background: var(--c-text-faint, #9ca3af);
+}
