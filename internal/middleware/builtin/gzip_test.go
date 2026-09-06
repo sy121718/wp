@@ -43,6 +43,18 @@ func gzipEngine() *gin.Engine {
 		c.Header("Content-Encoding", "br")
 		c.Data(http.StatusOK, "application/javascript; charset=utf-8", []byte("already-brotli"))
 	})
+	// 206：Range 分片响应（body 为字节切片，压缩会破坏 Content-Range 语义）。
+	engine.GET("/range.js", func(c *gin.Context) {
+		c.Header("Content-Range", "bytes 0-1023/5120")
+		c.Data(http.StatusPartialContent, "application/javascript; charset=utf-8",
+			bytes.Repeat([]byte("x"), 1024))
+	})
+	// 304：无 body，不应标记 Content-Encoding。
+	engine.GET("/not-modified.js", func(c *gin.Context) {
+		c.Header("Content-Type", "application/javascript; charset=utf-8")
+		c.Status(http.StatusNotModified)
+		c.Writer.WriteHeaderNow()
+	})
 	return engine
 }
 
@@ -130,5 +142,34 @@ func TestStaticGzipSkipsAlreadyEncoded(t *testing.T) {
 
 	if got := recorder.Header().Get("Content-Encoding"); got != "br" {
 		t.Fatalf("不应覆盖已有 Content-Encoding: got=%q", got)
+	}
+}
+
+// 206 Partial Content：body 是 Range 字节切片，不得压缩（否则 Content-Range 语义破坏）。
+func TestStaticGzipSkipsPartialContent(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	recorder := serveGzip("/range.js", "gzip")
+
+	if recorder.Code != http.StatusPartialContent {
+		t.Fatalf("应保持 206: got=%d", recorder.Code)
+	}
+	if got := recorder.Header().Get("Content-Encoding"); got != "" {
+		t.Fatalf("206 分片响应不应压缩: got=%q", got)
+	}
+	if recorder.Body.Len() != 1024 {
+		t.Fatalf("分片 body 应原样输出 1024 字节: got=%d", recorder.Body.Len())
+	}
+}
+
+// 304 无 body：不应标记 Content-Encoding。
+func TestStaticGzipSkipsNotModified(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	recorder := serveGzip("/not-modified.js", "gzip")
+
+	if recorder.Code != http.StatusNotModified {
+		t.Fatalf("应保持 304: got=%d", recorder.Code)
+	}
+	if got := recorder.Header().Get("Content-Encoding"); got != "" {
+		t.Fatalf("304 不应标记 Content-Encoding: got=%q", got)
 	}
 }

@@ -73,6 +73,9 @@ func (w *gzipResponseWriter) WriteHeader(code int) {
 }
 
 // start 首次写前决定压缩并转发 WriteHeader（幂等）。
+//
+// 仅 200 压缩：206 Partial Content 的 body 是字节范围的原始切片（Range 请求，
+// 视频拖动/断点下载），压缩会破坏 Content-Range 语义；304/204 无 body。
 func (w *gzipResponseWriter) start() {
 	if w.started {
 		return
@@ -81,7 +84,7 @@ func (w *gzipResponseWriter) start() {
 	if w.status == 0 {
 		w.status = http.StatusOK
 	}
-	if shouldCompressGzip(w.Header()) {
+	if w.status == http.StatusOK && shouldCompressGzip(w.Header()) {
 		w.compressed = true
 		zw := gzipPool.Get().(*gzip.Writer)
 		zw.Reset(w.ResponseWriter)
