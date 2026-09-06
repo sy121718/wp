@@ -8,6 +8,7 @@ import (
 	artifacthttp "go_wp/internal/module/artifact/inbound/http"
 	blockhttp "go_wp/internal/module/block/inbound/http"
 	captcharouter "go_wp/internal/module/common/captcha/router"
+	contenthttp "go_wp/internal/module/content/inbound/http"
 	dashboardhttp "go_wp/internal/module/dashboard/inbound/http"
 	mediahttp "go_wp/internal/module/media/inbound/http"
 	pagehttp "go_wp/internal/module/page/inbound/http"
@@ -115,6 +116,9 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 	blockSvc := blockhttp.SetupBlockRoutes(authorizedAPI, db, projectService)
 	artifactSvc := artifacthttp.SetupArtifactRoutes(authorizedAPI, db)
 	publicationSvc := pubhttp.SetupPublicationRoutes(authorizedAPI, db)
+	// CMS 内容（0-A2，contenttemplate/presentation 依赖其字段白名单契约）。
+	contentSvc := contenthttp.SetupContentRoutes(authorizedAPI, db)
+	_ = contentSvc // presentation 模块落地后消费其 ResolverFor/字段白名单
 	// 插件模块（page 构建路径依赖其装配素材，须先于 page 装配）。
 	pluginSvc := pluginhttp.SetupPluginRoutes(authorizedAPI, db)
 	pageService := pagehttp.SetupPageRoutes(authorizedAPI, db, artifactSvc, publicationSvc, projectService, blockSvc, pluginSvc)

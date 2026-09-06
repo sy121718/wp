@@ -33,6 +33,12 @@ var pluginPermSQL string
 //go:embed 040_plugin_registry.sql
 var pluginRegistrySQL string
 
+//go:embed 042_content.sql
+var contentSQL string
+
+//go:embed 033_content_permissions.sql
+var contentPermSQL string
+
 func init() {
 	register(Migration{
 		Version:   "001-init-schema",
@@ -82,11 +88,26 @@ func init() {
 		SQL:       pluginRegistrySQL,
 	})
 
+	// CMS 内容实体（docs/02-domain.md §1，0-A2 content 模块）。
+	register(Migration{
+		Version:   "042-content",
+		TableName: "contents",
+		SQL:       contentSQL,
+	})
+
 	// 插件权限 seed（权限点 + 后台菜单，docs/06）。
 	registerSeed(Seed{
 		Version:      "032-plugin-permissions",
 		TableName:    "sys_permission",
 		ConditionSQL: "SELECT COUNT(*) FROM sys_permission WHERE module = 'plugin'",
 		SQL:          pluginPermSQL,
+	})
+
+	// CMS 内容权限 seed（权限点 + 超管策略，0-A2）。
+	registerSeed(Seed{
+		Version:      "033-content-permissions",
+		TableName:    "sys_permission",
+		ConditionSQL: "SELECT COUNT(*) FROM sys_permission WHERE module = 'content'",
+		SQL:          contentPermSQL,
 	})
 }
