@@ -117,6 +117,8 @@ type CompiledPage struct {
 	HTML string
 	// CSS 全部样式（含响应式媒体查询与入场动效关键帧）。
 	CSS string
+	// ThemeVarsCSS 主题变量块（:root --wp-*，注入 <style> 顶部；空=无主题）。
+	ThemeVarsCSS string
 }
 
 // CompileOption 编译选项。
@@ -129,6 +131,7 @@ type compileConfig struct {
 	set        *jet.Set
 	plugin     core.PluginResolver
 	collection core.CollectionResolver
+	theme      *ThemeSettings
 }
 
 // WithContentResolver 注入 CMS 内容解析器（构建期动态绑定静态填入，规范 docs/02-C1）。
@@ -161,6 +164,12 @@ func WithPluginResolver(r core.PluginResolver) CompileOption {
 // 调用方（page service / dashboard）注入 content 模块的 CollectionResolver。
 func WithCollectionResolver(r core.CollectionResolver) CompileOption {
 	return func(c *compileConfig) { c.collection = r }
+}
+
+// WithThemeSettings 注入主题设置（主题色编译为 :root CSS 变量进产物 head，
+// 组件经 var(--wp-c-*) 引用——主题系统真正生效到产物）。
+func WithThemeSettings(t *ThemeSettings) CompileOption {
+	return func(c *compileConfig) { c.theme = t }
 }
 
 // MaxNodeDepth 组件树深度上限（顶级节点为第 1 层）。
@@ -294,6 +303,7 @@ func Compile(p *Page, opts ...CompileOption) (res *CompiledPage, err error) {
 		BodyClasses:     classes,
 		HTML:            htmlBuf.String(),
 		CSS:             b.String(),
+		ThemeVarsCSS:    ThemeVarsCSS(cfg.theme),
 	}, nil
 }
 
@@ -314,6 +324,11 @@ func RenderDocument(c *CompiledPage) string {
 		sb.WriteString("\">\n")
 	}
 	sb.WriteString("<style>\n")
+	// 主题变量块置顶（组件 CSS 可引用 var(--wp-c-*) 消费主题令牌）。
+	if c.ThemeVarsCSS != "" {
+		sb.WriteString(c.ThemeVarsCSS)
+		sb.WriteString("\n")
+	}
 	sb.WriteString(c.CSS)
 	sb.WriteString("\n</style>\n</head>\n<body")
 	if len(c.BodyClasses) > 0 {

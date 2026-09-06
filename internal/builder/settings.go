@@ -30,7 +30,7 @@ var bodyClassRe = regexp.MustCompile(`^[A-Za-z0-9_-]{1,100}$`)
 type PageSettings struct {
 	Layout      PageLayout    `json:"layout"`
 	Base        BaseStyle     `json:"base"`
-	Theme       ThemeSettings `json:"theme,omitempty"`
+	Theme       PageTheme `json:"theme,omitempty"`
 	SEO         SEO           `json:"seo"`
 	BodyClasses []string      `json:"bodyClasses,omitempty"`
 	// Structure 全局结构绑定快照（保存时从激活主题 settings 合入）：
@@ -194,8 +194,8 @@ func compileSettingsCSS(s *PageSettings, b *core.CSSBuckets) {
 	}
 }
 
-// ThemeSettings 站点级设计 Token（来自 project settings，保存页面/改主题时合入页面文档）。
-type ThemeSettings struct {
+// PageTheme 站点级设计快照（页面文档内嵌，来自主题系统保存时合入）。
+type PageTheme struct {
 	Colors struct {
 		Primary    string `json:"primary,omitempty"`
 		Text       string `json:"text,omitempty"`

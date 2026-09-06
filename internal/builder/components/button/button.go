@@ -347,9 +347,14 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	default: // solid
 		if p.Normal.Background != "" {
 			base = append(base, core.CSSDecl("background", p.Normal.Background))
+		} else {
+			// 主题回退链：主题按钮背景 → 主题主色 → 硬编码兜底。
+			base = append(base, "background: var(--wp-btn-bg, var(--wp-c-primary, #2563eb))")
 		}
 		if p.Normal.Color != "" {
 			base = append(base, core.CSSDecl("color", p.Normal.Color))
+		} else {
+			base = append(base, "color: var(--wp-btn-color, #fff)")
 		}
 		if p.Normal.Border != "" {
 			base = append(base, core.CSSDecl("border", "1px", "solid", p.Normal.Border))
