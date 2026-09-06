@@ -46,6 +46,8 @@ const testManifest = `{
 // newService 隔离 PG schema + AutoMigrate plugin_registry + 装配 service。
 func newService(t *testing.T) *pluginservice.Service {
 	t.Helper()
+	// 插件存储隔离到临时目录（避免相对路径 public/runtime/plugins 污染测试目录）。
+	t.Setenv("GO_WP_PLUGIN_ROOT", t.TempDir())
 	db, err := support.NewPGTestDB(t)
 	if err != nil {
 		t.Skipf("本地 PostgreSQL 不可用：%v", err)

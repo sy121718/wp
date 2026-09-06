@@ -41,9 +41,16 @@ var extWhitelist = map[string]bool{
 	".woff2": true, ".woff": true, ".ttf": true, ".sql": true, ".md": true, ".txt": true,
 }
 
-// pluginStorageRoot 插件解包根目录（public/runtime 为运行时产物区，
-// 未挂载任何对外静态路由：/storage 只挂 public/storage，/site 只挂激活产物）。
-var pluginStorageRoot = filepath.Join("public", "runtime", "plugins")
+// pluginStorageRoot 插件解包根目录：GO_WP_PLUGIN_ROOT 环境变量可覆盖
+// （测试隔离用），默认 public/runtime/plugins（运行时产物区，未挂载任何
+// 对外静态路由：/storage 只挂 public/storage，/site 只挂激活产物）。
+// 与 pipeline.DefaultArtifactRoot 同一模式：环境变量覆盖 + 默认相对路径。
+func pluginStorageRoot() string {
+	if root := strings.TrimSpace(os.Getenv("GO_WP_PLUGIN_ROOT")); root != "" {
+		return root
+	}
+	return filepath.Join("public", "runtime", "plugins")
+}
 
 // Install 安装/升级插件：安全解包 → manifest 校验 → L1 迁移 → 存储 → registry 记账。
 func (s *Service) Install(ctx context.Context, zipBytes []byte) (res *plugindto.PluginResp, err error) {
@@ -83,7 +90,7 @@ func (s *Service) Install(ctx context.Context, zipBytes []byte) (res *plugindto.
 		return nil, fmt.Errorf("%s: %w", pluginenums.ErrMigrationFailed, err)
 	}
 	// 6. 落盘存储（{root}/{id}/{version}/）。
-	target := filepath.Join(pluginStorageRoot, manifest.ID, manifest.Version)
+	target := filepath.Join(pluginStorageRoot(), manifest.ID, manifest.Version)
 	if err = writePluginFiles(target, files); err != nil {
 		return nil, fmt.Errorf("%s: %w", pluginenums.ErrStorageFailure, err)
 	}
@@ -182,7 +189,7 @@ func writePluginFiles(target string, files map[string][]byte) error {
 
 // removePluginStorage 删除插件全部存储（卸载）。
 func removePluginStorage(pluginID string) {
-	_ = os.RemoveAll(filepath.Join(pluginStorageRoot, pluginID))
+	_ = os.RemoveAll(filepath.Join(pluginStorageRoot(), pluginID))
 }
 
 // removePluginVersionDir 删除指定版本目录（升级清理）。
@@ -190,5 +197,5 @@ func removePluginVersionDir(pluginID, version string) {
 	if pluginID == "" || version == "" {
 		return
 	}
-	_ = os.RemoveAll(filepath.Join(pluginStorageRoot, pluginID, version))
+	_ = os.RemoveAll(filepath.Join(pluginStorageRoot(), pluginID, version))
 }

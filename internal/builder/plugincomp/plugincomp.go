@@ -355,11 +355,11 @@ func validatePresetNode(n *core.Node, ids map[string]bool, depth, idx int) error
 	if err := core.ValidateNodeID(n.ID, n.Name, ids); err != nil {
 		return fmt.Errorf("预设 %d: %w", idx, err)
 	}
-	// 类型可识别：内置（core.Lookup）或插件命名空间（plugin.* 前缀）。
-	if !strings.HasPrefix(n.Type, "plugin.") {
-		if _, err := core.Lookup(n.Type); err != nil {
-			return fmt.Errorf("预设 %d: %w", idx, err)
-		}
+	// 类型名前缀白名单：内置 core.* 或插件 plugin.*（安装时不做 registry 查证——
+	// 内置组件是否注册是编译期固定事实，且 plugincomp 不 blank import 组件；
+	// 真正编译时 core.Lookup/PluginResolver 才验证存在性）。
+	if !strings.HasPrefix(n.Type, "plugin.") && !strings.HasPrefix(n.Type, "core.") {
+		return fmt.Errorf("预设 %d: 未知组件类型 %q", idx, n.Type)
 	}
 	for _, c := range n.Children {
 		if err := validatePresetNode(c, ids, depth+1, idx); err != nil {
