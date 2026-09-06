@@ -4,11 +4,12 @@ package blockenums
 const (
 	MsgBlockTitle = "全局块"
 
-	ErrBlockParamRequired = "块参数不能为空"
-	ErrBlockNotFound      = "全局块不存在"
-	ErrProjectNotFound    = "工程不存在"
-	ErrBlockNameRequired  = "块名称不能为空"
-	ErrBlockInvalidDoc    = "块文档不合法"
-	ErrBlockInvalidKind   = "块类型不合法"
-	ErrBlockDuplicate     = "同名块已存在"
+	ErrBlockParamRequired   = "块参数不能为空"
+	ErrBlockNotFound        = "全局块不存在"
+	ErrProjectNotFound      = "工程不存在"
+	ErrBlockNameRequired    = "块名称不能为空"
+	ErrBlockInvalidDoc      = "块文档不合法"
+	ErrBlockInvalidKind     = "块类型不合法"
+	ErrBlockInvalidCategory = "块分类不合法"
+	ErrBlockDuplicate       = "同名块已存在"
 )

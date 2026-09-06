@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"regexp"
 	"strings"
 	"time"
 
@@ -32,13 +33,17 @@ func NewService(model *blockmodel.Model, projects projectcontract.ProjectService
 	return &Service{model: model, projects: projects}
 }
 
-// List 列出工程全部块（kind 可选过滤）。
+// List 列出工程全部块（kind/category 可选过滤）。
 func (s *Service) List(ctx context.Context, req *blockdto.ListReq) (res []blockdto.BlockResp, err error) {
 	// 参数缺失（nil/空 projectID）是调用方错误，与「工程下无块」/资源不存在区分开。
 	if req == nil || strings.TrimSpace(req.ProjectID) == "" {
 		return nil, errors.New(blockenums.ErrBlockParamRequired)
 	}
-	entities, err := s.model.ListByProject(ctx, req.ProjectID, strings.TrimSpace(req.Kind))
+	category := strings.TrimSpace(req.Category)
+	if category != "" && !categoryPattern.MatchString(category) {
+		return nil, errors.New(blockenums.ErrBlockInvalidCategory)
+	}
+	entities, err := s.model.ListByProject(ctx, req.ProjectID, strings.TrimSpace(req.Kind), category)
 	if err != nil {
 		return nil, err
 	}
@@ -71,11 +76,15 @@ func (s *Service) Create(ctx context.Context, req *blockdto.CreateReq) (res *blo
 		return nil, err
 	}
 	kind := normalizeKind(req.Kind)
+	category, err := normalizeCategory(req.Category)
+	if err != nil {
+		return nil, err
+	}
 	document, err := validateDocument(req.Document)
 	if err != nil {
 		return nil, err
 	}
-	existing, err := s.model.ListByProject(ctx, req.ProjectID, "")
+	existing, err := s.model.ListByProject(ctx, req.ProjectID, "", "")
 	if err != nil {
 		return nil, err
 	}
@@ -87,7 +96,7 @@ func (s *Service) Create(ctx context.Context, req *blockdto.CreateReq) (res *blo
 	now := time.Now().UTC()
 	entity := &blockmodel.BlockEntity{
 		ID: uuid.NewString(), ProjectID: req.ProjectID,
-		Name: strings.TrimSpace(req.Name), Kind: kind, Document: document,
+		Name: strings.TrimSpace(req.Name), Kind: kind, Category: category, Document: document,
 		CreatedAt: now, UpdatedAt: now,
 	}
 	if err = s.model.Create(ctx, entity); err != nil {
@@ -114,6 +123,12 @@ func (s *Service) Update(ctx context.Context, req *blockdto.UpdateReq) (res *blo
 	if strings.TrimSpace(req.Kind) != "" {
 		kind = normalizeKind(req.Kind)
 	}
+	category := entity.Category
+	if strings.TrimSpace(req.Category) != "" {
+		if category, err = normalizeCategory(req.Category); err != nil {
+			return nil, err
+		}
+	}
 	document := entity.Document
 	if len(req.Document) > 0 {
 		if document, err = validateDocument(req.Document); err != nil {
@@ -121,10 +136,10 @@ func (s *Service) Update(ctx context.Context, req *blockdto.UpdateReq) (res *blo
 		}
 	}
 	now := time.Now().UTC()
-	if err = s.model.UpdateDocument(ctx, entity.ID, name, kind, document, now); err != nil {
+	if err = s.model.UpdateDocument(ctx, entity.ID, name, kind, category, document, now); err != nil {
 		return nil, err
 	}
-	entity.Name, entity.Kind, entity.Document, entity.UpdatedAt = name, kind, document, now
+	entity.Name, entity.Kind, entity.Category, entity.Document, entity.UpdatedAt = name, kind, category, document, now
 	return blockRespPtr(entity), nil
 }
 
@@ -164,6 +179,22 @@ func (s *Service) requireProject(ctx context.Context, projectID string) error {
 	return nil
 }
 
+// categoryPattern category 值白名单：小写字母、数字、下划线、连字符，1~50 字符。
+// 收紧为分组键友好的稳定格式（防注入，保证管理端/工作台分组与 URL 传参稳定）。
+var categoryPattern = regexp.MustCompile(`^[a-z0-9_-]{1,50}$`)
+
+// normalizeCategory 归一化块分类：空默认 general，非空校验白名单。
+func normalizeCategory(raw string) (string, error) {
+	s := strings.TrimSpace(raw)
+	if s == "" {
+		return blockmodel.DefaultCategory, nil
+	}
+	if !categoryPattern.MatchString(s) {
+		return "", errors.New(blockenums.ErrBlockInvalidCategory)
+	}
+	return s, nil
+}
+
 // normalizeKind 归一化块类型（空默认 block）。
 func normalizeKind(raw string) string {
 	switch strings.TrimSpace(raw) {
@@ -197,7 +228,7 @@ func validateDocument(raw json.RawMessage) (json.RawMessage, error) {
 
 func blockResp(e *blockmodel.BlockEntity) blockdto.BlockResp {
 	return blockdto.BlockResp{
-		ID: e.ID, ProjectID: e.ProjectID, Name: e.Name, Kind: e.Kind,
+		ID: e.ID, ProjectID: e.ProjectID, Name: e.Name, Kind: e.Kind, Category: e.Category,
 		Document: e.Document, CreatedAt: e.CreatedAt, UpdatedAt: e.UpdatedAt,
 	}
 }

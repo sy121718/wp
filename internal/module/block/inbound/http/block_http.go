@@ -39,10 +39,10 @@ func SetupBlockRoutes(rg *gin.RouterGroup, db *gorm.DB, projects projectcontract
 	return svc
 }
 
-// List 列出工程全局块（?projectId=&kind=）。
+// List 列出工程全局块（?projectId=&kind=&category=）。
 func (h *Handle) List(c *gin.Context) {
 	res, err := h.svc.List(c.Request.Context(), &blockdto.ListReq{
-		ProjectID: c.Query("projectId"), Kind: c.Query("kind"),
+		ProjectID: c.Query("projectId"), Kind: c.Query("kind"), Category: c.Query("category"),
 	})
 	if err != nil {
 		response.ErrorWithMessage(c, blockErrorStatus(err), err.Error())
@@ -117,7 +117,8 @@ func blockErrorStatus(err error) int {
 	case strings.Contains(message, blockenums.ErrBlockParamRequired),
 		strings.Contains(message, blockenums.ErrBlockNameRequired),
 		strings.Contains(message, blockenums.ErrBlockInvalidDoc),
-		strings.Contains(message, blockenums.ErrBlockInvalidKind):
+		strings.Contains(message, blockenums.ErrBlockInvalidKind),
+		strings.Contains(message, blockenums.ErrBlockInvalidCategory):
 		return http.StatusBadRequest
 	default:
 		return http.StatusInternalServerError

@@ -54,6 +54,9 @@ var blueprintSQL string
 //go:embed 046_navigation.sql
 var navigationSQL string
 
+//go:embed 047_block_category.sql
+var blockCategorySQL string
+
 //go:embed 036_blueprint_navigation_permissions.sql
 var blueprintNavigationPermSQL string
 
@@ -139,6 +142,16 @@ func init() {
 		Version:   "046-navigation",
 		TableName: "navigations",
 		SQL:       navigationSQL,
+	})
+
+	// 全局块自由分类（组织/筛选维度，不改引用维度）。
+	// blocks 表已在 021 创建，默认幂等检查（表存在即跳过）会误跳过，
+	// 故用自定义 CheckSQL 按 category 列是否存在判断。
+	register(Migration{
+		Version:   "047-block-category",
+		TableName: "blocks",
+		CheckSQL:  "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = ? AND column_name = 'category'",
+		SQL:       blockCategorySQL,
 	})
 
 	// 插件权限 seed（权限点 + 后台菜单，docs/06）。

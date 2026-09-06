@@ -28,11 +28,11 @@ var bodyClassRe = regexp.MustCompile(`^[A-Za-z0-9_-]{1,100}$`)
 // PageSettings 页面级全局环境配置（规范 docs/02-A §2）。
 // 不是可视化 DOM 节点，由独立的"页面设置面板"维护，编译期直接作用于 <head> 与 <body>。
 type PageSettings struct {
-	Layout      PageLayout    `json:"layout"`
-	Base        BaseStyle     `json:"base"`
-	Theme       PageTheme `json:"theme,omitempty"`
-	SEO         SEO           `json:"seo"`
-	BodyClasses []string      `json:"bodyClasses,omitempty"`
+	Layout      PageLayout     `json:"layout"`
+	Base        BaseStyle      `json:"base"`
+	Theme       *ThemeSettings `json:"theme,omitempty"`
+	SEO         SEO            `json:"seo"`
+	BodyClasses []string       `json:"bodyClasses,omitempty"`
 	// Structure 全局结构绑定快照（保存时从激活主题 settings 合入）：
 	// 编译装配层读取，构建期内联页眉/页脚块（021_blocks.sql 方案 C）。
 	Structure StructureBindings `json:"structure,omitempty"`
@@ -133,27 +133,31 @@ func safeCSS(v string) bool {
 // compileSettingsCSS 编译页面设置为 CSS：body 基底样式与版心约束。
 func compileSettingsCSS(s *PageSettings, b *core.CSSBuckets) {
 	// 主题 Token → :root CSS 变量（组件统一用 var(--color-*) 取色）。
-	var root []string
-	if v := s.Theme.Colors.Primary; v != "" {
-		root = append(root, "--color-primary: "+v)
-	}
-	if v := s.Theme.Colors.Text; v != "" {
-		root = append(root, "--color-text: "+v)
-	}
-	if v := s.Theme.Colors.Background; v != "" {
-		root = append(root, "--color-bg: "+v)
-	}
-	if v := s.Theme.Colors.Surface; v != "" {
-		root = append(root, "--color-surface: "+v)
-	}
-	if v := s.Theme.Colors.Border; v != "" {
-		root = append(root, "--color-border: "+v)
-	}
-	if len(root) > 0 {
-		b.Add(core.BreakpointDesktop, ":root", root)
-	}
-	if v := s.Theme.FontFamily; v != "" {
-		b.Add(core.BreakpointDesktop, "body", []string{"font-family: " + v})
+	// Theme 为指针（主题快照），nil 表示无主题，跳过主题令牌与正文字体。
+	if s.Theme != nil {
+		var root []string
+		c := s.Theme.Colors
+		if v := c.Primary; v != "" {
+			root = append(root, "--color-primary: "+v)
+		}
+		if v := c.Text; v != "" {
+			root = append(root, "--color-text: "+v)
+		}
+		if v := c.Background; v != "" {
+			root = append(root, "--color-bg: "+v)
+		}
+		if v := c.Surface; v != "" {
+			root = append(root, "--color-surface: "+v)
+		}
+		if v := c.Border; v != "" {
+			root = append(root, "--color-border: "+v)
+		}
+		if len(root) > 0 {
+			b.Add(core.BreakpointDesktop, ":root", root)
+		}
+		if v := s.Theme.Typography.Body.FontFamily; v != "" {
+			b.Add(core.BreakpointDesktop, "body", []string{"font-family: " + v})
+		}
 	}
 	var body []string
 	if v := s.Base.BackgroundColor; v != "" {
@@ -192,17 +196,4 @@ func compileSettingsCSS(s *PageSettings, b *core.CSSBuckets) {
 			"padding-left: " + v, "padding-right: " + v,
 		})
 	}
-}
-
-// PageTheme 站点级设计快照（页面文档内嵌，来自主题系统保存时合入）。
-type PageTheme struct {
-	Colors struct {
-		Primary    string `json:"primary,omitempty"`
-		Text       string `json:"text,omitempty"`
-		Background string `json:"background,omitempty"`
-		Surface    string `json:"surface,omitempty"`
-		Border     string `json:"border,omitempty"`
-	} `json:"colors,omitempty"`
-	// FontFamily 正文字体栈。
-	FontFamily string `json:"fontFamily,omitempty"`
 }

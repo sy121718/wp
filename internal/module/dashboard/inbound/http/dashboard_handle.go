@@ -256,7 +256,8 @@ func (a blockResolverAdapter) ResolveBlockRoot(blockID string) ([]*core.Node, er
 	return page.Root, nil
 }
 
-// blockSummaries 工程块列表的轻量投影（id/name/kind，不含文档大字段）。
+// blockSummaries 工程块列表的轻量投影（id/name/kind/category，不含文档大字段）。
+// category 供 workbench 全局块按分类分组。
 func (h *Handle) blockSummaries(c *gin.Context, projectID string) []gin.H {
 	blocks, err := h.blocks.List(c.Request.Context(), &blockdto.ListReq{ProjectID: projectID})
 	if err != nil {
@@ -264,7 +265,7 @@ func (h *Handle) blockSummaries(c *gin.Context, projectID string) []gin.H {
 	}
 	out := make([]gin.H, 0, len(blocks))
 	for _, b := range blocks {
-		out = append(out, gin.H{"id": b.ID, "name": b.Name, "kind": b.Kind})
+		out = append(out, gin.H{"id": b.ID, "name": b.Name, "kind": b.Kind, "category": b.Category})
 	}
 	return out
 }
@@ -373,16 +374,51 @@ func (h *Handle) renderPreview(c *gin.Context, document json.RawMessage, withEdi
 	if h.collection != nil {
 		opts = append(opts, builder.WithCollectionResolver(h.collection))
 	}
+	// 主题快照注入：settings.theme（Woodmart 级令牌）→ 编译进产物。
+	if docPage.Settings.Theme != nil {
+		opts = append(opts, builder.WithThemeSettings(docPage.Settings.Theme))
+	}
 	compiled, err := builder.Compile(docPage, opts...)
 	if err != nil {
 		c.String(http.StatusUnprocessableEntity, "编译失败: %s", err.Error())
 		return
 	}
+	// 页眉/页脚块内联（settings.structure 绑定快照）：预览与正式构建同源，
+	// 画布渲染页眉页脚，所见即所得（对齐 page service 的 assembleCompile）。
+	headerHTML, headerCSS := h.compilePreviewBlock(c, docPage.Settings.Structure.HeaderBlockID)
+	footerHTML, footerCSS := h.compilePreviewBlock(c, docPage.Settings.Structure.FooterBlockID)
+	compiled.HTML = headerHTML + compiled.HTML + footerHTML
+	compiled.CSS = headerCSS + compiled.CSS + footerCSS
 	html := builder.RenderDocument(compiled)
 	if withEditorBridge {
 		html = injectEditorBridge(html)
 	}
 	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(html))
+}
+
+// compilePreviewBlock 编译页眉/页脚块片段（编辑器预览专用，与正式构建同源）。
+// 块不存在/编译失败返回空片段（页眉页脚为可选，不阻塞预览）。
+func (h *Handle) compilePreviewBlock(c *gin.Context, blockID string) (html, css string) {
+	if blockID == "" || h.blocks == nil {
+		return "", ""
+	}
+	block, err := h.blocks.Detail(c.Request.Context(), &blockdto.DetailReq{ID: blockID})
+	if err != nil || block == nil || len(block.Document) == 0 {
+		return "", ""
+	}
+	page, err := builder.ParsePage(block.Document)
+	if err != nil {
+		return "", ""
+	}
+	set, serr := templates.NewEmbeddedComponentSet()
+	if serr != nil {
+		return "", ""
+	}
+	compiled, cerr := builder.Compile(page, builder.WithComponentSet(set))
+	if cerr != nil {
+		return "", ""
+	}
+	return compiled.HTML, compiled.CSS
 }
 
 // componentSet 组件模板 Set：无插件 → embed 单例；有插件 → CompositeSet。

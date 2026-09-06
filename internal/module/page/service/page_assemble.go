@@ -53,6 +53,10 @@ func (s *Service) assembleCompile(docJSON []byte) ([]byte, error) {
 	if s.content != nil {
 		opts = append(opts, builder.WithCollectionResolver(s.content))
 	}
+	// 主题快照注入：settings.theme（保存时合入的 ThemeSettings 快照）→ 编译进产物。
+	if page.Settings.Theme != nil {
+		opts = append(opts, builder.WithThemeSettings(page.Settings.Theme))
+	}
 	compiled, err := builder.Compile(page, opts...)
 	if err != nil {
 		logger.Scene("build").Error(err, "页面编译失败")

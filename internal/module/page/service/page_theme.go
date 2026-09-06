@@ -19,39 +19,47 @@ import (
 )
 
 // mergeActiveTheme 把工程激活主题的设置合入页面文档：
-// settings.theme（颜色/字体）与 settings.structure（页眉/页脚块绑定）。
+// settings.theme（Woodmart 级主题令牌）与 settings.structure（页眉/页脚块绑定）。
 // 无激活主题或查询失败时不合入（主题为可选增强，不阻塞页面保存）。
 func (s *Service) mergeActiveTheme(ctx context.Context, projectID string, doc json.RawMessage) (json.RawMessage, error) {
 	theme, err := s.project.GetActiveTheme(ctx, projectID)
 	if err != nil || theme == nil {
-		return doc, nil
-	}
-	var settings struct {
-		Colors     json.RawMessage `json:"colors"`
-		FontFamily string          `json:"fontFamily"`
-		Header     string          `json:"headerBlockId"`
-		Footer     string          `json:"footerBlockId"`
-	}
-	if len(theme.Settings) > 0 {
-		if err := json.Unmarshal(theme.Settings, &settings); err != nil {
-			logger.Scene("page").With("err", err).Warn("主题设置解析失败")
-			return doc, nil // 主题设置非法时忽略
-		}
-	}
-	// settings.theme 快照（仅当主题含颜色/字体设置）。
-	if len(settings.Colors) > 0 || settings.FontFamily != "" {
-		themeJSON, _ := json.Marshal(map[string]any{
-			"colors":     settings.Colors,
-			"fontFamily": settings.FontFamily,
-		})
-		if doc, err = mergeSettingsKey(doc, "theme", themeJSON); err != nil {
+		// 无主题：仍写空 theme/structure 快照（保持 settings.theme 键存在的
+		// 既有契约，页面文档规范化后键不缺失）。
+		if doc, err = mergeSettingsKey(doc, "theme", json.RawMessage(`{}`)); err != nil {
 			return nil, err
 		}
+		return mergeSettingsKey(doc, "structure", json.RawMessage(`{}`))
+	}
+	var structure struct {
+		Header string `json:"headerBlockId"`
+		Footer string `json:"footerBlockId"`
+	}
+	if len(theme.Settings) > 0 {
+		if err := json.Unmarshal(theme.Settings, &structure); err != nil {
+			logger.Scene("page").With("err", err).Warn("主题设置解析失败")
+			// 非法主题设置：写空快照（不阻塞保存，保持键存在）。
+			if doc, err = mergeSettingsKey(doc, "theme", json.RawMessage(`{}`)); err != nil {
+				return nil, err
+			}
+			return mergeSettingsKey(doc, "structure", json.RawMessage(`{}`))
+		}
+	}
+	// settings.theme 快照：整体快照主题 settings（ThemeSettings Woodmart 级模型）。
+	// 经 ParseThemeSettings 校验合法才快照，非法则空快照（不阻塞保存）。
+	themeSnapshot := json.RawMessage(`{}`)
+	if len(theme.Settings) > 0 {
+		if _, perr := builder.ParseThemeSettings(theme.Settings); perr == nil {
+			themeSnapshot = theme.Settings
+		}
+	}
+	if doc, err = mergeSettingsKey(doc, "theme", themeSnapshot); err != nil {
+		return nil, err
 	}
 	// settings.structure 快照（页眉/页脚块绑定）。
 	structureJSON, _ := json.Marshal(map[string]any{
-		"headerBlockId": settings.Header,
-		"footerBlockId": settings.Footer,
+		"headerBlockId": structure.Header,
+		"footerBlockId": structure.Footer,
 	})
 	return mergeSettingsKey(doc, "structure", structureJSON)
 }

@@ -13,7 +13,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"html"
 	"strings"
 	"sync"
 
@@ -308,41 +307,61 @@ func Compile(p *Page, opts ...CompileOption) (res *CompiledPage, err error) {
 }
 
 // RenderDocument 将编译输出组装为完整 HTML 文档（用于预览与静态发布产物）。
+//
+// 文档骨架经 go:embed 的 document.jet 模板渲染（声明式可见，IDE 可配平校验），
+// 转义策略：Title/MetaDescription 走 Jet 默认 HTML 转义（等价 html.EscapeString）；
+// CSS/HTML/ThemeVarsCSS/增强脚本是编译产物，用 unsafe 原样输出，避免二次转义；
+// BodyClass 保持现状未转义（父代理单独处理转义问题），同样 unsafe 原样输出。
 func RenderDocument(c *CompiledPage) string {
+	v := documentView{
+		Title:           c.Title,
+		MetaDescription: c.MetaDescription,
+		BodyClass:       strings.Join(c.BodyClasses, " "),
+		HTML:            c.HTML,
+		CSS:             c.CSS,
+		ThemeVarsCSS:    c.ThemeVarsCSS,
+		EnhanceScript:   enhanceScript,
+	}
 	var sb strings.Builder
-	sb.WriteString("<!DOCTYPE html>\n<html lang=\"zh-CN\">\n<head>\n")
-	sb.WriteString("<meta charset=\"utf-8\">\n")
-	sb.WriteString("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n")
-	if c.Title != "" {
-		sb.WriteString("<title>")
-		sb.WriteString(html.EscapeString(c.Title))
-		sb.WriteString("</title>\n")
+	if err := documentTemplate().Execute(&sb, nil, v); err != nil {
+		panic(fmt.Sprintf("渲染 document.jet 失败: %v", err))
 	}
-	if c.MetaDescription != "" {
-		sb.WriteString("<meta name=\"description\" content=\"")
-		sb.WriteString(html.EscapeString(c.MetaDescription))
-		sb.WriteString("\">\n")
-	}
-	sb.WriteString("<style>\n")
-	// 主题变量块置顶（组件 CSS 可引用 var(--wp-c-*) 消费主题令牌）。
-	if c.ThemeVarsCSS != "" {
-		sb.WriteString(c.ThemeVarsCSS)
-		sb.WriteString("\n")
-	}
-	sb.WriteString(c.CSS)
-	sb.WriteString("\n</style>\n</head>\n<body")
-	if len(c.BodyClasses) > 0 {
-		sb.WriteString(" class=\"")
-		sb.WriteString(strings.Join(c.BodyClasses, " "))
-		sb.WriteString("\"")
-	}
-	sb.WriteString(">\n")
-	sb.WriteString(c.HTML)
-	sb.WriteString("\n<script>")
-	sb.WriteString(enhanceScript)
-	sb.WriteString("</script>\n</body>\n</html>\n")
 	return sb.String()
 }
+
+// documentView 文档骨架渲染数据（CompiledPage 拍平 + 增强脚本进模板）。
+type documentView struct {
+	Title           string
+	MetaDescription string
+	BodyClass       string // strings.Join(c.BodyClasses, " ")，模板 unsafe 原样输出
+	HTML            string
+	CSS             string
+	ThemeVarsCSS    string
+	EnhanceScript   string
+}
+
+// documentTpl* document.jet 的进程级单例（embed 静态模板编译一次全局复用）。
+var (
+	documentTplOnce sync.Once
+	documentTpl     *jet.Template
+)
+
+// documentTemplate 返回 document.jet 的编译后模板（首次调用加载编译）。
+func documentTemplate() *jet.Template {
+	documentTplOnce.Do(func() {
+		loader := jet.NewInMemLoader()
+		loader.Set("document", documentJetSrc)
+		t, err := jet.NewSet(loader).GetTemplate("document")
+		if err != nil {
+			panic(fmt.Sprintf("加载 document.jet 失败: %v", err))
+		}
+		documentTpl = t
+	})
+	return documentTpl
+}
+
+//go:embed document.jet
+var documentJetSrc string
 
 //go:embed enhance.js
 var enhanceScript string
