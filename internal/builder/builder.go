@@ -127,6 +127,13 @@ func WithComponentSet(set *jet.Set) CompileOption {
 	return func(c *compileConfig) { c.set = set }
 }
 
+// MaxNodeDepth 组件树深度上限（顶级节点为第 1 层）。
+// 正常页面 3~4 层（页面主体 > 区块 > 布局 > 叶子），复杂卡片 5~6 层；
+// 超过 8 层即结构失控（选择器特异度竞争、响应式覆盖链失控、大纲树不可用，
+// 参照 Elementor 硬 3 层 / Webflow 社区最佳实践 ≤6 层）。上限取 10：
+// 给合法复杂度留余量，同时拦住无限嵌套（含未来插件预设塞深层结构）。
+const MaxNodeDepth = 10
+
 // ValidatePage 只校验页面文档结构，不执行 HTML/CSS 渲染与外部解析。
 // 草稿保存入口使用它拒绝非法 Layout、重复 Node ID、未知组件与非法 Props；
 // 媒体/CMS Binding 在正式 Build 阶段由注入的 Resolver 解析。
@@ -137,6 +144,12 @@ func ValidatePage(p *Page) (err error) {
 	if err = validateSettings(&p.Settings); err != nil {
 		return fmt.Errorf("页面设置: %w", err)
 	}
+	// 深度防线：超限拒绝（草稿保存即拦截，编译期同样经过此处）。
+	for i, n := range p.Root {
+		if d := nodeDepth(n); d > MaxNodeDepth {
+			return fmt.Errorf("顶级节点 %d: 组件树深度 %d 超过上限 %d（嵌套失控，请简化结构）", i, d, MaxNodeDepth)
+		}
+	}
 	ids := map[string]bool{}
 	for i, n := range p.Root {
 		if err = core.ValidateNode(n, ids); err != nil {
@@ -144,6 +157,20 @@ func ValidatePage(p *Page) (err error) {
 		}
 	}
 	return nil
+}
+
+// nodeDepth 节点子树深度（自身为 1）。
+func nodeDepth(n *core.Node) int {
+	if n == nil || len(n.Children) == 0 {
+		return 1
+	}
+	max := 0
+	for _, c := range n.Children {
+		if d := nodeDepth(c); d > max {
+			max = d
+		}
+	}
+	return max + 1
 }
 
 // ComponentSchemas 生成全部已注册组件的 Inspector 面板 schema（docs/02-C3）。

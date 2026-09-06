@@ -1,5 +1,7 @@
 // Package container 实现 core.container 标准容器组件（规范 docs/02-A §3）：
-// 组件树的唯一结构载体，既可作为页面第一层顶级 Section，也可无限自由嵌套；
+// 组件树的唯一结构载体，既可作为页面第一层顶级 Section，也可自由嵌套
+// （深度上限 builder.MaxNodeDepth=10，由 ValidatePage 统一拦截；正常页面
+// 3~6 层，防线针对 globalref 内联叠加与插件预设失控）；
 // 编译期直出单层原生 HTML 语义标签，不产生冗余 Wrapper。
 package container
 
