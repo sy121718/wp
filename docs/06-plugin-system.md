@@ -194,24 +194,26 @@ marketing-plugin.zip
   实际抓出两个真 bug（后代选择器缺空格、nodeID 未校验）并修复，失败
   样本入库 `testdata/fuzz` 作回归资产。
 
-## 7. 模板加载：CompositeLoader（Hugo overlay 语义）
+## 7. 模板加载：CompositeLoader（命名空间合并）
 
-`templates` 包新增 Composite Loader，语义照搬 Hugo 的虚拟联合文件系统：
+`templates` 包 Composite Loader，采用**命名空间合并**（终态设计，强于
+Hugo overlay 回退）：内置模板与插件模板路径空间不相交——
 
 ```text
-内置 embed 模板（最高优先）
-  → 插件A模板（registry 启用序）
-  → 插件B模板
-回退规则：先到先得；内置模板永不被插件覆盖（安全基线）。
+内置模板：  "{name}.jet"                      （如 heading.jet）
+插件模板：  "plugin/{pluginID}/{file}.jet"    （如 plugin/marketing/campaign_card.jet）
 ```
 
-- 实现 `jet.Loader` 接口（`Exists` + `Open`），`embedLoader` 是现成范本；
-- 每个构建任务组装本次构建专用视图（内置 Set 可继续进程级单例，插件
-  模板按 registry 版本合并）——注意：`builder.ComponentSchemas()` 与
-  `templates.NewEmbeddedComponentSet()` 的 sync.Once 缓存仅覆盖内置部分，
-  插件部分按构建合并，**这是 Phase 1 的既定改造点，不是缓存缺陷**；
+路径前缀 `plugin/{pid}/` 路由到对应插件包的 `components/` 目录。插件永远
+不可能覆盖内置模板——比「先到先得」更强的安全基线（从路径层面杜绝同名）。
+
+- 实现 `jet.Loader` 接口（`Exists` + `Open`）；`embedLoader` 为内置来源，
+  `compositeLoader` 按 `plugin/{pid}/` 前缀路由到启用插件的 fs.FS；
+- 无启用插件：构建/预览走内置 embed 单例（`NewEmbeddedComponentSet`，
+  hot path 缓存）；有插件：按任务组装 `NewCompositeSet`（内置 + 插件），
+  确定性：同一插件版本集 → 同一模板内容；
 - 组件 palette 注入：workbench 的 `wb-schemas`（ComponentSchemas 产物）
-  合并插件组件 schema，组件库自动出现新组件。
+  合并插件组件 schema，组件库自动出现新组件（`registerPluginPalette`）。
 
 ## 8. 表扩展：独立 PG Schema + 迁移执行器
 
@@ -303,9 +305,9 @@ Query DSL）：
 | 阶段 | 内容 | 状态 |
 |---|---|---|
 | **P0（已完成）** | 样式声明引擎 `internal/builder/style`（§6） | ✅ 已合入主干 |
-| **P1** | `plugin` 模块骨架（上传/版本/启停 + registry 表 + zip 解析与 manifest 校验）；CompositeLoader + pluginLoader（§7）；组件注册进 workbench palette；ComponentSchemas 单例缓存分层改造（内置 Once + 插件动态合并） | 待做 |
+| **P1（已完成）** | `plugin` 模块（上传/版本/启停/卸载 + registry + zip 安全解析 + manifest 校验）；CompositeLoader 命名空间合并（§7）；plugin.* 节点编译分发（builder 内核契约）；组件注册进 workbench palette；编译同源注入（dashboard 预览 + page 构建）；后台插件管理页 | ✅ 已合入主干 |
 | **P2** | L1 迁移执行器（插件 schema 创建/增量迁移/级联卸载 + registry 记账，真实 PG 测试）；presets 注册进组件库（§5.2） | 待做 |
-| **P3** | L2 CollectionSource（对齐 0-A2 content 落地节奏）；后台管理页挂接（admin 路由 + 菜单 seed）；脚手架 `plugin init`（对标 strapi generate） | 待做 |
+| **P3** | L2 CollectionSource（对齐 0-A2 content 落地节奏）；脚手架 `plugin init`（对标 strapi generate） | 待做 |
 | **演进** | 第三轨（Yaegi/Wasm 受限逻辑）；插件市场与签名分发 | 评估项 |
 
 ## 14. 术语表
@@ -316,7 +318,7 @@ Query DSL）：
 | 轻轨 / 重轨 | zip 数据插件（热装）/ Go 模块插件（编译期），共享 schema 与注册体系 |
 | L0 / L1 / L2 | 展示层（无表）/ 数据层（自有 schema）/ 内容源层（白名单注册） |
 | styles 声明 | manifest 中的样式规则集，由 style 引擎编译进 CSSBuckets |
-| CompositeLoader | Hugo overlay 语义的模板加载器：内置优先、插件回退、同名不覆盖 |
+| CompositeLoader | 命名空间合并的模板加载器：内置 `{name}.jet` + 插件 `plugin/{pid}/{file}.jet`，路径层面杜绝覆盖 |
 | CollectionSource | 插件数据进可视化的唯一白名单通道 |
 | presets | 区块预设：插件声明的预组合 AST 片段，一键插入组件库 |
 | plugin_registry | 插件记账表：plugin_id、版本、schema 版本、启停状态 |
