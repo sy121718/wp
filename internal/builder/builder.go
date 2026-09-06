@@ -103,10 +103,11 @@ type CompileOption func(*compileConfig)
 
 // compileConfig 编译配置。
 type compileConfig struct {
-	content core.ContentResolver
-	block   core.BlockResolver
-	set     *jet.Set
-	plugin  core.PluginResolver
+	content    core.ContentResolver
+	block      core.BlockResolver
+	set        *jet.Set
+	plugin     core.PluginResolver
+	collection core.CollectionResolver
 }
 
 // WithContentResolver 注入 CMS 内容解析器（构建期动态绑定静态填入，规范 docs/02-C1）。
@@ -133,6 +134,12 @@ func WithComponentSet(set *jet.Set) CompileOption {
 // 页面含插件节点将返回明确错误。
 func WithPluginResolver(r core.PluginResolver) CompileOption {
 	return func(c *compileConfig) { c.plugin = r }
+}
+
+// WithCollectionResolver 注入集合内容解析器（插件组件集合绑定渲染，docs/06 §9）。
+// 调用方（page service / dashboard）注入 content 模块的 CollectionResolver。
+func WithCollectionResolver(r core.CollectionResolver) CompileOption {
+	return func(c *compileConfig) { c.collection = r }
 }
 
 // MaxNodeDepth 组件树深度上限（顶级节点为第 1 层）。
@@ -240,7 +247,7 @@ func Compile(p *Page, opts ...CompileOption) (res *CompiledPage, err error) {
 	compileSettingsCSS(&p.Settings, &b)
 
 	var htmlBuf strings.Builder
-	ctx := &core.RenderContext{CSS: &b, Content: cfg.content, Block: cfg.block, Plugin: cfg.plugin}
+	ctx := &core.RenderContext{CSS: &b, Content: cfg.content, Block: cfg.block, Plugin: cfg.plugin, Collection: cfg.collection}
 	for _, n := range p.Root {
 		// Jet 路径：nodeViewOf 把 Node 转 view 树（含 CSS 编译与递归），renderView 渲染根 view。
 		v, verr := nodeViewOf(n, true, ctx)

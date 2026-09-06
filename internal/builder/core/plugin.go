@@ -36,6 +36,19 @@ type PluginComponentSpec struct {
 	CompileStyles func(nodeID string, props map[string]any, b *CSSBuckets) error
 	// HasChildren 插件组件是否允许子节点（当前一律 false：叶子组件）。
 	HasChildren bool
+	// Collection 集合绑定（docs/06 §9）：组件渲染列表数据。nil = 非集合组件。
+	// 构建期经 RenderContext.Collection 展开为视图 .V.items。
+	Collection *CollectionBinding
+}
+
+// CollectionBinding 插件组件集合绑定（docs/06 §9，不变量 4 白名单）。
+type CollectionBinding struct {
+	// Source 集合源标识（"content:{entityType}" 等）。
+	Source string
+	// Fields 渲染字段白名单（模板只能渲染声明字段）。
+	Fields []string
+	// Filter 固定过滤（键值等值）。
+	Filter map[string]string
 }
 
 // PluginResolver 插件组件解析契约：按节点类型返回组件规格。

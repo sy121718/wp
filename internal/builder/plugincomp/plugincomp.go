@@ -82,6 +82,20 @@ type Component struct {
 	Props map[string]PropControl `json:"props,omitempty"`
 	// Styles 样式声明（style 引擎 Rule 列表，docs/06 §6）。
 	Styles *style.Schema `json:"styles,omitempty"`
+	// Collection 集合绑定声明（docs/06 §9）：组件渲染列表数据。source 为
+	// 集合源（"content:{entityType}" 等），fields 为渲染字段白名单，filter
+	// 为可选固定过滤。声明后构建期经 CollectionResolver 展开为 .V.items。
+	Collection *CollectionBinding `json:"collection,omitempty"`
+}
+
+// CollectionBinding 组件集合绑定声明（构建期展开列表数据）。
+type CollectionBinding struct {
+	// Source 集合源标识（"content:product" / 未来 "plugin:{id}.{table}"）。
+	Source string `json:"source"`
+	// Fields 渲染字段白名单（不变量 4：模板只能渲染声明字段）。
+	Fields []string `json:"fields"`
+	// Filter 可选固定过滤（键值等值，键在集合源白名单内）。
+	Filter map[string]string `json:"filter,omitempty"`
 }
 
 // PropControl manifest 单个控件声明（core.PluginPropControl 的 JSON 形态）。
@@ -212,6 +226,38 @@ func validateComponent(m *Manifest, idx int, c Component, seen map[string]bool) 
 			return fmt.Errorf("组件 %s: 样式声明非法: %w", c.Name, err)
 		}
 	}
+	if c.Collection != nil {
+		if err := validateCollectionBinding(c.Name, c.Collection); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// collectionSourceRe 集合源标识白名单（"content:product" / "plugin:{id}.{table}"）。
+var collectionSourceRe = regexp.MustCompile(`^(content:[a-z]+|plugin:[a-z][a-z0-9_-]*\.[a-z][a-z0-9_]*)$`)
+
+// validateCollectionBinding 集合绑定声明校验（source/fields/filter 白名单）。
+func validateCollectionBinding(compName string, cb *CollectionBinding) error {
+	if !collectionSourceRe.MatchString(cb.Source) {
+		return fmt.Errorf("组件 %s: 集合源 %q 非法", compName, cb.Source)
+	}
+	if len(cb.Fields) == 0 || len(cb.Fields) > 40 {
+		return fmt.Errorf("组件 %s: 集合字段数非法（1~40）", compName)
+	}
+	for _, f := range cb.Fields {
+		if !keyCharRe.MatchString(f) {
+			return fmt.Errorf("组件 %s: 集合字段 %q 非法", compName, f)
+		}
+	}
+	if len(cb.Filter) > 20 {
+		return fmt.Errorf("组件 %s: 过滤维度超限（上限 20）", compName)
+	}
+	for k := range cb.Filter {
+		if !keyCharRe.MatchString(k) {
+			return fmt.Errorf("组件 %s: 过滤键 %q 非法", compName, k)
+		}
+	}
 	return nil
 }
 
@@ -241,6 +287,13 @@ func BuildSpecs(m *Manifest) map[string]*core.PluginComponentSpec {
 			styles := comp.Styles
 			spec.CompileStyles = func(nodeID string, props map[string]any, b *core.CSSBuckets) error {
 				return style.Compile(nodeID, props, styles, b)
+			}
+		}
+		if comp.Collection != nil {
+			spec.Collection = &core.CollectionBinding{
+				Source: comp.Collection.Source,
+				Fields: comp.Collection.Fields,
+				Filter: comp.Collection.Filter,
 			}
 		}
 		out[spec.Type] = spec

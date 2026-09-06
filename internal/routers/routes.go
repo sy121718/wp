@@ -4,6 +4,8 @@ import (
 	"net/http"
 
 	"go_wp/internal/middleware/builtin"
+
+	"go_wp/internal/builder/core"
 	adminhttp "go_wp/internal/module/admin/inbound/http"
 	artifacthttp "go_wp/internal/module/artifact/inbound/http"
 	blockhttp "go_wp/internal/module/block/inbound/http"
@@ -127,10 +129,12 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 	_ = presentationSvc // 后续 stale 传播编排（实体变更触发 Rebuild）接入
 	// 插件模块（page 构建路径依赖其装配素材，须先于 page 装配）。
 	pluginSvc := pluginhttp.SetupPluginRoutes(authorizedAPI, db)
-	pageService := pagehttp.SetupPageRoutes(authorizedAPI, db, artifactSvc, publicationSvc, projectService, blockSvc, pluginSvc)
+	// content service 同时实现 core.CollectionResolver（插件集合绑定渲染）。
+	collectionResolver, _ := contentSvc.(core.CollectionResolver)
+	pageService := pagehttp.SetupPageRoutes(authorizedAPI, db, artifactSvc, publicationSvc, projectService, blockSvc, pluginSvc, collectionResolver)
 
 	// 页面路由（编辑器外壳依赖 page/block/plugin 契约，置于 API 装配之后）
-	dashboardhttp.SetupDashboardRoutes(router, pageService, projectService, blockSvc, pluginSvc)
+	dashboardhttp.SetupDashboardRoutes(router, pageService, projectService, blockSvc, pluginSvc, collectionResolver)
 
 	// 未匹配路由返回 404
 	router.NoRoute(func(c *gin.Context) {

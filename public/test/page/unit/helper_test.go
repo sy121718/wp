@@ -69,7 +69,7 @@ func newPageService(t *testing.T) (*gorm.DB, pagecontract.PageService, *projects
 	artifacts := artifactservice.NewService(artifactmodel.NewArtifactModel(db))
 	routes := pubservice.NewService(pubmodel.NewPublicationModel(db))
 	blocks := blockservice.NewService(blockmodel.NewBlockModel(db), projects)
-	return db, pageservice.NewService(pageModel, artifacts, routes, projects, blocks, nil), projects, project.ID
+	return db, pageservice.NewService(pageModel, artifacts, routes, projects, blocks, nil, nil), projects, project.ID
 }
 
 // createPage 创建指定路径的页面并返回投影。

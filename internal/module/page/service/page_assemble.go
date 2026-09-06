@@ -50,6 +50,9 @@ func (s *Service) assembleCompile(docJSON []byte) ([]byte, error) {
 	if asm != nil {
 		opts = append(opts, builder.WithPluginResolver(pluginservice.AssemblyResolver(asm)))
 	}
+	if s.content != nil {
+		opts = append(opts, builder.WithCollectionResolver(s.content))
+	}
 	compiled, err := builder.Compile(page, opts...)
 	if err != nil {
 		logger.Scene("build").Error(err, "页面编译失败")

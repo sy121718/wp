@@ -4,6 +4,8 @@ package dashboardhttp
 import (
 	"go_wp/internal/middleware/builtin"
 
+	"go_wp/internal/builder/core"
+
 	blockcontract "go_wp/internal/module/block/contract"
 	pagecontract "go_wp/internal/module/page/contract"
 	plugincontract "go_wp/internal/module/plugin/contract"
@@ -17,12 +19,13 @@ func SetupDashboardRoutes(router *gin.Engine,
 	pages pagecontract.PageService,
 	projects projectcontract.ProjectService,
 	blocks blockcontract.BlockService,
-	plugins plugincontract.PluginService) {
+	plugins plugincontract.PluginService,
+	collection core.CollectionResolver) {
 	if router == nil {
 		return
 	}
 
-	handle := NewHandle(pages, projects, blocks, plugins)
+	handle := NewHandle(pages, projects, blocks, plugins, collection)
 
 	// 登录页：不挂认证（未登录请求被中间件 302 到此，独立布局渲染登录表单）。
 	router.GET("/admin/login", handle.LoginPage)

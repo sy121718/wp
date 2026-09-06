@@ -46,6 +46,23 @@ func pluginViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nod
 		_ = node.Hidden
 	}
 
+	// 视图数据 V：默认 = props map（{{.V.field}}）；集合组件追加 .V.items 列表。
+	viewData := props
+	if spec.Collection != nil {
+		if ctx.Collection == nil {
+			return nil, fmt.Errorf("节点 %s: 编译上下文缺少集合解析器（组件 %q 声明了集合绑定）", node.ID, node.Type)
+		}
+		items, cerr := ctx.Collection.ResolveCollection(spec.Collection.Source, spec.Collection.Filter)
+		if cerr != nil {
+			return nil, fmt.Errorf("节点 %s: 集合 %q 解析失败: %w", node.ID, spec.Collection.Source, cerr)
+		}
+		// 字段白名单裁剪（不变量 4：模板只能渲染声明字段）。
+		viewData = map[string]any{
+			"items": cropFields(items, spec.Collection.Fields),
+			"props": props,
+		}
+	}
+
 	return &nodeView{
 		Type:     spec.Type,
 		Template: spec.Template,
@@ -53,8 +70,27 @@ func pluginViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nod
 		Classes:  strings.Join(classes, " "),
 		TopLevel: topLevel,
 		Props:    props,
-		V:        props, // 模板经 {{.V.field}} 访问（Jet 默认转义）
+		V:        viewData, // 模板经 {{.V.field}}（非集合）或 {{range .V.items}}（集合）
 	}, nil
+}
+
+// cropFields 按字段白名单裁剪列表项（不变量 4：拒绝声明外字段）。
+func cropFields(items []map[string]any, fields []string) []map[string]any {
+	allow := make(map[string]bool, len(fields))
+	for _, f := range fields {
+		allow[f] = true
+	}
+	out := make([]map[string]any, 0, len(items))
+	for _, item := range items {
+		row := make(map[string]any, len(fields))
+		for _, f := range fields {
+			if v, ok := item[f]; ok {
+				row[f] = v
+			}
+		}
+		out = append(out, row)
+	}
+	return out
 }
 
 // decodePluginProps 按 spec 白名单解码节点 props：未知键拒绝（防夹带），

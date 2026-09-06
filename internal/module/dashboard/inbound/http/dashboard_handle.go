@@ -38,16 +38,19 @@ import (
 
 // Handle 页面处理器，聚合 dashboard 相关 handler。
 type Handle struct {
-	pages    pagecontract.PageService
-	projects projectcontract.ProjectService
-	blocks   blockcontract.BlockService
-	plugins  plugincontract.PluginService
+	pages      pagecontract.PageService
+	projects   projectcontract.ProjectService
+	blocks     blockcontract.BlockService
+	plugins    plugincontract.PluginService
+	collection core.CollectionResolver
 }
 
-// NewHandle 创建页面处理器；pages/projects/blocks/plugins 为各模块契约。
+// NewHandle 创建页面处理器；pages/projects/blocks/plugins 为各模块契约，
+// collection 为集合内容解析器（插件集合绑定预览渲染）。
 func NewHandle(pages pagecontract.PageService, projects projectcontract.ProjectService,
-	blocks blockcontract.BlockService, plugins plugincontract.PluginService) *Handle {
-	return &Handle{pages: pages, projects: projects, blocks: blocks, plugins: plugins}
+	blocks blockcontract.BlockService, plugins plugincontract.PluginService,
+	collection core.CollectionResolver) *Handle {
+	return &Handle{pages: pages, projects: projects, blocks: blocks, plugins: plugins, collection: collection}
 }
 
 // Dashboard 仪表盘页面。
@@ -366,6 +369,9 @@ func (h *Handle) renderPreview(c *gin.Context, document json.RawMessage, withEdi
 	}
 	if asm := h.pluginAssembly(c); asm != nil {
 		opts = append(opts, builder.WithPluginResolver(pluginservice.AssemblyResolver(asm)))
+	}
+	if h.collection != nil {
+		opts = append(opts, builder.WithCollectionResolver(h.collection))
 	}
 	compiled, err := builder.Compile(docPage, opts...)
 	if err != nil {

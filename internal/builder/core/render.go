@@ -16,6 +16,9 @@ type RenderContext struct {
 	// Plugin 插件组件解析器（plugin.* 节点经此取规格渲染，docs/06 §7）。
 	// 未注入时插件节点返回明确错误（而非静默跳过）。
 	Plugin PluginResolver
+	// Collection 集合内容解析器（插件组件绑定集合时展开列表数据，docs/06 §9）。
+	// 未注入时集合绑定组件返回明确错误。
+	Collection CollectionResolver
 }
 
 // ContentResolver CMS 内容解析契约：绑定字段 → 构建期字符串值。
