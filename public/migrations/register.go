@@ -48,6 +48,15 @@ var presentationSQL string
 //go:embed 034_content_pipeline_permissions.sql
 var contentPipelinePermSQL string
 
+//go:embed 045_blueprint.sql
+var blueprintSQL string
+
+//go:embed 046_navigation.sql
+var navigationSQL string
+
+//go:embed 036_blueprint_navigation_permissions.sql
+var blueprintNavigationPermSQL string
+
 func init() {
 	register(Migration{
 		Version:   "001-init-schema",
@@ -118,6 +127,20 @@ func init() {
 		SQL:       presentationSQL,
 	})
 
+	// Page 初始化工具 Blueprint（docs/02 §1.2，0-B）。
+	register(Migration{
+		Version:   "045-blueprint",
+		TableName: "blueprints",
+		SQL:       blueprintSQL,
+	})
+
+	// 公开站点导航（docs/05 阶段6，0-C）。
+	register(Migration{
+		Version:   "046-navigation",
+		TableName: "navigations",
+		SQL:       navigationSQL,
+	})
+
 	// 插件权限 seed（权限点 + 后台菜单，docs/06）。
 	registerSeed(Seed{
 		Version:      "032-plugin-permissions",
@@ -140,5 +163,13 @@ func init() {
 		TableName:    "sys_permission",
 		ConditionSQL: "SELECT COUNT(*) FROM sys_permission WHERE module IN ('contenttemplate','presentation')",
 		SQL:          contentPipelinePermSQL,
+	})
+
+	// Blueprint 与 Navigation 权限 seed（0-B/0-C）。
+	registerSeed(Seed{
+		Version:      "036-blueprint-navigation-permissions",
+		TableName:    "sys_permission",
+		ConditionSQL: "SELECT COUNT(*) FROM sys_permission WHERE module IN ('blueprint','navigation')",
+		SQL:          blueprintNavigationPermSQL,
 	})
 }

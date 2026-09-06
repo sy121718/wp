@@ -1,0 +1,89 @@
+// Package navigationmodel 实现 navigation 模块 navigations 表持久化（0-C）。
+// navigations 为公开站点导航表，与后台权限菜单 sys_menus 严格隔离，不可复用同一张表。
+package navigationmodel
+
+import (
+	"context"
+	"time"
+
+	"gorm.io/gorm"
+)
+
+const tableNameNavigations = "navigations"
+
+// NavigationEntity 对应 navigations 表。
+type NavigationEntity struct {
+	ID        string    `gorm:"column:id;type:uuid;primaryKey"`
+	ProjectID string    `gorm:"column:project_id;type:uuid;not null"`
+	Title     string    `gorm:"column:title;not null"`
+	Path      string    `gorm:"column:path;not null"`
+	Kind      string    `gorm:"column:kind;not null"`
+	ParentID  *string   `gorm:"column:parent_id;type:uuid"`
+	SortOrder int       `gorm:"column:sort_order;not null"`
+	CreatedAt time.Time `gorm:"column:created_at;not null"`
+	UpdatedAt time.Time `gorm:"column:updated_at;not null"`
+}
+
+// TableName 表名。
+func (NavigationEntity) TableName() string { return tableNameNavigations }
+
+// Model navigations 表数据访问（Repository）。
+type Model struct {
+	db *gorm.DB
+}
+
+// NewModel 构造。
+func NewModel(db *gorm.DB) *Model { return &Model{db: db} }
+
+// DB 返回已绑定 navigations 表的 GORM 实例。
+func (m *Model) DB(ctx context.Context) *gorm.DB {
+	return m.db.WithContext(ctx).Model(&NavigationEntity{})
+}
+
+// Create 新增导航项。
+func (m *Model) Create(ctx context.Context, e *NavigationEntity) error {
+	return m.DB(ctx).Create(e).Error
+}
+
+// Get 按 ID 查询导航项。
+func (m *Model) Get(ctx context.Context, id string) (e *NavigationEntity, err error) {
+	var row NavigationEntity
+	if err = m.db.WithContext(ctx).Where("id = ?", id).First(&row).Error; err != nil {
+		return nil, err
+	}
+	return &row, nil
+}
+
+// List 按工程（可选 kind）列出导航项，sort_order 升序、同序按 id 升序。
+func (m *Model) List(ctx context.Context, projectID, kind string) (list []*NavigationEntity, err error) {
+	q := m.db.WithContext(ctx).Where("project_id = ?", projectID)
+	if kind != "" {
+		q = q.Where("kind = ?", kind)
+	}
+	err = q.Order("sort_order ASC, id ASC").Find(&list).Error
+	return list, err
+}
+
+// Save 按 ID 部分更新（Where("id = ?").Updates(map)）。
+func (m *Model) Save(ctx context.Context, id string, updates map[string]any) error {
+	return m.DB(ctx).Where("id = ?", id).Updates(updates).Error
+}
+
+// Delete 按 ID 删除导航项。
+func (m *Model) Delete(ctx context.Context, id string) error {
+	return m.DB(ctx).Where("id = ?", id).Delete(&NavigationEntity{}).Error
+}
+
+// ExistsPath 判断同工程同 kind 下 path 是否已被（其他）导航项占用。
+// excludeID 非空时排除自身，供更新场景复用。
+func (m *Model) ExistsPath(ctx context.Context, projectID, kind, path, excludeID string) (bool, error) {
+	var count int64
+	q := m.DB(ctx).Where("project_id = ? AND kind = ? AND path = ?", projectID, kind, path)
+	if excludeID != "" {
+		q = q.Where("id <> ?", excludeID)
+	}
+	if err := q.Count(&count).Error; err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}

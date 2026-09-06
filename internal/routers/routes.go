@@ -9,11 +9,13 @@ import (
 	adminhttp "go_wp/internal/module/admin/inbound/http"
 	artifacthttp "go_wp/internal/module/artifact/inbound/http"
 	blockhttp "go_wp/internal/module/block/inbound/http"
+	blueprinthttp "go_wp/internal/module/blueprint/inbound/http"
 	captcharouter "go_wp/internal/module/common/captcha/router"
 	contenthttp "go_wp/internal/module/content/inbound/http"
 	contenttemplatehttp "go_wp/internal/module/contenttemplate/inbound/http"
 	dashboardhttp "go_wp/internal/module/dashboard/inbound/http"
 	mediahttp "go_wp/internal/module/media/inbound/http"
+	navigationhttp "go_wp/internal/module/navigation/inbound/http"
 	pagehttp "go_wp/internal/module/page/inbound/http"
 	pluginhttp "go_wp/internal/module/plugin/inbound/http"
 	presentationhttp "go_wp/internal/module/presentation/inbound/http"
@@ -120,6 +122,12 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 	blockSvc := blockhttp.SetupBlockRoutes(authorizedAPI, db, projectService)
 	artifactSvc := artifacthttp.SetupArtifactRoutes(authorizedAPI, db)
 	publicationSvc := pubhttp.SetupPublicationRoutes(authorizedAPI, db)
+	// Page 初始化工具 Blueprint（0-B，InitPageDocument 未来接 page CreatePage）。
+	blueprintSvc := blueprinthttp.SetupBlueprintRoutes(authorizedAPI, db)
+	// 公开站点导航（0-C，与后台 menu 严格隔离）。
+	navigationSvc := navigationhttp.SetupNavigationRoutes(authorizedAPI, db)
+	_ = blueprintSvc  // 未来 page CreatePage 消费 InitPageDocument
+	_ = navigationSvc // 未来构建期编译消费 Render
 	// CMS 内容（0-A2，contenttemplate/presentation 依赖其字段白名单契约）。
 	contentSvc := contenthttp.SetupContentRoutes(authorizedAPI, db)
 	// 内容结构模板（presentation 依赖 ResolveTemplate）。
