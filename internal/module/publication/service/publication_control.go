@@ -14,6 +14,7 @@ import (
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // RenameReserved 修改页面的草稿路径占用；仅允许 reserved 状态改名。
@@ -119,44 +120,36 @@ func (s *Service) Activate(ctx context.Context, req *pubdto.ActivateReq) (res *p
 	}
 
 	// 第二段：路由事务（占用归属校验 + 路由切换 + 置 committed）。
+	//
+	// 原子抢占：单条 INSERT ... ON CONFLICT DO UPDATE（PG 方言，主库）替代
+	// 原「SELECT 无锁检查 → UPDATE → CREATE」三语句。语义：
+	//   - 无既有占用            → 插入 active 行（RowsAffected=1）；
+	//   - 既有占用且归属者本人    → 原地升级 active（含 reserved 升级，
+	//                              RowsAffected=1，幂等重复激活）；
+	//   - 既有占用且非归属者      → DO UPDATE WHERE 不匹配，PG 静默 DO NOTHING
+	//                              （RowsAffected=0）→ ErrRouteOccupied。
+	// 消除原实现 SELECT→CREATE 的 TOCTOU 窗口：并发抢占时败者不再产生失败的
+	// CREATE 撞 23505 与补偿回执，唯一约束冲突在语句内被原子消化。
 	err = s.model.Transaction(ctx, func(tx *gorm.DB) error {
-		var existing pubmodel.RouteEntity
-		switch ferr := tx.Where("project_id = ? AND path = ?", req.ProjectID, path).
-			First(&existing).Error; {
-		case ferr == nil:
-			// 已有占用：只允许归属者本人升级；page_id 为空表示展示实例占用。
-			if existing.PageID == nil || *existing.PageID != req.PageID {
-				return errRouteOccupied
-			}
-		case errors.Is(ferr, gorm.ErrRecordNotFound):
-			// 无既有占用：下面直接建立 active 行（幂等激活）。
-		default:
-			return ferr
-		}
-		result := tx.Model(&pubmodel.RouteEntity{}).
-			Where("project_id = ? AND path = ? AND page_id = ?", req.ProjectID, path, req.PageID).
-			Updates(map[string]any{
-				"route_kind":  pubmodel.RouteActive,
-				"artifact_id": req.ArtifactID,
-				"updated_at":  now,
-			})
+		pageIDCopy := req.PageID
+		result := tx.Clauses(clause.OnConflict{
+			Columns: []clause.Column{{Name: "project_id"}, {Name: "path"}},
+			// DO UPDATE 仅当冲突行归属者本人（page_id 相同）；他人页面或
+			// 展示实例（page_id 为 NULL）时 WHERE 不成立 → 0 行 → occupied。
+			Where: clause.Where{Exprs: []clause.Expression{
+				clause.Expr{SQL: "page_routes.page_id = EXCLUDED.page_id"},
+			}},
+			DoUpdates: clause.AssignmentColumns([]string{"route_kind", "artifact_id", "updated_at"}),
+		}).Create(&pubmodel.RouteEntity{
+			ProjectID: req.ProjectID, Path: path, PageID: &pageIDCopy,
+			RouteKind: pubmodel.RouteActive, ArtifactID: strPtr(req.ArtifactID), UpdatedAt: now,
+		})
 		if result.Error != nil {
 			return result.Error
 		}
 		if result.RowsAffected == 0 {
-			pageIDCopy := req.PageID
-			if err := tx.Create(&pubmodel.RouteEntity{
-				ProjectID: req.ProjectID, Path: path, PageID: &pageIDCopy,
-				RouteKind: pubmodel.RouteActive, ArtifactID: strPtr(req.ArtifactID), UpdatedAt: now,
-			}).Error; err != nil {
-				// 并发抢占同一路径：两个事务都通过上面的无占用检查（READ COMMITTED
-				// 无行锁），后提交者 CREATE 撞 (project_id, path) 唯一约束——
-				// 归一为 ErrRouteOccupied（TranslateError 未开启时是原始 23505）。
-				if errors.Is(err, gorm.ErrDuplicatedKey) || strings.Contains(err.Error(), "23505") {
-					return errRouteOccupied
-				}
-				return err
-			}
+			// 目标路径被其他实体占用：ON CONFLICT 未执行更新。
+			return errRouteOccupied
 		}
 		return markReceipt(tx, receipt.ID, pubmodel.ReceiptCommitted, now)
 	})

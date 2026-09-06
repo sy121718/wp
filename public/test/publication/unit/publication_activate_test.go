@@ -143,6 +143,40 @@ func TestPublicationActivateNilRequest(t *testing.T) {
 	containsErr(t, err, pubenums.ErrInvalidParam)
 }
 
+// TestPublicationActivateConcurrentSamePage 同一页面并发重复激活（幂等语义）：
+// 归属者本人重复激活放行（DO UPDATE 命中自己占用的行），全部成功；
+// 最终仅 1 行路由，回执各自 committed。
+// 该用例固化原子化改造（INSERT ... ON CONFLICT DO UPDATE）后的行为，
+// 也是旧测试 pageID 拼接缺陷（goroutine 同归属）场景的回归防护。
+func TestPublicationActivateConcurrentSamePage(t *testing.T) {
+	svc := newUnitService(t)
+	ctx := context.Background()
+	const goroutines = 8
+	var wg sync.WaitGroup
+	errs := make([]error, goroutines)
+	for i := 0; i < goroutines; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			_, errs[idx] = svc.Activate(ctx, &pubdto.ActivateReq{
+				ProjectID: projectID, Path: "/race-self", PageID: pageID, ArtifactID: artifactUUID,
+			})
+		}(i)
+	}
+	wg.Wait()
+	for i, err := range errs {
+		if err != nil {
+			t.Fatalf("goroutine %d 同一页面重复激活应幂等成功: %v", i, err)
+		}
+	}
+	if n := countRoutes(t, svc, "path = ?", "/race-self"); n != 1 {
+		t.Fatalf("并发同页激活应仅 1 行路由: %d", n)
+	}
+	if n := countReceipts(t, svc, "receipt_state = ?", pubmodel.ReceiptCommitted); n != goroutines {
+		t.Fatalf("应有 %d 条 committed 回执: %d", goroutines, n)
+	}
+}
+
 // TestPublicationActivateConcurrentSamePath 多个不同页面并发激活同一路径：
 // 必须恰好一个成功；其余失败者拿到 ErrRouteOccupied（或唯一约束竞争时的
 // 原始 DB 错误，见下方日志统计）。
