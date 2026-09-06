@@ -219,6 +219,56 @@
                     paletteGroups.push({ key: 'plugin', title: '插件组件', types: types });
                 }
             },
+            // ---------------- 画布直改支持 ----------------
+            // textFieldOf 组件类型 → 就地编辑的文本 prop 键（双击编辑回写目标）。
+            textFieldOf(type) {
+                var map = {
+                    'core.heading': 'text', 'core.text': 'text', 'core.button': 'text',
+                    'core.card': 'title', 'core.quote': 'text', 'core.badge': 'text',
+                    'core.infobox': 'title', 'core.counter': 'suffix', 'core.progress': 'label'
+                };
+                return map[type] || null;
+            },
+            // handleCanvasCtx 画布右键/快捷条操作分发（复用既有方法）。
+            handleCanvasCtx(id, op, value) {
+                this.selectedId = id;
+                switch (op) {
+                    case 'copy': this.copyNode(); break;
+                    case 'cut': this.cutNode(); break;
+                    case 'paste-inside': this.pasteInto(id); break;
+                    case 'delete': this.deleteSelected(); break;
+                    case 'move-up': this.moveNodeOrder(id, -1); break;
+                    case 'move-down': this.moveNodeOrder(id, 1); break;
+                    case 'entrance':
+                        // 入场动画快捷项：写 props.advanced.interaction.entrance。
+                        var n = this.findNode(id);
+                        if (n) {
+                            this.snapshot();
+                            n.props = n.props || {};
+                            n.props.advanced = n.props.advanced || {};
+                            n.props.advanced.interaction = n.props.advanced.interaction || {};
+                            // 切换：同值再点取消。
+                            n.props.advanced.interaction.entrance =
+                                n.props.advanced.interaction.entrance === value ? '' : value;
+                            this.saveState = 'dirty';
+                            this.renderTree(); this.refreshCanvas(); this.renderUI();
+                        }
+                        break;
+                    case 'hover':
+                        var n2 = this.findNode(id);
+                        if (n2) {
+                            this.snapshot();
+                            n2.props = n2.props || {};
+                            n2.props.advanced = n2.props.advanced || {};
+                            n2.props.advanced.interaction = n2.props.advanced.interaction || {};
+                            n2.props.advanced.interaction.hoverEffect =
+                                n2.props.advanced.interaction.hoverEffect === value ? '' : value;
+                            this.saveState = 'dirty';
+                            this.renderTree(); this.refreshCanvas(); this.renderUI();
+                        }
+                        break;
+                }
+            },
             renderPalette() {
                 this.renderPaletteComponents();
                 this.renderPaletteBlocks();
@@ -1613,6 +1663,43 @@
                         field(d[1] + '对齐', 'props.align.' + d[0], 'select', [['', '默认'], ['left', '左对齐'], ['center', '居中'], ['right', '右对齐']]);
                         unitInput(d[1] + '宽度', 'props.width.' + d[0], ['px', '%', 'vw']);
                     });
+                    // 副标题样式组（docs/06：副标题完整排版控制）。
+                    heading('副标题');
+                    field('副标题颜色', 'props.subtitleColor', 'color');
+                    unitInput('副标题字号', 'props.subtitleFontSize', ['px', 'rem', 'em']);
+                    field('副标题字重', 'props.subtitleFontWeight', 'select', [['400', '常规'], ['500', '中等'], ['600', '半粗'], ['700', '粗体']]);
+                    unitInput('副标题间距', 'props.subtitleSpacing', ['px', 'rem']);
+                }
+
+                // interactionPanel 动效分组（效果基本库，全组件：AdvancedProps.Interaction）。
+                // 入场 17 种 / 滚动触发 / 时长档位 / 延迟 / 悬浮 5 种 / 循环 4 种。
+                function interactionPanel() {
+                    heading('动效');
+                    field('入场动画', 'props.advanced.interaction.entrance', 'select', [
+                        ['', '无'],
+                        ['fade-in', '淡入'], ['fade-up', '淡入·上'], ['fade-down', '淡入·下'],
+                        ['fade-left', '淡入·右移'], ['fade-right', '淡入·左移'],
+                        ['zoom-in', '缩放进入'], ['zoom-out', '缩放退出'],
+                        ['slide-up', '上滑'], ['slide-down', '下滑'],
+                        ['slide-left', '右滑'], ['slide-right', '左滑'],
+                        ['flip-x', '翻转 X'], ['flip-y', '翻转 Y'],
+                        ['blur-in', '模糊入场'], ['bounce-in', '弹跳入场'], ['rotate-in', '旋转入场']
+                    ]);
+                    field('时长', 'props.advanced.interaction.entranceDuration', 'select', [
+                        ['', '标准 0.6s'], ['fast', '快 0.3s'], ['slow', '慢 1s']
+                    ]);
+                    field('延迟(s)', 'props.advanced.interaction.entranceDelay', 'number');
+                    field('滚动触发', 'props.advanced.interaction.scrollReveal', 'select', [
+                        ['', '加载即播'], ['reveal', '滚动到视口时']
+                    ]);
+                    field('悬浮效果', 'props.advanced.interaction.hoverEffect', 'select', [
+                        ['', '无'], ['lift', '上浮'], ['scale', '放大'], ['glow', '发光'],
+                        ['shadow', '阴影加深'], ['underline', '下划线生长']
+                    ]);
+                    field('循环动画', 'props.advanced.interaction.loopEffect', 'select', [
+                        ['', '无'], ['pulse', '脉冲'], ['float', '漂浮'],
+                        ['glow', '呼吸发光'], ['spin', '旋转']
+                    ]);
                 }
 
                 function typographyPanel(typoPath) {
@@ -2296,6 +2383,8 @@
                     if (node.type === 'core.image') imageStylePanel();
                     if (node.type === 'core.heading') headingStylePanel();
                     groups.style.forEach(schemaField);
+                    // 动效分组（效果基本库，全组件生效：AdvancedProps.Interaction）。
+                    interactionPanel();
                     if (groups.advanced.length) {
                         heading('高级');
                         groups.advanced.forEach(schemaField);
@@ -2620,6 +2709,24 @@
                         if (t && t.type === 'core.container' && ev.data.inMiddle) placement = 'inside';
                         if (!t) return;
                         self.moveNode(ev.data.nodeID, ev.data.targetID, placement);
+                    }
+                    // ===== 画布直改：双击编辑文本回写 =====
+                    if (ev.data.type === 'wb-edit-text' && ev.data.id) {
+                        var node = self.findNode(ev.data.id);
+                        if (!node || typeof ev.data.text !== 'string') return;
+                        // 文本字段映射：按组件类型回写对应文本 prop。
+                        var textField = self.textFieldOf(node.type);
+                        if (textField) {
+                            self.snapshot();
+                            node.props = node.props || {};
+                            node.props[textField] = ev.data.text.slice(0, 2000);
+                            self.saveState = 'dirty';
+                            self.renderTree(); self.refreshCanvas(); self.renderUI();
+                        }
+                    }
+                    // ===== 画布直改：右键菜单/快捷条操作 =====
+                    if (ev.data.type === 'wb-ctx' && ev.data.id) {
+                        self.handleCanvasCtx(ev.data.id, ev.data.op, ev.data.value);
                     }
                 });
                 var search = document.querySelector('#wb-navigator .wb-search');

@@ -81,9 +81,9 @@ var shadowLevels = map[string]string{
 // shadowUpgrade 悬浮反馈时加深的阴影级别。
 var shadowUpgrade = map[string]string{"": "md", "sm": "md", "md": "lg", "lg": "xl", "xl": "xl"}
 
-// allowedEntrance 入场动效白名单（纯 CSS 实现，默认关闭）。
+// allowedEntrance 入场动效白名单（纯 CSS 实现，默认关闭；与 core.allowedEntrance 同步）。
 var allowedEntrance = map[string]bool{
-	"": true, "fade-in": true, "slide-up": true,
+	"": true, "fade-in": true, "slide-up": true, "zoom-in": true,
 }
 
 // Responsive 三端字符串值（如内边距、间距）。
@@ -236,17 +236,10 @@ type VisualProps struct {
 	ShadowColor  string `json:"shadowColor,omitempty" ct:"color,maxlen=200,sec=style,label=阴影颜色"`
 }
 
-// InteractionProps 交互状态与动画。
-type InteractionProps struct {
-	// Sticky 滚动吸顶定位。
-	Sticky bool `json:"sticky,omitempty"`
-	// StickyTop 吸顶偏移（CSS 长度值），默认 0。
-	StickyTop string `json:"stickyTop,omitempty"`
-	// HoverLift 悬浮上浮反馈（卡片场景）。
-	HoverLift bool `json:"hoverLift,omitempty"`
-	// Entrance 入场微动："" 关闭（默认）/ fade-in / slide-up。
-	Entrance string `json:"entrance,omitempty"`
-}
+// InteractionProps 交互状态与动画（已上移 core 共享组，类型别名兼容过渡）。
+// 全组件通过 AdvancedProps.Interaction 共享本组；container 保留别名避免
+// 包外引用断裂（开发阶段允许，后续统一改为 core.InteractionProps）。
+type InteractionProps = core.InteractionProps
 
 // Container core.container 组件实现。
 type Container struct{}

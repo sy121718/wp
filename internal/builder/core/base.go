@@ -143,6 +143,8 @@ type AdvancedProps struct {
 	HideOn HideOn `json:"hideOn,omitempty"`
 	// ZIndex 层级（负边距叠放控制），[-100, 100]。
 	ZIndex int `json:"zIndex,omitempty"`
+	// Interaction 交互/动效组（入场动画/延迟/悬浮上浮/吸顶），全组件共享。
+	Interaction InteractionProps `json:"interaction,omitempty"`
 	// CustomClasses 自定义 class（禁 wp- 前缀，防碰撞编译产物命名空间）。
 	CustomClasses []string `json:"customClasses,omitempty"`
 	// CustomID 自定义 Element ID（锚点跳转），全文档唯一（复用节点 ID 查重 map）。
@@ -202,6 +204,10 @@ var allowedBorderStyle = map[string]bool{
 // ValidateAdvanced 校验通用高级属性（全原子组件共用一份规则）。
 // nodeID 仅用于错误定位。customID 非空时登记进 ids 保证全文档唯一。
 func ValidateAdvanced(a *AdvancedProps, nodeID string, ids map[string]bool) (err error) {
+	// 交互/动效组校验（entrance 白名单 + delay 限幅）。
+	if err = ValidateInteraction(a.Interaction); err != nil {
+		return fmt.Errorf("节点 %s: %w", nodeID, err)
+	}
 	for bp, rs := range map[string]Spacing{
 		"desktop": a.Margin.Desktop, "tablet": a.Margin.Tablet, "mobile": a.Margin.Mobile,
 	} {
@@ -379,6 +385,9 @@ func CompileAdvanced(nodeID string, a *AdvancedProps, b *CSSBuckets) (extraClass
 	if a.HideOn.Mobile {
 		b.Add(BreakpointMobile, sel, []string{"display: none"})
 	}
+
+	// 交互/动效组（入场动画/延迟/悬浮上浮/吸顶），全组件共享（docs/06 §6 同源管线）。
+	CompileInteraction(sel, a.Interaction, b)
 
 	return a.CustomClasses, a.CustomID
 }

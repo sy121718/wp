@@ -545,6 +545,149 @@ const editorBridgeScript = `<script>
     }
   });
 
+  // ========== 画布直改三件套（对标 Figma/Elementor 就地编辑） ==========
+
+  // 1) 双击就地编辑：文本类组件（heading/text/button/card 等）双击 →
+  //    contenteditable 就地编辑 → 失焦/回车回写 AST（wb-edit-text 消息）。
+  document.addEventListener('dblclick', function(ev){
+    var target = ev.target.closest('[data-wp-id]');
+    if(!target) return;
+    ev.preventDefault(); ev.stopPropagation();
+    // 已在编辑中不重复进入。
+    if (target.isContentEditable) return;
+    target.setAttribute('contenteditable', 'plaintext-only');
+    target.focus();
+    // 全选文本（就地替换习惯）。
+    var range = document.createRange();
+    range.selectNodeContents(target);
+    var sel = window.getSelection();
+    sel.removeAllRanges(); sel.addRange(range);
+    target.classList.add('wb-editing');
+    function finish(save){
+      target.removeAttribute('contenteditable');
+      target.classList.remove('wb-editing');
+      target.removeEventListener('blur', onBlur);
+      target.removeEventListener('keydown', onKey);
+      if (save) {
+        parent.postMessage({
+          type: 'wb-edit-text',
+          id: target.getAttribute('data-wp-id'),
+          text: target.textContent.trim()
+        }, location.origin);
+      } else {
+        // 取消：下次画布刷新自动还原（不主动刷新，等下次交互）。
+      }
+    }
+    function onBlur(){ finish(true); }
+    function onKey(e){
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); target.blur(); }
+      if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+    }
+    target.addEventListener('blur', onBlur);
+    target.addEventListener('keydown', onKey);
+  });
+
+  // 2) 画布右键菜单：编辑/复制/粘贴到内部/删除/上移/下移/隐藏 + 动效快捷项。
+  var ctxMenu = null;
+  function closeCtxMenu(){ if (ctxMenu) { ctxMenu.remove(); ctxMenu = null; } }
+  document.addEventListener('contextmenu', function(ev){
+    var target = ev.target.closest('[data-wp-id]');
+    closeCtxMenu();
+    if(!target) return; // 画布空白处不拦截（浏览器原生菜单）。
+    ev.preventDefault(); ev.stopPropagation();
+    var id = target.getAttribute('data-wp-id');
+    parent.postMessage({type:'wb-select', id: id}, location.origin);
+    ctxMenu = document.createElement('div');
+    ctxMenu.className = 'wb-ctx-menu';
+    function item(label, action){
+      var b = document.createElement('button');
+      b.type = 'button'; b.textContent = label;
+      b.addEventListener('click', function(e){ e.stopPropagation(); closeCtxMenu(); action(); });
+      ctxMenu.appendChild(b);
+    }
+    function separator(){ var s = document.createElement('div'); s.className='wb-ctx-sep'; ctxMenu.appendChild(s); }
+    function send(msg){ parent.postMessage(msg, location.origin); }
+    item('✏️ 编辑文本', function(){ // 触发双击编辑。
+      var el = document.querySelector('[data-wp-id="' + id + '"]');
+      if (el) { var d = new MouseEvent('dblclick', {bubbles:true}); el.dispatchEvent(d); }
+    });
+    item('⧉ 复制', function(){ send({type:'wb-ctx', id:id, op:'copy'}); });
+    item('✂ 剪切', function(){ send({type:'wb-ctx', id:id, op:'cut'}); });
+    item('📋 粘贴到内部', function(){ send({type:'wb-ctx', id:id, op:'paste-inside'}); });
+    separator();
+    item('↑ 上移', function(){ send({type:'wb-ctx', id:id, op:'move-up'}); });
+    item('↓ 下移', function(){ send({type:'wb-ctx', id:id, op:'move-down'}); });
+    separator();
+    // 动效快捷子项（效果基本库入口：常用 4 种入场 + 悬浮）。
+    var anim = document.createElement('div'); anim.className='wb-ctx-group'; anim.textContent='✨ 入场动画';
+    ctxMenu.appendChild(anim);
+    ['fade-up','zoom-in','slide-up','blur-in'].forEach(function(eff){
+      item('　' + eff, function(){ send({type:'wb-ctx', id:id, op:'entrance', value:eff}); });
+    });
+    item('🌀 悬浮上浮', function(){ send({type:'wb-ctx', id:id, op:'hover', value:'lift'}); });
+    separator();
+    item('🗑 删除', function(){ send({type:'wb-ctx', id:id, op:'delete'}); });
+    document.body.appendChild(ctxMenu);
+    // 定位（不越界）。
+    var x = Math.min(ev.pageX, window.innerWidth - 180);
+    var y = Math.min(ev.pageY, window.innerHeight - 320);
+    ctxMenu.style.left = x + 'px'; ctxMenu.style.top = y + 'px';
+  });
+  document.addEventListener('click', function(ev){
+    if (ctxMenu && !ctxMenu.contains(ev.target)) closeCtxMenu();
+  }, true);
+
+  // 3) 选中悬浮快捷条（Elementor 式小工具条：编辑/复制/删除）。
+  var quickBar = document.createElement('div');
+  quickBar.className = 'wb-quick-bar';
+  quickBar.style.display = 'none';
+  document.body.appendChild(quickBar);
+  function positionQuickBar(el){
+    var rect = el.getBoundingClientRect();
+    quickBar.style.display = 'flex';
+    quickBar.style.left = rect.left + 'px';
+    quickBar.style.top = (rect.top - 30 + window.scrollY) + 'px';
+    quickBar.setAttribute('data-target-id', el.getAttribute('data-wp-id'));
+  }
+  window.addEventListener('message', function(ev){
+    if (ev.origin !== location.origin || !ev.data) return;
+    if (ev.data.type === 'wb-mark-selected') {
+      var el = ev.data.id ? document.querySelector('[data-wp-id="' + ev.data.id + '"]') : null;
+      if (el) positionQuickBar(el); else quickBar.style.display = 'none';
+    }
+  });
+  [['✏️','编辑',function(){ var el=document.querySelector('[data-wp-id="'+quickBar.getAttribute('data-target-id')+'"]'); if(el) el.dispatchEvent(new MouseEvent('dblclick',{bubbles:true})); }],
+   ['⧉','复制',function(){ send2({type:'wb-ctx', id:quickBar.getAttribute('data-target-id'), op:'copy'}); }],
+   ['🗑','删除',function(){ send2({type:'wb-ctx', id:quickBar.getAttribute('data-target-id'), op:'delete'}); }]
+  ].forEach(function(t){
+    var b = document.createElement('button');
+    b.type='button'; b.textContent=t[0]; b.title=t[1];
+    b.addEventListener('click', function(e){ e.stopPropagation(); t[2](); });
+    quickBar.appendChild(b);
+  });
+  function send2(msg){ parent.postMessage(msg, location.origin); }
+
+  // 直改样式（右键菜单/快捷条/编辑态）。
+  var directStyle = document.createElement('style');
+  directStyle.textContent = [
+    '[data-wp-id].wb-editing{outline:2px solid #3d444f !important;cursor:text;}',
+    '[contenteditable]{outline-offset:-2px;}',
+    '.wb-ctx-menu{position:absolute;z-index:99999;min-width:160px;background:#fff;',
+    '  border:1px solid #e5e7eb;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.14);',
+    '  padding:4px;font-size:13px;color:#1a1d21;}',
+    '.wb-ctx-menu button{display:block;width:100%;text-align:left;padding:6px 10px;',
+    '  border:none;background:none;cursor:pointer;border-radius:6px;font-size:13px;color:inherit;}',
+    '.wb-ctx-menu button:hover{background:#eceef1;}',
+    '.wb-ctx-sep{height:1px;background:#e5e7eb;margin:4px 0;}',
+    '.wb-ctx-group{padding:6px 10px 2px;font-size:11px;color:#6b7280;font-weight:600;}',
+    '.wb-quick-bar{position:absolute;z-index:99998;display:none;gap:2px;',
+    '  background:#1a1d21;border-radius:6px;padding:3px;box-shadow:0 4px 12px rgba(0,0,0,.25);}',
+    '.wb-quick-bar button{border:none;background:none;cursor:pointer;font-size:13px;',
+    '  padding:4px 8px;border-radius:4px;color:#fff;}',
+    '.wb-quick-bar button:hover{background:rgba(255,255,255,.15);}'
+  ].join('');
+  document.head.appendChild(directStyle);
+
   // 拖放落点指示：父窗口 bindCanvasDrop 在 dragover 时给目标加类，
   // 这里只负责样式；drop/dragleave 时父窗口负责移除。
 })();

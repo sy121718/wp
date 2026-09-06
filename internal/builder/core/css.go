@@ -18,14 +18,40 @@ var breakpointMedia = map[string]string{
 	BreakpointMobile: "@media (max-width: 767px)",
 }
 
-// keyframesCSS 通用入场动效关键帧，仅在实际被使用时输出。
+// keyframesCSS 通用动效关键帧（入场 17 种 + 循环 4 种），仅实际被使用时输出。
 var keyframesCSS = map[string]string{
-	"wp-fade-in":  "@keyframes wp-fade-in {\n  from { opacity: 0 }\n  to { opacity: 1 }\n}",
-	"wp-slide-up": "@keyframes wp-slide-up {\n  from { opacity: 0; transform: translateY(24px) }\n  to { opacity: 1; transform: none }\n}",
+	// 入场（entrance）
+	"wp-fade-in":     "@keyframes wp-fade-in {\n  from { opacity: 0 }\n  to { opacity: 1 }\n}",
+	"wp-fade-up":     "@keyframes wp-fade-up {\n  from { opacity: 0; transform: translateY(16px) }\n  to { opacity: 1; transform: none }\n}",
+	"wp-fade-down":   "@keyframes wp-fade-down {\n  from { opacity: 0; transform: translateY(-16px) }\n  to { opacity: 1; transform: none }\n}",
+	"wp-fade-left":   "@keyframes wp-fade-left {\n  from { opacity: 0; transform: translateX(16px) }\n  to { opacity: 1; transform: none }\n}",
+	"wp-fade-right":  "@keyframes wp-fade-right {\n  from { opacity: 0; transform: translateX(-16px) }\n  to { opacity: 1; transform: none }\n}",
+	"wp-zoom-in":     "@keyframes wp-zoom-in {\n  from { opacity: 0; transform: scale(.92) }\n  to { opacity: 1; transform: none }\n}",
+	"wp-zoom-out":    "@keyframes wp-zoom-out {\n  from { opacity: 0; transform: scale(1.08) }\n  to { opacity: 1; transform: none }\n}",
+	"wp-slide-up":    "@keyframes wp-slide-up {\n  from { opacity: 0; transform: translateY(24px) }\n  to { opacity: 1; transform: none }\n}",
+	"wp-slide-down":  "@keyframes wp-slide-down {\n  from { opacity: 0; transform: translateY(-24px) }\n  to { opacity: 1; transform: none }\n}",
+	"wp-slide-left":  "@keyframes wp-slide-left {\n  from { opacity: 0; transform: translateX(24px) }\n  to { opacity: 1; transform: none }\n}",
+	"wp-slide-right": "@keyframes wp-slide-right {\n  from { opacity: 0; transform: translateX(-24px) }\n  to { opacity: 1; transform: none }\n}",
+	"wp-flip-x":      "@keyframes wp-flip-x {\n  from { opacity: 0; transform: perspective(600px) rotateX(-12deg) }\n  to { opacity: 1; transform: none }\n}",
+	"wp-flip-y":      "@keyframes wp-flip-y {\n  from { opacity: 0; transform: perspective(600px) rotateY(-12deg) }\n  to { opacity: 1; transform: none }\n}",
+	"wp-blur-in":     "@keyframes wp-blur-in {\n  from { opacity: 0; filter: blur(8px) }\n  to { opacity: 1; filter: none }\n}",
+	"wp-bounce-in":   "@keyframes wp-bounce-in {\n  0% { opacity: 0; transform: scale(.8) }\n  60% { opacity: 1; transform: scale(1.04) }\n  100% { opacity: 1; transform: none }\n}",
+	"wp-rotate-in":   "@keyframes wp-rotate-in {\n  from { opacity: 0; transform: rotate(-6deg) scale(.96) }\n  to { opacity: 1; transform: none }\n}",
+	// 循环（attention）
+	"wp-loop-pulse": "@keyframes wp-loop-pulse {\n  0%, 100% { transform: scale(1) }\n  50% { transform: scale(1.03) }\n}",
+	"wp-loop-float": "@keyframes wp-loop-float {\n  0%, 100% { transform: translateY(0) }\n  50% { transform: translateY(-8px) }\n}",
+	"wp-loop-glow":  "@keyframes wp-loop-glow {\n  0%, 100% { box-shadow: 0 0 0 rgba(59,130,246,0) }\n  50% { box-shadow: 0 0 16px rgba(59,130,246,.35) }\n}",
+	"wp-loop-spin":  "@keyframes wp-loop-spin {\n  from { transform: rotate(0deg) }\n  to { transform: rotate(360deg) }\n}",
 }
 
 // keyframesOrder 关键帧输出顺序（保证确定性）。
-var keyframesOrder = []string{"wp-fade-in", "wp-slide-up"}
+var keyframesOrder = []string{
+	"wp-fade-in", "wp-fade-up", "wp-fade-down", "wp-fade-left", "wp-fade-right",
+	"wp-zoom-in", "wp-zoom-out",
+	"wp-slide-up", "wp-slide-down", "wp-slide-left", "wp-slide-right",
+	"wp-flip-x", "wp-flip-y", "wp-blur-in", "wp-bounce-in", "wp-rotate-in",
+	"wp-loop-pulse", "wp-loop-float", "wp-loop-glow", "wp-loop-spin",
+}
 
 // CSSBuckets 三端 CSS 规则集合。
 // 规则按文档序（前序遍历）追加，最终按 关键帧 → 桌面 → 平板 → 手机 的固定顺序拼接，

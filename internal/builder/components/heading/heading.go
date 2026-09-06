@@ -59,10 +59,17 @@ type Props struct {
 	LineClamp int `json:"lineClamp,omitempty" ct:"slider,min=0,max=6,step=1,sec=style"`
 	// TextShadow 文字阴影预设：subtle/strong；空为无。
 	TextShadow string `json:"textShadow,omitempty" ct:"select,subtle=轻阴影,strong=重阴影,sec=style,label=文字阴影"`
-	// Subtitle 副标题文本（显示于主标题之上，小字）。
+	// Subtitle 副标题文本（显示于主标题之上，小字）。清空保存空串，渲染端
+	// 空串不输出 <span>（无空标签残留）。
 	Subtitle string `json:"subtitle,omitempty" ct:"text,maxlen=200,sec=content,label=副标题"`
 	// SubtitleColor 副标题颜色。
 	SubtitleColor string `json:"subtitleColor,omitempty" ct:"color,maxlen=200,sec=style,label=副标题颜色"`
+	// SubtitleFontSize 副标题字号（如 "14px"），空=默认 0.875em。
+	SubtitleFontSize string `json:"subtitleFontSize,omitempty" ct:"dimension,maxlen=30,sec=style,label=副标题字号"`
+	// SubtitleFontWeight 副标题字重。
+	SubtitleFontWeight string `json:"subtitleFontWeight,omitempty" ct:"select,400=常规,500=中等,600=半粗,700=粗体,default=600,sec=style,label=副标题字重"`
+	// SubtitleSpacing 副标题与主标题的间距（如 "8px"）。
+	SubtitleSpacing string `json:"subtitleSpacing,omitempty" ct:"dimension,maxlen=30,sec=style,label=副标题间距"`
 	// Align 三端对齐：left/center/right。
 	Align Align `json:"align,omitempty"`
 	// Width 宽度（CSS 长度，三端）。
@@ -181,12 +188,22 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		desktop = append(desktop, core.CSSDecl("text-shadow", v))
 	}
 
-	// 副标题样式。
-	b.Add(core.BreakpointDesktop, sel+" .wp-heading-sub", []string{
+	// 副标题样式（默认基底 + 用户覆盖：颜色/字号/字重/间距）。
+	subDecls := []string{
 		"display: block", "font-size: 0.62em", "font-weight: 500",
 		"letter-spacing: 0.08em", "text-transform: uppercase",
 		"margin-bottom: 0.4em", "opacity: .7",
-	})
+	}
+	if p.SubtitleFontSize != "" {
+		subDecls = append(subDecls, core.CSSDecl("font-size", p.SubtitleFontSize), "opacity: 1")
+	}
+	if p.SubtitleFontWeight != "" {
+		subDecls = append(subDecls, core.CSSDecl("font-weight", p.SubtitleFontWeight))
+	}
+	if p.SubtitleSpacing != "" {
+		subDecls = append(subDecls, core.CSSDecl("margin-bottom", p.SubtitleSpacing))
+	}
+	b.Add(core.BreakpointDesktop, sel+" .wp-heading-sub", subDecls)
 	if p.SubtitleColor != "" {
 		b.Add(core.BreakpointDesktop, sel+" .wp-heading-sub", []string{core.CSSDecl("color", p.SubtitleColor), "opacity: 1"})
 	}
