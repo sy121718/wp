@@ -114,7 +114,9 @@ var (
 )
 
 // Init 初始化验证码服务。
-// cfg 为 nil 时使用默认值（Length=6, ExpireTime=1min, Width=120, Height=40）。
+// cfg 为 nil 或字段零值时逐项兜底默认值（Length=6, ExpireTime=1min,
+// Width=120, Height=40）——防止 config.yaml 缺失 captcha 段时 GetInt 返回 0
+// 导致 Length=0 生成空验证码（图上无字符，用户无法登录）。
 func Init(cfg *Config) {
 	mu.Lock()
 	defer mu.Unlock()
@@ -124,12 +126,19 @@ func Init(cfg *Config) {
 	}
 
 	if cfg == nil {
-		cfg = &Config{
-			Length:     6,
-			ExpireTime: 1 * time.Minute,
-			Width:      120,
-			Height:     40,
-		}
+		cfg = &Config{}
+	}
+	if cfg.Length <= 0 {
+		cfg.Length = 6
+	}
+	if cfg.ExpireTime <= 0 {
+		cfg.ExpireTime = 1 * time.Minute
+	}
+	if cfg.Width <= 0 {
+		cfg.Width = 120
+	}
+	if cfg.Height <= 0 {
+		cfg.Height = 40
 	}
 	captchaService = &CaptchaService{
 		config: cfg,

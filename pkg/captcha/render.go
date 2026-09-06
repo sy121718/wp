@@ -80,13 +80,13 @@ func renderCodeDataURL(code string, width, height int) string {
 		}
 	}
 
-	// 2) 随机深色干扰线
-	lineCount := 3 + randInt(0, 3)
+	// 2) 干扰线：比背景略深、远浅于字符（存在干扰但不压过字符辨识度）
+	lineCount := 2 + randInt(0, 2)
 	for i := 0; i < lineCount; i++ {
 		drawLine(img,
 			randInt(0, width), randInt(0, height),
 			randInt(0, width), randInt(0, height),
-			randDeepColor(100, 170),
+			randDeepColor(180, 220),
 		)
 	}
 
@@ -116,7 +116,8 @@ func renderCodeDataURL(code string, width, height int) string {
 			cx := cellW*i + cellW/2 + randInt(-jitter, jitter+1)
 			cy := height/2 + randInt(-jitter, jitter+1)
 			angle := float64(randInt(-25, 26)) * math.Pi / 180
-			drawGlyph(img, digit, cx, cy, scale, thickness, angle, randDeepColor(0, 110))
+			// 字符深色（0~60）：与浅底（200~246）强对比，保证辨识度。
+			drawGlyph(img, digit, cx, cy, scale, thickness, angle, randDeepColor(0, 60))
 		}
 	}
 
