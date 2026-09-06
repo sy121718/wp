@@ -73,3 +73,13 @@ func (m *Model) Update(ctx context.Context, e *Entity) error {
 func (m *Model) Delete(ctx context.Context, pluginID string) error {
 	return m.db.WithContext(ctx).Where("plugin_id = ?", pluginID).Delete(&Entity{}).Error
 }
+
+// Exec 在底层裸连接上执行一条 SQL（供 L1 数据层迁移执行器跑 DDL/SCHEMA 语句）。
+func (m *Model) Exec(ctx context.Context, sql string) error {
+	return m.db.WithContext(ctx).Exec(sql).Error
+}
+
+// Transaction 在底层裸连接上开启事务（供 L1 迁移执行器整包执行、失败回滚）。
+func (m *Model) Transaction(ctx context.Context, fn func(tx *gorm.DB) error) error {
+	return m.db.WithContext(ctx).Transaction(fn)
+}

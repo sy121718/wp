@@ -18,4 +18,5 @@ const (
 	ErrStorageFailure  = "插件包存储失败"
 	ErrToggleFailed    = "插件状态更新失败"
 	ErrUninstallFailed = "插件卸载失败"
+	ErrMigrationFailed = "插件数据层迁移失败"
 )

@@ -107,11 +107,17 @@ func (h *Handle) Workbench(c *gin.Context) {
 		c.String(http.StatusInternalServerError, "草稿文档序列化失败")
 		return
 	}
-	// 启用插件的组件库摘要（palette 注入，docs/06 §5）。
+	// 启用插件的组件库摘要与区块预设（palette 注入，docs/06 §5/§5.2）。
 	var pluginComponents []plugindto.ComponentSummary
+	var pluginPresets []plugindto.PresetSummary
 	asm := h.pluginAssembly(c)
 	if asm != nil {
 		pluginComponents = asm.Components
+		pluginPresets = asm.Presets
+	}
+	// 预设空时给空数组而非 nil（前端按数组读取，避免 undefined）。
+	if pluginPresets == nil {
+		pluginPresets = []plugindto.PresetSummary{}
 	}
 	metaJSON, err := json.Marshal(gin.H{
 		"pageId":    page.ID,
@@ -124,6 +130,8 @@ func (h *Handle) Workbench(c *gin.Context) {
 		"themeSettings": h.themeSettingsOf(c, page),
 		// 启用插件组件（组件库「插件组件」分组，type/label/hint/初始 props）。
 		"plugins": pluginComponents,
+		// 启用插件区块预设（组件库「区块预设」分组，id/label/category/thumbnail/document）。
+		"presets": pluginPresets,
 	})
 	if err != nil {
 		c.String(http.StatusInternalServerError, "编辑器元数据序列化失败")

@@ -262,6 +262,42 @@
                     });
                     return button;
                 }
+                // 区块预设项：整段 AST 片段（对比 makeItem 的单组件 type+props）。
+                function makePresetItem(p) {
+                    var button = document.createElement('button');
+                    button.type = 'button';
+                    button.className = 'wb-palette-item wb-preset-item';
+                    button.draggable = true;
+                    // 有缩略图显示图，无则仅文字（label 恒显示）。
+                    if (p.thumbnail) {
+                        var img = document.createElement('img');
+                        img.className = 'wb-preset-thumb';
+                        img.src = p.thumbnail;
+                        img.alt = p.label || p.id;
+                        // 内联尺寸约束（不改 CSS 文件）：缩略图固定高度封面，文字紧随其后。
+                        img.style.cssText = 'width:100%;height:52px;object-fit:cover;border-radius:4px;margin-bottom:6px;display:block;background:#f1f5f9;';
+                        // 缩略图路径失效（如包内相对路径无静态服务）→ 移除退化为纯文字。
+                        img.addEventListener('error', function () { img.remove(); });
+                        button.appendChild(img);
+                    }
+                    var strong = document.createElement('strong');
+                    strong.textContent = p.label || p.id;
+                    button.appendChild(strong);
+                    var span = document.createElement('span');
+                    span.textContent = p.category || '区块预设';
+                    button.appendChild(span);
+                    button.addEventListener('click', function () {
+                        self.insertPreset(p);
+                        self.showEdit();
+                    });
+                    button.addEventListener('dragstart', function (event) {
+                        // 预设拖拽：复用 globalref 的 id 传值机制（document 已在
+                        // meta.presets 内存中，无需把整段 AST 序列化进 DataTransfer）。
+                        event.dataTransfer.effectAllowed = 'copy';
+                        event.dataTransfer.setData('application/x-wb-preset', p.id);
+                    });
+                    return button;
+                }
                 var any = false;
                 paletteGroups.forEach(function (group) {
                     makeGroup(group.title, group.key, function () {
@@ -272,6 +308,16 @@
                     });
                     any = any || root.lastChild !== null;
                 });
+                // 区块预设分组：插件 manifest 声明的预组合 AST 片段（docs/06 §5.2），
+                // 作为独立分组挂在组件页签末尾，一键插入整段结构。
+                var presets = (meta.presets || []);
+                if (presets.length) {
+                    makeGroup('区块预设', 'presets', function () {
+                        return presets.filter(function (p) {
+                            return p && match((p.label || '') + ' ' + (p.category || ''));
+                        }).map(makePresetItem);
+                    });
+                }
                 if (root.children.length === 0) {
                     root.innerHTML = '<p class="wb-empty">没有匹配的组件</p>';
                 }
@@ -357,6 +403,34 @@
                     this.doc.root.push(node);
                 }
                 this.selectedId = node.id;
+                this.renderTree();
+                this.syncInspector();
+                this.refreshCanvas();
+                this.renderUI();
+            },
+            // insertPreset 一键插入区块预设（docs/06 §5.2）：
+            // 预设是整段 AST 数组（非单组件 type+props），深拷贝后递归重写所有
+            // 节点 ID（保留 props/结构，仅重写 ID 保证唯一），再顶级平铺进 root。
+            // 与 insertComponent 互补：insertComponent 插入单个 paletteItem，本方法插入整段。
+            insertPreset(preset) {
+                if (!preset) return;
+                var nodes = preset.document;
+                if (!Array.isArray(nodes) || !nodes.length) return;
+                this.snapshot();
+                // 深拷贝预设 AST，避免污染 meta.presets 源数据（后续插入可重复用）。
+                nodes = clone(nodes);
+                var self = this;
+                // 递归重写 ID：与 pasteInto 同源，但保留 document 里的 props/结构。
+                (function assign(list) {
+                    (list || []).forEach(function (n) {
+                        n.id = self.newId(n.id || 'node');
+                        assign(n.children);
+                    });
+                })(nodes);
+                // 顶级平铺：本项目无强制根容器，预组合区块（Section）顶级平铺是一等形态。
+                for (var i = 0; i < nodes.length; i++) this.doc.root.push(nodes[i]);
+                // 选中首个节点，便于立即编辑。
+                this.selectedId = (nodes[0] && nodes[0].id) || '';
                 this.renderTree();
                 this.syncInspector();
                 this.refreshCanvas();
@@ -1045,6 +1119,13 @@
                     clearDropMarks();
                     var target = event.target.closest && event.target.closest('[data-wp-id]');
                     var targetID = target && target.getAttribute('data-wp-id');
+                    // 预设拖入：按 id 找回预设并整段插入（与点击一致的顶级平铺）。
+                    var presetID = event.dataTransfer.getData('application/x-wb-preset');
+                    if (presetID) {
+                        var preset = (meta.presets || []).filter(function (x) { return x.id === presetID; })[0];
+                        if (preset) self.insertPreset(preset);
+                        return;
+                    }
                     var type = event.dataTransfer.getData('application/x-wb-component');
                     // 树/画布内元素拖动(x-wb-node)由 iframe 桥接统一处理,此处只接组件库拖入。
                     if (!type) return;

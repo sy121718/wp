@@ -27,6 +27,7 @@ func (s *Service) EnabledAssembly(ctx context.Context) (asm *plugincontract.Asse
 		Specs:            make(map[string]*core.PluginComponentSpec),
 		InspectorSchemas: make(map[string][]byte),
 		Components:       make([]plugindto.ComponentSummary, 0),
+		Presets:          make([]plugindto.PresetSummary, 0),
 	}
 	for _, row := range rows {
 		// 存储目录缺失（被手动清理）→ 跳过该插件并保持注册行（管理员可重装）。
@@ -52,6 +53,16 @@ func (s *Service) EnabledAssembly(ctx context.Context) (asm *plugincontract.Asse
 				Label: c.Label,
 				Hint:  orDefault(c.Hint, "插件组件"),
 				Props: defaultProps(c.Props),
+			})
+		}
+		// 区块预设：保持 manifest 声明顺序；跨插件按 ListEnabled 字典序自然有序。
+		for _, p := range manifest.Presets {
+			asm.Presets = append(asm.Presets, plugindto.PresetSummary{
+				ID:        p.ID,
+				Label:     p.Label,
+				Category:  p.Category,
+				Thumbnail: p.Thumbnail,
+				Document:  p.Document,
 			})
 		}
 	}

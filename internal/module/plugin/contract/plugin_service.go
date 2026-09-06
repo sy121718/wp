@@ -39,6 +39,8 @@ type Assembly struct {
 	InspectorSchemas map[string][]byte
 	// Components 工作台组件库摘要（palette 注入）。
 	Components []plugindto.ComponentSummary
+	// Presets 区块预设摘要（palette「区块预设」分组注入，document 为预组合 AST 片段）。
+	Presets []plugindto.PresetSummary
 }
 
 // ManifestAlias manifest 类型的模块间传递形态（详情接口暴露）。

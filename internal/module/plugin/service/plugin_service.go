@@ -57,7 +57,7 @@ func (s *Service) Toggle(ctx context.Context, req *plugindto.ToggleReq) (err err
 	return s.m.Update(ctx, row)
 }
 
-// Uninstall 卸载：删注册行 + 级联删存储目录（L1 数据层 schema 级联在迁移执行器落地后接入）。
+// Uninstall 卸载：删注册行 + 级联 DROP schema（L1）+ 删存储目录。
 func (s *Service) Uninstall(ctx context.Context, req *plugindto.UninstallReq) (err error) {
 	if req == nil || req.ID == "" {
 		return errors.New(pluginenums.ErrInvalidParam)
@@ -71,6 +71,12 @@ func (s *Service) Uninstall(ctx context.Context, req *plugindto.UninstallReq) (e
 	}
 	if err = s.m.Delete(ctx, req.ID); err != nil {
 		return fmt.Errorf("%s: %w", pluginenums.ErrUninstallFailed, err)
+	}
+	// L1 数据层 schema 级联清理（docs/06 §8.2：DROP SCHEMA ... CASCADE + registry 除名）。
+	if row.SchemaVersion > 0 {
+		if err = s.m.Exec(ctx, dropSchemaSQL(row.PluginID)); err != nil {
+			return fmt.Errorf("%s: %w", pluginenums.ErrUninstallFailed, err)
+		}
 	}
 	removePluginStorage(row.PluginID)
 	return nil

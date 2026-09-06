@@ -40,6 +40,27 @@ type Manifest struct {
 	Version    string      `json:"version"`
 	Requires   *Requires   `json:"requires,omitempty"`
 	Components []Component `json:"components"`
+	// Migrations L1 数据层迁移目录名（如 "migrations"，含版本化 SQL；docs/06 §8）。
+	// 空 = 纯展示插件（无自有表）。
+	Migrations string `json:"migrations,omitempty"`
+	// SchemaVersion L1 数据层 schema 版本（迁移执行器记账；0 = 无自有表）。
+	SchemaVersion int `json:"schemaVersion,omitempty"`
+	// Presets 区块预设（预组合 AST 片段，一键插入组件库；docs/06 §5.2）。
+	Presets []Preset `json:"presets,omitempty"`
+}
+
+// Preset 区块预设声明（对标 GrapesJS Block Manager，docs/06 §5.2）。
+type Preset struct {
+	// ID 预设标识（组件库去重键，白名单字符）。
+	ID string `json:"id"`
+	// Label 预设显示名。
+	Label string `json:"label"`
+	// Category 分组名（如 "营销区块"）。
+	Category string `json:"category,omitempty"`
+	// Thumbnail 缩略图路径（包内相对路径，可选）。
+	Thumbnail string `json:"thumbnail,omitempty"`
+	// Document 预组合 AST 片段（Node 数组，插入时 ID 重写）。
+	Document json.RawMessage `json:"document"`
 }
 
 // Requires 版本要求（当前仅记录，不强校验核心版本）。
@@ -102,7 +123,56 @@ func ValidateManifest(m *Manifest) (err error) {
 			return err
 		}
 	}
+	// L1 迁移目录名与 schema 版本（docs/06 §8）。
+	if m.Migrations != "" && !dirNameRe.MatchString(m.Migrations) {
+		return fmt.Errorf("迁移目录名 %q 非法（小写字母数字下划线连字符）", m.Migrations)
+	}
+	if m.SchemaVersion < 0 {
+		return fmt.Errorf("schema 版本不能为负")
+	}
+	// 区块预设（docs/06 §5.2）。
+	if len(m.Presets) > 100 {
+		return fmt.Errorf("预设数超限（上限 100）")
+	}
+	presetSeen := map[string]bool{}
+	for i, p := range m.Presets {
+		if err = validatePreset(i, p, presetSeen); err != nil {
+			return err
+		}
+	}
 	return nil
+}
+
+// dirNameRe 目录名白名单（迁移目录等）。
+var dirNameRe = regexp.MustCompile(`^[a-z0-9_-]{1,60}$`)
+
+// presetIDRe 预设 ID 白名单。
+var presetIDRe = regexp.MustCompile(`^[a-z0-9_-]{1,80}$`)
+
+// presetCategoryRe 预设分组名白名单（字面中文字符范围，Go regexp 不支持 \uXXXX 转义）。
+var presetCategoryRe = regexp.MustCompile(`^[A-Za-z0-9一-龥_-]{1,40}$`)
+
+// validatePreset 单个区块预设校验：ID/label/分组白名单 + document 解析为
+// Node 数组（结构合法、深度上限、组件类型可识别）。
+func validatePreset(idx int, p Preset, seen map[string]bool) error {
+	if !presetIDRe.MatchString(p.ID) {
+		return fmt.Errorf("预设 %d: id %q 非法", idx, p.ID)
+	}
+	if seen[p.ID] {
+		return fmt.Errorf("预设 %d: id %q 重复", idx, p.ID)
+	}
+	seen[p.ID] = true
+	if strings.TrimSpace(p.Label) == "" || len([]rune(p.Label)) > 40 {
+		return fmt.Errorf("预设 %d: label 非法", idx)
+	}
+	if p.Category != "" && !presetCategoryRe.MatchString(p.Category) {
+		return fmt.Errorf("预设 %d: 分组名 %q 非法", idx, p.Category)
+	}
+	if len(p.Document) == 0 {
+		return fmt.Errorf("预设 %d: 缺少 document", idx)
+	}
+	// document 解析为 Node 数组并做结构校验（深度/类型/ID 合法性）。
+	return validatePresetDocument(p.Document, idx)
 }
 
 // validateComponent 单组件校验。
@@ -245,4 +315,56 @@ func sortControls(controls []map[string]any) {
 			controls[j], controls[j-1] = controls[j-1], controls[j]
 		}
 	}
+}
+
+// presetMaxDepth 预设 document 深度上限（与 builder.MaxNodeDepth 对齐，
+// 避免预设内联展开后叠加页面挂载链超限；插件预设深度更保守）。
+const presetMaxDepth = 8
+
+// validatePresetDocument 解析预设 document（Node 数组）并做结构校验：
+// 数组非空、节点类型可识别（内置或 plugin.*）、ID 白名单唯一、深度上限。
+// 不执行 props 值校验（预设只含初始 props，运行时用户编辑再校验）。
+func validatePresetDocument(raw json.RawMessage, idx int) error {
+	var nodes []*core.Node
+	if err := json.Unmarshal(raw, &nodes); err != nil {
+		return fmt.Errorf("预设 %d: document 解析失败: %w", idx, err)
+	}
+	if len(nodes) == 0 {
+		return fmt.Errorf("预设 %d: document 不能为空", idx)
+	}
+	if len(nodes) > 10 {
+		return fmt.Errorf("预设 %d: 顶级节点数超限（上限 10）", idx)
+	}
+	ids := map[string]bool{}
+	for _, n := range nodes {
+		if err := validatePresetNode(n, ids, 1, idx); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validatePresetNode 递归校验预设节点（ID/类型/深度/无子节点规则）。
+func validatePresetNode(n *core.Node, ids map[string]bool, depth, idx int) error {
+	if n == nil {
+		return fmt.Errorf("预设 %d: 节点为空", idx)
+	}
+	if depth > presetMaxDepth {
+		return fmt.Errorf("预设 %d: 深度 %d 超过上限 %d", idx, depth, presetMaxDepth)
+	}
+	if err := core.ValidateNodeID(n.ID, n.Name, ids); err != nil {
+		return fmt.Errorf("预设 %d: %w", idx, err)
+	}
+	// 类型可识别：内置（core.Lookup）或插件命名空间（plugin.* 前缀）。
+	if !strings.HasPrefix(n.Type, "plugin.") {
+		if _, err := core.Lookup(n.Type); err != nil {
+			return fmt.Errorf("预设 %d: %w", idx, err)
+		}
+	}
+	for _, c := range n.Children {
+		if err := validatePresetNode(c, ids, depth+1, idx); err != nil {
+			return err
+		}
+	}
+	return nil
 }

@@ -45,7 +45,7 @@ var extWhitelist = map[string]bool{
 // 未挂载任何对外静态路由：/storage 只挂 public/storage，/site 只挂激活产物）。
 var pluginStorageRoot = filepath.Join("public", "runtime", "plugins")
 
-// Install 安装/升级插件：安全解包 → manifest 校验 → 存储 → registry 记账。
+// Install 安装/升级插件：安全解包 → manifest 校验 → L1 迁移 → 存储 → registry 记账。
 func (s *Service) Install(ctx context.Context, zipBytes []byte) (res *plugindto.PluginResp, err error) {
 	if len(zipBytes) == 0 {
 		return nil, errors.New(pluginenums.ErrInstallParse)
@@ -71,15 +71,24 @@ func (s *Service) Install(ctx context.Context, zipBytes []byte) (res *plugindto.
 			return nil, fmt.Errorf("%s: 组件 %s 的模板 %s 不在包内", pluginenums.ErrInstallParse, c.Name, c.Template)
 		}
 	}
-	// 4. 落盘存储（{root}/{id}/{version}/）。
+	// 4. 查 registry（迁移版本策略需要现有行判断全新/升级/幂等；nil = 全新安装）。
+	now := time.Now().UTC()
+	row, gerr := s.m.Get(ctx, manifest.ID)
+	if gerr != nil {
+		row = nil
+	}
+	// 5. L1 数据层迁移（manifest 校验通过后、落盘前；失败整体失败且事务回滚，
+	//    不留半成品 schema）。
+	if err = s.migrateSchema(ctx, manifest, files, row); err != nil {
+		return nil, fmt.Errorf("%s: %w", pluginenums.ErrMigrationFailed, err)
+	}
+	// 6. 落盘存储（{root}/{id}/{version}/）。
 	target := filepath.Join(pluginStorageRoot, manifest.ID, manifest.Version)
 	if err = writePluginFiles(target, files); err != nil {
 		return nil, fmt.Errorf("%s: %w", pluginenums.ErrStorageFailure, err)
 	}
-	// 5. registry 记账（新装或升级；升级清理旧版本目录）。
-	now := time.Now().UTC()
-	row, gerr := s.m.Get(ctx, manifest.ID)
-	if gerr != nil {
+	// 7. registry 记账（新装或升级；升级清理旧版本目录；SchemaVersion = manifest.SchemaVersion）。
+	if row == nil {
 		row = &pluginmodel.Entity{PluginID: manifest.ID, Enabled: true, InstalledAt: now}
 	} else {
 		if row.Version != manifest.Version {
@@ -89,6 +98,7 @@ func (s *Service) Install(ctx context.Context, zipBytes []byte) (res *plugindto.
 	}
 	row.Name = manifest.Name
 	row.Version = manifest.Version
+	row.SchemaVersion = manifest.SchemaVersion
 	row.Manifest = manifestRaw
 	row.StoragePath = target
 	row.UpdatedAt = now
