@@ -195,19 +195,32 @@ func (h *Handle) workbenchBlock(c *gin.Context, blockID string) {
 }
 
 // blockResolverAdapter 适配 block 契约为 builder.BlockResolver（预览内联 globalref）。
+//
+// ctx 为请求上下文（随请求取消传播，避免 Background 泄漏）；cache 为单次
+// 编译内的块解析缓存——同一页面引用同一全局块多次时只查一次库，其余复用。
 type blockResolverAdapter struct {
-	h *Handle
+	h     *Handle
+	ctx   context.Context
+	cache map[string][]*core.Node
 }
 
 // ResolveBlockRoot 按块 ID 返回块文档 root 节点。
 func (a blockResolverAdapter) ResolveBlockRoot(blockID string) ([]*core.Node, error) {
-	block, err := a.h.blocks.Detail(context.Background(), &blockdto.DetailReq{ID: blockID})
+	if a.cache != nil {
+		if nodes, ok := a.cache[blockID]; ok {
+			return nodes, nil
+		}
+	}
+	block, err := a.h.blocks.Detail(a.ctx, &blockdto.DetailReq{ID: blockID})
 	if err != nil || block == nil {
 		return nil, fmt.Errorf("全局块 %s 不可用", blockID)
 	}
 	page, err := builder.ParsePage(block.Document)
 	if err != nil {
 		return nil, err
+	}
+	if a.cache != nil {
+		a.cache[blockID] = page.Root
 	}
 	return page.Root, nil
 }
@@ -313,7 +326,12 @@ func (h *Handle) renderPreview(c *gin.Context, document json.RawMessage, withEdi
 	}
 	opts := []builder.CompileOption{builder.WithComponentSet(set)}
 	if h.blocks != nil {
-		opts = append(opts, builder.WithBlockResolver(blockResolverAdapter{h}))
+		// 请求 ctx + 单次编译内块缓存：重复 globalref 只查一次库。
+		opts = append(opts, builder.WithBlockResolver(blockResolverAdapter{
+			h:     h,
+			ctx:   c.Request.Context(),
+			cache: make(map[string][]*core.Node),
+		}))
 	}
 	compiled, err := builder.Compile(docPage, opts...)
 	if err != nil {

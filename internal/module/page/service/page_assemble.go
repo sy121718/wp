@@ -35,7 +35,7 @@ func (s *Service) assembleCompile(docJSON []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	resolver := blockResolverAdapter{s: s}
+	resolver := blockResolverAdapter{s: s, cache: make(map[string][]*core.Node)}
 	opts := []builder.CompileOption{builder.WithBlockResolver(resolver), builder.WithComponentSet(set)}
 	compiled, err := builder.Compile(page, opts...)
 	if err != nil {
@@ -69,12 +69,19 @@ func parseStructureBindings(docJSON []byte) (b builder.StructureBindings, err er
 
 // blockRootResolverAdapter 适配 block 契约为 builder 的 BlockResolver
 // （core.globalref 构建期展开引用块内容）。
+// cache 为单次编译内块解析缓存：同一块被引用多次时只查一次库。
 type blockResolverAdapter struct {
-	s *Service
+	s     *Service
+	cache map[string][]*core.Node
 }
 
 // ResolveBlockRoot 按块 ID 返回块文档 root 节点。
 func (a blockResolverAdapter) ResolveBlockRoot(blockID string) ([]*core.Node, error) {
+	if a.cache != nil {
+		if nodes, ok := a.cache[blockID]; ok {
+			return nodes, nil
+		}
+	}
 	block, err := a.s.blocks.Detail(context.Background(), &blockdto.DetailReq{ID: blockID})
 	if err != nil || block == nil {
 		return nil, fmt.Errorf("全局块 %s 不可用", blockID)
@@ -82,6 +89,9 @@ func (a blockResolverAdapter) ResolveBlockRoot(blockID string) ([]*core.Node, er
 	page, err := builder.ParsePage(block.Document)
 	if err != nil {
 		return nil, err
+	}
+	if a.cache != nil {
+		a.cache[blockID] = page.Root
 	}
 	return page.Root, nil
 }

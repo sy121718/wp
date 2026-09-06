@@ -39,7 +39,8 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 	// 静态文件服务（admin CSS + builder JS/CSS 统一在此）。
 	// gin.Dir(listDirectory=false) 禁目录列表：无 index 文件时返回空列表而非
 	// 泄漏目录清单（审计 Low：/static 目录列表开启）。
-	router.StaticFS("/static", gin.Dir("internal/templates/static", false))
+	// StaticGzipMiddleware：文本类资源（js/css/svg）gzip 传输压缩。
+	router.Group("/static", builtin.StaticGzipMiddleware()).StaticFS("/", gin.Dir("internal/templates/static", false))
 
 	// 媒体上传存储（pkg/upload local provider 默认 public/storage）。
 	// 同样禁目录列表（审计 Low：/storage 目录列表开启）。
@@ -136,6 +137,7 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 // gin.Dir(listDirectory=false) 底层仍是 http.Dir（符号链接跟随行为不变，
 // 不限制 activeRoot 的 symlink 访问面），仅禁用 Readdir 以阻止目录列表
 // （审计 Low：/site 目录列表开启）。
+// 访问面文本产物（HTML/CSS/JS）经 StaticGzipMiddleware 传输压缩提速。
 func setupStaticFace(router *gin.Engine) {
-	router.StaticFS("/site", gin.Dir(pipeline.ActiveRoot(), false))
+	router.Group("/site", builtin.StaticGzipMiddleware()).StaticFS("/", gin.Dir(pipeline.ActiveRoot(), false))
 }

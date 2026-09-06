@@ -337,6 +337,7 @@
                 if (this.undoStack.length > 100) this.undoStack.shift();
                 this.redoStack.length = 0;
                 this.saveState = 'dirty';
+                this.backupDoc();
             },
             undo() {
                 var prev = this.undoStack.pop();
@@ -345,6 +346,7 @@
                 this.doc = JSON.parse(prev);
                 this.renderTree(); this.refreshCanvas(); this.syncInspector();
                 this.saveState = 'dirty';
+                this.backupDoc();
             },
             redo() {
                 var next = this.redoStack.pop();
@@ -353,6 +355,71 @@
                 this.doc = JSON.parse(next);
                 this.renderTree(); this.refreshCanvas(); this.syncInspector();
                 this.saveState = 'dirty';
+                this.backupDoc();
+            },
+
+            // ---------------- 本地草稿备份（崩溃恢复） ----------------
+            // 每次 AST 变更（snapshot/undo/redo）后节流写入 localStorage：
+            // 页面误关/崩溃/刷新丢失时可在下次打开时恢复。保存成功即清除。
+            backupKey() {
+                return 'wb-backup-' + meta.pageId + '-' + (meta.saveBase || 'page');
+            },
+            backupDoc() {
+                var self = this;
+                if (this._backupTimer) return; // 节流 500ms
+                this._backupTimer = setTimeout(function () {
+                    self._backupTimer = null;
+                    try {
+                        localStorage.setItem(self.backupKey(), JSON.stringify({
+                            doc: self.doc,
+                            version: self.draftVersion,
+                            savedAt: Date.now()
+                        }));
+                    } catch (e) { /* 存储满/禁用：静默降级，不影响编辑 */ }
+                }, 500);
+            },
+            clearBackup() {
+                if (this._backupTimer) {
+                    clearTimeout(this._backupTimer);
+                    this._backupTimer = null;
+                }
+                try { localStorage.removeItem(this.backupKey()); } catch (e) {}
+            },
+            // maybeOfferBackup 打开编辑器时检测备份：存在且与当前文档不同则浮层提示恢复。
+            maybeOfferBackup() {
+                var self = this;
+                var raw = null;
+                try { raw = localStorage.getItem(this.backupKey()); } catch (e) { return; }
+                if (!raw) return;
+                var backup = null;
+                try { backup = JSON.parse(raw); } catch (e) { return; }
+                if (!backup || !backup.doc || !Array.isArray(backup.doc.root)) return;
+                if (JSON.stringify(backup.doc) === JSON.stringify(this.doc)) return; // 保存后残留，无恢复价值
+                var savedAt = backup.savedAt ? new Date(backup.savedAt).toLocaleString() : '未知时间';
+                var banner = document.createElement('div');
+                banner.className = 'wb-backup-banner';
+                var msg = document.createElement('span');
+                msg.textContent = '检测到未保存的草稿备份（' + savedAt + '）';
+                banner.appendChild(msg);
+                var restore = document.createElement('button');
+                restore.type = 'button'; restore.className = 'wb-btn wb-btn-primary wb-btn-sm';
+                restore.textContent = '恢复备份';
+                restore.addEventListener('click', function () {
+                    self.doc = backup.doc;
+                    self.draftVersion = backup.version || self.draftVersion;
+                    self.ensureRootContainer();
+                    self.selectedId = null;
+                    self.saveState = 'dirty';
+                    self.renderTree(); self.flushCanvas(); self.syncInspector(); self.renderUI();
+                    banner.remove();
+                });
+                var discard = document.createElement('button');
+                discard.type = 'button'; discard.className = 'wb-btn wb-btn-ghost wb-btn-sm';
+                discard.textContent = '丢弃';
+                discard.addEventListener('click', function () { self.clearBackup(); banner.remove(); });
+                banner.appendChild(restore);
+                banner.appendChild(discard);
+                document.body.appendChild(banner);
             },
 
             // ---------------- 节点查找 ----------------
@@ -729,7 +796,7 @@
                                     self.ensureRootContainer();
                                     self.selectedId = null;
                                     self.renderTree();
-                                    self.refreshCanvas();
+                                    self.flushCanvas();
                                     self.renderUI();
                                     self.loadHistory();
                                 });
@@ -889,7 +956,28 @@
             },
 
             // ---------------- 画布联动 ----------------
+            // refreshCanvas 调度版：250ms 防抖合并。连续 AST 变更（拖拽/滑块/连续
+            // 字段提交）只触发一次 iframe 提交，最后一次以最新 doc 为准；
+            // 结构性/需要立即反馈的场景（保存成功、历史回放）用 flushCanvas 强制提交。
             refreshCanvas() {
+                var self = this;
+                if (!document.getElementById('wb-canvas')) return;
+                if (this._canvasTimer) return; // 已排程：等待合并，提交时使用最新 doc
+                this._canvasTimer = setTimeout(function () {
+                    self._canvasTimer = null;
+                    self.submitCanvas();
+                }, 250);
+            },
+            // flushCanvas 立即提交当前画布（清掉未决的防抖定时器）。
+            flushCanvas() {
+                if (this._canvasTimer) {
+                    clearTimeout(this._canvasTimer);
+                    this._canvasTimer = null;
+                }
+                this.submitCanvas();
+            },
+            // submitCanvas 实际提交：整文档 JSON → /workbench/preview 重载 iframe。
+            submitCanvas() {
                 var frame = document.getElementById('wb-canvas');
                 if (!frame) return;
                 var form = document.getElementById('wb-preview-form');
@@ -1126,9 +1214,16 @@
                         var raw = get(path) == null ? '' : String(get(path)).trim();
                         swatch.value = /^#[0-9a-fA-F]{3,8}$/.test(raw) ? raw : '#2563eb';
                         input.classList.add('wb-color-text');
+                        // 拖动色板：input 事件高频连发。防抖 150ms 合并——只提交最后一次
+                        // 颜色值，避免连续整帧刷新与 undo 栈污染；不再 dispatch change 双触发。
+                        var swatchTimer = null;
                         swatch.addEventListener('input', function () {
                             input.value = swatch.value;
-                            input.dispatchEvent(new Event('change'));
+                            if (swatchTimer) clearTimeout(swatchTimer);
+                            swatchTimer = setTimeout(function () {
+                                swatchTimer = null;
+                                commit(path, swatch.value);
+                            }, 150);
                         });
                         cWrap.appendChild(input); cWrap.appendChild(swatch);
                         wrap.appendChild(cWrap);
@@ -2307,7 +2402,8 @@
                               return;
                           }
                           self.saveState = 'saved';
-                          self.refreshCanvas();
+                          self.clearBackup();
+                          self.flushCanvas();
                       })
                       .catch(function () { self.busy = false; self.saveState = 'error'; self.renderUI(); });
                     return;
@@ -2320,7 +2416,8 @@
                 }, function (data) {
                     self.draftVersion = data.draftVersion || (self.draftVersion + 1);
                     self.saveState = 'saved';
-                    self.refreshCanvas();
+                    self.clearBackup();
+                    self.flushCanvas();
                 });
             },
             publishFlow() {
@@ -2337,6 +2434,7 @@
                     self.api('build', { id: meta.pageId, expectedVersion: self.draftVersion }, function () {
                         self.api('publish', { id: meta.pageId }, function () {
                             self.saveState = 'saved';
+                            self.clearBackup();
                         });
                     });
                 });
@@ -2385,6 +2483,8 @@
                 this.renderPalette();
                 this.renderTree();
                 this.renderUI();
+                // 崩溃恢复：检测未保存的本地备份（在预载媒体库之前弹出，避免遮挡）。
+                this.maybeOfferBackup();
                 // 预载媒体库列表：检查器媒体字段缩略图解析依赖 _mediaCache（URL 直出）。
                 this.loadMediaList();
                 document.addEventListener('keydown', function (e) { self.onKeydown(e); });

@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"html"
 	"strings"
+	"sync"
 
 	"github.com/CloudyKit/jet/v6"
 
@@ -149,7 +150,25 @@ func ValidatePage(p *Page) (err error) {
 // 键为组件类型（core.container 等），值为 core.Control 描述符数组 JSON。
 // 未实现 SpecProvider 的组件跳过（兼容手写校验阶段）。
 // 输出确定性：Types 字典序，桶内字段声明序。
+//
+// 结果进程级缓存：PropsSpec 由组件编译期静态声明（core.Lookup + SchemaJSON
+// 均为纯函数），进程内恒定；此前每个工作台请求都重新遍历生成，属冗余开销。
 func ComponentSchemas() (map[string]json.RawMessage, error) {
+	componentSchemasOnce.Do(func() {
+		componentSchemas, componentSchemasErr = buildComponentSchemas()
+	})
+	return componentSchemas, componentSchemasErr
+}
+
+// componentSchemas* 进程级单例（见 ComponentSchemas 注释）。
+var (
+	componentSchemasOnce sync.Once
+	componentSchemas     map[string]json.RawMessage
+	componentSchemasErr  error
+)
+
+// buildComponentSchemas 实际生成逻辑（仅首调执行一次）。
+func buildComponentSchemas() (map[string]json.RawMessage, error) {
 	out := make(map[string]json.RawMessage, 8)
 	for _, typeName := range core.Types() {
 		comp, err := core.Lookup(typeName)
