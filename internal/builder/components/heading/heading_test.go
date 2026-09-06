@@ -96,13 +96,13 @@ func cssBlock(css, selector string) string {
 func TestCompileCSS(t *testing.T) {
 	b := &core.CSSBuckets{}
 	compileCSS("n1", &Props{
-		Text:         "标题",
-		Weight:       "bold",
-		Color:        "#ff0000",
-		Align:        Align{Desktop: "center"},
-		TextShadow:   "subtle",
-		LineClamp:    2,
-		Subtitle:     "副标题",
+		Text:          "标题",
+		Weight:        "bold",
+		Color:         "#ff0000",
+		Align:         Align{Desktop: "center"},
+		TextShadow:    "subtle",
+		LineClamp:     2,
+		Subtitle:      "副标题",
 		SubtitleColor: "#888",
 	}, b)
 	css := b.String()

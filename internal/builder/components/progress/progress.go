@@ -83,7 +83,7 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	sel := "." + core.NodeClass(id)
 	color := p.Color
 	if color == "" {
-		color = "var(--color-primary, #2563eb)"
+		color = "var(--wp-c-primary, #2563eb)"
 	}
 	pct := percent(p)
 

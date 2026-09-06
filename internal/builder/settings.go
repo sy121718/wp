@@ -131,30 +131,12 @@ func safeCSS(v string) bool {
 }
 
 // compileSettingsCSS 编译页面设置为 CSS：body 基底样式与版心约束。
+// 主题令牌统一由 ThemeVarsCSS 生成 --wp-c-* 变量（theme_settings.go，
+// 完整 11 色 + 排版 + 按钮 + 表面 + 动效），此处只应用 body 字体/背景等
+// 页面级规则，不再重复输出旧的 --color-* 变量。
 func compileSettingsCSS(s *PageSettings, b *core.CSSBuckets) {
-	// 主题 Token → :root CSS 变量（组件统一用 var(--color-*) 取色）。
-	// Theme 为指针（主题快照），nil 表示无主题，跳过主题令牌与正文字体。
 	if s.Theme != nil {
-		var root []string
-		c := s.Theme.Colors
-		if v := c.Primary; v != "" {
-			root = append(root, "--color-primary: "+v)
-		}
-		if v := c.Text; v != "" {
-			root = append(root, "--color-text: "+v)
-		}
-		if v := c.Background; v != "" {
-			root = append(root, "--color-bg: "+v)
-		}
-		if v := c.Surface; v != "" {
-			root = append(root, "--color-surface: "+v)
-		}
-		if v := c.Border; v != "" {
-			root = append(root, "--color-border: "+v)
-		}
-		if len(root) > 0 {
-			b.Add(core.BreakpointDesktop, ":root", root)
-		}
+		// 正文字体（主题排版默认应用进 body）。
 		if v := s.Theme.Typography.Body.FontFamily; v != "" {
 			b.Add(core.BreakpointDesktop, "body", []string{"font-family: " + v})
 		}

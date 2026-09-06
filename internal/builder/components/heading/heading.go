@@ -53,7 +53,7 @@ type Props struct {
 	Transform string `json:"transform,omitempty" ct:"select,none=无,uppercase=全大写,lowercase=全小写,capitalize=首字母大写,sec=style,label=大小写转换"`
 	// Decor 文本装饰。
 	Decor DecorProps `json:"decor,omitempty"`
-	// Color 文字颜色：色值或主题 Token（var(--color-primary)）。
+	// Color 文字颜色：色值或主题 Token（var(--wp-c-primary)）。
 	Color string `json:"color,omitempty" ct:"color,maxlen=200,sec=style"`
 	// LineClamp 多行截断行数 1~6；0 表示不截断。
 	LineClamp int `json:"lineClamp,omitempty" ct:"slider,min=0,max=6,step=1,sec=style"`
