@@ -218,6 +218,7 @@ Cookie 属性：`HttpOnly`、`Secure`（release 自动启用）、`SameSite=Lax`
 - `docs/01-overview.md` — 概览、边界、冻结边界速查（注意：模块表以本文「模块现状」为准）
 - `docs/03-pipeline.md` — 发布管线（§4.3/§5/§6.5/§9 已实现；§4.4/§7/§8 规划）
 - `docs/05-implementation-plan.md` — 阶段计划（阶段 0-3 已完成；4-7 待办）
+- `docs/06-plugin-system.md` — 插件体系规范（三级能力分层/双轨制/表扩展/样式引擎已落地；P1-P3 待做）
 - `docs/02-*` — 组件规格；`docs/03-A-workbench.md` — 工作台
 - `docs/agents/` — Issue 追踪、Triage 标签、领域术语
 - `internal/module/CLAUDE.md` — 模块开发规范；`pkg/CLAUDE.md` — pkg 组件规范
