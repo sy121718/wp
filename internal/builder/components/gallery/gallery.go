@@ -14,7 +14,6 @@ package gallery
 import (
 	"encoding/json"
 	"fmt"
-	"html"
 	"regexp"
 	"strconv"
 	"strings"
@@ -241,34 +240,8 @@ func parseValues(v string) (items []Item, err error) {
 	return items, nil
 }
 
-// renderItem 单图项：img（URL 直出）+ 点击动作包裹 + 图注结构。
-func renderItem(p *Props, r Item) string {
-	imgHTML := `<img class="gi" src="` + html.EscapeString(r.URL) + `" loading="lazy" decoding="async" alt="` + html.EscapeString(r.Alt) + `">`
-
-	href := r.Link
-	if href == "" {
-		href = p.DefaultLink
-	}
-	var item string
-	switch {
-	case p.ClickAction == ClickLightbox && href == "":
-		// 默认相册灯箱：点击打开原图（客户端增强脚本接管为滑动相册；无脚本时浏览器直开图片）。
-		item = `<a href="` + html.EscapeString(r.URL) + `" data-lightbox="wp-g-">` + imgHTML + `</a>`
-	case (p.ClickAction == ClickLink || r.Link != "") && href != "":
-		item = `<a href="` + html.EscapeString(href) + `">` + imgHTML + `</a>`
-	default:
-		item = imgHTML
-	}
-
-	switch p.CaptionMode {
-	case CaptionBelow, CaptionHover:
-		caption := r.Caption
-		if caption != "" {
-			return `<figure>` + item + `<figcaption>` + html.EscapeString(caption) + `</figcaption></figure>`
-		}
-	}
-	return item
-}
+// 单图项渲染视图逻辑已迁移至 jet.go 的 buildItemView + gallery.jet 模板
+//（HTML 结构下沉 .jet，Jet 默认转义），旧 renderItem 手拼 HTML 已删除。
 
 // compileCSS 图集样式：Grid 三端/间距、Carousel 骨架、统一样式（比例/适配/圆角/边框/悬浮）、图注。
 func compileCSS(id string, p *Props, b *core.CSSBuckets) {

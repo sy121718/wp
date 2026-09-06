@@ -7,7 +7,6 @@ package image
 
 import (
 	"fmt"
-	"html"
 	"regexp"
 	"strings"
 
@@ -157,11 +156,8 @@ func validateExtra(p *Props, nodeID string) (err error) {
 // fieldPathRe 绑定路径白名单。
 var fieldPathRe = regexp.MustCompile(`^[a-z][a-z0-9_]*\.[a-zA-Z][a-zA-Z0-9_]*$`)
 
-// lightboxHTML 零 JS 灯箱浮层：CSS :target 显隐（docs/02-C6 说明约束内实现）。
-func lightboxHTML(nodeID, src string) string {
-	return `<div id="wp-lb-` + nodeID + `" class="wp-lightbox"><a href="#` + nodeID + `" class="wp-lightbox-close">×</a><img src="` +
-		html.EscapeString(src) + `" alt=""></div>`
-}
+// 灯箱浮层结构已迁移至 image.jet 模板（HTML 下沉 .jet，Jet 默认转义），
+// 旧 lightboxHTML 手拼 HTML 已删除。
 
 // compileCSS 图片样式：比例/适应/对齐/尺寸/滤镜/悬浮过渡/灯箱浮层。
 func compileCSS(id string, p *Props, b *core.CSSBuckets) {

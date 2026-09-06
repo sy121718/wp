@@ -1,14 +1,12 @@
 // Package image — Jet 渲染路径辅助导出（Phase 1）。
 //
 // 与 render 函数并行的新路径：图片 URL 直出 + 点击动作（链接/灯箱）+ 图注包裹
-// 保留在 Go（预计算完整 HTML 片段），image.jet 模板仅原样输出。
+// 的分支判定保留在 Go，HTML 拼装交给 image.jet 模板。
 // render 函数保持不变（旧输出），本文件只做最小导出与等价的数据准备。
 package image
 
 import (
 	"fmt"
-	"html"
-	"strings"
 
 	"go_wp/internal/builder/core"
 )
@@ -20,11 +18,42 @@ func CompileCSS(id string, p *Props, b *core.CSSBuckets) {
 
 // View image 渲染视图数据（供 image.jet 模板使用）。
 type View struct {
-	// HTML 完整图片/灯箱/图注 HTML 片段（已转义，原样输出）。
-	HTML string
+	// Src 图片地址（协议校验后，模板输出时由 Jet 默认转义）。
+	Src string
+	// Alt 替代文本（模板输出时由 Jet 默认转义）。
+	Alt string
+	// Title 局部标题（模板输出时由 Jet 默认转义）。
+	Title string
+	// Class 已合并节点 class（非空才输出 class 属性，模板输出时由 Jet 默认转义）。
+	Class string
+	// IsEager 立即加载（否则懒加载）。
+	IsEager bool
+	// FetchHigh 加载优先级 high。
+	FetchHigh bool
+
+	// --- 点击动作分支 ---
+	// IsLightbox 灯箱分支（零 JS :target 浮层）。
+	IsLightbox bool
+	// IsLink 链接分支（Link 非空或 ClickAction == link）。
+	IsLink bool
+	// Link 链接地址（模板输出时由 Jet 默认转义）。
+	Link string
+	// TargetBlank 新窗口打开。
+	TargetBlank bool
+	// RelNofollow 加 nofollow。
+	RelNofollow bool
+	// LinkID 链接分支的自定义 Element ID（加到 <a>）。
+	LinkID string
+	// ImgID 无链接分支的自定义 Element ID（加到 <img>）。
+	ImgID string
+	// NodeID 节点 ID（灯箱锚点/浮层 id 前缀，模板输出时由 Jet 默认转义）。
+	NodeID string
+
+	// Caption 图注（非空则 figure/figcaption 包裹）。
+	Caption string
 }
 
-// BuildView 生成图片渲染 HTML：URL 直出 + 点击动作 + 图注（与 render 输出结构一致）。
+// BuildView 生成图片渲染视图：URL 直出 + 点击动作分支判定 + 图注（与 render 输出结构一致）。
 // class 为已合并的节点 class（nodeView 层计算），customID 为 Advanced 自定义 Element ID。
 func BuildView(node *core.Node, p *Props, class, customID string, content core.ContentResolver) (View, error) {
 	// 图片地址：CMS 绑定优先，否则手填 Src（媒体库/外链统一 URL）。
@@ -51,60 +80,31 @@ func BuildView(node *core.Node, p *Props, class, customID string, content core.C
 		src = ""
 	}
 
-	// 组装 <img>：URL 直出，宽高由 CSS 控制，无媒体库变体解析。
-	var sb strings.Builder
-	sb.WriteString(`<img src="`)
-	sb.WriteString(html.EscapeString(src))
-	sb.WriteString(`"`)
-	if class != "" {
-		sb.WriteString(` class="`)
-		sb.WriteString(html.EscapeString(class))
-		sb.WriteString(`"`)
-	}
-	if p.Loading == "eager" {
-		sb.WriteString(` loading="eager"`)
-	} else {
-		sb.WriteString(` loading="lazy"`)
-	}
-	if p.FetchPriority == "high" {
-		sb.WriteString(` fetchpriority="high"`)
-	}
-	sb.WriteString(` decoding="async" alt="`)
-	sb.WriteString(html.EscapeString(p.Alt))
-	sb.WriteString(`"`)
-	if p.Title != "" {
-		sb.WriteString(` title="`)
-		sb.WriteString(html.EscapeString(p.Title))
-		sb.WriteString(`"`)
-	}
-	sb.WriteString(`>`)
-	imgHTML := sb.String()
-
-	// 点击动作：lightbox 零 JS 实现（CSS :target 浮层）。
-	if p.ClickAction == "lightbox" {
-		imgHTML = `<a href="#wp-lb-` + node.ID + `">` + imgHTML + `</a>` +
-			lightboxHTML(node.ID, src)
-	} else if p.Link != "" || p.ClickAction == "link" {
-		linkAttrs := `href="` + html.EscapeString(p.Link) + `"`
-		if p.LinkTarget == "blank" {
-			linkAttrs += ` target="_blank"`
-		}
-		if p.LinkRel == "nofollow" {
-			linkAttrs += ` rel="nofollow"`
-		}
-		if customID != "" {
-			linkAttrs += ` id="` + customID + `"`
-		}
-		imgHTML = `<a ` + linkAttrs + `>` + imgHTML + `</a>`
-	} else if customID != "" {
-		imgHTML = strings.Replace(imgHTML, "<img ", "<img id=\""+customID+"\" ", 1)
+	v := View{
+		Src:       src,
+		Alt:       p.Alt,
+		Title:     p.Title,
+		Class:     class,
+		IsEager:   p.Loading == "eager",
+		FetchHigh: p.FetchPriority == "high",
+		NodeID:    node.ID,
+		Caption:   p.Caption,
 	}
 
-	// 图注包裹。
-	if p.Caption != "" {
-		tmp := imgHTML
-		imgHTML = `<figure>` + tmp + `<figcaption>` + html.EscapeString(p.Caption) + `</figcaption></figure>`
+	// 点击动作分支（与旧 render 内联逻辑一致）。
+	switch {
+	case p.ClickAction == "lightbox":
+		v.IsLightbox = true
+	case p.Link != "" || p.ClickAction == "link":
+		v.IsLink = true
+		v.Link = p.Link
+		v.TargetBlank = p.LinkTarget == "blank"
+		v.RelNofollow = p.LinkRel == "nofollow"
+		v.LinkID = customID
+	default:
+		// 无链接：customID 织入 <img>（旧路径在 <img 后插入 id 属性）。
+		v.ImgID = customID
 	}
 
-	return View{HTML: imgHTML}, nil
+	return v, nil
 }
