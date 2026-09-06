@@ -322,7 +322,11 @@
                 } else if (targetLocation) {
                     targetLocation.siblings.splice(targetLocation.index + (placement === 'before' ? 0 : 1), 0, node);
                 } else {
-                    this.ensureRootContainer().children.push(node);
+                    // 无插入目标：优先落到既有「页面主体」容器，否则顶级平铺
+                    //（root 是森林，Section 直接作为顶级节点，容器可选项语义）。
+                    var rootHost = this.ensureRootContainer();
+                    if (rootHost) rootHost.children.push(node);
+                    else this.doc.root.push(node);
                 }
                 this.selectedId = node.id;
                 this.renderTree();
@@ -407,7 +411,6 @@
                 restore.addEventListener('click', function () {
                     self.doc = backup.doc;
                     self.draftVersion = backup.version || self.draftVersion;
-                    self.ensureRootContainer();
                     self.selectedId = null;
                     self.saveState = 'dirty';
                     self.renderTree(); self.flushCanvas(); self.syncInspector(); self.renderUI();
@@ -460,21 +463,18 @@
                 var self = this;
                 return (node.children || []).some(function (child) { return self.containsNode(child, id); });
             },
+            // ensureRootContainer 兼容旧文档的单一「页面主体」容器：
+            // 仅当既有文档已是单根容器时返回它（补 children 数组）；不再强制
+            // 把空文档/多根文档包裹进容器——页面骨架由 settings 层稳定
+            // （structure 页眉页脚 + 版心 + 主题），正文顶级 Section 平铺
+            // 是一等形态，容器是按需添加的可选项（插入兜底走 doc.root）。
             ensureRootContainer() {
                 var roots = this.doc.root || [];
                 if (roots.length === 1 && roots[0].type === 'core.container') {
                     roots[0].children = roots[0].children || [];
                     return roots[0];
                 }
-                var container = {
-                    id: this.newId('section'),
-                    type: 'core.container',
-                    name: '页面主体',
-                    props: { tag: 'main', layout: { engine: 'flex', flex: { direction: 'column', gap: '16px' } }, box: {} },
-                    children: roots.splice(0)
-                };
-                this.doc.root = [container];
-                return container;
+                return null;
             },
             moveNode(sourceID, targetID, placement) {
                 if (!sourceID || !targetID || sourceID === targetID) return;
@@ -793,7 +793,6 @@
                                 }, function (data) {
                                     self.draftVersion = data.draftVersion || (self.draftVersion + 1);
                                     self.doc = rev.draftDocument;
-                                    self.ensureRootContainer();
                                     self.selectedId = null;
                                     self.renderTree();
                                     self.flushCanvas();
@@ -2475,9 +2474,9 @@
 
             init() {
                 var self = this;
-                var hadSingleRootContainer = this.doc.root.length === 1 && this.doc.root[0].type === 'core.container';
-                this.ensureRootContainer();
-                if (!hadSingleRootContainer) this.saveState = 'dirty';
+                // 不再强制包裹「页面主体」容器：骨架由 settings 层稳定
+                //（structure/版心/主题），正文顶级 Section 平铺是一等形态，
+                // 容器按需添加；空文档/多根文档打开即干净（不再误标 dirty）。
                 window.__wb = this;
                 this.setDevice(this.device);
                 this.renderPalette();
