@@ -307,7 +307,7 @@ Query DSL）：
 | **P0（已完成）** | 样式声明引擎 `internal/builder/style`（§6） | ✅ 已合入主干 |
 | **P1（已完成）** | `plugin` 模块（上传/版本/启停/卸载 + registry + zip 安全解析 + manifest 校验）；CompositeLoader 命名空间合并（§7）；plugin.* 节点编译分发（builder 内核契约）；组件注册进 workbench palette；编译同源注入（dashboard 预览 + page 构建）；后台插件管理页 | ✅ 已合入主干 |
 | **P2（已完成）** | L1 数据层迁移执行器（插件 schema 创建/版本管理/级联卸载 + registry 记账，真实 PG 测试）；presets 区块预设注册进组件库（§5.2，对标 GrapesJS Block Manager） | ✅ 已合入主干 |
-| **P3** | L2 CollectionSource（对齐 0-A2 content 落地节奏，**硬依赖 0-A2 未落地，缓**）；脚手架 `plugin init`（对标 strapi generate） | 待做 |
+| **P3** | L2 CollectionSource（对齐 0-A2 content 落地节奏，**硬依赖 0-A2 未落地，缓**）；脚手架 `plugin init`（对标 strapi generate） | 脚手架 ✅ 已合入；CollectionSource 待做 |
 | **演进** | 第三轨（Yaegi/Wasm 受限逻辑）；插件市场与签名分发 | 评估项 |
 
 ## 14. 术语表
