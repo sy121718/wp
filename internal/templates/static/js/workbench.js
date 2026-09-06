@@ -322,11 +322,9 @@
                 } else if (targetLocation) {
                     targetLocation.siblings.splice(targetLocation.index + (placement === 'before' ? 0 : 1), 0, node);
                 } else {
-                    // 无插入目标：优先落到既有「页面主体」容器，否则顶级平铺
-                    //（root 是森林，Section 直接作为顶级节点，容器可选项语义）。
-                    var rootHost = this.ensureRootContainer();
-                    if (rootHost) rootHost.children.push(node);
-                    else this.doc.root.push(node);
+                    // 无插入目标：顶级平铺（root 是森林，Section 直接作为
+                    // 顶级节点；容器是按需添加的可选项，无任何包裹兜底）。
+                    this.doc.root.push(node);
                 }
                 this.selectedId = node.id;
                 this.renderTree();
@@ -462,19 +460,6 @@
                 if (node.id === id) return true;
                 var self = this;
                 return (node.children || []).some(function (child) { return self.containsNode(child, id); });
-            },
-            // ensureRootContainer 兼容旧文档的单一「页面主体」容器：
-            // 仅当既有文档已是单根容器时返回它（补 children 数组）；不再强制
-            // 把空文档/多根文档包裹进容器——页面骨架由 settings 层稳定
-            // （structure 页眉页脚 + 版心 + 主题），正文顶级 Section 平铺
-            // 是一等形态，容器是按需添加的可选项（插入兜底走 doc.root）。
-            ensureRootContainer() {
-                var roots = this.doc.root || [];
-                if (roots.length === 1 && roots[0].type === 'core.container') {
-                    roots[0].children = roots[0].children || [];
-                    return roots[0];
-                }
-                return null;
             },
             moveNode(sourceID, targetID, placement) {
                 if (!sourceID || !targetID || sourceID === targetID) return;
