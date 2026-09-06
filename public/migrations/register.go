@@ -39,6 +39,15 @@ var contentSQL string
 //go:embed 033_content_permissions.sql
 var contentPermSQL string
 
+//go:embed 043_content_template.sql
+var contentTemplateSQL string
+
+//go:embed 044_presentation.sql
+var presentationSQL string
+
+//go:embed 034_content_pipeline_permissions.sql
+var contentPipelinePermSQL string
+
 func init() {
 	register(Migration{
 		Version:   "001-init-schema",
@@ -95,6 +104,20 @@ func init() {
 		SQL:       contentSQL,
 	})
 
+	// 内容结构模板（docs/02-domain.md §2，0-A2 contenttemplate 模块）。
+	register(Migration{
+		Version:   "043-content-template",
+		TableName: "content_templates",
+		SQL:       contentTemplateSQL,
+	})
+
+	// 自动发布实例与快照（docs/02-domain.md §3，0-A2 presentation 模块）。
+	register(Migration{
+		Version:   "044-presentation",
+		TableName: "presentation_instances",
+		SQL:       presentationSQL,
+	})
+
 	// 插件权限 seed（权限点 + 后台菜单，docs/06）。
 	registerSeed(Seed{
 		Version:      "032-plugin-permissions",
@@ -109,5 +132,13 @@ func init() {
 		TableName:    "sys_permission",
 		ConditionSQL: "SELECT COUNT(*) FROM sys_permission WHERE module = 'content'",
 		SQL:          contentPermSQL,
+	})
+
+	// 内容模板与自动发布权限 seed（0-A2）。
+	registerSeed(Seed{
+		Version:      "034-content-pipeline-permissions",
+		TableName:    "sys_permission",
+		ConditionSQL: "SELECT COUNT(*) FROM sys_permission WHERE module IN ('contenttemplate','presentation')",
+		SQL:          contentPipelinePermSQL,
 	})
 }

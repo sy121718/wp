@@ -9,10 +9,12 @@ import (
 	blockhttp "go_wp/internal/module/block/inbound/http"
 	captcharouter "go_wp/internal/module/common/captcha/router"
 	contenthttp "go_wp/internal/module/content/inbound/http"
+	contenttemplatehttp "go_wp/internal/module/contenttemplate/inbound/http"
 	dashboardhttp "go_wp/internal/module/dashboard/inbound/http"
 	mediahttp "go_wp/internal/module/media/inbound/http"
 	pagehttp "go_wp/internal/module/page/inbound/http"
 	pluginhttp "go_wp/internal/module/plugin/inbound/http"
+	presentationhttp "go_wp/internal/module/presentation/inbound/http"
 	projecthttp "go_wp/internal/module/project/inbound/http"
 	pubhttp "go_wp/internal/module/publication/inbound/http"
 	"go_wp/internal/pipeline"
@@ -118,7 +120,11 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 	publicationSvc := pubhttp.SetupPublicationRoutes(authorizedAPI, db)
 	// CMS 内容（0-A2，contenttemplate/presentation 依赖其字段白名单契约）。
 	contentSvc := contenthttp.SetupContentRoutes(authorizedAPI, db)
-	_ = contentSvc // presentation 模块落地后消费其 ResolverFor/字段白名单
+	// 内容结构模板（presentation 依赖 ResolveTemplate）。
+	contentTemplateSvc := contenttemplatehttp.SetupContentTemplateRoutes(authorizedAPI, db)
+	// 自动发布实例（内容实体驱动，复用编译/存储/激活管线）。
+	presentationSvc := presentationhttp.SetupPresentationRoutes(authorizedAPI, db, contentTemplateSvc, contentSvc)
+	_ = presentationSvc // 后续 stale 传播编排（实体变更触发 Rebuild）接入
 	// 插件模块（page 构建路径依赖其装配素材，须先于 page 装配）。
 	pluginSvc := pluginhttp.SetupPluginRoutes(authorizedAPI, db)
 	pageService := pagehttp.SetupPageRoutes(authorizedAPI, db, artifactSvc, publicationSvc, projectService, blockSvc, pluginSvc)

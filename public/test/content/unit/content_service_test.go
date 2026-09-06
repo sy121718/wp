@@ -105,23 +105,23 @@ func TestContentResolverFieldWhitelist(t *testing.T) {
 		t.Fatalf("ResolverFor: %v", err)
 	}
 	// 字符串字段。
-	if v, _ := r.ResolveString("name"); v != "测试商品" {
+	if v, _ := r.ResolveString("product.name"); v != "测试商品" {
 		t.Fatalf("name 解析错误: %q", v)
 	}
 	// 数值归一（199.0 → 199）。
-	if v, _ := r.ResolveString("price"); v != "199" {
+	if v, _ := r.ResolveString("product.price"); v != "199" {
 		t.Fatalf("price 归一错误: %q", v)
 	}
 	// 数组取首元素。
-	if v, _ := r.ResolveString("images"); v != "https://img/a.jpg" {
+	if v, _ := r.ResolveString("product.images"); v != "https://img/a.jpg" {
 		t.Fatalf("images 取首错误: %q", v)
 	}
 	// 未设置字段 → 空串。
-	if v, _ := r.ResolveString("description"); v != "" {
+	if v, _ := r.ResolveString("product.description"); v != "" {
 		t.Fatalf("未设置字段应空串: %q", v)
 	}
 	// 白名单外字段 → 错误。
-	if _, err := r.ResolveString("evil"); err == nil {
+	if _, err := r.ResolveString("product.evil"); err == nil {
 		t.Fatalf("白名单外字段应拒绝")
 	}
 }

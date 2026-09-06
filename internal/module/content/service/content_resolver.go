@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 
 	"go_wp/internal/builder/core"
 	contentcontract "go_wp/internal/module/content/contract"
@@ -50,11 +51,21 @@ type entityResolver struct {
 }
 
 // ResolveString 按字段白名单解析字段值为字符串（不存在返回空串）。
+// field 形如 "product.name"（entityType.field，与 heading 组件 fieldPathRe
+// 的两段格式一致）；拆前缀校验类型匹配 + 字段名白名单（不变量 4）。
 func (r *entityResolver) ResolveString(field string) (string, error) {
-	if !contentcontract.IsValidField(r.entityType, field) {
-		return "", fmt.Errorf("%s: %q", contentenums.ErrInvalidField, field)
+	parts := strings.SplitN(field, ".", 2)
+	if len(parts) != 2 {
+		return "", fmt.Errorf("%s: %q（期望 entityType.field）", contentenums.ErrInvalidField, field)
 	}
-	v, ok := r.data[field]
+	entityType, fieldName := parts[0], parts[1]
+	if entityType != r.entityType {
+		return "", fmt.Errorf("绑定字段 %q 类型 %q 与当前实体 %q 不符", field, entityType, r.entityType)
+	}
+	if !contentcontract.IsValidField(entityType, fieldName) {
+		return "", fmt.Errorf("%s: %q", contentenums.ErrInvalidField, fieldName)
+	}
+	v, ok := r.data[fieldName]
 	if !ok || v == nil {
 		return "", nil
 	}
