@@ -20,29 +20,44 @@ import (
 
 // mergeActiveTheme 把工程激活主题的设置合入页面文档：
 // settings.theme（Woodmart 级主题令牌）与 settings.structure（页眉/页脚块绑定）。
-// 无激活主题或查询失败时不合入（主题为可选增强，不阻塞页面保存）。
+// 页眉/页脚支持**页面级覆盖**：页面 settings.structure 非空字段优先（用户在
+// 页面设置里显式选了某页眉/页脚），空字段回退主题默认（headerBlockId/
+// footerBlockId 为空 = 用主题）。无激活主题时保留页面现有绑定。
 func (s *Service) mergeActiveTheme(ctx context.Context, projectID string, doc json.RawMessage) (json.RawMessage, error) {
+	// 页面现有 structure（页面级覆盖优先）。
+	pageStructure, perr := parseStructureBindings(doc)
+	if perr != nil {
+		pageStructure = builder.StructureBindings{}
+	}
+
 	theme, err := s.project.GetActiveTheme(ctx, projectID)
 	if err != nil || theme == nil {
-		// 无主题：仍写空 theme/structure 快照（保持 settings.theme 键存在的
-		// 既有契约，页面文档规范化后键不缺失）。
+		// 无主题：保留页面现有 structure（页面级选择），theme 写空快照保持键存在。
 		if doc, err = mergeSettingsKey(doc, "theme", json.RawMessage(`{}`)); err != nil {
 			return nil, err
 		}
-		return mergeSettingsKey(doc, "structure", json.RawMessage(`{}`))
+		structureJSON, _ := json.Marshal(map[string]any{
+			"headerBlockId": pageStructure.HeaderBlockID,
+			"footerBlockId": pageStructure.FooterBlockID,
+		})
+		return mergeSettingsKey(doc, "structure", structureJSON)
 	}
-	var structure struct {
+	var themeStructure struct {
 		Header string `json:"headerBlockId"`
 		Footer string `json:"footerBlockId"`
 	}
 	if len(theme.Settings) > 0 {
-		if err := json.Unmarshal(theme.Settings, &structure); err != nil {
+		if err := json.Unmarshal(theme.Settings, &themeStructure); err != nil {
 			logger.Scene("page").With("err", err).Warn("主题设置解析失败")
-			// 非法主题设置：写空快照（不阻塞保存，保持键存在）。
+			// 非法主题设置：保留页面现有 structure，theme 写空快照。
 			if doc, err = mergeSettingsKey(doc, "theme", json.RawMessage(`{}`)); err != nil {
 				return nil, err
 			}
-			return mergeSettingsKey(doc, "structure", json.RawMessage(`{}`))
+			structureJSON, _ := json.Marshal(map[string]any{
+				"headerBlockId": pageStructure.HeaderBlockID,
+				"footerBlockId": pageStructure.FooterBlockID,
+			})
+			return mergeSettingsKey(doc, "structure", structureJSON)
 		}
 	}
 	// settings.theme 快照：整体快照主题 settings（ThemeSettings Woodmart 级模型）。
@@ -56,10 +71,18 @@ func (s *Service) mergeActiveTheme(ctx context.Context, projectID string, doc js
 	if doc, err = mergeSettingsKey(doc, "theme", themeSnapshot); err != nil {
 		return nil, err
 	}
-	// settings.structure 快照（页眉/页脚块绑定）。
+	// settings.structure 合并：页面非空优先（覆盖），空字段回退主题默认。
+	header := pageStructure.HeaderBlockID
+	if header == "" {
+		header = themeStructure.Header
+	}
+	footer := pageStructure.FooterBlockID
+	if footer == "" {
+		footer = themeStructure.Footer
+	}
 	structureJSON, _ := json.Marshal(map[string]any{
-		"headerBlockId": structure.Header,
-		"footerBlockId": structure.Footer,
+		"headerBlockId": header,
+		"footerBlockId": footer,
 	})
 	return mergeSettingsKey(doc, "structure", structureJSON)
 }

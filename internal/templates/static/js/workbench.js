@@ -838,6 +838,32 @@
                 });
                 bcWrap.appendChild(bcInput); body.appendChild(bcWrap);
 
+                // 页眉/页脚选择（页面级覆盖主题默认；空 = 用主题默认）。
+                if (!doc.settings.structure) doc.settings.structure = {};
+                var headerBlocks = (meta.blocks || []).filter(function (b) { return b.kind === 'header'; });
+                var footerBlocks = (meta.blocks || []).filter(function (b) { return b.kind === 'footer'; });
+                function blockSelect(labelText, field, candidates, kindLabel) {
+                    var wrap = document.createElement('div'); wrap.className = 'wb-field';
+                    var label = document.createElement('label'); label.textContent = labelText; wrap.appendChild(label);
+                    var sel = document.createElement('select');
+                    var empty = document.createElement('option'); empty.value = ''; empty.textContent = '— 用主题默认（' + kindLabel + '）—'; sel.appendChild(empty);
+                    candidates.forEach(function (b) {
+                        var o = document.createElement('option'); o.value = b.id;
+                        o.textContent = b.name + (b.category && b.category !== 'general' ? ' · ' + b.category : '');
+                        sel.appendChild(o);
+                    });
+                    sel.value = doc.settings.structure[field] || '';
+                    sel.addEventListener('change', function () {
+                        self.snapshot();
+                        doc.settings.structure[field] = sel.value;
+                        self.saveState = 'dirty';
+                        self.refreshCanvas();
+                    });
+                    wrap.appendChild(sel); body.appendChild(wrap);
+                }
+                blockSelect('页眉', 'headerBlockId', headerBlocks, '页眉');
+                blockSelect('页脚', 'footerBlockId', footerBlocks, '页脚');
+
                 var tip = document.createElement('p'); tip.className = 'wb-empty';
                 tip.textContent = '改动已写入草稿，点右上「存草稿」保存；发布后生效。';
                 body.appendChild(tip);
