@@ -94,7 +94,7 @@ func TestActivateThemeReskinsWholeSite(t *testing.T) {
 	// 主题 A（首个自动激活）+ 主题 B（含不同颜色/字体/页眉页脚绑定）。
 	themeA, err := projects.CreateTheme(ctx, &projectdto.ThemeCreateReq{
 		ProjectID: projectID, Name: "默认亮色",
-		Settings: json.RawMessage(`{"colors":{"primary":"#111111"},"fontFamily":"Arial"}`),
+		Settings: json.RawMessage(`{"colors":{"primary":"#111111"},"typography":{"body":{"fontFamily":"Arial"}}}`),
 	})
 	if err != nil {
 		t.Fatalf("创建主题 A 失败: %v", err)
@@ -104,7 +104,7 @@ func TestActivateThemeReskinsWholeSite(t *testing.T) {
 	}
 	themeB, err := projects.CreateTheme(ctx, &projectdto.ThemeCreateReq{
 		ProjectID: projectID, Name: "春季暗色",
-		Settings: json.RawMessage(`{"colors":{"primary":"#2563eb"},"fontFamily":"Serif","headerBlockId":"new-hdr","footerBlockId":"new-ftr"}`),
+		Settings: json.RawMessage(`{"colors":{"primary":"#2563eb"},"typography":{"body":{"fontFamily":"Serif"}},"headerBlockId":"new-hdr","footerBlockId":"new-ftr"}`),
 	})
 	if err != nil {
 		t.Fatalf("创建主题 B 失败: %v", err)
@@ -240,14 +240,18 @@ func assertThemeSnapshotX(t *testing.T, doc []byte, wantPrimary, wantFont string
 	}
 	var theme struct {
 		Colors     map[string]string `json:"colors"`
-		FontFamily string            `json:"fontFamily"`
+		Typography struct {
+			Body struct {
+				FontFamily string `json:"fontFamily"`
+			} `json:"body"`
+		} `json:"typography"`
 	}
 	if err := json.Unmarshal(raw, &theme); err != nil {
 		t.Fatalf("解析 theme 快照失败: %v", err)
 	}
-	if theme.Colors["primary"] != wantPrimary || theme.FontFamily != wantFont {
+	if theme.Colors["primary"] != wantPrimary || theme.Typography.Body.FontFamily != wantFont {
 		t.Errorf("theme 快照错误: primary=%q font=%q (want %q/%q)",
-			theme.Colors["primary"], theme.FontFamily, wantPrimary, wantFont)
+			theme.Colors["primary"], theme.Typography.Body.FontFamily, wantPrimary, wantFont)
 	}
 }
 

@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"strings"
 
+	"go_wp/internal/builder"
 	blockdto "go_wp/internal/module/block/dto"
 	dashboardenums "go_wp/internal/module/dashboard/enums"
 	projectdto "go_wp/internal/module/project/dto"
@@ -111,10 +112,11 @@ func (h *Handle) CreateTheme(c *gin.Context) {
 
 // ActivateTheme 激活主题（POST /admin/themes/activate）。
 // 激活成功后对该主题所在工程的整站页面执行「换皮」：
-//   1) 全部页面转挂到新激活主题（ReattachProjectPagesToTheme）；
-//   2) 颜色/字体快照合入 settings.theme（RefreshThemeForTheme）；
-//   3) 页眉/页脚绑定合入 settings.structure（RefreshStructureForTheme）；
-//   4) 全部页面标记待重建（MarkStaleForTheme），下次构建即以新主题换皮。
+//  1. 全部页面转挂到新激活主题（ReattachProjectPagesToTheme）；
+//  2. 颜色/字体快照合入 settings.theme（RefreshThemeForTheme）；
+//  3. 页眉/页脚绑定合入 settings.structure（RefreshStructureForTheme）；
+//  4. 全部页面标记待重建（MarkStaleForTheme），下次构建即以新主题换皮。
+//
 // 已发布产物静态面不变，草稿重建即新主题；刷新失败不使激活回滚（激活已提交），仅记日志。
 func (h *Handle) ActivateTheme(c *gin.Context) {
 	id := strings.TrimSpace(c.PostForm("id"))
@@ -189,23 +191,30 @@ func (h *Handle) refreshThemePages(c *gin.Context, themeID string, settingsJSON 
 }
 
 // themeSnapshots 从主题设置构造页面文档快照：
-// settings.theme（colors/fontFamily，编译端 :root 变量）与
-// settings.structure（headerBlockId/footerBlockId，全局块槽位）。
+//   - themeJSON = 完整 ThemeSettings（builder.ParseThemeSettings 校验后的原样 JSON，
+//     不含 headerBlockId/footerBlockId），编译端 :root 变量；
+//   - structureJSON = {headerBlockId, footerBlockId}（全局块槽位绑定）。
+//
+// 向后兼容：旧 themes.settings（5 色 colors + 顶层 fontFamily + headerBlockId/
+// footerBlockId）仍可解析——ParseThemeSettings 能解析出 Colors.Primary 等，
+// fontFamily 旧字段被忽略（新格式字体内聚在 typography.body.fontFamily）。
 // settings 非法时返回可读错误。
 func themeSnapshots(settings json.RawMessage) (themeJSON, structureJSON json.RawMessage, err error) {
-	s := themeSettingsJSON{}
+	// 完整 ThemeSettings：解析 + 校验（含向后兼容旧 5 色格式）。
+	ts, err := builder.ParseThemeSettings(settings)
+	if err != nil {
+		return nil, nil, err
+	}
+	themeJSON, err = json.Marshal(ts)
+	if err != nil {
+		return nil, nil, err
+	}
+	// 结构绑定：从顶层 headerBlockId/footerBlockId 取（不属于 ThemeSettings）。
+	var s themeSettingsJSON
 	if len(settings) > 0 {
 		if err = json.Unmarshal(settings, &s); err != nil {
 			return nil, nil, err
 		}
-	}
-	colors := s.Colors
-	if colors == nil {
-		colors = map[string]string{}
-	}
-	themeJSON, err = json.Marshal(map[string]any{"colors": colors, "fontFamily": s.FontFamily})
-	if err != nil {
-		return nil, nil, err
 	}
 	structureJSON, err = json.Marshal(map[string]any{
 		"headerBlockId": s.HeaderBlockID,
@@ -256,17 +265,21 @@ func (h *Handle) backToThemes(c *gin.Context) string {
 
 // themeSettingsData 单主题设置页数据（全局颜色/字体/页眉页脚块绑定）。
 type themeSettingsData struct {
-	Title      string
-	Menu       string
-	ThemeID    string
-	ThemeName  string
-	ProjectID  string
+	Title     string
+	Menu      string
+	ThemeID   string
+	ThemeName string
+	ProjectID string
+	// 以下 5 色 + 字体为旧字段，供 admin/theme_settings.html 回显（向后兼容）。
 	PColor     string
 	TColor     string
 	BgColor    string
 	SColor     string
 	BdColor    string
 	FontFamily string
+	// ThemeSettingsJSON 完整 ThemeSettings JSON 字符串（colors 11 色 + typography +
+	// button + surface + motion），供前端面板回显/扩展使用。
+	ThemeSettingsJSON string
 	// HeaderBlockID/FooterBlockID 全局页眉/页脚块绑定（编译期内联装配）。
 	HeaderBlockID string
 	FooterBlockID string
@@ -285,31 +298,37 @@ type blockOption struct {
 // templateMap 转 Jet 模板键 map。
 func (d *themeSettingsData) templateMap() gin.H {
 	return gin.H{
-		"title":        d.Title,
-		"menu":         d.Menu,
-		"ThemeID":      d.ThemeID,
-		"ThemeName":    d.ThemeName,
-		"ProjectID":    d.ProjectID,
-		"PColor":       d.PColor,
-		"TColor":       d.TColor,
-		"BgColor":      d.BgColor,
-		"SColor":       d.SColor,
-		"BdColor":      d.BdColor,
-		"FontFamily":   d.FontFamily,
-		"HeaderBlock":  d.HeaderBlockID,
-		"FooterBlock":  d.FooterBlockID,
-		"HeaderBlocks": d.HeaderBlocks,
-		"FooterBlocks": d.FooterBlocks,
+		"title":         d.Title,
+		"menu":          d.Menu,
+		"ThemeID":       d.ThemeID,
+		"ThemeName":     d.ThemeName,
+		"ProjectID":     d.ProjectID,
+		"PColor":        d.PColor,
+		"TColor":        d.TColor,
+		"BgColor":       d.BgColor,
+		"SColor":        d.SColor,
+		"BdColor":       d.BdColor,
+		"FontFamily":    d.FontFamily,
+		"ThemeSettings": d.ThemeSettingsJSON,
+		"HeaderBlock":   d.HeaderBlockID,
+		"FooterBlock":   d.FooterBlockID,
+		"HeaderBlocks":  d.HeaderBlocks,
+		"FooterBlocks":  d.FooterBlocks,
 	}
 }
 
 // themeSettingsJSON 与主题设置结构约定对齐（020_themes.sql / 021_blocks.sql 方案 C）：
-// 颜色/字体为站点设计 Token；headerBlockId/footerBlockId 为全局块槽位绑定。
+// themes.settings 存储的 JSON = 完整 ThemeSettings（colors 11 色 + typography +
+// button + surface + motion，经 builder.ParseThemeSettings 校验）+ 顶层
+// headerBlockId/footerBlockId（全局块槽位绑定，不属于 ThemeSettings 模型，
+// 但同存一份方便 themeSnapshots 分离快照）。
+//
+// 嵌入 builder.ThemeSettings 使 json.Marshal 扁平化输出完整主题字段；
+// headerBlockId/footerBlockId 为顶层结构绑定。
 type themeSettingsJSON struct {
-	Colors        map[string]string `json:"colors,omitempty"`
-	FontFamily    string            `json:"fontFamily,omitempty"`
-	HeaderBlockID string            `json:"headerBlockId,omitempty"`
-	FooterBlockID string            `json:"footerBlockId,omitempty"`
+	builder.ThemeSettings
+	HeaderBlockID string `json:"headerBlockId,omitempty"`
+	FooterBlockID string `json:"footerBlockId,omitempty"`
 }
 
 // ThemeSettings 单主题设置页。
@@ -338,20 +357,30 @@ func (h *Handle) loadThemeSettings(c *gin.Context, themeID string) *themeSetting
 		Title: dashboardenums.MsgThemeSettingsTitle, Menu: "themes",
 		ThemeID: theme.ID, ThemeName: theme.Name, ProjectID: theme.ProjectID,
 	}
+	// 完整 ThemeSettings：解析 + 校验（向后兼容旧 5 色 + 顶层 fontFamily 格式）。
+	// 旧字段回显：PColor 等取自 ThemeColors；FontFamily 取自 typography.body.fontFamily
+	// （旧顶层 fontFamily 被 ParseThemeSettings 忽略）。
+	ts, perr := builder.ParseThemeSettings(theme.Settings)
+	if perr != nil {
+		logger.Scene("page").With("theme_id", themeID).Error(perr, "解析主题设置 JSON 失败")
+	} else {
+		data.PColor = ts.Colors.Primary
+		data.TColor = ts.Colors.Text
+		data.BgColor = ts.Colors.Background
+		data.SColor = ts.Colors.Surface
+		data.BdColor = ts.Colors.Border
+		data.FontFamily = ts.Typography.Body.FontFamily
+		if b, err := json.Marshal(ts); err == nil {
+			data.ThemeSettingsJSON = string(b)
+		}
+	}
+	// 结构绑定：顶层 headerBlockId/footerBlockId（不属于 ThemeSettings）。
 	var s themeSettingsJSON
 	if len(theme.Settings) > 0 {
 		if err := json.Unmarshal(theme.Settings, &s); err != nil {
-			logger.Scene("page").With("theme_id", themeID).Error(err, "解析主题设置 JSON 失败")
+			logger.Scene("page").With("theme_id", themeID).Error(err, "解析主题结构绑定 JSON 失败")
 		}
 	}
-	if s.Colors != nil {
-		data.PColor = s.Colors["primary"]
-		data.TColor = s.Colors["text"]
-		data.BgColor = s.Colors["background"]
-		data.SColor = s.Colors["surface"]
-		data.BdColor = s.Colors["border"]
-	}
-	data.FontFamily = s.FontFamily
 	data.HeaderBlockID = s.HeaderBlockID
 	data.FooterBlockID = s.FooterBlockID
 	// 页眉/页脚绑定候选：本工程的页眉/页脚类全局块。
@@ -372,9 +401,29 @@ func (h *Handle) loadThemeSettings(c *gin.Context, themeID string) *themeSetting
 }
 
 // SaveThemeSettings 保存单主题设置（POST /admin/themes/settings/save）：
-// 写回 themes.settings（颜色/字体/页眉页脚块绑定）；颜色/字体批量合入该主题下
-// 全部页面文档（settings.theme 快照），结构绑定合入 settings.structure；
+// 写回 themes.settings（完整 ThemeSettings + 页眉/页脚块绑定）；主题设置批量合入
+// 该主题下全部页面文档（settings.theme 快照），结构绑定合入 settings.structure；
 // 保存后该主题下页面全部标待重建（新颜色/结构与块内容需重新构建生效）。
+//
+// PostForm 键名约定（扁平点分命名，前端 workbench.js 严格按此提交）：
+//   - 颜色 11 个：colors.primary / colors.secondary / colors.accent / colors.success /
+//     colors.warning / colors.danger / colors.text / colors.heading /
+//     colors.background / colors.surface / colors.border
+//   - 标题排版：typography.heading.color / typography.heading.weight（→ Heading.FontWeight）/
+//     typography.heading.size（→ Heading.FontSize）/ typography.heading.spacing /
+//     typography.heading.font（→ Heading.FontFamily）
+//   - 正文排版：typography.body.color / typography.body.size（→ Body.FontSize）/
+//     typography.body.line（→ Body.LineHeight）/ typography.body.font（→ Body.FontFamily）
+//   - 链接：typography.link.color / typography.link.hover（→ Link.HoverColor）/
+//     typography.link.underline
+//   - 按钮：button.background / button.color / button.radius /
+//     button.weight（→ Button.FontWeight）/ button.py（→ Button.PaddingY）/
+//     button.px（→ Button.PaddingX）/ button.hoverBg（→ Button.HoverBackground）/
+//     button.hoverColor
+//   - 表面：surface.radius / surface.borderWidth / surface.borderColor / surface.shadow
+//   - 动效：motion.duration（→ Motion.TransitionDuration）/ motion.easing /
+//     motion.entrance（→ Motion.DefaultEntrance）
+//   - 结构绑定（顶层）：headerBlockId / footerBlockId
 func (h *Handle) SaveThemeSettings(c *gin.Context) {
 	themeID := strings.TrimSpace(c.PostForm("id"))
 	if themeID == "" {
@@ -386,21 +435,77 @@ func (h *Handle) SaveThemeSettings(c *gin.Context) {
 		c.String(http.StatusNotFound, "主题不存在")
 		return
 	}
-	colors := map[string]string{}
-	for _, key := range []string{"primary", "text", "background", "surface", "border"} {
-		if v := strings.TrimSpace(c.PostForm(key)); v != "" {
-			colors[key] = v
-		}
+	// 从 PostForm（点分键名）组装完整 ThemeSettings；空值直接透传为字段零值，
+	// 序列化时经 omitempty 省略（未设置字段不输出 CSS 变量，组件回退自身默认）。
+	ts := &builder.ThemeSettings{
+		Colors: builder.ThemeColors{
+			Primary:    strings.TrimSpace(c.PostForm("colors.primary")),
+			Secondary:  strings.TrimSpace(c.PostForm("colors.secondary")),
+			Accent:     strings.TrimSpace(c.PostForm("colors.accent")),
+			Success:    strings.TrimSpace(c.PostForm("colors.success")),
+			Warning:    strings.TrimSpace(c.PostForm("colors.warning")),
+			Danger:     strings.TrimSpace(c.PostForm("colors.danger")),
+			Text:       strings.TrimSpace(c.PostForm("colors.text")),
+			Heading:    strings.TrimSpace(c.PostForm("colors.heading")),
+			Background: strings.TrimSpace(c.PostForm("colors.background")),
+			Surface:    strings.TrimSpace(c.PostForm("colors.surface")),
+			Border:     strings.TrimSpace(c.PostForm("colors.border")),
+		},
+		Typography: builder.ThemeTypography{
+			Heading: builder.ThemeHeadingStyle{
+				Color:      strings.TrimSpace(c.PostForm("typography.heading.color")),
+				FontWeight: strings.TrimSpace(c.PostForm("typography.heading.weight")),
+				FontSize:   strings.TrimSpace(c.PostForm("typography.heading.size")),
+				Spacing:    strings.TrimSpace(c.PostForm("typography.heading.spacing")),
+				FontFamily: strings.TrimSpace(c.PostForm("typography.heading.font")),
+			},
+			Body: builder.ThemeBodyStyle{
+				Color:      strings.TrimSpace(c.PostForm("typography.body.color")),
+				FontSize:   strings.TrimSpace(c.PostForm("typography.body.size")),
+				LineHeight: strings.TrimSpace(c.PostForm("typography.body.line")),
+				FontFamily: strings.TrimSpace(c.PostForm("typography.body.font")),
+			},
+			Link: builder.ThemeLinkStyle{
+				Color:      strings.TrimSpace(c.PostForm("typography.link.color")),
+				HoverColor: strings.TrimSpace(c.PostForm("typography.link.hover")),
+				Underline:  strings.TrimSpace(c.PostForm("typography.link.underline")),
+			},
+		},
+		Button: builder.ThemeButton{
+			Background:      strings.TrimSpace(c.PostForm("button.background")),
+			Color:           strings.TrimSpace(c.PostForm("button.color")),
+			Radius:          strings.TrimSpace(c.PostForm("button.radius")),
+			FontWeight:      strings.TrimSpace(c.PostForm("button.weight")),
+			PaddingY:        strings.TrimSpace(c.PostForm("button.py")),
+			PaddingX:        strings.TrimSpace(c.PostForm("button.px")),
+			HoverBackground: strings.TrimSpace(c.PostForm("button.hoverBg")),
+			HoverColor:      strings.TrimSpace(c.PostForm("button.hoverColor")),
+		},
+		Surface: builder.ThemeSurface{
+			Radius:      strings.TrimSpace(c.PostForm("surface.radius")),
+			BorderWidth: strings.TrimSpace(c.PostForm("surface.borderWidth")),
+			BorderColor: strings.TrimSpace(c.PostForm("surface.borderColor")),
+			Shadow:      strings.TrimSpace(c.PostForm("surface.shadow")),
+		},
+		Motion: builder.ThemeMotion{
+			TransitionDuration: strings.TrimSpace(c.PostForm("motion.duration")),
+			Easing:             strings.TrimSpace(c.PostForm("motion.easing")),
+			DefaultEntrance:    strings.TrimSpace(c.PostForm("motion.entrance")),
+		},
 	}
-	settings := themeSettingsJSON{
-		Colors:        colors,
-		FontFamily:    strings.TrimSpace(c.PostForm("fontFamily")),
+	// 完整存储 JSON = 校验后的 ThemeSettings + 顶层结构绑定。
+	settingsJSON, err := json.Marshal(themeSettingsJSON{
+		ThemeSettings: *ts,
 		HeaderBlockID: strings.TrimSpace(c.PostForm("headerBlockId")),
 		FooterBlockID: strings.TrimSpace(c.PostForm("footerBlockId")),
-	}
-	settingsJSON, err := json.Marshal(settings)
+	})
 	if err != nil {
 		c.String(http.StatusInternalServerError, err.Error())
+		return
+	}
+	// ParseThemeSettings 校验（IsSafeCSSValue 白名单，防 CSS 注入）；非法返回 400。
+	if _, err := builder.ParseThemeSettings(settingsJSON); err != nil {
+		c.String(http.StatusBadRequest, err.Error())
 		return
 	}
 	if _, err := h.projects.UpdateTheme(c.Request.Context(), &projectdto.ThemeUpdateReq{

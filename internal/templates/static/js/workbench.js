@@ -416,15 +416,30 @@
                     return button;
                 }
                 var any = false;
-                [['header', '页眉'], ['footer', '页脚'], ['block', '区块']].forEach(function (g) {
-                    var hits = (meta.blocks || []).filter(function (b) { return b.kind === g[0] && match(b.name); });
-                    if (!hits.length) return;
+                // 分组策略：页眉/页脚按 kind 分组；区块（block）按 category 细分
+                // （对接后续商品区块/文章区块/营销区块等自定义分类）。
+                var categoryLabels = { general: '通用区块', product: '商品区块', article: '文章区块', marketing: '营销区块' };
+                function appendGroup(title, items) {
+                    if (!items.length) return;
                     any = true;
                     var h = document.createElement('div');
                     h.className = 'wb-palette-group';
-                    h.textContent = g[1];
+                    h.textContent = title;
                     root.appendChild(h);
-                    hits.forEach(function (b) { root.appendChild(makeBlockButton(b)); });
+                    items.forEach(function (b) { root.appendChild(makeBlockButton(b)); });
+                }
+                [['header', '页眉'], ['footer', '页脚']].forEach(function (g) {
+                    appendGroup(g[1], (meta.blocks || []).filter(function (b) { return b.kind === g[0] && match(b.name); }));
+                });
+                // block 类型：按 category 分组（未识别的 category 归入「其他区块」）。
+                var blockHits = (meta.blocks || []).filter(function (b) { return b.kind === 'block' && match(b.name); });
+                var byCat = {};
+                blockHits.forEach(function (b) {
+                    var cat = b.category || 'general';
+                    (byCat[cat] = byCat[cat] || []).push(b);
+                });
+                Object.keys(byCat).sort().forEach(function (cat) {
+                    appendGroup(categoryLabels[cat] || (cat + ' 区块'), byCat[cat]);
                 });
                 if (!any) root.innerHTML = '<p class="wb-empty">还没有全局块。到后台「全局块」创建页眉/页脚/区块后，这里可一键引用。</p>';
             },
@@ -869,7 +884,7 @@
                 body.appendChild(tip);
             },
 
-            // ---- 全局设置面板：站点主题颜色/字体（保存后合入全部页面） ----
+            // ---- 全局设置面板：站点主题（Woodmart 级：色板/排版/按钮/表面/动效） ----
             renderGlobalPanel() {
                 var body = document.getElementById('wb-global-body');
                 if (!body) return;
@@ -880,38 +895,98 @@
                     return;
                 }
                 var t = meta.themeSettings || {};
-                var colors = t.colors || {};
-                var colorDefs = [['primary', '主色'], ['text', '文本色'], ['background', '页面背景'], ['surface', '卡片底色'], ['border', '边框色']];
-                var inputs = {};
-                colorDefs.forEach(function (def) {
-                    var wrap = document.createElement('div'); wrap.className = 'wb-field wb-color-row';
-                    var label = document.createElement('label'); label.textContent = def[1];
-                    label.style.flex = '0 0 72px';
-                    wrap.appendChild(label);
-                    var text = document.createElement('input'); text.type = 'text'; text.className = 'wb-color-text';
-                    text.value = colors[def[0]] || '';
-                    var swatch = document.createElement('input'); swatch.type = 'color'; swatch.className = 'wb-color-swatch';
-                    swatch.value = /^#[0-9a-fA-F]{3,8}$/.test(text.value) ? text.value : '#2563eb';
-                    swatch.addEventListener('input', function () { text.value = swatch.value; });
-                    wrap.appendChild(text); wrap.appendChild(swatch);
-                    body.appendChild(wrap);
-                    inputs[def[0]] = text;
+                function getByPath(obj, path) {
+                    return path.split('.').reduce(function (o, k) { return o == null ? undefined : o[k]; }, obj);
+                }
+                // 字段定义：[label, 回显路径(JSON 字段名), 提交键名(点分), 控件, 选项]
+                // 回显路径读 meta.themeSettings（= theme.Settings 存储 JSON，ThemeSettings
+                // 实际字段名 fontWeight/paddingY/hoverBackground/transitionDuration）；
+                // 提交键名是后端 SaveThemeSettings 的 PostForm 点分约定（weight/py/...）。
+                var fieldGroups = [
+                    { title: '颜色', fields: [
+                        ['主色', 'colors.primary', 'colors.primary', 'color'], ['次色', 'colors.secondary', 'colors.secondary', 'color'],
+                        ['点缀色', 'colors.accent', 'colors.accent', 'color'], ['成功色', 'colors.success', 'colors.success', 'color'],
+                        ['警告色', 'colors.warning', 'colors.warning', 'color'], ['危险色', 'colors.danger', 'colors.danger', 'color'],
+                        ['正文色', 'colors.text', 'colors.text', 'color'], ['标题色', 'colors.heading', 'colors.heading', 'color'],
+                        ['页面背景', 'colors.background', 'colors.background', 'color'], ['卡片底色', 'colors.surface', 'colors.surface', 'color'],
+                        ['边框色', 'colors.border', 'colors.border', 'color']
+                    ]},
+                    { title: '排版 · 标题', fields: [
+                        ['颜色', 'typography.heading.color', 'typography.heading.color', 'color'],
+                        ['字重', 'typography.heading.fontWeight', 'typography.heading.weight', 'select', [['', '默认'], ['400', '常规'], ['500', '中等'], ['600', '半粗'], ['700', '粗体']]],
+                        ['基准字号', 'typography.heading.fontSize', 'typography.heading.size', 'text'],
+                        ['标题下间距', 'typography.heading.spacing', 'typography.heading.spacing', 'text'],
+                        ['字体', 'typography.heading.fontFamily', 'typography.heading.font', 'text']
+                    ]},
+                    { title: '排版 · 正文', fields: [
+                        ['颜色', 'typography.body.color', 'typography.body.color', 'color'],
+                        ['字号', 'typography.body.fontSize', 'typography.body.size', 'text'],
+                        ['行高', 'typography.body.lineHeight', 'typography.body.line', 'text'],
+                        ['字体', 'typography.body.fontFamily', 'typography.body.font', 'text']
+                    ]},
+                    { title: '排版 · 链接', fields: [
+                        ['颜色', 'typography.link.color', 'typography.link.color', 'color'],
+                        ['悬停色', 'typography.link.hoverColor', 'typography.link.hover', 'color'],
+                        ['下划线', 'typography.link.underline', 'typography.link.underline', 'select', [['', '默认'], ['none', '无'], ['hover', '悬停时'], ['always', '始终']]]
+                    ]},
+                    { title: '按钮', fields: [
+                        ['背景', 'button.background', 'button.background', 'color'], ['文字色', 'button.color', 'button.color', 'color'],
+                        ['圆角', 'button.radius', 'button.radius', 'text'],
+                        ['字重', 'button.fontWeight', 'button.weight', 'select', [['', '默认'], ['400', '常规'], ['500', '中等'], ['600', '半粗'], ['700', '粗体']]],
+                        ['纵向内边距', 'button.paddingY', 'button.py', 'text'], ['横向内边距', 'button.paddingX', 'button.px', 'text'],
+                        ['悬停背景', 'button.hoverBackground', 'button.hoverBg', 'color'], ['悬停文字色', 'button.hoverColor', 'button.hoverColor', 'color']
+                    ]},
+                    { title: '表面', fields: [
+                        ['全局圆角', 'surface.radius', 'surface.radius', 'text'], ['边框宽', 'surface.borderWidth', 'surface.borderWidth', 'text'],
+                        ['边框色', 'surface.borderColor', 'surface.borderColor', 'color'],
+                        ['默认阴影', 'surface.shadow', 'surface.shadow', 'select', [['', '无'], ['sm', '小'], ['md', '中'], ['lg', '大'], ['xl', '特大']]]
+                    ]},
+                    { title: '动效', fields: [
+                        ['过渡时长(ms)', 'motion.transitionDuration', 'motion.duration', 'text'],
+                        ['缓动', 'motion.easing', 'motion.easing', 'select', [['', '默认'], ['ease', 'Ease'], ['ease-out', 'Ease Out'], ['linear', 'Linear']]],
+                        ['默认入场', 'motion.defaultEntrance', 'motion.entrance', 'select', [['', '无'], ['fade-in', '淡入'], ['fade-up', '淡入·上'], ['slide-up', '上滑'], ['zoom-in', '缩放']]]
+                    ]}
+                ];
+                var allInputs = {}; // 提交键名 -> input 元素
+                fieldGroups.forEach(function (g) {
+                    var gh = document.createElement('div'); gh.className = 'wb-palette-group';
+                    gh.textContent = g.title; body.appendChild(gh);
+                    g.fields.forEach(function (f) {
+                        var wrap = document.createElement('div'); wrap.className = 'wb-field';
+                        var label = document.createElement('label'); label.textContent = f[0]; wrap.appendChild(label);
+                        var cur = getByPath(t, f[1]); // 回显路径（JSON 字段名）
+                        var input;
+                        if (f[3] === 'color') {
+                            wrap.className += ' wb-color-row';
+                            label.style.flex = '0 0 72px';
+                            input = document.createElement('input'); input.type = 'text'; input.className = 'wb-color-text';
+                            input.value = cur || '';
+                            var swatch = document.createElement('input'); swatch.type = 'color'; swatch.className = 'wb-color-swatch';
+                            swatch.value = /^#[0-9a-fA-F]{3,8}$/.test(input.value) ? input.value : '#2563eb';
+                            swatch.addEventListener('input', function () { input.value = swatch.value; });
+                            wrap.appendChild(input); wrap.appendChild(swatch);
+                        } else if (f[3] === 'select') {
+                            input = document.createElement('select');
+                            f[4].forEach(function (o) {
+                                var opt = document.createElement('option'); opt.value = o[0]; opt.textContent = o[1];
+                                if (cur === o[0]) opt.selected = true;
+                                input.appendChild(opt);
+                            });
+                        } else {
+                            input = document.createElement('input'); input.type = 'text';
+                            input.value = cur == null ? '' : String(cur);
+                        }
+                        wrap.appendChild(input); body.appendChild(wrap);
+                        allInputs[f[2]] = input; // 按提交键名存
+                    });
                 });
-                var fontWrap = document.createElement('div'); fontWrap.className = 'wb-field';
-                var fontLabel = document.createElement('label'); fontLabel.textContent = '正文字体栈'; fontWrap.appendChild(fontLabel);
-                var fontInput = document.createElement('input'); fontInput.type = 'text';
-                fontInput.placeholder = '如：system-ui, sans-serif';
-                fontInput.value = t.fontFamily || '';
-                fontWrap.appendChild(fontInput); body.appendChild(fontWrap);
 
                 var saveBtn = document.createElement('button'); saveBtn.type = 'button';
                 saveBtn.className = 'btn btn-primary'; saveBtn.textContent = '保存并应用到全部页面';
                 saveBtn.addEventListener('click', function () {
                     var form = new URLSearchParams();
                     form.append('id', meta.themeId);
-                    colorDefs.forEach(function (def) { form.append(def[0], inputs[def[0]].value.trim()); });
-                    form.append('fontFamily', fontInput.value.trim());
-                    // 透传页眉页脚块绑定（本面板不改，避免被覆盖清空）。
+                    Object.keys(allInputs).forEach(function (key) { form.append(key, allInputs[key].value.trim()); });
                     form.append('headerBlockId', t.headerBlockId || '');
                     form.append('footerBlockId', t.footerBlockId || '');
                     saveBtn.disabled = true; saveBtn.textContent = '保存中…';
@@ -919,12 +994,13 @@
                         .then(function (r) {
                             saveBtn.disabled = false; saveBtn.textContent = '保存并应用到全部页面';
                             if (!r.ok) { alert('保存失败，请重试'); return; }
-                            meta.themeSettings = {
-                                colors: (function () { var c = {}; colorDefs.forEach(function (d) { c[d[0]] = inputs[d[0]].value.trim(); }); return c; })(),
-                                fontFamily: fontInput.value.trim(),
-                                headerBlockId: t.headerBlockId || '',
-                                footerBlockId: t.footerBlockId || ''
-                            };
+                            // 更新本地缓存（点分路径回写）。
+                            Object.keys(allInputs).forEach(function (key) {
+                                var parts = key.split('.'); var o = t; var v = allInputs[key].value.trim();
+                                for (var i = 0; i < parts.length - 1; i++) { if (!o[parts[i]]) o[parts[i]] = {}; o = o[parts[i]]; }
+                                o[parts[parts.length - 1]] = v;
+                            });
+                            meta.themeSettings = t;
                             alert('已保存，主题将合入全部页面；页面需重新构建后生效。');
                         })
                         .catch(function () { saveBtn.disabled = false; saveBtn.textContent = '保存并应用到全部页面'; alert('保存失败，请重试'); });

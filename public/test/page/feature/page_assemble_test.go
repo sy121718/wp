@@ -5,9 +5,9 @@ package feature
 // 块变更 stale 传播。
 
 import (
-	"fmt"
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
