@@ -11,6 +11,7 @@ import (
 	dashboardhttp "go_wp/internal/module/dashboard/inbound/http"
 	mediahttp "go_wp/internal/module/media/inbound/http"
 	pagehttp "go_wp/internal/module/page/inbound/http"
+	pluginhttp "go_wp/internal/module/plugin/inbound/http"
 	projecthttp "go_wp/internal/module/project/inbound/http"
 	pubhttp "go_wp/internal/module/publication/inbound/http"
 	"go_wp/internal/pipeline"
@@ -114,10 +115,12 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 	blockSvc := blockhttp.SetupBlockRoutes(authorizedAPI, db, projectService)
 	artifactSvc := artifacthttp.SetupArtifactRoutes(authorizedAPI, db)
 	publicationSvc := pubhttp.SetupPublicationRoutes(authorizedAPI, db)
-	pageService := pagehttp.SetupPageRoutes(authorizedAPI, db, artifactSvc, publicationSvc, projectService, blockSvc)
+	// 插件模块（page 构建路径依赖其装配素材，须先于 page 装配）。
+	pluginSvc := pluginhttp.SetupPluginRoutes(authorizedAPI, db)
+	pageService := pagehttp.SetupPageRoutes(authorizedAPI, db, artifactSvc, publicationSvc, projectService, blockSvc, pluginSvc)
 
-	// 页面路由（编辑器外壳依赖 page/block 契约，置于 API 装配之后）
-	dashboardhttp.SetupDashboardRoutes(router, pageService, projectService, blockSvc)
+	// 页面路由（编辑器外壳依赖 page/block/plugin 契约，置于 API 装配之后）
+	dashboardhttp.SetupDashboardRoutes(router, pageService, projectService, blockSvc, pluginSvc)
 
 	// 未匹配路由返回 404
 	router.NoRoute(func(c *gin.Context) {

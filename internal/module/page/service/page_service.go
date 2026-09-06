@@ -7,6 +7,7 @@ import (
 	blockcontract "go_wp/internal/module/block/contract"
 	pagecontract "go_wp/internal/module/page/contract"
 	pagemodel "go_wp/internal/module/page/model"
+	plugincontract "go_wp/internal/module/plugin/contract"
 	projectcontract "go_wp/internal/module/project/contract"
 
 	"go_wp/internal/pipeline"
@@ -29,6 +30,7 @@ type Service struct {
 	artifacts artifactcontract.ArtifactService
 	routes    pubcontract.PublicationService
 	blocks    blockcontract.BlockService
+	plugins   plugincontract.PluginService
 
 	publisher *pipeline.Publisher
 	store     *pipeline.LocalStore
@@ -36,10 +38,10 @@ type Service struct {
 
 // NewService 创建 Page 服务；同时初始化本地产物根（GO_WP_ARTIFACT_ROOT 可覆盖，
 // 默认与访问面一致，经 pipeline.DefaultArtifactRoot/ActiveRoot 单源取值）。
-// 构建注入装配感知编译器：页眉/页脚块内联（方案 C）。
+// 构建注入装配感知编译器：页眉/页脚块内联（方案 C）+ 插件组件（docs/06）。
 func NewService(model *pagemodel.Model, artifacts artifactcontract.ArtifactService,
 	routes pubcontract.PublicationService, project projectcontract.ProjectService,
-	blocks blockcontract.BlockService) *Service {
+	blocks blockcontract.BlockService, plugins plugincontract.PluginService) *Service {
 	store := &pipeline.LocalStore{Root: pipeline.DefaultArtifactRoot()}
 	publication := &pipeline.LocalPublicationStore{ActiveRoot: pipeline.ActiveRoot()}
 	s := &Service{
@@ -48,6 +50,7 @@ func NewService(model *pagemodel.Model, artifacts artifactcontract.ArtifactServi
 		routes:    routes,
 		project:   project,
 		blocks:    blocks,
+		plugins:   plugins,
 		publisher: pipeline.NewPublisher(store, publication),
 		store:     store,
 	}

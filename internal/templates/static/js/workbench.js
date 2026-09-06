@@ -178,6 +178,32 @@
             },
 
             // ---------------- 组件库与插入 ----------------
+            // registerPluginPalette 把启用插件组件注入组件库（docs/06 §5）：
+            // meta.plugins = [{type,label,hint,props}]，转成 paletteItems 项 +
+            // 「插件组件」分组（types 动态），init 时调用一次（幂等防重复注册）。
+            registerPluginPalette() {
+                if (this._pluginPaletteRegistered) return;
+                this._pluginPaletteRegistered = true;
+                var list = (meta.plugins || []);
+                if (!list.length) return;
+                var types = [];
+                var self = this;
+                list.forEach(function (p) {
+                    if (!p || !p.type) return;
+                    // 防重复：同 type 已在内置 palette 则跳过。
+                    if (paletteItems.some(function (e) { return e.type === p.type; })) return;
+                    types.push(p.type);
+                    paletteItems.push({
+                        type: p.type,
+                        label: p.label || p.type,
+                        hint: p.hint || '插件组件',
+                        props: p.props || {}
+                    });
+                });
+                if (types.length) {
+                    paletteGroups.push({ key: 'plugin', title: '插件组件', types: types });
+                }
+            },
             renderPalette() {
                 this.renderPaletteComponents();
                 this.renderPaletteBlocks();
@@ -308,8 +334,12 @@
             insertComponent(item, targetID, placement) {
                 if (!item) return;
                 this.snapshot();
+                // 节点 ID 取类型末段（core.container→container；plugin.marketing.campaign_card
+                // →campaign_card），保证只含 [A-Za-z0-9_-]（后端 ValidateNodeID 白名单，
+                // 点号非法）。
+                var idBase = String(item.type || 'node').split('.').pop();
                 var node = {
-                    id: this.newId(item.type.replace('core.', '')),
+                    id: this.newId(idBase),
                     type: item.type,
                     name: item.label,
                     props: clone(item.props)
@@ -2463,6 +2493,7 @@
                 //（structure/版心/主题），正文顶级 Section 平铺是一等形态，
                 // 容器按需添加；空文档/多根文档打开即干净（不再误标 dirty）。
                 window.__wb = this;
+                this.registerPluginPalette();
                 this.setDevice(this.device);
                 this.renderPalette();
                 this.renderTree();

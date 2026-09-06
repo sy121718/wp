@@ -20,12 +20,17 @@ import (
 	dashboardenums "go_wp/internal/module/dashboard/enums"
 	pagecontract "go_wp/internal/module/page/contract"
 	pagedto "go_wp/internal/module/page/dto"
+	plugincontract "go_wp/internal/module/plugin/contract"
+	plugindto "go_wp/internal/module/plugin/dto"
+	pluginservice "go_wp/internal/module/plugin/service"
 	projectcontract "go_wp/internal/module/project/contract"
 
 	"go_wp/internal/builder"
 	"go_wp/internal/builder/core"
 	"go_wp/internal/middleware/builtin"
 	"go_wp/internal/templates"
+
+	"github.com/CloudyKit/jet/v6"
 	"go_wp/pkg/captcha"
 
 	"github.com/gin-gonic/gin"
@@ -36,12 +41,13 @@ type Handle struct {
 	pages    pagecontract.PageService
 	projects projectcontract.ProjectService
 	blocks   blockcontract.BlockService
+	plugins  plugincontract.PluginService
 }
 
-// NewHandle 创建页面处理器；pages/projects/blocks 为各模块契约。
+// NewHandle 创建页面处理器；pages/projects/blocks/plugins 为各模块契约。
 func NewHandle(pages pagecontract.PageService, projects projectcontract.ProjectService,
-	blocks blockcontract.BlockService) *Handle {
-	return &Handle{pages: pages, projects: projects, blocks: blocks}
+	blocks blockcontract.BlockService, plugins plugincontract.PluginService) *Handle {
+	return &Handle{pages: pages, projects: projects, blocks: blocks, plugins: plugins}
 }
 
 // Dashboard 仪表盘页面。
@@ -101,6 +107,12 @@ func (h *Handle) Workbench(c *gin.Context) {
 		c.String(http.StatusInternalServerError, "草稿文档序列化失败")
 		return
 	}
+	// 启用插件的组件库摘要（palette 注入，docs/06 §5）。
+	var pluginComponents []plugindto.ComponentSummary
+	asm := h.pluginAssembly(c)
+	if asm != nil {
+		pluginComponents = asm.Components
+	}
 	metaJSON, err := json.Marshal(gin.H{
 		"pageId":    page.ID,
 		"draftPath": page.DraftPath,
@@ -110,6 +122,8 @@ func (h *Handle) Workbench(c *gin.Context) {
 		// 全局设置面板：页面挂接的主题与当前设置（颜色/字体），可就地修改保存。
 		"themeId":       h.themeIDOf(c, page),
 		"themeSettings": h.themeSettingsOf(c, page),
+		// 启用插件组件（组件库「插件组件」分组，type/label/hint/初始 props）。
+		"plugins": pluginComponents,
 	})
 	if err != nil {
 		c.String(http.StatusInternalServerError, "编辑器元数据序列化失败")
@@ -117,10 +131,16 @@ func (h *Handle) Workbench(c *gin.Context) {
 	}
 	// 组件 Inspector 面板 schema（docs/02-C3）：声明式 Controls 驱动检查器表单，
 	// 前端按 content/style/advanced 分组渲染，替代硬编码字段。
+	// 插件组件 schema 合并（与内置同构，docs/06 §5：上传即出现在检查器）。
 	schemas, err := builder.ComponentSchemas()
 	if err != nil {
 		c.String(http.StatusInternalServerError, "组件 schema 生成失败")
 		return
+	}
+	if asm != nil {
+		for t, data := range asm.InspectorSchemas {
+			schemas[t] = data
+		}
 	}
 	schemasJSON, err := json.Marshal(schemas)
 	if err != nil {
@@ -311,6 +331,8 @@ func (h *Handle) PreviewDraft(c *gin.Context) {
 }
 
 // renderPreview 只完成 AST 校验与编译，响应生命周期结束即丢弃结果。
+// 插件组件：启用插件集注入（CompositeSet 模板命名空间合并 + PluginResolver），
+// 与正式构建同源（docs/06-plugin-system.md §10）。
 func (h *Handle) renderPreview(c *gin.Context, document json.RawMessage, withEditorBridge bool) {
 	var docPage *builder.Page
 	if err := json.Unmarshal(document, &docPage); err != nil || docPage == nil {
@@ -318,8 +340,9 @@ func (h *Handle) renderPreview(c *gin.Context, document json.RawMessage, withEdi
 		return
 	}
 	// 预览与正式构建同源：全局块引用按需展开——画布所见与产物一致。
-	// 组件模板 Set（Jet 渲染路径必需；embed 加载，不依赖进程工作目录）。
-	set, serr := templates.NewEmbeddedComponentSet()
+	// 组件模板 Set：无启用插件走 embed 单例（hot path 缓存）；有插件按任务组装
+	// CompositeSet（内置 embed + 插件命名空间合并，docs/06 §7）。
+	set, serr := h.componentSet(c)
 	if serr != nil {
 		c.String(http.StatusInternalServerError, "组件模板 Set 加载失败: %s", serr.Error())
 		return
@@ -333,6 +356,9 @@ func (h *Handle) renderPreview(c *gin.Context, document json.RawMessage, withEdi
 			cache: make(map[string][]*core.Node),
 		}))
 	}
+	if asm := h.pluginAssembly(c); asm != nil {
+		opts = append(opts, builder.WithPluginResolver(pluginservice.AssemblyResolver(asm)))
+	}
 	compiled, err := builder.Compile(docPage, opts...)
 	if err != nil {
 		c.String(http.StatusUnprocessableEntity, "编译失败: %s", err.Error())
@@ -343,6 +369,37 @@ func (h *Handle) renderPreview(c *gin.Context, document json.RawMessage, withEdi
 		html = injectEditorBridge(html)
 	}
 	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(html))
+}
+
+// componentSet 组件模板 Set：无插件 → embed 单例；有插件 → CompositeSet。
+func (h *Handle) componentSet(c *gin.Context) (*jet.Set, error) {
+	asm := h.pluginAssembly(c)
+	if asm == nil || len(asm.PluginFS) == 0 {
+		return templates.NewEmbeddedComponentSet()
+	}
+	return templates.NewCompositeSet(asm.PluginFS)
+}
+
+// pluginAssembly 启用插件装配素材（无插件模块契约或无启用插件时返回 nil）。
+// 单请求内缓存（避免 Workbench 渲染 + 编译重复查询）。
+func (h *Handle) pluginAssembly(c *gin.Context) *plugincontract.Assembly {
+	if h.plugins == nil {
+		return nil
+	}
+	if v, ok := c.Get("pluginAssembly"); ok {
+		if asm, ok := v.(*plugincontract.Assembly); ok {
+			return asm
+		}
+	}
+	asm, err := h.plugins.EnabledAssembly(c.Request.Context())
+	if err != nil {
+		return nil
+	}
+	if asm != nil && (len(asm.PluginFS) > 0 || len(asm.Specs) > 0) {
+		c.Set("pluginAssembly", asm)
+		return asm
+	}
+	return nil
 }
 
 // editorBridgeScript 在 iframe 内运行的编辑器桥接脚本（仅编辑器预览注入）。

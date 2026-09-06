@@ -27,6 +27,12 @@ var businessPermSQL string
 //go:embed 031_business_permissions_superadmin.sql
 var businessPermSuperAdminSQL string
 
+//go:embed 032_plugin_permissions.sql
+var pluginPermSQL string
+
+//go:embed 040_plugin_registry.sql
+var pluginRegistrySQL string
+
 func init() {
 	register(Migration{
 		Version:   "001-init-schema",
@@ -67,5 +73,20 @@ func init() {
 		TableName:    "sys_casbin_rule",
 		ConditionSQL: "SELECT COUNT(*) FROM sys_casbin_rule WHERE ptype = 'p' AND v1 = '/api/page/list' AND v0 IN (SELECT CAST(id AS VARCHAR) FROM sys_admin WHERE is_admin = 1)",
 		SQL:          businessPermSuperAdminSQL,
+	})
+
+	// 插件注册表（docs/06-plugin-system.md §8：安装/版本/启停记账）。
+	register(Migration{
+		Version:   "040-plugin-registry",
+		TableName: "plugin_registry",
+		SQL:       pluginRegistrySQL,
+	})
+
+	// 插件权限 seed（权限点 + 后台菜单，docs/06）。
+	registerSeed(Seed{
+		Version:      "032-plugin-permissions",
+		TableName:    "sys_permission",
+		ConditionSQL: "SELECT COUNT(*) FROM sys_permission WHERE module = 'plugin'",
+		SQL:          pluginPermSQL,
 	})
 }

@@ -14,6 +14,8 @@ import (
 	"go_wp/internal/builder"
 	"go_wp/internal/builder/core"
 	blockdto "go_wp/internal/module/block/dto"
+	plugincontract "go_wp/internal/module/plugin/contract"
+	pluginservice "go_wp/internal/module/plugin/service"
 	"go_wp/internal/pipeline"
 	"go_wp/internal/templates"
 	"go_wp/pkg/logger"
@@ -30,13 +32,24 @@ func (s *Service) assembleCompile(docJSON []byte) ([]byte, error) {
 		logger.Scene("build").With("err", err).Warn("页面文档解析失败，回退默认编译")
 		return pipeline.DefaultCompile(docJSON)
 	}
-	// 组件模板 Set（Jet 渲染路径必需；embed 加载，不依赖进程工作目录）。
+	// 组件模板 Set：无插件走 embed 单例；有插件走 CompositeSet
+	//（内置 embed + 插件命名空间合并，docs/06 §7）。
+	asm := s.enabledAssembly(ctx)
 	set, err := templates.NewEmbeddedComponentSet()
 	if err != nil {
 		return nil, err
 	}
+	if asm != nil && len(asm.PluginFS) > 0 {
+		set, err = templates.NewCompositeSet(asm.PluginFS)
+		if err != nil {
+			return nil, err
+		}
+	}
 	resolver := blockResolverAdapter{s: s, cache: make(map[string][]*core.Node)}
 	opts := []builder.CompileOption{builder.WithBlockResolver(resolver), builder.WithComponentSet(set)}
+	if asm != nil {
+		opts = append(opts, builder.WithPluginResolver(pluginservice.AssemblyResolver(asm)))
+	}
 	compiled, err := builder.Compile(page, opts...)
 	if err != nil {
 		logger.Scene("build").Error(err, "页面编译失败")
@@ -94,4 +107,17 @@ func (a blockResolverAdapter) ResolveBlockRoot(blockID string) ([]*core.Node, er
 		a.cache[blockID] = page.Root
 	}
 	return page.Root, nil
+}
+
+// enabledAssembly 启用插件的编译装配素材（无插件契约或查询失败返回 nil）。
+// 构建路径为后台任务（无请求 ctx），此处用 context.Background。
+func (s *Service) enabledAssembly(ctx context.Context) *plugincontract.Assembly {
+	if s.plugins == nil {
+		return nil
+	}
+	asm, err := s.plugins.EnabledAssembly(ctx)
+	if err != nil {
+		return nil
+	}
+	return asm
 }

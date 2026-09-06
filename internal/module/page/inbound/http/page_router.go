@@ -7,6 +7,7 @@ import (
 	pagecontract "go_wp/internal/module/page/contract"
 	pagemodel "go_wp/internal/module/page/model"
 	pageservice "go_wp/internal/module/page/service"
+	plugincontract "go_wp/internal/module/plugin/contract"
 	projectcontract "go_wp/internal/module/project/contract"
 
 	artifactcontract "go_wp/internal/module/artifact/contract"
@@ -21,9 +22,10 @@ func SetupPageRoutes(rg *gin.RouterGroup, db *gorm.DB,
 	artifacts artifactcontract.ArtifactService,
 	routes pubcontract.PublicationService,
 	projectService projectcontract.ProjectService,
-	blocks blockcontract.BlockService) pagecontract.PageService {
+	blocks blockcontract.BlockService,
+	plugins plugincontract.PluginService) pagecontract.PageService {
 	model := pagemodel.NewPageModel(db)
-	svc := pageservice.NewService(model, artifacts, routes, projectService, blocks)
+	svc := pageservice.NewService(model, artifacts, routes, projectService, blocks, plugins)
 	handle := NewHandle(svc)
 
 	g := rg.Group("/page", builtin.SessionAuthMiddleware())

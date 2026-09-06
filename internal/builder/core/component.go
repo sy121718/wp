@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strings"
 )
 
 // Node 组件树节点通用结构。Props 由各组件自行解码为自己的 props 类型。
@@ -70,9 +71,21 @@ func Types() (types []string) {
 }
 
 // ValidateNode 校验单个节点：按类型分发到已注册组件。
+// plugin.* 前缀为运行时插件组件（registry 不感知），只做结构校验
+// （ID 唯一/无子节点）；props 值校验在渲染装配（builder.decodePluginProps，
+// 白名单与 spec 同源），未安装/未启用的插件节点在编译期报明确错误。
 func ValidateNode(node *Node, ids map[string]bool) (err error) {
 	if node == nil {
 		return fmt.Errorf("节点为空")
+	}
+	if strings.HasPrefix(node.Type, "plugin.") {
+		if err = ValidateNodeID(node.ID, node.Name, ids); err != nil {
+			return err
+		}
+		if len(node.Children) > 0 {
+			return fmt.Errorf("节点 %s: 插件组件不支持子节点", node.ID)
+		}
+		return nil
 	}
 	comp, err := Lookup(node.Type)
 	if err != nil {

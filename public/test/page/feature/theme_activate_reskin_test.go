@@ -80,7 +80,7 @@ func makeJsonbPageService(t *testing.T) (*gorm.DB, pagecontract.PageService, *pr
 	artifacts := artifactservice.NewService(artifactmodel.NewArtifactModel(db))
 	routes := pubservice.NewService(pubmodel.NewPublicationModel(db))
 	blocks := blockservice.NewService(blockmodel.NewBlockModel(db), projects)
-	svc := pageservice.NewService(pageModel, artifacts, routes, projects, blocks)
+	svc := pageservice.NewService(pageModel, artifacts, routes, projects, blocks, nil)
 	return db, svc, projects, project.ID
 }
 
@@ -195,7 +195,7 @@ func TestActivateThemeThenSaveKeepsNewTheme(t *testing.T) {
 func activateThemeHTTP(t *testing.T, svc pagecontract.PageService, projects *projectservice.Service,
 	themeID string) int {
 	t.Helper()
-	handle := dashboardhttp.NewHandle(svc, projects, nil)
+	handle := dashboardhttp.NewHandle(svc, projects, nil, nil)
 	router := gin.New()
 	router.POST("/admin/themes/activate", handle.ActivateTheme)
 

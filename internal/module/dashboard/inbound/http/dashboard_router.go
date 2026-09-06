@@ -6,6 +6,7 @@ import (
 
 	blockcontract "go_wp/internal/module/block/contract"
 	pagecontract "go_wp/internal/module/page/contract"
+	plugincontract "go_wp/internal/module/plugin/contract"
 	projectcontract "go_wp/internal/module/project/contract"
 
 	"github.com/gin-gonic/gin"
@@ -15,12 +16,13 @@ import (
 func SetupDashboardRoutes(router *gin.Engine,
 	pages pagecontract.PageService,
 	projects projectcontract.ProjectService,
-	blocks blockcontract.BlockService) {
+	blocks blockcontract.BlockService,
+	plugins plugincontract.PluginService) {
 	if router == nil {
 		return
 	}
 
-	handle := NewHandle(pages, projects, blocks)
+	handle := NewHandle(pages, projects, blocks, plugins)
 
 	// 登录页：不挂认证（未登录请求被中间件 302 到此，独立布局渲染登录表单）。
 	router.GET("/admin/login", handle.LoginPage)
@@ -61,4 +63,9 @@ func SetupDashboardRoutes(router *gin.Engine,
 	adminPages.POST("/themes/settings/save", handle.SaveThemeSettings)
 	// 旧单主题设置入口 → 新主题管理页。
 	adminPages.GET("/theme", handle.ThemeRedirect)
+	// 插件管理（列表/上传安装/启停/卸载，docs/06-plugin-system.md）。
+	adminPages.GET("/plugins", handle.PluginsPage)
+	adminPages.POST("/plugins/install", handle.PluginsInstall)
+	adminPages.POST("/plugins/toggle", handle.PluginsToggle)
+	adminPages.POST("/plugins/uninstall", handle.PluginsUninstall)
 }

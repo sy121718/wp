@@ -106,6 +106,10 @@ func nodeViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeV
 	case globalrefPkg.Type:
 		return globalrefViewOf(node, topLevel, ctx)
 	default:
+		// 插件组件（plugin.{id}.{name}）：经 RenderContext.Plugin 取规格渲染。
+		if strings.HasPrefix(node.Type, pluginTypePrefix) {
+			return pluginViewOf(node, topLevel, ctx)
+		}
 		return nil, fmt.Errorf("nodeView: 不支持的组件类型 %q", node.Type)
 	}
 }

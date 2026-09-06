@@ -1,0 +1,64 @@
+{* admin/plugins.html — 插件管理：列表/上传安装/启停/卸载（docs/06-plugin-system.md） *}
+{{extends "layout.html"}}
+{{block body()}}
+<div class="pages-wrap">
+    <section class="pages-card">
+        <h2>安装插件</h2>
+        <p class="pages-hint">上传 zip 插件包（manifest.json + 组件模板 + 样式声明 + 资产）。安装后启用即出现在可视化工作台组件库。</p>
+        <form method="post" action="/admin/plugins/install" enctype="multipart/form-data" class="pages-form mt-md">
+            <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
+            <input type="file" name="file" accept=".zip" required>
+            <button type="submit" class="btn btn-primary">上传并安装</button>
+        </form>
+        {{if .Error}}
+        <p class="pages-empty">{{.Error}}</p>
+        {{end}}
+    </section>
+
+    <section class="pages-card">
+        <h2>已安装插件</h2>
+        {{if len(.Plugins) == 0}}
+        <p class="pages-empty">还没有安装插件。上传 zip 包安装你的第一个插件。</p>
+        {{else}}
+        <table class="pages-table">
+            <thead>
+                <tr>
+                    <th>名称</th>
+                    <th>ID</th>
+                    <th>版本</th>
+                    <th>组件数</th>
+                    <th>状态</th>
+                    <th>安装时间</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody>
+                {{range _, p := .Plugins}}
+                <tr>
+                    <td>{{p.Name}}</td>
+                    <td><code>{{p.ID}}</code></td>
+                    <td>{{p.Version}}</td>
+                    <td>{{p.ComponentCount}}</td>
+                    <td>{{if p.Enabled}}<span class="badge badge-ok">启用</span>{{else}}<span class="badge">停用</span>{{end}}</td>
+                    <td>{{p.InstalledAt}}</td>
+                    <td>
+                        <form method="post" action="/admin/plugins/toggle" class="pages-inline-form">
+                            <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
+                            <input type="hidden" name="id" value="{{p.ID}}">
+                            <input type="hidden" name="enabled" value="{{if p.Enabled}}false{{else}}true{{end}}">
+                            <button type="submit" class="btn btn-secondary btn-sm">{{if p.Enabled}}停用{{else}}启用{{end}}</button>
+                        </form>
+                        <form method="post" action="/admin/plugins/uninstall" class="pages-inline-form" onsubmit="return confirm('卸载将删除插件文件，确认？')">
+                            <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
+                            <input type="hidden" name="id" value="{{p.ID}}">
+                            <button type="submit" class="btn btn-danger btn-sm">卸载</button>
+                        </form>
+                    </td>
+                </tr>
+                {{end}}
+            </tbody>
+        </table>
+        {{end}}
+    </section>
+</div>
+{{end}}

@@ -13,6 +13,9 @@ type RenderContext struct {
 	// Block 全局块解析器（构建期内联展开 core.globalref 引用，方案 C）。
 	// 未注入时引用节点渲染降级为占位结构（编辑画布仍可选中）。
 	Block BlockResolver
+	// Plugin 插件组件解析器（plugin.* 节点经此取规格渲染，docs/06 §7）。
+	// 未注入时插件节点返回明确错误（而非静默跳过）。
+	Plugin PluginResolver
 }
 
 // ContentResolver CMS 内容解析契约：绑定字段 → 构建期字符串值。

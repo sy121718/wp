@@ -47,6 +47,22 @@ func NewEmbeddedComponentSet() (*jet.Set, error) {
 
 // buildEmbeddedComponentSet 实际构建逻辑（仅首调执行一次）。
 func buildEmbeddedComponentSet() (*jet.Set, error) {
+	loader, err := newEmbeddedComponentLoader()
+	if err != nil {
+		return nil, err
+	}
+	set := jet.NewSet(
+		loader,
+		jet.WithTemplateNameExtensions([]string{"", ".jet"}),
+	)
+	injectGlobals(set)
+	return set, nil
+}
+
+// newEmbeddedComponentLoader 内置组件模板的 embed loader。
+// 供 embed 单例 Set 与 NewCompositeSet（插件命名空间合并，docs/06 §7）
+// 共用同一内置来源——插件模板经独立前缀路由，内置不可被覆盖。
+func newEmbeddedComponentLoader() (*embedLoader, error) {
 	sub, err := fs.Sub(componentsFS, "components")
 	if err != nil {
 		return nil, fmt.Errorf("组件模板 embed 子目录失败: %w", err)
@@ -61,10 +77,5 @@ func buildEmbeddedComponentSet() (*jet.Set, error) {
 			files = append(files, e.Name())
 		}
 	}
-	set := jet.NewSet(
-		newEmbedLoader(sub, files),
-		jet.WithTemplateNameExtensions([]string{"", ".jet"}),
-	)
-	injectGlobals(set)
-	return set, nil
+	return newEmbedLoader(sub, files), nil
 }
