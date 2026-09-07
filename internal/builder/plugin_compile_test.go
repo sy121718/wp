@@ -91,7 +91,10 @@ func TestPluginComponentCompile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Compile: %v", err)
 	}
-	html := RenderDocument(compiled)
+	html, err := RenderDocument(compiled)
+	if err != nil {
+		t.Fatalf("RenderDocument: %v", err)
+	}
 
 	// HTML：模板渲染，title 用 props 值，level 用 default。
 	if !strings.Contains(html, "会员日") || !strings.Contains(html, "gold") {

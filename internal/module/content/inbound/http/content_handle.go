@@ -2,7 +2,6 @@
 package contenthttp
 
 import (
-	"errors"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -94,6 +93,3 @@ func (h *Handle) Delete(c *gin.Context) {
 	}
 	response.SuccessWithMessage(c, contentenums.MsgDeleteSuccess, nil)
 }
-
-// 保留 errors 引用位（ShouldBind 错误细分预留）。
-var _ = errors.Is

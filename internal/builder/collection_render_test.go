@@ -5,6 +5,7 @@ package builder
 // 字段白名单裁剪（未声明字段不得进产物）。
 
 import (
+	"context"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -34,7 +35,7 @@ const collectionTemplate = `<ul class="{{ .Classes }}">
 // fakeCollection 实现 core.CollectionResolver（返回固定列表 + 夹带字段）。
 type fakeCollection struct{}
 
-func (fakeCollection) ResolveCollection(source string, filter map[string]string) ([]map[string]any, error) {
+func (fakeCollection) ResolveCollection(_ context.Context, source string, filter map[string]string) ([]map[string]any, error) {
 	return []map[string]any{
 		{"name": "衬衫", "price": 99.0, "secret": "should-be-cropped"},
 		{"name": "裤子", "price": 199.0, "secret": "should-be-cropped"},
@@ -69,7 +70,10 @@ func TestPluginCollectionRender(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Compile: %v", err)
 	}
-	html := RenderDocument(compiled)
+	html, err := RenderDocument(compiled)
+	if err != nil {
+		t.Fatalf("RenderDocument: %v", err)
+	}
 
 	// 列表展开：两条记录 + 字段值。
 	if !strings.Contains(html, "衬衫 - 99") || !strings.Contains(html, "裤子 - 199") {

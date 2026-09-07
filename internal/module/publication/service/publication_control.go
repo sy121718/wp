@@ -177,6 +177,69 @@ func (s *Service) Activate(ctx context.Context, req *pubdto.ActivateReq) (res *p
 	return routeResp(route), nil
 }
 
+// ReservePath 创建草稿路径 reserved 占用（页面创建时预留）。
+// 路径已被其他实体占用（含展示实例）时返回 ErrRouteOccupied——
+// 替代原 page model 三表事务里直接 INSERT reserved 撞主键的检测方式，
+// 使 URL 占用单一归 publication 所有。
+func (s *Service) ReservePath(ctx context.Context, req *pubdto.ReserveReq) (err error) {
+	if req == nil {
+		return errors.New(pubenums.ErrInvalidParam)
+	}
+	path, err := normalizePath(req.Path)
+	if err != nil {
+		return err
+	}
+	now := time.Now().UTC()
+	pageIDCopy := req.PageID
+	err = s.model.Transaction(ctx, func(tx *gorm.DB) error {
+		if cerr := tx.Create(&pubmodel.RouteEntity{
+			ProjectID: req.ProjectID, Path: path, PageID: &pageIDCopy,
+			RouteKind: pubmodel.RouteReserved, UpdatedAt: now,
+		}).Error; cerr != nil {
+			if errors.Is(cerr, gorm.ErrDuplicatedKey) || strings.Contains(cerr.Error(), "23505") {
+				return errRouteOccupied
+			}
+			return cerr
+		}
+		return nil
+	})
+	if errors.Is(err, errRouteOccupied) {
+		return errors.New(pubenums.ErrRouteOccupied)
+	}
+	return err
+}
+
+// DeleteRoutesByPage 清理页面全部路径占用（reserved/active/redirect 任一 kind），
+// 页面删除时释放路径。幂等（无占用时 RowsAffected=0 不报错）。
+func (s *Service) DeleteRoutesByPage(ctx context.Context, req *pubdto.DeleteRoutesReq) (err error) {
+	if req == nil {
+		return errors.New(pubenums.ErrInvalidParam)
+	}
+	result := s.model.RouteDB(ctx).
+		Where("project_id = ? AND page_id = ?", req.ProjectID, req.PageID).
+		Delete(&pubmodel.RouteEntity{})
+	return result.Error
+}
+
+// IsPathOccupied 查询路径是否被其他实体占用（page_id 为空即展示实例占用，
+// page_id 非 excludePageID 即他人页面占用），供页面创建/发布前预检。
+func (s *Service) IsPathOccupied(ctx context.Context, req *pubdto.IsOccupiedReq) (occupied bool, err error) {
+	if req == nil {
+		return false, errors.New(pubenums.ErrInvalidParam)
+	}
+	path, err := normalizePath(req.Path)
+	if err != nil {
+		return false, err
+	}
+	var foreign int64
+	if err = s.model.RouteDB(ctx).
+		Where("project_id = ? AND path = ? AND (page_id IS NULL OR page_id <> ?)", req.ProjectID, path, req.ExcludePageID).
+		Count(&foreign).Error; err != nil {
+		return false, err
+	}
+	return foreign > 0, nil
+}
+
 // Deactivate 取消路径占用；路由不存在时幂等返回。
 func (s *Service) Deactivate(ctx context.Context, req *pubdto.DeactivateReq) (err error) {
 	if req == nil {
@@ -197,7 +260,12 @@ func (s *Service) Deactivate(ctx context.Context, req *pubdto.DeactivateReq) (er
 	return nil
 }
 
-// Redirect 把旧路径占用改为 redirect 并指向重定向产物。
+// Redirect 把旧路径占用改为 redirect 并指向重定向产物（两段式回执，与 Activate 对齐）。
+//
+//	第一段：pending 回执在独立事务中先行持久化——进程在后续任一步崩溃时
+//	恢复流程（RollbackReceipts）有据可查；
+//	第二段：路由事务内完成占用切换 + 置 committed，二者原子；失败时把
+//	pending 回执补偿为 rolled_back（补偿失败保持 pending 供恢复）。
 func (s *Service) Redirect(ctx context.Context, req *pubdto.RedirectReq) (res *pubdto.RouteResp, err error) {
 	if req == nil {
 		return nil, errors.New(pubenums.ErrInvalidParam)
@@ -207,6 +275,32 @@ func (s *Service) Redirect(ctx context.Context, req *pubdto.RedirectReq) (res *p
 		return nil, err
 	}
 	now := time.Now().UTC()
+
+	// ArtifactID 允许为空（重定向产物不入库，DTO 契约）：回执不得写入空串 uuid。
+	var toArtifact *string
+	if strings.TrimSpace(req.ArtifactID) != "" {
+		toArtifact = strPtr(req.ArtifactID)
+	}
+	receiptData, merr := json.Marshal(map[string]string{"redirect": req.ArtifactID})
+	if merr != nil {
+		receiptData = json.RawMessage(`{}`)
+	}
+	receipt := &pubmodel.ReceiptEntity{
+		ID: uuid.NewString(), SourceType: "page", SourceID: req.PageID,
+		Action: "redirect", Path: oldPath,
+		ToArtifact: toArtifact, ReceiptState: pubmodel.ReceiptPending,
+		ReceiptData: receiptData, CreatedAt: now,
+	}
+
+	// 第一段：pending 回执独立事务提交（故障恢复依据，对齐 Activate）。
+	if cerr := s.model.Transaction(ctx, func(tx *gorm.DB) error {
+		return tx.Create(receipt).Error
+	}); cerr != nil {
+		logger.Scene("publication").With("url", oldPath).With("kind", "redirect").Error(cerr, "pending 回执写入失败")
+		return nil, cerr
+	}
+
+	// 第二段：路由事务（占用切换 + 置 committed）。
 	err = s.model.Transaction(ctx, func(tx *gorm.DB) error {
 		result := tx.Model(&pubmodel.RouteEntity{}).
 			Where("project_id = ? AND path = ? AND page_id = ?", req.ProjectID, oldPath, req.PageID).
@@ -232,35 +326,29 @@ func (s *Service) Redirect(ctx context.Context, req *pubdto.RedirectReq) (res *p
 				return err
 			}
 		}
-		if strings.TrimSpace(req.ArtifactID) != "" {
+		if toArtifact != nil {
 			if err := tx.Model(&pubmodel.RouteEntity{}).
 				Where("project_id = ? AND path = ?", req.ProjectID, oldPath).
-				Update("artifact_id", req.ArtifactID).Error; err != nil {
+				Update("artifact_id", *toArtifact).Error; err != nil {
 				return err
 			}
 		}
-		// ArtifactID 允许为空（重定向产物不入库，DTO 契约）：回执不得写入空串 uuid。
-		var toArtifact *string
-		if strings.TrimSpace(req.ArtifactID) != "" {
-			toArtifact = strPtr(req.ArtifactID)
-		}
-		receiptData, err := json.Marshal(map[string]string{"redirect": req.ArtifactID})
-		if err != nil {
-			return err
-		}
-		return tx.Create(&pubmodel.ReceiptEntity{
-			ID: uuid.NewString(), SourceType: "page", SourceID: req.PageID,
-			Action: "redirect", Path: oldPath,
-			FromArtifact: nil, ToArtifact: toArtifact,
-			ReceiptState: pubmodel.ReceiptCommitted,
-			ReceiptData:  receiptData,
-			CreatedAt:    now, CompletedAt: &now,
-		}).Error
+		return markReceipt(tx, receipt.ID, pubmodel.ReceiptCommitted, now)
 	})
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, errors.New(pubenums.ErrRouteNotFound)
-	}
 	if err != nil {
+		// 路由事务失败：pending → rolled_back（补偿失败保持 pending 供恢复）。
+		if rberr := s.model.Transaction(ctx, func(tx *gorm.DB) error {
+			return markReceipt(tx, receipt.ID, pubmodel.ReceiptRolledBack, time.Now().UTC())
+		}); rberr != nil {
+			logger.Scene("publication").With("url", oldPath).With("receiptId", receipt.ID).
+				Error(rberr, "pending 回执补偿失败（保持 pending 供恢复流程处理）")
+		}
+		if errors.Is(err, errRouteOccupied) {
+			return nil, errors.New(pubenums.ErrRouteOccupied)
+		}
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, errors.New(pubenums.ErrRouteNotFound)
+		}
 		logger.Scene("publication").With("url", oldPath).With("kind", "redirect").Error(err, "路由重定向失败")
 		return nil, err
 	}

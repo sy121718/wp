@@ -169,7 +169,7 @@ func (s *Service) compileBlockFragment(ctx context.Context, blockID string) (htm
 		logger.Scene("build").With("block", blockID).Error(serr, "组件模板 Set 加载失败")
 		return "", ""
 	}
-	compiled, err := builder.Compile(page, builder.WithComponentSet(set))
+	compiled, err := builder.Compile(page, builder.WithContext(ctx), builder.WithComponentSet(set))
 	if err != nil {
 		logger.Scene("build").With("block", blockID).Error(err, "块编译失败")
 		return "", ""

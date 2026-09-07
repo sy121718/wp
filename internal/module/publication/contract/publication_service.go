@@ -19,4 +19,10 @@ type PublicationService interface {
 	RollbackReceipts(ctx context.Context) (count int64, err error)
 	// RenameReserved 修改页面的草稿路径占用（reserved 状态改名）。
 	RenameReserved(ctx context.Context, req *pubdto.RenameReservedReq) (err error)
+	// ReservePath 创建草稿路径 reserved 占用（页面创建时预留，冲突返回占用错误）。
+	ReservePath(ctx context.Context, req *pubdto.ReserveReq) (err error)
+	// DeleteRoutesByPage 清理页面全部路径占用（页面删除时释放，幂等）。
+	DeleteRoutesByPage(ctx context.Context, req *pubdto.DeleteRoutesReq) (err error)
+	// IsPathOccupied 查询路径是否被其他实体占用（页面创建/发布前预检）。
+	IsPathOccupied(ctx context.Context, req *pubdto.IsOccupiedReq) (occupied bool, err error)
 }

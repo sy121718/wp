@@ -213,7 +213,10 @@ func TestRenderDocument(t *testing.T) {
 	if err != nil {
 		t.Fatalf("编译失败: %v", err)
 	}
-	doc := builder.RenderDocument(c)
+	doc, err := builder.RenderDocument(c)
+	if err != nil {
+		t.Fatalf("RenderDocument: %v", err)
+	}
 	for _, want := range []string{
 		"<title>测试页</title>",
 		`<meta name="description" content="页面描述">`,

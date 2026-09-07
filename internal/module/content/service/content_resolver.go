@@ -15,7 +15,6 @@ import (
 	"go_wp/internal/builder/core"
 	contentcontract "go_wp/internal/module/content/contract"
 	contentenums "go_wp/internal/module/content/enums"
-	contentmodel "go_wp/internal/module/content/model"
 
 	"gorm.io/gorm"
 )
@@ -101,6 +100,3 @@ func scalarString(v any) string {
 
 // 编译期断言：entityResolver 实现 core.ContentResolver。
 var _ core.ContentResolver = (*entityResolver)(nil)
-
-// 引用 contentmodel 避免未用（Entity 类型经 s.m.Get 返回，隐式使用）。
-var _ = contentmodel.Entity{}

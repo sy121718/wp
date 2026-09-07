@@ -1,6 +1,7 @@
 package pipeline
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"sync"
@@ -74,10 +75,11 @@ type PageRecord struct {
 
 // CompileFn 冻结编译函数：Page Document 字节 → 完整 HTML 文档字节。
 // 发布期唯一编译入口；实现必须确定性（docs/03-pipeline.md §3.4）。
-type CompileFn func(docJSON []byte) (html []byte, err error)
+// ctx 为发起构建的请求上下文（构建链需查库解析块/集合时传播，支持超时取消）。
+type CompileFn func(ctx context.Context, docJSON []byte) (html []byte, err error)
 
 // DefaultCompile 默认编译器：internal/builder 文档编译 + 完整文档组装。
-func DefaultCompile(docJSON []byte) ([]byte, error) {
+func DefaultCompile(ctx context.Context, docJSON []byte) ([]byte, error) {
 	page, err := builder.ParsePage(docJSON)
 	if err != nil {
 		return nil, err
@@ -87,11 +89,15 @@ func DefaultCompile(docJSON []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	compiled, err := builder.Compile(page, builder.WithComponentSet(set))
+	compiled, err := builder.Compile(page, builder.WithContext(ctx), builder.WithComponentSet(set))
 	if err != nil {
 		return nil, err
 	}
-	return []byte(builder.RenderDocument(compiled)), nil
+	doc, err := builder.RenderDocument(compiled)
+	if err != nil {
+		return nil, err
+	}
+	return []byte(doc), nil
 }
 
 // Option Publisher 构造选项。
@@ -181,15 +187,57 @@ func (p *Publisher) saveDraftLocked(pageID string, expectedVersion int, path str
 
 // Build 构建：基于指定草稿版本冻结快照 → 确定性编译 → 不可变 Artifact 落盘 → 暂存。
 // expectedVersion 必须等于当前草稿版本（§6.2 防数据撕裂）。
-func (p *Publisher) Build(pageID string, expectedVersion int) (hash string, err error) {
+//
+// 并发设计（M2 修复）：编译与落盘是慢操作（Jet 渲染 + IO），原实现持有全局
+// mutex 执行，单页慢构建会阻塞所有页面的状态机。现改为「锁内取快照 → 锁外
+// 编译落盘 → 锁内二次校验版本并提交」：编译期间其他页面操作不受阻塞，提交时
+// 校验版本未变（并发 SaveDraft 推进版本则本次构建作废）。
+func (p *Publisher) Build(ctx context.Context, pageID string, expectedVersion int) (hash string, err error) {
+	// 锁内：校验版本 + 取冻结快照。
 	p.mu.Lock()
-	defer p.mu.Unlock()
-
 	rec, ok := p.pages[pageID]
 	if !ok {
+		p.mu.Unlock()
 		return "", ErrPageNotFound
 	}
-	return p.buildLocked(rec, expectedVersion)
+	if expectedVersion != rec.Version {
+		p.mu.Unlock()
+		return "", ErrVersionConflict
+	}
+	rec.Status = StateBuilding
+	docSnapshot := append([]byte(nil), rec.DocumentJSON...)
+	path := rec.Path
+	p.mu.Unlock()
+
+	// 锁外：确定性编译 + 产物落盘。
+	a, cerr := p.compileArtifact(ctx, pageID, path, docSnapshot)
+	if cerr != nil {
+		p.mu.Lock()
+		if rec.Version == expectedVersion {
+			rec.FailedReason = cerr.Error()
+			rec.Status = rec.currentStatus()
+		}
+		p.mu.Unlock()
+		logger.Scene("build").With("pageId", rec.ID).Error(cerr, "页面编译失败")
+		return "", cerr
+	}
+
+	// 锁内：二次校验版本 + 提交暂存。
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if rec.Version != expectedVersion {
+		return "", ErrVersionConflict
+	}
+	rec.StagedHash = a.Hash
+	rec.FailedReason = ""
+	rec.Status = rec.currentStatus()
+	p.order++
+	rec.Histories = append(rec.Histories, &HistoryEntry{
+		Hash: a.Hash, Path: path, Status: StateReady, Order: p.order,
+	})
+	rec.trimHistory()
+	logger.Scene("build").With("pageId", rec.ID).With("hash", a.Hash).Info("构建完成")
+	return a.Hash, nil
 }
 
 // Publish 激活暂存产物（0-A1 §2.3）：校验后原子切换活跃指针，旧活跃版本转 Superseded。
@@ -204,7 +252,7 @@ func (p *Publisher) Publish(pageID string) (hash string, err error) {
 	if rec.StagedHash == "" {
 		return "", ErrNoStagedArtifact
 	}
-	loc := Locator{Provider: "local", Key: "artifacts/" + rec.StagedHash}
+	loc := ArtifactLocator(rec.StagedHash)
 
 	// 校验产物与路径一致性（§6.3）：不可变产物 + 内容哈希 + canonicalPath。
 	a, err := p.store.GetArtifact(loc)
@@ -247,7 +295,7 @@ func (p *Publisher) Rollback(pageID string, targetHash string) (err error) {
 		return ErrRollbackPathMismatch
 	}
 
-	loc := Locator{Provider: "local", Key: "artifacts/" + targetHash}
+	loc := ArtifactLocator(targetHash)
 	if err = p.store.VerifyArtifact(loc, targetHash); err != nil {
 		return err
 	}
@@ -267,21 +315,22 @@ func (p *Publisher) Rollback(pageID string, targetHash string) (err error) {
 // UpdateURL 修改访问路径（docs/03-pipeline.md §6.5）：
 // 先基于新 URL 构建并原子激活新 URL，再按显式策略处理旧 URL（301 / 取消激活）。
 // withRedirect 为 true 时旧 URL 注册 301 永久重定向（规范 0-A2 §1.1）。
-func (p *Publisher) UpdateURL(pageID string, newPath string, withRedirect bool) (oldPath string, err error) {
+func (p *Publisher) UpdateURL(ctx context.Context, pageID string, newPath string, withRedirect bool) (oldPath string, err error) {
 	p.mu.Lock()
-	defer p.mu.Unlock()
-
 	rec, ok := p.pages[pageID]
 	if !ok {
+		p.mu.Unlock()
 		return "", ErrPageNotFound
 	}
 	oldPath = rec.Path
 
 	nPath, err := NormalizeURL(newPath)
 	if err != nil {
+		p.mu.Unlock()
 		return oldPath, err
 	}
 	if nPath == oldPath {
+		p.mu.Unlock()
 		return oldPath, errors.New("新路径与当前路径相同")
 	}
 
@@ -289,102 +338,110 @@ func (p *Publisher) UpdateURL(pageID string, newPath string, withRedirect bool) 
 	// 不构建、不激活、不写 active_path；旧路径从未在访问面激活，也无需
 	// 301 / 取消激活处理。DB 侧迁移（draft_path 与 reserved 路由）由调用方
 	// 负责（page service MoveDraftPath / RenameReserved）。
-	// 修复前该分支固定执行 构建+激活+置 published，未发布页面被直接推上线
-	// （审计 Medium：UpdateURL 纯草稿问题）。
 	if !rec.hasPublishedHistory() {
 		if _, err = p.saveDraftLocked(pageID, rec.Version, nPath, rec.DocumentJSON); err != nil {
+			p.mu.Unlock()
 			return oldPath, err
 		}
+		p.mu.Unlock()
 		logger.Scene("build").With("pageId", pageID).With("oldPath", oldPath).With("newPath", nPath).
 			Info("纯草稿改 URL：仅迁移草稿路径，未构建未激活")
 		return oldPath, nil
 	}
 
-	// 1. 将新 URL 写入草稿路径；2. 基于新 URL 构建；3. 原子激活新 URL。
+	// 1. 锁内：新 URL 写入草稿路径（Version +1）。
 	if _, err = p.saveDraftLocked(pageID, rec.Version, nPath, rec.DocumentJSON); err != nil {
+		p.mu.Unlock()
 		return oldPath, err
 	}
-	// rec 引用不变（map 值是指针），Version 已 +1。
-	hash, err := p.buildLocked(rec, rec.Version)
-	if err != nil {
-		return oldPath, err
+	version := rec.Version
+	docSnapshot := append([]byte(nil), rec.DocumentJSON...)
+	p.mu.Unlock()
+
+	// 2. 锁外：基于新 URL 构建（慢操作不阻塞其他页面）。
+	a, cerr := p.compileArtifact(ctx, pageID, nPath, docSnapshot)
+	if cerr != nil {
+		p.mu.Lock()
+		if rec.Version == version {
+			rec.FailedReason = cerr.Error()
+			rec.Status = rec.currentStatus()
+		}
+		p.mu.Unlock()
+		logger.Scene("build").With("pageId", pageID).Error(cerr, "URL 修改构建失败")
+		return oldPath, cerr
 	}
-	if err = p.publishLocked(rec, hash); err != nil {
+
+	// 3. 锁内：二次校验版本 + 原子激活新 URL。
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if rec.Version != version {
+		return oldPath, ErrVersionConflict
+	}
+	if err = p.publishLocked(rec, a.Hash); err != nil {
 		return oldPath, err
 	}
 
 	// 4. 处理旧 URL（新 URL 已生效后执行；失败不撤销新 URL）。
 	// 重定向目标必须是新 URL（0-A2 §1.1：旧 URL -> 新 URL 的 301）。
+	//
+	// 新 URL 已上线是不可逆事实：旧路径处置失败只记日志、返回成功，让调用方
+	// 继续 DB 同步（draft_path / 路由）。否则内核与 FS 已在新路径、DB 仍停在
+	// 旧路径，且 syncKernel 的 LoadRecord 重建无法修复路由脱节，造成三方分裂。
 	if withRedirect {
 		ra, rerr := NewRedirectArtifact(nPath, 301)
 		if rerr != nil {
-			return oldPath, rerr
+			logger.Scene("build").With("pageId", pageID).With("oldPath", oldPath).Error(rerr, "旧 URL 301 产物构造失败（新 URL 已生效）")
+			return oldPath, nil
 		}
 		rl, rerr := p.store.PutRedirect(ra)
 		if rerr != nil {
-			return oldPath, rerr
+			logger.Scene("build").With("pageId", pageID).With("oldPath", oldPath).Error(rerr, "旧 URL 301 产物落盘失败（新 URL 已生效）")
+			return oldPath, nil
 		}
 		if aerr := p.pub.Activate(oldPath, rl); aerr != nil {
-			return oldPath, fmt.Errorf("新 URL 已生效，但旧 URL 301 激活失败: %w", aerr)
+			logger.Scene("build").With("pageId", pageID).With("oldPath", oldPath).Error(aerr, "旧 URL 301 激活失败（新 URL 已生效）")
+			return oldPath, nil
 		}
 	} else {
 		if derr := p.pub.Deactivate(oldPath); derr != nil {
-			return oldPath, fmt.Errorf("新 URL 已生效，但旧 URL 取消激活失败: %w", derr)
+			logger.Scene("build").With("pageId", pageID).With("oldPath", oldPath).Error(derr, "旧 URL 取消激活失败（新 URL 已生效）")
+			return oldPath, nil
 		}
 	}
 	return oldPath, nil
 }
 
-// buildLocked 在锁内执行构建（UpdateURL 复用）。
-func (p *Publisher) buildLocked(rec *PageRecord, expectedVersion int) (hash string, err error) {
-	if expectedVersion != rec.Version {
-		return "", ErrVersionConflict
-	}
-	rec.Status = StateBuilding
-
-	html, err := p.compile(rec.DocumentJSON)
+// compileArtifact 锁外编译并落盘（纯函数，不碰 Publisher 锁）。
+// pageID/path/docJSON 为锁内取出的冻结快照，编译期间不访问 rec 可变字段，
+// 因此可在锁外并行执行——慢操作不再阻塞其他页面的状态机（M2）。
+func (p *Publisher) compileArtifact(ctx context.Context, pageID, path string, docJSON []byte) (a *Artifact, err error) {
+	html, err := p.compile(ctx, docJSON)
 	if err != nil {
-		logger.Scene("build").With("pageId", rec.ID).Error(err, "页面编译失败")
-		rec.FailedReason = err.Error()
-		rec.Status = rec.currentStatus()
-		return "", fmt.Errorf("编译失败: %w", err)
+		return nil, fmt.Errorf("编译失败: %w", err)
 	}
 	m := &Manifest{
 		ManifestSchemaVersion:     ManifestSchemaVersion,
 		PageDocumentSchemaVersion: 1,
 		CompilerVersion:           "internal-builder",
-		SourceID:                  rec.ID,
+		SourceID:                  pageID,
 		SourceType:                SourceTypePage,
-		CanonicalPath:             rec.Path,
-		SourceHash:                SHA256(rec.DocumentJSON),
-		BuildInputHash:            SHA256(rec.DocumentJSON),
+		CanonicalPath:             path,
+		SourceHash:                SHA256(docJSON),
+		BuildInputHash:            SHA256(docJSON),
 	}
-	a, err := NewArtifact(html, m)
+	a, err = NewArtifact(html, m)
 	if err != nil {
-		rec.FailedReason = err.Error()
-		rec.Status = rec.currentStatus()
-		return "", err
+		return nil, err
 	}
 	if _, err = p.store.PutArtifact(a); err != nil {
-		logger.Scene("build").With("pageId", rec.ID).Error(err, "产物落盘失败")
-		rec.FailedReason = err.Error()
-		rec.Status = rec.currentStatus()
-		return "", err
+		return nil, err
 	}
-	rec.StagedHash = a.Hash
-	rec.FailedReason = ""
-	rec.Status = rec.currentStatus()
-	p.order++
-	rec.Histories = append(rec.Histories, &HistoryEntry{
-		Hash: a.Hash, Path: rec.Path, Status: StateReady, Order: p.order,
-	})
-	logger.Scene("build").With("pageId", rec.ID).With("hash", a.Hash).Info("构建完成")
-	return a.Hash, nil
+	return a, nil
 }
 
 // publishLocked 在锁内执行发布（UpdateURL 复用）。
 func (p *Publisher) publishLocked(rec *PageRecord, stagedHash string) error {
-	loc := Locator{Provider: "local", Key: "artifacts/" + stagedHash}
+	loc := ArtifactLocator(stagedHash)
 	a, err := p.store.GetArtifact(loc)
 	if err != nil {
 		return err
@@ -401,6 +458,33 @@ func (p *Publisher) publishLocked(rec *PageRecord, stagedHash string) error {
 	rec.Status = StatePublished
 	rec.markLatestHistory(stagedHash, StatePublished, rec.Path)
 	return nil
+}
+
+// maxHistoryEntries 单页历史条目上限：防止长期运行进程内 Histories 无界增长，
+// 同时约束 supersedeActiveLocked/markLatestHistory/findHistory 的全量线性扫描开销。
+const maxHistoryEntries = 50
+
+// trimHistory 淘汰超限历史条目：优先从头部删除最老的 Superseded（保留
+// published/ready 与最近条目），Superseded 不足时强制截断到最近 N 条。
+func (rec *PageRecord) trimHistory() {
+	if len(rec.Histories) <= maxHistoryEntries {
+		return
+	}
+	overflow := len(rec.Histories) - maxHistoryEntries
+	kept := make([]*HistoryEntry, 0, maxHistoryEntries)
+	removed := 0
+	for _, h := range rec.Histories {
+		if removed < overflow && h.Status == StateSuperseded {
+			removed++
+			continue
+		}
+		kept = append(kept, h)
+	}
+	// Superseded 不足时强制保留最近 N 条（回滚依赖最新历史）。
+	if len(kept) > maxHistoryEntries {
+		kept = kept[len(kept)-maxHistoryEntries:]
+	}
+	rec.Histories = kept
 }
 
 // supersedeActiveLocked 把已发布的旧版本标记为 Superseded（激活前调用，

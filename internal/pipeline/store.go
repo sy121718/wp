@@ -15,6 +15,12 @@ type Locator struct {
 	Key string `json:"key"`
 }
 
+// ArtifactLocator 构造产物定位器：provider/key 由存储实现统一派生，
+// 调用方不硬编码 "local"/"artifacts/" 前缀（换对象存储时无需逐处修改）。
+func ArtifactLocator(hash string) Locator {
+	return Locator{Provider: "local", Key: "artifacts/" + hash}
+}
+
 // Store ArtifactStore 契约（docs/03-pipeline.md §4.3）。
 // 删除接口只接受持久的 Locator 与期望 hash，必须幂等；Store 自身不判断业务引用，
 // 引用检查由生命周期服务（Phase 0-A1 publication 模块）负责。
@@ -66,7 +72,7 @@ func (s *LocalStore) PutArtifact(a *Artifact) (Locator, error) {
 		return Locator{}, fmt.Errorf("产物为空或缺少内容哈希")
 	}
 	dir := s.artifactDir(a.Hash)
-	loc := Locator{Provider: "local", Key: "artifacts/" + a.Hash}
+	loc := ArtifactLocator(a.Hash)
 
 	if _, err := os.Stat(dir); err == nil {
 		// 已存在：验证一致后幂等返回（禁止覆盖历史文件）。
@@ -78,13 +84,30 @@ func (s *LocalStore) PutArtifact(a *Artifact) (Locator, error) {
 		return Locator{}, err
 	}
 
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	// 原子写入：先写临时目录再 rename 到目标，避免进程在两次 WriteFile 之间
+	// 崩溃留下半成品目录——该 hash 后续 Stat 命中 → Verify 失败 → 永久「砖死」。
+	if err := os.MkdirAll(filepath.Dir(dir), 0o755); err != nil {
 		return Locator{}, err
 	}
+	tmp, err := os.MkdirTemp(filepath.Dir(dir), filepath.Base(dir)+".tmp-*")
+	if err != nil {
+		return Locator{}, err
+	}
+	defer os.RemoveAll(tmp) // rename 成功后临时目录已不存在，RemoveAll 为 no-op
 	for _, path := range []string{"manifest.json", "index.html"} {
-		if err := os.WriteFile(filepath.Join(dir, path), a.Entries[path], 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(tmp, path), a.Entries[path], 0o644); err != nil {
 			return Locator{}, err
 		}
+	}
+	if err = os.Rename(tmp, dir); err != nil {
+		// 并发同 hash 写入：对方已 rename 成功，走幂等分支。
+		if _, serr := os.Stat(dir); serr == nil {
+			if verr := s.VerifyArtifact(loc, a.Hash); verr != nil {
+				return Locator{}, fmt.Errorf("产物目录已存在但内容不一致（禁止覆盖）: %w", verr)
+			}
+			return loc, nil
+		}
+		return Locator{}, err
 	}
 	return loc, nil
 }
@@ -109,7 +132,7 @@ func (s *LocalStore) GetArtifact(loc Locator) (*Artifact, error) {
 	if err = json.Unmarshal(mJSON, &m); err != nil {
 		return nil, fmt.Errorf("manifest 解析失败: %w", err)
 	}
-	if got := SHA256(append(append([]byte{}, mJSON...), append([]byte("\n"), html...)...)); got != hash {
+	if got := artifactPayloadHash(mJSON, html); got != hash {
 		return nil, fmt.Errorf("产物内容哈希校验失败（期望 %s 实际 %s）", hash, got)
 	}
 	return &Artifact{
@@ -191,10 +214,26 @@ func (s *LocalStore) PutRedirect(r *RedirectArtifact) (Locator, error) {
 		return Locator{}, err
 	}
 
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	// 原子写入：临时目录 + rename（同 PutArtifact，防半成品目录砖死）。
+	if err := os.MkdirAll(filepath.Dir(dir), 0o755); err != nil {
 		return Locator{}, err
 	}
-	if err := os.WriteFile(filepath.Join(dir, "redirect.json"), r.Entry, 0o644); err != nil {
+	tmp, err := os.MkdirTemp(filepath.Dir(dir), filepath.Base(dir)+".tmp-*")
+	if err != nil {
+		return Locator{}, err
+	}
+	defer os.RemoveAll(tmp)
+	if err = os.WriteFile(filepath.Join(tmp, "redirect.json"), r.Entry, 0o644); err != nil {
+		return Locator{}, err
+	}
+	if err = os.Rename(tmp, dir); err != nil {
+		if _, serr := os.Stat(dir); serr == nil {
+			got, gerr := s.GetRedirect(loc)
+			if gerr != nil || got.Hash != r.Hash {
+				return Locator{}, fmt.Errorf("重定向产物目录已存在但内容不一致（禁止覆盖）")
+			}
+			return loc, nil
+		}
 		return Locator{}, err
 	}
 	return loc, nil

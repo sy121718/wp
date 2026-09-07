@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -69,13 +70,13 @@ func (s *Service) Build(ctx context.Context, req *pagedto.BuildReq) (res *pagedt
 	if err = s.syncKernel(page.DraftPath, page.DraftDocument, page.ID); err != nil {
 		return nil, err
 	}
-	hash, err := s.publisher.Build(page.ID, s.kernelVersion(page.ID))
+	hash, err := s.publisher.Build(ctx, page.ID, s.kernelVersion(page.ID))
 	if err != nil {
 		logger.Scene("build").With("pageId", page.ID).Error(err, "构建失败")
 		return nil, mapPublishError(err)
 	}
 
-	artifactID, err := s.ensureArtifactRow(ctx, page, hash)
+	artifactID, err := s.ensureArtifactRow(ctx, page, hash, page.DraftDocument)
 	if err != nil {
 		return nil, err
 	}
@@ -126,7 +127,7 @@ func (s *Service) Publish(ctx context.Context, req *pagedto.PublishReq) (res *pa
 		return nil, err
 	}
 	version := s.kernelVersionOrOne(page.ID)
-	built, buildErr := s.publisher.Build(page.ID, version)
+	built, buildErr := s.publisher.Build(ctx, page.ID, version)
 	if buildErr != nil {
 		logger.Scene("build").With("pageId", page.ID).Error(buildErr, "发布前复构建失败")
 		return nil, mapPublishError(buildErr)
@@ -142,7 +143,11 @@ func (s *Service) Publish(ctx context.Context, req *pagedto.PublishReq) (res *pa
 
 	now := time.Now().UTC()
 	if err = s.model.MarkPublished(ctx, page.ID, page.DraftPath, stagedArt.ID, now); err != nil {
-		return nil, err
+		// FS 已原子激活（线上已生效），此处 DB active 指针更新失败属于部分成功：
+		// 错误必须明确暴露，且重试可收敛（复构建 hash 与暂存一致 → 幂等再激活）。
+		logger.Scene("publication").With("pageId", page.ID).With("hash", hash).
+			Error(err, "发布 FS 已激活，但 DB 活跃指针更新失败（线上已生效，重试可收敛）")
+		return nil, fmt.Errorf("发布已生效但数据库状态同步失败: %w", err)
 	}
 	if s.routes != nil {
 		// 旧路径 active 行处置：SaveDraft 改草稿路径后直接发布时，
@@ -253,7 +258,7 @@ func (s *Service) UpdateURL(ctx context.Context, req *pagedto.UpdateURLReq) (res
 	if err = s.restoreKernelForUpdate(ctx, page, publishedPath); err != nil {
 		return nil, err
 	}
-	if _, err = s.publisher.UpdateURL(page.ID, newPath, req.WithRedirect); err != nil {
+	if _, err = s.publisher.UpdateURL(ctx, page.ID, newPath, req.WithRedirect); err != nil {
 		logger.Scene("page").With("pageId", page.ID).Error(err, "URL 修改失败")
 		return nil, mapPublishError(err)
 	}
@@ -291,7 +296,9 @@ func (s *Service) UpdateURL(ctx context.Context, req *pagedto.UpdateURLReq) (res
 
 	// 新产物归档换取 page_artifacts 行 ID：路由 artifact_id 是 uuid 列，
 	// 必须写产物行主键而非内容 hash（生产 DDL 下写 hash 必然 22P02 失败）。
-	artifactRowID, err := s.ensureArtifactRow(ctx, page, activeHashOf(st))
+	// 归档源文档用内核构建输入（st.DocumentJSON，即活动产物冻结源文档），
+	// 与 restoreKernelForUpdate 的编译输入一致（H4）。
+	artifactRowID, err := s.ensureArtifactRow(ctx, page, activeHashOf(st), st.DocumentJSON)
 	if err != nil {
 		logger.Scene("page").With("pageId", page.ID).With("hash", activeHashOf(st)).Error(err, "URL 修改后产物归档失败")
 		return nil, err
@@ -369,16 +376,18 @@ func (s *Service) restoreKernelForUpdate(ctx context.Context, page *pagemodel.Pa
 	histories := []*pipeline.HistoryEntry{}
 	if page.ActiveArtifactID != nil && *page.ActiveArtifactID != "" {
 		art, err := s.artifacts.DetailByID(ctx, &artifactdto.DetailByIDReq{ID: *page.ActiveArtifactID})
-		if err == nil {
-			activeHash = art.ArtifactHash
-			histories = append(histories, &pipeline.HistoryEntry{
-				Hash: art.ArtifactHash, Path: art.CanonicalPath,
-				Status: pipeline.StatePublished, Order: 1,
-			})
-			doc = page.DraftDocumentFor(art.SourceDocument)
-		} else {
-			logger.Scene("page").With("pageId", page.ID).With("artifactID", *page.ActiveArtifactID).With("err", err).Warn("回滚/改URL 时活动产物缺失")
+		if err != nil {
+			// 活动产物行缺失是数据不一致（产物行被删而指针未清）：显式失败而非
+			// 降级为纯草稿——否则 histories/activeHash 留空，UpdateURL 误判纯草稿，
+			// 只迁 draft_path 不构建不激活，线上旧 URL 继续出旧内容。
+			return fmt.Errorf("页面活动产物缺失（artifact_id=%s），无法修改 URL: %w", *page.ActiveArtifactID, err)
 		}
+		activeHash = art.ArtifactHash
+		histories = append(histories, &pipeline.HistoryEntry{
+			Hash: art.ArtifactHash, Path: art.CanonicalPath,
+			Status: pipeline.StatePublished, Order: 1,
+		})
+		doc = page.DraftDocumentFor(art.SourceDocument)
 	}
 	rec := &pipeline.PageRecord{
 		ID: page.ID, Path: publishedPath, Version: 1, Status: pipeline.StatePublished,
@@ -389,12 +398,16 @@ func (s *Service) restoreKernelForUpdate(ctx context.Context, page *pagemodel.Pa
 }
 
 // ensureArtifactRow 返回该 hash 对应的产物元数据行 ID；不存在则归档新建。
-func (s *Service) ensureArtifactRow(ctx context.Context, page *pagemodel.PageEntity, hash string) (string, error) {
+// sourceDocument 必须与构建该产物的输入一致：Build 路径为当前草稿，
+// UpdateURL 路径为活动产物冻结源文档（内核 restoreKernelForUpdate 的输入）。
+// 若统一归档 page.DraftDocument，草稿较新时产物字节与归档 SourceDocument/
+// SourceHash 不对应，日后按该产物回滚会编译出不同 hash（ErrRollbackPathMismatch）。
+func (s *Service) ensureArtifactRow(ctx context.Context, page *pagemodel.PageEntity, hash string, sourceDocument json.RawMessage) (string, error) {
 	existing, err := s.artifacts.Detail(ctx, &artifactdto.DetailReq{PageID: page.ID, Hash: hash})
 	if err == nil {
 		return existing.ID, nil
 	}
-	loc := pipeline.Locator{Provider: "local", Key: "artifacts/" + hash}
+	loc := pipeline.ArtifactLocator(hash)
 	art, err := s.store.GetArtifact(loc)
 	if err != nil {
 		return "", err
@@ -407,7 +420,7 @@ func (s *Service) ensureArtifactRow(ctx context.Context, page *pagemodel.PageEnt
 		ArtifactID:       uuid.NewString(),
 		PageID:           page.ID,
 		Version:          page.DraftVersion,
-		SourceDocument:   page.DraftDocument,
+		SourceDocument:   sourceDocument,
 		SchemaVersion:    art.Manifest.PageDocumentSchemaVersion,
 		SourceHash:       art.Manifest.SourceHash,
 		BuildInputHash:   art.Manifest.BuildInputHash,
@@ -478,14 +491,18 @@ func (s *Service) kernelVersionOrOne(pageID string) int { return s.kernelVersion
 // 实例占用）。本页面自己的占用行不算冲突。
 // 该检查必须在触发 FS 激活的 publisher 调用之前执行（H7 前置防线），
 // 并发抢占窗口由 publication Activate 事务内的归属校验兜底。
+// 经 publication contract 查询（page_routes 单一所有归 publication）。
 func (s *Service) ensureRouteNotOccupied(ctx context.Context, projectID, path, selfPageID string) error {
-	var foreign int64
-	if err := s.model.RouteDB(ctx).
-		Where("project_id = ? AND path = ? AND (page_id IS NULL OR page_id <> ?)", projectID, path, selfPageID).
-		Count(&foreign).Error; err != nil {
+	if s.routes == nil {
+		return nil
+	}
+	occupied, err := s.routes.IsPathOccupied(ctx, &pubdto.IsOccupiedReq{
+		ProjectID: projectID, Path: path, ExcludePageID: selfPageID,
+	})
+	if err != nil {
 		return err
 	}
-	if foreign > 0 {
+	if occupied {
 		return ErrPathOccupied
 	}
 	return nil

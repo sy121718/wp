@@ -9,6 +9,7 @@
 package builder
 
 import (
+	"context"
 	_ "embed"
 	"encoding/json"
 	"errors"
@@ -131,6 +132,7 @@ type compileConfig struct {
 	plugin     core.PluginResolver
 	collection core.CollectionResolver
 	theme      *ThemeSettings
+	ctx        context.Context
 }
 
 // WithContentResolver 注入 CMS 内容解析器（构建期动态绑定静态填入，规范 docs/02-C1）。
@@ -169,6 +171,11 @@ func WithCollectionResolver(r core.CollectionResolver) CompileOption {
 // 组件经 var(--wp-c-*) 引用——主题系统真正生效到产物）。
 func WithThemeSettings(t *ThemeSettings) CompileOption {
 	return func(c *compileConfig) { c.theme = t }
+}
+
+// WithContext 注入请求上下文：构建期集合/内容解析器查库时传播（超时取消）。
+func WithContext(ctx context.Context) CompileOption {
+	return func(c *compileConfig) { c.ctx = ctx }
 }
 
 // MaxNodeDepth 组件树深度上限（顶级节点为第 1 层）。
@@ -276,7 +283,7 @@ func Compile(p *Page, opts ...CompileOption) (res *CompiledPage, err error) {
 	compileSettingsCSS(&p.Settings, &b)
 
 	var htmlBuf strings.Builder
-	ctx := &core.RenderContext{CSS: &b, Content: cfg.content, Block: cfg.block, Plugin: cfg.plugin, Collection: cfg.collection}
+	ctx := &core.RenderContext{CSS: &b, Context: cfg.ctx, Content: cfg.content, Block: cfg.block, Plugin: cfg.plugin, Collection: cfg.collection}
 	for _, n := range p.Root {
 		// Jet 路径：nodeViewOf 把 Node 转 view 树（含 CSS 编译与递归），renderView 渲染根 view。
 		v, verr := nodeViewOf(n, true, ctx)
@@ -312,7 +319,7 @@ func Compile(p *Page, opts ...CompileOption) (res *CompiledPage, err error) {
 // 转义策略：Title/MetaDescription 走 Jet 默认 HTML 转义（等价 html.EscapeString）；
 // CSS/HTML/ThemeVarsCSS/增强脚本是编译产物，用 unsafe 原样输出，避免二次转义；
 // BodyClass 保持现状未转义（父代理单独处理转义问题），同样 unsafe 原样输出。
-func RenderDocument(c *CompiledPage) string {
+func RenderDocument(c *CompiledPage) (string, error) {
 	v := documentView{
 		Title:           c.Title,
 		MetaDescription: c.MetaDescription,
@@ -324,9 +331,12 @@ func RenderDocument(c *CompiledPage) string {
 	}
 	var sb strings.Builder
 	if err := documentTemplate().Execute(&sb, nil, v); err != nil {
-		panic(fmt.Sprintf("渲染 document.jet 失败: %v", err))
+		// 渲染失败返回 error 而非 panic：构建路径应可被上层捕获并返回 500，
+		// 遵循「组件只返回 error」约定（documentTemplate 首次加载 panic 属
+		// 准启动 fail-fast，保留）。
+		return "", fmt.Errorf("渲染 document.jet 失败: %w", err)
 	}
-	return sb.String()
+	return sb.String(), nil
 }
 
 // documentView 文档骨架渲染数据（CompiledPage 拍平 + 增强脚本进模板）。

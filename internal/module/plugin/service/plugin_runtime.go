@@ -89,21 +89,3 @@ func orDefault(s, def string) string {
 	}
 	return s
 }
-
-// mapResolver Assembly.Specs 的 core.PluginResolver 实现（供注入 builder）。
-type mapResolver map[string]*core.PluginComponentSpec
-
-// LookupPluginComponent 见 core.PluginResolver。
-func (m mapResolver) LookupPluginComponent(typeName string) (*core.PluginComponentSpec, bool) {
-	spec, ok := m[typeName]
-	return spec, ok
-}
-
-// AssemblyResolver 构建 core.PluginResolver（nil 安全：无插件时返回空 resolver）。
-// 独立函数而非 Assembly 方法（类型定义在 contract 包，方法应贴近定义处）。
-func AssemblyResolver(a *plugincontract.Assembly) core.PluginResolver {
-	if a == nil || len(a.Specs) == 0 {
-		return mapResolver{}
-	}
-	return mapResolver(a.Specs)
-}

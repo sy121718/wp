@@ -21,12 +21,12 @@ const collectionSourcePrefix = "content:"
 // ResolveCollection 实现 core.CollectionResolver：按集合源查实体列表。
 // filter 为白名单等值过滤（MVP：仅支持空 filter 或按 entity_type 外的
 // 数据字段等值匹配；字段值白名单由调用方组件声明控制）。
-func (s *Service) ResolveCollection(source string, filter map[string]string) (items []map[string]any, err error) {
+func (s *Service) ResolveCollection(ctx context.Context, source string, filter map[string]string) (items []map[string]any, err error) {
 	entityType, ok := strings.CutPrefix(source, collectionSourcePrefix)
 	if !ok || !contentcontract.IsValidType(entityType) {
 		return nil, fmt.Errorf("%s: %q（期望 content:{product|article|category}）", contentenums.ErrInvalidType, source)
 	}
-	rows, err := s.m.List(context.Background(), entityType, 100, 0)
+	rows, err := s.m.List(ctx, entityType, 100, 0)
 	if err != nil {
 		return nil, err
 	}

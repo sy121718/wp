@@ -42,3 +42,23 @@ type RouteResp struct {
 	ArtifactID *string   `json:"artifactId,omitempty"`
 	UpdatedAt  time.Time `json:"updatedAt"`
 }
+
+// ReserveReq 创建草稿路径 reserved 占用（页面创建时预留）。
+type ReserveReq struct {
+	ProjectID string `json:"projectId" binding:"required"`
+	Path      string `json:"path" binding:"required"`
+	PageID    string `json:"pageId" binding:"required"`
+}
+
+// DeleteRoutesReq 清理页面全部路径占用（页面删除时释放）。
+type DeleteRoutesReq struct {
+	ProjectID string `json:"projectId" binding:"required"`
+	PageID    string `json:"pageId" binding:"required"`
+}
+
+// IsOccupiedReq 查询路径是否被其他实体占用（用于页面创建/发布前的预检）。
+type IsOccupiedReq struct {
+	ProjectID     string `json:"projectId" binding:"required"`
+	Path          string `json:"path" binding:"required"`
+	ExcludePageID string `json:"excludePageId"`
+}

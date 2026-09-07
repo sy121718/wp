@@ -75,6 +75,17 @@ func SHA256(data []byte) string {
 	return hex.EncodeToString(sum[:])
 }
 
+// artifactPayloadHash 计算产物内容哈希：SHA256(manifestJSON + "\n" + indexHTML)。
+// 存储（NewArtifact）与读取校验（GetArtifact）必须使用同一拼接规则——
+// 单次预分配拼接，替代原先双层 append 的晦涩写法。
+func artifactPayloadHash(mJSON, html []byte) string {
+	payload := make([]byte, 0, len(mJSON)+1+len(html))
+	payload = append(payload, mJSON...)
+	payload = append(payload, '\n')
+	payload = append(payload, html...)
+	return SHA256(payload)
+}
+
 // EncodeManifest 序列化 manifest（确定性：dependencies 排序 + files 由标准库按 key 排序）。
 func EncodeManifest(m *Manifest) ([]byte, error) {
 	if m.Dependencies != nil {
@@ -104,7 +115,7 @@ func NewArtifact(html []byte, m *Manifest) (*Artifact, error) {
 	if err != nil {
 		return nil, fmt.Errorf("manifest 编码失败: %w", err)
 	}
-	hash := SHA256(append(append([]byte{}, mJSON...), append([]byte("\n"), html...)...))
+	hash := artifactPayloadHash(mJSON, html)
 
 	return &Artifact{
 		Hash:          hash,

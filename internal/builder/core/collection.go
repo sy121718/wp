@@ -7,6 +7,8 @@
 // 不能保存 SQL、任意过滤表达式或 endpoint（不变量 4）。
 package core
 
+import "context"
+
 // CollectionResolver 集合内容解析契约：集合源 → 静态列表数据（构建期填入）。
 type CollectionResolver interface {
 	// ResolveCollection 按集合源 + 白名单过滤解析为字段值列表（有序）。
@@ -14,7 +16,8 @@ type CollectionResolver interface {
 	// 后续扩展 "plugin:{pluginID}.{table}"（插件 L1 表集合）。
 	// filter 为白名单过滤维度（键值等值匹配）；字段集由调用方（组件声明）
 	// 的白名单决定，实现方只返回声明字段。
-	ResolveCollection(source string, filter map[string]string) (items []map[string]any, err error)
+	// ctx 为发起构建的请求上下文，实现方查库时传播（支持超时取消）。
+	ResolveCollection(ctx context.Context, source string, filter map[string]string) (items []map[string]any, err error)
 }
 
 // CollectionSource 集合源白名单声明（插件 manifest collections.json 投影，

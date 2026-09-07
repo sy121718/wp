@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 const (
@@ -102,7 +103,9 @@ func (m *Model) GetByPageVersion(ctx context.Context, pageID string, version int
 }
 
 // ReplaceArtifactContent 同版本重构建时替换产物指针与归档内容（含对象闭包重建）。
-func (m *Model) ReplaceArtifactContent(ctx context.Context, id string, entity *PageArtifactEntity, objects []PageArtifactObjectEntity) (err error) {
+// contentObjects 为需幂等写入的共享内容对象（content_objects），与产物行、闭包
+// 在同一事务内提交——此前内容对象在事务外写入，替换失败会残留孤儿行。
+func (m *Model) ReplaceArtifactContent(ctx context.Context, id string, entity *PageArtifactEntity, objects []PageArtifactObjectEntity, contentObjects []ContentObjectEntity) (err error) {
 	return m.Transaction(ctx, func(tx *gorm.DB) error {
 		if err = tx.Model(&PageArtifactEntity{}).Where("id = ?", id).Updates(map[string]interface{}{
 			"source_document":              entity.SourceDocument,
@@ -125,6 +128,12 @@ func (m *Model) ReplaceArtifactContent(ctx context.Context, id string, entity *P
 		for i := range objects {
 			objects[i].ArtifactID = id
 			if err = tx.Create(&objects[i]).Error; err != nil {
+				return err
+			}
+		}
+		// 共享内容对象：事务内 ON CONFLICT DO NOTHING 幂等写入（first-writer-wins）。
+		for i := range contentObjects {
+			if err = tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&contentObjects[i]).Error; err != nil {
 				return err
 			}
 		}

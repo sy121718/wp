@@ -7,7 +7,8 @@ package runtimefragment
 
 import (
 	"context"
-	"html"
+
+	"go_wp/internal/templates"
 )
 
 func init() {
@@ -27,21 +28,18 @@ func init() {
 	})
 }
 
-// renderLoginPanel 登录面板：提示文案（用户数据经 escape）。
+// renderLoginPanel 登录面板：提示文案（Jet 模板渲染，用户数据默认转义）。
 func renderLoginPanel(_ context.Context, r *Request) (string, error) {
 	// 语义上下文：visitorSession 时显示会话态文案（MVP：统一提示）。
 	label := "登录 / 注册"
 	if r.Context == "visitorSession" {
 		label = "继续购物"
 	}
-	return `<div class="wp-fragment-login-panel" data-fragment="loginPanel">` +
-		`<a href="/admin/login" rel="nofollow">` + html.EscapeString(label) + `</a>` +
-		`</div>`, nil
+	return templates.RenderFragment("login_panel", struct{ Label string }{Label: label})
 }
 
 // renderCartSummary 购物车计数（session；购物车数据模块后续接入，MVP 占位 0）。
 func renderCartSummary(_ context.Context, r *Request) (string, error) {
 	// MVP：购物车数据模块未落地，返回占位计数 0（结构真实，数据占位）。
-	return `<span class="wp-fragment-cart-count" data-fragment="cartSummary">` +
-		html.EscapeString("0") + `</span>`, nil
+	return templates.RenderFragment("cart_summary", struct{ Count string }{Count: "0"})
 }

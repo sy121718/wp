@@ -93,10 +93,18 @@ func validateSpacing(name string, s Spacing, allowNegative bool) (err error) {
 			return fmt.Errorf("%s%s不允许负值: %q", name, side, v)
 		}
 		if strings.HasPrefix(v, "-") {
-			// 负值限幅：提取数值部分判断（单位可为 px/em/rem/% 等）。
-			numStr := strings.TrimRight(strings.TrimLeft(v, "-"), "pxemremit%.")
-			if f, e := strconv.ParseFloat(numStr, 64); e == nil && f > negMarginLimit {
-				return fmt.Errorf("%s%s负值超出下限 -%dpx: %q", name, side, negMarginLimit, v)
+			// 负值限幅：提取数值前缀（数字与小数点，截止到单位开始处）判断。
+			// 原实现用 TrimRight 字符集裁剪单位，无法覆盖 q/vh 等未知单位，
+			// 非法单位会使 ParseFloat 失败而静默放行，绕过限幅。
+			num := strings.TrimPrefix(v, "-")
+			i := 0
+			for i < len(num) && ((num[i] >= '0' && num[i] <= '9') || num[i] == '.') {
+				i++
+			}
+			if i > 0 {
+				if f, e := strconv.ParseFloat(num[:i], 64); e == nil && f > negMarginLimit {
+					return fmt.Errorf("%s%s负值超出下限 -%dpx: %q", name, side, negMarginLimit, v)
+				}
 			}
 		}
 	}

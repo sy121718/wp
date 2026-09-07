@@ -5,12 +5,13 @@ package navigationservice
 import (
 	"context"
 	"errors"
-	"html"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+
+	"go_wp/internal/templates"
 
 	navigationcontract "go_wp/internal/module/navigation/contract"
 	navigationdto "go_wp/internal/module/navigation/dto"
@@ -180,8 +181,8 @@ func (s *Service) Delete(ctx context.Context, req *navigationdto.DeleteReq) (err
 	return s.m.Delete(ctx, id)
 }
 
-// Render 拼装该工程该 kind 的导航 HTML 片段：
-// 根节点平铺 <a>，子节点按 parent_id 嵌套 <ul><li>；title/path 均经 html.EscapeString 转义。
+// Render 渲染该工程该 kind 的导航 HTML 片段（Jet 模板渲染）。
+// 根节点平铺 <a>，子节点按 parent_id 嵌套 <ul><li>；title/path 由 Jet 默认转义。
 func (s *Service) Render(ctx context.Context, projectID, kind string) (htmlStr string, err error) {
 	projectID = strings.TrimSpace(projectID)
 	kind = strings.TrimSpace(kind)
@@ -195,7 +196,43 @@ func (s *Service) Render(ctx context.Context, projectID, kind string) (htmlStr s
 	if err != nil {
 		return "", err
 	}
-	return buildHTML(rows), nil
+	return renderNavigation(rows)
+}
+
+// renderNavigation 由导航实体构建树形视图并经 Jet 渲染 HTML 片段。
+func renderNavigation(rows []*navigationmodel.NavigationEntity) (string, error) {
+	children := make(map[string][]*navigationmodel.NavigationEntity)
+	var roots []*navigationmodel.NavigationEntity
+	for _, r := range rows {
+		if r.ParentID == nil || *r.ParentID == "" {
+			roots = append(roots, r)
+			continue
+		}
+		children[*r.ParentID] = append(children[*r.ParentID], r)
+	}
+	rootViews := make([]navNodeView, 0, len(roots))
+	for _, root := range roots {
+		rootViews = append(rootViews, buildNodeView(root, children))
+	}
+	return templates.RenderFragment("navigation", struct {
+		Roots []navNodeView
+	}{Roots: rootViews})
+}
+
+// navNodeView 导航节点视图（Jet 模板渲染数据，树形）。
+type navNodeView struct {
+	Title    string
+	Path     string
+	Children []navNodeView
+}
+
+// buildNodeView 把实体树转成视图树（父 → 子递归）。
+func buildNodeView(n *navigationmodel.NavigationEntity, children map[string][]*navigationmodel.NavigationEntity) navNodeView {
+	v := navNodeView{Title: n.Title, Path: n.Path}
+	for _, k := range children[n.ID] {
+		v.Children = append(v.Children, buildNodeView(k, children))
+	}
+	return v
 }
 
 // validateField 校验 title/path/kind 基础规则（不含唯一性）。
@@ -235,45 +272,5 @@ func toResp(e *navigationmodel.NavigationEntity) *navigationdto.NavigationResp {
 		ID: e.ID, ProjectID: e.ProjectID, Title: e.Title, Path: e.Path,
 		Kind: e.Kind, ParentID: e.ParentID, SortOrder: e.SortOrder,
 		UpdatedAt: e.UpdatedAt.Format("2006-01-02 15:04"),
-	}
-}
-
-// buildHTML 由导航实体拼装 HTML：根节点平铺 <a>，子节点嵌套 <ul><li>。
-// 入参 rows 已按 sort_order 升序，子节点在 append 时保持稳定顺序。
-func buildHTML(rows []*navigationmodel.NavigationEntity) string {
-	children := make(map[string][]*navigationmodel.NavigationEntity)
-	var roots []*navigationmodel.NavigationEntity
-	for _, r := range rows {
-		if r.ParentID == nil || *r.ParentID == "" {
-			roots = append(roots, r)
-			continue
-		}
-		children[*r.ParentID] = append(children[*r.ParentID], r)
-	}
-
-	var sb strings.Builder
-	sb.WriteString("<nav>")
-	for _, root := range roots {
-		writeNode(&sb, root, children)
-	}
-	sb.WriteString("</nav>")
-	return sb.String()
-}
-
-// writeNode 写单个导航节点及其子节点（根平铺 <a>，子节点嵌套 <ul><li>）。
-func writeNode(sb *strings.Builder, n *navigationmodel.NavigationEntity, children map[string][]*navigationmodel.NavigationEntity) {
-	sb.WriteString(`<a href="`)
-	sb.WriteString(html.EscapeString(n.Path))
-	sb.WriteString(`">`)
-	sb.WriteString(html.EscapeString(n.Title))
-	sb.WriteString(`</a>`)
-	if kids := children[n.ID]; len(kids) > 0 {
-		sb.WriteString("<ul>")
-		for _, k := range kids {
-			sb.WriteString("<li>")
-			writeNode(sb, k, children)
-			sb.WriteString("</li>")
-		}
-		sb.WriteString("</ul>")
 	}
 }

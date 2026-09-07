@@ -45,3 +45,24 @@ type Assembly struct {
 
 // ManifestAlias manifest 类型的模块间传递形态（详情接口暴露）。
 type ManifestAlias = plugincomp.Manifest
+
+// pluginSpecResolver 实现 core.PluginResolver：按类型标识查组件规格。
+type pluginSpecResolver map[string]*core.PluginComponentSpec
+
+// LookupPluginComponent 见 core.PluginResolver。
+func (m pluginSpecResolver) LookupPluginComponent(typeName string) (*core.PluginComponentSpec, bool) {
+	spec, ok := m[typeName]
+	return spec, ok
+}
+
+// AssemblyResolver 构建 core.PluginResolver（nil 安全：无插件时返回空 resolver）。
+//
+// 放在 contract 包而非 service 包：page / dashboard 构建路径需要把 Assembly
+// 注入 builder，若直接依赖 plugin/service 的工厂函数，将违反「跨模块只依赖
+// contract」约束。Assembly 类型本就在 contract 包，工厂贴近定义处更合理。
+func AssemblyResolver(a *Assembly) core.PluginResolver {
+	if a == nil || len(a.Specs) == 0 {
+		return pluginSpecResolver{}
+	}
+	return pluginSpecResolver(a.Specs)
+}

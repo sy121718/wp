@@ -35,7 +35,10 @@ func TestRenderDocumentGolden(t *testing.T) {
 		CSS:             `.wp-c-hero{display:grid;max-width:1200px}`,
 		ThemeVarsCSS:    `:root{--wp-c-primary:#3366ff;--wp-c-bg:#ffffff}`,
 	}
-	got := RenderDocument(c)
+	got, err := RenderDocument(c)
+	if err != nil {
+		t.Fatalf("RenderDocument: %v", err)
+	}
 
 	goldenPath := filepath.Join("testdata", "golden", "document.html")
 	if *updateDocumentGolden {

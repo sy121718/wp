@@ -1,6 +1,7 @@
 package unit
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -45,7 +46,7 @@ func TestPublisherLifecycle(t *testing.T) {
 	if err != nil || v != 1 {
 		t.Fatalf("保存草稿失败: v=%d err=%v", v, err)
 	}
-	hash, err := p.Build("page-1", 1)
+	hash, err := p.Build(context.Background(), "page-1", 1)
 	if err != nil {
 		t.Fatalf("构建失败: %v", err)
 	}
@@ -81,7 +82,7 @@ func TestPublisherDeterminism(t *testing.T) {
 	if _, err := p.SaveDraft("page-1", 0, "/about", []byte(docV1)); err != nil {
 		t.Fatalf("保存草稿失败: %v", err)
 	}
-	h1, err := p.Build("page-1", 1)
+	h1, err := p.Build(context.Background(), "page-1", 1)
 	if err != nil {
 		t.Fatalf("首次构建失败: %v", err)
 	}
@@ -93,7 +94,7 @@ func TestPublisherDeterminism(t *testing.T) {
 	if _, err = p.SaveDraft("page-1", 1, "/about", []byte(docV1)); err != nil {
 		t.Fatalf("再次保存草稿失败: %v", err)
 	}
-	h2, err := p.Build("page-1", 2)
+	h2, err := p.Build(context.Background(), "page-1", 2)
 	if err != nil {
 		t.Fatalf("再次构建失败: %v", err)
 	}
@@ -125,7 +126,7 @@ func TestPublisherVersionConflict(t *testing.T) {
 	if _, err := p.SaveDraft("page-1", 1, "/about", []byte(docV1)); !errors.Is(err, pipeline.ErrVersionConflict) {
 		t.Errorf("旧版本写入应被拒绝: %v", err)
 	}
-	if _, err := p.Build("page-1", 1); !errors.Is(err, pipeline.ErrVersionConflict) {
+	if _, err := p.Build(context.Background(), "page-1", 1); !errors.Is(err, pipeline.ErrVersionConflict) {
 		t.Errorf("基于旧版本的构建应被拒绝: %v", err)
 	}
 	// 无产物暂存，不允许发布。
@@ -138,12 +139,12 @@ func TestPublisherVersionConflict(t *testing.T) {
 func TestPublisherBuildFailure(t *testing.T) {
 	boom := errors.New("编译器故障")
 	p, _, pub, _ := newPublisherEnv(t,
-		pipeline.WithCompile(func([]byte) ([]byte, error) { return nil, boom }))
+		pipeline.WithCompile(func(context.Context, []byte) ([]byte, error) { return nil, boom }))
 
 	if _, err := p.SaveDraft("page-1", 0, "/about", []byte(docV1)); err != nil {
 		t.Fatalf("保存草稿失败: %v", err)
 	}
-	if _, err := p.Build("page-1", 1); !errors.Is(err, boom) {
+	if _, err := p.Build(context.Background(), "page-1", 1); !errors.Is(err, boom) {
 		t.Fatalf("构建应失败: %v", err)
 	}
 	st, _ := p.Status("page-1")
@@ -165,7 +166,7 @@ func TestPublisherRollback(t *testing.T) {
 	if _, err := p.SaveDraft("page-1", 0, "/about", []byte(docV1)); err != nil {
 		t.Fatalf("保存草稿失败: %v", err)
 	}
-	h1, _ := p.Build("page-1", 1)
+	h1, _ := p.Build(context.Background(), "page-1", 1)
 	if _, err := p.Publish("page-1"); err != nil {
 		t.Fatalf("首次发布失败: %v", err)
 	}
@@ -174,7 +175,7 @@ func TestPublisherRollback(t *testing.T) {
 	if _, err := p.SaveDraft("page-1", 1, "/about", []byte(docV2)); err != nil {
 		t.Fatalf("保存草稿失败: %v", err)
 	}
-	if _, err := p.Build("page-1", 2); err != nil {
+	if _, err := p.Build(context.Background(), "page-1", 2); err != nil {
 		t.Fatalf("二次构建失败: %v", err)
 	}
 	if _, err := p.Publish("page-1"); err != nil {
@@ -211,11 +212,11 @@ func TestPublisherRollbackPathMismatch(t *testing.T) {
 	if _, err := p.SaveDraft("page-1", 0, "/about", []byte(docV1)); err != nil {
 		t.Fatalf("保存草稿失败: %v", err)
 	}
-	h1, _ := p.Build("page-1", 1)
+	h1, _ := p.Build(context.Background(), "page-1", 1)
 	if _, err := p.Publish("page-1"); err != nil {
 		t.Fatalf("首次发布失败: %v", err)
 	}
-	if _, err := p.UpdateURL("page-1", "/about-us", false); err != nil {
+	if _, err := p.UpdateURL(context.Background(), "page-1", "/about-us", false); err != nil {
 		t.Fatalf("URL 修改失败: %v", err)
 	}
 	if err := p.Rollback("page-1", h1); !errors.Is(err, pipeline.ErrRollbackPathMismatch) {
@@ -230,14 +231,14 @@ func TestPublisherUpdateURLWithRedirect(t *testing.T) {
 	if _, err := p.SaveDraft("page-1", 0, "/about", []byte(docV1)); err != nil {
 		t.Fatalf("保存草稿失败: %v", err)
 	}
-	if _, err := p.Build("page-1", 1); err != nil {
+	if _, err := p.Build(context.Background(), "page-1", 1); err != nil {
 		t.Fatalf("构建失败: %v", err)
 	}
 	if _, err := p.Publish("page-1"); err != nil {
 		t.Fatalf("首次发布失败: %v", err)
 	}
 
-	oldPath, err := p.UpdateURL("page-1", "/about-us", true)
+	oldPath, err := p.UpdateURL(context.Background(), "page-1", "/about-us", true)
 	if err != nil {
 		t.Fatalf("URL 修改失败: %v", err)
 	}
@@ -268,13 +269,13 @@ func TestPublisherUpdateURLNoRedirect(t *testing.T) {
 	if _, err := p.SaveDraft("page-1", 0, "/about", []byte(docV1)); err != nil {
 		t.Fatalf("保存草稿失败: %v", err)
 	}
-	if _, err := p.Build("page-1", 1); err != nil {
+	if _, err := p.Build(context.Background(), "page-1", 1); err != nil {
 		t.Fatalf("构建失败: %v", err)
 	}
 	if _, err := p.Publish("page-1"); err != nil {
 		t.Fatalf("发布失败: %v", err)
 	}
-	if _, err := p.UpdateURL("page-1", "/about-us", false); err != nil {
+	if _, err := p.UpdateURL(context.Background(), "page-1", "/about-us", false); err != nil {
 		t.Fatalf("URL 修改失败: %v", err)
 	}
 	insp, err := pub.Inspect("/about")
@@ -293,33 +294,33 @@ func TestPublisherUpdateURLGuards(t *testing.T) {
 	if _, err := p.SaveDraft("page-1", 0, "/about", []byte(docV1)); err != nil {
 		t.Fatalf("保存草稿失败: %v", err)
 	}
-	if _, err := p.Build("page-1", 1); err != nil {
+	if _, err := p.Build(context.Background(), "page-1", 1); err != nil {
 		t.Fatalf("构建失败: %v", err)
 	}
 	if _, err := p.Publish("page-1"); err != nil {
 		t.Fatalf("发布失败: %v", err)
 	}
 	// 相同路径拒绝。
-	if _, err := p.UpdateURL("page-1", "/about", true); err == nil {
+	if _, err := p.UpdateURL(context.Background(), "page-1", "/about", true); err == nil {
 		t.Error("相同路径应被拒绝")
 	}
 	// 非法路径拒绝。
-	if _, err := p.UpdateURL("page-1", "no-slash", true); err == nil {
+	if _, err := p.UpdateURL(context.Background(), "page-1", "no-slash", true); err == nil {
 		t.Error("非法路径应被拒绝")
 	}
 	// 不存在的页面。
-	if _, err := p.UpdateURL("missing", "/x", true); !errors.Is(err, pipeline.ErrPageNotFound) {
+	if _, err := p.UpdateURL(context.Background(), "missing", "/x", true); !errors.Is(err, pipeline.ErrPageNotFound) {
 		t.Errorf("不存在页面应报错: %v", err)
 	}
 }
 
 // TestPublisherUpdateURLBuildFailure 新 URL 构建失败：旧 URL 线上保持不变。
 func TestPublisherUpdateURLBuildFailure(t *testing.T) {
-	compile := func(doc []byte) ([]byte, error) {
+	compile := func(ctx context.Context, doc []byte) ([]byte, error) {
 		if strings.Contains(string(doc), "boom") {
 			return nil, errors.New("boom")
 		}
-		return pipeline.DefaultCompile(doc)
+		return pipeline.DefaultCompile(ctx, doc)
 	}
 	p, _, pub, _ := newPublisherEnv(t, pipeline.WithCompile(compile))
 
@@ -327,7 +328,7 @@ func TestPublisherUpdateURLBuildFailure(t *testing.T) {
 	if _, err := p.SaveDraft("page-1", 0, "/about", []byte(docV1)); err != nil {
 		t.Fatalf("保存草稿失败: %v", err)
 	}
-	if _, err := p.Build("page-1", 1); err != nil {
+	if _, err := p.Build(context.Background(), "page-1", 1); err != nil {
 		t.Fatalf("构建失败: %v", err)
 	}
 	if _, err := p.Publish("page-1"); err != nil {
@@ -338,7 +339,7 @@ func TestPublisherUpdateURLBuildFailure(t *testing.T) {
 	if _, err := p.SaveDraft("page-1", 1, "/about", []byte(docV2+"boom")); err != nil {
 		t.Fatalf("保存草稿失败: %v", err)
 	}
-	if _, err := p.UpdateURL("page-1", "/about-us", true); err == nil {
+	if _, err := p.UpdateURL(context.Background(), "page-1", "/about-us", true); err == nil {
 		t.Fatal("构建失败时 URL 修改应报错")
 	}
 	insp, _ := pub.Inspect("/about")
@@ -356,7 +357,7 @@ func TestPublisherSaveDraftSnapshot(t *testing.T) {
 	}
 	// 修改调用方缓冲区，快照不受影响。
 	copy(doc, `{"broken`)
-	if _, err := p.Build("page-1", 1); err != nil {
+	if _, err := p.Build(context.Background(), "page-1", 1); err != nil {
 		t.Fatalf("快照应隔离调用方修改: %v", err)
 	}
 }

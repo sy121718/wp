@@ -12,6 +12,7 @@ import (
 	contentdto "go_wp/internal/module/content/dto"
 	contentenums "go_wp/internal/module/content/enums"
 	contentmodel "go_wp/internal/module/content/model"
+	"go_wp/pkg/logger"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -95,7 +96,9 @@ func (s *Service) Get(ctx context.Context, req *contentdto.GetReq) (res *content
 		return nil, err
 	}
 	data := map[string]any{}
-	_ = json.Unmarshal(e.Data, &data)
+	if err = json.Unmarshal(e.Data, &data); err != nil {
+		return nil, fmt.Errorf("%s: %w", contentenums.ErrDataInvalid, err)
+	}
 	return toResp(e, data), nil
 }
 
@@ -117,7 +120,11 @@ func (s *Service) List(ctx context.Context, req *contentdto.ListReq) (list []*co
 	out := make([]*contentdto.ContentResp, 0, len(rows))
 	for _, r := range rows {
 		data := map[string]any{}
-		_ = json.Unmarshal(r.Data, &data)
+		if uerr := json.Unmarshal(r.Data, &data); uerr != nil {
+			// 单行数据损坏：跳过该行并记 Warn，不阻塞整列表。
+			logger.Scene("content").With("id", r.ID).With("err", uerr).Warn("内容数据解析失败，跳过该行")
+			continue
+		}
 		out = append(out, toResp(r, data))
 	}
 	return out, nil

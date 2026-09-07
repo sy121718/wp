@@ -1,5 +1,7 @@
 package core
 
+import "context"
+
 // RenderContext 单次编译的渲染上下文：CSS 收集器与编译期外部服务。
 //
 // 说明：HTML 渲染已迁移到 Jet 模板路径（builder/jetview.go 的 renderView 直接
@@ -7,6 +9,9 @@ package core
 // 编译 CSS 与驱动递归。
 type RenderContext struct {
 	CSS *CSSBuckets
+	// Context 发起构建的请求上下文（构建期查库解析集合/内容时传播）。
+	// 未注入（nil）时解析器按后台任务语义处理。
+	Context context.Context
 	// Content CMS 内容解析器（构建期动态绑定注入）。使用字段绑定的组件
 	// （core.heading 的 post.title 等）依赖它；未注入时绑定组件渲染返回明确错误。
 	Content ContentResolver

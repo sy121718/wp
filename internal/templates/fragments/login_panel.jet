@@ -1,0 +1,1 @@
+<div class="wp-fragment-login-panel" data-fragment="loginPanel"><a href="/admin/login" rel="nofollow">{{ .Label }}</a></div>

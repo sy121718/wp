@@ -183,7 +183,11 @@ func (s *Service) Delete(ctx context.Context, req *presentationdto.DeleteReq) (e
 		}
 		return err
 	}
-	_ = s.publication.Deactivate(inst.URLPath)
+	// 反激活失败必须中止删除：否则实例行已删、URL 占用残留，后续同路径
+	// 发布/激活会被「已占用」拒绝且无实例可查（状态分裂）。
+	if err = s.publication.Deactivate(inst.URLPath); err != nil {
+		return fmt.Errorf("删除实例前反激活 URL 失败: %w", err)
+	}
 	return s.m.DeleteInstance(ctx, req.ID)
 }
 
@@ -202,12 +206,17 @@ func (s *Service) buildAndPublish(ctx context.Context, entityType, entityID, url
 		return "", nil, err
 	}
 	compiled, err := builder.Compile(page,
+		builder.WithContext(ctx),
 		builder.WithComponentSet(set),
 		builder.WithContentResolver(resolver))
 	if err != nil {
 		return "", nil, err
 	}
-	html = []byte(builder.RenderDocument(compiled))
+	doc, err := builder.RenderDocument(compiled)
+	if err != nil {
+		return "", nil, err
+	}
+	html = []byte(doc)
 	artifact, err := pipeline.NewArtifact(html, &pipeline.Manifest{
 		ManifestSchemaVersion:     1,
 		PageDocumentSchemaVersion: 1,

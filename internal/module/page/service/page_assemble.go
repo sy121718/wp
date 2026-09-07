@@ -15,7 +15,6 @@ import (
 	"go_wp/internal/builder/core"
 	blockdto "go_wp/internal/module/block/dto"
 	plugincontract "go_wp/internal/module/plugin/contract"
-	pluginservice "go_wp/internal/module/plugin/service"
 	"go_wp/internal/pipeline"
 	"go_wp/internal/templates"
 	"go_wp/pkg/logger"
@@ -25,12 +24,11 @@ import (
 // 内容引用面只存 URL 快照，构建期零解析（不查媒体库）。
 // 无绑定无引用时输出与默认编译字节一致（hash 兼容历史产物）；
 // 块文档缺失/非法降级为空片段，不阻塞构建主链。
-func (s *Service) assembleCompile(docJSON []byte) ([]byte, error) {
-	ctx := context.Background()
+func (s *Service) assembleCompile(ctx context.Context, docJSON []byte) ([]byte, error) {
 	page, err := builder.ParsePage(docJSON)
 	if err != nil {
 		logger.Scene("build").With("err", err).Warn("页面文档解析失败，回退默认编译")
-		return pipeline.DefaultCompile(docJSON)
+		return pipeline.DefaultCompile(ctx, docJSON)
 	}
 	// 组件模板 Set：无插件走 embed 单例；有插件走 CompositeSet
 	//（内置 embed + 插件命名空间合并，docs/06 §7）。
@@ -45,10 +43,10 @@ func (s *Service) assembleCompile(docJSON []byte) ([]byte, error) {
 			return nil, err
 		}
 	}
-	resolver := blockResolverAdapter{s: s, cache: make(map[string][]*core.Node)}
-	opts := []builder.CompileOption{builder.WithBlockResolver(resolver), builder.WithComponentSet(set)}
+	resolver := blockResolverAdapter{s: s, ctx: ctx, cache: make(map[string][]*core.Node)}
+	opts := []builder.CompileOption{builder.WithContext(ctx), builder.WithBlockResolver(resolver), builder.WithComponentSet(set)}
 	if asm != nil {
-		opts = append(opts, builder.WithPluginResolver(pluginservice.AssemblyResolver(asm)))
+		opts = append(opts, builder.WithPluginResolver(plugincontract.AssemblyResolver(asm)))
 	}
 	if s.content != nil {
 		opts = append(opts, builder.WithCollectionResolver(s.content))
@@ -71,7 +69,11 @@ func (s *Service) assembleCompile(docJSON []byte) ([]byte, error) {
 	// 页眉在主体前、页脚在主体后；三段 CSS 为独立规则集，顺序拼接。
 	compiled.HTML = headerHTML + compiled.HTML + footerHTML
 	compiled.CSS = headerCSS + compiled.CSS + footerCSS
-	return []byte(builder.RenderDocument(compiled)), nil
+	doc, err := builder.RenderDocument(compiled)
+	if err != nil {
+		return nil, err
+	}
+	return []byte(doc), nil
 }
 
 // parseStructureBindings 从页面文档读取全局块绑定快照（无该键时返回零值）。
@@ -92,6 +94,7 @@ func parseStructureBindings(docJSON []byte) (b builder.StructureBindings, err er
 // cache 为单次编译内块解析缓存：同一块被引用多次时只查一次库。
 type blockResolverAdapter struct {
 	s     *Service
+	ctx   context.Context
 	cache map[string][]*core.Node
 }
 
@@ -102,7 +105,7 @@ func (a blockResolverAdapter) ResolveBlockRoot(blockID string) ([]*core.Node, er
 			return nodes, nil
 		}
 	}
-	block, err := a.s.blocks.Detail(context.Background(), &blockdto.DetailReq{ID: blockID})
+	block, err := a.s.blocks.Detail(a.ctx, &blockdto.DetailReq{ID: blockID})
 	if err != nil || block == nil {
 		return nil, fmt.Errorf("全局块 %s 不可用", blockID)
 	}

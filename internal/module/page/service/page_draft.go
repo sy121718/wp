@@ -14,6 +14,7 @@ import (
 	pagecontract "go_wp/internal/module/page/contract"
 	pagedto "go_wp/internal/module/page/dto"
 	pagemodel "go_wp/internal/module/page/model"
+	pubdto "go_wp/internal/module/publication/dto"
 	"go_wp/internal/pipeline"
 
 	"github.com/google/uuid"
@@ -55,10 +56,37 @@ func (s *Service) Create(ctx context.Context, req *pagedto.CreateReq) (res *page
 		ID: uuid.NewString(), PageID: page.ID, Version: page.DraftVersion,
 		DraftPath: path, DraftDocument: doc, SourceHash: hash(doc), CreatedAt: now,
 	}
-	if err = s.model.CreateWithRevisionAndRoute(ctx, page, revision, path); err != nil {
+	// 先经 publication contract 预留草稿路径（冲突返回 ErrPathOccupied），
+	// 成功后再原子创建 page + revision；建页失败释放预留（可恢复，无永久分裂）。
+	if err = s.reservePath(ctx, page.ProjectID, path, page.ID); err != nil {
+		return nil, err
+	}
+	if err = s.model.CreateWithRevision(ctx, page, revision); err != nil {
+		// 建页失败：释放已预留的路径，避免「路径占用残留但页面不存在」。
+		if s.routes != nil {
+			_ = s.routes.DeleteRoutesByPage(ctx, &pubdto.DeleteRoutesReq{ProjectID: page.ProjectID, PageID: page.ID})
+		}
 		return nil, mapPersistenceError(err)
 	}
 	return pageResp(page), nil
+}
+
+// reservePath 经 publication contract 预留草稿路径（页面创建前置）。
+// 占用冲突归一为 page 的 ErrPathOccupied；系统错误原样返回。
+// routes 为 nil（降级/测试）时跳过预留。
+func (s *Service) reservePath(ctx context.Context, projectID, path, pageID string) error {
+	if s.routes == nil {
+		return nil
+	}
+	err := s.routes.ReservePath(ctx, &pubdto.ReserveReq{ProjectID: projectID, Path: path, PageID: pageID})
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, gorm.ErrDuplicatedKey) || strings.Contains(err.Error(), "23505") ||
+		strings.Contains(err.Error(), "占用") {
+		return ErrPathOccupied
+	}
+	return err
 }
 
 // Detail 查询当前 Page Draft。
@@ -110,8 +138,26 @@ func (s *Service) SaveDraft(ctx context.Context, req *pagedto.SaveDraftReq) (res
 		DraftPath: path, DraftDocument: doc, SourceHash: hash(doc), CreatedAt: now,
 	}
 	changedPath := page.DraftPath != path
-	if err = s.model.SaveDraftWithRevision(ctx, page.ID, page.ProjectID, page.DraftVersion,
-		page.DraftPath, path, doc, nextVersion, now, revision, changedPath); err != nil {
+	// 改路径时先经 publication contract 迁移 reserved 占用：改到他人占用路径
+	// 在此失败（RenameReserved 撞 newPath 唯一约束），草稿尚未提交，保持原路径
+	// 与版本不变（保留原三表事务的「路径冲突整体回滚」语义）。
+	if changedPath && s.routes != nil {
+		if rerr := s.routes.RenameReserved(ctx, &pubdto.RenameReservedReq{
+			ProjectID: page.ProjectID, PageID: page.ID,
+			OldPath: page.DraftPath, NewPath: path,
+		}); rerr != nil {
+			return nil, mapPersistenceError(rerr)
+		}
+	}
+	if err = s.model.SaveDraftWithRevision(ctx, page.ID, page.DraftVersion,
+		path, doc, nextVersion, now, revision); err != nil {
+		// 草稿提交失败（版本冲突）：已迁移的 reserved 需回迁，保持路径占用与草稿一致。
+		if changedPath && s.routes != nil {
+			_ = s.routes.RenameReserved(ctx, &pubdto.RenameReservedReq{
+				ProjectID: page.ProjectID, PageID: page.ID,
+				OldPath: path, NewPath: page.DraftPath,
+			})
+		}
 		return nil, mapPersistenceError(err)
 	}
 	page.DraftPath = path
@@ -216,6 +262,10 @@ func mapPersistenceError(err error) error {
 		return ErrDraftVersionConflict
 	}
 	if errors.Is(err, gorm.ErrDuplicatedKey) || strings.Contains(strings.ToLower(err.Error()), "duplicate key") || strings.Contains(strings.ToLower(err.Error()), "unique constraint") {
+		return ErrPathOccupied
+	}
+	// publication contract 的占用错误（ErrRouteOccupied）归一为 page 的 ErrPathOccupied。
+	if strings.Contains(err.Error(), "占用") {
 		return ErrPathOccupied
 	}
 	if errors.Is(err, gorm.ErrRecordNotFound) {

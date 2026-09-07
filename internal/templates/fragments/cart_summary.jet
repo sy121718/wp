@@ -1,0 +1,1 @@
+<span class="wp-fragment-cart-count" data-fragment="cartSummary">{{ .Count }}</span>

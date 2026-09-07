@@ -127,10 +127,11 @@ func TestArtifactEnsureRecordReplaceInvalidManifest(t *testing.T) {
 	}
 }
 
-// TestArtifactEnsureRecordReplaceRollbackAndOrphanObject 覆盖替换路径的事务行为：
-// 闭包重建撞复合主键（manifest 内重复文件 hash）→ ReplaceArtifactContent 事务
-// 回滚（元数据与旧闭包恢复），但 content_object 在事务外已写入 → 孤立对象残留。
-func TestArtifactEnsureRecordReplaceRollbackAndOrphanObject(t *testing.T) {
+// TestArtifactEnsureRecordReplaceDedupesSharedHash 覆盖替换路径的重复内容哈希：
+// manifest.files 两个文件名共享同一内容哈希（内容重复）时，闭包按内容寻址
+// 去重——同一哈希只归档一条闭包 + 一条内容对象，不撞 (artifact_id, content_hash)
+// 复合主键，不报错，且 content_object 在事务内写入、无孤儿对象残留。
+func TestArtifactEnsureRecordReplaceDedupesSharedHash(t *testing.T) {
 	svc := newService(t)
 	ctx := context.Background()
 
@@ -141,32 +142,17 @@ func TestArtifactEnsureRecordReplaceRollbackAndOrphanObject(t *testing.T) {
 	reqC.ArtifactHash = "hash-c"
 	reqC.Manifest = json.RawMessage(`{"canonicalPath":"/c.html","files":{"x.js":"H3","y.js":"H3"}}`)
 
-	_, err := svc.EnsureRecord(ctx, reqC)
-	// 预期（修复 bug 后）：两个路径共享同一内容哈希 → 两条闭包引用同一哈希 →
-	// 撞 page_artifact_objects 复合主键 → ErrArtifactMismatch 且事务回滚；
-	// 同时 ensureContentObject 在事务外已写入 H3 → 孤立对象残留。
-	// 当前 bug 行为：替换路径把文件名（manifest key）当内容哈希写入闭包，
-	// 两条闭包 (id,"x.js")/(id,"y.js") 不冲突，替换“成功”且无错误（见 bug 报告）。
-	requireErrMsg(t, err, artifactenums.ErrArtifactMismatch)
-
-	// 事务回滚：元数据 hash 仍是 v1，行数 1。
-	if n := artifactRowCount(t, svc); n != 1 {
-		t.Fatalf("替换失败后行数应仍为 1: %d", n)
-	}
-	detail, err := svc.DetailByID(ctx, &artifactdto.DetailByIDReq{ID: testArtifactID})
+	replaced, err := svc.EnsureRecord(ctx, reqC)
 	if err != nil {
-		t.Fatalf("原记录应可查询: %v", err)
+		t.Fatalf("重复内容哈希应去重成功，不应报错: %v", err)
 	}
-	if detail.ArtifactHash != artifactHashV1 {
-		t.Fatalf("回滚后 hash 应恢复 v1: %s", detail.ArtifactHash)
+	// 闭包去重：两个文件名共享同一哈希，只归档一条闭包。
+	if n := closureCount(t, svc, replaced.ID); n != 1 {
+		t.Fatalf("重复哈希去重后闭包应为 1 条: %d", n)
 	}
-	// 旧闭包恢复。
-	if n := closureCount(t, svc, testArtifactID); n != 2 {
-		t.Fatalf("回滚后闭包应恢复 2 条: %d", n)
-	}
-	// bug 证据：ensureContentObject 在事务外执行，H3 已写入 content_objects 成为孤立对象。
+	// 内容对象只写一次，无孤儿对象（事务内写入，替换失败会一并回滚）。
 	if !contentObjectExists(t, svc, "H3") {
-		t.Fatalf("bug 证据缺失：替换失败后 H3 内容对象应残留（事务外写入）")
+		t.Fatalf("内容对象 H3 应存在")
 	}
 }
 
@@ -196,35 +182,39 @@ func TestArtifactEnsureRecordReplaceUsesContentHashValue(t *testing.T) {
 	}
 }
 
-// TestArtifactEnsureRecordTransactionAtomic 覆盖替换事务的原子性：
-// 元数据、闭包删除、闭包新建在同一个事务中，任一失败整体回滚。
+// TestArtifactEnsureRecordTransactionAtomic 覆盖替换事务提交后的一致性：
+// 元数据、闭包删除、闭包新建、内容对象在同一个事务中，提交后三者一致——
+// 替换成功时旧闭包被删除、新闭包（去重）与内容对象（事务内幂等写入）齐全。
 func TestArtifactEnsureRecordTransactionAtomic(t *testing.T) {
 	svc := newService(t)
 	ctx := context.Background()
 
 	mustRecord(t, svc, validReq())
 
-	// 替换路径闭包重建时两条闭包引用同一哈希 H4 → 撞复合主键，
-	// 验证 ReplaceArtifactContent 事务内 Update/Delete/Create 整体回滚。
-	// （当前 bug：替换路径误用文件名作哈希，两条闭包不冲突，替换“成功”；
-	// 修复后此处应得到 ErrArtifactMismatch，见 bug 报告。）
+	// 重复哈希 H4：去重后闭包 1 条、内容对象 1 个，无主键冲突。
 	reqD := validReq()
 	reqD.ArtifactID = testArtifactID2
 	reqD.ArtifactHash = "hash-d"
 	reqD.Manifest = json.RawMessage(`{"canonicalPath":"/d.html","files":{"x.js":"H4","y.js":"H4"}}`)
 
-	_, err := svc.EnsureRecord(ctx, reqD)
-	requireErrMsg(t, err, artifactenums.ErrArtifactMismatch)
+	replaced, err := svc.EnsureRecord(ctx, reqD)
+	if err != nil {
+		t.Fatalf("替换失败: %v", err)
+	}
 
-	// 事务整体回滚：原记录完整。
+	// 元数据一致：同一行被替换，hash 更新。
 	detail, err := svc.DetailByID(ctx, &artifactdto.DetailByIDReq{ID: testArtifactID})
 	if err != nil {
-		t.Fatalf("原记录应可查询: %v", err)
+		t.Fatalf("替换后原记录应可查询: %v", err)
 	}
-	if detail.ArtifactHash != artifactHashV1 {
-		t.Fatalf("原子性破坏：hash 应为 v1: %s", detail.ArtifactHash)
+	if detail.ArtifactHash != "hash-d" {
+		t.Fatalf("替换后 hash 应为 hash-d: %s", detail.ArtifactHash)
 	}
-	if detail.Version != 1 {
-		t.Fatalf("原子性破坏：version 应为 1: %d", detail.Version)
+	// 闭包去重为 1 条，内容对象存在且无孤儿。
+	if n := closureCount(t, svc, replaced.ID); n != 1 {
+		t.Fatalf("去重后闭包应为 1 条: %d", n)
+	}
+	if !contentObjectExists(t, svc, "H4") {
+		t.Fatalf("内容对象 H4 应存在")
 	}
 }

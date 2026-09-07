@@ -18,7 +18,6 @@ var (
 const (
 	tableNamePages         = "pages"
 	tableNamePageRevisions = "page_revisions"
-	tableNamePageRoutes    = "page_routes"
 )
 
 // PageEntity 对应 pages 表的手工 Page 字段。
@@ -57,17 +56,6 @@ type RevisionEntity struct {
 
 func (RevisionEntity) TableName() string { return tableNamePageRevisions }
 
-// RouteEntity 对应 page_routes 表；用于 project 内 draft/active/redirect 的全局路径占用。
-type RouteEntity struct {
-	ProjectID string    `gorm:"column:project_id;type:uuid;primaryKey"`
-	Path      string    `gorm:"column:path;type:text;primaryKey"`
-	PageID    *string   `gorm:"column:page_id;type:uuid"`
-	RouteKind string    `gorm:"column:route_kind;type:text;not null"`
-	UpdatedAt time.Time `gorm:"column:updated_at;not null"`
-}
-
-func (RouteEntity) TableName() string { return tableNamePageRoutes }
-
 // Model 封装 page 表数据访问。
 type Model struct {
 	db *gorm.DB
@@ -84,11 +72,6 @@ func (m *Model) DB(ctx context.Context) *gorm.DB {
 // RevisionDB 返回已绑定 page_revisions 表的 GORM 实例。
 func (m *Model) RevisionDB(ctx context.Context) *gorm.DB {
 	return m.db.WithContext(ctx).Model(&RevisionEntity{})
-}
-
-// RouteDB 返回已绑定 page_routes 表的 GORM 实例。
-func (m *Model) RouteDB(ctx context.Context) *gorm.DB {
-	return m.db.WithContext(ctx).Model(&RouteEntity{})
 }
 
 // Transaction 在数据库事务中执行给定函数；草稿、修订与路径占用必须原子提交。
@@ -172,38 +155,30 @@ func (m *Model) ListRevisions(ctx context.Context, pageID string) (list []Revisi
 	return list, err
 }
 
-// CreateWithRevisionAndRoute 原子创建 Page、初始 Revision 与路径占用。
-func (m *Model) CreateWithRevisionAndRoute(ctx context.Context, page *PageEntity, revision *RevisionEntity, path string) (err error) {
+// CreateWithRevision 原子创建 Page 与初始 Revision。
+// 路径占用（page_routes 的 reserved 行）由 service 层经 publication contract
+// 的 ReservePath 处理——page_routes 单一所有归 publication，page model 不碰该表。
+func (m *Model) CreateWithRevision(ctx context.Context, page *PageEntity, revision *RevisionEntity) (err error) {
 	return m.Transaction(ctx, func(tx *gorm.DB) error {
 		if err := tx.Create(page).Error; err != nil {
 			return err
 		}
-		if err := tx.Create(revision).Error; err != nil {
-			return err
-		}
-		return tx.Create(&RouteEntity{
-			ProjectID: page.ProjectID,
-			Path:      path,
-			PageID:    &page.ID,
-			RouteKind: "reserved",
-			UpdatedAt: page.UpdatedAt,
-		}).Error
+		return tx.Create(revision).Error
 	})
 }
 
-// SaveDraftWithRevision 使用乐观锁原子保存草稿、修订及路径占用。
+// SaveDraftWithRevision 使用乐观锁原子保存草稿与修订。
+// 改路径时的 reserved 占用迁移由 service 层经 publication contract 的
+// RenameReserved 处理——page model 不再碰 page_routes。
 func (m *Model) SaveDraftWithRevision(
 	ctx context.Context,
 	pageID string,
-	projectID string,
 	expectedVersion int64,
-	oldPath string,
 	path string,
 	document json.RawMessage,
 	nextVersion int64,
 	updatedAt time.Time,
 	revision *RevisionEntity,
-	changedPath bool,
 ) (err error) {
 	return m.Transaction(ctx, func(tx *gorm.DB) error {
 		result := tx.Model(&PageEntity{}).
@@ -220,30 +195,6 @@ func (m *Model) SaveDraftWithRevision(
 		}
 		if result.RowsAffected != 1 {
 			return ErrDraftVersionConflict
-		}
-		if changedPath {
-			if err := tx.Where("project_id = ? AND path = ? AND page_id = ? AND route_kind = ?", projectID, oldPath, pageID, "reserved").
-				Delete(&RouteEntity{}).Error; err != nil {
-				return err
-			}
-			var ownedRouteCount int64
-			if err := tx.Model(&RouteEntity{}).
-				Where("project_id = ? AND path = ? AND page_id = ?", projectID, path, pageID).
-				Count(&ownedRouteCount).Error; err != nil {
-				return err
-			}
-			if ownedRouteCount == 0 {
-				pageIDCopy := pageID
-				if err := tx.Create(&RouteEntity{
-					ProjectID: projectID,
-					Path:      path,
-					PageID:    &pageIDCopy,
-					RouteKind: "reserved",
-					UpdatedAt: updatedAt,
-				}).Error; err != nil {
-					return err
-				}
-			}
 		}
 		return tx.Create(revision).Error
 	})
@@ -273,25 +224,20 @@ func (m *Model) MoveDraftPath(ctx context.Context, pageID, newPath string, at ti
 		Updates(map[string]any{"draft_path": newPath, "active_path": newPath, "updated_at": at}).Error
 }
 
-// SoftDeleteWithRoutes 软删 Page（deleted_at 置时间，审计留痕）并原子清理该页面
-// 全部路径占用（reserved/active/redirect 任一 kind）；页面不存在或已软删返回
-// gorm.ErrRecordNotFound。清理路由是释放路径占用的关键：否则软删后同路径
-// 新页面永远创建不了（routeCount==1 残留）。
-func (m *Model) SoftDeleteWithRoutes(ctx context.Context, pageID string, at time.Time) (err error) {
-	return m.Transaction(ctx, func(tx *gorm.DB) error {
-		result := tx.Model(&PageEntity{}).
-			Where("id = ? AND deleted_at IS NULL", pageID).
-			Update("deleted_at", at)
-		if result.Error != nil {
-			return result.Error
-		}
-		if result.RowsAffected != 1 {
-			return gorm.ErrRecordNotFound
-		}
-		// page_routes 按 page_id 全量清理（reserved/active/redirect），
-		// presentation 实例占用（page_id 为空）不受影响。
-		return tx.Where("page_id = ?", pageID).Delete(&RouteEntity{}).Error
-	})
+// SoftDelete 软删 Page（deleted_at 置时间，审计留痕）；页面不存在或已软删
+// 返回 gorm.ErrRecordNotFound。路径占用清理由 service 层经 publication contract
+// 的 DeleteRoutesByPage 处理——page model 不再碰 page_routes。
+func (m *Model) SoftDelete(ctx context.Context, pageID string, at time.Time) (err error) {
+	result := m.DB(ctx).
+		Where("id = ? AND deleted_at IS NULL", pageID).
+		Update("deleted_at", at)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
 }
 
 // DraftPathValue 返回草稿访问路径（空安全）。

@@ -52,7 +52,7 @@ func pluginViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nod
 		if ctx.Collection == nil {
 			return nil, fmt.Errorf("节点 %s: 编译上下文缺少集合解析器（组件 %q 声明了集合绑定）", node.ID, node.Type)
 		}
-		items, cerr := ctx.Collection.ResolveCollection(spec.Collection.Source, spec.Collection.Filter)
+		items, cerr := ctx.Collection.ResolveCollection(ctx.Context, spec.Collection.Source, spec.Collection.Filter)
 		if cerr != nil {
 			return nil, fmt.Errorf("节点 %s: 集合 %q 解析失败: %w", node.ID, spec.Collection.Source, cerr)
 		}

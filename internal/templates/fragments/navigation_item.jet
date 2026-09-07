@@ -1,0 +1,1 @@
+<a href="{{ .Path }}">{{ .Title }}</a>{{ if .Children }}<ul>{{ range _, child := .Children }}<li>{{ include "navigation_item" child }}</li>{{ end }}</ul>{{ end }}

@@ -13,6 +13,7 @@ import (
 	"go_wp/pkg/logger"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // validateRecordReq 必填/格式校验（DTO binding 仅 HTTP 层生效，契约层直调必须自校验，
@@ -194,19 +195,31 @@ func (s *Service) EnsureRecord(ctx context.Context, req *artifactdto.RecordReq) 
 			CreatedAt:                 e.CreatedAt,
 		}
 		objects := make([]artifactmodel.PageArtifactObjectEntity, 0, len(parsedManifest.Files))
+		contentObjects := make([]artifactmodel.ContentObjectEntity, 0, len(parsedManifest.Files))
+		seen := make(map[string]struct{}, len(parsedManifest.Files))
 		// 遍历 VALUE（内容哈希）而非 map KEY（文件名）：内容寻址语义。
+		// seen 去重：多个文件名共享同一内容哈希时只归档一条闭包 + 一条内容对象，
+		// 避免 (artifact_id, content_hash) 主键冲突。
 		for _, fileHash := range parsedManifest.Files {
 			if strings.TrimSpace(fileHash) == "" {
 				continue
 			}
+			if _, dup := seen[fileHash]; dup {
+				continue
+			}
+			seen[fileHash] = struct{}{}
 			objects = append(objects, artifactmodel.PageArtifactObjectEntity{
 				ArtifactID: e.ID, ContentHash: fileHash,
 			})
-			if err = ensureContentObject(s.model.DB(ctx), fileHash, req.ArtifactProvider, req.ArtifactKey, now); err != nil {
-				return nil, err
-			}
+			contentObjects = append(contentObjects, artifactmodel.ContentObjectEntity{
+				ContentHash: fileHash,
+				Provider:    req.ArtifactProvider,
+				ObjectKey:   req.ArtifactKey,
+				ByteSize:    0,
+				CreatedAt:   now,
+			})
 		}
-		if err = s.model.ReplaceArtifactContent(ctx, e.ID, newEntity, objects); err != nil {
+		if err = s.model.ReplaceArtifactContent(ctx, e.ID, newEntity, objects, contentObjects); err != nil {
 			return nil, mapPersistenceError(err)
 		}
 		return toResp(newEntity), nil
@@ -232,16 +245,11 @@ func (s *Service) EnsureRecord(ctx context.Context, req *artifactdto.RecordReq) 
 // 产物行（page_artifacts.artifact_provider/artifact_key）各自记录其自身位置，
 // 不受本函数的 first-writer-wins 影响。
 func ensureContentObject(tx *gorm.DB, contentHash, provider, objectKey string, now time.Time) error {
-	var count int64
-	if err := tx.Model(&artifactmodel.ContentObjectEntity{}).
-		Where("content_hash = ?", contentHash).
-		Count(&count).Error; err != nil {
-		return err
-	}
-	if count > 0 {
-		return nil
-	}
-	return tx.Create(&artifactmodel.ContentObjectEntity{
+	// 单条 INSERT ... ON CONFLICT DO NOTHING（PG 方言）原子幂等写入，替代原
+	// Count→Create 读-改-写：并发 EnsureRecord 同一 hash 时，原实现双双 Count=0、
+	// 一方 Create 撞 content_hash 主键，被 mapPersistenceError 误报为
+	// ErrArtifactMismatch；ON CONFLICT 在语句内原子消化唯一冲突，无 TOCTOU。
+	return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&artifactmodel.ContentObjectEntity{
 		ContentHash: contentHash,
 		Provider:    provider,
 		ObjectKey:   objectKey,
