@@ -69,14 +69,14 @@ func TestBuildView(t *testing.T) {
 			}
 			full, half := 0, 0
 			for _, s := range v.Stars {
-				switch s.StarSVG {
-				case starFull:
+				switch s.Form {
+				case starFormFull:
 					full++
-				case starHalf:
+				case starFormHalf:
 					half++
-				case starEmpty:
+				case starFormEmpty:
 				default:
-					t.Fatalf("未知星形形态: %q", s.StarSVG)
+					t.Fatalf("未知星形形态: %q", s.Form)
 				}
 			}
 			if full != tt.wantFull || half != tt.wantHalf {
@@ -89,22 +89,21 @@ func TestBuildView(t *testing.T) {
 	}
 }
 
-// TestBuildViewHalfStar 半星 SVG 结构（clipPath 左半填充）。
+// TestBuildViewHalfStar 半星形态：2.5 分含半星，且 points 与全/空星一致（骨架由 rating.jet 渲染）。
 func TestBuildViewHalfStar(t *testing.T) {
 	v := BuildView(&Props{Value: 2.5, Max: 5})
-	var halfSVG string
+	var half StarView
+	found := false
 	for _, s := range v.Stars {
-		if s.StarSVG == starHalf {
-			halfSVG = s.StarSVG
+		if s.Form == starFormHalf {
+			half, found = s, true
 		}
 	}
-	if halfSVG == "" {
+	if !found {
 		t.Fatal("2.5 分应包含半星")
 	}
-	for _, want := range []string{"clipPath", "wp-star-half", "clip-path=\"url(#wp-star-half)\""} {
-		if !strings.Contains(halfSVG, want) {
-			t.Errorf("半星 SVG 缺少 %q\n%s", want, halfSVG)
-		}
+	if half.Points != starPoints {
+		t.Errorf("半星 points 与 starPoints 不一致: %q", half.Points)
 	}
 }
 

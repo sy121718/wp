@@ -1888,6 +1888,74 @@
                         }
                     });
                 }
+                // iconFilterBar 图标选择器工具栏：搜索框 + 分类标签。
+                // names 为可用图标名全集（可能是 opts.names 子集）；onchange 在筛选状态变化时回调。
+                // 返回 { el, filtered() }：el 为工具栏 DOM，filtered() 返回按当前分类+关键词筛选后的图标名。
+                function iconFilterBar(names, onchange) {
+                    var state = { category: '', style: '', keyword: '' };
+                    var bar = document.createElement('div');
+                    bar.className = 'wb-icon-toolbar';
+                    var search = document.createElement('input');
+                    search.type = 'text';
+                    search.className = 'wb-icon-search';
+                    search.placeholder = '搜索图标…';
+                    search.addEventListener('input', function () { state.keyword = search.value; onchange(); });
+                    bar.appendChild(search);
+                    var styles = document.createElement('div');
+                    styles.className = 'wb-icon-styles';
+                    function styleBtn(v, label) {
+                        var b = document.createElement('button');
+                        b.type = 'button';
+                        b.className = 'wb-icon-cat';
+                        b.textContent = label;
+                        b.addEventListener('click', function () {
+                            state.style = v;
+                            Array.prototype.forEach.call(styles.children, function (x) { x.classList.toggle('is-active', x === b); });
+                            onchange();
+                        });
+                        styles.appendChild(b);
+                        return b;
+                    }
+                    styleBtn('', '全部').classList.add('is-active');
+                    styleBtn('outlined', '描边');
+                    styleBtn('filled', '实心');
+                    bar.appendChild(styles);
+                    var cats = document.createElement('div');
+                    cats.className = 'wb-icon-cats';
+                    function catBtn(c, label) {
+                        var b = document.createElement('button');
+                        b.type = 'button';
+                        b.className = 'wb-icon-cat';
+                        b.textContent = label;
+                        b.addEventListener('click', function () {
+                            state.category = c;
+                            Array.prototype.forEach.call(cats.children, function (x) { x.classList.toggle('is-active', x === b); });
+                            onchange();
+                        });
+                        cats.appendChild(b);
+                        return b;
+                    }
+                    catBtn('', '全部').classList.add('is-active');
+                    (window.WPIcons && window.WPIcons.categories || []).forEach(function (c) {
+                        catBtn(c, window.WPIcons.categoryLabel(c));
+                    });
+                    bar.appendChild(cats);
+                    return {
+                        el: bar,
+                        filtered: function () {
+                            if (!window.WPIcons || !window.WPIcons.filter) return names;
+                            var out = window.WPIcons.filter(state.category, state.style, state.keyword);
+                            // opts.names 限定的子集取交集，保持调用方约束（如按钮只允许箭头图标）。
+                            if (names !== window.WPIcons.names) {
+                                var set = {};
+                                names.forEach(function (n) { set[n] = true; });
+                                out = out.filter(function (n) { return set[n]; });
+                            }
+                            return out;
+                        }
+                    };
+                }
+
                 // iconPopupPicker 弹层图标选择：点击小图标按钮弹出 SVG 网格，选后回填。
                 // onPick(value) 回调；当前值 current。
                 function iconPopupPicker(triggerLabel, current, onPick, opts) {
@@ -1904,6 +1972,7 @@
                     pop.style.display = 'none';
                     var grid = document.createElement('div');
                     grid.className = 'wb-icon-grid';
+                    var toolbar = iconFilterBar(names, buildGrid);
                     function buildGrid() {
                         grid.innerHTML = '';
                         var cur = current;
@@ -1912,7 +1981,7 @@
                             n0.textContent='无'; n0.addEventListener('click', function(){ pop.style.display='none'; onPick(''); });
                             grid.appendChild(n0);
                         }
-                        names.forEach(function(nm){
+                        toolbar.filtered().forEach(function(nm){
                             var b=document.createElement('button'); b.type='button';
                             b.className='wb-icon-cell'+(cur===nm?' is-active':'');
                             b.title=window.WPIcons?window.WPIcons.label(nm):nm;
@@ -1922,6 +1991,7 @@
                         });
                     }
                     buildGrid();
+                    pop.appendChild(toolbar.el);
                     pop.appendChild(grid);
                     btn.addEventListener('click', function(){
                         pop.style.display = (pop.style.display==='none') ? 'block' : 'none';
@@ -1943,6 +2013,7 @@
                     var grid = document.createElement('div'); grid.className = 'wb-icon-grid';
                     var names = opts.names || (window.WPIcons ? window.WPIcons.names : []);
                     var current = get(path) == null ? '' : String(get(path));
+                    var toolbar = iconFilterBar(names, paint);
                     function paint() {
                         grid.innerHTML = '';
                         if (opts.allowEmpty) {
@@ -1952,7 +2023,7 @@
                             none.addEventListener('click', function () { current = ''; commit(path, ''); paint(); });
                             grid.appendChild(none);
                         }
-                        names.forEach(function (name) {
+                        toolbar.filtered().forEach(function (name) {
                             var b = document.createElement('button');
                             b.type = 'button';
                             b.className = 'wb-icon-cell' + (current === name ? ' is-active' : '');
@@ -1967,6 +2038,7 @@
                         });
                     }
                     paint();
+                    wrap.appendChild(toolbar.el);
                     wrap.appendChild(grid);
                     panel.appendChild(wrap);
                 }

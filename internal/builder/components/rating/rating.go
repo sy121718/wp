@@ -23,6 +23,7 @@ const defaultMax = 5
 const maxLimit = 10
 
 // starPoints 星形 polygon 顶点（24 viewBox，fill 版本，与 core.IconSVG 的 star 对齐）。
+// 由 rating.jet 模板按星形形态（full/half/empty）渲染 <svg> 骨架，此处只提供 polygon points。
 const starPoints = "12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"
 
 // Props rating 属性。
@@ -113,14 +114,6 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 func init() {
 	core.Register(Widget)
 }
-
-// starFull / starEmpty / starHalf 三种星形 SVG 形态（fill 实心 / stroke 空星 / 左半填充）。
-var (
-	starFull  = `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="` + starPoints + `"/></svg>`
-	starEmpty = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><polygon points="` + starPoints + `"/></svg>`
-	// starHalf 空星轮廓 + clipPath 裁剪的左半实心星。
-	starHalf = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><defs><clipPath id="wp-star-half"><rect x="0" y="0" width="12" height="24"/></clipPath></defs><polygon points="` + starPoints + `" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><polygon points="` + starPoints + `" fill="currentColor" clip-path="url(#wp-star-half)"/></svg>`
-)
 
 // ratingLabel 无障碍描述文本（如「评分 4.5 / 5」）。
 func ratingLabel(p *Props) string {

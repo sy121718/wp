@@ -256,10 +256,11 @@ func IsSafeCSSValue(v string) bool {
 }
 
 // shapeDividers 形状分隔线白名单（03-A §3.1 Tab2，纯 SVG 装饰）。
+// 值仅为 path 内容片段，<svg> 骨架由 container.jet 模板渲染（去 Go 拼字符串）。
 var shapeDividers = map[string]string{
-	"wave":  `<svg viewBox="0 0 1440 64" preserveAspectRatio="none" aria-hidden="true"><path fill="currentColor" d="M0 32c120-32 240-32 360 0s240 32 360 0 240-32 360 0 240 32 360 0v64H0z"/></svg>`,
-	"slant": `<svg viewBox="0 0 1440 64" preserveAspectRatio="none" aria-hidden="true"><path fill="currentColor" d="M0 64L1440 0v64H0z"/></svg>`,
-	"curve": `<svg viewBox="0 0 1440 64" preserveAspectRatio="none" aria-hidden="true"><path fill="currentColor" d="M0 64C360 0 1080 0 1440 64H0z"/></svg>`,
+	"wave":  `<path fill="currentColor" d="M0 32c120-32 240-32 360 0s240 32 360 0 240-32 360 0 240 32 360 0v64H0z"/>`,
+	"slant": `<path fill="currentColor" d="M0 64L1440 0v64H0z"/>`,
+	"curve": `<path fill="currentColor" d="M0 64C360 0 1080 0 1440 64H0z"/>`,
 }
 
 // attrKeyRe 自定义属性 key 白名单（data-* / aria-* / 常见属性）。

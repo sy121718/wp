@@ -6,7 +6,6 @@
 package socialbuttons
 
 import (
-	"html"
 	"strings"
 
 	"go_wp/internal/builder/core"
@@ -23,8 +22,12 @@ type ItemView struct {
 	Platform string
 	// URL 跳转地址（模板输出时由 Jet 默认转义）。
 	URL string
-	// InnerHTML 内联 SVG 或首字母兜底 span（原样输出）。
-	InnerHTML string
+	// SVGContent 平台图标内部元素（path 片段，不含 <svg> 包裹）；无专属图标时为空。
+	SVGContent string
+	// HasIcon 是否命中平台白名单：true 渲染 <svg>，false 渲染首字母兜底 <span>。
+	HasIcon bool
+	// Initial 首字母兜底大写字母（HasIcon=false 时使用，模板输出时由 Jet 默认转义）。
+	Initial string
 }
 
 // View socialbuttons 渲染视图数据（供 socialbuttons.jet 模板使用）。
@@ -45,11 +48,11 @@ func BuildView(p *Props) View {
 	for _, it := range p.Items {
 		iv := ItemView{Platform: it.Platform, URL: it.URL}
 		if svg, ok := platformIcons[it.Platform]; ok {
-			iv.InnerHTML = svg
+			iv.HasIcon = true
+			iv.SVGContent = svg
 		} else {
 			// 无专属 SVG 的平台：首字母圆形兜底（品牌色已按平台映射）。
-			iv.InnerHTML = `<span class="wp-social-fallback">` +
-				html.EscapeString(strings.ToUpper(it.Platform[:1])) + `</span>`
+			iv.Initial = strings.ToUpper(it.Platform[:1])
 		}
 		items = append(items, iv)
 	}

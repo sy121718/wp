@@ -14,10 +14,19 @@ func CompileCSS(id string, p *Props, b *core.CSSBuckets) {
 	compileCSS(id, p, b)
 }
 
+// 星形填充形态（供 rating.jet 模板选择 <svg> 骨架）。
+const (
+	starFormFull  = "full"  // 实心
+	starFormHalf  = "half"  // 半星（左半填充）
+	starFormEmpty = "empty" // 空星
+)
+
 // StarView 单颗星渲染视图（供 rating.jet 模板使用）。
 type StarView struct {
-	// StarSVG 该星的完整 SVG（full/half/empty 三种形态），原样输出。
-	StarSVG string
+	// Form 星形形态（full/half/empty），模板据此选择 <svg> 骨架。
+	Form string
+	// Points 星形 polygon 顶点（starPoints，模板填充 points 属性）。
+	Points string
 }
 
 // View rating 渲染视图数据（供 rating.jet 模板使用）。
@@ -36,16 +45,16 @@ func BuildView(p *Props) View {
 
 	stars := make([]StarView, 0, max)
 	for i := 0; i < max; i++ {
-		var svg string
+		var form string
 		switch {
 		case i < full:
-			svg = starFull
+			form = starFormFull
 		case i == full && half:
-			svg = starHalf
+			form = starFormHalf
 		default:
-			svg = starEmpty
+			form = starFormEmpty
 		}
-		stars = append(stars, StarView{StarSVG: svg})
+		stars = append(stars, StarView{Form: form, Points: starPoints})
 	}
 	return View{Stars: stars, Label: ratingLabel(p)}
 }

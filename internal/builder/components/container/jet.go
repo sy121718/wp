@@ -23,9 +23,9 @@ type View struct {
 	Tag string
 	// Attrs 前导空格 + 属性串（组父联动 / 自定义属性 / 抽屉协议，均已转义）。
 	Attrs string
-	// ShapeTop 顶部形状分隔线 SVG（空则无）。
+	// ShapeTop 顶部形状分隔线内容片段（path，空则无；<svg> 骨架由 container.jet 渲染）。
 	ShapeTop string
-	// ShapeBottom 底部形状分隔线 SVG（空则无）。
+	// ShapeBottom 底部形状分隔线内容片段（path，空则无；<svg> 骨架由 container.jet 渲染）。
 	ShapeBottom string
 }
 

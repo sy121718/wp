@@ -22,8 +22,9 @@ type View struct {
 	IsText bool
 	// InsetText 嵌入文本（模板输出时由 Jet 默认转义）。
 	InsetText string
-	// InsetIconHTML 嵌入图标完整 SVG（空则无，原样输出）。
-	InsetIconHTML string
+	// InsetIconContent 嵌入图标内部元素（path/circle 片段，不含 <svg> 包裹），
+	// 由 divider.jet 模板负责 <svg> 骨架（去 Go 拼字符串）。
+	InsetIconContent string
 }
 
 // BuildView 生成分割线渲染视图：纯线 / 文本嵌入 / 图标嵌入（与 render 输出结构一致）。
@@ -34,8 +35,7 @@ func BuildView(p *Props) View {
 			v.IsText = true
 			v.InsetText = p.Inset.Text
 		} else if path, ok := builtinInsetIcons[p.Inset.IconName]; ok {
-			v.InsetIconHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">` +
-				path + `</svg>`
+			v.InsetIconContent = path
 		}
 	}
 	return v

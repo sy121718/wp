@@ -449,6 +449,35 @@ button.wb-palette-group:hover { color: var(--c-primary, #3d444f); }
 .wp-social-fallback { font-weight: 700; font-size: 0.9em; }
 
 /* ===== 视觉化图标选择器 ===== */
+.wb-icon-toolbar {
+    display: flex; flex-direction: column; gap: 8px;
+    margin-bottom: 8px;
+}
+.wb-icon-search {
+    width: 100%; box-sizing: border-box;
+    padding: 7px 10px; font-size: 13px;
+    border: 1px solid var(--c-border, #e5e7eb); border-radius: 6px;
+    background: var(--c-surface, #fff); color: var(--c-text, #1a1d21);
+    outline: none;
+}
+.wb-icon-search:focus { border-color: var(--c-primary, #3d444f); }
+.wb-icon-styles {
+    display: flex; flex-wrap: wrap; gap: 6px;
+}
+.wb-icon-cats {
+    display: flex; flex-wrap: wrap; gap: 6px;
+}
+.wb-icon-cat {
+    padding: 4px 10px; font-size: 12px;
+    border: 1px solid var(--c-border, #e5e7eb); border-radius: 999px;
+    background: var(--c-surface, #fff); color: var(--c-text-secondary, #4b5563);
+    cursor: pointer;
+}
+.wb-icon-cat:hover { border-color: var(--c-primary, #3d444f); }
+.wb-icon-cat.is-active {
+    border-color: var(--c-primary, #3d444f);
+    background: var(--c-primary, #3d444f); color: #fff;
+}
 .wb-icon-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(44px, 1fr));

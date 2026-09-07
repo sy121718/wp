@@ -26,15 +26,17 @@ type View struct {
 	Attrs string
 	// Text 按钮文本（模板输出时由 Jet 默认转义）。
 	Text string
-	// IconPrefix 前缀图标 HTML（空则无，原样输出）。
+	// IconPrefix / IconSuffix 图标渲染片段（空则无，原样输出）：
+	//   - builtin：内置图标内部元素（path 片段，不含 <svg> 包裹）；
+	//   - media：已转义的媒体图标地址。
+	// <svg>/<img> 骨架与动态属性（class/size/type）由 button.jet 模板经 .Props.Icon 渲染。
 	IconPrefix string
-	// IconSuffix 后缀图标 HTML（空则无，原样输出）。
 	IconSuffix string
 }
 
 // BuildView 生成按钮渲染视图：标签选择 + 链接协议 + 图标（与 render 输出结构一致）。
 func BuildView(p *Props, content core.ContentResolver) (View, error) {
-	iconHTML, err := renderIcon(p)
+	fragment, err := buildIconFragment(p)
 	if err != nil {
 		return View{}, err
 	}
@@ -45,12 +47,31 @@ func BuildView(p *Props, content core.ContentResolver) (View, error) {
 	v := View{Tag: tag, Attrs: attrs, Text: p.Text}
 	if p.Icon != nil {
 		if p.Icon.Position == "suffix" {
-			v.IconSuffix = iconHTML
+			v.IconSuffix = fragment
 		} else {
-			v.IconPrefix = iconHTML
+			v.IconPrefix = fragment
 		}
 	}
 	return v, nil
+}
+
+// buildIconFragment 计算按钮图标渲染片段（去 <svg>/<img> 骨架，骨架由 button.jet 模板渲染）。
+//   - 无图标：返回空串；
+//   - builtin：返回内置图标内部元素（path 片段）；
+//   - media：返回已转义的媒体图标地址（模板输出时经 unsafe 原样注入 src）。
+func buildIconFragment(p *Props) (string, error) {
+	if p.Icon == nil {
+		return "", nil
+	}
+	if p.Icon.Source == "builtin" {
+		path, ok := builtinIcons[p.Icon.Name]
+		if !ok {
+			return "", fmt.Errorf("无效的内置图标: %q", p.Icon.Name)
+		}
+		return path, nil
+	}
+	// 媒体库/外链图标：URL 直引 img（构建期零解析，不内联 SVG 源码）。
+	return html.EscapeString(p.Icon.URL), nil
 }
 
 // buildAttrs 标签与属性选择（与 render 内联逻辑逐字一致，保持旧输出不变）。

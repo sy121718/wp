@@ -12,7 +12,6 @@ package button
 
 import (
 	"fmt"
-	"html"
 	"regexp"
 	"strings"
 
@@ -226,33 +225,6 @@ func validateExtra(p *Props, nodeID string) (err error) {
 		}
 	}
 	return nil
-}
-
-// renderIcon 图标输出：内置 SVG 或媒体库/外链图标（img 直引）。
-func renderIcon(p *Props) (string, error) {
-	if p.Icon == nil {
-		return "", nil
-	}
-	size := p.Icon.Size
-	if size == "" {
-		size = "1em"
-	}
-	var inner string
-	if p.Icon.Source == "builtin" {
-		path, ok := builtinIcons[p.Icon.Name]
-		if !ok {
-			return "", fmt.Errorf("无效的内置图标: %q", p.Icon.Name)
-		}
-		inner = path
-	} else {
-		// 媒体库/外链图标：URL 直引 img（构建期零解析，不内联 SVG 源码）。
-		return `<img class="bt-icon" src="` + html.EscapeString(p.Icon.URL) + `" alt="" style="width:` + html.EscapeString(size) + `;height:` + html.EscapeString(size) + `">`, nil
-	}
-	class := "bt-icon"
-	if p.Icon.HoverShift != "" {
-		class += " bt-icon-shift"
-	}
-	return `<svg class="` + class + `" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="` + html.EscapeString(size) + `" height="` + html.EscapeString(size) + `" aria-hidden="true">` + inner + `</svg>`, nil
 }
 
 // compileCSS 按钮样式：尺寸/变体/双态/图标动效/块级。

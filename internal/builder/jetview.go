@@ -70,10 +70,10 @@ type nodeView struct {
 	Tag         string // 语义标签（a/button/div/section/...）
 	Attrs       string // 前导空格 + 属性串（已转义）
 	Text        string // button 文本
-	IconPrefix  string // button 前缀图标 HTML（空则无）
-	IconSuffix  string // button 后缀图标 HTML（空则无）
-	ShapeTop    string // container 顶部形状分隔线 SVG（空则无）
-	ShapeBottom string // container 底部形状分隔线 SVG（空则无）
+	IconPrefix  string // button 前缀图标内容片段（path/已转义 img URL；<svg> 骨架由 button.jet 渲染）
+	IconSuffix  string // button 后缀图标内容片段（同上）
+	ShapeTop    string // container 顶部形状分隔线内容片段（<svg> 骨架由 container.jet 渲染）
+	ShapeBottom string // container 底部形状分隔线内容片段（同上）
 }
 
 // nodeViewOf 把单个 Node 转换为 nodeView（含递归 children，CSS 加入顺序对齐旧路径）。
