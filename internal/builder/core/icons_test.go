@@ -46,8 +46,8 @@ func TestFilterIconsByKeyword(t *testing.T) {
 		t.Fatalf("关键词「定位」应包含 map-pin，got %v", FilterIcons("", "", "定位"))
 	}
 	// 名称搜索（大小写不敏感）。
-	if !contains(FilterIcons("", "", "REFRESH"), "refresh") {
-		t.Fatalf("关键词「REFRESH」应包含 refresh，got %v", FilterIcons("", "", "REFRESH"))
+	if !contains(FilterIcons("", "", "REFRESH"), "refresh-cw") {
+		t.Fatalf("关键词「REFRESH」应包含 refresh-cw，got %v", FilterIcons("", "", "REFRESH"))
 	}
 	// 分类 + 关键词组合：结果仍须全部属于该分类。
 	for _, name := range FilterIcons("media", "", "播放") {
@@ -81,8 +81,9 @@ func TestIconMeta(t *testing.T) {
 // TestIconCategories 分类数量与顺序（分类由 IconCategories 的 order 显式声明，
 // 数量稳定，不随图标数量变化）。
 func TestIconCategories(t *testing.T) {
-	expect := []string{"arrows", "basic", "commerce", "communication", "navigation",
-		"security", "social", "media", "editor", "weather", "files"}
+	expect := []string{"basic", "arrows", "communication", "social", "commerce",
+		"media", "editor", "files", "weather", "security", "navigation",
+		"development", "devices", "gaming", "layout", "food", "time", "health"}
 	cats := IconCategories()
 	if len(cats) != len(expect) {
 		t.Fatalf("应返回 %d 个分类，got %d (%v)", len(expect), len(cats), cats)
@@ -97,8 +98,8 @@ func TestIconCategories(t *testing.T) {
 // TestIconCatalogComplete 每个内嵌 SVG 图标都应有分类元数据。
 func TestIconCatalogComplete(t *testing.T) {
 	names := IconNames()
-	if len(names) < 100 {
-		t.Fatalf("内置图标数量过少（应 ≥ 100），got %d", len(names))
+	if len(names) < 1800 {
+		t.Fatalf("内置图标数量过少（应 ≥ 1800），got %d", len(names))
 	}
 	for _, name := range names {
 		if _, ok := IconCategory(name); !ok {
@@ -128,8 +129,10 @@ func TestIconSVGFormat(t *testing.T) {
 		if !strings.HasSuffix(svg, `</svg>`) {
 			t.Fatalf("图标 %q 缺少 </svg> 闭合", name)
 		}
-		if strings.Contains(svg, `xmlns=`) || strings.Contains(svg, ` class=`) {
-			t.Fatalf("图标 %q 含 xmlns/class 属性", name)
+		head := svg[:strings.Index(svg, ">")+1]
+		if strings.Contains(head, `xmlns=`) || strings.Contains(head, ` class=`) ||
+			strings.Contains(head, ` width=`) || strings.Contains(head, ` height=`) {
+			t.Fatalf("图标 %q 根开标签含 xmlns/class/width/height 属性", name)
 		}
 	}
 }
