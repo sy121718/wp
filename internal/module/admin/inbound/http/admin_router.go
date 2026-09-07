@@ -1,6 +1,8 @@
 package adminhttp
 
 import (
+	"time"
+
 	"go_wp/internal/middleware/builtin"
 	adminservice "go_wp/internal/module/admin/service"
 	datarulepkg "go_wp/pkg/datarule"
@@ -8,6 +10,13 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+)
+
+// 登录接口按 IP 限流参数：与验证码限流 + 失败计数原子锁定构成三层防线，
+// 防止匿名脚本并发爆破登录。正常用户 60s 内登录尝试不会超过 10 次。
+const (
+	loginRateLimit  = 10
+	loginRateWindow = time.Minute
 )
 
 // SetupAdminRoutes 装配 admin 模块（管理员/角色/权限点/菜单/部门/数据权限）并注册全部路由。
@@ -29,7 +38,10 @@ func SetupAdminRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 
 	// --- 管理员 ---
 	admin := rg.Group("/admin")
-	admin.POST("/login", handle.AdminLogin)
+	// 登录接口匿名可达，无条件挂按 IP 限流（不依赖全局 rate_limit 开关）。
+	admin.POST("/login",
+		builtin.RequestRateLimitMiddleware(loginRateLimit, loginRateWindow),
+		handle.AdminLogin)
 
 	auth := admin.Group("").Use(
 		builtin.SessionAuthMiddleware(),

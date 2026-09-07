@@ -27,6 +27,20 @@ import (
 //
 // 适用位置：需要细粒度权限控制的路由组或单路由。
 func CasbinMiddleware() gin.HandlerFunc {
+	return casbinMiddleware("")
+}
+
+// CasbinMiddlewareForPath 显式指定鉴权对象路径（obj）的 Casbin 中间件。
+//
+// 用于「页面写操作」：后台页面路由（如 /admin/pages/create）与权限点路径
+// （如 /api/page/create）不一致时，页面 handler 应复用对应 API 权限点的语义
+// 做鉴权，而非直接以页面路径 enforce（权限点表里不存在页面路径，会导致
+// 所有用户被拒）。obj 为空时回退到实际请求路径（等价 CasbinMiddleware）。
+func CasbinMiddlewareForPath(obj string) gin.HandlerFunc {
+	return casbinMiddleware(obj)
+}
+
+func casbinMiddleware(forcedObj string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		userID, exists := c.Get("user_id")
 		if !exists {
@@ -35,7 +49,10 @@ func CasbinMiddleware() gin.HandlerFunc {
 			return
 		}
 
-		obj := c.Request.URL.Path
+		obj := forcedObj
+		if obj == "" {
+			obj = c.Request.URL.Path
+		}
 		act := c.Request.Method
 		sub := strconv.FormatInt(userID.(int64), 10)
 

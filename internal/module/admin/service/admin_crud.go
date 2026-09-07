@@ -29,10 +29,10 @@ func (s *Service) AdminList(ctx context.Context, req *admindto.AdminListReq) (re
 	query := s.am.DB(ctx).Where("is_admin != ?", 1)
 
 	if email := strings.TrimSpace(req.Email); email != "" {
-		query = query.Where("email LIKE ?", "%"+email+"%")
+		query = query.Where("email LIKE ? ESCAPE '\\'", "%"+adminmodel.EscapeLike(email)+"%")
 	}
 	if name := strings.TrimSpace(req.Name); name != "" {
-		query = query.Where("name LIKE ?", "%"+name+"%")
+		query = query.Where("name LIKE ? ESCAPE '\\'", "%"+adminmodel.EscapeLike(name)+"%")
 	}
 	if req.Status != nil {
 		query = query.Where("status = ?", *req.Status)
@@ -398,6 +398,29 @@ func (s *Service) roleHasSuperAdminPermission(ctx context.Context, roleCodes []s
 	}
 	for _, p := range all {
 		if _, ok := codes[p.PermissionCode]; !ok {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+// codesCoverAllEnabled 判定一个权限点集合是否覆盖全部启用权限点（超管等价）。
+// 权限点全集为空（权限体系未配置/未 seed）时保守判定为 false，
+// 避免空集被任意权限点集合恒真覆盖导致保护失效。
+func (s *Service) codesCoverAllEnabled(ctx context.Context, codes []string) (bool, error) {
+	all, err := s.pm.IsEnabledAll(ctx)
+	if err != nil {
+		return false, err
+	}
+	if len(all) == 0 {
+		return false, nil
+	}
+	set := make(map[string]struct{}, len(codes))
+	for _, c := range codes {
+		set[c] = struct{}{}
+	}
+	for _, p := range all {
+		if _, ok := set[p.PermissionCode]; !ok {
 			return false, nil
 		}
 	}

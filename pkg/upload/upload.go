@@ -1,10 +1,12 @@
 package upload
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -249,6 +251,20 @@ func uploadWithProvider(ctx context.Context, providerName string, runtime Runtim
 		return Result{}, err
 	}
 
+	// 魔数嗅探：读取前 512 字节检测真实内容类型，拒绝伪装成图片/pdf/txt 的
+	// HTML/SVG/脚本文件——扩展名与 Content-Type 均由客户端控制，可伪造绕过
+	// validateFile；此类文件上传到 /storage 直出后会被浏览器 MIME 嗅探执行
+	// （存储型 XSS）。嗅探到的字节拼回 Reader，供 provider 完整写入。
+	sniffed := make([]byte, 512)
+	n, _ := io.ReadFull(file.Reader, sniffed)
+	if n > 0 {
+		head := sniffed[:n]
+		if reason := detectDangerousContent(head); reason != "" {
+			return Result{}, fmt.Errorf("上传内容被拒绝（疑似 %s 脚本文件）", reason)
+		}
+		file.Reader = io.MultiReader(bytes.NewReader(head), file.Reader)
+	}
+
 	// 大小校验的流式兜底：file.Size <= 0（调用方未声明大小或谎报 0）时
 	// 不得跳过限制——把 Reader 截断到 maxSize+1 字节，实际大小由 provider
 	// 写完后返回的 Size 判定，超限则整体报错（由 provider 清理已落盘文件）。
@@ -414,6 +430,37 @@ func validateFile(file File) error {
 	}
 
 	return nil
+}
+
+// detectDangerousContent 检测文件头是否属于危险内容（HTML/SVG/XML/脚本）。
+//
+// 返回非空字符串表示检测到的危险类型（如 "html"、"svg"），空串表示安全。
+// 采用两层判定：
+//  1. http.DetectContentType 识别常见类型（text/html、image/svg+xml 等）；
+//  2. 内容前缀模式匹配（去空白与 UTF-8 BOM 后检测 <?xml/<svg/<!doctype/<html/<script），
+//     兜底 Go sniff 算法不识别 SVG 的情况。
+func detectDangerousContent(head []byte) string {
+	detected := http.DetectContentType(head)
+	mediaType := detected
+	if i := strings.Index(mediaType, ";"); i >= 0 {
+		mediaType = strings.TrimSpace(mediaType[:i])
+	}
+	switch mediaType {
+	case "text/html", "application/xhtml+xml", "text/javascript", "application/javascript", "image/svg+xml":
+		return mediaType
+	}
+
+	trimmed := bytes.TrimLeft(head, " \t\r\n\xEF\xBB\xBF") // 去空白与 UTF-8 BOM
+	lower := bytes.ToLower(trimmed)
+	switch {
+	case bytes.HasPrefix(lower, []byte("<?xml")),
+		bytes.HasPrefix(lower, []byte("<svg")),
+		bytes.HasPrefix(lower, []byte("<!doctype")),
+		bytes.HasPrefix(lower, []byte("<html")),
+		bytes.HasPrefix(lower, []byte("<script")):
+		return "html/svg/xml"
+	}
+	return ""
 }
 
 func parseByteSize(raw string) (int64, error) {

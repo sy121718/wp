@@ -16,6 +16,7 @@ import (
 	dashboardenums "go_wp/internal/module/dashboard/enums"
 	projectdto "go_wp/internal/module/project/dto"
 	"go_wp/pkg/logger"
+	"go_wp/pkg/response"
 
 	"github.com/gin-gonic/gin"
 )
@@ -56,7 +57,7 @@ func (d *themeManageData) templateMap() gin.H {
 func (h *Handle) ThemeManage(c *gin.Context) {
 	projects, err := h.projects.List(c.Request.Context())
 	if err != nil {
-		c.String(http.StatusInternalServerError, err.Error())
+		response.ErrorWithMessage(c, http.StatusInternalServerError, dashboardenums.MsgInternalError)
 		return
 	}
 	data := &themeManageData{
@@ -72,7 +73,7 @@ func (h *Handle) ThemeManage(c *gin.Context) {
 	if data.SelectedProjectID != "" {
 		themes, err := h.projects.ListThemes(c.Request.Context(), data.SelectedProjectID)
 		if err != nil {
-			c.String(http.StatusInternalServerError, err.Error())
+			response.ErrorWithMessage(c, http.StatusInternalServerError, dashboardenums.MsgInternalError)
 			return
 		}
 		data.Themes = make([]themeRow, 0, len(themes))
@@ -500,7 +501,7 @@ func (h *Handle) SaveThemeSettings(c *gin.Context) {
 		FooterBlockID: strings.TrimSpace(c.PostForm("footerBlockId")),
 	})
 	if err != nil {
-		c.String(http.StatusInternalServerError, err.Error())
+		response.ErrorWithMessage(c, http.StatusInternalServerError, dashboardenums.MsgInternalError)
 		return
 	}
 	// ParseThemeSettings 校验（IsSafeCSSValue 白名单，防 CSS 注入）；非法返回 400。
@@ -511,7 +512,7 @@ func (h *Handle) SaveThemeSettings(c *gin.Context) {
 	if _, err := h.projects.UpdateTheme(c.Request.Context(), &projectdto.ThemeUpdateReq{
 		ID: themeID, Name: data.ThemeName, Settings: settingsJSON,
 	}); err != nil {
-		c.String(http.StatusInternalServerError, err.Error())
+		response.ErrorWithMessage(c, http.StatusInternalServerError, dashboardenums.MsgInternalError)
 		return
 	}
 	// 颜色/字体快照合入 settings.theme + 页眉/页脚绑定合入 settings.structure，

@@ -49,14 +49,20 @@ type Store interface {
 // MemoryStore 基于内存的验证码存储。
 // 启动后台协程每 5 分钟清理过期数据。
 type MemoryStore struct {
-	mu       sync.RWMutex
-	captchas map[string]*Captcha
+	mu         sync.RWMutex
+	captchas   map[string]*Captcha
+	maxEntries int
 }
+
+// defaultMaxEntries MemoryStore 容量上限：防止匿名接口被脚本刷爆时
+// 验证码条目无界增长撑爆进程内存（纵深防御，与 HTTP 层按 IP 限流互补）。
+const defaultMaxEntries = 10000
 
 // NewMemoryStore 创建内存存储并启动过期清理协程。
 func NewMemoryStore() *MemoryStore {
 	store := &MemoryStore{
-		captchas: make(map[string]*Captcha),
+		captchas:   make(map[string]*Captcha),
+		maxEntries: defaultMaxEntries,
 	}
 	go store.cleanup()
 	return store
@@ -65,6 +71,20 @@ func NewMemoryStore() *MemoryStore {
 func (s *MemoryStore) Set(id string, captcha *Captcha) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	// 容量上限：新条目且已达上限时，先清理过期项；仍满则丢弃该条目
+	// （宁可验证码不可用，也不能让内存被恶意刷爆）。
+	if _, exists := s.captchas[id]; !exists && len(s.captchas) >= s.maxEntries {
+		now := time.Now()
+		for k, v := range s.captchas {
+			if v.ExpiresAt.Before(now) {
+				delete(s.captchas, k)
+			}
+		}
+		if len(s.captchas) >= s.maxEntries {
+			return
+		}
+	}
 	s.captchas[id] = captcha
 }
 
@@ -153,6 +173,14 @@ func Get() *CaptchaService {
 		Init(nil)
 	}
 	return captchaService
+}
+
+// ExpireSeconds 返回验证码有效时长（秒），供接口层下发给前端展示刷新提示。
+func (s *CaptchaService) ExpireSeconds() int64 {
+	if s.config.ExpireTime <= 0 {
+		return 0
+	}
+	return int64(s.config.ExpireTime / time.Second)
 }
 
 // GenerateByType 按类型生成验证码。

@@ -5,6 +5,7 @@ import (
 	"database/sql/driver"
 	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 
 	adminenums "go_wp/internal/module/admin/enums"
@@ -121,9 +122,43 @@ func (m *AdminModel) DeleteByIDs(ctx context.Context, ids []uint64) (deleted int
 	return result.RowsAffected, result.Error
 }
 
+// IncrementLoginFailure 原子累加登录失败计数，连续达到阈值时锁定 30 分钟。
+//
+// 必须用单条原子 SQL（count = count + 1）而非读-改-写：并发失败请求
+// 读到相同计数会丢失计数，导致永远无法触发锁定，可被无限暴力破解。
+// 锁定只写 locked_until_time，绝不修改 status（见 service 层注释）。
+func (m *AdminModel) IncrementLoginFailure(ctx context.Context, id uint64, lockThreshold int, lockDuration time.Duration) error {
+	now := time.Now()
+	lockedUntil := now.Add(lockDuration)
+	return m.db.WithContext(ctx).Model(&AdminEntity{}).
+		Where("id = ?", id).
+		Updates(map[string]any{
+			"login_failure_count": gorm.Expr("login_failure_count + 1"),
+			"last_failure_time":   now,
+			"locked_until_time":   gorm.Expr("CASE WHEN login_failure_count + 1 >= ? THEN ? ELSE locked_until_time END", lockThreshold, lockedUntil),
+		}).Error
+}
+
+// ResetLoginFailure 原子清零登录失败状态（登录成功时调用）。
+func (m *AdminModel) ResetLoginFailure(ctx context.Context, id uint64) error {
+	return m.db.WithContext(ctx).Model(&AdminEntity{}).
+		Where("id = ?", id).
+		Updates(map[string]any{
+			"login_failure_count": 0,
+			"locked_until_time":   nil,
+			"last_failure_time":   nil,
+		}).Error
+}
+
 // TableName 指定表名。
 func (AdminEntity) TableName() string {
 	return tableNameSysAdmin
+}
+
+// EscapeLike 转义 LIKE 通配符（% / _ / \），使关键字按字面匹配。
+// 与 ESCAPE '\' 配套使用（参照 media 模块 AttachmentModel.List 的示范）。
+func EscapeLike(s string) string {
+	return strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(s)
 }
 
 // CanLogin 是否可以登录。

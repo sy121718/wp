@@ -70,6 +70,8 @@ type RoleMenuListReq struct {
 type RoleMenuSaveReq struct {
 	RoleID  uint64   `json:"role_id" binding:"required" validate:"required"`
 	MenuIDs []uint64 `json:"menu_ids"`
+	// OperatorID 当前操作者（handler 从会话注入，禁止前端传入）。
+	OperatorID uint64 `json:"-"`
 }
 
 // RoleUserListReq 查询角色下的用户。

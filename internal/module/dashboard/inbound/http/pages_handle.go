@@ -12,6 +12,7 @@ import (
 	dashboardenums "go_wp/internal/module/dashboard/enums"
 	pagedto "go_wp/internal/module/page/dto"
 	projectdto "go_wp/internal/module/project/dto"
+	"go_wp/pkg/response"
 
 	"github.com/gin-gonic/gin"
 )
@@ -53,7 +54,7 @@ type pageRow struct {
 func (h *Handle) PagesList(c *gin.Context) {
 	data, err := h.buildPagesData(c)
 	if err != nil {
-		c.String(http.StatusInternalServerError, err.Error())
+		response.ErrorWithMessage(c, http.StatusInternalServerError, dashboardenums.MsgInternalError)
 		return
 	}
 	c.HTML(http.StatusOK, "admin/pages", withCSRF(c, data.templateMap()))
@@ -106,7 +107,7 @@ func (h *Handle) CreateProject(c *gin.Context) {
 	if _, err := h.projects.Create(c.Request.Context(), &projectdto.CreateReq{
 		Name: name, Settings: json.RawMessage("{}"),
 	}); err != nil {
-		c.String(http.StatusInternalServerError, err.Error())
+		response.ErrorWithMessage(c, http.StatusInternalServerError, dashboardenums.MsgInternalError)
 		return
 	}
 	c.Redirect(http.StatusSeeOther, "/admin/pages")
@@ -131,7 +132,7 @@ func (h *Handle) CreatePage(c *gin.Context) {
 		DraftPath:         path,
 		DraftDocument:     json.RawMessage(`{"settings":{"layout":{"mode":"full"}},"root":[]}`),
 	}); err != nil {
-		c.String(http.StatusInternalServerError, err.Error())
+		response.ErrorWithMessage(c, http.StatusInternalServerError, dashboardenums.MsgInternalError)
 		return
 	}
 	c.Redirect(http.StatusSeeOther, "/admin/pages")

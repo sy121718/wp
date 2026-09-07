@@ -109,15 +109,29 @@
         var msgEl = document.getElementById('login-msg');
 
         // 拉取新验证码：接口只回 captcha_id 与图片，答案不下发
+        var refreshing = false;
         function refreshCaptcha() {
+            if (refreshing) { return; } // 防连点：一次请求未完成时不重复发起
+            refreshing = true;
             fetch('/api/captcha')
-                .then(function (resp) { return resp.json(); })
+                .then(function (resp) {
+                    if (resp.status === 429) {
+                        msgEl.textContent = '验证码刷新过于频繁，请稍后再试';
+                        return null;
+                    }
+                    return resp.json();
+                })
                 .then(function (body) {
+                    if (!body) { return; }
                     var data = body.data || {};
                     if (data.captcha_image) { captchaImg.src = data.captcha_image; }
                     if (data.captcha_id) { captchaIdInput.value = data.captcha_id; }
+                    if (data.expire_seconds) {
+                        captchaImg.title = '点击刷新（' + data.expire_seconds + ' 秒内有效）';
+                    }
                 })
-                .catch(function () { msgEl.textContent = '验证码加载失败，请重试'; });
+                .catch(function () { msgEl.textContent = '验证码加载失败，请重试'; })
+                .finally(function () { refreshing = false; });
         }
 
         if (!captchaImg.getAttribute('src')) { refreshCaptcha(); }

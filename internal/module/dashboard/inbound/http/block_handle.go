@@ -12,6 +12,7 @@ import (
 	blockdto "go_wp/internal/module/block/dto"
 	dashboardenums "go_wp/internal/module/dashboard/enums"
 	projectdto "go_wp/internal/module/project/dto"
+	"go_wp/pkg/response"
 
 	"github.com/gin-gonic/gin"
 )
@@ -78,7 +79,7 @@ func toBlockRows(blocks []blockdto.BlockResp, kind string) []blockRow {
 func (h *Handle) BlocksList(c *gin.Context) {
 	projects, err := h.projects.List(c.Request.Context())
 	if err != nil {
-		c.String(http.StatusInternalServerError, err.Error())
+		response.ErrorWithMessage(c, http.StatusInternalServerError, dashboardenums.MsgInternalError)
 		return
 	}
 	data := &blocksPageData{
@@ -94,7 +95,7 @@ func (h *Handle) BlocksList(c *gin.Context) {
 	if data.SelectedProjectID != "" {
 		blocks, err := h.blocks.List(c.Request.Context(), &blockdto.ListReq{ProjectID: data.SelectedProjectID})
 		if err != nil {
-			c.String(http.StatusInternalServerError, err.Error())
+			response.ErrorWithMessage(c, http.StatusInternalServerError, dashboardenums.MsgInternalError)
 			return
 		}
 		data.Headers = toBlockRows(blocks, "header")
@@ -170,7 +171,7 @@ func (h *Handle) SaveBlockContent(c *gin.Context) {
 	if _, err := h.blocks.Update(c.Request.Context(), &blockdto.UpdateReq{
 		ID: req.ID, Name: name, Document: req.Document,
 	}); err != nil {
-		c.String(http.StatusInternalServerError, err.Error())
+		response.ErrorWithMessage(c, http.StatusInternalServerError, dashboardenums.MsgInternalError)
 		return
 	}
 	h.markStaleForBlock(c, req.ID)

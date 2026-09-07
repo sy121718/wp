@@ -15,9 +15,11 @@ import (
 // GET /api/captcha → 返回 captcha_id 与 base64 PNG 图片；
 // 答案 code 只保存在服务端 Store 供 Verify 校验，绝不下发客户端。
 func CaptchaHandle(c *gin.Context) {
-	id, image := captcha.Get().GenerateImage()
+	svc := captcha.Get()
+	id, image := svc.GenerateImage()
 	r.Success(c, gin.H{
-		"captcha_id":    id,
-		"captcha_image": image,
+		"captcha_id":     id,
+		"captcha_image":  image,
+		"expire_seconds": svc.ExpireSeconds(),
 	})
 }

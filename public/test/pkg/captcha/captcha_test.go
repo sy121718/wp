@@ -81,9 +81,13 @@ func TestCaptchaHandleResponseNoPlaintextCode(t *testing.T) {
 		t.Fatalf("解析响应失败: %v", err)
 	}
 
-	// data 结构断言：仅 captcha_id + captcha_image 两个字段，杜绝明文回显
-	if len(result.Data) != 2 {
-		t.Fatalf("data 应仅含 captcha_id 与 captcha_image，got: %v", result.Data)
+	// data 结构断言：仅 captcha_id + captcha_image + expire_seconds 三个字段，
+	// 杜绝明文回显（expire_seconds 供前端展示验证码有效期提示）。
+	if len(result.Data) != 3 {
+		t.Fatalf("data 应仅含 captcha_id、captcha_image、expire_seconds，got: %v", result.Data)
+	}
+	if _, ok := result.Data["expire_seconds"]; !ok {
+		t.Fatal("缺少 expire_seconds 字段")
 	}
 	id, _ := result.Data["captcha_id"].(string)
 	image, _ := result.Data["captcha_image"].(string)

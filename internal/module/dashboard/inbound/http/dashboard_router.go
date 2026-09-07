@@ -46,29 +46,31 @@ func SetupDashboardRoutes(router *gin.Engine,
 	adminPages := router.Group("/admin", builtin.SessionAuthMiddleware(), builtin.CSRFMiddleware())
 	adminPages.GET("", handle.Dashboard)
 	// 页面管理列表：列出/新建站点工程与页面。
+	// 页面写操作复用对应 API 权限点做 Casbin 鉴权（页面路径与权限点路径不一致，
+	// 直接以页面路径 enforce 会因权限点表无此路径而拒绝所有用户）。
 	adminPages.GET("/pages", handle.PagesList)
-	adminPages.POST("/pages/create", handle.CreatePage)
-	adminPages.POST("/projects/create", handle.CreateProject)
+	adminPages.POST("/pages/create", builtin.CasbinMiddlewareForPath("/api/page/create"), handle.CreatePage)
+	adminPages.POST("/projects/create", builtin.CasbinMiddlewareForPath("/api/project/create"), handle.CreateProject)
 	// 全局块管理：页眉/页脚/区块（编辑进工作台；stale 传播在本模块编排）。
 	adminPages.GET("/blocks", handle.BlocksList)
-	adminPages.POST("/blocks/create", handle.CreateBlock)
-	adminPages.POST("/blocks/delete", handle.DeleteBlock)
+	adminPages.POST("/blocks/create", builtin.CasbinMiddlewareForPath("/api/block/create"), handle.CreateBlock)
+	adminPages.POST("/blocks/delete", builtin.CasbinMiddlewareForPath("/api/block/delete"), handle.DeleteBlock)
 	// 工作台保存块内容（保存后编排 stale 传播）。
-	adminPages.POST("/blocks/save-content", handle.SaveBlockContent)
+	adminPages.POST("/blocks/save-content", builtin.CasbinMiddlewareForPath("/api/block/update"), handle.SaveBlockContent)
 	// 媒体库（左树右库：分类树筛选 + WP 式网格/列表 + 详情编辑）。
 	adminPages.GET("/media", handle.MediaPage)
 	// 主题管理（多主题：列表/新建/激活/删除 + 单主题设置）。
 	adminPages.GET("/themes", handle.ThemeManage)
-	adminPages.POST("/themes/create", handle.CreateTheme)
-	adminPages.POST("/themes/activate", handle.ActivateTheme)
-	adminPages.POST("/themes/delete", handle.DeleteTheme)
+	adminPages.POST("/themes/create", builtin.CasbinMiddlewareForPath("/api/theme/create"), handle.CreateTheme)
+	adminPages.POST("/themes/activate", builtin.CasbinMiddlewareForPath("/api/theme/activate"), handle.ActivateTheme)
+	adminPages.POST("/themes/delete", builtin.CasbinMiddlewareForPath("/api/theme/delete"), handle.DeleteTheme)
 	adminPages.GET("/themes/settings", handle.ThemeSettings)
-	adminPages.POST("/themes/settings/save", handle.SaveThemeSettings)
+	adminPages.POST("/themes/settings/save", builtin.CasbinMiddlewareForPath("/api/theme/update"), handle.SaveThemeSettings)
 	// 旧单主题设置入口 → 新主题管理页。
 	adminPages.GET("/theme", handle.ThemeRedirect)
 	// 插件管理（列表/上传安装/启停/卸载，docs/06-plugin-system.md）。
 	adminPages.GET("/plugins", handle.PluginsPage)
-	adminPages.POST("/plugins/install", handle.PluginsInstall)
-	adminPages.POST("/plugins/toggle", handle.PluginsToggle)
-	adminPages.POST("/plugins/uninstall", handle.PluginsUninstall)
+	adminPages.POST("/plugins/install", builtin.CasbinMiddlewareForPath("/api/plugin/install"), handle.PluginsInstall)
+	adminPages.POST("/plugins/toggle", builtin.CasbinMiddlewareForPath("/api/plugin/toggle"), handle.PluginsToggle)
+	adminPages.POST("/plugins/uninstall", builtin.CasbinMiddlewareForPath("/api/plugin/uninstall"), handle.PluginsUninstall)
 }

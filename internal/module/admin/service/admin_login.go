@@ -54,7 +54,8 @@ func (s *Service) AdminLogin(ctx context.Context, req *admindto.AdminLoginReq, c
 	// 3) 检查是否被锁定
 	if entity.IsLocked() {
 		logger.Scene("admin").With("username", req.Username).With("reason", "账号已锁定").Warn("登录失败")
-		// key|param 协议：ErrAccountLocked 翻译模板含 %s，参数随错误消息传递（pkg/response 统一格式化）
+		// key|param 协议：ErrAccountLocked 翻译模板含 %s，参数随错误消息传递（pkg/response 统一格式化）。
+		// 区分锁定与凭据错误是产品设计（H1 回归测试锁定），账号枚举由验证码前置缓解。
 		return nil, fmt.Errorf("%s|%s", adminenums.ErrAccountLocked,
 			time.Until(*entity.LockedUntilTime).Round(time.Minute).String())
 	}
@@ -68,23 +69,24 @@ func (s *Service) AdminLogin(ctx context.Context, req *admindto.AdminLoginReq, c
 	// 5) 密码校验
 	if err := bcrypt.CompareHashAndPassword([]byte(entity.Password), []byte(req.Password)); err != nil {
 		logger.Scene("admin").With("username", req.Username).With("reason", "密码错误").Warn("登录失败")
-		recordLoginFailure(ctx, s.am, &entity)
+		if ferr := s.am.IncrementLoginFailure(ctx, entity.ID, loginFailureLockThreshold, loginFailureLockDuration); ferr != nil {
+			logger.Scene("admin").Error(ferr, "记录登录失败状态失败")
+		}
 		return nil, errors.New(adminenums.ErrBadCredentials)
 	}
 
-	// 6) 登录成功，清空失败状态，记录登录信息
-	now := time.Now()            //获取当前时间
-	entity.LoginFailureCount = 0 //登录失败次数清空为0
-	entity.LockedUntilTime = nil //清空封禁时间
-	entity.LastFailureTime = nil
-	entity.LastLoginTime = &now //设置登录时间
-	if clientIP != "" {
-		entity.LastLoginIP = &clientIP
+	// 6) 登录成功：原子清零失败状态，再记录登录信息
+	if err := s.am.ResetLoginFailure(ctx, entity.ID); err != nil {
+		return nil, err
 	}
-	if err := s.am.DB(ctx).Where("id = ?", entity.ID).Select(
-		"login_failure_count", "locked_until_time", "last_failure_time",
-		"last_login_time", "last_login_ip").
-		Updates(&entity).Error; err != nil {
+	now := time.Now() //获取当前时间
+	loginUpdate := map[string]any{"last_login_time": now}
+	if clientIP != "" {
+		loginUpdate["last_login_ip"] = clientIP
+	}
+	if err := s.am.DB(ctx).Where("id = ?", entity.ID).
+		Select("last_login_time", "last_login_ip").
+		Updates(loginUpdate).Error; err != nil {
 		return nil, err
 	}
 
@@ -216,25 +218,12 @@ func (s *Service) AdminProfile(ctx context.Context, userID uint64) (*admindto.Ad
 	}, nil
 }
 
-// recordLoginFailure 记录登录失败：累加次数，连续 5 次锁定 30 分钟。
-//
-// 失败锁定只写 locked_until_time，绝不修改 status：
+// 登录失败锁定阈值与时长：连续失败达到阈值锁定 30 分钟。
+// 锁定只写 locked_until_time，绝不修改 status：
 // status 表达管理员启用/禁用/封禁的管理状态，若被改为 Banned，
 // 30 分钟锁定过期后 IsActive() 仍为 false，账号将永久无法登录（DoS）。
 // IsLocked() 基于 locked_until_time 与当前时间比较，到期自动解锁。
-func recordLoginFailure(ctx context.Context, am *adminmodel.AdminModel, entity *adminmodel.AdminEntity) {
-	now := time.Now()
-	entity.LoginFailureCount++
-	entity.LastFailureTime = &now
-
-	if entity.LoginFailureCount >= 5 {
-		lockedUntil := now.Add(30 * time.Minute)
-		entity.LockedUntilTime = &lockedUntil
-	}
-
-	if err := am.DB(ctx).Where("id = ?", entity.ID).
-		Select("login_failure_count", "last_failure_time", "locked_until_time").
-		Updates(entity).Error; err != nil {
-		logger.Scene("admin").Error(err, "记录登录失败状态失败")
-	}
-}
+const (
+	loginFailureLockThreshold = 5
+	loginFailureLockDuration  = 30 * time.Minute
+)

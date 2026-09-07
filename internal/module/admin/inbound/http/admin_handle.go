@@ -89,9 +89,10 @@ func (h *Handle) AdminLogin(c *gin.Context) {
 		return
 	}
 
-	// 登录即生成 CSRF token，供后续 POST 写操作校验；
-	// token 必须随响应 data 返回，否则客户端拿不到 token，后台所有 POST 会被 CSRF 中间件 403
-	csrfToken, err := builtin.EnsureCSRFToken(c)
+	// 登录成功强制轮换 CSRF token（不复用匿名期 token，防预置 cookie 攻击），
+	// 供后续 POST 写操作校验；token 必须随响应 data 返回，否则客户端拿不到
+	// token，后台所有 POST 会被 CSRF 中间件 403。
+	csrfToken, err := builtin.RotateCSRFToken(c)
 	if err != nil {
 		r.ErrorWithMessage(c, 500, err.Error())
 		return

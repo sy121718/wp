@@ -21,10 +21,10 @@ func (s *Service) PermList(ctx context.Context, req *admindto.PermListReq) (res 
 		query = query.Where("module = ?", req.Module)
 	}
 	if req.Code != "" {
-		query = query.Where("permission_code LIKE ?", "%"+req.Code+"%")
+		query = query.Where("permission_code LIKE ? ESCAPE '\\'", "%"+adminmodel.EscapeLike(req.Code)+"%")
 	}
 	if req.APIPath != "" {
-		query = query.Where("api_path LIKE ?", "%"+req.APIPath+"%")
+		query = query.Where("api_path LIKE ? ESCAPE '\\'", "%"+adminmodel.EscapeLike(req.APIPath)+"%")
 	}
 	if req.Status != nil {
 		query = query.Where("status = ?", *req.Status)

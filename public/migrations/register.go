@@ -60,6 +60,9 @@ var blockCategorySQL string
 //go:embed 036_blueprint_navigation_permissions.sql
 var blueprintNavigationPermSQL string
 
+//go:embed 035_theme_permissions.sql
+var themePermSQL string
+
 func init() {
 	register(Migration{
 		Version:   "001-init-schema",
@@ -184,5 +187,13 @@ func init() {
 		TableName:    "sys_permission",
 		ConditionSQL: "SELECT COUNT(*) FROM sys_permission WHERE module IN ('blueprint','navigation')",
 		SQL:          blueprintNavigationPermSQL,
+	})
+
+	// 主题（Theme）权限 seed（project 模块下 theme 能力，此前无权限点体系）。
+	registerSeed(Seed{
+		Version:      "035-theme-permissions",
+		TableName:    "sys_permission",
+		ConditionSQL: "SELECT COUNT(*) FROM sys_permission WHERE permission_code LIKE 'project:theme_%'",
+		SQL:          themePermSQL,
 	})
 }

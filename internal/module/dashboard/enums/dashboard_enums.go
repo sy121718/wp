@@ -16,3 +16,6 @@ const MsgThemeSettingsTitle = "主题设置"
 
 // MsgBlocksTitle 全局块管理页标题。
 const MsgBlocksTitle = "全局块"
+
+// MsgInternalError 页面 handler 内部错误统一提示（禁止直出 err.Error() 泄露内部细节）。
+const MsgInternalError = "系统内部错误，请稍后重试"

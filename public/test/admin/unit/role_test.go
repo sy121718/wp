@@ -309,6 +309,9 @@ func TestRoleMenuSaveSuccess(t *testing.T) {
 	code := "rolemenu_" + uniq("")
 	roleID := createRole(t, e, "rm_"+uniq(""), "菜单角色")
 	permID := createPerm(t, e, code, "/api/rolemenu")
+	// 预置一个无关权限点拉高「覆盖全部启用权限点」的门槛（>1）：
+	// 测试环境权限点全集过小，仅授单个菜单会被超管保护误判为超管等价。
+	createPerm(t, e, "bg_"+uniq(""), "/api/background")
 	menuID := createMenuWithPerm(t, e, permID, code)
 
 	res, err := e.svc.RoleMenuSave(ctx, &admindto.RoleMenuSaveReq{

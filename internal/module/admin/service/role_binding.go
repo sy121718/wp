@@ -46,6 +46,10 @@ func (s *Service) RoleMenuList(ctx context.Context, req *admindto.RoleMenuListRe
 
 // RoleMenuSave 全量替换角色菜单授权。
 // 流程：menu_ids → permission_codes → [path, method, code] → Casbin ReplaceRolePermissions。
+//
+// 超管保护（审计项「RBAC 提权无超管保护」）：新授权权限点集合覆盖全部启用权限点
+// （目标角色将变为超管等价角色），或目标角色当前已是超管等价角色时，仅超管可操作——
+// 防止普通管理员给自己所在角色写入全量权限点完成提权。
 func (s *Service) RoleMenuSave(ctx context.Context, req *admindto.RoleMenuSaveReq) (res *admindto.RoleMenuSaveResp, err error) {
 	role, err := s.rm.GetByID(ctx, req.RoleID)
 	if err != nil {
@@ -58,6 +62,19 @@ func (s *Service) RoleMenuSave(ctx context.Context, req *admindto.RoleMenuSaveRe
 	// menu_ids → permission_codes
 	codes, err := s.GetPermissionCodesByIDs(ctx, req.MenuIDs)
 	if err != nil {
+		return nil, err
+	}
+
+	// 超管保护：新权限集是否覆盖全部启用权限点，目标角色当前是否已超管等价
+	willBeSuper, err := s.codesCoverAllEnabled(ctx, codes)
+	if err != nil {
+		return nil, err
+	}
+	roleSuper, err := s.roleHasSuperAdminPermission(ctx, []string{role.RoleCode})
+	if err != nil {
+		return nil, err
+	}
+	if err = s.requireSuperAdminForSensitiveTarget(ctx, req.OperatorID, willBeSuper || roleSuper); err != nil {
 		return nil, err
 	}
 

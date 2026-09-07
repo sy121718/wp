@@ -74,6 +74,22 @@ func GetCSRFToken(c *gin.Context) (string, error) {
 	return EnsureCSRFToken(c)
 }
 
+// RotateCSRFToken 强制生成新 CSRF token 并覆盖会话旧值（登录成功后调用）。
+//
+// 区别于 EnsureCSRFToken（存在即复用）：登录前的匿名会话可能已被攻击者
+// 预置 CSRF token（如子域 Set-Cookie 注入），复用旧值会让攻击者预知登录后的
+// CSRF token；登录成功必须轮换，使预置 token 失效。
+func RotateCSRFToken(c *gin.Context) (string, error) {
+	token, err := newCSRFToken()
+	if err != nil {
+		return "", err
+	}
+	if err := auth.SetSessionValue(c, csrfSessionKey, token); err != nil {
+		return "", err
+	}
+	return token, nil
+}
+
 // getCSRFToken 从 cookie session 读取已保存的 CSRF token，不存在返回空串。
 func getCSRFToken(c *gin.Context) string {
 	v, ok := auth.GetSessionValue(c, csrfSessionKey)
