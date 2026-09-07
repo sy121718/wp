@@ -1,6 +1,8 @@
 # 04 · 运行时能力与交付
 
 > 本文集中存放运行时层的动态能力协议（Runtime Fragment / Client Enhancement）、横切关注点（SEO / 安全 / 性能）、以及面向交付的内容（Phase 顺序、验收清单、迁移结论）。
+>
+> 能力规划（做哪些动态片段、商品场景落点、Jet 渲染演进、复用资产与数据绑定）见 [04-A-dynamic-capabilities.md](./04-A-dynamic-capabilities.md)。
 
 ## 1. 组件执行模型
 
