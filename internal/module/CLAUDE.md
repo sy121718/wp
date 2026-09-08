@@ -2,7 +2,7 @@
 
 `internal/module/` 存放业务模块代码。模块直接平铺在本目录下，不区分前后台。
 
-当前已有模块（2025-09 核对）：
+当前已有模块（2026-09 核对）：
 
 - `admin/` — 管理控制面大模块（管理员、角色、权限点、菜单、部门、数据权限）；模块内部同包直调，自包含装配，不拆子模块
 - `common/` — 公共业务能力（当前为验证码：标准库自绘 PNG 图片化，答案绝不下发）
@@ -13,13 +13,19 @@
 - `block/` — 全局块（页眉/页脚/区块）与 stale 传播编排
 - `artifact/` — Artifact 元数据与内容对象闭包
 - `publication/` — URL 占用、激活（两段式回执）、回滚
+- `content/` / `contenttemplate/` / `presentation/` — CMS 内容、版本化结构模板、自动发布实例
+- `blueprint/` — Page Document 初始化工具（用完即弃）
+- `navigation/` — 公开站点导航（与后台 `menu` 严格隔离）
+- `plugin/` — 插件体系
+- `runtimefragment/` — 白名单动态片段（无 contract，直挂访问面路由）
 
 > `build` 无独立模块目录：编译内核在 `internal/builder`，发布内核在 `internal/pipeline`。
-> 规划模块（0-A2 content/contenttemplate/presentation、0-B blueprint/component、0-C navigation、0-D runtimefragment）尚未落地，不预建空目录。
+> 模块落地后必须同步更新本列表与 `AGENTS.md`「模块现状」表，同一批提交完成，禁止「目录已存在、规则仍写未落地」的漂移。
 
 > 管理面六领域（管理员/角色/权限/菜单/部门/数据权限）已合并为 `admin` 大模块：
 > 每个领域占 model/dto/handle/service 下的一个文件（如 `role_model.go`、`role_crud.go`），
-> service 层同包互调，无跨模块契约与 setter 注入。新增管理面领域时沿用此模式。
+> service 层同包互调、无 setter 注入；`contract/` 预留对外能力，当前无外部消费者。
+> admin 的 service 层经 `DB(ctx)` 直查有明文豁免（见下方 model 层定位）。新增管理面领域时沿用此模式。
 
 ## 目录结构
 
@@ -49,7 +55,7 @@ module_name/
 
 - `contract/` — 只放本模块对外暴露的接口，不定义外部依赖接口
 - `inbound` — 承接外部调用
-- `service` — 实现本模块契约，可直接依赖其他模块的 `contract/`，禁止导入其他模块的 `service/model/dto`
+- `service` — 实现本模块契约，可直接依赖其他模块的 `contract/`（及不可变 `dto/`），禁止导入其他模块的 `service/model`（豁免规则见 model 层定位）
 - `outbound` — 按需增加，用于外部协议转换或适配（非必需目录）
 - `model` — 持久化模型与数据库访问
 - `dto` — 请求/响应结构
@@ -84,6 +90,7 @@ func SetupXxxRoutes(rg *gin.RouterGroup, db *gorm.DB, ...契约参数) {
 
 - `xxx_service.go` 只放 `Service` / `NewService()`
 - `Service` struct 只持有本模块 `model` + 契约接口，不持有 `*gorm.DB`
+- service 禁止调用 `model.DB(ctx)` 等裸句柄拼接查询；持久化唯一入口是 model 具名方法（admin 豁免，见 model 层定位）
 - 跨模块依赖直接注入目标模块的 `contract` 接口
 - 构造函数直接传参，不用 `Deps` 结构体（参数 ≤6 时直传）
 - 必须加编译期断言：`var _ <contract>.XXXService = (*Service)(nil)`
@@ -93,7 +100,7 @@ func SetupXxxRoutes(rg *gin.RouterGroup, db *gorm.DB, ...契约参数) {
 
 ## 编码风格
 
-- import 别名：`permissiondto`、`adminmodel`、`permissioncontract`
+- import 别名：`pagedto`、`adminmodel`、`pubcontract`、`pagemodel`（模式：`<模块名小写>dto/model/contract/enums`）
 - 函数签名使用命名返回值，`error` 放最后
 
 ## model
@@ -102,14 +109,18 @@ func SetupXxxRoutes(rg *gin.RouterGroup, db *gorm.DB, ...契约参数) {
 - 可放本模块固定常量（表名、状态值、API 路径）
 - 请求/响应结构放 `dto/`，不放入 `model/`
 - `DB(ctx)` 返回 `m.db.WithContext(ctx).Model(&Entity{})`
-- 禁止在 model 层写：条件筛选、分页、排序、聚合、多表关联
-- 不放业务规则
+- 查询条件、分页、排序以**参数**传入方法（仅限本模块表）；方法内不得写死业务条件，不得多表关联
+- 不放业务规则（状态机、归属校验等留在 service）
 
 ### model 层定位（Repository，非 DDD Domain Model）
 
-- ✅ 允许：单表 CRUD、单表聚合、单表内的原子组合操作（如全量替换 `Delete+Create` 在同一事务内）
-- ❌ 禁止：跨 model 调用、业务规则/决策（谁能删、状态机）、跨表事务（两个 model 各自开事务无法共享）
-- 跨表事务必须在 service 层编排：model 方法接受外部 `*gorm.DB`/`*gorm.Session`（或 model 暴露 `Transaction()` 透传），由 service 决定事务边界与回滚
+> 权威版本见 `AGENTS.md` §「model 层定位」；两处冲突时以 AGENTS.md 为准，本节保持同步摘录。
+
+- ✅ 允许：本模块表的 CRUD、聚合与**聚合内原子组合**（如全量替换 `Delete+Create` 在同一事务内）；查询条件以参数传入
+- ❌ 禁止：跨 model 调用、业务规则/决策（谁能删、状态机）、**跨聚合/跨模块事务**
+- 跨聚合/跨模块事务必须在 service 层编排：model 暴露 `Transaction()` 透传（或方法接受外部 `*gorm.DB`/`*gorm.Session`），由 service 决定事务边界与回滚
+- `DB(ctx)` 等裸 gorm 句柄是 model 内部实现细节，**只允许被本 model 的仓储方法消费**；service 禁止调用它拼接查询
+- 评审拦截项：`internal/module/*/service` 命中 `\.DB(ctx)` 或 `\.RevisionDB(ctx)` 即打回（含先存变量的写法）；**仅 admin 有明文豁免**（仅限本模块表、简单 CRUD；跨表事务仍须 `Transaction()` 编排），新增模块一律禁止直查
 
 ## outbound
 
@@ -124,17 +135,17 @@ func SetupXxxRoutes(rg *gin.RouterGroup, db *gorm.DB, ...契约参数) {
 ### 隔离机制
 
 ```text
-admin/service
-  ├── 持有 admin/model          → 只能碰本模块表
-  ├── 持有 contract.RoleReader  → 接口，不知道数据从哪来
-  └── 不持有 *gorm.DB           → 无法 .Table() 切表
+page/service
+  ├── 持有 pagemodel.Model                → 只能碰本模块表
+  ├── 持有 pubcontract.PublicationService → 接口，不知道数据从哪来
+  └── 不持有 *gorm.DB                     → 无法 .Table() 切表
 ```
 
 跨模块数据链路：
 
 ```text
-admin/service → 调 permission/contract.PermissionReader
-  → permission/service → permission/model → sys_permission
+page/service → 调 pubcontract.PublicationService
+  → publication/service → publication/model → publication 路由表
 ```
 
 这里强调的是依赖方向：调用方只依赖目标模块的 `contract`，目标模块自行负责其数据访问。
@@ -142,9 +153,8 @@ admin/service → 调 permission/contract.PermissionReader
 ### 规则
 
 - service 层禁止使用 `.Table()` / `.Model()` 切换到非本模块的表
-- model 的 `DB(ctx)` 已绑定本表，不得修改
-- 跨模块调用统一依赖目标模块的 `contract`
-- 调用方禁止直接导入目标模块的 `service`、`model`、`dto`
+- model 的 `DB(ctx)` 恒绑定本模块表（`WithContext + Model(&Entity{})`），不得重绑定到其他表；service 不得调用 `DB(ctx)`（见 model 层定位）
+- 跨模块调用统一依赖目标模块的 `contract`；跨模块可传递的数据类型是 `contract` 与**不可变 dto**（对齐 `AGENTS.md`「命名约束」），禁止导入目标模块的 `service`、`model`
 
 ## 装配
 
@@ -153,9 +163,10 @@ admin/service → 调 permission/contract.PermissionReader
 对于需要跨模块契约的模块，顶层 routes.go 在调用时从被依赖模块获取契约并传递过去：
 
 ```go
-permissionServices := permissionhttp.SetupPermissionRoutes(api, db)
-adminhttp.SetupAdminRoutes(api, db, permissionServices.Reader)
-```
+projectService := projecthttp.SetupProjectRoutes(authorizedAPI, db)
+blockSvc := blockhttp.SetupBlockRoutes(authorizedAPI, db, projectService)
+presentationSvc := presentationhttp.SetupPresentationRoutes(authorizedAPI, db, contentTemplateSvc, contentSvc)
+```（节选自 `internal/routers/routes.go`，与实际装配顺序一致）
 
 ## dto
 

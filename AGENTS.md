@@ -26,7 +26,7 @@ go_wp 是 `CMS + Visual Website Builder + Static Publishing Engine`。
 | Admin 交互 | HTMX（CDN） | 草稿、预览、构建、发布、回滚请求 |
 | 认证 | Session + Cookie（gin-contrib/sessions + Cookie 存储） | 替代旧 JWT 方案，HTMX 请求自动携带 Cookie |
 | 鉴权 | Casbin（自研 persist.Adapter） | Enforce(user_id, path, method)；业务 API 已挂载 |
-| 公开动态片段 | HTMX + Go Handler | 按 Registry capability 返回受控 HTML Fragment（规划态，暂无路由） |
+| 公开动态片段 | HTMX + Go Handler | 按 Registry capability 返回受控 HTML Fragment（`runtimefragment` 已落地，挂载 /fragment 类路由） |
 | 富文本编辑器 | TinyMCE（CDN） | 文章内容编辑 |
 | 数据库 | PostgreSQL（主库） | CMS 内容、Page 草稿、Artifact 元数据和依赖索引；MySQL 为历史兼容；SQLite/SQL Server 驱动已移除 |
 | 会话存储 | Redis（pkg/cache） | 用户会话、封禁标记、在线心跳（**Critical 组件，配置必须启用**） |
@@ -51,8 +51,8 @@ go vet ./...
 以下不变量贯穿全系统，违反任意一条即为设计缺陷。详细论证见 `docs/01-overview.md` 等文档。
 
 1. **控制面与访问面分离**：访客请求不查询数据库、不执行 Jet、不解释 AST。URL → 文件映射由 PublicationStore 文件系统状态决定，不由数据库指针决定。
-2. **两条发布路径共享同一管线**：Page（手工）已实现；PresentationInstance（自动）属规划态，落地后走同一 Publish Compiler → ArtifactStore → PublicationStore。
-3. **Blueprint 用完即弃，ContentTemplate 每次构建参与**：均属规划不变式（0-B/0-A2），尚未落地；Blueprint 只初始化 Page Document，后续修改不传播。
+2. **两条发布路径共享同一管线**：Page（手工）与 PresentationInstance（自动）均已实现，走同一 Publish Compiler → ArtifactStore → PublicationStore。
+3. **Blueprint 用完即弃，ContentTemplate 每次构建参与**（0-B/0-A2 不变式，blueprint/content/contenttemplate 已落地）：Blueprint 只初始化 Page Document，后续修改不传播。
 4. **Binding 不是 Query DSL**：Document 只保存白名单 FieldBinding / CollectionSource / MediaBinding，不能保存 SQL、过滤表达式或任意 endpoint。
 5. **确定性构建**：同一 Page Document + BuildContext + Registry + Compiler 产生相同 Artifact 字节（有 determinism/fuzz 测试背书）。
 6. **冻结边界不可越权**：每个模块、组件、协议都有明确的「负责 / 禁止」边界，详见 `docs/01-overview.md` §5 冻结边界速查。
@@ -81,7 +81,7 @@ Page Document     ≠ CMS Content
 Artifact          ≠ 可编辑源码
 ```
 
-## 模块现状（2025-09 核对）
+## 模块现状（2026-09 核对）
 
 ### 已实现模块
 
@@ -96,25 +96,24 @@ Artifact          ≠ 可编辑源码
 | `block` | 全局块（页眉/页脚/区块）与 stale 传播编排 | — |
 | `artifact` | Artifact 元数据与内容对象闭包（不可变写入、同版本重构建原地替换） | — |
 | `publication` | URL 占用、激活（两段式回执 pending→committed/rolled_back）、回滚 | — |
+| `content` | 固定 CMS 内容 | — |
+| `contenttemplate` | PresentationInstance DocumentSnapshot 的版本化结构模板 | — |
+| `presentation` | 自动发布实例（依赖 content/contenttemplate 契约，走同一发布管线） | 手工 Page |
+| `blueprint` | Page Document 初始化工具（用完即弃） | 构建期/运行时模板 |
+| `navigation` | 公开站点菜单（与后台 `menu` 严格隔离） | 管理后台权限菜单 |
+| `plugin` | 插件体系（组件注册、能力分层） | — |
+| `runtimefragment` | 白名单动态片段（HTMX Runtime Fragment） | — |
 
 > `build` 无独立模块目录：编译内核在 `internal/builder`，发布内核在 `internal/pipeline`。
 > `permission/role/menu/dept/datarule` 已并入 `admin` 大模块，不再独立。
-
-### 规划模块（未落地，不预建空目录）
-
-| Phase | 模块 | 职责 |
-|---|---|---|
-| 0-A2 | `content` / `contenttemplate` / `presentation` | 固定 CMS 内容 + 版本化结构模板 + 自动发布实例 |
-| 0-B | `blueprint` / `component` | Page 初始化工具 + 全局组件版本与策略 |
-| 0-C | `navigation` | 公开站点菜单（与后台 `menu` 严格隔离） |
-| 0-D | `runtimefragment` | 白名单动态片段 |
+> 模块落地后必须同步更新本表；新增模块代码与规则文件在同一批提交中更新，禁止出现「目录已存在、规则仍写未落地」的漂移。
 
 ### 命名约束
 
 - `menu` = 管理后台权限菜单；`navigation` = 公开站点导航，两者不可混用
 - `admin` = 管理控制面账号；未来访客账号必须另建领域模块
 - `build → artifact → publication` 是单向流水线，后者不得反向导入前者实现
-- 跨模块只使用 `contract` 和不可变 DTO，不得导入其他模块的 `service/model/dto`
+- 跨模块只使用 `contract` 和不可变 DTO；不得导入其他模块的 `service/model`（不可变 DTO 允许跨模块传递，对齐 `internal/module/CLAUDE.md` 表隔离约定）
 
 ## 核心约定
 
@@ -154,6 +153,7 @@ CSRF：HTMX 请求经 `<body hx-headers='{"X-CSRF-Token":"{{ .["csrf_token"] }}"
 | `/api/captcha`、`/api/admin/login` | 豁免 | 豁免 | 豁免 |
 | `/api/admin/*` 六领域 | ✅ | ✅ | ✅ |
 | `/api/{media,project,block,page,artifact,publication}/*` | ✅ | ✅ | ✅ |
+| `/api/{content,contenttemplate,presentation,blueprint,navigation,plugin}/*` | ✅ | ✅ | ✅ |
 | `/admin/*` 页面、`/`、`/workbench*` | ✅ | ✅ | —（页面路由） |
 
 Cookie 属性：`HttpOnly`、`Secure`（release 自动启用）、`SameSite=Lax`。
@@ -194,10 +194,15 @@ Cookie 属性：`HttpOnly`、`Secure`（release 自动启用）、`SameSite=Lax`
 
 `model` 是**表访问单元（Repository）**，不是 DDD Domain Model：
 
-- ✅ 允许：单表 CRUD、单表聚合、单表内的原子组合操作（如 `ReplaceByRuleID`）
-- ❌ 禁止：跨 model 调用、业务规则/决策（谁能删、状态机）、**跨表事务**（两个 model 各自开事务无法共享）
-- 跨表事务必须在 service 层编排：model 方法接受外部 `*gorm.DB`/`*gorm.Session`（或 model 暴露 `Transaction()` 透传），由 service 决定事务边界与回滚
+- ✅ 允许：本模块表的 CRUD、聚合与**聚合内原子组合**（如 `CreateWithRevision` 在同一事务内写 `pages` + `page_revisions`）；查询条件一律以参数传入，方法内不得写死业务条件
+- ❌ 禁止：跨 model 调用、业务规则/决策（谁能删、状态机）、**跨聚合/跨模块事务**
+- 跨聚合/跨模块事务必须在 service 层编排：model 暴露 `Transaction()` 透传（或方法接受外部 `*gorm.DB`/`*gorm.Session`），由 service 决定事务边界与回滚
+- `DB(ctx)` / `RevisionDB(ctx)` 等裸 gorm 句柄是 model 的**内部实现细节，只允许被本 model 的仓储方法消费**；service 禁止调用它们拼接查询
+- service 对持久化的唯一入口是 model 的具名方法；新增查询需求 = 给 model 加方法，而不是在 service 里写 `.Where().Create()`
+- 评审拦截项：`internal/module/*/service` 中命中 `\.DB(ctx)` 或 `\.RevisionDB(ctx)` 即打回（含先存变量的 `query := x.DB(ctx)` 写法；仅 admin 豁免，见下）
 - `contract/` 只放模块对外接口；`service` 依赖其他模块能力时直接引用对方 `contract`
+
+**admin 豁免条款**：`admin` 为管理面 CRUD 大模块（六领域合并、同包直调），service 层经 `DB(ctx)` 直查**明文豁免**。豁免边界：仅限 admin 模块、仅限本模块表、跨表事务仍须 `Transaction()` 编排、简单 CRUD 之外的业务查询仍走 model 方法。新增模块一律禁止直查。
 
 ## 测试
 

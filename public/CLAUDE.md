@@ -8,10 +8,14 @@
 public/
 ├── docs/              # 项目文档
 ├── logs/              # 运行日志目录
+├── migrations/        # 数据库版本化迁移 SQL（幂等，register.go 注册；见 AGENTS.md「数据库」）
+├── runtime/           # 运行时产物（激活站点等，勿手工修改）
 ├── storage/           # 静态文件目录
 │   ├── document/      # 文档类文件
 │   └── image/         # 图片类文件
-└── test/              # 单元测试与用例测试目录
+├── test/              # 单元测试与用例测试目录
+├── backup/            # 备份产物
+└── wp/                # 构建/发布相关产物目录
 ```
 
 ## 目录职责
