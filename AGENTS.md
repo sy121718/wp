@@ -225,6 +225,7 @@ Cookie 属性：`HttpOnly`、`Secure`（release 自动启用）、`SameSite=Lax`
 - `docs/03-pipeline.md` — 发布管线（§4.3/§5/§6.5/§9 已实现；§4.4/§7/§8 规划）
 - `docs/05-implementation-plan.md` — 阶段计划（阶段 0-3 已完成；4-7 待办）
 - `docs/06-plugin-system.md` — 插件体系规范（三级能力分层/双轨制/表扩展/样式引擎已落地；P1-P3 待做）
+- `docs/06-A-plugin-ecosystem-roadmap.md` — 插件生态路线图（本体收口/SEO 基建/首批插件清单/商品重轨+壳）
 - `docs/02-*` — 组件规格；`docs/03-A-workbench.md` — 工作台
 - `docs/04-B-dynamic-development-guide.md` — 动态能力开发指南（How-To：静态绑定/Fragment/Client Enhancement 三路径）
 - `docs/agents/` — Issue 追踪、Triage 标签、领域术语
