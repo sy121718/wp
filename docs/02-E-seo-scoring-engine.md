@@ -113,3 +113,76 @@ premium 包的正确用法：当**产品功能参考**（redirects/IndexNow/soci
 
 > 规则来源版权说明：rubric 出自本地 SEO 工作区（自有资产）；Yoast 规则采用「公开算法思想重写」
 > （关键词密度/Flesch/五点位均为公开方法论），不复制其代码。GPLv2 代码（若选路径 B）需单独法务评估。
+
+## 7. 开源算法印证对比（2026-09 调研）
+
+用业界公开算法交叉验证本地 rubric，确认无盲区、无孤例：
+
+| 维度 | 本地 rubric | Yoast（开源 content-analysis） | RankMath（公开文档） | Lighthouse SEO 类目 |
+|---|---|---|---|---|
+| 关键词密度 | 0.5–2.0% 满分，>3% 判 stuffing | 0.5–3.5% 区间评分（>3.5% 告警） | **1–1.5% 为宜**，强调自然语言 | —（不评） |
+| 关键词位置 | title/H1/首百词/URL/alt/meta 五点位 | 同五点位 + keyphrase density/distribution | 同（焦点词在 title/description/URL/首段） | — |
+| 标题长度 | 50–60 字符 + 低截断风险 | **像素宽度**（≤580px）而非字符数 | 50–60 字符 | 仅检查存在性 |
+| 标题结构 | 唯一 H1、层级递进 | 同 + H2/H3 数量基准 | 同 | — |
+| 可读性 | 阅读级别按受众 | **Flesch Reading Ease**（英文 60+） | 句长/段长/过渡词占比 | — |
+| 内容长度 | 按查询类型分档（1500+/1200+/500+） | 按页型 word count 基准 | ≥600 词起评（长文加分） | — |
+| 内外链 | 按篇幅基准表 | internal/external link count + nofollow 检查 | 内链外链数量 + dofollow | 仅查链接可爬（crawlable） |
+| 图片 | alt 覆盖率 + 文件大小分级 | alt 检查 | alt + 文件名 | — |
+| 技术项 | canonical/HTTPS/CWV | —（另在站点审计） | 站点级 SEO Analysis（40+ 测试） | **8 项技术**：title/meta 存在、robots.txt、canonical、hreflang、tap targets、字号、链接可爬、无插件依赖 |
+| 语义/LSI | 2–3 次级词 + 语义变体 | **prominent words**（重点词提取） | LSI 词建议（付费功能） | — |
+
+**印证结论**：
+
+1. rubric 与 Yoast/RankMath 在核心维度上**高度一致**，且 rubric 独有「按查询类型的内容长度分档 + 按页型调权 + WCAG 叠加」——比单家更完整，可直接当主规则源；
+2. 两处采纳更优实现：① 标题长度改用**像素宽**判定（Yoast 做法，字符数只是粗代理）；② 密度区间向 RankMath 收紧建议值（1–1.5% 为绿、2–3% 黄、>3% 红）；
+3. Lighthouse 的 8 项技术检查在 go_wp 全部是**构建期保证**（canonical/robots/链接可爬/字号/tap targets 由产物与主题决定），评分器按 §3.1 架构满分处理，不重复实现。
+
+## 8. rubric → Go 落地设计（怎么写进算法）
+
+rubric 本质是**表 + 线性加权公式**，天然适合表驱动纯函数实现：
+
+### 8.1 核心结构
+
+```go
+// internal/seo/scoring
+
+type PageType string // home | article | product | landing | local
+
+// Section 权重卡（rubric Weighted Scorecard 的直接映射，可按页型调权）
+type Section struct {
+    Key    string  // "title" | "meta" | "headings" | "content" | "keywords" | "links" | "images" | "tech"
+    Weight float64 // 0.15 / 0.05 / 0.10 / 0.25 / 0.15 / 0.10 / 0.10 / 0.10
+    Checks []Check
+}
+
+type Check struct {
+    Key       string
+    Score     func(in *Input) int   // 纯函数：0..max，无 IO
+    Max       int
+    Benchmark string               // "50-60 chars / ≤580px"，展示用
+    Hint      string               // 改进建议（rubric Resolution Playbook 映射）
+}
+
+// 总分：rubric 公式 Sum(section% × weight × 100)；等级 A+..F 同表
+func Score(in *Input, profile Profile) *Result
+
+type Profile struct {           // 按页型调权（rubric Weight Adjustments 表）
+    Type     PageType
+    Weights  map[string]float64  // 覆盖默认（商品页：images/tech ↑，content 长文 ↓）
+    LengthBy QueryIntent         // 内容长度分档（informational 1500+ / transactional 500+）
+}
+```
+
+### 8.2 落地三步
+
+1. **基准表数据化**：rubric 的四张基准表（长度分档/密度/内链/图片大小）写成 `benchmarks.go` 常量表——检查逻辑查表打分，改规则=改表不动代码；
+2. **检查函数纯化**：每个 Check 只读 `Input`（已抽取的文本统计），不做分词以外的 IO；中文适配点收拢在 `textstats.go`（分词计数/句长/字数），英文 Flesch 独立文件；
+3. **调权可解释**：`Profile` 覆盖默认权重时必须在结果里回显「本页型权重及理由」（rubric 要求 weight change 记录在报告里），侧栏展示。
+
+### 8.3 与 rubric 的差异登记
+
+| 点 | 处置 |
+|---|---|
+| 标题像素宽 | 字符数 + 像素宽双指标（像素宽用等宽近似表估算，编辑器实时预览为主） |
+| 密度区间 | 主判 0.5–2.0%（rubric），建议区 1–1.5%（RankMath 印证），>3% stuffing |
+| E-E-A-T / 意图匹配 | 非算法可判定项，不做自动评分——留给 Check 的 Hint 引导人工（诚实边界） |

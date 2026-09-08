@@ -226,6 +226,7 @@ Cookie 属性：`HttpOnly`、`Secure`（release 自动启用）、`SameSite=Lax`
 - `docs/05-implementation-plan.md` — 阶段计划（阶段 0-3 已完成；4-7 待办）
 - `docs/06-plugin-system.md` — 插件体系规范（三级能力分层/双轨制/表扩展/样式引擎已落地；P1-P3 待做）
 - `docs/06-A-plugin-ecosystem-roadmap.md` — 插件生态路线图（本体收口/SEO 基建/首批插件清单/商品重轨+壳）
+- `docs/06-B-dual-track-adr.md` — ADR：双轨制决策固化（分轨/admin 契约双口/商品定位/正文双视图单真源/SEO 分工）
 - `docs/02-*` — 组件规格；`docs/03-A-workbench.md` — 工作台
 - `docs/04-B-dynamic-development-guide.md` — 动态能力开发指南（How-To：静态绑定/Fragment/Client Enhancement 三路径）
 - `docs/02-E-seo-scoring-engine.md` — SEO 评分引擎（rubric 权重卡/Yoast 复用策略/自研计算器/执行计划）
