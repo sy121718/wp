@@ -17,6 +17,10 @@ import (
 	"github.com/spf13/viper"
 )
 
+// localProviderDefaultDir 本地存储默认根目录，与 provider 包 defaultLocalDir 同值
+// （provider 包未导出该常量，这里同步维护，LocalDir 未初始化兜底用）。
+const localProviderDefaultDir = "public/storage"
+
 var (
 	stateMu         sync.RWMutex
 	runtimeMu       sync.RWMutex
@@ -147,6 +151,22 @@ func IsInited() bool {
 	stateMu.RLock()
 	defer stateMu.RUnlock()
 	return inited
+}
+
+// LocalDir 返回本地存储根目录（local provider 的落盘根），供服务端生成衍生文件
+// （如媒体变体）直接写盘时定位存储路径——变体是受信的服务端产物，不经上传校验入口。
+// 与 provider/local.go Init 的解析逻辑保持一致：upload.local_dir 覆盖，默认 public/storage。
+// 未初始化（如单测环境）时返回默认值，避免空指针。
+func LocalDir() string {
+	stateMu.RLock()
+	v := configSource
+	stateMu.RUnlock()
+	if v != nil {
+		if dir := strings.TrimSpace(v.GetString("upload.local_dir")); dir != "" {
+			return filepath.Clean(dir)
+		}
+	}
+	return filepath.Clean(localProviderDefaultDir)
 }
 
 func Ready() error {

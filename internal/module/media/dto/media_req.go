@@ -36,3 +36,8 @@ type DetailReq struct {
 type DeleteReq struct {
 	ID uint64 `json:"id" binding:"required"`
 }
+
+// VariantsGenerateReq 重新生成图片变体（POST /api/media/variants/generate）。
+type VariantsGenerateReq struct {
+	ID uint64 `json:"id" binding:"required"`
+}

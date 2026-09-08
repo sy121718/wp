@@ -63,6 +63,15 @@ var blueprintNavigationPermSQL string
 //go:embed 035_theme_permissions.sql
 var themePermSQL string
 
+//go:embed 037_theme_active_unique.sql
+var themeActiveUniqueSQL string
+
+//go:embed 038_blocks_name_lower_unique.sql
+var blocksNameLowerUniqueSQL string
+
+//go:embed 048_media_variant.sql
+var mediaVariantSQL string
+
 func init() {
 	register(Migration{
 		Version:   "001-init-schema",
@@ -195,5 +204,38 @@ func init() {
 		TableName:    "sys_permission",
 		ConditionSQL: "SELECT COUNT(*) FROM sys_permission WHERE permission_code LIKE 'project:theme_%'",
 		SQL:          themePermSQL,
+	})
+
+	// 主题「同工程单激活」部分唯一索引（themes 表已由 020 创建，默认表存在检查会误跳过，
+	// 故用自定义 CheckSQL 按索引名判断是否存在）。
+	register(Migration{
+		Version:   "037-theme-active-unique",
+		TableName: "themes",
+		CheckSQL:  "SELECT COUNT(*) FROM pg_indexes WHERE schemaname = current_schema() AND tablename = ? AND indexname = 'uq_themes_project_active'",
+		SQL:       themeActiveUniqueSQL,
+	})
+
+	// blocks 表「同工程块名大小写不敏感」唯一索引（blocks 已由 021 创建，默认表存在检查会误跳过，
+	// 故用自定义 CheckSQL 按索引名判断是否存在）。
+	register(Migration{
+		Version:   "038-blocks-name-lower-unique",
+		TableName: "blocks",
+		CheckSQL:  "SELECT COUNT(*) FROM pg_indexes WHERE schemaname = current_schema() AND tablename = ? AND indexname = 'uq_blocks_project_name_lower'",
+		SQL:       blocksNameLowerUniqueSQL,
+	})
+
+	// 媒体图片变体表（thumb/medium/webp），同文件内附带 media 下载/变体接口权限点 seed。
+	// Migration 负责建表；Seed 由 RunSeeds 兜底保证权限点存在
+	// （DDL IF NOT EXISTS / INSERT NOT EXISTS 均幂等，重复执行安全）。
+	register(Migration{
+		Version:   "048-media-variant",
+		TableName: "sys_media_variant",
+		SQL:       mediaVariantSQL,
+	})
+	registerSeed(Seed{
+		Version:      "048-media-variant-permissions",
+		TableName:    "sys_permission",
+		ConditionSQL: "SELECT COUNT(*) FROM sys_permission WHERE permission_code IN ('media:download','media:download_batch','media:variants_generate')",
+		SQL:          mediaVariantSQL,
 	})
 }

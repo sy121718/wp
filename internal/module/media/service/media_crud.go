@@ -67,6 +67,11 @@ func (s *Service) Upload(ctx context.Context, file *multipart.FileHeader, catego
 		return nil, fmt.Errorf("%s: %w", mediaenums.ErrUploadFailed, err)
 	}
 
+	// 图片变体（048 改造）：图片类且非 svg/gif 时登记变体记录并投递异步生成任务；
+	// 变体任何失败一律降级（failed 记录/日志），不回滚主上传、不影响本响应。
+	s.EnsureVariantRecords(ctx, entity)
+	s.scheduleVariants(ctx, entity.ID)
+
 	return entityToResp(entity), nil
 }
 
@@ -81,6 +86,8 @@ func (s *Service) List(ctx context.Context, req *mediato.ListReq) (*mediato.List
 	for _, e := range list {
 		resps = append(resps, *entityToResp(&e))
 	}
+	// 变体状态批量填充（一次 IN 查询，避免 N+1；失败不影响列表主数据）。
+	s.fillVariants(ctx, resps)
 
 	return &mediato.ListResp{
 		Total: total,
@@ -99,7 +106,11 @@ func (s *Service) Detail(ctx context.Context, req *mediato.DetailReq) (*mediato.
 		}
 		return nil, err
 	}
-	return entityToResp(e), nil
+	resp := entityToResp(e)
+	// 详情填充变体状态（thumb/medium/webp 徽标数据源）。
+	list := []mediato.AttachmentResp{*resp}
+	s.fillVariants(ctx, list)
+	return &list[0], nil
 }
 
 // Delete 删除附件（软删除元数据）。

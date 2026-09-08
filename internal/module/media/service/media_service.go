@@ -11,9 +11,10 @@ var _ mediacontract.MediaService = (*Service)(nil)
 type Service struct {
 	am *mediamodel.AttachmentModel
 	cm *mediamodel.FileCategoryModel
+	vm *mediamodel.MediaVariantModel
 }
 
-// NewService 创建媒体服务。
-func NewService(am *mediamodel.AttachmentModel, cm *mediamodel.FileCategoryModel) *Service {
-	return &Service{am: am, cm: cm}
+// NewService 创建媒体服务（am/cm/vm 分别为附件、分类、变体表访问单元）。
+func NewService(am *mediamodel.AttachmentModel, cm *mediamodel.FileCategoryModel, vm *mediamodel.MediaVariantModel) *Service {
+	return &Service{am: am, cm: cm, vm: vm}
 }

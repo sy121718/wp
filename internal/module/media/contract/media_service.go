@@ -28,4 +28,11 @@ type MediaService interface {
 	UpdateAttachment(ctx context.Context, req *mediadto.AttachmentUpdateReq) error
 	// CategoryTree 获取文件分类树。
 	CategoryTree(ctx context.Context) ([]mediadto.CategoryTreeNode, error)
+	// GenerateVariants 同步生成/重新生成指定附件的全部图片变体（thumb/medium/webp），
+	// 供「重新生成」按钮与存量回填复用；返回生成后的变体状态列表。
+	GenerateVariants(ctx context.Context, attachmentID uint64) ([]mediadto.VariantResp, error)
+	// BuildDownloadPlan 构建单个附件的资源包（zip）打包计划。
+	BuildDownloadPlan(ctx context.Context, attachmentID uint64) (*mediadto.DownloadPlan, error)
+	// BuildBatchDownloadPlan 构建多个附件的资源包（zip）批量打包计划。
+	BuildBatchDownloadPlan(ctx context.Context, ids []uint64) (*mediadto.DownloadPlan, error)
 }

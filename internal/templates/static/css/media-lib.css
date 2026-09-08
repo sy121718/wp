@@ -160,3 +160,28 @@
 .media-tree-caret.is-collapsed::before { content: '▸'; }
 .media-tree-caret:empty { visibility: hidden; }
 .media-tree-children.is-collapsed { display: none; }
+/* ===== 媒体变体与批量下载（048 改造） ===== */
+.media-card-check {
+    position: absolute;
+    top: 6px;
+    left: 6px;
+    z-index: 2;
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+    accent-color: var(--c-primary, #2563eb);
+}
+.media-card { position: relative; }
+.media-variant-badges { display: flex; flex-wrap: wrap; gap: 4px; }
+.media-variant-badge {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 999px;
+    font-size: 11px;
+    line-height: 18px;
+    border: 1px solid transparent;
+}
+.media-variant-badge.is-pending { background: #f3f4f6; color: #6b7280; border-color: #e5e7eb; }
+.media-variant-badge.is-processing { background: #eff6ff; color: #2563eb; border-color: #bfdbfe; }
+.media-variant-badge.is-ready { background: #ecfdf5; color: #059669; border-color: #a7f3d0; }
+.media-variant-badge.is-failed { background: #fef2f2; color: #dc2626; border-color: #fecaca; }

@@ -22,12 +22,13 @@ func newMediaUnitService(t *testing.T) (*gorm.DB, *mediaservice.Service) {
 		t.Skipf("本地 PostgreSQL 不可用，跳过测试：%v", err)
 		return nil, nil
 	}
-	if err := db.AutoMigrate(&mediamodel.AttachmentEntity{}, &mediamodel.FileCategoryEntity{}); err != nil {
+	if err := db.AutoMigrate(&mediamodel.AttachmentEntity{}, &mediamodel.FileCategoryEntity{}, &mediamodel.MediaVariantEntity{}); err != nil {
 		t.Fatalf("AutoMigrate media 表失败: %v", err)
 	}
 	svc := mediaservice.NewService(
 		mediamodel.NewAttachmentModel(db),
 		mediamodel.NewFileCategoryModel(db),
+		mediamodel.NewMediaVariantModel(db),
 	)
 	return db, svc
 }

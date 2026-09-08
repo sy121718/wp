@@ -18,6 +18,7 @@
         tree: [],
         collapsed: {},   // 分类折叠状态（id -> true）
         selected: null,   // 详情侧栏附件
+        checked: {},      // 批量下载勾选集合（id -> true）
         counts: {}        // 分类 → 附件数（后续可按需扩展）
     };
 
@@ -111,6 +112,19 @@
         list.forEach(function (item) {
             var card = document.createElement('div');
             card.className = 'media-card';
+            // 批量下载勾选框（左上角，阻止冒泡避免打开详情）。
+            var check = document.createElement('input');
+            check.type = 'checkbox';
+            check.className = 'media-card-check';
+            check.title = '勾选后可批量下载';
+            check.checked = !!state.checked[item.id];
+            check.addEventListener('click', function (e) { e.stopPropagation(); });
+            check.addEventListener('change', function () {
+                if (check.checked) state.checked[item.id] = true;
+                else delete state.checked[item.id];
+                updateBatchBtn();
+            });
+            card.appendChild(check);
             var thumb = document.createElement('div');
             thumb.className = 'media-card-thumb';
             var imgUrl = M.thumbUrl(item);
@@ -136,6 +150,17 @@
         body.innerHTML = '';
         list.forEach(function (item) {
             var tr = document.createElement('tr');
+            var tdCheck = document.createElement('td');
+            var check = document.createElement('input');
+            check.type = 'checkbox';
+            check.checked = !!state.checked[item.id];
+            check.addEventListener('change', function () {
+                if (check.checked) state.checked[item.id] = true;
+                else delete state.checked[item.id];
+                updateBatchBtn();
+            });
+            tdCheck.appendChild(check);
+            tr.appendChild(tdCheck);
             var tdFile = document.createElement('td');
             tdFile.textContent = item.file_name || '';
             var tdCat = document.createElement('td');
@@ -237,6 +262,27 @@
             '<div>类型：' + M.typeLabel(item.file_type) + (item.mime_type ? '（' + item.mime_type + '）' : '') + '</div>' +
             '<div>大小：' + M.formatSize(item.file_size) + '</div>' +
             '<div>上传时间：' + M.formatTime(item.create_time) + '</div>';
+        // 变体状态徽标行（thumb/medium/webp），数据来自 detail 接口的 variants。
+        var variantRow = document.createElement('div');
+        variantRow.className = 'media-variant-badges';
+        meta.appendChild(variantRow);
+        function renderVariantBadges(variants) {
+            variantRow.innerHTML = '';
+            var labels = { thumb: '缩略图', medium: 'medium', webp: 'webp' };
+            var texts = { pending: '排队中', processing: '生成中', ready: '就绪', failed: '失败' };
+            (variants || []).forEach(function (v) {
+                var b = document.createElement('span');
+                b.className = 'media-variant-badge is-' + (v.status || 'pending');
+                b.title = (v.width && v.height ? v.width + '×' + v.height + ' ' : '') + M.formatSize(v.file_size);
+                b.textContent = (labels[v.variant_type] || v.variant_type) + '·' + (texts[v.status] || v.status);
+                variantRow.appendChild(b);
+            });
+        }
+        // 拉详情拿变体状态（列表项不含 variants）。
+        M.api('detail?id=' + item.id).then(function (fresh) {
+            item.variants = (fresh && fresh.variants) || [];
+            renderVariantBadges(item.variants);
+        }).catch(function () { /* 变体状态拉取失败不打断详情 */ });
         var urlRow = document.createElement('div');
         urlRow.className = 'media-detail-url';
         var urlInput = document.createElement('input'); urlInput.type = 'text'; urlInput.readOnly = true; urlInput.value = item.url || '';
@@ -275,6 +321,32 @@
         });
         actions.appendChild(saveBtn); actions.appendChild(delBtn);
         body.appendChild(actions);
+        // 变体与资源包操作（048 改造）。
+        var varActions = document.createElement('div');
+        varActions.className = 'media-detail-actions';
+        var dlBtn = document.createElement('button');
+        dlBtn.type = 'button'; dlBtn.className = 'btn btn-secondary';
+        dlBtn.textContent = '下载资源包';
+        dlBtn.title = '原图 + webp + 缩略图 + medium 打包 zip 下载';
+        dlBtn.addEventListener('click', function () {
+            window.open('/api/media/download?id=' + item.id, '_blank');
+        });
+        var regenBtn = document.createElement('button');
+        regenBtn.type = 'button'; regenBtn.className = 'btn';
+        regenBtn.textContent = '重新生成变体';
+        regenBtn.addEventListener('click', function () {
+            regenBtn.disabled = true; regenBtn.textContent = '生成中…';
+            M.api('variants/generate', { method: 'POST', body: { id: item.id } })
+                .then(function (variants) {
+                    alert('变体生成完成');
+                    renderVariantBadges(variants || []);
+                    loadList();
+                })
+                .catch(function (err) { alert(err.message); })
+                .finally(function () { regenBtn.disabled = false; regenBtn.textContent = '重新生成变体'; });
+        });
+        varActions.appendChild(dlBtn); varActions.appendChild(regenBtn);
+        body.appendChild(varActions);
     }
 
     // ---------- 上传 ----------
@@ -382,6 +454,12 @@
         // 视图切换。
         document.getElementById('ml-view-grid').addEventListener('click', function () { state.view = 'grid'; refreshView(); });
         document.getElementById('ml-view-list').addEventListener('click', function () { state.view = 'list'; refreshView(); });
+        // 批量下载（勾选 id 集合 → GET /api/media/download/batch?ids=1,2,3）。
+        document.getElementById('ml-batch-download').addEventListener('click', function () {
+            var ids = Object.keys(state.checked);
+            if (!ids.length) { alert('请先勾选要下载的图片'); return; }
+            window.open('/api/media/download/batch?ids=' + ids.join(','), '_blank');
+        });
         // 上传。
         document.getElementById('ml-upload-btn').addEventListener('click', openUpload);
         document.getElementById('ml-upload-close').addEventListener('click', closeUpload);
@@ -413,6 +491,14 @@
         document.getElementById('ml-view-grid').classList.toggle('is-active', state.view === 'grid');
         document.getElementById('ml-view-list').classList.toggle('is-active', state.view === 'list');
         loadList();
+    }
+
+    // updateBatchBtn 批量下载按钮随勾选数变化提示文案。
+    function updateBatchBtn() {
+        var btn = document.getElementById('ml-batch-download');
+        if (!btn) return;
+        var n = Object.keys(state.checked).length;
+        btn.textContent = n > 0 ? ('批量下载(' + n + ')') : '批量下载';
     }
 
     // ---------- 启动 ----------

@@ -26,12 +26,13 @@ func newMediaService(t *testing.T) (*gorm.DB, *mediaservice.Service) {
 	for _, stmt := range []string{
 		`CREATE TABLE sys_file_category (id BIGSERIAL PRIMARY KEY, category_name TEXT NOT NULL, category_code TEXT NOT NULL, parent_id INTEGER DEFAULT 0, sort_order INTEGER DEFAULT 0, icon TEXT, status INTEGER DEFAULT 1, create_by INTEGER, update_by INTEGER, create_time TIMESTAMPTZ, update_time TIMESTAMPTZ)`,
 		`CREATE TABLE sys_attachment (id BIGSERIAL PRIMARY KEY, category_id INTEGER, file_name TEXT NOT NULL, file_path TEXT NOT NULL, file_size INTEGER, file_type TEXT, mime_type TEXT, storage_type TEXT DEFAULT 'local', storage_path TEXT, url TEXT, md5 TEXT, extra_info TEXT, status INTEGER DEFAULT 1, create_by INTEGER, update_by INTEGER, create_time TIMESTAMPTZ, update_time TIMESTAMPTZ)`,
+		`CREATE TABLE sys_media_variant (id BIGSERIAL PRIMARY KEY, attachment_id INTEGER NOT NULL, variant_type TEXT NOT NULL, file_path TEXT NOT NULL, width INTEGER, height INTEGER, file_size INTEGER DEFAULT 0, mime_type TEXT, status TEXT NOT NULL DEFAULT 'pending', create_time TIMESTAMPTZ DEFAULT NOW(), update_time TIMESTAMPTZ, CONSTRAINT uq_media_variant_test UNIQUE (attachment_id, variant_type))`,
 	} {
 		if err := db.Exec(stmt).Error; err != nil {
 			t.Fatalf("创建测试表失败: %v", err)
 		}
 	}
-	return db, mediaservice.NewService(mediamodel.NewAttachmentModel(db), mediamodel.NewFileCategoryModel(db))
+	return db, mediaservice.NewService(mediamodel.NewAttachmentModel(db), mediamodel.NewFileCategoryModel(db), mediamodel.NewMediaVariantModel(db))
 }
 
 func seedAttachment(t *testing.T, db *gorm.DB, categoryID *uint64, name, fileType, mime string) uint64 {
@@ -39,16 +40,16 @@ func seedAttachment(t *testing.T, db *gorm.DB, categoryID *uint64, name, fileTyp
 	now := time.Now()
 	url := "/storage/test-" + name
 	e := &mediamodel.AttachmentEntity{
-		CategoryID: categoryID,
-		FileName:   name,
-		FilePath:   "test/" + name,
-		FileSize:   1024,
-		FileType:   fileType,
-		MimeType:   &mime,
+		CategoryID:  categoryID,
+		FileName:    name,
+		FilePath:    "test/" + name,
+		FileSize:    1024,
+		FileType:    fileType,
+		MimeType:    &mime,
 		StorageType: "local",
-		URL:        &url,
-		Status:     1,
-		CreateTime: now,
+		URL:         &url,
+		Status:      1,
+		CreateTime:  now,
 	}
 	if err := db.Create(e).Error; err != nil {
 		t.Fatalf("插入附件失败: %v", err)

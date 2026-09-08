@@ -13,6 +13,33 @@ type AttachmentResp struct {
 	MD5         string  `json:"md5"`
 	ExtraInfo   string  `json:"extra_info"`
 	CreateTime  string  `json:"create_time"`
+	// Variants 图片变体列表（仅图片类附件有值；非图片为空）。
+	Variants []VariantResp `json:"variants,omitempty"`
+}
+
+// VariantResp 图片变体响应（thumb/medium/webp 生成状态与结果）。
+type VariantResp struct {
+	VariantType string `json:"variant_type"`
+	Status      string `json:"status"`
+	FilePath    string `json:"file_path,omitempty"`
+	URL         string `json:"url,omitempty"`
+	FileSize    int64  `json:"file_size"`
+	Width       int    `json:"width"`
+	Height      int    `json:"height"`
+	MimeType    string `json:"mime_type,omitempty"`
+}
+
+// DownloadEntry 打包下载条目：Content 非空时直接写入字节（README 说明），否则读取本地 Path。
+type DownloadEntry struct {
+	Name    string `json:"name"`              // zip 内路径（已做安全化）
+	Path    string `json:"path,omitempty"`    // 本地文件绝对路径
+	Content string `json:"content,omitempty"` // 内联内容（README.txt）
+}
+
+// DownloadPlan 一次打包下载的完整计划，handler 据此流式写 zip（不落盘临时文件）。
+type DownloadPlan struct {
+	FileName string          `json:"file_name"`
+	Entries  []DownloadEntry `json:"entries"`
 }
 
 // ListResp 附件列表响应。
