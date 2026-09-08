@@ -148,6 +148,62 @@ builder（顶层编排）
 4. **builder 解耦**：`core` 只依赖 stdlib + jet，为未来抽库/开源铺路。
 5. **go 版本**：`go.mod` 声明 `go 1.26`，确认 vfox 管理的 Go 版本与之匹配（避免 CI/本地版本漂移）。
 
+### 5. awesome-go 候选库池（按需查阅，非引入计划）
+
+> 来源：[avelino/awesome-go](https://github.com/avelino/awesome-go)（183k stars，76 分类 / 3,100 条目），2026-09 针对本项目六个方向筛选。
+> 定位：**候选池**，不是引入计划——对应需求落地时再按图索骥，不做提前建设。
+> 重新获取清单：`gh api repos/avelino/awesome-go/readme --jq '.content' | base64 -d`。
+
+#### 5.1 现状锚点（避免重复推荐）
+
+| 项 | 状态 |
+|---|---|
+| `hibiken/asynq` | ✅ 已在用（v0.26.0，`pkg/queue` 封装，Build Worker 任务队列，见 §1 审计表） |
+| `alicebob/miniredis` | ✅ 已在用（测试 mock Redis） |
+| `go-playground/validator/v10` | ✅ 已在用（Gin binding） |
+| `google/uuid` | ✅ 已在用 |
+| `testify` | 未引入；遵守「不新增测试框架」约定，本池不推 |
+
+#### 5.2 六方向候选清单
+
+| 方向 | 候选库（均在 awesome-go 收录） | 用途与落点 | 触发时机 |
+|---|---|---|---|
+| 高并发 | `golang.org/x/sync`（errgroup/singleflight）、[ants](https://github.com/panjf2000/ants)、[conc](https://github.com/sourcegraph/conc) | singleflight 合并同 Page 重复构建；ants 控制构建 worker 并发度；conc 用于 workbench 批量操作 | Build Worker 并发化 / 构建去重时 |
+| 安全·防护 | [Coraza](https://github.com/corazawaf/coraza)、[teler-waf](https://github.com/kitabisa/teler-waf)、[Tollbooth](https://github.com/didip/tollbooth)、[ulule/limiter](https://github.com/ulule/limiter)、[unrolled/secure](https://github.com/unrolled/secure)、[redact](https://github.com/alesr/redact) | Coraza（OWASP CRS 兼容 WAF）或 teler-waf（IDS）挂 Gin 中间件；Tollbooth 限流；secure 补安全响应头；redact 防日志泄敏感字段 | content/多租户上线评估 WAF；限流可先行 |
+| 测试 | [testcontainers-go](https://github.com/testcontainers/testcontainers-go)、[goleak](https://github.com/uber-go/goleak)、[httpmock](https://github.com/jarcoal/httpmock) | testcontainers-go 拉真实 PG/Redis 容器跑 `public/test/` feature 链路，消除「环境缺失 t.Skip」；goleak 配 `-race` 查 goroutine 泄漏 | 测试基建强化时（收益最大项之一） |
+| 域名解析 | [miekg/dns](https://github.com/miekg/dns)、[lego](https://github.com/go-acme/lego) | 租户自定义域名绑定：miekg/dns 做 CNAME/记录校验，lego 走 DNS-01 签证书（100+ DNS 服务商） | 多租户自定义域名功能落地时 |
+| 证书自动签发 | [CertMagic](https://github.com/caddyserver/certmagic)、lego、[autocert](https://pkg.go.dev/golang.org/x/crypto/acme/autocert) | HTTPS 证书自动申请+续期；CertMagic 最省事（Caddy 同款内核），存储后端可接现有 Redis | 「不走 nginx 直接对外」启动时 |
+| 真 SSH 证书 | 榜内仅 [Wish](https://github.com/charmbracelet/wish)、[SFTPGo](https://github.com/drakkan/sftpgo)（SSH 服务框架，非 CA） | SSH CA 无收录项：底层 `golang.org/x/crypto/ssh`，完整 CA 用 smallstep/step-ca（榜外事实标准） | 确有 SSH 证书签发需求时 |
+
+#### 5.3 内嵌 Web（不走 nginx）——可行，架构契合
+
+访问面本就是 PublicationStore 静态文件 `http.Dir` 只读直出 + Go Handler 的 Runtime Fragment，无 nginx 动态能力依赖。Go 单二进制直接对外是成熟路线（Caddy 本身就是 Go 写的）。
+
+```text
+Gin / http.Server
+  + CertMagic        80/443 ACME 自动 HTTPS + OCSP stapling（存储后端接现有 Redis）
+  + quic-go          HTTP/3（可选）
+  + teler-waf/Coraza WAF（可选，评估后）
+  + Tollbooth        限流
+  + unrolled/secure  安全响应头
+```
+
+落地注意：
+
+1. HTTP-01 验证需 80 端口可达（`CAP_NET_BIND_SERVICE` 或端口映射）。
+2. 多实例部署时 CertMagic 证书存储必须共享——接现有 Redis 即可，不引新组件。
+3. TLS 终止从运维层移入应用层后，证书状态需经 `/readyz` 或日志暴露观测。
+
+#### 5.4 冻结边界（明确不引入）
+
+| 类别 | 榜内候选 | 不引入理由 |
+|---|---|---|
+| Web 框架 | Echo / Fiber / chi | 技术栈已冻结 Gin |
+| 模板引擎 | fasttemplate / gomponents 等 19 条 | 已定 Jet v6，且只在构建期运行 |
+| ORM | bob / bun（榜上评分高） | 已定 GORM，迁移成本与收益不成比 |
+| DI 框架 | wire / fx | `config.InitComponents()` 自研组件注册已覆盖 |
+| fail2ban 类 | BadActor 等 | 登录失败锁定已自研（`locked_until_time` 原子计数），不重复建设 |
+
 ---
 
 ## 待办优先级建议

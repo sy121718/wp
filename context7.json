@@ -1,24 +1,29 @@
 {
-  "version": "1.0",
-  "comment": "项目主要库的 context7 ID 映射。优先查本地，未命中再调 context7 API，查询后回填。",
+  "version": "1.1",
+  "comment": "项目主要库的 context7 ID 映射。优先查本地，未命中再调 context7 API，查询后回填。2026-09 对照 go.mod 全量核对：删除已移除的 golang-jwt/lumberjack；新增 tollbooth/testcontainers/goleak/uuid/imaging/nativewebp/gin-contrib-sessions。未收录说明：unrolled/secure 与 gorilla/sessions 在 context7 无条目（secure 配置自足看 README；sessions 查 gin-contrib-sessions 即可）；gorm 驱动文档并入 gorm 主条目；robfig/cron 仅作为 asynq 的 indirect 存在。",
   "libraries": {
     "gin": "/gin-gonic/gin",
     "gorm": "/go-gorm/gorm",
     "go-redis": "/redis/go-redis",
     "casbin": "/apache/casbin",
     "viper": "/spf13/viper",
-    "golang-jwt": "/golang-jwt/jwt",
     "validator": "/go-playground/validator",
     "asynq": "/hibiken/asynq",
     "zap": "/uber-go/zap",
-    "lumberjack": "/natefinch/lumberjack",
-    "cron": "/robfig/cron",
-    "gh": "/cli/cli",
     "miniredis": "/alicebob/miniredis",
     "jet": "/cloudykit/jet",
     "htmx": "/bigskysoftware/htmx",
     "tinymce": "/tinymce/tinymce-docs",
     "tailwindcss": "/tailwindlabs/tailwindcss.com",
-    "echarts": "/apache/echarts-doc"
+    "echarts": "/apache/echarts-doc",
+    "gh": "/cli/cli",
+    "cron": "/robfig/cron",
+    "tollbooth": "/didip/tollbooth",
+    "testcontainers-go": "/testcontainers/testcontainers-go",
+    "goleak": "/uber-go/goleak",
+    "uuid": "/google/uuid",
+    "imaging": "/disintegration/imaging",
+    "nativewebp": "/hugosmits86/nativewebp",
+    "gin-contrib-sessions": "/gin-contrib/sessions"
   }
 }
