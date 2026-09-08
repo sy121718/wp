@@ -47,11 +47,14 @@ type Store interface {
 }
 
 // MemoryStore 基于内存的验证码存储。
-// 启动后台协程每 5 分钟清理过期数据。
+// 启动后台协程每 5 分钟清理过期数据；Close 可停止该协程（幂等），
+// 避免进程内 Init/Close 循环遗留 goroutine（测试基建 goleak 泄漏检测）。
 type MemoryStore struct {
 	mu         sync.RWMutex
 	captchas   map[string]*Captcha
 	maxEntries int
+	stopCh     chan struct{}
+	stopOnce   sync.Once
 }
 
 // defaultMaxEntries MemoryStore 容量上限：防止匿名接口被脚本刷爆时
@@ -63,6 +66,7 @@ func NewMemoryStore() *MemoryStore {
 	store := &MemoryStore{
 		captchas:   make(map[string]*Captcha),
 		maxEntries: defaultMaxEntries,
+		stopCh:     make(chan struct{}),
 	}
 	go store.cleanup()
 	return store
@@ -102,16 +106,28 @@ func (s *MemoryStore) Delete(id string) {
 
 func (s *MemoryStore) cleanup() {
 	ticker := time.NewTicker(5 * time.Minute)
-	for range ticker.C {
-		s.mu.Lock()
-		now := time.Now()
-		for id, captcha := range s.captchas {
-			if captcha.ExpiresAt.Before(now) {
-				delete(s.captchas, id)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-s.stopCh:
+			return
+		case <-ticker.C:
+			s.mu.Lock()
+			now := time.Now()
+			for id, captcha := range s.captchas {
+				if captcha.ExpiresAt.Before(now) {
+					delete(s.captchas, id)
+				}
 			}
+			s.mu.Unlock()
 		}
-		s.mu.Unlock()
 	}
+}
+
+// Close 停止过期清理协程（幂等），供组件编排与测试收尾调用。
+func (s *MemoryStore) Close() error {
+	s.stopOnce.Do(func() { close(s.stopCh) })
+	return nil
 }
 
 // Config 验证码配置
@@ -318,10 +334,15 @@ func (s *CaptchaService) Verify(id, code string, clear bool) bool {
 	return true
 }
 
-// Close 关闭验证码服务，清空运行时状态。
+// Close 关闭验证码服务：先停止 MemoryStore 的过期清理协程，再清空运行时状态。
 func Close() error {
 	mu.Lock()
 	defer mu.Unlock()
+	if captchaService != nil {
+		if ms, ok := captchaService.store.(*MemoryStore); ok {
+			_ = ms.Close()
+		}
+	}
 	captchaService = nil
 	return nil
 }

@@ -53,6 +53,13 @@ func SetupRedisForTest(t *testing.T) error {
 	if addr == "" {
 		addr = DefaultTestRedisAddr
 	}
+	return SetupRedisForTestAt(t, addr)
+}
+
+// SetupRedisForTestAt 用显式 Redis 地址初始化测试用 cache（Redis）与 auth 组件，
+// 失败语义与 SetupRedisForTest 一致（support/testenv.go 容器回退路径复用）。
+func SetupRedisForTestAt(t *testing.T, addr string) error {
+	t.Helper()
 
 	cfg := viper.New()
 	cfg.Set("redis.addrs", []string{addr})

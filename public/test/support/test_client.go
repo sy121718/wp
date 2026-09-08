@@ -60,6 +60,13 @@ func SendRequest(engine *gin.Engine, options RequestOptions) (*httptest.Response
 		return nil, fmt.Errorf("创建请求失败: %w", err)
 	}
 
+	// http.NewRequest 不设置 RemoteAddr；按 RemoteAddr 解析客户端 IP 的中间件
+	// （如 tollbooth 限流）会因取不到 IP 而 fail-open 放行。此处模拟真实请求
+	// 的对端地址（TEST-NET 文档段），保证限流/审计类中间件在链路测试中生效。
+	if req.RemoteAddr == "" {
+		req.RemoteAddr = "192.0.2.1:1234"
+	}
+
 	for key, value := range options.Headers {
 		req.Header.Set(key, value)
 	}

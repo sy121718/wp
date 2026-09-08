@@ -10,7 +10,8 @@ package feature
 //   - 业务权限 seed 后：超管（is_admin=1）可访问已授权业务 API；urlCodeMap 收录业务路径
 //   - 非超管（is_admin=0，无任何策略）访问业务 API → 403 默认拒绝
 //
-// 依赖本地 PostgreSQL 与 Redis，任一不可用时整体 Skip（不 Fail）。
+// 依赖 PostgreSQL 与 Redis：本地可用优先本地，否则自动回退 testcontainers
+// 容器（support.AcquireTestEnv），两级均不可用时整体 Skip（不 Fail）。
 
 import (
 	"net/http"
@@ -20,6 +21,7 @@ import (
 	adminhttp "go_wp/internal/module/admin/inbound/http"
 	captcharouter "go_wp/internal/module/common/captcha/router"
 	projecthttp "go_wp/internal/module/project/inbound/http"
+	"go_wp/pkg/captcha"
 	pkgcasbin "go_wp/pkg/casbin"
 	"go_wp/pkg/response"
 	"go_wp/public/migrations"
@@ -38,9 +40,16 @@ const plainAdminUsername = "feature_plain_admin"
 func newAuthFeatureEngine(t *testing.T) (*gin.Engine, *support.AdminSession) {
 	t.Helper()
 
-	db, err := support.NewPGTestDB(t)
+	// 三级回退获取 PG + Redis 端点：本地优先 → Docker 容器 → Skip 兜底。
+	env, err := support.AcquireTestEnv(t)
 	if err != nil {
-		t.Skipf("跳过：本地 PostgreSQL 不可用（%v）", err)
+		t.Skipf("跳过：%v", err)
+	}
+
+	db, err := support.NewPGTestDBAt(t, env.PG)
+	if err != nil {
+		// 端点已经 AcquireTestEnv 探测就绪，此处失败视为测试自身问题。
+		t.Fatalf("创建隔离 PG schema 失败: %v", err)
 	}
 
 	engine, cleanup, err := support.SetupTestBootstrap(support.BootstrapOptions{
@@ -69,6 +78,8 @@ func newAuthFeatureEngine(t *testing.T) (*gin.Engine, *support.AdminSession) {
 				if err := pkgcasbin.Close(); err != nil {
 					t.Errorf("关闭 Casbin 失败: %v", err)
 				}
+				// 停止 captcha.Get() 自动初始化产生的过期清理协程（goleak 泄漏检测要求）。
+				_ = captcha.Close()
 			})
 			// 5) 测试专用路径 /api/ping（GET+POST）：直接写入超管策略，
 			//    避免 ReplaceUserPermissions 清空 seed 授权
@@ -120,9 +131,10 @@ func newAuthFeatureEngine(t *testing.T) (*gin.Engine, *support.AdminSession) {
 		}
 	})
 
-	if err := support.SetupRedisForTest(t); err != nil {
+	if err := support.SetupRedisForTestAt(t, env.RedisAddr); err != nil {
 		cleanup()
-		t.Skipf("跳过：%v", err)
+		// 端点已经 AcquireTestEnv 探测就绪，此处失败视为测试自身问题。
+		t.Fatalf("初始化测试 Redis 失败: %v", err)
 	}
 
 	sess, err := support.LoginAdminSession(t, engine, support.TestAdminUsername, support.TestAdminPassword)

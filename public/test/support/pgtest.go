@@ -56,6 +56,26 @@ type pgTestDB struct {
 	schema                             string
 }
 
+// PGEndpoint 一组 PG 连接参数（本地服务与 testcontainers 容器端点通用）。
+type PGEndpoint struct {
+	Host     string
+	Port     string
+	User     string
+	Password string
+	Database string
+}
+
+// localPGEndpoint 按现行约定读取本地 PG 连接参数（libpq 环境变量覆盖默认值）。
+func localPGEndpoint() PGEndpoint {
+	return PGEndpoint{
+		Host:     pgEnv("PGHOST", DefaultPGHost),
+		Port:     pgEnv("PGPORT", DefaultPGPort),
+		User:     pgEnv("PGUSER", DefaultPGUser),
+		Password: pgEnv("PGPASSWORD", DefaultPGPassword),
+		Database: pgEnv("PGDATABASE", DefaultPGDatabase),
+	}
+}
+
 // NewPGTestDB opens a dedicated, isolated postgres schema for one test.
 // It connects to PGDATABASE (default wp_test), creates a unique schema,
 // and returns a *gorm.DB whose search_path points at that schema so all
@@ -63,13 +83,15 @@ type pgTestDB struct {
 // Cleanup 通过 t.Cleanup 注册：DROP SCHEMA ... CASCADE 并回收连接。
 func NewPGTestDB(t *testing.T) (*gorm.DB, error) {
 	t.Helper()
+	return NewPGTestDBAt(t, localPGEndpoint())
+}
 
-	host := pgEnv("PGHOST", DefaultPGHost)
-	port := pgEnv("PGPORT", DefaultPGPort)
-	user := pgEnv("PGUSER", DefaultPGUser)
-	password := pgEnv("PGPASSWORD", DefaultPGPassword)
-	dbname := pgEnv("PGDATABASE", DefaultPGDatabase)
+// NewPGTestDBAt 与 NewPGTestDB 相同，但使用显式端点
+// （support/testenv.go 的容器回退路径复用；行为与原函数完全一致）。
+func NewPGTestDBAt(t *testing.T, ep PGEndpoint) (*gorm.DB, error) {
+	t.Helper()
 
+	host, port, user, password, dbname := ep.Host, ep.Port, ep.User, ep.Password, ep.Database
 	adminDB, err := gorm.Open(postgres.Open(pgDSN(host, port, user, password, dbname)), &gorm.Config{})
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrPGUnavailable, err)
