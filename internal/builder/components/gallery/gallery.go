@@ -403,7 +403,10 @@ func slideNum(n float64, def float64) string {
 	return strconv.FormatFloat(n, 'f', -1, 64)
 }
 
-// isSafeURL 链接安全（与 core url 控件同规则）。
+// isSafeURL 图片地址安全（仅 #//http(s)，有意排除 mailto/tel）。
+// 比 core.IsSafeURL（允许 mailto/tel）更严：图集 URL 语义是图片 src 或点击链接，
+// 不涉及邮件/电话协议。静态 Items 路径使用本函数；绑定解析路径（jet.go）按统一
+// 协议白名单走 core.IsSafeURL。
 func isSafeURL(s string) bool {
 	if len(s) > 500 {
 		return false

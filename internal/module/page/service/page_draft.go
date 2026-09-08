@@ -11,11 +11,11 @@ import (
 	"time"
 
 	"go_wp/internal/builder"
-	pagecontract "go_wp/internal/module/page/contract"
 	pagedto "go_wp/internal/module/page/dto"
 	pagemodel "go_wp/internal/module/page/model"
-	pubdto "go_wp/internal/module/publication/dto"
+	pubcontract "go_wp/internal/module/publication/contract"
 	"go_wp/internal/pipeline"
+	"go_wp/pkg/logger"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -64,7 +64,9 @@ func (s *Service) Create(ctx context.Context, req *pagedto.CreateReq) (res *page
 	if err = s.model.CreateWithRevision(ctx, page, revision); err != nil {
 		// 建页失败：释放已预留的路径，避免「路径占用残留但页面不存在」。
 		if s.routes != nil {
-			_ = s.routes.DeleteRoutesByPage(ctx, &pubdto.DeleteRoutesReq{ProjectID: page.ProjectID, PageID: page.ID})
+			if derr := s.routes.DeleteRoutesByPage(ctx, &pubcontract.DeleteRoutesReq{ProjectID: page.ProjectID, PageID: page.ID}); derr != nil {
+				logger.Scene("page").With("pageId", page.ID).Error(derr, "建页失败后释放预留路径失败")
+			}
 		}
 		return nil, mapPersistenceError(err)
 	}
@@ -78,7 +80,7 @@ func (s *Service) reservePath(ctx context.Context, projectID, path, pageID strin
 	if s.routes == nil {
 		return nil
 	}
-	err := s.routes.ReservePath(ctx, &pubdto.ReserveReq{ProjectID: projectID, Path: path, PageID: pageID})
+	err := s.routes.ReservePath(ctx, &pubcontract.ReserveReq{ProjectID: projectID, Path: path, PageID: pageID})
 	if err == nil {
 		return nil
 	}
@@ -142,7 +144,7 @@ func (s *Service) SaveDraft(ctx context.Context, req *pagedto.SaveDraftReq) (res
 	// 在此失败（RenameReserved 撞 newPath 唯一约束），草稿尚未提交，保持原路径
 	// 与版本不变（保留原三表事务的「路径冲突整体回滚」语义）。
 	if changedPath && s.routes != nil {
-		if rerr := s.routes.RenameReserved(ctx, &pubdto.RenameReservedReq{
+		if rerr := s.routes.RenameReserved(ctx, &pubcontract.RenameReservedReq{
 			ProjectID: page.ProjectID, PageID: page.ID,
 			OldPath: page.DraftPath, NewPath: path,
 		}); rerr != nil {
@@ -153,10 +155,12 @@ func (s *Service) SaveDraft(ctx context.Context, req *pagedto.SaveDraftReq) (res
 		path, doc, nextVersion, now, revision); err != nil {
 		// 草稿提交失败（版本冲突）：已迁移的 reserved 需回迁，保持路径占用与草稿一致。
 		if changedPath && s.routes != nil {
-			_ = s.routes.RenameReserved(ctx, &pubdto.RenameReservedReq{
+			if rerr := s.routes.RenameReserved(ctx, &pubcontract.RenameReservedReq{
 				ProjectID: page.ProjectID, PageID: page.ID,
 				OldPath: path, NewPath: page.DraftPath,
-			})
+			}); rerr != nil {
+				logger.Scene("page").With("pageId", page.ID).Error(rerr, "草稿提交失败后回迁保留路由失败")
+			}
 		}
 		return nil, mapPersistenceError(err)
 	}
@@ -292,6 +296,3 @@ func hash(data []byte) string {
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:])
 }
-
-// 保证编译期使用 page 模块对外契约。
-var _ pagecontract.PageService = (*Service)(nil)

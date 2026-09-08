@@ -7,6 +7,14 @@ import (
 	artifactdto "go_wp/internal/module/artifact/dto"
 )
 
+// 请求/响应 DTO 重导出：跨模块调用方只依赖 contract，不直接 import artifact/dto。
+type (
+	RecordReq     = artifactdto.RecordReq
+	DetailReq     = artifactdto.DetailReq
+	DetailByIDReq = artifactdto.DetailByIDReq
+	ArtifactResp  = artifactdto.ArtifactResp
+)
+
 // ArtifactService 不可变构建产物归档能力。
 type ArtifactService interface {
 	// Record 把已落盘的 pipeline Artifact 元数据与内容对象闭包写入数据库。

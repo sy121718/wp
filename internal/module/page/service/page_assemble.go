@@ -9,27 +9,50 @@ package pageservice
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"go_wp/internal/builder"
 	"go_wp/internal/builder/core"
-	blockdto "go_wp/internal/module/block/dto"
+	blockcontract "go_wp/internal/module/block/contract"
 	plugincontract "go_wp/internal/module/plugin/contract"
 	"go_wp/internal/pipeline"
 	"go_wp/internal/templates"
 	"go_wp/pkg/logger"
 )
 
+// errCompileFailed 标记编译阶段失败。compileDocument 以 %w 包裹，
+// 调用方经 errors.Is 区分「编译失败」与「组件模板加载/文档渲染失败」——
+// 预览需要据此分类 422（编译失败）与 500（其余内部错误），构建路径仅关心 err != nil。
+var errCompileFailed = errors.New("页面编译失败")
+
 // assembleCompile 装配感知编译：页眉块 + 页面主体 + 页脚块。
 // 内容引用面只存 URL 快照，构建期零解析（不查媒体库）。
 // 无绑定无引用时输出与默认编译字节一致（hash 兼容历史产物）；
 // 块文档缺失/非法降级为空片段，不阻塞构建主链。
+// 解析失败回退默认编译；解析成功则与预览共用 compileDocument 装配管线。
 func (s *Service) assembleCompile(ctx context.Context, docJSON []byte) ([]byte, error) {
 	page, err := builder.ParsePage(docJSON)
 	if err != nil {
 		logger.Scene("build").With("err", err).Warn("页面文档解析失败，回退默认编译")
 		return pipeline.DefaultCompile(ctx, docJSON)
 	}
+	html, err := s.compileDocument(ctx, page)
+	if err != nil {
+		if errors.Is(err, errCompileFailed) {
+			logger.Scene("build").Error(err, "页面编译失败")
+		}
+		return nil, err
+	}
+	return html, nil
+}
+
+// compileDocument 装配编译已解析的页面文档为完整 HTML 字节：
+// 组件模板 Set 选择（embed / CompositeSet）、BlockResolver/PluginResolver/
+// CollectionResolver/ThemeSettings 注入、Compile、页眉/页脚块内联、RenderDocument。
+// 解析由调用方负责（构建路径 ParsePage + 降级；预览路径 json.Unmarshal + 空文档检查）。
+// 编译失败以 %w 包裹 errCompileFailed，其余失败原样返回。
+func (s *Service) compileDocument(ctx context.Context, page *builder.Page) ([]byte, error) {
 	// 组件模板 Set：无插件走 embed 单例；有插件走 CompositeSet
 	//（内置 embed + 插件命名空间合并，docs/06 §7）。
 	asm := s.enabledAssembly(ctx)
@@ -57,15 +80,11 @@ func (s *Service) assembleCompile(ctx context.Context, docJSON []byte) ([]byte, 
 	}
 	compiled, err := builder.Compile(page, opts...)
 	if err != nil {
-		logger.Scene("build").Error(err, "页面编译失败")
-		return nil, err
+		return nil, fmt.Errorf("%w: %v", errCompileFailed, err)
 	}
-	structure, err := parseStructureBindings(docJSON)
-	if err != nil {
-		structure = builder.StructureBindings{}
-	}
-	headerHTML, headerCSS := s.compileBlockFragment(ctx, structure.HeaderBlockID)
-	footerHTML, footerCSS := s.compileBlockFragment(ctx, structure.FooterBlockID)
+	// 页眉/页脚块内联（settings.structure 绑定快照）：与预览/正式构建同源。
+	headerHTML, headerCSS := s.compileBlockFragment(ctx, page.Settings.Structure.HeaderBlockID)
+	footerHTML, footerCSS := s.compileBlockFragment(ctx, page.Settings.Structure.FooterBlockID)
 	// 页眉在主体前、页脚在主体后；三段 CSS 为独立规则集，顺序拼接。
 	compiled.HTML = headerHTML + compiled.HTML + footerHTML
 	compiled.CSS = headerCSS + compiled.CSS + footerCSS
@@ -77,6 +96,7 @@ func (s *Service) assembleCompile(ctx context.Context, docJSON []byte) ([]byte, 
 }
 
 // parseStructureBindings 从页面文档读取全局块绑定快照（无该键时返回零值）。
+// 供主题合并（mergeActiveTheme）读取页面级页眉/页脚覆盖使用。
 func parseStructureBindings(docJSON []byte) (b builder.StructureBindings, err error) {
 	var page struct {
 		Settings struct {
@@ -105,7 +125,7 @@ func (a blockResolverAdapter) ResolveBlockRoot(blockID string) ([]*core.Node, er
 			return nodes, nil
 		}
 	}
-	block, err := a.s.blocks.Detail(a.ctx, &blockdto.DetailReq{ID: blockID})
+	block, err := a.s.blocks.Detail(a.ctx, &blockcontract.DetailReq{ID: blockID})
 	if err != nil || block == nil {
 		return nil, fmt.Errorf("全局块 %s 不可用", blockID)
 	}

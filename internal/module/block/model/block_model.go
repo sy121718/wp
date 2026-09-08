@@ -66,6 +66,17 @@ func (m *Model) ListByProject(ctx context.Context, projectID, kind, category str
 	return list, err
 }
 
+// ExistsByName 判断工程下是否已存在同名块（大小写不敏感，参数化单条查询）。
+// 用于 Create 前判重：避免拉全量 Document(jsonb) 大字段后在内存 EqualFold。
+// 注意：并发下同名仍可能穿透（需 DB 唯一索引兜底，见 service 层说明）。
+func (m *Model) ExistsByName(ctx context.Context, projectID, name string) (exists bool, err error) {
+	var count int64
+	err = m.DB(ctx).
+		Where("project_id = ? AND LOWER(name) = LOWER(?)", projectID, name).
+		Count(&count).Error
+	return count > 0, err
+}
+
 // GetByID 按 ID 查询块。
 func (m *Model) GetByID(ctx context.Context, id string) (e *BlockEntity, err error) {
 	e = &BlockEntity{}

@@ -3,11 +3,12 @@ package projecthttp
 import (
 	"errors"
 	"net/http"
-	"strings"
 
 	projectcontract "go_wp/internal/module/project/contract"
 	projectdto "go_wp/internal/module/project/dto"
 	projectenums "go_wp/internal/module/project/enums"
+	projectservice "go_wp/internal/module/project/service"
+	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
 
 	"github.com/gin-gonic/gin"
@@ -32,7 +33,7 @@ func (h *Handle) Create(c *gin.Context) {
 	}
 	res, err := h.svc.Create(c.Request.Context(), &req)
 	if err != nil {
-		response.ErrorWithMessage(c, projectErrorStatus(err), err.Error())
+		projectError(c, err)
 		return
 	}
 	response.SuccessWithMessage(c, projectenums.MsgProjectCreated, res)
@@ -42,7 +43,7 @@ func (h *Handle) Create(c *gin.Context) {
 func (h *Handle) List(c *gin.Context) {
 	res, err := h.svc.List(c.Request.Context())
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusInternalServerError, err.Error())
+		projectError(c, err)
 		return
 	}
 	response.Success(c, res)
@@ -57,7 +58,7 @@ func (h *Handle) Detail(c *gin.Context) {
 	}
 	res, err := h.svc.Detail(c.Request.Context(), &req)
 	if err != nil {
-		response.ErrorWithMessage(c, projectErrorStatus(err), err.Error())
+		projectError(c, err)
 		return
 	}
 	response.Success(c, res)
@@ -72,18 +73,26 @@ func (h *Handle) Update(c *gin.Context) {
 	}
 	res, err := h.svc.Update(c.Request.Context(), &req)
 	if err != nil {
-		response.ErrorWithMessage(c, projectErrorStatus(err), err.Error())
+		projectError(c, err)
 		return
 	}
 	response.SuccessWithMessage(c, projectenums.MsgProjectUpdated, res)
 }
 
-func projectErrorStatus(err error) int {
-	if errors.Is(err, errors.New(projectenums.ErrProjectNotFound)) || strings.Contains(err.Error(), projectenums.ErrProjectNotFound) {
-		return http.StatusNotFound
+// projectError 将工程业务错误映射为响应状态码与文案：
+// 业务哨兵 → 对应 enums 文案；其余（基础设施故障）→ 兜底文案 + 日志留原文，
+// 不向客户端泄漏内部错误细节。
+func projectError(c *gin.Context, err error) {
+	status, message := http.StatusInternalServerError, projectenums.ErrProjectInternal
+	switch {
+	case errors.Is(err, projectservice.ErrProjectNotFound):
+		status, message = http.StatusNotFound, projectenums.ErrProjectNotFound
+	case errors.Is(err, projectservice.ErrInvalidName),
+		errors.Is(err, projectservice.ErrInvalidSettings),
+		errors.Is(err, projectservice.ErrInvalidParam):
+		status, message = http.StatusBadRequest, err.Error()
+	default:
+		logger.Scene("project").Error(err, "工程操作失败")
 	}
-	if strings.Contains(err.Error(), projectenums.ErrInvalidName) || strings.Contains(err.Error(), projectenums.ErrInvalidSettings) {
-		return http.StatusBadRequest
-	}
-	return http.StatusInternalServerError
+	response.ErrorWithMessage(c, status, message)
 }

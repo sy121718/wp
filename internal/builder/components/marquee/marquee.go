@@ -81,6 +81,9 @@ func (c *Component) Validate(node *core.Node, ids map[string]bool) (err error) {
 	if err = core.ValidateSpec(&p, node.ID); err != nil {
 		return err
 	}
+	if p.Gap != "" && !core.IsSafeCSSValue(p.Gap) {
+		return fmt.Errorf("节点 %s: 无效的内容间距: %q", node.ID, p.Gap)
+	}
 	return nil
 }
 
@@ -104,7 +107,7 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	}
 
 	gap := p.Gap
-	if gap == "" {
+	if gap == "" || !core.IsSafeCSSValue(gap) {
 		gap = "24px"
 	}
 

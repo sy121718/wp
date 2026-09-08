@@ -147,6 +147,11 @@ func validateExtra(p *Props, nodeID string) (err error) {
 	if p.Hover.Duration != "" && !core.IsSafeCSSValue(p.Hover.Duration) {
 		return fmt.Errorf("无效的过渡时长: %q", p.Hover.Duration)
 	}
+	for bp, h := range map[string]string{"desktop": p.Height.Desktop, "tablet": p.Height.Tablet, "mobile": p.Height.Mobile} {
+		if h != "" && !core.IsSafeCSSValue(h) {
+			return fmt.Errorf("无效的 %s 端固定高度: %q", bp, h)
+		}
+	}
 	if p.Binding != nil && p.Binding.Field != "" && !fieldPathRe.MatchString(p.Binding.Field) {
 		return fmt.Errorf("无效的绑定字段路径: %q", p.Binding.Field)
 	}
@@ -181,9 +186,10 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	if p.MaxWidth != "" {
 		desktop = append(desktop, core.CSSDecl("max-width", p.MaxWidth))
 	}
-	// 固定高度（三端独立）。
+	// 固定高度（三端独立）。编译期容错：非法值跳过声明（对齐「降级不阻断编译」，
+	// validateExtra 已在校验阶段拦截，此处为防御性兜底）。
 	appendHeight := func(target *[]string, h string) {
-		if h != "" {
+		if h != "" && core.IsSafeCSSValue(h) {
 			*target = append(*target, core.CSSDecl("height", h))
 		}
 	}

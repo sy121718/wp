@@ -144,6 +144,129 @@ func nodeViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeV
 	}
 }
 
+// ---- 公共收敛骨架 ----
+//
+// 28 个 xxxViewOf 的公共序列收敛为以下 helper（字节等价：仅抽取完全相同的公共子序列）：
+//   - decodeProps：props JSON 解码（返回 Props 值副本，与旧路径 var p P 一致）
+//   - advancedClasses：Advanced 通用层编译 + class 合并（customID 仅 adv != nil 时非空）
+//   - atomViewOf：纯叶子 Atom（BuildView(p) 无 error，有 Advanced 层，V 字段）
+//   - contentAtomViewOf：叶子 Atom（BuildView(p, content) 返回 (View, error)，有 Advanced 层）
+//   - leafViewOf：无 Advanced 层的叶子组件（BuildView(p) 无 error，无 CustomID）
+//
+// 特殊组件（button/container/image/gallery/slider/tabs/accordion/marquee/globalref）
+// 因拍平字段、递归 children、可见性分支或 BuildView 签名差异，保留独立实现。
+
+// decodeProps 解码节点 props 为组件 Props 值（空 props 返回零值，与旧路径一致）。
+func decodeProps[P any](node *core.Node) (P, error) {
+	var p P
+	if len(node.Props) > 0 {
+		if err := json.Unmarshal(node.Props, &p); err != nil {
+			return p, fmt.Errorf("节点 %s props 反序列化失败: %w", node.ID, err)
+		}
+	}
+	return p, nil
+}
+
+// advancedClasses 执行 Advanced 通用层编译并合并 class：返回 [NodeClass, extraClasses...]
+// 与 customID（adv == nil 时 extraClasses 为空、customID 为空串）。
+func advancedClasses[P any](node *core.Node, p *P, ctx *core.RenderContext) (classes []string, customID string) {
+	classes = []string{core.NodeClass(node.ID)}
+	if adv := core.AdvancedOf(p); adv != nil {
+		extra, id := core.CompileAdvanced(node.ID, adv, ctx.CSS)
+		classes = append(classes, extra...)
+		customID = id
+	}
+	return classes, customID
+}
+
+// atomViewOf 收敛纯叶子 Atom 组件模板：props 解码 → Advanced → CompileCSS → BuildView(p) → nodeView。
+// typeName 为组件类型常量，template 为模板名，compileCSS/buildView 为组件包导出函数。
+func atomViewOf[P any, V any](
+	node *core.Node,
+	topLevel bool,
+	ctx *core.RenderContext,
+	typeName, template string,
+	compileCSS func(id string, p *P, b *core.CSSBuckets),
+	buildView func(p *P) V,
+) (*nodeView, error) {
+	p, err := decodeProps[P](node)
+	if err != nil {
+		return nil, err
+	}
+	classes, customID := advancedClasses(node, &p, ctx)
+	compileCSS(node.ID, &p, ctx.CSS)
+	view := buildView(&p)
+	return &nodeView{
+		Type:     typeName,
+		Template: template,
+		NodeID:   node.ID,
+		Classes:  strings.Join(classes, " "),
+		CustomID: customID,
+		TopLevel: topLevel,
+		Props:    p,
+		V:        view,
+	}, nil
+}
+
+// contentAtomViewOf 收敛依赖 Content 的叶子 Atom 组件模板：
+// props 解码 → Advanced → CompileCSS → BuildView(p, content) → nodeView。
+func contentAtomViewOf[P any, V any](
+	node *core.Node,
+	topLevel bool,
+	ctx *core.RenderContext,
+	typeName, template string,
+	compileCSS func(id string, p *P, b *core.CSSBuckets),
+	buildView func(p *P, content core.ContentResolver) (V, error),
+) (*nodeView, error) {
+	p, err := decodeProps[P](node)
+	if err != nil {
+		return nil, err
+	}
+	classes, customID := advancedClasses(node, &p, ctx)
+	compileCSS(node.ID, &p, ctx.CSS)
+	view, err := buildView(&p, ctx.Content)
+	if err != nil {
+		return nil, fmt.Errorf("节点 %s: %w", node.ID, err)
+	}
+	return &nodeView{
+		Type:     typeName,
+		Template: template,
+		NodeID:   node.ID,
+		Classes:  strings.Join(classes, " "),
+		CustomID: customID,
+		TopLevel: topLevel,
+		Props:    p,
+		V:        view,
+	}, nil
+}
+
+// leafViewOf 收敛无 Advanced 层的叶子组件模板：
+// props 解码 → CompileCSS → BuildView(p) → nodeView（Classes 仅 NodeClass，无 CustomID）。
+func leafViewOf[P any, V any](
+	node *core.Node,
+	topLevel bool,
+	ctx *core.RenderContext,
+	typeName, template string,
+	compileCSS func(id string, p *P, b *core.CSSBuckets),
+	buildView func(p *P) V,
+) (*nodeView, error) {
+	p, err := decodeProps[P](node)
+	if err != nil {
+		return nil, err
+	}
+	compileCSS(node.ID, &p, ctx.CSS)
+	view := buildView(&p)
+	return &nodeView{
+		Type:     typeName,
+		Template: template,
+		NodeID:   node.ID,
+		Classes:  core.NodeClass(node.ID),
+		TopLevel: topLevel,
+		Props:    p,
+		V:        view,
+	}, nil
+}
+
 // buttonViewOf 转换 button 节点（对应 core.Atom 基座的 Render 流程）。
 func buttonViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeView, error) {
 	var p buttonPkg.Props
@@ -233,74 +356,12 @@ func containerViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*
 
 // headingViewOf 转换 heading 节点（对应 core.Atom 基座的 Render 流程）。
 func headingViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeView, error) {
-	var p headingPkg.Props
-	if len(node.Props) > 0 {
-		if err := json.Unmarshal(node.Props, &p); err != nil {
-			return nil, fmt.Errorf("节点 %s props 反序列化失败: %w", node.ID, err)
-		}
-	}
-
-	var extraClasses []string
-	var customID string
-	if adv := core.AdvancedOf(&p); adv != nil {
-		extraClasses, customID = core.CompileAdvanced(node.ID, adv, ctx.CSS)
-	}
-	classes := []string{core.NodeClass(node.ID)}
-	classes = append(classes, extraClasses...)
-
-	headingPkg.CompileCSS(node.ID, &p, ctx.CSS)
-
-	view, err := headingPkg.BuildView(&p, ctx.Content)
-	if err != nil {
-		return nil, fmt.Errorf("节点 %s: %w", node.ID, err)
-	}
-
-	return &nodeView{
-		Type:     headingPkg.Type,
-		Template: "heading",
-		NodeID:   node.ID,
-		Classes:  strings.Join(classes, " "),
-		CustomID: customID,
-		TopLevel: topLevel,
-		Props:    p,
-		V:        view,
-	}, nil
+	return contentAtomViewOf(node, topLevel, ctx, headingPkg.Type, "heading", headingPkg.CompileCSS, headingPkg.BuildView)
 }
 
 // textViewOf 转换 text 节点（对应 core.Atom 基座的 Render 流程）。
 func textViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeView, error) {
-	var p textPkg.Props
-	if len(node.Props) > 0 {
-		if err := json.Unmarshal(node.Props, &p); err != nil {
-			return nil, fmt.Errorf("节点 %s props 反序列化失败: %w", node.ID, err)
-		}
-	}
-
-	var extraClasses []string
-	var customID string
-	if adv := core.AdvancedOf(&p); adv != nil {
-		extraClasses, customID = core.CompileAdvanced(node.ID, adv, ctx.CSS)
-	}
-	classes := []string{core.NodeClass(node.ID)}
-	classes = append(classes, extraClasses...)
-
-	textPkg.CompileCSS(node.ID, &p, ctx.CSS)
-
-	view, err := textPkg.BuildView(&p, ctx.Content)
-	if err != nil {
-		return nil, fmt.Errorf("节点 %s: %w", node.ID, err)
-	}
-
-	return &nodeView{
-		Type:     textPkg.Type,
-		Template: "text",
-		NodeID:   node.ID,
-		Classes:  strings.Join(classes, " "),
-		CustomID: customID,
-		TopLevel: topLevel,
-		Props:    p,
-		V:        view,
-	}, nil
+	return contentAtomViewOf(node, topLevel, ctx, textPkg.Type, "text", textPkg.CompileCSS, textPkg.BuildView)
 }
 
 // imageViewOf 转换 image 节点（对应 core.Atom 基座的 Render 流程）。
@@ -344,68 +405,12 @@ func imageViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*node
 
 // dividerViewOf 转换 divider 节点（对应 core.Atom 基座的 Render 流程）。
 func dividerViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeView, error) {
-	var p dividerPkg.Props
-	if len(node.Props) > 0 {
-		if err := json.Unmarshal(node.Props, &p); err != nil {
-			return nil, fmt.Errorf("节点 %s props 反序列化失败: %w", node.ID, err)
-		}
-	}
-
-	var extraClasses []string
-	var customID string
-	if adv := core.AdvancedOf(&p); adv != nil {
-		extraClasses, customID = core.CompileAdvanced(node.ID, adv, ctx.CSS)
-	}
-	classes := []string{core.NodeClass(node.ID)}
-	classes = append(classes, extraClasses...)
-
-	dividerPkg.CompileCSS(node.ID, &p, ctx.CSS)
-
-	view := dividerPkg.BuildView(&p)
-
-	return &nodeView{
-		Type:     dividerPkg.Type,
-		Template: "divider",
-		NodeID:   node.ID,
-		Classes:  strings.Join(classes, " "),
-		CustomID: customID,
-		TopLevel: topLevel,
-		Props:    p,
-		V:        view,
-	}, nil
+	return atomViewOf(node, topLevel, ctx, dividerPkg.Type, "divider", dividerPkg.CompileCSS, dividerPkg.BuildView)
 }
 
 // spacerViewOf 转换 spacer 节点（对应 core.Atom 基座的 Render 流程）。
 func spacerViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeView, error) {
-	var p spacerPkg.Props
-	if len(node.Props) > 0 {
-		if err := json.Unmarshal(node.Props, &p); err != nil {
-			return nil, fmt.Errorf("节点 %s props 反序列化失败: %w", node.ID, err)
-		}
-	}
-
-	var extraClasses []string
-	var customID string
-	if adv := core.AdvancedOf(&p); adv != nil {
-		extraClasses, customID = core.CompileAdvanced(node.ID, adv, ctx.CSS)
-	}
-	classes := []string{core.NodeClass(node.ID)}
-	classes = append(classes, extraClasses...)
-
-	spacerPkg.CompileCSS(node.ID, &p, ctx.CSS)
-
-	view := spacerPkg.BuildView(&p)
-
-	return &nodeView{
-		Type:     spacerPkg.Type,
-		Template: "spacer",
-		NodeID:   node.ID,
-		Classes:  strings.Join(classes, " "),
-		CustomID: customID,
-		TopLevel: topLevel,
-		Props:    p,
-		V:        view,
-	}, nil
+	return atomViewOf(node, topLevel, ctx, spacerPkg.Type, "spacer", spacerPkg.CompileCSS, spacerPkg.BuildView)
 }
 
 // 以下 10 个 ViewOf 为新组件库补齐（对标 GrapesJS 组件生态），
@@ -413,298 +418,68 @@ func spacerViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nod
 // props 解码 → Advanced 编译 → 组件 CSS → BuildView → nodeView。
 
 func tableViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeView, error) {
-	var p tablePkg.Props
-	if len(node.Props) > 0 {
-		if err := json.Unmarshal(node.Props, &p); err != nil {
-			return nil, fmt.Errorf("节点 %s props 反序列化失败: %w", node.ID, err)
-		}
-	}
-	var extraClasses []string
-	var customID string
-	if adv := core.AdvancedOf(&p); adv != nil {
-		extraClasses, customID = core.CompileAdvanced(node.ID, adv, ctx.CSS)
-	}
-	classes := append([]string{core.NodeClass(node.ID)}, extraClasses...)
-	tablePkg.CompileCSS(node.ID, &p, ctx.CSS)
-	return &nodeView{Type: tablePkg.Type, Template: "table", NodeID: node.ID,
-		Classes: strings.Join(classes, " "), CustomID: customID, TopLevel: topLevel, Props: p, V: tablePkg.BuildView(&p)}, nil
+	return atomViewOf(node, topLevel, ctx, tablePkg.Type, "table", tablePkg.CompileCSS, tablePkg.BuildView)
 }
 
 func cardViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeView, error) {
-	var p cardPkg.Props
-	if len(node.Props) > 0 {
-		if err := json.Unmarshal(node.Props, &p); err != nil {
-			return nil, fmt.Errorf("节点 %s props 反序列化失败: %w", node.ID, err)
-		}
-	}
-	var extraClasses []string
-	var customID string
-	if adv := core.AdvancedOf(&p); adv != nil {
-		extraClasses, customID = core.CompileAdvanced(node.ID, adv, ctx.CSS)
-	}
-	classes := append([]string{core.NodeClass(node.ID)}, extraClasses...)
-	cardPkg.CompileCSS(node.ID, &p, ctx.CSS)
-	return &nodeView{Type: cardPkg.Type, Template: "card", NodeID: node.ID,
-		Classes: strings.Join(classes, " "), CustomID: customID, TopLevel: topLevel, Props: p, V: cardPkg.BuildView(&p)}, nil
+	return atomViewOf(node, topLevel, ctx, cardPkg.Type, "card", cardPkg.CompileCSS, cardPkg.BuildView)
 }
 
 func faqViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeView, error) {
-	var p faqPkg.Props
-	if len(node.Props) > 0 {
-		if err := json.Unmarshal(node.Props, &p); err != nil {
-			return nil, fmt.Errorf("节点 %s props 反序列化失败: %w", node.ID, err)
-		}
-	}
-	var extraClasses []string
-	var customID string
-	if adv := core.AdvancedOf(&p); adv != nil {
-		extraClasses, customID = core.CompileAdvanced(node.ID, adv, ctx.CSS)
-	}
-	classes := append([]string{core.NodeClass(node.ID)}, extraClasses...)
-	faqPkg.CompileCSS(node.ID, &p, ctx.CSS)
-	return &nodeView{Type: faqPkg.Type, Template: "faq", NodeID: node.ID,
-		Classes: strings.Join(classes, " "), CustomID: customID, TopLevel: topLevel, Props: p, V: faqPkg.BuildView(&p)}, nil
+	return atomViewOf(node, topLevel, ctx, faqPkg.Type, "faq", faqPkg.CompileCSS, faqPkg.BuildView)
 }
 
 func quoteViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeView, error) {
-	var p quotePkg.Props
-	if len(node.Props) > 0 {
-		if err := json.Unmarshal(node.Props, &p); err != nil {
-			return nil, fmt.Errorf("节点 %s props 反序列化失败: %w", node.ID, err)
-		}
-	}
-	var extraClasses []string
-	var customID string
-	if adv := core.AdvancedOf(&p); adv != nil {
-		extraClasses, customID = core.CompileAdvanced(node.ID, adv, ctx.CSS)
-	}
-	classes := append([]string{core.NodeClass(node.ID)}, extraClasses...)
-	quotePkg.CompileCSS(node.ID, &p, ctx.CSS)
-	return &nodeView{Type: quotePkg.Type, Template: "quote", NodeID: node.ID,
-		Classes: strings.Join(classes, " "), CustomID: customID, TopLevel: topLevel, Props: p, V: quotePkg.BuildView(&p)}, nil
+	return atomViewOf(node, topLevel, ctx, quotePkg.Type, "quote", quotePkg.CompileCSS, quotePkg.BuildView)
 }
 
 func countdownViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeView, error) {
-	var p countdownPkg.Props
-	if len(node.Props) > 0 {
-		if err := json.Unmarshal(node.Props, &p); err != nil {
-			return nil, fmt.Errorf("节点 %s props 反序列化失败: %w", node.ID, err)
-		}
-	}
-	var extraClasses []string
-	var customID string
-	if adv := core.AdvancedOf(&p); adv != nil {
-		extraClasses, customID = core.CompileAdvanced(node.ID, adv, ctx.CSS)
-	}
-	classes := append([]string{core.NodeClass(node.ID)}, extraClasses...)
-	countdownPkg.CompileCSS(node.ID, &p, ctx.CSS)
-	return &nodeView{Type: countdownPkg.Type, Template: "countdown", NodeID: node.ID,
-		Classes: strings.Join(classes, " "), CustomID: customID, TopLevel: topLevel, Props: p, V: countdownPkg.BuildView(&p)}, nil
+	return atomViewOf(node, topLevel, ctx, countdownPkg.Type, "countdown", countdownPkg.CompileCSS, countdownPkg.BuildView)
 }
 
 func iconViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeView, error) {
-	var p iconPkg.Props
-	if len(node.Props) > 0 {
-		if err := json.Unmarshal(node.Props, &p); err != nil {
-			return nil, fmt.Errorf("节点 %s props 反序列化失败: %w", node.ID, err)
-		}
-	}
-	var extraClasses []string
-	var customID string
-	if adv := core.AdvancedOf(&p); adv != nil {
-		extraClasses, customID = core.CompileAdvanced(node.ID, adv, ctx.CSS)
-	}
-	classes := append([]string{core.NodeClass(node.ID)}, extraClasses...)
-	iconPkg.CompileCSS(node.ID, &p, ctx.CSS)
-	return &nodeView{Type: iconPkg.Type, Template: "icon", NodeID: node.ID,
-		Classes: strings.Join(classes, " "), CustomID: customID, TopLevel: topLevel, Props: p, V: iconPkg.BuildView(&p)}, nil
+	return atomViewOf(node, topLevel, ctx, iconPkg.Type, "icon", iconPkg.CompileCSS, iconPkg.BuildView)
 }
 
 func badgeViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeView, error) {
-	var p badgePkg.Props
-	if len(node.Props) > 0 {
-		if err := json.Unmarshal(node.Props, &p); err != nil {
-			return nil, fmt.Errorf("节点 %s props 反序列化失败: %w", node.ID, err)
-		}
-	}
-	var extraClasses []string
-	var customID string
-	if adv := core.AdvancedOf(&p); adv != nil {
-		extraClasses, customID = core.CompileAdvanced(node.ID, adv, ctx.CSS)
-	}
-	classes := append([]string{core.NodeClass(node.ID)}, extraClasses...)
-	badgePkg.CompileCSS(node.ID, &p, ctx.CSS)
-	return &nodeView{Type: badgePkg.Type, Template: "badge", NodeID: node.ID,
-		Classes: strings.Join(classes, " "), CustomID: customID, TopLevel: topLevel, Props: p, V: badgePkg.BuildView(&p)}, nil
+	return atomViewOf(node, topLevel, ctx, badgePkg.Type, "badge", badgePkg.CompileCSS, badgePkg.BuildView)
 }
 
 func progressViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeView, error) {
-	var p progressPkg.Props
-	if len(node.Props) > 0 {
-		if err := json.Unmarshal(node.Props, &p); err != nil {
-			return nil, fmt.Errorf("节点 %s props 反序列化失败: %w", node.ID, err)
-		}
-	}
-	var extraClasses []string
-	var customID string
-	if adv := core.AdvancedOf(&p); adv != nil {
-		extraClasses, customID = core.CompileAdvanced(node.ID, adv, ctx.CSS)
-	}
-	classes := append([]string{core.NodeClass(node.ID)}, extraClasses...)
-	progressPkg.CompileCSS(node.ID, &p, ctx.CSS)
-	return &nodeView{Type: progressPkg.Type, Template: "progress", NodeID: node.ID,
-		Classes: strings.Join(classes, " "), CustomID: customID, TopLevel: topLevel, Props: p, V: progressPkg.BuildView(&p)}, nil
+	return atomViewOf(node, topLevel, ctx, progressPkg.Type, "progress", progressPkg.CompileCSS, progressPkg.BuildView)
 }
 
 func ratingViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeView, error) {
-	var p ratingPkg.Props
-	if len(node.Props) > 0 {
-		if err := json.Unmarshal(node.Props, &p); err != nil {
-			return nil, fmt.Errorf("节点 %s props 反序列化失败: %w", node.ID, err)
-		}
-	}
-	var extraClasses []string
-	var customID string
-	if adv := core.AdvancedOf(&p); adv != nil {
-		extraClasses, customID = core.CompileAdvanced(node.ID, adv, ctx.CSS)
-	}
-	classes := append([]string{core.NodeClass(node.ID)}, extraClasses...)
-	ratingPkg.CompileCSS(node.ID, &p, ctx.CSS)
-	return &nodeView{Type: ratingPkg.Type, Template: "rating", NodeID: node.ID,
-		Classes: strings.Join(classes, " "), CustomID: customID, TopLevel: topLevel, Props: p, V: ratingPkg.BuildView(&p)}, nil
+	return atomViewOf(node, topLevel, ctx, ratingPkg.Type, "rating", ratingPkg.CompileCSS, ratingPkg.BuildView)
 }
 
 func formViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeView, error) {
-	var p formPkg.Props
-	if len(node.Props) > 0 {
-		if err := json.Unmarshal(node.Props, &p); err != nil {
-			return nil, fmt.Errorf("节点 %s props 反序列化失败: %w", node.ID, err)
-		}
-	}
-	var extraClasses []string
-	var customID string
-	if adv := core.AdvancedOf(&p); adv != nil {
-		extraClasses, customID = core.CompileAdvanced(node.ID, adv, ctx.CSS)
-	}
-	classes := append([]string{core.NodeClass(node.ID)}, extraClasses...)
-	formPkg.CompileCSS(node.ID, &p, ctx.CSS)
-	return &nodeView{Type: formPkg.Type, Template: "form", NodeID: node.ID,
-		Classes: strings.Join(classes, " "), CustomID: customID, TopLevel: topLevel, Props: p, V: formPkg.BuildView(&p)}, nil
+	return atomViewOf(node, topLevel, ctx, formPkg.Type, "form", formPkg.CompileCSS, formPkg.BuildView)
 }
 
 // listViewOf 转换 list 节点（对应 Component.Render 流程，无 Advanced 层）。
 func listViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeView, error) {
-	var p listPkg.Props
-	if len(node.Props) > 0 {
-		if err := json.Unmarshal(node.Props, &p); err != nil {
-			return nil, fmt.Errorf("节点 %s props 反序列化失败: %w", node.ID, err)
-		}
-	}
-
-	listPkg.CompileCSS(node.ID, &p, ctx.CSS)
-	view := listPkg.BuildView(&p)
-
-	return &nodeView{
-		Type:     listPkg.Type,
-		Template: "list",
-		NodeID:   node.ID,
-		Classes:  core.NodeClass(node.ID),
-		TopLevel: topLevel,
-		Props:    p,
-		V:        view,
-	}, nil
+	return leafViewOf(node, topLevel, ctx, listPkg.Type, "list", listPkg.CompileCSS, listPkg.BuildView)
 }
 
 // infoboxViewOf 转换 infobox 节点（对应 Component.Render 流程，无 Advanced 层）。
 func infoboxViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeView, error) {
-	var p infoboxPkg.Props
-	if len(node.Props) > 0 {
-		if err := json.Unmarshal(node.Props, &p); err != nil {
-			return nil, fmt.Errorf("节点 %s props 反序列化失败: %w", node.ID, err)
-		}
-	}
-
-	infoboxPkg.CompileCSS(node.ID, &p, ctx.CSS)
-	view := infoboxPkg.BuildView(&p)
-
-	return &nodeView{
-		Type:     infoboxPkg.Type,
-		Template: "infobox",
-		NodeID:   node.ID,
-		Classes:  core.NodeClass(node.ID),
-		TopLevel: topLevel,
-		Props:    p,
-		V:        view,
-	}, nil
+	return leafViewOf(node, topLevel, ctx, infoboxPkg.Type, "infobox", infoboxPkg.CompileCSS, infoboxPkg.BuildView)
 }
 
 // socialbuttonsViewOf 转换 socialbuttons 节点（对应 Component.Render 流程，无 Advanced 层）。
 func socialbuttonsViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeView, error) {
-	var p socialbuttonsPkg.Props
-	if len(node.Props) > 0 {
-		if err := json.Unmarshal(node.Props, &p); err != nil {
-			return nil, fmt.Errorf("节点 %s props 反序列化失败: %w", node.ID, err)
-		}
-	}
-
-	socialbuttonsPkg.CompileCSS(node.ID, &p, ctx.CSS)
-	view := socialbuttonsPkg.BuildView(&p)
-
-	return &nodeView{
-		Type:     socialbuttonsPkg.Type,
-		Template: "socialbuttons",
-		NodeID:   node.ID,
-		Classes:  core.NodeClass(node.ID),
-		TopLevel: topLevel,
-		Props:    p,
-		V:        view,
-	}, nil
+	return leafViewOf(node, topLevel, ctx, socialbuttonsPkg.Type, "socialbuttons", socialbuttonsPkg.CompileCSS, socialbuttonsPkg.BuildView)
 }
 
 // videoViewOf 转换 video 节点（对应 Component.Render 流程，无 Advanced 层）。
 func videoViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeView, error) {
-	var p videoPkg.Props
-	if len(node.Props) > 0 {
-		if err := json.Unmarshal(node.Props, &p); err != nil {
-			return nil, fmt.Errorf("节点 %s props 反序列化失败: %w", node.ID, err)
-		}
-	}
-
-	videoPkg.CompileCSS(node.ID, &p, ctx.CSS)
-	view := videoPkg.BuildView(&p)
-
-	return &nodeView{
-		Type:     videoPkg.Type,
-		Template: "video",
-		NodeID:   node.ID,
-		Classes:  core.NodeClass(node.ID),
-		TopLevel: topLevel,
-		Props:    p,
-		V:        view,
-	}, nil
+	return leafViewOf(node, topLevel, ctx, videoPkg.Type, "video", videoPkg.CompileCSS, videoPkg.BuildView)
 }
 
 // counterViewOf 转换 counter 节点（对应 Component.Render 流程，无 Advanced 层）。
 func counterViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeView, error) {
-	var p counterPkg.Props
-	if len(node.Props) > 0 {
-		if err := json.Unmarshal(node.Props, &p); err != nil {
-			return nil, fmt.Errorf("节点 %s props 反序列化失败: %w", node.ID, err)
-		}
-	}
-
-	counterPkg.CompileCSS(node.ID, &p, ctx.CSS)
-	view := counterPkg.BuildView(&p)
-
-	return &nodeView{
-		Type:     counterPkg.Type,
-		Template: "counter",
-		NodeID:   node.ID,
-		Classes:  core.NodeClass(node.ID),
-		TopLevel: topLevel,
-		Props:    p,
-		V:        view,
-	}, nil
+	return leafViewOf(node, topLevel, ctx, counterPkg.Type, "counter", counterPkg.CompileCSS, counterPkg.BuildView)
 }
 
 // galleryViewOf 转换 gallery 节点（对应 core.Atom 基座的 Render 流程）。

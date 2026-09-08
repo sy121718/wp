@@ -125,6 +125,9 @@ func validateExtra(p *Props, nodeID string) (err error) {
 			}
 		}
 	}
+	if p.Action != "" && !core.IsSafeURL(p.Action) {
+		return fmt.Errorf("无效的提交地址: %q", p.Action)
+	}
 	return nil
 }
 

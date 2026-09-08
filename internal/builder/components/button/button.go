@@ -390,7 +390,10 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	}
 }
 
-// isSafeURL 外链白名单（与 url 控件同规则）。
+// isSafeURL 外链白名单（仅 http/https）。
+// 有意比 core.IsSafeURL（允许 mailto/tel/#/相对路径）更严：external 动作只收外链，
+// 站内路径/锚点/原生协议分别走 ActionInternal/ActionAnchor/ActionNative 独立分流，
+// 此处不得放宽，否则相对路径会绕过 internal 的白名单正则。
 func isSafeURL(s string) bool {
 	if len(s) > 500 {
 		return false

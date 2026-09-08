@@ -6,7 +6,7 @@ import (
 	"time"
 
 	pagedto "go_wp/internal/module/page/dto"
-	pubdto "go_wp/internal/module/publication/dto"
+	pubcontract "go_wp/internal/module/publication/contract"
 )
 
 // Delete 软删页面：deleted_at 置时间（审计留痕，行保留），并释放该页面
@@ -27,7 +27,7 @@ func (s *Service) Delete(ctx context.Context, req *pagedto.DeleteReq) (err error
 		return mapPersistenceError(err)
 	}
 	if s.routes != nil {
-		if rerr := s.routes.DeleteRoutesByPage(ctx, &pubdto.DeleteRoutesReq{
+		if rerr := s.routes.DeleteRoutesByPage(ctx, &pubcontract.DeleteRoutesReq{
 			ProjectID: page.ProjectID, PageID: req.ID,
 		}); rerr != nil {
 			return rerr

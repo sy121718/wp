@@ -41,11 +41,6 @@ func pluginViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nod
 			return nil, fmt.Errorf("节点 %s: 样式编译失败: %w", node.ID, serr)
 		}
 	}
-	if node.Hidden {
-		// 编辑期隐藏仅编辑器语义，编译产物不含（与内置组件一致：Hidden 不进产物）。
-		_ = node.Hidden
-	}
-
 	// 视图数据 V：默认 = props map（{{.V.field}}）；集合组件追加 .V.items 列表。
 	viewData := props
 	if spec.Collection != nil {

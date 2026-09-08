@@ -12,9 +12,9 @@ import (
 	"strings"
 
 	"go_wp/internal/builder"
-	blockdto "go_wp/internal/module/block/dto"
+	blockcontract "go_wp/internal/module/block/contract"
 	dashboardenums "go_wp/internal/module/dashboard/enums"
-	projectdto "go_wp/internal/module/project/dto"
+	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
 
@@ -37,7 +37,7 @@ type themeRow struct {
 type themeManageData struct {
 	Title             string
 	Menu              string
-	Projects          []projectdto.ProjectResp
+	Projects          []projectcontract.ProjectResp
 	SelectedProjectID string
 	Themes            []themeRow
 }
@@ -97,11 +97,12 @@ func (h *Handle) CreateTheme(c *gin.Context) {
 		c.String(http.StatusBadRequest, "工程与主题名称不能为空")
 		return
 	}
-	theme, err := h.projects.CreateTheme(c.Request.Context(), &projectdto.ThemeCreateReq{
+	theme, err := h.projects.CreateTheme(c.Request.Context(), &projectcontract.ThemeCreateReq{
 		ProjectID: projectID, Name: name,
 	})
 	if err != nil {
-		c.String(http.StatusBadRequest, err.Error())
+		logger.Scene("theme").Error(err, "创建主题失败")
+		c.String(http.StatusInternalServerError, dashboardenums.MsgInternalError)
 		return
 	}
 	// 回填：该工程 theme_id 为空的历史页面挂到新主题（失败不阻塞，可再次保存触发）。
@@ -125,8 +126,9 @@ func (h *Handle) ActivateTheme(c *gin.Context) {
 		c.String(http.StatusBadRequest, "缺少主题 id")
 		return
 	}
-	if err := h.projects.ActivateTheme(c.Request.Context(), &projectdto.ThemeActivateReq{ID: id}); err != nil {
-		c.String(http.StatusBadRequest, err.Error())
+	if err := h.projects.ActivateTheme(c.Request.Context(), &projectcontract.ThemeActivateReq{ID: id}); err != nil {
+		logger.Scene("theme").With("theme_id", id).Error(err, "激活主题失败")
+		c.String(http.StatusInternalServerError, dashboardenums.MsgInternalError)
 		return
 	}
 	// 激活已提交：取新激活主题的 ProjectID 与 Settings，编排刷新整站页面。
@@ -241,7 +243,8 @@ func (h *Handle) DeleteTheme(c *gin.Context) {
 		projectID = theme.ProjectID
 	}
 	if err := h.projects.DeleteTheme(c.Request.Context(), id); err != nil {
-		c.String(http.StatusBadRequest, err.Error())
+		logger.Scene("theme").With("theme_id", id).Error(err, "删除主题失败")
+		c.String(http.StatusInternalServerError, dashboardenums.MsgInternalError)
 		return
 	}
 	if projectID != "" {
@@ -385,7 +388,7 @@ func (h *Handle) loadThemeSettings(c *gin.Context, themeID string) *themeSetting
 	data.HeaderBlockID = s.HeaderBlockID
 	data.FooterBlockID = s.FooterBlockID
 	// 页眉/页脚绑定候选：本工程的页眉/页脚类全局块。
-	if blocks, err := h.blocks.List(ctx, &blockdto.ListReq{ProjectID: theme.ProjectID}); err == nil {
+	if blocks, err := h.blocks.List(ctx, &blockcontract.ListReq{ProjectID: theme.ProjectID}); err == nil {
 		data.HeaderBlocks = []blockOption{{ID: "", Name: "（未设置）"}}
 		data.FooterBlocks = []blockOption{{ID: "", Name: "（未设置）"}}
 		for _, b := range blocks {
@@ -506,10 +509,11 @@ func (h *Handle) SaveThemeSettings(c *gin.Context) {
 	}
 	// ParseThemeSettings 校验（IsSafeCSSValue 白名单，防 CSS 注入）；非法返回 400。
 	if _, err := builder.ParseThemeSettings(settingsJSON); err != nil {
-		c.String(http.StatusBadRequest, err.Error())
+		logger.Scene("theme").With("theme_id", themeID).Error(err, "主题设置校验失败")
+		c.String(http.StatusBadRequest, dashboardenums.MsgThemeSettingsInvalid)
 		return
 	}
-	if _, err := h.projects.UpdateTheme(c.Request.Context(), &projectdto.ThemeUpdateReq{
+	if _, err := h.projects.UpdateTheme(c.Request.Context(), &projectcontract.ThemeUpdateReq{
 		ID: themeID, Name: data.ThemeName, Settings: settingsJSON,
 	}); err != nil {
 		response.ErrorWithMessage(c, http.StatusInternalServerError, dashboardenums.MsgInternalError)

@@ -126,10 +126,31 @@ func resolveSourceContent(p *Props, content core.ContentResolver) (items []Item,
 		return nil, fmt.Errorf("解析绑定 %q 失败: %w", p.Binding.Field, err)
 	}
 	if v != "" {
-		return parseValues(v)
+		items, err = parseValues(v)
+		if err != nil {
+			return nil, err
+		}
+		return filterUnsafeItems(items), nil
 	}
 	if p.Binding.Placeholder != "" {
-		return []Item{{URL: p.Binding.Placeholder}}, nil
+		return filterUnsafeItems([]Item{{URL: p.Binding.Placeholder}}), nil
 	}
 	return nil, nil // 隐藏组件
+}
+
+// filterUnsafeItems 过滤 URL 未过协议校验的绑定项（对齐 button 组件「降级不阻断编译」：
+// 绑定值是 CMS 运行时数据，校验失败静默丢弃而非让整页编译失败）。
+// URL 失败丢弃整项；Link 失败降级为空（图仍显示，仅失去点击链接）。
+func filterUnsafeItems(items []Item) []Item {
+	out := make([]Item, 0, len(items))
+	for _, it := range items {
+		if it.URL == "" || !core.IsSafeURL(it.URL) {
+			continue
+		}
+		if it.Link != "" && !core.IsSafeURL(it.Link) {
+			it.Link = ""
+		}
+		out = append(out, it)
+	}
+	return out
 }

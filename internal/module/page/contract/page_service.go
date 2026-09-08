@@ -4,8 +4,35 @@ package pagecontract
 import (
 	"context"
 	"encoding/json"
+	"errors"
 
 	pagedto "go_wp/internal/module/page/dto"
+)
+
+// 请求/响应 DTO 重导出：跨模块调用方只依赖 contract，不直接 import page/dto。
+type (
+	CreateReq    = pagedto.CreateReq
+	SaveDraftReq = pagedto.SaveDraftReq
+	DetailReq    = pagedto.DetailReq
+	RevisionReq  = pagedto.RevisionReq
+	RevisionResp = pagedto.RevisionResp
+	DeleteReq    = pagedto.DeleteReq
+	PageResp     = pagedto.PageResp
+	BuildReq     = pagedto.BuildReq
+	PublishReq   = pagedto.PublishReq
+	RollbackReq  = pagedto.RollbackReq
+	UpdateURLReq = pagedto.UpdateURLReq
+	PublishResp  = pagedto.PublishResp
+)
+
+// 预览编译错误哨兵：dashboard 预览复用本契约的编译能力时，
+// 经 errors.Is 精确分类 HTTP 状态码（解析失败 400 / 编译失败 422 / 其余 500），
+// 文案由调用方（dashboard enums）自行下发，此处仅作错误类型标识。
+var (
+	// ErrPreviewInvalidDocument 预览文档解析失败（JSON 非法或空文档）。
+	ErrPreviewInvalidDocument = errors.New("预览文档解析失败")
+	// ErrPreviewCompileFailed 预览编译失败。
+	ErrPreviewCompileFailed = errors.New("预览编译失败")
 )
 
 // PageService 手工 Page 草稿、修订与发布管理能力。
@@ -17,6 +44,10 @@ type PageService interface {
 	SaveDraft(ctx context.Context, req *pagedto.SaveDraftReq) (res *pagedto.PageResp, err error)
 	ListRevisions(ctx context.Context, req *pagedto.RevisionReq) (res []pagedto.RevisionResp, err error)
 
+	// CompilePreview 基于未落盘文档 JSON 编译完整 HTML（预览专用：不落盘、不影响产物）。
+	// 复用正式构建同源编译管线；错误经 errors.Is 分类：
+	// ErrPreviewInvalidDocument（解析失败）/ ErrPreviewCompileFailed（编译失败）/ 其余为内部错误。
+	CompilePreview(ctx context.Context, docJSON []byte) (html []byte, err error)
 	// Build 基于当前草稿构建并暂存产物（不激活线上）。
 	Build(ctx context.Context, req *pagedto.BuildReq) (res *pagedto.PublishResp, err error)
 	// Publish 激活暂存产物。
@@ -35,6 +66,9 @@ type PageService interface {
 	RefreshStructureForTheme(ctx context.Context, themeID string, structure json.RawMessage) error
 	// MarkStaleForTheme 把挂在该主题下全部页面标记为待重建（页眉/页脚块内容变更后调用）。
 	MarkStaleForTheme(ctx context.Context, themeID string) error
+	// MarkStaleForBlock 把文档中经 core.globalref 引用或 settings.structure 页眉/页脚
+	// 自选绑定该块的页面标记为待重建（块内容变更后调用，与 MarkStaleForTheme 互补）。
+	MarkStaleForBlock(ctx context.Context, blockID string) error
 	// AttachThemeToUnassigned 把工程内未挂主题的页面挂到指定主题（工程首个主题创建后回填历史页面）。
 	AttachThemeToUnassigned(ctx context.Context, projectID, themeID string) error
 	// ReattachProjectPagesToTheme 把工程内全部页面（含已挂其他主题的）转挂到指定主题，

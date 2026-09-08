@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"regexp"
 
-	containerPkg "go_wp/internal/builder/components/container"
 	"go_wp/internal/builder/core"
 )
 
@@ -125,9 +124,9 @@ func validateSettings(s *PageSettings) (err error) {
 	return nil
 }
 
-// safeCSS 复用容器组件导出的 CSS 值白名单校验。
+// safeCSS CSS 值白名单校验（委托 core.IsSafeCSSValue，含 url 外联注入封禁）。
 func safeCSS(v string) bool {
-	return containerPkg.IsSafeCSSValue(v)
+	return core.IsSafeCSSValue(v)
 }
 
 // compileSettingsCSS 编译页面设置为 CSS：body 基底样式与版心约束。

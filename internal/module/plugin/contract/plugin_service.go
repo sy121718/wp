@@ -10,6 +10,16 @@ import (
 	"go_wp/internal/templates"
 )
 
+// 请求/响应 DTO 重导出：跨模块调用方只依赖 contract，不直接 import plugin/dto。
+type (
+	PluginResp       = plugindto.PluginResp
+	ToggleReq        = plugindto.ToggleReq
+	UninstallReq     = plugindto.UninstallReq
+	DetailReq        = plugindto.DetailReq
+	ComponentSummary = plugindto.ComponentSummary
+	PresetSummary    = plugindto.PresetSummary
+)
+
 // PluginService 插件管理契约：安装/列表/启停/卸载 + 编译装配查询。
 //
 // 编译装配（EnabledAssembly）供 dashboard 预览与 page 构建路径注入：

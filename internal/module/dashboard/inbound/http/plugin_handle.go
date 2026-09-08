@@ -8,8 +8,9 @@ import (
 	"io"
 	"net/http"
 
-	plugindto "go_wp/internal/module/plugin/dto"
+	plugincontract "go_wp/internal/module/plugin/contract"
 	pluginenums "go_wp/internal/module/plugin/enums"
+	"go_wp/pkg/logger"
 
 	"github.com/gin-gonic/gin"
 )
@@ -18,7 +19,7 @@ import (
 type pluginsPageData struct {
 	Title   string
 	Menu    string
-	Plugins []*plugindto.PluginResp
+	Plugins []*plugincontract.PluginResp
 	Error   string
 }
 
@@ -60,7 +61,8 @@ func (h *Handle) PluginsInstall(c *gin.Context) {
 		return
 	}
 	if _, err := h.plugins.Install(c.Request.Context(), data); err != nil {
-		c.String(http.StatusBadRequest, err.Error())
+		logger.Scene("plugin").Error(err, "插件安装失败")
+		c.String(http.StatusBadRequest, pluginenums.MsgInstallFailed)
 		return
 	}
 	c.Redirect(http.StatusSeeOther, "/admin/plugins")
@@ -72,9 +74,10 @@ func (h *Handle) PluginsToggle(c *gin.Context) {
 		c.String(http.StatusServiceUnavailable, "插件模块未装配")
 		return
 	}
-	req := &plugindto.ToggleReq{ID: c.PostForm("id"), Enabled: c.PostForm("enabled") == "true" || c.PostForm("enabled") == "on"}
+	req := &plugincontract.ToggleReq{ID: c.PostForm("id"), Enabled: c.PostForm("enabled") == "true" || c.PostForm("enabled") == "on"}
 	if err := h.plugins.Toggle(c.Request.Context(), req); err != nil {
-		c.String(http.StatusBadRequest, err.Error())
+		logger.Scene("plugin").With("plugin_id", req.ID).Error(err, "插件状态更新失败")
+		c.String(http.StatusBadRequest, pluginenums.ErrToggleFailed)
 		return
 	}
 	c.Redirect(http.StatusSeeOther, "/admin/plugins")
@@ -86,9 +89,10 @@ func (h *Handle) PluginsUninstall(c *gin.Context) {
 		c.String(http.StatusServiceUnavailable, "插件模块未装配")
 		return
 	}
-	req := &plugindto.UninstallReq{ID: c.PostForm("id")}
+	req := &plugincontract.UninstallReq{ID: c.PostForm("id")}
 	if err := h.plugins.Uninstall(c.Request.Context(), req); err != nil {
-		c.String(http.StatusBadRequest, err.Error())
+		logger.Scene("plugin").With("plugin_id", req.ID).Error(err, "插件卸载失败")
+		c.String(http.StatusBadRequest, pluginenums.ErrUninstallFailed)
 		return
 	}
 	c.Redirect(http.StatusSeeOther, "/admin/plugins")

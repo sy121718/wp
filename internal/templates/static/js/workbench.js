@@ -130,6 +130,10 @@
 
     /** 区块预设（预组合的全局 section，一键插入整个容器）。
      *  结构与 Page Document 一致：JSON AST 片段。 */
+
+    /** 容器嵌套最大深度（含节点自身），超出拒绝拖放/插入，防止无限嵌套。 */
+    var MAX_NEST_DEPTH = 8;
+
     function workbench() {
         return {
             pageId: meta.pageId,
@@ -459,7 +463,6 @@
             },
             insertComponent(item, targetID, placement) {
                 if (!item) return;
-                this.snapshot();
                 // 节点 ID 取类型末段（core.container→container；plugin.marketing.campaign_card
                 // →campaign_card），保证只含 [A-Za-z0-9_-]（后端 ValidateNodeID 白名单，
                 // 点号非法）。
@@ -472,6 +475,12 @@
                 };
                 var targetLocation = this.findLocation(targetID || this.selectedId);
                 var target = targetLocation && targetLocation.node;
+                // 嵌套深度守卫：插入容器内前校验（新节点为叶子，目标已满则拒绝）。
+                if (target && target.type === 'core.container' && placement !== 'before' && placement !== 'after' && this.maxDepth(target) >= MAX_NEST_DEPTH) {
+                    console.warn('嵌套层级超出限制（' + MAX_NEST_DEPTH + ' 层），已取消插入');
+                    return;
+                }
+                this.snapshot();
                 if (target && target.type === 'core.container' && placement !== 'before' && placement !== 'after') {
                     target.children = target.children || [];
                     target.children.push(node);
@@ -645,11 +654,26 @@
                 var self = this;
                 return (node.children || []).some(function (child) { return self.containsNode(child, id); });
             },
+            // maxDepth 统计某节点子树最大深度（叶子=1，含自身），用于限制容器嵌套层级。
+            maxDepth(node) {
+                if (!node || !(node.children && node.children.length)) return 1;
+                var self = this, max = 0;
+                node.children.forEach(function (c) {
+                    var d = self.maxDepth(c);
+                    if (d > max) max = d;
+                });
+                return 1 + max;
+            },
             moveNode(sourceID, targetID, placement) {
                 if (!sourceID || !targetID || sourceID === targetID) return;
                 var source = this.findLocation(sourceID);
                 var targetLocation = this.findLocation(targetID);
                 if (!source || !targetLocation || this.containsNode(source.node, targetID)) return;
+                // 嵌套深度守卫：拖入容器前校验，超限拒绝（防止无限嵌套）。
+                if (placement === 'inside' && this.maxDepth(targetLocation.node) + this.maxDepth(source.node) > MAX_NEST_DEPTH) {
+                    console.warn('嵌套层级超出限制（' + MAX_NEST_DEPTH + ' 层），已取消拖放');
+                    return;
+                }
                 this.snapshot();
                 source.siblings.splice(source.index, 1);
                 if (placement === 'inside' && targetLocation.node.type === 'core.container') {
@@ -1017,9 +1041,11 @@
                 if (!body) return;
                 var self = this;
                 body.innerHTML = '<p class="wb-empty">加载中…</p>';
+                var seq = (self._historyReq = (self._historyReq || 0) + 1);
                 fetch('/api/page/revision/list?pageId=' + encodeURIComponent(meta.pageId))
                     .then(function (r) { return r.json(); })
                     .then(function (j) {
+                        if (seq !== self._historyReq) return;
                         if (j.code && j.code >= 400) {
                             body.innerHTML = '<p class="wb-empty">' + (j.message || '加载失败') + '</p>';
                             return;
@@ -1061,7 +1087,7 @@
                             body.appendChild(row);
                         });
                     })
-                    .catch(function () { body.innerHTML = '<p class="wb-empty">加载失败</p>'; });
+                    .catch(function () { if (seq === self._historyReq) body.innerHTML = '<p class="wb-empty">加载失败</p>'; });
             },
             markTreeSelection() {
                 document.querySelectorAll('#wb-tree .wb-node').forEach(function (el) {
@@ -1147,7 +1173,7 @@
                             row.appendChild(nameSpan);
 
                             if (n.hidden) { var eh = document.createElement('span'); eh.textContent = '隐'; eh.className = 'wb-node-flag'; eh.title = '编辑期隐藏'; row.appendChild(eh); }
-                            if (n.locked) { var el = document.createElement('span'); el.textContent = '锁'; el.className = 'wb-node-flag'; eh.title = '已锁定'; row.appendChild(el); }
+                            if (n.locked) { var el = document.createElement('span'); el.textContent = '锁'; el.className = 'wb-node-flag'; el.title = '已锁定'; row.appendChild(el); }
 
                             // 右键菜单（对标 Elementor）：编辑/复制/粘贴/复制到此下/下方插入/删除。
                             row.addEventListener('contextmenu', function (event) {
@@ -1349,8 +1375,11 @@
                 (function assign(list) { (list || []).forEach(function (c) { c.id = self.newId(c.id || 'node'); assign(c.children); }); })([node]);
                 if (parentId) {
                     var parent = this.findNode(parentId);
-                    parent.children = parent.children || [];
-                    parent.children.push(node);
+                    if (!parent) { this.doc.root.push(node); }
+                    else {
+                        parent.children = parent.children || [];
+                        parent.children.push(node);
+                    }
                 } else { this.doc.root.push(node); }
                 if (this.clipboard.mode === 'cut') { this.removeById(this.clipboard.node.id); this.clipboard = null; }
                 this.renderTree(); this.refreshCanvas();
@@ -1888,6 +1917,15 @@
                         }
                     });
                 }
+                // renderIcon 安全渲染图标：仅白名单（WPIcons.names）名走 innerHTML（SVG 来自常量），
+                // 其余（自定义/未知名）退回 textContent，杜绝非白名单值注入。
+                function renderIcon(el, name, fallback) {
+                    if (name && window.WPIcons && window.WPIcons.names && window.WPIcons.names.indexOf(name) >= 0) {
+                        el.innerHTML = window.WPIcons.svg(name);
+                    } else {
+                        el.textContent = (name || fallback || '');
+                    }
+                }
                 // iconFilterBar 图标选择器工具栏：搜索框 + 分类标签。
                 // names 为可用图标名全集（可能是 opts.names 子集）；onchange 在筛选状态变化时回调。
                 // 返回 { el, filtered() }：el 为工具栏 DOM，filtered() 返回按当前分类+关键词筛选后的图标名。
@@ -1964,7 +2002,7 @@
                     var btn = document.createElement('button');
                     btn.type = 'button';
                     btn.className = 'wb-icon-pop';
-                    btn.innerHTML = (current && window.WPIcons) ? window.WPIcons.svg(current) : (current || '＋');
+                    renderIcon(btn, current, '＋');
                     btn.title = '选择图标';
                     // 浮层。
                     var pop = document.createElement('div');
@@ -1973,20 +2011,28 @@
                     var grid = document.createElement('div');
                     grid.className = 'wb-icon-grid';
                     var toolbar = iconFilterBar(names, buildGrid);
+                    // 命名 closer：仅在浮层打开时挂载，关闭即解绑，避免每次构建累积 document 级监听器。
+                    function onDocClick(ev) {
+                        if (!pop.contains(ev.target) && ev.target !== btn) closePop();
+                    }
+                    function closePop() {
+                        pop.style.display = 'none';
+                        document.removeEventListener('click', onDocClick);
+                    }
                     function buildGrid() {
                         grid.innerHTML = '';
                         var cur = current;
                         if (opts.allowEmpty) {
                             var n0 = document.createElement('button'); n0.type='button'; n0.className='wb-icon-cell'+(cur===''?' is-active':'');
-                            n0.textContent='无'; n0.addEventListener('click', function(){ pop.style.display='none'; onPick(''); });
+                            n0.textContent='无'; n0.addEventListener('click', function(){ closePop(); onPick(''); });
                             grid.appendChild(n0);
                         }
                         toolbar.filtered().forEach(function(nm){
                             var b=document.createElement('button'); b.type='button';
                             b.className='wb-icon-cell'+(cur===nm?' is-active':'');
                             b.title=window.WPIcons?window.WPIcons.label(nm):nm;
-                            b.innerHTML=window.WPIcons?window.WPIcons.svg(nm):'';
-                            b.addEventListener('click', function(){ pop.style.display='none'; onPick(nm); });
+                            renderIcon(b, nm, '');
+                            b.addEventListener('click', function(){ closePop(); onPick(nm); });
                             grid.appendChild(b);
                         });
                     }
@@ -1994,14 +2040,12 @@
                     pop.appendChild(toolbar.el);
                     pop.appendChild(grid);
                     btn.addEventListener('click', function(){
-                        pop.style.display = (pop.style.display==='none') ? 'block' : 'none';
-                        if (pop.style.display==='block') buildGrid();
+                        if (pop.style.display === 'block') { closePop(); return; }
+                        pop.style.display = 'block';
+                        buildGrid();
+                        document.addEventListener('click', onDocClick);
                     });
-                    // 点击别处关闭。
-                    document.addEventListener('click', function closer(ev){
-                        if (!pop.contains(ev.target) && ev.target!==btn) { pop.style.display='none'; }
-                    });
-                    return { btn: btn, pop: pop, refresh: function(v){ current=v; if(window.WPIcons) btn.innerHTML=window.WPIcons.svg(v); } };
+                    return { btn: btn, pop: pop, refresh: function(v){ current=v; renderIcon(btn, v, '＋'); } };
                 }
 
                 // iconPicker 视觉化图标选择：SVG 网格点选（无文字按钮）。
@@ -2028,7 +2072,7 @@
                             b.type = 'button';
                             b.className = 'wb-icon-cell' + (current === name ? ' is-active' : '');
                             b.title = window.WPIcons ? window.WPIcons.label(name) : name;
-                            b.innerHTML = window.WPIcons ? window.WPIcons.svg(name) : '';
+                            renderIcon(b, name, '');
                             b.addEventListener('click', function () {
                                 current = name;
                                 commit(path, name);
@@ -2681,12 +2725,14 @@
                 if (!grid) return;
                 var self = this;
                 grid.innerHTML = '<p class="wb-empty">加载中…</p>';
+                var seq = (self._mediaReq = (self._mediaReq || 0) + 1);
                 var qs = 'page=1&limit=120';
                 if (self._mediaCategory > 0) qs += '&category_id=' + self._mediaCategory;
                 if (self._mediaSearch) qs += '&search=' + encodeURIComponent(self._mediaSearch);
                 fetch('/api/media/list?' + qs)
                     .then(function (r) { return r.json(); })
                     .then(function (j) {
+                        if (seq !== self._mediaReq) return;
                         grid.innerHTML = '';
                         var list = (j.data && j.data.list) || [];
                         self._mediaCache = list;
@@ -2716,7 +2762,7 @@
                             grid.appendChild(cell);
                         });
                     })
-                    .catch(function () { grid.innerHTML = '<p class="wb-empty">加载失败</p>'; });
+                    .catch(function () { if (seq === self._mediaReq) grid.innerHTML = '<p class="wb-empty">加载失败</p>'; });
             },
             uploadMedia(file) {
                 if (!file) return;

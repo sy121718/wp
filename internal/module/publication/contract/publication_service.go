@@ -7,6 +7,18 @@ import (
 	pubdto "go_wp/internal/module/publication/dto"
 )
 
+// 请求/响应 DTO 重导出：跨模块调用方只依赖 contract，不直接 import publication/dto。
+type (
+	ActivateReq       = pubdto.ActivateReq
+	DeactivateReq     = pubdto.DeactivateReq
+	RedirectReq       = pubdto.RedirectReq
+	RenameReservedReq = pubdto.RenameReservedReq
+	ReserveReq        = pubdto.ReserveReq
+	DeleteRoutesReq   = pubdto.DeleteRoutesReq
+	IsOccupiedReq     = pubdto.IsOccupiedReq
+	RouteResp         = pubdto.RouteResp
+)
+
 // PublicationService URL 占用、激活与回滚控制能力。
 type PublicationService interface {
 	// Activate 把路径占用从 reserved 切换为 active 并记录回执。

@@ -7,6 +7,16 @@ import (
 	blockdto "go_wp/internal/module/block/dto"
 )
 
+// 请求/响应 DTO 重导出：跨模块调用方只依赖 contract，不直接 import block/dto。
+type (
+	ListReq   = blockdto.ListReq
+	DetailReq = blockdto.DetailReq
+	CreateReq = blockdto.CreateReq
+	UpdateReq = blockdto.UpdateReq
+	DeleteReq = blockdto.DeleteReq
+	BlockResp = blockdto.BlockResp
+)
+
 // BlockService 全局块能力：跨页面复用的结构片段（页眉/页脚/区块）。
 type BlockService interface {
 	// List 列出工程全部块（kind 可选过滤：block/header/footer）。

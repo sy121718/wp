@@ -19,3 +19,9 @@ const MsgBlocksTitle = "全局块"
 
 // MsgInternalError 页面 handler 内部错误统一提示（禁止直出 err.Error() 泄露内部细节）。
 const MsgInternalError = "系统内部错误，请稍后重试"
+
+// MsgCompileFailed 预览编译失败统一提示（编译器内部错误不外泄，仅提示用户检查配置）。
+const MsgCompileFailed = "预览编译失败"
+
+// MsgThemeSettingsInvalid 主题设置校验失败统一提示（非法 CSS 值等，详情只记日志）。
+const MsgThemeSettingsInvalid = "主题设置不合法"

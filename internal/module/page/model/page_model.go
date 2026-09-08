@@ -119,6 +119,21 @@ func (m *Model) MarkStaleForTheme(ctx context.Context, themeID string) (err erro
 	return err
 }
 
+// MarkStaleForBlock 把文档中经 core.globalref 引用（draft_document 树内
+// "blockId": "<blockID>" 节点）或 settings.structure 页眉/页脚自选绑定
+// （headerBlockId/footerBlockId，页面级覆盖，非主题默认）该块的页面标记为待重建。
+// 与 MarkStaleForTheme 可能重叠命中同一页面，stale=true 幂等，无妨。
+func (m *Model) MarkStaleForBlock(ctx context.Context, blockID string) (err error) {
+	err = m.DB(ctx).Exec(
+		"UPDATE pages SET stale = true, updated_at = ? WHERE deleted_at IS NULL AND ("+
+			"draft_document::text LIKE '%\"blockId\": \"' || ? || '\"%'"+
+			" OR draft_document->'settings'->'structure'->>'headerBlockId' = ?"+
+			" OR draft_document->'settings'->'structure'->>'footerBlockId' = ?)",
+		time.Now().UTC(), blockID, blockID, blockID,
+	).Error
+	return err
+}
+
 // AttachThemeToUnassigned 把工程内尚未挂主题的页面挂到指定主题。
 // 工程首个主题创建时回填历史页面（迁移 020 的运行时兜底）。
 func (m *Model) AttachThemeToUnassigned(ctx context.Context, projectID, themeID string) (err error) {

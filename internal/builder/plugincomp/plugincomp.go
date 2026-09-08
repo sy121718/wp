@@ -220,6 +220,9 @@ func validateComponent(m *Manifest, idx int, c Component, seen map[string]bool) 
 		if len([]rune(ctl.Label)) > 40 {
 			return fmt.Errorf("组件 %s: props %q 的 label 超长", c.Name, key)
 		}
+		if ctl.Default != nil && !defaultKindCompatible(ctl.Kind, ctl.Default) {
+			return fmt.Errorf("组件 %s: props %q 的 default 与 kind %q 不相容", c.Name, key, ctl.Kind)
+		}
 	}
 	if c.Styles != nil {
 		if err := c.Styles.Validate(); err != nil {
@@ -232,6 +235,18 @@ func validateComponent(m *Manifest, idx int, c Component, seen map[string]bool) 
 		}
 	}
 	return nil
+}
+
+// defaultKindCompatible default 与 kind 相容校验：number 需数值默认值，
+// 其余控件（text/textarea/select/color/media/unit）需字符串默认值。
+// JSON 反序列化到 any 后 number 为 float64，string 为 string。
+func defaultKindCompatible(kind string, def any) bool {
+	if kind == "number" {
+		_, ok := def.(float64)
+		return ok
+	}
+	_, ok := def.(string)
+	return ok
 }
 
 // collectionSourceRe 集合源标识白名单（"content:product" / "plugin:{id}.{table}"）。

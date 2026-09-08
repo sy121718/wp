@@ -4,6 +4,7 @@ package projectmodel
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -84,7 +85,29 @@ func (m *Model) ActivateTheme(ctx context.Context, projectID, themeID string, up
 	})
 }
 
-// DeleteTheme 删除主题(非激活态,由 service 校验)。
-func (m *Model) DeleteTheme(ctx context.Context, id string) (err error) {
-	return m.ThemeDB(ctx).Where("id = ?", id).Delete(&ThemeEntity{}).Error
+// DeleteTheme 删除主题（原子守卫：仅当仍为非激活态时删除，规避 GetTheme 后并发激活的 TOCTOU）。
+// 返回受影响行数：rows=0 表示目标不存在或已变为激活态，由 service 判型。
+func (m *Model) DeleteTheme(ctx context.Context, id string) (rows int64, err error) {
+	res := m.ThemeDB(ctx).Where("id = ? AND is_active = false", id).Delete(&ThemeEntity{})
+	return res.RowsAffected, res.Error
+}
+
+// ExistsByName 判断工程下是否已存在同名主题（大小写不敏感）。
+// excludeID 可选：排除指定主题自身（更新时复用）。
+func (m *Model) ExistsByName(ctx context.Context, projectID, name string, excludeID ...string) (exists bool, err error) {
+	q := m.ThemeDB(ctx).Where("project_id = ? AND LOWER(name) = LOWER(?)", projectID, name)
+	if len(excludeID) > 0 && strings.TrimSpace(excludeID[0]) != "" {
+		q = q.Where("id <> ?", excludeID[0])
+	}
+	var count int64
+	if err = q.Count(&count).Error; err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+// CountThemes 统计工程下主题数量（判断首建自动激活）。
+func (m *Model) CountThemes(ctx context.Context, projectID string) (count int64, err error) {
+	err = m.ThemeDB(ctx).Where("project_id = ?", projectID).Count(&count).Error
+	return count, err
 }

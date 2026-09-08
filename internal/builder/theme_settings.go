@@ -14,6 +14,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+
+	"go_wp/internal/builder/core"
 )
 
 // ThemeSettings 主题全局设置（Woodmart 级）。
@@ -277,7 +279,7 @@ func ParseThemeSettings(data json.RawMessage) (t *ThemeSettings, err error) {
 	return t, nil
 }
 
-// isSafeCSS 简洁别名（复用 core 白名单语义）。
+// isSafeCSS 简洁别名（委托 core.IsSafeCSSValue，含 url 外联注入封禁）。
 func isSafeCSS(v string) bool {
-	return len(v) <= 500 && !strings.ContainsAny(v, "{}<>") && !strings.Contains(v, "url(")
+	return core.IsSafeCSSValue(v)
 }

@@ -12,13 +12,18 @@ import (
 	"gorm.io/gorm"
 
 	projectdto "go_wp/internal/module/project/dto"
+	projectenums "go_wp/internal/module/project/enums"
 	projectmodel "go_wp/internal/module/project/model"
 )
 
+// theme 业务错误哨兵（errors.Is 判型；文案统一取 projectenums，不硬编码）。
 var (
-	ErrThemeNameRequired = errors.New("主题名称不能为空")
-	ErrThemeNotFound     = errors.New("主题不存在")
-	ErrThemeIsActive     = errors.New("激活主题不可删除，请先切换到其他主题")
+	ErrThemeNameRequired    = errors.New(projectenums.ErrThemeNameRequired)
+	ErrThemeNotFound        = errors.New(projectenums.ErrThemeNotFound)
+	ErrThemeIsActive        = errors.New(projectenums.ErrThemeIsActive)
+	ErrThemeDuplicateName   = errors.New(projectenums.ErrThemeDuplicateName)
+	ErrThemeProjectIDEmpty  = errors.New(projectenums.ErrThemeProjectIDEmpty)
+	ErrInvalidThemeSettings = errors.New(projectenums.ErrInvalidThemeSettings)
 )
 
 // ListThemes 列出工程全部主题。
@@ -65,26 +70,33 @@ func (s *Service) CreateTheme(ctx context.Context, req *projectdto.ThemeCreateRe
 		return nil, ErrThemeNameRequired
 	}
 	if strings.TrimSpace(req.ProjectID) == "" {
-		return nil, errors.New("工程 ID 不能为空")
+		return nil, ErrThemeProjectIDEmpty
 	}
 	// settings 必须是 JSON 对象：空值兜底 {}，null/数组/字符串等拒绝（复用工程侧校验）。
 	settings, err := normalizeSettings(req.Settings)
 	if err != nil {
-		return nil, errors.New("无效的主题设置")
+		return nil, ErrInvalidThemeSettings
 	}
-	existing, err := s.model.ListThemes(ctx, req.ProjectID)
+	name := strings.TrimSpace(req.Name)
+	// 名称查重：model 层参数化精确查询（大小写不敏感），消除 ListThemes 拉全量。
+	exists, err := s.model.ExistsByName(ctx, req.ProjectID, name)
 	if err != nil {
 		return nil, err
 	}
-	for _, e := range existing {
-		if strings.EqualFold(e.Name, strings.TrimSpace(req.Name)) {
-			return nil, errors.New("同名主题已存在")
-		}
+	if exists {
+		return nil, ErrThemeDuplicateName
 	}
-	isFirst := len(existing) == 0
+	// 首建自动激活：工程首个主题 is_active=true。
+	// 并发首建竞态由部分唯一索引 uq_themes_project_active（迁移 037）兜底——
+	// 同工程仅允许一个 is_active=true，多请求并发首建时仅一个成功，其余触发唯一约束错误。
+	count, err := s.model.CountThemes(ctx, req.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	isFirst := count == 0
 	now := time.Now().UTC()
 	entity := &projectmodel.ThemeEntity{
-		ID: uuid.NewString(), ProjectID: req.ProjectID, Name: strings.TrimSpace(req.Name),
+		ID: uuid.NewString(), ProjectID: req.ProjectID, Name: name,
 		Settings: settings, IsActive: isFirst, CreatedAt: now, UpdatedAt: now,
 	}
 	if err = s.model.CreateTheme(ctx, entity); err != nil {
@@ -101,17 +113,30 @@ func (s *Service) UpdateTheme(ctx context.Context, req *projectdto.ThemeUpdateRe
 	}
 	entity, err := s.model.GetTheme(ctx, req.ID)
 	if err != nil {
-		return nil, ErrThemeNotFound
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrThemeNotFound
+		}
+		return nil, err
 	}
 	name := entity.Name
 	if strings.TrimSpace(req.Name) != "" {
 		name = strings.TrimSpace(req.Name)
 	}
+	// 名称查重（排除自身，大小写不敏感）。
+	if name != entity.Name {
+		exists, err := s.model.ExistsByName(ctx, entity.ProjectID, name, entity.ID)
+		if err != nil {
+			return nil, err
+		}
+		if exists {
+			return nil, ErrThemeDuplicateName
+		}
+	}
 	settings := entity.Settings
 	if len(req.Settings) > 0 {
 		normalized, err := normalizeSettings(req.Settings)
 		if err != nil {
-			return nil, errors.New("无效的主题设置")
+			return nil, ErrInvalidThemeSettings
 		}
 		settings = normalized
 	}
@@ -130,7 +155,10 @@ func (s *Service) ActivateTheme(ctx context.Context, req *projectdto.ThemeActiva
 	}
 	entity, err := s.model.GetTheme(ctx, req.ID)
 	if err != nil {
-		return ErrThemeNotFound
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrThemeNotFound
+		}
+		return err
 	}
 	return s.model.ActivateTheme(ctx, entity.ProjectID, entity.ID, time.Now().UTC())
 }
@@ -142,12 +170,24 @@ func (s *Service) DeleteTheme(ctx context.Context, id string) (err error) {
 	}
 	entity, err := s.model.GetTheme(ctx, id)
 	if err != nil {
-		return ErrThemeNotFound
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrThemeNotFound
+		}
+		return err
 	}
 	if entity.IsActive {
 		return ErrThemeIsActive
 	}
-	return s.model.DeleteTheme(ctx, id)
+	// 原子删除：仅当仍为非激活态时删除（WHERE is_active=false），规避 GetTheme 后并发激活的 TOCTOU。
+	rows, err := s.model.DeleteTheme(ctx, id)
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		// GetTheme 后被并发激活：部分唯一索引保证单激活，此处按激活态拒绝。
+		return ErrThemeIsActive
+	}
+	return nil
 }
 
 // GetActiveTheme 取工程当前激活主题。

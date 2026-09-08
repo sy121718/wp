@@ -3,39 +3,36 @@ package unit
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
 
+	blockcontract "go_wp/internal/module/block/contract"
 	blockdto "go_wp/internal/module/block/dto"
 	blockenums "go_wp/internal/module/block/enums"
 	blockmodel "go_wp/internal/module/block/model"
 )
 
 // TestBlockKindNormalization 通过 Create 落库 kind 间接覆盖私有 normalizeKind：
-// 空值默认 block；header/footer 精确识别（TrimSpace 后）；未知值回退 block。
+// 空值默认 block；header/footer 精确识别（TrimSpace 后）；非法 kind 一律拒绝而非静默回退。
 func TestBlockKindNormalization(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()
 
-	cases := []struct {
+	okCases := []struct {
 		name string
 		raw  string
 		want string
 	}{
 		{"EmptyDefaultsBlock", "", blockmodel.KindBlock},
-		{"UnknownFallsBackToBlock", "hero", blockmodel.KindBlock},
 		{"WhitespaceOnlyDefaultsBlock", "   ", blockmodel.KindBlock},
 		{"HeaderExact", "header", blockmodel.KindHeader},
 		{"FooterExact", "footer", blockmodel.KindFooter},
 		{"HeaderWithWhitespace", "  header  ", blockmodel.KindHeader},
 		{"FooterWithTabNewline", "\tfooter\n", blockmodel.KindFooter},
-		// 观察点：normalizeKind 大小写敏感（只 TrimSpace，不做 EqualFold）：
-		// 大写/混合大小写不被识别，静默回退 block。
-		{"UpperHeaderFallsBackToBlock", "HEADER", blockmodel.KindBlock},
-		{"MixedCaseFooterFallsBackToBlock", "Footer", blockmodel.KindBlock},
 	}
-	for _, tc := range cases {
+	for _, tc := range okCases {
 		t.Run(tc.name, func(t *testing.T) {
 			res, err := e.svc.Create(ctx, &blockdto.CreateReq{
 				ProjectID: e.projectID, Name: "kind-" + tc.name, Kind: tc.raw,
@@ -45,6 +42,30 @@ func TestBlockKindNormalization(t *testing.T) {
 			}
 			if res.Kind != tc.want {
 				t.Fatalf("normalizeKind(%q) 落库为 %q，期望 %q", tc.raw, res.Kind, tc.want)
+			}
+		})
+	}
+
+	// 观察点：normalizeKind 大小写敏感（只 TrimSpace，不做 EqualFold）。
+	// 未知值与大写/混合大小写不再静默回退 block，而是拒绝（ErrInvalidKind）。
+	rejectCases := []struct {
+		name string
+		raw  string
+	}{
+		{"UnknownRejected", "hero"},
+		{"UpperHeaderRejected", "HEADER"},
+		{"MixedCaseFooterRejected", "Footer"},
+	}
+	for _, tc := range rejectCases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := e.svc.Create(ctx, &blockdto.CreateReq{
+				ProjectID: e.projectID, Name: "kind-" + tc.name, Kind: tc.raw,
+			})
+			if err == nil {
+				t.Fatalf("normalizeKind(%q) 应拒绝，但创建成功", tc.raw)
+			}
+			if !errors.Is(err, blockcontract.ErrInvalidKind) {
+				t.Fatalf("normalizeKind(%q) 期望 ErrInvalidKind，实际 %v", tc.raw, err)
 			}
 		})
 	}

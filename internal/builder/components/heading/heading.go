@@ -153,6 +153,11 @@ func validateExtra(p *Props, nodeID string) (err error) {
 	if _, err = resolveWeight(p.Weight); err != nil {
 		return err
 	}
+	for bp, w := range map[string]string{"desktop": p.Width.Desktop, "tablet": p.Width.Tablet, "mobile": p.Width.Mobile} {
+		if w != "" && !core.IsSafeCSSValue(w) {
+			return fmt.Errorf("无效的 %s 端宽度: %q", bp, w)
+		}
+	}
 	return core.ValidateTextStyle(nodeID, &p.Typography)
 }
 
@@ -233,7 +238,7 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	appendAlign(&tablet, p.Align.Tablet)
 	appendAlign(&mobile, p.Align.Mobile)
 	appendWidth := func(target *[]string, w string) {
-		if w != "" {
+		if w != "" && core.IsSafeCSSValue(w) {
 			*target = append(*target, core.CSSDecl("width", w))
 		}
 	}

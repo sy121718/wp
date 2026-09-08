@@ -13,7 +13,7 @@ import (
 	"fmt"
 
 	"go_wp/internal/builder"
-	blockdto "go_wp/internal/module/block/dto"
+	blockcontract "go_wp/internal/module/block/contract"
 	"go_wp/internal/templates"
 	"go_wp/pkg/logger"
 )
@@ -137,6 +137,12 @@ func (s *Service) MarkStaleForTheme(ctx context.Context, themeID string) error {
 	return s.model.MarkStaleForTheme(ctx, themeID)
 }
 
+// MarkStaleForBlock 把文档中经 core.globalref 引用或 settings.structure 页眉/页脚
+// 自选绑定该块的页面标记为待重建（块内容变更后调用，与 MarkStaleForTheme 互补）。
+func (s *Service) MarkStaleForBlock(ctx context.Context, blockID string) error {
+	return s.model.MarkStaleForBlock(ctx, blockID)
+}
+
 // AttachThemeToUnassigned 把工程内未挂主题的页面挂到指定主题（工程首个主题创建后回填历史页面）。
 func (s *Service) AttachThemeToUnassigned(ctx context.Context, projectID, themeID string) error {
 	return s.model.AttachThemeToUnassigned(ctx, projectID, themeID)
@@ -154,7 +160,7 @@ func (s *Service) compileBlockFragment(ctx context.Context, blockID string) (htm
 	if blockID == "" {
 		return "", ""
 	}
-	block, err := s.blocks.Detail(ctx, &blockdto.DetailReq{ID: blockID})
+	block, err := s.blocks.Detail(ctx, &blockcontract.DetailReq{ID: blockID})
 	if err != nil || block == nil || len(block.Document) == 0 {
 		logger.Scene("build").With("block", blockID).Error(err, "页眉/页脚块不可用")
 		return "", ""

@@ -3,8 +3,8 @@ package blockhttp
 // 全局块 REST API（JSON 模式）：列表/详情/新建/更新/删除。
 
 import (
+	"errors"
 	"net/http"
-	"strings"
 
 	blockcontract "go_wp/internal/module/block/contract"
 	blockdto "go_wp/internal/module/block/dto"
@@ -12,6 +12,7 @@ import (
 	blockmodel "go_wp/internal/module/block/model"
 	blockservice "go_wp/internal/module/block/service"
 	projectcontract "go_wp/internal/module/project/contract"
+	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
 
 	"go_wp/internal/middleware/builtin"
@@ -45,7 +46,7 @@ func (h *Handle) List(c *gin.Context) {
 		ProjectID: c.Query("projectId"), Kind: c.Query("kind"), Category: c.Query("category"),
 	})
 	if err != nil {
-		response.ErrorWithMessage(c, blockErrorStatus(err), err.Error())
+		response.ErrorWithMessage(c, blockErrorStatus(err), blockErrorMessage(err))
 		return
 	}
 	response.Success(c, res)
@@ -55,7 +56,7 @@ func (h *Handle) List(c *gin.Context) {
 func (h *Handle) Detail(c *gin.Context) {
 	res, err := h.svc.Detail(c.Request.Context(), &blockdto.DetailReq{ID: c.Query("id")})
 	if err != nil {
-		response.ErrorWithMessage(c, blockErrorStatus(err), err.Error())
+		response.ErrorWithMessage(c, blockErrorStatus(err), blockErrorMessage(err))
 		return
 	}
 	response.Success(c, res)
@@ -70,7 +71,7 @@ func (h *Handle) Create(c *gin.Context) {
 	}
 	res, err := h.svc.Create(c.Request.Context(), &req)
 	if err != nil {
-		response.ErrorWithMessage(c, blockErrorStatus(err), err.Error())
+		response.ErrorWithMessage(c, blockErrorStatus(err), blockErrorMessage(err))
 		return
 	}
 	response.Success(c, res)
@@ -85,7 +86,7 @@ func (h *Handle) Update(c *gin.Context) {
 	}
 	res, err := h.svc.Update(c.Request.Context(), &req)
 	if err != nil {
-		response.ErrorWithMessage(c, blockErrorStatus(err), err.Error())
+		response.ErrorWithMessage(c, blockErrorStatus(err), blockErrorMessage(err))
 		return
 	}
 	response.Success(c, res)
@@ -99,28 +100,41 @@ func (h *Handle) Delete(c *gin.Context) {
 		return
 	}
 	if err := h.svc.Delete(c.Request.Context(), &req); err != nil {
-		response.ErrorWithMessage(c, blockErrorStatus(err), err.Error())
+		response.ErrorWithMessage(c, blockErrorStatus(err), blockErrorMessage(err))
 		return
 	}
 	response.Success(c, nil)
 }
 
-// blockErrorStatus 按错误消息映射 HTTP 状态码（沿用 page 模块 pageErrorStatus 风格）：
+// blockErrorStatus 按 sentinel error 映射 HTTP 状态码（与 page 模块 pageErrorStatus 同构）：
 // 参数/校验错误 → 400，资源不存在（块/工程）→ 404，同名冲突 → 409，其余未知错误 → 500。
+// 修复前按 err.Error() 中文文案 strings.Contains 匹配（文案改动即失效）；
+// 修复后基于 blockservice 包 sentinel error 精确 errors.Is 判定。
 func blockErrorStatus(err error) int {
-	message := err.Error()
 	switch {
-	case strings.Contains(message, blockenums.ErrBlockNotFound), strings.Contains(message, blockenums.ErrProjectNotFound):
+	case errors.Is(err, blockservice.ErrNotFound), errors.Is(err, blockservice.ErrProjectNotFound):
 		return http.StatusNotFound
-	case strings.Contains(message, blockenums.ErrBlockDuplicate):
+	case errors.Is(err, blockservice.ErrDuplicate):
 		return http.StatusConflict
-	case strings.Contains(message, blockenums.ErrBlockParamRequired),
-		strings.Contains(message, blockenums.ErrBlockNameRequired),
-		strings.Contains(message, blockenums.ErrBlockInvalidDoc),
-		strings.Contains(message, blockenums.ErrBlockInvalidKind),
-		strings.Contains(message, blockenums.ErrBlockInvalidCategory):
+	case errors.Is(err, blockservice.ErrParamRequired),
+		errors.Is(err, blockservice.ErrNameRequired),
+		errors.Is(err, blockservice.ErrInvalidDoc),
+		errors.Is(err, blockservice.ErrInvalidKind),
+		errors.Is(err, blockservice.ErrInvalidCategory):
 		return http.StatusBadRequest
 	default:
 		return http.StatusInternalServerError
 	}
+}
+
+// blockErrorMessage 把 service 错误映射为响应消息：
+// 已知业务错误（sentinel）其 Error() 即 blockenums 文案，直接下发；
+// 未知系统错误（blockErrorStatus 归为 500）改用兜底文案下发，原文只进日志，
+// 避免 err.Error() 把内部细节（SQL 错误、连接信息）泄露给客户端。
+func blockErrorMessage(err error) string {
+	if blockErrorStatus(err) == http.StatusInternalServerError {
+		logger.Scene("block").Error(err, "block 接口内部错误")
+		return blockenums.MsgInternalError
+	}
+	return err.Error()
 }

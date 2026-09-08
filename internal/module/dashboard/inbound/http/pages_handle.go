@@ -10,8 +10,8 @@ import (
 	"strings"
 
 	dashboardenums "go_wp/internal/module/dashboard/enums"
-	pagedto "go_wp/internal/module/page/dto"
-	projectdto "go_wp/internal/module/project/dto"
+	pagecontract "go_wp/internal/module/page/contract"
+	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/pkg/response"
 
 	"github.com/gin-gonic/gin"
@@ -23,7 +23,7 @@ import (
 type pagesPageData struct {
 	Title    string
 	Menu     string
-	Projects []projectdto.ProjectResp
+	Projects []projectcontract.ProjectResp
 	Pages    []pageRow
 }
 
@@ -104,7 +104,7 @@ func (h *Handle) CreateProject(c *gin.Context) {
 		c.String(http.StatusBadRequest, "项目名称不能为空")
 		return
 	}
-	if _, err := h.projects.Create(c.Request.Context(), &projectdto.CreateReq{
+	if _, err := h.projects.Create(c.Request.Context(), &projectcontract.CreateReq{
 		Name: name, Settings: json.RawMessage("{}"),
 	}); err != nil {
 		response.ErrorWithMessage(c, http.StatusInternalServerError, dashboardenums.MsgInternalError)
@@ -125,7 +125,7 @@ func (h *Handle) CreatePage(c *gin.Context) {
 		path = "/" + path
 	}
 	// 默认空白草稿：layout.mode 为编译端必填校验项（full/boxed）。
-	if _, err := h.pages.Create(c.Request.Context(), &pagedto.CreateReq{
+	if _, err := h.pages.Create(c.Request.Context(), &pagecontract.CreateReq{
 		ProjectID:         projectID,
 		Kind:              "home",
 		ContentTargetType: "none",

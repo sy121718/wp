@@ -7,6 +7,18 @@ import (
 	projectdto "go_wp/internal/module/project/dto"
 )
 
+// 请求/响应 DTO 重导出：跨模块调用方只依赖 contract，不直接 import project/dto。
+type (
+	CreateReq        = projectdto.CreateReq
+	UpdateReq        = projectdto.UpdateReq
+	DetailReq        = projectdto.DetailReq
+	ProjectResp      = projectdto.ProjectResp
+	ThemeCreateReq   = projectdto.ThemeCreateReq
+	ThemeUpdateReq   = projectdto.ThemeUpdateReq
+	ThemeActivateReq = projectdto.ThemeActivateReq
+	ThemeResp        = projectdto.ThemeResp
+)
+
 // ProjectService 站点工程与 SiteSettings 业务能力。
 type ProjectService interface {
 	Create(ctx context.Context, req *projectdto.CreateReq) (res *projectdto.ProjectResp, err error)

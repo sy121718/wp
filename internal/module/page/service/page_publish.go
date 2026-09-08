@@ -8,10 +8,11 @@ import (
 	"strings"
 	"time"
 
-	artifactdto "go_wp/internal/module/artifact/dto"
+	artifactcontract "go_wp/internal/module/artifact/contract"
+	artifactenums "go_wp/internal/module/artifact/enums"
 	pagedto "go_wp/internal/module/page/dto"
 	pagemodel "go_wp/internal/module/page/model"
-	pubdto "go_wp/internal/module/publication/dto"
+	pubcontract "go_wp/internal/module/publication/contract"
 
 	"go_wp/internal/pipeline"
 	"go_wp/pkg/logger"
@@ -105,9 +106,16 @@ func (s *Service) Publish(ctx context.Context, req *pagedto.PublishReq) (res *pa
 	if page.StagedArtifactID == nil || *page.StagedArtifactID == "" {
 		return nil, ErrNoStagedArtifact
 	}
-	stagedArt, err := s.artifacts.DetailByID(ctx, &artifactdto.DetailByIDReq{ID: *page.StagedArtifactID})
+	stagedArt, err := s.artifacts.DetailByID(ctx, &artifactcontract.DetailByIDReq{ID: *page.StagedArtifactID})
 	if err != nil {
-		return nil, ErrNoStagedArtifact
+		// 仅真实「无暂存产物」（artifact 侧 ErrArtifactNotFound）归一为 409 业务冲突；
+		// DB 故障等其他系统错误原样透传并记日志，避免被误判为「无暂存产物」误导前端。
+		if strings.Contains(err.Error(), artifactenums.ErrArtifactNotFound) {
+			return nil, ErrNoStagedArtifact
+		}
+		logger.Scene("publication").With("pageId", page.ID).With("artifactID", *page.StagedArtifactID).
+			Error(err, "查询暂存产物失败")
+		return nil, err
 	}
 	if stagedArt.ArtifactKey == "" || stagedArt.PageID != page.ID {
 		return nil, ErrNoStagedArtifact
@@ -141,6 +149,11 @@ func (s *Service) Publish(ctx context.Context, req *pagedto.PublishReq) (res *pa
 		return nil, mapPublishError(err)
 	}
 
+	// 记录发布前旧 active 路径快照：MarkPublished 会把 active_path 更新为 DraftPath，
+	// 若 Deactivate 失败后重试（page 重新读取），再读 ActivePathValue() 已是 DraftPath，
+	// 导致「旧路径永不清理」。此处以发布前快照为准，重试幂等。
+	oldPath := page.ActivePathValue()
+
 	now := time.Now().UTC()
 	if err = s.model.MarkPublished(ctx, page.ID, page.DraftPath, stagedArt.ID, now); err != nil {
 		// FS 已原子激活（线上已生效），此处 DB active 指针更新失败属于部分成功：
@@ -152,15 +165,15 @@ func (s *Service) Publish(ctx context.Context, req *pagedto.PublishReq) (res *pa
 	if s.routes != nil {
 		// 旧路径 active 行处置：SaveDraft 改草稿路径后直接发布时，
 		// 若不取消旧路径激活，会残留同页双 active 占用（旧路径继续出旧产物）。
-		if old := page.ActivePathValue(); old != "" && old != page.DraftPath {
-			if derr := s.routes.Deactivate(ctx, &pubdto.DeactivateReq{
-				ProjectID: page.ProjectID, Path: old,
+		if oldPath != "" && oldPath != page.DraftPath {
+			if derr := s.routes.Deactivate(ctx, &pubcontract.DeactivateReq{
+				ProjectID: page.ProjectID, Path: oldPath,
 			}); derr != nil {
-				logger.Scene("publication").With("pageId", page.ID).With("oldPath", old).Error(derr, "发布前取消旧路径激活失败")
+				logger.Scene("publication").With("pageId", page.ID).With("oldPath", oldPath).Error(derr, "发布前取消旧路径激活失败")
 				return nil, derr
 			}
 		}
-		if _, err = s.routes.Activate(ctx, &pubdto.ActivateReq{
+		if _, err = s.routes.Activate(ctx, &pubcontract.ActivateReq{
 			ProjectID: page.ProjectID, Path: page.DraftPath,
 			PageID: page.ID, ArtifactID: stagedArt.ID,
 		}); err != nil {
@@ -187,7 +200,7 @@ func (s *Service) Rollback(ctx context.Context, req *pagedto.RollbackReq) (res *
 		return nil, err
 	}
 	logger.Scene("page").With("pageId", page.ID).With("targetHash", req.TargetHash).Info("开始回滚")
-	targetArt, err := s.artifacts.Detail(ctx, &artifactdto.DetailReq{PageID: page.ID, Hash: req.TargetHash})
+	targetArt, err := s.artifacts.Detail(ctx, &artifactcontract.DetailReq{PageID: page.ID, Hash: req.TargetHash})
 	if err != nil {
 		logger.Scene("page").With("pageId", page.ID).Error(err, "回滚目标产物缺失")
 		return nil, ErrRollbackTargetMiss
@@ -205,7 +218,17 @@ func (s *Service) Rollback(ctx context.Context, req *pagedto.RollbackReq) (res *
 		return nil, err
 	}
 	if s.routes != nil {
-		if _, err = s.routes.Activate(ctx, &pubdto.ActivateReq{
+		// 回滚到不同路径的历史产物时，先取消旧 active 路径激活，
+		// 避免残留同页双 active 占用（旧路径继续出旧产物，与 Publish 一致）。
+		if old := page.ActivePathValue(); old != "" && old != targetArt.CanonicalPath {
+			if derr := s.routes.Deactivate(ctx, &pubcontract.DeactivateReq{
+				ProjectID: page.ProjectID, Path: old,
+			}); derr != nil {
+				logger.Scene("page").With("pageId", page.ID).With("oldPath", old).Error(derr, "回滚前取消旧路径激活失败")
+				return nil, derr
+			}
+		}
+		if _, err = s.routes.Activate(ctx, &pubcontract.ActivateReq{
 			ProjectID: page.ProjectID, Path: targetArt.CanonicalPath,
 			PageID: page.ID, ArtifactID: targetArt.ID,
 		}); err != nil {
@@ -274,7 +297,7 @@ func (s *Service) UpdateURL(ctx context.Context, req *pagedto.UpdateURLReq) (res
 			return nil, err
 		}
 		if s.routes != nil {
-			if rerr := s.routes.RenameReserved(ctx, &pubdto.RenameReservedReq{
+			if rerr := s.routes.RenameReserved(ctx, &pubcontract.RenameReservedReq{
 				ProjectID: page.ProjectID, PageID: page.ID,
 				OldPath: oldPath, NewPath: newPath,
 			}); rerr != nil {
@@ -312,14 +335,14 @@ func (s *Service) UpdateURL(ctx context.Context, req *pagedto.UpdateURLReq) (res
 	if s.routes != nil {
 		// 改名失败必须中止：reserved 行滞留旧路径会让路由表与 pages 表脱节，
 		// 后续 SaveDraft 基于错误基线增删路由（不得仅记日志继续）。
-		if rerr := s.routes.RenameReserved(ctx, &pubdto.RenameReservedReq{
+		if rerr := s.routes.RenameReserved(ctx, &pubcontract.RenameReservedReq{
 			ProjectID: page.ProjectID, PageID: page.ID,
 			OldPath: oldPath, NewPath: newPath,
 		}); rerr != nil {
 			logger.Scene("page").With("pageId", page.ID).Error(rerr, "URL 修改后重命名保留路由失败，中止流程")
 			return nil, rerr
 		}
-		if _, err = s.routes.Activate(ctx, &pubdto.ActivateReq{
+		if _, err = s.routes.Activate(ctx, &pubcontract.ActivateReq{
 			ProjectID: page.ProjectID, Path: newPath,
 			PageID: page.ID, ArtifactID: artifactRowID,
 		}); err != nil {
@@ -332,7 +355,7 @@ func (s *Service) UpdateURL(ctx context.Context, req *pagedto.UpdateURLReq) (res
 					logger.Scene("page").With("pageId", page.ID).Error(err, "重定向路由注册失败")
 					return nil, err
 				}
-			} else if err = s.routes.Deactivate(ctx, &pubdto.DeactivateReq{
+			} else if err = s.routes.Deactivate(ctx, &pubcontract.DeactivateReq{
 				ProjectID: page.ProjectID, Path: publishedPath,
 			}); err != nil {
 				logger.Scene("page").With("pageId", page.ID).Error(err, "旧 URL 取消激活失败")
@@ -355,7 +378,7 @@ func (s *Service) UpdateURL(ctx context.Context, req *pagedto.UpdateURLReq) (res
 // ---- 内核记录重建辅助 ----
 
 // restoreKernelForHistory 以目标产物为基线重建内核记录（回滚前置）。
-func (s *Service) restoreKernelForHistory(page *pagemodel.PageEntity, target *artifactdto.ArtifactResp) error {
+func (s *Service) restoreKernelForHistory(page *pagemodel.PageEntity, target *artifactcontract.ArtifactResp) error {
 	doc := page.DraftDocumentFor(target.SourceDocument)
 	rec := &pipeline.PageRecord{
 		ID: page.ID, Path: target.CanonicalPath, Version: 1, Status: pipeline.StatePublished,
@@ -375,7 +398,7 @@ func (s *Service) restoreKernelForUpdate(ctx context.Context, page *pagemodel.Pa
 	activeHash := ""
 	histories := []*pipeline.HistoryEntry{}
 	if page.ActiveArtifactID != nil && *page.ActiveArtifactID != "" {
-		art, err := s.artifacts.DetailByID(ctx, &artifactdto.DetailByIDReq{ID: *page.ActiveArtifactID})
+		art, err := s.artifacts.DetailByID(ctx, &artifactcontract.DetailByIDReq{ID: *page.ActiveArtifactID})
 		if err != nil {
 			// 活动产物行缺失是数据不一致（产物行被删而指针未清）：显式失败而非
 			// 降级为纯草稿——否则 histories/activeHash 留空，UpdateURL 误判纯草稿，
@@ -403,7 +426,7 @@ func (s *Service) restoreKernelForUpdate(ctx context.Context, page *pagemodel.Pa
 // 若统一归档 page.DraftDocument，草稿较新时产物字节与归档 SourceDocument/
 // SourceHash 不对应，日后按该产物回滚会编译出不同 hash（ErrRollbackPathMismatch）。
 func (s *Service) ensureArtifactRow(ctx context.Context, page *pagemodel.PageEntity, hash string, sourceDocument json.RawMessage) (string, error) {
-	existing, err := s.artifacts.Detail(ctx, &artifactdto.DetailReq{PageID: page.ID, Hash: hash})
+	existing, err := s.artifacts.Detail(ctx, &artifactcontract.DetailReq{PageID: page.ID, Hash: hash})
 	if err == nil {
 		return existing.ID, nil
 	}
@@ -416,7 +439,7 @@ func (s *Service) ensureArtifactRow(ctx context.Context, page *pagemodel.PageEnt
 	if err != nil {
 		return "", err
 	}
-	recorded, err := s.artifacts.EnsureRecord(ctx, &artifactdto.RecordReq{
+	recorded, err := s.artifacts.EnsureRecord(ctx, &artifactcontract.RecordReq{
 		ArtifactID:       uuid.NewString(),
 		PageID:           page.ID,
 		Version:          page.DraftVersion,
@@ -453,7 +476,7 @@ func (s *Service) ensureRedirectRoute(ctx context.Context, page *pagemodel.PageE
 	if _, saErr := s.store.PutRedirect(ra); saErr != nil {
 		return saErr
 	}
-	_, rerr := s.routes.Redirect(ctx, &pubdto.RedirectReq{
+	_, rerr := s.routes.Redirect(ctx, &pubcontract.RedirectReq{
 		ProjectID: page.ProjectID, OldPath: publishedPath, PageID: page.ID,
 	})
 	return rerr
@@ -496,7 +519,7 @@ func (s *Service) ensureRouteNotOccupied(ctx context.Context, projectID, path, s
 	if s.routes == nil {
 		return nil
 	}
-	occupied, err := s.routes.IsPathOccupied(ctx, &pubdto.IsOccupiedReq{
+	occupied, err := s.routes.IsPathOccupied(ctx, &pubcontract.IsOccupiedReq{
 		ProjectID: projectID, Path: path, ExcludePageID: selfPageID,
 	})
 	if err != nil {

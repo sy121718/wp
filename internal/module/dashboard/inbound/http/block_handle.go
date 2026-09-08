@@ -5,13 +5,16 @@ package dashboardhttp
 // block 模块不感知主题/页面，跨模块组合只能依赖双方契约（模块表隔离规范）。
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 
-	blockdto "go_wp/internal/module/block/dto"
+	blockcontract "go_wp/internal/module/block/contract"
 	dashboardenums "go_wp/internal/module/dashboard/enums"
-	projectdto "go_wp/internal/module/project/dto"
+	projectcontract "go_wp/internal/module/project/contract"
+	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
 
 	"github.com/gin-gonic/gin"
@@ -30,7 +33,7 @@ type blockRow struct {
 type blocksPageData struct {
 	Title             string
 	Menu              string
-	Projects          []projectdto.ProjectResp
+	Projects          []projectcontract.ProjectResp
 	SelectedProjectID string
 	Headers           []blockRow
 	Footers           []blockRow
@@ -61,7 +64,7 @@ func kindLabel(kind string) string {
 	}
 }
 
-func toBlockRows(blocks []blockdto.BlockResp, kind string) []blockRow {
+func toBlockRows(blocks []blockcontract.BlockResp, kind string) []blockRow {
 	rows := make([]blockRow, 0, len(blocks))
 	for _, b := range blocks {
 		if b.Kind != kind {
@@ -93,7 +96,7 @@ func (h *Handle) BlocksList(c *gin.Context) {
 		data.SelectedProjectID = projects[0].ID
 	}
 	if data.SelectedProjectID != "" {
-		blocks, err := h.blocks.List(c.Request.Context(), &blockdto.ListReq{ProjectID: data.SelectedProjectID})
+		blocks, err := h.blocks.List(c.Request.Context(), &blockcontract.ListReq{ProjectID: data.SelectedProjectID})
 		if err != nil {
 			response.ErrorWithMessage(c, http.StatusInternalServerError, dashboardenums.MsgInternalError)
 			return
@@ -114,18 +117,20 @@ func (h *Handle) CreateBlock(c *gin.Context) {
 		c.String(http.StatusBadRequest, "工程与块名称不能为空")
 		return
 	}
-	block, err := h.blocks.Create(c.Request.Context(), &blockdto.CreateReq{
+	block, err := h.blocks.Create(c.Request.Context(), &blockcontract.CreateReq{
 		ProjectID: projectID, Name: name, Kind: kind,
 	})
 	if err != nil {
-		c.String(http.StatusBadRequest, err.Error())
+		logger.Scene("dashboard").With("op", "CreateBlock").Error(err, "创建全局块失败")
+		c.String(http.StatusBadRequest, blockBizError(err))
 		return
 	}
 	c.Redirect(http.StatusSeeOther, "/workbench?block="+block.ID)
 }
 
 // DeleteBlock 删除全局块（POST /admin/blocks/delete）。
-// 删除后编排 stale：绑定该块的主题下全部页面标待重建（产物退化为无页眉/页脚）。
+// 删除后由 block service 统一编排 stale：绑定该块的主题下全部页面标待重建
+// （产物退化为无页眉/页脚）。
 func (h *Handle) DeleteBlock(c *gin.Context) {
 	id := strings.TrimSpace(c.PostForm("id"))
 	projectID := strings.TrimSpace(c.PostForm("projectId"))
@@ -133,11 +138,11 @@ func (h *Handle) DeleteBlock(c *gin.Context) {
 		c.String(http.StatusBadRequest, "缺少块 id")
 		return
 	}
-	if err := h.blocks.Delete(c.Request.Context(), &blockdto.DeleteReq{ID: id}); err != nil {
-		c.String(http.StatusBadRequest, err.Error())
+	if err := h.blocks.Delete(c.Request.Context(), &blockcontract.DeleteReq{ID: id}); err != nil {
+		logger.Scene("dashboard").With("op", "DeleteBlock").Error(err, "删除全局块失败")
+		c.String(http.StatusBadRequest, blockBizError(err))
 		return
 	}
-	h.markStaleForBlock(c, id)
 	if projectID != "" {
 		c.Redirect(http.StatusSeeOther, "/admin/blocks?project="+projectID)
 		return
@@ -146,8 +151,8 @@ func (h *Handle) DeleteBlock(c *gin.Context) {
 }
 
 // SaveBlockContent 工作台保存块内容（POST /admin/blocks/save-content，JSON）。
-// 工作台块编辑的唯一保存入口：保存后编排 stale（绑定该块的主题下页面标待重建）。
-// 直连 REST /api/block/update 不做传播，供纯数据管理场景使用。
+// 工作台块编辑的保存入口：保存后由 block service 统一编排 stale
+// （传播器已在装配时注入，REST /api/block/update 与 dashboard 保存路径同源传播）。
 func (h *Handle) SaveBlockContent(c *gin.Context) {
 	var req struct {
 		ID       string          `json:"id" binding:"required"`
@@ -159,7 +164,7 @@ func (h *Handle) SaveBlockContent(c *gin.Context) {
 		return
 	}
 	// 名称取现值（工作台只改文档）。
-	current, err := h.blocks.Detail(c.Request.Context(), &blockdto.DetailReq{ID: req.ID})
+	current, err := h.blocks.Detail(c.Request.Context(), &blockcontract.DetailReq{ID: req.ID})
 	if err != nil || current == nil {
 		c.String(http.StatusNotFound, "全局块不存在")
 		return
@@ -168,26 +173,55 @@ func (h *Handle) SaveBlockContent(c *gin.Context) {
 	if strings.TrimSpace(req.Name) != "" {
 		name = strings.TrimSpace(req.Name)
 	}
-	if _, err := h.blocks.Update(c.Request.Context(), &blockdto.UpdateReq{
+	if _, err := h.blocks.Update(c.Request.Context(), &blockcontract.UpdateReq{
 		ID: req.ID, Name: name, Document: req.Document,
 	}); err != nil {
 		response.ErrorWithMessage(c, http.StatusInternalServerError, dashboardenums.MsgInternalError)
 		return
 	}
-	h.markStaleForBlock(c, req.ID)
 	c.JSON(http.StatusOK, gin.H{"code": 200, "message": "已保存，关联页面将标记为待重建"})
 }
 
-// markStaleForBlock 全局块内容变更/删除后的传播：
-// 反查页眉/页脚槽位绑定该块的主题（project 契约），逐主题标记页面待重建（page 契约）。
-func (h *Handle) markStaleForBlock(c *gin.Context, blockID string) {
-	themes, err := h.projects.ListThemesByBlockID(c.Request.Context(), blockID)
+// markStaleForBlockCtx 全局块内容变更/删除后的 stale 传播（实现 block service 传播器契约），
+// 覆盖三条引用路径：
+//  1. 页眉/页脚槽位绑定该块的主题（project 契约 ListThemesByBlockID）→ 逐主题 MarkStaleForTheme；
+//  2. core.globalref 引用（页面文档树内 "blockId" 节点）→ MarkStaleForBlock；
+//  3. 页面级 settings.structure 页眉/页脚自选覆盖（headerBlockId/footerBlockId）→ MarkStaleForBlock。
+//
+// 路径 2/3 由 page 契约按 blockID 反查；路径 1 与 2/3 可能重叠命中同一页面，stale=true 幂等，无妨。
+func (h *Handle) markStaleForBlockCtx(ctx context.Context, blockID string) error {
+	themes, err := h.projects.ListThemesByBlockID(ctx, blockID)
 	if err != nil {
-		return
+		logger.Scene("block").With("block_id", blockID).Error(err, "反查绑定块的主题失败")
+		return err
 	}
 	for _, t := range themes {
-		if err := h.pages.MarkStaleForTheme(c.Request.Context(), t.ID); err != nil {
-			return
+		if err := h.pages.MarkStaleForTheme(ctx, t.ID); err != nil {
+			logger.Scene("block").With("block_id", blockID).With("theme_id", t.ID).Error(err, "标记页面待重建失败")
+			return err
 		}
+	}
+	if err := h.pages.MarkStaleForBlock(ctx, blockID); err != nil {
+		logger.Scene("block").With("block_id", blockID).Error(err, "反查引用块页面标待重建失败")
+		return err
+	}
+	return nil
+}
+
+// blockBizError 把 block 业务错误映射为用户可见文案；非业务错误（基础设施故障）回退兜底文案，
+// 原文仅进日志不外泄（对齐「不直出 err.Error()」约定）。
+func blockBizError(err error) string {
+	switch {
+	case errors.Is(err, blockcontract.ErrParamRequired),
+		errors.Is(err, blockcontract.ErrNotFound),
+		errors.Is(err, blockcontract.ErrProjectNotFound),
+		errors.Is(err, blockcontract.ErrNameRequired),
+		errors.Is(err, blockcontract.ErrInvalidDoc),
+		errors.Is(err, blockcontract.ErrInvalidKind),
+		errors.Is(err, blockcontract.ErrInvalidCategory),
+		errors.Is(err, blockcontract.ErrDuplicate):
+		return err.Error()
+	default:
+		return dashboardenums.MsgInternalError
 	}
 }

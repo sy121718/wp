@@ -27,3 +27,6 @@ const (
 	MsgRollbackDone    = "回滚成功"
 	MsgURLUpdated      = "访问路径已更新"
 )
+
+// MsgInternalError handler 内部错误统一兜底提示（禁止直出 err.Error() 泄露内部细节）。
+const MsgInternalError = "系统内部错误，请稍后重试"

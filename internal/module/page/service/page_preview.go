@@ -1,0 +1,42 @@
+package pageservice
+
+// page_preview.go — 预览编译用例：基于未落盘文档 JSON 编译完整 HTML。
+// dashboard 工作台预览（Preview/PreviewDraft/BlockPreview）复用本方法，
+// 与正式构建共用 compileDocument 装配管线（docs/03-A §4.2 隔离预览）。
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+
+	"go_wp/internal/builder"
+	pagecontract "go_wp/internal/module/page/contract"
+	"go_wp/pkg/logger"
+)
+
+// CompilePreview 基于未落盘文档 JSON 编译完整 HTML（预览专用：不落盘、不影响产物）。
+// 复用与正式构建同源的编译管线（compileDocument），仅错误语义按预览需求分类：
+//   - 文档解析失败（JSON 非法或空文档）→ ErrPreviewInvalidDocument；
+//   - 编译失败 → ErrPreviewCompileFailed；
+//   - 组件模板加载/文档渲染失败 → 原样透传（调用方映射为内部错误）。
+func (s *Service) CompilePreview(ctx context.Context, docJSON []byte) (html []byte, err error) {
+	var page *builder.Page
+	if err = json.Unmarshal(docJSON, &page); err != nil || page == nil {
+		if err == nil {
+			err = errors.New("草稿文档为空")
+		}
+		logger.Scene("build").With("err", err).Warn("预览文档解析失败")
+		return nil, fmt.Errorf("%w: %v", pagecontract.ErrPreviewInvalidDocument, err)
+	}
+	html, err = s.compileDocument(ctx, page)
+	if err != nil {
+		if errors.Is(err, errCompileFailed) {
+			logger.Scene("build").Error(err, "预览编译失败")
+			return nil, fmt.Errorf("%w: %v", pagecontract.ErrPreviewCompileFailed, err)
+		}
+		logger.Scene("build").Error(err, "预览文档渲染失败")
+		return nil, err
+	}
+	return html, nil
+}

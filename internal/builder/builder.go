@@ -278,6 +278,11 @@ func Compile(p *Page, opts ...CompileOption) (res *CompiledPage, err error) {
 	if cfg.set == nil {
 		return nil, errors.New("编译缺少组件模板 Set：请通过 WithComponentSet 注入（templates.NewComponentSet）")
 	}
+	// 防御性兜底：WithThemeSettings 注入的主题设置在消费（ThemeVarsCSS）前校验，
+	// 校验失败返回 error（不 panic），避免非法主题令牌进入产物 CSS 变量。
+	if err = ValidateThemeSettings(cfg.theme); err != nil {
+		return nil, fmt.Errorf("主题设置: %w", err)
+	}
 
 	var b core.CSSBuckets
 	compileSettingsCSS(&p.Settings, &b)
