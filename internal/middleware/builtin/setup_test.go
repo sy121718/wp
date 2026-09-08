@@ -13,8 +13,6 @@ import (
 )
 
 func TestSetupAttachesRecoverySecurityAndRateLimit(t *testing.T) {
-	ResetRateLimitStore()
-
 	engine := gin.New()
 	// 直接测试 Setup 通过 handler 挂载中间件的能力
 	engine.Use(Recovery())
@@ -33,7 +31,7 @@ func TestSetupAttachesRecoverySecurityAndRateLimit(t *testing.T) {
 	})
 
 	okRecorder := httptest.NewRecorder()
-	okRequest, _ := http.NewRequest(http.MethodGet, "/ok", nil)
+	okRequest := httptest.NewRequest(http.MethodGet, "/ok", nil)
 	engine.ServeHTTP(okRecorder, okRequest)
 	if okRecorder.Code != http.StatusOK {
 		t.Fatalf("正常请求状态码不正确: got=%d want=%d", okRecorder.Code, http.StatusOK)
@@ -55,18 +53,18 @@ func TestSetupAttachesRecoverySecurityAndRateLimit(t *testing.T) {
 
 	for i := 0; i < 2; i++ {
 		rateRecorder := httptest.NewRecorder()
-		rateRequest, _ := http.NewRequest(http.MethodGet, "/ok", nil)
+		rateRequest := httptest.NewRequest(http.MethodGet, "/ok", nil)
 		engine.ServeHTTP(rateRecorder, rateRequest)
 	}
 	blockedRecorder := httptest.NewRecorder()
-	blockedRequest, _ := http.NewRequest(http.MethodGet, "/ok", nil)
+	blockedRequest := httptest.NewRequest(http.MethodGet, "/ok", nil)
 	engine.ServeHTTP(blockedRecorder, blockedRequest)
 	if blockedRecorder.Code != http.StatusTooManyRequests {
 		t.Fatalf("第三次请求应被限流: got=%d want=%d", blockedRecorder.Code, http.StatusTooManyRequests)
 	}
 
 	bodyRecorder := httptest.NewRecorder()
-	bodyRequest, _ := http.NewRequest(http.MethodPost, "/limited", strings.NewReader(strings.Repeat("a", 11)))
+	bodyRequest := httptest.NewRequest(http.MethodPost, "/limited", strings.NewReader(strings.Repeat("a", 11)))
 	bodyRequest.ContentLength = 11
 	engine.ServeHTTP(bodyRecorder, bodyRequest)
 	if bodyRecorder.Code != http.StatusRequestEntityTooLarge {
@@ -74,7 +72,7 @@ func TestSetupAttachesRecoverySecurityAndRateLimit(t *testing.T) {
 	}
 
 	panicRecorder := httptest.NewRecorder()
-	panicRequest, _ := http.NewRequest(http.MethodGet, "/panic", nil)
+	panicRequest := httptest.NewRequest(http.MethodGet, "/panic", nil)
 	engine.ServeHTTP(panicRecorder, panicRequest)
 	if panicRecorder.Code != http.StatusInternalServerError {
 		t.Fatalf("Recovery 未生效: got=%d want=%d", panicRecorder.Code, http.StatusInternalServerError)
@@ -82,8 +80,6 @@ func TestSetupAttachesRecoverySecurityAndRateLimit(t *testing.T) {
 }
 
 func TestRequestRateLimitSkipsStaticAssets(t *testing.T) {
-	ResetRateLimitStore()
-
 	engine := gin.New()
 	engine.Use(RequestRateLimitMiddleware(1, time.Minute))
 	engine.GET("/static/*path", func(c *gin.Context) {
@@ -99,7 +95,7 @@ func TestRequestRateLimitSkipsStaticAssets(t *testing.T) {
 	} {
 		for i := 0; i < 3; i++ {
 			recorder := httptest.NewRecorder()
-			request, _ := http.NewRequest(http.MethodGet, path, nil)
+			request := httptest.NewRequest(http.MethodGet, path, nil)
 			engine.ServeHTTP(recorder, request)
 			if recorder.Code != http.StatusOK {
 				t.Fatalf("静态资源请求不应被限流: path=%s request=%d got=%d want=%d", path, i+1, recorder.Code, http.StatusOK)

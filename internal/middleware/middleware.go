@@ -9,7 +9,9 @@
 //  2. CORS              — 跨域资源共享，预检请求直接返回 204
 //  3. SecurityHeaders   — 安全响应头（X-Content-Type-Options, X-Frame-Options, CSP）
 //  4. RequestBodyLimit  — 限制请求体大小，按 /upload 路径区分普通/上传限制
-//  5. RequestRateLimit  — 固定窗口限流（按 IP+ 路径），由配置开关
+//  5. RequestRateLimit  — 基础限流（tollbooth 令牌桶，按 IP），由配置开关；
+//     严格层（/api/captcha、/api/admin/login 每 IP 每分钟 10 次）在各自模块
+//     路由内无条件挂载，不受此开关控制
 //  6. RequestLogCapture — 结构化 HTTP 请求日志（按配置开关）
 //
 // 配置读取方式：
@@ -85,13 +87,23 @@ func buildBodyLimit(cfg *viper.Viper) gin.HandlerFunc {
 	return builtin.RequestBodyLimitMiddleware(requestLimit, uploadLimit)
 }
 
-// isRateLimitEnabled 检查配置是否启用了限流。
+// isRateLimitEnabled 检查配置是否启用了基础限流。
 // 配置键：server.rate_limit_enabled
+// fail-safe：viper 不可用或键未设置时默认启用（限流是防滥用底线，
+// 显式配置为 false 才关闭）。严格层（登录/验证码每 IP 每分钟 10 次）
+// 不受此开关影响，始终在模块路由内挂载。
 func isRateLimitEnabled(cfg *viper.Viper) bool {
-	return cfg != nil && cfg.GetBool("server.rate_limit_enabled")
+	if cfg == nil {
+		return true
+	}
+	if !cfg.IsSet("server.rate_limit_enabled") {
+		return true
+	}
+	return cfg.GetBool("server.rate_limit_enabled")
 }
 
-// getRateLimit 从配置中读取限流参数。
+// getRateLimit 从配置中读取基础限流参数（每 IP 每窗口额度，
+// 严格层参数由 captcha/admin 模块各自维护）。
 //
 // 配置键：
 //   - server.rate_limit_limit  — 窗口内允许的最大请求数（默认 120）
