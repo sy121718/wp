@@ -228,5 +228,6 @@ Cookie 属性：`HttpOnly`、`Secure`（release 自动启用）、`SameSite=Lax`
 - `docs/06-A-plugin-ecosystem-roadmap.md` — 插件生态路线图（本体收口/SEO 基建/首批插件清单/商品重轨+壳）
 - `docs/02-*` — 组件规格；`docs/03-A-workbench.md` — 工作台
 - `docs/04-B-dynamic-development-guide.md` — 动态能力开发指南（How-To：静态绑定/Fragment/Client Enhancement 三路径）
+- `docs/02-E-seo-scoring-engine.md` — SEO 评分引擎（rubric 权重卡/Yoast 复用策略/自研计算器/执行计划）
 - `docs/agents/` — Issue 追踪、Triage 标签、领域术语
 - `internal/module/CLAUDE.md` — 模块开发规范；`pkg/CLAUDE.md` — pkg 组件规范
