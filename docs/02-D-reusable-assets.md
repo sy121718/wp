@@ -118,6 +118,14 @@ flowchart TB
 | `banner` | 全宽横幅 |
 | `grid` | 多栏布局 |
 
+### 4.4 片段模板（snippet，一次性复制）
+
+| kind | 说明 |
+|---|---|
+| `snippet` | 片段模板（商品卡/表单/弹窗/营销段），典型配合 `reuse_mode='template'`；细分走 `category`（如 `product-card`/`form`/`modal`） |
+
+> 定案：模板类片段不逐个设 kind（避免 kind 爆炸），统一 `kind='snippet'` + category 细分；`snippet` 也允许 global（强复用的营销段同理可引用）。`globalref` 构建期只展开 `reuse_mode='global'` 的块，template 块被引用展开会直接构建失败（误用防御，见 §9）。
+
 > 以上是「全局引用」的站点级片段。它们被页面通过 `settings.structure`（页眉/页脚槽位）
 > 或 `core.globalref`（内联引用）消费，改一处触发 stale 传播。
 
@@ -286,6 +294,25 @@ func (s *Service) propagateStale(ctx context.Context, blockID string) {
 
 > 步骤 1-3 是「改造区块」的核心（复用语义区分）；步骤 4-7 是「复用资产」的完整化。
 > 其中步骤 4 的「复制 AST」机制 Blueprint 已实现，主要是抽取复用。
+
+## 12. 实施记录（2026-09 已落地）
+
+| 步骤 | 状态 | 落点 |
+|---|---|---|
+| 1 迁移 reuse_mode | ✅ | `public/migrations/049_block_reuse_mode.sql`（CHECK + 索引，幂等） |
+| 2 Entity/model | ✅ | `BlockEntity.ReuseMode`；`ListByProject`/`UpdateDocument` 透传；kind 白名单扩至 16 值（§4.1-4.4） |
+| 3 stale 分支 | ✅ | `propagateStale(ctx, id, reuseMode)`：template 不传播 |
+| 4 复制 AST helper | ✅ | `builder.ClonePageWithNewIDs` / `CloneNodeWithNewIDs`（blueprint 已改用，私有实现删除） |
+| 5 引用/复制动作 | ✅ 后端 | `POST /api/block/clone`（`CloneAST`：解析→克隆→返回独立文档）；workbench 前端接线待做 |
+| 6 kind/category 扩充 | ✅ | service `kindWhitelist`；管理页新建表单全量选项 |
+| 7 列表筛选 | ✅ | `List` 支持 `reuseMode` 过滤；管理页「区块/复用资产」组显示类型 + 复用方式列 |
+
+额外落地的审核项：
+
+- **删除拦截（§9 补强）**：`DeleteReq.Force`；global 块被引用（globalref/structure/主题槽位，经 `CountBlockReference` + `ListThemesByBlockID` 注入检查器）默认拒绝 `ErrBlockInUse`，Force 强删后传播退化。template 块直接删。
+- **global→template 切换防御**：`Update` 时仍被引用的 global 块拒绝切换（否则引用悬空）。
+- **构建期误用防御**：`page_assemble.go` 的 `blockResolverAdapter` 拒绝展开 `reuse_mode='template'` 的块（构建期报错而非静默渲染）。
+- **template 无升级路径**：v1 明确不提供「模板更新批量刷新已插入页面」能力（副本独立是语义特性，不是缺陷）；如需强复用请用 global。
 
 ## 关联文档
 

@@ -87,13 +87,13 @@ Artifact          ≠ 可编辑源码
 
 | 模块 | 职责 | 不负责 |
 |---|---|---|
-| `admin` | 管理控制面大模块：管理员、角色、权限点、菜单、部门、数据权限（六领域已合并，同包直调） | CMS 内容、公开站点用户 |
+| `admin` | 管理控制面大模块：管理员、角色、权限点、菜单、部门、数据权限（六领域已合并，同包直调）。对外经 `contract.AuthzContextService` 暴露只读权限上下文查询（IsSuperAdmin/角色码/权限码/路由树），供外部模块与插件消费 | CMS 内容、公开站点用户 |
 | `common` | 公共业务入口（当前为验证码：标准库自绘 PNG 图片化，答案绝不下发） | 通用基础设施 |
 | `dashboard` | 需要后端逻辑的后台页面入口（仪表盘、可视化工作台 Workbench、媒体库、主题管理） | — |
 | `media` | 附件与文件分类（LIKE 通配符转义、软删除过滤） | — |
 | `project` | 站点工程、SiteSettings、多主题 Theme（list/activate/delete/settings） | — |
 | `page` | 手工 Page 与 Page Document：草稿/构建/发布/回滚/改 URL | — |
-| `block` | 全局块（页眉/页脚/区块）与 stale 传播编排 | — |
+| `block` | 复用资产（全局块）：16 种 kind + reuse_mode（global 引用/template 一次性复制）、stale 传播编排、删除引用拦截、CloneAST | — |
 | `artifact` | Artifact 元数据与内容对象闭包（不可变写入、同版本重构建原地替换） | — |
 | `publication` | URL 占用、激活（两段式回执 pending→committed/rolled_back）、回滚 | — |
 | `content` | 固定 CMS 内容 | — |
@@ -226,5 +226,6 @@ Cookie 属性：`HttpOnly`、`Secure`（release 自动启用）、`SameSite=Lax`
 - `docs/05-implementation-plan.md` — 阶段计划（阶段 0-3 已完成；4-7 待办）
 - `docs/06-plugin-system.md` — 插件体系规范（三级能力分层/双轨制/表扩展/样式引擎已落地；P1-P3 待做）
 - `docs/02-*` — 组件规格；`docs/03-A-workbench.md` — 工作台
+- `docs/04-B-dynamic-development-guide.md` — 动态能力开发指南（How-To：静态绑定/Fragment/Client Enhancement 三路径）
 - `docs/agents/` — Issue 追踪、Triage 标签、领域术语
 - `internal/module/CLAUDE.md` — 模块开发规范；`pkg/CLAUDE.md` — pkg 组件规范

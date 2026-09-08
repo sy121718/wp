@@ -10,7 +10,7 @@
 - `media/` — 附件与文件分类（LIKE 通配符转义、软删除过滤）
 - `project/` — 站点工程、SiteSettings、多主题 Theme（list/activate/delete/settings）
 - `page/` — 手工 Page 与 Page Document：草稿/构建/发布/回滚/改 URL
-- `block/` — 全局块（页眉/页脚/区块）与 stale 传播编排
+- `block/` — 复用资产（全局块）：16 种 kind + reuse_mode（global 引用/template 一次性复制）与 stale 传播编排
 - `artifact/` — Artifact 元数据与内容对象闭包
 - `publication/` — URL 占用、激活（两段式回执）、回滚
 - `content/` / `contenttemplate/` / `presentation/` — CMS 内容、版本化结构模板、自动发布实例
