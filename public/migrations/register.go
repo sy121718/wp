@@ -72,6 +72,9 @@ var blocksNameLowerUniqueSQL string
 //go:embed 048_media_variant.sql
 var mediaVariantSQL string
 
+//go:embed 049_block_reuse_mode.sql
+var blockReuseModeSQL string
+
 func init() {
 	register(Migration{
 		Version:   "001-init-schema",
@@ -164,6 +167,15 @@ func init() {
 		TableName: "blocks",
 		CheckSQL:  "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = ? AND column_name = 'category'",
 		SQL:       blockCategorySQL,
+	})
+
+	// 全局块复用方式维度（docs/02-D：global 引用 / template 一次性复制）。
+	// blocks 表已在 021 创建，默认幂等检查会误跳过，仿 047 按 reuse_mode 列是否存在判断。
+	register(Migration{
+		Version:   "049-block-reuse-mode",
+		TableName: "blocks",
+		CheckSQL:  "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = ? AND column_name = 'reuse_mode'",
+		SQL:       blockReuseModeSQL,
 	})
 
 	// 插件权限 seed（权限点 + 后台菜单，docs/06）。

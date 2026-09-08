@@ -143,6 +143,12 @@ func (s *Service) MarkStaleForBlock(ctx context.Context, blockID string) error {
 	return s.model.MarkStaleForBlock(ctx, blockID)
 }
 
+// CountBlockReference 统计引用该块的未删除页面数（globalref / structure 自选绑定），
+// 供 block 模块删除或切换 global→template 前的引用拦截（docs/02-D §9）。
+func (s *Service) CountBlockReference(ctx context.Context, blockID string) (int64, error) {
+	return s.model.CountBlockReference(ctx, blockID)
+}
+
 // AttachThemeToUnassigned 把工程内未挂主题的页面挂到指定主题（工程首个主题创建后回填历史页面）。
 func (s *Service) AttachThemeToUnassigned(ctx context.Context, projectID, themeID string) error {
 	return s.model.AttachThemeToUnassigned(ctx, projectID, themeID)

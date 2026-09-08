@@ -119,6 +119,9 @@ type blockResolverAdapter struct {
 }
 
 // ResolveBlockRoot 按块 ID 返回块文档 root 节点。
+// 防御（docs/02-D §5/§9）：reuse_mode=template 的块是「一次性复制」语义，
+// 不允许经 core.globalref 引用展开——正常流程下副本已在插入时并入页面文档，
+// 此处命中说明引用被绕过编辑器写入，构建期即报错暴露而非静默按引用渲染。
 func (a blockResolverAdapter) ResolveBlockRoot(blockID string) ([]*core.Node, error) {
 	if a.cache != nil {
 		if nodes, ok := a.cache[blockID]; ok {
@@ -128,6 +131,9 @@ func (a blockResolverAdapter) ResolveBlockRoot(blockID string) ([]*core.Node, er
 	block, err := a.s.blocks.Detail(a.ctx, &blockcontract.DetailReq{ID: blockID})
 	if err != nil || block == nil {
 		return nil, fmt.Errorf("全局块 %s 不可用", blockID)
+	}
+	if block.ReuseMode == "template" {
+		return nil, fmt.Errorf("全局块 %s 为一次性复制片段，不能被引用展开", blockID)
 	}
 	page, err := builder.ParsePage(block.Document)
 	if err != nil {

@@ -22,11 +22,13 @@ import (
 
 // blockRow 全局块列表行投影。
 type blockRow struct {
-	ID        string
-	Name      string
-	Kind      string
-	KindLabel string
-	UpdatedAt string
+	ID            string
+	Name          string
+	Kind          string
+	KindLabel     string
+	ReuseMode     string
+	ReuseModeLabel string
+	UpdatedAt     string
 }
 
 // blocksPageData 全局块管理页数据。
@@ -53,29 +55,59 @@ func (d *blocksPageData) templateMap() gin.H {
 	}
 }
 
-func kindLabel(kind string) string {
-	switch kind {
-	case "header":
-		return "页眉"
-	case "footer":
-		return "页脚"
-	default:
-		return "区块"
-	}
+// kindLabels 块类型中文标签（docs/02-D §4/§5 全量白名单）。
+var kindLabels = map[string]string{
+	"header": "页眉", "footer": "页脚", "block": "区块",
+	"announcement": "公告栏", "sidebar": "侧边栏", "breadcrumb": "面包屑", "drawer": "抽屉导航", "search": "搜索框",
+	"cta": "CTA 段", "trust": "信任徽章", "brands": "品牌墙", "contact": "联系方式", "about": "关于我们",
+	"banner": "横幅", "grid": "多栏布局", "snippet": "片段模板",
 }
 
+func kindLabel(kind string) string {
+	if label, ok := kindLabels[kind]; ok {
+		return label
+	}
+	return "区块"
+}
+
+// reuseModeLabel 复用方式标签（docs/02-D §5）。
+func reuseModeLabel(mode string) string {
+	if mode == "template" {
+		return "复制"
+	}
+	return "引用"
+}
+
+// toBlockRows 按 kind 精确过滤（header/footer 页眉页脚组）。
 func toBlockRows(blocks []blockcontract.BlockResp, kind string) []blockRow {
 	rows := make([]blockRow, 0, len(blocks))
 	for _, b := range blocks {
 		if b.Kind != kind {
 			continue
 		}
-		rows = append(rows, blockRow{
-			ID: b.ID, Name: b.Name, Kind: b.Kind, KindLabel: kindLabel(b.Kind),
-			UpdatedAt: b.UpdatedAt.Format("2006-01-02 15:04"),
-		})
+		rows = append(rows, toBlockRow(b))
 	}
 	return rows
+}
+
+// toOtherBlockRows 其余全部类型（新 kind + snippet 片段模板）归入「区块/复用资产」组。
+func toOtherBlockRows(blocks []blockcontract.BlockResp) []blockRow {
+	rows := make([]blockRow, 0, len(blocks))
+	for _, b := range blocks {
+		if b.Kind == "header" || b.Kind == "footer" {
+			continue
+		}
+		rows = append(rows, toBlockRow(b))
+	}
+	return rows
+}
+
+func toBlockRow(b blockcontract.BlockResp) blockRow {
+	return blockRow{
+		ID: b.ID, Name: b.Name, Kind: b.Kind, KindLabel: kindLabel(b.Kind),
+		ReuseMode: b.ReuseMode, ReuseModeLabel: reuseModeLabel(b.ReuseMode),
+		UpdatedAt: b.UpdatedAt.Format("2006-01-02 15:04"),
+	}
 }
 
 // BlocksList 全局块管理页（GET /admin/blocks?project=X）。
@@ -103,7 +135,7 @@ func (h *Handle) BlocksList(c *gin.Context) {
 		}
 		data.Headers = toBlockRows(blocks, "header")
 		data.Footers = toBlockRows(blocks, "footer")
-		data.Blocks = toBlockRows(blocks, "block")
+		data.Blocks = toOtherBlockRows(blocks)
 	}
 	c.HTML(http.StatusOK, "admin/blocks", withCSRF(c, data.templateMap()))
 }
@@ -113,12 +145,13 @@ func (h *Handle) CreateBlock(c *gin.Context) {
 	projectID := strings.TrimSpace(c.PostForm("projectId"))
 	name := strings.TrimSpace(c.PostForm("name"))
 	kind := strings.TrimSpace(c.PostForm("kind"))
+	reuseMode := strings.TrimSpace(c.PostForm("reuseMode"))
 	if projectID == "" || name == "" {
 		c.String(http.StatusBadRequest, "工程与块名称不能为空")
 		return
 	}
 	block, err := h.blocks.Create(c.Request.Context(), &blockcontract.CreateReq{
-		ProjectID: projectID, Name: name, Kind: kind,
+		ProjectID: projectID, Name: name, Kind: kind, ReuseMode: reuseMode,
 	})
 	if err != nil {
 		logger.Scene("dashboard").With("op", "CreateBlock").Error(err, "创建全局块失败")
@@ -138,7 +171,8 @@ func (h *Handle) DeleteBlock(c *gin.Context) {
 		c.String(http.StatusBadRequest, "缺少块 id")
 		return
 	}
-	if err := h.blocks.Delete(c.Request.Context(), &blockcontract.DeleteReq{ID: id}); err != nil {
+	force := strings.TrimSpace(c.PostForm("force")) == "1"
+	if err := h.blocks.Delete(c.Request.Context(), &blockcontract.DeleteReq{ID: id, Force: force}); err != nil {
 		logger.Scene("dashboard").With("op", "DeleteBlock").Error(err, "删除全局块失败")
 		c.String(http.StatusBadRequest, blockBizError(err))
 		return
@@ -208,6 +242,25 @@ func (h *Handle) markStaleForBlockCtx(ctx context.Context, blockID string) error
 	return nil
 }
 
+// blockReferencedCtx 判断块是否仍被引用（block service 引用检查器契约，docs/02-D §9）：
+// 主题页眉/页脚槽位绑定该块，或存在 globalref / settings.structure 自选引用页面。
+func (h *Handle) blockReferencedCtx(ctx context.Context, blockID string) (bool, error) {
+	themes, err := h.projects.ListThemesByBlockID(ctx, blockID)
+	if err != nil {
+		logger.Scene("block").With("block_id", blockID).Error(err, "反查绑定块的主题失败")
+		return false, err
+	}
+	if len(themes) > 0 {
+		return true, nil
+	}
+	count, err := h.pages.CountBlockReference(ctx, blockID)
+	if err != nil {
+		logger.Scene("block").With("block_id", blockID).Error(err, "统计引用块页面失败")
+		return false, err
+	}
+	return count > 0, nil
+}
+
 // blockBizError 把 block 业务错误映射为用户可见文案；非业务错误（基础设施故障）回退兜底文案，
 // 原文仅进日志不外泄（对齐「不直出 err.Error()」约定）。
 func blockBizError(err error) string {
@@ -219,7 +272,9 @@ func blockBizError(err error) string {
 		errors.Is(err, blockcontract.ErrInvalidDoc),
 		errors.Is(err, blockcontract.ErrInvalidKind),
 		errors.Is(err, blockcontract.ErrInvalidCategory),
-		errors.Is(err, blockcontract.ErrDuplicate):
+		errors.Is(err, blockcontract.ErrDuplicate),
+		errors.Is(err, blockcontract.ErrInvalidReuseMode),
+		errors.Is(err, blockcontract.ErrBlockInUse):
 		return err.Error()
 	default:
 		return dashboardenums.MsgInternalError

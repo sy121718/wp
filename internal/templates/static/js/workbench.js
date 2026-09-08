@@ -399,20 +399,32 @@
                 var self = this;
                 var f = (this.libraryFilter || '').toLowerCase();
                 function match(text) { return !f || text.toLowerCase().indexOf(f) >= 0; }
+                var kindLabels = { header: '页眉', footer: '页脚', block: '区块',
+                    announcement: '公告栏', sidebar: '侧边栏', breadcrumb: '面包屑', drawer: '抽屉导航', search: '搜索框',
+                    cta: 'CTA 段', trust: '信任徽章', brands: '品牌墙', contact: '联系方式', about: '关于我们',
+                    banner: '横幅', grid: '多栏布局', snippet: '片段模板' };
+                // isTemplate：一次性复制语义（docs/02-D §5）——点击即调 /api/block/clone
+                // 复制独立 AST 插入；不允许以引用方式插入（构建期会拒绝 template 引用）。
+                function isTemplate(b) { return b.reuseMode === 'template'; }
                 function makeBlockButton(b) {
                     var button = document.createElement('button');
                     button.type = 'button';
                     button.className = 'wb-palette-item';
-                    button.draggable = true;
+                    var tpl = isTemplate(b);
+                    button.draggable = !tpl;
                     button.dataset.type = 'core.globalref';
                     button.innerHTML = '<strong></strong><span></span>';
                     button.querySelector('strong').textContent = b.name;
-                    button.querySelector('span').textContent = '全局块 · ' + (b.kind === 'header' ? '页眉' : b.kind === 'footer' ? '页脚' : '区块');
-                    button.addEventListener('click', function () {
+                    button.querySelector('span').textContent = (kindLabels[b.kind] || '区块') +
+                        ' · ' + (tpl ? '复制（点击插入独立副本）' : '引用（点击/拖拽；Shift+点击改为复制）');
+                    button.addEventListener('click', function (ev) {
+                        if (tpl) { self.insertBlockClone(b); return; }
+                        // Shift+点击＝强制复制插入（global 块也可一次性复制，docs/02-D §5.3 显式选择）。
+                        if (ev.shiftKey) { self.insertBlockClone(b); return; }
                         self.insertComponent(self.globalRefItem(b));
                         self.showEdit();
                     });
-                    button.addEventListener('dragstart', function (event) {
+                    if (!tpl) button.addEventListener('dragstart', function (event) {
                         event.dataTransfer.effectAllowed = 'copy';
                         event.dataTransfer.setData('application/x-wb-component', 'core.globalref');
                         event.dataTransfer.setData('application/x-wb-block', b.id);
@@ -435,8 +447,10 @@
                 [['header', '页眉'], ['footer', '页脚']].forEach(function (g) {
                     appendGroup(g[1], (meta.blocks || []).filter(function (b) { return b.kind === g[0] && match(b.name); }));
                 });
-                // block 类型：按 category 分组（未识别的 category 归入「其他区块」）。
-                var blockHits = (meta.blocks || []).filter(function (b) { return b.kind === 'block' && match(b.name); });
+                // 其余全部类型（block/骨架/内容段/布局/snippet，docs/02-D §4）：按 category 分组。
+                var blockHits = (meta.blocks || []).filter(function (b) {
+                    return b.kind !== 'header' && b.kind !== 'footer' && match(b.name);
+                });
                 var byCat = {};
                 blockHits.forEach(function (b) {
                     var cat = b.category || 'general';
@@ -450,6 +464,26 @@
             // globalRefItem 全局块的插入描述（引用节点只带 blockId）。
             globalRefItem(b) {
                 return { type: 'core.globalref', label: b.name, hint: '全局块', props: { blockId: b.id } };
+            },
+            // insertBlockClone 「插入-复制」动作（docs/02-D §5.2）：调 /api/block/clone
+            // 取独立 AST（全部节点已重生成 ID），复用 insertPreset 顶级平铺插入。
+            // 之后与源块互不影响；源块修改不传播（template 语义）。
+            insertBlockClone(b) {
+                var self = this;
+                fetch('/api/block/clone', {
+                    method: 'POST',
+                    headers: Object.assign({ 'Content-Type': 'application/json' }, csrfHeaders({})),
+                    body: JSON.stringify({ id: b.id })
+                }).then(function (r) { return r.json(); }).then(function (res) {
+                    if (!res || res.code !== 200 || !res.data || !res.data.document) {
+                        console.warn('复制块失败', res);
+                        return;
+                    }
+                    var nodes = res.data.document.root;
+                    if (!Array.isArray(nodes) || !nodes.length) return;
+                    self.insertPreset({ document: nodes });
+                    self.showEdit();
+                }).catch(function (err) { console.warn('复制块请求失败', err); });
             },
             // resolveDropItem 拖入落点解析：全局块按 DataTransfer 里的块 ID 匹配。
             resolveDropItem(type, dataTransfer) {

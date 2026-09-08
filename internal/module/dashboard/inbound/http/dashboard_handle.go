@@ -54,6 +54,13 @@ func NewHandle(pages pagecontract.PageService, projects projectcontract.ProjectS
 	}); ok {
 		setter.SetStalePropagator(h.markStaleForBlockCtx)
 	}
+	// 注入引用检查器：global 块删除 / global→template 切换前判断是否仍被引用
+	//（docs/02-D §9）。引用路径与 stale 传播一致：globalref/structure 页面 + 主题槽位。
+	if setter, ok := blocks.(interface {
+		SetReferenceChecker(func(context.Context, string) (bool, error))
+	}); ok {
+		setter.SetReferenceChecker(h.blockReferencedCtx)
+	}
 	return h
 }
 
@@ -239,8 +246,8 @@ func (h *Handle) workbenchBlock(c *gin.Context, blockID string) {
 	}))
 }
 
-// blockSummaries 工程块列表的轻量投影（id/name/kind/category，不含文档大字段）。
-// category 供 workbench 全局块按分类分组。
+// blockSummaries 工程块列表的轻量投影（id/name/kind/category/reuseMode，不含文档大字段）。
+// category 供 workbench 全局块按分类分组；reuseMode 供「引用/复制」双动作分流（docs/02-D §5.3）。
 func (h *Handle) blockSummaries(c *gin.Context, projectID string) []gin.H {
 	blocks, err := h.blocks.List(c.Request.Context(), &blockcontract.ListReq{ProjectID: projectID})
 	if err != nil {
@@ -248,7 +255,7 @@ func (h *Handle) blockSummaries(c *gin.Context, projectID string) []gin.H {
 	}
 	out := make([]gin.H, 0, len(blocks))
 	for _, b := range blocks {
-		out = append(out, gin.H{"id": b.ID, "name": b.Name, "kind": b.Kind, "category": b.Category})
+		out = append(out, gin.H{"id": b.ID, "name": b.Name, "kind": b.Kind, "category": b.Category, "reuseMode": b.ReuseMode})
 	}
 	return out
 }

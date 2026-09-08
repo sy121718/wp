@@ -29,6 +29,9 @@ type Service struct {
 	// propagate 全局块内容变更/删除后的 stale 传播器（编排层注入，可空）。
 	// block 不直接依赖 page 模块，传播由注入的回调完成，避免 block↔page 装配循环。
 	propagate func(ctx context.Context, blockID string) error
+	// referenced 引用检查器（编排层注入，可空）：global 块删除 / global→template 切换前
+	// 判断是否仍被页面（globalref/structure）或主题槽位引用。未注入时不拦截（兼容直连装配）。
+	referenced func(ctx context.Context, blockID string) (bool, error)
 }
 
 // NewService 创建全局块服务。
@@ -42,9 +45,33 @@ func (s *Service) SetStalePropagator(p func(ctx context.Context, blockID string)
 	s.propagate = p
 }
 
+// SetReferenceChecker 注入引用检查器（dashboard 在 page/project 装配后绑定，
+// 与 SetStalePropagator 同模式）。未注入时删除/切换不做引用拦截。
+func (s *Service) SetReferenceChecker(r func(ctx context.Context, blockID string) (bool, error)) {
+	s.referenced = r
+}
+
+// blockReferenced 判断块是否仍被引用（检查器未注入视为未引用）。
+func (s *Service) blockReferenced(ctx context.Context, blockID string) bool {
+	if s.referenced == nil {
+		return false
+	}
+	ok, err := s.referenced(ctx, blockID)
+	if err != nil {
+		// 检查失败按「被引用」处理（宁拒勿删，删除是不可逆操作）。
+		logger.Scene("block").With("block_id", blockID).Error(err, "块引用检查失败，按被引用处理")
+		return true
+	}
+	return ok
+}
+
 // propagateStale 块内容变更/删除后触发引用方 stale 传播。
-// 传播器未注入（直连 REST 且未接线）或传播失败只记日志，不阻断保存/删除主流程。
-func (s *Service) propagateStale(ctx context.Context, blockID string) {
+// reuse_mode=template 的块不传播（docs/02-D §9）：插入时已复制 AST，页面持有独立副本，
+// 源块修改不影响任何页面。传播器未注入或传播失败只记日志，不阻断保存/删除主流程。
+func (s *Service) propagateStale(ctx context.Context, blockID, reuseMode string) {
+	if reuseMode == blockmodel.ReuseTemplate {
+		return // 一次性复制的片段不传播 stale
+	}
 	if s.propagate == nil {
 		logger.Scene("block").With("block_id", blockID).Warn("stale 传播器未注入，引用页面不会标待重建")
 		return
@@ -54,7 +81,7 @@ func (s *Service) propagateStale(ctx context.Context, blockID string) {
 	}
 }
 
-// List 列出工程全部块（kind/category 可选过滤）。
+// List 列出工程全部块（kind/category/reuseMode 可选过滤）。
 func (s *Service) List(ctx context.Context, req *blockdto.ListReq) (res []blockdto.BlockResp, err error) {
 	// 参数缺失（nil/空 projectID）是调用方错误，与「工程下无块」/资源不存在区分开。
 	if req == nil || strings.TrimSpace(req.ProjectID) == "" {
@@ -64,7 +91,11 @@ func (s *Service) List(ctx context.Context, req *blockdto.ListReq) (res []blockd
 	if category != "" && !categoryPattern.MatchString(category) {
 		return nil, ErrInvalidCategory
 	}
-	entities, err := s.model.ListByProject(ctx, req.ProjectID, strings.TrimSpace(req.Kind), category)
+	reuseMode, err := normalizeReuseMode(req.ReuseMode)
+	if err != nil {
+		return nil, err
+	}
+	entities, err := s.model.ListByProject(ctx, req.ProjectID, strings.TrimSpace(req.Kind), category, reuseMode)
 	if err != nil {
 		return nil, err
 	}
@@ -104,6 +135,10 @@ func (s *Service) Create(ctx context.Context, req *blockdto.CreateReq) (res *blo
 	if err != nil {
 		return nil, err
 	}
+	reuseMode, err := normalizeReuseMode(req.ReuseMode)
+	if err != nil {
+		return nil, err
+	}
 	document, err := validateDocument(req.Document)
 	if err != nil {
 		return nil, err
@@ -120,7 +155,7 @@ func (s *Service) Create(ctx context.Context, req *blockdto.CreateReq) (res *blo
 	now := time.Now().UTC()
 	entity := &blockmodel.BlockEntity{
 		ID: uuid.NewString(), ProjectID: req.ProjectID,
-		Name: strings.TrimSpace(req.Name), Kind: kind, Category: category, Document: document,
+		Name: strings.TrimSpace(req.Name), Kind: kind, Category: category, ReuseMode: reuseMode, Document: document,
 		CreatedAt: now, UpdatedAt: now,
 	}
 	if err = s.model.Create(ctx, entity); err != nil {
@@ -155,6 +190,18 @@ func (s *Service) Update(ctx context.Context, req *blockdto.UpdateReq) (res *blo
 			return nil, err
 		}
 	}
+	reuseMode := entity.ReuseMode
+	if strings.TrimSpace(req.ReuseMode) != "" {
+		if reuseMode, err = normalizeReuseMode(req.ReuseMode); err != nil {
+			return nil, err
+		}
+		// global→template 切换防御：仍被引用的 global 块一旦切成 template，
+		// 引用页面将悬空（stale 不再传播），必须先解除引用。
+		if entity.ReuseMode == blockmodel.ReuseGlobal && reuseMode == blockmodel.ReuseTemplate &&
+			s.blockReferenced(ctx, entity.ID) {
+			return nil, ErrBlockInUse
+		}
+	}
 	document := entity.Document
 	if len(req.Document) > 0 {
 		if document, err = validateDocument(req.Document); err != nil {
@@ -162,15 +209,18 @@ func (s *Service) Update(ctx context.Context, req *blockdto.UpdateReq) (res *blo
 		}
 	}
 	now := time.Now().UTC()
-	if err = s.model.UpdateDocument(ctx, entity.ID, name, kind, category, document, now); err != nil {
+	if err = s.model.UpdateDocument(ctx, entity.ID, name, kind, category, reuseMode, document, now); err != nil {
 		return nil, err
 	}
-	entity.Name, entity.Kind, entity.Category, entity.Document, entity.UpdatedAt = name, kind, category, document, now
-	s.propagateStale(ctx, entity.ID)
+	entity.Name, entity.Kind, entity.Category, entity.ReuseMode, entity.Document, entity.UpdatedAt = name, kind, category, reuseMode, document, now
+	s.propagateStale(ctx, entity.ID, entity.ReuseMode)
 	return blockRespPtr(entity), nil
 }
 
-// Delete 删除块，并触发引用方 stale 传播（传播器注入时）。
+// Delete 删除块。docs/02-D §9：
+//   - reuse_mode=template：页面已持有独立副本，删除无副作用，不传播；
+//   - reuse_mode=global：仍被页面（globalref/structure）或主题槽位引用时默认拒绝（ErrBlockInUse），
+//     Force=true 强制删除并传播（引用页面退化为无该块，下次构建 globalref 降级占位）。
 func (s *Service) Delete(ctx context.Context, req *blockdto.DeleteReq) (err error) {
 	// 参数缺失（nil/空 ID）是调用方错误，与「ID 对应块不存在」区分开（与 List/Detail 语义一致）。
 	if req == nil || strings.TrimSpace(req.ID) == "" {
@@ -178,14 +228,40 @@ func (s *Service) Delete(ctx context.Context, req *blockdto.DeleteReq) (err erro
 	}
 	// 先确认存在：避免 model.Delete RowsAffected=0 静默成功，
 	// 与 Detail/Update 的「不存在 → ErrBlockNotFound」语义保持一致。
-	if _, err := s.getExistingBlock(ctx, req.ID); err != nil {
+	entity, err := s.getExistingBlock(ctx, req.ID)
+	if err != nil {
 		return err
+	}
+	if entity.ReuseMode == blockmodel.ReuseGlobal && !req.Force && s.blockReferenced(ctx, entity.ID) {
+		return ErrBlockInUse
 	}
 	if err = s.model.Delete(ctx, req.ID); err != nil {
 		return err
 	}
-	s.propagateStale(ctx, req.ID)
+	s.propagateStale(ctx, req.ID, entity.ReuseMode)
 	return nil
+}
+
+// CloneAST 复制块文档为独立 AST（docs/02-D §5.2「插入-复制」动作）：
+// 解析 → 公共克隆（重生成全部 Node ID）→ 返回。副本与源块脱钩，此后互不影响。
+// 与 blueprint 的整页初始化复用同一 ClonePageWithNewIDs 机制（片段层级 vs 完整文档层级）。
+func (s *Service) CloneAST(ctx context.Context, req *blockdto.CloneReq) (res *blockdto.CloneResp, err error) {
+	if req == nil || strings.TrimSpace(req.ID) == "" {
+		return nil, ErrParamRequired
+	}
+	entity, err := s.getExistingBlock(ctx, req.ID)
+	if err != nil {
+		return nil, err
+	}
+	page, err := builder.ParsePage(entity.Document)
+	if err != nil {
+		return nil, ErrInvalidDoc
+	}
+	out, err := json.Marshal(builder.ClonePageWithNewIDs(page))
+	if err != nil {
+		return nil, ErrInvalidDoc
+	}
+	return &blockdto.CloneResp{Document: out}, nil
 }
 
 func (s *Service) getExistingBlock(ctx context.Context, id string) (e *blockmodel.BlockEntity, err error) {
@@ -226,20 +302,42 @@ func normalizeCategory(raw string) (string, error) {
 	return s, nil
 }
 
-// normalizeKind 归一化块类型：空默认 block，仅接受 block/header/footer，
+// kindWhitelist 块类型白名单（docs/02-D §4/§5）：站点骨架 + 复用内容段 + 布局骨架 + 片段模板。
+var kindWhitelist = map[string]bool{
+	blockmodel.KindBlock: true, blockmodel.KindHeader: true, blockmodel.KindFooter: true,
+	blockmodel.KindAnnouncement: true, blockmodel.KindSidebar: true, blockmodel.KindBreadcrumb: true,
+	blockmodel.KindDrawer: true, blockmodel.KindSearch: true,
+	blockmodel.KindCTA: true, blockmodel.KindTrust: true, blockmodel.KindBrands: true,
+	blockmodel.KindContact: true, blockmodel.KindAbout: true,
+	blockmodel.KindBanner: true, blockmodel.KindGrid: true,
+	blockmodel.KindSnippet: true,
+}
+
+// normalizeKind 归一化块类型：空默认 block，仅接受白名单内的类型，
 // 其余返回 ErrInvalidKind（拒绝而非静默改写为 block）。
 func normalizeKind(raw string) (string, error) {
+	s := strings.TrimSpace(raw)
+	if s == "" {
+		return blockmodel.KindBlock, nil
+	}
+	if !kindWhitelist[s] {
+		return "", ErrInvalidKind
+	}
+	return s, nil
+}
+
+// normalizeReuseMode 归一化复用方式（docs/02-D §5）：空默认 global（存量语义），
+// 仅接受 global/template，其余返回 ErrInvalidReuseMode。
+func normalizeReuseMode(raw string) (string, error) {
 	switch strings.TrimSpace(raw) {
 	case "":
-		return blockmodel.KindBlock, nil
-	case blockmodel.KindBlock:
-		return blockmodel.KindBlock, nil
-	case blockmodel.KindHeader:
-		return blockmodel.KindHeader, nil
-	case blockmodel.KindFooter:
-		return blockmodel.KindFooter, nil
+		return blockmodel.ReuseGlobal, nil
+	case blockmodel.ReuseGlobal:
+		return blockmodel.ReuseGlobal, nil
+	case blockmodel.ReuseTemplate:
+		return blockmodel.ReuseTemplate, nil
 	default:
-		return "", ErrInvalidKind
+		return "", ErrInvalidReuseMode
 	}
 }
 
@@ -265,7 +363,7 @@ func validateDocument(raw json.RawMessage) (json.RawMessage, error) {
 func blockResp(e *blockmodel.BlockEntity) blockdto.BlockResp {
 	return blockdto.BlockResp{
 		ID: e.ID, ProjectID: e.ProjectID, Name: e.Name, Kind: e.Kind, Category: e.Category,
-		Document: e.Document, CreatedAt: e.CreatedAt, UpdatedAt: e.UpdatedAt,
+		ReuseMode: e.ReuseMode, Document: e.Document, CreatedAt: e.CreatedAt, UpdatedAt: e.UpdatedAt,
 	}
 }
 

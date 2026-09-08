@@ -30,4 +30,8 @@ var (
 	ErrInvalidCategory = errors.New(blockenums.ErrBlockInvalidCategory)
 	// ErrDuplicate 同工程同名块已存在。
 	ErrDuplicate = errors.New(blockenums.ErrBlockDuplicate)
+	// ErrInvalidReuseMode 块复用方式不合法（非 global/template）。
+	ErrInvalidReuseMode = errors.New(blockenums.ErrBlockInvalidReuseMode)
+	// ErrBlockInUse global 块仍被页面/主题引用：删除或切换 global→template 前须先解除引用或 Force。
+	ErrBlockInUse = errors.New(blockenums.ErrBlockInUse)
 )

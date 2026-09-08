@@ -69,6 +69,9 @@ type PageService interface {
 	// MarkStaleForBlock 把文档中经 core.globalref 引用或 settings.structure 页眉/页脚
 	// 自选绑定该块的页面标记为待重建（块内容变更后调用，与 MarkStaleForTheme 互补）。
 	MarkStaleForBlock(ctx context.Context, blockID string) error
+	// CountBlockReference 统计引用该块的未删除页面数（globalref / structure 自选绑定），
+	// 供 block 模块删除或切换 global→template 前的引用拦截（docs/02-D §9）。
+	CountBlockReference(ctx context.Context, blockID string) (int64, error)
 	// AttachThemeToUnassigned 把工程内未挂主题的页面挂到指定主题（工程首个主题创建后回填历史页面）。
 	AttachThemeToUnassigned(ctx context.Context, projectID, themeID string) error
 	// ReattachProjectPagesToTheme 把工程内全部页面（含已挂其他主题的）转挂到指定主题，

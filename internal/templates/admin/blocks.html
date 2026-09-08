@@ -24,9 +24,26 @@
             <input type="hidden" name="projectId" value="{{.SelectedProject}}">
             <input type="text" name="name" placeholder="块名称，如：站点页眉" required>
             <select name="kind">
+                <option value="block">区块</option>
                 <option value="header">页眉</option>
                 <option value="footer">页脚</option>
-                <option value="block">区块</option>
+                <option value="announcement">公告栏</option>
+                <option value="sidebar">侧边栏</option>
+                <option value="breadcrumb">面包屑</option>
+                <option value="drawer">抽屉导航</option>
+                <option value="search">搜索框</option>
+                <option value="cta">CTA 段</option>
+                <option value="trust">信任徽章</option>
+                <option value="brands">品牌墙</option>
+                <option value="contact">联系方式</option>
+                <option value="about">关于我们</option>
+                <option value="banner">横幅</option>
+                <option value="grid">多栏布局</option>
+                <option value="snippet">片段模板</option>
+            </select>
+            <select name="reuseMode">
+                <option value="global">全局引用（改一处，引用页一起更新）</option>
+                <option value="template">一次性复制（插入即独立，互不影响）</option>
             </select>
             <button type="submit" class="btn btn-primary">新建并编辑</button>
         </form>
@@ -91,16 +108,18 @@
     </section>
 
     <section class="pages-card">
-        <h2>区块</h2>
+        <h2>区块 / 复用资产</h2>
         {{if len(.Blocks) == 0}}
         <p class="pages-empty">还没有区块。区块用于跨页面复用的结构片段（对应 WP 的同步块），工作台「全局块」页签可一键引用。</p>
         {{else}}
         <table class="pages-table">
-            <thead><tr><th>名称</th><th>更新时间</th><th>操作</th></tr></thead>
+            <thead><tr><th>名称</th><th>类型</th><th>复用方式</th><th>更新时间</th><th>操作</th></tr></thead>
             <tbody>
             {{range _, b := .Blocks}}
             <tr>
                 <td>{{b.Name}}</td>
+                <td>{{b.KindLabel}}</td>
+                <td>{{b.ReuseModeLabel}}</td>
                 <td>{{b.UpdatedAt}}</td>
                 <td class="pages-actions">
                     <a class="btn" href="/workbench?block={{b.ID}}">编辑</a>
@@ -124,7 +143,10 @@
         <p class="pages-empty">
             全局块 = 跨页面复用的结构片段（对应 WP 的 HTML 块 / template part）。页眉/页脚块在
             「主题管理 → 设置」里绑定到主题，构建页面时编译期内联进产物——访问面保持纯静态；
-            块内容变更后，绑定了它的主题下页面自动标为待重建。
+            块内容变更后，绑定了它的主题下页面自动标为待重建。<br>
+            复用方式（docs/02-D）：<b>全局引用</b>＝页面存引用，改一处所有引用页一起更新（页眉/公告栏/信任徽章）；
+            <b>一次性复制</b>＝插入时复制完整结构，此后与源块互不影响（商品卡/表单/弹窗）。
+            被引用的全局块删除前须先解除引用。
         </p>
     </section>
     {{end}}

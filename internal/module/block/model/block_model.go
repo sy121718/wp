@@ -11,11 +11,33 @@ import (
 
 const tableNameBlocks = "blocks"
 
-// 块类型：普通块 / 页眉候选 / 页脚候选。
+// 块类型（docs/02-D §4/§5）：站点骨架 / 复用内容段 / 布局骨架 / 片段模板。
+// header/footer 为页眉页脚候选；snippet 为片段模板类（配合 ReuseTemplate 一次性复制）。
 const (
-	KindBlock  = "block"
-	KindHeader = "header"
-	KindFooter = "footer"
+	KindBlock        = "block"        // 普通区块
+	KindHeader       = "header"       // 页眉
+	KindFooter       = "footer"       // 页脚
+	KindAnnouncement = "announcement" // 公告栏（促销条，页眉上方）
+	KindSidebar      = "sidebar"      // 侧边栏
+	KindBreadcrumb   = "breadcrumb"   // 面包屑导航
+	KindDrawer       = "drawer"       // 移动端抽屉导航
+	KindSearch       = "search"       // 全局搜索框
+	KindCTA          = "cta"          // 全局 CTA 段（订阅/联系）
+	KindTrust        = "trust"        // 信任徽章/支付方式条
+	KindBrands       = "brands"       // 品牌 logo 墙
+	KindContact      = "contact"      // 客服联系方式条
+	KindAbout        = "about"        // 「关于我们」简介段
+	KindBanner       = "banner"       // 全宽横幅
+	KindGrid         = "grid"         // 多栏布局
+	KindSnippet      = "snippet"      // 片段模板（商品卡/表单/弹窗，template 复用方式的典型 kind）
+)
+
+// 复用方式（docs/02-D §5）。
+const (
+	// ReuseGlobal 全局引用：页面存 block_id，改处处变 + stale 传播。
+	ReuseGlobal = "global"
+	// ReuseTemplate 一次性复制：插入时复制完整 AST（重生成 Node ID），此后独立、不传播 stale。
+	ReuseTemplate = "template"
 )
 
 // DefaultCategory 块默认分类（自由分类体系，组织/筛选维度）。
@@ -28,6 +50,7 @@ type BlockEntity struct {
 	Name      string          `gorm:"column:name;type:text;not null"`
 	Kind      string          `gorm:"column:kind;type:text;not null"`
 	Category  string          `gorm:"column:category;type:text;not null;default:general"`
+	ReuseMode string          `gorm:"column:reuse_mode;type:text;not null;default:global"`
 	Document  json.RawMessage `gorm:"column:document;type:jsonb;not null"`
 	CreatedAt time.Time       `gorm:"column:created_at;not null"`
 	UpdatedAt time.Time       `gorm:"column:updated_at;not null"`
@@ -53,14 +76,17 @@ func (m *Model) Create(ctx context.Context, e *BlockEntity) (err error) {
 	return m.DB(ctx).Create(e).Error
 }
 
-// ListByProject 列出工程全部块（kind/category 可选过滤；类型序 + 创建序）。
-func (m *Model) ListByProject(ctx context.Context, projectID, kind, category string) (list []BlockEntity, err error) {
+// ListByProject 列出工程全部块（kind/category/reuseMode 可选过滤；类型序 + 创建序）。
+func (m *Model) ListByProject(ctx context.Context, projectID, kind, category, reuseMode string) (list []BlockEntity, err error) {
 	q := m.DB(ctx).Where("project_id = ?", projectID)
 	if kind != "" {
 		q = q.Where("kind = ?", kind)
 	}
 	if category != "" {
 		q = q.Where("category = ?", category)
+	}
+	if reuseMode != "" {
+		q = q.Where("reuse_mode = ?", reuseMode)
 	}
 	err = q.Order("kind ASC, created_at ASC").Find(&list).Error
 	return list, err
@@ -86,10 +112,10 @@ func (m *Model) GetByID(ctx context.Context, id string) (e *BlockEntity, err err
 	return e, nil
 }
 
-// UpdateDocument 更新块名称、类型、分类与文档（覆盖式，编辑器整树保存）。
-func (m *Model) UpdateDocument(ctx context.Context, id, name, kind, category string, document json.RawMessage, updatedAt time.Time) (err error) {
+// UpdateDocument 更新块名称、类型、分类、复用方式与文档（覆盖式，编辑器整树保存）。
+func (m *Model) UpdateDocument(ctx context.Context, id, name, kind, category, reuseMode string, document json.RawMessage, updatedAt time.Time) (err error) {
 	return m.DB(ctx).Where("id = ?", id).Updates(map[string]any{
-		"name": name, "kind": kind, "category": category, "document": document, "updated_at": updatedAt,
+		"name": name, "kind": kind, "category": category, "reuse_mode": reuseMode, "document": document, "updated_at": updatedAt,
 	}).Error
 }
 

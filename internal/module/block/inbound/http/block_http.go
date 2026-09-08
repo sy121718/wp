@@ -37,13 +37,15 @@ func SetupBlockRoutes(rg *gin.RouterGroup, db *gorm.DB, projects projectcontract
 	g.POST("/create", h.Create)
 	g.POST("/update", h.Update)
 	g.POST("/delete", h.Delete)
+	g.POST("/clone", h.CloneAST)
 	return svc
 }
 
-// List 列出工程全局块（?projectId=&kind=&category=）。
+// List 列出工程全局块（?projectId=&kind=&category=&reuseMode=）。
 func (h *Handle) List(c *gin.Context) {
 	res, err := h.svc.List(c.Request.Context(), &blockdto.ListReq{
 		ProjectID: c.Query("projectId"), Kind: c.Query("kind"), Category: c.Query("category"),
+		ReuseMode: c.Query("reuseMode"),
 	})
 	if err != nil {
 		response.ErrorWithMessage(c, blockErrorStatus(err), blockErrorMessage(err))
@@ -92,7 +94,7 @@ func (h *Handle) Update(c *gin.Context) {
 	response.Success(c, res)
 }
 
-// Delete 删除块。
+// Delete 删除块（global 块被引用默认拒绝，force=true 强制删除）。
 func (h *Handle) Delete(c *gin.Context) {
 	var req blockdto.DeleteReq
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -106,6 +108,21 @@ func (h *Handle) Delete(c *gin.Context) {
 	response.Success(c, nil)
 }
 
+// CloneAST 复制块 AST（编辑器「插入-复制」动作）：返回与源块脱钩的独立文档。
+func (h *Handle) CloneAST(c *gin.Context) {
+	var req blockdto.CloneReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ParamError(c, err.Error())
+		return
+	}
+	res, err := h.svc.CloneAST(c.Request.Context(), &req)
+	if err != nil {
+		response.ErrorWithMessage(c, blockErrorStatus(err), blockErrorMessage(err))
+		return
+	}
+	response.Success(c, res)
+}
+
 // blockErrorStatus 按 sentinel error 映射 HTTP 状态码（与 page 模块 pageErrorStatus 同构）：
 // 参数/校验错误 → 400，资源不存在（块/工程）→ 404，同名冲突 → 409，其余未知错误 → 500。
 // 修复前按 err.Error() 中文文案 strings.Contains 匹配（文案改动即失效）；
@@ -116,11 +133,15 @@ func blockErrorStatus(err error) int {
 		return http.StatusNotFound
 	case errors.Is(err, blockservice.ErrDuplicate):
 		return http.StatusConflict
+	case errors.Is(err, blockservice.ErrBlockInUse):
+		// 409：资源仍被引用，属状态冲突而非参数错误。
+		return http.StatusConflict
 	case errors.Is(err, blockservice.ErrParamRequired),
 		errors.Is(err, blockservice.ErrNameRequired),
 		errors.Is(err, blockservice.ErrInvalidDoc),
 		errors.Is(err, blockservice.ErrInvalidKind),
-		errors.Is(err, blockservice.ErrInvalidCategory):
+		errors.Is(err, blockservice.ErrInvalidCategory),
+		errors.Is(err, blockservice.ErrInvalidReuseMode):
 		return http.StatusBadRequest
 	default:
 		return http.StatusInternalServerError

@@ -119,6 +119,20 @@ func (m *Model) MarkStaleForTheme(ctx context.Context, themeID string) (err erro
 	return err
 }
 
+// CountBlockReference 统计引用该块的未删除页面数（与 MarkStaleForBlock 同一匹配条件）：
+// core.globalref 节点（"blockId"）或 settings.structure 页眉/页脚自选绑定。
+// 供 block 模块删除/切换 global→template 前的引用拦截（docs/02-D §9）。
+func (m *Model) CountBlockReference(ctx context.Context, blockID string) (count int64, err error) {
+	err = m.DB(ctx).
+		Where("deleted_at IS NULL AND ("+
+			"draft_document::text LIKE '%\"blockId\": \"' || ? || '\"%'"+
+			" OR draft_document->'settings'->'structure'->>'headerBlockId' = ?"+
+			" OR draft_document->'settings'->'structure'->>'footerBlockId' = ?)",
+			blockID, blockID, blockID,
+		).Count(&count).Error
+	return count, err
+}
+
 // MarkStaleForBlock 把文档中经 core.globalref 引用（draft_document 树内
 // "blockId": "<blockID>" 节点）或 settings.structure 页眉/页脚自选绑定
 // （headerBlockId/footerBlockId，页面级覆盖，非主题默认）该块的页面标记为待重建。

@@ -12,7 +12,6 @@ import (
 	"gorm.io/gorm"
 
 	"go_wp/internal/builder"
-	"go_wp/internal/builder/core"
 	blueprintcontract "go_wp/internal/module/blueprint/contract"
 	blueprintdto "go_wp/internal/module/blueprint/dto"
 	blueprintenums "go_wp/internal/module/blueprint/enums"
@@ -185,39 +184,13 @@ func (s *Service) InitPageDocument(ctx context.Context, blueprintID string) (doc
 	if err != nil {
 		return nil, errors.New(blueprintenums.ErrDataInvalid)
 	}
-	// 复制完整 AST：settings 原样保留，root 每个节点递归重写 ID。
-	cloned := &builder.Page{Settings: page.Settings, Root: make([]*core.Node, 0, len(page.Root))}
-	for _, n := range page.Root {
-		cloned.Root = append(cloned.Root, cloneWithNewIDs(n))
-	}
+	// 复制完整 AST：settings 原样保留，root 每个节点递归重写 ID（公共机制，与 block 片段模板共用）。
+	cloned := builder.ClonePageWithNewIDs(page)
 	out, err := json.Marshal(cloned)
 	if err != nil {
 		return nil, errors.New(blueprintenums.ErrDataInvalid)
 	}
 	return out, nil
-}
-
-// cloneWithNewIDs 递归复制 AST 节点：每个 node.ID 换新 UUID，Children 递归复制。
-// Type/Props/编辑元数据原样保留，仅重写 ID，得到独立于 Blueprint 的 Page Document。
-func cloneWithNewIDs(n *core.Node) *core.Node {
-	if n == nil {
-		return nil
-	}
-	cloned := &core.Node{
-		ID:     uuid.NewString(),
-		Type:   n.Type,
-		Props:  append(json.RawMessage(nil), n.Props...),
-		Name:   n.Name,
-		Hidden: n.Hidden,
-		Locked: n.Locked,
-	}
-	if len(n.Children) > 0 {
-		cloned.Children = make([]*core.Node, 0, len(n.Children))
-		for _, c := range n.Children {
-			cloned.Children = append(cloned.Children, cloneWithNewIDs(c))
-		}
-	}
-	return cloned
 }
 
 // validateDocument 解析并校验 Page Document，返回规范化存储字节。
