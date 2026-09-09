@@ -2,7 +2,7 @@
 
 > 本文是 go_wp 从当前状态到完整交付的执行路线。每个阶段有明确的验收门禁，未通过不得进入下一阶段。
 >
-> **状态更新于 2026-09（按代码回填）：阶段 0-3 已完成；阶段 4 主链已落地、仅「CMS 变更自动发布（依赖 fan-out）」未做；阶段 5 的 blueprint/media 已落地、component 未落地（语义由 `block.reuse_mode` 承担）；阶段 6/7 已落地。**
+> **状态更新于 2026-09（按代码回填）：阶段 0-3 已完成；阶段 4 主链已落地，「CMS 变更自动发布」Page 侧已打通（PIPE-3：依赖记录落库 + 精确 fan-out + 自动重建/回写，presentation 侧待其 DB 持久化对齐）；阶段 5 的 blueprint/media 已落地、component 未落地（语义由 `block.reuse_mode` 承担）；阶段 6/7 已落地。**
 
 ## 冻结决策
 
@@ -57,7 +57,7 @@
 | 阶段 1 | 已完成 | 后台壳 + Session + 安全 |
 | 阶段 2 | 已完成 | 模块 HTMX 迁移（admin 六领域合并大模块，SPA/JWT 已清理） |
 | 阶段 3 | 已完成 | 0-A1 Page 静态发布主链（project/page/artifact/publication 模块落地，两段式回执/占用前置/activating 随机化） |
-| 阶段 4 | 部分完成 | 0-A2 CMS 内容 + 自动发布：`content`/`contenttemplate`/`presentation` 三模块已落地（迁移 042/043/044）；**未做**「CMS 变更 → 自动派生 DocumentSnapshot → 自动发布」（依赖 fan-out，见 `03-pipeline.md` §8）与「文章编辑页 Trix 集成」（后台无内容管理页） |
+| 阶段 4 | 部分完成 | 0-A2 CMS 内容 + 自动发布：`content`/`contenttemplate`/`presentation` 三模块已落地（迁移 042/043/044）；「CMS 变更 → 自动发布」**Page 侧已落地**（PIPE-3：迁移 071 + 依赖记录落库 + 精确 fan-out + 自动重建/回写），**presentation 侧未落地**（其持久化与生产 DDL 未对齐，见 `10-todo.md` PIPE-3）；**未做**「文章编辑页 Trix 集成」（后台无内容管理页） |
 | 阶段 5 | 部分完成 | 0-B Blueprint + Component + Media：`blueprint`（迁移 045）、`media`（迁移 048 + asynq 变体）已落地；`component` **未落地**，其版本/更新策略语义由 `block.reuse_mode` 承担（迁移 049，`internal/module/block/model/block_model.go`） |
 | 阶段 6 | 已完成 | 0-C Navigation（`internal/module/navigation`，迁移 046/054，后台 `/admin/navigations`） |
 | 阶段 7 | 部分完成 | 0-D Runtime Fragment：内核已落地（`internal/module/runtimefragment` 的 registry/capability/endpoint/router，`GET /_fragments/:type`）；分页列表与搜索 Shell 的 capability 未注册（当前仅 `loginPanel`/`cartSummary`） |

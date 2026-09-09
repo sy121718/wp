@@ -10,7 +10,8 @@
 >   - §6.5 UpdateURL：`internal/module/page/service/page_publish.go`（新 URL 构建激活 + 旧 URL 301/取消激活，传 artifact uuid 而非内容 hash、占用前置检查 `ensureRouteNotOccupied`）；
 >   - §9 两段式发布回执：`publication_control.go`（pending → committed / rolled_back 补偿，含占用归属校验）。
 > - 🟡 **部分实现**：§4.4 Redirect Artifact——`redirect.json` 落盘与 symlink 激活已有（`store.go` PutRedirect/GetRedirect/DeleteRedirect），对象存储/CDN 等价实现仍为规划。
-> - ⏳ **规划态**：§7 删除/取消发布与 GC 保留期（删除/取消发布流程有，GC 保留期调度未完整模块化）、§8 依赖 fan-out 与构建队列（Revision/依赖记录/stale 状态机为协议描述，队列消费端未完整落地）。
+> - 🟡 **部分实现**：§8 依赖 fan-out（PIPE-3，2026-09）：依赖记录已落库（`page_dependencies`）、内容变更按 (kind,key) 精确反查并标记 stale、受影响页面自动重建（已发布语言自动回写线上）；**构建队列消费端（§8.3 / PIPE-2）仍未落地**，自动重建目前在内容写入请求内同步执行且有单次上限；`presentation_dependencies` 因 presentation 侧 DB 持久化未对齐暂未写入（见 §8.2 实施说明）。
+> - ⏳ **规划态**：§7 删除/取消发布与 GC 保留期（删除/取消发布流程有，GC 保留期调度未完整模块化）。
 
 ## 1. Editor Kernel
 
@@ -401,6 +402,14 @@ URL 修改不是普通 props 更新：
 
 ## 8. 依赖失效与构建队列
 
+> **实施状态（PIPE-3，2026-09）**
+>
+> - 依赖记录**已落库**：页面构建成功后把 `Manifest.dependencies` 写入 `page_dependencies`（`internal/module/page/service/page_dependency.go` 的 `persistDependencies`；发布时按 Manifest 补写一次，保证活跃产物必有依赖记录）。
+> - **精确 fan-out 已替代全站标记**：内容实体增/改/删 → `content` 模块扇出 `direct_content:{type}:{id}` 与 `content_collection:collection:content:{type}` 两条键 → `pipeline.Fanout` 分发 → `page.MarkStaleByDependency` 按依赖表反查（命中条件见下方「反查口径」）→ 只标记真正受影响的页面。
+> - **自动重建已接通**：`page.RebuildStale` 对受影响页面按启用语言逐个构建（只产生 staged Artifact），**此前已发布的语言自动发布**；单次上限 20 页，超限页面保持 stale（PIPE-2 构建队列落地后应改为入队）。
+> - **既有全站标记保留不退化**：`MarkStaleForTheme` / `MarkStaleForBlock` / `MarkStaleForI18n` 语义不变（来源自身无法精确表达影响面时的保守标记）。
+> - **未完成**：`presentation_dependencies` 未写入（presentation 侧持久化与生产 DDL 未对齐，见 `docs/10-todo.md` PIPE-3 遗留项）；menu/media/site_setting/content_template 四类依赖尚未在构建期登记；§8.3 队列消费端属 PIPE-2。
+
 ### 8.1 Revision 机制
 
 Revision 是依赖源的变化追踪标识。每当一个依赖源的语义内容发生变化时，revision 更新。Build Worker 通过比较"构建时记录的 revision"和"当前 revision"来判断是否需要重建——相等即未变化，不等即已变化。
@@ -488,6 +497,8 @@ CMS Entity Revision Changed (non-runtime)
 - 构建成功仅 stage 时 `stale = false`，但 `active_artifact_id` 不变。
 - 内容变化后若 `stale` 已经是 true，不重复入队（由依赖表 last_checked 判断）。
 - 自动重建默认只产生 staged Artifact；是否自动 publish 由内容类型的显式发布策略决定。
+
+**反查口径（实施补充）**：§8.2 的失效查询按 `pages.active_artifact_id` 连接依赖表。实现额外纳入 `pages.staged_artifact_id`：未发布的页面（只有暂存产物）在内容变更后若不标记，其暂存产物会静默过期、一旦发布即上线旧内容。两个指针各只指向一个产物，不含历史噪音，仍是精确集合。多语言下 `pages.staged_artifact_id` 是最近一次构建语言的镜像，逐语言暂存真源在 `page_stagings`（后续可按语言细化）。
 
 ### 8.3 队列规则
 

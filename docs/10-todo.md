@@ -126,7 +126,7 @@
 |---|---|---|---|---|---|
 | PIPE-1 | 删除、取消发布与 GC（tombstone / 保留期 / \`gc_pending\` claim / 内容对象闭包回收） | \`03-pipeline.md\` §7（L373-400）、\`internal/pipeline/url.go:10\` 注释「§7/§8 属后续阶段」 | 未开始（无 \`gc_pending\` / claim 相关实现） | 中 | 上线前必须补 |
 | PIPE-2 | 构建队列 / Build Job Engine（幂等键、superseded、重试与退避） | \`03-pipeline.md\` §8.3（L492-500）、\`0-A1-pipeline.md\` §3.2（L46） | 未开始（\`build_jobs\` 表存在于 \`init_builder_schema.sql\`，无 Go 侧引擎） | 中 | PIPE-3 |
-| PIPE-3 | 依赖 fan-out 与 stale 状态机（\`direct_content\` / \`content_collection\` / \`content_template\` / \`site_setting\` 等） | \`03-pipeline.md\` §8.1（L404-426）、§8.2（L428-490）、\`05-implementation-plan.md\` 阶段 4 验收（L216） | 部分完成：\`block\` 的 stale 传播 + \`MarkStaleForI18n\` 已落地；content/presentation 的 fan-out 未做（\`presentation\` 仅手动 \`POST /rebuild\`） | 高 | 无 |
+| PIPE-3 | 依赖 fan-out 与 stale 状态机（\`direct_content\` / \`content_collection\` / \`content_template\` / \`site_setting\` 等） | \`03-pipeline.md\` §8.1（L404-426）、§8.2（L428-490）、\`05-implementation-plan.md\` 阶段 4 验收（L216） | 主体已落地（2026-09）：迁移 071（反查索引 + kind 扩展）、依赖记录落库、\`direct_content\`/\`content_collection\` 精确反查（不再全站标记）、受影响页面自动重建 + 已发布语言自动回写；**遗留**：\`presentation_dependencies\` 未写（presentation 持久化与生产 DDL 未对齐）、menu/media/site_setting/content_template 未登记、stale 保持 bool | 高 | 无 |
 | PIPE-4 | 插件生效流水线（上传 → 校验 → 入库 → **asynq 入队重建受影响页面** → 原子切换） | \`06-plugin-system.md\` §10（L266-279） | 部分完成：安装/编译/原子切换已落地；\`asynq\` 目前仅用于媒体变体（\`media_variant_task.go\`），未接构建 | 中 | PIPE-3 |
 | PIPE-5 | Redirect Artifact（\`redirect.json\` + \`route_kind=redirect\` + Static Server 301） | \`03-pipeline.md\` §4.4（L222-247） | 文档滞后-代码已有：\`pipeline/artifact.go\` \`RedirectDirective\`、\`store.go\` \`PutRedirect\`、\`publication.go\` 读取、\`page_publish.go:595\` \`ensureRedirectRoute\`（改 URL 时生成 301） | — | 无 |
 | PIPE-6 | AccessGuard（密码保护 / 登录用户可见，Manifest 标记 + 静态守卫页） | \`0-A2-page-routing-meta.md\` §2.2（L37-38）、§5（L84） | 未开始（无 \`AccessGuard\` 相关代码） | 中 | 访客账号域（BIZ-3）做「登录可见」 |
@@ -161,7 +161,7 @@
 | # | 事项 | 出处 | 现状 | 优先级 | 依赖/前置 |
 |---|---|---|---|---|---|
 | INF-1 | CMS 内容**后台管理页** + 文章编辑页 | \`05-implementation-plan.md\` 阶段 4 验收（L215）、\`09-session-handoff.md\` §1.4（L45） | 未开始（\`content\` 模块有 CRUD API，\`templates/admin/\` 无文章/内容页） | 高 | 无 |
-| INF-2 | CMS 实体变更 → 自动派生 DocumentSnapshot → 自动发布 | \`05\` 阶段 4 任务（L208）、\`03-pipeline.md\` §8.2 典型 fan-out（L462-472） | 未开始（\`presentation\` 仅 \`POST /api/presentation/rebuild\` 手动触发） | 中 | PIPE-3 |
+| INF-2 | CMS 实体变更 → 自动派生 DocumentSnapshot → 自动发布 | \`05\` 阶段 4 任务（L208）、\`03-pipeline.md\` §8.2 典型 fan-out（L462-472） | Page 侧已落地（2026-09，PIPE-3）：内容变更 → 精确反查 → 自动重建 + 已发布页面自动回写；**presentation 侧未落地**（\`presentation\` 持久化与生产 DDL 未对齐，仅 \`POST /api/presentation/rebuild\` 手动触发） | 中 | PIPE-3 |
 | INF-3 | 02-B 媒体中心三表与实现不一致 | \`02-B-media-center.md\` §7（L85-88：\`media_asset\`/\`media_asset_variant\`/\`media_reference\`） | ✅ **已修正（2026-09）**：\`02-B\` §7 改为实际三表，并说明 \`media_asset\`/\`media_asset_variant\`/\`media_reference\` 仅为 \`init_schema.sql\` 建表、无任何 Go 引用的遗留；§6 实现映射同步改为真实代码位置（原引用的 \`internal/builder/media/\` 不存在） | — | 无 |
 | INF-4 | 媒体下载接口（单图 + 批量 zip） | \`media-variants-recon.md\` §C（L200-204） | 文档滞后-代码已有：\`media_router.go:37-38\` \`/download\` 与 \`/download/batch\` | — | 无 |
 | INF-5 | qiniu 存储不支持批量打包（一期限定 \`storage_type=local\`） | \`media-variants-recon.md\`（L204） | 未开始（已知限制） | 低 | 无 |
