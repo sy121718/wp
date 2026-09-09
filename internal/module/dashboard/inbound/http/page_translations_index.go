@@ -20,8 +20,9 @@ package dashboardhttp
 //   - 更彻底的做法是新增「候选使用表」（page_id, source_hash, context，草稿保存时维护），
 //     代价是每次草稿写入多一次索引维护与一张新表，本轮不做（遗留项）。
 //
-// 已知缺口：块（core.globalref / 页眉页脚）内的文本不在页面文档里，
-// 因此不计入本索引（与 P5b「块内文本不翻译」同源，docs/06-D §15.11）。
+// 块内文本已纳入本索引（docs/06-D §15.14）：扫描页面草稿时同时记录「哪些页面引用了哪些块」
+// （settings.structure 页眉/页脚绑定 + core.globalref 节点），再按块文档收集候选，
+// 归属到引用它的页面——这样工作台行、复用提示与全站完成度分母三者口径一致。
 
 import (
 	"context"
@@ -126,6 +127,29 @@ func (h *Handle) buildSiteContentIndex(ctx context.Context) (*siteContentIndex, 
 	seenKey := make(map[string]bool)
 	seenHash := make(map[string]bool)
 	seenPage := make(map[string]map[string]bool)
+	// add 登记一个候选（去重 + 记录出现该 (hash, context) 的页面路径）。
+	add := func(cand builder.ContentCandidate, path string) {
+		hash := i18n.ContentHash(cand.Source)
+		key := i18n.ContentIndexKey(hash, cand.Context)
+		if !seenKey[key] {
+			seenKey[key] = true
+			idx.keys = append(idx.keys, key)
+		}
+		if !seenHash[hash] {
+			seenHash[hash] = true
+			idx.hashes = append(idx.hashes, hash)
+		}
+		if seenPage[key] == nil {
+			seenPage[key] = map[string]bool{}
+		}
+		if !seenPage[key][path] {
+			seenPage[key][path] = true
+			idx.usage[key] = append(idx.usage[key], path)
+		}
+	}
+	// 块引用：块 ID → 引用该块的页面路径（块内文本的「出现在哪些页面」由此得出）。
+	blockPaths := map[string][]string{}
+	blockPathSeen := map[string]map[string]bool{}
 	for i := range drafts {
 		doc := drafts[i].DraftDocument
 		if len(doc) == 0 {
@@ -141,22 +165,68 @@ func (h *Handle) buildSiteContentIndex(ctx context.Context) (*siteContentIndex, 
 			path = drafts[i].ID
 		}
 		for _, cand := range builder.CollectContentCandidates(page) {
-			hash := i18n.ContentHash(cand.Source)
-			key := i18n.ContentIndexKey(hash, cand.Context)
-			if !seenKey[key] {
-				seenKey[key] = true
-				idx.keys = append(idx.keys, key)
+			add(cand, path)
+		}
+		refs := builder.ReferencedBlockIDs(page.Root)
+		if id := page.Settings.Structure.HeaderBlockID; id != "" {
+			refs = append(refs, id)
+		}
+		if id := page.Settings.Structure.FooterBlockID; id != "" {
+			refs = append(refs, id)
+		}
+		for _, blockID := range refs {
+			if blockPathSeen[blockID] == nil {
+				blockPathSeen[blockID] = map[string]bool{}
 			}
-			if !seenHash[hash] {
-				seenHash[hash] = true
-				idx.hashes = append(idx.hashes, hash)
+			if blockPathSeen[blockID][path] {
+				continue
 			}
-			if seenPage[key] == nil {
-				seenPage[key] = map[string]bool{}
+			blockPathSeen[blockID][path] = true
+			blockPaths[blockID] = append(blockPaths[blockID], path)
+		}
+	}
+	// 块内文本同样进全站索引（分母/复用提示与工作台行保持一致）：
+	// 块被哪些页面引用，其文本就算出现在哪些页面；块内再引用块沿用同一批页面。
+	if h.blocks != nil && len(blockPaths) > 0 {
+		cache := map[string]*builder.Page{}
+		visited := map[string]bool{}
+		queue := make([]string, 0, len(blockPaths))
+		for blockID := range blockPaths {
+			queue = append(queue, blockID)
+		}
+		sort.Strings(queue)
+		for len(queue) > 0 {
+			blockID := queue[0]
+			queue = queue[1:]
+			if visited[blockID] {
+				continue
 			}
-			if !seenPage[key][path] {
-				seenPage[key][path] = true
-				idx.usage[key] = append(idx.usage[key], path)
+			visited[blockID] = true
+			paths := blockPaths[blockID]
+			blockPage := h.blockPageOf(ctx, blockID, cache)
+			if blockPage == nil {
+				continue
+			}
+			for _, cand := range builder.CollectContentCandidates(blockPage) {
+				for _, path := range paths {
+					add(cand, path)
+				}
+			}
+			for _, nested := range builder.ReferencedBlockIDs(blockPage.Root) {
+				if visited[nested] {
+					continue
+				}
+				if blockPathSeen[nested] == nil {
+					blockPathSeen[nested] = map[string]bool{}
+				}
+				for _, path := range paths {
+					if blockPathSeen[nested][path] {
+						continue
+					}
+					blockPathSeen[nested][path] = true
+					blockPaths[nested] = append(blockPaths[nested], path)
+				}
+				queue = append(queue, nested)
 			}
 		}
 	}

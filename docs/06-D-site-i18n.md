@@ -1266,9 +1266,10 @@ go test ./public/test/pkg/i18n/ -run TestContentRevisionTracksWrites -count=1 -v
 
 **不确定项 / 已知缺口**：
 
-- **块内文本不翻译**：`compileBlockFragment`（页眉/页脚块）编译时不传语言与取词器，
+- ~~**块内文本不翻译**~~ **已在 §15.14 修复**：`compileBlockFragment`（页眉/页脚块）编译时不传语言与取词器，
   `core.globalref` 内联展开的块内文本虽会走替换逻辑，但其 hash 不在本页候选集合内 → 回退原文
-  （并计入 `Misses`）。与 P4 的既有缺口同源，需单独一轮统一（块编译补 lang + 候选集合含块）。
+  （并计入 `Misses`）。修复方式：候选集合改为「本页 AST + 页眉/页脚绑定块 + globalref 递归展开」，
+  块编译下传语言与同一个取词器。
 - **`nav` 菜单标签**：`core.nav` 的 `items[].label` 在白名单内，但 `Menu=header/footer` 时
   标签来自 navigation 模块数据（构建期覆盖），其多语言归属（导航数据本地化）尚未定论。
 - **revision 粒度**：`i18n:content` 用全局 `max(updated_at)`，任一条译文变更都会让所有含候选的
@@ -1362,8 +1363,9 @@ go test ./public/test/dashboard/feature/ -run "TestPageTranslations|TestSavePage
 
 **不确定项 / 已知缺口**：
 
-- **块内文本仍不在工作台**：`core.globalref` / 页眉页脚块内的文本不在页面文档里，
-  既不进候选也不进全站索引（与 §15.11「块内文本不翻译」同源）。
+- ~~**块内文本仍不在工作台**~~ **已在 §15.14 补齐**：`core.globalref` / 页眉页脚块内的文本不在页面文档里，
+  既不进候选也不进全站索引（与 §15.11「块内文本不翻译」同源）。现由工作台按「本页引用块」补入，
+  行上标注来源（页眉块/页脚块/全局块），全站索引与完成度分母同步覆盖。
 - **译文删除未做**：清空输入框 = 本行不写入，库中旧行保留；改名/改文案后的孤儿行清理仍属 §14 D14。
 - **全站统计是「进程内 + 30s 缓存 + 1000 页上限」的近似**：多实例部署时各实例缓存独立；
   页数超限时工作台只显示本页维度（页面有文案提示）。
@@ -1461,8 +1463,86 @@ go test ./public/test/page/feature/ -run "TestPageBilingualSiteOnline|TestPageAr
 - `docs/10-todo.md` I18N-1 条目引用 `site_lang_prefix` 默认值，同样待同步。
 - 旧键 `site_lang_prefix` 仅保留解析兼容，未在配置校验层给出「已废弃」告警。
 
+### 15.14 P5b 缺口补齐：块内文本进翻译链路 + 工作台同步（2025-09）
+
+**背景**：§15.11 遗留「块内文本不翻译」、§15.12 遗留「块内文本仍不在工作台」。本轮补齐两条链路，
+**未改 `pkg/i18n` 的取词与缓存语义**（取词器仍是一次批量预载 + 内存索引 + 回退原文）。
+
+**缺口根因**：
+
+| 缺口 | 根因 |
+|---|---|
+| 页眉/页脚块文本不翻译 | `compileBlockFragment` 编译块文档时既不传语言（P4 组件文案）也不传取词器（P5b 内容文本） |
+| `core.globalref` 内联块文本不翻译 | 替换逻辑会执行，但候选集合只扫本页 AST → 块内原文 hash 未进取词器索引 → 回退原文并计入 `Misses` |
+
+**修复（构建链路）**：
+
+1. `builder.CollectContentCandidatesDeep(p, extraBlockIDs, resolve)`（`internal/builder/content_i18n.go`）：
+   候选 = 本页 AST + `extraBlockIDs`（`settings.structure` 页眉/页脚绑定）+ 二者内 `core.globalref`
+   引用的块**递归展开**。同一块 ID 只解析一次（`visited` 去重兼引用环保护）；块不可用时按渲染期
+   同一降级语义跳过（不阻断构建）。新增 `CollectContentCandidatesOfRoots`（块文档复用同一份白名单）
+   与 `ReferencedBlockIDs`（只读扫描引用 ID，供依赖判据与递归驱动）。
+2. 装配层（`page_assemble.go`）：`blockResolverAdapter` 缓存由「root 节点」改为「解析后的 `*builder.Page`」
+   （失败结果同样缓存），**候选收集与渲染展开共用同一份缓存**；`compileBlockFragment(ctx, blockID, lang, translator)`
+   下传语言与**同一个**取词器，块内组件文案（P4）与内容文本（P5b）同时生效。
+3. **每页每语言一次查库保持不变**：取词器仍只构造一次，其 hash 集合已含块内候选；页眉块、页脚块、
+   globalref 内联块复用同一实例 → 0 次额外查询。默认语言/单语言站点仍整体跳过（块解析也不发生）。
+4. 依赖登记判据扩为**保守超集**（`pageMayUseContentTranslation`）：本页有候选 **或** 引用了块
+   （structure 绑定 / globalref）即登记 `i18n:content`——引用块的页面本页 AST 可能一个候选都没有，
+   漏登记会让补齐译文后不触发重建（§9 关键约束）。不为此额外解析块文档（精确集合由编译期算出）。
+5. `Misses` 统计移到块内联之后：页眉/页脚/内联块的未命中计入同一计数（L3 告警口径不变）。
+
+**翻译工作台（判断与实现）**：块内文本**应当**出现在页面工作台里。
+
+- 判断理由：① 块内文本是本页产物的一部分（构建期装配内联），工作台是唯一的译文录入入口，
+  不列出则该文本永远无法翻译；② 只统计本页候选会让完成度误报 100%（页眉仍是中文却显示已全部翻译）；
+  ③ 写入路径天然全局（`sys_translation` 主键 `(source_hash, context, lang)`），保存后调用
+  `page.MarkStaleForI18n` 全站标记待重建，共享文本语义 P5c 已支撑。
+- 实现：`page_translations_blocks.go` 收集本页引用块（页眉/页脚/globalref，递归）的候选，并按
+  `(source_hash, context)` 记录来源标签；行上显示 `页眉块 / 页脚块 / 全局块` 徽章（`title` 说明
+  「全站共享文本：改动后所有使用该块的页面同步生效」）。`page_translations_index.go` 的全站索引把
+  块内文本归属到「引用该块的页面」，跨页面复用提示与全站完成度分母随之覆盖块内文本。
+- 代价：工作台一次渲染增加「本页引用块」的 `blocks.Detail`（同一块只查一次）；全站索引重建
+  （30s 缓存）按被引用块数增加查询。块内文本在**每个**引用它的页面的工作台各出现一行（同一行译文，
+  全局唯一），更彻底的形态是块级工作台（`/admin/block/translations`），见下方遗留。
+
+**改动文件**：
+
+| 文件 | 改动 |
+|---|---|
+| `internal/builder/content_i18n.go` | `CollectContentCandidatesOfRoots` / `CollectContentCandidatesDeep` / `ReferencedBlockIDs` / `sortCandidates` |
+| `internal/module/page/service/page_assemble.go` | 块解析缓存改 `*builder.Page`（含失败缓存）+ `collectContentCandidates`（本页 + 页眉/页脚 + globalref）；块编译下传 lang/取词器；Misses 统计后移 |
+| `internal/module/page/service/page_theme.go` | `compileBlockFragment` 增 `lang`、`translator` 参数，注入 `WithLanguage/WithTranslator/WithContentTranslator` |
+| `internal/module/page/service/page_lang.go` | 依赖判据扩为 `pageMayUseContentTranslation`（含块引用） |
+| `internal/module/page/service/page_service.go` | 内容译文端口 `contentStore` + `SetContentTranslationStore`（测试注入）+ `newContentTranslator` |
+| `internal/module/dashboard/inbound/http/page_translations_blocks.go` | 新增：工作台块内候选收集 + 来源标签 + 候选合并 |
+| `internal/module/dashboard/inbound/http/page_translations_{handle,index}.go` | 行含块内文本与来源徽章；全站索引纳入块内文本（归属引用页面） |
+| `internal/templates/admin/page_translations.html` | 字段列来源徽章 |
+| `internal/builder/content_i18n_blocks_test.go` | 新增：候选覆盖块 / 环保护 / 块文本随语言切换 / 回退字节一致 / 块内缺失计数 |
+| `public/test/page/unit/page_block_content_i18n_test.go` | 新增：装配层真 PG 链路（页眉+页脚+globalref 翻译、一次查库、回退一致） |
+| `public/test/dashboard/feature/page_translations_blocks_test.go` | 新增：工作台列出块内文本 + 来源徽章 + 保存落库 + 复用提示 |
+
+**验证命令**（真实输出见提交说明）：
+
+```bash
+go test ./... -count=1                       # 全量基线（改前 / 改后）
+go test ./internal/builder/ -run "TestCollectContentCandidatesDeep|TestContentTranslationBlock" -count=1 -v
+go test ./public/test/page/unit/ -run "TestPageBlockContentTranslation|TestPageBlockOnlyContent|TestPageBlockContentFallback" -count=1 -v
+go test ./public/test/dashboard/feature/ -run "TestPageTranslationsListsBlockText|TestSaveBlockTextTranslation" -count=1 -v
+```
+
+**剩余遗留**：
+
+- **块级工作台未做**：块内文本按「引用该块的每个页面」重复出现在页面工作台；独立入口
+  `/admin/block/translations`（按块聚合、与页面列表解耦）属后续一轮。
+- **`core.nav` 菜单标签的多语言归属**仍未定（导航数据本地化，与 §15.11 同款）。
+- **`i18n:content` revision 仍是全局 `max(updated_at)`**：任一条译文变更使所有含候选的非默认语言
+  产物依赖失效（保守正确，代价是全站重建）。
+- **块内文本的「来源」按外层入口标注**：块内再引用块时，嵌套块文本沿用外层标签（不细分到嵌套块）。
+
 ## 变更记录
 
+- v12（2025-09）：新增 §15.14——P5b 缺口补齐：块内文本进翻译链路（`CollectContentCandidatesDeep` 覆盖页眉/页脚绑定块 + `core.globalref` 递归展开、块编译下传 lang 与同一取词器、每页每语言仍一次查库、依赖判据扩为含块引用的保守超集、Misses 含块内未命中）+ 翻译工作台同步（块内文本行 + 来源徽章 + 全站索引归属引用页面）；§15.11/§15.12 的块内文本遗留项标记为已修复。
 - v11（2025-09）：新增 §15.13——语言 URL 方案由 D1 全前缀调整为方案 A'：默认语言无前缀（/about、/index）+ 非默认语言短码（/en/about），内部语言码保持完整码；新增 `i18n.site_lang_url_mode` 枚举（default_plain/all_prefix/off）与旧键兼容映射、`i18n.lang_url_codes` 覆盖表 + 内置表 + 主语言子标签回退 + 短码冲突 fail-fast；唯一映射点收敛到 `pipeline.LangURLRule`（Path/Strip/Locate/Validate），page_routes 登记、active_path、hreflang、语言切换器、sitemap 分组、导航本地化、预览路径全部经同一规则。
 - v10（2025-09）：新增 §15.12——P5c 翻译工作台落地：页面列表行内「多语言」入口、按组件分组的手动填译文界面（状态/来源徽章、一键 AI 灰置预留）、写入三重校验（白名单/长度/形态 + hash 一致性 + ON CONFLICT 幂等）、仅内容变化才触发全站标记待重建、跨页面复用提示与全站完成度（进程内全站索引 + 30s 缓存 + 1000 页上限）；记录块内文本不入工作台等 5 条缺口。
 - v9（2025-09）：新增 §15.11——P5b 已落地：构建器内联文本接入内容翻译（18 个组件 `Translatable` 白名单 + 注册期校验、每页每语言一次批量取词、`RenderContext.ContentTranslate`、L3 构建期缺失告警、`i18n:content` 依赖条目与 `pkg/i18n.ContentRevision`）；记录块内文本不翻译等 4 条缺口。

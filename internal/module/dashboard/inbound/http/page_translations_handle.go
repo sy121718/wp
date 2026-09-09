@@ -6,8 +6,9 @@ package dashboardhttp
 //   GET  /admin/page/translations?pageId=…&lang=…
 //   POST /admin/page/translations/save（整表提交，PRG 回跳）
 //
-// 清单与构建期同源（P5b 注意点 1）：本页可翻译行 = builder.CollectContentCandidates(草稿文档)，
-// 与构建期取词用的是同一个函数、同一份 core.TranslatableFields 白名单；
+// 清单与构建期同源（P5b 注意点 1）：本页可翻译行 = 本页草稿文档候选（builder.CollectContentCandidates）
+// + 本页引用块内候选（页眉/页脚绑定块与 core.globalref 内联块，见 page_translations_blocks.go），
+// 与构建期取词用的是同一套函数与同一份 core.TranslatableFields 白名单；
 // 工作台不另写扫描，因此不会出现「工作台能改、构建期不取」的漂移。
 //
 // 写入链路（P5b 注意点 2/3/5/6）：
@@ -125,6 +126,8 @@ type translationRow struct {
 	ReuseTotal int
 	// ReuseHint 展开提示：出现该文本的页面路径（最多 6 条）。
 	ReuseHint string
+	// Origin 来源标签（空 = 本页文档；非空 = 页眉块/页脚块/全局块，全站共享文本）。
+	Origin string
 }
 
 // translationGroup 按组件分组的行集合。
@@ -371,7 +374,16 @@ func (h *Handle) buildPageTranslationsData(ctx context.Context, pageID, wantLang
 		data.Errors = append(data.Errors, dashboardenums.MsgTranslationDocInvalid)
 		return data, nil
 	}
-	candidates := builder.CollectContentCandidates(parsed)
+	// 清单 = 本页文档候选 + 本页引用块（页眉/页脚绑定、core.globalref）内的候选。
+	// 块内文本同样是本页产物的一部分（构建期装配内联），因此必须列在工作台里，
+	// 否则它无法被翻译、完成度也会误报 100%（见 page_translations_blocks.go 文件头）。
+	pageCandidates := builder.CollectContentCandidates(parsed)
+	blockInfo := h.collectBlockCandidates(ctx, parsed)
+	candidates := mergeContentCandidates(pageCandidates, blockInfo.candidates)
+	pageKeys := make(map[string]bool, len(pageCandidates))
+	for _, cand := range pageCandidates {
+		pageKeys[i18n.ContentIndexKey(i18n.ContentHash(cand.Source), cand.Context)] = true
+	}
 	data.PageTotal = len(candidates)
 	if len(candidates) == 0 {
 		return data, nil
@@ -416,6 +428,10 @@ func (h *Handle) buildPageTranslationsData(ctx context.Context, pageID, wantLang
 			Context: cand.Context, Component: component, Field: field,
 			Source: cand.Source, SourceHash: i18n.ContentHash(cand.Source),
 			Rich: meta.Rich(), Limit: limit,
+		}
+		// 来源标注：本页没有该 (原文, 语境) 时说明它来自哪个块（全站共享文本）。
+		if !pageKeys[key] {
+			row.Origin = blockInfo.origin[key]
 		}
 		if info, hit := details[key]; hit && info.TargetText != "" {
 			row.Target = info.TargetText

@@ -20,7 +20,9 @@ import (
 	"bytes"
 	"encoding/json"
 	"sort"
+	"strings"
 
+	"go_wp/internal/builder/components/globalref"
 	"go_wp/internal/builder/core"
 	"go_wp/pkg/i18n"
 )
@@ -45,18 +47,142 @@ func CollectContentCandidates(p *Page) []ContentCandidate {
 	if p == nil {
 		return nil
 	}
+	return CollectContentCandidatesOfRoots(p.Root)
+}
+
+// CollectContentCandidatesOfRoots 收集一组根节点（页面 root 或块文档 root）的候选。
+//
+// 与 CollectContentCandidates 同一份白名单与去重规则，供「块文档候选收集」复用
+// （页眉/页脚块与 core.globalref 引用块的文本同样是本页产物的可翻译文本）。
+func CollectContentCandidatesOfRoots(roots []*core.Node) []ContentCandidate {
+	if len(roots) == 0 {
+		return nil
+	}
+	seen := map[string]bool{}
+	var out []ContentCandidate
+	for _, n := range roots {
+		collectNodeCandidates(n, seen, &out)
+	}
+	sortCandidates(out)
+	return out
+}
+
+// BlockRootFunc 解析块 ID → 块文档 root 节点（候选收集用）。
+//
+// 与 core.BlockResolver.ResolveBlockRoot 同形，但用函数类型表达，使装配层
+// （blockResolverAdapter）与工作台各自注入自己的解析器，共用同一份收集逻辑。
+// 返回错误 / 空 roots 表示块不可用，按渲染期同一降级语义跳过（不计缺失、不阻断）。
+type BlockRootFunc func(blockID string) ([]*core.Node, error)
+
+// CollectContentCandidatesDeep 收集「页面文档 + 构建期内联块」的全部可翻译候选。
+//
+// 为什么需要它（docs/06-D §15.11 遗留项）：块是**构建期展开**的——
+//   - settings.structure 绑定的页眉/页脚块（extraBlockIDs）经 compileBlockFragment 编译；
+//   - 页面文档内的 core.globalref 节点经 BlockResolver 内联展开。
+//
+// 两者渲染期都会走 applyContentTranslation，但其原文 hash 不在「只扫本页 AST」的
+// CollectContentCandidates 结果里 → 取词器索引未预载 → 回退原文并计入 Misses。
+// 本函数把块内文本并入同一份候选集合，装配层据此**一次**构造取词器（每页每语言
+// 一次批量查库的约束不变）。
+//
+// 遍历规则：页面 root + extraBlockIDs + 二者中 core.globalref 引用的块递归展开；
+// 同一块 ID 只解析一次（visited 去重，同时天然阻断 A→B→A 的引用环）。
+// 块解析失败与渲染期一致降级（跳过该块，不阻断构建）。
+func CollectContentCandidatesDeep(p *Page, extraBlockIDs []string, resolve BlockRootFunc) []ContentCandidate {
+	if p == nil {
+		return nil
+	}
 	seen := map[string]bool{}
 	var out []ContentCandidate
 	for _, n := range p.Root {
 		collectNodeCandidates(n, seen, &out)
 	}
+	visited := map[string]bool{}
+	var walk func(roots []*core.Node)
+	load := func(blockID string) {
+		blockID = strings.TrimSpace(blockID)
+		if resolve == nil || blockID == "" || visited[blockID] {
+			return
+		}
+		visited[blockID] = true
+		roots, err := resolve(blockID)
+		if err != nil || len(roots) == 0 {
+			return
+		}
+		walk(roots)
+	}
+	walk = func(roots []*core.Node) {
+		for _, r := range roots {
+			collectNodeCandidates(r, seen, &out)
+		}
+		for _, id := range ReferencedBlockIDs(roots) {
+			load(id)
+		}
+	}
+	for _, id := range ReferencedBlockIDs(p.Root) {
+		load(id)
+	}
+	for _, id := range extraBlockIDs {
+		load(id)
+	}
+	sortCandidates(out)
+	return out
+}
+
+// ReferencedBlockIDs 返回 root 树内 core.globalref 节点引用的块 ID（去重、字典序）。
+//
+// 只读扫描、不解析块：装配层据此判断「本页是否引用了块」（内容译文依赖登记），
+// 以及驱动 CollectContentCandidatesDeep 的递归展开。
+func ReferencedBlockIDs(roots []*core.Node) []string {
+	if len(roots) == 0 {
+		return nil
+	}
+	seen := map[string]bool{}
+	var out []string
+	var walk func(n *core.Node)
+	walk = func(n *core.Node) {
+		if n == nil {
+			return
+		}
+		if n.Type == globalref.Type {
+			if id := blockIDOf(n.Props); id != "" && !seen[id] {
+				seen[id] = true
+				out = append(out, id)
+			}
+		}
+		for _, c := range n.Children {
+			walk(c)
+		}
+	}
+	for _, r := range roots {
+		walk(r)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// blockIDOf 从 globalref 节点 props 读取 blockId（非法/缺失返回空串）。
+func blockIDOf(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var props struct {
+		BlockID string `json:"blockId"`
+	}
+	if err := json.Unmarshal(raw, &props); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(props.BlockID)
+}
+
+// sortCandidates 候选排序：按 (context, source) 字典序（确定性，便于测试与日志）。
+func sortCandidates(out []ContentCandidate) {
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].Context != out[j].Context {
 			return out[i].Context < out[j].Context
 		}
 		return out[i].Source < out[j].Source
 	})
-	return out
 }
 
 // ContentHashes 候选集合 → 去重后的 source_hash 列表（一次 SQL 的入参）。

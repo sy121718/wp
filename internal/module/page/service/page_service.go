@@ -18,6 +18,8 @@ import (
 	artifactcontract "go_wp/internal/module/artifact/contract"
 	pubcontract "go_wp/internal/module/publication/contract"
 
+	"go_wp/pkg/i18n"
+
 	"gorm.io/gorm"
 )
 
@@ -39,6 +41,10 @@ type Service struct {
 	navigation navigationcontract.NavigationService
 	// media 媒体契约：构建期探测图片变体，输出响应式 srcset（访客零查询）。
 	media mediacontract.MediaService
+	// contentStore 内容译文读取端口（多语言 P5b）：为 nil 时用 pkg/i18n 默认存储
+	// （sys_translation 表 + 默认数据库）。测试经 SetContentTranslationStore 注入
+	// 隔离 schema 的存储，用于验证「块内文本进候选集合 + 每页每语言一次查库」。
+	contentStore i18n.ContentStore
 
 	publisher *pipeline.Publisher
 	store     *pipeline.LocalStore
@@ -72,6 +78,22 @@ func NewService(model *pagemodel.Model, artifacts artifactcontract.ArtifactServi
 	s.publisher = pipeline.NewPublisher(store, publication, pipeline.WithDependencies(s.buildDependencies))
 	s.publisher.SetCompile(s.assembleCompile)
 	return s
+}
+
+// SetContentTranslationStore 注入内容译文读取端口（测试用；生产走 pkg/i18n 默认存储）。
+func (s *Service) SetContentTranslationStore(store i18n.ContentStore) {
+	s.contentStore = store
+}
+
+// newContentTranslator 构造本次编译的内容译文取词器（一次批量查询 + 内存索引）。
+//
+// 注入端口优先（测试），否则用 pkg/i18n 默认存储（sys_translation）。
+// 取词语义与缓存行为完全由 pkg/i18n 决定，本层不做二次缓存（docs/06-D §7.7）。
+func (s *Service) newContentTranslator(ctx context.Context, lang string, hashes []string) *i18n.ContentTranslator {
+	if s != nil && s.contentStore != nil {
+		return i18n.NewContentTranslatorWith(ctx, s.contentStore, lang, hashes)
+	}
+	return i18n.NewContentTranslator(ctx, lang, hashes)
 }
 
 // getExistingPage 查询未删除页面，统一映射未找到错误。

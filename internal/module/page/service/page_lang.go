@@ -250,10 +250,16 @@ func (s *Service) buildDependencies(ctx context.Context, in pipeline.BuildInput)
 
 // pageUsesContentTranslation 判定本次构建是否用到内容翻译（依赖登记的判据）。
 //
-// 判据与 compileDocument 的接入条件**同源**（语言维度 + 可翻译候选），保证
+// 判据与 compileDocument 的接入条件**同源**（语言维度 + 可翻译输入），保证
 // 「登记了依赖」与「产物确实可能随译文变化」一致：
 //   - 语言为空（单语言站点）/ 等于站点默认语言 → 否（产物即原文，决策 F1）；
 //   - 文档解析失败 → 否（构建主链会自行报错，依赖登记不额外阻断）。
+//
+// 块内文本补齐后，判据必须同时覆盖「本页引用了块」（页眉/页脚绑定或 core.globalref）：
+// 这类页面的本页 AST 可能一个候选都没有，但块内文本会进产物——漏登记会让补齐译文后
+// 不触发重建（§9 关键约束）。此处按**保守超集**判定：只要引用了块就登记，不为此额外
+// 解析块文档（精确集合由 compileDocument 在编译期算出；多登记一条依赖只在 sys_translation
+// revision 变化时才会失效，而该 revision 是全局 max(updated_at)，故不增加重建噪音）。
 func (s *Service) pageUsesContentTranslation(ctx context.Context, in pipeline.BuildInput) bool {
 	lang := strings.TrimSpace(in.Lang)
 	if lang == "" {
@@ -267,7 +273,25 @@ func (s *Service) pageUsesContentTranslation(ctx context.Context, in pipeline.Bu
 	if err != nil {
 		return false
 	}
-	return len(builder.CollectContentCandidates(page)) > 0
+	return pageMayUseContentTranslation(page)
+}
+
+// pageMayUseContentTranslation 页面「可能」用到内容翻译：本页有候选，或引用了块。
+//
+// 与 compileDocument 的接入条件同源（后者进一步解析块文档得到精确候选集合）：
+// 引用块（settings.structure 页眉/页脚绑定 / core.globalref 节点）意味着产物里
+// 可能含块内文本，必须登记 i18n:content 依赖。
+func pageMayUseContentTranslation(page *builder.Page) bool {
+	if page == nil {
+		return false
+	}
+	if len(builder.CollectContentCandidates(page)) > 0 {
+		return true
+	}
+	if page.Settings.Structure.HeaderBlockID != "" || page.Settings.Structure.FooterBlockID != "" {
+		return true
+	}
+	return len(builder.ReferencedBlockIDs(page.Root)) > 0
 }
 
 // contentTranslationEnabled 判定本次编译是否接入内容翻译（与 pageUsesContentTranslation

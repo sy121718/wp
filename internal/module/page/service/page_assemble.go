@@ -96,7 +96,7 @@ func (s *Service) compileDocument(ctx context.Context, page *builder.Page, proje
 			return nil, err
 		}
 	}
-	resolver := blockResolverAdapter{s: s, ctx: ctx, cache: make(map[string][]*core.Node)}
+	resolver := newBlockResolverAdapter(s, ctx)
 	// 构建语言与取词函数：WithLanguage 决定 RenderContext.Lang；
 	// WithTranslator 注入「构建开始时刻冻结」的词条快照——构建中途刷新 i18n 缓存
 	// 不影响本次产物字节（确定性构建不变量，docs/06-D §2.3/§12）。
@@ -143,35 +143,65 @@ func (s *Service) compileDocument(ctx context.Context, page *builder.Page, proje
 	}
 	// 内容翻译（多语言 P5b，docs/06-D §7.7）：作者在编辑器里填写的文本（按钮文字/
 	// 标题/alt/图注/富文本）按组件 Translatable 白名单替换。每页每语言**构造一次**
-	// 取词器——先遍历 AST 收集候选 → ShouldTranslateContent 过滤 → 一次批量 SQL 取回
+	// 取词器——先收集候选（本页 AST + 页眉/页脚块 + core.globalref 内联块，见
+	// collectContentCandidates）→ ShouldTranslateContent 过滤 → **一次**批量 SQL 取回
 	// 译文，组件渲染期零查库（§7.7「零查库」）。默认语言与单语言站点跳过（产物即原文）。
 	var contentTranslator *i18n.ContentTranslator
 	contentCandidates := 0
-	if cands := builder.CollectContentCandidates(page); len(cands) > 0 && s.contentTranslationEnabled(ctx, projectID, lang) {
-		contentCandidates = len(cands)
-		contentTranslator = i18n.NewContentTranslator(ctx, lang, builder.ContentHashes(cands))
-		opts = append(opts, builder.WithContentTranslator(contentTranslator))
+	if s.contentTranslationEnabled(ctx, projectID, lang) {
+		if cands := s.collectContentCandidates(page, resolver); len(cands) > 0 {
+			contentCandidates = len(cands)
+			contentTranslator = s.newContentTranslator(ctx, lang, builder.ContentHashes(cands))
+			opts = append(opts, builder.WithContentTranslator(contentTranslator))
+		}
 	}
 	compiled, err := builder.Compile(page, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", errCompileFailed, err)
 	}
-	// L3 构建期缺失告警（决策 F14 第三层）：统计本页未命中译文数并记日志，
-	// **不阻断构建**（缺译文已在取词器内回退原文，产物照常产出）。
-	if contentTranslator != nil {
-		reportContentMisses(lang, contentCandidates, contentTranslator.Misses())
-	}
 	// 页眉/页脚块内联（settings.structure 绑定快照）：与预览/正式构建同源。
-	headerHTML, headerCSS := s.compileBlockFragment(ctx, page.Settings.Structure.HeaderBlockID)
-	footerHTML, footerCSS := s.compileBlockFragment(ctx, page.Settings.Structure.FooterBlockID)
+	// 语言与取词器一并下传：块文档同样走构建期文案取词（P4）与内容翻译（P5b），
+	// 且**复用同一个取词器**——块内文本不额外查库（每页每语言一次，§7.7）。
+	headerHTML, headerCSS := s.compileBlockFragment(ctx, page.Settings.Structure.HeaderBlockID, lang, contentTranslator)
+	footerHTML, footerCSS := s.compileBlockFragment(ctx, page.Settings.Structure.FooterBlockID, lang, contentTranslator)
 	// 页眉在主体前、页脚在主体后；三段 CSS 为独立规则集，顺序拼接。
 	compiled.HTML = headerHTML + compiled.HTML + footerHTML
 	compiled.CSS = headerCSS + compiled.CSS + footerCSS
+	// L3 构建期缺失告警（决策 F14 第三层）：统计本页未命中译文数并记日志，
+	// **不阻断构建**（缺译文已在取词器内回退原文，产物照常产出）。
+	// 位置在块内联之后：页眉/页脚与 globalref 内联块的缺失同样计入（取词器为同一实例）。
+	if contentTranslator != nil {
+		reportContentMisses(lang, contentCandidates, contentTranslator.Misses())
+	}
 	doc, err := builder.RenderDocument(compiled)
 	if err != nil {
 		return nil, err
 	}
 	return []byte(doc), nil
+}
+
+// collectContentCandidates 收集「本页产物」的全部可翻译候选（多语言 P5b + 块内文本补齐）。
+//
+// 组成（与渲染期实际取词范围一致）：
+//  1. 本页文档 root（builder.CollectContentCandidatesDeep 内部先扫本页 AST）；
+//  2. settings.structure 绑定的页眉/页脚块（extraBlockIDs，构建期由
+//     compileBlockFragment 编译，不在本页 AST 里）；
+//  3. 本页 AST 与上述块内 core.globalref 引用的块（递归展开，渲染期内联）。
+//
+// 三者共用一个 blockResolverAdapter：块解析走同一份单次编译缓存，
+// 因此「候选收集」不会为渲染再查一次库（每页每语言一次批量查库的约束保持）。
+func (s *Service) collectContentCandidates(page *builder.Page, resolver *blockResolverAdapter) []builder.ContentCandidate {
+	if page == nil {
+		return nil
+	}
+	extra := make([]string, 0, 2)
+	if id := page.Settings.Structure.HeaderBlockID; id != "" {
+		extra = append(extra, id)
+	}
+	if id := page.Settings.Structure.FooterBlockID; id != "" {
+		extra = append(extra, id)
+	}
+	return builder.CollectContentCandidatesDeep(page, extra, resolver.ResolveBlockRoot)
 }
 
 // localeViewOf 计算本页的语言视图：hreflang 互指条目 + 语言切换器链接（多语言 P3）。
@@ -220,40 +250,73 @@ func parseStructureBindings(docJSON []byte) (b builder.StructureBindings, err er
 	return page.Settings.Structure, nil
 }
 
-// blockRootResolverAdapter 适配 block 契约为 builder 的 BlockResolver
+// blockResolverAdapter 适配 block 契约为 builder 的 BlockResolver
 // （core.globalref 构建期展开引用块内容）。
-// cache 为单次编译内块解析缓存：同一块被引用多次时只查一次库。
+// 缓存为单次编译内块解析缓存：同一块被引用多次时只查一次库，且**候选收集与
+// 渲染展开共用同一份缓存**（内容翻译的块内候选不会额外产生一次块查询）。
 type blockResolverAdapter struct {
 	s     *Service
 	ctx   context.Context
-	cache map[string][]*core.Node
+	cache map[string]*builder.Page
+	errs  map[string]error
+}
+
+// newBlockResolverAdapter 构造单次编译的块解析适配器（缓存随编译实例存活）。
+func newBlockResolverAdapter(s *Service, ctx context.Context) *blockResolverAdapter {
+	return &blockResolverAdapter{
+		s: s, ctx: ctx,
+		cache: map[string]*builder.Page{}, errs: map[string]error{},
+	}
 }
 
 // ResolveBlockRoot 按块 ID 返回块文档 root 节点。
 // 防御（docs/02-D §5/§9）：reuse_mode=template 的块是「一次性复制」语义，
 // 不允许经 core.globalref 引用展开——正常流程下副本已在插入时并入页面文档，
 // 此处命中说明引用被绕过编辑器写入，构建期即报错暴露而非静默按引用渲染。
-func (a blockResolverAdapter) ResolveBlockRoot(blockID string) ([]*core.Node, error) {
-	if a.cache != nil {
-		if nodes, ok := a.cache[blockID]; ok {
-			return nodes, nil
-		}
-	}
-	block, err := a.s.blocks.Detail(a.ctx, &blockcontract.DetailReq{ID: blockID})
-	if err != nil || block == nil {
-		return nil, fmt.Errorf("全局块 %s 不可用", blockID)
-	}
-	if block.ReuseMode == "template" {
-		return nil, fmt.Errorf("全局块 %s 为一次性复制片段，不能被引用展开", blockID)
-	}
-	page, err := builder.ParsePage(block.Document)
+func (a *blockResolverAdapter) ResolveBlockRoot(blockID string) ([]*core.Node, error) {
+	page, err := a.blockPage(blockID)
 	if err != nil {
 		return nil, err
 	}
-	if a.cache != nil {
-		a.cache[blockID] = page.Root
-	}
 	return page.Root, nil
+}
+
+// blockPage 解析块文档为 builder.Page（带缓存；失败结果同样缓存，避免重复查库）。
+func (a *blockResolverAdapter) blockPage(blockID string) (*builder.Page, error) {
+	if a.cache != nil {
+		if page, ok := a.cache[blockID]; ok {
+			return page, nil
+		}
+	}
+	if a.errs != nil {
+		if err, ok := a.errs[blockID]; ok {
+			return nil, err
+		}
+	}
+	fail := func(err error) (*builder.Page, error) {
+		if a.errs != nil {
+			a.errs[blockID] = err
+		}
+		return nil, err
+	}
+	if a.s == nil || a.s.blocks == nil {
+		return fail(fmt.Errorf("全局块 %s 不可用", blockID))
+	}
+	block, err := a.s.blocks.Detail(a.ctx, &blockcontract.DetailReq{ID: blockID})
+	if err != nil || block == nil {
+		return fail(fmt.Errorf("全局块 %s 不可用", blockID))
+	}
+	if block.ReuseMode == "template" {
+		return fail(fmt.Errorf("全局块 %s 为一次性复制片段，不能被引用展开", blockID))
+	}
+	page, err := builder.ParsePage(block.Document)
+	if err != nil {
+		return fail(err)
+	}
+	if a.cache != nil {
+		a.cache[blockID] = page
+	}
+	return page, nil
 }
 
 // enabledAssembly 启用插件的编译装配素材（无插件契约或查询失败返回 nil）。

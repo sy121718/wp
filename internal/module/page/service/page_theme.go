@@ -15,6 +15,7 @@ import (
 	"go_wp/internal/builder"
 	blockcontract "go_wp/internal/module/block/contract"
 	"go_wp/internal/templates"
+	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
 )
 
@@ -162,7 +163,14 @@ func (s *Service) ReattachProjectPagesToTheme(ctx context.Context, projectID, th
 
 // compileBlockFragment 编译单个全局块为片段（HTML/CSS）；块缺失或非法时降级为空片段。
 // 绑定被删除的块不阻塞构建：页面产物退化为无页眉/页脚，保存主题绑定即可恢复。
-func (s *Service) compileBlockFragment(ctx context.Context, blockID string) (html, css string) {
+//
+// lang / translator 与页面主体编译同源（多语言 P4/P5b 缺口补齐）：
+//   - lang 决定块内组件的构建期文案取词（RenderContext.Lang）；
+//   - translator 为**本次页面编译已构造的那一个**取词器（其 hash 集合已含块内候选，
+//     见 Service.collectContentCandidates）——块编译不再单独查库，每页每语言仍是一次。
+//
+// lang 为空（单语言站点）时行为与接入前一致：默认语言文案 + 不替换内容文本。
+func (s *Service) compileBlockFragment(ctx context.Context, blockID, lang string, translator *i18n.ContentTranslator) (html, css string) {
 	if blockID == "" {
 		return "", ""
 	}
@@ -181,7 +189,16 @@ func (s *Service) compileBlockFragment(ctx context.Context, blockID string) (htm
 		logger.Scene("build").With("block", blockID).Error(serr, "组件模板 Set 加载失败")
 		return "", ""
 	}
-	compiled, err := builder.Compile(page, builder.WithContext(ctx), builder.WithComponentSet(set))
+	opts := []builder.CompileOption{
+		builder.WithContext(ctx), builder.WithComponentSet(set),
+		// 语言与取词函数：与 compileDocument 的页面主体编译保持同一口径
+		//（构建期冻结快照，构建中途刷新 i18n 缓存不影响本次产物字节）。
+		builder.WithLanguage(lang), builder.WithTranslator(i18n.Snapshot(lang)),
+	}
+	if translator != nil {
+		opts = append(opts, builder.WithContentTranslator(translator))
+	}
+	compiled, err := builder.Compile(page, opts...)
 	if err != nil {
 		logger.Scene("build").With("block", blockID).Error(err, "块编译失败")
 		return "", ""

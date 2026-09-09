@@ -87,7 +87,7 @@
                 <tbody>
                 {{range _, r := g.Rows}}
                 <tr>
-                    <td class="tr-field">{{r.Field}}{{if r.Rich}}<br><span class="pages-badge">富文本</span>{{end}}</td>
+                    <td class="tr-field">{{r.Field}}{{if r.Rich}}<br><span class="pages-badge">富文本</span>{{end}}{{if r.Origin}}<br><span class="pages-badge pages-badge-info" title="全站共享文本：改动后所有使用该块的页面同步生效">{{r.Origin}}</span>{{end}}</td>
                     <td class="tr-source">{{r.Source}}</td>
                     <td class="tr-target">
                         <textarea name="rowTarget" rows="{{if r.Rich}}4{{else}}2{{end}}" maxlength="{{r.Limit}}" placeholder="填写译文（留空则不写入）">{{r.Target}}</textarea>
