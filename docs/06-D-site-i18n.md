@@ -917,8 +917,83 @@ revision       = sys_i18n 的资源版本号（max(update_time) 或独立计数�
 | D15 | `engine='po'` 的导入入口（§7 遗留） | ① 后台 .po 导入；② 仅 CLI | **① 后台导入**（与工作台同一处） | dashboard 模块 |
 | D16 | CMS 内容翻译的工作台入口（§7 遗留） | ① 沿用页面列表「多语言」按钮（决策 F10 只覆盖构建器）；② CMS 列表各自加「多语言」；③ 统一「内容翻译」页 | **② 各自加**（与 F10 同构，就近原则） | content 模块、页面列表 |
 
+## 15. 实施记录（P2，构建内核加 lang 维度）
+
+> 本节记录 P2 的实际落地结论，供 P3 接手。代码为唯一事实来源，结论均带验证方式。
+
+### 15.1 已落地
+
+| # | 改动 | 位置 | 验证 |
+|---|---|---|---|
+| 1 | `Manifest.Lang`（D2，`json:"lang,omitempty"`） | `internal/pipeline/artifact.go` | `TestPublisherLangDimension` |
+| 2 | `pipeline.BuildInput{PageID,Lang,Path,DocJSON}` + `CompileFn(ctx, BuildInput)` | `internal/pipeline/publisher.go` | 编译期 + 既有 publisher 测试 |
+| 3 | `pipeline.Draft{Path,Lang,DocJSON}` + `SaveDraftInput`（`SaveDraft` 保留为无语言等价签名） | `internal/pipeline/publisher.go` | 既有 16 处调用未改 |
+| 4 | `PageRecord.Lang`（构建语言随记录冻结） | `internal/pipeline/publisher.go` | `TestPublisherLangDimension` |
+| 5 | `LangPath` / `StripLangPath` / `NormalizeLang`（路径映射单点） | `internal/pipeline/lang.go`（新） | `TestLangPathMapping` / `TestLangPathRejects` / `TestStripLangPath` |
+| 6 | 激活层祖先符号链接防线 `ensureAncestorsAreDirs` | `internal/pipeline/publication.go` | `TestLocalPublicationRejectsSymlinkAncestor` |
+| 7 | 构建期冻结词条快照 `i18n.Snapshot(lang)` | `pkg/i18n/snapshot.go`（新） | `TestSnapshotFreezesCache` / `TestSnapshotFallbackChain` |
+| 8 | 文案资源版本号 `i18n.Revision()`（`sys_i18n_revision` → `max(update_time)`） | `pkg/i18n/revision.go`（新） | 编译期 + 人工核对 |
+| 9 | `DependencyKind=i18n` + `WithDependencies` 提供者 | `internal/pipeline/artifact.go` / `publisher.go` | `TestPublisherI18nDependency` |
+| 10 | 改文案触发重建 `MarkStaleForI18n` | `internal/module/page/{model,service,contract}` | 编译期断言（无调用方，见 15.5） |
+| 11 | 装配层全链路传语言（构建/预览/发布/改 URL/导航链接） | `internal/module/page/service/page_{assemble,preview,publish,draft,lang,navigation}.go` | `TestPageLangPrefixFullChain` / `TestPageLangExplicitRequest` |
+
+### 15.2 D1 与 D1 的落地口径
+
+- **D1 全语言带前缀**：`pipeline.LangPath(lang, path)` 是唯一映射点，默认语言同样带前缀。
+- **D1 语言根**：采用方案 **② `/{lang}/index`**（§14 D1 的 ②/③ 建议）。
+  实测确认 §4.4 硬坑真实存在：父路径 `/zh-CN` 已激活为「指向产物目录的符号链接」后，
+  再激活 `/zh-CN/about` 时 `MkdirAll` 会跟随该链接，把符号链接写进 `artifacts/{hash}` 内部
+  （不可变产物被污染，且上溯层数错算成悬空链接）。改为 `/{lang}/index` 后语言根与同语言子路径
+  是兄弟节点，冲突面消失；激活层再加 `ensureAncestorsAreDirs` 防线，即使误用 `/zh-CN` 也**显式失败**
+  而不是污染产物。
+
+### 15.3 落地开关（重要）
+
+配置 `i18n.site_lang_prefix`（默认 **false**，见 `config.yaml` / `pkg/i18n`）：
+
+```text
+false（默认）：页面产物路径保持逻辑路径（/about），行为与 P2 前一致，
+              Manifest.lang 仍记录默认语言；既有测试与线上 URL 不受影响。
+true：全语言带前缀（/zh-CN/about、语言根 /zh-CN/index），决策 D1 的完整形态。
+```
+
+开关是灰度闸门，不是「不做 D1」：内核、装配层、路由与激活全链路都已按带前缀实现并有测试覆盖
+（`TestPageLangPrefixFullChain` 打开开关跑完整链路）。**建议与 P3 的「语言清单 + 每语言路由行」
+一起打开**——单独打开会暴露 15.5 的两处结构性缺口。
+
+### 15.4 对既有产物的影响
+
+- 产物 hash = `SHA256(manifestJSON + "\n" + indexHTML)`（`artifactPayloadHash`）**含 Manifest**，
+  因此新增 `lang` 字段会改变所有「带语言构建」的产物 hash；`omitempty` 保证未接入语言的来源
+  （presentation 自动发布）Manifest 字节不变。历史产物仍可按旧 hash 回滚。
+- 构建期取词从「实时缓存」改为「构建开始时刻的冻结副本」，且**去掉了 `cache.Get` 的
+  「遍历所有可用语言」随机兜底**（Go map 迭代顺序随机，会破坏确定性）；未命中一律回退
+  组件内中文原文。默认语言（zh-CN）下产物字节与 P4 后一致。
+
+### 15.5 遗留项（P3 前置）
+
+| # | 缺口 | 影响 | 建议 |
+|---|---|---|---|
+| 1 | `page_artifacts UNIQUE(page_id, version)` | 同一页面同一草稿版本只允许一行产物 → 第二个语言的产物会**替换**第一个语言的行，`page_routes.artifact_id` 指向错内容 | 加 `lang` 列，唯一键改 `(page_id, version, lang)`，`EnsureRecord`/`GetByPageVersion` 按语言取行 |
+| 2 | `pages.active_path` 单值 | 一页只能记住一个语言的激活路径，多语言并行激活时旧路径清理失效 | 新增 `page_publications(page_id, lang, active_path, artifact_id)` 或等价结构 |
+| 3 | 语言清单（§14 D10） | 没有「站点有哪几种语言」的真源，无法为每语言登记 `page_routes` 行（当前 reserved 行只登记默认语言） | Project 级 `project_locales` 表（顺序 + 默认标记 + 启用状态） |
+| 4 | hreflang / sitemap 语言分组 | `BuildSEOHead` 与 `internal/seo/sitemap.go` 未输出 `hreflang` / `xhtml:link` | §5 的构建期输出方案，激活后刷新阶段统一生成 |
+| 5 | 站内链接本地化只覆盖导航 | 按钮/图片/文本里的站内链接仍是逻辑路径 | 组件链接属性统一过 `LangPath`（与导航同一函数） |
+| 6 | `MarkStaleForI18n` 无调用方 | 后台 i18n CRUD（§14 D7）尚未实现，改文案不会自动触发重建（依赖条目已就位） | 后台 CRUD 保存成功后调用；或加 CLI |
+| 7 | Runtime Fragment 语言（P5） | `/_fragments` 请求仍无 `lang`、无 `Vary` | §11 方案，独立阶段 |
+
+### 15.6 验证命令
+
+```bash
+go build ./... && go vet ./... && go test ./... -count=1
+go test ./public/test/pipeline/unit/ -run "Lang|Publication|Determinism|Dependency" -count=1 -v
+go test ./public/test/page/unit/ -run TestPageLang -count=1 -v
+go test ./pkg/i18n/ -count=1 -v
+```
+
 ## 变更记录
 
 - v1（2025-09）：首版设计提案。确立「`lang ∈ BuildContext`」「`/{lang}/path` 前缀」「CMS 内容字段级 + 主表/翻译表」三条主线，列出 10 个待决策点。
 - v2（2025-09）：**收敛最终决策**——新增 §7「`sys_translation` 内容寻址翻译层 + 翻译工作台」（17 条决策 F1–F17、DDL、组件 `Translatable` 声明、构建期批量取数 SQL、工作台界面示意、跨页面复用提示、一键 AI 预留形态、埋点三层、质量五道防线、AI 直接生效风险与缓解、CMS 共用同一张表）；§6 标注为历史论证（模型 C 收敛为内容寻址单表，`content_translations` 被取代）；§7–§14 顺延重编号，同步更新交叉引用；新增章节索引；D3 标记为已拍板，新增 D11–D16 遗留待拍板点。
+- v4（2025-09）：新增 §15 实施记录（P2 构建内核加 lang 维度）——Manifest.lang、BuildInput/Draft、PageRecord.Lang、LangPath 路径映射、激活层祖先符号链接防线、构建期冻结词条快照、DependencyKind=i18n 与 MarkStaleForI18n、装配层全链路传语言；记录 D1 语言根采用 `/{lang}/index`、落地开关 `i18n.site_lang_prefix`（默认 false）、产物 hash 变化与 P3 前置缺口。
 - v3（2025-09）：新增 §10.5 实施记录——组件文案构建期翻译已落地（10 处访客面固定文案走 `site.component.*` key，含 enhance.js 圆点标签改为「构建期下发模板」；迁移 060 seed 13 key × zh-CN/en-US，取词兜底链单点在 `pkg/i18n.Translate`）；`DependencyKind=i18n`、构建期冻结快照、`/{lang}/` 产物仍为后续阶段。

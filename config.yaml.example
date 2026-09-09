@@ -57,6 +57,11 @@ i18n:
   default_lang: zh-CN
   auto_refresh: true
   refresh_interval: 20s
+  # 站点产物语言前缀开关（多语言 P2，docs/06-D §5 决策 D1）：
+  # false = 页面产物路径保持逻辑路径（/about），单语言行为不变；
+  # true  = 全语言带 /{lang}/ 前缀（/zh-CN/about，语言根 /zh-CN/index）。
+  # 建议与 P3 的「语言清单 + 每语言路由行」一起打开（见 docs/06-D §15.5）。
+  site_lang_prefix: false
 
 # 队列配置
 queue:
