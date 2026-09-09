@@ -135,6 +135,9 @@ var pgJSONBPartialIndexSQL string
 //go:embed 069_drop_obsolete_design_tables.sql
 var dropObsoleteDesignTablesSQL string
 
+//go:embed 070_sys_status_index_audit.sql
+var sysStatusIndexAuditSQL string
+
 func init() {
 	register(Migration{
 		Version:   "001-init-schema",
@@ -507,5 +510,28 @@ func init() {
 			"'content_template_component_pins_component_id_fkey', 'content_template_component_pins_pinned_version_id_fkey'" +
 			")) = 0 THEN 1 ELSE 0 END",
 		SQL: dropObsoleteDesignTablesSQL,
+	})
+
+	// 070：PG 优化第二梯队 —— sys_* 软删除/状态列索引核对（第一批 068 的遗留项 ①）。
+	// 逐个核对 model 里真实出现的 Where 子句后，只补 3 处「查询真的会用到、且现有索引
+	// 没覆盖」的缺口（全部在媒体中心）：
+	//   · idx_att_file_path_alive  —— 构建期按 file_path 反查附件（此前无任何索引）
+	//   · idx_mva_file_path        —— 构建期按 file_path 反查变体（此前无任何索引）
+	//   · idx_att_cat_time_alive   —— 媒体库按分类分页列表（等值列 + 排序列 + 存活谓词）
+	// 其余 9 张 sys_* 表要么已有覆盖索引、要么查询根本不用该条件，逐个跳过（原因写在 SQL 里）。
+	// sys_attachment / sys_media_variant 早已存在，默认「表存在即跳过」必然误跳过，
+	// 故按索引名判定（与 037/038/068 同一手法）。
+	// 幂等检查要求 3 个索引全部存在（缺任意一个即重跑，CREATE INDEX IF NOT EXISTS 安全）：
+	// 只按其中一个判定会在「部分索引被手工删除」时误跳过。
+	register(Migration{
+		Version:   "070-sys-status-index-audit",
+		TableName: "sys_attachment",
+		// 注意：migrator.apply 固定以 TableName 作为唯一 ? 参数调用 CheckSQL，
+		// 故这里必须保留恰好一个 ?（用 IN (?, 'sys_media_variant') 覆盖两张表）。
+		CheckSQL: "SELECT CASE WHEN COUNT(*) = 3 THEN 1 ELSE 0 END FROM pg_indexes " +
+			"WHERE schemaname = current_schema() " +
+			"AND indexname IN ('idx_att_file_path_alive', 'idx_mva_file_path', 'idx_att_cat_time_alive') " +
+			"AND tablename IN (?, 'sys_media_variant')",
+		SQL: sysStatusIndexAuditSQL,
 	})
 }
