@@ -147,13 +147,34 @@ func (m *Model) MarkStaleForI18n(ctx context.Context) (err error) {
 	return err
 }
 
+// blockRefMatchCond 块引用匹配条件（JSONB 路径查询）。
+//
+// 语义：draft_document 中任意深度出现键 blockId 且值为字符串 <blockID> 的节点
+// （core.globalref 的 props.blockId 是唯一来源，但该节点可嵌在 root 树任意
+// 容器层级，故用递归通配 $.** 收集全部 blockId 值，再判数组包含）。
+// 与旧写法 draft_document::text LIKE '%"blockId": "<blockID>"%' 结果集完全一致：
+// 旧写法把 JSONB 序列化成 text 后子串匹配，而字符串值内部的引号在 JSONB 文本
+// 输出中已转义为 \"，两者都不会误命中字符串字面量。
+//
+// 为什么不是 @? '$.**.blockId ? (@ == "x")'：jsonb_path_ops 无法索引递归
+// 通配，EXPLAIN 下退化为索引内全扫（2 万行实测：索引扫描 18182 行后丢弃，
+// 比 seq scan 更慢）。改成「值集合 + 数组包含」后表达式可被 GIN 精确索引。
+//
+// 本表达式与迁移 068 的 idx_pages_blockref 表达式一致（PG 按解析后的表达式树
+// 比较，空白无关）；同一查询的 structure 分支（headerBlockId / footerBlockId）
+// 另有 idx_pages_structure_header / _footer 两个 btree 表达式索引，三个 OR 分支
+// 由 planner 用 BitmapOr 合并（2 万行实测 0.27ms，旧写法全表扫 55ms）。
+// 改动本表达式必须同步迁移 068，否则索引静默失效
+// （public/test/page/unit 有等价性与 EXPLAIN 断言守住）。
+const blockRefMatchCond = `jsonb_path_query_array(draft_document, '$.**.blockId') @> jsonb_build_array(?::text)`
+
 // CountBlockReference 统计引用该块的未删除页面数（与 MarkStaleForBlock 同一匹配条件）：
-// core.globalref 节点（"blockId"）或 settings.structure 页眉/页脚自选绑定。
+// core.globalref 节点（blockId）或 settings.structure 页眉/页脚自选绑定。
 // 供 block 模块删除/切换 global→template 前的引用拦截（docs/02-D §9）。
 func (m *Model) CountBlockReference(ctx context.Context, blockID string) (count int64, err error) {
 	err = m.DB(ctx).
 		Where("deleted_at IS NULL AND ("+
-			"draft_document::text LIKE '%\"blockId\": \"' || ? || '\"%'"+
+			blockRefMatchCond+
 			" OR draft_document->'settings'->'structure'->>'headerBlockId' = ?"+
 			" OR draft_document->'settings'->'structure'->>'footerBlockId' = ?)",
 			blockID, blockID, blockID,
@@ -168,7 +189,7 @@ func (m *Model) CountBlockReference(ctx context.Context, blockID string) (count 
 func (m *Model) MarkStaleForBlock(ctx context.Context, blockID string) (err error) {
 	err = m.DB(ctx).Exec(
 		"UPDATE pages SET stale = true, updated_at = ? WHERE deleted_at IS NULL AND ("+
-			"draft_document::text LIKE '%\"blockId\": \"' || ? || '\"%'"+
+			blockRefMatchCond+
 			" OR draft_document->'settings'->'structure'->>'headerBlockId' = ?"+
 			" OR draft_document->'settings'->'structure'->>'footerBlockId' = ?)",
 		time.Now().UTC(), blockID, blockID, blockID,

@@ -129,6 +129,9 @@ var sysTranslationSQL string
 //go:embed 067_media_center.sql
 var mediaCenterSQL string
 
+//go:embed 068_pg_jsonb_partial_index.sql
+var pgJSONBPartialIndexSQL string
+
 func init() {
 	register(Migration{
 		Version:   "001-init-schema",
@@ -471,5 +474,16 @@ func init() {
 		TableName: "sys_attachment",
 		CheckSQL:  "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = ? AND column_name = 'generation'",
 		SQL:       mediaCenterSQL,
+	})
+
+	// 068：PG 特性优化第一批 —— pages 块引用表达式 GIN 索引（替代 ::text LIKE 搜 JSON）
+	// + 软删除部分索引（WHERE deleted_at IS NULL）。
+	// pages 由 002-init-builder-schema 创建，默认「表存在即跳过」必然误跳过，
+	// 故按索引名判定（与 037/038 同一手法）。
+	register(Migration{
+		Version:   "068-pg-jsonb-partial-index",
+		TableName: "pages",
+		CheckSQL:  "SELECT COUNT(*) FROM pg_indexes WHERE schemaname = current_schema() AND tablename = ? AND indexname = 'idx_pages_blockref'",
+		SQL:       pgJSONBPartialIndexSQL,
 	})
 }
