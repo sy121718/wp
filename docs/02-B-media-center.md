@@ -76,7 +76,7 @@ internal/builder/
 |---|---|
 | 稳定引用 | `sys_attachment.id`（自增主键）为引用标识；`md5` 列仅落库留痕，**不做去重** |
 | 文件去重与版本替换 | **未实现**：`Upload` 无重复检测/duplicateOf，无 `Replace`/`Generation` |
-| 引用追踪与保护 | **未实现**：无引用登记表与删除拦截（`init_schema.sql` 的 `media_reference` 建表但无 Go 引用） |
+| 引用追踪与保护 | 引用登记表 `media_reference` **⚠️ 已废弃：由 sys_attachment / sys_file_category / sys_media_variant 实现（见 §6 实现映射）**——该表已删除；引用保护改由 `sys_attachment.extra_info` 的 JSONB refs 承担 |
 | 多维检索 | `Service.List`（`internal/module/media/service/media_crud.go:79`）：`file_type` + `category_id` + `search`（文件名）+ 分页 |
 | 变体生成 | `GenerateVariants` + `media_variant_task.go`（asynq）；类型 `thumb`(320)/`medium`(1280)/`webp`，统一有损 JPEG q82 落盘为 `<stem>_<type>.jpg` |
 | 构建期变体注入 | `builder.WithAssetProbe`（`internal/builder/builder.go:213`）+ `media.Service.ProbeImageVariants`（`page/service/page_assemble.go:104`） |
@@ -88,7 +88,14 @@ internal/builder/
 
 ## 7. 数据库表结构（wp 库，PostgreSQL）
 
-> **口径更正（2026-09 按代码回填）**：本节原先写的 `media_asset` / `media_asset_variant` / `media_reference` 三表在 `init_schema.sql` 中确有建表语句（L305 / L337 / L356），但**没有任何 Go 代码读写**——属于早期设计遗留。实际持久化使用下表三张表。
+> **⚠️ 已废弃：由 sys_attachment / sys_file_category / sys_media_variant 实现（见 §6 实现映射）**
+>
+> `media_asset` / `media_asset_variant` / `media_reference` 三表**已删除**：代码零引用，且语义已由
+> `sys_attachment` / `sys_file_category` / `sys_media_variant` 承担。`init_schema.sql` 中的建表语句
+> （原 L305 / L337 / L356）已移除，落地迁移为 `public/migrations/069_drop_obsolete_design_tables.sql`。
+> 下文 §2 的功能设计保留为历史设计记录，实现口径以 §6 为准。
+>
+> **口径更正（2026-09 按代码回填）**：该三表**没有任何 Go 代码读写**——属于早期设计遗留。实际持久化使用下表三张表。
 
 | 表 | 职责 | 对应规范条目 |
 |---|---|---|
@@ -98,6 +105,6 @@ internal/builder/
 
 依据：`public/migrations/init_schema.sql:204,236`、`public/migrations/048_media_variant.sql:17`、`internal/module/media/model/media_model.go:13-14`、`internal/module/media/model/media_variant_model.go:13`。
 
-与 02-B 目标模型的关系：`media_*` 三表对应的「内容哈希派生 assetId / 去重 / 版本替换 / 引用保护」在代码中**未实现**（见 §6 表格），若后续启用需新增迁移与 service 实现，或直接删除这三张空表统一到 `sys_*` 体系。
+与 02-B 目标模型的关系：**⚠️ 已废弃：由 sys_attachment / sys_file_category / sys_media_variant 实现（见 §6 实现映射）**——`media_*` 三表对应的「内容哈希派生 assetId / 去重 / 版本替换 / 引用保护」已统一到 `sys_*` 体系（`067_media_center.sql` 补 `generation` / `extra_info jsonb` / 去重索引），三张空表已于 `069_drop_obsolete_design_tables.sql` 删除。
 
 域内核（`internal/builder/media`）与表的字段一一对应：`Asset.ID/Hash/FileName/MimeType/Type/Width/Height/Size/Alt/Title/Caption/CategoryID/Tags/Generation`、`Variant.Kind/Format/URL/Width/Height`、`Reference.Kind/ID/Title`。

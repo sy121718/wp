@@ -40,28 +40,9 @@ CREATE TABLE IF NOT EXISTS blueprint_versions (
     UNIQUE (blueprint_id, version)
 );
 
--- 3. Global Component（全局组件与版本）
-CREATE TABLE IF NOT EXISTS global_components (
-    id              uuid PRIMARY KEY,
-    project_id      uuid NOT NULL REFERENCES projects(id),
-    name            text NOT NULL,
-    draft_document  jsonb NOT NULL,
-    draft_version   bigint NOT NULL DEFAULT 1,
-    created_at      timestamptz NOT NULL,
-    updated_at      timestamptz NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS global_component_versions (
-    id                   uuid PRIMARY KEY,
-    global_component_id  uuid NOT NULL REFERENCES global_components(id),
-    version              bigint NOT NULL,
-    document             jsonb NOT NULL,
-    source_hash          text NOT NULL,
-    created_by           uuid NOT NULL,
-    created_at           timestamptz NOT NULL,
-    UNIQUE (global_component_id, version),
-    UNIQUE (id, global_component_id)
-);
+-- 3. Global Component（全局组件与版本）：⚠️ 已废弃删除（2026-09）。
+-- 原 global_components / global_component_versions 建表语句已移除，语义由 block.reuse_mode
+-- （global 引用 / template 一次性复制）承担，见 docs/02-domain.md §4.2 与迁移 069。
 
 -- 4. ContentTemplate 与版本（每次构建参与）
 CREATE TABLE IF NOT EXISTS content_templates (
@@ -190,25 +171,29 @@ CREATE TABLE IF NOT EXISTS page_routes (
     )
 );
 
--- 9. 全局组件更新策略
-CREATE TABLE IF NOT EXISTS global_component_policies (
-    component_id        uuid PRIMARY KEY REFERENCES global_components(id),
-    default_update_mode text NOT NULL CHECK (default_update_mode IN ('immutable', 'auto-update'))
-);
+-- 9. 全局组件更新策略：⚠️ 已废弃删除（2026-09）。
+-- 原 global_component_policies 建表语句已移除，语义由 block.reuse_mode 承担，
+-- 见 docs/02-domain.md §4.3 与迁移 069。
 
--- 10. 页面级组件版本锁定
+-- 10. 页面级组件版本锁定（表保留，见 03-pipeline 规划）
+-- ⚠️ 原 global_components / global_component_versions 已废弃删除（语义由 block.reuse_mode 承担），
+--    故去掉指向它们的外键；表、列、主键全部保留（降级为弱引用）。
+--    见 docs/02-domain.md §4.2/§4.3 与 069_drop_obsolete_design_tables.sql。
 CREATE TABLE IF NOT EXISTS page_component_pins (
     page_id       uuid NOT NULL REFERENCES pages(id),
-    component_id  uuid NOT NULL REFERENCES global_components(id),
-    pinned_version_id uuid NOT NULL REFERENCES global_component_versions(id),
+    component_id  uuid NOT NULL,
+    pinned_version_id uuid NOT NULL,
     PRIMARY KEY (page_id, component_id)
 );
 
--- 11. ContentTemplate 级组件版本锁定
+-- 11. ContentTemplate 级组件版本锁定（表保留，见 02-domain §4 规划）
+-- ⚠️ 原 global_components / global_component_versions 已废弃删除（语义由 block.reuse_mode 承担），
+--    故去掉指向它们的外键；表、列、主键全部保留（降级为弱引用）。
+--    见 docs/02-domain.md §4.2/§4.3 与 069_drop_obsolete_design_tables.sql。
 CREATE TABLE IF NOT EXISTS content_template_component_pins (
     template_id       uuid NOT NULL REFERENCES content_templates(id),
-    component_id      uuid NOT NULL REFERENCES global_components(id),
-    pinned_version_id uuid NOT NULL REFERENCES global_component_versions(id),
+    component_id      uuid NOT NULL,
+    pinned_version_id uuid NOT NULL,
     PRIMARY KEY (template_id, component_id)
 );
 

@@ -132,6 +132,9 @@ var mediaCenterSQL string
 //go:embed 068_pg_jsonb_partial_index.sql
 var pgJSONBPartialIndexSQL string
 
+//go:embed 069_drop_obsolete_design_tables.sql
+var dropObsoleteDesignTablesSQL string
+
 func init() {
 	register(Migration{
 		Version:   "001-init-schema",
@@ -485,5 +488,24 @@ func init() {
 		TableName: "pages",
 		CheckSQL:  "SELECT COUNT(*) FROM pg_indexes WHERE schemaname = current_schema() AND tablename = ? AND indexname = 'idx_pages_blockref'",
 		SQL:       pgJSONBPartialIndexSQL,
+	})
+
+	// 069：删除 6 张「设计已被取代」的空表（media_asset/_variant/_reference 与
+	// global_components/_versions/_policies），并解绑保留表上指向它们的 4 个外键。
+	// 本迁移是 DROP 语义，默认「表存在即跳过」正好相反，故用自定义 CheckSQL：
+	// 6 张表全部不存在且 4 个外键全部已解绑时返回 1（跳过），否则执行（DROP IF EXISTS 幂等）。
+	// TableName 取 media_asset 作为首个 ? 参数。
+	register(Migration{
+		Version:   "069-drop-obsolete-design-tables",
+		TableName: "media_asset",
+		CheckSQL: "SELECT CASE WHEN (" +
+			"SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = current_schema() " +
+			"AND table_name IN (?, 'media_asset_variant', 'media_reference', 'global_components', " +
+			"'global_component_versions', 'global_component_policies')) = 0 " +
+			"AND (SELECT COUNT(*) FROM pg_constraint WHERE conname IN (" +
+			"'page_component_pins_component_id_fkey', 'page_component_pins_pinned_version_id_fkey', " +
+			"'content_template_component_pins_component_id_fkey', 'content_template_component_pins_pinned_version_id_fkey'" +
+			")) = 0 THEN 1 ELSE 0 END",
+		SQL: dropObsoleteDesignTablesSQL,
 	})
 }

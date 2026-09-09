@@ -703,6 +703,8 @@ CREATE TABLE blueprint_versions (
     UNIQUE (blueprint_id, version)
 );
 
+-- ⚠️ 已废弃：语义由 block.reuse_mode 承担（global 引用 / template 复制）。
+-- 该表已删除，见 public/migrations/069_drop_obsolete_design_tables.sql 与本节开头的「实现归属」说明。
 CREATE TABLE global_components (
     id              uuid PRIMARY KEY,
     project_id      uuid NOT NULL REFERENCES projects(id),
@@ -713,6 +715,8 @@ CREATE TABLE global_components (
     updated_at      timestamptz NOT NULL
 );
 
+-- ⚠️ 已废弃：语义由 block.reuse_mode 承担（版本语义由 block 的全局块 + stale 传播替代）。
+-- 该表已删除，见 public/migrations/069_drop_obsolete_design_tables.sql。
 CREATE TABLE global_component_versions (
     id                   uuid PRIMARY KEY,
     global_component_id  uuid NOT NULL REFERENCES global_components(id),
@@ -841,6 +845,8 @@ ALTER TABLE presentation_instances
         REFERENCES document_snapshots(id, presentation_instance_id);
 
 -- 全局组件更新策略
+-- ⚠️ 已废弃：语义由 block.reuse_mode 承担（immutable≈template，auto-update≈global 引用 + stale 传播）。
+-- 该表已删除，见 public/migrations/069_drop_obsolete_design_tables.sql 与 §4.3 开头的「实现状态」说明。
 CREATE TABLE global_component_policies (
     component_id        uuid PRIMARY KEY REFERENCES global_components(id),
     default_update_mode text NOT NULL CHECK (default_update_mode IN ('immutable', 'auto-update'))
