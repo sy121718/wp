@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>侧边栏 · 无限级菜单方案预览 — go_wp</title>
+<style>
+:root{--c-primary:#3d444f;--c-primary-bg:#eceef1;--c-bg:#fff;--c-bg-soft:#f7f8f9;--c-bg-hover:#f3f4f6;--c-border:#e5e7eb;--c-border-strong:#d1d5db;--c-text:#1f2937;--c-text-mute:#6b7280;--c-text-faint:#9ca3af;--r-md:8px;--r-lg:12px;--tr:140ms ease;--rail-w:88px;--subnav-w:224px;--indent:12px;--indent-max:3}
+html[data-theme="dark"]{--c-primary:#d5dae2;--c-primary-bg:#2a3038;--c-bg:#1c2127;--c-bg-soft:#232830;--c-bg-hover:#2a3038;--c-border:#333a43;--c-border-strong:#454d58;--c-text:#e6e9ee;--c-text-mute:#9aa3ae;--c-text-faint:#6f7883}
+*{box-sizing:border-box}
+body{margin:0;font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",system-ui,sans-serif;background:var(--c-bg-soft);color:var(--c-text);font-size:14px}
+.layout{display:flex;min-height:100vh}
+.rail{flex:0 0 var(--rail-w);width:var(--rail-w);background:var(--c-bg);border-right:1px solid var(--c-border);display:flex;flex-direction:column;padding:12px 8px;gap:4px}
+.rail-brand{display:flex;align-items:center;justify-content:center;height:40px;margin-bottom:8px;font-weight:700;font-size:13px;color:var(--c-primary)}
+.rail-btn{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;padding:10px 4px;border:0;border-radius:var(--r-md);cursor:pointer;background:transparent;color:var(--c-text-mute);font-size:12px;font-family:inherit;transition:background var(--tr),color var(--tr)}
+.rail-btn svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.6}
+.rail-btn:hover{background:var(--c-bg-hover);color:var(--c-text)}
+.rail-btn.is-active{background:var(--c-primary-bg);color:var(--c-primary);font-weight:600}
+.rail-btn.is-active::before{content:"";position:absolute;left:-8px;top:50%;transform:translateY(-50%);width:3px;height:22px;border-radius:0 3px 3px 0;background:var(--c-primary)}
+.subnav{flex:0 0 var(--subnav-w);width:var(--subnav-w);background:var(--c-bg);border-right:1px solid var(--c-border);padding:14px 10px 0;display:flex;flex-direction:column;overflow:hidden;transition:flex-basis 220ms cubic-bezier(.4,0,.2,1),width 220ms cubic-bezier(.4,0,.2,1),opacity 160ms ease}
+.subnav-scroll{flex:1;overflow-y:auto;padding-bottom:12px}
+body.sidebar-collapsed .subnav{flex-basis:0;width:0;border-right:0;opacity:0}
+.subnav-pin{display:flex;align-items:center;gap:8px;padding:10px 8px;border-top:1px solid var(--c-border)}
+.pin-btn{display:inline-flex;align-items:center;gap:6px;padding:5px 9px;border:1px solid var(--c-border);border-radius:var(--r-md);background:var(--c-bg);color:var(--c-text-mute);font-size:12px;font-family:inherit;cursor:pointer;transition:background var(--tr),color var(--tr),border-color var(--tr)}
+.pin-btn:hover{background:var(--c-bg-hover);color:var(--c-text)}
+.pin-btn.is-on{background:var(--c-primary-bg);color:var(--c-primary);border-color:transparent;font-weight:600}
+.pin-btn svg{width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:1.7}
+.pin-hint{margin-left:auto;font-size:11px;color:var(--c-text-faint)}
+.subnav-overview{display:flex;align-items:center;gap:7px;padding:8px 10px;margin-bottom:8px;border-radius:var(--r-md);color:var(--c-text);text-decoration:none;font-size:13px;font-weight:600;background:var(--c-bg-soft);transition:background var(--tr),color var(--tr)}
+.subnav-overview:hover{background:var(--c-bg-hover)}
+.subnav-overview.is-active{background:var(--c-primary-bg);color:var(--c-primary)}
+.subnav-overview svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:1.7;flex:0 0 auto}
+.subnav-divider{height:1px;background:var(--c-border);margin:0 4px 10px}
+.subnav-title{padding:6px 10px 10px;font-size:12px;font-weight:600;color:var(--c-text-faint);letter-spacing:.4px}
+.tree-node{position:relative}
+.tree-node[data-depth]:not([data-depth="0"])::before{content:"";position:absolute;left:calc(var(--pad,8px) - 5px);top:0;bottom:0;width:1px;background:var(--c-border)}
+.tree-node{position:relative}
+.tree-toggle{position:absolute;right:2px;top:50%;transform:translateY(-50%);width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;border:0;border-radius:6px;background:transparent;color:var(--c-text-faint);cursor:pointer;transition:background var(--tr),color var(--tr)}
+.tree-toggle:hover{background:var(--c-bg-hover);color:var(--c-text)}
+.tree-toggle .caret{width:0;height:0;border-left:4px solid currentColor;border-top:3.5px solid transparent;border-bottom:3.5px solid transparent;transform:rotate(90deg);transform-origin:40% 50%;transition:transform var(--tr)}
+.tree-node:not(.is-open)>.tree-toggle .caret{transform:rotate(0deg)}
+.tree-node.has-children>.tree-link{padding-right:30px}
+.tree-branch-btn{position:relative;width:100%;display:flex;align-items:center;gap:7px;padding:7px 8px;border:0;border-radius:var(--r-md);cursor:pointer;background:transparent;color:var(--c-text);font-size:13px;font-weight:600;font-family:inherit;text-align:left;transition:background var(--tr)}
+.tree-branch-btn:hover{background:var(--c-bg-hover)}
+.tree-branch-btn .caret{width:0;height:0;flex:0 0 auto;color:var(--c-text-faint);border-left:4px solid currentColor;border-top:3.5px solid transparent;border-bottom:3.5px solid transparent;transform:rotate(90deg);transform-origin:40% 50%;transition:transform var(--tr)}
+.tree-branch:not(.is-open)>.tree-branch-btn .caret{transform:rotate(0deg)}
+.tree-branch-body{display:none}
+.tree-branch.is-open>.tree-branch-body{display:block}
+.tree-link{position:relative;display:flex;align-items:center;gap:7px;padding:7px 8px;margin-bottom:1px;border-radius:var(--r-md);color:var(--c-text-mute);text-decoration:none;font-size:13px;transition:background var(--tr),color var(--tr)}
+.tree-link:hover{background:var(--c-bg-hover);color:var(--c-text)}
+.tree-link.is-active{background:var(--c-primary-bg);color:var(--c-primary);font-weight:600}
+.tree-link .dot{width:5px;height:5px;border-radius:50%;background:var(--c-border-strong);flex:0 0 auto}
+.tree-link.is-active .dot{background:var(--c-primary)}
+.tree-link .count{margin-left:auto;font-size:11px;color:var(--c-text-faint);background:var(--c-bg-hover);padding:1px 6px;border-radius:999px}
+.main{flex:1;min-width:0;display:flex;flex-direction:column}
+.topbar{display:flex;align-items:center;justify-content:space-between;height:56px;padding:0 24px;background:var(--c-bg);border-bottom:1px solid var(--c-border)}
+.topbar-title{font-size:15px;font-weight:600}
+.topbar-actions{display:flex;align-items:center;gap:8px}
+.icon-btn{width:30px;height:30px;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--c-border);border-radius:var(--r-md);cursor:pointer;background:var(--c-bg);color:var(--c-text-mute);font-size:14px;transition:background var(--tr),color var(--tr)}
+.icon-btn:hover{background:var(--c-bg-hover);color:var(--c-text)}
+.content{flex:1;padding:24px}
+.hint{background:var(--c-bg);border:1px solid var(--c-border);border-radius:var(--r-lg);padding:20px 24px;color:var(--c-text-mute);font-size:13px;line-height:1.95}
+.hint b{color:var(--c-text)}
+.hint code{background:var(--c-bg-hover);padding:1px 6px;border-radius:4px;font-size:12px;font-family:ui-monospace,Menlo,Consolas,monospace}
+.depth-meter{display:inline-flex;align-items:center;gap:6px;margin-top:10px;font-size:12px;color:var(--c-text-faint)}
+.depth-meter i{display:inline-block;width:18px;height:6px;border-radius:3px;background:var(--c-border)}
+.depth-meter i.on{background:var(--c-primary)}
+</style>
+</head>
+<body>
+<div class="layout">
+<nav class="rail" id="rail">
+<div class="rail-brand">go_wp</div>
+<button class="rail-btn" data-group="overview"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="11" width="7" height="10" rx="1.5"/><rect x="3" y="15" width="7" height="6" rx="1.5"/></svg>概览</button>
+<button class="rail-btn is-active" data-group="manage"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.2"/><path d="M5 20c0-3.6 3.1-6 7-6s7 2.4 7 6"/></svg>管理</button>
+<button class="rail-btn" data-group="content"><svg viewBox="0 0 24 24"><path d="M5 4h9l5 5v11a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z"/><path d="M14 4v5h5"/><path d="M8 13h8M8 17h5"/></svg>内容</button>
+<button class="rail-btn" data-group="system"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21M5.6 5.6l1.8 1.8M16.6 16.6l1.8 1.8M18.4 5.6l-1.8 1.8M7.4 16.6l-1.8 1.8"/></svg>系统</button>
+</nav>
+<nav class="subnav" id="subnav"><div class="subnav-scroll"><div class="subnav-title" id="subnavTitle">管理</div><div id="treeRoot"></div></div><div class="subnav-pin"><button type="button" class="pin-btn" id="pinBtn" title="固定后导航不再自动收起"><svg viewBox="0 0 24 24"><path d="M9 3h6l-1 6 4 4-5 1-1 7-1-7-5-1 4-4z"/></svg><span id="pinText">固定侧栏</span></button><span class="pin-hint" id="pinHint">点击菜单后收起</span></div></nav>
+<div class="main">
+<header class="topbar"><div class="topbar-title">角色管理</div><div class="topbar-actions"><button class="icon-btn" id="themeToggle" title="切换主题">◐</button><button class="icon-btn" title="用户">◯</button></div></header>
+<div class="content"><div class="hint"><b>无限级菜单渲染预览</b>（数据驱动 + 递归渲染，与 Jet 的 <code>yield menuNodes(children, depth+1)</code> 同构）<br>
+· <b>一级图标点击 = 切换二级栏（不导航）</b>；主菜单自己的页面放在二级栏顶部「概览」入口<br>· 左侧图标栏 = 顶层目录；右侧 = 该目录下的完整子树（<b>任意深度</b>）<br>
+· <b>父级可点击性由"有没有页面"决定</b>：有页面的父级（如「权限体系」）点文字=导航、点右侧三角=展开；无页面的纯容器（如「组织架构」）文字不可点<br>· <b>缩进前 3 级 12px/级，之后封顶</b>（深层不再右推，靠竖线表示嵌套）<br>
+· 淡色竖线 = 层级引导线；第 5 级「提交 / 取消」仍完整可读<br>
+· <b>点二级菜单项 → 侧栏自动收起</b>（让内容区变宽）；点「固定侧栏」后不再自动收起<br>· 点当前模块的一级图标 = 收起/展开；点其它图标 = 切换模块并展开<br>· 固定状态用 localStorage 记忆（真实项目用 cookie，服务端渲染时决定首屏状态，无闪烁）<br>· 右上角 ◐ 切深色主题
+<div class="depth-meter">当前数据最大深度：<i></i><i></i><i></i><i></i><i></i><span id="maxDepth">-</span></div>
+</div></div>
+</div>
+</div>
+<script>
+var MENU_TREE = {
+  overview: { title: "概览", overview: { title: "仪表盘", path: "/admin" }, nodes: [] },
+  manage: { title: "管理", overview: { title: "管理概览", path: "/admin/manage-overview" }, nodes: [
+    { title: "权限体系", path: "/admin/permissions", active: true, count: 119, children: [
+      { title: "角色管理", path: "/admin/roles", count: 12 },
+      { title: "权限资源", children: [
+        { title: "API 权限点", path: "/admin/permissions" },
+        { title: "按钮权限", children: [
+          { title: "页面按钮", path: "#" },
+          { title: "表单按钮", children: [ { title: "提交 / 取消", path: "#" } ] }
+        ] }
+      ] },
+      { title: "菜单管理", path: "/admin/menus" }
+    ] },
+    { title: "组织架构", children: [
+      { title: "部门管理", path: "/admin/departments" },
+      { title: "数据权限", children: [ { title: "行级规则", path: "#" }, { title: "字段屏蔽", path: "#" } ] }
+    ] },
+    { title: "管理员", path: "/admin/administrators", count: 3 }
+  ] },
+  content: { title: "内容", overview: { title: "内容概览", path: "/admin/content-overview" }, nodes: [ { title: "文章", path: "#" }, { title: "商品", path: "#" }, { title: "分类标签", path: "#" } ] },
+  system: { title: "系统", overview: { title: "系统概览", path: "/admin/system-overview" }, nodes: [ { title: "页面", path: "/admin/pages" }, { title: "主题管理", path: "/admin/themes" }, { title: "全局块", path: "/admin/blocks" }, { title: "媒体库", path: "/admin/media" }, { title: "插件", path: "/admin/plugins" }, { title: "站点设置", path: "/admin/settings" } ] }
+};
+var INDENT_STEP = 12, INDENT_MAX = 3, BASE_PAD = 8;
+function esc(s){return String(s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c];});}
+function containsActive(n){ if(n.active) return true; return (n.children||[]).some(containsActive); }
+function renderNodes(nodes, depth){
+  return nodes.map(function(n){
+    var pad = BASE_PAD + Math.min(depth, INDENT_MAX) * INDENT_STEP;
+    var hasChildren = n.children && n.children.length > 0;
+    var clickable = !!n.path;                 /* 可点击性由"有没有页面"决定，而非类型 */
+    var isActive = !!n.active;
+
+    if (hasChildren) {
+      var open = containsActive(n) ? " is-open" : "";
+      var linkInner = '<span class="dot"></span>' + esc(n.title) + (n.count ? '<span class="count">' + n.count + '</span>' : '');
+      var link = clickable
+        ? '<a class="tree-link' + (isActive ? ' is-active' : '') + '" href="' + n.path + '" style="padding-left:' + pad + 'px">' + linkInner + '</a>'
+        : '<span class="tree-link is-group" style="padding-left:' + pad + 'px">' + linkInner + '</span>';
+      return '<div class="tree-node has-children' + open + '" data-depth="' + depth + '">' +
+               link +
+               '<button type="button" class="tree-toggle" title="展开 / 收起子菜单"><span class="caret"></span></button>' +
+               '<div class="tree-branch-body">' + renderNodes(n.children, depth + 1) + '</div>' +
+             '</div>';
+    }
+    return '<a class="tree-link' + (isActive ? ' is-active' : '') + '" href="' + (n.path || '#') + '" style="padding-left:' + pad + 'px" data-depth="' + depth + '">' +
+             '<span class="dot"></span>' + esc(n.title) + (n.count ? '<span class="count">' + n.count + '</span>' : '') +
+           '</a>';
+  }).join("");
+}
+
+function maxDepthOf(nodes, d){ var m = d||1; nodes.forEach(function(n){ if(n.children&&n.children.length) m = Math.max(m, maxDepthOf(n.children,(d||1)+1)); }); return m; }
+function renderGroup(key){
+  var g = MENU_TREE[key]; if(!g) return;
+  document.getElementById("subnavTitle").textContent = g.title;
+  var html = "";
+  if (g.overview) {
+    html += '<a class="subnav-overview" href="' + g.overview.path + '">' +
+              '<svg viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/></svg>' +
+              esc(g.overview.title) + '</a>';
+    if (g.nodes && g.nodes.length) html += '<div class="subnav-divider"></div>';
+  }
+  html += renderNodes(g.nodes, 0);
+  document.getElementById("treeRoot").innerHTML = html;
+  var md = maxDepthOf(g.nodes, 1);
+  document.getElementById("maxDepth").textContent = md + " 级";
+  var bars = document.querySelectorAll(".depth-meter i");
+  bars.forEach(function(b,i){ b.classList.toggle("on", i < Math.min(md, bars.length)); });
+}
+/* ===== 侧栏状态：pinned（固定） / collapsed（收起） ===== */
+var pinned = localStorage.getItem("gw_sidebar_pinned") === "1";
+function applyPin() {
+  document.body.classList.toggle("sidebar-pinned", pinned);
+  var btn = document.getElementById("pinBtn");
+  btn.classList.toggle("is-on", pinned);
+  document.getElementById("pinText").textContent = pinned ? "已固定" : "固定侧栏";
+  document.getElementById("pinHint").textContent = pinned ? "导航后保持展开" : "点击菜单后收起";
+}
+function setCollapsed(v) {
+  document.body.classList.toggle("sidebar-collapsed", v);
+}
+document.getElementById("pinBtn").addEventListener("click", function (e) {
+  e.stopPropagation();
+  pinned = !pinned;
+  localStorage.setItem("gw_sidebar_pinned", pinned ? "1" : "0");
+  applyPin();
+  if (pinned) setCollapsed(false);          /* 固定时立即展开 */
+});
+
+/* 一级图标：切换模块 + 展开二级栏；点当前模块则 toggle 收起 */
+var currentGroup = "manage";
+document.querySelectorAll(".rail-btn").forEach(function(btn){
+  btn.addEventListener("click", function(){
+    var key = btn.getAttribute("data-group");
+    var collapsed = document.body.classList.contains("sidebar-collapsed");
+    if (key === currentGroup && !collapsed) { setCollapsed(true); return; }
+    currentGroup = key;
+    document.querySelectorAll(".rail-btn").forEach(function(b){ b.classList.toggle("is-active", b===btn); });
+    renderGroup(key);
+    setCollapsed(false);
+  });
+});
+
+/* 点击二级菜单项：导航后收起（未固定时）——真实项目里是写 cookie 后整页跳转 */
+document.getElementById("treeRoot").addEventListener("click", function (e) {
+  var link = e.target.closest(".tree-link, .subnav-overview");
+  if (!link) return;
+  if (pinned) return;                        /* 已固定：保持展开 */
+  setCollapsed(true);                        /* demo 无跳转，直接演示收起 */
+});
+document.getElementById("treeRoot").addEventListener("click", function(e){
+  var toggle = e.target.closest(".tree-toggle");
+  if (!toggle) return;                        /* 点文字 = 正常导航；点三角 = 展开/收起 */
+  e.preventDefault();
+  e.stopPropagation();
+  toggle.closest(".tree-node").classList.toggle("is-open");
+});
+
+document.getElementById("themeToggle").addEventListener("click", function(){
+  var h = document.documentElement;
+  h.setAttribute("data-theme", h.getAttribute("data-theme")==="dark" ? "light" : "dark");
+});
+renderGroup("manage");
+applyPin();
+</script>
+</body>
+</html>
