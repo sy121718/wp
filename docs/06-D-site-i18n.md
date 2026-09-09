@@ -934,7 +934,7 @@ revision       = sys_i18n 的资源版本号（max(update_time) 或独立计数�
 | 7 | 构建期冻结词条快照 `i18n.Snapshot(lang)` | `pkg/i18n/snapshot.go`（新） | `TestSnapshotFreezesCache` / `TestSnapshotFallbackChain` |
 | 8 | 文案资源版本号 `i18n.Revision()`（`sys_i18n_revision` → `max(update_time)`） | `pkg/i18n/revision.go`（新） | 编译期 + 人工核对 |
 | 9 | `DependencyKind=i18n` + `WithDependencies` 提供者 | `internal/pipeline/artifact.go` / `publisher.go` | `TestPublisherI18nDependency` |
-| 10 | 改文案触发重建 `MarkStaleForI18n` | `internal/module/page/{model,service,contract}` | 编译期断言（无调用方，见 15.5） |
+| 10 | 改文案触发重建 `MarkStaleForI18n` | `internal/module/page/{model,service,contract}`；调用方 `dashboard/inbound/http/site_locales_handle.go`（§15.10） | `public/test/dashboard/feature/site_locales_stale_test.go` |
 | 11 | 装配层全链路传语言（构建/预览/发布/改 URL/导航链接） | `internal/module/page/service/page_{assemble,preview,publish,draft,lang,navigation}.go` | `TestPageLangPrefixFullChain` / `TestPageLangExplicitRequest` |
 
 ### 15.2 D1 与 D1 的落地口径
@@ -979,7 +979,7 @@ true：全语言带前缀（/zh-CN/about、语言根 /zh-CN/index），决策 D1
 | 3 | 语言清单（§14 D10） | 没有「站点有哪几种语言」的真源，无法为每语言登记 `page_routes` 行（当前 reserved 行只登记默认语言） | Project 级 `project_locales` 表（顺序 + 默认标记 + 启用状态） |
 | 4 | hreflang / sitemap 语言分组 | `BuildSEOHead` 与 `internal/seo/sitemap.go` 未输出 `hreflang` / `xhtml:link` | §5 的构建期输出方案，激活后刷新阶段统一生成 |
 | 5 | 站内链接本地化只覆盖导航 | 按钮/图片/文本里的站内链接仍是逻辑路径 | 组件链接属性统一过 `LangPath`（与导航同一函数） |
-| 6 | `MarkStaleForI18n` 无调用方 | 后台 i18n CRUD（§14 D7）尚未实现，改文案不会自动触发重建（依赖条目已就位） | 后台 CRUD 保存成功后调用；或加 CLI |
+| 6 | `MarkStaleForI18n` 调用方不完整 | 后台 i18n CRUD（§14 D7）尚未实现，改文案不会自动触发重建（依赖条目已就位）；**语言清单保存路径已接**（§15.10） | 后台 CRUD 保存成功后调用；或加 CLI |
 | 7 | Runtime Fragment 语言（P5） | `/_fragments` 请求仍无 `lang`、无 `Vary` | §11 方案，独立阶段 |
 
 ### 15.6 验证命令
@@ -1124,13 +1124,61 @@ go test ./public/test/dashboard/feature/ -run "TestSiteSettingsRendersLocaleGrou
 
 **仍属后续（本节新增遗留）**
 
-- 改语言清单后不会自动重建已发布页面：切换器链接与 hreflang 进产物字节，清单变化后需重新构建/发布才生效（建议在 `SaveLocales` 成功后调用 page 模块的「全站标记待重建」能力，与 `MarkStaleForI18n` 同形；当前未接）。
+- ~~改语言清单后不会自动重建已发布页面~~：**已接**（保存清单成功后按「内容确实变化」调用 page 的 `MarkStaleForI18n` 标记全站待重建，见 §15.10）。
 - 禁用某语言后其已激活路由仍不会自动清理（§15.8 遗留，本节只提供提示文案）。
 - 「目标语言已登记路由但尚未发布」的语言仍会给出链接（会 404）：这是确定性判据的必然取舍，如需严格隐藏需把 `page_routes` 存在性纳入构建输入并接受产物随发布状态变化。
 - 语言前缀开关 `i18n.site_lang_prefix` 默认 false：关闭时多语言映射同一路径，切换器不渲染（同一页多语言也不能同时在线），页面已用文案提示。
 
+### 15.10 语言清单变更自动标记全站待重建（2025-09）
+
+**问题**：语言切换器链接与 hreflang 是构建期写进产物字节的（§15.9），改语言清单后不重建，
+前台看不出任何变化——这是 §15.9 遗留第 1 条。
+
+**触发方式：dashboard handler 编排**（`site_locales_handle.go` 的 `SaveSiteLocales`）。
+
+理由（依赖方向）：语言清单归 `project`（`project_locales` 表），「全站标记待重建」的能力归
+`page`（`MarkStaleForI18n`），且依赖方向是 `page → project`；若让 `project` 在 `SaveLocales`
+里反向调用 page，即形成 `project ↔ page` 循环依赖。`dashboard` 模块的 `Handle` 同时持有
+`projectcontract.ProjectService` 与 `pagecontract.PageService`，且已是本项目既有的跨模块编排点
+（`theme_handle.go` 的整站换皮、`block_handle.go` 的 stale 传播同理），因此沿用
+「handler 编排 + 双方契约」，不新增回调/事件机制，也不给 `project` 加反向依赖。
+
+**触发条件：清单内容确实变化**。比较的是 `project.ListLocales` 的规范输出（默认语言在前，
+其余按 `sort_order`、语言升序）逐项「语言码 + 默认标记 + 启用状态」——该顺序正是构建期
+`EnabledLangs` 的取用顺序，即产物里切换器与 hreflang 的顺序，所以它等价于「构建可见内容」。因此：
+
+- 增/删语言、切换默认语言、启用/禁用语言 → 触发；
+- 单语言站点原样再保存一次 → 不触发（避免无意义的全站重建）；
+- 仅调整**被禁用**语言之间的相对顺序 → 可能触发（`ListLocales` 输出顺序变了，但 `EnabledLangs`
+  不变）：属可接受的过度触发，`stale = true` 幂等且重建本身安全；
+- 工程首次保存清单（`before` 为空）→ 触发一次：构建输入确实变了，属预期。
+
+**失败语义**：清单已落库，不因标记失败而回滚；标记失败只记日志（`logger.Scene("settings")`），
+下次保存会重新判定并再试。校验失败/保存失败一律不触发（比较发生在 `SaveLocales` 成功之后）。
+
+**改动文件**：
+
+| 文件 | 改动 |
+|---|---|
+| `internal/module/dashboard/inbound/http/site_locales_handle.go` | `SaveSiteLocales` 保存前读 before 清单、成功后比较；新增 `markPagesStaleForLocaleChange` / `localesEqual` |
+| `public/test/dashboard/feature/site_locales_stale_test.go` | 新增：变化触发 / 默认语言切换触发 / 未变不触发 / 校验失败不触发 |
+
+**验证命令**（真实输出见提交说明）：
+
+```bash
+go build ./... && go vet ./... && go test ./... -count=1
+go test ./public/test/dashboard/feature/ -run "TestSaveSiteLocales" -count=1 -v
+```
+
+**不确定项**：
+
+- 只有「保存语言清单」这一条写入口（`POST /admin/settings/locales/save`）接了触发；若将来新增
+  API/CLI 写 `project_locales`，需同样编排，否则会出现同一缺口。
+- 禁用语言之间的顺序调整会过度触发一次全站重建（见上），未做更细的判据。
+
 ## 变更记录
 
+- v8（2025-09）：新增 §15.10——保存语言清单成功后自动标记全站待重建：触发落在 dashboard handler（避免 `project ↔ page` 循环依赖），判据是 `ListLocales` 规范输出逐项比较（内容确实变化才触发，单语言站点原样保存不触发），失败只记日志不回滚；§15.9 遗留第 1 条标记为已落地，§15.1 第 10 行与 §15.5 第 6 行的「无调用方」口径同步修正。
 - v7（2025-09）：新增 §15.9——语言切换器 UI 与后台语言清单管理已落地：`core.languages` 独立组件（纯链接零 JS、当前语言 `aria-current` 不可点、展示名用语言自称）+ 构建期 `WithLocaleLinks`（与 hreflang 同源）+ `<html lang>` 跟随构建语言 + §9 缺语言策略选 S2「隐藏」及其理由 + 站点设置「语言」分组（复用 project `ListLocales`/`SaveLocales`、HTMX 行片段增删、禁用语言提示、校验失败不落库）+ 迁移 065 词条 seed；§15.8「仍属后续」第 1 条标记为已落地，并新增 4 条遗留（清单变更不自动重建、禁用语言路由不清理、未发布语言仍出链接、前缀开关默认关闭）。
 - v6（2025-09）：新增 §15.8——P3 站点多语言上线已落地：迁移 062 `page_publications`（每语言激活状态真源）+ 063 `page_stagings`（每语言暂存指针）+ 064 `project_locales`（语言清单）；Publish/Rollback/UpdateURL 按语言作用域、`RenameReserved.OnlyReserved` 防跨语言误改、路由登记逐语言、产物 head hreflang 与 sitemap 语言分组、导航高亮双重前缀修复；含端到端双语言在线证据与灰度开关双路径测试。
 - v5（2025-09）：新增 §15.7——§15.5 第 1 条（`page_artifacts` 同页多语言互相覆盖）已修复：迁移 061 加 `lang` 列并改唯一键为 `(page_id, version, lang)`、model/service 补语言维度、装配层调用点补 `lang`，含存量回填与幂等验证；§15.5 第 2/3 条仍属 P3。

@@ -19,6 +19,7 @@ package dashboardhttp
 // 若用语言码做 radio/checkbox 的 value，改码后默认/启用勾选会静默丢失。
 
 import (
+	"context"
 	"net/http"
 	"strconv"
 	"strings"
@@ -122,11 +123,21 @@ func (h *Handle) LocaleRowsFragment(c *gin.Context) {
 //
 // 校验（全部在 project.SaveLocales 内单点实现）：至少一种语言、至多一个默认语言
 // 且默认语言必须启用、语言码白名单。校验失败时不落库，回渲染设置页并给出提示。
+//
+// 保存成功后按「清单内容是否变化」决定是否标记全站待重建（见
+// markPagesStaleForLocaleChange）：切换器链接与 hreflang 是构建期写进产物字节的，
+// 清单变了不重建，前台看不出变化（docs/06-D §15.9 遗留第 1 条）。
 func (h *Handle) SaveSiteLocales(c *gin.Context) {
 	projectID := strings.TrimSpace(c.PostForm("projectId"))
 	if projectID == "" {
 		c.String(http.StatusBadRequest, "工程不能为空")
 		return
+	}
+	// 变更前清单（project 契约的规范输出）：仅用于「是否变化」判定。
+	// 读失败不阻断保存：before 为空切片，与保存结果比较必然判定为变化，保守触发重建。
+	before, err := h.projects.ListLocales(c.Request.Context(), projectID)
+	if err != nil {
+		logger.Scene("settings").With("project", projectID).Error(err, "读取语言清单失败，按已变更处理")
 	}
 	rows := parseLocaleRows(c)
 	req := &projectdto.LocalesSaveReq{ProjectID: projectID, Locales: make([]projectdto.LocaleItem, 0, len(rows))}
@@ -136,7 +147,8 @@ func (h *Handle) SaveSiteLocales(c *gin.Context) {
 			Lang: r.Lang, IsDefault: r.IsDefault, Enabled: &enabled,
 		})
 	}
-	if _, err := h.projects.SaveLocales(c.Request.Context(), req); err != nil {
+	after, err := h.projects.SaveLocales(c.Request.Context(), req)
+	if err != nil {
 		logger.Scene("settings").With("project", projectID).Error(err, "保存语言清单失败")
 		data := h.buildSiteSettingsData(c, projectID)
 		data.Locales = rows // 回显用户输入，便于就地修正
@@ -144,5 +156,47 @@ func (h *Handle) SaveSiteLocales(c *gin.Context) {
 		c.HTML(http.StatusOK, "admin/settings", withCSRF(c, data.templateMap()))
 		return
 	}
+	h.markPagesStaleForLocaleChange(c.Request.Context(), projectID, before, after)
 	c.Redirect(http.StatusSeeOther, "/admin/settings?project="+projectID+"&locales_saved=1")
+}
+
+// markPagesStaleForLocaleChange 语言清单内容确实变化后，把全站页面标记为待重建。
+//
+// 为什么落在 dashboard handler（而不是 project 模块）：语言清单归 project，
+// 「全站标记待重建」的能力归 page，且依赖方向是 page → project；让 project 反向
+// 依赖 page 会成环。dashboard 同时持有 project 与 page 两个契约，本就是本项目既有的
+// 跨模块编排点（theme_handle 的整站换皮、block_handle 的 stale 传播同理），
+// 因此沿用「handler 编排 + 双方契约」的做法，不新增回调/事件机制。
+//
+// 触发条件：before/after 按「构建可见内容」比较不等（语言码集合与顺序、默认标记、
+// 启用状态）。单语言站点原样再保存一次清单内容不变 → 不触发，避免无意义的全站重建。
+//
+// 失败只记日志：清单已落库（不因标记失败而回滚），下次保存会重新判定并再试。
+func (h *Handle) markPagesStaleForLocaleChange(ctx context.Context, projectID string, before, after []projectdto.LocaleResp) {
+	if localesEqual(before, after) {
+		return
+	}
+	if h.pages == nil {
+		return
+	}
+	if err := h.pages.MarkStaleForI18n(ctx); err != nil {
+		logger.Scene("settings").With("project", projectID).Error(err, "语言清单变更后标记全站待重建失败")
+	}
+}
+
+// localesEqual 比较两次语言清单是否「构建可见」一致。
+//
+// 以 project.ListLocales 的规范输出为准（默认语言在前，其余按 sort_order、语言升序）：
+// 该顺序正是构建期 EnabledLangs 的取用顺序，也就是产物里语言切换器与 hreflang 的顺序。
+// 逐项比较语言码 + 默认标记 + 启用状态，任一不同即视为清单变化。
+func localesEqual(a, b []projectdto.LocaleResp) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i].Lang != b[i].Lang || a[i].IsDefault != b[i].IsDefault || a[i].Enabled != b[i].Enabled {
+			return false
+		}
+	}
+	return true
 }
