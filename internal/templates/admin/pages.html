@@ -56,6 +56,8 @@
                 <td class="pages-actions">
                     <a class="btn" href="/workbench?id={{p.ID}}">编辑</a>
                     <a class="btn" href="/workbench/preview?id={{p.ID}}" target="_blank">预览</a>
+                    {* 多语言工作台入口（决策 F10：行内按钮，不做独立菜单） *}
+                    <a class="btn" href="/admin/page/translations?pageId={{p.ID}}">多语言</a>
                     {{if p.Active}}
                     <a class="btn" href="/site{{p.DraftPath}}/" target="_blank">线上</a>
                     {{end}}

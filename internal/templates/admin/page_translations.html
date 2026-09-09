@@ -1,0 +1,143 @@
+{* admin/page_translations.html — 翻译工作台（多语言 P5c，docs/06-D §7.8 决策 F10/F11/F12）。
+   入口：页面列表行内「多语言」按钮（不做独立菜单）；本页不做独立 JS，交互全部为
+   服务端渲染 + 原生表单（语言切换 onchange 提交、保存整表 POST + PRG 回跳）。
+   可翻译行由 handler 用 builder.CollectContentCandidates 生成，与构建期同源。 *}
+{{extends "layout.html"}}
+{{block body()}}
+<div class="pages-wrap">
+    <section class="pages-card">
+        <h2>多语言 · {{.PagePath}}</h2>
+
+        {{if .Errors}}
+        <div class="tr-alert" role="alert">
+            <strong>未保存：请先修正以下问题</strong>
+            <ul class="pages-list">
+                {{range _, e := .Errors}}
+                <li>{{e}}</li>
+                {{end}}
+            </ul>
+        </div>
+        {{end}}
+
+        {{if .Saved}}
+        <p class="pages-empty" role="status">
+            已保存 {{.SavedCount}} 条译文。{{if .SavedCount}}译文变更已标记全站待重建（下次构建生效）。{{end}}
+        </p>
+        {{end}}
+
+        {* 语言切换 + 完成度 + 一键 AI（灰置，待接入；决策 F13） *}
+        <form method="get" action="/admin/page/translations" class="pages-form tr-toolbar">
+            <input type="hidden" name="pageId" value="{{.PageID}}">
+            <label>语言
+                <select name="lang" onchange="this.form.submit()">
+                    {{range _, l := .Langs}}
+                    <option value="{{l.Code}}"{{if l.Active}} selected{{end}}>{{l.Label}}</option>
+                    {{end}}
+                </select>
+            </label>
+            <noscript><button type="submit" class="btn btn-sm">切换语言</button></noscript>
+            <span class="pages-empty">本页完成度 {{.PageDone}} / {{.PageTotal}}</span>
+            {{if .SiteNote}}
+            <span class="pages-empty">{{.SiteNote}}</span>
+            {{else}}
+            <span class="pages-empty">全站完成度 {{.Lang}}：{{.SiteDone}} / {{.SiteTotal}} 条</span>
+            {{end}}
+            <button type="button" class="btn btn-secondary" disabled aria-disabled="true" title="待接入">一键 AI 翻译</button>
+        </form>
+
+        {{if .IsDefaultLang}}
+        <p class="pages-empty">
+            当前语言是站点默认语言：构建期不使用内容译文（产物即原文）。译文可先填好，切换语言后即可生效。
+        </p>
+        {{end}}
+
+        <p class="pages-empty">
+            筛选：
+            <a href="/admin/page/translations?pageId={{.PageID}}&amp;lang={{.Lang}}&amp;filter=all">全部</a> ·
+            <a href="/admin/page/translations?pageId={{.PageID}}&amp;lang={{.Lang}}&amp;filter=missing">只看缺失</a> ·
+            <a href="/admin/page/translations?pageId={{.PageID}}&amp;lang={{.Lang}}&amp;filter=manual">只看人工</a> ·
+            <a href="/admin/page/translations?pageId={{.PageID}}&amp;lang={{.Lang}}&amp;filter=ai">只看 AI 翻译</a>
+            <span>（当前显示 {{.RowCount}} 行）</span>
+        </p>
+    </section>
+
+    {{if len(.Groups) == 0}}
+    <section class="pages-card mt-md">
+        <p class="pages-empty">
+            {{if .PageTotal == 0}}
+            本页没有可翻译文本（只有组件白名单字段参与翻译；纯数字/纯符号与链接、色值等字段不翻译）。
+            {{else}}
+            当前筛选条件下没有行。
+            {{end}}
+        </p>
+    </section>
+    {{else}}
+    <form method="post" action="/admin/page/translations/save">
+        <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
+        <input type="hidden" name="pageId" value="{{.PageID}}">
+        <input type="hidden" name="lang" value="{{.Lang}}">
+
+        {{range _, g := .Groups}}
+        <section class="pages-card mt-md">
+            <h2>{{g.Component}} <span class="pages-empty">（{{len(g.Rows)}} 条）</span></h2>
+            <table class="pages-table tr-table">
+                <thead>
+                <tr><th>字段</th><th>原文</th><th>译文</th><th>状态</th><th>来源</th></tr>
+                </thead>
+                <tbody>
+                {{range _, r := g.Rows}}
+                <tr>
+                    <td class="tr-field">{{r.Field}}{{if r.Rich}}<br><span class="pages-badge">富文本</span>{{end}}</td>
+                    <td class="tr-source">{{r.Source}}</td>
+                    <td class="tr-target">
+                        <textarea name="rowTarget" rows="{{if r.Rich}}4{{else}}2{{end}}" maxlength="{{r.Limit}}" placeholder="填写译文（留空则不写入）">{{r.Target}}</textarea>
+                        <input type="hidden" name="rowContext" value="{{r.Context}}">
+                        <input type="hidden" name="rowSource" value="{{r.Source}}">
+                        <input type="hidden" name="rowHash" value="{{r.SourceHash}}">
+                        <div class="pages-empty">上限 {{r.Limit}} 字节{{if r.Rich}}；富文本译文需保留 HTML 标签（形态与原文一致）{{end}}</div>
+                    </td>
+                    <td>
+                        {{if r.Translated}}
+                        <span class="pages-badge pages-badge-ok">已翻译</span>
+                        {{else}}
+                        <span class="pages-badge pages-badge-warn">缺失</span>
+                        {{end}}
+                    </td>
+                    <td>
+                        {{if r.Engine}}
+                        <span class="pages-badge{{if r.Engine == "ai"}} pages-badge-info{{end}}">{{r.Engine}}</span>
+                        {{else}}
+                        <span class="pages-empty">—</span>
+                        {{end}}
+                    </td>
+                </tr>
+                {{if r.ReusePages}}
+                <tr class="tr-reuse">
+                    <td></td>
+                    <td colspan="4">
+                        <details>
+                            <summary>↳ 还用在另外 {{r.ReusePages}} 个页面（修改后全站同步生效）</summary>
+                            <div class="pages-empty">
+                                该文本在 {{r.ReuseTotal}} 个页面出现：{{r.ReuseHint}}<br>
+                                共 1 个译文（context = {{r.Context}}，lang = {{.Lang}}）
+                            </div>
+                        </details>
+                    </td>
+                </tr>
+                {{end}}
+                {{end}}
+                </tbody>
+            </table>
+        </section>
+        {{end}}
+
+        <section class="pages-card mt-md">
+            <button type="submit" class="btn btn-primary">保存全部</button>
+            <span class="pages-empty">
+                保存写入 sys_translation（来源 manual）；清空输入框表示「本行不写入」，不会删除已有译文。
+            </span>
+        </section>
+    </form>
+    {{end}}
+</div>
+{{end}}

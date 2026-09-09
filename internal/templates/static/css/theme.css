@@ -506,6 +506,22 @@ table.data-table {
 }
 .pages-actions .btn:hover { border-color: var(--c-primary, #2563eb); color: var(--c-primary, #2563eb); }
 .pages-empty { color: var(--c-text-mute, #6b7280); font-size: 13px; }
+/* ===== 翻译工作台（admin/page_translations.html，多语言 P5c） ===== */
+.tr-toolbar { align-items: center; gap: 12px; flex-wrap: wrap; }
+.tr-table td { vertical-align: top; }
+.tr-field { white-space: nowrap; font-family: monospace; font-size: 12px; }
+.tr-source { max-width: 320px; word-break: break-word; }
+.tr-target textarea {
+    width: 100%; min-width: 240px; padding: 6px 10px; font-size: 13px; line-height: 20px;
+    border: 1px solid var(--c-border, #e5e7eb); border-radius: 8px; font-family: inherit;
+    background: var(--c-surface, #fff); color: inherit;
+}
+.tr-reuse summary { cursor: pointer; color: var(--c-text-mute, #6b7280); font-size: 12px; }
+.tr-alert {
+    border: 1px solid var(--c-warn, #f59e0b); border-radius: 8px;
+    padding: 10px 14px; margin-bottom: 12px; font-size: 13px;
+}
+
 /* ===== 站点语言清单（admin/settings.html 语言分组，多语言 P3） ===== */
 .locale-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 6px 0; }
 .locale-row .locale-lang { padding: 6px 10px; font-size: 13px; border: 1px solid var(--c-border, #e5e7eb); border-radius: 8px; min-width: 160px; }
