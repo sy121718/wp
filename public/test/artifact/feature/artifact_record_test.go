@@ -11,7 +11,6 @@ import (
 	artifactmodel "go_wp/internal/module/artifact/model"
 	artifactservice "go_wp/internal/module/artifact/service"
 	"go_wp/public/test/support"
-
 )
 
 const recordManifest = `{"files":{"index.html":"hash-html","manifest.json":"hash-manifest"}}`

@@ -144,11 +144,12 @@ func TestMediaVariantGenerateSuccess(t *testing.T) {
 		if rerr != nil {
 			t.Fatalf("%s 文件应存在: %v", vt, rerr)
 		}
-		if len(data) < 12 || string(data[0:4]) != "RIFF" {
-			t.Fatalf("%s 应为 webp 文件（RIFF 头）", vt)
+		// 变体统一有损 JPEG（体积比无损 webp 小 3~4 倍，是页面加载速度的关键）。
+		if len(data) < 3 || data[0] != 0xFF || data[1] != 0xD8 {
+			t.Fatalf("%s 应为 JPEG 文件（SOI 头 FFD8）", vt)
 		}
-		if rec.MimeType == nil || *rec.MimeType != "image/webp" {
-			t.Fatalf("%s MIME 应为 image/webp", vt)
+		if rec.MimeType == nil || *rec.MimeType != "image/jpeg" {
+			t.Fatalf("%s MIME 应为 image/jpeg", vt)
 		}
 	}
 
@@ -206,7 +207,7 @@ func TestMediaVariantOversizeSkipped(t *testing.T) {
 		}
 	}
 	// 不应产生任何变体文件。
-	if _, serr := os.Stat(filepath.Join(tmp, "huge_thumb.webp")); !os.IsNotExist(serr) {
+	if _, serr := os.Stat(filepath.Join(tmp, "huge_thumb.jpg")); !os.IsNotExist(serr) {
 		t.Fatalf("超大图不应产出变体文件")
 	}
 }

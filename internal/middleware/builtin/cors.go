@@ -57,9 +57,9 @@ func defaultCORSConfig() CORSConfig {
 //  2. 配置 server.cors_allowed_origins（生产使用，config.yaml 维护）
 //  3. 两者皆空 → 无白名单，按运行模式回退：
 //     - release：拒绝非同源请求，不反射 Origin（fail-closed，浏览器收不到
-//       Access-Control-Allow-Origin 即拒绝跨域读取），启动时打一条 Warn；
+//     Access-Control-Allow-Origin 即拒绝跨域读取），启动时打一条 Warn；
 //     - debug / test：反射请求 Origin 并允许携带 Cookie（本地开发便利），
-//       启动时打一条 Warn 提醒生产必须配置白名单。
+//     启动时打一条 Warn 提醒生产必须配置白名单。
 //
 // 白名单非空时：仅命中白名单的 Origin 下发
 // Access-Control-Allow-Origin（精确回显该 Origin）并保留

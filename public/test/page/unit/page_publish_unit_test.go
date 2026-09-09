@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	pageenums "go_wp/internal/module/page/enums"
 	pagedto "go_wp/internal/module/page/dto"
+	pageenums "go_wp/internal/module/page/enums"
 	pubmodel "go_wp/internal/module/publication/model"
 )
 

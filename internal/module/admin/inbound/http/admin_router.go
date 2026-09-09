@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"go_wp/internal/middleware/builtin"
+	admincontract "go_wp/internal/module/admin/contract"
 	adminservice "go_wp/internal/module/admin/service"
 	datarulepkg "go_wp/pkg/datarule"
 	"go_wp/pkg/logger"
@@ -22,9 +23,11 @@ const (
 // SetupAdminRoutes 装配 admin 模块（管理员/角色/权限点/菜单/部门/数据权限）并注册全部路由。
 //
 // 合并后模块内部同包直调，无跨模块契约，不对外暴露接口。
-func SetupAdminRoutes(rg *gin.RouterGroup, db *gorm.DB) {
+// 返回 AuthzContextService：对外只读权限上下文查询能力，供外部模块/插件消费
+// （管理面写操作仍由 handle 层经 AdminService 等走 Casbin 鉴权，不在此返回）。
+func SetupAdminRoutes(rg *gin.RouterGroup, db *gorm.DB) admincontract.AuthzContextService {
 	if rg == nil {
-		return
+		return nil
 	}
 
 	svc := adminservice.NewService(db)
@@ -153,6 +156,8 @@ func SetupAdminRoutes(rg *gin.RouterGroup, db *gorm.DB) {
 		datarule.GET("/assignment/list", handle.RuleAssignmentList)
 		datarule.POST("/assignment/save", handle.RuleAssignmentSave)
 	}
+
+	return svc
 }
 
 // registerDomains 注册所有数据域及字段白名单。

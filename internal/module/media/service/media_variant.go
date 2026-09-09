@@ -12,6 +12,7 @@ import (
 	"image"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"syscall"
 	"time"
@@ -45,13 +46,13 @@ func variantEligible(fileType string, fileName string) bool {
 }
 
 // variantObjectKey 由原图存储 key 推导变体存储 key：
-// 与原图同目录，命名 <stem>_<variantType>.webp——webp 全尺寸用 _webp 后缀，
-// 避免与「原图本身即 .webp」的场景重名冲突；文件名可推导，zip 打包/排查不依赖额外约定。
+// 与原图同目录，命名 <stem>_<variantType>.jpg（变体统一有损 JPEG 编码）。
+// 文件名可推导，zip 打包/排查不依赖额外约定。
 func variantObjectKey(sourceKey string, variantType string) string {
 	dir := filepath.ToSlash(filepath.Dir(strings.TrimPrefix(filepath.ToSlash(sourceKey), "/")))
 	base := filepath.Base(strings.TrimPrefix(filepath.ToSlash(sourceKey), "/"))
 	stem := strings.TrimSuffix(base, filepath.Ext(base))
-	name := stem + "_" + variantType + ".webp"
+	name := stem + "_" + variantType + ".jpg"
 	if dir == "" || dir == "." {
 		return name
 	}
@@ -140,14 +141,14 @@ type variantProduceResult struct {
 	Size   int64
 }
 
-// produceVariant 生成单个变体文件：按类型缩放/重编码 → webp 编码 → 落盘，
+// produceVariant 生成单个变体文件：按类型缩放/重编码 → JPEG 有损编码 → 落盘，
 // 返回变体实际宽高与文件大小。
 func produceVariant(src image.Image, variantType string, key string) (variantProduceResult, error) {
 	img, err := buildVariantImage(src, variantType)
 	if err != nil {
 		return variantProduceResult{}, err
 	}
-	data, err := encodeWebPBytes(img)
+	data, err := encodeJPEGBytes(img)
 	if err != nil {
 		return variantProduceResult{}, err
 	}
@@ -278,7 +279,7 @@ func (s *Service) GenerateVariants(ctx context.Context, attachmentID uint64) (re
 				"width":       produced.Width,
 				"height":      produced.Height,
 				"file_size":   produced.Size,
-				"mime_type":   "image/webp",
+				"mime_type":   "image/jpeg",
 				"update_time": time.Now(),
 			})
 			rec.Status = mediamodel.VariantStatusReady
@@ -337,4 +338,51 @@ func variantEntityToResp(e *mediamodel.MediaVariantEntity) mediato.VariantResp {
 		Height:      height,
 		MimeType:    mime,
 	}
+}
+
+// ProbeImageVariants 按公开 URL（/storage/...）探测已就绪的图片变体宽度列表，
+// 供构建期响应式图片（srcset）使用：宽度取变体类型的标准边并与文件命名
+// <stem>_<type>.jpg 一一对应；升序去重，保证同一文档重复编译产物字节一致。
+// 非媒体库 URL、附件不存在或变体未就绪返回 nil（调用方不输出 srcset）。
+func (s *Service) ProbeImageVariants(ctx context.Context, url string) []int {
+	const prefix = "/storage/"
+	if !strings.HasPrefix(url, prefix) {
+		return nil
+	}
+	rel := strings.TrimPrefix(url, prefix)
+	if rel == "" || strings.Contains(rel, "..") {
+		return nil
+	}
+	att, err := s.am.GetByFilePath(ctx, rel)
+	if err != nil || att == nil {
+		return nil
+	}
+	list, err := s.vm.ListByAttachment(ctx, att.ID)
+	if err != nil {
+		return nil
+	}
+	// webp 变体与源图同尺寸，不参与 srcset（原图已由 src 兜底）。
+	widths := make([]int, 0, len(list))
+	seen := make(map[int]bool, len(list))
+	for _, v := range list {
+		if v.Status != mediamodel.VariantStatusReady {
+			continue
+		}
+		var w int
+		switch v.VariantType {
+		case mediamodel.VariantTypeThumb:
+			w = thumbVariantEdge
+		case mediamodel.VariantTypeMedium:
+			w = mediumVariantEdge
+		default:
+			continue
+		}
+		if seen[w] {
+			continue
+		}
+		seen[w] = true
+		widths = append(widths, w)
+	}
+	sort.Ints(widths)
+	return widths
 }

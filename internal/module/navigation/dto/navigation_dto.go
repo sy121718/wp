@@ -12,6 +12,12 @@ type CreateReq struct {
 	ParentID *string `json:"parentId"`
 	// SortOrder 排序权重（越小越靠前）。
 	SortOrder int `json:"sortOrder"`
+	// SourceType 菜单项来源：custom（手填链接）/page/article/product/category/block。
+	SourceType string `json:"sourceType"`
+	// SourceID 来源实体 ID（custom 时为空）。
+	SourceID *string `json:"sourceId"`
+	// Target 打开方式：self / blank。
+	Target string `json:"target"`
 }
 
 // UpdateReq 更新公开站点导航项（仅更新传入的非空字段）。
@@ -22,6 +28,10 @@ type UpdateReq struct {
 	Kind      *string `json:"kind"`
 	ParentID  *string `json:"parentId"`
 	SortOrder *int    `json:"sortOrder"`
+	// SourceType / SourceID / Target 同 CreateReq。
+	SourceType *string `json:"sourceType"`
+	SourceID   *string `json:"sourceId"`
+	Target     *string `json:"target"`
 }
 
 // GetReq 按 ID 查询导航项。
@@ -55,5 +65,23 @@ type NavigationResp struct {
 	Kind      string  `json:"kind"`
 	ParentID  *string `json:"parentId"`
 	SortOrder int     `json:"sortOrder"`
-	UpdatedAt string  `json:"updatedAt"`
+	// SourceType 菜单项来源：custom/page/article/product/category/block。
+	SourceType string `json:"sourceType"`
+	// SourceID 来源实体 ID（custom 时为空）。
+	SourceID *string `json:"sourceId"`
+	// Target 打开方式：self / blank。
+	Target    string `json:"target"`
+	UpdatedAt string `json:"updatedAt"`
+}
+
+// NavigationNode 导航项树节点（按 parent_id 组装，构建期编译与菜单管理页共用）。
+type NavigationNode struct {
+	ID         string            `json:"id"`
+	Title      string            `json:"title"`
+	Path       string            `json:"path"`
+	SourceType string            `json:"sourceType"`
+	SourceID   *string           `json:"sourceId"`
+	Target     string            `json:"target"`
+	SortOrder  int               `json:"sortOrder"`
+	Children   []*NavigationNode `json:"children,omitempty"`
 }

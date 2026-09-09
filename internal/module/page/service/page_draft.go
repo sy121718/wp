@@ -14,6 +14,7 @@ import (
 	pagedto "go_wp/internal/module/page/dto"
 	pagemodel "go_wp/internal/module/page/model"
 	pubcontract "go_wp/internal/module/publication/contract"
+	pubenums "go_wp/internal/module/publication/enums"
 	"go_wp/internal/pipeline"
 	"go_wp/pkg/logger"
 
@@ -84,8 +85,10 @@ func (s *Service) reservePath(ctx context.Context, projectID, path, pageID strin
 	if err == nil {
 		return nil
 	}
+	// 占用冲突归一：唯一约束冲突，或 publication 的 ErrRouteOccupied（资源 key）。
+	// 注意不能按中文文案匹配——enums 值已 key 化，文案随语言变化。
 	if errors.Is(err, gorm.ErrDuplicatedKey) || strings.Contains(err.Error(), "23505") ||
-		strings.Contains(err.Error(), "占用") {
+		strings.Contains(err.Error(), pubenums.ErrRouteOccupied) {
 		return ErrPathOccupied
 	}
 	return err
@@ -242,7 +245,9 @@ func validateDraft(rawPath string, rawDoc json.RawMessage) (path string, doc jso
 	if err != nil {
 		return "", nil, ErrInvalidDocument
 	}
-	if err = builder.ValidatePage(page); err != nil {
+	// 容错校验：编辑中间态允许「某个组件还没配好」（编译时跳过该节点），
+	// 只拦截致命问题（设置非法 / 深度超限）。
+	if _, err = builder.ValidatePageTolerant(page); err != nil {
 		return "", nil, fmt.Errorf("%w: %v", ErrInvalidDocument, err)
 	}
 	// 重新编码保证存储 JSON 的规范格式；Document 不接受任意散乱字节。
@@ -268,8 +273,8 @@ func mapPersistenceError(err error) error {
 	if errors.Is(err, gorm.ErrDuplicatedKey) || strings.Contains(strings.ToLower(err.Error()), "duplicate key") || strings.Contains(strings.ToLower(err.Error()), "unique constraint") {
 		return ErrPathOccupied
 	}
-	// publication contract 的占用错误（ErrRouteOccupied）归一为 page 的 ErrPathOccupied。
-	if strings.Contains(err.Error(), "占用") {
+	// publication contract 的占用错误（ErrRouteOccupied key）归一为 page 的 ErrPathOccupied。
+	if strings.Contains(err.Error(), pubenums.ErrRouteOccupied) {
 		return ErrPathOccupied
 	}
 	if errors.Is(err, gorm.ErrRecordNotFound) {

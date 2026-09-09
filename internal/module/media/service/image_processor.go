@@ -1,25 +1,32 @@
 package mediaservice
 
 // image_processor.go — media 模块侧图片处理封装：
-// 变体生成使用纯 Go 库（disintegration/imaging 缩放 + HugoSmits86/nativewebp 无损编码），
+// 变体生成使用纯 Go 库（disintegration/imaging 缩放 + 标准库 image/jpeg 有损编码），
 // 只服务本模块的变体产物，不做通用图片工具。防御约定：
 //   - 处理前用标准库 image.DecodeConfig 读 header，解码失败或任一边长超过
 //     maxVariantSourceEdge（6000px）则拒绝生成（调用方将该变体记为 failed），不阻塞上传；
-//   - nativewebp 硬限宽高 ≤16384，变体目标边长均远小于该值，无越界风险；
+//   - 编码统一 JPEG（有损，质量 variantJPEGQuality）：此前用 nativewebp 无损编码，
+//     实测 1280px 变体可达 1.7MB，体积是页面变慢的主因；JPEG 同尺寸通常 150~300KB；
+//   - JPEG 不支持透明：带 alpha 的图先合成到白底（flattenToOpaque），避免透明区变黑；
 //   - svg/gif 不参与变体生成（svg 为矢量无需位图，gif 多帧转码丢帧），在调用方过滤。
 
 import (
 	"bytes"
 	"errors"
 	"image"
-	_ "image/gif"  // 注册 gif 解码器（DecodeConfig 探测用；变体本身排除 gif）
-	_ "image/jpeg" // 注册 jpeg 解码器
-	_ "image/png"  // 注册 png 解码器
+	"image/color"
+	"image/draw"
+	_ "image/gif" // 注册 gif 解码器（DecodeConfig 探测用；变体本身排除 gif）
+	"image/jpeg"
+	_ "image/png" // 注册 png 解码器
 	"io"
+
+	// webp 解码器（纯 Go）：源图本身是 .webp 时 DecodeConfig/Decode 才可用。
+	// 此前只注册 gif/jpeg/png，webp 源图会以 "unknown format" 跳过变体生成。
+	_ "golang.org/x/image/webp"
 
 	mediamodel "go_wp/internal/module/media/model"
 
-	"github.com/HugoSmits86/nativewebp"
 	"github.com/disintegration/imaging"
 )
 
@@ -40,6 +47,10 @@ const (
 
 	// mediumVariantEdge 调节尺寸变体的 Fit 边长（1280x1280）。
 	mediumVariantEdge = 1280
+
+	// variantJPEGQuality JPEG 变体编码质量：82 是「视觉无损」常用档，
+	// 相比无损 webp 体积小 5~10 倍，是页面加载速度的关键。
+	variantJPEGQuality = 82
 )
 
 // probeImage 读取图片 header 探测尺寸，返回 (宽, 高, err)。
@@ -65,16 +76,27 @@ func decodeImage(r io.Reader) (image.Image, error) {
 	return imaging.Decode(r, imaging.AutoOrientation(true))
 }
 
-// encodeWebP 把任意 image.Image 编码为无损 VP8L webp
-// （nativewebp.Encode 接受任意 image.Image，内部自动转 NRGBA）。
-func encodeWebP(w io.Writer, img image.Image) error {
-	return nativewebp.Encode(w, img, &nativewebp.Options{CompressionLevel: nativewebp.DefaultCompression})
+// flattenToOpaque 把带 alpha 的图像合成到白底（JPEG 无透明通道）。
+// 无 alpha 的图原样返回，避免不必要的拷贝。
+func flattenToOpaque(img image.Image) image.Image {
+	if _, ok := img.(*image.NRGBA); !ok {
+		// 常见不透明类型（YCbCr / RGBA 且不透明）直接返回。
+		switch img.(type) {
+		case *image.YCbCr, *image.Gray:
+			return img
+		}
+	}
+	b := img.Bounds()
+	dst := image.NewRGBA(b)
+	draw.Draw(dst, b, &image.Uniform{C: color.White}, image.Point{}, draw.Src)
+	draw.Draw(dst, b, img, b.Min, draw.Over)
+	return dst
 }
 
-// encodeWebPBytes 编码为字节切片，供落盘写入。
-func encodeWebPBytes(img image.Image) ([]byte, error) {
+// encodeJPEGBytes 编码为有损 JPEG 字节切片（落盘写入用）。
+func encodeJPEGBytes(img image.Image) ([]byte, error) {
 	var buf bytes.Buffer
-	if err := encodeWebP(&buf, img); err != nil {
+	if err := jpeg.Encode(&buf, flattenToOpaque(img), &jpeg.Options{Quality: variantJPEGQuality}); err != nil {
 		return nil, err
 	}
 	return buf.Bytes(), nil

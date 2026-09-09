@@ -26,6 +26,9 @@ func TestWorkbenchPageShell(t *testing.T) {
 			"document":  `{"settings":{},"root":[]}`,
 			"meta":      `{"pageId":"p-1","draftPath":"/about","version":3}`,
 			"schemas":   `{"core.heading":[{"key":"text","kind":"text","section":"content"}]}`,
+			// jsVer 由真实 handler 注入（dashboard_handle.go）；模板 head/body 均引用它，
+			// 缺失会让 Jet 在第一个 jsVer 表达式处运行时报错并截断输出。
+			"jsVer": "test-1",
 		})
 	})
 
@@ -41,11 +44,17 @@ func TestWorkbenchPageShell(t *testing.T) {
 		`id="wb-bootstrap"`, `{"settings":{},"root":[]}`,
 		`id="wb-meta"`, `{"pageId":"p-1","draftPath":"/about","version":3}`,
 		`id="wb-schemas"`, `"core.heading"`,
-		"/static/js/workbench.js", "存草稿", "editor=1",
+		// 前端已拆分为 ES modules（docs/09 §3）：入口 index.js + core + methods/*。
+		"/static/js/workbench/index.js", "存草稿", "editor=1",
+		// 富文本编辑器为 Trix，本地 vendor 资源（不再走 CDN）。
+		"/static/vendor/trix/trix.umd.js", "/static/vendor/trix/trix.css",
 	} {
 		if !strings.Contains(body, fragment) {
 			t.Fatalf("外壳缺少区块 %s", fragment)
 		}
+	}
+	if strings.Contains(strings.ToLower(body), "tinymce") {
+		t.Fatalf("外壳仍引用 TinyMCE: %s", body)
 	}
 	if strings.Contains(body, "&quot;") {
 		t.Fatalf("JSON 数据岛被 HTML 转义: %s", body)

@@ -16,7 +16,7 @@ func TestWeakSessionSecret(t *testing.T) {
 	}{
 		{"", true},
 		{"gowp-dev-session-secret-change-me-in-production", true}, // 默认值
-		{"your-session-secret-key-change-this", true},            // 文档示例密钥
+		{"your-session-secret-key-change-this", true},             // 文档示例密钥
 		{"your-secret-key", true},
 		{"a-strong-random-secret-9f3b2c1d", false},
 	}

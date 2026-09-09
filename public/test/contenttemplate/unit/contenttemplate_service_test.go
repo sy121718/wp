@@ -11,6 +11,7 @@ import (
 	"gorm.io/gorm"
 
 	contenttemplatedto "go_wp/internal/module/contenttemplate/dto"
+	contenttemplateenums "go_wp/internal/module/contenttemplate/enums"
 	contenttemplatemodel "go_wp/internal/module/contenttemplate/model"
 	contenttemplateservice "go_wp/internal/module/contenttemplate/service"
 
@@ -181,7 +182,7 @@ func TestContentTemplateRejectInvalidDocument(t *testing.T) {
 		EntityType:    "product",
 		Name:          "坏文档模板",
 		DraftDocument: json.RawMessage(`{"settings":`),
-	}); err == nil || !strings.Contains(err.Error(), "格式非法") {
+	}); err == nil || !strings.Contains(err.Error(), contenttemplateenums.ErrDataInvalid) {
 		t.Fatalf("非法文档应返回 ErrDataInvalid: %v", err)
 	}
 }

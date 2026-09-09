@@ -6,6 +6,7 @@ import (
 
 	"go_wp/internal/builder/core"
 	"go_wp/internal/builder/plugincomp"
+	admincontract "go_wp/internal/module/admin/contract"
 	plugindto "go_wp/internal/module/plugin/dto"
 	"go_wp/internal/templates"
 )
@@ -37,6 +38,10 @@ type PluginService interface {
 	Detail(ctx context.Context, req *plugindto.DetailReq) (res *plugindto.PluginResp, err error)
 	// EnabledAssembly 启用插件的编译装配素材（模板 FS + 组件规格 + 检查器 schema）。
 	EnabledAssembly(ctx context.Context) (asm *Assembly, err error)
+	// AdminAuthz 返回注入的 admin 权限上下文查询服务。
+	// 插件是外部插件宿主：插件运行时经此读取当前用户角色/权限/超管上下文，
+	// 不直接依赖 admin 的 model/service。未注入时返回 nil，调用方需判空降级。
+	AdminAuthz() admincontract.AuthzContextService
 }
 
 // Assembly 编译装配素材（按启用插件集构建，确定性：同插件版本集恒定）。

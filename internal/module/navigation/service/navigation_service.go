@@ -12,6 +12,7 @@ import (
 	"gorm.io/gorm"
 
 	"go_wp/internal/templates"
+	"go_wp/pkg/logger"
 
 	navigationcontract "go_wp/internal/module/navigation/contract"
 	navigationdto "go_wp/internal/module/navigation/dto"
@@ -25,13 +26,42 @@ const (
 	kindFooter = "footer"
 )
 
+// 菜单项来源白名单（与迁移 054 的 CHECK 约束对齐）。
+const (
+	sourceCustom   = "custom"
+	sourcePage     = "page"
+	sourceArticle  = "article"
+	sourceProduct  = "product"
+	sourceCategory = "category"
+	sourceBlock    = "block"
+)
+
+// 打开方式白名单（与迁移 054 的 CHECK 约束对齐）。
+const (
+	targetSelf  = "self"
+	targetBlank = "blank"
+)
+
 // Service navigation 模块业务实现。
 type Service struct {
 	m *navigationmodel.Model
+	// sources 来源实体解析器（装配层注入；未注入时来源项退化为记录自身 title/path）。
+	sources navigationcontract.SourceResolver
 }
 
 // NewService 构造（model 注入，不持有 *gorm.DB）。
 func NewService(m *navigationmodel.Model) *Service { return &Service{m: m} }
+
+// SetSourceResolver 注入来源实体解析器（启动期装配调用一次，之后只读）。
+func (s *Service) SetSourceResolver(r navigationcontract.SourceResolver) { s.sources = r }
+
+// SourceGroups 返回该工程可加入菜单的来源候选（未注入解析器时为空）。
+func (s *Service) SourceGroups(ctx context.Context, projectID string) (groups []navigationcontract.SourceGroup, err error) {
+	if s.sources == nil {
+		return nil, nil
+	}
+	return s.sources.Candidates(ctx, projectID)
+}
 
 // 编译期契约断言。
 var _ navigationcontract.NavigationService = (*Service)(nil)
@@ -52,6 +82,10 @@ func (s *Service) Create(ctx context.Context, req *navigationdto.CreateReq) (res
 		return nil, err
 	}
 	parentID := normalizeParentID(req.ParentID)
+	sourceType, sourceID, target, err := normalizeSource(req.SourceType, req.SourceID, req.Target)
+	if err != nil {
+		return nil, err
+	}
 
 	exists, err := s.m.ExistsPath(ctx, projectID, kind, path, "")
 	if err != nil {
@@ -61,10 +95,22 @@ func (s *Service) Create(ctx context.Context, req *navigationdto.CreateReq) (res
 		return nil, errors.New(navigationenums.ErrPathTaken)
 	}
 
+	// 排序：未显式指定（0）时追加到同级末尾，保证同级 sort_order 唯一，
+	// 管理页的「上移/下移」才能稳定交换。
+	sortOrder := req.SortOrder
+	if sortOrder == 0 {
+		maxOrder, merr := s.m.MaxSortOrder(ctx, projectID, kind, parentID)
+		if merr != nil {
+			return nil, merr
+		}
+		sortOrder = maxOrder + 1
+	}
+
 	now := time.Now().UTC()
 	e := &navigationmodel.NavigationEntity{
 		ID: uuid.NewString(), ProjectID: projectID, Title: title, Path: path,
-		Kind: kind, ParentID: parentID, SortOrder: req.SortOrder,
+		Kind: kind, ParentID: parentID, SortOrder: sortOrder,
+		SourceType: sourceType, SourceID: sourceID, Target: target,
 		CreatedAt: now, UpdatedAt: now,
 	}
 	if err = s.m.Create(ctx, e); err != nil {
@@ -109,6 +155,26 @@ func (s *Service) Update(ctx context.Context, req *navigationdto.UpdateReq) (res
 	}
 	if req.SortOrder != nil {
 		updates["sort_order"] = *req.SortOrder
+	}
+	// 来源与打开方式：三字段联动校验（来源切到非 custom 时必须同时给出来源实体）。
+	if req.SourceType != nil || req.SourceID != nil || req.Target != nil {
+		sourceType := e.SourceType
+		if req.SourceType != nil {
+			sourceType = *req.SourceType
+		}
+		sourceID := e.SourceID
+		if req.SourceID != nil {
+			sourceID = normalizeSourceID(req.SourceID)
+		}
+		target := e.Target
+		if req.Target != nil {
+			target = *req.Target
+		}
+		st, sid, tg, serr := normalizeSource(sourceType, sourceID, target)
+		if serr != nil {
+			return nil, serr
+		}
+		updates["source_type"], updates["source_id"], updates["target"] = st, sid, tg
 	}
 
 	// path/kind 任一变化时重校验同工程同 kind 同 path 唯一（排除自身）。
@@ -167,42 +233,111 @@ func (s *Service) List(ctx context.Context, req *navigationdto.ListReq) (list []
 	return out, nil
 }
 
-// Delete 删除导航项。
+// Delete 删除导航项及其全部子项（导航树是一个聚合：留下孤儿节点会被渲染成顶级项）。
 func (s *Service) Delete(ctx context.Context, req *navigationdto.DeleteReq) (err error) {
 	if req == nil || strings.TrimSpace(req.ID) == "" {
 		return errors.New(navigationenums.ErrInvalidParam)
 	}
 	id := strings.TrimSpace(req.ID)
-	if _, err = s.m.Get(ctx, id); errors.Is(err, gorm.ErrRecordNotFound) {
+	e, err := s.m.Get(ctx, id)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return errors.New(navigationenums.ErrNotFound)
-	} else if err != nil {
+	}
+	if err != nil {
 		return err
 	}
-	return s.m.Delete(ctx, id)
+	rows, err := s.m.List(ctx, e.ProjectID, e.Kind)
+	if err != nil {
+		return err
+	}
+	return s.m.DeleteMany(ctx, navDescendantIDs(rows, id))
+}
+
+// navDescendantIDs 返回自身 + 全部子孙 ID（深度优先）。
+func navDescendantIDs(rows []*navigationmodel.NavigationEntity, rootID string) []string {
+	children := make(map[string][]string, len(rows))
+	for _, r := range rows {
+		if r.ParentID != nil && *r.ParentID != "" {
+			children[*r.ParentID] = append(children[*r.ParentID], r.ID)
+		}
+	}
+	out := make([]string, 0, 4)
+	stack := []string{rootID}
+	for len(stack) > 0 {
+		cur := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		out = append(out, cur)
+		stack = append(stack, children[cur]...)
+	}
+	return out
+}
+
+// Tree 按工程 + 位置返回导航项树（sort_order 升序，同序按 id 升序）。
+// 构建期编译导航组件与管理页结构面板共用同一棵树。
+func (s *Service) Tree(ctx context.Context, projectID, kind string) (nodes []*navigationdto.NavigationNode, err error) {
+	projectID = strings.TrimSpace(projectID)
+	kind = strings.TrimSpace(kind)
+	if projectID == "" {
+		return nil, errors.New(navigationenums.ErrInvalidParam)
+	}
+	if !isValidKind(kind) {
+		return nil, errors.New(navigationenums.ErrInvalidKind)
+	}
+	rows, err := s.m.List(ctx, projectID, kind)
+	if err != nil {
+		return nil, err
+	}
+	nodes = buildTree(rows)
+	s.resolveSourceTitles(ctx, nodes)
+	return nodes, nil
+}
+
+// resolveSourceTitles 递归把来源实体的标题/URL 写回菜单树。
+// 解析失败保留记录自身值（构建期不因单个来源实体缺失而整页失败）。
+func (s *Service) resolveSourceTitles(ctx context.Context, nodes []*navigationdto.NavigationNode) {
+	if s.sources == nil {
+		return
+	}
+	for _, n := range nodes {
+		if n.SourceType != sourceCustom && n.SourceID != nil && *n.SourceID != "" {
+			title, url, err := s.sources.ResolveSource(ctx, n.SourceType, *n.SourceID)
+			if err != nil {
+				logger.Scene("navigation").
+					With("sourceType", n.SourceType).With("sourceId", *n.SourceID).
+					Warn("导航来源实体解析失败，回退记录自身标题/链接")
+			} else {
+				if title != "" {
+					n.Title = title
+				}
+				if url != "" {
+					n.Path = url
+				}
+			}
+		}
+		s.resolveSourceTitles(ctx, n.Children)
+	}
 }
 
 // Render 渲染该工程该 kind 的导航 HTML 片段（Jet 模板渲染）。
 // 根节点平铺 <a>，子节点按 parent_id 嵌套 <ul><li>；title/path 由 Jet 默认转义。
 func (s *Service) Render(ctx context.Context, projectID, kind string) (htmlStr string, err error) {
-	projectID = strings.TrimSpace(projectID)
-	kind = strings.TrimSpace(kind)
-	if projectID == "" {
-		return "", errors.New(navigationenums.ErrInvalidParam)
-	}
-	if !isValidKind(kind) {
-		return "", errors.New(navigationenums.ErrInvalidKind)
-	}
-	rows, err := s.m.List(ctx, projectID, kind)
+	nodes, err := s.Tree(ctx, projectID, kind)
 	if err != nil {
 		return "", err
 	}
-	return renderNavigation(rows)
+	rootViews := make([]navNodeView, 0, len(nodes))
+	for _, n := range nodes {
+		rootViews = append(rootViews, toNavNodeView(n))
+	}
+	return templates.RenderFragment("navigation", struct {
+		Roots []navNodeView
+	}{Roots: rootViews})
 }
 
-// renderNavigation 由导航实体构建树形视图并经 Jet 渲染 HTML 片段。
-func renderNavigation(rows []*navigationmodel.NavigationEntity) (string, error) {
+// buildTree 由扁平实体列表组装树（父缺失的孤儿节点按根处理，避免丢项）。
+func buildTree(rows []*navigationmodel.NavigationEntity) []*navigationdto.NavigationNode {
 	children := make(map[string][]*navigationmodel.NavigationEntity)
-	var roots []*navigationmodel.NavigationEntity
+	roots := make([]*navigationmodel.NavigationEntity, 0, len(rows))
 	for _, r := range rows {
 		if r.ParentID == nil || *r.ParentID == "" {
 			roots = append(roots, r)
@@ -210,13 +345,24 @@ func renderNavigation(rows []*navigationmodel.NavigationEntity) (string, error) 
 		}
 		children[*r.ParentID] = append(children[*r.ParentID], r)
 	}
-	rootViews := make([]navNodeView, 0, len(roots))
+	out := make([]*navigationdto.NavigationNode, 0, len(roots))
 	for _, root := range roots {
-		rootViews = append(rootViews, buildNodeView(root, children))
+		out = append(out, buildNode(root, children))
 	}
-	return templates.RenderFragment("navigation", struct {
-		Roots []navNodeView
-	}{Roots: rootViews})
+	return out
+}
+
+// buildNode 把实体转成树节点（父 → 子递归）。
+func buildNode(n *navigationmodel.NavigationEntity, children map[string][]*navigationmodel.NavigationEntity) *navigationdto.NavigationNode {
+	node := &navigationdto.NavigationNode{
+		ID: n.ID, Title: n.Title, Path: n.Path,
+		SourceType: n.SourceType, SourceID: n.SourceID, Target: n.Target,
+		SortOrder: n.SortOrder,
+	}
+	for _, k := range children[n.ID] {
+		node.Children = append(node.Children, buildNode(k, children))
+	}
+	return node
 }
 
 // navNodeView 导航节点视图（Jet 模板渲染数据，树形）。
@@ -226,11 +372,11 @@ type navNodeView struct {
 	Children []navNodeView
 }
 
-// buildNodeView 把实体树转成视图树（父 → 子递归）。
-func buildNodeView(n *navigationmodel.NavigationEntity, children map[string][]*navigationmodel.NavigationEntity) navNodeView {
+// toNavNodeView 树节点 → 模板视图。
+func toNavNodeView(n *navigationdto.NavigationNode) navNodeView {
 	v := navNodeView{Title: n.Title, Path: n.Path}
-	for _, k := range children[n.ID] {
-		v.Children = append(v.Children, buildNodeView(k, children))
+	for _, c := range n.Children {
+		v.Children = append(v.Children, toNavNodeView(c))
 	}
 	return v
 }
@@ -266,11 +412,73 @@ func normalizeParentID(p *string) *string {
 	return &v
 }
 
+// normalizeSource 规范化并校验菜单项来源三件套（sourceType/sourceID/target）。
+// 规则：空值按 custom/self 处理；custom 来源忽略来源实体；非 custom 必须给出来源实体。
+func normalizeSource(sourceType string, sourceID *string, target string) (st string, sid *string, tg string, err error) {
+	st = normalizeSourceType(sourceType)
+	if !isValidSourceType(st) {
+		return "", nil, "", errors.New(navigationenums.ErrInvalidSource)
+	}
+	tg = normalizeTarget(target)
+	if !isValidTarget(tg) {
+		return "", nil, "", errors.New(navigationenums.ErrInvalidTarget)
+	}
+	sid = normalizeSourceID(sourceID)
+	if st == sourceCustom {
+		return st, nil, tg, nil
+	}
+	if sid == nil {
+		return "", nil, "", errors.New(navigationenums.ErrInvalidSource)
+	}
+	return st, sid, tg, nil
+}
+
+// isValidSourceType 判断菜单项来源是否在白名单内。
+func isValidSourceType(v string) bool {
+	switch v {
+	case sourceCustom, sourcePage, sourceArticle, sourceProduct, sourceCategory, sourceBlock:
+		return true
+	}
+	return false
+}
+
+// isValidTarget 判断打开方式是否在白名单内。
+func isValidTarget(v string) bool { return v == targetSelf || v == targetBlank }
+
+// normalizeSourceType 空值规范为 custom。
+func normalizeSourceType(v string) string {
+	if v = strings.TrimSpace(v); v == "" {
+		return sourceCustom
+	}
+	return v
+}
+
+// normalizeTarget 空值规范为 self。
+func normalizeTarget(v string) string {
+	if v = strings.TrimSpace(v); v == "" {
+		return targetSelf
+	}
+	return v
+}
+
+// normalizeSourceID 空字符串来源实体规范为 nil。
+func normalizeSourceID(p *string) *string {
+	if p == nil {
+		return nil
+	}
+	v := strings.TrimSpace(*p)
+	if v == "" {
+		return nil
+	}
+	return &v
+}
+
 // toResp 实体 → 响应。
 func toResp(e *navigationmodel.NavigationEntity) *navigationdto.NavigationResp {
 	return &navigationdto.NavigationResp{
 		ID: e.ID, ProjectID: e.ProjectID, Title: e.Title, Path: e.Path,
 		Kind: e.Kind, ParentID: e.ParentID, SortOrder: e.SortOrder,
+		SourceType: e.SourceType, SourceID: e.SourceID, Target: e.Target,
 		UpdatedAt: e.UpdatedAt.Format("2006-01-02 15:04"),
 	}
 }

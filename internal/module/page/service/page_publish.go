@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -182,6 +183,11 @@ func (s *Service) Publish(ctx context.Context, req *pagedto.PublishReq) (res *pa
 		}
 	}
 	logger.Scene("publication").With("pageId", page.ID).With("hash", hash).Info("发布完成")
+	// 站点级 SEO 产物：发布激活后刷新 sitemap.xml / robots.txt。
+	// 尽力而为——生成失败只记日志，不回滚已完成的发布（产物可由下次发布或手动接口重建）。
+	if err = s.routes.RefreshSiteFiles(ctx, page.ProjectID, siteBaseURL(), pipeline.ActiveRoot()); err != nil {
+		logger.Scene("publication").With("pageId", page.ID).Error(err, "sitemap/robots 刷新失败")
+	}
 	return &pagedto.PublishResp{
 		PageID: page.ID, Status: pipeline.StatePublished, ActiveHash: hash,
 		DraftPath: page.DraftPath, PublishedAt: now.Format(time.RFC3339),
@@ -551,4 +557,10 @@ func mapPublishError(err error) error {
 	default:
 		return err
 	}
+}
+
+// siteBaseURL 站点公开根地址（sitemap/robots 用）。
+// 通过环境变量 WP_SITE_BASE_URL 配置；未配置时返回空串，生成器会省略绝对 URL 前缀。
+func siteBaseURL() string {
+	return strings.TrimSpace(os.Getenv("WP_SITE_BASE_URL"))
 }

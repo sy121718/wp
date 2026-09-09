@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 
 	projectdto "go_wp/internal/module/project/dto"
+	projectenums "go_wp/internal/module/project/enums"
 	projectservice "go_wp/internal/module/project/service"
 )
 
@@ -49,7 +50,7 @@ func TestThemeCreateEdge(t *testing.T) {
 	t.Run("空ProjectID拒绝", func(t *testing.T) {
 		// 修复语义：service 层校验 ProjectID 必填，不再泄漏 PG uuid 原始错误。
 		_, err := svc.CreateTheme(ctx, &projectdto.ThemeCreateReq{ProjectID: "", Name: "孤儿主题"})
-		if err == nil || !strings.Contains(err.Error(), "工程 ID 不能为空") {
+		if err == nil || !strings.Contains(err.Error(), projectenums.ErrThemeProjectIDEmpty) {
 			t.Fatalf("空 ProjectID 应返回「工程 ID 不能为空」，实际: %v", err)
 		}
 	})
@@ -58,7 +59,7 @@ func TestThemeCreateEdge(t *testing.T) {
 		mustCreateTheme(t, svc, pid, "Default", json.RawMessage(`{}`))
 		for _, dup := range []string{"default", "DEFAULT", "  Default  "} {
 			_, err := svc.CreateTheme(ctx, &projectdto.ThemeCreateReq{ProjectID: pid, Name: dup})
-			if err == nil || !strings.Contains(err.Error(), "同名主题已存在") {
+			if err == nil || !strings.Contains(err.Error(), projectenums.ErrThemeDuplicateName) {
 				t.Fatalf("同名 %q 应被拒绝，实际: %v", dup, err)
 			}
 		}
@@ -89,7 +90,7 @@ func TestThemeCreateEdge(t *testing.T) {
 	t.Run("Settings为null字面量拒绝", func(t *testing.T) {
 		// 修复语义：settings 必须是 JSON 对象，"null" 字面量被拒绝，不再绕过兜底入库。
 		_, err := svc.CreateTheme(ctx, &projectdto.ThemeCreateReq{ProjectID: newProjectID(), Name: "null设置", Settings: json.RawMessage("null")})
-		if err == nil || !strings.Contains(err.Error(), "无效的主题设置") {
+		if err == nil || !strings.Contains(err.Error(), projectenums.ErrInvalidThemeSettings) {
 			t.Fatalf("「null」设置应被拒绝为「无效的主题设置」，实际: %v", err)
 		}
 	})
@@ -97,7 +98,7 @@ func TestThemeCreateEdge(t *testing.T) {
 	t.Run("Settings非法JSON拒绝", func(t *testing.T) {
 		// 修复语义：service 层校验 settings 为合法 JSON 对象，返回业务错误而非 PG 原始错误。
 		_, err := svc.CreateTheme(ctx, &projectdto.ThemeCreateReq{ProjectID: newProjectID(), Name: "坏设置", Settings: json.RawMessage(`{bad`)})
-		if err == nil || !strings.Contains(err.Error(), "无效的主题设置") {
+		if err == nil || !strings.Contains(err.Error(), projectenums.ErrInvalidThemeSettings) {
 			t.Fatalf("非法 JSON 应返回「无效的主题设置」，实际: %v", err)
 		}
 	})
@@ -173,7 +174,7 @@ func TestThemeUpdateEdge(t *testing.T) {
 	t.Run("Settings数组拒绝", func(t *testing.T) {
 		// 修复语义：UpdateTheme settings 非对象被拒绝，不再原样写入 jsonb。
 		_, err := svc.UpdateTheme(ctx, &projectdto.ThemeUpdateReq{ID: th.ID, Settings: json.RawMessage(`[]`)})
-		if err == nil || !strings.Contains(err.Error(), "无效的主题设置") {
+		if err == nil || !strings.Contains(err.Error(), projectenums.ErrInvalidThemeSettings) {
 			t.Fatalf("settings 数组应被拒绝为「无效的主题设置」，实际: %v", err)
 		}
 	})

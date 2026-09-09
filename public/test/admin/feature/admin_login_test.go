@@ -18,8 +18,8 @@ import (
 	adminmodel "go_wp/internal/module/admin/model"
 	adminservice "go_wp/internal/module/admin/service"
 	"go_wp/pkg/auth"
-	"go_wp/pkg/captcha"
 	"go_wp/pkg/cache"
+	"go_wp/pkg/captcha"
 	"go_wp/public/test/support"
 
 	"github.com/gin-gonic/gin"

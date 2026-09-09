@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"go_wp/internal/seo"
 	"strings"
 	"time"
 
@@ -424,4 +425,16 @@ func routeResp(e *pubmodel.RouteEntity) *pubdto.RouteResp {
 		ProjectID: e.ProjectID, Path: e.Path, PageID: e.PageID,
 		RouteKind: e.RouteKind, ArtifactID: e.ArtifactID, UpdatedAt: e.UpdatedAt,
 	}
+}
+
+// RefreshSiteFiles 生成/刷新站点级 SEO 产物（sitemap.xml + robots.txt）。
+func (s *Service) RefreshSiteFiles(ctx context.Context, projectID, baseURL, dir string) (err error) {
+	if projectID == "" || dir == "" {
+		return nil
+	}
+	paths, err := s.model.ListActivePaths(ctx, projectID)
+	if err != nil {
+		return err
+	}
+	return seo.WriteSiteFiles(dir, baseURL, seo.EntriesFromPaths(baseURL, paths))
 }

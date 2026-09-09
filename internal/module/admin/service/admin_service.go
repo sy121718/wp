@@ -18,6 +18,8 @@ var (
 	_ admincontract.MenuService  = (*Service)(nil)
 	_ admincontract.DeptService  = (*Service)(nil)
 	_ admincontract.RuleService  = (*Service)(nil)
+	// 对外权限上下文查询（供外部模块/插件消费）。
+	_ admincontract.AuthzContextService = (*Service)(nil)
 )
 
 // Service 定义 admin 模块（管理员/角色/权限点/菜单/部门/数据权限）的业务逻辑。

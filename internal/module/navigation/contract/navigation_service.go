@@ -8,6 +8,42 @@ import (
 	navigationdto "go_wp/internal/module/navigation/dto"
 )
 
+// SourceResolver 来源实体解析能力：菜单项来源非 custom 时，按来源实体取标题与 URL。
+//
+// 说明：这是 navigation 模块对「外部能力」的依赖声明，由顶层装配注入实现
+// （page / content / presentation / block 契约的适配器，见 navigation/outbound/source）。
+// 放在 contract 是为了让装配层只依赖契约，不 import 其他模块的 service。
+type SourceResolver interface {
+	// ResolveSource 按来源类型（page/article/product/category/block）+ 实体 ID
+	// 返回菜单项标题与 URL。返回空串表示解析不到，调用方回退记录自身的 title/path。
+	ResolveSource(ctx context.Context, sourceType, sourceID string) (title, url string, err error)
+	// Candidates 列出该工程可加入菜单的来源实体（按来源分组，空组已剔除）。
+	// 管理页「按来源添加」消费；依赖模块不可用时对应分组为空，不报错。
+	Candidates(ctx context.Context, projectID string) (groups []SourceGroup, err error)
+}
+
+// SourceGroup 来源候选分组（管理页「添加菜单项」按来源分组展示）。
+type SourceGroup struct {
+	// Type 来源类型：page/article/product/category/block。
+	Type string
+	// Title 分组标题（页面/文章/产品/分类/全局块）。
+	Title string
+	// Items 该分组下的候选实体。
+	Items []SourceCandidate
+}
+
+// SourceCandidate 可加入菜单的来源实体。
+type SourceCandidate struct {
+	// ID 实体 ID（写入菜单项的 source_id）。
+	ID string
+	// Label 候选项显示名（页面路径/内容 slug）。
+	Label string
+	// Title 解析出的菜单标题（页面 SEO 标题/内容标题），添加菜单项时写入 title。
+	Title string
+	// URL 解析出的公开链接；为空表示暂无公开路径（管理页不提供添加）。
+	URL string
+}
+
 // NavigationService 公开站点导航管理契约。
 type NavigationService interface {
 	// Create 新建导航项。
@@ -18,6 +54,16 @@ type NavigationService interface {
 	Get(ctx context.Context, req *navigationdto.GetReq) (res *navigationdto.NavigationResp, err error)
 	// List 按工程（可选 kind）列出导航项，sort_order 升序。
 	List(ctx context.Context, req *navigationdto.ListReq) (list []*navigationdto.NavigationResp, err error)
+	// Tree 按工程 + 位置（header/footer）返回导航项树（sort_order 升序）。
+	// 构建期编译导航组件与管理页结构面板共用；树为空表示该位置暂无菜单项。
+	// 来源非 custom 的项会经 SourceResolver 解析为来源实体的标题与 URL。
+	Tree(ctx context.Context, projectID, kind string) (nodes []*navigationdto.NavigationNode, err error)
+	// SetSourceResolver 注入来源实体解析器（顶层装配在依赖模块就绪后调用一次）。
+	// 未注入时来源项退化为记录自身的 title/path（不报错，保持向后可用）。
+	SetSourceResolver(r SourceResolver)
+	// SourceGroups 返回该工程可加入菜单的来源候选（管理页「按来源添加」消费）。
+	// 未注入解析器时返回空列表（页面退化为仅支持自定义链接）。
+	SourceGroups(ctx context.Context, projectID string) (groups []SourceGroup, err error)
 	// Delete 删除导航项。
 	Delete(ctx context.Context, req *navigationdto.DeleteReq) (err error)
 	// Render 返回该工程该 kind 的导航 HTML 片段。

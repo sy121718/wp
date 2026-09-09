@@ -20,7 +20,11 @@ import (
 //   - 文档解析失败（JSON 非法或空文档）→ ErrPreviewInvalidDocument；
 //   - 编译失败 → ErrPreviewCompileFailed；
 //   - 组件模板加载/文档渲染失败 → 原样透传（调用方映射为内部错误）。
-func (s *Service) CompilePreview(ctx context.Context, docJSON []byte) (html []byte, err error) {
+//
+// projectID 为页面所属站点工程（调用方从页面记录取；块预览传块所属工程），
+// currentPath 为页面访问路径（导航当前项高亮；块预览传空），
+// 与正式构建一致地驱动导航等站点级资源解析——画布所见即产物。
+func (s *Service) CompilePreview(ctx context.Context, docJSON []byte, projectID, currentPath string) (html []byte, err error) {
 	var page *builder.Page
 	if err = json.Unmarshal(docJSON, &page); err != nil || page == nil {
 		if err == nil {
@@ -29,7 +33,7 @@ func (s *Service) CompilePreview(ctx context.Context, docJSON []byte) (html []by
 		logger.Scene("build").With("err", err).Warn("预览文档解析失败")
 		return nil, fmt.Errorf("%w: %v", pagecontract.ErrPreviewInvalidDocument, err)
 	}
-	html, err = s.compileDocument(ctx, page)
+	html, err = s.compileDocument(ctx, page, projectID, currentPath)
 	if err != nil {
 		if errors.Is(err, errCompileFailed) {
 			logger.Scene("build").Error(err, "预览编译失败")

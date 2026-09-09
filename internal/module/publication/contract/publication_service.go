@@ -33,6 +33,8 @@ type PublicationService interface {
 	RenameReserved(ctx context.Context, req *pubdto.RenameReservedReq) (err error)
 	// ReservePath 创建草稿路径 reserved 占用（页面创建时预留，冲突返回占用错误）。
 	ReservePath(ctx context.Context, req *pubdto.ReserveReq) (err error)
+	// RefreshSiteFiles 依据已激活路由重写站点 sitemap.xml / robots.txt（dir 为空则跳过）。
+	RefreshSiteFiles(ctx context.Context, projectID, baseURL, dir string) (err error)
 	// DeleteRoutesByPage 清理页面全部路径占用（页面删除时释放，幂等）。
 	DeleteRoutesByPage(ctx context.Context, req *pubdto.DeleteRoutesReq) (err error)
 	// IsPathOccupied 查询路径是否被其他实体占用（页面创建/发布前预检）。

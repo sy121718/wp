@@ -50,8 +50,9 @@ var securityHeaders = secure.New(secure.Options{
 //     初始化与切换脚本（localStorage 读取 + data-theme 写入，须在 CSS 前执行，
 //     无法外置为文件）；去除 'unsafe-inline' 会直接破坏主题加载与切换。
 //   - HTMX 2.x 依赖内联事件绑定（hx-on 属性等），去除后会静默失效。
-//   - TinyMCE 经 cdn.jsdelivr.net/npm/tinymce@7 引入（已在 script-src 白名单，
-//     非 cdn.tiny.cloud），不受影响。
+//   - 富文本编辑器已改为 Trix 2.x 本地 vendor 资源（/static/vendor/trix/），
+//     走 script-src 'self'，不再需要任何 CDN 例外；cdn.jsdelivr.net 的例外
+//     现仅由 admin 页的 htmx@2.0.4 使用（admin/layout.html）。
 //   - workbench/layout.html 的 <script type="application/json"> 为数据块，
 //     不执行、不受 script-src 约束。
 //     后续若将主题脚本外置为静态文件，可收窄为 'unsafe-inline' 仅保留在 style-src，

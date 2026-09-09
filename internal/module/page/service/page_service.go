@@ -6,6 +6,8 @@ import (
 
 	"go_wp/internal/builder/core"
 	blockcontract "go_wp/internal/module/block/contract"
+	mediacontract "go_wp/internal/module/media/contract"
+	navigationcontract "go_wp/internal/module/navigation/contract"
 	pagecontract "go_wp/internal/module/page/contract"
 	pagemodel "go_wp/internal/module/page/model"
 	plugincontract "go_wp/internal/module/plugin/contract"
@@ -33,6 +35,10 @@ type Service struct {
 	blocks    blockcontract.BlockService
 	plugins   plugincontract.PluginService
 	content   core.CollectionResolver
+	// navigation 公开站点导航契约：core.nav 绑定菜单位置时构建期解析菜单项。
+	navigation navigationcontract.NavigationService
+	// media 媒体契约：构建期探测图片变体，输出响应式 srcset（访客零查询）。
+	media mediacontract.MediaService
 
 	publisher *pipeline.Publisher
 	store     *pipeline.LocalStore
@@ -45,19 +51,22 @@ type Service struct {
 func NewService(model *pagemodel.Model, artifacts artifactcontract.ArtifactService,
 	routes pubcontract.PublicationService, project projectcontract.ProjectService,
 	blocks blockcontract.BlockService, plugins plugincontract.PluginService,
-	content core.CollectionResolver) *Service {
+	content core.CollectionResolver, navigation navigationcontract.NavigationService,
+	media mediacontract.MediaService) *Service {
 	store := &pipeline.LocalStore{Root: pipeline.DefaultArtifactRoot()}
 	publication := &pipeline.LocalPublicationStore{ActiveRoot: pipeline.ActiveRoot()}
 	s := &Service{
-		model:     model,
-		artifacts: artifacts,
-		routes:    routes,
-		project:   project,
-		blocks:    blocks,
-		plugins:   plugins,
-		content:   content,
-		publisher: pipeline.NewPublisher(store, publication),
-		store:     store,
+		model:      model,
+		artifacts:  artifacts,
+		routes:     routes,
+		project:    project,
+		blocks:     blocks,
+		plugins:    plugins,
+		content:    content,
+		navigation: navigation,
+		media:      media,
+		publisher:  pipeline.NewPublisher(store, publication),
+		store:      store,
 	}
 	s.publisher.SetCompile(s.assembleCompile)
 	return s

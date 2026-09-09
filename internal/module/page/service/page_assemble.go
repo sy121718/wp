@@ -31,13 +31,14 @@ var errCompileFailed = errors.New("页面编译失败")
 // 无绑定无引用时输出与默认编译字节一致（hash 兼容历史产物）；
 // 块文档缺失/非法降级为空片段，不阻塞构建主链。
 // 解析失败回退默认编译；解析成功则与预览共用 compileDocument 装配管线。
-func (s *Service) assembleCompile(ctx context.Context, docJSON []byte) ([]byte, error) {
+func (s *Service) assembleCompile(ctx context.Context, pageID string, docJSON []byte) ([]byte, error) {
 	page, err := builder.ParsePage(docJSON)
 	if err != nil {
 		logger.Scene("build").With("err", err).Warn("页面文档解析失败，回退默认编译")
-		return pipeline.DefaultCompile(ctx, docJSON)
+		return pipeline.DefaultCompile(ctx, pageID, docJSON)
 	}
-	html, err := s.compileDocument(ctx, page)
+	projectID, currentPath := s.pageContextOf(ctx, pageID)
+	html, err := s.compileDocument(ctx, page, projectID, currentPath)
 	if err != nil {
 		if errors.Is(err, errCompileFailed) {
 			logger.Scene("build").Error(err, "页面编译失败")
@@ -52,7 +53,10 @@ func (s *Service) assembleCompile(ctx context.Context, docJSON []byte) ([]byte, 
 // CollectionResolver/ThemeSettings 注入、Compile、页眉/页脚块内联、RenderDocument。
 // 解析由调用方负责（构建路径 ParsePage + 降级；预览路径 json.Unmarshal + 空文档检查）。
 // 编译失败以 %w 包裹 errCompileFailed，其余失败原样返回。
-func (s *Service) compileDocument(ctx context.Context, page *builder.Page) ([]byte, error) {
+// projectID 为本次编译的站点工程 ID（页面文档不携带，由调用方按页面记录注入）；
+// 供导航等站点级资源解析使用，为空时绑定菜单位置的导航节点在编译期显式报错。
+// currentPath 为页面访问路径，用于导航「当前项」高亮（空 = 不标记）。
+func (s *Service) compileDocument(ctx context.Context, page *builder.Page, projectID, currentPath string) ([]byte, error) {
 	// 组件模板 Set：无插件走 embed 单例；有插件走 CompositeSet
 	//（内置 embed + 插件命名空间合并，docs/06 §7）。
 	asm := s.enabledAssembly(ctx)
@@ -74,6 +78,21 @@ func (s *Service) compileDocument(ctx context.Context, page *builder.Page) ([]by
 	if s.content != nil {
 		opts = append(opts, builder.WithCollectionResolver(s.content))
 	}
+	// 导航注入：core.nav 绑定菜单位置（header/footer）时构建期解析为静态菜单项。
+	// 缓存按「工程 + 位置」单次编译内复用（同一页面多个导航节点只查一次库）。
+	if s.navigation != nil {
+		opts = append(opts, builder.WithNavigationResolver(navigationResolverAdapter{
+			svc: s.navigation, ctx: ctx, cache: map[string][]core.NavigationItem{},
+		}))
+	}
+	// 响应式图片：媒体变体存在时输出 srcset/sizes（构建期探测，访客零查询）。
+	if s.media != nil {
+		opts = append(opts, builder.WithAssetProbe(func(url string) []int {
+			return s.media.ProbeImageVariants(ctx, url)
+		}))
+	}
+	// 工程 ID：页面文档不携带，由调用方按页面记录注入（导航等站点级资源取数上下文）。
+	opts = append(opts, builder.WithProjectID(projectID), builder.WithCurrentPath(currentPath))
 	// 主题快照注入：settings.theme（保存时合入的 ThemeSettings 快照）→ 编译进产物。
 	if page.Settings.Theme != nil {
 		opts = append(opts, builder.WithThemeSettings(page.Settings.Theme))

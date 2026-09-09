@@ -5,8 +5,8 @@ import (
 	"testing"
 
 	admindto "go_wp/internal/module/admin/dto"
-	adminmodel "go_wp/internal/module/admin/model"
 	adminenums "go_wp/internal/module/admin/enums"
+	adminmodel "go_wp/internal/module/admin/model"
 	pkgcasbin "go_wp/pkg/casbin"
 )
 

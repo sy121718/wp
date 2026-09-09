@@ -6,6 +6,7 @@ import (
 	"go_wp/internal/middleware/builtin"
 
 	"go_wp/internal/builder/core"
+	admincontract "go_wp/internal/module/admin/contract"
 	adminhttp "go_wp/internal/module/admin/inbound/http"
 	artifacthttp "go_wp/internal/module/artifact/inbound/http"
 	blockhttp "go_wp/internal/module/block/inbound/http"
@@ -16,6 +17,7 @@ import (
 	dashboardhttp "go_wp/internal/module/dashboard/inbound/http"
 	mediahttp "go_wp/internal/module/media/inbound/http"
 	navigationhttp "go_wp/internal/module/navigation/inbound/http"
+	navsource "go_wp/internal/module/navigation/outbound/source"
 	pagehttp "go_wp/internal/module/page/inbound/http"
 	pluginhttp "go_wp/internal/module/plugin/inbound/http"
 	presentationhttp "go_wp/internal/module/presentation/inbound/http"
@@ -49,7 +51,9 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 	// gin.Dir(listDirectory=false) 禁目录列表：无 index 文件时返回空列表而非
 	// 泄漏目录清单（审计 Low：/static 目录列表开启）。
 	// StaticGzipMiddleware：文本类资源（js/css/svg）gzip 传输压缩。
-	router.Group("/static", builtin.StaticGzipMiddleware()).StaticFS("/", gin.Dir("internal/templates/static", false))
+	// StaticCacheMiddleware：静态资源统一协商缓存（no-cache + Last-Modified），
+	// 避免 ES modules 子模块因启发式缓存执行旧代码（docs/09 §3 拆分后修复）。
+	router.Group("/static", builtin.StaticGzipMiddleware(), builtin.StaticCacheMiddleware()).StaticFS("/", gin.Dir("internal/templates/static", false))
 
 	// 媒体上传存储（pkg/upload local provider 默认 public/storage）。
 	// 同样禁目录列表（审计 Low：/storage 目录列表开启）。
@@ -115,10 +119,11 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 	//     超管（is_admin=1）由 seed 全量授权，非超管需经角色/用户授权接口分配
 	api := router.Group("/api")
 	captcharouter.SetupCaptchaRoutes(api)
-	adminhttp.SetupAdminRoutes(api, db)
+	// admin 对外权限上下文查询契约（供外部模块/插件消费，见 AuthzContextService）。
+	adminAuthzSvc := adminhttp.SetupAdminRoutes(api, db)
 
 	authorizedAPI := api.Group("", builtin.SessionAuthMiddleware(), builtin.CSRFMiddleware(), builtin.CasbinMiddleware())
-	mediahttp.SetupMediaRoutes(authorizedAPI, db)
+	mediaSvc := mediahttp.SetupMediaRoutes(authorizedAPI, db)
 	projectService := projecthttp.SetupProjectRoutes(authorizedAPI, db)
 	blockSvc := blockhttp.SetupBlockRoutes(authorizedAPI, db, projectService)
 	artifactSvc := artifacthttp.SetupArtifactRoutes(authorizedAPI, db)
@@ -127,23 +132,39 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 	blueprintSvc := blueprinthttp.SetupBlueprintRoutes(authorizedAPI, db)
 	// 公开站点导航（0-C，与后台 menu 严格隔离）。
 	navigationSvc := navigationhttp.SetupNavigationRoutes(authorizedAPI, db)
-	_ = blueprintSvc  // 未来 page CreatePage 消费 InitPageDocument
-	_ = navigationSvc // 未来构建期编译消费 Render
+	_ = blueprintSvc // 未来 page CreatePage 消费 InitPageDocument
 	// CMS 内容（0-A2，contenttemplate/presentation 依赖其字段白名单契约）。
 	contentSvc := contenthttp.SetupContentRoutes(authorizedAPI, db)
 	// 内容结构模板（presentation 依赖 ResolveTemplate）。
 	contentTemplateSvc := contenttemplatehttp.SetupContentTemplateRoutes(authorizedAPI, db)
 	// 自动发布实例（内容实体驱动，复用编译/存储/激活管线）。
 	presentationSvc := presentationhttp.SetupPresentationRoutes(authorizedAPI, db, contentTemplateSvc, contentSvc)
-	_ = presentationSvc // 后续 stale 传播编排（实体变更触发 Rebuild）接入
+
 	// 插件模块（page 构建路径依赖其装配素材，须先于 page 装配）。
-	pluginSvc := pluginhttp.SetupPluginRoutes(authorizedAPI, db)
+	// plugin 是外部插件宿主：注入 admin 权限上下文契约，供插件运行时读取当前用户权限。
+	pluginSvc := pluginhttp.SetupPluginRoutes(authorizedAPI, db, adminAuthzSvc)
 	// content service 同时实现 core.CollectionResolver（插件集合绑定渲染）。
 	collectionResolver, _ := contentSvc.(core.CollectionResolver)
-	pageService := pagehttp.SetupPageRoutes(authorizedAPI, db, artifactSvc, publicationSvc, projectService, blockSvc, pluginSvc, collectionResolver)
+	// navigationSvc 注入 page 装配：core.nav 绑定菜单位置时构建期解析菜单项。
+	pageService := pagehttp.SetupPageRoutes(authorizedAPI, db, artifactSvc, publicationSvc, projectService, blockSvc, pluginSvc, collectionResolver, navigationSvc, mediaSvc)
+	// 导航来源实体解析（page/article/product/category/block → 标题 + URL）：
+	// 依赖 page/content/presentation/block 契约，故在它们全部装配完成后注入。
+	navigationSvc.SetSourceResolver(navsource.New(pageService, contentSvc, presentationSvc, blockSvc))
 
-	// 页面路由（编辑器外壳依赖 page/block/plugin 契约，置于 API 装配之后）
-	dashboardhttp.SetupDashboardRoutes(router, pageService, projectService, blockSvc, pluginSvc, collectionResolver)
+	// 页面路由（编辑器外壳依赖 page/block/plugin 契约，置于 API 装配之后）。
+	// admin 六领域 CRUD 契约：SetAdminRoutes 返回的 AuthzContextService 动态类型即合并后的
+	// *Service（同实现全部六接口），此处匿名接口断言获得管理面 CRUD 能力注入 dashboard，
+	// 供 /admin 六领域管理页（管理员/角色/菜单/权限/部门/数据权限）消费；不使用 GET/POST 之外的动词。
+	adminCRUD := adminAuthzSvc.(interface {
+		admincontract.AdminService
+		admincontract.RoleService
+		admincontract.PermService
+		admincontract.MenuService
+		admincontract.DeptService
+		admincontract.RuleService
+	})
+	dashboardhttp.SetupDashboardRoutes(router, pageService, projectService, blockSvc, pluginSvc, collectionResolver,
+		adminCRUD, adminCRUD, adminCRUD, adminCRUD, adminCRUD, adminCRUD, adminAuthzSvc, navigationSvc)
 
 	// 运行时片段端点（0-D，公开路由：capability 白名单 + 认证策略在 handler 内）。
 	runtimefragment.SetupFragmentRoutes(router)

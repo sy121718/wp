@@ -31,7 +31,7 @@ func (s *Service) AdminRoleList(ctx context.Context, req *admindto.AdminRoleList
 // 或目标角色含超管权限（权限集覆盖全部启用权限点）时，仅超管可操作——
 // 防止普通管理员借「替换角色绑定」把超管账号降权，或给自己绑定超管角色提权。
 func (s *Service) AdminRoleSave(ctx context.Context, req *admindto.AdminRoleSaveReq) (res *admindto.AdminRoleSaveResp, err error) {
-	targetSuper, err := s.isSuperAdmin(ctx, req.UserID)
+	targetSuper, err := s.IsSuperAdmin(ctx, req.UserID)
 	if err != nil {
 		return nil, err
 	}
@@ -149,45 +149,9 @@ func (s *Service) AdminMenuSave(ctx context.Context, req *admindto.AdminMenuSave
 // AdminRoutes 返回当前用户有效路由树、角色 codes 和有效 permission codes。
 // 供前端动态路由初始化和按钮权限判断。lang 为请求语言，用于菜单标题翻译。
 func (s *Service) AdminRoutes(ctx context.Context, userID uint64, lang string) (res *admindto.AdminRoutesResp, err error) {
-	userIDStr := strconv.FormatUint(userID, 10)
-
-	// 1. 获取启用角色编码列表，保持与 Casbin g2 角色状态语义一致。
-	roleCodes, err := s.GetRoleCodesByUserID(ctx, userID)
+	roleCodes, uniqueCodes, err := s.collectEffectiveCodes(ctx, userID)
 	if err != nil {
 		return nil, err
-	}
-
-	// 2. 收集全部有效 permission codes
-	effectiveCodes := make(map[string]struct{})
-
-	// 2a. 用户直接权限
-	directPerms, err := casbin.GetUserDirectPermissions(userIDStr)
-	if err != nil {
-		return nil, err
-	}
-	for _, p := range directPerms {
-		effectiveCodes[p[2]] = struct{}{}
-	}
-
-	// 2b. 角色继承权限
-	for _, rc := range roleCodes {
-		rolePerms, err := casbin.GetRolePermissions(rc)
-		if err != nil {
-			return nil, err
-		}
-		for _, p := range rolePerms {
-			effectiveCodes[p[2]] = struct{}{}
-		}
-	}
-
-	// 3. 转为稳定数组并构建当前用户可见路由树。
-	uniqueCodes := make([]string, 0, len(effectiveCodes))
-	for c := range effectiveCodes {
-		uniqueCodes = append(uniqueCodes, c)
-	}
-	sort.Strings(uniqueCodes)
-	if roleCodes == nil {
-		roleCodes = []string{}
 	}
 
 	routes, err := s.BuildAuthorizedRoutes(ctx, uniqueCodes, lang)
@@ -200,4 +164,65 @@ func (s *Service) AdminRoutes(ctx context.Context, userID uint64, lang string) (
 		Roles:           roleCodes,
 		PermissionCodes: uniqueCodes,
 	}, nil
+}
+
+// collectEffectiveCodes 收集用户全部有效权限码（用户直接权限 + 角色继承权限），
+// 返回（启用角色码列表, 排序后的有效权限码列表）。
+//
+// 供 AdminRoutes（动态路由）与 EffectivePermissionCodes（渲染层过滤）复用，
+// 保证「API 鉴权放行的权限」与「页面/按钮显示的权限」永远同源。
+func (s *Service) collectEffectiveCodes(ctx context.Context, userID uint64) (roleCodes, codes []string, err error) {
+	userIDStr := strconv.FormatUint(userID, 10)
+
+	// 1. 启用角色编码列表，保持与 Casbin g2 角色状态语义一致。
+	roleCodes, err = s.GetRoleCodesByUserID(ctx, userID)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// 2. 收集全部有效 permission codes
+	effectiveCodes := make(map[string]struct{})
+
+	// 2a. 用户直接权限
+	directPerms, err := casbin.GetUserDirectPermissions(userIDStr)
+	if err != nil {
+		return nil, nil, err
+	}
+	for _, p := range directPerms {
+		effectiveCodes[p[2]] = struct{}{}
+	}
+
+	// 2b. 角色继承权限
+	for _, rc := range roleCodes {
+		rolePerms, err := casbin.GetRolePermissions(rc)
+		if err != nil {
+			return nil, nil, err
+		}
+		for _, p := range rolePerms {
+			effectiveCodes[p[2]] = struct{}{}
+		}
+	}
+
+	// 3. 转为稳定数组（确定性渲染顺序）。
+	codes = make([]string, 0, len(effectiveCodes))
+	for c := range effectiveCodes {
+		codes = append(codes, c)
+	}
+	sort.Strings(codes)
+	if roleCodes == nil {
+		roleCodes = []string{}
+	}
+	return roleCodes, codes, nil
+}
+
+// EffectivePermissionCodes 返回用户全部有效权限码（直接 + 角色继承）。
+//
+// 渲染层入口：dashboard 页面据此注入 HasPerm，做菜单 / 按钮 / 字段的可见性过滤，
+// 与 Casbin API 鉴权共用同一份权限来源，避免「看得到但点不了」或反向不一致。
+func (s *Service) EffectivePermissionCodes(ctx context.Context, userID uint64) ([]string, error) {
+	_, codes, err := s.collectEffectiveCodes(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	return codes, nil
 }

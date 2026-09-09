@@ -33,6 +33,9 @@ func (s *Service) MenuCreate(ctx context.Context, req *admindto.MenuCreateReq) e
 	if err := s.validatePermissionBinding(req.Type, req.PermissionCode, ctx); err != nil {
 		return err
 	}
+	if err := s.validateMenuPlacement(ctx, req.ParentID, req.Type); err != nil {
+		return err
+	}
 
 	entity := &adminmodel.MenuEntity{
 		Title:       req.Title,
@@ -88,6 +91,9 @@ func (s *Service) MenuUpdate(ctx context.Context, req *admindto.MenuUpdateReq) e
 		return err
 	}
 	if err := s.validatePermissionBinding(req.Type, req.PermissionCode, ctx); err != nil {
+		return err
+	}
+	if err := s.validateMenuPlacement(ctx, req.ParentID, req.Type); err != nil {
 		return err
 	}
 
@@ -192,6 +198,43 @@ func (s *Service) validatePermissionBinding(menuType int, code string, ctx conte
 		}
 		if !ok {
 			return errors.New(adminenums.ErrCodeNotEnabled)
+		}
+	}
+	return nil
+}
+
+// maxNavDepth 导航最大层级（目录链 + 菜单 = 3 级）。
+//
+// 侧边栏渲染（partials/nav-nodes.html）支持任意深度并做缩进封顶，
+// 但超过 3 级后后台可用性急剧下降（缩进吃宽度、认知负担），故在写入侧拦截。
+const maxNavDepth = 3
+
+// validateMenuPlacement 校验菜单层级深度（不超过 maxNavDepth）。
+//
+// 不限制父级的 type 语义：父级菜单本身也可以有子菜单（主菜单既是页面又是分组），
+// 可点击性由「有没有页面路径」决定，而非由类型决定。
+// 父级不存在时不拦截——树构建侧对孤儿节点做降级处理，保持既有语义不变。
+func (s *Service) validateMenuPlacement(ctx context.Context, parentID uint64, menuType int) error {
+	if parentID == 0 {
+		return nil
+	}
+	_ = menuType // 保留参数：未来若需按类型收紧约束（如按钮必须挂菜单）在此扩展
+	depth := 1
+	cur, err := s.mm.GetByID(ctx, parentID)
+	if err != nil {
+		return err
+	}
+	for cur != nil {
+		depth++
+		if depth > maxNavDepth {
+			return errors.New(adminenums.ErrMenuDepthExceeded)
+		}
+		if cur.ParentID == 0 {
+			break
+		}
+		cur, err = s.mm.GetByID(ctx, cur.ParentID)
+		if err != nil {
+			return err
 		}
 	}
 	return nil

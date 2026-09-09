@@ -31,6 +31,9 @@ type MediaService interface {
 	// GenerateVariants 同步生成/重新生成指定附件的全部图片变体（thumb/medium/webp），
 	// 供「重新生成」按钮与存量回填复用；返回生成后的变体状态列表。
 	GenerateVariants(ctx context.Context, attachmentID uint64) ([]mediadto.VariantResp, error)
+	// ProbeImageVariants 按公开 URL（/storage/...）探测已就绪的图片变体宽度列表，
+	// 供构建期响应式图片（srcset）使用；非媒体库 URL 或变体未就绪返回 nil。
+	ProbeImageVariants(ctx context.Context, url string) []int
 	// BuildDownloadPlan 构建单个附件的资源包（zip）打包计划。
 	BuildDownloadPlan(ctx context.Context, attachmentID uint64) (*mediadto.DownloadPlan, error)
 	// BuildBatchDownloadPlan 构建多个附件的资源包（zip）批量打包计划。

@@ -71,6 +71,30 @@ type DeptService interface {
 	DeptUserSave(ctx context.Context, req *admindto.DeptUserSaveReq) error
 }
 
+// AuthzContextService 面向外部模块/插件的权限上下文查询能力。
+//
+// 与 AdminService/RoleService 等管理面 CRUD 接口不同，本接口只暴露「某用户在
+// 其角色/权限/超管范围内的只读上下文」，供外部模块（如 dashboard、后续插件体系）
+// 消费，而无需导入 admin 的 model/service。管理面写操作仍由 handle 层经
+// AdminService 等走 Casbin 鉴权，不在此暴露。
+type AuthzContextService interface {
+	// IsSuperAdmin 是否为超管（is_admin=1）。
+	IsSuperAdmin(ctx context.Context, userID uint64) (bool, error)
+	// GetRoleCodesByUserID 查询用户绑定且已启用的角色编码列表。
+	GetRoleCodesByUserID(ctx context.Context, userID uint64) ([]string, error)
+	// GetPermissionCodesByIDs 根据 menu_id 列表收集 type=2/3 的 permission_code 并去重。
+	GetPermissionCodesByIDs(ctx context.Context, menuIDs []uint64) ([]string, error)
+	// ListByCodes 按 permission code 列表查询权限点概要（path/method/code）。
+	ListByCodes(ctx context.Context, codes []string) ([]admindto.PermBrief, error)
+	// ExistsEnabledCode 指定权限点编码是否存在且启用。
+	ExistsEnabledCode(ctx context.Context, code string) (bool, error)
+	// BuildAuthorizedRoutes 根据权限 codes 构建当前用户可见路由树。
+	BuildAuthorizedRoutes(ctx context.Context, codes []string, lang string) ([]admindto.RouteNode, error)
+	// EffectivePermissionCodes 用户全部有效权限码（直接 + 角色继承）。
+	// 渲染层据此做菜单 / 按钮 / 字段可见性过滤，与 Casbin API 鉴权同源。
+	EffectivePermissionCodes(ctx context.Context, userID uint64) ([]string, error)
+}
+
 // RuleService 数据权限规则领域业务能力。
 type RuleService interface {
 	RuleList(ctx context.Context, req *admindto.RuleListReq) (*admindto.RuleListResp, error)

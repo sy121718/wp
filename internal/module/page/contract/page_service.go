@@ -47,7 +47,9 @@ type PageService interface {
 	// CompilePreview 基于未落盘文档 JSON 编译完整 HTML（预览专用：不落盘、不影响产物）。
 	// 复用正式构建同源编译管线；错误经 errors.Is 分类：
 	// ErrPreviewInvalidDocument（解析失败）/ ErrPreviewCompileFailed（编译失败）/ 其余为内部错误。
-	CompilePreview(ctx context.Context, docJSON []byte) (html []byte, err error)
+	// projectID 为页面所属站点工程（驱动导航等站点级资源解析，与正式构建一致）；
+	// currentPath 为页面访问路径（导航当前项高亮，块预览传空）。
+	CompilePreview(ctx context.Context, docJSON []byte, projectID, currentPath string) (html []byte, err error)
 	// Build 基于当前草稿构建并暂存产物（不激活线上）。
 	Build(ctx context.Context, req *pagedto.BuildReq) (res *pagedto.PublishResp, err error)
 	// Publish 激活暂存产物。

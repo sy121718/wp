@@ -9,6 +9,7 @@ import (
 
 	contentcontract "go_wp/internal/module/content/contract"
 	contentdto "go_wp/internal/module/content/dto"
+	contentenums "go_wp/internal/module/content/enums"
 	contentmodel "go_wp/internal/module/content/model"
 	contentservice "go_wp/internal/module/content/service"
 
@@ -81,7 +82,7 @@ func TestContentRejectsForeignField(t *testing.T) {
 		EntityType: "product", Slug: "x",
 		Data: map[string]any{"name": "ok", "evil": "injected"},
 	})
-	if err == nil || !strings.Contains(err.Error(), "白名单") {
+	if err == nil || !strings.Contains(err.Error(), contentenums.ErrInvalidField) {
 		t.Fatalf("白名单外字段应拒绝: %v", err)
 	}
 }

@@ -20,6 +20,7 @@ import (
 	"testing"
 
 	mediadto "go_wp/internal/module/media/dto"
+	mediaenums "go_wp/internal/module/media/enums"
 	mediamodel "go_wp/internal/module/media/model"
 	"go_wp/pkg/upload"
 
@@ -135,7 +136,7 @@ func TestMediaUploadNilFileRejected(t *testing.T) {
 	ctx := context.Background()
 
 	_, err := svc.Upload(ctx, nil, nil)
-	if err == nil || !strings.Contains(err.Error(), "上传文件不能为空") {
+	if err == nil || !strings.Contains(err.Error(), mediaenums.ErrUploadEmpty) {
 		t.Fatalf("nil 文件应被拒绝: %v", err)
 	}
 }
@@ -313,7 +314,7 @@ func TestMediaDetailNotExistRejected(t *testing.T) {
 	ctx := context.Background()
 
 	_, err := svc.Detail(ctx, &mediadto.DetailReq{ID: 99999})
-	if err == nil || !strings.Contains(err.Error(), "附件不存在") {
+	if err == nil || !strings.Contains(err.Error(), mediaenums.ErrAttachmentNotFound) {
 		t.Fatalf("不存在的附件应返回附件不存在: %v", err)
 	}
 }
@@ -346,7 +347,7 @@ func TestMediaDeleteNotExistRejected(t *testing.T) {
 	ctx := context.Background()
 
 	err := svc.Delete(ctx, &mediadto.DeleteReq{ID: 99999})
-	if err == nil || !strings.Contains(err.Error(), "附件不存在") {
+	if err == nil || !strings.Contains(err.Error(), mediaenums.ErrAttachmentNotFound) {
 		t.Fatalf("不存在的附件删除应被拒绝: %v", err)
 	}
 }
@@ -441,6 +442,7 @@ func TestMediaUpdateAttachmentNotExistRejected(t *testing.T) {
 
 	name := "x"
 	err := svc.UpdateAttachment(ctx, &mediadto.AttachmentUpdateReq{ID: 99999, FileName: &name})
+	// 该路径的文案仍由 media service 硬编码（media_category.go:157），未走 enums key，故按原文断言。
 	if err == nil || !strings.Contains(err.Error(), "附件不存在") {
 		t.Fatalf("不存在的附件更新应被拒绝: %v", err)
 	}

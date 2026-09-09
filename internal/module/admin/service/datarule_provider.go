@@ -12,8 +12,8 @@ import (
 	adminenums "go_wp/internal/module/admin/enums"
 	adminmodel "go_wp/internal/module/admin/model"
 
-	"gorm.io/gorm"
 	"go_wp/pkg/datarule"
+	"gorm.io/gorm"
 )
 
 // GetRules 实现 datarule.RuleProvider 接口。

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"time"
 
+	admincontract "go_wp/internal/module/admin/contract"
 	plugincontract "go_wp/internal/module/plugin/contract"
 	plugindto "go_wp/internal/module/plugin/dto"
 	pluginenums "go_wp/internal/module/plugin/enums"
@@ -18,11 +19,27 @@ import (
 
 // Service 插件模块业务实现。
 type Service struct {
-	m *pluginmodel.Model
+	m          *pluginmodel.Model
+	adminAuthz admincontract.AuthzContextService
 }
 
 // NewService 构造（model 注入，不持有 *gorm.DB）。
 func NewService(m *pluginmodel.Model) *Service { return &Service{m: m} }
+
+// SetAdminAuthz 注入 admin 的对外权限上下文查询能力。
+//
+// 插件是未来外部插件的宿主：插件运行时需要读取「当前用户在其角色/权限/超管
+// 范围内的上下文」，本方法把 admin 的只读权限契约注入插件模块，供插件经
+// contract 访问器 AdminAuthz() 获取，避免插件直接依赖 admin 的 model/service。
+func (s *Service) SetAdminAuthz(a admincontract.AuthzContextService) {
+	s.adminAuthz = a
+}
+
+// AdminAuthz 对外暴露 admin 权限上下文查询服务（供插件/装配方经 plugin contract 消费）。
+// 未注入时返回 nil，调用方应判空降级。
+func (s *Service) AdminAuthz() admincontract.AuthzContextService {
+	return s.adminAuthz
+}
 
 // 编译期契约断言。
 var _ plugincontract.PluginService = (*Service)(nil)

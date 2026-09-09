@@ -178,7 +178,7 @@ func (s *Service) RoleUserSave(ctx context.Context, req *admindto.RoleUserSaveRe
 	}
 	targetSuper := false
 	for _, id := range req.UserIDs {
-		super, err := s.isSuperAdmin(ctx, id)
+		super, err := s.IsSuperAdmin(ctx, id)
 		if err != nil {
 			return nil, err
 		}

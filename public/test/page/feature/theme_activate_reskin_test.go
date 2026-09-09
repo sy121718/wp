@@ -80,7 +80,7 @@ func makeJsonbPageService(t *testing.T) (*gorm.DB, pagecontract.PageService, *pr
 	artifacts := artifactservice.NewService(artifactmodel.NewArtifactModel(db))
 	routes := pubservice.NewService(pubmodel.NewPublicationModel(db))
 	blocks := blockservice.NewService(blockmodel.NewBlockModel(db), projects)
-	svc := pageservice.NewService(pageModel, artifacts, routes, projects, blocks, nil, nil)
+	svc := pageservice.NewService(pageModel, artifacts, routes, projects, blocks, nil, nil, nil, nil)
 	return db, svc, projects, project.ID
 }
 
@@ -195,7 +195,9 @@ func TestActivateThemeThenSaveKeepsNewTheme(t *testing.T) {
 func activateThemeHTTP(t *testing.T, svc pagecontract.PageService, projects *projectservice.Service,
 	themeID string) int {
 	t.Helper()
-	handle := dashboardhttp.NewHandle(svc, projects, nil, nil, nil)
+	// dashboardhttp.NewHandle 现收 block/plugin/collection + 6 个 admin contract（六领域 CRUD 契约），
+	// 本测试仅覆盖 ActivateTheme，admin 实例传 nil（不触达 admin 页面）。
+	handle := dashboardhttp.NewHandle(svc, projects, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	router := gin.New()
 	router.POST("/admin/themes/activate", handle.ActivateTheme)
 

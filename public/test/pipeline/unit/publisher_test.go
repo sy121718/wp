@@ -139,7 +139,7 @@ func TestPublisherVersionConflict(t *testing.T) {
 func TestPublisherBuildFailure(t *testing.T) {
 	boom := errors.New("编译器故障")
 	p, _, pub, _ := newPublisherEnv(t,
-		pipeline.WithCompile(func(context.Context, []byte) ([]byte, error) { return nil, boom }))
+		pipeline.WithCompile(func(context.Context, string, []byte) ([]byte, error) { return nil, boom }))
 
 	if _, err := p.SaveDraft("page-1", 0, "/about", []byte(docV1)); err != nil {
 		t.Fatalf("保存草稿失败: %v", err)
@@ -316,11 +316,11 @@ func TestPublisherUpdateURLGuards(t *testing.T) {
 
 // TestPublisherUpdateURLBuildFailure 新 URL 构建失败：旧 URL 线上保持不变。
 func TestPublisherUpdateURLBuildFailure(t *testing.T) {
-	compile := func(ctx context.Context, doc []byte) ([]byte, error) {
+	compile := func(ctx context.Context, pageID string, doc []byte) ([]byte, error) {
 		if strings.Contains(string(doc), "boom") {
 			return nil, errors.New("boom")
 		}
-		return pipeline.DefaultCompile(ctx, doc)
+		return pipeline.DefaultCompile(ctx, pageID, doc)
 	}
 	p, _, pub, _ := newPublisherEnv(t, pipeline.WithCompile(compile))
 

@@ -73,13 +73,15 @@ type PageRecord struct {
 	Histories []*HistoryEntry
 }
 
-// CompileFn 冻结编译函数：Page Document 字节 → 完整 HTML 文档字节。
+// CompileFn 冻结编译函数：页面 ID + Page Document 字节 → 完整 HTML 文档字节。
 // 发布期唯一编译入口；实现必须确定性（docs/03-pipeline.md §3.4）。
-// ctx 为发起构建的请求上下文（构建链需查库解析块/集合时传播，支持超时取消）。
-type CompileFn func(ctx context.Context, docJSON []byte) (html []byte, err error)
+// ctx 为发起构建的请求上下文（构建链需查库解析块/集合时传播，支持超时取消）；
+// pageID 供装配层解析「文档自身不携带」的站点级资源（如工程 ID → 导航菜单）。
+type CompileFn func(ctx context.Context, pageID string, docJSON []byte) (html []byte, err error)
 
 // DefaultCompile 默认编译器：internal/builder 文档编译 + 完整文档组装。
-func DefaultCompile(ctx context.Context, docJSON []byte) ([]byte, error) {
+// pageID 未使用（默认编译器不解析站点级资源）。
+func DefaultCompile(ctx context.Context, _ string, docJSON []byte) ([]byte, error) {
 	page, err := builder.ParsePage(docJSON)
 	if err != nil {
 		return nil, err
@@ -415,7 +417,7 @@ func (p *Publisher) UpdateURL(ctx context.Context, pageID string, newPath string
 // pageID/path/docJSON 为锁内取出的冻结快照，编译期间不访问 rec 可变字段，
 // 因此可在锁外并行执行——慢操作不再阻塞其他页面的状态机（M2）。
 func (p *Publisher) compileArtifact(ctx context.Context, pageID, path string, docJSON []byte) (a *Artifact, err error) {
-	html, err := p.compile(ctx, docJSON)
+	html, err := p.compile(ctx, pageID, docJSON)
 	if err != nil {
 		return nil, fmt.Errorf("编译失败: %w", err)
 	}

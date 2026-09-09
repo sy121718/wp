@@ -51,7 +51,7 @@ func NewHandleWithDeps(
 func (h *Handle) AdminList(c *gin.Context) {
 	var req admindto.AdminListReq
 	if err := c.ShouldBindQuery(&req); err != nil {
-		r.ErrorWithMessage(c, 400, adminenums.MsgBadRequest+":"+err.Error())
+		r.ErrorWithMessage(c, 400, adminenums.MsgBadRequest+": "+err.Error())
 		return
 	}
 
@@ -68,7 +68,7 @@ func (h *Handle) AdminList(c *gin.Context) {
 func (h *Handle) AdminLogin(c *gin.Context) {
 	var req admindto.AdminLoginReq
 	if err := c.ShouldBindJSON(&req); err != nil {
-		r.ErrorWithMessage(c, 400, adminenums.MsgBadRequest+"："+err.Error())
+		r.ErrorWithMessage(c, 400, adminenums.MsgBadRequest+": "+err.Error())
 		return
 	}
 
@@ -155,7 +155,7 @@ func (h *Handle) AdminProfile(c *gin.Context) {
 func (h *Handle) AdminCreate(c *gin.Context) {
 	var req admindto.AdminCreateReq
 	if err := c.ShouldBindJSON(&req); err != nil {
-		r.ErrorWithMessage(c, 400, adminenums.MsgBadRequest+"："+err.Error())
+		r.ErrorWithMessage(c, 400, adminenums.MsgBadRequest+": "+err.Error())
 		return
 	}
 	res, err := h.admin.AdminCreate(c.Request.Context(), &req)
@@ -170,7 +170,7 @@ func (h *Handle) AdminCreate(c *gin.Context) {
 func (h *Handle) AdminEdit(c *gin.Context) {
 	var req admindto.AdminEditReq
 	if err := c.ShouldBindJSON(&req); err != nil {
-		r.ErrorWithMessage(c, 400, adminenums.MsgBadRequest+":"+err.Error())
+		r.ErrorWithMessage(c, 400, adminenums.MsgBadRequest+": "+err.Error())
 		return
 	}
 	res, err := h.admin.AdminEdit(c.Request.Context(), &req)
@@ -185,7 +185,7 @@ func (h *Handle) AdminEdit(c *gin.Context) {
 func (h *Handle) AdminDetail(c *gin.Context) {
 	var req admindto.AdminDetailReq
 	if err := c.ShouldBindQuery(&req); err != nil {
-		r.ErrorWithMessage(c, 400, adminenums.MsgBadRequest+"："+err.Error())
+		r.ErrorWithMessage(c, 400, adminenums.MsgBadRequest+": "+err.Error())
 		return
 	}
 
@@ -202,7 +202,7 @@ func (h *Handle) AdminDetail(c *gin.Context) {
 func (h *Handle) AdminDelete(c *gin.Context) {
 	var req admindto.AdminDeleteReq
 	if err := c.ShouldBindJSON(&req); err != nil {
-		r.ErrorWithMessage(c, 400, adminenums.MsgBadRequest+"："+err.Error())
+		r.ErrorWithMessage(c, 400, adminenums.MsgBadRequest+": "+err.Error())
 		return
 	}
 

@@ -82,6 +82,15 @@ func (m *Model) Transaction(ctx context.Context, fn func(tx *gorm.DB) error) err
 	return m.db.WithContext(ctx).Transaction(fn)
 }
 
+// ListActivePaths 列出项目下全部已激活路由路径（升序，用于 sitemap 生成）。
+func (m *Model) ListActivePaths(ctx context.Context, projectID string) (paths []string, err error) {
+	err = m.RouteDB(ctx).
+		Where("project_id = ? AND route_kind = ?", projectID, RouteActive).
+		Order("path ASC").
+		Pluck("path", &paths).Error
+	return paths, err
+}
+
 // GetRoute 按 (projectID, path) 查询路由占用。
 func (m *Model) GetRoute(ctx context.Context, projectID, path string) (e *RouteEntity, err error) {
 	e = &RouteEntity{}

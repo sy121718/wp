@@ -353,9 +353,9 @@ func uniqueAdminIDs(ids []uint64) []uint64 {
 
 // --- 超管判定 helper（RBAC 提权保护共用） ---
 
-// isSuperAdmin 查询指定管理员是否为超管（is_admin=1）。
+// IsSuperAdmin 查询指定管理员是否为超管（is_admin=1）。
 // 用户不存在或 userID 为 0 时按非超管处理（存在性由调用方自行校验）。
-func (s *Service) isSuperAdmin(ctx context.Context, userID uint64) (bool, error) {
+func (s *Service) IsSuperAdmin(ctx context.Context, userID uint64) (bool, error) {
 	if userID == 0 {
 		return false, nil
 	}
@@ -434,7 +434,7 @@ func (s *Service) requireSuperAdminForSensitiveTarget(ctx context.Context, opera
 	if !targetSensitive {
 		return nil
 	}
-	opSuper, err := s.isSuperAdmin(ctx, operatorID)
+	opSuper, err := s.IsSuperAdmin(ctx, operatorID)
 	if err != nil {
 		return err
 	}

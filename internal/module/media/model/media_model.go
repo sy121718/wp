@@ -106,6 +106,20 @@ func (m *AttachmentModel) GetByID(ctx context.Context, id uint64) (*AttachmentEn
 	return &e, nil
 }
 
+// GetByFilePath 按存储相对路径查询启用状态的附件（构建期资源探测用）。
+// 兼容历史数据中带/不带前导斜杠两种写法。
+func (m *AttachmentModel) GetByFilePath(ctx context.Context, filePath string) (*AttachmentEntity, error) {
+	var e AttachmentEntity
+	err := m.attrDB(ctx).
+		Where("status = ?", AttachmentStatusEnabled).
+		Where("file_path = ? OR file_path = ?", filePath, "/"+filePath).
+		First(&e).Error
+	if err != nil {
+		return nil, err
+	}
+	return &e, nil
+}
+
 // List 分页查询附件，支持按文件类型和分类过滤。
 func (m *AttachmentModel) List(ctx context.Context, fileType string, categoryID *uint64, search string, offset, limit int) ([]AttachmentEntity, int64, error) {
 	q := m.attrDB(ctx).Where("status = ?", AttachmentStatusEnabled)

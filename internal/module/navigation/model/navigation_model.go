@@ -13,11 +13,16 @@ const tableNameNavigations = "navigations"
 
 // NavigationEntity 对应 navigations 表。
 type NavigationEntity struct {
-	ID        string    `gorm:"column:id;type:uuid;primaryKey"`
-	ProjectID string    `gorm:"column:project_id;type:uuid;not null"`
-	Title     string    `gorm:"column:title;not null"`
-	Path      string    `gorm:"column:path;not null"`
-	Kind      string    `gorm:"column:kind;not null"`
+	ID        string `gorm:"column:id;type:uuid;primaryKey"`
+	ProjectID string `gorm:"column:project_id;type:uuid;not null"`
+	Title     string `gorm:"column:title;not null"`
+	Path      string `gorm:"column:path;not null"`
+	Kind      string `gorm:"column:kind;not null"`
+	// SourceType / SourceID 菜单项来源（custom/page/article/product/category/block）。
+	SourceType string  `gorm:"column:source_type;not null;default:custom"`
+	SourceID   *string `gorm:"column:source_id;type:uuid"`
+	// Target 打开方式：self / blank。
+	Target    string    `gorm:"column:target;not null;default:self"`
 	ParentID  *string   `gorm:"column:parent_id;type:uuid"`
 	SortOrder int       `gorm:"column:sort_order;not null"`
 	CreatedAt time.Time `gorm:"column:created_at;not null"`
@@ -64,6 +69,19 @@ func (m *Model) List(ctx context.Context, projectID, kind string) (list []*Navig
 	return list, err
 }
 
+// MaxSortOrder 返回同工程同 kind 同父级下的最大排序值（无记录返回 0）。
+// 供 service 在未显式指定排序时把新项追加到末尾。
+func (m *Model) MaxSortOrder(ctx context.Context, projectID, kind string, parentID *string) (maxOrder int, err error) {
+	q := m.DB(ctx).Where("project_id = ? AND kind = ?", projectID, kind)
+	if parentID == nil || *parentID == "" {
+		q = q.Where("parent_id IS NULL")
+	} else {
+		q = q.Where("parent_id = ?", *parentID)
+	}
+	err = q.Select("COALESCE(MAX(sort_order), 0)").Row().Scan(&maxOrder)
+	return maxOrder, err
+}
+
 // Save 按 ID 部分更新（Where("id = ?").Updates(map)）。
 func (m *Model) Save(ctx context.Context, id string, updates map[string]any) error {
 	return m.DB(ctx).Where("id = ?", id).Updates(updates).Error
@@ -72,6 +90,14 @@ func (m *Model) Save(ctx context.Context, id string, updates map[string]any) err
 // Delete 按 ID 删除导航项。
 func (m *Model) Delete(ctx context.Context, id string) error {
 	return m.DB(ctx).Where("id = ?", id).Delete(&NavigationEntity{}).Error
+}
+
+// DeleteMany 批量删除导航项（同一聚合内：删菜单项及其全部子孙）。
+func (m *Model) DeleteMany(ctx context.Context, ids []string) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	return m.DB(ctx).Where("id IN ?", ids).Delete(&NavigationEntity{}).Error
 }
 
 // ExistsPath 判断同工程同 kind 下 path 是否已被（其他）导航项占用。
