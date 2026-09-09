@@ -135,10 +135,10 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 	_ = blueprintSvc // 未来 page CreatePage 消费 InitPageDocument
 	// CMS 内容（0-A2，contenttemplate/presentation 依赖其字段白名单契约）。
 	contentSvc := contenthttp.SetupContentRoutes(authorizedAPI, db)
-	// 内容结构模板（presentation 依赖 ResolveTemplate）。
-	contentTemplateSvc := contenttemplatehttp.SetupContentTemplateRoutes(authorizedAPI, db)
-	// 自动发布实例（内容实体驱动，复用编译/存储/激活管线）。
-	presentationSvc := presentationhttp.SetupPresentationRoutes(authorizedAPI, db, contentTemplateSvc, contentSvc)
+	// 内容结构模板（presentation 依赖 ResolveTemplate；模板行需 project_id 外键）。
+	contentTemplateSvc := contenttemplatehttp.SetupContentTemplateRoutes(authorizedAPI, db, projectService)
+	// 自动发布实例（内容实体驱动，复用编译/存储/激活管线；实例行需 project_id 外键）。
+	presentationSvc := presentationhttp.SetupPresentationRoutes(authorizedAPI, db, contentTemplateSvc, contentSvc, projectService)
 
 	// 插件模块（page 构建路径依赖其装配素材，须先于 page 装配）。
 	// plugin 是外部插件宿主：注入 admin 权限上下文契约，供插件运行时读取当前用户权限。

@@ -12,4 +12,8 @@ const (
 	ErrNotFound     = "ErrNotFound"     // 模板不存在
 	ErrInvalidType  = "ErrInvalidType"  // 不支持的内容类型
 	ErrDataInvalid  = "ErrDataInvalid"  // 模板文档格式非法
+	// ErrProjectRequired 未指定工程且无法从唯一工程推导（0 个或多个工程）。
+	ErrProjectRequired = "ErrProjectRequired"
+	// ErrProjectNotFound 显式指定的工程不存在。
+	ErrProjectNotFound = "ErrProjectNotFound"
 )

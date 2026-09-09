@@ -7,14 +7,16 @@ import (
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
 	contenttemplatemodel "go_wp/internal/module/contenttemplate/model"
 	contenttemplateservice "go_wp/internal/module/contenttemplate/service"
+	projectcontract "go_wp/internal/module/project/contract"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
 
 // SetupContentTemplateRoutes 装配 contenttemplate 模块路由，返回模块契约。
-func SetupContentTemplateRoutes(rg *gin.RouterGroup, db *gorm.DB) contenttemplatecontract.ContentTemplateService {
-	svc := contenttemplateservice.NewService(contenttemplatemodel.NewModel(db))
+// project 用于解析模板所属工程（content_templates.project_id 为 NOT NULL 外键）。
+func SetupContentTemplateRoutes(rg *gin.RouterGroup, db *gorm.DB, project projectcontract.ProjectService) contenttemplatecontract.ContentTemplateService {
+	svc := contenttemplateservice.NewService(contenttemplatemodel.NewModel(db), project)
 	handle := NewHandle(svc)
 
 	g := rg.Group("/contenttemplate")

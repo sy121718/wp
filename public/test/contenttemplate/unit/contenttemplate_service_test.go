@@ -1,5 +1,9 @@
-// Package unit contenttemplate 模块 feature 测试（真实 PostgreSQL，0-A2）：
+// Package unit contenttemplate 模块 feature 测试（真实 PostgreSQL + 生产 DDL，0-A2）：
 // 模板创建 → 初始版本、更新 → 版本递增、ResolveTemplate 取最新版本、非法类型拒绝。
+//
+// 测试基建（本轮修复）：建表走 migrations.Run（真实迁移 SQL），不再用 AutoMigrate
+// ——AutoMigrate 会把 model 里多出来的列自动补进测试 schema，掩盖 DDL 漂移；
+// 另加「model 列集合 ⊆ 生产 DDL 列集合」断言（support.AssertModelColumnsSubset）。
 package unit
 
 import (
@@ -14,7 +18,11 @@ import (
 	contenttemplateenums "go_wp/internal/module/contenttemplate/enums"
 	contenttemplatemodel "go_wp/internal/module/contenttemplate/model"
 	contenttemplateservice "go_wp/internal/module/contenttemplate/service"
+	projectdto "go_wp/internal/module/project/dto"
+	projectmodel "go_wp/internal/module/project/model"
+	projectservice "go_wp/internal/module/project/service"
 
+	"go_wp/public/migrations"
 	"go_wp/public/test/support"
 )
 
@@ -24,23 +32,92 @@ const pageDocument = `{"settings":{"layout":{"mode":"full"}},"root":[]}`
 // headingDocument 含标题组件的合法页面文档（用于验证 ResolveTemplate 取最新内容）。
 const headingDocument = `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"h1","type":"core.heading","props":{"text":"你好"}}]}`
 
-// newService 隔离 PG schema + AutoMigrate 两张表 + 装配 service。
-func newService(t *testing.T) (*contenttemplateservice.Service, *gorm.DB) {
+// newService 隔离 PG schema + 按生产迁移建表 + 真实工程行 + 装配 service。
+// 返回 (service, db, projectID)。
+func newService(t *testing.T) (*contenttemplateservice.Service, *gorm.DB, string) {
 	t.Helper()
 	db, err := support.NewPGTestDB(t)
 	if err != nil {
 		t.Skipf("本地 PostgreSQL 不可用：%v", err)
-		return nil, nil
+		return nil, nil, ""
 	}
-	if err := db.AutoMigrate(&contenttemplatemodel.TemplateEntity{}, &contenttemplatemodel.VersionEntity{}); err != nil {
-		t.Fatalf("AutoMigrate 失败: %v", err)
+	if err := migrations.Run(db); err != nil {
+		t.Fatalf("执行生产迁移建表失败: %v", err)
 	}
-	return contenttemplateservice.NewService(contenttemplatemodel.NewModel(db)), db
+	projects := projectservice.NewService(projectmodel.NewProjectModel(db))
+	project, err := projects.Create(context.Background(), &projectdto.CreateReq{Name: "模板测试工程"})
+	if err != nil {
+		t.Fatalf("创建测试工程失败: %v", err)
+	}
+	return contenttemplateservice.NewService(contenttemplatemodel.NewModel(db), projects), db, project.ID
+}
+
+// TestContentTemplateModelColumnsSubsetOfProductionDDL model 列集合必须是生产
+// DDL 列集合的子集（content_templates / content_template_versions）。
+func TestContentTemplateModelColumnsSubsetOfProductionDDL(t *testing.T) {
+	_, db, _ := newService(t)
+	if db == nil {
+		return
+	}
+	support.AssertModelColumnsSubset(t, db, "content_templates", &contenttemplatemodel.TemplateEntity{})
+	support.AssertModelColumnsSubset(t, db, "content_template_versions", &contenttemplatemodel.VersionEntity{})
+}
+
+// TestContentTemplateCreatePersistsRealColumns 真实 DDL 下创建必须落库
+// project_id / current_version_id 与版本行的 source_hash / created_by。
+func TestContentTemplateCreatePersistsRealColumns(t *testing.T) {
+	svc, db, projectID := newService(t)
+	if svc == nil {
+		return
+	}
+	ctx := context.Background()
+
+	res, err := svc.Create(ctx, &contenttemplatedto.CreateReq{
+		EntityType:    "product",
+		Name:          "商品模板",
+		DraftDocument: json.RawMessage(pageDocument),
+	})
+	if err != nil {
+		t.Fatalf("创建失败: %v", err)
+	}
+
+	var tpl struct {
+		ProjectID        string
+		CurrentVersionID *string
+	}
+	if err := db.Raw("SELECT project_id, current_version_id FROM content_templates WHERE id = ?", res.ID).
+		Scan(&tpl).Error; err != nil {
+		t.Fatalf("读取模板行失败: %v", err)
+	}
+	if tpl.ProjectID != projectID {
+		t.Errorf("project_id 未落库: %q（期望 %q）", tpl.ProjectID, projectID)
+	}
+	if tpl.CurrentVersionID == nil || *tpl.CurrentVersionID == "" {
+		t.Errorf("current_version_id 未回填")
+	}
+
+	var ver struct {
+		SourceHash string
+		CreatedBy  string
+	}
+	if err := db.Raw("SELECT source_hash, created_by FROM content_template_versions WHERE template_id = ?", res.ID).
+		Scan(&ver).Error; err != nil {
+		t.Fatalf("读取版本行失败: %v", err)
+	}
+	if ver.SourceHash == "" {
+		t.Errorf("版本行 source_hash 未落库（NOT NULL 列）")
+	}
+	if ver.CreatedBy == "" {
+		t.Errorf("版本行 created_by 未落库（NOT NULL 列）")
+	}
+	if tpl.CurrentVersionID != nil && *tpl.CurrentVersionID == "" {
+		t.Errorf("current_version_id 为空")
+	}
 }
 
 // TestContentTemplateCreate 创建 → draft_version=1 且 LatestVersion 存在。
 func TestContentTemplateCreate(t *testing.T) {
-	svc, db := newService(t)
+	svc, db, _ := newService(t)
 	if svc == nil {
 		return
 	}
@@ -70,7 +147,7 @@ func TestContentTemplateCreate(t *testing.T) {
 
 // TestContentTemplateUpdate 更新 → draft_version 递增 + 版本数=2。
 func TestContentTemplateUpdate(t *testing.T) {
-	svc, db := newService(t)
+	svc, db, _ := newService(t)
 	if svc == nil {
 		return
 	}
@@ -108,7 +185,7 @@ func TestContentTemplateUpdate(t *testing.T) {
 
 // TestContentTemplateResolve 解析最新模板的最新版本 document。
 func TestContentTemplateResolve(t *testing.T) {
-	svc, _ := newService(t)
+	svc, _, _ := newService(t)
 	if svc == nil {
 		return
 	}
@@ -139,6 +216,9 @@ func TestContentTemplateResolve(t *testing.T) {
 	if got.VersionID == "" {
 		t.Fatalf("VersionID 不应为空")
 	}
+	if got.TemplateID != res.ID {
+		t.Fatalf("TemplateID 应为模板 ID %s，实际 %q", res.ID, got.TemplateID)
+	}
 	if got.EntityType != "product" {
 		t.Fatalf("EntityType 应为 product: %q", got.EntityType)
 	}
@@ -149,7 +229,7 @@ func TestContentTemplateResolve(t *testing.T) {
 
 // TestContentTemplateRejectInvalidType 非法 EntityType 拒绝。
 func TestContentTemplateRejectInvalidType(t *testing.T) {
-	svc, _ := newService(t)
+	svc, _, _ := newService(t)
 	if svc == nil {
 		return
 	}
@@ -172,7 +252,7 @@ func TestContentTemplateRejectInvalidType(t *testing.T) {
 
 // TestContentTemplateRejectInvalidDocument 非法文档拒绝（ErrDataInvalid）。
 func TestContentTemplateRejectInvalidDocument(t *testing.T) {
-	svc, _ := newService(t)
+	svc, _, _ := newService(t)
 	if svc == nil {
 		return
 	}

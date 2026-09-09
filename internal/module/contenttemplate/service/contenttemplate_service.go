@@ -3,8 +3,11 @@ package contenttemplateservice
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -16,15 +19,26 @@ import (
 	contenttemplatedto "go_wp/internal/module/contenttemplate/dto"
 	contenttemplateenums "go_wp/internal/module/contenttemplate/enums"
 	contenttemplatemodel "go_wp/internal/module/contenttemplate/model"
+	projectcontract "go_wp/internal/module/project/contract"
 )
+
+// systemCreator 版本行 created_by 的占位（NOT NULL uuid 列）。
+//
+// 与 artifact 模块 defaultCreator 同一口径：uuid 列不接受空串，
+// 无登录上下文的自动写入统一落零值 UUID（表示「系统写入」）。
+const systemCreator = "00000000-0000-0000-0000-000000000000"
 
 // Service contenttemplate 模块业务实现。
 type Service struct {
-	m *contenttemplatemodel.Model
+	m       *contenttemplatemodel.Model
+	project projectcontract.ProjectService
 }
 
-// NewService 构造（model 注入，不持有 *gorm.DB）。
-func NewService(m *contenttemplatemodel.Model) *Service { return &Service{m: m} }
+// NewService 构造（model + project 契约注入，不持有 *gorm.DB）。
+// project 用于解析模板所属工程（content_templates.project_id 为 NOT NULL 外键）。
+func NewService(m *contenttemplatemodel.Model, project projectcontract.ProjectService) *Service {
+	return &Service{m: m, project: project}
+}
 
 // 编译期契约断言。
 var _ contenttemplatecontract.ContentTemplateService = (*Service)(nil)
@@ -34,6 +48,10 @@ func (s *Service) Create(ctx context.Context, req *contenttemplatedto.CreateReq)
 	if req == nil || !contentcontract.IsValidType(req.EntityType) || req.Name == "" {
 		return nil, errors.New(contenttemplateenums.ErrInvalidParam)
 	}
+	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
+	if err != nil {
+		return nil, err
+	}
 	// 校验 DraftDocument 是合法 Page Document 并规范化为存储字节。
 	doc, err := validateDocument(req.DraftDocument)
 	if err != nil {
@@ -41,16 +59,23 @@ func (s *Service) Create(ctx context.Context, req *contenttemplatedto.CreateReq)
 	}
 	now := time.Now().UTC()
 	e := &contenttemplatemodel.TemplateEntity{
-		ID: uuid.NewString(), Name: req.Name, EntityType: req.EntityType,
+		ID: uuid.NewString(), ProjectID: projectID, Name: req.Name, EntityType: req.EntityType,
 		DraftDocument: doc, DraftVersion: 1, CreatedAt: now, UpdatedAt: now,
 	}
 	if err = s.m.Create(ctx, e); err != nil {
 		return nil, err
 	}
 	// 立即写不可变版本 1（保证 ResolveTemplate 总有 LatestVersion）。
+	verID := uuid.NewString()
 	if err = s.m.CreateVersion(ctx, &contenttemplatemodel.VersionEntity{
-		ID: uuid.NewString(), TemplateID: e.ID, Version: 1, Document: doc, CreatedAt: now,
+		ID: verID, TemplateID: e.ID, Version: 1, Document: doc,
+		SourceHash: hashDocument(doc), CreatedBy: systemCreator, CreatedAt: now,
 	}); err != nil {
+		return nil, err
+	}
+	// 当前版本指针回填（content_templates.current_version_id）。
+	e.CurrentVersionID = &verID
+	if err = s.m.SetCurrentVersion(ctx, e.ID, verID, now); err != nil {
 		return nil, err
 	}
 	return toResp(e), nil
@@ -75,12 +100,15 @@ func (s *Service) Update(ctx context.Context, req *contenttemplatedto.UpdateReq)
 	e.DraftDocument = doc
 	e.DraftVersion++ // 单调递增（版本号即不可变快照序号）
 	e.UpdatedAt = time.Now().UTC()
-	if err = s.m.Save(ctx, e); err != nil {
+	verID := uuid.NewString()
+	if err = s.m.CreateVersion(ctx, &contenttemplatemodel.VersionEntity{
+		ID: verID, TemplateID: e.ID, Version: e.DraftVersion, Document: doc,
+		SourceHash: hashDocument(doc), CreatedBy: systemCreator, CreatedAt: e.UpdatedAt,
+	}); err != nil {
 		return nil, err
 	}
-	if err = s.m.CreateVersion(ctx, &contenttemplatemodel.VersionEntity{
-		ID: uuid.NewString(), TemplateID: e.ID, Version: e.DraftVersion, Document: doc, CreatedAt: e.UpdatedAt,
-	}); err != nil {
+	e.CurrentVersionID = &verID
+	if err = s.m.Save(ctx, e); err != nil {
 		return nil, err
 	}
 	return toResp(e), nil
@@ -124,7 +152,7 @@ func (s *Service) List(ctx context.Context, req *contenttemplatedto.ListReq) (li
 // DocumentSnapshot 的唯一入口）。逻辑：
 //  1. 取该类型最新的模板（updated_at 倒序首条），无则 ErrNotFound；
 //  2. 取该模板最新版本（LatestVersion）的 document；
-//  3. 组装 ResolvedTemplate{VersionID, Version, EntityType, Document}。
+//  3. 组装 ResolvedTemplate{TemplateID, VersionID, Version, EntityType, Document}。
 func (s *Service) ResolveTemplate(ctx context.Context, entityType string) (res *contenttemplatecontract.ResolvedTemplate, err error) {
 	if entityType == "" || !contentcontract.IsValidType(entityType) {
 		return nil, errors.New(contenttemplateenums.ErrInvalidType)
@@ -145,11 +173,46 @@ func (s *Service) ResolveTemplate(ctx context.Context, entityType string) (res *
 		return nil, err
 	}
 	return &contenttemplatecontract.ResolvedTemplate{
+		TemplateID: tpl.ID,
 		VersionID:  ver.ID,
 		Version:    ver.Version,
 		EntityType: tpl.EntityType,
 		Document:   ver.Document,
 	}, nil
+}
+
+// resolveProjectID 解析模板所属工程：显式传入优先（校验存在），
+// 否则经 project 契约取唯一工程；无工程或多工程时要求显式指定。
+func (s *Service) resolveProjectID(ctx context.Context, explicit string) (string, error) {
+	if id := strings.TrimSpace(explicit); id != "" {
+		if s.project != nil {
+			ok, err := s.project.Exists(ctx, id)
+			if err != nil {
+				return "", err
+			}
+			if !ok {
+				return "", errors.New(contenttemplateenums.ErrProjectNotFound)
+			}
+		}
+		return id, nil
+	}
+	if s.project == nil {
+		return "", errors.New(contenttemplateenums.ErrProjectRequired)
+	}
+	list, err := s.project.List(ctx)
+	if err != nil {
+		return "", err
+	}
+	if len(list) != 1 {
+		return "", errors.New(contenttemplateenums.ErrProjectRequired)
+	}
+	return list[0].ID, nil
+}
+
+// hashDocument 版本文档内容哈希（content_template_versions.source_hash）。
+func hashDocument(doc []byte) string {
+	sum := sha256.Sum256(doc)
+	return hex.EncodeToString(sum[:])
 }
 
 // validateDocument 解析并校验 Page Document，返回规范化存储字节。

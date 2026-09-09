@@ -8,16 +8,19 @@ import (
 	presentationcontract "go_wp/internal/module/presentation/contract"
 	presentationmodel "go_wp/internal/module/presentation/model"
 	presentationservice "go_wp/internal/module/presentation/service"
+	projectcontract "go_wp/internal/module/project/contract"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
 
 // SetupPresentationRoutes 装配 presentation 模块路由，返回模块契约。
+// project 用于解析实例所属工程（presentation_instances.project_id 为 NOT NULL 外键）。
 func SetupPresentationRoutes(rg *gin.RouterGroup, db *gorm.DB,
 	templates contenttemplatecontract.ContentTemplateService,
-	content contentcontract.ContentService) presentationcontract.PresentationService {
-	svc := presentationservice.NewService(presentationmodel.NewModel(db), templates, content)
+	content contentcontract.ContentService,
+	project projectcontract.ProjectService) presentationcontract.PresentationService {
+	svc := presentationservice.NewService(presentationmodel.NewModel(db), templates, content, project)
 	handle := NewHandle(svc)
 
 	g := rg.Group("/presentation")

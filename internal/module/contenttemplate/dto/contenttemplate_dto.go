@@ -8,6 +8,9 @@ type CreateReq struct {
 	EntityType    string          `json:"entityType" binding:"required"`
 	Name          string          `json:"name" binding:"required"`
 	DraftDocument json.RawMessage `json:"draftDocument" binding:"required"`
+	// ProjectID 模板所属站点工程（content_templates.project_id 为 NOT NULL 外键）。
+	// 可空：缺省时经 project 契约解析（工程唯一时取该工程），否则报参数错误。
+	ProjectID string `json:"projectId"`
 }
 
 // UpdateReq 修改模板（产生新版本）。

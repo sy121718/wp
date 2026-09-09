@@ -27,6 +27,9 @@ type ContentTemplateService interface {
 
 // ResolvedTemplate 已解析的模板版本（presentation 派生快照的输入）。
 type ResolvedTemplate struct {
+	// TemplateID 模板 ID（presentation_instances.template_id 为 NOT NULL 外键
+	// 指向 content_templates(id)，presentation 装配实例行时必须落库）。
+	TemplateID string
 	// VersionID 模板版本 ID（快照记录 source_template_version_id）。
 	VersionID string
 	// Version 版本号。

@@ -3,6 +3,11 @@
 // 自动发布：内容实体 + ContentTemplate → 派生快照 → 同一 Publish Compiler
 // → ArtifactStore → PublicationStore（与手工 Page 共享管线，docs/02 §3）。
 //
+// DDL 对齐（本轮修复）：实例/快照/产物/依赖四张表按生产 DDL 读写
+// （presentation_instances 用 stale + staged/active_artifact_id 指针，
+// 不再有 status / artifact_hash 列）；project_id / template_id 为 NOT NULL
+// 外键，创建时经 project 契约解析工程、经 ResolveTemplate 取模板 ID。
+//
 // MVP 取舍（开发阶段）：DocumentSnapshot 保存模板 AST（含 binding 节点），
 // 编译时经 ContentResolver 解析为字面量——而非领域模型 §3.3 的「快照已
 // 解析为字面量」。收益：复用 builder.WithContentResolver 注入，避免遍历
@@ -11,8 +16,10 @@ package presentationservice
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	contentcontract "go_wp/internal/module/content/contract"
@@ -21,6 +28,7 @@ import (
 	presentationdto "go_wp/internal/module/presentation/dto"
 	presentationenums "go_wp/internal/module/presentation/enums"
 	presentationmodel "go_wp/internal/module/presentation/model"
+	projectcontract "go_wp/internal/module/project/contract"
 
 	"go_wp/internal/builder"
 	"go_wp/internal/pipeline"
@@ -28,25 +36,36 @@ import (
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+
+	"go_wp/pkg/logger"
 )
+
+// systemCreator 产物行 created_by 的占位（NOT NULL uuid 列不接受空串）。
+const systemCreator = "00000000-0000-0000-0000-000000000000"
+
+// maxAutoRebuildInstances 单次依赖失效触发的自动重建上限（与 page 侧同口径）。
+const maxAutoRebuildInstances = 20
 
 // Service presentation 模块业务实现。
 type Service struct {
 	m           *presentationmodel.Model
 	templates   contenttemplatecontract.ContentTemplateService
 	content     contentcontract.ContentService
+	project     projectcontract.ProjectService
 	store       *pipeline.LocalStore
 	publication *pipeline.LocalPublicationStore
 }
 
-// NewService 构造（依赖 contenttemplate/content 契约 + pipeline 内核）。
+// NewService 构造（依赖 contenttemplate/content/project 契约 + pipeline 内核）。
 func NewService(m *presentationmodel.Model,
 	templates contenttemplatecontract.ContentTemplateService,
-	content contentcontract.ContentService) *Service {
+	content contentcontract.ContentService,
+	project projectcontract.ProjectService) *Service {
 	return &Service{
 		m:           m,
 		templates:   templates,
 		content:     content,
+		project:     project,
 		store:       &pipeline.LocalStore{Root: pipeline.DefaultArtifactRoot()},
 		publication: &pipeline.LocalPublicationStore{ActiveRoot: pipeline.ActiveRoot()},
 	}
@@ -55,52 +74,100 @@ func NewService(m *presentationmodel.Model,
 // 编译期契约断言。
 var _ presentationcontract.PresentationService = (*Service)(nil)
 
-// CreateInstance 创建自动发布实例：解析模板 → 编译 → 发布 → 记快照。
+// 依赖扇出契约断言（pipeline.Fanout 的失效目标 + 自动重建实现）。
+var _ pipeline.DependencyTarget = (*Service)(nil)
+var _ pipeline.StaleRebuilder = (*Service)(nil)
+
+// SourceType 实现 pipeline.DependencyTarget：本服务是自动发布实例来源。
+func (s *Service) SourceType() string { return pipeline.SourceTypePresentation }
+
+// MarkStaleByDependency 实现 pipeline.DependencyTarget：按依赖源精确标记。
+func (s *Service) MarkStaleByDependency(ctx context.Context, kind, key string) ([]string, error) {
+	return s.m.MarkStaleByDependency(ctx, kind, key, time.Now().UTC())
+}
+
+// RebuildStale 实现 pipeline.StaleRebuilder：重建受影响实例并重新发布。
+//
+// 策略（§8.3）：presentation 实例的语义就是「内容驱动的自动发布页面」，
+// 创建即上线，因此重建成功后直接回写线上（与 page 侧「仅已发布语言自动回写」
+// 的口径在结果上一致——presentation 不存在「从未发布」的实例）。
+// 单个实例失败不阻断其余（记日志后继续），返回 nil 由 stale 标记兜底。
+func (s *Service) RebuildStale(ctx context.Context, ids []string) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	if len(ids) > maxAutoRebuildInstances {
+		logger.Scene("dependency").With("affected", len(ids)).With("limit", maxAutoRebuildInstances).
+			Warn("自动重建超出单次上限，剩余实例保持 stale 等待后续触发")
+		ids = ids[:maxAutoRebuildInstances]
+	}
+	rebuilt := 0
+	for _, id := range ids {
+		if ctx.Err() != nil {
+			return nil
+		}
+		inst, err := s.m.GetInstance(ctx, id)
+		if err != nil {
+			logger.Scene("dependency").With("presentation_id", id).Warn("自动重建跳过：实例不存在或已删除")
+			continue
+		}
+		tpl, err := s.templates.ResolveTemplate(ctx, inst.EntityType)
+		if err != nil {
+			logger.Scene("dependency").With("presentation_id", id).
+				Error(err, "自动重建跳过：无可用内容模板")
+			continue
+		}
+		if _, err = s.rebuildInstance(ctx, inst, tpl); err != nil {
+			logger.Scene("dependency").With("presentation_id", id).
+				Error(err, "依赖失效后的自动重建失败（实例保持 stale）")
+			continue
+		}
+		rebuilt++
+	}
+	if rebuilt > 0 {
+		logger.Scene("dependency").With("rebuilt", rebuilt).Info("依赖失效后的自动重建完成")
+	}
+	return nil
+}
+
+// CreateInstance 创建自动发布实例：解析模板 → 编译 → 发布 → 记快照/产物/依赖。
 func (s *Service) CreateInstance(ctx context.Context, req *presentationdto.CreateInstanceReq) (res *presentationdto.InstanceResp, err error) {
 	if req == nil || req.EntityType == "" || req.EntityID == "" || req.URLPath == "" {
 		return nil, errors.New(presentationenums.ErrInvalidParam)
 	}
-	// 同实体已存在实例 → 视为幂等（返回已有）。
+	// 同实体已存在实例 → 视为幂等（返回已有；无需再解析工程）。
 	if existing, gerr := s.m.GetInstanceByEntity(ctx, req.EntityType, req.EntityID); gerr == nil {
-		return s.toResp(ctx, existing), nil
+		return s.toResp(ctx, existing)
 	} else if !errors.Is(gerr, gorm.ErrRecordNotFound) {
 		return nil, gerr
+	}
+	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
+	if err != nil {
+		return nil, err
 	}
 	// 解析模板版本 + 实体解析器。
 	tpl, err := s.templates.ResolveTemplate(ctx, req.EntityType)
 	if err != nil {
 		return nil, errors.New(presentationenums.ErrNoTemplate)
 	}
-	// 编译发布。
-	hash, html, err := s.buildAndPublish(ctx, req.EntityType, req.EntityID, req.URLPath, tpl.Document)
+	built, err := s.buildAndPublish(ctx, req.EntityType, req.EntityID, req.URLPath, tpl)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", presentationenums.ErrBuildFailed, err)
 	}
-	// 记实例 + 快照。
+	// 记实例（project_id / template_id 为 NOT NULL 外键，必须落库）。
 	now := time.Now().UTC()
 	inst := &presentationmodel.InstanceEntity{
-		ID: uuid.NewString(), EntityType: req.EntityType, EntityID: req.EntityID,
-		URLPath: req.URLPath, Status: "active", CreatedAt: now, UpdatedAt: now,
+		ID: uuid.NewString(), ProjectID: projectID, EntityType: req.EntityType,
+		EntityID: req.EntityID, URLPath: req.URLPath, TemplateID: tpl.TemplateID,
+		Stale: true, CreatedAt: now, UpdatedAt: now,
 	}
 	if err = s.m.CreateInstance(ctx, inst); err != nil {
 		return nil, err
 	}
-	snapID := uuid.NewString()
-	snap := &presentationmodel.SnapshotEntity{
-		ID: snapID, PresentationInstanceID: inst.ID,
-		SourceTemplateVersionID: tpl.VersionID, SourceEntityRevision: 0,
-		Document: tpl.Document, CreatedAt: now,
-	}
-	if err = s.m.CreateSnapshot(ctx, snap); err != nil {
+	if err = s.persistBuild(ctx, inst, tpl, built, now); err != nil {
 		return nil, err
 	}
-	inst.CurrentSnapshotID = &snapID
-	inst.ArtifactHash = &hash
-	if err = s.m.UpdateInstance(ctx, inst); err != nil {
-		return nil, err
-	}
-	_ = html // 产物已入 ArtifactStore，快照持模板 AST
-	return s.toResp(ctx, inst), nil
+	return s.toResp(ctx, inst)
 }
 
 // Rebuild 实体数据更新后重建：重解析模板+实体 → 重新编译发布。
@@ -117,27 +184,125 @@ func (s *Service) Rebuild(ctx context.Context, req *presentationdto.RebuildReq) 
 	if err != nil {
 		return nil, errors.New(presentationenums.ErrNoTemplate)
 	}
-	hash, _, err := s.buildAndPublish(ctx, inst.EntityType, inst.EntityID, inst.URLPath, tpl.Document)
+	return s.rebuildInstance(ctx, inst, tpl)
+}
+
+// rebuildInstance 实例重建主链：编译发布 → 新快照 → 新产物行 → 指针切换 → 依赖落库。
+func (s *Service) rebuildInstance(ctx context.Context, inst *presentationmodel.InstanceEntity,
+	tpl *contenttemplatecontract.ResolvedTemplate) (res *presentationdto.InstanceResp, err error) {
+	built, err := s.buildAndPublish(ctx, inst.EntityType, inst.EntityID, inst.URLPath, tpl)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", presentationenums.ErrBuildFailed, err)
 	}
-	// 新快照（revision 由 entity 决定，此处保守置 0 占位，Rebuild 语义为重编译）。
-	now := time.Now().UTC()
+	if err = s.persistBuild(ctx, inst, tpl, built, time.Now().UTC()); err != nil {
+		return nil, err
+	}
+	return s.toResp(ctx, inst)
+}
+
+// builtArtifact 一次构建的产物信息（编译结果 + 存储定位 + Manifest 依赖）。
+type builtArtifact struct {
+	Hash     string
+	Loc      pipeline.Locator
+	Manifest pipeline.Manifest
+}
+
+// persistBuild 把一次构建结果落库：快照行 → 产物行 → 实例指针 → 依赖记录。
+//
+// 顺序不可颠倒：presentation_artifacts 以复合外键引用 (snapshot_id, instance_id)，
+// 快照必须先存在；实例的 active/staged 指针又引用产物行。
+func (s *Service) persistBuild(ctx context.Context, inst *presentationmodel.InstanceEntity,
+	tpl *contenttemplatecontract.ResolvedTemplate, built builtArtifact, now time.Time) error {
+	snapID := uuid.NewString()
 	snap := &presentationmodel.SnapshotEntity{
-		ID: uuid.NewString(), PresentationInstanceID: inst.ID,
-		SourceTemplateVersionID: tpl.VersionID, SourceEntityRevision: 0,
+		ID: snapID, PresentationInstanceID: inst.ID,
+		SourceTemplateVersionID: tpl.VersionID, SourceEntityRevisionID: inst.EntityID,
 		Document: tpl.Document, CreatedAt: now,
 	}
-	if err = s.m.CreateSnapshot(ctx, snap); err != nil {
-		return nil, err
+	if err := s.m.CreateSnapshot(ctx, snap); err != nil {
+		return err
 	}
-	inst.CurrentSnapshotID = &snap.ID
-	inst.ArtifactHash = &hash
+	artifactID, err := s.recordArtifact(ctx, inst, snapID, built, now)
+	if err != nil {
+		return err
+	}
+	inst.CurrentSnapshotID = &snapID
+	inst.StagedSnapshotID = &snapID
+	inst.StagedArtifactID = &artifactID
+	inst.ActiveArtifactID = &artifactID
+	inst.Stale = false
+	inst.PublishedAt = &now
 	inst.UpdatedAt = now
-	if err = s.m.UpdateInstance(ctx, inst); err != nil {
-		return nil, err
+	if err = s.m.UpdateInstancePointers(ctx, inst); err != nil {
+		return err
 	}
-	return s.toResp(ctx, inst), nil
+	s.persistDependencies(ctx, inst.ID, artifactID, built.Manifest.Dependencies, now)
+	return nil
+}
+
+// recordArtifact 写产物行（同 hash 幂等复用，避免重建时产物行膨胀）。
+func (s *Service) recordArtifact(ctx context.Context, inst *presentationmodel.InstanceEntity,
+	snapID string, built builtArtifact, now time.Time) (artifactID string, err error) {
+	if existing, gerr := s.m.GetArtifactByHash(ctx, inst.ID, built.Hash); gerr == nil {
+		return existing.ID, nil
+	} else if !errors.Is(gerr, gorm.ErrRecordNotFound) {
+		return "", gerr
+	}
+	manifestJSON, err := json.Marshal(built.Manifest)
+	if err != nil {
+		return "", err
+	}
+	version, err := s.m.NextArtifactVersion(ctx, inst.ID)
+	if err != nil {
+		return "", err
+	}
+	e := &presentationmodel.ArtifactEntity{
+		ID: uuid.NewString(), PresentationInstanceID: inst.ID, SnapshotID: snapID,
+		Version: version, SourceHash: built.Manifest.SourceHash,
+		BuildInputManifest: manifestJSON, BuildInputHash: built.Manifest.BuildInputHash,
+		ArtifactProvider: "local", ArtifactKey: built.Loc.Key, ArtifactHash: built.Hash,
+		CompilerVersion: built.Manifest.CompilerVersion, RegistryVersion: built.Manifest.CompilerVersion,
+		Manifest: manifestJSON, PayloadState: "available", Note: "",
+		CreatedBy: systemCreator, CreatedAt: now,
+	}
+	if err = s.m.CreateArtifact(ctx, e); err != nil {
+		return "", err
+	}
+	return e.ID, nil
+}
+
+// persistDependencies 把本次产物的依赖集合写入 presentation_dependencies。
+//
+// 失败只记日志：依赖记录是失效追踪的投影，不是构建输入，不阻断发布主链。
+func (s *Service) persistDependencies(ctx context.Context, instanceID, artifactID string, deps []pipeline.Dependency, now time.Time) {
+	if strings.TrimSpace(instanceID) == "" || strings.TrimSpace(artifactID) == "" {
+		return
+	}
+	rows := make([]presentationmodel.DependencyEntity, 0, len(deps))
+	seen := map[[2]string]bool{}
+	for _, d := range deps {
+		kind, key := strings.TrimSpace(d.Kind), strings.TrimSpace(d.Key)
+		if kind == "" || key == "" {
+			continue
+		}
+		if seen[[2]string{kind, key}] {
+			continue
+		}
+		seen[[2]string{kind, key}] = true
+		row := presentationmodel.DependencyEntity{
+			PresentationID: instanceID, ArtifactID: artifactID,
+			DependencyKind: kind, DependencyKey: key, LastChecked: now,
+		}
+		if rev := strings.TrimSpace(d.Revision); rev != "" {
+			r := rev
+			row.Revision = &r
+		}
+		rows = append(rows, row)
+	}
+	if err := s.m.ReplaceDependencies(ctx, artifactID, rows); err != nil {
+		logger.Scene("dependency").With("presentation_id", instanceID).With("artifact_id", artifactID).
+			Error(err, "依赖记录写入失败（已降级，不影响构建结果）")
+	}
 }
 
 // Get 按 ID 查询。
@@ -152,7 +317,7 @@ func (s *Service) Get(ctx context.Context, req *presentationdto.GetReq) (res *pr
 		}
 		return nil, err
 	}
-	return s.toResp(ctx, inst), nil
+	return s.toResp(ctx, inst)
 }
 
 // List 按类型列表。
@@ -166,12 +331,16 @@ func (s *Service) List(ctx context.Context, req *presentationdto.ListReq) (list 
 	}
 	out := make([]*presentationdto.InstanceResp, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, s.toResp(ctx, r))
+		resp, rerr := s.toResp(ctx, r)
+		if rerr != nil {
+			return nil, rerr
+		}
+		out = append(out, resp)
 	}
 	return out, nil
 }
 
-// Delete 删除实例（级联删快照 + 反激活 URL）。
+// Delete 删除实例（级联删本模块从属行 + 反激活 URL）。
 func (s *Service) Delete(ctx context.Context, req *presentationdto.DeleteReq) (err error) {
 	if req == nil || req.ID == "" {
 		return errors.New(presentationenums.ErrInvalidParam)
@@ -192,49 +361,100 @@ func (s *Service) Delete(ctx context.Context, req *presentationdto.DeleteReq) (e
 }
 
 // buildAndPublish 编译模板 AST（经实体 resolver）→ 产物 → 激活 URL。
-func (s *Service) buildAndPublish(ctx context.Context, entityType, entityID, urlPath string, templateDoc []byte) (hash string, html []byte, err error) {
-	page, err := builder.ParsePage(templateDoc)
+func (s *Service) buildAndPublish(ctx context.Context, entityType, entityID, urlPath string,
+	tpl *contenttemplatecontract.ResolvedTemplate) (built builtArtifact, err error) {
+	page, err := builder.ParsePage(tpl.Document)
 	if err != nil {
-		return "", nil, err
+		return built, err
 	}
 	resolver, err := s.content.ResolverFor(ctx, entityType, entityID)
 	if err != nil {
-		return "", nil, err
+		return built, err
 	}
 	set, err := templates.NewEmbeddedComponentSet()
 	if err != nil {
-		return "", nil, err
+		return built, err
 	}
 	compiled, err := builder.Compile(page,
 		builder.WithContext(ctx),
 		builder.WithComponentSet(set),
 		builder.WithContentResolver(resolver))
 	if err != nil {
-		return "", nil, err
+		return built, err
 	}
 	doc, err := builder.RenderDocument(compiled)
 	if err != nil {
-		return "", nil, err
+		return built, err
 	}
-	html = []byte(doc)
+	html := []byte(doc)
+	sourceHash := pipeline.SHA256(tpl.Document)
 	artifact, err := pipeline.NewArtifact(html, &pipeline.Manifest{
 		ManifestSchemaVersion:     1,
 		PageDocumentSchemaVersion: 1,
 		SourceID:                  entityID,
-		SourceType:                "presentation",
+		SourceType:                pipeline.SourceTypePresentation,
 		CanonicalPath:             urlPath,
+		SourceHash:                sourceHash,
+		BuildInputHash:            sourceHash,
+		Dependencies:              presentationDependencies(entityType, entityID, tpl.TemplateID),
 	})
 	if err != nil {
-		return "", nil, err
+		return built, err
 	}
 	loc, err := s.store.PutArtifact(artifact)
 	if err != nil {
-		return "", nil, err
+		return built, err
 	}
 	if err = s.publication.Activate(urlPath, loc); err != nil {
-		return "", nil, err
+		return built, err
 	}
-	return artifact.Hash, html, nil
+	return builtArtifact{Hash: artifact.Hash, Loc: loc, Manifest: artifact.Manifest}, nil
+}
+
+// presentationDependencies 本次产物的依赖源集合。
+//
+//   - direct_content:{type}:{id}    —— 内容实体字段变化（PIPE-3 自动重建的触发键，
+//     与 content 模块 notifyContentChanged 声明的键逐字一致）；
+//   - content_template:{templateID} —— 模板版本变化（kind 见 pipeline.DepKindContentTemplate；
+//     当前无来源模块触发该键，登记用于审计与后续接入）。
+func presentationDependencies(entityType, entityID, templateID string) []pipeline.Dependency {
+	dep := pipeline.DirectContentKey(entityType, entityID)
+	out := []pipeline.Dependency{{Kind: dep.Kind, Key: dep.Key}}
+	if strings.TrimSpace(templateID) != "" {
+		out = append(out, pipeline.Dependency{
+			Kind: pipeline.DepKindContentTemplate,
+			Key:  "content_template:" + templateID,
+		})
+	}
+	return out
+}
+
+// resolveProjectID 解析实例所属工程：显式传入优先（校验存在），
+// 否则经 project 契约取唯一工程；无工程或多工程时要求显式指定。
+func (s *Service) resolveProjectID(ctx context.Context, explicit string) (string, error) {
+	if id := strings.TrimSpace(explicit); id != "" {
+		if s.project != nil {
+			ok, err := s.project.Exists(ctx, id)
+			if err != nil {
+				return "", err
+			}
+			if !ok {
+				return "", errors.New(presentationenums.ErrProjectNotFound)
+			}
+		}
+		return id, nil
+	}
+	if s.project == nil {
+		return "", errors.New(presentationenums.ErrProjectRequired)
+	}
+	list, err := s.project.List(ctx)
+	if err != nil {
+		return "", err
+	}
+	if len(list) != 1 {
+		return "", errors.New(presentationenums.ErrProjectRequired)
+	}
+	return list[0].ID, nil
 }
 
 // findByEntityID 按内容实体 ID 反查实例。
@@ -252,17 +472,26 @@ func (s *Service) findByEntityID(ctx context.Context, entityID string) (*present
 }
 
 // toResp 实体 → 响应。
-func (s *Service) toResp(ctx context.Context, e *presentationmodel.InstanceEntity) *presentationdto.InstanceResp {
-	resp := &presentationdto.InstanceResp{
-		ID: e.ID, EntityType: e.EntityType, EntityID: e.EntityID,
-		URLPath: e.URLPath, Status: e.Status,
+//
+// Status 不再是表列：由 active_artifact_id 指针推导（active / draft），
+// ArtifactHash 取活跃产物行的哈希。
+func (s *Service) toResp(ctx context.Context, e *presentationmodel.InstanceEntity) (resp *presentationdto.InstanceResp, err error) {
+	resp = &presentationdto.InstanceResp{
+		ID: e.ID, ProjectID: e.ProjectID, EntityType: e.EntityType, EntityID: e.EntityID,
+		URLPath: e.URLPath, TemplateID: e.TemplateID, Stale: e.Stale,
 		UpdatedAt: e.UpdatedAt.Format("2006-01-02 15:04"),
 	}
-	if e.ArtifactHash != nil {
-		resp.ArtifactHash = *e.ArtifactHash
+	if e.ActiveArtifactID != nil {
+		resp.Status = presentationenums.StatusActive
+		resp.ArtifactID = *e.ActiveArtifactID
+		if art, aerr := s.m.GetArtifact(ctx, *e.ActiveArtifactID); aerr == nil {
+			resp.ArtifactHash = art.ArtifactHash
+		}
+	} else {
+		resp.Status = presentationenums.StatusDraft
 	}
 	if e.CurrentSnapshotID != nil {
 		resp.SnapshotID = *e.CurrentSnapshotID
 	}
-	return resp
+	return resp, nil
 }

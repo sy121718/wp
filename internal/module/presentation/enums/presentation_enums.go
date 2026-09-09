@@ -14,4 +14,16 @@ const (
 	ErrNoTemplate    = "ErrNoTemplate"    // 该类型无可用内容模板
 	ErrEntityMissing = "ErrEntityMissing" // 内容实体不存在
 	ErrBuildFailed   = "ErrBuildFailed"   // 实例构建失败
+	// ErrProjectRequired 未指定工程且无法从唯一工程推导（0 个或多个工程）。
+	ErrProjectRequired = "ErrProjectRequired"
+	// ErrProjectNotFound 显式指定的工程不存在。
+	ErrProjectNotFound = "ErrProjectNotFound"
+)
+
+// 实例发布状态（由指针列推导，非表列）。
+const (
+	// StatusActive 已上线（active_artifact_id 非空）。
+	StatusActive = "active"
+	// StatusDraft 仅有草稿/未上线。
+	StatusDraft = "draft"
 )

@@ -1,4 +1,14 @@
-// Package presentationmodel 实现 presentation 模块两张表持久化（0-A2）。
+// Package presentationmodel 实现 presentation 模块四张表持久化（0-A2）。
+//
+// DDL 对齐（本轮修复）：实体列集合严格对齐生产 DDL
+// public/migrations/init_builder_schema.sql —— presentation_instances /
+// document_snapshots / presentation_artifacts / presentation_dependencies。
+//
+// 修复前 model 按 status / artifact_hash / source_entity_revision 读写，
+// 生产库没有这三列（真实列是 stale / staged_artifact_id / active_artifact_id
+// 与 source_entity_revision_id），CreateInstance/UpdateInstance 对真实库必然
+// 失败；测试靠 AutoMigrate 补列掩盖了缺陷（见 public/test/presentation/unit
+// 的列集合断言）。
 package presentationmodel
 
 import (
@@ -9,36 +19,96 @@ import (
 	"gorm.io/gorm"
 )
 
+const (
+	tableNamePresentationInstances    = "presentation_instances"
+	tableNameDocumentSnapshots        = "document_snapshots"
+	tableNamePresentationArtifacts    = "presentation_artifacts"
+	tableNamePresentationDependencies = "presentation_dependencies"
+)
+
 // InstanceEntity presentation_instances 表实体。
+//
+// 语义（对齐 DDL，非旧 model 的 status/artifact_hash）：
+//   - 发布状态由指针列承载：staged_artifact_id 暂存、active_artifact_id 已上线；
+//   - stale 表示「依赖已变更、待重建」；
+//   - project_id / template_id 为 NOT NULL 外键，装配时必须落库。
 type InstanceEntity struct {
-	ID                string    `gorm:"column:id;type:uuid;primaryKey"`
-	EntityType        string    `gorm:"column:entity_type;not null"`
-	EntityID          string    `gorm:"column:entity_id;type:uuid;not null"`
-	URLPath           string    `gorm:"column:url_path;not null"`
-	Status            string    `gorm:"column:status;not null"`
-	CurrentSnapshotID *string   `gorm:"column:current_snapshot_id;type:uuid"`
-	ArtifactHash      *string   `gorm:"column:artifact_hash"`
-	CreatedAt         time.Time `gorm:"column:created_at;not null"`
-	UpdatedAt         time.Time `gorm:"column:updated_at;not null"`
+	ID                string  `gorm:"column:id;type:uuid;primaryKey"`
+	ProjectID         string  `gorm:"column:project_id;type:uuid;not null"`
+	EntityType        string  `gorm:"column:entity_type;not null"`
+	EntityID          string  `gorm:"column:entity_id;type:uuid;not null"`
+	URLPath           string  `gorm:"column:url_path;not null"`
+	TemplateID        string  `gorm:"column:template_id;type:uuid;not null"`
+	CurrentSnapshotID *string `gorm:"column:current_snapshot_id;type:uuid"`
+	StagedSnapshotID  *string `gorm:"column:staged_snapshot_id;type:uuid"`
+	StagedArtifactID  *string `gorm:"column:staged_artifact_id;type:uuid"`
+	ActiveArtifactID  *string `gorm:"column:active_artifact_id;type:uuid"`
+	Stale             bool    `gorm:"column:stale;not null"`
+	// DeletedAt 保留列（本轮不启用软删语义，删除走聚合内级联硬删）。
+	DeletedAt   *time.Time `gorm:"column:deleted_at"`
+	PublishedAt *time.Time `gorm:"column:published_at"`
+	CreatedAt   time.Time  `gorm:"column:created_at;not null"`
+	UpdatedAt   time.Time  `gorm:"column:updated_at;not null"`
 }
 
 // TableName 表名。
-func (InstanceEntity) TableName() string { return "presentation_instances" }
+func (InstanceEntity) TableName() string { return tableNamePresentationInstances }
 
 // SnapshotEntity document_snapshots 表实体。
+//
+// SourceEntityRevisionID 对应真实列 source_entity_revision_id（uuid NOT NULL）：
+// 指向产生本快照的内容实体 ID（当前无独立的 revision 行表，落实体 ID）。
 type SnapshotEntity struct {
 	ID                      string          `gorm:"column:id;type:uuid;primaryKey"`
 	PresentationInstanceID  string          `gorm:"column:presentation_instance_id;type:uuid;not null"`
 	SourceTemplateVersionID string          `gorm:"column:source_template_version_id;type:uuid;not null"`
-	SourceEntityRevision    int64           `gorm:"column:source_entity_revision;not null"`
+	SourceEntityRevisionID  string          `gorm:"column:source_entity_revision_id;type:uuid;not null"`
 	Document                json.RawMessage `gorm:"column:document;type:jsonb;not null"`
 	CreatedAt               time.Time       `gorm:"column:created_at;not null"`
 }
 
 // TableName 表名。
-func (SnapshotEntity) TableName() string { return "document_snapshots" }
+func (SnapshotEntity) TableName() string { return tableNameDocumentSnapshots }
 
-// Model 两张表数据访问（Repository）。
+// ArtifactEntity presentation_artifacts 表实体（自动发布实例的产物元数据）。
+type ArtifactEntity struct {
+	ID                     string          `gorm:"column:id;type:uuid;primaryKey"`
+	PresentationInstanceID string          `gorm:"column:presentation_instance_id;type:uuid;not null"`
+	SnapshotID             string          `gorm:"column:snapshot_id;type:uuid;not null"`
+	Version                int64           `gorm:"column:version;not null"`
+	SourceHash             string          `gorm:"column:source_hash;not null"`
+	BuildInputManifest     json.RawMessage `gorm:"column:build_input_manifest;type:jsonb;not null"`
+	BuildInputHash         string          `gorm:"column:build_input_hash;not null"`
+	ArtifactProvider       string          `gorm:"column:artifact_provider;not null"`
+	ArtifactKey            string          `gorm:"column:artifact_key;not null"`
+	ArtifactHash           string          `gorm:"column:artifact_hash;not null"`
+	CompilerVersion        string          `gorm:"column:compiler_version;not null"`
+	RegistryVersion        string          `gorm:"column:registry_version;not null"`
+	Manifest               json.RawMessage `gorm:"column:manifest;type:jsonb;not null"`
+	PayloadState           string          `gorm:"column:payload_state;not null"`
+	PayloadDeletedAt       *time.Time      `gorm:"column:payload_deleted_at"`
+	Note                   string          `gorm:"column:note;not null"`
+	CreatedBy              string          `gorm:"column:created_by;type:uuid;not null"`
+	CreatedAt              time.Time       `gorm:"column:created_at;not null"`
+}
+
+// TableName 表名。
+func (ArtifactEntity) TableName() string { return tableNamePresentationArtifacts }
+
+// DependencyEntity presentation_dependencies 行（产物声明的构建期依赖）。
+type DependencyEntity struct {
+	PresentationID string    `gorm:"column:presentation_id;type:uuid;primaryKey"`
+	ArtifactID     string    `gorm:"column:artifact_id;type:uuid;primaryKey"`
+	DependencyKind string    `gorm:"column:dependency_kind;primaryKey"`
+	DependencyKey  string    `gorm:"column:dependency_key;primaryKey"`
+	Revision       *string   `gorm:"column:revision"`
+	LastChecked    time.Time `gorm:"column:last_checked;not null"`
+}
+
+// TableName 表名。
+func (DependencyEntity) TableName() string { return tableNamePresentationDependencies }
+
+// Model 四张表数据访问（Repository）。
 type Model struct {
 	db *gorm.DB
 }
@@ -54,6 +124,21 @@ func (m *Model) InstanceDB(ctx context.Context) *gorm.DB {
 // SnapshotDB 绑定快照表。
 func (m *Model) SnapshotDB(ctx context.Context) *gorm.DB {
 	return m.db.WithContext(ctx).Model(&SnapshotEntity{})
+}
+
+// ArtifactDB 绑定产物表。
+func (m *Model) ArtifactDB(ctx context.Context) *gorm.DB {
+	return m.db.WithContext(ctx).Model(&ArtifactEntity{})
+}
+
+// DependencyDB 绑定依赖表。
+func (m *Model) DependencyDB(ctx context.Context) *gorm.DB {
+	return m.db.WithContext(ctx).Model(&DependencyEntity{})
+}
+
+// Transaction 透传事务（service 编排聚合内原子写入）。
+func (m *Model) Transaction(ctx context.Context, fn func(tx *gorm.DB) error) error {
+	return m.db.WithContext(ctx).Transaction(fn)
 }
 
 // CreateInstance 新增实例。
@@ -91,22 +176,153 @@ func (m *Model) ListInstances(ctx context.Context, entityType string) (list []*I
 	return list, err
 }
 
-// UpdateInstance 更新实例指针（snapshot_id + artifact_hash + status）。
-func (m *Model) UpdateInstance(ctx context.Context, e *InstanceEntity) error {
+// UpdateInstancePointers 更新实例指针（快照/产物/stale/发布时间）。
+//
+// 显式列白名单而非 Save：实例行的 project_id/template_id/entity_* 是不可变
+// 身份列，重建只允许改指针与状态，防止整体覆盖时误改身份。
+func (m *Model) UpdateInstancePointers(ctx context.Context, e *InstanceEntity) error {
 	return m.InstanceDB(ctx).Where("id = ?", e.ID).Updates(map[string]any{
 		"current_snapshot_id": e.CurrentSnapshotID,
-		"artifact_hash":       e.ArtifactHash,
-		"status":              e.Status,
+		"staged_snapshot_id":  e.StagedSnapshotID,
+		"staged_artifact_id":  e.StagedArtifactID,
+		"active_artifact_id":  e.ActiveArtifactID,
+		"stale":               e.Stale,
+		"published_at":        e.PublishedAt,
 		"updated_at":          e.UpdatedAt,
 	}).Error
 }
 
-// DeleteInstance 删除实例。
+// MarkStale 批量标记实例待重建（依赖失效后的落库动作）。
+func (m *Model) MarkStale(ctx context.Context, ids []string, at time.Time) (n int64, err error) {
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	res := m.InstanceDB(ctx).Where("id IN ?", ids).Updates(map[string]any{
+		"stale": true, "updated_at": at,
+	})
+	return res.RowsAffected, res.Error
+}
+
+// DeleteInstance 删除实例及其聚合内从属行（解引用 → 依赖 → 产物 → 快照 → 实例）。
+//
+// 必须级联：presentation_artifacts / document_snapshots / presentation_dependencies
+// 均以复合外键引用实例行且无 ON DELETE CASCADE，直接 DELETE 实例会被外键拒绝。
+// 四张表同属本模块，属 model 层允许的「聚合内原子组合」。
+//
+// 必须先解引用：实例的 staged/active_artifact_id 与 current/staged_snapshot_id
+// 反向引用产物与快照行，形成循环外键（presentation_instances_staged_artifact_fk
+// 等），不清空指针就删产物会被这些外键挡住。
 func (m *Model) DeleteInstance(ctx context.Context, id string) error {
-	return m.db.WithContext(ctx).Where("id = ?", id).Delete(&InstanceEntity{}).Error
+	return m.Transaction(ctx, func(tx *gorm.DB) error {
+		if err := tx.Model(&InstanceEntity{}).Where("id = ?", id).Updates(map[string]any{
+			"current_snapshot_id": nil,
+			"staged_snapshot_id":  nil,
+			"staged_artifact_id":  nil,
+			"active_artifact_id":  nil,
+		}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("presentation_id = ?", id).Delete(&DependencyEntity{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("presentation_instance_id = ?", id).Delete(&ArtifactEntity{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("presentation_instance_id = ?", id).Delete(&SnapshotEntity{}).Error; err != nil {
+			return err
+		}
+		return tx.Where("id = ?", id).Delete(&InstanceEntity{}).Error
+	})
 }
 
 // CreateSnapshot 写快照。
 func (m *Model) CreateSnapshot(ctx context.Context, e *SnapshotEntity) error {
 	return m.SnapshotDB(ctx).Create(e).Error
+}
+
+// NextArtifactVersion 取该实例下一个产物版本号（version 在实例内唯一）。
+func (m *Model) NextArtifactVersion(ctx context.Context, instanceID string) (v int64, err error) {
+	var maxVersion *int64
+	if err = m.db.WithContext(ctx).Model(&ArtifactEntity{}).
+		Where("presentation_instance_id = ?", instanceID).
+		Select("MAX(version)").Scan(&maxVersion).Error; err != nil {
+		return 0, err
+	}
+	if maxVersion == nil {
+		return 1, nil
+	}
+	return *maxVersion + 1, nil
+}
+
+// CreateArtifact 写产物行。
+func (m *Model) CreateArtifact(ctx context.Context, e *ArtifactEntity) error {
+	return m.ArtifactDB(ctx).Create(e).Error
+}
+
+// GetArtifactByHash 按 (实例, 产物哈希) 查询（重建幂等：同字节不新增行）。
+func (m *Model) GetArtifactByHash(ctx context.Context, instanceID, hash string) (e *ArtifactEntity, err error) {
+	var row ArtifactEntity
+	if err = m.db.WithContext(ctx).
+		Where("presentation_instance_id = ? AND artifact_hash = ?", instanceID, hash).
+		First(&row).Error; err != nil {
+		return nil, err
+	}
+	return &row, nil
+}
+
+// GetArtifact 按产物 ID 查询。
+func (m *Model) GetArtifact(ctx context.Context, id string) (e *ArtifactEntity, err error) {
+	var row ArtifactEntity
+	if err = m.db.WithContext(ctx).Where("id = ?", id).First(&row).Error; err != nil {
+		return nil, err
+	}
+	return &row, nil
+}
+
+// ReplaceDependencies 全量替换某产物的依赖记录（同一事务内 delete + insert）。
+func (m *Model) ReplaceDependencies(ctx context.Context, artifactID string, rows []DependencyEntity) (err error) {
+	return m.Transaction(ctx, func(tx *gorm.DB) error {
+		if derr := tx.Where("artifact_id = ?", artifactID).Delete(&DependencyEntity{}).Error; derr != nil {
+			return derr
+		}
+		if len(rows) == 0 {
+			return nil
+		}
+		return tx.CreateInBatches(rows, 200).Error
+	})
+}
+
+// ListDependencies 读取某产物的全部依赖记录（测试与诊断用，按 kind,key 排序）。
+func (m *Model) ListDependencies(ctx context.Context, artifactID string) (list []DependencyEntity, err error) {
+	err = m.DependencyDB(ctx).Where("artifact_id = ?", artifactID).
+		Order("dependency_kind, dependency_key").Find(&list).Error
+	return list, err
+}
+
+// MarkStaleByDependency 按依赖源 (kind,key) 精确标记受影响实例待重建，
+// 返回受影响的实例 ID（去重、升序）。
+//
+// 命中条件：该实例的**活跃或暂存**产物在依赖表里声明了这条依赖
+// （与 page 侧同一口径，见 page/model/page_dependency_model.go）。
+func (m *Model) MarkStaleByDependency(ctx context.Context, kind, key string, at time.Time) (ids []string, err error) {
+	if kind == "" || key == "" {
+		return nil, nil
+	}
+	err = m.db.WithContext(ctx).Raw(`
+		WITH affected AS (
+			SELECT DISTINCT d.presentation_id AS presentation_id
+			FROM presentation_dependencies d
+			JOIN presentation_instances p ON p.id = d.presentation_id
+			WHERE d.dependency_kind = ?
+			  AND d.dependency_key = ?
+			  AND p.deleted_at IS NULL
+			  AND d.artifact_id IN (p.active_artifact_id, p.staged_artifact_id)
+		)
+		UPDATE presentation_instances SET stale = true, updated_at = ?
+		WHERE deleted_at IS NULL AND id IN (SELECT presentation_id FROM affected)
+		RETURNING id`, kind, key, at).Scan(&ids).Error
+	if err != nil {
+		return nil, err
+	}
+	return ids, nil
 }
