@@ -18,12 +18,18 @@ const (
 )
 
 // PageArtifactEntity 对应 page_artifacts 表：构建产物的数据库元数据投影。
-// UNIQUE(page_id, version) 对齐生产 DDL（init_builder_schema.sql:238），
-// AutoMigrate 亦生成该约束——同版本产物恰一行，替换语义的 DB 层兜底。
+// UNIQUE(page_id, version, lang) 对齐生产 DDL（init_builder_schema.sql:238 + 迁移
+// 061-page-artifacts-lang）：同一草稿版本下「每个语言」各恰一行，同页多语言产物
+// 并存互不覆盖；同版本同语言重构建仍为替换语义的 DB 层兜底。
+// 索引名 uk_page_artifacts_page_version_lang 与迁移 061 保持一致，AutoMigrate 同名同形。
+//
+// Lang 是唯一键第三维：空值会让唯一键退化为 (page_id, version) 互相覆盖，
+// 因此 service 落库前必须归一化为站点默认语言。
 type PageArtifactEntity struct {
 	ID                        string          `gorm:"column:id;type:uuid;primaryKey"`
-	PageID                    string          `gorm:"column:page_id;type:uuid;not null;uniqueIndex:uk_page_version"`
-	Version                   int64           `gorm:"column:version;not null;uniqueIndex:uk_page_version"`
+	PageID                    string          `gorm:"column:page_id;type:uuid;not null;uniqueIndex:uk_page_artifacts_page_version_lang"`
+	Version                   int64           `gorm:"column:version;not null;uniqueIndex:uk_page_artifacts_page_version_lang"`
+	Lang                      string          `gorm:"column:lang;type:text;not null;default:'zh-CN';uniqueIndex:uk_page_artifacts_page_version_lang"`
 	SourceDocument            json.RawMessage `gorm:"column:source_document;type:jsonb;not null"`
 	PageDocumentSchemaVersion int             `gorm:"column:page_document_schema_version;not null"`
 	SourceHash                string          `gorm:"column:source_hash;type:text;not null"`
@@ -83,6 +89,10 @@ func (m *Model) Transaction(ctx context.Context, fn func(tx *gorm.DB) error) err
 }
 
 // GetByHash 按 (pageID, hash) 查询产物记录。
+//
+// 不带 lang 维度：产物 hash 覆盖 Manifest（含 lang），同 hash 必同语言
+// （docs/06-D-site-i18n.md §15.4），因此 (page_id, hash) 已足以定位唯一一行。
+// 回滚等只持有 hash 的调用方因此无需知道语言。
 func (m *Model) GetByHash(ctx context.Context, pageID, hash string) (e *PageArtifactEntity, err error) {
 	e = &PageArtifactEntity{}
 	if err = m.DB(ctx).Where("page_id = ? AND artifact_hash = ?", pageID, hash).First(e).Error; err != nil {
@@ -91,12 +101,13 @@ func (m *Model) GetByHash(ctx context.Context, pageID, hash string) (e *PageArti
 	return e, nil
 }
 
-// GetByPageVersion 按 (pageID, version) 查询产物记录。
-// page_artifacts 以 (page_id, version) 唯一：同一草稿版本重构建（编译器升级
-// 导致 hash 变化）时应替换该行产物指针，而非插入新行。
-func (m *Model) GetByPageVersion(ctx context.Context, pageID string, version int64) (e *PageArtifactEntity, err error) {
+// GetByPageVersion 按 (pageID, version, lang) 查询产物记录。
+// page_artifacts 以 (page_id, version, lang) 唯一：同页多语言各占一行、互不覆盖；
+// 同一语言同一草稿版本重构建（编译器升级导致 hash 变化）时替换该行产物指针。
+// lang 由调用方传入（不写死业务条件）；空 lang 匹配不到任何行，service 必须先归一化。
+func (m *Model) GetByPageVersion(ctx context.Context, pageID string, version int64, lang string) (e *PageArtifactEntity, err error) {
 	e = &PageArtifactEntity{}
-	if err = m.DB(ctx).Where("page_id = ? AND version = ?", pageID, version).First(e).Error; err != nil {
+	if err = m.DB(ctx).Where("page_id = ? AND version = ? AND lang = ?", pageID, version, lang).First(e).Error; err != nil {
 		return nil, err
 	}
 	return e, nil
@@ -150,8 +161,10 @@ func (m *Model) GetByID(ctx context.Context, id string) (e *PageArtifactEntity, 
 	return e, nil
 }
 
-// ListByPage 按版本倒序读取页面的全部产物记录。
+// ListByPage 按版本倒序读取页面的全部产物记录（跨语言，含每个语言的各版本行）。
+// 有意不按语言过滤：这是「本页产物全景」视图，语言维度由每行 Lang 自带；
+// 需要单语言切片时按 GetByPageVersion 或调用方自行过滤。
 func (m *Model) ListByPage(ctx context.Context, pageID string) (list []PageArtifactEntity, err error) {
-	err = m.DB(ctx).Where("page_id = ?", pageID).Order("version DESC").Find(&list).Error
+	err = m.DB(ctx).Where("page_id = ?", pageID).Order("version DESC, lang ASC").Find(&list).Error
 	return list, err
 }

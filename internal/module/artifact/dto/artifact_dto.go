@@ -6,10 +6,14 @@ import (
 )
 
 // RecordReq 归档一条已落盘产物的元数据；闭包对象由服务端从 manifest 提取。
+//
+// Lang 是产物行唯一键 (pageId, version, lang) 的第三维（多语言 P3）：
+// 空 = 站点默认语言（i18n.default_lang），service 落库前统一归一化，绝不留空。
 type RecordReq struct {
 	ArtifactID       string          `json:"artifactId" binding:"required"`
 	PageID           string          `json:"pageId" binding:"required"`
 	Version          int64           `json:"version" binding:"required,min=1"`
+	Lang             string          `json:"lang"`
 	SourceDocument   json.RawMessage `json:"sourceDocument" binding:"required"`
 	SchemaVersion    int             `json:"schemaVersion" binding:"required,min=1"`
 	SourceHash       string          `json:"sourceHash" binding:"required"`
@@ -24,6 +28,7 @@ type RecordReq struct {
 }
 
 // DetailReq 按 pageId + hash 查询产物。
+// 不带 lang：产物 hash 覆盖 Manifest（含 lang），同 hash 必同语言。
 type DetailReq struct {
 	PageID string `form:"pageId" json:"pageId" binding:"required"`
 	Hash   string `form:"hash" json:"hash" binding:"required"`
@@ -39,6 +44,7 @@ type ArtifactResp struct {
 	ID               string          `json:"id"`
 	PageID           string          `json:"pageId"`
 	Version          int64           `json:"version"`
+	Lang             string          `json:"lang"`
 	SourceDocument   json.RawMessage `json:"sourceDocument,omitempty"`
 	SourceHash       string          `json:"sourceHash"`
 	BuildInputHash   string          `json:"buildInputHash"`

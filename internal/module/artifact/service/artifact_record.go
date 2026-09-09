@@ -10,11 +10,25 @@ import (
 	artifactdto "go_wp/internal/module/artifact/dto"
 	artifactenums "go_wp/internal/module/artifact/enums"
 	artifactmodel "go_wp/internal/module/artifact/model"
+	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
+
+// normalizeLang 归一化产物语言：空 → 站点默认语言（i18n.default_lang，未初始化回退 zh-CN）。
+//
+// 必要性：lang 是 page_artifacts 唯一键 (page_id, version, lang) 的第三维，
+// 落库为空会让唯一键退化成 (page_id, version)，同页多语言重新互相覆盖
+// （docs/06-D-site-i18n.md §15.5 第 1 条）。调用方（page 装配层）通常已显式传语言，
+// 本函数是契约层直调与历史调用方的兜底，保证任何路径都不会写入空 lang。
+func normalizeLang(lang string) string {
+	if l := strings.TrimSpace(lang); l != "" {
+		return l
+	}
+	return i18n.GetDefaultLang()
+}
 
 // validateRecordReq 必填/格式校验（DTO binding 仅 HTTP 层生效，契约层直调必须自校验，
 // 否则空 ArtifactHash/PageID/Version=0 直接落库抛 PG 原始错误）。
@@ -64,6 +78,7 @@ func (s *Service) Record(ctx context.Context, req *artifactdto.RecordReq) (res *
 		ID:                        req.ArtifactID,
 		PageID:                    req.PageID,
 		Version:                   req.Version,
+		Lang:                      normalizeLang(req.Lang),
 		SourceDocument:            req.SourceDocument,
 		PageDocumentSchemaVersion: req.SchemaVersion,
 		SourceHash:                req.SourceHash,
@@ -152,20 +167,24 @@ func (s *Service) findByHash(ctx context.Context, pageID, hash string) (e *artif
 	return e, true, nil
 }
 
-// EnsureRecord 幂等归档：同 (pageID, hash) 直接返回；同 (pageID, version)
+// EnsureRecord 幂等归档：同 (pageID, hash) 直接返回；同 (pageID, version, lang)
 // 重构建（编译器升级导致 hash 变化）时替换该行产物指针与对象闭包；
-// 否则新建。确定性构建模型下同版本产物的唯一正确语义。
+// 否则新建。确定性构建模型下「同版本同语言」产物的唯一正确语义。
+//
+// 语言维度（多语言 P3）：替换范围严格限定在同一语言内 —— 同页不同语言各占一行，
+// 构建 en-US 绝不触碰 zh-CN 的行，路由 artifact_id 因此始终指向正确语言的产物。
 func (s *Service) EnsureRecord(ctx context.Context, req *artifactdto.RecordReq) (res *artifactdto.ArtifactResp, err error) {
 	if err = validateRecordReq(req); err != nil {
 		return nil, err
 	}
+	lang := normalizeLang(req.Lang)
 	if e, exists, err := s.findByHash(ctx, req.PageID, req.ArtifactHash); err != nil {
 		return nil, err
 	} else if exists {
 		return toResp(e), nil
 	}
-	// 同版本已有记录：替换产物内容（UNIQUE(page_id, version) 允许恰好一行）。
-	if e, err := s.model.GetByPageVersion(ctx, req.PageID, req.Version); err == nil {
+	// 同版本同语言已有记录：替换产物内容（UNIQUE(page_id, version, lang) 允许恰好一行）。
+	if e, err := s.model.GetByPageVersion(ctx, req.PageID, req.Version, lang); err == nil {
 		var parsedManifest struct {
 			Files map[string]string `json:"files"`
 		}
@@ -178,6 +197,7 @@ func (s *Service) EnsureRecord(ctx context.Context, req *artifactdto.RecordReq) 
 			ID:                        e.ID,
 			PageID:                    req.PageID,
 			Version:                   req.Version,
+			Lang:                      lang,
 			SourceDocument:            req.SourceDocument,
 			PageDocumentSchemaVersion: req.SchemaVersion,
 			SourceHash:                req.SourceHash,
@@ -283,6 +303,7 @@ func toResp(e *artifactmodel.PageArtifactEntity) *artifactdto.ArtifactResp {
 		ID:               e.ID,
 		PageID:           e.PageID,
 		Version:          e.Version,
+		Lang:             e.Lang,
 		SourceDocument:   e.SourceDocument,
 		SourceHash:       e.SourceHash,
 		BuildInputHash:   e.BuildInputHash,
