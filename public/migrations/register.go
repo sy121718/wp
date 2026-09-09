@@ -123,6 +123,9 @@ var projectLocalesSQL string
 //go:embed 065_i18n_seed_language_switcher.sql
 var i18nSeedLanguageSwitcherSQL string
 
+//go:embed 066_sys_translation.sql
+var sysTranslationSQL string
+
 func init() {
 	register(Migration{
 		Version:   "001-init-schema",
@@ -444,5 +447,15 @@ func init() {
 		TableName:    "sys_i18n",
 		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 1 THEN 1 ELSE 0 END FROM sys_i18n WHERE lang = 'zh-CN' AND item_key LIKE 'site.component.languages.%'",
 		SQL:          i18nSeedLanguageSwitcherSQL,
+	})
+
+	// 066：sys_translation 内容寻址翻译表（多语言 P5a，docs/06-D §7.3）。
+	// 与 sys_i18n 分工见决策 F17：本表跟内容编辑走（构建器内联文本 + CMS 字段），
+	// 按 (source_hash, context, lang) 寻址，改原文即自动失效。
+	// 新表，默认「表存在即跳过」检查即可（CheckSQL 留空 = 按表存在判定）。
+	register(Migration{
+		Version:   "066-sys-translation",
+		TableName: "sys_translation",
+		SQL:       sysTranslationSQL,
 	})
 }
