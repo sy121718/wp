@@ -50,7 +50,25 @@ func (s *Service) assembleCompile(ctx context.Context, in pipeline.BuildInput) (
 		}
 		return nil, err
 	}
+	s.syncMediaRefs(ctx, in.PageID, currentPath, html)
 	return html, nil
+}
+
+// syncMediaRefs 构建期写入媒体引用缓存（02-B 第 4 能力，docs/02-B §2 引用保护）。
+//
+// 时机：**构建期**，不是每次编辑——引用关系是产物事实（文档里写的 URL 未必都进产物，
+// 条件渲染/块内联/CMS 集合展开后只有编译结果才权威），且构建期天然幂等
+// （同一文档重复构建写入同一集合，差集为空零写入）。
+//
+// 失败一律降级：引用缓存是保护性元数据，不是构建输入，不阻断发布主链。
+// 标题参数用页面逻辑路径（pages 表无标题列，标题在文档内），仅用于删除拦截提示。
+func (s *Service) syncMediaRefs(ctx context.Context, pageID, pagePath string, html []byte) {
+	if s.media == nil || strings.TrimSpace(pageID) == "" || len(html) == 0 {
+		return
+	}
+	if _, err := s.media.SyncReferencesFromHTML(ctx, "page", pageID, pagePath, string(html)); err != nil {
+		logger.Scene("build").With("page_id", pageID).Warn("媒体引用缓存同步失败（已降级，不阻断构建）")
+	}
 }
 
 // compileDocument 装配编译已解析的页面文档为完整 HTML 字节：

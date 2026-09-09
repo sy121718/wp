@@ -29,6 +29,10 @@ func SetupMediaRoutes(rg *gin.RouterGroup, db *gorm.DB) mediacontract.MediaServi
 		g.GET("/detail", handle.Detail)
 		g.POST("/delete", handle.Delete)
 		g.POST("/update", handle.UpdateAttachment)
+		// 媒体中心（02-B，迁移 067）：换图（URL 不变 + generation+1）与引用查询。
+		// refs 写入侧不暴露 HTTP：只由构建期经 contract.SyncReferencesFromHTML 调用。
+		g.POST("/replace", handle.Replace)
+		g.GET("/references", handle.References)
 		g.GET("/category/tree", handle.CategoryTree)
 		g.POST("/category/create", handle.CategoryCreate)
 		g.POST("/category/update", handle.CategoryUpdate)

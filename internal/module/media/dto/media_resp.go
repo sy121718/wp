@@ -13,6 +13,10 @@ type AttachmentResp struct {
 	MD5         string  `json:"md5"`
 	ExtraInfo   string  `json:"extra_info"`
 	CreateTime  string  `json:"create_time"`
+	// Generation 换图代数（迁移 067）：初始 1，每次换图 +1。
+	Generation int `json:"generation"`
+	// Duplicate 本次上传命中 md5+类型去重、复用已有附件（URL/变体为既有记录的）。
+	Duplicate bool `json:"duplicate,omitempty"`
 	// Variants 图片变体列表（仅图片类附件有值；非图片为空）。
 	Variants []VariantResp `json:"variants,omitempty"`
 }

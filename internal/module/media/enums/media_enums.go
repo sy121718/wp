@@ -10,6 +10,10 @@ const (
 	ErrDownloadFailed          = "ErrDownloadFailed"          // 打包下载失败
 	ErrDownloadEmpty           = "ErrDownloadEmpty"           // 请选择要下载的附件
 	ErrDownloadStorageNotLocal = "ErrDownloadStorageNotLocal" // 仅本地存储支持打包下载
+	// 媒体中心（02-B，迁移 067）：稳定引用 / 换图 / 引用保护。
+	ErrReplaceFailed        = "ErrReplaceFailed"        // 换图失败
+	ErrReplaceExtMismatch   = "ErrReplaceExtMismatch"   // 换图需保持扩展名一致（URL 稳定引用的前提）
+	ErrAttachmentReferenced = "ErrAttachmentReferenced" // 附件被页面引用，删除被拒绝
 )
 
 const (

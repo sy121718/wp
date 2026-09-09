@@ -21,23 +21,25 @@ const (
 
 // AttachmentEntity 对应 sys_attachment 表。
 type AttachmentEntity struct {
-	ID          uint64     `gorm:"column:id;primaryKey"`
-	CategoryID  *uint64    `gorm:"column:category_id"`
-	FileName    string     `gorm:"column:file_name;type:varchar(255)"`
-	FilePath    string     `gorm:"column:file_path;type:varchar(500)"`
-	FileSize    int64      `gorm:"column:file_size"`
-	FileType    string     `gorm:"column:file_type;type:varchar(50)"`
-	MimeType    *string    `gorm:"column:mime_type;type:varchar(100)"`
-	StorageType string     `gorm:"column:storage_type;type:varchar(50);default:local"`
-	StoragePath *string    `gorm:"column:storage_path;type:varchar(500)"`
-	URL         *string    `gorm:"column:url;type:varchar(500)"`
-	MD5         *string    `gorm:"column:md5;type:varchar(32)"`
-	ExtraInfo   *string    `gorm:"column:extra_info;type:json"`
-	Status      int        `gorm:"column:status;default:1"`
-	CreateBy    *uint64    `gorm:"column:create_by"`
-	UpdateBy    *uint64    `gorm:"column:update_by"`
-	CreateTime  time.Time  `gorm:"column:create_time;autoCreateTime"`
-	UpdateTime  *time.Time `gorm:"column:update_time"`
+	ID          uint64  `gorm:"column:id;primaryKey"`
+	CategoryID  *uint64 `gorm:"column:category_id"`
+	FileName    string  `gorm:"column:file_name;type:varchar(255)"`
+	FilePath    string  `gorm:"column:file_path;type:varchar(500)"`
+	FileSize    int64   `gorm:"column:file_size"`
+	FileType    string  `gorm:"column:file_type;type:varchar(50)"`
+	MimeType    *string `gorm:"column:mime_type;type:varchar(100)"`
+	StorageType string  `gorm:"column:storage_type;type:varchar(50);default:local"`
+	StoragePath *string `gorm:"column:storage_path;type:varchar(500)"`
+	URL         *string `gorm:"column:url;type:varchar(500)"`
+	MD5         *string `gorm:"column:md5;type:varchar(32)"`
+	ExtraInfo   *string `gorm:"column:extra_info;type:jsonb"`
+	// Generation 换图代数（迁移 067）：初始 1，每次换图 +1，供依赖记录/构建期重建判定。
+	Generation int        `gorm:"column:generation;not null;default:1"`
+	Status     int        `gorm:"column:status;default:1"`
+	CreateBy   *uint64    `gorm:"column:create_by"`
+	UpdateBy   *uint64    `gorm:"column:update_by"`
+	CreateTime time.Time  `gorm:"column:create_time;autoCreateTime"`
+	UpdateTime *time.Time `gorm:"column:update_time"`
 }
 
 func (AttachmentEntity) TableName() string { return tableNameSysAttachment }
@@ -118,6 +120,39 @@ func (m *AttachmentModel) GetByFilePath(ctx context.Context, filePath string) (*
 		return nil, err
 	}
 	return &e, nil
+}
+
+// GetByMD5AndType 按「md5 + 文件类型」查询启用中的附件（上传去重键）。
+// 同一内容多条记录时取最早一条（id ASC），保证去重命中结果稳定。
+func (m *AttachmentModel) GetByMD5AndType(ctx context.Context, md5 string, fileType string) (*AttachmentEntity, error) {
+	var e AttachmentEntity
+	err := m.attrDB(ctx).
+		Where("md5 = ? AND file_type = ? AND status = ?", md5, fileType, AttachmentStatusEnabled).
+		Order("id ASC").
+		First(&e).Error
+	if err != nil {
+		return nil, err
+	}
+	return &e, nil
+}
+
+// IncrementGeneration 换图后把 generation 原子 +1，返回新代数。
+// 单条 UPDATE ... RETURNING，避免「读-改-写」在并发换图下丢更新。
+func (m *AttachmentModel) IncrementGeneration(ctx context.Context, id uint64) (int, error) {
+	var gen int
+	err := m.db.WithContext(ctx).
+		Raw("UPDATE "+tableNameSysAttachment+" SET generation = generation + 1 WHERE id = ? RETURNING generation", id).
+		Scan(&gen).Error
+	if err != nil {
+		return 0, err
+	}
+	return gen, nil
+}
+
+// HardDelete 物理删除附件记录（上传两阶段登记失败时的回滚动作；
+// 常规删除走 Delete 软删，见 service 的引用保护）。
+func (m *AttachmentModel) HardDelete(ctx context.Context, id uint64) error {
+	return m.attrDB(ctx).Where("id = ?", id).Delete(&AttachmentEntity{}).Error
 }
 
 // List 分页查询附件，支持按文件类型和分类过滤。

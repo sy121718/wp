@@ -100,6 +100,42 @@ func (h *Handle) Delete(c *gin.Context) {
 	response.SuccessWithMessage(c, mediaenums.MsgSuccess, nil)
 }
 
+// Replace 换图（POST /api/media/replace，multipart：id + file）。
+// 保持 /storage/<id>.<ext> 不变、内容替换、generation+1；被引用不影响换图（只影响删除）。
+func (h *Handle) Replace(c *gin.Context) {
+	id, err := strconv.ParseUint(strings.TrimSpace(c.PostForm("id")), 10, 64)
+	if err != nil || id == 0 {
+		response.ParamError(c, mediaenums.MsgBadRequest)
+		return
+	}
+	file, err := c.FormFile("file")
+	if err != nil {
+		response.ParamError(c, mediaenums.ErrUploadEmpty)
+		return
+	}
+	att, err := h.svc.Replace(c.Request.Context(), id, file)
+	if err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	response.SuccessWithMessage(c, mediaenums.MsgSuccess, att)
+}
+
+// References 查询附件引用来源（GET /api/media/references?id=1）。
+func (h *Handle) References(c *gin.Context) {
+	id, err := strconv.ParseUint(strings.TrimSpace(c.Query("id")), 10, 64)
+	if err != nil || id == 0 {
+		response.ParamError(c, mediaenums.MsgBadRequest)
+		return
+	}
+	refs, err := h.svc.References(c.Request.Context(), id)
+	if err != nil {
+		response.ErrorWithMessage(c, http.StatusNotFound, err.Error())
+		return
+	}
+	response.Success(c, refs)
+}
+
 // CategoryTree 获取文件分类树。
 func (h *Handle) CategoryTree(c *gin.Context) {
 	tree, err := h.svc.CategoryTree(c.Request.Context())

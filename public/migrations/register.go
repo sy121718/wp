@@ -126,6 +126,9 @@ var i18nSeedLanguageSwitcherSQL string
 //go:embed 066_sys_translation.sql
 var sysTranslationSQL string
 
+//go:embed 067_media_center.sql
+var mediaCenterSQL string
+
 func init() {
 	register(Migration{
 		Version:   "001-init-schema",
@@ -457,5 +460,16 @@ func init() {
 		Version:   "066-sys-translation",
 		TableName: "sys_translation",
 		SQL:       sysTranslationSQL,
+	})
+
+	// 067：媒体中心（02-B）在既有 sys_attachment 上落地四能力（不新建 media_* 三表）：
+	// extra_info json→jsonb（含 NULL/脏数据兜底）、GIN 索引、generation 列、md5 去重索引。
+	// sys_attachment 由 001-init-schema 创建，默认「表存在即跳过」必然误跳过，
+	// 故按 generation 列是否存在判定（与 047/049/054/055/057/061 同一手法）。
+	register(Migration{
+		Version:   "067-media-center",
+		TableName: "sys_attachment",
+		CheckSQL:  "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = ? AND column_name = 'generation'",
+		SQL:       mediaCenterSQL,
 	})
 }

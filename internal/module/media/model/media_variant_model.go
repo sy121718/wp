@@ -88,6 +88,20 @@ func (m *MediaVariantModel) Update(ctx context.Context, id uint64, updates map[s
 	return m.varDB(ctx).Where("id = ?", id).Updates(updates).Error
 }
 
+// GetByFilePath 按变体存储相对路径查询变体记录（构建期从产物 URL 反查附件用：
+// 页面里可能直接引用 <stem>_thumb.jpg 这类变体地址）。
+func (m *MediaVariantModel) GetByFilePath(ctx context.Context, filePath string) (*MediaVariantEntity, error) {
+	var e MediaVariantEntity
+	err := m.varDB(ctx).
+		Where("file_path = ? OR file_path = ?", filePath, "/"+filePath).
+		Order("id ASC").
+		First(&e).Error
+	if err != nil {
+		return nil, err
+	}
+	return &e, nil
+}
+
 // ListByAttachment 查询指定附件的全部变体记录，按 thumb/medium/webp 固定顺序。
 func (m *MediaVariantModel) ListByAttachment(ctx context.Context, attachmentID uint64) ([]MediaVariantEntity, error) {
 	var list []MediaVariantEntity

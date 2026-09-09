@@ -16,8 +16,17 @@ type MediaService interface {
 	List(ctx context.Context, req *mediadto.ListReq) (*mediadto.ListResp, error)
 	// Detail 查询单个附件详情。
 	Detail(ctx context.Context, req *mediadto.DetailReq) (*mediadto.AttachmentResp, error)
-	// Delete 删除附件（同时删除物理文件）。
+	// Delete 删除附件（软删除；被引用时拒绝，见 References）。
 	Delete(ctx context.Context, req *mediadto.DeleteReq) error
+	// Replace 换图：内容替换、URL 不变（/storage/<id>.<ext>）、generation+1；
+	// 扩展名必须与现路径一致，内容 md5 未变时直接返回现状。
+	Replace(ctx context.Context, id uint64, file *multipart.FileHeader) (*mediadto.AttachmentResp, error)
+	// References 查询附件的引用来源（构建期写入 extra_info.refs 的缓存）。
+	References(ctx context.Context, id uint64) ([]mediadto.AttachmentRefResp, error)
+	// SyncReferences 全量同步某引用方对媒体库的引用（refs 写入侧，构建期调用，幂等）。
+	SyncReferences(ctx context.Context, req *mediadto.SyncRefsReq) (int, error)
+	// SyncReferencesFromHTML 从产物 HTML 收集媒体引用并全量同步（构建期便捷入口）。
+	SyncReferencesFromHTML(ctx context.Context, refKind, refID, refTitle, html string) (int, error)
 	// CreateCategory 新建分类（无限级，同父级下重名拒绝）。
 	CreateCategory(ctx context.Context, req *mediadto.CategoryCreateReq) (*mediadto.CategoryTreeNode, error)
 	// UpdateCategory 更新分类（改名/移动父级/排序，移动防环）。
