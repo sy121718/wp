@@ -111,6 +111,51 @@ func validateSpacing(name string, s Spacing, allowNegative bool) (err error) {
 	return nil
 }
 
+// cssDeclsUnsafeRe CSS 声明里的危险字符（注入/跳出规则）。
+var cssDeclsUnsafeRe = regexp.MustCompile("[{}<>\"'\x60]")
+
+// IsSafeCSSDecls 校验「分号分隔的 CSS 声明」：允许 : ; , . % # ( ) - / 空格与字母数字，
+// 拒绝大括号/引号/尖括号等可跳出规则的字符；长度上限 500。
+func IsSafeCSSDecls(v string) bool {
+	if len(v) > 500 {
+		return false
+	}
+	if cssDeclsUnsafeRe.MatchString(v) {
+		return false
+	}
+	low := strings.ToLower(v)
+	for _, bad := range []string{"expression", "javascript:", "url(", "@import", "</"} {
+		if strings.Contains(low, bad) {
+			return false
+		}
+	}
+	return true
+}
+
+// parseResponsiveDecls 解析「分号分隔的 CSS 声明」为声明列表。
+// 只接受 "prop: value" 形式且通过安全白名单，非法片段静默丢弃（构建期不 panic）。
+func parseResponsiveDecls(raw string) []string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+	var out []string
+	for _, part := range strings.Split(raw, ";") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		if !strings.Contains(part, ":") {
+			continue
+		}
+		if !IsSafeCSSValue(part) {
+			continue
+		}
+		out = append(out, part)
+	}
+	return out
+}
+
 // ---------- 通用高级属性（原子组件 Advanced 层，规范 docs/02-C0） ----------
 
 // WidthMode 自身宽度模式。
@@ -130,40 +175,46 @@ var alignSelfMap = map[string]string{
 // 在自身专属 Props 之外统一嵌入本结构（json 字段名 advanced）。
 type AdvancedProps struct {
 	// Margin 外边距：四向独立 + 三端响应式，支持负值（限幅）做微叠放。
-	Margin ResponsiveSpacing `json:"margin,omitempty"`
+	Margin ResponsiveSpacing `json:"margin,omitempty" ct:"spacing,sec=layout,label=外距"`
 	// Padding 内边距：四向独立 + 三端响应式（按钮/图文块等内留白组件）。
-	Padding ResponsiveSpacing `json:"padding,omitempty"`
+	Padding ResponsiveSpacing `json:"padding,omitempty" ct:"spacing,sec=layout,label=内距"`
 	// WidthMode 自身宽度：auto / full / fixed（默认 auto）。
-	WidthMode string `json:"widthMode,omitempty"`
+	WidthMode string `json:"widthMode,omitempty" ct:"select,auto=自适应,full=铺满父容器,fixed=固定宽度,sec=layout,label=宽度模式"`
 	// WidthValue fixed 模式下的自定义宽度（如 "320px"）。
-	WidthValue string `json:"widthValue,omitempty"`
+	WidthValue string `json:"widthValue,omitempty" ct:"dimension,maxlen=20,sec=layout,label=固定宽度"`
 	// AlignSelf 在 Flex 容器中的自身对齐，覆盖父容器统一对齐。
-	AlignSelf string `json:"alignSelf,omitempty"`
-	// Border 边框（三要素需同时提供才生效）。
-	Border BorderProps `json:"border,omitempty"`
+	AlignSelf string `json:"alignSelf,omitempty" ct:"select,auto=默认,start=起始,center=居中,end=末端,stretch=拉伸,baseline=基线,sec=layout,label=自对齐"`
+	// Border 边框（三要素需同时提供才生效）；ct:"group" 展开到面板「边框」区块。
+	Border BorderProps `json:"border,omitempty" ct:"group"`
 	// Radius 四角独立圆角（顺时针：左上/右上/右下/左下），用于不规则圆角。
-	Radius RadiusProps `json:"radius,omitempty"`
+	Radius RadiusProps `json:"radius,omitempty" ct:"group"`
 	// Shadow 阴影预设 Token：sm / md / lg / xl。
-	Shadow string `json:"shadow,omitempty"`
+	Shadow string `json:"shadow,omitempty" ct:"select,sm=小,md=中,lg=大,xl=特大,sec=border,label=阴影"`
 	// Opacity 不透明度 0~100（百分比）。
-	Opacity int `json:"opacity,omitempty"`
+	Opacity int `json:"opacity,omitempty" ct:"int,min=0,max=100,sec=layout,label=不透明度(%)"`
 	// HideOn 响应式显隐开关：三端全开时编译器照常输出（保持哑与确定性），编辑器层提示。
-	HideOn HideOn `json:"hideOn,omitempty"`
+	HideOn HideOn `json:"hideOn,omitempty" ct:"group"`
 	// ZIndex 层级（负边距叠放控制），[-100, 100]。
-	ZIndex int `json:"zIndex,omitempty"`
+	ZIndex int `json:"zIndex,omitempty" ct:"int,min=-100,max=100,sec=layout,label=Z-index"`
 	// Interaction 交互/动效组（入场动画/延迟/悬浮上浮/吸顶），全组件共享。
 	Interaction InteractionProps `json:"interaction,omitempty"`
+	// TabletCSS 平板端覆盖声明（分号分隔的 CSS 声明，如 "font-size:16px;padding:12px"）。
+	// 通用按端覆盖：任何属性都能在指定断点覆盖桌面值，避免为每个字段都做三端变体。
+	TabletCSS string `json:"tabletCss,omitempty" ct:"cssdecls,maxlen=500,sec=responsive,label=平板端样式覆盖"`
+	// MobileCSS 手机端样式覆盖（同上：只写样式/布局/动画属性）。
+	MobileCSS string `json:"mobileCss,omitempty" ct:"cssdecls,maxlen=500,sec=responsive,label=手机端样式覆盖"`
+
 	// CustomClasses 自定义 class（禁 wp- 前缀，防碰撞编译产物命名空间）。
-	CustomClasses []string `json:"customClasses,omitempty"`
+	CustomClasses []string `json:"customClasses,omitempty" ct:"classes,sec=advanced,label=CSS 类"`
 	// CustomID 自定义 Element ID（锚点跳转），全文档唯一（复用节点 ID 查重 map）。
-	CustomID string `json:"customId,omitempty"`
+	CustomID string `json:"customId,omitempty" ct:"safe,maxlen=64,sec=advanced,label=CSS ID"`
 }
 
-// BorderProps 边框三要素。
+// BorderProps 边框三要素（面板「边框」区块，留空 = 无边框）。
 type BorderProps struct {
-	Width string `json:"width,omitempty"` // 如 "1px"
-	Style string `json:"style,omitempty"` // solid / dashed / dotted / double
-	Color string `json:"color,omitempty"`
+	Width string `json:"width,omitempty" ct:"dimension,maxlen=20,sec=border,label=边框宽度"` // 如 "1px"
+	Style string `json:"style,omitempty" ct:"select,solid=实线,dashed=虚线,dotted=点线,double=双线,sec=border,label=边框样式"`
+	Color string `json:"color,omitempty" ct:"color,maxlen=200,sec=border,label=边框颜色"`
 }
 
 // IsSet 边框是否已配置。
@@ -171,12 +222,12 @@ func (b BorderProps) IsSet() bool {
 	return b.Width != "" || b.Style != "" || b.Color != ""
 }
 
-// RadiusProps 四角独立圆角。
+// RadiusProps 四角独立圆角（面板「边框」区块，四角合并为一个带联动锁的控件）。
 type RadiusProps struct {
-	TopLeft     string `json:"topLeft,omitempty"`
-	TopRight    string `json:"topRight,omitempty"`
-	BottomRight string `json:"bottomRight,omitempty"`
-	BottomLeft  string `json:"bottomLeft,omitempty"`
+	TopLeft     string `json:"topLeft,omitempty" ct:"dimension,maxlen=20,sec=border,label=左上圆角"`
+	TopRight    string `json:"topRight,omitempty" ct:"dimension,maxlen=20,sec=border,label=右上圆角"`
+	BottomRight string `json:"bottomRight,omitempty" ct:"dimension,maxlen=20,sec=border,label=右下圆角"`
+	BottomLeft  string `json:"bottomLeft,omitempty" ct:"dimension,maxlen=20,sec=border,label=左下圆角"`
 }
 
 // IsEmpty 四角全空。
@@ -192,11 +243,11 @@ func (r RadiusProps) CSS() string {
 	return strings.Join([]string{r.TopLeft, r.TopRight, r.BottomRight, r.BottomLeft}, " ")
 }
 
-// HideOn 响应式显隐开关。
+// HideOn 响应式显隐开关（勾选 = 该端隐藏）。
 type HideOn struct {
-	Desktop bool `json:"desktop,omitempty"`
-	Tablet  bool `json:"tablet,omitempty"`
-	Mobile  bool `json:"mobile,omitempty"`
+	Desktop bool `json:"desktop,omitempty" ct:"bool,sec=layout,label=桌面隐藏"`
+	Tablet  bool `json:"tablet,omitempty" ct:"bool,sec=layout,label=平板隐藏"`
+	Mobile  bool `json:"mobile,omitempty" ct:"bool,sec=layout,label=手机隐藏"`
 }
 
 // IsEmpty 无任何隐藏。
@@ -378,6 +429,10 @@ func CompileAdvanced(nodeID string, a *AdvancedProps, b *CSSBuckets) (extraClass
 	if a.ZIndex != 0 {
 		desktop = append(desktop, fmt.Sprintf("z-index: %d", a.ZIndex))
 	}
+
+	// 通用按端覆盖：解析「分号分隔的 CSS 声明」追加到对应断点（后者覆盖前者，符合 CSS 层叠）。
+	tablet = append(tablet, parseResponsiveDecls(a.TabletCSS)...)
+	mobile = append(mobile, parseResponsiveDecls(a.MobileCSS)...)
 
 	b.Add(BreakpointDesktop, sel, desktop)
 	b.Add(BreakpointTablet, sel, tablet)

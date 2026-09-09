@@ -121,7 +121,7 @@ func TestCompileCSS(t *testing.T) {
 		"border: 1px solid rgba(0,0,0,.15)",
 		"border-radius: 6px",
 		".wp-form-submit",
-		"background: var(--c-primary, #2563eb)",
+		"background: var(--wp-btn-bg, var(--wp-c-primary, #2563eb))",
 		"textarea",
 		"select",
 		"resize: vertical",

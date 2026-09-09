@@ -39,7 +39,7 @@ type Props struct {
 	// Color 图标颜色（currentColor 或色值/主题 Token）。
 	Color string `json:"color,omitempty" ct:"color,maxlen=200,sec=style,label=颜色"`
 	// Advanced 通用高级属性（docs/02-C0）。
-	Advanced core.AdvancedProps `json:"advanced"`
+	Advanced core.AdvancedProps `json:"advanced" ct:"group"`
 }
 
 // Widget 基座实例。

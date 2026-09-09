@@ -30,7 +30,8 @@ func (c *Component) PropsSpec() any { return &globalrefProps{} }
 
 // globalrefProps 节点 props。
 type globalrefProps struct {
-	BlockID string `json:"blockId"`
+	// BlockID 全局块 ID（检查器可编辑；留空即无效引用，Validate 会拒绝）。
+	BlockID string `json:"blockId" ct:"string,maxlen=64,sec=content,label=全局块 ID"`
 }
 
 func decode(node *core.Node) (p globalrefProps, err error) {

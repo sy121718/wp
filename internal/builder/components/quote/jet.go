@@ -16,7 +16,8 @@ func CompileCSS(id string, p *Props, b *core.CSSBuckets) {
 
 // View quote 渲染视图数据（供 quote.jet 模板使用）。
 type View struct {
-	// Text 引用内容（模板输出时由 Jet 默认转义）。
+	// Text 引用内容（已由 core.RichTextHTML 处理：富文本白名单清洗 / 存量纯文本段落化，
+	// 模板侧 unsafe 原样输出）。
 	Text string
 	// Author 作者（空则无 cite）。
 	Author string
@@ -31,7 +32,7 @@ type View struct {
 // BuildView 生成引用渲染视图：作者/出处可选分支。
 func BuildView(p *Props) View {
 	return View{
-		Text:      p.Text,
+		Text:      core.RichTextHTML(p.Text),
 		Author:    p.Author,
 		Source:    p.Source,
 		HasAuthor: p.Author != "",

@@ -72,6 +72,18 @@ type BaseStyle struct {
 type SEO struct {
 	Title       string `json:"title,omitempty"`
 	Description string `json:"description,omitempty"`
+	// FocusKeyword 主关键词（SEO 评分用，不参与产物）。
+	FocusKeyword string `json:"focusKeyword,omitempty"`
+	// SecondaryKeywords 次级关键词（评分用）。
+	SecondaryKeywords []string `json:"secondaryKeywords,omitempty"`
+	// Canonical 规范链接（空 = 由 URL 推导）。
+	Canonical string `json:"canonical,omitempty"`
+	// OGImage 社交分享图。
+	OGImage string `json:"ogImage,omitempty"`
+	// Intent 查询意图（评分的内容长度分档：informational/commercial/transactional/local/definition）。
+	Intent string `json:"intent,omitempty"`
+	// SchemaType 结构化数据类型：空=自动（WebPage）/website/article/product/faq。
+	SchemaType string `json:"schemaType,omitempty"`
 }
 
 // validateSettings 校验页面设置。

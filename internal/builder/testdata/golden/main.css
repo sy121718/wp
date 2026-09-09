@@ -12,10 +12,12 @@
   border: none;
   padding: 12px 26px;
   font-size: 1.125rem;
-  border-radius: 9999px;
+  border-radius: var(--wp-btn-radius, 8px);
   gap: 8px;
   background: #111111;
   color: #ffffff;
+  border: var(--wp-btn-border-width, 0) var(--wp-btn-border-style, solid) var(--wp-btn-border-color, transparent);
+  box-shadow: var(--wp-btn-shadow, none);
 }
 
 .wp-c-cta {
@@ -35,8 +37,9 @@
   border: none;
   padding: 10px 20px;
   font-size: 1rem;
-  border-radius: px;
+  border-radius: var(--wp-btn-radius, 8px);
   background: transparent;
+  box-shadow: var(--wp-btn-shadow, none);
 }
 
 .wp-c-ghost .bt-icon-shift {

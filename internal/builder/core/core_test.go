@@ -30,7 +30,7 @@ func TestIsSafeCSSValue(t *testing.T) {
 		"url(//evil.com/x)",                      // 外联协议相对
 		`url("https://evil.com/x")`,              // 引号包裹外联
 		`url('//evil.com/x')`,
-		"url('/img/a.jpg')",  // 引号形式一律拒绝（' 不在字符集）
+		"url('/img/a.jpg')",      // 引号形式一律拒绝（' 不在字符集）
 		strings.Repeat("a", 501), // 超长
 	}
 	for _, v := range invalid {
@@ -149,11 +149,11 @@ func TestValidateTextStyle(t *testing.T) {
 	}
 
 	invalid := []TextStyle{
-		{Desktop: TextStyleValue{FontSize: "bold"}},            // 非长度
-		{Desktop: TextStyleValue{LineHeight: "calc(100%)"}},    // 行高不支持 calc
-		{Desktop: TextStyleValue{TextAlign: "middle"}},         // 非法对齐
+		{Desktop: TextStyleValue{FontSize: "bold"}},                  // 非长度
+		{Desktop: TextStyleValue{LineHeight: "calc(100%)"}},          // 行高不支持 calc
+		{Desktop: TextStyleValue{TextAlign: "middle"}},               // 非法对齐
 		{Desktop: TextStyleValue{FontSize: strings.Repeat("1", 41)}}, // 超 40 上限
-		{Desktop: TextStyleValue{FontSize: "16px;color:red"}},  // 注入
+		{Desktop: TextStyleValue{FontSize: "16px;color:red"}},        // 注入
 	}
 	for _, ts := range invalid {
 		if err := ValidateTextStyle("n1", &ts); err == nil {
@@ -178,7 +178,7 @@ func TestTextStyleDecls(t *testing.T) {
 // fakeComponent 测试用最小组件。
 type fakeComponent struct{ t string }
 
-func (f fakeComponent) Type() string { return f.t }
+func (f fakeComponent) Type() string                              { return f.t }
 func (f fakeComponent) Validate(_ *Node, _ map[string]bool) error { return nil }
 
 // TestRegisterLookup 组件注册表：注册/查询/类型排序确定性。

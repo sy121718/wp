@@ -1,0 +1,22 @@
+.wp-c-tb1 {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.wp-c-tb1 caption {
+  caption-side: top;
+  text-align: left;
+  padding: 8px 0;
+  font-weight: 600;
+}
+
+.wp-c-tb1 th, .wp-c-tb1 td {
+  padding: 10px 12px;
+  text-align: left;
+}
+
+.wp-c-tb1 thead th {
+  font-weight: 600;
+  background: var(--wp-c-surface, #f5f6f8);
+  border-bottom: 2px solid rgba(0,0,0,0.12);
+}

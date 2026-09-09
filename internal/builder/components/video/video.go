@@ -57,7 +57,7 @@ type Props struct {
 	// Radius 圆角。
 	Radius string `json:"radius,omitempty" ct:"dimension,maxlen=20,sec=style,label=圆角"`
 	// Advanced 通用高级属性。
-	Advanced core.AdvancedProps `json:"advanced"`
+	Advanced core.AdvancedProps `json:"advanced" ct:"group"`
 }
 
 // Validate 校验。

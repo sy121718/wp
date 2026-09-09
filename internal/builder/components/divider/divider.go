@@ -83,7 +83,7 @@ type Props struct {
 	// Inset 嵌入元素。
 	Inset Inset `json:"inset,omitempty"`
 	// Advanced 通用高级属性（docs/02-C0）。
-	Advanced core.AdvancedProps `json:"advanced"`
+	Advanced core.AdvancedProps `json:"advanced" ct:"group"`
 }
 
 // Widget 基座实例。

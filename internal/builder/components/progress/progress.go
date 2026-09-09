@@ -20,15 +20,15 @@ const defaultMax = 100
 // Props progress 属性。
 type Props struct {
 	// Value 当前进度值（0~Max）。
-	Value int `json:"value,omitempty"`
+	Value int `json:"value,omitempty" ct:"int,min=0,max=100,sec=content,label=当前值"`
 	// Max 进度上限（默认 100）。
-	Max int `json:"max,omitempty"`
+	Max int `json:"max,omitempty" ct:"int,min=1,max=100,sec=content,label=最大值"`
 	// Label 标签（进度说明文字）。
 	Label string `json:"label,omitempty" ct:"text,maxlen=100,sec=content,label=标签"`
 	// Color 进度填充色（色值或主题 Token）。
 	Color string `json:"color,omitempty" ct:"color,maxlen=200,sec=style,label=颜色"`
 	// Advanced 通用高级属性（docs/02-C0）。
-	Advanced core.AdvancedProps `json:"advanced"`
+	Advanced core.AdvancedProps `json:"advanced" ct:"group"`
 }
 
 // Widget 基座实例。

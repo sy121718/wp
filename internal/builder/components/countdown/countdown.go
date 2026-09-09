@@ -30,9 +30,9 @@ type Props struct {
 	// TargetDate 目标时间（RFC3339 或 2006-01-02 15:04:05 / 2006-01-02）。
 	TargetDate string `json:"targetDate,omitempty" ct:"text,maxlen=30,sec=content,label=目标时间"`
 	// ShowDays 是否显示「天」位（目标超过 24 小时时开启）。
-	ShowDays bool `json:"showDays,omitempty"`
+	ShowDays bool `json:"showDays,omitempty" ct:"bool,sec=content,label=显示天数"`
 	// Advanced 通用高级属性（docs/02-C0）。
-	Advanced core.AdvancedProps `json:"advanced"`
+	Advanced core.AdvancedProps `json:"advanced" ct:"group"`
 }
 
 // Widget 基座实例。

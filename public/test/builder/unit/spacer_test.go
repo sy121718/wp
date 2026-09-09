@@ -47,7 +47,8 @@ func TestSpacerValidate(t *testing.T) {
 	cases := []struct{ name, props, want string }{
 		{"高度注入", `{"height":{"desktop":"1px}body{x:1}"}}`, "无效的 desktop 端高度"},
 		{"Advanced 非法 class", `{"advanced":{"customClasses":["wp-evil"]}}`, "wp- 保留前缀"},
-		{"Advanced 非法透明度", `{"advanced":{"opacity":150}}`, "0~100"},
+		// 越界值由声明式 ct 校验先拦（int,min=0,max=100），文案为通用「超出上限」。
+		{"Advanced 非法透明度", `{"advanced":{"opacity":150}}`, "超出上限"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

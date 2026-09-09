@@ -27,6 +27,8 @@ type View struct {
 	ShapeTop string
 	// ShapeBottom 底部形状分隔线内容片段（path，空则无；<svg> 骨架由 container.jet 渲染）。
 	ShapeBottom string
+	// BgSlides 背景轮播图（多张；渲染为绝对定位背景层，纯 CSS 交叉淡入）。
+	BgSlides []string
 }
 
 // BuildView 生成容器渲染视图：属性串 + 形状分隔线（与 Render 输出结构一致）。
@@ -56,7 +58,7 @@ func BuildView(node *core.Node, p *Props) View {
 		}
 	}
 
-	v := View{Tag: p.Tag, Attrs: attrs.String()}
+	v := View{Tag: p.Tag, Attrs: attrs.String(), BgSlides: p.Visual.BgSlides}
 	if p.StyleEx.ShapeDivider != "" {
 		svg := shapeDividers[p.StyleEx.ShapeDivider]
 		if p.StyleEx.ShapeDividerPosition == "top" {

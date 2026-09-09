@@ -10,10 +10,10 @@ import (
 
 // groupSample 分组与新增控件测试模板。
 type groupSample struct {
-	Content string `json:"content" ct:"text,maxlen=100"`                                  // 默认 content 组
-	Level   string `json:"level" ct:"select,a,b,sec=style"`                                // style 组
-	Opacity int    `json:"opacity" ct:"slider,min=0,max=100,step=5,sec=style"`             // slider
-	Link    string `json:"link" ct:"url,sec=content"`                                      // url 协议白名单
+	Content string `json:"content" ct:"text,maxlen=100"`                       // 默认 content 组
+	Level   string `json:"level" ct:"select,a,b,sec=style"`                    // style 组
+	Opacity int    `json:"opacity" ct:"slider,min=0,max=100,step=5,sec=style"` // slider
+	Link    string `json:"link" ct:"url,sec=content"`                          // url 协议白名单
 }
 
 // TestGroupSectionParse 分组解析：默认 content，sec=style 归入样式组。

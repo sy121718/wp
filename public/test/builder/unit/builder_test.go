@@ -242,7 +242,8 @@ func TestValidateErrors(t *testing.T) {
 		{"非法排版引擎", `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"a","type":"core.container","props":{"tag":"div","layout":{"engine":"table"}}}]}`, "无效的排版引擎"},
 		{"flex缺参数", `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"a","type":"core.container","props":{"tag":"div","layout":{"engine":"flex"}}}]}`, "必须提供 flex 参数"},
 		{"栅格列数越界", `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"a","type":"core.container","props":{"tag":"div","layout":{"engine":"grid","grid":{"columns":{"desktop":13}}}}}]}`, "1~12"},
-		{"边框不完整", `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"a","type":"core.container","props":{"tag":"div","layout":{"engine":"flex","flex":{}},"visual":{"borderWidth":"1px"}}}]}`, "边框需同时提供"},
+		// 容器 visual 边框不再要求三要素同时提供：缺失项由编译端兜底
+		//（1px / solid / currentColor，container.go 编译注释），故此处不再作为失败用例。
 		{"非法阴影级别", `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"a","type":"core.container","props":{"tag":"div","layout":{"engine":"flex","flex":{}},"visual":{"shadow":"xxl"}}}]}`, "无效的阴影级别"},
 		{"非法入场动效", `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"a","type":"core.container","props":{"tag":"div","layout":{"engine":"flex","flex":{}},"interaction":{"entrance":"spin"}}}]}`, "无效的入场动效"},
 		{"节点ID重复", `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"a","type":"core.container","props":{"tag":"div","layout":{"engine":"flex","flex":{}}},"children":[{"id":"a","type":"core.container","props":{"tag":"div","layout":{"engine":"flex","flex":{}}}}]}]}`, "ID 重复"},

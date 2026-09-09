@@ -35,6 +35,7 @@ import (
 	infoboxPkg "go_wp/internal/builder/components/infobox"
 	listPkg "go_wp/internal/builder/components/list"
 	marqueePkg "go_wp/internal/builder/components/marquee"
+	navPkg "go_wp/internal/builder/components/nav"
 	progressPkg "go_wp/internal/builder/components/progress"
 	quotePkg "go_wp/internal/builder/components/quote"
 	ratingPkg "go_wp/internal/builder/components/rating"
@@ -67,13 +68,14 @@ type nodeView struct {
 	V any
 
 	// --- button / container 拍平字段（Phase 0 样板，向后兼容） ---
-	Tag         string // 语义标签（a/button/div/section/...）
-	Attrs       string // 前导空格 + 属性串（已转义）
-	Text        string // button 文本
-	IconPrefix  string // button 前缀图标内容片段（path/已转义 img URL；<svg> 骨架由 button.jet 渲染）
-	IconSuffix  string // button 后缀图标内容片段（同上）
-	ShapeTop    string // container 顶部形状分隔线内容片段（<svg> 骨架由 container.jet 渲染）
-	ShapeBottom string // container 底部形状分隔线内容片段（同上）
+	Tag         string   // 语义标签（a/button/div/section/...）
+	Attrs       string   // 前导空格 + 属性串（已转义）
+	Text        string   // button 文本
+	IconPrefix  string   // button 前缀图标内容片段（path/已转义 img URL；<svg> 骨架由 button.jet 渲染）
+	IconSuffix  string   // button 后缀图标内容片段（同上）
+	ShapeTop    string   // container 顶部形状分隔线内容片段（<svg> 骨架由 container.jet 渲染）
+	ShapeBottom string   // container 底部形状分隔线内容片段（同上）
+	BgSlides    []string // container 背景轮播图（渲染为 .wp-bg-slides 背景层）
 }
 
 // nodeViewOf 把单个 Node 转换为 nodeView（含递归 children，CSS 加入顺序对齐旧路径）。
@@ -107,6 +109,8 @@ func nodeViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeV
 		return galleryViewOf(node, topLevel, ctx)
 	case sliderPkg.Type:
 		return sliderViewOf(node, topLevel, ctx)
+	case navPkg.Type:
+		return navViewOf(node, topLevel, ctx)
 	case tabsPkg.Type:
 		return tabsViewOf(node, topLevel, ctx)
 	case accordionPkg.Type:
@@ -179,6 +183,16 @@ func advancedClasses[P any](node *core.Node, p *P, ctx *core.RenderContext) (cla
 	return classes, customID
 }
 
+// applyI18n 组件视图实现 core.I18nAware 时按当前语言回填文案字段（多语言 P4）。
+//
+// 与 ApplyImageLoading 同形：BuildView 之后由渲染层统一回填，组件包不感知语言来源。
+// 取词函数为 ctx.Text（内部：注入函数 → fallback 原中文 → key），ctx 为 nil 亦安全。
+func applyI18n(view any, ctx *core.RenderContext) {
+	if aware, ok := view.(core.I18nAware); ok {
+		aware.ApplyI18n(ctx.Text)
+	}
+}
+
 // atomViewOf 收敛纯叶子 Atom 组件模板：props 解码 → Advanced → CompileCSS → BuildView(p) → nodeView。
 // typeName 为组件类型常量，template 为模板名，compileCSS/buildView 为组件包导出函数。
 func atomViewOf[P any, V any](
@@ -196,6 +210,13 @@ func atomViewOf[P any, V any](
 	classes, customID := advancedClasses(node, &p, ctx)
 	compileCSS(node.ID, &p, ctx.CSS)
 	view := buildView(&p)
+	// 输出 <img> 的组件（card/infobox 等）按主题「图片管理」默认解析懒加载三态：
+	// 视图自持 Loading 原值，经接口回填 IsEager/Skeleton/Class。
+	if aware, ok := any(&view).(core.ImageLoadingAware); ok && aware.ApplyImageLoading(ctx.ImageDefaults) {
+		core.AddImageSkeletonCSS(ctx.CSS)
+	}
+	// 构建期文案回填（countdown 单元标签 / form 提交按钮 / rating 无障碍描述等）。
+	applyI18n(&view, ctx)
 	return &nodeView{
 		Type:     typeName,
 		Template: template,
@@ -228,6 +249,7 @@ func contentAtomViewOf[P any, V any](
 	if err != nil {
 		return nil, fmt.Errorf("节点 %s: %w", node.ID, err)
 	}
+	applyI18n(&view, ctx)
 	return &nodeView{
 		Type:     typeName,
 		Template: template,
@@ -256,6 +278,12 @@ func leafViewOf[P any, V any](
 	}
 	compileCSS(node.ID, &p, ctx.CSS)
 	view := buildView(&p)
+	// 输出 <img> 的组件（infobox 等无 Advanced 层的叶子）同样按主题默认解析加载三态。
+	if aware, ok := any(&view).(core.ImageLoadingAware); ok && aware.ApplyImageLoading(ctx.ImageDefaults) {
+		core.AddImageSkeletonCSS(ctx.CSS)
+	}
+	// 构建期文案回填（video 的 iframe title 等）。
+	applyI18n(&view, ctx)
 	return &nodeView{
 		Type:     typeName,
 		Template: template,
@@ -293,6 +321,10 @@ func buttonViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nod
 	if err != nil {
 		return nil, fmt.Errorf("节点 %s: %w", node.ID, err)
 	}
+	// 媒体库图标 <img> 也走统一图片加载三态（按钮通常首屏可见，主题可改默认）。
+	if aware, ok := any(&view).(core.ImageLoadingAware); ok && aware.ApplyImageLoading(ctx.ImageDefaults) {
+		core.AddImageSkeletonCSS(ctx.CSS)
+	}
 
 	return &nodeView{
 		Type:       buttonPkg.Type,
@@ -302,6 +334,7 @@ func buttonViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nod
 		CustomID:   customID,
 		TopLevel:   topLevel,
 		Props:      p,
+		V:          view,
 		Tag:        view.Tag,
 		Attrs:      view.Attrs,
 		Text:       view.Text,
@@ -351,6 +384,7 @@ func containerViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*
 		Attrs:       view.Attrs,
 		ShapeTop:    view.ShapeTop,
 		ShapeBottom: view.ShapeBottom,
+		BgSlides:    view.BgSlides,
 	}, nil
 }
 
@@ -386,9 +420,16 @@ func imageViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*node
 
 	imagePkg.CompileCSS(node.ID, &p, ctx.CSS)
 
-	view, err := imagePkg.BuildView(node, &p, classStr, customID, ctx.Content)
+	view, err := imagePkg.BuildView(node, &p, classStr, customID, ctx.Content, ctx.ImageDefaults, ctx.AssetProbe)
 	if err != nil {
 		return nil, fmt.Errorf("节点 %s: %w", node.ID, err)
+	}
+	// 懒加载骨架屏（主题「图片管理 → 骨架屏」开启且本图懒加载）：
+	// 给 <img> 加 is-skeleton 类，用纯 CSS 渐变占位——图片加载完成后内容自然覆盖背景，
+	// 无需任何 JS（产物零脚本约束）。
+	if view.Skeleton {
+		view.Class = core.ImageSkeletonClass(classStr, true)
+		core.AddImageSkeletonCSS(ctx.CSS)
 	}
 
 	return &nodeView{
@@ -504,9 +545,16 @@ func galleryViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*no
 		return nil, fmt.Errorf("节点 %s: %w", node.ID, err)
 	}
 
+	// 构建期文案回填（轮播箭头 aria-label）。
+	applyI18n(&view, ctx)
+
 	// 隐藏（空图集且无占位）时旧路径不编译组件样式；可见才编译。
 	if view.Visible {
 		galleryPkg.CompileCSS(node.ID, &p, ctx.CSS)
+		// 图集内所有图片共用组件级三态（主题默认解析后统一输出 loading + 骨架类）。
+		if aware, ok := any(&view).(core.ImageLoadingAware); ok && aware.ApplyImageLoading(ctx.ImageDefaults) {
+			core.AddImageSkeletonCSS(ctx.CSS)
+		}
 	}
 
 	return &nodeView{
@@ -547,6 +595,7 @@ func sliderViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nod
 
 	sliderPkg.CompileCSS(node.ID, &p, ctx.CSS)
 	view := sliderPkg.BuildView(node, &p)
+	applyI18n(&view, ctx)
 
 	return &nodeView{
 		Type:     sliderPkg.Type,
@@ -561,6 +610,52 @@ func sliderViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nod
 }
 
 // tabsViewOf 转换 tabs 节点（对应 Component.Render 流程，children 为各面板）。
+// navViewOf 转换导航菜单节点（内容型，无 children；toggle id 依赖节点 ID）。
+func navViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeView, error) {
+	var p navPkg.Props
+	if len(node.Props) > 0 {
+		if err := json.Unmarshal(node.Props, &p); err != nil {
+			return nil, fmt.Errorf("节点 %s props 反序列化失败: %w", node.ID, err)
+		}
+	}
+	if err := resolveNavMenu(node, &p, ctx); err != nil {
+		return nil, err
+	}
+	// 当前项高亮：按本次编译的页面路径标记（块预览等无路径时不标记）。
+	navPkg.MarkCurrent(p.Items, ctx.CurrentPath)
+	navPkg.CompileCSS(node.ID, &p, ctx.CSS)
+	view := navPkg.BuildView(node, &p)
+	applyI18n(&view, ctx)
+	return &nodeView{
+		Type:     navPkg.Type,
+		Template: "nav",
+		NodeID:   node.ID,
+		Classes:  core.NodeClass(node.ID),
+		TopLevel: topLevel,
+		Props:    p,
+		V:        view,
+	}, nil
+}
+
+// resolveNavMenu 导航节点绑定了菜单位置（header/footer）时，用构建期解析结果
+// 覆盖手写菜单项：产物仍是静态 HTML，导航数据在构建期一次性读库。
+// 未注入解析器/工程 ID 时显式报错（构建期失败优先于静默产出空菜单）。
+func resolveNavMenu(node *core.Node, p *navPkg.Props, ctx *core.RenderContext) error {
+	kind := strings.TrimSpace(p.Menu)
+	if kind == "" {
+		return nil
+	}
+	if ctx.Navigation == nil || strings.TrimSpace(ctx.ProjectID) == "" {
+		return fmt.Errorf("节点 %s: 已绑定导航位置 %q，但构建期缺少导航解析器或工程 ID（装配未注入）", node.ID, kind)
+	}
+	items, err := ctx.Navigation.ResolveMenu(ctx.ProjectID, kind)
+	if err != nil {
+		return fmt.Errorf("节点 %s: 导航位置 %q 解析失败: %w", node.ID, kind, err)
+	}
+	p.Items = navPkg.ItemsOf(items)
+	return navPkg.ValidateItems(p.Items, node.ID)
+}
+
 func tabsViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeView, error) {
 	var p tabsPkg.Props
 	if len(node.Props) > 0 {

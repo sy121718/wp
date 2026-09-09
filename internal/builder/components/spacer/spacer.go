@@ -21,8 +21,8 @@ type Height struct {
 
 // Props 间隔组件属性：三端高度 + Advanced 通用层（基座约定字段）。
 type Props struct {
-	Height   Height             `json:"height,omitempty"`
-	Advanced core.AdvancedProps `json:"advanced"`
+	Height   Height             `json:"height,omitempty" ct:"rtext,sec=layout,label=高度"`
+	Advanced core.AdvancedProps `json:"advanced" ct:"group"`
 }
 
 // Widget 泛型基座实例。

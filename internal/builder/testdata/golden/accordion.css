@@ -14,7 +14,7 @@
   padding: 14px 18px;
   font-size: 15px;
   font-weight: 600;
-  background: var(--c-surface, #fff);
+  background: var(--wp-c-surface, #fff);
   border: 1px solid rgba(0,0,0,.1);
   border-radius: 10px;
   background: #f9f9f9;
@@ -37,7 +37,7 @@
 }
 
 .wp-c-ac1 .wp-accordion-head:hover {
-  background: var(--c-bg-hover, #f3f4f6);
+  background: var(--wp-c-surface, #f3f4f6);
 }
 
 .wp-c-ac1 .wp-accordion-body {
@@ -64,7 +64,7 @@
   padding: 14px 18px;
   font-size: 15px;
   font-weight: 600;
-  background: var(--c-surface, #fff);
+  background: var(--wp-c-surface, #fff);
   border: 1px solid rgba(0,0,0,.1);
   border-radius: 10px;
 }
@@ -86,7 +86,7 @@
 }
 
 .wp-c-ac2 .wp-accordion-head:hover {
-  background: var(--c-bg-hover, #f3f4f6);
+  background: var(--wp-c-surface, #f3f4f6);
 }
 
 .wp-c-ac2 .wp-accordion-body {

@@ -76,8 +76,8 @@ type Icon struct {
 	Name string `json:"name,omitempty" ct:"select,arrow-right=右箭头,arrow-left=左箭头,arrow-up=上箭头,arrow-down=下箭头,check=对勾,chevron-right=右尖括号,phone=电话,mail=邮件,sec=content,label=图标样式"`
 	// URL 媒体库/外链图标 URL（source=media，img 直引）。
 	URL string `json:"url,omitempty" ct:"media,sec=content,label=图标图片"`
-	// Position 位置：prefix（前置）/ suffix（后置）。
-	Position string `json:"position,omitempty" ct:"select,prefix=图标在前,suffix=图标在后,sec=content,label=图标位置"`
+	// Position 位置：prefix/suffix（左右）、top/bottom（上下，按钮改为纵向排列）。
+	Position string `json:"position,omitempty" ct:"select,prefix=图标在前,suffix=图标在后,top=图标在上,bottom=图标在下,sec=content,label=图标位置"`
 	// Spacing 图标与文案间距。
 	Spacing string `json:"spacing,omitempty" ct:"dimension,maxlen=20,sec=style"`
 	// HoverShift 悬停时图标水平位移动画值（如 "4px"）。
@@ -115,7 +115,12 @@ type Props struct {
 	// Action 动作类型：internal/external/anchor/native/modal/link（默认 external）。
 	Action string `json:"action,omitempty" ct:"select,internal=站内链接,external=外部链接,anchor=页内锚点,native=电话/邮件,modal=弹窗,link=自定义链接,default=external,sec=content,label=点击动作"`
 	// Value 动作值：internal 站内路径 / external URL / anchor 元素ID / native tel-mailto / modal 目标ID。
-	Value string `json:"value,omitempty" ct:"safe,maxlen=500,sec=content"`
+	// 控件类型用 string 而非 safe：safe 走 IsSafeCSSValue 的 CSS 值白名单，其字符集
+	// 刻意封禁 @（CSS 注入载体），而本字段是**链接值**——mailto:a@b.com 会被这条
+	// CSS 规则误杀（实测报「字段 value 值非法」）。值域真源是下方 validateExtra 的
+	// 按动作白名单（站内路径 / 外链协议 / 锚点 ID / tel-mailto 各自正则，未放宽），
+	// 控件层只保留长度上限；href 输出侧由 jet.go 的 html.EscapeString 转义。
+	Value string `json:"value,omitempty" ct:"string,maxlen=500,sec=content"`
 	// Target 外部链接打开方式：self / blank（blank 自动 rel=noopener noreferrer）。
 	Target string `json:"target,omitempty" ct:"select,self=当前窗口,blank=新窗口,sec=content,label=打开方式"`
 	// Rel SEO 策略：none / nofollow / sponsored。
@@ -131,29 +136,84 @@ type Props struct {
 
 	// --- 尺寸/变体/双态外观 ---
 	Size string `json:"size,omitempty" ct:"select,xs=特小,sm=小,md=中,lg=大,xl=特大,default=md,sec=style,label=按钮尺寸"`
-	// Shape 形状预设：rect 直角 / rounded 圆角 / pill 胶囊。
-	Shape string `json:"shape,omitempty" ct:"select,rect=直角,rounded=圆角,pill=胶囊,default=rounded,sec=style,label=形状"`
 	// FontFamily 字体族（可选覆盖）。
 	FontFamily string `json:"fontFamily,omitempty" ct:"safe,maxlen=200,sec=style,label=字体族"`
 	// FullWidth 全宽按钮。
 	FullWidth bool `json:"fullWidth,omitempty" ct:"bool,sec=style,label=全宽"`
+	// --- 外观（扁平化：嵌套 State 无法在检查器直接编辑，故提升为顶层字段；
+	//     编译时优先取扁平字段，缺省回退嵌套 State，兼容旧文档） ---
+	// Bg 背景色（直接写 transparent / rgba(0,0,0,0) 即为透明底）。
+	Bg string `json:"bg,omitempty" ct:"color,maxlen=200,sec=background,label=背景色"`
+	// TextColor 文字颜色。
+	TextColor string `json:"textColor,omitempty" ct:"color,maxlen=200,sec=style,label=文字颜色"`
+	// --- 边框与圆角（通用外观字段：所有组件同一命名，面板「边框」标签） ---
+	// BorderWidth 边框宽度（空 = 不设边框，默认无边框）。
+	BorderWidth string `json:"borderWidth,omitempty" ct:"dimension,maxlen=20,sec=border,label=边框宽度"`
+	// BorderStyle 边框样式。
+	BorderStyle string `json:"borderStyle,omitempty" ct:"select,solid=实线,dashed=虚线,dotted=点线,double=双线,sec=border,label=边框样式"`
+	// BorderColor 边框颜色。
+	BorderColor string `json:"borderColor,omitempty" ct:"color,maxlen=200,sec=border,label=边框颜色"`
+	// RadiusTL/TR/BR/BL 四角圆角（空 = 0；四角全空时回退主题圆角）。
+	RadiusTL string `json:"radiusTL,omitempty" ct:"dimension,maxlen=20,sec=border,label=左上圆角"`
+	RadiusTR string `json:"radiusTR,omitempty" ct:"dimension,maxlen=20,sec=border,label=右上圆角"`
+	RadiusBR string `json:"radiusBR,omitempty" ct:"dimension,maxlen=20,sec=border,label=右下圆角"`
+	RadiusBL string `json:"radiusBL,omitempty" ct:"dimension,maxlen=20,sec=border,label=左下圆角"`
+	// Shadow 阴影级别（sm/md/lg/xl）。
+	Shadow string `json:"shadow,omitempty" ct:"select,sm=小,md=中,lg=大,xl=特大,sec=border,label=阴影"`
+	// --- 悬停态（面板「悬停」标签） ---
+	// HoverBorderColor 悬停边框色。
+	HoverBorderColor string `json:"hoverBorderColor,omitempty" ct:"color,maxlen=200,sec=border,label=悬停边框色"`
+	// HoverShadow 悬停阴影级别。
+	HoverShadow string `json:"hoverShadow,omitempty" ct:"select,sm=小,md=中,lg=大,xl=特大,sec=border,label=悬停阴影"`
+
 	// HoverBg 悬停背景色。
-	HoverBg string `json:"hoverBg,omitempty" ct:"color,maxlen=200,sec=style,label=悬停背景色"`
+	HoverBg string `json:"hoverBg,omitempty" ct:"color,maxlen=200,sec=background,label=悬停背景色"`
 	// HoverColor 悬停文字色。
 	HoverColor string `json:"hoverColor,omitempty" ct:"color,maxlen=200,sec=style,label=悬停文字色"`
 	// LineHeight 行高（可选覆盖）。
 	LineHeight string `json:"lineHeight,omitempty" ct:"dimension,maxlen=20,sec=style,label=行高"`
 	Block      Block  `json:"block,omitempty"`
 	Variant    string `json:"variant,omitempty" ct:"select,solid,outline,ghost,default=solid,sec=style"`
-	Radius     string `json:"radius,omitempty" ct:"select,0,6,8,9999,default=8,sec=style"`
 	// Normal 正常态；Hover 悬浮/聚焦态（缺省继承 Normal）。
 	Normal State `json:"normal,omitempty"`
 	Hover  State `json:"hover,omitempty"`
-	// HoverLift 悬浮上浮距离（如 "-2px"）。
-	HoverLift string `json:"hoverLift,omitempty" ct:"dimension,maxlen=20,sec=style"`
+	// HoverLift 悬浮上浮距离（如 "-2px"；等价悬停态垂直偏移）。
+	HoverLift string `json:"hoverLift,omitempty" ct:"dimension,maxlen=20,sec=transform,label=悬停上浮"`
+	// --- 变换（通用外观字段，面板「变换」标签；标准态） ---
+	// Rotate 旋转角度（如 45deg）。
+	Rotate string `json:"rotate,omitempty" ct:"dimension,maxlen=20,sec=transform,label=旋转"`
+	// TranslateX / TranslateY 偏移。
+	TranslateX string `json:"translateX,omitempty" ct:"dimension,maxlen=20,sec=transform,label=水平偏移"`
+	TranslateY string `json:"translateY,omitempty" ct:"dimension,maxlen=20,sec=transform,label=垂直偏移"`
+	// Scale 缩放倍数（如 1.1）。
+	Scale string `json:"scale,omitempty" ct:"safe,maxlen=20,sec=transform,label=缩放"`
+	// SkewX / SkewY 倾斜角度。
+	SkewX string `json:"skewX,omitempty" ct:"dimension,maxlen=20,sec=transform,label=倾斜 X"`
+	SkewY string `json:"skewY,omitempty" ct:"dimension,maxlen=20,sec=transform,label=倾斜 Y"`
+	// FlipX / FlipY 翻转。
+	FlipX bool `json:"flipX,omitempty" ct:"bool,sec=transform,label=水平翻转"`
+	FlipY bool `json:"flipY,omitempty" ct:"bool,sec=transform,label=垂直翻转"`
+	// --- 变换（悬停态） ---
+	HoverRotate     string `json:"hoverRotate,omitempty" ct:"dimension,maxlen=20,sec=transform,label=悬停旋转"`
+	HoverTranslateX string `json:"hoverTranslateX,omitempty" ct:"dimension,maxlen=20,sec=transform,label=悬停水平偏移"`
+	HoverTranslateY string `json:"hoverTranslateY,omitempty" ct:"dimension,maxlen=20,sec=transform,label=悬停垂直偏移"`
+	HoverScale      string `json:"hoverScale,omitempty" ct:"safe,maxlen=20,sec=transform,label=悬停缩放"`
+	HoverSkewX      string `json:"hoverSkewX,omitempty" ct:"dimension,maxlen=20,sec=transform,label=悬停倾斜 X"`
+	HoverSkewY      string `json:"hoverSkewY,omitempty" ct:"dimension,maxlen=20,sec=transform,label=悬停倾斜 Y"`
+	// --- 通用动效（所有组件同一命名，面板「动效」标签） ---
+	// TransitionDuration 过渡时长（如 0.2s / 200ms）。
+	TransitionDuration string `json:"transitionDuration,omitempty" ct:"dimension,maxlen=20,sec=motion,label=过渡时长"`
+	// TransitionEasing 缓动曲线。
+	TransitionEasing string `json:"transitionEasing,omitempty" ct:"select,linear=线性,ease=缓入缓出,ease-in=缓入,ease-out=缓出,ease-in-out=先缓入再缓出,sec=motion,label=缓动曲线"`
+	// TransitionDelay 过渡延迟（如 0.1s）。
+	TransitionDelay string `json:"transitionDelay,omitempty" ct:"dimension,maxlen=20,sec=motion,label=过渡延迟"`
 
+	// Loading 图标（媒体库图片）加载策略三态：空=默认（继承主题「图片管理」）/ on=开启 / off=关闭。
+	Loading string `json:"loading,omitempty" ct:"select,=默认（继承主题）,on=开启懒加载,off=关闭懒加载,lazy=懒加载（旧）,eager=立即加载（旧）,default=,sec=content,label=图标加载"`
+	// FetchPriority 资源提示优先级：空=auto（不输出属性）/ high=首屏优先 / low=次要。
+	FetchPriority string `json:"fetchPriority,omitempty" ct:"select,=自动,high=高优先,low=低优先,default=,sec=content,label=加载优先级"`
 	// Advanced 通用高级属性（docs/02-C0）。
-	Advanced core.AdvancedProps `json:"advanced"`
+	Advanced core.AdvancedProps `json:"advanced" ct:"group"`
 }
 
 // Widget 基座实例。
@@ -257,20 +317,18 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	if p.Transform != "" && p.Transform != "none" {
 		base = append(base, core.CSSDecl("text-transform", p.Transform))
 	}
-	// 形状预设（Radius 显式设置时优先）。
-	if p.Shape == "pill" {
-		base = append(base, "border-radius: 9999px")
-	} else if p.Shape == "rect" {
-		base = append(base, "border-radius: 0")
+	// 圆角：四角独立（通用外观字段）；四角全空时回退主题级按钮圆角。
+	if p.RadiusTL == "" && p.RadiusTR == "" && p.RadiusBR == "" && p.RadiusBL == "" {
+		base = append(base, "border-radius: var(--wp-btn-radius, 8px)")
 	} else {
-		switch p.Radius {
-		case "0":
-			base = append(base, "border-radius: 0")
-		case "9999":
-			base = append(base, "border-radius: 9999px")
-		default:
-			base = append(base, core.CSSDecl("border-radius", p.Radius+"px"))
+		corner := func(v string) string {
+			if v == "" {
+				return "0"
+			}
+			return v
 		}
+		base = append(base, core.CSSDecl("border-radius",
+			corner(p.RadiusTL), corner(p.RadiusTR), corner(p.RadiusBR), corner(p.RadiusBL)))
 	}
 	if p.FontFamily != "" {
 		base = append(base, core.CSSDecl("font-family", p.FontFamily))
@@ -293,82 +351,161 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		b.Add(core.BreakpointDesktop, sel+":hover", hv)
 	}
 
-	// 图标间距。
-	if p.Icon != nil && p.Icon.Spacing != "" {
-		gap := p.Icon.Spacing
-		base = append(base, core.CSSDecl("gap", gap))
+	// 图标间距 + 排布方向（图标在上/下时按钮改纵向排列）。
+	if p.Icon != nil {
+		if p.Icon.Spacing != "" {
+			base = append(base, core.CSSDecl("gap", p.Icon.Spacing))
+		}
+		if p.Icon.Position == "top" || p.Icon.Position == "bottom" {
+			base = append(base, "flex-direction: column")
+		}
+	}
+
+	// 外观取值：扁平字段优先（检查器直接编辑），缺省回退嵌套 State（兼容旧文档）。
+	bg := p.Bg
+	if bg == "" {
+		bg = p.Normal.Background
+	}
+	textColor := p.TextColor
+	if textColor == "" {
+		textColor = p.Normal.Color
+	}
+	borderColor := p.BorderColor
+	if borderColor == "" {
+		borderColor = p.Normal.Border
+	}
+	shadowLevel := p.Shadow
+	if shadowLevel == "" {
+		shadowLevel = p.Normal.Shadow
 	}
 
 	// 变体基础。
 	switch p.Variant {
 	case VariantGhost:
-		base = append(base, "background: transparent")
+		// 幽灵按钮：透明底；显式设了背景（含 transparent）则尊重用户设置。
+		if bg != "" {
+			base = append(base, core.CSSDecl("background", bg))
+		} else {
+			base = append(base, "background: transparent")
+		}
 		if p.Text == "" {
 			base = append(base, "padding: 6px 0")
 		}
 	case VariantOutline:
-		base = append(base, "background: transparent")
-		if p.Normal.Border != "" {
-			base = append(base, core.CSSDecl("border", "1px", "solid", p.Normal.Border))
+		if bg != "" {
+			base = append(base, core.CSSDecl("background", bg))
+		} else {
+			base = append(base, "background: transparent")
+		}
+		// 边框：宽度 + 样式 + 颜色（用户可自定义，缺省 1px solid currentColor）。
+		if p.BorderWidth != "" {
+			bstyle := p.BorderStyle
+			if bstyle == "" {
+				bstyle = "solid"
+			}
+			bcol := borderColor
+			if bcol == "" {
+				bcol = "currentColor"
+			}
+			base = append(base, core.CSSDecl("border", p.BorderWidth, bstyle, bcol))
+		} else if borderColor != "" {
+			base = append(base, core.CSSDecl("border", "1px", "solid", borderColor))
 		} else {
 			base = append(base, "border: 1px solid currentColor")
 		}
-		if p.Normal.Color != "" {
-			base = append(base, core.CSSDecl("color", p.Normal.Color))
+		if textColor != "" {
+			base = append(base, core.CSSDecl("color", textColor))
 		}
 	default: // solid
-		if p.Normal.Background != "" {
-			base = append(base, core.CSSDecl("background", p.Normal.Background))
+		if bg != "" {
+			base = append(base, core.CSSDecl("background", bg))
 		} else {
 			// 主题回退链：主题按钮背景 → 主题主色 → 硬编码兜底。
 			base = append(base, "background: var(--wp-btn-bg, var(--wp-c-primary, #2563eb))")
 		}
-		if p.Normal.Color != "" {
-			base = append(base, core.CSSDecl("color", p.Normal.Color))
+		if textColor != "" {
+			base = append(base, core.CSSDecl("color", textColor))
 		} else {
 			base = append(base, "color: var(--wp-btn-color, #fff)")
 		}
-		if p.Normal.Border != "" {
-			base = append(base, core.CSSDecl("border", "1px", "solid", p.Normal.Border))
+		if p.BorderWidth != "" {
+			bstyle := p.BorderStyle
+			if bstyle == "" {
+				bstyle = "solid"
+			}
+			bcol := borderColor
+			if bcol == "" {
+				bcol = "currentColor"
+			}
+			base = append(base, core.CSSDecl("border", p.BorderWidth, bstyle, bcol))
+		} else if borderColor != "" {
+			base = append(base, core.CSSDecl("border", "1px", "solid", borderColor))
+		} else {
+			// 组件未设边框 → 回退主题级按钮边框变量（主题未配置时宽度 0 = 无边框）。
+			base = append(base, "border: var(--wp-btn-border-width, 0) var(--wp-btn-border-style, solid) var(--wp-btn-border-color, transparent)")
 		}
 	}
-	if v, ok := core.ShadowPresets[p.Normal.Shadow]; ok {
+	if v, ok := core.ShadowPresets[shadowLevel]; ok {
 		base = append(base, core.CSSDecl("box-shadow", v))
+	} else {
+		// 组件未设阴影 → 回退主题级按钮阴影变量。
+		base = append(base, "box-shadow: var(--wp-btn-shadow, none)")
+	}
+	// 变换（标准态）。
+	if t := transformDecl(p, false); t != "" {
+		base = append(base, t)
 	}
 	b.Add(core.BreakpointDesktop, sel, base)
 
-	// 悬浮/聚焦态。
+	// 悬浮/聚焦态：悬停扁平字段优先（HoverBg/HoverColor/HoverBorderColor/HoverShadow），
+	// 缺省回退嵌套 Hover State，再回退正常态推导。
 	var hoverDecls []string
 	hoverBase := p.Hover
+	hoverBg := p.HoverBg
+	if hoverBg == "" {
+		hoverBg = hoverBase.Background
+	}
 	switch p.Variant {
 	case VariantOutline:
-		if hoverBase.Background == "" {
-			hoverBase.Background = p.Normal.Color
+		if hoverBg == "" {
+			hoverBg = textColor
 		}
 	default:
-		if hoverBase.Background == "" {
-			hoverBase.Background = p.Normal.Background
+		if hoverBg == "" {
+			hoverBg = bg
 		}
 	}
-	if hoverBase.Background != "" {
-		hoverDecls = append(hoverDecls, core.CSSDecl("background", hoverBase.Background))
+	if hoverBg != "" {
+		hoverDecls = append(hoverDecls, core.CSSDecl("background", hoverBg))
 	}
-	if hoverBase.Color != "" {
-		hoverDecls = append(hoverDecls, core.CSSDecl("color", hoverBase.Color))
+	hoverColor := p.HoverColor
+	if hoverColor == "" {
+		hoverColor = hoverBase.Color
 	}
-	if hoverBase.Border != "" {
-		hoverDecls = append(hoverDecls, core.CSSDecl("border-color", hoverBase.Border))
+	if hoverColor != "" {
+		hoverDecls = append(hoverDecls, core.CSSDecl("color", hoverColor))
 	}
-	if hoverBase.Shadow != "" {
-		if v, ok := core.ShadowPresets[hoverBase.Shadow]; ok {
+	hoverBorder := p.HoverBorderColor
+	if hoverBorder == "" {
+		hoverBorder = hoverBase.Border
+	}
+	if hoverBorder != "" {
+		hoverDecls = append(hoverDecls, core.CSSDecl("border-color", hoverBorder))
+	}
+	hoverShadow := p.HoverShadow
+	if hoverShadow == "" {
+		hoverShadow = hoverBase.Shadow
+	}
+	if hoverShadow != "" {
+		if v, ok := core.ShadowPresets[hoverShadow]; ok {
 			hoverDecls = append(hoverDecls, core.CSSDecl("box-shadow", v))
 		}
 	}
-	if p.HoverLift != "" {
-		hoverDecls = append(hoverDecls, "transform: translateY("+p.HoverLift+")")
+	if t := transformDecl(p, true); t != "" {
+		hoverDecls = append(hoverDecls, t)
 	}
 	if len(hoverDecls) > 0 {
-		b.Add(core.BreakpointDesktop, sel, []string{"transition: all 0.2s ease"})
+		b.Add(core.BreakpointDesktop, sel, []string{transitionDecl(p)})
 		b.Add(core.BreakpointDesktop, sel+":hover, "+sel+":focus", hoverDecls)
 	}
 
@@ -388,6 +525,93 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	if p.Block.Mobile {
 		b.Add(core.BreakpointMobile, sel, []string{"display: flex", "width: 100%"})
 	}
+}
+
+// transformDecl 合成 transform 声明（旋转 / 偏移 / 缩放 / 倾斜 / 翻转）。
+// hover=true 时取悬停态字段；悬停态全部未设置则返回空串（继承标准态，不覆盖）。
+func transformDecl(p *Props, hover bool) string {
+	rotate, tx, ty, scale, skewX, skewY := p.Rotate, p.TranslateX, p.TranslateY, p.Scale, p.SkewX, p.SkewY
+	flipX, flipY := p.FlipX, p.FlipY
+	if hover {
+		if p.HoverRotate == "" && p.HoverTranslateX == "" && p.HoverTranslateY == "" &&
+			p.HoverScale == "" && p.HoverSkewX == "" && p.HoverSkewY == "" && p.HoverLift == "" {
+			return ""
+		}
+		if p.HoverRotate != "" {
+			rotate = p.HoverRotate
+		}
+		if p.HoverTranslateX != "" {
+			tx = p.HoverTranslateX
+		}
+		if p.HoverTranslateY != "" {
+			ty = p.HoverTranslateY
+		} else if p.HoverLift != "" {
+			ty = p.HoverLift
+		}
+		if p.HoverScale != "" {
+			scale = p.HoverScale
+		}
+		if p.HoverSkewX != "" {
+			skewX = p.HoverSkewX
+		}
+		if p.HoverSkewY != "" {
+			skewY = p.HoverSkewY
+		}
+	}
+	var parts []string
+	if rotate != "" {
+		parts = append(parts, "rotate("+rotate+")")
+	}
+	if tx != "" || ty != "" {
+		x, y := tx, ty
+		if x == "" {
+			x = "0"
+		}
+		if y == "" {
+			y = "0"
+		}
+		parts = append(parts, "translate("+x+", "+y+")")
+	}
+	if scale != "" {
+		parts = append(parts, "scale("+scale+")")
+	}
+	if skewX != "" || skewY != "" {
+		x, y := skewX, skewY
+		if x == "" {
+			x = "0"
+		}
+		if y == "" {
+			y = "0"
+		}
+		parts = append(parts, "skew("+x+", "+y+")")
+	}
+	if flipX {
+		parts = append(parts, "scaleX(-1)")
+	}
+	if flipY {
+		parts = append(parts, "scaleY(-1)")
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return "transform: " + strings.Join(parts, " ")
+}
+
+// transitionDecl 通用过渡声明：时长 / 缓动 / 延迟，缺省 all 0.2s ease。
+func transitionDecl(p *Props) string {
+	d := p.TransitionDuration
+	if d == "" {
+		d = "0.2s"
+	}
+	e := p.TransitionEasing
+	if e == "" {
+		e = "ease"
+	}
+	parts := []string{"all", d, e}
+	if p.TransitionDelay != "" {
+		parts = append(parts, p.TransitionDelay)
+	}
+	return "transition: " + strings.Join(parts, " ")
 }
 
 // isSafeURL 外链白名单（仅 http/https）。

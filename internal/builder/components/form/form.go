@@ -73,7 +73,7 @@ type Props struct {
 	// Method 提交方式：post / get（默认 post）。
 	Method string `json:"method,omitempty" ct:"select,post=POST,get=GET,default=post,sec=content,label=提交方式"`
 	// Advanced 通用高级属性（docs/02-C0）。
-	Advanced core.AdvancedProps `json:"advanced"`
+	Advanced core.AdvancedProps `json:"advanced" ct:"group"`
 }
 
 // Widget 基座实例。
@@ -181,7 +181,7 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	b.Add(core.BreakpointDesktop, sel+" textarea", append(append([]string{}, inputDecls...), "min-height: 96px", "resize: vertical"))
 	b.Add(core.BreakpointDesktop, sel+" select", inputDecls)
 	// 聚焦边框高亮。
-	focusDecls := []string{"border-color: var(--c-primary, #2563eb)", "outline: none"}
+	focusDecls := []string{"border-color: var(--wp-c-primary, #2563eb)", "outline: none"}
 	b.Add(core.BreakpointDesktop, sel+" input:focus", focusDecls)
 	b.Add(core.BreakpointDesktop, sel+" textarea:focus", focusDecls)
 	b.Add(core.BreakpointDesktop, sel+" select:focus", focusDecls)
@@ -192,14 +192,14 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		"font-size: 15px",
 		"font-weight: 600",
 		"color: #fff",
-		"background: var(--c-primary, #2563eb)",
+		"background: var(--wp-btn-bg, var(--wp-c-primary, #2563eb))",
 		"border: none",
 		"border-radius: 6px",
 		"cursor: pointer",
 		"transition: background .15s",
 	})
 	b.Add(core.BreakpointDesktop, sel+" .wp-form-submit:hover", []string{
-		"background: var(--c-primary-dark, #1d4ed8)",
+		"background: var(--wp-btn-hover-bg, var(--wp-c-primary, #1d4ed8))",
 	})
 }
 

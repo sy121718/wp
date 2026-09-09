@@ -12,6 +12,7 @@ package builder
 
 import (
 	"encoding/json"
+	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -125,6 +126,9 @@ var goldenCases = []goldenCase{
 		{"id":"t1","type":"core.text","props":{"mode":"plaintext","plainTag":"p","text":"纯文本 <b>&</b> 特殊"}},
 		{"id":"t2","type":"core.text","props":{"mode":"richtext","text":"<p>富文本 <strong>加粗</strong> & 更多</p><script>alert(1)</script>"}}
 	]`)},
+	{name: "table", doc: rootDoc(`[
+		{"id":"tb1","type":"core.table","props":{"caption":"标题 & 更多","headers":["列 A","列 B"],"rows":[["1","2"],["3","4"]]}}
+	]`)},
 	{name: "image", doc: rootDoc(`[
 		{"id":"img1","type":"core.image","props":{"src":"https://example.com/a.jpg","alt":"图片 & 说明","loading":"eager","fetchPriority":"high"}},
 		{"id":"img2","type":"core.image","props":{"src":"https://example.com/b.jpg","alt":"链接图","clickAction":"link","link":"https://example.com/t?x=1&y=2","linkTarget":"blank","linkRel":"nofollow","advanced":{"customId":"img-link"}}},
@@ -147,6 +151,17 @@ var goldenCases = []goldenCase{
 		{"id":"ib1","type":"core.infobox","props":{"icon":"check","title":"标题 & 内容","text":"描述","subtitle":"副标题","link":"https://example.com","btnText":"了解更多"}},
 		{"id":"ib2","type":"core.infobox","props":{"mediaImage":"https://example.com/m.jpg","title":"媒体图","text":"文本"}},
 		{"id":"ib3","type":"core.infobox","props":{"icon":"star","title":"链接卡","link":"https://example.com/2"}}
+	]`)},
+	{name: "card", doc: rootDoc(`[
+		{"id":"cd1","type":"core.card","props":{"title":"标题 & 更多","text":"<p>正文 <strong>加粗</strong> &amp; 更多</p><script>alert(1)</script>","imageSrc":"https://example.com/a.jpg","buttonText":"立即购买","buttonLink":"https://example.com/buy?x=1&y=2","advanced":{"customClasses":["my-card"],"customId":"card-1"}}},
+		{"id":"cd2","type":"core.card","props":{"title":"纯文本正文","text":"第一段 1 < 2 & 更多\n\n第二段\n换行"}}
+	]`)},
+	{name: "quote", doc: rootDoc(`[
+		{"id":"q1","type":"core.quote","props":{"text":"<p>引用 <em>斜体</em> 内容</p>","author":"作者 & 更多","source":"https://example.com/src?x=1&y=2","align":"center"}},
+		{"id":"q2","type":"core.quote","props":{"text":"纯文本引用 & 特殊 <字符>","author":"匿名"}}
+	]`)},
+	{name: "faq", doc: rootDoc(`[
+		{"id":"fq1","type":"core.faq","props":{"items":[{"question":"问题一 & 特殊","answer":"<p>答案 <strong>加粗</strong> 内容</p>","open":true},{"question":"问题二","answer":"纯文本答案 1 < 2 & 更多\n\n第二段"}]}}
 	]`)},
 	{name: "socialbuttons", doc: rootDoc(`[
 		{"id":"sb1","type":"core.social_buttons","props":{"color":"brand","items":[{"platform":"facebook","url":"https://facebook.com/x"},{"platform":"x","url":"https://x.com/y"}]}},
@@ -211,6 +226,10 @@ var goldenCases = []goldenCase{
 // goldenDir golden 文件目录。
 const goldenDir = "testdata/golden"
 
+// updateJetGolden 重新固化 golden：编译产物发生「有意变更」后用它更新基准。
+// 用法：go test ./internal/builder -run TestJetViewByteEquivalent -update-jet-golden
+var updateJetGolden = flag.Bool("update-jet-golden", false, "更新 Jet 字节等价 golden 文件")
+
 // readGolden 读取 golden 文件内容（不存在时给出明确错误）。
 // golden 由切换前旧 render 路径生成并固化，作为「切换前产物」基准。
 func readGolden(t *testing.T, name string) string {
@@ -243,6 +262,15 @@ func TestJetViewByteEquivalent(t *testing.T) {
 			got, err := Compile(page, opts...)
 			if err != nil {
 				t.Fatalf("Compile: %v", err)
+			}
+			if *updateJetGolden {
+				if err := os.WriteFile(filepath.Join(goldenDir, c.name+".html"), []byte(got.HTML), 0o644); err != nil {
+					t.Fatalf("写 golden 失败: %v", err)
+				}
+				if err := os.WriteFile(filepath.Join(goldenDir, c.name+".css"), []byte(got.CSS), 0o644); err != nil {
+					t.Fatalf("写 golden 失败: %v", err)
+				}
+				return
 			}
 			if want := readGolden(t, c.name+".html"); got.HTML != want {
 				t.Errorf("HTML 字节不一致（与切换前产物）:\n--- golden ---\n%s\n--- 新输出 ---\n%s", want, got.HTML)

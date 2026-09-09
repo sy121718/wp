@@ -46,17 +46,17 @@ type Props struct {
 	// PerView 每屏显示 slide 数（1~4，默认 1）。
 	PerView PerView `json:"perView,omitempty"`
 	// Autoplay 自动播放间隔（秒）；0 关闭。
-	Autoplay float64 `json:"autoplay,omitempty"`
+	Autoplay float64 `json:"autoplay,omitempty" ct:"number,sec=content,label=自动播放间隔(s)"`
 	// ShowArrows 显示左右箭头（轻量增强）。
-	ShowArrows bool `json:"showArrows,omitempty"`
+	ShowArrows bool `json:"showArrows,omitempty" ct:"bool,sec=content,label=显示箭头"`
 	// ShowDots 显示圆点指示器（轻量增强）。
-	ShowDots bool `json:"showDots,omitempty"`
+	ShowDots bool `json:"showDots,omitempty" ct:"bool,sec=content,label=显示圆点"`
 	// Loop 循环（末尾跳回开头，增强实现）。
-	Loop bool `json:"loop,omitempty"`
+	Loop bool `json:"loop,omitempty" ct:"bool,sec=content,label=循环播放"`
 	// Gap slide 间距（px）。
-	Gap string `json:"gap,omitempty"`
+	Gap string `json:"gap,omitempty" ct:"dimension,maxlen=20,sec=content,label=间距"`
 	// Advanced 通用高级属性。
-	Advanced core.AdvancedProps `json:"advanced"`
+	Advanced core.AdvancedProps `json:"advanced" ct:"group"`
 }
 
 // Validate 校验：叶子校验由子树递归完成；slider 要求至少一个 slide。
@@ -65,7 +65,7 @@ func (c *Component) Validate(node *core.Node, ids map[string]bool) (err error) {
 		return err
 	}
 	if len(node.Children) == 0 {
-		return fmt.Errorf("节点 %s: 轮播至少需要一个 slide（把组件拖入内部）", node.ID)
+		return fmt.Errorf("%w: 节点 %s: 轮播至少需要一个 slide（把组件拖入内部）", core.ErrIncompleteNode, node.ID)
 	}
 	var p Props
 	if len(node.Props) > 0 {

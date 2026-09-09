@@ -48,7 +48,7 @@ type Props struct {
 	// TitleSize 标题字号。
 	TitleSize string `json:"titleSize,omitempty" ct:"dimension,maxlen=20,sec=style,label=标题字号"`
 	// Advanced 通用高级属性。
-	Advanced core.AdvancedProps `json:"advanced"`
+	Advanced core.AdvancedProps `json:"advanced" ct:"group"`
 }
 
 // Validate 校验：标题数需与 children 一致且至少一个。
@@ -98,7 +98,7 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		"list-style: none", "cursor: pointer", "user-select: none",
 		"display: flex", "align-items: center", "justify-content: space-between",
 		"padding: 14px 18px", "font-size: 15px", "font-weight: 600",
-		"background: var(--c-surface, #fff)",
+		"background: var(--wp-c-surface, #fff)",
 		"border: 1px solid rgba(0,0,0,.1)", "border-radius: 10px",
 	}
 	if p.BgColor != "" {
@@ -118,7 +118,7 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		"transition: transform .2s", "margin-left: 12px",
 	})
 	b.Add(core.BreakpointDesktop, sel+" details[open] "+head+"::after", []string{"transform: rotate(45deg)"})
-	b.Add(core.BreakpointDesktop, head+":hover", []string{"background: var(--c-bg-hover, #f3f4f6)"})
+	b.Add(core.BreakpointDesktop, head+":hover", []string{"background: var(--wp-c-surface, #f3f4f6)"})
 
 	b.Add(core.BreakpointDesktop, sel+" .wp-accordion-body", []string{
 		"padding: 14px 18px", "border: 1px solid rgba(0,0,0,.08)",

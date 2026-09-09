@@ -27,11 +27,11 @@ func (c *Component) PropsSpec() any { return &Props{} }
 // Props 计数器属性。
 type Props struct {
 	// Start 起始值。
-	Start float64 `json:"start,omitempty"`
+	Start float64 `json:"start,omitempty" ct:"number,sec=content,label=起始值"`
 	// End 结束值（目标）。
-	End float64 `json:"end,omitempty"`
+	End float64 `json:"end,omitempty" ct:"number,sec=content,label=结束值"`
 	// Decimals 小数位（默认 0）。
-	Decimals int `json:"decimals,omitempty"`
+	Decimals int `json:"decimals,omitempty" ct:"int,min=0,max=6,sec=content,label=小数位"`
 	// Prefix 前缀（如 $ / + / 已售）。
 	Prefix string `json:"prefix,omitempty" ct:"safe,maxlen=20,sec=content,label=前缀"`
 	// Suffix 后缀（如 % / + / 万）。
@@ -39,7 +39,7 @@ type Props struct {
 	// Label 底部标签（如「满意客户」）。
 	Label string `json:"label,omitempty" ct:"safe,maxlen=100,sec=content,label=标签"`
 	// Duration 动画时长（秒，默认 2）。
-	Duration float64 `json:"duration,omitempty"`
+	Duration float64 `json:"duration,omitempty" ct:"number,sec=content,label=动画时长(s)"`
 	// Color 数字颜色。
 	Color string `json:"color,omitempty" ct:"color,maxlen=200,sec=style,label=数字颜色"`
 	// FontSize 数字字号。
@@ -47,7 +47,7 @@ type Props struct {
 	// Align 对齐：left / center / right。
 	Align string `json:"align,omitempty" ct:"select,left=左对齐,center=居中,right=右对齐,default=center,sec=style,label=对齐"`
 	// Advanced 通用高级属性。
-	Advanced core.AdvancedProps `json:"advanced"`
+	Advanced core.AdvancedProps `json:"advanced" ct:"group"`
 }
 
 // Validate 校验。

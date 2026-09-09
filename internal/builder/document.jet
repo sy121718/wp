@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 {{ if .Title }}<title>{{ .Title }}</title>
 {{ end }}{{ if .MetaDescription }}<meta name="description" content="{{ .MetaDescription }}">
+{{ end }}{{ if .SEOHead }}{{ .SEOHead | unsafe }}
 {{ end }}<style>
 {{ if .ThemeVarsCSS }}{{ .ThemeVarsCSS | unsafe }}
 {{ end }}{{ .CSS | unsafe }}

@@ -56,6 +56,10 @@ type Item struct {
 	Alt     string `json:"alt,omitempty"`
 	Caption string `json:"caption,omitempty"`
 	Link    string `json:"link,omitempty"`
+	// Loading 单图加载策略三态：空=继承组件级 loading（再继承主题）/ on / off。
+	Loading string `json:"loading,omitempty" ct:"select,=继承组件,on=开启懒加载,off=关闭懒加载,default=,sec=content,label=单图加载"`
+	// FetchPriority 单图资源提示：空=auto（不输出）/ high=首屏优先 / low=次要。
+	FetchPriority string `json:"fetchPriority,omitempty" ct:"select,=自动,high=高优先,low=低优先,default=,sec=content,label=单图优先级"`
 }
 
 // Columns 三端栅格列数。
@@ -81,6 +85,9 @@ type Carousel struct {
 	SlidesPerView SlidesPerView `json:"slidesPerView,omitempty"`
 	Arrows        bool          `json:"arrows,omitempty"`
 	Dots          bool          `json:"dots,omitempty"`
+	// FirstEagerOff 关闭「首图优先加载」（默认开启）：轮播首图立即加载并置
+	// fetchpriority=high 以压 LCP；关闭后首图跟随组件级/主题的懒加载设置。
+	FirstEagerOff bool `json:"firstEagerOff,omitempty" ct:"bool,sec=content,label=关闭首图优先加载"`
 }
 
 // Grid 栅格配置。
@@ -131,8 +138,11 @@ type Props struct {
 	DefaultLink string `json:"defaultLink,omitempty" ct:"url,sec=content"`
 	CaptionMode string `json:"captionMode,omitempty" ct:"select,none=不显示,below=图下方,hover=悬停显示,default=none,sec=style,label=说明方式"`
 
+	// Loading 图片加载策略三态（组件级，作用于图集内全部图片）：
+	// 空=默认（继承主题「图片管理」）/ on=开启懒加载 / off=关闭。
+	Loading string `json:"loading,omitempty" ct:"select,=默认（继承主题）,on=开启懒加载,off=关闭懒加载,lazy=懒加载（旧）,eager=立即加载（旧）,default=,sec=content,label=图片加载"`
 	// Advanced 通用高级属性（docs/02-C0）。
-	Advanced core.AdvancedProps `json:"advanced"`
+	Advanced core.AdvancedProps `json:"advanced" ct:"group"`
 }
 
 // Widget 基座实例。

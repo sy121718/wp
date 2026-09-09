@@ -46,7 +46,7 @@ type Props struct {
 	// BorderColor 导航底边框色。
 	BorderColor string `json:"borderColor,omitempty" ct:"color,maxlen=200,sec=style,label=导航边框色"`
 	// Advanced 通用高级属性。
-	Advanced core.AdvancedProps `json:"advanced"`
+	Advanced core.AdvancedProps `json:"advanced" ct:"group"`
 }
 
 // Validate 校验：标签数需与面板数一致且至少一个。
@@ -106,7 +106,7 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		radio := "#wp-tabs-" + id + "-" + fmt.Sprintf("%d", i)
 		label := sel + " .wp-tabs-nav label:nth-of-type(" + fmt.Sprintf("%d", i+1) + ")"
 		b.Add(core.BreakpointDesktop, radio+":checked ~ "+label, []string{
-			"color: #fff", "background: var(--c-primary, #2563eb)",
+			"color: #fff", "background: var(--wp-c-primary, #2563eb)",
 		})
 	}
 

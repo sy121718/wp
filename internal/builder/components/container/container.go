@@ -10,6 +10,8 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"strconv"
+	"strings"
 
 	"go_wp/internal/builder/core"
 )
@@ -103,32 +105,34 @@ type ResponsiveInt struct {
 // Props 标准容器能力描述（规范 docs/02-A §3 + docs/03-A 面板能力）。
 type Props struct {
 	// Tag 原生语义标签：div/section/article/aside/nav/header/footer/main。
-	Tag         string           `json:"tag"`
-	Layout      LayoutProps      `json:"layout"`
-	Box         BoxProps         `json:"box"`
-	Visual      VisualProps      `json:"visual"`
+	Tag    string      `json:"tag"`
+	Layout LayoutProps `json:"layout"`
+	// Box 盒模型（内距/外距/尺寸/溢出）；ct:"group" 展开到「布局」区块。
+	Box BoxProps `json:"box" ct:"group"`
+	// Visual 外观（边框/圆角/阴影/背景）；ct:"group" 让检查器按 visual.* 路径展开渲染。
+	Visual      VisualProps      `json:"visual" ct:"group"`
 	Interaction InteractionProps `json:"interaction"`
 	// Position 定位系统（03-A §3.1 Tab1）：static/relative/absolute/sticky/drawer。
-	Position PositionProps `json:"position,omitempty"`
+	Position PositionProps `json:"position,omitempty" ct:"group"`
 	// StyleEx 样式扩展（03-A §3.1 Tab2）：背景双态/遮罩/形状分隔线/顺序/组父联动/属性。
 	StyleEx StyleExProps `json:"styleEx,omitempty"`
 }
 
-// PositionProps 定位系统。
+// PositionProps 定位系统（ct:"group" 展开到面板「布局」区块）。
 type PositionProps struct {
 	// Type 定位类型：static（默认）/ relative / absolute / sticky / drawer。
-	Type string `json:"type,omitempty"`
+	Type string `json:"type,omitempty" ct:"select,static=默认,relative=相对,absolute=绝对,sticky=粘性,drawer=抽屉,sec=layout,label=定位方式"`
 	// Top/Right/Bottom/Left absolute 精准坐标（CSS 长度值）。
-	Top    string `json:"top,omitempty"`
-	Right  string `json:"right,omitempty"`
-	Bottom string `json:"bottom,omitempty"`
-	Left   string `json:"left,omitempty"`
+	Top    string `json:"top,omitempty" ct:"dimension,maxlen=20,sec=layout,label=上偏移"`
+	Right  string `json:"right,omitempty" ct:"dimension,maxlen=20,sec=layout,label=右偏移"`
+	Bottom string `json:"bottom,omitempty" ct:"dimension,maxlen=20,sec=layout,label=下偏移"`
+	Left   string `json:"left,omitempty" ct:"dimension,maxlen=20,sec=layout,label=左偏移"`
 	// DrawerSide drawer 抽屉滑出边：left / right / bottom。
-	DrawerSide string `json:"drawerSide,omitempty"`
+	DrawerSide string `json:"drawerSide,omitempty" ct:"select,left=左侧,right=右侧,bottom=底部,sec=layout,label=抽屉方向"`
 	// DrawerOverlay 抽屉遮罩（:target 显隐，零 JS）。
-	DrawerOverlay bool `json:"drawerOverlay,omitempty"`
+	DrawerOverlay bool `json:"drawerOverlay,omitempty" ct:"bool,sec=layout,label=抽屉遮罩"`
 	// DrawerTriggerID 唯一触发元素 ID（配合 button 等触发协议）。
-	DrawerTriggerID string `json:"drawerTriggerId,omitempty"`
+	DrawerTriggerID string `json:"drawerTriggerId,omitempty" ct:"safe,maxlen=64,sec=layout,label=抽屉触发 ID"`
 }
 
 // StyleExProps 样式扩展。
@@ -189,51 +193,61 @@ type GridProps struct {
 	RowGap string `json:"rowGap,omitempty"`
 }
 
-// BoxProps 盒模型尺寸，三端独立。
+// BoxProps 盒模型尺寸，三端独立（ct:"group" 展开到面板「布局」区块）。
 type BoxProps struct {
-	// Padding 内边距（CSS 简写值），三端独立。
-	Padding Responsive `json:"padding,omitempty"`
-	// Margin 外边距（CSS 简写值，含 auto 居中），三端独立。
-	Margin Responsive `json:"margin,omitempty"`
+	// Padding 内边距（CSS 简写值），三端独立；检查器按「一行四向 + 联动」编辑（boxspacing）。
+	Padding Responsive `json:"padding,omitempty" ct:"boxspacing,sec=layout,label=内距"`
+	// Margin 外边距（CSS 简写值，含 auto 居中），三端独立；同上四向编辑。
+	Margin Responsive `json:"margin,omitempty" ct:"boxspacing,sec=layout,label=外距"`
 	// MinHeight 最小高度。
-	MinHeight string `json:"minHeight,omitempty"`
+	MinHeight string `json:"minHeight,omitempty" ct:"dimension,maxlen=20,sec=layout,label=最小高度"`
 	// MaxHeight 最大高度。
-	MaxHeight string `json:"maxHeight,omitempty"`
+	MaxHeight string `json:"maxHeight,omitempty" ct:"dimension,maxlen=20,sec=layout,label=最大高度"`
 	// Overflow 内容溢出处理：visible / hidden / scroll / auto。
-	Overflow string `json:"overflow,omitempty"`
+	Overflow string `json:"overflow,omitempty" ct:"select,visible=可见,hidden=隐藏,scroll=滚动,auto=自动,sec=layout,label=溢出处理"`
 }
 
 // VisualProps 视觉装饰。
 type VisualProps struct {
-	BgColor    string `json:"bgColor,omitempty"`
-	BgGradient string `json:"bgGradient,omitempty"` // 如 "linear-gradient(to right, #fff, #000)"
-	BgImage    string `json:"bgImage,omitempty"`    // 背景图 URL（媒体库选择回填；画布/产物直出）
+	BgColor    string `json:"bgColor,omitempty" ct:"color,maxlen=200,sec=background,label=背景色"`
+	BgGradient string `json:"bgGradient,omitempty" ct:"safe,maxlen=200,sec=background,label=背景渐变"` // 如 "linear-gradient(to right, #fff, #000)"
+	BgImage    string `json:"bgImage,omitempty" ct:"media,sec=background,label=背景图片"`              // 背景图 URL（媒体库选择回填；画布/产物直出）
+	// BgSlides 背景轮播图（多张，纯 CSS 交叉淡入；填写后优先于单张背景图）。
+	BgSlides []string `json:"bgSlides,omitempty" ct:"mediaList,sec=background,label=背景轮播图"`
+	// BgSlideInterval 轮播切换间隔（秒，默认 6）。
+	BgSlideInterval string `json:"bgSlideInterval,omitempty" ct:"number,min=1,max=60,sec=background,label=轮播间隔(s)"`
 	// BgPosition 背景定位（default=浏览器默认）：center / left top 等关键词组合；custom 时取 BgPositionXY。
-	BgPosition string `json:"bgPosition,omitempty" ct:"select,default=（默认）,custom=自定义,center=居中,center top=中上,center bottom=中下,left top=左上,left center=左中,left bottom=左下,right top=右上,right center=右中,right bottom=右下,default=default,sec=style,label=背景定位"`
+	BgPosition string `json:"bgPosition,omitempty" ct:"select,default=（默认）,custom=自定义,center=居中,center top=中上,center bottom=中下,left top=左上,left center=左中,left bottom=左下,right top=右上,right center=右中,right bottom=右下,default=default,sec=background,label=背景定位"`
 	// BgPositionXY 自定义定位值（BgPosition=custom 时生效），如 "50% 20%"。
-	BgPositionXY string `json:"bgPositionXY,omitempty" ct:"safe,maxlen=40,sec=style"`
+	BgPositionXY string `json:"bgPositionXY,omitempty" ct:"safe,maxlen=40,sec=background,label=自定义定位值"`
 	// BgAttachment 背景附着方式：default / scroll / fixed / local。
-	BgAttachment string `json:"bgAttachment,omitempty" ct:"select,default=（默认）,scroll=随页面滚动,fixed=固定（视差）,local=随内容滚动,default=default,sec=style,label=背景附着方式"`
+	BgAttachment string `json:"bgAttachment,omitempty" ct:"select,default=（默认）,scroll=随页面滚动,fixed=固定（视差）,local=随内容滚动,default=default,sec=background,label=背景附着方式"`
 	// BgRepeat 背景重复：default / no-repeat / repeat / repeat-x / repeat-y。
-	BgRepeat string `json:"bgRepeat,omitempty" ct:"select,default=（默认）,no-repeat=不重复,repeat=平铺,repeat-x=横向平铺,repeat-y=纵向平铺,default=default,sec=style,label=背景重复"`
+	BgRepeat string `json:"bgRepeat,omitempty" ct:"select,default=（默认）,no-repeat=不重复,repeat=平铺,repeat-x=横向平铺,repeat-y=纵向平铺,default=default,sec=background,label=背景重复"`
 	// BgSize 显示尺寸：default / auto / contain / cover / custom（取 BgSizeValue）。
-	BgSize string `json:"bgSize,omitempty" ct:"select,default=（默认）,auto=原始,contain=完整包含,cover=铺满裁剪,custom=自定义,default=default,sec=style,label=显示尺寸"`
+	BgSize string `json:"bgSize,omitempty" ct:"select,default=（默认）,auto=原始,contain=完整包含,cover=铺满裁剪,custom=自定义,default=default,sec=background,label=显示尺寸"`
 	// BgSizeValue 自定义尺寸值（BgSize=custom 时生效），如 "100% auto"。
-	BgSizeValue string `json:"bgSizeValue,omitempty" ct:"safe,maxlen=40,sec=style"`
-	// 边框三要素，需同时提供才生效。
-	BorderWidth string `json:"borderWidth,omitempty"`
-	BorderStyle string `json:"borderStyle,omitempty"`
-	BorderColor string `json:"borderColor,omitempty"`
-	// Radius 圆角弧度。
-	Radius string `json:"radius,omitempty"`
+	BgSizeValue string `json:"bgSizeValue,omitempty" ct:"safe,maxlen=40,sec=background,label=自定义尺寸值"`
+	// --- 边框与圆角（通用外观字段，面板「边框」标签） ---
+	// 边框三要素：宽度留空即无边框；只填部分时缺省值兜底（1px solid currentColor）。
+	BorderWidth string `json:"borderWidth,omitempty" ct:"dimension,maxlen=20,sec=border,label=边框宽度"`
+	BorderStyle string `json:"borderStyle,omitempty" ct:"select,solid=实线,dashed=虚线,dotted=点线,double=双线,sec=border,label=边框样式"`
+	BorderColor string `json:"borderColor,omitempty" ct:"color,maxlen=200,sec=border,label=边框颜色"`
+	// Radius 圆角（四角统一值；四角字段任一填写时以四角为准）。
+	Radius string `json:"radius,omitempty" ct:"dimension,maxlen=20,sec=border,label=圆角"`
+	// RadiusTL/TR/BR/BL 四角圆角（空 = 用 Radius）。
+	RadiusTL string `json:"radiusTL,omitempty" ct:"dimension,maxlen=20,sec=border,label=左上圆角"`
+	RadiusTR string `json:"radiusTR,omitempty" ct:"dimension,maxlen=20,sec=border,label=右上圆角"`
+	RadiusBR string `json:"radiusBR,omitempty" ct:"dimension,maxlen=20,sec=border,label=右下圆角"`
+	RadiusBL string `json:"radiusBL,omitempty" ct:"dimension,maxlen=20,sec=border,label=左下圆角"`
 	// Shadow 阴影级别：sm / md / lg / xl；custom 时取 ShadowCustom。
-	Shadow string `json:"shadow,omitempty"`
+	Shadow string `json:"shadow,omitempty" ct:"select,sm=小,md=中,lg=大,xl=特大,custom=自定义,sec=border,label=阴影"`
 	// ShadowCustom 自定义阴影四参 + 颜色（Shadow=custom 时生效）。
-	ShadowX      string `json:"shadowX,omitempty" ct:"dimension,maxlen=20,sec=style,label=阴影 X"`
-	ShadowY      string `json:"shadowY,omitempty" ct:"dimension,maxlen=20,sec=style,label=阴影 Y"`
-	ShadowBlur   string `json:"shadowBlur,omitempty" ct:"dimension,maxlen=20,sec=style,label=阴影模糊"`
-	ShadowSpread string `json:"shadowSpread,omitempty" ct:"dimension,maxlen=20,sec=style,label=阴影扩散"`
-	ShadowColor  string `json:"shadowColor,omitempty" ct:"color,maxlen=200,sec=style,label=阴影颜色"`
+	ShadowX      string `json:"shadowX,omitempty" ct:"dimension,maxlen=20,sec=border,label=阴影 X"`
+	ShadowY      string `json:"shadowY,omitempty" ct:"dimension,maxlen=20,sec=border,label=阴影 Y"`
+	ShadowBlur   string `json:"shadowBlur,omitempty" ct:"dimension,maxlen=20,sec=border,label=阴影模糊"`
+	ShadowSpread string `json:"shadowSpread,omitempty" ct:"dimension,maxlen=20,sec=border,label=阴影扩散"`
+	ShadowColor  string `json:"shadowColor,omitempty" ct:"color,maxlen=200,sec=border,label=阴影颜色"`
 }
 
 // InteractionProps 交互状态与动画（已上移 core 共享组，类型别名兼容过渡）。
@@ -417,10 +431,73 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 			}
 		}
 	}
-	if p.Visual.BorderStyle != "" {
-		desktop = append(desktop, core.CSSDecl("border", p.Visual.BorderWidth, p.Visual.BorderStyle, p.Visual.BorderColor))
+	// 背景轮播（多图交叉淡入，纯 CSS；填写后优先于单张背景图）。
+	if slides := p.Visual.BgSlides; len(slides) > 0 {
+		interval := 6
+		if v, err := strconv.Atoi(strings.TrimSuffix(strings.TrimSpace(p.Visual.BgSlideInterval), "s")); err == nil && v > 0 && v <= 60 {
+			interval = v
+		}
+		n := len(slides)
+		seg := 100 / n
+		total := fmt.Sprintf("%ds", n*interval)
+		kf := "@keyframes wp-bg-fade-" + strconv.Itoa(n) + " {\n" +
+			"  0% { opacity: 0 }\n" +
+			"  4% { opacity: 1 }\n" +
+			"  " + strconv.Itoa(seg-4) + "% { opacity: 1 }\n" +
+			"  " + strconv.Itoa(seg) + "% { opacity: 0 }\n" +
+			"  100% { opacity: 0 }\n" +
+			"}"
+		b.AddKeyframes("wp-bg-fade-"+strconv.Itoa(n), kf)
+		desktop = append(desktop, "position: relative", "overflow: hidden")
+		b.Add(core.BreakpointDesktop, sel+" .wp-bg-slides", []string{
+			"position: absolute", "inset: 0", "overflow: hidden", "pointer-events: none", "z-index: 0",
+		})
+		// 内容层抬到背景之上（背景层是唯一直接子元素例外）。
+		b.Add(core.BreakpointDesktop, sel+" > :not(.wp-bg-slides)", []string{"position: relative", "z-index: 1"})
+		b.Add(core.BreakpointDesktop, sel+" .wp-bg-slide", []string{
+			"position: absolute", "inset: 0",
+			"background-size: cover", "background-position: center", "background-repeat: no-repeat",
+			"opacity: 0",
+			fmt.Sprintf("animation: wp-bg-fade-%d %s ease-in-out infinite", n, total),
+		})
+		for i := range slides {
+			b.Add(core.BreakpointDesktop, fmt.Sprintf("%s .wp-bg-slide:nth-child(%d)", sel, i+1), []string{
+				fmt.Sprintf("animation-delay: %ds", i*interval),
+			})
+		}
 	}
-	if v := p.Visual.Radius; v != "" {
+
+	// 边框：任一要素填写即生效，缺失项用缺省值兜底（1px solid currentColor）。
+	if p.Visual.BorderWidth != "" || p.Visual.BorderStyle != "" || p.Visual.BorderColor != "" {
+		bw := p.Visual.BorderWidth
+		if bw == "" {
+			bw = "1px"
+		}
+		bs := p.Visual.BorderStyle
+		if bs == "" {
+			bs = "solid"
+		}
+		bc := p.Visual.BorderColor
+		if bc == "" {
+			bc = "currentColor"
+		}
+		desktop = append(desktop, core.CSSDecl("border", bw, bs, bc))
+	}
+	// 圆角：四角字段优先，其次统一值。
+	if p.Visual.RadiusTL != "" || p.Visual.RadiusTR != "" || p.Visual.RadiusBR != "" || p.Visual.RadiusBL != "" {
+		fallback := p.Visual.Radius
+		if fallback == "" {
+			fallback = "0"
+		}
+		corner := func(v string) string {
+			if v == "" {
+				return fallback
+			}
+			return v
+		}
+		desktop = append(desktop, core.CSSDecl("border-radius",
+			corner(p.Visual.RadiusTL), corner(p.Visual.RadiusTR), corner(p.Visual.RadiusBR), corner(p.Visual.RadiusBL)))
+	} else if v := p.Visual.Radius; v != "" {
 		desktop = append(desktop, core.CSSDecl("border-radius", v))
 	}
 	if p.Visual.Shadow == "custom" {
@@ -657,10 +734,7 @@ func validateProps(p *Props) (err error) {
 			return fmt.Errorf("无效的%s: %q", item.name, item.v)
 		}
 	}
-	borderSet := p.Visual.BorderWidth != "" || p.Visual.BorderStyle != "" || p.Visual.BorderColor != ""
-	if borderSet && (p.Visual.BorderWidth == "" || p.Visual.BorderStyle == "" || p.Visual.BorderColor == "") {
-		return errors.New("边框需同时提供粗细、线型与颜色")
-	}
+	// 边框三要素不再强制同时提供：缺失项由编译端兜底（1px / solid / currentColor）。
 	if p.Visual.BorderStyle != "" && !allowedBorderStyle[p.Visual.BorderStyle] {
 		return fmt.Errorf("无效的边框线型: %q", p.Visual.BorderStyle)
 	}

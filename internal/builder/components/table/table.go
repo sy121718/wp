@@ -29,11 +29,11 @@ type Props struct {
 	// Rows 数据行（二维切片；行内列数与 Headers 一致）。
 	Rows [][]string `json:"rows,omitempty"`
 	// Striped 斑马纹（tbody 偶数行浅色背景）。
-	Striped bool `json:"striped,omitempty"`
+	Striped bool `json:"striped,omitempty" ct:"bool,sec=content,label=斑马纹"`
 	// Bordered 边框（th/td 加 1px 边框）。
-	Bordered bool `json:"bordered,omitempty"`
+	Bordered bool `json:"bordered,omitempty" ct:"bool,sec=content,label=显示边框"`
 	// Advanced 通用高级属性（docs/02-C0）。
-	Advanced core.AdvancedProps `json:"advanced"`
+	Advanced core.AdvancedProps `json:"advanced" ct:"group"`
 }
 
 // Widget 基座实例。
@@ -101,7 +101,7 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	// 表头底纹与分隔线。
 	b.Add(core.BreakpointDesktop, sel+" thead th", []string{
 		"font-weight: 600",
-		"background: var(--c-surface, #f5f6f8)",
+		"background: var(--wp-c-surface, #f5f6f8)",
 		"border-bottom: 2px solid rgba(0,0,0,0.12)",
 	})
 	// 斑马纹：tbody 偶数行浅色背景。

@@ -29,11 +29,11 @@ const starPoints = "12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 2
 // Props rating 属性。
 type Props struct {
 	// Value 评分值（1~Max，可小数）。
-	Value float64 `json:"value,omitempty"`
+	Value float64 `json:"value,omitempty" ct:"number,sec=content,label=评分值"`
 	// Max 星数上限（默认 5，最大 10）。
-	Max int `json:"max,omitempty"`
+	Max int `json:"max,omitempty" ct:"int,min=1,max=10,sec=content,label=满分"`
 	// Advanced 通用高级属性（docs/02-C0）。
-	Advanced core.AdvancedProps `json:"advanced"`
+	Advanced core.AdvancedProps `json:"advanced" ct:"group"`
 }
 
 // Widget 基座实例。

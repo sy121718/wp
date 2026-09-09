@@ -20,7 +20,7 @@ func CompileCSS(id string, p *Props, b *core.CSSBuckets) {
 type UnitView struct {
 	// Unit 单元标识（days/hours/minutes/seconds），写入 data-unit 供客户端增强定位。
 	Unit string
-	// Label 单元中文标签（天/时/分/秒）。
+	// Label 单元标签（天/时/分/秒；构建期按当前语言填充，多语言 P4）。
 	Label string
 	// Sep 该单元后是否输出分隔符「:」（最后一个单元为 false）。
 	Sep bool
@@ -60,4 +60,44 @@ func BuildView(p *Props) View {
 	}
 	v.Units = units
 	return v
+}
+
+// 访客面组件文案 key：site.component.{type}.{prop}（docs/06-D §10.3）。
+const (
+	// TextKeyDays 「天」单元标签的词条 key。
+	TextKeyDays = "site.component.countdown.days"
+	// TextKeyHours 「时」单元标签的词条 key。
+	TextKeyHours = "site.component.countdown.hours"
+	// TextKeyMinutes 「分」单元标签的词条 key。
+	TextKeyMinutes = "site.component.countdown.minutes"
+	// TextKeySeconds 「秒」单元标签的词条 key。
+	TextKeySeconds = "site.component.countdown.seconds"
+)
+
+// unitText 单元标识 → (词条 key, 缺词条时的原中文兜底)。
+var unitText = map[string]struct{ Key, Fallback string }{
+	"days":    {Key: TextKeyDays, Fallback: "天"},
+	"hours":   {Key: TextKeyHours, Fallback: "时"},
+	"minutes": {Key: TextKeyMinutes, Fallback: "分"},
+	"seconds": {Key: TextKeySeconds, Fallback: "秒"},
+}
+
+// ApplyI18n 按当前语言填充时间单元标签（实现 core.I18nAware）。
+// text 为 nil 或未命中词条时使用包内中文兜底，保证标签永不为空。
+func (v *View) ApplyI18n(text func(key, fallback string) string) {
+	if v == nil {
+		return
+	}
+	for i := range v.Units {
+		u := &v.Units[i]
+		meta, ok := unitText[u.Unit]
+		if !ok {
+			continue
+		}
+		if text == nil {
+			u.Label = meta.Fallback
+			continue
+		}
+		u.Label = text(meta.Key, meta.Fallback)
+	}
 }

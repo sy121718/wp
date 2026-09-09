@@ -71,10 +71,14 @@
             var dots = [];
             var dotsWrap = root.querySelector('[data-dots]');
             if (dotsWrap) {
+                // 圆点无障碍标签模板由构建期按当前语言写入 data-slide-label
+                // （文案唯一真源在 sys_i18n，客户端不再硬编码中文）；
+                // 模板缺失（旧产物）时用中性英文兜底，仍不留硬编码中文。
+                var labelPattern = dotsWrap.getAttribute('data-slide-label') || 'Slide %s';
                 slides.forEach(function (_, i) {
                     var d = document.createElement('button');
                     d.type = 'button';
-                    d.setAttribute('aria-label', '第 ' + (i + 1) + ' 张');
+                    d.setAttribute('aria-label', labelPattern.replace('%s', String(i + 1)));
                     d.addEventListener('click', function () { go(i); });
                     dotsWrap.appendChild(d);
                     dots.push(d);

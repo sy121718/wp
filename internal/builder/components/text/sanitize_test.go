@@ -163,3 +163,58 @@ func TestSanitizeRichHTMLRichTextPreserved(t *testing.T) {
 		})
 	}
 }
+
+// TestSanitizeRichHTMLHeadingDowngrade h1 降级为 h2：
+// Trix 默认工具条的「标题」按钮输出 h1，而文章正文不得出现 H1
+// （SEO 要求一页一个 H1，由页面标题承担），故白名单输出侧统一降级。
+func TestSanitizeRichHTMLHeadingDowngrade(t *testing.T) {
+	cases := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{"h1 降级为 h2", `<h1>大标题</h1>`, `<h2>大标题</h2>`},
+		{"h1 属性一并剥离", `<h1 class="x" id="y">标题</h1>`, `<h2>标题</h2>`},
+		{"混合文档中 h1 降级", `<p>前</p><h1>中</h1><p>后</p>`, `<p>前</p><h2>中</h2><p>后</p>`},
+		{"h2/h3/h4 不受影响", `<h2>二</h2><h3>三</h3><h4>四</h4>`, `<h2>二</h2><h3>三</h3><h4>四</h4>`},
+		{"自闭合 h1 降级为 h2", `<h1/>`, `<h2>`},
+		{"降级幂等（h2 再清洗仍为 h2）", `<h2>已降级</h2>`, `<h2>已降级</h2>`},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := sanitizeRichHTML(c.src)
+			if got != c.want {
+				t.Errorf("sanitizeRichHTML(%q) = %q, 期望 %q", c.src, got, c.want)
+			}
+			// 幂等：降级后的输出再次清洗必须稳定（fuzz 不变式）。
+			if again := sanitizeRichHTML(got); again != got {
+				t.Errorf("h1 降级非幂等: %q -> %q", got, again)
+			}
+		})
+	}
+}
+
+// TestSanitizeRichHTMLPreCodeBlock Trix 代码块输出 pre，必须在白名单内且内容转义。
+func TestSanitizeRichHTMLPreCodeBlock(t *testing.T) {
+	cases := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{"pre 代码块保留", `<pre>x := 1</pre>`, `<pre>x := 1</pre>`},
+		{"pre 属性剥离", `<pre class="code" data-x="1">code</pre>`, `<pre>code</pre>`},
+		{"pre 内实体往返等价", `<pre>a &lt; b</pre>`, `<pre>a &lt; b</pre>`},
+		{"Trix 默认工具条产物（h1 + pre）", `<h1>标题</h1><pre>code</pre>`, `<h2>标题</h2><pre>code</pre>`},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := sanitizeRichHTML(c.src)
+			if got != c.want {
+				t.Errorf("sanitizeRichHTML(%q) = %q, 期望 %q", c.src, got, c.want)
+			}
+			if again := sanitizeRichHTML(got); again != got {
+				t.Errorf("pre 清洗非幂等: %q -> %q", got, again)
+			}
+		})
+	}
+}

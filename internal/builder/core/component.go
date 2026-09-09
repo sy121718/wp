@@ -6,6 +6,7 @@ package core
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -69,6 +70,11 @@ func Types() (types []string) {
 	sort.Strings(types)
 	return types
 }
+
+// ErrIncompleteNode 标记「节点配置不完整」（如轮播未拖入 slide）——
+// 属于编辑中间态，可由容错校验跳过该节点而非阻断整页；
+// 与「配置非法」（非法 props / 属性 key / 超长名称）区分，后者必须拒绝。
+var ErrIncompleteNode = errors.New("节点配置不完整")
 
 // ValidateNode 校验单个节点：按类型分发到已注册组件。
 // plugin.* 前缀为运行时插件组件（registry 不感知），只做结构校验

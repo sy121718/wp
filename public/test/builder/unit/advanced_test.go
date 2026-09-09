@@ -10,7 +10,7 @@ import (
 // advancedImageDoc 构造带 Advanced 配置的图片文档。
 func advancedImageDoc(t *testing.T, src, advanced string) *builder.Page {
 	t.Helper()
-	return mustParse(t, `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"pic","type":"core.image","props":{"src":"` + src + `","advanced":` + advanced + `}}]}`)
+	return mustParse(t, `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"pic","type":"core.image","props":{"src":"`+src+`","advanced":`+advanced+`}}]}`)
 }
 
 // TestAdvancedSpacingCompile 四向间距 + 三端响应式 + 负边距编译。
@@ -146,13 +146,15 @@ func TestAdvancedValidateErrors(t *testing.T) {
 		{"负内边距", `{"padding":{"desktop":{"top":"-8px"}}}`, "不允许负值"},
 		{"外边距超下限", `{"margin":{"desktop":{"top":"-500px"}}}`, "负值超出下限"},
 		{"间距注入", `{"margin":{"desktop":{"top":"1px}body{x:1}"}}}`, "无效的"},
-		{"非法宽度模式", `{"widthMode":"diagonal"}`, "无效的宽度模式"},
+		// 枚举类非法值由声明式 ct 校验（select 选项）先拦，文案为通用「不在选项内」；
+		// 数值越界同理报「超出上限」。组件自定义文案仅在声明式校验放行后才可能触发。
+		{"非法宽度模式", `{"widthMode":"diagonal"}`, "不在选项内"},
 		{"fixed缺宽度", `{"widthMode":"fixed"}`, "必须提供有效宽度值"},
-		{"非法对齐", `{"alignSelf":"middle"}`, "无效的自身对齐"},
+		{"非法对齐", `{"alignSelf":"middle"}`, "不在选项内"},
 		{"边框不完整", `{"border":{"width":"1px"}}`, "边框需同时提供"},
-		{"非法阴影", `{"shadow":"xxl"}`, "无效的阴影预设"},
-		{"透明度越界", `{"opacity":150}`, "0~100"},
-		{"zindex越界", `{"zIndex":999}`, "z-index"},
+		{"非法阴影", `{"shadow":"xxl"}`, "不在选项内"},
+		{"透明度越界", `{"opacity":150}`, "超出上限"},
+		{"zindex越界", `{"zIndex":999}`, "超出上限"},
 		{"保留前缀class", `{"customClasses":["wp-evil"]}`, "wp- 保留前缀"},
 		{"非法class字符", `{"customClasses":["a b"]}`, "无效的自定义 class"},
 		{"非法ID", `{"customId":"1abc"}`, "无效的自定义 ID"},

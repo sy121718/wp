@@ -72,7 +72,7 @@ type Props struct {
 	// Spacing 项间距（px）。
 	Spacing string `json:"spacing,omitempty" ct:"dimension,maxlen=20,sec=style,label=项间距"`
 	// Advanced 通用高级属性。
-	Advanced core.AdvancedProps `json:"advanced"`
+	Advanced core.AdvancedProps `json:"advanced" ct:"group"`
 }
 
 // Validate 校验。

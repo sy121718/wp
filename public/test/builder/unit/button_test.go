@@ -32,9 +32,10 @@ func TestButtonExternal(t *testing.T) {
 		}
 	}
 	for _, want := range []string{
-		"border-radius: 9999px",
+		// 按钮外观已变量化（跟随主题 --wp-btn-*，docs/09 §1.1）：不再输出字面圆角。
+		"border-radius: var(--wp-btn-radius",
 		"background: #2563eb", "color: #fff", "box-shadow: 0 1px 3px rgba(0,0,0,0.12)",
-		".wp-c-b1:hover, .wp-c-b1:focus", "transform: translateY(-2px)",
+		".wp-c-b1:hover, .wp-c-b1:focus", "transform: translate(0, -2px)",
 		"translateX(4px)",
 	} {
 		if !strings.Contains(c.CSS, want) {

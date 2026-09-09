@@ -30,6 +30,30 @@ type ThemeSettings struct {
 	Surface ThemeSurface `json:"surface,omitempty"`
 	// Motion 动效全局默认。
 	Motion ThemeMotion `json:"motion,omitempty"`
+	// Images 图片全局默认（懒加载策略 + 骨架屏），组件未显式设置时继承。
+	Images ThemeImages `json:"images,omitempty"`
+}
+
+// ThemeImages 图片全局默认（主题「图片管理」）。
+type ThemeImages struct {
+	// LazyLoad 懒加载默认策略：on（开启，默认）/ off（关闭）。
+	// 组件级 loading 为空（默认）时继承此值。
+	LazyLoad string `json:"lazyLoad,omitempty"`
+	// Skeleton 懒加载图片显示骨架屏（纯 CSS 渐变占位，图片加载完成后自然覆盖）。
+	Skeleton bool `json:"skeleton,omitempty"`
+}
+
+// LazyLoadEnabled 解析主题懒加载默认值（未设置视为开启）。
+func (t *ThemeSettings) LazyLoadEnabled() bool {
+	if t == nil {
+		return true
+	}
+	return t.Images.LazyLoad != "off"
+}
+
+// SkeletonEnabled 主题是否开启骨架屏。
+func (t *ThemeSettings) SkeletonEnabled() bool {
+	return t != nil && t.Images.Skeleton
 }
 
 // ThemeColors 色板令牌。
@@ -91,6 +115,11 @@ type ThemeButton struct {
 	PaddingX        string `json:"paddingX,omitempty"`
 	HoverBackground string `json:"hoverBackground,omitempty"`
 	HoverColor      string `json:"hoverColor,omitempty"`
+	// 边框与阴影（全局按钮默认，组件级可覆盖）。
+	BorderWidth string `json:"borderWidth,omitempty"`
+	BorderStyle string `json:"borderStyle,omitempty"`
+	BorderColor string `json:"borderColor,omitempty"`
+	Shadow      string `json:"shadow,omitempty"`
 }
 
 // ThemeSurface 全局表面。
@@ -163,6 +192,10 @@ func themeVars(t *ThemeSettings) []string {
 	add("btn-px", btn.PaddingX)
 	add("btn-hover-bg", btn.HoverBackground)
 	add("btn-hover-color", btn.HoverColor)
+	add("btn-border-width", btn.BorderWidth)
+	add("btn-border-style", btn.BorderStyle)
+	add("btn-border-color", btn.BorderColor)
+	add("btn-shadow", btn.Shadow)
 	// 表面。
 	s := t.Surface
 	add("radius", s.Radius)
@@ -171,9 +204,11 @@ func themeVars(t *ThemeSettings) []string {
 		add("c-border", s.BorderColor)
 	}
 	add("shadow", s.Shadow)
-	// 动效。
+	// 动效（空值不输出，避免 --wp-tr-duration: ms 这类非法声明）。
 	m := t.Motion
-	add("tr-duration", m.TransitionDuration+"ms")
+	if m.TransitionDuration != "" {
+		add("tr-duration", m.TransitionDuration+"ms")
+	}
 	add("easing", m.Easing)
 	return out
 }

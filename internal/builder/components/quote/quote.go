@@ -20,8 +20,8 @@ const (
 
 // Props core.quote 引用属性。
 type Props struct {
-	// Text 引用内容（非空）。
-	Text string `json:"text,omitempty" ct:"textarea,maxlen=1000,sec=content,label=引用内容"`
+	// Text 引用内容（富文本 HTML 片段，构建期白名单清洗；存量纯文本转义后按段落包装）。
+	Text string `json:"text,omitempty" ct:"richtext,maxlen=1000,sec=content,label=引用内容"`
 	// Author 作者（非空输出 <cite>）。
 	Author string `json:"author,omitempty" ct:"text,maxlen=100,sec=content,label=作者"`
 	// Source 出处链接（Author 非空时包裹 <a href>）。
@@ -29,7 +29,7 @@ type Props struct {
 	// Align 对齐：left / center（默认 left）。
 	Align string `json:"align,omitempty" ct:"select,left=左对齐,center=居中,sec=style,label=对齐"`
 	// Advanced 通用高级属性（docs/02-C0）。
-	Advanced core.AdvancedProps `json:"advanced"`
+	Advanced core.AdvancedProps `json:"advanced" ct:"group"`
 }
 
 // Widget 基座实例。
@@ -58,7 +58,7 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	decls := []string{
 		"margin: 0",
 		"padding: 16px 20px",
-		"border-left: 4px solid var(--c-primary, #2563eb)",
+		"border-left: 4px solid var(--wp-c-primary, #2563eb)",
 		"font-style: italic",
 	}
 	if p.Align == AlignCenter {

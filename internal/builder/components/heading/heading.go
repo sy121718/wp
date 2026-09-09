@@ -71,15 +71,15 @@ type Props struct {
 	// SubtitleSpacing 副标题与主标题的间距（如 "8px"）。
 	SubtitleSpacing string `json:"subtitleSpacing,omitempty" ct:"dimension,maxlen=30,sec=style,label=副标题间距"`
 	// Align 三端对齐：left/center/right。
-	Align Align `json:"align,omitempty"`
+	Align Align `json:"align,omitempty" ct:"rtext,sec=layout,label=对齐"`
 	// Width 宽度（CSS 长度，三端）。
-	Width Responsive `json:"width,omitempty"`
+	Width Responsive `json:"width,omitempty" ct:"rtext,sec=layout,label=宽度"`
 	// Highlight 高亮背景盒（WD 标题高亮装饰）：背景色/内边距/圆角。
 	HighlightColor   string `json:"highlightColor,omitempty" ct:"color,maxlen=200,sec=style,label=高亮背景色"`
 	HighlightPadding string `json:"highlightPadding,omitempty" ct:"dimension,maxlen=30,sec=style,label=高亮内边距"`
 	HighlightRadius  string `json:"highlightRadius,omitempty" ct:"dimension,maxlen=30,sec=style,label=高亮圆角"`
 	// Advanced 通用高级属性（规范 docs/02-C0）。
-	Advanced core.AdvancedProps `json:"advanced"`
+	Advanced core.AdvancedProps `json:"advanced" ct:"group"`
 }
 
 // Align 三端对齐。

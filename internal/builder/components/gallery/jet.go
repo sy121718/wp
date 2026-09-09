@@ -22,6 +22,8 @@ type View struct {
 	Visible bool
 	// IsCarousel 是否轮播模式（否则为 grid 网格模式）。
 	IsCarousel bool
+	// FirstEager 轮播首图优先加载（carousel 且未关闭 carousel.firstEagerOff 时为真）。
+	FirstEager bool
 	// Items 每个单图项的渲染视图数据（URL/alt/图注/点击动作分支）。
 	Items []ItemView
 	// CarouselAttr 轮播增强属性 data-carousel='...'（carousel 模式，原样输出）。
@@ -30,7 +32,34 @@ type View struct {
 	Arrows bool
 	// Dots 显示圆点指示器（carousel 模式）。
 	Dots bool
+
+	// Loading 组件级加载策略三态原值（空=继承主题，由 ApplyImageLoading 解析）。
+	Loading string
+	// IsEager 立即加载（ApplyImageLoading 后有效，作用于图集内全部 <img>）。
+	IsEager bool
+	// Skeleton 懒加载骨架屏（ApplyImageLoading 后有效）。
+	Skeleton bool
+	// Class 附加 class（仅骨架类；模板拼在 "gi" 之后，空则不追加）。
+	Class string
+
+	// PrevLabel / NextLabel 轮播箭头 aria-label（构建期按当前语言填充，多语言 P4）。
+	PrevLabel string
+	NextLabel string
 }
+
+// 访客面组件文案 key：site.component.{type}.{prop}（docs/06-D §10.3）。
+const (
+	// TextKeyPrev 轮播「上一张」箭头的词条 key。
+	TextKeyPrev = "site.component.gallery.prev"
+	// TextKeyNext 轮播「下一张」箭头的词条 key。
+	TextKeyNext = "site.component.gallery.next"
+)
+
+// textFallbackPrev / textFallbackNext 缺词条时的原中文兜底（绝不输出空串）。
+const (
+	textFallbackPrev = "上一张"
+	textFallbackNext = "下一张"
+)
 
 // ItemView 单个图集项的渲染视图数据（供 gallery.jet 模板使用）。
 type ItemView struct {
@@ -48,6 +77,20 @@ type ItemView struct {
 	IsLink bool
 	// Href 链接地址（link 分支，模板输出时由 Jet 默认转义）。
 	Href string
+
+	// Loading 单图 loading 三态原值（空=继承组件级 loading）。
+	Loading string
+	// FetchPriority 单图 fetchpriority 原值（空=不输出属性）。
+	FetchPriority string
+	// IsEager 立即加载（ApplyImageLoading 后有效）。
+	IsEager bool
+	// Skeleton 懒加载骨架屏（ApplyImageLoading 后有效）。
+	Skeleton bool
+	// Class 附加 class（仅骨架类；模板拼在 "gi" 之后）。
+	Class string
+	// FetchHigh / FetchLow 资源提示（ApplyImageLoading 后有效）。
+	FetchHigh bool
+	FetchLow  bool
 }
 
 // BuildView 生成图集渲染视图：数据源解析（绑定优先/静态兜底）+ 单图项视图准备
@@ -72,7 +115,8 @@ func BuildView(p *Props, content core.ContentResolver) (View, error) {
 		views = append(views, buildItemView(p, r))
 	}
 
-	v := View{Visible: true, IsCarousel: mode == LayoutCarousel, Items: views}
+	v := View{Visible: true, IsCarousel: mode == LayoutCarousel, Items: views, Loading: p.Loading,
+		FirstEager: mode == LayoutCarousel && !p.Carousel.FirstEagerOff}
 	if mode == LayoutCarousel {
 		c := p.Carousel
 		interval := c.Interval
@@ -96,7 +140,7 @@ func buildItemView(p *Props, r Item) ItemView {
 		href = p.DefaultLink
 	}
 
-	iv := ItemView{URL: r.URL, Alt: r.Alt, Caption: r.Caption}
+	iv := ItemView{URL: r.URL, Alt: r.Alt, Caption: r.Caption, Loading: r.Loading, FetchPriority: r.FetchPriority}
 	switch {
 	case p.ClickAction == ClickLightbox && href == "":
 		// 默认相册灯箱：点击打开原图（客户端增强脚本接管为滑动相册；无脚本时浏览器直开图片）。
@@ -153,4 +197,63 @@ func filterUnsafeItems(items []Item) []Item {
 		out = append(out, it)
 	}
 	return out
+}
+
+// ApplyImageLoading 按主题「图片管理」默认解析加载三态（实现 core.ImageLoadingAware）。
+// 返回 true 表示需要骨架屏 CSS，由渲染层统一输出（CSSBuckets 去重，多图不重复）。
+func (v *View) ApplyImageLoading(d core.ImageDefaults) bool {
+	// 优先级：单图设置 → 组件级设置 → 主题默认 → 内置默认（开启）。
+	needSkeleton := false
+	allEager := true
+	for i := range v.Items {
+		it := &v.Items[i]
+		loading := it.Loading
+		if loading == "" && v.FirstEager && i == 0 {
+			// 轮播首图优先加载（默认开启）：首屏 LCP 图立即取，不等懒加载判定。
+			// 显式的单图 loading 优先于该默认。
+			loading = "off"
+		}
+		if loading == "" {
+			loading = v.Loading
+		}
+		attrs := core.ResolveImageLoading(loading, d)
+		it.IsEager, it.Skeleton = attrs.IsEager, attrs.Skeleton
+		it.Class = core.ImageSkeletonClass("", attrs.Skeleton)
+		fp := core.ResolveFetchPriority(it.FetchPriority)
+		if it.FetchPriority == "" && v.IsCarousel {
+			// 轮播首屏自动分级：第 1 张是 LCP 候选（high），其余延后（low）。
+			// 显式设置（high/low）优先，不受此默认影响。
+			if i == 0 {
+				fp = core.ImageFetchPriority{High: true}
+			} else {
+				fp = core.ImageFetchPriority{Low: true}
+			}
+		}
+		it.FetchHigh, it.FetchLow = fp.High, fp.Low
+		if attrs.Skeleton {
+			needSkeleton = true
+		}
+		if !attrs.IsEager {
+			allEager = false
+		}
+	}
+	// 组件级字段保留（全部图都立即加载才算 eager），供模板/测试的组件级判断使用。
+	v.IsEager = allEager
+	v.Skeleton = needSkeleton
+	v.Class = core.ImageSkeletonClass("", needSkeleton)
+	return needSkeleton
+}
+
+// ApplyI18n 按当前语言填充轮播箭头无障碍标签（实现 core.I18nAware）。
+// text 为 nil 或未命中词条时使用包内中文兜底，保证属性永不为空。
+func (v *View) ApplyI18n(text func(key, fallback string) string) {
+	if v == nil {
+		return
+	}
+	if text == nil {
+		v.PrevLabel, v.NextLabel = textFallbackPrev, textFallbackNext
+		return
+	}
+	v.PrevLabel = text(TextKeyPrev, textFallbackPrev)
+	v.NextLabel = text(TextKeyNext, textFallbackNext)
 }

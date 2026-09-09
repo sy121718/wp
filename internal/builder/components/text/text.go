@@ -39,7 +39,8 @@ type Props struct {
 	// PlainTag 纯文本模式的包裹标签：p（默认）/ span。
 	PlainTag string `json:"plainTag,omitempty" ct:"select,p=段落,span=行内,default=p,sec=content,label=包裹标签"`
 	// Text 内容：纯文本模式为纯字符串；富文本模式为 HTML 片段（编译期白名单清洗）。
-	Text string `json:"text,omitempty" ct:"text,maxlen=30000,sec=content"`
+	// ct kind = richtext：检查器走 Trix 富文本编辑器（Mode=plaintext 时前端回退多行输入）。
+	Text string `json:"text,omitempty" ct:"richtext,maxlen=30000,sec=content"`
 	// Binding CMS 字段绑定（优先于 Text）。
 	Binding *Binding `json:"binding,omitempty"`
 	// Typography 基准字号行高与对齐（三端独立，core.TextStyle 共享组）。
@@ -55,7 +56,7 @@ type Props struct {
 	// Excerpt 富文本绑定长文时仅取纯文本截前 N 字；0 关闭（仅 binding 时生效）。
 	Excerpt int `json:"excerpt,omitempty" ct:"slider,min=0,max=400,step=5,sec=style"`
 	// Advanced 通用高级属性（docs/02-C0）。
-	Advanced core.AdvancedProps `json:"advanced"`
+	Advanced core.AdvancedProps `json:"advanced" ct:"group"`
 }
 
 // Widget 泛型基座实例。

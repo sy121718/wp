@@ -32,6 +32,19 @@ type View struct {
 	// <svg>/<img> 骨架与动态属性（class/size/type）由 button.jet 模板经 .Props.Icon 渲染。
 	IconPrefix string
 	IconSuffix string
+	// Loading 组件级加载策略三态原值（空=继承主题，由 ApplyImageLoading 解析）。
+	Loading string
+	// IsEager 立即加载（ApplyImageLoading 后有效；仅媒体库图标 <img> 生效）。
+	IsEager bool
+	// Skeleton 懒加载骨架屏（ApplyImageLoading 后有效）。
+	Skeleton bool
+	// Class 附加 class（仅骨架类；模板拼在 "bt-icon" 之后，空则不追加）。
+	Class string
+	// FetchPriority 资源提示原值（空=不输出属性）。
+	FetchPriority string
+	// FetchHigh / FetchLow 资源提示（ApplyImageLoading 后有效）。
+	FetchHigh bool
+	FetchLow  bool
 }
 
 // BuildView 生成按钮渲染视图：标签选择 + 链接协议 + 图标（与 render 输出结构一致）。
@@ -44,15 +57,30 @@ func BuildView(p *Props, content core.ContentResolver) (View, error) {
 	if err != nil {
 		return View{}, err
 	}
-	v := View{Tag: tag, Attrs: attrs, Text: p.Text}
+	v := View{Tag: tag, Attrs: attrs, Text: p.Text, Loading: p.Loading, FetchPriority: p.FetchPriority}
 	if p.Icon != nil {
-		if p.Icon.Position == "suffix" {
+		// top 与 prefix 同用前缀位、bottom 与 suffix 同用后缀位，
+		// 上下排布由编译端 flex-direction: column 实现（见 CompileCSS）。
+		switch p.Icon.Position {
+		case "suffix", "bottom":
 			v.IconSuffix = fragment
-		} else {
+		default:
 			v.IconPrefix = fragment
 		}
 	}
 	return v, nil
+}
+
+// ApplyImageLoading 按主题「图片管理」默认解析加载三态（实现 core.ImageLoadingAware）。
+// 返回 true 表示需要骨架屏 CSS，由渲染层统一输出（CSSBuckets 去重，多图不重复）。
+func (v *View) ApplyImageLoading(d core.ImageDefaults) bool {
+	attrs := core.ResolveImageLoading(v.Loading, d)
+	v.IsEager, v.Skeleton = attrs.IsEager, attrs.Skeleton
+	// Class 只放附加类：模板里 <img class="bt-icon{{ ... }}"> 追加，避免覆盖 .bt-icon 样式。
+	v.Class = core.ImageSkeletonClass("", attrs.Skeleton)
+	fp := core.ResolveFetchPriority(v.FetchPriority)
+	v.FetchHigh, v.FetchLow = fp.High, fp.Low
+	return attrs.Skeleton
 }
 
 // buildIconFragment 计算按钮图标渲染片段（去 <svg>/<img> 骨架，骨架由 button.jet 模板渲染）。

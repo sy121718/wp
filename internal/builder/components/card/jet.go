@@ -22,7 +22,8 @@ type View struct {
 	ImageSrc string
 	// Title 标题（模板输出时由 Jet 默认转义）。
 	Title string
-	// Text 正文（模板输出时由 Jet 默认转义）。
+	// Text 正文（已由 core.RichTextHTML 处理：富文本白名单清洗 / 存量纯文本段落化，
+	// 模板侧 unsafe 原样输出）。
 	Text string
 	// HasButton 是否有按钮（ButtonText 与 ButtonLink 均非空）。
 	HasButton bool
@@ -30,17 +31,44 @@ type View struct {
 	ButtonText string
 	// ButtonLink 按钮链接。
 	ButtonLink string
+
+	// Loading 组件级加载策略三态原值（空=继承主题，由 ApplyImageLoading 解析）。
+	Loading string
+	// IsEager 立即加载（ApplyImageLoading 后有效）。
+	IsEager bool
+	// Skeleton 懒加载骨架屏（ApplyImageLoading 后有效）。
+	Skeleton bool
+	// Class <img> 的 class（骨架类并入后；空则不输出 class 属性）。
+	Class string
+	// FetchPriority 资源提示原值（空=不输出属性）。
+	FetchPriority string
+	// FetchHigh / FetchLow 资源提示（ApplyImageLoading 后有效）。
+	FetchHigh bool
+	FetchLow  bool
 }
 
 // BuildView 生成卡片渲染视图：图片/按钮可选分支，文本字段直通。
 func BuildView(p *Props) View {
 	return View{
-		HasImage:   p.ImageSrc != "",
-		ImageSrc:   p.ImageSrc,
-		Title:      p.Title,
-		Text:       p.Text,
-		HasButton:  p.ButtonText != "" && p.ButtonLink != "",
-		ButtonText: p.ButtonText,
-		ButtonLink: p.ButtonLink,
+		HasImage:      p.ImageSrc != "",
+		ImageSrc:      p.ImageSrc,
+		Title:         p.Title,
+		Text:          core.RichTextHTML(p.Text),
+		HasButton:     p.ButtonText != "" && p.ButtonLink != "",
+		ButtonText:    p.ButtonText,
+		ButtonLink:    p.ButtonLink,
+		Loading:       p.Loading,
+		FetchPriority: p.FetchPriority,
 	}
+}
+
+// ApplyImageLoading 按主题「图片管理」默认解析加载三态（实现 core.ImageLoadingAware）。
+// 返回 true 表示需要骨架屏 CSS，由渲染层统一输出（CSSBuckets 去重，多图不重复）。
+func (v *View) ApplyImageLoading(d core.ImageDefaults) bool {
+	attrs := core.ResolveImageLoading(v.Loading, d)
+	v.IsEager, v.Skeleton = attrs.IsEager, attrs.Skeleton
+	v.Class = core.ImageSkeletonClass(v.Class, attrs.Skeleton)
+	fp := core.ResolveFetchPriority(v.FetchPriority)
+	v.FetchHigh, v.FetchLow = fp.High, fp.Low
+	return attrs.Skeleton
 }

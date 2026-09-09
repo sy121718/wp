@@ -16,16 +16,20 @@ const Type = "core.card"
 type Props struct {
 	// Title 标题（非空输出 <h3>）。
 	Title string `json:"title,omitempty" ct:"text,maxlen=200,sec=content,label=标题"`
-	// Text 正文（非空输出 <p>）。
-	Text string `json:"text,omitempty" ct:"textarea,maxlen=1000,sec=content,label=正文"`
+	// Text 正文（富文本 HTML 片段，构建期白名单清洗；存量纯文本转义后按段落包装）。
+	Text string `json:"text,omitempty" ct:"richtext,maxlen=1000,sec=content,label=正文"`
 	// ImageSrc 顶部图片（媒体库选择回填 URL 或外部绝对 URL）。
 	ImageSrc string `json:"imageSrc,omitempty" ct:"media,maxlen=500,sec=content,label=图片"`
 	// ButtonText 按钮文字（非空且 ButtonLink 非空时输出 <a>）。
 	ButtonText string `json:"buttonText,omitempty" ct:"text,maxlen=50,sec=content,label=按钮文字"`
 	// ButtonLink 按钮链接（href）。
 	ButtonLink string `json:"buttonLink,omitempty" ct:"text,maxlen=500,sec=content,label=按钮链接"`
+	// Loading 图片加载策略三态：空=默认（继承主题「图片管理」）/ on=开启懒加载 / off=关闭。
+	Loading string `json:"loading,omitempty" ct:"select,=默认（继承主题）,on=开启懒加载,off=关闭懒加载,lazy=懒加载（旧）,eager=立即加载（旧）,default=,sec=content,label=图片加载"`
+	// FetchPriority 资源提示优先级：空=auto（不输出属性）/ high=首屏优先 / low=次要。
+	FetchPriority string `json:"fetchPriority,omitempty" ct:"select,=自动,high=高优先,low=低优先,default=,sec=content,label=加载优先级"`
 	// Advanced 通用高级属性（docs/02-C0）。
-	Advanced core.AdvancedProps `json:"advanced"`
+	Advanced core.AdvancedProps `json:"advanced" ct:"group"`
 }
 
 // Widget 基座实例。
@@ -53,7 +57,7 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		"display: flex",
 		"flex-direction: column",
 		"overflow: hidden",
-		"background: var(--c-surface, #fff)",
+		"background: var(--wp-c-surface, #fff)",
 		"border: 1px solid rgba(0,0,0,0.1)",
 		"border-radius: 12px",
 		"padding: 16px",
@@ -81,7 +85,7 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		"display: inline-block",
 		"padding: 8px 16px",
 		"border-radius: 6px",
-		"background: var(--c-primary, #2563eb)",
+		"background: var(--wp-btn-bg, var(--wp-c-primary, #2563eb))",
 		"color: #fff",
 		"text-decoration: none",
 	})

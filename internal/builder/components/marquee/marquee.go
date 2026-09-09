@@ -36,19 +36,19 @@ const (
 // Props 跑马灯属性。
 type Props struct {
 	// Speed 滚动速度（秒，单份内容位移一个自身宽度的时间；默认 12s）。
-	Speed float64 `json:"speed,omitempty"`
+	Speed float64 `json:"speed,omitempty" ct:"number,sec=content,label=速度(s)"`
 	// Direction 滚动方向：left / right。
 	Direction Direction `json:"direction,omitempty" ct:"select,left=向左,right=向右,default=left,sec=style,label=滚动方向"`
 	// PauseOnHover 悬停暂停。
 	PauseOnHover bool `json:"pauseOnHover,omitempty" ct:"bool,sec=style,label=悬停暂停"`
 	// Gap 内容间距（px）。
-	Gap string `json:"gap,omitempty"`
+	Gap string `json:"gap,omitempty" ct:"dimension,maxlen=20,sec=content,label=间距"`
 	// Background 背景色。
 	Background string `json:"background,omitempty" ct:"color,maxlen=200,sec=style,label=背景色"`
 	// Padding 内边距。
 	Padding string `json:"padding,omitempty" ct:"margin,maxlen=30,sec=style,label=内边距"`
 	// Advanced 通用高级属性。
-	Advanced core.AdvancedProps `json:"advanced"`
+	Advanced core.AdvancedProps `json:"advanced" ct:"group"`
 }
 
 // Validate 校验：至少一个内容节点。

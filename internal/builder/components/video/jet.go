@@ -31,6 +31,27 @@ type View struct {
 	Preload string
 	// Src 本地视频地址（模板输出时由 Jet 默认转义）。
 	Src string
+	// Title iframe 的 title 属性（无障碍描述，构建期按当前语言填充，多语言 P4）。
+	Title string
+}
+
+// TextKeyTitle 外链嵌入 iframe title 的词条 key（site.component.{type}.{prop}）。
+const TextKeyTitle = "site.component.video.title"
+
+// textFallbackTitle 缺词条时的原中文兜底（绝不输出空串）。
+const textFallbackTitle = "视频"
+
+// ApplyI18n 按当前语言填充 iframe title（实现 core.I18nAware）。
+// text 为 nil 或未命中词条时使用包内中文兜底，保证属性永不为空。
+func (v *View) ApplyI18n(text func(key, fallback string) string) {
+	if v == nil {
+		return
+	}
+	if text == nil {
+		v.Title = textFallbackTitle
+		return
+	}
+	v.Title = text(TextKeyTitle, textFallbackTitle)
 }
 
 // BuildView 生成视频渲染视图：外链嵌入 vs 本地 video 双形态判定。

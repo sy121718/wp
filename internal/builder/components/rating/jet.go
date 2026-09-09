@@ -6,6 +6,10 @@
 package rating
 
 import (
+	"fmt"
+	"strconv"
+	"strings"
+
 	"go_wp/internal/builder/core"
 )
 
@@ -33,9 +37,20 @@ type StarView struct {
 type View struct {
 	// Stars 星形列表（长度 = effectiveMax）。
 	Stars []StarView
-	// Label 无障碍描述文本（role=img 的 aria-label）。
+	// Label 无障碍描述文本（role=img 的 aria-label；构建期按当前语言填充，多语言 P4）。
 	Label string
+
+	// value / max 原始数值：ApplyI18n 按语言重新格式化 Label 时使用（不参与模板输出）。
+	value float64
+	max   int
 }
+
+// TextKeyLabel 评分无障碍描述的词条 key（site.component.{type}.{prop}）。
+// 词条值含两个 %s（评分值 / 满分），与 pkg/i18n.HasStringPlaceholdersOnly 约定一致。
+const TextKeyLabel = "site.component.rating.label"
+
+// textFallbackLabel 缺词条时的原中文兜底模板（绝不输出空串）。
+const textFallbackLabel = "评分 %s / %s"
 
 // BuildView 生成评分渲染视图：按 Value/Max 计算每颗星填充状态（实心/半星/空星）。
 func BuildView(p *Props) View {
@@ -56,5 +71,29 @@ func BuildView(p *Props) View {
 		}
 		stars = append(stars, StarView{Form: form, Points: starPoints})
 	}
-	return View{Stars: stars, Label: ratingLabel(p)}
+	return View{Stars: stars, Label: ratingLabel(p), value: p.Value, max: effectiveMax(p)}
+}
+
+// ApplyI18n 按当前语言重新格式化无障碍描述（实现 core.I18nAware）。
+//
+// 兜底：text 为 nil / 未命中词条 → 包内中文模板；词条缺 %s 占位符 → 原样输出；
+// 占位符数量不足时只注入能对应的参数，绝不产生 %!s(MISSING) 之类的破损文本。
+func (v *View) ApplyI18n(text func(key, fallback string) string) {
+	if v == nil {
+		return
+	}
+	tpl := textFallbackLabel
+	if text != nil {
+		tpl = text(TextKeyLabel, textFallbackLabel)
+	}
+	value := strconv.FormatFloat(v.value, 'f', -1, 64)
+	max := strconv.Itoa(v.max)
+	switch n := strings.Count(tpl, "%s"); {
+	case n >= 2:
+		v.Label = fmt.Sprintf(tpl, value, max)
+	case n == 1:
+		v.Label = fmt.Sprintf(tpl, value)
+	default:
+		v.Label = tpl
+	}
 }

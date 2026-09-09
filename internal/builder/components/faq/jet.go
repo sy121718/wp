@@ -18,7 +18,8 @@ func CompileCSS(id string, p *Props, b *core.CSSBuckets) {
 type FaqItemView struct {
 	// Question 问题文本（模板输出时由 Jet 默认转义）。
 	Question string
-	// Answer 答案文本（模板输出时由 Jet 默认转义）。
+	// Answer 答案文本（已由 core.RichTextHTML 处理：富文本白名单清洗 / 存量纯文本段落化，
+	// 模板侧 unsafe 原样输出）。
 	Answer string
 	// Open 默认展开。
 	Open bool
@@ -34,7 +35,7 @@ type View struct {
 func BuildView(p *Props) View {
 	items := make([]FaqItemView, 0, len(p.Items))
 	for _, it := range p.Items {
-		items = append(items, FaqItemView{Question: it.Question, Answer: it.Answer, Open: it.Open})
+		items = append(items, FaqItemView{Question: it.Question, Answer: core.RichTextHTML(it.Answer), Open: it.Open})
 	}
 	return View{Items: items}
 }

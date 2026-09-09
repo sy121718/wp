@@ -74,6 +74,24 @@ type CSSBuckets struct {
 	tablet    []string
 	mobile    []string
 	keyframes map[string]bool
+	// seen 已输出的规则（断点+规则体），重复规则只保留首份：
+	// 多张图共享同一骨架规则时不产生重复 CSS，确定性不受影响。
+	seen map[string]bool
+	// 组件自定义关键帧（如容器背景轮播）：按加入顺序输出，同名只输出一次。
+	customKeyframes map[string]string
+	customOrder     []string
+}
+
+// AddKeyframes 追加组件自定义关键帧（name 唯一，重复调用只保留首份，保证确定性）。
+func (b *CSSBuckets) AddKeyframes(name, css string) {
+	if b.customKeyframes == nil {
+		b.customKeyframes = map[string]string{}
+	}
+	if _, ok := b.customKeyframes[name]; ok {
+		return
+	}
+	b.customKeyframes[name] = css
+	b.customOrder = append(b.customOrder, name)
 }
 
 // Add 向指定断点追加一条规则；空声明被忽略，无有效声明的规则不输出。
@@ -88,6 +106,14 @@ func (b *CSSBuckets) Add(breakpoint, selector string, decls []string) {
 		return
 	}
 	rule := selector + " {\n" + indentDecl(filtered) + "}"
+	if b.seen == nil {
+		b.seen = map[string]bool{}
+	}
+	key := breakpoint + "\x00" + rule
+	if b.seen[key] {
+		return
+	}
+	b.seen[key] = true
 	switch breakpoint {
 	case BreakpointDesktop:
 		b.desktop = append(b.desktop, rule)
@@ -113,6 +139,9 @@ func (b *CSSBuckets) String() string {
 		if b.keyframes[name] {
 			parts = append(parts, keyframesCSS[name])
 		}
+	}
+	for _, name := range b.customOrder {
+		parts = append(parts, b.customKeyframes[name])
 	}
 	parts = append(parts, b.desktop...)
 	if len(b.tablet) > 0 {

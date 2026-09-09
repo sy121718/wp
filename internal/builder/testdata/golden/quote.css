@@ -1,0 +1,50 @@
+.wp-c-q1 {
+  margin: 0;
+  padding: 16px 20px;
+  border-left: 4px solid var(--wp-c-primary, #2563eb);
+  font-style: italic;
+  text-align: center;
+}
+
+.wp-c-q1 p {
+  margin: 0;
+  line-height: 1.7;
+}
+
+.wp-c-q1 cite {
+  display: block;
+  margin-top: 12px;
+  font-style: normal;
+  font-weight: 600;
+  color: rgba(0,0,0,0.6);
+}
+
+.wp-c-q1 cite a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.wp-c-q2 {
+  margin: 0;
+  padding: 16px 20px;
+  border-left: 4px solid var(--wp-c-primary, #2563eb);
+  font-style: italic;
+}
+
+.wp-c-q2 p {
+  margin: 0;
+  line-height: 1.7;
+}
+
+.wp-c-q2 cite {
+  display: block;
+  margin-top: 12px;
+  font-style: normal;
+  font-weight: 600;
+  color: rgba(0,0,0,0.6);
+}
+
+.wp-c-q2 cite a {
+  color: inherit;
+  text-decoration: none;
+}

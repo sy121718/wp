@@ -29,10 +29,14 @@ type Props struct {
 	Icon string `json:"icon,omitempty" ct:"select,,check=对勾,star=星形,arrow=箭头,shield=盾牌,truck=卡车,cross=叉形,sec=content,label=图标"`
 	// MediaImage 媒体图 URL（与 Icon 二选一，优先于 Icon）。
 	MediaImage string `json:"mediaImage,omitempty" ct:"media,sec=content,label=图片"`
+	// Loading 图片加载策略三态：空=默认（继承主题「图片管理」）/ on=开启懒加载 / off=关闭。
+	Loading string `json:"loading,omitempty" ct:"select,=默认（继承主题）,on=开启懒加载,off=关闭懒加载,lazy=懒加载（旧）,eager=立即加载（旧）,default=,sec=content,label=图片加载"`
+	// FetchPriority 资源提示优先级：空=auto（不输出属性）/ high=首屏优先 / low=次要。
+	FetchPriority string `json:"fetchPriority,omitempty" ct:"select,=自动,high=高优先,low=低优先,default=,sec=content,label=加载优先级"`
 	// Title 标题。
 	Title string `json:"title,omitempty" ct:"text,maxlen=200,sec=content,label=标题"`
-	// Text 描述文本。
-	Text string `json:"text,omitempty" ct:"text,maxlen=2000,sec=content,label=描述"`
+	// Text 描述文本（富文本 HTML 片段，构建期白名单清洗；存量纯文本转义后按段落包装）。
+	Text string `json:"text,omitempty" ct:"richtext,maxlen=2000,sec=content,label=描述"`
 	// Link 整卡链接（可选）。
 	Link string `json:"link,omitempty" ct:"url,sec=content,label=链接"`
 	// IconColor 图标颜色。
@@ -66,7 +70,7 @@ type Props struct {
 	// BtnText 按钮文字（与 Link 配合）。
 	BtnText string `json:"btnText,omitempty" ct:"safe,maxlen=100,sec=content,label=按钮文字"`
 	// Advanced 通用高级属性。
-	Advanced core.AdvancedProps `json:"advanced"`
+	Advanced core.AdvancedProps `json:"advanced" ct:"group"`
 }
 
 // Validate 校验。
@@ -193,7 +197,7 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		b.Add(core.BreakpointDesktop, sel+" .wp-infobox-btn", []string{
 			"display: inline-flex", "align-items: center", "justify-content: center",
 			"padding: 10px 22px", "border-radius: 999px",
-			"background: var(--c-primary, #2563eb)", "color: #fff",
+			"background: var(--wp-btn-bg, var(--wp-c-primary, #2563eb))", "color: var(--wp-btn-color, #fff)",
 			"text-decoration: none", "font-size: 0.9em", "font-weight: 500",
 			"margin-top: 6px", "transition: opacity .15s",
 		})

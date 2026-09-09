@@ -82,11 +82,11 @@ type Props struct {
 	ObjectFit        string `json:"objectFit,omitempty" ct:"select,cover=铺满裁剪,contain=完整包含,fill=拉伸,default=cover,sec=style,label=填充方式"`
 	// ObjectPosition 对象定位（object-fit 裁剪基准点），如 "center center" / "50% 20%"。
 	ObjectPosition string `json:"objectPosition,omitempty" ct:"safe,maxlen=40,sec=style,label=对象定位"`
-	Align          Align  `json:"align,omitempty"`                                             // 三端对齐：left/center/right
+	Align          Align  `json:"align,omitempty" ct:"rtext,sec=layout,label=对齐"`              // 三端对齐：left/center/right
 	Width          string `json:"width,omitempty" ct:"safe,maxlen=30,sec=style,label=宽度"`      // auto / 百分比 / px / rem
 	MaxWidth       string `json:"maxWidth,omitempty" ct:"safe,maxlen=30,sec=style,label=最大宽度"` // 如 480px
 	// Height 固定高度（三端独立；设置后配合 object-fit 控制裁切）。
-	Height Responsive `json:"height,omitempty"`
+	Height Responsive `json:"height,omitempty" ct:"rtext,sec=layout,label=高度"`
 	// BorderRadius 圆角（CSS 简写，如 "12px" 或 "12px 0"）。
 	BorderRadius string `json:"borderRadius,omitempty" ct:"safe,maxlen=30,sec=style,label=圆角"`
 
@@ -95,8 +95,11 @@ type Props struct {
 	Hover   Hover   `json:"hover,omitempty"`
 
 	// --- 性能与交互 ---
-	Loading       string `json:"loading,omitempty" ct:"select,lazy=懒加载,eager=立即加载,default=lazy,sec=content,label=加载策略"` // 默认 lazy
-	FetchPriority string `json:"fetchPriority,omitempty" ct:"select,high=高,auto=自动,sec=content,label=加载优先级"`
+	// Loading 图片加载策略三态：空=默认（继承主题「图片管理」设置）/ on=开启懒加载 / off=关闭。
+	// 旧值 lazy/eager 在编译期兼容映射（历史文档）。
+	// 保留旧值 lazy/eager 选项：历史页面文档仍在用，校验放行后由编译期映射到三态。
+	Loading       string `json:"loading,omitempty" ct:"select,=默认（继承主题）,on=开启懒加载,off=关闭懒加载,lazy=懒加载（旧）,eager=立即加载（旧）,default=,sec=content,label=图片加载"`
+	FetchPriority string `json:"fetchPriority,omitempty" ct:"select,=自动,high=高优先,low=低优先,default=,sec=content,label=加载优先级"`
 	ClickAction   string `json:"clickAction,omitempty" ct:"select,none=无,link=打开链接,lightbox=灯箱放大,default=none,sec=content,label=点击动作"`
 	Link          string `json:"link,omitempty" ct:"url,sec=content,label=链接地址"`
 	LinkTarget    string `json:"linkTarget,omitempty" ct:"select,blank=新窗口,self=当前窗口,default=self,sec=content,label=打开方式"`
@@ -106,7 +109,7 @@ type Props struct {
 	Binding *Binding `json:"binding,omitempty" sec:"content"`
 
 	// Advanced 通用高级属性（docs/02-C0）。
-	Advanced core.AdvancedProps `json:"advanced"`
+	Advanced core.AdvancedProps `json:"advanced" ct:"group"`
 }
 
 // Widget 基座实例。

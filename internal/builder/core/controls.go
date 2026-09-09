@@ -20,15 +20,24 @@ const (
 	ControlInt    ControlKind = "int"    // min/max 可选
 	ControlSlider ControlKind = "slider" // 滑块：int 语义 + step（编辑器交互）
 	ControlSelect ControlKind = "select"
-	ControlSafe   ControlKind = "safe"  // CSS 值白名单校验（IsSafeCSSValue）
-	ControlText   ControlKind = "text"  // 富文本/长文本（长度上限 maxlen，存原始 HTML 由组件自行处理）
-	ControlRegex  ControlKind = "regex" // 正则校验（pattern 来自独立 ctRegex tag）
-	ControlURL    ControlKind = "url"   // 链接：协议白名单（http/https/mailto/tel/相对路径/#）
+	ControlSafe   ControlKind = "safe" // CSS 值白名单校验（IsSafeCSSValue）
+	ControlText   ControlKind = "text" // 长文本（长度上限 maxlen）
+	// ControlRichText 富文本内容字段：编辑器为 Trix，存 HTML 片段，
+	// 构建期统一经 core.RichTextHTML（白名单清洗 / 存量纯文本段落化）后 unsafe 输出。
+	ControlRichText ControlKind = "richtext"
+	ControlRegex    ControlKind = "regex" // 正则校验（pattern 来自独立 ctRegex tag）
+	ControlURL      ControlKind = "url"   // 链接：协议白名单（http/https/mailto/tel/相对路径/#）
 	// UI 声明式控件（检查器渲染；ValidateSpec 仅做 maxlen，不校验值域）：
 	ControlMedia     ControlKind = "media"     // 媒体选择（预览缩略图 + 媒体库选择 + 清除）
 	ControlColor     ControlKind = "color"     // 颜色（色板 + 文本，支持 var(--token)）
 	ControlDimension ControlKind = "dimension" // 数值 + 单位（px/%/em/rem/vw）
 	ControlMargin    ControlKind = "margin"    // 四向边距（上右下左 + 联动 + 单位）
+	ControlSpacing   ControlKind = "spacing"   // 三端 × 四向间距（ResponsiveSpacing 结构）
+	ControlCorners   ControlKind = "corners"   // 四角圆角（联动锁 + 单位）
+	ControlClasses   ControlKind = "classes"   // 多类名（[]string，逗号分隔编辑）
+	ControlRText     ControlKind = "rtext"     // 三端文本值（Responsive{desktop,tablet,mobile}）
+	ControlNumber    ControlKind = "number"    // 浮点数（min/max 可选，文本输入）
+	ControlCSSDecls  ControlKind = "cssdecls"  // 分号分隔的 CSS 声明（按端覆盖，白名单校验）
 )
 
 // ctTag / ctRegexTag 字段标签：
@@ -72,14 +81,44 @@ func (c Control) SortKey() string { return c.Key }
 
 // ParseControls 从 props 结构体反射扫描 ct tag，生成控件描述符表。
 // 排序规则：按字段声明序（结构体字段顺序），保证确定性。
+//
+// 嵌套展开：带 ct:"group" 的结构体字段会递归展开，Key/goName 带点号路径
+// （如 visual.borderWidth / Visual.BorderWidth），前端按 props.<Key> 渲染。
 func ParseControls(props any) (controls []Control, err error) {
+	return parseControls(props, "", "")
+}
+
+// parseControls 递归实现：keyPrefix / goPrefix 为嵌套路径前缀（带尾点）。
+func parseControls(props any, keyPrefix, goPrefix string) (controls []Control, err error) {
 	t := reflect.TypeOf(props)
-	if t.Kind() == reflect.Ptr {
+	// 循环解引用：group 展开传入的可能是 *T 或 **T（指针嵌套字段）。
+	for t.Kind() == reflect.Ptr {
 		t = t.Elem()
+	}
+	if t.Kind() != reflect.Struct {
+		return nil, fmt.Errorf("props 必须是结构体或结构体指针")
 	}
 	for i := 0; i < t.NumField(); i++ {
 		f := t.Field(i)
 		tag, ok := f.Tag.Lookup(ctTagName)
+		// ct:"group" 标记的嵌套结构体：递归展开为带路径前缀的子控件。
+		if ok && strings.HasPrefix(strings.TrimSpace(tag), "group") {
+			// 指针嵌套块（如 layout.flex *FlexProps）：解引用后按结构体展开，
+			// 子控件 key 带点号路径，前端按 props.<key> 渲染。
+			ft := f.Type
+			for ft.Kind() == reflect.Ptr {
+				ft = ft.Elem()
+			}
+			if ft.Kind() != reflect.Struct {
+				return nil, fmt.Errorf("字段 %s: ct:\"group\" 仅支持结构体或结构体指针", f.Name)
+			}
+			sub, serr := parseControls(reflect.New(ft).Interface(), keyPrefix+jsonFieldName(f)+".", goPrefix+f.Name+".")
+			if serr != nil {
+				return nil, serr
+			}
+			controls = append(controls, sub...)
+			continue
+		}
 		if !ok || strings.TrimSpace(tag) == "" {
 			continue
 		}
@@ -95,9 +134,40 @@ func ParseControls(props any) (controls []Control, err error) {
 				return nil, fmt.Errorf("字段 %s: regex 控件必须提供 ctRegex tag", f.Name)
 			}
 		}
+		c.Key = keyPrefix + c.Key
+		c.goName = goPrefix + c.goName
 		controls = append(controls, c)
 	}
 	return controls, nil
+}
+
+// jsonFieldName 取字段的 json 名（无 json tag 时退回 Go 字段名）。
+func jsonFieldName(f reflect.StructField) string {
+	if j := strings.Split(f.Tag.Get("json"), ",")[0]; j != "" && j != "-" {
+		return j
+	}
+	return f.Name
+}
+
+// fieldByPath 按点号路径取嵌套字段值（如 Visual.BorderWidth）。
+// ok=false 表示路径不可达：父级指针为 nil（可选嵌套块未设置，如 layout.flex）。
+func fieldByPath(v reflect.Value, path string) (reflect.Value, bool) {
+	for _, part := range strings.Split(path, ".") {
+		for v.Kind() == reflect.Ptr {
+			if v.IsNil() {
+				return reflect.Value{}, false
+			}
+			v = v.Elem()
+		}
+		if v.Kind() != reflect.Struct {
+			return reflect.Value{}, false
+		}
+		v = v.FieldByName(part)
+		if !v.IsValid() {
+			return reflect.Value{}, false
+		}
+	}
+	return v, true
 }
 
 // parseControlTag 解析单个字段的 ct tag。
@@ -174,9 +244,10 @@ func ValidateSpec(props any, nodeID string) (err error) {
 		v = v.Elem()
 	}
 	for _, c := range controls {
-		fv := v.FieldByName(c.goName)
-		if !fv.IsValid() {
-			return fmt.Errorf("节点 %s: 字段 %s 不存在", nodeID, c.goName)
+		fv, reachable := fieldByPath(v, c.goName)
+		if !reachable {
+			// 父级可选指针块未设置（如 layout.flex 为 nil）：无值可校验，跳过。
+			continue
 		}
 		if err = validateControlValue(c, fv, nodeID); err != nil {
 			return err
@@ -219,6 +290,15 @@ func validateControlValue(c Control, fv reflect.Value, nodeID string) (err error
 			if strings.ContainsAny(s, " \t\"'<>`;") {
 				return msg("媒体值非法: %q", s)
 			}
+		case "boxspacing":
+			// 四向间距的 CSS 简写（如 "10px 20px"）：仅做 CSS 值安全校验。
+			if !IsSafeCSSValue(s) {
+				return msg("值非法: %q", s)
+			}
+		case ControlCSSDecls:
+			if !IsSafeCSSDecls(s) {
+				return msg("CSS 声明非法: %q", s)
+			}
 		case ControlSafe, ControlColor, ControlDimension, ControlMargin:
 			if !IsSafeCSSValue(s) {
 				return msg("值非法: %q", s)
@@ -246,6 +326,18 @@ func validateControlValue(c Control, fv reflect.Value, nodeID string) (err error
 		if c.Max != 0 && n > int64(c.Max) {
 			return msg("超出上限 %d: %d", c.Max, n)
 		}
+	case reflect.Float32, reflect.Float64:
+		// number 控件：浮点值域校验（0 视为未设置，放行）。
+		f := fv.Float()
+		if f == 0 {
+			return nil
+		}
+		if c.Min != 0 && f < float64(c.Min) {
+			return msg("小于下限 %d: %v", c.Min, f)
+		}
+		if c.Max != 0 && f > float64(c.Max) {
+			return msg("超出上限 %d: %v", c.Max, f)
+		}
 	}
 	return nil
 }
@@ -268,8 +360,9 @@ func IsSafeURL(s string) bool {
 		strings.HasPrefix(s, "tel:")
 }
 
-// sectionOrder 面板分组固定输出顺序（content → style → advanced）。
-var sectionOrder = map[string]int{"content": 0, "style": 1, "advanced": 2}
+// sectionOrder 面板分组固定输出顺序（内容 → 基础 → 边框 → 悬停 → 动效 → 高级）。
+// 未登记的分组不会被丢弃：排在已登记分组之后，同名按字典序，保证确定性。
+var sectionOrder = map[string]int{"content": 0, "style": 1, "border": 2, "hover": 3, "motion": 4, "advanced": 5}
 
 // SchemaJSON 生成 Inspector 面板 schema（供编辑器渲染控件表单）。
 // 输出按分组（content/style/advanced）→ 字段声明序，确定性排序。
@@ -292,20 +385,37 @@ func SchemaJSON(props any) (data []byte, err error) {
 		Options []ControlOption `json:"options,omitempty"`
 		Hidden  bool            `json:"hidden,omitempty"`
 	}
-	// 按 section 分桶，桶内保持字段声明序。
+	// 按 section 分桶，桶内保持字段声明序；未声明 sec 的字段归入 content。
 	buckets := map[string][]schemaItem{}
 	for _, c := range controls {
-		buckets[c.Section] = append(buckets[c.Section], schemaItem{
-			Key: c.Key, Kind: string(c.Kind), Label: c.Label, Section: c.Section, Default: c.Default,
+		sec := c.Section
+		if sec == "" {
+			sec = "content"
+		}
+		item := schemaItem{
+			Key: c.Key, Kind: string(c.Kind), Label: c.Label, Section: sec, Default: c.Default,
 			Min: c.Min, Max: c.Max, Step: c.Step, MaxLen: c.MaxLen, Unit: c.Unit, Options: c.Options, Hidden: c.Hidden,
-		})
+		}
+		buckets[sec] = append(buckets[sec], item)
 	}
 	var items []schemaItem
-	secs := make([]string, 0, len(sectionOrder))
-	for sec := range sectionOrder {
+	secs := make([]string, 0, len(buckets))
+	for sec := range buckets {
 		secs = append(secs, sec)
 	}
-	sort.Slice(secs, func(i, j int) bool { return sectionOrder[secs[i]] < sectionOrder[secs[j]] })
+	rank := func(sec string) int {
+		if v, ok := sectionOrder[sec]; ok {
+			return v
+		}
+		return len(sectionOrder) + 1
+	}
+	sort.Slice(secs, func(i, j int) bool {
+		ri, rj := rank(secs[i]), rank(secs[j])
+		if ri != rj {
+			return ri < rj
+		}
+		return secs[i] < secs[j]
+	})
 	for _, sec := range secs {
 		items = append(items, buckets[sec]...)
 	}

@@ -23,8 +23,10 @@ const (
 type FaqItem struct {
 	// Question 问题文本。
 	Question string `json:"question"`
-	// Answer 答案文本。
-	Answer string `json:"answer"`
+	// Answer 答案文本（富文本 HTML 片段，构建期白名单清洗；存量纯文本转义后按段落包装）。
+	// 数组元素不参与 schema 反射（Items 无 ct tag，不递归展开），
+	// 该 ct 标签用于声明控件契约：编辑器由前端 faqPanel 的 Trix 富文本承担。
+	Answer string `json:"answer" ct:"richtext,maxlen=2000,label=答案"`
 	// Open 默认展开。
 	Open bool `json:"open,omitempty"`
 }
@@ -34,7 +36,7 @@ type Props struct {
 	// Items 常见问题条目（数组字段，无 ct tag，边界由 validateExtra 校验）。
 	Items []FaqItem `json:"items,omitempty"`
 	// Advanced 通用高级属性（docs/02-C0）。
-	Advanced core.AdvancedProps `json:"advanced"`
+	Advanced core.AdvancedProps `json:"advanced" ct:"group"`
 }
 
 // Widget 基座实例。
@@ -82,7 +84,7 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	b.Add(core.BreakpointDesktop, sel+" details", []string{
 		"border: 1px solid rgba(0,0,0,0.1)",
 		"border-radius: 10px",
-		"background: var(--c-surface, #fff)",
+		"background: var(--wp-c-surface, #fff)",
 	})
 	b.Add(core.BreakpointDesktop, sel+" summary", []string{
 		"list-style: none",

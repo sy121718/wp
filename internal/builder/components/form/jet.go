@@ -42,6 +42,12 @@ type View struct {
 	Fields []FieldView
 }
 
+// TextKeySubmit 提交按钮缺省文案的词条 key（site.component.{type}.{prop}）。
+const TextKeySubmit = "site.component.form.submit"
+
+// textFallbackSubmit 缺词条时的原中文兜底（绝不输出空串）。
+const textFallbackSubmit = "提交"
+
 // BuildView 生成表单渲染视图：字段列表 + 提交语义（method/submitLabel 缺省回退）。
 func BuildView(p *Props) View {
 	method := p.Method
@@ -50,7 +56,7 @@ func BuildView(p *Props) View {
 	}
 	submitLabel := p.SubmitLabel
 	if submitLabel == "" {
-		submitLabel = "提交"
+		submitLabel = textFallbackSubmit
 	}
 	fields := make([]FieldView, 0, len(p.Fields))
 	for _, f := range p.Fields {
@@ -69,4 +75,23 @@ func BuildView(p *Props) View {
 		SubmitLabel: submitLabel,
 		Fields:      fields,
 	}
+}
+
+// ApplyI18n 按当前语言填充提交按钮缺省文案（实现 core.I18nAware）。
+//
+// 用户显式填写的提交文案优先：只有「未填写」或「恰好等于内置缺省『提交』」时才翻译
+// （BuildView 已把空值落为内置缺省，此处无法区分两者，故以值判定）。
+// text 为 nil 或未命中词条时使用包内中文兜底，保证按钮文字永不为空。
+func (v *View) ApplyI18n(text func(key, fallback string) string) {
+	if v == nil {
+		return
+	}
+	if v.SubmitLabel != "" && v.SubmitLabel != textFallbackSubmit {
+		return // 用户自定义文案不翻译
+	}
+	if text == nil {
+		v.SubmitLabel = textFallbackSubmit
+		return
+	}
+	v.SubmitLabel = text(TextKeySubmit, textFallbackSubmit)
 }
