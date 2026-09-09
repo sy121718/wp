@@ -1057,13 +1057,81 @@ HTTP GET /site/en-US/about/ -> 200, 8732 bytes
 
 **仍属后续**
 
-- `project_locales` 的后台 CRUD 入口与语言切换器 UI（本阶段只落地表/契约/消费点；无 UI 时清单与 `i18n.default_lang` 一致，不会出现「默认语言分歧」）。
+- ~~`project_locales` 的后台 CRUD 入口与语言切换器 UI~~ **已落地，见 §15.9**。
 - 站内链接本地化仍只覆盖导航（§15.5 第 5 条）：导航来源候选（`navigation/outbound/source`）读 `pages.active_path` 镜像，多语言下取「最近发布语言」的路径。
 - 禁用某语言后其已激活路由不会自动清理（无 UI 触发，本阶段不处理）。
 - sitemap 的 `<loc>` 与 hreflang 在未配置 `WP_SITE_BASE_URL` 时输出站点内路径（既有行为）。
 
+### 15.9 语言切换器 UI + 后台语言清单管理已落地（2025-09）
+
+§15.8「仍属后续」第 1 条（前台切换器 + 后台清单 CRUD）已落地。代码为唯一事实来源，结论均带验证方式。
+
+| # | 改动 | 位置 | 验证 |
+|---|---|---|---|
+| 1 | `core.languages` 组件（独立组件形态，判断依据见下） | `internal/builder/components/languages/{languages,jet}.go` + `internal/templates/components/languages.jet` | `TestLanguagesSwitcherRendersLinks` 等 7 个用例 |
+| 2 | `core.LocaleLink` + `RenderContext.Locales` + `builder.WithLocaleLinks` | `internal/builder/core/render.go`、`internal/builder/builder.go` | 编译期 + 组件测试 |
+| 3 | 装配层一次计算、两处消费：hreflang 互指 + 切换器链接（同一份 `siteRouteEntries`） | `internal/module/page/service/page_assemble.go`（`localeViewOf` 取代 `alternatesOf`） | `TestPageArtifactLanguageSwitcher`、既有 `TestPageArtifactHreflangPerLanguage` |
+| 4 | `<html lang>` 跟随构建语言（此前硬编码 `zh-CN`，en-US 产物自称中文） | `internal/builder/{builder.go,document.jet}`（`CompiledPage.Lang` → `documentView.Lang`，空回退默认语言） | `TestRenderDocumentLangAttribute`、`TestRenderDocumentGolden`（默认语言字节不变） |
+| 5 | 切换器容器无障碍标签词条 seed | `public/migrations/065_i18n_seed_language_switcher.sql` + `register.go`（ConditionSQL 按 `site.component.languages.%` 的 zh-CN 行数判定） | `TestMigrationsRunTwiceIsIdempotent` |
+| 6 | 组件库入口（工作台可拖入） | `internal/templates/static/js/workbench/palette.js` | `TestPaletteGroupsCoverItems` / `TestPaletteInsertNodesValidate` |
+| 7 | 后台语言清单管理（站点设置「语言」分组） | `internal/module/dashboard/inbound/http/{site_settings_handle,site_locales_handle,dashboard_router}.go`、`internal/templates/admin/{settings.html,partials/locale_rows.html}` | `TestSiteSettingsRendersLocaleGroup` / `TestLocaleRowsFragmentAddAndRemove` / `TestSaveSiteLocalesPersists` / `TestSaveSiteLocalesValidation` |
+
+**前台切换器为什么是独立组件**（而不是 document.jet 全局注入 / nav 的一个选项）：
+
+1. 访问面所有可见 UI 都由组件产生，`document.jet` 只是骨架（head + body 包裹）；把可见结构塞进骨架会打破「body 内容 = 文档编译产物」的语义，且骨架没有组件 CSS 通道（无法表达位置、可见性开关与样式）；
+2. 导航（`core.nav`）的职责是站点菜单，语言切换不是菜单项；混入会让 navigation 模块承担非菜单职责，且只在「放了导航的页面」生效；
+3. 独立组件可放进页眉全局块（block 模块 global 引用）→ 全站一次放置即生效，这是站点级复用的既有机制；
+4. 组件天然受益于「同一文档、多语言各自一份产物」：文档只维护一份，构建期按当前语言渲染当前项标记与各语言链接。
+
+**产物形态**（真实构建输出，`TestPageArtifactLanguageSwitcher` 断言原文）：
+
+```html
+<nav class="wp-c-lang1 wp-lang" aria-label="语言">
+  <ul class="wp-lang-list">
+    <li class="wp-lang-item is-current"><span class="wp-lang-current" lang="zh-CN" aria-current="true">简体中文</span></li>
+    <li class="wp-lang-item"><a class="wp-lang-link" href="/en-US/about" hreflang="en-US" lang="en-US">English</a></li>
+  </ul>
+</nav>
+```
+
+- 当前语言：`<span aria-current="true">`，不可点（不输出指向自身的 `<a>`）；其他语言：`<a hreflang lang>`。
+- **零 JS**：产物里没有任何跳转脚本（测试断言无 `onclick` / `location.href=`）。
+- 展示名用「语言自称」（简体中文 / English / 日本語 …，`languages.Endonym`，未收录回退语言码）。
+
+**缺语言回退策略（§9）选 S2「隐藏」**，理由：
+
+1. 静态访问面没有运行时回退（`/site` 是 `http.FileServer`，未激活路径直接 404），给出一个必然 404 的链接是访问面最差结果；
+2. 「指向默认语言回退页」会与产物 head 的 hreflang/canonical 互相矛盾（head 里 `en-US → /en-US/about`，页面上 en-US 链接却指向 `/zh-CN/about`），SEO 与访客认知双输；
+3. 判据必须是构建输入的一部分才能守住确定性不变量（同一文档两次构建字节一致）：本实现只用「启用语言清单 + 本页逻辑路径」两项构建输入，`siteRouteEntries` 已按路径去重，因此「目标语言在本页没有独立可寻址路径」的语言不会进入清单（含未开启语言前缀时多语言映射同一路径 → 整个切换器不渲染）。发布/激活状态属运行时事实，一旦进产物会让同输入产出不同字节，故**不参与判据**。
+
+**后台管理入口与交互**：
+
+- 入口：`/admin/settings` 的「语言」分组（同一页面内，不新开独立页与侧栏菜单）：语言清单是工程级配置（`project_locales` 按 `project_id`），与站点名/简介同属一个设置面，且页面已有工程切换器（`?project=`），语言清单天然随工程切换；`settings.html` 的「待实现能力」清单里原本就列了「站点语言与地区」，此处正是其落地位置。
+- 契约复用：读写一律经 `project` 的 `ListLocales` / `SaveLocales`，**不写第二套校验**（「至少一种语言、至多一个默认且默认必须启用、语言码白名单」单点在 `project/service/locale_service.go`）。
+- 交互：行编辑器（语言码 + 默认 radio + 启用 checkbox + 删除）+「添加语言」（HTMX `hx-post` 到 `/admin/settings/locales/rows`，服务端重渲染行片段，未落库）+「保存语言清单」（普通表单 POST → 303 回跳，PRG）。
+- 行身份用「提交顺序下标」（`langs` + `defaultIndex` + `enabledIndex`）而非语言码：用户可在表单里直接改语言码，用语言码做 value 会让默认/启用勾选静默丢失。
+- 禁用语言提示（页面固定文案）：「禁用某语言后，该语言已激活的站点路由不会自动清理（需手动取消激活或删除路由占用）」。
+- 校验失败不落库：回渲染设置页并给出提示（`MsgSiteLocalesInvalid`），保留用户输入便于就地修正。
+
+**验证命令**（真实输出见提交说明）：
+
+```bash
+go build ./... && go vet ./... && go test ./... -count=1
+go test ./internal/builder/ -run "TestLanguages|TestRenderDocumentLang" -count=1 -v
+go test ./public/test/page/feature/ -run TestPageArtifactLanguageSwitcher -count=1 -v
+go test ./public/test/dashboard/feature/ -run "TestSiteSettingsRendersLocaleGroup|TestLocaleRowsFragment|TestSaveSiteLocales" -count=1 -v
+```
+
+**仍属后续（本节新增遗留）**
+
+- 改语言清单后不会自动重建已发布页面：切换器链接与 hreflang 进产物字节，清单变化后需重新构建/发布才生效（建议在 `SaveLocales` 成功后调用 page 模块的「全站标记待重建」能力，与 `MarkStaleForI18n` 同形；当前未接）。
+- 禁用某语言后其已激活路由仍不会自动清理（§15.8 遗留，本节只提供提示文案）。
+- 「目标语言已登记路由但尚未发布」的语言仍会给出链接（会 404）：这是确定性判据的必然取舍，如需严格隐藏需把 `page_routes` 存在性纳入构建输入并接受产物随发布状态变化。
+- 语言前缀开关 `i18n.site_lang_prefix` 默认 false：关闭时多语言映射同一路径，切换器不渲染（同一页多语言也不能同时在线），页面已用文案提示。
+
 ## 变更记录
 
+- v7（2025-09）：新增 §15.9——语言切换器 UI 与后台语言清单管理已落地：`core.languages` 独立组件（纯链接零 JS、当前语言 `aria-current` 不可点、展示名用语言自称）+ 构建期 `WithLocaleLinks`（与 hreflang 同源）+ `<html lang>` 跟随构建语言 + §9 缺语言策略选 S2「隐藏」及其理由 + 站点设置「语言」分组（复用 project `ListLocales`/`SaveLocales`、HTMX 行片段增删、禁用语言提示、校验失败不落库）+ 迁移 065 词条 seed；§15.8「仍属后续」第 1 条标记为已落地，并新增 4 条遗留（清单变更不自动重建、禁用语言路由不清理、未发布语言仍出链接、前缀开关默认关闭）。
 - v6（2025-09）：新增 §15.8——P3 站点多语言上线已落地：迁移 062 `page_publications`（每语言激活状态真源）+ 063 `page_stagings`（每语言暂存指针）+ 064 `project_locales`（语言清单）；Publish/Rollback/UpdateURL 按语言作用域、`RenameReserved.OnlyReserved` 防跨语言误改、路由登记逐语言、产物 head hreflang 与 sitemap 语言分组、导航高亮双重前缀修复；含端到端双语言在线证据与灰度开关双路径测试。
 - v5（2025-09）：新增 §15.7——§15.5 第 1 条（`page_artifacts` 同页多语言互相覆盖）已修复：迁移 061 加 `lang` 列并改唯一键为 `(page_id, version, lang)`、model/service 补语言维度、装配层调用点补 `lang`，含存量回填与幂等验证；§15.5 第 2/3 条仍属 P3。
 - v1（2025-09）：首版设计提案。确立「`lang ∈ BuildContext`」「`/{lang}/path` 前缀」「CMS 内容字段级 + 主表/翻译表」三条主线，列出 10 个待决策点。
