@@ -1,0 +1,161 @@
+/* ==========================================================================
+   workbench-a11y.css — 工作台无障碍 P1 增量层（动效降级 + 键盘焦点）
+   加载顺序：theme.css → workbench.css → 本文件（必须最后加载，覆盖焦点态）
+   约束：不改 workbench.css；本文件只做「叠加覆盖」，不改动既有视觉基线。
+
+   设计原则：
+   - 动效降级不搞一刀切。animation:none / transition:none 全局清零会让折叠箭头、
+     选中底色、面板切换等「状态反馈」失去渲染路径；这里改为把时长压到 0.01ms，
+     状态照常瞬时生效，只抹掉运动过程。
+   - 焦点轮廓统一走 :focus-visible，鼠标点击不出现轮廓，键盘导航必有轮廓。
+   ========================================================================== */
+
+/* ==========================================================================
+   1. 键盘焦点统一轮廓（:focus-visible）
+   2px solid var(--c-primary, #3d444f) + outline-offset 2px
+   ========================================================================== */
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+a:focus-visible,
+a[href]:focus-visible,
+[tabindex]:focus-visible,
+[contenteditable]:focus-visible,
+.wb-node:focus-visible,
+.wb-acc-head:focus-visible,
+.wb-subtab:focus-visible,
+.wb-palette-item:focus-visible,
+.wb-color-swatch:focus-visible,
+.wb-node-action:focus-visible,
+.wb-caret:focus-visible {
+    outline: 2px solid var(--c-primary, #3d444f);
+    outline-offset: 2px;
+}
+
+/* 1.1 workbench.css 里存在 outline: none 的焦点态（检查器字段 / 自定义下拉 / 搜索框），
+   这些规则特异性为 (0,2,1)，上面那条覆盖不到，必须用同等特异性 + 后置顺序压过去，
+   否则键盘进入表单字段时轮廓被吃掉。 */
+.wb-field input:focus-visible,
+.wb-field textarea:focus-visible,
+.wb-field select:focus-visible,
+.wb-unit-value:focus-visible,
+.wb-color-text:focus-visible,
+.wb-dd-btn:focus-visible,
+.wb-dims-input:focus-visible,
+.wb-icon-search:focus-visible,
+.wb-search:focus-visible {
+    outline: 2px solid var(--c-primary, #3d444f);
+    outline-offset: 2px;
+}
+
+/* 1.2 结构树 / 大纲树的选中态自带 1px outline（.wb-node.is-selected）。
+   键盘焦点落在选中节点上时，用 2px 焦点轮廓顶替，避免两层轮廓叠在一起。 */
+.wb-node.is-selected:focus-visible {
+    outline: 2px solid var(--c-primary, #3d444f);
+    outline-offset: 2px;
+}
+
+/* 1.3 折叠区块头部与子标签是 button，浏览器默认焦点环在深色底上不可读，
+   这里统一成主色环；不改变 is-open / is-active 的底色反馈。 */
+.wb-acc-head:focus-visible,
+.wb-subtab:focus-visible {
+    outline: 2px solid var(--c-primary, #3d444f);
+    outline-offset: 2px;
+}
+
+/* 1.4 兜底：不支持 :focus-visible 的旧引擎回退到 :focus（仅键盘可达元素受影响）。 */
+@supports not selector(:focus-visible) {
+    button:focus,
+    input:focus,
+    select:focus,
+    textarea:focus,
+    a[href]:focus,
+    [tabindex]:focus,
+    .wb-node:focus,
+    .wb-acc-head:focus,
+    .wb-subtab:focus,
+    .wb-palette-item:focus,
+    .wb-color-swatch:focus,
+    .wb-node-action:focus,
+    .wb-caret:focus {
+        outline: 2px solid var(--c-primary, #3d444f);
+        outline-offset: 2px;
+    }
+}
+
+/* ==========================================================================
+   2. 动效降级（prefers-reduced-motion: reduce）
+   ========================================================================== */
+@media (prefers-reduced-motion: reduce) {
+
+    /* 2.1 通用时长收敛到 0.01ms。
+       刻意不写 animation: none / transition: none —— 那样会连「状态变化」一起掐掉，
+       折叠/选中/错误提示等反馈将失去渲染时机。压时长后：状态瞬时生效、运动消失。 */
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-delay: 0ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        transition-delay: 0ms !important;
+        scroll-behavior: auto !important;
+    }
+
+    /* 2.2 纯位移 / 缩放类动效：连「运动」本身也去掉（不只是加速）。
+       这些效果不含状态信息，去掉后不影响任何反馈。 */
+    .wb-panel {
+        /* 原：wb-panel-in 180ms，translateY(3px) + 淡入；面板切换改为直接显示 */
+        animation: none !important;
+    }
+    .wb-palette-item:hover,
+    .wb-btn:hover,
+    .wb-icon-btn:hover,
+    .wb-node-action:hover,
+    .wb-color-swatch:hover {
+        /* 原：hover 上浮 translateY(-1px)；改为零位移，阴影/边框/底色反馈保留 */
+        transform: none !important;
+    }
+
+    /* 2.3 抽屉 / 画布宽度 / 弹层：位移终值必须保留（关闭态依赖 translateX(-100%)、
+       断点依赖 max-width），所以只去掉过渡，绝不把 transform 置为 none。 */
+    .wb-inspector,
+    .wb-canvas-frame,
+    .wb-navigator,
+    .wb-cp,
+    .wb-dd-list,
+    .wb-media-panel {
+        transition: none !important;
+    }
+
+    /* 2.4 明确保留的「状态指示」类变换（只去过渡，终态照常可见）：
+       - .wb-caret / .wb-acc-arrow 的 rotate(90deg) 表示折叠已展开
+       - .wb-palette-caret::before 的 rotate(-90deg) 表示分组已收起
+       - .wb-rail-btn::before 的高度表示当前激活面板
+       若把这几处 transform 一并清零，用户将看不出展开/收起状态。 */
+    .wb-caret,
+    .wb-acc-head .wb-acc-arrow,
+    .wb-palette-caret::before,
+    .wb-rail-btn::before {
+        transition: none !important;
+    }
+
+    /* 2.5 文本/边框/背景类过渡即使被压到 0.01ms 也保留声明，
+       确保 :focus / :hover / .is-selected / .is-active 的样式差异仍然生效。 */
+    .wb-node,
+    .wb-node.is-selected,
+    .wb-acc-head,
+    .wb-subtab,
+    .wb-palette-item,
+    .wb-color-swatch,
+    .wb-node-action,
+    .wb-field input,
+    .wb-field textarea,
+    .wb-field select,
+    .wb-unit-value,
+    .wb-color-text,
+    .wb-dd-btn {
+        transition-property: background-color, color, border-color, box-shadow, outline-color, opacity;
+    }
+}

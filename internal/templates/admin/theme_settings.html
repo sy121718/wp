@@ -1,5 +1,8 @@
-{* admin/theme_settings.html — 单主题设置：全局颜色/字体/页眉页脚引用 *}
+{* admin/theme_settings.html — 单主题设置：Woodmart 级全量设计令牌面板 *}
 {* Jet 方言：range 用 range 关键字；方法调用圆括号；extends 相对本目录 *}
+{* 提交键名严格对齐 backend SaveThemeSettings 的点分约定：
+    colors.* / typography.{heading,body,link}.* / button.* / surface.* / motion.*
+    + 顶层 headerBlockId / footerBlockId。全部值经 IsSafeCSSValue 白名单校验。 *}
 {{extends "layout.html"}}
 {{block body()}}
 <div class="pages-wrap">
@@ -7,19 +10,87 @@
         <h2>主题设置：{{.ThemeName}}
             <a class="btn" href="/admin/themes?project={{.ProjectID}}" style="float:right">返回列表</a>
         </h2>
-        <form method="post" action="/admin/themes/settings/save" class="theme-form">
+        {* 完整 ThemeSettings JSON 供前端按点分键回显（11 色 + typography + button + surface + motion）。
+           用了 unsafe 输出真实 JSON 到 application/json 脚本块；服务端已由 ParseThemeSettings 校验过值安全。 *}
+        <script type="application/json" id="theme-settings-json">{{ .ThemeSettings | unsafe }}</script>
+        <form method="post" action="/admin/themes/settings/save" class="theme-form" id="theme-settings-form">
             <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
             <input type="hidden" name="id" value="{{.ThemeID}}">
-            <h3>全局颜色</h3>
+
+            <h3>色板</h3>
+            <p class="pages-empty">11 个全局颜色令牌，组件经 var(--wp-c-*) 引用；未设置则回退组件默认值。</p>
             <div class="theme-color-grid">
-                <label>主色<input type="color" name="primary" value="{{.PColor}}"></label>
-                <label>文本色<input type="color" name="text" value="{{.TColor}}"></label>
-                <label>页面背景<input type="color" name="background" value="{{.BgColor}}"></label>
-                <label>卡片底色<input type="color" name="surface" value="{{.SColor}}"></label>
-                <label>边框色<input type="color" name="border" value="{{.BdColor}}"></label>
+                <label>主色<input type="color" name="colors.primary"></label>
+                <label>次色<input type="color" name="colors.secondary"></label>
+                <label>点缀色<input type="color" name="colors.accent"></label>
+                <label>成功色<input type="color" name="colors.success"></label>
+                <label>警告色<input type="color" name="colors.warning"></label>
+                <label>危险色<input type="color" name="colors.danger"></label>
+                <label>正文色<input type="color" name="colors.text"></label>
+                <label>标题色<input type="color" name="colors.heading"></label>
+                <label>页面背景<input type="color" name="colors.background"></label>
+                <label>卡片底色<input type="color" name="colors.surface"></label>
+                <label>边框色<input type="color" name="colors.border"></label>
             </div>
-            <h3>字体</h3>
-            <input type="text" name="fontFamily" class="theme-font-input" placeholder="正文字体栈，如：system-ui, sans-serif" value="{{.FontFamily}}">
+
+            <h3>标题排版</h3>
+            <div class="theme-color-grid">
+                <label>标题颜色<input type="color" name="typography.heading.color"></label>
+                <label>标题字重<input type="text" name="typography.heading.weight" class="theme-font-input" placeholder="如 700 / bold"></label>
+                <label>标题字号（h2 基准）<input type="text" name="typography.heading.size" class="theme-font-input" placeholder="如 32px / 2rem"></label>
+                <label>标题下间距<input type="text" name="typography.heading.spacing" class="theme-font-input" placeholder="如 16px"></label>
+                <label>标题字体<input type="text" name="typography.heading.font" class="theme-font-input" placeholder="如 Georgia, serif"></label>
+            </div>
+
+            <h3>正文排版</h3>
+            <div class="theme-color-grid">
+                <label>正文字色<input type="color" name="typography.body.color"></label>
+                <label>正文字号<input type="text" name="typography.body.size" class="theme-font-input" placeholder="如 16px / 1rem"></label>
+                <label>行高<input type="text" name="typography.body.line" class="theme-font-input" placeholder="如 1.6"></label>
+                <label>正文字体<input type="text" name="typography.body.font" class="theme-font-input" placeholder="如 system-ui, sans-serif"></label>
+            </div>
+
+            <h3>链接排版</h3>
+            <div class="theme-color-grid">
+                <label>链接颜色<input type="color" name="typography.link.color"></label>
+                <label>链接悬停色<input type="color" name="typography.link.hover"></label>
+                <label>下划线<input type="text" name="typography.link.underline" class="theme-font-input" placeholder="none / hover / always"></label>
+            </div>
+
+            <h3>按钮</h3>
+            <div class="theme-color-grid">
+                <label>按钮背景<input type="text" name="button.background" class="theme-font-input" placeholder="#2563eb / transparent / rgba(0,0,0,0)"></label>
+                <label>按钮文字色<input type="color" name="button.color"></label>
+                <label>按钮圆角<input type="text" name="button.radius" class="theme-font-input" placeholder="如 8px"></label>
+                <label>按钮字重<input type="text" name="button.weight" class="theme-font-input" placeholder="如 600"></label>
+                <label>纵向内边距<input type="text" name="button.py" class="theme-font-input" placeholder="如 10px"></label>
+                <label>横向内边距<input type="text" name="button.px" class="theme-font-input" placeholder="如 20px"></label>
+                <label>悬停背景<input type="text" name="button.hoverBg" class="theme-font-input" placeholder="颜色值 / transparent"></label>
+                <label>悬停文字色<input type="color" name="button.hoverColor"></label>
+            </div>
+            <h3>按钮边框 / 阴影</h3>
+            <div class="theme-color-grid">
+                <label>边框宽<input type="text" name="button.borderWidth" class="theme-font-input" placeholder="如 1px（留空无边框）"></label>
+                <label>边框样式<input type="text" name="button.borderStyle" class="theme-font-input" placeholder="solid / dashed / dotted / double"></label>
+                <label>边框色<input type="color" name="button.borderColor"></label>
+                <label>阴影级别<input type="text" name="button.shadow" class="theme-font-input" placeholder="sm / md / lg / xl"></label>
+            </div>
+
+            <h3>表面 / 边框 / 圆角</h3>
+            <div class="theme-color-grid">
+                <label>全局圆角<input type="text" name="surface.radius" class="theme-font-input" placeholder="如 12px"></label>
+                <label>全局边框宽<input type="text" name="surface.borderWidth" class="theme-font-input" placeholder="如 1px"></label>
+                <label>全局边框色<input type="color" name="surface.borderColor"></label>
+                <label>默认阴影<input type="text" name="surface.shadow" class="theme-font-input" placeholder="sm / md / lg"></label>
+            </div>
+
+            <h3>动效</h3>
+            <div class="theme-color-grid">
+                <label>过渡时长（ms）<input type="text" name="motion.duration" class="theme-font-input" placeholder="如 200"></label>
+                <label>缓动<input type="text" name="motion.easing" class="theme-font-input" placeholder="ease / ease-out / linear"></label>
+                <label>默认入场<input type="text" name="motion.entrance" class="theme-font-input" placeholder="如 fade-up"></label>
+            </div>
+
             <h3>全局页眉 / 页脚块</h3>
             <div class="theme-color-grid">
                 <label>页眉块
@@ -37,6 +108,7 @@
                     </select>
                 </label>
             </div>
+
             <div class="theme-actions">
                 <button type="submit" class="btn btn-primary">保存并应用到该主题页面</button>
             </div>
@@ -45,11 +117,50 @@
     <section class="pages-card">
         <h2>说明</h2>
         <p class="pages-empty">
-            颜色与字体保存后合入该主题下全部页面的文档（settings.theme），构建产物注入 :root CSS 变量——
-            组件中 var(--color-primary) 等变量全局生效；已发布页面需重新构建才会带新主题。
+            所有设计令牌保存后合入该主题下全部页面的文档（settings.theme），构建产物注入 :root CSS 变量
+            （--wp-c-* 色板、--wp-heading-* / --wp-body-* / --wp-link-* 排版、--wp-btn-* 按钮、
+            --wp-radius / --wp-border-* / --wp-shadow 表面、--wp-tr-duration / --wp-easing 动效）——
+            组件中 var(--wp-*) 全局生效；已发布页面需重新构建才会带新主题。
             页眉/页脚块在构建页面时编译期内联进产物（访问面保持纯静态），保存后该主题下页面将标记为待重建。
             没有候选块？先到「全局块」新建页眉/页脚块。
         </p>
     </section>
 </div>
+<script>
+    {* 回显：从内嵌 ThemeSettings JSON 按提交点分键名填充各表单字段 value。
+        无自定义框架，仅原生 DOM。CMS 值安全（服务端已走 IsSafeCSSValue 白名单校验）。 *}
+    (function () {
+        var raw = document.getElementById('theme-settings-json');
+        if (!raw) return;
+        var ts = {};
+        try { ts = JSON.parse(raw.textContent || '{}') || {}; } catch (e) { ts = {}; }
+        // 沿点分路径取内嵌 JSON 值：colors.primary → ts.colors.primary
+        function lookup(obj, path) {
+            var cur = obj;
+            var parts = path.split('.');
+            for (var i = 0; i < parts.length; i++) {
+                if (cur == null) return '';
+                cur = cur[parts[i]];
+            }
+            return (cur == null) ? '' : String(cur);
+        }
+        var form = document.getElementById('theme-settings-form');
+        if (!form) return;
+        var fields = form.querySelectorAll('input[name*="."], select[name="headerBlockId"], select[name="footerBlockId"]');
+        for (var i = 0; i < fields.length; i++) {
+            var el = fields[i];
+            var key = el.getAttribute('name');
+            if (!key) continue;
+            var v = lookup(ts, key);
+            if (v !== '') {
+                if (el.tagName === 'SELECT') {
+                    var opt = el.querySelector('option[value="' + v + '"]');
+                    if (opt) el.value = v;
+                } else {
+                    el.value = v;
+                }
+            }
+        }
+    })();
+</script>
 {{end}}

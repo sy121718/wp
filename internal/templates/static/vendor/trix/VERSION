@@ -1,0 +1,8 @@
+trix 2.1.19
+来源：https://registry.npmjs.org/trix/-/trix-2.1.19.tgz
+下载日期：2026-09-09
+文件：trix.umd.js（dist/trix.umd.js）、trix.css（dist/trix.css）、LICENSE（MIT）
+校验：
+  676299911f4cbd15d35b0e12904a12ed1d7cff634502b9bff8518aecace5a9a7  trix.umd.js
+  7a35d25d0204a594f9f89a6fef18f74321ee2dae3970da3ac11e22c4305536ac  trix.css
+升级方式：改上面的版本号，重新 curl 解包 dist/trix.umd.js 与 dist/trix.css 覆盖本目录。

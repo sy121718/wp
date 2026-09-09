@@ -4,11 +4,12 @@
    登录接口 POST /api/admin/login 返回 JSON，成功后 data.csrf_token 为
    后续 POST 写操作的 CSRF token，此处写入 sessionStorage 供前端复用。 *}
 <!DOCTYPE html>
-<html lang="zh-CN">
+{* 语言：由 withI18n 注入（zh-CN / en-US）；缺数据时回退 zh-CN *}
+<html lang="{{if .["lang"]}}{{ .["lang"] }}{{else}}zh-CN{{end}}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>登录 — go_wp 管理后台</title>
+    <title>{{ .["t"]("shell.login.title", "登录") }} — go_wp {{ .["t"]("shell.brand", "管理后台") }}</title>
     <script>
         {* 防止主题闪烁：在 CSS 加载前就从 localStorage 读取主题 *}
         (function() {
@@ -79,26 +80,49 @@
 <body>
     <div class="login-card">
         <div class="login-brand">go<span>_wp</span></div>
-        <div class="login-sub">管理后台</div>
-        <form id="login-form">
+        <div class="login-sub">{{ .["t"]("shell.brand", "管理后台") }}</div>
+        {* ===== 语言切换（登录前）：/admin/lang 走会话鉴权（未登录 401），
+               故登录页用 ?lang= 查询参数切换（requestLanguage 第 2 优先级），链接即刷新。
+               登录后由后台外壳的语言下拉写 Cookie 持久化。 *}
+        {{if .["langs"]}}
+        <div class="login-lang" role="group" aria-label="{{ .["t"]("shell.lang.label", "语言") }}">
+            {{range _, l := .["langs"]}}
+            {{if l.Active}}
+            <span class="lang-link is-active" aria-current="true">{{l.Label}}</span>
+            {{else}}
+            <a class="lang-link" href="/admin/login?lang={{l.Code}}">{{l.Label}}</a>
+            {{end}}
+            {{end}}
+        </div>
+        {{end}}
+        <form id="login-form"
+              data-msg-failed="{{ .["t"]("shell.login.failed", "登录失败") }}"
+              data-msg-network="{{ .["t"]("shell.login.network_error", "网络异常，请重试") }}">
             <div class="login-field">
-                <label for="username">用户名</label>
+                <label for="username">{{ .["t"]("shell.login.username", "用户名") }}</label>
                 <input id="username" name="username" type="text" autocomplete="username" required>
             </div>
             <div class="login-field">
-                <label for="password">密码</label>
+                <label for="password">{{ .["t"]("shell.login.password", "密码") }}</label>
                 <input id="password" name="password" type="password" autocomplete="current-password" required>
             </div>
             <div class="login-field">
-                <label for="captcha">验证码</label>
+                <label for="captcha">{{ .["t"]("shell.login.captcha", "验证码") }}</label>
                 <div class="captcha-row">
                     <input id="captcha" name="captcha" type="text" maxlength="10" autocomplete="off" required>
                     {* 服务端渲染了验证码图则直接展示；点击图片或图缺失时经 /api/captcha 刷新 *}
-                    <img id="captcha-img" class="captcha-img" src="{{ .["captcha_image"] }}" alt="验证码" title="点击刷新">
+                    {* JS 文案经 data-msg-* 下发（属性转义安全，避免在 script 内拼接被 HTML 转义的字符串）；
+                       占位符 %s 由 JS 用 replace 填充。 *}
+                    <img id="captcha-img" class="captcha-img" src="{{ .["captcha_image"] }}"
+                         alt="{{ .["t"]("shell.login.captcha", "验证码") }}"
+                         title="{{ .["t"]("shell.login.captcha_refresh", "点击刷新") }}"
+                         data-msg-busy="{{ .["t"]("shell.login.captcha_busy", "验证码刷新过于频繁，请稍后再试") }}"
+                         data-msg-ttl="{{ .["t"]("shell.login.captcha_ttl", "点击刷新（%s 秒内有效）") }}"
+                         data-msg-failed="{{ .["t"]("shell.login.captcha_failed", "验证码加载失败，请重试") }}">
                 </div>
             </div>
             <input type="hidden" name="captcha_id" id="captcha-id" value="">
-            <button class="login-btn" type="submit">登 录</button>
+            <button class="login-btn" type="submit">{{ .["t"]("shell.login.submit", "登 录") }}</button>
             <div class="login-msg" id="login-msg"></div>
         </form>
     </div>
@@ -107,6 +131,11 @@
         var captchaImg = document.getElementById('captcha-img');
         var captchaIdInput = document.getElementById('captcha-id');
         var msgEl = document.getElementById('login-msg');
+        var formEl = document.getElementById('login-form');
+        // 文案由服务端按请求语言渲染进 data-msg-* 属性；属性缺失时回退中文原文（兜底不报错）。
+        function msgOf(el, key, fallback) {
+            return (el && el.dataset && el.dataset[key]) || fallback;
+        }
 
         // 拉取新验证码：接口只回 captcha_id 与图片，答案不下发
         var refreshing = false;
@@ -116,7 +145,7 @@
             fetch('/api/captcha')
                 .then(function (resp) {
                     if (resp.status === 429) {
-                        msgEl.textContent = '验证码刷新过于频繁，请稍后再试';
+                        msgEl.textContent = msgOf(captchaImg, 'msgBusy', '验证码刷新过于频繁，请稍后再试');
                         return null;
                     }
                     return resp.json();
@@ -127,17 +156,18 @@
                     if (data.captcha_image) { captchaImg.src = data.captcha_image; }
                     if (data.captcha_id) { captchaIdInput.value = data.captcha_id; }
                     if (data.expire_seconds) {
-                        captchaImg.title = '点击刷新（' + data.expire_seconds + ' 秒内有效）';
+                        var ttlTpl = msgOf(captchaImg, 'msgTtl', '点击刷新（%s 秒内有效）');
+                        captchaImg.title = ttlTpl.replace('%s', data.expire_seconds);
                     }
                 })
-                .catch(function () { msgEl.textContent = '验证码加载失败，请重试'; })
+                .catch(function () { msgEl.textContent = msgOf(captchaImg, 'msgFailed', '验证码加载失败，请重试'); })
                 .finally(function () { refreshing = false; });
         }
 
         if (!captchaImg.getAttribute('src')) { refreshCaptcha(); }
         captchaImg.addEventListener('click', refreshCaptcha);
 
-        document.getElementById('login-form').addEventListener('submit', function (e) {
+        formEl.addEventListener('submit', function (e) {
             e.preventDefault();
             msgEl.textContent = '';
             var payload = {
@@ -153,7 +183,7 @@
             }).then(function (resp) { return resp.json().then(function (body) { return { ok: resp.ok, body: body }; }); })
               .then(function (result) {
                   if (!result.ok) {
-                      msgEl.textContent = (result.body && result.body.message) || '登录失败';
+                      msgEl.textContent = (result.body && result.body.message) || msgOf(formEl, 'msgFailed', '登录失败');
                       document.getElementById('captcha').value = '';
                       refreshCaptcha();
                       return;
@@ -163,7 +193,7 @@
                   if (data.csrf_token) { sessionStorage.setItem('csrf_token', data.csrf_token); }
                   window.location.href = '/admin';
               })
-              .catch(function () { msgEl.textContent = '网络异常，请重试'; });
+              .catch(function () { msgEl.textContent = msgOf(formEl, 'msgNetwork', '网络异常，请重试'); });
         });
     </script>
 </body>

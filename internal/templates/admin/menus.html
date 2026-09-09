@@ -1,0 +1,172 @@
+{* admin/menus.html — 菜单管理：顶部筛选 + 新建/编辑走右侧抽屉（admin.js），列表纯展示。 *}
+{{extends "layout.html"}}
+{{block body()}}
+<div class="pages-wrap">
+    <section class="card">
+        <div class="card-header">
+            <span class="card-title">菜单管理（共 {{len(.Rows)}}）</span>
+        </div>
+        <div class="list-toolbar">
+            <div class="toolbar-search">
+                <input type="text" data-filter-input placeholder="筛选：标题 / 路径 / 备注…" class="form-input">
+            </div>
+            <div class="toolbar-spacer"></div>
+            {{if .PermSet["menu:create"]}}<button type="button" class="btn btn-primary" data-drawer-open="#tpl-menu-create" data-drawer-title="新建菜单">＋ 新建菜单</button>{{end}}
+        </div>
+        <div class="card-body">
+            {{if len(.Rows) == 0}}
+            <p class="pages-empty">还没有菜单，点右上「新建菜单」创建一个。</p>
+            {{else}}
+            <div class="table-wrap">
+            <table class="data-table">
+                <thead>
+                <tr><th class="col-icon">图标</th><th>标题</th><th>类型</th><th>路径</th><th>状态</th><th>排序</th><th>备注</th><th class="col-actions">操作</th></tr>
+                </thead>
+                <tbody>
+                {{range _, m := .Rows}}
+                <tr data-filter-text="{{m.Title}} {{m.Path}} {{m.Remark}}">
+                {* 图标由 admin.js 在图标库加载后填充 SVG（data-icon-name 为图标库键名） *}
+                <td class="col-icon"><span class="menu-icon" data-icon-name="{{if m.Icon}}{{m.Icon}}{{end}}"></span></td>
+                <td>{{m.Indent}}{{m.Title}}</td>
+                <td>{{if m.Type == 1}}<span class="badge badge-mute">目录</span>{{else if m.Type == 2}}<span class="badge">菜单</span>{{else if m.Type == 3}}<span class="badge badge-mute">按钮</span>{{else if m.Type == 4}}<span class="badge badge-mute">iframe</span>{{else if m.Type == 5}}<span class="badge badge-mute">外链</span>{{else}}<span class="badge badge-mute">未知</span>{{end}}</td>
+                <td class="text-mute">{{if m.Path}}{{m.Path}}{{end}}</td>
+                <td>{{if m.Status == 1}}<span class="badge badge-success">启用</span>{{else}}<span class="badge badge-mute">禁用</span>{{end}}</td>
+                <td>{{m.SortOrder}}</td>
+                <td>{{if m.Remark}}{{m.Remark}}{{end}}</td>
+                <td class="col-actions">
+                    {{if .PermSet["menu:update"]}}<button type="button" class="btn btn-sm btn-ghost" data-drawer-open="#tpl-menu-edit-{{m.ID}}" data-drawer-title="编辑菜单：{{m.Title}}">编辑</button>{{end}}
+                    {{if .PermSet["menu:delete"]}}<button type="button" class="btn btn-sm btn-danger" onclick="if(confirm('确认删除？')){document.getElementById('menu-del-{{m.ID}}').submit()}">删除</button>{{end}}
+                    <form id="menu-del-{{m.ID}}" method="post" action="/admin/menus/delete" class="hidden-form">
+                        <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
+                        <input type="hidden" name="id" value="{{m.ID}}">
+                    </form>
+                </td>
+                </tr>
+                {{end}}
+                </tbody>
+            </table>
+            </div>
+            {{end}}
+        </div>
+    </section>
+</div>
+
+{* ===== 新建菜单（抽屉表单模板） ===== *}
+<template id="tpl-menu-create">
+    <form method="post" action="/admin/menus/create">
+        <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
+        <div class="form-group">
+            <label class="form-label req">菜单标题</label>
+            <input type="text" name="title" class="form-input" required maxlength="50" placeholder="如：菜单管理">
+        </div>
+        <div class="form-group">
+            <label class="form-label">上级菜单</label>
+            <select name="parent_id" class="form-select">
+                <option value="0">（根菜单）</option>
+                {{range _, p := .Parents}}
+                <option value="{{p.ID}}" data-type="{{p.Type}}">{{p.Indent}}{{p.Title}}</option>
+                {{end}}
+            </select>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label class="form-label req">类型</label>
+                <select name="type" class="form-select">
+                    <option value="1">目录</option>
+                    <option value="2" selected>菜单</option>
+                    <option value="3">按钮</option>
+                    <option value="4">iframe</option>
+                    <option value="5">外链</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label class="form-label">状态</label>
+                <select name="status" class="form-select">
+                    <option value="1">启用</option>
+                    <option value="0">禁用</option>
+                </select>
+            </div>
+        </div>
+        <div class="form-group">
+            <label class="form-label">路径</label>
+            <input type="text" name="path" class="form-input" maxlength="100" placeholder="如：/admin/menus">
+        </div>
+        <div class="form-group">
+            <label class="form-label">图标</label>
+            <div data-icon-field></div>
+            <input type="hidden" name="icon" value="">
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label class="form-label">排序</label>
+                <input type="number" name="sort_order" class="form-input" value="0">
+            </div>
+            <div class="form-group">
+                <label class="form-label">备注</label>
+                <input type="text" name="remark" class="form-input" maxlength="200">
+            </div>
+        </div>
+        <div class="form-actions">
+            <button type="button" class="btn btn-ghost" data-drawer-close>取消</button>
+            <button type="submit" class="btn btn-primary">创建菜单</button>
+        </div>
+    </form>
+</template>
+
+{* ===== 编辑菜单（每行一份抽屉表单模板，服务端回显） ===== *}
+{{range _, m := .Rows}}
+<template id="tpl-menu-edit-{{m.ID}}">
+    <form method="post" action="/admin/menus/update">
+        <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
+        <input type="hidden" name="id" value="{{m.ID}}">
+        <input type="hidden" name="parent_id" value="{{m.ParentID}}">
+        <div class="form-group">
+            <label class="form-label req">菜单标题</label>
+            <input type="text" name="title" class="form-input" required maxlength="50" value="{{m.Title}}">
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label class="form-label req">类型</label>
+                <select name="type" class="form-select">
+                    <option value="1"{{if m.Type == 1}} selected{{end}}>目录</option>
+                    <option value="2"{{if m.Type == 2}} selected{{end}}>菜单</option>
+                    <option value="3"{{if m.Type == 3}} selected{{end}}>按钮</option>
+                    <option value="4"{{if m.Type == 4}} selected{{end}}>iframe</option>
+                    <option value="5"{{if m.Type == 5}} selected{{end}}>外链</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label class="form-label">状态</label>
+                <select name="status" class="form-select">
+                    <option value="1"{{if m.Status == 1}} selected{{end}}>启用</option>
+                    <option value="0"{{if m.Status == 0}} selected{{end}}>禁用</option>
+                </select>
+            </div>
+        </div>
+        <div class="form-group">
+            <label class="form-label">路径</label>
+            <input type="text" name="path" class="form-input" maxlength="100" value="{{if m.Path}}{{m.Path}}{{end}}">
+        </div>
+        <div class="form-group">
+            <label class="form-label">图标</label>
+            <div data-icon-field></div>
+            <input type="hidden" name="icon" value="{{if m.Icon}}{{m.Icon}}{{end}}">
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label class="form-label">排序</label>
+                <input type="number" name="sort_order" class="form-input" value="{{m.SortOrder}}">
+            </div>
+            <div class="form-group">
+                <label class="form-label">备注</label>
+                <input type="text" name="remark" class="form-input" maxlength="200" value="{{if m.Remark}}{{m.Remark}}{{end}}">
+            </div>
+        </div>
+        <div class="form-actions">
+            <button type="button" class="btn btn-ghost" data-drawer-close>取消</button>
+            <button type="submit" class="btn btn-primary">保存修改</button>
+        </div>
+    </form>
+</template>
+{{end}}
+{{end}}

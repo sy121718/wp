@@ -10,7 +10,11 @@
        渲染数据由 withCSRF 注入，缺 key 时输出空串（chain 索引安全），JS 兜底 sessionStorage。 *}
     <meta name="csrf-token" content="{{ .["csrf_token"] }}">
     <link rel="stylesheet" href="/static/css/theme.css">
+    {* Trix 富文本编辑器基础样式（本地 vendor）；放在 workbench.css 之前，便于工作台覆盖 *}
+    <link rel="stylesheet" href="/static/vendor/trix/trix.css?v={{.jsVer}}">
     <link rel="stylesheet" href="/static/css/workbench.css?v=20260906c">
+    {* 无障碍 P1 增量层：动效降级 + 键盘焦点轮廓（必须最后加载以覆盖焦点态） *}
+    <link rel="stylesheet" href="/static/css/workbench-a11y.css?v=20260908a">
 </head>
 <body class="wb-body">
 
@@ -18,14 +22,23 @@
     <header class="wb-topbar">
         <div class="wb-topbar-left">
             <a href="/admin" class="wb-btn wb-btn-ghost" title="返回后台">← 后台</a>
-            <span class="wb-brand">go<span>_wp</span> 工作台</span>
-            <button type="button" class="wb-btn wb-btn-secondary" id="wb-add-component" title="添加组件">+ 组件</button>
+            <nav class="wb-rail" aria-label="面板切换">
+                <button type="button" class="wb-rail-btn is-active" id="wb-rail-library" title="组件库">▦</button>
+                <button type="button" class="wb-rail-btn" id="wb-rail-add" title="添加组件">＋</button>
+                <button type="button" class="wb-rail-btn" id="wb-rail-settings" title="页面设置">⚙</button>
+                <button type="button" class="wb-rail-btn" id="wb-rail-seo" title="SEO 设置与评分">🔍</button>
+                <button type="button" class="wb-rail-btn" id="wb-rail-global" title="全局设置（主题）">◐</button>
+                <button type="button" class="wb-rail-btn" id="wb-rail-history" title="修订历史">↺</button>
+                <button type="button" class="wb-rail-btn" id="wb-rail-navigator" title="结构树">☰</button>
+            </nav>
         </div>
 
         <div class="wb-topbar-center" role="tablist" aria-label="响应式断点">
-            <button type="button" class="wb-btn wb-chip is-active" id="wb-device-desktop">桌面</button>
-            <button type="button" class="wb-btn wb-chip" id="wb-device-tablet">平板 768</button>
-            <button type="button" class="wb-btn wb-chip" id="wb-device-mobile">手机 375</button>
+            <button type="button" class="wb-btn wb-chip is-active" id="wb-device-desktop" title="桌面（自适应宽度）">🖥 桌面</button>
+            <button type="button" class="wb-btn wb-chip" id="wb-device-laptop" title="笔记本 1024px">💻 1024</button>
+            <button type="button" class="wb-btn wb-chip" id="wb-device-tablet" title="平板 768px">▭ 768</button>
+            <button type="button" class="wb-btn wb-chip" id="wb-device-mobileL" title="手机横屏 640px">▤ 640</button>
+            <button type="button" class="wb-btn wb-chip" id="wb-device-mobile" title="手机竖屏 375px">📱 375</button>
         </div>
 
         <div class="wb-topbar-right">
@@ -40,17 +53,7 @@
 
     <div class="wb-main" id="wb-main">
 
-        {* ===== 左侧图标栏：组件 / 页面设置 / 全局设置 / 修订历史（对标 Elementor） ===== *}
-        <nav class="wb-rail" aria-label="面板切换">
-            <button type="button" class="wb-rail-btn is-active" id="wb-rail-library" title="组件">▦</button>
-            <button type="button" class="wb-rail-btn" id="wb-rail-settings" title="页面设置">⚙</button>
-            <button type="button" class="wb-rail-btn" id="wb-rail-global" title="全局设置（主题）">◐</button>
-            <button type="button" class="wb-rail-btn" id="wb-rail-history" title="修订历史">↺</button>
-            <span class="wb-rail-spacer"></span>
-            <button type="button" class="wb-rail-btn" id="wb-rail-navigator" title="结构树">☰</button>
-        </nav>
-
-        {* ===== 左侧面板：组件库 / 组件编辑 / 页面设置 / 全局设置 / 修订历史 ===== *}
+        {* ===== 左侧面板：顶部标签条（组件/页面设置/全局设置/修订历史）+ 结构树，下方按标签切换内容 ===== *}
         <aside class="wb-inspector">
             {* 组件库视图：页签（组件 | 全局块 | SEO） *}
             <section class="wb-panel" id="wb-panel-library" aria-label="组件库">
@@ -61,16 +64,13 @@
                 <div class="wb-lib-tabs" role="tablist">
                     <button type="button" class="is-active" data-libtab="components">组件</button>
                     <button type="button" data-libtab="blocks">全局块</button>
-                    <button type="button" data-libtab="seo">SEO</button>
                 </div>
                 <input type="search" class="wb-search wb-library-search" id="wb-library-search" placeholder="搜索组件…">
                 <p class="wb-library-hint" id="wb-library-hint" style="display:none"></p>
                 <div class="wb-inspector-body" id="wb-library-body">
                     <div class="wb-palette-accordion" id="wb-palette"></div>
                     <div class="wb-palette-blocks" id="wb-palette-blocks" hidden></div>
-                    <div class="wb-palette-seo" id="wb-palette-seo" hidden>
-                        <p class="wb-empty">SEO 设置即将上线，敬请期待。</p>
-                    </div>
+                    {* SEO 已归入「页面设置」面板（settings.seo），组件库不再重复入口 *}
                 </div>
             </section>
             {* 编辑视图：选中组件后显示 *}
@@ -172,10 +172,14 @@
     <script type="application/json" id="wb-bootstrap">{{ .document | unsafe }}</script>
     <script type="application/json" id="wb-meta">{{ .meta | unsafe }}</script>
     <script type="application/json" id="wb-schemas">{{ .schemas | unsafe }}</script>
-    {* TinyMCE 富文本编辑器（text 组件 richtext 模式）；jsdelivr 在 CSP script-src 白名单内 *}
-    <script src="https://cdn.jsdelivr.net/npm/tinymce@7/tinymce.min.js" referrerpolicy="origin"></script>
+    {* Trix 富文本编辑器（text 组件 richtext 模式）：本地 vendor 资源，不再走 CDN *}
+    <script src="/static/vendor/trix/trix.umd.js?v={{.jsVer}}"></script>
     <script src="/static/js/icons.js"></script>
     <script src="/static/js/media-lib.js"></script>
-    <script src="/static/js/workbench.js?v={{.jsVer}}"></script>
+    {* idiomorph（本地 vendor 0.8.0）：面板片段用 DOM morphing 替换，保留滚动位置/输入焦点/展开态
+        （docs/06-C §四）。必须早于 workbench/index.js 加载：core.js 的 morphHTML 直接调全局 Idiomorph。 *}
+    <script src="/static/vendor/idiomorph/idiomorph.min.js?v={{.jsVer}}"></script>
+    {* 工作台前端已按功能拆分为 ES modules（core + methods/*），入口 index.js（docs/09 §3） *}
+    <script type="module" src="/static/js/workbench/index.js?v={{.jsVer}}"></script>
 </body>
 </html>

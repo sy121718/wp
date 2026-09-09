@@ -1,0 +1,153 @@
+{* admin/permissions.html — 权限资源：顶部筛选 + 新建/编辑走右侧抽屉（admin.js），列表纯展示。 *}
+{{extends "layout.html"}}
+{{block body()}}
+<div class="pages-wrap">
+    <section class="card">
+        <div class="card-header">
+            <span class="card-title">权限资源列表（共 {{.Total}}）</span>
+        </div>
+        {* 服务端筛选：GET 提交，条件进 SQL（与分页同源，翻页保留筛选）。 *}
+        <form class="list-toolbar" method="get" action="/admin/permissions">
+            <div class="toolbar-search">
+                <input type="text" name="code" value="{{.["FilterCode"]}}" placeholder="权限编码" class="form-input">
+            </div>
+            <div class="toolbar-search">
+                <input type="text" name="module" value="{{.["FilterModule"]}}" placeholder="所属模块" class="form-input">
+            </div>
+            <button type="submit" class="btn">筛选</button>
+            <a class="btn btn-ghost" href="/admin/permissions">重置</a>
+            <div class="toolbar-spacer"></div>
+            {{if .PermSet["permission:create"]}}<button type="button" class="btn btn-primary" data-drawer-open="#tpl-perm-create" data-drawer-title="新建权限点">＋ 新建权限点</button>{{end}}
+        </form>
+        <div class="card-body">
+            {{if len(.Rows) == 0}}
+            <p class="pages-empty">还没有权限点，点右上「新建权限点」创建一个。</p>
+            {{else}}
+            <div class="table-wrap">
+            <table class="data-table">
+                <thead>
+                <tr><th>编码</th><th>名称</th><th>模块</th><th>API 路径</th><th>方法</th><th>状态</th><th>备注</th><th class="col-actions">操作</th></tr>
+                </thead>
+                <tbody>
+                {{range _, p := .Rows}}
+                <tr data-filter-text="{{p.PermissionCode}} {{p.PermissionName}} {{p.Module}} {{p.APIPath}} {{p.APIMethod}} {{if p.Remark}}{{p.Remark}}{{end}}">
+                <td class="text-mute">{{p.PermissionCode}}</td>
+                <td>{{p.PermissionName}}</td>
+                <td>{{p.Module}}</td>
+                <td class="text-mute">{{p.APIPath}}</td>
+                <td><span class="badge badge-mute">{{p.APIMethod}}</span></td>
+                <td>{{if p.Status == 1}}<span class="badge badge-success">启用</span>{{else}}<span class="badge badge-mute">禁用</span>{{end}}</td>
+                <td>{{if p.Remark}}{{p.Remark}}{{end}}</td>
+                <td class="col-actions">
+                    {{if .PermSet["permission:update"]}}<button type="button" class="btn btn-sm btn-ghost" data-drawer-open="#tpl-perm-edit-{{p.ID}}" data-drawer-title="编辑权限点：{{p.PermissionName}}">编辑</button>{{end}}
+                    {{if .PermSet["permission:delete"]}}<button type="button" class="btn btn-sm btn-danger" onclick="if(confirm('确认删除？')){document.getElementById('perm-del-{{p.ID}}').submit()}">删除</button>{{end}}
+                    <form id="perm-del-{{p.ID}}" method="post" action="/admin/permissions/delete" class="hidden-form">
+                        <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
+                        <input type="hidden" name="id" value="{{p.ID}}">
+                    </form>
+                </td>
+                </tr>
+                {{end}}
+                </tbody>
+            </table>
+            </div>
+        {{include "partials/pagination.html"}}
+            {{end}}
+        </div>
+    </section>
+</div>
+
+{* ===== 新建权限点（抽屉表单模板） ===== *}
+<template id="tpl-perm-create">
+    <form method="post" action="/admin/permissions/create">
+        <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
+        <div class="form-group">
+            <label class="form-label req">权限编码</label>
+            <input type="text" name="permission_code" class="form-input" required maxlength="100" placeholder="如：role:list">
+        </div>
+        <div class="form-group">
+            <label class="form-label req">权限名称</label>
+            <input type="text" name="permission_name" class="form-input" required maxlength="100">
+        </div>
+        <div class="form-group">
+            <label class="form-label req">所属模块</label>
+            <input type="text" name="module" class="form-input" required maxlength="50" placeholder="如：admin">
+        </div>
+        <div class="form-group">
+            <label class="form-label req">API 路径</label>
+            <input type="text" name="api_path" class="form-input" required maxlength="200" placeholder="如：/api/admin/list">
+        </div>
+        <div class="form-group">
+            <label class="form-label req">方法</label>
+            <select name="api_method" class="form-select">
+                <option value="GET">GET</option>
+                <option value="POST" selected>POST</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label class="form-label">状态</label>
+            <select name="status" class="form-select">
+                <option value="1">启用</option>
+                <option value="0">禁用</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label class="form-label">备注</label>
+            <input type="text" name="remark" class="form-input" maxlength="200">
+        </div>
+        <div class="form-actions">
+            <button type="button" class="btn btn-ghost" data-drawer-close>取消</button>
+            <button type="submit" class="btn btn-primary">创建权限点</button>
+        </div>
+    </form>
+</template>
+
+{* ===== 编辑权限点（每行一份抽屉表单模板，服务端回显） ===== *}
+{{range _, p := .Rows}}
+<template id="tpl-perm-edit-{{p.ID}}">
+    <form method="post" action="/admin/permissions/update">
+        <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
+        <input type="hidden" name="id" value="{{p.ID}}">
+        <input type="hidden" name="permission_code" value="{{p.PermissionCode}}">
+        <div class="form-group">
+            <label class="form-label">权限编码</label>
+            <input type="text" class="form-input" value="{{p.PermissionCode}}" disabled>
+        </div>
+        <div class="form-group">
+            <label class="form-label req">权限名称</label>
+            <input type="text" name="permission_name" class="form-input" required maxlength="100" value="{{p.PermissionName}}">
+        </div>
+        <div class="form-group">
+            <label class="form-label req">所属模块</label>
+            <input type="text" name="module" class="form-input" required maxlength="50" value="{{p.Module}}">
+        </div>
+        <div class="form-group">
+            <label class="form-label req">API 路径</label>
+            <input type="text" name="api_path" class="form-input" required maxlength="200" value="{{p.APIPath}}">
+        </div>
+        <div class="form-group">
+            <label class="form-label req">方法</label>
+            <select name="api_method" class="form-select">
+                <option value="GET"{{if p.APIMethod == "GET"}} selected{{end}}>GET</option>
+                <option value="POST"{{if p.APIMethod == "POST"}} selected{{end}}>POST</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label class="form-label">状态</label>
+            <select name="status" class="form-select">
+                <option value="1"{{if p.Status == 1}} selected{{end}}>启用</option>
+                <option value="0"{{if p.Status == 0}} selected{{end}}>禁用</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label class="form-label">备注</label>
+            <input type="text" name="remark" class="form-input" maxlength="200" value="{{if p.Remark}}{{p.Remark}}{{end}}">
+        </div>
+        <div class="form-actions">
+            <button type="button" class="btn btn-ghost" data-drawer-close>取消</button>
+            <button type="submit" class="btn btn-primary">保存修改</button>
+        </div>
+    </form>
+</template>
+{{end}}
+{{end}}

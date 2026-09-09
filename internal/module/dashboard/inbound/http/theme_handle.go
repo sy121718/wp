@@ -442,6 +442,11 @@ func (h *Handle) SaveThemeSettings(c *gin.Context) {
 	// 从 PostForm（点分键名）组装完整 ThemeSettings；空值直接透传为字段零值，
 	// 序列化时经 omitempty 省略（未设置字段不输出 CSS 变量，组件回退自身默认）。
 	ts := &builder.ThemeSettings{
+		// 图片管理：懒加载默认策略 + 骨架屏开关（组件级三态为「默认」时继承这里）。
+		Images: builder.ThemeImages{
+			LazyLoad: strings.TrimSpace(c.PostForm("images.lazyLoad")),
+			Skeleton: strings.TrimSpace(c.PostForm("images.skeleton")) == "true",
+		},
 		Colors: builder.ThemeColors{
 			Primary:    strings.TrimSpace(c.PostForm("colors.primary")),
 			Secondary:  strings.TrimSpace(c.PostForm("colors.secondary")),
@@ -484,6 +489,10 @@ func (h *Handle) SaveThemeSettings(c *gin.Context) {
 			PaddingX:        strings.TrimSpace(c.PostForm("button.px")),
 			HoverBackground: strings.TrimSpace(c.PostForm("button.hoverBg")),
 			HoverColor:      strings.TrimSpace(c.PostForm("button.hoverColor")),
+			BorderWidth:     strings.TrimSpace(c.PostForm("button.borderWidth")),
+			BorderStyle:     strings.TrimSpace(c.PostForm("button.borderStyle")),
+			BorderColor:     strings.TrimSpace(c.PostForm("button.borderColor")),
+			Shadow:          strings.TrimSpace(c.PostForm("button.shadow")),
 		},
 		Surface: builder.ThemeSurface{
 			Radius:      strings.TrimSpace(c.PostForm("surface.radius")),

@@ -1,0 +1,135 @@
+{* admin/departments.html — 部门管理：顶部筛选 + 新建/编辑走右侧抽屉（admin.js），列表纯展示。 *}
+{{extends "layout.html"}}
+{{block body()}}
+<div class="pages-wrap">
+    <section class="card">
+        <div class="card-header">
+            <span class="card-title">部门管理（共 {{len(.Rows)}}）</span>
+        </div>
+        <div class="list-toolbar">
+            <div class="toolbar-search">
+                <input type="text" data-filter-input placeholder="筛选：名称 / 编码 / 备注…" class="form-input">
+            </div>
+            <div class="toolbar-spacer"></div>
+            {{if .PermSet["dept:create"]}}<button type="button" class="btn btn-primary" data-drawer-open="#tpl-dept-create" data-drawer-title="新建部门">＋ 新建部门</button>{{end}}
+        </div>
+        <div class="card-body">
+            {{if len(.Rows) == 0}}
+            <p class="pages-empty">还没有部门，点右上「新建部门」创建一个。</p>
+            {{else}}
+            <div class="table-wrap">
+            <table class="data-table">
+                <thead>
+                <tr><th>名称</th><th>编码</th><th>状态</th><th>排序</th><th>备注</th><th class="col-actions">操作</th></tr>
+                </thead>
+                <tbody>
+                {{range _, d := .Rows}}
+                <tr data-filter-text="{{d.DeptName}} {{d.DeptCode}} {{d.Remark}}">
+                <td>{{d.Indent}}{{d.DeptName}}</td>
+                <td class="text-mute">{{d.DeptCode}}</td>
+                <td>{{if d.Status == 1}}<span class="badge badge-success">启用</span>{{else}}<span class="badge badge-mute">禁用</span>{{end}}</td>
+                <td>{{d.SortOrder}}</td>
+                <td>{{if d.Remark}}{{d.Remark}}{{end}}</td>
+                <td class="col-actions">
+                    {{if .PermSet["dept:update"]}}<button type="button" class="btn btn-sm btn-ghost" data-drawer-open="#tpl-dept-edit-{{d.ID}}" data-drawer-title="编辑部门：{{d.DeptName}}">编辑</button>{{end}}
+                    {{if .PermSet["dept:delete"]}}<button type="button" class="btn btn-sm btn-danger" onclick="if(confirm('确认删除？')){document.getElementById('dept-del-{{d.ID}}').submit()}">删除</button>{{end}}
+                    <form id="dept-del-{{d.ID}}" method="post" action="/admin/departments/delete" class="hidden-form">
+                        <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
+                        <input type="hidden" name="id" value="{{d.ID}}">
+                    </form>
+                </td>
+                </tr>
+                {{end}}
+                </tbody>
+            </table>
+            </div>
+            {{end}}
+        </div>
+    </section>
+</div>
+
+{* ===== 新建部门（抽屉表单模板） ===== *}
+<template id="tpl-dept-create">
+    <form method="post" action="/admin/departments/create">
+        <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
+        <div class="form-group">
+            <label class="form-label req">部门名称</label>
+            <input type="text" name="dept_name" class="form-input" required maxlength="100" placeholder="如：技术部">
+        </div>
+        <div class="form-group">
+            <label class="form-label req">部门编码</label>
+            <input type="text" name="dept_code" class="form-input" required maxlength="50" placeholder="如：tech">
+        </div>
+        <div class="form-group">
+            <label class="form-label">上级部门</label>
+            <select name="parent_id" class="form-select">
+                <option value="0">（根部门）</option>
+                {{range _, p := .Parents}}
+                <option value="{{p.ID}}">{{p.Indent}}{{p.DeptName}}</option>
+                {{end}}
+            </select>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label class="form-label">状态</label>
+                <select name="status" class="form-select">
+                    <option value="1">启用</option>
+                    <option value="0">禁用</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label class="form-label">排序</label>
+                <input type="number" name="sort_order" class="form-input" value="0">
+            </div>
+        </div>
+        <div class="form-group">
+            <label class="form-label">备注</label>
+            <input type="text" name="remark" class="form-input" maxlength="200">
+        </div>
+        <div class="form-actions">
+            <button type="button" class="btn btn-ghost" data-drawer-close>取消</button>
+            <button type="submit" class="btn btn-primary">创建部门</button>
+        </div>
+    </form>
+</template>
+
+{* ===== 编辑部门（每行一份抽屉表单模板，服务端回显；parent_id 隐藏，保持不移动父级） ===== *}
+{{range _, d := .Rows}}
+<template id="tpl-dept-edit-{{d.ID}}">
+    <form method="post" action="/admin/departments/update">
+        <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
+        <input type="hidden" name="id" value="{{d.ID}}">
+        <input type="hidden" name="parent_id" value="{{d.ParentID}}">
+        <div class="form-group">
+            <label class="form-label req">部门名称</label>
+            <input type="text" name="dept_name" class="form-input" required maxlength="100" value="{{d.DeptName}}">
+        </div>
+        <div class="form-group">
+            <label class="form-label req">部门编码</label>
+            <input type="text" name="dept_code" class="form-input" required maxlength="50" value="{{d.DeptCode}}">
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label class="form-label">状态</label>
+                <select name="status" class="form-select">
+                    <option value="1"{{if d.Status == 1}} selected{{end}}>启用</option>
+                    <option value="0"{{if d.Status == 0}} selected{{end}}>禁用</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label class="form-label">排序</label>
+                <input type="number" name="sort_order" class="form-input" value="{{d.SortOrder}}">
+            </div>
+        </div>
+        <div class="form-group">
+            <label class="form-label">备注</label>
+            <input type="text" name="remark" class="form-input" maxlength="200" value="{{if d.Remark}}{{d.Remark}}{{end}}">
+        </div>
+        <div class="form-actions">
+            <button type="button" class="btn btn-ghost" data-drawer-close>取消</button>
+            <button type="submit" class="btn btn-primary">保存修改</button>
+        </div>
+    </form>
+</template>
+{{end}}
+{{end}}

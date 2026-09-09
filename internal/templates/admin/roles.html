@@ -1,0 +1,129 @@
+{* admin/roles.html — 角色管理：顶部筛选 + 新建/编辑走右侧抽屉（admin.js），列表纯展示。 *}
+{{extends "layout.html"}}
+{{block body()}}
+<div class="pages-wrap">
+    <section class="card">
+        <div class="card-header">
+            <span class="card-title">角色管理（共 {{.Total}}）</span>
+        </div>
+                {* 服务端筛选：GET 提交，条件进 SQL（与分页同源）。 *}
+        <form class="list-toolbar" method="get" action="/admin/roles">
+            <div class="toolbar-search">
+                <input type="text" name="keyword" value="{{.["FilterKeyword"]}}" placeholder="关键词：编码 / 名称 / 备注" class="form-input">
+            </div>
+            <button type="submit" class="btn">筛选</button>
+            <a class="btn btn-ghost" href="/admin/roles">重置</a>
+<div class="toolbar-spacer"></div>
+            {{if .PermSet["role:create"]}}<button type="button" class="btn btn-primary" data-drawer-open="#tpl-role-create" data-drawer-title="新建角色">＋ 新建角色</button>{{end}}
+        </form>
+        <div class="card-body">
+            {{if len(.Rows) == 0}}
+            <p class="pages-empty">还没有角色，点右上「新建角色」创建一个。</p>
+            {{else}}
+            <div class="table-wrap">
+            <table class="data-table">
+                <thead>
+                <tr><th>编码</th><th>名称</th><th>状态</th><th>排序</th><th>备注</th><th class="col-actions">操作</th></tr>
+                </thead>
+                <tbody>
+                {{range _, r := .Rows}}
+                <tr data-filter-text="{{r.RoleCode}} {{r.RoleName}} {{r.Remark}}">
+                <td class="text-mute">{{r.RoleCode}}{{if r.IsSystem == 1}} <span class="badge badge-mute">系统</span>{{end}}</td>
+                <td>{{r.RoleName}}</td>
+                <td>{{if r.Status == 1}}<span class="badge badge-success">启用</span>{{else}}<span class="badge badge-mute">禁用</span>{{end}}</td>
+                <td>{{r.SortOrder}}</td>
+                <td>{{if r.Remark}}{{r.Remark}}{{end}}</td>
+                <td class="col-actions">
+                    {{if .PermSet["role:update"]}}<button type="button" class="btn btn-sm btn-ghost" data-drawer-open="#tpl-role-edit-{{r.ID}}" data-drawer-title="编辑角色：{{r.RoleName}}">编辑</button>{{end}}
+                    {{if .PermSet["role:delete"]}}<button type="button" class="btn btn-sm btn-danger" onclick="if(confirm('确认删除？')){document.getElementById('role-del-{{r.ID}}').submit()}">删除</button>{{end}}
+                    <form id="role-del-{{r.ID}}" method="post" action="/admin/roles/delete" class="hidden-form">
+                        <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
+                        <input type="hidden" name="id" value="{{r.ID}}">
+                    </form>
+                </td>
+                </tr>
+                {{end}}
+                </tbody>
+            </table>
+            </div>
+        {{include "partials/pagination.html"}}
+            {{end}}
+        </div>
+    </section>
+</div>
+
+{* ===== 新建角色（抽屉表单模板） ===== *}
+<template id="tpl-role-create">
+    <form method="post" action="/admin/roles/create">
+        <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
+        <div class="form-group">
+            <label class="form-label req">角色编码</label>
+            <input type="text" name="role_code" class="form-input" required maxlength="50" placeholder="如：editor">
+        </div>
+        <div class="form-group">
+            <label class="form-label req">角色名称</label>
+            <input type="text" name="role_name" class="form-input" required maxlength="100">
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label class="form-label">排序</label>
+                <input type="number" name="sort_order" class="form-input" value="0">
+            </div>
+            <div class="form-group">
+                <label class="form-label">状态</label>
+                <select name="status" class="form-select">
+                    <option value="1">启用</option>
+                    <option value="0">禁用</option>
+                </select>
+            </div>
+        </div>
+        <div class="form-group">
+            <label class="form-label">备注</label>
+            <input type="text" name="remark" class="form-input" maxlength="200">
+        </div>
+        <div class="form-actions">
+            <button type="button" class="btn btn-ghost" data-drawer-close>取消</button>
+            <button type="submit" class="btn btn-primary">创建角色</button>
+        </div>
+    </form>
+</template>
+
+{* ===== 编辑角色（每行一份抽屉表单模板，服务端回显） ===== *}
+{{range _, r := .Rows}}
+<template id="tpl-role-edit-{{r.ID}}">
+    <form method="post" action="/admin/roles/update">
+        <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
+        <input type="hidden" name="id" value="{{r.ID}}">
+        <div class="form-group">
+            <label class="form-label">角色编码</label>
+            <input type="text" class="form-input" value="{{r.RoleCode}}" disabled>
+        </div>
+        <div class="form-group">
+            <label class="form-label req">角色名称</label>
+            <input type="text" name="role_name" class="form-input" required maxlength="100" value="{{r.RoleName}}">
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label class="form-label">排序</label>
+                <input type="number" name="sort_order" class="form-input" value="{{r.SortOrder}}">
+            </div>
+            <div class="form-group">
+                <label class="form-label">状态</label>
+                <select name="status" class="form-select">
+                    <option value="1"{{if r.Status == 1}} selected{{end}}>启用</option>
+                    <option value="0"{{if r.Status == 0}} selected{{end}}>禁用</option>
+                </select>
+            </div>
+        </div>
+        <div class="form-group">
+            <label class="form-label">备注</label>
+            <input type="text" name="remark" class="form-input" maxlength="200" value="{{if r.Remark}}{{r.Remark}}{{end}}">
+        </div>
+        <div class="form-actions">
+            <button type="button" class="btn btn-ghost" data-drawer-close>取消</button>
+            <button type="submit" class="btn btn-primary">保存修改</button>
+        </div>
+    </form>
+</template>
+{{end}}
+{{end}}

@@ -5658,6 +5658,171 @@
                 }
                 return true;
             });
+        },
+
+        /**
+         * picker(opts) 通用图标选择器：按钮 + 弹层（搜索 / 分类 / 网格 / 清除）。
+         * opts: { value, placeholder, allowEmpty, onPick(name) }
+         * 返回 { el, value, set(name) }：el 为挂载节点，onPick 在用户选择时回调。
+         *
+         * 供后台表单（菜单/目录/按钮图标）与工作台复用；样式见 theme.css 的 .wp-ip-*。
+         */
+        picker: function (opts) {
+            opts = opts || {};
+            var self = this;
+            var current = opts.value || '';
+
+            var root = document.createElement('div');
+            root.className = 'wp-ip';
+
+            var btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'wp-ip-btn';
+
+            var pop = document.createElement('div');
+            pop.className = 'wp-ip-pop';
+            pop.hidden = true;
+
+            var search = document.createElement('input');
+            search.type = 'text';
+            search.className = 'wp-ip-search';
+            search.placeholder = '搜索图标（名称或中文）';
+
+            var cats = document.createElement('div');
+            cats.className = 'wp-ip-cats';
+
+            var grid = document.createElement('div');
+            grid.className = 'wp-ip-grid';
+
+            var foot = document.createElement('div');
+            foot.className = 'wp-ip-foot';
+            var clearBtn = document.createElement('button');
+            clearBtn.type = 'button';
+            clearBtn.className = 'wp-ip-clear';
+            clearBtn.textContent = '清除图标';
+            foot.appendChild(clearBtn);
+
+            var state = { category: '', keyword: '' };
+
+            function renderBtn() {
+                btn.innerHTML = '';
+                if (current) {
+                    var nm = document.createElement('span');
+                    nm.className = 'wp-ip-name';
+                    if (self.svg(current)) {
+                        var ic = document.createElement('span');
+                        ic.className = 'wp-ip-preview';
+                        ic.innerHTML = self.svg(current);   // SVG 来自常量，白名单内
+                        btn.appendChild(ic);
+                        nm.textContent = self.label(current);
+                    } else {
+                        // 库外图标名（如历史数据 i-ep:set-up）：保留原值，仅无法预览。
+                        nm.textContent = current + '（当前图标库无此项，可重新选择）';
+                    }
+                    btn.appendChild(nm);
+                } else {
+                    var ph = document.createElement('span');
+                    ph.className = 'wp-ip-name is-empty';
+                    ph.textContent = opts.placeholder || '选择图标（可不选）';
+                    btn.appendChild(ph);
+                }
+            }
+
+            function renderGrid() {
+                grid.innerHTML = '';
+                var names = self.filter(state.category, '', state.keyword);
+                var limit = 160;
+                names.slice(0, limit).forEach(function (name) {
+                    var cell = document.createElement('button');
+                    cell.type = 'button';
+                    cell.className = 'wp-ip-cell';
+                    cell.title = self.label(name);
+                    cell.innerHTML = self.svg(name);
+                    if (name === current) cell.classList.add('is-active');
+                    cell.addEventListener('click', function () {
+                        current = name;
+                        renderBtn();
+                        renderGrid();
+                        close();
+                        if (opts.onPick) opts.onPick(name);
+                    });
+                    grid.appendChild(cell);
+                });
+                if (names.length > limit) {
+                    var more = document.createElement('div');
+                    more.className = 'wp-ip-more';
+                    more.textContent = '仅显示前 ' + limit + ' 个，请用搜索缩小范围（共 ' + names.length + ' 个）';
+                    grid.appendChild(more);
+                }
+                if (!names.length) {
+                    var empty = document.createElement('div');
+                    empty.className = 'wp-ip-more';
+                    empty.textContent = '没有匹配的图标';
+                    grid.appendChild(empty);
+                }
+            }
+
+            function renderCats() {
+                cats.innerHTML = '';
+                var all = document.createElement('button');
+                all.type = 'button';
+                all.className = 'wp-ip-cat' + (state.category === '' ? ' is-active' : '');
+                all.textContent = '全部';
+                all.addEventListener('click', function () { state.category = ''; renderCats(); renderGrid(); });
+                cats.appendChild(all);
+                (self.categories || []).forEach(function (c) {
+                    var b = document.createElement('button');
+                    b.type = 'button';
+                    b.className = 'wp-ip-cat' + (state.category === c ? ' is-active' : '');
+                    b.textContent = self.categoryLabel(c);
+                    b.addEventListener('click', function () { state.category = c; renderCats(); renderGrid(); });
+                    cats.appendChild(b);
+                });
+            }
+
+            function open() {
+                pop.hidden = false;
+                root.classList.add('is-open');
+                renderCats();
+                renderGrid();
+                search.focus();
+            }
+            function close() {
+                pop.hidden = true;
+                root.classList.remove('is-open');
+            }
+
+            btn.addEventListener('click', function (e) {
+                e.stopPropagation();
+                if (pop.hidden) open(); else close();
+            });
+            search.addEventListener('input', function () {
+                state.keyword = search.value;
+                renderGrid();
+            });
+            clearBtn.addEventListener('click', function () {
+                current = '';
+                renderBtn();
+                renderGrid();
+                close();
+                if (opts.onPick) opts.onPick('');
+            });
+            pop.addEventListener('click', function (e) { e.stopPropagation(); });
+            document.addEventListener('click', function () { close(); });
+
+            pop.appendChild(search);
+            pop.appendChild(cats);
+            pop.appendChild(grid);
+            pop.appendChild(foot);
+            root.appendChild(btn);
+            root.appendChild(pop);
+            renderBtn();
+
+            return {
+                el: root,
+                get value() { return current; },
+                set: function (v) { current = v || ''; renderBtn(); }
+            };
         }
     };
 })();

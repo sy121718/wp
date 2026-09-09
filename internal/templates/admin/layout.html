@@ -1,10 +1,11 @@
 {* layout.jet — 后台布局骨架，所有后台页面继承此模板 *}
 <!DOCTYPE html>
-<html lang="zh-CN">
+{* 语言：由 withI18n 注入（zh-CN / en-US）；缺数据时回退 zh-CN，不报错 *}
+<html lang="{{if .["lang"]}}{{ .["lang"] }}{{else}}zh-CN{{end}}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{.title}} — go_wp 管理后台</title>
+    <title>{{.title}} — go_wp {{ .["t"]("shell.brand", "管理后台") }}</title>
     <script>
         {* 防止主题闪烁：在 CSS 加载前就从 localStorage 读取主题 *}
         (function() {
@@ -19,52 +20,40 @@
    渲染数据未传 csrf_token 时输出空串（chain 索引写法对 map 缺 key 安全，不会渲染报错），
    此时请求不带 token、由 CSRF 中间件按未授权处理；各页面 handler 应在渲染数据中
    传入 gin.H{"csrf_token": builtin.GetCSRFToken(c)} 的 token 值。 *}
-<body hx-headers='{"X-CSRF-Token":"{{ .["csrf_token"] }}"}'>
+<body class="{{if !.["SidebarOpen"]}}sidebar-collapsed{{end}}" hx-headers='{"X-CSRF-Token":"{{ .["csrf_token"] }}"}'>
     <div class="admin-layout">
         {* ===== 侧栏 ===== *}
-        <aside class="admin-sidebar">
-            <div class="sidebar-brand">go<span>_wp</span></div>
-            <nav class="sidebar-nav">
-                <div class="sidebar-section">
-                    <div class="sidebar-section-title">概览</div>
-                    <a href="/admin" class="sidebar-link{{if .menu == "dashboard"}} active{{end}}">仪表盘</a>
-                </div>
-                <div class="sidebar-section">
-                    <div class="sidebar-section-title">管理</div>
-                    <a href="/admin/administrators" class="sidebar-link{{if .menu == "admins"}} active{{end}}">管理员</a>
-                    <a href="/admin/roles" class="sidebar-link{{if .menu == "roles"}} active{{end}}">角色管理</a>
-                    <a href="/admin/menus" class="sidebar-link{{if .menu == "menus"}} active{{end}}">菜单管理</a>
-                    <a href="/admin/permissions" class="sidebar-link{{if .menu == "permissions"}} active{{end}}">权限资源</a>
-                    <a href="/admin/departments" class="sidebar-link{{if .menu == "depts"}} active{{end}}">部门管理</a>
-                    <a href="/admin/datarules" class="sidebar-link{{if .menu == "datarules"}} active{{end}}">数据权限</a>
-                </div>
-                <div class="sidebar-section">
-                    <div class="sidebar-section-title">内容</div>
-                    <a href="/admin/articles" class="sidebar-link{{if .menu == "articles"}} active{{end}}">文章</a>
-                    <a href="/admin/products" class="sidebar-link{{if .menu == "products"}} active{{end}}">商品</a>
-                    <a href="/admin/categories" class="sidebar-link{{if .menu == "categories"}} active{{end}}">分类标签</a>
-                </div>
-                <div class="sidebar-section">
-                    <div class="sidebar-section-title">系统</div>
-                    <a href="/admin/pages" class="sidebar-link{{if .menu == "pages"}} active{{end}}">页面</a>
-                    <a href="/admin/themes" class="sidebar-link{{if .menu == "themes"}} active{{end}}">主题管理</a>
-                    <a href="/admin/blocks" class="sidebar-link{{if .menu == "blocks"}} active{{end}}">全局块</a>
-                    <a href="/admin/media" class="sidebar-link{{if .menu == "media"}} active{{end}}">媒体库</a>
-                    <a href="/admin/settings" class="sidebar-link{{if .menu == "settings"}} active{{end}}">站点设置</a>
-                </div>
-            </nav>
-        </aside>
+        {* ===== 侧边栏：一级图标栏 + 二级递归树（数据驱动 + 权限过滤） ===== *}
+        {{include "partials/sidebar.html"}}
 
+        <div class="admin-main">
         {* ===== 顶栏 ===== *}
         <header class="admin-topbar">
             <div class="topbar-title">{{.title}}</div>
             <div class="topbar-actions">
+                {* ===== 语言切换：GET /admin/lang（写语言 Cookie + 302 回当前页）。
+                       纯表单提交，无额外 JS；redirect 为服务端注入的当前页 URI（含 query），
+                       由该路由再次校验为站内路径。缺 t/langs 时整块不渲染，不影响页面。 *}
+                {{if .["langs"]}}
+                <form class="lang-switch" method="get" action="/admin/lang">
+                    <input type="hidden" name="redirect" value="{{ .["lang_redirect"] }}">
+                    <label class="sr-only" for="lang-select">{{ .["t"]("shell.lang.label", "语言") }}</label>
+                    <select class="lang-select" id="lang-select" name="lang"
+                            title="{{ .["t"]("shell.lang.label", "语言") }}"
+                            onchange="this.form.submit()">
+                        {{range _, l := .["langs"]}}
+                        <option value="{{l.Code}}"{{if l.Active}} selected{{end}}>{{l.Label}}</option>
+                        {{end}}
+                    </select>
+                    <noscript><button type="submit" class="lang-submit">→</button></noscript>
+                </form>
+                {{end}}
                 <button class="theme-toggle" onclick="
                     var html = document.documentElement;
                     var next = html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
                     html.setAttribute('data-theme', next);
                     localStorage.setItem('theme', next);
-                " title="切换主题">◐</button>
+                " title="{{ .["t"]("shell.action.toggle_theme", "切换主题") }}">◐</button>
             </div>
         </header>
 
@@ -72,6 +61,19 @@
         <main class="admin-content">
             {{block body()}}{{end}}
         </main>
+
+        </div>{* /.admin-main *}
+
+        {* ===== 全局右侧抽屉：页面模板提供 <template>，admin.js 负责开合（新建/编辑表单） ===== *}
+        <div class="drawer-mask" data-drawer-mask hidden></div>
+        <aside class="drawer" data-drawer hidden aria-hidden="true">
+            <header class="drawer-head">
+                <span class="drawer-title" data-drawer-title></span>
+                <button type="button" class="drawer-close" data-drawer-close title="{{ .["t"]("shell.action.close", "关闭") }}">✕</button>
+            </header>
+            <div class="drawer-body" data-drawer-body></div>
+        </aside>
+        <script src="/static/js/admin.js"></script>
     </div>
 </body>
 </html>

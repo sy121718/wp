@@ -1,0 +1,68 @@
+{* fragments/inspector_panel.html — 检查器面板（HTMX 服务端渲染，docs/09 §3 打样）
+   数据：NodeID / NodeType / Sections（分组 → 字段）
+   约定：控件带 data-wb-path（相对 props 的路径）与 data-wb-kind，客户端统一事件委托回写 AST。 *}
+{{if .NodeID == ""}}
+<p class="wb-empty">在画布或大纲树中选择组件</p>
+{{else}}
+{{range _, s := .Sections}}
+<details class="wb-inspector-group" data-wb-section="{{s.Key}}"{{if s.Open}} open{{end}}>
+    <summary class="wb-inspector-section">{{s.Title}}{{if s.Used}} <span class="wb-group-count">{{s.Used}}</span>{{end}}</summary>
+    {{range _, f := s.Fields}}
+    {{if f.Slot != ""}}
+    {* 增强字段：客户端用既有控件函数填充（取色器/联动锁/媒体选择），服务端只给定位占位 *}
+    <div class="wb-field-slot" data-wb-slot="{{f.Key}}" data-wb-enhance="{{f.Slot}}"></div>
+    {{else if f.UI == "bool"}}
+    <div class="wb-field wb-field-check"><label><input type="checkbox" data-wb-path="{{f.Key}}" data-wb-kind="bool"{{if f.Bool}} checked{{end}}> {{f.Label}}</label></div>
+    {{else if f.UI == "select"}}
+    <div class="wb-field wb-field-compact"><label>{{f.Label}}</label>
+        <select data-wb-path="{{f.Key}}" data-wb-kind="select">
+            {{if f.Value == ""}}<option value="" selected>（默认）</option>{{end}}
+            {{range _, o := f.Options}}<option value="{{o.Value}}"{{if o.Selected}} selected{{end}}>{{o.Label}}</option>{{end}}
+        </select>
+    </div>
+    {{else if f.UI == "textarea"}}
+    <div class="wb-field"><label>{{f.Label}}</label><textarea rows="4" data-wb-path="{{f.Key}}" data-wb-kind="text">{{f.Value}}</textarea></div>
+    {{else if f.UI == "cssdecls"}}
+    <div class="wb-field"><label>{{f.Label}}</label><textarea rows="3" data-wb-path="{{f.Key}}" data-wb-kind="cssdecls" placeholder="{{f.Placeholder}}">{{f.Value}}</textarea></div>
+    {{else if f.UI == "mediaList"}}
+    <div class="wb-field"><label>{{f.Label}}</label><textarea rows="3" data-wb-path="{{f.Key}}" data-wb-kind="mediaList" placeholder="每行一个图片地址">{{f.Value}}</textarea></div>
+    {{else if f.UI == "number"}}
+    <div class="wb-field wb-field-compact"><label>{{f.Label}}</label><input type="number" data-wb-path="{{f.Key}}" data-wb-kind="number" value="{{f.Value}}"{{if f.Min}} min="{{f.Min}}"{{end}}{{if f.Max}} max="{{f.Max}}"{{end}} step="{{f.Step}}"></div>
+    {{else if f.UI == "color"}}
+    <div class="wb-field wb-field-color"><label>{{f.Label}}</label><input type="text" data-wb-path="{{f.Key}}" data-wb-kind="color" value="{{f.Value}}" placeholder="#rrggbb / var(--wp-c-…)"></div>
+    {{else if f.UI == "media"}}
+    <div class="wb-field wb-field-media"><label>{{f.Label}}</label>
+        <input type="text" data-wb-path="{{f.Key}}" data-wb-kind="media" value="{{f.Value}}">
+        <button type="button" class="wb-btn wb-btn-sm wb-btn-secondary" data-wb-media-pick="{{f.Key}}">选择</button>
+    </div>
+    {{else if f.UI == "spacing"}}
+    <div class="wb-field wb-field-dims"><label>{{f.Label}}</label>
+        <div class="wb-dims-grid">
+            {{range _, in := f.Inputs}}
+            <label class="wb-dim-cell"><span>{{in.Label}}</span><input type="text" data-wb-path="{{in.Path}}" data-wb-kind="dimension" value="{{in.Value}}" placeholder="{{in.Placeholder}}"></label>
+            {{end}}
+        </div>
+    </div>
+    {{else if f.UI == "corners"}}
+    <div class="wb-field wb-field-dims"><label>{{f.Label}}</label>
+        <div class="wb-dims-grid wb-corners-grid">
+            {{range _, in := f.Inputs}}
+            <label class="wb-dim-cell"><span>{{in.Label}}</span><input type="text" data-wb-path="{{in.Path}}" data-wb-kind="dimension" value="{{in.Value}}" placeholder="0px"></label>
+            {{end}}
+        </div>
+    </div>
+    {{else if f.UI == "rtext"}}
+    <div class="wb-field wb-field-dims"><label>{{f.Label}}</label>
+        <div class="wb-dims-grid">
+            {{range _, in := f.Inputs}}
+            <label class="wb-dim-cell"><span>{{in.Label}}</span><input type="text" data-wb-path="{{in.Path}}" data-wb-kind="dimension" value="{{in.Value}}"></label>
+            {{end}}
+        </div>
+    </div>
+    {{else}}
+    <div class="wb-field wb-field-compact"><label>{{f.Label}}</label><input type="text" data-wb-path="{{f.Key}}" data-wb-kind="{{f.UI}}" value="{{f.Value}}"{{if f.Placeholder}} placeholder="{{f.Placeholder}}"{{end}}></div>
+    {{end}}
+    {{end}}
+</details>
+{{end}}
+{{end}}

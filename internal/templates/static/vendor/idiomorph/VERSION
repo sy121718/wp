@@ -1,0 +1,19 @@
+idiomorph 0.8.0
+来源：https://registry.npmjs.org/idiomorph/-/idiomorph-0.8.0.tgz
+下载日期：2026-09-09
+文件：
+  idiomorph.min.js      dist/idiomorph.min.js，UMD 风格自执行，暴露全局对象 Idiomorph
+  idiomorph-ext.min.js  dist/idiomorph-ext.min.js = idiomorph + idiomorph-htmx，
+                        在 htmx 上注册名为 morph 的扩展（htmx.defineExtension("morph", ...)）
+  LICENSE               0BSD（Zero-Clause BSD）
+校验：
+  4cbd535caf7663a51eda9bce6595371c384fc430d54b8d414e29a61167f19f96  idiomorph.min.js
+  5811b9a7eda14878b7dab4378bf60432e1bb6f11fcfb970cc26540642650181e  idiomorph-ext.min.js
+  d3d2456f76414f2456104660ebd65aff1c04cd7966b942bdabd63f3cdb316a38  LICENSE
+体积：idiomorph.min.js 10,587 B（gzip -9 3,789 B）；idiomorph-ext.min.js 11,037 B（gzip -9 3,945 B）
+加载：workbench/layout.html 只引入 idiomorph.min.js（在 workbench/index.js 之前），
+      工作台 JS 直接调用全局 Idiomorph.morph(el, html, {morphStyle:'innerHTML'})，不需要 hx-ext。
+      idiomorph-ext.min.js 本目录留存但不加载：未来把面板改为 hx-ext="morph" +
+      hx-swap="morph:innerHTML" 的声明式路径时可直接启用；与核心文件同源同版本一起锁定，避免版本漂移。
+升级方式：改上面的版本号，重新 curl 解包 dist/idiomorph.min.js 与 dist/idiomorph-ext.min.js 覆盖本目录，
+      再执行 sha256sum 更新上面的校验值。

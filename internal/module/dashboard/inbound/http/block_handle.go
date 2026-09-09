@@ -22,13 +22,13 @@ import (
 
 // blockRow 全局块列表行投影。
 type blockRow struct {
-	ID            string
-	Name          string
-	Kind          string
-	KindLabel     string
-	ReuseMode     string
+	ID             string
+	Name           string
+	Kind           string
+	KindLabel      string
+	ReuseMode      string
 	ReuseModeLabel string
-	UpdatedAt     string
+	UpdatedAt      string
 }
 
 // blocksPageData 全局块管理页数据。

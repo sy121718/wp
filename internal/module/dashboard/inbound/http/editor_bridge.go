@@ -277,6 +277,28 @@ const editorBridgeScript = `<script>
   ].join('');
   document.head.appendChild(directStyle);
 
+  // 局部刷新（父窗口 wb-patch）：只替换目标节点的 DOM 与整页样式，不重载 iframe。
+  window.addEventListener('message', function (ev) {
+    if (ev.origin !== location.origin || !ev.data || ev.data.type !== 'wb-patch') return;
+    var el = document.querySelector('[data-wp-id="' + ev.data.id + '"]');
+    if (el && ev.data.html) {
+      var tmp = document.createElement('div');
+      tmp.innerHTML = ev.data.html;
+      var fresh = tmp.firstElementChild;
+      if (fresh) {
+        fresh.setAttribute('data-wp-id', ev.data.id);
+        fresh.setAttribute('draggable', 'true');
+        if (el.classList.contains('wb-selected')) fresh.classList.add('wb-selected');
+        el.replaceWith(fresh);
+      }
+    }
+    if (typeof ev.data.css === 'string') {
+      var st = document.getElementById('wb-live-css');
+      if (!st) { st = document.createElement('style'); st.id = 'wb-live-css'; document.head.appendChild(st); }
+      st.textContent = ev.data.css;
+    }
+  });
+
   // 拖放落点指示：父窗口 bindCanvasDrop 在 dragover 时给目标加类，
   // 这里只负责样式；drop/dragleave 时父窗口负责移除。
 })();

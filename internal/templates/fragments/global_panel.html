@@ -1,0 +1,24 @@
+{* fragments/global_panel.html — 全局设置（站点主题）面板（HTMX 服务端渲染，docs/09 §3）
+   数据：ThemeID / Groups（分组 → 字段）
+   约定：普通字段带 name（提交键）与 value；color 字段输出槽，客户端用取色器增强并注入 hidden input。 *}
+{{if .ThemeID == ""}}
+<p class="wb-empty">当前页面未挂接主题。<br>到后台「主题管理」创建并激活主题后，这里可就地调整。</p>
+{{else}}
+{{range _, g := .Groups}}
+<div class="wb-palette-group">{{g.Title}}</div>
+{{range _, f := g.Fields}}
+{{if f.Kind == "color"}}
+<div class="wb-field wb-field-color" data-wb-theme-color="{{f.Name}}" data-wb-theme-path="{{f.Path}}"><label>{{f.Label}}</label></div>
+{{else if f.Kind == "select"}}
+<div class="wb-field"><label>{{f.Label}}</label>
+    <select name="{{f.Name}}">
+        {{range _, o := f.Options}}<option value="{{o.Value}}"{{if o.Selected}} selected{{end}}>{{o.Label}}</option>{{end}}
+    </select>
+</div>
+{{else}}
+<div class="wb-field"><label>{{f.Label}}</label><input type="text" name="{{f.Name}}" value="{{f.Value}}"></div>
+{{end}}
+{{end}}
+{{end}}
+<p class="wb-empty">保存后主题设置批量合入全部页面文档，已发布页面需重新构建才会带新主题。</p>
+{{end}}

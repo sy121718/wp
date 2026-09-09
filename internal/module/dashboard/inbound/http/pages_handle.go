@@ -12,6 +12,7 @@ import (
 	dashboardenums "go_wp/internal/module/dashboard/enums"
 	pagecontract "go_wp/internal/module/page/contract"
 	projectcontract "go_wp/internal/module/project/contract"
+	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
 
 	"github.com/gin-gonic/gin"
@@ -107,6 +108,7 @@ func (h *Handle) CreateProject(c *gin.Context) {
 	if _, err := h.projects.Create(c.Request.Context(), &projectcontract.CreateReq{
 		Name: name, Settings: json.RawMessage("{}"),
 	}); err != nil {
+		logger.Scene("page").With("name", name).Error(err, "创建站点工程失败")
 		response.ErrorWithMessage(c, http.StatusInternalServerError, dashboardenums.MsgInternalError)
 		return
 	}
@@ -132,6 +134,7 @@ func (h *Handle) CreatePage(c *gin.Context) {
 		DraftPath:         path,
 		DraftDocument:     json.RawMessage(`{"settings":{"layout":{"mode":"full"}},"root":[]}`),
 	}); err != nil {
+		logger.Scene("page").With("projectId", projectID).With("path", path).Error(err, "创建页面失败")
 		response.ErrorWithMessage(c, http.StatusInternalServerError, dashboardenums.MsgInternalError)
 		return
 	}

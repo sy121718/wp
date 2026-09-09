@@ -1,0 +1,77 @@
+{{import "nav-nodes.html"}}
+{* admin/partials/sidebar.html — 后台侧边栏：一级图标栏（顶层分组）+ 二级递归树。
+   数据：.NavGroups（服务端按权限过滤后的导航树）、.SidebarOpen / .SidebarPinned（cookie 决定首屏态）。
+   交互在 static/js/admin.js：点菜单后收起（未固定时）、固定切换、三角展开子级。
+   Jet 语法注意：无 eq 函数（比较用中缀）；map 用 ["key"] 索引访问（缺 key 返回 nil 不报错）；
+   range 遇 nil 会报 "not rangeable"，故用 {{if}} 先判空。 *}
+<nav class="rail">
+    <div class="rail-brand">go_wp</div>
+    {{if .["NavGroups"]}}
+    {{range _, g := .["NavGroups"]}}
+    {{if len(g.Nodes) > 0}}
+    {* 目录：点击展开/收起二级栏 *}
+    <button type="button" class="rail-btn{{if g.Active}} is-active{{end}}" data-group="{{g.Key}}" data-first-url="{{g.FirstURL}}" title="{{g.Title}}">
+        {{if g.Key == "dashboard"}}
+        <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="11" width="7" height="10" rx="1.5"/><rect x="3" y="15" width="7" height="6" rx="1.5"/></svg>
+        {{else if g.Key == "manage"}}
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.2"/><path d="M5 20c0-3.6 3.1-6 7-6s7 2.4 7 6"/></svg>
+        {{else if g.Key == "content"}}
+        <svg viewBox="0 0 24 24"><path d="M5 4h9l5 5v11a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z"/><path d="M14 4v5h5"/><path d="M8 13h8M8 17h5"/></svg>
+        {{else}}
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21M5.6 5.6l1.8 1.8M16.6 16.6l1.8 1.8M18.4 5.6l-1.8 1.8M7.4 16.6l-1.8 1.8"/></svg>
+        {{end}}
+        {{g.Title}}
+    </button>
+    {{else}}
+    {* 直接链接：一级项直接导航（如仪表盘），不展开二级栏 *}
+    <a class="rail-btn{{if g.Active}} is-active{{end}}" href="{{g.Overview.Path}}" title="{{g.Title}}">
+        {{if g.Key == "dashboard"}}
+        <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="11" width="7" height="10" rx="1.5"/><rect x="3" y="15" width="7" height="6" rx="1.5"/></svg>
+        {{else}}
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>
+        {{end}}
+        {{g.Title}}
+    </a>
+    {{end}}
+    {{end}}
+    {{end}}
+</nav>
+
+{{if .["HasSubnav"]}}
+<nav class="subnav" id="subnav">
+    <div class="subnav-pin">
+        {* 文案走 sys_i18n（shell.sidebar.*）；data-label-* 供 admin.js 切换固定态时同步文案，
+           缺词条时 t 回退模板内中文原文。 *}
+        <button type="button" class="pin-btn{{if .["SidebarPinned"]}} is-on{{end}}" id="pinBtn"
+                title="{{ .["t"]("shell.sidebar.pin_title", "固定后导航不再自动收起") }}"
+                data-label-pinned="{{ .["t"]("shell.sidebar.pinned", "已固定") }}"
+                data-label-pin="{{ .["t"]("shell.sidebar.pin", "固定侧栏") }}"
+                data-hint-pinned="{{ .["t"]("shell.sidebar.pinned_hint", "导航后保持展开") }}"
+                data-hint-unpinned="{{ .["t"]("shell.sidebar.unpinned_hint", "点击菜单后收起") }}">
+            <svg viewBox="0 0 24 24"><path d="M9 3h6l-1 6 4 4-5 1-1 7-1-7-5-1 4-4z"/></svg>
+            <span id="pinText">{{if .["SidebarPinned"]}}{{ .["t"]("shell.sidebar.pinned", "已固定") }}{{else}}{{ .["t"]("shell.sidebar.pin", "固定侧栏") }}{{end}}</span>
+        </button>
+        <span class="pin-hint" id="pinHint">{{if .["SidebarPinned"]}}{{ .["t"]("shell.sidebar.pinned_hint", "导航后保持展开") }}{{else}}{{ .["t"]("shell.sidebar.unpinned_hint", "点击菜单后收起") }}{{end}}</span>
+    </div>
+    <div class="subnav-scroll">
+        {{if .["NavGroups"]}}
+        {{range _, g := .["NavGroups"]}}
+        {{if len(g.Nodes) > 0}}
+        <div class="subnav-group{{if g.Active}} is-active{{end}}" data-group="{{g.Key}}">
+            <div class="subnav-title">{{g.Title}}</div>
+            {{if g.Overview}}
+            <a class="subnav-overview{{if g.Overview.Active}} is-active{{end}}" href="{{g.Overview.Path}}">
+                <svg viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/></svg>
+                {{g.Overview.Title}}
+            </a>
+            {{if len(g.Nodes) > 0}}<div class="subnav-divider"></div>{{end}}
+            {{end}}
+            {{yield navNodes(nodes=g.Nodes, depth=0)}}
+        </div>
+        {{end}}
+        {{end}}
+        {{end}}
+    </div>
+
+</nav>
+{{end}}

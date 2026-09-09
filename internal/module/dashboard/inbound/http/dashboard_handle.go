@@ -9,14 +9,17 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 
+	admincontract "go_wp/internal/module/admin/contract"
 	blockcontract "go_wp/internal/module/block/contract"
 	dashboardenums "go_wp/internal/module/dashboard/enums"
+	navigationcontract "go_wp/internal/module/navigation/contract"
 	pagecontract "go_wp/internal/module/page/contract"
 	plugincontract "go_wp/internal/module/plugin/contract"
 	projectcontract "go_wp/internal/module/project/contract"
@@ -31,12 +34,22 @@ import (
 )
 
 // Handle 页面处理器，聚合 dashboard 相关 handler。
+// admin 六领域 CRUD 契约供 /admin 六领域管理页消费（管理员/角色/菜单/权限/部门/数据权限）。
 type Handle struct {
 	pages      pagecontract.PageService
 	projects   projectcontract.ProjectService
 	blocks     blockcontract.BlockService
 	plugins    plugincontract.PluginService
 	collection core.CollectionResolver
+	admins     admincontract.AdminService
+	roles      admincontract.RoleService
+	perms      admincontract.PermService
+	menus      admincontract.MenuService
+	depts      admincontract.DeptService
+	rules      admincontract.RuleService
+	authz      admincontract.AuthzContextService
+	// navigations 公开站点导航契约（导航菜单管理页，与后台权限菜单严格隔离）。
+	navigations navigationcontract.NavigationService
 }
 
 // NewHandle 创建页面处理器；pages/projects/blocks/plugins 为各模块契约。
@@ -44,8 +57,15 @@ type Handle struct {
 // dashboard 不再直接使用，字段保留以维持 SetupDashboardRoutes 装配签名稳定（routes.go）。
 func NewHandle(pages pagecontract.PageService, projects projectcontract.ProjectService,
 	blocks blockcontract.BlockService, plugins plugincontract.PluginService,
-	collection core.CollectionResolver) *Handle {
-	h := &Handle{pages: pages, projects: projects, blocks: blocks, plugins: plugins, collection: collection}
+	collection core.CollectionResolver,
+	admins admincontract.AdminService, roles admincontract.RoleService,
+	perms admincontract.PermService, menus admincontract.MenuService,
+	depts admincontract.DeptService, rules admincontract.RuleService,
+	authz admincontract.AuthzContextService,
+	navigations navigationcontract.NavigationService) *Handle {
+	h := &Handle{pages: pages, projects: projects, blocks: blocks, plugins: plugins, collection: collection,
+		admins: admins, roles: roles, perms: perms, menus: menus, depts: depts, rules: rules, authz: authz,
+		navigations: navigations}
 	// 注入 block 服务 stale 传播器：块内容变更/删除后编排引用页面待重建。
 	// 经匿名接口断言 SetStalePropagator 而非 import block service 实现（模块隔离）；
 	// dashboard 在 page 之后装配，具备传播所需的 page/project 契约，打破 block↔page 装配循环。
@@ -77,11 +97,13 @@ func (h *Handle) Dashboard(c *gin.Context) {
 // 若渲染入口已生成验证码图片则直接注入，避免首屏额外请求。
 func (h *Handle) LoginPage(c *gin.Context) {
 	id, image := captcha.Get().GenerateImage()
-	c.HTML(http.StatusOK, "admin/login", gin.H{
-		"title":         "登录",
+	// 登录页无会话（不走 withCSRF），同样需要语言数据：注入 lang/t/langs 供页面文案与语言切换使用。
+	// 标题走 shell.login.title（缺词条回退「登录」）。
+	c.HTML(http.StatusOK, "admin/login", withI18n(c, gin.H{
+		"title":         translateFor(c)("shell.login.title", "登录"),
 		"captcha_id":    id,
 		"captcha_image": image,
-	})
+	}))
 }
 
 // withCSRF 向模板数据注入当前会话的 CSRF token（layout 的 hx-headers 使用）。
@@ -91,12 +113,101 @@ func withCSRF(c *gin.Context, data gin.H) gin.H {
 	if data == nil {
 		data = gin.H{}
 	}
+	// 多语言：注入 lang / t / langs / lang_redirect，并把 title（enums key）翻成当前语言。
+	// 缺词条时 t 回退模板内中文原文，绝不报错（见 i18n.go）。
+	data = withI18n(c, data)
 	if tok, err := builtin.GetCSRFToken(c); err == nil {
 		data["csrf_token"] = tok
 	} else {
 		data["csrf_token"] = ""
 	}
+	// 当前用户有效权限码集合（permContextMiddleware 注入）。
+	// 模板用 {{if .PermSet["role:list"]}} 控制菜单/按钮/字段显示，
+	// 与 Casbin API 鉴权同源，避免「看得到但点不了」。
+	set := map[string]bool{}
+	if v, ok := c.Get(permSetKey); ok {
+		if m, ok := v.(map[string]bool); ok {
+			set = m
+		}
+	}
+	data["PermSet"] = set
+	// 侧边栏导航树（按权限过滤 + 当前页标记）。
+	navGroups := buildNav(set, normalizePath(c.Request.URL.Path))
+	data["NavGroups"] = navGroups
+	// 侧边栏展开态：由 cookie 决定，服务端渲染首屏即正确（无「先展开后收起」闪烁）。
+	// 点击菜单导航时前端写 cookie=0，固定（pin）时写 cookie 且不再自动收起。
+	open := sidebarOpen(c)
+	pinned := sidebarPinned(c)
+	// 当前页不属于任何目录分组（如「仪表盘」这类直接链接页）且未固定时默认收起，
+	// 否则二级栏无 is-active 分组会整块空白。
+	if open && !pinned && !hasActiveDirGroup(navGroups) {
+		open = false
+	}
+	data["SidebarOpen"] = open
+	data["SidebarPinned"] = pinned
+	// 二级栏渲染开关：仅当当前页属于某个目录分组时才渲染二级栏 DOM。
+	// 仪表盘这类直接链接页不渲染（无空栏占位）；此时点一级目录图标由 admin.js
+	// 跳转到该组第一个页面（data-first-url），目标页正常渲染二级栏。
+	data["HasSubnav"] = hasActiveDirGroup(navGroups)
 	return data
+}
+
+// sidebarCookieOpen / sidebarCookiePinned 侧边栏状态 cookie 名。
+const (
+	sidebarCookieOpen   = "sidebar_open"
+	sidebarCookiePinned = "sidebar_pinned"
+)
+
+// hasActiveDirGroup 判断导航树中是否存在「当前页所在的目录分组」（有二级内容的组）。
+// 仪表盘这类直接链接页返回 false。
+func hasActiveDirGroup(groups []navGroup) bool {
+	for _, g := range groups {
+		if g.Active && len(g.Nodes) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// sidebarOpen 侧边栏是否展开：cookie 缺省为展开（首次访问体验）。
+func sidebarOpen(c *gin.Context) bool {
+	v, err := c.Cookie(sidebarCookieOpen)
+	if err != nil || v == "" {
+		return true
+	}
+	return v != "0"
+}
+
+// sidebarPinned 侧边栏是否固定（固定后导航不再自动收起）。
+func sidebarPinned(c *gin.Context) bool {
+	v, _ := c.Cookie(sidebarCookiePinned)
+	return v == "1"
+}
+
+// permSetKey 请求上下文中的权限码集合键。
+const permSetKey = "perm_set"
+
+// permContextMiddleware 把当前用户有效权限码集合写入请求上下文（仅 dashboard 页面路由挂载）。
+//
+// API 鉴权由 Casbin 中间件独立负责，两者共用同一权限来源；
+// 权限码查询失败时降级为空集合（页面照常渲染，仅不显示需权限的元素）。
+func permContextMiddleware(authz admincontract.AuthzContextService) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		set := map[string]bool{}
+		if authz != nil {
+			if v, ok := c.Get("user_id"); ok {
+				if uid, ok := v.(int64); ok && uid > 0 {
+					if codes, err := authz.EffectivePermissionCodes(c.Request.Context(), uint64(uid)); err == nil {
+						for _, code := range codes {
+							set[code] = true
+						}
+					}
+				}
+			}
+		}
+		c.Set(permSetKey, set)
+		c.Next()
+	}
 }
 
 // jsonSafe 转义 JSON 字符串中的 script 闭合序列，防止用户可编辑的 Page Document
@@ -193,11 +304,28 @@ func (h *Handle) Workbench(c *gin.Context) {
 }
 
 // jsVer 工作台脚本的缓存版本（文件 mtime），开发期改 JS 无需手动升版本号。
+// workbenchJsVer 工作台脚本缓存版本：取拆分后模块目录（static/js/workbench/**）
+// 下所有 .js 的最新 mtime。任一模块改动都会让入口 URL 的 ?v= 变化，配合
+// StaticCacheMiddleware 的协商缓存，浏览器不会再执行旧模块。
 func workbenchJsVer() string {
-	if fi, err := os.Stat(filepath.Join("internal", "templates", "static", "js", "workbench.js")); err == nil {
-		return strconv.FormatInt(fi.ModTime().Unix(), 10)
+	root := filepath.Join("internal", "templates", "static", "js", "workbench")
+	var latest int64
+	err := filepath.Walk(root, func(_ string, fi os.FileInfo, walkErr error) error {
+		if walkErr != nil {
+			return nil // 目录缺失/权限问题不阻断渲染，版本退化为 0
+		}
+		if fi.IsDir() || !strings.HasSuffix(fi.Name(), ".js") {
+			return nil
+		}
+		if m := fi.ModTime().Unix(); m > latest {
+			latest = m
+		}
+		return nil
+	})
+	if err != nil || latest == 0 {
+		return "0"
 	}
-	return "0"
+	return strconv.FormatInt(latest, 10)
 }
 
 // workbenchBlock 全局块编辑模式：复用工作台画布与检查器，
@@ -293,7 +421,7 @@ func (h *Handle) Preview(c *gin.Context) {
 		c.String(http.StatusNotFound, "页面不存在")
 		return
 	}
-	h.renderPreview(c, page.DraftDocument, c.Query("editor") == "1")
+	h.renderPreview(c, page.DraftDocument, page.ProjectID, page.DraftPath, c.Query("editor") == "1")
 }
 
 // BlockPreview 全局块画布预览（工作台块编辑模式 iframe 内嵌）。
@@ -308,7 +436,7 @@ func (h *Handle) BlockPreview(c *gin.Context) {
 		c.String(http.StatusNotFound, "全局块不存在")
 		return
 	}
-	h.renderPreview(c, block.Document, c.Query("editor") == "1")
+	h.renderPreview(c, block.Document, block.ProjectID, "", c.Query("editor") == "1")
 }
 
 // PreviewDraft 基于未保存 AST 返回临时预览，不持久化、不写 Artifact、不影响发布指针。
@@ -329,21 +457,31 @@ func (h *Handle) PreviewDraft(c *gin.Context) {
 		c.String(http.StatusConflict, "草稿版本已更新，请刷新后重试")
 		return
 	}
-	h.renderPreview(c, document, true)
+	h.renderPreview(c, document, page.ProjectID, page.DraftPath, true)
 }
 
 // renderPreview 只完成 AST 校验与编译，响应生命周期结束即丢弃结果。
 // 编译复用 page 模块 CompilePreview（与正式构建同源装配管线，docs/06 §10）：
 // 全局块引用展开、插件组件集注入、主题/集合解析均与构建一致，画布所见即产物。
 // editorBridge（画布联动 JS）为后处理拼接，与编译无关，仅预览启用。
-func (h *Handle) renderPreview(c *gin.Context, document json.RawMessage, withEditorBridge bool) {
-	html, err := h.pages.CompilePreview(c.Request.Context(), document)
+// projectID 为文档所属站点工程（页面/块的记录字段），驱动导航等站点级资源解析；
+// currentPath 为页面访问路径（导航当前项高亮，块预览传空）。
+func (h *Handle) renderPreview(c *gin.Context, document json.RawMessage, projectID, currentPath string, withEditorBridge bool) {
+	html, err := h.pages.CompilePreview(c.Request.Context(), document, projectID, currentPath)
 	if err != nil {
 		switch {
 		case errors.Is(err, pagecontract.ErrPreviewInvalidDocument):
 			c.String(http.StatusBadRequest, "草稿文档解析失败")
 		case errors.Is(err, pagecontract.ErrPreviewCompileFailed):
-			c.String(http.StatusUnprocessableEntity, dashboardenums.MsgCompileFailed)
+			// 编译校验错误是「用户可操作的配置提示」（如「轮播至少需要一个 slide」），
+			// 透出具体原因并带节点定位，便于在工作台直接定位坏组件；
+			// 仅剥掉内部包装前缀，系统级错误仍走统一提示（不泄露内部细节）。
+			reason := err.Error()
+			// 依次剥掉包装前缀（ErrPreviewCompileFailed 与 pipeline 的「页面编译失败」），
+			// 只留用户可读的节点定位信息。
+			reason = strings.TrimPrefix(reason, fmt.Sprint(pagecontract.ErrPreviewCompileFailed)+": ")
+			reason = strings.TrimPrefix(reason, "页面编译失败: ")
+			c.String(http.StatusUnprocessableEntity, dashboardenums.MsgCompileFailed+"："+reason)
 		default:
 			c.String(http.StatusInternalServerError, dashboardenums.MsgInternalError)
 		}

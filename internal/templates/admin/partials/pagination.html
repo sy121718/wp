@@ -1,0 +1,19 @@
+{* admin/partials/pagination.html — 分页条（服务端渲染，零 JS）。
+   由列表页 handler 用 buildPagination().templateKeys() 注入 PaginationInfo / PaginationLinks；
+   单页或空数据时不注入这两个键，模板自然不渲染。 *}
+{{if .["PaginationLinks"]}}
+<nav class="pagination" aria-label="{{ .["t"]("shell.pagination.label", "分页") }}">
+    <div class="pagination-info">{{.["PaginationInfo"]}}</div>
+    <div class="pagination-pages">
+        {{range _, l := .["PaginationLinks"]}}
+        {{if l.Disabled}}
+        <span class="pagination-btn is-disabled">{{l.Label}}</span>
+        {{else if l.Active}}
+        <span class="pagination-btn is-active">{{l.Label}}</span>
+        {{else}}
+        <a class="pagination-btn" href="{{l.URL}}">{{l.Label}}</a>
+        {{end}}
+        {{end}}
+    </div>
+</nav>
+{{end}}

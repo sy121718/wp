@@ -1,0 +1,65 @@
+{* admin/settings.html — 站点设置：展示/编辑基础站点信息（站点名/简介/联系邮箱）。
+   数据来自 project 模块 SiteSettings（projects.settings JSON），走 project 契约保存。
+   「待实现能力」为占位清单，对应后端尚无的站点级能力，随功能落地逐步解锁。 *}
+{{extends "layout.html"}}
+{{block body()}}
+<div class="pages-wrap">
+    {{if len(.Projects) == 0}}
+    <section class="pages-card">
+        <h2>站点设置</h2>
+        <p class="pages-empty">还没有站点工程。请先在「页面」里创建一个站点工程，再配置站点设置。</p>
+    </section>
+    {{else}}
+    <section class="pages-card">
+        <h2>站点设置</h2>
+        {* 工程切换：站点设置属于具体工程（每个工程一份 SiteSettings） *}
+        <form method="get" action="/admin/settings" class="pages-form">
+            <select name="project" onchange="this.form.submit()">
+                {{range _, p := .Projects}}
+                <option value="{{p.ID}}" {{if p.ID == .Selected}}selected{{end}}>{{p.Name}}</option>
+                {{end}}
+            </select>
+        </form>
+
+        {{if .Selected != ""}}
+        {* 基础站点信息编辑（走 project Update，保存 SiteSettings） *}
+        <form method="post" action="/admin/settings/save" class="mt-md">
+            <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
+            <input type="hidden" name="projectId" value="{{.Selected}}">
+            <div class="form-field">
+                <label>站点名称（工程名）</label>
+                <input type="text" name="name" value="{{.Name}}" maxlength="200" required>
+            </div>
+            <div class="form-field">
+                <label>站点显示名</label>
+                <input type="text" name="siteName" value="{{.SiteName}}" maxlength="200" placeholder="前台站名">
+            </div>
+            <div class="form-field">
+                <label>站点简介</label>
+                <textarea name="siteDesc" rows="3" placeholder="一句话描述站点">{{.SiteDesc}}</textarea>
+            </div>
+            <div class="form-field">
+                <label>联系邮箱</label>
+                <input type="email" name="contactEmail" value="{{.ContactEmail}}" maxlength="200" placeholder="business@example.com">
+            </div>
+            <button type="submit" class="btn btn-primary">保存设置</button>
+        </form>
+
+        <section class="pages-card mt-md">
+            <h2>待实现能力</h2>
+            <p class="pages-empty">
+                以下站点级能力目前尚未在后端实现，仅作规划占位，落地后将在此页开放配置：
+            </p>
+            <ul class="pages-list">
+                <li>站点 SEO 全局设置（关键词/描述/og 标签）</li>
+                <li>站点语言与地区</li>
+                <li>统计与分析（自定义统计脚本注入）</li>
+                <li>验证码/安全策略</li>
+                <li>备案信息与页脚附加文案</li>
+            </ul>
+        </section>
+        {{end}}
+    </section>
+    {{end}}
+</div>
+{{end}}

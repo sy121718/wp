@@ -1,0 +1,37 @@
+{* fragments/settings_panel.html — 页面设置表单（HTMX 服务端渲染，docs/09 §3）
+   约定：字段带 data-wb-setting（doc 内路径）与可选 data-wb-kind（list=空格分隔数组）；
+   segment 按钮带 data-wb-setting + data-wb-value，客户端统一事件委托回写。 *}
+<div class="wb-field wb-field-seg">
+    <label>版心模式</label>
+    <div class="wb-seg">
+        <button type="button" class="wb-seg-btn{{if .Settings.LayoutMode == "full"}} is-active{{end}}" data-wb-setting="settings.layout.mode" data-wb-value="full">全宽</button>
+        <button type="button" class="wb-seg-btn{{if .Settings.LayoutMode == "boxed"}} is-active{{end}}" data-wb-setting="settings.layout.mode" data-wb-value="boxed">定宽</button>
+    </div>
+</div>
+<div class="wb-field"><label>SEO 标题</label><input type="text" data-wb-setting="settings.seo.title" value="{{.Settings.SEOTitle}}" placeholder="浏览器标签页与搜索结果标题"></div>
+<div class="wb-field"><label>SEO 描述</label><textarea rows="3" data-wb-setting="settings.seo.description" placeholder="搜索结果里的摘要文案">{{.Settings.SEODescription}}</textarea></div>
+<div class="wb-field"><label>焦点关键词</label><input type="text" data-wb-setting="settings.seo.focusKeyword" value="{{.Settings.FocusKeyword}}" placeholder="如 disposable vape"></div>
+<div class="wb-field"><label>Canonical 链接</label><input type="text" data-wb-setting="settings.seo.canonical" value="{{.Settings.Canonical}}" placeholder="规范链接，留空则由页面 URL 推导"></div>
+<div class="wb-field"><label>社交分享图</label><input type="text" data-wb-setting="settings.seo.ogImage" value="{{.Settings.OGImage}}" placeholder="OG/Twitter 卡片图，建议 1200×630"></div>
+<div class="wb-field wb-field-seg">
+    <label>结构化数据</label>
+    <div class="wb-seg">
+        <button type="button" class="wb-seg-btn{{if .Settings.SchemaType == ""}} is-active{{end}}" data-wb-setting="settings.seo.schemaType" data-wb-value="">自动</button>
+        <button type="button" class="wb-seg-btn{{if .Settings.SchemaType == "website"}} is-active{{end}}" data-wb-setting="settings.seo.schemaType" data-wb-value="website">网站</button>
+        <button type="button" class="wb-seg-btn{{if .Settings.SchemaType == "article"}} is-active{{end}}" data-wb-setting="settings.seo.schemaType" data-wb-value="article">文章</button>
+        <button type="button" class="wb-seg-btn{{if .Settings.SchemaType == "product"}} is-active{{end}}" data-wb-setting="settings.seo.schemaType" data-wb-value="product">商品</button>
+        <button type="button" class="wb-seg-btn{{if .Settings.SchemaType == "faq"}} is-active{{end}}" data-wb-setting="settings.seo.schemaType" data-wb-value="faq">FAQ</button>
+    </div>
+</div>
+<div class="wb-field"><label>次级关键词</label><input type="text" data-wb-setting="settings.seo.secondaryKeywords" data-wb-kind="list" value="{{.Settings.SecondaryKeywords}}" placeholder="空格分隔，如 puff count battery"></div>
+<div class="wb-field wb-field-seg">
+    <label>查询意图</label>
+    <div class="wb-seg">
+        <button type="button" class="wb-seg-btn{{if .Settings.Intent == "informational"}} is-active{{end}}" data-wb-setting="settings.seo.intent" data-wb-value="informational">信息型</button>
+        <button type="button" class="wb-seg-btn{{if .Settings.Intent == "commercial"}} is-active{{end}}" data-wb-setting="settings.seo.intent" data-wb-value="commercial">商业型</button>
+        <button type="button" class="wb-seg-btn{{if .Settings.Intent == "transactional"}} is-active{{end}}" data-wb-setting="settings.seo.intent" data-wb-value="transactional">交易型</button>
+        <button type="button" class="wb-seg-btn{{if .Settings.Intent == "local"}} is-active{{end}}" data-wb-setting="settings.seo.intent" data-wb-value="local">本地型</button>
+    </div>
+</div>
+{* 评分区占位：客户端随后请求 /workbench/seo-score-panel 填入 *}
+<div class="wb-seo-score" id="wb-seo-score"></div>
