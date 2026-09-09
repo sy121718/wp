@@ -61,11 +61,11 @@ func TestPageArtifactLangCoexistAndRouteBinding(t *testing.T) {
 	if _, err = svc.Publish(ctx, &pagedto.PublishReq{ID: created.ID}); err != nil {
 		t.Fatalf("默认语言发布失败: %v", err)
 	}
-	zhArtifactID := activeRouteArtifactID(t, db, projectID, "/zh-CN/about")
+	zhArtifactID := activeRouteArtifactID(t, db, projectID, "/about")
 	if zhArtifactID == "" {
-		t.Fatal("/zh-CN/about 激活路由应指向产物行")
+		t.Fatal("/about 激活路由应指向产物行")
 	}
-	if lang, canonical := artifactLangAndPath(t, db, zhArtifactID); lang != "zh-CN" || canonical != "/zh-CN/about" {
+	if lang, canonical := artifactLangAndPath(t, db, zhArtifactID); lang != "zh-CN" || canonical != "/about" {
 		t.Fatalf("zh-CN 路由应指向 zh-CN 产物，实际 lang=%q path=%q", lang, canonical)
 	}
 
@@ -129,35 +129,35 @@ func TestPageArtifactLangCoexistAndRouteBinding(t *testing.T) {
 	}
 
 	// ---- 路由 artifact_id 指向各自语言的产物 ----
-	if got := activeRouteArtifactID(t, db, projectID, "/en-US/about"); got != enRow.ID {
-		t.Fatalf("/en-US/about 路由应指向 en-US 产物行 %s，实际 %s", enRow.ID, got)
+	if got := activeRouteArtifactID(t, db, projectID, "/en/about"); got != enRow.ID {
+		t.Fatalf("/en/about 路由应指向 en-US 产物行 %s，实际 %s", enRow.ID, got)
 	}
-	if lang, canonical := artifactLangAndPath(t, db, enRow.ID); lang != "en-US" || canonical != "/en-US/about" {
+	if lang, canonical := artifactLangAndPath(t, db, enRow.ID); lang != "en-US" || canonical != "/en/about" {
 		t.Fatalf("en-US 产物行内容错误: lang=%q path=%q", lang, canonical)
 	}
 	// zh-CN 产物行内容独立保留（即使其激活路由已被后续发布取消，见下方说明）。
-	if lang, canonical := artifactLangAndPath(t, db, zhRow.ID); lang != "zh-CN" || canonical != "/zh-CN/about" {
+	if lang, canonical := artifactLangAndPath(t, db, zhRow.ID); lang != "zh-CN" || canonical != "/about" {
 		t.Fatalf("zh-CN 产物行内容错误: lang=%q path=%q", lang, canonical)
 	}
 
-	// ---- P3 核心回归点：Publish(en-US) 不得取消 /zh-CN/about 的激活路由 ----
-	// 修复前（pages.active_path 单值）：Publish(en-US) 把 pages.active_path（=/zh-CN/about）
+	// ---- P3 核心回归点：Publish(en-US) 不得取消 /about 的激活路由 ----
+	// 修复前（pages.active_path 单值）：Publish(en-US) 把 pages.active_path（=/about）
 	// 当作本页旧路径 Deactivate，zh-CN 激活行被 DELETE，一页多语言无法同时在线。
 	var zhActive int64
 	if err := db.Table("page_routes").
-		Where("project_id = ? AND path = ? AND route_kind = ?", projectID, "/zh-CN/about", "active").
+		Where("project_id = ? AND path = ? AND route_kind = ?", projectID, "/about", "active").
 		Count(&zhActive).Error; err != nil {
 		t.Fatalf("统计 zh-CN 激活路由失败: %v", err)
 	}
 	if zhActive != 1 {
-		t.Fatalf("一页两语言应同时在线：/zh-CN/about 激活行=%d（期望 1）", zhActive)
+		t.Fatalf("一页两语言应同时在线：/about 激活行=%d（期望 1）", zhActive)
 	}
 	// 两语言的激活行分别指向各自语言的产物行。
-	if got := activeRouteArtifactID(t, db, projectID, "/zh-CN/about"); got != zhRow.ID {
-		t.Fatalf("/zh-CN/about 路由应指向 zh-CN 产物行 %s，实际 %s", zhRow.ID, got)
+	if got := activeRouteArtifactID(t, db, projectID, "/about"); got != zhRow.ID {
+		t.Fatalf("/about 路由应指向 zh-CN 产物行 %s，实际 %s", zhRow.ID, got)
 	}
-	if got := activeRouteArtifactID(t, db, projectID, "/en-US/about"); got != enRow.ID {
-		t.Fatalf("/en-US/about 路由应指向 en-US 产物行 %s，实际 %s", enRow.ID, got)
+	if got := activeRouteArtifactID(t, db, projectID, "/en/about"); got != enRow.ID {
+		t.Fatalf("/en/about 路由应指向 en-US 产物行 %s，实际 %s", enRow.ID, got)
 	}
 	// page_publications 每语言一行（多语言激活状态真源）。
 	var pubs []struct{ Lang, ActivePath string }
@@ -165,8 +165,8 @@ func TestPageArtifactLangCoexistAndRouteBinding(t *testing.T) {
 		Select("lang, active_path").Where("page_id = ?", created.ID).Order("lang").Scan(&pubs).Error; err != nil {
 		t.Fatalf("查询 page_publications 失败: %v", err)
 	}
-	if len(pubs) != 2 || pubs[0].Lang != "en-US" || pubs[0].ActivePath != "/en-US/about" ||
-		pubs[1].Lang != "zh-CN" || pubs[1].ActivePath != "/zh-CN/about" {
+	if len(pubs) != 2 || pubs[0].Lang != "en-US" || pubs[0].ActivePath != "/en/about" ||
+		pubs[1].Lang != "zh-CN" || pubs[1].ActivePath != "/about" {
 		t.Fatalf("每语言激活状态错误: %+v", pubs)
 	}
 	t.Logf("产物行：zh-CN=%s(%s) en-US=%s(%s)；激活状态：%+v", zhRow.ID, zhRow.ArtifactHash, enRow.ID, enRow.ArtifactHash, pubs)

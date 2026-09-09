@@ -10,6 +10,7 @@ import (
 
 	"go_wp/pkg/i18n"
 
+	"go_wp/internal/pipeline"
 	pubdto "go_wp/internal/module/publication/dto"
 	pubenums "go_wp/internal/module/publication/enums"
 	pubmodel "go_wp/internal/module/publication/model"
@@ -454,13 +455,16 @@ func (s *Service) RefreshSiteFiles(ctx context.Context, projectID, baseURL, dir 
 // 多语言（开启前缀且 ≥2 语言）时按「逻辑路径」分组：同一逻辑路径的各语言版本
 // 互相输出 xhtml:link 互指（含 x-default）。单语言或未开启前缀时输出与 P3 之前一致。
 func sitemapEntries(baseURL string, paths, langs []string, defaultLang string) []seo.SitemapEntry {
-	if !i18n.SiteLangPrefixEnabled() || len(langs) < 2 {
+	if !i18n.SiteLangURLsSeparated() || len(langs) < 2 {
 		return seo.EntriesFromPaths(baseURL, paths)
 	}
+	// 语言归属用与构建期完全相同的规则（唯一映射点 pipeline.LangURLRule）：
+	// default_plain 下 /about 归属默认语言、/en/about 归属 en-US，两者互为一组。
+	rule := pipeline.NewLangURLRule(true, i18n.SiteLangURLPrefixDefault(), defaultLang, i18n.URLCodeOverrides())
 	byLogical := map[string]map[string]string{}
 	logicalOf := map[string]string{}
 	for _, p := range paths {
-		lang, logical, ok := langOfPath(p, langs)
+		lang, logical, ok := rule.Locate(p, langs)
 		if !ok {
 			continue
 		}
@@ -502,21 +506,5 @@ func sitemapEntries(baseURL string, paths, langs []string, defaultLang string) [
 	return out
 }
 
-// langOfPath 判断站点路径属于哪个启用语言，并返回其逻辑路径。
-// 与 pipeline.LangPath 的映射口径一致：/{lang} 与 /{lang}/index 对应逻辑根 "/"，
-// /{lang}/path 对应 /path；未带任何已知语言前缀时 ok=false（该行不参与互指）。
-func langOfPath(path string, langs []string) (lang, logical string, ok bool) {
-	for _, l := range langs {
-		if l == "" {
-			continue
-		}
-		prefix := "/" + l
-		if path == prefix || path == prefix+"/index" {
-			return l, "/", true
-		}
-		if strings.HasPrefix(path, prefix+"/") {
-			return l, strings.TrimPrefix(path, prefix), true
-		}
-	}
-	return "", "", false
-}
+// 语言归属判定已下沉到 pipeline.LangURLRule.Locate（构建期与 sitemap 同一份规则），
+// 见 sitemapEntries：默认语言无前缀方案下，未带任何已知短码前缀的路径归属默认语言。

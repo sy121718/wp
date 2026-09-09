@@ -84,7 +84,7 @@
                 </p>
                 <p class="pages-empty">
                     注意：<strong>禁用某语言后，该语言已激活的站点路由不会自动清理</strong>（需手动取消激活或删除路由占用）；
-                    语言前缀由配置 <code>i18n.site_lang_prefix</code> 控制，关闭时各语言映射到同一路径（同一页多语言无法同时在线）。
+                    访问路径的语言方案由配置 <code>i18n.site_lang_url_mode</code> 控制：<code>default_plain</code>（默认语言无前缀 <code>/about</code>、非默认语言短码 <code>/en/about</code>）、<code>all_prefix</code>（全语言短码前缀 <code>/zh/about</code>）、<code>off</code>（各语言映射到同一路径，同一页多语言无法同时在线）。
                     改动语言清单后，已发布页面需要重新构建/发布才会更新产物里的语言切换链接与 hreflang。
                 </p>
                 <button type="submit" class="btn btn-primary">保存语言清单</button>

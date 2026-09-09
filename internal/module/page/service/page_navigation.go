@@ -13,15 +13,17 @@ import (
 	"go_wp/internal/builder/core"
 	navigationcontract "go_wp/internal/module/navigation/contract"
 	navigationdto "go_wp/internal/module/navigation/dto"
-	"go_wp/internal/pipeline"
 )
 
 // navigationResolverAdapter 适配 navigation 契约为 builder 的 NavigationResolver。
 // cache 为单次编译内的解析缓存（键：工程 ID + 位置），同一页面多个导航节点只查一次库。
 type navigationResolverAdapter struct {
 	svc navigationcontract.NavigationService
+	// s 装配服务：菜单项站内 URL 需按站点语言 URL 方案本地化（s.localizeMenuURL）。
+	s   *Service
 	ctx context.Context
-	// lang 本次构建语言：菜单项站内 URL 按它加前缀（多语言 P2，docs/06-D §4.1 第 6 项）。
+	// lang 本次构建语言（完整码）：菜单项站内 URL 按它映射访问路径
+	//（多语言 P2/P3，docs/06-D §4.1 第 6 项）。
 	lang  string
 	cache map[string][]core.NavigationItem
 }
@@ -38,23 +40,24 @@ func (a navigationResolverAdapter) ResolveMenu(projectID, kind string) (items []
 	if err != nil {
 		return nil, err
 	}
-	items = navigationItemsOf(nodes, a.lang)
+	items = a.itemsOf(nodes, projectID)
 	if a.cache != nil {
 		a.cache[key] = items
 	}
 	return items, nil
 }
 
-// navigationItemsOf 树节点 → 构建期菜单项（递归展开子菜单）。
-// lang 用于站内链接本地化（多语言前缀；关闭前缀时等价原样输出）。
-func navigationItemsOf(nodes []*navigationdto.NavigationNode, lang string) []core.NavigationItem {
+// itemsOf 树节点 → 构建期菜单项（递归展开子菜单）。
+// 站内链接按「工程 + 构建语言」本地化（默认语言无前缀、非默认语言短码前缀；
+// off 方案下等价原样输出）。
+func (a navigationResolverAdapter) itemsOf(nodes []*navigationdto.NavigationNode, projectID string) []core.NavigationItem {
 	out := make([]core.NavigationItem, 0, len(nodes))
 	for _, n := range nodes {
 		out = append(out, core.NavigationItem{
 			Label:    n.Title,
-			URL:      localizeMenuURL(lang, n.Path),
+			URL:      a.s.localizeMenuURL(a.ctx, projectID, a.lang, n.Path),
 			Target:   n.Target,
-			Children: navigationItemsOf(n.Children, lang),
+			Children: a.itemsOf(n.Children, projectID),
 		})
 	}
 	return out
@@ -64,9 +67,10 @@ func navigationItemsOf(nodes []*navigationdto.NavigationNode, lang string) []cor
 // 工程 ID 用于导航解析（缺失时绑定菜单位置的导航节点编译期显式报错）；
 // 逻辑路径用于导航「当前项」高亮与 hreflang 互指——调用方会再经 sitePath 加语言前缀。
 //
-// 多语言 P3 修正：此前取 pages.active_path（可能已带 /{lang}/ 前缀），
-// 再经 highlightPath 加一次前缀会得到 /zh-CN/zh-CN/about，导航高亮永远匹配不上；
-// 现在按语言取 page_publications 的行并剥掉语言前缀，未发布回退草稿路径（逻辑路径）。
+// 多语言 P3 修正：此前取 pages.active_path（可能已带语言前缀），再经 highlightPath
+// 加一次前缀会得到 /en/en/about，导航高亮永远匹配不上；现在按语言取
+// page_publications 的行并用同一 LangURLRule 剥掉语言前缀，未发布回退草稿路径
+//（草稿路径本就是逻辑路径）。
 func (s *Service) pageContextOf(ctx context.Context, pageID, lang string) (projectID, logicalPath string) {
 	if strings.TrimSpace(pageID) == "" {
 		return "", ""
@@ -77,7 +81,7 @@ func (s *Service) pageContextOf(ctx context.Context, pageID, lang string) (proje
 	}
 	logicalPath = page.DraftPath
 	if pub, perr := s.model.GetPublication(ctx, pageID, buildLang(lang)); perr == nil && pub != nil && pub.ActivePath != "" {
-		logicalPath = pipeline.StripLangPath(buildLang(lang), pub.ActivePath)
+		logicalPath = s.langURLRuleOf(ctx, page.ProjectID).Strip(buildLang(lang), pub.ActivePath)
 	}
 	return page.ProjectID, logicalPath
 }

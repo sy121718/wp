@@ -1372,8 +1372,98 @@ go test ./public/test/dashboard/feature/ -run "TestPageTranslations|TestSavePage
 - **保存未走事务包 stale**：译文先落库、再标记 stale（失败只记日志），与 §15.10 的失败语义一致；
   依赖条目 `i18n:content` 会在下次构建时按 revision 比对兜底。
 
+### 15.13 语言 URL 方案调整：默认语言无前缀 + 非默认语言短码（2025-09）
+
+**变更**：决策 D1「全语言带前缀」（/zh-CN/about、/en-US/about）调整为**方案 A'**：
+
+| 语言 | 方案 A' 访问路径 | 内部语言码 |
+|---|---|---|
+| 默认语言（zh-CN） | `/about`、`/index`（无前缀） | `zh-CN` |
+| 非默认语言（en-US） | `/en/about`、`/en/index`（短码） | `en-US` |
+
+内部逻辑（`sys_i18n` / `sys_translation` / `project_locales` / `BuildContext.lang` /
+产物 `Manifest.lang` / 数据库 `lang` 列）**继续使用完整码**，只有 URL 路径段使用短码。
+
+**配置**：新增枚举 `i18n.site_lang_url_mode`（`default_plain` 默认 / `all_prefix` / `off`）；
+旧键 `i18n.site_lang_prefix`（bool）保留兼容映射（true → all_prefix、false → off），
+新键优先。非法取值在 `i18n.Init` fail-fast。`config.yaml` 与 `config.yaml.example` 已改为
+`site_lang_url_mode: default_plain` 并重写注释。
+
+**语言码 → URL 短码映射**（确定性纯函数）：
+
+1. 配置覆盖 `i18n.lang_url_codes`（如 `zh-TW: tw`）；
+2. 内置表 `pipeline.builtinURLCodes`（zh-CN→zh、en-US→en、zh-TW→zh-tw、pt-BR→pt-br …）；
+3. 回退：主语言子标签小写（`fr-CA`→`fr`、`sv-SE`→`sv`），无子标签则整码小写。
+
+短码冲突（两种启用语言映射到同一段，如 zh-TW 与 zh-Hant）在 `LangURLRule.Validate` 报错，
+建页/改草稿阶段归一为 `ErrInvalidPath`——**绝不静默共用一个访问路径**。
+
+**唯一映射点**：`internal/pipeline/lang.go` 的 `LangURLRule`（`Path` / `Strip` / `Locate` /
+`Validate`）；装配层 `pageservice.sitePath` 是唯一调用入口，`highlightPath`、
+`localizeMenuURL`、`siteRouteEntries`、`sitePathOf` 全部经它。`LangPath` / `StripLangPath`
+保留为「全语言短码前缀」的历史兼容包装。首页语言根统一映射 `/index`（默认语言 `/index`、
+非默认 `/en/index`），继续规避 §4.4 的父子符号链接硬坑。
+
+**同步改动**（全部经同一规则，无第二处拼接）：
+
+| 文件 | 改动 |
+|---|---|
+| `pkg/i18n/langurl.go` | 新增：`SiteLangURLMode` 枚举、`SiteLangURLsSeparated` / `SiteLangURLPrefixDefault` / `URLCodeOverrides` / `SetURLCodeOverrides` |
+| `pkg/i18n/i18n.go` | 解析 `site_lang_url_mode` + 旧键兼容 + `lang_url_codes`；`SiteLangPrefixEnabled` / `SetSiteLangPrefix` 降为兼容名 |
+| `internal/pipeline/lang.go` | `LangURLRule`（Path/Strip/Locate/Validate/URLCode）+ 内置短码表 + `LangPath`/`StripLangPath` 兼容包装 |
+| `internal/module/page/service/page_lang.go` | `langURLRuleOf`（站点默认语言取自 `project_locales.is_default`）；`sitePath`/`highlightPath`/`localizeMenuURL` 改走规则；导航 URL 幂等反查（避免 `/en/en/about`） |
+| `internal/module/page/service/page_navigation.go` | 菜单项本地化改方法调用；`pageContextOf` 用同一规则 Strip |
+| `internal/module/page/service/page_assemble.go` | 高亮路径与语言视图判据改用 `SiteLangURLsSeparated` |
+| `internal/module/page/service/page_publish.go` | Build/Publish/UpdateURL 的 `sitePathOf` 带 ctx+工程，按站点默认语言判定 |
+| `internal/module/publication/service/publication_control.go` | sitemap 语言归属改用 `LangURLRule.Locate`（默认语言无前缀路径归属默认语言） |
+| `internal/templates/admin/settings.html` | 语言分组文案改为 `site_lang_url_mode` 三值说明 |
+| `config.yaml` / `config.yaml.example` | `site_lang_prefix: true` → `site_lang_url_mode: default_plain` + 新注释 |
+
+**真实产物证据**（`TestPageBilingualSiteOnline`，页面逻辑路径 `/about`，语言 zh-CN 默认 + en-US）：
+
+```text
+路由行: path=/about     kind=active
+路由行: path=/en/about  kind=active
+激活状态: lang=zh-CN active_path=/about
+激活状态: lang=en-US active_path=/en/about
+激活链接: public/active/about    -> ../../artifacts/fd6b1766…
+激活链接: public/active/en/about -> ../../../artifacts/bd21582c…
+HTTP GET /site/about/    -> 200, 8717 bytes
+HTTP GET /site/en/about/ -> 200, 8717 bytes
+zh 产物 hreflang: <link rel="alternate" hreflang="en-US" href="/en/about">
+                 <link rel="alternate" hreflang="zh-CN" href="/about">
+                 <link rel="alternate" hreflang="x-default" href="/about">
+sitemap: <loc>/about</loc> 与 <loc>/en/about</loc> 各带 3 条 xhtml:link 互指（含 x-default→/about）
+确定性: zh 产物 8717 字节，两次构建字节一致（hash 不变）
+```
+
+语言切换器（`TestPageArtifactLanguageSwitcher`）：
+
+```html
+<!-- zh 产物 --> <a class="wp-lang-link" href="/en/about" hreflang="en-US" lang="en-US">English</a>
+<!-- en 产物 --> <a class="wp-lang-link" href="/about" hreflang="zh-CN" lang="zh-CN">简体中文</a>
+```
+
+**验证命令**：
+
+```bash
+go build ./... && go vet ./... && go test ./... -count=1
+go test ./public/test/pipeline/unit/ -run TestLang -count=1
+go test ./public/test/pkg/i18n/ -run TestSiteLang -count=1
+go test ./public/test/page/unit/ -run "TestPageLang|TestPagePublications|TestPageRoutes|TestPageArtifactHreflang|TestPageSitemap" -count=1
+go test ./public/test/page/feature/ -run "TestPageBilingualSiteOnline|TestPageArtifactLanguageSwitcher" -count=1 -v
+```
+
+**遗留**：
+
+- 默认语言首页由 `/` 变为 `/index`：静态服务器需把 `/site/` 映射到 `active/index/`（`http.FileServer` 的目录 index 行为天然满足）；导航里手填 `/` 的菜单项产物输出 `/index`。
+- `docs/01-overview.md` §1.4 仍按 `config.yaml:66 site_lang_prefix: true` 取证，行号与键名已变（需随下次文档口径修正一并更新）。
+- `docs/10-todo.md` I18N-1 条目引用 `site_lang_prefix` 默认值，同样待同步。
+- 旧键 `site_lang_prefix` 仅保留解析兼容，未在配置校验层给出「已废弃」告警。
+
 ## 变更记录
 
+- v11（2025-09）：新增 §15.13——语言 URL 方案由 D1 全前缀调整为方案 A'：默认语言无前缀（/about、/index）+ 非默认语言短码（/en/about），内部语言码保持完整码；新增 `i18n.site_lang_url_mode` 枚举（default_plain/all_prefix/off）与旧键兼容映射、`i18n.lang_url_codes` 覆盖表 + 内置表 + 主语言子标签回退 + 短码冲突 fail-fast；唯一映射点收敛到 `pipeline.LangURLRule`（Path/Strip/Locate/Validate），page_routes 登记、active_path、hreflang、语言切换器、sitemap 分组、导航本地化、预览路径全部经同一规则。
 - v10（2025-09）：新增 §15.12——P5c 翻译工作台落地：页面列表行内「多语言」入口、按组件分组的手动填译文界面（状态/来源徽章、一键 AI 灰置预留）、写入三重校验（白名单/长度/形态 + hash 一致性 + ON CONFLICT 幂等）、仅内容变化才触发全站标记待重建、跨页面复用提示与全站完成度（进程内全站索引 + 30s 缓存 + 1000 页上限）；记录块内文本不入工作台等 5 条缺口。
 - v9（2025-09）：新增 §15.11——P5b 已落地：构建器内联文本接入内容翻译（18 个组件 `Translatable` 白名单 + 注册期校验、每页每语言一次批量取词、`RenderContext.ContentTranslate`、L3 构建期缺失告警、`i18n:content` 依赖条目与 `pkg/i18n.ContentRevision`）；记录块内文本不翻译等 4 条缺口。
 - v8（2025-09）：新增 §15.10——保存语言清单成功后自动标记全站待重建：触发落在 dashboard handler（避免 `project ↔ page` 循环依赖），判据是 `ListLocales` 规范输出逐项比较（内容确实变化才触发，单语言站点原样保存不触发），失败只记日志不回滚；§15.9 遗留第 1 条标记为已落地，§15.1 第 10 行与 §15.5 第 6 行的「无调用方」口径同步修正。

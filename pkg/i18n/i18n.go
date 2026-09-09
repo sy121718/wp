@@ -15,16 +15,21 @@ var (
 	initMu      sync.Mutex
 	inited      bool
 	defaultLang = fallbackDefaultLang
-	// siteLangPrefix 站点产物 /{lang}/ 前缀开关（默认关闭：保持单语言产物路径不变）。
-	siteLangPrefix bool
+	// siteLangURLMode 站点访问路径的语言方案（默认 default_plain：默认语言无前缀
+	// + 非默认语言短码前缀，见 langurl.go）。
+	siteLangURLMode = SiteLangURLModeDefaultPlain
+	// langURLCodeOverrides 语言码 → URL 短码的配置覆盖表（i18n.lang_url_codes）。
+	langURLCodeOverrides map[string]string
 )
 
 type initConfig struct {
 	defaultLang     string
 	autoRefresh     bool
 	refreshInterval time.Duration
-	// sitePrefix 站点产物是否使用 /{lang}/ 路径前缀（多语言 P2，决策 D1 的落地开关）。
-	sitePrefix bool
+	// siteURLMode 站点访问路径的语言方案（多语言 P2/P3 的落地开关）。
+	siteURLMode SiteLangURLMode
+	// urlCodes 语言码 → URL 短码的配置覆盖表。
+	urlCodes map[string]string
 }
 
 // Init initializes i18n cache data and runtime behaviors from config.
@@ -37,7 +42,8 @@ func Init(v *viper.Viper) error {
 	initMu.Lock()
 	alreadyInited := inited
 	setDefaultLangLocked(cfg.defaultLang)
-	siteLangPrefix = cfg.sitePrefix
+	siteLangURLMode = cfg.siteURLMode
+	langURLCodeOverrides = cfg.urlCodes
 	initMu.Unlock()
 
 	if !alreadyInited {
@@ -71,24 +77,23 @@ func GetDefaultLang() string {
 	return defaultLang
 }
 
-// SiteLangPrefixEnabled 返回站点产物是否使用 /{lang}/ 路径前缀
-// （配置 i18n.site_lang_prefix，默认 false）。
+// SiteLangPrefixEnabled 兼容名：报告站点是否按语言区分访问路径。
 //
-// 决策 D1（docs/06-D §5）为「全语言带前缀，含默认语言」；该开关是它的落地
-// 闸门：关闭时页面产物路径保持逻辑路径（单语言兼容），开启后经
-// pipeline.LangPath 统一映射为 /{lang}/path（语言根映射 /{lang}/index）。
+// 语义已随方案调整（docs/06-D §5 方案 A'）：默认方案 default_plain 下**默认语言
+// 无前缀**、非默认语言带短码前缀，因此「是否分离语言路径」不再等于「是否全带
+// 前缀」。新代码请用 SiteLangURLsSeparated / SiteLangURLModeValue。
 func SiteLangPrefixEnabled() bool {
-	initMu.Lock()
-	defer initMu.Unlock()
-	return siteLangPrefix
+	return SiteLangURLsSeparated()
 }
 
-// SetSiteLangPrefix 运行时设置站点产物前缀开关（测试与多语言灰度使用）。
-// 与 SetDefaultLang 同形：只改运行时状态，不改配置源。
+// SetSiteLangPrefix 兼容名：true → all_prefix（全语言带短码前缀），
+// false → off（全语言共用逻辑路径）。新代码请用 SetSiteLangURLMode。
 func SetSiteLangPrefix(enabled bool) {
-	initMu.Lock()
-	defer initMu.Unlock()
-	siteLangPrefix = enabled
+	if enabled {
+		SetSiteLangURLMode(SiteLangURLModeAllPrefix)
+		return
+	}
+	SetSiteLangURLMode(SiteLangURLModeOff)
 }
 
 // Get returns full i18n result.
@@ -159,6 +164,8 @@ func Close() error {
 	initMu.Lock()
 	inited = false
 	defaultLang = fallbackDefaultLang
+	siteLangURLMode = SiteLangURLModeDefaultPlain
+	langURLCodeOverrides = nil
 	initMu.Unlock()
 	return nil
 }
@@ -187,7 +194,25 @@ func parseInitConfig(v *viper.Viper) (initConfig, error) {
 		cfg.defaultLang = lang
 	}
 	cfg.autoRefresh = v.GetBool("i18n.auto_refresh")
-	cfg.sitePrefix = v.GetBool("i18n.site_lang_prefix")
+	// 语言 URL 方案：优先 i18n.site_lang_url_mode（枚举）；缺省时回退旧键
+	// i18n.site_lang_prefix（true → all_prefix / false → off）；两者都没有则
+	// 采用默认方案 default_plain（默认语言无前缀 + 非默认语言短码）。
+	modeRaw := strings.TrimSpace(v.GetString("i18n.site_lang_url_mode"))
+	if modeRaw == "" && v.IsSet("i18n.site_lang_prefix") {
+		if v.GetBool("i18n.site_lang_prefix") {
+			modeRaw = string(SiteLangURLModeAllPrefix)
+		} else {
+			modeRaw = string(SiteLangURLModeOff)
+		}
+	}
+	mode, err := parseSiteLangURLMode(modeRaw)
+	if err != nil {
+		return initConfig{}, err
+	}
+	cfg.siteURLMode = mode
+	if codes := v.GetStringMapString("i18n.lang_url_codes"); len(codes) > 0 {
+		cfg.urlCodes = codes
+	}
 
 	if raw := strings.TrimSpace(v.GetString("i18n.refresh_interval")); raw != "" {
 		duration, err := time.ParseDuration(raw)

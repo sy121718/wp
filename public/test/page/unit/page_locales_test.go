@@ -47,7 +47,7 @@ func TestPageRoutesRegisteredPerLocale(t *testing.T) {
 
 	page := createPage(t, svc, projectID, "/about", headingDocument)
 	got := reservedPaths(t, db, projectID, page.ID)
-	want := []string{"/en-US/about", "/zh-CN/about"}
+	want := []string{"/about", "/en/about"}
 	if len(got) != 2 || got[0] != want[0] || got[1] != want[1] {
 		t.Fatalf("建页应为每语言登记一行 reserved: 期望 %v，实际 %v", want, got)
 	}
@@ -60,7 +60,7 @@ func TestPageRoutesRegisteredPerLocale(t *testing.T) {
 		t.Fatalf("改草稿路径失败: %v", err)
 	}
 	got = reservedPaths(t, db, projectID, page.ID)
-	want = []string{"/en-US/about-us", "/zh-CN/about-us"}
+	want = []string{"/about-us", "/en/about-us"}
 	if len(got) != 2 || got[0] != want[0] || got[1] != want[1] {
 		t.Fatalf("改草稿后应迁移全部语言占用: 期望 %v，实际 %v", want, got)
 	}
@@ -80,16 +80,16 @@ func TestPageRoutesRegisteredPerLocale(t *testing.T) {
 	if _, err = svc.Publish(ctx, &pagedto.PublishReq{ID: page.ID, Lang: "en-US"}); err != nil {
 		t.Fatalf("en 发布失败: %v", err)
 	}
-	if kind := routeKind(t, db, projectID, "/zh-CN/about-us"); kind != pubmodel.RouteActive {
-		t.Fatalf("/zh-CN/about-us 应 active，实际 %q", kind)
+	if kind := routeKind(t, db, projectID, "/about-us"); kind != pubmodel.RouteActive {
+		t.Fatalf("/about-us 应 active，实际 %q", kind)
 	}
-	if kind := routeKind(t, db, projectID, "/en-US/about-us"); kind != pubmodel.RouteActive {
-		t.Fatalf("/en-US/about-us 应 active，实际 %q", kind)
+	if kind := routeKind(t, db, projectID, "/en/about-us"); kind != pubmodel.RouteActive {
+		t.Fatalf("/en/about-us 应 active，实际 %q", kind)
 	}
-	if hash := activeRouteArtifactHash(t, db, projectID, "/zh-CN/about-us"); hash != zh.StagedHash {
+	if hash := activeRouteArtifactHash(t, db, projectID, "/about-us"); hash != zh.StagedHash {
 		t.Fatalf("zh 路由产物错误: %s", hash)
 	}
-	if hash := activeRouteArtifactHash(t, db, projectID, "/en-US/about-us"); hash != en.StagedHash {
+	if hash := activeRouteArtifactHash(t, db, projectID, "/en/about-us"); hash != en.StagedHash {
 		t.Fatalf("en 路由产物错误: %s", hash)
 	}
 

@@ -56,8 +56,9 @@ type HistoryEntry struct {
 type PageRecord struct {
 	// ID 页面唯一标识。
 	ID string
-	// Path 当前访问路径：单语言时为草稿逻辑路径，多语言时为带语言前缀的
-	// 访问路径（/{lang}/path，见 LangPath）。激活与回滚校验都以它为准。
+	// Path 当前访问路径：单语言（off 方案）为草稿逻辑路径，多语言（方案 A'）为
+	// 语言访问路径（默认语言无前缀 /about，非默认语言短码 /en/about，
+	// 见 LangURLRule.Path）。激活与回滚校验都以它为准。
 	Path string
 	// Lang 本记录的构建语言（多语言 P2，docs/06-D §4.1 第 5 项）。
 	//
@@ -84,13 +85,14 @@ type PageRecord struct {
 // BuildInput 一次构建的完整输入（多语言 P2，docs/06-D §4.1 第 3 项）。
 //
 // 语言（Lang）与访问路径（Path）是同一层构建环境：同一 Page Document 在每个语言
-// 下独立构建，产物路径带语言前缀、Manifest 记录语言，因此两者必须一起传入。
+// 下独立构建，产物路径按语言方案映射（默认语言无前缀、非默认语言短码）、
+// Manifest 记录完整语言码，因此两者必须一起传入。
 type BuildInput struct {
 	// PageID 页面 ID：供装配层解析「文档自身不携带」的站点级资源（工程 ID → 导航菜单）。
 	PageID string
 	// Lang 本次构建的目标语言（空 = 未接入语言：Manifest 不写 lang、路径不带前缀）。
 	Lang string
-	// Path 已本地化的访问路径（多语言下为 /{lang}/path，见 LangPath）。
+	// Path 已本地化的访问路径（见 LangURLRule.Path）。
 	Path string
 	// DocJSON 冻结的 Page Document 字节。
 	DocJSON []byte
@@ -127,7 +129,7 @@ func DefaultCompile(ctx context.Context, in BuildInput) ([]byte, error) {
 
 // Draft 一次草稿冻结输入（多语言 P2：语言与路径同层，均随草稿一起进入内核）。
 type Draft struct {
-	// Path 访问路径：单语言为逻辑路径，多语言为带前缀的 /{lang}/path。
+	// Path 访问路径：单语言为逻辑路径，多语言为按方案映射后的语言访问路径。
 	Path string
 	// Lang 构建语言（空 = 未接入语言）。
 	Lang string

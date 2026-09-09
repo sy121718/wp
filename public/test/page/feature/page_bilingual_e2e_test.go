@@ -1,10 +1,13 @@
 package feature
 
-// page_bilingual_e2e_test.go — 一页多语言同时在线的端到端证据（多语言 P3）。
+// page_bilingual_e2e_test.go — 一页多语言同时在线的端到端证据（多语言 P3，方案 A'）。
 //
 // 走完整装配链（建页 → 每语言构建 → 每语言发布 → 静态访问面 HTTP 读取），
 // 打印可核对证据：page_routes 行、page_publications 行、page_artifacts 行、
-// FS 激活链接目标、HTTP 响应、sitemap 语言互指、确定性字节对比。
+// FS 激活链接目标、HTTP 响应、hreflang 互指、sitemap 语言分组、确定性字节对比。
+//
+// 方案 A'（i18n.site_lang_url_mode=default_plain）：
+//   默认语言 zh-CN → 无前缀 /about；非默认语言 en-US → 短码 /en/about。
 
 import (
 	"context"
@@ -22,11 +25,11 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// withLangPrefixFeature 临时开启站点语言前缀（测试结束恢复）。
-func withLangPrefixFeature(t *testing.T) {
+// withDefaultPlainFeature 切到「默认语言无前缀 + 非默认语言短码」方案（测试结束恢复）。
+func withDefaultPlainFeature(t *testing.T) {
 	t.Helper()
-	i18n.SetSiteLangPrefix(true)
-	t.Cleanup(func() { i18n.SetSiteLangPrefix(false) })
+	i18n.SetSiteLangURLMode(i18n.SiteLangURLModeDefaultPlain)
+	t.Cleanup(func() { i18n.SetSiteLangURLMode(i18n.SiteLangURLModeDefaultPlain) })
 }
 
 // TestPageBilingualSiteOnline 同一页面 zh-CN + en-US 同时在线，互不干扰。
@@ -34,7 +37,7 @@ func TestPageBilingualSiteOnline(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db, svc, projectID := newPageService(t)
 	ctx := context.Background()
-	withLangPrefixFeature(t)
+	withDefaultPlainFeature(t)
 
 	// 语言清单：zh-CN（默认）+ en-US。
 	if err := db.Exec(
@@ -67,7 +70,7 @@ func TestPageBilingualSiteOnline(t *testing.T) {
 		t.Fatalf("en 发布失败: %v", err)
 	}
 
-	// ---- 证据 1：page_routes 两行 active，各自指向各自语言的产物 ----
+	// ---- 证据 1：page_routes 两行 active，路径分别是 /about 与 /en/about ----
 	type routeRow struct {
 		Path       string
 		RouteKind  string
@@ -81,6 +84,10 @@ func TestPageBilingualSiteOnline(t *testing.T) {
 	if len(routes) != 2 {
 		t.Fatalf("应有两语言各一行路由，实际 %+v", routes)
 	}
+	gotPaths := []string{routes[0].Path, routes[1].Path}
+	if gotPaths[0] != "/about" || gotPaths[1] != "/en/about" {
+		t.Fatalf("路由路径应为 [/about /en/about]，实际 %v", gotPaths)
+	}
 	for _, r := range routes {
 		if r.RouteKind != "active" {
 			t.Fatalf("路由应 active: %+v", r)
@@ -91,7 +98,7 @@ func TestPageBilingualSiteOnline(t *testing.T) {
 		t.Fatalf("两语言路由不应指向同一产物: %+v", routes)
 	}
 
-	// ---- 证据 2：page_publications 每语言一行 ----
+	// ---- 证据 2：page_publications 每语言一行，路径无前缀 / 短码前缀 ----
 	type pubRow struct {
 		Lang         string
 		ActivePath   string
@@ -104,6 +111,12 @@ func TestPageBilingualSiteOnline(t *testing.T) {
 	}
 	if len(pubs) != 2 {
 		t.Fatalf("应有两条每语言激活状态，实际 %+v", pubs)
+	}
+	if pubs[0].Lang != "en-US" || pubs[0].ActivePath != "/en/about" {
+		t.Fatalf("en-US 激活路径应为 /en/about，实际 %+v", pubs[0])
+	}
+	if pubs[1].Lang != "zh-CN" || pubs[1].ActivePath != "/about" {
+		t.Fatalf("zh-CN 激活路径应为 /about（默认语言无前缀），实际 %+v", pubs[1])
 	}
 	for _, p := range pubs {
 		t.Logf("激活状态: lang=%s active_path=%s artifact_hash=%s", p.Lang, p.ActivePath, p.ArtifactHash)
@@ -127,13 +140,13 @@ func TestPageBilingualSiteOnline(t *testing.T) {
 		t.Logf("产物行: lang=%s hash=%s key=%s", a.Lang, a.ArtifactHash, a.ArtifactKey)
 	}
 
-	// ---- 证据 4：FS 激活链接指向各自语言的产物目录 ----
+	// ---- 证据 4：FS 激活链接（默认语言在 active/about，非默认语言在 active/en/about）----
 	root := artifactRootOf(t)
-	for _, c := range []struct{ lang, hash string }{
-		{"zh-CN", zhBuild.StagedHash},
-		{"en-US", enBuild.StagedHash},
+	for _, c := range []struct{ lang, hash, rel string }{
+		{"zh-CN", zhBuild.StagedHash, filepath.Join("about")},
+		{"en-US", enBuild.StagedHash, filepath.Join("en", "about")},
 	} {
-		link := filepath.Join(root, "public", "active", c.lang, "about")
+		link := filepath.Join(root, "public", "active", c.rel)
 		target, lerr := os.Readlink(link)
 		if lerr != nil {
 			t.Fatalf("读取激活链接失败 %s: %v", link, lerr)
@@ -144,33 +157,54 @@ func TestPageBilingualSiteOnline(t *testing.T) {
 		t.Logf("激活链接: %s -> %s", link, target)
 	}
 
-	// ---- 证据 5：HTTP 访问面两个语言各自 200 ----
+	// ---- 证据 5：HTTP 访问面两个语言各自 200（/site/about/ 与 /site/en/about/）----
 	router := gin.New()
 	router.StaticFS("/site", http.Dir(filepath.Join(root, "public", "active")))
-	for _, lang := range []string{"zh-CN", "en-US"} {
+	for _, rel := range []string{"about", "en/about"} {
 		rec := httptest.NewRecorder()
-		router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/site/"+lang+"/about/", nil))
+		router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/site/"+rel+"/", nil))
 		if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "<html") {
-			t.Fatalf("访问 /site/%s/about/ 失败: code=%d", lang, rec.Code)
+			t.Fatalf("访问 /site/%s/ 失败: code=%d", rel, rec.Code)
 		}
-		t.Logf("HTTP GET /site/%s/about/ -> %d, %d bytes", lang, rec.Code, rec.Body.Len())
+		t.Logf("HTTP GET /site/%s/ -> %d, %d bytes", rel, rec.Code, rec.Body.Len())
 	}
 
-	// ---- 证据 6：产物 head 互指 + sitemap 语言分组 ----
+	// ---- 证据 6：产物 head 互指（默认语言无前缀）+ sitemap 语言分组 ----
 	zhHTML, err := os.ReadFile(filepath.Join(root, "artifacts", zhBuild.StagedHash, "index.html"))
 	if err != nil {
 		t.Fatalf("读取 zh 产物失败: %v", err)
 	}
-	for _, want := range []string{"hreflang=\"zh-CN\" href=\"/zh-CN/about\"", "hreflang=\"en-US\" href=\"/en-US/about\"", "hreflang=\"x-default\" href=\"/zh-CN/about\""} {
+	for _, want := range []string{
+		"hreflang=\"zh-CN\" href=\"/about\"",
+		"hreflang=\"en-US\" href=\"/en/about\"",
+		"hreflang=\"x-default\" href=\"/about\"",
+	} {
 		if !strings.Contains(string(zhHTML), want) {
 			t.Fatalf("zh 产物缺少 %s", want)
 		}
 	}
+	t.Logf("zh 产物 hreflang: %s", hreflangLinesOf(t, zhHTML))
+
+	enHTML, err := os.ReadFile(filepath.Join(root, "artifacts", enBuild.StagedHash, "index.html"))
+	if err != nil {
+		t.Fatalf("读取 en 产物失败: %v", err)
+	}
+	for _, want := range []string{
+		"hreflang=\"zh-CN\" href=\"/about\"",
+		"hreflang=\"en-US\" href=\"/en/about\"",
+		"hreflang=\"x-default\" href=\"/about\"",
+	} {
+		if !strings.Contains(string(enHTML), want) {
+			t.Fatalf("en 产物缺少 %s", want)
+		}
+	}
+	t.Logf("en 产物 hreflang: %s", hreflangLinesOf(t, enHTML))
+
 	sitemap, err := os.ReadFile(filepath.Join(root, "public", "active", "sitemap.xml"))
 	if err != nil {
 		t.Fatalf("读取 sitemap 失败: %v", err)
 	}
-	for _, want := range []string{"/zh-CN/about", "/en-US/about", "xhtml:link", "hreflang=\"x-default\""} {
+	for _, want := range []string{"<loc>/about</loc>", "<loc>/en/about</loc>", "xhtml:link", "hreflang=\"x-default\""} {
 		if !strings.Contains(string(sitemap), want) {
 			t.Fatalf("sitemap 缺少 %s: %s", want, sitemap)
 		}
@@ -197,4 +231,16 @@ func TestPageBilingualSiteOnline(t *testing.T) {
 		t.Fatal("同输入两次构建产物字节不同")
 	}
 	t.Logf("确定性: zh 产物 %d 字节，两次构建字节一致（hash=%s）", len(first), zhBuild.StagedHash)
+}
+
+// hreflangLinesOf 摘出产物 head 中的 alternate 行，便于在测试输出里核对。
+func hreflangLinesOf(t *testing.T, html []byte) string {
+	t.Helper()
+	var out []string
+	for _, line := range strings.Split(string(html), "\n") {
+		if strings.Contains(line, "rel=\"alternate\"") {
+			out = append(out, strings.TrimSpace(line))
+		}
+	}
+	return strings.Join(out, " | ")
 }

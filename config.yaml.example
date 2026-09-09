@@ -57,12 +57,21 @@ i18n:
   default_lang: zh-CN
   auto_refresh: true
   refresh_interval: 20s
-  # 站点产物语言前缀开关（多语言 P2，docs/06-D §5 决策 D1）：
-  # false = 页面产物路径保持逻辑路径（/about），单语言行为不变；
-  # true  = 全语言带 /{lang}/ 前缀（/zh-CN/about，语言根 /zh-CN/index）。
-  # 已启用：多语言内核 / 每语言路由行 / hreflang / 语言切换器 / 翻译工作台均已落地
-  # （docs/06-D §15.5、§15.12）。启用后产物路径带语言前缀，需重新构建已发布页面。
-  site_lang_prefix: true
+  # 站点访问路径的语言方案（多语言 P2/P3，docs/06-D §5 方案 A'）：
+  #   default_plain = 默认语言**无前缀**（/about、/index），非默认语言用**短码**
+  #                   （/en/about、/en/index）——推荐方案，默认值；
+  #   all_prefix    = 全语言带短码前缀（/zh/about、/en/about），历史「全前缀」方案；
+  #   off           = 全语言共用逻辑路径（/about），单语言站点兼容形态
+  #                   （多语言无法同时在线，后发布者覆盖线上内容）。
+  # 内部逻辑（数据库 lang 列 / sys_i18n / sys_translation / project_locales /
+  # BuildContext.lang / 产物 Manifest.lang）始终使用**完整语言码**（zh-CN / en-US），
+  # 只有 URL 路径段使用短码；映射表内置（zh-CN→zh、en-US→en …），未收录语言按
+  # 「主语言子标签小写」确定性回退（fr-CA→fr），可用 lang_url_codes 覆盖。
+  # 兼容：旧键 site_lang_prefix（bool）仍可识别——true → all_prefix、false → off。
+  site_lang_url_mode: default_plain
+  # lang_url_codes:        # 可选：语言码 → URL 短码覆盖表（短码冲突时必须显式配置）
+  #   zh-CN: zh
+  #   en-US: en
 
 # 队列配置
 queue:

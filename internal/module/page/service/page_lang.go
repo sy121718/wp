@@ -2,10 +2,15 @@ package pageservice
 
 // page_lang.go — 站点产物语言装配（多语言 P2，docs/06-D）。
 //
-// 语言是构建环境维度：构建、预览、发布都必须显式携带目标语言，产物路径前缀
-// 单点经 pipeline.LangPath 计算（禁止各处手拼 "/" + lang + path）。
-// 配置开关 i18n.site_lang_prefix（pkg/i18n.SiteLangPrefixEnabled）是决策 D1 的
-// 落地闸门：关闭时保持逻辑路径（单语言兼容），开启后全语言带 /{lang}/ 前缀。
+// 语言是构建环境维度：构建、预览、发布都必须显式携带目标语言，访问路径
+// 单点经 pipeline.LangURLRule.Path 计算（禁止各处手拼 "/" + code + path）。
+//
+// 方案（docs/06-D §5 方案 A'，配置 i18n.site_lang_url_mode）：
+//   - default_plain（默认）：默认语言无前缀 /about、/index；非默认语言短码 /en/about；
+//   - all_prefix：全语言带短码前缀 /zh/about、/en/about；
+//   - off：全语言共用逻辑路径（单语言兼容）。
+// 内部逻辑（BuildContext.lang / 数据库 lang 列）始终是完整语言码，
+// 只有 URL 段用短码（pipeline.LangURLRule.URLCode）。
 
 import (
 	"context"
@@ -27,13 +32,25 @@ func buildLang(requested string) string {
 	return lang
 }
 
-// sitePath 逻辑访问路径 → 实际访问路径（语言前缀开关见文件头）。
-// 关闭：返回规范化逻辑路径；开启：/{lang}/path（语言根映射 /{lang}/index）。
-func sitePath(lang, logical string) (string, error) {
-	if !i18n.SiteLangPrefixEnabled() {
-		return pipeline.NormalizeURL(logical)
-	}
-	return pipeline.LangPath(lang, logical)
+// langURLRuleOf 构造站点语言 URL 规则（唯一映射点的规则载体）。
+//
+// 方案取自配置（i18n.site_lang_url_mode / 兼容键 site_lang_prefix），
+// 默认语言取自站点清单（project_locales.is_default，缺失回退 i18n.default_lang）——
+// 「默认语言无前缀」必须按站点判定，不能只看全局 i18n.default_lang。
+func (s *Service) langURLRuleOf(ctx context.Context, projectID string) pipeline.LangURLRule {
+	return pipeline.NewLangURLRule(
+		i18n.SiteLangURLsSeparated(),
+		i18n.SiteLangURLPrefixDefault(),
+		s.defaultLocaleOf(ctx, projectID),
+		i18n.URLCodeOverrides(),
+	)
+}
+
+// sitePath 逻辑访问路径 → 实际访问路径（本模块唯一入口；实现在 pipeline.LangURLRule.Path）。
+// off：规范化逻辑路径；default_plain：默认语言无前缀、其余 /{短码}/path；
+// all_prefix：全语言 /{短码}/path（语言根与首页映射为 /index）。
+func sitePath(rule pipeline.LangURLRule, lang, logical string) (string, error) {
+	return rule.Path(lang, logical)
 }
 
 // siteRoutePaths 建页/改草稿阶段的路径占用路径：按站点启用语言（project_locales）
@@ -69,10 +86,16 @@ func (s *Service) siteRouteEntries(ctx context.Context, projectID, logical strin
 			langs = l
 		}
 	}
+	rule := s.langURLRuleOf(ctx, projectID)
+	// 短码冲突（两种语言映射到同一 URL 段）会让 page_routes 唯一键撞车或静默覆盖：
+	// 构建期即失败并提示显式配置 i18n.lang_url_codes。
+	if err := rule.Validate(langs); err != nil {
+		return nil, err
+	}
 	seen := map[string]bool{}
 	out := make([]siteRouteEntry, 0, len(langs))
 	for _, lang := range langs {
-		p, err := sitePath(lang, logical)
+		p, err := sitePath(rule, lang, logical)
 		if err != nil {
 			return nil, err
 		}
@@ -160,30 +183,37 @@ func (s *Service) defaultLocaleOf(ctx context.Context, projectID string) string 
 	return i18n.GetDefaultLang()
 }
 
-// highlightPath 导航「当前项」高亮用的访问路径：与导航项 URL 同源（带前缀）。
+// highlightPath 导航「当前项」高亮用的访问路径：与导航项 URL 同源（同一规则）。
 // 路径非法或空时返回空串（不标记当前项，绝不让高亮逻辑影响构建主链）。
-func highlightPath(lang, logical string) string {
+func (s *Service) highlightPath(ctx context.Context, projectID, lang, logical string) string {
 	if strings.TrimSpace(logical) == "" {
 		return ""
 	}
-	p, err := sitePath(lang, logical)
+	p, err := sitePath(s.langURLRuleOf(ctx, projectID), lang, logical)
 	if err != nil {
 		return ""
 	}
 	return p
 }
 
-// localizeMenuURL 导航项 URL 本地化：站内绝对路径（以 / 开头）加语言前缀，
+// localizeMenuURL 导航项 URL 本地化：站内绝对路径（以 / 开头）按本语言方案映射，
 // 外链（http/https///mailto/tel/#）与相对路径原样保留。
 //
-// 必要性：导航 URL 来自 navigation 表，存的是站点逻辑路径；多语言开启前缀后
-// 产物里的菜单链接必须指向 /{lang}/path，否则访客点菜单必然 404。
-func localizeMenuURL(lang, raw string) string {
+// 必要性：导航 URL 来自 navigation 表；多语言下产物里的菜单链接必须指向
+// 「本语言的访问路径」（默认语言无前缀、非默认语言短码前缀），否则访客点菜单 404。
+//
+// 幂等：导航来源可能存的是某语言的访问路径（如页面 active_path 已带 /en 前缀），
+// 先用同一规则反查为逻辑路径再加本语言前缀，避免 /en/en/about。
+func (s *Service) localizeMenuURL(ctx context.Context, projectID, lang, raw string) string {
 	u := strings.TrimSpace(raw)
 	if u == "" || !strings.HasPrefix(u, "/") || strings.HasPrefix(u, "//") {
 		return raw
 	}
-	p, err := sitePath(lang, u)
+	rule := s.langURLRuleOf(ctx, projectID)
+	if _, logical, ok := rule.Locate(u, s.enabledLangsOf(ctx, projectID)); ok {
+		u = logical
+	}
+	p, err := sitePath(rule, lang, u)
 	if err != nil {
 		return raw
 	}

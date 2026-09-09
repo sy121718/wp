@@ -2,7 +2,7 @@ package unit
 
 // page_publications_test.go — 每语言激活状态（多语言 P3，docs/06-D-site-i18n.md §15.5 第 2 条）。
 //
-// 回归对象：pages.active_path 单值时，Publish(en-US) 会把 /zh-CN/about 当作本页旧路径
+// 回归对象：pages.active_path 单值时，Publish(en-US) 会把 /about 当作本页旧路径
 // 取消激活（Deactivate 删除路由行），「一页多语言同时在线」不成立。
 // 本文件验证：Publish / Rollback / UpdateURL（含旧路径 Deactivate）全部按语言作用域，
 // 语言之间互不干扰；灰度开关关闭时保持单路径语义。
@@ -14,6 +14,7 @@ import (
 	pagedto "go_wp/internal/module/page/dto"
 	pageenums "go_wp/internal/module/page/enums"
 	pubmodel "go_wp/internal/module/publication/model"
+	"go_wp/pkg/i18n"
 
 	"gorm.io/gorm"
 )
@@ -72,8 +73,8 @@ func TestPagePublicationsLanguageScopedLifecycle(t *testing.T) {
 
 	// ---- 1) 默认语言 zh-CN 上线 ----
 	zhHash := buildAndPublish(t, svc, page.ID)
-	if kind := activeKind(t, "/zh-CN/about"); kind != "page" {
-		t.Fatalf("/zh-CN/about 应激活为 page，实际 %s", kind)
+	if kind := activeKind(t, "/about"); kind != "page" {
+		t.Fatalf("/about 应激活为 page，实际 %s", kind)
 	}
 
 	// ---- 2) en-US 上线：不得取消 zh-CN 的激活 ----
@@ -84,19 +85,19 @@ func TestPagePublicationsLanguageScopedLifecycle(t *testing.T) {
 	if _, err = svc.Publish(ctx, &pagedto.PublishReq{ID: page.ID, Lang: "en-US"}); err != nil {
 		t.Fatalf("en-US 发布失败: %v", err)
 	}
-	if kind := routeKind(t, db, projectID, "/zh-CN/about"); kind != pubmodel.RouteActive {
-		t.Fatalf("Publish(en-US) 后 /zh-CN/about 仍应为 active，实际 %q", kind)
+	if kind := routeKind(t, db, projectID, "/about"); kind != pubmodel.RouteActive {
+		t.Fatalf("Publish(en-US) 后 /about 仍应为 active，实际 %q", kind)
 	}
-	if kind := routeKind(t, db, projectID, "/en-US/about"); kind != pubmodel.RouteActive {
-		t.Fatalf("/en-US/about 应为 active，实际 %q", kind)
+	if kind := routeKind(t, db, projectID, "/en/about"); kind != pubmodel.RouteActive {
+		t.Fatalf("/en/about 应为 active，实际 %q", kind)
 	}
-	if kind := activeKind(t, "/zh-CN/about"); kind != "page" {
-		t.Fatalf("/zh-CN/about 的 FS 激活链接应保留，实际 %s", kind)
+	if kind := activeKind(t, "/about"); kind != "page" {
+		t.Fatalf("/about 的 FS 激活链接应保留，实际 %s", kind)
 	}
-	if got := activeRouteArtifactHash(t, db, projectID, "/zh-CN/about"); got != zhHash {
+	if got := activeRouteArtifactHash(t, db, projectID, "/about"); got != zhHash {
 		t.Fatalf("zh-CN 路由产物应保持 %s，实际 %s", zhHash, got)
 	}
-	if got := activeRouteArtifactHash(t, db, projectID, "/en-US/about"); got != builtEn.StagedHash {
+	if got := activeRouteArtifactHash(t, db, projectID, "/en/about"); got != builtEn.StagedHash {
 		t.Fatalf("en-US 路由产物应为 %s，实际 %s", builtEn.StagedHash, got)
 	}
 
@@ -104,11 +105,11 @@ func TestPagePublicationsLanguageScopedLifecycle(t *testing.T) {
 	if _, err = svc.Publish(ctx, &pagedto.PublishReq{ID: page.ID}); err != nil {
 		t.Fatalf("zh-CN 二次发布失败: %v", err)
 	}
-	if kind := routeKind(t, db, projectID, "/en-US/about"); kind != pubmodel.RouteActive {
-		t.Fatalf("重新发布 zh-CN 后 /en-US/about 应仍 active，实际 %q", kind)
+	if kind := routeKind(t, db, projectID, "/en/about"); kind != pubmodel.RouteActive {
+		t.Fatalf("重新发布 zh-CN 后 /en/about 应仍 active，实际 %q", kind)
 	}
-	if kind := activeKind(t, "/en-US/about"); kind != "page" {
-		t.Fatalf("/en-US/about 的 FS 激活链接应保留，实际 %s", kind)
+	if kind := activeKind(t, "/en/about"); kind != "page" {
+		t.Fatalf("/en/about 的 FS 激活链接应保留，实际 %s", kind)
 	}
 
 	// ---- 4) 改草稿后再发布 en-US，回滚 en-US 到上一版：只动 en-US ----
@@ -132,11 +133,11 @@ func TestPagePublicationsLanguageScopedLifecycle(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("en-US 回滚失败: %v", err)
 	}
-	if got := activeRouteArtifactHash(t, db, projectID, "/en-US/about"); got != builtEn.StagedHash {
+	if got := activeRouteArtifactHash(t, db, projectID, "/en/about"); got != builtEn.StagedHash {
 		t.Fatalf("回滚后 en-US 路由产物应为 %s，实际 %s", builtEn.StagedHash, got)
 	}
-	if kind := routeKind(t, db, projectID, "/zh-CN/about"); kind != pubmodel.RouteActive {
-		t.Fatalf("回滚 en-US 后 /zh-CN/about 应仍 active，实际 %q", kind)
+	if kind := routeKind(t, db, projectID, "/about"); kind != pubmodel.RouteActive {
+		t.Fatalf("回滚 en-US 后 /about 应仍 active，实际 %q", kind)
 	}
 	if after := publicationOf(t, db, page.ID, "zh-CN"); after != zhBefore {
 		t.Fatalf("回滚 en-US 不应改动 zh-CN 激活记录: 前 %+v 后 %+v", zhBefore, after)
@@ -148,24 +149,24 @@ func TestPagePublicationsLanguageScopedLifecycle(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("en-US 改 URL 失败: %v", err)
 	}
-	if kind := routeKind(t, db, projectID, "/en-US/about-us"); kind != pubmodel.RouteActive {
-		t.Fatalf("/en-US/about-us 应为 active，实际 %q", kind)
+	if kind := routeKind(t, db, projectID, "/en/about-us"); kind != pubmodel.RouteActive {
+		t.Fatalf("/en/about-us 应为 active，实际 %q", kind)
 	}
-	if kind := routeKind(t, db, projectID, "/en-US/about"); kind != "" {
+	if kind := routeKind(t, db, projectID, "/en/about"); kind != "" {
 		t.Fatalf("en-US 旧路径激活行应被取消，实际 %q", kind)
 	}
-	if kind := routeKind(t, db, projectID, "/zh-CN/about"); kind != pubmodel.RouteActive {
-		t.Fatalf("改 en-US URL 不应影响 /zh-CN/about，实际 %q", kind)
+	if kind := routeKind(t, db, projectID, "/about"); kind != pubmodel.RouteActive {
+		t.Fatalf("改 en-US URL 不应影响 /about，实际 %q", kind)
 	}
-	if kind := activeKind(t, "/zh-CN/about"); kind != "page" {
+	if kind := activeKind(t, "/about"); kind != "page" {
 		t.Fatalf("改 en-US URL 不应影响 zh-CN 的 FS 激活，实际 %s", kind)
 	}
 	en := publicationOf(t, db, page.ID, "en-US")
-	if en.ActivePath != "/en-US/about-us" {
-		t.Fatalf("en-US 激活路径应迁移到 /en-US/about-us，实际 %q", en.ActivePath)
+	if en.ActivePath != "/en/about-us" {
+		t.Fatalf("en-US 激活路径应迁移到 /en/about-us，实际 %q", en.ActivePath)
 	}
 	zh := publicationOf(t, db, page.ID, "zh-CN")
-	if zh.ActivePath != "/zh-CN/about" {
+	if zh.ActivePath != "/about" {
 		t.Fatalf("zh-CN 激活路径不应变化，实际 %q", zh.ActivePath)
 	}
 
@@ -178,7 +179,7 @@ func TestPagePublicationsLanguageScopedLifecycle(t *testing.T) {
 		t.Fatalf("详情应带两条每语言激活状态，实际 %+v", detail.Publications)
 	}
 	// pages.active_path 是「最近发布语言」的单值镜像（en-US 最后发布/改 URL）。
-	if detail.ActivePath == nil || *detail.ActivePath != "/en-US/about-us" {
+	if detail.ActivePath == nil || *detail.ActivePath != "/en/about-us" {
 		t.Fatalf("pages.active_path 镜像应为最近发布语言路径，实际 %v", detail.ActivePath)
 	}
 
@@ -191,13 +192,13 @@ func TestPagePublicationsLanguageScopedLifecycle(t *testing.T) {
 	}
 }
 
-// TestPagePublicationsGateOffKeepsSinglePath 关闭语言前缀（默认灰度状态）时，
+// TestPagePublicationsGateOffKeepsSinglePath off 方案（各语言共用逻辑路径）时，
 // 两种语言共享逻辑路径：路由只有一行、每语言仍各留一条激活记录，
-// 后发布者覆盖线上内容——「一页多语言同时在线」必须打开 site_lang_prefix。
+// 后发布者覆盖线上内容——「一页多语言同时在线」必须使用 default_plain / all_prefix。
 func TestPagePublicationsGateOffKeepsSinglePath(t *testing.T) {
 	db, svc, _, projectID := newPageService(t)
 	ctx := context.Background()
-	// 不调用 withLangPrefix：保持默认关闭。
+	withLangURLMode(t, i18n.SiteLangURLModeOff)
 
 	page := createPage(t, svc, projectID, "/about", headingDocument)
 	zhHash := buildAndPublish(t, svc, page.ID)
@@ -312,15 +313,15 @@ func TestPageStagingsPerLanguageIndependent(t *testing.T) {
 	if _, err = svc.Publish(ctx, &pagedto.PublishReq{ID: page.ID, Lang: "en-US"}); err != nil {
 		t.Fatalf("en 发布失败: %v", err)
 	}
-	if got := activeRouteArtifactHash(t, db, projectID, "/zh-CN/staged"); got != zh.StagedHash {
+	if got := activeRouteArtifactHash(t, db, projectID, "/staged"); got != zh.StagedHash {
 		t.Fatalf("zh-CN 路由产物应为 %s，实际 %s", zh.StagedHash, got)
 	}
-	if got := activeRouteArtifactHash(t, db, projectID, "/en-US/staged"); got != en.StagedHash {
+	if got := activeRouteArtifactHash(t, db, projectID, "/en/staged"); got != en.StagedHash {
 		t.Fatalf("en-US 路由产物应为 %s，实际 %s", en.StagedHash, got)
 	}
 
 	// 跨语言暂存不互认：删掉 zh-CN 的暂存行后，pages 单值镜像里只剩 en-US 的产物，
-	// Publish(zh-CN) 必须报「无暂存产物」，而不是把 en-US 的产物发布到 /zh-CN/。
+	// Publish(zh-CN) 必须报「无暂存产物」，而不是把 en-US 的产物发布到 /。
 	if err = db.Exec("DELETE FROM page_stagings WHERE page_id = ? AND lang = ?", page.ID, "zh-CN").Error; err != nil {
 		t.Fatalf("清理 zh-CN 暂存失败: %v", err)
 	}
@@ -328,7 +329,7 @@ func TestPageStagingsPerLanguageIndependent(t *testing.T) {
 	if err == nil || err.Error() != pageenums.ErrNoStagedArtifact {
 		t.Fatalf("跨语言暂存应报 %q，实际 %v", pageenums.ErrNoStagedArtifact, err)
 	}
-	if got := activeRouteArtifactHash(t, db, projectID, "/zh-CN/staged"); got != zh.StagedHash {
+	if got := activeRouteArtifactHash(t, db, projectID, "/staged"); got != zh.StagedHash {
 		t.Fatalf("被拒绝的发布不应改变 zh-CN 线上产物，实际 %s", got)
 	}
 }

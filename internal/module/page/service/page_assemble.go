@@ -96,7 +96,7 @@ func (s *Service) compileDocument(ctx context.Context, page *builder.Page, proje
 	// 缓存按「工程 + 位置」单次编译内复用（同一页面多个导航节点只查一次库）。
 	if s.navigation != nil {
 		opts = append(opts, builder.WithNavigationResolver(navigationResolverAdapter{
-			svc: s.navigation, ctx: ctx, lang: lang, cache: map[string][]core.NavigationItem{},
+			svc: s.navigation, s: s, ctx: ctx, lang: lang, cache: map[string][]core.NavigationItem{},
 		}))
 	}
 	// 响应式图片：媒体变体存在时输出 srcset/sizes（构建期探测，访客零查询）。
@@ -107,7 +107,7 @@ func (s *Service) compileDocument(ctx context.Context, page *builder.Page, proje
 	}
 	// 工程 ID：页面文档不携带，由调用方按页面记录注入（导航等站点级资源取数上下文）。
 	// 当前项高亮用「实际访问路径」（多语言开启前缀时与导航项 URL 同带前缀）。
-	opts = append(opts, builder.WithProjectID(projectID), builder.WithCurrentPath(highlightPath(lang, currentPath)))
+	opts = append(opts, builder.WithProjectID(projectID), builder.WithCurrentPath(s.highlightPath(ctx, projectID, lang, currentPath)))
 	// 主题快照注入：settings.theme（保存时合入的 ThemeSettings 快照）→ 编译进产物。
 	if page.Settings.Theme != nil {
 		opts = append(opts, builder.WithThemeSettings(page.Settings.Theme))
@@ -169,7 +169,7 @@ func (s *Service) compileDocument(ctx context.Context, page *builder.Page, proje
 // 在本页没有独立可寻址路径」（如未开前缀、语言清单缺该语言）的语言不会进入清单。
 // 发布/激活状态属运行时事实，一旦进产物会让同输入产出不同字节，故不参与判据。
 func (s *Service) localeViewOf(ctx context.Context, projectID, logicalPath, lang string) (alts []builder.Alternate, links []core.LocaleLink) {
-	if !i18n.SiteLangPrefixEnabled() || strings.TrimSpace(projectID) == "" || strings.TrimSpace(logicalPath) == "" {
+	if !i18n.SiteLangURLsSeparated() || strings.TrimSpace(projectID) == "" || strings.TrimSpace(logicalPath) == "" {
 		return nil, nil
 	}
 	entries, err := s.siteRouteEntries(ctx, projectID, logicalPath)

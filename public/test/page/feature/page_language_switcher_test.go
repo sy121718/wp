@@ -5,8 +5,9 @@ package feature
 // 与 page_bilingual_e2e_test.go 同一条链路（建页 → 每语言构建 → 发布 → 静态面 HTTP），
 // 断言的是「访问面产物里真的出现可点的语言链接」：
 //   - 每种语言产物都指向其他语言的对应路径（<a hreflang>），当前语言为不可点 <span aria-current>；
+//   - 方案 A'：默认语言链接无前缀（/about），非默认语言用短码（/en/about）；
 //   - <html lang> 跟随构建语言；
-//   - 语言前缀开关关闭（默认）时不渲染切换器，单语言站点产物字节与 P3 之前一致；
+//   - off 方案（各语言共用逻辑路径）时不渲染切换器，单语言站点产物字节不变；
 //   - 产物里不得出现任何跳转脚本（访问面零 JS 硬约束）。
 
 import (
@@ -46,7 +47,7 @@ func TestPageArtifactLanguageSwitcher(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db, svc, projectID := newPageService(t)
 	ctx := context.Background()
-	withLangPrefixFeature(t)
+	withDefaultPlainFeature(t)
 
 	if err := db.Exec(
 		"INSERT INTO project_locales (project_id, lang, sort_order, is_default, enabled, created_at, updated_at) VALUES (?, ?, 0, true, true, now(), now()), (?, ?, 1, false, true, now(), now())",
@@ -89,7 +90,7 @@ func TestPageArtifactLanguageSwitcher(t *testing.T) {
 	// zh 产物：指向 en-US 的纯链接 + 当前语言（zh-CN）不可点标记 + html lang。
 	for _, want := range []string{
 		`<html lang="zh-CN">`,
-		`<a class="wp-lang-link" href="/en-US/about" hreflang="en-US" lang="en-US">English</a>`,
+		`<a class="wp-lang-link" href="/en/about" hreflang="en-US" lang="en-US">English</a>`,
 		`<span class="wp-lang-current" lang="zh-CN" aria-current="true">简体中文</span>`,
 	} {
 		if !strings.Contains(zhHTML, want) {
@@ -98,14 +99,14 @@ func TestPageArtifactLanguageSwitcher(t *testing.T) {
 	}
 	// 当前语言不可点：head 里的 hreflang 自指链接不算（那是 SEO 标注），
 	// 切换器内部不得出现指向自身的 <a class="wp-lang-link">。
-	if strings.Contains(zhHTML, `<a class="wp-lang-link" href="/zh-CN/about"`) {
+	if strings.Contains(zhHTML, `<a class="wp-lang-link" href="/about"`) {
 		t.Fatal("zh 产物当前语言不应渲染为链接")
 	}
 
 	// en 产物：反向链接 + 当前语言标记随语言变化 + html lang 同步。
 	for _, want := range []string{
 		`<html lang="en-US">`,
-		`<a class="wp-lang-link" href="/zh-CN/about" hreflang="zh-CN" lang="zh-CN">简体中文</a>`,
+		`<a class="wp-lang-link" href="/about" hreflang="zh-CN" lang="zh-CN">简体中文</a>`,
 		`<span class="wp-lang-current" lang="en-US" aria-current="true">English</span>`,
 	} {
 		if !strings.Contains(enHTML, want) {
@@ -129,26 +130,56 @@ func TestPageArtifactLanguageSwitcher(t *testing.T) {
 	}
 	router := gin.New()
 	router.StaticFS("/site", http.Dir(filepath.Join(root, "public", "active")))
-	for _, c := range []struct{ lang, wantLink string }{
-		{"zh-CN", `href="/en-US/about"`},
-		{"en-US", `href="/zh-CN/about"`},
+	for _, c := range []struct{ rel, wantLink string }{
+		{"about", `href="/en/about"`},
+		{"en/about", `href="/about"`},
 	} {
 		rec := httptest.NewRecorder()
-		router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/site/"+c.lang+"/about/", nil))
+		router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/site/"+c.rel+"/", nil))
 		if rec.Code != http.StatusOK {
-			t.Fatalf("GET /site/%s/about/ -> %d", c.lang, rec.Code)
+			t.Fatalf("GET /site/%s/ -> %d", c.rel, rec.Code)
 		}
 		if !strings.Contains(rec.Body.String(), c.wantLink) {
-			t.Fatalf("%s 静态产物缺少切换链接 %q", c.lang, c.wantLink)
+			t.Fatalf("/site/%s/ 静态产物缺少切换链接 %q", c.rel, c.wantLink)
 		}
-		t.Logf("HTTP GET /site/%s/about/ -> %d，含切换链接 %s", c.lang, rec.Code, c.wantLink)
+		t.Logf("HTTP GET /site/%s/ -> %d，含切换链接 %s", c.rel, rec.Code, c.wantLink)
 	}
 }
 
-// TestPageArtifactLanguageSwitcherHiddenWithoutPrefix 语言前缀关闭（默认配置）时
+// TestPagePreviewLocaleLinksDefaultPlain 预览（CompilePreview）与正式构建共用同一语言
+// URL 规则：默认语言预览的切换链接无前缀（/about），非默认语言预览为短码（/en/about）。
+func TestPagePreviewLocaleLinksDefaultPlain(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db, svc, projectID := newPageService(t)
+	ctx := context.Background()
+	withDefaultPlainFeature(t)
+
+	if err := db.Exec(
+		"INSERT INTO project_locales (project_id, lang, sort_order, is_default, enabled, created_at, updated_at) VALUES (?, ?, 0, true, true, now(), now()), (?, ?, 1, false, true, now(), now())",
+		projectID, "zh-CN", projectID, "en-US").Error; err != nil {
+		t.Fatalf("写入语言清单失败: %v", err)
+	}
+
+	for _, c := range []struct{ lang, want string }{
+		{"", `href="/en/about"`},        // 默认语言预览：自身无前缀，其他语言短码
+		{"en-US", `href="/about"`},      // 非默认语言预览：指向默认语言无前缀路径
+	} {
+		html, err := svc.CompilePreview(ctx, []byte(switcherDoc), projectID, "/about", c.lang)
+		if err != nil {
+			t.Fatalf("预览编译失败(lang=%q): %v", c.lang, err)
+		}
+		if !strings.Contains(string(html), c.want) {
+			t.Fatalf("预览(lang=%q)缺少 %q\n%s", c.lang, c.want, switcherFragment(string(html)))
+		}
+		t.Logf("预览 lang=%q 切换器: %s", c.lang, switcherFragment(string(html)))
+	}
+}
+
+// TestPageArtifactLanguageSwitcherHiddenWithoutPrefix off 方案（各语言共用逻辑路径）时
 // 多语言映射到同一路径，切换器整块不渲染：单语言站点产物字节与 P3 之前一致。
 func TestPageArtifactLanguageSwitcherHiddenWithoutPrefix(t *testing.T) {
-	i18n.SetSiteLangPrefix(false)
+	i18n.SetSiteLangURLMode(i18n.SiteLangURLModeOff)
+	t.Cleanup(func() { i18n.SetSiteLangURLMode(i18n.SiteLangURLModeDefaultPlain) })
 	db, svc, projectID := newPageService(t)
 	ctx := context.Background()
 

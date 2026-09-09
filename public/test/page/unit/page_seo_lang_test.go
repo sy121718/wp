@@ -53,9 +53,9 @@ func TestPageArtifactHreflangPerLanguage(t *testing.T) {
 	}
 
 	want := []string{
-		"hreflang=\"zh-CN\" href=\"/zh-CN/about\"",
-		"hreflang=\"en-US\" href=\"/en-US/about\"",
-		"hreflang=\"x-default\" href=\"/zh-CN/about\"",
+		"hreflang=\"zh-CN\" href=\"/about\"",
+		"hreflang=\"en-US\" href=\"/en/about\"",
+		"hreflang=\"x-default\" href=\"/about\"",
 	}
 	for _, c := range []struct{ name, hash string }{
 		{"zh-CN", zh.StagedHash},
@@ -106,7 +106,7 @@ func TestPageSitemapGroupedByLanguage(t *testing.T) {
 	}
 	sm := string(data)
 	for _, w := range []string{
-		"/zh-CN/about", "/en-US/about",
+		"/about", "/en/about",
 		"xmlns:xhtml=\"http://www.w3.org/1999/xhtml\"",
 		"hreflang=\"en-US\"", "hreflang=\"zh-CN\"", "hreflang=\"x-default\"",
 	} {

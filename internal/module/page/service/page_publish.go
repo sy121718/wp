@@ -60,9 +60,9 @@ func (s *Service) syncKernel(path, lang string, doc json.RawMessage, pageID stri
 	return err
 }
 
-// sitePathOf 计算页面实际访问路径（多语言前缀单点映射），失败归一为 ErrInvalidPath。
-func sitePathOf(lang string, page *pagemodel.PageEntity) (string, error) {
-	path, err := sitePath(lang, page.DraftPath)
+// sitePathOf 计算页面实际访问路径（语言 URL 方案单点映射），失败归一为 ErrInvalidPath。
+func (s *Service) sitePathOf(ctx context.Context, lang string, page *pagemodel.PageEntity) (string, error) {
+	path, err := sitePath(s.langURLRuleOf(ctx, page.ProjectID), lang, page.DraftPath)
 	if err != nil {
 		return "", ErrInvalidPath
 	}
@@ -85,7 +85,7 @@ func (s *Service) Build(ctx context.Context, req *pagedto.BuildReq) (res *pagedt
 	// 构建语言（多语言 P2）：请求显式指定优先，否则站点默认语言；
 	// 实际访问路径由 sitePath 单点映射（开启前缀时 /{lang}/path）。
 	lang := buildLang(req.Lang)
-	path, err := sitePathOf(lang, page)
+	path, err := s.sitePathOf(ctx, lang, page)
 	if err != nil {
 		return nil, err
 	}
@@ -127,7 +127,7 @@ func (s *Service) Publish(ctx context.Context, req *pagedto.PublishReq) (res *pa
 		return nil, err
 	}
 	lang := buildLang(req.Lang)
-	path, err := sitePathOf(lang, page)
+	path, err := s.sitePathOf(ctx, lang, page)
 	if err != nil {
 		return nil, err
 	}
@@ -318,12 +318,13 @@ func (s *Service) UpdateURL(ctx context.Context, req *pagedto.UpdateURLReq) (res
 		return nil, err
 	}
 	lang := buildLang(req.Lang)
-	kernelNewPath, err := sitePath(lang, newPath)
+	rule := s.langURLRuleOf(ctx, page.ProjectID)
+	kernelNewPath, err := sitePath(rule, lang, newPath)
 	if err != nil {
 		return nil, ErrInvalidPath
 	}
 	oldPath := page.DraftPathValue()
-	oldRoutePath, err := sitePath(lang, oldPath)
+	oldRoutePath, err := sitePath(rule, lang, oldPath)
 	if err != nil {
 		return nil, ErrInvalidPath
 	}
@@ -496,7 +497,7 @@ func (s *Service) publishedPathOf(ctx context.Context, page *pagemodel.PageEntit
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		return "", err
 	}
-	if !i18n.SiteLangPrefixEnabled() {
+	if !i18n.SiteLangURLsSeparated() {
 		return page.ActivePathValue(), nil
 	}
 	return "", nil

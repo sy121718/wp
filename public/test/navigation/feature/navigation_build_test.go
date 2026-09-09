@@ -111,7 +111,9 @@ func TestNavigationMenuCompiledIntoArtifact(t *testing.T) {
 		t.Fatalf("预览编译失败: %v", err)
 	}
 	out := string(html)
-	for _, want := range []string{`>首页<`, `href="/"`, `href="/products"`, `>新品<`, `target="_blank"`} {
+	// 方案 A'（default_plain）：默认语言无前缀，但首页语言根统一映射为 /index
+	// （与带前缀语言的 /{code}/index 同形，见 pipeline.LangURLRule.Path）。
+	for _, want := range []string{`>首页<`, `href="/index"`, `href="/products"`, `>新品<`, `target="_blank"`} {
 		if !strings.Contains(out, want) {
 			t.Errorf("产物缺少 %q\n%s", want, out)
 		}
