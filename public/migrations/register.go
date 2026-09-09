@@ -108,6 +108,18 @@ var i18nSeedShellSQL string
 //go:embed 060_i18n_seed_site_components.sql
 var i18nSeedSiteComponentsSQL string
 
+//go:embed 061_page_artifacts_lang.sql
+var pageArtifactsLangSQL string
+
+//go:embed 062_page_publications.sql
+var pagePublicationsSQL string
+
+//go:embed 063_page_stagings.sql
+var pageStagingsSQL string
+
+//go:embed 064_project_locales.sql
+var projectLocalesSQL string
+
 func init() {
 	register(Migration{
 		Version:   "001-init-schema",
@@ -383,5 +395,40 @@ func init() {
 		TableName:    "sys_i18n",
 		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 13 THEN 1 ELSE 0 END FROM sys_i18n WHERE lang = 'zh-CN' AND item_key LIKE 'site.component.%'",
 		SQL:          i18nSeedSiteComponentsSQL,
+	})
+
+	// 061：page_artifacts 加 lang 维度（多语言上线第一阻塞项，docs/06-D §15.5 第 1 条）。
+	// 唯一键 (page_id, version) → (page_id, version, lang)，同页多语言各占一行。
+	// page_artifacts 由 002-init-builder-schema 创建，默认「表存在即跳过」会误跳过，
+	// 故按 lang 列是否存在判定（与 047/049/054/055 同一手法）。
+	register(Migration{
+		Version:   "061-page-artifacts-lang",
+		TableName: "page_artifacts",
+		CheckSQL:  "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = ? AND column_name = 'lang'",
+		SQL:       pageArtifactsLangSQL,
+	})
+
+	// 062：page_publications（页面每语言激活状态，多语言 P3，docs/06-D §15.5 第 2 条）。
+	// 解掉 pages.active_path 单值导致「Publish(en-US) 取消 /zh-CN/about 激活路由」。
+	// 新表，默认「表存在即跳过」检查即可。
+	register(Migration{
+		Version:   "062-page-publications",
+		TableName: "page_publications",
+		SQL:       pagePublicationsSQL,
+	})
+
+	// 063：page_stagings（页面每语言暂存产物，多语言 P3）。
+	// 解掉 pages.staged_artifact_id 单值导致「先构建两语言再逐个发布」失败。
+	register(Migration{
+		Version:   "063-page-stagings",
+		TableName: "page_stagings",
+		SQL:       pageStagingsSQL,
+	})
+
+	// 064：project_locales（站点语言清单，多语言 P3，docs/06-D §14 D10）。
+	register(Migration{
+		Version:   "064-project-locales",
+		TableName: "project_locales",
+		SQL:       projectLocalesSQL,
 	})
 }

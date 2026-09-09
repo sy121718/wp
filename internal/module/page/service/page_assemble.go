@@ -11,12 +11,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	"go_wp/internal/builder"
 	"go_wp/internal/builder/core"
 	blockcontract "go_wp/internal/module/block/contract"
 	plugincontract "go_wp/internal/module/plugin/contract"
 	"go_wp/internal/pipeline"
+	"go_wp/internal/seo"
 	"go_wp/internal/templates"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
@@ -38,7 +40,7 @@ func (s *Service) assembleCompile(ctx context.Context, in pipeline.BuildInput) (
 		logger.Scene("build").With("err", err).Warn("页面文档解析失败，回退默认编译")
 		return pipeline.DefaultCompile(ctx, in)
 	}
-	projectID, currentPath := s.pageContextOf(ctx, in.PageID)
+	projectID, currentPath := s.pageContextOf(ctx, in.PageID, in.Lang)
 	// 语言来自构建输入（内核按 PageRecord.Lang 注入，见 pipeline.BuildInput）；
 	// 访问路径仍取页面记录的逻辑路径，前缀在 compileDocument 内单点计算。
 	html, err := s.compileDocument(ctx, page, projectID, currentPath, in.Lang)
@@ -110,6 +112,11 @@ func (s *Service) compileDocument(ctx context.Context, page *builder.Page, proje
 	if page.Settings.Theme != nil {
 		opts = append(opts, builder.WithThemeSettings(page.Settings.Theme))
 	}
+	// hreflang 互指（多语言 P3）：站点启用 ≥2 语言且开启前缀时，
+	// 产物 head 输出本页各语言版本的 alternate 链接（SEO 语言标注）。
+	if alts := s.alternatesOf(ctx, projectID, currentPath, lang); len(alts) > 1 {
+		opts = append(opts, builder.WithAlternates(alts))
+	}
 	compiled, err := builder.Compile(page, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", errCompileFailed, err)
@@ -125,6 +132,30 @@ func (s *Service) compileDocument(ctx context.Context, page *builder.Page, proje
 		return nil, err
 	}
 	return []byte(doc), nil
+}
+
+
+// alternatesOf 计算本页各语言版本的 hreflang 目标（多语言 P3）。
+//
+// 仅在「站点语言前缀开启 + 启用语言 ≥2」时返回（单语言站点返回 nil，
+// 产物字节与 P3 之前一致）。Href 在配置了 WP_SITE_BASE_URL 时为绝对 URL，
+// 否则为站点内路径（同样被搜索引擎接受，且不引入环境耦合）。
+func (s *Service) alternatesOf(ctx context.Context, projectID, logicalPath, lang string) []builder.Alternate {
+	if !i18n.SiteLangPrefixEnabled() || strings.TrimSpace(projectID) == "" || strings.TrimSpace(logicalPath) == "" {
+		return nil
+	}
+	entries, err := s.siteRouteEntries(ctx, projectID, logicalPath)
+	if err != nil || len(entries) < 2 {
+		return nil
+	}
+	defaultLang := s.defaultLocaleOf(ctx, projectID)
+	out := make([]builder.Alternate, 0, len(entries))
+	for _, e := range entries {
+		out = append(out, builder.Alternate{
+			Lang: e.Lang, Href: seo.JoinURL(siteBaseURL(), e.Path), Default: e.Lang == defaultLang,
+		})
+	}
+	return out
 }
 
 // parseStructureBindings 从页面文档读取全局块绑定快照（无该键时返回零值）。

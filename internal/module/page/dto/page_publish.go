@@ -20,6 +20,9 @@ type PublishReq struct {
 type RollbackReq struct {
 	ID         string `json:"id" binding:"required"`
 	TargetHash string `json:"targetHash" binding:"required"`
+	// Lang 回滚语言（多语言 P3）：留空时取目标产物冻结的 Manifest.lang，
+	// 二者都为空才回退站点默认语言。回滚只作用于该语言的激活状态与路由。
+	Lang string `json:"lang"`
 }
 
 // UpdateURLReq 修改访问路径并按策略处理旧路径。

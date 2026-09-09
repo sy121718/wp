@@ -34,7 +34,9 @@ type PublicationService interface {
 	// ReservePath 创建草稿路径 reserved 占用（页面创建时预留，冲突返回占用错误）。
 	ReservePath(ctx context.Context, req *pubdto.ReserveReq) (err error)
 	// RefreshSiteFiles 依据已激活路由重写站点 sitemap.xml / robots.txt（dir 为空则跳过）。
-	RefreshSiteFiles(ctx context.Context, projectID, baseURL, dir string) (err error)
+	// langs 为站点启用语言（默认语言在前，多语言 P3），defaultLang 用于 x-default；
+	// 二者为空时按单语言输出（与 P3 之前一致）。
+	RefreshSiteFiles(ctx context.Context, projectID, baseURL, dir string, langs []string, defaultLang string) (err error)
 	// DeleteRoutesByPage 清理页面全部路径占用（页面删除时释放，幂等）。
 	DeleteRoutesByPage(ctx context.Context, req *pubdto.DeleteRoutesReq) (err error)
 	// IsPathOccupied 查询路径是否被其他实体占用（页面创建/发布前预检）。

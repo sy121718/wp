@@ -42,7 +42,8 @@ func TestArtifactContentObjectFirstWriterWins(t *testing.T) {
 	mustRecord(t, svc, validReq())
 
 	// 第二条记录：不同 provider（s3）+ 不同 key，但 manifest 复用 hash-html，
-	// 并引入新 hash hash-s3-only。Version 换为 2，避免撞 UNIQUE(page_id, version)。
+	// 并引入新 hash hash-s3-only。Version 换为 2，避免撞
+	// UNIQUE(page_id, version, lang)（此处两行同语言）。
 	reqB := validReq()
 	reqB.ArtifactID = testArtifactID2
 	reqB.Version = 2

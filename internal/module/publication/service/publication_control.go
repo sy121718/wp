@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"go_wp/pkg/i18n"
+
 	pubdto "go_wp/internal/module/publication/dto"
 	pubenums "go_wp/internal/module/publication/enums"
 	pubmodel "go_wp/internal/module/publication/model"
@@ -50,6 +52,11 @@ func (s *Service) RenameReserved(ctx context.Context, req *pubdto.RenameReserved
 			return ferr
 		}
 		if existing.RouteKind != pubmodel.RouteReserved {
+			// OnlyReserved：调用方（多语言下改其他语言 URL）只希望迁移草稿占用，
+			// 明确要求不动本页 active/redirect 行。
+			if req.OnlyReserved {
+				return nil
+			}
 			if existing.PageID == nil || *existing.PageID != req.PageID {
 				return errors.New(pubenums.ErrRouteActiveRename)
 			}
@@ -428,7 +435,10 @@ func routeResp(e *pubmodel.RouteEntity) *pubdto.RouteResp {
 }
 
 // RefreshSiteFiles 生成/刷新站点级 SEO 产物（sitemap.xml + robots.txt）。
-func (s *Service) RefreshSiteFiles(ctx context.Context, projectID, baseURL, dir string) (err error) {
+//
+// langs 为站点启用语言（默认语言在前），defaultLang 用于 x-default（多语言 P3）。
+// 语言清单由调用方（page 装配层，持有 project 契约）传入——publication 不跨模块查语言。
+func (s *Service) RefreshSiteFiles(ctx context.Context, projectID, baseURL, dir string, langs []string, defaultLang string) (err error) {
 	if projectID == "" || dir == "" {
 		return nil
 	}
@@ -436,5 +446,77 @@ func (s *Service) RefreshSiteFiles(ctx context.Context, projectID, baseURL, dir 
 	if err != nil {
 		return err
 	}
-	return seo.WriteSiteFiles(dir, baseURL, seo.EntriesFromPaths(baseURL, paths))
+	return seo.WriteSiteFiles(dir, baseURL, sitemapEntries(baseURL, paths, langs, defaultLang))
+}
+
+// sitemapEntries 已激活路径 → sitemap 条目。
+//
+// 多语言（开启前缀且 ≥2 语言）时按「逻辑路径」分组：同一逻辑路径的各语言版本
+// 互相输出 xhtml:link 互指（含 x-default）。单语言或未开启前缀时输出与 P3 之前一致。
+func sitemapEntries(baseURL string, paths, langs []string, defaultLang string) []seo.SitemapEntry {
+	if !i18n.SiteLangPrefixEnabled() || len(langs) < 2 {
+		return seo.EntriesFromPaths(baseURL, paths)
+	}
+	byLogical := map[string]map[string]string{}
+	logicalOf := map[string]string{}
+	for _, p := range paths {
+		lang, logical, ok := langOfPath(p, langs)
+		if !ok {
+			continue
+		}
+		if byLogical[logical] == nil {
+			byLogical[logical] = map[string]string{}
+		}
+		byLogical[logical][lang] = p
+		logicalOf[p] = logical
+	}
+	out := make([]seo.SitemapEntry, 0, len(paths))
+	for _, p := range paths {
+		entry := seo.EntryForPath(baseURL, p)
+		logical, ok := logicalOf[p]
+		if !ok {
+			out = append(out, entry)
+			continue
+		}
+		group := byLogical[logical]
+		if len(group) < 2 {
+			out = append(out, entry)
+			continue
+		}
+		for _, l := range langs {
+			alt, exists := group[l]
+			if !exists {
+				continue
+			}
+			entry.Alternates = append(entry.Alternates, seo.SitemapAlternate{
+				Lang: l, Href: seo.JoinURL(baseURL, alt),
+			})
+		}
+		if alt, exists := group[defaultLang]; exists {
+			entry.Alternates = append(entry.Alternates, seo.SitemapAlternate{
+				Lang: "x-default", Href: seo.JoinURL(baseURL, alt),
+			})
+		}
+		out = append(out, entry)
+	}
+	return out
+}
+
+// langOfPath 判断站点路径属于哪个启用语言，并返回其逻辑路径。
+// 与 pipeline.LangPath 的映射口径一致：/{lang} 与 /{lang}/index 对应逻辑根 "/"，
+// /{lang}/path 对应 /path；未带任何已知语言前缀时 ok=false（该行不参与互指）。
+func langOfPath(path string, langs []string) (lang, logical string, ok bool) {
+	for _, l := range langs {
+		if l == "" {
+			continue
+		}
+		prefix := "/" + l
+		if path == prefix || path == prefix+"/index" {
+			return l, "/", true
+		}
+		if strings.HasPrefix(path, prefix+"/") {
+			return l, strings.TrimPrefix(path, prefix), true
+		}
+	}
+	return "", "", false
 }

@@ -16,9 +16,11 @@ import (
 	pubcontract "go_wp/internal/module/publication/contract"
 
 	"go_wp/internal/pipeline"
+	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 // 发布链路（docs/03-pipeline.md §6 / 0-A1 §2）：
@@ -97,12 +99,14 @@ func (s *Service) Build(ctx context.Context, req *pagedto.BuildReq) (res *pagedt
 		return nil, mapPublishError(err)
 	}
 
-	artifactID, err := s.ensureArtifactRow(ctx, page, hash, page.DraftDocument)
+	artifactID, err := s.ensureArtifactRow(ctx, page, hash, page.DraftDocument, lang)
 	if err != nil {
 		return nil, err
 	}
 	now := time.Now().UTC()
-	if err = s.model.MarkStaged(ctx, page.ID, artifactID, now); err != nil {
+	// 暂存指针按语言记录（多语言 P3）：Build(en-US) 不再覆盖 Build(zh-CN) 的暂存指针，
+	// 「先构建两种语言、再逐个发布」由此可用；pages 的单值列仍是最近构建语言的镜像。
+	if err = s.model.MarkStagedLang(ctx, page.ID, lang, artifactID, hash, page.DraftVersion, now); err != nil {
 		return nil, err
 	}
 	logger.Scene("build").With("pageId", page.ID).With("hash", hash).Info("构建完成")
@@ -128,18 +132,10 @@ func (s *Service) Publish(ctx context.Context, req *pagedto.PublishReq) (res *pa
 		return nil, err
 	}
 	logger.Scene("publication").With("pageId", page.ID).With("lang", lang).With("path", path).Info("开始发布")
-	if page.StagedArtifactID == nil || *page.StagedArtifactID == "" {
-		return nil, ErrNoStagedArtifact
-	}
-	stagedArt, err := s.artifacts.DetailByID(ctx, &artifactcontract.DetailByIDReq{ID: *page.StagedArtifactID})
+	// 暂存产物按语言取（page_stagings 为真源）：Publish(en-US) 只看 en-US 的暂存，
+	// 不会因为中途构建过其他语言而误报「无暂存产物」或发布错语言的产物。
+	stagedArt, err := s.stagedArtifactOf(ctx, page, lang)
 	if err != nil {
-		// 仅真实「无暂存产物」（artifact 侧 ErrArtifactNotFound）归一为 409 业务冲突；
-		// DB 故障等其他系统错误原样透传并记日志，避免被误判为「无暂存产物」误导前端。
-		if strings.Contains(err.Error(), artifactenums.ErrArtifactNotFound) {
-			return nil, ErrNoStagedArtifact
-		}
-		logger.Scene("publication").With("pageId", page.ID).With("artifactID", *page.StagedArtifactID).
-			Error(err, "查询暂存产物失败")
 		return nil, err
 	}
 	if stagedArt.ArtifactKey == "" || stagedArt.PageID != page.ID {
@@ -174,14 +170,23 @@ func (s *Service) Publish(ctx context.Context, req *pagedto.PublishReq) (res *pa
 		return nil, mapPublishError(err)
 	}
 
-	// 记录发布前旧 active 路径快照：MarkPublished 会把 active_path 更新为实际访问路径，
-	// 若 Deactivate 失败后重试（page 重新读取），再读 ActivePathValue() 已是新路径，
-	// 导致「旧路径永不清理」。此处以发布前快照为准，重试幂等。
-	// 多语言下 active_path 存「实际访问路径」（带 /{lang}/ 前缀），与路由行口径一致。
-	oldPath := page.ActivePathValue()
+	// 记录发布前「本语言」的旧 active 路径快照（page_publications 为该语言真源）：
+	// MarkPublishedLang 会把该语言的激活路径更新为本次路径，若 Deactivate 失败后重试
+	// （page 重新读取），再读激活记录已是新路径，导致「旧路径永不清理」。
+	// 此处以发布前快照为准，重试幂等。
+	//
+	// 多语言 P3：旧路径只取本语言那一行，因此 Publish(en-US) 不会取消
+	// /zh-CN/about 的激活路由——「一页多语言同时在线」由此成立。
+	oldPath, perr := s.publishedPathOf(ctx, page, lang)
+	if perr != nil {
+		return nil, perr
+	}
 
 	now := time.Now().UTC()
-	if err = s.model.MarkPublished(ctx, page.ID, path, stagedArt.ID, now); err != nil {
+	if err = s.model.MarkPublishedLang(ctx, pagemodel.PublicationRecord{
+		PageID: page.ID, Lang: lang, ActivePath: path,
+		ArtifactID: stagedArt.ID, ArtifactHash: hash, PublishedAt: now,
+	}); err != nil {
 		// FS 已原子激活（线上已生效），此处 DB active 指针更新失败属于部分成功：
 		// 错误必须明确暴露，且重试可收敛（复构建 hash 与暂存一致 → 幂等再激活）。
 		logger.Scene("publication").With("pageId", page.ID).With("hash", hash).
@@ -210,7 +215,8 @@ func (s *Service) Publish(ctx context.Context, req *pagedto.PublishReq) (res *pa
 	logger.Scene("publication").With("pageId", page.ID).With("hash", hash).Info("发布完成")
 	// 站点级 SEO 产物：发布激活后刷新 sitemap.xml / robots.txt。
 	// 尽力而为——生成失败只记日志，不回滚已完成的发布（产物可由下次发布或手动接口重建）。
-	if err = s.routes.RefreshSiteFiles(ctx, page.ProjectID, siteBaseURL(), pipeline.ActiveRoot()); err != nil {
+	if err = s.routes.RefreshSiteFiles(ctx, page.ProjectID, siteBaseURL(), pipeline.ActiveRoot(),
+		s.enabledLangsOf(ctx, page.ProjectID), s.defaultLocaleOf(ctx, page.ProjectID)); err != nil {
 		logger.Scene("publication").With("pageId", page.ID).Error(err, "sitemap/robots 刷新失败")
 	}
 	return &pagedto.PublishResp{
@@ -236,6 +242,17 @@ func (s *Service) Rollback(ctx context.Context, req *pagedto.RollbackReq) (res *
 		logger.Scene("page").With("pageId", page.ID).Error(err, "回滚目标产物缺失")
 		return nil, ErrRollbackTargetMiss
 	}
+	// 回滚语言取目标产物冻结语言（产物 hash 覆盖 Manifest.lang，同 hash 必同语言）；
+	// 目标产物未记录语言时回退请求语言 / 站点默认语言。
+	// 按语言作用域回滚：只处置「该语言」的旧激活路由，其他语言保持在线。
+	lang := buildLang(req.Lang)
+	if strings.TrimSpace(targetArt.Lang) != "" {
+		lang = targetArt.Lang
+	}
+	oldPath, perr := s.publishedPathOf(ctx, page, lang)
+	if perr != nil {
+		return nil, perr
+	}
 	if err = s.restoreKernelForHistory(page, targetArt); err != nil {
 		return nil, err
 	}
@@ -245,13 +262,16 @@ func (s *Service) Rollback(ctx context.Context, req *pagedto.RollbackReq) (res *
 	}
 
 	now := time.Now().UTC()
-	if err = s.model.MarkPublished(ctx, page.ID, targetArt.CanonicalPath, targetArt.ID, now); err != nil {
+	if err = s.model.MarkPublishedLang(ctx, pagemodel.PublicationRecord{
+		PageID: page.ID, Lang: lang, ActivePath: targetArt.CanonicalPath,
+		ArtifactID: targetArt.ID, ArtifactHash: targetArt.ArtifactHash, PublishedAt: now,
+	}); err != nil {
 		return nil, err
 	}
 	if s.routes != nil {
-		// 回滚到不同路径的历史产物时，先取消旧 active 路径激活，
+		// 回滚到不同路径的历史产物时，先取消本语言旧 active 路径激活，
 		// 避免残留同页双 active 占用（旧路径继续出旧产物，与 Publish 一致）。
-		if old := page.ActivePathValue(); old != "" && old != targetArt.CanonicalPath {
+		if old := oldPath; old != "" && old != targetArt.CanonicalPath {
 			if derr := s.routes.Deactivate(ctx, &pubcontract.DeactivateReq{
 				ProjectID: page.ProjectID, Path: old,
 			}); derr != nil {
@@ -314,9 +334,14 @@ func (s *Service) UpdateURL(ctx context.Context, req *pagedto.UpdateURLReq) (res
 		return nil, err
 	}
 	logger.Scene("page").With("pageId", page.ID).With("lang", lang).With("newPath", kernelNewPath).Info("开始修改 URL")
-	publishedPath := oldRoutePath
-	if page.ActivePath != nil && *page.ActivePath != "" {
-		publishedPath = *page.ActivePath
+	// 本语言当前线上路径（page_publications 为该语言真源）；该语言尚未发布时
+	// 回退本语言的草稿路由路径（纯草稿分支不会用到它做重定向/取消激活）。
+	publishedPath, perr := s.publishedPathOf(ctx, page, lang)
+	if perr != nil {
+		return nil, perr
+	}
+	if publishedPath == "" {
+		publishedPath = oldRoutePath
 	}
 
 	// 内核以旧发布路径为基线执行 UpdateURL（内部完成构建+激活+旧路径处置）。
@@ -339,10 +364,7 @@ func (s *Service) UpdateURL(ctx context.Context, req *pagedto.UpdateURLReq) (res
 			return nil, err
 		}
 		if s.routes != nil {
-			if rerr := s.routes.RenameReserved(ctx, &pubcontract.RenameReservedReq{
-				ProjectID: page.ProjectID, PageID: page.ID,
-				OldPath: oldRoutePath, NewPath: kernelNewPath,
-			}); rerr != nil {
+			if rerr := s.renameReservedAllLangs(ctx, page.ProjectID, page.ID, oldPath, newPath, lang); rerr != nil {
 				logger.Scene("page").With("pageId", page.ID).Error(rerr, "URL 修改后重命名保留路由失败，中止流程")
 				return nil, rerr
 			}
@@ -363,7 +385,7 @@ func (s *Service) UpdateURL(ctx context.Context, req *pagedto.UpdateURLReq) (res
 	// 必须写产物行主键而非内容 hash（生产 DDL 下写 hash 必然 22P02 失败）。
 	// 归档源文档用内核构建输入（st.DocumentJSON，即活动产物冻结源文档），
 	// 与 restoreKernelForUpdate 的编译输入一致（H4）。
-	artifactRowID, err := s.ensureArtifactRow(ctx, page, activeHashOf(st), st.DocumentJSON)
+	artifactRowID, err := s.ensureArtifactRow(ctx, page, activeHashOf(st), st.DocumentJSON, lang)
 	if err != nil {
 		logger.Scene("page").With("pageId", page.ID).With("hash", activeHashOf(st)).Error(err, "URL 修改后产物归档失败")
 		return nil, err
@@ -374,13 +396,17 @@ func (s *Service) UpdateURL(ctx context.Context, req *pagedto.UpdateURLReq) (res
 		logger.Scene("page").With("pageId", page.ID).Error(err, "草稿路径迁移失败")
 		return nil, err
 	}
+	// 该语言的激活路径同步（page_publications 行 + pages 单值镜像）：
+	// 只影响本语言，其他语言的激活路径与路由行不动（多语言 P3）。
+	if err = s.model.MovePublicationPath(ctx, page.ID, lang, kernelNewPath, now); err != nil {
+		logger.Scene("page").With("pageId", page.ID).With("lang", lang).Error(err, "激活路径迁移失败")
+		return nil, err
+	}
 	if s.routes != nil {
 		// 改名失败必须中止：reserved 行滞留旧路径会让路由表与 pages 表脱节，
 		// 后续 SaveDraft 基于错误基线增删路由（不得仅记日志继续）。
-		if rerr := s.routes.RenameReserved(ctx, &pubcontract.RenameReservedReq{
-			ProjectID: page.ProjectID, PageID: page.ID,
-			OldPath: oldRoutePath, NewPath: kernelNewPath,
-		}); rerr != nil {
+		// 多语言 P3：逐启用语言迁移 reserved 行（逻辑路径 → 各语言站点路径）。
+		if rerr := s.renameReservedAllLangs(ctx, page.ProjectID, page.ID, oldPath, newPath, lang); rerr != nil {
 			logger.Scene("page").With("pageId", page.ID).Error(rerr, "URL 修改后重命名保留路由失败，中止流程")
 			return nil, rerr
 		}
@@ -415,6 +441,65 @@ func (s *Service) UpdateURL(ctx context.Context, req *pagedto.UpdateURLReq) (res
 		OldPath: publishedPath, DraftPath: newPath,
 		PublishedAt: now.Format(time.RFC3339),
 	}, nil
+}
+
+
+// stagedArtifactOf 取该语言的暂存产物（page_stagings 为真源）。
+//
+// 兼容口径：迁移 063 之前只写 pages.staged_artifact_id，该镜像仅在「产物语言与
+// 目标语言一致」时采用（多语言站点里镜像可能属于别的语言，绝不将错就错）。
+func (s *Service) stagedArtifactOf(ctx context.Context, page *pagemodel.PageEntity, lang string) (*artifactcontract.ArtifactResp, error) {
+	artifactID := ""
+	st, err := s.model.GetStaging(ctx, page.ID, lang)
+	switch {
+	case err == nil && st != nil:
+		artifactID = st.ArtifactID
+	case err != nil && !errors.Is(err, gorm.ErrRecordNotFound):
+		return nil, err
+	}
+	// 回退镜像：仅当镜像产物确实属于目标语言时可用。
+	if artifactID == "" {
+		if page.StagedArtifactID == nil || *page.StagedArtifactID == "" {
+			return nil, ErrNoStagedArtifact
+		}
+		artifactID = *page.StagedArtifactID
+	}
+	art, derr := s.artifacts.DetailByID(ctx, &artifactcontract.DetailByIDReq{ID: artifactID})
+	if derr != nil {
+		// 仅真实「无暂存产物」（artifact 侧 ErrArtifactNotFound）归一为 409 业务冲突；
+		// DB 故障等其他系统错误原样透传并记日志，避免被误判为「无暂存产物」误导前端。
+		if strings.Contains(derr.Error(), artifactenums.ErrArtifactNotFound) {
+			return nil, ErrNoStagedArtifact
+		}
+		logger.Scene("publication").With("pageId", page.ID).With("artifactID", artifactID).
+			Error(derr, "查询暂存产物失败")
+		return nil, derr
+	}
+	if art.Lang != "" && art.Lang != lang {
+		// 该语言没有暂存产物（镜像属于其他语言）：按「无暂存产物」处理，不跨语言发布。
+		return nil, ErrNoStagedArtifact
+	}
+	return art, nil
+}
+
+// publishedPathOf 取该语言当前线上激活路径（page_publications 为真源）。
+//
+// 兼容口径：关闭站点语言前缀（i18n.site_lang_prefix=false）的单语言站点，
+// pages.active_path 单值即该语言的路径，历史行（迁移 062 回填前）也按此读；
+// 开启前缀时不猜测——没有该语言的激活记录就返回空（本语言从未发布），
+// 绝不拿别的语言的路径去 Deactivate（这正是 Publish(en-US) 取消 /zh-CN/about 的根因）。
+func (s *Service) publishedPathOf(ctx context.Context, page *pagemodel.PageEntity, lang string) (string, error) {
+	pub, err := s.model.GetPublication(ctx, page.ID, lang)
+	if err == nil && pub != nil {
+		return pub.ActivePath, nil
+	}
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return "", err
+	}
+	if !i18n.SiteLangPrefixEnabled() {
+		return page.ActivePathValue(), nil
+	}
+	return "", nil
 }
 
 // ---- 内核记录重建辅助 ----
@@ -467,7 +552,10 @@ func (s *Service) restoreKernelForUpdate(ctx context.Context, page *pagemodel.Pa
 // UpdateURL 路径为活动产物冻结源文档（内核 restoreKernelForUpdate 的输入）。
 // 若统一归档 page.DraftDocument，草稿较新时产物字节与归档 SourceDocument/
 // SourceHash 不对应，日后按该产物回滚会编译出不同 hash（ErrRollbackPathMismatch）。
-func (s *Service) ensureArtifactRow(ctx context.Context, page *pagemodel.PageEntity, hash string, sourceDocument json.RawMessage) (string, error) {
+//
+// lang 为本次构建语言：产物行唯一键是 (page_id, version, lang)，同页多语言各占一行；
+// 预检查询按 hash（hash 覆盖 Manifest.lang，必同语言）即可，写入必须带 lang。
+func (s *Service) ensureArtifactRow(ctx context.Context, page *pagemodel.PageEntity, hash string, sourceDocument json.RawMessage, lang string) (string, error) {
 	existing, err := s.artifacts.Detail(ctx, &artifactcontract.DetailReq{PageID: page.ID, Hash: hash})
 	if err == nil {
 		return existing.ID, nil
@@ -485,6 +573,7 @@ func (s *Service) ensureArtifactRow(ctx context.Context, page *pagemodel.PageEnt
 		ArtifactID:       uuid.NewString(),
 		PageID:           page.ID,
 		Version:          page.DraftVersion,
+		Lang:             lang,
 		SourceDocument:   sourceDocument,
 		SchemaVersion:    art.Manifest.PageDocumentSchemaVersion,
 		SourceHash:       art.Manifest.SourceHash,
@@ -503,15 +592,17 @@ func (s *Service) ensureArtifactRow(ctx context.Context, page *pagemodel.PageEnt
 	return recorded.ID, nil
 }
 
-// ensureRedirectRoute 把旧发布路径占用标记为 redirect 并落盘重定向产物。
+// ensureRedirectRoute 把「本语言的旧发布路径」占用标记为 redirect 并落盘重定向产物。
+// publishedPath 由调用方按语言解析（page_publications 真源）——旧实现用
+// pages.active_path 单值，多语言下会拿到别的语言的路径。
 func (s *Service) ensureRedirectRoute(ctx context.Context, page *pagemodel.PageEntity, publishedPath string) error {
 	// 未发布页面没有旧线上路径：无法（也无需）创建 301 重定向产物。
 	// 旧实现无条件用 ActivePathValue()（未发布为空串）构造产物，
 	// 在 FS/DB 已迁移后报「路径不能为空」，造成状态分裂。
-	if page.ActivePathValue() == "" {
+	if publishedPath == "" {
 		return nil
 	}
-	ra, raErr := pipeline.NewRedirectArtifact(page.ActivePathValue(), 301)
+	ra, raErr := pipeline.NewRedirectArtifact(publishedPath, 301)
 	if raErr != nil {
 		return raErr
 	}

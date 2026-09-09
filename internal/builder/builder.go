@@ -143,6 +143,8 @@ type compileConfig struct {
 	assetProbe  func(string) []int
 	theme       *ThemeSettings
 	ctx         context.Context
+	// alternates 同页其他语言版本（hreflang 互指，多语言 P3）。
+	alternates []Alternate
 	// lang 本次编译目标语言（空=取 i18n.GetDefaultLang()，多语言 P4）。
 	lang string
 	// translate 构建期取词函数（空=默认 i18n.TranslateFunc(lang)）。
@@ -226,6 +228,12 @@ func WithContext(ctx context.Context) CompileOption {
 // i18n.GetDefaultLang()，因此现有调用方无需改动即保持中文产物不变。
 func WithLanguage(lang string) CompileOption {
 	return func(c *compileConfig) { c.lang = strings.TrimSpace(lang) }
+}
+
+// WithAlternates 注入同页其他语言版本（多语言 P3）：编译期输出 hreflang 互指。
+// 未注入（单语言站点）时产物字节与 P3 之前完全一致。
+func WithAlternates(alternates []Alternate) CompileOption {
+	return func(c *compileConfig) { c.alternates = alternates }
 }
 
 // WithTranslator 注入自定义取词函数（key, fallback → 文案）。
@@ -451,7 +459,7 @@ func Compile(p *Page, opts ...CompileOption) (res *CompiledPage, err error) {
 	classes = append(classes, p.Settings.BodyClasses...)
 
 	// 构建期 SEO 头：canonical / OG / Twitter / JSON-LD（三级回落由 BuildSEOHead 处理）。
-	seoHead := BuildSEOHead(p.Settings.SEO, p.Settings.SEO.Canonical, p.Settings.SEO.Title, p.Settings.SEO.Description)
+	seoHead := BuildSEOHead(p.Settings.SEO, p.Settings.SEO.Canonical, p.Settings.SEO.Title, p.Settings.SEO.Description, cfg.alternates)
 
 	return &CompiledPage{
 		Title:           p.Settings.SEO.Title,

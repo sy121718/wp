@@ -243,12 +243,6 @@ func (m *Model) SaveDraftWithRevision(
 	})
 }
 
-// MarkStaged 回写暂存产物指针（构建成功，尚未激活）。
-func (m *Model) MarkStaged(ctx context.Context, pageID, artifactID string, at time.Time) (err error) {
-	return m.DB(ctx).Where("id = ? AND deleted_at IS NULL", pageID).
-		Updates(map[string]any{"staged_artifact_id": artifactID, "stale": false, "updated_at": at}).Error
-}
-
 // MarkPublished 回写活跃产物指针与发布元数据（发布/回滚共用）。
 func (m *Model) MarkPublished(ctx context.Context, pageID, path, artifactID string, at time.Time) (err error) {
 	return m.DB(ctx).Where("id = ? AND deleted_at IS NULL", pageID).
@@ -261,26 +255,37 @@ func (m *Model) MarkPublished(ctx context.Context, pageID, path, artifactID stri
 		}).Error
 }
 
-// MoveDraftPath 发布改 URL 后同步草稿路径与活跃路径。
+// MoveDraftPath 发布改 URL 后同步草稿路径（逻辑路径，不含语言前缀）。
+// 激活路径不再在此处写：它按语言存放在 page_publications，
+// 由 MovePublicationPath 单独同步（多语言 P3，docs/06-D §15.5 第 2 条）。
 func (m *Model) MoveDraftPath(ctx context.Context, pageID, newPath string, at time.Time) (err error) {
 	return m.DB(ctx).Where("id = ? AND deleted_at IS NULL", pageID).
-		Updates(map[string]any{"draft_path": newPath, "active_path": newPath, "updated_at": at}).Error
+		Updates(map[string]any{"draft_path": newPath, "updated_at": at}).Error
 }
 
 // SoftDelete 软删 Page（deleted_at 置时间，审计留痕）；页面不存在或已软删
 // 返回 gorm.ErrRecordNotFound。路径占用清理由 service 层经 publication contract
 // 的 DeleteRoutesByPage 处理——page model 不再碰 page_routes。
+// 同时清理 page_publications（同聚合原子组合）：软删后残留的激活记录
+// 会让「同路径新建页面」读到幽灵激活状态。
 func (m *Model) SoftDelete(ctx context.Context, pageID string, at time.Time) (err error) {
-	result := m.DB(ctx).
-		Where("id = ? AND deleted_at IS NULL", pageID).
-		Update("deleted_at", at)
-	if result.Error != nil {
-		return result.Error
-	}
-	if result.RowsAffected != 1 {
-		return gorm.ErrRecordNotFound
-	}
-	return nil
+	return m.Transaction(ctx, func(tx *gorm.DB) error {
+		result := tx.Model(&PageEntity{}).
+			Where("id = ? AND deleted_at IS NULL", pageID).
+			Update("deleted_at", at)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return gorm.ErrRecordNotFound
+		}
+		if derr := tx.Model(&PublicationEntity{}).Where("page_id = ?", pageID).
+			Delete(&PublicationEntity{}).Error; derr != nil {
+			return derr
+		}
+		return tx.Model(&StagingEntity{}).Where("page_id = ?", pageID).
+			Delete(&StagingEntity{}).Error
+	})
 }
 
 // DraftPathValue 返回草稿访问路径（空安全）。

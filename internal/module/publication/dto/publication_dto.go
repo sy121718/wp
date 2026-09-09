@@ -31,6 +31,10 @@ type RenameReservedReq struct {
 	PageID    string `json:"pageId" binding:"required"`
 	OldPath   string `json:"oldPath" binding:"required"`
 	NewPath   string `json:"newPath" binding:"required"`
+	// OnlyReserved 只迁移 reserved 行，跳过本页 active/redirect 行。
+	// 多语言 P3：改某语言 URL 时，其他语言的 active 行绝不能被顺带改名
+	//（否则 /zh-CN/about 的激活行会被迁到新路径，线上路由丢失）。
+	OnlyReserved bool `json:"onlyReserved"`
 }
 
 // RouteResp 路由占用投影。

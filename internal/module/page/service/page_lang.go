@@ -11,8 +11,10 @@ import (
 	"context"
 	"strings"
 
+	pubcontract "go_wp/internal/module/publication/contract"
 	"go_wp/internal/pipeline"
 	"go_wp/pkg/i18n"
+	"go_wp/pkg/logger"
 )
 
 // buildLang 解析本次构建语言：请求显式指定优先，否则站点默认语言（i18n.default_lang）。
@@ -33,11 +35,128 @@ func sitePath(lang, logical string) (string, error) {
 	return pipeline.LangPath(lang, logical)
 }
 
-// siteRoutePath 保存草稿/建页阶段的路径占用路径：此时语言未知，用站点默认语言。
-// 多语言站点每语言一行占用属后续阶段（docs/06-D §14 D10 语言清单）；
-// 当前只登记默认语言那一行，发布时按构建语言登记激活行。
-func siteRoutePath(logical string) (string, error) {
-	return sitePath(i18n.GetDefaultLang(), logical)
+// siteRoutePaths 建页/改草稿阶段的路径占用路径：按站点启用语言（project_locales）
+// 各一行，默认语言在前（多语言 P3，docs/06-D §14 D10）。
+//
+// 关闭语言前缀时多语言映射到同一逻辑路径，这里按路径去重（page_routes 主键是
+// (project_id, path)，重复插入必然撞唯一键）；语言清单不可读时回退默认语言一种，
+// 与 P3 之前的单语言行为完全一致。
+func (s *Service) siteRoutePaths(ctx context.Context, projectID, logical string) ([]string, error) {
+	entries, err := s.siteRouteEntries(ctx, projectID, logical)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]string, 0, len(entries))
+	for _, e := range entries {
+		out = append(out, e.Path)
+	}
+	return out, nil
+}
+
+// siteRouteEntry 语言 → 该语言下的站点访问路径。
+type siteRouteEntry struct {
+	Lang string
+	Path string
+}
+
+// siteRouteEntries 按启用语言（project_locales）计算逻辑路径的各语言站点路径，
+// 默认语言在前；关闭前缀时多语言映射到同一路径，按路径去重。
+func (s *Service) siteRouteEntries(ctx context.Context, projectID, logical string) ([]siteRouteEntry, error) {
+	langs := []string{i18n.GetDefaultLang()}
+	if s.project != nil && strings.TrimSpace(projectID) != "" {
+		if l, err := s.project.EnabledLangs(ctx, projectID); err == nil && len(l) > 0 {
+			langs = l
+		}
+	}
+	seen := map[string]bool{}
+	out := make([]siteRouteEntry, 0, len(langs))
+	for _, lang := range langs {
+		p, err := sitePath(lang, logical)
+		if err != nil {
+			return nil, err
+		}
+		if seen[p] {
+			continue
+		}
+		seen[p] = true
+		out = append(out, siteRouteEntry{Lang: lang, Path: p})
+	}
+	return out, nil
+}
+
+// renameReservedAllLangs 按启用语言逐语言迁移路径占用（建页/改草稿/改 URL）。
+//
+// targetLang 非空（改某语言 URL）时：该语言允许迁移本页 active 行（发布时
+// reserved 被原地升级为 active，改 URL 的 DB 同步依赖这一迁移），其他语言
+// **只迁移 reserved 行**——否则会把别的语言的激活行改到新路径，线上路由丢失。
+// targetLang 为空（改草稿路径）时所有语言同等对待。
+//
+// 任一语言失败即把已迁移的迁回（尽力而为）并返回该错误：路由表与草稿路径必须同源。
+func (s *Service) renameReservedAllLangs(ctx context.Context, projectID, pageID, oldLogical, newLogical, targetLang string) error {
+	if s.routes == nil {
+		return nil
+	}
+	oldEntries, err := s.siteRouteEntries(ctx, projectID, oldLogical)
+	if err != nil {
+		return ErrInvalidPath
+	}
+	newEntries, err := s.siteRouteEntries(ctx, projectID, newLogical)
+	if err != nil {
+		return ErrInvalidPath
+	}
+	if len(oldEntries) != len(newEntries) {
+		// 语言清单在迁移中途变化（极罕见）：不做半途改名，交由调用方重试。
+		return ErrInvalidPath
+	}
+	done := 0
+	for i := range oldEntries {
+		oldPath, newPath := oldEntries[i].Path, newEntries[i].Path
+		if oldPath == newPath {
+			done = i + 1
+			continue
+		}
+		onlyReserved := targetLang != "" && oldEntries[i].Lang != targetLang
+		if rerr := s.routes.RenameReserved(ctx, &pubcontract.RenameReservedReq{
+			ProjectID: projectID, PageID: pageID, OldPath: oldPath, NewPath: newPath,
+			OnlyReserved: onlyReserved,
+		}); rerr != nil {
+			for j := 0; j < done; j++ {
+				if oldEntries[j].Path == newEntries[j].Path {
+					continue
+				}
+				if rberr := s.routes.RenameReserved(ctx, &pubcontract.RenameReservedReq{
+					ProjectID: projectID, PageID: pageID,
+					OldPath: newEntries[j].Path, NewPath: oldEntries[j].Path,
+					OnlyReserved: targetLang != "" && oldEntries[j].Lang != targetLang,
+				}); rberr != nil {
+					logger.Scene("page").With("pageId", pageID).Error(rberr, "保留路由回迁失败")
+				}
+			}
+			return rerr
+		}
+		done = i + 1
+	}
+	return nil
+}
+
+// enabledLangsOf 站点启用语言（默认语言在前；清单不可读时回退默认语言一种）。
+func (s *Service) enabledLangsOf(ctx context.Context, projectID string) []string {
+	if s.project != nil && strings.TrimSpace(projectID) != "" {
+		if langs, err := s.project.EnabledLangs(ctx, projectID); err == nil && len(langs) > 0 {
+			return langs
+		}
+	}
+	return []string{i18n.GetDefaultLang()}
+}
+
+// defaultLocaleOf 站点默认语言（清单 is_default，缺失回退 i18n.default_lang）。
+func (s *Service) defaultLocaleOf(ctx context.Context, projectID string) string {
+	if s.project != nil && strings.TrimSpace(projectID) != "" {
+		if d, err := s.project.DefaultLocale(ctx, projectID); err == nil && d != "" {
+			return d
+		}
+	}
+	return i18n.GetDefaultLang()
 }
 
 // highlightPath 导航「当前项」高亮用的访问路径：与导航项 URL 同源（带前缀）。

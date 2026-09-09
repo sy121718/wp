@@ -8,8 +8,8 @@ import (
 )
 
 // TestArtifactRecordHashConflictWithProdConstraint 在"生产 DDL 语义"（补建
-// UNIQUE(page_id, version)）下验证：同 (page, version) 不同 hash 的 Record
-// 撞唯一约束 → mapPersistenceError 归一化为 ErrArtifactMismatch。
+// UNIQUE(page_id, version, lang)，迁移 061）下验证：同 (page, version, lang)
+// 不同 hash 的 Record 撞唯一键 → mapPersistenceError 归一化为 ErrArtifactMismatch。
 func TestArtifactRecordHashConflictWithProdConstraint(t *testing.T) {
 	svc := newServiceWithProdConstraint(t)
 	ctx := context.Background()
@@ -30,8 +30,8 @@ func TestArtifactRecordHashConflictWithProdConstraint(t *testing.T) {
 
 // TestArtifactRecordSameVersionDifferentHashNoConstraint 揭示 model 缺陷：
 // PageArtifactEntity 的 gorm 标签未声明 uniqueIndex，AutoMigrate 生成的 schema
-// 缺少生产 DDL 中的 UNIQUE(page_id, version)。纯 AutoMigrate 下同版本不同 hash
-// 的 Record 会插入第二行，破坏"同版本恰好一行"的替换语义（与生产 schema 行为不一致）。
+// 缺少生产 DDL 中的 UNIQUE(page_id, version, lang)。纯 AutoMigrate 下同版本同语言
+// 不同 hash 的 Record 会插入第二行，破坏"同版本同语言恰好一行"的替换语义。
 func TestArtifactRecordSameVersionDifferentHashNoConstraint(t *testing.T) {
 	svc := newService(t) // 纯 AutoMigrate，无唯一约束
 	ctx := context.Background()
@@ -42,8 +42,8 @@ func TestArtifactRecordSameVersionDifferentHashNoConstraint(t *testing.T) {
 	reqB.ArtifactID = "aaaaaaaa-0000-0000-0000-000000000002"
 	reqB.ArtifactHash = artifactHashV2
 
-	// 修复语义：model 标签已对齐生产 UNIQUE(page_id, version)，
-	// AutoMigrate 亦生成约束，同版本第二行插入必须失败。
+	// 修复语义：model 标签已对齐生产 UNIQUE(page_id, version, lang)，
+	// AutoMigrate 亦生成唯一键，同版本同语言第二行插入必须失败。
 	if _, err := svc.Record(ctx, reqB); err == nil {
 		t.Fatalf("同版本不同 hash 插入应被唯一约束拒绝")
 	}

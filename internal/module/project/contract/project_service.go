@@ -17,6 +17,9 @@ type (
 	ThemeUpdateReq   = projectdto.ThemeUpdateReq
 	ThemeActivateReq = projectdto.ThemeActivateReq
 	ThemeResp        = projectdto.ThemeResp
+	LocaleItem       = projectdto.LocaleItem
+	LocalesSaveReq   = projectdto.LocalesSaveReq
+	LocaleResp       = projectdto.LocaleResp
 )
 
 // ProjectService 站点工程与 SiteSettings 业务能力。
@@ -46,4 +49,15 @@ type ProjectService interface {
 	DeleteTheme(ctx context.Context, id string) (err error)
 	// GetActiveTheme 取工程当前激活主题。
 	GetActiveTheme(ctx context.Context, projectID string) (res *projectdto.ThemeResp, err error)
+
+	// ---- 站点语言清单（多语言 P3，docs/06-D §14 D10）----
+
+	// ListLocales 列出站点语言清单（默认语言在前）。
+	ListLocales(ctx context.Context, projectID string) (res []projectdto.LocaleResp, err error)
+	// EnabledLangs 返回站点启用语言（默认语言在前；无清单时回退站点默认语言一种）。
+	EnabledLangs(ctx context.Context, projectID string) (langs []string, err error)
+	// DefaultLocale 返回站点默认语言（清单 is_default，缺失回退 i18n.default_lang）。
+	DefaultLocale(ctx context.Context, projectID string) (lang string, err error)
+	// SaveLocales 全量保存站点语言清单（至少一种语言、至多一个默认且默认必须启用）。
+	SaveLocales(ctx context.Context, req *projectdto.LocalesSaveReq) (res []projectdto.LocaleResp, err error)
 }

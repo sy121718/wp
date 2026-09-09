@@ -12,27 +12,49 @@ import (
 // 发布激活后由调用方刷新：输入是「已激活 URL 列表」，输出是 ActiveRoot 下的两个文件。
 // 确定性：条目按 Loc 升序排序后输出，同一输入产生相同字节。
 
+// SitemapAlternate 语言互指条目（sitemap 的 xhtml:link，多语言 P3）。
+// Lang 为 BCP 47 语言码，或 "x-default"（默认语言版本）。
+type SitemapAlternate struct {
+	Lang string
+	Href string
+}
+
 // SitemapEntry sitemap 单条记录。
 type SitemapEntry struct {
 	Loc        string // 绝对 URL
 	LastMod    string // YYYY-MM-DD（空则省略）
 	ChangeFreq string // always/hourly/daily/weekly/monthly/yearly/never（空则省略）
 	Priority   string // 0.0-1.0（空则省略）
+	// Alternates 该 URL 的其他语言版本（多语言站点按语言分组输出）。
+	Alternates []SitemapAlternate
 }
 
 // urlSet / urlNode sitemap XML 结构。
 type urlSet struct {
 	XMLName xml.Name  `xml:"urlset"`
 	Xmlns   string    `xml:"xmlns,attr"`
-	URLs    []urlNode `xml:"url"`
+	// XmlnsXhtml 仅在存在语言互指时声明（保持单语言 sitemap 字节不变）。
+	XmlnsXhtml string    `xml:"xmlns:xhtml,attr,omitempty"`
+	URLs       []urlNode `xml:"url"`
 }
 
 type urlNode struct {
-	Loc        string `xml:"loc"`
-	LastMod    string `xml:"lastmod,omitempty"`
-	ChangeFreq string `xml:"changefreq,omitempty"`
-	Priority   string `xml:"priority,omitempty"`
+	Loc        string     `xml:"loc"`
+	LastMod    string     `xml:"lastmod,omitempty"`
+	ChangeFreq string     `xml:"changefreq,omitempty"`
+	Priority   string     `xml:"priority,omitempty"`
+	Links      []linkNode `xml:"xhtml:link,omitempty"`
 }
+
+// linkNode sitemap 的语言互指标签（rel=alternate）。
+type linkNode struct {
+	Rel      string `xml:"rel,attr"`
+	Hreflang string `xml:"hreflang,attr"`
+	Href     string `xml:"href,attr"`
+}
+
+// xhtmlNamespace sitemap 语言互指所需命名空间。
+const xhtmlNamespace = "http://www.w3.org/1999/xhtml"
 
 // JoinURL 拼接站点基础 URL 与路径（path 以 / 开头）。
 func JoinURL(baseURL, path string) string {
@@ -65,9 +87,21 @@ func BuildSitemap(entries []SitemapEntry) (string, error) {
 	}
 	set := urlSet{Xmlns: "http://www.sitemaps.org/schemas/sitemap/0.9"}
 	for _, e := range sorted {
-		set.URLs = append(set.URLs, urlNode{
+		node := urlNode{
 			Loc: e.Loc, LastMod: e.LastMod, ChangeFreq: e.ChangeFreq, Priority: e.Priority,
-		})
+		}
+		// 语言互指：按语言码升序输出、x-default 固定最后（确定性输出）。
+		alts := sortAlternates(e.Alternates)
+		for _, a := range alts {
+			if strings.TrimSpace(a.Href) == "" || strings.TrimSpace(a.Lang) == "" {
+				continue
+			}
+			node.Links = append(node.Links, linkNode{Rel: "alternate", Hreflang: a.Lang, Href: a.Href})
+		}
+		if len(node.Links) > 0 {
+			set.XmlnsXhtml = xhtmlNamespace
+		}
+		set.URLs = append(set.URLs, node)
 	}
 	body, err := xml.MarshalIndent(set, "", "  ")
 	if err != nil {
@@ -114,6 +148,15 @@ func WriteSiteFiles(dir, baseURL string, entries []SitemapEntry) error {
 	return os.WriteFile(filepath.Join(dir, "robots.txt"), []byte(rb), 0o644)
 }
 
+// EntryForPath 由单条「已激活路径」构造 sitemap 条目（根路径优先级最高）。
+func EntryForPath(baseURL, path string) SitemapEntry {
+	freq, prio := "weekly", "0.7"
+	if path == "/" || path == "" {
+		freq, prio = "daily", "1.0"
+	}
+	return SitemapEntry{Loc: JoinURL(baseURL, path), ChangeFreq: freq, Priority: prio}
+}
+
 // EntriesFromPaths 由「已激活路径」构造 sitemap 条目（根路径优先级最高）。
 func EntriesFromPaths(baseURL string, paths []string) []SitemapEntry {
 	out := make([]SitemapEntry, 0, len(paths))
@@ -121,11 +164,29 @@ func EntriesFromPaths(baseURL string, paths []string) []SitemapEntry {
 		if strings.TrimSpace(p) == "" {
 			continue
 		}
-		freq, prio := "weekly", "0.7"
-		if p == "/" || p == "" {
-			freq, prio = "daily", "1.0"
+		out = append(out, EntryForPath(baseURL, p))
+	}
+	return out
+}
+
+// sortAlternates 语言互指排序：语言码升序，x-default 固定最后（确定性输出）。
+func sortAlternates(in []SitemapAlternate) []SitemapAlternate {
+	out := make([]SitemapAlternate, 0, len(in))
+	for _, a := range in {
+		if a.Lang == "x-default" {
+			continue
 		}
-		out = append(out, SitemapEntry{Loc: JoinURL(baseURL, p), ChangeFreq: freq, Priority: prio})
+		out = append(out, a)
+	}
+	for i := 1; i < len(out); i++ {
+		for j := i; j > 0 && out[j].Lang < out[j-1].Lang; j-- {
+			out[j], out[j-1] = out[j-1], out[j]
+		}
+	}
+	for _, a := range in {
+		if a.Lang == "x-default" {
+			out = append(out, a)
+		}
 	}
 	return out
 }

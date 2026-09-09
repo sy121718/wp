@@ -13,6 +13,7 @@ import (
 	"go_wp/internal/builder/core"
 	navigationcontract "go_wp/internal/module/navigation/contract"
 	navigationdto "go_wp/internal/module/navigation/dto"
+	"go_wp/internal/pipeline"
 )
 
 // navigationResolverAdapter 适配 navigation 契约为 builder 的 NavigationResolver。
@@ -59,10 +60,14 @@ func navigationItemsOf(nodes []*navigationdto.NavigationNode, lang string) []cor
 	return out
 }
 
-// pageContextOf 按页面 ID 取所属站点工程 ID 与访问路径。
+// pageContextOf 按页面 ID 取所属站点工程 ID 与该语言的「逻辑访问路径」。
 // 工程 ID 用于导航解析（缺失时绑定菜单位置的导航节点编译期显式报错）；
-// 访问路径用于导航「当前项」高亮（优先激活路径，未发布用草稿路径）。
-func (s *Service) pageContextOf(ctx context.Context, pageID string) (projectID, currentPath string) {
+// 逻辑路径用于导航「当前项」高亮与 hreflang 互指——调用方会再经 sitePath 加语言前缀。
+//
+// 多语言 P3 修正：此前取 pages.active_path（可能已带 /{lang}/ 前缀），
+// 再经 highlightPath 加一次前缀会得到 /zh-CN/zh-CN/about，导航高亮永远匹配不上；
+// 现在按语言取 page_publications 的行并剥掉语言前缀，未发布回退草稿路径（逻辑路径）。
+func (s *Service) pageContextOf(ctx context.Context, pageID, lang string) (projectID, logicalPath string) {
 	if strings.TrimSpace(pageID) == "" {
 		return "", ""
 	}
@@ -70,9 +75,9 @@ func (s *Service) pageContextOf(ctx context.Context, pageID string) (projectID, 
 	if err != nil || page == nil {
 		return "", ""
 	}
-	currentPath = page.DraftPath
-	if page.ActivePath != nil && *page.ActivePath != "" {
-		currentPath = *page.ActivePath
+	logicalPath = page.DraftPath
+	if pub, perr := s.model.GetPublication(ctx, pageID, buildLang(lang)); perr == nil && pub != nil && pub.ActivePath != "" {
+		logicalPath = pipeline.StripLangPath(buildLang(lang), pub.ActivePath)
 	}
-	return page.ProjectID, currentPath
+	return page.ProjectID, logicalPath
 }

@@ -36,7 +36,8 @@ func newService(t *testing.T) *artifactservice.Service {
 }
 
 // newServiceWithProdConstraint 在 AutoMigrate 之外补建生产 DDL 中的
-// UNIQUE(page_id, version) 约束，用于验证生产 schema 语义下 service 的行为。
+// UNIQUE(page_id, version, lang) 唯一键（迁移 061），用于验证生产 schema 语义下
+// service 的行为。
 func newServiceWithProdConstraint(t *testing.T) *artifactservice.Service {
 	t.Helper()
 	db := newMigratedDB(t, true)
@@ -63,21 +64,24 @@ func newMigratedDB(t *testing.T, withProdConstraint bool) *gorm.DB {
 		t.Fatalf("AutoMigrate 建表失败: %v", err)
 	}
 	if withProdConstraint {
-		// PageArtifactEntity 的 gorm 标签已声明 uniqueIndex:uk_page_version
-		// （page_id, version 复合），AutoMigrate 即生成该约束；此处再以生产 DDL
-		// （public/migrations/init_builder_schema.sql:238）同款语句幂等补建，
-		// 显式对齐生产 schema 语义。
+		// PageArtifactEntity 的 gorm 标签已声明
+		// uniqueIndex:uk_page_artifacts_page_version_lang（page_id, version, lang 复合），
+		// AutoMigrate 即生成该唯一键；此处再以迁移 061
+		// （public/migrations/061_page_artifacts_lang.sql）同款语句幂等补建，
+		// 显式对齐生产 schema 语义（同页多语言各占一行）。
 		if err := db.Exec(
-			`CREATE UNIQUE INDEX IF NOT EXISTS uq_page_artifacts_page_version
-			 ON page_artifacts (page_id, version)`,
+			`CREATE UNIQUE INDEX IF NOT EXISTS uk_page_artifacts_page_version_lang
+			 ON page_artifacts (page_id, version, lang)`,
 		).Error; err != nil {
-			t.Fatalf("补建唯一约束失败: %v", err)
+			t.Fatalf("补建唯一键失败: %v", err)
 		}
 	}
 	return db
 }
 
 // validReq 构造合法归档请求。
+// 有意不填 Lang：存量调用方（历史代码）不传语言时必须落到站点默认语言，
+// 这本身是一条兼容性断言；显式语言场景见 ensure_record_lang_test.go。
 func validReq() *artifactdto.RecordReq {
 	return &artifactdto.RecordReq{
 		ArtifactID:       testArtifactID,
