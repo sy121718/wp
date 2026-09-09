@@ -974,7 +974,7 @@ true：全语言带前缀（/zh-CN/about、语言根 /zh-CN/index），决策 D1
 
 | # | 缺口 | 影响 | 建议 |
 |---|---|---|---|
-| 1 | `page_artifacts UNIQUE(page_id, version)` | 同一页面同一草稿版本只允许一行产物 → 第二个语言的产物会**替换**第一个语言的行，`page_routes.artifact_id` 指向错内容 | 加 `lang` 列，唯一键改 `(page_id, version, lang)`，`EnsureRecord`/`GetByPageVersion` 按语言取行 |
+| 1 | ~~`page_artifacts UNIQUE(page_id, version)`~~ | 同一页面同一草稿版本只允许一行产物 → 第二个语言的产物会**替换**第一个语言的行，`page_routes.artifact_id` 指向错内容 | **已修复**（迁移 061 + model/service 加 lang 维度，见 §15.7） |
 | 2 | `pages.active_path` 单值 | 一页只能记住一个语言的激活路径，多语言并行激活时旧路径清理失效 | 新增 `page_publications(page_id, lang, active_path, artifact_id)` 或等价结构 |
 | 3 | 语言清单（§14 D10） | 没有「站点有哪几种语言」的真源，无法为每语言登记 `page_routes` 行（当前 reserved 行只登记默认语言） | Project 级 `project_locales` 表（顺序 + 默认标记 + 启用状态） |
 | 4 | hreflang / sitemap 语言分组 | `BuildSEOHead` 与 `internal/seo/sitemap.go` 未输出 `hreflang` / `xhtml:link` | §5 的构建期输出方案，激活后刷新阶段统一生成 |
@@ -991,8 +991,81 @@ go test ./public/test/page/unit/ -run TestPageLang -count=1 -v
 go test ./pkg/i18n/ -count=1 -v
 ```
 
+### 15.7 P3 前置项 1 已修复（page_artifacts 加 lang 维度）
+
+§15.5 第 1 条（同页多语言互相覆盖）已落地，实施范围：
+
+| # | 改动 | 位置 |
+|---|---|---|
+| 1 | 迁移 061：加 `lang` 列（存量行回填站点默认语言）→ 删旧 `UNIQUE(page_id, version)` → 建 `UNIQUE(page_id, version, lang)`（索引名 `uk_page_artifacts_page_version_lang`，与 gorm 标签同名同形） | `public/migrations/061_page_artifacts_lang.sql` + `register.go`（ConditionSQL 按 lang 列存在判定） |
+| 2 | `PageArtifactEntity.Lang` + `GetByPageVersion(pageID, version, lang)`；`GetByHash` 保持无语言（产物 hash 覆盖 Manifest.lang，同 hash 必同语言） | `internal/module/artifact/model/artifact_model.go` |
+| 3 | `RecordReq.Lang` / `ArtifactResp.Lang`；service 归一化空语言 → 站点默认语言，替换语义限定在同一语言内 | `internal/module/artifact/{dto,service,contract}` |
+| 4 | 装配层调用点补语言：`Build` / `UpdateURL` → `ensureArtifactRow(..., lang)` → `EnsureRecord{Lang}`（跨模块仍只经 `artifact/contract`） | `internal/module/page/service/page_publish.go` |
+
+存量兼容：回填口径为「项目设置 `settings.defaultLang`/`default_lang` → 应用内置 `zh-CN`」（迁移器读不到 `config.yaml`）；
+`site_lang_prefix=false` 的无前缀构建路径行为不变（路径仍为逻辑路径，产物行只是多带一个默认语言值）。
+
+验证：`TestPageArtifactsLangMigration{BackfillsExistingRows,Idempotent,UsesProjectDefaultLang}`、
+`TestMigrationsRunTwiceIsIdempotent`（全量迁移重复执行不报错）、
+`TestArtifactEnsureRecordSamePageTwoLangsCoexist`、`TestArtifactEnsureRecordSameLangSameVersionReplaces`、
+`TestArtifactEnsureRecordEmptyLangFallsBackToDefault`、`TestArtifactGetByPageVersionLangScoped`、
+`TestPageArtifactLangCoexistAndRouteBinding`（端到端：两语言各一行 + 路由 artifact_id 指向各自语言产物）。
+
+仍属 P3：§15.5 第 2 条（`pages.active_path` 单值，实测 `Publish(en-US)` 会取消 `/zh-CN/about` 的激活路由）、
+第 3 条（`project_locales` 语言清单）——两条均已随 P3 落地，见 §15.8。
+
+### 15.8 P3 已落地（站点多语言上线，2025-09）
+
+P3 目标：解掉 `pages.active_path` 单值，让「一页多语言同时在线」成立，并补上语言清单、灰度开关双路径与 SEO 语言标注。
+代码为唯一事实来源；本节记录改动位置与验证方式。
+
+| # | 改动 | 位置 | 验证 |
+|---|---|---|---|
+| 1 | 迁移 062 `page_publications(page_id, lang, active_path, artifact_id, artifact_hash, published_at, updated_at)`：每语言激活状态真源；存量 `pages.active_path` 回填默认语言一行 | `public/migrations/062_page_publications.sql` + `register.go` | `TestPagePublicationsLanguageScopedLifecycle`、`TestMigrationsRunTwiceIsIdempotent` |
+| 2 | 迁移 063 `page_stagings(page_id, lang, artifact_id, artifact_hash, draft_version, updated_at)`：每语言暂存指针（解「先构建两语言再逐个发布」失败） | `public/migrations/063_page_stagings.sql` + `register.go` | `TestPageStagingsPerLanguageIndependent` |
+| 3 | 迁移 064 `project_locales(project_id, lang, sort_order, is_default, enabled)` + 部分唯一索引 `uq_project_locales_default` | `public/migrations/064_project_locales.sql` + `register.go` | `TestProjectLocalesSaveAndList` / `TestProjectLocalesValidation` |
+| 4 | page model：`PublicationEntity`/`StagingEntity`、`MarkPublishedLang`（upsert + pages 单值镜像同事务）、`MovePublicationPath`、`MarkStagedLang`、软删同清两表 | `internal/module/page/model/page_publication_model.go`、`page_model.go` | `TestPagePublications*` 全组 |
+| 5 | Publish / Rollback / UpdateURL 按语言作用域：旧路径取 `page_publications` 本语言行（`publishedPathOf`），暂存产物取 `page_stagings` 本语言行（`stagedArtifactOf`，跨语言暂存不互认） | `internal/module/page/service/page_publish.go` | `TestPagePublicationsLanguageScopedLifecycle`、`TestPageStagingsPerLanguageIndependent` |
+| 6 | `RenameReservedReq.OnlyReserved`：改某语言 URL 时其他语言**只迁 reserved 行**，绝不动他人 active 行 | `publication/{dto,service}`、`page_lang.go` | `TestPagePublicationsLanguageScopedLifecycle`（第 5 段） |
+| 7 | 路由登记按 `project_locales` 逐语言：建页 `reservePath`、改草稿/改 URL `renameReservedAllLangs`（失败回迁） | `page_draft.go`、`page_lang.go` | `TestPageRoutesRegisteredPerLocale` |
+| 8 | project 模块语言清单：`ListLocales` / `EnabledLangs`（无清单回退默认语言一种）/ `DefaultLocale` / `SaveLocales`（至少一种、至多一个默认且默认必须启用、语言码白名单） | `internal/module/project/{model,dto,service,contract}` | `TestProjectLocales*` |
+| 9 | 产物 head 输出 hreflang 互指（`builder.Alternate` + `WithAlternates` + `BuildSEOHead` 第五参）：语言码升序、`x-default` 固定最后，<2 语言不输出（单语言字节不变） | `internal/builder/{seo_head.go,builder.go}`、`page_assemble.go` | `TestBuildSEOHeadAlternates`、`TestPageArtifactHreflangPerLanguage` |
+| 10 | sitemap 按语言分组：`SitemapEntry.Alternates` + `xhtml:link` + 按需声明 `xmlns:xhtml`；`RefreshSiteFiles` 增加 `langs/defaultLang` 参数（语言清单由装配层传入，publication 不跨模块查语言） | `internal/seo/sitemap.go`、`publication_control.go`、`publication/contract` | `TestBuildSitemapAlternates`、`TestPageSitemapGroupedByLanguage` |
+| 11 | 导航「当前项」高亮修复：`pageContextOf(ctx, pageID, lang)` 返回**逻辑路径**（此前取已带前缀的 active_path 再加前缀 → `/zh-CN/zh-CN/about`，高亮永不命中） | `page_navigation.go`、`page_assemble.go` | 既有导航测试 + `TestPageBilingualSiteOnline` |
+| 12 | `PageResp.Publications`（每语言激活状态投影）与 `RollbackReq.Lang` | `internal/module/page/dto` | `TestPagePublicationsLanguageScopedLifecycle` |
+
+**语义口径（重要）**
+
+- `page_publications` 是每语言激活状态的**真源**；`pages.active_path` / `active_artifact_id` / `published_at` 退化为「最近发布语言的单值镜像」，仅供既有单值读取方（导航来源候选、列表投影）使用。
+- `page_stagings` 是每语言暂存指针的真源；`pages.staged_artifact_id` 同理为镜像。跨语言暂存**不互认**：本语言无暂存行且镜像产物语言不符时返回「无暂存产物」，绝不跨语言发布。
+- 灰度开关 `i18n.site_lang_prefix` 默认 **false**：关闭时两种语言映射到同一逻辑路径（路由只有一行、后发布者覆盖线上内容），「一页多语言同时在线」必须显式开启（`TestPagePublicationsGateOffKeepsSinglePath` 记录该口径）。
+- 语言清单不可读（表缺失/查询失败）时 `EnabledLangs` 回退「站点默认语言一种」，单语言站点行为与 P3 之前逐字节一致。
+
+**端到端证据**（`TestPageBilingualSiteOnline`，真实 PG + 真实 FS + gin 静态面）：同一页 `/about` 两语言同时在线：
+
+```text
+路由行: path=/en-US/about kind=active artifact_id=defbb8d0-...
+路由行: path=/zh-CN/about kind=active artifact_id=49c035ac-...
+激活状态: lang=en-US active_path=/en-US/about artifact_hash=79d3a74e...
+激活状态: lang=zh-CN active_path=/zh-CN/about artifact_hash=8965d536...
+激活链接: .../public/active/zh-CN/about -> ../../../artifacts/8965d536...
+激活链接: .../public/active/en-US/about -> ../../../artifacts/79d3a74e...
+HTTP GET /site/zh-CN/about/ -> 200, 8732 bytes
+HTTP GET /site/en-US/about/ -> 200, 8732 bytes
+确定性: zh 产物 8732 字节，两次构建字节一致（hash=8965d536...）
+```
+
+**仍属后续**
+
+- `project_locales` 的后台 CRUD 入口与语言切换器 UI（本阶段只落地表/契约/消费点；无 UI 时清单与 `i18n.default_lang` 一致，不会出现「默认语言分歧」）。
+- 站内链接本地化仍只覆盖导航（§15.5 第 5 条）：导航来源候选（`navigation/outbound/source`）读 `pages.active_path` 镜像，多语言下取「最近发布语言」的路径。
+- 禁用某语言后其已激活路由不会自动清理（无 UI 触发，本阶段不处理）。
+- sitemap 的 `<loc>` 与 hreflang 在未配置 `WP_SITE_BASE_URL` 时输出站点内路径（既有行为）。
+
 ## 变更记录
 
+- v6（2025-09）：新增 §15.8——P3 站点多语言上线已落地：迁移 062 `page_publications`（每语言激活状态真源）+ 063 `page_stagings`（每语言暂存指针）+ 064 `project_locales`（语言清单）；Publish/Rollback/UpdateURL 按语言作用域、`RenameReserved.OnlyReserved` 防跨语言误改、路由登记逐语言、产物 head hreflang 与 sitemap 语言分组、导航高亮双重前缀修复；含端到端双语言在线证据与灰度开关双路径测试。
+- v5（2025-09）：新增 §15.7——§15.5 第 1 条（`page_artifacts` 同页多语言互相覆盖）已修复：迁移 061 加 `lang` 列并改唯一键为 `(page_id, version, lang)`、model/service 补语言维度、装配层调用点补 `lang`，含存量回填与幂等验证；§15.5 第 2/3 条仍属 P3。
 - v1（2025-09）：首版设计提案。确立「`lang ∈ BuildContext`」「`/{lang}/path` 前缀」「CMS 内容字段级 + 主表/翻译表」三条主线，列出 10 个待决策点。
 - v2（2025-09）：**收敛最终决策**——新增 §7「`sys_translation` 内容寻址翻译层 + 翻译工作台」（17 条决策 F1–F17、DDL、组件 `Translatable` 声明、构建期批量取数 SQL、工作台界面示意、跨页面复用提示、一键 AI 预留形态、埋点三层、质量五道防线、AI 直接生效风险与缓解、CMS 共用同一张表）；§6 标注为历史论证（模型 C 收敛为内容寻址单表，`content_translations` 被取代）；§7–§14 顺延重编号，同步更新交叉引用；新增章节索引；D3 标记为已拍板，新增 D11–D16 遗留待拍板点。
 - v4（2025-09）：新增 §15 实施记录（P2 构建内核加 lang 维度）——Manifest.lang、BuildInput/Draft、PageRecord.Lang、LangPath 路径映射、激活层祖先符号链接防线、构建期冻结词条快照、DependencyKind=i18n 与 MarkStaleForI18n、装配层全链路传语言；记录 D1 语言根采用 `/{lang}/index`、落地开关 `i18n.site_lang_prefix`（默认 false）、产物 hash 变化与 P3 前置缺口。
