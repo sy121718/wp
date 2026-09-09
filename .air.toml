@@ -1,0 +1,46 @@
+# .air.toml — go_wp 开发期热重载（air）
+#
+# 用法：
+#   air                                  # 前台运行，Ctrl+C 退出
+#   air > /tmp/gowp-air.log 2>&1 &       # 后台运行
+#
+# 说明：
+#   - 监听 Go 源码、go:embed 的组件模板（*.jet）与后台模板（*.html）、config.yaml；
+#     改动后自动 go build + 重启服务（默认 SIGINT 优雅关闭，走 CloseComponents）。
+#   - 静态资源 /static 由 gin.Dir 直接读文件系统，改 JS/CSS 只需刷新浏览器，不触发重启，
+#     所以不监听 js/css，避免无意义的重新编译。
+#   - 测试代码、发布产物目录（public/runtime、storage、logs、backup）不参与触发。
+root = "."
+tmp_dir = "tmp"
+
+[build]
+  cmd = "go build -o ./tmp/gowp-dev ./cmd/main.go"
+  bin = "./tmp/gowp-dev"
+  delay = 500                       # 聚合连续改动，避免编辑时反复编译
+  include_ext = ["go", "jet", "html", "yaml"]
+  include_dir = []
+  exclude_dir = [
+    "tmp", ".git", ".code-review-graph", "docs", "node_modules",
+    "public/runtime", "public/storage", "public/logs", "public/backup",
+    "public/test", "cmd_tmp_login"
+  ]
+  exclude_regex = ["_test\\.go$"]
+  exclude_file = ["config.yaml.example", ".wp-credentials.local"]
+  exclude_unchanged = true
+  follow_symlink = false
+  log = "tmp/build-errors.log"
+  stop_on_error = true
+  send_interrupt = true             # 优雅关闭：让服务自己关 Redis/DB 连接
+  kill_delay = "3s"
+  rerun = false
+
+[screen]
+  clear_on_rebuild = false
+  keep_scroll = true
+
+[log]
+  time = true
+  main_only = false
+
+[misc]
+  clean_on_exit = false

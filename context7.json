@@ -1,6 +1,6 @@
 {
   "version": "1.1",
-  "comment": "项目主要库的 context7 ID 映射。优先查本地，未命中再调 context7 API，查询后回填。2026-09 对照 go.mod 全量核对：删除已移除的 golang-jwt/lumberjack；新增 tollbooth/testcontainers/goleak/uuid/imaging/nativewebp/gin-contrib-sessions。未收录说明：unrolled/secure 与 gorilla/sessions 在 context7 无条目（secure 配置自足看 README；sessions 查 gin-contrib-sessions 即可）；gorm 驱动文档并入 gorm 主条目；robfig/cron 仅作为 asynq 的 indirect 存在。",
+  "comment": "项目主要库的 context7 ID 映射。优先查本地，未命中再调 context7 API，查询后回填。接口形式 https://context7.com/api/v1/<owner>/<repo>?topic=..&tokens=..&type=txt 。2026-09 对照 go.mod 全量核对：删除已移除的 golang-jwt/lumberjack；新增 tollbooth/testcontainers/goleak/uuid/imaging/nativewebp/gin-contrib-sessions。2026-09-09 更新：tinymce 已下线，改为 trix（本地 vendor /static/vendor/trix/）；新增 idiomorph（本地 vendor /static/vendor/idiomorph/）。未收录说明：unrolled/secure 与 gorilla/sessions 在 context7 无条目（secure 配置自足看 README；sessions 查 gin-contrib-sessions 即可）；gorm 驱动文档并入 gorm 主条目；robfig/cron 仅作为 asynq 的 indirect 存在。",
   "libraries": {
     "gin": "/gin-gonic/gin",
     "gorm": "/go-gorm/gorm",
@@ -13,9 +13,8 @@
     "miniredis": "/alicebob/miniredis",
     "jet": "/cloudykit/jet",
     "htmx": "/bigskysoftware/htmx",
-    "tinymce": "/tinymce/tinymce-docs",
-    "tailwindcss": "/tailwindlabs/tailwindcss.com",
-    "echarts": "/apache/echarts-doc",
+    "trix": "/basecamp/trix",
+    "idiomorph": "/bigskysoftware/idiomorph",
     "gh": "/cli/cli",
     "cron": "/robfig/cron",
     "tollbooth": "/didip/tollbooth",
