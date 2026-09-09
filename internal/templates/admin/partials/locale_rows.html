@@ -1,0 +1,17 @@
+{* admin/partials/locale_rows.html — 站点语言清单行（多语言 P3，project_locales）。
+   渲染数据：Locales = [{Lang, IsDefault, Enabled}]（服务端按 project 契约 ListLocales 读出，
+   或由行片段端点按表单回显）。行身份用「提交顺序下标」，用户改语言码不会丢失勾选。
+   hx-post 到 /admin/settings/locales/rows 的按钮会带上整表（hx-include="#locale-form"），
+   服务端增/删一行后重渲染本片段——未落库，保存仍由整表提交触发。 *}
+{{if .Locales}}
+{{range i, l := .Locales}}
+<div class="locale-row">
+    <input class="locale-lang" type="text" name="langs" value="{{l.Lang}}" maxlength="35" list="wp-locale-options" placeholder="语言码，如 zh-CN" required>
+    <label class="locale-flag"><input type="radio" name="defaultIndex" value="{{i}}"{{if l.IsDefault}} checked{{end}}> 默认</label>
+    <label class="locale-flag"><input type="checkbox" name="enabledIndex" value="{{i}}"{{if l.Enabled}} checked{{end}}> 启用</label>
+    <button type="button" class="btn btn-sm" hx-post="/admin/settings/locales/rows" hx-vals='{"action":"remove","removeIndex":"{{i}}"}' hx-include="#locale-form" hx-target="#locale-rows" hx-swap="innerHTML">删除</button>
+</div>
+{{end}}
+{{else}}
+<p class="pages-empty">还没有语言清单。至少保留一种语言，且默认语言必须启用。</p>
+{{end}}

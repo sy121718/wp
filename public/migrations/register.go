@@ -120,6 +120,9 @@ var pageStagingsSQL string
 //go:embed 064_project_locales.sql
 var projectLocalesSQL string
 
+//go:embed 065_i18n_seed_language_switcher.sql
+var i18nSeedLanguageSwitcherSQL string
+
 func init() {
 	register(Migration{
 		Version:   "001-init-schema",
@@ -430,5 +433,16 @@ func init() {
 		Version:   "064-project-locales",
 		TableName: "project_locales",
 		SQL:       projectLocalesSQL,
+	})
+
+	// 065：语言切换器容器无障碍标签词条 seed（site.component.languages.label，
+	// zh-CN 1 行 / en-US 1 行，多语言 P3 前台切换器）。
+	// ConditionSQL 以 site.component.languages.* 的 zh-CN 行数为门槛，
+	// 与 060 的 site.component.% 门槛互不干扰（060 已灌满不会再跑）。
+	registerSeed(Seed{
+		Version:      "065-i18n-seed-language-switcher",
+		TableName:    "sys_i18n",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 1 THEN 1 ELSE 0 END FROM sys_i18n WHERE lang = 'zh-CN' AND item_key LIKE 'site.component.languages.%'",
+		SQL:          i18nSeedLanguageSwitcherSQL,
 	})
 }

@@ -26,6 +26,9 @@ const MsgNavigationsTitle = "MsgNavigationsTitle" // 导航菜单
 // MsgSiteSettingsSaved 站点设置保存成功提示。
 const MsgSiteSettingsSaved = "MsgSiteSettingsSaved" // 站点设置已保存
 
+// MsgSiteLocalesInvalid 语言清单校验失败提示（至少一种语言 / 至多一个默认且默认必须启用 / 语言码白名单）。
+const MsgSiteLocalesInvalid = "MsgSiteLocalesInvalid" // 语言清单不合法：至少保留一种语言；至多一个默认语言且必须启用；语言码只能包含字母、数字与连字符
+
 // MsgInternalError 页面 handler 内部错误统一提示（禁止直出 err.Error() 泄露内部细节）。
 const MsgInternalError = "MsgInternalError" // 系统内部错误，请稍后重试
 

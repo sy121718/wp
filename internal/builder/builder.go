@@ -52,6 +52,8 @@ import (
 	_ "go_wp/internal/builder/components/video"
 	// core.tabs：页签（结构型，radio hack 零 JS 切换，WD wd_tabs）。
 	_ "go_wp/internal/builder/components/nav"
+	// core.languages：站点语言切换器（构建期注入各语言链接，纯链接零 JS，docs/06-D）。
+	_ "go_wp/internal/builder/components/languages"
 	_ "go_wp/internal/builder/components/tabs"
 	// core.accordion：手风琴（结构型，details/summary 原生，WD wd_accordion）。
 	_ "go_wp/internal/builder/components/accordion"
@@ -111,6 +113,9 @@ func ParsePage(data []byte) (p *Page, err error) {
 
 // CompiledPage 页面文档的静态编译输出。
 type CompiledPage struct {
+	// Lang 本次编译的目标语言（注入 <html lang>，多语言 P3）。
+	// 空表示未知，RenderDocument 回退站点默认语言（保持单语言产物字节不变）。
+	Lang string
 	// Title 页面标题，注入 <title>。
 	Title string
 	// MetaDescription 页面描述，注入 <meta name="description">。
@@ -145,6 +150,8 @@ type compileConfig struct {
 	ctx         context.Context
 	// alternates 同页其他语言版本（hreflang 互指，多语言 P3）。
 	alternates []Alternate
+	// locales 站点语言切换器条目（多语言 P3）：与 alternates 同源（装配层一次算出）。
+	locales []core.LocaleLink
 	// lang 本次编译目标语言（空=取 i18n.GetDefaultLang()，多语言 P4）。
 	lang string
 	// translate 构建期取词函数（空=默认 i18n.TranslateFunc(lang)）。
@@ -234,6 +241,12 @@ func WithLanguage(lang string) CompileOption {
 // 未注入（单语言站点）时产物字节与 P3 之前完全一致。
 func WithAlternates(alternates []Alternate) CompileOption {
 	return func(c *compileConfig) { c.alternates = alternates }
+}
+
+// WithLocaleLinks 注入站点语言切换器条目（多语言 P3）：core.languages 组件据此输出
+// 各语言的静态链接。未注入（单语言站点 / 页面未放切换器）时产物字节与 P3 之前一致。
+func WithLocaleLinks(links []core.LocaleLink) CompileOption {
+	return func(c *compileConfig) { c.locales = links }
 }
 
 // WithTranslator 注入自定义取词函数（key, fallback → 文案）。
@@ -429,7 +442,7 @@ func Compile(p *Page, opts ...CompileOption) (res *CompiledPage, err error) {
 		CSS: &b, Context: cfg.ctx, Content: cfg.content, Block: cfg.block,
 		Plugin: cfg.plugin, Collection: cfg.collection,
 		Navigation: cfg.navigation, ProjectID: cfg.projectID, CurrentPath: cfg.currentPath,
-		Lang: lang, Translate: translate,
+		Lang: lang, Translate: translate, Locales: cfg.locales,
 		ImageDefaults: core.ImageDefaults{
 			LazyLoad: cfg.theme.LazyLoadEnabled(),
 			Skeleton: cfg.theme.SkeletonEnabled(),
@@ -462,6 +475,7 @@ func Compile(p *Page, opts ...CompileOption) (res *CompiledPage, err error) {
 	seoHead := BuildSEOHead(p.Settings.SEO, p.Settings.SEO.Canonical, p.Settings.SEO.Title, p.Settings.SEO.Description, cfg.alternates)
 
 	return &CompiledPage{
+		Lang:            lang,
 		Title:           p.Settings.SEO.Title,
 		MetaDescription: p.Settings.SEO.Description,
 		SEOHead:         seoHead,
@@ -479,7 +493,14 @@ func Compile(p *Page, opts ...CompileOption) (res *CompiledPage, err error) {
 // CSS/HTML/ThemeVarsCSS/增强脚本是编译产物，用 unsafe 原样输出，避免二次转义；
 // BodyClass 保持现状未转义（父代理单独处理转义问题），同样 unsafe 原样输出。
 func RenderDocument(c *CompiledPage) (string, error) {
+	// <html lang>：目标语言缺省回退站点默认语言（i18n 未初始化时内部回退 zh-CN），
+	// 绝不输出空 lang 属性（空 lang 会让浏览器与屏幕阅读器失去语言线索）。
+	lang := strings.TrimSpace(c.Lang)
+	if lang == "" {
+		lang = i18n.GetDefaultLang()
+	}
 	v := documentView{
+		Lang:            lang,
 		Title:           c.Title,
 		MetaDescription: c.MetaDescription,
 		SEOHead:         c.SEOHead,
@@ -501,6 +522,7 @@ func RenderDocument(c *CompiledPage) (string, error) {
 
 // documentView 文档骨架渲染数据（CompiledPage 拍平 + 增强脚本进模板）。
 type documentView struct {
+	Lang            string // <html lang>（目标语言，空回退默认语言）
 	Title           string
 	MetaDescription string
 	SEOHead         string // canonical / OG / Twitter / JSON-LD（已转义，模板 unsafe 输出）

@@ -124,22 +124,30 @@ func TestI18nEnumsSeedSchemaAndIdempotency(t *testing.T) {
 
 	// 4) 词条行数（干净 schema，精确断言）
 	// 195/79 为 058 enums 词条；+25/+25 为 059 后台外壳 shell.* 词条；
-	// +13/+13 为 060 访客面组件 site.component.* 词条（三组中英均已人工编写）。
+	// +13/+13 为 060 访客面组件 site.component.* 词条；+1/+1 为 065 语言切换器
+	// 容器无障碍标签 site.component.languages.label（四组中英均已人工编写）。
 	zhCount := countRows(t, db, "sys_i18n", "lang = ?", "zh-CN")
 	enCount := countRows(t, db, "sys_i18n", "lang = ?", "en-US")
-	if zhCount != 233 {
-		t.Fatalf("sys_i18n zh-CN 行数应为 233（195 enums + 25 shell + 13 site.component），实际 %d", zhCount)
+	if zhCount != 234 {
+		t.Fatalf("sys_i18n zh-CN 行数应为 234（195 enums + 25 shell + 13 site.component + 1 languages），实际 %d", zhCount)
 	}
-	if enCount != 117 {
-		t.Fatalf("sys_i18n en-US 行数应为 117（79 enums + 25 shell + 13 site.component），实际 %d", enCount)
+	if enCount != 118 {
+		t.Fatalf("sys_i18n en-US 行数应为 118（79 enums + 25 shell + 13 site.component + 1 languages），实际 %d", enCount)
 	}
 
 	// 4-B) 访客面组件词条（060）：13 个 key，zh-CN/en-US 各一行；中英必须都有（不许缺翻译）。
-	if got := countRows(t, db, "sys_i18n", "item_key LIKE 'site.component.%' AND lang = ?", "zh-CN"); got != 13 {
-		t.Fatalf("site.component.* zh-CN 应为 13 行，实际 %d", got)
+	if got := countRows(t, db, "sys_i18n", "item_key LIKE 'site.component.%' AND lang = ?", "zh-CN"); got != 14 {
+		t.Fatalf("site.component.* zh-CN 应为 14 行（060 的 13 + 065 的 1），实际 %d", got)
 	}
-	if got := countRows(t, db, "sys_i18n", "item_key LIKE 'site.component.%' AND lang = ?", "en-US"); got != 13 {
-		t.Fatalf("site.component.* en-US 应为 13 行，实际 %d", got)
+	if got := countRows(t, db, "sys_i18n", "item_key LIKE 'site.component.%' AND lang = ?", "en-US"); got != 14 {
+		t.Fatalf("site.component.* en-US 应为 14 行（060 的 13 + 065 的 1），实际 %d", got)
+	}
+	// 065 语言切换器容器标签：中英各一行且取值不同。
+	if got := countRows(t, db, "sys_i18n", "item_key = 'site.component.languages.label' AND lang = ?", "zh-CN"); got != 1 {
+		t.Fatalf("site.component.languages.label zh-CN 应为 1 行，实际 %d", got)
+	}
+	if got := countRows(t, db, "sys_i18n", "item_key = 'site.component.languages.label' AND lang = ?", "en-US"); got != 1 {
+		t.Fatalf("site.component.languages.label en-US 应为 1 行，实际 %d", got)
 	}
 	// 逐条断言：中英取值不同（文案确实被翻译，不是复制中文）+ 占位符仅 %s。
 	siteKeys := []string{

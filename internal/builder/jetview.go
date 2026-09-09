@@ -33,6 +33,7 @@ import (
 	iconPkg "go_wp/internal/builder/components/icon"
 	imagePkg "go_wp/internal/builder/components/image"
 	infoboxPkg "go_wp/internal/builder/components/infobox"
+	languagesPkg "go_wp/internal/builder/components/languages"
 	listPkg "go_wp/internal/builder/components/list"
 	marqueePkg "go_wp/internal/builder/components/marquee"
 	navPkg "go_wp/internal/builder/components/nav"
@@ -111,6 +112,8 @@ func nodeViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeV
 		return sliderViewOf(node, topLevel, ctx)
 	case navPkg.Type:
 		return navViewOf(node, topLevel, ctx)
+	case languagesPkg.Type:
+		return languagesViewOf(node, topLevel, ctx)
 	case tabsPkg.Type:
 		return tabsViewOf(node, topLevel, ctx)
 	case accordionPkg.Type:
@@ -610,7 +613,34 @@ func sliderViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nod
 }
 
 // tabsViewOf 转换 tabs 节点（对应 Component.Render 流程，children 为各面板）。
-// navViewOf 转换导航菜单节点（内容型，无 children；toggle id 依赖节点 ID）。
+// languagesViewOf 转换语言切换器节点（原子，无 children）。
+//
+// 与 navViewOf 同形而非 atomViewOf：BuildView 需要构建期注入的 ctx.Locales
+// （各语言链接与当前语言标记），不是只依赖 props 的纯函数。
+func languagesViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeView, error) {
+	var p languagesPkg.Props
+	if len(node.Props) > 0 {
+		if err := json.Unmarshal(node.Props, &p); err != nil {
+			return nil, fmt.Errorf("节点 %s props 反序列化失败: %w", node.ID, err)
+		}
+	}
+	classes, customID := advancedClasses(node, &p, ctx)
+	languagesPkg.CompileCSS(node.ID, &p, ctx.CSS)
+	view := languagesPkg.BuildView(node, &p, ctx)
+	applyI18n(&view, ctx)
+	return &nodeView{
+		Type:     languagesPkg.Type,
+		Template: "languages",
+		NodeID:   node.ID,
+		Classes:  strings.Join(classes, " "),
+		CustomID: customID,
+		TopLevel: topLevel,
+		Props:    p,
+		V:        view,
+	}, nil
+}
+
+// navViewOf 转换导航菜单组件（内容型，无 children；toggle id 依赖节点 ID）。
 func navViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeView, error) {
 	var p navPkg.Props
 	if len(node.Props) > 0 {

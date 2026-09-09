@@ -27,6 +27,13 @@ type siteSettingsData struct {
 	SiteName     string // 站点显示名
 	SiteDesc     string // 站点简介
 	ContactEmail string // 联系邮箱
+
+	// Locales 站点语言清单编辑行（多语言 P3，project_locales）。
+	Locales []localeRow
+	// LocaleError 语言清单校验失败提示（空=无错误）。
+	LocaleError string
+	// LocaleSaved 语言清单刚保存成功（?locales_saved=1，PRG 回跳提示）。
+	LocaleSaved bool
 }
 
 // templateMap 转 Jet 模板键 map（layout 以小写 title/menu 取值）。
@@ -40,31 +47,37 @@ func (d *siteSettingsData) templateMap() gin.H {
 		"SiteName":     d.SiteName,
 		"SiteDesc":     d.SiteDesc,
 		"ContactEmail": d.ContactEmail,
+		"Locales":      d.Locales,
+		"LocaleError":  d.LocaleError,
+		"LocaleSaved":  d.LocaleSaved,
 	}
 }
 
 // SiteSettings 站点设置页（GET /admin/settings）。
 func (h *Handle) SiteSettings(c *gin.Context) {
+	data := h.buildSiteSettingsData(c, strings.TrimSpace(c.Query("project")))
+	data.LocaleSaved = strings.TrimSpace(c.Query("locales_saved")) == "1"
+	c.HTML(http.StatusOK, "admin/settings", withCSRF(c, data.templateMap()))
+}
+
+// buildSiteSettingsData 组装站点设置页数据（工程列表 + 选中工程的基础信息与语言清单）。
+// selected 为空时取第一个工程；工程不存在时只渲染工程选择器。
+func (h *Handle) buildSiteSettingsData(c *gin.Context, selected string) *siteSettingsData {
+	data := &siteSettingsData{Title: dashboardenums.MsgSiteSettingsTitle, Menu: "settings"}
 	projects, err := h.projects.List(c.Request.Context())
 	if err != nil {
 		response.ErrorWithMessage(c, http.StatusInternalServerError, dashboardenums.MsgInternalError)
-		return
+		return data
 	}
-	data := &siteSettingsData{
-		Title:    dashboardenums.MsgSiteSettingsTitle,
-		Menu:     "settings",
-		Projects: projects,
-	}
-	// 工程切换：优先 URL 指定，否则默认第一个工程。
-	if sel := strings.TrimSpace(c.Query("project")); sel != "" {
-		data.Selected = sel
-	} else if len(projects) > 0 {
+	data.Projects = projects
+	data.Selected = selected
+	if data.Selected == "" && len(projects) > 0 {
 		data.Selected = projects[0].ID
 	}
 	if data.Selected != "" {
 		h.fillProjectSettings(c, data)
 	}
-	c.HTML(http.StatusOK, "admin/settings", withCSRF(c, data.templateMap()))
+	return data
 }
 
 // fillProjectSettings 填入选中工程的站点信息（名称 + settings 基础字段）。
@@ -80,6 +93,8 @@ func (h *Handle) fillProjectSettings(c *gin.Context, data *siteSettingsData) {
 	data.SiteName = fields.SiteName
 	data.SiteDesc = fields.SiteDesc
 	data.ContactEmail = fields.ContactEmail
+	// 语言清单（project_locales）：站点「有哪几种语言」的唯一真源，与构建/路由同源。
+	data.Locales = h.localeRowsOf(c, data.Selected)
 }
 
 // SaveSiteSettings 保存站点设置（POST /admin/settings/save）。

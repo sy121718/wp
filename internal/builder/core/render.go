@@ -48,6 +48,22 @@ type RenderContext struct {
 	// 默认 i18n.TranslateFunc(Lang)；nil 时组件直接使用 fallback 原文。
 	// 组件包不依赖 pkg/i18n，只经此函数取词（core.I18nAware 契约）。
 	Translate func(key, fallback string) string
+	// Locales 站点语言切换器条目（构建期注入，core.languages 消费）。
+	// 由装配层按「本页逻辑路径 + 站点启用语言」逐语言算出（与产物 head 的 hreflang
+	// 同一份计算）；空或少于两条时切换器整块不渲染（单语言站点字节不变）。
+	Locales []LocaleLink
+}
+
+// LocaleLink 语言切换器条目（构建期数据，core.languages 消费）。
+//
+// 只携带「数据」不含「展示」：展示名由组件按语言自称表填充，便于换展示形态。
+type LocaleLink struct {
+	// Lang 语言码（如 zh-CN）：产物里同时作为 hreflang 与 lang 属性。
+	Lang string
+	// Href 该语言的对应页面地址（站点内路径或绝对 URL）。
+	Href string
+	// Current 是否本次构建的目标语言（当前项渲染为不可点的 <span aria-current>）。
+	Current bool
 }
 
 // Text 返回 key 在当前语言下的组件文案。

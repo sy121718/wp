@@ -29,6 +29,7 @@ export const paletteItems = [
     { type: 'core.social_buttons', label: '社交图标', hint: '社交平台图标组', props: { color: 'brand', size: '40px', shape: 'circle', items: [{ platform: 'facebook', url: 'https://facebook.com' }, { platform: 'x', url: 'https://x.com' }, { platform: 'instagram', url: 'https://instagram.com' }] } },
     { type: 'core.video', label: '视频', hint: '外链嵌入/本地 MP4', props: { url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ', controls: true, ratio: '16:9' } },
     { type: 'core.nav', label: '导航菜单', hint: '站点菜单（支持二级）', props: { items: [{ label: '首页', url: '/' }, { label: '产品', url: '/shop', children: [{ label: '一次性', url: '/shop/disposable' }, { label: '换弹', url: '/shop/pods' }] }, { label: '关于我们', url: '/about' }], orientation: 'horizontal', gap: '24px', color: '#3B3C40', hoverColor: '#D93425', itemPadding: '8px 0', mobileCollapse: true } },
+    { type: 'core.languages', label: '语言切换', hint: '多语言站点切换链接', props: { orientation: 'horizontal', gap: '16px' } },
     { type: 'core.tabs', label: '页签', hint: '多面板切换', props: { tabs: [{ label: '页签一' }] } },
     { type: 'core.accordion', label: '手风琴', hint: '折叠展开', props: { items: [{ title: '折叠项一', open: true }] } },
     { type: 'core.marquee', label: '跑马灯', hint: '无缝滚动内容', props: { speed: 12, direction: 'left', gap: '24px' } },
@@ -48,7 +49,7 @@ export const paletteItems = [
 /** 组件库分组：基础组件大分类平铺（细分类留给进阶组件，当前无进阶内容）；
  *  「区块」概念归全局块（页眉/页脚/区块）。 */
 export const paletteGroups = [
-    { key: 'basic', title: '基础组件', types: ['core.container', 'core.heading', 'core.text', 'core.button', 'core.image', 'core.gallery', 'core.divider', 'core.spacer', 'core.slider', 'core.list', 'core.infobox', 'core.social_buttons', 'core.video', 'core.nav', 'core.tabs', 'core.accordion', 'core.marquee', 'core.counter', 'core.table', 'core.card', 'core.faq', 'core.quote', 'core.countdown', 'core.icon', 'core.badge', 'core.progress', 'core.rating', 'core.form'] }
+    { key: 'basic', title: '基础组件', types: ['core.container', 'core.heading', 'core.text', 'core.button', 'core.image', 'core.gallery', 'core.divider', 'core.spacer', 'core.slider', 'core.list', 'core.infobox', 'core.social_buttons', 'core.video', 'core.nav', 'core.languages', 'core.tabs', 'core.accordion', 'core.marquee', 'core.counter', 'core.table', 'core.card', 'core.faq', 'core.quote', 'core.countdown', 'core.icon', 'core.badge', 'core.progress', 'core.rating', 'core.form'] }
 ];
 
 /**

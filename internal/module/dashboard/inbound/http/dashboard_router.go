@@ -110,6 +110,9 @@ func SetupDashboardRoutes(router *gin.Engine,
 	// 站点设置（基础站点信息：站点名/简介/联系邮箱，走 project SiteSettings）。
 	adminPages.GET("/settings", handle.SiteSettings)
 	adminPages.POST("/settings/save", builtin.CasbinMiddlewareForPath("/api/project/update"), handle.SaveSiteSettings)
+	// 站点语言清单（多语言 P3）：行片段走 HTMX 服务端渲染，保存复用 project 更新权限点。
+	adminPages.POST("/settings/locales/rows", builtin.CasbinMiddlewareForPath("/api/project/update"), handle.LocaleRowsFragment)
+	adminPages.POST("/settings/locales/save", builtin.CasbinMiddlewareForPath("/api/project/update"), handle.SaveSiteLocales)
 	// 插件管理（列表/上传安装/启停/卸载，docs/06-plugin-system.md）。
 	adminPages.GET("/plugins", handle.PluginsPage)
 	adminPages.POST("/plugins/install", builtin.CasbinMiddlewareForPath("/api/plugin/install"), handle.PluginsInstall)

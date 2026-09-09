@@ -45,6 +45,52 @@
             <button type="submit" class="btn btn-primary">保存设置</button>
         </form>
 
+        {* 语言分组（多语言 P3）：站点语言清单真源 project_locales，经 project 契约读写。
+           行片段走 HTMX 服务端渲染（增/删一行即时回显），整表提交落库。 *}
+        <section class="pages-card mt-md">
+            <h2>语言</h2>
+            {{if .LocaleError}}
+            <p class="pages-empty" role="alert">{{ .["t"](.LocaleError, "语言清单不合法：至少保留一种语言；至多一个默认语言且必须启用；语言码只能包含字母、数字与连字符") }}</p>
+            {{end}}
+            {{if .LocaleSaved}}
+            <p class="pages-empty" role="status">语言清单已保存。</p>
+            {{end}}
+            <form id="locale-form" method="post" action="/admin/settings/locales/save" class="pages-form">
+                <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
+                <input type="hidden" name="projectId" value="{{.Selected}}">
+                <div id="locale-rows">
+                    {{include "partials/locale_rows.html"}}
+                </div>
+                <div class="locale-add">
+                    <input type="text" name="newLang" maxlength="35" list="wp-locale-options" placeholder="新增语言码，如 ja / fr-CA">
+                    <button type="button" class="btn btn-sm" hx-post="/admin/settings/locales/rows" hx-vals='{"action":"add"}' hx-include="#locale-form" hx-target="#locale-rows" hx-swap="innerHTML">添加语言</button>
+                </div>
+                <datalist id="wp-locale-options">
+                    <option value="zh-CN">简体中文</option>
+                    <option value="zh-TW">繁體中文</option>
+                    <option value="en-US">English (US)</option>
+                    <option value="en-GB">English (UK)</option>
+                    <option value="ja">日本語</option>
+                    <option value="ko">한국어</option>
+                    <option value="fr">Français</option>
+                    <option value="de">Deutsch</option>
+                    <option value="es">Español</option>
+                    <option value="pt-BR">Português (BR)</option>
+                    <option value="ru">Русский</option>
+                    <option value="ar">العربية</option>
+                </datalist>
+                <p class="pages-empty">
+                    规则：至少保留一种语言；至多一个默认语言，且默认语言必须处于启用状态；语言码只允许字母、数字与连字符。
+                </p>
+                <p class="pages-empty">
+                    注意：<strong>禁用某语言后，该语言已激活的站点路由不会自动清理</strong>（需手动取消激活或删除路由占用）；
+                    语言前缀由配置 <code>i18n.site_lang_prefix</code> 控制，关闭时各语言映射到同一路径（同一页多语言无法同时在线）。
+                    改动语言清单后，已发布页面需要重新构建/发布才会更新产物里的语言切换链接与 hreflang。
+                </p>
+                <button type="submit" class="btn btn-primary">保存语言清单</button>
+            </form>
+        </section>
+
         <section class="pages-card mt-md">
             <h2>待实现能力</h2>
             <p class="pages-empty">
@@ -52,7 +98,6 @@
             </p>
             <ul class="pages-list">
                 <li>站点 SEO 全局设置（关键词/描述/og 标签）</li>
-                <li>站点语言与地区</li>
                 <li>统计与分析（自定义统计脚本注入）</li>
                 <li>验证码/安全策略</li>
                 <li>备案信息与页脚附加文案</li>
