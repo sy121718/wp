@@ -14,7 +14,8 @@ graphify-out/
 /app
 /builder
 coverage.out
-/tmp/            # air 热重载的临时二进制与 build-errors.log
+# air 热重载的临时二进制与 build-errors.log
+/tmp/
 
 # 运行时数据和测试生成物
 public/logs/
@@ -39,3 +40,6 @@ public/docs/*.visual-check.*
 # 本地备份与临时工具
 .backup/
 cmd_tmp_login/
+
+# 数据库备份与原型稿（本地参考，不入库）
+public/backup/
