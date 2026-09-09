@@ -99,10 +99,13 @@ func (s *Service) Build(ctx context.Context, req *pagedto.BuildReq) (res *pagedt
 		return nil, mapPublishError(err)
 	}
 
-	artifactID, err := s.ensureArtifactRow(ctx, page, hash, page.DraftDocument, lang)
+	artifactID, deps, err := s.ensureArtifactRow(ctx, page, hash, page.DraftDocument, lang)
 	if err != nil {
 		return nil, err
 	}
+	// 依赖记录落库（docs/03-pipeline.md §8.2）：本次产物声明的依赖集合，
+	// 供依赖源变更时按 (kind,key) 反查受影响页面（PIPE-3 精确 fan-out）。
+	s.persistDependencies(ctx, page.ID, artifactID, deps)
 	now := time.Now().UTC()
 	// 暂存指针按语言记录（多语言 P3）：Build(en-US) 不再覆盖 Build(zh-CN) 的暂存指针，
 	// 「先构建两种语言、再逐个发布」由此可用；pages 的单值列仍是最近构建语言的镜像。
@@ -141,6 +144,8 @@ func (s *Service) Publish(ctx context.Context, req *pagedto.PublishReq) (res *pa
 	if stagedArt.ArtifactKey == "" || stagedArt.PageID != page.ID {
 		return nil, ErrNoStagedArtifact
 	}
+	// 活跃产物的依赖记录必须齐备（fan-out 反查的前提）：发布时按 Manifest 补写一次。
+	s.persistDependenciesFromManifest(ctx, page.ID, stagedArt.ID, stagedArt.Manifest)
 
 	// FS 激活前预检：目标路径被其他页面/展示实例占用时提前失败（H7），
 	// 避免内核先把 FS 覆盖成本页产物、DB 路由写入才报错的状态分裂。
@@ -386,11 +391,14 @@ func (s *Service) UpdateURL(ctx context.Context, req *pagedto.UpdateURLReq) (res
 	// 必须写产物行主键而非内容 hash（生产 DDL 下写 hash 必然 22P02 失败）。
 	// 归档源文档用内核构建输入（st.DocumentJSON，即活动产物冻结源文档），
 	// 与 restoreKernelForUpdate 的编译输入一致（H4）。
-	artifactRowID, err := s.ensureArtifactRow(ctx, page, activeHashOf(st), st.DocumentJSON, lang)
+	artifactRowID, deps, err := s.ensureArtifactRow(ctx, page, activeHashOf(st), st.DocumentJSON, lang)
 	if err != nil {
 		logger.Scene("page").With("pageId", page.ID).With("hash", activeHashOf(st)).Error(err, "URL 修改后产物归档失败")
 		return nil, err
 	}
+	// 归档即补依赖记录：URL 变更不改变依赖集合，但产物行可能新建，
+	// 依赖表必须同步（否则该产物的精确失效查询会漏掉它）。
+	s.persistDependencies(ctx, page.ID, artifactRowID, deps)
 
 	now := time.Now().UTC()
 	if err = s.model.MoveDraftPath(ctx, page.ID, newPath, now); err != nil {
@@ -443,7 +451,6 @@ func (s *Service) UpdateURL(ctx context.Context, req *pagedto.UpdateURLReq) (res
 		PublishedAt: now.Format(time.RFC3339),
 	}, nil
 }
-
 
 // stagedArtifactOf 取该语言的暂存产物（page_stagings 为真源）。
 //
@@ -556,19 +563,21 @@ func (s *Service) restoreKernelForUpdate(ctx context.Context, page *pagemodel.Pa
 //
 // lang 为本次构建语言：产物行唯一键是 (page_id, version, lang)，同页多语言各占一行；
 // 预检查询按 hash（hash 覆盖 Manifest.lang，必同语言）即可，写入必须带 lang。
-func (s *Service) ensureArtifactRow(ctx context.Context, page *pagemodel.PageEntity, hash string, sourceDocument json.RawMessage, lang string) (string, error) {
+// 返回值第二项是本次产物声明的构建期依赖（Manifest.dependencies）——
+// 无论产物行是新建还是已存在都返回，调用方据此写 page_dependencies。
+func (s *Service) ensureArtifactRow(ctx context.Context, page *pagemodel.PageEntity, hash string, sourceDocument json.RawMessage, lang string) (string, []pipeline.Dependency, error) {
 	existing, err := s.artifacts.Detail(ctx, &artifactcontract.DetailReq{PageID: page.ID, Hash: hash})
-	if err == nil {
-		return existing.ID, nil
-	}
 	loc := pipeline.ArtifactLocator(hash)
 	art, err := s.store.GetArtifact(loc)
 	if err != nil {
-		return "", err
+		return "", nil, err
+	}
+	if existing != nil && existing.ID != "" {
+		return existing.ID, art.Manifest.Dependencies, nil
 	}
 	manifestJSON, err := json.Marshal(art.Manifest)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	recorded, err := s.artifacts.EnsureRecord(ctx, &artifactcontract.RecordReq{
 		ArtifactID:       uuid.NewString(),
@@ -588,9 +597,9 @@ func (s *Service) ensureArtifactRow(ctx context.Context, page *pagemodel.PageEnt
 		CreatedBy:        systemCreator,
 	})
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
-	return recorded.ID, nil
+	return recorded.ID, art.Manifest.Dependencies, nil
 }
 
 // ensureRedirectRoute 把「本语言的旧发布路径」占用标记为 redirect 并落盘重定向产物。

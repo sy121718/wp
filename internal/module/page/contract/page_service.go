@@ -79,6 +79,13 @@ type PageService interface {
 	// MarkStaleForI18n 把全部页面标记为待重建（界面文案词条变更后调用，
 	// 与 Manifest 的 i18n 依赖条目配套，docs/06-D §10.4）。
 	MarkStaleForI18n(ctx context.Context) error
+	// MarkStaleByDependency 按依赖源 (kind,key) 精确标记受影响页面待重建，
+	// 返回受影响的页面 ID（PIPE-3 fan-out：只命中活跃/暂存产物确实声明了该依赖
+	// 的页面，与上面的全站标记严格区分）。
+	MarkStaleByDependency(ctx context.Context, kind, key string) (ids []string, err error)
+	// RebuildStale 重建指定页面（依赖失效后的自动重建端口，PIPE-3）：
+	// 按站点启用语言逐个构建（只产生 staged Artifact），此前已发布的语言自动发布。
+	RebuildStale(ctx context.Context, ids []string) error
 	// CountBlockReference 统计引用该块的未删除页面数（globalref / structure 自选绑定），
 	// 供 block 模块删除或切换 global→template 前的引用拦截（docs/02-D §9）。
 	CountBlockReference(ctx context.Context, blockID string) (int64, error)

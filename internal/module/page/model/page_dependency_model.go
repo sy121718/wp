@@ -1,0 +1,104 @@
+package pagemodel
+
+// page_dependency_model.go — page_dependencies 表访问（依赖记录投影，docs/03-pipeline.md §8.2）。
+//
+// 定位：Artifact Manifest 是历史事实，本表是按 Artifact 可重建的**查询投影**。
+// 构建成功后写入，失效查询按 (dependency_kind, dependency_key) 反查受影响的页面。
+//
+// 反查为什么用「active OR staged」而不是仅 active：
+// docs/03-pipeline.md §8.2 只连 pages.active_artifact_id。但未发布的页面
+// （只有 staged 产物）在内容变更后不会被标记，其暂存产物会静默过期，
+// 一旦发布就上线旧内容。本实现把「当前活跃产物」与「当前暂存产物」两个指针
+// 都纳入——两者都只指向一个产物，不含历史噪音，仍是精确集合。
+
+import (
+	"context"
+	"time"
+
+	"gorm.io/gorm"
+)
+
+// tableNamePageDependencies page_dependencies 表名。
+const tableNamePageDependencies = "page_dependencies"
+
+// DependencyEntity page_dependencies 行（产物声明的构建期依赖）。
+type DependencyEntity struct {
+	PageID         string    `gorm:"column:page_id;type:uuid;primaryKey"`
+	ArtifactID     string    `gorm:"column:artifact_id;type:uuid;primaryKey"`
+	DependencyKind string    `gorm:"column:dependency_kind;primaryKey"`
+	DependencyKey  string    `gorm:"column:dependency_key;primaryKey"`
+	Revision       *string   `gorm:"column:revision"`
+	LastChecked    time.Time `gorm:"column:last_checked;not null"`
+}
+
+// TableName 表名。
+func (DependencyEntity) TableName() string { return tableNamePageDependencies }
+
+// DependencyDB 绑定依赖表。
+func (m *Model) DependencyDB(ctx context.Context) *gorm.DB {
+	return m.db.WithContext(ctx).Model(&DependencyEntity{})
+}
+
+// ReplaceDependencies 全量替换某产物的依赖记录（同一事务内 delete + insert）。
+//
+// 同一产物重复构建（同 hash 原地替换，见 artifact 模块）时依赖集合可能变化，
+// 必须整体替换而非累加，否则会残留「旧文档声明过、新产物已不再依赖」的假依赖，
+// 造成内容变更时的过度标记。
+func (m *Model) ReplaceDependencies(ctx context.Context, artifactID string, rows []DependencyEntity) (err error) {
+	return m.Transaction(ctx, func(tx *gorm.DB) error {
+		if derr := tx.Where("artifact_id = ?", artifactID).Delete(&DependencyEntity{}).Error; derr != nil {
+			return derr
+		}
+		if len(rows) == 0 {
+			return nil
+		}
+		return tx.CreateInBatches(rows, 200).Error
+	})
+}
+
+// ListDependencies 读取某产物的全部依赖记录（测试与诊断用，按 kind,key 排序）。
+func (m *Model) ListDependencies(ctx context.Context, artifactID string) (list []DependencyEntity, err error) {
+	err = m.DependencyDB(ctx).Where("artifact_id = ?", artifactID).
+		Order("dependency_kind, dependency_key").Find(&list).Error
+	return list, err
+}
+
+// MarkStaleByDependency 按依赖源 (kind,key) 精确标记受影响页面待重建，
+// 返回受影响的页面 ID（去重、升序）。
+//
+// 命中条件：该页面的**活跃或暂存**产物在依赖表里声明了这条依赖。
+// 语义与旧的全站标记（MarkStaleFor*）严格区分：无关页面不会被触碰，
+// 这是 PIPE-3「精确 fan-out」的核心——调用方可用返回的 ID 集合直接断言影响面。
+//
+// 幂等：已经 stale 的页面重复标记只更新 updated_at，返回值仍是完整受影响集合
+// （自动重建需要「谁受影响」而不是「谁刚变成 stale」）。
+func (m *Model) MarkStaleByDependency(ctx context.Context, kind, key string, at time.Time) (ids []string, err error) {
+	if kind == "" || key == "" {
+		return nil, nil
+	}
+	err = m.db.WithContext(ctx).Raw(`
+		WITH affected AS (
+			SELECT DISTINCT d.page_id AS page_id
+			FROM page_dependencies d
+			JOIN pages p ON p.id = d.page_id
+			WHERE d.dependency_kind = ?
+			  AND d.dependency_key = ?
+			  AND p.deleted_at IS NULL
+			  AND d.artifact_id IN (p.active_artifact_id, p.staged_artifact_id)
+		)
+		UPDATE pages SET stale = true, updated_at = ?
+		WHERE deleted_at IS NULL AND id IN (SELECT page_id FROM affected)
+		RETURNING id`, kind, key, at).Scan(&ids).Error
+	if err != nil {
+		return nil, err
+	}
+	return ids, nil
+}
+
+// CountDependenciesByKind 统计某页面当前活跃产物声明的依赖条数（诊断/测试用）。
+func (m *Model) CountDependenciesByKind(ctx context.Context, pageID, kind string) (n int64, err error) {
+	err = m.DependencyDB(ctx).
+		Where("page_id = ? AND dependency_kind = ?", pageID, kind).
+		Count(&n).Error
+	return n, err
+}

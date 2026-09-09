@@ -138,6 +138,9 @@ var dropObsoleteDesignTablesSQL string
 //go:embed 070_sys_status_index_audit.sql
 var sysStatusIndexAuditSQL string
 
+//go:embed 071_dependency_fanout.sql
+var dependencyFanoutSQL string
+
 func init() {
 	register(Migration{
 		Version:   "001-init-schema",
@@ -533,5 +536,36 @@ func init() {
 			"AND indexname IN ('idx_att_file_path_alive', 'idx_mva_file_path', 'idx_att_cat_time_alive') " +
 			"AND tablename IN (?, 'sys_media_variant')",
 		SQL: sysStatusIndexAuditSQL,
+	})
+
+	// 071：依赖 fan-out 的反查索引 + dependency_kind 约束扩展（PIPE-3）。
+	// 两表此前无任何 Go 侧写入路径，失效标记退化为全站 UPDATE；PIPE-3 起按
+	// (dependency_kind, dependency_key) 反查受影响的具体产物/页面。
+	//   ① idx_page_deps_lookup / idx_pres_deps_lookup —— 主键前导列是 artifact_id，
+	//      反查方向（kind+key → artifact）无索引可用，必然全表扫。
+	//   ② CHECK 约束补 'i18n' / 'block' 两个实现中真实存在的构建期依赖类型
+	//      （Manifest 已在用 i18n；块内联进产物）。
+	// 默认「表存在即跳过」对这两张早已存在的表必然误跳过，故按索引名 + 约束定义判定：
+	// 2 个索引全部存在且 2 个约束都已含 'i18n' 才算完成（部分完成时重跑，语句幂等）。
+	// 注意：migrator.apply 固定以 TableName 作为唯一 ? 参数调用 CheckSQL。
+	register(Migration{
+		Version:   "071-dependency-fanout",
+		TableName: "page_dependencies",
+		// 约束判定先用 MATERIALIZED CTE 锁定本迁移自己的约束 OID 再 deparse：
+		// pg_get_constraintdef 会打开约束所属的关系，若在同一查询里对整个
+		// pg_constraint 调用它，会与「其它测试包并发 DROP SCHEMA」竞争（实测
+		// 报 "could not open relation with OID ..."）。物化出目标 OID 后，
+		// 函数只对本迁移的两张表求值，不再触碰别人的关系。
+		CheckSQL: "WITH target_constraints AS MATERIALIZED (" +
+			"SELECT oid FROM pg_constraint " +
+			"WHERE conrelid IN ('page_dependencies'::regclass, 'presentation_dependencies'::regclass) " +
+			"AND conname IN ('page_dependencies_dependency_kind_check', 'presentation_dependencies_dependency_kind_check')) " +
+			"SELECT CASE WHEN (" +
+			"SELECT COUNT(*) FROM pg_indexes WHERE schemaname = current_schema() " +
+			"AND indexname IN ('idx_page_deps_lookup', 'idx_pres_deps_lookup') " +
+			"AND tablename IN (?, 'presentation_dependencies')) = 2 " +
+			"AND (SELECT COUNT(*) FROM pg_constraint pc JOIN target_constraints tc ON tc.oid = pc.oid " +
+			"WHERE pg_get_constraintdef(pc.oid) LIKE '%i18n%') = 2 THEN 1 ELSE 0 END",
+		SQL: dependencyFanoutSQL,
 	})
 }

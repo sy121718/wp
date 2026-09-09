@@ -240,10 +240,21 @@ func (s *Service) MarkStaleForI18n(ctx context.Context) error {
 //
 // 为什么「有候选即登记」而非「有缺失才登记」：命中译文的字段同样依赖 sys_translation，
 // 改译文/补齐译文都会改变产物字节，两者都必须触发重建。
+//
+// PIPE-3 起追加「可精确表达」的依赖源（pageDependencyKeys）：块引用、页面绑定的
+// 内容实体、文档内集合源。它们写入 Manifest 后由构建路径落库（page_dependencies），
+// 依赖源变更时即可按 (kind,key) 反查受影响页面——不再退化为全站标记。
+// 页面查询失败只降级为「不登记这些依赖」，不阻断构建（i18n 两条仍登记）。
 func (s *Service) buildDependencies(ctx context.Context, in pipeline.BuildInput) []pipeline.Dependency {
 	deps := []pipeline.Dependency{pipeline.I18NDependency(i18n.Revision())}
 	if s.pageUsesContentTranslation(ctx, in) {
 		deps = append(deps, pipeline.I18NContentDependency(i18n.ContentRevision()))
+	}
+	if page, err := s.model.GetByID(ctx, in.PageID); err == nil {
+		deps = append(deps, s.pageDependencyKeys(ctx, page)...)
+	} else {
+		logger.Scene("dependency").With("page_id", in.PageID).
+			Warn("页面依赖源登记跳过：页面记录读取失败（已降级，不阻断构建）")
 	}
 	return deps
 }

@@ -59,6 +59,11 @@ func newPageService(t *testing.T) (*gorm.DB, pagecontract.PageService, *projects
 		`CREATE TABLE page_publications (page_id UUID NOT NULL, lang TEXT NOT NULL, active_path TEXT NOT NULL, artifact_id UUID, artifact_hash TEXT NOT NULL DEFAULT '', published_at TIMESTAMPTZ NOT NULL, updated_at TIMESTAMPTZ NOT NULL, PRIMARY KEY(page_id, lang))`,
 		`CREATE TABLE page_stagings (page_id UUID NOT NULL, lang TEXT NOT NULL, artifact_id UUID NOT NULL, artifact_hash TEXT NOT NULL DEFAULT '', draft_version BIGINT NOT NULL DEFAULT 0, updated_at TIMESTAMPTZ NOT NULL, PRIMARY KEY(page_id, lang))`,
 		`CREATE TABLE project_locales (project_id UUID NOT NULL, lang TEXT NOT NULL, sort_order INTEGER NOT NULL DEFAULT 0, is_default BOOLEAN NOT NULL DEFAULT false, enabled BOOLEAN NOT NULL DEFAULT true, created_at TIMESTAMPTZ NOT NULL, updated_at TIMESTAMPTZ NOT NULL, PRIMARY KEY(project_id, lang))`,
+		// 依赖记录投影（迁移 071 的形状：含 i18n / block 两种 kind，反查索引）。
+		`CREATE TABLE page_dependencies (page_id UUID NOT NULL, artifact_id UUID NOT NULL, dependency_kind TEXT NOT NULL CHECK (dependency_kind IN ('direct_content', 'content_collection', 'content_template', 'menu', 'media', 'global_component', 'site_setting', 'runtime', 'i18n', 'block')), dependency_key TEXT NOT NULL, revision TEXT, last_checked TIMESTAMPTZ NOT NULL DEFAULT now(), PRIMARY KEY (artifact_id, dependency_kind, dependency_key))`,
+		`CREATE INDEX idx_page_deps_lookup ON page_dependencies (dependency_kind, dependency_key)`,
+		// CMS 内容实体（PIPE-3 自动发布链路测试需要真实 content service）。
+		`CREATE TABLE contents (id UUID PRIMARY KEY, entity_type TEXT NOT NULL, slug TEXT NOT NULL, revision BIGINT NOT NULL DEFAULT 1, data JSONB NOT NULL DEFAULT '{}'::jsonb, created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now(), UNIQUE(entity_type, slug))`,
 	} {
 		if err := db.Exec(statement).Error; err != nil {
 			t.Fatalf("创建测试表失败: %v", err)

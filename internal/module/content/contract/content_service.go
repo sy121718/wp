@@ -67,4 +67,19 @@ type ContentService interface {
 	// ResolverFor 返回绑定单个实体的内容解析器（构建期注入：presentation
 	// 模块构建 DocumentSnapshot 时按 entityType+entityID 取实体解析 Binding）。
 	ResolverFor(ctx context.Context, entityType, entityID string) (r core.ContentResolver, err error)
+	// SetDependencyInvalidator 注入依赖失效扇出端口（编排层装配，可空）。
+	// 内容实体变更后由本模块推导依赖源键（实体自身 + 所属集合）并交给端口，
+	// 端口负责按依赖表反查受影响产物（PIPE-3）。
+	SetDependencyInvalidator(inv DependencyInvalidator)
+}
+
+// DependencyInvalidator 依赖失效扇出入口（由编排层注入实现，通常是 pipeline.Fanout）。
+//
+// 契约刻意保持极简（kind + key）：content 模块只负责声明「我是哪个依赖源」，
+// 具体反查与重建由发布来源模块完成，避免 content 反向依赖 page/presentation。
+// 实现必须容错——失效失败不能影响已经成功的内容写入。
+type DependencyInvalidator interface {
+	// Invalidate 标记依赖源 (kind,key) 变更；kind/key 语义见
+	// docs/03-pipeline.md §8.1 与 pipeline.DepKind* 常量。
+	Invalidate(ctx context.Context, kind, key string)
 }

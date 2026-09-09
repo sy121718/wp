@@ -147,6 +147,16 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 	collectionResolver, _ := contentSvc.(core.CollectionResolver)
 	// navigationSvc 注入 page 装配：core.nav 绑定菜单位置时构建期解析菜单项。
 	pageService := pagehttp.SetupPageRoutes(authorizedAPI, db, artifactSvc, publicationSvc, projectService, blockSvc, pluginSvc, collectionResolver, navigationSvc, mediaSvc)
+	// 依赖 fan-out（PIPE-3，docs/03-pipeline.md §8.2）：内容实体变更 → 按依赖表
+	// 反查受影响产物 → 精确标记 stale（不再是全站标记）→ 自动重建。
+	//
+	// 装配顺序要求：page 服务必须先装配完成（作为失效目标与重建实现），
+	// 再由内容服务持有扇出端口；presentation 侧待其 DB 持久化对齐后接入同一 Fanout。
+	fanout := pipeline.NewFanout()
+	fanout.Register(pipeline.SourceTypePage, pageService)
+	fanout.SetRebuilder(pipeline.SourceTypePage, pageService)
+	contentSvc.SetDependencyInvalidator(fanout)
+
 	// 导航来源实体解析（page/article/product/category/block → 标题 + URL）：
 	// 依赖 page/content/presentation/block 契约，故在它们全部装配完成后注入。
 	navigationSvc.SetSourceResolver(navsource.New(pageService, contentSvc, presentationSvc, blockSvc))

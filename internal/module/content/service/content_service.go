@@ -12,6 +12,7 @@ import (
 	contentdto "go_wp/internal/module/content/dto"
 	contentenums "go_wp/internal/module/content/enums"
 	contentmodel "go_wp/internal/module/content/model"
+	"go_wp/internal/pipeline"
 	"go_wp/pkg/logger"
 
 	"github.com/google/uuid"
@@ -21,6 +22,35 @@ import (
 // Service content 模块业务实现。
 type Service struct {
 	m *contentmodel.Model
+	// invalidator 依赖失效扇出端口（PIPE-3，编排层注入，可空）。
+	// 为空时内容写入行为与本轮之前完全一致（不触发任何失效）。
+	invalidator contentcontract.DependencyInvalidator
+}
+
+// SetDependencyInvalidator 注入依赖失效扇出端口（编排层装配；可空）。
+func (s *Service) SetDependencyInvalidator(inv contentcontract.DependencyInvalidator) {
+	s.invalidator = inv
+}
+
+// notifyContentChanged 内容实体变更后推导依赖源键并交给扇出端口。
+//
+// 两条键（docs/03-pipeline.md §8.2 典型 fan-out）：
+//   - direct_content:{type}:{id}       —— 直接引用该实体的产物；
+//   - content_collection:collection:content:{type}
+//     —— 渲染该类型集合的产物（新增/删除成员时旧产物里还没有该实体，
+//     只能靠集合键失效，这是「新增实体也要让列表页更新」的关键）。
+//
+// 失败一律降级：内容已经写入成功，失效标记失败不能反向让写入报错。
+func (s *Service) notifyContentChanged(ctx context.Context, e *contentmodel.Entity) {
+	if s == nil || s.invalidator == nil || e == nil {
+		return
+	}
+	for _, k := range []pipeline.DepKey{
+		pipeline.DirectContentKey(e.EntityType, e.ID),
+		pipeline.ContentCollectionKey(e.EntityType),
+	} {
+		s.invalidator.Invalidate(ctx, k.Kind, k.Key)
+	}
 }
 
 // NewService 构造（model 注入，不持有 *gorm.DB）。
@@ -54,6 +84,8 @@ func (s *Service) Create(ctx context.Context, req *contentdto.CreateReq) (res *c
 	if err = s.m.Create(ctx, e); err != nil {
 		return nil, err
 	}
+	// 新增实体同样要失效：集合键让「列表页出现新条目」，实体键覆盖「先建实例后建内容」的极端顺序。
+	s.notifyContentChanged(ctx, e)
 	return toResp(e, data), nil
 }
 
@@ -80,6 +112,7 @@ func (s *Service) Update(ctx context.Context, req *contentdto.UpdateReq) (res *c
 	if err = s.m.Save(ctx, e); err != nil {
 		return nil, err
 	}
+	s.notifyContentChanged(ctx, e)
 	return toResp(e, data), nil
 }
 
@@ -135,13 +168,19 @@ func (s *Service) Delete(ctx context.Context, req *contentdto.DeleteReq) (err er
 	if req == nil || req.ID == "" {
 		return errors.New(contentenums.ErrInvalidParam)
 	}
-	if _, err = s.m.Get(ctx, req.ID); err != nil {
+	e, err := s.m.Get(ctx, req.ID)
+	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return errors.New(contentenums.ErrNotFound)
 		}
 		return err
 	}
-	return s.m.Delete(ctx, req.ID)
+	if err = s.m.Delete(ctx, req.ID); err != nil {
+		return err
+	}
+	// 删除后仍要失效：产物里还留着这个实体的字面量，且集合少了一个成员。
+	s.notifyContentChanged(ctx, e)
+	return nil
 }
 
 // validateData 字段白名单校验（不变量 4：拒绝白名单外字段，防夹带）。
