@@ -15,10 +15,11 @@
 
 ```go
 // ct:"kind,opt1,opt2,..."
-// kind：string / bool / int / select / safe / text / regex
+// kind：string / bool / int / select / safe / text / richtext / regex
 // 选项：default=...  min=...  max=...  maxlen=...
 type Props struct {
-    Text    string `json:"text"   ct:"text,maxlen=500"`                    // 富文本/长文本
+    Text    string `json:"text"   ct:"text,maxlen=500"`                    // 长文本（多行）
+    Body    string `json:"body"   ct:"richtext,maxlen=2000"`               // 富文本（Trix 编辑器，构建期白名单清洗）
     Tag     string `json:"tag"    ct:"select,h1,h2,h3,h4,h5,h6,div,span,default=h2"`
     Shadow  string `json:"shadow" ct:"select,subtle,strong"`               // 选项列表
     Color   string `json:"color"  ct:"safe,maxlen=200"`                    // CSS 值白名单
@@ -34,7 +35,8 @@ type Props struct {
 | `int` | **零值=未设置放行**；非零校验 min/max |
 | `select` | 值必须在选项中；default 供渲染层取默认 |
 | `safe` | `core.IsSafeCSSValue` 白名单（防 CSS 注入） |
-| `text` | 长度上限 maxlen（富文本/长文本，内容语义由组件负责） |
+| `text` | 长度上限 maxlen（长文本，内容语义由组件负责） |
+| `richtext` | 富文本内容字段：长度上限 maxlen（与 `text` 同口径）；值存 HTML 片段，构建期统一经 `core.RichTextHTML`（白名单清洗 / 存量纯文本段落化）后由模板 `unsafe` 输出；检查器渲染 Trix 编辑器（`core.text` 的 `mode=plaintext` 回退多行输入） |
 | `regex` | 模式来自独立 `ctRegex` tag（模式含逗号时不走 ct 分片） |
 
 ## 3. 核心 API（internal/builder/core/controls.go）
@@ -65,6 +67,7 @@ func (Heading) PropsSpec() any { return &Props{} }  // 声明模板
 - `core.heading`：Text/Tag/Weight/LetterSpacing/Transform/Color/LineClamp/TextShadow 共 8 个字段接入声明式，
   手写校验段减少约 60 行（保留内容互斥、Binding 路径、排版三端、Decor、字重 token 等关系性/复合校验）。
 - `core.image` / `core.text`：下一步接入（方案一致：字段 tag + ValidateSpec）。
+- `richtext` 控件已接入：`core.text` 正文、`core.card.text`、`core.quote.text`、`core.infobox.text`、`core.faq.FaqItem.answer`（详见 `docs/02-C2-text.md` §2 富文本字段清单）。
 
 ## 6. 实现映射
 
@@ -74,6 +77,7 @@ func (Heading) PropsSpec() any { return &Props{} }  // 声明模板
 | 反射校验引擎 | `core.ValidateSpec`（零值放行、select/safe/regex/int 域、错误统一格式） |
 | 面板 schema | `core.SchemaJSON`（确定性字段序输出） |
 | 组件接入点 | `core.SpecProvider` 可选接口 + 组件 `PropsSpec()` |
+| `richtext` 控件 | `core/controls.go`（`ControlRichText`）+ `inspector_handle.go`（`UI/Slot = richtext`）+ `methods/controls/text.js` / `misc.js`（Trix 填充） |
 | 单元测试 | `public/test/builder/unit/controls_test.go`（解析/校验/schema 确定性 + heading 集成） |
 
 后续组件（button/divider/视频等）按 §4 流程开发，字段级校验不再手写。

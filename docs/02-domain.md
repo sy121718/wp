@@ -605,7 +605,7 @@ interface BuildDependency {
 - `dependencies` 是实际读取集合，不是按 PageKind 猜测的粗粒度依赖。
 - Collection 除记录当前结果实体外，还必须记录稳定的 `contentSet` revision，例如 `article:recent` 或 `category:{id}:articles`；新增、删除或重排成员时提升集合 revision，使列表页能够被失效。
 - 同一规范化 Page Document、BuildContext、Registry 和 Compiler 必须产生相同 Artifact 字节。
-- 富文本必须由 CMS Core 在入库时净化，Compiler 只通过专用 RichText Fragment 输出。
+- 富文本必须经白名单净化后才可输出：唯一实现是 `internal/builder/core/richtext.go`（`SanitizeRichHTML` / `RichTextHTML`），Compiler 通过专用 RichText Fragment（模板 `unsafe`）输出；禁止组件自建白名单或直出未净化 HTML。
 
 ## 6. Component Registry 与 Compiler IR
 

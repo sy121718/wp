@@ -15,7 +15,7 @@
 | 数据库 | PostgreSQL（主库，唯一领域 SQL 基线）；MySQL 历史兼容；SQLite/SQL Server 驱动已移除 |
 | 会话存储 | Redis（pkg/cache，Critical：认证会话/封禁/心跳硬依赖） |
 | 公共前台 | Jet 只在 Preview/Publish 构建阶段执行，访客读取静态 Artifact |
-| 富文本 | TinyMCE（先 CDN 跑通，后期按需自托管） |
+| 富文本 | Trix 2.x（本地 vendor `internal/templates/static/vendor/trix/`，零 CDN；服务端白名单清洗在 `core/richtext.go`） |
 | 设计系统 | Stripe 风格，亮暗双主题，详见 [DESIGN.md](../DESIGN.md) |
 
 ## 数据流总览
@@ -71,7 +71,7 @@
 **任务**：
 
 - [x] `go.mod` 确认 Jet v6 依赖已引入
-- [x] 加入 HTML sanitize 依赖（实现为自研 sanitize：基于 x/net/html 白名单，非 bluemonday），用于 TinyMCE 内容白名单清洗
+- [x] 加入 HTML sanitize 依赖（实现为自研 sanitize：基于 x/net/html 白名单，非 bluemonday），用于富文本内容白名单清洗（现集中实现于 `core/richtext.go`，编辑器为 Trix 2.x）
 - [x] 加入 CSRF 中间件依赖
 - [x] 建立 `internal/templates/admin/` 目录结构和 Jet 渲染 facade
   - 实现 `gin.HTMLRender` 接口封装 Jet `*jet.Set`
@@ -206,7 +206,7 @@
 - [ ] `contenttemplate` 模块：ContentTemplate 草稿、不可变版本、Binding 约束
 - [ ] `presentation` 模块：PresentationInstance / DocumentSnapshot / 内容驱动发布入口
 - [ ] CMS 实体变更 → 自动派生 DocumentSnapshot → 经同一 Publish Compiler → ArtifactStore → PublicationStore
-- [ ] TinyMCE 集成到文章编辑页（CDN 引入 + 服务端白名单清洗）
+- [ ] 富文本编辑器（Trix 2.x，本地 vendor）集成到文章编辑页（服务端白名单清洗）
 
 **验收门禁**：
 
@@ -215,7 +215,7 @@
 | 内容 CRUD | Article/Product/Category 创建/编辑/删除正常 |
 | 自动发布 | 内容变更触发 PresentationInstance 重建并发布 |
 | ContentTemplate 版本 | 版本变化触发所有关联 PresentationInstance 重建 |
-| TinyMCE | 编辑器加载正常，提交内容经白名单清洗 |
+| 富文本编辑器（Trix 2.x） | 编辑器加载正常，提交内容经白名单清洗 |
 | `go test ./...` | 全绿 |
 
 ---

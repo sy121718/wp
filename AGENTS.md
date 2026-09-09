@@ -27,7 +27,7 @@ go_wp 是 `CMS + Visual Website Builder + Static Publishing Engine`。
 | 认证 | Session + Cookie（gin-contrib/sessions + Cookie 存储） | 替代旧 JWT 方案，HTMX 请求自动携带 Cookie |
 | 鉴权 | Casbin（自研 persist.Adapter） | Enforce(user_id, path, method)；业务 API 已挂载 |
 | 公开动态片段 | HTMX + Go Handler | 按 Registry capability 返回受控 HTML Fragment（`runtimefragment` 已落地，挂载 /fragment 类路由） |
-| 富文本编辑器 | TinyMCE（CDN） | 文章内容编辑 |
+| 富文本编辑器 | Trix 2.x（本地 vendor：/static/vendor/trix/） | 文章内容编辑；白名单清洗 + h1 降级 h2 |
 | 数据库 | PostgreSQL（主库） | CMS 内容、Page 草稿、Artifact 元数据和依赖索引；MySQL 为历史兼容；SQLite/SQL Server 驱动已移除 |
 | 会话存储 | Redis（pkg/cache） | 用户会话、封禁标记、在线心跳（**Critical 组件，配置必须启用**） |
 | Artifact 存储 | 本地文件系统 / 对象存储 | 不可变构建文件与内容寻址资源 |

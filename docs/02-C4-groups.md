@@ -39,6 +39,7 @@ Text   string `json:"text"   ct:"text,maxlen=500"`            // 默认 content
 |---|---|---|
 | `slider` | int 值域 + `step=`（编辑器滑块交互元数据） | 与 int 同（min/max，零值放行） |
 | `url` | 链接字段 | 协议白名单：http/https/mailto/站内相对路径/`#` 锚点；字符集白名单（含 @ 供 mailto），禁引号/尖括号 |
+| `richtext` | 富文本内容字段（HTML 片段，编辑器 Trix 2.x） | 与 `text` 同（仅 maxlen）；内容安全由构建期 `core.RichTextHTML` 负责，校验层不解析 HTML |
 
 ## 4. 实现映射
 
