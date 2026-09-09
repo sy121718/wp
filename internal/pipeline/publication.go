@@ -68,7 +68,14 @@ func (s *LocalPublicationStore) Activate(path string, loc Locator) error {
 		return fmt.Errorf("定位器缺少 provider 或 key")
 	}
 
-	link := filepath.Join(s.ActiveRoot, relActivePath(p))
+	rel := relActivePath(p)
+	// 父子前缀互斥防线（docs/06-D §4.4 硬坑）：先确认祖先链上没有符号链接占位，
+	// 再 MkdirAll。否则 MkdirAll 会跟随祖先符号链接在不可变产物目录内部建目录，
+	// 随后落地的符号链接进入 artifacts/{hash}，污染产物且上溯层数错算成悬空链接。
+	if err = s.ensureAncestorsAreDirs(rel); err != nil {
+		return fmt.Errorf("激活 %s 失败: %w", p, err)
+	}
+	link := filepath.Join(s.ActiveRoot, rel)
 	parent := filepath.Dir(link)
 	if err = os.MkdirAll(parent, 0o755); err != nil {
 		return err
@@ -107,6 +114,35 @@ func (s *LocalPublicationStore) Activate(path string, loc Locator) error {
 		// Normalize/占用检查职责：此处必须明确失败，禁止递归删除子路径
 		// 激活树（H9：不得 RemoveAll 静默破坏已激活子路径）。
 		return fmt.Errorf("激活 %s 失败: %w", p, err)
+	}
+	return nil
+}
+
+// ensureAncestorsAreDirs 检查激活链接的祖先链：任一已存在的祖先不是目录
+// （被符号链接或普通文件占位）即显式报错。
+//
+// 与「子路径先激活、父路径后激活」在 rename 阶段失败（H9）互补，本检查覆盖
+// 相反顺序——父路径已是符号链接时再激活子路径。多语言前缀（/{lang}/path）
+// 让这种冲突从「偶发」变成「必然」（语言根与同语言子路径），因此必须在
+// 内核层挡住，禁止把符号链接写进不可变产物目录。
+func (s *LocalPublicationStore) ensureAncestorsAreDirs(rel string) error {
+	segs := strings.Split(rel, "/")
+	cur := s.ActiveRoot
+	for i := 0; i < len(segs)-1; i++ {
+		cur = filepath.Join(cur, segs[i])
+		fi, err := os.Lstat(cur)
+		if err != nil {
+			if os.IsNotExist(err) {
+				return nil // 更深的祖先必然也不存在，交给 MkdirAll
+			}
+			return err
+		}
+		if fi.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("父路径 %s 已被符号链接占位（父子路径互斥，禁止写入不可变产物目录）", cur)
+		}
+		if !fi.IsDir() {
+			return fmt.Errorf("父路径 %s 已被非目录占位", cur)
+		}
 	}
 	return nil
 }

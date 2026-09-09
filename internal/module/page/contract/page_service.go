@@ -48,8 +48,9 @@ type PageService interface {
 	// 复用正式构建同源编译管线；错误经 errors.Is 分类：
 	// ErrPreviewInvalidDocument（解析失败）/ ErrPreviewCompileFailed（编译失败）/ 其余为内部错误。
 	// projectID 为页面所属站点工程（驱动导航等站点级资源解析，与正式构建一致）；
-	// currentPath 为页面访问路径（导航当前项高亮，块预览传空）。
-	CompilePreview(ctx context.Context, docJSON []byte, projectID, currentPath string) (html []byte, err error)
+	// currentPath 为页面逻辑访问路径（导航当前项高亮，块预览传空）；
+	// lang 为预览目标语言（空 = 站点默认语言，多语言 P2）。
+	CompilePreview(ctx context.Context, docJSON []byte, projectID, currentPath, lang string) (html []byte, err error)
 	// Build 基于当前草稿构建并暂存产物（不激活线上）。
 	Build(ctx context.Context, req *pagedto.BuildReq) (res *pagedto.PublishResp, err error)
 	// Publish 激活暂存产物。
@@ -71,6 +72,9 @@ type PageService interface {
 	// MarkStaleForBlock 把文档中经 core.globalref 引用或 settings.structure 页眉/页脚
 	// 自选绑定该块的页面标记为待重建（块内容变更后调用，与 MarkStaleForTheme 互补）。
 	MarkStaleForBlock(ctx context.Context, blockID string) error
+	// MarkStaleForI18n 把全部页面标记为待重建（界面文案词条变更后调用，
+	// 与 Manifest 的 i18n 依赖条目配套，docs/06-D §10.4）。
+	MarkStaleForI18n(ctx context.Context) error
 	// CountBlockReference 统计引用该块的未删除页面数（globalref / structure 自选绑定），
 	// 供 block 模块删除或切换 global→template 前的引用拦截（docs/02-D §9）。
 	CountBlockReference(ctx context.Context, blockID string) (int64, error)

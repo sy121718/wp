@@ -119,6 +119,20 @@ func (m *Model) MarkStaleForTheme(ctx context.Context, themeID string) (err erro
 	return err
 }
 
+// MarkStaleForI18n 把全部未删除页面标记为待重建（界面文案词条变更后调用）。
+//
+// 文案词条（sys_i18n）参与构建：组件固定文案由构建期取词注入 HTML 字节
+// （docs/06-D §10）。词条改动后所有页面产物都可能过期，故整站标记 stale；
+// 触发源为后台 i18n CRUD（决策 D7，尚未实现）或运维脚本，内核只提供能力。
+// 全表更新，与 MarkStaleForTheme 同一模式（stale=true 幂等）。
+func (m *Model) MarkStaleForI18n(ctx context.Context) (err error) {
+	err = m.DB(ctx).Exec(
+		"UPDATE pages SET stale = true, updated_at = ? WHERE deleted_at IS NULL",
+		time.Now().UTC(),
+	).Error
+	return err
+}
+
 // CountBlockReference 统计引用该块的未删除页面数（与 MarkStaleForBlock 同一匹配条件）：
 // core.globalref 节点（"blockId"）或 settings.structure 页眉/页脚自选绑定。
 // 供 block 模块删除/切换 global→template 前的引用拦截（docs/02-D §9）。

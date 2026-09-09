@@ -15,12 +15,16 @@ var (
 	initMu      sync.Mutex
 	inited      bool
 	defaultLang = fallbackDefaultLang
+	// siteLangPrefix 站点产物 /{lang}/ 前缀开关（默认关闭：保持单语言产物路径不变）。
+	siteLangPrefix bool
 )
 
 type initConfig struct {
 	defaultLang     string
 	autoRefresh     bool
 	refreshInterval time.Duration
+	// sitePrefix 站点产物是否使用 /{lang}/ 路径前缀（多语言 P2，决策 D1 的落地开关）。
+	sitePrefix bool
 }
 
 // Init initializes i18n cache data and runtime behaviors from config.
@@ -33,6 +37,7 @@ func Init(v *viper.Viper) error {
 	initMu.Lock()
 	alreadyInited := inited
 	setDefaultLangLocked(cfg.defaultLang)
+	siteLangPrefix = cfg.sitePrefix
 	initMu.Unlock()
 
 	if !alreadyInited {
@@ -64,6 +69,26 @@ func GetDefaultLang() string {
 	initMu.Lock()
 	defer initMu.Unlock()
 	return defaultLang
+}
+
+// SiteLangPrefixEnabled 返回站点产物是否使用 /{lang}/ 路径前缀
+// （配置 i18n.site_lang_prefix，默认 false）。
+//
+// 决策 D1（docs/06-D §5）为「全语言带前缀，含默认语言」；该开关是它的落地
+// 闸门：关闭时页面产物路径保持逻辑路径（单语言兼容），开启后经
+// pipeline.LangPath 统一映射为 /{lang}/path（语言根映射 /{lang}/index）。
+func SiteLangPrefixEnabled() bool {
+	initMu.Lock()
+	defer initMu.Unlock()
+	return siteLangPrefix
+}
+
+// SetSiteLangPrefix 运行时设置站点产物前缀开关（测试与多语言灰度使用）。
+// 与 SetDefaultLang 同形：只改运行时状态，不改配置源。
+func SetSiteLangPrefix(enabled bool) {
+	initMu.Lock()
+	defer initMu.Unlock()
+	siteLangPrefix = enabled
 }
 
 // Get returns full i18n result.
@@ -162,6 +187,7 @@ func parseInitConfig(v *viper.Viper) (initConfig, error) {
 		cfg.defaultLang = lang
 	}
 	cfg.autoRefresh = v.GetBool("i18n.auto_refresh")
+	cfg.sitePrefix = v.GetBool("i18n.site_lang_prefix")
 
 	if raw := strings.TrimSpace(v.GetString("i18n.refresh_interval")); raw != "" {
 		duration, err := time.ParseDuration(raw)

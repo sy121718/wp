@@ -467,7 +467,8 @@ func (h *Handle) PreviewDraft(c *gin.Context) {
 // projectID 为文档所属站点工程（页面/块的记录字段），驱动导航等站点级资源解析；
 // currentPath 为页面访问路径（导航当前项高亮，块预览传空）。
 func (h *Handle) renderPreview(c *gin.Context, document json.RawMessage, projectID, currentPath string, withEditorBridge bool) {
-	html, err := h.pages.CompilePreview(c.Request.Context(), document, projectID, currentPath)
+	// 预览语言：?lang= 显式指定（工作台多语言预览切换），空 = 站点默认语言。
+	html, err := h.pages.CompilePreview(c.Request.Context(), document, projectID, currentPath, c.Query("lang"))
 	if err != nil {
 		switch {
 		case errors.Is(err, pagecontract.ErrPreviewInvalidDocument):

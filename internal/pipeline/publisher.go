@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 
 	"go_wp/internal/builder"
@@ -55,8 +56,15 @@ type HistoryEntry struct {
 type PageRecord struct {
 	// ID 页面唯一标识。
 	ID string
-	// Path 当前草稿路径（draft_path）。
+	// Path 当前访问路径：单语言时为草稿逻辑路径，多语言时为带语言前缀的
+	// 访问路径（/{lang}/path，见 LangPath）。激活与回滚校验都以它为准。
 	Path string
+	// Lang 本记录的构建语言（多语言 P2，docs/06-D §4.1 第 5 项）。
+	//
+	// 内存记录仍以页面 ID 为键（一次构建一个语言）；「按 (pageID, lang) 持有
+	// 独立状态机」属后续阶段（docs/06-D §4.1 第 5 项标注为高风险改动）。
+	// 为空表示未接入语言：Manifest 不写 lang，路径不带前缀（行为与改造前一致）。
+	Lang string
 	// Version 草稿版本号（乐观锁，每次保存 +1）。
 	Version int
 	// Status 页面当前状态：draft / building / ready / failed / published。
@@ -73,16 +81,30 @@ type PageRecord struct {
 	Histories []*HistoryEntry
 }
 
-// CompileFn 冻结编译函数：页面 ID + Page Document 字节 → 完整 HTML 文档字节。
+// BuildInput 一次构建的完整输入（多语言 P2，docs/06-D §4.1 第 3 项）。
+//
+// 语言（Lang）与访问路径（Path）是同一层构建环境：同一 Page Document 在每个语言
+// 下独立构建，产物路径带语言前缀、Manifest 记录语言，因此两者必须一起传入。
+type BuildInput struct {
+	// PageID 页面 ID：供装配层解析「文档自身不携带」的站点级资源（工程 ID → 导航菜单）。
+	PageID string
+	// Lang 本次构建的目标语言（空 = 未接入语言：Manifest 不写 lang、路径不带前缀）。
+	Lang string
+	// Path 已本地化的访问路径（多语言下为 /{lang}/path，见 LangPath）。
+	Path string
+	// DocJSON 冻结的 Page Document 字节。
+	DocJSON []byte
+}
+
+// CompileFn 冻结编译函数：构建输入 → 完整 HTML 文档字节。
 // 发布期唯一编译入口；实现必须确定性（docs/03-pipeline.md §3.4）。
-// ctx 为发起构建的请求上下文（构建链需查库解析块/集合时传播，支持超时取消）；
-// pageID 供装配层解析「文档自身不携带」的站点级资源（如工程 ID → 导航菜单）。
-type CompileFn func(ctx context.Context, pageID string, docJSON []byte) (html []byte, err error)
+// ctx 为发起构建的请求上下文（构建链需查库解析块/集合时传播，支持超时取消）。
+type CompileFn func(ctx context.Context, in BuildInput) (html []byte, err error)
 
 // DefaultCompile 默认编译器：internal/builder 文档编译 + 完整文档组装。
-// pageID 未使用（默认编译器不解析站点级资源）。
-func DefaultCompile(ctx context.Context, _ string, docJSON []byte) ([]byte, error) {
-	page, err := builder.ParsePage(docJSON)
+// 不解析站点级资源（PageID 仅用于记录）；语言经 WithLanguage 影响组件固定文案。
+func DefaultCompile(ctx context.Context, in BuildInput) ([]byte, error) {
+	page, err := builder.ParsePage(in.DocJSON)
 	if err != nil {
 		return nil, err
 	}
@@ -91,7 +113,8 @@ func DefaultCompile(ctx context.Context, _ string, docJSON []byte) ([]byte, erro
 	if err != nil {
 		return nil, err
 	}
-	compiled, err := builder.Compile(page, builder.WithContext(ctx), builder.WithComponentSet(set))
+	compiled, err := builder.Compile(page,
+		builder.WithContext(ctx), builder.WithComponentSet(set), builder.WithLanguage(in.Lang))
 	if err != nil {
 		return nil, err
 	}
@@ -102,12 +125,34 @@ func DefaultCompile(ctx context.Context, _ string, docJSON []byte) ([]byte, erro
 	return []byte(doc), nil
 }
 
+// Draft 一次草稿冻结输入（多语言 P2：语言与路径同层，均随草稿一起进入内核）。
+type Draft struct {
+	// Path 访问路径：单语言为逻辑路径，多语言为带前缀的 /{lang}/path。
+	Path string
+	// Lang 构建语言（空 = 未接入语言）。
+	Lang string
+	// DocJSON 草稿文档字节。
+	DocJSON []byte
+}
+
 // Option Publisher 构造选项。
 type Option func(*Publisher)
 
 // WithCompile 注入替代编译器（测试/集成用）。
 func WithCompile(fn CompileFn) Option {
 	return func(p *Publisher) { p.compile = fn }
+}
+
+// DependencyProvider 构建期依赖提供者：按构建输入返回依赖条目，
+// 内核把它们写入 Manifest.dependencies（docs/03-pipeline.md §8.2）。
+//
+// 装配层用它声明「产物字节依赖的外部资源」（如文案词条 revision），
+// 内核保持通用——不 import 业务模块、不认识具体资源类型。
+type DependencyProvider func(ctx context.Context, in BuildInput) []Dependency
+
+// WithDependencies 注入构建期依赖提供者（未注入时 Manifest.dependencies 为空）。
+func WithDependencies(fn DependencyProvider) Option {
+	return func(p *Publisher) { p.deps = fn }
 }
 
 // Publisher 发布服务：页面生命周期状态机（0-A1 §2）+ 流水线编排。
@@ -117,6 +162,8 @@ type Publisher struct {
 	store   Store
 	pub     PublicationStore
 	compile CompileFn
+	// deps 构建期依赖提供者（可选）：为 Manifest.dependencies 供数。
+	deps DependencyProvider
 
 	mu    sync.Mutex
 	pages map[string]*PageRecord
@@ -149,25 +196,38 @@ func (p *Publisher) SetCompile(fn CompileFn) {
 // SaveDraft 保存草稿（0-A1 §4.1：仅更新草稿字段并追加历史版本快照，返回新版本号）。
 // expectedVersion 为乐观锁：页面不存在时为 0（创建），否则必须等于当前版本。
 func (p *Publisher) SaveDraft(pageID string, expectedVersion int, path string, docJSON []byte) (version int, err error) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	return p.saveDraftLocked(pageID, expectedVersion, path, docJSON)
+	return p.SaveDraftInput(pageID, expectedVersion, Draft{Path: path, DocJSON: docJSON})
 }
 
-func (p *Publisher) saveDraftLocked(pageID string, expectedVersion int, path string, docJSON []byte) (version int, err error) {
+// SaveDraftInput 保存草稿（多语言 P2：显式携带语言，见 Draft）。
+// 语言为空时等价旧签名 SaveDraft（不写 Manifest.lang、路径不带前缀）。
+func (p *Publisher) SaveDraftInput(pageID string, expectedVersion int, d Draft) (version int, err error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.saveDraftLocked(pageID, expectedVersion, d)
+}
+
+func (p *Publisher) saveDraftLocked(pageID string, expectedVersion int, d Draft) (version int, err error) {
 	if pageID == "" {
 		return 0, errors.New("页面 ID 不能为空")
 	}
-	nPath, err := NormalizeURL(path)
+	nPath, err := NormalizeURL(d.Path)
 	if err != nil {
 		return 0, err
 	}
+	lang := strings.TrimSpace(d.Lang)
+	if lang != "" {
+		if lang, err = NormalizeLang(lang); err != nil {
+			return 0, err
+		}
+	}
+	docJSON := d.DocJSON
 	rec, ok := p.pages[pageID]
 	if !ok {
 		if expectedVersion != 0 {
 			return 0, ErrVersionConflict
 		}
-		rec = &PageRecord{ID: pageID, Path: nPath, Version: 1, Status: StateDraft}
+		rec = &PageRecord{ID: pageID, Path: nPath, Lang: lang, Version: 1, Status: StateDraft}
 		p.pages[pageID] = rec
 	} else {
 		if expectedVersion != rec.Version {
@@ -175,6 +235,7 @@ func (p *Publisher) saveDraftLocked(pageID string, expectedVersion int, path str
 		}
 		rec.Version++
 		rec.Path = nPath
+		rec.Lang = lang
 	}
 
 	// 冻结快照：拷贝字节，构建期使用，防止后续写入影响产物。
@@ -208,11 +269,11 @@ func (p *Publisher) Build(ctx context.Context, pageID string, expectedVersion in
 	}
 	rec.Status = StateBuilding
 	docSnapshot := append([]byte(nil), rec.DocumentJSON...)
-	path := rec.Path
+	in := BuildInput{PageID: pageID, Lang: rec.Lang, Path: rec.Path, DocJSON: docSnapshot}
 	p.mu.Unlock()
 
 	// 锁外：确定性编译 + 产物落盘。
-	a, cerr := p.compileArtifact(ctx, pageID, path, docSnapshot)
+	a, cerr := p.compileArtifact(ctx, in)
 	if cerr != nil {
 		p.mu.Lock()
 		if rec.Version == expectedVersion {
@@ -235,7 +296,7 @@ func (p *Publisher) Build(ctx context.Context, pageID string, expectedVersion in
 	rec.Status = rec.currentStatus()
 	p.order++
 	rec.Histories = append(rec.Histories, &HistoryEntry{
-		Hash: a.Hash, Path: path, Status: StateReady, Order: p.order,
+		Hash: a.Hash, Path: in.Path, Status: StateReady, Order: p.order,
 	})
 	rec.trimHistory()
 	logger.Scene("build").With("pageId", rec.ID).With("hash", a.Hash).Info("构建完成")
@@ -341,7 +402,7 @@ func (p *Publisher) UpdateURL(ctx context.Context, pageID string, newPath string
 	// 301 / 取消激活处理。DB 侧迁移（draft_path 与 reserved 路由）由调用方
 	// 负责（page service MoveDraftPath / RenameReserved）。
 	if !rec.hasPublishedHistory() {
-		if _, err = p.saveDraftLocked(pageID, rec.Version, nPath, rec.DocumentJSON); err != nil {
+		if _, err = p.saveDraftLocked(pageID, rec.Version, Draft{Path: nPath, Lang: rec.Lang, DocJSON: rec.DocumentJSON}); err != nil {
 			p.mu.Unlock()
 			return oldPath, err
 		}
@@ -352,16 +413,16 @@ func (p *Publisher) UpdateURL(ctx context.Context, pageID string, newPath string
 	}
 
 	// 1. 锁内：新 URL 写入草稿路径（Version +1）。
-	if _, err = p.saveDraftLocked(pageID, rec.Version, nPath, rec.DocumentJSON); err != nil {
+	if _, err = p.saveDraftLocked(pageID, rec.Version, Draft{Path: nPath, Lang: rec.Lang, DocJSON: rec.DocumentJSON}); err != nil {
 		p.mu.Unlock()
 		return oldPath, err
 	}
 	version := rec.Version
-	docSnapshot := append([]byte(nil), rec.DocumentJSON...)
+	in := BuildInput{PageID: pageID, Lang: rec.Lang, Path: nPath, DocJSON: append([]byte(nil), rec.DocumentJSON...)}
 	p.mu.Unlock()
 
 	// 2. 锁外：基于新 URL 构建（慢操作不阻塞其他页面）。
-	a, cerr := p.compileArtifact(ctx, pageID, nPath, docSnapshot)
+	a, cerr := p.compileArtifact(ctx, in)
 	if cerr != nil {
 		p.mu.Lock()
 		if rec.Version == version {
@@ -414,10 +475,10 @@ func (p *Publisher) UpdateURL(ctx context.Context, pageID string, newPath string
 }
 
 // compileArtifact 锁外编译并落盘（纯函数，不碰 Publisher 锁）。
-// pageID/path/docJSON 为锁内取出的冻结快照，编译期间不访问 rec 可变字段，
-// 因此可在锁外并行执行——慢操作不再阻塞其他页面的状态机（M2）。
-func (p *Publisher) compileArtifact(ctx context.Context, pageID, path string, docJSON []byte) (a *Artifact, err error) {
-	html, err := p.compile(ctx, pageID, docJSON)
+// in 为锁内取出的冻结快照（页面 ID / 语言 / 路径 / 文档字节），编译期间不访问
+// rec 可变字段，因此可在锁外并行执行——慢操作不再阻塞其他页面的状态机（M2）。
+func (p *Publisher) compileArtifact(ctx context.Context, in BuildInput) (a *Artifact, err error) {
+	html, err := p.compile(ctx, in)
 	if err != nil {
 		return nil, fmt.Errorf("编译失败: %w", err)
 	}
@@ -425,11 +486,15 @@ func (p *Publisher) compileArtifact(ctx context.Context, pageID, path string, do
 		ManifestSchemaVersion:     ManifestSchemaVersion,
 		PageDocumentSchemaVersion: 1,
 		CompilerVersion:           "internal-builder",
-		SourceID:                  pageID,
+		SourceID:                  in.PageID,
 		SourceType:                SourceTypePage,
-		CanonicalPath:             path,
-		SourceHash:                SHA256(docJSON),
-		BuildInputHash:            SHA256(docJSON),
+		CanonicalPath:             in.Path,
+		Lang:                      in.Lang,
+		SourceHash:                SHA256(in.DocJSON),
+		BuildInputHash:            SHA256(in.DocJSON),
+	}
+	if p.deps != nil {
+		m.Dependencies = p.deps(ctx, in)
 	}
 	a, err = NewArtifact(html, m)
 	if err != nil {

@@ -18,8 +18,10 @@ import (
 // navigationResolverAdapter 适配 navigation 契约为 builder 的 NavigationResolver。
 // cache 为单次编译内的解析缓存（键：工程 ID + 位置），同一页面多个导航节点只查一次库。
 type navigationResolverAdapter struct {
-	svc   navigationcontract.NavigationService
-	ctx   context.Context
+	svc navigationcontract.NavigationService
+	ctx context.Context
+	// lang 本次构建语言：菜单项站内 URL 按它加前缀（多语言 P2，docs/06-D §4.1 第 6 项）。
+	lang  string
 	cache map[string][]core.NavigationItem
 }
 
@@ -35,7 +37,7 @@ func (a navigationResolverAdapter) ResolveMenu(projectID, kind string) (items []
 	if err != nil {
 		return nil, err
 	}
-	items = navigationItemsOf(nodes)
+	items = navigationItemsOf(nodes, a.lang)
 	if a.cache != nil {
 		a.cache[key] = items
 	}
@@ -43,14 +45,15 @@ func (a navigationResolverAdapter) ResolveMenu(projectID, kind string) (items []
 }
 
 // navigationItemsOf 树节点 → 构建期菜单项（递归展开子菜单）。
-func navigationItemsOf(nodes []*navigationdto.NavigationNode) []core.NavigationItem {
+// lang 用于站内链接本地化（多语言前缀；关闭前缀时等价原样输出）。
+func navigationItemsOf(nodes []*navigationdto.NavigationNode, lang string) []core.NavigationItem {
 	out := make([]core.NavigationItem, 0, len(nodes))
 	for _, n := range nodes {
 		out = append(out, core.NavigationItem{
 			Label:    n.Title,
-			URL:      n.Path,
+			URL:      localizeMenuURL(lang, n.Path),
 			Target:   n.Target,
-			Children: navigationItemsOf(n.Children),
+			Children: navigationItemsOf(n.Children, lang),
 		})
 	}
 	return out

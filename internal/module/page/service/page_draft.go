@@ -77,11 +77,17 @@ func (s *Service) Create(ctx context.Context, req *pagedto.CreateReq) (res *page
 // reservePath 经 publication contract 预留草稿路径（页面创建前置）。
 // 占用冲突归一为 page 的 ErrPathOccupied；系统错误原样返回。
 // routes 为 nil（降级/测试）时跳过预留。
+// path 为逻辑草稿路径，此处按「实际访问路径」登记（多语言开启前缀时带前缀，
+// 语言取站点默认语言——建页时语言未知，见 siteRoutePath）。
 func (s *Service) reservePath(ctx context.Context, projectID, path, pageID string) error {
 	if s.routes == nil {
 		return nil
 	}
-	err := s.routes.ReservePath(ctx, &pubcontract.ReserveReq{ProjectID: projectID, Path: path, PageID: pageID})
+	routePath, err := siteRoutePath(path)
+	if err != nil {
+		return ErrInvalidPath
+	}
+	err = s.routes.ReservePath(ctx, &pubcontract.ReserveReq{ProjectID: projectID, Path: routePath, PageID: pageID})
 	if err == nil {
 		return nil
 	}
@@ -147,9 +153,14 @@ func (s *Service) SaveDraft(ctx context.Context, req *pagedto.SaveDraftReq) (res
 	// 在此失败（RenameReserved 撞 newPath 唯一约束），草稿尚未提交，保持原路径
 	// 与版本不变（保留原三表事务的「路径冲突整体回滚」语义）。
 	if changedPath && s.routes != nil {
+		oldRoutePath, oerr := siteRoutePath(page.DraftPath)
+		newRoutePath, nerr := siteRoutePath(path)
+		if oerr != nil || nerr != nil {
+			return nil, ErrInvalidPath
+		}
 		if rerr := s.routes.RenameReserved(ctx, &pubcontract.RenameReservedReq{
 			ProjectID: page.ProjectID, PageID: page.ID,
-			OldPath: page.DraftPath, NewPath: path,
+			OldPath: oldRoutePath, NewPath: newRoutePath,
 		}); rerr != nil {
 			return nil, mapPersistenceError(rerr)
 		}
@@ -158,11 +169,15 @@ func (s *Service) SaveDraft(ctx context.Context, req *pagedto.SaveDraftReq) (res
 		path, doc, nextVersion, now, revision); err != nil {
 		// 草稿提交失败（版本冲突）：已迁移的 reserved 需回迁，保持路径占用与草稿一致。
 		if changedPath && s.routes != nil {
-			if rerr := s.routes.RenameReserved(ctx, &pubcontract.RenameReservedReq{
-				ProjectID: page.ProjectID, PageID: page.ID,
-				OldPath: path, NewPath: page.DraftPath,
-			}); rerr != nil {
-				logger.Scene("page").With("pageId", page.ID).Error(rerr, "草稿提交失败后回迁保留路由失败")
+			oldRoutePath, oerr := siteRoutePath(path)
+			newRoutePath, nerr := siteRoutePath(page.DraftPath)
+			if oerr == nil && nerr == nil {
+				if rerr := s.routes.RenameReserved(ctx, &pubcontract.RenameReservedReq{
+					ProjectID: page.ProjectID, PageID: page.ID,
+					OldPath: oldRoutePath, NewPath: newRoutePath,
+				}); rerr != nil {
+					logger.Scene("page").With("pageId", page.ID).Error(rerr, "草稿提交失败后回迁保留路由失败")
+				}
 			}
 		}
 		return nil, mapPersistenceError(err)

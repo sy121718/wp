@@ -18,6 +18,7 @@ import (
 	plugincontract "go_wp/internal/module/plugin/contract"
 	"go_wp/internal/pipeline"
 	"go_wp/internal/templates"
+	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
 )
 
@@ -31,14 +32,16 @@ var errCompileFailed = errors.New("页面编译失败")
 // 无绑定无引用时输出与默认编译字节一致（hash 兼容历史产物）；
 // 块文档缺失/非法降级为空片段，不阻塞构建主链。
 // 解析失败回退默认编译；解析成功则与预览共用 compileDocument 装配管线。
-func (s *Service) assembleCompile(ctx context.Context, pageID string, docJSON []byte) ([]byte, error) {
-	page, err := builder.ParsePage(docJSON)
+func (s *Service) assembleCompile(ctx context.Context, in pipeline.BuildInput) ([]byte, error) {
+	page, err := builder.ParsePage(in.DocJSON)
 	if err != nil {
 		logger.Scene("build").With("err", err).Warn("页面文档解析失败，回退默认编译")
-		return pipeline.DefaultCompile(ctx, pageID, docJSON)
+		return pipeline.DefaultCompile(ctx, in)
 	}
-	projectID, currentPath := s.pageContextOf(ctx, pageID)
-	html, err := s.compileDocument(ctx, page, projectID, currentPath)
+	projectID, currentPath := s.pageContextOf(ctx, in.PageID)
+	// 语言来自构建输入（内核按 PageRecord.Lang 注入，见 pipeline.BuildInput）；
+	// 访问路径仍取页面记录的逻辑路径，前缀在 compileDocument 内单点计算。
+	html, err := s.compileDocument(ctx, page, projectID, currentPath, in.Lang)
 	if err != nil {
 		if errors.Is(err, errCompileFailed) {
 			logger.Scene("build").Error(err, "页面编译失败")
@@ -55,8 +58,11 @@ func (s *Service) assembleCompile(ctx context.Context, pageID string, docJSON []
 // 编译失败以 %w 包裹 errCompileFailed，其余失败原样返回。
 // projectID 为本次编译的站点工程 ID（页面文档不携带，由调用方按页面记录注入）；
 // 供导航等站点级资源解析使用，为空时绑定菜单位置的导航节点在编译期显式报错。
-// currentPath 为页面访问路径，用于导航「当前项」高亮（空 = 不标记）。
-func (s *Service) compileDocument(ctx context.Context, page *builder.Page, projectID, currentPath string) ([]byte, error) {
+// currentPath 为页面逻辑访问路径，用于导航「当前项」高亮（空 = 不标记）；
+// 多语言开启前缀时，此处统一转换为带前缀路径后再比对（与导航项 URL 同源）。
+// lang 为本次构建语言（空 = 站点默认语言）：驱动组件文案取词（构建期冻结快照）
+// 与导航项 URL 前缀，是「同一文档每个语言一份独立产物」的语言维度。
+func (s *Service) compileDocument(ctx context.Context, page *builder.Page, projectID, currentPath, lang string) ([]byte, error) {
 	// 组件模板 Set：无插件走 embed 单例；有插件走 CompositeSet
 	//（内置 embed + 插件命名空间合并，docs/06 §7）。
 	asm := s.enabledAssembly(ctx)
@@ -71,7 +77,13 @@ func (s *Service) compileDocument(ctx context.Context, page *builder.Page, proje
 		}
 	}
 	resolver := blockResolverAdapter{s: s, ctx: ctx, cache: make(map[string][]*core.Node)}
-	opts := []builder.CompileOption{builder.WithContext(ctx), builder.WithBlockResolver(resolver), builder.WithComponentSet(set)}
+	// 构建语言与取词函数：WithLanguage 决定 RenderContext.Lang；
+	// WithTranslator 注入「构建开始时刻冻结」的词条快照——构建中途刷新 i18n 缓存
+	// 不影响本次产物字节（确定性构建不变量，docs/06-D §2.3/§12）。
+	opts := []builder.CompileOption{
+		builder.WithContext(ctx), builder.WithBlockResolver(resolver), builder.WithComponentSet(set),
+		builder.WithLanguage(lang), builder.WithTranslator(i18n.Snapshot(lang)),
+	}
 	if asm != nil {
 		opts = append(opts, builder.WithPluginResolver(plugincontract.AssemblyResolver(asm)))
 	}
@@ -82,7 +94,7 @@ func (s *Service) compileDocument(ctx context.Context, page *builder.Page, proje
 	// 缓存按「工程 + 位置」单次编译内复用（同一页面多个导航节点只查一次库）。
 	if s.navigation != nil {
 		opts = append(opts, builder.WithNavigationResolver(navigationResolverAdapter{
-			svc: s.navigation, ctx: ctx, cache: map[string][]core.NavigationItem{},
+			svc: s.navigation, ctx: ctx, lang: lang, cache: map[string][]core.NavigationItem{},
 		}))
 	}
 	// 响应式图片：媒体变体存在时输出 srcset/sizes（构建期探测，访客零查询）。
@@ -92,7 +104,8 @@ func (s *Service) compileDocument(ctx context.Context, page *builder.Page, proje
 		}))
 	}
 	// 工程 ID：页面文档不携带，由调用方按页面记录注入（导航等站点级资源取数上下文）。
-	opts = append(opts, builder.WithProjectID(projectID), builder.WithCurrentPath(currentPath))
+	// 当前项高亮用「实际访问路径」（多语言开启前缀时与导航项 URL 同带前缀）。
+	opts = append(opts, builder.WithProjectID(projectID), builder.WithCurrentPath(highlightPath(lang, currentPath)))
 	// 主题快照注入：settings.theme（保存时合入的 ThemeSettings 快照）→ 编译进产物。
 	if page.Settings.Theme != nil {
 		opts = append(opts, builder.WithThemeSettings(page.Settings.Theme))

@@ -55,7 +55,7 @@ func TestNavigationSourcePageResolved(t *testing.T) {
 	}
 
 	// 端到端：解析结果经导航组件编译进产物，且当前页被标记高亮。
-	html, err := pages.CompilePreview(ctx, []byte(navDocument), projectID, "/about")
+	html, err := pages.CompilePreview(ctx, []byte(navDocument), projectID, "/about", "")
 	if err != nil {
 		t.Fatalf("预览编译失败: %v", err)
 	}

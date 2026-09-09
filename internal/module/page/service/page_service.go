@@ -65,9 +65,11 @@ func NewService(model *pagemodel.Model, artifacts artifactcontract.ArtifactServi
 		content:    content,
 		navigation: navigation,
 		media:      media,
-		publisher:  pipeline.NewPublisher(store, publication),
 		store:      store,
 	}
+	// 依赖提供者：把文案词条资源版本号写进 Manifest.dependencies
+	// （DependencyKind=i18n，改文案触发重建，docs/06-D §10.4）。
+	s.publisher = pipeline.NewPublisher(store, publication, pipeline.WithDependencies(s.buildDependencies))
 	s.publisher.SetCompile(s.assembleCompile)
 	return s
 }

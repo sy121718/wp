@@ -36,23 +36,35 @@ import (
 const systemCreator = ""
 
 // syncKernel 把页面当前草稿同步进内核记录（幂等；版本号以内核为准续增）。
-func (s *Service) syncKernel(path string, doc json.RawMessage, pageID string) error {
+// path 为实际访问路径（多语言下带 /{lang}/ 前缀），lang 为构建语言：
+// 两者一起进入内核记录，决定 Manifest.lang 与激活路径。
+func (s *Service) syncKernel(path, lang string, doc json.RawMessage, pageID string) error {
+	draft := pipeline.Draft{Path: path, Lang: lang, DocJSON: doc}
 	st, err := s.publisher.Status(pageID)
 	if errors.Is(err, pipeline.ErrPageNotFound) {
-		_, err = s.publisher.SaveDraft(pageID, 0, path, doc)
+		_, err = s.publisher.SaveDraftInput(pageID, 0, draft)
 		return err
 	}
 	if err != nil {
 		return err
 	}
-	if st.Path != path {
-		// 内核记录路径落后于数据库（如改 URL 中断恢复）：整体重建。
+	if st.Path != path || st.Lang != lang {
+		// 内核记录路径/语言落后于数据库（如改 URL 中断恢复、语言切换）：整体重建。
 		s.publisher.LoadRecord(&pipeline.PageRecord{ID: pageID})
-		_, err = s.publisher.SaveDraft(pageID, 0, path, doc)
+		_, err = s.publisher.SaveDraftInput(pageID, 0, draft)
 		return err
 	}
-	_, err = s.publisher.SaveDraft(pageID, st.Version, path, doc)
+	_, err = s.publisher.SaveDraftInput(pageID, st.Version, draft)
 	return err
+}
+
+// sitePathOf 计算页面实际访问路径（多语言前缀单点映射），失败归一为 ErrInvalidPath。
+func sitePathOf(lang string, page *pagemodel.PageEntity) (string, error) {
+	path, err := sitePath(lang, page.DraftPath)
+	if err != nil {
+		return "", ErrInvalidPath
+	}
+	return path, nil
 }
 
 // Build 基于当前草稿构建并暂存产物。
@@ -68,8 +80,15 @@ func (s *Service) Build(ctx context.Context, req *pagedto.BuildReq) (res *pagedt
 	if req.ExpectedVersion > 0 && req.ExpectedVersion != page.DraftVersion {
 		return nil, ErrDraftVersionConflict
 	}
-	logger.Scene("build").With("pageId", page.ID).Info("开始构建")
-	if err = s.syncKernel(page.DraftPath, page.DraftDocument, page.ID); err != nil {
+	// 构建语言（多语言 P2）：请求显式指定优先，否则站点默认语言；
+	// 实际访问路径由 sitePath 单点映射（开启前缀时 /{lang}/path）。
+	lang := buildLang(req.Lang)
+	path, err := sitePathOf(lang, page)
+	if err != nil {
+		return nil, err
+	}
+	logger.Scene("build").With("pageId", page.ID).With("lang", lang).With("path", path).Info("开始构建")
+	if err = s.syncKernel(path, lang, page.DraftDocument, page.ID); err != nil {
 		return nil, err
 	}
 	hash, err := s.publisher.Build(ctx, page.ID, s.kernelVersion(page.ID))
@@ -103,7 +122,12 @@ func (s *Service) Publish(ctx context.Context, req *pagedto.PublishReq) (res *pa
 	if err != nil {
 		return nil, err
 	}
-	logger.Scene("publication").With("pageId", page.ID).Info("开始发布")
+	lang := buildLang(req.Lang)
+	path, err := sitePathOf(lang, page)
+	if err != nil {
+		return nil, err
+	}
+	logger.Scene("publication").With("pageId", page.ID).With("lang", lang).With("path", path).Info("开始发布")
 	if page.StagedArtifactID == nil || *page.StagedArtifactID == "" {
 		return nil, ErrNoStagedArtifact
 	}
@@ -124,15 +148,15 @@ func (s *Service) Publish(ctx context.Context, req *pagedto.PublishReq) (res *pa
 
 	// FS 激活前预检：目标路径被其他页面/展示实例占用时提前失败（H7），
 	// 避免内核先把 FS 覆盖成本页产物、DB 路由写入才报错的状态分裂。
-	if err = s.ensureRouteNotOccupied(ctx, page.ProjectID, page.DraftPath, page.ID); err != nil {
-		logger.Scene("publication").With("pageId", page.ID).With("path", page.DraftPath).Warn("发布被拒绝：路径已被占用")
+	if err = s.ensureRouteNotOccupied(ctx, page.ProjectID, path, page.ID); err != nil {
+		logger.Scene("publication").With("pageId", page.ID).With("path", path).Warn("发布被拒绝：路径已被占用")
 		return nil, err
 	}
 
 	// 确定性构建保证与暂存一致；用「当前草稿」（路径+文档）重建内核——
 	// 若草稿在构建后又被 SaveDraft 修改（含改路径），重建 hash 必与暂存不同，
 	// 走 ErrRebuildRequired 拒绝发布，避免发布旧内容后界面误报「已发布最新」。
-	if err = s.syncKernel(page.DraftPath, page.DraftDocument, page.ID); err != nil {
+	if err = s.syncKernel(path, lang, page.DraftDocument, page.ID); err != nil {
 		return nil, err
 	}
 	version := s.kernelVersionOrOne(page.ID)
@@ -150,13 +174,14 @@ func (s *Service) Publish(ctx context.Context, req *pagedto.PublishReq) (res *pa
 		return nil, mapPublishError(err)
 	}
 
-	// 记录发布前旧 active 路径快照：MarkPublished 会把 active_path 更新为 DraftPath，
-	// 若 Deactivate 失败后重试（page 重新读取），再读 ActivePathValue() 已是 DraftPath，
+	// 记录发布前旧 active 路径快照：MarkPublished 会把 active_path 更新为实际访问路径，
+	// 若 Deactivate 失败后重试（page 重新读取），再读 ActivePathValue() 已是新路径，
 	// 导致「旧路径永不清理」。此处以发布前快照为准，重试幂等。
+	// 多语言下 active_path 存「实际访问路径」（带 /{lang}/ 前缀），与路由行口径一致。
 	oldPath := page.ActivePathValue()
 
 	now := time.Now().UTC()
-	if err = s.model.MarkPublished(ctx, page.ID, page.DraftPath, stagedArt.ID, now); err != nil {
+	if err = s.model.MarkPublished(ctx, page.ID, path, stagedArt.ID, now); err != nil {
 		// FS 已原子激活（线上已生效），此处 DB active 指针更新失败属于部分成功：
 		// 错误必须明确暴露，且重试可收敛（复构建 hash 与暂存一致 → 幂等再激活）。
 		logger.Scene("publication").With("pageId", page.ID).With("hash", hash).
@@ -166,7 +191,7 @@ func (s *Service) Publish(ctx context.Context, req *pagedto.PublishReq) (res *pa
 	if s.routes != nil {
 		// 旧路径 active 行处置：SaveDraft 改草稿路径后直接发布时，
 		// 若不取消旧路径激活，会残留同页双 active 占用（旧路径继续出旧产物）。
-		if oldPath != "" && oldPath != page.DraftPath {
+		if oldPath != "" && oldPath != path {
 			if derr := s.routes.Deactivate(ctx, &pubcontract.DeactivateReq{
 				ProjectID: page.ProjectID, Path: oldPath,
 			}); derr != nil {
@@ -175,7 +200,7 @@ func (s *Service) Publish(ctx context.Context, req *pagedto.PublishReq) (res *pa
 			}
 		}
 		if _, err = s.routes.Activate(ctx, &pubcontract.ActivateReq{
-			ProjectID: page.ProjectID, Path: page.DraftPath,
+			ProjectID: page.ProjectID, Path: path,
 			PageID: page.ID, ArtifactID: stagedArt.ID,
 		}); err != nil {
 			logger.Scene("publication").With("pageId", page.ID).Error(err, "发布路由激活失败")
@@ -262,6 +287,8 @@ func (s *Service) UpdateURL(ctx context.Context, req *pagedto.UpdateURLReq) (res
 	if req == nil || strings.TrimSpace(req.ID) == "" {
 		return nil, ErrInvalidParam
 	}
+	// 逻辑新路径（DB 语义，写入 pages.draft_path）与内核实际路径（带语言前缀）分离：
+	// 多语言下二者不同，混淆会导致下次构建重复加前缀（/zh-CN/zh-CN/about）。
 	newPath, err := normalizePagePath(req.NewPath)
 	if err != nil {
 		return nil, err
@@ -270,15 +297,24 @@ func (s *Service) UpdateURL(ctx context.Context, req *pagedto.UpdateURLReq) (res
 	if err != nil {
 		return nil, err
 	}
+	lang := buildLang(req.Lang)
+	kernelNewPath, err := sitePath(lang, newPath)
+	if err != nil {
+		return nil, ErrInvalidPath
+	}
+	oldPath := page.DraftPathValue()
+	oldRoutePath, err := sitePath(lang, oldPath)
+	if err != nil {
+		return nil, ErrInvalidPath
+	}
 	// FS 激活前预检：新路径已被其他页面/展示实例占用（active/redirect/
 	// reserved 任一 kind）时提前失败，绝不触发内核的 FS 覆盖。
-	if err = s.ensureRouteNotOccupied(ctx, page.ProjectID, newPath, page.ID); err != nil {
-		logger.Scene("page").With("pageId", page.ID).With("newPath", newPath).Warn("改 URL 被拒绝：新路径已被占用")
+	if err = s.ensureRouteNotOccupied(ctx, page.ProjectID, kernelNewPath, page.ID); err != nil {
+		logger.Scene("page").With("pageId", page.ID).With("newPath", kernelNewPath).Warn("改 URL 被拒绝：新路径已被占用")
 		return nil, err
 	}
-	logger.Scene("page").With("pageId", page.ID).With("newPath", newPath).Info("开始修改 URL")
-	oldPath := page.DraftPathValue()
-	publishedPath := oldPath
+	logger.Scene("page").With("pageId", page.ID).With("lang", lang).With("newPath", kernelNewPath).Info("开始修改 URL")
+	publishedPath := oldRoutePath
 	if page.ActivePath != nil && *page.ActivePath != "" {
 		publishedPath = *page.ActivePath
 	}
@@ -287,7 +323,7 @@ func (s *Service) UpdateURL(ctx context.Context, req *pagedto.UpdateURLReq) (res
 	if err = s.restoreKernelForUpdate(ctx, page, publishedPath); err != nil {
 		return nil, err
 	}
-	if _, err = s.publisher.UpdateURL(ctx, page.ID, newPath, req.WithRedirect); err != nil {
+	if _, err = s.publisher.UpdateURL(ctx, page.ID, kernelNewPath, req.WithRedirect); err != nil {
 		logger.Scene("page").With("pageId", page.ID).Error(err, "URL 修改失败")
 		return nil, mapPublishError(err)
 	}
@@ -305,7 +341,7 @@ func (s *Service) UpdateURL(ctx context.Context, req *pagedto.UpdateURLReq) (res
 		if s.routes != nil {
 			if rerr := s.routes.RenameReserved(ctx, &pubcontract.RenameReservedReq{
 				ProjectID: page.ProjectID, PageID: page.ID,
-				OldPath: oldPath, NewPath: newPath,
+				OldPath: oldRoutePath, NewPath: kernelNewPath,
 			}); rerr != nil {
 				logger.Scene("page").With("pageId", page.ID).Error(rerr, "URL 修改后重命名保留路由失败，中止流程")
 				return nil, rerr
@@ -343,19 +379,19 @@ func (s *Service) UpdateURL(ctx context.Context, req *pagedto.UpdateURLReq) (res
 		// 后续 SaveDraft 基于错误基线增删路由（不得仅记日志继续）。
 		if rerr := s.routes.RenameReserved(ctx, &pubcontract.RenameReservedReq{
 			ProjectID: page.ProjectID, PageID: page.ID,
-			OldPath: oldPath, NewPath: newPath,
+			OldPath: oldRoutePath, NewPath: kernelNewPath,
 		}); rerr != nil {
 			logger.Scene("page").With("pageId", page.ID).Error(rerr, "URL 修改后重命名保留路由失败，中止流程")
 			return nil, rerr
 		}
 		if _, err = s.routes.Activate(ctx, &pubcontract.ActivateReq{
-			ProjectID: page.ProjectID, Path: newPath,
+			ProjectID: page.ProjectID, Path: kernelNewPath,
 			PageID: page.ID, ArtifactID: artifactRowID,
 		}); err != nil {
 			logger.Scene("page").With("pageId", page.ID).Error(err, "URL 修改后路由激活失败")
 			return nil, err
 		}
-		if oldPath != newPath {
+		if oldRoutePath != kernelNewPath {
 			if req.WithRedirect {
 				if err = s.ensureRedirectRoute(ctx, page, publishedPath); err != nil {
 					logger.Scene("page").With("pageId", page.ID).Error(err, "重定向路由注册失败")

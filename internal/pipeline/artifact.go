@@ -37,8 +37,34 @@ type Manifest struct {
 	CanonicalPath             string            `json:"canonicalPath"`
 	SourceHash                string            `json:"sourceHash"`
 	BuildInputHash            string            `json:"buildInputHash"`
+	// Lang 本次构建的目标语言（多语言 P2，docs/06-D §4.2 决策 D2：lang 进 Manifest）。
+	//
+	// 必须显式记录：不同语言产物内容不同，若不进 Manifest 可能两个语言 hash 相同
+	// 而内容不同，回滚校验与去重都会失效。omitempty 让未接入语言的来源
+	// （如 presentation 自动发布，P5 前不涉及）保持原 Manifest 字节不变。
+	//
+	// 影响面：产物 hash = SHA256(manifestJSON + "\n" + indexHTML) 含 Manifest
+	// （artifact.go artifactPayloadHash），因此新增 lang 字段会改变全部
+	// 「带语言构建」的产物 hash，需要一次性全量重建（历史产物仍可按旧 hash 回滚）。
+	Lang string `json:"lang,omitempty"`
 	Dependencies              []Dependency      `json:"dependencies"`
 	Files                     map[string]string `json:"files"`
+}
+
+// 依赖类型常量（docs/03-pipeline.md §8.2 / docs/06-D §10.4）。
+const (
+	// DependencyKindI18N 界面文案词条依赖：sys_i18n 变更后需重建产物
+	// （组件固定文案由构建期取词注入 HTML 字节）。
+	DependencyKindI18N = "i18n"
+)
+
+// I18NDependencyKey 文案词条依赖的资源键（访客面 namespace）。
+const I18NDependencyKey = "i18n:site"
+
+// I18NDependency 构造文案词条依赖条目（revision 取自 sys_i18n_revision，
+// 或退化为 max(update_time) 的 RFC3339 串）。
+func I18NDependency(revision string) Dependency {
+	return Dependency{Kind: DependencyKindI18N, Key: I18NDependencyKey, Revision: revision}
 }
 
 // Artifact 不可变发布产物：入口 HTML + manifest + 其他 manifest 声明文件。

@@ -102,7 +102,7 @@ func TestNavigationMenuCompiledIntoArtifact(t *testing.T) {
 	parentID := addNavItem(t, navSvc, projectID, "产品", "/products", nil, "self")
 	addNavItem(t, navSvc, projectID, "新品", "/new", &parentID, "blank")
 
-	html, err := pages.CompilePreview(ctx, []byte(navDocument), projectID, "/")
+	html, err := pages.CompilePreview(ctx, []byte(navDocument), projectID, "/", "")
 	if err != nil {
 		t.Fatalf("预览编译失败: %v", err)
 	}
@@ -122,7 +122,7 @@ func TestNavigationMenuIsolatedByProject(t *testing.T) {
 
 	// 另一个工程（该工程无导航项）：编译不应带出本工程菜单。
 	otherProjectID := "00000000-0000-0000-0000-0000000000ff"
-	html, err := pages.CompilePreview(ctx, []byte(navDocument), otherProjectID, "/")
+	html, err := pages.CompilePreview(ctx, []byte(navDocument), otherProjectID, "/", "")
 	if err != nil {
 		t.Fatalf("预览编译失败: %v", err)
 	}
@@ -134,7 +134,7 @@ func TestNavigationMenuIsolatedByProject(t *testing.T) {
 // TestNavigationCustomItemsUntouched 未绑定位置时手写菜单项照常渲染。
 func TestNavigationCustomItemsUntouched(t *testing.T) {
 	_, pages, _, projectID := newNavigationEnv(t)
-	html, err := pages.CompilePreview(context.Background(), []byte(customNavDocument), projectID, "")
+	html, err := pages.CompilePreview(context.Background(), []byte(customNavDocument), projectID, "", "")
 	if err != nil {
 		t.Fatalf("预览编译失败: %v", err)
 	}

@@ -5,11 +5,15 @@ package pagedto
 type BuildReq struct {
 	ID              string `json:"id" binding:"required"`
 	ExpectedVersion int64  `json:"expectedVersion"`
+	// Lang 构建语言（多语言 P2）：空 = 站点默认语言（i18n.default_lang）。
+	Lang string `json:"lang"`
 }
 
 // PublishReq 激活暂存产物。
 type PublishReq struct {
 	ID string `json:"id" binding:"required"`
+	// Lang 发布语言：必须与构建语言一致，否则暂存产物与激活路径不匹配。
+	Lang string `json:"lang"`
 }
 
 // RollbackReq 回滚到指定历史产物。
@@ -23,6 +27,8 @@ type UpdateURLReq struct {
 	ID           string `json:"id" binding:"required"`
 	NewPath      string `json:"newPath" binding:"required"`
 	WithRedirect bool   `json:"withRedirect"`
+	// Lang 目标语言（多语言 P2）：决定新路径的实际访问前缀，空 = 站点默认语言。
+	Lang string `json:"lang"`
 }
 
 // PublishResp 发布链路操作结果。
