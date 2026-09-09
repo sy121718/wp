@@ -35,7 +35,7 @@
 - 页面 id `32274c84-4f6f-46ac-91bb-f87e4eeed4be`，路径 `/updvape-home`，135 节点
 - 页眉/Hero/信任条(grid)/分类/畅销/积分/品牌/新品/组合装/指南/关于/页脚
 - 新增容器**背景轮播**能力：`visual.bgSlides[]` + `bgSlideInterval`，纯 CSS 交叉淡入；`core.CSSBuckets.AddKeyframes` 支持组件自定义关键帧
-- **遗留**：17 张图仍是 updvape 外链（防盗链导致轮播显示底色），需本地化到 `public/storage`
+- **遗留（已解决 → 见 §3「updvape 外链图片本地化（已完成）」）**：当时页面仍有 updvape 外链图（防盗链导致轮播显示底色）；后续已下载并替换为 `/storage/image/updvape/*.webp`（当前 `public/storage/image/updvape/` 下 9 个 webp；产物中剩余 3 处 `updvape.com` 为页脚/社交 `<a>` 链接，合理保留）
 
 ### 1.4 SEO（4 步全部完成）
 - `internal/seo/scoring`：8 维度 24 检查项 + 基准表（`benchmarks.go`）+ 页型调权 + 9 个表驱动测试；规则表见 `docs/02-E1-seo-scoring-rules.md`
@@ -53,7 +53,7 @@
 ### 1.6 富文本迁移（本轮）
 
 - **编辑器换 Trix 2.x**：TinyMCE 全部移除，改为本地 vendor `internal/templates/static/vendor/trix/`（`trix.css` + `trix.umd.js`，`workbench/layout.html` 引入，零 CDN）；`public/test/page/feature/workbench_page_test.go` 已断言外壳不含 tinymce
-- **富文本能力上移 core**：新增 `internal/builder/core/richtext.go`（**白名单唯一来源**）——`allowedRichTags` / `SanitizeRichHTML` / `RichTextHTML` / `HasRichMarkup` / `StripRichTags` / `MaxRichLen = 20000`；`internal/builder/components/text/sanitize.go` 退化为薄转发（保留包内私有名 `sanitizeRichHTML` / `stripRichTags`，既有调用点与测试名不变）
+- **富文本能力上移 core**：新增 `internal/builder/core/richtext.go`（**白名单唯一来源**）——`allowedRichTags` / `SanitizeRichHTML` / `RichTextHTML` / `HasRichMarkup` / `StripRichTags` / `MaxRichLen`（当时为 20000，**现已统一为 30000**，与 `ct:"richtext,maxlen=30000"` 一致，见 `internal/builder/core/richtext.go:26`）；`internal/builder/components/text/sanitize.go` 退化为薄转发（保留包内私有名 `sanitizeRichHTML` / `stripRichTags`，既有调用点与测试名不变）
 - **白名单变化**：新增 `pre`（代码块）与 `div`（Trix 段落容器，输出侧归一为 `p`，带嵌套保护不产出 `<p><p>`）；`h1` 仅入白名单用于输出侧统一降级 `h2`
 - **新增控件 kind `ct:"richtext"`**（与 `rtext` 三端文本区分）：`core/controls.go` 的 `ControlRichText` + `inspector_handle.go` 输出 `slot=richtext` + 客户端 `methods/controls/misc.js`（`schemaField` / `fillInspectorSlots`）分派到 `richTextField`（`methods/controls/text.js`，Trix）
 - **四字段富文本化**：`core.card.text`、`core.quote.text`、`core.infobox.text`、`core.faq.FaqItem.answer` 改 `ct:"richtext,..."`，`BuildView` 走 `core.RichTextHTML` + 模板 `unsafe` 输出；`core.faq` 另加 `faqPanel` 编辑面板（答案单独成块，Trix 需要横向空间，不塞进 repeater 行）
@@ -61,7 +61,7 @@
 - **富文本图片上传**：Trix 粘贴/拖入 → `POST /api/media/upload`（复用 media 模块，非超管需 `media:upload` 权限点）；失败移除 pending 附件，避免空 `<figure>` 进正文
 - **顺带修复**：`faq.jet` 与 `table.jet` 的 Jet 语法 bug——`{{ range $x := ... }}` 不支持，已改 `{{ range _, x := ... }}`（faq 答案同时改为 `unsafe(item.Answer)` 走富文本）
 - **验证**：`internal/builder/core/richtext_test.go`（纯文本段落化 / 清洗 / h1 降级 / 长度上限 / 幂等）+ `components/text/sanitize_test.go`、`sanitize_fuzz_test.go`（薄转发后仍覆盖）
-- **进行中**：idiomorph 引入（把面板 `innerHTML` 整块重建改为 morph，见 `docs/06-C-htmx-extensions.md` §四/§五）
+- **已完成**：idiomorph 已引入（vendor 0.8.0，`internal/templates/workbench/layout.html:181` 引入 + `static/js/workbench/core.js:45` `morphHTML`；结构树刻意保留整块 innerHTML，见 `methods/tree.js:23`；见 `docs/06-C-htmx-extensions.md` §四/§五）
 
 > 规范同步：`docs/02-C2-text.md`（§2 富文本字段清单 / §4 清洗规则 / §6 实现映射）、`docs/02-C3-controls.md`（`richtext` kind）、`docs/02-C4-groups.md`（新增控件类型）、`docs/06-C-htmx-extensions.md`（Trix 附件上传）。
 
@@ -182,7 +182,7 @@
 - **加载方式**：`layout.html` 改为 `<script type="module" src="/static/js/workbench/index.js?v={{.jsVer}}">`；`icons.js`/`media-lib.js` 仍是普通脚本（先于 module 执行）
 - **共享状态**：`core.js` 用 `export const/let/function` 导出（顶层变量无运行时重赋值，已核对）；各 methods 模块 `import` 同名绑定，**原引用点零改动**；方法间 `this` 调用由 `Object.assign` 合并后仍然有效
 - **验证**：12 个模块 `node --check` 全通过；Node 端 import 图全部加载成功并断言合并对象含 `init/renderTree/syncInspector/saveDraft/openMediaPicker/bindTreeHtmx/renderSettingsPanelHtmx/loadHistoryHtmx/select/snapshot`；`/static/js/workbench/{index,core,methods/inspector}.js` 均 200，旧 `/static/js/workbench.js` 404；`go test ./...` 全绿
-- **已知**：`inspector.js` 仍 1788 行——`syncInspector` 是含 30+ 闭包控件函数的超大方法，下一步把这些控件（colorControl/spacingControl/cornersControl/mediaControl/richTextField/各 repeater 面板）从闭包提取为模块级函数，可再降 800~1000 行；ES module 子模块 import 不带版本参数，开发时若遇旧缓存需硬刷新
+- **已知（后续已解决，见本节「下一个减量目标」）**：当时 `inspector.js` 1788 行，`syncInspector` 含 30+ 闭包控件函数；现已提取到 `methods/controls/*.js`（`inspector.js` 161 行）。仍成立的部分：ES module 子模块 import 不带版本参数，开发时若遇旧缓存需硬刷新
 - **HTMX 替代收尾**：本轮补齐 htmx 路径缺失的手写面板（`typographyPanel`/`interactionPanel`/`dividerInsetStyle`）；`?htmx=all` 浏览器走查无误后，可把 htmx 设为默认并删除旧渲染路径（约 775 行）
 
 ### htmx 成为默认路径 + 页签补齐（已完成）
@@ -191,7 +191,7 @@
 - **修复**：`buildInspectorSections` 的「未登记分组兜底」循环此前未受页签约束，会把被过滤掉的已登记分组（如 advanced）当未登记加回来——已修正
 - **验证**：`TestInspectorPanelTabFiltering`（content 不含样式字段 / style 不含内容字段 / 空 tab 渲染全部）；`go test ./...` 全绿
 - **旧渲染路径已删除（本文档上一版遗留的「可删 775 行」已完成）**：`renderSettingsPanel` / `renderGlobalPanel` / `loadHistory` 等旧 DOM 拼装分支已移除，现为薄包装（见各文件「旧 DOM 拼装路径已删除」注释）；`wbHtmxEnabled` 开关与 `?htmx=off` 回退已不存在，htmx 是唯一路径
-- **下一个减量目标**：`inspector.js` 1829 行，`syncInspector()` 单个方法内嵌 49 个闭包控件函数（84 行 ~ 约 1500 行）。提取为模块级函数或 `methods/controls/*.js`（`panel` / `node` / `self` 改参数传递）预计再降约 900 行
+- **下一个减量目标（已完成，2026-09 回填）**：`inspector.js` 1829 行时 `syncInspector()` 内嵌 49 个闭包控件函数。现已提取到 `methods/controls/*.js`（base/color/corners/media/misc/repeater/selects/spacing/text 共 9 个文件 2093 行），`methods/inspector.js` 降到 **161 行**（`wc -l` 实测）
 
 ### 走查反馈修复（浏览器实测）
 1. **页签第一次点击内容/样式相同**：`index.js` 初始 `tab: 'layout'`，而服务端 `sectionInTab` 只认 `content`/`style`（其他值渲染全部）→ 改为 `'content'`；另给 `fetchInspectorPanel` 加请求序号（快速切换时丢弃过期响应，避免「后发先至」显示错页签）
@@ -380,12 +380,27 @@
 
 ## 4. 其他遗留（非阻塞）
 
-- 复刻页外链图片本地化（走媒体库，顺带验证变体管线）
-- `card` 组件缺标题/正文排版字段（只能靠通用层）
-- `core.text` 正文 `ct:"richtext,maxlen=30000"` 与清洗硬上限 `core.MaxRichLen=20000` 不一致（20000~30000 之间能过校验但产物被判空），建议后续统一口径
-- 富文本图片（Trix `figure/img`）未接媒体变体与 caption：白名单直出 `src`，不走 `srcset`
-- idiomorph 引入中（面板 `innerHTML` → `Idiomorph.morph`，见 `docs/06-C-htmx-extensions.md` §四）
-- 容器 flex 布局面板（方向/主轴/交叉轴/换行/间距）
+- ~~复刻页外链图片本地化（走媒体库，顺带验证变体管线）~~ **已完成**：外链图已下载到 `public/storage/image/updvape/`（见 §3）；「未走媒体库」部分仍成立
+- `card` 组件缺标题/正文排版字段（只能靠通用层）——**仍成立**（`internal/builder/components/card/card.go` 仅 title/text/buttonText/buttonLink）
+- ~~`core.text` 正文 `ct:"richtext,maxlen=30000"` 与清洗硬上限 `core.MaxRichLen=20000` 不一致~~ **已统一**：`MaxRichLen = 30000`（`internal/builder/core/richtext.go:26`），与 `internal/builder/components/text/text.go:43` 一致
+- 富文本图片（Trix `figure/img`）未接媒体变体与 caption：白名单直出 `src`，不走 `srcset`——**仍成立**
+- ~~idiomorph 引入中（面板 `innerHTML` → `Idiomorph.morph`）~~ **已完成**（`layout.html:181` + `core.js` `morphHTML`）
+- ~~容器 flex 布局面板（方向/主轴/交叉轴/换行/间距）~~ **已核销**：`containerLayout()`（`internal/templates/static/js/workbench/methods/controls/misc.js:128`）已渲染完整面板，见 §3
 - `infobox.icon` 手写面板与后端 tag 是否重复显示
 - 后台「菜单管理」页（sys_menus）尚未收录 `/admin/navigations`（侧边栏走代码配置 `nav_menu.go`，不受影响；要一致可补 seed）
 - **测试基线已修复**：上一轮遗留的 8 个断言（advanced 5 例文案、container 边框三要素、按钮圆角/位移字面值、spacer 透明度文案）已按现行实现更新，`go test ./...` 全绿——后续任何红都是真回归。
+
+---
+
+## 5. 文档回填记录（2026-09）
+
+本文以「会话交接」为定位，§1/§4 保留的是各轮当时的未完成口径，与 §3 的实施记录冲突。本次按**代码为准**统一以下 4 处（`10-todo.md` DOC-8 / §10.2 记录的同一问题）：
+
+| 项 | §1/§4 旧口径 | 代码事实 | 依据（代码路径 / 符号） |
+|---|---|---|---|
+| updvape 图片本地化 | §1.3「遗留外链图」、§4「未做」 | 已完成 | §3 实施记录；`public/storage/image/updvape/`（9 个 `.webp`） |
+| `core.MaxRichLen` | §1.6「= 20000」、§4「与 maxlen=30000 不一致」 | 已统一为 30000 | `internal/builder/core/richtext.go:26`；`internal/builder/components/text/text.go:43` |
+| idiomorph | §1.6「进行中」、§4「引入中」 | 已引入（vendor 0.8.0） | `internal/templates/workbench/layout.html:181`；`internal/templates/static/js/workbench/core.js:45` `morphHTML` |
+| 容器 flex 布局面板 | §4「未做」 | 已实现（核查后无需改动） | `internal/templates/static/js/workbench/methods/controls/misc.js:128` `containerLayout` |
+
+> 说明：§1.3 的「17 张」与 §3 的「10 张」为不同口径（前者是页面引用点数、后者是去重后下载的图片数），原文保留不改，仅标注状态。

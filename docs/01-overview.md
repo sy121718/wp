@@ -25,7 +25,7 @@ ClientEnhancement     对已有 HTML 渐进增强的受控客户端行为
 ContentTemplate       为内容实体类型（Product/Article/Category）设计的版本化页面结构定义，参与每次构建
 PresentationInstance  内容实体（Product/Article/Category）的自动发布页面实例，含已解析的完整 AST 快照
 DocumentSnapshot      构建时从 ContentTemplate 派生、含已解析数据的完整不可变 AST 快照
-GlobalComponentUpdatePolicy  全局组件新版本发布时对已有页面的更新策略（immutable / auto-update / pinned）
+GlobalComponentUpdatePolicy  全局组件新版本发布时对已有页面的更新策略（immutable / auto-update / pinned；当前实现由 `block` 模块的 `reuse_mode` 承担，见 §4.1）
 ```
 
 系统只管理固定 CMS 业务：
@@ -109,7 +109,10 @@ MVP 不做：
 - 整站 Release 与整站原子回滚
 - 多人实时协作
 - 第三方组件市场
-- 多语言静态发布（i18n）——后续按 URL 语言前缀方案扩展：`/{lang}/{path}` 各生成独立 Artifact，切换语言等同跳转新 URL 并触发构建。同一 Page Document 按 Project 语言列表循环构建，BuildContext 按 language 注入翻译。Admin 控制面 i18n 复用现有 `sys_i18n` + 内存缓存机制。
+
+**口径更正（2026-09 回填）**：原列于此的「多语言静态发布（i18n）」**已落地**，不再属于非目标——按 URL 语言前缀 `/{lang}/{path}` 各生成独立 Artifact，切换语言等同跳转新 URL 并触发构建；同一 Page Document 按 Project 语言列表循环构建，BuildContext 按 language 注入翻译；Admin 控制面 i18n 复用 `sys_i18n` + 内存缓存机制。
+
+> 依据：`config.yaml:66`（`i18n.site_lang_prefix: true`）、迁移 `055_i18n_columns` / `056_i18n_revision` / `061_page_artifacts_lang` / `062_page_publications` / `063_page_stagings` / `064_project_locales` / `066_sys_translation`、`internal/module/project/model/locale_model.go`、`internal/module/page/service/page_lang.go`、`internal/templates/admin/page_translations.html`（翻译工作台）；详见 `docs/06-D-site-i18n.md` §15。
 
 ## 2. 总体架构
 
@@ -249,13 +252,13 @@ go_wp/
 │       ├── block/                    # 已实现：全局块（页眉/页脚/区块）与 stale 传播编排
 │       ├── artifact/                 # 已实现：Artifact 元数据与内容对象闭包
 │       ├── publication/              # 已实现：URL 占用、激活、回滚与恢复
-│       ├── content/                  # 规划 0-A2：固定 CMS 内容与 revision
-│       ├── contenttemplate/          # 规划 0-A2：ContentTemplate 与版本
-│       ├── presentation/             # 规划 0-A2：PresentationInstance / DocumentSnapshot
-│       ├── blueprint/                # 规划 0-B：Blueprint 与版本
-│       ├── component/                # 规划 0-B：Global Component、版本、策略与 Registry
-│       ├── navigation/               # 规划 0-C：公开站点菜单及其 revision
-│       └── runtimefragment/          # 规划 0-D：白名单动态片段
+│       ├── content/                  # 已实现：固定 CMS 内容与 revision
+│       ├── contenttemplate/          # 已实现：ContentTemplate 与版本
+│       ├── presentation/             # 已实现：PresentationInstance / DocumentSnapshot
+│       ├── blueprint/                # 已实现：Blueprint 与版本（用完即弃）
+│       ├── navigation/               # 已实现：公开站点菜单及其 revision
+│       ├── plugin/                   # 已实现：插件体系（组件注册、能力分层）
+│       └── runtimefragment/          # 已实现：白名单动态片段
 ├── pkg/                              # 通用基础组件（facade + provider/driver）
 ├── public/
 │   ├── migrations/                   # 数据迁移
@@ -263,7 +266,7 @@ go_wp/
 │   └── test/                         # 集成测试与 fixtures
 ```
 
-目录树中「已实现」模块已落地；「规划 0-X」模块尚未创建，不预建空目录。`build` 无独立 module 目录：编译内核在 `internal/builder`，发布内核在 `internal/pipeline`。原 `internal/embed/dist/` 下的 Vue SPA 构建产物已移除（后台全部改为 HTMX + Jet SSR）。
+目录树中模块均已落地（2026-09 按 `internal/module/` 实际目录回填，共 16 个）。`component` **无独立模块目录**：Global Component 的「不可变版本子树 + 更新策略（immutable / auto-update / pinned）」语义当前由 `block` 模块的 `reuse_mode`（`global` 引用 / `template` 一次性复制）承担，见 §4.1 与 `docs/02-domain.md` §4.2。`build` 无独立 module 目录：编译内核在 `internal/builder`，发布内核在 `internal/pipeline`。原 `internal/embed/dist/` 下的 Vue SPA 构建产物已移除（后台全部改为 HTMX + Jet SSR）。
 
 ### 4.1 现有模块与 go_wp 核心模块映射
 
@@ -278,14 +281,15 @@ go_wp/
 | `build` | 非独立模块 | BuildContext 解析、Normalize/Validate/Lowering/Render 管线与构建任务；编译内核在 `internal/builder`，发布内核在 `internal/pipeline` | 持久化 CMS 实体、直接切换线上 URL |
 | `artifact` | 已实现 | Artifact 元数据、内容对象闭包、`ArtifactStore` 契约与实现 | URL 占用、发布状态机 |
 | `publication` | 已实现 | `page_routes`、激活/回滚/取消发布、event/receipt 与恢复任务（两段式回执、占用前置） | 编译 Document、修改 Artifact 内容 |
-| `content` | 规划 0-A2 | 固定 Article/Product/Category/Tag 等 CMS 内容及单调 revision | 页面 AST、访问时模板解释、库存等实时状态 |
-| `contenttemplate` | 规划 0-A2 | ContentTemplate 草稿、不可变版本和 Binding 约束 | CMS 内容实例、运行时渲染 |
-| `presentation` | 规划 0-A2 | PresentationInstance、DocumentSnapshot 及内容驱动的发布入口 | 手工 Page 编辑、模板版本管理 |
-| `blueprint` | 规划 0-B | Blueprint 草稿、不可变版本和 Page 初始化 | 构建期继承、自动传播 |
-| `component` | 规划 0-B | Global Component、版本、更新策略、pins 与 Registry manifest | Publish Compiler 的树遍历和产物组装 |
-| `media` | 已实现 | 媒体元数据、变体、内容 hash 和稳定 `assetId`（LIKE 通配符转义、软删除过滤） | Page Document、公开 URL 激活 |
-| `navigation` | 规划 0-C | 公开站点菜单、位置和 revision | 后台权限菜单；后者始终属于 `menu` |
-| `runtimefragment` | 规划 0-D | capability 白名单、受控 HTML Fragment handler | 读取 Page Document、执行 Jet、接受任意 endpoint |
+| `content` | 已实现 | 固定 Article/Product/Category/Tag 等 CMS 内容及单调 revision（`internal/module/content`，含 `collection_resolver.go` 的 `content:{type}` 集合源） | 页面 AST、访问时模板解释、库存等实时状态 |
+| `contenttemplate` | 已实现 | ContentTemplate 草稿、不可变版本和 Binding 约束 | CMS 内容实例、运行时渲染 |
+| `presentation` | 已实现 | PresentationInstance、DocumentSnapshot 及内容驱动的发布入口（手动 `POST /api/presentation/rebuild`；自动 fan-out 见 `05` 阶段 4 未完成项） | 手工 Page 编辑、模板版本管理 |
+| `blueprint` | 已实现 | Blueprint 草稿、不可变版本和 Page 初始化 | 构建期继承、自动传播 |
+| `component` | 未落地（语义由 `block.reuse_mode` 承担） | Global Component 的复用与版本语义：`block` 的 `reuse_mode=global`（引用 + stale 传播）/ `reuse_mode=template`（插入时复制 AST、此后独立） | Publish Compiler 的树遍历和产物组装；当前无 `internal/module/component` 目录 |
+| `media` | 已实现 | 媒体元数据、变体、内容 hash 和稳定 `assetId`（LIKE 通配符转义、软删除过滤；表为 `sys_attachment`/`sys_file_category`/`sys_media_variant`） | Page Document、公开 URL 激活 |
+| `navigation` | 已实现 | 公开站点菜单、位置和 revision | 后台权限菜单；后者始终属于 `menu` |
+| `plugin` | 已实现 | 插件体系：组件注册、能力分层、manifest 编译与原子切换 | 第三方任意脚本/查询扩展 |
+| `runtimefragment` | 已实现 | capability 白名单、受控 HTML Fragment handler（`capability.go` 首批 `loginPanel`/`cartSummary`） | 读取 Page Document、执行 Jet、接受任意 endpoint |
 
 关键命名约束：
 
@@ -329,9 +333,9 @@ internal/module/{module}/
 | ContentTemplate | 内容实体类型的版本化页面结构定义，参与每次构建派生 DocumentSnapshot | 参与运行时渲染；作为一次性初始化工具 |
 | PresentationInstance | 内容实体的自动发布页面实例，从 ContentTemplate 派生 DocumentSnapshot 后经同一流水线生成 Artifact | 手工在 Visual Builder 编辑；URL 脱离 CMS 实体手动设置 |
 | DocumentSnapshot | 构建时从 ContentTemplate 派生的已解析完整 AST 快照 | 手工编辑；保存业务内容实例或任意代码 |
-| GlobalComponentUpdatePolicy | 定义全局组件新版本发布时对已有页面的更新策略 | 片段级覆盖或绕过 Compiler 的自动升级 |
+| GlobalComponentUpdatePolicy | 定义全局组件新版本发布时对已有页面的更新策略（实现归属：`block.reuse_mode`，见 §4.1） | 片段级覆盖或绕过 Compiler 的自动升级 |
 | Project Assets | CMS Media 的稳定引用与构建期资源解析 | 复制媒体二进制或保存最终 URL |
-| Global Component | Project 内不可变版本子树 | 绕过 updatePolicy 自动升级 Page 或引用点局部 override |
+| Global Component | Project 内不可变版本子树（实现归属：`block` 模块，`reuse_mode=global` 引用 / `template` 一次性复制） | 绕过 updatePolicy 自动升级 Page 或引用点局部 override |
 | Page Document | 单 URL 的结构、样式、Binding | 保存业务内容实例或任意代码 |
 | Editor Kernel | Command、History、NodeIndex | 实现发布 Compiler |
 | Component Registry | 组件语义、Inspector manifest、lowering、renderStrategy | 任意脚本/API/查询扩展 |

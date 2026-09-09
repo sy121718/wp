@@ -2,7 +2,7 @@
 
 > 本文是 go_wp 从当前状态到完整交付的执行路线。每个阶段有明确的验收门禁，未通过不得进入下一阶段。
 >
-> **状态更新于 2025-09：阶段 0-3 已完成，4-7 待办。**
+> **状态更新于 2026-09（按代码回填）：阶段 0-3 已完成；阶段 4 主链已落地、仅「CMS 变更自动发布（依赖 fan-out）」未做；阶段 5 的 blueprint/media 已落地、component 未落地（语义由 `block.reuse_mode` 承担）；阶段 6/7 已落地。**
 
 ## 冻结决策
 
@@ -57,10 +57,10 @@
 | 阶段 1 | 已完成 | 后台壳 + Session + 安全 |
 | 阶段 2 | 已完成 | 模块 HTMX 迁移（admin 六领域合并大模块，SPA/JWT 已清理） |
 | 阶段 3 | 已完成 | 0-A1 Page 静态发布主链（project/page/artifact/publication 模块落地，两段式回执/占用前置/activating 随机化） |
-| 阶段 4 | 待开始 | 0-A2 CMS 内容 + 自动发布 |
-| 阶段 5 | 待开始 | 0-B Blueprint + Component + Media（media 已部分落地，blueprint/component 未落地） |
-| 阶段 6 | 待开始 | 0-C Navigation |
-| 阶段 7 | 待开始 | 0-D Runtime Fragment |
+| 阶段 4 | 部分完成 | 0-A2 CMS 内容 + 自动发布：`content`/`contenttemplate`/`presentation` 三模块已落地（迁移 042/043/044）；**未做**「CMS 变更 → 自动派生 DocumentSnapshot → 自动发布」（依赖 fan-out，见 `03-pipeline.md` §8）与「文章编辑页 Trix 集成」（后台无内容管理页） |
+| 阶段 5 | 部分完成 | 0-B Blueprint + Component + Media：`blueprint`（迁移 045）、`media`（迁移 048 + asynq 变体）已落地；`component` **未落地**，其版本/更新策略语义由 `block.reuse_mode` 承担（迁移 049，`internal/module/block/model/block_model.go`） |
+| 阶段 6 | 已完成 | 0-C Navigation（`internal/module/navigation`，迁移 046/054，后台 `/admin/navigations`） |
+| 阶段 7 | 部分完成 | 0-D Runtime Fragment：内核已落地（`internal/module/runtimefragment` 的 registry/capability/endpoint/router，`GET /_fragments/:type`）；分页列表与搜索 Shell 的 capability 未注册（当前仅 `loginPanel`/`cartSummary`） |
 
 ---
 
@@ -202,20 +202,20 @@
 
 **任务**：
 
-- [ ] `content` 模块：固定 CMS 内容（Article/Product/Category/Tag）与单调 revision
-- [ ] `contenttemplate` 模块：ContentTemplate 草稿、不可变版本、Binding 约束
-- [ ] `presentation` 模块：PresentationInstance / DocumentSnapshot / 内容驱动发布入口
-- [ ] CMS 实体变更 → 自动派生 DocumentSnapshot → 经同一 Publish Compiler → ArtifactStore → PublicationStore
-- [ ] 富文本编辑器（Trix 2.x，本地 vendor）集成到文章编辑页（服务端白名单清洗）
+- [x] `content` 模块：固定 CMS 内容（Article/Product/Category/Tag）与单调 revision（`internal/module/content`，迁移 `042_content.sql`）
+- [x] `contenttemplate` 模块：ContentTemplate 草稿、不可变版本、Binding 约束（`internal/module/contenttemplate`，迁移 `043_content_template.sql`）
+- [x] `presentation` 模块：PresentationInstance / DocumentSnapshot / 内容驱动发布入口（`internal/module/presentation`，迁移 `044_presentation.sql`）
+- [ ] CMS 实体变更 → 自动派生 DocumentSnapshot → 经同一 Publish Compiler → ArtifactStore → PublicationStore（**未做**：当前仅手动 `POST /api/presentation/rebuild`，自动 fan-out 见 `03-pipeline.md` §8 与 `10-todo.md` PIPE-3）
+- [ ] 富文本编辑器（Trix 2.x，本地 vendor）集成到文章编辑页（服务端白名单清洗）（**部分**：Trix 已集成工作台富文本字段与媒体上传，`internal/builder/core/richtext.go` 为白名单唯一来源；后台尚无文章/内容编辑页，见 `10-todo.md` INF-1）
 
 **验收门禁**：
 
 | 检查项 | 标准 |
 |--------|------|
-| 内容 CRUD | Article/Product/Category 创建/编辑/删除正常 |
-| 自动发布 | 内容变更触发 PresentationInstance 重建并发布 |
-| ContentTemplate 版本 | 版本变化触发所有关联 PresentationInstance 重建 |
-| 富文本编辑器（Trix 2.x） | 编辑器加载正常，提交内容经白名单清洗 |
+| 内容 CRUD | ✅ Article/Product/Category 创建/编辑/删除正常（`content` 模块 API） |
+| 自动发布 | ❌ 未通过：内容变更**不**自动触发 PresentationInstance 重建（需手动 `POST /api/presentation/rebuild`） |
+| ContentTemplate 版本 | ❌ 未通过：版本变化未自动触发关联 PresentationInstance 重建（同依赖 fan-out） |
+| 富文本编辑器（Trix 2.x） | ⚠️ 部分：工作台富文本字段加载正常、提交经白名单清洗；文章编辑页尚未存在 |
 | `go test ./...` | 全绿 |
 
 ---
@@ -226,17 +226,17 @@
 
 **任务**：
 
-- [ ] `blueprint` 模块：Blueprint 草稿、不可变版本、Page 初始化（用完即弃）
-- [ ] `component` 模块：Global Component、版本、更新策略（immutable/auto-update/pinned）、Registry manifest
-- [ ] `media` 模块：媒体元数据、变体、内容 hash、稳定 assetId
+- [x] `blueprint` 模块：Blueprint 草稿、不可变版本、Page 初始化（用完即弃）（`internal/module/blueprint`，迁移 `045_blueprint.sql`）
+- [ ] `component` 模块：Global Component、版本、更新策略（immutable/auto-update/pinned）、Registry manifest（**未落地**：无 `internal/module/component`；复用与版本语义由 `block` 的 `reuse_mode` 承担，迁移 `049_block_reuse_mode.sql`，`internal/module/block/model/block_model.go:37-40`）
+- [x] `media` 模块：媒体元数据、变体、内容 hash、稳定 assetId（`internal/module/media`，迁移 `048_media_variant.sql`，变体生成走 asynq）
 
 **验收门禁**：
 
 | 检查项 | 标准 |
 |--------|------|
-| Blueprint | 初始化 Page Document 后不再参与构建；修改不传播 |
-| Component 版本 | 更新策略生效（immutable 冻结 / auto-update 自动升级 / pinned 固定） |
-| Media | 上传→变体→引用链路闭环，assetId 稳定 |
+| Blueprint | ✅ 初始化 Page Document 后不再参与构建；修改不传播 |
+| Component 版本 | ❌ 未通过：无 `component` 模块，无 immutable/auto-update/pinned 三策略；`block.reuse_mode` 只提供 global（引用+stale 传播）/ template（复制后独立）两种语义 |
+| Media | ✅ 上传→变体→引用链路闭环，assetId 稳定（`sys_attachment`/`sys_file_category`/`sys_media_variant`） |
 | `go test ./...` | 全绿 |
 
 ---
@@ -247,8 +247,8 @@
 
 **任务**：
 
-- [ ] `navigation` 模块：公开站点 Header/Footer 导航、菜单位置、revision
-- [ ] 导航构建期编译进静态 Artifact
+- [x] `navigation` 模块：公开站点 Header/Footer 导航、菜单位置、revision（`internal/module/navigation`，迁移 `046_navigation.sql`/`054_navigation_sources.sql`）
+- [x] 导航构建期编译进静态 Artifact（`internal/builder/navigation_test.go` 覆盖）
 
 **验收门禁**：
 
@@ -267,17 +267,17 @@
 
 **任务**：
 
-- [ ] `runtimefragment` 模块：capability 白名单、受控 HTML Fragment handler
-- [ ] HTMX 请求 → Go Handler → 返回受控 HTML 片段
-- [ ] 分页列表：构建时只输出第一页静态 HTML，后续页码 HTMX 按需加载
-- [ ] 搜索 Shell：规范化 Search Shell Page，搜索结果由 HTMX Fragment 按需返回
+- [x] `runtimefragment` 模块：capability 白名单、受控 HTML Fragment handler（`internal/module/runtimefragment/registry.go`）
+- [x] HTMX 请求 → Go Handler → 返回受控 HTML 片段（`GET /_fragments/:type`，`router.go`）
+- [ ] 分页列表：构建时只输出第一页静态 HTML，后续页码 HTMX 按需加载（**未注册 capability**）
+- [ ] 搜索 Shell：规范化 Search Shell Page，搜索结果由 HTMX Fragment 按需返回（**未注册 capability**；当前白名单仅 `loginPanel`/`cartSummary`，见 `capability.go`）
 
 **验收门禁**：
 
 | 检查项 | 标准 |
 |--------|------|
-| 白名单 | 只允许 Registry 内 capability，拒绝任意 endpoint |
-| 分页 | 第一页静态，后续页 HTMX 片段正常 |
-| 搜索 | 搜索结果 HTMX 按需返回 |
+| 白名单 | ✅ 只允许 Registry 内 capability，拒绝任意 endpoint |
+| 分页 | ❌ 未通过：未注册分页 capability |
+| 搜索 | ❌ 未通过：未注册搜索 capability |
 | 安全 | Fragment 不读取 Page Document、不执行 Jet、不接受任意 endpoint |
 | `go test ./...` | 全绿 |

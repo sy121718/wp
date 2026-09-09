@@ -53,38 +53,51 @@ Go Publish Compiler (发布构建期)
 
 ## 6. 实现映射（代码位置）
 
+> **口径更正（2026-09 按代码回填）**：本节原先引用的 `internal/builder/media/`（`asset.go`/`resolve.go`/`render.go`）与 `core.MediaResolver` **均不存在**。媒体能力的真实落点如下。
+
 ```text
+internal/module/media/                # 媒体业务模块（持久化 + 变体生产 + 下载）
+├── contract/media_service.go         #   MediaService 契约（ProbeImageVariants / GenerateVariants 已导出）
+├── service/media_crud.go             #   上传 / 列表 / 详情 / 删除（sys_attachment、sys_file_category）
+├── service/media_category.go         #   分类树增删改（含后代校验）
+├── service/media_variant.go          #   变体登记/生成/探测（EnsureVariantRecords / GenerateVariants / ProbeImageVariants）
+├── service/media_variant_task.go     #   asynq 异步变体任务
+├── service/image_processor.go        #   decode / flattenToOpaque / encodeJPEGBytes / buildVariantImage
+├── service/media_download.go         #   单图与批量 zip 下载（BuildDownloadPlan / BuildBatchDownloadPlan）
+└── model/media_model.go、media_variant_model.go   # sys_attachment / sys_file_category / sys_media_variant 表访问
+
 internal/builder/
-├── media/                      # 媒体中心领域内核（内存存储；上传/转码/持久化由媒体业务模块对接）
-│   ├── asset.go                #   Asset/Variant/Reference 模型、去重索引、版本替换、引用保护、多维检索
-│   ├── resolve.go              #   core.MediaResolver 实现：变体选择、srcset、现代格式 source
-│   └── render.go               #   图片 HTML 编译（<picture>/<img>，宽高必写、懒加载默认开）
-├── core/render.go              # MediaResolver 契约与 MediaMeta（媒体级，覆盖图片/视频/SVG/文档）
-└── components/
-    └── image/                  # core.image 图片组件：仅记录 assetId，构建期解析注入
+├── core/render.go                    # RenderContext.AssetProbe：构建期探测「该 URL 存在哪些变体宽度」
+├── core/image_loading.go             # 懒加载三态 + 骨架屏 CSS 的唯一实现
+└── components/image/                 # core.image：image.go（模型/校验）+ jet.go（srcset 映射 _thumb/_medium）
 ```
 
 | 规范条目 | 实现 |
 |---|---|
-| 不可变资产与稳定引用 | `media/asset.go` `Upload`（内容哈希派生 assetId）、`deriveAssetID` |
-| 文件去重与版本替换 | `Upload` 重复检测返回 duplicateOf；`Replace`（assetId/引用保留、Generation+1 触发全站刷新） |
-| 引用追踪与保护 | `RecordRef` / `Refs` / `Delete`（被引用强制拦截并列出引用清单） |
-| 多维搜索 | `Search`（文件名/类型/分类/标签/引用状态） |
-| 构建期变体注入 | `media/resolve.go` `ResolveMedia` + `core.MediaResolver` 契约 |
-| 响应式图片编译 | `media/render.go` `RenderImageHTML`（AVIF→WebP→fallback、宽高必写杜绝 CLS、`loading="lazy"` 默认） |
-| 组件仅存 assetId | `components/image`（Validate 强制白名单 assetId，Render 经解析器取元数据） |
-| 单元测试 | `public/test/builder/unit/media_test.go` |
+| 稳定引用 | `sys_attachment.id`（自增主键）为引用标识；`md5` 列仅落库留痕，**不做去重** |
+| 文件去重与版本替换 | **未实现**：`Upload` 无重复检测/duplicateOf，无 `Replace`/`Generation` |
+| 引用追踪与保护 | **未实现**：无引用登记表与删除拦截（`init_schema.sql` 的 `media_reference` 建表但无 Go 引用） |
+| 多维检索 | `Service.List`（`internal/module/media/service/media_crud.go:79`）：`file_type` + `category_id` + `search`（文件名）+ 分页 |
+| 变体生成 | `GenerateVariants` + `media_variant_task.go`（asynq）；类型 `thumb`(320)/`medium`(1280)/`webp`，统一有损 JPEG q82 落盘为 `<stem>_<type>.jpg` |
+| 构建期变体注入 | `builder.WithAssetProbe`（`internal/builder/builder.go:213`）+ `media.Service.ProbeImageVariants`（`page/service/page_assemble.go:104`） |
+| 响应式图片编译 | `components/image/jet.go` 输出 `srcset`（`_thumb.jpg`/`_medium.jpg`）+ `sizes`，原图留 `src` 回退；宽高必写、`loading="lazy"` 默认开 |
+| 懒加载/骨架屏 | `core.ResolveImageLoading` / `core.ImageSkeletonClass`（`core/image_loading.go`），单图→组件→主题→默认四级解析 |
+| 单元测试 | `internal/builder/image_loading_test.go`、`internal/builder/image_skeleton_test.go`、`public/test/media/unit/media_probe_unit_test.go` |
 
-命名约定：解析契约为**媒体级** `MediaResolver`（覆盖图片/视频/SVG/文档）；`core.image` 是消费它的**图片展示组件**（渲染 `<img>`），后续 `core.video` 等组件复用同一解析器。视频/文档资产解析返回稳定 URL 与 SEO 元数据（变体语义不适用）。
+命名约定（2026-09 更正）：当前**不存在** `MediaResolver` 契约；构建期响应式图片改由 `core.RenderContext.AssetProbe`（`internal/builder/core/render.go:42`，装配层经 `builder.WithAssetProbe` 注入）提供「URL → 可用变体宽度」探测，`core.image`（`internal/builder/components/image`）是消费它的图片展示组件。视频/文档资产当前只输出原文件 URL，无变体语义。
 
 ## 7. 数据库表结构（wp 库，PostgreSQL）
 
+> **口径更正（2026-09 按代码回填）**：本节原先写的 `media_asset` / `media_asset_variant` / `media_reference` 三表在 `init_schema.sql` 中确有建表语句（L305 / L337 / L356），但**没有任何 Go 代码读写**——属于早期设计遗留。实际持久化使用下表三张表。
+
 | 表 | 职责 | 对应规范条目 |
 |---|---|---|
-| `media_asset` | 媒体资产主表：`id`（稳定 assetId）、`content_hash` 唯一约束（去重）、宽高、SEO 元数据、`tags`(JSONB)、`generation`（替换代数） | §1 不可变资产与稳定引用、§2 去重/替换/SEO |
-| `media_asset_variant` | 变体表：`kind`（规格）+ `format`（格式）+ `url` + 宽高，`asset_id` 级联删除 | §2 自动变体生成 |
-| `media_reference` | 引用表：`(asset_id, ref_kind, ref_id)` 唯一约束（幂等登记），`ref_title` 供拦截警告展示 | §2 引用追踪与保护 |
+| `sys_attachment` | 附件主表：自增 `id`（引用标识）、`file_name`/`file_path`/`file_size`/`file_type`/`mime_type`、`storage_type`/`storage_path`/`url`、`md5`（留痕）、`extra_info`、`status`、分类外键 | §1 稳定引用、§2 SEO/检索 |
+| `sys_file_category` | 文件分类表（树形分类，媒体库筛选维度） | §2 多维检索 |
+| `sys_media_variant` | 变体表：`attachment_id` + `variant_type`（thumb/medium/webp）+ `file_path` + 宽高 + `status`（pending/processing/ready/failed），`UNIQUE(attachment_id, variant_type)`，级联删除 | §2 自动变体生成 |
 
-与旧附件表的关系：`sys_attachment` / `sys_file_category` 为 go-mvc 时代的传统附件表（自增 ID、单文件单记录、无变体/引用概念），由现有后台媒体管理模块继续使用；02-B 媒体中心以 `media_*` 三表为持久化落点，媒体业务模块（Phase 0-B/0-C）落地时在此表上实现 `media.Store` 的 GORM 版本，`sys_attachment` 届时评估废弃或保留为后台附件历史数据。
+依据：`public/migrations/init_schema.sql:204,236`、`public/migrations/048_media_variant.sql:17`、`internal/module/media/model/media_model.go:13-14`、`internal/module/media/model/media_variant_model.go:13`。
+
+与 02-B 目标模型的关系：`media_*` 三表对应的「内容哈希派生 assetId / 去重 / 版本替换 / 引用保护」在代码中**未实现**（见 §6 表格），若后续启用需新增迁移与 service 实现，或直接删除这三张空表统一到 `sys_*` 体系。
 
 域内核（`internal/builder/media`）与表的字段一一对应：`Asset.ID/Hash/FileName/MimeType/Type/Width/Height/Size/Alt/Title/Caption/CategoryID/Tags/Generation`、`Variant.Kind/Format/URL/Width/Height`、`Reference.Kind/ID/Title`。

@@ -405,6 +405,13 @@ interface ComponentVariantRef {
 
 ### 4.2 Global Component
 
+> **实现归属（2026-09 回填，代码为准）**：当前**没有 `internal/module/component` 模块**，本节描述的 Global Component 复用语义由 `block` 模块的 `reuse_mode` 承担：
+> - `reuse_mode=global`：页面存 `block_id` 引用，改一处处处变，走 block→page 的 stale 传播编排（对应本节「显式复用」与 §4.3 的 auto-update 意图）；
+> - `reuse_mode=template`：插入时复制完整 AST 并重生成 Node ID，此后页面持有独立副本、不传播 stale（对应本节「新版本不会自动替换 Page 中的旧引用」）。
+>
+> 依据：`internal/module/block/model/block_model.go:37-40`、`internal/module/block/service/block_service.go:69-72`（template 不传播）、`public/migrations/049_block_reuse_mode.sql`。
+> 下文 §4.2/§4.3 描述的是**目标语义**（含 `version` 字段、`pinned` 页面级覆盖、`auto-update` 自动重建）；与 `block` 实现的差异以代码为准。
+
 Global Component 是 Project 内显式复用的不可变组件子树：
 
 ```ts
@@ -429,6 +436,8 @@ interface GlobalComponentDocument {
 - 禁止根据节点相似度自动抽取 Global Component。
 
 ### 4.3 Global Component Update Policy
+
+> **实现状态（2026-09 核对）**：本节三策略（`immutable` / `auto-update` / `pinned`）**尚未落地**——无 `component` 模块，无组件级 `version`/`defaultUpdateMode` 与页面级 `ComponentPin.pinnedVersionId`。`block.reuse_mode` 只提供两种语义：`global`（引用 + stale 传播，接近 auto-update）与 `template`（复制后独立，接近 immutable）。本节为目标设计，见 `10-todo.md` CMP-1 / DOC-13。
 
 Global Component 的版本更新策略由组件级策略和页面级覆盖共同决定：
 
