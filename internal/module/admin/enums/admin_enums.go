@@ -47,6 +47,9 @@ const (
 	ErrMenuHasChildren     = "ErrMenuHasChildren"     // 该菜单下有子菜单，无法删除
 	ErrMenuIsSystem        = "ErrMenuIsSystem"        // 系统内置菜单不可删除或修改类型
 	ErrMenuCircle          = "ErrMenuCircle"          // 不能将菜单移动到自身或其子级下
+	ErrMenuParentNotFound  = "ErrMenuParentNotFound"  // 父级菜单不存在
+	ErrMenuParentMustBeDir = "ErrMenuParentMustBeDir" // 菜单/外链的父级必须是目录
+	ErrMenuDepthExceeded   = "ErrMenuDepthExceeded"   // 菜单层级超过上限（3 级）
 	ErrCodeNotBindable     = "ErrCodeNotBindable"     // 目录、iframe 和外链不能绑定权限编码
 	ErrCodeRequired        = "ErrCodeRequired"        // 菜单和按钮类型必须绑定权限编码
 	ErrCodeNotEnabled      = "ErrCodeNotEnabled"      // 绑定的权限编码不存在或未启用

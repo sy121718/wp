@@ -17,6 +17,9 @@ import (
 	"strings"
 	"sync"
 
+	"go_wp/pkg/i18n"
+	"go_wp/pkg/logger"
+
 	"github.com/CloudyKit/jet/v6"
 
 	// 内置组件注册（core.container 为组件树唯一结构载体，包 init 自注册）。
@@ -48,6 +51,7 @@ import (
 	// core.video：视频（外链嵌入/本地 MP4，WD wd_video）。
 	_ "go_wp/internal/builder/components/video"
 	// core.tabs：页签（结构型，radio hack 零 JS 切换，WD wd_tabs）。
+	_ "go_wp/internal/builder/components/nav"
 	_ "go_wp/internal/builder/components/tabs"
 	// core.accordion：手风琴（结构型，details/summary 原生，WD wd_accordion）。
 	_ "go_wp/internal/builder/components/accordion"
@@ -111,6 +115,8 @@ type CompiledPage struct {
 	Title string
 	// MetaDescription 页面描述，注入 <meta name="description">。
 	MetaDescription string
+	// SEOHead 构建期 SEO 头片段（canonical / OG / Twitter / JSON-LD）。
+	SEOHead string
 	// BodyClasses 注入 <body> 的 class 列表。
 	BodyClasses []string
 	// HTML 组件树 HTML（单层语义标签，无内联样式、无脚本）。
@@ -126,13 +132,21 @@ type CompileOption func(*compileConfig)
 
 // compileConfig 编译配置。
 type compileConfig struct {
-	content    core.ContentResolver
-	block      core.BlockResolver
-	set        *jet.Set
-	plugin     core.PluginResolver
-	collection core.CollectionResolver
-	theme      *ThemeSettings
-	ctx        context.Context
+	content     core.ContentResolver
+	block       core.BlockResolver
+	set         *jet.Set
+	plugin      core.PluginResolver
+	collection  core.CollectionResolver
+	navigation  core.NavigationResolver
+	projectID   string
+	currentPath string
+	assetProbe  func(string) []int
+	theme       *ThemeSettings
+	ctx         context.Context
+	// lang 本次编译目标语言（空=取 i18n.GetDefaultLang()，多语言 P4）。
+	lang string
+	// translate 构建期取词函数（空=默认 i18n.TranslateFunc(lang)）。
+	translate func(key, fallback string) string
 }
 
 // WithContentResolver 注入 CMS 内容解析器（构建期动态绑定静态填入，规范 docs/02-C1）。
@@ -167,6 +181,33 @@ func WithCollectionResolver(r core.CollectionResolver) CompileOption {
 	return func(c *compileConfig) { c.collection = r }
 }
 
+// WithNavigationResolver 注入公开站点导航解析器（core.nav 绑定菜单位置时构建期展开）。
+// 调用方（page service）注入 navigation 契约的适配器；未注入时绑定菜单位置的
+// 导航节点返回明确错误（不静默渲染空菜单）。
+func WithNavigationResolver(r core.NavigationResolver) CompileOption {
+	return func(c *compileConfig) { c.navigation = r }
+}
+
+// WithProjectID 注入本次编译所属站点工程 ID（导航等站点级资源的取数上下文）。
+// 页面文档不携带工程 ID，由装配层从 pages 表注入；为空时绑定菜单位置的
+// 导航节点同样返回明确错误。
+func WithProjectID(projectID string) CompileOption {
+	return func(c *compileConfig) { c.projectID = projectID }
+}
+
+// WithAssetProbe 注入媒体资源探测函数（构建期响应式图片）：
+// 传入媒体 URL 返回可用变体宽度（降序），如 [1280, 320]；返回空则只输出原图。
+// 由装配层（page service）按本地存储根目录实现——构建期查文件系统，访客零查询。
+func WithAssetProbe(fn func(string) []int) CompileOption {
+	return func(c *compileConfig) { c.assetProbe = fn }
+}
+
+// WithCurrentPath 注入本次编译的页面访问路径（导航「当前项」高亮依据）。
+// 为空表示未知（如块预览），导航不标记当前项。
+func WithCurrentPath(path string) CompileOption {
+	return func(c *compileConfig) { c.currentPath = path }
+}
+
 // WithThemeSettings 注入主题设置（主题色编译为 :root CSS 变量进产物 head，
 // 组件经 var(--wp-c-*) 引用——主题系统真正生效到产物）。
 func WithThemeSettings(t *ThemeSettings) CompileOption {
@@ -176,6 +217,46 @@ func WithThemeSettings(t *ThemeSettings) CompileOption {
 // WithContext 注入请求上下文：构建期集合/内容解析器查库时传播（超时取消）。
 func WithContext(ctx context.Context) CompileOption {
 	return func(c *compileConfig) { c.ctx = ctx }
+}
+
+// WithLanguage 指定本次编译的目标语言（构建期组件文案翻译，多语言 P4）。
+//
+// 预留维度：本轮不改变产物路径与路由（站点级 /{lang}/ 输出属后续 P2），
+// 只影响 core.RenderContext.Lang 与默认取词函数。未指定（空串）时取
+// i18n.GetDefaultLang()，因此现有调用方无需改动即保持中文产物不变。
+func WithLanguage(lang string) CompileOption {
+	return func(c *compileConfig) { c.lang = strings.TrimSpace(lang) }
+}
+
+// WithTranslator 注入自定义取词函数（key, fallback → 文案）。
+//
+// 缺省为 i18n.TranslateFunc(lang)（读 i18n 内存缓存，兜底链见 pkg/i18n.Translate）。
+// 注入点供测试与装配层使用：传入的函数同样应遵守「缺词条回退 fallback、
+// 不返回空串」的约定（RenderContext.Text 会再兜一层，绝不输出空串）。
+func WithTranslator(fn func(key, fallback string) string) CompileOption {
+	return func(c *compileConfig) { c.translate = fn }
+}
+
+// resolveCompileI18n 解析本次编译的语言与取词函数：
+//   - 语言为空 → i18n.GetDefaultLang()（i18n 未初始化时内部回退 zh-CN）；
+//   - 取词函数未注入 → i18n.TranslateFunc(lang)。
+//
+// 两条兜底都保证返回值可用：i18n 未初始化时取词函数返回 fallback（原中文），
+// 编译不会失败，产物也不会出现空属性或裸 key。
+func resolveCompileI18n(cfg *compileConfig) (string, func(key, fallback string) string) {
+	var lang string
+	var fn func(key, fallback string) string
+	if cfg != nil {
+		lang = strings.TrimSpace(cfg.lang)
+		fn = cfg.translate
+	}
+	if lang == "" {
+		lang = i18n.GetDefaultLang()
+	}
+	if fn == nil {
+		fn = i18n.TranslateFunc(lang)
+	}
+	return lang, fn
 }
 
 // MaxNodeDepth 组件树深度上限（顶级节点为第 1 层）。
@@ -208,6 +289,47 @@ func ValidatePage(p *Page) (err error) {
 		}
 	}
 	return nil
+}
+
+// ValidatePageTolerant 容错校验：致命问题（设置非法 / 组件树深度超限）仍返回错误，
+// 单节点配置不完整（如「轮播未拖入 slide」）只记入 skipped 并跳过，不阻断整页。
+//
+// 用于编译/预览与草稿保存：编辑过程中的「某个组件还没配好」是正常中间态，
+// 不应导致整页编译失败（用户补齐后重新预览即可）。
+// 需要严格拒绝非法文档的入口仍用 ValidatePage。
+func ValidatePageTolerant(p *Page) (skippedIDs map[string]bool, err error) {
+	if p == nil {
+		return nil, errors.New("页面文档为空")
+	}
+	if err = validateSettings(&p.Settings); err != nil {
+		return nil, fmt.Errorf("页面设置: %w", err)
+	}
+	for i, n := range p.Root {
+		if d := nodeDepth(n); d > MaxNodeDepth {
+			return nil, fmt.Errorf("顶级节点 %d: 组件树深度 %d 超过上限 %d（嵌套失控，请简化结构）", i, d, MaxNodeDepth)
+		}
+	}
+	ids := map[string]bool{}
+	skippedIDs = map[string]bool{}
+	var reasons []string
+	for i, n := range p.Root {
+		verr := core.ValidateNode(n, ids)
+		if verr == nil {
+			continue
+		}
+		// 仅跳过「配置不完整」类（编辑中间态，如轮播未拖入 slide）；
+		// 非法 props / 非法属性 key / 未知组件等配置错误仍必须拒绝。
+		if errors.Is(verr, core.ErrIncompleteNode) {
+			skippedIDs[n.ID] = true
+			reasons = append(reasons, fmt.Sprintf("顶级节点 %d: %v", i, verr))
+			continue
+		}
+		return nil, fmt.Errorf("顶级节点 %d: %w", i, verr)
+	}
+	if len(reasons) > 0 {
+		logger.Scene("build").With("skipped", reasons).Warn("部分节点配置不完整，已跳过渲染（其余节点照常编译）")
+	}
+	return skippedIDs, nil
 }
 
 // nodeDepth 节点子树深度（自身为 1）。
@@ -268,7 +390,10 @@ func buildComponentSchemas() (map[string]json.RawMessage, error) {
 
 // Compile 编译页面文档。确定性保证：同一输入产生完全相同的输出。
 func Compile(p *Page, opts ...CompileOption) (res *CompiledPage, err error) {
-	if err = ValidatePage(p); err != nil {
+	// 容错校验：配置不完整的节点（如轮播未拖入 slide）被跳过渲染，不阻断整页；
+	// 配置非法（非法 props / 未知组件等）仍返回错误（详见 ValidatePageTolerant）。
+	skippedIDs, err := ValidatePageTolerant(p)
+	if err != nil {
 		return nil, err
 	}
 	cfg := &compileConfig{}
@@ -287,9 +412,26 @@ func Compile(p *Page, opts ...CompileOption) (res *CompiledPage, err error) {
 	var b core.CSSBuckets
 	compileSettingsCSS(&p.Settings, &b)
 
+	// 构建期语言与取词函数（多语言 P4）：未指定语言时取默认语言，
+	// 取词函数缺省读 i18n 内存缓存并带完整兜底链（见 resolveCompileI18n）。
+	lang, translate := resolveCompileI18n(cfg)
+
 	var htmlBuf strings.Builder
-	ctx := &core.RenderContext{CSS: &b, Context: cfg.ctx, Content: cfg.content, Block: cfg.block, Plugin: cfg.plugin, Collection: cfg.collection}
+	ctx := &core.RenderContext{
+		CSS: &b, Context: cfg.ctx, Content: cfg.content, Block: cfg.block,
+		Plugin: cfg.plugin, Collection: cfg.collection,
+		Navigation: cfg.navigation, ProjectID: cfg.projectID, CurrentPath: cfg.currentPath,
+		Lang: lang, Translate: translate,
+		ImageDefaults: core.ImageDefaults{
+			LazyLoad: cfg.theme.LazyLoadEnabled(),
+			Skeleton: cfg.theme.SkeletonEnabled(),
+		},
+		AssetProbe: cfg.assetProbe,
+	}
 	for _, n := range p.Root {
+		if skippedIDs[n.ID] {
+			continue // 配置不完整，已在校验阶段跳过（日志已记录原因）
+		}
 		// Jet 路径：nodeViewOf 把 Node 转 view 树（含 CSS 编译与递归），renderView 渲染根 view。
 		v, verr := nodeViewOf(n, true, ctx)
 		if verr != nil {
@@ -308,9 +450,13 @@ func Compile(p *Page, opts ...CompileOption) (res *CompiledPage, err error) {
 	}
 	classes = append(classes, p.Settings.BodyClasses...)
 
+	// 构建期 SEO 头：canonical / OG / Twitter / JSON-LD（三级回落由 BuildSEOHead 处理）。
+	seoHead := BuildSEOHead(p.Settings.SEO, p.Settings.SEO.Canonical, p.Settings.SEO.Title, p.Settings.SEO.Description)
+
 	return &CompiledPage{
 		Title:           p.Settings.SEO.Title,
 		MetaDescription: p.Settings.SEO.Description,
+		SEOHead:         seoHead,
 		BodyClasses:     classes,
 		HTML:            htmlBuf.String(),
 		CSS:             b.String(),
@@ -328,6 +474,7 @@ func RenderDocument(c *CompiledPage) (string, error) {
 	v := documentView{
 		Title:           c.Title,
 		MetaDescription: c.MetaDescription,
+		SEOHead:         c.SEOHead,
 		BodyClass:       strings.Join(c.BodyClasses, " "),
 		HTML:            c.HTML,
 		CSS:             c.CSS,
@@ -348,6 +495,7 @@ func RenderDocument(c *CompiledPage) (string, error) {
 type documentView struct {
 	Title           string
 	MetaDescription string
+	SEOHead         string // canonical / OG / Twitter / JSON-LD（已转义，模板 unsafe 输出）
 	BodyClass       string // strings.Join(c.BodyClasses, " ")，模板 unsafe 原样输出
 	HTML            string
 	CSS             string

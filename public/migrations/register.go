@@ -75,6 +75,39 @@ var mediaVariantSQL string
 //go:embed 049_block_reuse_mode.sql
 var blockReuseModeSQL string
 
+//go:embed 050_admin_domains_permissions.sql
+var adminDomainsPermSQL string
+
+//go:embed 051_superadmin_all_policies.sql
+var superadminAllPoliciesSQL string
+
+//go:embed 052_menu_icons.sql
+var menuIconsSQL string
+
+//go:embed 053_drop_route_page_fk.sql
+var dropRoutePageFKSQL string
+
+//go:embed 054_navigation_sources.sql
+var navigationSourcesSQL string
+
+//go:embed 055_i18n_columns.sql
+var i18nColumnsSQL string
+
+//go:embed 056_i18n_revision.sql
+var i18nRevisionSQL string
+
+//go:embed 057_sys_menus_title_key.sql
+var menuTitleKeySQL string
+
+//go:embed 058_i18n_seed_enums.sql
+var i18nSeedEnumsSQL string
+
+//go:embed 059_i18n_seed_shell.sql
+var i18nSeedShellSQL string
+
+//go:embed 060_i18n_seed_site_components.sql
+var i18nSeedSiteComponentsSQL string
+
 func init() {
 	register(Migration{
 		Version:   "001-init-schema",
@@ -178,6 +211,14 @@ func init() {
 		SQL:       blockReuseModeSQL,
 	})
 
+	// 导航项多来源（对齐 WP 菜单：页面/文章/产品/分类/全局块 + 打开方式）。
+	register(Migration{
+		Version:   "054-navigation-sources",
+		TableName: "navigations",
+		CheckSQL:  "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = ? AND column_name = 'source_type'",
+		SQL:       navigationSourcesSQL,
+	})
+
 	// 插件权限 seed（权限点 + 后台菜单，docs/06）。
 	registerSeed(Seed{
 		Version:      "032-plugin-permissions",
@@ -249,5 +290,98 @@ func init() {
 		TableName:    "sys_permission",
 		ConditionSQL: "SELECT COUNT(*) FROM sys_permission WHERE permission_code IN ('media:download','media:download_batch','media:variants_generate')",
 		SQL:          mediaVariantSQL,
+	})
+
+	// 管理面六领域权限 seed（权限点 + 超管策略）：六领域 API 挂 Casbin 但此前从未 seed，
+	// 超管访问 /api/role/* 等也被拒。幂等，重启或 RunSeeds 时生效。
+	registerSeed(Seed{
+		Version:      "050-admin-domains-permissions",
+		TableName:    "sys_permission",
+		ConditionSQL: "SELECT COUNT(*) FROM sys_permission WHERE module IN ('admin','role','permission','menu','dept','datarule')",
+		SQL:          adminDomainsPermSQL,
+	})
+
+	// 超管全量策略补全：从 sys_permission 全表 CROSS JOIN 生成。
+	// 修正「各 seed 硬编码策略清单 + ConditionSQL 跳过导致策略缺失」的历史问题
+	//（实测超管缺 plugin/theme/content 等策略，后台对应操作 403）。
+	// 后台菜单/目录/按钮图标补全（历史数据无图标或旧格式 i-ep:*）。
+	// 去掉 page_routes.page_id 外键：预留路径时页面尚未创建，外键与预留语义冲突
+	//（导致「新建页面」必然 500）。
+	register(Migration{
+		Version:   "053-drop-route-page-fk",
+		TableName: "page_routes",
+		CheckSQL:  "SELECT COUNT(*) FROM pg_constraint WHERE conname = 'page_routes_page_id_fkey' AND conrelid = ?::regclass",
+		SQL:       dropRoutePageFKSQL,
+	})
+
+	registerSeed(Seed{
+		Version:      "052-menu-icons",
+		TableName:    "sys_menus",
+		ConditionSQL: "SELECT COUNT(*) FROM sys_menus WHERE deleted_time IS NULL AND (icon IS NULL OR icon = '' OR icon LIKE 'i-ep:%')",
+		SQL:          menuIconsSQL,
+	})
+
+	registerSeed(Seed{
+		Version:      "051-superadmin-all-policies",
+		TableName:    "sys_casbin_rule",
+		ConditionSQL: "SELECT COUNT(*) FROM sys_casbin_rule r JOIN sys_permission p ON r.v1 = p.api_path AND r.v2 = p.api_method AND r.v3 = p.permission_code WHERE r.ptype = 'p' AND r.v0 IN (SELECT CAST(id AS VARCHAR) FROM sys_admin WHERE is_admin = 1)",
+		SQL:          superadminAllPoliciesSQL,
+	})
+
+	// ---- i18n 数据层（P0：表结构 + 词条 seed，docs/06-D §13 P0/P1）----
+	//
+	// 055：sys_i18n 补 category/remark。sys_i18n 由 init_schema.sql 建表，
+	// 默认「表存在即跳过」会误跳过，故按 category 列是否存在判定。
+	register(Migration{
+		Version:   "055-i18n-columns",
+		TableName: "sys_i18n",
+		CheckSQL:  "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = ? AND column_name = 'category'",
+		SQL:       i18nColumnsSQL,
+	})
+
+	// 056：sys_i18n_revision 单行资源版本号（对齐 a2 历史结构，SWR 协商用）。
+	register(Migration{
+		Version:   "056-i18n-revision",
+		TableName: "sys_i18n_revision",
+		SQL:       i18nRevisionSQL,
+	})
+
+	// 057：sys_menus 补 title_key（修现存 bug：model 已 SELECT title_key，但建表缺列）。
+	// 同样按列是否存在判定，避免默认「表存在即跳过」。
+	register(Migration{
+		Version:   "057-sys-menus-title-key",
+		TableName: "sys_menus",
+		CheckSQL:  "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = ? AND column_name = 'title_key'",
+		SQL:       menuTitleKeySQL,
+	})
+
+	// 058：enums 全量词条 seed（zh-CN 195 行 / en-US 79 行，ON CONFLICT 幂等）。
+	// ConditionSQL 以 zh-CN 行数为门槛：已灌满则跳过；新增词条时同步调大阈值即可重跑补齐。
+	registerSeed(Seed{
+		Version:      "058-i18n-seed-enums",
+		TableName:    "sys_i18n",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 195 THEN 1 ELSE 0 END FROM sys_i18n WHERE lang = 'zh-CN'",
+		SQL:          i18nSeedEnumsSQL,
+	})
+
+	// 059：后台外壳 shell.* 词条 seed（zh-CN 25 行 / en-US 25 行，多语言 P1 第二步）。
+	// ConditionSQL 以 shell.* 的 zh-CN 行数为门槛（与 058 的 195 门槛互不干扰）：
+	// 已灌满则跳过；新增 shell 词条时同步调大阈值即可重跑补齐。
+	registerSeed(Seed{
+		Version:      "059-i18n-seed-shell",
+		TableName:    "sys_i18n",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 25 THEN 1 ELSE 0 END FROM sys_i18n WHERE lang = 'zh-CN' AND item_key LIKE 'shell.%'",
+		SQL:          i18nSeedShellSQL,
+	})
+
+	// 060：访客面组件固定文案 site.component.* 词条 seed
+	// （zh-CN 13 行 / en-US 13 行，多语言 P4：构建期组件文案）。
+	// ConditionSQL 以 site.component.* 的 zh-CN 行数为门槛（与 058/059 门槛互不干扰）：
+	// 已灌满则跳过；新增组件文案词条时同步调大阈值即可重跑补齐。
+	registerSeed(Seed{
+		Version:      "060-i18n-seed-site-components",
+		TableName:    "sys_i18n",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 13 THEN 1 ELSE 0 END FROM sys_i18n WHERE lang = 'zh-CN' AND item_key LIKE 'site.component.%'",
+		SQL:          i18nSeedSiteComponentsSQL,
 	})
 }

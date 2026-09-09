@@ -78,13 +78,49 @@ func TranslateMessage(c *gin.Context, message string) string {
 	return translate(c, message)
 }
 
+// LangCookieName 语言协商 Cookie 名（后台语言切换写入，requestLanguage 优先读取）。
+const LangCookieName = "lang"
+
+// langCookieMaxAge 语言 Cookie 有效期（秒，1 年）。
+const langCookieMaxAge = 365 * 24 * 60 * 60
+
 // RequestLanguage 返回请求语言（requestLanguage 的公开出口），供 service 层按语言处理（如菜单标题翻译）。
 func RequestLanguage(c *gin.Context) string {
 	return requestLanguage(c)
 }
 
-// requestLanguage 解析请求语言：query lang 优先，其次 Accept-Language 首段，最后默认语言。
+// NormalizeLang 校验并规范化语言代码（语言切换入口复用同一白名单，避免第二套规则）。
+// 返回规范化语言码与是否受支持；非法输入返回默认语言 + false，绝不返回空串（调用方无需再兜底）。
+func NormalizeLang(raw string) (string, bool) {
+	fallback := i18n.GetDefaultLang()
+	if lang := normalizeLang(raw, ""); lang != "" {
+		return lang, true
+	}
+	return fallback, false
+}
+
+// SetLangCookie 写入语言协商 Cookie：Path=/、HttpOnly、SameSite=Lax，
+// release 模式（gin.ReleaseMode，由 server.mode 驱动）自动加 Secure。
+// SameSite=Lax 下同站导航与 HTMX（同源 XHR）请求都会携带该 Cookie，故 HTMX 请求同样能带上语言。
+func SetLangCookie(c *gin.Context, lang string) {
+	if c == nil {
+		return
+	}
+
+	http.SetCookie(c.Writer, &http.Cookie{
+		Name:     LangCookieName,
+		Value:    lang,
+		Path:     "/",
+		MaxAge:   langCookieMaxAge,
+		HttpOnly: true,
+		Secure:   gin.Mode() == gin.ReleaseMode,
+		SameSite: http.SameSiteLaxMode,
+	})
+}
+
+// requestLanguage 解析请求语言：Cookie lang 优先，其次 query lang，再次 Accept-Language 首段，最后默认语言。
 // 解析结果统一规范化（zh/en 大小写与区域变体 → 标准码，不支持的语言回退默认，见 i18n-issues 2-4）。
+// 兜底：任何一层缺失或非法都继续降级，最终返回默认语言，绝不报错、绝不 panic（c 为 nil 亦安全）。
 func requestLanguage(c *gin.Context) string {
 	fallback := i18n.GetDefaultLang()
 
@@ -92,10 +128,19 @@ func requestLanguage(c *gin.Context) string {
 		return fallback
 	}
 
+	// 1) Cookie（语言切换落地的持久选择）
+	if cookie, err := c.Cookie(LangCookieName); err == nil {
+		if lang := strings.TrimSpace(cookie); lang != "" {
+			return normalizeLang(lang, fallback)
+		}
+	}
+
+	// 2) query lang（显式单次覆盖）
 	if lang := strings.TrimSpace(c.Query("lang")); lang != "" {
 		return normalizeLang(lang, fallback)
 	}
 
+	// 3) Accept-Language 首段（浏览器默认偏好）
 	accept := strings.TrimSpace(c.GetHeader("Accept-Language"))
 	if accept != "" {
 		first := strings.TrimSpace(strings.Split(accept, ",")[0])
@@ -107,6 +152,7 @@ func requestLanguage(c *gin.Context) string {
 		}
 	}
 
+	// 4) 配置默认语言
 	return fallback
 }
 

@@ -1,0 +1,19 @@
+-- ========================================
+-- go_wp — 修复「创建页面必然失败」：去掉 page_routes.page_id 外键
+--
+-- 现象：后台「页面 → 新建页面」返回 500（系统内部错误），日志报
+--   publication/service/publication_control.go:195 violates foreign key constraint
+--
+-- 根因：页面创建流程是「先经 publication 预留草稿路径，再原子创建 page + revision」
+--（见 page/service/page_draft.go Create 的注释与调用顺序），但 page_routes.page_id
+-- 带有外键 REFERENCES pages(id)，且 CHECK 约束要求 page_id/presentation_id 二选一非空——
+-- 预留时页面尚未创建，必然违反外键，创建页面 100% 失败。
+--
+-- 处理：去掉该外键。URL 占用表的 page_id 本质是「路径 → 实体」的逻辑引用，
+-- 预留阶段实体尚不存在；引用完整性由业务层保证（删除页面时清理路由）。
+-- 保留 CHECK 约束（二选一非空）与 project_id 外键（项目必然先存在）。
+--
+-- 幂等：DROP CONSTRAINT IF EXISTS。
+-- 注册：public/migrations/register.go（Migration 053-drop-route-page-fk）。
+-- ========================================
+ALTER TABLE page_routes DROP CONSTRAINT IF EXISTS page_routes_page_id_fkey;
