@@ -66,6 +66,12 @@ func Register(c Component) {
 	}
 	registry[c.Type()] = c
 	delete(translatableCache, c.Type())
+	// 字段元数据缓存同样按类型失效（translatable_meta.go）。
+	for key := range translatableMetaCache {
+		if strings.HasPrefix(key, c.Type()+".") {
+			delete(translatableMetaCache, key)
+		}
+	}
 }
 
 // Lookup 按类型查找组件。

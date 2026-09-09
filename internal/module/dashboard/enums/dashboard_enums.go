@@ -29,6 +29,33 @@ const MsgSiteSettingsSaved = "MsgSiteSettingsSaved" // 站点设置已保存
 // MsgSiteLocalesInvalid 语言清单校验失败提示（至少一种语言 / 至多一个默认且默认必须启用 / 语言码白名单）。
 const MsgSiteLocalesInvalid = "MsgSiteLocalesInvalid" // 语言清单不合法：至少保留一种语言；至多一个默认语言且必须启用；语言码只能包含字母、数字与连字符
 
+// MsgPageTranslationsTitle 翻译工作台页面标题（多语言 P5c）。
+const MsgPageTranslationsTitle = "MsgPageTranslationsTitle" // 多语言
+
+// MsgTranslationSaved 译文保存成功提示（含本次真正写入的条数）。
+const MsgTranslationSaved = "MsgTranslationSaved" // 译文已保存
+
+// MsgTranslationSaveFailed 译文写入失败统一提示（详情只记日志）。
+const MsgTranslationSaveFailed = "MsgTranslationSaveFailed" // 译文保存失败，请稍后重试
+
+// MsgTranslationInvalid 工作台提交数据不完整（表单被裁剪/篡改）。
+const MsgTranslationInvalid = "MsgTranslationInvalid" // 提交数据不完整，请刷新页面后重试
+
+// MsgTranslationStale 原文指纹不一致：页面草稿已变，需刷新后重填。
+const MsgTranslationStale = "MsgTranslationStale" // 原文已变更，请刷新页面后重新翻译
+
+// MsgTranslationLangInvalid 目标语言不属于站点启用语言。
+const MsgTranslationLangInvalid = "MsgTranslationLangInvalid" // 目标语言未启用，请先在站点设置里启用
+
+// MsgTranslationDocInvalid 页面草稿无法解析，无法列出可翻译文本。
+const MsgTranslationDocInvalid = "MsgTranslationDocInvalid" // 页面草稿无法解析，请先在工作台修复页面
+
+// MsgTranslationSiteScanSkipped 全站统计不可用（扫描失败），工作台退化为本页维度。
+const MsgTranslationSiteScanSkipped = "MsgTranslationSiteScanSkipped" // 全站统计暂不可用，当前仅显示本页维度
+
+// MsgTranslationSiteScanTooMany 全站页面数超过扫描上限，跳过全站统计。
+const MsgTranslationSiteScanTooMany = "MsgTranslationSiteScanTooMany" // 页面数超过全站扫描上限，当前仅显示本页维度
+
 // MsgInternalError 页面 handler 内部错误统一提示（禁止直出 err.Error() 泄露内部细节）。
 const MsgInternalError = "MsgInternalError" // 系统内部错误，请稍后重试
 

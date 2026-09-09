@@ -90,6 +90,20 @@ func (m *Model) ListAll(ctx context.Context, themeID string) (list []PageEntity,
 	return list, err
 }
 
+// ListDraftDocuments 列出全部未删除页面的草稿文档（多语言 P5c 翻译工作台的全站扫描用）。
+//
+// 与 ListAll 的区别：带 draft_document 大字段（工作台要按组件白名单收集候选，
+// 无法在 SQL 侧完成——白名单在 Go 里）；按 updated_at 倒序，便于诊断。
+// 代价：一次查询返回全站草稿 JSONB，调用方必须自带缓存与页数上限（见 dashboard 工作台）。
+func (m *Model) ListDraftDocuments(ctx context.Context) (list []PageEntity, err error) {
+	err = m.DB(ctx).
+		Select("id", "project_id", "draft_path", "draft_document", "updated_at").
+		Where("deleted_at IS NULL").
+		Order("updated_at DESC").
+		Find(&list).Error
+	return list, err
+}
+
 // RefreshThemeForTheme 把主题设置批量合入挂在该主题下全部页面的 settings.theme。
 // 使用 jsonb_set 只替换 settings.theme 键，不动内容与版本（主题是展示层快照）。
 func (m *Model) RefreshThemeForTheme(ctx context.Context, themeID string, themeJSON []byte) (err error) {

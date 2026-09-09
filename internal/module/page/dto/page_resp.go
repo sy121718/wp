@@ -36,6 +36,18 @@ type PagePublicationResp struct {
 	PublishedAt  *time.Time `json:"publishedAt,omitempty"`
 }
 
+// PageDraftResp 页面草稿文档投影（多语言 P5c 翻译工作台的全站扫描用：只读，不参与编辑）。
+//
+// 与 PageResp 的区别：只带「扫描可翻译候选」所需的字段，不取发布/暂存指针，
+// 且明确包含 DraftDocument（列表页用的 PageResp 会省略大字段）。
+type PageDraftResp struct {
+	ID            string          `json:"id"`
+	ProjectID     string          `json:"projectId"`
+	DraftPath     string          `json:"draftPath"`
+	DraftDocument json.RawMessage `json:"draftDocument"`
+	UpdatedAt     time.Time       `json:"updatedAt"`
+}
+
 // RevisionResp Page 草稿修订快照，用于历史记录/Undo/Redo/版本对比。
 type RevisionResp struct {
 	ID            string          `json:"id"`

@@ -605,6 +605,9 @@ func (r *Resolver) Load(ctx context.Context, lang string, hashes []string) (tran
 跳过项（纯数字/符号）不计入分母
 ```
 
+> 实施状态（P5c，2025-09）：入口、界面、手动写入、跨页面复用提示与全站完成度均已落地，
+> 见 §15.12；「一键 AI」仍为灰置预留（§7.9）。
+
 ### 7.9 一键 AI 的预留形态（决策 F13，暂不实现）
 
 按钮（灰置 + tooltip，点击无请求）：
@@ -979,7 +982,7 @@ true：全语言带前缀（/zh-CN/about、语言根 /zh-CN/index），决策 D1
 | 3 | 语言清单（§14 D10） | 没有「站点有哪几种语言」的真源，无法为每语言登记 `page_routes` 行（当前 reserved 行只登记默认语言） | Project 级 `project_locales` 表（顺序 + 默认标记 + 启用状态） |
 | 4 | hreflang / sitemap 语言分组 | `BuildSEOHead` 与 `internal/seo/sitemap.go` 未输出 `hreflang` / `xhtml:link` | §5 的构建期输出方案，激活后刷新阶段统一生成 |
 | 5 | 站内链接本地化只覆盖导航 | 按钮/图片/文本里的站内链接仍是逻辑路径 | 组件链接属性统一过 `LangPath`（与导航同一函数） |
-| 6 | `MarkStaleForI18n` 调用方不完整 | 后台 i18n CRUD（§14 D7）尚未实现，改文案不会自动触发重建（依赖条目已就位）；**语言清单保存路径已接**（§15.10） | 后台 CRUD 保存成功后调用；或加 CLI |
+| 6 | `MarkStaleForI18n` 调用方不完整 | 后台 i18n CRUD（§14 D7）尚未实现，改文案不会自动触发重建（依赖条目已就位）；**语言清单保存路径已接**（§15.10）、**译文保存路径已接**（§15.12） | 后台 CRUD 保存成功后调用；或加 CLI |
 | 7 | Runtime Fragment 语言（P5） | `/_fragments` 请求仍无 `lang`、无 `Vary` | §11 方案，独立阶段 |
 
 ### 15.6 验证命令
@@ -1273,8 +1276,105 @@ go test ./public/test/pkg/i18n/ -run TestContentRevisionTracksWrites -count=1 -v
 - **端到端译文验证依赖全局数据库**：装配层取词器走默认存储（`database.GetDB()`），
   `public/test/page/unit` 用独立 schema 不接全局，故该层验证「依赖登记 + 回退原文」；
   译文替换链路由 `internal/builder` 的假存储用例覆盖。
+### 15.12 P5c 已落地（翻译工作台：手动填译文，2025-09）
+
+**范围**：页面列表行内「多语言」入口 → 该页翻译工作台（按组件分组列出可翻译文本、
+手动填译文、状态与来源徽章、跨页面复用提示、完成度统计、一键 AI 按钮灰置预留）。
+**不做**：AI 翻译（只留按钮与 engine 字段）、CMS 字段（文章/商品模块未实现）、
+译文删除（清空输入框 = 不写入；孤儿行清理仍属 §14 D14）。
+
+**入口与界面（决策 F10）**：
+
+```text
+GET  /admin/page/translations?pageId=PAGE_ID&lang=en-US   ← 页面列表行内「多语言」按钮
+POST /admin/page/translations/save                        ← 整表提交 + PRG 回跳（复用 /api/page/draft/save 权限点）
+```
+
+不做独立菜单；语言切换为原生 GET 表单（onchange 提交 + noscript 回退），筛选
+（全部 / 只看缺失 / 只看人工 / 只看 AI）为纯链接，零自定义 JS。一键 AI 按钮
+`disabled aria-disabled="true" title="待接入"`，路由不注册（§7.9 的「不做半成品入口」）。
+
+**清单与构建期一致（P5b 注意点 1）**：工作台行 = `builder.CollectContentCandidates(草稿文档)`，
+与 P5b 构建期取词**同一个函数、同一份 `core.TranslatableFields` 白名单**，不另写扫描。
+字段类型/长度上限经 `core.TranslatableFieldMeta`（组件 `ct` tag → `ParseControls`）读取，
+未声明字段（`link`/`src`/`color`…）与跳过规则命中值（纯数字/符号）不出现。
+
+**写入校验（P5b 注意点 2/5/6）**：
+
+| 层 | 校验 | 位置 |
+|---|---|---|
+| handler | 语言必须属于站点启用语言；原文指纹必须与表单一致（草稿已变则要求刷新） | `page_translations_handle.go` |
+| builder | 语境在白名单内；原文参与翻译；译文非空；长度 ≤ `min(控件 maxlen, core.MaxRichLen)`；**形态一致**（`core.HasRichMarkup` 原文/译文必须同为含标签或同为纯文本） | `internal/builder/content_validate.go` |
+| pkg/i18n | 重算 `sha256(source_text) == source_hash`（066 的 CHECK 只校验格式）；engine ∈ manual/ai/po；空译文拒绝；批量先校验后写（不出现部分成功） | `pkg/i18n/content_write.go` |
+
+形态一致的理由：富文本字段构建期经 `core.RichTextHTML`——原文是 HTML、译文是纯文本时
+译文会被转义后包 `<p>`（形态丢失）；反之原文纯文本、译文带标签时标签会以文本出现在产物里。
+
+**幂等与全站标记待重建（P5b 注意点 3）**：主键 `(source_hash, context, lang)`，
+写入走 `ON CONFLICT DO UPDATE`（engine 记 manual）；保存前用 P5a 读路径读现有译文，
+**只有译文文本确实变化才写库并调用 `page.MarkStaleForI18n`**（原样再保存 → 零写入、零重建；
+仅 engine 从 ai 变 manual → 写库但不触发，产物字节未变）。编排落在 dashboard handler，模式同 §15.10。
+
+**跨页面复用与全站完成度（决策 F11/F12，方案与代价）**：
+
+- 分母 = 全站去重后的 `(source_hash, context)` 条数；分子 = 其中在目标语言已有译文的条数；
+  复用提示 = 该 `(hash, context)` 出现的页面数（>1 时显示「↳ 还用在另外 N 个页面（修改后全站同步生效）」，
+  展开列出页面路径）。
+- **实现方式**：进程内全站索引（`page_translations_index.go`）——一次 `page.ListDrafts`
+  取回全站 `pages.draft_document`，用 `CollectContentCandidates` 逐页收集，
+  建 `(hash, context) → 页面路径集合`。**为什么不是一条 SQL**：候选集合由 Go 侧白名单 + 跳过规则决定，
+  SQL 无法表达。
+- **代价**：一次扫描 = 一条 SELECT 拉全站 JSONB + 全量 JSON 解析，内存与「页面数 × 文档大小」同阶；
+  故加了两道闸门：进程内缓存 TTL 30s、页面数 > 1000 时跳过全站统计（工作台退化为「本页维度」并在页面说明）。
+- **取舍**：准确的跨页面复用必须知道「全站哪些页用了这段原文」，而当前没有合适索引
+  （候选维度是 Go 逻辑，不是数据库列）。更彻底的做法是新增「候选使用表」
+  （`page_id, source_hash, context`，草稿保存时维护），代价是每次草稿写入多一次索引维护 + 一张新表 —— 本轮不做。
+
+**改动文件**：
+
+| 文件 | 改动 |
+|---|---|
+| `internal/builder/core/translatable_meta.go` | 新增：`TranslatableFieldMeta`（字段 Kind/MaxLen，来自组件 `ct` 声明） |
+| `internal/builder/core/component.go` | `Register` 同步清空字段元数据缓存 |
+| `internal/builder/content_validate.go` | 新增：`ContentTargetLimit` / `ValidateContentTarget`（白名单 + 跳过 + 长度 + 形态） |
+| `pkg/i18n/content_write.go` | 新增：`ParseContentContext`、`ContentWriter`（`LoadTargets` / `LoadDetails` / `Upsert`），P5a 读路径与取词语义未改 |
+| `internal/module/page/{dto,model,service,contract}` | 新增只读 `ListDrafts`（全站草稿文档投影，供工作台扫描） |
+| `internal/module/dashboard/inbound/http/page_translations_handle.go` | 新增：工作台 GET / 保存 POST / 错误回显 / 消息翻译 |
+| `internal/module/dashboard/inbound/http/page_translations_index.go` | 新增：全站内容索引 + 缓存（复用提示与完成度分母） |
+| `internal/module/dashboard/inbound/http/{dashboard_handle,dashboard_router}.go` | Handle 增加译文端口与索引缓存；注册两条页面路由；侧边栏高亮经 `navPathFor` 归到「页面」 |
+| `internal/module/dashboard/inbound/http/nav_path_alias.go` | 新增：子页面 → 所属菜单路径映射（`/admin/page/translations` → `/admin/pages`） |
+| `internal/module/dashboard/enums/dashboard_enums.go` | 工作台标题与错误/提示消息 |
+| `internal/templates/admin/page_translations.html` | 新增：工作台页面（分组表格 + 徽章 + 复用提示 + AI 灰置按钮） |
+| `internal/templates/admin/pages.html` | 行内「多语言」入口 |
+| `internal/templates/static/css/theme.css` | 工作台行样式（`.tr-*`） |
+| `public/test/builder/unit/content_validate_test.go` | 清单同源 / 白名单 / 长度 / 形态 / 跳过规则 |
+| `public/test/pkg/i18n/content_write_test.go` | 写入读回 / hash 一致性 / 幂等 / 非法输入 / 批量原子性 |
+| `public/test/dashboard/feature/page_translations_test.go` | 渲染 / 入口 / 保存落库 + stale / 幂等 / 校验拒绝 / 空译文 / 未启用语言 |
+
+**验证命令**（真实输出见提交说明）：
+
+```bash
+go build ./... && go vet ./... && go test ./... -count=1
+go test ./public/test/builder/unit/ -run "TestWorkbench|TestValidateContentTarget|TestContentTargetLimit" -count=1 -v
+go test ./public/test/pkg/i18n/ -run "TestContentWriter|TestParseContentContext" -count=1 -v
+go test ./public/test/dashboard/feature/ -run "TestPageTranslations|TestSavePageTranslations|TestPagesListShowsTranslationsEntry" -count=1 -v
+```
+
+**不确定项 / 已知缺口**：
+
+- **块内文本仍不在工作台**：`core.globalref` / 页眉页脚块内的文本不在页面文档里，
+  既不进候选也不进全站索引（与 §15.11「块内文本不翻译」同源）。
+- **译文删除未做**：清空输入框 = 本行不写入，库中旧行保留；改名/改文案后的孤儿行清理仍属 §14 D14。
+- **全站统计是「进程内 + 30s 缓存 + 1000 页上限」的近似**：多实例部署时各实例缓存独立；
+  页数超限时工作台只显示本页维度（页面有文案提示）。
+- **`core.nav` 标签的多语言归属**未定（§15.11 同款缺口）：`nav` 的 `items[].label` 在白名单内，
+  但 `Menu=header/footer` 时标签来自 navigation 数据，工作台改的是页面文档里的取值。
+- **保存未走事务包 stale**：译文先落库、再标记 stale（失败只记日志），与 §15.10 的失败语义一致；
+  依赖条目 `i18n:content` 会在下次构建时按 revision 比对兜底。
+
 ## 变更记录
 
+- v10（2025-09）：新增 §15.12——P5c 翻译工作台落地：页面列表行内「多语言」入口、按组件分组的手动填译文界面（状态/来源徽章、一键 AI 灰置预留）、写入三重校验（白名单/长度/形态 + hash 一致性 + ON CONFLICT 幂等）、仅内容变化才触发全站标记待重建、跨页面复用提示与全站完成度（进程内全站索引 + 30s 缓存 + 1000 页上限）；记录块内文本不入工作台等 5 条缺口。
 - v9（2025-09）：新增 §15.11——P5b 已落地：构建器内联文本接入内容翻译（18 个组件 `Translatable` 白名单 + 注册期校验、每页每语言一次批量取词、`RenderContext.ContentTranslate`、L3 构建期缺失告警、`i18n:content` 依赖条目与 `pkg/i18n.ContentRevision`）；记录块内文本不翻译等 4 条缺口。
 - v8（2025-09）：新增 §15.10——保存语言清单成功后自动标记全站待重建：触发落在 dashboard handler（避免 `project ↔ page` 循环依赖），判据是 `ListLocales` 规范输出逐项比较（内容确实变化才触发，单语言站点原样保存不触发），失败只记日志不回滚；§15.9 遗留第 1 条标记为已落地，§15.1 第 10 行与 §15.5 第 6 行的「无调用方」口径同步修正。
 - v7（2025-09）：新增 §15.9——语言切换器 UI 与后台语言清单管理已落地：`core.languages` 独立组件（纯链接零 JS、当前语言 `aria-current` 不可点、展示名用语言自称）+ 构建期 `WithLocaleLinks`（与 hreflang 同源）+ `<html lang>` 跟随构建语言 + §9 缺语言策略选 S2「隐藏」及其理由 + 站点设置「语言」分组（复用 project `ListLocales`/`SaveLocales`、HTMX 行片段增删、禁用语言提示、校验失败不落库）+ 迁移 065 词条 seed；§15.8「仍属后续」第 1 条标记为已落地，并新增 4 条遗留（清单变更不自动重建、禁用语言路由不清理、未发布语言仍出链接、前缀开关默认关闭）。

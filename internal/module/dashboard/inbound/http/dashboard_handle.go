@@ -50,6 +50,14 @@ type Handle struct {
 	authz      admincontract.AuthzContextService
 	// navigations 公开站点导航契约（导航菜单管理页，与后台权限菜单严格隔离）。
 	navigations navigationcontract.NavigationService
+
+	// contentStore 内容译文读写端口（翻译工作台，多语言 P5c）。
+	// 为 nil 时按默认实现（pkg/i18n.ContentWriter + 默认数据库）惰性构造；
+	// 测试经 SetContentTranslationStore 注入隔离 schema 的写入器。
+	contentStore contentTranslationPort
+	// siteIndex 全站可翻译内容索引缓存（跨页面复用提示 + 全站完成度，见
+	// page_translations_index.go）。
+	siteIndex siteContentIndexCache
 }
 
 // NewHandle 创建页面处理器；pages/projects/blocks/plugins 为各模块契约。
@@ -132,7 +140,8 @@ func withCSRF(c *gin.Context, data gin.H) gin.H {
 	}
 	data["PermSet"] = set
 	// 侧边栏导航树（按权限过滤 + 当前页标记）。
-	navGroups := buildNav(set, normalizePath(c.Request.URL.Path))
+	// 子页面（如翻译工作台）经 navPathFor 归到所属菜单项，避免整组失去高亮。
+	navGroups := buildNav(set, navPathFor(c.Request.URL.Path))
 	data["NavGroups"] = navGroups
 	// 侧边栏展开态：由 cookie 决定，服务端渲染首屏即正确（无「先展开后收起」闪烁）。
 	// 点击菜单导航时前端写 cookie=0，固定（pin）时写 cookie 且不再自动收起。

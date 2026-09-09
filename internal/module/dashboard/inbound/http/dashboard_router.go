@@ -82,6 +82,10 @@ func SetupDashboardRoutes(router *gin.Engine,
 	// 直接以页面路径 enforce 会因权限点表无此路径而拒绝所有用户）。
 	adminPages.GET("/pages", handle.PagesList)
 	adminPages.POST("/pages/create", builtin.CasbinMiddlewareForPath("/api/page/create"), handle.CreatePage)
+	// 翻译工作台（多语言 P5c，docs/06-D §7.8）：入口在页面列表行内「多语言」按钮，不做独立菜单。
+	// 保存写 sys_translation（engine=manual）并触发全站标记待重建，鉴权复用「保存草稿」权限点。
+	adminPages.GET("/page/translations", handle.PageTranslations)
+	adminPages.POST("/page/translations/save", builtin.CasbinMiddlewareForPath("/api/page/draft/save"), handle.SavePageTranslations)
 	adminPages.POST("/projects/create", builtin.CasbinMiddlewareForPath("/api/project/create"), handle.CreateProject)
 	// 全局块管理：页眉/页脚/区块（编辑进工作台；stale 传播在本模块编排）。
 	// 前台导航菜单（公开站点导航，与后台权限菜单严格隔离）：结构树 + 排序 + 打开方式。

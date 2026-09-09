@@ -11,18 +11,19 @@ import (
 
 // 请求/响应 DTO 重导出：跨模块调用方只依赖 contract，不直接 import page/dto。
 type (
-	CreateReq    = pagedto.CreateReq
-	SaveDraftReq = pagedto.SaveDraftReq
-	DetailReq    = pagedto.DetailReq
-	RevisionReq  = pagedto.RevisionReq
-	RevisionResp = pagedto.RevisionResp
-	DeleteReq    = pagedto.DeleteReq
-	PageResp     = pagedto.PageResp
-	BuildReq     = pagedto.BuildReq
-	PublishReq   = pagedto.PublishReq
-	RollbackReq  = pagedto.RollbackReq
-	UpdateURLReq = pagedto.UpdateURLReq
-	PublishResp  = pagedto.PublishResp
+	CreateReq     = pagedto.CreateReq
+	SaveDraftReq  = pagedto.SaveDraftReq
+	DetailReq     = pagedto.DetailReq
+	RevisionReq   = pagedto.RevisionReq
+	RevisionResp  = pagedto.RevisionResp
+	DeleteReq     = pagedto.DeleteReq
+	PageResp      = pagedto.PageResp
+	PageDraftResp = pagedto.PageDraftResp
+	BuildReq      = pagedto.BuildReq
+	PublishReq    = pagedto.PublishReq
+	RollbackReq   = pagedto.RollbackReq
+	UpdateURLReq  = pagedto.UpdateURLReq
+	PublishResp   = pagedto.PublishResp
 )
 
 // 预览编译错误哨兵：dashboard 预览复用本契约的编译能力时，
@@ -41,6 +42,9 @@ type PageService interface {
 	// List 列出页面摘要（themeID 为空时列全部；非空时只列挂在该主题下的页面）。
 	List(ctx context.Context, themeID string) (res []pagedto.PageResp, err error)
 	Detail(ctx context.Context, req *pagedto.DetailReq) (res *pagedto.PageResp, err error)
+	// ListDrafts 列出全部未删除页面的草稿文档（多语言 P5c 翻译工作台的全站扫描：
+	// 跨页面复用提示与全站完成度分母需要 (source_hash, context) 的全站视图）。
+	ListDrafts(ctx context.Context) (res []pagedto.PageDraftResp, err error)
 	SaveDraft(ctx context.Context, req *pagedto.SaveDraftReq) (res *pagedto.PageResp, err error)
 	ListRevisions(ctx context.Context, req *pagedto.RevisionReq) (res []pagedto.RevisionResp, err error)
 
