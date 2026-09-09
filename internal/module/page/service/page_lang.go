@@ -11,6 +11,7 @@ import (
 	"context"
 	"strings"
 
+	"go_wp/internal/builder"
 	pubcontract "go_wp/internal/module/publication/contract"
 	"go_wp/internal/pipeline"
 	"go_wp/pkg/i18n"
@@ -199,8 +200,67 @@ func (s *Service) MarkStaleForI18n(ctx context.Context) error {
 }
 
 // buildDependencies 构建期依赖（pipeline.DependencyProvider 实现）。
-// 组件固定文案由构建期取词注入 HTML 字节，因此产物依赖文案词条资源版本号：
-// 改文案 → revision 变化 → 依赖比对不等 → 触发重建（docs/06-D §10.4）。
-func (s *Service) buildDependencies(_ context.Context, _ pipeline.BuildInput) []pipeline.Dependency {
-	return []pipeline.Dependency{pipeline.I18NDependency(i18n.Revision())}
+//
+// 两条依赖（Kind 同为 i18n，Key 区分资源）：
+//   - i18n:site —— 组件固定文案（sys_i18n 开发者词条，P4）：改文案 → revision 变化
+//     → 依赖比对不等 → 触发重建（docs/06-D §10.4）；
+//   - i18n:content —— 内容译文（sys_translation，P5b）：**只在本次构建确实走内容翻译
+//     时登记**。这是 §9 的关键约束：缺译文时构建期回退原文，若依赖里没有这条记录，
+//     补齐译文后 revision 未变 → 不触发重建 → 站点长期停留在回退内容。
+//
+// 为什么「有候选即登记」而非「有缺失才登记」：命中译文的字段同样依赖 sys_translation，
+// 改译文/补齐译文都会改变产物字节，两者都必须触发重建。
+func (s *Service) buildDependencies(ctx context.Context, in pipeline.BuildInput) []pipeline.Dependency {
+	deps := []pipeline.Dependency{pipeline.I18NDependency(i18n.Revision())}
+	if s.pageUsesContentTranslation(ctx, in) {
+		deps = append(deps, pipeline.I18NContentDependency(i18n.ContentRevision()))
+	}
+	return deps
+}
+
+// pageUsesContentTranslation 判定本次构建是否用到内容翻译（依赖登记的判据）。
+//
+// 判据与 compileDocument 的接入条件**同源**（语言维度 + 可翻译候选），保证
+// 「登记了依赖」与「产物确实可能随译文变化」一致：
+//   - 语言为空（单语言站点）/ 等于站点默认语言 → 否（产物即原文，决策 F1）；
+//   - 文档解析失败 → 否（构建主链会自行报错，依赖登记不额外阻断）。
+func (s *Service) pageUsesContentTranslation(ctx context.Context, in pipeline.BuildInput) bool {
+	lang := strings.TrimSpace(in.Lang)
+	if lang == "" {
+		return false
+	}
+	projectID, _ := s.pageContextOf(ctx, in.PageID, lang)
+	if lang == s.defaultLocaleOf(ctx, projectID) {
+		return false
+	}
+	page, err := builder.ParsePage(in.DocJSON)
+	if err != nil {
+		return false
+	}
+	return len(builder.CollectContentCandidates(page)) > 0
+}
+
+// contentTranslationEnabled 判定本次编译是否接入内容翻译（与 pageUsesContentTranslation
+// 的语言维度同源；文档已在装配层解析，故此处只看语言）。
+func (s *Service) contentTranslationEnabled(ctx context.Context, projectID, lang string) bool {
+	l := strings.TrimSpace(lang)
+	if l == "" {
+		return false
+	}
+	return l != s.defaultLocaleOf(ctx, projectID)
+}
+
+// reportContentMisses 记录构建期内容译文缺失（L3 埋点，决策 F14 第三层）。
+//
+// 只记日志、不阻断构建：缺译文已在取词器内回退原文（§7.7），告警用于提醒
+// 「上线前有字段仍是原文」；补齐译文后依赖条目（i18n:content）会触发重建。
+func reportContentMisses(lang string, candidates int, misses int64) {
+	if misses <= 0 {
+		return
+	}
+	logger.Scene("build").
+		With("lang", lang).
+		With("candidates", candidates).
+		With("misses", misses).
+		Warn("构建期内容译文缺失，已回退原文（补齐译文后需重建，docs/06-D §9）")
 }

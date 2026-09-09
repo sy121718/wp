@@ -47,8 +47,25 @@ type Component interface {
 var registry = map[string]Component{}
 
 // Register 注册组件。重复类型直接覆盖（便于测试替换），生产组件在包 init 中注册。
+//
+// 注册期校验可翻译字段白名单（多语言 P5b，docs/06-D §7.5 规则 2）：
+// 组件声明了 Translatable 时，字段名必须合法且存在于自身 Props 的 JSON 字段集合，
+// 拼错即 panic（init 期 fail-fast）——白名单是唯一可翻译性来源，不允许静默失效。
 func Register(c Component) {
+	if c == nil {
+		panic("core.Register: 组件为 nil")
+	}
+	if tp, ok := c.(TranslatableProvider); ok {
+		var spec any
+		if sp, ok := c.(SpecProvider); ok {
+			spec = sp.PropsSpec()
+		}
+		if err := ValidateTranslatable(spec, tp.Translatable()); err != nil {
+			panic(fmt.Sprintf("组件 %s 可翻译字段白名单非法: %v", c.Type(), err))
+		}
+	}
 	registry[c.Type()] = c
+	delete(translatableCache, c.Type())
 }
 
 // Lookup 按类型查找组件。

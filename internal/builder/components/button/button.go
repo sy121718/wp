@@ -221,6 +221,9 @@ var Widget = core.Atom[Props]{
 	Spec: core.AtomSpec[Props]{
 		TypeName:      Type,
 		ValidateExtra: validateExtra,
+		// Translatable 可翻译字段白名单（多语言 P5b，docs/06-D §7.5 决策 F6）：
+		// 只有这里列出的字段参与内容翻译，未声明字段永不翻译。
+		Translatable: []string{"text"},
 	},
 }
 

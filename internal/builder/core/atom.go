@@ -15,6 +15,11 @@ type AtomSpec[P any] struct {
 	TypeName string
 	// ValidateExtra 关系性校验（可选）：互斥/依赖等字段级（ct tag）之外的规则。
 	ValidateExtra func(p *P, nodeID string) error
+	// Translatable 可翻译字段白名单（多语言 P5b，docs/06-D §7.5 决策 F6）：
+	// 只有列出的 JSON 字段名参与内容翻译（sys_translation），未声明字段永不翻译。
+	// 只放「作者填写的文本」字段（text/title/alt/caption 等），
+	// 链接（/shop）、色值（#FF0000）、宽度、枚举一律不放。
+	Translatable []string
 }
 
 // Atom 泛型原子组件基座，实现 Component 接口。
@@ -37,6 +42,11 @@ func (a Atom[P]) Type() string { return a.Spec.TypeName }
 // PropsSpec 实现 SpecProvider：返回 Props 零值实例供声明式 Controls
 // 生成 Inspector 面板 schema（docs/02-C3）。组件作者零配置。
 func (a Atom[P]) PropsSpec() any { var p P; return &p }
+
+// Translatable 实现 TranslatableProvider：返回 Props 声明的可翻译字段白名单。
+//
+// 所有 Atom 基座组件自动具备本方法（未声明返回 nil = 无可翻译字段）。
+func (a Atom[P]) Translatable() []string { return a.Spec.Translatable }
 
 // Validate 实现组件接口：公共校验管线 + 声明式 + 组件关系性 + Advanced。
 func (a Atom[P]) Validate(node *Node, ids map[string]bool) (err error) {

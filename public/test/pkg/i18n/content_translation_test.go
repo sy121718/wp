@@ -394,3 +394,62 @@ func TestContentDefaultStoreAgainstGlobalDB(t *testing.T) {
 		t.Fatalf("数据库不可用应回退原文，实际 %q", got)
 	}
 }
+
+// TestContentRevisionTracksWrites 内容译文资源版本号（多语言 P5b，docs/06-D §9）：
+// sys_translation 的 max(updated_at) 随写入推进 —— 依赖条目（i18n:content）据此
+// 触发重建，补齐译文后站点不会长期停留在回退内容。
+func TestContentRevisionTracksWrites(t *testing.T) {
+	dbName := "go_test_content_rev_" + randomSuffix()
+	admin, err := gorm.Open(postgres.Open(i18nTestDSN("postgres")), &gorm.Config{})
+	if err != nil {
+		t.Skipf("跳过：本地 PostgreSQL 不可用: %v", err)
+	}
+	if err := admin.Exec("CREATE DATABASE " + dbName).Error; err != nil {
+		t.Skipf("跳过：创建临时测试库失败: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = admin.Exec("DROP DATABASE IF EXISTS " + dbName)
+		if sqlDB, err := admin.DB(); err == nil {
+			_ = sqlDB.Close()
+		}
+	})
+
+	cfg := newI18nTestConfig(dbName)
+	if err := database.Init(cfg); err != nil {
+		t.Fatalf("初始化数据库失败: %v", err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	db, err := database.GetDB()
+	if err != nil {
+		t.Fatalf("获取数据库实例失败: %v", err)
+	}
+	if err := migrations.Run(db); err != nil {
+		t.Fatalf("迁移失败: %v", err)
+	}
+
+	// 空表：无 revision（调用方按「无 revision」处理，不阻断构建）。
+	if got := i18n.ContentRevision(); got != "" {
+		t.Fatalf("空表应返回空 revision，实际 %q", got)
+	}
+
+	// 写入一条译文 → revision 出现（前缀 trans-max-）。
+	insertTranslation(t, db, "了解更多", "core.button.text", "en-US", "Learn more", "manual")
+	first := i18n.ContentRevision()
+	if !strings.HasPrefix(first, "trans-max-") {
+		t.Fatalf("revision 形态错误: %q", first)
+	}
+
+	// 再写入一条（时间推进）→ revision 变化（依赖比对不等 → 触发重建）。
+	if err := db.Exec("UPDATE sys_translation SET updated_at = now() + interval '1 second'").Error; err != nil {
+		t.Fatalf("推进 updated_at 失败: %v", err)
+	}
+	insertTranslation(t, db, "联系我们", "core.button.text", "en-US", "Contact us", "ai")
+	second := i18n.ContentRevision()
+	if second == first {
+		t.Fatalf("写入后 revision 必须变化: %q", second)
+	}
+	if !strings.HasPrefix(second, "trans-max-") {
+		t.Fatalf("revision 形态错误: %q", second)
+	}
+	t.Logf("ContentRevision: 空表=%q 首次写入=%q 再次写入=%q", "", first, second)
+}

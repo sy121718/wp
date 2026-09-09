@@ -48,6 +48,15 @@ type RenderContext struct {
 	// 默认 i18n.TranslateFunc(Lang)；nil 时组件直接使用 fallback 原文。
 	// 组件包不依赖 pkg/i18n，只经此函数取词（core.I18nAware 契约）。
 	Translate func(key, fallback string) string
+	// ContentTranslate 构建期内容译文取词函数（source_text, context → 译文），
+	// 多语言 P5b：处理**作者在编辑器里填写的文本**（按钮文字/标题/alt/图注/富文本）。
+	//
+	// 与 Translate（P4 的 sys_i18n 固定文案 key）严格分工、互不覆盖：
+	//   - Translate 只填充「未由用户填写」的缺省文案；
+	//   - ContentTranslate 只作用于组件 Translatable 白名单字段，且有译文用译文、
+	//     无译文回退原文（绝不返回空串）。
+	// 由 builder.WithContentTranslator 注入；nil 时渲染层零开销（不复制 props）。
+	ContentTranslate func(sourceText, contentContext string) string
 	// Locales 站点语言切换器条目（构建期注入，core.languages 消费）。
 	// 由装配层按「本页逻辑路径 + 站点启用语言」逐语言算出（与产物 head 的 hreflang
 	// 同一份计算）；空或少于两条时切换器整块不渲染（单语言站点字节不变）。

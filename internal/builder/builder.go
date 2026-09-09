@@ -156,6 +156,9 @@ type compileConfig struct {
 	lang string
 	// translate 构建期取词函数（空=默认 i18n.TranslateFunc(lang)）。
 	translate func(key, fallback string) string
+	// contentTranslator 内容译文取词器（多语言 P5b，空=不接入内容翻译，产物字节不变）。
+	// 由装配层「每页每语言构造一次」（CollectContentCandidates → 一次 SQL）。
+	contentTranslator *i18n.ContentTranslator
 }
 
 // WithContentResolver 注入 CMS 内容解析器（构建期动态绑定静态填入，规范 docs/02-C1）。
@@ -256,6 +259,25 @@ func WithLocaleLinks(links []core.LocaleLink) CompileOption {
 // 不返回空串」的约定（RenderContext.Text 会再兜一层，绝不输出空串）。
 func WithTranslator(fn func(key, fallback string) string) CompileOption {
 	return func(c *compileConfig) { c.translate = fn }
+}
+
+// WithContentTranslator 注入内容译文取词器（多语言 P5b，docs/06-D §7.7）。
+//
+// 取词器由装配层按「本页候选原文的 hash 集合 + 目标语言」构造一次（一次批量 SQL），
+// 组件渲染期只在内存索引上取词，**不逐组件查库**。未注入（nil）时渲染层零开销，
+// 产物字节与接入前逐字节一致（无译文回退原文的等价形态）。
+//
+// 传入 nil 等价于不接入（可用于显式关闭）。
+func WithContentTranslator(t *i18n.ContentTranslator) CompileOption {
+	return func(c *compileConfig) { c.contentTranslator = t }
+}
+
+// contentTranslateFunc 把取词器转为 RenderContext 的取词函数（nil 取词器返回 nil）。
+func contentTranslateFunc(t *i18n.ContentTranslator) func(sourceText, contentContext string) string {
+	if t == nil {
+		return nil
+	}
+	return t.TranslateContent
 }
 
 // resolveCompileI18n 解析本次编译的语言与取词函数：
@@ -443,6 +465,7 @@ func Compile(p *Page, opts ...CompileOption) (res *CompiledPage, err error) {
 		Plugin: cfg.plugin, Collection: cfg.collection,
 		Navigation: cfg.navigation, ProjectID: cfg.projectID, CurrentPath: cfg.currentPath,
 		Lang: lang, Translate: translate, Locales: cfg.locales,
+		ContentTranslate: contentTranslateFunc(cfg.contentTranslator),
 		ImageDefaults: core.ImageDefaults{
 			LazyLoad: cfg.theme.LazyLoadEnabled(),
 			Skeleton: cfg.theme.SkeletonEnabled(),

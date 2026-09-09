@@ -123,9 +123,25 @@ func (s *Service) compileDocument(ctx context.Context, page *builder.Page, proje
 	if len(links) > 1 {
 		opts = append(opts, builder.WithLocaleLinks(links))
 	}
+	// 内容翻译（多语言 P5b，docs/06-D §7.7）：作者在编辑器里填写的文本（按钮文字/
+	// 标题/alt/图注/富文本）按组件 Translatable 白名单替换。每页每语言**构造一次**
+	// 取词器——先遍历 AST 收集候选 → ShouldTranslateContent 过滤 → 一次批量 SQL 取回
+	// 译文，组件渲染期零查库（§7.7「零查库」）。默认语言与单语言站点跳过（产物即原文）。
+	var contentTranslator *i18n.ContentTranslator
+	contentCandidates := 0
+	if cands := builder.CollectContentCandidates(page); len(cands) > 0 && s.contentTranslationEnabled(ctx, projectID, lang) {
+		contentCandidates = len(cands)
+		contentTranslator = i18n.NewContentTranslator(ctx, lang, builder.ContentHashes(cands))
+		opts = append(opts, builder.WithContentTranslator(contentTranslator))
+	}
 	compiled, err := builder.Compile(page, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", errCompileFailed, err)
+	}
+	// L3 构建期缺失告警（决策 F14 第三层）：统计本页未命中译文数并记日志，
+	// **不阻断构建**（缺译文已在取词器内回退原文，产物照常产出）。
+	if contentTranslator != nil {
+		reportContentMisses(lang, contentCandidates, contentTranslator.Misses())
 	}
 	// 页眉/页脚块内联（settings.structure 绑定快照）：与预览/正式构建同源。
 	headerHTML, headerCSS := s.compileBlockFragment(ctx, page.Settings.Structure.HeaderBlockID)

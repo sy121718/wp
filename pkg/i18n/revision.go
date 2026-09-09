@@ -37,3 +37,23 @@ func Revision() string {
 	}
 	return "i18n-max-" + latest.UTC().Format(time.RFC3339Nano)
 }
+
+// ContentRevision 返回内容译文资源版本号（多语言 P5b，docs/06-D §7.3/§9）。
+//
+// 数据源：sys_translation 的 max(updated_at)。该表刻意没有独立的 revision 表
+// （决策 F2/F3：行即答案，主键 (source_hash, context, lang)），任何写入
+// （人工补译、AI 译文、PO 导入）都会推进该值 → 依赖条目变化 → 触发重建。
+//
+// 空表 / 查询失败 / 数据库未初始化返回空串（调用方按「无 revision」处理，不阻断构建）。
+// 本函数只读，不触碰 P5a 的缓存与查询层语义。
+func ContentRevision() string {
+	db, err := database.GetDB()
+	if err != nil || db == nil {
+		return ""
+	}
+	var latest *time.Time
+	if err = db.Table("sys_translation").Select("max(updated_at) AS latest").Scan(&latest).Error; err != nil || latest == nil {
+		return ""
+	}
+	return "trans-max-" + latest.UTC().Format(time.RFC3339Nano)
+}

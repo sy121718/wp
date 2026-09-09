@@ -1176,8 +1176,106 @@ go test ./public/test/dashboard/feature/ -run "TestSaveSiteLocales" -count=1 -v
   API/CLI 写 `project_locales`，需同样编排，否则会出现同一缺口。
 - 禁用语言之间的顺序调整会过度触发一次全站重建（见上），未做更细的判据。
 
+### 15.11 P5b 已落地（构建器内联文本接入内容翻译，2025-09）
+
+**范围**：把作者在编辑器里填写的文本（按钮文字、标题、副标题、alt、图注、表头/单元格、
+表单标签与选项、富文本等）接入 P5a 的 `sys_translation` 内容翻译层。CMS 字段（P5d）、
+翻译工作台（P5c）、AI 翻译均不在本轮。
+
+**与 §7.5 示意的差异**：白名单没有新建 `Definition` 结构，而是挂在组件基座
+`core.AtomSpec.Translatable`（Atom 基座组件零样板声明）+ 自定义结构组件的
+`Translatable() []string` 方法（与 `PropsSpec()` 同形）。注册期校验字段名必须存在于
+组件 Props 的 JSON 字段集合，拼错即 panic（fail-fast）。
+
+**白名单清单（本轮声明，18 个组件）**：
+
+| 组件 | 可翻译字段 |
+|---|---|
+| `core.heading` | `text`、`subtitle` |
+| `core.text` | `text` |
+| `core.button` | `text` |
+| `core.badge` | `text` |
+| `core.card` | `title`、`text`、`buttonText` |
+| `core.image` | `alt`、`title`、`caption` |
+| `core.gallery` | `alt`、`caption`（items 元素内同名字段） |
+| `core.quote` | `text`、`author` |
+| `core.faq` | `question`、`answer` |
+| `core.accordion` | `title` |
+| `core.tabs` | `label` |
+| `core.list` | `text` |
+| `core.table` | `caption`、`headers`、`rows` |
+| `core.infobox` | `title`、`text` |
+| `core.divider` | `text` |
+| `core.progress` | `label` |
+| `core.counter` | `prefix`、`suffix`、`label` |
+| `core.form` | `submitLabel`、`label`、`placeholder`、`options` |
+
+未声明的组件（`core.container`/`core.nav` 之外的结构型与样式型组件）与未声明字段**永不翻译**：
+`value`（链接）、`link`、`src`、`color`、`width`、`action`、`variant` 等一律不在白名单，
+由 `TestTranslatableFieldsDeclared` 逐组件断言守住。
+
+**构建期取词链路（每页每语言一次）**：
+
+```text
+CollectContentCandidates(AST)  ← 按组件白名单遍历 props（嵌套字段 context 不带索引，D11）
+  → ShouldTranslateContent 过滤（纯数字/纯符号/空白跳过，F7）
+  → ContentHashes 去重集合 → i18n.NewContentTranslator（一次批量 SQL，§7.7）
+  → builder.WithContentTranslator → RenderContext.ContentTranslate
+  → nodeViewOf 入口按白名单替换 props 副本（AST 与 Page Document 不动，F1）
+```
+
+- 注入形态对齐 P4：`builder.WithContentTranslator`（取词器）与 `WithTranslator`（sys_i18n 取词函数）
+  并列，分别落 `RenderContext.ContentTranslate` 与 `RenderContext.Translate`，互不覆盖。
+- **不逐组件查库**：取词器构造一次，组件渲染期只读内存索引；`ContentTranslator.Misses()` 提供
+  本页未命中数（L3 埋点第三层），装配层记 warn 日志、**不阻断构建**。
+- 默认语言与单语言站点（`lang` 为空或等于站点默认语言）**跳过**：产物即原文，与接入前逐字节一致。
+
+**依赖登记（§9 关键约束）**：新增 `pipeline.I18NContentDependency`（`kind=i18n`、
+`key=i18n:content`、`revision=pkg/i18n.ContentRevision()` = `sys_translation` 的 `max(updated_at)`）。
+判据与接入条件同源：**非默认语言 + 本页存在可翻译候选**才登记——缺译文回退原文后，
+补齐译文推进 revision → 依赖比对不等 → 触发重建，避免站点长期停留在回退内容。
+
+**改动文件**：
+
+| 文件 | 改动 |
+|---|---|
+| `internal/builder/core/translatable.go` | 新增：`TranslatableProvider`、`ValidateTranslatable`（注册期校验）、`TranslatableFields`（类型缓存） |
+| `internal/builder/core/atom.go` | `AtomSpec.Translatable` + `Atom.Translatable()` |
+| `internal/builder/core/component.go` | `Register` 校验白名单（拼错 panic） |
+| `internal/builder/core/render.go` | `RenderContext.ContentTranslate` |
+| `internal/builder/content_i18n.go` | 新增：候选收集、`ContentHashes`、props 译文替换（RawMessage 级替换，未替换字段字节不动） |
+| `internal/builder/jetview.go` | `nodeViewOf` 入口按白名单替换 props 副本 |
+| `internal/builder/builder.go` | `WithContentTranslator` 选项与注入 |
+| 18 个组件包 | 声明 `Translatable` 白名单 |
+| `internal/module/page/service/page_assemble.go` | 每页构造一次取词器 + L3 缺失告警 |
+| `internal/module/page/service/page_lang.go` | `buildDependencies` 增 `i18n:content`；判据函数 |
+| `internal/pipeline/artifact.go` | `I18NContentDependency` / `I18NContentDependencyKey` |
+| `pkg/i18n/revision.go` | `ContentRevision()`（只读，不触碰 P5a 缓存与查询层语义） |
+
+**验证命令**（真实输出见提交说明）：
+
+```bash
+go build ./... && go vet ./... && go test ./... -count=1
+go test ./internal/builder/ -run "TestContent|TestTranslatable" -count=1 -v
+go test ./public/test/page/unit/ -run TestPageContentTranslationDependency -count=1 -v
+go test ./public/test/pkg/i18n/ -run TestContentRevisionTracksWrites -count=1 -v
+```
+
+**不确定项 / 已知缺口**：
+
+- **块内文本不翻译**：`compileBlockFragment`（页眉/页脚块）编译时不传语言与取词器，
+  `core.globalref` 内联展开的块内文本虽会走替换逻辑，但其 hash 不在本页候选集合内 → 回退原文
+  （并计入 `Misses`）。与 P4 的既有缺口同源，需单独一轮统一（块编译补 lang + 候选集合含块）。
+- **`nav` 菜单标签**：`core.nav` 的 `items[].label` 在白名单内，但 `Menu=header/footer` 时
+  标签来自 navigation 模块数据（构建期覆盖），其多语言归属（导航数据本地化）尚未定论。
+- **revision 粒度**：`i18n:content` 用全局 `max(updated_at)`，任一条译文变更都会让所有含候选的
+  非默认语言产物依赖失效（保守正确，代价是全站重建；表级 revision 计数器可作为后续优化）。
+- **端到端译文验证依赖全局数据库**：装配层取词器走默认存储（`database.GetDB()`），
+  `public/test/page/unit` 用独立 schema 不接全局，故该层验证「依赖登记 + 回退原文」；
+  译文替换链路由 `internal/builder` 的假存储用例覆盖。
 ## 变更记录
 
+- v9（2025-09）：新增 §15.11——P5b 已落地：构建器内联文本接入内容翻译（18 个组件 `Translatable` 白名单 + 注册期校验、每页每语言一次批量取词、`RenderContext.ContentTranslate`、L3 构建期缺失告警、`i18n:content` 依赖条目与 `pkg/i18n.ContentRevision`）；记录块内文本不翻译等 4 条缺口。
 - v8（2025-09）：新增 §15.10——保存语言清单成功后自动标记全站待重建：触发落在 dashboard handler（避免 `project ↔ page` 循环依赖），判据是 `ListLocales` 规范输出逐项比较（内容确实变化才触发，单语言站点原样保存不触发），失败只记日志不回滚；§15.9 遗留第 1 条标记为已落地，§15.1 第 10 行与 §15.5 第 6 行的「无调用方」口径同步修正。
 - v7（2025-09）：新增 §15.9——语言切换器 UI 与后台语言清单管理已落地：`core.languages` 独立组件（纯链接零 JS、当前语言 `aria-current` 不可点、展示名用语言自称）+ 构建期 `WithLocaleLinks`（与 hreflang 同源）+ `<html lang>` 跟随构建语言 + §9 缺语言策略选 S2「隐藏」及其理由 + 站点设置「语言」分组（复用 project `ListLocales`/`SaveLocales`、HTMX 行片段增删、禁用语言提示、校验失败不落库）+ 迁移 065 词条 seed；§15.8「仍属后续」第 1 条标记为已落地，并新增 4 条遗留（清单变更不自动重建、禁用语言路由不清理、未发布语言仍出链接、前缀开关默认关闭）。
 - v6（2025-09）：新增 §15.8——P3 站点多语言上线已落地：迁移 062 `page_publications`（每语言激活状态真源）+ 063 `page_stagings`（每语言暂存指针）+ 064 `project_locales`（语言清单）；Publish/Rollback/UpdateURL 按语言作用域、`RenameReserved.OnlyReserved` 防跨语言误改、路由登记逐语言、产物 head hreflang 与 sitemap 语言分组、导航高亮双重前缀修复；含端到端双语言在线证据与灰度开关双路径测试。

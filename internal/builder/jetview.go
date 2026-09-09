@@ -81,6 +81,12 @@ type nodeView struct {
 
 // nodeViewOf 把单个 Node 转换为 nodeView（含递归 children，CSS 加入顺序对齐旧路径）。
 func nodeViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeView, error) {
+	// 内容翻译（多语言 P5b，docs/06-D §7.7）：按组件 Translatable 白名单把作者填写的
+	// 文本替换为译文（无译文回退原文）。只做 props 副本替换，AST 与 Page Document 不动；
+	// 未接入（ctx.ContentTranslate == nil）时返回原节点，零开销、产物字节不变。
+	if ctx != nil {
+		node = applyContentTranslation(node, ctx.ContentTranslate)
+	}
 	switch node.Type {
 	case buttonPkg.Type:
 		return buttonViewOf(node, topLevel, ctx)

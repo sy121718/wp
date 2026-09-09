@@ -67,6 +67,22 @@ func I18NDependency(revision string) Dependency {
 	return Dependency{Kind: DependencyKindI18N, Key: I18NDependencyKey, Revision: revision}
 }
 
+// I18NContentDependencyKey 内容译文依赖的资源键（sys_translation，多语言 P5b）。
+//
+// 与 I18NDependencyKey（i18n:site，sys_i18n 开发者词条）并列，Kind 同为 i18n：
+// 两者是同一维度的两种资源，产物字节都受它们影响，重建判定方式一致。
+const I18NContentDependencyKey = "i18n:content"
+
+// I18NContentDependency 构造内容译文依赖条目（revision 取自 sys_translation 的
+// max(updated_at)，见 pkg/i18n.ContentRevision）。
+//
+// 为什么必须记（docs/06-D §9 关键约束）：缺译文时构建期**回退原文**，补齐译文后
+// 若依赖里没有这条记录，revision 未变 → 不触发重建 → 站点长期停留在回退内容。
+// 因此「本页用到了内容翻译」（存在可翻译候选字段）就必须登记本条依赖。
+func I18NContentDependency(revision string) Dependency {
+	return Dependency{Kind: DependencyKindI18N, Key: I18NContentDependencyKey, Revision: revision}
+}
+
 // Artifact 不可变发布产物：入口 HTML + manifest + 其他 manifest 声明文件。
 // 一旦 Put 到 ArtifactStore 后禁止修改；重新构建产生新 hash 新目录。
 type Artifact struct {
