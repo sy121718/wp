@@ -114,6 +114,8 @@
 timeline    nodes[{title,desc,icon}] + lineGrow(bool) + scrub(枚举: none|css|js)
 pindeck     pages[children] + direction(h|v) + scrub + 页切换节奏
 cardstack   cards[children] + interaction(hover-fan|scroll-stack|drag-360) + scaleBase/scaleStep + spacing
+            —— 已落地为 core.cardstack（2026-09）：trigger(hover|scroll) × shape(fan|line) 两轴，
+            scroll 模式用 sticky + CSS scroll-driven（零 JS，见 §4.6）；drag-360 待做
 productcard image + badge + title/desc + feats[] + price{old,new} + cta{label,icon} + rating + stock
             + hoverStyle(lift|circle-flip|tilt) + badgeStyle(pill|ribbon) —— 纯 CSS hover 编排零 JS，电商核心组件（对齐 docs/06-A 商品重轨）
 showcase    image + presentation(cube-rotate|float) —— 常驻 3D 旋转展示台（产品盒/徽章），受约束 5 性能预算
@@ -136,13 +138,87 @@ motionpath  path(预设轨迹枚举: arc|scurve|zigzag + 自定义 SVG path) + t
 delay: calc(var(--i)*0.1s)、交错入场），且编译期可确定性生成——Jet 循环输出 --i，CSS 一份通用，
 同输入同字节自动成立。
 
-落地方式：内置组件直接在 compileCSS 生成派生规则（如 .wp-cardfan .card{ transform: rotate(calc(var(--i)*5deg)) ... }），
---i 由模板按序输出，不动样式引擎白名单；若插件路径也要此类效果，safeProps 需小扩
-（filter 以 hue-rotate 枚举值收口、z-index 直接收），不引入任意 calc 表达式——表达式生成保留在内置组件编译期。
+**落地方式（已实现，2026-09）**：内置组件 **core.cardstack**（`internal/builder/components/cardstack/`）。
+上文设想的「Jet 输出 --i、CSS 一份通用」**未采用** —— 实际由 compileCSS 用 `:nth-child(N)` 逐卡生成
+色相/旋转/平移声明。原因：产物是静态 CSS，样式引擎有 safeProps 白名单，`calc()` 表达式生成只保留在
+内置组件编译期（Go 侧），不让 `calc(var(--i)*…)` 进入词汇。代价是 CSS 随卡片数线性增长
+（默认 9 张 ≈ 9 条基础规则 + 9 个 hover 块），且同页多实例各自成块 —— 取舍与尺寸约束详见该组件包注释。
 
-cardstack 组件据此收敛为三交互模式：interaction: hover-fan（本节，0 依赖）| scroll-stack
-（test.html，GSAP core+ScrollTrigger）| drag-360（GSAP Observer/Draggable）。画布内三模式均显示静态布局
-（hover/滚动/拖拽在画布不触发，正好等于无 JS 降级形态）。
+组件把「按序号派生几何」收敛成**两条正交轴**，覆盖 §4.5 规划里的前两种模式：
+
+```text
+trigger: hover  → 悬停展开（纯 CSS）              shape: fan              弧线扇形（rotate 在前，带角度）
+trigger: scroll → 滚动堆叠（sticky + scroll-driven）     line + horizontal   横排一行（无任何角度）
+                                                        line + vertical     竖排一列（无任何角度）
+```
+
+两轴正交：`trigger` 只改布局与驱动方式，`shape`/`direction` 只改变换写法与收敛式。
+
+**line 是「不带角度的纯排开」**：卡片不做任何 rotate，只用 `translate` 沿一个轴排列 ——
+横排时所有卡的 top 完全相同、left 严格等距（实测 9 张卡间距恰为 spreadDistance=120px）；
+竖排时 left 完全相同、top 等距，收敛式改按视口高度 `50vh − gutter − 卡高/2` 算，
+轨道另按 `卡高 + 2×最大步距×位移` 预留纵向空间。这与 fan 的差别不只是"位移方向"：
+fan 的位移落在旋转后的坐标系里（外接框会变大、卡片高度参差），line 的外接框就是卡本身。
+
+卡片内容同样是两态 —— 拖入子节点即内容卡（每张卡一个子节点），删空则退回 1~N 数字占位卡
+（先调几何再填内容）。
+若插件路径也要此类效果，safeProps 需小扩（filter 以 hue-rotate 枚举值收口、z-index 直接收），
+不引入任意 calc 表达式——表达式生成保留在内置组件编译期。
+
+实现要点（照抄社区 demo 会踩的坑）：
+
+1. **取色**一律走 `var(--wp-c-primary, …)` / `var(--wp-c-surface, …)` 主题变量（与 badge/quote/progress
+   同一约定）；
+2. **数字颜色**同时写在**不包 `@media (hover: hover)`** 的 `:active` 规则里（触屏没有 hover，
+   只写悬停态 = 移动端永远看不到数字）；
+3. **纵向**：悬停模式的容器高度用 `calc(卡高 + 2×上抬量)` 预留展开空间，否则展开时卡片越出容器顶部；
+4. **展开位移**写成 `calc(offset × clamp(0px, 允许值, spreadDistance))`，允许值按形态算，
+   都等于「视口相应半轴 − 安全留白 − 该形态下卡片占据的半尺寸」，再除以最大步距：
+   ```text
+   fan          (50vw − gutter − L·sinθ − (W/2)cosθ − (H/2)sinθ) / (cosθ · offsetMax)
+   line 横排     (50vw − gutter − W/2) / offsetMax
+   line 竖排     (50vh − gutter − H/2) / offsetMax
+   ```
+   `50%` 在 `translate` 的 X 方向即卡 border box 半宽（所以卡宽写成 px/rem/% 都不影响）；
+   卡高拿不到百分比，由容器以 `--wp-cardstack-h` 变量传入。上界仍是用户参数 `spreadDistance`：
+   **视口够宽时参数 100% 生效，装不下才收敛**，不静默改写参数。反之把它设成比允许值大的数
+   （如 200），就是「自动铺满视口」。
+
+   **收敛基准为什么取视口（vw）而不是容器（cqw）**：cqw 需要容器声明 `container-type: inline-size`，
+   它等于 `contain: layout` —— 而 `contain: layout` 会让容器成为 fixed 后代的包含块，
+   「点击放大到屏幕中央」的 fixed 层就再也走不出容器。两者不可兼得，取视口：
+   横向溢出的实际危害本来就是撑出视口（横向滚动条）。实测（1440 视口）视口 1440/1000/700 三档下
+   展开跨度均比视口窄 16px，全程无横向滚动。
+
+5. **点击放大**：卡片是 `<label>`，内部藏一个同组 radio —— 纯 CSS 零 JS，同组互斥天然保证
+   「一次只放大一张」。放大态用 `:has(> .wp-cardstack-toggle:checked)` 命中，`inset:0 + margin:auto`
+   居中（不用 transform，免得和展开位移抢属性）；遮罩是容器末尾的 label，点它即选中关闭 radio。
+   radio 无法「再点一次取消」，所以另配一个右上角关闭按钮（`<label for>` 指向同一个关闭 radio），
+   且关闭 radio **不能共用 toggle 类名**，否则「有 toggle 被选中」在关闭后依然为真、遮罩收不回去。
+6. **内容集合（自动出卡）**：卡片数量由 CMS 内容条数决定时，不要在页面里手工复刻卡片 ——
+   组件声明 `collectionSource`（`content:article` 等）+ 一组字段映射（图片/标题/正文/附注/链接），
+   构建期解析集合、按条数展开卡片。三层职责：
+
+   ```text
+   core.CollectionResolver        内容 → 字段列表（构建期静态填入）
+   core.CollectionSchemaProvider  集合源 → 字段白名单（可选能力，组件侧按能力探测使用）
+   content 模块                   实现两者；HTTP 侧 /api/content/collections 供工作台渲染字段下拉
+   ```
+
+   **白名单是唯一的**：组件在构建期用 `CollectionSchemas` 校验字段映射（写错直接报错并列出可用字段，
+   不静默渲染空白），并按白名单裁剪集合项（不变量 4：模板只能渲染声明字段）；工作台用同一个接口
+   渲染字段**下拉**而不是输入框 —— 手填字段名会绕过白名单，所以界面层不给这个口子。
+   解析器未实现元数据契约时退回「按数据实际字段判断」，不阻断构建。
+
+   集合模式的卡片样式与子节点内容卡一致（走卡片级背景/内边距/圆角），卡内元素由组件渲染：
+   `img → 标题 → 正文 → 附注 → 链接`，字段留空则该元素不渲染。子节点内容卡与集合卡互斥 ——
+   声明了集合源就等于「卡片交给内容」，子节点不再参与卡片渲染。
+
+7. **滚动堆叠**：基础规则就是 `position: sticky + top + translate: 0 -50%` 的纯层叠，跟手收敛叠在同一条
+   规则的 `animation` 上，靠 `animation-timeline: view()` 驱动。**不需要 `@supports` 包裹** ——
+   老浏览器把 `animation-timeline`/`animation-range` 当未知属性丢弃，动画按 0s 播完并由
+   `fill-mode: both` 停在终态，视觉正好等于静态缩放。每张卡用独立关键帧（`wp-cs-<节点id>-<序号>`），
+   因为各卡终态缩放不同，共用一份关键帧做不到。
 
 **扩展案例：产品卡双形态（productcard 组件素材，2026-09 补充）**
 
