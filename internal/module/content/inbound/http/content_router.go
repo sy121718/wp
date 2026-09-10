@@ -22,6 +22,8 @@ func SetupContentRoutes(rg *gin.RouterGroup, db *gorm.DB) contentcontract.Conten
 	g.POST("/update", handle.Update)
 	g.GET("/get", handle.Get)
 	g.GET("/list", handle.List)
+	// 集合源元数据：内置组件集合字段白名单 + 工作台字段下拉。
+	g.GET("/collections", handle.Collections)
 	g.POST("/delete", handle.Delete)
 	return svc
 }

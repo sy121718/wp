@@ -150,6 +150,9 @@ var recoveryPermsSQL string
 //go:embed 078_artifact_gc_permissions.sql
 var artifactGCPermsSQL string
 
+//go:embed 079_content_collections_permission.sql
+var contentCollectionsPermSQL string
+
 //go:embed 073_blueprint_ddl_align.sql
 var blueprintDDLAlignSQL string
 
@@ -430,6 +433,14 @@ func init() {
 		TableName:    "sys_permission",
 		ConditionSQL: "SELECT COUNT(*) FROM sys_permission WHERE permission_code = 'page:artifact_gc'",
 		SQL:          artifactGCPermsSQL,
+	})
+
+	// 079：内容集合元数据接口权限点（工作台集合字段下拉 + 内置组件字段校验）。
+	registerSeed(Seed{
+		Version:      "079-content-collections-permission",
+		TableName:    "sys_permission",
+		ConditionSQL: "SELECT COUNT(*) FROM sys_permission WHERE permission_code = 'content:collections'",
+		SQL:          contentCollectionsPermSQL,
 	})
 
 	// 073：把历史库的 blueprints / blueprint_versions 对齐到 model（唯一真源）。

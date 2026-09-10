@@ -20,6 +20,32 @@ type CollectionResolver interface {
 	ResolveCollection(ctx context.Context, source string, filter map[string]string) (items []map[string]any, err error)
 }
 
+// CollectionSchema 集合源元数据（字段白名单 + 过滤/排序维度）。
+//
+// 这是「内置组件也能声明集合」的通用契约：解析器实现方（content 模块）给出
+// 每个集合源允许渲染的字段，内置组件在构建期据此校验字段映射（不变量 4），
+// 工作台据它渲染字段下拉 —— 白名单只有一处来源，不在组件里各写一份。
+type CollectionSchema struct {
+	// Source 集合源标识（"content:article" 等）。
+	Source string
+	// Label 展示名（工作台下拉用）。
+	Label string
+	// Fields 允许渲染的字段白名单。
+	Fields []string
+	// Filters 允许的过滤维度（键 + 枚举）。
+	Filters []CollectionFilter
+	// OrderBy 允许的排序键白名单。
+	OrderBy []string
+}
+
+// CollectionSchemaProvider 可选能力：解析器能给出集合源元数据。
+//
+// 实现方为内容模块。组件侧按「能力探测」使用：实现了就按白名单严格校验，
+// 没实现则退回按数据实际字段判断 —— 契约缺失不阻断构建。
+type CollectionSchemaProvider interface {
+	CollectionSchemas(ctx context.Context) ([]CollectionSchema, error)
+}
+
 // CollectionSource 集合源白名单声明（插件 manifest collections.json 投影，
 // 由 plugin 模块注册，构建期经 CollectionResolver 消费）。
 type CollectionSource struct {

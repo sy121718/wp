@@ -8,6 +8,8 @@ const (
 	MsgListSuccess   = "MsgListSuccess"   // 内容列表获取成功
 	MsgDetailSuccess = "MsgDetailSuccess" // 内容详情获取成功
 	MsgDeleteSuccess = "MsgDeleteSuccess" // 内容已删除
+	// MsgCollectionsSuccess 集合源元数据获取成功。
+	MsgCollectionsSuccess = "MsgCollectionsSuccess"
 
 	ErrInvalidParam = "ErrInvalidParam" // 参数错误
 	ErrNotFound     = "ErrNotFound"     // 内容不存在
@@ -15,4 +17,6 @@ const (
 	ErrInvalidField = "ErrInvalidField" // 内容字段不在白名单
 	ErrSlugTaken    = "ErrSlugTaken"    // 同类型下 slug 已存在
 	ErrDataInvalid  = "ErrDataInvalid"  // 内容数据格式非法
+	// ErrCollectionUnsupported 当前内容服务未实现集合元数据契约。
+	ErrCollectionUnsupported = "ErrCollectionUnsupported"
 )

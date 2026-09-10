@@ -61,5 +61,37 @@ func matchFilter(data map[string]any, filter map[string]string) bool {
 	return true
 }
 
-// 编译期断言：Service 实现 core.CollectionResolver。
-var _ core.CollectionResolver = (*Service)(nil)
+// CollectionSchemas 实现 core.CollectionSchemaProvider：暴露内容集合源与字段白名单。
+// 内置组件（如 cardstack）用它在构建期校验字段映射，工作台用它渲染字段下拉。
+func (s *Service) CollectionSchemas(_ context.Context) ([]core.CollectionSchema, error) {
+	types := contentcontract.EntityTypes()
+	out := make([]core.CollectionSchema, 0, len(types))
+	for _, t := range types {
+		out = append(out, core.CollectionSchema{
+			Source: collectionSourcePrefix + t,
+			Label:  entityTypeLabel(t),
+			Fields: contentcontract.FieldWhitelist(t),
+		})
+	}
+	return out, nil
+}
+
+// entityTypeLabel 内容类型的展示名（工作台集合源/字段下拉）。
+func entityTypeLabel(entityType string) string {
+	switch entityType {
+	case "article":
+		return "文章列表"
+	case "product":
+		return "商品列表"
+	case "category":
+		return "分类列表"
+	default:
+		return entityType
+	}
+}
+
+// 编译期断言：Service 实现集合解析与集合元数据两个契约。
+var (
+	_ core.CollectionResolver       = (*Service)(nil)
+	_ core.CollectionSchemaProvider = (*Service)(nil)
+)

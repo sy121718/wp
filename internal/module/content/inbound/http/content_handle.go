@@ -6,6 +6,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"go_wp/internal/builder/core"
 	contentcontract "go_wp/internal/module/content/contract"
 	contentdto "go_wp/internal/module/content/dto"
 	contentenums "go_wp/internal/module/content/enums"
@@ -78,6 +79,21 @@ func (h *Handle) List(c *gin.Context) {
 		return
 	}
 	response.SuccessWithMessage(c, contentenums.MsgListSuccess, list)
+}
+
+// Collections 集合源元数据（字段白名单）：内置组件构建期校验与工作台字段下拉的唯一来源。
+func (h *Handle) Collections(c *gin.Context) {
+	provider, ok := h.svc.(core.CollectionSchemaProvider)
+	if !ok {
+		response.ErrorWithMessage(c, http.StatusBadRequest, contentenums.ErrCollectionUnsupported)
+		return
+	}
+	items, err := provider.CollectionSchemas(c.Request.Context())
+	if err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	response.SuccessWithMessage(c, contentenums.MsgCollectionsSuccess, gin.H{"collections": items})
 }
 
 // Delete 删除内容。
