@@ -28,6 +28,17 @@ shape: line 直接排开（**卡片不带任何角度**）
 
 > 信息类卡片（商品、文章）优先 `line` 或 `deck`：扇形展开后文字是斜的，不好读。
 
+### `slide` 与 `deck(vertical)` 别混（最容易搞错的一对）
+
+| | `slide` | `deck` + `deckDirection=vertical` |
+|---|---|---|
+| 卡片排布 | **纵向平铺**，每张一屏高 | **叠在中心**，只露边 |
+| 切换方式 | 滚动吸附（滚轮 / PageDown） | 上下拖动 / ↑↓ 键 / 点侧卡 |
+| 首屏看到 | 第一张（其余在下面） | 第一张（其余压在下面） |
+| 适合 | 一页一屏的落地页、故事页 | 卡片式翻牌、选项切换 |
+
+看到「几屏内容纵向排开」是 `slide` 的**正常形态**，不是堆叠失效；要"叠着"用 `deck`。
+
 ## 3. 内容来源：三种，按需求挑
 
 | 来源 | 怎么触发 | 适合 |
@@ -81,7 +92,8 @@ shape: line 直接排开（**卡片不带任何角度**）
 | `spreadAngle` | 5 | hover + fan（每张卡的角度增量，总角 = (张数−1)×增量） |
 | `spreadDistance` | 120 | hover（每张卡的位移增量，同时是「铺满」开关） |
 | `dragRadius` | 0 = 自动 | drag（0 时按「相邻卡片不重叠」自动算） |
-| `deckOffset` / `deckRotate` / `deckScaleStep` | 54 / 4 / 6 | deck |
+| `deckDirection` | horizontal | deck：横向切换（左右） / **纵向切换（上下）** |
+| `deckOffset` / `deckRotate` / `deckScaleStep` | 54 / 4 / 6 | deck（纵向时偏移缺省 12、倾斜减半） |
 | `deckLoop` | 关 | deck（滑到头绕回另一端） |
 
 ### 布局 / 样式
