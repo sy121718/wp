@@ -28,8 +28,8 @@ const (
 
 // Binding 字段绑定。
 type Binding struct {
-	Field    string `json:"field,omitempty"`    // 字段路径：post.excerpt / category.description / post.content 等
-	Fallback string `json:"fallback,omitempty"` // 绑定字段为空时的兜底文本
+	Field    string `json:"field,omitempty" ct:"bindingfield,maxlen=60,sec=content,label=内容字段"` // 字段路径：item.excerpt（集合项）/ post.excerpt / category.description 等
+	Fallback string `json:"fallback,omitempty"`                                                 // 绑定字段为空时的兜底文本
 }
 
 // Props core.text 特有属性 + 共享排版组 + Advanced 通用层。

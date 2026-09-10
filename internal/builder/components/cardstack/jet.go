@@ -46,6 +46,14 @@ type View struct {
 	Drag bool
 }
 
+// IsCollection 是否内容集合模式 —— 装配层据此决定「子节点模板」还是「组件自带字段映射」。
+func IsCollection(p *Props) bool { return collectionSource(p) != "" }
+
+// CollectionItems 解析集合项（含字段白名单校验与裁剪），供装配层按项展开子节点模板。
+func CollectionItems(node *core.Node, p *Props, ctx *core.RenderContext) ([]map[string]any, error) {
+	return resolveItems(node, p, ctx)
+}
+
 // BuildView 生成渲染视图；内容集合模式需要 ctx.Collection（装配层注入）。
 func BuildView(node *core.Node, p *Props, ctx *core.RenderContext) (View, error) {
 	drag := effectiveTrigger(p) == TriggerDrag
@@ -68,6 +76,16 @@ func BuildView(node *core.Node, p *Props, ctx *core.RenderContext) (View, error)
 
 // collectionCards 解析内容集合 → 每项一张卡（字段映射取自 props）。
 func collectionCards(node *core.Node, p *Props, ctx *core.RenderContext) ([]CardView, error) {
+	items, err := resolveItems(node, p, ctx)
+	if err != nil {
+		return nil, err
+	}
+	return buildCollectionCards(p, items), nil
+}
+
+// resolveItems 解析集合源 → 字段列表：限额、白名单校验（有元数据契约时严格校验并裁剪，
+// 否则按数据实际字段判断）。子节点模板模式与组件自带字段映射模式共用它。
+func resolveItems(node *core.Node, p *Props, ctx *core.RenderContext) ([]map[string]any, error) {
 	if ctx == nil || ctx.Collection == nil {
 		return nil, fmt.Errorf("节点 %s: 编译上下文缺少集合解析器（无法解析内容集合 %q）", node.ID, p.CollectionSource)
 	}
@@ -94,13 +112,13 @@ func collectionCards(node *core.Node, p *Props, ctx *core.RenderContext) ([]Card
 			if err = checkFieldMapping(node.ID, p, items); err != nil {
 				return nil, err
 			}
-			return buildCollectionCards(p, items), nil
+			return items, nil
 		}
 	}
 	if err = checkFieldMapping(node.ID, p, items); err != nil {
 		return nil, err
 	}
-	return buildCollectionCards(p, items), nil
+	return items, nil
 }
 
 // checkFieldsAgainstSchema 按集合元数据白名单校验字段映射。

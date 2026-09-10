@@ -60,6 +60,8 @@ export function schemaField(ctx, ctl) {
     if (ctl.kind === 'mediaList') { mediaListControl(ctx, label, path, ctl); return; }
     // 集合字段下拉（内置组件的集合绑定）：选项来自后端字段白名单。
     if (ctl.kind === 'collectionfield') { collectionFieldControl(ctx, label, path); return; }
+    // 内容字段绑定（heading/text/image 的 binding.field）：item.* 取当前卡片项，<type>.* 取页面内容。
+    if (ctl.kind === 'bindingfield') { bindingFieldControl(ctx, label, path); return; }
     if (ctl.kind === 'select') {
         // 选项归一为 [value, label]：ct tag 已声明中文标签时优先。
         var opts = (ctl.options || []).map(function (o) {
@@ -166,6 +168,42 @@ function collectionFieldControl(ctx, label, path) {
         if (schema) {
             (schema.Fields || []).forEach(function (f) { options.push([f, f]); });
         }
+        holder.textContent = '';
+        holder.className = '';
+        holder.appendChild(wbDropdown(options, get(ctx, path) || '', {
+            onChange: function (v) { commit(ctx, path, v); }
+        }).root);
+    });
+}
+
+/**
+ * bindingFieldControl 内容字段绑定下拉：两类来源同一份白名单接口 ——
+ *   item.<字段>  当前卡片项（在 cardstack 集合卡里生效，见 core.ItemScope）
+ *   <类型>.<字段> 页面内容（contenttemplate/presentation 路径）
+ * 前缀写错会绕过白名单，所以这里不给输入框。
+ */
+function bindingFieldControl(ctx, label, path) {
+    var wrap = document.createElement('div'); wrap.className = 'wb-field';
+    var cap = document.createElement('label'); cap.textContent = label; wrap.appendChild(cap);
+    ctx.panel.appendChild(wrap);
+    var holder = document.createElement('div');
+    holder.className = 'wb-hint';
+    holder.textContent = '字段载入中…';
+    wrap.appendChild(holder);
+
+    loadCollections(function (list) {
+        var options = [['', '（不使用）']];
+        (list || []).forEach(function (c) {
+            var type = String(c.Source || '').replace('content:', '');
+            var fields = (c.Fields || []).slice();
+            if (fields.indexOf('slug') < 0) fields.push('slug');
+            fields.forEach(function (f) {
+                options.push(['item.' + f, '当前卡片项 · ' + f]);
+            });
+            fields.forEach(function (f) {
+                options.push([type + '.' + f, (c.Label || type) + ' · ' + f]);
+            });
+        });
         holder.textContent = '';
         holder.className = '';
         holder.appendChild(wbDropdown(options, get(ctx, path) || '', {

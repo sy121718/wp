@@ -7,7 +7,12 @@
 // 不能保存 SQL、任意过滤表达式或 endpoint（不变量 4）。
 package core
 
-import "context"
+import (
+	"context"
+	"fmt"
+	"strconv"
+	"strings"
+)
 
 // CollectionResolver 集合内容解析契约：集合源 → 静态列表数据（构建期填入）。
 type CollectionResolver interface {
@@ -44,6 +49,65 @@ type CollectionSchema struct {
 // 没实现则退回按数据实际字段判断 —— 契约缺失不阻断构建。
 type CollectionSchemaProvider interface {
 	CollectionSchemas(ctx context.Context) ([]CollectionSchema, error)
+}
+
+// ItemFieldPrefix 集合项字段前缀：绑定写成 item.title 表示「当前集合项的字段」，
+// 由集合组件在展开每张卡时注入作用域（见 ItemScope）。
+const ItemFieldPrefix = "item."
+
+// ItemScope 把绑定解析限定到当前集合项：字段以 item. 开头时取当前项，
+// 其余原样委托内层解析器（页面级 FieldBinding 照旧）。
+//
+// 这是「集合卡用任意组件做模板」的关键 —— 子节点组件完全不需要知道自己在集合里，
+// 它们照旧调 ContentResolver.ResolveString，作用域由外层组件在递归渲染时换掉。
+// 不在集合里（Item 为 nil）时 item.* 解析为空串，由组件的 fallback 兜底。
+type ItemScope struct {
+	Inner ContentResolver
+	Item  map[string]any
+}
+
+// ResolveString 实现 ContentResolver。
+func (s ItemScope) ResolveString(field string) (string, error) {
+	if name, ok := strings.CutPrefix(field, ItemFieldPrefix); ok {
+		return ItemFieldText(s.Item, name), nil
+	}
+	if s.Inner == nil {
+		return "", nil
+	}
+	return s.Inner.ResolveString(field)
+}
+
+// ItemFieldText 取集合项字段的展示文本；数组取首元素（如 product.images），
+// 整数数值去掉小数尾巴（价格 299 而非 299.000000）。
+func ItemFieldText(item map[string]any, field string) string {
+	if field == "" || item == nil {
+		return ""
+	}
+	v, ok := item[field]
+	if !ok || v == nil {
+		return ""
+	}
+	switch t := v.(type) {
+	case string:
+		return t
+	case []any:
+		if len(t) == 0 {
+			return ""
+		}
+		return ItemFieldText(map[string]any{"v": t[0]}, "v")
+	case float64:
+		if t == float64(int64(t)) {
+			return strconv.FormatInt(int64(t), 10)
+		}
+		return strconv.FormatFloat(t, 'f', -1, 64)
+	case bool:
+		if t {
+			return "是"
+		}
+		return "否"
+	default:
+		return fmt.Sprint(t)
+	}
 }
 
 // CollectionSource 集合源白名单声明（插件 manifest collections.json 投影，

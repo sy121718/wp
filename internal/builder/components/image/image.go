@@ -61,7 +61,7 @@ type Hover struct {
 
 // Binding CMS 图片字段绑定：解析结果为图片 URL；为空回退 Fallback（同为 URL）。
 type Binding struct {
-	Field    string `json:"field,omitempty"`
+	Field    string `json:"field,omitempty" ct:"bindingfield,maxlen=60,sec=content,label=内容字段"`
 	Fallback string `json:"fallback,omitempty"`
 }
 

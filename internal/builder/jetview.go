@@ -526,6 +526,16 @@ func cardViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeV
 
 // cardstackViewOf 转换卡片堆叠节点：结构型组件 —— 子节点即卡片内容（没有则退回数字卡），
 // props 只描述几何与交互，故不走 atomViewOf，与 tabs/accordion 同路。
+// cardstackView 卡片堆叠的模板视图：几何/字段数据来自组件包，子节点分组由本层组装 ——
+// nodeView 是本包私有类型，组件包看不到，所以「集合项 → 一组子节点」只能在这里拼。
+type cardstackView struct {
+	cardstackPkg.View
+	// CardNodes 集合项模板模式：每个集合项一组已渲染子树（第 i 组 = 第 i 张卡的内容）。
+	CardNodes [][]*nodeView
+	// HasCardNodes 是否走子节点模板（模板里据此分支，空切片也能表达）。
+	HasCardNodes bool
+}
+
 func cardstackViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeView, error) {
 	var p cardstackPkg.Props
 	if len(node.Props) > 0 {
@@ -534,8 +544,21 @@ func cardstackViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*
 		}
 	}
 
+	// 先解析视图（内容集合模式要在这里展开成 N 张卡），再按实际卡片数编译 CSS ——
+	// 集合条数运行期才知道，逐卡 :nth-child 规则必须与之对齐。
+	base, err := cardstackPkg.BuildView(node, &p, ctx)
+	if err != nil {
+		return nil, err
+	}
+	view := cardstackView{View: base}
+
 	children := make([]*nodeView, 0, len(node.Children))
+	isCollection := cardstackPkg.IsCollection(&p)
 	for _, child := range node.Children {
+		// 集合模式：子节点不再各自成卡，而是「每张卡的模板」——延后到按项展开时渲染。
+		if isCollection {
+			continue
+		}
 		cv, err := nodeViewOf(child, false, ctx)
 		if err != nil {
 			return nil, err
@@ -543,14 +566,33 @@ func cardstackViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*
 		children = append(children, cv)
 	}
 
-	// 先解析视图（内容集合模式要在这里展开成 N 张卡），再按实际卡片数编译 CSS ——
-	// 集合条数运行期才知道，逐卡 :nth-child 规则必须与之对齐。
-	view, err := cardstackPkg.BuildView(node, &p, ctx)
-	if err != nil {
-		return nil, err
+	// 集合 + 子节点 = 子节点模板模式：按集合项展开子树，每项渲染时把 ContentResolver
+	// 换成作用域化的 ItemScope —— 子节点组件照旧调 ResolveString（写 item.title 即取当前项），
+	// 不需要知道自己在集合里。
+	if isCollection && len(node.Children) > 0 {
+		items, ierr := cardstackPkg.CollectionItems(node, &p, ctx)
+		if ierr != nil {
+			return nil, ierr
+		}
+		view.CardNodes = make([][]*nodeView, 0, len(items))
+		for _, item := range items {
+			itemCtx := *ctx
+			itemCtx.Content = core.ItemScope{Inner: ctx.Content, Item: item}
+			group := make([]*nodeView, 0, len(node.Children))
+			for _, child := range node.Children {
+				cv, cerr := nodeViewOf(child, false, &itemCtx)
+				if cerr != nil {
+					return nil, cerr
+				}
+				group = append(group, cv)
+			}
+			view.CardNodes = append(view.CardNodes, group)
+		}
+		view.HasCardNodes = len(view.CardNodes) > 0
 	}
+
 	classes, customID := advancedClasses(node, &p, ctx)
-	cardstackPkg.CompileCSS(node, &p, len(view.Cards), ctx.CSS)
+	cardstackPkg.CompileCSS(node, &p, len(base.Cards), ctx.CSS)
 
 	return &nodeView{
 		Type:     cardstackPkg.Type,

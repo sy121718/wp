@@ -30,7 +30,7 @@ type DecorProps struct {
 // Binding CMS 字段绑定（规范 §2 Dynamic Binding）。
 type Binding struct {
 	// Field 字段路径：post.title / product.name / category.name 等。
-	Field string `json:"field,omitempty"`
+	Field string `json:"field,omitempty" ct:"bindingfield,maxlen=60,sec=content,label=内容字段"`
 	// Fallback 绑定字段为空时的兜底文本。
 	Fallback string `json:"fallback,omitempty" ct:"text,maxlen=500"`
 }
