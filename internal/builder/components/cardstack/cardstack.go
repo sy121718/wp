@@ -97,6 +97,8 @@ const (
 	defaultSlideCount = 3
 	// slideFitViewport slideFit 的「铺满视口」取值。
 	slideFitViewport = "viewport"
+	// slideDirectionHorizontal slideDirection 的横向取值。
+	slideDirectionHorizontal = "horizontal"
 	// fallbackCardW / fallbackCardH 拖拽旋转算环形半径时的兜底卡片尺寸（非 px 宽度时使用）。
 	fallbackCardW = 320
 	fallbackCardH = 240
@@ -147,6 +149,11 @@ type Props struct {
 	// viewport 让容器脱离文档流铺满视口，父容器的内边距不再影响它 ——
 	// 「整页分页」不必再手动把父容器 padding 归零；代价是页面上不能有别的同级内容。
 	SlideFit string `json:"slideFit,omitempty" ct:"select,=页面内滚动区,viewport=铺满视口(整页分页),sec=layout,label=贴合方式"`
+	// SlideDirection 全屏分页的滚动方向：vertical 纵向 / horizontal 横向。
+	SlideDirection string `json:"slideDirection,omitempty" ct:"select,vertical=纵向滚动,horizontal=横向滚动,default=vertical,sec=layout,label=滚动方向"`
+	// SlideStack 堆叠翻页：卡片粘在同一位置，下一张滑上来盖住前一张（缺省平铺）。
+	// 与平铺的区别：平铺时上滑会把前一张推走，堆叠时前一张留在原地被覆盖。
+	SlideStack bool `json:"slideStack,omitempty" ct:"bool,sec=layout,label=堆叠翻页"`
 	// SlideHeight 全屏分页的每屏高度（缺省 100dvh —— 用 dvh 而非 vh，移动端地址栏收放时不会跳）。
 	SlideHeight string `json:"slideHeight,omitempty" ct:"dimension,maxlen=20,sec=layout,label=每屏高度"`
 	// Spacing 滚动模式的卡片间距（缺省 26vh）。
@@ -1050,16 +1057,35 @@ func compileSlideCSS(b *core.CSSBuckets, sel string, p *Props, n int, height str
 		fitDecls = append(fitDecls, screenDecl...)
 		b.Add(core.BreakpointDesktop, sel, fitDecls)
 	}
+	// 滚动方向：纵向滚动用 Y 轴与 pan-y，横向滚动把整套换成 X 轴。
+	horizontal := p.SlideDirection == slideDirectionHorizontal
+	scrollAxis, snapAxis := "y", "y"
+	overflowMain, overflowCross := "overflow-y: auto", "overflow-x: hidden"
+	snapAlign := "scroll-snap-align: start"
+	stickyAxis := "top: 0"
+	if horizontal {
+		scrollAxis, snapAxis = "x", "x"
+		overflowMain, overflowCross = "overflow-x: auto", "overflow-y: hidden"
+		snapAlign = "scroll-snap-align: start"
+		stickyAxis = "left: 0"
+	}
+	_ = scrollAxis
+
 	// 滚动容器：原生滚动 + 强制吸附（一次只翻一屏）。
 	trackDecls := append([]string{
 		"position: relative",
 		"display: block",
-		"overflow-y: auto",
-		"overflow-x: hidden",
-		"scroll-snap-type: y mandatory",
+		overflowMain,
+		overflowCross,
+		"scroll-snap-type: " + snapAxis + " mandatory",
 		"-webkit-overflow-scrolling: touch",
 		"scrollbar-width: thin",
 	}, screenDecl...)
+	if horizontal {
+		// 横向分页必须让卡片真正横排：块级元素默认纵向堆叠，宽度不会溢出，
+		// 轨道 scrollWidth 恒等于 clientWidth —— 滚动条根本出不来（实测踩过）。
+		trackDecls = append(trackDecls, "display: flex", "flex-direction: row")
+	}
 	// 页码：CSS counter 自动编号（卡片逐个 increment），总数由编译期写进 attr()——
 	// 全程零 JS，滚动中也能看出「第几屏 / 共几屏」。
 	trackDecls = append(trackDecls, "counter-reset: wp-page")
@@ -1082,9 +1108,23 @@ func compileSlideCSS(b *core.CSSBuckets, sel string, p *Props, n int, height str
 		decls := []string{
 			"width: 100%",
 			"counter-increment: wp-page",
-			"scroll-snap-align: start",
+			snapAlign,
 			// always：一次手势只翻一屏，不会连跳好几屏。
 			"scroll-snap-stop: always",
+		}
+		if horizontal {
+			// flex 子项不能靠 width: 100% 定宽（会被压缩），用 flex 基准定成整屏宽。
+			decls = append(decls, "flex: 0 0 100%")
+		}
+		if p.SlideStack {
+			// 堆叠翻页：每张卡都粘在同一位置，靠递增 z-index 让后一张**盖住**前一张。
+			// 平铺时上滑会把前一张推走，堆叠时它留在原地被覆盖 —— 视觉上是「翻页」。
+			// 纯 sticky + z-index，零 JS、不依赖 scroll-driven。
+			decls = append(decls,
+				"position: sticky",
+				stickyAxis,
+				"z-index: "+strconv.Itoa(i+1),
+			)
 		}
 		decls = append(decls, cardMin...)
 		if content {

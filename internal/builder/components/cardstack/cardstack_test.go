@@ -188,6 +188,49 @@ func TestSlideCSS(t *testing.T) {
 	}
 }
 
+// TestSlideHorizontal 横向滚动：整套换到 X 轴（含吸附与 sticky 轴）。
+func TestSlideHorizontal(t *testing.T) {
+	p := &Props{Trigger: TriggerSlide, Count: 3, SlideDirection: slideDirectionHorizontal, SlideStack: true}
+	s := compiled(t, nodeOf(p, 0), p)
+
+	for _, want := range []string{
+		"overflow-x: auto",
+		"overflow-y: hidden",
+		"scroll-snap-type: x mandatory",
+		"left: 0", // sticky 换到 X 轴
+		"position: sticky",
+	} {
+		if !strings.Contains(s, want) {
+			t.Errorf("横向分页缺少 %q", want)
+		}
+	}
+	if strings.Contains(s, "scroll-snap-type: y mandatory") {
+		t.Errorf("横向分页不该再用纵向吸附")
+	}
+}
+
+// TestSlideStack 堆叠翻页：粘在同位 + 递增 z-index，后一张盖住前一张（零 JS）。
+func TestSlideStack(t *testing.T) {
+	plain := &Props{Trigger: TriggerSlide, Count: 3}
+	ps := compiled(t, nodeOf(plain, 0), plain)
+	if strings.Contains(ps, "position: sticky") {
+		t.Errorf("缺省（平铺）不该出现 sticky")
+	}
+
+	stack := &Props{Trigger: TriggerSlide, Count: 3, SlideStack: true}
+	ss := compiled(t, nodeOf(stack, 0), stack)
+	for _, want := range []string{
+		"position: sticky",
+		"top: 0",
+		"z-index: 1",
+		"z-index: 3", // 第 3 张盖在最上面
+	} {
+		if !strings.Contains(ss, want) {
+			t.Errorf("堆叠翻页缺少 %q", want)
+		}
+	}
+}
+
 // TestSlideFitViewport 铺满视口：容器脱离文档流，父容器内边距不再影响它。
 func TestSlideFitViewport(t *testing.T) {
 	inline := &Props{Trigger: TriggerSlide, Count: 3}
