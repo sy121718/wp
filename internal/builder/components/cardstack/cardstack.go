@@ -86,6 +86,9 @@ const (
 	defaultCollectionLimit = 6
 	// defaultCardGap 内容卡内部元素间距缺省值。
 	defaultCardGap = "10px"
+	// defaultCardLinkText / defaultCollectionEmptyText 内置文案缺省值（可由 props 覆盖）。
+	defaultCardLinkText        = "查看详情"
+	defaultCollectionEmptyText = "暂无内容"
 	// fallbackCardW / fallbackCardH 拖拽旋转算环形半径时的兜底卡片尺寸（非 px 宽度时使用）。
 	fallbackCardW = 320
 	fallbackCardH = 240
@@ -142,6 +145,12 @@ type Props struct {
 	CollectionSource string `json:"collectionSource,omitempty" ct:"select,=不使用,content:article=文章列表,content:product=商品列表,content:category=分类列表,sec=collection,label=内容集合"`
 	// CollectionLimit 取前几条（1~24，缺省 6）。
 	CollectionLimit int `json:"collectionLimit,omitempty" ct:"slider,min=1,max=24,step=1,sec=collection,label=取几条"`
+	// CollectionEmpty 集合无内容时的表现：留空显示占位文案、hide 隐藏整个组件。
+	CollectionEmpty string `json:"collectionEmpty,omitempty" ct:"select,=显示占位文案,hide=隐藏整个组件,sec=collection,label=无内容时"`
+	// CollectionEmptyText 无内容时的占位文案（缺省「暂无内容」）。
+	CollectionEmptyText string `json:"collectionEmptyText,omitempty" ct:"text,maxlen=60,sec=collection,label=占位文案"`
+	// CardLinkText 卡片详情链接的文案（缺省「查看详情」；内置文案做成可配，多语言站点不必改代码）。
+	CardLinkText string `json:"cardLinkText,omitempty" ct:"text,maxlen=30,sec=collection,label=链接文案"`
 	// CardImageField 图片字段名（如 product.images / article.featuredImage；留空不渲染图片）。
 	CardImageField string `json:"cardImageField,omitempty" ct:"collectionfield,maxlen=40,sec=collection,label=图片字段"`
 	// CardTitleField 标题字段名（如 product.name / article.title）。
@@ -449,6 +458,21 @@ func CompileCSS(node *core.Node, p *Props, cardN int, b *core.CSSBuckets) {
 	compileZoomCSS(b, sel, p, content)
 	if collectionSource(p) != "" {
 		compileCollectionCSS(b, sel)
+		// 空状态：集合没有内容时给一块可见占位，而不是留一片空白（也可整体隐藏）。
+		b.Add(core.BreakpointDesktop, sel+" .wp-cardstack-empty", []string{
+			"margin: 0",
+			"padding: 48px 24px",
+			"text-align: center",
+			"opacity: .6",
+			"background-color: " + colorSurface,
+			"border: 1px dashed rgba(0,0,0,.16)",
+			"border-radius: 16px",
+		})
+		b.Add(core.BreakpointDesktop, sel+".is-empty-hidden", []string{"display: none"})
+	}
+	// 键盘可达：拖拽类模式的容器可聚焦（tabindex=0），焦点环与组件库其余组件一致。
+	if trigger == TriggerDrag || trigger == TriggerDeck {
+		b.Add(core.BreakpointDesktop, sel+":focus-visible", core.FocusRingDecls())
 	}
 }
 

@@ -27,6 +27,7 @@ type CardView struct {
 	Meta     string
 	Image    string
 	Href     string
+	LinkText string
 	HasImage bool
 	HasTitle bool
 	HasText  bool
@@ -50,6 +51,15 @@ type View struct {
 	DeckIndex int
 	// DeckLoop 堆叠轮播是否循环切换（滑到头继续往前会绕回来）。
 	DeckLoop bool
+
+	// Empty 内容集合解析出 0 条（此时不渲染卡片，改渲染占位或整体隐藏）。
+	Empty bool
+	// EmptyText 无内容占位文案。
+	EmptyText string
+	// HideEmpty 无内容时隐藏整个组件（而不是显示占位）。
+	HideEmpty bool
+	// LinkText 卡片详情链接文案（集合字段映射模式使用）。
+	LinkText string
 }
 
 // IsCollection 是否内容集合模式 —— 装配层据此决定「子节点模板」还是「组件自带字段映射」。
@@ -70,7 +80,12 @@ func BuildView(node *core.Node, p *Props, ctx *core.RenderContext) (View, error)
 		if err != nil {
 			return View{}, err
 		}
-		return View{Cards: cards, Collection: true, Drag: drag, Deck: deck, DeckIndex: len(cards) / 2, DeckLoop: p.DeckLoop}, nil
+		return View{
+			Cards: cards, Collection: true,
+			Drag: drag, Deck: deck, DeckIndex: len(cards) / 2, DeckLoop: p.DeckLoop,
+			Empty: len(cards) == 0, EmptyText: emptyText(p), HideEmpty: p.CollectionEmpty == "hide",
+			LinkText: linkText(p),
+		}, nil
 	}
 
 	n := cardCount(node, p)
@@ -212,6 +227,7 @@ func buildCollectionCards(p *Props, items []map[string]any) []CardView {
 			aria = "放大：" + title
 		}
 		cards = append(cards, CardView{
+			LinkText:  linkText(p),
 			AriaLabel: aria,
 			Title:     title, HasTitle: title != "",
 			Text: text, HasText: text != "",
@@ -221,6 +237,22 @@ func buildCollectionCards(p *Props, items []map[string]any) []CardView {
 		})
 	}
 	return cards
+}
+
+// linkText 卡片详情链接文案（props 覆盖内置缺省）。
+func linkText(p *Props) string {
+	if t := strings.TrimSpace(p.CardLinkText); t != "" {
+		return t
+	}
+	return defaultCardLinkText
+}
+
+// emptyText 无内容占位文案（props 覆盖内置缺省）。
+func emptyText(p *Props) string {
+	if t := strings.TrimSpace(p.CollectionEmptyText); t != "" {
+		return t
+	}
+	return defaultCollectionEmptyText
 }
 
 // checkFieldMapping 校验字段映射：字段名写错时立刻报错并列出该集合的可用字段，

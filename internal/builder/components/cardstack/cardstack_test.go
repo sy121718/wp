@@ -506,6 +506,71 @@ func TestCollectionCSS(t *testing.T) {
 	}
 }
 
+// emptyCollection 空集合（后台还没有内容时的真实形态）。
+type emptyCollection struct{}
+
+func (emptyCollection) ResolveCollection(_ context.Context, _ string, _ map[string]string) ([]map[string]any, error) {
+	return nil, nil
+}
+
+func (emptyCollection) CollectionSchemas(_ context.Context) ([]core.CollectionSchema, error) {
+	return []core.CollectionSchema{{Source: "content:article", Label: "文章列表", Fields: []string{"title"}}}, nil
+}
+
+// TestCollectionEmptyState 集合无内容：渲染占位或整体隐藏，而不是留一片空白。
+func TestCollectionEmptyState(t *testing.T) {
+	p := &Props{CollectionSource: "content:article", CardTitleField: "title"}
+	v, err := BuildView(nodeOf(nil, 0), p, &core.RenderContext{Collection: emptyCollection{}})
+	if err != nil {
+		t.Fatalf("空集合不该报错: %v", err)
+	}
+	if !v.Empty {
+		t.Errorf("空集合应标记 Empty")
+	}
+	if v.EmptyText != defaultCollectionEmptyText {
+		t.Errorf("占位文案缺省应为 %q，got %q", defaultCollectionEmptyText, v.EmptyText)
+	}
+	if v.HideEmpty {
+		t.Errorf("缺省应显示占位而不是隐藏整个组件")
+	}
+	if len(v.Cards) != 0 {
+		t.Errorf("空集合不该产出卡片，got %d", len(v.Cards))
+	}
+
+	// 也可以选择整体隐藏（列表页里"没有内容就什么都不显示"）。
+	hidden := &Props{CollectionSource: "content:article", CollectionEmpty: "hide"}
+	v2, _ := BuildView(nodeOf(nil, 0), hidden, &core.RenderContext{Collection: emptyCollection{}})
+	if !v2.HideEmpty {
+		t.Errorf("collectionEmpty=hide 应标记 HideEmpty")
+	}
+}
+
+// TestBuiltinTextOverridable 内置文案可配（多语言站点不必改代码）。
+func TestBuiltinTextOverridable(t *testing.T) {
+	p := &Props{CollectionSource: "content:article", CardTitleField: "title", CardLinkField: "slug",
+		CardLinkText: "阅读全文", CollectionEmptyText: "还没有内容"}
+	ctx := &core.RenderContext{Collection: fakeCollection{}}
+	v, err := BuildView(nodeOf(nil, 0), p, ctx)
+	if err != nil {
+		t.Fatalf("BuildView: %v", err)
+	}
+	if v.LinkText != "阅读全文" {
+		t.Errorf("链接文案应可覆盖，got %q", v.LinkText)
+	}
+	if v.EmptyText != "还没有内容" {
+		t.Errorf("占位文案应可覆盖，got %q", v.EmptyText)
+	}
+	if len(v.Cards) == 0 || v.Cards[0].LinkText != "阅读全文" {
+		t.Errorf("卡片应带上自定义链接文案：%+v", v.Cards)
+	}
+
+	// 不配时用内置缺省。
+	def, _ := BuildView(nodeOf(nil, 0), &Props{CollectionSource: "content:article"}, ctx)
+	if def.LinkText != defaultCardLinkText {
+		t.Errorf("缺省链接文案应为 %q，got %q", defaultCardLinkText, def.LinkText)
+	}
+}
+
 // TestBuildView 渲染视图：卡片数量随内容来源与占位数量变化。
 func TestBuildView(t *testing.T) {
 	v, err := BuildView(nodeOf(nil, 0), &Props{}, &core.RenderContext{})
