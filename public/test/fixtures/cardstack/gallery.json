@@ -103,7 +103,7 @@
       "collectionSource": "content:product",
       "collectionLimit": 4,
       "width": "258px",
-      "height": "476px",
+      "height": "368px",
       "cardBackground": "#ffffff",
       "cardRadius": "18px",
       "cardPadding": "14px",
@@ -683,6 +683,116 @@
        ]
       }
      ]
+    }
+   ]
+  },
+  {
+   "id": "orbit",
+   "type": "core.container",
+   "props": {
+    "tag": "section",
+    "layout": {
+     "engine": "flex",
+     "flex": {
+      "direction": "column",
+      "gap": "14px"
+     }
+    },
+    "box": {
+     "padding": {
+      "desktop": "64px 24px"
+     }
+    }
+   },
+   "children": [
+    {
+     "id": "orbit-h",
+     "type": "core.heading",
+     "props": {
+      "text": "⑦ 文章环绕",
+      "tag": "h2"
+     }
+    },
+    {
+     "id": "orbit-t",
+     "type": "core.text",
+     "props": {
+      "mode": "plaintext",
+      "plainTag": "p",
+      "text": "卡片贴着圆柱面围成一圈，拖动（或方向键）就能转 360° —— 正对观察者的那张最清楚，两侧的退向远处。这一圈放的是文章：标题、摘要、封面都在卡上。"
+     }
+    },
+    {
+     "id": "orbit-c",
+     "type": "core.cardstack",
+     "props": {
+      "trigger": "drag",
+      "dragMode": "cylinder",
+      "dragRadius": 620,
+      "collectionSource": "content:article",
+      "collectionLimit": 6,
+      "cardImageField": "featuredImage",
+      "cardTitleField": "title",
+      "cardTextField": "excerpt",
+      "width": "300px",
+      "height": "360px",
+      "cardBackground": "#ffffff",
+      "cardRadius": "18px",
+      "cardPadding": "16px",
+      "cardJustify": "flex-start",
+      "cardGap": "8px"
+     }
+    }
+   ]
+  },
+  {
+   "id": "orbit2",
+   "type": "core.container",
+   "props": {
+    "tag": "section",
+    "layout": {
+     "engine": "flex",
+     "flex": {
+      "direction": "column",
+      "gap": "14px"
+     }
+    },
+    "box": {
+     "padding": {
+      "desktop": "64px 24px"
+     }
+    }
+   },
+   "children": [
+    {
+     "id": "orbit2-h",
+     "type": "core.heading",
+     "props": {
+      "text": "⑧ 环绕画廊",
+      "tag": "h2"
+     }
+    },
+    {
+     "id": "orbit2-t",
+     "type": "core.text",
+     "props": {
+      "mode": "plaintext",
+      "plainTag": "p",
+      "text": "同样的一圈，换成数字卡并把色相按位置铺开：拖动时颜色跟着流动。这一块纯粹是为好看 —— 十个色相正好绕满一整圈。"
+     }
+    },
+    {
+     "id": "orbit2-c",
+     "type": "core.cardstack",
+     "props": {
+      "trigger": "drag",
+      "dragMode": "cylinder",
+      "dragRadius": 640,
+      "count": 10,
+      "hueStep": 36,
+      "width": "220px",
+      "height": "300px"
+     }
     }
    ]
   }

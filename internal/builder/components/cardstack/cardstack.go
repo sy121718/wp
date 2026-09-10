@@ -99,6 +99,8 @@ const (
 	slideFitViewport = "viewport"
 	// slideDirectionHorizontal slideDirection 的横向取值。
 	slideDirectionHorizontal = "horizontal"
+	// dragModeCylinder DragMode 的三维环绕取值。
+	dragModeCylinder = "cylinder"
 	// fallbackCardW / fallbackCardH 拖拽旋转算环形半径时的兜底卡片尺寸（非 px 宽度时使用）。
 	fallbackCardW = 320
 	fallbackCardH = 240
@@ -153,6 +155,10 @@ type Props struct {
 	DeckLoop bool `json:"deckLoop,omitempty" ct:"bool,sec=motion,label=循环切换"`
 	// DeckScaleStep 堆叠轮播每远一张的缩放递减（%，缺省 6）。
 	DeckScaleStep int `json:"deckScaleStep,omitempty" ct:"slider,min=1,max=20,step=1,sec=motion,label=缩放递减(%)"`
+	// DragMode 拖拽的排布方式：ring 平面圆环 / cylinder 三维圆柱环绕。
+	// cylinder 用 perspective + rotateY + translateZ 把卡片贴到圆柱面上，拖动转 360° ——
+	// 视觉上是"一页页围成一圈"，正对观察者的那张最清楚。
+	DragMode string `json:"dragMode,omitempty" ct:"select,ring=平面圆环,cylinder=三维环绕,default=ring,sec=motion,label=排布方式"`
 	// DragRadius 拖拽旋转的环形半径 px（0 = 自动：按卡片宽度与数量保证相邻卡片不重叠）。
 	DragRadius int `json:"dragRadius,omitempty" ct:"slider,min=0,max=1200,step=10,sec=motion,label=环形半径(0=自动)"`
 	// SlideFit 全屏分页的贴合方式：inline 页面内滚动区 / viewport 铺满视口。
@@ -864,8 +870,9 @@ func compileDragCSS(b *core.CSSBuckets, sel string, p *Props, n int, width, heig
 		"-webkit-tap-highlight-color: transparent",
 	})
 	b.Add(core.BreakpointDesktop, sel+".is-dragging", []string{"cursor: grabbing"})
+	cylinder := p.DragMode == dragModeCylinder
 	// 轨道高度 = 圆周外接盒（2R + 卡高），与相邻区块不会重叠。
-	b.Add(core.BreakpointDesktop, track, []string{
+	trackDecls := []string{
 		"position: relative",
 		// 同格叠放 + 内容可撑开：min-height 只作下限（环形外接盒是几何下限）。
 		"display: grid",
@@ -874,7 +881,12 @@ func compileDragCSS(b *core.CSSBuckets, sel string, p *Props, n int, width, heig
 		fmt.Sprintf("min-height: %dpx", int(2*radius+cardH)),
 		// 旋转角由增强脚本改写；无脚本时保持 0，卡片静态成环。
 		"--sky-cardstack-rot: 0deg",
-	})
+	}
+	if cylinder {
+		// 透视：值越小"圆柱"越粗、卡片变形越明显；1600px 接近真实相机距离。
+		trackDecls = append(trackDecls, "perspective: 1600px", "perspective-origin: 50% 50%")
+	}
+	b.Add(core.BreakpointDesktop, track, trackDecls)
 
 	hueStep := float64(effectiveHueStep(p))
 	for i := 0; i < n; i++ {
@@ -886,9 +898,13 @@ func compileDragCSS(b *core.CSSBuckets, sel string, p *Props, n int, width, heig
 			"justify-self: center",
 			"align-self: center",
 			"width: " + width,
-			fmt.Sprintf("transform: rotate(calc(%sdeg + var(--sky-cardstack-rot, 0deg))) translateY(-%dpx) rotate(calc(-%sdeg - var(--sky-cardstack-rot, 0deg)))",
-				num(angle), int(radius), num(angle)),
+			dragCardTransform(angle, radius, cylinder),
 			"transition: transform .35s ease",
+		}
+		if cylinder {
+			// 背对观察者的那半圈藏起来 —— 圆柱环绕只需要看到前面，
+			// 否则背面的卡片会以镜像姿态透出来（文字反着）。
+			decls = append(decls, "backface-visibility: hidden")
 		}
 		if content {
 			decls = append(decls, "min-height: "+height, "height: auto")
@@ -995,6 +1011,19 @@ func deckTransform(offset, rot int, scaleStep float64, vertical bool) string {
 	// 居中交给 grid，变换里不再带 translate(-50%, -50%)。
 	return fmt.Sprintf("transform: translate%s(calc(var(--sky-deck-off, 0) * %d%%)) rotate(calc(var(--sky-deck-off, 0) * %ddeg)) scale(calc(1 - var(--sky-deck-abs, 0) * %s))",
 		axis, offset, rot, fnum(scaleStep))
+}
+
+// dragCardTransform 拖拽卡片的变换。
+//
+//	ring     平面圆环绕中心排布，卡片始终正立（先转到角度、位移、再抵消旋转）；
+//	cylinder 三维圆柱：卡片贴在外侧面朝外，靠透视产生环绕感与近大远小。
+func dragCardTransform(angle float64, radius float64, cylinder bool) string {
+	if cylinder {
+		return fmt.Sprintf("transform: rotateY(calc(%sdeg + var(--sky-cardstack-rot, 0deg))) translateZ(%dpx)",
+			num(angle), int(radius))
+	}
+	return fmt.Sprintf("transform: rotate(calc(%sdeg + var(--sky-cardstack-rot, 0deg))) translateY(-%dpx) rotate(calc(-%sdeg - var(--sky-cardstack-rot, 0deg)))",
+		num(angle), int(radius), num(angle))
 }
 
 // dragRadius 环形半径：用户值优先；0 = 自动，保证相邻卡片弦长不小于卡宽。
