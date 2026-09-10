@@ -834,7 +834,10 @@ func compileHoverCSS(b *core.CSSBuckets, sel string, p *Props, n int, width, hei
 		// 触屏没有悬停：把展开态直接给出去，否则手机上这一整块永远保持合上的样子、
 		// 看起来像"没反应"（AddHover 的规则在 hover: none 下根本不输出）。
 		// 用 adaptive（含 clamp 收敛）而不是 fixed —— 窄屏上卡片多时不会横向溢出。
-		b.AddHoverNone(hover, []string{"transform: " + adaptive})
+		// 注意选择器要**去掉 :hover** —— hover 变量是「容器:hover 轨道 卡片」，
+		// 直接复用的话会在 @media (hover: none) 里输出「容器:hover …」，
+		// 触屏上依然不匹配，等于没写（这个 bug 让手机端卡片一直叠着、文字互相透出来）。
+		b.AddHoverNone(strings.Replace(hover, ":hover", "", 1), []string{"transform: " + adaptive})
 	}
 
 	// 按压：容器按下时全部卡变暗；被点的卡恢复原色（并显形数字）后置顶。
