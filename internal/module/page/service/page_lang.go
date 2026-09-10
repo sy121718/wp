@@ -238,6 +238,12 @@ func (s *Service) localizeMenuURL(ctx context.Context, projectID, lang, raw stri
 // 启动时全量构建会拖住启动链，且对「只想先看一眼」的部署是意外副作用。
 //
 // current 为空（二进制无 VCS 信息等）时不做任何标记 —— 宁可不标记也不全站误标。
+//
+// 标记粒度是**页面级**而非语言级，这是有意的保守选择：只要该页任一语言的产物由旧组件
+// 产出，整页标记。重建走 RebuildStale，它按站点启用语言逐个构建 —— 内容没变的语言会因
+// 产物内容寻址（同 hash 的 PutArtifact 是 no-op）而零写入，代价只是重复编译的 CPU 时间。
+// 反过来做语言级精确标记需要新增「待重建语言」状态存储（现有 stale 是 pages 表的布尔列，
+// 没有语言维度），且一旦漏标就是「线上继续跑旧组件产物且无人察觉」—— 风险收益不成正比。
 func (s *Service) MarkStaleByRegistryVersion(ctx context.Context, current string) (ids []string, err error) {
 	if strings.TrimSpace(current) == "" || s.artifacts == nil {
 		return nil, nil
