@@ -47,4 +47,7 @@ type PublicationService interface {
 	ListActivePaths(ctx context.Context, req *pubdto.ListActivePathsReq) (paths []string, err error)
 	// IsPathOccupied 查询路径是否被其他实体占用（页面创建/发布前预检）。
 	IsPathOccupied(ctx context.Context, req *pubdto.IsOccupiedReq) (occupied bool, err error)
+	// ListReferencedArtifactIDs 返回全部被路由引用的产物行 ID（产物 GC 的保护集合）。
+	// 路由指向的产物文件被删除意味着线上直接 404，且路由行不会因文件消失而失效。
+	ListReferencedArtifactIDs(ctx context.Context) (ids []string, err error)
 }

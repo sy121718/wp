@@ -175,3 +175,28 @@ func (m *Model) DeleteStagings(ctx context.Context, pageID string) (err error) {
 	return m.db.WithContext(ctx).Model(&StagingEntity{}).Where("page_id = ?", pageID).
 		Delete(&StagingEntity{}).Error
 }
+
+// ListProtectedArtifactIDs 返回「当前仍被引用、绝不可回收」的产物行 ID 集合。
+//
+// 集合来源（任一命中即保护）：
+//   - pages.active_artifact_id / pages.staged_artifact_id（单值镜像）
+//   - page_publications.artifact_id（每语言激活真源）
+//   - page_stagings.artifact_id（每语言暂存指针）
+//
+// 供产物 GC 使用：这些产物一旦丢了文件，线上立即 404 或下次发布直接失败。
+// 三张表都属本模块，单条 SQL UNION 完成，不跨模块。
+func (m *Model) ListProtectedArtifactIDs(ctx context.Context) (ids []string, err error) {
+	ids = []string{}
+	err = m.db.WithContext(ctx).Raw(`
+		SELECT active_artifact_id::text FROM pages
+		 WHERE deleted_at IS NULL AND active_artifact_id IS NOT NULL
+		UNION
+		SELECT staged_artifact_id::text FROM pages
+		 WHERE deleted_at IS NULL AND staged_artifact_id IS NOT NULL
+		UNION
+		SELECT artifact_id::text FROM page_publications WHERE artifact_id IS NOT NULL
+		UNION
+		SELECT artifact_id::text FROM page_stagings
+	`).Scan(&ids).Error
+	return ids, err
+}

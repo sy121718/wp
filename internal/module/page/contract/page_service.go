@@ -68,6 +68,10 @@ type PageService interface {
 	// HashMatched：只有构建输入（源文档 + 组件注册表 + 编译期依赖）全部未变，
 	// 才能拿回同一个 hash。
 	RebuildArtifact(ctx context.Context, req *pagedto.RebuildArtifactReq) (res *pagedto.RebuildArtifactResp, err error)
+	// GarbageCollectArtifacts 回收超出保留窗口且不再被任何指针引用的产物文件。
+	// 保护集合 = 页面活跃/暂存指针 + 每语言激活暂存 + 路由指向；同 hash 被其他行
+	// 引用时只标记 gc_pending 不删文件。默认 dryRun=true（必须显式传 false 才真删）。
+	GarbageCollectArtifacts(ctx context.Context, req *pagedto.GCArtifactsReq) (res *pagedto.GCArtifactsResp, err error)
 	// AuditPublication 巡检激活面：返回全部悬空/异常链接。
 	// /site 直接服务文件系统，产物被误删时 DB 侧毫无察觉，本方法是唯一发现手段。
 	AuditPublication(ctx context.Context) (res *pagedto.PublicationAuditResp, err error)

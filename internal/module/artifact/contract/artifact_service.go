@@ -3,6 +3,7 @@ package artifactcontract
 
 import (
 	"context"
+	"time"
 
 	artifactdto "go_wp/internal/module/artifact/dto"
 )
@@ -13,6 +14,15 @@ type (
 	DetailReq     = artifactdto.DetailReq
 	DetailByIDReq = artifactdto.DetailByIDReq
 	ArtifactResp  = artifactdto.ArtifactResp
+
+	GCCandidateResp = artifactdto.GCCandidateResp
+)
+
+// 产物负载状态（跨模块传值用；与 page_artifacts 的 CHECK 约束逐字对应）。
+const (
+	PayloadStateAvailable = "available"
+	PayloadStateGCPending = "gc_pending"
+	PayloadStateDeleted   = "deleted"
 )
 
 // ArtifactService 不可变构建产物归档能力。
@@ -33,4 +43,14 @@ type ArtifactService interface {
 	// 用途：部署新组件后的全站待重建识别 —— 组件编译进二进制，没有运行时事件能
 	// 提示「已有产物由旧组件产出」，只能靠产物元数据里的版本号比对。
 	ListPageIDsByOtherRegistryVersion(ctx context.Context, current string) (ids []string, err error)
+	// ListGCCandidates 列出可回收候选：payload_state=available、早于 before、
+	// 且不在 excludeIDs（保护集合）内。
+	// excludeIDs 为空表示调用方无法确定保护集合 —— 此时返回空列表（宁可不回收也不误删）。
+	ListGCCandidates(ctx context.Context, before time.Time, excludeIDs []string) (list []artifactdto.GCCandidateResp, err error)
+	// CountOtherAvailableByHash 统计同 hash 的其他 available 行数。
+	// 产物是内容寻址的（artifacts/<hash>/），多条元数据行可能指向同一份文件 ——
+	// 只有返回 0 时删除物理文件才安全。
+	CountOtherAvailableByHash(ctx context.Context, hash, excludeID string) (n int64, err error)
+	// MarkPayloadState 批量更新负载状态（gc_pending / deleted），返回受影响行数。
+	MarkPayloadState(ctx context.Context, ids []string, state string) (n int64, err error)
 }

@@ -303,8 +303,13 @@ func (s *Service) recordArtifactTx(ctx context.Context, tx *gorm.DB, inst *prese
 		Version: version, SourceHash: built.Manifest.SourceHash,
 		BuildInputManifest: manifestJSON, BuildInputHash: built.Manifest.BuildInputHash,
 		ArtifactProvider: "local", ArtifactKey: built.Loc.Key, ArtifactHash: built.Hash,
-		CompilerVersion: built.Manifest.CompilerVersion, RegistryVersion: built.Manifest.CompilerVersion,
-		Manifest: manifestJSON, PayloadState: "available", Note: "",
+		CompilerVersion: built.Manifest.CompilerVersion,
+		// 真实注册表版本（组件模板 + Props 结构 + 二进制 revision 的指纹）。
+		// 原来与 CompilerVersion 写同一个常量 "internal-builder"，等于空转：
+		// 自动发布实例的产物也就无法参与「组件更新后识别待重建页面」的比对，
+		// 与手工 Page 路径行为不一致（见 builder.RegistryVersion）。
+		RegistryVersion: builder.RegistryVersion(),
+		Manifest:        manifestJSON, PayloadState: "available", Note: "",
 		CreatedBy: systemCreator, CreatedAt: now,
 	}
 	if err = s.m.CreateArtifactTx(tx, e); err != nil {

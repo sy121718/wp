@@ -161,8 +161,16 @@ func (m *Model) GetByID(ctx context.Context, id string) (e *PageArtifactEntity, 
 	return e, nil
 }
 
-// PayloadStateAvailable 产物负载可用（DB CHECK 约束允许的三种状态之一）。
-const PayloadStateAvailable = "available"
+// 产物负载状态（与 page_artifacts 的 CHECK 约束逐字对应）。
+const (
+	// PayloadStateAvailable 产物负载可用。
+	PayloadStateAvailable = "available"
+	// PayloadStateGCPending 已判定可回收、但物理文件因同 hash 仍被其他行引用而未删除。
+	PayloadStateGCPending = "gc_pending"
+	// PayloadStateDeleted 物理文件已删除，仅保留元数据（source_document 仍在，
+	// 需要时可用 POST /api/page/artifact/rebuild 重建）。
+	PayloadStateDeleted = "deleted"
+)
 
 // ListPageIDsByOtherRegistryVersion 返回「存在 registry_version 与 current 不同的
 // 可用产物」的页面 ID（去重、字典序，确定性输出）。
@@ -183,4 +191,44 @@ func (m *Model) ListPageIDsByOtherRegistryVersion(ctx context.Context, current s
 func (m *Model) ListByPage(ctx context.Context, pageID string) (list []PageArtifactEntity, err error) {
 	err = m.DB(ctx).Where("page_id = ?", pageID).Order("version DESC, lang ASC").Find(&list).Error
 	return list, err
+}
+
+// ListGCCandidates 列出可回收候选：
+//   - payload_state = available（已标记回收的不重复处理）
+//   - created_at 早于 before（保留窗口之外）
+//   - 不在 excludeIDs 内（调用方传入的保护集合：页面指针 / 每语言激活暂存 / 路由指向）
+//
+// excludeIDs 为空表示调用方无法确定保护集合 —— 此时返回空列表（宁可不回收也不误删）。
+func (m *Model) ListGCCandidates(ctx context.Context, before time.Time, excludeIDs []string) (list []PageArtifactEntity, err error) {
+	if len(excludeIDs) == 0 {
+		return nil, nil
+	}
+	q := m.DB(ctx).Where("payload_state = ? AND created_at < ?", PayloadStateAvailable, before)
+	q = q.Where("id NOT IN ?", excludeIDs)
+	err = q.Order("created_at ASC").Find(&list).Error
+	return list, err
+}
+
+// CountOtherAvailableByHash 统计同 hash 的**其他** available 行数。
+//
+// 产物是内容寻址的（artifacts/<hash>/），多条元数据行可能指向同一份文件。
+// 只有在没有任何其他可用行引用该 hash 时，删除物理文件才是安全的。
+func (m *Model) CountOtherAvailableByHash(ctx context.Context, hash, excludeID string) (n int64, err error) {
+	err = m.DB(ctx).
+		Where("artifact_hash = ? AND payload_state = ? AND id <> ?", hash, PayloadStateAvailable, excludeID).
+		Count(&n).Error
+	return n, err
+}
+
+// MarkPayloadState 批量更新负载状态（gc_pending / deleted），返回受影响行数。
+func (m *Model) MarkPayloadState(ctx context.Context, ids []string, state string, at time.Time) (n int64, err error) {
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	updates := map[string]any{"payload_state": state}
+	if state == PayloadStateDeleted {
+		updates["payload_deleted_at"] = at
+	}
+	res := m.DB(ctx).Where("id IN ?", ids).Updates(updates)
+	return res.RowsAffected, res.Error
 }

@@ -230,6 +230,11 @@ func (s *Service) DeleteRoutesByPage(ctx context.Context, req *pubdto.DeleteRout
 	return result.Error
 }
 
+// ListReferencedArtifactIDs 返回全部被路由引用的产物行 ID（产物 GC 的保护集合）。
+func (s *Service) ListReferencedArtifactIDs(ctx context.Context) (ids []string, err error) {
+	return s.model.ListReferencedArtifactIDs(ctx)
+}
+
 // ListActivePaths 返回页面已激活（active/redirect）的路径集合。
 //
 // 访问面（/site）直接服务 active 目录的文件系统状态：调用方清理页面时必须

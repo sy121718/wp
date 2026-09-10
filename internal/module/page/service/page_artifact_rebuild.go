@@ -11,6 +11,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	artifactcontract "go_wp/internal/module/artifact/contract"
 	pagedto "go_wp/internal/module/page/dto"
@@ -94,5 +95,100 @@ func (s *Service) AuditPublication(ctx context.Context) (res *pagedto.Publicatio
 	if len(issues) > 0 {
 		logger.Scene("page").With("count", len(issues)).Warn("激活面巡检发现异常链接")
 	}
+	return res, nil
+}
+
+// defaultArtifactRetentionDays 默认保留窗口：30 天内的产物一律不回收（回滚窗口）。
+const defaultArtifactRetentionDays = 30
+
+// GarbageCollectArtifacts 回收超出保留窗口且不再被任何指针引用的产物文件。
+//
+// 保护集合（任一命中即绝不回收）：
+//   - pages.active_artifact_id / pages.staged_artifact_id
+//   - page_publications.artifact_id（每语言激活真源）、page_stagings.artifact_id
+//   - page_routes.artifact_id（访问面实际指向）
+//
+// 内容寻址去重：同一 hash 的物理文件可能被多条元数据行引用 —— 只有当没有任何其他
+// available 行引用该 hash 时才删文件，否则只把本行标为 gc_pending（表示「想回收但
+// 被共享占用」）。
+//
+// 可回滚性：删除的是物理文件，page_artifacts.source_document 始终保留 ——
+// 需要时可经 POST /api/page/artifact/rebuild 重建（hash 一致则完美恢复）。
+func (s *Service) GarbageCollectArtifacts(ctx context.Context, req *pagedto.GCArtifactsReq) (res *pagedto.GCArtifactsResp, err error) {
+	retention, dryRun := defaultArtifactRetentionDays, true
+	if req != nil {
+		if req.RetentionDays > 0 {
+			retention = req.RetentionDays
+		}
+		if req.DryRun != nil {
+			dryRun = *req.DryRun
+		}
+	}
+	before := time.Now().UTC().AddDate(0, 0, -retention)
+	res = &pagedto.GCArtifactsResp{RetentionDays: retention, DryRun: dryRun}
+
+	protected, err := s.model.ListProtectedArtifactIDs(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if s.routes != nil {
+		refs, rerr := s.routes.ListReferencedArtifactIDs(ctx)
+		if rerr != nil {
+			return nil, rerr
+		}
+		protected = append(protected, refs...)
+	}
+	if len(protected) == 0 {
+		// 保护集合为空：查询异常或系统尚未发布任何内容 —— 宁可不回收也不误删。
+		return res, nil
+	}
+
+	cands, err := s.artifacts.ListGCCandidates(ctx, before, protected)
+	if err != nil {
+		return nil, err
+	}
+	res.Scanned = len(cands)
+	for _, c := range cands {
+		item := pagedto.GCRecoveredArtifact{ID: c.ID, ArtifactHash: c.ArtifactHash, Lang: c.Lang}
+		others, cerr := s.artifacts.CountOtherAvailableByHash(ctx, c.ArtifactHash, c.ID)
+		if cerr != nil {
+			item.Action, item.Reason = "skipped", "同 hash 引用检查失败: "+cerr.Error()
+			res.Failed++
+			res.Items = append(res.Items, item)
+			continue
+		}
+		if others > 0 {
+			item.Action = "kept_shared"
+			item.Reason = fmt.Sprintf("同 hash 仍被 %d 条产物行引用，文件保留", others)
+			res.SkippedShared++
+			if !dryRun {
+				_, _ = s.artifacts.MarkPayloadState(ctx, []string{c.ID}, artifactcontract.PayloadStateGCPending)
+			}
+			res.Items = append(res.Items, item)
+			continue
+		}
+		if dryRun {
+			item.Action = "would_delete"
+			res.Items = append(res.Items, item)
+			continue
+		}
+		if derr := s.store.DeleteArtifact(pipeline.ArtifactLocator(c.ArtifactHash), c.ArtifactHash); derr != nil {
+			item.Action, item.Reason = "delete_failed", derr.Error()
+			res.Failed++
+			logger.Scene("artifact").With("id", c.ID).With("hash", c.ArtifactHash).Error(derr, "产物文件删除失败")
+			res.Items = append(res.Items, item)
+			continue
+		}
+		if _, merr := s.artifacts.MarkPayloadState(ctx, []string{c.ID}, artifactcontract.PayloadStateDeleted); merr != nil {
+			item.Action, item.Reason = "state_failed", "文件已删但状态未更新: "+merr.Error()
+			res.Failed++
+		} else {
+			item.Action = "deleted"
+			res.Deleted++
+		}
+		res.Items = append(res.Items, item)
+	}
+	logger.Scene("artifact").With("scanned", res.Scanned).With("deleted", res.Deleted).
+		With("skippedShared", res.SkippedShared).With("dryRun", dryRun).Info("产物回收完成")
 	return res, nil
 }

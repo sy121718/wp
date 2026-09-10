@@ -105,3 +105,14 @@ func (m *Model) ListPendingReceipts(ctx context.Context) (list []ReceiptEntity, 
 	err = m.ReceiptDB(ctx).Where("receipt_state = ?", ReceiptPending).Order("created_at ASC").Find(&list).Error
 	return list, err
 }
+
+// ListReferencedArtifactIDs 返回全部被路由引用的产物行 ID（GC 保护集合）。
+//
+// page_routes.artifact_id 是访问面的实际指向：该产物文件被删除意味着线上直接 404，
+// 且路由行本身不会因文件消失而失效 —— 必须显式纳入保护。
+func (m *Model) ListReferencedArtifactIDs(ctx context.Context) (ids []string, err error) {
+	ids = []string{}
+	err = m.RouteDB(ctx).Where("artifact_id IS NOT NULL").
+		Distinct().Pluck("artifact_id", &ids).Error
+	return ids, err
+}

@@ -39,12 +39,6 @@ var contentSQL string
 //go:embed 033_content_permissions.sql
 var contentPermSQL string
 
-//go:embed 043_content_template.sql
-var contentTemplateSQL string
-
-//go:embed 044_presentation.sql
-var presentationSQL string
-
 //go:embed 034_content_pipeline_permissions.sql
 var contentPipelinePermSQL string
 
@@ -153,6 +147,9 @@ var langBackfillPerProjectSQL string
 //go:embed 077_recovery_permissions.sql
 var recoveryPermsSQL string
 
+//go:embed 078_artifact_gc_permissions.sql
+var artifactGCPermsSQL string
+
 //go:embed 073_blueprint_ddl_align.sql
 var blueprintDDLAlignSQL string
 
@@ -212,19 +209,13 @@ func init() {
 		SQL:       contentSQL,
 	})
 
-	// 内容结构模板（docs/02-domain.md §2，0-A2 contenttemplate 模块）。
-	register(Migration{
-		Version:   "043-content-template",
-		TableName: "content_templates",
-		SQL:       contentTemplateSQL,
-	})
-
-	// 自动发布实例与快照（docs/02-domain.md §3，0-A2 presentation 模块）。
-	register(Migration{
-		Version:   "044-presentation",
-		TableName: "presentation_instances",
-		SQL:       presentationSQL,
-	})
+	// 内容结构模板（docs/02-domain.md §2，0-A2 contenttemplate 模块）与自动发布实例
+	// （§3，presentation 模块）：建表由 002-init-builder-schema 承担。
+	//
+	// 原 043_content_template.sql / 044_presentation.sql 是同一批表的重复定义，
+	// 且列集合明显更旧（缺 project_id NOT NULL、缺 current_version_id），
+	// 因 002 先建表而永远被跳过 —— 与 045_blueprint.sql 同因，已一并删除。
+	// DDL 唯一真源为 002；model 已对齐 002 的实际列集合（见 28031ed）。
 
 	// Page 初始化工具 Blueprint：建表由 002-init-builder-schema 承担。
 	// 原 045_blueprint.sql 是同一张表的重复定义（列集合还与 model 矛盾），
@@ -431,6 +422,14 @@ func init() {
 		TableName:    "sys_permission",
 		ConditionSQL: "SELECT COUNT(*) FROM sys_permission WHERE permission_code IN ('page:artifact_rebuild','page:publication_audit')",
 		SQL:          recoveryPermsSQL,
+	})
+
+	// 078：产物回收接口权限点。
+	registerSeed(Seed{
+		Version:      "078-artifact-gc-permissions",
+		TableName:    "sys_permission",
+		ConditionSQL: "SELECT COUNT(*) FROM sys_permission WHERE permission_code = 'page:artifact_gc'",
+		SQL:          artifactGCPermsSQL,
 	})
 
 	// 073：把历史库的 blueprints / blueprint_versions 对齐到 model（唯一真源）。

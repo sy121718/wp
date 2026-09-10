@@ -340,3 +340,29 @@ func toResp(e *artifactmodel.PageArtifactEntity) *artifactdto.ArtifactResp {
 		CreatedAt:        e.CreatedAt,
 	}
 }
+
+// ListGCCandidates 列出可回收候选（见 contract 说明）。
+func (s *Service) ListGCCandidates(ctx context.Context, before time.Time, excludeIDs []string) (list []artifactdto.GCCandidateResp, err error) {
+	rows, err := s.model.ListGCCandidates(ctx, before, excludeIDs)
+	if err != nil {
+		return nil, err
+	}
+	list = make([]artifactdto.GCCandidateResp, 0, len(rows))
+	for _, r := range rows {
+		list = append(list, artifactdto.GCCandidateResp{
+			ID: r.ID, PageID: r.PageID, Version: r.Version, Lang: r.Lang,
+			ArtifactHash: r.ArtifactHash, ArtifactKey: r.ArtifactKey, CreatedAt: r.CreatedAt,
+		})
+	}
+	return list, nil
+}
+
+// CountOtherAvailableByHash 见 contract 说明。
+func (s *Service) CountOtherAvailableByHash(ctx context.Context, hash, excludeID string) (n int64, err error) {
+	return s.model.CountOtherAvailableByHash(ctx, hash, excludeID)
+}
+
+// MarkPayloadState 见 contract 说明。
+func (s *Service) MarkPayloadState(ctx context.Context, ids []string, state string) (n int64, err error) {
+	return s.model.MarkPayloadState(ctx, ids, state, time.Now().UTC())
+}

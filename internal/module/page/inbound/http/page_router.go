@@ -49,5 +49,7 @@ func SetupPageRoutes(rg *gin.RouterGroup, db *gorm.DB,
 	// 灾难恢复：按产物元数据重建丢失的产物文件 + 激活面巡检。
 	g.POST("/artifact/rebuild", handle.RebuildArtifact)
 	g.GET("/publication/audit", handle.AuditPublication)
+	// 产物回收：默认 dryRun（只列候选），需显式传 dryRun=false 才实际删除。
+	g.POST("/artifact/gc", handle.GarbageCollectArtifacts)
 	return svc
 }

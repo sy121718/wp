@@ -124,6 +124,21 @@ func (h *Handle) RebuildArtifact(c *gin.Context) {
 	response.Success(c, res)
 }
 
+// GarbageCollectArtifacts 回收超期且无引用的产物文件（默认 dryRun，先看再删）。
+func (h *Handle) GarbageCollectArtifacts(c *gin.Context) {
+	var req pagedto.GCArtifactsReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		// 允许空 body：全部走默认值（30 天保留窗口 + dryRun）
+		req = pagedto.GCArtifactsReq{}
+	}
+	res, err := h.svc.GarbageCollectArtifacts(c.Request.Context(), &req)
+	if err != nil {
+		response.ErrorWithMessage(c, pageErrorStatus(err), pageErrorMessage(err))
+		return
+	}
+	response.Success(c, res)
+}
+
 // AuditPublication 巡检激活面：返回所有悬空/异常的激活链接。
 func (h *Handle) AuditPublication(c *gin.Context) {
 	res, err := h.svc.AuditPublication(c.Request.Context())

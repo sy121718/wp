@@ -59,3 +59,14 @@ type ArtifactResp struct {
 	CreatedBy        string          `json:"createdBy"`
 	CreatedAt        time.Time       `json:"createdAt"`
 }
+
+// GCCandidateResp 单条可回收产物候选（产物 GC 用）。
+type GCCandidateResp struct {
+	ID           string    `json:"id"`
+	PageID       string    `json:"pageId"`
+	Version      int64     `json:"version"`
+	Lang         string    `json:"lang"`
+	ArtifactHash string    `json:"artifactHash"`
+	ArtifactKey  string    `json:"artifactKey"`
+	CreatedAt    time.Time `json:"createdAt"`
+}
