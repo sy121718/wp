@@ -166,8 +166,15 @@ func (s *Service) renameReservedAllLangs(ctx context.Context, projectID, pageID,
 // enabledLangsOf 站点启用语言（默认语言在前；清单不可读时回退默认语言一种）。
 func (s *Service) enabledLangsOf(ctx context.Context, projectID string) []string {
 	if s.project != nil && strings.TrimSpace(projectID) != "" {
-		if langs, err := s.project.EnabledLangs(ctx, projectID); err == nil && len(langs) > 0 {
+		langs, err := s.project.EnabledLangs(ctx, projectID)
+		if err == nil && len(langs) > 0 {
 			return langs
+		}
+		if err != nil {
+			// 降级成单语言意味着多语言站点的构建产物只剩默认语言那一套，
+			// 表现为「其他语言突然消失」——必须留痕，否则毫无线索可查。
+			logger.Scene("page").With("projectId", projectID).
+				Error(err, "启用语言清单读取失败，已降级为默认语言单语言构建")
 		}
 	}
 	return []string{i18n.GetDefaultLang()}

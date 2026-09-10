@@ -82,6 +82,11 @@ func (s *Service) Create(ctx context.Context, req *navigationdto.CreateReq) (res
 		return nil, err
 	}
 	parentID := normalizeParentID(req.ParentID)
+	// 父引用先校验：不存在的父 / 跨工程父 / 跨类型父都会让该节点在构建期树装配时
+	// 成为孤儿（永远挂不上根，产物里静默消失）。
+	if verr := s.validateParent(ctx, projectID, kind, "", parentID); verr != nil {
+		return nil, verr
+	}
 	sourceType, sourceID, target, err := normalizeSource(req.SourceType, req.SourceID, req.Target)
 	if err != nil {
 		return nil, err
@@ -151,7 +156,13 @@ func (s *Service) Update(ctx context.Context, req *navigationdto.UpdateReq) (res
 		return nil, err
 	}
 	if req.ParentID != nil {
-		updates["parent_id"] = normalizeParentID(req.ParentID)
+		newParent := normalizeParentID(req.ParentID)
+		// 自引用、或挂到自己的后代下都会成环：构建期树装配永远到不了根节点，
+		// 整棵子树从产物里静默消失（后台列表仍显示正常）。
+		if verr := s.validateParent(ctx, e.ProjectID, kind, e.ID, newParent); verr != nil {
+			return nil, verr
+		}
+		updates["parent_id"] = newParent
 	}
 	if req.SortOrder != nil {
 		updates["sort_order"] = *req.SortOrder
@@ -398,6 +409,51 @@ func validateField(title, path, kind string) error {
 // isValidKind 判断导航类型是否为 header/footer。
 func isValidKind(kind string) bool {
 	return kind == kindHeader || kind == kindFooter
+}
+
+// maxParentDepth 父链上溯深度上限：兜底历史脏数据形成的环（正常菜单不超过 3~4 层）。
+const maxParentDepth = 64
+
+// validateParent 校验父引用合法：自引用、成环、跨工程、跨类型、父项不存在一律拒绝。
+//
+// 此前 parent_id 直接落库、零校验：一旦把节点挂到自己或自己的后代下就形成环，
+// 构建期树装配从根节点出发递归，环上的节点永远到不了根 —— 整棵子树在产物里
+// 静默消失（后台列表照常显示），排查成本极高。
+func (s *Service) validateParent(ctx context.Context, projectID, kind, selfID string, parentID *string) error {
+	if parentID == nil {
+		return nil
+	}
+	cur := strings.TrimSpace(*parentID)
+	if cur == "" {
+		return nil
+	}
+	if selfID != "" && cur == selfID {
+		return errors.New(navigationenums.ErrInvalidParent)
+	}
+	for depth := 0; depth < maxParentDepth; depth++ {
+		parent, err := s.m.Get(ctx, cur)
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return errors.New(navigationenums.ErrInvalidParent)
+			}
+			return err
+		}
+		if parent.ProjectID != projectID {
+			return errors.New(navigationenums.ErrInvalidParent)
+		}
+		if kind != "" && parent.Kind != kind {
+			return errors.New(navigationenums.ErrInvalidParent)
+		}
+		if parent.ParentID == nil || strings.TrimSpace(*parent.ParentID) == "" {
+			return nil // 到达根节点，链路合法
+		}
+		next := strings.TrimSpace(*parent.ParentID)
+		if selfID != "" && next == selfID {
+			return errors.New(navigationenums.ErrInvalidParent)
+		}
+		cur = next
+	}
+	return errors.New(navigationenums.ErrInvalidParent)
 }
 
 // normalizeParentID 把空字符串父 ID 规范为 nil（表示根导航项）。

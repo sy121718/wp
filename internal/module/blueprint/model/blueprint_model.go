@@ -86,9 +86,27 @@ func (m *Model) DBVersion(ctx context.Context) *gorm.DB {
 	return m.db.WithContext(ctx).Model(&VersionEntity{})
 }
 
+// Transaction 透传事务（service 编排跨两张表的原子写入）。
+func (m *Model) Transaction(ctx context.Context, fn func(tx *gorm.DB) error) error {
+	return m.db.WithContext(ctx).Transaction(fn)
+}
+
 // Create 新增 Blueprint 草稿。
 func (m *Model) Create(ctx context.Context, e *BlueprintEntity) error {
 	return m.DB(ctx).Create(e).Error
+}
+
+// CreateWithVersion 同一事务内写草稿行 + 首个不可变版本行。
+//
+// 两步必须原子：草稿先落库而版本行失败时，该 Blueprint 永久没有
+// LatestVersion，InitPageDocument 直接失败且无法自愈。
+func (m *Model) CreateWithVersion(ctx context.Context, e *BlueprintEntity, v *VersionEntity) error {
+	return m.Transaction(ctx, func(tx *gorm.DB) error {
+		if err := tx.Create(e).Error; err != nil {
+			return err
+		}
+		return tx.Create(v).Error
+	})
 }
 
 // Get 按 ID 查询 Blueprint。
@@ -102,7 +120,7 @@ func (m *Model) Get(ctx context.Context, id string) (e *BlueprintEntity, err err
 
 // List 按 kind 列表（更新时间倒序；kind 为空时返回全部）。
 func (m *Model) List(ctx context.Context, kind string) (list []*BlueprintEntity, err error) {
-	q := m.db.WithContext(ctx).Order("updated_at DESC")
+	q := m.db.WithContext(ctx).Order("updated_at DESC, id DESC")
 	if kind != "" {
 		q = q.Where("kind = ?", kind)
 	}
@@ -124,6 +142,23 @@ func (m *Model) Save(ctx context.Context, e *BlueprintEntity) error {
 // CreateVersion 写入不可变版本快照。
 func (m *Model) CreateVersion(ctx context.Context, v *VersionEntity) error {
 	return m.DBVersion(ctx).Create(v).Error
+}
+
+// SaveWithVersion 同一事务内更新草稿 + 写新版本行。
+//
+// 原来 service 先 Save 再 CreateVersion：版本行失败时草稿已改而版本缺失，
+// draft_version 也已在库里前移，重试会撞 (blueprint_id, version) 唯一约束。
+func (m *Model) SaveWithVersion(ctx context.Context, e *BlueprintEntity, v *VersionEntity) error {
+	return m.Transaction(ctx, func(tx *gorm.DB) error {
+		if err := tx.Model(&BlueprintEntity{}).Where("id = ?", e.ID).Updates(map[string]any{
+			"draft_document": e.DraftDocument,
+			"draft_version":  e.DraftVersion,
+			"updated_at":     e.UpdatedAt,
+		}).Error; err != nil {
+			return err
+		}
+		return tx.Create(v).Error
+	})
 }
 
 // LatestVersion 取 Blueprint 最新版本（version 降序首条）。

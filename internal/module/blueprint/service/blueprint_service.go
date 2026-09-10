@@ -47,11 +47,8 @@ func (s *Service) Create(ctx context.Context, req *blueprintdto.CreateReq) (res 
 		ID: uuid.NewString(), Name: req.Name, Kind: req.Kind,
 		DraftDocument: doc, DraftVersion: 1, CreatedAt: now, UpdatedAt: now,
 	}
-	if err = s.m.Create(ctx, e); err != nil {
-		return nil, err
-	}
-	// 立即写不可变版本 1（保证 InitPageDocument 总有 LatestVersion）。
-	if err = s.m.CreateVersion(ctx, &blueprintmodel.VersionEntity{
+	// 草稿行 + 首个不可变版本原子写入（分步写失败会留下没有 LatestVersion 的 Blueprint）。
+	if err = s.m.CreateWithVersion(ctx, e, &blueprintmodel.VersionEntity{
 		ID: uuid.NewString(), BlueprintID: e.ID, Version: 1, Document: doc, CreatedAt: now,
 	}); err != nil {
 		return nil, err
@@ -78,10 +75,8 @@ func (s *Service) Update(ctx context.Context, req *blueprintdto.UpdateReq) (res 
 	e.DraftDocument = doc
 	e.DraftVersion++ // 单调递增（版本号即不可变快照序号）
 	e.UpdatedAt = time.Now().UTC()
-	if err = s.m.Save(ctx, e); err != nil {
-		return nil, err
-	}
-	if err = s.m.CreateVersion(ctx, &blueprintmodel.VersionEntity{
+	// 草稿更新 + 新版本行原子写入（分步写会在版本行失败时留下「草稿已改、版本缺失」）。
+	if err = s.m.SaveWithVersion(ctx, e, &blueprintmodel.VersionEntity{
 		ID: uuid.NewString(), BlueprintID: e.ID, Version: e.DraftVersion, Document: doc, CreatedAt: e.UpdatedAt,
 	}); err != nil {
 		return nil, err

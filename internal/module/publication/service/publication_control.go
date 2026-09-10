@@ -230,6 +230,24 @@ func (s *Service) DeleteRoutesByPage(ctx context.Context, req *pubdto.DeleteRout
 	return result.Error
 }
 
+// ListActivePaths 返回页面已激活（active/redirect）的路径集合。
+//
+// 访问面（/site）直接服务 active 目录的文件系统状态：调用方清理页面时必须
+// 按这些路径解除激活（删除符号链接），只删 DB 路由行不会让内容下线。
+func (s *Service) ListActivePaths(ctx context.Context, req *pubdto.ListActivePathsReq) (paths []string, err error) {
+	if req == nil {
+		return nil, errors.New(pubenums.ErrInvalidParam)
+	}
+	paths = []string{}
+	if err = s.model.RouteDB(ctx).
+		Where("project_id = ? AND page_id = ? AND route_kind IN ?",
+			req.ProjectID, req.PageID, []string{pubmodel.RouteActive, pubmodel.RouteRedirect}).
+		Pluck("path", &paths).Error; err != nil {
+		return nil, err
+	}
+	return paths, nil
+}
+
 // IsPathOccupied 查询路径是否被其他实体占用（page_id 为空即展示实例占用，
 // page_id 非 excludePageID 即他人页面占用），供页面创建/发布前预检。
 func (s *Service) IsPathOccupied(ctx context.Context, req *pubdto.IsOccupiedReq) (occupied bool, err error) {
@@ -241,9 +259,13 @@ func (s *Service) IsPathOccupied(ctx context.Context, req *pubdto.IsOccupiedReq)
 		return false, err
 	}
 	var foreign int64
-	if err = s.model.RouteDB(ctx).
-		Where("project_id = ? AND path = ? AND (page_id IS NULL OR page_id <> ?)", req.ProjectID, path, req.ExcludePageID).
-		Count(&foreign).Error; err != nil {
+	q := s.model.RouteDB(ctx).Where("project_id = ? AND path = ?", req.ProjectID, path)
+	// ExcludePageID 为空时**不能**加 uuid 比较条件：把空串当 uuid 传给 PG 会直接报
+	// invalid input syntax for type uuid: ""（新建页预检不携带排除项，必踩此路径）。
+	if exclude := strings.TrimSpace(req.ExcludePageID); exclude != "" {
+		q = q.Where("(page_id IS NULL OR page_id <> ?)", exclude)
+	}
+	if err = q.Count(&foreign).Error; err != nil {
 		return false, err
 	}
 	return foreign > 0, nil

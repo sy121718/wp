@@ -48,6 +48,9 @@ type Service struct {
 
 	publisher *pipeline.Publisher
 	store     *pipeline.LocalStore
+	// publication 访问面激活存储（active 目录符号链接）：页面删除时必须按路径
+	// 解除激活，否则「DB 路由已清、符号链接还在」会让已删内容继续可访问。
+	publication *pipeline.LocalPublicationStore
 }
 
 // NewService 创建 Page 服务；同时初始化本地产物根（GO_WP_ARTIFACT_ROOT 可覆盖，
@@ -62,16 +65,17 @@ func NewService(model *pagemodel.Model, artifacts artifactcontract.ArtifactServi
 	store := &pipeline.LocalStore{Root: pipeline.DefaultArtifactRoot()}
 	publication := &pipeline.LocalPublicationStore{ActiveRoot: pipeline.ActiveRoot()}
 	s := &Service{
-		model:      model,
-		artifacts:  artifacts,
-		routes:     routes,
-		project:    project,
-		blocks:     blocks,
-		plugins:    plugins,
-		content:    content,
-		navigation: navigation,
-		media:      media,
-		store:      store,
+		model:       model,
+		artifacts:   artifacts,
+		routes:      routes,
+		project:     project,
+		blocks:      blocks,
+		plugins:     plugins,
+		content:     content,
+		navigation:  navigation,
+		media:       media,
+		store:       store,
+		publication: publication,
 	}
 	// 依赖提供者：把文案词条资源版本号写进 Manifest.dependencies
 	// （DependencyKind=i18n，改文案触发重建，docs/06-D §10.4）。

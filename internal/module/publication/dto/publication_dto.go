@@ -60,6 +60,12 @@ type DeleteRoutesReq struct {
 	PageID    string `json:"pageId" binding:"required"`
 }
 
+// ListActivePathsReq 查询页面已激活的路径集合（页面删除时清理访问面文件用）。
+type ListActivePathsReq struct {
+	ProjectID string `json:"projectId" binding:"required"`
+	PageID    string `json:"pageId" binding:"required"`
+}
+
 // IsOccupiedReq 查询路径是否被其他实体占用（用于页面创建/发布前的预检）。
 type IsOccupiedReq struct {
 	ProjectID     string `json:"projectId" binding:"required"`

@@ -19,7 +19,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"strings"
+	"sync"
 	"time"
 
 	contentcontract "go_wp/internal/module/content/contract"
@@ -46,6 +48,10 @@ const systemCreator = "00000000-0000-0000-0000-000000000000"
 // maxAutoRebuildInstances 单次依赖失效触发的自动重建上限（与 page 侧同口径）。
 const maxAutoRebuildInstances = 20
 
+// instanceLockStripes 实例级并发锁的分片数。
+// 用固定分片而非「按 ID 建锁」：既保证同实例互斥，又不随实例数累积锁对象。
+const instanceLockStripes = 64
+
 // Service presentation 模块业务实现。
 type Service struct {
 	m           *presentationmodel.Model
@@ -54,6 +60,17 @@ type Service struct {
 	project     projectcontract.ProjectService
 	store       *pipeline.LocalStore
 	publication *pipeline.LocalPublicationStore
+	// instanceLocks 实例分片互斥锁：并发构建同一实例时串行化
+	// 「构建 → 落库 → 激活」整段序列，避免产物版本号 MAX+1 竞态与
+	// active_artifact_id 指针交错覆盖（线上内容与 DB 指针分裂）。
+	instanceLocks [instanceLockStripes]sync.Mutex
+}
+
+// lockInstance 取某实体的实例级锁（按 entity 维度：创建与重建互斥同一把）。
+func (s *Service) lockInstance(entityType, entityID string) *sync.Mutex {
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(entityType + ":" + entityID))
+	return &s.instanceLocks[h.Sum32()%instanceLockStripes]
 }
 
 // NewService 构造（依赖 contenttemplate/content/project 契约 + pipeline 内核）。
@@ -135,6 +152,12 @@ func (s *Service) CreateInstance(ctx context.Context, req *presentationdto.Creat
 	if req == nil || req.EntityType == "" || req.EntityID == "" || req.URLPath == "" {
 		return nil, errors.New(presentationenums.ErrInvalidParam)
 	}
+	// 实例级互斥：同一实体的「构建 → 落库 → 激活」整体串行，
+	// 并发请求不会各自推进产物版本号，也不会交错覆盖 active 指针。
+	lock := s.lockInstance(req.EntityType, req.EntityID)
+	lock.Lock()
+	defer lock.Unlock()
+
 	// 同实体已存在实例 → 视为幂等（返回已有；无需再解析工程）。
 	if existing, gerr := s.m.GetInstanceByEntity(ctx, req.EntityType, req.EntityID); gerr == nil {
 		return s.toResp(ctx, existing)
@@ -150,7 +173,10 @@ func (s *Service) CreateInstance(ctx context.Context, req *presentationdto.Creat
 	if err != nil {
 		return nil, errors.New(presentationenums.ErrNoTemplate)
 	}
-	built, err := s.buildAndPublish(ctx, req.EntityType, req.EntityID, req.URLPath, tpl)
+	// 顺序：构建（产物落盘幂等，不触碰线上）→ 实例落库 → 快照/产物行/指针 → 激活。
+	// 落库失败时线上保持原样、可直接重试；反之「先激活后落库」会让线上渲染出
+	// 错误实体内容且没有任何恢复入口。
+	built, err := s.buildArtifact(ctx, req.EntityType, req.EntityID, req.URLPath, tpl)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", presentationenums.ErrBuildFailed, err)
 	}
@@ -166,6 +192,11 @@ func (s *Service) CreateInstance(ctx context.Context, req *presentationdto.Creat
 	}
 	if err = s.persistBuild(ctx, inst, tpl, built, now); err != nil {
 		return nil, err
+	}
+	// 落库全部成功后才上线。激活失败时实例与指针已存在（线上仍是旧内容），
+	// 可经 Rebuild 自愈，不产生「线上有内容、DB 无记录」的分裂。
+	if err = s.activate(req.URLPath, built); err != nil {
+		return nil, fmt.Errorf("%s: %w", presentationenums.ErrBuildFailed, err)
 	}
 	return s.toResp(ctx, inst)
 }
@@ -190,12 +221,20 @@ func (s *Service) Rebuild(ctx context.Context, req *presentationdto.RebuildReq) 
 // rebuildInstance 实例重建主链：编译发布 → 新快照 → 新产物行 → 指针切换 → 依赖落库。
 func (s *Service) rebuildInstance(ctx context.Context, inst *presentationmodel.InstanceEntity,
 	tpl *contenttemplatecontract.ResolvedTemplate) (res *presentationdto.InstanceResp, err error) {
-	built, err := s.buildAndPublish(ctx, inst.EntityType, inst.EntityID, inst.URLPath, tpl)
+	// 实例级互斥：并发重建同一实例时串行化，避免版本号竞态与指针交错。
+	lock := s.lockInstance(inst.EntityType, inst.EntityID)
+	lock.Lock()
+	defer lock.Unlock()
+
+	built, err := s.buildArtifact(ctx, inst.EntityType, inst.EntityID, inst.URLPath, tpl)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", presentationenums.ErrBuildFailed, err)
 	}
 	if err = s.persistBuild(ctx, inst, tpl, built, time.Now().UTC()); err != nil {
 		return nil, err
+	}
+	if err = s.activate(inst.URLPath, built); err != nil {
+		return nil, fmt.Errorf("%s: %w", presentationenums.ErrBuildFailed, err)
 	}
 	return s.toResp(ctx, inst)
 }
@@ -219,31 +258,34 @@ func (s *Service) persistBuild(ctx context.Context, inst *presentationmodel.Inst
 		SourceTemplateVersionID: tpl.VersionID, SourceEntityRevisionID: inst.EntityID,
 		Document: tpl.Document, CreatedAt: now,
 	}
-	if err := s.m.CreateSnapshot(ctx, snap); err != nil {
-		return err
-	}
-	artifactID, err := s.recordArtifact(ctx, inst, snapID, built, now)
-	if err != nil {
-		return err
-	}
-	inst.CurrentSnapshotID = &snapID
-	inst.StagedSnapshotID = &snapID
-	inst.StagedArtifactID = &artifactID
-	inst.ActiveArtifactID = &artifactID
-	inst.Stale = false
-	inst.PublishedAt = &now
-	inst.UpdatedAt = now
-	if err = s.m.UpdateInstancePointers(ctx, inst); err != nil {
-		return err
-	}
-	s.persistDependencies(ctx, inst.ID, artifactID, built.Manifest.Dependencies, now)
-	return nil
+	// 四步跨四张表，必须同一事务：任一中间失败都会留下自相矛盾的实例状态
+	//（产物行已写而 active 指针仍指旧产物、依赖记录指向不存在的产物等）。
+	return s.m.Transaction(ctx, func(tx *gorm.DB) error {
+		if err := s.m.CreateSnapshotTx(tx, snap); err != nil {
+			return err
+		}
+		artifactID, err := s.recordArtifactTx(ctx, tx, inst, snapID, built, now)
+		if err != nil {
+			return err
+		}
+		inst.CurrentSnapshotID = &snapID
+		inst.StagedSnapshotID = &snapID
+		inst.StagedArtifactID = &artifactID
+		inst.ActiveArtifactID = &artifactID
+		inst.Stale = false
+		inst.PublishedAt = &now
+		inst.UpdatedAt = now
+		if err = s.m.UpdateInstancePointersTx(tx, inst); err != nil {
+			return err
+		}
+		return s.persistDependenciesTx(tx, inst.ID, artifactID, built.Manifest.Dependencies, now)
+	})
 }
 
-// recordArtifact 写产物行（同 hash 幂等复用，避免重建时产物行膨胀）。
-func (s *Service) recordArtifact(ctx context.Context, inst *presentationmodel.InstanceEntity,
+// recordArtifactTx 事务内写产物行（同 hash 幂等复用，避免重建时产物行膨胀）。
+func (s *Service) recordArtifactTx(ctx context.Context, tx *gorm.DB, inst *presentationmodel.InstanceEntity,
 	snapID string, built builtArtifact, now time.Time) (artifactID string, err error) {
-	if existing, gerr := s.m.GetArtifactByHash(ctx, inst.ID, built.Hash); gerr == nil {
+	if existing, gerr := s.m.GetArtifactByHashTx(tx, inst.ID, built.Hash); gerr == nil {
 		return existing.ID, nil
 	} else if !errors.Is(gerr, gorm.ErrRecordNotFound) {
 		return "", gerr
@@ -252,7 +294,7 @@ func (s *Service) recordArtifact(ctx context.Context, inst *presentationmodel.In
 	if err != nil {
 		return "", err
 	}
-	version, err := s.m.NextArtifactVersion(ctx, inst.ID)
+	version, err := s.m.NextArtifactVersionTx(tx, inst.ID)
 	if err != nil {
 		return "", err
 	}
@@ -265,18 +307,20 @@ func (s *Service) recordArtifact(ctx context.Context, inst *presentationmodel.In
 		Manifest: manifestJSON, PayloadState: "available", Note: "",
 		CreatedBy: systemCreator, CreatedAt: now,
 	}
-	if err = s.m.CreateArtifact(ctx, e); err != nil {
+	if err = s.m.CreateArtifactTx(tx, e); err != nil {
 		return "", err
 	}
 	return e.ID, nil
 }
 
-// persistDependencies 把本次产物的依赖集合写入 presentation_dependencies。
+// persistDependenciesTx 事务内把本次产物的依赖集合写入 presentation_dependencies。
 //
-// 失败只记日志：依赖记录是失效追踪的投影，不是构建输入，不阻断发布主链。
-func (s *Service) persistDependencies(ctx context.Context, instanceID, artifactID string, deps []pipeline.Dependency, now time.Time) {
+// 依赖记录是失效追踪的投影而非构建输入；但它必须与快照/产物行/指针同生共死，
+// 否则会出现「指针已切到新产物、依赖记录仍是旧集合」的漂移，导致后续
+// fan-out 按错误的依赖反查（漏标 stale 或误标）。
+func (s *Service) persistDependenciesTx(tx *gorm.DB, instanceID, artifactID string, deps []pipeline.Dependency, now time.Time) error {
 	if strings.TrimSpace(instanceID) == "" || strings.TrimSpace(artifactID) == "" {
-		return
+		return nil
 	}
 	rows := make([]presentationmodel.DependencyEntity, 0, len(deps))
 	seen := map[[2]string]bool{}
@@ -299,10 +343,7 @@ func (s *Service) persistDependencies(ctx context.Context, instanceID, artifactI
 		}
 		rows = append(rows, row)
 	}
-	if err := s.m.ReplaceDependencies(ctx, artifactID, rows); err != nil {
-		logger.Scene("dependency").With("presentation_id", instanceID).With("artifact_id", artifactID).
-			Error(err, "依赖记录写入失败（已降级，不影响构建结果）")
-	}
+	return s.m.ReplaceDependenciesTx(tx, artifactID, rows)
 }
 
 // Get 按 ID 查询。
@@ -360,8 +401,11 @@ func (s *Service) Delete(ctx context.Context, req *presentationdto.DeleteReq) (e
 	return s.m.DeleteInstance(ctx, req.ID)
 }
 
-// buildAndPublish 编译模板 AST（经实体 resolver）→ 产物 → 激活 URL。
-func (s *Service) buildAndPublish(ctx context.Context, entityType, entityID, urlPath string,
+// buildArtifact 编译模板 AST（经实体 resolver）→ 产物落盘（**不激活**）。
+//
+// 激活由调用方在实例落库成功后单独执行（见 activate）：先激活后落库时，
+// 一旦落库失败，线上已渲染出新实体内容却没有任何恢复入口。
+func (s *Service) buildArtifact(ctx context.Context, entityType, entityID, urlPath string,
 	tpl *contenttemplatecontract.ResolvedTemplate) (built builtArtifact, err error) {
 	page, err := builder.ParsePage(tpl.Document)
 	if err != nil {
@@ -405,10 +449,16 @@ func (s *Service) buildAndPublish(ctx context.Context, entityType, entityID, url
 	if err != nil {
 		return built, err
 	}
-	if err = s.publication.Activate(urlPath, loc); err != nil {
-		return built, err
-	}
 	return builtArtifact{Hash: artifact.Hash, Loc: loc, Manifest: artifact.Manifest}, nil
+}
+
+// activate 把本次产物激活到线上 URL（覆盖 active 符号链接）。
+// 调用时机：实例 / 快照 / 产物行 / 指针全部落库成功之后。
+func (s *Service) activate(urlPath string, built builtArtifact) error {
+	if err := s.publication.Activate(urlPath, built.Loc); err != nil {
+		return fmt.Errorf("激活 %s 失败: %w", urlPath, err)
+	}
+	return nil
 }
 
 // presentationDependencies 本次产物的依赖源集合。

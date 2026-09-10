@@ -168,7 +168,7 @@ func (m *Model) GetInstanceByEntity(ctx context.Context, entityType, entityID st
 
 // ListInstances 按类型列表。
 func (m *Model) ListInstances(ctx context.Context, entityType string) (list []*InstanceEntity, err error) {
-	q := m.db.WithContext(ctx).Order("updated_at DESC")
+	q := m.db.WithContext(ctx).Order("updated_at DESC, id DESC")
 	if entityType != "" {
 		q = q.Where("entity_type = ?", entityType)
 	}
@@ -290,6 +290,70 @@ func (m *Model) ReplaceDependencies(ctx context.Context, artifactID string, rows
 		}
 		return tx.CreateInBatches(rows, 200).Error
 	})
+}
+
+// ---- 事务句柄变体（service 编排「快照 → 产物行 → 实例指针 → 依赖」四步原子写入）----
+//
+// 四步跨四张表，任一中间失败都会留下自相矛盾的实例状态（例如产物行已写、
+// active_artifact_id 仍指向旧产物，或依赖记录指向不存在的产物）。事务边界
+// 由 service 决定，model 只提供接受外部 *gorm.DB 的变体（AGENTS.md model 层定位）。
+
+// CreateSnapshotTx 事务内写快照。
+func (m *Model) CreateSnapshotTx(tx *gorm.DB, e *SnapshotEntity) error {
+	return tx.Create(e).Error
+}
+
+// GetArtifactByHashTx 事务内按 (实例, 产物哈希) 查询。
+func (m *Model) GetArtifactByHashTx(tx *gorm.DB, instanceID, hash string) (e *ArtifactEntity, err error) {
+	var row ArtifactEntity
+	if err = tx.Where("presentation_instance_id = ? AND artifact_hash = ?", instanceID, hash).
+		First(&row).Error; err != nil {
+		return nil, err
+	}
+	return &row, nil
+}
+
+// NextArtifactVersionTx 事务内取下一个产物版本号（MAX+1；调用方需持有实例级互斥）。
+func (m *Model) NextArtifactVersionTx(tx *gorm.DB, instanceID string) (v int64, err error) {
+	var maxVersion *int64
+	if err = tx.Model(&ArtifactEntity{}).
+		Where("presentation_instance_id = ?", instanceID).
+		Select("MAX(version)").Scan(&maxVersion).Error; err != nil {
+		return 0, err
+	}
+	if maxVersion == nil {
+		return 1, nil
+	}
+	return *maxVersion + 1, nil
+}
+
+// CreateArtifactTx 事务内写产物行。
+func (m *Model) CreateArtifactTx(tx *gorm.DB, e *ArtifactEntity) error {
+	return tx.Create(e).Error
+}
+
+// UpdateInstancePointersTx 事务内更新实例指针（列白名单同 UpdateInstancePointers）。
+func (m *Model) UpdateInstancePointersTx(tx *gorm.DB, e *InstanceEntity) error {
+	return tx.Model(&InstanceEntity{}).Where("id = ?", e.ID).Updates(map[string]any{
+		"current_snapshot_id": e.CurrentSnapshotID,
+		"staged_snapshot_id":  e.StagedSnapshotID,
+		"staged_artifact_id":  e.StagedArtifactID,
+		"active_artifact_id":  e.ActiveArtifactID,
+		"stale":               e.Stale,
+		"published_at":        e.PublishedAt,
+		"updated_at":          e.UpdatedAt,
+	}).Error
+}
+
+// ReplaceDependenciesTx 事务内全量替换依赖记录。
+func (m *Model) ReplaceDependenciesTx(tx *gorm.DB, artifactID string, rows []DependencyEntity) error {
+	if err := tx.Where("artifact_id = ?", artifactID).Delete(&DependencyEntity{}).Error; err != nil {
+		return err
+	}
+	if len(rows) == 0 {
+		return nil
+	}
+	return tx.CreateInBatches(rows, 200).Error
 }
 
 // ListDependencies 读取某产物的全部依赖记录（测试与诊断用，按 kind,key 排序）。

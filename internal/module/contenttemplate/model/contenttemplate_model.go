@@ -93,7 +93,7 @@ func (m *Model) Get(ctx context.Context, id string) (e *TemplateEntity, err erro
 
 // List 按 entity_type 列表（更新时间倒序；entity_type 为空时返回全部）。
 func (m *Model) List(ctx context.Context, entityType string) (list []*TemplateEntity, err error) {
-	q := m.db.WithContext(ctx).Order("updated_at DESC")
+	q := m.db.WithContext(ctx).Order("updated_at DESC, id DESC")
 	if entityType != "" {
 		q = q.Where("entity_type = ?", entityType)
 	}
@@ -124,6 +124,45 @@ func (m *Model) SetCurrentVersion(ctx context.Context, templateID, versionID str
 // CreateVersion 写入不可变版本快照。
 func (m *Model) CreateVersion(ctx context.Context, v *VersionEntity) error {
 	return m.DBVersion(ctx).Create(v).Error
+}
+
+// CreateWithVersion 同一事务内写模板行 + 首个版本行 + 回填当前版本指针。
+//
+// 三步必须原子：任一中间步骤失败会留下「模板存在但没有 LatestVersion」或
+// 「版本行在、指针为空」的死模板 —— ResolveTemplate 直接失败且无法自愈
+// （重试也撞版本唯一索引）。属聚合内原子组合，事务边界留在 model。
+func (m *Model) CreateWithVersion(ctx context.Context, e *TemplateEntity, v *VersionEntity) error {
+	return m.Transaction(ctx, func(tx *gorm.DB) error {
+		if err := tx.Create(e).Error; err != nil {
+			return err
+		}
+		if err := tx.Create(v).Error; err != nil {
+			return err
+		}
+		return tx.Model(&TemplateEntity{}).Where("id = ?", e.ID).
+			Updates(map[string]any{
+				"current_version_id": v.ID,
+				"updated_at":         e.UpdatedAt,
+			}).Error
+	})
+}
+
+// SaveWithVersion 同一事务内写新版本行 + 更新草稿与当前版本指针。
+//
+// 版本行先落库而草稿 Save 失败时，指针停在旧版本，新版本成为不可达孤儿，
+// 且 draft_version 已自增导致重试版本号错位。
+func (m *Model) SaveWithVersion(ctx context.Context, v *VersionEntity, e *TemplateEntity) error {
+	return m.Transaction(ctx, func(tx *gorm.DB) error {
+		if err := tx.Create(v).Error; err != nil {
+			return err
+		}
+		return tx.Model(&TemplateEntity{}).Where("id = ?", e.ID).Updates(map[string]any{
+			"draft_document":     e.DraftDocument,
+			"draft_version":      e.DraftVersion,
+			"current_version_id": e.CurrentVersionID,
+			"updated_at":         e.UpdatedAt,
+		}).Error
+	})
 }
 
 // LatestVersion 取模板最新版本（version 降序首条）。

@@ -60,6 +60,14 @@ func NormalizeURL(raw string) (string, error) {
 		return "/", nil
 	}
 
+	// /index 与 /index.html 归一为根路径：三者在访问面都映射到同一个文件
+	// active/index（见 relActivePath），允许并存时后发布的会把前者的符号链接
+	// 顶掉，而 DB 里两条路由行各自存在 —— 线上内容与路由记录分裂且全程无报错。
+	// 归一后重复占用由路由唯一约束自然拒绝。
+	if raw == "/index" || raw == "/index.html" {
+		return "/", nil
+	}
+
 	// 去除结尾斜杠（根路径已提前放行；重复分隔符在分段时拒绝）。
 	p := strings.TrimSuffix(raw, "/")
 	if len(p) > maxURLPathLen {

@@ -208,6 +208,14 @@ func (s *Service) Publish(ctx context.Context, req *pagedto.PublishReq) (res *pa
 				logger.Scene("publication").With("pageId", page.ID).With("oldPath", oldPath).Error(derr, "发布前取消旧路径激活失败")
 				return nil, derr
 			}
+			// DB 路由行删除只表示「不再占用」，访问面的符号链接必须另行解除：
+			// /site 直接服务 active 目录的文件系统状态，只删 DB 行会让旧 URL
+			// 继续输出旧产物（同页双 active 占用），且此后没有任何入口能查到
+			// 该清哪个链接 —— 与页面删除同一根因。
+			if derr := s.deactivatePaths([]string{oldPath}); derr != nil {
+				logger.Scene("publication").With("pageId", page.ID).With("oldPath", oldPath).Error(derr, "发布前解除旧路径访问面激活失败")
+				return nil, derr
+			}
 		}
 		if _, err = s.routes.Activate(ctx, &pubcontract.ActivateReq{
 			ProjectID: page.ProjectID, Path: path,
@@ -281,6 +289,14 @@ func (s *Service) Rollback(ctx context.Context, req *pagedto.RollbackReq) (res *
 				ProjectID: page.ProjectID, Path: old,
 			}); derr != nil {
 				logger.Scene("page").With("pageId", page.ID).With("oldPath", old).Error(derr, "回滚前取消旧路径激活失败")
+				return nil, derr
+			}
+			// DB 路由行删除只表示「不再占用」，访问面的符号链接必须另行解除：
+			// /site 直接服务 active 目录的文件系统状态，只删 DB 行会让旧 URL
+			// 继续输出旧产物（同页双 active 占用），且此后没有任何入口能查到
+			// 该清哪个链接 —— 与页面删除同一根因。
+			if derr := s.deactivatePaths([]string{old}); derr != nil {
+				logger.Scene("page").With("pageId", page.ID).With("oldPath", old).Error(derr, "回滚前解除旧路径访问面激活失败")
 				return nil, derr
 			}
 		}
@@ -437,6 +453,11 @@ func (s *Service) UpdateURL(ctx context.Context, req *pagedto.UpdateURLReq) (res
 			}); err != nil {
 				logger.Scene("page").With("pageId", page.ID).Error(err, "旧 URL 取消激活失败")
 				return nil, err
+			} else if derr := s.deactivatePaths([]string{publishedPath}); derr != nil {
+				// 内核的旧路径处置失败只记日志（新 URL 已上线，不阻断流程），
+				// 这里再幂等地清一次；两层都失败才残留，且此时会明确报错。
+				logger.Scene("page").With("pageId", page.ID).With("oldPath", publishedPath).Error(derr, "旧 URL 解除访问面激活失败")
+				return nil, derr
 			}
 		}
 	}

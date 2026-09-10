@@ -95,9 +95,15 @@ func (s *LocalStore) PutArtifact(a *Artifact) (Locator, error) {
 	}
 	defer os.RemoveAll(tmp) // rename 成功后临时目录已不存在，RemoveAll 为 no-op
 	for _, path := range []string{"manifest.json", "index.html"} {
-		if err := os.WriteFile(filepath.Join(tmp, path), a.Entries[path], 0o644); err != nil {
+		if err := writeFileSync(filepath.Join(tmp, path), a.Entries[path]); err != nil {
 			return Locator{}, err
 		}
+	}
+	// 目录项本身也要 fsync：只落盘文件内容时，rename 之后掉电仍可能让整个目录项
+	// 消失，而该 hash 已被数据库引用（同名产物不重建）→ 访问面永久 404。
+	if f, oerr := os.Open(tmp); oerr == nil {
+		_ = f.Sync()
+		_ = f.Close()
 	}
 	if err = os.Rename(tmp, dir); err != nil {
 		// 并发同 hash 写入：对方已 rename 成功，走幂等分支。
@@ -283,4 +289,24 @@ func locatorHash(loc Locator) string {
 		return key[idx+1:]
 	}
 	return key
+}
+
+// writeFileSync 写文件并 fsync 后才返回。
+//
+// 产物是不可变归档：掉电后若目录里出现「长度已分配但内容未落盘」的零字节文件，
+// 该 hash 目录会永久砖死 —— 数据库已引用它、同名产物不会重建，Verify 每次必失败。
+func writeFileSync(path string, data []byte) error {
+	f, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	if _, err = f.Write(data); err != nil {
+		_ = f.Close()
+		return err
+	}
+	if err = f.Sync(); err != nil {
+		_ = f.Close()
+		return err
+	}
+	return f.Close()
 }

@@ -86,7 +86,7 @@ func (m *Model) ListAll(ctx context.Context, themeID string) (list []PageEntity,
 	if themeID != "" {
 		q = q.Where("theme_id = ?", themeID)
 	}
-	err = q.Order("updated_at DESC").Find(&list).Error
+	err = q.Order("updated_at DESC, id DESC").Find(&list).Error
 	return list, err
 }
 
@@ -99,7 +99,7 @@ func (m *Model) ListDraftDocuments(ctx context.Context) (list []PageEntity, err 
 	err = m.DB(ctx).
 		Select("id", "project_id", "draft_path", "draft_document", "updated_at").
 		Where("deleted_at IS NULL").
-		Order("updated_at DESC").
+		Order("updated_at DESC, id DESC").
 		Find(&list).Error
 	return list, err
 }

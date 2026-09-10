@@ -62,20 +62,14 @@ func (s *Service) Create(ctx context.Context, req *contenttemplatedto.CreateReq)
 		ID: uuid.NewString(), ProjectID: projectID, Name: req.Name, EntityType: req.EntityType,
 		DraftDocument: doc, DraftVersion: 1, CreatedAt: now, UpdatedAt: now,
 	}
-	if err = s.m.Create(ctx, e); err != nil {
-		return nil, err
-	}
-	// 立即写不可变版本 1（保证 ResolveTemplate 总有 LatestVersion）。
+	// 模板行 + 首个不可变版本 + 当前版本指针回填，三者原子写入。
+	// 分步写会在中途失败时留下「模板存在但无 LatestVersion」的死模板。
 	verID := uuid.NewString()
-	if err = s.m.CreateVersion(ctx, &contenttemplatemodel.VersionEntity{
+	e.CurrentVersionID = &verID
+	if err = s.m.CreateWithVersion(ctx, e, &contenttemplatemodel.VersionEntity{
 		ID: verID, TemplateID: e.ID, Version: 1, Document: doc,
 		SourceHash: hashDocument(doc), CreatedBy: systemCreator, CreatedAt: now,
 	}); err != nil {
-		return nil, err
-	}
-	// 当前版本指针回填（content_templates.current_version_id）。
-	e.CurrentVersionID = &verID
-	if err = s.m.SetCurrentVersion(ctx, e.ID, verID, now); err != nil {
 		return nil, err
 	}
 	return toResp(e), nil
@@ -101,14 +95,13 @@ func (s *Service) Update(ctx context.Context, req *contenttemplatedto.UpdateReq)
 	e.DraftVersion++ // 单调递增（版本号即不可变快照序号）
 	e.UpdatedAt = time.Now().UTC()
 	verID := uuid.NewString()
-	if err = s.m.CreateVersion(ctx, &contenttemplatemodel.VersionEntity{
+	e.CurrentVersionID = &verID
+	// 新版本行与草稿/指针更新必须原子：分步写时若 Save 失败，指针停在旧版本，
+	// 新版本成为不可达孤儿，且 draft_version 已自增导致重试版本号错位。
+	if err = s.m.SaveWithVersion(ctx, &contenttemplatemodel.VersionEntity{
 		ID: verID, TemplateID: e.ID, Version: e.DraftVersion, Document: doc,
 		SourceHash: hashDocument(doc), CreatedBy: systemCreator, CreatedAt: e.UpdatedAt,
-	}); err != nil {
-		return nil, err
-	}
-	e.CurrentVersionID = &verID
-	if err = s.m.Save(ctx, e); err != nil {
+	}, e); err != nil {
 		return nil, err
 	}
 	return toResp(e), nil
