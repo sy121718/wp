@@ -152,6 +152,7 @@ trigger: hover  → 悬停展开（纯 CSS）                    shape: fan     
 trigger: scroll → 滚动堆叠（sticky + scroll-driven）           line + horizontal   横排一行（无任何角度）
 trigger: drag   → 环形拖拽旋转（enhance.js 只改一个变量）       line + vertical     竖排一列（无任何角度）
 trigger: deck   → 堆叠轮播（主卡居中正立，滑动/点击/方向键切换主卡）
+trigger: slide  → 全屏分页（一屏一张，原生滚动吸附切换）
 ```
 
 两轴正交：`trigger` 只改布局与驱动方式，`shape`/`direction` 只改变换写法与收敛式。
@@ -267,7 +268,23 @@ fan 的位移落在旋转后的坐标系里（外接框会变大、卡片高度�
    `go()` 越界同理绕回另一端。远卡淡出也由 `abs` 驱动（`opacity: max(0, 1 − abs×0.28)`），
    卡片多时不会在两侧无限堆远。
 
-9. **滚动堆叠**：基础规则就是 `position: sticky + top + translate: 0 -50%` 的纯层叠，跟手收敛叠在同一条
+9. **全屏分页**：一屏一张卡，**用 `scroll-snap` 而不是劫持滚动**。滚动条本身仍归浏览器管 ——
+   惯性、触控板、键盘 PageDown/空格、屏幕阅读器全都照旧可用；JS 滚动劫持（`wheel` +
+   `preventDefault` + 自算动画）在移动端与辅助技术上是灾难，不值得。要点：
+
+   - 容器 `scroll-snap-type: y mandatory`，卡片 `scroll-snap-align: start` +
+     `scroll-snap-stop: always`（一次手势只翻一屏，不会连跳）；
+   - 每屏高度用 **`dvh`**（降级链补一条 `vh`）：移动端地址栏收放时 `vh` 会跳、内容跟着抖；
+   - 卡片给 **`min-height`** 而不是 `height`：内容超出一屏时卡片自己长高、原地可读，
+     而不是被裁掉 —— 但这属于「这一屏内容太多」，应在内容侧解决；
+   - 全屏卡片的圆角与投影要去掉（否则露出拼接感），点击放大自动关闭（本来就是满屏）。
+
+**卡片必须 `box-sizing: border-box`**（本条是修 bug 顺带确立的约束）：卡片有内边距，
+而逐卡几何（扇形收敛、环形半径、每屏高度）全部按 props 里的数值计算。默认的 content-box
+下「卡片宽度 240px + 内边距 24px」实际外宽 288px，几何随之整体偏移；全屏分页更直接 ——
+一屏卡片会比视口高出一个内边距，滚动吸附永远对不齐。
+
+10. **滚动堆叠**：基础规则就是 `position: sticky + top + translate: 0 -50%` 的纯层叠，跟手收敛叠在同一条
    规则的 `animation` 上，靠 `animation-timeline: view()` 驱动。**不需要 `@supports` 包裹** ——
    老浏览器把 `animation-timeline`/`animation-range` 当未知属性丢弃，动画按 0s 播完并由
    `fill-mode: both` 停在终态，视觉正好等于静态缩放。每张卡用独立关键帧（`wp-cs-<节点id>-<序号>`），
