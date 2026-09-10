@@ -118,7 +118,7 @@ func (m *Model) GetByPageVersion(ctx context.Context, pageID string, version int
 // 在同一事务内提交——此前内容对象在事务外写入，替换失败会残留孤儿行。
 func (m *Model) ReplaceArtifactContent(ctx context.Context, id string, entity *PageArtifactEntity, objects []PageArtifactObjectEntity, contentObjects []ContentObjectEntity) (err error) {
 	return m.Transaction(ctx, func(tx *gorm.DB) error {
-		if err = tx.Model(&PageArtifactEntity{}).Where("id = ?", id).Updates(map[string]interface{}{
+		if err = tx.Model(&PageArtifactEntity{}).Where("id = ?", id).Updates(map[string]any{
 			"source_document":              entity.SourceDocument,
 			"page_document_schema_version": entity.PageDocumentSchemaVersion,
 			"source_hash":                  entity.SourceHash,

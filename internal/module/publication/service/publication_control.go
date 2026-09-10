@@ -10,10 +10,10 @@ import (
 
 	"go_wp/pkg/i18n"
 
-	"go_wp/internal/pipeline"
 	pubdto "go_wp/internal/module/publication/dto"
 	pubenums "go_wp/internal/module/publication/enums"
 	pubmodel "go_wp/internal/module/publication/model"
+	"go_wp/internal/pipeline"
 	"go_wp/pkg/logger"
 
 	"github.com/google/uuid"

@@ -31,8 +31,8 @@ type SitemapEntry struct {
 
 // urlSet / urlNode sitemap XML 结构。
 type urlSet struct {
-	XMLName xml.Name  `xml:"urlset"`
-	Xmlns   string    `xml:"xmlns,attr"`
+	XMLName xml.Name `xml:"urlset"`
+	Xmlns   string   `xml:"xmlns,attr"`
 	// XmlnsXhtml 仅在存在语言互指时声明（保持单语言 sitemap 字节不变）。
 	XmlnsXhtml string    `xml:"xmlns:xhtml,attr,omitempty"`
 	URLs       []urlNode `xml:"url"`

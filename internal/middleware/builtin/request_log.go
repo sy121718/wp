@@ -44,7 +44,7 @@ func RequestLogCaptureMiddleware(enabled bool) gin.HandlerFunc {
 		status := c.Writer.Status()
 		latency := time.Since(start)
 
-		fields := map[string]interface{}{
+		fields := map[string]any{
 			"method":     method,
 			"path":       path,
 			"status":     status,

@@ -1,11 +1,12 @@
 package pipeline
 
 import (
+	"cmp"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"sort"
+	"slices"
 )
 
 // 常量：manifest 版本号与支持来源类型（docs/03-pipeline.md §4.2）。
@@ -29,14 +30,14 @@ type Dependency struct {
 // 确定性守则（§3.4）：manifest 不写构建时间；files 由标准库按 key 排序；
 // dependencies 在编码前按 (kind,key) 显式排序。
 type Manifest struct {
-	ManifestSchemaVersion     int               `json:"manifestSchemaVersion"`
-	PageDocumentSchemaVersion int               `json:"pageDocumentSchemaVersion"`
-	CompilerVersion           string            `json:"compilerVersion"`
-	SourceID                  string            `json:"sourceId"`
-	SourceType                string            `json:"sourceType"`
-	CanonicalPath             string            `json:"canonicalPath"`
-	SourceHash                string            `json:"sourceHash"`
-	BuildInputHash            string            `json:"buildInputHash"`
+	ManifestSchemaVersion     int    `json:"manifestSchemaVersion"`
+	PageDocumentSchemaVersion int    `json:"pageDocumentSchemaVersion"`
+	CompilerVersion           string `json:"compilerVersion"`
+	SourceID                  string `json:"sourceId"`
+	SourceType                string `json:"sourceType"`
+	CanonicalPath             string `json:"canonicalPath"`
+	SourceHash                string `json:"sourceHash"`
+	BuildInputHash            string `json:"buildInputHash"`
 	// Lang 本次构建的目标语言（多语言 P2，docs/06-D §4.2 决策 D2：lang 进 Manifest）。
 	//
 	// 必须显式记录：不同语言产物内容不同，若不进 Manifest 可能两个语言 hash 相同
@@ -46,9 +47,9 @@ type Manifest struct {
 	// 影响面：产物 hash = SHA256(manifestJSON + "\n" + indexHTML) 含 Manifest
 	// （artifact.go artifactPayloadHash），因此新增 lang 字段会改变全部
 	// 「带语言构建」的产物 hash，需要一次性全量重建（历史产物仍可按旧 hash 回滚）。
-	Lang string `json:"lang,omitempty"`
-	Dependencies              []Dependency      `json:"dependencies"`
-	Files                     map[string]string `json:"files"`
+	Lang         string            `json:"lang,omitempty"`
+	Dependencies []Dependency      `json:"dependencies"`
+	Files        map[string]string `json:"files"`
 }
 
 // 依赖类型常量（docs/03-pipeline.md §8.2 / docs/06-D §10.4）。
@@ -131,11 +132,8 @@ func artifactPayloadHash(mJSON, html []byte) string {
 // EncodeManifest 序列化 manifest（确定性：dependencies 排序 + files 由标准库按 key 排序）。
 func EncodeManifest(m *Manifest) ([]byte, error) {
 	if m.Dependencies != nil {
-		sort.SliceStable(m.Dependencies, func(i, j int) bool {
-			if m.Dependencies[i].Kind != m.Dependencies[j].Kind {
-				return m.Dependencies[i].Kind < m.Dependencies[j].Kind
-			}
-			return m.Dependencies[i].Key < m.Dependencies[j].Key
+		slices.SortStableFunc(m.Dependencies, func(a, b Dependency) int {
+			return cmp.Or(cmp.Compare(a.Kind, b.Kind), cmp.Compare(a.Key, b.Key))
 		})
 	}
 	return json.Marshal(m)

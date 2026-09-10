@@ -120,6 +120,7 @@ func (m *Model) MovePublicationPath(ctx context.Context, pageID, lang, activePat
 func (m *Model) DeletePublications(ctx context.Context, pageID string) (err error) {
 	return m.PublicationDB(ctx).Where("page_id = ?", pageID).Delete(&PublicationEntity{}).Error
 }
+
 const tableNamePageStagings = "page_stagings"
 
 // StagingEntity 对应 page_stagings 表：页面在某语言下已构建、待激活的产物指针。

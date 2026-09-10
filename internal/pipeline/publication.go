@@ -128,7 +128,7 @@ func (s *LocalPublicationStore) Activate(path string, loc Locator) error {
 func (s *LocalPublicationStore) ensureAncestorsAreDirs(rel string) error {
 	segs := strings.Split(rel, "/")
 	cur := s.ActiveRoot
-	for i := 0; i < len(segs)-1; i++ {
+	for i := range len(segs) - 1 {
 		cur = filepath.Join(cur, segs[i])
 		fi, err := os.Lstat(cur)
 		if err != nil {
