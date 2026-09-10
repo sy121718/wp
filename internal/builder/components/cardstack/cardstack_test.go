@@ -197,24 +197,55 @@ func TestSlideEffect(t *testing.T) {
 	}
 
 	// 每个效果都映射到 core 那套词汇里的真实关键帧名，且关键帧被注入。
-	cases := map[string]string{
-		"fade": "wp-fade-in-bottom-right", "zoom": "wp-zoom-in-up", "flip": "wp-flip-in-x",
-		"bounce": "wp-bounce-in-up", "back": "wp-back-in-up",
-		"rotate": "wp-rotate-in-down-left", "light": "wp-light-speed-in-left",
+	// 方向自适应：纵向走 *-up / -left 变体，横向走 *-right / -y 变体。
+	cases := map[string][2]string{
+		"fade":   {"wp-fade-in-bottom-left", "wp-fade-in-bottom-right"},
+		"zoom":   {"wp-zoom-in-up", "wp-zoom-in-right"},
+		"flip":   {"wp-flip-in-x", "wp-flip-in-y"},
+		"bounce": {"wp-bounce-in-up", "wp-bounce-in-right"},
+		"back":   {"wp-back-in-up", "wp-back-in-right"},
+		"rotate": {"wp-rotate-in-up-left", "wp-rotate-in-up-right"},
+		"light":  {"wp-light-speed-in-left", "wp-light-speed-in-right"},
+		"roll":   {"wp-roll-in", "wp-roll-in"},
+		"jack":   {"wp-jack-in-the-box", "wp-jack-in-the-box"},
 	}
-	for effect, kf := range cases {
-		p := &Props{Trigger: TriggerSlide, Count: 2, SlideEffect: effect}
-		s := compiled(t, nodeOf(p, 0), p)
-		for _, want := range []string{
-			"animation: " + kf + " linear both",
-			"animation-timeline: view()",
-			"animation-range: entry 0% entry 70%",
-			"@keyframes " + kf, // 词汇从 core 统一注入，组件不自己造关键帧
-		} {
-			if !strings.Contains(s, want) {
-				t.Errorf("效果 %s 缺少 %q", effect, want)
+	for effect, kfs := range cases {
+		for _, side := range []int{0, 1} {
+			kf := kfs[side]
+			p := &Props{Trigger: TriggerSlide, Count: 2, SlideEffect: effect}
+			if side == 1 {
+				p.SlideDirection = slideDirectionHorizontal
+			}
+			s := compiled(t, nodeOf(p, 0), p)
+			for _, want := range []string{
+				"animation: " + kf + " linear both",
+				"animation-timeline: view()",
+				"animation-range: entry 0% entry 70%",
+				"@keyframes " + kf, // 词汇从 core 统一注入，组件不自己造关键帧
+			} {
+				if !strings.Contains(s, want) {
+					t.Errorf("效果 %s（side=%d）缺少 %q", effect, side, want)
+				}
 			}
 		}
+	}
+}
+
+// TestDeckTransition deck 切换曲线与时长可调（卡片在视口内，走过渡而非入场动画）。
+func TestDeckTransition(t *testing.T) {
+	def := &Props{Trigger: TriggerDeck, Count: 3}
+	ds := compiled(t, nodeOf(def, 0), def)
+	if !strings.Contains(ds, "transition: transform 450ms cubic-bezier(.22,.61,.36,1)") {
+		t.Errorf("缺省应为 450ms 平滑缓出")
+	}
+
+	spring := &Props{Trigger: TriggerDeck, Count: 3, DeckTransition: "spring", DeckDuration: 600}
+	ss := compiled(t, nodeOf(spring, 0), spring)
+	if !strings.Contains(ss, "transition: transform 600ms cubic-bezier(.34,1.56,.64,1)") {
+		t.Errorf("回弹曲线与自定义时长应生效")
+	}
+	if !strings.Contains(ss, "cubic-bezier(.34,1.56,.64,1)") {
+		t.Errorf("回弹曲线缺失")
 	}
 }
 
@@ -341,7 +372,7 @@ func TestDeckCSS(t *testing.T) {
 		"scale(calc(1 - var(--wp-deck-abs, 0) * 0.0600))",
 		"z-index: calc(50 - var(--wp-deck-abs, 0))",
 		".wp-c-n1 .wp-cardstack-card.is-active",
-		"transition: transform .45s cubic-bezier(.22,.61,.36,1)",
+		"transition: transform 450ms cubic-bezier(.22,.61,.36,1)",
 		// 越远越淡：卡片多时不至于在两侧无限堆远（max() 不被支持时退化为全不透明）。
 		"opacity: max(0, calc(1 - var(--wp-deck-abs, 0) * 0.28))",
 	} {

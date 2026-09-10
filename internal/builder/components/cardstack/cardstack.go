@@ -135,6 +135,11 @@ type Props struct {
 	// DeckDirection 堆叠轮播的切换方向：horizontal 横向 / vertical 纵向。
 	// 纵向即「首屏一张卡叠着，上下滑动翻到下一张」—— 与 slide 的纵向平铺滚动是两回事。
 	DeckDirection string `json:"deckDirection,omitempty" ct:"select,horizontal=横向切换,vertical=纵向切换,default=horizontal,sec=motion,label=切换方向"`
+	// DeckTransition 卡片切换的过渡曲线：缺省平滑缓出，spring 带回弹。
+	// （deck 的卡片始终在视口内，入场类动画会和位置变换抢 transform，所以这里走过渡曲线。）
+	DeckTransition string `json:"deckTransition,omitempty" ct:"select,=平滑,spring=回弹,ease-out=缓出,linear=线性,sec=motion,label=切换曲线"`
+	// DeckDuration 切换时长 ms（缺省 450）。
+	DeckDuration int `json:"deckDuration,omitempty" ct:"slider,min=200,max=900,step=10,sec=motion,label=切换时长(ms)"`
 	// DeckOffset 堆叠轮播的相邻卡间距（%，横向相对卡宽缺省 54、纵向相对卡高缺省 12）。
 	DeckOffset int `json:"deckOffset,omitempty" ct:"slider,min=5,max=120,step=1,sec=motion,label=相邻间距(%)"`
 	// DeckRotate 堆叠轮播相邻卡的倾斜角度（deg，缺省 4；0 = 不倾斜，用默认）。
@@ -153,7 +158,7 @@ type Props struct {
 	SlideDirection string `json:"slideDirection,omitempty" ct:"select,vertical=纵向滚动,horizontal=横向滚动,default=vertical,sec=layout,label=滚动方向"`
 	// SlideEffect 卡片切换动画：复用通用动效词汇（core/keyframes_animate.go），
 	// 卡片进入视口时播放；缺省为空 = 纯覆盖（只有位置变化，不加动画）。
-	SlideEffect string `json:"slideEffect,omitempty" ct:"select,=无（纯覆盖）,fade=淡入,zoom=缩放入场,flip=翻转入场,bounce=弹入,back=回弹入场,rotate=旋转入场,light=光速入场,sec=motion,label=切换动画"`
+	SlideEffect string `json:"slideEffect,omitempty" ct:"select,=无（纯覆盖）,fade=淡入,zoom=缩放入场,flip=翻转入场,bounce=弹入,back=回弹入场,rotate=旋转入场,light=光速入场,roll=滚入,jack=弹出,sec=motion,label=切换动画"`
 	// SlideStack 堆叠翻页：卡片粘在同一位置，下一张滑上来盖住前一张（缺省平铺）。
 	// 与平铺的区别：平铺时上滑会把前一张推走，堆叠时前一张留在原地被覆盖。
 	SlideStack bool `json:"slideStack,omitempty" ct:"bool,sec=layout,label=堆叠翻页"`
@@ -880,23 +885,70 @@ func compileDragCSS(b *core.CSSBuckets, sel string, p *Props, n int, width, heig
 // slideEffectKeyframe 切换动画 → 通用动效词汇名（不新增关键帧，直接复用 core 那套）。
 // 返回空串 = 无动画（缺省，只有位置变化）。
 func slideEffectKeyframe(p *Props) string {
+	horizontal := p.SlideDirection == slideDirectionHorizontal
 	switch p.SlideEffect {
 	case "fade":
-		return "wp-fade-in-bottom-right"
+		if horizontal {
+			return "wp-fade-in-bottom-right"
+		}
+		return "wp-fade-in-bottom-left"
 	case "zoom":
+		if horizontal {
+			return "wp-zoom-in-right"
+		}
 		return "wp-zoom-in-up"
 	case "flip":
+		if horizontal {
+			return "wp-flip-in-y"
+		}
 		return "wp-flip-in-x"
 	case "bounce":
+		if horizontal {
+			return "wp-bounce-in-right"
+		}
 		return "wp-bounce-in-up"
 	case "back":
+		if horizontal {
+			return "wp-back-in-right"
+		}
 		return "wp-back-in-up"
 	case "rotate":
-		return "wp-rotate-in-down-left"
+		if horizontal {
+			return "wp-rotate-in-up-right"
+		}
+		return "wp-rotate-in-up-left"
 	case "light":
+		if horizontal {
+			return "wp-light-speed-in-right"
+		}
 		return "wp-light-speed-in-left"
+	case "roll":
+		return "wp-roll-in"
+	case "jack":
+		return "wp-jack-in-the-box"
 	}
 	return ""
+}
+
+// deckEasing 切换曲线预设（缺省平滑缓出）。
+func deckEasing(p *Props) string {
+	switch p.DeckTransition {
+	case "spring":
+		return "cubic-bezier(.34,1.56,.64,1)" // 轻微过冲，手感像回弹
+	case "ease-out":
+		return "ease-out"
+	case "linear":
+		return "linear"
+	}
+	return "cubic-bezier(.22,.61,.36,1)"
+}
+
+// effectiveDeckDuration 切换时长（ms），缺省 450。
+func effectiveDeckDuration(p *Props) int {
+	if p.DeckDuration < 200 {
+		return 450
+	}
+	return p.DeckDuration
 }
 
 // deckTransform 堆叠轮播的变换：横向沿 X 位移，纵向沿 Y 位移（缩放与层级共用偏移绝对值）。
@@ -1018,7 +1070,7 @@ func compileDeckCSS(b *core.CSSBuckets, sel string, p *Props, n int, width, heig
 			"z-index: calc(50 - var(--wp-deck-abs, 0))",
 			// 越远越淡：卡片多时不至于在两侧无限堆远（max() 不被支持时退化为全不透明，不影响可用性）。
 			"opacity: max(0, calc(1 - var(--wp-deck-abs, 0) * 0.28))",
-			"transition: transform .45s cubic-bezier(.22,.61,.36,1), box-shadow .3s, opacity .3s",
+			"transition: transform " + strconv.Itoa(effectiveDeckDuration(p)) + "ms " + deckEasing(p) + ", box-shadow .3s, opacity .3s",
 			"cursor: pointer",
 		}
 		if content {
