@@ -1,0 +1,1578 @@
+{
+ "settings": {
+  "layout": {
+   "mode": "boxed",
+   "maxWidth": "1240px",
+   "safePadding": {
+    "desktop": "16px",
+    "tablet": "12px",
+    "mobile": "8px"
+   }
+  },
+  "base": {
+   "backgroundColor": "#f4f6fa"
+  },
+  "seo": {
+   "title": "core.cardstack 全能力实例",
+   "description": "五种交互模式 · 三种内容来源 · 全套动画"
+  }
+ },
+ "root": [
+  {
+   "id": "hero",
+   "type": "core.container",
+   "props": {
+    "tag": "section",
+    "layout": {
+     "engine": "flex",
+     "flex": {
+      "direction": "column",
+      "gap": "12px"
+     }
+    },
+    "box": {
+     "padding": {
+      "desktop": "36px 24px"
+     }
+    }
+   },
+   "children": [
+    {
+     "id": "hero-h",
+     "type": "core.heading",
+     "props": {
+      "text": "core.cardstack · 全能力实例",
+      "tag": "h1"
+     }
+    },
+    {
+     "id": "hero-n",
+     "type": "core.text",
+     "props": {
+      "mode": "plaintext",
+      "plainTag": "p",
+      "text": "五种交互模式 × 三种内容来源 × 卡片级样式 × 切换动画与循环高亮。这页是回归素材：构建它即可一次跑通全部渲染路径。"
+     }
+    }
+   ]
+  },
+  {
+   "id": "s1",
+   "type": "core.container",
+   "props": {
+    "tag": "section",
+    "layout": {
+     "engine": "flex",
+     "flex": {
+      "direction": "column",
+      "gap": "12px"
+     }
+    },
+    "box": {
+     "padding": {
+      "desktop": "36px 24px"
+     }
+    }
+   },
+   "children": [
+    {
+     "id": "s1-h",
+     "type": "core.heading",
+     "props": {
+      "text": "① 悬停展开 · 扇形（shape=fan）",
+      "tag": "h2"
+     }
+    },
+    {
+     "id": "s1-n",
+     "type": "core.text",
+     "props": {
+      "mode": "plaintext",
+      "plainTag": "p",
+      "text": "悬停后沿弧线散开；数字卡按位置派生色相。"
+     }
+    },
+    {
+     "id": "c1",
+     "type": "core.cardstack",
+     "props": {
+      "trigger": "hover",
+      "shape": "fan",
+      "count": 9,
+      "width": "190px",
+      "height": "250px",
+      "hueStep": 40
+     }
+    }
+   ]
+  },
+  {
+   "id": "s2",
+   "type": "core.container",
+   "props": {
+    "tag": "section",
+    "layout": {
+     "engine": "flex",
+     "flex": {
+      "direction": "column",
+      "gap": "12px"
+     }
+    },
+    "box": {
+     "padding": {
+      "desktop": "36px 24px"
+     }
+    }
+   },
+   "children": [
+    {
+     "id": "s2-h",
+     "type": "core.heading",
+     "props": {
+      "text": "② 悬停展开 · 横排一行（shape=line + horizontal + 悬停发光）",
+      "tag": "h2"
+     }
+    },
+    {
+     "id": "s2-n",
+     "type": "core.text",
+     "props": {
+      "mode": "plaintext",
+      "plainTag": "p",
+      "text": "卡片不带角度；悬停时叠一层 glow 循环（filter，不抢位移的 transform）。"
+     }
+    },
+    {
+     "id": "c2",
+     "type": "core.cardstack",
+     "props": {
+      "trigger": "hover",
+      "shape": "line",
+      "direction": "horizontal",
+      "count": 9,
+      "spreadDistance": 130,
+      "hoverEffect": "glow",
+      "width": "190px",
+      "height": "250px",
+      "hueStep": 40
+     }
+    }
+   ]
+  },
+  {
+   "id": "s3",
+   "type": "core.container",
+   "props": {
+    "tag": "section",
+    "layout": {
+     "engine": "flex",
+     "flex": {
+      "direction": "column",
+      "gap": "12px"
+     }
+    },
+    "box": {
+     "padding": {
+      "desktop": "36px 24px"
+     }
+    }
+   },
+   "children": [
+    {
+     "id": "s3-h",
+     "type": "core.heading",
+     "props": {
+      "text": "③ 悬停展开 · 竖排一列（shape=line + vertical）",
+      "tag": "h2"
+     }
+    },
+    {
+     "id": "s3-n",
+     "type": "core.text",
+     "props": {
+      "mode": "plaintext",
+      "plainTag": "p",
+      "text": "纵向等距排开，同样无角度。"
+     }
+    },
+    {
+     "id": "c3",
+     "type": "core.cardstack",
+     "props": {
+      "trigger": "hover",
+      "shape": "line",
+      "direction": "vertical",
+      "count": 5,
+      "spreadDistance": 88,
+      "width": "320px",
+      "height": "150px",
+      "hueStep": 40
+     }
+    }
+   ]
+  },
+  {
+   "id": "s4",
+   "type": "core.container",
+   "props": {
+    "tag": "section",
+    "layout": {
+     "engine": "flex",
+     "flex": {
+      "direction": "column",
+      "gap": "12px"
+     }
+    },
+    "box": {
+     "padding": {
+      "desktop": "36px 24px"
+     }
+    }
+   },
+   "children": [
+    {
+     "id": "s4-h",
+     "type": "core.heading",
+     "props": {
+      "text": "④ 滚动堆叠（trigger=scroll）",
+      "tag": "h2"
+     }
+    },
+    {
+     "id": "s4-n",
+     "type": "core.text",
+     "props": {
+      "mode": "plaintext",
+      "plainTag": "p",
+      "text": "sticky 层叠 + view() 时间线逐张收敛缩放。"
+     }
+    },
+    {
+     "id": "c4",
+     "type": "core.cardstack",
+     "props": {
+      "trigger": "scroll",
+      "spacing": "34vh",
+      "scaleBase": 92,
+      "scaleStep": 3,
+      "width": "620px",
+      "height": "170px",
+      "cardBackground": "#ffffff",
+      "cardRadius": "16px"
+     },
+     "children": [
+      {
+       "id": "a1",
+       "type": "core.container",
+       "props": {
+        "tag": "div",
+        "layout": {
+         "engine": "flex",
+         "flex": {
+          "direction": "column",
+          "gap": "8px"
+         }
+        }
+       },
+       "children": [
+        {
+         "id": "a1h",
+         "type": "core.heading",
+         "props": {
+          "text": "第一张卡",
+          "tag": "h3"
+         }
+        },
+        {
+         "id": "a1t",
+         "type": "core.text",
+         "props": {
+          "mode": "plaintext",
+          "plainTag": "p",
+          "text": "滚进视口时粘住。"
+         }
+        }
+       ]
+      },
+      {
+       "id": "a2",
+       "type": "core.container",
+       "props": {
+        "tag": "div",
+        "layout": {
+         "engine": "flex",
+         "flex": {
+          "direction": "column",
+          "gap": "8px"
+         }
+        }
+       },
+       "children": [
+        {
+         "id": "a2h",
+         "type": "core.heading",
+         "props": {
+          "text": "第二张卡",
+          "tag": "h3"
+         }
+        },
+        {
+         "id": "a2t",
+         "type": "core.text",
+         "props": {
+          "mode": "plaintext",
+          "plainTag": "p",
+          "text": "序号越大层级越高。"
+         }
+        }
+       ]
+      },
+      {
+       "id": "a3",
+       "type": "core.container",
+       "props": {
+        "tag": "div",
+        "layout": {
+         "engine": "flex",
+         "flex": {
+          "direction": "column",
+          "gap": "8px"
+         }
+        }
+       },
+       "children": [
+        {
+         "id": "a3h",
+         "type": "core.heading",
+         "props": {
+          "text": "第三张卡",
+          "tag": "h3"
+         }
+        },
+        {
+         "id": "a3t",
+         "type": "core.text",
+         "props": {
+          "mode": "plaintext",
+          "plainTag": "p",
+          "text": "最终叠成一摞。"
+         }
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "s5",
+   "type": "core.container",
+   "props": {
+    "tag": "section",
+    "layout": {
+     "engine": "flex",
+     "flex": {
+      "direction": "column",
+      "gap": "12px"
+     }
+    },
+    "box": {
+     "padding": {
+      "desktop": "36px 24px"
+     }
+    }
+   },
+   "children": [
+    {
+     "id": "s5-h",
+     "type": "core.heading",
+     "props": {
+      "text": "⑤ 拖拽旋转（trigger=drag）",
+      "tag": "h2"
+     }
+    },
+    {
+     "id": "s5-n",
+     "type": "core.text",
+     "props": {
+      "mode": "plaintext",
+      "plainTag": "p",
+      "text": "卡片落在圆周上且始终正立；拖拽 / 方向键旋转，半径不填时按相邻不重叠自动算。"
+     }
+    },
+    {
+     "id": "c5",
+     "type": "core.cardstack",
+     "props": {
+      "trigger": "drag",
+      "count": 9,
+      "width": "160px",
+      "height": "210px",
+      "hueStep": 40
+     }
+    }
+   ]
+  },
+  {
+   "id": "s6",
+   "type": "core.container",
+   "props": {
+    "tag": "section",
+    "layout": {
+     "engine": "flex",
+     "flex": {
+      "direction": "column",
+      "gap": "12px"
+     }
+    },
+    "box": {
+     "padding": {
+      "desktop": "36px 24px"
+     }
+    }
+   },
+   "children": [
+    {
+     "id": "s6-h",
+     "type": "core.heading",
+     "props": {
+      "text": "⑥ 堆叠轮播 · 横向（deck + 回弹曲线）",
+      "tag": "h2"
+     }
+    },
+    {
+     "id": "s6-n",
+     "type": "core.text",
+     "props": {
+      "mode": "plaintext",
+      "plainTag": "p",
+      "text": "拖拽 / 滚轮与触摸板 / 方向键 / 点侧卡切换；deckTransition=spring 带轻微过冲。"
+     }
+    },
+    {
+     "id": "c6",
+     "type": "core.cardstack",
+     "props": {
+      "trigger": "deck",
+      "deckLoop": true,
+      "deckTransition": "spring",
+      "deckDuration": 600,
+      "width": "360px",
+      "height": "200px",
+      "cardBackground": "#ffffff",
+      "cardRadius": "18px"
+     },
+     "children": [
+      {
+       "id": "b1",
+       "type": "core.container",
+       "props": {
+        "tag": "div",
+        "layout": {
+         "engine": "flex",
+         "flex": {
+          "direction": "column",
+          "gap": "8px"
+         }
+        }
+       },
+       "children": [
+        {
+         "id": "b1h",
+         "type": "core.heading",
+         "props": {
+          "text": "第一张",
+          "tag": "h3"
+         }
+        },
+        {
+         "id": "b1t",
+         "type": "core.text",
+         "props": {
+          "mode": "plaintext",
+          "plainTag": "p",
+          "text": "主卡居中正立。"
+         }
+        }
+       ]
+      },
+      {
+       "id": "b2",
+       "type": "core.container",
+       "props": {
+        "tag": "div",
+        "layout": {
+         "engine": "flex",
+         "flex": {
+          "direction": "column",
+          "gap": "8px"
+         }
+        }
+       },
+       "children": [
+        {
+         "id": "b2h",
+         "type": "core.heading",
+         "props": {
+          "text": "第二张",
+          "tag": "h3"
+         }
+        },
+        {
+         "id": "b2t",
+         "type": "core.text",
+         "props": {
+          "mode": "plaintext",
+          "plainTag": "p",
+          "text": "回弹曲线切换。"
+         }
+        }
+       ]
+      },
+      {
+       "id": "b3",
+       "type": "core.container",
+       "props": {
+        "tag": "div",
+        "layout": {
+         "engine": "flex",
+         "flex": {
+          "direction": "column",
+          "gap": "8px"
+         }
+        }
+       },
+       "children": [
+        {
+         "id": "b3h",
+         "type": "core.heading",
+         "props": {
+          "text": "第三张",
+          "tag": "h3"
+         }
+        },
+        {
+         "id": "b3t",
+         "type": "core.text",
+         "props": {
+          "mode": "plaintext",
+          "plainTag": "p",
+          "text": "点侧卡只切主位。"
+         }
+        }
+       ]
+      },
+      {
+       "id": "b4",
+       "type": "core.container",
+       "props": {
+        "tag": "div",
+        "layout": {
+         "engine": "flex",
+         "flex": {
+          "direction": "column",
+          "gap": "8px"
+         }
+        }
+       },
+       "children": [
+        {
+         "id": "b4h",
+         "type": "core.heading",
+         "props": {
+          "text": "第四张",
+          "tag": "h3"
+         }
+        },
+        {
+         "id": "b4t",
+         "type": "core.text",
+         "props": {
+          "mode": "plaintext",
+          "plainTag": "p",
+          "text": "点主卡才放大。"
+         }
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "s7",
+   "type": "core.container",
+   "props": {
+    "tag": "section",
+    "layout": {
+     "engine": "flex",
+     "flex": {
+      "direction": "column",
+      "gap": "12px"
+     }
+    },
+    "box": {
+     "padding": {
+      "desktop": "36px 24px"
+     }
+    }
+   },
+   "children": [
+    {
+     "id": "s7-h",
+     "type": "core.heading",
+     "props": {
+      "text": "⑦ 堆叠轮播 · 纵向（vertical + 主卡发光）",
+      "tag": "h2"
+     }
+    },
+    {
+     "id": "s7-n",
+     "type": "core.text",
+     "props": {
+      "mode": "plaintext",
+      "plainTag": "p",
+      "text": "上下拖动或 ↑↓ 切换；主卡靠 filter 呼吸，不占用位置变换。"
+     }
+    },
+    {
+     "id": "c7",
+     "type": "core.cardstack",
+     "props": {
+      "trigger": "deck",
+      "deckDirection": "vertical",
+      "deckLoop": true,
+      "deckHighlight": "glow",
+      "width": "520px",
+      "height": "230px",
+      "cardBackground": "#ffffff",
+      "cardRadius": "18px",
+      "deckScaleStep": 5
+     },
+     "children": [
+      {
+       "id": "d1",
+       "type": "core.container",
+       "props": {
+        "tag": "div",
+        "layout": {
+         "engine": "flex",
+         "flex": {
+          "direction": "column",
+          "gap": "8px"
+         }
+        }
+       },
+       "children": [
+        {
+         "id": "d1h",
+         "type": "core.heading",
+         "props": {
+          "text": "第一张",
+          "tag": "h3"
+         }
+        },
+        {
+         "id": "d1t",
+         "type": "core.text",
+         "props": {
+          "mode": "plaintext",
+          "plainTag": "p",
+          "text": "叠在最上面。"
+         }
+        }
+       ]
+      },
+      {
+       "id": "d2",
+       "type": "core.container",
+       "props": {
+        "tag": "div",
+        "layout": {
+         "engine": "flex",
+         "flex": {
+          "direction": "column",
+          "gap": "8px"
+         }
+        }
+       },
+       "children": [
+        {
+         "id": "d2h",
+         "type": "core.heading",
+         "props": {
+          "text": "第二张",
+          "tag": "h3"
+         }
+        },
+        {
+         "id": "d2t",
+         "type": "core.text",
+         "props": {
+          "mode": "plaintext",
+          "plainTag": "p",
+          "text": "上滑翻上来。"
+         }
+        }
+       ]
+      },
+      {
+       "id": "d3",
+       "type": "core.container",
+       "props": {
+        "tag": "div",
+        "layout": {
+         "engine": "flex",
+         "flex": {
+          "direction": "column",
+          "gap": "8px"
+         }
+        }
+       },
+       "children": [
+        {
+         "id": "d3h",
+         "type": "core.heading",
+         "props": {
+          "text": "第三张",
+          "tag": "h3"
+         }
+        },
+        {
+         "id": "d3t",
+         "type": "core.text",
+         "props": {
+          "mode": "plaintext",
+          "plainTag": "p",
+          "text": "分层靠缩放与层级。"
+         }
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "s8",
+   "type": "core.container",
+   "props": {
+    "tag": "section",
+    "layout": {
+     "engine": "flex",
+     "flex": {
+      "direction": "column",
+      "gap": "12px"
+     }
+    },
+    "box": {
+     "padding": {
+      "desktop": "36px 24px"
+     }
+    }
+   },
+   "children": [
+    {
+     "id": "s8-h",
+     "type": "core.heading",
+     "props": {
+      "text": "⑧ 全屏分页 · 纵向平铺（slide + 翻转入场 + 当前屏发光）",
+      "tag": "h2"
+     }
+    },
+    {
+     "id": "s8-n",
+     "type": "core.text",
+     "props": {
+      "mode": "plaintext",
+      "plainTag": "p",
+      "text": "滚动条已隐藏；右下角页码。入场动画与当前屏高亮并列成两条 animation，各带自己的 range。"
+     }
+    },
+    {
+     "id": "c8",
+     "type": "core.cardstack",
+     "props": {
+      "trigger": "slide",
+      "slideEffect": "flip",
+      "slideHighlight": "glow",
+      "slideHeight": "58vh",
+      "cardBackground": "#ffffff",
+      "cardPadding": "6vw",
+      "cardAlign": "flex-start",
+      "cardJustify": "center"
+     },
+     "children": [
+      {
+       "id": "e1",
+       "type": "core.container",
+       "props": {
+        "tag": "div",
+        "layout": {
+         "engine": "flex",
+         "flex": {
+          "direction": "column",
+          "gap": "8px"
+         }
+        }
+       },
+       "children": [
+        {
+         "id": "e1h",
+         "type": "core.heading",
+         "props": {
+          "text": "纵向平铺 · 第一屏",
+          "tag": "h3"
+         }
+        },
+        {
+         "id": "e1t",
+         "type": "core.text",
+         "props": {
+          "mode": "plaintext",
+          "plainTag": "p",
+          "text": "上滑把前一张推走。"
+         }
+        }
+       ]
+      },
+      {
+       "id": "e2",
+       "type": "core.container",
+       "props": {
+        "tag": "div",
+        "layout": {
+         "engine": "flex",
+         "flex": {
+          "direction": "column",
+          "gap": "8px"
+         }
+        }
+       },
+       "children": [
+        {
+         "id": "e2h",
+         "type": "core.heading",
+         "props": {
+          "text": "纵向平铺 · 第二屏",
+          "tag": "h3"
+         }
+        },
+        {
+         "id": "e2t",
+         "type": "core.text",
+         "props": {
+          "mode": "plaintext",
+          "plainTag": "p",
+          "text": "滚到中段时发光。"
+         }
+        }
+       ]
+      },
+      {
+       "id": "e3",
+       "type": "core.container",
+       "props": {
+        "tag": "div",
+        "layout": {
+         "engine": "flex",
+         "flex": {
+          "direction": "column",
+          "gap": "8px"
+         }
+        }
+       },
+       "children": [
+        {
+         "id": "e3h",
+         "type": "core.heading",
+         "props": {
+          "text": "纵向平铺 · 第三屏",
+          "tag": "h3"
+         }
+        },
+        {
+         "id": "e3t",
+         "type": "core.text",
+         "props": {
+          "mode": "plaintext",
+          "plainTag": "p",
+          "text": "共三屏。"
+         }
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "s9",
+   "type": "core.container",
+   "props": {
+    "tag": "section",
+    "layout": {
+     "engine": "flex",
+     "flex": {
+      "direction": "column",
+      "gap": "12px"
+     }
+    },
+    "box": {
+     "padding": {
+      "desktop": "36px 24px"
+     }
+    }
+   },
+   "children": [
+    {
+     "id": "s9-h",
+     "type": "core.heading",
+     "props": {
+      "text": "⑨ 全屏分页 · 纵向堆叠（slideStack）",
+      "tag": "h2"
+     }
+    },
+    {
+     "id": "s9-n",
+     "type": "core.text",
+     "props": {
+      "mode": "plaintext",
+      "plainTag": "p",
+      "text": "卡片粘在同一位置，下一张滑上来盖住前一张（sticky + 递增 z-index，零 JS）。"
+     }
+    },
+    {
+     "id": "c9",
+     "type": "core.cardstack",
+     "props": {
+      "trigger": "slide",
+      "slideStack": true,
+      "slideEffect": "zoom",
+      "slideHeight": "58vh",
+      "cardBackground": "#ffffff",
+      "cardPadding": "6vw",
+      "cardAlign": "flex-start",
+      "cardJustify": "center"
+     },
+     "children": [
+      {
+       "id": "f1",
+       "type": "core.container",
+       "props": {
+        "tag": "div",
+        "layout": {
+         "engine": "flex",
+         "flex": {
+          "direction": "column",
+          "gap": "8px"
+         }
+        }
+       },
+       "children": [
+        {
+         "id": "f1h",
+         "type": "core.heading",
+         "props": {
+          "text": "纵向堆叠 · 第一张",
+          "tag": "h3"
+         }
+        },
+        {
+         "id": "f1t",
+         "type": "core.text",
+         "props": {
+          "mode": "plaintext",
+          "plainTag": "p",
+          "text": "留在原地被盖住。"
+         }
+        }
+       ]
+      },
+      {
+       "id": "f2",
+       "type": "core.container",
+       "props": {
+        "tag": "div",
+        "layout": {
+         "engine": "flex",
+         "flex": {
+          "direction": "column",
+          "gap": "8px"
+         }
+        }
+       },
+       "children": [
+        {
+         "id": "f2h",
+         "type": "core.heading",
+         "props": {
+          "text": "纵向堆叠 · 第二张",
+          "tag": "h3"
+         }
+        },
+        {
+         "id": "f2t",
+         "type": "core.text",
+         "props": {
+          "mode": "plaintext",
+          "plainTag": "p",
+          "text": "滑上来覆盖。"
+         }
+        }
+       ]
+      },
+      {
+       "id": "f3",
+       "type": "core.container",
+       "props": {
+        "tag": "div",
+        "layout": {
+         "engine": "flex",
+         "flex": {
+          "direction": "column",
+          "gap": "8px"
+         }
+        }
+       },
+       "children": [
+        {
+         "id": "f3h",
+         "type": "core.heading",
+         "props": {
+          "text": "纵向堆叠 · 第三张",
+          "tag": "h3"
+         }
+        },
+        {
+         "id": "f3t",
+         "type": "core.text",
+         "props": {
+          "mode": "plaintext",
+          "plainTag": "p",
+          "text": "往回滚会重新露出来。"
+         }
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "s10",
+   "type": "core.container",
+   "props": {
+    "tag": "section",
+    "layout": {
+     "engine": "flex",
+     "flex": {
+      "direction": "column",
+      "gap": "12px"
+     }
+    },
+    "box": {
+     "padding": {
+      "desktop": "36px 24px"
+     }
+    }
+   },
+   "children": [
+    {
+     "id": "s10-h",
+     "type": "core.heading",
+     "props": {
+      "text": "⑩ 全屏分页 · 横向堆叠（horizontal + stack + 弹入）",
+      "tag": "h2"
+     }
+    },
+    {
+     "id": "s10-n",
+     "type": "core.text",
+     "props": {
+      "mode": "plaintext",
+      "plainTag": "p",
+      "text": "横向滚动 + 堆叠覆盖；每屏占满宽度（flex 基准定宽，否则滚动条出不来）。"
+     }
+    },
+    {
+     "id": "c10",
+     "type": "core.cardstack",
+     "props": {
+      "trigger": "slide",
+      "slideDirection": "horizontal",
+      "slideStack": true,
+      "slideEffect": "bounce",
+      "slideHeight": "46vh",
+      "cardBackground": "#ffffff",
+      "cardPadding": "5vw",
+      "cardAlign": "flex-start",
+      "cardJustify": "center"
+     },
+     "children": [
+      {
+       "id": "g1",
+       "type": "core.container",
+       "props": {
+        "tag": "div",
+        "layout": {
+         "engine": "flex",
+         "flex": {
+          "direction": "column",
+          "gap": "8px"
+         }
+        }
+       },
+       "children": [
+        {
+         "id": "g1h",
+         "type": "core.heading",
+         "props": {
+          "text": "横向堆叠 · 第一张",
+          "tag": "h3"
+         }
+        },
+        {
+         "id": "g1t",
+         "type": "core.text",
+         "props": {
+          "mode": "plaintext",
+          "plainTag": "p",
+          "text": "下一张从右边盖住它。"
+         }
+        }
+       ]
+      },
+      {
+       "id": "g2",
+       "type": "core.container",
+       "props": {
+        "tag": "div",
+        "layout": {
+         "engine": "flex",
+         "flex": {
+          "direction": "column",
+          "gap": "8px"
+         }
+        }
+       },
+       "children": [
+        {
+         "id": "g2h",
+         "type": "core.heading",
+         "props": {
+          "text": "横向堆叠 · 第二张",
+          "tag": "h3"
+         }
+        },
+        {
+         "id": "g2t",
+         "type": "core.text",
+         "props": {
+          "mode": "plaintext",
+          "plainTag": "p",
+          "text": "粘在同一位置。"
+         }
+        }
+       ]
+      },
+      {
+       "id": "g3",
+       "type": "core.container",
+       "props": {
+        "tag": "div",
+        "layout": {
+         "engine": "flex",
+         "flex": {
+          "direction": "column",
+          "gap": "8px"
+         }
+        }
+       },
+       "children": [
+        {
+         "id": "g3h",
+         "type": "core.heading",
+         "props": {
+          "text": "横向堆叠 · 第三张",
+          "tag": "h3"
+         }
+        },
+        {
+         "id": "g3t",
+         "type": "core.text",
+         "props": {
+          "mode": "plaintext",
+          "plainTag": "p",
+          "text": "左滑到底。"
+         }
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "s11",
+   "type": "core.container",
+   "props": {
+    "tag": "section",
+    "layout": {
+     "engine": "flex",
+     "flex": {
+      "direction": "column",
+      "gap": "12px"
+     }
+    },
+    "box": {
+     "padding": {
+      "desktop": "36px 24px"
+     }
+    }
+   },
+   "children": [
+    {
+     "id": "s11-h",
+     "type": "core.heading",
+     "props": {
+      "text": "⑪ 商品变体 · 集合 + 子节点模板",
+      "tag": "h2"
+     }
+    },
+    {
+     "id": "s11-n",
+     "type": "core.text",
+     "props": {
+      "mode": "plaintext",
+      "plainTag": "p",
+      "text": "卡片数随内容条数；卡内结构由子节点决定，字段用 item.* 绑定到当前项。"
+     }
+    },
+    {
+     "id": "c11",
+     "type": "core.cardstack",
+     "props": {
+      "trigger": "hover",
+      "shape": "line",
+      "direction": "horizontal",
+      "spreadDistance": 120,
+      "collectionSource": "content:product",
+      "collectionLimit": 4,
+      "width": "265px",
+      "height": "350px",
+      "cardBackground": "#ffffff",
+      "cardRadius": "18px",
+      "cardPadding": "14px",
+      "cardJustify": "flex-start",
+      "cardGap": "6px"
+     },
+     "children": [
+      {
+       "id": "pi",
+       "type": "core.image",
+       "props": {
+        "src": "",
+        "alt": "",
+        "binding": {
+         "field": "item.images"
+        }
+       }
+      },
+      {
+       "id": "pn",
+       "type": "core.heading",
+       "props": {
+        "text": "",
+        "tag": "h3",
+        "binding": {
+         "field": "item.name"
+        }
+       }
+      },
+      {
+       "id": "pp",
+       "type": "core.text",
+       "props": {
+        "mode": "plaintext",
+        "plainTag": "p",
+        "text": "",
+        "binding": {
+         "field": "item.price"
+        }
+       }
+      },
+      {
+       "id": "pd",
+       "type": "core.text",
+       "props": {
+        "mode": "plaintext",
+        "plainTag": "p",
+        "text": "",
+        "binding": {
+         "field": "item.description"
+        }
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "s12",
+   "type": "core.container",
+   "props": {
+    "tag": "section",
+    "layout": {
+     "engine": "flex",
+     "flex": {
+      "direction": "column",
+      "gap": "12px"
+     }
+    },
+    "box": {
+     "padding": {
+      "desktop": "36px 24px"
+     }
+    }
+   },
+   "children": [
+    {
+     "id": "s12-h",
+     "type": "core.heading",
+     "props": {
+      "text": "⑫ 文章列表 · 集合 + 内置字段映射",
+      "tag": "h2"
+     }
+    },
+    {
+     "id": "s12-n",
+     "type": "core.text",
+     "props": {
+      "mode": "plaintext",
+      "plainTag": "p",
+      "text": "不拖子节点，只配字段就出卡；自带「阅读全文」链接（前缀 + slug）。"
+     }
+    },
+    {
+     "id": "c12",
+     "type": "core.cardstack",
+     "props": {
+      "trigger": "hover",
+      "shape": "line",
+      "direction": "vertical",
+      "spreadDistance": 96,
+      "collectionSource": "content:article",
+      "collectionLimit": 3,
+      "cardImageField": "featuredImage",
+      "cardTitleField": "title",
+      "cardTextField": "excerpt",
+      "cardLinkField": "slug",
+      "cardLinkPrefix": "/article/",
+      "cardLinkText": "阅读全文",
+      "width": "600px",
+      "height": "140px",
+      "cardBackground": "#ffffff"
+     }
+    }
+   ]
+  },
+  {
+   "id": "s13",
+   "type": "core.container",
+   "props": {
+    "tag": "section",
+    "layout": {
+     "engine": "flex",
+     "flex": {
+      "direction": "column",
+      "gap": "12px"
+     }
+    },
+    "box": {
+     "padding": {
+      "desktop": "36px 24px"
+     }
+    }
+   },
+   "children": [
+    {
+     "id": "s13-h",
+     "type": "core.heading",
+     "props": {
+      "text": "⑬ 卡片级样式（卡片即容器）",
+      "tag": "h2"
+     }
+    },
+    {
+     "id": "s13-n",
+     "type": "core.text",
+     "props": {
+      "mode": "plaintext",
+      "plainTag": "p",
+      "text": "卡内排列 / 间距 / 对齐、背景 / 圆角 / 内边距 / 边框都是组件参数。"
+     }
+    },
+    {
+     "id": "c13",
+     "type": "core.cardstack",
+     "props": {
+      "trigger": "hover",
+      "shape": "fan",
+      "spreadAngle": 3,
+      "spreadDistance": 150,
+      "cardGap": "12px"
+     },
+     "children": [
+      {
+       "id": "h1",
+       "type": "core.container",
+       "props": {
+        "tag": "div",
+        "layout": {
+         "engine": "flex",
+         "flex": {
+          "direction": "column",
+          "gap": "8px"
+         }
+        }
+       },
+       "children": [
+        {
+         "id": "h1h",
+         "type": "core.heading",
+         "props": {
+          "text": "深色卡",
+          "tag": "h3"
+         }
+        },
+        {
+         "id": "h1t",
+         "type": "core.text",
+         "props": {
+          "mode": "plaintext",
+          "plainTag": "p",
+          "text": "卡内套容器设背景。"
+         }
+        }
+       ]
+      },
+      {
+       "id": "h2",
+       "type": "core.container",
+       "props": {
+        "tag": "div",
+        "layout": {
+         "engine": "flex",
+         "flex": {
+          "direction": "column",
+          "gap": "8px"
+         }
+        }
+       },
+       "children": [
+        {
+         "id": "h2h",
+         "type": "core.heading",
+         "props": {
+          "text": "主色卡",
+          "tag": "h3"
+         }
+        },
+        {
+         "id": "h2t",
+         "type": "core.text",
+         "props": {
+          "mode": "plaintext",
+          "plainTag": "p",
+          "text": "卡片级参数是整套统一。"
+         }
+        }
+       ]
+      },
+      {
+       "id": "h3",
+       "type": "core.container",
+       "props": {
+        "tag": "div",
+        "layout": {
+         "engine": "flex",
+         "flex": {
+          "direction": "column",
+          "gap": "8px"
+         }
+        }
+       },
+       "children": [
+        {
+         "id": "h3h",
+         "type": "core.heading",
+         "props": {
+          "text": "绿色卡",
+          "tag": "h3"
+         }
+        },
+        {
+         "id": "h3t",
+         "type": "core.text",
+         "props": {
+          "mode": "plaintext",
+          "plainTag": "p",
+          "text": "要每张不同就套容器。"
+         }
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "s14",
+   "type": "core.container",
+   "props": {
+    "tag": "section",
+    "layout": {
+     "engine": "flex",
+     "flex": {
+      "direction": "column",
+      "gap": "12px"
+     }
+    },
+    "box": {
+     "padding": {
+      "desktop": "36px 24px"
+     }
+    }
+   },
+   "children": [
+    {
+     "id": "s14-h",
+     "type": "core.heading",
+     "props": {
+      "text": "⑭ 空状态（集合无内容）",
+      "tag": "h2"
+     }
+    },
+    {
+     "id": "s14-n",
+     "type": "core.text",
+     "props": {
+      "mode": "plaintext",
+      "plainTag": "p",
+      "text": "解析出 0 条时显示占位文案，而不是留一片空白。"
+     }
+    },
+    {
+     "id": "c14",
+     "type": "core.cardstack",
+     "props": {
+      "trigger": "hover",
+      "collectionSource": "content:category",
+      "collectionEmptyText": "这个分类下还没有内容"
+     }
+    }
+   ]
+  }
+ ]
+}
