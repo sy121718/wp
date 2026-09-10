@@ -160,6 +160,30 @@ func TestHoverLineVerticalCSS(t *testing.T) {
 	}
 }
 
+// TestHoverBookSpreadWithinViewport 摊开的书：展开位移必须按视口收敛。
+//
+// 为什么不能用 45vw 封顶：2×45vw + 卡宽恒大于 100vw，窄屏上六页摊开会把页面撑出
+// 横向滚动 —— 实测 440 视口溢出 37px、375 视口溢出 99px，移动端表现为「右侧一片空白、
+// 页面能左右拖」，而在 DevTools 里点一下元素触发的重排又会让它看起来恢复正常，
+// 是很难复现的假象。收敛式与 fan / line 保持一致（除以最大步距，最外侧那页贴住视口边）。
+func TestHoverBookSpreadWithinViewport(t *testing.T) {
+	p := &Props{Shape: ShapeBook}
+	s := compiled(t, nodeOf(p, 0), p)
+
+	if strings.Contains(s, "45vw") {
+		t.Errorf("摊开的书不能再拿 45vw 封顶（窄屏会把页面撑出横向滚动）")
+	}
+	if !strings.Contains(s, "translateX(clamp(calc(-1 * calc((50vw - 16px - 50%) / ") {
+		t.Errorf("摊开位移缺少按视口收敛的 clamp")
+	}
+	if !strings.Contains(s, "rotateY(0deg)") {
+		t.Errorf("摊开时应转平（rotateY 0deg）")
+	}
+	if !strings.Contains(s, "perspective: 1800px") {
+		t.Errorf("翻书需要透视，否则 rotateY 被压平成横向缩放")
+	}
+}
+
 // TestScrollCSS 滚动堆叠：sticky 层叠是基础形态，scroll-driven 跟手收敛叠在同一条
 // 规则上 —— 老浏览器丢弃未知属性后动画停在终态，即静态缩放，自动降级。
 func TestScrollCSS(t *testing.T) {

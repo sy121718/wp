@@ -319,6 +319,14 @@ func inspectorFieldOf(ctl inspectorSchemaItem, props map[string]any) inspectorFi
 		f.Slot = "dimension"
 		f.Value = value
 		f.Placeholder = "如 16px / 1.5rem"
+	case "collectionfield", "bindingfield":
+		// 集合字段映射（core.cardstack 的 5 个字段）与内容字段绑定（item.<字段>）：
+		// 选项来自后端字段白名单（按当前节点的「内容集合」过滤），手填字段名会绕过白名单，
+		// 所以服务端只输出 slot，客户端用 collectionFieldControl / bindingFieldControl
+		// 渲染成下拉 —— 不走 default 的文本框（退化成手填等于把白名单丢了）。
+		f.UI = ctl.Kind
+		f.Slot = ctl.Kind
+		f.Value = value
 	default:
 		f.UI = "text"
 		f.Value = value

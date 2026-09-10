@@ -368,6 +368,11 @@ export function fillInspectorSlots(ctx) {
                 mediaListControl(ctx, label, path, ctl);
             } else if (ctl.kind === 'dimension') {
                 dimensionControl(ctx, label, path, ctl);
+            } else if (ctl.kind === 'collectionfield') {
+                // 集合字段下拉：选项来自后端字段白名单（同一个控件函数，两条渲染路径共用）。
+                collectionFieldControl(ctx, label, path);
+            } else if (ctl.kind === 'bindingfield') {
+                bindingFieldControl(ctx, label, path);
             } else {
                 field(ctx, label, path, 'input');
             }

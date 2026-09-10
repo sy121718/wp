@@ -24,6 +24,9 @@ var clientSupportedKinds = map[string]bool{
 	// 服务端输出 slot，客户端用既有控件填充
 	"color": true, "spacing": true, "margin": true, "rtext": true,
 	"dimension": true, "media": true, "mediaList": true, "boxspacing": true,
+	// 集合字段映射 / 内容字段绑定（core.cardstack 字段映射、item.<字段>）：
+	// 选项来自后端字段白名单，服务端输出 slot、客户端渲染成下拉。
+	"collectionfield": true, "bindingfield": true,
 	// richtext：服务端输出 slot，客户端 richTextField（Trix）填充；
 	// core.text 的 mode=plaintext 由 isPlainTextMode 回退多行输入。
 	"richtext": true,

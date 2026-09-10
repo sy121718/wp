@@ -790,9 +790,14 @@ func compileHoverCSS(b *core.CSSBuckets, sel string, p *Props, n int, width, hei
 		case book:
 			// 摊开：转平（rotateY 0）并按序号向两外侧移，像把书页摊在桌上。
 			// 0.58 倍卡宽是刻意留的重叠量 —— 完全按卡宽铺开会显得像并排卡片，不像书页。
-			// 摊开位移按视口收敛（45vw）：手机上六页摊开的物理宽度会远超屏宽。
+			// 摊开位移必须按视口收敛：手机上六页摊开的物理宽度远超屏宽（见下方 allow）。
 			openX := offset * cssPx(width, fallbackCardW) * 0.58
-			openXDecl := fmt.Sprintf("clamp(calc(-1 * var(--sky-cardstack-side, 45vw)), %spx, var(--sky-cardstack-side, 45vw))", num(openX))
+			// 收敛与 fan/line 同一套：可用空间 = 视口半宽 − 留白 − 卡半宽，再除以最大步距 mid，
+			// 让最外侧那页刚好贴住视口边缘。**不能再用 45vw 封顶** —— 2×45vw + 卡宽恒大于 100vw，
+			// 窄屏上六页摊开会把页面撑出横向滚动（实测 440 视口溢出 37px、375 视口溢出 99px），
+			// 手机上表现为「右侧一片空白、页面能左右拖」，与 fan / line 的收敛写法也不一致。
+			allow := fmt.Sprintf("calc((50vw - %dpx - 50%%) / %s)", viewportGutter, fnum(mid))
+			openXDecl := fmt.Sprintf("clamp(calc(-1 * %s), %spx, %s)", allow, num(openX), allow)
 			fixed = "rotateY(0deg) translateX(" + openXDecl + ")"
 			adaptive = fixed
 		case fan:
