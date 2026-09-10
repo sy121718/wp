@@ -257,6 +257,12 @@ fan 的位移落在旋转后的坐标系里（外接框会变大、卡片高度�
    点击语义必须分开：**点侧卡 = 切主位**（在捕获阶段 `preventDefault`，否则卡片是 label，
    会顺带把它放大）、**点主卡 = 放行**进入放大；拖动结束补发的 click 同样在捕获阶段吞掉。
 
+   **循环切换**（`deckLoop`）时偏移要取**最短方向**：
+   `off = ((i − active + half) % n + n) % n − half` —— 直接取模会让最后一↔第一之间绕半圈，
+   卡片横穿整排飞过去；取最短方向后偏移恒落在 `[−half, half]`，切换看起来只是相邻滑动。
+   `go()` 越界同理绕回另一端。远卡淡出也由 `abs` 驱动（`opacity: max(0, 1 − abs×0.28)`），
+   卡片多时不会在两侧无限堆远。
+
 9. **滚动堆叠**：基础规则就是 `position: sticky + top + translate: 0 -50%` 的纯层叠，跟手收敛叠在同一条
    规则的 `animation` 上，靠 `animation-timeline: view()` 驱动。**不需要 `@supports` 包裹** ——
    老浏览器把 `animation-timeline`/`animation-range` 当未知属性丢弃，动画按 0s 播完并由
