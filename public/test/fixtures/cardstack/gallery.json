@@ -1039,6 +1039,36 @@
      }
     }
    ]
+  },
+  {
+   "id": "ver",
+   "type": "core.container",
+   "props": {
+    "tag": "footer",
+    "layout": {
+     "engine": "flex",
+     "flex": {
+      "direction": "column",
+      "gap": "6px"
+     }
+    },
+    "box": {
+     "padding": {
+      "desktop": "40px 24px 64px"
+     }
+    }
+   },
+   "children": [
+    {
+     "id": "ver-t",
+     "type": "core.text",
+     "props": {
+      "mode": "plaintext",
+      "plainTag": "p",
+      "text": "构建版本 v2026-09-10-c · 已适配移动端（宽度自适应收缩、触屏手势、无横向溢出）。若手机上左右能滑出空白，说明打开的是旧文件。"
+     }
+    }
+   ]
   }
  ]
 }

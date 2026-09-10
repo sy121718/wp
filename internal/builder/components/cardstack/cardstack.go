@@ -929,7 +929,7 @@ func compileDragCSS(b *core.CSSBuckets, sel string, p *Props, n int, width, heig
 	// 环形/环绕的半径与翻书的摊开位移都不能超过它，否则卡片会被推到屏幕外 ——
 	// 之前用 40vw/45vw 这种经验值，卡宽 186px 时算出来 150px，两边一加就 486px，
 	// 在 375px 的手机上直接横向溢出（实测）。用卡宽参与计算才是准的。
-	sideRoom := fmt.Sprintf("calc((100vw - %s) / 2 - 12px)", width)
+	sideRoom := fmt.Sprintf("max(0px, calc((100vw - %s) / 2 - 12px))", width)
 	// 轨道高度 = 圆周外接盒（2R + 卡高），与相邻区块不会重叠。
 	trackDecls := []string{
 		"position: relative",
