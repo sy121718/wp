@@ -461,15 +461,24 @@
             if (!track) return;
             var cards = [].slice.call(track.querySelectorAll('.sky-cardstack-card'));
             if (!cards.length) return;
+            // 记录上一轮的可见比例：observe 之后浏览器会立刻回调一次「初始状态」，
+            // 那次不该播入场动画（否则页面一加载第一屏就自己动起来，像是页面在抢戏）。
+            // 只有比例发生跃迁（用户真的翻页了）才加 is-enter；is-current 不受此限 ——
+            // 初始那屏本来就该是亮的。
+            var lastRatio = new WeakMap();
             var io = new IntersectionObserver(function (entries) {
                 entries.forEach(function (e) {
                     var c = e.target;
                     var r = e.intersectionRatio;
+                    var prev = lastRatio.get(c);
+                    lastRatio.set(c, r);
                     if (r >= 0.6) {
-                        c.classList.add('is-enter', 'is-current');
+                        c.classList.add('is-current');
+                        if (prev !== undefined) { c.classList.add('is-enter'); }
                     } else if (r > 0) {
                         c.classList.remove('is-current');
                     } else {
+                        // 完全离开：清掉入场类，往回滚能重播
                         c.classList.remove('is-current', 'is-enter');
                     }
                 });
