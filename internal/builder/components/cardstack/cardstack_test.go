@@ -188,6 +188,36 @@ func TestSlideCSS(t *testing.T) {
 	}
 }
 
+// TestSlideEffect 切换动画：复用通用动效词汇，关键帧随组件一起注入产物；缺省无动画。
+func TestSlideEffect(t *testing.T) {
+	plain := &Props{Trigger: TriggerSlide, Count: 2}
+	ps := compiled(t, nodeOf(plain, 0), plain)
+	if strings.Contains(ps, "animation-timeline: view()") {
+		t.Errorf("缺省不该带切换动画（只有位置变化）")
+	}
+
+	// 每个效果都映射到 core 那套词汇里的真实关键帧名，且关键帧被注入。
+	cases := map[string]string{
+		"fade": "wp-fade-in-bottom-right", "zoom": "wp-zoom-in-up", "flip": "wp-flip-in-x",
+		"bounce": "wp-bounce-in-up", "back": "wp-back-in-up",
+		"rotate": "wp-rotate-in-down-left", "light": "wp-light-speed-in-left",
+	}
+	for effect, kf := range cases {
+		p := &Props{Trigger: TriggerSlide, Count: 2, SlideEffect: effect}
+		s := compiled(t, nodeOf(p, 0), p)
+		for _, want := range []string{
+			"animation: " + kf + " linear both",
+			"animation-timeline: view()",
+			"animation-range: entry 0% entry 70%",
+			"@keyframes " + kf, // 词汇从 core 统一注入，组件不自己造关键帧
+		} {
+			if !strings.Contains(s, want) {
+				t.Errorf("效果 %s 缺少 %q", effect, want)
+			}
+		}
+	}
+}
+
 // TestSlideScrollbarHidden 滚动条默认隐藏（三种写法覆盖 Firefox / 旧 Edge / WebKit）。
 func TestSlideScrollbarHidden(t *testing.T) {
 	p := &Props{Trigger: TriggerSlide, Count: 3}
