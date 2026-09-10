@@ -1,6 +1,7 @@
 package core
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -282,11 +283,11 @@ func TestStickyAutoZIndex(t *testing.T) {
 	}
 }
 
-// TestHoverEffectAll 悬浮效果全量（19 词）：白名单放行 + 编译输出 + 触屏治理包裹。
+// TestHoverEffectAll 悬浮效果全量（20 词）：白名单放行 + 编译输出 + 触屏治理包裹。
 func TestHoverEffectAll(t *testing.T) {
 	all := []string{"lift", "scale", "glow", "shadow", "underline", "shine", "sink", "grow",
 		"border-glow", "text-glow", "skew", "img-zoom", "img-zoom-out", "img-gray", "img-blur",
-		"img-bright", "img-sepia", "img-rotate", "img-flip"}
+		"img-bright", "img-sepia", "img-rotate", "img-flip", "img-hue"}
 	for _, fx := range all {
 		t.Run(fx, func(t *testing.T) {
 			if err := ValidateInteraction(InteractionProps{HoverEffect: fx}); err != nil {
@@ -303,5 +304,105 @@ func TestHoverEffectAll(t *testing.T) {
 	// 非法词拒绝。
 	if err := ValidateInteraction(InteractionProps{HoverEffect: "wiggle"}); err == nil {
 		t.Errorf("非法悬浮效果应被拒绝")
+	}
+}
+
+// TestHueRotate 色相偏移（Advanced.HueRotate）：编译输出 + 边界校验 + 零值不输出。
+//
+// 校验入口是 ValidateAdvanced(a, nodeID, ids)，编译入口是 CompileAdvanced(nodeID, a, b) ——
+// 两者分离：编译只负责产出声明，合法性由校验阶段拦截。
+func TestHueRotate(t *testing.T) {
+	valid := func(deg int) error { return ValidateAdvanced(&AdvancedProps{HueRotate: deg}, "t", map[string]bool{}) }
+
+	// 正常值：输出 filter: hue-rotate(Ndeg)。
+	b := &CSSBuckets{}
+	if err := valid(90); err != nil {
+		t.Fatalf("HueRotate=90 应通过校验: %v", err)
+	}
+	CompileAdvanced("t", &AdvancedProps{HueRotate: 90}, b)
+	if css := b.String(); !strings.Contains(css, "filter: hue-rotate(90deg)") {
+		t.Errorf("缺少色相偏移声明\n%s", css)
+	}
+
+	// 负值与边界：-360 / -120 / 360 合法，且声明中的度数原样保留（含负号）。
+	for _, deg := range []int{-360, -120, 360} {
+		if err := valid(deg); err != nil {
+			t.Errorf("HueRotate=%d 应通过校验: %v", deg, err)
+		}
+		bb := &CSSBuckets{}
+		CompileAdvanced("t", &AdvancedProps{HueRotate: deg}, bb)
+		want := "filter: hue-rotate(" + strconv.Itoa(deg) + "deg)"
+		if css := bb.String(); !strings.Contains(css, want) {
+			t.Errorf("HueRotate=%d 缺少 %q\n%s", deg, want, css)
+		}
+	}
+
+	// 零值：不输出任何 filter（保持「未引用零字节输出」原则）。
+	z := &CSSBuckets{}
+	CompileAdvanced("t", &AdvancedProps{HueRotate: 0}, z)
+	if css := z.String(); strings.Contains(css, "hue-rotate") {
+		t.Errorf("HueRotate=0 不应输出 filter\n%s", css)
+	}
+
+	// 越界：|deg| > 360 拒绝。
+	for _, deg := range []int{-361, 361} {
+		if err := valid(deg); err == nil {
+			t.Errorf("HueRotate=%d 应被拒绝", deg)
+		}
+	}
+}
+
+// TestImgHueHover 色相流动（HoverEffect=img-hue）：作用于子元素 img，且包触屏治理。
+func TestImgHueHover(t *testing.T) {
+	b := &CSSBuckets{}
+	CompileInteraction(".t", InteractionProps{HoverEffect: "img-hue"}, b)
+	css := b.String()
+	wants := []string{".t img", "transition: filter .5s ease", "@media (hover: hover)", "filter: hue-rotate(120deg)"}
+	for _, want := range wants {
+		if !strings.Contains(css, want) {
+			t.Errorf("img-hue 缺少 %q\n%s", want, css)
+		}
+	}
+}
+
+// TestActiveEffect 按压反馈（ActiveEffect）：白名单放行 + 编译输出 + 触屏不包裹。
+//
+// 关键约束：按压规则走 AddActive，**不包** @media (hover: hover) ——
+// :active 在触屏上同样触发，若包进 hover:hover 移动端将失去按下反馈。
+func TestActiveEffect(t *testing.T) {
+	all := []string{"press", "sink", "pop", "glow"}
+	for _, fx := range all {
+		t.Run(fx, func(t *testing.T) {
+			if err := ValidateInteraction(InteractionProps{ActiveEffect: fx}); err != nil {
+				t.Fatalf("%s 应在按压白名单内: %v", fx, err)
+			}
+			b := &CSSBuckets{}
+			CompileInteraction(".t", InteractionProps{ActiveEffect: fx}, b)
+			css := b.String()
+			if !strings.Contains(css, ".t:active") {
+				t.Errorf("%s 缺少 :active 规则\n%s", fx, css)
+			}
+			if !strings.Contains(css, "transition: transform 0.25s ease") {
+				t.Errorf("%s 缺少过渡声明（按下回弹需平滑）\n%s", fx, css)
+			}
+			if strings.Contains(css, "@media (hover: hover)") {
+				t.Errorf("%s 不应包 hover:hover（:active 触屏同样生效）\n%s", fx, css)
+			}
+		})
+	}
+
+	// 非法词拒绝。
+	if err := ValidateInteraction(InteractionProps{ActiveEffect: "wiggle"}); err == nil {
+		t.Errorf("非法按压效果应被拒绝")
+	}
+
+	// 与 hover 并存：两条规则都存在，且 :active 块在 :hover 块之后（按压胜出）。
+	b := &CSSBuckets{}
+	CompileInteraction(".t", InteractionProps{HoverEffect: "lift", ActiveEffect: "press"}, b)
+	css := b.String()
+	hoverIdx := strings.Index(css, ".t:hover")
+	activeIdx := strings.Index(css, ".t:active")
+	if hoverIdx == -1 || activeIdx == -1 || activeIdx < hoverIdx {
+		t.Errorf("hover 与 active 并存时顺序错误（:active 应在 :hover 之后）\nhoverIdx=%d activeIdx=%d\n%s", hoverIdx, activeIdx, css)
 	}
 }

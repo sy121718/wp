@@ -42,6 +42,9 @@ const negMarginLimit = 300
 // zIndexLimit z-index 边界（负边距叠放所需的层级控制）。
 const zIndexLimit = 100
 
+// hueRotateLimit 色相偏移角度边界（滤镜度数上限，超出无视觉意义）。
+const hueRotateLimit = 360
+
 // IsSafeCSSValue CSS 值白名单校验（长度上限 500）。全组件共用的唯一入口。
 // 收紧取舍说明（M 级 url() 外联注入修复）：SafeValueRe 字符集保留括号（rgba() 等
 // 合法函数取值依赖，见容器 Overlay 控件），故不做「仅放行 ^url\(站内路径\)$」的
@@ -199,6 +202,14 @@ type AdvancedProps struct {
 	TextGradient string `json:"textGradient,omitempty" ct:"safe,maxlen=300,sec=advanced,label=渐变文字"`
 	// Opacity 不透明度 0~100（百分比）。
 	Opacity int `json:"opacity,omitempty" ct:"int,min=0,max=100,sec=layout,label=不透明度(%)"`
+	// HueRotate 色相偏移（deg，-360~360，0=不偏移）：整体调色，或做多元素色相轮转
+	// （同一结构复制多份、每份给不同角度，即可拼出色相渐变的卡片/图标墙）。
+	// 编译为 filter: hue-rotate(Ndeg)。
+	//
+	// 注意 filter 是**单值属性**：同元素上若还有其它 filter 效果，后者覆盖前者，
+	// 不会叠加。当前库内作用于同元素的 filter 只有「入场 blur-in 动画」——
+	// 动画播放期间由 keyframes 接管、结束后回落，属预期行为。
+	HueRotate int `json:"hueRotate,omitempty" ct:"int,min=-360,max=360,sec=style,label=色相偏移(deg)"`
 	// HideOn 响应式显隐开关：三端全开时编译器照常输出（保持哑与确定性），编辑器层提示。
 	HideOn HideOn `json:"hideOn,omitempty" ct:"group"`
 	// ZIndex 层级（负边距叠放控制），[-100, 100]。
@@ -358,6 +369,9 @@ func ValidateAdvanced(a *AdvancedProps, nodeID string, ids map[string]bool) (err
 	if a.ZIndex < -zIndexLimit || a.ZIndex > zIndexLimit {
 		return fmt.Errorf("节点 %s: z-index 必须在 [-%d, %d] 之间: %d", nodeID, zIndexLimit, zIndexLimit, a.ZIndex)
 	}
+	if a.HueRotate < -hueRotateLimit || a.HueRotate > hueRotateLimit {
+		return fmt.Errorf("节点 %s: 色相偏移必须在 [-%d, %d] 度之间: %d", nodeID, hueRotateLimit, hueRotateLimit, a.HueRotate)
+	}
 
 	for _, cls := range a.CustomClasses {
 		if !CustomClassRe.MatchString(cls) {
@@ -473,6 +487,11 @@ func CompileAdvanced(nodeID string, a *AdvancedProps, b *CSSBuckets) (extraClass
 	}
 	if a.Opacity > 0 && a.Opacity < 100 {
 		desktop = append(desktop, fmt.Sprintf("opacity: %s", strconv.FormatFloat(float64(a.Opacity)/100, 'f', 2, 64)))
+	}
+	// 色相偏移（filter: hue-rotate）：整体调色能力。
+	// 放在 Shadow/Surface 之后、ZIndex 之前：与它们无属性重叠，位置仅影响可读性。
+	if a.HueRotate != 0 {
+		desktop = append(desktop, fmt.Sprintf("filter: hue-rotate(%ddeg)", a.HueRotate))
 	}
 	if a.ZIndex != 0 {
 		desktop = append(desktop, fmt.Sprintf("z-index: %d", a.ZIndex))

@@ -117,6 +117,7 @@ type CSSBuckets struct {
 	tablet  []string
 	mobile  []string
 	hover   []string // 触屏治理：悬浮规则包 @media (hover: hover)（H5 sticky hover 治理）
+	active  []string // 按压规则：不包 hover:hover（:active 在触屏上同样生效，是移动端唯一可靠的按下反馈）
 	// 容器查询三桶：按「样式来源层级」分开，输出时分别包进 @layer
 	// wp-auto（自动适配：@container 尺寸查询）< wp-theme（主题档位 style 查询）<
 	// wp-local（容器/作者显式声明）——优先级由层序决定，不依赖源顺序。
@@ -232,6 +233,33 @@ func (b *CSSBuckets) AddHover(sel string, decls []string) {
 	}
 	b.seen[key] = true
 	b.hover = append(b.hover, wrapped)
+}
+
+// AddActive 按压规则专用：与 AddHover 的区别是**不包** @media (hover: hover)。
+//
+// 原因：:active 在触屏上同样触发（手指按下即激活），是移动端唯一可靠的「按下反馈」。
+// 若一并包进 hover:hover，触屏设备将完全失去按压反馈 —— 这正是此前按压态缺失
+// （effects.go 分类目录按钮 FX 里的 ◻️ 项）留下的体验缺口。
+func (b *CSSBuckets) AddActive(sel string, decls []string) {
+	filtered := make([]string, 0, len(decls))
+	for _, d := range decls {
+		if d != "" {
+			filtered = append(filtered, d)
+		}
+	}
+	if len(filtered) == 0 {
+		return
+	}
+	rule := sel + " {\n" + indentDecl(filtered) + "\n}"
+	if b.seen == nil {
+		b.seen = map[string]bool{}
+	}
+	key := "active\x00" + rule
+	if b.seen[key] {
+		return
+	}
+	b.seen[key] = true
+	b.active = append(b.active, rule)
 }
 
 // AddContainer 容器查询规则（组件级响应式）：按「组件所在最近容器」的宽度适配，
@@ -352,6 +380,10 @@ func (b *CSSBuckets) String() string {
 	// 悬浮块：触屏治理（@media hover:hover 包裹），置于最末（覆盖语义与源序一致）。
 	if len(b.hover) > 0 {
 		parts = append(parts, strings.Join(b.hover, "\n"))
+	}
+	// 按压块：置于 hover 之后（同时「悬停且按住」时按压态胜出，符合直觉）。不包 hover:hover。
+	if len(b.active) > 0 {
+		parts = append(parts, strings.Join(b.active, "\n"))
 	}
 
 	return strings.Join(parts, "\n\n")

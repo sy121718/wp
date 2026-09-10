@@ -17,9 +17,10 @@ package core
 //	 6. 动效 motion ✅ 入场×40（含 Animate.css 拆解 24 词，keyframes_animate.go）/
 //	    循环×17（含拆解 7 词）/ 悬浮×8（触屏治理 hover:hover）/ 滚动触发 / 吸顶 / ReducedMotion 无障碍
 //	    → InteractionProps + css.go/keyframes_animate.go keyframes 通用表。
-//	 7. 图片 image ✅ img-zoom 悬停缩放 / img-gray 灰度→彩色（HoverEffect）；◻️ 模糊过渡。
+//	 7. 图片 image ✅ img-zoom 悬停缩放 / img-gray 灰度→彩色 / img-hue 色相流动（HoverEffect）；
+//	    ✅ HueRotate 静态色相偏移（AdvancedProps，整体调色 / 多元素色相轮转）；◻️ 模糊过渡。
 //	 8. 按钮 button ✅ shine 光泽扫过（HoverEffect）+ lift/scale/glow 复用；
-//	    ◻️ 按压回弹（:active，组件级）。
+//	    ✅ 按压反馈 ActiveEffect（press/sink/pop/glow，:active，触屏同样生效）。
 //	 9. 表格 table ✅ RowHover 行悬停高亮（AddHover 触屏治理）；◻️ 悬停展开。
 //	10. 加载 loader ✅ core.loader 组件（spinner/dots/bars/pulse 四形态，零 JS）。
 //	11. 阴影 shadow ✅ 预设 sm/md/lg/xl/neon（霓虹发光）。

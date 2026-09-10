@@ -114,6 +114,12 @@ type InteractionProps struct {
 	// Apple 产品页式叙事）：zoom 放大 / rise 上滑 / fade 渐显。独占 animation
 	// 声明，与 Entrance / ScrollReveal / LoopEffect 互斥。旧浏览器降级为静态终态。
 	ScrollStory string `json:"scrollStory,omitempty"`
+	// ActiveEffect 按压反馈（:active 触发）："" 无 / press 按下缩小 / sink 按下下沉 /
+	// pop 按下放大 / glow 按下发光。
+	//
+	// 与 HoverEffect 的区别是触发时机：:active 在触屏上同样生效（手指按下即触发），
+	// 是移动端唯一可靠的按下反馈 —— 所以它**不**走 @media (hover: hover) 包裹。
+	ActiveEffect string `json:"activeEffect,omitempty" ct:"select,=无,press=按下缩小,sink=按下下沉,pop=按下放大,glow=按下发光,sec=motion,label=按压反馈"`
 	// HoverLift 悬浮上浮（兼容旧字段，等效 HoverEffect=lift）。
 	HoverLift bool `json:"hoverLift,omitempty"`
 	// Sticky 滚动吸顶定位。
@@ -148,8 +154,10 @@ var (
 	allowedScrollStory      = map[string]bool{"": true, "zoom": true, "rise": true, "fade": true}
 	allowedHoverEffect      = map[string]bool{"": true, "lift": true, "scale": true, "glow": true, "shadow": true, "underline": true, "shine": true,
 		"sink": true, "grow": true, "border-glow": true, "text-glow": true, "skew": true,
-		"img-zoom": true, "img-zoom-out": true, "img-gray": true, "img-blur": true, "img-bright": true, "img-sepia": true, "img-rotate": true, "img-flip": true}
-	allowedLoopEffect = map[string]bool{"": true, "pulse": true, "float": true, "drift": true, "shake": true, "jello": true, "heartbeat": true, "blob": true, "flash": true, "rubber-band": true, "swing": true, "tada": true, "wobble": true, "head-shake": true, "bounce": true, "glow": true, "spin": true}
+		"img-zoom": true, "img-zoom-out": true, "img-gray": true, "img-blur": true, "img-bright": true, "img-sepia": true, "img-rotate": true, "img-flip": true,
+		"img-hue": true}
+	allowedLoopEffect   = map[string]bool{"": true, "pulse": true, "float": true, "drift": true, "shake": true, "jello": true, "heartbeat": true, "blob": true, "flash": true, "rubber-band": true, "swing": true, "tada": true, "wobble": true, "head-shake": true, "bounce": true, "glow": true, "spin": true}
+	allowedActiveEffect = map[string]bool{"": true, "press": true, "sink": true, "pop": true, "glow": true}
 )
 
 // timingOverride 组合缓动覆盖声明：存在并接的循环动画时给出两个值
@@ -216,6 +224,12 @@ var interactionFieldChecks = []func(p InteractionProps) string{
 	func(p InteractionProps) string {
 		if !allowedHoverEffect[p.HoverEffect] {
 			return fmt.Sprintf("无效的悬浮效果: %q（lift/scale/glow/shadow/underline）", p.HoverEffect)
+		}
+		return ""
+	},
+	func(p InteractionProps) string {
+		if !allowedActiveEffect[p.ActiveEffect] {
+			return fmt.Sprintf("无效的按压反馈: %q（press/sink/pop/glow）", p.ActiveEffect)
 		}
 		return ""
 	},
@@ -335,8 +349,10 @@ func CompileInteraction(sel string, p InteractionProps, b *CSSBuckets) {
 		}
 		decls = append(decls, "position: sticky", "top: "+top)
 	}
-	// 悬浮过渡声明。
-	if hover != "" && hover != "underline" && hover != "shine" && !strings.HasPrefix(hover, "img-") {
+	// 悬浮/按压过渡声明：hover 或 active 都需要 transform/box-shadow 过渡，
+	// 否则按下后瞬间回弹、无平滑（按压效果全落在 transform/box-shadow 上）。
+	needTransition := (hover != "" && hover != "underline" && hover != "shine" && !strings.HasPrefix(hover, "img-")) || p.ActiveEffect != ""
+	if needTransition {
 		decls = append(decls, "transition: transform 0.25s ease, box-shadow 0.25s ease")
 	}
 	if len(decls) > 0 {
@@ -366,6 +382,11 @@ func CompileInteraction(sel string, p InteractionProps, b *CSSBuckets) {
 		case "img-sepia":
 			b.Add(BreakpointDesktop, sel+" img", []string{"filter: sepia(.75)", "transition: filter .4s ease"})
 			b.AddHover(sel+":hover img", []string{"filter: none"})
+		case "img-hue":
+			// 色相流动：悬停时整幅图色相旋转（纯 filter，不触发布局）。
+			// 与 Advanced.HueRotate（静态色相偏移）的区别是触发时机，不是能力。
+			b.Add(BreakpointDesktop, sel+" img", []string{"transition: filter .5s ease"})
+			b.AddHover(sel+":hover img", []string{"filter: hue-rotate(120deg)"})
 		case "img-rotate":
 			b.Add(BreakpointDesktop, sel+" img", []string{"transition: transform .35s ease"})
 			b.AddHover(sel+":hover img", []string{"transform: scale(1.08) rotate(3deg)"})
@@ -397,6 +418,12 @@ func CompileInteraction(sel string, p InteractionProps, b *CSSBuckets) {
 			b.AddHover(sel+":hover::after", []string{"width: 100%"})
 		}
 	}
+	// 按压反馈（:active，触屏同样生效，不包 hover:hover）。
+	if fx := p.ActiveEffect; fx != "" {
+		if decls := activeTriggerDecls(fx); len(decls) > 0 {
+			b.AddActive(sel+":active", decls)
+		}
+	}
 }
 
 // hoverTriggerDecls 悬浮效果 → :hover 触发态声明。
@@ -422,6 +449,22 @@ func hoverTriggerDecls(effect string) []string {
 		return []string{"transform: skewX(-4deg)"}
 	case "underline":
 		return nil // ::after 处理
+	}
+	return nil
+}
+
+// activeTriggerDecls 按压反馈触发态声明（:active）。
+// 与 hoverTriggerDecls 平行的表驱动：新增按压词只需加一行。
+func activeTriggerDecls(effect string) []string {
+	switch effect {
+	case "press":
+		return []string{"transform: scale(0.96)"}
+	case "sink":
+		return []string{"transform: translateY(2px)"}
+	case "pop":
+		return []string{"transform: scale(1.03)"}
+	case "glow":
+		return []string{"box-shadow: 0 0 0 3px rgba(59,130,246,.4), 0 0 20px rgba(59,130,246,.3)"}
 	}
 	return nil
 }
