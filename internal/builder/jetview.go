@@ -21,6 +21,7 @@ import (
 	badgePkg "go_wp/internal/builder/components/badge"
 	buttonPkg "go_wp/internal/builder/components/button"
 	cardPkg "go_wp/internal/builder/components/card"
+	cardfanPkg "go_wp/internal/builder/components/cardfan"
 	containerPkg "go_wp/internal/builder/components/container"
 	countdownPkg "go_wp/internal/builder/components/countdown"
 	counterPkg "go_wp/internal/builder/components/counter"
@@ -139,6 +140,8 @@ func nodeViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeV
 		return tableViewOf(node, topLevel, ctx)
 	case cardPkg.Type:
 		return cardViewOf(node, topLevel, ctx)
+	case cardfanPkg.Type:
+		return cardfanViewOf(node, topLevel, ctx)
 	case faqPkg.Type:
 		return faqViewOf(node, topLevel, ctx)
 	case quotePkg.Type:
@@ -519,6 +522,10 @@ func tableViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*node
 
 func cardViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeView, error) {
 	return atomViewOf(node, topLevel, ctx, cardPkg.Type, "card", cardPkg.CompileCSS, cardPkg.BuildView)
+}
+
+func cardfanViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeView, error) {
+	return atomViewOf(node, topLevel, ctx, cardfanPkg.Type, "cardfan", cardfanPkg.CompileCSS, cardfanPkg.BuildView)
 }
 
 func faqViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeView, error) {
