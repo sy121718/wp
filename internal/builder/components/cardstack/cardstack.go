@@ -487,6 +487,8 @@ func CompileCSS(node *core.Node, p *Props, cardN int, b *core.CSSBuckets) {
 	b.Add(core.BreakpointDesktop, sel, []string{
 		"position: relative",
 		"width: 100%",
+		// 触屏点按的高亮块会盖在卡片上，统一去掉（卡片自身已有按压态）。
+		"-webkit-tap-highlight-color: transparent",
 	})
 
 	switch trigger {
@@ -824,6 +826,8 @@ func compileDragCSS(b *core.CSSBuckets, sel string, p *Props, n int, width, heig
 		"width: 100%",
 		"cursor: grab",
 		"touch-action: pan-y",
+		// 触屏点按的高亮块会盖在卡片上，去掉（卡片自身已有按压态）。
+		"-webkit-tap-highlight-color: transparent",
 	})
 	b.Add(core.BreakpointDesktop, sel+".is-dragging", []string{"cursor: grabbing"})
 	// 轨道高度 = 圆周外接盒（2R + 卡高），与相邻区块不会重叠。
@@ -945,11 +949,19 @@ func compileDeckCSS(b *core.CSSBuckets, sel string, p *Props, n int, width, heig
 	tiltOut := cardW * math.Sin(float64(rot)*math.Pi/180) * maxOff * 0.35
 	trackH := cardH + 2*math.Max(24, tiltOut)
 
+	// touch-action 必须**跟着切换轴走**：切换方向的轴归 JS（否则触摸手势被浏览器
+	// 拿去滚页面，滑动切换在触屏上完全失效），另一个轴让给页面滚动。
+	touchAction := "pan-y" // 横向切换：纵向留给页面
+	if vertical {
+		touchAction = "pan-x" // 纵向切换：横向留给页面
+	}
 	b.Add(core.BreakpointDesktop, sel, []string{
 		"position: relative",
 		"width: 100%",
 		"cursor: grab",
-		"touch-action: pan-y",
+		"touch-action: " + touchAction,
+		// 触屏点按的高亮块会盖在卡片上，去掉（卡片自身已有按压态）。
+		"-webkit-tap-highlight-color: transparent",
 	})
 	b.Add(core.BreakpointDesktop, sel+".is-dragging", []string{"cursor: grabbing"})
 	b.Add(core.BreakpointDesktop, track, []string{
