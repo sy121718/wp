@@ -304,22 +304,35 @@
         roots.forEach(function (root) {
             var cards = [].slice.call(root.querySelectorAll('.wp-cardstack-card'));
             if (cards.length < 2) return;
+            var total = cards.length;
             var active = parseInt(root.getAttribute('data-cardstack-deck'), 10) || 0;
-            if (active < 0 || active >= cards.length) active = Math.floor(cards.length / 2);
+            if (active < 0 || active >= total) active = Math.floor(total / 2);
+            var loop = root.getAttribute('data-cardstack-loop') === '1';
             var drag = null;
             var moved = false;
             var SWIPE_PX = 70;   // 拖动超过这个距离才算一次切换
 
             function apply() {
+                // 循环模式下偏移要取「最短方向」：否则最后一↔第一之间会绕半圈，
+                // 卡片横穿整排飞过去。half 取半圈，取模后落在 [−half, half) 内。
+                var half = total / 2;
                 cards.forEach(function (c, i) {
                     var off = i - active;
+                    if (loop && total > 1) {
+                        off = ((off + half) % total + total) % total - half;
+                    }
                     c.style.setProperty('--wp-deck-off', String(off));
                     c.style.setProperty('--wp-deck-abs', String(Math.abs(off)));
                     c.classList.toggle('is-active', off === 0);
                 });
             }
             function go(i) {
-                var next = Math.max(0, Math.min(i, cards.length - 1));
+                var next;
+                if (loop) {
+                    next = ((i % total) + total) % total;   // 越界即绕回另一端
+                } else {
+                    next = Math.max(0, Math.min(i, total - 1));
+                }
                 if (next === active) return;
                 active = next;
                 apply();

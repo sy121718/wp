@@ -177,6 +177,8 @@ func TestDeckCSS(t *testing.T) {
 		"z-index: calc(50 - var(--wp-deck-abs, 0))",
 		".wp-c-n1 .wp-cardstack-card.is-active",
 		"transition: transform .45s cubic-bezier(.22,.61,.36,1)",
+		// 越远越淡：卡片多时不至于在两侧无限堆远（max() 不被支持时退化为全不透明）。
+		"opacity: max(0, calc(1 - var(--wp-deck-abs, 0) * 0.28))",
 	} {
 		if !strings.Contains(s, want) {
 			t.Errorf("堆叠轮播缺少 %q", want)
@@ -204,6 +206,16 @@ func TestDeckView(t *testing.T) {
 	v2, _ := BuildView(nodeOf(hover, 0), hover, &core.RenderContext{})
 	if v2.Deck {
 		t.Errorf("悬停模式不该标记 Deck")
+	}
+
+	// 循环切换：模板据此输出 data-cardstack-loop，脚本用「最短方向」算偏移。
+	looped := &Props{Trigger: TriggerDeck, Count: 5, DeckLoop: true}
+	v3, err := BuildView(nodeOf(looped, 0), looped, &core.RenderContext{})
+	if err != nil {
+		t.Fatalf("BuildView(loop): %v", err)
+	}
+	if !v3.DeckLoop {
+		t.Errorf("开启循环切换后应标记 DeckLoop")
 	}
 }
 

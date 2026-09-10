@@ -123,6 +123,8 @@ type Props struct {
 	DeckOffset int `json:"deckOffset,omitempty" ct:"slider,min=20,max=120,step=2,sec=motion,label=相邻间距(%)"`
 	// DeckRotate 堆叠轮播相邻卡的倾斜角度（deg，缺省 4；0 = 不倾斜，用默认）。
 	DeckRotate int `json:"deckRotate,omitempty" ct:"slider,min=0,max=20,step=1,sec=motion,label=相邻倾斜(deg)"`
+	// DeckLoop 堆叠轮播循环切换：滑到最后一张继续往前会回到第一张。
+	DeckLoop bool `json:"deckLoop,omitempty" ct:"bool,sec=motion,label=循环切换"`
 	// DeckScaleStep 堆叠轮播每远一张的缩放递减（%，缺省 6）。
 	DeckScaleStep int `json:"deckScaleStep,omitempty" ct:"slider,min=1,max=20,step=1,sec=motion,label=缩放递减(%)"`
 	// DragRadius 拖拽旋转的环形半径 px（0 = 自动：按卡片宽度与数量保证相邻卡片不重叠）。
@@ -878,7 +880,9 @@ func compileDeckCSS(b *core.CSSBuckets, sel string, p *Props, n int, width, heig
 			fmt.Sprintf("transform: translate(-50%%, -50%%) translateX(calc(var(--wp-deck-off, 0) * %d%%)) rotate(calc(var(--wp-deck-off, 0) * %ddeg)) scale(calc(1 - var(--wp-deck-abs, 0) * %s))",
 				offset, rot, fnum(scaleStep)),
 			"z-index: calc(50 - var(--wp-deck-abs, 0))",
-			"transition: transform .45s cubic-bezier(.22,.61,.36,1), box-shadow .3s",
+			// 越远越淡：卡片多时不至于在两侧无限堆远（max() 不被支持时退化为全不透明，不影响可用性）。
+			"opacity: max(0, calc(1 - var(--wp-deck-abs, 0) * 0.28))",
+			"transition: transform .45s cubic-bezier(.22,.61,.36,1), box-shadow .3s, opacity .3s",
 			"cursor: pointer",
 		}
 		if content {

@@ -48,6 +48,8 @@ type View struct {
 	Deck bool
 	// DeckIndex 初始主卡序号（取中间那张，两侧对称叠开）。
 	DeckIndex int
+	// DeckLoop 堆叠轮播是否循环切换（滑到头继续往前会绕回来）。
+	DeckLoop bool
 }
 
 // IsCollection 是否内容集合模式 —— 装配层据此决定「子节点模板」还是「组件自带字段映射」。
@@ -68,7 +70,7 @@ func BuildView(node *core.Node, p *Props, ctx *core.RenderContext) (View, error)
 		if err != nil {
 			return View{}, err
 		}
-		return View{Cards: cards, Collection: true, Drag: drag, Deck: deck, DeckIndex: len(cards) / 2}, nil
+		return View{Cards: cards, Collection: true, Drag: drag, Deck: deck, DeckIndex: len(cards) / 2, DeckLoop: p.DeckLoop}, nil
 	}
 
 	n := cardCount(node, p)
@@ -77,7 +79,7 @@ func BuildView(node *core.Node, p *Props, ctx *core.RenderContext) (View, error)
 		label := strconv.Itoa(i + 1)
 		cards[i] = CardView{Label: label, AriaLabel: "放大第 " + label + " 张卡片"}
 	}
-	return View{Cards: cards, HasContent: hasContent(node), Drag: drag, Deck: deck, DeckIndex: len(cards) / 2}, nil
+	return View{Cards: cards, HasContent: hasContent(node), Drag: drag, Deck: deck, DeckIndex: len(cards) / 2, DeckLoop: p.DeckLoop}, nil
 }
 
 // collectionCards 解析内容集合 → 每项一张卡（字段映射取自 props）。
