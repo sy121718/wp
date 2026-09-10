@@ -125,6 +125,9 @@ motionpath  path(预设轨迹枚举: arc|scurve|zigzag + 自定义 SVG path) + t
 
 ### 4.6 零依赖社区效果：纯 CSS 与薄 JS（2026-09 补充）
 
+> 本节记录的是**实现原理与取舍**（几何推导、收敛公式、降级策略）。
+> 组件的**选型建议与参数速查**见 `docs/02-C10-cardstack.md`。
+
 参考案例：掘金「Playing Card Hover Effects」（juejin.cn/post/7297665681016684598，作者「掘一」，仅作技术参考）扑克牌扇形展开；本项目对照样本 public/a/test.html（GSAP 滚动堆叠，§4.5 cardstack scroll-stack 模式）。
 
 机制拆解：
