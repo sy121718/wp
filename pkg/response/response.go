@@ -7,6 +7,7 @@ import (
 
 	"go_wp/pkg/enums"
 	"go_wp/pkg/i18n"
+	"go_wp/pkg/logger"
 
 	"github.com/gin-gonic/gin"
 )
@@ -48,6 +49,24 @@ func ErrorWithMessage(c *gin.Context, code int, message string) {
 		Code:    code,
 		Message: translate(c, message),
 	})
+}
+
+// msgInternalError 500 响应的统一对外文案。
+const msgInternalError = "服务器内部错误，请稍后重试"
+
+// ErrorInternal 收敛服务端内部错误：完整错误只进日志，对外统一返回通用文案。
+//
+// handler 直接写 ErrorWithMessage(c, 500, err.Error()) 会把 SQL 片段、文件路径、
+// 内部标识符原样返回给客户端 —— 既是信息泄漏，也违反「响应文案统一走 enums」的
+// 约定。收敛到本函数后，泄漏面只剩日志，且不再依赖每个 handler 自觉。
+func ErrorInternal(c *gin.Context, scene string, err error) {
+	if err != nil {
+		if scene == "" {
+			scene = "http"
+		}
+		logger.Scene(scene).Error(err, "handler 内部错误")
+	}
+	ErrorWithMessage(c, http.StatusInternalServerError, msgInternalError)
 }
 
 func ParamError(c *gin.Context, msg ...string) {

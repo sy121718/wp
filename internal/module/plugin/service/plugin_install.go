@@ -110,7 +110,12 @@ func (s *Service) Install(ctx context.Context, zipBytes []byte) (res *plugindto.
 	row.StoragePath = target
 	row.UpdatedAt = now
 	if err = s.m.Update(ctx, row); err != nil {
-		_ = s.m.Create(ctx, row)
+		// 更新失败时退回插入（例如记录被外部删掉）。原来的 `_ = s.m.Create(...)`
+		// 把插入失败也一并吞掉，结果是「注册行根本没写进库」却返回安装成功 ——
+		// 插件在列表里时有时无，且没有任何错误可查。
+		if cerr := s.m.Create(ctx, row); cerr != nil {
+			return nil, fmt.Errorf("插件注册行写入失败: %w", cerr)
+		}
 	}
 	return toResp(row, false), nil
 }

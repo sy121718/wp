@@ -326,15 +326,32 @@ func ReplaceRolePermissions(roleCode string, policies [][3]string) error {
 	policyMu.Lock()
 	defer policyMu.Unlock()
 
-	// 删除该角色所有旧 p 策略（按 sub=roleCode 过滤）
-	if _, err := e.RemoveFilteredPolicy(0, roleCode); err != nil {
-		return fmt.Errorf("删除角色旧权限失败: %w", err)
+	// 先加后删：中途失败时权限是「旧 ∪ 新」的超集，该角色下用户不会突然失去
+	// 已有权限；反过来（先删后加）一旦 AddPolicy 失败，角色会停在「旧权限已删、
+	// 新权限没写完」的残缺态，其下全部用户立即被 deny —— 保存权限失败不该等于
+	// 生产环境集体掉权限。
+	want := make(map[string]struct{}, len(policies))
+	for _, p := range policies {
+		want[p[0]+"\x00"+p[1]+"\x00"+p[2]] = struct{}{}
 	}
-
-	// 写入新权限
 	for _, p := range policies {
 		if _, err := e.AddPolicy(roleCode, p[0], p[1], p[2]); err != nil {
 			return fmt.Errorf("添加角色权限失败: %w", err)
+		}
+	}
+	existing, err := e.GetFilteredPolicy(0, roleCode)
+	if err != nil {
+		return fmt.Errorf("查询角色现有权限失败: %w", err)
+	}
+	for _, rule := range existing {
+		if len(rule) < 4 {
+			continue
+		}
+		if _, keep := want[rule[1]+"\x00"+rule[2]+"\x00"+rule[3]]; keep {
+			continue
+		}
+		if _, err := e.RemovePolicy(rule[0], rule[1], rule[2], rule[3]); err != nil {
+			return fmt.Errorf("删除角色旧权限失败: %w", err)
 		}
 	}
 
@@ -360,18 +377,33 @@ func ReplaceUserRoleBindings(userID string, roleCodes []string) error {
 	policyMu.Lock()
 	defer policyMu.Unlock()
 
-	// 删除该用户所有旧 g 策略（按 sub=userID 过滤）
-	if _, err := e.RemoveFilteredGroupingPolicy(0, userID); err != nil {
-		return fmt.Errorf("删除用户旧角色绑定失败: %w", err)
-	}
-
-	// 写入新角色绑定
+	// 先加后删（理由同 ReplaceRolePermissions）：中途失败时用户是「旧 ∪ 新」的
+	// 超集，不会出现「旧绑定已清、新绑定没写完」导致的权限真空。
+	want := make(map[string]struct{}, len(roleCodes))
 	for _, code := range roleCodes {
 		if code == "" {
 			continue
 		}
+		want[code] = struct{}{}
+	}
+	for code := range want {
 		if _, err := e.AddGroupingPolicy(userID, code); err != nil {
 			return fmt.Errorf("添加用户角色绑定失败: %w", err)
+		}
+	}
+	existing, err := e.GetFilteredGroupingPolicy(0, userID)
+	if err != nil {
+		return fmt.Errorf("查询用户现有角色绑定失败: %w", err)
+	}
+	for _, rule := range existing {
+		if len(rule) < 2 {
+			continue
+		}
+		if _, keep := want[rule[1]]; keep {
+			continue
+		}
+		if _, err := e.RemoveGroupingPolicy(rule[0], rule[1]); err != nil {
+			return fmt.Errorf("删除用户旧角色绑定失败: %w", err)
 		}
 	}
 
@@ -397,18 +429,32 @@ func ReplaceRoleUsers(roleCode string, userIDs []string) error {
 	policyMu.Lock()
 	defer policyMu.Unlock()
 
-	// 删除该角色所有旧 g 策略（按 obj=roleCode 过滤，即第 1 个字段）
-	if _, err := e.RemoveFilteredGroupingPolicy(1, roleCode); err != nil {
-		return fmt.Errorf("删除角色旧用户绑定失败: %w", err)
-	}
-
-	// 写入新用户绑定
+	// 先加后删（理由同 ReplaceRolePermissions）：中途失败时绑定是「旧 ∪ 新」的超集。
+	want := make(map[string]struct{}, len(userIDs))
 	for _, uid := range userIDs {
 		if uid == "" {
 			continue
 		}
+		want[uid] = struct{}{}
+	}
+	for uid := range want {
 		if _, err := e.AddGroupingPolicy(uid, roleCode); err != nil {
 			return fmt.Errorf("添加角色用户绑定失败: %w", err)
+		}
+	}
+	existing, err := e.GetFilteredGroupingPolicy(1, roleCode)
+	if err != nil {
+		return fmt.Errorf("查询角色现有用户绑定失败: %w", err)
+	}
+	for _, rule := range existing {
+		if len(rule) < 2 {
+			continue
+		}
+		if _, keep := want[rule[0]]; keep {
+			continue
+		}
+		if _, err := e.RemoveGroupingPolicy(rule[0], rule[1]); err != nil {
+			return fmt.Errorf("删除角色旧用户绑定失败: %w", err)
 		}
 	}
 
@@ -434,15 +480,29 @@ func ReplaceUserPermissions(userID string, policies [][3]string) error {
 	policyMu.Lock()
 	defer policyMu.Unlock()
 
-	// 删除该用户所有直接 p 策略（按 sub=userID 过滤）
-	if _, err := e.RemoveFilteredPolicy(0, userID); err != nil {
-		return fmt.Errorf("删除用户直接权限失败: %w", err)
+	// 先加后删（理由同 ReplaceRolePermissions）：中途失败时权限是「旧 ∪ 新」的超集。
+	want := make(map[string]struct{}, len(policies))
+	for _, p := range policies {
+		want[p[0]+"\x00"+p[1]+"\x00"+p[2]] = struct{}{}
 	}
-
-	// 写入新权限
 	for _, p := range policies {
 		if _, err := e.AddPolicy(userID, p[0], p[1], p[2]); err != nil {
 			return fmt.Errorf("添加用户直接权限失败: %w", err)
+		}
+	}
+	existing, err := e.GetFilteredPolicy(0, userID)
+	if err != nil {
+		return fmt.Errorf("查询用户现有直接权限失败: %w", err)
+	}
+	for _, rule := range existing {
+		if len(rule) < 4 {
+			continue
+		}
+		if _, keep := want[rule[1]+"\x00"+rule[2]+"\x00"+rule[3]]; keep {
+			continue
+		}
+		if _, err := e.RemovePolicy(rule[0], rule[1], rule[2], rule[3]); err != nil {
+			return fmt.Errorf("删除用户旧直接权限失败: %w", err)
 		}
 	}
 

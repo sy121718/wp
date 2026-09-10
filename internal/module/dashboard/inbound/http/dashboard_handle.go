@@ -24,6 +24,8 @@ import (
 	plugincontract "go_wp/internal/module/plugin/contract"
 	projectcontract "go_wp/internal/module/project/contract"
 
+	"go_wp/pkg/logger"
+
 	"go_wp/internal/builder"
 	"go_wp/internal/builder/core"
 	"go_wp/internal/middleware/builtin"
@@ -206,10 +208,15 @@ func permContextMiddleware(authz admincontract.AuthzContextService) gin.HandlerF
 		if authz != nil {
 			if v, ok := c.Get("user_id"); ok {
 				if uid, ok := v.(int64); ok && uid > 0 {
-					if codes, err := authz.EffectivePermissionCodes(c.Request.Context(), uint64(uid)); err == nil {
-						for _, code := range codes {
-							set[code] = true
-						}
+					codes, aerr := authz.EffectivePermissionCodes(c.Request.Context(), uint64(uid))
+					if aerr != nil {
+						// 失败即降级为空权限集：本页所有需要权限的按钮与菜单都会消失，
+						// 功能上等同于只读。用户看到的是「按钮不见了」，必须留痕才能定位。
+						logger.Scene("dashboard").With("userId", uid).
+							Error(aerr, "权限上下文查询失败，本页按空权限集渲染")
+					}
+					for _, code := range codes {
+						set[code] = true
 					}
 				}
 			}

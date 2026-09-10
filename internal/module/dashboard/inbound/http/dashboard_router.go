@@ -63,7 +63,10 @@ func SetupDashboardRoutes(router *gin.Engine,
 	authPages.POST("/workbench/global", handle.GlobalPanel)
 	// 修订历史列表与恢复（HTMX 化）：列表由服务端渲染，恢复走服务端覆盖保存。
 	authPages.POST("/workbench/history", handle.HistoryPanel)
-	authPages.POST("/workbench/history/restore", handle.HistoryRestore)
+	// 恢复修订会覆盖页面草稿（属写操作），必须做 Casbin 鉴权：
+	// 权限点复用「保存草稿」（与 /admin/page/translations/save 同源），
+	// 否则任何仅登录后台的低权限用户都能覆盖任意页面草稿。
+	authPages.POST("/workbench/history/restore", builtin.CasbinMiddlewareForPath("/api/page/draft/save"), handle.HistoryRestore)
 	// SEO 评分：只读分析草稿，返回评分与逐项建议。
 	authPages.POST("/workbench/seo-score", handle.SEOScore)
 	// 全局块画布预览（工作台块编辑模式 iframe 内嵌）。

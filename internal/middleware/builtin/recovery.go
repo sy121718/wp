@@ -34,6 +34,14 @@ func Recovery() gin.HandlerFunc {
 				return
 			}
 
+			// http.ErrAbortHandler 是 net/http 约定的「静默中止」哨兵：handler
+			// 主动 panic 它表示响应已不可用，标准库会静默关闭连接、不写日志。
+			// 若按普通 panic 处理，会往已断的连接写 500 响应体并污染日志。
+			if rec == http.ErrAbortHandler {
+				c.Abort()
+				return
+			}
+
 			// 连接中断类 panic 直接中止，不写响应、不记录堆栈噪音。
 			if isBrokenPipe(rec) {
 				c.Abort()

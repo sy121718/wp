@@ -86,14 +86,17 @@ func (s *Service) Uninstall(ctx context.Context, req *plugindto.UninstallReq) (e
 		}
 		return err
 	}
-	if err = s.m.Delete(ctx, req.ID); err != nil {
-		return fmt.Errorf("%s: %w", pluginenums.ErrUninstallFailed, err)
-	}
-	// L1 数据层 schema 级联清理（docs/06 §8.2：DROP SCHEMA ... CASCADE + registry 除名）。
+	// 顺序：先清 L1 schema，再删注册行。
+	// 反过来的话，DROP 失败时注册行已经消失——插件从列表里看不到，
+	// 残留 schema 再没有任何入口能触发清理，只能人工 DROP。
+	//（docs/06 §8.2：DROP SCHEMA ... CASCADE + registry 除名）
 	if row.SchemaVersion > 0 {
 		if err = s.m.Exec(ctx, dropSchemaSQL(row.PluginID)); err != nil {
 			return fmt.Errorf("%s: %w", pluginenums.ErrUninstallFailed, err)
 		}
+	}
+	if err = s.m.Delete(ctx, req.ID); err != nil {
+		return fmt.Errorf("%s: %w", pluginenums.ErrUninstallFailed, err)
 	}
 	removePluginStorage(row.PluginID)
 	return nil

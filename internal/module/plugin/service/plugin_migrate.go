@@ -11,6 +11,7 @@ package pluginservice
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -66,10 +67,18 @@ func (s *Service) migrateSchema(ctx context.Context, m *plugincomp.Manifest, fil
 				return fmt.Errorf("清理旧 schema %s: %w", schemaName, err)
 			}
 		}
+		// 锁定 search_path：迁移里未限定 schema 的对象全部落在插件自己的 schema，
+		// 不会外溢到 public（与 validatePluginStatement 的 public. 拒绝互为纵深）。
+		if err := tx.Exec("SET LOCAL search_path TO " + quoteSchemaIdent(schemaName)).Error; err != nil {
+			return fmt.Errorf("锁定 search_path 到 %s 失败: %w", schemaName, err)
+		}
 		for _, name := range names {
 			for _, stmt := range migrations.SplitStatements(string(files[name])) {
 				if stmt == "" {
 					continue
+				}
+				if verr := validatePluginStatement(stmt); verr != nil {
+					return fmt.Errorf("迁移文件 %s: %w", name, verr)
 				}
 				if err := tx.Exec(stmt).Error; err != nil {
 					return fmt.Errorf("迁移文件 %s 执行失败: %w", name, err)
@@ -78,6 +87,62 @@ func (s *Service) migrateSchema(ctx context.Context, m *plugincomp.Manifest, fil
 		}
 		return nil
 	})
+}
+
+// pluginSQLDeny 插件迁移语句的危险模式黑名单。
+//
+// 背景（全项目审查发现）：迁移 SQL 直接来自插件 zip，此前逐条 tx.Exec 无任何
+// 限制 —— 拥有 plugin:install 权限的低权管理员可借插件包执行任意 SQL（等价提权 DBA，
+// 可 INSERT sys_admin / 改 sys_casbin_rule）。插件迁移的正当需求只有「在自己的
+// plugin_<id> schema 下建表、建索引、填默认数据」，因此执行器加了两道防线：
+//  1. 执行前 SET LOCAL search_path 锁定到插件自己的 schema（未限定对象不外溢）；
+//  2. 下列模式一律拒绝（跨库破坏、角色与权限变更、文件与外部访问、系统目录直读）。
+var pluginSQLDeny = []*regexp.Regexp{
+	regexp.MustCompile(`\bdrop\s+(database|schema|tablespace)\b`),
+	regexp.MustCompile(`\b(create|alter|drop)\s+(role|user)\b`),
+	regexp.MustCompile(`\bgrant\b|\brevoke\b`),
+	regexp.MustCompile(`\balter\s+system\b`),
+	regexp.MustCompile(`\bset\s+role\b`),
+	regexp.MustCompile(`\bsecurity\s+definer\b`),
+	regexp.MustCompile(`\bcopy\b`),
+	regexp.MustCompile(`\bpg_read_file\b|\bpg_write_file\b|\bpg_ls_dir\b|\bpg_read_binary_file\b`),
+	regexp.MustCompile(`\blo_import\b|\blo_export\b`),
+	regexp.MustCompile(`\bpg_authid\b|\bpg_shadow\b|\bpg_catalog\b|\binformation_schema\b`),
+	regexp.MustCompile(`\bpublic\s*\.`),
+	regexp.MustCompile(`\bdblink\b|\bpostgres_fdw\b`),
+}
+
+// sqlBlockCommentRe 块注释（校验前剥离，避免注释文本触发误判）。
+var sqlBlockCommentRe = regexp.MustCompile(`(?s)/\*.*?\*/`)
+
+// stripSQLComments 剥离行注释与块注释，只对真正的语句文本做关键字匹配。
+func stripSQLComments(stmt string) string {
+	s := sqlBlockCommentRe.ReplaceAllString(stmt, " ")
+	var b strings.Builder
+	for _, line := range strings.Split(s, "\n") {
+		if i := strings.Index(line, "--"); i >= 0 {
+			line = line[:i]
+		}
+		b.WriteString(line)
+		b.WriteByte('\n')
+	}
+	return b.String()
+}
+
+// validatePluginStatement 校验单条插件迁移语句，命中黑名单即拒绝执行。
+func validatePluginStatement(stmt string) error {
+	lower := strings.ToLower(stripSQLComments(stmt))
+	for _, re := range pluginSQLDeny {
+		if re.MatchString(lower) {
+			return fmt.Errorf("迁移语句被安全策略拒绝（命中 %s）：插件迁移只能操作自己的 schema", re.String())
+		}
+	}
+	return nil
+}
+
+// quoteSchemaIdent 双引号包裹 schema 标识符（ID 经 plugincomp 白名单校验，无注入面）。
+func quoteSchemaIdent(name string) string {
+	return `"` + name + `"`
 }
 
 // collectMigrationSQL 收集迁移目录下 *.sql 文件的键，按字典序排序返回。

@@ -153,8 +153,11 @@ func main() {
 		c.Redirect(http.StatusFound, "/builder")
 	})
 
-	addr := ":8080"
-	logger.Scene("build").With("addr", addr).Info("构建器启动")
+	// 只监听回环地址：本工具无认证、无 CSRF，且 /builder/generate 可写文件系统，
+	// 绑定全网卡会让同网段任意主机直接调用（误部署即存储型 XSS 宿主）。
+	// 需要远程访问时应在前面加带认证的反向代理，而不是放开监听。
+	addr := "127.0.0.1:8080"
+	logger.Scene("build").With("addr", addr).Info("构建器启动（仅本机可访问）")
 	if err := http.ListenAndServe(addr, router); err != nil {
 		logger.Scene("build").Error(err, "构建器启动失败")
 		log.Fatal("启动失败")
