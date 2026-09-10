@@ -25,6 +25,8 @@ const a11yPageJSON = `{
       {"id": "p1", "type": "core.heading", "props": {"text": "面板一", "tag": "h3"}},
       {"id": "p2", "type": "core.heading", "props": {"text": "面板二", "tag": "h3"}}
     ]},
+    {"id": "card1", "type": "core.card", "props": {"title": "二级标题卡片", "text": "正文", "titleTag": "h2"}},
+    {"id": "info1", "type": "core.infobox", "props": {"title": "信息框", "text": "说明文字", "mediaImage": "/a.jpg", "mediaAlt": "示例图"}},
     {"id": "form1", "type": "core.form", "props": {"submitLabel": "提交", "method": "post", "fields": [
       {"type": "text", "label": "姓名", "name": "name"},
       {"type": "textarea", "label": "留言", "name": "msg"},

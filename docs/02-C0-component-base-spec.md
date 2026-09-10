@@ -149,3 +149,28 @@ height: 100dvh;   /* 新 —— 后写，覆盖前者 */
 - 窄视口下在浏览器控制台确认**没有横向溢出**：
   `document.documentElement.scrollWidth === clientWidth`，
   且不存在 `getBoundingClientRect().right > clientWidth` 的元素。
+
+### 6.10 无障碍基线（每个组件都必须满足）
+
+产物是静态 HTML，读屏与键盘用户直接面对它。以下约束由
+`public/test/builder/unit/a11y_audit_test.go` **自动守着**（遍历全部组件编译产物，新组件自动纳入；
+逆向验证过：去掉某个组件的 `alt` 会立刻报红）：
+
+| # | 规则 | 为什么 |
+|---|---|---|
+| 1 | `<img>` 必须有 `alt` 属性（空值合法 = 装饰性图片） | 缺属性时读屏念文件名 |
+| 2 | `<button>` 必须有可访问名（文本或 `aria-label`） | 图标按钮否则只念「按钮」 |
+| 3 | `<label>` 内不得出现 `<a>` / `<button>` | 规范禁止；点击不触发放大靠浏览器隐式规则，不可依赖 |
+| 4 | 文本类控件必须有关联 label（包裹或 `for`/`id`） | 否则读屏只念「编辑框」，不念字段名 |
+| 5 | `role="tab"` 必须挂在可聚焦元素上 | `<label>` 不可聚焦，键盘进不去 |
+| 6 | 禁止：重复 id、正 `tabindex`、`aria-hidden` 子树里的可聚焦元素、`<ul>` 直接子元素非 `<li>` | 分别破坏 AT 关联或 Tab 顺序 |
+| 7 | 零 JS 方案**不得写静态 ARIA 状态**（如 `aria-selected`） | 状态不跟着切换走就是假状态，比不写更糟 |
+
+**键盘可达是硬指标**：任何「零 JS 交互」都要能用键盘走完 —— 原生 radio group 的方向键、
+checkbox 的空格、`<details>` 的 Enter。隐藏控件用 **sr-only**（`position:absolute` + 1px +
+`clip-path: inset(50%)`），**不要用 `display:none` / `hidden`** —— 那会把控件踢出键盘序列，
+触屏之外全废（tabs 与 nav 折叠菜单都踩过这个坑）。
+
+**实际验证方式**：`a11y_page_fixture_test.go` 会生成含 tabs / nav / form / card / infobox 的
+完整走查页（`/tmp/a11y-page.html`），用 CDP 发**真实按键事件**验证方向键切换、空格展开、
+`input.labels` 关联 —— 组件级断言只能证明标记结构对，证明不了键盘真的走得通。

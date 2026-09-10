@@ -122,13 +122,23 @@ func auditHTML(htmlText string) []string {
 	if err != nil {
 		return []string{"HTML 解析失败: " + err.Error()}
 	}
-	// 先收集所有 label[for] 的目标 id，用于控件关联检查。
+	// 先收集 label[for] 的目标 id（控件关联检查）与 id 使用情况（重复 id 检查）。
 	labeled := map[string]bool{}
+	seenID := map[string]bool{}
+	var problems []string
 	var collect func(*xhtml.Node)
 	collect = func(n *xhtml.Node) {
-		if n.Type == xhtml.ElementNode && n.Data == "label" {
-			if id := attr(n, "for"); id != "" {
-				labeled[id] = true
+		if n.Type == xhtml.ElementNode {
+			if n.Data == "label" {
+				if id := attr(n, "for"); id != "" {
+					labeled[id] = true
+				}
+			}
+			if id := attr(n, "id"); id != "" {
+				if seenID[id] {
+					problems = append(problems, "重复 id="+id)
+				}
+				seenID[id] = true
 			}
 		}
 		for c := n.FirstChild; c != nil; c = c.NextSibling {
@@ -137,7 +147,6 @@ func auditHTML(htmlText string) []string {
 	}
 	collect(root)
 
-	var problems []string
 	var check func(*xhtml.Node)
 	check = func(n *xhtml.Node) {
 		if n.Type == xhtml.ElementNode {
@@ -166,6 +175,27 @@ func auditHTML(htmlText string) []string {
 				if !inLabel(n) && !labeled[attr(n, "id")] {
 					problems = append(problems, "<"+n.Data+"> 没有关联 label")
 				}
+			case "ul", "ol":
+				// 列表的直接子元素只能是 <li>：中间夹一层 div 会被读屏当成
+				// 「列表里没有项目」，项目数播报直接失效。
+				for c := n.FirstChild; c != nil; c = c.NextSibling {
+					if c.Type == xhtml.ElementNode && c.Data != "li" && c.Data != "template" && c.Data != "script" {
+						problems = append(problems, "<"+n.Data+"> 的直接子元素出现 <"+c.Data+">（只能是 li）")
+					}
+				}
+			case "a":
+				// 没有 href 的 <a> 既不可聚焦也不是链接（除非显式给了 role 当自定义控件用）。
+				if !hasAttr(n, "href") && !hasAttr(n, "role") {
+					problems = append(problems, "<a> 没有 href（不可聚焦、语义不明）")
+				}
+			}
+			// aria-hidden 子树里放可聚焦元素是最常见的 a11y 反模式：读屏跳过它，键盘却能进去。
+			if attr(n, "aria-hidden") == "true" && hasFocusable(n) {
+				problems = append(problems, "aria-hidden=true 的 <"+n.Data+"> 子树里有可聚焦元素")
+			}
+			// 正 tabindex 会打乱全局 Tab 顺序（WAI-ARIA 明确不推荐）。
+			if ti := attr(n, "tabindex"); ti != "" && ti != "0" && ti != "-1" {
+				problems = append(problems, "tabindex="+ti+" 为正值（打乱 Tab 顺序）")
 			}
 			if attr(n, "role") == "tab" && n.Data != "button" && n.Data != "input" && !hasAttr(n, "tabindex") {
 				problems = append(problems, "role=tab 挂在不可聚焦的 <"+n.Data+"> 上")
@@ -211,6 +241,29 @@ func innerInteractive(n *xhtml.Node) string {
 		}
 	}
 	return ""
+}
+
+// hasFocusable 判断子树里是否存在可聚焦元素（链接、表单控件、显式 tabindex）。
+func hasFocusable(n *xhtml.Node) bool {
+	for c := n.FirstChild; c != nil; c = c.NextSibling {
+		if c.Type == xhtml.ElementNode {
+			switch c.Data {
+			case "a":
+				if hasAttr(c, "href") {
+					return true
+				}
+			case "button", "input", "select", "textarea":
+				return true
+			}
+			if ti := attr(c, "tabindex"); ti != "" && ti != "-1" {
+				return true
+			}
+			if hasFocusable(c) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // inLabel 判断节点是否被 label 包裹（隐式关联）。
