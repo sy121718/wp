@@ -65,7 +65,7 @@ func (m *Model) GetBySlug(ctx context.Context, entityType, slug string) (e *Enti
 
 // List 按类型分页列表（更新时间倒序）。
 func (m *Model) List(ctx context.Context, entityType string, limit, offset int) (list []*Entity, err error) {
-	q := m.db.WithContext(ctx).Order("updated_at DESC")
+	q := m.db.WithContext(ctx).Order("updated_at DESC, id DESC")
 	if entityType != "" {
 		q = q.Where("entity_type = ?", entityType)
 	}

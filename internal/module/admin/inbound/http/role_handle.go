@@ -17,7 +17,7 @@ func (h *Handle) RoleList(c *gin.Context) {
 	}
 	res, err := h.role.RoleList(c.Request.Context(), &req)
 	if err != nil {
-		r.ErrorWithMessage(c, 500, err.Error())
+		r.ErrorInternal(c, "admin", err)
 		return
 	}
 	r.Success(c, res)

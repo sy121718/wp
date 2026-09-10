@@ -12,7 +12,7 @@ import (
 func (h *Handle) DeptTree(c *gin.Context) {
 	list, err := h.dept.DeptTree(c.Request.Context())
 	if err != nil {
-		r.ErrorWithMessage(c, 500, err.Error())
+		r.ErrorInternal(c, "admin", err)
 		return
 	}
 	r.Success(c, list)
@@ -84,7 +84,7 @@ func (h *Handle) DeptUserList(c *gin.Context) {
 	}
 	res, err := h.dept.DeptUserList(c.Request.Context(), &req)
 	if err != nil {
-		r.ErrorWithMessage(c, 500, err.Error())
+		r.ErrorInternal(c, "admin", err)
 		return
 	}
 	r.Success(c, res)

@@ -18,7 +18,7 @@ func (h *Handle) MenuTree(c *gin.Context) {
 
 	list, err := h.menu.MenuTree(c.Request.Context(), &req)
 	if err != nil {
-		r.ErrorWithMessage(c, 500, err.Error())
+		r.ErrorInternal(c, "admin", err)
 		return
 	}
 	r.Success(c, list)

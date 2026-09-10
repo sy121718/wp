@@ -57,7 +57,7 @@ func (h *Handle) AdminList(c *gin.Context) {
 
 	res, err := h.admin.AdminList(c.Request.Context(), &req)
 	if err != nil {
-		r.ErrorWithMessage(c, 500, err.Error())
+		r.ErrorInternal(c, "admin", err)
 		return
 	}
 
@@ -85,7 +85,7 @@ func (h *Handle) AdminLogin(c *gin.Context) {
 		SessionID: res.SessionID,
 		IssuedAt:  res.IssuedAt,
 	}, res.RememberMe); err != nil {
-		r.ErrorWithMessage(c, 500, err.Error())
+		r.ErrorInternal(c, "admin", err)
 		return
 	}
 
@@ -94,7 +94,7 @@ func (h *Handle) AdminLogin(c *gin.Context) {
 	// token，后台所有 POST 会被 CSRF 中间件 403。
 	csrfToken, err := builtin.RotateCSRFToken(c)
 	if err != nil {
-		r.ErrorWithMessage(c, 500, err.Error())
+		r.ErrorInternal(c, "admin", err)
 		return
 	}
 
@@ -114,13 +114,13 @@ func (h *Handle) AdminLogout(c *gin.Context) {
 		return
 	}
 	if err := h.admin.AdminLogout(c.Request.Context(), uint64(uid)); err != nil {
-		r.ErrorWithMessage(c, 500, err.Error())
+		r.ErrorInternal(c, "admin", err)
 		return
 	}
 
 	// 清空 cookie session（Redis 会话已在 service 层删除）
 	if err := auth.ClearSession(c); err != nil {
-		r.ErrorWithMessage(c, 500, err.Error())
+		r.ErrorInternal(c, "admin", err)
 		return
 	}
 
@@ -144,7 +144,7 @@ func (h *Handle) AdminProfile(c *gin.Context) {
 
 	res, err := h.admin.AdminProfile(c.Request.Context(), uint64(uid))
 	if err != nil {
-		r.ErrorWithMessage(c, 500, err.Error())
+		r.ErrorInternal(c, "admin", err)
 		return
 	}
 
@@ -160,7 +160,7 @@ func (h *Handle) AdminCreate(c *gin.Context) {
 	}
 	res, err := h.admin.AdminCreate(c.Request.Context(), &req)
 	if err != nil {
-		r.ErrorWithMessage(c, 500, err.Error())
+		r.ErrorInternal(c, "admin", err)
 		return
 	}
 	r.Success(c, res)
@@ -175,7 +175,7 @@ func (h *Handle) AdminEdit(c *gin.Context) {
 	}
 	res, err := h.admin.AdminEdit(c.Request.Context(), &req)
 	if err != nil {
-		r.ErrorWithMessage(c, 500, err.Error())
+		r.ErrorInternal(c, "admin", err)
 		return
 	}
 	r.Success(c, res)
@@ -191,7 +191,7 @@ func (h *Handle) AdminDetail(c *gin.Context) {
 
 	res, err := h.admin.AdminDetail(c.Request.Context(), &req)
 	if err != nil {
-		r.ErrorWithMessage(c, 500, err.Error())
+		r.ErrorInternal(c, "admin", err)
 		return
 	}
 
@@ -216,7 +216,7 @@ func (h *Handle) AdminDelete(c *gin.Context) {
 
 	res, err := h.admin.AdminDelete(c.Request.Context(), &req)
 	if err != nil {
-		r.ErrorWithMessage(c, 500, err.Error())
+		r.ErrorInternal(c, "admin", err)
 		return
 	}
 
@@ -232,7 +232,7 @@ func (h *Handle) AdminRoleList(c *gin.Context) {
 	}
 	res, err := h.admin.AdminRoleList(c.Request.Context(), &req)
 	if err != nil {
-		r.ErrorWithMessage(c, 500, err.Error())
+		r.ErrorInternal(c, "admin", err)
 		return
 	}
 	r.Success(c, res)
@@ -270,7 +270,7 @@ func (h *Handle) AdminMenuList(c *gin.Context) {
 	}
 	res, err := h.admin.AdminMenuList(c.Request.Context(), &req)
 	if err != nil {
-		r.ErrorWithMessage(c, 500, err.Error())
+		r.ErrorInternal(c, "admin", err)
 		return
 	}
 	r.Success(c, res)
@@ -305,7 +305,7 @@ func (h *Handle) AdminRoutes(c *gin.Context) {
 	}
 	res, err := h.admin.AdminRoutes(c.Request.Context(), uint64(uid), r.RequestLanguage(c))
 	if err != nil {
-		r.ErrorWithMessage(c, 500, err.Error())
+		r.ErrorInternal(c, "admin", err)
 		return
 	}
 	r.Success(c, res)

@@ -18,7 +18,7 @@ func (h *Handle) PermList(c *gin.Context) {
 
 	res, err := h.perm.PermList(c.Request.Context(), &req)
 	if err != nil {
-		r.ErrorWithMessage(c, 500, err.Error())
+		r.ErrorInternal(c, "admin", err)
 		return
 	}
 	r.Success(c, res)
@@ -50,7 +50,7 @@ func (h *Handle) PermOptions(c *gin.Context) {
 
 	res, err := h.perm.PermOptions(c.Request.Context(), &req)
 	if err != nil {
-		r.ErrorWithMessage(c, 500, err.Error())
+		r.ErrorInternal(c, "admin", err)
 		return
 	}
 	r.Success(c, res)

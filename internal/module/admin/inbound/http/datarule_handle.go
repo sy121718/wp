@@ -17,7 +17,7 @@ func (h *Handle) RuleList(c *gin.Context) {
 	}
 	res, err := h.rule.RuleList(c.Request.Context(), &req)
 	if err != nil {
-		r.ErrorWithMessage(c, 500, err.Error())
+		r.ErrorInternal(c, "admin", err)
 		return
 	}
 	r.Success(c, res)
@@ -84,7 +84,7 @@ func (h *Handle) RuleDelete(c *gin.Context) {
 func (h *Handle) RuleSchemaList(c *gin.Context) {
 	res, err := h.rule.RuleSchemaList(c.Request.Context())
 	if err != nil {
-		r.ErrorWithMessage(c, 500, err.Error())
+		r.ErrorInternal(c, "admin", err)
 		return
 	}
 	r.Success(c, res)
@@ -118,7 +118,7 @@ func (h *Handle) RuleAssignmentList(c *gin.Context) {
 	}
 	res, err := h.rule.RuleAssignmentList(c.Request.Context(), &req)
 	if err != nil {
-		r.ErrorWithMessage(c, 500, err.Error())
+		r.ErrorInternal(c, "admin", err)
 		return
 	}
 	r.Success(c, res)
