@@ -108,17 +108,14 @@ func (s *Service) Replace(ctx context.Context, id uint64, file *multipart.FileHe
 		return nil, fmt.Errorf("%s: %w", mediaenums.ErrReplaceFailed, err)
 	}
 
-	gen, err := s.am.IncrementGeneration(ctx, id)
-	if err != nil {
-		return nil, err
-	}
+	// generation 自增与 md5/大小/MIME 回填走**同一条 UPDATE**（model.ReplaceContentMeta）：
+	// 分两条 SQL 会留下「磁盘已是新内容、DB 仍标旧 md5 与旧代数」的中间态 ——
+	// 之后同内容上传会命中「内容未变」幂等分支返回错误现状，且没有自愈路径。
 	mimeType := file.Header.Get("Content-Type")
-	if err := s.am.AttachmentUpdate(ctx, id, map[string]any{
-		"md5":         md5hex,
-		"file_size":   staged.Size,
-		"mime_type":   mimeType,
-		"update_time": time.Now(),
-	}); err != nil {
+	gen, err := s.am.ReplaceContentMeta(ctx, id, md5hex, staged.Size, mimeType, time.Now())
+	if err != nil {
+		logger.Scene("media").With("attachment_id", id).
+			Error(err, "换图元数据回填失败：磁盘内容与 DB 元数据可能不一致，需人工核对")
 		return nil, err
 	}
 

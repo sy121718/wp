@@ -67,6 +67,12 @@ func (s *Service) UpdateCategory(ctx context.Context, req *mediadto.CategoryUpda
 	if err != nil {
 		return errors.New("分类不存在")
 	}
+	// 查重基准必须是**移动后**的父级：一次请求同时改名 + 移动时按旧父级查重会漏检
+	// 新父级下的同名分类（无 DB 唯一约束兜底），破坏「同父级唯一名」约束。
+	newParent := current.ParentID
+	if req.ParentID != nil {
+		newParent = *req.ParentID
+	}
 	updates := map[string]any{"update_time": time.Now()}
 	if req.CategoryName != nil && strings.TrimSpace(*req.CategoryName) != "" {
 		name := strings.TrimSpace(*req.CategoryName)
@@ -76,7 +82,7 @@ func (s *Service) UpdateCategory(ctx context.Context, req *mediadto.CategoryUpda
 			return err
 		}
 		for _, c := range siblings {
-			if c.ID != req.ID && c.ParentID == current.ParentID && strings.EqualFold(c.CategoryName, name) {
+			if c.ID != req.ID && c.ParentID == newParent && strings.EqualFold(c.CategoryName, name) {
 				return errors.New("同级分类下已存在同名分类")
 			}
 		}
@@ -86,7 +92,6 @@ func (s *Service) UpdateCategory(ctx context.Context, req *mediadto.CategoryUpda
 		updates["sort_order"] = *req.SortOrder
 	}
 	if req.ParentID != nil {
-		newParent := *req.ParentID
 		if newParent == req.ID {
 			return errors.New("父级不能是自己")
 		}

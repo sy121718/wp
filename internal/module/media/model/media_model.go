@@ -139,13 +139,19 @@ func (m *AttachmentModel) GetByMD5AndType(ctx context.Context, md5 string, fileT
 	return &e, nil
 }
 
-// IncrementGeneration 换图后把 generation 原子 +1，返回新代数。
-// 单条 UPDATE ... RETURNING，避免「读-改-写」在并发换图下丢更新。
-func (m *AttachmentModel) IncrementGeneration(ctx context.Context, id uint64) (int, error) {
+// ReplaceContentMeta 换图后的元数据回填：generation 自增与 md5/大小/MIME 一次写完。
+//
+// 为什么不能分两条 SQL：IncrementGeneration 与 AttachmentUpdate 之间若失败/进程退出，
+// 磁盘已是新内容而 DB 仍标旧 md5 与旧代数 —— 之后同内容上传会命中「内容未变」幂等分支
+// 返回错误现状，去重键与依赖重建判定双双失真，且没有自愈路径。
+// 单条 UPDATE 把这个窗口压到一次语句提交，并用 RETURNING 取回新代数。
+func (m *AttachmentModel) ReplaceContentMeta(ctx context.Context, id uint64, md5hex string, size int64, mimeType string, updatedAt time.Time) (int, error) {
 	var gen int
-	err := m.db.WithContext(ctx).
-		Raw("UPDATE "+tableNameSysAttachment+" SET generation = generation + 1 WHERE id = ? RETURNING generation", id).
-		Scan(&gen).Error
+	err := m.db.WithContext(ctx).Raw(
+		"UPDATE "+tableNameSysAttachment+
+			" SET generation = generation + 1, md5 = ?, file_size = ?, mime_type = ?, update_time = ?"+
+			" WHERE id = ? RETURNING generation",
+		md5hex, size, mimeType, updatedAt, id).Scan(&gen).Error
 	if err != nil {
 		return 0, err
 	}

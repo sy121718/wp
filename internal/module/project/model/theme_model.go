@@ -74,14 +74,25 @@ func (m *Model) UpdateTheme(ctx context.Context, id, name string, settings json.
 }
 
 // ActivateTheme 激活主题:同工程其余取消激活(事务保证单套激活)。
+//
+// 第二步必须检查受影响行数：若目标主题在 service 的 GetTheme 之后被并发删除，
+// UPDATE 匹配 0 行且不报错，事务照样提交 —— 结果是整个工程 is_active 全 false，
+// 而 API 回报「激活成功」（状态与响应不符）。返回 gorm.ErrRecordNotFound 由 service 判型。
 func (m *Model) ActivateTheme(ctx context.Context, projectID, themeID string, updatedAt time.Time) (err error) {
 	return m.DB(ctx).Transaction(func(tx *gorm.DB) error {
 		if err = tx.Model(&ThemeEntity{}).Where("project_id = ?", projectID).
 			Update("is_active", false).Error; err != nil {
 			return err
 		}
-		return tx.Model(&ThemeEntity{}).Where("id = ? AND project_id = ?", themeID, projectID).
-			Updates(map[string]any{"is_active": true, "updated_at": updatedAt}).Error
+		res := tx.Model(&ThemeEntity{}).Where("id = ? AND project_id = ?", themeID, projectID).
+			Updates(map[string]any{"is_active": true, "updated_at": updatedAt})
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return gorm.ErrRecordNotFound
+		}
+		return nil
 	})
 }
 

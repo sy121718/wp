@@ -160,7 +160,15 @@ func (s *Service) ActivateTheme(ctx context.Context, req *projectdto.ThemeActiva
 		}
 		return err
 	}
-	return s.model.ActivateTheme(ctx, entity.ProjectID, entity.ID, time.Now().UTC())
+	// 事务内第二步「激活目标」影响 0 行 = 目标在 GetTheme 之后被并发删除，
+	// 此时必须回滚（否则全工程落入无激活主题），并映射成「主题不存在」。
+	if err = s.model.ActivateTheme(ctx, entity.ProjectID, entity.ID, time.Now().UTC()); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrThemeNotFound
+		}
+		return err
+	}
+	return nil
 }
 
 // DeleteTheme 删除主题(激活态拒绝)。

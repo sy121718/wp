@@ -122,3 +122,46 @@ func TestThemeDeleteGuardsActive(t *testing.T) {
 		t.Fatalf("删除后应只剩一个主题: %+v", themes)
 	}
 }
+
+// TestActivateThemeMissingTargetKeepsOtherActive 激活目标不存在时必须报错并回滚。
+//
+// 事务第一步会把同工程其余主题全部取消激活；若第二步 UPDATE 匹配 0 行还不报错
+// （目标在 GetTheme 之后被并发删除），事务照样提交 —— 整个工程 is_active 全 false，
+// 而 API 回报「激活成功」。这里断言失败后仍恰好有一套激活主题，且原主题没被抹掉。
+func TestActivateThemeMissingTargetKeepsOtherActive(t *testing.T) {
+	svc := newProjectThemeService(t)
+	ctx := context.Background()
+
+	project, err := svc.Create(ctx, &projectdto.CreateReq{Name: "站点"})
+	if err != nil {
+		t.Fatalf("创建工程失败: %v", err)
+	}
+	first, err := svc.CreateTheme(ctx, &projectdto.ThemeCreateReq{ProjectID: project.ID, Name: "主题A"})
+	if err != nil {
+		t.Fatalf("创建主题失败: %v", err)
+	}
+
+	const missing = "00000000-0000-0000-0000-000000000000"
+	if err := svc.ActivateTheme(ctx, &projectdto.ThemeActivateReq{ID: missing}); err == nil {
+		t.Errorf("激活不存在的主题必须返回错误")
+	}
+
+	themes, err := svc.ListThemes(ctx, project.ID)
+	if err != nil {
+		t.Fatalf("ListThemes: %v", err)
+	}
+	active := 0
+	for _, th := range themes {
+		if th.IsActive {
+			active++
+		}
+	}
+	if active != 1 {
+		t.Errorf("激活失败后仍应恰好有一套激活主题，got %d：%+v", active, themes)
+	}
+	for _, th := range themes {
+		if th.ID == first.ID && !th.IsActive {
+			t.Errorf("原激活主题被事务第一步抹掉了：%+v", th)
+		}
+	}
+}

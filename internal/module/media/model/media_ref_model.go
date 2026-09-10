@@ -74,15 +74,18 @@ func (m *AttachmentModel) HasRef(ctx context.Context, id uint64, kind string, re
 	return n > 0, nil
 }
 
-// AddRef 追加一条引用（同 kind+id 已存在时不重复追加），返回是否新增。
-// 单条 UPDATE：refs 缺失或非数组时先归一为数组再拼接。
+// AddRef 追加一条引用（同 kind+id 已存在时不重复追加），返回本次是否真的新增。
+//
+// 判重与追加必须在**同一条 SQL** 里完成：原先「HasRef 查一次 → UPDATE 追加」是
+// check-then-act，两个页面并发构建且引用同一张图时双方都查到 false，各自追加
+// → refs 出现重复项（summarizeRefs 计数虚高），与本文件头「全部更新走单条 SQL」
+// 的声明不符。改成 WHERE NOT (extra_info @> ?) 守卫后，并发的第二次 UPDATE
+// 匹配 0 行，由 RowsAffected 判定「本次是否新增」（行锁天然把两次 UPDATE 串行化）。
+// extra_info 为 SQL NULL 时 `@>` 返回 NULL、`NOT NULL` 仍为 NULL，故必须显式放行 IS NULL。
 func (m *AttachmentModel) AddRef(ctx context.Context, id uint64, ref AttachmentRef) (bool, error) {
-	exists, err := m.HasRef(ctx, id, ref.Kind, ref.ID)
+	match, err := refMatchJSON(ref.Kind, ref.ID)
 	if err != nil {
 		return false, err
-	}
-	if exists {
-		return false, nil
 	}
 	payload, err := json.Marshal(ref)
 	if err != nil {
@@ -96,10 +99,13 @@ func (m *AttachmentModel) AddRef(ctx context.Context, id uint64, ref AttachmentR
                  THEN (CASE WHEN jsonb_typeof(extra_info) = 'object' THEN extra_info ELSE '{}'::jsonb END) -> 'refs' END,
             '[]'::jsonb
         ) || ?::jsonb, true)`
-	if err := m.attrDB(ctx).Where("id = ?", id).Update("extra_info", gorm.Expr(setRefs, string(payload))).Error; err != nil {
-		return false, err
+	res := m.attrDB(ctx).
+		Where("id = ? AND (extra_info IS NULL OR NOT (extra_info @> ?::jsonb))", id, match).
+		Update("extra_info", gorm.Expr(setRefs, string(payload)))
+	if res.Error != nil {
+		return false, res.Error
 	}
-	return true, nil
+	return res.RowsAffected > 0, nil
 }
 
 // RemoveRef 移除指定 kind+id 的引用（不存在时为 no-op），返回是否移除。
