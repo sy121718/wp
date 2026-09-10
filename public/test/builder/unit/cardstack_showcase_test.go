@@ -112,8 +112,11 @@ func TestCardstackShowcase(t *testing.T) {
 	for _, want := range []string{
 		"scroll-snap-type: y mandatory", "scroll-snap-type: x mandatory",
 		"scrollbar-width: none", "::-webkit-scrollbar",
-		"animation: sky-flip-in-x linear both, sky-loop-glow 2s ease-in-out infinite",
-		"animation-range: entry 0% entry 70%, cover 25% cover 75%",
+		// slide 的动画由脚本切类触发（不能用 view()：内嵌滚动容器下不驱动动画）
+		".sky-cardstack-card.is-enter",
+		".sky-cardstack-card.is-current",
+		"animation: sky-flip-in-x 800ms",
+		"animation: sky-loop-glow 2s ease-in-out infinite",
 	} {
 		if !strings.Contains(css, want) {
 			t.Errorf("全屏分页缺少 %q", want)

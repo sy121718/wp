@@ -188,38 +188,47 @@ func TestSlideCSS(t *testing.T) {
 	}
 }
 
-// TestSlideHighlight 当前屏高亮：与切换动画**并列**成两条 animation，
-// 各自的 timeline / range 独立 —— 所以不需要把高亮挪到伪元素上。
+// TestSlideHighlight 当前屏高亮：挂在脚本切换的 .is-current 类上（普通 animation）。
+//
+// 为什么不用 animation-timeline: view()：slide 的轨道是**内嵌滚动容器**，实测 view()
+// 在该场景下不驱动动画 —— 时间线对象创建成功、进度随滚动变化，但元素计算值恒定不变。
+// 这条断言同时守住「别再退回 view() 写法」。
 func TestSlideHighlight(t *testing.T) {
 	hp := &Props{Trigger: TriggerSlide, Count: 2, SlideHighlight: "glow"}
 	hs := compiled(t, nodeOf(hp, 0), hp)
 	for _, want := range []string{
 		"animation: sky-loop-glow 2s ease-in-out infinite",
-		"animation-range: cover 25% cover 75%", // 卡片基本占满视口时才亮
 		"@keyframes sky-loop-glow",
+		".sky-cardstack-card.is-current", // 由脚本按可见比例切换
 	} {
 		if !strings.Contains(hs, want) {
 			t.Errorf("当前屏高亮缺少 %q", want)
 		}
 	}
 
-	// 两者同时开：并列成两条，互不覆盖。
+	// 两者同时开：各挂各的类，互不覆盖。
 	bp := &Props{Trigger: TriggerSlide, Count: 2, SlideEffect: "flip", SlideHighlight: "glow"}
 	bs := compiled(t, nodeOf(bp, 0), bp)
 	for _, want := range []string{
-		"animation: sky-flip-in-x linear both, sky-loop-glow 2s ease-in-out infinite",
-		"animation-timeline: view(), view()",
-		"animation-range: entry 0% entry 70%, cover 25% cover 75%",
+		".sky-cardstack-card.is-enter",
+		".sky-cardstack-card.is-current",
+		"animation: sky-flip-in-x 800ms cubic-bezier(.22,.61,.36,1) both",
+		"animation: sky-loop-glow 2s ease-in-out infinite",
 	} {
 		if !strings.Contains(bs, want) {
-			t.Errorf("切换动画 + 当前屏高亮并列失败，缺少 %q", want)
+			t.Errorf("切换动画 + 当前屏高亮缺少 %q", want)
 		}
 	}
 
-	// 两个都不开时不输出 animation。
+	// slide 不得再出现 view() 时间线（内嵌滚动容器下不驱动动画）。
+	if strings.Contains(bs, "animation-timeline") {
+		t.Errorf("slide 不该用 animation-timeline: view()：内嵌滚动容器下实测不驱动动画")
+	}
+
+	// 两个都不开时不输出动画规则。
 	plain := &Props{Trigger: TriggerSlide, Count: 2}
-	if ps := compiled(t, nodeOf(plain, 0), plain); strings.Contains(ps, "animation:") {
-		t.Errorf("都不开时不该输出 animation")
+	if ps := compiled(t, nodeOf(plain, 0), plain); strings.Contains(ps, "is-enter") {
+		t.Errorf("都不开时不该输出动画规则")
 	}
 }
 
@@ -286,9 +295,8 @@ func TestSlideEffect(t *testing.T) {
 			}
 			s := compiled(t, nodeOf(p, 0), p)
 			for _, want := range []string{
-				"animation: " + kf + " linear both",
-				"animation-timeline: view()",
-				"animation-range: entry 0% entry 70%",
+				"animation: " + kf + " 800ms cubic-bezier(.22,.61,.36,1) both",
+				".sky-cardstack-card.is-enter",
 				"@keyframes " + kf, // 词汇从 core 统一注入，组件不自己造关键帧
 			} {
 				if !strings.Contains(s, want) {

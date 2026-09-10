@@ -126,15 +126,21 @@ shape: line 直接排开（**卡片不带任何角度**）
 堆叠用 `position: sticky` + 递增 `z-index` 实现（后一张盖住前一张）——**零 JS、不依赖
 scroll-driven**，老浏览器一样能跑。
 
-`slideEffect` 与 `slideHighlight` **可以同时开** —— 它们并列成两条 `animation`，各自带
-自己的 `animation-timeline` / `animation-range`（CSS 多动画语法），互不覆盖，因此不需要
-把高亮挪到伪元素上：
+`slideEffect` 与 `slideHighlight` 都由**脚本切换类名**触发普通 `animation`：
 
 ```css
-animation: sky-flip-in-x linear both, sky-loop-glow 2s ease-in-out infinite;
-animation-timeline: view(), view();
-animation-range: entry 0% entry 70%, cover 25% cover 75%;
+.sky-cardstack-track .sky-cardstack-card.is-enter   { animation: sky-flip-in-x 800ms … both }
+.sky-cardstack-track .sky-cardstack-card.is-current { animation: sky-loop-glow 2s infinite }
 ```
+
+`enhance.js` 用 `IntersectionObserver`（`root` 取轨道）按可见比例切类：进入 → 播一次入场动画、
+占满 60% → 当前屏高亮、完全离开 → 清类以便往回滚重播。
+
+> **不要改回 `animation-timeline: view()`**：slide 的轨道是**内嵌滚动容器**，实测 view() 在该场景下
+> 不驱动动画 —— 时间线对象创建成功、进度随滚动正常变化，但元素的计算值（`transform` / `filter`）
+> 恒为初始值，动画等于没跑；同一元素换成普通动画立刻恢复。试过 `cover` / `scroll()` / `normal` /
+> `entry` 全段四种 range 都无效。
+> `trigger=scroll` 的 view() 是相对**页面**滚动的，那条路径有效，保持原样。
 
 两者都 **不新增关键帧**，直接复用通用动效词汇（`internal/builder/core/keyframes_animate.go`
 那 33 条 `sky-*`）里适合翻页的 18 条，由 `NeedKeyframes` 标记后构建期统一注入（同名只注入一次、

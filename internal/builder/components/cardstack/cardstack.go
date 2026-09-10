@@ -1233,33 +1233,13 @@ func compileSlideCSS(b *core.CSSBuckets, sel string, p *Props, n int, height str
 			// flex 子项不能靠 width: 100% 定宽（会被压缩），用 flex 基准定成整屏宽。
 			decls = append(decls, "flex: 0 0 100%")
 		}
-		// 动画：**两条并列**，各自带自己的 animation-timeline / animation-range
-		// （CSS 多动画语法），所以「切换入场」与「当前屏高亮」不会互相顶掉 ——
-		// 也就不需要把高亮挪到伪元素上。两者都绑 view()（最近的滚动容器 = 轨道）：
-		//   · 入场动画：entry 0% → entry 70%（卡片刚进入视口时播一次）
-		//   · 当前屏高亮：cover 25% → cover 75%（卡片基本占满视口时持续循环）
-		// 不支持 view() 的浏览器丢弃未知属性：入场动画按 0s 播完停在终态（等于没动画），
-		// 高亮则退化成常驻循环 —— 都不影响卡片位置与内容。
-		var anims, timelines, ranges []string
-		if kf := slideEffectKeyframe(p); kf != "" {
-			b.NeedKeyframes(kf)
-			anims = append(anims, kf+" linear both")
-			timelines = append(timelines, "view()")
-			ranges = append(ranges, "entry 0% entry 70%")
-		}
-		if kf := loopEffectKey(p.SlideHighlight); kf != "" {
-			b.NeedKeyframes(kf)
-			anims = append(anims, kf+" 2s ease-in-out infinite")
-			timelines = append(timelines, "view()")
-			ranges = append(ranges, "cover 25% cover 75%")
-		}
-		if len(anims) > 0 {
-			decls = append(decls,
-				"animation: "+strings.Join(anims, ", "),
-				"animation-timeline: "+strings.Join(timelines, ", "),
-				"animation-range: "+strings.Join(ranges, ", "),
-			)
-		}
+		// 卡片本身不挂动画：入场动画与当前屏高亮都由脚本在卡片上切换类名触发
+		// （见本函数末尾的 .is-enter / .is-current 规则）。
+		//
+		// 为什么不用 animation-timeline: view()：slide 的轨道是**内嵌滚动容器**，
+		// 实测 view() 时间线在该场景下不驱动动画 —— 时间线对象创建成功、进度随滚动
+		// 正常变化，但元素的计算值（transform / filter）恒为初始值，动画等于没跑。
+		// 换成脚本驱动后行为与 hover / deck 的循环效果一致，且不依赖浏览器新特性。
 		if p.SlideStack {
 			// 堆叠翻页：每张卡都粘在同一位置，靠递增 z-index 让后一张**盖住**前一张。
 			// 平铺时上滑会把前一张推走，堆叠时它留在原地被覆盖 —— 视觉上是「翻页」。
@@ -1278,6 +1258,22 @@ func compileSlideCSS(b *core.CSSBuckets, sel string, p *Props, n int, height str
 		// 全屏卡片自己就是页面，圆角与投影会露出拼接感，去掉。
 		decls = append(decls, "border-radius: 0", "box-shadow: none")
 		b.Add(core.BreakpointDesktop, card, decls)
+	}
+
+	// 入场动画：卡片进入轨道视口时脚本加 .is-enter，播一次后由脚本在它离开时移除，
+	// 这样往回滚可以重播。duration 固定 800ms —— 参数只负责「选哪种效果」。
+	if kf := slideEffectKeyframe(p); kf != "" {
+		b.NeedKeyframes(kf)
+		b.Add(core.BreakpointDesktop, track+" .sky-cardstack-card.is-enter", []string{
+			"animation: " + kf + " 800ms cubic-bezier(.22,.61,.36,1) both",
+		})
+	}
+	// 当前屏高亮：卡片基本占满视口时脚本加 .is-current，离开即移除，持续循环。
+	if kf := loopEffectKey(p.SlideHighlight); kf != "" {
+		b.NeedKeyframes(kf)
+		b.Add(core.BreakpointDesktop, track+" .sky-cardstack-card.is-current", []string{
+			"animation: " + kf + " 2s ease-in-out infinite",
+		})
 	}
 }
 

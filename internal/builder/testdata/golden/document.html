@@ -448,14 +448,50 @@
         });
     }
 
+    // ---------- 全屏分页：入场动画与当前屏高亮 ----------
+    // 为什么用脚本而不是 animation-timeline: view()：slide 的轨道是**内嵌滚动容器**，
+    // 实测 view() 在该场景下不驱动动画 —— 时间线对象创建成功、进度随滚动正常变化，
+    // 但元素的计算值（transform / filter）恒为初始值，动画等于没跑（同元素普通动画正常）。
+    // 用 IntersectionObserver 以轨道为 root 判断卡片可见比例，切换类名触发普通 animation。
+    function initSlideStacks() {
+        var roots = document.querySelectorAll('[data-cardstack-slide]');
+        if (!roots.length || !('IntersectionObserver' in window)) return;
+        roots.forEach(function (root) {
+            var track = root.querySelector('[data-cardstack-track]');
+            if (!track) return;
+            var cards = [].slice.call(track.querySelectorAll('.sky-cardstack-card'));
+            if (!cards.length) return;
+            var io = new IntersectionObserver(function (entries) {
+                entries.forEach(function (e) {
+                    var c = e.target;
+                    var r = e.intersectionRatio;
+                    if (r >= 0.6) {
+                        c.classList.add('is-enter', 'is-current');
+                    } else if (r > 0) {
+                        c.classList.remove('is-current');
+                    } else {
+                        c.classList.remove('is-current', 'is-enter');
+                    }
+                });
+            }, { root: track, threshold: [0, 0.2, 0.6, 0.95] });
+            cards.forEach(function (c) { io.observe(c); });
+        });
+    }
+
     onReady(function () {
-        initCounters();
-        initSliders();
-        initCarousels();
-        initCountdowns();
-        initLightboxes();
-        initCardStacks();
-        initCardDecks();
+        // 每个增强各自独立执行：任何一个抛错都不该拖累其余。
+        // 这不是防御性编程 —— 排在最前面的增强一旦抛错，后面的全部不会执行，
+        // 表现为「组件看着正常但某个功能完全不生效」，且控制台外的排查成本很高。
+        [
+            initCounters, initSliders, initCarousels, initCountdowns, initLightboxes,
+            initCardStacks, initCardDecks, initSlideStacks,
+        ].forEach(function (fn) {
+            try {
+                fn();
+            } catch (e) {
+                // 单个增强失败不影响其余；真要排查时在控制台里单独调该函数即可。
+            }
+        });
     });
 })();</script>
 </body>
