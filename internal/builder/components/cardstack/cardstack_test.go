@@ -193,6 +193,29 @@ func TestSlideCSS(t *testing.T) {
 // 为什么不用 animation-timeline: view()：slide 的轨道是**内嵌滚动容器**，实测 view()
 // 在该场景下不驱动动画 —— 时间线对象创建成功、进度随滚动变化，但元素计算值恒定不变。
 // 这条断言同时守住「别再退回 view() 写法」。
+// TestSlideStackPageno 堆叠模式的页码显隐：卡片粘在同一位置、后面的卡更小，
+// 前面那张的页码会从边缘露出来叠成重影。用 :has 表达「一旦有当前屏就隐藏其余的」，
+// 而且脚本没跑时页码照旧可见（只是重影），比默认全隐藏稳妥。
+func TestSlideStackPageno(t *testing.T) {
+	sp := &Props{Trigger: TriggerSlide, Count: 3, SlideStack: true}
+	ss := compiled(t, nodeOf(sp, 0), sp)
+	for _, want := range []string{
+		":has(.sky-cardstack-card.is-current)",
+		":not(.is-current) .sky-cardstack-page",
+	} {
+		if !strings.Contains(ss, want) {
+			t.Errorf("堆叠模式缺少页码显隐规则 %q（会与更小的卡叠成重影）", want)
+		}
+	}
+
+	// 平铺模式卡片各自独立，页码本就该各自显示，不套这条规则。
+	plain := &Props{Trigger: TriggerSlide, Count: 3}
+	ps := compiled(t, nodeOf(plain, 0), plain)
+	if strings.Contains(ps, ":has(.sky-cardstack-card.is-current)") {
+		t.Errorf("平铺模式不该套页码显隐规则")
+	}
+}
+
 func TestSlideHighlight(t *testing.T) {
 	hp := &Props{Trigger: TriggerSlide, Count: 2, SlideHighlight: "glow"}
 	hs := compiled(t, nodeOf(hp, 0), hp)

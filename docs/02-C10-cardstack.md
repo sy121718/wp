@@ -133,8 +133,13 @@ scroll-driven**，老浏览器一样能跑。
 .sky-cardstack-track .sky-cardstack-card.is-current { animation: sky-loop-glow 2s infinite }
 ```
 
-`enhance.js` 用 `IntersectionObserver`（`root` 取轨道）按可见比例切类：进入 → 播一次入场动画、
-占满 60% → 当前屏高亮、完全离开 → 清类以便往回滚重播。
+`enhance.js` 的 `watchTrack` 监听轨道的 `scroll` 事件，用 `getBoundingClientRect` 算每张卡与轨道
+视口的交叠比例来切类：进入 → 播一次入场动画、占满 60% → 当前屏高亮、完全离开 → 清类以便往回滚重播。
+初始只标当前屏、**不播入场动画**（页面一加载就自己动会像在抢戏），节流用 `setTimeout`。
+
+> 不用 `IntersectionObserver` / `requestAnimationFrame` 的原因：它们都等下一次**渲染帧**，
+> 在无头环境里不回调/不执行，且 `scroll` 事件同理不派发 —— 三者同源，会让整段逻辑静默失效
+> 且无法自动验证。同步几何计算 + `setTimeout` 在任何环境都能断言。
 
 > **不要改回 `animation-timeline: view()`**：slide 的轨道是**内嵌滚动容器**，实测 view() 在该场景下
 > 不驱动动画 —— 时间线对象创建成功、进度随滚动正常变化，但元素的计算值（`transform` / `filter`）

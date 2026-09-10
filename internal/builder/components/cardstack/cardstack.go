@@ -1219,6 +1219,18 @@ func compileSlideCSS(b *core.CSSBuckets, sel string, p *Props, n int, height str
 	b.Add(core.BreakpointDesktop, track+" .sky-cardstack-page::before", []string{
 		`content: counter(sky-page) " / " attr(data-total)`,
 	})
+	if p.SlideStack {
+		// 堆叠翻页时页码只给当前屏显示：卡片粘在同一位置、后面的卡又因缩放递减而更小，
+		// 前面那张的页码会从更小的卡边缘露出来，右下角叠成一片（实测 1/3 与 2/3 重影）。
+		// 用 :has 表达「一旦有当前屏，就隐藏其余的」—— 脚本没跑时页码照旧可见（只是重影），
+		// 比默认全隐藏稳妥：看不到页码会让人以为功能坏了，而重影一看就知道是样式问题。
+		b.Add(core.BreakpointDesktop, track+" .sky-cardstack-card .sky-cardstack-page", []string{
+			"transition: opacity .3s",
+		})
+		b.Add(core.BreakpointDesktop,
+			track+":has(.sky-cardstack-card.is-current) .sky-cardstack-card:not(.is-current) .sky-cardstack-page",
+			[]string{"opacity: 0"})
+	}
 
 	for i := 0; i < n; i++ {
 		card := track + " .sky-cardstack-card:nth-child(" + strconv.Itoa(i+1) + ")"
