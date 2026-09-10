@@ -36,6 +36,8 @@ const (
 	TriggerDrag   = "drag"
 	// TriggerDeck 堆叠轮播：主卡居中正立，两侧卡片叠开，滑动/拖拽/点击切换主卡。
 	TriggerDeck = "deck"
+	// TriggerSlide 全屏分页：一屏一张卡，原生滚动吸附切换（不劫持滚动）。
+	TriggerSlide = "slide"
 )
 
 // 展开形态。
@@ -89,6 +91,10 @@ const (
 	// defaultCardLinkText / defaultCollectionEmptyText 内置文案缺省值（可由 props 覆盖）。
 	defaultCardLinkText        = "查看详情"
 	defaultCollectionEmptyText = "暂无内容"
+	// defaultSlideHeight 全屏分页每屏高度缺省值（dvh：跟随移动端地址栏收放）。
+	defaultSlideHeight = "100dvh"
+	// defaultSlideCount 全屏分页占位卡缺省数量。
+	defaultSlideCount = 3
 	// fallbackCardW / fallbackCardH 拖拽旋转算环形半径时的兜底卡片尺寸（非 px 宽度时使用）。
 	fallbackCardW = 320
 	fallbackCardH = 240
@@ -105,7 +111,7 @@ const (
 // Props 卡片堆叠属性。
 type Props struct {
 	// Trigger 触发方式：hover 悬停展开 / scroll 滚动堆叠（纯 CSS）/ drag 拖拽旋转（增强脚本）。
-	Trigger string `json:"trigger,omitempty" ct:"select,hover=悬停展开,scroll=滚动堆叠,drag=拖拽旋转,deck=堆叠轮播,default=hover,sec=content,label=触发方式"`
+	Trigger string `json:"trigger,omitempty" ct:"select,hover=悬停展开,scroll=滚动堆叠,drag=拖拽旋转,deck=堆叠轮播,slide=全屏分页,default=hover,sec=content,label=触发方式"`
 	// Shape 展开形态（悬停模式）：fan 弧线扇形 / line 排开（卡片不带任何角度）。
 	Shape string `json:"shape,omitempty" ct:"select,fan=扇形展开,line=直线排开,default=fan,sec=content,label=展开形态"`
 	// Direction 排开方向（仅 shape=line 生效）：horizontal 横排一行 / vertical 竖排一列。
@@ -132,6 +138,8 @@ type Props struct {
 	DeckScaleStep int `json:"deckScaleStep,omitempty" ct:"slider,min=1,max=20,step=1,sec=motion,label=缩放递减(%)"`
 	// DragRadius 拖拽旋转的环形半径 px（0 = 自动：按卡片宽度与数量保证相邻卡片不重叠）。
 	DragRadius int `json:"dragRadius,omitempty" ct:"slider,min=0,max=1200,step=10,sec=motion,label=环形半径(0=自动)"`
+	// SlideHeight 全屏分页的每屏高度（缺省 100dvh —— 用 dvh 而非 vh，移动端地址栏收放时不会跳）。
+	SlideHeight string `json:"slideHeight,omitempty" ct:"dimension,maxlen=20,sec=layout,label=每屏高度"`
 	// Spacing 滚动模式的卡片间距（缺省 26vh）。
 	Spacing string `json:"spacing,omitempty" ct:"dimension,maxlen=20,sec=layout,label=卡片间距"`
 	// StickyTop 滚动模式卡片的粘住位置（缺省 50%，即视口垂直居中）。
@@ -248,6 +256,8 @@ func effectiveTrigger(p *Props) string {
 		return TriggerDrag
 	case TriggerDeck:
 		return TriggerDeck
+	case TriggerSlide:
+		return TriggerSlide
 	}
 	return TriggerHover
 }
@@ -311,8 +321,12 @@ func effectiveDirection(p *Props) string {
 }
 
 // effectiveCount 占位卡数量缺省 9（ct 声明 min=2，0/1 视作未设置）。
+// 全屏分页缺省 3 屏 —— 9 屏占位卡在滚动吸附下要翻很久，不是合理起点。
 func effectiveCount(p *Props) int {
 	if p.Count < 2 {
+		if effectiveTrigger(p) == TriggerSlide {
+			return defaultSlideCount
+		}
 		return defaultCount
 	}
 	return p.Count
@@ -375,7 +389,13 @@ func effectiveScaleStep(p *Props) int {
 }
 
 // zoomEnabled 点击放大默认开启（显式 off 才关）。
-func zoomEnabled(p *Props) bool { return p.Zoom != "off" }
+// 全屏分页自动关闭：卡片本来就占满一屏，再"放大到视口中央"等于原地不动。
+func zoomEnabled(p *Props) bool {
+	if effectiveTrigger(p) == TriggerSlide {
+		return false
+	}
+	return p.Zoom != "off"
+}
 
 // hasContent 是否用子节点作为卡片内容。
 func hasContent(node *core.Node) bool { return node != nil && len(node.Children) > 0 }
@@ -395,6 +415,9 @@ func cardSize(p *Props, trigger string, content bool) (width, height string) {
 	switch {
 	case trigger == TriggerScroll:
 		defW, defH = widthScroll, heightScroll
+	case trigger == TriggerSlide:
+		// 每屏一张：宽度占满容器，高度交给 SlideHeight（min-height 一屏）。
+		defW, defH = "100%", widthContent
 	case content:
 		defW, defH = widthContent, heightContent
 	}
@@ -452,6 +475,8 @@ func CompileCSS(node *core.Node, p *Props, cardN int, b *core.CSSBuckets) {
 		compileDragCSS(b, sel, p, n, width, height, content)
 	case TriggerDeck:
 		compileDeckCSS(b, sel, p, n, width, height, content)
+	case TriggerSlide:
+		compileSlideCSS(b, sel, p, n, height, content)
 	default:
 		compileHoverCSS(b, sel, p, n, width, height, content)
 	}
@@ -548,6 +573,10 @@ func cardBaseDecls(content bool, p *Props) []string {
 			gap = defaultCardGap
 		}
 		return []string{
+			// border-box：卡片有内边距时，"卡片宽度/高度"必须含 padding 才是外尺寸 ——
+			// 逐卡几何（扇形收敛、环形半径、每屏高度）都按 props 里的数值计算，
+			// content-box 会让实际尺寸比参数大一圈，几何随之全部偏移。
+			"box-sizing: border-box",
 			"display: flex",
 			"flex-direction: " + layout,
 			"justify-content: " + justify,
@@ -575,6 +604,7 @@ func cardBaseDecls(content bool, p *Props) []string {
 		background = colorPrimary
 	}
 	return []string{
+		"box-sizing: border-box",
 		"display: flex",
 		"justify-content: center",
 		"align-items: center",
@@ -926,6 +956,68 @@ func compileDeckCSS(b *core.CSSBuckets, sel string, p *Props, n int, width, heig
 	})
 	// 拖动过程中取消过渡，否则卡片追着指针慢半拍。
 	b.Add(core.BreakpointDesktop, sel+".is-dragging .wp-cardstack-card", []string{"transition: none"})
+}
+
+// compileSlideCSS 全屏分页：一屏一张卡，原生滚动吸附切换。
+//
+// 关键取舍：**用 scroll-snap，不劫持滚动**。滚动条本身仍归浏览器管 ——
+// 惯性、触控板、键盘 PageDown/空格、屏幕阅读器全都照旧可用；JS 滚动劫持
+// （wheel + preventDefault + 自算动画）在移动端与辅助技术上是灾难，不值得。
+//
+// 每屏高度用 dvh 而非 vh：移动端地址栏收放时 vh 会跳、内容跟着抖，dvh 会跟着变。
+// 卡片给 min-height（不是 height）：内容超出一屏时卡片自己长高、原地可读，
+// 而不是被裁掉或压成卡内滚动条 —— 但这属于「这一屏内容太多了」，应在内容侧解决。
+func compileSlideCSS(b *core.CSSBuckets, sel string, p *Props, n int, height string, content bool) {
+	track := sel + " .wp-cardstack-track"
+	screen := strings.TrimSpace(p.SlideHeight)
+	if screen == "" {
+		screen = defaultSlideHeight
+	}
+	// 每屏高度降级链：dvh 不认识时退回 vh（老浏览器仍是一屏一张，只是地址栏收放时略跳）。
+	screenDecl := []string{
+		"height: " + screen,
+	}
+	if strings.HasSuffix(screen, "dvh") {
+		screenDecl = append(screenDecl, "height: "+strings.TrimSuffix(screen, "dvh")+"vh")
+	}
+	cardMin := []string{"min-height: " + screen}
+	if strings.HasSuffix(screen, "dvh") {
+		cardMin = append(cardMin, "min-height: "+strings.TrimSuffix(screen, "dvh")+"vh")
+	}
+
+	b.Add(core.BreakpointDesktop, sel, []string{
+		"position: relative",
+		"width: 100%",
+	})
+	// 滚动容器：原生滚动 + 强制吸附（一次只翻一屏）。
+	trackDecls := append([]string{
+		"position: relative",
+		"display: block",
+		"overflow-y: auto",
+		"overflow-x: hidden",
+		"scroll-snap-type: y mandatory",
+		"-webkit-overflow-scrolling: touch",
+		"scrollbar-width: thin",
+	}, screenDecl...)
+	b.Add(core.BreakpointDesktop, track, trackDecls)
+
+	for i := 0; i < n; i++ {
+		card := track + " .wp-cardstack-card:nth-child(" + strconv.Itoa(i+1) + ")"
+		decls := []string{
+			"width: 100%",
+			"scroll-snap-align: start",
+			// always：一次手势只翻一屏，不会连跳好几屏。
+			"scroll-snap-stop: always",
+		}
+		decls = append(decls, cardMin...)
+		if content {
+			decls = append(decls, "height: auto")
+		}
+		decls = append(decls, cardBaseDecls(content, p)...)
+		// 全屏卡片自己就是页面，圆角与投影会露出拼接感，去掉。
+		decls = append(decls, "border-radius: 0", "box-shadow: none")
+		b.Add(core.BreakpointDesktop, card, decls)
+	}
 }
 
 // compileZoomCSS 点击放大到视口中央（零 JS：label + radio，同组互斥，一次只放大一张）。

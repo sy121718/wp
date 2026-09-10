@@ -161,6 +161,56 @@ func TestScrollCSS(t *testing.T) {
 	}
 }
 
+// TestSlideCSS 全屏分页：原生滚动吸附，一屏一张。
+func TestSlideCSS(t *testing.T) {
+	p := &Props{Trigger: TriggerSlide, Count: 3}
+	s := compiled(t, nodeOf(p, 0), p)
+
+	for _, want := range []string{
+		"overflow-y: auto",
+		"scroll-snap-type: y mandatory",
+		"scroll-snap-align: start",
+		"scroll-snap-stop: always", // 一次手势只翻一屏
+		"width: 100%",
+		"height: 100dvh",     // 移动端地址栏收放时不跳
+		"height: 100vh",      // 老浏览器降级
+		"min-height: 100dvh", // 内容超一屏时卡片自己长高，不裁切
+		"border-radius: 0",   // 全屏卡片的圆角与投影会露出拼接感
+		"box-shadow: none",
+	} {
+		if !strings.Contains(s, want) {
+			t.Errorf("全屏分页缺少 %q", want)
+		}
+	}
+	// 全屏下"放大到视口中央"等于原地不动，不该输出放大层。
+	if strings.Contains(s, "wp-cardstack-scrim") {
+		t.Errorf("全屏分页不该输出放大层")
+	}
+}
+
+// TestSlideDefaults 全屏分页缺省值：3 屏、宽度占满、自动关闭放大。
+func TestSlideDefaults(t *testing.T) {
+	p := &Props{Trigger: TriggerSlide}
+	if n := cardCount(nodeOf(p, 0), p); n != defaultSlideCount {
+		t.Errorf("全屏分页占位卡缺省应为 %d 屏，got %d", defaultSlideCount, n)
+	}
+	if w, _ := cardSize(p, TriggerSlide, false); w != "100%" {
+		t.Errorf("全屏分页卡片宽度应为 100%%，got %q", w)
+	}
+	if zoomEnabled(p) {
+		t.Errorf("全屏分页应自动关闭点击放大")
+	}
+	if zoomEnabled(&Props{Trigger: TriggerHover}) != true {
+		t.Errorf("其他模式仍应默认开启点击放大")
+	}
+	// 自定义每屏高度生效，且 dvh 会带一条 vh 降级。
+	custom := &Props{Trigger: TriggerSlide, SlideHeight: "80dvh"}
+	cs := compiled(t, nodeOf(custom, 0), custom)
+	if !strings.Contains(cs, "height: 80dvh") || !strings.Contains(cs, "height: 80vh") {
+		t.Errorf("自定义每屏高度应生效并带 vh 降级")
+	}
+}
+
 // TestDeckCSS 堆叠轮播：几何由每张卡的两个变量驱动，脚本只改写它们。
 func TestDeckCSS(t *testing.T) {
 	p := &Props{Trigger: TriggerDeck}
