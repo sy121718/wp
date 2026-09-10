@@ -151,6 +151,7 @@ delay: calc(var(--i)*0.1s)、交错入场），且编译期可确定性生成—
 trigger: hover  → 悬停展开（纯 CSS）                    shape: fan              弧线扇形（rotate 在前，带角度）
 trigger: scroll → 滚动堆叠（sticky + scroll-driven）           line + horizontal   横排一行（无任何角度）
 trigger: drag   → 环形拖拽旋转（enhance.js 只改一个变量）       line + vertical     竖排一列（无任何角度）
+trigger: deck   → 堆叠轮播（主卡居中正立，滑动/点击/方向键切换主卡）
 ```
 
 两轴正交：`trigger` 只改布局与驱动方式，`shape`/`direction` 只改变换写法与收敛式。
@@ -240,7 +241,23 @@ fan 的位移落在旋转后的坐标系里（外接框会变大、卡片高度�
    位移超过阈值时要在捕获阶段吞掉这次点击；指针监听不要 `preventDefault`，否则点击放大被一起掐死。
    键盘等价入口：容器 `tabindex="0"`，左右方向键每步 15°。
 
-8. **滚动堆叠**：基础规则就是 `position: sticky + top + translate: 0 -50%` 的纯层叠，跟手收敛叠在同一条
+8. **堆叠轮播**：主卡居中正立、两侧叠开 —— 信息类卡片不适合扇形展开（倾斜后不好读），
+   这条模式解决的就是它。几何全部由每张卡的两个 CSS 变量驱动：
+
+   ```text
+   --wp-deck-off  相对主卡的偏移（0 = 主卡）
+   --wp-deck-abs  偏移绝对值（CSS 没有 abs()，缩放与层级要用它）
+   ```
+
+   编译期逐卡写入的是**静态降级值**（i - mid）：没有脚本时卡片按序号摊开成一摞；脚本接管后
+   只改写这两个变量，位移/倾斜/缩放/层级的关系全部留在静态 CSS 里 ——
+   `translateX(off×54%) · rotate(off×4deg) · scale(1 − abs×6%) · z-index: calc(50 − abs)`，
+   脚本端不碰任何几何数值（改样式参数不会让脚本失效）。
+
+   点击语义必须分开：**点侧卡 = 切主位**（在捕获阶段 `preventDefault`，否则卡片是 label，
+   会顺带把它放大）、**点主卡 = 放行**进入放大；拖动结束补发的 click 同样在捕获阶段吞掉。
+
+9. **滚动堆叠**：基础规则就是 `position: sticky + top + translate: 0 -50%` 的纯层叠，跟手收敛叠在同一条
    规则的 `animation` 上，靠 `animation-timeline: view()` 驱动。**不需要 `@supports` 包裹** ——
    老浏览器把 `animation-timeline`/`animation-range` 当未知属性丢弃，动画按 0s 播完并由
    `fill-mode: both` 停在终态，视觉正好等于静态缩放。每张卡用独立关键帧（`wp-cs-<节点id>-<序号>`），
