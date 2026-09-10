@@ -70,8 +70,8 @@ import (
 	_ "go_wp/internal/builder/components/table"
 	// core.card：卡片（标题/正文/图片/按钮）。
 	_ "go_wp/internal/builder/components/card"
-	// core.cardfan：扇形卡片墙（N 张堆叠卡片，悬停弧形展开 + 色相渐变 + 按压置顶）。
-	_ "go_wp/internal/builder/components/cardfan"
+	// core.cardstack：卡片堆叠（悬停扇形/直排展开 + 滚动堆叠 + 点击放大，零 JS）。
+	_ "go_wp/internal/builder/components/cardstack"
 	// core.faq：常见问题（details/summary 原生折叠）。
 	_ "go_wp/internal/builder/components/faq"
 	// core.quote：引用块（blockquote/cite）。

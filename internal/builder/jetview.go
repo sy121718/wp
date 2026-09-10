@@ -21,7 +21,7 @@ import (
 	badgePkg "go_wp/internal/builder/components/badge"
 	buttonPkg "go_wp/internal/builder/components/button"
 	cardPkg "go_wp/internal/builder/components/card"
-	cardfanPkg "go_wp/internal/builder/components/cardfan"
+	cardstackPkg "go_wp/internal/builder/components/cardstack"
 	containerPkg "go_wp/internal/builder/components/container"
 	countdownPkg "go_wp/internal/builder/components/countdown"
 	counterPkg "go_wp/internal/builder/components/counter"
@@ -140,8 +140,8 @@ func nodeViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeV
 		return tableViewOf(node, topLevel, ctx)
 	case cardPkg.Type:
 		return cardViewOf(node, topLevel, ctx)
-	case cardfanPkg.Type:
-		return cardfanViewOf(node, topLevel, ctx)
+	case cardstackPkg.Type:
+		return cardstackViewOf(node, topLevel, ctx)
 	case faqPkg.Type:
 		return faqViewOf(node, topLevel, ctx)
 	case quotePkg.Type:
@@ -524,8 +524,45 @@ func cardViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeV
 	return atomViewOf(node, topLevel, ctx, cardPkg.Type, "card", cardPkg.CompileCSS, cardPkg.BuildView)
 }
 
-func cardfanViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeView, error) {
-	return atomViewOf(node, topLevel, ctx, cardfanPkg.Type, "cardfan", cardfanPkg.CompileCSS, cardfanPkg.BuildView)
+// cardstackViewOf 转换卡片堆叠节点：结构型组件 —— 子节点即卡片内容（没有则退回数字卡），
+// props 只描述几何与交互，故不走 atomViewOf，与 tabs/accordion 同路。
+func cardstackViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeView, error) {
+	var p cardstackPkg.Props
+	if len(node.Props) > 0 {
+		if err := json.Unmarshal(node.Props, &p); err != nil {
+			return nil, fmt.Errorf("节点 %s props 反序列化失败: %w", node.ID, err)
+		}
+	}
+
+	children := make([]*nodeView, 0, len(node.Children))
+	for _, child := range node.Children {
+		cv, err := nodeViewOf(child, false, ctx)
+		if err != nil {
+			return nil, err
+		}
+		children = append(children, cv)
+	}
+
+	// 先解析视图（内容集合模式要在这里展开成 N 张卡），再按实际卡片数编译 CSS ——
+	// 集合条数运行期才知道，逐卡 :nth-child 规则必须与之对齐。
+	view, err := cardstackPkg.BuildView(node, &p, ctx)
+	if err != nil {
+		return nil, err
+	}
+	classes, customID := advancedClasses(node, &p, ctx)
+	cardstackPkg.CompileCSS(node, &p, len(view.Cards), ctx.CSS)
+
+	return &nodeView{
+		Type:     cardstackPkg.Type,
+		Template: "cardstack",
+		NodeID:   node.ID,
+		Classes:  strings.Join(classes, " "),
+		CustomID: customID,
+		TopLevel: topLevel,
+		Props:    p,
+		Children: children,
+		V:        view,
+	}, nil
 }
 
 func faqViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeView, error) {

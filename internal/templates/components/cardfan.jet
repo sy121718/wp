@@ -1,1 +1,0 @@
-<div class="{{ .Classes }}"{{ if .CustomID }} id="{{ .CustomID }}"{{ end }}>{{ range _, c := .V.Cards }}<div class="wp-cardfan-card">{{ c.Label }}</div>{{ end }}</div>

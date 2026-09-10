@@ -36,7 +36,7 @@ export const paletteItems = [
     { type: 'core.counter', label: '计数器', hint: '数字统计', props: { start: 0, end: 100, suffix: '+' } },
     { type: 'core.table', label: '表格', hint: '数据表格', props: { caption: '数据表格', headers: ['列一', '列二'], rows: [['A', 'B'], ['C', 'D']], striped: true, bordered: true } },
     { type: 'core.card', label: '卡片', hint: '标题+正文+按钮', props: { title: '卡片标题', text: '卡片正文内容。', buttonText: '了解更多', buttonLink: '/' } },
-    { type: 'core.cardfan', label: '扇形卡片', hint: '堆叠卡片悬停展开', props: { count: 9, hueStep: 50, spreadAngle: 5, spreadDistance: 120 } },
+    { type: 'core.cardstack', label: '卡片堆叠', hint: '悬停扇形/直排 · 滚动堆叠', props: { trigger: 'hover', shape: 'fan', count: 9, hueStep: 50, spreadAngle: 5, spreadDistance: 120 } },
     { type: 'core.faq', label: '常见问题', hint: '问答折叠', props: { items: [{ question: '常见问题一？', answer: '这里是回答内容。', open: true }, { question: '常见问题二？', answer: '这里是回答内容。' }] } },
     { type: 'core.quote', label: '引用', hint: '引用块', props: { text: '引用一段有力量的话。', author: '作者名', align: 'left' } },
     { type: 'core.countdown', label: '倒计时', hint: '营销倒计时', props: { targetDate: '2030-01-01 00:00:00', showDays: true } },
@@ -50,7 +50,7 @@ export const paletteItems = [
 /** 组件库分组：基础组件大分类平铺（细分类留给进阶组件，当前无进阶内容）；
  *  「区块」概念归全局块（页眉/页脚/区块）。 */
 export const paletteGroups = [
-    { key: 'basic', title: '基础组件', types: ['core.container', 'core.heading', 'core.text', 'core.button', 'core.image', 'core.gallery', 'core.divider', 'core.spacer', 'core.slider', 'core.list', 'core.infobox', 'core.social_buttons', 'core.video', 'core.nav', 'core.languages', 'core.tabs', 'core.accordion', 'core.marquee', 'core.counter', 'core.table', 'core.card', 'core.cardfan', 'core.faq', 'core.quote', 'core.countdown', 'core.icon', 'core.badge', 'core.progress', 'core.rating', 'core.form'] }
+    { key: 'basic', title: '基础组件', types: ['core.container', 'core.heading', 'core.text', 'core.button', 'core.image', 'core.gallery', 'core.divider', 'core.spacer', 'core.slider', 'core.list', 'core.infobox', 'core.social_buttons', 'core.video', 'core.nav', 'core.languages', 'core.tabs', 'core.accordion', 'core.marquee', 'core.counter', 'core.table', 'core.card', 'core.cardstack', 'core.faq', 'core.quote', 'core.countdown', 'core.icon', 'core.badge', 'core.progress', 'core.rating', 'core.form'] }
 ];
 
 /**
@@ -94,6 +94,28 @@ export const DEFAULT_CONTENT = {
             props: { tag: 'div', layout: { engine: 'flex', flex: { direction: 'column', gap: '12px' } }, box: { padding: { desktop: '24px' } } },
             children: [{ type: 'core.text', name: 'Slide 文本', props: { mode: 'plaintext', plainTag: 'p', text: '第一屏内容，点击编辑。' } }]
         }]
+    },
+    'core.cardstack': {
+        // 卡片可选子节点：有子节点即内容卡，删空后自动退回 1~N 数字占位卡。
+        // 默认给两张真内容卡，插入即可看出几何效果与内容排版。
+        children: [
+            {
+                type: 'core.container', name: '卡片一',
+                props: { tag: 'div', layout: { engine: 'flex', flex: { direction: 'column', gap: '8px' } } },
+                children: [
+                    { type: 'core.heading', name: '卡片标题', props: { text: '第一张卡', tag: 'h3' } },
+                    { type: 'core.text', name: '卡片正文', props: { mode: 'plaintext', plainTag: 'p', text: '点击卡片可放大到屏幕中央，点遮罩收起。' } }
+                ]
+            },
+            {
+                type: 'core.container', name: '卡片二',
+                props: { tag: 'div', layout: { engine: 'flex', flex: { direction: 'column', gap: '8px' } } },
+                children: [
+                    { type: 'core.heading', name: '卡片标题', props: { text: '第二张卡', tag: 'h3' } },
+                    { type: 'core.text', name: '卡片正文', props: { mode: 'plaintext', plainTag: 'p', text: '悬停看展开，改成滚动堆叠则随滚动逐张粘住。' } }
+                ]
+            }
+        ]
     },
     'core.marquee': {
         // 跑马灯会把子节点渲染两份（无缝循环），故默认内容用无状态的行内文本，

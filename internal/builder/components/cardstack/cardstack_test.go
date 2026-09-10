@@ -1,0 +1,376 @@
+package cardstack
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"strconv"
+	"strings"
+	"testing"
+
+	"go_wp/internal/builder/core"
+)
+
+// nodeOf 构造测试节点：props 为 nil 表示空 props；childN 为子节点数量
+// （用已注册的 cardstack 自身当子节点类型，避免依赖其它组件包）。
+func nodeOf(p *Props, childN int) *core.Node {
+	n := &core.Node{ID: "n1", Type: Type}
+	if p != nil {
+		raw, err := json.Marshal(p)
+		if err != nil {
+			panic(err)
+		}
+		n.Props = raw
+	}
+	for i := 0; i < childN; i++ {
+		id := "c" + strconv.Itoa(i+1)
+		n.Children = append(n.Children, &core.Node{ID: id, Type: Type})
+	}
+	return n
+}
+
+// compiled 编译节点并返回 CSS。
+func compiled(t *testing.T, n *core.Node, p *Props) string {
+	t.Helper()
+	b := &core.CSSBuckets{}
+	CompileCSS(n, p, 0, b) // 0 = 按静态卡片数（子节点数 / 占位卡数量）生成
+	return b.String()
+}
+
+// TestValidateProps 校验：尺寸类字段必须是 CSS 安全值，其余由 ct tag 兜底。
+func TestValidateProps(t *testing.T) {
+	c := &Component{}
+	cases := []struct {
+		name    string
+		props   *Props
+		wantErr bool
+	}{
+		{"空 props 合法", nil, false},
+		{"尺寸合法", &Props{Width: "240px", Height: "320px", Spacing: "26vh"}, false},
+		{"宽度注入", &Props{Width: "240px;}"}, true},
+		{"间距注入", &Props{Spacing: "26vh;}"}, true},
+		{"粘住位置注入", &Props{StickyTop: "50%;}"}, true},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			err := c.Validate(nodeOf(tt.props, 0), map[string]bool{})
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("Validate(%+v) err=%v wantErr=%v", tt.props, err, tt.wantErr)
+			}
+		})
+	}
+}
+
+// TestHoverFanCSS 悬停 + 扇形：rotate 在 translate 之前（位移走旋转坐标系 → 弧线），
+// 收敛式扣掉上抬量的旋转投影，且不再依赖容器查询。
+func TestHoverFanCSS(t *testing.T) {
+	s := compiled(t, nodeOf(nil, 0), &Props{}) // 默认 9 张数字卡
+
+	for _, want := range []string{
+		"rotate(-20deg) translate(-480px, -50px);", // 固定值兜底：第 1 张
+		"rotate(20deg) translate(480px, -50px)",    // 第 9 张（扇形对称）
+		"rotate(-20deg) translate(calc(-4 * clamp(0px, calc((50vw - 16px - 17.1010px - 0.9397 * 50% - 0.3420 * var(--wp-cardstack-h) / 2) / 3.7588), 120px)), -50px)",
+		"rotate(20deg) translate(calc(4 * clamp(0px,",
+		"filter: hue-rotate(-200deg)",          // 数字卡位置派生色相
+		"min-height: calc(320px + 100px)",      // 纵向预留上抬空间
+		"--wp-cardstack-h: calc(320px + 20px)", // 旋转外扩要用的卡高
+	} {
+		if !strings.Contains(s, want) {
+			t.Errorf("扇形悬停缺少 %q", want)
+		}
+	}
+	if strings.Contains(s, "container-type") {
+		t.Errorf("不应依赖容器查询（contain: layout 会困住 fixed 放大层）")
+	}
+	// 选择器形态：:hover 挂容器、经轨道到卡片；容器类名只能出现一次。
+	if !strings.Contains(s, ".wp-c-n1:hover .wp-cardstack-track .wp-cardstack-card:nth-child(1)") {
+		t.Errorf("悬停选择器应挂在容器上并经轨道下到卡片")
+	}
+	if strings.Contains(s, ".wp-c-n1:hover .wp-c-n1") {
+		t.Errorf("悬停选择器重复了容器类名（永不匹配）")
+	}
+}
+
+// TestHoverLineHorizontalCSS 横排：卡片不带任何角度，纯水平平移成一行。
+func TestHoverLineHorizontalCSS(t *testing.T) {
+	p := &Props{Shape: ShapeLine}
+	s := compiled(t, nodeOf(p, 0), p)
+
+	if strings.Contains(s, "transform: rotate(") || strings.Contains(s, ") rotate(") {
+		t.Errorf("横排不该有任何旋转（「直接排开」的全部意义就在这里）")
+	}
+	for _, want := range []string{
+		"translate(-480px, 0px);", // 第 1 张固定值
+		"translate(calc(-4 * clamp(0px, calc((50vw - 16px - 50%) / 4), 120px)), 0px)",
+		"min-height: 320px", // 横排不需要纵向预留
+	} {
+		if !strings.Contains(s, want) {
+			t.Errorf("横排缺少 %q", want)
+		}
+	}
+}
+
+// TestHoverLineVerticalCSS 竖排：同样无角度，纯垂直平移成一列；收敛按视口高度，
+// 轨道按「卡高 + 2×最大步距×位移」预留纵向铺开空间。
+func TestHoverLineVerticalCSS(t *testing.T) {
+	p := &Props{Shape: ShapeLine, Direction: directionVertical}
+	s := compiled(t, nodeOf(p, 0), p)
+
+	if strings.Contains(s, "transform: rotate(") || strings.Contains(s, ") rotate(") {
+		t.Errorf("竖排不该有任何旋转")
+	}
+	for _, want := range []string{
+		"translate(0px, -480px);",
+		"translate(0px, calc(-4 * clamp(0px, calc((50vh - 16px - var(--wp-cardstack-h) / 2) / 4), 120px)))",
+		"min-height: calc(320px + 960px)", // 2 × 4 × 120
+	} {
+		if !strings.Contains(s, want) {
+			t.Errorf("竖排缺少 %q", want)
+		}
+	}
+}
+
+// TestScrollCSS 滚动堆叠：sticky 层叠是基础形态，scroll-driven 跟手收敛叠在同一条
+// 规则上 —— 老浏览器丢弃未知属性后动画停在终态，即静态缩放，自动降级。
+func TestScrollCSS(t *testing.T) {
+	p := &Props{Trigger: TriggerScroll}
+	s := compiled(t, nodeOf(p, 0), p)
+
+	for _, want := range []string{
+		"position: sticky",
+		"top: 50%",
+		"translate: 0 -50%",
+		"margin: 0 auto 26vh",
+		"scale: 0.9400", // 第 1 张 = base
+		"scale: 1.1000", // 第 9 张 = 94% + 8*2%
+		"animation: wp-cs-n1-1 linear both",
+		"animation-timeline: view()",
+		"animation-range: entry 0% entry 60%",
+		"@keyframes wp-cs-n1-1",
+		"from { scale: 1.0528; opacity: .5 }",
+		"to { scale: 0.9400; opacity: 1 }",
+	} {
+		if !strings.Contains(s, want) {
+			t.Errorf("滚动模式缺少 %q", want)
+		}
+	}
+	// absolute 只该出现在两条「隐藏单选」规则里（卡片本身是 sticky 排布）。
+	if n := strings.Count(s, "position: absolute"); n != 2 {
+		t.Errorf("滚动模式不该把卡片绝对堆叠（position: absolute 出现 %d 次，期望 2）", n)
+	}
+}
+
+// TestZoomCSS 点击放大：隐藏但可聚焦的单选 + 放大态 + 遮罩，全部零 JS。
+func TestZoomCSS(t *testing.T) {
+	s := compiled(t, nodeOf(nil, 0), &Props{})
+
+	for _, want := range []string{
+		".wp-cardstack-toggle",
+		"pointer-events: none", // 点击穿透到 label
+		":has(> .wp-cardstack-toggle:checked)",
+		"position: fixed",
+		"margin: auto", // inset:0 + margin:auto 居中，不抢 transform
+		"translate: none",
+		"scale: 1",
+		"z-index: 1001",
+		".wp-cardstack-scrim",
+		".wp-cardstack-close-btn",
+		"display: block",
+	} {
+		if !strings.Contains(s, want) {
+			t.Errorf("放大层缺少 %q", want)
+		}
+	}
+
+	off := compiled(t, nodeOf(nil, 0), &Props{Zoom: "off"})
+	if strings.Contains(off, "wp-cardstack-scrim") {
+		t.Errorf("Zoom=off 不应输出遮罩")
+	}
+}
+
+// TestContentCards 有子节点即内容卡：不套色相、裁剪溢出、高度按 min-height。
+func TestContentCards(t *testing.T) {
+	s := compiled(t, nodeOf(nil, 3), &Props{}) // 3 个子节点 → 3 张内容卡
+
+	if strings.Contains(s, "hue-rotate") {
+		t.Errorf("内容卡不该套色相滤镜")
+	}
+	if !strings.Contains(s, "overflow: hidden") {
+		t.Errorf("内容卡应裁剪溢出内容")
+	}
+	if !strings.Contains(s, "min-height: 240px") {
+		t.Errorf("内容卡高度缺省 240px（min-height）")
+	}
+	if !strings.Contains(s, ":nth-child(3)") || strings.Contains(s, ":nth-child(4)") {
+		t.Errorf("卡片数应等于子节点数（3 张）")
+	}
+}
+
+// fakeCollection 固定两条文章数据，用于验证集合模式展开与字段映射。
+type fakeCollection struct{}
+
+func (fakeCollection) ResolveCollection(_ context.Context, source string, _ map[string]string) ([]map[string]any, error) {
+	if source != "content:article" {
+		return nil, fmt.Errorf("未知集合源 %q", source)
+	}
+	return []map[string]any{
+		{"id": 1, "slug": "first", "title": "第一篇文章", "excerpt": "第一篇摘要", "featuredImage": "https://x/1.jpg"},
+		{"id": 2, "slug": "second", "title": "第二篇文章", "excerpt": "第二篇摘要", "featuredImage": "https://x/2.jpg"},
+	}, nil
+}
+
+// TestCollectionCards 内容集合：卡片数量与卡内字段都由内容决定。
+func TestCollectionCards(t *testing.T) {
+	p := &Props{
+		CollectionSource: "content:article",
+		CardTitleField:   "title",
+		CardTextField:    "excerpt",
+		CardImageField:   "featuredImage",
+		CardLinkField:    "slug",
+		CardLinkPrefix:   "/article/",
+	}
+	ctx := &core.RenderContext{Collection: fakeCollection{}}
+	view, err := BuildView(nodeOf(nil, 0), p, ctx)
+	if err != nil {
+		t.Fatalf("BuildView: %v", err)
+	}
+	if !view.Collection {
+		t.Fatalf("应标记为集合模式")
+	}
+	if len(view.Cards) != 2 {
+		t.Fatalf("应展开 2 张卡，got %d", len(view.Cards))
+	}
+	c := view.Cards[0]
+	if c.Title != "第一篇文章" || c.Text != "第一篇摘要" || c.Image != "https://x/1.jpg" || c.Href != "/article/first" {
+		t.Errorf("字段映射结果不对：%+v", c)
+	}
+	if !c.HasImage || !c.HasTitle || !c.HasText || !c.HasHref {
+		t.Errorf("Has* 标记应全部为真：%+v", c)
+	}
+	if strings.Contains(c.AriaLabel, "1") && c.AriaLabel != "放大：第一篇文章" {
+		t.Errorf("无障碍描述应带标题：%q", c.AriaLabel)
+	}
+
+	// 取几条
+	p.CollectionLimit = 1
+	view2, err := BuildView(nodeOf(nil, 0), p, ctx)
+	if err != nil {
+		t.Fatalf("BuildView(limit=1): %v", err)
+	}
+	if len(view2.Cards) != 1 {
+		t.Errorf("limit=1 应只取 1 条，got %d", len(view2.Cards))
+	}
+}
+
+// TestCollectionFieldError 字段名写错要在构建期报错并列出可用字段，而不是静默渲染空白。
+func TestCollectionFieldError(t *testing.T) {
+	p := &Props{CollectionSource: "content:article", CardTitleField: "tittle"} // 拼错
+	ctx := &core.RenderContext{Collection: fakeCollection{}}
+	_, err := BuildView(nodeOf(nil, 0), p, ctx)
+	if err == nil {
+		t.Fatalf("字段名拼错应报错")
+	}
+	if !strings.Contains(err.Error(), "可用字段") || !strings.Contains(err.Error(), "title") {
+		t.Errorf("报错应列出可用字段：%v", err)
+	}
+}
+
+// fakeSchemaCollection 在集合解析之外还提供元数据契约（content 模块的形态）。
+type fakeSchemaCollection struct{ fakeCollection }
+
+func (fakeSchemaCollection) CollectionSchemas(_ context.Context) ([]core.CollectionSchema, error) {
+	return []core.CollectionSchema{{
+		Source: "content:article",
+		Label:  "文章列表",
+		Fields: []string{"title", "excerpt", "featuredImage"},
+	}}, nil
+}
+
+// TestCollectionSchemaWhitelist 有元数据契约时按白名单严格校验（不变量 4）。
+func TestCollectionSchemaWhitelist(t *testing.T) {
+	ctx := &core.RenderContext{Collection: fakeSchemaCollection{}}
+
+	// 白名单内 → 通过
+	ok := &Props{CollectionSource: "content:article", CardTitleField: "title", CardImageField: "featuredImage"}
+	if _, err := BuildView(nodeOf(nil, 0), ok, ctx); err != nil {
+		t.Fatalf("白名单内字段应通过：%v", err)
+	}
+
+	// 白名单外（body 不在 fake 白名单里）→ 报错并列出可用字段
+	bad := &Props{CollectionSource: "content:article", CardTextField: "body"}
+	_, err := BuildView(nodeOf(nil, 0), bad, ctx)
+	if err == nil {
+		t.Fatalf("白名单外字段应报错")
+	}
+	if !strings.Contains(err.Error(), "白名单") || !strings.Contains(err.Error(), "title") {
+		t.Errorf("报错应说明白名单并列出可用字段：%v", err)
+	}
+
+	// 未知集合源 → 报错
+	_, err = BuildView(nodeOf(nil, 0), &Props{CollectionSource: "content:unknown"}, ctx)
+	if err == nil || !strings.Contains(err.Error(), "未知集合源") {
+		t.Errorf("未知集合源应报错：%v", err)
+	}
+
+	// 裁剪：模板只能渲染白名单字段（未声明字段被丢弃）
+	view, err := BuildView(nodeOf(nil, 0), ok, ctx)
+	if err != nil {
+		t.Fatalf("BuildView: %v", err)
+	}
+	if len(view.Cards) != 2 || view.Cards[0].Title != "第一篇文章" {
+		t.Errorf("裁剪后仍应正常出卡：%+v", view.Cards)
+	}
+}
+
+// TestCollectionMissingResolver 未注入集合解析器时给出明确提示。
+func TestCollectionMissingResolver(t *testing.T) {
+	p := &Props{CollectionSource: "content:article"}
+	if _, err := BuildView(nodeOf(nil, 0), p, &core.RenderContext{}); err == nil {
+		t.Fatalf("缺少集合解析器应报错")
+	}
+}
+
+// TestCollectionCSS 集合模式：既走内容卡样式，逐卡规则数量也与内容条数一致。
+func TestCollectionCSS(t *testing.T) {
+	p := &Props{CollectionSource: "content:article", CardTitleField: "title"}
+	n := nodeOf(nil, 0)
+	b := &core.CSSBuckets{}
+	CompileCSS(n, p, 2, b) // 解析出 2 条内容
+	s := b.String()
+
+	if !strings.Contains(s, ":nth-child(2)") || strings.Contains(s, ":nth-child(3)") {
+		t.Errorf("逐卡规则数量应与内容条数一致（2 条）")
+	}
+	if !strings.Contains(s, "min-height: 240px") {
+		t.Errorf("集合卡应走内容卡样式（min-height 缺省 240px）")
+	}
+	for _, want := range []string{".wp-cardstack-img", ".wp-cardstack-title", ".wp-cardstack-text", ".wp-cardstack-link"} {
+		if !strings.Contains(s, want) {
+			t.Errorf("集合卡元素样式缺少 %q", want)
+		}
+	}
+}
+
+// TestBuildView 渲染视图：卡片数量随内容来源与占位数量变化。
+func TestBuildView(t *testing.T) {
+	v, err := BuildView(nodeOf(nil, 0), &Props{}, &core.RenderContext{})
+	if err != nil {
+		t.Fatalf("BuildView: %v", err)
+	}
+	if len(v.Cards) != 9 || v.HasContent {
+		t.Fatalf("无子节点应 9 张占位卡且 HasContent=false，got %d/%v", len(v.Cards), v.HasContent)
+	}
+	if v.Cards[0].Label != "1" || v.Cards[8].Label != "9" {
+		t.Errorf("占位卡序号应为 1..N，got %q/%q", v.Cards[0].Label, v.Cards[8].Label)
+	}
+	if !strings.Contains(v.Cards[0].AriaLabel, "1") {
+		t.Errorf("缺少无障碍描述：%q", v.Cards[0].AriaLabel)
+	}
+	v2, err := BuildView(nodeOf(nil, 2), &Props{}, &core.RenderContext{})
+	if err != nil {
+		t.Fatalf("BuildView(2 children): %v", err)
+	}
+	if len(v2.Cards) != 2 || !v2.HasContent {
+		t.Fatalf("2 个子节点应 2 张内容卡且 HasContent=true，got %d/%v", len(v2.Cards), v2.HasContent)
+	}
+}
