@@ -114,8 +114,9 @@
 timeline    nodes[{title,desc,icon}] + lineGrow(bool) + scrub(枚举: none|css|js)
 pindeck     pages[children] + direction(h|v) + scrub + 页切换节奏
 cardstack   cards[children] + interaction(hover-fan|scroll-stack|drag-360) + scaleBase/scaleStep + spacing
-            —— 已落地为 core.cardstack（2026-09）：trigger(hover|scroll) × shape(fan|line) 两轴，
-            scroll 模式用 sticky + CSS scroll-driven（零 JS，见 §4.6）；drag-360 待做
+            —— 已落地为 core.cardstack（2026-09）：trigger(hover|scroll|drag) × shape(fan|line) + direction。
+            scroll 用 sticky + CSS scroll-driven（零 JS）、drag 用构建期环形几何 + enhance.js 只改写一个
+            CSS 变量（路径 C，见 §4.6）—— 三种模式都有静态降级形态，无 JS / 无新特性时不缺件
 productcard image + badge + title/desc + feats[] + price{old,new} + cta{label,icon} + rating + stock
             + hoverStyle(lift|circle-flip|tilt) + badgeStyle(pill|ribbon) —— 纯 CSS hover 编排零 JS，电商核心组件（对齐 docs/06-A 商品重轨）
 showcase    image + presentation(cube-rotate|float) —— 常驻 3D 旋转展示台（产品盒/徽章），受约束 5 性能预算
@@ -147,9 +148,9 @@ delay: calc(var(--i)*0.1s)、交错入场），且编译期可确定性生成—
 组件把「按序号派生几何」收敛成**两条正交轴**，覆盖 §4.5 规划里的前两种模式：
 
 ```text
-trigger: hover  → 悬停展开（纯 CSS）              shape: fan              弧线扇形（rotate 在前，带角度）
-trigger: scroll → 滚动堆叠（sticky + scroll-driven）     line + horizontal   横排一行（无任何角度）
-                                                        line + vertical     竖排一列（无任何角度）
+trigger: hover  → 悬停展开（纯 CSS）                    shape: fan              弧线扇形（rotate 在前，带角度）
+trigger: scroll → 滚动堆叠（sticky + scroll-driven）           line + horizontal   横排一行（无任何角度）
+trigger: drag   → 环形拖拽旋转（enhance.js 只改一个变量）       line + vertical     竖排一列（无任何角度）
 ```
 
 两轴正交：`trigger` 只改布局与驱动方式，`shape`/`direction` 只改变换写法与收敛式。
@@ -214,7 +215,18 @@ fan 的位移落在旋转后的坐标系里（外接框会变大、卡片高度�
    `img → 标题 → 正文 → 附注 → 链接`，字段留空则该元素不渲染。子节点内容卡与集合卡互斥 ——
    声明了集合源就等于「卡片交给内容」，子节点不再参与卡片渲染。
 
-7. **滚动堆叠**：基础规则就是 `position: sticky + top + translate: 0 -50%` 的纯层叠，跟手收敛叠在同一条
+7. **拖拽旋转（路径 C）**：卡片按 `360i/N` 均匀落在半径 R 的圆周上，变换链
+   `translate(-50%,-50%) → rotate(θ+rot) → translateY(-R) → rotate(-(θ+rot))` —— 前一个 rotate
+   把位移送到圆周方向（于是卡片沿环走位），后一个把它转回来抵消朝向（于是**卡片始终正立**，文字可读）。
+   半径 R 由构建期算：相邻夹角 2π/N → 弦长 2R·sin(π/N)，取 `R = 卡宽 / (2·sin(π/N))` 即相邻卡片刚好不重叠。
+   增强脚本只做一件事：把指针位移折算成角度写进 `--wp-cardstack-rot`（每像素 0.5°），
+   **几何全在静态 CSS 里** —— 所以没有脚本时该变量恒为 `0deg`，卡片静态成环，点击放大与键盘聚焦照旧。
+
+   两条容易踩的坑：拖动结束若指针落在卡片上会补发一次 `click`（卡片是 label → 误放大），
+   位移超过阈值时要在捕获阶段吞掉这次点击；指针监听不要 `preventDefault`，否则点击放大被一起掐死。
+   键盘等价入口：容器 `tabindex="0"`，左右方向键每步 15°。
+
+8. **滚动堆叠**：基础规则就是 `position: sticky + top + translate: 0 -50%` 的纯层叠，跟手收敛叠在同一条
    规则的 `animation` 上，靠 `animation-timeline: view()` 驱动。**不需要 `@supports` 包裹** ——
    老浏览器把 `animation-timeline`/`animation-range` 当未知属性丢弃，动画按 0s 播完并由
    `fill-mode: both` 停在终态，视觉正好等于静态缩放。每张卡用独立关键帧（`wp-cs-<节点id>-<序号>`），
