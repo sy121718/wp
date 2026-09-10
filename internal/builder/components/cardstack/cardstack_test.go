@@ -247,6 +247,44 @@ func TestZoomCSS(t *testing.T) {
 	}
 }
 
+// TestCardLayoutParams 卡内布局可配：卡片因此能当容器用（排列方向/间距/对齐）。
+func TestCardLayoutParams(t *testing.T) {
+	def := compiled(t, nodeOf(nil, 2), &Props{})
+	for _, want := range []string{
+		"flex-direction: column",
+		"justify-content: center",
+		"align-items: center",
+		"gap: 10px",
+	} {
+		if !strings.Contains(def, want) {
+			t.Errorf("缺省卡内布局缺少 %q", want)
+		}
+	}
+
+	row := compiled(t, nodeOf(nil, 2), &Props{
+		CardLayout: "row", CardGap: "18px", CardJustify: "space-between", CardAlign: "flex-start",
+	})
+	for _, want := range []string{
+		"flex-direction: row",
+		"gap: 18px",
+		"justify-content: space-between",
+		"align-items: flex-start",
+	} {
+		if !strings.Contains(row, want) {
+			t.Errorf("自定义卡内布局缺少 %q", want)
+		}
+	}
+
+	// 枚举白名单：非法值退回缺省，绝不透传进 CSS（编译期自防御）。
+	bad := compiled(t, nodeOf(nil, 2), &Props{CardLayout: "grid; color: red", CardAlign: "evil"})
+	if strings.Contains(bad, "grid; color: red") || strings.Contains(bad, "align-items: evil") {
+		t.Errorf("非法枚举值被透传进 CSS")
+	}
+	if !strings.Contains(bad, "flex-direction: column") || !strings.Contains(bad, "align-items: center") {
+		t.Errorf("非法枚举值应退回缺省")
+	}
+}
+
 // TestContentCards 有子节点即内容卡：不套色相、裁剪溢出、高度按 min-height。
 func TestContentCards(t *testing.T) {
 	s := compiled(t, nodeOf(nil, 3), &Props{}) // 3 个子节点 → 3 张内容卡

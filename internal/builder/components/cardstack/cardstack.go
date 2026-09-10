@@ -82,6 +82,8 @@ const (
 	defaultSticky  = "50%"
 	// defaultCollectionLimit 内容集合缺省取几条。
 	defaultCollectionLimit = 6
+	// defaultCardGap 内容卡内部元素间距缺省值。
+	defaultCardGap = "10px"
 	// fallbackCardW / fallbackCardH 拖拽旋转算环形半径时的兜底卡片尺寸（非 px 宽度时使用）。
 	fallbackCardW = 320
 	fallbackCardH = 240
@@ -142,6 +144,14 @@ type Props struct {
 	CardLinkField string `json:"cardLinkField,omitempty" ct:"collectionfield,maxlen=40,sec=collection,label=链接字段"`
 	// CardLinkPrefix 链接前缀（如 /article/），与链接字段拼接成 href。
 	CardLinkPrefix string `json:"cardLinkPrefix,omitempty" ct:"text,maxlen=80,sec=collection,label=链接前缀"`
+	// CardLayout 卡内排列方向（内容卡）：column 纵向 / row 横向。
+	CardLayout string `json:"cardLayout,omitempty" ct:"select,column=纵向排列,row=横向排列,default=column,sec=style,label=卡内排列"`
+	// CardGap 卡内元素间距（缺省 10px）。
+	CardGap string `json:"cardGap,omitempty" ct:"dimension,maxlen=20,sec=style,label=卡内间距"`
+	// CardJustify 主轴对齐（缺省 center；集合卡缺省 flex-start：内容从上往下排）。
+	CardJustify string `json:"cardJustify,omitempty" ct:"select,=居中,flex-start=靠前,center=居中,flex-end=靠后,space-between=两端对齐,sec=style,label=主轴对齐"`
+	// CardAlign 交叉轴对齐（缺省 center）。
+	CardAlign string `json:"cardAlign,omitempty" ct:"select,=居中,flex-start=靠前,center=居中,flex-end=靠后,stretch=拉伸,sec=style,label=交叉轴对齐"`
 	// CardBackground 卡片背景（缺省：内容卡取主题 surface 色、数字卡取主色）。
 	CardBackground string `json:"cardBackground,omitempty" ct:"color,maxlen=200,sec=style,label=卡片背景"`
 	// CardPadding 内容卡内边距（缺省 24px；数字卡为居中排版，不受此项影响）。
@@ -191,6 +201,7 @@ func (c *Component) Validate(node *core.Node, ids map[string]bool) (err error) {
 		{"卡片内边距", p.CardPadding},
 		{"卡片圆角", p.CardRadius},
 		{"卡片边框宽度", p.CardBorder},
+		{"卡内间距", p.CardGap},
 	} {
 		if f.val != "" && !core.IsSafeCSSValue(f.val) {
 			return fmt.Errorf("节点 %s: 无效的%s: %q", node.ID, f.key, f.val)
@@ -459,11 +470,20 @@ func cardBaseDecls(content bool, p *Props) []string {
 		if background == "" {
 			background = colorSurface
 		}
+		// 卡内布局：与容器组件的 flex 参数同源，卡片因此可以当容器用。
+		layout := pickEnum(p.CardLayout, "column", "column", "row")
+		justify := pickEnum(p.CardJustify, "center", "flex-start", "center", "flex-end", "space-between")
+		align := pickEnum(p.CardAlign, "center", "flex-start", "center", "flex-end", "stretch")
+		gap := p.CardGap
+		if gap == "" {
+			gap = defaultCardGap
+		}
 		return []string{
 			"display: flex",
-			"flex-direction: column",
-			"justify-content: center",
-			"gap: 10px",
+			"flex-direction: " + layout,
+			"justify-content: " + justify,
+			"align-items: " + align,
+			"gap: " + gap,
 			"padding: " + padding,
 			"background-color: " + background,
 			"color: var(--wp-cardstack-text, #1f2430)",
@@ -739,6 +759,17 @@ func dragRadius(p *Props, n int, width, height string) float64 {
 		r = min
 	}
 	return r
+}
+
+// pickEnum 枚举白名单：不在白名单内退回缺省 —— 枚举值会直接进入 CSS 声明，
+// 必须封闭（不靠 Validate 兜底，编译期也要自防御）。
+func pickEnum(v, def string, allowed ...string) string {
+	for _, a := range allowed {
+		if v == a {
+			return v
+		}
+	}
+	return def
 }
 
 // cssPx 取 px 数值；非 px 单位退回兜底值 —— 环形半径要在编译期算三角函数，
