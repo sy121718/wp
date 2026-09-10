@@ -164,6 +164,9 @@ type Props struct {
 	// SlideEffect 卡片切换动画：复用通用动效词汇（core/keyframes_animate.go），
 	// 卡片进入视口时播放；缺省为空 = 纯覆盖（只有位置变化，不加动画）。
 	SlideEffect string `json:"slideEffect,omitempty" ct:"select,=无（纯覆盖）,fade=淡入,zoom=缩放入场,flip=翻转入场,bounce=弹入,back=回弹入场,rotate=旋转入场,light=光速入场,roll=滚入,jack=弹出,sec=motion,label=切换动画"`
+	// SlideHighlight 当前屏的循环高亮（发光 / 闪烁）：卡片滚到视口中段时才亮，
+	// 与切换动画并存 —— 两者各占一条 animation，各自带自己的 timeline 与 range。
+	SlideHighlight string `json:"slideHighlight,omitempty" ct:"select,=无,glow=发光,flash=闪烁,sec=motion,label=当前屏高亮"`
 	// SlideStack 堆叠翻页：卡片粘在同一位置，下一张滑上来盖住前一张（缺省平铺）。
 	// 与平铺的区别：平铺时上滑会把前一张推走，堆叠时前一张留在原地被覆盖。
 	SlideStack bool `json:"slideStack,omitempty" ct:"bool,sec=layout,label=堆叠翻页"`
@@ -1230,15 +1233,31 @@ func compileSlideCSS(b *core.CSSBuckets, sel string, p *Props, n int, height str
 			// flex 子项不能靠 width: 100% 定宽（会被压缩），用 flex 基准定成整屏宽。
 			decls = append(decls, "flex: 0 0 100%")
 		}
-		// 切换动画：卡片进入滚动容器视口时播放（view() 时间线绑定最近的滚动容器 = 轨道）。
-		// 不支持 view() 的浏览器把未知属性丢弃，动画按 0s 播完并由 fill-mode: both 停在终态 ——
-		// 视觉等于没有动画，卡片位置与内容都正常。
+		// 动画：**两条并列**，各自带自己的 animation-timeline / animation-range
+		// （CSS 多动画语法），所以「切换入场」与「当前屏高亮」不会互相顶掉 ——
+		// 也就不需要把高亮挪到伪元素上。两者都绑 view()（最近的滚动容器 = 轨道）：
+		//   · 入场动画：entry 0% → entry 70%（卡片刚进入视口时播一次）
+		//   · 当前屏高亮：cover 25% → cover 75%（卡片基本占满视口时持续循环）
+		// 不支持 view() 的浏览器丢弃未知属性：入场动画按 0s 播完停在终态（等于没动画），
+		// 高亮则退化成常驻循环 —— 都不影响卡片位置与内容。
+		var anims, timelines, ranges []string
 		if kf := slideEffectKeyframe(p); kf != "" {
 			b.NeedKeyframes(kf)
+			anims = append(anims, kf+" linear both")
+			timelines = append(timelines, "view()")
+			ranges = append(ranges, "entry 0% entry 70%")
+		}
+		if kf := loopEffectKey(p.SlideHighlight); kf != "" {
+			b.NeedKeyframes(kf)
+			anims = append(anims, kf+" 2s ease-in-out infinite")
+			timelines = append(timelines, "view()")
+			ranges = append(ranges, "cover 25% cover 75%")
+		}
+		if len(anims) > 0 {
 			decls = append(decls,
-				"animation: "+kf+" linear both",
-				"animation-timeline: view()",
-				"animation-range: entry 0% entry 70%",
+				"animation: "+strings.Join(anims, ", "),
+				"animation-timeline: "+strings.Join(timelines, ", "),
+				"animation-range: "+strings.Join(ranges, ", "),
 			)
 		}
 		if p.SlideStack {

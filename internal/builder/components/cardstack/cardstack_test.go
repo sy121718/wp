@@ -188,6 +188,41 @@ func TestSlideCSS(t *testing.T) {
 	}
 }
 
+// TestSlideHighlight 当前屏高亮：与切换动画**并列**成两条 animation，
+// 各自的 timeline / range 独立 —— 所以不需要把高亮挪到伪元素上。
+func TestSlideHighlight(t *testing.T) {
+	hp := &Props{Trigger: TriggerSlide, Count: 2, SlideHighlight: "glow"}
+	hs := compiled(t, nodeOf(hp, 0), hp)
+	for _, want := range []string{
+		"animation: wp-loop-glow 2s ease-in-out infinite",
+		"animation-range: cover 25% cover 75%", // 卡片基本占满视口时才亮
+		"@keyframes wp-loop-glow",
+	} {
+		if !strings.Contains(hs, want) {
+			t.Errorf("当前屏高亮缺少 %q", want)
+		}
+	}
+
+	// 两者同时开：并列成两条，互不覆盖。
+	bp := &Props{Trigger: TriggerSlide, Count: 2, SlideEffect: "flip", SlideHighlight: "glow"}
+	bs := compiled(t, nodeOf(bp, 0), bp)
+	for _, want := range []string{
+		"animation: wp-flip-in-x linear both, wp-loop-glow 2s ease-in-out infinite",
+		"animation-timeline: view(), view()",
+		"animation-range: entry 0% entry 70%, cover 25% cover 75%",
+	} {
+		if !strings.Contains(bs, want) {
+			t.Errorf("切换动画 + 当前屏高亮并列失败，缺少 %q", want)
+		}
+	}
+
+	// 两个都不开时不输出 animation。
+	plain := &Props{Trigger: TriggerSlide, Count: 2}
+	if ps := compiled(t, nodeOf(plain, 0), plain); strings.Contains(ps, "animation:") {
+		t.Errorf("都不开时不该输出 animation")
+	}
+}
+
 // TestLoopEffects 循环效果：悬停展开与 deck 主卡只走 filter/opacity 两条词汇 ——
 // 展开位移与卡片缩放已经占了 transform，swing/wobble/pulse 之类会把位移顶掉。
 func TestLoopEffects(t *testing.T) {
