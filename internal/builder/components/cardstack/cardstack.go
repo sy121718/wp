@@ -130,8 +130,11 @@ type Props struct {
 	SpreadAngle int `json:"spreadAngle,omitempty" ct:"slider,min=1,max=15,step=1,sec=motion,label=展开角度(deg)"`
 	// SpreadDistance 悬停展开平移系数（px/张，1~200，缺省 120；同时是「铺满」开关）。
 	SpreadDistance int `json:"spreadDistance,omitempty" ct:"slider,min=1,max=200,step=1,sec=motion,label=展开平移(px)"`
-	// DeckOffset 堆叠轮播的相邻卡横向间距（%，相对卡宽，缺省 54）。
-	DeckOffset int `json:"deckOffset,omitempty" ct:"slider,min=20,max=120,step=2,sec=motion,label=相邻间距(%)"`
+	// DeckDirection 堆叠轮播的切换方向：horizontal 横向 / vertical 纵向。
+	// 纵向即「首屏一张卡叠着，上下滑动翻到下一张」—— 与 slide 的纵向平铺滚动是两回事。
+	DeckDirection string `json:"deckDirection,omitempty" ct:"select,horizontal=横向切换,vertical=纵向切换,default=horizontal,sec=motion,label=切换方向"`
+	// DeckOffset 堆叠轮播的相邻卡间距（%，横向相对卡宽缺省 54、纵向相对卡高缺省 12）。
+	DeckOffset int `json:"deckOffset,omitempty" ct:"slider,min=5,max=120,step=1,sec=motion,label=相邻间距(%)"`
 	// DeckRotate 堆叠轮播相邻卡的倾斜角度（deg，缺省 4；0 = 不倾斜，用默认）。
 	DeckRotate int `json:"deckRotate,omitempty" ct:"slider,min=0,max=20,step=1,sec=motion,label=相邻倾斜(deg)"`
 	// DeckLoop 堆叠轮播循环切换：滑到最后一张继续往前会回到第一张。
@@ -291,10 +294,22 @@ func effectiveCollectionLimit(p *Props) int {
 const (
 	defaultDeckOffset    = 54 // 相邻卡横向间距（%）
 	defaultDeckRotate    = 4  // 相邻卡倾斜（deg）
-	defaultDeckScaleStep = 6  // 每远一张的缩放递减（%）
+	defaultDeckScaleStep = 6
+	// defaultDeckOffsetVertical 纵向切换的相邻卡偏移（%，相对卡高）——
+	// 纵向叠卡的分层靠缩放与层级，位移给大了会散成一列。
+	defaultDeckOffsetVertical = 12 // 每远一张的缩放递减（%）
 )
 
-// effectiveDeckOffset 相邻卡间距缺省 54%。
+// effectiveDeckDirection 堆叠轮播切换方向缺省横向。
+// （与 shape 的 direction 是两回事：那个是悬停展开的排开方向。）
+func effectiveDeckDirection(p *Props) string {
+	if p.DeckDirection == "vertical" {
+		return "vertical"
+	}
+	return "horizontal"
+}
+
+// effectiveDeckOffset 堆叠轮播相邻卡间距（横向按卡宽 %，纵向按卡高 %），缺省 54。
 func effectiveDeckOffset(p *Props) int {
 	if p.DeckOffset <= 0 {
 		return defaultDeckOffset
@@ -848,6 +863,16 @@ func compileDragCSS(b *core.CSSBuckets, sel string, p *Props, n int, width, heig
 	b.Add(core.BreakpointDesktop, sel+".is-dragging .wp-cardstack-card", []string{"transition: none"})
 }
 
+// deckTransform 堆叠轮播的变换：横向沿 X 位移，纵向沿 Y 位移（缩放与层级共用偏移绝对值）。
+func deckTransform(offset, rot int, scaleStep float64, vertical bool) string {
+	axis := "X"
+	if vertical {
+		axis = "Y"
+	}
+	return fmt.Sprintf("transform: translate(-50%%, -50%%) translate%s(calc(var(--wp-deck-off, 0) * %d%%)) rotate(calc(var(--wp-deck-off, 0) * %ddeg)) scale(calc(1 - var(--wp-deck-abs, 0) * %s))",
+		axis, offset, rot, fnum(scaleStep))
+}
+
 // dragRadius 环形半径：用户值优先；0 = 自动，保证相邻卡片弦长不小于卡宽。
 func dragRadius(p *Props, n int, width, height string) float64 {
 	if p.DragRadius > 0 {
@@ -903,6 +928,14 @@ func compileDeckCSS(b *core.CSSBuckets, sel string, p *Props, n int, width, heig
 	offset := effectiveDeckOffset(p)
 	rot := effectiveDeckRotate(p)
 	scaleStep := float64(effectiveDeckScaleStep(p)) / 100
+	vertical := effectiveDeckDirection(p) == "vertical"
+	if vertical && p.DeckOffset <= 0 {
+		offset = defaultDeckOffsetVertical
+		// 纵向倾斜减半：竖向位移配大角度会显得歪。
+		if p.DeckRotate <= 0 {
+			rot = defaultDeckRotate / 2
+		}
+	}
 	mid := float64(n-1) / 2.0
 
 	// 轨道高度：倾斜 + 缩放后卡片的外接盒，按最大偏移保守预留。
@@ -937,8 +970,7 @@ func compileDeckCSS(b *core.CSSBuckets, sel string, p *Props, n int, width, heig
 			"left: 50%",
 			"top: 50%",
 			"width: " + width,
-			fmt.Sprintf("transform: translate(-50%%, -50%%) translateX(calc(var(--wp-deck-off, 0) * %d%%)) rotate(calc(var(--wp-deck-off, 0) * %ddeg)) scale(calc(1 - var(--wp-deck-abs, 0) * %s))",
-				offset, rot, fnum(scaleStep)),
+			deckTransform(offset, rot, scaleStep, vertical),
 			"z-index: calc(50 - var(--wp-deck-abs, 0))",
 			// 越远越淡：卡片多时不至于在两侧无限堆远（max() 不被支持时退化为全不透明，不影响可用性）。
 			"opacity: max(0, calc(1 - var(--wp-deck-abs, 0) * 0.28))",
@@ -980,15 +1012,14 @@ func compileSlideCSS(b *core.CSSBuckets, sel string, p *Props, n int, height str
 		screen = defaultSlideHeight
 	}
 	// 每屏高度降级链：dvh 不认识时退回 vh（老浏览器仍是一屏一张，只是地址栏收放时略跳）。
-	screenDecl := []string{
-		"height: " + screen,
-	}
-	if strings.HasSuffix(screen, "dvh") {
-		screenDecl = append(screenDecl, "height: "+strings.TrimSuffix(screen, "dvh")+"vh")
-	}
+	// 降级链顺序：**旧值在前、新值在后** —— 后写的覆盖先写的。
+	// 反过来写的话 dvh 会被 vh 永久盖掉，等于白写。
+	screenDecl := []string{"height: " + screen}
 	cardMin := []string{"min-height: " + screen}
 	if strings.HasSuffix(screen, "dvh") {
-		cardMin = append(cardMin, "min-height: "+strings.TrimSuffix(screen, "dvh")+"vh")
+		fallback := strings.TrimSuffix(screen, "dvh") + "vh"
+		screenDecl = []string{"height: " + fallback, "height: " + screen}
+		cardMin = []string{"min-height: " + fallback, "min-height: " + screen}
 	}
 
 	b.Add(core.BreakpointDesktop, sel, []string{

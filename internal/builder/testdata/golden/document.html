@@ -322,9 +322,12 @@
             var active = parseInt(root.getAttribute('data-cardstack-deck'), 10) || 0;
             if (active < 0 || active >= total) active = Math.floor(total / 2);
             var loop = root.getAttribute('data-cardstack-loop') === '1';
+            // 纵向切换：拖动看 Y 轴、方向键用上下键（其余逻辑与横向完全共用）。
+            var axisY = root.getAttribute('data-cardstack-deck-axis') === 'y';
             var drag = null;
             var moved = false;
             var SWIPE_PX = 70;   // 拖动超过这个距离才算一次切换
+            function axisOf(e) { return axisY ? e.clientY : e.clientX; }
 
             function apply() {
                 // 循环模式下偏移要取「最短方向」：否则最后一↔第一之间会绕半圈，
@@ -354,13 +357,13 @@
 
             root.addEventListener('pointerdown', function (e) {
                 if (e.button && e.button !== 0) return;
-                drag = { x: e.clientX, dx: 0 };
+                drag = { x: axisOf(e), dx: 0 };
                 moved = false;
                 if (root.setPointerCapture) root.setPointerCapture(e.pointerId);
             });
             root.addEventListener('pointermove', function (e) {
                 if (!drag) return;
-                drag.dx = e.clientX - drag.x;
+                drag.dx = axisOf(e) - drag.x;
                 if (Math.abs(drag.dx) > 8) {
                     moved = true;
                     root.classList.add('is-dragging');
@@ -371,7 +374,8 @@
                 var dx = drag.dx;
                 drag = null;
                 root.classList.remove('is-dragging');
-                // 卡片向左滑走 = 看下一张（与触摸惯性方向一致）。
+                // 卡片向滑动方向的反向滑走 = 看下一张（与触摸惯性一致）：
+                // 横向左滑、纵向上滑都前进。
                 if (dx <= -SWIPE_PX) go(active + 1);
                 else if (dx >= SWIPE_PX) go(active - 1);
             }
@@ -398,9 +402,11 @@
                 }
             }, true);
 
+            var prevKey = axisY ? 'ArrowUp' : 'ArrowLeft';
+            var nextKey = axisY ? 'ArrowDown' : 'ArrowRight';
             root.addEventListener('keydown', function (e) {
-                if (e.key === 'ArrowLeft') { go(active - 1); e.preventDefault(); }
-                else if (e.key === 'ArrowRight') { go(active + 1); e.preventDefault(); }
+                if (e.key === prevKey) { go(active - 1); e.preventDefault(); }
+                else if (e.key === nextKey) { go(active + 1); e.preventDefault(); }
             });
 
             apply();

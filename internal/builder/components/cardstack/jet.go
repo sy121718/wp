@@ -64,6 +64,8 @@ type View struct {
 	Slide bool
 	// PageTotal 全屏分页的总屏数（页码分母）。
 	PageTotal int
+	// DeckVertical 堆叠轮播是否纵向切换（模板输出轴向，脚本据此换拖动轴与方向键）。
+	DeckVertical bool
 }
 
 // IsCollection 是否内容集合模式 —— 装配层据此决定「子节点模板」还是「组件自带字段映射」。
@@ -80,6 +82,7 @@ func BuildView(node *core.Node, p *Props, ctx *core.RenderContext) (View, error)
 	drag := trigger == TriggerDrag
 	deck := trigger == TriggerDeck
 	slide := trigger == TriggerSlide
+	deckVertical := deck && effectiveDeckDirection(p) == "vertical"
 	if source := collectionSource(p); source != "" {
 		cards, err := collectionCards(node, p, ctx)
 		if err != nil {
@@ -90,6 +93,7 @@ func BuildView(node *core.Node, p *Props, ctx *core.RenderContext) (View, error)
 			Drag: drag, Deck: deck, DeckIndex: len(cards) / 2, DeckLoop: p.DeckLoop,
 			Empty: len(cards) == 0, EmptyText: emptyText(p), HideEmpty: p.CollectionEmpty == "hide",
 			LinkText: linkText(p), Slide: slide, PageTotal: len(cards),
+			DeckVertical: deckVertical,
 		}, nil
 	}
 
@@ -103,6 +107,7 @@ func BuildView(node *core.Node, p *Props, ctx *core.RenderContext) (View, error)
 		Cards: cards, HasContent: hasContent(node),
 		Drag: drag, Deck: deck, DeckIndex: len(cards) / 2, DeckLoop: p.DeckLoop,
 		Slide: slide, PageTotal: len(cards),
+		DeckVertical: deckVertical,
 	}, nil
 }
 
