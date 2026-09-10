@@ -1079,8 +1079,17 @@ func compileSlideCSS(b *core.CSSBuckets, sel string, p *Props, n int, height str
 		overflowCross,
 		"scroll-snap-type: " + snapAxis + " mandatory",
 		"-webkit-overflow-scrolling: touch",
-		"scrollbar-width: thin",
+		// 隐藏滚动条：全屏分页里滚动条是纯视觉噪音，右下角的页码角标已经说明了位置。
+		// 隐藏不影响滚动本身 —— 滚轮、触摸板、键盘、触屏手势照旧。
+		"scrollbar-width: none",
+		"-ms-overflow-style: none",
 	}, screenDecl...)
+	// WebKit/Blink 用伪元素隐藏（scrollbar-width 在它们上面还不生效）。
+	b.Add(core.BreakpointDesktop, track+"::-webkit-scrollbar", []string{
+		"display: none",
+		"width: 0",
+		"height: 0",
+	})
 	if horizontal {
 		// 横向分页必须让卡片真正横排：块级元素默认纵向堆叠，宽度不会溢出，
 		// 轨道 scrollWidth 恒等于 clientWidth —— 滚动条根本出不来（实测踩过）。

@@ -188,6 +188,25 @@ func TestSlideCSS(t *testing.T) {
 	}
 }
 
+// TestSlideScrollbarHidden 滚动条默认隐藏（三种写法覆盖 Firefox / 旧 Edge / WebKit）。
+func TestSlideScrollbarHidden(t *testing.T) {
+	p := &Props{Trigger: TriggerSlide, Count: 3}
+	s := compiled(t, nodeOf(p, 0), p)
+	for _, want := range []string{
+		"scrollbar-width: none",
+		"-ms-overflow-style: none",
+		"::-webkit-scrollbar",
+		"display: none",
+	} {
+		if !strings.Contains(s, want) {
+			t.Errorf("滚动条隐藏缺少 %q", want)
+		}
+	}
+	if strings.Contains(s, "scrollbar-width: thin") {
+		t.Errorf("旧的 thin 写法应被替换掉")
+	}
+}
+
 // TestSlideHorizontal 横向滚动：整套换到 X 轴（含吸附与 sticky 轴）。
 func TestSlideHorizontal(t *testing.T) {
 	p := &Props{Trigger: TriggerSlide, Count: 3, SlideDirection: slideDirectionHorizontal, SlideStack: true}
