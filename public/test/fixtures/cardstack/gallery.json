@@ -108,7 +108,8 @@
       "cardRadius": "18px",
       "cardPadding": "14px",
       "cardJustify": "flex-start",
-      "cardGap": "7px"
+      "cardGap": "7px",
+      "cardAlign": "stretch"
      },
      "children": [
       {

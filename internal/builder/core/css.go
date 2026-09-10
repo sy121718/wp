@@ -240,6 +240,35 @@ func (b *CSSBuckets) AddHover(sel string, decls []string) {
 // 原因：:active 在触屏上同样触发（手指按下即激活），是移动端唯一可靠的「按下反馈」。
 // 若一并包进 hover:hover，触屏设备将完全失去按压反馈 —— 这正是此前按压态缺失
 // （effects.go 分类目录按钮 FX 里的 ◻️ 项）留下的体验缺口。
+// AddHoverNone 添加「无悬停设备」下生效的规则（触屏）。
+//
+// 与 AddHover 互补：AddHover 只包 @media (hover: hover)，触屏上整段不输出；
+// 而触屏没有悬停，任何依赖 :hover 的形态都必须在这里给出等价形态，
+// 否则手机上永远不触发（cardstack 的四种悬停形态踩过的坑）。
+// 复用 hover 桶输出 —— 两个媒体查询互斥，顺序无关。
+func (b *CSSBuckets) AddHoverNone(sel string, decls []string) {
+	filtered := make([]string, 0, len(decls))
+	for _, d := range decls {
+		if d != "" {
+			filtered = append(filtered, d)
+		}
+	}
+	if len(filtered) == 0 {
+		return
+	}
+	rule := sel + " {\n" + indentDecl(filtered) + "\n}"
+	wrapped := "@media (hover: none) {\n  " + rule + "\n}"
+	if b.seen == nil {
+		b.seen = map[string]bool{}
+	}
+	key := "hovernone" + wrapped
+	if b.seen[key] {
+		return
+	}
+	b.seen[key] = true
+	b.hover = append(b.hover, wrapped)
+}
+
 func (b *CSSBuckets) AddActive(sel string, decls []string) {
 	filtered := make([]string, 0, len(decls))
 	for _, d := range decls {

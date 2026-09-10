@@ -820,6 +820,10 @@ func compileHoverCSS(b *core.CSSBuckets, sel string, p *Props, n int, width, hei
 			hoverDecls = append(hoverDecls, "animation: "+kf+" 2s ease-in-out infinite")
 		}
 		b.AddHover(hover, hoverDecls)
+		// 触屏没有悬停：把展开态直接给出去，否则手机上这一整块永远保持合上的样子、
+		// 看起来像"没反应"（AddHover 的规则在 hover: none 下根本不输出）。
+		// 用 adaptive（含 clamp 收敛）而不是 fixed —— 窄屏上卡片多时不会横向溢出。
+		b.AddHoverNone(hover, []string{"transform: " + adaptive})
 	}
 
 	// 按压：容器按下时全部卡变暗；被点的卡恢复原色（并显形数字）后置顶。
