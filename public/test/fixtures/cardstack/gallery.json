@@ -51,7 +51,7 @@
      "props": {
       "mode": "plaintext",
       "plainTag": "p",
-      "text": "同一份组件，覆盖商品陈列、文章列表、团队介绍、图片画廊、特性轮播与全屏叙事 —— 换一个参数就换一种形态。"
+      "text": "同一份组件，覆盖商品陈列、文章列表、团队介绍、图片画廊、特性轮播与全屏叙事 —— 换一个参数就换一种形态。页面内容全部由编辑器组件生成。"
      }
     }
    ]
@@ -89,7 +89,7 @@
      "props": {
       "mode": "plaintext",
       "plainTag": "p",
-      "text": "横排一行，卡片不带角度。下面四张卡来自商品内容集合 —— 不是手工摆的，内容多一条就多一张。"
+      "text": "横排一行，卡片不带角度。四个商品来自内容集合，内容多一条就多一张卡。卡首的色块是容器组件用渐变加图案生成的 —— 纯 CSS，不依赖任何图片文件。"
      }
     },
     {
@@ -103,7 +103,7 @@
       "collectionSource": "content:product",
       "collectionLimit": 4,
       "width": "258px",
-      "height": "372px",
+      "height": "368px",
       "cardBackground": "#ffffff",
       "cardRadius": "18px",
       "cardPadding": "14px",
@@ -112,13 +112,24 @@
      },
      "children": [
       {
-       "id": "gi",
-       "type": "core.image",
+       "id": "gv1",
+       "type": "core.container",
        "props": {
-        "src": "",
-        "alt": "",
-        "binding": {
-         "field": "item.images"
+        "tag": "div",
+        "box": {
+         "minHeight": "152px"
+        },
+        "visual": {
+         "bgGradient": "linear-gradient(135deg, #1f2430 0%, #3b4457 100%)",
+         "radius": "10px"
+        },
+        "layout": {
+         "engine": "flex",
+         "flex": {
+          "direction": "column",
+          "justify": "center",
+          "align": "center"
+         }
         }
        }
       },
@@ -204,7 +215,7 @@
      "props": {
       "mode": "plaintext",
       "plainTag": "p",
-      "text": "竖排一列，卡片自动带上封面、标题、摘要与「阅读全文」链接。这张用的是内置字段映射 —— 只配字段，不用摆卡内结构。"
+      "text": "竖排一列，卡片自带封面、标题、摘要与「阅读全文」链接。这一块用的是内置字段映射 —— 只配字段名，不用摆卡内结构。"
      }
     },
     {
@@ -264,7 +275,7 @@
      "props": {
       "mode": "plaintext",
       "plainTag": "p",
-      "text": "鼠标移到卡片上，整组沿弧线散开 —— 收起时是一摞，悬停时铺成一把扇子。适合「名单类」内容：不占地方，又藏得住信息。"
+      "text": "鼠标移到卡片上，整组沿弧线散开：收起时是一摞，悬停时铺成一把扇子。适合名单类内容 —— 不占地方，又藏得住信息。"
      }
     },
     {
@@ -555,7 +566,7 @@
      "props": {
       "mode": "plaintext",
       "plainTag": "p",
-      "text": "每屏一件事，滚动翻页。上面五块是页面里的嵌入用法；这一块单独铺满一屏高，滚轮停在这一块里就能翻页，右下角有页码。"
+      "text": "每屏一件事，滚动翻页。上面五块是页面里的嵌入用法；这一块单独铺满大半屏，鼠标停在这一块里就能翻页，右下角有页码。"
      }
     },
     {
