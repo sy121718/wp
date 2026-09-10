@@ -1,6 +1,6 @@
 {
   "version": "1.1",
-  "comment": "项目主要库的 context7 ID 映射。优先查本地，未命中再调 context7 API，查询后回填。接口形式 https://context7.com/api/v1/<owner>/<repo>?topic=..&tokens=..&type=txt 。2026-09 对照 go.mod 全量核对：删除已移除的 golang-jwt/lumberjack；新增 tollbooth/testcontainers/goleak/uuid/imaging/nativewebp/gin-contrib-sessions。2026-09-09 更新：tinymce 已下线，改为 trix（本地 vendor /static/vendor/trix/）；新增 idiomorph（本地 vendor /static/vendor/idiomorph/）。未收录说明：unrolled/secure 与 gorilla/sessions 在 context7 无条目（secure 配置自足看 README；sessions 查 gin-contrib-sessions 即可）；gorm 驱动文档并入 gorm 主条目；robfig/cron 仅作为 asynq 的 indirect 存在。",
+  "comment": "项目主要库的 context7 ID 映射。优先查本地，未命中再调 context7 API，查询后回填。接口形式 https://context7.com/api/v1/<owner>/<repo>?topic=..&tokens=..&type=txt 。2026-09 对照 go.mod 全量核对：删除已移除的 golang-jwt/lumberjack；新增 tollbooth/testcontainers/goleak/uuid/imaging/nativewebp/gin-contrib-sessions。2026-09-09 更新：tinymce 已下线，改为 trix（本地 vendor /static/vendor/trix/）；新增 idiomorph（本地 vendor /static/vendor/idiomorph/）。2026-09 动效选型（docs/02-F-motion-animation.md）：新增 12 条动画库条目（gsap/motion/animejs/lenis/aos/scrollreveal/barba/tsparticles/mojs/animate-css 及 gsap-docs/animejs-docs 聚合版）；hover.css、magic、Splitting.js、kute.js 在 context7 无条目；CSS scroll-driven animations 为浏览器原生标准、无库条目（查 MDN）；聚合版 /websites/* 文档量远大于仓库版，与仓库版并存。未收录说明：unrolled/secure 与 gorilla/sessions 在 context7 无条目（secure 配置自足看 README；sessions 查 gin-contrib-sessions 即可）；gorm 驱动文档并入 gorm 主条目；robfig/cron 仅作为 asynq 的 indirect 存在。",
   "libraries": {
     "gin": "/gin-gonic/gin",
     "gorm": "/go-gorm/gorm",
@@ -23,6 +23,18 @@
     "uuid": "/google/uuid",
     "imaging": "/disintegration/imaging",
     "nativewebp": "/hugosmits86/nativewebp",
-    "gin-contrib-sessions": "/gin-contrib/sessions"
+    "gin-contrib-sessions": "/gin-contrib/sessions",
+    "gsap": "/greensock/gsap",
+    "gsap-docs": "/websites/gsap_v3",
+    "motion": "/websites/motion_dev",
+    "animejs": "/juliangarnier/anime",
+    "animejs-docs": "/websites/animejs",
+    "lenis": "/darkroomengineering/lenis",
+    "aos": "/michalsnik/aos",
+    "scrollreveal": "/jlmakes/scrollreveal",
+    "barba": "/barbajs/barba",
+    "tsparticles": "/tsparticles/tsparticles",
+    "mojs": "/mojs/mojs",
+    "animate-css": "/animate-css/animate.css"
   }
 }

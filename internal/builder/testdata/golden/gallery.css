@@ -1,3 +1,10 @@
+@layer wp-base, wp-plugin, wp-auto, wp-theme, wp-local;
+
+@layer wp-base {
+body {
+  container-name: wp-theme;
+}
+
 .wp-c-ga1 .gi {
   aspect-ratio: 16 / 9;
   border-radius: 8px;
@@ -102,5 +109,15 @@
 }
 .wp-c-ga2 .gallery-slide {
   flex: 0 0 100.000%;
+}
+}
+}
+
+@layer wp-auto {
+@container (width < 400px) {
+  .wp-c-ga1 {
+  grid-template-columns: 1fr;
+
+}
 }
 }

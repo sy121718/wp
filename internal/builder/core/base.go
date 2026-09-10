@@ -32,6 +32,8 @@ var ShadowPresets = map[string]string{
 	"md": "0 4px 12px rgba(0,0,0,0.12)",
 	"lg": "0 10px 28px rgba(0,0,0,0.16)",
 	"xl": "0 20px 48px rgba(0,0,0,0.2)",
+	// neon 霓虹发光（强调元素/暗色主题；双层光晕，颜色与 --wp-c-primary 同族）。
+	"neon": "0 0 8px rgba(59,130,246,.6), 0 0 24px rgba(59,130,246,.35)",
 }
 
 // negMarginLimit 负边距下限（单侧绝对值上限，防溢出视口）。
@@ -188,8 +190,13 @@ type AdvancedProps struct {
 	Border BorderProps `json:"border,omitempty" ct:"group"`
 	// Radius 四角独立圆角（顺时针：左上/右上/右下/左下），用于不规则圆角。
 	Radius RadiusProps `json:"radius,omitempty" ct:"group"`
-	// Shadow 阴影预设 Token：sm / md / lg / xl。
-	Shadow string `json:"shadow,omitempty" ct:"select,sm=小,md=中,lg=大,xl=特大,sec=border,label=阴影"`
+	// Shadow 阴影预设 Token：sm / md / lg / xl / neon（霓虹发光，强调元素）。
+	Shadow string `json:"shadow,omitempty" ct:"select,sm=小,md=中,lg=大,xl=特大,neon=霓虹,sec=border,label=阴影"`
+	// Surface 表面质感预设："" 标准 / glass 玻璃拟态 / liquid 液态玻璃。
+	// 需要元素背后有内容（背景图/相邻区块）才呈现透镜效果；见 core/effects.go。
+	Surface string `json:"surface,omitempty" ct:"select,=标准,glass=玻璃拟态,liquid=液态玻璃,neumorph=新拟态,sec=border,label=表面质感"`
+	// TextGradient 渐变文字（CSS 渐变值；background-clip: text 实现）。
+	TextGradient string `json:"textGradient,omitempty" ct:"safe,maxlen=300,sec=advanced,label=渐变文字"`
 	// Opacity 不透明度 0~100（百分比）。
 	Opacity int `json:"opacity,omitempty" ct:"int,min=0,max=100,sec=layout,label=不透明度(%)"`
 	// HideOn 响应式显隐开关：三端全开时编译器照常输出（保持哑与确定性），编辑器层提示。
@@ -215,6 +222,10 @@ type BorderProps struct {
 	Width string `json:"width,omitempty" ct:"dimension,maxlen=20,sec=border,label=边框宽度"` // 如 "1px"
 	Style string `json:"style,omitempty" ct:"select,solid=实线,dashed=虚线,dotted=点线,double=双线,sec=border,label=边框样式"`
 	Color string `json:"color,omitempty" ct:"color,maxlen=200,sec=border,label=边框颜色"`
+	// Gradient 渐变边框（border-image 方案，优先于三要素边框；与 Radius 同用时圆角失效为直角）。
+	Gradient string `json:"gradient,omitempty" ct:"safe,maxlen=300,sec=border,label=渐变边框"`
+	// Flow 边框流动（Gradient 需为 conic-gradient(...)，角度旋转动画）。
+	Flow bool `json:"flow,omitempty" ct:"bool,sec=border,label=边框流动"`
 }
 
 // IsSet 边框是否已配置。
@@ -324,6 +335,23 @@ func ValidateAdvanced(a *AdvancedProps, nodeID string, ids map[string]bool) (err
 			return fmt.Errorf("节点 %s: 无效的阴影预设: %q", nodeID, a.Shadow)
 		}
 	}
+	// 表面质感白名单（效果基本库，core/effects.go）。
+	if !allowedSurface[a.Surface] {
+		return fmt.Errorf("节点 %s: 无效的表面质感: %q（glass/liquid）", nodeID, a.Surface)
+	}
+	// 渐变边框：CSS 安全值；流动需 conic-gradient（否则角度动画无消费对象）。
+	if a.Border.Gradient != "" {
+		if !IsSafeCSSValue(a.Border.Gradient) {
+			return fmt.Errorf("节点 %s: 无效的渐变边框: %q", nodeID, a.Border.Gradient)
+		}
+		if a.Border.Flow && !strings.Contains(a.Border.Gradient, "conic-gradient(") {
+			return fmt.Errorf("节点 %s: 边框流动需 conic-gradient 渐变", nodeID)
+		}
+	}
+	// 渐变文字安全值。
+	if a.TextGradient != "" && !IsSafeCSSValue(a.TextGradient) {
+		return fmt.Errorf("节点 %s: 无效的渐变文字: %q", nodeID, a.TextGradient)
+	}
 	if a.Opacity < 0 || a.Opacity > 100 {
 		return fmt.Errorf("节点 %s: 不透明度必须在 0~100 之间: %d", nodeID, a.Opacity)
 	}
@@ -418,16 +446,41 @@ func CompileAdvanced(nodeID string, a *AdvancedProps, b *CSSBuckets) (extraClass
 	if v := a.Radius.CSS(); v != "" {
 		desktop = append(desktop, "border-radius: "+v)
 	}
+	// 渐变边框（border-image 方案，优先于三要素边框；border-width 缺省 2px；
+	// 与 Radius 同用时圆角失效为直角，注释已告知）。流动 = conic 角度旋转动画。
+	if a.Border.Gradient != "" {
+		bw := a.Border.Width
+		if bw == "" {
+			bw = "2px"
+		}
+		desktop = append(desktop, "border: "+bw+" solid transparent", "border-image: "+a.Border.Gradient+" 1")
+		if a.Border.Flow {
+			desktop = append(desktop, "animation: wp-border-flow 3s linear infinite")
+			b.NeedKeyframes("wp-border-flow")
+			b.AddKeyframes("wp-border-flow-angle", BorderFlowAngleProperty)
+		}
+	}
 
 	// 阴影 / 不透明度 / 层级。
 	if v, ok := ShadowPresets[a.Shadow]; a.Shadow != "" && ok {
 		desktop = append(desktop, "box-shadow: "+v)
+	}
+	// 表面质感（glass/liquid，效果基本库 core/effects.go；内阴影覆盖上方外阴影预设，质感优先）。
+	CompileSurface(sel, a.Surface, b)
+	// 渐变文字（覆盖 color/背景类声明，置于尾部保证优先级）。
+	if a.TextGradient != "" {
+		desktop = append(desktop, TextGradientDecls(a.TextGradient)...)
 	}
 	if a.Opacity > 0 && a.Opacity < 100 {
 		desktop = append(desktop, fmt.Sprintf("opacity: %s", strconv.FormatFloat(float64(a.Opacity)/100, 'f', 2, 64)))
 	}
 	if a.ZIndex != 0 {
 		desktop = append(desktop, fmt.Sprintf("z-index: %d", a.ZIndex))
+	} else if a.Interaction.Sticky {
+		// 吸顶自动抬升层叠（10）：吸顶元素需高于后续内容，否则会被滚动上来的
+		// 区块覆盖；用户显式设置 ZIndex 时以其为准（此处不覆盖）。
+		// 放在 Advanced 而非 CompileInteraction：后者单独成规则，会覆盖用户 ZIndex。
+		desktop = append(desktop, "z-index: 10")
 	}
 
 	// 通用按端覆盖：解析「分号分隔的 CSS 声明」追加到对应断点（后者覆盖前者，符合 CSS 层叠）。

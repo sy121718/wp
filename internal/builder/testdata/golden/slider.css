@@ -1,3 +1,10 @@
+@layer wp-base, wp-plugin, wp-auto, wp-theme, wp-local;
+
+@layer wp-base {
+body {
+  container-name: wp-theme;
+}
+
 .wp-c-sl1 {
   position: relative;
   overflow: hidden;
@@ -83,5 +90,6 @@
 @media (max-width: 767px) {
 .wp-c-sl1 .wp-slide {
   flex: 0 0 100.0000%;
+}
 }
 }

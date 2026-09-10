@@ -1,3 +1,10 @@
+@layer wp-base, wp-plugin, wp-auto, wp-theme, wp-local;
+
+@layer wp-base {
+body {
+  container-name: wp-theme;
+}
+
 .wp-c-s1 {
   margin-top: 10px;
   margin-bottom: 20px;
@@ -16,5 +23,6 @@
 @media (max-width: 767px) {
 .wp-c-s1 {
   height: 20px;
+}
 }
 }

@@ -46,6 +46,15 @@ func decode(node *core.Node) (p globalrefProps, err error) {
 	return p, nil
 }
 
+// BlockIDOf 读取 globalref 节点引用的块 ID（渲染层防环检查用）。
+func BlockIDOf(node *core.Node) (string, error) {
+	p, err := decode(node)
+	if err != nil {
+		return "", err
+	}
+	return p.BlockID, nil
+}
+
 // Validate 校验节点：blockId 非空、叶子节点、ID 参与文档级查重。
 func (c *Component) Validate(node *core.Node, ids map[string]bool) (err error) {
 	if err = core.ValidateNodeID(node.ID, node.Name, ids); err != nil {

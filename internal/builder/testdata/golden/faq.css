@@ -1,3 +1,10 @@
+@layer wp-base, wp-plugin, wp-auto, wp-theme, wp-local;
+
+@layer wp-base {
+body {
+  container-name: wp-theme;
+}
+
 .wp-c-fq1 {
   display: flex;
   flex-direction: column;
@@ -40,4 +47,5 @@
   padding: 0 18px 14px;
   color: rgba(0,0,0,0.65);
   line-height: 1.6;
+}
 }

@@ -1,0 +1,7 @@
+@layer wp-base, wp-plugin, wp-auto, wp-theme, wp-local;
+
+@layer wp-base {
+body {
+  container-name: wp-theme;
+}
+}

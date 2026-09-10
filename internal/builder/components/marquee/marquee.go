@@ -121,7 +121,7 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		"animation: wp-marquee-" + id + " " + strconv.FormatFloat(speed, 'f', -1, 64) + "s linear infinite",
 	})
 	// keyframes：整个轨道位移自身宽度一半（双份内容无缝衔接）。
-	b.Add(core.BreakpointDesktop, "@keyframes wp-marquee-"+id, []string{
+	b.AddKeyframesDecls("wp-marquee-"+id, []string{
 		"from { transform: translateX(" + from + ") }",
 		"to { transform: translateX(" + to + ") }",
 	})

@@ -1,3 +1,10 @@
+@layer wp-base, wp-plugin, wp-auto, wp-theme, wp-local;
+
+@layer wp-base {
+body {
+  container-name: wp-theme;
+}
+
 .wp-c-tb1 {
   width: 100%;
   border-collapse: collapse;
@@ -19,4 +26,5 @@
   font-weight: 600;
   background: var(--wp-c-surface, #f5f6f8);
   border-bottom: 2px solid rgba(0,0,0,0.12);
+}
 }

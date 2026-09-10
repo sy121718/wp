@@ -1,14 +1,13 @@
 package core
 
 import (
+	"errors"
 	"fmt"
 	"regexp"
+	"strings"
 )
 
-// 共享排版组（对标 Elementor Group_Control_Typography，但声明式实现）。
-// heading/text 等文本类组件嵌入 TextStyle，使用同一份校验与 CSS 生成，
-// 消除组件间重复定义。组内字段（fontSize/lineHeight/textAlign）为组件通用
-// 组合件，专有字段（如 heading 的字重/转换）仍留在组件自己的 Props。
+// TextStyle 三端文字排版共享组（标题/文本等排版组件复用）。
 type TextStyle struct {
 	Desktop TextStyleValue `json:"desktop,omitempty"`
 	Tablet  TextStyleValue `json:"tablet,omitempty"`
@@ -89,22 +88,32 @@ func (ts TextStyle) BreakpointDecls(bp string) []string {
 // 嵌入 AdvancedProps.Interaction 后所有组件自动获得动效能力。
 type InteractionProps struct {
 	// Entrance 入场动效："" 关闭 / fade-in / fade-up / fade-down / fade-left /
-	// fade-right / zoom-in / zoom-out / slide-up / slide-down / slide-left /
-	// slide-right / flip-x / flip-y / blur-in / bounce-in / rotate-in。
+	// fade-right / zoom-in / zoom-out / slide-* / flip-x / flip-y / blur-in /
+	// bounce-in / rotate-in / back-in-* / bounce-in-* / fade-in-* 角向 /
+	// light-speed-in-* / roll-in / jack-in-the-box / zoom-in-* 方向 / rotate-in-* 方向。
 	Entrance string `json:"entrance,omitempty"`
 	// EntranceDelay 入场延迟（秒，0~3，一位小数），编排多元素先后入场。
 	EntranceDelay float64 `json:"entranceDelay,omitempty"`
 	// EntranceDuration 入场时长档位：fast(0.3s) / normal(0.6s，默认) / slow(1s)。
 	EntranceDuration string `json:"entranceDuration,omitempty"`
+	// EntranceEasing 入场缓动："" 弹簧（默认，linear() 采样，Apple 式过冲回弹，
+	// 老浏览器回退 ease）/ soft 柔和弹簧 / bouncy 弹跳弹簧 / classic 经典 ease。
+	EntranceEasing string `json:"entranceEasing,omitempty"`
 	// ScrollReveal 滚动到视口时触发入场（CSS animation-timeline: view()，
 	// 零 JS；旧浏览器降级为直接入场）。"" 关闭 / reveal。
 	ScrollReveal string `json:"scrollReveal,omitempty"`
 	// HoverEffect 悬浮效果："" 无 / lift 上浮 / scale 放大 / glow 发光 /
 	// shadow 阴影加深 / underline 下划线生长。
 	HoverEffect string `json:"hoverEffect,omitempty"`
-	// LoopEffect 循环动画："" 无 / pulse 脉冲 / float 漂浮 / glow 呼吸发光 /
-	// spin 旋转（装饰元素用，内容区慎用）。
+	// LoopEffect 循环动画："" 无 / pulse 脉冲 / float 漂浮 / drift 横向漂移 /
+	// shake 震动 / jello 果冻 / heartbeat 心跳 / blob 液态形变 /
+	// flash 闪烁 / rubber-band 橡皮筋 / swing 摇摆 / tada 挥舞 / wobble 摇晃 /
+	// head-shake 摇头 / bounce 弹跳 / glow 呼吸发光 / spin 旋转（装饰元素用，内容区慎用）。
 	LoopEffect string `json:"loopEffect,omitempty"`
+	// ScrollStory 滚动叙事（view() 进度连续绑定：滚动多少动画走多少，可逆跟手；
+	// Apple 产品页式叙事）：zoom 放大 / rise 上滑 / fade 渐显。独占 animation
+	// 声明，与 Entrance / ScrollReveal / LoopEffect 互斥。旧浏览器降级为静态终态。
+	ScrollStory string `json:"scrollStory,omitempty"`
 	// HoverLift 悬浮上浮（兼容旧字段，等效 HoverEffect=lift）。
 	HoverLift bool `json:"hoverLift,omitempty"`
 	// Sticky 滚动吸顶定位。
@@ -121,12 +130,36 @@ var (
 		"zoom-in": true, "zoom-out": true,
 		"slide-up": true, "slide-down": true, "slide-left": true, "slide-right": true,
 		"flip-x": true, "flip-y": true, "blur-in": true, "bounce-in": true, "rotate-in": true,
+		// Animate.css 拆解扩充（keyframes_animate.go）：
+		"back-in-up": true, "back-in-down": true, "back-in-left": true, "back-in-right": true,
+		"bounce-in-down": true, "bounce-in-up": true, "bounce-in-left": true, "bounce-in-right": true,
+		"fade-in-top-left": true, "fade-in-top-right": true,
+		"fade-in-bottom-left": true, "fade-in-bottom-right": true,
+		"light-speed-in-left": true, "light-speed-in-right": true,
+		"roll-in": true, "jack-in-the-box": true,
+		"zoom-in-down": true, "zoom-in-up": true, "zoom-in-left": true, "zoom-in-right": true,
+		"rotate-in-down-left": true, "rotate-in-down-right": true,
+		"rotate-in-up-left": true, "rotate-in-up-right": true,
+		"flip-in-x": true, "flip-in-y": true,
 	}
 	allowedEntranceDuration = map[string]bool{"": true, "fast": true, "normal": true, "slow": true}
+	allowedEntranceEasing   = map[string]bool{"": true, "spring": true, "soft": true, "bouncy": true, "classic": true}
 	allowedScrollReveal     = map[string]bool{"": true, "reveal": true}
-	allowedHoverEffect      = map[string]bool{"": true, "lift": true, "scale": true, "glow": true, "shadow": true, "underline": true}
-	allowedLoopEffect       = map[string]bool{"": true, "pulse": true, "float": true, "glow": true, "spin": true}
+	allowedScrollStory      = map[string]bool{"": true, "zoom": true, "rise": true, "fade": true}
+	allowedHoverEffect      = map[string]bool{"": true, "lift": true, "scale": true, "glow": true, "shadow": true, "underline": true, "shine": true,
+		"sink": true, "grow": true, "border-glow": true, "text-glow": true, "skew": true,
+		"img-zoom": true, "img-zoom-out": true, "img-gray": true, "img-blur": true, "img-bright": true, "img-sepia": true, "img-rotate": true, "img-flip": true}
+	allowedLoopEffect = map[string]bool{"": true, "pulse": true, "float": true, "drift": true, "shake": true, "jello": true, "heartbeat": true, "blob": true, "flash": true, "rubber-band": true, "swing": true, "tada": true, "wobble": true, "head-shake": true, "bounce": true, "glow": true, "spin": true}
 )
+
+// timingOverride 组合缓动覆盖声明：存在并接的循环动画时给出两个值
+// （入场用弹簧曲线、循环保持 ease-in-out），避免单值扩展到全部动画。
+func timingOverride(spring string, withLoop bool) string {
+	if withLoop {
+		return "animation-timing-function: " + spring + ", ease-in-out"
+	}
+	return "animation-timing-function: " + spring
+}
 
 // entranceDurationCSS 时长档位 → CSS 值。
 func entranceDurationCSS(d string) string {
@@ -141,24 +174,88 @@ func entranceDurationCSS(d string) string {
 }
 
 // ValidateInteraction 交互组校验（效果基本库白名单 + 限幅）。
+// interactionFieldChecks 字段级校验表（表驱动：新增动效字段只需加一行校验器，
+// 返回非空字符串 = 校验失败详情）。文案与词表由各自白名单维护。
+var interactionFieldChecks = []func(p InteractionProps) string{
+	func(p InteractionProps) string {
+		if !allowedEntrance[p.Entrance] {
+			return fmt.Sprintf("无效的入场动效: %q", p.Entrance)
+		}
+		return ""
+	},
+	func(p InteractionProps) string {
+		if p.EntranceDelay < 0 || p.EntranceDelay > 3 {
+			return fmt.Sprintf("入场延迟 %.1fs 超限（0~3）", p.EntranceDelay)
+		}
+		return ""
+	},
+	func(p InteractionProps) string {
+		if !allowedEntranceDuration[p.EntranceDuration] {
+			return fmt.Sprintf("无效的入场时长档位: %q（fast/normal/slow）", p.EntranceDuration)
+		}
+		return ""
+	},
+	func(p InteractionProps) string {
+		if !allowedEntranceEasing[p.EntranceEasing] {
+			return fmt.Sprintf("无效的入场缓动: %q（spring/soft/bouncy/classic）", p.EntranceEasing)
+		}
+		return ""
+	},
+	func(p InteractionProps) string {
+		if !allowedScrollReveal[p.ScrollReveal] {
+			return fmt.Sprintf("无效的滚动触发: %q", p.ScrollReveal)
+		}
+		return ""
+	},
+	func(p InteractionProps) string {
+		if !allowedScrollStory[p.ScrollStory] {
+			return fmt.Sprintf("无效的滚动叙事: %q（zoom/rise/fade）", p.ScrollStory)
+		}
+		return ""
+	},
+	func(p InteractionProps) string {
+		if !allowedHoverEffect[p.HoverEffect] {
+			return fmt.Sprintf("无效的悬浮效果: %q（lift/scale/glow/shadow/underline）", p.HoverEffect)
+		}
+		return ""
+	},
+	func(p InteractionProps) string {
+		if !allowedLoopEffect[p.LoopEffect] {
+			return fmt.Sprintf("无效的循环动画: %q（pulse/float/glow/spin）", p.LoopEffect)
+		}
+		return ""
+	},
+	func(p InteractionProps) string {
+		if p.StickyTop != "" && !IsSafeCSSValue(p.StickyTop) {
+			return fmt.Sprintf("无效的吸顶偏移: %q", p.StickyTop)
+		}
+		return ""
+	},
+}
+
+// ValidateInteraction 交互组校验（字段级表驱动 + 关系性互斥规则）。
 func ValidateInteraction(p InteractionProps) (err error) {
-	if !allowedEntrance[p.Entrance] {
-		return fmt.Errorf("无效的入场动效: %q", p.Entrance)
+	for _, check := range interactionFieldChecks {
+		if msg := check(p); msg != "" {
+			return errors.New(msg)
+		}
 	}
-	if p.EntranceDelay < 0 || p.EntranceDelay > 3 {
-		return fmt.Errorf("入场延迟 %.1fs 超限（0~3）", p.EntranceDelay)
+	return validateInteractionRelations(p)
+}
+
+// validateInteractionRelations 关系性校验（跨字段互斥）：滚动叙事独占 animation 声明，
+// 与入场/滚动触发/循环同时设置会互相覆盖，直接拒绝。
+func validateInteractionRelations(p InteractionProps) (err error) {
+	if p.ScrollStory == "" {
+		return nil
 	}
-	if !allowedEntranceDuration[p.EntranceDuration] {
-		return fmt.Errorf("无效的入场时长档位: %q（fast/normal/slow）", p.EntranceDuration)
-	}
-	if !allowedScrollReveal[p.ScrollReveal] {
-		return fmt.Errorf("无效的滚动触发: %q", p.ScrollReveal)
-	}
-	if !allowedHoverEffect[p.HoverEffect] {
-		return fmt.Errorf("无效的悬浮效果: %q（lift/scale/glow/shadow/underline）", p.HoverEffect)
-	}
-	if !allowedLoopEffect[p.LoopEffect] {
-		return fmt.Errorf("无效的循环动画: %q（pulse/float/glow/spin）", p.LoopEffect)
+	switch {
+	case p.Entrance != "":
+		return errors.New("滚动叙事与入场动效互斥，请只选一种")
+	case p.ScrollReveal != "":
+		return errors.New("滚动叙事与滚动触发互斥，请只选一种")
+	case p.LoopEffect != "":
+		return errors.New("滚动叙事与循环动画互斥，请只选一种")
 	}
 	return nil
 }
@@ -182,6 +279,20 @@ func CompileInteraction(sel string, p InteractionProps, b *CSSBuckets) {
 			anim = fmt.Sprintf("animation: wp-%s %s ease %.1fs backwards", p.Entrance, dur, p.EntranceDelay)
 		}
 		decls = append(decls, anim)
+		// 默认弹簧缓动（Apple 式过冲回弹）：timing 覆盖声明在简写之后，
+		// 老浏览器忽略 linear() 自动回退简写内的 ease（渐进增强，产物不坏）。
+		// 与循环并接时必须给足两个值：单值会扩展到全部动画，弹簧曲线会误伤
+		// 循环节奏（pulse/heartbeat 等会出现「弹一下停住」）。
+		withLoop := p.LoopEffect != ""
+		switch p.EntranceEasing {
+		case "classic": // 显式回退经典 ease，无覆盖声明
+		case "soft":
+			decls = append(decls, timingOverride(SpringSoftCurve, withLoop))
+		case "bouncy":
+			decls = append(decls, timingOverride(SpringBouncyCurve, withLoop))
+		default: // "" 与 "spring" 均走标准弹簧
+			decls = append(decls, timingOverride(SpringStandardCurve, withLoop))
+		}
 		b.NeedKeyframes("wp-" + p.Entrance)
 		// 滚动触发：视口进入时播放（现代浏览器；旧浏览器不识别 timeline 即直接入场）。
 		if p.ScrollReveal == "reveal" {
@@ -206,8 +317,26 @@ func CompileInteraction(sel string, p InteractionProps, b *CSSBuckets) {
 		}
 		b.NeedKeyframes("wp-loop-" + p.LoopEffect)
 	}
+	// 滚动叙事（view() 进度连续绑定）：linear + both 保证进度可逆跟手；
+	// 区间覆盖「进入视口 → 离开视口」全程。旧浏览器忽略 timeline 后
+	// 保留静态 from 帧（opacity/位移初值），仍优于无效果。
+	if p.ScrollStory != "" {
+		decls = append(decls,
+			"animation: wp-story-"+p.ScrollStory+" linear both",
+			"animation-timeline: view()",
+			"animation-range: entry 0% exit 100%")
+		b.NeedKeyframes("wp-story-" + p.ScrollStory)
+	}
+	// 滚动吸顶（全组件共享；StickyTop 未设置时缺省 0）。
+	if p.Sticky {
+		top := p.StickyTop
+		if top == "" {
+			top = "0"
+		}
+		decls = append(decls, "position: sticky", "top: "+top)
+	}
 	// 悬浮过渡声明。
-	if hover != "" && hover != "underline" {
+	if hover != "" && hover != "underline" && hover != "shine" && !strings.HasPrefix(hover, "img-") {
 		decls = append(decls, "transition: transform 0.25s ease, box-shadow 0.25s ease")
 	}
 	if len(decls) > 0 {
@@ -215,9 +344,48 @@ func CompileInteraction(sel string, p InteractionProps, b *CSSBuckets) {
 	}
 	// 悬浮触发态。
 	if hover != "" {
+		// 子元素/伪元素特判（结构型悬浮效果，见 effects.go 分类目录）：
+		// img-zoom 图片悬停缩放、img-gray 灰度→彩色、shine 光泽扫过（按钮/卡片装饰）。
+		// 全部走 AddHover（@media hover:hover 包裹，H5 触屏治理——触屏不粘滞 hover 态）。
+		switch hover {
+		case "img-zoom":
+			b.Add(BreakpointDesktop, sel+" img", []string{"transition: transform .3s ease"})
+			b.AddHover(sel+":hover img", []string{"transform: scale(1.06)"})
+		case "img-gray":
+			b.Add(BreakpointDesktop, sel+" img", []string{"filter: grayscale(1)", "transition: filter .4s ease"})
+			b.AddHover(sel+":hover img", []string{"filter: grayscale(0)"})
+		case "img-zoom-out":
+			b.Add(BreakpointDesktop, sel+" img", []string{"transform: scale(1.1)", "transition: transform .35s ease"})
+			b.AddHover(sel+":hover img", []string{"transform: scale(1)"})
+		case "img-blur":
+			b.Add(BreakpointDesktop, sel+" img", []string{"filter: blur(3px)", "transition: filter .35s ease"})
+			b.AddHover(sel+":hover img", []string{"filter: blur(0)"})
+		case "img-bright":
+			b.Add(BreakpointDesktop, sel+" img", []string{"transition: filter .35s ease"})
+			b.AddHover(sel+":hover img", []string{"filter: brightness(1.15) saturate(1.08)"})
+		case "img-sepia":
+			b.Add(BreakpointDesktop, sel+" img", []string{"filter: sepia(.75)", "transition: filter .4s ease"})
+			b.AddHover(sel+":hover img", []string{"filter: none"})
+		case "img-rotate":
+			b.Add(BreakpointDesktop, sel+" img", []string{"transition: transform .35s ease"})
+			b.AddHover(sel+":hover img", []string{"transform: scale(1.08) rotate(3deg)"})
+		case "img-flip":
+			b.Add(BreakpointDesktop, sel+" img", []string{"transition: transform .5s ease"})
+			b.AddHover(sel+":hover img", []string{"transform: perspective(600px) rotateY(180deg)"})
+		case "shine":
+			// 光斑需裁剪于元素内（Absolute 定位组件慎用，注释见分类目录按钮 FX）。
+			b.Add(BreakpointDesktop, sel, []string{"position: relative", "overflow: hidden"})
+			b.Add(BreakpointDesktop, sel+"::after", []string{
+				"content: ''", "position: absolute", "top: 0", "left: -75%",
+				"width: 50%", "height: 100%",
+				"background: linear-gradient(120deg, transparent, rgba(255,255,255,.55), transparent)",
+				"transform: skewX(-20deg)", "transition: left .6s ease",
+			})
+			b.AddHover(sel+":hover::after", []string{"left: 125%"})
+		}
 		hoverDecls := hoverTriggerDecls(hover)
 		if len(hoverDecls) > 0 {
-			b.Add(BreakpointDesktop, sel+":hover", hoverDecls)
+			b.AddHover(sel+":hover", hoverDecls)
 		}
 		// underline 需要基础声明（伪元素线宽 0 → hover 100%）。
 		if hover == "underline" {
@@ -226,7 +394,7 @@ func CompileInteraction(sel string, p InteractionProps, b *CSSBuckets) {
 				"width: 0", "background: currentColor",
 				"transition: width 0.3s ease",
 			})
-			b.Add(BreakpointDesktop, sel+":hover::after", []string{"width: 100%"})
+			b.AddHover(sel+":hover::after", []string{"width: 100%"})
 		}
 	}
 }
@@ -242,6 +410,16 @@ func hoverTriggerDecls(effect string) []string {
 		return []string{"box-shadow: 0 0 0 3px rgba(59,130,246,.35), 0 0 24px rgba(59,130,246,.25)"}
 	case "shadow":
 		return []string{"box-shadow: 0 16px 40px rgba(0,0,0,.18)"}
+	case "sink":
+		return []string{"transform: translateY(4px)"}
+	case "grow":
+		return []string{"transform: scale(1.06)"}
+	case "border-glow":
+		return []string{"box-shadow: 0 0 0 3px rgba(59,130,246,.28)"}
+	case "text-glow":
+		return []string{"text-shadow: 0 0 12px currentColor"}
+	case "skew":
+		return []string{"transform: skewX(-4deg)"}
 	case "underline":
 		return nil // ::after 处理
 	}
@@ -249,4 +427,4 @@ func hoverTriggerDecls(effect string) []string {
 }
 
 // InteractionControlFields 面板字段键（workbench 检查器「动效」分组渲染用）。
-var InteractionControlFields = []string{"interaction.entrance", "interaction.entranceDelay", "interaction.hoverLift"}
+var InteractionControlFields = []string{"interaction.entrance", "interaction.entranceDelay", "interaction.entranceEasing", "interaction.scrollStory", "interaction.hoverLift"}

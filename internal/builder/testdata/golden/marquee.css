@@ -1,3 +1,15 @@
+@layer wp-base, wp-plugin, wp-auto, wp-theme, wp-local;
+
+@layer wp-base {
+@keyframes wp-marquee-mq1 {
+  from { transform: translateX(-50%) }
+  to { transform: translateX(0) }
+}
+
+body {
+  container-name: wp-theme;
+}
+
 .wp-c-mq1 {
   display: flex;
   overflow: hidden;
@@ -11,11 +23,6 @@
   gap: 32px;
   padding-right: 32px;
   animation: wp-marquee-mq1 15s linear infinite;
-}
-
-@keyframes wp-marquee-mq1 {
-  from { transform: translateX(-50%) };
-  to { transform: translateX(0) };
 }
 
 .wp-c-mq1 .wp-marquee-item {
@@ -35,4 +42,5 @@
 .wp-c-mq1 .wp-marquee-track {
   padding-top: 12px;
   padding-bottom: 12px;
+}
 }

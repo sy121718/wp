@@ -120,7 +120,7 @@ func TestCompileComponentTextFallbackChain(t *testing.T) {
 		`title="视频"`,
 		`>天<`, `>时<`, `>分<`, `>秒<`,
 		`>提交<`,
-		`data-slide-label="第 %s 张"`,
+		`aria-label="第 1 张"`, // 圆点锚点已改构建期生成（序号在构建期替换）
 		`aria-label="评分 4.5 / 5"`,
 	} {
 		if !strings.Contains(html, want) {

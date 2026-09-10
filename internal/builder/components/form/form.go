@@ -177,17 +177,25 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		"border-radius: 6px",
 		"background: #fff",
 		"color: #111",
-		"transition: border-color .15s",
+		core.FocusTransitionDecl(),
 	}
-	b.Add(core.BreakpointDesktop, sel+" input[type=text]", inputDecls)
-	b.Add(core.BreakpointDesktop, sel+" input[type=email]", inputDecls)
+	// :is() 合并同声明选择器（规则数 4→2，产物体积更小；:is 特异性取参数最高者，
+	// 与拆分写法一致，不改变覆盖行为）。
+	b.Add(core.BreakpointDesktop, sel+" :is(input[type=text],input[type=email],select)", inputDecls)
 	b.Add(core.BreakpointDesktop, sel+" textarea", append(append([]string{}, inputDecls...), "min-height: 96px", "resize: vertical"))
-	b.Add(core.BreakpointDesktop, sel+" select", inputDecls)
-	// 聚焦边框高亮。
-	focusDecls := []string{"border-color: var(--wp-c-primary, #2563eb)", "outline: none"}
-	b.Add(core.BreakpointDesktop, sel+" input:focus", focusDecls)
-	b.Add(core.BreakpointDesktop, sel+" textarea:focus", focusDecls)
-	b.Add(core.BreakpointDesktop, sel+" select:focus", focusDecls)
+	// 聚焦边框高亮 + 光晕 ring（效果基本库 core.FocusRingDecls，--wp-focus-ring 可主题覆写）。
+	focusDecls := core.FocusRingDecls()
+	b.Add(core.BreakpointDesktop, sel+" :is(input,textarea,select):focus", focusDecls)
+	// 校验错误态（:has() 父选择器 + 原生 :user-invalid，零 JS）：
+	// 用户交互后字段非法 → 字段容器与输入框同步标红，无需 JS 遍历 DOM。
+	// 用 :user-invalid 而非 :invalid：避开「刚打开页面就全部标红」的体验问题。
+	b.Add(core.BreakpointDesktop, sel+" .wp-form-field:has(:user-invalid)", []string{
+		"color: var(--wp-danger, #dc2626)",
+	})
+	b.Add(core.BreakpointDesktop, sel+" :user-invalid", []string{
+		"border-color: var(--wp-danger, #dc2626)",
+		"box-shadow: 0 0 0 3px rgba(220, 38, 38, .12)",
+	})
 	// 提交按钮样式。
 	b.Add(core.BreakpointDesktop, sel+" .wp-form-submit", []string{
 		"align-self: flex-start",

@@ -162,6 +162,9 @@ func compileSettingsCSS(s *PageSettings, b *core.CSSBuckets) {
 	if s.Base.BackgroundFixed {
 		body = append(body, "background-attachment: fixed")
 	}
+	// body 同时作为样式查询锚点（container-name 不启用 containment → 零布局影响）：
+	// 主题/插件在 body 上声明的语义开关可被任意组件用 @container style() 响应。
+	body = append(body, "container-name: wp-theme")
 	b.Add(core.BreakpointDesktop, "body", body)
 
 	if s.Layout.Mode != LayoutBoxed {

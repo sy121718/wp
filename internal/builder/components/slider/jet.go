@@ -2,12 +2,12 @@
 //
 // 与 Render 方法并行的新路径：props 解码 / CSS 生成 / 属性与 slide 轨道预计算
 // 保留在 Go，HTML 拼装交给 slider.jet 模板（children 递归 include）。
-// Render 方法保持不变（旧输出），本文件只做最小导出与等价的数据准备。
 package slider
 
 import (
 	"html"
 	"strconv"
+	"strings"
 
 	"go_wp/internal/builder/core"
 )
@@ -34,10 +34,19 @@ type View struct {
 	// PrevLabel / NextLabel 箭头 aria-label（构建期按当前语言填充，多语言 P4）。
 	PrevLabel string
 	NextLabel string
-	// SlideLabel 圆点按钮 aria-label 模板（含单个 %s，客户端增强按序号替换）。
-	// 圆点由 wp-enhance.js 在访客浏览器里创建，故构建期只下发「已翻译的模板」，
-	// 客户端不再硬编码中文（文案唯一真源仍是 sys_i18n）。
+	// SlideLabel 圆点 aria-label 模板（含单个 %s；兜底保留）。
 	SlideLabel string
+	// Dots 圆点导航（构建期生成 <a> 锚点：点击由浏览器原生滚动 + scroll-snap 对齐，
+	// **零 JS 可用**；aria-label 已按当前语言 + 序号填好）。
+	Dots []DotItem
+}
+
+// DotItem 圆点导航项。
+type DotItem struct {
+	// Anchor slide 元素 id（模板输出 href="#<Anchor>"）。
+	Anchor string
+	// Label 无障碍标签（构建期翻译 + 序号替换）。
+	Label string
 }
 
 // 访客面组件文案 key：site.component.{type}.{prop}（docs/06-D §10.3）。
@@ -46,7 +55,7 @@ const (
 	TextKeyPrev = "site.component.slider.prev"
 	// TextKeyNext 箭头「下一张」的词条 key。
 	TextKeyNext = "site.component.slider.next"
-	// TextKeySlideLabel 圆点按钮 aria-label 模板的词条 key（含单个 %s）。
+	// TextKeySlideLabel 圆点 aria-label 模板的词条 key（含单个 %s）。
 	TextKeySlideLabel = "site.component.slider.slide_label"
 )
 
@@ -57,7 +66,7 @@ const (
 	textFallbackSlideLabel = "第 %s 张"
 )
 
-// ApplyI18n 按当前语言填充箭头无障碍标签（实现 core.I18nAware）。
+// ApplyI18n 按当前语言填充无障碍标签（实现 core.I18nAware），并同步填充圆点标签。
 // text 为 nil 或未命中词条时使用包内中文兜底，保证属性永不为空。
 func (v *View) ApplyI18n(text func(key, fallback string) string) {
 	if v == nil {
@@ -66,15 +75,24 @@ func (v *View) ApplyI18n(text func(key, fallback string) string) {
 	if text == nil {
 		v.PrevLabel, v.NextLabel = textFallbackPrev, textFallbackNext
 		v.SlideLabel = textFallbackSlideLabel
+		v.fillDotLabels()
 		return
 	}
 	v.PrevLabel = text(TextKeyPrev, textFallbackPrev)
 	v.NextLabel = text(TextKeyNext, textFallbackNext)
 	v.SlideLabel = text(TextKeySlideLabel, textFallbackSlideLabel)
+	v.fillDotLabels()
 }
 
-// BuildView 生成轮播渲染视图：data-slider/data-autoplay/data-loop 属性预计算
-// （与 Render 输出结构一致）。children 的递归渲染由 nodeView 层驱动。
+// fillDotLabels 用已翻译的模板 + 序号填充圆点 aria-label。
+func (v *View) fillDotLabels() {
+	for i := range v.Dots {
+		v.Dots[i].Label = strings.Replace(v.SlideLabel, "%s", strconv.Itoa(i+1), 1)
+	}
+}
+
+// BuildView 生成轮播渲染视图：data-slider/data-autoplay/data-loop 属性 + 圆点锚点预计算。
+// children 的递归渲染由 nodeView 层驱动。
 func BuildView(node *core.Node, p *Props) View {
 	v := View{
 		DataSlider: html.EscapeString(node.ID),
@@ -85,6 +103,15 @@ func BuildView(node *core.Node, p *Props) View {
 	if p.Autoplay > 0 {
 		v.HasAutoplay = true
 		v.Autoplay = strconv.FormatFloat(p.Autoplay, 'f', -1, 64)
+	}
+	// 圆点锚点：构建期按 children 数生成（label 由 ApplyI18n 填充）。
+	if p.ShowDots {
+		v.Dots = make([]DotItem, 0, len(node.Children))
+		for i := range node.Children {
+			v.Dots = append(v.Dots, DotItem{
+				Anchor: "wp-slide-" + node.ID + "-" + strconv.Itoa(i),
+			})
+		}
 	}
 	return v
 }

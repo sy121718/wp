@@ -7,6 +7,8 @@ package gallery
 
 import (
 	"fmt"
+	"strconv"
+	"strings"
 
 	"go_wp/internal/builder/core"
 )
@@ -32,6 +34,11 @@ type View struct {
 	Arrows bool
 	// Dots 显示圆点指示器（carousel 模式）。
 	Dots bool
+	// SlideLabel 圆点 aria-label 模板（含单个 %s；由 ApplyI18n 填充）。
+	SlideLabel string
+	// DotItems 圆点导航锚点（构建期生成：<a href="#...">点击由浏览器原生滚动 +
+	// scroll-snap 对齐，**零 JS 可用**；aria-label 构建期按语言 + 序号填好）。
+	DotItems []DotItem
 
 	// Loading 组件级加载策略三态原值（空=继承主题，由 ApplyImageLoading 解析）。
 	Loading string
@@ -53,16 +60,29 @@ const (
 	TextKeyPrev = "site.component.gallery.prev"
 	// TextKeyNext 轮播「下一张」箭头的词条 key。
 	TextKeyNext = "site.component.gallery.next"
+	// TextKeySlideLabel 圆点 aria-label 模板的词条 key（含单个 %s）。
+	TextKeySlideLabel = "site.component.gallery.slide_label"
 )
+
+// DotItem 圆点导航项（锚点 id 指向对应 slide 元素）。
+type DotItem struct {
+	// Anchor slide 元素 id。
+	Anchor string
+	// Label 无障碍标签（构建期翻译 + 序号替换）。
+	Label string
+}
 
 // textFallbackPrev / textFallbackNext 缺词条时的原中文兜底（绝不输出空串）。
 const (
-	textFallbackPrev = "上一张"
-	textFallbackNext = "下一张"
+	textFallbackPrev       = "上一张"
+	textFallbackNext       = "下一张"
+	textFallbackSlideLabel = "第 %s 张"
 )
 
 // ItemView 单个图集项的渲染视图数据（供 gallery.jet 模板使用）。
 type ItemView struct {
+	// AnchorID slide 元素 id（carousel 模式构建期生成：圆点锚点跳转目标）。
+	AnchorID string
 	// URL 图片地址（img src 与灯箱原图，模板输出时由 Jet 默认转义）。
 	URL string
 	// Alt 替代文本（模板输出时由 Jet 默认转义）。
@@ -95,7 +115,7 @@ type ItemView struct {
 
 // BuildView 生成图集渲染视图：数据源解析（绑定优先/静态兜底）+ 单图项视图准备
 // + 轮播属性拼装（与 render 输出结构一致）。
-func BuildView(p *Props, content core.ContentResolver) (View, error) {
+func BuildView(nodeID string, p *Props, content core.ContentResolver) (View, error) {
 	// 与旧 render 一致：空模式回落 grid，并写回 p.Mode（compileCSS 依赖它选择分支）。
 	if p.Mode == "" {
 		p.Mode = LayoutGrid
@@ -111,12 +131,25 @@ func BuildView(p *Props, content core.ContentResolver) (View, error) {
 	}
 
 	views := make([]ItemView, 0, len(items))
-	for _, r := range items {
-		views = append(views, buildItemView(p, r))
+	for i, r := range items {
+		iv := buildItemView(p, r)
+		if mode == LayoutCarousel {
+			iv.AnchorID = "wp-gslide-" + nodeID + "-" + strconv.Itoa(i)
+		}
+		views = append(views, iv)
 	}
 
 	v := View{Visible: true, IsCarousel: mode == LayoutCarousel, Items: views, Loading: p.Loading,
 		FirstEager: mode == LayoutCarousel && !p.Carousel.FirstEagerOff}
+	// 圆点锚点：构建期按图片数生成（label 由 ApplyI18n 填）。
+	if mode == LayoutCarousel && p.Carousel.Dots {
+		v.DotItems = make([]DotItem, 0, len(views))
+		for i := range views {
+			v.DotItems = append(v.DotItems, DotItem{
+				Anchor: views[i].AnchorID,
+			})
+		}
+	}
 	if mode == LayoutCarousel {
 		c := p.Carousel
 		interval := c.Interval
@@ -252,8 +285,20 @@ func (v *View) ApplyI18n(text func(key, fallback string) string) {
 	}
 	if text == nil {
 		v.PrevLabel, v.NextLabel = textFallbackPrev, textFallbackNext
+		v.SlideLabel = textFallbackSlideLabel
+		v.fillDotLabels()
 		return
 	}
 	v.PrevLabel = text(TextKeyPrev, textFallbackPrev)
 	v.NextLabel = text(TextKeyNext, textFallbackNext)
+	v.SlideLabel = text(TextKeySlideLabel, textFallbackSlideLabel)
+	v.fillDotLabels()
+}
+
+// SlideLabel 圆点 aria-label 模板（含单个 %s；由 ApplyI18n 填充）。
+// fillDotLabels 用已翻译模板 + 序号填充圆点标签。
+func (v *View) fillDotLabels() {
+	for i := range v.DotItems {
+		v.DotItems[i].Label = strings.Replace(v.SlideLabel, "%s", strconv.Itoa(i+1), 1)
+	}
 }

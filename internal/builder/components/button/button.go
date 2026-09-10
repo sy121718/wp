@@ -351,7 +351,7 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		if p.HoverColor != "" {
 			hv = append(hv, core.CSSDecl("color", p.HoverColor))
 		}
-		b.Add(core.BreakpointDesktop, sel+":hover", hv)
+		b.AddHover(sel+":hover", hv)
 	}
 
 	// 图标间距 + 排布方向（图标在上/下时按钮改纵向排列）。

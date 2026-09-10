@@ -63,7 +63,7 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		"background: var(--wp-c-surface, #fff)",
 		"border: 1px solid rgba(0,0,0,0.1)",
 		"border-radius: 12px",
-		"padding: 16px",
+		core.CSSDecl("padding", "var(--wp-density-pad, 16px)"),
 	})
 	b.Add(core.BreakpointDesktop, sel+" img", []string{
 		"width: 100%",
@@ -71,6 +71,30 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		"border-radius: 8px",
 		"margin-bottom: 12px",
 		"object-fit: cover",
+	})
+	// 容器级自适应（@container）：组件被放进宽容器时图左文右，窄容器保持纵向堆叠。
+	// 外层未启用「容器查询上下文」时规则不匹配（自然降级为默认纵向，零副作用）。
+	b.AddContainer("(width >= 480px)", sel, []string{
+		"flex-direction: row",
+		"align-items: center",
+		"gap: 16px",
+	})
+	b.AddContainer("(width >= 480px)", sel+" img", []string{
+		"width: 40%",
+		"margin-bottom: 0",
+	})
+	// 结构变体（样式查询 @container style()）：外层容器显式声明
+	// --wp-card-layout: horizontal 时横排——由作者/主题显式决定结构，不依赖宽度。
+	b.AddStyleQuery("wp-theme", "--wp-card-layout", "horizontal", sel, []string{
+		"flex-direction: row",
+		"align-items: center",
+		"gap: 16px",
+	})
+	// 密度结构差异（样式查询）：紧凑档位下卡片横排——更省纵向空间、信息密度更高。
+	b.AddThemeQuery("wp-theme", "--wp-density", "compact", sel, []string{
+		"flex-direction: row",
+		"align-items: center",
+		"gap: var(--wp-density-gap, 16px)",
 	})
 	b.Add(core.BreakpointDesktop, sel+" h3", []string{
 		"margin: 0 0 8px",

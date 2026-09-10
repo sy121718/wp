@@ -230,17 +230,26 @@ func TestMarqueeRendersDuplicateTracks(t *testing.T) {
 }
 
 func TestCounterRendersValue(t *testing.T) {
+	// 整数模式（decimals=0）：零 JS 计数——模板不输出 data-* 增强属性，
+	// 数值由 @property <integer> + counter() 在 CSS 里生成。
 	doc := `{"settings":{"layout":{"mode":"full"}},"root":[{"type":"core.counter","id":"ct1","props":{"start":0,"end":100,"suffix":"+"}}]}`
 	html, css := compileDoc(t, doc)
 
-	if !strings.Contains(html, "wp-counter") || !strings.Contains(html, "100") {
+	if !strings.Contains(html, "wp-counter") || !strings.Contains(html, "+") {
 		t.Fatalf("计数器渲染缺失: %s", html[:300])
 	}
-	if !strings.Contains(html, `data-end="100"`) {
-		t.Fatalf("增强数据缺失: %s", html[:400])
+	if strings.Contains(html, "data-counter=") {
+		t.Fatalf("整数模式不应输出 data-* 增强属性（应走 CSS 计数）: %s", html[:400])
 	}
-	if !strings.Contains(css, "wp-counter") {
-		t.Fatalf("计数器样式缺失: %s", css[:200])
+	if !strings.Contains(css, "counter-reset: wpcount") || !strings.Contains(css, "content: counter(wpcount)") {
+		t.Fatalf("CSS 计数规则缺失: %s", css[:400])
+	}
+
+	// 小数位模式：CSS counter 只支持整数，回退内嵌脚本增强（保留 data-*）。
+	doc2 := `{"settings":{"layout":{"mode":"full"}},"root":[{"type":"core.counter","id":"ct2","props":{"start":0,"end":99.5,"decimals":1}}]}`
+	html2, _ := compileDoc(t, doc2)
+	if !strings.Contains(html2, `data-decimals="1"`) {
+		t.Fatalf("小数模式应保留增强属性: %s", html2[:400])
 	}
 }
 

@@ -23,7 +23,10 @@ type View struct {
 	EndData      string
 	DecimalsData string
 	DurationData string
-	// Value 无 JS 时的结束值（最终态）。
+	// CSSMode 零 JS 计数模式（小数位为 0；数值由 @property + counter() 生成，
+	// 模板不输出 data-* 增强属性，不激活内嵌脚本）。
+	CSSMode bool
+	// Value 无 JS 时的结束值（最终态；CSSMode 时为空，数值由 ::after 生成）。
 	Value string
 	// Prefix / Suffix / Label 前缀/后缀/标签（模板输出时由 Jet 默认转义）。
 	Prefix string
@@ -37,12 +40,18 @@ func BuildView(p *Props) View {
 	if duration <= 0 {
 		duration = 2
 	}
+	cssMode := p.Decimals == 0
+	value := formatNum(p.End, p.Decimals)
+	if cssMode {
+		value = "" // 数值由 .wp-counter-value::after 生成（零 JS）
+	}
 	return View{
+		CSSMode:      cssMode,
 		StartData:    strconv.FormatFloat(p.Start, 'f', -1, 64),
 		EndData:      strconv.FormatFloat(p.End, 'f', -1, 64),
 		DecimalsData: strconv.Itoa(p.Decimals),
 		DurationData: strconv.FormatFloat(duration, 'f', -1, 64),
-		Value:        formatNum(p.End, p.Decimals),
+		Value:        value,
 		Prefix:       p.Prefix,
 		Suffix:       p.Suffix,
 		Label:        p.Label,

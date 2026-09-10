@@ -296,6 +296,9 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 			return g
 		}
 		b.Add(core.BreakpointDesktop, sel, append(splitDecls(gridDecl(c.Desktop)), gaps()...))
+		// 容器级自适应（@container）：组件放进窄容器（侧栏/窄区块）时降为单列，
+		// 避免窄容器里挤成多列碎图。外层未启用容器查询上下文时不匹配（自然忽略）。
+		b.AddContainer("(width < 400px)", sel, []string{"grid-template-columns: 1fr"})
 		if c.Tablet > 0 {
 			b.Add(core.BreakpointTablet, sel, splitDecls(gridDecl(c.Tablet)))
 		}

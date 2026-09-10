@@ -1,11 +1,12 @@
 package core
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"reflect"
 	"regexp"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -98,7 +99,7 @@ func parseControls(props any, keyPrefix, goPrefix string) (controls []Control, e
 	if t.Kind() != reflect.Struct {
 		return nil, fmt.Errorf("props 必须是结构体或结构体指针")
 	}
-	for i := 0; i < t.NumField(); i++ {
+	for i := range t.NumField() {
 		f := t.Field(i)
 		tag, ok := f.Tag.Lookup(ctTagName)
 		// ct:"group" 标记的嵌套结构体：递归展开为带路径前缀的子控件。
@@ -258,7 +259,7 @@ func ValidateSpec(props any, nodeID string) (err error) {
 
 // validateControlValue 单字段值校验。
 func validateControlValue(c Control, fv reflect.Value, nodeID string) (err error) {
-	msg := func(detail string, args ...interface{}) error {
+	msg := func(detail string, args ...any) error {
 		return fmt.Errorf("节点 %s: 字段 %s %s", nodeID, c.Key, fmt.Sprintf(detail, args...))
 	}
 
@@ -409,12 +410,8 @@ func SchemaJSON(props any) (data []byte, err error) {
 		}
 		return len(sectionOrder) + 1
 	}
-	sort.Slice(secs, func(i, j int) bool {
-		ri, rj := rank(secs[i]), rank(secs[j])
-		if ri != rj {
-			return ri < rj
-		}
-		return secs[i] < secs[j]
+	slices.SortFunc(secs, func(a, b string) int {
+		return cmp.Or(cmp.Compare(rank(a), rank(b)), strings.Compare(a, b))
 	})
 	for _, sec := range secs {
 		items = append(items, buckets[sec]...)

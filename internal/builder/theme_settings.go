@@ -56,6 +56,59 @@ func (t *ThemeSettings) SkeletonEnabled() bool {
 	return t != nil && t.Images.Skeleton
 }
 
+// reducedMotionCSS 减弱动态效果无障碍块（标准实现，覆盖组件与插件全部动画/过渡）。
+const reducedMotionCSS = `@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}`
+
+// ReducedMotionEnabled 主题是否开启「减弱动态效果」跟随系统开关。
+func (t *ThemeSettings) ReducedMotionEnabled() bool {
+	return t != nil && t.Motion.ReducedMotion
+}
+
+// ReducedMotionCSS 无障碍块（未开启返回空，产物字节不变）。
+func (t *ThemeSettings) ReducedMotionCSS() string {
+	if t == nil || !t.ReducedMotionEnabled() {
+		return ""
+	}
+	return reducedMotionCSS
+}
+
+// viewTransitionsCSS 页面转场规则（跨文档导航自动转场，默认交叉淡化）。
+const viewTransitionsCSS = `@view-transition {
+  navigation: auto;
+}`
+
+// ViewTransitionsCSS 页面转场规则（未开启返回空，产物字节不变）。
+// 同源多页跳转生效（静态站天然同源）；不支持 @view-transition 的浏览器
+// 忽略规则降级为普通跳转。
+func (t *ThemeSettings) ViewTransitionsCSS() string {
+	if t == nil || !t.Motion.ViewTransitions {
+		return ""
+	}
+	return viewTransitionsCSS
+}
+
+// RevealInheritOf 滚动显现继承初值（"on" = 全站滚动显现；其余 = 未启用）。
+func (t *ThemeSettings) RevealInheritOf() string {
+	if t != nil && t.Motion.ScrollRevealDefault {
+		return "on"
+	}
+	return ""
+}
+
+// RevealDefaultEntranceOf 滚动显现注入的默认入场词（空 = fade-up）。
+func (t *ThemeSettings) RevealDefaultEntranceOf() string {
+	if t == nil || t.Motion.DefaultEntrance == "" {
+		return "fade-up"
+	}
+	return t.Motion.DefaultEntrance
+}
+
 // ThemeColors 色板令牌。
 type ThemeColors struct {
 	Primary    string `json:"primary,omitempty"`   // 主色（按钮/链接/强调）
@@ -128,6 +181,11 @@ type ThemeSurface struct {
 	BorderWidth string `json:"borderWidth,omitempty"` // 全局边框宽
 	BorderColor string `json:"borderColor,omitempty"` // 全局边框色（Colors.Border 别名）
 	Shadow      string `json:"shadow,omitempty"`      // 默认阴影级别 sm/md/lg
+	Density     string `json:"density,omitempty"`     // 密度档位：空=标准 / compact 紧凑 / cozy 宽松
+	// Density 密度档位："" 标准（内边距 16px / 间距 24px）/ compact 紧凑（8/16）/ cozy 宽松（24/32）。
+	// 编译为语义变量（--wp-density-pad / --wp-density-gap）+ 样式查询开关（--wp-density），
+	// 组件经 var() 消费即可「一处切换全站间距」；也可用 @container style(--wp-density: compact)
+	// 做结构性差异（如紧凑模式下卡片改横排）。
 }
 
 // ThemeMotion 动效全局默认。
@@ -138,6 +196,17 @@ type ThemeMotion struct {
 	Easing string `json:"easing,omitempty"`
 	// DefaultEntrance 新组件默认入场动画（继承效果基本库）。
 	DefaultEntrance string `json:"defaultEntrance,omitempty"`
+	// ReducedMotion 尊重系统「减弱动态效果」（prefers-reduced-motion）：
+	// 开启时产物注入无障碍块，全部动画/过渡压至近零时长（WCAG 2.3.3；
+	// H5 移动端系统开关生效，动画敏感用户零动效浏览）。
+	ReducedMotion bool `json:"reducedMotion,omitempty"`
+	// ViewTransitions 页面转场（@view-transition，跨文档导航自动淡入淡出）：
+	// 同源静态多页跳转自带 Apple 式丝滑转场；不支持的浏览器降级为普通跳转。
+	ViewTransitions bool `json:"viewTransitions,omitempty"`
+	// ScrollRevealDefault 全站滚动显现（H5「滚动过去才出内容」）：开启后，
+	// 未显式配置入场的组件自动注入 DefaultEntrance + view() 滚动触发；
+	// 容器可在子树内豁免（StyleEx.Reveal=off）。老浏览器降级为直接显示。
+	ScrollRevealDefault bool `json:"scrollRevealDefault,omitempty"`
 }
 
 // themeVar 主题变量映射表（Go 字段 → CSS 变量名 + 值），未设置字段跳过。
@@ -150,6 +219,14 @@ func themeVars(t *ThemeSettings) []string {
 		if val != "" {
 			out = append(out, fmt.Sprintf("--wp-%s: %s", name, val))
 		}
+	}
+	// 密度档位：语义间距变量 + 样式查询开关（组件经 var() 消费，一处切换全站；
+	// @container style(--wp-density: compact) 供组件做结构性差异）。未设置则不输出。
+	switch t.Surface.Density {
+	case "compact":
+		out = append(out, "--wp-density-pad: 8px", "--wp-density-gap: 16px", "--wp-density: compact")
+	case "cozy":
+		out = append(out, "--wp-density-pad: 24px", "--wp-density-gap: 32px", "--wp-density: cozy")
 	}
 	// 色板。
 	c := t.Colors

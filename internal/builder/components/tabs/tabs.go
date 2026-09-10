@@ -149,7 +149,7 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		"display: none", "padding: 18px 4px", "animation: wp-tabs-fade .25s ease",
 	})
 	// 渐显动画。
-	b.Add(core.BreakpointDesktop, "@keyframes wp-tabs-fade", []string{
+	b.AddKeyframesDecls("wp-tabs-fade", []string{
 		"from { opacity: 0 }", "to { opacity: 1 }",
 	})
 	// 竖向布局。

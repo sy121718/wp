@@ -1,3 +1,10 @@
+@layer wp-base, wp-plugin, wp-auto, wp-theme, wp-local;
+
+@layer wp-base {
+body {
+  container-name: wp-theme;
+}
+
 .wp-lightbox {
   display: none;
   position: fixed;
@@ -25,4 +32,5 @@
   font-size: 2rem;
   line-height: 1;
   text-decoration: none;
+}
 }

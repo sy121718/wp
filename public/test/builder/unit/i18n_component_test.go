@@ -130,7 +130,7 @@ func TestCompileComponentTextZhVsEn(t *testing.T) {
 
 	zhWants := []string{`aria-label="站点导航"`, `aria-label="上一张"`, `aria-label="下一张"`, `title="视频"`,
 		`>天<`, `>时<`, `>分<`, `>秒<`, `>提交<`, `aria-label="评分 4.5 / 5"`,
-		`data-slide-label="第 %s 张"`}
+		`aria-label="第 1 张"`} // 圆点锚点已改构建期生成（序号在构建期替换）
 	for _, want := range zhWants {
 		if !strings.Contains(zh.HTML, want) {
 			t.Fatalf("zh-CN 产物缺少 %q\nHTML=%s", want, zh.HTML)
@@ -139,7 +139,7 @@ func TestCompileComponentTextZhVsEn(t *testing.T) {
 
 	enWants := []string{`aria-label="Site navigation"`, `aria-label="Previous"`, `aria-label="Next"`,
 		`title="Video"`, `>Days<`, `>Hours<`, `>Minutes<`, `>Seconds<`, `>Submit<`, `aria-label="Rated 4.5 out of 5"`,
-		`data-slide-label="Slide %s"`}
+		`aria-label="Slide 1"`}
 	for _, want := range enWants {
 		if !strings.Contains(en.HTML, want) {
 			t.Fatalf("en-US 产物缺少 %q\nHTML=%s", want, en.HTML)

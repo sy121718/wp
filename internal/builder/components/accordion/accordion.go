@@ -122,7 +122,8 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		"transition: transform .2s", "margin-left: 12px",
 	})
 	b.Add(core.BreakpointDesktop, sel+" details[open] "+head+"::after", []string{"transform: rotate(45deg)"})
-	b.Add(core.BreakpointDesktop, head+":hover", []string{"background: var(--wp-c-surface, #f3f4f6)"})
+	b.Add(core.BreakpointDesktop, head, []string{"transition: background .2s ease"})
+	b.AddHover(head+":hover", []string{"background: var(--wp-c-surface, #f3f4f6)"})
 
 	b.Add(core.BreakpointDesktop, sel+" .wp-accordion-body", []string{
 		"padding: 14px 18px", "border: 1px solid rgba(0,0,0,.08)",

@@ -69,7 +69,7 @@ const jetDocJSON = `{
             "layout": {"engine": "grid", "grid": {"columns": {"desktop": 2, "tablet": 1}, "columnGap": "16px", "rowGap": "16px"}},
             "box": {"padding": {"desktop": "20px"}},
             "visual": {"borderWidth": "1px", "borderStyle": "solid", "borderColor": "#e0e0e0"},
-            "styleEx": {"shapeDivider": "slant", "shapeDividerPosition": "top"}
+            "styleEx": {"shapeDivider": "slope", "shapeDividerPosition": "top"}
           },
           "children": [
             {

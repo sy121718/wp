@@ -86,7 +86,7 @@ func collectJSONFieldNames(t reflect.Type, out map[string]bool, seen map[reflect
 		return
 	}
 	seen[t] = true
-	for i := 0; i < t.NumField(); i++ {
+	for i := range t.NumField() {
 		f := t.Field(i)
 		if !f.IsExported() {
 			continue

@@ -1,3 +1,10 @@
+@layer wp-base, wp-plugin, wp-auto, wp-theme, wp-local;
+
+@layer wp-base {
+body {
+  container-name: wp-theme;
+}
+
 .wp-c-ac1 {
   display: flex;
   flex-direction: column;
@@ -36,8 +43,8 @@
   transform: rotate(45deg);
 }
 
-.wp-c-ac1 .wp-accordion-head:hover {
-  background: var(--wp-c-surface, #f3f4f6);
+.wp-c-ac1 .wp-accordion-head {
+  transition: background .2s ease;
 }
 
 .wp-c-ac1 .wp-accordion-body {
@@ -85,8 +92,8 @@
   transform: rotate(45deg);
 }
 
-.wp-c-ac2 .wp-accordion-head:hover {
-  background: var(--wp-c-surface, #f3f4f6);
+.wp-c-ac2 .wp-accordion-head {
+  transition: background .2s ease;
 }
 
 .wp-c-ac2 .wp-accordion-body {
@@ -114,4 +121,18 @@
   border-radius: 0;
   padding-left: 0;
   padding-right: 0;
+}
+
+@media (hover: hover) {
+  .wp-c-ac1 .wp-accordion-head:hover {
+  background: var(--wp-c-surface, #f3f4f6);
+
+}
+}
+@media (hover: hover) {
+  .wp-c-ac2 .wp-accordion-head:hover {
+  background: var(--wp-c-surface, #f3f4f6);
+
+}
+}
 }

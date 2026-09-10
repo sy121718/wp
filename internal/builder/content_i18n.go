@@ -18,7 +18,9 @@ package builder
 
 import (
 	"bytes"
+	"cmp"
 	"encoding/json"
+	"slices"
 	"sort"
 	"strings"
 
@@ -177,11 +179,8 @@ func blockIDOf(raw json.RawMessage) string {
 
 // sortCandidates 候选排序：按 (context, source) 字典序（确定性，便于测试与日志）。
 func sortCandidates(out []ContentCandidate) {
-	sort.Slice(out, func(i, j int) bool {
-		if out[i].Context != out[j].Context {
-			return out[i].Context < out[j].Context
-		}
-		return out[i].Source < out[j].Source
+	slices.SortFunc(out, func(a, b ContentCandidate) int {
+		return cmp.Or(strings.Compare(a.Context, b.Context), strings.Compare(a.Source, b.Source))
 	})
 }
 

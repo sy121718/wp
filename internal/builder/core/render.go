@@ -18,6 +18,9 @@ type RenderContext struct {
 	// Block 全局块解析器（构建期内联展开 core.globalref 引用，方案 C）。
 	// 未注入时引用节点渲染降级为占位结构（编辑画布仍可选中）。
 	Block BlockResolver
+	// BlockStack 当前展开中的全局块 ID 栈（globalref 防环 + 深度限制，
+	// 由 builder 渲染层维护；空 = 未在任何块展开内）。
+	BlockStack []string
 	// Plugin 插件组件解析器（plugin.* 节点经此取规格渲染，docs/06 §7）。
 	// 未注入时插件节点返回明确错误（而非静默跳过）。
 	Plugin PluginResolver
@@ -33,6 +36,14 @@ type RenderContext struct {
 	// CurrentPath 本次编译的页面访问路径（如 /about），用于导航「当前项」高亮。
 	// 为空表示未知（预览块/独立编译），此时不标记当前项。
 	CurrentPath string
+	// RevealInherit 滚动显现继承上下文（H5「滚动过去才出内容」的分层开关）：
+	// "" 未启用 / "on" 子树默认滚动显现 / "off" 子树豁免（直接显示）。
+	// 由装配层按主题/页面设置初始化；container 可在子树内覆盖（栈式进入设置、离开恢复）。
+	// 组件级显式设置（interaction.entrance / scrollStory / scrollReveal）永远优先于继承。
+	RevealInherit string
+	// RevealDefaultEntrance 滚动显现注入的默认入场词（如 "fade-up"；空 = "fade-up"）。
+	// 来源：主题 Motion.DefaultEntrance（效果基本库入场词汇表）。
+	RevealDefaultEntrance string
 	// ImageDefaults 图片全局默认（主题「图片管理」投影：懒加载策略 + 骨架屏）。
 	// core 不依赖 builder，故用轻量投影结构；builder 注入时从 ThemeSettings 转换。
 	ImageDefaults ImageDefaults

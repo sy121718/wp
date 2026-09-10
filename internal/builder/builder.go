@@ -36,6 +36,10 @@ import (
 	_ "go_wp/internal/builder/components/button"
 	// core.divider：分割线组件（纯线 hr 直出 / Flex 嵌入文本或图标）。
 	_ "go_wp/internal/builder/components/divider"
+	// core.loader：加载器（spinner/dots/bars/pulse 纯 CSS 动画，零 JS）。
+	_ "go_wp/internal/builder/components/loader"
+	// core.shapedivider：形状分隔线（区块过渡 SVG 装饰，多层景深，WD wd_shapedivider）。
+	_ "go_wp/internal/builder/components/shapedivider"
 	// core.image：媒体引用组件（构建期 URL 直出，零解析）。
 	_ "go_wp/internal/builder/components/image"
 	// core.globalref：全局块引用组件（构建期经 BlockResolver 内联展开，方案 C）。
@@ -159,6 +163,9 @@ type compileConfig struct {
 	// contentTranslator 内容译文取词器（多语言 P5b，空=不接入内容翻译，产物字节不变）。
 	// 由装配层「每页每语言构造一次」（CollectContentCandidates → 一次 SQL）。
 	contentTranslator *i18n.ContentTranslator
+	// extraCSS 插件静态样式（插件包 assets/*.css，构建期注入主 CSS 之后；
+	// docs/06 §5.1 资产规范——复杂动画/特殊结构不在引擎内表达时由插件自带）。
+	extraCSS string
 }
 
 // WithContentResolver 注入 CMS 内容解析器（构建期动态绑定静态填入，规范 docs/02-C1）。
@@ -178,6 +185,14 @@ func WithBlockResolver(r core.BlockResolver) CompileOption {
 // 创建后注入。未注入时 Compile 返回明确错误，避免静默走旧路径。
 func WithComponentSet(set *jet.Set) CompileOption {
 	return func(c *compileConfig) { c.set = set }
+}
+
+// WithExtraCSS 注入插件静态样式（插件包 assets/*.css，docs/06 §5.1）。
+// 构建期追加到主 CSS 之后（插件扩展覆盖内置语义）；接收时清洗 </style
+// 防止逃逸 <style> 块（插件样式为管理员级信任，仍做防御性清洗）。
+func WithExtraCSS(css string) CompileOption {
+	cleaned := strings.ReplaceAll(css, "</style", "")
+	return func(c *compileConfig) { c.extraCSS = cleaned }
 }
 
 // WithPluginResolver 注入插件组件解析器（plugin.* 节点渲染，docs/06 §7）。
@@ -470,7 +485,9 @@ func Compile(p *Page, opts ...CompileOption) (res *CompiledPage, err error) {
 			LazyLoad: cfg.theme.LazyLoadEnabled(),
 			Skeleton: cfg.theme.SkeletonEnabled(),
 		},
-		AssetProbe: cfg.assetProbe,
+		RevealInherit:         cfg.theme.RevealInheritOf(),
+		RevealDefaultEntrance: cfg.theme.RevealDefaultEntranceOf(),
+		AssetProbe:            cfg.assetProbe,
 	}
 	for _, n := range p.Root {
 		if skippedIDs[n.ID] {
@@ -497,6 +514,36 @@ func Compile(p *Page, opts ...CompileOption) (res *CompiledPage, err error) {
 	// 构建期 SEO 头：canonical / OG / Twitter / JSON-LD（三级回落由 BuildSEOHead 处理）。
 	seoHead := BuildSEOHead(p.Settings.SEO, p.Settings.SEO.Canonical, p.Settings.SEO.Title, p.Settings.SEO.Description, cfg.alternates)
 
+	// 产物 CSS = 内核编译样式 + 插件静态样式，用 @layer 显式分层：
+	//   wp-base（内核基础）< wp-plugin（插件）< wp-auto（容器宽度自动适配）<
+	//   wp-theme（主题档位）< wp-local（容器/作者显式声明）< 未分层（用户自定义，最高）。
+	// 分层后优先级由层序决定（稳定显式），不再依赖源顺序（脆弱）；
+	// 未分层样式天然高于所有层，符合「用户覆盖一切」的预期。
+	var cssParts []string
+	cssParts = append(cssParts, "@layer wp-base, wp-plugin, wp-auto, wp-theme, wp-local;")
+	cssParts = append(cssParts, "@layer wp-base {\n"+b.String()+"\n}")
+	if cfg.extraCSS != "" {
+		cssParts = append(cssParts, "@layer wp-plugin {\n"+cfg.extraCSS+"\n}")
+	}
+	// 容器查询块：自动适配（wp-auto）< 主题档位（wp-theme）< 局部显式（wp-local），
+	// 层序即优先级——不再依赖规则输出顺序。
+	if cq := b.ContainerQueryCSS(); cq != "" {
+		cssParts = append(cssParts, cq)
+	}
+	// 未分层顶层规则（@property 注册等）：注册是全局的，放层外最稳。
+	if tl := b.TopLevelCSS(); tl != "" {
+		cssParts = append(cssParts, tl)
+	}
+	css := strings.Join(cssParts, "\n\n")
+	// 减弱动态效果无障碍块（主题开关 + 系统偏好双重门控；未开启零输出）。
+	if rm := cfg.theme.ReducedMotionCSS(); rm != "" {
+		css = css + "\n\n" + rm
+	}
+	// 页面转场规则（@view-transition，主题开关；未开启零输出）。
+	if vt := cfg.theme.ViewTransitionsCSS(); vt != "" {
+		css = css + "\n\n" + vt
+	}
+
 	return &CompiledPage{
 		Lang:            lang,
 		Title:           p.Settings.SEO.Title,
@@ -504,7 +551,7 @@ func Compile(p *Page, opts ...CompileOption) (res *CompiledPage, err error) {
 		SEOHead:         seoHead,
 		BodyClasses:     classes,
 		HTML:            htmlBuf.String(),
-		CSS:             b.String(),
+		CSS:             css,
 		ThemeVarsCSS:    ThemeVarsCSS(cfg.theme),
 	}, nil
 }

@@ -26,7 +26,7 @@ type ItemView struct {
 type View struct {
 	// Items 折叠项标题列表（与 children 一一对应，顺序一致）。
 	Items []ItemView
-	// OneOpen 严格手风琴模式（data-one-open="1"）。
+	// OneOpen 严格手风琴模式（模板输出 <details name> 原生互斥，零 JS）。
 	OneOpen bool
 	// Borderless 无边框样式。
 	Borderless bool
@@ -36,8 +36,18 @@ type View struct {
 // children 的递归渲染由 nodeView 层驱动（Items 与 Children 顺序一一对应）。
 func BuildView(p *Props) View {
 	items := make([]ItemView, 0, len(p.Items))
+	// 严格单开模式（<details name> 原生互斥）下只保留首个默认展开：
+	// 同 name 组内浏览器只允许一个 open，多配会导致不可预期的展开项。
+	opened := false
 	for _, it := range p.Items {
-		items = append(items, ItemView{Title: it.Title, Open: it.Open})
+		open := it.Open
+		if p.OneOpen && open {
+			if opened {
+				open = false
+			}
+			opened = true
+		}
+		items = append(items, ItemView{Title: it.Title, Open: open})
 	}
 	return View{Items: items, OneOpen: p.OneOpen, Borderless: p.Borderless}
 }

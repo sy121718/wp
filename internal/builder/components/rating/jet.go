@@ -59,7 +59,7 @@ func BuildView(p *Props) View {
 	half := hasHalf(p)
 
 	stars := make([]StarView, 0, max)
-	for i := 0; i < max; i++ {
+	for i := range max {
 		var form string
 		switch {
 		case i < full:

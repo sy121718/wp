@@ -89,6 +89,11 @@ func formatNum(v float64, decimals int) string {
 	return strconv.FormatFloat(v, 'f', decimals, 64)
 }
 
+// formatInt 整数展示（CSS 计数模式：counter-reset 只接受整数）。
+func formatInt(v float64) string {
+	return strconv.FormatFloat(v, 'f', 0, 64)
+}
+
 // compileCSS 计数器样式。
 func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	sel := "." + core.NodeClass(id)
@@ -117,6 +122,31 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	b.Add(core.BreakpointDesktop, sel, desktop)
 
 	b.Add(core.BreakpointDesktop, sel+" .wp-counter-value", []string{"font-variant-numeric: tabular-nums"})
+	// 整数模式零 JS 计数（@property 注册 <integer> 自定义属性 + counter() 显示）：
+	// 动画由 view() 时间线驱动（滚动进入视口计数），老浏览器忽略 timeline 后
+	// 动画立即完成显示终值（优雅降级）。小数位模式仍走内嵌脚本（CSS counter 只支持整数）。
+	if p.Decimals == 0 {
+		dur := p.Duration
+		if dur <= 0 {
+			dur = 2
+		}
+		b.Add(core.BreakpointDesktop, sel, []string{
+			core.CSSDecl("--wp-counter-from", formatInt(p.Start)),
+			core.CSSDecl("--wp-counter-to", formatInt(p.End)),
+			core.CSSDecl("--wp-counter-duration", strconv.FormatFloat(dur, 'f', -1, 64)+"s"),
+			"counter-reset: wpcount var(--wp-count)",
+			"animation: wp-counter-run var(--wp-counter-duration) linear both",
+			"animation-timeline: view()",
+			"animation-range: entry 0% entry 80%",
+		})
+		b.Add(core.BreakpointDesktop, sel+" .wp-counter-value::after", []string{"content: counter(wpcount)"})
+		// 共享资源（AddKeyframes 按名去重：多计数器只输出一份）。
+		b.AddKeyframes("wp-counter-property", "@property --wp-count {\n  syntax: \"<integer>\"\n  initial-value: 0\n  inherits: false\n}")
+		b.AddKeyframesDecls("wp-counter-run", []string{
+			"from { --wp-count: var(--wp-counter-from) }",
+			"to { --wp-count: var(--wp-counter-to) }",
+		})
+	}
 	b.Add(core.BreakpointDesktop, "div"+sel+"-label.wp-counter-label, .wp-counter-label", []string{
 		"font-size: 0.85rem", "font-weight: 400", "opacity: .7",
 		"margin-top: 6px", core.CSSDecl("text-align", textAlign),

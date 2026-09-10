@@ -35,11 +35,13 @@ import (
 	infoboxPkg "go_wp/internal/builder/components/infobox"
 	languagesPkg "go_wp/internal/builder/components/languages"
 	listPkg "go_wp/internal/builder/components/list"
+	loaderPkg "go_wp/internal/builder/components/loader"
 	marqueePkg "go_wp/internal/builder/components/marquee"
 	navPkg "go_wp/internal/builder/components/nav"
 	progressPkg "go_wp/internal/builder/components/progress"
 	quotePkg "go_wp/internal/builder/components/quote"
 	ratingPkg "go_wp/internal/builder/components/rating"
+	shapedividerPkg "go_wp/internal/builder/components/shapedivider"
 	sliderPkg "go_wp/internal/builder/components/slider"
 	socialbuttonsPkg "go_wp/internal/builder/components/socialbuttons"
 	spacerPkg "go_wp/internal/builder/components/spacer"
@@ -87,6 +89,7 @@ func nodeViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeV
 	if ctx != nil {
 		node = applyContentTranslation(node, ctx.ContentTranslate)
 	}
+	// 滚动显现注入在 advancedClasses / containerViewOf 内完成（结构体层，见 reveal.go）。
 	switch node.Type {
 	case buttonPkg.Type:
 		return buttonViewOf(node, topLevel, ctx)
@@ -102,6 +105,10 @@ func nodeViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeV
 		return dividerViewOf(node, topLevel, ctx)
 	case spacerPkg.Type:
 		return spacerViewOf(node, topLevel, ctx)
+	case shapedividerPkg.Type:
+		return shapedividerViewOf(node, topLevel, ctx)
+	case loaderPkg.Type:
+		return loaderViewOf(node, topLevel, ctx)
 	case listPkg.Type:
 		return listViewOf(node, topLevel, ctx)
 	case infoboxPkg.Type:
@@ -185,6 +192,10 @@ func decodeProps[P any](node *core.Node) (P, error) {
 func advancedClasses[P any](node *core.Node, p *P, ctx *core.RenderContext) (classes []string, customID string) {
 	classes = []string{core.NodeClass(node.ID)}
 	if adv := core.AdvancedOf(p); adv != nil {
+		// 滚动显现分层注入（H5「滚动过去才出内容」）：上下文启用且未显式配置时注入。
+		if revealActive(ctx) {
+			applyScrollReveal(&adv.Interaction, ctx.RevealDefaultEntrance)
+		}
 		extra, id := core.CompileAdvanced(node.ID, adv, ctx.CSS)
 		classes = append(classes, extra...)
 		customID = id
@@ -361,6 +372,23 @@ func containerViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*
 		}
 	}
 
+	// 滚动显现注入（container 的 Interaction 为顶层字段，不走 advancedClasses）。
+	if revealActive(ctx) {
+		applyScrollReveal(&p.Interaction, ctx.RevealDefaultEntrance)
+	}
+	// 容器滚动显现覆盖（栈式：进入子树前设置，函数返回自动恢复——
+	// 触发路径：nodeViewOf 入口按 ctx.RevealInherit 注入，见 reveal.go）。
+	switch p.StyleEx.Reveal {
+	case "on":
+		old := ctx.RevealInherit
+		ctx.RevealInherit = "on"
+		defer func() { ctx.RevealInherit = old }()
+	case "off":
+		old := ctx.RevealInherit
+		ctx.RevealInherit = "off"
+		defer func() { ctx.RevealInherit = old }()
+	}
+
 	cls := core.NodeClass(node.ID)
 	if topLevel {
 		cls += " " + core.SectionClass
@@ -463,6 +491,16 @@ func spacerViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nod
 	return atomViewOf(node, topLevel, ctx, spacerPkg.Type, "spacer", spacerPkg.CompileCSS, spacerPkg.BuildView)
 }
 
+// shapedividerViewOf 转换 shapedivider 节点（对应 core.Atom 基座的 Render 流程）。
+func shapedividerViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeView, error) {
+	return atomViewOf(node, topLevel, ctx, shapedividerPkg.Type, "shapedivider", shapedividerPkg.CompileCSS, shapedividerPkg.BuildView)
+}
+
+// loaderViewOf 转换 loader 节点（对应 core.Atom 基座的 Render 流程）。
+func loaderViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeView, error) {
+	return atomViewOf(node, topLevel, ctx, loaderPkg.Type, "loader", loaderPkg.CompileCSS, loaderPkg.BuildView)
+}
+
 // 以下 10 个 ViewOf 为新组件库补齐（对标 GrapesJS 组件生态），
 // 均为叶子原子组件（core.Atom 基座），模式与 spacer/divider 一致：
 // props 解码 → Advanced 编译 → 组件 CSS → BuildView → nodeView。
@@ -549,7 +587,7 @@ func galleryViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*no
 	classes := []string{core.NodeClass(node.ID)}
 	classes = append(classes, extraClasses...)
 
-	view, err := galleryPkg.BuildView(&p, ctx.Content)
+	view, err := galleryPkg.BuildView(node.ID, &p, ctx.Content)
 	if err != nil {
 		return nil, fmt.Errorf("节点 %s: %w", node.ID, err)
 	}
@@ -790,8 +828,26 @@ func marqueeViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*no
 	}, nil
 }
 
+// maxBlockExpandDepth 全局块展开深度上限（合法嵌套 3~6 层，32 为充裕上限）。
+// 超限或循环引用立即报错——否则无限展开会指数级耗尽内存（OOM，而非栈溢出）。
+const maxBlockExpandDepth = 32
+
 // globalrefViewOf 转换 globalref 节点（对应 Component.Render 流程：占位或展开）。
+// 含循环引用与深度防护：同一块 ID 不允许嵌套展开（a→b→a），栈深超限报错。
 func globalrefViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeView, error) {
+	blockID, err := globalrefPkg.BlockIDOf(node)
+	if err != nil {
+		return nil, fmt.Errorf("节点 %s: %w", node.ID, err)
+	}
+	for _, id := range ctx.BlockStack {
+		if id == blockID {
+			return nil, fmt.Errorf("节点 %s: 全局块循环引用（%s → %s）", node.ID, strings.Join(ctx.BlockStack, " → "), blockID)
+		}
+	}
+	if len(ctx.BlockStack) >= maxBlockExpandDepth {
+		return nil, fmt.Errorf("节点 %s: 全局块嵌套超过 %d 层上限", node.ID, maxBlockExpandDepth)
+	}
+
 	view, roots, err := globalrefPkg.BuildView(node, ctx.Block)
 	if err != nil {
 		return nil, fmt.Errorf("节点 %s: %w", node.ID, err)
@@ -809,14 +865,18 @@ func globalrefViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*
 	}
 
 	// 展开：递归块 root children（ID 前缀已由 BuildView 重写）。
+	// 块 ID 入栈/出栈维护展开上下文（防环检查见函数头）。
+	ctx.BlockStack = append(ctx.BlockStack, blockID)
 	children := make([]*nodeView, 0, len(roots))
 	for _, r := range roots {
 		cv, err := nodeViewOf(r, false, ctx)
 		if err != nil {
+			ctx.BlockStack = ctx.BlockStack[:len(ctx.BlockStack)-1]
 			return nil, err
 		}
 		children = append(children, cv)
 	}
+	ctx.BlockStack = ctx.BlockStack[:len(ctx.BlockStack)-1]
 
 	return &nodeView{
 		Type:     globalrefPkg.Type,

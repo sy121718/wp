@@ -80,13 +80,7 @@ var shadowLevels = map[string]string{
 	"xl": "0 20px 48px rgba(0,0,0,0.2)",
 }
 
-// shadowUpgrade 悬浮反馈时加深的阴影级别。
-var shadowUpgrade = map[string]string{"": "md", "sm": "md", "md": "lg", "lg": "xl", "xl": "xl"}
-
-// allowedEntrance 入场动效白名单（纯 CSS 实现，默认关闭；与 core.allowedEntrance 同步）。
-var allowedEntrance = map[string]bool{
-	"": true, "fade-in": true, "slide-up": true, "zoom-in": true,
-}
+// （悬浮反馈的阴影加深逻辑已随交互管线上收 core.CompileInteraction；
 
 // Responsive 三端字符串值（如内边距、间距）。
 type Responsive struct {
@@ -110,8 +104,8 @@ type Props struct {
 	// Box 盒模型（内距/外距/尺寸/溢出）；ct:"group" 展开到「布局」区块。
 	Box BoxProps `json:"box" ct:"group"`
 	// Visual 外观（边框/圆角/阴影/背景）；ct:"group" 让检查器按 visual.* 路径展开渲染。
-	Visual      VisualProps      `json:"visual" ct:"group"`
-	Interaction InteractionProps `json:"interaction"`
+	Visual      VisualProps           `json:"visual" ct:"group"`
+	Interaction core.InteractionProps `json:"interaction"`
 	// Position 定位系统（03-A §3.1 Tab1）：static/relative/absolute/sticky/drawer。
 	Position PositionProps `json:"position,omitempty" ct:"group"`
 	// StyleEx 样式扩展（03-A §3.1 Tab2）：背景双态/遮罩/形状分隔线/顺序/组父联动/属性。
@@ -141,10 +135,26 @@ type StyleExProps struct {
 	BackgroundHover string `json:"backgroundHover,omitempty"`
 	// Overlay 背景覆盖层（纯色/渐变半透明遮罩，保障文本可读）。
 	Overlay string `json:"overlay,omitempty"`
-	// ShapeDivider 形状分隔线：wave / slant / curve；空=关闭。
+	// ShapeDivider 形状分隔线：wave / slope / curve；空=关闭。
 	ShapeDivider string `json:"shapeDivider,omitempty"`
 	// ShapeDividerPosition 形状位置：top / bottom（默认 bottom）。
 	ShapeDividerPosition string `json:"shapeDividerPosition,omitempty"`
+	// SafeAreaBottom 底部安全区垫高（H5：padding-bottom 接 env(safe-area-inset-bottom)，
+	// 适配 iPhone 底部横条；开启后覆盖用户 padding-bottom。视觉层 viewport 适配分类）。
+	SafeAreaBottom bool `json:"safeAreaBottom,omitempty" ct:"bool,sec=background,label=底部安全区垫高"`
+	// Reveal 滚动显现覆盖（H5「滚动过去才出内容」子树开关）："" 跟随页面/主题、
+	// on 子树强制滚动显现、off 子树豁免直接显示（视觉层分层开关）。
+	Reveal string `json:"reveal,omitempty" ct:"select,=跟随页面,on=子树滚动显现,off=子树直接显示,sec=background,label=滚动显现"`
+	// CardLayout 内部卡片布局语义开关（H5 结构变体）："" 默认（跟随容器宽度自适应）/
+	// horizontal 强制横排。声明到本容器上，内部卡片经 @container style() 响应。
+	CardLayout string `json:"cardLayout,omitempty" ct:"select,=默认,horizontal=卡片横排,sec=layout,label=内部卡片布局"`
+	// ContainerQuery 容器查询上下文（H5 组件级响应式）：输出 container-type: inline-size，
+	// 内部组件可用 @container 规则按「容器宽度」自适应（而非视口宽度），
+	// 适合把组件放进侧栏/窄区块的场景。未开启时内部组件始终用视口断点。
+	ContainerQuery bool `json:"containerQuery,omitempty" ct:"bool,sec=layout,label=容器查询上下文"`
+	// ContentVisibility 视口外跳过渲染（H5 长页面滚动性能；content-visibility: auto +
+	// contain-intrinsic-size 占位防滚动条跳动）。注意与滚动显现动效可能相互影响，按需开启。
+	ContentVisibility bool `json:"contentVisibility,omitempty" ct:"bool,sec=background,label=视口外跳过渲染"`
 	// Order 子项顺序（flex/grid 中 -1~99）。
 	Order int `json:"order,omitempty"`
 	// GroupParent 父子悬停联动：父容器 hover 时子组件可触发联动样式。
@@ -211,7 +221,13 @@ type BoxProps struct {
 type VisualProps struct {
 	BgColor    string `json:"bgColor,omitempty" ct:"color,maxlen=200,sec=background,label=背景色"`
 	BgGradient string `json:"bgGradient,omitempty" ct:"safe,maxlen=200,sec=background,label=背景渐变"` // 如 "linear-gradient(to right, #fff, #000)"
-	BgImage    string `json:"bgImage,omitempty" ct:"media,sec=background,label=背景图片"`              // 背景图 URL（媒体库选择回填；画布/产物直出）
+	// Pattern 图案背景（纯 CSS 平铺，20 种；与渐变/背景图互斥——三者同写 background-image）。
+	Pattern string `json:"pattern,omitempty" ct:"select,=无,dots=点阵,grid=网格,overlay=细网格,diagonal-stripes=斜纹,diagonal-lines=细斜线,vertical-stripes=竖纹,horizontal-stripes=横纹,zigzag=锯齿,checkerboard=棋盘,triangles=三角,diamond=菱形,crosses=十字,plus=加号,squares=方块,circles=大圆点,polka=交错波点,ripple=同心波纹,bricks=砖块,rain=雨丝,honeycomb=蜂窝,sec=background,label=图案背景"`
+	// PatternColor 图案颜色（空 = 8% 黑）。
+	PatternColor string `json:"patternColor,omitempty" ct:"color,maxlen=200,sec=background,label=图案颜色"`
+	// BgGradientAnimated 背景渐变流动（配合 BgGradient；200% 拉伸 + wp-bg-flow 位移动画）。
+	BgGradientAnimated bool   `json:"bgGradientAnimated,omitempty" ct:"bool,sec=background,label=渐变流动"`
+	BgImage            string `json:"bgImage,omitempty" ct:"media,sec=background,label=背景图片"` // 背景图 URL（媒体库选择回填；画布/产物直出）
 	// BgSlides 背景轮播图（多张，纯 CSS 交叉淡入；填写后优先于单张背景图）。
 	BgSlides []string `json:"bgSlides,omitempty" ct:"mediaList,sec=background,label=背景轮播图"`
 	// BgSlideInterval 轮播切换间隔（秒，默认 6）。
@@ -250,12 +266,8 @@ type VisualProps struct {
 	ShadowColor  string `json:"shadowColor,omitempty" ct:"color,maxlen=200,sec=border,label=阴影颜色"`
 }
 
-// InteractionProps 交互状态与动画（已上移 core 共享组，类型别名兼容过渡）。
-// 全组件通过 AdvancedProps.Interaction 共享本组；container 保留别名避免
-// 包外引用断裂（开发阶段允许，后续统一改为 core.InteractionProps）。
-type InteractionProps = core.InteractionProps
-
-// Container core.container 组件实现。
+// Container core.container 组件实现（交互属性类型已统一为 core.InteractionProps，
+// 别名过渡层已删除，docs/06 §6 同源管线）。
 type Container struct{}
 
 // Type 实现组件接口。
@@ -270,11 +282,20 @@ func IsSafeCSSValue(v string) bool {
 }
 
 // shapeDividers 形状分隔线白名单（03-A §3.1 Tab2，纯 SVG 装饰）。
-// 值仅为 path 内容片段，<svg> 骨架由 container.jet 模板渲染（去 Go 拼字符串）。
+// path 统一取自 core 通用素材库（core/shapes.go，viewBox 1440×120 参数化生成，
+// 单一定义），词汇与素材库对齐（原 slant 已更名 slope，开发期无存量站点，
+// 含旧词汇的测试数据直接重存）；<path fill> 包装在此完成，
+// <svg> 骨架（viewBox 1440×120）由 container.jet 模板渲染（去 Go 拼字符串）。
 var shapeDividers = map[string]string{
-	"wave":  `<path fill="currentColor" d="M0 32c120-32 240-32 360 0s240 32 360 0 240-32 360 0 240 32 360 0v64H0z"/>`,
-	"slant": `<path fill="currentColor" d="M0 64L1440 0v64H0z"/>`,
-	"curve": `<path fill="currentColor" d="M0 64C360 0 1080 0 1440 64H0z"/>`,
+	"wave":  shapeDividerMarkup(core.ShapeKindWave),
+	"slope": shapeDividerMarkup(core.ShapeKindSlope),
+	"curve": shapeDividerMarkup(core.ShapeKindCurve),
+}
+
+// shapeDividerMarkup 素材库 path → 装饰 <path> 片段
+// （fill=currentColor 跟随容器背景反色，语义不变）。
+func shapeDividerMarkup(kind string) string {
+	return `<path fill="currentColor" d="` + core.ShapePath(kind, 0, false) + `"/>`
 }
 
 // attrKeyRe 自定义属性 key 白名单（data-* / aria-* / 常见属性）。
@@ -407,6 +428,11 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	// 渐变优先于背景图。
 	if v := p.Visual.BgGradient; v != "" {
 		desktop = append(desktop, core.CSSDecl("background-image", v))
+		// 渐变流动（效果基本库 core.BackgroundFlowDecls；未开启零输出）。
+		if p.Visual.BgGradientAnimated {
+			desktop = append(desktop, core.BackgroundFlowDecls()...)
+			b.NeedKeyframes("wp-bg-flow")
+		}
 	} else if v := p.Visual.BgImage; v != "" {
 		desktop = append(desktop, "background-image: url("+v+")")
 		// 背景显示控制（对齐 Elementor：定位/附着/重复/尺寸），仅背景图存在时输出。
@@ -430,6 +456,9 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 				desktop = append(desktop, core.CSSDecl("background-size", v))
 			}
 		}
+	} else if v := p.Visual.Pattern; v != "" {
+		// 图案背景（纯 CSS 平铺，20 种；零图片资产；与渐变/背景图互斥，校验层拦截）。
+		desktop = append(desktop, core.BackgroundPatternDecls(v, p.Visual.PatternColor)...)
 	}
 	// 背景轮播（多图交叉淡入，纯 CSS；填写后优先于单张背景图）。
 	if slides := p.Visual.BgSlides; len(slides) > 0 {
@@ -523,35 +552,14 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		desktop = append(desktop, core.CSSDecl("box-shadow", v))
 	}
 
-	// --- 交互状态与动画 ---
-	if p.Interaction.Sticky {
-		desktop = append(desktop, "position: sticky")
-		top := p.Interaction.StickyTop
-		if top == "" {
-			top = "0"
-		}
-		desktop = append(desktop, core.CSSDecl("top", top))
-	}
-	if p.Interaction.HoverLift {
-		// 过渡声明入基础规则，触发态入 :hover 规则。
-		desktop = append(desktop, "transition: transform 0.25s ease, box-shadow 0.25s ease")
-	}
-	if e := p.Interaction.Entrance; e != "" {
-		// backwards 而非 both：动画结束后释放终态，避免填充态压制 hover 的 transform。
-		desktop = append(desktop, "animation: wp-"+e+" 0.6s ease backwards")
-		b.NeedKeyframes("wp-" + e)
-	}
-
+	// --- 交互状态与动画（统一走 core.CompileInteraction：入场/循环/悬浮/吸顶） ---
+	// 与全部 Atom 组件共用同一动效管线（docs/06 §6 同源）：弹簧缓动、滚动触发、
+	// 循环词汇、触屏治理 hover 一次性获得，不再维护容器私有实现。
 	b.Add(core.BreakpointDesktop, sel, desktop)
 	b.Add(core.BreakpointTablet, sel, tablet)
 	b.Add(core.BreakpointMobile, sel, mobile)
 
-	if p.Interaction.HoverLift {
-		b.Add(core.BreakpointDesktop, sel+":hover", []string{
-			"transform: translateY(-6px)",
-			core.CSSDecl("box-shadow", shadowLevels[shadowUpgrade[p.Visual.Shadow]]),
-		})
-	}
+	core.CompileInteraction(sel, p.Interaction, b)
 
 	// --- 定位系统（03-A） ---
 	switch p.Position.Type {
@@ -596,7 +604,29 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	}
 	if p.StyleEx.BackgroundHover != "" {
 		b.Add(core.BreakpointDesktop, sel, []string{"transition: background 0.2s ease"})
-		b.Add(core.BreakpointDesktop, sel+":hover", []string{core.CSSDecl("background", p.StyleEx.BackgroundHover)})
+		b.AddHover(sel+":hover", []string{core.CSSDecl("background", p.StyleEx.BackgroundHover)})
+	}
+	// 底部安全区垫高（H5 viewport 适配：iPhone 底部横条；效果基本库 core.SafeAreaDecls）。
+	// 容器查询上下文（组件级响应式）：内部组件的 @container 规则以本容器宽度为准。
+	if p.StyleEx.ContainerQuery {
+		// 同时命名容器：内部组件的尺寸查询与样式查询（style()）都以本容器为最近锚点。
+		b.Add(core.BreakpointDesktop, sel, []string{"container-type: inline-size", "container-name: wp-theme"})
+	}
+	// 内部卡片布局语义开关（结构变体）：声明自定义属性，内部卡片用样式查询响应。
+	if p.StyleEx.CardLayout == "horizontal" {
+		b.Add(core.BreakpointDesktop, sel, []string{"--wp-card-layout: horizontal"})
+	}
+	// 视口外跳过渲染（H5 长页面滚动性能；占位尺寸防滚动条跳动）。
+	// 与滚动吸顶互斥：content-visibility 创建 containment，吸顶元素在视口外被
+	// 跳过渲染时定位不可靠（校验层拦截同时开启）。
+	if p.StyleEx.ContentVisibility {
+		b.Add(core.BreakpointDesktop, sel, []string{
+			"content-visibility: auto",
+			"contain-intrinsic-size: auto 480px",
+		})
+	}
+	if p.StyleEx.SafeAreaBottom {
+		b.Add(core.BreakpointDesktop, sel, core.SafeAreaDecls("bottom"))
 	}
 	if p.StyleEx.Overlay != "" {
 		if p.Position.Type == "static" {
@@ -744,12 +774,19 @@ func validateProps(p *Props) (err error) {
 		}
 	}
 
-	// 交互状态与动画。
-	if p.Interaction.StickyTop != "" && !IsSafeCSSValue(p.Interaction.StickyTop) {
-		return fmt.Errorf("无效的吸顶偏移: %q", p.Interaction.StickyTop)
+	// 交互状态与动画：统一走 core 校验（入场/循环/悬浮/滚动叙事/吸顶全词汇 +
+	// 互斥规则），与 Atom 组件共用同一词汇表，消除容器窄白名单的能力割裂。
+	// 背景来源互斥：图案与渐变/背景图同写 background-image，同时配置会静默忽略其一。
+	if p.Visual.Pattern != "" && (p.Visual.BgGradient != "" || p.Visual.BgImage != "") {
+		return fmt.Errorf("图案背景与渐变/背景图互斥，请只选一种")
 	}
-	if !allowedEntrance[p.Interaction.Entrance] {
-		return fmt.Errorf("无效的入场动效: %q", p.Interaction.Entrance)
+	if err := core.ValidateInteraction(p.Interaction); err != nil {
+		return err
+	}
+	// 视口外跳过渲染与滚动吸顶互斥：content-visibility 创建 containment，
+	// 吸顶元素在视口外被跳过渲染时定位不可靠。
+	if p.StyleEx.ContentVisibility && p.Interaction.Sticky {
+		return fmt.Errorf("视口外跳过渲染与滚动吸顶不可同时开启")
 	}
 
 	// 定位系统（03-A）。
@@ -794,13 +831,16 @@ func validateProps(p *Props) (err error) {
 	}
 	if p.StyleEx.ShapeDivider != "" {
 		if _, ok := shapeDividers[p.StyleEx.ShapeDivider]; !ok {
-			return fmt.Errorf("无效的形状分隔线: %q（仅 wave/slant/curve）", p.StyleEx.ShapeDivider)
+			return fmt.Errorf("无效的形状分隔线: %q（仅 wave/slope/curve）", p.StyleEx.ShapeDivider)
 		}
 	}
 	if p.StyleEx.ShapeDividerPosition != "" && p.StyleEx.ShapeDividerPosition != "top" && p.StyleEx.ShapeDividerPosition != "bottom" {
 		return fmt.Errorf("形状分隔线位置仅支持 top/bottom: %q", p.StyleEx.ShapeDividerPosition)
 	}
 	if p.StyleEx.Order < -1 || p.StyleEx.Order > 99 {
+		if v := p.StyleEx.Reveal; v != "" && v != "on" && v != "off" {
+			return fmt.Errorf("无效的滚动显现覆盖: %q（on/off）", v)
+		}
 		return fmt.Errorf("顺序值必须在 -1~99 之间: %d", p.StyleEx.Order)
 	}
 	for _, kv := range p.StyleEx.Attributes {

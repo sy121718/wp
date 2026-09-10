@@ -76,9 +76,9 @@ func TestWorkbenchStyleEx(t *testing.T) {
 		`data-wp-group="true"`,
 		`data-track="banner"`,
 		`aria-label="首屏"`,
-		// 形状分隔线内嵌 SVG。
+		// 形状分隔线内嵌 SVG（path 统一取自 core 素材库，viewBox 1440×120）。
 		`<span class="wp-shape wp-shape-bottom">`,
-		"<svg viewBox=\"0 0 1440 64\"",
+		"<svg viewBox=\"0 0 1440 120\"",
 		// CSS。
 		".wp-c-sec1:hover", "background: #111111",
 		".wp-c-sec1::before", "rgba(0,0,0,0.4)",

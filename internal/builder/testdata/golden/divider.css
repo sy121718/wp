@@ -1,3 +1,10 @@
+@layer wp-base, wp-plugin, wp-auto, wp-theme, wp-local;
+
+@layer wp-base {
+body {
+  container-name: wp-theme;
+}
+
 .wp-c-d1 {
   border-top: 2px solid #ccc;
   margin: 0;
@@ -61,4 +68,5 @@
 .wp-c-d3 .dt-inset svg {
   width: 1em;
   height: 1em;
+}
 }

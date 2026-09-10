@@ -248,7 +248,7 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		if p.Hover.RestoreColor {
 			hoverDecls = append(hoverDecls, "filter: none")
 		}
-		b.Add(core.BreakpointDesktop, sel+":hover", hoverDecls)
+		b.AddHover(sel+":hover", hoverDecls)
 	}
 
 	// 灯箱浮层样式（零 JS :target 显隐）。

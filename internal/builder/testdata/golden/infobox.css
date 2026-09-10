@@ -1,3 +1,10 @@
+@layer wp-base, wp-plugin, wp-auto, wp-theme, wp-local;
+
+@layer wp-base {
+body {
+  container-name: wp-theme;
+}
+
 .wp-c-ib1 {
   display: flex;
   flex-direction: column;
@@ -167,4 +174,5 @@
   font-size: 0.92em;
   line-height: 1.6;
   opacity: .85;
+}
 }

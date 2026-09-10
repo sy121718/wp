@@ -30,6 +30,8 @@ type Props struct {
 	Rows [][]string `json:"rows,omitempty"`
 	// Striped 斑马纹（tbody 偶数行浅色背景）。
 	Striped bool `json:"striped,omitempty" ct:"bool,sec=content,label=斑马纹"`
+	// RowHover 行悬停高亮（触屏治理：仅真悬浮设备生效，core.AddHover）。
+	RowHover bool `json:"rowHover,omitempty" ct:"bool,sec=content,label=行悬停高亮"`
 	// Bordered 边框（th/td 加 1px 边框）。
 	Bordered bool `json:"bordered,omitempty" ct:"bool,sec=content,label=显示边框"`
 	// Advanced 通用高级属性（docs/02-C0）。
@@ -111,6 +113,15 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	if p.Striped {
 		b.Add(core.BreakpointDesktop, sel+" tbody tr:nth-child(even)", []string{
 			"background: rgba(0,0,0,0.04)",
+		})
+	}
+	// 行悬停高亮（H5 触屏治理：AddHover 包 @media hover:hover，触屏不粘滞）。
+	if p.RowHover {
+		b.Add(core.BreakpointDesktop, sel+" tbody tr", []string{
+			"transition: background 0.15s ease",
+		})
+		b.AddHover(sel+" tbody tr:hover", []string{
+			"background: rgba(0,0,0,0.05)",
 		})
 	}
 	// 边框：th/td 加 1px 边框。
