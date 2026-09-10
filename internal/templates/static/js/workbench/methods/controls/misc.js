@@ -1,6 +1,6 @@
 // workbench/methods/controls/misc.js — schema 字段分发、手写面板编排与 slot 填充（从 methods/inspector.js 提取）。
 
-import { componentSchemas, controlLabel, optionLabel } from '../../core.js';
+import { wbDropdown, componentSchemas, controlLabel, optionLabel } from '../../core.js';
 import { get, set, commit, heading, field, checkbox, segmentedField } from './base.js';
 import { colorControl } from './color.js';
 import { cornersControl } from './corners.js';
@@ -58,6 +58,8 @@ export function schemaField(ctx, ctl) {
     if (ctl.kind === 'classes') { classesControl(ctx, label, path, ctl); return; }
     if (ctl.kind === 'rtext') { rtextControl(ctx, label, path, ctl); return; }
     if (ctl.kind === 'mediaList') { mediaListControl(ctx, label, path, ctl); return; }
+    // 集合字段下拉（内置组件的集合绑定）：选项来自后端字段白名单。
+    if (ctl.kind === 'collectionfield') { collectionFieldControl(ctx, label, path); return; }
     if (ctl.kind === 'select') {
         // 选项归一为 [value, label]：ct tag 已声明中文标签时优先。
         var opts = (ctl.options || []).map(function (o) {
@@ -72,8 +74,11 @@ export function schemaField(ctx, ctl) {
         }
         var choices = opts;
         if (ctl.default) choices.unshift(['', '（默认）']);
-        // text.mode 切换后重建面板，切换富文本/纯文本编辑形态。
-        var afterSel = (ctx.node.type === 'core.text' && ctl.key === 'mode') ? modeAfter : null;
+        // text.mode 切换后重建面板，切换富文本/纯文本编辑形态；
+        // 集合源切换后同样重建 —— 字段下拉的选项依赖它。
+        var afterSel = null;
+        if (ctx.node.type === 'core.text' && ctl.key === 'mode') afterSel = modeAfter;
+        if (ctl.key === 'collectionSource') afterSel = function (c) { if (c.self.syncInspector) c.self.syncInspector(); };
         field(ctx, label, path, 'select', choices, afterSel);
     } else if (ctl.kind === 'cssdecls') {
         // 按端样式覆盖：只写样式/布局/动画属性（内容字段不参与按端）。
@@ -102,7 +107,10 @@ export function schemaField(ctx, ctl) {
     } else if (ctl.kind === 'text') {
         field(ctx, label, path, 'textarea');
     } else if (ctl.kind === 'int' || ctl.kind === 'slider') {
-        field(ctx, label, path, 'number', null, null, { min: ctl.min, max: ctl.max, step: ctl.step || 1 });
+        // slider 声明额外并联一个滑块（拖动调参）；int 仍是纯数字输入。
+        field(ctx, label, path, 'number', null, null, {
+            min: ctl.min, max: ctl.max, step: ctl.step || 1, range: ctl.kind === 'slider'
+        });
     } else if (ctl.kind === 'number') {
         field(ctx, label, path, 'number', null, null, { min: ctl.min, max: ctl.max, step: ctl.step || 0.1 });
     } else if (ctl.kind === 'bool') {
@@ -111,6 +119,59 @@ export function schemaField(ctx, ctl) {
         // string / safe / url / regex：文本输入。
         field(ctx, label, path, 'input');
     }
+}
+
+/** 集合元数据缓存（GET /api/content/collections，一次会话只拉一次）。 */
+var collectionSchemas = null;
+
+/** loadCollections 拉取集合源与字段白名单，失败降级为空列表（不阻断编辑）。 */
+function loadCollections(cb) {
+    if (collectionSchemas) { cb(collectionSchemas); return; }
+    var done = function (list) { collectionSchemas = list; cb(list); };
+    try {
+        fetch('/api/content/collections', { credentials: 'same-origin', headers: { Accept: 'application/json' } })
+            .then(function (r) { return r.json(); })
+            .then(function (j) { done((j && j.data && j.data.collections) || []); })
+            .catch(function () { done([]); });
+    } catch (e) { done([]); }
+}
+
+/**
+ * collectionFieldControl 集合字段下拉：选项 = 后端字段白名单（按当前节点的
+ * 「内容集合」过滤），并额外提供 slug（链接字段常用）。白名单只有一处来源，
+ * 组件侧与工作台共用同一份 —— 手填字段名会绕过它，所以这里用下拉而非输入框。
+ */
+function collectionFieldControl(ctx, label, path) {
+    var wrap = document.createElement('div'); wrap.className = 'wb-field';
+    var cap = document.createElement('label'); cap.textContent = label; wrap.appendChild(cap);
+    ctx.panel.appendChild(wrap);
+
+    var source = get(ctx, 'props.collectionSource') || '';
+    if (!source) {
+        var hint = document.createElement('div');
+        hint.className = 'wb-hint';
+        hint.textContent = '先选「内容集合」，再挑字段';
+        wrap.appendChild(hint);
+        return;
+    }
+    var holder = document.createElement('div');
+    holder.className = 'wb-hint';
+    holder.textContent = '字段载入中…';
+    wrap.appendChild(holder);
+
+    loadCollections(function (list) {
+        var schema = null;
+        list.forEach(function (c) { if (c.Source === source) schema = c; });
+        var options = [['', '（不显示）'], ['slug', 'slug（链接用）']];
+        if (schema) {
+            (schema.Fields || []).forEach(function (f) { options.push([f, f]); });
+        }
+        holder.textContent = '';
+        holder.className = '';
+        holder.appendChild(wbDropdown(options, get(ctx, path) || '', {
+            onChange: function (v) { commit(ctx, path, v); }
+        }).root);
+    });
 }
 
 // isPlainTextMode core.text 的「纯文本」模式：正文不用 Trix（保留多行输入）。

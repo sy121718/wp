@@ -1104,4 +1104,16 @@ button.wb-color-swatch:hover { border-color: var(--c-primary, #3d444f); }
 [data-theme="dark"] .wb-media-field { background-color: var(--c-bg-soft, #171b21); }
 [data-theme="dark"] .wb-media-cell img { background: var(--c-bg-hover, #1f242b); }
 
+/* ---- 数值滑块行：ct:"slider" 字段渲染成「滑块 + 数字输入」双联 ----
+   滑块负责拖动调参（120ms 防抖提交），数字框负责精确键入，两者双向同步。 */
+.wb-range-row { display: flex; align-items: center; gap: 8px; }
+.wb-range-row .wb-range {
+    flex: 1 1 auto; min-width: 0; margin: 0; height: 4px;
+    accent-color: var(--c-primary, #5e5cfc); cursor: pointer;
+}
+.wb-range-row input[type="number"] { flex: 0 0 76px; width: 76px; }
+
+/* 字段提示（如「先选内容集合」）：次要色小字，不抢控件视觉。 */
+.wb-hint { font-size: 11px; line-height: 1.5; color: var(--c-text-dim, #8a93a3); }
+
 

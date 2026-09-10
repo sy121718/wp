@@ -95,7 +95,36 @@ export function field(ctx, label, path, kind, choices, after, extra) {
         if (kind === 'number') value = input.value === '' ? '' : Number(input.value);
         commit(ctx, path, value, after);
     });
-    wrap.appendChild(input);
+    // 数值字段可选并联滑块（ct:"slider" 声明的字段）：拖动即时回填数字框，
+    // 120ms 防抖合并提交，松手立即提交 —— 避免每一帧都进 undo 栈与整树重渲染。
+    if (kind === 'number' && extra && extra.range && extra.min !== undefined && extra.max !== undefined) {
+        var slider = document.createElement('input');
+        slider.type = 'range';
+        slider.className = 'wb-range';
+        slider.min = extra.min;
+        slider.max = extra.max;
+        slider.step = extra.step !== undefined ? extra.step : 1;
+        slider.value = input.value === '' ? extra.min : Number(input.value);
+        var rangeTimer = null;
+        var flushRange = function (delay) {
+            if (rangeTimer) { clearTimeout(rangeTimer); rangeTimer = null; }
+            rangeTimer = setTimeout(function () { rangeTimer = null; commit(ctx, path, Number(slider.value), after); }, delay);
+        };
+        slider.addEventListener('input', function () { input.value = slider.value; flushRange(120); });
+        slider.addEventListener('change', function () { flushRange(0); });
+        input.addEventListener('input', function () {
+            if (input.value !== '' && Number(input.value) >= slider.min && Number(input.value) <= slider.max) {
+                slider.value = input.value;
+            }
+        });
+        var rangeRow = document.createElement('div');
+        rangeRow.className = 'wb-range-row';
+        rangeRow.appendChild(slider);
+        rangeRow.appendChild(input);
+        wrap.appendChild(rangeRow);
+    } else {
+        wrap.appendChild(input);
+    }
     // 媒体类字段：缩略图预览 + 媒体库选择 + 清除（对齐 Elementor 图片控件）。
     // src/bgImage 尾缀：直接回填 URL（画布/产物直出，构建期零解析）。
     if (kind === 'input' && /\.(src|bgImage)$/.test(path)) {
