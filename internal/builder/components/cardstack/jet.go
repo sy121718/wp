@@ -60,6 +60,10 @@ type View struct {
 	HideEmpty bool
 	// LinkText 卡片详情链接文案（集合字段映射模式使用）。
 	LinkText string
+	// Slide 是否全屏分页模式（模板据此输出页码角标，总数写进 data-total）。
+	Slide bool
+	// PageTotal 全屏分页的总屏数（页码分母）。
+	PageTotal int
 }
 
 // IsCollection 是否内容集合模式 —— 装配层据此决定「子节点模板」还是「组件自带字段映射」。
@@ -75,6 +79,7 @@ func BuildView(node *core.Node, p *Props, ctx *core.RenderContext) (View, error)
 	trigger := effectiveTrigger(p)
 	drag := trigger == TriggerDrag
 	deck := trigger == TriggerDeck
+	slide := trigger == TriggerSlide
 	if source := collectionSource(p); source != "" {
 		cards, err := collectionCards(node, p, ctx)
 		if err != nil {
@@ -84,7 +89,7 @@ func BuildView(node *core.Node, p *Props, ctx *core.RenderContext) (View, error)
 			Cards: cards, Collection: true,
 			Drag: drag, Deck: deck, DeckIndex: len(cards) / 2, DeckLoop: p.DeckLoop,
 			Empty: len(cards) == 0, EmptyText: emptyText(p), HideEmpty: p.CollectionEmpty == "hide",
-			LinkText: linkText(p),
+			LinkText: linkText(p), Slide: slide, PageTotal: len(cards),
 		}, nil
 	}
 
@@ -94,7 +99,11 @@ func BuildView(node *core.Node, p *Props, ctx *core.RenderContext) (View, error)
 		label := strconv.Itoa(i + 1)
 		cards[i] = CardView{Label: label, AriaLabel: "放大第 " + label + " 张卡片"}
 	}
-	return View{Cards: cards, HasContent: hasContent(node), Drag: drag, Deck: deck, DeckIndex: len(cards) / 2, DeckLoop: p.DeckLoop}, nil
+	return View{
+		Cards: cards, HasContent: hasContent(node),
+		Drag: drag, Deck: deck, DeckIndex: len(cards) / 2, DeckLoop: p.DeckLoop,
+		Slide: slide, PageTotal: len(cards),
+	}, nil
 }
 
 // collectionCards 解析内容集合 → 每项一张卡（字段映射取自 props）。

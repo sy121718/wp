@@ -1017,12 +1017,28 @@ func compileSlideCSS(b *core.CSSBuckets, sel string, p *Props, n int, height str
 		"-webkit-overflow-scrolling: touch",
 		"scrollbar-width: thin",
 	}, screenDecl...)
+	// 页码：CSS counter 自动编号（卡片逐个 increment），总数由编译期写进 attr()——
+	// 全程零 JS，滚动中也能看出「第几屏 / 共几屏」。
+	trackDecls = append(trackDecls, "counter-reset: wp-page")
 	b.Add(core.BreakpointDesktop, track, trackDecls)
+	b.Add(core.BreakpointDesktop, track+" .wp-cardstack-page", []string{
+		"position: absolute",
+		"right: 20px",
+		"bottom: 16px",
+		"font-size: 13px",
+		"letter-spacing: .08em",
+		"opacity: .45",
+		"pointer-events: none",
+	})
+	b.Add(core.BreakpointDesktop, track+" .wp-cardstack-page::before", []string{
+		`content: counter(wp-page) " / " attr(data-total)`,
+	})
 
 	for i := 0; i < n; i++ {
 		card := track + " .wp-cardstack-card:nth-child(" + strconv.Itoa(i+1) + ")"
 		decls := []string{
 			"width: 100%",
+			"counter-increment: wp-page",
 			"scroll-snap-align: start",
 			// always：一次手势只翻一屏，不会连跳好几屏。
 			"scroll-snap-stop: always",
