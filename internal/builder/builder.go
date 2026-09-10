@@ -580,7 +580,7 @@ func RenderDocument(c *CompiledPage) (string, error) {
 		HTML:            c.HTML,
 		CSS:             c.CSS,
 		ThemeVarsCSS:    c.ThemeVarsCSS,
-		EnhanceScript:   enhanceScript,
+		EnhanceScript:   enhanceScriptFor(c.HTML),
 	}
 	var sb strings.Builder
 	if err := documentTemplate().Execute(&sb, nil, v); err != nil {
