@@ -64,7 +64,7 @@
                 <td class="pages-actions">
                     <a class="btn" href="/workbench?block={{b.ID}}">编辑</a>
                     <form method="post" action="/admin/blocks/delete" class="pages-form" style="display:inline"
-                          onsubmit="return confirm('确定删除块「{{b.Name}}」？绑定了它的主题下页面将重新构建。')">
+                          onsubmit="return confirm('确定删除块「{{b.Name|safeJs}}」？绑定了它的主题下页面将重新构建。')">
                         <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
                         <input type="hidden" name="id" value="{{b.ID}}">
                         <input type="hidden" name="projectId" value="{{.SelectedProject}}">
@@ -93,7 +93,7 @@
                 <td class="pages-actions">
                     <a class="btn" href="/workbench?block={{b.ID}}">编辑</a>
                     <form method="post" action="/admin/blocks/delete" class="pages-form" style="display:inline"
-                          onsubmit="return confirm('确定删除块「{{b.Name}}」？绑定了它的主题下页面将重新构建。')">
+                          onsubmit="return confirm('确定删除块「{{b.Name|safeJs}}」？绑定了它的主题下页面将重新构建。')">
                         <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
                         <input type="hidden" name="id" value="{{b.ID}}">
                         <input type="hidden" name="projectId" value="{{.SelectedProject}}">
@@ -124,7 +124,7 @@
                 <td class="pages-actions">
                     <a class="btn" href="/workbench?block={{b.ID}}">编辑</a>
                     <form method="post" action="/admin/blocks/delete" class="pages-form" style="display:inline"
-                          onsubmit="return confirm('确定删除块「{{b.Name}}」？')">
+                          onsubmit="return confirm('确定删除块「{{b.Name|safeJs}}」？')">
                         <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
                         <input type="hidden" name="id" value="{{b.ID}}">
                         <input type="hidden" name="projectId" value="{{.SelectedProject}}">

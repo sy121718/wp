@@ -48,10 +48,9 @@
 {* ===== 表格 ===== *}
 <div class="flex items-center justify-between mb-md">
     <h2 style="font-size:18px;font-weight:300;">管理员列表</h2>
-    <input type="text" class="form-input" placeholder="搜索..." style="width:240px;"
-           hx-get="/admin/administrators/search"
-           hx-trigger="keyup delay:500ms"
-           hx-target="#table-body">
+    {* 此处原有一个 hx-get="/admin/administrators/search" 搜索框：该路由从未注册，
+       每次输入都产生一次 404；且本页表格是静态占位数据，本来也没有可搜索的数据源。
+       带筛选的真实管理员列表在 /admin/administrators，故移除该输入框。 *}
 </div>
 
 <div class="table-wrap">

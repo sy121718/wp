@@ -122,7 +122,7 @@
                         </form>
                     </details>
                     <form method="post" action="/admin/navigations/delete" class="pages-form" style="display:inline"
-                          onsubmit="return confirm('确定删除「{{r.Title}}」？它的子菜单项会一并删除。')">
+                          onsubmit="return confirm('确定删除「{{r.Title|safeJs}}」？它的子菜单项会一并删除。')">
                         <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
                         <input type="hidden" name="projectId" value="{{.SelectedProject}}">
                         <input type="hidden" name="kind" value="{{.Kind}}">

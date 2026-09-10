@@ -17,15 +17,15 @@
                         <label class="form-label req">数据域</label>
                         <select name="domain" class="form-select">
                             {{range _, dm := .Domains}}
-                            <option value="{{dm.Domain}}"{{if eq .Detail.Domain dm.Domain}} selected{{end}}>{{dm.DomainLabel}}（{{dm.Domain}}）</option>
+                            <option value="{{dm.Domain}}"{{if .Detail.Domain == dm.Domain}} selected{{end}}>{{dm.DomainLabel}}（{{dm.Domain}}）</option>
                             {{end}}
                         </select>
                     </div>
                     <div class="form-group">
                         <label class="form-label">状态</label>
                         <select name="status" class="form-select">
-                            <option value="1"{{if eq .Detail.Status 1}} selected{{end}}>启用</option>
-                            <option value="0"{{if eq .Detail.Status 0}} selected{{end}}>禁用</option>
+                            <option value="1"{{if .Detail.Status == 1}} selected{{end}}>启用</option>
+                            <option value="0"{{if .Detail.Status == 0}} selected{{end}}>禁用</option>
                         </select>
                     </div>
                     <div class="form-group">

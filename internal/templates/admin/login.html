@@ -121,7 +121,10 @@
                          data-msg-failed="{{ .["t"]("shell.login.captcha_failed", "验证码加载失败，请重试") }}">
                 </div>
             </div>
-            <input type="hidden" name="captcha_id" id="captcha-id" value="">
+            {* 服务端已生成验证码（captcha_image/captcha_id 同时下发）：必须把 id 一并写入隐藏域，
+               否则首屏图片对应的 id 丢失，用户不点一次图片刷新就必然带着空 captcha_id 提交。
+               链式索引写法对 map 缺 key 安全（JS 侧仍会在刷新时覆盖）。 *}
+            <input type="hidden" name="captcha_id" id="captcha-id" value="{{ .["captcha_id"] }}">
             <button class="login-btn" type="submit">{{ .["t"]("shell.login.submit", "登 录") }}</button>
             <div class="login-msg" id="login-msg"></div>
         </form>

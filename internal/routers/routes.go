@@ -44,8 +44,10 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 		return
 	}
 
-	// Jet 模板渲染器（根目录 internal/templates，开发模式即时生效）
-	router.HTMLRender = templates.NewJetHTMLRender("internal/templates", true)
+	// Jet 模板渲染器（根目录 internal/templates）。
+	// 开发模式由 Gin 运行模式驱动：release 关缓存（AGENTS.md 约定「生产模式必须关闭」），
+	// debug/test 禁用缓存即时生效。硬编码 true 会让模板解析错误潜伏到运行时才暴露。
+	router.HTMLRender = templates.NewJetHTMLRender("internal/templates", gin.Mode() != gin.ReleaseMode)
 
 	// 静态文件服务（admin CSS + builder JS/CSS 统一在此）。
 	// gin.Dir(listDirectory=false) 禁目录列表：无 index 文件时返回空列表而非
