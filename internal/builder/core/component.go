@@ -65,13 +65,10 @@ func Register(c Component) {
 		}
 	}
 	registry[c.Type()] = c
-	delete(translatableCache, c.Type())
-	// 字段元数据缓存同样按类型失效（translatable_meta.go）。
-	for key := range translatableMetaCache {
-		if strings.HasPrefix(key, c.Type()+".") {
-			delete(translatableMetaCache, key)
-		}
-	}
+	// 缓存失效统一走带锁封装：直接操作裸 map 会与构建期的并发读竞态
+	// （见 translatable.go / translatable_meta.go 的并发约束）。
+	resetTranslatableFields(c.Type())
+	resetTranslatableMetaByType(c.Type())
 }
 
 // Lookup 按类型查找组件。

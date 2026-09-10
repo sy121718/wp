@@ -101,8 +101,11 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	// 面板默认隐藏，选中对应 radio 时显示（面板是 radio 的后续兄弟）。
 	for i := range p.Tabs {
 		radio := "#wp-tabs-" + id + "-" + fmt.Sprintf("%d", i)
-		// 面板按出现顺序：nav 之后第 i 个 .wp-tab-panel（radio ~ 选择器 + nth-of-type 按元素类型计数——用 panel 自身 index 更稳）。
-		panel := sel + " .wp-tab-panel:nth-of-type(" + fmt.Sprintf("%d", i+1) + ")"
+		// 面板定位用模板已输出的 data-index（tabs.jet：data-index="{{ i }}"）。
+		// 不能用 nth-of-type：它按「元素类型」计数而非按类名，而容器内 .wp-tabs-nav
+		// 同样是 div，会占掉 div:nth-of-type(1)，导致所有面板选择器整体错位一位、
+		// 匹配不到任何元素 —— 页签切换完全失效（radio 可点但面板永不显示）。
+		panel := sel + " .wp-tab-panel[data-index=\"" + fmt.Sprintf("%d", i) + "\"]"
 		b.Add(core.BreakpointDesktop, radio+":checked ~ "+panel, []string{"display: block"})
 	}
 	// 标签高亮。

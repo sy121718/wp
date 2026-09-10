@@ -24,6 +24,7 @@ import (
 	"reflect"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -126,7 +127,10 @@ func translatableJSONFieldName(f reflect.StructField) string {
 // 构建期收集与替换共用本函数，保证「声明即唯一来源」；结果按类型缓存
 // （组件注册表在 init 后不变，白名单随组件编译期静态声明）。
 func TranslatableFields(typeName string) map[string]bool {
-	if cached, ok := translatableCache[typeName]; ok {
+	translatableCacheMu.RLock()
+	cached, ok := translatableCache[typeName]
+	translatableCacheMu.RUnlock()
+	if ok {
 		return cached
 	}
 	comp, err := Lookup(typeName)
@@ -145,10 +149,26 @@ func TranslatableFields(typeName string) map[string]bool {
 	for _, f := range fields {
 		out[f] = true
 	}
+	translatableCacheMu.Lock()
 	translatableCache[typeName] = out
+	translatableCacheMu.Unlock()
 	return out
 }
 
 // translatableCache 类型 → 白名单集合（见 TranslatableFields）。
 // Register 会清空缓存，便于测试替换组件。
-var translatableCache = map[string]map[string]bool{}
+//
+// 并发约束：同一进程内多个构建 worker 会并发查询本缓存（cache miss 冷启动路径），
+// 裸 map 并发写会触发 fatal error: concurrent map writes——该错误不可 recover，
+// 会直接终止整个服务进程。所有读写一律经 translatableCacheMu。
+var (
+	translatableCacheMu sync.RWMutex
+	translatableCache   = map[string]map[string]bool{}
+)
+
+// resetTranslatableFields 失效单个类型的白名单缓存（组件注册表变化时调用）。
+func resetTranslatableFields(typeName string) {
+	translatableCacheMu.Lock()
+	delete(translatableCache, typeName)
+	translatableCacheMu.Unlock()
+}

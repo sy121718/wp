@@ -296,6 +296,9 @@ func leafViewOf[P any, V any](
 	if err != nil {
 		return nil, err
 	}
+	// Advanced 通用层：与 atomViewOf 同源。本类组件此前完全跳过 Advanced，
+	// 结果是编辑器里能配、能存，构建产物里却被静默丢弃。
+	classes, customID := advancedClasses(node, &p, ctx)
 	compileCSS(node.ID, &p, ctx.CSS)
 	view := buildView(&p)
 	// 输出 <img> 的组件（infobox 等无 Advanced 层的叶子）同样按主题默认解析加载三态。
@@ -308,7 +311,8 @@ func leafViewOf[P any, V any](
 		Type:     typeName,
 		Template: template,
 		NodeID:   node.ID,
-		Classes:  core.NodeClass(node.ID),
+		Classes:  strings.Join(classes, " "),
+		CustomID: customID,
 		TopLevel: topLevel,
 		Props:    p,
 		V:        view,
@@ -389,7 +393,10 @@ func containerViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*
 		defer func() { ctx.RevealInherit = old }()
 	}
 
-	cls := core.NodeClass(node.ID)
+	// Advanced 通用层：与 atomViewOf 同源。container/slider 此前整段跳过 Advanced，
+	// 编辑器里能配、能存，构建产物里却被静默丢弃。
+	classes, customID := advancedClasses(node, &p, ctx)
+	cls := strings.Join(classes, " ")
 	if topLevel {
 		cls += " " + core.SectionClass
 	}
@@ -414,6 +421,7 @@ func containerViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*
 		Template:    "container",
 		NodeID:      node.ID,
 		Classes:     cls,
+		CustomID:    customID,
 		TopLevel:    topLevel,
 		Props:       p,
 		Children:    children,
@@ -625,7 +633,10 @@ func sliderViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nod
 		}
 	}
 
-	cls := core.NodeClass(node.ID)
+	// Advanced 通用层：与 atomViewOf 同源。container/slider 此前整段跳过 Advanced，
+	// 编辑器里能配、能存，构建产物里却被静默丢弃。
+	classes, customID := advancedClasses(node, &p, ctx)
+	cls := strings.Join(classes, " ")
 	if topLevel {
 		cls += " " + core.SectionClass
 	}
@@ -649,6 +660,7 @@ func sliderViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nod
 		Template: "slider",
 		NodeID:   node.ID,
 		Classes:  cls,
+		CustomID: customID,
 		TopLevel: topLevel,
 		Props:    p,
 		Children: children,
@@ -697,6 +709,9 @@ func navViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeVi
 	}
 	// 当前项高亮：按本次编译的页面路径标记（块预览等无路径时不标记）。
 	navPkg.MarkCurrent(p.Items, ctx.CurrentPath)
+	// Advanced 通用层：与 atomViewOf 同源。本类组件此前完全跳过 Advanced，
+	// 结果是编辑器里能配、能存，构建产物里却被静默丢弃。
+	classes, customID := advancedClasses(node, &p, ctx)
 	navPkg.CompileCSS(node.ID, &p, ctx.CSS)
 	view := navPkg.BuildView(node, &p)
 	applyI18n(&view, ctx)
@@ -704,7 +719,8 @@ func navViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeVi
 		Type:     navPkg.Type,
 		Template: "nav",
 		NodeID:   node.ID,
-		Classes:  core.NodeClass(node.ID),
+		Classes:  strings.Join(classes, " "),
+		CustomID: customID,
 		TopLevel: topLevel,
 		Props:    p,
 		V:        view,
@@ -747,6 +763,9 @@ func tabsViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeV
 		children = append(children, cv)
 	}
 
+	// Advanced 通用层：与 atomViewOf 同源。本类组件此前完全跳过 Advanced，
+	// 结果是编辑器里能配、能存，构建产物里却被静默丢弃。
+	classes, customID := advancedClasses(node, &p, ctx)
 	tabsPkg.CompileCSS(node.ID, &p, ctx.CSS)
 	view := tabsPkg.BuildView(node, &p)
 
@@ -754,7 +773,8 @@ func tabsViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeV
 		Type:     tabsPkg.Type,
 		Template: "tabs",
 		NodeID:   node.ID,
-		Classes:  core.NodeClass(node.ID),
+		Classes:  strings.Join(classes, " "),
+		CustomID: customID,
 		TopLevel: topLevel,
 		Props:    p,
 		Children: children,
@@ -780,6 +800,9 @@ func accordionViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*
 		children = append(children, cv)
 	}
 
+	// Advanced 通用层：与 atomViewOf 同源。本类组件此前完全跳过 Advanced，
+	// 结果是编辑器里能配、能存，构建产物里却被静默丢弃。
+	classes, customID := advancedClasses(node, &p, ctx)
 	accordionPkg.CompileCSS(node.ID, &p, ctx.CSS)
 	view := accordionPkg.BuildView(&p)
 
@@ -787,7 +810,8 @@ func accordionViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*
 		Type:     accordionPkg.Type,
 		Template: "accordion",
 		NodeID:   node.ID,
-		Classes:  core.NodeClass(node.ID),
+		Classes:  strings.Join(classes, " "),
+		CustomID: customID,
 		TopLevel: topLevel,
 		Props:    p,
 		Children: children,
@@ -813,6 +837,9 @@ func marqueeViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*no
 		children = append(children, cv)
 	}
 
+	// Advanced 通用层：与 atomViewOf 同源。本类组件此前完全跳过 Advanced，
+	// 结果是编辑器里能配、能存，构建产物里却被静默丢弃。
+	classes, customID := advancedClasses(node, &p, ctx)
 	marqueePkg.CompileCSS(node.ID, &p, ctx.CSS)
 	view := marqueePkg.BuildView(&p)
 
@@ -820,7 +847,8 @@ func marqueeViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*no
 		Type:     marqueePkg.Type,
 		Template: "marquee",
 		NodeID:   node.ID,
-		Classes:  core.NodeClass(node.ID),
+		Classes:  strings.Join(classes, " "),
+		CustomID: customID,
 		TopLevel: topLevel,
 		Props:    p,
 		Children: children,

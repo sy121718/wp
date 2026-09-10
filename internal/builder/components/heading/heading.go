@@ -235,9 +235,13 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	if p.SubtitleSpacing != "" {
 		subDecls = append(subDecls, core.CSSDecl("margin-bottom", p.SubtitleSpacing))
 	}
-	b.Add(core.BreakpointDesktop, sel+" .wp-heading-sub", subDecls)
+	// 副标题在 DOM 中是根元素的**前置兄弟**（heading.jet：subtitle 在标题标签之前），
+	// 因此后代选择器 sel+" .wp-heading-sub" 永远匹配不到任何元素 —— 副标题的颜色、
+	// 字号、字重、间距此前全部静默失效。用 :has() 从副标题侧反向限定到本节点。
+	subSel := ".wp-heading-sub:has(+ " + sel + ")"
+	b.Add(core.BreakpointDesktop, subSel, subDecls)
 	if p.SubtitleColor != "" {
-		b.Add(core.BreakpointDesktop, sel+" .wp-heading-sub", []string{core.CSSDecl("color", p.SubtitleColor), "opacity: 1"})
+		b.Add(core.BreakpointDesktop, subSel, []string{core.CSSDecl("color", p.SubtitleColor), "opacity: 1"})
 	}
 	// 高亮背景盒。
 	if p.HighlightColor != "" {

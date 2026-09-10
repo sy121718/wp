@@ -119,11 +119,14 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	if p.Color != "" {
 		desktop = append(desktop, core.CSSDecl("color", p.Color))
 	}
-	if p.LinkColor != "" {
-		desktop = append(desktop, core.CSSDecl("color", p.LinkColor))
-	}
 
 	b.Add(core.BreakpointDesktop, sel, desktop)
+
+	// 链接颜色必须落在 sel a 上，不能与 Color 同规则：两条 color 声明写进同一个
+	// 选择器时后者覆盖前者，结果是「配了链接色 → 正文颜色被改掉，而链接本身没变色」。
+	if p.LinkColor != "" {
+		b.Add(core.BreakpointDesktop, sel+" a", []string{core.CSSDecl("color", p.LinkColor)})
+	}
 	b.Add(core.BreakpointTablet, sel, tablet)
 	b.Add(core.BreakpointMobile, sel, mobile)
 

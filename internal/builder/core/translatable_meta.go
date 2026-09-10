@@ -13,7 +13,10 @@ package core
 // 白名单之外（core.TranslatableFields 未声明）一律返回 ok=false：
 // 工作台不允许写入「构建期根本不会取用」的字段。
 
-import "strings"
+import (
+	"strings"
+	"sync"
+)
 
 // FieldMeta 可翻译字段的写入元数据。
 type FieldMeta struct {
@@ -44,7 +47,10 @@ func TranslatableFieldMeta(typeName, field string) (m FieldMeta, ok bool) {
 		return FieldMeta{}, false
 	}
 	cacheKey := typeName + "." + field
-	if cached, hit := translatableMetaCache[cacheKey]; hit {
+	translatableMetaCacheMu.RLock()
+	cached, hit := translatableMetaCache[cacheKey]
+	translatableMetaCacheMu.RUnlock()
+	if hit {
 		return cached, true
 	}
 
@@ -63,10 +69,30 @@ func TranslatableFieldMeta(typeName, field string) (m FieldMeta, ok bool) {
 			}
 		}
 	}
+	translatableMetaCacheMu.Lock()
 	translatableMetaCache[cacheKey] = m
+	translatableMetaCacheMu.Unlock()
 	return m, true
 }
 
 // translatableMetaCache 语境 → 字段元数据（见 TranslatableFieldMeta）。
 // Register 会清空缓存，便于测试替换组件（与 translatableCache 同步）。
-var translatableMetaCache = map[string]FieldMeta{}
+//
+// 并发约束：与 translatableCache 同因——构建期并发查询下裸 map 写会进程级崩溃，
+// 所有读写一律经 translatableMetaCacheMu。
+var (
+	translatableMetaCacheMu sync.RWMutex
+	translatableMetaCache   = map[string]FieldMeta{}
+)
+
+// resetTranslatableMetaByType 失效某类型的全部字段元数据缓存（组件重注册时调用）。
+func resetTranslatableMetaByType(typeName string) {
+	prefix := typeName + "."
+	translatableMetaCacheMu.Lock()
+	for key := range translatableMetaCache {
+		if strings.HasPrefix(key, prefix) {
+			delete(translatableMetaCache, key)
+		}
+	}
+	translatableMetaCacheMu.Unlock()
+}

@@ -5,7 +5,7 @@ body {
   container-name: wp-theme;
 }
 
-.wp-c-h1 .wp-heading-sub {
+.wp-heading-sub:has(+ .wp-c-h1) {
   display: block;
   font-size: 0.62em;
   font-weight: 500;
@@ -25,7 +25,7 @@ body {
   text-wrap: balance;
 }
 
-.wp-c-h2 .wp-heading-sub {
+.wp-heading-sub:has(+ .wp-c-h2) {
   display: block;
   font-size: 0.62em;
   font-weight: 500;

@@ -113,6 +113,12 @@ func buildAttrs(p *Props, content core.ContentResolver) (tag, attrs string, err 
 		if content == nil {
 			return "", "", fmt.Errorf("编译上下文缺少内容解析器，无法解析动态链接")
 		}
+		// 绑定缺失必须在此拦截：validateExtra 只在「文本与绑定双空」时报错，
+		// 因此 {"text":"x","action":"link"}（Binding 为 nil）能通过校验抵达这里，
+		// 直接取 p.Binding.Field 会 nil 解引用并 panic 掉整个构建 worker。
+		if p.Binding == nil || p.Binding.Field == "" {
+			return "", "", fmt.Errorf("动态链接动作缺少绑定字段（binding.field），请配置绑定或改用其他动作")
+		}
 		v, e := content.ResolveString(p.Binding.Field)
 		if e != nil {
 			return "", "", fmt.Errorf("解析绑定 %q 失败: %w", p.Binding.Field, e)
