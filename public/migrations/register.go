@@ -48,9 +48,6 @@ var presentationSQL string
 //go:embed 034_content_pipeline_permissions.sql
 var contentPipelinePermSQL string
 
-//go:embed 045_blueprint.sql
-var blueprintSQL string
-
 //go:embed 046_navigation.sql
 var navigationSQL string
 
@@ -141,6 +138,21 @@ var sysStatusIndexAuditSQL string
 //go:embed 071_dependency_fanout.sql
 var dependencyFanoutSQL string
 
+//go:embed 072_media_replace_permissions.sql
+var mediaReplacePermsSQL string
+
+//go:embed 074_attachment_md5_unique.sql
+var attachmentMD5UniqueSQL string
+
+//go:embed 075_navigation_path_unique.sql
+var navigationPathUniqueSQL string
+
+//go:embed 076_lang_backfill_per_project.sql
+var langBackfillPerProjectSQL string
+
+//go:embed 073_blueprint_ddl_align.sql
+var blueprintDDLAlignSQL string
+
 func init() {
 	register(Migration{
 		Version:   "001-init-schema",
@@ -211,12 +223,10 @@ func init() {
 		SQL:       presentationSQL,
 	})
 
-	// Page 初始化工具 Blueprint（docs/02 §1.2，0-B）。
-	register(Migration{
-		Version:   "045-blueprint",
-		TableName: "blueprints",
-		SQL:       blueprintSQL,
-	})
+	// Page 初始化工具 Blueprint：建表由 002-init-builder-schema 承担。
+	// 原 045_blueprint.sql 是同一张表的重复定义（列集合还与 model 矛盾），
+	// 因 002 先建表而永远被跳过 —— 已删除，DDL 唯一真源为 002。
+	// 历史库的结构对齐见迁移 073-blueprint-ddl-align。
 
 	// 公开站点导航（docs/05 阶段6，0-C）。
 	register(Migration{
@@ -354,11 +364,77 @@ func init() {
 		SQL:          menuIconsSQL,
 	})
 
+	// 超管全量策略补全（每次启动检查，缺哪条补哪条）。
+	//
+	// ConditionSQL 语义是「返回 > 0 则跳过整个 seed」，因此这里必须表达
+	// 「缺失条数为 0」才跳过：原实现统计的是「超管已有多少条策略」，
+	// 首次执行后恒 > 0 → 之后新增的权限点永远不会补超管策略，
+	// 表现为新接口对超管也 403（media:replace / media:references 即此因）。
+	//
+	// Version 用 999 前缀排在全部 seed 之后：本条做的是「超管 = 全部启用权限点」的
+	// 全量补全，必须在所有权限点 seed 执行完之后才检查。用 051 前缀时它先于 072 等
+	// 新权限点 seed 运行，检查时「没有缺失」→ 直接跳过，之后新插入的权限点永远补不上。
 	registerSeed(Seed{
-		Version:      "051-superadmin-all-policies",
-		TableName:    "sys_casbin_rule",
-		ConditionSQL: "SELECT COUNT(*) FROM sys_casbin_rule r JOIN sys_permission p ON r.v1 = p.api_path AND r.v2 = p.api_method AND r.v3 = p.permission_code WHERE r.ptype = 'p' AND r.v0 IN (SELECT CAST(id AS VARCHAR) FROM sys_admin WHERE is_admin = 1)",
-		SQL:          superadminAllPoliciesSQL,
+		Version:   "999-superadmin-all-policies",
+		TableName: "sys_casbin_rule",
+		ConditionSQL: `SELECT CASE WHEN EXISTS (
+			SELECT 1 FROM sys_admin a CROSS JOIN sys_permission p
+			WHERE a.is_admin = 1 AND p.status = 1 AND p.api_path <> ''
+			  AND NOT EXISTS (
+			      SELECT 1 FROM sys_casbin_rule r
+			      WHERE r.ptype = 'p' AND r.v0 = CAST(a.id AS VARCHAR)
+			        AND r.v1 = p.api_path AND r.v2 = p.api_method AND r.v3 = p.permission_code
+			  )
+		) THEN 0 ELSE 1 END`,
+		SQL: superadminAllPoliciesSQL,
+	})
+
+	// 072：补 media 换图 / 引用来源权限点（此前从未 seed，接口对全员 403 死链）。
+	registerSeed(Seed{
+		Version:      "072-media-replace-permissions",
+		TableName:    "sys_permission",
+		ConditionSQL: "SELECT COUNT(*) FROM sys_permission WHERE permission_code IN ('media:replace','media:references')",
+		SQL:          mediaReplacePermsSQL,
+	})
+
+	// 074 / 075：把两处「先查后写」的判断（媒体上传去重、导航路径唯一）落到
+	// 数据库层唯一约束 —— 并发下两次请求都能通过检查，只有约束能真正兜住。
+	// CheckSQL 用 pg_indexes 判断索引是否已存在（默认的「表是否存在」对加索引无意义）。
+	register(Migration{
+		Version:   "074-attachment-md5-unique",
+		TableName: "uq_attachment_md5_type_active",
+		CheckSQL:  "SELECT COUNT(*) FROM pg_indexes WHERE indexname = ?",
+		SQL:       attachmentMD5UniqueSQL,
+	})
+	register(Migration{
+		Version:   "075-navigation-path-unique",
+		TableName: "uq_navigation_project_kind_path",
+		CheckSQL:  "SELECT COUNT(*) FROM pg_indexes WHERE indexname = ?",
+		SQL:       navigationPathUniqueSQL,
+	})
+
+	// 076：按工程修正 061 回填的语言（原实现取全局第一个工程的 defaultLang，多工程库全被标成同一语言）。
+	// TableName 故意用不存在的名字：默认 CheckSQL（表是否存在）恒为 0，等价于「每次启动都跑一遍」。
+	// 该 UPDATE 幂等且带 IS DISTINCT FROM 条件，无差异时零行更新。
+	register(Migration{
+		Version:   "076-lang-backfill-per-project",
+		TableName: "page_artifacts_lang_backfill_always",
+		SQL:       langBackfillPerProjectSQL,
+	})
+
+	// 073：把历史库的 blueprints / blueprint_versions 对齐到 model（唯一真源）。
+	// CheckSQL 表达「已对齐」条件（返回 > 0 则跳过）：三个历史残留列全部消失才算完成。
+	register(Migration{
+		Version:   "073-blueprint-ddl-align",
+		TableName: "blueprints",
+		CheckSQL: `SELECT COUNT(*) FROM information_schema.tables t
+			WHERE t.table_schema = current_schema() AND t.table_name = ?
+			  AND NOT EXISTS (
+			      SELECT 1 FROM information_schema.columns c
+			      WHERE c.table_schema = t.table_schema AND c.table_name = t.table_name
+			        AND c.column_name IN ('project_id','source_hash','created_by')
+			  )`,
+		SQL: blueprintDDLAlignSQL,
 	})
 
 	// ---- i18n 数据层（P0：表结构 + 词条 seed，docs/06-D §13 P0/P1）----

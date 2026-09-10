@@ -18,9 +18,12 @@ CREATE TABLE IF NOT EXISTS projects (
 );
 
 -- 2. Blueprint（Page Document 初始化工具，用完即弃）
+-- 注意：blueprint 是「Page Document 初始化工具」，在代码层面是工程无关的
+-- （BlueprintEntity 无 ProjectID 字段，见 internal/module/blueprint/model）。
+-- 本表曾误带 project_id uuid NOT NULL（无默认值），导致 blueprint Create 必然失败；
+-- 已移除该列，历史库由迁移 073 对齐。045_blueprint.sql 的重复建表已删除。
 CREATE TABLE IF NOT EXISTS blueprints (
     id              uuid PRIMARY KEY,
-    project_id      uuid NOT NULL REFERENCES projects(id),
     name            text NOT NULL,
     kind            text NOT NULL,
     draft_document  jsonb NOT NULL,
@@ -29,13 +32,13 @@ CREATE TABLE IF NOT EXISTS blueprints (
     updated_at      timestamptz NOT NULL
 );
 
+-- 列集合以 VersionEntity 为唯一真源：source_hash / created_by 是 045 旧设计的残留，
+-- model 从不写入，NOT NULL 下 CreateVersion 必然失败，故一并移除（历史库由 073 对齐）。
 CREATE TABLE IF NOT EXISTS blueprint_versions (
     id              uuid PRIMARY KEY,
     blueprint_id    uuid NOT NULL REFERENCES blueprints(id),
     version         bigint NOT NULL,
     document        jsonb NOT NULL,
-    source_hash     text NOT NULL,
-    created_by      uuid NOT NULL,
     created_at      timestamptz NOT NULL,
     UNIQUE (blueprint_id, version)
 );
