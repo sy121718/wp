@@ -755,7 +755,7 @@ func compileHoverCSS(b *core.CSSBuckets, sel string, p *Props, n int, width, hei
 		card := track + " .sky-cardstack-card:nth-child(" + nth + ")"
 
 		// 基础态：同格叠放（grid-area 1/1）；数字卡带位置派生色相，内容卡保持原色。
-		decls := []string{"grid-area: 1 / 1", "justify-self: center", "align-self: center", "width: " + width}
+		decls := []string{"grid-area: 1 / 1", "justify-self: center", "align-self: center", "width: min(100%, " + width + ")"}
 		if book {
 			// 书的几何：把旋转轴放在**书脊那一侧**（左半取右缘、右半取左缘），
 			// 于是"翻开"是绕书脊转，而不是绕卡片自身转 —— 这是翻书感的关键。
@@ -790,8 +790,10 @@ func compileHoverCSS(b *core.CSSBuckets, sel string, p *Props, n int, width, hei
 		case book:
 			// 摊开：转平（rotateY 0）并按序号向两外侧移，像把书页摊在桌上。
 			// 0.58 倍卡宽是刻意留的重叠量 —— 完全按卡宽铺开会显得像并排卡片，不像书页。
+			// 摊开位移按视口收敛（45vw）：手机上六页摊开的物理宽度会远超屏宽。
 			openX := offset * cssPx(width, fallbackCardW) * 0.58
-			fixed = fmt.Sprintf("rotateY(0deg) translateX(%spx)", num(openX))
+			openXDecl := fmt.Sprintf("clamp(calc(-1 * var(--sky-cardstack-side, 45vw)), %spx, var(--sky-cardstack-side, 45vw))", num(openX))
+			fixed = "rotateY(0deg) translateX(" + openXDecl + ")"
 			adaptive = fixed
 		case fan:
 			// 弧线：收敛 = 视口半宽 − 留白 − 旋转外扩 −（上抬量被旋转投影的那一份），
@@ -923,6 +925,11 @@ func compileDragCSS(b *core.CSSBuckets, sel string, p *Props, n int, width, heig
 	})
 	b.Add(core.BreakpointDesktop, sel+".is-dragging", []string{"cursor: grabbing"})
 	cylinder := p.DragMode == dragModeCylinder
+	// 单侧可用空间 = (视口宽 − 卡宽) ÷ 2 − 边距。
+	// 环形/环绕的半径与翻书的摊开位移都不能超过它，否则卡片会被推到屏幕外 ——
+	// 之前用 40vw/45vw 这种经验值，卡宽 186px 时算出来 150px，两边一加就 486px，
+	// 在 375px 的手机上直接横向溢出（实测）。用卡宽参与计算才是准的。
+	sideRoom := fmt.Sprintf("calc((100vw - %s) / 2 - 12px)", width)
 	// 轨道高度 = 圆周外接盒（2R + 卡高），与相邻区块不会重叠。
 	trackDecls := []string{
 		"position: relative",
@@ -933,6 +940,7 @@ func compileDragCSS(b *core.CSSBuckets, sel string, p *Props, n int, width, heig
 		fmt.Sprintf("min-height: %dpx", int(2*radius+cardH)),
 		// 旋转角由增强脚本改写；无脚本时保持 0，卡片静态成环。
 		"--sky-cardstack-rot: 0deg",
+		"--sky-cardstack-side: " + sideRoom,
 	}
 	if cylinder {
 		// 透视：值越小"圆柱"越粗、卡片变形越明显；1600px 接近真实相机距离。
@@ -949,7 +957,7 @@ func compileDragCSS(b *core.CSSBuckets, sel string, p *Props, n int, width, heig
 			"grid-area: 1 / 1",
 			"justify-self: center",
 			"align-self: center",
-			"width: " + width,
+			"width: min(100%, " + width + ")",
 			dragCardTransform(angle, radius, cylinder),
 			"transition: transform .35s ease",
 		}
@@ -1100,10 +1108,10 @@ func deckTransform(offset, rot int, scaleStep float64, vertical bool) string {
 //	cylinder 三维圆柱：卡片贴在外侧面朝外，靠透视产生环绕感与近大远小。
 func dragCardTransform(angle float64, radius float64, cylinder bool) string {
 	if cylinder {
-		return fmt.Sprintf("transform: rotateY(calc(%sdeg + var(--sky-cardstack-rot, 0deg))) translateZ(%dpx)",
+		return fmt.Sprintf("transform: rotateY(calc(%sdeg + var(--sky-cardstack-rot, 0deg))) translateZ(min(%dpx, var(--sky-cardstack-side, 40vw)))",
 			num(angle), int(radius))
 	}
-	return fmt.Sprintf("transform: rotate(calc(%sdeg + var(--sky-cardstack-rot, 0deg))) translateY(-%dpx) rotate(calc(-%sdeg - var(--sky-cardstack-rot, 0deg)))",
+	return fmt.Sprintf("transform: rotate(calc(%sdeg + var(--sky-cardstack-rot, 0deg))) translateY(calc(-1 * min(%dpx, var(--sky-cardstack-side, 40vw)))) rotate(calc(-%sdeg - var(--sky-cardstack-rot, 0deg)))",
 		num(angle), int(radius), num(angle))
 }
 
@@ -1214,7 +1222,7 @@ func compileDeckCSS(b *core.CSSBuckets, sel string, p *Props, n int, width, heig
 			"grid-area: 1 / 1",
 			"justify-self: center",
 			"align-self: center",
-			"width: " + width,
+			"width: min(100%, " + width + ")",
 			deckTransform(offset, rot, scaleStep, vertical),
 			"z-index: calc(50 - var(--sky-deck-abs, 0))",
 			// 越远越淡：卡片多时不至于在两侧无限堆远（max() 不被支持时退化为全不透明，不影响可用性）。

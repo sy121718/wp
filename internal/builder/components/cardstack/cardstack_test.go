@@ -555,7 +555,7 @@ func TestDragCSS(t *testing.T) {
 		"--sky-cardstack-rot: 0deg",
 		// 9 张卡、240px 宽 → 半径 240/(2·sin20°) ≈ 350.86 → 350px
 		"grid-area: 1 / 1", // 居中交给 grid 同格叠放（卡片不再 absolute）
-		"transform: rotate(calc(0deg + var(--sky-cardstack-rot, 0deg))) translateY(-350px)",
+		"transform: rotate(calc(0deg + var(--sky-cardstack-rot, 0deg))) translateY(calc(-1 * min(350px, var(--sky-cardstack-side, 40vw))))",
 		"rotate(calc(-320deg - var(--sky-cardstack-rot, 0deg)))", // 第 9 张 = 360×8/9
 		"transition: transform .35s ease",
 		".sky-c-n1.is-dragging .sky-cardstack-card",
