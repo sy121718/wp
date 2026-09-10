@@ -1089,10 +1089,10 @@ HTTP GET /site/en-US/about/ -> 200, 8732 bytes
 **产物形态**（真实构建输出，`TestPageArtifactLanguageSwitcher` 断言原文）：
 
 ```html
-<nav class="wp-c-lang1 wp-lang" aria-label="语言">
-  <ul class="wp-lang-list">
-    <li class="wp-lang-item is-current"><span class="wp-lang-current" lang="zh-CN" aria-current="true">简体中文</span></li>
-    <li class="wp-lang-item"><a class="wp-lang-link" href="/en-US/about" hreflang="en-US" lang="en-US">English</a></li>
+<nav class="sky-c-lang1 sky-lang" aria-label="语言">
+  <ul class="sky-lang-list">
+    <li class="sky-lang-item is-current"><span class="sky-lang-current" lang="zh-CN" aria-current="true">简体中文</span></li>
+    <li class="sky-lang-item"><a class="sky-lang-link" href="/en-US/about" hreflang="en-US" lang="en-US">English</a></li>
   </ul>
 </nav>
 ```
@@ -1442,8 +1442,8 @@ sitemap: <loc>/about</loc> 与 <loc>/en/about</loc> 各带 3 条 xhtml:link 互�
 语言切换器（`TestPageArtifactLanguageSwitcher`）：
 
 ```html
-<!-- zh 产物 --> <a class="wp-lang-link" href="/en/about" hreflang="en-US" lang="en-US">English</a>
-<!-- en 产物 --> <a class="wp-lang-link" href="/about" hreflang="zh-CN" lang="zh-CN">简体中文</a>
+<!-- zh 产物 --> <a class="sky-lang-link" href="/en/about" hreflang="en-US" lang="en-US">English</a>
+<!-- en 产物 --> <a class="sky-lang-link" href="/about" hreflang="zh-CN" lang="zh-CN">简体中文</a>
 ```
 
 **验证命令**：

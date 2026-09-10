@@ -1,27 +1,27 @@
-@layer wp-base, wp-plugin, wp-auto, wp-theme, wp-local;
+@layer sky-base, sky-plugin, sky-auto, sky-theme, sky-local;
 
-@layer wp-base {
+@layer sky-base {
 body {
-  container-name: wp-theme;
+  container-name: sky-theme;
 }
 
-.wp-c-s1 {
+.sky-c-s1 {
   margin-top: 10px;
   margin-bottom: 20px;
 }
 
-.wp-c-s1 {
+.sky-c-s1 {
   height: 80px;
 }
 
 @media (max-width: 1024px) {
-.wp-c-s1 {
+.sky-c-s1 {
   height: 40px;
 }
 }
 
 @media (max-width: 767px) {
-.wp-c-s1 {
+.sky-c-s1 {
   height: 20px;
 }
 }

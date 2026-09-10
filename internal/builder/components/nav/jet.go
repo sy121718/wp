@@ -63,7 +63,7 @@ func BuildView(node *core.Node, p *Props) View {
 	}
 	return View{
 		Items:          itemViews(p.Items),
-		ToggleID:       "wp-nav-toggle-" + node.ID,
+		ToggleID:       "sky-nav-toggle-" + node.ID,
 		MobileCollapse: p.MobileCollapse,
 		ToggleLabel:    label,
 	}

@@ -21,7 +21,7 @@
 
 - 定位系统 `position`：static / relative / absolute（top/right/bottom/left 坐标，至少一个）/
   sticky / **drawer**（left/right/bottom 滑出 + 遮罩 + 唯一触发 ID）。
-- Drawer 零 JS 实现：`position: fixed` + 移出视口 transform，`:target`（触发 `href="#wp-drawer-<id>"`）滑入。
+- Drawer 零 JS 实现：`position: fixed` + 移出视口 transform，`:target`（触发 `href="#sky-drawer-<id>"`）滑入。
 - 语义标签白名单新增 `<main>`。
 - `styleEx.order`：flex/grid 子项顺序（-1~99）。
 
@@ -30,11 +30,11 @@
 - 背景双态：`backgroundHover`（悬停背景，含过渡）。
 - 背景覆盖层 `overlay`：::before 半透明遮罩 + 子内容提升 z-index（文本可读性）。
 - 形状分隔线 `shapeDivider`（wave/slant/curve 纯 SVG 白名单，top/bottom 位置、
-  着色随背景色）。单层 DOM 承诺内的装饰元素（容器内部 span.wp-shape，非包装节点）。
+  着色随背景色）。单层 DOM 承诺内的装饰元素（容器内部 span.sky-shape，非包装节点）。
 
 **Tab3 扩展**：
 
-- 组父联动 `groupParent`：输出 `data-wp-group="true"` 标记，子组件经该标记实现 hover 联动
+- 组父联动 `groupParent`：输出 `data-sky-group="true"` 标记，子组件经该标记实现 hover 联动
   （后续子组件 hover 反馈默认挂父联动协议）。
 - 自定义属性 `attributes`：key 白名单（data-*/aria-*/role/title/tabindex）+
   value 独立安全白名单（允许中文，禁引号/尖括号/反斜杠/反引号防属性逃逸）。

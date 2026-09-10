@@ -117,15 +117,15 @@ func TestCompileCSS(t *testing.T) {
 	wants := []string{
 		"flex-direction: column",
 		"gap: 16px",
-		".wp-form-field",
+		".sky-form-field",
 		"border: 1px solid rgba(0,0,0,.15)",
 		"border-radius: 6px",
-		".wp-form-submit",
-		"background: var(--wp-btn-bg, var(--wp-c-primary, #2563eb))",
+		".sky-form-submit",
+		"background: var(--sky-btn-bg, var(--sky-c-primary, #2563eb))",
 		"textarea",
 		"select",
 		"resize: vertical",
-		".wp-form-check",
+		".sky-form-check",
 	}
 	for _, want := range wants {
 		if !strings.Contains(css1, want) {
@@ -166,13 +166,13 @@ func TestFormTemplateRender(t *testing.T) {
 		t.Fatalf("GetTemplate(form): %v", err)
 	}
 	var buf strings.Builder
-	if err := tpl.Execute(&buf, nil, renderCtx{Classes: "wp-c-f1", CustomID: "contact-form", V: view}); err != nil {
+	if err := tpl.Execute(&buf, nil, renderCtx{Classes: "sky-c-f1", CustomID: "contact-form", V: view}); err != nil {
 		t.Fatalf("渲染 form 模板失败: %v", err)
 	}
 	got := buf.String()
 
 	wants := []string{
-		`<form class="wp-c-f1" method="post" id="contact-form" action="/submit">`,
+		`<form class="sky-c-f1" method="post" id="contact-form" action="/submit">`,
 		`<input type="text" name="name" placeholder="请输入姓名" required>`,
 		`<input type="email" name="email" placeholder="you@example.com">`,
 		`<textarea name="message" placeholder="说点什么"></textarea>`,
@@ -180,7 +180,7 @@ func TestFormTemplateRender(t *testing.T) {
 		`<option value="北京">北京</option>`,
 		`<option value="上海 &amp; 广州">上海 &amp; 广州</option>`,
 		`<input type="checkbox" name="agree" required>`,
-		`<button type="submit" class="wp-form-submit">提交表单</button>`,
+		`<button type="submit" class="sky-form-submit">提交表单</button>`,
 		`</form>`,
 		// 标签特殊字符转义。
 		`姓名 &amp; &lt;称呼&gt;`,

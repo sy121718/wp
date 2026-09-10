@@ -44,7 +44,7 @@ func TestWorkbenchPreviewDraft(t *testing.T) {
 
 	getRecorder := httptest.NewRecorder()
 	router.ServeHTTP(getRecorder, httptest.NewRequest(http.MethodGet, "/workbench/preview?id="+created.ID+"&editor=1", nil))
-	if getRecorder.Code != http.StatusOK || !strings.Contains(getRecorder.Body.String(), "初始标题") || !strings.Contains(getRecorder.Body.String(), "data-wp-id") {
+	if getRecorder.Code != http.StatusOK || !strings.Contains(getRecorder.Body.String(), "初始标题") || !strings.Contains(getRecorder.Body.String(), "data-sky-id") {
 		t.Fatalf("已保存草稿预览失败: status=%d body=%s", getRecorder.Code, getRecorder.Body.String())
 	}
 
@@ -62,7 +62,7 @@ func TestWorkbenchPreviewDraft(t *testing.T) {
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("临时预览失败: status=%d body=%s", recorder.Code, recorder.Body.String())
 	}
-	if !strings.Contains(recorder.Body.String(), "未保存即时预览") || !strings.Contains(recorder.Body.String(), "data-wp-id") {
+	if !strings.Contains(recorder.Body.String(), "未保存即时预览") || !strings.Contains(recorder.Body.String(), "data-sky-id") {
 		t.Fatalf("临时预览缺少编译内容或编辑器桥接: %s", recorder.Body.String())
 	}
 

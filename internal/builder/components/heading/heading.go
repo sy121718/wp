@@ -53,7 +53,7 @@ type Props struct {
 	Transform string `json:"transform,omitempty" ct:"select,none=无,uppercase=全大写,lowercase=全小写,capitalize=首字母大写,sec=style,label=大小写转换"`
 	// Decor 文本装饰。
 	Decor DecorProps `json:"decor,omitempty"`
-	// Color 文字颜色：色值或主题 Token（var(--wp-c-primary)）。
+	// Color 文字颜色：色值或主题 Token（var(--sky-c-primary)）。
 	Color string `json:"color,omitempty" ct:"color,maxlen=200,sec=style"`
 	// LineClamp 多行截断行数 1~6；0 表示不截断。
 	LineClamp int `json:"lineClamp,omitempty" ct:"slider,min=0,max=6,step=1,sec=style"`
@@ -236,9 +236,9 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		subDecls = append(subDecls, core.CSSDecl("margin-bottom", p.SubtitleSpacing))
 	}
 	// 副标题在 DOM 中是根元素的**前置兄弟**（heading.jet：subtitle 在标题标签之前），
-	// 因此后代选择器 sel+" .wp-heading-sub" 永远匹配不到任何元素 —— 副标题的颜色、
+	// 因此后代选择器 sel+" .sky-heading-sub" 永远匹配不到任何元素 —— 副标题的颜色、
 	// 字号、字重、间距此前全部静默失效。用 :has() 从副标题侧反向限定到本节点。
-	subSel := ".wp-heading-sub:has(+ " + sel + ")"
+	subSel := ".sky-heading-sub:has(+ " + sel + ")"
 	b.Add(core.BreakpointDesktop, subSel, subDecls)
 	if p.SubtitleColor != "" {
 		b.Add(core.BreakpointDesktop, subSel, []string{core.CSSDecl("color", p.SubtitleColor), "opacity: 1"})
@@ -252,7 +252,7 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		if p.HighlightRadius != "" {
 			hl = append(hl, core.CSSDecl("border-radius", p.HighlightRadius))
 		}
-		b.Add(core.BreakpointDesktop, sel+" .wp-heading-highlight", hl)
+		b.Add(core.BreakpointDesktop, sel+" .sky-heading-highlight", hl)
 	}
 	// 对齐与宽度（三端）。
 	appendAlign := func(target *[]string, a string) {
@@ -289,18 +289,18 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		if delay <= 0 {
 			delay = 40
 		}
-		b.Add(core.BreakpointDesktop, sel+" .wp-h-seg", []string{
+		b.Add(core.BreakpointDesktop, sel+" .sky-h-seg", []string{
 			"display: inline-block",
 			"white-space: pre",
-			"animation: wp-fade-up 0.6s ease backwards",
+			"animation: sky-fade-up 0.6s ease backwards",
 		})
 		for i := 1; i <= 20; i++ {
-			b.Add(core.BreakpointDesktop, fmt.Sprintf("%s .wp-h-seg:nth-child(%d)", sel, i),
+			b.Add(core.BreakpointDesktop, fmt.Sprintf("%s .sky-h-seg:nth-child(%d)", sel, i),
 				[]string{fmt.Sprintf("animation-delay: %dms", (i-1)*delay)})
 		}
-		b.Add(core.BreakpointDesktop, sel+" .wp-h-seg:nth-child(n+21)",
+		b.Add(core.BreakpointDesktop, sel+" .sky-h-seg:nth-child(n+21)",
 			[]string{fmt.Sprintf("animation-delay: %dms", 20*delay)})
-		b.NeedKeyframes("wp-fade-up")
+		b.NeedKeyframes("sky-fade-up")
 	}
 
 	if p.LineClamp > 0 {

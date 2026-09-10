@@ -1,24 +1,24 @@
-@layer wp-base, wp-plugin, wp-auto, wp-theme, wp-local;
+@layer sky-base, sky-plugin, sky-auto, sky-theme, sky-local;
 
-@layer wp-base {
+@layer sky-base {
 body {
-  container-name: wp-theme;
+  container-name: sky-theme;
 }
 
-.wp-c-l1 {
+.sky-c-l1 {
   list-style: none;
   margin: 0;
   padding: 0;
 }
 
-.wp-c-l1 .wp-list-item {
+.sky-c-l1 .sky-list-item {
   display: flex;
   align-items: flex-start;
   gap: 10px;
   padding: calc(10px / 2) 0;
 }
 
-.wp-c-l1 .wp-list-marker {
+.sky-c-l1 .sky-list-marker {
   flex: none;
   display: inline-flex;
   align-items: center;
@@ -28,27 +28,27 @@ body {
   margin-top: 2px;
 }
 
-.wp-c-l1 .wp-list-marker svg {
+.sky-c-l1 .sky-list-marker svg {
   width: 1em;
   height: 1em;
   display: block;
 }
 
-.wp-c-l1 .wp-list-text {
+.sky-c-l1 .sky-list-text {
   flex: 1;
   min-width: 0;
 }
 
-.wp-c-l1 a.wp-list-text {
+.sky-c-l1 a.sky-list-text {
   text-decoration: none;
   color: inherit;
 }
 
-.wp-c-l1 a.wp-list-text:hover {
+.sky-c-l1 a.sky-list-text:hover {
   text-decoration: underline;
 }
 
-.wp-c-l1 .wp-list-dot {
+.sky-c-l1 .sky-list-dot {
   width: 8px;
   height: 8px;
   border-radius: 999px;
@@ -57,20 +57,20 @@ body {
   margin-top: 6px;
 }
 
-.wp-c-l2 {
+.sky-c-l2 {
   list-style: none;
   margin: 0;
   padding: 0;
 }
 
-.wp-c-l2 .wp-list-item {
+.sky-c-l2 .sky-list-item {
   display: flex;
   align-items: flex-start;
   gap: 10px;
   padding: calc(10px / 2) 0;
 }
 
-.wp-c-l2 .wp-list-marker {
+.sky-c-l2 .sky-list-marker {
   flex: none;
   display: inline-flex;
   align-items: center;
@@ -80,27 +80,27 @@ body {
   margin-top: 2px;
 }
 
-.wp-c-l2 .wp-list-marker svg {
+.sky-c-l2 .sky-list-marker svg {
   width: 1em;
   height: 1em;
   display: block;
 }
 
-.wp-c-l2 .wp-list-text {
+.sky-c-l2 .sky-list-text {
   flex: 1;
   min-width: 0;
 }
 
-.wp-c-l2 a.wp-list-text {
+.sky-c-l2 a.sky-list-text {
   text-decoration: none;
   color: inherit;
 }
 
-.wp-c-l2 a.wp-list-text:hover {
+.sky-c-l2 a.sky-list-text:hover {
   text-decoration: underline;
 }
 
-.wp-c-l2 .wp-list-dot {
+.sky-c-l2 .sky-list-dot {
   width: 8px;
   height: 8px;
   border-radius: 999px;
@@ -109,20 +109,20 @@ body {
   margin-top: 6px;
 }
 
-.wp-c-l3 {
+.sky-c-l3 {
   list-style: none;
   margin: 0;
   padding: 0;
 }
 
-.wp-c-l3 .wp-list-item {
+.sky-c-l3 .sky-list-item {
   display: flex;
   align-items: flex-start;
   gap: 10px;
   padding: calc(10px / 2) 0;
 }
 
-.wp-c-l3 .wp-list-marker {
+.sky-c-l3 .sky-list-marker {
   flex: none;
   display: inline-flex;
   align-items: center;
@@ -132,27 +132,27 @@ body {
   margin-top: 2px;
 }
 
-.wp-c-l3 .wp-list-marker svg {
+.sky-c-l3 .sky-list-marker svg {
   width: 1em;
   height: 1em;
   display: block;
 }
 
-.wp-c-l3 .wp-list-text {
+.sky-c-l3 .sky-list-text {
   flex: 1;
   min-width: 0;
 }
 
-.wp-c-l3 a.wp-list-text {
+.sky-c-l3 a.sky-list-text {
   text-decoration: none;
   color: inherit;
 }
 
-.wp-c-l3 a.wp-list-text:hover {
+.sky-c-l3 a.sky-list-text:hover {
   text-decoration: underline;
 }
 
-.wp-c-l3 .wp-list-dot {
+.sky-c-l3 .sky-list-dot {
   width: 8px;
   height: 8px;
   border-radius: 999px;

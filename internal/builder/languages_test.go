@@ -53,12 +53,12 @@ func TestLanguagesSwitcherRendersLinks(t *testing.T) {
 
 	for _, want := range []string{
 		// 非当前语言：纯链接，带 hreflang 与 lang（无障碍正确发音）。
-		`<a class="wp-lang-link" href="/en-US/about" hreflang="en-US" lang="en-US">English</a>`,
+		`<a class="sky-lang-link" href="/en-US/about" hreflang="en-US" lang="en-US">English</a>`,
 		// 当前语言：不可点的 span + aria-current 标记 + 语言自称。
-		`<span class="wp-lang-current" lang="zh-CN" aria-current="true">简体中文</span>`,
-		`<nav class="wp-c-lang1 wp-lang"`,
+		`<span class="sky-lang-current" lang="zh-CN" aria-current="true">简体中文</span>`,
+		`<nav class="sky-c-lang1 sky-lang"`,
 		`aria-label="语言"`,
-		`<ul class="wp-lang-list">`,
+		`<ul class="sky-lang-list">`,
 	} {
 		if !strings.Contains(html, want) {
 			t.Fatalf("产物缺少 %q\nHTML=%s", want, html)
@@ -86,7 +86,7 @@ func TestLanguagesSwitcherHiddenWhenSingleLocale(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			html := compileLanguagesDoc(t, WithLocaleLinks(c.links))
-			if strings.Contains(html, "wp-lang") {
+			if strings.Contains(html, "sky-lang") {
 				t.Fatalf("单语言站点不应渲染切换器\nHTML=%s", html)
 			}
 		})
@@ -100,7 +100,7 @@ func TestLanguagesSwitcherSkipsLinkWithoutHref(t *testing.T) {
 		{Lang: "zh-CN", Href: "/zh-CN/about", Current: true},
 		{Lang: "en-US"}, // 缺 Href：本页无该语言可寻址路径
 	}))
-	if strings.Contains(html, "wp-lang") {
+	if strings.Contains(html, "sky-lang") {
 		t.Fatalf("仅剩一条有效语言时应整块不渲染\nHTML=%s", html)
 	}
 	if strings.Contains(html, "href=\"\"") {

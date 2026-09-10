@@ -32,7 +32,7 @@ package core
 //	    ◻️ 断点变量化（tablet 1024 / mobile 767 可配）。
 //
 // 原则：所有效果 = core 词汇表条目 + 统一编译函数；组件只声明词汇，不自带实现；
-// CSS 变量驱动主题化（--wp-*），确定性输出（同 props 同字节）；
+// CSS 变量驱动主题化（--sky-*），确定性输出（同 props 同字节）；
 // 新增特效的标准动作 = 词汇常量 + 白名单 + 编译出口 + 表驱动测试（四件套）。
 
 // 表面质感取值。
@@ -46,36 +46,36 @@ const (
 var allowedSurface = map[string]bool{"": true, SurfaceGlass: true, SurfaceLiquid: true, SurfaceNeumorph: true}
 
 // CompileSurface 表面质感 → 桌面端声明（Advanced 管线调用）。
-// 背景/边框色经 CSS 变量暴露给主题覆写（--wp-glass-bg / --wp-glass-border）。
+// 背景/边框色经 CSS 变量暴露给主题覆写（--sky-glass-bg / --sky-glass-border）。
 // 质感的 box-shadow 含内阴影（透镜感），会覆盖同元素的 Shadow 外阴影预设。
 func CompileSurface(sel string, surface string, b *CSSBuckets) {
 	switch surface {
 	case SurfaceGlass:
 		b.Add(BreakpointDesktop, sel, []string{
 			"backdrop-filter: blur(12px)",
-			"background: var(--wp-glass-bg, rgba(255,255,255,.55))",
-			"border: 1px solid var(--wp-glass-border, rgba(255,255,255,.45))",
+			"background: var(--sky-glass-bg, rgba(255,255,255,.55))",
+			"border: 1px solid var(--sky-glass-border, rgba(255,255,255,.45))",
 		})
 	case SurfaceLiquid:
 		b.Add(BreakpointDesktop, sel, []string{
 			"backdrop-filter: blur(16px) saturate(1.6)",
-			"background: var(--wp-glass-bg, rgba(255,255,255,.45))",
-			"border: 1px solid var(--wp-glass-border, rgba(255,255,255,.55))",
+			"background: var(--sky-glass-bg, rgba(255,255,255,.45))",
+			"border: 1px solid var(--sky-glass-border, rgba(255,255,255,.55))",
 			"box-shadow: inset 0 1px 1px rgba(255,255,255,.65), inset 0 -1px 2px rgba(0,0,0,.06), 0 8px 32px rgba(0,0,0,.12)",
 		})
 	case SurfaceNeumorph:
 		// 新拟态：与背景同色 + 双向柔和阴影（左上高光 / 右下暗影）塑形。
-		// 背景与阴影色经变量暴露，主题可整体替换（暗色主题改写 --wp-neu-*）。
+		// 背景与阴影色经变量暴露，主题可整体替换（暗色主题改写 --sky-neu-*）。
 		b.Add(BreakpointDesktop, sel, []string{
-			"background: var(--wp-neu-bg, #e9edf2)",
-			"box-shadow: 8px 8px 16px var(--wp-neu-dark, rgba(163,177,198,.6)), -8px -8px 16px var(--wp-neu-light, rgba(255,255,255,.9))",
+			"background: var(--sky-neu-bg, #e9edf2)",
+			"box-shadow: 8px 8px 16px var(--sky-neu-dark, rgba(163,177,198,.6)), -8px -8px 16px var(--sky-neu-light, rgba(255,255,255,.9))",
 			"border: 1px solid transparent",
 		})
 	}
 	// 新拟态移动端降级：阴影半径减半（大半径软阴影在低端设备上合成开销更高）。
 	if surface == SurfaceNeumorph {
 		b.Add(BreakpointMobile, sel, []string{
-			"box-shadow: 4px 4px 8px var(--wp-neu-dark, rgba(163,177,198,.6)), -4px -4px 8px var(--wp-neu-light, rgba(255,255,255,.9))",
+			"box-shadow: 4px 4px 8px var(--sky-neu-dark, rgba(163,177,198,.6)), -4px -4px 8px var(--sky-neu-light, rgba(255,255,255,.9))",
 		})
 	}
 	// 移动端降级（H5 性能）：backdrop-filter 是低端安卓最贵的合成操作，
@@ -88,11 +88,11 @@ func CompileSurface(sel string, surface string, b *CSSBuckets) {
 }
 
 // FocusRingDecls 焦点光晕声明（:focus 态使用；表单类组件取用）。
-// 焦点环颜色经 --wp-focus-ring 主题覆写。
+// 焦点环颜色经 --sky-focus-ring 主题覆写。
 func FocusRingDecls() []string {
 	return []string{
-		"border-color: var(--wp-c-primary, #2563eb)",
-		"box-shadow: 0 0 0 3px var(--wp-focus-ring, rgba(37,99,235,.15))",
+		"border-color: var(--sky-c-primary, #2563eb)",
+		"box-shadow: 0 0 0 3px var(--sky-focus-ring, rgba(37,99,235,.15))",
 		"outline: none",
 	}
 }
@@ -107,13 +107,13 @@ func FocusTransitionDecl() string {
 func BackgroundFlowDecls() []string {
 	return []string{
 		"background-size: 200% 200%",
-		"animation: wp-bg-flow 8s ease infinite",
+		"animation: sky-bg-flow 8s ease infinite",
 	}
 }
 
 // BorderFlowAngleProperty 边框流动所需的 @property 角度注册块
 // （自定义属性动画，现代浏览器全绿；旧浏览器忽略动画但保留静态渐变边框）。
-const BorderFlowAngleProperty = "@property --wp-flow-angle {\n  syntax: \"<angle>\"\n  initial-value: 0deg\n  inherits: false\n}"
+const BorderFlowAngleProperty = "@property --sky-flow-angle {\n  syntax: \"<angle>\"\n  initial-value: 0deg\n  inherits: false\n}"
 
 // TextGradientDecls 渐变文字声明组（标题/文本类组件取用）。
 // gradient 为 CSS 渐变值（ct:safe 白名单校验后传入）；color 透明由裁剪文字显示渐变。

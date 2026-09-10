@@ -739,55 +739,55 @@ a.pagination-btn:hover { background: var(--c-bg-hover); color: var(--c-text); }
 /* ==========================================================================
    图标选择器（WPIcons.picker）— 后台表单选图标，可不选
    ========================================================================== */
-.wp-ip { position: relative; }
-.wp-ip-btn {
+.sky-ip { position: relative; }
+.sky-ip-btn {
     display: flex; align-items: center; gap: 8px; width: 100%; box-sizing: border-box;
     padding: 6px 8px; font-size: 13px; font-family: inherit; text-align: left; cursor: pointer;
     color: var(--c-text); background: var(--c-bg); border: 1px solid var(--c-border);
     border-radius: 6px; transition: border-color var(--tr-fast), box-shadow var(--tr-fast);
 }
-.wp-ip-btn:hover { border-color: var(--c-border-strong); }
-.wp-ip.is-open .wp-ip-btn { border-color: var(--c-primary); box-shadow: 0 0 0 3px var(--c-primary-bg); }
-.wp-ip-preview { display: inline-flex; width: 18px; height: 18px; flex: 0 0 auto; }
-.wp-ip-preview svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 1.7; }
-.wp-ip-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.wp-ip-name.is-empty { color: var(--c-text-faint); }
-.wp-ip-pop {
+.sky-ip-btn:hover { border-color: var(--c-border-strong); }
+.sky-ip.is-open .sky-ip-btn { border-color: var(--c-primary); box-shadow: 0 0 0 3px var(--c-primary-bg); }
+.sky-ip-preview { display: inline-flex; width: 18px; height: 18px; flex: 0 0 auto; }
+.sky-ip-preview svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 1.7; }
+.sky-ip-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sky-ip-name.is-empty { color: var(--c-text-faint); }
+.sky-ip-pop {
     position: absolute; z-index: 70; left: 0; right: 0; top: calc(100% + 4px);
     background: var(--c-bg); border: 1px solid var(--c-border); border-radius: 8px;
     box-shadow: 0 8px 24px rgba(16, 20, 26, .14); padding: 8px;
 }
-.wp-ip-search {
+.sky-ip-search {
     width: 100%; box-sizing: border-box; padding: 6px 8px; margin-bottom: 8px; font-size: 13px;
     color: var(--c-text); background: var(--c-bg); border: 1px solid var(--c-border); border-radius: 6px;
 }
-.wp-ip-cats { display: flex; flex-wrap: wrap; gap: 4px; max-height: 66px; overflow-y: auto; margin-bottom: 8px; }
-.wp-ip-cat {
+.sky-ip-cats { display: flex; flex-wrap: wrap; gap: 4px; max-height: 66px; overflow-y: auto; margin-bottom: 8px; }
+.sky-ip-cat {
     padding: 3px 8px; font-size: 12px; font-family: inherit; cursor: pointer;
     color: var(--c-text-mute); background: var(--c-bg-soft, var(--c-bg-hover));
     border: 1px solid transparent; border-radius: 999px;
 }
-.wp-ip-cat:hover { color: var(--c-text); }
-.wp-ip-cat.is-active { color: var(--c-primary); background: var(--c-primary-bg); font-weight: 600; }
-.wp-ip-grid {
+.sky-ip-cat:hover { color: var(--c-text); }
+.sky-ip-cat.is-active { color: var(--c-primary); background: var(--c-primary-bg); font-weight: 600; }
+.sky-ip-grid {
     display: grid; grid-template-columns: repeat(auto-fill, minmax(32px, 1fr)); gap: 4px;
     max-height: 220px; overflow-y: auto;
 }
-.wp-ip-cell {
+.sky-ip-cell {
     display: inline-flex; align-items: center; justify-content: center;
     width: 32px; height: 32px; padding: 0; cursor: pointer; color: var(--c-text-mute);
     background: transparent; border: 1px solid transparent; border-radius: 6px;
 }
-.wp-ip-cell svg { width: 17px; height: 17px; stroke: currentColor; fill: none; stroke-width: 1.7; }
-.wp-ip-cell:hover { background: var(--c-bg-hover); color: var(--c-text); }
-.wp-ip-cell.is-active { background: var(--c-primary-bg); color: var(--c-primary); border-color: var(--c-primary); }
-.wp-ip-more { grid-column: 1 / -1; font-size: 12px; color: var(--c-text-faint); padding: 6px 2px; }
-.wp-ip-foot { display: flex; justify-content: flex-end; padding-top: 8px; }
-.wp-ip-clear {
+.sky-ip-cell svg { width: 17px; height: 17px; stroke: currentColor; fill: none; stroke-width: 1.7; }
+.sky-ip-cell:hover { background: var(--c-bg-hover); color: var(--c-text); }
+.sky-ip-cell.is-active { background: var(--c-primary-bg); color: var(--c-primary); border-color: var(--c-primary); }
+.sky-ip-more { grid-column: 1 / -1; font-size: 12px; color: var(--c-text-faint); padding: 6px 2px; }
+.sky-ip-foot { display: flex; justify-content: flex-end; padding-top: 8px; }
+.sky-ip-clear {
     padding: 4px 10px; font-size: 12px; font-family: inherit; cursor: pointer;
     color: var(--c-text-mute); background: var(--c-bg); border: 1px solid var(--c-border); border-radius: 6px;
 }
-.wp-ip-clear:hover { color: var(--c-danger, #dc2626); border-color: currentColor; }
+.sky-ip-clear:hover { color: var(--c-danger, #dc2626); border-color: currentColor; }
 
 
 /* 固定按钮移到二级栏顶部（底部不易被发现）；改为底部分隔线。 */

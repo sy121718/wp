@@ -75,13 +75,13 @@ func TestCSSBucketsOrder(t *testing.T) {
 	b.Add(BreakpointMobile, ".m", []string{"color: blue"})
 	b.Add(BreakpointDesktop, ".d", []string{"color: red"})
 	b.Add(BreakpointTablet, ".t", []string{"color: green"})
-	b.NeedKeyframes("wp-fade-in")
+	b.NeedKeyframes("sky-fade-in")
 	out := b.String()
 
 	di := strings.Index(out, ".d")
 	ti := strings.Index(out, ".t")
 	mi := strings.Index(out, ".m")
-	ki := strings.Index(out, "@keyframes wp-fade-in")
+	ki := strings.Index(out, "@keyframes sky-fade-in")
 	if !(ki < di && di < ti && ti < mi) {
 		t.Fatalf("输出顺序错误 keyframes=%d desktop=%d tablet=%d mobile=%d\n%s", ki, di, ti, mi, out)
 	}

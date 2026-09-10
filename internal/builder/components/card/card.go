@@ -60,10 +60,10 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		"display: flex",
 		"flex-direction: column",
 		"overflow: hidden",
-		"background: var(--wp-c-surface, #fff)",
+		"background: var(--sky-c-surface, #fff)",
 		"border: 1px solid rgba(0,0,0,0.1)",
 		"border-radius: 12px",
-		core.CSSDecl("padding", "var(--wp-density-pad, 16px)"),
+		core.CSSDecl("padding", "var(--sky-density-pad, 16px)"),
 	})
 	b.Add(core.BreakpointDesktop, sel+" img", []string{
 		"width: 100%",
@@ -84,17 +84,17 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		"margin-bottom: 0",
 	})
 	// 结构变体（样式查询 @container style()）：外层容器显式声明
-	// --wp-card-layout: horizontal 时横排——由作者/主题显式决定结构，不依赖宽度。
-	b.AddStyleQuery("wp-theme", "--wp-card-layout", "horizontal", sel, []string{
+	// --sky-card-layout: horizontal 时横排——由作者/主题显式决定结构，不依赖宽度。
+	b.AddStyleQuery("sky-theme", "--sky-card-layout", "horizontal", sel, []string{
 		"flex-direction: row",
 		"align-items: center",
 		"gap: 16px",
 	})
 	// 密度结构差异（样式查询）：紧凑档位下卡片横排——更省纵向空间、信息密度更高。
-	b.AddThemeQuery("wp-theme", "--wp-density", "compact", sel, []string{
+	b.AddThemeQuery("sky-theme", "--sky-density", "compact", sel, []string{
 		"flex-direction: row",
 		"align-items: center",
-		"gap: var(--wp-density-gap, 16px)",
+		"gap: var(--sky-density-gap, 16px)",
 	})
 	b.Add(core.BreakpointDesktop, sel+" h3", []string{
 		"margin: 0 0 8px",
@@ -106,13 +106,13 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		"color: rgba(0,0,0,0.65)",
 		"line-height: 1.6",
 	})
-	b.Add(core.BreakpointDesktop, sel+" a.wp-card-btn", []string{
+	b.Add(core.BreakpointDesktop, sel+" a.sky-card-btn", []string{
 		"margin-top: 16px",
 		"align-self: flex-start",
 		"display: inline-block",
 		"padding: 8px 16px",
 		"border-radius: 6px",
-		"background: var(--wp-btn-bg, var(--wp-c-primary, #2563eb))",
+		"background: var(--sky-btn-bg, var(--sky-c-primary, #2563eb))",
 		"color: #fff",
 		"text-decoration: none",
 	})

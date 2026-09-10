@@ -70,11 +70,11 @@ func TestHoverFanCSS(t *testing.T) {
 	for _, want := range []string{
 		"rotate(-20deg) translate(-480px, -50px);", // 固定值兜底：第 1 张
 		"rotate(20deg) translate(480px, -50px)",    // 第 9 张（扇形对称）
-		"rotate(-20deg) translate(calc(-4 * clamp(0px, calc((50vw - 16px - 17.1010px - 0.9397 * 50% - 0.3420 * var(--wp-cardstack-h) / 2) / 3.7588), 120px)), -50px)",
+		"rotate(-20deg) translate(calc(-4 * clamp(0px, calc((50vw - 16px - 17.1010px - 0.9397 * 50% - 0.3420 * var(--sky-cardstack-h) / 2) / 3.7588), 120px)), -50px)",
 		"rotate(20deg) translate(calc(4 * clamp(0px,",
-		"filter: hue-rotate(-200deg)",          // 数字卡位置派生色相
-		"min-height: calc(320px + 100px)",      // 纵向预留上抬空间
-		"--wp-cardstack-h: calc(320px + 20px)", // 旋转外扩要用的卡高
+		"filter: hue-rotate(-200deg)",           // 数字卡位置派生色相
+		"min-height: calc(320px + 100px)",       // 纵向预留上抬空间
+		"--sky-cardstack-h: calc(320px + 20px)", // 旋转外扩要用的卡高
 	} {
 		if !strings.Contains(s, want) {
 			t.Errorf("扇形悬停缺少 %q", want)
@@ -84,10 +84,10 @@ func TestHoverFanCSS(t *testing.T) {
 		t.Errorf("不应依赖容器查询（contain: layout 会困住 fixed 放大层）")
 	}
 	// 选择器形态：:hover 挂容器、经轨道到卡片；容器类名只能出现一次。
-	if !strings.Contains(s, ".wp-c-n1:hover .wp-cardstack-track .wp-cardstack-card:nth-child(1)") {
+	if !strings.Contains(s, ".sky-c-n1:hover .sky-cardstack-track .sky-cardstack-card:nth-child(1)") {
 		t.Errorf("悬停选择器应挂在容器上并经轨道下到卡片")
 	}
-	if strings.Contains(s, ".wp-c-n1:hover .wp-c-n1") {
+	if strings.Contains(s, ".sky-c-n1:hover .sky-c-n1") {
 		t.Errorf("悬停选择器重复了容器类名（永不匹配）")
 	}
 }
@@ -122,7 +122,7 @@ func TestHoverLineVerticalCSS(t *testing.T) {
 	}
 	for _, want := range []string{
 		"translate(0px, -480px);",
-		"translate(0px, calc(-4 * clamp(0px, calc((50vh - 16px - var(--wp-cardstack-h) / 2) / 4), 120px)))",
+		"translate(0px, calc(-4 * clamp(0px, calc((50vh - 16px - var(--sky-cardstack-h) / 2) / 4), 120px)))",
 		"min-height: calc(320px + 960px)", // 2 × 4 × 120
 	} {
 		if !strings.Contains(s, want) {
@@ -144,10 +144,10 @@ func TestScrollCSS(t *testing.T) {
 		"margin: 0 auto 26vh",
 		"scale: 0.9400", // 第 1 张 = base
 		"scale: 1.1000", // 第 9 张 = 94% + 8*2%
-		"animation: wp-cs-n1-1 linear both",
+		"animation: sky-cs-n1-1 linear both",
 		"animation-timeline: view()",
 		"animation-range: entry 0% entry 60%",
-		"@keyframes wp-cs-n1-1",
+		"@keyframes sky-cs-n1-1",
 		"from { scale: 1.0528; opacity: .5 }",
 		"to { scale: 0.9400; opacity: 1 }",
 	} {
@@ -183,7 +183,7 @@ func TestSlideCSS(t *testing.T) {
 		}
 	}
 	// 全屏下"放大到视口中央"等于原地不动，不该输出放大层。
-	if strings.Contains(s, "wp-cardstack-scrim") {
+	if strings.Contains(s, "sky-cardstack-scrim") {
 		t.Errorf("全屏分页不该输出放大层")
 	}
 }
@@ -194,9 +194,9 @@ func TestSlideHighlight(t *testing.T) {
 	hp := &Props{Trigger: TriggerSlide, Count: 2, SlideHighlight: "glow"}
 	hs := compiled(t, nodeOf(hp, 0), hp)
 	for _, want := range []string{
-		"animation: wp-loop-glow 2s ease-in-out infinite",
+		"animation: sky-loop-glow 2s ease-in-out infinite",
 		"animation-range: cover 25% cover 75%", // 卡片基本占满视口时才亮
-		"@keyframes wp-loop-glow",
+		"@keyframes sky-loop-glow",
 	} {
 		if !strings.Contains(hs, want) {
 			t.Errorf("当前屏高亮缺少 %q", want)
@@ -207,7 +207,7 @@ func TestSlideHighlight(t *testing.T) {
 	bp := &Props{Trigger: TriggerSlide, Count: 2, SlideEffect: "flip", SlideHighlight: "glow"}
 	bs := compiled(t, nodeOf(bp, 0), bp)
 	for _, want := range []string{
-		"animation: wp-flip-in-x linear both, wp-loop-glow 2s ease-in-out infinite",
+		"animation: sky-flip-in-x linear both, sky-loop-glow 2s ease-in-out infinite",
 		"animation-timeline: view(), view()",
 		"animation-range: entry 0% entry 70%, cover 25% cover 75%",
 	} {
@@ -229,8 +229,8 @@ func TestLoopEffects(t *testing.T) {
 	hp := &Props{Trigger: TriggerHover, Count: 3, HoverEffect: "glow"}
 	hs := compiled(t, nodeOf(hp, 0), hp)
 	for _, want := range []string{
-		"animation: wp-loop-glow 2s ease-in-out infinite",
-		"@keyframes wp-loop-glow",
+		"animation: sky-loop-glow 2s ease-in-out infinite",
+		"@keyframes sky-loop-glow",
 	} {
 		if !strings.Contains(hs, want) {
 			t.Errorf("悬停循环效果缺少 %q", want)
@@ -240,9 +240,9 @@ func TestLoopEffects(t *testing.T) {
 	dp := &Props{Trigger: TriggerDeck, Count: 3, DeckHighlight: "flash"}
 	ds := compiled(t, nodeOf(dp, 0), dp)
 	for _, want := range []string{
-		"animation: wp-loop-flash 2s ease-in-out infinite",
-		"@keyframes wp-loop-flash",
-		".wp-c-n1 .wp-cardstack-card.is-active",
+		"animation: sky-loop-flash 2s ease-in-out infinite",
+		"@keyframes sky-loop-flash",
+		".sky-c-n1 .sky-cardstack-card.is-active",
 	} {
 		if !strings.Contains(ds, want) {
 			t.Errorf("主卡高亮缺少 %q", want)
@@ -251,7 +251,7 @@ func TestLoopEffects(t *testing.T) {
 
 	// 缺省不带任何循环动画。
 	plain := &Props{Trigger: TriggerHover, Count: 3}
-	if ps := compiled(t, nodeOf(plain, 0), plain); strings.Contains(ps, "wp-loop-") {
+	if ps := compiled(t, nodeOf(plain, 0), plain); strings.Contains(ps, "sky-loop-") {
 		t.Errorf("缺省不该带循环动画")
 	}
 }
@@ -267,15 +267,15 @@ func TestSlideEffect(t *testing.T) {
 	// 每个效果都映射到 core 那套词汇里的真实关键帧名，且关键帧被注入。
 	// 方向自适应：纵向走 *-up / -left 变体，横向走 *-right / -y 变体。
 	cases := map[string][2]string{
-		"fade":   {"wp-fade-in-bottom-left", "wp-fade-in-bottom-right"},
-		"zoom":   {"wp-zoom-in-up", "wp-zoom-in-right"},
-		"flip":   {"wp-flip-in-x", "wp-flip-in-y"},
-		"bounce": {"wp-bounce-in-up", "wp-bounce-in-right"},
-		"back":   {"wp-back-in-up", "wp-back-in-right"},
-		"rotate": {"wp-rotate-in-up-left", "wp-rotate-in-up-right"},
-		"light":  {"wp-light-speed-in-left", "wp-light-speed-in-right"},
-		"roll":   {"wp-roll-in", "wp-roll-in"},
-		"jack":   {"wp-jack-in-the-box", "wp-jack-in-the-box"},
+		"fade":   {"sky-fade-in-bottom-left", "sky-fade-in-bottom-right"},
+		"zoom":   {"sky-zoom-in-up", "sky-zoom-in-right"},
+		"flip":   {"sky-flip-in-x", "sky-flip-in-y"},
+		"bounce": {"sky-bounce-in-up", "sky-bounce-in-right"},
+		"back":   {"sky-back-in-up", "sky-back-in-right"},
+		"rotate": {"sky-rotate-in-up-left", "sky-rotate-in-up-right"},
+		"light":  {"sky-light-speed-in-left", "sky-light-speed-in-right"},
+		"roll":   {"sky-roll-in", "sky-roll-in"},
+		"jack":   {"sky-jack-in-the-box", "sky-jack-in-the-box"},
 	}
 	for effect, kfs := range cases {
 		for _, side := range []int{0, 1} {
@@ -433,16 +433,16 @@ func TestDeckCSS(t *testing.T) {
 	for _, want := range []string{
 		"cursor: grab",
 		"touch-action: pan-y",
-		"--wp-deck-off: -4", // 第 1 张：静态降级值 = i - mid（9 张卡）
-		"--wp-deck-abs: 4",
-		"translateX(calc(var(--wp-deck-off, 0) * 54%))",
-		"rotate(calc(var(--wp-deck-off, 0) * 4deg))",
-		"scale(calc(1 - var(--wp-deck-abs, 0) * 0.0600))",
-		"z-index: calc(50 - var(--wp-deck-abs, 0))",
-		".wp-c-n1 .wp-cardstack-card.is-active",
+		"--sky-deck-off: -4", // 第 1 张：静态降级值 = i - mid（9 张卡）
+		"--sky-deck-abs: 4",
+		"translateX(calc(var(--sky-deck-off, 0) * 54%))",
+		"rotate(calc(var(--sky-deck-off, 0) * 4deg))",
+		"scale(calc(1 - var(--sky-deck-abs, 0) * 0.0600))",
+		"z-index: calc(50 - var(--sky-deck-abs, 0))",
+		".sky-c-n1 .sky-cardstack-card.is-active",
 		"transition: transform 450ms cubic-bezier(.22,.61,.36,1)",
 		// 越远越淡：卡片多时不至于在两侧无限堆远（max() 不被支持时退化为全不透明）。
-		"opacity: max(0, calc(1 - var(--wp-deck-abs, 0) * 0.28))",
+		"opacity: max(0, calc(1 - var(--sky-deck-abs, 0) * 0.28))",
 	} {
 		if !strings.Contains(s, want) {
 			t.Errorf("堆叠轮播缺少 %q", want)
@@ -491,12 +491,12 @@ func TestDragCSS(t *testing.T) {
 	for _, want := range []string{
 		"cursor: grab",
 		"touch-action: pan-y", // 纵向留给页面滚动，横向才归旋转
-		"--wp-cardstack-rot: 0deg",
+		"--sky-cardstack-rot: 0deg",
 		// 9 张卡、240px 宽 → 半径 240/(2·sin20°) ≈ 350.86 → 350px
-		"transform: translate(-50%, -50%) rotate(calc(0deg + var(--wp-cardstack-rot, 0deg))) translateY(-350px)",
-		"rotate(calc(-320deg - var(--wp-cardstack-rot, 0deg)))", // 第 9 张 = 360×8/9
+		"transform: translate(-50%, -50%) rotate(calc(0deg + var(--sky-cardstack-rot, 0deg))) translateY(-350px)",
+		"rotate(calc(-320deg - var(--sky-cardstack-rot, 0deg)))", // 第 9 张 = 360×8/9
 		"transition: transform .35s ease",
-		".wp-c-n1.is-dragging .wp-cardstack-card",
+		".sky-c-n1.is-dragging .sky-cardstack-card",
 	} {
 		if !strings.Contains(s, want) {
 			t.Errorf("拖拽模式缺少 %q", want)
@@ -546,16 +546,16 @@ func TestZoomCSS(t *testing.T) {
 	s := compiled(t, nodeOf(nil, 0), &Props{})
 
 	for _, want := range []string{
-		".wp-cardstack-toggle",
+		".sky-cardstack-toggle",
 		"pointer-events: none", // 点击穿透到 label
-		":has(> .wp-cardstack-toggle:checked)",
+		":has(> .sky-cardstack-toggle:checked)",
 		"position: fixed",
 		"margin: auto", // inset:0 + margin:auto 居中，不抢 transform
 		"translate: none",
 		"scale: 1",
 		"z-index: 1001",
-		".wp-cardstack-scrim",
-		".wp-cardstack-close-btn",
+		".sky-cardstack-scrim",
+		".sky-cardstack-close-btn",
 		"display: block",
 	} {
 		if !strings.Contains(s, want) {
@@ -564,7 +564,7 @@ func TestZoomCSS(t *testing.T) {
 	}
 
 	off := compiled(t, nodeOf(nil, 0), &Props{Zoom: "off"})
-	if strings.Contains(off, "wp-cardstack-scrim") {
+	if strings.Contains(off, "sky-cardstack-scrim") {
 		t.Errorf("Zoom=off 不应输出遮罩")
 	}
 }
@@ -763,7 +763,7 @@ func TestCollectionCSS(t *testing.T) {
 	if !strings.Contains(s, "min-height: 240px") {
 		t.Errorf("集合卡应走内容卡样式（min-height 缺省 240px）")
 	}
-	for _, want := range []string{".wp-cardstack-img", ".wp-cardstack-title", ".wp-cardstack-text", ".wp-cardstack-link"} {
+	for _, want := range []string{".sky-cardstack-img", ".sky-cardstack-title", ".sky-cardstack-text", ".sky-cardstack-link"} {
 		if !strings.Contains(s, want) {
 			t.Errorf("集合卡元素样式缺少 %q", want)
 		}

@@ -1,23 +1,23 @@
-@layer wp-base, wp-plugin, wp-auto, wp-theme, wp-local;
+@layer sky-base, sky-plugin, sky-auto, sky-theme, sky-local;
 
-@layer wp-base {
+@layer sky-base {
 body {
-  container-name: wp-theme;
+  container-name: sky-theme;
 }
 
-.wp-c-fq1 {
+.sky-c-fq1 {
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 
-.wp-c-fq1 details {
+.sky-c-fq1 details {
   border: 1px solid rgba(0,0,0,0.1);
   border-radius: 10px;
-  background: var(--wp-c-surface, #fff);
+  background: var(--sky-c-surface, #fff);
 }
 
-.wp-c-fq1 summary {
+.sky-c-fq1 summary {
   list-style: none;
   cursor: pointer;
   user-select: none;
@@ -28,22 +28,22 @@ body {
   font-weight: 600;
 }
 
-.wp-c-fq1 summary::-webkit-details-marker {
+.sky-c-fq1 summary::-webkit-details-marker {
   display: none;
 }
 
-.wp-c-fq1 summary::after {
+.sky-c-fq1 summary::after {
   content: '＋';
   font-size: 14px;
   color: rgba(0,0,0,0.4);
   transition: transform .2s;
 }
 
-.wp-c-fq1 details[open] summary::after {
+.sky-c-fq1 details[open] summary::after {
   transform: rotate(45deg);
 }
 
-.wp-c-fq1 .wp-faq-answer {
+.sky-c-fq1 .sky-faq-answer {
   padding: 0 18px 14px;
   color: rgba(0,0,0,0.65);
   line-height: 1.6;

@@ -22,7 +22,7 @@ import (
 	"go_wp/internal/templates"
 )
 
-// jetDocJSON 覆盖：顶级 Section（wp-section）、三端 CSS、入场动效关键帧、
+// jetDocJSON 覆盖：顶级 Section（sky-section）、三端 CSS、入场动效关键帧、
 // 形状分隔线（top/bottom）、button 外链/内链/图标前后缀/自定义 class 与 ID/特殊字符转义。
 const jetDocJSON = `{
   "settings": {

@@ -134,7 +134,7 @@ func BuildView(nodeID string, p *Props, content core.ContentResolver) (View, err
 	for i, r := range items {
 		iv := buildItemView(p, r)
 		if mode == LayoutCarousel {
-			iv.AnchorID = "wp-gslide-" + nodeID + "-" + strconv.Itoa(i)
+			iv.AnchorID = "sky-gslide-" + nodeID + "-" + strconv.Itoa(i)
 		}
 		views = append(views, iv)
 	}

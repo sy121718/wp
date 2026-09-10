@@ -6,14 +6,14 @@
 <title>测试页 &amp; &lt;Title&gt; &#34;双引号&#34; &#39;单引号&#39;</title>
 <meta name="description" content="页面描述 &amp; &lt;meta&gt; &#34;引号&#34; &#39;单引号&#39;">
 <style>
-:root{--wp-c-primary:#3366ff;--wp-c-bg:#ffffff}
-.wp-c-hero{display:grid;max-width:1200px}
+:root{--sky-c-primary:#3366ff;--sky-c-bg:#ffffff}
+.sky-c-hero{display:grid;max-width:1200px}
 </style>
 </head>
-<body class="wp-page wp-boxed custom-theme">
-<section class="wp-c-hero wp-section"><h1 class="wp-heading">Hello &amp; World</h1></section>
+<body class="sky-page sky-boxed custom-theme">
+<section class="sky-c-hero sky-section"><h1 class="sky-heading">Hello &amp; World</h1></section>
 <script>/**
- * wp-enhance.js — 构建产物客户端增强（纯客户端交互，静态站运行）。
+ * sky-enhance.js — 构建产物客户端增强（纯客户端交互，静态站运行）。
  * 零依赖 IIFE；按 data-* 属性按需初始化，无交互组件时静默跳过。
  * 覆盖：轮播（箭头/自动播放/循环/圆点高亮同步）、计数器（仅小数位模式——
  * 整数模式已由 @property + counter() 零 JS 实现）、倒计时（CSS 无时钟）。
@@ -36,7 +36,7 @@
             var end = parseFloat(el.dataset.end || 0);
             var decimals = parseInt(el.dataset.decimals || 0, 10);
             var duration = parseFloat(el.dataset.duration || 2) * 1000;
-            var value = el.querySelector('.wp-counter-value');
+            var value = el.querySelector('.sky-counter-value');
             if (!value) return;
             var done = false;
             function animate() {
@@ -71,7 +71,7 @@
         roots.forEach(function (root) {
             var track = root.querySelector('[data-track]');
             if (!track) return;
-            var slides = root.querySelectorAll('.wp-slide');
+            var slides = root.querySelectorAll('.sky-slide');
             if (!slides.length) return;
             var idx = 0;
             var total = slides.length;
@@ -86,7 +86,7 @@
             // 圆点。
             // 圆点由构建期生成 <a> 锚点（点击原生滚动到对应 slide）；
             // 此处仅做「当前张」高亮同步（滑动/自动播放时更新 is-active）。
-            var dots = [].slice.call(root.querySelectorAll('.wp-slider-dot'));
+            var dots = [].slice.call(root.querySelectorAll('.sky-slider-dot'));
             function updateDots() {
                 dots.forEach(function (d, i) { d.classList.toggle('is-active', i === idx); });
             }
@@ -258,7 +258,7 @@
     }
 
     // ---------- 卡片堆叠：拖拽旋转 360°（指针 + 左右方向键） ----------
-    // 只改写一个 CSS 变量（--wp-cardstack-rot），几何全部由构建期生成的静态 CSS 负责；
+    // 只改写一个 CSS 变量（--sky-cardstack-rot），几何全部由构建期生成的静态 CSS 负责；
     // 没有增强脚本时该变量恒为 0deg，卡片静态成环，功能不缺失（路径 C 的降级要求）。
     function initCardStacks() {
         var roots = document.querySelectorAll('[data-cardstack-drag]');
@@ -271,7 +271,7 @@
             var moved = false;
             var KEY_STEP = 15;   // 方向键每步 15°
             var PER_PX = 0.5;    // 指针每像素 0.5°：转满一圈约 720px 行程
-            function apply() { track.style.setProperty('--wp-cardstack-rot', rot.toFixed(2) + 'deg'); }
+            function apply() { track.style.setProperty('--sky-cardstack-rot', rot.toFixed(2) + 'deg'); }
             function down(x) { drag = { x: x, rot: rot }; moved = false; root.classList.add('is-dragging'); }
             function move(x) {
                 if (!drag) return;
@@ -310,13 +310,13 @@
     }
 
     // ---------- 卡片堆叠轮播：把选中的卡切到主位（滑动 / 点击 / 方向键） ----------
-    // 只改写每张卡的两个 CSS 变量（--wp-deck-off / --wp-deck-abs），位移、倾斜、缩放、
+    // 只改写每张卡的两个 CSS 变量（--sky-deck-off / --sky-deck-abs），位移、倾斜、缩放、
     // 层级的关系全部留在构建期生成的静态 CSS 里；脚本端不碰任何几何数值。
     function initCardDecks() {
         var roots = document.querySelectorAll('[data-cardstack-deck]');
         if (!roots.length) return;
         roots.forEach(function (root) {
-            var cards = [].slice.call(root.querySelectorAll('.wp-cardstack-card'));
+            var cards = [].slice.call(root.querySelectorAll('.sky-cardstack-card'));
             if (cards.length < 2) return;
             var total = cards.length;
             var active = parseInt(root.getAttribute('data-cardstack-deck'), 10) || 0;
@@ -338,8 +338,8 @@
                     if (loop && total > 1) {
                         off = ((off + half) % total + total) % total - half;
                     }
-                    c.style.setProperty('--wp-deck-off', String(off));
-                    c.style.setProperty('--wp-deck-abs', String(Math.abs(off)));
+                    c.style.setProperty('--sky-deck-off', String(off));
+                    c.style.setProperty('--sky-deck-abs', String(Math.abs(off)));
                     c.classList.toggle('is-active', off === 0);
                 });
             }
@@ -393,7 +393,7 @@
                     return;
                 }
                 var el = e.target;
-                var card = el && el.closest ? el.closest('.wp-cardstack-card') : null;
+                var card = el && el.closest ? el.closest('.sky-cardstack-card') : null;
                 var idx = card ? cards.indexOf(card) : -1;
                 if (idx >= 0 && idx !== active) {
                     e.preventDefault();

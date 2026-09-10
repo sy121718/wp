@@ -28,7 +28,7 @@ import (
 
 // switcherFragment 从产物 HTML 里截出语言切换器的 <nav> 片段（证据用，取不到返回空串）。
 func switcherFragment(html string) string {
-	start := strings.Index(html, `<nav class="wp-c-`)
+	start := strings.Index(html, `<nav class="sky-c-`)
 	if start < 0 {
 		return ""
 	}
@@ -90,24 +90,24 @@ func TestPageArtifactLanguageSwitcher(t *testing.T) {
 	// zh 产物：指向 en-US 的纯链接 + 当前语言（zh-CN）不可点标记 + html lang。
 	for _, want := range []string{
 		`<html lang="zh-CN">`,
-		`<a class="wp-lang-link" href="/en/about" hreflang="en-US" lang="en-US">English</a>`,
-		`<span class="wp-lang-current" lang="zh-CN" aria-current="true">简体中文</span>`,
+		`<a class="sky-lang-link" href="/en/about" hreflang="en-US" lang="en-US">English</a>`,
+		`<span class="sky-lang-current" lang="zh-CN" aria-current="true">简体中文</span>`,
 	} {
 		if !strings.Contains(zhHTML, want) {
 			t.Fatalf("zh 产物缺少 %q", want)
 		}
 	}
 	// 当前语言不可点：head 里的 hreflang 自指链接不算（那是 SEO 标注），
-	// 切换器内部不得出现指向自身的 <a class="wp-lang-link">。
-	if strings.Contains(zhHTML, `<a class="wp-lang-link" href="/about"`) {
+	// 切换器内部不得出现指向自身的 <a class="sky-lang-link">。
+	if strings.Contains(zhHTML, `<a class="sky-lang-link" href="/about"`) {
 		t.Fatal("zh 产物当前语言不应渲染为链接")
 	}
 
 	// en 产物：反向链接 + 当前语言标记随语言变化 + html lang 同步。
 	for _, want := range []string{
 		`<html lang="en-US">`,
-		`<a class="wp-lang-link" href="/about" hreflang="zh-CN" lang="zh-CN">简体中文</a>`,
-		`<span class="wp-lang-current" lang="en-US" aria-current="true">English</span>`,
+		`<a class="sky-lang-link" href="/about" hreflang="zh-CN" lang="zh-CN">简体中文</a>`,
+		`<span class="sky-lang-current" lang="en-US" aria-current="true">English</span>`,
 	} {
 		if !strings.Contains(enHTML, want) {
 			t.Fatalf("en 产物缺少 %q", want)
@@ -204,7 +204,7 @@ func TestPageArtifactLanguageSwitcherHiddenWithoutPrefix(t *testing.T) {
 		t.Fatalf("读取产物失败: %v", err)
 	}
 	// 组件 CSS 仍会编译进产物（节点存在于文档中），这里断言的是「没有渲染出链接列表」。
-	if strings.Contains(string(html), `<ul class="wp-lang-list">`) {
+	if strings.Contains(string(html), `<ul class="sky-lang-list">`) {
 		t.Fatal("未开启语言前缀时不应渲染切换器（多语言映射同一路径）")
 	}
 	if !strings.Contains(string(html), `<html lang="zh-CN">`) {

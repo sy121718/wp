@@ -1,45 +1,45 @@
-@layer wp-base, wp-plugin, wp-auto, wp-theme, wp-local;
+@layer sky-base, sky-plugin, sky-auto, sky-theme, sky-local;
 
-@layer wp-base {
-@keyframes wp-marquee-mq1 {
+@layer sky-base {
+@keyframes sky-marquee-mq1 {
   from { transform: translateX(-50%) }
   to { transform: translateX(0) }
 }
 
 body {
-  container-name: wp-theme;
+  container-name: sky-theme;
 }
 
-.wp-c-mq1 {
+.sky-c-mq1 {
   display: flex;
   overflow: hidden;
   white-space: nowrap;
 }
 
-.wp-c-mq1 .wp-marquee-track {
+.sky-c-mq1 .sky-marquee-track {
   display: flex;
   align-items: center;
   flex: none;
   gap: 32px;
   padding-right: 32px;
-  animation: wp-marquee-mq1 15s linear infinite;
+  animation: sky-marquee-mq1 15s linear infinite;
 }
 
-.wp-c-mq1 .wp-marquee-item {
+.sky-c-mq1 .sky-marquee-item {
   flex: none;
   display: inline-flex;
   align-items: center;
 }
 
-.wp-c-mq1:hover .wp-marquee-track {
+.sky-c-mq1:hover .sky-marquee-track {
   animation-play-state: paused;
 }
 
-.wp-c-mq1 {
+.sky-c-mq1 {
   background: #111;
 }
 
-.wp-c-mq1 .wp-marquee-track {
+.sky-c-mq1 .sky-marquee-track {
   padding-top: 12px;
   padding-bottom: 12px;
 }

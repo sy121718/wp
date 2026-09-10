@@ -97,12 +97,12 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 
 	b.Add(core.BreakpointDesktop, sel, []string{"display: flex", "flex-direction: column", "gap: 8px"})
 
-	head := sel + " .wp-accordion-head"
+	head := sel + " .sky-accordion-head"
 	headRules := []string{
 		"list-style: none", "cursor: pointer", "user-select: none",
 		"display: flex", "align-items: center", "justify-content: space-between",
 		"padding: 14px 18px", "font-size: 15px", "font-weight: 600",
-		"background: var(--wp-c-surface, #fff)",
+		"background: var(--sky-c-surface, #fff)",
 		"border: 1px solid rgba(0,0,0,.1)", "border-radius: 10px",
 	}
 	if p.BgColor != "" {
@@ -123,9 +123,9 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	})
 	b.Add(core.BreakpointDesktop, sel+" details[open] "+head+"::after", []string{"transform: rotate(45deg)"})
 	b.Add(core.BreakpointDesktop, head, []string{"transition: background .2s ease"})
-	b.AddHover(head+":hover", []string{"background: var(--wp-c-surface, #f3f4f6)"})
+	b.AddHover(head+":hover", []string{"background: var(--sky-c-surface, #f3f4f6)"})
 
-	b.Add(core.BreakpointDesktop, sel+" .wp-accordion-body", []string{
+	b.Add(core.BreakpointDesktop, sel+" .sky-accordion-body", []string{
 		"padding: 14px 18px", "border: 1px solid rgba(0,0,0,.08)",
 		"border-top: 0", "border-radius: 0 0 10px 10px",
 		"margin-top: -8px",
@@ -133,12 +133,12 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 
 	// 无边框模式。
 	if p.Borderless {
-		b.Add(core.BreakpointDesktop, sel+".wp-accordion-borderless", []string{"gap: 0"})
-		b.Add(core.BreakpointDesktop, sel+".wp-accordion-borderless .wp-accordion-head", []string{
+		b.Add(core.BreakpointDesktop, sel+".sky-accordion-borderless", []string{"gap: 0"})
+		b.Add(core.BreakpointDesktop, sel+".sky-accordion-borderless .sky-accordion-head", []string{
 			"border: 0", "border-bottom: 1px solid rgba(0,0,0,.1)", "border-radius: 0",
 			"padding-left: 0", "padding-right: 0",
 		})
-		b.Add(core.BreakpointDesktop, sel+".wp-accordion-borderless .wp-accordion-body", []string{
+		b.Add(core.BreakpointDesktop, sel+".sky-accordion-borderless .sky-accordion-body", []string{
 			"border: 0", "border-radius: 0", "padding-left: 0", "padding-right: 0",
 		})
 	}

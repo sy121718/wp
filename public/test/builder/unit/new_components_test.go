@@ -34,16 +34,16 @@ func TestSliderRendersSlidesAndScrollSnap(t *testing.T) {
 	]}]}`
 	html, css := compileDoc(t, doc)
 
-	if !strings.Contains(html, "wp-slider") || !strings.Contains(html, "wp-slider-track") {
+	if !strings.Contains(html, "sky-slider") || !strings.Contains(html, "sky-slider-track") {
 		t.Fatalf("缺少轮播结构: %s", html[:300])
 	}
-	if strings.Count(html, "wp-slide") < 2 {
+	if strings.Count(html, "sky-slide") < 2 {
 		t.Fatalf("应有 2 个 slide: %s", html[:300])
 	}
 	if !strings.Contains(html, "Slide A") || !strings.Contains(html, "Slide B") {
 		t.Fatalf("slide 内容应渲染: %s", html[:400])
 	}
-	if !strings.Contains(html, "wp-slider-prev") || !strings.Contains(html, "wp-slider-dots") {
+	if !strings.Contains(html, "sky-slider-prev") || !strings.Contains(html, "sky-slider-dots") {
 		t.Fatalf("箭头与圆点应输出: %s", html[:400])
 	}
 	if !strings.Contains(css, "scroll-snap-type: x mandatory") {
@@ -65,13 +65,13 @@ func TestListRendersItems(t *testing.T) {
 	if !strings.Contains(html, "免费配送") || !strings.Contains(html, "正品保证") {
 		t.Fatalf("列表项应渲染: %s", html[:300])
 	}
-	if !strings.Contains(html, "wp-list-icon") && !strings.Contains(html, "wp-list-marker") {
+	if !strings.Contains(html, "sky-list-icon") && !strings.Contains(html, "sky-list-marker") {
 		t.Fatalf("缺少列表标记: %s", html[:300])
 	}
 	if !strings.Contains(html, "<svg") {
 		t.Fatalf("图标应内联 SVG: %s", html[:400])
 	}
-	if !strings.Contains(css, "wp-list") {
+	if !strings.Contains(css, "sky-list") {
 		t.Fatalf("缺少列表样式: %s", css[:200])
 	}
 }
@@ -86,7 +86,7 @@ func TestInfoboxRendersContent(t *testing.T) {
 	if !strings.Contains(html, `<a class="`) || !strings.Contains(html, `href="/about"`) {
 		t.Fatalf("信息框链接应渲染: %s", html[:400])
 	}
-	if !strings.Contains(css, "wp-infobox") {
+	if !strings.Contains(css, "sky-infobox") {
 		t.Fatalf("缺少信息框样式: %s", css[:200])
 	}
 }
@@ -95,7 +95,7 @@ func TestSocialButtonsRenderBrandIcons(t *testing.T) {
 	doc := `{"settings":{"layout":{"mode":"full"}},"root":[{"type":"core.social_buttons","id":"so1","props":{"color":"brand","items":[{"platform":"facebook","url":"https://fb.com"},{"platform":"instagram","url":"https://ig.com"}]}}]}`
 	html, css := compileDoc(t, doc)
 
-	if !strings.Contains(html, "wp-social-btn") {
+	if !strings.Contains(html, "sky-social-btn") {
 		t.Fatalf("社交按钮应渲染: %s", html[:300])
 	}
 	if !strings.Contains(html, "facebook") || !strings.Contains(html, "instagram") {
@@ -186,7 +186,7 @@ func TestTabsRendersRadioHack(t *testing.T) {
 	]}]}`
 	html, css := compileDoc(t, doc)
 
-	if !strings.Contains(html, "wp-tabs-radio") || !strings.Contains(html, "参数面板") || !strings.Contains(html, "评价面板") {
+	if !strings.Contains(html, "sky-tabs-radio") || !strings.Contains(html, "参数面板") || !strings.Contains(html, "评价面板") {
 		t.Fatalf("页签结构缺失: %s", html[:400])
 	}
 	if !strings.Contains(css, ":checked ~") {
@@ -221,10 +221,10 @@ func TestMarqueeRendersDuplicateTracks(t *testing.T) {
 	]}]}`
 	html, css := compileDoc(t, doc)
 
-	if strings.Count(html, "wp-marquee-track") < 2 {
+	if strings.Count(html, "sky-marquee-track") < 2 {
 		t.Fatalf("应渲染双份轨道: %s", html[:300])
 	}
-	if !strings.Contains(css, "@keyframes wp-marquee-mq1") {
+	if !strings.Contains(css, "@keyframes sky-marquee-mq1") {
 		t.Fatalf("滚动动画缺失: %s", css[:300])
 	}
 }
@@ -235,7 +235,7 @@ func TestCounterRendersValue(t *testing.T) {
 	doc := `{"settings":{"layout":{"mode":"full"}},"root":[{"type":"core.counter","id":"ct1","props":{"start":0,"end":100,"suffix":"+"}}]}`
 	html, css := compileDoc(t, doc)
 
-	if !strings.Contains(html, "wp-counter") || !strings.Contains(html, "+") {
+	if !strings.Contains(html, "sky-counter") || !strings.Contains(html, "+") {
 		t.Fatalf("计数器渲染缺失: %s", html[:300])
 	}
 	if strings.Contains(html, "data-counter=") {

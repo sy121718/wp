@@ -322,7 +322,7 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	}
 	// 圆角：四角独立（通用外观字段）；四角全空时回退主题级按钮圆角。
 	if p.RadiusTL == "" && p.RadiusTR == "" && p.RadiusBR == "" && p.RadiusBL == "" {
-		base = append(base, "border-radius: var(--wp-btn-radius, 8px)")
+		base = append(base, "border-radius: var(--sky-btn-radius, 8px)")
 	} else {
 		corner := func(v string) string {
 			if v == "" {
@@ -424,12 +424,12 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 			base = append(base, core.CSSDecl("background", bg))
 		} else {
 			// 主题回退链：主题按钮背景 → 主题主色 → 硬编码兜底。
-			base = append(base, "background: var(--wp-btn-bg, var(--wp-c-primary, #2563eb))")
+			base = append(base, "background: var(--sky-btn-bg, var(--sky-c-primary, #2563eb))")
 		}
 		if textColor != "" {
 			base = append(base, core.CSSDecl("color", textColor))
 		} else {
-			base = append(base, "color: var(--wp-btn-color, #fff)")
+			base = append(base, "color: var(--sky-btn-color, #fff)")
 		}
 		if p.BorderWidth != "" {
 			bstyle := p.BorderStyle
@@ -445,14 +445,14 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 			base = append(base, core.CSSDecl("border", "1px", "solid", borderColor))
 		} else {
 			// 组件未设边框 → 回退主题级按钮边框变量（主题未配置时宽度 0 = 无边框）。
-			base = append(base, "border: var(--wp-btn-border-width, 0) var(--wp-btn-border-style, solid) var(--wp-btn-border-color, transparent)")
+			base = append(base, "border: var(--sky-btn-border-width, 0) var(--sky-btn-border-style, solid) var(--sky-btn-border-color, transparent)")
 		}
 	}
 	if v, ok := core.ShadowPresets[shadowLevel]; ok {
 		base = append(base, core.CSSDecl("box-shadow", v))
 	} else {
 		// 组件未设阴影 → 回退主题级按钮阴影变量。
-		base = append(base, "box-shadow: var(--wp-btn-shadow, none)")
+		base = append(base, "box-shadow: var(--sky-btn-shadow, none)")
 	}
 	// 变换（标准态）。
 	if t := transformDecl(p, false); t != "" {

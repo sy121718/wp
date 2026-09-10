@@ -173,7 +173,7 @@ fan 的位移落在旋转后的坐标系里（外接框会变大、卡片高度�
 
 实现要点（照抄社区 demo 会踩的坑）：
 
-1. **取色**一律走 `var(--wp-c-primary, …)` / `var(--wp-c-surface, …)` 主题变量（与 badge/quote/progress
+1. **取色**一律走 `var(--sky-c-primary, …)` / `var(--sky-c-surface, …)` 主题变量（与 badge/quote/progress
    同一约定）；
 2. **数字颜色**同时写在**不包 `@media (hover: hover)`** 的 `:active` 规则里（触屏没有 hover，
    只写悬停态 = 移动端永远看不到数字）；
@@ -186,7 +186,7 @@ fan 的位移落在旋转后的坐标系里（外接框会变大、卡片高度�
    line 竖排     (50vh − gutter − H/2) / offsetMax
    ```
    `50%` 在 `translate` 的 X 方向即卡 border box 半宽（所以卡宽写成 px/rem/% 都不影响）；
-   卡高拿不到百分比，由容器以 `--wp-cardstack-h` 变量传入。上界仍是用户参数 `spreadDistance`：
+   卡高拿不到百分比，由容器以 `--sky-cardstack-h` 变量传入。上界仍是用户参数 `spreadDistance`：
    **视口够宽时参数 100% 生效，装不下才收敛**，不静默改写参数。反之把它设成比允许值大的数
    （如 200），就是「自动铺满视口」。
 
@@ -197,7 +197,7 @@ fan 的位移落在旋转后的坐标系里（外接框会变大、卡片高度�
    展开跨度均比视口窄 16px，全程无横向滚动。
 
 5. **点击放大**：卡片是 `<label>`，内部藏一个同组 radio —— 纯 CSS 零 JS，同组互斥天然保证
-   「一次只放大一张」。放大态用 `:has(> .wp-cardstack-toggle:checked)` 命中，`inset:0 + margin:auto`
+   「一次只放大一张」。放大态用 `:has(> .sky-cardstack-toggle:checked)` 命中，`inset:0 + margin:auto`
    居中（不用 transform，免得和展开位移抢属性）；遮罩是容器末尾的 label，点它即选中关闭 radio。
    radio 无法「再点一次取消」，所以另配一个右上角关闭按钮（`<label for>` 指向同一个关闭 radio），
    且关闭 radio **不能共用 toggle 类名**，否则「有 toggle 被选中」在关闭后依然为真、遮罩收不回去。
@@ -242,7 +242,7 @@ fan 的位移落在旋转后的坐标系里（外接框会变大、卡片高度�
    `translate(-50%,-50%) → rotate(θ+rot) → translateY(-R) → rotate(-(θ+rot))` —— 前一个 rotate
    把位移送到圆周方向（于是卡片沿环走位），后一个把它转回来抵消朝向（于是**卡片始终正立**，文字可读）。
    半径 R 由构建期算：相邻夹角 2π/N → 弦长 2R·sin(π/N)，取 `R = 卡宽 / (2·sin(π/N))` 即相邻卡片刚好不重叠。
-   增强脚本只做一件事：把指针位移折算成角度写进 `--wp-cardstack-rot`（每像素 0.5°），
+   增强脚本只做一件事：把指针位移折算成角度写进 `--sky-cardstack-rot`（每像素 0.5°），
    **几何全在静态 CSS 里** —— 所以没有脚本时该变量恒为 `0deg`，卡片静态成环，点击放大与键盘聚焦照旧。
 
    两条容易踩的坑：拖动结束若指针落在卡片上会补发一次 `click`（卡片是 label → 误放大），
@@ -253,8 +253,8 @@ fan 的位移落在旋转后的坐标系里（外接框会变大、卡片高度�
    这条模式解决的就是它。几何全部由每张卡的两个 CSS 变量驱动：
 
    ```text
-   --wp-deck-off  相对主卡的偏移（0 = 主卡）
-   --wp-deck-abs  偏移绝对值（CSS 没有 abs()，缩放与层级要用它）
+   --sky-deck-off  相对主卡的偏移（0 = 主卡）
+   --sky-deck-abs  偏移绝对值（CSS 没有 abs()，缩放与层级要用它）
    ```
 
    编译期逐卡写入的是**静态降级值**（i - mid）：没有脚本时卡片按序号摊开成一摞；脚本接管后
@@ -290,7 +290,7 @@ fan 的位移落在旋转后的坐标系里（外接框会变大、卡片高度�
 10. **滚动堆叠**：基础规则就是 `position: sticky + top + translate: 0 -50%` 的纯层叠，跟手收敛叠在同一条
    规则的 `animation` 上，靠 `animation-timeline: view()` 驱动。**不需要 `@supports` 包裹** ——
    老浏览器把 `animation-timeline`/`animation-range` 当未知属性丢弃，动画按 0s 播完并由
-   `fill-mode: both` 停在终态，视觉正好等于静态缩放。每张卡用独立关键帧（`wp-cs-<节点id>-<序号>`），
+   `fill-mode: both` 停在终态，视觉正好等于静态缩放。每张卡用独立关键帧（`sky-cs-<节点id>-<序号>`），
    因为各卡终态缩放不同，共用一份关键帧做不到。
 
 **扩展案例：产品卡双形态（productcard 组件素材，2026-09 补充）**
@@ -401,14 +401,14 @@ keyframes 是普通文本块，编译期确切知道页面每个组件的 props 
 ```go
 // 组件 compileCSS 内（与 button variant 系统同款思路）
 var animCSS = map[string]string{
-    "fade-up": "@keyframes wp-fade-up{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:none}}",
-    "zoom-in": "@keyframes wp-zoom-in{from{opacity:0;transform:scale(.92)}to{opacity:1;transform:none}}",
+    "fade-up": "@keyframes sky-fade-up{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:none}}",
+    "zoom-in": "@keyframes sky-zoom-in{from{opacity:0;transform:scale(.92)}to{opacity:1;transform:none}}",
 }
 
 func compileCSS(id string, p *Props, b *core.CSSBuckets) {
     if p.Entrance != "" && p.Entrance != "none" {
         b.Append("anim", animCSS[p.Entrance]) // ← 只写选中的这一个 keyframes
-        b.Append("anim", fmt.Sprintf("[data-wp-%s]{animation:wp-%s .8s ease-out both}", id, p.Entrance))
+        b.Append("anim", fmt.Sprintf("[data-sky-%s]{animation:sky-%s .8s ease-out both}", id, p.Entrance))
     }
 }
 ```
@@ -419,13 +419,13 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 ### 6.2 零 JS 路线示例（pindeck 纯 CSS 骨架）
 
 ```css
-.wp-pindeck { position: sticky; top: 0; height: 100vh; overflow: hidden; }
-.wp-pindeck-track {
+.sky-pindeck { position: sticky; top: 0; height: 100vh; overflow: hidden; }
+.sky-pindeck-track {
   display: flex; height: 100%;
-  animation: wp-deck-move linear both;
+  animation: sky-deck-move linear both;
   animation-timeline: scroll(nearest block); /* 滚动进度 → 横移 */
 }
-@keyframes wp-deck-move { to { transform: translateX(calc(-100% + 100vw)); } }
+@keyframes sky-deck-move { to { transform: translateX(calc(-100% + 100vw)); } }
 @supports not (animation-timeline: scroll()) { /* 降级：普通横向滚动容器 */ }
 ```
 

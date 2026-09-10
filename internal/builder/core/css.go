@@ -28,41 +28,41 @@ type Keyframe struct {
 // 切片顺序即输出顺序，确定性内建于数据结构，无独立顺序表）。
 var keyframesBuiltin = []Keyframe{
 	// 入场（entrance）
-	{Name: "wp-fade-in", CSS: "@keyframes wp-fade-in {\n  from { opacity: 0 }\n  to { opacity: 1 }\n}"},
-	{Name: "wp-fade-up", CSS: "@keyframes wp-fade-up {\n  from { opacity: 0; transform: translateY(16px) }\n  to { opacity: 1; transform: none }\n}"},
-	{Name: "wp-fade-down", CSS: "@keyframes wp-fade-down {\n  from { opacity: 0; transform: translateY(-16px) }\n  to { opacity: 1; transform: none }\n}"},
-	{Name: "wp-fade-left", CSS: "@keyframes wp-fade-left {\n  from { opacity: 0; transform: translateX(16px) }\n  to { opacity: 1; transform: none }\n}"},
-	{Name: "wp-fade-right", CSS: "@keyframes wp-fade-right {\n  from { opacity: 0; transform: translateX(-16px) }\n  to { opacity: 1; transform: none }\n}"},
-	{Name: "wp-zoom-in", CSS: "@keyframes wp-zoom-in {\n  from { opacity: 0; transform: scale(.92) }\n  to { opacity: 1; transform: none }\n}"},
-	{Name: "wp-zoom-out", CSS: "@keyframes wp-zoom-out {\n  from { opacity: 0; transform: scale(1.08) }\n  to { opacity: 1; transform: none }\n}"},
-	{Name: "wp-slide-up", CSS: "@keyframes wp-slide-up {\n  from { opacity: 0; transform: translateY(24px) }\n  to { opacity: 1; transform: none }\n}"},
-	{Name: "wp-slide-down", CSS: "@keyframes wp-slide-down {\n  from { opacity: 0; transform: translateY(-24px) }\n  to { opacity: 1; transform: none }\n}"},
-	{Name: "wp-slide-left", CSS: "@keyframes wp-slide-left {\n  from { opacity: 0; transform: translateX(24px) }\n  to { opacity: 1; transform: none }\n}"},
-	{Name: "wp-slide-right", CSS: "@keyframes wp-slide-right {\n  from { opacity: 0; transform: translateX(-24px) }\n  to { opacity: 1; transform: none }\n}"},
-	{Name: "wp-flip-x", CSS: "@keyframes wp-flip-x {\n  from { opacity: 0; transform: perspective(600px) rotateX(-12deg) }\n  to { opacity: 1; transform: none }\n}"},
-	{Name: "wp-flip-y", CSS: "@keyframes wp-flip-y {\n  from { opacity: 0; transform: perspective(600px) rotateY(-12deg) }\n  to { opacity: 1; transform: none }\n}"},
-	{Name: "wp-blur-in", CSS: "@keyframes wp-blur-in {\n  from { opacity: 0; filter: blur(8px) }\n  to { opacity: 1; filter: none }\n}"},
-	{Name: "wp-bounce-in", CSS: "@keyframes wp-bounce-in {\n  0% { opacity: 0; transform: scale(.8) }\n  60% { opacity: 1; transform: scale(1.04) }\n  100% { opacity: 1; transform: none }\n}"},
-	{Name: "wp-rotate-in", CSS: "@keyframes wp-rotate-in {\n  from { opacity: 0; transform: rotate(-6deg) scale(.96) }\n  to { opacity: 1; transform: none }\n}"},
+	{Name: "sky-fade-in", CSS: "@keyframes sky-fade-in {\n  from { opacity: 0 }\n  to { opacity: 1 }\n}"},
+	{Name: "sky-fade-up", CSS: "@keyframes sky-fade-up {\n  from { opacity: 0; transform: translateY(16px) }\n  to { opacity: 1; transform: none }\n}"},
+	{Name: "sky-fade-down", CSS: "@keyframes sky-fade-down {\n  from { opacity: 0; transform: translateY(-16px) }\n  to { opacity: 1; transform: none }\n}"},
+	{Name: "sky-fade-left", CSS: "@keyframes sky-fade-left {\n  from { opacity: 0; transform: translateX(16px) }\n  to { opacity: 1; transform: none }\n}"},
+	{Name: "sky-fade-right", CSS: "@keyframes sky-fade-right {\n  from { opacity: 0; transform: translateX(-16px) }\n  to { opacity: 1; transform: none }\n}"},
+	{Name: "sky-zoom-in", CSS: "@keyframes sky-zoom-in {\n  from { opacity: 0; transform: scale(.92) }\n  to { opacity: 1; transform: none }\n}"},
+	{Name: "sky-zoom-out", CSS: "@keyframes sky-zoom-out {\n  from { opacity: 0; transform: scale(1.08) }\n  to { opacity: 1; transform: none }\n}"},
+	{Name: "sky-slide-up", CSS: "@keyframes sky-slide-up {\n  from { opacity: 0; transform: translateY(24px) }\n  to { opacity: 1; transform: none }\n}"},
+	{Name: "sky-slide-down", CSS: "@keyframes sky-slide-down {\n  from { opacity: 0; transform: translateY(-24px) }\n  to { opacity: 1; transform: none }\n}"},
+	{Name: "sky-slide-left", CSS: "@keyframes sky-slide-left {\n  from { opacity: 0; transform: translateX(24px) }\n  to { opacity: 1; transform: none }\n}"},
+	{Name: "sky-slide-right", CSS: "@keyframes sky-slide-right {\n  from { opacity: 0; transform: translateX(-24px) }\n  to { opacity: 1; transform: none }\n}"},
+	{Name: "sky-flip-x", CSS: "@keyframes sky-flip-x {\n  from { opacity: 0; transform: perspective(600px) rotateX(-12deg) }\n  to { opacity: 1; transform: none }\n}"},
+	{Name: "sky-flip-y", CSS: "@keyframes sky-flip-y {\n  from { opacity: 0; transform: perspective(600px) rotateY(-12deg) }\n  to { opacity: 1; transform: none }\n}"},
+	{Name: "sky-blur-in", CSS: "@keyframes sky-blur-in {\n  from { opacity: 0; filter: blur(8px) }\n  to { opacity: 1; filter: none }\n}"},
+	{Name: "sky-bounce-in", CSS: "@keyframes sky-bounce-in {\n  0% { opacity: 0; transform: scale(.8) }\n  60% { opacity: 1; transform: scale(1.04) }\n  100% { opacity: 1; transform: none }\n}"},
+	{Name: "sky-rotate-in", CSS: "@keyframes sky-rotate-in {\n  from { opacity: 0; transform: rotate(-6deg) scale(.96) }\n  to { opacity: 1; transform: none }\n}"},
 	// 循环（attention）。shake/jello/heartbeat 效果参考 Animate.css（MIT）/CSShake，
 	// 按循环动效场景重写的简化帧（非逐字复制）。
-	{Name: "wp-loop-pulse", CSS: "@keyframes wp-loop-pulse {\n  0%, 100% { transform: scale(1) }\n  50% { transform: scale(1.03) }\n}"},
-	{Name: "wp-loop-float", CSS: "@keyframes wp-loop-float {\n  0%, 100% { transform: translateY(0) }\n  50% { transform: translateY(-8px) }\n}"},
-	{Name: "wp-loop-drift", CSS: "@keyframes wp-loop-drift {\n  0%, 100% { transform: translateX(0) }\n  50% { transform: translateX(-8px) }\n}"},
-	{Name: "wp-loop-shake", CSS: "@keyframes wp-loop-shake {\n  0%, 100% { transform: translateX(0) }\n  25% { transform: translateX(-4px) }\n  75% { transform: translateX(4px) }\n}"},
-	{Name: "wp-loop-jello", CSS: "@keyframes wp-loop-jello {\n  0%, 100% { transform: skewX(0) }\n  25% { transform: skewX(-6deg) }\n  75% { transform: skewX(6deg) }\n}"},
-	{Name: "wp-loop-heartbeat", CSS: "@keyframes wp-loop-heartbeat {\n  0%, 100% { transform: scale(1) }\n  14% { transform: scale(1.08) }\n  28% { transform: scale(1) }\n  42% { transform: scale(1.08) }\n  70% { transform: scale(1) }\n}"},
-	{Name: "wp-loop-blob", CSS: "@keyframes wp-loop-blob {\n  0%, 100% { border-radius: 60% 40% 30% 70% / 60% 30% 70% 40%; transform: rotate(0) }\n  50% { border-radius: 30% 60% 70% 40% / 50% 60% 30% 60%; transform: rotate(8deg) }\n}"},
+	{Name: "sky-loop-pulse", CSS: "@keyframes sky-loop-pulse {\n  0%, 100% { transform: scale(1) }\n  50% { transform: scale(1.03) }\n}"},
+	{Name: "sky-loop-float", CSS: "@keyframes sky-loop-float {\n  0%, 100% { transform: translateY(0) }\n  50% { transform: translateY(-8px) }\n}"},
+	{Name: "sky-loop-drift", CSS: "@keyframes sky-loop-drift {\n  0%, 100% { transform: translateX(0) }\n  50% { transform: translateX(-8px) }\n}"},
+	{Name: "sky-loop-shake", CSS: "@keyframes sky-loop-shake {\n  0%, 100% { transform: translateX(0) }\n  25% { transform: translateX(-4px) }\n  75% { transform: translateX(4px) }\n}"},
+	{Name: "sky-loop-jello", CSS: "@keyframes sky-loop-jello {\n  0%, 100% { transform: skewX(0) }\n  25% { transform: skewX(-6deg) }\n  75% { transform: skewX(6deg) }\n}"},
+	{Name: "sky-loop-heartbeat", CSS: "@keyframes sky-loop-heartbeat {\n  0%, 100% { transform: scale(1) }\n  14% { transform: scale(1.08) }\n  28% { transform: scale(1) }\n  42% { transform: scale(1.08) }\n  70% { transform: scale(1) }\n}"},
+	{Name: "sky-loop-blob", CSS: "@keyframes sky-loop-blob {\n  0%, 100% { border-radius: 60% 40% 30% 70% / 60% 30% 70% 40%; transform: rotate(0) }\n  50% { border-radius: 30% 60% 70% 40% / 50% 60% 30% 60%; transform: rotate(8deg) }\n}"},
 	// glow 用 filter: drop-shadow（合成器友好；box-shadow 动画在移动端逐帧重绘，
 	// 循环场景持续掉帧耗电）。drop-shadow 沿元素轮廓发光，圆角/透明底更自然。
-	{Name: "wp-loop-glow", CSS: "@keyframes wp-loop-glow {\n  0%, 100% { filter: drop-shadow(0 0 0 rgba(59,130,246,0)) }\n  50% { filter: drop-shadow(0 0 8px rgba(59,130,246,.45)) }\n}"},
-	{Name: "wp-loop-spin", CSS: "@keyframes wp-loop-spin {\n  from { transform: rotate(0deg) }\n  to { transform: rotate(360deg) }\n}"},
-	{Name: "wp-bg-flow", CSS: "@keyframes wp-bg-flow {\n  0% { background-position: 0% 50% }\n  50% { background-position: 100% 50% }\n  100% { background-position: 0% 50% }\n}"},
-	{Name: "wp-border-flow", CSS: "@keyframes wp-border-flow {\n  to { --wp-flow-angle: 360deg }\n}"},
+	{Name: "sky-loop-glow", CSS: "@keyframes sky-loop-glow {\n  0%, 100% { filter: drop-shadow(0 0 0 rgba(59,130,246,0)) }\n  50% { filter: drop-shadow(0 0 8px rgba(59,130,246,.45)) }\n}"},
+	{Name: "sky-loop-spin", CSS: "@keyframes sky-loop-spin {\n  from { transform: rotate(0deg) }\n  to { transform: rotate(360deg) }\n}"},
+	{Name: "sky-bg-flow", CSS: "@keyframes sky-bg-flow {\n  0% { background-position: 0% 50% }\n  50% { background-position: 100% 50% }\n  100% { background-position: 0% 50% }\n}"},
+	{Name: "sky-border-flow", CSS: "@keyframes sky-border-flow {\n  to { --sky-flow-angle: 360deg }\n}"},
 	// 滚动叙事（scroll-driven，view() 进度连续绑定；Apple 产品页式叙事的原子变换）。
-	{Name: "wp-story-zoom", CSS: "@keyframes wp-story-zoom {\n  from { transform: scale(.78) }\n  to { transform: scale(1.08) }\n}"},
-	{Name: "wp-story-rise", CSS: "@keyframes wp-story-rise {\n  from { transform: translateY(60px) }\n  to { transform: translateY(0) }\n}"},
-	{Name: "wp-story-fade", CSS: "@keyframes wp-story-fade {\n  from { opacity: .15 }\n  to { opacity: 1 }\n}"},
+	{Name: "sky-story-zoom", CSS: "@keyframes sky-story-zoom {\n  from { transform: scale(.78) }\n  to { transform: scale(1.08) }\n}"},
+	{Name: "sky-story-rise", CSS: "@keyframes sky-story-rise {\n  from { transform: translateY(60px) }\n  to { transform: translateY(0) }\n}"},
+	{Name: "sky-story-fade", CSS: "@keyframes sky-story-fade {\n  from { opacity: .15 }\n  to { opacity: 1 }\n}"},
 }
 
 // keyframesCatalog 全部动效关键帧（内置组 + Animate 拆解组，组内序即输出序）。
@@ -119,11 +119,11 @@ type CSSBuckets struct {
 	hover   []string // 触屏治理：悬浮规则包 @media (hover: hover)（H5 sticky hover 治理）
 	active  []string // 按压规则：不包 hover:hover（:active 在触屏上同样生效，是移动端唯一可靠的按下反馈）
 	// 容器查询三桶：按「样式来源层级」分开，输出时分别包进 @layer
-	// wp-auto（自动适配：@container 尺寸查询）< wp-theme（主题档位 style 查询）<
-	// wp-local（容器/作者显式声明）——优先级由层序决定，不依赖源顺序。
-	containersAuto  []string // 自动适配（尺寸查询）→ @layer wp-auto
-	containersTheme []string // 主题档位（style 查询）→ @layer wp-theme
-	containersLocal []string // 局部显式声明（style 查询）→ @layer wp-local
+	// sky-auto（自动适配：@container 尺寸查询）< sky-theme（主题档位 style 查询）<
+	// sky-local（容器/作者显式声明）——优先级由层序决定，不依赖源顺序。
+	containersAuto  []string // 自动适配（尺寸查询）→ @layer sky-auto
+	containersTheme []string // 主题档位（style 查询）→ @layer sky-theme
+	containersLocal []string // 局部显式声明（style 查询）→ @layer sky-local
 	// topLevel 注册类顶层规则（@property 等）：不进任何 @layer——这类规则的注册
 	// 是全局的，放未分层最稳（避免浏览器对「层内注册」的实现差异）。
 	topLevel  []string
@@ -288,8 +288,8 @@ func (b *CSSBuckets) AddContainer(condition, sel string, decls []string) {
 	b.containersAuto = append(b.containersAuto, wrapped)
 }
 
-// AddThemeQuery 主题档位样式查询（@layer wp-theme）：组件响应主题级语义开关
-// （如 --wp-density: compact）。层序：wp-auto < wp-theme < wp-local。
+// AddThemeQuery 主题档位样式查询（@layer sky-theme）：组件响应主题级语义开关
+// （如 --sky-density: compact）。层序：sky-auto < sky-theme < sky-local。
 func (b *CSSBuckets) AddThemeQuery(containerName, prop, value, sel string, decls []string) {
 	b.addQuery(&b.containersTheme, containerName, prop, value, sel, decls)
 }
@@ -319,7 +319,7 @@ func (b *CSSBuckets) addQuery(bucket *[]string, containerName, prop, value, sel 
 	*bucket = append(*bucket, wrapped)
 }
 
-// ContainerQueryCSS 容器查询块输出（按层聚合）：wp-auto → wp-theme → wp-local。
+// ContainerQueryCSS 容器查询块输出（按层聚合）：sky-auto → sky-theme → sky-local。
 // 与 String()（内核基础样式）分离，由装配层按层序追加到产物 CSS。
 func (b *CSSBuckets) ContainerQueryCSS() string {
 	var parts []string
@@ -327,9 +327,9 @@ func (b *CSSBuckets) ContainerQueryCSS() string {
 		layer string
 		rules []string
 	}{
-		{"wp-auto", b.containersAuto},
-		{"wp-theme", b.containersTheme},
-		{"wp-local", b.containersLocal},
+		{"sky-auto", b.containersAuto},
+		{"sky-theme", b.containersTheme},
+		{"sky-local", b.containersLocal},
 	} {
 		if len(g.rules) > 0 {
 			parts = append(parts, "@layer "+g.layer+" {\n"+strings.Join(g.rules, "\n")+"\n}")
@@ -391,7 +391,7 @@ func (b *CSSBuckets) String() string {
 
 // NodeClass 节点 CSS 类名。
 func NodeClass(id string) string {
-	return "wp-c-" + id
+	return "sky-c-" + id
 }
 
 // indentDecl 声明列表缩进格式化。

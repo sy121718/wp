@@ -2,7 +2,7 @@
 //
 // ThemeSettings 是主题的全局设计令牌：色板/排版/按钮/链接/边框/圆角/动效。
 // 编译期生成 :root CSS 变量块注入产物 <head>——主题色真正进产物（替代
-// 组件硬编码默认色），全站组件经 var(--wp-c-*) 引用主题令牌。
+// 组件硬编码默认色），全站组件经 var(--sky-c-*) 引用主题令牌。
 //
 // 设计原则（docs/06 §6 同源）：
 //   - 全部值经 core.IsSafeCSSValue 白名单校验（防注入）；
@@ -183,8 +183,8 @@ type ThemeSurface struct {
 	Shadow      string `json:"shadow,omitempty"`      // 默认阴影级别 sm/md/lg
 	Density     string `json:"density,omitempty"`     // 密度档位：空=标准 / compact 紧凑 / cozy 宽松
 	// Density 密度档位："" 标准（内边距 16px / 间距 24px）/ compact 紧凑（8/16）/ cozy 宽松（24/32）。
-	// 编译为语义变量（--wp-density-pad / --wp-density-gap）+ 样式查询开关（--wp-density），
-	// 组件经 var() 消费即可「一处切换全站间距」；也可用 @container style(--wp-density: compact)
+	// 编译为语义变量（--sky-density-pad / --sky-density-gap）+ 样式查询开关（--sky-density），
+	// 组件经 var() 消费即可「一处切换全站间距」；也可用 @container style(--sky-density: compact)
 	// 做结构性差异（如紧凑模式下卡片改横排）。
 }
 
@@ -217,16 +217,16 @@ func themeVars(t *ThemeSettings) []string {
 	var out []string
 	add := func(name, val string) {
 		if val != "" {
-			out = append(out, fmt.Sprintf("--wp-%s: %s", name, val))
+			out = append(out, fmt.Sprintf("--sky-%s: %s", name, val))
 		}
 	}
 	// 密度档位：语义间距变量 + 样式查询开关（组件经 var() 消费，一处切换全站；
-	// @container style(--wp-density: compact) 供组件做结构性差异）。未设置则不输出。
+	// @container style(--sky-density: compact) 供组件做结构性差异）。未设置则不输出。
 	switch t.Surface.Density {
 	case "compact":
-		out = append(out, "--wp-density-pad: 8px", "--wp-density-gap: 16px", "--wp-density: compact")
+		out = append(out, "--sky-density-pad: 8px", "--sky-density-gap: 16px", "--sky-density: compact")
 	case "cozy":
-		out = append(out, "--wp-density-pad: 24px", "--wp-density-gap: 32px", "--wp-density: cozy")
+		out = append(out, "--sky-density-pad: 24px", "--sky-density-gap: 32px", "--sky-density: cozy")
 	}
 	// 色板。
 	c := t.Colors
@@ -281,7 +281,7 @@ func themeVars(t *ThemeSettings) []string {
 		add("c-border", s.BorderColor)
 	}
 	add("shadow", s.Shadow)
-	// 动效（空值不输出，避免 --wp-tr-duration: ms 这类非法声明）。
+	// 动效（空值不输出，避免 --sky-tr-duration: ms 这类非法声明）。
 	m := t.Motion
 	if m.TransitionDuration != "" {
 		add("tr-duration", m.TransitionDuration+"ms")

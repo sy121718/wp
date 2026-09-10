@@ -159,8 +159,8 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	if pad != "" {
 		frame = append(frame, core.CSSDecl("padding-top", pad))
 	}
-	b.Add(core.BreakpointDesktop, sel+" .wp-video-frame", frame)
-	b.Add(core.BreakpointDesktop, sel+" .wp-video-frame iframe, "+sel+" .wp-video-frame video", []string{
+	b.Add(core.BreakpointDesktop, sel+" .sky-video-frame", frame)
+	b.Add(core.BreakpointDesktop, sel+" .sky-video-frame iframe, "+sel+" .sky-video-frame video", []string{
 		"position: absolute", "inset: 0", "width: 100%", "height: 100%",
 		"border: 0", "border-radius: inherit", "display: block",
 	})

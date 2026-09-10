@@ -30,10 +30,10 @@ func TestRenderDocumentGolden(t *testing.T) {
 	c := &CompiledPage{
 		Title:           "测试页 & <Title> \"双引号\" '单引号'",
 		MetaDescription: "页面描述 & <meta> \"引号\" '单引号'",
-		BodyClasses:     []string{"wp-page", "wp-boxed", "custom-theme"},
-		HTML:            `<section class="wp-c-hero wp-section"><h1 class="wp-heading">Hello &amp; World</h1></section>`,
-		CSS:             `.wp-c-hero{display:grid;max-width:1200px}`,
-		ThemeVarsCSS:    `:root{--wp-c-primary:#3366ff;--wp-c-bg:#ffffff}`,
+		BodyClasses:     []string{"sky-page", "sky-boxed", "custom-theme"},
+		HTML:            `<section class="sky-c-hero sky-section"><h1 class="sky-heading">Hello &amp; World</h1></section>`,
+		CSS:             `.sky-c-hero{display:grid;max-width:1200px}`,
+		ThemeVarsCSS:    `:root{--sky-c-primary:#3366ff;--sky-c-bg:#ffffff}`,
 	}
 	got, err := RenderDocument(c)
 	if err != nil {

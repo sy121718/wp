@@ -34,9 +34,9 @@ type View struct {
 // BuildView 生成容器渲染视图：属性串 + 形状分隔线（与 Render 输出结构一致）。
 func BuildView(node *core.Node, p *Props) View {
 	var attrs strings.Builder
-	// 组父联动标记（03-A：子组件可经 [data-wp-group] 联动）。
+	// 组父联动标记（03-A：子组件可经 [data-sky-group] 联动）。
 	if p.StyleEx.GroupParent {
-		attrs.WriteString(` data-wp-group="true"`)
+		attrs.WriteString(` data-sky-group="true"`)
 	}
 	// 自定义属性键值对（白名单 key + 安全 value）。
 	for _, kv := range p.StyleEx.Attributes {
@@ -48,7 +48,7 @@ func BuildView(node *core.Node, p *Props) View {
 	}
 	// 抽屉协议（:target 显隐，零 JS）。
 	if p.Position.Type == "drawer" {
-		attrs.WriteString(` id="wp-drawer-`)
+		attrs.WriteString(` id="sky-drawer-`)
 		attrs.WriteString(node.ID)
 		attrs.WriteString(`" data-drawer-side="`)
 		attrs.WriteString(p.Position.DrawerSide)

@@ -69,7 +69,7 @@ func (c *Component) Validate(node *core.Node, ids map[string]bool) (err error) {
 	return nil
 }
 
-// cloneWithIDPrefix 深拷贝节点树并为全部节点 ID 加前缀（CSS wp-c-<id> 类随之隔离）。
+// cloneWithIDPrefix 深拷贝节点树并为全部节点 ID 加前缀（CSS sky-c-<id> 类随之隔离）。
 func cloneWithIDPrefix(node *core.Node, prefix string) *core.Node {
 	if node == nil {
 		return nil

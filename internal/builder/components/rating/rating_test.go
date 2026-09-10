@@ -112,7 +112,7 @@ func TestCompileCSS(t *testing.T) {
 	b := &core.CSSBuckets{}
 	compileCSS("n1", &Props{Value: 4, Max: 5}, b)
 	css := b.String()
-	wants := []string{"display: inline-flex", ".wp-star", "color: #f59e0b", "width: 1.25em"}
+	wants := []string{"display: inline-flex", ".sky-star", "color: #f59e0b", "width: 1.25em"}
 	for _, want := range wants {
 		if !strings.Contains(css, want) {
 			t.Errorf("CSS 缺少 %q\n%s", want, css)

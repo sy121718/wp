@@ -74,10 +74,10 @@ func AddImageSkeletonCSS(b *CSSBuckets) {
 		return
 	}
 	b.Add(BreakpointDesktop, "img.is-skeleton", []string{
-		"background-image: linear-gradient(90deg, var(--wp-skeleton-a, #eef1f4) 25%, var(--wp-skeleton-b, #e2e6ea) 37%, var(--wp-skeleton-a, #eef1f4) 63%)",
+		"background-image: linear-gradient(90deg, var(--sky-skeleton-a, #eef1f4) 25%, var(--sky-skeleton-b, #e2e6ea) 37%, var(--sky-skeleton-a, #eef1f4) 63%)",
 		"background-size: 400% 100%",
-		"animation: wp-skeleton-shimmer 1.4s ease infinite",
+		"animation: sky-skeleton-shimmer 1.4s ease infinite",
 	})
-	b.AddKeyframes("wp-skeleton-shimmer",
+	b.AddKeyframes("sky-skeleton-shimmer",
 		"0% { background-position: 100% 50% } 100% { background-position: 0 50% }")
 }

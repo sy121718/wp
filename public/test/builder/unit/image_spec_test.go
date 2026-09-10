@@ -40,7 +40,7 @@ func TestImagePhotoCompile(t *testing.T) {
 		"width: 60%", "max-width: 480px",
 		"filter: grayscale(100%)",
 		"transition: transform 300ms ease, filter 300ms ease",
-		".wp-c-sv1:hover", "scale(1.05)",
+		".sky-c-sv1:hover", "scale(1.05)",
 		"margin-bottom: 24px", // Advanced 由基座编译
 	} {
 		if !strings.Contains(c.CSS, want) && !strings.Contains(c.HTML, want) {
@@ -70,9 +70,9 @@ func TestImageLightbox(t *testing.T) {
 		t.Fatalf("编译失败: %v", err)
 	}
 	for _, want := range []string{
-		`<a href="#wp-lb-sv1">`,
-		`id="wp-lb-sv1" class="wp-lightbox"`,
-		".wp-lightbox:target",
+		`<a href="#sky-lb-sv1">`,
+		`id="sky-lb-sv1" class="sky-lightbox"`,
+		".sky-lightbox:target",
 		"display: flex",
 	} {
 		if !strings.Contains(c.HTML, want) && !strings.Contains(c.CSS, want) {

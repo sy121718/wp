@@ -59,7 +59,7 @@ func TestNavigationSourcePageResolved(t *testing.T) {
 	if err != nil {
 		t.Fatalf("预览编译失败: %v", err)
 	}
-	for _, want := range []string{">关于我们<", `href="/about"`, `class="wp-nav-item is-current"`, `aria-current="page"`} {
+	for _, want := range []string{">关于我们<", `href="/about"`, `class="sky-nav-item is-current"`, `aria-current="page"`} {
 		if !strings.Contains(string(html), want) {
 			t.Errorf("产物缺少 %q", want)
 		}

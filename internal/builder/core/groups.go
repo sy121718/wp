@@ -288,9 +288,9 @@ func CompileInteraction(sel string, p InteractionProps, b *CSSBuckets) {
 	// 入场动效（含时长/延迟/滚动触发）。
 	if p.Entrance != "" {
 		dur := entranceDurationCSS(p.EntranceDuration)
-		anim := fmt.Sprintf("animation: wp-%s %s ease backwards", p.Entrance, dur)
+		anim := fmt.Sprintf("animation: sky-%s %s ease backwards", p.Entrance, dur)
 		if p.EntranceDelay > 0 {
-			anim = fmt.Sprintf("animation: wp-%s %s ease %.1fs backwards", p.Entrance, dur, p.EntranceDelay)
+			anim = fmt.Sprintf("animation: sky-%s %s ease %.1fs backwards", p.Entrance, dur, p.EntranceDelay)
 		}
 		decls = append(decls, anim)
 		// 默认弹簧缓动（Apple 式过冲回弹）：timing 覆盖声明在简写之后，
@@ -307,7 +307,7 @@ func CompileInteraction(sel string, p InteractionProps, b *CSSBuckets) {
 		default: // "" 与 "spring" 均走标准弹簧
 			decls = append(decls, timingOverride(SpringStandardCurve, withLoop))
 		}
-		b.NeedKeyframes("wp-" + p.Entrance)
+		b.NeedKeyframes("sky-" + p.Entrance)
 		// 滚动触发：视口进入时播放（现代浏览器；旧浏览器不识别 timeline 即直接入场）。
 		if p.ScrollReveal == "reveal" {
 			decls = append(decls,
@@ -318,7 +318,7 @@ func CompileInteraction(sel string, p InteractionProps, b *CSSBuckets) {
 	// 循环动画（attention；与入场互不冲突——loop 走独立 animation 名，
 	// 同元素多动画用逗号并接）。
 	if p.LoopEffect != "" {
-		loop := fmt.Sprintf("animation: wp-loop-%s 2.4s ease-in-out infinite", p.LoopEffect)
+		loop := fmt.Sprintf("animation: sky-loop-%s 2.4s ease-in-out infinite", p.LoopEffect)
 		if p.Entrance != "" {
 			// 已有入场动画：并接（入场结束后循环接管）。
 			for i, d := range decls {
@@ -329,17 +329,17 @@ func CompileInteraction(sel string, p InteractionProps, b *CSSBuckets) {
 		} else {
 			decls = append(decls, loop)
 		}
-		b.NeedKeyframes("wp-loop-" + p.LoopEffect)
+		b.NeedKeyframes("sky-loop-" + p.LoopEffect)
 	}
 	// 滚动叙事（view() 进度连续绑定）：linear + both 保证进度可逆跟手；
 	// 区间覆盖「进入视口 → 离开视口」全程。旧浏览器忽略 timeline 后
 	// 保留静态 from 帧（opacity/位移初值），仍优于无效果。
 	if p.ScrollStory != "" {
 		decls = append(decls,
-			"animation: wp-story-"+p.ScrollStory+" linear both",
+			"animation: sky-story-"+p.ScrollStory+" linear both",
 			"animation-timeline: view()",
 			"animation-range: entry 0% exit 100%")
-		b.NeedKeyframes("wp-story-" + p.ScrollStory)
+		b.NeedKeyframes("sky-story-" + p.ScrollStory)
 	}
 	// 滚动吸顶（全组件共享；StickyTop 未设置时缺省 0）。
 	if p.Sticky {

@@ -7,7 +7,7 @@
 | 项 | 值 |
 |---|---|
 | 项目 | `/home/sky/project/go/wp`（Go + Gin + Jet v6 + HTMX） |
-| 服务 | **air 热重载**，端口 8080（改代码自动重编译；当前进程 gowp-dev，`curl 127.0.0.1:8080/livez` 应为 200） |
+| 服务 | **air 热重载**，端口 8080（改代码自动重编译；当前进程 gosky-dev，`curl 127.0.0.1:8080/livez` 应为 200） |
 | 启动命令 | `export WP_SITE_BASE_URL='http://127.0.0.1:8080/site' && air -c .air.toml`（或 `bash scripts/dev.sh`） |
 | 配置 | `.air.toml`（go/jet/html/yaml 触发重编译；static 的 js/css 直读不重启） |
 | 测试 | `go test ./...`（**当前全绿**，见 §4） |
@@ -26,7 +26,7 @@
 - **样式面板** WP 式折叠分组：基础 / 布局 / 背景 / 边框 / 变换 / 动效 / 响应式（空组不显示、有值自动展开、显示已用项数）
 - **通用层下沉**：26 个组件统一 `core.AdvancedProps`（layout/border/transform/motion/响应式覆盖）；控件系统支持 `ct:"group"` 嵌套展开
 - **新增控件类型**：spacing（三端×四向）、corners、rtext（三端文本）、classes、cssdecls（按端样式覆盖）、mediaList（多图）、number（浮点）、**richtext（Trix 富文本，见 §1.6）**
-- **修复**：schema 丢弃自定义分组；`field()` select 分支漏 `appendChild`（>6 选项下拉不显示）；8 个组件误用编辑器变量 `--c-*` → 站点变量 `--wp-c-*`；按钮类元素改为跟随 `--wp-btn-bg`；`--wp-tr-duration: ms` 空值
+- **修复**：schema 丢弃自定义分组；`field()` select 分支漏 `appendChild`（>6 选项下拉不显示）；8 个组件误用编辑器变量 `--c-*` → 站点变量 `--sky-c-*`；按钮类元素改为跟随 `--sky-btn-bg`；`--sky-tr-duration: ms` 空值
 
 ### 1.2 air 热重载
 `.air.toml` + `scripts/dev.sh`；静态资源不触发重启（gin.Dir 直读）。
@@ -315,7 +315,7 @@
 ### 图片懒加载三态 + 主题骨架屏 + 响应式 srcset（已完成，覆盖全部含图组件）
 **主题「图片管理」**（主题设置 → 全局设置面板「图片」分组）：
 - `ThemeImages.LazyLoad`：`on`（默认）/ `off` —— 组件级「默认」时继承
-- `ThemeImages.Skeleton`：懒加载时显示骨架屏（纯 CSS 渐变 + `wp-skeleton-shimmer` keyframes，图片加载完成后内容自然覆盖背景，**零 JS**）
+- `ThemeImages.Skeleton`：懒加载时显示骨架屏（纯 CSS 渐变 + `sky-skeleton-shimmer` keyframes，图片加载完成后内容自然覆盖背景，**零 JS**）
 - 保存走 `SaveThemeSettings` 的 `images.lazyLoad` / `images.skeleton` 点分键
 
 **组件级三态**（`loading` 字段；输出 `<img>` 的 5 个组件全部支持：`core.image` / `core.card` / `core.gallery` / `core.infobox` / `core.button` 媒体图标）：
@@ -368,12 +368,12 @@
 
 **现状根因**：`inspector.js` 的 `commit()` → `refreshCanvas()`（250ms 防抖）→ `submitCanvas()`（`canvas.js:389`）把**整份文档 JSON** POST 到 `/workbench/preview`，服务端整页重渲染 → iframe 重载。所以任何属性改动都触发整页重刷（非本轮引入，一直如此）。
 
-**已有地基**：iframe 内 `editor_bridge.go` 的桥接脚本已把编译期 `wp-c-<nodeId>` 类还原为 `data-wp-id="<nodeId>"`（editor_bridge.go:13-23），可据此做节点级替换。
+**已有地基**：iframe 内 `editor_bridge.go` 的桥接脚本已把编译期 `sky-c-<nodeId>` 类还原为 `data-sky-id="<nodeId>"`（editor_bridge.go:13-23），可据此做节点级替换。
 
 **实现（零服务端改动）**：
 1. `canvas.js` 新增 `fetchCanvasHTML()`：fetch 复用现有 `POST /workbench/preview`（不重载 iframe），拿到整页 HTML
-2. `canvas.js` 新增 `patchCanvas(nodeId)`：`DOMParser` 解析后取 `.wp-c-<nodeId>` 的 outerHTML + 首个 `<style>` 内容，`postMessage({type:'wb-patch'})` 送进 iframe；带序号防并发覆盖，失败回退 `refreshCanvas()`
-3. `editor_bridge.go` 新增 `wb-patch` 处理：`[data-wp-id="id"]` 的 outerHTML 替换（重设 `data-wp-id`/`draggable`/选中态），并写入 `<style id="wb-live-css">`（后定义覆盖旧规则）
+2. `canvas.js` 新增 `patchCanvas(nodeId)`：`DOMParser` 解析后取 `.sky-c-<nodeId>` 的 outerHTML + 首个 `<style>` 内容，`postMessage({type:'wb-patch'})` 送进 iframe；带序号防并发覆盖，失败回退 `refreshCanvas()`
+3. `editor_bridge.go` 新增 `wb-patch` 处理：`[data-sky-id="id"]` 的 outerHTML 替换（重设 `data-sky-id`/`draggable`/选中态），并写入 `<style id="wb-live-css">`（后定义覆盖旧规则）
 4. `inspector.js` 的 `commit()` 改为 `renderTree + renderUI + patchCanvas(当前节点)`；无节点上下文（页面设置）与结构性变更仍走整页刷新
 
 **验收**：改 padding / 颜色 / 文本时 iframe 不重载（滚动位置与焦点保持），DOM 只变动该节点；结构操作仍整页刷新。

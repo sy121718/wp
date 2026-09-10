@@ -5665,7 +5665,7 @@
          * opts: { value, placeholder, allowEmpty, onPick(name) }
          * 返回 { el, value, set(name) }：el 为挂载节点，onPick 在用户选择时回调。
          *
-         * 供后台表单（菜单/目录/按钮图标）与工作台复用；样式见 theme.css 的 .wp-ip-*。
+         * 供后台表单（菜单/目录/按钮图标）与工作台复用；样式见 theme.css 的 .sky-ip-*。
          */
         picker: function (opts) {
             opts = opts || {};
@@ -5673,32 +5673,32 @@
             var current = opts.value || '';
 
             var root = document.createElement('div');
-            root.className = 'wp-ip';
+            root.className = 'sky-ip';
 
             var btn = document.createElement('button');
             btn.type = 'button';
-            btn.className = 'wp-ip-btn';
+            btn.className = 'sky-ip-btn';
 
             var pop = document.createElement('div');
-            pop.className = 'wp-ip-pop';
+            pop.className = 'sky-ip-pop';
             pop.hidden = true;
 
             var search = document.createElement('input');
             search.type = 'text';
-            search.className = 'wp-ip-search';
+            search.className = 'sky-ip-search';
             search.placeholder = '搜索图标（名称或中文）';
 
             var cats = document.createElement('div');
-            cats.className = 'wp-ip-cats';
+            cats.className = 'sky-ip-cats';
 
             var grid = document.createElement('div');
-            grid.className = 'wp-ip-grid';
+            grid.className = 'sky-ip-grid';
 
             var foot = document.createElement('div');
-            foot.className = 'wp-ip-foot';
+            foot.className = 'sky-ip-foot';
             var clearBtn = document.createElement('button');
             clearBtn.type = 'button';
-            clearBtn.className = 'wp-ip-clear';
+            clearBtn.className = 'sky-ip-clear';
             clearBtn.textContent = '清除图标';
             foot.appendChild(clearBtn);
 
@@ -5708,10 +5708,10 @@
                 btn.innerHTML = '';
                 if (current) {
                     var nm = document.createElement('span');
-                    nm.className = 'wp-ip-name';
+                    nm.className = 'sky-ip-name';
                     if (self.svg(current)) {
                         var ic = document.createElement('span');
-                        ic.className = 'wp-ip-preview';
+                        ic.className = 'sky-ip-preview';
                         ic.innerHTML = self.svg(current);   // SVG 来自常量，白名单内
                         btn.appendChild(ic);
                         nm.textContent = self.label(current);
@@ -5722,7 +5722,7 @@
                     btn.appendChild(nm);
                 } else {
                     var ph = document.createElement('span');
-                    ph.className = 'wp-ip-name is-empty';
+                    ph.className = 'sky-ip-name is-empty';
                     ph.textContent = opts.placeholder || '选择图标（可不选）';
                     btn.appendChild(ph);
                 }
@@ -5735,7 +5735,7 @@
                 names.slice(0, limit).forEach(function (name) {
                     var cell = document.createElement('button');
                     cell.type = 'button';
-                    cell.className = 'wp-ip-cell';
+                    cell.className = 'sky-ip-cell';
                     cell.title = self.label(name);
                     cell.innerHTML = self.svg(name);
                     if (name === current) cell.classList.add('is-active');
@@ -5750,13 +5750,13 @@
                 });
                 if (names.length > limit) {
                     var more = document.createElement('div');
-                    more.className = 'wp-ip-more';
+                    more.className = 'sky-ip-more';
                     more.textContent = '仅显示前 ' + limit + ' 个，请用搜索缩小范围（共 ' + names.length + ' 个）';
                     grid.appendChild(more);
                 }
                 if (!names.length) {
                     var empty = document.createElement('div');
-                    empty.className = 'wp-ip-more';
+                    empty.className = 'sky-ip-more';
                     empty.textContent = '没有匹配的图标';
                     grid.appendChild(empty);
                 }
@@ -5766,14 +5766,14 @@
                 cats.innerHTML = '';
                 var all = document.createElement('button');
                 all.type = 'button';
-                all.className = 'wp-ip-cat' + (state.category === '' ? ' is-active' : '');
+                all.className = 'sky-ip-cat' + (state.category === '' ? ' is-active' : '');
                 all.textContent = '全部';
                 all.addEventListener('click', function () { state.category = ''; renderCats(); renderGrid(); });
                 cats.appendChild(all);
                 (self.categories || []).forEach(function (c) {
                     var b = document.createElement('button');
                     b.type = 'button';
-                    b.className = 'wp-ip-cat' + (state.category === c ? ' is-active' : '');
+                    b.className = 'sky-ip-cat' + (state.category === c ? ' is-active' : '');
                     b.textContent = self.categoryLabel(c);
                     b.addEventListener('click', function () { state.category = c; renderCats(); renderGrid(); });
                     cats.appendChild(b);

@@ -1,24 +1,24 @@
-@layer wp-base, wp-plugin, wp-auto, wp-theme, wp-local;
+@layer sky-base, sky-plugin, sky-auto, sky-theme, sky-local;
 
-@layer wp-base {
+@layer sky-base {
 body {
-  container-name: wp-theme;
+  container-name: sky-theme;
 }
 
-.wp-c-q1 {
+.sky-c-q1 {
   margin: 0;
   padding: 16px 20px;
-  border-left: 4px solid var(--wp-c-primary, #2563eb);
+  border-left: 4px solid var(--sky-c-primary, #2563eb);
   font-style: italic;
   text-align: center;
 }
 
-.wp-c-q1 p {
+.sky-c-q1 p {
   margin: 0;
   line-height: 1.7;
 }
 
-.wp-c-q1 cite {
+.sky-c-q1 cite {
   display: block;
   margin-top: 12px;
   font-style: normal;
@@ -26,24 +26,24 @@ body {
   color: rgba(0,0,0,0.6);
 }
 
-.wp-c-q1 cite a {
+.sky-c-q1 cite a {
   color: inherit;
   text-decoration: none;
 }
 
-.wp-c-q2 {
+.sky-c-q2 {
   margin: 0;
   padding: 16px 20px;
-  border-left: 4px solid var(--wp-c-primary, #2563eb);
+  border-left: 4px solid var(--sky-c-primary, #2563eb);
   font-style: italic;
 }
 
-.wp-c-q2 p {
+.sky-c-q2 p {
   margin: 0;
   line-height: 1.7;
 }
 
-.wp-c-q2 cite {
+.sky-c-q2 cite {
   display: block;
   margin-top: 12px;
   font-style: normal;
@@ -51,7 +51,7 @@ body {
   color: rgba(0,0,0,0.6);
 }
 
-.wp-c-q2 cite a {
+.sky-c-q2 cite a {
   color: inherit;
   text-decoration: none;
 }

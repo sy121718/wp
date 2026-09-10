@@ -26,7 +26,7 @@ func TestImageSkeletonAndLoading(t *testing.T) {
 	if !strings.Contains(c.HTML, "is-skeleton") {
 		t.Errorf("应输出 is-skeleton 类\n%s", c.HTML)
 	}
-	if !strings.Contains(c.CSS, "wp-skeleton-shimmer") {
+	if !strings.Contains(c.CSS, "sky-skeleton-shimmer") {
 		t.Errorf("应输出骨架 keyframes\n%s", c.CSS)
 	}
 

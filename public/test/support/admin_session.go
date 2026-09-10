@@ -63,7 +63,7 @@ func SetupRedisForTestAt(t *testing.T, addr string) error {
 
 	cfg := viper.New()
 	cfg.Set("redis.addrs", []string{addr})
-	cfg.Set("auth.session_secret", "wp-feature-test-session-secret")
+	cfg.Set("auth.session_secret", "sky-feature-test-session-secret")
 
 	if err := cache.Init(cfg); err != nil {
 		return fmt.Errorf("%w: %v", ErrRedisUnavailable, err)

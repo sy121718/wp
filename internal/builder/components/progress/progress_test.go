@@ -78,7 +78,7 @@ func TestCompileCSS(t *testing.T) {
 		props *Props
 		wants []string
 	}{
-		{"缺省主色半程", &Props{Value: 50}, []string{"width: 50%", "background: var(--wp-c-primary, #2563eb)", ".wp-progress-track"}},
+		{"缺省主色半程", &Props{Value: 50}, []string{"width: 50%", "background: var(--sky-c-primary, #2563eb)", ".sky-progress-track"}},
 		{"自定义色与比例", &Props{Value: 25, Max: 200, Color: "#0af"}, []string{"width: 12%", "background: #0af"}},
 		{"满值", &Props{Value: 100}, []string{"width: 100%"}},
 	}

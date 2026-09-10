@@ -46,7 +46,7 @@ func TestCompileCSS(t *testing.T) {
 		{
 			name:  "solid 缺省主色",
 			props: &Props{Text: "A", Variant: VariantSolid},
-			wants: []string{"background: var(--wp-c-primary, #2563eb)", "color: #fff", "border-radius: 9999px"},
+			wants: []string{"background: var(--sky-c-primary, #2563eb)", "color: #fff", "border-radius: 9999px"},
 			not:   []string{"border: 1px", "color-mix"},
 		},
 		{
@@ -62,7 +62,7 @@ func TestCompileCSS(t *testing.T) {
 		{
 			name:  "缺省变体为 solid",
 			props: &Props{Text: "A"},
-			wants: []string{"background: var(--wp-c-primary, #2563eb)", "color: #fff"},
+			wants: []string{"background: var(--sky-c-primary, #2563eb)", "color: #fff"},
 		},
 	}
 	for _, tt := range tests {

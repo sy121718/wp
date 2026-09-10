@@ -97,23 +97,23 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		"display: flex", "flex-direction: column",
 	})
 	// radio 隐藏。
-	b.Add(core.BreakpointDesktop, sel+" .wp-tabs-radio", []string{"display: none"})
+	b.Add(core.BreakpointDesktop, sel+" .sky-tabs-radio", []string{"display: none"})
 	// 面板默认隐藏，选中对应 radio 时显示（面板是 radio 的后续兄弟）。
 	for i := range p.Tabs {
-		radio := "#wp-tabs-" + id + "-" + fmt.Sprintf("%d", i)
+		radio := "#sky-tabs-" + id + "-" + fmt.Sprintf("%d", i)
 		// 面板定位用模板已输出的 data-index（tabs.jet：data-index="{{ i }}"）。
-		// 不能用 nth-of-type：它按「元素类型」计数而非按类名，而容器内 .wp-tabs-nav
+		// 不能用 nth-of-type：它按「元素类型」计数而非按类名，而容器内 .sky-tabs-nav
 		// 同样是 div，会占掉 div:nth-of-type(1)，导致所有面板选择器整体错位一位、
 		// 匹配不到任何元素 —— 页签切换完全失效（radio 可点但面板永不显示）。
-		panel := sel + " .wp-tab-panel[data-index=\"" + fmt.Sprintf("%d", i) + "\"]"
+		panel := sel + " .sky-tab-panel[data-index=\"" + fmt.Sprintf("%d", i) + "\"]"
 		b.Add(core.BreakpointDesktop, radio+":checked ~ "+panel, []string{"display: block"})
 	}
 	// 标签高亮。
 	for i := range p.Tabs {
-		radio := "#wp-tabs-" + id + "-" + fmt.Sprintf("%d", i)
-		label := sel + " .wp-tabs-nav label:nth-of-type(" + fmt.Sprintf("%d", i+1) + ")"
+		radio := "#sky-tabs-" + id + "-" + fmt.Sprintf("%d", i)
+		label := sel + " .sky-tabs-nav label:nth-of-type(" + fmt.Sprintf("%d", i+1) + ")"
 		b.Add(core.BreakpointDesktop, radio+":checked ~ "+label, []string{
-			"color: #fff", "background: var(--wp-c-primary, #2563eb)",
+			"color: #fff", "background: var(--sky-c-primary, #2563eb)",
 		})
 	}
 
@@ -128,43 +128,43 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	} else if p.NavAlign == "right" {
 		navJustify = "flex-end"
 	}
-	b.Add(core.BreakpointDesktop, sel+" .wp-tabs-nav", []string{
+	b.Add(core.BreakpointDesktop, sel+" .sky-tabs-nav", []string{
 		"display: flex", "gap: 4px", "flex-wrap: wrap",
 		core.CSSDecl("justify-content", navJustify),
 		core.CSSDecl("border-bottom", "1px", "solid", borderColor), "padding: 0 4px",
 	})
 	if p.ActiveColor != "" {
 		for i := range p.Tabs {
-			radio := "#wp-tabs-" + id + "-" + fmt.Sprintf("%d", i)
-			label := sel + " .wp-tabs-nav label:nth-of-type(" + fmt.Sprintf("%d", i+1) + ")"
+			radio := "#sky-tabs-" + id + "-" + fmt.Sprintf("%d", i)
+			label := sel + " .sky-tabs-nav label:nth-of-type(" + fmt.Sprintf("%d", i+1) + ")"
 			b.Add(core.BreakpointDesktop, radio+":checked ~ "+label, []string{
 				core.CSSDecl("background", p.ActiveColor),
 			})
 		}
 	}
-	b.Add(core.BreakpointDesktop, sel+" .wp-tabs-nav label", []string{
+	b.Add(core.BreakpointDesktop, sel+" .sky-tabs-nav label", []string{
 		"padding: 9px 18px", "cursor: pointer", "font-size: 14px",
 		"border-radius: 8px 8px 0 0", "transition: background .15s, color .15s",
 		"user-select: none",
 	})
-	b.Add(core.BreakpointDesktop, sel+" .wp-tabs-nav label:hover", []string{"background: rgba(0,0,0,.05)"})
-	b.Add(core.BreakpointDesktop, sel+" .wp-tab-panel", []string{
-		"display: none", "padding: 18px 4px", "animation: wp-tabs-fade .25s ease",
+	b.Add(core.BreakpointDesktop, sel+" .sky-tabs-nav label:hover", []string{"background: rgba(0,0,0,.05)"})
+	b.Add(core.BreakpointDesktop, sel+" .sky-tab-panel", []string{
+		"display: none", "padding: 18px 4px", "animation: sky-tabs-fade .25s ease",
 	})
 	// 渐显动画。
-	b.AddKeyframesDecls("wp-tabs-fade", []string{
+	b.AddKeyframesDecls("sky-tabs-fade", []string{
 		"from { opacity: 0 }", "to { opacity: 1 }",
 	})
 	// 竖向布局。
 	if p.Vertical {
-		b.Add(core.BreakpointDesktop, sel+".wp-tabs-vertical", []string{"flex-direction: row", "align-items: stretch"})
-		b.Add(core.BreakpointDesktop, sel+".wp-tabs-vertical .wp-tabs-nav", []string{
+		b.Add(core.BreakpointDesktop, sel+".sky-tabs-vertical", []string{"flex-direction: row", "align-items: stretch"})
+		b.Add(core.BreakpointDesktop, sel+".sky-tabs-vertical .sky-tabs-nav", []string{
 			"flex-direction: column", "border-bottom: 0", "border-right: 1px solid rgba(0,0,0,.1)",
 			"min-width: 140px", "padding: 4px 0",
 		})
-		b.Add(core.BreakpointDesktop, sel+".wp-tabs-vertical .wp-tabs-nav label", []string{
+		b.Add(core.BreakpointDesktop, sel+".sky-tabs-vertical .sky-tabs-nav label", []string{
 			"border-radius: 8px", "margin: 2px 4px",
 		})
-		b.Add(core.BreakpointDesktop, sel+".wp-tabs-vertical .wp-tab-panel", []string{"flex: 1", "padding: 0 18px"})
+		b.Add(core.BreakpointDesktop, sel+".sky-tabs-vertical .sky-tab-panel", []string{"flex: 1", "padding: 0 18px"})
 	}
 }

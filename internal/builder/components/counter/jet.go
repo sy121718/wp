@@ -43,7 +43,7 @@ func BuildView(p *Props) View {
 	cssMode := p.Decimals == 0
 	value := formatNum(p.End, p.Decimals)
 	if cssMode {
-		value = "" // 数值由 .wp-counter-value::after 生成（零 JS）
+		value = "" // 数值由 .sky-counter-value::after 生成（零 JS）
 	}
 	return View{
 		CSSMode:      cssMode,

@@ -85,7 +85,7 @@ func TestCardstackShowcase(t *testing.T) {
 		t.Errorf("扇形模式缺少弧线变换或色相派生")
 	}
 	// 悬停发光：只走 filter，不抢位移的 transform
-	if !strings.Contains(css, "animation: wp-loop-glow 2s ease-in-out infinite") {
+	if !strings.Contains(css, "animation: sky-loop-glow 2s ease-in-out infinite") {
 		t.Errorf("悬停发光缺失")
 	}
 	// 竖排：纯纵向平移
@@ -97,11 +97,11 @@ func TestCardstackShowcase(t *testing.T) {
 		t.Errorf("滚动堆叠缺失 sticky 或 view() 时间线")
 	}
 	// 拖拽旋转：环形几何 + 旋转变量
-	if !strings.Contains(css, "--wp-cardstack-rot") {
+	if !strings.Contains(css, "--sky-cardstack-rot") {
 		t.Errorf("拖拽旋转缺旋转变量")
 	}
 	// deck：偏移变量 + 回弹曲线
-	if !strings.Contains(css, "--wp-deck-off") || !strings.Contains(css, "cubic-bezier(.34,1.56,.64,1)") {
+	if !strings.Contains(css, "--sky-deck-off") || !strings.Contains(css, "cubic-bezier(.34,1.56,.64,1)") {
 		t.Errorf("堆叠轮播缺少偏移变量或回弹曲线")
 	}
 	// deck 纵向：轴向标记
@@ -112,7 +112,7 @@ func TestCardstackShowcase(t *testing.T) {
 	for _, want := range []string{
 		"scroll-snap-type: y mandatory", "scroll-snap-type: x mandatory",
 		"scrollbar-width: none", "::-webkit-scrollbar",
-		"animation: wp-flip-in-x linear both, wp-loop-glow 2s ease-in-out infinite",
+		"animation: sky-flip-in-x linear both, sky-loop-glow 2s ease-in-out infinite",
 		"animation-range: entry 0% entry 70%, cover 25% cover 75%",
 	} {
 		if !strings.Contains(css, want) {

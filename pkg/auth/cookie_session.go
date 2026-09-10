@@ -33,7 +33,7 @@ const (
 	sessionUserKey = "auth_user" // CookieSession 的 JSON 串
 
 	// 开发默认 secret：仅用于本地开发，生产必须通过配置覆盖。
-	defaultSessionSecret = "gowp-dev-session-secret-change-me-in-production"
+	defaultSessionSecret = "gosky-dev-session-secret-change-me-in-production"
 
 	// 会话有效期（秒）：普通 24h，勾选记住我 7d。
 	defaultSessionMaxAge    = 24 * 60 * 60

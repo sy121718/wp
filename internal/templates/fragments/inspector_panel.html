@@ -29,7 +29,7 @@
     {{else if f.UI == "number"}}
     <div class="wb-field wb-field-compact"><label>{{f.Label}}</label><input type="number" data-wb-path="{{f.Key}}" data-wb-kind="number" value="{{f.Value}}"{{if f.Min}} min="{{f.Min}}"{{end}}{{if f.Max}} max="{{f.Max}}"{{end}} step="{{f.Step}}"></div>
     {{else if f.UI == "color"}}
-    <div class="wb-field wb-field-color"><label>{{f.Label}}</label><input type="text" data-wb-path="{{f.Key}}" data-wb-kind="color" value="{{f.Value}}" placeholder="#rrggbb / var(--wp-c-…)"></div>
+    <div class="wb-field wb-field-color"><label>{{f.Label}}</label><input type="text" data-wb-path="{{f.Key}}" data-wb-kind="color" value="{{f.Value}}" placeholder="#rrggbb / var(--sky-c-…)"></div>
     {{else if f.UI == "media"}}
     <div class="wb-field wb-field-media"><label>{{f.Label}}</label>
         <input type="text" data-wb-path="{{f.Key}}" data-wb-kind="media" value="{{f.Value}}">

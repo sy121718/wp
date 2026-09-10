@@ -94,11 +94,11 @@ func TestCardstackCollectionNodeTemplate(t *testing.T) {
 			t.Errorf("子节点模板产物缺少 %q", want)
 		}
 	}
-	if n := strings.Count(c.HTML, "wp-cardstack-card"); n < 3 {
+	if n := strings.Count(c.HTML, "sky-cardstack-card"); n < 3 {
 		t.Errorf("应展开 3 张卡，实际出现 %d 处卡片标记", n)
 	}
 	// 子节点模板模式走的是子节点内容，不该混入字段映射模式的内置卡内元素。
-	if strings.Contains(c.HTML, "wp-cardstack-link") {
+	if strings.Contains(c.HTML, "sky-cardstack-link") {
 		t.Errorf("子节点模板模式不应混入字段映射模式的卡内元素")
 	}
 }

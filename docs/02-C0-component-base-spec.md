@@ -34,8 +34,8 @@
 ### 层级与开发者标识 (Attributes)
 
 - **Z-index**：[-100, 100] 有界整数（负边距叠放所需的层级控制）。
-- **自定义 Class**：白名单字符，禁止 `wp-` 保留前缀（防碰撞编译产物命名空间）。
-- **自定义 Element ID**：锚点跳转用，全文档唯一（复用节点 ID 查重）；与节点类名 `wp-c-<节点ID>` 是两回事（前者进 `id` 属性，后者进 class 做样式挂载）。
+- **自定义 Class**：白名单字符，禁止 `sky-` 保留前缀（防碰撞编译产物命名空间）。
+- **自定义 Element ID**：锚点跳转用，全文档唯一（复用节点 ID 查重）；与节点类名 `sky-c-<节点ID>` 是两回事（前者进 `id` 属性，后者进 class 做样式挂载）。
 
 ## 3. 非目标（相对 WordPress/Elementor 的克制）
 
@@ -85,8 +85,8 @@ height: 100dvh;   /* 新 —— 后写，覆盖前者 */
 
 - **并列多动画**：`animation: a 1s both, b 2s infinite` 配合同样并列的
   `animation-timeline` / `animation-range`，各动画互不干扰（见 cardstack 的切换动画 + 当前屏高亮）；
-- **换属性**：循环效果优先挑 `filter` / `opacity` 类词汇（`wp-loop-glow` / `wp-loop-flash`），
-  `wp-loop-swing` / `wobble` / `pulse` 等改 transform 的词汇**不能**用在已有位移的元素上。
+- **换属性**：循环效果优先挑 `filter` / `opacity` 类词汇（`sky-loop-glow` / `sky-loop-flash`），
+  `sky-loop-swing` / `wobble` / `pulse` 等改 transform 的词汇**不能**用在已有位移的元素上。
 
 ### 6.4 手势轴：`touch-action` 必须跟着交互轴走
 
@@ -100,7 +100,7 @@ height: 100dvh;   /* 新 —— 后写，覆盖前者 */
 
 ### 6.6 动效不要自造：复用 `core/keyframes_animate.go` 的通用词汇
 
-33 条 `wp-*` 已覆盖入场/循环/叙事。组件侧只做「类型 → 词汇名」映射 +
+33 条 `sky-*` 已覆盖入场/循环/叙事。组件侧只做「类型 → 词汇名」映射 +
 `CSSBuckets.NeedKeyframes(name)` 标记，构建期统一注入且同名只注入一次、按需注入。
 
 ### 6.7 模板：单行大文件不要 `read` → `write` 往返

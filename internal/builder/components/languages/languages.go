@@ -95,7 +95,7 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	if p.Gap != "" {
 		list = append(list, core.CSSDecl("gap", p.Gap))
 	}
-	b.Add(core.BreakpointDesktop, sel+" .wp-lang-list", list)
+	b.Add(core.BreakpointDesktop, sel+" .sky-lang-list", list)
 
 	item := []string{"display: inline-flex", "align-items: center", "text-decoration: none", "transition: color .15s ease"}
 	if p.Color != "" {
@@ -110,15 +110,15 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	if p.ItemPadding != "" {
 		item = append(item, core.CSSDecl("padding", p.ItemPadding))
 	}
-	b.Add(core.BreakpointDesktop, sel+" .wp-lang-link", item)
+	b.Add(core.BreakpointDesktop, sel+" .sky-lang-link", item)
 	// 当前语言不可点（span 而非 a），与链接同样的排版但明确区分。
 	current := []string{"display: inline-flex", "align-items: center", "cursor: default"}
 	current = append(current, item[2:]...)
-	b.Add(core.BreakpointDesktop, sel+" .wp-lang-current", current)
+	b.Add(core.BreakpointDesktop, sel+" .sky-lang-current", current)
 	if p.HoverColor != "" {
-		b.Add(core.BreakpointDesktop, sel+" .wp-lang-link:hover", []string{core.CSSDecl("color", p.HoverColor)})
+		b.Add(core.BreakpointDesktop, sel+" .sky-lang-link:hover", []string{core.CSSDecl("color", p.HoverColor)})
 	}
 	if p.CurrentColor != "" {
-		b.Add(core.BreakpointDesktop, sel+" .wp-lang-current", []string{core.CSSDecl("color", p.CurrentColor)})
+		b.Add(core.BreakpointDesktop, sel+" .sky-lang-current", []string{core.CSSDecl("color", p.CurrentColor)})
 	}
 }

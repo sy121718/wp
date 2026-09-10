@@ -87,7 +87,7 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	b.Add(core.BreakpointDesktop, sel+" details", []string{
 		"border: 1px solid rgba(0,0,0,0.1)",
 		"border-radius: 10px",
-		"background: var(--wp-c-surface, #fff)",
+		"background: var(--sky-c-surface, #fff)",
 	})
 	b.Add(core.BreakpointDesktop, sel+" summary", []string{
 		"list-style: none",
@@ -107,7 +107,7 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		"transition: transform .2s",
 	})
 	b.Add(core.BreakpointDesktop, sel+" details[open] summary::after", []string{"transform: rotate(45deg)"})
-	b.Add(core.BreakpointDesktop, sel+" .wp-faq-answer", []string{
+	b.Add(core.BreakpointDesktop, sel+" .sky-faq-answer", []string{
 		"padding: 0 18px 14px",
 		"color: rgba(0,0,0,0.65)",
 		"line-height: 1.6",

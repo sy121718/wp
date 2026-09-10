@@ -135,11 +135,11 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		desktop = append(desktop, core.CSSDecl("background", p.Background))
 	}
 	b.Add(core.BreakpointDesktop, sel, desktop)
-	b.Add(core.BreakpointDesktop, sel+".wp-infobox", []string{
+	b.Add(core.BreakpointDesktop, sel+".sky-infobox", []string{
 		"text-decoration: none", "color: inherit",
 		"transition: transform .18s, box-shadow .18s",
 	})
-	b.Add(core.BreakpointDesktop, sel+".wp-infobox:hover", []string{
+	b.Add(core.BreakpointDesktop, sel+".sky-infobox:hover", []string{
 		"transform: translateY(-2px)",
 	})
 
@@ -147,7 +147,7 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	if iconSize == "" {
 		iconSize = "40px"
 	}
-	b.Add(core.BreakpointDesktop, sel+" .wp-infobox-icon", []string{
+	b.Add(core.BreakpointDesktop, sel+" .sky-infobox-icon", []string{
 		core.CSSDecl("width", iconSize), core.CSSDecl("height", iconSize),
 		"display: inline-flex", "align-items: center", "justify-content: center",
 		"font-size: calc(" + iconSize + " * 0.6)",
@@ -155,23 +155,23 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		"background: rgba(0,0,0,.05)",
 	})
 	if p.IconColor != "" {
-		b.Add(core.BreakpointDesktop, sel+" .wp-infobox-icon", []string{core.CSSDecl("color", p.IconColor)})
+		b.Add(core.BreakpointDesktop, sel+" .sky-infobox-icon", []string{core.CSSDecl("color", p.IconColor)})
 	}
-	b.Add(core.BreakpointDesktop, sel+" .wp-infobox-media img", []string{
+	b.Add(core.BreakpointDesktop, sel+" .sky-infobox-media img", []string{
 		"max-width: 100%", "height: auto", "border-radius: 8px",
 	})
-	b.Add(core.BreakpointDesktop, sel+" .wp-infobox-title", []string{
+	b.Add(core.BreakpointDesktop, sel+" .sky-infobox-title", []string{
 		"margin: 0", "font-size: 1.15em", "line-height: 1.3",
 	})
 	if p.TitleColor != "" {
-		b.Add(core.BreakpointDesktop, sel+" .wp-infobox-title", []string{core.CSSDecl("color", p.TitleColor)})
+		b.Add(core.BreakpointDesktop, sel+" .sky-infobox-title", []string{core.CSSDecl("color", p.TitleColor)})
 	}
-	b.Add(core.BreakpointDesktop, sel+" .wp-infobox-text", []string{
+	b.Add(core.BreakpointDesktop, sel+" .sky-infobox-text", []string{
 		"font-size: 0.92em", "line-height: 1.6",
 		"opacity: .85",
 	})
 	if p.TextColor != "" {
-		b.Add(core.BreakpointDesktop, sel+" .wp-infobox-text", []string{core.CSSDecl("color", p.TextColor), "opacity: 1"})
+		b.Add(core.BreakpointDesktop, sel+" .sky-infobox-text", []string{core.CSSDecl("color", p.TextColor), "opacity: 1"})
 	}
 	if p.Subtitle != "" {
 		sub := []string{
@@ -180,31 +180,31 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 			"padding: 3px 10px", "border-radius: 999px",
 			"background: rgba(0,0,0,.06)",
 		}
-		b.Add(core.BreakpointDesktop, sel+" .wp-infobox-subtitle", sub)
+		b.Add(core.BreakpointDesktop, sel+" .sky-infobox-subtitle", sub)
 		if p.SubtitleColor != "" {
-			b.Add(core.BreakpointDesktop, sel+" .wp-infobox-subtitle", []string{core.CSSDecl("color", p.SubtitleColor)})
+			b.Add(core.BreakpointDesktop, sel+" .sky-infobox-subtitle", []string{core.CSSDecl("color", p.SubtitleColor)})
 		}
 	}
 	if p.Radius != "" {
 		b.Add(core.BreakpointDesktop, sel, []string{core.CSSDecl("border-radius", p.Radius), "overflow: hidden"})
 	}
 	if p.HoverBg != "" {
-		b.Add(core.BreakpointDesktop, sel+".wp-infobox:hover", []string{core.CSSDecl("background", p.HoverBg)})
+		b.Add(core.BreakpointDesktop, sel+".sky-infobox:hover", []string{core.CSSDecl("background", p.HoverBg)})
 	}
 	if p.IconBgColor != "" {
-		b.Add(core.BreakpointDesktop, sel+" .wp-infobox-icon", []string{core.CSSDecl("background", p.IconBgColor)})
+		b.Add(core.BreakpointDesktop, sel+" .sky-infobox-icon", []string{core.CSSDecl("background", p.IconBgColor)})
 	}
 	if p.IconBorderColor != "" {
-		b.Add(core.BreakpointDesktop, sel+" .wp-infobox-icon", []string{core.CSSDecl("border", "1px", "solid", p.IconBorderColor)})
+		b.Add(core.BreakpointDesktop, sel+" .sky-infobox-icon", []string{core.CSSDecl("border", "1px", "solid", p.IconBorderColor)})
 	}
 	if p.BtnText != "" {
-		b.Add(core.BreakpointDesktop, sel+" .wp-infobox-btn", []string{
+		b.Add(core.BreakpointDesktop, sel+" .sky-infobox-btn", []string{
 			"display: inline-flex", "align-items: center", "justify-content: center",
 			"padding: 10px 22px", "border-radius: 999px",
-			"background: var(--wp-btn-bg, var(--wp-c-primary, #2563eb))", "color: var(--wp-btn-color, #fff)",
+			"background: var(--sky-btn-bg, var(--sky-c-primary, #2563eb))", "color: var(--sky-btn-color, #fff)",
 			"text-decoration: none", "font-size: 0.9em", "font-weight: 500",
 			"margin-top: 6px", "transition: opacity .15s",
 		})
-		b.Add(core.BreakpointDesktop, sel+" .wp-infobox-btn:hover", []string{"opacity: .85"})
+		b.Add(core.BreakpointDesktop, sel+" .sky-infobox-btn:hover", []string{"opacity: .85"})
 	}
 }

@@ -139,13 +139,13 @@ func TestCompileCSS(t *testing.T) {
 		{
 			name:  "drift 动画与关键帧",
 			props: &Props{Layers: 2, Animate: AnimDrift},
-			wants: []string{"animation: wp-sd-drift 14s ease-in-out infinite alternate", "@keyframes wp-sd-drift"},
+			wants: []string{"animation: sky-sd-drift 14s ease-in-out infinite alternate", "@keyframes sky-sd-drift"},
 		},
 		{
 			name:  "无 drift 无动画",
 			props: &Props{},
 			wants: []string{"position: relative"},
-			not:   []string{"animation:", "@keyframes wp-sd-drift"},
+			not:   []string{"animation:", "@keyframes sky-sd-drift"},
 		},
 	}
 	for _, tt := range tests {

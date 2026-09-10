@@ -252,7 +252,7 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	}
 
 	// 灯箱浮层样式（零 JS :target 显隐）。
-	b.Add(core.BreakpointDesktop, ".wp-lightbox", []string{
+	b.Add(core.BreakpointDesktop, ".sky-lightbox", []string{
 		"display: none",
 		"position: fixed",
 		"inset: 0",
@@ -261,11 +261,11 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		"align-items: center",
 		"justify-content: center",
 	})
-	b.Add(core.BreakpointDesktop, ".wp-lightbox:target", []string{"display: flex"})
-	b.Add(core.BreakpointDesktop, ".wp-lightbox img", []string{
+	b.Add(core.BreakpointDesktop, ".sky-lightbox:target", []string{"display: flex"})
+	b.Add(core.BreakpointDesktop, ".sky-lightbox img", []string{
 		"max-width: 90vw", "max-height: 90vh",
 	})
-	b.Add(core.BreakpointDesktop, ".wp-lightbox-close", []string{
+	b.Add(core.BreakpointDesktop, ".sky-lightbox-close", []string{
 		"position: absolute",
 		"top: 16px",
 		"right: 24px",

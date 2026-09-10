@@ -145,25 +145,25 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		"gap: 16px",
 	})
 	// 单个字段：纵向排列。
-	b.Add(core.BreakpointDesktop, sel+" .wp-form-field", []string{
+	b.Add(core.BreakpointDesktop, sel+" .sky-form-field", []string{
 		"display: flex",
 		"flex-direction: column",
 		"gap: 6px",
 	})
 	// 标签样式。
-	b.Add(core.BreakpointDesktop, sel+" .wp-form-field label", []string{
+	b.Add(core.BreakpointDesktop, sel+" .sky-form-field label", []string{
 		"font-size: 14px",
 		"font-weight: 600",
 		"color: inherit",
 	})
 	// checkbox 标签：横向排列 + 字重回退（覆盖上方统一 label 样式）。
-	b.Add(core.BreakpointDesktop, sel+" .wp-form-field label.wp-form-check", []string{
+	b.Add(core.BreakpointDesktop, sel+" .sky-form-field label.sky-form-check", []string{
 		"display: inline-flex",
 		"align-items: center",
 		"gap: 8px",
 		"font-weight: 400",
 	})
-	b.Add(core.BreakpointDesktop, sel+" .wp-form-field label.wp-form-check input", []string{
+	b.Add(core.BreakpointDesktop, sel+" .sky-form-field label.sky-form-check input", []string{
 		"width: auto",
 		"margin: 0",
 	})
@@ -183,34 +183,34 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	// 与拆分写法一致，不改变覆盖行为）。
 	b.Add(core.BreakpointDesktop, sel+" :is(input[type=text],input[type=email],select)", inputDecls)
 	b.Add(core.BreakpointDesktop, sel+" textarea", append(append([]string{}, inputDecls...), "min-height: 96px", "resize: vertical"))
-	// 聚焦边框高亮 + 光晕 ring（效果基本库 core.FocusRingDecls，--wp-focus-ring 可主题覆写）。
+	// 聚焦边框高亮 + 光晕 ring（效果基本库 core.FocusRingDecls，--sky-focus-ring 可主题覆写）。
 	focusDecls := core.FocusRingDecls()
 	b.Add(core.BreakpointDesktop, sel+" :is(input,textarea,select):focus", focusDecls)
 	// 校验错误态（:has() 父选择器 + 原生 :user-invalid，零 JS）：
 	// 用户交互后字段非法 → 字段容器与输入框同步标红，无需 JS 遍历 DOM。
 	// 用 :user-invalid 而非 :invalid：避开「刚打开页面就全部标红」的体验问题。
-	b.Add(core.BreakpointDesktop, sel+" .wp-form-field:has(:user-invalid)", []string{
-		"color: var(--wp-danger, #dc2626)",
+	b.Add(core.BreakpointDesktop, sel+" .sky-form-field:has(:user-invalid)", []string{
+		"color: var(--sky-danger, #dc2626)",
 	})
 	b.Add(core.BreakpointDesktop, sel+" :user-invalid", []string{
-		"border-color: var(--wp-danger, #dc2626)",
+		"border-color: var(--sky-danger, #dc2626)",
 		"box-shadow: 0 0 0 3px rgba(220, 38, 38, .12)",
 	})
 	// 提交按钮样式。
-	b.Add(core.BreakpointDesktop, sel+" .wp-form-submit", []string{
+	b.Add(core.BreakpointDesktop, sel+" .sky-form-submit", []string{
 		"align-self: flex-start",
 		"padding: 11px 24px",
 		"font-size: 15px",
 		"font-weight: 600",
 		"color: #fff",
-		"background: var(--wp-btn-bg, var(--wp-c-primary, #2563eb))",
+		"background: var(--sky-btn-bg, var(--sky-c-primary, #2563eb))",
 		"border: none",
 		"border-radius: 6px",
 		"cursor: pointer",
 		"transition: background .15s",
 	})
-	b.Add(core.BreakpointDesktop, sel+" .wp-form-submit:hover", []string{
-		"background: var(--wp-btn-hover-bg, var(--wp-c-primary, #1d4ed8))",
+	b.Add(core.BreakpointDesktop, sel+" .sky-form-submit:hover", []string{
+		"background: var(--sky-btn-hover-bg, var(--sky-c-primary, #1d4ed8))",
 	})
 }
 

@@ -66,7 +66,7 @@ render(node) 流程（改造后）：
 ```html
 {# components/heading.jet #}
 <{{ .Tag }} class="{{ .Classes }}"{{ if .CustomID }} id="{{ .CustomID }}"{{ end }}>
-  {{ if .HighlightColor }}<span class="wp-heading-highlight">{{ .Text }}</span>{{ else }}{{ .Text }}{{ end }}
+  {{ if .HighlightColor }}<span class="sky-heading-highlight">{{ .Text }}</span>{{ else }}{{ .Text }}{{ end }}
 </{{ .Tag }}>
 ```
 
@@ -90,7 +90,7 @@ globalref——占位/展开分支，展开时模板内递归引用块 root：
     {{ include child.Template child }}
   {{ end }}
 {{ else }}
-<div class="{{ .Classes }} wp-globalref-missing"><span>{{ .PlaceholderText }}</span></div>
+<div class="{{ .Classes }} sky-globalref-missing"><span>{{ .PlaceholderText }}</span></div>
 {{ end }}
 ```
 

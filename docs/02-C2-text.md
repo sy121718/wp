@@ -25,10 +25,10 @@
 | 组件 | 字段 | 长度上限 | 渲染位置 |
 |---|---|---|---|
 | `core.text` | `text`（`mode=richtext`，默认） | maxlen 30000 | `text.jet` → `{{ unsafe(.V.SanitizedContent) }}` |
-| `core.card` | `text` | maxlen 1000 | `card.jet` → `<div class="wp-card-text">{{ unsafe(.V.Text) }}</div>` |
-| `core.quote` | `text` | maxlen 1000 | `quote.jet` → `<div class="wp-quote-text">{{ unsafe(.V.Text) }}</div>` |
-| `core.infobox` | `text` | maxlen 2000 | `infobox.jet` → `<div class="wp-infobox-text">{{ unsafe(.V.Text) }}</div>` |
-| `core.faq` | `FaqItem.answer` | maxlen 2000 | `faq.jet` → `<div class="wp-faq-answer">{{ unsafe(item.Answer) }}</div>` |
+| `core.card` | `text` | maxlen 1000 | `card.jet` → `<div class="sky-card-text">{{ unsafe(.V.Text) }}</div>` |
+| `core.quote` | `text` | maxlen 1000 | `quote.jet` → `<div class="sky-quote-text">{{ unsafe(.V.Text) }}</div>` |
+| `core.infobox` | `text` | maxlen 2000 | `infobox.jet` → `<div class="sky-infobox-text">{{ unsafe(.V.Text) }}</div>` |
+| `core.faq` | `FaqItem.answer` | maxlen 2000 | `faq.jet` → `<div class="sky-faq-answer">{{ unsafe(item.Answer) }}</div>` |
 
 - **统一入口**：card / quote / infobox / faq 的 `BuildView` 调 `core.RichTextHTML`（白名单清洗 + 存量纯文本段落化），视图字段再交给模板 `unsafe` 输出。
 - **core.text 例外**：富文本分支直接调 `core.SanitizeRichHTML`（`text` 包私有别名薄转发），不做纯文本段落化——`core.text` 自身有 `mode=plaintext` 模式承担该场景。
@@ -54,7 +54,7 @@
 
 ## 3. 继承自 02-C0 的通用能力
 
-三端 Margin/Padding、Align-self、宽度模式、边框/圆角/阴影/透明度、三端显隐、自定义 Class（禁 `wp-` 前缀）与 Element ID。
+三端 Margin/Padding、Align-self、宽度模式、边框/圆角/阴影/透明度、三端显隐、自定义 Class（禁 `sky-` 前缀）与 Element ID。
 
 ## 4. 安全清洗规则（编译期）
 
@@ -75,8 +75,8 @@
 
 ## 5. 编译输出规则与产物示例
 
-- **纯文本**（单层直出）：`<div class="wp-c-t1"><p>这是一款兼顾便携与降噪的日常通勤耳机。</p></div>`
-- **富文本**（结构化片段，外套单层节点容器）：`<div class="wp-c-t1"><p>核心使用指南：</p><ul><li>长按 3 秒开启蓝牙配对。</li></ul></div>`
+- **纯文本**（单层直出）：`<div class="sky-c-t1"><p>这是一款兼顾便携与降噪的日常通勤耳机。</p></div>`
+- **富文本**（结构化片段，外套单层节点容器）：`<div class="sky-c-t1"><p>核心使用指南：</p><ul><li>长按 3 秒开启蓝牙配对。</li></ul></div>`
 - **存量纯文本兼容**（无标签输入，card/quote/infobox/faq 四字段经 `core.RichTextHTML`）：输入 `第一段\n\n第二段\n换行` → `<p>第一段</p><p>第二段<br>换行</p>`
 - Tailwind 类为规范示意，实际产物以 `CompiledPage.CSS` 输出等价纯净 CSS。
 

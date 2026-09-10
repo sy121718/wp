@@ -121,7 +121,7 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		gap = "16px"
 	}
 	slideW := 100.0 / float64(perView)
-	slideSel := sel + " .wp-slide"
+	slideSel := sel + " .sky-slide"
 	slide := []string{
 		"flex: 0 0 " + strconv.FormatFloat(slideW, 'f', 4, 64) + "%",
 		"scroll-snap-align: start",
@@ -144,11 +144,11 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	}
 
 	// slide 内部块级填充。
-	inner := sel + " .wp-slide > *"
+	inner := sel + " .sky-slide > *"
 	b.Add(core.BreakpointDesktop, inner, []string{"height: 100%", "margin: 0"})
 
 	// 箭头与圆点（增强）。
-	arrow := sel + " .wp-slider-arrow"
+	arrow := sel + " .sky-slider-arrow"
 	b.Add(core.BreakpointDesktop, arrow, []string{
 		"position: absolute", "top: 50%", "transform: translateY(-50%)",
 		"width: 40px", "height: 40px", "border-radius: 999px",
@@ -157,21 +157,21 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		"display: flex", "align-items: center", "justify-content: center",
 		"z-index: 2", "box-shadow: 0 2px 8px rgba(0,0,0,.1)",
 	})
-	b.Add(core.BreakpointDesktop, sel+" .wp-slider-prev", []string{"left: 12px"})
-	b.Add(core.BreakpointDesktop, sel+" .wp-slider-next", []string{"right: 12px"})
-	dots := sel + " .wp-slider-dots"
+	b.Add(core.BreakpointDesktop, sel+" .sky-slider-prev", []string{"left: 12px"})
+	b.Add(core.BreakpointDesktop, sel+" .sky-slider-next", []string{"right: 12px"})
+	dots := sel + " .sky-slider-dots"
 	b.Add(core.BreakpointDesktop, dots, []string{
 		"position: absolute", "bottom: 10px", "left: 0", "right: 0",
 		"display: flex", "justify-content: center", "gap: 6px", "z-index: 2",
 	})
-	b.Add(core.BreakpointDesktop, sel+" .wp-slider-dots button", []string{
+	b.Add(core.BreakpointDesktop, sel+" .sky-slider-dots button", []string{
 		"width: 8px", "height: 8px", "border-radius: 999px", "border: none",
 		"background: rgba(0,0,0,.25)", "cursor: pointer", "padding: 0",
 	})
-	b.Add(core.BreakpointDesktop, sel+" .wp-slider-dots button.is-active", []string{"background: currentColor"})
+	b.Add(core.BreakpointDesktop, sel+" .sky-slider-dots button.is-active", []string{"background: currentColor"})
 }
 
-// perViewSlideRules 按每屏显示数生成 .wp-slide 的 flex-basis 规则（0=沿用上一档）。
+// perViewSlideRules 按每屏显示数生成 .sky-slide 的 flex-basis 规则（0=沿用上一档）。
 func perViewSlideRules(n int, gap string) []string {
 	if n <= 0 || n > 4 {
 		return nil

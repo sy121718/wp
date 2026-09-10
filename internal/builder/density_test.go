@@ -24,8 +24,8 @@ func TestThemeDensity(t *testing.T) {
 		wants   []string
 	}{
 		{"", nil},
-		{"compact", []string{"--wp-density-pad: 8px", "--wp-density-gap: 16px", "--wp-density: compact"}},
-		{"cozy", []string{"--wp-density-pad: 24px", "--wp-density-gap: 32px", "--wp-density: cozy"}},
+		{"compact", []string{"--sky-density-pad: 8px", "--sky-density-gap: 16px", "--sky-density: compact"}},
+		{"cozy", []string{"--sky-density-pad: 24px", "--sky-density-gap: 32px", "--sky-density: cozy"}},
 	}
 	for _, tc := range cases {
 		t.Run("density="+tc.density, func(t *testing.T) {
@@ -35,13 +35,13 @@ func TestThemeDensity(t *testing.T) {
 				t.Fatalf("Compile: %v", err)
 			}
 			if len(tc.wants) == 0 {
-				if strings.Contains(compiled.CSS+compiled.ThemeVarsCSS, "wp-density") {
+				if strings.Contains(compiled.CSS+compiled.ThemeVarsCSS, "sky-density") {
 					t.Errorf("未设置档位时不应输出密度变量")
 				}
 				return
 			}
 			for _, want := range tc.wants {
-				// 主题变量块（:root --wp-*）注入 <style> 顶部，与页面 CSS 分开承载。
+				// 主题变量块（:root --sky-*）注入 <style> 顶部，与页面 CSS 分开承载。
 				if !strings.Contains(compiled.CSS+compiled.ThemeVarsCSS, want) {
 					t.Errorf("CSS 缺少 %q", want)
 				}

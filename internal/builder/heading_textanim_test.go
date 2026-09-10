@@ -41,14 +41,14 @@ func compileHeadingTextAnimDoc(t *testing.T) *CompiledPage {
 // TestCompileHeadingTextAnimHTML 逐字分段落到产物 HTML：每字一个 span；高亮盒与关闭态整段输出。
 func TestCompileHeadingTextAnimHTML(t *testing.T) {
 	res := compileHeadingTextAnimDoc(t)
-	want := `<span class="wp-h-seg">标</span><span class="wp-h-seg">题</span><span class="wp-h-seg">动</span><span class="wp-h-seg">画</span>`
+	want := `<span class="sky-h-seg">标</span><span class="sky-h-seg">题</span><span class="sky-h-seg">动</span><span class="sky-h-seg">画</span>`
 	if !strings.Contains(res.HTML, want) {
 		t.Fatalf("产物缺少逐字分段 %s，HTML：%s", want, res.HTML)
 	}
-	if got := strings.Count(res.HTML, `class="wp-h-seg"`); got != 4 {
+	if got := strings.Count(res.HTML, `class="sky-h-seg"`); got != 4 {
 		t.Errorf("分段 span 数 = %d, want 4（仅 ha1 拆分）", got)
 	}
-	if !strings.Contains(res.HTML, `<span class="wp-heading-highlight">高亮标题</span>`) {
+	if !strings.Contains(res.HTML, `<span class="sky-heading-highlight">高亮标题</span>`) {
 		t.Errorf("高亮盒应整段输出，HTML：%s", res.HTML)
 	}
 	if !strings.Contains(res.HTML, "普通标题") {
@@ -61,21 +61,21 @@ func TestCompileHeadingTextAnimCSS(t *testing.T) {
 	res := compileHeadingTextAnimDoc(t)
 	css := res.CSS
 	for _, want := range []string{
-		".wp-c-ha1 .wp-h-seg {",
-		"animation: wp-fade-up 0.6s ease backwards",
-		".wp-c-ha1 .wp-h-seg:nth-child(1)",
+		".sky-c-ha1 .sky-h-seg {",
+		"animation: sky-fade-up 0.6s ease backwards",
+		".sky-c-ha1 .sky-h-seg:nth-child(1)",
 		"animation-delay: 0ms",
-		".wp-c-ha1 .wp-h-seg:nth-child(3)",
+		".sky-c-ha1 .sky-h-seg:nth-child(3)",
 		"animation-delay: 80ms",
-		".wp-c-ha1 .wp-h-seg:nth-child(n+21)",
+		".sky-c-ha1 .sky-h-seg:nth-child(n+21)",
 		"animation-delay: 800ms",
-		"@keyframes wp-fade-up",
+		"@keyframes sky-fade-up",
 	} {
 		if !strings.Contains(css, want) {
 			t.Errorf("产物 CSS 缺少 %q", want)
 		}
 	}
-	if strings.Contains(css, ".wp-c-ha2 .wp-h-seg") || strings.Contains(css, ".wp-c-ha3 .wp-h-seg") {
+	if strings.Contains(css, ".sky-c-ha2 .sky-h-seg") || strings.Contains(css, ".sky-c-ha3 .sky-h-seg") {
 		t.Error("高亮盒/未开启节点不应产出分段规则")
 	}
 }

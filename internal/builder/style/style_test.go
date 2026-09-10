@@ -34,7 +34,7 @@ func TestCompileBasicBindings(t *testing.T) {
 		},
 	}}}
 	got := compileOnce(t, "card-1", map[string]any{"bgColor": "#fff", "radius": "12px"}, s)
-	want := `.wp-c-card-1 {
+	want := `.sky-c-card-1 {
   display: flex;
   gap: 16px;
   background: #fff;
@@ -72,7 +72,7 @@ func TestCompilePseudoAndTarget(t *testing.T) {
 		{Target: ".head .title", Pseudo: "focus", Decls: [][2]string{{"outline", "2px solid #2563eb"}}},
 	}}
 	got := compileOnce(t, "b-1", map[string]any{"lift": "-2px"}, s)
-	for _, sel := range []string{".wp-c-b-1:hover", ".wp-c-b-1 .badge", ".wp-c-b-1 .head .title:focus"} {
+	for _, sel := range []string{".sky-c-b-1:hover", ".sky-c-b-1 .badge", ".sky-c-b-1 .head .title:focus"} {
 		if !strings.Contains(got, sel+" {") {
 			t.Fatalf("缺少选择器 %q:\n%s", sel, got)
 		}
@@ -137,7 +137,7 @@ func TestCompileUnsafeBindingValue(t *testing.T) {
 	for _, evil := range []string{
 		"red;background:url(https://evil.com/x)", // 分号 + 外联
 		"url(//evil.com/a.gif)",                  // 协议相对外联
-		"} .wp-c-other { display:none",           // 花括号逃逸
+		"} .sky-c-other { display:none",          // 花括号逃逸
 	} {
 		b := &core.CSSBuckets{}
 		if err := Compile("x-1", map[string]any{"color": evil}, s, b); err == nil {
@@ -153,7 +153,7 @@ func TestValidateRejectsBadSchema(t *testing.T) {
 		s    *Schema
 	}{
 		{"属性名不在白名单", &Schema{Rules: []Rule{{Decls: [][2]string{{"behavior", "url(#default#time2)"}}}}}},
-		{"选择器注入", &Schema{Rules: []Rule{{Target: ".a, .wp-c-other"}}}},
+		{"选择器注入", &Schema{Rules: []Rule{{Target: ".a, .sky-c-other"}}}},
 		{"任意选择器字符串", &Schema{Rules: []Rule{{Target: "div *"}}}},
 		{"伪类注入", &Schema{Rules: []Rule{{Pseudo: "hover) .x:not("}}}},
 		{"静态值分号注入", &Schema{Rules: []Rule{{Decls: [][2]string{{"color", "red;z-index:9"}}}}}},

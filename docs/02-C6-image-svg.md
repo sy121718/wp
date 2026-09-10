@@ -28,7 +28,7 @@
 ## 2. 关键设计决策
 
 - **零 JS 灯箱**：规范要求全屏预览，但架构不变量约束“浏览器端零 JavaScript 布局计算”。
-  采用 CSS `:target` 伪类实现：点击图 `<a href="#wp-lb-<id>">`，浮层 `#wp-lb-<id>:target { display: flex }`，关闭链接回退锚点。
+  采用 CSS `:target` 伪类实现：点击图 `<a href="#sky-lb-<id>">`，浮层 `#sky-lb-<id>:target { display: flex }`，关闭链接回退锚点。
   无脚本、确定性输出，且浮层样式属于静态 CSS 而非布局计算（无 JS 执行）。
 - **绑定路径白名单放宽**：`entity.camelCaseField`（规范示例 `post.featuredImage`），
   统一放宽三个组件（heading/text/image）的 fieldPathRe 第二段允许大写字母。

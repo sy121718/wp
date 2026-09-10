@@ -1,16 +1,16 @@
-@layer wp-base, wp-plugin, wp-auto, wp-theme, wp-local;
+@layer sky-base, sky-plugin, sky-auto, sky-theme, sky-local;
 
-@layer wp-base {
-@keyframes wp-counter-run {
-  from { --wp-count: var(--wp-counter-from) }
-  to { --wp-count: var(--wp-counter-to) }
+@layer sky-base {
+@keyframes sky-counter-run {
+  from { --sky-count: var(--sky-counter-from) }
+  to { --sky-count: var(--sky-counter-to) }
 }
 
 body {
-  container-name: wp-theme;
+  container-name: sky-theme;
 }
 
-.wp-c-c1 {
+.sky-c-c1 {
   display: flex;
   align-items: baseline;
   justify-content: center;
@@ -22,11 +22,11 @@ body {
   line-height: 1.2;
 }
 
-.wp-c-c1 .wp-counter-value {
+.sky-c-c1 .sky-counter-value {
   font-variant-numeric: tabular-nums;
 }
 
-div.wp-c-c1-label.wp-counter-label, .wp-counter-label {
+div.sky-c-c1-label.sky-counter-label, .sky-counter-label {
   font-size: 0.85rem;
   font-weight: 400;
   opacity: .7;
@@ -34,7 +34,7 @@ div.wp-c-c1-label.wp-counter-label, .wp-counter-label {
   text-align: center;
 }
 
-.wp-c-c2 {
+.sky-c-c2 {
   display: flex;
   align-items: baseline;
   justify-content: center;
@@ -46,25 +46,25 @@ div.wp-c-c1-label.wp-counter-label, .wp-counter-label {
   line-height: 1.2;
 }
 
-.wp-c-c2 .wp-counter-value {
+.sky-c-c2 .sky-counter-value {
   font-variant-numeric: tabular-nums;
 }
 
-.wp-c-c2 {
-  --wp-counter-from: 0;
-  --wp-counter-to: 99;
-  --wp-counter-duration: 2s;
-  counter-reset: wpcount var(--wp-count);
-  animation: wp-counter-run var(--wp-counter-duration) linear both;
+.sky-c-c2 {
+  --sky-counter-from: 0;
+  --sky-counter-to: 99;
+  --sky-counter-duration: 2s;
+  counter-reset: wpcount var(--sky-count);
+  animation: sky-counter-run var(--sky-counter-duration) linear both;
   animation-timeline: view();
   animation-range: entry 0% entry 80%;
 }
 
-.wp-c-c2 .wp-counter-value::after {
+.sky-c-c2 .sky-counter-value::after {
   content: counter(wpcount);
 }
 
-div.wp-c-c2-label.wp-counter-label, .wp-counter-label {
+div.sky-c-c2-label.sky-counter-label, .sky-counter-label {
   font-size: 0.85rem;
   font-weight: 400;
   opacity: .7;
@@ -73,7 +73,7 @@ div.wp-c-c2-label.wp-counter-label, .wp-counter-label {
 }
 }
 
-@property --wp-count {
+@property --sky-count {
   syntax: "<integer>"
   initial-value: 0
   inherits: false

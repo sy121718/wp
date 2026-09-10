@@ -1,11 +1,11 @@
-@layer wp-base, wp-plugin, wp-auto, wp-theme, wp-local;
+@layer sky-base, sky-plugin, sky-auto, sky-theme, sky-local;
 
-@layer wp-base {
+@layer sky-base {
 body {
-  container-name: wp-theme;
+  container-name: sky-theme;
 }
 
-.wp-lightbox {
+.sky-lightbox {
   display: none;
   position: fixed;
   inset: 0;
@@ -15,16 +15,16 @@ body {
   justify-content: center;
 }
 
-.wp-lightbox:target {
+.sky-lightbox:target {
   display: flex;
 }
 
-.wp-lightbox img {
+.sky-lightbox img {
   max-width: 90vw;
   max-height: 90vh;
 }
 
-.wp-lightbox-close {
+.sky-lightbox-close {
   position: absolute;
   top: 16px;
   right: 24px;

@@ -40,10 +40,10 @@ func TestCompileCSS(t *testing.T) {
 	compileCSS("n1", &Props{}, b)
 	css := b.String()
 	for _, want := range []string{
-		"--wp-loader-size: 32px",
-		".wp-c-n1 .wp-loader-ring",
-		"animation: wp-loader-spin .8s linear infinite",
-		"@keyframes wp-loader-spin",
+		"--sky-loader-size: 32px",
+		".sky-c-n1 .sky-loader-ring",
+		"animation: sky-loader-spin .8s linear infinite",
+		"@keyframes sky-loader-spin",
 	} {
 		if !strings.Contains(css, want) {
 			t.Errorf("CSS 缺少 %q\n%s", want, css)
@@ -54,14 +54,14 @@ func TestCompileCSS(t *testing.T) {
 	for _, s := range shapes {
 		b2 := &core.CSSBuckets{}
 		compileCSS("n2", &Props{Variant: s.variant}, b2)
-		if !strings.Contains(b2.String(), "@keyframes wp-loader-") {
+		if !strings.Contains(b2.String(), "@keyframes sky-loader-") {
 			t.Errorf("形态 %s 缺少 keyframes", s.variant)
 		}
 	}
 
 	b3 := &core.CSSBuckets{}
 	compileCSS("n3", &Props{Size: "48px"}, b3)
-	if !strings.Contains(b3.String(), "--wp-loader-size: 48px") {
+	if !strings.Contains(b3.String(), "--sky-loader-size: 48px") {
 		t.Errorf("自定义尺寸未生效:\n%s", b3.String())
 	}
 }
@@ -108,7 +108,7 @@ func TestShapeTableSync(t *testing.T) {
 		b := &core.CSSBuckets{}
 		compileCSS("n1", &Props{Variant: s.variant}, b)
 		css := b.String()
-		sel := ".wp-c-n1 .wp-loader-" + s.self
+		sel := ".sky-c-n1 .sky-loader-" + s.self
 		if !strings.Contains(css, sel) {
 			t.Errorf("形态 %s：CSS 缺少选择器 %s", s.variant, sel)
 		}

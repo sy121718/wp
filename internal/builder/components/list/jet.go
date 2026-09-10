@@ -56,7 +56,7 @@ func BuildView(p *Props) View {
 		case StyleNumber:
 			iv.MarkerHTML = fmt.Sprintf("%d", i+1)
 		default: // dot
-			iv.MarkerHTML = `<i class="wp-list-dot"></i>`
+			iv.MarkerHTML = `<i class="sky-list-dot"></i>`
 		}
 		if strings.TrimSpace(item.Link) != "" {
 			iv.IsLink = true

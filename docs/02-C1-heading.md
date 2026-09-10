@@ -37,13 +37,13 @@
 
 ## 3. 继承自 02-C0 的通用能力
 
-三端 Margin/Padding（四向独立）、Align-self、宽度模式、边框/圆角/阴影/透明度、三端显隐、自定义 Class（禁 `wp-` 前缀）与 Element ID（锚点，全文档唯一）。
+三端 Margin/Padding（四向独立）、Align-self、宽度模式、边框/圆角/阴影/透明度、三端显隐、自定义 Class（禁 `sky-` 前缀）与 Element ID（锚点，全文档唯一）。
 
 ## 4. 编译输出规则
 
 - 单层语义标签，无外层包装节点；样式的 Tailwind 类（text-2xl/font-bold 等）仅为规范示例写法，实际产物以编辑器内联的 `CompliedPage.CSS` 输出等价纯净 CSS（`font-size`/`font-weight`/`line-clamp` 等），HTML 端只保留节点类名与自定义 class。
-- **静态文本**：`<h2 class="wp-c-h1 custom-heading">核心产品特性介绍</h2>`
-- **CMS 绑定**（发布期已静态填入）：`<h1 class="wp-c-h1">2026 年度旗舰款无线降噪耳机</h1>`
+- **静态文本**：`<h2 class="sky-c-h1 custom-heading">核心产品特性介绍</h2>`
+- **CMS 绑定**（发布期已静态填入）：`<h1 class="sky-c-h1">2026 年度旗舰款无线降噪耳机</h1>`
 
 ## 5. 实现映射
 

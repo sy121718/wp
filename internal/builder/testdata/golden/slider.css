@@ -1,11 +1,11 @@
-@layer wp-base, wp-plugin, wp-auto, wp-theme, wp-local;
+@layer sky-base, sky-plugin, sky-auto, sky-theme, sky-local;
 
-@layer wp-base {
+@layer sky-base {
 body {
-  container-name: wp-theme;
+  container-name: sky-theme;
 }
 
-.wp-c-sl1 {
+.sky-c-sl1 {
   position: relative;
   overflow: hidden;
   display: flex;
@@ -17,19 +17,19 @@ body {
   margin: 0 calc(-24px / 2);
 }
 
-.wp-c-sl1 .wp-slide {
+.sky-c-sl1 .sky-slide {
   flex: 0 0 50.0000%;
   scroll-snap-align: start;
   min-width: 0;
   padding: 0 calc(24px / 2);
 }
 
-.wp-c-sl1 .wp-slide > * {
+.sky-c-sl1 .sky-slide > * {
   height: 100%;
   margin: 0;
 }
 
-.wp-c-sl1 .wp-slider-arrow {
+.sky-c-sl1 .sky-slider-arrow {
   position: absolute;
   top: 50%;
   transform: translateY(-50%);
@@ -48,15 +48,15 @@ body {
   box-shadow: 0 2px 8px rgba(0,0,0,.1);
 }
 
-.wp-c-sl1 .wp-slider-prev {
+.sky-c-sl1 .sky-slider-prev {
   left: 12px;
 }
 
-.wp-c-sl1 .wp-slider-next {
+.sky-c-sl1 .sky-slider-next {
   right: 12px;
 }
 
-.wp-c-sl1 .wp-slider-dots {
+.sky-c-sl1 .sky-slider-dots {
   position: absolute;
   bottom: 10px;
   left: 0;
@@ -67,7 +67,7 @@ body {
   z-index: 2;
 }
 
-.wp-c-sl1 .wp-slider-dots button {
+.sky-c-sl1 .sky-slider-dots button {
   width: 8px;
   height: 8px;
   border-radius: 999px;
@@ -77,18 +77,18 @@ body {
   padding: 0;
 }
 
-.wp-c-sl1 .wp-slider-dots button.is-active {
+.sky-c-sl1 .sky-slider-dots button.is-active {
   background: currentColor;
 }
 
 @media (max-width: 1024px) {
-.wp-c-sl1 .wp-slide {
+.sky-c-sl1 .sky-slide {
   flex: 0 0 100.0000%;
 }
 }
 
 @media (max-width: 767px) {
-.wp-c-sl1 .wp-slide {
+.sky-c-sl1 .sky-slide {
   flex: 0 0 100.0000%;
 }
 }

@@ -301,7 +301,7 @@ func inspectorFieldOf(ctl inspectorSchemaItem, props map[string]any) inspectorFi
 	case "classes":
 		f.UI = "classes"
 		f.Value = value
-		f.Placeholder = "逗号或空格分隔，禁 wp- 前缀"
+		f.Placeholder = "逗号或空格分隔，禁 sky- 前缀"
 	case "cssdecls":
 		f.UI = "cssdecls"
 		f.Value = value

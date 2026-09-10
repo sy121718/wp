@@ -113,14 +113,14 @@ func TestCompileCSS(t *testing.T) {
 		"text-align: center",
 		"text-shadow: 0 1px 2px rgba(0,0,0,0.45)",
 		"-webkit-line-clamp: 2",
-		".wp-heading-sub",
+		".sky-heading-sub",
 	} {
 		if !strings.Contains(css, want) {
 			t.Errorf("CSS 缺少 %q\n%s", want, css)
 		}
 	}
 	// Transform 为空时主块不得输出 text-transform（副标题固定 uppercase 属特性）。
-	if strings.Contains(cssBlock(css, ".wp-c-n1"), "text-transform") {
+	if strings.Contains(cssBlock(css, ".sky-c-n1"), "text-transform") {
 		t.Errorf("Transform 为空不应输出 text-transform\n%s", css)
 	}
 }
@@ -131,7 +131,7 @@ func TestCompileCSSInvalidWeight(t *testing.T) {
 	compileCSS("n1", &Props{Text: "x", Weight: "oops"}, b)
 	css := b.String()
 	// 副标题样式固定含 font-weight: 500，只检查主选择器块。
-	if strings.Contains(cssBlock(css, ".wp-c-n1"), "font-weight") {
+	if strings.Contains(cssBlock(css, ".sky-c-n1"), "font-weight") {
 		t.Errorf("非法字重不应输出 font-weight 声明\n%s", css)
 	}
 }

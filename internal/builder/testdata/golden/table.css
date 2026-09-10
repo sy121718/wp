@@ -1,30 +1,30 @@
-@layer wp-base, wp-plugin, wp-auto, wp-theme, wp-local;
+@layer sky-base, sky-plugin, sky-auto, sky-theme, sky-local;
 
-@layer wp-base {
+@layer sky-base {
 body {
-  container-name: wp-theme;
+  container-name: sky-theme;
 }
 
-.wp-c-tb1 {
+.sky-c-tb1 {
   width: 100%;
   border-collapse: collapse;
 }
 
-.wp-c-tb1 caption {
+.sky-c-tb1 caption {
   caption-side: top;
   text-align: left;
   padding: 8px 0;
   font-weight: 600;
 }
 
-.wp-c-tb1 th, .wp-c-tb1 td {
+.sky-c-tb1 th, .sky-c-tb1 td {
   padding: 10px 12px;
   text-align: left;
 }
 
-.wp-c-tb1 thead th {
+.sky-c-tb1 thead th {
   font-weight: 600;
-  background: var(--wp-c-surface, #f5f6f8);
+  background: var(--sky-c-surface, #f5f6f8);
   border-bottom: 2px solid rgba(0,0,0,0.12);
 }
 }

@@ -1,11 +1,11 @@
-@layer wp-base, wp-plugin, wp-auto, wp-theme, wp-local;
+@layer sky-base, sky-plugin, sky-auto, sky-theme, sky-local;
 
-@layer wp-base {
+@layer sky-base {
 body {
-  container-name: wp-theme;
+  container-name: sky-theme;
 }
 
-.wp-c-v1 {
+.sky-c-v1 {
   position: relative;
   overflow: hidden;
   max-width: 100%;
@@ -13,13 +13,13 @@ body {
   margin-right: auto;
 }
 
-.wp-c-v1 .wp-video-frame {
+.sky-c-v1 .sky-video-frame {
   position: relative;
   width: 100%;
   padding-top: 56.25%;
 }
 
-.wp-c-v1 .wp-video-frame iframe, .wp-c-v1 .wp-video-frame video {
+.sky-c-v1 .sky-video-frame iframe, .sky-c-v1 .sky-video-frame video {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -29,7 +29,7 @@ body {
   display: block;
 }
 
-.wp-c-v2 {
+.sky-c-v2 {
   position: relative;
   overflow: hidden;
   max-width: 100%;
@@ -38,13 +38,13 @@ body {
   width: 100%;
 }
 
-.wp-c-v2 .wp-video-frame {
+.sky-c-v2 .sky-video-frame {
   position: relative;
   width: 100%;
   padding-top: 75%;
 }
 
-.wp-c-v2 .wp-video-frame iframe, .wp-c-v2 .wp-video-frame video {
+.sky-c-v2 .sky-video-frame iframe, .sky-c-v2 .sky-video-frame video {
   position: absolute;
   inset: 0;
   width: 100%;

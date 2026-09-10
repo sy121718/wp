@@ -30,7 +30,7 @@ type Node struct {
 }
 
 // SectionClass 顶级容器附加 class，用于页面版心约束选择器。
-const SectionClass = "wp-section"
+const SectionClass = "sky-section"
 
 // Component 组件接口。每种可视化组件实现本接口并注册到 Registry。
 //

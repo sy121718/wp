@@ -57,7 +57,7 @@ type Props struct {
 	ColorBack string `json:"colorBack,omitempty" ct:"color,maxlen=200,sec=style,label=背景层颜色"`
 	// Animate 层漂移动画（CSS-only）：仅 wave 且层数≥2 时可用。
 	// 注意量纲：本组件漂移作用于 SVG 内部 path（-60 = viewBox 单位 ≈ 4% 宽度），
-	// 与通用循环动效 Interaction.LoopEffect=drift（HTML 元素量纲 wp-loop-drift，
+	// 与通用循环动效 Interaction.LoopEffect=drift（HTML 元素量纲 sky-loop-drift，
 	// 见 core/css.go）名称相近但用途不同——前者层错位流动，后者元素微漂。
 	Animate string `json:"animate,omitempty" ct:"select,none=无,drift=层漂移,default=none,sec=style,label=动画"`
 	// Advanced 通用高级属性（docs/02-C0）。
@@ -187,13 +187,13 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	// 层漂移：中层正放慢速、背景层反向更慢（alternate 往返，无跳变）。
 	if p.Animate == AnimDrift {
 		b.Add(core.BreakpointDesktop, sel+" .sd-l2", []string{
-			"animation: wp-sd-drift 14s ease-in-out infinite alternate",
+			"animation: sky-sd-drift 14s ease-in-out infinite alternate",
 		})
 		b.Add(core.BreakpointDesktop, sel+" .sd-l3", []string{
-			"animation: wp-sd-drift 22s ease-in-out infinite alternate-reverse",
+			"animation: sky-sd-drift 22s ease-in-out infinite alternate-reverse",
 		})
 		// 位移量 60 远小于 path 两侧外扩量（720），平移不露边。
-		b.AddKeyframes("wp-sd-drift", "@keyframes wp-sd-drift {\n  from { transform: translateX(0) }\n  to { transform: translateX(-60px) }\n}")
+		b.AddKeyframes("sky-sd-drift", "@keyframes sky-sd-drift {\n  from { transform: translateX(0) }\n  to { transform: translateX(-60px) }\n}")
 	}
 }
 

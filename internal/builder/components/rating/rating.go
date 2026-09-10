@@ -99,12 +99,12 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		"color: #f59e0b",
 		"line-height: 0",
 	})
-	b.Add(core.BreakpointDesktop, sel+" .wp-star", []string{
+	b.Add(core.BreakpointDesktop, sel+" .sky-star", []string{
 		"display: inline-flex",
 		"width: 1.25em",
 		"height: 1.25em",
 	})
-	b.Add(core.BreakpointDesktop, sel+" .wp-star svg", []string{
+	b.Add(core.BreakpointDesktop, sel+" .sky-star svg", []string{
 		"width: 100%",
 		"height: 100%",
 	})

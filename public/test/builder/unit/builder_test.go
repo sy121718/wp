@@ -69,7 +69,7 @@ func TestPageSettingsCompile(t *testing.T) {
 
 	// body class：基础 + 模式 + 自定义。
 	joined := strings.Join(c.BodyClasses, " ")
-	for _, want := range []string{"wp-page", "wp-boxed", "custom-theme"} {
+	for _, want := range []string{"sky-page", "sky-boxed", "custom-theme"} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("body class 缺少 %q，实际 %q", want, joined)
 		}
@@ -105,7 +105,7 @@ func TestContainerHTMLStructure(t *testing.T) {
 		t.Fatalf("编译失败: %v", err)
 	}
 
-	wantHTML := `<section class="wp-c-hero wp-section"><nav class="wp-c-nav-bar"></nav></section>`
+	wantHTML := `<section class="sky-c-hero sky-section"><nav class="sky-c-nav-bar"></nav></section>`
 	if c.HTML != wantHTML {
 		t.Errorf("HTML 不符合单层语义标签约定:\nwant: %s\ngot:  %s", wantHTML, c.HTML)
 	}
@@ -169,8 +169,8 @@ func TestContainerBoxVisualInteraction(t *testing.T) {
 		"transition: transform 0.25s ease, box-shadow 0.25s ease",
 		"translateY(-6px)",
 		// 入场动效（含关键帧输出）。
-		"animation: wp-fade-in 0.6s ease backwards",
-		"@keyframes wp-fade-in",
+		"animation: sky-fade-in 0.6s ease backwards",
+		"@keyframes sky-fade-in",
 	} {
 		if !strings.Contains(c.CSS, want) {
 			t.Errorf("CSS 缺少 %q", want)
@@ -220,8 +220,8 @@ func TestRenderDocument(t *testing.T) {
 	for _, want := range []string{
 		"<title>测试页</title>",
 		`<meta name="description" content="页面描述">`,
-		`<body class="wp-page wp-boxed custom-theme">`,
-		`<section class="wp-c-hero wp-section">`,
+		`<body class="sky-page sky-boxed custom-theme">`,
+		`<section class="sky-c-hero sky-section">`,
 	} {
 		if !strings.Contains(doc, want) {
 			t.Errorf("文档缺少 %q", want)

@@ -15,7 +15,7 @@ func CompileCSS(id string, p *Props, b *core.CSSBuckets) {
 // 结构由 shapes 形态表派生，不是「每形态一个布尔」：新增形态只改表一处，
 // 模板与 View 字段都不再增长，也不可能出现「模板分支漏写某形态」的分叉。
 type View struct {
-	// Self 根下元素类名后缀（模板输出 class="wp-loader-{{ .V.Self }}"）。
+	// Self 根下元素类名后缀（模板输出 class="sky-loader-{{ .V.Self }}"）。
 	// 单元素形态（ring/pulse/plane/orbit）= 该元素本身；
 	// 多点形态（dot/bar/bounce）= 每个平铺子元素的类名；
 	// 容器形态（grid/wave）= 包裹子元素的容器类名。

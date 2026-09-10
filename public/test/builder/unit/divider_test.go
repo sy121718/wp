@@ -20,7 +20,7 @@ func TestDividerPlain(t *testing.T) {
 	if err != nil {
 		t.Fatalf("编译失败: %v", err)
 	}
-	if !strings.Contains(c.HTML, `<hr class="wp-c-d1"/>`) && !strings.Contains(c.HTML, `<hr class="wp-c-d1" />`) {
+	if !strings.Contains(c.HTML, `<hr class="sky-c-d1"/>`) && !strings.Contains(c.HTML, `<hr class="sky-c-d1" />`) {
 		t.Errorf("纯线应输出单层 hr: %s", c.HTML)
 	}
 	for _, want := range []string{

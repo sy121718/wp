@@ -61,7 +61,7 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	decls := []string{
 		"margin: 0",
 		"padding: 16px 20px",
-		"border-left: 4px solid var(--wp-c-primary, #2563eb)",
+		"border-left: 4px solid var(--sky-c-primary, #2563eb)",
 		"font-style: italic",
 	}
 	if p.Align == AlignCenter {

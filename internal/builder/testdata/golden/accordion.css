@@ -1,17 +1,17 @@
-@layer wp-base, wp-plugin, wp-auto, wp-theme, wp-local;
+@layer sky-base, sky-plugin, sky-auto, sky-theme, sky-local;
 
-@layer wp-base {
+@layer sky-base {
 body {
-  container-name: wp-theme;
+  container-name: sky-theme;
 }
 
-.wp-c-ac1 {
+.sky-c-ac1 {
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 
-.wp-c-ac1 .wp-accordion-head {
+.sky-c-ac1 .sky-accordion-head {
   list-style: none;
   cursor: pointer;
   user-select: none;
@@ -21,17 +21,17 @@ body {
   padding: 14px 18px;
   font-size: 15px;
   font-weight: 600;
-  background: var(--wp-c-surface, #fff);
+  background: var(--sky-c-surface, #fff);
   border: 1px solid rgba(0,0,0,.1);
   border-radius: 10px;
   background: #f9f9f9;
 }
 
-.wp-c-ac1 .wp-accordion-head::-webkit-details-marker {
+.sky-c-ac1 .sky-accordion-head::-webkit-details-marker {
   display: none;
 }
 
-.wp-c-ac1 .wp-accordion-head::after {
+.sky-c-ac1 .sky-accordion-head::after {
   content: '＋';
   font-size: 14px;
   color: rgba(0,0,0,.4);
@@ -39,15 +39,15 @@ body {
   margin-left: 12px;
 }
 
-.wp-c-ac1 details[open] .wp-c-ac1 .wp-accordion-head::after {
+.sky-c-ac1 details[open] .sky-c-ac1 .sky-accordion-head::after {
   transform: rotate(45deg);
 }
 
-.wp-c-ac1 .wp-accordion-head {
+.sky-c-ac1 .sky-accordion-head {
   transition: background .2s ease;
 }
 
-.wp-c-ac1 .wp-accordion-body {
+.sky-c-ac1 .sky-accordion-body {
   padding: 14px 18px;
   border: 1px solid rgba(0,0,0,.08);
   border-top: 0;
@@ -55,13 +55,13 @@ body {
   margin-top: -8px;
 }
 
-.wp-c-ac2 {
+.sky-c-ac2 {
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 
-.wp-c-ac2 .wp-accordion-head {
+.sky-c-ac2 .sky-accordion-head {
   list-style: none;
   cursor: pointer;
   user-select: none;
@@ -71,16 +71,16 @@ body {
   padding: 14px 18px;
   font-size: 15px;
   font-weight: 600;
-  background: var(--wp-c-surface, #fff);
+  background: var(--sky-c-surface, #fff);
   border: 1px solid rgba(0,0,0,.1);
   border-radius: 10px;
 }
 
-.wp-c-ac2 .wp-accordion-head::-webkit-details-marker {
+.sky-c-ac2 .sky-accordion-head::-webkit-details-marker {
   display: none;
 }
 
-.wp-c-ac2 .wp-accordion-head::after {
+.sky-c-ac2 .sky-accordion-head::after {
   content: '＋';
   font-size: 14px;
   color: rgba(0,0,0,.4);
@@ -88,15 +88,15 @@ body {
   margin-left: 12px;
 }
 
-.wp-c-ac2 details[open] .wp-c-ac2 .wp-accordion-head::after {
+.sky-c-ac2 details[open] .sky-c-ac2 .sky-accordion-head::after {
   transform: rotate(45deg);
 }
 
-.wp-c-ac2 .wp-accordion-head {
+.sky-c-ac2 .sky-accordion-head {
   transition: background .2s ease;
 }
 
-.wp-c-ac2 .wp-accordion-body {
+.sky-c-ac2 .sky-accordion-body {
   padding: 14px 18px;
   border: 1px solid rgba(0,0,0,.08);
   border-top: 0;
@@ -104,11 +104,11 @@ body {
   margin-top: -8px;
 }
 
-.wp-c-ac2.wp-accordion-borderless {
+.sky-c-ac2.sky-accordion-borderless {
   gap: 0;
 }
 
-.wp-c-ac2.wp-accordion-borderless .wp-accordion-head {
+.sky-c-ac2.sky-accordion-borderless .sky-accordion-head {
   border: 0;
   border-bottom: 1px solid rgba(0,0,0,.1);
   border-radius: 0;
@@ -116,7 +116,7 @@ body {
   padding-right: 0;
 }
 
-.wp-c-ac2.wp-accordion-borderless .wp-accordion-body {
+.sky-c-ac2.sky-accordion-borderless .sky-accordion-body {
   border: 0;
   border-radius: 0;
   padding-left: 0;
@@ -124,14 +124,14 @@ body {
 }
 
 @media (hover: hover) {
-  .wp-c-ac1 .wp-accordion-head:hover {
-  background: var(--wp-c-surface, #f3f4f6);
+  .sky-c-ac1 .sky-accordion-head:hover {
+  background: var(--sky-c-surface, #f3f4f6);
 
 }
 }
 @media (hover: hover) {
-  .wp-c-ac2 .wp-accordion-head:hover {
-  background: var(--wp-c-surface, #f3f4f6);
+  .sky-c-ac2 .sky-accordion-head:hover {
+  background: var(--sky-c-surface, #f3f4f6);
 
 }
 }

@@ -19,7 +19,7 @@ func CompileCSS(id string, b *core.CSSBuckets) {}
 type View struct {
 	// IsPlaceholder 是否降级为占位（Block 未注入 / 块不存在 / 解析失败）。
 	IsPlaceholder bool
-	// NodeID 节点 ID（占位 div 的 data-wp-id 属性值，模板输出时由 Jet 默认转义）。
+	// NodeID 节点 ID（占位 div 的 data-sky-id 属性值，模板输出时由 Jet 默认转义）。
 	NodeID string
 }
 
@@ -40,7 +40,7 @@ func BuildView(node *core.Node, block core.BlockResolver) (View, []*core.Node, e
 		return placeholder, nil, nil
 	}
 
-	// 块节点 ID 统一加前缀，保证文档内唯一、wp-c-<id> CSS 类不冲突。
+	// 块节点 ID 统一加前缀，保证文档内唯一、sky-c-<id> CSS 类不冲突。
 	prefix := node.ID + "-b-"
 	out := make([]*core.Node, 0, len(roots))
 	for _, r := range roots {

@@ -135,37 +135,37 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		spacing = "10px"
 	}
 	b.Add(core.BreakpointDesktop, sel, desktop)
-	b.Add(core.BreakpointDesktop, sel+" .wp-list-item", []string{
+	b.Add(core.BreakpointDesktop, sel+" .sky-list-item", []string{
 		"display: flex", "align-items: flex-start", "gap: 10px",
 		"padding: calc(" + spacing + " / 2) 0",
 	})
-	b.Add(core.BreakpointDesktop, sel+" .wp-list-marker", []string{
+	b.Add(core.BreakpointDesktop, sel+" .sky-list-marker", []string{
 		"flex: none", "display: inline-flex", "align-items: center",
 		"justify-content: center", "width: 1.3em", "height: 1.3em",
 		"margin-top: 2px",
 	})
-	b.Add(core.BreakpointDesktop, sel+" .wp-list-marker svg", []string{
+	b.Add(core.BreakpointDesktop, sel+" .sky-list-marker svg", []string{
 		"width: 1em", "height: 1em", "display: block",
 	})
-	b.Add(core.BreakpointDesktop, sel+" .wp-list-text", []string{
+	b.Add(core.BreakpointDesktop, sel+" .sky-list-text", []string{
 		"flex: 1", "min-width: 0",
 	})
-	b.Add(core.BreakpointDesktop, sel+" a.wp-list-text", []string{
+	b.Add(core.BreakpointDesktop, sel+" a.sky-list-text", []string{
 		"text-decoration: none", "color: inherit",
 	})
-	b.Add(core.BreakpointDesktop, sel+" a.wp-list-text:hover", []string{
+	b.Add(core.BreakpointDesktop, sel+" a.sky-list-text:hover", []string{
 		"text-decoration: underline",
 	})
-	b.Add(core.BreakpointDesktop, sel+" .wp-list-dot", []string{
+	b.Add(core.BreakpointDesktop, sel+" .sky-list-dot", []string{
 		"width: 8px", "height: 8px", "border-radius: 999px",
 		"background: currentColor", "display: block", "margin-top: 6px",
 	})
 
 	if p.IconColor != "" {
-		b.Add(core.BreakpointDesktop, sel+" .wp-list-marker", []string{core.CSSDecl("color", p.IconColor)})
+		b.Add(core.BreakpointDesktop, sel+" .sky-list-marker", []string{core.CSSDecl("color", p.IconColor)})
 	}
 	if p.IconBgColor != "" {
-		b.Add(core.BreakpointDesktop, sel+" .wp-list-marker", []string{
+		b.Add(core.BreakpointDesktop, sel+" .sky-list-marker", []string{
 			core.CSSDecl("background", p.IconBgColor), "border-radius: 999px",
 			"width: 1.8em", "height: 1.8em",
 		})
@@ -178,22 +178,22 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		if p.IconBgColorHover != "" {
 			hv = append(hv, core.CSSDecl("background", p.IconBgColorHover))
 		}
-		b.Add(core.BreakpointDesktop, sel+" .wp-list-item:hover .wp-list-marker", hv)
+		b.Add(core.BreakpointDesktop, sel+" .sky-list-item:hover .sky-list-marker", hv)
 	}
 	if p.TextColor != "" {
-		b.Add(core.BreakpointDesktop, sel+" .wp-list-text", []string{core.CSSDecl("color", p.TextColor)})
+		b.Add(core.BreakpointDesktop, sel+" .sky-list-text", []string{core.CSSDecl("color", p.TextColor)})
 	}
 	if p.TextSize != "" {
-		b.Add(core.BreakpointDesktop, sel+" .wp-list-text", []string{core.CSSDecl("font-size", p.TextSize)})
+		b.Add(core.BreakpointDesktop, sel+" .sky-list-text", []string{core.CSSDecl("font-size", p.TextSize)})
 	}
 	if p.LinkColor != "" {
-		b.Add(core.BreakpointDesktop, sel+" a.wp-list-text", []string{core.CSSDecl("color", p.LinkColor)})
+		b.Add(core.BreakpointDesktop, sel+" a.sky-list-text", []string{core.CSSDecl("color", p.LinkColor)})
 	}
 	if p.LinkColorHover != "" {
-		b.Add(core.BreakpointDesktop, sel+" a.wp-list-text:hover", []string{core.CSSDecl("color", p.LinkColorHover)})
+		b.Add(core.BreakpointDesktop, sel+" a.sky-list-text:hover", []string{core.CSSDecl("color", p.LinkColorHover)})
 	}
 	if p.IconSize != "" {
-		b.Add(core.BreakpointDesktop, sel+" .wp-list-marker", []string{core.CSSDecl("font-size", p.IconSize)})
+		b.Add(core.BreakpointDesktop, sel+" .sky-list-marker", []string{core.CSSDecl("font-size", p.IconSize)})
 	}
 	if p.Align == "center" || p.Align == "right" {
 		j := "flex-start"

@@ -115,26 +115,26 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		"display: flex", "overflow: hidden",
 		"white-space: nowrap",
 	})
-	b.Add(core.BreakpointDesktop, sel+" .wp-marquee-track", []string{
+	b.Add(core.BreakpointDesktop, sel+" .sky-marquee-track", []string{
 		"display: flex", "align-items: center", "flex: none",
 		core.CSSDecl("gap", gap), core.CSSDecl("padding-right", gap),
-		"animation: wp-marquee-" + id + " " + strconv.FormatFloat(speed, 'f', -1, 64) + "s linear infinite",
+		"animation: sky-marquee-" + id + " " + strconv.FormatFloat(speed, 'f', -1, 64) + "s linear infinite",
 	})
 	// keyframes：整个轨道位移自身宽度一半（双份内容无缝衔接）。
-	b.AddKeyframesDecls("wp-marquee-"+id, []string{
+	b.AddKeyframesDecls("sky-marquee-"+id, []string{
 		"from { transform: translateX(" + from + ") }",
 		"to { transform: translateX(" + to + ") }",
 	})
-	b.Add(core.BreakpointDesktop, sel+" .wp-marquee-item", []string{
+	b.Add(core.BreakpointDesktop, sel+" .sky-marquee-item", []string{
 		"flex: none", "display: inline-flex", "align-items: center",
 	})
 	if p.PauseOnHover {
-		b.Add(core.BreakpointDesktop, sel+":hover .wp-marquee-track", []string{"animation-play-state: paused"})
+		b.Add(core.BreakpointDesktop, sel+":hover .sky-marquee-track", []string{"animation-play-state: paused"})
 	}
 	if p.Background != "" {
 		b.Add(core.BreakpointDesktop, sel, []string{core.CSSDecl("background", p.Background)})
 	}
 	if p.Padding != "" {
-		b.Add(core.BreakpointDesktop, sel+" .wp-marquee-track", []string{core.CSSDecl("padding-top", p.Padding), core.CSSDecl("padding-bottom", p.Padding)})
+		b.Add(core.BreakpointDesktop, sel+" .sky-marquee-track", []string{core.CSSDecl("padding-top", p.Padding), core.CSSDecl("padding-bottom", p.Padding)})
 	}
 }

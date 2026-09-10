@@ -106,7 +106,7 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	// 表头底纹与分隔线。
 	b.Add(core.BreakpointDesktop, sel+" thead th", []string{
 		"font-weight: 600",
-		"background: var(--wp-c-surface, #f5f6f8)",
+		"background: var(--sky-c-surface, #f5f6f8)",
 		"border-bottom: 2px solid rgba(0,0,0,0.12)",
 	})
 	// 斑马纹：tbody 偶数行浅色背景。

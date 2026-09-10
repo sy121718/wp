@@ -62,7 +62,7 @@ type nodeView struct {
 	Type     string      // 组件类型标识（core.button / core.container / ...）
 	Template string      // 模板名（button / container / heading / ...）
 	NodeID   string      // 节点 ID
-	Classes  string      // 已合并 class（wp-c-<id> [+ wp-section] [+ 自定义类]）
+	Classes  string      // 已合并 class（sky-c-<id> [+ sky-section] [+ 自定义类]）
 	CustomID string      // 自定义 Element ID（空则无）
 	TopLevel bool        // 是否页面第一层顶级 Section
 	Props    any         // 解码后的组件 props
@@ -79,7 +79,7 @@ type nodeView struct {
 	IconSuffix  string   // button 后缀图标内容片段（同上）
 	ShapeTop    string   // container 顶部形状分隔线内容片段（<svg> 骨架由 container.jet 渲染）
 	ShapeBottom string   // container 底部形状分隔线内容片段（同上）
-	BgSlides    []string // container 背景轮播图（渲染为 .wp-bg-slides 背景层）
+	BgSlides    []string // container 背景轮播图（渲染为 .sky-bg-slides 背景层）
 }
 
 // nodeViewOf 把单个 Node 转换为 nodeView（含递归 children，CSS 加入顺序对齐旧路径）。

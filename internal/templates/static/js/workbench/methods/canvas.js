@@ -441,7 +441,7 @@ export const canvasMethods = {
                 this.fetchCanvasHTML().then(function (html) {
                     if (self._patchSeq !== seq) return;
                     var doc = new DOMParser().parseFromString(html, 'text/html');
-                    var fresh = doc.querySelector('.wp-c-' + nodeId);
+                    var fresh = doc.querySelector('.sky-c-' + nodeId);
                     if (!fresh) { self.refreshCanvas(); return; }
                     var styleEl = doc.querySelector('style');
                     frame.contentWindow.postMessage({
@@ -465,12 +465,12 @@ export const canvasMethods = {
                 }
                 doc.addEventListener('dragover', function (event) {
                     event.preventDefault();
-                    var target = event.target.closest && event.target.closest('[data-wp-id]');
+                    var target = event.target.closest && event.target.closest('[data-sky-id]');
                     clearDropMarks();
                     if (!target) return;
                     var bounds = target.getBoundingClientRect();
                     var offset = event.clientY - bounds.top;
-                    var isContainer = (target.getAttribute('data-wp-id') && (self.findNode(target.getAttribute('data-wp-id')) || {}).type === 'core.container');
+                    var isContainer = (target.getAttribute('data-sky-id') && (self.findNode(target.getAttribute('data-sky-id')) || {}).type === 'core.container');
                     var placement = isContainer && offset > bounds.height * .25 && offset < bounds.height * .75 ? 'inside' : (offset < bounds.height / 2 ? 'before' : 'after');
                     target.classList.add('wb-drop-' + placement);
                 });
@@ -480,8 +480,8 @@ export const canvasMethods = {
                 doc.addEventListener('drop', function (event) {
                     event.preventDefault();
                     clearDropMarks();
-                    var target = event.target.closest && event.target.closest('[data-wp-id]');
-                    var targetID = target && target.getAttribute('data-wp-id');
+                    var target = event.target.closest && event.target.closest('[data-sky-id]');
+                    var targetID = target && target.getAttribute('data-sky-id');
                     // 预设拖入：按 id 找回预设并整段插入（与点击一致的顶级平铺）。
                     var presetID = event.dataTransfer.getData('application/x-wb-preset');
                     if (presetID) {
@@ -509,7 +509,7 @@ export const canvasMethods = {
             highlightInCanvas(id) {
                 var win = document.getElementById('wb-canvas') && document.getElementById('wb-canvas').contentWindow;
                 if (!win || !win.document) return;
-                var el = win.document.querySelector('[data-wp-id="' + id + '"]');
+                var el = win.document.querySelector('[data-sky-id="' + id + '"]');
                 if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
                 // 通知 iframe 桥接层更新选中描边与「+ 插入组件」浮标位置。
                 win.postMessage({ type: 'wb-mark-selected', id: id }, window.location.origin);

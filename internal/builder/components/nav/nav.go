@@ -139,8 +139,8 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	if v := map[string]string{"left": "flex-start", "center": "center", "right": "flex-end"}[p.Align]; v != "" {
 		list = append(list, "justify-content: "+v)
 	}
-	b.Add(core.BreakpointDesktop, sel+" .wp-nav-list", list)
-	b.Add(core.BreakpointDesktop, sel+" .wp-nav-item", []string{"position: relative", "margin: 0"})
+	b.Add(core.BreakpointDesktop, sel+" .sky-nav-list", list)
+	b.Add(core.BreakpointDesktop, sel+" .sky-nav-item", []string{"position: relative", "margin: 0"})
 
 	link := []string{"display: inline-flex", "align-items: center", "text-decoration: none", "transition: color .15s ease"}
 	if p.Color != "" {
@@ -155,13 +155,13 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	if p.ItemPadding != "" {
 		link = append(link, core.CSSDecl("padding", p.ItemPadding))
 	}
-	b.Add(core.BreakpointDesktop, sel+" .wp-nav-item > a", link)
+	b.Add(core.BreakpointDesktop, sel+" .sky-nav-item > a", link)
 	if p.HoverColor != "" {
-		b.Add(core.BreakpointDesktop, sel+" .wp-nav-item > a:hover", []string{core.CSSDecl("color", p.HoverColor)})
+		b.Add(core.BreakpointDesktop, sel+" .sky-nav-item > a:hover", []string{core.CSSDecl("color", p.HoverColor)})
 	}
 	if p.ActiveColor != "" {
-		b.Add(core.BreakpointDesktop, sel+" .wp-nav-item.is-current > a", []string{core.CSSDecl("color", p.ActiveColor)})
-		b.Add(core.BreakpointDesktop, sel+" .wp-nav-sub-item.is-current > a", []string{core.CSSDecl("color", p.ActiveColor)})
+		b.Add(core.BreakpointDesktop, sel+" .sky-nav-item.is-current > a", []string{core.CSSDecl("color", p.ActiveColor)})
+		b.Add(core.BreakpointDesktop, sel+" .sky-nav-sub-item.is-current > a", []string{core.CSSDecl("color", p.ActiveColor)})
 	}
 
 	sub := []string{
@@ -178,26 +178,26 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	if p.SubmenuWidth != "" {
 		sub = append(sub, "min-width: "+p.SubmenuWidth)
 	}
-	b.Add(core.BreakpointDesktop, sel+" .wp-nav-sub", sub)
-	b.Add(core.BreakpointDesktop, sel+" .wp-nav-item:hover > .wp-nav-sub", []string{"opacity: 1", "visibility: visible"})
-	b.Add(core.BreakpointDesktop, sel+" .wp-nav-sub a", []string{
+	b.Add(core.BreakpointDesktop, sel+" .sky-nav-sub", sub)
+	b.Add(core.BreakpointDesktop, sel+" .sky-nav-item:hover > .sky-nav-sub", []string{"opacity: 1", "visibility: visible"})
+	b.Add(core.BreakpointDesktop, sel+" .sky-nav-sub a", []string{
 		"display: block", "padding: 8px 16px", "text-decoration: none", "color: inherit", "white-space: nowrap",
 	})
 	if p.HoverColor != "" {
-		b.Add(core.BreakpointDesktop, sel+" .wp-nav-sub a:hover", []string{core.CSSDecl("color", p.HoverColor)})
+		b.Add(core.BreakpointDesktop, sel+" .sky-nav-sub a:hover", []string{core.CSSDecl("color", p.HoverColor)})
 	}
 
 	if p.MobileCollapse {
-		b.Add(core.BreakpointDesktop, sel+" .wp-nav-burger", []string{
+		b.Add(core.BreakpointDesktop, sel+" .sky-nav-burger", []string{
 			"display: none", "cursor: pointer", "font-size: 22px", "line-height: 1", "padding: 8px 12px",
 		})
-		b.Add(core.BreakpointMobile, sel+" .wp-nav-burger", []string{"display: block"})
-		b.Add(core.BreakpointMobile, sel+" .wp-nav-list", []string{
+		b.Add(core.BreakpointMobile, sel+" .sky-nav-burger", []string{"display: block"})
+		b.Add(core.BreakpointMobile, sel+" .sky-nav-list", []string{
 			"display: none", "flex-direction: column", "align-items: stretch", "gap: 0", "width: 100%", "padding: 8px 0",
 		})
-		b.Add(core.BreakpointMobile, sel+" .wp-nav-toggle:checked ~ .wp-nav-list", []string{"display: flex"})
-		b.Add(core.BreakpointMobile, sel+" .wp-nav-item > a", []string{"padding: 10px 12px", "width: 100%"})
-		b.Add(core.BreakpointMobile, sel+" .wp-nav-sub", []string{
+		b.Add(core.BreakpointMobile, sel+" .sky-nav-toggle:checked ~ .sky-nav-list", []string{"display: flex"})
+		b.Add(core.BreakpointMobile, sel+" .sky-nav-item > a", []string{"padding: 10px 12px", "width: 100%"})
+		b.Add(core.BreakpointMobile, sel+" .sky-nav-sub", []string{
 			"position: static", "opacity: 1", "visibility: visible", "box-shadow: none",
 			"padding: 0 0 0 16px", "background: transparent",
 		})

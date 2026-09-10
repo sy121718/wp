@@ -106,10 +106,10 @@ const (
 
 // 取色（与 badge/quote/progress 同一约定：CSS 变量 + 兜底色，主题可整体覆写）。
 const (
-	colorPrimary = "var(--wp-c-primary, #5e5cfc)"
-	colorLabel   = "var(--wp-cardstack-label, rgba(0,0,0,.25))"
-	colorDim     = "var(--wp-cardstack-dim, #333)"
-	colorSurface = "var(--wp-c-surface, #fff)"
+	colorPrimary = "var(--sky-c-primary, #5e5cfc)"
+	colorLabel   = "var(--sky-cardstack-label, rgba(0,0,0,.25))"
+	colorDim     = "var(--sky-cardstack-dim, #333)"
+	colorSurface = "var(--sky-c-surface, #fff)"
 )
 
 // Props 卡片堆叠属性。
@@ -484,7 +484,7 @@ func fnum(v float64) string { return strconv.FormatFloat(v, 'f', 4, 64) }
 func scaleOf(i, base, step int) float64 { return float64(base+i*step) / 100 }
 
 // keyframesName scroll-driven 每卡独立关键帧名（含节点 id，跨实例唯一）。
-func keyframesName(id string, i int) string { return "wp-cs-" + id + "-" + strconv.Itoa(i+1) }
+func keyframesName(id string, i int) string { return "sky-cs-" + id + "-" + strconv.Itoa(i+1) }
 
 // CompileCSS 生成容器 / 轨道 / 卡片 / 放大层全部样式。
 //
@@ -530,7 +530,7 @@ func CompileCSS(node *core.Node, p *Props, cardN int, b *core.CSSBuckets) {
 	if collectionSource(p) != "" {
 		compileCollectionCSS(b, sel)
 		// 空状态：集合没有内容时给一块可见占位，而不是留一片空白（也可整体隐藏）。
-		b.Add(core.BreakpointDesktop, sel+" .wp-cardstack-empty", []string{
+		b.Add(core.BreakpointDesktop, sel+" .sky-cardstack-empty", []string{
 			"margin: 0",
 			"padding: 48px 24px",
 			"text-align: center",
@@ -549,35 +549,35 @@ func CompileCSS(node *core.Node, p *Props, cardN int, b *core.CSSBuckets) {
 
 // compileCollectionCSS 集合卡片内部元素样式：卡内从上往下排（图 → 标题 → 正文 → 附注 → 链接）。
 func compileCollectionCSS(b *core.CSSBuckets, sel string) {
-	b.Add(core.BreakpointDesktop, sel+" .wp-cardstack-card", []string{
+	b.Add(core.BreakpointDesktop, sel+" .sky-cardstack-card", []string{
 		"justify-content: flex-start",
 		"gap: 10px",
 	})
-	b.Add(core.BreakpointDesktop, sel+" .wp-cardstack-img", []string{
+	b.Add(core.BreakpointDesktop, sel+" .sky-cardstack-img", []string{
 		"width: 100%",
 		"height: 150px",
 		"object-fit: cover",
 		"border-radius: 10px",
 		"flex: 0 0 auto",
 	})
-	b.Add(core.BreakpointDesktop, sel+" .wp-cardstack-title", []string{
+	b.Add(core.BreakpointDesktop, sel+" .sky-cardstack-title", []string{
 		"margin: 0",
 		"font-size: 1.15em",
 		"line-height: 1.35",
 	})
-	b.Add(core.BreakpointDesktop, sel+" .wp-cardstack-text", []string{
+	b.Add(core.BreakpointDesktop, sel+" .sky-cardstack-text", []string{
 		"margin: 0",
 		"font-size: .92em",
 		"line-height: 1.55",
 		"opacity: .78",
 	})
-	b.Add(core.BreakpointDesktop, sel+" .wp-cardstack-meta", []string{
+	b.Add(core.BreakpointDesktop, sel+" .sky-cardstack-meta", []string{
 		"margin: 0",
 		"font-size: 1.05em",
 		"font-weight: 700",
 		"color: " + colorPrimary,
 	})
-	b.Add(core.BreakpointDesktop, sel+" .wp-cardstack-link", []string{
+	b.Add(core.BreakpointDesktop, sel+" .sky-cardstack-link", []string{
 		"align-self: flex-start",
 		"margin-top: auto",
 		"font-size: .88em",
@@ -630,7 +630,7 @@ func cardBaseDecls(content bool, p *Props) []string {
 			"gap: " + gap,
 			"padding: " + padding,
 			"background-color: " + background,
-			"color: var(--wp-cardstack-text, #1f2430)",
+			"color: var(--sky-cardstack-text, #1f2430)",
 			fmt.Sprintf("border: %s solid rgba(0,0,0,.08)", border),
 			"border-radius: " + radius,
 			"box-shadow: 0 15px 50px rgba(0,0,0,.12)",
@@ -681,7 +681,7 @@ func cardBaseDecls(content bool, p *Props) []string {
 //	line 横排     |dx| + W/2 ≤ 50vw − gutter
 //	line 竖排     |dy| + H/2 ≤ 50vh − gutter
 func compileHoverCSS(b *core.CSSBuckets, sel string, p *Props, n int, width, height string, content bool) {
-	track := sel + " .wp-cardstack-track"
+	track := sel + " .sky-cardstack-track"
 	hueStep := float64(effectiveHueStep(p))
 	angle := float64(effectiveSpreadAngle(p))
 	dist := float64(effectiveSpreadDistance(p))
@@ -708,13 +708,13 @@ func compileHoverCSS(b *core.CSSBuckets, sel string, p *Props, n int, width, hei
 		trackHeight,
 		// 卡片 border box 高（含上下边框）：旋转外扩与竖排收敛都要用它，
 		// 而 translate 的百分比只能拿到宽度，高度必须以变量传入。
-		fmt.Sprintf("--wp-cardstack-h: calc(%s + %dpx)", height, 2*cardBorder),
+		fmt.Sprintf("--sky-cardstack-h: calc(%s + %dpx)", height, 2*cardBorder),
 	})
 
 	for i := 0; i < n; i++ {
 		offset := float64(i) - mid
 		nth := strconv.Itoa(i + 1)
-		card := track + " .wp-cardstack-card:nth-child(" + nth + ")"
+		card := track + " .sky-cardstack-card:nth-child(" + nth + ")"
 
 		// 基础态：绝对堆叠；数字卡带位置派生色相，内容卡保持原色。
 		decls := []string{"position: absolute", "width: " + width}
@@ -730,8 +730,8 @@ func compileHoverCSS(b *core.CSSBuckets, sel string, p *Props, n int, width, hei
 		// 悬停展开：旋转 + 平移 + 文字/阴影加深；被放大的那张卡退出扇形逻辑。
 		// 注意：:hover 挂在容器上，经轨道下到卡片；track 变量本身已含 sel 前缀，
 		// 这里不能再拼一次（否则是「容器:hover 容器 轨道 …」这种永不匹配的选择器）。
-		hover := sel + ":hover .wp-cardstack-track .wp-cardstack-card:nth-child(" + nth +
-			"):not(:has(> .wp-cardstack-toggle:checked))"
+		hover := sel + ":hover .sky-cardstack-track .sky-cardstack-card:nth-child(" + nth +
+			"):not(:has(> .sky-cardstack-toggle:checked))"
 		var fixed, adaptive string
 		switch {
 		case fan:
@@ -739,14 +739,14 @@ func compileHoverCSS(b *core.CSSBuckets, sel string, p *Props, n int, width, hei
 			// 再除以 cosθ·最大步距（dx 要先经 cosθ 才变成世界坐标的水平位移）。
 			rad := math.Abs(offset*angle) * math.Pi / 180
 			cosT, sinT := math.Cos(rad), math.Sin(rad)
-			allow := fmt.Sprintf("calc((50vw - %dpx - %spx - %s * 50%% - %s * var(--wp-cardstack-h) / 2) / %s)",
+			allow := fmt.Sprintf("calc((50vw - %dpx - %spx - %s * 50%% - %s * var(--sky-cardstack-h) / 2) / %s)",
 				viewportGutter, fnum(cardLiftY*sinT), fnum(cosT), fnum(sinT), fnum(cosT*mid))
 			fixed = fmt.Sprintf("rotate(%sdeg) translate(%spx, -%dpx)", num(offset*angle), num(offset*dist), cardLiftY)
 			adaptive = fmt.Sprintf("rotate(%sdeg) translate(calc(%s * clamp(0px, %s, %dpx)), -%dpx)",
 				num(offset*angle), num(offset), allow, int(dist), cardLiftY)
 		case vertical:
 			// 竖排：不带旋转、横向不动，收敛 = 视口半高 − 留白 − 卡半高。
-			allow := fmt.Sprintf("calc((50vh - %dpx - var(--wp-cardstack-h) / 2) / %s)", viewportGutter, num(mid))
+			allow := fmt.Sprintf("calc((50vh - %dpx - var(--sky-cardstack-h) / 2) / %s)", viewportGutter, num(mid))
 			fixed = fmt.Sprintf("translate(0px, %spx)", num(offset*dist))
 			adaptive = fmt.Sprintf("translate(0px, calc(%s * clamp(0px, %s, %dpx)))",
 				num(offset), allow, int(dist))
@@ -775,8 +775,8 @@ func compileHoverCSS(b *core.CSSBuckets, sel string, p *Props, n int, width, hei
 	// 按压：容器按下时全部卡变暗；被点的卡恢复原色（并显形数字）后置顶。
 	// 走 AddActive（不包 hover:hover）：触屏按下同样触发 —— 触屏没有 hover，
 	// 数字颜色若只写在悬停规则里，移动端将永远看不到卡片数字。
-	b.AddActive(sel+":active .wp-cardstack-card", []string{"background-color: " + colorDim})
-	b.AddActive(sel+" .wp-cardstack-card:active", []string{
+	b.AddActive(sel+":active .sky-cardstack-card", []string{"background-color: " + colorDim})
+	b.AddActive(sel+" .sky-cardstack-card:active", []string{
 		"background-color: " + colorPrimary,
 		"color: " + colorLabel,
 		"z-index: 100",
@@ -791,7 +791,7 @@ func compileHoverCSS(b *core.CSSBuckets, sel string, p *Props, n int, width, hei
 // 当未知属性丢弃，动画按 0s 播完并由 fill-mode: both 停在终态，视觉与静态缩放一致。
 // 因此不需要 @supports 包裹：未知属性天然被忽略，降级是「白送」的。
 func compileScrollCSS(b *core.CSSBuckets, sel, id string, p *Props, n int, width, height string, content bool) {
-	track := sel + " .wp-cardstack-track"
+	track := sel + " .sky-cardstack-track"
 	spacing := effectiveSpacing(p)
 	stickyTop := effectiveStickyTop(p)
 	base, step := effectiveScaleBase(p), effectiveScaleStep(p)
@@ -801,7 +801,7 @@ func compileScrollCSS(b *core.CSSBuckets, sel, id string, p *Props, n int, width
 
 	for i := 0; i < n; i++ {
 		nth := strconv.Itoa(i + 1)
-		card := track + " .wp-cardstack-card:nth-child(" + nth + ")"
+		card := track + " .sky-cardstack-card:nth-child(" + nth + ")"
 		s := scaleOf(i, base, step)
 		kf := keyframesName(id, i)
 		decls := []string{
@@ -842,10 +842,10 @@ func compileScrollCSS(b *core.CSSBuckets, sel, id string, p *Props, n int, width
 // 变换链 translate(-50%,-50%) → rotate(θ+rot) → translateY(-R) → rotate(-(θ+rot))：
 // 第一个 rotate 把位移送到圆周方向，后一个把它转回来抵消朝向，所以卡片沿圆环走位而不歪。
 //
-// 降级：没有增强脚本时 --wp-cardstack-rot 恒为 0deg，卡片静态环形分布 ——
+// 降级：没有增强脚本时 --sky-cardstack-rot 恒为 0deg，卡片静态环形分布 ——
 // 比堆叠态更接近最终形态，且点击放大、键盘聚焦照旧可用，不依赖 JS 才看得见。
 func compileDragCSS(b *core.CSSBuckets, sel string, p *Props, n int, width, height string, content bool) {
-	track := sel + " .wp-cardstack-track"
+	track := sel + " .sky-cardstack-track"
 	radius := dragRadius(p, n, width, height)
 	cardH := cssPx(height, fallbackCardH)
 
@@ -865,19 +865,19 @@ func compileDragCSS(b *core.CSSBuckets, sel string, p *Props, n int, width, heig
 		"display: block",
 		fmt.Sprintf("height: %dpx", int(2*radius+cardH)),
 		// 旋转角由增强脚本改写；无脚本时保持 0，卡片静态成环。
-		"--wp-cardstack-rot: 0deg",
+		"--sky-cardstack-rot: 0deg",
 	})
 
 	hueStep := float64(effectiveHueStep(p))
 	for i := 0; i < n; i++ {
 		angle := 360 * float64(i) / float64(n)
-		card := track + " .wp-cardstack-card:nth-child(" + strconv.Itoa(i+1) + ")"
+		card := track + " .sky-cardstack-card:nth-child(" + strconv.Itoa(i+1) + ")"
 		decls := []string{
 			"position: absolute",
 			"left: 50%",
 			"top: 50%",
 			"width: " + width,
-			fmt.Sprintf("transform: translate(-50%%, -50%%) rotate(calc(%sdeg + var(--wp-cardstack-rot, 0deg))) translateY(-%dpx) rotate(calc(-%sdeg - var(--wp-cardstack-rot, 0deg)))",
+			fmt.Sprintf("transform: translate(-50%%, -50%%) rotate(calc(%sdeg + var(--sky-cardstack-rot, 0deg))) translateY(-%dpx) rotate(calc(-%sdeg - var(--sky-cardstack-rot, 0deg)))",
 				num(angle), int(radius), num(angle)),
 			"transition: transform .35s ease",
 		}
@@ -893,7 +893,7 @@ func compileDragCSS(b *core.CSSBuckets, sel string, p *Props, n int, width, heig
 	}
 
 	// 拖拽过程中取消过渡，否则卡片会追着指针慢半拍。
-	b.Add(core.BreakpointDesktop, sel+".is-dragging .wp-cardstack-card", []string{"transition: none"})
+	b.Add(core.BreakpointDesktop, sel+".is-dragging .sky-cardstack-card", []string{"transition: none"})
 }
 
 // slideEffectKeyframe 切换动画 → 通用动效词汇名（不新增关键帧，直接复用 core 那套）。
@@ -903,43 +903,43 @@ func slideEffectKeyframe(p *Props) string {
 	switch p.SlideEffect {
 	case "fade":
 		if horizontal {
-			return "wp-fade-in-bottom-right"
+			return "sky-fade-in-bottom-right"
 		}
-		return "wp-fade-in-bottom-left"
+		return "sky-fade-in-bottom-left"
 	case "zoom":
 		if horizontal {
-			return "wp-zoom-in-right"
+			return "sky-zoom-in-right"
 		}
-		return "wp-zoom-in-up"
+		return "sky-zoom-in-up"
 	case "flip":
 		if horizontal {
-			return "wp-flip-in-y"
+			return "sky-flip-in-y"
 		}
-		return "wp-flip-in-x"
+		return "sky-flip-in-x"
 	case "bounce":
 		if horizontal {
-			return "wp-bounce-in-right"
+			return "sky-bounce-in-right"
 		}
-		return "wp-bounce-in-up"
+		return "sky-bounce-in-up"
 	case "back":
 		if horizontal {
-			return "wp-back-in-right"
+			return "sky-back-in-right"
 		}
-		return "wp-back-in-up"
+		return "sky-back-in-up"
 	case "rotate":
 		if horizontal {
-			return "wp-rotate-in-up-right"
+			return "sky-rotate-in-up-right"
 		}
-		return "wp-rotate-in-up-left"
+		return "sky-rotate-in-up-left"
 	case "light":
 		if horizontal {
-			return "wp-light-speed-in-right"
+			return "sky-light-speed-in-right"
 		}
-		return "wp-light-speed-in-left"
+		return "sky-light-speed-in-left"
 	case "roll":
-		return "wp-roll-in"
+		return "sky-roll-in"
 	case "jack":
-		return "wp-jack-in-the-box"
+		return "sky-jack-in-the-box"
 	}
 	return ""
 }
@@ -949,9 +949,9 @@ func slideEffectKeyframe(p *Props) string {
 func loopEffectKey(v string) string {
 	switch v {
 	case "glow":
-		return "wp-loop-glow"
+		return "sky-loop-glow"
 	case "flash":
-		return "wp-loop-flash"
+		return "sky-loop-flash"
 	}
 	return ""
 }
@@ -983,7 +983,7 @@ func deckTransform(offset, rot int, scaleStep float64, vertical bool) string {
 	if vertical {
 		axis = "Y"
 	}
-	return fmt.Sprintf("transform: translate(-50%%, -50%%) translate%s(calc(var(--wp-deck-off, 0) * %d%%)) rotate(calc(var(--wp-deck-off, 0) * %ddeg)) scale(calc(1 - var(--wp-deck-abs, 0) * %s))",
+	return fmt.Sprintf("transform: translate(-50%%, -50%%) translate%s(calc(var(--sky-deck-off, 0) * %d%%)) rotate(calc(var(--sky-deck-off, 0) * %ddeg)) scale(calc(1 - var(--sky-deck-abs, 0) * %s))",
 		axis, offset, rot, fnum(scaleStep))
 }
 
@@ -1031,14 +1031,14 @@ func cssPx(v string, fallback float64) float64 {
 //
 // 几何全部由每张卡的两个 CSS 变量驱动：
 //
-//	--wp-deck-off  相对当前主卡的偏移（整数，0 = 主卡）
-//	--wp-deck-abs  偏移的绝对值（CSS 没有 abs()，缩放/层级要用它）
+//	--sky-deck-off  相对当前主卡的偏移（整数，0 = 主卡）
+//	--sky-deck-abs  偏移的绝对值（CSS 没有 abs()，缩放/层级要用它）
 //
 // 编译期逐卡写入的是**静态降级值**（i - mid）：没有增强脚本时卡片按序号摊开成一摞，
 // 依旧可点、可放大；脚本接管后改写为「相对主卡」的偏移 —— 切换主卡只改这两个变量，
 // 位移/倾斜/缩放/层级的关系全在静态 CSS 里，脚本端不碰任何几何数值。
 func compileDeckCSS(b *core.CSSBuckets, sel string, p *Props, n int, width, height string, content bool) {
-	track := sel + " .wp-cardstack-track"
+	track := sel + " .sky-cardstack-track"
 	offset := effectiveDeckOffset(p)
 	rot := effectiveDeckRotate(p)
 	scaleStep := float64(effectiveDeckScaleStep(p)) / 100
@@ -1083,19 +1083,19 @@ func compileDeckCSS(b *core.CSSBuckets, sel string, p *Props, n int, width, heig
 	hueStep := float64(effectiveHueStep(p))
 	for i := 0; i < n; i++ {
 		static := float64(i) - mid
-		card := track + " .wp-cardstack-card:nth-child(" + strconv.Itoa(i+1) + ")"
+		card := track + " .sky-cardstack-card:nth-child(" + strconv.Itoa(i+1) + ")"
 		decls := []string{
 			// 静态降级值：按序号摊开（无脚本时的形态）。
-			fmt.Sprintf("--wp-deck-off: %s", num(static)),
-			fmt.Sprintf("--wp-deck-abs: %s", num(math.Abs(static))),
+			fmt.Sprintf("--sky-deck-off: %s", num(static)),
+			fmt.Sprintf("--sky-deck-abs: %s", num(math.Abs(static))),
 			"position: absolute",
 			"left: 50%",
 			"top: 50%",
 			"width: " + width,
 			deckTransform(offset, rot, scaleStep, vertical),
-			"z-index: calc(50 - var(--wp-deck-abs, 0))",
+			"z-index: calc(50 - var(--sky-deck-abs, 0))",
 			// 越远越淡：卡片多时不至于在两侧无限堆远（max() 不被支持时退化为全不透明，不影响可用性）。
-			"opacity: max(0, calc(1 - var(--wp-deck-abs, 0) * 0.28))",
+			"opacity: max(0, calc(1 - var(--sky-deck-abs, 0) * 0.28))",
 			"transition: transform " + strconv.Itoa(effectiveDeckDuration(p)) + "ms " + deckEasing(p) + ", box-shadow .3s, opacity .3s",
 			"cursor: pointer",
 		}
@@ -1118,9 +1118,9 @@ func compileDeckCSS(b *core.CSSBuckets, sel string, p *Props, n int, width, heig
 		b.NeedKeyframes(kf)
 		activeDecls = append(activeDecls, "animation: "+kf+" 2s ease-in-out infinite")
 	}
-	b.Add(core.BreakpointDesktop, sel+" .wp-cardstack-card.is-active", activeDecls)
+	b.Add(core.BreakpointDesktop, sel+" .sky-cardstack-card.is-active", activeDecls)
 	// 拖动过程中取消过渡，否则卡片追着指针慢半拍。
-	b.Add(core.BreakpointDesktop, sel+".is-dragging .wp-cardstack-card", []string{"transition: none"})
+	b.Add(core.BreakpointDesktop, sel+".is-dragging .sky-cardstack-card", []string{"transition: none"})
 }
 
 // compileSlideCSS 全屏分页：一屏一张卡，原生滚动吸附切换。
@@ -1133,7 +1133,7 @@ func compileDeckCSS(b *core.CSSBuckets, sel string, p *Props, n int, width, heig
 // 卡片给 min-height（不是 height）：内容超出一屏时卡片自己长高、原地可读，
 // 而不是被裁掉或压成卡内滚动条 —— 但这属于「这一屏内容太多了」，应在内容侧解决。
 func compileSlideCSS(b *core.CSSBuckets, sel string, p *Props, n int, height string, content bool) {
-	track := sel + " .wp-cardstack-track"
+	track := sel + " .sky-cardstack-track"
 	screen := strings.TrimSpace(p.SlideHeight)
 	if screen == "" {
 		screen = defaultSlideHeight
@@ -1205,9 +1205,9 @@ func compileSlideCSS(b *core.CSSBuckets, sel string, p *Props, n int, height str
 	}
 	// 页码：CSS counter 自动编号（卡片逐个 increment），总数由编译期写进 attr()——
 	// 全程零 JS，滚动中也能看出「第几屏 / 共几屏」。
-	trackDecls = append(trackDecls, "counter-reset: wp-page")
+	trackDecls = append(trackDecls, "counter-reset: sky-page")
 	b.Add(core.BreakpointDesktop, track, trackDecls)
-	b.Add(core.BreakpointDesktop, track+" .wp-cardstack-page", []string{
+	b.Add(core.BreakpointDesktop, track+" .sky-cardstack-page", []string{
 		"position: absolute",
 		"right: 20px",
 		"bottom: 16px",
@@ -1216,15 +1216,15 @@ func compileSlideCSS(b *core.CSSBuckets, sel string, p *Props, n int, height str
 		"opacity: .45",
 		"pointer-events: none",
 	})
-	b.Add(core.BreakpointDesktop, track+" .wp-cardstack-page::before", []string{
-		`content: counter(wp-page) " / " attr(data-total)`,
+	b.Add(core.BreakpointDesktop, track+" .sky-cardstack-page::before", []string{
+		`content: counter(sky-page) " / " attr(data-total)`,
 	})
 
 	for i := 0; i < n; i++ {
-		card := track + " .wp-cardstack-card:nth-child(" + strconv.Itoa(i+1) + ")"
+		card := track + " .sky-cardstack-card:nth-child(" + strconv.Itoa(i+1) + ")"
 		decls := []string{
 			"width: 100%",
-			"counter-increment: wp-page",
+			"counter-increment: sky-page",
 			snapAlign,
 			// always：一次手势只翻一屏，不会连跳好几屏。
 			"scroll-snap-stop: always",
@@ -1292,7 +1292,7 @@ func compileZoomCSS(b *core.CSSBuckets, sel string, p *Props, content bool) {
 	// 隐藏但可聚焦的单选：键盘 Tab 能聚焦、Space/方向键能切换。
 	// 关闭单选单独写一条：它不能共用 toggle 类，否则「有 toggle 被选中」在关闭后
 	// 依然为真（关闭单选自己被选中），遮罩与关闭按钮就再也收不回去。
-	b.Add(core.BreakpointDesktop, sel+" .wp-cardstack-toggle", []string{
+	b.Add(core.BreakpointDesktop, sel+" .sky-cardstack-toggle", []string{
 		"position: absolute",
 		"width: 1px",
 		"height: 1px",
@@ -1303,7 +1303,7 @@ func compileZoomCSS(b *core.CSSBuckets, sel string, p *Props, content bool) {
 		// 点击穿透到 label：label 的原生行为会激活它内部的控件。
 		"pointer-events: none",
 	})
-	b.Add(core.BreakpointDesktop, sel+" .wp-cardstack-close", []string{
+	b.Add(core.BreakpointDesktop, sel+" .sky-cardstack-close", []string{
 		"position: absolute",
 		"width: 1px",
 		"height: 1px",
@@ -1313,7 +1313,7 @@ func compileZoomCSS(b *core.CSSBuckets, sel string, p *Props, content bool) {
 		"opacity: 0",
 		"pointer-events: none",
 	})
-	b.Add(core.BreakpointDesktop, sel+" .wp-cardstack-card:focus-within", core.FocusRingDecls())
+	b.Add(core.BreakpointDesktop, sel+" .sky-cardstack-card:focus-within", core.FocusRingDecls())
 
 	// 放大态：脱离堆叠、居中到视口。用 inset:0 + margin:auto 居中而不是 transform，
 	// 免得和悬停展开/滚动位移抢属性；同时清掉独立属性 translate/scale 的残留。
@@ -1337,10 +1337,10 @@ func compileZoomCSS(b *core.CSSBuckets, sel string, p *Props, content bool) {
 	} else {
 		zoom = append(zoom, "color: "+colorLabel, "font-size: clamp(3rem, 20vw, 13rem)")
 	}
-	b.Add(core.BreakpointDesktop, sel+" .wp-cardstack-card:has(> .wp-cardstack-toggle:checked)", zoom)
+	b.Add(core.BreakpointDesktop, sel+" .sky-cardstack-card:has(> .sky-cardstack-toggle:checked)", zoom)
 
 	// 遮罩：默认不占位；有卡被放大时铺满视口，点它即关闭。
-	b.Add(core.BreakpointDesktop, sel+" .wp-cardstack-scrim", []string{
+	b.Add(core.BreakpointDesktop, sel+" .sky-cardstack-scrim", []string{
 		"display: none",
 		"position: fixed",
 		"inset: 0",
@@ -1348,11 +1348,11 @@ func compileZoomCSS(b *core.CSSBuckets, sel string, p *Props, content bool) {
 		"background: rgba(12,14,26,.72)",
 		"cursor: zoom-out",
 	})
-	b.Add(core.BreakpointDesktop, sel+":has(.wp-cardstack-toggle:checked) .wp-cardstack-scrim", []string{"display: block"})
+	b.Add(core.BreakpointDesktop, sel+":has(.sky-cardstack-toggle:checked) .sky-cardstack-scrim", []string{"display: block"})
 
 	// 显式关闭按钮：radio 无法「再点一次取消」，所以关闭必须由另一个控件完成 ——
 	// 遮罩（点空白处）与这个按钮（点右上角）都指向同一个关闭单选。
-	b.Add(core.BreakpointDesktop, sel+" .wp-cardstack-close-btn", []string{
+	b.Add(core.BreakpointDesktop, sel+" .sky-cardstack-close-btn", []string{
 		"display: none",
 		"position: fixed",
 		"top: 20px",
@@ -1370,5 +1370,5 @@ func compileZoomCSS(b *core.CSSBuckets, sel string, p *Props, content bool) {
 		"cursor: zoom-out",
 		"user-select: none",
 	})
-	b.Add(core.BreakpointDesktop, sel+":has(.wp-cardstack-toggle:checked) .wp-cardstack-close-btn", []string{"display: flex"})
+	b.Add(core.BreakpointDesktop, sel+":has(.sky-cardstack-toggle:checked) .sky-cardstack-close-btn", []string{"display: flex"})
 }

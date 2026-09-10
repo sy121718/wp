@@ -9,10 +9,10 @@ import (
 func TestAnimateEntranceAll(t *testing.T) {
 	for _, kf := range keyframesAnimate {
 		name0 := kf.Name
-		if strings.HasPrefix(name0, "wp-loop-") {
+		if strings.HasPrefix(name0, "sky-loop-") {
 			continue // 循环词由 TestInteractionLoopAll 覆盖
 		}
-		name := strings.TrimPrefix(name0, "wp-")
+		name := strings.TrimPrefix(name0, "sky-")
 		t.Run(name, func(t *testing.T) {
 			if err := ValidateInteraction(InteractionProps{Entrance: name}); err != nil {
 				t.Fatalf("%s 应在入场白名单内: %v", name, err)
@@ -34,10 +34,10 @@ func TestAnimateEntranceAll(t *testing.T) {
 func TestAnimateLoopAll(t *testing.T) {
 	for _, kf := range keyframesAnimate {
 		name0 := kf.Name
-		if !strings.HasPrefix(name0, "wp-loop-") {
+		if !strings.HasPrefix(name0, "sky-loop-") {
 			continue
 		}
-		name := strings.TrimPrefix(name0, "wp-loop-")
+		name := strings.TrimPrefix(name0, "sky-loop-")
 		t.Run(name, func(t *testing.T) {
 			if err := ValidateInteraction(InteractionProps{LoopEffect: name}); err != nil {
 				t.Fatalf("%s 应在循环白名单内: %v", name, err)

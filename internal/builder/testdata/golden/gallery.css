@@ -1,35 +1,35 @@
-@layer wp-base, wp-plugin, wp-auto, wp-theme, wp-local;
+@layer sky-base, sky-plugin, sky-auto, sky-theme, sky-local;
 
-@layer wp-base {
+@layer sky-base {
 body {
-  container-name: wp-theme;
+  container-name: sky-theme;
 }
 
-.wp-c-ga1 .gi {
+.sky-c-ga1 .gi {
   aspect-ratio: 16 / 9;
   border-radius: 8px;
 }
 
-.wp-c-ga1 {
+.sky-c-ga1 {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   column-gap: 16px;
   row-gap: 16px;
 }
 
-.wp-c-ga2 .gallery-track {
+.sky-c-ga2 .gallery-track {
   display: flex;
   overflow-x: auto;
   scroll-snap-type: x mandatory;
   scrollbar-width: none;
 }
 
-.wp-c-ga2 .gallery-slide {
+.sky-c-ga2 .gallery-slide {
   scroll-snap-align: start;
   flex: 0 0 50.000%;
 }
 
-.wp-c-ga2 .gallery-prev, .wp-c-ga2 .gallery-next {
+.sky-c-ga2 .gallery-prev, .sky-c-ga2 .gallery-next {
   position: absolute;
   top: 50%;
   transform: translateY(-50%);
@@ -40,26 +40,26 @@ body {
   border: none;
 }
 
-.wp-c-ga2 .gallery-dots {
+.sky-c-ga2 .gallery-dots {
   display: flex;
   justify-content: center;
   gap: 6px;
   margin-top: 8px;
 }
 
-.wp-c-ga2 .gi {
+.sky-c-ga2 .gi {
   transition: transform 300ms ease, box-shadow 300ms ease, filter 300ms ease;
 }
 
-.wp-c-ga2 .gi:hover {
+.sky-c-ga2 .gi:hover {
   transform: scale(1.05);
 }
 
-.wp-c-ga2 .gi {
+.sky-c-ga2 .gi {
   position: relative;
 }
 
-.wp-c-ga2 .gi::after {
+.sky-c-ga2 .gi::after {
   content: "";
   position: absolute;
   inset: 0;
@@ -67,11 +67,11 @@ body {
   transition: background 300ms ease;
 }
 
-.wp-c-ga2 .gi:hover::after {
+.sky-c-ga2 .gi:hover::after {
   background: rgba(0,0,0,0.35);
 }
 
-.wp-c-ga2 figcaption {
+.sky-c-ga2 figcaption {
   position: absolute;
   left: 0;
   right: 0;
@@ -83,39 +83,39 @@ body {
   transition: opacity 300ms ease;
 }
 
-.wp-c-ga2 figure {
+.sky-c-ga2 figure {
   position: relative;
   overflow: hidden;
 }
 
-.wp-c-ga2 figure:hover figcaption {
+.sky-c-ga2 figure:hover figcaption {
   opacity: 1;
 }
 
 @media (max-width: 1024px) {
-.wp-c-ga1 {
+.sky-c-ga1 {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
 }
-.wp-c-ga2 .gallery-slide {
+.sky-c-ga2 .gallery-slide {
   flex: 0 0 100.000%;
 }
 }
 
 @media (max-width: 767px) {
-.wp-c-ga1 {
+.sky-c-ga1 {
   display: grid;
   grid-template-columns: repeat(1, 1fr);
 }
-.wp-c-ga2 .gallery-slide {
+.sky-c-ga2 .gallery-slide {
   flex: 0 0 100.000%;
 }
 }
 }
 
-@layer wp-auto {
+@layer sky-auto {
 @container (width < 400px) {
-  .wp-c-ga1 {
+  .sky-c-ga1 {
   grid-template-columns: 1fr;
 
 }

@@ -18,9 +18,9 @@ func CompileCSS(id string, p *Props, b *core.CSSBuckets) {
 
 // TabView 单个页签的渲染视图数据（供 tabs.jet 模板使用）。
 type TabView struct {
-	// ID 页签 radio 的完整 id（wp-tabs-<节点ID>-<序号>），模板输出时由 Jet 默认转义。
+	// ID 页签 radio 的完整 id（sky-tabs-<节点ID>-<序号>），模板输出时由 Jet 默认转义。
 	ID string
-	// Name 页签 radio 的 name（wp-tabs-<节点ID>），模板输出时由 Jet 默认转义。
+	// Name 页签 radio 的 name（sky-tabs-<节点ID>），模板输出时由 Jet 默认转义。
 	Name string
 	// Checked 是否默认选中（首个为 true）。
 	Checked bool
@@ -42,8 +42,8 @@ func BuildView(node *core.Node, p *Props) View {
 	tabs := make([]TabView, 0, len(p.Tabs))
 	for i, t := range p.Tabs {
 		tabs = append(tabs, TabView{
-			ID:      "wp-tabs-" + node.ID + "-" + strconv.Itoa(i),
-			Name:    "wp-tabs-" + node.ID,
+			ID:      "sky-tabs-" + node.ID + "-" + strconv.Itoa(i),
+			Name:    "sky-tabs-" + node.ID,
 			Checked: i == 0,
 			Label:   t.Label,
 		})

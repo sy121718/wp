@@ -22,7 +22,7 @@ func TestButtonExternal(t *testing.T) {
 	}
 
 	for _, want := range []string{
-		`<a class="wp-c-b1" href="https://example.com/checkout" target="_blank" rel="noopener noreferrer nofollow">`,
+		`<a class="sky-c-b1" href="https://example.com/checkout" target="_blank" rel="noopener noreferrer nofollow">`,
 		`<span class="bt-text">立即抢购</span>`,
 		`<svg class="bt-icon bt-icon-shift"`, // 内置箭头图标
 		"</a>",
@@ -32,10 +32,10 @@ func TestButtonExternal(t *testing.T) {
 		}
 	}
 	for _, want := range []string{
-		// 按钮外观已变量化（跟随主题 --wp-btn-*，docs/09 §1.1）：不再输出字面圆角。
-		"border-radius: var(--wp-btn-radius",
+		// 按钮外观已变量化（跟随主题 --sky-btn-*，docs/09 §1.1）：不再输出字面圆角。
+		"border-radius: var(--sky-btn-radius",
 		"background: #2563eb", "color: #fff", "box-shadow: 0 1px 3px rgba(0,0,0,0.12)",
-		".wp-c-b1:hover, .wp-c-b1:focus", "transform: translate(0, -2px)",
+		".sky-c-b1:hover, .sky-c-b1:focus", "transform: translate(0, -2px)",
 		"translateX(4px)",
 	} {
 		if !strings.Contains(c.CSS, want) {
@@ -52,7 +52,7 @@ func TestButtonModal(t *testing.T) {
 		t.Fatalf("编译失败: %v", err)
 	}
 	for _, want := range []string{
-		`<button class="wp-c-b1" type="button" data-modal-target="contact-modal">`,
+		`<button class="sky-c-b1" type="button" data-modal-target="contact-modal">`,
 		`<span class="bt-text">联系商务合作</span>`,
 		"</button>",
 	} {

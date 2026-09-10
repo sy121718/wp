@@ -11,7 +11,7 @@ func TestCompileSurface(t *testing.T) {
 	b := &CSSBuckets{}
 	CompileSurface(".t", SurfaceGlass, b)
 	css := b.String()
-	for _, want := range []string{"backdrop-filter: blur(12px)", "var(--wp-glass-bg"} {
+	for _, want := range []string{"backdrop-filter: blur(12px)", "var(--sky-glass-bg"} {
 		if !strings.Contains(css, want) {
 			t.Errorf("glass 缺少 %q\n%s", want, css)
 		}
@@ -38,12 +38,12 @@ func TestCompileSurface(t *testing.T) {
 // TestBorderGradientFlow 渐变边框与流动（Advanced 管线集成行为经 CompileAdvanced，
 // 此处验证校验规则与 @property/keyframes 资源存在性）。
 func TestBorderGradientFlow(t *testing.T) {
-	if !strings.Contains(BorderFlowAngleProperty, "@property --wp-flow-angle") {
+	if !strings.Contains(BorderFlowAngleProperty, "@property --sky-flow-angle") {
 		t.Errorf("@property 块不符")
 	}
 	// keyframes 通用表含边框流动帧。
-	if keyframeIndex["wp-border-flow"] == "" || keyframeIndex["wp-bg-flow"] == "" {
-		t.Errorf("wp-border-flow / wp-bg-flow 应在通用 keyframes 表中")
+	if keyframeIndex["sky-border-flow"] == "" || keyframeIndex["sky-bg-flow"] == "" {
+		t.Errorf("sky-border-flow / sky-bg-flow 应在通用 keyframes 表中")
 	}
 }
 
@@ -51,7 +51,7 @@ func TestBorderGradientFlow(t *testing.T) {
 func TestFocusAndBackgroundFX(t *testing.T) {
 	ring := FocusRingDecls()
 	joined := strings.Join(ring, "\n")
-	for _, want := range []string{"box-shadow: 0 0 0 3px var(--wp-focus-ring", "outline: none"} {
+	for _, want := range []string{"box-shadow: 0 0 0 3px var(--sky-focus-ring", "outline: none"} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("焦点光晕缺少 %q", want)
 		}
@@ -60,7 +60,7 @@ func TestFocusAndBackgroundFX(t *testing.T) {
 		t.Errorf("焦点过渡声明不符")
 	}
 	flow := BackgroundFlowDecls()
-	if !strings.Contains(strings.Join(flow, "\n"), "animation: wp-bg-flow 8s ease infinite") {
+	if !strings.Contains(strings.Join(flow, "\n"), "animation: sky-bg-flow 8s ease infinite") {
 		t.Errorf("背景流动声明不符")
 	}
 	tg := TextGradientDecls("linear-gradient(90deg,#f00,#00f)")
@@ -160,7 +160,7 @@ func TestSpringEasing(t *testing.T) {
 		t.Errorf("默认应输出标准弹簧曲线\n%s", css)
 	}
 	// 简写内 ease 仍保留（老浏览器回退路径）。
-	if !strings.Contains(css, "animation: wp-fade-in 0.6s ease backwards") {
+	if !strings.Contains(css, "animation: sky-fade-in 0.6s ease backwards") {
 		t.Errorf("简写 ease 兜底缺失\n%s", css)
 	}
 
@@ -194,7 +194,7 @@ func TestSpringEasing(t *testing.T) {
 	if !strings.Contains(css4, "animation-timing-function: "+SpringStandardCurve+", ease-in-out") {
 		t.Errorf("入场+循环并存时 timing 应为两值\n%s", css4)
 	}
-	if !strings.Contains(css4, "animation: wp-fade-in 0.6s ease backwards, wp-loop-pulse 2.4s ease-in-out infinite") {
+	if !strings.Contains(css4, "animation: sky-fade-in 0.6s ease backwards, sky-loop-pulse 2.4s ease-in-out infinite") {
 		t.Errorf("入场与循环应并接为动画列表\n%s", css4)
 	}
 }
@@ -210,10 +210,10 @@ func TestScrollStory(t *testing.T) {
 			CompileInteraction(".t", InteractionProps{ScrollStory: word}, b)
 			css := b.String()
 			for _, want := range []string{
-				"animation: wp-story-" + word + " linear both",
+				"animation: sky-story-" + word + " linear both",
 				"animation-timeline: view()",
 				"animation-range: entry 0% exit 100%",
-				"@keyframes wp-story-" + word,
+				"@keyframes sky-story-" + word,
 			} {
 				if !strings.Contains(css, want) {
 					t.Errorf("CSS 缺少 %q\n%s", want, css)

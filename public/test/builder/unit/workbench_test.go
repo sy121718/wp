@@ -20,7 +20,7 @@ func TestWorkbenchMetadata(t *testing.T) {
 	if strings.Contains(c.HTML, "首屏") || strings.Contains(c.HTML, `id="`) {
 		t.Errorf("编辑元数据不应进入产物: %s", c.HTML)
 	}
-	if !strings.Contains(c.HTML, `<section class="wp-c-sec1 wp-section">`) {
+	if !strings.Contains(c.HTML, `<section class="sky-c-sec1 sky-section">`) {
 		t.Errorf("容器输出异常: %s", c.HTML)
 	}
 }
@@ -50,7 +50,7 @@ func TestWorkbenchPosition(t *testing.T) {
 	if err != nil {
 		t.Fatalf("编译失败: %v", err)
 	}
-	if !strings.Contains(c.CSS, ".wp-c-d1:target") || !strings.Contains(c.CSS, "translateX(100%)") {
+	if !strings.Contains(c.CSS, ".sky-c-d1:target") || !strings.Contains(c.CSS, "translateX(100%)") {
 		t.Errorf("drawer 零 JS 协议缺失:\n%s", c.CSS)
 	}
 }
@@ -73,17 +73,17 @@ func TestWorkbenchStyleEx(t *testing.T) {
 
 	for _, want := range []string{
 		// 输出属性。
-		`data-wp-group="true"`,
+		`data-sky-group="true"`,
 		`data-track="banner"`,
 		`aria-label="首屏"`,
 		// 形状分隔线内嵌 SVG（path 统一取自 core 素材库，viewBox 1440×120）。
-		`<span class="wp-shape wp-shape-bottom">`,
+		`<span class="sky-shape sky-shape-bottom">`,
 		"<svg viewBox=\"0 0 1440 120\"",
 		// CSS。
-		".wp-c-sec1:hover", "background: #111111",
-		".wp-c-sec1::before", "rgba(0,0,0,0.4)",
+		".sky-c-sec1:hover", "background: #111111",
+		".sky-c-sec1::before", "rgba(0,0,0,0.4)",
 		"order: 2",
-		".wp-shape-bottom", "bottom: 0",
+		".sky-shape-bottom", "bottom: 0",
 	} {
 		if !strings.Contains(c.HTML, want) && !strings.Contains(c.CSS, want) {
 			t.Errorf("输出缺少 %q", want)

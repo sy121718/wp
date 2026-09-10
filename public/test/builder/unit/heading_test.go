@@ -44,7 +44,7 @@ func TestHeadingStaticCompile(t *testing.T) {
 		t.Fatalf("编译失败: %v", err)
 	}
 
-	wantHTML := `<h2 class="wp-c-h1 custom-heading">核心产品特性介绍</h2>`
+	wantHTML := `<h2 class="sky-c-h1 custom-heading">核心产品特性介绍</h2>`
 	if c.HTML != wantHTML {
 		t.Errorf("HTML 不符合单层语义标签:\nwant %s\ngot  %s", wantHTML, c.HTML)
 	}

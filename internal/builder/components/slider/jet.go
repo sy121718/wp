@@ -109,7 +109,7 @@ func BuildView(node *core.Node, p *Props) View {
 		v.Dots = make([]DotItem, 0, len(node.Children))
 		for i := range node.Children {
 			v.Dots = append(v.Dots, DotItem{
-				Anchor: "wp-slide-" + node.ID + "-" + strconv.Itoa(i),
+				Anchor: "sky-slide-" + node.ID + "-" + strconv.Itoa(i),
 			})
 		}
 	}

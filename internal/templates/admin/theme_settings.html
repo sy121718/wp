@@ -18,7 +18,7 @@
             <input type="hidden" name="id" value="{{.ThemeID}}">
 
             <h3>色板</h3>
-            <p class="pages-empty">11 个全局颜色令牌，组件经 var(--wp-c-*) 引用；未设置则回退组件默认值。</p>
+            <p class="pages-empty">11 个全局颜色令牌，组件经 var(--sky-c-*) 引用；未设置则回退组件默认值。</p>
             <div class="theme-color-grid">
                 <label>主色<input type="color" name="colors.primary"></label>
                 <label>次色<input type="color" name="colors.secondary"></label>
@@ -118,9 +118,9 @@
         <h2>说明</h2>
         <p class="pages-empty">
             所有设计令牌保存后合入该主题下全部页面的文档（settings.theme），构建产物注入 :root CSS 变量
-            （--wp-c-* 色板、--wp-heading-* / --wp-body-* / --wp-link-* 排版、--wp-btn-* 按钮、
-            --wp-radius / --wp-border-* / --wp-shadow 表面、--wp-tr-duration / --wp-easing 动效）——
-            组件中 var(--wp-*) 全局生效；已发布页面需重新构建才会带新主题。
+            （--sky-c-* 色板、--sky-heading-* / --sky-body-* / --sky-link-* 排版、--sky-btn-* 按钮、
+            --sky-radius / --sky-border-* / --sky-shadow 表面、--sky-tr-duration / --sky-easing 动效）——
+            组件中 var(--sky-*) 全局生效；已发布页面需重新构建才会带新主题。
             页眉/页脚块在构建页面时编译期内联进产物（访问面保持纯静态），保存后该主题下页面将标记为待重建。
             没有候选块？先到「全局块」新建页眉/页脚块。
         </p>

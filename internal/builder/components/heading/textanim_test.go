@@ -101,11 +101,11 @@ func TestCompileCSSTextAnim(t *testing.T) {
 	compileCSS("n1", &Props{Text: "标题动画", TextAnim: "chars", TextAnimDelay: 40}, b)
 	css := b.String()
 
-	base := cssBlock(css, ".wp-c-n1 .wp-h-seg")
+	base := cssBlock(css, ".sky-c-n1 .sky-h-seg")
 	for _, want := range []string{
 		"display: inline-block",
 		"white-space: pre",
-		"animation: wp-fade-up 0.6s ease backwards",
+		"animation: sky-fade-up 0.6s ease backwards",
 	} {
 		if !strings.Contains(base, want) {
 			t.Errorf("分段基础规则缺少 %q，实际 %q", want, base)
@@ -117,10 +117,10 @@ func TestCompileCSSTextAnim(t *testing.T) {
 		nth  string
 		decl string
 	}{
-		{".wp-c-n1 .wp-h-seg:nth-child(1)", "animation-delay: 0ms"},
-		{".wp-c-n1 .wp-h-seg:nth-child(3)", "animation-delay: 80ms"},
-		{".wp-c-n1 .wp-h-seg:nth-child(20)", "animation-delay: 760ms"},
-		{".wp-c-n1 .wp-h-seg:nth-child(n+21)", "animation-delay: 800ms"},
+		{".sky-c-n1 .sky-h-seg:nth-child(1)", "animation-delay: 0ms"},
+		{".sky-c-n1 .sky-h-seg:nth-child(3)", "animation-delay: 80ms"},
+		{".sky-c-n1 .sky-h-seg:nth-child(20)", "animation-delay: 760ms"},
+		{".sky-c-n1 .sky-h-seg:nth-child(n+21)", "animation-delay: 800ms"},
 	} {
 		if !strings.Contains(css, c.nth+" {") {
 			t.Errorf("缺少规则 %q", c.nth)
@@ -131,8 +131,8 @@ func TestCompileCSSTextAnim(t *testing.T) {
 		}
 	}
 
-	if !strings.Contains(css, "@keyframes wp-fade-up") {
-		t.Error("NeedKeyframes 未激活 @keyframes wp-fade-up")
+	if !strings.Contains(css, "@keyframes sky-fade-up") {
+		t.Error("NeedKeyframes 未激活 @keyframes sky-fade-up")
 	}
 }
 
@@ -150,7 +150,7 @@ func TestCompileCSSTextAnimDelay(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			b := &core.CSSBuckets{}
 			compileCSS("n1", &Props{Text: "标题 文本", TextAnim: "words", TextAnimDelay: tt.delay}, b)
-			sel := ".wp-c-n1 .wp-h-seg:nth-child(4)"
+			sel := ".sky-c-n1 .sky-h-seg:nth-child(4)"
 			if got := cssBlock(b.String(), sel); !strings.Contains(got, tt.want) {
 				t.Errorf("delay=%d：%q 期望 %q，实际 %q", tt.delay, sel, tt.want, got)
 			}
@@ -163,10 +163,10 @@ func TestCompileCSSTextAnimOff(t *testing.T) {
 	b := &core.CSSBuckets{}
 	compileCSS("n1", &Props{Text: "标题"}, b)
 	css := b.String()
-	if strings.Contains(css, "wp-h-seg") {
+	if strings.Contains(css, "sky-h-seg") {
 		t.Errorf("未开启文本动画不应输出分段规则，实际 %q", css)
 	}
-	if strings.Contains(css, "@keyframes wp-fade-up") {
-		t.Error("未开启文本动画不应激活 @keyframes wp-fade-up")
+	if strings.Contains(css, "@keyframes sky-fade-up") {
+		t.Error("未开启文本动画不应激活 @keyframes sky-fade-up")
 	}
 }

@@ -2,7 +2,7 @@
 //
 // 轻量装饰性原子组件：单行文字 + 三种外观范式（solid 实心 / outline 描边 / soft 浅底），
 // 支持颜色覆盖（色值或主题 Token），零客户端 JS。缺省主色走主题 Token
-// var(--wp-c-primary) 并带兜底，与容器/按钮等组件保持同一取色约定。
+// var(--sky-c-primary) 并带兜底，与容器/按钮等组件保持同一取色约定。
 package badge
 
 import (
@@ -22,7 +22,7 @@ const (
 )
 
 // defaultColor 缺省主色（主题 Token + 兜底，与 tabs/infobox 的取色约定对齐）。
-const defaultColor = "var(--wp-c-primary, #2563eb)"
+const defaultColor = "var(--sky-c-primary, #2563eb)"
 
 // Props badge 属性。
 type Props struct {

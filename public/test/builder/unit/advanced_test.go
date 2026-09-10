@@ -120,7 +120,7 @@ func TestAdvancedCustomAttributes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("编译失败: %v", err)
 	}
-	if !strings.Contains(c.HTML, `class="wp-c-pic promo-hero dark"`) {
+	if !strings.Contains(c.HTML, `class="sky-c-pic promo-hero dark"`) {
 		t.Errorf("自定义 class 未织入: %s", c.HTML)
 	}
 	if !strings.Contains(c.HTML, `id="hero-anchor"`) {
@@ -155,7 +155,7 @@ func TestAdvancedValidateErrors(t *testing.T) {
 		{"非法阴影", `{"shadow":"xxl"}`, "不在选项内"},
 		{"透明度越界", `{"opacity":150}`, "超出上限"},
 		{"zindex越界", `{"zIndex":999}`, "超出上限"},
-		{"保留前缀class", `{"customClasses":["wp-evil"]}`, "wp- 保留前缀"},
+		{"保留前缀class", `{"customClasses":["sky-evil"]}`, "sky- 保留前缀"},
 		{"非法class字符", `{"customClasses":["a b"]}`, "无效的自定义 class"},
 		{"非法ID", `{"customId":"1abc"}`, "无效的自定义 ID"},
 	}

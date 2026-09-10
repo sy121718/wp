@@ -11,7 +11,7 @@ import (
 // Compile 把样式声明 + 当前 props 值确定性编译进 CSSBuckets。
 //
 //   - nodeID：组件节点 ID（选择器前缀 core.NodeClass(nodeID)，与内置组件一致，
-//     编辑器桥接依赖 wp-c-{id} 还原 data-wp-id）；
+//     编辑器桥接依赖 sky-c-{id} 还原 data-sky-id）；
 //   - props：检查器控件值（键为 manifest props schema 的键，值 string/number；
 //     非字符串值转字符串；空值跳过声明，与内置组件 CSSDecl 跳空值语义一致）；
 //   - 值防御深度：绑定值（用户运行期输入）在此处再过 core.IsSafeCSSValue，
@@ -72,8 +72,8 @@ func Compile(nodeID string, props map[string]any, schema *Schema, b *core.CSSBuc
 }
 
 // buildSelector 受控拼装选择器：基类 + 后代子元素 + 伪类（无任意字符串拼接面）。
-// target 以空格分隔（后代选择器：".badge" → ".wp-c-x .badge"，
-// 绝不拼接成 ".wp-c-x.badge" 的同元素双类语义）。
+// target 以空格分隔（后代选择器：".badge" → ".sky-c-x .badge"，
+// 绝不拼接成 ".sky-c-x.badge" 的同元素双类语义）。
 func buildSelector(base, target, pseudo string) string {
 	sel := base
 	if target != "" {

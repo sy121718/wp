@@ -86,7 +86,7 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	sel := "." + core.NodeClass(id)
 	color := p.Color
 	if color == "" {
-		color = "var(--wp-c-primary, #2563eb)"
+		color = "var(--sky-c-primary, #2563eb)"
 	}
 	pct := percent(p)
 
@@ -95,20 +95,20 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		"align-items: center",
 		"gap: 10px",
 	})
-	b.Add(core.BreakpointDesktop, sel+" .wp-progress-track", []string{
+	b.Add(core.BreakpointDesktop, sel+" .sky-progress-track", []string{
 		"flex: 1",
 		"height: 8px",
 		"background: rgba(0,0,0,0.08)",
 		"border-radius: 9999px",
 		"overflow: hidden",
 	})
-	b.Add(core.BreakpointDesktop, sel+" .wp-progress-bar", []string{
+	b.Add(core.BreakpointDesktop, sel+" .sky-progress-bar", []string{
 		core.CSSDecl("width", fmt.Sprintf("%d%%", pct)),
 		core.CSSDecl("background", color),
 		"height: 100%",
 		"border-radius: inherit",
 	})
-	b.Add(core.BreakpointDesktop, sel+" .wp-progress-label", []string{
+	b.Add(core.BreakpointDesktop, sel+" .sky-progress-label", []string{
 		"font-size: 0.875rem",
 		"opacity: 0.8",
 	})

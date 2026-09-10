@@ -16,9 +16,9 @@ const (
 
 // body 基础 class。
 const (
-	bodyClassPage  = "wp-page"
-	bodyClassBoxed = "wp-boxed"
-	bodyClassFull  = "wp-full"
+	bodyClassPage  = "sky-page"
+	bodyClassBoxed = "sky-boxed"
+	bodyClassFull  = "sky-full"
 )
 
 // bodyClassRe body 自定义 class 白名单。
@@ -142,7 +142,7 @@ func safeCSS(v string) bool {
 }
 
 // compileSettingsCSS 编译页面设置为 CSS：body 基底样式与版心约束。
-// 主题令牌统一由 ThemeVarsCSS 生成 --wp-c-* 变量（theme_settings.go，
+// 主题令牌统一由 ThemeVarsCSS 生成 --sky-c-* 变量（theme_settings.go，
 // 完整 11 色 + 排版 + 按钮 + 表面 + 动效），此处只应用 body 字体/背景等
 // 页面级规则，不再重复输出旧的 --color-* 变量。
 func compileSettingsCSS(s *PageSettings, b *core.CSSBuckets) {
@@ -164,7 +164,7 @@ func compileSettingsCSS(s *PageSettings, b *core.CSSBuckets) {
 	}
 	// body 同时作为样式查询锚点（container-name 不启用 containment → 零布局影响）：
 	// 主题/插件在 body 上声明的语义开关可被任意组件用 @container style() 响应。
-	body = append(body, "container-name: wp-theme")
+	body = append(body, "container-name: sky-theme")
 	b.Add(core.BreakpointDesktop, "body", body)
 
 	if s.Layout.Mode != LayoutBoxed {

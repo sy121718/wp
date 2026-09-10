@@ -18,7 +18,7 @@ var (
 	// （background-image: url(//attacker) 外联注入载体）。大小写不敏感，兼容 url( 与 url (、
 	// 引号包裹等 CSS 语法变体；站内相对路径 url(/img/a.jpg) 不受影响。
 	cssExternalURLRe = regexp.MustCompile(`(?i)url\s*\(\s*['"]?\s*(?:https?:|//)`)
-	// CustomClassRe 自定义 class 白名单：禁止 wp- 前缀之外的注入字符（wp- 前缀由 ValidateAdvanced 单独拦截）。
+	// CustomClassRe 自定义 class 白名单：禁止 sky- 前缀之外的注入字符（sky- 前缀由 ValidateAdvanced 单独拦截）。
 	CustomClassRe = regexp.MustCompile(`^[A-Za-z0-9_-]{1,100}$`)
 	// CustomIDRe 自定义 Element ID 白名单（锚点）。
 	CustomIDRe = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_-]{0,63}$`)
@@ -32,7 +32,7 @@ var ShadowPresets = map[string]string{
 	"md": "0 4px 12px rgba(0,0,0,0.12)",
 	"lg": "0 10px 28px rgba(0,0,0,0.16)",
 	"xl": "0 20px 48px rgba(0,0,0,0.2)",
-	// neon 霓虹发光（强调元素/暗色主题；双层光晕，颜色与 --wp-c-primary 同族）。
+	// neon 霓虹发光（强调元素/暗色主题；双层光晕，颜色与 --sky-c-primary 同族）。
 	"neon": "0 0 8px rgba(59,130,246,.6), 0 0 24px rgba(59,130,246,.35)",
 }
 
@@ -222,7 +222,7 @@ type AdvancedProps struct {
 	// MobileCSS 手机端样式覆盖（同上：只写样式/布局/动画属性）。
 	MobileCSS string `json:"mobileCss,omitempty" ct:"cssdecls,maxlen=500,sec=responsive,label=手机端样式覆盖"`
 
-	// CustomClasses 自定义 class（禁 wp- 前缀，防碰撞编译产物命名空间）。
+	// CustomClasses 自定义 class（禁 sky- 前缀，防碰撞编译产物命名空间）。
 	CustomClasses []string `json:"customClasses,omitempty" ct:"classes,sec=advanced,label=CSS 类"`
 	// CustomID 自定义 Element ID（锚点跳转），全文档唯一（复用节点 ID 查重 map）。
 	CustomID string `json:"customId,omitempty" ct:"safe,maxlen=64,sec=advanced,label=CSS ID"`
@@ -377,8 +377,8 @@ func ValidateAdvanced(a *AdvancedProps, nodeID string, ids map[string]bool) (err
 		if !CustomClassRe.MatchString(cls) {
 			return fmt.Errorf("节点 %s: 无效的自定义 class: %q", nodeID, cls)
 		}
-		if strings.HasPrefix(cls, "wp-") {
-			return fmt.Errorf("节点 %s: 自定义 class 禁止使用 wp- 保留前缀: %q", nodeID, cls)
+		if strings.HasPrefix(cls, "sky-") {
+			return fmt.Errorf("节点 %s: 自定义 class 禁止使用 sky- 保留前缀: %q", nodeID, cls)
 		}
 	}
 	if a.CustomID != "" {
@@ -469,9 +469,9 @@ func CompileAdvanced(nodeID string, a *AdvancedProps, b *CSSBuckets) (extraClass
 		}
 		desktop = append(desktop, "border: "+bw+" solid transparent", "border-image: "+a.Border.Gradient+" 1")
 		if a.Border.Flow {
-			desktop = append(desktop, "animation: wp-border-flow 3s linear infinite")
-			b.NeedKeyframes("wp-border-flow")
-			b.AddKeyframes("wp-border-flow-angle", BorderFlowAngleProperty)
+			desktop = append(desktop, "animation: sky-border-flow 3s linear infinite")
+			b.NeedKeyframes("sky-border-flow")
+			b.AddKeyframes("sky-border-flow-angle", BorderFlowAngleProperty)
 		}
 	}
 

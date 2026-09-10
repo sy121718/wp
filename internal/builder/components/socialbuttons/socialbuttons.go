@@ -166,14 +166,14 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	b.Add(core.BreakpointDesktop, sel, []string{
 		"display: flex", "gap: 8px", core.CSSDecl("justify-content", justify),
 	})
-	b.Add(core.BreakpointDesktop, sel+" .wp-social-btn", []string{
+	b.Add(core.BreakpointDesktop, sel+" .sky-social-btn", []string{
 		core.CSSDecl("width", size), core.CSSDecl("height", size),
 		"display: inline-flex", "align-items: center", "justify-content: center",
 		"font-size: calc(" + size + " * 0.55)",
 		"text-decoration: none",
 		"transition: transform .15s, opacity .15s",
 	})
-	b.Add(core.BreakpointDesktop, sel+" .wp-social-btn:hover", []string{"transform: translateY(-2px)"})
+	b.Add(core.BreakpointDesktop, sel+" .sky-social-btn:hover", []string{"transform: translateY(-2px)"})
 
 	// 形状。
 	shape := p.Shape
@@ -182,17 +182,17 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	}
 	switch shape {
 	case "rounded":
-		b.Add(core.BreakpointDesktop, sel+" .wp-social-btn", []string{"border-radius: 10px"})
+		b.Add(core.BreakpointDesktop, sel+" .sky-social-btn", []string{"border-radius: 10px"})
 	case "square":
-		b.Add(core.BreakpointDesktop, sel+" .wp-social-btn", []string{"border-radius: 0"})
+		b.Add(core.BreakpointDesktop, sel+" .sky-social-btn", []string{"border-radius: 0"})
 	default:
-		b.Add(core.BreakpointDesktop, sel+" .wp-social-btn", []string{"border-radius: 999px"})
+		b.Add(core.BreakpointDesktop, sel+" .sky-social-btn", []string{"border-radius: 999px"})
 	}
 
 	// 配色。
 	switch p.Color {
 	case ColorMono:
-		b.Add(core.BreakpointDesktop, sel+" .wp-social-btn", []string{
+		b.Add(core.BreakpointDesktop, sel+" .sky-social-btn", []string{
 			"color: #6b7280", "background: rgba(0,0,0,.06)",
 		})
 	case ColorCustom:
@@ -200,7 +200,7 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		if col == "" {
 			col = "#2563eb"
 		}
-		b.Add(core.BreakpointDesktop, sel+" .wp-social-btn", []string{
+		b.Add(core.BreakpointDesktop, sel+" .sky-social-btn", []string{
 			core.CSSDecl("color", col), "background: rgba(0,0,0,.06)",
 		})
 	default: // brand（有序输出，保证确定性构建）

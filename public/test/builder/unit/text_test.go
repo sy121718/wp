@@ -20,7 +20,7 @@ func TestTextPlainMode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("编译失败: %v", err)
 	}
-	want := `<div class="wp-c-t1"><p>这是一款兼顾便携与降噪的日常通勤耳机。</p></div>`
+	want := `<div class="sky-c-t1"><p>这是一款兼顾便携与降噪的日常通勤耳机。</p></div>`
 	if c.HTML != want {
 		t.Errorf("HTML 异常:\nwant %s\ngot  %s", want, c.HTML)
 	}

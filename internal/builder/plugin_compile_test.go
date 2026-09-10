@@ -38,7 +38,7 @@ const testPluginManifest = `{
 }`
 
 // testPluginTemplate 插件组件模板（{{.V.title}} 走 nodeView.V）。
-const testPluginTemplate = `<article class="wp-campaign-card {{ .Classes }}">
+const testPluginTemplate = `<article class="sky-campaign-card {{ .Classes }}">
   <h3>{{ .V.title }}</h3>
   <span class="level">{{ .V.level }}</span>
 </article>`
@@ -104,8 +104,8 @@ func TestPluginComponentCompile(t *testing.T) {
 	if !strings.Contains(compiled.CSS, "border-radius: 12px") || !strings.Contains(compiled.CSS, "background: #ff0") {
 		t.Fatalf("样式编译缺失:\n%s", compiled.CSS)
 	}
-	// 节点类（wp-c-{id}）进产物（编辑器桥接依赖）。
-	if !strings.Contains(html, "wp-c-card-1") {
+	// 节点类（sky-c-{id}）进产物（编辑器桥接依赖）。
+	if !strings.Contains(html, "sky-c-card-1") {
 		t.Fatalf("节点类缺失:\n%s", html)
 	}
 }

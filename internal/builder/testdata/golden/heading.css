@@ -1,11 +1,11 @@
-@layer wp-base, wp-plugin, wp-auto, wp-theme, wp-local;
+@layer sky-base, sky-plugin, sky-auto, sky-theme, sky-local;
 
-@layer wp-base {
+@layer sky-base {
 body {
-  container-name: wp-theme;
+  container-name: sky-theme;
 }
 
-.wp-heading-sub:has(+ .wp-c-h1) {
+.sky-heading-sub:has(+ .sky-c-h1) {
   display: block;
   font-size: 0.62em;
   font-weight: 500;
@@ -15,17 +15,17 @@ body {
   opacity: .7;
 }
 
-.wp-c-h1 .wp-heading-highlight {
+.sky-c-h1 .sky-heading-highlight {
   background: #fff000;
   padding: 4px 8px;
   border-radius: 6px;
 }
 
-.wp-c-h1 {
+.sky-c-h1 {
   text-wrap: balance;
 }
 
-.wp-heading-sub:has(+ .wp-c-h2) {
+.sky-heading-sub:has(+ .sky-c-h2) {
   display: block;
   font-size: 0.62em;
   font-weight: 500;
@@ -35,7 +35,7 @@ body {
   opacity: .7;
 }
 
-.wp-c-h2 {
+.sky-c-h2 {
   font-weight: 700;
   text-transform: uppercase;
   text-decoration: underline #f00;

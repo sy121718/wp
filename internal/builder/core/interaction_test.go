@@ -17,8 +17,8 @@ func TestInteractionLoopDrift(t *testing.T) {
 	CompileInteraction(".t", InteractionProps{LoopEffect: "drift"}, b)
 	css := b.String()
 	for _, want := range []string{
-		"animation: wp-loop-drift 2.4s ease-in-out infinite",
-		"@keyframes wp-loop-drift",
+		"animation: sky-loop-drift 2.4s ease-in-out infinite",
+		"@keyframes sky-loop-drift",
 		"translateX(-8px)",
 	} {
 		if !strings.Contains(css, want) {
@@ -29,7 +29,7 @@ func TestInteractionLoopDrift(t *testing.T) {
 	// 未引用 drift 时不输出其 keyframes。
 	b2 := &CSSBuckets{}
 	CompileInteraction(".t2", InteractionProps{LoopEffect: "float"}, b2)
-	if strings.Contains(b2.String(), "wp-loop-drift") {
+	if strings.Contains(b2.String(), "sky-loop-drift") {
 		t.Errorf("未引用 drift 时不应输出其 keyframes")
 	}
 }
@@ -50,12 +50,12 @@ func TestInteractionLoopAll(t *testing.T) {
 			b := &CSSBuckets{}
 			CompileInteraction(".t", InteractionProps{LoopEffect: fx}, b)
 			css := b.String()
-			anim := "animation: wp-loop-" + fx + " 2.4s ease-in-out infinite"
+			anim := "animation: sky-loop-" + fx + " 2.4s ease-in-out infinite"
 			if !strings.Contains(css, anim) {
 				t.Errorf("CSS 缺少 %q\n%s", anim, css)
 			}
-			if !strings.Contains(css, "@keyframes wp-loop-"+fx) {
-				t.Errorf("CSS 缺少 @keyframes wp-loop-%s\n%s", fx, css)
+			if !strings.Contains(css, "@keyframes sky-loop-"+fx) {
+				t.Errorf("CSS 缺少 @keyframes sky-loop-%s\n%s", fx, css)
 			}
 		})
 	}

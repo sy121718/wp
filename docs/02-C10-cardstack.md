@@ -131,21 +131,21 @@ scroll-driven**，老浏览器一样能跑。
 把高亮挪到伪元素上：
 
 ```css
-animation: wp-flip-in-x linear both, wp-loop-glow 2s ease-in-out infinite;
+animation: sky-flip-in-x linear both, sky-loop-glow 2s ease-in-out infinite;
 animation-timeline: view(), view();
 animation-range: entry 0% entry 70%, cover 25% cover 75%;
 ```
 
 两者都 **不新增关键帧**，直接复用通用动效词汇（`internal/builder/core/keyframes_animate.go`
-那 33 条 `wp-*`）里适合翻页的 18 条，由 `NeedKeyframes` 标记后构建期统一注入（同名只注入一次、
+那 33 条 `sky-*`）里适合翻页的 18 条，由 `NeedKeyframes` 标记后构建期统一注入（同名只注入一次、
 **按需注入**：横向页面不会带上纵向的变体）。**方向不用选** —— 纵向自动走 `*-up`/`*-left`、
 横向自动走 `*-right`/`*-y`。
 
 `deck` 的动画走**过渡曲线**而不是入场动画：deck 的卡片始终在视口内，入场动画会和它的位置
 变换抢 `transform`。回弹预设是 `cubic-bezier(.34,1.56,.64,1)`（轻微过冲）。
 
-`hoverEffect` / `deckHighlight` 也**只挑了不抢 `transform` 的两条循环词汇**：`wp-loop-glow`
-（`filter: drop-shadow`）与 `wp-loop-flash`（`opacity`）。其余 `wp-loop-*`（swing / wobble /
+`hoverEffect` / `deckHighlight` 也**只挑了不抢 `transform` 的两条循环词汇**：`sky-loop-glow`
+（`filter: drop-shadow`）与 `sky-loop-flash`（`opacity`）。其余 `sky-loop-*`（swing / wobble /
 tada / pulse / bounce / rubber-band / spin）都改 `transform`，挂在卡片上会把展开位移或层级缩放
 顶掉 —— 这是这套词汇用在「已在运动的元素」上时的硬约束。
 播放时机用 `animation-timeline: view()`：卡片进入滚动容器视口时播；不支持 `view()` 的浏览器

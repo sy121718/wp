@@ -19,15 +19,15 @@ var loaderVariants = []struct {
 	html    string
 	self    string
 }{
-	{"spinner", `<span class="wp-loader-ring" aria-hidden="true"></span>`, "ring"},
-	{"dots", strings.Repeat(`<i class="wp-loader-dot" aria-hidden="true"></i>`, 3), "dot"},
-	{"bars", strings.Repeat(`<i class="wp-loader-bar" aria-hidden="true"></i>`, 4), "bar"},
-	{"pulse", `<span class="wp-loader-pulse" aria-hidden="true"></span>`, "pulse"},
-	{"plane", `<span class="wp-loader-plane" aria-hidden="true"></span>`, "plane"},
-	{"grid", `<span class="wp-loader-grid" aria-hidden="true">` + strings.Repeat("<i></i>", 9) + `</span>`, "grid"},
-	{"orbit", `<span class="wp-loader-orbit" aria-hidden="true"></span>`, "orbit"},
-	{"wave", `<span class="wp-loader-wave" aria-hidden="true">` + strings.Repeat("<i></i>", 5) + `</span>`, "wave"},
-	{"bounce", strings.Repeat(`<i class="wp-loader-bounce" aria-hidden="true"></i>`, 3), "bounce"},
+	{"spinner", `<span class="sky-loader-ring" aria-hidden="true"></span>`, "ring"},
+	{"dots", strings.Repeat(`<i class="sky-loader-dot" aria-hidden="true"></i>`, 3), "dot"},
+	{"bars", strings.Repeat(`<i class="sky-loader-bar" aria-hidden="true"></i>`, 4), "bar"},
+	{"pulse", `<span class="sky-loader-pulse" aria-hidden="true"></span>`, "pulse"},
+	{"plane", `<span class="sky-loader-plane" aria-hidden="true"></span>`, "plane"},
+	{"grid", `<span class="sky-loader-grid" aria-hidden="true">` + strings.Repeat("<i></i>", 9) + `</span>`, "grid"},
+	{"orbit", `<span class="sky-loader-orbit" aria-hidden="true"></span>`, "orbit"},
+	{"wave", `<span class="sky-loader-wave" aria-hidden="true">` + strings.Repeat("<i></i>", 5) + `</span>`, "wave"},
+	{"bounce", strings.Repeat(`<i class="sky-loader-bounce" aria-hidden="true"></i>`, 3), "bounce"},
 }
 
 // loaderDocJSON 拼装九形态文档（节点 id 依次 ld1..ld9）。
@@ -72,12 +72,12 @@ func TestCompileLoaderVariantsHTML(t *testing.T) {
 func TestCompileLoaderVariantsCSS(t *testing.T) {
 	res := compileLoaderDoc(t)
 	for i, v := range loaderVariants {
-		sel := fmt.Sprintf(".wp-c-ld%d .wp-loader-%s", i+1, v.self)
+		sel := fmt.Sprintf(".sky-c-ld%d .sky-loader-%s", i+1, v.self)
 		if !strings.Contains(res.CSS, sel) {
 			t.Errorf("形态 %s：产物 CSS 缺少选择器 %s", v.variant, sel)
 		}
 	}
-	for _, want := range []string{"@keyframes wp-loader-wave", "@keyframes wp-loader-bounce"} {
+	for _, want := range []string{"@keyframes sky-loader-wave", "@keyframes sky-loader-bounce"} {
 		if !strings.Contains(res.CSS, want) {
 			t.Errorf("产物 CSS 缺少 %s", want)
 		}

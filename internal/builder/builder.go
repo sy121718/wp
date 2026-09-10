@@ -134,7 +134,7 @@ type CompiledPage struct {
 	HTML string
 	// CSS 全部样式（含响应式媒体查询与入场动效关键帧）。
 	CSS string
-	// ThemeVarsCSS 主题变量块（:root --wp-*，注入 <style> 顶部；空=无主题）。
+	// ThemeVarsCSS 主题变量块（:root --sky-*，注入 <style> 顶部；空=无主题）。
 	ThemeVarsCSS string
 }
 
@@ -238,7 +238,7 @@ func WithCurrentPath(path string) CompileOption {
 }
 
 // WithThemeSettings 注入主题设置（主题色编译为 :root CSS 变量进产物 head，
-// 组件经 var(--wp-c-*) 引用——主题系统真正生效到产物）。
+// 组件经 var(--sky-c-*) 引用——主题系统真正生效到产物）。
 func WithThemeSettings(t *ThemeSettings) CompileOption {
 	return func(c *compileConfig) { c.theme = t }
 }
@@ -517,17 +517,17 @@ func Compile(p *Page, opts ...CompileOption) (res *CompiledPage, err error) {
 	seoHead := BuildSEOHead(p.Settings.SEO, p.Settings.SEO.Canonical, p.Settings.SEO.Title, p.Settings.SEO.Description, cfg.alternates)
 
 	// 产物 CSS = 内核编译样式 + 插件静态样式，用 @layer 显式分层：
-	//   wp-base（内核基础）< wp-plugin（插件）< wp-auto（容器宽度自动适配）<
-	//   wp-theme（主题档位）< wp-local（容器/作者显式声明）< 未分层（用户自定义，最高）。
+	//   sky-base（内核基础）< sky-plugin（插件）< sky-auto（容器宽度自动适配）<
+	//   sky-theme（主题档位）< sky-local（容器/作者显式声明）< 未分层（用户自定义，最高）。
 	// 分层后优先级由层序决定（稳定显式），不再依赖源顺序（脆弱）；
 	// 未分层样式天然高于所有层，符合「用户覆盖一切」的预期。
 	var cssParts []string
-	cssParts = append(cssParts, "@layer wp-base, wp-plugin, wp-auto, wp-theme, wp-local;")
-	cssParts = append(cssParts, "@layer wp-base {\n"+b.String()+"\n}")
+	cssParts = append(cssParts, "@layer sky-base, sky-plugin, sky-auto, sky-theme, sky-local;")
+	cssParts = append(cssParts, "@layer sky-base {\n"+b.String()+"\n}")
 	if cfg.extraCSS != "" {
-		cssParts = append(cssParts, "@layer wp-plugin {\n"+cfg.extraCSS+"\n}")
+		cssParts = append(cssParts, "@layer sky-plugin {\n"+cfg.extraCSS+"\n}")
 	}
-	// 容器查询块：自动适配（wp-auto）< 主题档位（wp-theme）< 局部显式（wp-local），
+	// 容器查询块：自动适配（sky-auto）< 主题档位（sky-theme）< 局部显式（sky-local），
 	// 层序即优先级——不再依赖规则输出顺序。
 	if cq := b.ContainerQueryCSS(); cq != "" {
 		cssParts = append(cssParts, cq)

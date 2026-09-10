@@ -225,7 +225,7 @@ type VisualProps struct {
 	Pattern string `json:"pattern,omitempty" ct:"select,=无,dots=点阵,grid=网格,overlay=细网格,diagonal-stripes=斜纹,diagonal-lines=细斜线,vertical-stripes=竖纹,horizontal-stripes=横纹,zigzag=锯齿,checkerboard=棋盘,triangles=三角,diamond=菱形,crosses=十字,plus=加号,squares=方块,circles=大圆点,polka=交错波点,ripple=同心波纹,bricks=砖块,rain=雨丝,honeycomb=蜂窝,sec=background,label=图案背景"`
 	// PatternColor 图案颜色（空 = 8% 黑）。
 	PatternColor string `json:"patternColor,omitempty" ct:"color,maxlen=200,sec=background,label=图案颜色"`
-	// BgGradientAnimated 背景渐变流动（配合 BgGradient；200% 拉伸 + wp-bg-flow 位移动画）。
+	// BgGradientAnimated 背景渐变流动（配合 BgGradient；200% 拉伸 + sky-bg-flow 位移动画）。
 	BgGradientAnimated bool   `json:"bgGradientAnimated,omitempty" ct:"bool,sec=background,label=渐变流动"`
 	BgImage            string `json:"bgImage,omitempty" ct:"media,sec=background,label=背景图片"` // 背景图 URL（媒体库选择回填；画布/产物直出）
 	// BgSlides 背景轮播图（多张，纯 CSS 交叉淡入；填写后优先于单张背景图）。
@@ -431,7 +431,7 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		// 渐变流动（效果基本库 core.BackgroundFlowDecls；未开启零输出）。
 		if p.Visual.BgGradientAnimated {
 			desktop = append(desktop, core.BackgroundFlowDecls()...)
-			b.NeedKeyframes("wp-bg-flow")
+			b.NeedKeyframes("sky-bg-flow")
 		}
 	} else if v := p.Visual.BgImage; v != "" {
 		desktop = append(desktop, "background-image: url("+v+")")
@@ -469,28 +469,28 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		n := len(slides)
 		seg := 100 / n
 		total := fmt.Sprintf("%ds", n*interval)
-		kf := "@keyframes wp-bg-fade-" + strconv.Itoa(n) + " {\n" +
+		kf := "@keyframes sky-bg-fade-" + strconv.Itoa(n) + " {\n" +
 			"  0% { opacity: 0 }\n" +
 			"  4% { opacity: 1 }\n" +
 			"  " + strconv.Itoa(seg-4) + "% { opacity: 1 }\n" +
 			"  " + strconv.Itoa(seg) + "% { opacity: 0 }\n" +
 			"  100% { opacity: 0 }\n" +
 			"}"
-		b.AddKeyframes("wp-bg-fade-"+strconv.Itoa(n), kf)
+		b.AddKeyframes("sky-bg-fade-"+strconv.Itoa(n), kf)
 		desktop = append(desktop, "position: relative", "overflow: hidden")
-		b.Add(core.BreakpointDesktop, sel+" .wp-bg-slides", []string{
+		b.Add(core.BreakpointDesktop, sel+" .sky-bg-slides", []string{
 			"position: absolute", "inset: 0", "overflow: hidden", "pointer-events: none", "z-index: 0",
 		})
 		// 内容层抬到背景之上（背景层是唯一直接子元素例外）。
-		b.Add(core.BreakpointDesktop, sel+" > :not(.wp-bg-slides)", []string{"position: relative", "z-index: 1"})
-		b.Add(core.BreakpointDesktop, sel+" .wp-bg-slide", []string{
+		b.Add(core.BreakpointDesktop, sel+" > :not(.sky-bg-slides)", []string{"position: relative", "z-index: 1"})
+		b.Add(core.BreakpointDesktop, sel+" .sky-bg-slide", []string{
 			"position: absolute", "inset: 0",
 			"background-size: cover", "background-position: center", "background-repeat: no-repeat",
 			"opacity: 0",
-			fmt.Sprintf("animation: wp-bg-fade-%d %s ease-in-out infinite", n, total),
+			fmt.Sprintf("animation: sky-bg-fade-%d %s ease-in-out infinite", n, total),
 		})
 		for i := range slides {
-			b.Add(core.BreakpointDesktop, fmt.Sprintf("%s .wp-bg-slide:nth-child(%d)", sel, i+1), []string{
+			b.Add(core.BreakpointDesktop, fmt.Sprintf("%s .sky-bg-slide:nth-child(%d)", sel, i+1), []string{
 				fmt.Sprintf("animation-delay: %ds", i*interval),
 			})
 		}
@@ -583,7 +583,7 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	case "sticky":
 		b.Add(core.BreakpointDesktop, sel, []string{"position: sticky", "top: 0"})
 	case "drawer":
-		// 抽屉：fixed + 移出视口，:target 滑入（触发协议 `href="#wp-drawer-<id>"`，零 JS）。
+		// 抽屉：fixed + 移出视口，:target 滑入（触发协议 `href="#sky-drawer-<id>"`，零 JS）。
 		var drawer []string
 		drawer = append(drawer, "position: fixed", "transition: transform 0.3s ease", "z-index: 900")
 		switch p.Position.DrawerSide {
@@ -610,11 +610,11 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	// 容器查询上下文（组件级响应式）：内部组件的 @container 规则以本容器宽度为准。
 	if p.StyleEx.ContainerQuery {
 		// 同时命名容器：内部组件的尺寸查询与样式查询（style()）都以本容器为最近锚点。
-		b.Add(core.BreakpointDesktop, sel, []string{"container-type: inline-size", "container-name: wp-theme"})
+		b.Add(core.BreakpointDesktop, sel, []string{"container-type: inline-size", "container-name: sky-theme"})
 	}
 	// 内部卡片布局语义开关（结构变体）：声明自定义属性，内部卡片用样式查询响应。
 	if p.StyleEx.CardLayout == "horizontal" {
-		b.Add(core.BreakpointDesktop, sel, []string{"--wp-card-layout: horizontal"})
+		b.Add(core.BreakpointDesktop, sel, []string{"--sky-card-layout: horizontal"})
 	}
 	// 视口外跳过渲染（H5 长页面滚动性能；占位尺寸防滚动条跳动）。
 	// 与滚动吸顶互斥：content-visibility 创建 containment，吸顶元素在视口外被
@@ -648,7 +648,7 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		if shapePos == "" {
 			shapePos = "bottom"
 		}
-		b.Add(core.BreakpointDesktop, sel+" .wp-shape", []string{
+		b.Add(core.BreakpointDesktop, sel+" .sky-shape", []string{
 			"position: absolute",
 			"left: 0", "right: 0",
 			"height: 48px",
@@ -656,9 +656,9 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 			"z-index: 2",
 			"pointer-events: none",
 		})
-		b.Add(core.BreakpointDesktop, sel+" .wp-shape svg", []string{"width: 100%", "height: 100%", "display: block"})
-		b.Add(core.BreakpointDesktop, sel+" .wp-shape-"+shapePos, []string{shapePos + ": 0"})
-		b.Add(core.BreakpointDesktop, sel+" .wp-shape svg", []string{core.CSSDecl("color", shapeColor(p))})
+		b.Add(core.BreakpointDesktop, sel+" .sky-shape svg", []string{"width: 100%", "height: 100%", "display: block"})
+		b.Add(core.BreakpointDesktop, sel+" .sky-shape-"+shapePos, []string{shapePos + ": 0"})
+		b.Add(core.BreakpointDesktop, sel+" .sky-shape svg", []string{core.CSSDecl("color", shapeColor(p))})
 		if p.Position.Type == "static" {
 			b.Add(core.BreakpointDesktop, sel, []string{"position: relative"})
 		}

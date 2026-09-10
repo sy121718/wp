@@ -1,1 +1,1 @@
-<span class="{{ .Classes }} wp-badge"{{ if .CustomID }} id="{{ .CustomID }}"{{ end }}>{{ .V.Text }}</span>
+<span class="{{ .Classes }} sky-badge"{{ if .CustomID }} id="{{ .CustomID }}"{{ end }}>{{ .V.Text }}</span>

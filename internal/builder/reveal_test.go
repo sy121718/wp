@@ -64,7 +64,7 @@ func TestScrollRevealLayered(t *testing.T) {
 		t.Fatalf("Compile: %v", err)
 	}
 
-	for _, want := range []string{"animation-timeline: view()", "animation: wp-fade-up 0.6s ease backwards", "@keyframes wp-fade-up"} {
+	for _, want := range []string{"animation-timeline: view()", "animation: sky-fade-up 0.6s ease backwards", "@keyframes sky-fade-up"} {
 		if !strings.Contains(compiled.CSS, want) {
 			t.Errorf("CSS 缺少 %q\n%s", want, compiled.CSS)
 		}

@@ -28,7 +28,7 @@ func TestLoggerInitReturnsErrorWhenBaseDirIsFile(t *testing.T) {
 }
 
 func TestLoggerConcurrentWriteAndSync(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "go_wp-logger-*")
+	tmpDir, err := os.MkdirTemp("", "go_sky-logger-*")
 	if err != nil {
 		t.Fatalf("创建临时目录失败: %v", err)
 	}
