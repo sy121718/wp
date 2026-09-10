@@ -89,6 +89,8 @@ shape: line 直接排开（**卡片不带任何角度**）
 | 参数 | 缺省 | 适用 |
 |---|---|---|
 | `hueStep` | 50 | 全部（数字卡的位置派生色相） |
+| `hoverEffect` | 无 | hover：悬停时的循环效果（发光 / 闪烁） |
+| `deckHighlight` | 无 | deck：主卡的循环高亮（发光 / 闪烁） |
 | `spreadAngle` | 5 | hover + fan（每张卡的角度增量，总角 = (张数−1)×增量） |
 | `spreadDistance` | 120 | hover（每张卡的位移增量，同时是「铺满」开关） |
 | `dragRadius` | 0 = 自动 | drag（0 时按「相邻卡片不重叠」自动算） |
@@ -130,6 +132,11 @@ scroll-driven**，老浏览器一样能跑。
 
 `deck` 的动画走**过渡曲线**而不是入场动画：deck 的卡片始终在视口内，入场动画会和它的位置
 变换抢 `transform`。回弹预设是 `cubic-bezier(.34,1.56,.64,1)`（轻微过冲）。
+
+`hoverEffect` / `deckHighlight` 也**只挑了不抢 `transform` 的两条循环词汇**：`wp-loop-glow`
+（`filter: drop-shadow`）与 `wp-loop-flash`（`opacity`）。其余 `wp-loop-*`（swing / wobble /
+tada / pulse / bounce / rubber-band / spin）都改 `transform`，挂在卡片上会把展开位移或层级缩放
+顶掉 —— 这是这套词汇用在「已在运动的元素」上时的硬约束。
 播放时机用 `animation-timeline: view()`：卡片进入滚动容器视口时播；不支持 `view()` 的浏览器
 把未知属性丢弃，动画按 0s 播完并由 `fill-mode: both` 停在终态 —— 视觉等于没有动画，位置与内容都正常。横向模式额外需要轨道 `display: flex` + 卡片
 `flex: 0 0 100%`：块级卡片默认纵向堆叠，宽度不溢出，滚动条根本出不来。
