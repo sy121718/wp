@@ -568,6 +568,38 @@ func TestDeckView(t *testing.T) {
 	}
 }
 
+// TestDragCylinderSideRoomAccountsPerspective 圆柱环绕的单侧可用空间必须扣掉透视放大。
+//
+// 卡片在 translateZ(R) 处被 perspective 放大 k = d/(d−R) 倍，只按卡宽预留会漏掉这一份 ——
+// 实测桌面 900 视口溢出 68px、1024 视口溢出 7px（⑧ 环绕画廊）。z 的硬上限是 radius
+// （min(radius, side) 里的常量项），所以 k 的上界能在构建期算准。
+func TestDragCylinderSideRoomAccountsPerspective(t *testing.T) {
+	p := &Props{Trigger: TriggerDrag, DragMode: dragModeCylinder}
+	s := compiled(t, nodeOf(p, 0), p)
+
+	if !strings.Contains(s, "perspective: 1600px") {
+		t.Errorf("圆柱环绕缺少透视")
+	}
+	// 占位写成 calc(<卡宽> * <放大系数>) —— 系数 = 1600/(1600−R)，R 是 translateZ 的硬上限。
+	var sideLine string
+	for _, line := range strings.Split(s, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "--sky-cardstack-side") {
+			sideLine = strings.TrimSpace(line)
+		}
+	}
+	if !strings.Contains(sideLine, "calc((100vw - calc(") || !strings.Contains(sideLine, " * 1.") {
+		t.Errorf("单侧可用空间没有把透视放大计入卡片占位：%s", sideLine)
+	}
+	if !strings.Contains(s, "/ 2 - 20px)") {
+		t.Errorf("每侧留白应为 20px（含桌面滚动条 7.5px 的误差余量）")
+	}
+	// 平面环不涉及 translateZ，不该被乘系数。
+	flat := compiled(t, nodeOf(&Props{Trigger: TriggerDrag}, 0), &Props{Trigger: TriggerDrag})
+	if strings.Contains(flat, "calc((100vw - calc(") {
+		t.Errorf("平面环没有透视放大，不该乘系数")
+	}
+}
+
 // TestDragCSS 拖拽旋转：环形几何在构建期算好，增强脚本只改写一个 CSS 变量。
 func TestDragCSS(t *testing.T) {
 	p := &Props{Trigger: TriggerDrag}

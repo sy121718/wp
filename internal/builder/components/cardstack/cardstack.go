@@ -72,7 +72,14 @@ const (
 	// cardBorder 卡片边框宽度（px）：参与 border box 换算（translate 的百分比基于 border box）。
 	cardBorder = 10
 	// viewportGutter 横向收敛时给视口边缘留的安全余量（px）。
+	// 桌面浏览器 100vw 含经典滚动条（≈15px，即半宽 7.5px），收敛式按 50vw 算出的位移
+	// 会比实际可视半宽多 7.5px —— 留白必须盖住这份误差（实测 1024 视口曾溢出 7px）。
 	viewportGutter = 16
+	// dragPerspective 圆柱环绕的透视距离（px），与 compileDragCSS 输出的 perspective 保持一致。
+	// 卡片在 translateZ(R) 处被放大 d/(d−R) 倍，算单侧可用空间时必须把这份放大计入占位。
+	dragPerspective = 1600.0
+	// dragGutter 环形/圆柱每侧留白（px）：12px 视觉留白 + 7.5px 滚动条误差 + 余量。
+	dragGutter = 20
 	// contentPad 内容卡内边距。
 	contentPad = "24px"
 )
@@ -933,11 +940,19 @@ func compileDragCSS(b *core.CSSBuckets, sel string, p *Props, n int, width, heig
 	})
 	b.Add(core.BreakpointDesktop, sel+".is-dragging", []string{"cursor: grabbing"})
 	cylinder := p.DragMode == dragModeCylinder
-	// 单侧可用空间 = (视口宽 − 卡宽) ÷ 2 − 边距。
+	// 单侧可用空间 = (视口宽 − 卡片实际占位) ÷ 2 − 留白。
 	// 环形/环绕的半径与翻书的摊开位移都不能超过它，否则卡片会被推到屏幕外 ——
 	// 之前用 40vw/45vw 这种经验值，卡宽 186px 时算出来 150px，两边一加就 486px，
 	// 在 375px 的手机上直接横向溢出（实测）。用卡宽参与计算才是准的。
-	sideRoom := fmt.Sprintf("max(0px, calc((100vw - %s) / 2 - 12px))", width)
+	//
+	// 圆柱还要再扣掉**透视放大**：卡片在 translateZ(R) 处被 perspective 放大 k = d/(d−R) 倍，
+	// 只按卡宽预留会漏掉这一份 —— 实测 900 视口溢出 68px、1024 视口溢出 7px（⑧ 环绕画廊）。
+	// z 的硬上限是 radius（min(radius, side) 里的常量项），所以 k 的上界能在构建期算准。
+	occupancy := width
+	if cylinder && radius > 0 && radius < dragPerspective {
+		occupancy = fmt.Sprintf("calc(%s * %.4f)", width, dragPerspective/(dragPerspective-radius))
+	}
+	sideRoom := fmt.Sprintf("max(0px, calc((100vw - %s) / 2 - %dpx))", occupancy, dragGutter)
 	// 轨道高度 = 圆周外接盒（2R + 卡高），与相邻区块不会重叠。
 	trackDecls := []string{
 		"position: relative",
@@ -952,7 +967,7 @@ func compileDragCSS(b *core.CSSBuckets, sel string, p *Props, n int, width, heig
 	}
 	if cylinder {
 		// 透视：值越小"圆柱"越粗、卡片变形越明显；1600px 接近真实相机距离。
-		trackDecls = append(trackDecls, "perspective: 1600px", "perspective-origin: 50% 50%")
+		trackDecls = append(trackDecls, fmt.Sprintf("perspective: %dpx", int(dragPerspective)), "perspective-origin: 50% 50%")
 	}
 	b.Add(core.BreakpointDesktop, track, trackDecls)
 
