@@ -104,10 +104,29 @@ shape: line 直接排开（**卡片不带任何角度**）
 | `stickyTop` | 50% | scroll 模式的粘住位置 |
 | `slideHeight` | 100dvh | slide 模式的每屏高度 |
 | `slideFit` | 页面内滚动区 | slide 的贴合方式：`viewport` = 铺满视口（整页分页，不受父容器内边距影响） |
+| `slideDirection` | vertical | slide 的滚动方向：纵向 / 横向 |
+| `slideStack` | 关 | slide 的**堆叠翻页**：卡片粘在同一位置，下一张滑上来盖住前一张 |
+| `slideEffect` | 无 | slide 的**切换动画**：淡入 / 缩放入场 / 翻转入场 / 弹入 / 回弹入场 / 旋转入场 / 光速入场 |
 
 > `slide` 的右下角自带页码角标（**第几屏 / 共几屏**），由 CSS `counter` + 编译期写入的
 > `attr(data-total)` 生成 —— 零 JS、滚动中自动更新。卡片背景设深色时记得文字也要跟浅色
 > （默认文字色是深色，深底深字会看不清）。
+
+**`slide` 有四个形态**（方向 × 排布）：
+
+| | 平铺（缺省） | 堆叠（`slideStack`） |
+|---|---|---|
+| **纵向** | 上滑把前一张**推走**（原有形态） | 前一张**留在原地被盖住** |
+| **横向** | 左滑把前一张推走 | 前一张留在原地被盖住 |
+
+堆叠用 `position: sticky` + 递增 `z-index` 实现（后一张盖住前一张）——**零 JS、不依赖
+scroll-driven**，老浏览器一样能跑。
+
+`slideEffect` **不新增关键帧**，直接复用通用动效词汇（`internal/builder/core/keyframes_animate.go`
+那 33 条 `wp-*`）里适合翻页的 7 条，由 `NeedKeyframes` 标记后构建期统一注入（同名只注入一次）。
+播放时机用 `animation-timeline: view()`：卡片进入滚动容器视口时播；不支持 `view()` 的浏览器
+把未知属性丢弃，动画按 0s 播完并由 `fill-mode: both` 停在终态 —— 视觉等于没有动画，位置与内容都正常。横向模式额外需要轨道 `display: flex` + 卡片
+`flex: 0 0 100%`：块级卡片默认纵向堆叠，宽度不溢出，滚动条根本出不来。
 | `cardLayout` | column | 卡内排列方向 |
 | `cardGap` | 10px | 卡内间距 |
 | `cardJustify` / `cardAlign` | center | 主轴 / 交叉轴对齐 |
