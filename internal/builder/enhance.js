@@ -395,6 +395,41 @@
                 else if (e.key === nextKey) { go(active + 1); e.preventDefault(); }
             });
 
+            // 滚轮 / 触摸板：累计位移过阈值切一张，随后短暂冷却。
+            // 触摸板的 wheel 事件又密又碎（每次几 px），鼠标滚轮一次就是 100+，
+            // 所以必须累积；冷却用来防止一次滑动连翻好几张。
+            //
+            // 关键：preventDefault 只在「确实切了」时才调 —— 非循环模式下滚到头就放行，
+            // 页面照常滚动，不会把用户困在组件里。监听器必须 passive: false，
+            // 否则浏览器忽略 preventDefault（默认 passive）。
+            var WHEEL_STEP = 50;
+            var WHEEL_COOLDOWN = 380;
+            var acc = 0;
+            var lockUntil = 0;
+            root.addEventListener('wheel', function (e) {
+                var d = e.deltaY !== 0 ? e.deltaY : e.deltaX;
+                if (!d) return;
+                var now = Date.now();
+                if (now < lockUntil) {
+                    // 冷却期内继续吞掉：本轮滑动已经在切了，别让它顺手再翻一张。
+                    acc = 0;
+                    e.preventDefault();
+                    return;
+                }
+                acc += d;
+                if (Math.abs(acc) < WHEEL_STEP) {
+                    e.preventDefault();
+                    return;
+                }
+                var dir = acc > 0 ? 1 : -1;
+                acc = 0;
+                var next = active + dir;
+                if (!loop && (next < 0 || next >= total)) return;   // 到头了：放行给页面
+                go(next);
+                lockUntil = now + WHEEL_COOLDOWN;
+                e.preventDefault();
+            }, { passive: false });
+
             apply();
         });
     }
