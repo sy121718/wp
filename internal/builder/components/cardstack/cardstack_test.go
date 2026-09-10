@@ -188,6 +188,29 @@ func TestSlideCSS(t *testing.T) {
 	}
 }
 
+// TestSlideFitViewport 铺满视口：容器脱离文档流，父容器内边距不再影响它。
+func TestSlideFitViewport(t *testing.T) {
+	inline := &Props{Trigger: TriggerSlide, Count: 3}
+	is := compiled(t, nodeOf(inline, 0), inline)
+	if strings.Contains(is, "position: fixed") {
+		t.Errorf("缺省（页面内滚动区）不该脱离文档流")
+	}
+
+	full := &Props{Trigger: TriggerSlide, Count: 3, SlideFit: slideFitViewport}
+	fs := compiled(t, nodeOf(full, 0), full)
+	for _, want := range []string{
+		"position: fixed",
+		"inset: 0",
+		"width: 100vw",
+		"height: 100dvh",
+		"height: 100vh", // 降级
+	} {
+		if !strings.Contains(fs, want) {
+			t.Errorf("铺满视口缺少 %q", want)
+		}
+	}
+}
+
 // TestSlideDefaults 全屏分页缺省值：3 屏、宽度占满、自动关闭放大。
 func TestSlideDefaults(t *testing.T) {
 	p := &Props{Trigger: TriggerSlide}

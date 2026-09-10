@@ -95,6 +95,8 @@ const (
 	defaultSlideHeight = "100dvh"
 	// defaultSlideCount 全屏分页占位卡缺省数量。
 	defaultSlideCount = 3
+	// slideFitViewport slideFit 的「铺满视口」取值。
+	slideFitViewport = "viewport"
 	// fallbackCardW / fallbackCardH 拖拽旋转算环形半径时的兜底卡片尺寸（非 px 宽度时使用）。
 	fallbackCardW = 320
 	fallbackCardH = 240
@@ -138,6 +140,10 @@ type Props struct {
 	DeckScaleStep int `json:"deckScaleStep,omitempty" ct:"slider,min=1,max=20,step=1,sec=motion,label=缩放递减(%)"`
 	// DragRadius 拖拽旋转的环形半径 px（0 = 自动：按卡片宽度与数量保证相邻卡片不重叠）。
 	DragRadius int `json:"dragRadius,omitempty" ct:"slider,min=0,max=1200,step=10,sec=motion,label=环形半径(0=自动)"`
+	// SlideFit 全屏分页的贴合方式：inline 页面内滚动区 / viewport 铺满视口。
+	// viewport 让容器脱离文档流铺满视口，父容器的内边距不再影响它 ——
+	// 「整页分页」不必再手动把父容器 padding 归零；代价是页面上不能有别的同级内容。
+	SlideFit string `json:"slideFit,omitempty" ct:"select,=页面内滚动区,viewport=铺满视口(整页分页),sec=layout,label=贴合方式"`
 	// SlideHeight 全屏分页的每屏高度（缺省 100dvh —— 用 dvh 而非 vh，移动端地址栏收放时不会跳）。
 	SlideHeight string `json:"slideHeight,omitempty" ct:"dimension,maxlen=20,sec=layout,label=每屏高度"`
 	// Spacing 滚动模式的卡片间距（缺省 26vh）。
@@ -989,6 +995,18 @@ func compileSlideCSS(b *core.CSSBuckets, sel string, p *Props, n int, height str
 		"position: relative",
 		"width: 100%",
 	})
+	// 铺满视口：容器脱离文档流，父容器的内边距与宽度都不再影响它 —— 省掉「手动把
+	// 父容器 padding 归零」这一步。代价是它与页面同级内容会重叠，只适合「整页只有它」。
+	if p.SlideFit == slideFitViewport {
+		fitDecls := []string{
+			"position: fixed",
+			"inset: 0",
+			"z-index: 30",
+			"width: 100vw",
+		}
+		fitDecls = append(fitDecls, screenDecl...)
+		b.Add(core.BreakpointDesktop, sel, fitDecls)
+	}
 	// 滚动容器：原生滚动 + 强制吸附（一次只翻一屏）。
 	trackDecls := append([]string{
 		"position: relative",
