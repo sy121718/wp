@@ -700,10 +700,15 @@ func compileHoverCSS(b *core.CSSBuckets, sel string, p *Props, n int, width, hei
 	case !fan:
 		trackHeight = "min-height: " + height
 	}
+	// 用 grid 同格叠放而不是「flex 居中 + 卡片 absolute」：
+	// absolute 的卡片不参与父元素高度计算，轨道只能按参数值预留高度；而内容卡是
+	// min-height，内容多了会自己长高 —— 两者不一致时卡片上下溢出、压住相邻内容，
+	// 且构建期不报错（实测踩过：卡片 452px 而轨道只有 368px，盖住了上方说明文字）。
+	// grid 的同格叠放天然重叠，且格子高度取最高的那张卡，轨道会被自动撑开。
 	b.Add(core.BreakpointDesktop, track, []string{
 		"position: relative",
-		"display: flex",
-		"justify-content: center",
+		"display: grid",
+		"justify-items: center",
 		"align-items: center",
 		trackHeight,
 		// 卡片 border box 高（含上下边框）：旋转外扩与竖排收敛都要用它，
@@ -716,8 +721,8 @@ func compileHoverCSS(b *core.CSSBuckets, sel string, p *Props, n int, width, hei
 		nth := strconv.Itoa(i + 1)
 		card := track + " .sky-cardstack-card:nth-child(" + nth + ")"
 
-		// 基础态：绝对堆叠；数字卡带位置派生色相，内容卡保持原色。
-		decls := []string{"position: absolute", "width: " + width}
+		// 基础态：同格叠放（grid-area 1/1）；数字卡带位置派生色相，内容卡保持原色。
+		decls := []string{"grid-area: 1 / 1", "justify-self: center", "align-self: center", "width: " + width}
 		if content {
 			decls = append(decls, "min-height: "+height, "height: auto")
 		} else {

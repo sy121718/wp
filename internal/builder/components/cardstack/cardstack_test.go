@@ -92,6 +92,35 @@ func TestHoverFanCSS(t *testing.T) {
 	}
 }
 
+// TestHoverGridStack 悬停展开用 grid 同格叠放：卡片天然重叠，且轨道被最高的那张卡撑开。
+//
+// 为什么不能用「flex 居中 + 卡片 absolute」：absolute 的卡片不参与父元素高度计算，
+// 轨道只能按参数值预留高度；而内容卡是 min-height，内容多了会自己长高 ——
+// 两者不一致时卡片上下溢出、压住相邻内容，且构建期不报错（实测：卡片 452px、
+// 轨道 368px，盖住了上方说明文字）。改 grid 后参数值退化成下限。
+func TestHoverGridStack(t *testing.T) {
+	p := &Props{Trigger: TriggerHover, Count: 3}
+	s := compiled(t, nodeOf(p, 0), p)
+	for _, want := range []string{
+		"display: grid",
+		"justify-items: center",
+		"align-items: center",
+		"grid-area: 1 / 1",
+		"justify-self: center",
+		"align-self: center",
+	} {
+		if !strings.Contains(s, want) {
+			t.Errorf("grid 同格叠放缺少 %q", want)
+		}
+	}
+	// 卡片规则里不该再有绝对定位（否则又变回「轨道按参数预留高度」的老问题）
+	for _, line := range strings.Split(s, "\n") {
+		if strings.Contains(line, "position: absolute") && strings.Contains(line, "sky-cardstack-card") {
+			t.Errorf("卡片仍在使用绝对定位：%s", strings.TrimSpace(line))
+		}
+	}
+}
+
 // TestHoverLineHorizontalCSS 横排：卡片不带任何角度，纯水平平移成一行。
 func TestHoverLineHorizontalCSS(t *testing.T) {
 	p := &Props{Shape: ShapeLine}
