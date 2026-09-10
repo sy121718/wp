@@ -140,6 +140,10 @@ type Props struct {
 	// HoverEffect 悬停时的循环效果（仅 hover 模式）：只挑不抢 transform 的两条词汇 ——
 	// 展开位移已经占用了 transform，swing/wobble/pulse 之类会把位移顶掉。
 	HoverEffect string `json:"hoverEffect,omitempty" ct:"select,=无,glow=发光,flash=闪烁,sec=motion,label=悬停效果"`
+	// DeckArrows 显示「上一页 / 下一页」按钮（仅 deck 模式）：
+	// 点击按钮切换主卡；不用按钮时拖拽 / 滚轮 / 方向键 / 点侧卡同样能切；
+	// 点主卡则是展开放大 —— 三种操作各管一件事，互不打架。
+	DeckArrows bool `json:"deckArrows,omitempty" ct:"bool,sec=motion,label=翻页按钮"`
 	// DeckHighlight 主卡高亮循环效果（仅 deck 模式）：同样只走 filter/opacity。
 	DeckHighlight string `json:"deckHighlight,omitempty" ct:"select,=无,glow=发光,flash=闪烁,sec=motion,label=主卡高亮"`
 	// DeckTransition 卡片切换的过渡曲线：缺省平滑缓出，spring 带回弹。
@@ -918,6 +922,35 @@ func compileDragCSS(b *core.CSSBuckets, sel string, p *Props, n int, width, heig
 	}
 
 	// 拖拽过程中取消过渡，否则卡片会追着指针慢半拍。
+	// 翻页按钮：卡片区两侧的半透明圆钮。点它切主卡；不用按钮时拖拽 / 滚轮 / 方向键 /
+	// 点侧卡同样能切；点主卡则是展开放大 —— 三种操作各管一件事，互不打架。
+	if p.DeckArrows {
+		b.Add(core.BreakpointDesktop, sel+" .sky-cardstack-arrow", []string{
+			"position: absolute",
+			"top: 50%",
+			"transform: translateY(-50%)",
+			"z-index: 70",
+			"display: flex",
+			"align-items: center",
+			"justify-content: center",
+			"width: 40px",
+			"height: 40px",
+			"border: 0",
+			"padding: 0",
+			"border-radius: 9999px",
+			"font-size: 22px",
+			"line-height: 1",
+			"color: " + colorLabel,
+			"background: rgba(255,255,255,.92)",
+			"box-shadow: 0 6px 20px rgba(0,0,0,.16)",
+			"cursor: pointer",
+			"transition: background .2s",
+		})
+		b.Add(core.BreakpointDesktop, sel+" .sky-cardstack-arrow--prev", []string{"left: 4px"})
+		b.Add(core.BreakpointDesktop, sel+" .sky-cardstack-arrow--next", []string{"right: 4px"})
+		b.Add(core.BreakpointDesktop, sel+" .sky-cardstack-arrow:hover", []string{"background: #ffffff"})
+	}
+
 	b.Add(core.BreakpointDesktop, sel+".is-dragging .sky-cardstack-card", []string{"transition: none"})
 }
 

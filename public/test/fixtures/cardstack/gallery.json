@@ -390,11 +390,12 @@
       "deckHighlight": "glow",
       "deckTransition": "spring",
       "deckDuration": 520,
-      "width": "560px",
-      "height": "236px",
+      "width": "620px",
+      "height": "250px",
       "cardBackground": "#ffffff",
       "cardRadius": "18px",
-      "deckScaleStep": 5
+      "deckScaleStep": 6,
+      "deckArrows": true
      },
      "children": [
       {

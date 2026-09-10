@@ -388,6 +388,13 @@
                 }
             }, true);
 
+            // 翻页按钮：与方向键等价。按钮不是卡片，所以下面那个 click 捕获处理器
+            // 不会拦它（closest('.sky-cardstack-card') 为 null → idx = -1）。
+            var prevBtn = root.querySelector('[data-cardstack-prev]');
+            var nextBtn = root.querySelector('[data-cardstack-next]');
+            if (prevBtn) prevBtn.addEventListener('click', function () { go(active - 1); });
+            if (nextBtn) nextBtn.addEventListener('click', function () { go(active + 1); });
+
             var prevKey = axisY ? 'ArrowUp' : 'ArrowLeft';
             var nextKey = axisY ? 'ArrowDown' : 'ArrowRight';
             root.addEventListener('keydown', function (e) {

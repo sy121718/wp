@@ -66,6 +66,8 @@ type View struct {
 	PageTotal int
 	// DeckVertical 堆叠轮播是否纵向切换（模板输出轴向，脚本据此换拖动轴与方向键）。
 	DeckVertical bool
+	// DeckArrows 是否输出「上一页 / 下一页」按钮。
+	DeckArrows bool
 }
 
 // IsCollection 是否内容集合模式 —— 装配层据此决定「子节点模板」还是「组件自带字段映射」。
@@ -93,7 +95,7 @@ func BuildView(node *core.Node, p *Props, ctx *core.RenderContext) (View, error)
 			Drag: drag, Deck: deck, DeckIndex: len(cards) / 2, DeckLoop: p.DeckLoop,
 			Empty: len(cards) == 0, EmptyText: emptyText(p), HideEmpty: p.CollectionEmpty == "hide",
 			LinkText: linkText(p), Slide: slide, PageTotal: len(cards),
-			DeckVertical: deckVertical,
+			DeckVertical: deckVertical, DeckArrows: p.DeckArrows,
 		}, nil
 	}
 
@@ -107,7 +109,7 @@ func BuildView(node *core.Node, p *Props, ctx *core.RenderContext) (View, error)
 		Cards: cards, HasContent: hasContent(node),
 		Drag: drag, Deck: deck, DeckIndex: len(cards) / 2, DeckLoop: p.DeckLoop,
 		Slide: slide, PageTotal: len(cards),
-		DeckVertical: deckVertical,
+		DeckVertical: deckVertical, DeckArrows: p.DeckArrows,
 	}, nil
 }
 
