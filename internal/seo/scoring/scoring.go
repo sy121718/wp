@@ -86,6 +86,20 @@ func Score(in *Input, profile *Profile) *Result {
 			weights[k] = v
 		}
 	}
+	// 权重预归一：profile 覆盖后的权重和不一定等于 1（GuideProfile 覆盖后是 1.05），
+	// 直接累加会让满分变成 105 分。先求和再逐项归一，保证任何 profile 下满分都是 100。
+	weightSum := 0.0
+	for _, sec := range allSections() {
+		w, ok := weights[sec.Key]
+		if !ok {
+			w = sec.Weight
+		}
+		weightSum += w
+	}
+	if weightSum <= 0 {
+		weightSum = 1
+	}
+
 	res := &Result{}
 	total := 0.0
 	for _, sec := range allSections() {
@@ -93,6 +107,7 @@ func Score(in *Input, profile *Profile) *Result {
 		if !ok {
 			w = sec.Weight
 		}
+		w = w / weightSum
 		sr := SectionResult{Key: sec.Key, Label: sec.Label, Weight: w}
 		for _, ck := range sec.Checks {
 			score, actual := ck.Score(in)

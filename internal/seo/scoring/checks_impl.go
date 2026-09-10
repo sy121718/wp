@@ -388,11 +388,12 @@ func chkImageWeight(in *Input) (int, string) {
 		}
 		return 3, "无图片（不适用）"
 	}
-	over := 0
+	over, measured := 0, 0
 	for _, img := range in.Images {
 		if img.SizeKB <= 0 {
 			continue
 		}
+		measured++
 		limit := imageWeightKB[img.Kind]
 		if limit == 0 {
 			limit = imageWeightKB["content"]
@@ -400,6 +401,11 @@ func chkImageWeight(in *Input) (int, string) {
 		if img.SizeKB > limit {
 			over++
 		}
+	}
+	// 一张图都没有体积数据时不判满分：原来直接落到「体积达标」，等于给所有页面
+	// 无条件送一个满分项（该项永远不构成区分度）。
+	if measured == 0 {
+		return 0, "体积未知（缺少图片体积数据）"
 	}
 	if over == 0 {
 		return 3, "体积达标"
@@ -505,9 +511,14 @@ func itoa(n int) string {
 	return string(buf[i:])
 }
 
+// splitParagraphs 切分正文段落。
+//
+// 按单换行切分并过滤空段：这样同时兼容「双换行分段」与「单换行分段」两种来源。
+// 原实现只按双换行切，而富文本提取器产出的是单换行 —— 整篇正文被当成一段，
+// 段落长度检查恒判「偏长」（1/5 分空转，与内容质量无关）。
 func splitParagraphs(text string) []string {
 	var out []string
-	for _, p := range strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n\n") {
+	for _, p := range strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n") {
 		if p = strings.TrimSpace(p); p != "" {
 			out = append(out, p)
 		}

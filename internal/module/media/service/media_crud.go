@@ -15,10 +15,23 @@ import (
 	mediato "go_wp/internal/module/media/dto"
 	mediaenums "go_wp/internal/module/media/enums"
 	mediamodel "go_wp/internal/module/media/model"
+	"go_wp/pkg/logger"
 	"go_wp/pkg/upload"
 
 	"gorm.io/gorm"
 )
+
+// compensateDelete 上传中途失败时清掉半成品附件记录。
+//
+// 补偿本身失败不能改变原始错误（调用方要看到的是上传失败原因），但必须留下
+// 可观测记录：原实现的补偿调用把失败一起吞掉，遇到补偿失败会在库里留下没有任何
+// 线索的孤儿记录。
+func (s *Service) compensateDelete(ctx context.Context, id uint64) {
+	if err := s.am.HardDelete(ctx, id); err != nil {
+		logger.Scene("media").With("attachmentId", id).
+			Error(err, "上传失败补偿删除附件记录失败（可能留下孤儿记录）")
+	}
+}
 
 // Upload 上传文件并记录附件元数据（02-B 媒体中心：稳定引用 + 上传去重）。
 //
@@ -76,13 +89,13 @@ func (s *Service) Upload(ctx context.Context, file *multipart.FileHeader, catego
 		return nil, fmt.Errorf("%s: %w", mediaenums.ErrUploadFailed, err)
 	}
 	if entity.ID == 0 {
-		_ = s.am.HardDelete(ctx, entity.ID)
+		s.compensateDelete(ctx, entity.ID)
 		return nil, fmt.Errorf("%s: %w", mediaenums.ErrUploadFailed, errors.New("附件主键未回填"))
 	}
 
 	src, err := file.Open()
 	if err != nil {
-		_ = s.am.HardDelete(ctx, entity.ID)
+		s.compensateDelete(ctx, entity.ID)
 		return nil, fmt.Errorf("%s: %w", mediaenums.ErrUploadFailed, err)
 	}
 	defer src.Close()
@@ -96,7 +109,7 @@ func (s *Service) Upload(ctx context.Context, file *multipart.FileHeader, catego
 		ContentType: file.Header.Get("Content-Type"),
 	}, upload.Request{ObjectKey: objectKey})
 	if err != nil {
-		_ = s.am.HardDelete(ctx, entity.ID)
+		s.compensateDelete(ctx, entity.ID)
 		return nil, fmt.Errorf("%s: %w", mediaenums.ErrUploadFailed, err)
 	}
 
@@ -109,7 +122,7 @@ func (s *Service) Upload(ctx context.Context, file *multipart.FileHeader, catego
 		"status":       mediamodel.AttachmentStatusEnabled,
 		"update_time":  time.Now(),
 	}); err != nil {
-		_ = s.am.HardDelete(ctx, entity.ID)
+		s.compensateDelete(ctx, entity.ID)
 		return nil, fmt.Errorf("%s: %w", mediaenums.ErrUploadFailed, err)
 	}
 

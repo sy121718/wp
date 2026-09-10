@@ -258,10 +258,17 @@
         // 元数据与操作。
         var meta = document.createElement('div');
         meta.className = 'media-detail-meta';
-        meta.innerHTML =
-            '<div>类型：' + M.typeLabel(item.file_type) + (item.mime_type ? '（' + item.mime_type + '）' : '') + '</div>' +
-            '<div>大小：' + M.formatSize(item.file_size) + '</div>' +
-            '<div>上传时间：' + M.formatTime(item.create_time) + '</div>';
+        // mime_type 来自上传方提交的 multipart Content-Type（上传方可完全控制），
+        // 属于不可信输入：必须用 textContent 逐格填充，绝不拼进 innerHTML。
+        var metaType = document.createElement('div');
+        metaType.textContent = '类型：' + M.typeLabel(item.file_type) + (item.mime_type ? '（' + item.mime_type + '）' : '');
+        var metaSize = document.createElement('div');
+        metaSize.textContent = '大小：' + M.formatSize(item.file_size);
+        var metaTime = document.createElement('div');
+        metaTime.textContent = '上传时间：' + M.formatTime(item.create_time);
+        meta.appendChild(metaType);
+        meta.appendChild(metaSize);
+        meta.appendChild(metaTime);
         // 变体状态徽标行（thumb/medium/webp），数据来自 detail 接口的 variants。
         var variantRow = document.createElement('div');
         variantRow.className = 'media-variant-badges';
@@ -360,8 +367,14 @@
         if (list) list.appendChild(row);
         // FormData 提交不设 Content-Type（浏览器自动带 boundary）；写请求必须带 CSRF token。
         fetch('/api/media/upload', { method: 'POST', headers: M.apiHeaders({}), body: form })
-            .then(function (r) { return r.json(); })
-            .then(function (j) {
+            .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, body: j }; }); })
+            .then(function (res) {
+                // 必须校验 HTTP 状态与业务 code：被拒（无 upload 权限 403 / 类型不符 400）
+                // 时后端同样返回 JSON，原实现一律显示「上传完成」，用户以为成功了。
+                if (!res.ok || (res.body && res.body.code !== 0)) {
+                    row.textContent = '上传失败：' + ((res.body && res.body.message) || '未知错误');
+                    return;
+                }
                 row.textContent = '上传完成';
                 setTimeout(function () {
                     if (list) list.innerHTML = '';

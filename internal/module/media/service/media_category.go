@@ -5,7 +5,6 @@ package mediaservice
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -151,8 +150,9 @@ func (s *Service) DeleteCategory(ctx context.Context, req *mediadto.CategoryDele
 
 // UpdateAttachment 更新附件（文件名 / 分类 / alt / 标题 / 描述；alt 等存 ExtraInfo JSON）。
 func (s *Service) UpdateAttachment(ctx context.Context, req *mediadto.AttachmentUpdateReq) error {
-	e, err := s.am.GetByID(ctx, req.ID)
-	if err != nil {
+	// 存在性校验（GetByID 带 status=1 过滤）。ExtraInfo 合并在 model 内以 SQL 原子完成，
+	// 不再依赖这里读到的快照 —— 快照会与构建期 refs 写入竞态并互相覆盖。
+	if _, err := s.am.GetByID(ctx, req.ID); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return errors.New("附件不存在")
 		}
@@ -172,36 +172,29 @@ func (s *Service) UpdateAttachment(ctx context.Context, req *mediadto.Attachment
 			updates["category_id"] = nil // 移入未分类
 		}
 	}
-	// ExtraInfo JSON 合并（alt/title/description）。
-	extra := map[string]any{}
-	skipExtra := false
-	if e.ExtraInfo != nil && *e.ExtraInfo != "" {
-		// 原 ExtraInfo 非 JSON 对象（如数组/标量）时跳过合并，保留原数据防覆盖丢失。
-		if err := json.Unmarshal([]byte(*e.ExtraInfo), &extra); err != nil || extra == nil {
-			skipExtra = true
-		}
-	}
-	changed := false
+	// ExtraInfo 合并（alt/title/description）：只动这三个键，**不整列覆盖**。
+	// 同列的 refs 是构建期写入的引用缓存，整列读-改-写会把它回退成旧值，
+	// 导致删除保护失效（在用中的媒体被误删）。合并走 model 的 SQL 级 jsonb 操作。
+	setExtra := map[string]any{}
+	var delExtra []string
 	for _, pair := range []struct {
 		key string
 		val *string
 	}{{"alt", req.Alt}, {"title", req.Title}, {"description", req.Description}} {
-		if pair.val != nil {
-			v := strings.TrimSpace(*pair.val)
-			if v == "" {
-				delete(extra, pair.key)
-			} else {
-				extra[pair.key] = v
-			}
-			changed = true
+		if pair.val == nil {
+			continue
+		}
+		v := strings.TrimSpace(*pair.val)
+		if v == "" {
+			delExtra = append(delExtra, pair.key)
+		} else {
+			setExtra[pair.key] = v
 		}
 	}
-	if changed && !skipExtra {
-		raw, err := json.Marshal(extra)
-		if err != nil {
-			return err
+	if len(setExtra) > 0 || len(delExtra) > 0 {
+		if merr := s.am.MergeAttachmentExtra(ctx, req.ID, setExtra, delExtra); merr != nil {
+			return merr
 		}
-		updates["extra_info"] = string(raw)
 	}
 	return s.am.AttachmentUpdate(ctx, req.ID, updates)
 }

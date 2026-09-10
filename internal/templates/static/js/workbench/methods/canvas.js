@@ -348,9 +348,13 @@ export const canvasMethods = {
                 nodes = clone(nodes);
                 var self = this;
                 // 递归重写 ID：与 pasteInto 同源，但保留 document 里的 props/结构。
+                // 必须用批内记账的分配器：newId 只查「已入档」节点，而本批节点要等
+                // 全部重写完成后才 push 进 root，用 newId 会让同批同前缀节点撞成同一个 ID
+                // （删除命中错误节点 + 构建期 ValidateNodeID 拒绝发布）。
+                var allocId = this.makeIdAllocator();
                 (function assign(list) {
                     (list || []).forEach(function (n) {
-                        n.id = self.newId(n.id || 'node');
+                        n.id = allocId(n.id || 'node');
                         assign(n.children);
                     });
                 })(nodes);

@@ -16,7 +16,7 @@ export function listPanel(ctx) {
         var mid = document.createElement('div'); mid.className = 'wb-repeater-mid';
         if (get(ctx, 'props.style') === 'icon') {
             // 弹层图标选择：点击图标按钮弹出 SVG 网格，点选回填。
-            var ipo = iconPopupPicker('图标', item.icon || 'check', function (v) {
+            var ipo = iconPopupPicker(ctx, '图标', item.icon || 'check', function (v) {
                 item.icon = v;
                 save();
                 ipo.refresh(v);
@@ -50,7 +50,7 @@ export function infoboxPanel(ctx) {
     // 弹层选择：内联网格会把上千个图标全部铺开、占满面板；
     // 改为「点击当前图标 → 弹出选择器」（含搜索 + 分类切换），选中回填。
     var cur = get(ctx, 'props.icon') == null ? '' : String(get(ctx, 'props.icon'));
-    var ipo = iconPopupPicker('图标', cur, function (v) {
+    var ipo = iconPopupPicker(ctx, '图标', cur, function (v) {
         commit(ctx, 'props.icon', v);
         ipo.refresh(v);
     }, { allowEmpty: true });

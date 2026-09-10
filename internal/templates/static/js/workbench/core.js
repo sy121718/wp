@@ -543,7 +543,14 @@ export function wbColorPicker(opts) {
             if (panel.hidden) { sync(); place(); } else { panel.hidden = true; }
         });
         panel.addEventListener('pointerdown', function (e) { e.stopPropagation(); });
-        document.addEventListener('pointerdown', function (e) {
+        // 自清理监听：控件 DOM 被移除（检查器重渲染）后，本监听器自行注销。
+        // 原来每次渲染一个颜色控件都会向 document 挂一个永不释放的监听器，
+        // 闭包同时持有 panel/root，编辑会话越久泄漏越多。
+        document.addEventListener('pointerdown', function onDocDown(e) {
+            if (!document.documentElement.contains(root)) {
+                document.removeEventListener('pointerdown', onDocDown);
+                return;
+            }
             if (!panel.hidden && !root.contains(e.target)) panel.hidden = true;
         });
 

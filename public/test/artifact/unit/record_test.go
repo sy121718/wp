@@ -216,12 +216,18 @@ func TestArtifactRecordDuplicateFileHashInManifest(t *testing.T) {
 	req := validReq()
 	req.Manifest = json.RawMessage(`{"canonicalPath":"/dup.html","files":{"index.html":"H","app.js":"H"}}`)
 
-	_, err := svc.Record(context.Background(), req)
-	// 行为记录/bug：合法输入（两个路径共享同一内容哈希）导致归档失败。
-	requireErrMsg(t, err, artifactenums.ErrArtifactMismatch)
-	// 事务应回滚：不留半条记录。
-	if n := artifactRowCount(t, svc); n != 0 {
-		t.Fatalf("失败归档不应留行: %d", n)
+	res, err := svc.Record(context.Background(), req)
+	// 回归用例（原为「行为记录/bug」）：manifest 内两个路径共享同一内容哈希是合法输入，
+	// 闭包必须按哈希去重后归档成功。原实现让第二条撞复合主键，整个归档事务回滚 ——
+	// 表现为「首次归档含同内容文件必失败」。
+	if err != nil {
+		t.Fatalf("重复文件哈希应归档成功: %v", err)
+	}
+	if n := artifactRowCount(t, svc); n != 1 {
+		t.Fatalf("应留下 1 条归档记录: %d", n)
+	}
+	if n := closureCount(t, svc, res.ID); n != 1 {
+		t.Fatalf("重复哈希应去重为 1 条闭包: %d", n)
 	}
 }
 

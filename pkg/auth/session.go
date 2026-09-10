@@ -24,7 +24,12 @@ const (
 	onlinePrefix      = "online:"
 
 	defaultSessionTTL = 24 * time.Hour
-	defaultOnlineTTL  = 5 * time.Minute
+	// defaultRememberMeTTL 勾选「记住我」时 Redis 会话的存活时长。
+	// 必须与 cookie 的有效期一致（cookie_session.go rememberMeSessionMaxAge = 7d），
+	// 否则会出现「cookie 还在、Redis 会话已过期」的静默掉线：用户在第 25 小时
+	// 之后回到后台，浏览器仍带着登录 cookie，却被判定未登录并跳回登录页。
+	defaultRememberMeTTL = 7 * 24 * time.Hour
+	defaultOnlineTTL     = 5 * time.Minute
 
 	// blockedTTL 封禁标记的固定存活时长。
 	// RevokeUserSession 传 time.Now() 时 time.Until(blockedUntil) 为负值，Redis 会报
@@ -67,6 +72,30 @@ func SaveUserSession(ctx context.Context, session *UserSession, ttl time.Duratio
 		ttl = defaultSessionTTL
 	}
 	return cache.SetJSON(ctx, sessionKey(session.ID), session, ttl)
+}
+
+// RefreshUserSession 覆盖会话内容但**保持剩余 TTL 不变**。
+//
+// 登录之外的路径（读取个人信息时顺带回填 Redis）不能用 SaveUserSession(…, 0)：
+// 那会把「记住我」的 7 天有效期悄悄缩回默认 24h，用户在第 25 小时被踢回登录页。
+// key 已不存在（会话已过期）时按默认 24h 重建，与登录语义一致。
+func RefreshUserSession(ctx context.Context, session *UserSession) error {
+	ttl, err := cache.TTL(ctx, sessionKey(session.ID))
+	if err != nil || ttl <= 0 {
+		ttl = defaultSessionTTL
+	}
+	return cache.SetJSON(ctx, sessionKey(session.ID), session, ttl)
+}
+
+// SessionTTLFor 返回会话在 Redis 中的存活时长（与登录 cookie 的有效期一一对应）。
+//
+// 登录侧必须用它而不是传 0：传 0 会落到 24h 默认值，而勾选「记住我」时
+// cookie 写的是 7 天，两者不一致 → 第 25 小时起用户带着有效 cookie 被判未登录。
+func SessionTTLFor(rememberMe bool) time.Duration {
+	if rememberMe {
+		return defaultRememberMeTTL
+	}
+	return defaultSessionTTL
 }
 
 // GetUserSession 从 Redis 获取用户会话信息。

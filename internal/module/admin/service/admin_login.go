@@ -125,7 +125,7 @@ func (s *Service) AdminLogin(ctx context.Context, req *admindto.AdminLoginReq, c
 		Status:    entity.Status,
 		IsAdmin:   entity.IsAdmin,
 		DeptID:    entity.DeptID,
-	}, 0); err != nil {
+	}, auth.SessionTTLFor(req.RememberMe)); err != nil {
 		return nil, fmt.Errorf("写入用户会话失败: %w", err)
 	}
 
@@ -192,8 +192,8 @@ func (s *Service) AdminProfile(ctx context.Context, userID uint64) (*admindto.Ad
 		phone = *entity.Phone
 	}
 
-	// 3) 回填 Redis
-	if err := auth.SaveUserSession(ctx, &auth.UserSession{
+	// 3) 回填 Redis（保持剩余 TTL：本路径不是登录，不能重置会话有效期）
+	if err := auth.RefreshUserSession(ctx, &auth.UserSession{
 		ID:       entity.ID,
 		Username: entity.Username,
 		Name:     name,
@@ -203,7 +203,7 @@ func (s *Service) AdminProfile(ctx context.Context, userID uint64) (*admindto.Ad
 		Status:   entity.Status,
 		IsAdmin:  entity.IsAdmin,
 		DeptID:   entity.DeptID,
-	}, 0); err != nil {
+	}); err != nil {
 		return nil, fmt.Errorf("写入用户会话失败: %w", err)
 	}
 

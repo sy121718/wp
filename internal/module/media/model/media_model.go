@@ -3,6 +3,9 @@ package mediamodel
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -232,6 +235,50 @@ func (m *FileCategoryModel) DeleteCategory(ctx context.Context, id uint64) error
 // AttachmentUpdate 更新附件字段（文件名 / 分类 / ExtraInfo JSON）。
 func (m *AttachmentModel) AttachmentUpdate(ctx context.Context, id uint64, updates map[string]any) error {
 	return m.attrDB(ctx).Where("id = ?", id).Updates(updates).Error
+}
+
+// extraKeyRe ExtraInfo 业务键名白名单格式：内联进 SQL 之前逐键校验，杜绝拼接注入。
+var extraKeyRe = regexp.MustCompile(`^[a-z][a-z0-9_]{0,31}$`)
+
+// MergeAttachmentExtra 原子合并 ExtraInfo 的业务键（alt/title/description）。
+//
+// 为什么不能用「整列读-改-写」：extra_info 同一列还存着构建期写入的 refs
+// 引用缓存（见 media_ref_model.go 的 AddRef/ReplaceRefs）。两者并发时，
+// 整列覆盖会把刚写进去的 refs 回退成旧值 → 引用保护失效（在用中的媒体被误删）。
+// 这里改成 SQL 级 jsonb 合并（与 AddRef 同思路），两条写入路径互不覆盖。
+//
+// 语义：
+//   - extra_info 为 SQL NULL / jsonb null 时按空对象处理（正常写入，与旧实现一致）；
+//   - 数组 / 字符串 / 数字等历史脏数据原样保留，不归零重写；
+//   - set 中的键覆盖写入，del 中的键删除；两者都在一次 UPDATE 内完成。
+func (m *AttachmentModel) MergeAttachmentExtra(ctx context.Context, id uint64, set map[string]any, del []string) error {
+	setJSON := "{}"
+	if len(set) > 0 {
+		raw, err := json.Marshal(set)
+		if err != nil {
+			return err
+		}
+		setJSON = string(raw)
+	}
+	// 基值：NULL / jsonb null → 空对象；object → 自身。
+	// jsonb_typeof(NULL) 为 NULL，`IN (...)` 判定不成立，因此 NULL 会落到 ELSE 分支，
+	// 经 COALESCE 归零为空对象 —— 这正是旧实现（从空 map 起手）的行为。
+	base := "COALESCE(NULLIF(extra_info, 'null'::jsonb), '{}'::jsonb)"
+	// 括号不能省：PG 对同级运算符不按左结合解析（实测 'a'||'b'-'c' 会算成 'a'||('b'-'c')），
+	// 必须显式写成 ((base || 补丁) - 删除键) 才能正确删键。
+	expr := "CASE WHEN jsonb_typeof(extra_info) IN ('array','string','number','boolean') THEN extra_info ELSE ((" + base + " || ?::jsonb)"
+	for _, k := range del {
+		// 键名内联（先过白名单校验）而不是用占位符：GORM 对 Update 表达式参数与
+		// Where 参数的拼接顺序不保证与书写顺序一致，多占位符会导致实参错位；
+		// 键名来自服务端枚举的常量，校验格式后内联无注入面。
+		if !extraKeyRe.MatchString(k) {
+			return fmt.Errorf("非法的 ExtraInfo 键名: %q", k)
+		}
+		expr += " - '" + k + "'::text"
+	}
+	expr += ") END"
+	return m.attrDB(ctx).Where("id = ?", id).
+		Update("extra_info", gorm.Expr(expr, setJSON)).Error
 }
 
 // DetachAttachments 把分类下的全部附件移入未分类（category_id=NULL，分类删除前的级联动作）。

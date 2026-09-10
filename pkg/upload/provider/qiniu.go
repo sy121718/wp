@@ -95,6 +95,13 @@ func (p *qiniuProvider) Upload(ctx context.Context, cfg RuntimeConfig, file File
 	if err != nil {
 		return Result{}, err
 	}
+	// 必须关闭 pipe 读端：body 由后台 goroutine 写入无缓冲的 io.Pipe，一旦下面
+	// 任何一步失败（建请求失败 / Do 失败）而没人读，写端就永久阻塞在该 goroutine
+	// 上 —— 每次失败上传都会泄漏一个 goroutine 与一份文件句柄。
+	// 成功路径上 pipe 已读到 EOF，Close 是 no-op。
+	if closer, ok := bodyReader.(io.Closer); ok {
+		defer func() { _ = closer.Close() }()
+	}
 
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, uploadHost, bodyReader)
 	if err != nil {

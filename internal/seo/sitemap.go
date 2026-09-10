@@ -141,11 +141,24 @@ func WriteSiteFiles(dir, baseURL string, entries []SitemapEntry) error {
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(filepath.Join(dir, "sitemap.xml"), []byte(sm), 0o644); err != nil {
+	if err := writeFileAtomic(filepath.Join(dir, "sitemap.xml"), []byte(sm)); err != nil {
 		return err
 	}
 	rb := BuildRobots(baseURL, "/sitemap.xml")
-	return os.WriteFile(filepath.Join(dir, "robots.txt"), []byte(rb), 0o644)
+	return writeFileAtomic(filepath.Join(dir, "robots.txt"), []byte(rb))
+}
+
+// writeFileAtomic 先写同目录临时文件再 rename 落位。
+//
+// 直接 os.WriteFile 目标文件时，进程若在写入中途崩溃会留下截断的 sitemap.xml，
+// 爬虫读到半个 XML 会直接判定解析失败（比文件不存在更糟）。同目录 rename 在同一
+// 文件系统上是原子的：读者要么看到旧内容，要么看到完整新内容。
+func writeFileAtomic(path string, data []byte) error {
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
 }
 
 // EntryForPath 由单条「已激活路径」构造 sitemap 条目（根路径优先级最高）。

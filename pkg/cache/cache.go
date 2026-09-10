@@ -100,6 +100,18 @@ func SetJSON(ctx context.Context, key string, value any, ttl time.Duration) erro
 	return nil
 }
 
+// TTL 返回 key 的剩余存活时间（语义与 Redis TTL 一致：-2 = key 不存在，-1 = 无过期时间）。
+//
+// 用途：需要「改写值但不改变有效期」的场景（例如回填会话内容时保留登录时设置的
+// rememberMe 有效期），避免用固定 TTL 重写把长会话悄悄缩短。
+func TTL(ctx context.Context, key string) (time.Duration, error) {
+	client, err := GetRedis()
+	if err != nil {
+		return 0, err
+	}
+	return client.TTL(ctx, key).Result()
+}
+
 // GetJSON 从缓存中读取 JSON 并反序列化为指定类型。
 //
 // 参数说明：

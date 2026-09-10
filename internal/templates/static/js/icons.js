@@ -5808,7 +5808,15 @@
                 if (opts.onPick) opts.onPick('');
             });
             pop.addEventListener('click', function (e) { e.stopPropagation(); });
-            document.addEventListener('click', function () { close(); });
+            // 自清理监听（同 core.js 的 colorPicker）：控件被移除后自行注销，
+            // 否则每次打开一次图标选择器就向 document 挂一个永不释放的监听器。
+            document.addEventListener('click', function onDocClick() {
+                if (!document.documentElement.contains(root)) {
+                    document.removeEventListener('click', onDocClick);
+                    return;
+                }
+                close();
+            });
 
             pop.appendChild(search);
             pop.appendChild(cats);

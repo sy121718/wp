@@ -101,10 +101,19 @@ func (s *Service) Record(ctx context.Context, req *artifactdto.RecordReq) (res *
 			return err
 		}
 		// 内容对象闭包：manifest.files 的每个文件哈希都是一条共享内容对象。
+		//
+		// 必须按哈希去重：同一份文件在页面里出现多次时 manifest.files 会带重复项，
+		// 第二条 (artifact_id, content_hash) 直接撞主键，导致整个归档事务失败
+		//（表现为「首次归档含同内容文件必失败」）。
+		seenHashes := make(map[string]struct{}, len(parsedManifest.Files))
 		for _, fileHash := range parsedManifest.Files {
 			if strings.TrimSpace(fileHash) == "" {
 				continue
 			}
+			if _, dup := seenHashes[fileHash]; dup {
+				continue
+			}
+			seenHashes[fileHash] = struct{}{}
 			if err := ensureContentObject(tx, fileHash, req.ArtifactProvider, req.ArtifactKey, now); err != nil {
 				return err
 			}
