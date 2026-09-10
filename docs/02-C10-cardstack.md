@@ -95,6 +95,7 @@ shape: line 直接排开（**卡片不带任何角度**）
 | `deckDirection` | horizontal | deck：横向切换（左右） / **纵向切换（上下）** |
 | `deckOffset` / `deckRotate` / `deckScaleStep` | 54 / 4 / 6 | deck（纵向时偏移缺省 12、倾斜减半） |
 | `deckLoop` | 关 | deck（滑到头绕回另一端） |
+| `deckTransition` / `deckDuration` | 平滑 / 450ms | deck 的切换曲线（回弹 = `cubic-bezier(.34,1.56,.64,1)`）与时长 |
 
 ### 布局 / 样式
 
@@ -106,7 +107,7 @@ shape: line 直接排开（**卡片不带任何角度**）
 | `slideFit` | 页面内滚动区 | slide 的贴合方式：`viewport` = 铺满视口（整页分页，不受父容器内边距影响） |
 | `slideDirection` | vertical | slide 的滚动方向：纵向 / 横向 |
 | `slideStack` | 关 | slide 的**堆叠翻页**：卡片粘在同一位置，下一张滑上来盖住前一张 |
-| `slideEffect` | 无 | slide 的**切换动画**：淡入 / 缩放入场 / 翻转入场 / 弹入 / 回弹入场 / 旋转入场 / 光速入场 |
+| `slideEffect` | 无 | slide 的**切换动画**：淡入 / 缩放 / 翻转 / 弹入 / 回弹 / 旋转 / 光速 / 滚入 / 弹出（方向随 `slideDirection` 自适应） |
 
 > `slide` 的右下角自带页码角标（**第几屏 / 共几屏**），由 CSS `counter` + 编译期写入的
 > `attr(data-total)` 生成 —— 零 JS、滚动中自动更新。卡片背景设深色时记得文字也要跟浅色
@@ -123,7 +124,12 @@ shape: line 直接排开（**卡片不带任何角度**）
 scroll-driven**，老浏览器一样能跑。
 
 `slideEffect` **不新增关键帧**，直接复用通用动效词汇（`internal/builder/core/keyframes_animate.go`
-那 33 条 `wp-*`）里适合翻页的 7 条，由 `NeedKeyframes` 标记后构建期统一注入（同名只注入一次）。
+那 33 条 `wp-*`）里适合翻页的 18 条，由 `NeedKeyframes` 标记后构建期统一注入（同名只注入一次、
+**按需注入**：横向页面不会带上纵向的变体）。**方向不用选** —— 纵向自动走 `*-up`/`*-left`、
+横向自动走 `*-right`/`*-y`。
+
+`deck` 的动画走**过渡曲线**而不是入场动画：deck 的卡片始终在视口内，入场动画会和它的位置
+变换抢 `transform`。回弹预设是 `cubic-bezier(.34,1.56,.64,1)`（轻微过冲）。
 播放时机用 `animation-timeline: view()`：卡片进入滚动容器视口时播；不支持 `view()` 的浏览器
 把未知属性丢弃，动画按 0s 播完并由 `fill-mode: both` 停在终态 —— 视觉等于没有动画，位置与内容都正常。横向模式额外需要轨道 `display: flex` + 卡片
 `flex: 0 0 100%`：块级卡片默认纵向堆叠，宽度不溢出，滚动条根本出不来。
