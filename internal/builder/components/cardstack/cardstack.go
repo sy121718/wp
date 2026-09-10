@@ -34,6 +34,8 @@ const (
 	TriggerHover  = "hover"
 	TriggerScroll = "scroll"
 	TriggerDrag   = "drag"
+	// TriggerDeck 堆叠轮播：主卡居中正立，两侧卡片叠开，滑动/拖拽/点击切换主卡。
+	TriggerDeck = "deck"
 )
 
 // 展开形态。
@@ -100,7 +102,7 @@ const (
 // Props 卡片堆叠属性。
 type Props struct {
 	// Trigger 触发方式：hover 悬停展开 / scroll 滚动堆叠（纯 CSS）/ drag 拖拽旋转（增强脚本）。
-	Trigger string `json:"trigger,omitempty" ct:"select,hover=悬停展开,scroll=滚动堆叠,drag=拖拽旋转,default=hover,sec=content,label=触发方式"`
+	Trigger string `json:"trigger,omitempty" ct:"select,hover=悬停展开,scroll=滚动堆叠,drag=拖拽旋转,deck=堆叠轮播,default=hover,sec=content,label=触发方式"`
 	// Shape 展开形态（悬停模式）：fan 弧线扇形 / line 排开（卡片不带任何角度）。
 	Shape string `json:"shape,omitempty" ct:"select,fan=扇形展开,line=直线排开,default=fan,sec=content,label=展开形态"`
 	// Direction 排开方向（仅 shape=line 生效）：horizontal 横排一行 / vertical 竖排一列。
@@ -117,6 +119,12 @@ type Props struct {
 	SpreadAngle int `json:"spreadAngle,omitempty" ct:"slider,min=1,max=15,step=1,sec=motion,label=展开角度(deg)"`
 	// SpreadDistance 悬停展开平移系数（px/张，1~200，缺省 120；同时是「铺满」开关）。
 	SpreadDistance int `json:"spreadDistance,omitempty" ct:"slider,min=1,max=200,step=1,sec=motion,label=展开平移(px)"`
+	// DeckOffset 堆叠轮播的相邻卡横向间距（%，相对卡宽，缺省 54）。
+	DeckOffset int `json:"deckOffset,omitempty" ct:"slider,min=20,max=120,step=2,sec=motion,label=相邻间距(%)"`
+	// DeckRotate 堆叠轮播相邻卡的倾斜角度（deg，缺省 4；0 = 不倾斜，用默认）。
+	DeckRotate int `json:"deckRotate,omitempty" ct:"slider,min=0,max=20,step=1,sec=motion,label=相邻倾斜(deg)"`
+	// DeckScaleStep 堆叠轮播每远一张的缩放递减（%，缺省 6）。
+	DeckScaleStep int `json:"deckScaleStep,omitempty" ct:"slider,min=1,max=20,step=1,sec=motion,label=缩放递减(%)"`
 	// DragRadius 拖拽旋转的环形半径 px（0 = 自动：按卡片宽度与数量保证相邻卡片不重叠）。
 	DragRadius int `json:"dragRadius,omitempty" ct:"slider,min=0,max=1200,step=10,sec=motion,label=环形半径(0=自动)"`
 	// Spacing 滚动模式的卡片间距（缺省 26vh）。
@@ -227,6 +235,8 @@ func effectiveTrigger(p *Props) string {
 		return TriggerScroll
 	case TriggerDrag:
 		return TriggerDrag
+	case TriggerDeck:
+		return TriggerDeck
 	}
 	return TriggerHover
 }
@@ -248,6 +258,37 @@ func effectiveCollectionLimit(p *Props) int {
 		return defaultCollectionLimit
 	}
 	return p.CollectionLimit
+}
+
+// 堆叠轮播缺省值。
+const (
+	defaultDeckOffset    = 54 // 相邻卡横向间距（%）
+	defaultDeckRotate    = 4  // 相邻卡倾斜（deg）
+	defaultDeckScaleStep = 6  // 每远一张的缩放递减（%）
+)
+
+// effectiveDeckOffset 相邻卡间距缺省 54%。
+func effectiveDeckOffset(p *Props) int {
+	if p.DeckOffset <= 0 {
+		return defaultDeckOffset
+	}
+	return p.DeckOffset
+}
+
+// effectiveDeckRotate 相邻卡倾斜缺省 4°。
+func effectiveDeckRotate(p *Props) int {
+	if p.DeckRotate <= 0 {
+		return defaultDeckRotate
+	}
+	return p.DeckRotate
+}
+
+// effectiveDeckScaleStep 缩放递减缺省 6%。
+func effectiveDeckScaleStep(p *Props) int {
+	if p.DeckScaleStep <= 0 {
+		return defaultDeckScaleStep
+	}
+	return p.DeckScaleStep
 }
 
 // effectiveDirection 排开方向缺省横排。
@@ -398,6 +439,8 @@ func CompileCSS(node *core.Node, p *Props, cardN int, b *core.CSSBuckets) {
 		compileScrollCSS(b, sel, node.ID, p, n, width, height, content)
 	case TriggerDrag:
 		compileDragCSS(b, sel, p, n, width, height, content)
+	case TriggerDeck:
+		compileDeckCSS(b, sel, p, n, width, height, content)
 	default:
 		compileHoverCSS(b, sel, p, n, width, height, content)
 	}
@@ -781,6 +824,80 @@ func cssPx(v string, fallback float64) float64 {
 		}
 	}
 	return fallback
+}
+
+// compileDeckCSS 堆叠轮播：主卡居中正立，两侧卡片按「相对主卡的偏移」叠开。
+//
+// 几何全部由每张卡的两个 CSS 变量驱动：
+//
+//	--wp-deck-off  相对当前主卡的偏移（整数，0 = 主卡）
+//	--wp-deck-abs  偏移的绝对值（CSS 没有 abs()，缩放/层级要用它）
+//
+// 编译期逐卡写入的是**静态降级值**（i - mid）：没有增强脚本时卡片按序号摊开成一摞，
+// 依旧可点、可放大；脚本接管后改写为「相对主卡」的偏移 —— 切换主卡只改这两个变量，
+// 位移/倾斜/缩放/层级的关系全在静态 CSS 里，脚本端不碰任何几何数值。
+func compileDeckCSS(b *core.CSSBuckets, sel string, p *Props, n int, width, height string, content bool) {
+	track := sel + " .wp-cardstack-track"
+	offset := effectiveDeckOffset(p)
+	rot := effectiveDeckRotate(p)
+	scaleStep := float64(effectiveDeckScaleStep(p)) / 100
+	mid := float64(n-1) / 2.0
+
+	// 轨道高度：倾斜 + 缩放后卡片的外接盒，按最大偏移保守预留。
+	maxOff := math.Max(mid, 1)
+	cardW := cssPx(width, fallbackCardW)
+	cardH := cssPx(height, fallbackCardH)
+	tiltOut := cardW * math.Sin(float64(rot)*math.Pi/180) * maxOff * 0.35
+	trackH := cardH + 2*math.Max(24, tiltOut)
+
+	b.Add(core.BreakpointDesktop, sel, []string{
+		"position: relative",
+		"width: 100%",
+		"cursor: grab",
+		"touch-action: pan-y",
+	})
+	b.Add(core.BreakpointDesktop, sel+".is-dragging", []string{"cursor: grabbing"})
+	b.Add(core.BreakpointDesktop, track, []string{
+		"position: relative",
+		"display: block",
+		fmt.Sprintf("height: %dpx", int(trackH)),
+	})
+
+	hueStep := float64(effectiveHueStep(p))
+	for i := 0; i < n; i++ {
+		static := float64(i) - mid
+		card := track + " .wp-cardstack-card:nth-child(" + strconv.Itoa(i+1) + ")"
+		decls := []string{
+			// 静态降级值：按序号摊开（无脚本时的形态）。
+			fmt.Sprintf("--wp-deck-off: %s", num(static)),
+			fmt.Sprintf("--wp-deck-abs: %s", num(math.Abs(static))),
+			"position: absolute",
+			"left: 50%",
+			"top: 50%",
+			"width: " + width,
+			fmt.Sprintf("transform: translate(-50%%, -50%%) translateX(calc(var(--wp-deck-off, 0) * %d%%)) rotate(calc(var(--wp-deck-off, 0) * %ddeg)) scale(calc(1 - var(--wp-deck-abs, 0) * %s))",
+				offset, rot, fnum(scaleStep)),
+			"z-index: calc(50 - var(--wp-deck-abs, 0))",
+			"transition: transform .45s cubic-bezier(.22,.61,.36,1), box-shadow .3s",
+			"cursor: pointer",
+		}
+		if content {
+			decls = append(decls, "min-height: "+height, "height: auto")
+		} else {
+			decls = append(decls, "height: "+height,
+				fmt.Sprintf("filter: hue-rotate(%.0fdeg)", static*hueStep))
+		}
+		decls = append(decls, cardBaseDecls(content, p)...)
+		b.Add(core.BreakpointDesktop, card, decls)
+	}
+
+	// 主卡：抬升层级 + 加重投影（由脚本切 is-active 类）。
+	b.Add(core.BreakpointDesktop, sel+" .wp-cardstack-card.is-active", []string{
+		"z-index: 60",
+		"box-shadow: 0 24px 60px rgba(0,0,0,.26)",
+	})
+	// 拖动过程中取消过渡，否则卡片追着指针慢半拍。
+	b.Add(core.BreakpointDesktop, sel+".is-dragging .wp-cardstack-card", []string{"transition: none"})
 }
 
 // compileZoomCSS 点击放大到视口中央（零 JS：label + radio，同组互斥，一次只放大一张）。

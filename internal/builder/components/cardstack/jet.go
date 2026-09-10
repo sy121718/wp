@@ -44,6 +44,10 @@ type View struct {
 	Collection bool
 	// Drag 是否为拖拽旋转模式：容器输出 data-* 属性，公共增强脚本接管指针与方向键。
 	Drag bool
+	// Deck 是否为堆叠轮播模式：容器输出初始主卡序号，脚本接管滑动/点击/方向键切换。
+	Deck bool
+	// DeckIndex 初始主卡序号（取中间那张，两侧对称叠开）。
+	DeckIndex int
 }
 
 // IsCollection 是否内容集合模式 —— 装配层据此决定「子节点模板」还是「组件自带字段映射」。
@@ -56,13 +60,15 @@ func CollectionItems(node *core.Node, p *Props, ctx *core.RenderContext) ([]map[
 
 // BuildView 生成渲染视图；内容集合模式需要 ctx.Collection（装配层注入）。
 func BuildView(node *core.Node, p *Props, ctx *core.RenderContext) (View, error) {
-	drag := effectiveTrigger(p) == TriggerDrag
+	trigger := effectiveTrigger(p)
+	drag := trigger == TriggerDrag
+	deck := trigger == TriggerDeck
 	if source := collectionSource(p); source != "" {
 		cards, err := collectionCards(node, p, ctx)
 		if err != nil {
 			return View{}, err
 		}
-		return View{Cards: cards, Collection: true, Drag: drag}, nil
+		return View{Cards: cards, Collection: true, Drag: drag, Deck: deck, DeckIndex: len(cards) / 2}, nil
 	}
 
 	n := cardCount(node, p)
@@ -71,7 +77,7 @@ func BuildView(node *core.Node, p *Props, ctx *core.RenderContext) (View, error)
 		label := strconv.Itoa(i + 1)
 		cards[i] = CardView{Label: label, AriaLabel: "放大第 " + label + " 张卡片"}
 	}
-	return View{Cards: cards, HasContent: hasContent(node), Drag: drag}, nil
+	return View{Cards: cards, HasContent: hasContent(node), Drag: drag, Deck: deck, DeckIndex: len(cards) / 2}, nil
 }
 
 // collectionCards 解析内容集合 → 每项一张卡（字段映射取自 props）。

@@ -161,6 +161,52 @@ func TestScrollCSS(t *testing.T) {
 	}
 }
 
+// TestDeckCSS 堆叠轮播：几何由每张卡的两个变量驱动，脚本只改写它们。
+func TestDeckCSS(t *testing.T) {
+	p := &Props{Trigger: TriggerDeck}
+	s := compiled(t, nodeOf(p, 0), p)
+
+	for _, want := range []string{
+		"cursor: grab",
+		"touch-action: pan-y",
+		"--wp-deck-off: -4", // 第 1 张：静态降级值 = i - mid（9 张卡）
+		"--wp-deck-abs: 4",
+		"translateX(calc(var(--wp-deck-off, 0) * 54%))",
+		"rotate(calc(var(--wp-deck-off, 0) * 4deg))",
+		"scale(calc(1 - var(--wp-deck-abs, 0) * 0.0600))",
+		"z-index: calc(50 - var(--wp-deck-abs, 0))",
+		".wp-c-n1 .wp-cardstack-card.is-active",
+		"transition: transform .45s cubic-bezier(.22,.61,.36,1)",
+	} {
+		if !strings.Contains(s, want) {
+			t.Errorf("堆叠轮播缺少 %q", want)
+		}
+	}
+	if strings.Contains(s, "position: sticky") || strings.Contains(s, "rotate(-20deg)") {
+		t.Errorf("堆叠轮播混入了其他模式的几何")
+	}
+}
+
+// TestDeckView 轮播模式在视图上打标，初始主卡取中间那张（两侧对称叠开）。
+func TestDeckView(t *testing.T) {
+	p := &Props{Trigger: TriggerDeck, Count: 5}
+	v, err := BuildView(nodeOf(p, 0), p, &core.RenderContext{})
+	if err != nil {
+		t.Fatalf("BuildView: %v", err)
+	}
+	if !v.Deck {
+		t.Errorf("轮播模式应标记 Deck")
+	}
+	if v.DeckIndex != 2 {
+		t.Errorf("5 张卡的初始主卡应为第 3 张（序号 2），got %d", v.DeckIndex)
+	}
+	hover := &Props{Trigger: TriggerHover}
+	v2, _ := BuildView(nodeOf(hover, 0), hover, &core.RenderContext{})
+	if v2.Deck {
+		t.Errorf("悬停模式不该标记 Deck")
+	}
+}
+
 // TestDragCSS 拖拽旋转：环形几何在构建期算好，增强脚本只改写一个 CSS 变量。
 func TestDragCSS(t *testing.T) {
 	p := &Props{Trigger: TriggerDrag}
