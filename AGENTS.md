@@ -40,11 +40,44 @@ go_wp 是 `CMS + Visual Website Builder + Static Publishing Engine`。
 ```bash
 # 后端
 go run cmd/main.go
-go build -o app cmd/main.go
+go build -o app ./cmd        # 生产构建用「包路径」形式，且在 git 工作区内执行（见「组件更新与重建」）
 go test ./...
 go test -race ./...          # 并发回归
 go vet ./...
 ```
+
+
+### 组件更新与重建
+
+组件（Go 实现 + `internal/templates/components/*.jet` 模板）编译进二进制，**部署新组件后已发布的
+产物仍然是旧组件渲染的字节**。系统不会自动重建，但会在启动时给出准确的影响面：
+
+```text
+启动 → builder.RegistryVersion() 与 page_artifacts.registry_version 比对
+     → 差异页面标记 stale（只标记、不重建，避免拖住启动链）
+     → 日志：检测到组件已更新：相关页面已标记待重建（count / registryVersion）
+     → 运维经 page.RebuildStale 重建，或由后续编辑/发布自然覆盖
+```
+
+`RegistryVersion` = 构建指纹（`vcs.revision`+`vcs.modified`）+ 组件清单指纹（类型 + Props 的
+json/ct 标签结构 + 可翻译白名单）。两者的分辨力互补：
+
+| 构建方式 | vcs.revision | Go 代码改动（BuildView/CompileCSS） | Props/模板改动 |
+|---|---|---|---|
+| `go build -o app ./cmd`（git 工作区内） | ✅ | ✅ | ✅ |
+| `go build -o app cmd/main.go`（单文件） | ✅ | ✅ | ✅ |
+| `go run …` / 无 git 环境 | ❌ | ❌ | ✅ |
+
+无 VCS 信息时退化为「组件清单指纹」单独生效：**能发现字段与控件声明变化，发现不了只有 Go 代码
+变了的改动**。生产环境请确保二进制带 VCS 信息（在 git 工作区内构建即可，Go 1.18+ 默认嵌入）。
+
+> 坑：不要用 `bi.Main.Path` 之类的构建期变量给指纹兜底 —— 它随构建方式变化（`go run cmd/main.go`
+> 是 `command-line-arguments`，包方式是模块路径），会让同一个 commit 因构建命令不同算出不同版本，
+> 表现为「每次切换构建方式就误判全站待重建」。
+
+> 产物文件丢失（误删/磁盘损坏）不属于重建范畴：用 `POST /api/page/artifact/rebuild` 按元数据里的
+> `source_document` 重建，并以返回的 `hashMatched` 判断是否原样恢复（组件已更新时会为 false）；
+> `GET /api/page/publication/audit` 可巡检 active 目录里的悬空链接。
 
 ## 架构约束（核心不变量）
 
