@@ -106,6 +106,10 @@ func (s *Service) compileDocument(ctx context.Context, page *builder.Page, proje
 	}
 	if asm != nil {
 		opts = append(opts, builder.WithPluginResolver(plugincontract.AssemblyResolver(asm)))
+		// 插件静态样式（assets/*.css）：构建期注入主 CSS 之后（docs/06 §5.1）。
+		if len(asm.ExtraCSS) > 0 {
+			opts = append(opts, builder.WithExtraCSS(strings.Join(asm.ExtraCSS, "\n\n")))
+		}
 	}
 	if s.content != nil {
 		opts = append(opts, builder.WithCollectionResolver(s.content))

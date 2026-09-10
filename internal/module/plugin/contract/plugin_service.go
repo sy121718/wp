@@ -56,6 +56,9 @@ type Assembly struct {
 	Components []plugindto.ComponentSummary
 	// Presets 区块预设摘要（palette「区块预设」分组注入，document 为预组合 AST 片段）。
 	Presets []plugindto.PresetSummary
+	// ExtraCSS 插件静态样式（assets/*.css，按启用插件字典序拼接；
+	// 构建期经 WithExtraCSS 注入产物主 CSS 之后，docs/06 §5.1 资产规范）。
+	ExtraCSS []string
 }
 
 // ManifestAlias manifest 类型的模块间传递形态（详情接口暴露）。

@@ -7,7 +7,11 @@ package pluginservice
 import (
 	"context"
 	"os"
+	"path/filepath"
+	"regexp"
+	"slices"
 	"sort"
+	"strings"
 
 	"go_wp/internal/builder/core"
 	"go_wp/internal/builder/plugincomp"
@@ -65,9 +69,16 @@ func (s *Service) EnabledAssembly(ctx context.Context) (asm *plugincontract.Asse
 				Document:  p.Document,
 			})
 		}
+		// 插件静态样式（docs/06 §5.1 资产规范）：assets/*.css 按文件名序拼接，
+		// 构建期注入产物主 CSS 之后。文件缺失/目录缺失 = 无样式，静默跳过。
+		if css := pluginExtraCSS(manifest.ID, row.StoragePath); css != "" {
+			asm.ExtraCSS = append(asm.ExtraCSS, css)
+		}
 	}
 	// 组件摘要按类型排序（palette 注入确定性）。
-	sort.Slice(asm.Components, func(i, j int) bool { return asm.Components[i].Type < asm.Components[j].Type })
+	slices.SortFunc(asm.Components, func(a, b plugindto.ComponentSummary) int {
+		return strings.Compare(a.Type, b.Type)
+	})
 	return asm, nil
 }
 
@@ -88,4 +99,43 @@ func orDefault(s, def string) string {
 		return def
 	}
 	return s
+}
+
+// cssImportRe 匹配 @import 规则（大小写不敏感，覆盖 @import url(...) 与 @import "..."）。
+var cssImportRe = regexp.MustCompile(`(?i)@import[^;]*;?`)
+
+// pluginExtraCSS 读取插件包 assets/*.css 并按文件名序拼接（含来源注释头）。
+// 清洗 </style 防止逃逸产物 <style> 块（管理员级信任仍做防御性清洗）。
+// 确定性：文件名序 + 拼接顺序固定，同一插件版本恒同字节。
+func pluginExtraCSS(pluginID, storagePath string) string {
+	entries, err := os.ReadDir(filepath.Join(storagePath, "assets"))
+	if err != nil {
+		return ""
+	}
+	names := make([]string, 0, len(entries))
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".css") {
+			continue
+		}
+		names = append(names, e.Name())
+	}
+	if len(names) == 0 {
+		return ""
+	}
+	sort.Strings(names)
+	var sb strings.Builder
+	for _, name := range names {
+		data, rerr := os.ReadFile(filepath.Join(storagePath, "assets", name))
+		if rerr != nil {
+			continue // 单文件读取失败跳过，不阻断其他资产
+		}
+		css := strings.ReplaceAll(string(data), "</style", "")
+		// 禁 @import：外部样式引用构成数据外泄/追踪通道（插件为管理员级信任，
+		// 仍做纵深防御；站内资产请用 <link> 由平台统一管理）。
+		css = cssImportRe.ReplaceAllString(css, "")
+		sb.WriteString("/* plugin:" + pluginID + ":" + name + " */\n")
+		sb.WriteString(css)
+		sb.WriteString("\n")
+	}
+	return sb.String()
 }
