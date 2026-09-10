@@ -165,6 +165,18 @@ func (s *Service) DetailByID(ctx context.Context, req *artifactdto.DetailByIDReq
 	return toResp(entity), nil
 }
 
+// ListPageIDsByOtherRegistryVersion 返回「存在 registry_version 与 current 不同的
+// 可用产物」的页面 ID。
+//
+// current 为空表示调用方无法确定当前版本（例如二进制无 VCS 信息）：此时返回空列表，
+// 宁可不标记也不误标记全站（避免每次启动都触发全量重建）。
+func (s *Service) ListPageIDsByOtherRegistryVersion(ctx context.Context, current string) (ids []string, err error) {
+	if strings.TrimSpace(current) == "" {
+		return nil, nil
+	}
+	return s.model.ListPageIDsByOtherRegistryVersion(ctx, current)
+}
+
 func (s *Service) findByHash(ctx context.Context, pageID, hash string) (e *artifactmodel.PageArtifactEntity, exists bool, err error) {
 	e, err = s.model.GetByHash(ctx, pageID, hash)
 	if errors.Is(err, gorm.ErrRecordNotFound) {

@@ -84,6 +84,12 @@ type PageService interface {
 	// MarkStaleForBlock 把文档中经 core.globalref 引用或 settings.structure 页眉/页脚
 	// 自选绑定该块的页面标记为待重建（块内容变更后调用，与 MarkStaleForTheme 互补）。
 	MarkStaleForBlock(ctx context.Context, blockID string) error
+	// MarkStaleByRegistryVersion 把「产物由旧组件产出」的页面标记为待重建。
+	//
+	// 触发时机：服务启动时。组件编译进二进制，部署新组件后没有运行时事件能提示
+	// 「已有产物过期」，只能靠产物元数据里的 registry_version 指纹比对。
+	// 只标记不重建；current 为空时不做任何标记。返回被标记的页面 ID。
+	MarkStaleByRegistryVersion(ctx context.Context, current string) (ids []string, err error)
 	// MarkStaleForI18n 把全部页面标记为待重建（界面文案词条变更后调用，
 	// 与 Manifest 的 i18n 依赖条目配套，docs/06-D §10.4）。
 	MarkStaleForI18n(ctx context.Context) error

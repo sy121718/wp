@@ -147,6 +147,23 @@ func (m *Model) MarkStaleForI18n(ctx context.Context) (err error) {
 	return err
 }
 
+// MarkStaleByIDs 按页面 ID 列表标记待重建，返回实际被标记的 ID。
+//
+// 与 MarkStaleForI18n 的全表更新区分：调用方已经算出了精确的影响集合
+// （如「产物由旧组件产出」的页面），不做无谓的全站标记。
+func (m *Model) MarkStaleByIDs(ctx context.Context, ids []string, at time.Time) (marked []string, err error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	err = m.DB(ctx).
+		Where("deleted_at IS NULL AND id IN ?", ids).
+		Update("stale", true).Error
+	if err != nil {
+		return nil, err
+	}
+	return ids, nil
+}
+
 // blockRefMatchCond 块引用匹配条件（JSONB 路径查询）。
 //
 // 语义：draft_document 中任意深度出现键 blockId 且值为字符串 <blockID> 的节点

@@ -161,6 +161,22 @@ func (m *Model) GetByID(ctx context.Context, id string) (e *PageArtifactEntity, 
 	return e, nil
 }
 
+// PayloadStateAvailable 产物负载可用（DB CHECK 约束允许的三种状态之一）。
+const PayloadStateAvailable = "available"
+
+// ListPageIDsByOtherRegistryVersion 返回「存在 registry_version 与 current 不同的
+// 可用产物」的页面 ID（去重、字典序，确定性输出）。
+//
+// 用途：部署新组件后的全站待重建识别 —— 组件是编译进二进制的，没有运行时事件
+// 能提示「已有产物由旧组件产出」，只能靠产物元数据里的版本号比对。
+// 只统计 payload_state='available' 的行：已标记回收的产物不构成重建理由。
+func (m *Model) ListPageIDsByOtherRegistryVersion(ctx context.Context, current string) (ids []string, err error) {
+	err = m.DB(ctx).
+		Where("payload_state = ? AND registry_version <> ?", PayloadStateAvailable, current).
+		Distinct().Order("page_id").Pluck("page_id", &ids).Error
+	return ids, err
+}
+
 // ListByPage 按版本倒序读取页面的全部产物记录（跨语言，含每个语言的各版本行）。
 // 有意不按语言过滤：这是「本页产物全景」视图，语言维度由每行 Lang 自带；
 // 需要单语言切片时按 GetByPageVersion 或调用方自行过滤。

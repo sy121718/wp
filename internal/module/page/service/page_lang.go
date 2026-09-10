@@ -15,6 +15,7 @@ package pageservice
 import (
 	"context"
 	"strings"
+	"time"
 
 	"go_wp/internal/builder"
 	pubcontract "go_wp/internal/module/publication/contract"
@@ -225,6 +226,36 @@ func (s *Service) localizeMenuURL(ctx context.Context, projectID, lang, raw stri
 		return raw
 	}
 	return p
+}
+
+// MarkStaleByRegistryVersion 把「产物由旧组件产出」的页面标记为待重建。
+//
+// 触发时机：服务启动时。组件是编译进二进制的（Go 实现 + embed 模板），部署新组件后
+// 没有任何运行时事件能通知内核「已有产物过期」—— 只能靠产物元数据里的
+// registry_version 指纹（builder.RegistryVersion）与本进程当前值比对。
+//
+// 只标记、不重建：重建交给运维经 RebuildStale 触发，或由后续的编辑/发布自然覆盖。
+// 启动时全量构建会拖住启动链，且对「只想先看一眼」的部署是意外副作用。
+//
+// current 为空（二进制无 VCS 信息等）时不做任何标记 —— 宁可不标记也不全站误标。
+func (s *Service) MarkStaleByRegistryVersion(ctx context.Context, current string) (ids []string, err error) {
+	if strings.TrimSpace(current) == "" || s.artifacts == nil {
+		return nil, nil
+	}
+	ids, err = s.artifacts.ListPageIDsByOtherRegistryVersion(ctx, current)
+	if err != nil {
+		return nil, err
+	}
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	marked, merr := s.model.MarkStaleByIDs(ctx, ids, time.Now().UTC())
+	if merr != nil {
+		return nil, merr
+	}
+	logger.Scene("page").With("count", len(marked)).With("registryVersion", current).
+		Info("组件注册表版本变化：相关页面已标记待重建")
+	return marked, nil
 }
 
 // MarkStaleForI18n 把全部页面标记为待重建（文案词条变更后调用）。

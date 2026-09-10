@@ -1,10 +1,12 @@
 package routers
 
 import (
+	"context"
 	"net/http"
 
 	"go_wp/internal/middleware/builtin"
 
+	"go_wp/internal/builder"
 	"go_wp/internal/builder/core"
 	admincontract "go_wp/internal/module/admin/contract"
 	adminhttp "go_wp/internal/module/admin/inbound/http"
@@ -149,6 +151,21 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 	collectionResolver, _ := contentSvc.(core.CollectionResolver)
 	// navigationSvc 注入 page 装配：core.nav 绑定菜单位置时构建期解析菜单项。
 	pageService := pagehttp.SetupPageRoutes(authorizedAPI, db, artifactSvc, publicationSvc, projectService, blockSvc, pluginSvc, collectionResolver, navigationSvc, mediaSvc)
+
+	// 组件注册表版本比对（启动时一次）：
+	// 组件是编译进二进制的（Go 实现 + embed 模板），部署新组件后没有任何运行时事件
+	// 能提示「已有产物由旧组件产出」。这里比对产物元数据里的 registry_version 与本进程
+	// 当前指纹（builder.RegistryVersion），把差异页面标记为待重建。
+	//
+	// 只标记、不重建：启动时全量构建会拖住启动链，且对「只想先看一眼」的部署是意外
+	// 副作用；重建由运维经 RebuildStale 触发，或由后续编辑/发布自然覆盖。
+	// 失败不阻断启动（少一次提示不影响任何功能）。
+	if marked, verr := pageService.MarkStaleByRegistryVersion(context.Background(), builder.RegistryVersion()); verr != nil {
+		logger.Scene("init").Error(verr, "组件版本比对失败（不阻断启动）")
+	} else if len(marked) > 0 {
+		logger.Scene("init").With("count", len(marked)).With("registryVersion", builder.RegistryVersion()).
+			Info("检测到组件已更新：相关页面已标记待重建（可经 RebuildStale 重建）")
+	}
 	// 依赖 fan-out（PIPE-3，docs/03-pipeline.md §8.2）：内容实体变更 → 按依赖表
 	// 反查受影响产物 → 精确标记 stale（不再是全站标记）→ 自动重建。
 	//

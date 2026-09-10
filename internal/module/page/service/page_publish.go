@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"go_wp/internal/builder"
 	artifactcontract "go_wp/internal/module/artifact/contract"
 	artifactenums "go_wp/internal/module/artifact/enums"
 	pagedto "go_wp/internal/module/page/dto"
@@ -613,9 +614,12 @@ func (s *Service) ensureArtifactRow(ctx context.Context, page *pagemodel.PageEnt
 		ArtifactKey:      loc.Key,
 		ArtifactHash:     hash,
 		CompilerVersion:  art.Manifest.CompilerVersion,
-		RegistryVersion:  art.Manifest.CompilerVersion,
-		Manifest:         manifestJSON,
-		CreatedBy:        systemCreator,
+		// 真实注册表版本（组件模板 + Props 结构 + 二进制 revision 的指纹），
+		// 不是 Manifest 里的常量 —— 部署新组件后要靠它识别「哪些页面的产物是旧组件产的」，
+		// 见 builder.RegistryVersion 与 Service.MarkStaleByRegistryVersion。
+		RegistryVersion: builder.RegistryVersion(),
+		Manifest:        manifestJSON,
+		CreatedBy:       systemCreator,
 	})
 	if err != nil {
 		return "", nil, err

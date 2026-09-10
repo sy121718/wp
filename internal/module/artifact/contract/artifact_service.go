@@ -28,4 +28,9 @@ type ArtifactService interface {
 	Detail(ctx context.Context, req *artifactdto.DetailReq) (res *artifactdto.ArtifactResp, err error)
 	// DetailByID 按产物行 ID 查询产物元数据。
 	DetailByID(ctx context.Context, req *artifactdto.DetailByIDReq) (res *artifactdto.ArtifactResp, err error)
+	// ListPageIDsByOtherRegistryVersion 返回「存在 registry_version 与 current 不同的
+	// 可用产物」的页面 ID（去重、字典序）。
+	// 用途：部署新组件后的全站待重建识别 —— 组件编译进二进制，没有运行时事件能
+	// 提示「已有产物由旧组件产出」，只能靠产物元数据里的版本号比对。
+	ListPageIDsByOtherRegistryVersion(ctx context.Context, current string) (ids []string, err error)
 }
