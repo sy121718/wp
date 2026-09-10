@@ -135,6 +135,11 @@ type Props struct {
 	// DeckDirection 堆叠轮播的切换方向：horizontal 横向 / vertical 纵向。
 	// 纵向即「首屏一张卡叠着，上下滑动翻到下一张」—— 与 slide 的纵向平铺滚动是两回事。
 	DeckDirection string `json:"deckDirection,omitempty" ct:"select,horizontal=横向切换,vertical=纵向切换,default=horizontal,sec=motion,label=切换方向"`
+	// HoverEffect 悬停时的循环效果（仅 hover 模式）：只挑不抢 transform 的两条词汇 ——
+	// 展开位移已经占用了 transform，swing/wobble/pulse 之类会把位移顶掉。
+	HoverEffect string `json:"hoverEffect,omitempty" ct:"select,=无,glow=发光,flash=闪烁,sec=motion,label=悬停效果"`
+	// DeckHighlight 主卡高亮循环效果（仅 deck 模式）：同样只走 filter/opacity。
+	DeckHighlight string `json:"deckHighlight,omitempty" ct:"select,=无,glow=发光,flash=闪烁,sec=motion,label=主卡高亮"`
 	// DeckTransition 卡片切换的过渡曲线：缺省平滑缓出，spring 带回弹。
 	// （deck 的卡片始终在视口内，入场类动画会和位置变换抢 transform，所以这里走过渡曲线。）
 	DeckTransition string `json:"deckTransition,omitempty" ct:"select,=平滑,spring=回弹,ease-out=缓出,linear=线性,sec=motion,label=切换曲线"`
@@ -750,12 +755,18 @@ func compileHoverCSS(b *core.CSSBuckets, sel string, p *Props, n int, width, hei
 			adaptive = fmt.Sprintf("translate(calc(%s * clamp(0px, %s, %dpx)), 0px)",
 				num(offset), allow, int(dist))
 		}
-		b.AddHover(hover, []string{
+		hoverDecls := []string{
 			"transform: " + fixed,
 			"transform: " + adaptive,
 			"color: " + colorLabel,
 			"box-shadow: 0 15px 50px rgba(0,0,0,.25)",
-		})
+		}
+		// 悬停循环效果：只加在悬停规则里，移开鼠标动画自然停止。
+		if kf := loopEffectKey(p.HoverEffect); kf != "" {
+			b.NeedKeyframes(kf)
+			hoverDecls = append(hoverDecls, "animation: "+kf+" 2s ease-in-out infinite")
+		}
+		b.AddHover(hover, hoverDecls)
 	}
 
 	// 按压：容器按下时全部卡变暗；被点的卡恢复原色（并显形数字）后置顶。
@@ -930,6 +941,18 @@ func slideEffectKeyframe(p *Props) string {
 	return ""
 }
 
+// loopEffectKey 循环效果 → 通用词汇名（只返回不占用 transform 的两条：
+// glow 走 filter、flash 走 opacity；其余 loop 词汇都改 transform，会顶掉位移/缩放）。
+func loopEffectKey(v string) string {
+	switch v {
+	case "glow":
+		return "wp-loop-glow"
+	case "flash":
+		return "wp-loop-flash"
+	}
+	return ""
+}
+
 // deckEasing 切换曲线预设（缺省平滑缓出）。
 func deckEasing(p *Props) string {
 	switch p.DeckTransition {
@@ -1083,11 +1106,16 @@ func compileDeckCSS(b *core.CSSBuckets, sel string, p *Props, n int, width, heig
 		b.Add(core.BreakpointDesktop, card, decls)
 	}
 
-	// 主卡：抬升层级 + 加重投影（由脚本切 is-active 类）。
-	b.Add(core.BreakpointDesktop, sel+" .wp-cardstack-card.is-active", []string{
+	// 主卡：抬升层级 + 加重投影（由脚本切 is-active 类）；可选循环高亮。
+	activeDecls := []string{
 		"z-index: 60",
 		"box-shadow: 0 24px 60px rgba(0,0,0,.26)",
-	})
+	}
+	if kf := loopEffectKey(p.DeckHighlight); kf != "" {
+		b.NeedKeyframes(kf)
+		activeDecls = append(activeDecls, "animation: "+kf+" 2s ease-in-out infinite")
+	}
+	b.Add(core.BreakpointDesktop, sel+" .wp-cardstack-card.is-active", activeDecls)
 	// 拖动过程中取消过渡，否则卡片追着指针慢半拍。
 	b.Add(core.BreakpointDesktop, sel+".is-dragging .wp-cardstack-card", []string{"transition: none"})
 }

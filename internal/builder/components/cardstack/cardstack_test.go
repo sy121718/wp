@@ -188,6 +188,39 @@ func TestSlideCSS(t *testing.T) {
 	}
 }
 
+// TestLoopEffects 循环效果：悬停展开与 deck 主卡只走 filter/opacity 两条词汇 ——
+// 展开位移与卡片缩放已经占了 transform，swing/wobble/pulse 之类会把位移顶掉。
+func TestLoopEffects(t *testing.T) {
+	hp := &Props{Trigger: TriggerHover, Count: 3, HoverEffect: "glow"}
+	hs := compiled(t, nodeOf(hp, 0), hp)
+	for _, want := range []string{
+		"animation: wp-loop-glow 2s ease-in-out infinite",
+		"@keyframes wp-loop-glow",
+	} {
+		if !strings.Contains(hs, want) {
+			t.Errorf("悬停循环效果缺少 %q", want)
+		}
+	}
+
+	dp := &Props{Trigger: TriggerDeck, Count: 3, DeckHighlight: "flash"}
+	ds := compiled(t, nodeOf(dp, 0), dp)
+	for _, want := range []string{
+		"animation: wp-loop-flash 2s ease-in-out infinite",
+		"@keyframes wp-loop-flash",
+		".wp-c-n1 .wp-cardstack-card.is-active",
+	} {
+		if !strings.Contains(ds, want) {
+			t.Errorf("主卡高亮缺少 %q", want)
+		}
+	}
+
+	// 缺省不带任何循环动画。
+	plain := &Props{Trigger: TriggerHover, Count: 3}
+	if ps := compiled(t, nodeOf(plain, 0), plain); strings.Contains(ps, "wp-loop-") {
+		t.Errorf("缺省不该带循环动画")
+	}
+}
+
 // TestSlideEffect 切换动画：复用通用动效词汇，关键帧随组件一起注入产物；缺省无动画。
 func TestSlideEffect(t *testing.T) {
 	plain := &Props{Trigger: TriggerSlide, Count: 2}
