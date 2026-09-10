@@ -63,6 +63,14 @@ type PageService interface {
 	Rollback(ctx context.Context, req *pagedto.RollbackReq) (res *pagedto.PublishResp, err error)
 	// UpdateURL 修改访问路径，旧路径按策略 301 或取消激活。
 	UpdateURL(ctx context.Context, req *pagedto.UpdateURLReq) (res *pagedto.PublishResp, err error)
+	// RebuildArtifact 按产物元数据里冻结的 source_document 重建丢失的产物文件
+	// （灾难恢复：只重建文件，不激活、不改 DB 指针）。重建后调用方须比对
+	// HashMatched：只有构建输入（源文档 + 组件注册表 + 编译期依赖）全部未变，
+	// 才能拿回同一个 hash。
+	RebuildArtifact(ctx context.Context, req *pagedto.RebuildArtifactReq) (res *pagedto.RebuildArtifactResp, err error)
+	// AuditPublication 巡检激活面：返回全部悬空/异常链接。
+	// /site 直接服务文件系统，产物被误删时 DB 侧毫无察觉，本方法是唯一发现手段。
+	AuditPublication(ctx context.Context) (res *pagedto.PublicationAuditResp, err error)
 	// Delete 软删页面（deleted_at 置时间，审计留痕）并释放其全部路径占用
 	// （reserved/active/redirect），同路径可被新页面重新占用。
 	Delete(ctx context.Context, req *pagedto.DeleteReq) (err error)

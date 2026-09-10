@@ -508,6 +508,29 @@ func (p *Publisher) compileArtifact(ctx context.Context, in BuildInput) (a *Arti
 	return a, nil
 }
 
+// RestoreArtifact 按给定构建输入重新编译并落盘，返回完整产物（含 Hash）。
+//
+// 用途：灾难恢复 —— 产物文件丢失后，用 DB 里冻结的 source_document 重新编译。
+// 语义边界：
+//   - 不修改内存内核状态、不激活 URL、不写数据库；纯「把 artifacts/<hash>/ 写出来」；
+//   - 调用方**必须**校验返回的 Hash 是否等于元数据里记录的值。
+//
+// 为什么必须校验：产物 hash = SHA256(manifestJSON + "\n" + indexHTML)，而 HTML 的
+// 内容取决于「源文档 + 组件注册表 + 编译期依赖内容（CMS/主题/导航）」。只有这些
+// 输入全部未变时 hash 才相等；任一变化（典型是组件更新）都会产出**另一个版本**，
+// 此时绝不能拿它冒充旧产物。
+func (p *Publisher) RestoreArtifact(ctx context.Context, in BuildInput) (*Artifact, error) {
+	if p.compile == nil {
+		return nil, fmt.Errorf("编译函数未注入，无法重建产物")
+	}
+	return p.compileArtifact(ctx, in)
+}
+
+// ArtifactExists 检查产物文件是否存在且内容与期望 hash 一致（不存在返回错误）。
+func (p *Publisher) ArtifactExists(hash string) error {
+	return p.store.VerifyArtifact(ArtifactLocator(hash), hash)
+}
+
 // publishLocked 在锁内执行发布（UpdateURL 复用）。
 func (p *Publisher) publishLocked(rec *PageRecord, stagedHash string) error {
 	loc := ArtifactLocator(stagedHash)

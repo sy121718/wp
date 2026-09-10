@@ -46,5 +46,8 @@ func SetupPageRoutes(rg *gin.RouterGroup, db *gorm.DB,
 	g.POST("/rollback", handle.Rollback)
 	g.POST("/url/update", handle.UpdateURL)
 	g.POST("/delete", handle.Delete)
+	// 灾难恢复：按产物元数据重建丢失的产物文件 + 激活面巡检。
+	g.POST("/artifact/rebuild", handle.RebuildArtifact)
+	g.GET("/publication/audit", handle.AuditPublication)
 	return svc
 }

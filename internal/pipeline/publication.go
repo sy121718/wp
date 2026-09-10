@@ -3,6 +3,7 @@ package pipeline
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -223,6 +224,78 @@ func (s *LocalPublicationStore) readRedirect(dir string) (*RedirectArtifact, err
 		return nil, err
 	}
 	return &RedirectArtifact{Hash: SHA256(data), Directive: *d, Entry: data}, nil
+}
+
+// ActiveLinkIssue 一条异常的激活链接。
+type ActiveLinkIssue struct {
+	// URLPath 站点路径（/about、/）：由 active 目录相对路径反推。
+	URLPath string `json:"urlPath"`
+	// Link 符号链接的绝对路径。
+	Link string `json:"link"`
+	// Reason 异常原因（目标不可达 / 非符号链接 / 遍历失败）。
+	Reason string `json:"reason"`
+}
+
+// AuditActiveLinks 遍历激活目录，返回所有异常链接与受检总数。
+//
+// 为什么需要它：/site 直接服务 active 目录的文件系统状态，产物文件被误删或磁盘
+// 损坏后 DB 侧毫无察觉 —— page_artifacts 行还在、payload_state 仍是 available、
+// pages.active_artifact_id 仍指着它，表现是「线上 404 但后台一切正常」。
+// 本方法是唯一能发现这种静默失联的手段（只读，不修改任何状态）。
+func (s *LocalPublicationStore) AuditActiveLinks() (issues []ActiveLinkIssue, checked int, err error) {
+	if s.ActiveRoot == "" {
+		return nil, 0, fmt.Errorf("激活目录未配置")
+	}
+	if _, serr := os.Stat(s.ActiveRoot); serr != nil {
+		if os.IsNotExist(serr) {
+			return nil, 0, nil // 从未发布过：空目录等价于零 issue
+		}
+		return nil, 0, serr
+	}
+	walkErr := filepath.WalkDir(s.ActiveRoot, func(path string, d fs.DirEntry, werr error) error {
+		if werr != nil {
+			issues = append(issues, ActiveLinkIssue{Link: path, Reason: "遍历失败: " + werr.Error()})
+			return nil
+		}
+		if d.IsDir() {
+			return nil
+		}
+		// active 目录里的一切映射都应是指向 artifacts/ 的符号链接。
+		if d.Type()&os.ModeSymlink == 0 {
+			issues = append(issues, ActiveLinkIssue{
+				URLPath: activeRelToURL(s.ActiveRoot, path),
+				Link:    path,
+				Reason:  "非符号链接（激活目录只应存放指向产物的链接）",
+			})
+			return nil
+		}
+		checked++
+		if _, serr := os.Stat(path); serr != nil {
+			issues = append(issues, ActiveLinkIssue{
+				URLPath: activeRelToURL(s.ActiveRoot, path),
+				Link:    path,
+				Reason:  "链接目标不可达: " + serr.Error(),
+			})
+		}
+		return nil
+	})
+	if walkErr != nil {
+		return issues, checked, walkErr
+	}
+	return issues, checked, nil
+}
+
+// activeRelToURL active 目录相对路径 → 站点 URL（index → /）。
+func activeRelToURL(root, path string) string {
+	rel, rerr := filepath.Rel(root, path)
+	if rerr != nil {
+		return ""
+	}
+	rel = filepath.ToSlash(rel)
+	if rel == "index" || rel == "index.html" {
+		return "/"
+	}
+	return "/" + rel
 }
 
 // relActivePath URL path → active 目录相对路径；根路径映射为 index（静态站点入口约定）。

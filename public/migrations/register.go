@@ -150,6 +150,9 @@ var navigationPathUniqueSQL string
 //go:embed 076_lang_backfill_per_project.sql
 var langBackfillPerProjectSQL string
 
+//go:embed 077_recovery_permissions.sql
+var recoveryPermsSQL string
+
 //go:embed 073_blueprint_ddl_align.sql
 var blueprintDDLAlignSQL string
 
@@ -420,6 +423,14 @@ func init() {
 		Version:   "076-lang-backfill-per-project",
 		TableName: "page_artifacts_lang_backfill_always",
 		SQL:       langBackfillPerProjectSQL,
+	})
+
+	// 077：灾难恢复接口权限点（产物重建 + 激活面巡检）。
+	registerSeed(Seed{
+		Version:      "077-recovery-permissions",
+		TableName:    "sys_permission",
+		ConditionSQL: "SELECT COUNT(*) FROM sys_permission WHERE permission_code IN ('page:artifact_rebuild','page:publication_audit')",
+		SQL:          recoveryPermsSQL,
 	})
 
 	// 073：把历史库的 blueprints / blueprint_versions 对齐到 model（唯一真源）。

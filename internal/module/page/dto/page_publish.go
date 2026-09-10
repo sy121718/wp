@@ -44,3 +44,39 @@ type PublishResp struct {
 	DraftPath   string `json:"draftPath"`
 	PublishedAt string `json:"publishedAt,omitempty"`
 }
+
+// RebuildArtifactReq 按产物元数据重建丢失的产物文件（灾难恢复）。
+type RebuildArtifactReq struct {
+	ArtifactID string `json:"artifactId" binding:"required"`
+}
+
+// RebuildArtifactResp 产物重建结果。
+type RebuildArtifactResp struct {
+	ArtifactID   string `json:"artifactId"`
+	Lang         string `json:"lang"`
+	Path         string `json:"path"`
+	ExpectedHash string `json:"expectedHash"`
+	ActualHash   string `json:"actualHash"`
+	// Restored 产物文件现已可用（文件本就存在，或重建后 hash 一致）。
+	Restored bool `json:"restored"`
+	// HashMatched 重建结果与元数据记录的 hash 一致（hash 相同才算真的恢复）。
+	HashMatched bool `json:"hashMatched"`
+	// AlreadyThere 文件原本就在，未执行编译（幂等短路）。
+	AlreadyThere bool `json:"alreadyThere"`
+	// Reason 重建产物与元数据不一致时的差异说明。
+	Reason string `json:"reason"`
+}
+
+// PublicationIssue 一条异常激活链接（巡检报告项）。
+type PublicationIssue struct {
+	URLPath string `json:"urlPath"`
+	Link    string `json:"link"`
+	Reason  string `json:"reason"`
+}
+
+// PublicationAuditResp 激活面巡检报告。
+type PublicationAuditResp struct {
+	Checked int                `json:"checked"`
+	Issues  []PublicationIssue `json:"issues"`
+	Healthy bool               `json:"healthy"`
+}

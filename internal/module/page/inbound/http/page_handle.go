@@ -109,6 +109,31 @@ func (h *Handle) Publish(c *gin.Context) {
 	response.SuccessWithMessage(c, pageenums.MsgPublished, res)
 }
 
+// RebuildArtifact 按产物元数据重建丢失的产物文件（灾难恢复）。
+func (h *Handle) RebuildArtifact(c *gin.Context) {
+	var req pagedto.RebuildArtifactReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ParamError(c, pageenums.ErrInvalidParam)
+		return
+	}
+	res, err := h.svc.RebuildArtifact(c.Request.Context(), &req)
+	if err != nil {
+		response.ErrorWithMessage(c, pageErrorStatus(err), pageErrorMessage(err))
+		return
+	}
+	response.Success(c, res)
+}
+
+// AuditPublication 巡检激活面：返回所有悬空/异常的激活链接。
+func (h *Handle) AuditPublication(c *gin.Context) {
+	res, err := h.svc.AuditPublication(c.Request.Context())
+	if err != nil {
+		response.ErrorWithMessage(c, pageErrorStatus(err), pageErrorMessage(err))
+		return
+	}
+	response.Success(c, res)
+}
+
 // Rollback 回滚到历史产物。
 func (h *Handle) Rollback(c *gin.Context) {
 	var req pagedto.RollbackReq
