@@ -867,8 +867,11 @@ func compileDragCSS(b *core.CSSBuckets, sel string, p *Props, n int, width, heig
 	// 轨道高度 = 圆周外接盒（2R + 卡高），与相邻区块不会重叠。
 	b.Add(core.BreakpointDesktop, track, []string{
 		"position: relative",
-		"display: block",
-		fmt.Sprintf("height: %dpx", int(2*radius+cardH)),
+		// 同格叠放 + 内容可撑开：min-height 只作下限（环形外接盒是几何下限）。
+		"display: grid",
+		"justify-items: center",
+		"align-items: center",
+		fmt.Sprintf("min-height: %dpx", int(2*radius+cardH)),
 		// 旋转角由增强脚本改写；无脚本时保持 0，卡片静态成环。
 		"--sky-cardstack-rot: 0deg",
 	})
@@ -878,11 +881,12 @@ func compileDragCSS(b *core.CSSBuckets, sel string, p *Props, n int, width, heig
 		angle := 360 * float64(i) / float64(n)
 		card := track + " .sky-cardstack-card:nth-child(" + strconv.Itoa(i+1) + ")"
 		decls := []string{
-			"position: absolute",
-			"left: 50%",
-			"top: 50%",
+			// 居中交给 grid（同格叠放）：卡片不再 absolute，轨道因此能被内容撑开。
+			"grid-area: 1 / 1",
+			"justify-self: center",
+			"align-self: center",
 			"width: " + width,
-			fmt.Sprintf("transform: translate(-50%%, -50%%) rotate(calc(%sdeg + var(--sky-cardstack-rot, 0deg))) translateY(-%dpx) rotate(calc(-%sdeg - var(--sky-cardstack-rot, 0deg)))",
+			fmt.Sprintf("transform: rotate(calc(%sdeg + var(--sky-cardstack-rot, 0deg))) translateY(-%dpx) rotate(calc(-%sdeg - var(--sky-cardstack-rot, 0deg)))",
 				num(angle), int(radius), num(angle)),
 			"transition: transform .35s ease",
 		}
@@ -988,7 +992,8 @@ func deckTransform(offset, rot int, scaleStep float64, vertical bool) string {
 	if vertical {
 		axis = "Y"
 	}
-	return fmt.Sprintf("transform: translate(-50%%, -50%%) translate%s(calc(var(--sky-deck-off, 0) * %d%%)) rotate(calc(var(--sky-deck-off, 0) * %ddeg)) scale(calc(1 - var(--sky-deck-abs, 0) * %s))",
+	// 居中交给 grid，变换里不再带 translate(-50%, -50%)。
+	return fmt.Sprintf("transform: translate%s(calc(var(--sky-deck-off, 0) * %d%%)) rotate(calc(var(--sky-deck-off, 0) * %ddeg)) scale(calc(1 - var(--sky-deck-abs, 0) * %s))",
 		axis, offset, rot, fnum(scaleStep))
 }
 
@@ -1081,8 +1086,11 @@ func compileDeckCSS(b *core.CSSBuckets, sel string, p *Props, n int, width, heig
 	b.Add(core.BreakpointDesktop, sel+".is-dragging", []string{"cursor: grabbing"})
 	b.Add(core.BreakpointDesktop, track, []string{
 		"position: relative",
-		"display: block",
-		fmt.Sprintf("height: %dpx", int(trackH)),
+		// 同格叠放 + 内容可撑开：min-height 只作下限（内容卡的 height 是最小高度）。
+		"display: grid",
+		"justify-items: center",
+		"align-items: center",
+		fmt.Sprintf("min-height: %dpx", int(trackH)),
 	})
 
 	hueStep := float64(effectiveHueStep(p))
@@ -1093,9 +1101,9 @@ func compileDeckCSS(b *core.CSSBuckets, sel string, p *Props, n int, width, heig
 			// 静态降级值：按序号摊开（无脚本时的形态）。
 			fmt.Sprintf("--sky-deck-off: %s", num(static)),
 			fmt.Sprintf("--sky-deck-abs: %s", num(math.Abs(static))),
-			"position: absolute",
-			"left: 50%",
-			"top: 50%",
+			"grid-area: 1 / 1",
+			"justify-self: center",
+			"align-self: center",
 			"width: " + width,
 			deckTransform(offset, rot, scaleStep, vertical),
 			"z-index: calc(50 - var(--sky-deck-abs, 0))",

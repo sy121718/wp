@@ -493,6 +493,7 @@ func TestDeckCSS(t *testing.T) {
 	for _, want := range []string{
 		"cursor: grab",
 		"touch-action: pan-y",
+		"grid-area: 1 / 1",   // 居中交给 grid 同格叠放
 		"--sky-deck-off: -4", // 第 1 张：静态降级值 = i - mid（9 张卡）
 		"--sky-deck-abs: 4",
 		"translateX(calc(var(--sky-deck-off, 0) * 54%))",
@@ -553,7 +554,8 @@ func TestDragCSS(t *testing.T) {
 		"touch-action: pan-y", // 纵向留给页面滚动，横向才归旋转
 		"--sky-cardstack-rot: 0deg",
 		// 9 张卡、240px 宽 → 半径 240/(2·sin20°) ≈ 350.86 → 350px
-		"transform: translate(-50%, -50%) rotate(calc(0deg + var(--sky-cardstack-rot, 0deg))) translateY(-350px)",
+		"grid-area: 1 / 1", // 居中交给 grid 同格叠放（卡片不再 absolute）
+		"transform: rotate(calc(0deg + var(--sky-cardstack-rot, 0deg))) translateY(-350px)",
 		"rotate(calc(-320deg - var(--sky-cardstack-rot, 0deg)))", // 第 9 张 = 360×8/9
 		"transition: transform .35s ease",
 		".sky-c-n1.is-dragging .sky-cardstack-card",
@@ -565,6 +567,35 @@ func TestDragCSS(t *testing.T) {
 	// 不该混入其他模式的几何。
 	if strings.Contains(s, "position: sticky") || strings.Contains(s, "rotate(-20deg)") {
 		t.Errorf("拖拽模式混入了其他模式的几何")
+	}
+}
+
+// TestStackModesUseGrid deck / drag 也用 grid 同格叠放：卡片不再绝对定位，
+// 轨道能被内容撑开（min-height 只作下限），与悬停模式保持一致。
+func TestStackModesUseGrid(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		p    *Props
+	}{
+		{"deck", &Props{Trigger: TriggerDeck, Count: 3}},
+		{"drag", &Props{Trigger: TriggerDrag, Count: 3}},
+	} {
+		s := compiled(t, nodeOf(tc.p, 0), tc.p)
+		for _, want := range []string{
+			"display: grid",
+			"grid-area: 1 / 1",
+			"justify-items: center",
+			"min-height: ",
+		} {
+			if !strings.Contains(s, want) {
+				t.Errorf("%s 模式缺少 %q", tc.name, want)
+			}
+		}
+		for _, line := range strings.Split(s, "\n") {
+			if strings.Contains(line, "position: absolute") && strings.Contains(line, "sky-cardstack-card") {
+				t.Errorf("%s 模式的卡片仍在绝对定位：%s", tc.name, strings.TrimSpace(line))
+			}
+		}
 	}
 }
 
