@@ -110,6 +110,7 @@ shape: line 直接排开（**卡片不带任何角度**）
 | `slideDirection` | vertical | slide 的滚动方向：纵向 / 横向 |
 | `slideStack` | 关 | slide 的**堆叠翻页**：卡片粘在同一位置，下一张滑上来盖住前一张 |
 | `slideEffect` | 无 | slide 的**切换动画**：淡入 / 缩放 / 翻转 / 弹入 / 回弹 / 旋转 / 光速 / 滚入 / 弹出（方向随 `slideDirection` 自适应） |
+| `slideHighlight` | 无 | slide 的**当前屏高亮**：滚到视口中段的那一屏发光 / 闪烁（与切换动画并存） |
 
 > `slide` 的右下角自带页码角标（**第几屏 / 共几屏**），由 CSS `counter` + 编译期写入的
 > `attr(data-total)` 生成 —— 零 JS、滚动中自动更新。卡片背景设深色时记得文字也要跟浅色
@@ -125,7 +126,17 @@ shape: line 直接排开（**卡片不带任何角度**）
 堆叠用 `position: sticky` + 递增 `z-index` 实现（后一张盖住前一张）——**零 JS、不依赖
 scroll-driven**，老浏览器一样能跑。
 
-`slideEffect` **不新增关键帧**，直接复用通用动效词汇（`internal/builder/core/keyframes_animate.go`
+`slideEffect` 与 `slideHighlight` **可以同时开** —— 它们并列成两条 `animation`，各自带
+自己的 `animation-timeline` / `animation-range`（CSS 多动画语法），互不覆盖，因此不需要
+把高亮挪到伪元素上：
+
+```css
+animation: wp-flip-in-x linear both, wp-loop-glow 2s ease-in-out infinite;
+animation-timeline: view(), view();
+animation-range: entry 0% entry 70%, cover 25% cover 75%;
+```
+
+两者都 **不新增关键帧**，直接复用通用动效词汇（`internal/builder/core/keyframes_animate.go`
 那 33 条 `wp-*`）里适合翻页的 18 条，由 `NeedKeyframes` 标记后构建期统一注入（同名只注入一次、
 **按需注入**：横向页面不会带上纵向的变体）。**方向不用选** —— 纵向自动走 `*-up`/`*-left`、
 横向自动走 `*-right`/`*-y`。
