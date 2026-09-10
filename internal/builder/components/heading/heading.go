@@ -59,6 +59,9 @@ type Props struct {
 	LineClamp int `json:"lineClamp,omitempty" ct:"slider,min=0,max=6,step=1,sec=style"`
 	// TextShadow 文字阴影预设：subtle/strong；空为无。
 	TextShadow string `json:"textShadow,omitempty" ct:"select,subtle=轻阴影,strong=重阴影,sec=style,label=文字阴影"`
+	// TextStroke 文字描边预设：thin 细描边 / bold 粗描边（currentColor；
+	// 效果基本库 core.TextStrokeDecls，分类目录文本 FX）；空为无。
+	TextStroke string `json:"textStroke,omitempty" ct:"select,thin=细描边,bold=粗描边,sec=style,label=文字描边"`
 	// Subtitle 副标题文本（显示于主标题之上，小字）。清空保存空串，渲染端
 	// 空串不输出 <span>（无空标签残留）。
 	Subtitle string `json:"subtitle,omitempty" ct:"text,maxlen=200,sec=content,label=副标题"`
@@ -78,6 +81,11 @@ type Props struct {
 	HighlightColor   string `json:"highlightColor,omitempty" ct:"color,maxlen=200,sec=style,label=高亮背景色"`
 	HighlightPadding string `json:"highlightPadding,omitempty" ct:"dimension,maxlen=30,sec=style,label=高亮内边距"`
 	HighlightRadius  string `json:"highlightRadius,omitempty" ct:"dimension,maxlen=30,sec=style,label=高亮圆角"`
+	// TextAnim 文本动画（字/词错落入场）："" 无 / chars 逐字 / words 逐词。
+	// 与高亮盒（Highlight）互不叠加——套高亮盒时不做拆分动画。
+	TextAnim string `json:"textAnim,omitempty" ct:"select,=无,chars=逐字,words=逐词,sec=style,label=文本动画"`
+	// TextAnimDelay 字间延迟（毫秒，10~200，默认 40）。
+	TextAnimDelay int `json:"textAnimDelay,omitempty" ct:"int,min=10,max=200,sec=style,label=字间延迟(ms)"`
 	// Advanced 通用高级属性（规范 docs/02-C0）。
 	Advanced core.AdvancedProps `json:"advanced" ct:"group"`
 }
@@ -164,6 +172,13 @@ func validateExtra(p *Props, nodeID string) (err error) {
 	return core.ValidateTextStyle(nodeID, &p.Typography)
 }
 
+// textAnimOn 文本动画是否生效：开启且未套高亮盒。
+// 与 BuildView 共用同一判定（单一真源）——高亮盒模式下模板不拆分文本，
+// CSS 侧同步不产出分段规则，产物里不会留下永不匹配的死规则。
+func textAnimOn(p *Props) bool {
+	return p.TextAnim != "" && p.HighlightColor == ""
+}
+
 // compileCSS 标题样式：排版组三端声明 + 字重/间距/转换/装饰/颜色/截断/阴影。
 func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	sel := "." + core.NodeClass(id)
@@ -194,6 +209,15 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	}
 	if v, ok := textShadowPresets[p.TextShadow]; p.TextShadow != "" && ok {
 		desktop = append(desktop, core.CSSDecl("text-shadow", v))
+	}
+	// 标题平衡换行（现代 CSS，H5 窄屏长标题观感提升；不支持的浏览器自动忽略）。
+	desktop = append(desktop, "text-wrap: balance")
+	// 文字描边（效果基本库 core.TextStrokeDecls，分类目录文本 FX）。
+	switch p.TextStroke {
+	case "thin":
+		desktop = append(desktop, core.TextStrokeDecls("1px", "currentColor")...)
+	case "bold":
+		desktop = append(desktop, core.TextStrokeDecls("2px", "currentColor")...)
 	}
 
 	// 副标题样式（默认基底 + 用户覆盖：颜色/字号/字重/间距）。
@@ -254,6 +278,27 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	b.Add(core.BreakpointMobile, sel, mobile)
 
 	// 多行截断：-webkit-box 标准组合。
+	// 文本动画（逐字/逐词错落入场）：分段 span 自左向右递增延迟。
+	// 前 20 段逐段递增；第 21 段起用统一档位兜底（避免为长标题生成大量规则）。
+	if textAnimOn(p) {
+		delay := p.TextAnimDelay
+		if delay <= 0 {
+			delay = 40
+		}
+		b.Add(core.BreakpointDesktop, sel+" .wp-h-seg", []string{
+			"display: inline-block",
+			"white-space: pre",
+			"animation: wp-fade-up 0.6s ease backwards",
+		})
+		for i := 1; i <= 20; i++ {
+			b.Add(core.BreakpointDesktop, fmt.Sprintf("%s .wp-h-seg:nth-child(%d)", sel, i),
+				[]string{fmt.Sprintf("animation-delay: %dms", (i-1)*delay)})
+		}
+		b.Add(core.BreakpointDesktop, sel+" .wp-h-seg:nth-child(n+21)",
+			[]string{fmt.Sprintf("animation-delay: %dms", 20*delay)})
+		b.NeedKeyframes("wp-fade-up")
+	}
+
 	if p.LineClamp > 0 {
 		b.Add(core.BreakpointDesktop, sel, []string{
 			"display: -webkit-box",

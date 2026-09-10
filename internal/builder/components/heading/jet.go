@@ -7,6 +7,7 @@ package heading
 
 import (
 	"fmt"
+	"strings"
 
 	"go_wp/internal/builder/core"
 )
@@ -26,6 +27,8 @@ type View struct {
 	Text string
 	// Highlight 是否套高亮背景盒。
 	Highlight bool
+	// Segments 文本动画分段（逐字/逐词；空 = 模板直接输出 Text）。
+	Segments []string
 }
 
 // BuildView 生成标题渲染视图：内容解析（绑定/Fallback/静态）+ 语义标签 + 高亮标志。
@@ -52,5 +55,39 @@ func BuildView(p *Props, content core.ContentResolver) (View, error) {
 		}
 	}
 
-	return View{Tag: tag, Subtitle: p.Subtitle, Text: text, Highlight: p.HighlightColor != ""}, nil
+	view := View{Tag: tag, Subtitle: p.Subtitle, Text: text, Highlight: p.HighlightColor != ""}
+	// 文本动画拆分（逐字/逐词）：构建期切分，模板 range 输出 <span>。
+	// 高亮盒模式不拆分（视觉叠加不自然）；超长文本不拆分（避免规则数量失控）。
+	if textAnimOn(p) {
+		view.Segments = splitTextSegments(text, p.TextAnim)
+	}
+	return view, nil
+}
+
+// maxTextSegments 文本动画分段上限：超过则不拆分（前 20 段逐段递增，其余用兜底档位）。
+const maxTextSegments = 120
+
+// splitTextSegments 按字符/词切分文本用于错落入场动画。
+// chars：按 rune 切分（中文逐字自然，英文逐字母）；words：按空格切分并保留尾随空格。
+// 空文本或超过上限返回 nil（模板回退直接输出整段文本）。
+func splitTextSegments(text, mode string) []string {
+	if text == "" {
+		return nil
+	}
+	var segs []string
+	if mode == "words" {
+		for _, w := range strings.SplitAfter(text, " ") {
+			if w != "" {
+				segs = append(segs, w)
+			}
+		}
+	} else {
+		for _, r := range text {
+			segs = append(segs, string(r))
+		}
+	}
+	if len(segs) == 0 || len(segs) > maxTextSegments {
+		return nil
+	}
+	return segs
 }
