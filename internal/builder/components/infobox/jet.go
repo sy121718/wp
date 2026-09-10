@@ -32,6 +32,8 @@ type View struct {
 	HasMedia bool
 	// MediaSrc 媒体图地址（模板输出时由 Jet 默认转义）。
 	MediaSrc string
+	// MediaAlt 媒体图替代文本（空 = 装饰性图片，输出 alt=""）。
+	MediaAlt string
 	// HasIcon 是否有图标（无媒体图且 Icon 非空）。
 	HasIcon bool
 	// IconSVG 内置图标内联 SVG（白名单，模板 | unsafe 原样输出）。
@@ -69,6 +71,7 @@ func BuildView(p *Props) View {
 	if p.MediaImage != "" {
 		v.HasMedia = true
 		v.MediaSrc = p.MediaImage
+		v.MediaAlt = p.MediaAlt
 	} else if p.Icon != "" {
 		v.HasIcon = true
 		if svg, ok := core.IconSVG(p.Icon); ok {

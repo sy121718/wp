@@ -134,10 +134,13 @@ func TestCompileCSS(t *testing.T) {
 	}
 }
 
-// renderCtx 模板渲染上下文（字段名与 builder/nodeView 对齐：Classes/CustomID/V）。
+// renderCtx 模板渲染上下文（字段名与 builder/nodeView 对齐：Classes/CustomID/NodeID/V）。
+// NodeID 是控件 id 的前缀：label[for] 与控件 id 由「节点 ID + 字段 name」拼成，
+// 保证同页多表单不撞 id（此前 label 与控件完全没有关联）。
 type renderCtx struct {
 	Classes  string
 	CustomID string
+	NodeID   string
 	V        View
 }
 
@@ -166,17 +169,19 @@ func TestFormTemplateRender(t *testing.T) {
 		t.Fatalf("GetTemplate(form): %v", err)
 	}
 	var buf strings.Builder
-	if err := tpl.Execute(&buf, nil, renderCtx{Classes: "sky-c-f1", CustomID: "contact-form", V: view}); err != nil {
+	if err := tpl.Execute(&buf, nil, renderCtx{Classes: "sky-c-f1", CustomID: "contact-form", NodeID: "f1", V: view}); err != nil {
 		t.Fatalf("渲染 form 模板失败: %v", err)
 	}
 	got := buf.String()
 
 	wants := []string{
 		`<form class="sky-c-f1" method="post" id="contact-form" action="/submit">`,
-		`<input type="text" name="name" placeholder="请输入姓名" required>`,
-		`<input type="email" name="email" placeholder="you@example.com">`,
-		`<textarea name="message" placeholder="说点什么"></textarea>`,
-		`<select name="city">`,
+		// label[for] 与控件 id 必须成对：读屏靠它把「姓名」和输入框关联起来。
+		`<label for="sky-form-f1-name">姓名 &amp; &lt;称呼&gt;</label>`,
+		`<input id="sky-form-f1-name" type="text" name="name" placeholder="请输入姓名" required>`,
+		`<input id="sky-form-f1-email" type="email" name="email" placeholder="you@example.com">`,
+		`<textarea id="sky-form-f1-message" name="message" placeholder="说点什么"></textarea>`,
+		`<select id="sky-form-f1-city" name="city">`,
 		`<option value="北京">北京</option>`,
 		`<option value="上海 &amp; 广州">上海 &amp; 广州</option>`,
 		`<input type="checkbox" name="agree" required>`,
@@ -189,6 +194,13 @@ func TestFormTemplateRender(t *testing.T) {
 	for _, want := range wants {
 		if !strings.Contains(got, want) {
 			t.Errorf("渲染输出缺少 %q\n%s", want, got)
+		}
+	}
+	// 关联完整性：每个 label 的 for 都能在产物里找到同名 id（漏一个就是读屏读不出字段名）。
+	for _, seg := range strings.Split(got, "for=\"")[1:] {
+		id := seg[:strings.Index(seg, "\"")]
+		if !strings.Contains(got, `id="`+id+`"`) {
+			t.Errorf("label for=%q 找不到对应控件 id", id)
 		}
 	}
 	// 防注入：原始未转义的危险字符不应出现。

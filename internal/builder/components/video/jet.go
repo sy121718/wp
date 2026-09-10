@@ -29,6 +29,10 @@ type View struct {
 	Controls bool
 	// Preload 预加载策略（默认 metadata）。
 	Preload string
+	// CaptionsSrc / CaptionsLabel / CaptionsLang 字幕轨道（空则整条 track 不输出）。
+	CaptionsSrc   string
+	CaptionsLabel string
+	CaptionsLang  string
 	// Src 本地视频地址（模板输出时由 Jet 默认转义）。
 	Src string
 	// Title iframe 的 title 属性（无障碍描述，构建期按当前语言填充，多语言 P4）。
@@ -57,11 +61,14 @@ func (v *View) ApplyI18n(text func(key, fallback string) string) {
 // BuildView 生成视频渲染视图：外链嵌入 vs 本地 video 双形态判定。
 func BuildView(p *Props) View {
 	v := View{
-		Poster:   p.Poster,
-		Autoplay: p.Autoplay,
-		Loop:     p.Loop,
-		Muted:    p.Muted || p.Autoplay,
-		Controls: p.Controls,
+		Poster:        p.Poster,
+		Autoplay:      p.Autoplay,
+		Loop:          p.Loop,
+		Muted:         p.Muted || p.Autoplay,
+		Controls:      p.Controls,
+		CaptionsSrc:   p.CaptionsSrc,
+		CaptionsLabel: p.CaptionsLabel,
+		CaptionsLang:  p.CaptionsLang,
 	}
 
 	videoURL := p.URL

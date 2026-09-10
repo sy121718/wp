@@ -189,8 +189,16 @@ func TestTabsRendersRadioHack(t *testing.T) {
 	if !strings.Contains(html, "sky-tabs-radio") || !strings.Contains(html, "参数面板") || !strings.Contains(html, "评价面板") {
 		t.Fatalf("页签结构缺失: %s", html[:400])
 	}
-	if !strings.Contains(css, ":checked ~") {
-		t.Fatalf("radio hack 切换 CSS 缺失: %s", css[:300])
+	// 切换用 :has() 而不是「radio:checked ~ 面板」：radio 现在与标签同处导航容器（读屏才把
+	// 单选组读成一组），已不是面板的前兄弟。
+	if !strings.Contains(css, ":has(") || !strings.Contains(css, ":checked)") {
+		t.Fatalf("页签切换 CSS 缺失（应为 :has(...:checked) 形式）: %s", css[:300])
+	}
+	// radio 不能 display:none —— 那会让它离开键盘序列，键盘用户无法切换页签。
+	for _, line := range strings.Split(css, "\n") {
+		if strings.Contains(line, "sky-tabs-radio") && strings.Contains(line, "display: none") {
+			t.Fatalf("页签 radio 被 display:none 隐藏（键盘不可达）: %s", strings.TrimSpace(line))
+		}
 	}
 	if !strings.Contains(html, "参数") || !strings.Contains(html, "评价") {
 		t.Fatalf("页签标签缺失: %s", html[:400])

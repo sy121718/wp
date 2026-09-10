@@ -16,32 +16,45 @@ body {
 }
 
 .sky-c-tb1 .sky-tabs-radio {
-  display: none;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  clip-path: inset(50%);
+  overflow: hidden;
+  white-space: nowrap;
 }
 
-#sky-tabs-tb1-0:checked ~ .sky-c-tb1 .sky-tab-panel[data-index="0"] {
+.sky-c-tb1 .sky-tabs-radio:focus-visible + .sky-tabs-tab {
+  outline: 2px solid var(--sky-c-primary, #2563eb);
+  outline-offset: 2px;
+}
+
+.sky-c-tb1:has(#sky-tabs-tb1-0:checked) .sky-tab-panel[data-index="0"] {
   display: block;
 }
 
-#sky-tabs-tb1-1:checked ~ .sky-c-tb1 .sky-tab-panel[data-index="1"] {
+.sky-c-tb1:has(#sky-tabs-tb1-1:checked) .sky-tab-panel[data-index="1"] {
   display: block;
 }
 
-#sky-tabs-tb1-2:checked ~ .sky-c-tb1 .sky-tab-panel[data-index="2"] {
+.sky-c-tb1:has(#sky-tabs-tb1-2:checked) .sky-tab-panel[data-index="2"] {
   display: block;
 }
 
-#sky-tabs-tb1-0:checked ~ .sky-c-tb1 .sky-tabs-nav label:nth-of-type(1) {
+.sky-c-tb1:has(#sky-tabs-tb1-0:checked) .sky-tabs-nav label:nth-of-type(1) {
   color: #fff;
   background: var(--sky-c-primary, #2563eb);
 }
 
-#sky-tabs-tb1-1:checked ~ .sky-c-tb1 .sky-tabs-nav label:nth-of-type(2) {
+.sky-c-tb1:has(#sky-tabs-tb1-1:checked) .sky-tabs-nav label:nth-of-type(2) {
   color: #fff;
   background: var(--sky-c-primary, #2563eb);
 }
 
-#sky-tabs-tb1-2:checked ~ .sky-c-tb1 .sky-tabs-nav label:nth-of-type(3) {
+.sky-c-tb1:has(#sky-tabs-tb1-2:checked) .sky-tabs-nav label:nth-of-type(3) {
   color: #fff;
   background: var(--sky-c-primary, #2563eb);
 }
@@ -92,23 +105,36 @@ body {
 }
 
 .sky-c-tb2 .sky-tabs-radio {
-  display: none;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  clip-path: inset(50%);
+  overflow: hidden;
+  white-space: nowrap;
 }
 
-#sky-tabs-tb2-0:checked ~ .sky-c-tb2 .sky-tab-panel[data-index="0"] {
+.sky-c-tb2 .sky-tabs-radio:focus-visible + .sky-tabs-tab {
+  outline: 2px solid var(--sky-c-primary, #2563eb);
+  outline-offset: 2px;
+}
+
+.sky-c-tb2:has(#sky-tabs-tb2-0:checked) .sky-tab-panel[data-index="0"] {
   display: block;
 }
 
-#sky-tabs-tb2-1:checked ~ .sky-c-tb2 .sky-tab-panel[data-index="1"] {
+.sky-c-tb2:has(#sky-tabs-tb2-1:checked) .sky-tab-panel[data-index="1"] {
   display: block;
 }
 
-#sky-tabs-tb2-0:checked ~ .sky-c-tb2 .sky-tabs-nav label:nth-of-type(1) {
+.sky-c-tb2:has(#sky-tabs-tb2-0:checked) .sky-tabs-nav label:nth-of-type(1) {
   color: #fff;
   background: var(--sky-c-primary, #2563eb);
 }
 
-#sky-tabs-tb2-1:checked ~ .sky-c-tb2 .sky-tabs-nav label:nth-of-type(2) {
+.sky-c-tb2:has(#sky-tabs-tb2-1:checked) .sky-tabs-nav label:nth-of-type(2) {
   color: #fff;
   background: var(--sky-c-primary, #2563eb);
 }

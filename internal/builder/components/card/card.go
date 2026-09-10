@@ -14,8 +14,11 @@ const Type = "core.card"
 
 // Props core.card 卡片属性。
 type Props struct {
-	// Title 标题（非空输出 <h3>）。
+	// Title 标题（非空输出标题标签）。
 	Title string `json:"title,omitempty" ct:"text,maxlen=200,sec=content,label=标题"`
+	// TitleTag 标题标签层级：空 = h3。卡片出现在 h2 之前或更深层级时，写死 h3 会造成
+	// 标题跳级（h1 → h3），对 SEO 与读屏都是噪音，因此允许按页面结构选。
+	TitleTag string `json:"titleTag,omitempty" ct:"select,=默认（h3）,h2=二级标题,h3=三级标题,h4=四级标题,h5=五级标题,default=,sec=content,label=标题层级"`
 	// Text 正文（富文本 HTML 片段，构建期白名单清洗；存量纯文本转义后按段落包装）。
 	Text string `json:"text,omitempty" ct:"richtext,maxlen=1000,sec=content,label=正文"`
 	// ImageSrc 顶部图片（媒体库选择回填 URL 或外部绝对 URL）。

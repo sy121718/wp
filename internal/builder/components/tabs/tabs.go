@@ -96,8 +96,24 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	b.Add(core.BreakpointDesktop, sel, []string{
 		"display: flex", "flex-direction: column",
 	})
-	// radio 隐藏。
-	b.Add(core.BreakpointDesktop, sel+" .sky-tabs-radio", []string{"display: none"})
+	// radio 视觉隐藏但**保留可聚焦**（sr-only）：display:none 会把 tab 从键盘序列里彻底移除，
+	// 键盘用户无法切换页签。原生 radio group 自带正确的键盘模型 —— Tab 进组、方向键切换。
+	b.Add(core.BreakpointDesktop, sel+" .sky-tabs-radio", []string{
+		"position: absolute",
+		"width: 1px",
+		"height: 1px",
+		"margin: -1px",
+		"padding: 0",
+		"border: 0",
+		"clip-path: inset(50%)",
+		"overflow: hidden",
+		"white-space: nowrap",
+	})
+	// 聚焦可见：sr-only 的 radio 聚焦时把焦点环画在对应标签上（键盘用户能看见当前位置）。
+	b.Add(core.BreakpointDesktop, sel+" .sky-tabs-radio:focus-visible + .sky-tabs-tab", []string{
+		"outline: 2px solid var(--sky-c-primary, #2563eb)",
+		"outline-offset: 2px",
+	})
 	// 面板默认隐藏，选中对应 radio 时显示（面板是 radio 的后续兄弟）。
 	for i := range p.Tabs {
 		radio := "#sky-tabs-" + id + "-" + fmt.Sprintf("%d", i)
@@ -105,14 +121,18 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		// 不能用 nth-of-type：它按「元素类型」计数而非按类名，而容器内 .sky-tabs-nav
 		// 同样是 div，会占掉 div:nth-of-type(1)，导致所有面板选择器整体错位一位、
 		// 匹配不到任何元素 —— 页签切换完全失效（radio 可点但面板永不显示）。
-		panel := sel + " .sky-tab-panel[data-index=\"" + fmt.Sprintf("%d", i) + "\"]"
-		b.Add(core.BreakpointDesktop, radio+":checked ~ "+panel, []string{"display: block"})
+		// 面板选择器**不含 sel 前缀**：:has() 已经挂在容器上，再拼一次会变成
+		// `.sel:has(...) .sel .panel`（要求嵌套两层容器）—— 永不匹配、面板永远不显示。
+		panel := " .sky-tab-panel[data-index=\"" + fmt.Sprintf("%d", i) + "\"]"
+		// 用 :has() 而不是「radio:checked ~ 面板」：radio 现在与标签同处 .sky-tabs-nav，
+		// 已不是面板的前兄弟（标签要在同一个容器里，读屏才把单选组读成一组）。
+		b.Add(core.BreakpointDesktop, sel+":has("+radio+":checked)"+panel, []string{"display: block"})
 	}
 	// 标签高亮。
 	for i := range p.Tabs {
 		radio := "#sky-tabs-" + id + "-" + fmt.Sprintf("%d", i)
-		label := sel + " .sky-tabs-nav label:nth-of-type(" + fmt.Sprintf("%d", i+1) + ")"
-		b.Add(core.BreakpointDesktop, radio+":checked ~ "+label, []string{
+		label := " .sky-tabs-nav label:nth-of-type(" + fmt.Sprintf("%d", i+1) + ")"
+		b.Add(core.BreakpointDesktop, sel+":has("+radio+":checked)"+label, []string{
 			"color: #fff", "background: var(--sky-c-primary, #2563eb)",
 		})
 	}

@@ -46,6 +46,13 @@ type Props struct {
 	Muted bool `json:"muted,omitempty" ct:"bool,sec=content,label=静音"`
 	// Controls 显示播放控件。
 	Controls bool `json:"controls,omitempty" ct:"bool,sec=content,label=播放控件"`
+	// CaptionsSrc 字幕文件地址（WebVTT）。带语音的视频缺字幕，听障用户完全拿不到信息，
+	// 搜索引擎也无法理解音轨内容。
+	CaptionsSrc string `json:"captionsSrc,omitempty" ct:"media,sec=content,label=字幕文件(VTT)"`
+	// CaptionsLabel 字幕轨道名称（播放器菜单显示，如「中文字幕」）。
+	CaptionsLabel string `json:"captionsLabel,omitempty" ct:"text,maxlen=40,sec=content,label=字幕名称"`
+	// CaptionsLang 字幕语言码（BCP 47，如 zh-CN）。
+	CaptionsLang string `json:"captionsLang,omitempty" ct:"text,maxlen=20,sec=content,label=字幕语言"`
 	// Preload 预加载策略：metadata（默认）/ auto / none。
 	Preload string `json:"preload,omitempty" ct:"select,metadata=元数据,auto=全部预加载,none=不预加载,default=metadata,sec=content,label=预加载"`
 	// Align 对齐：left / center / right。

@@ -33,6 +33,9 @@ type Props struct {
 	Icon string `json:"icon,omitempty" ct:"select,,check=对勾,star=星形,arrow=箭头,shield=盾牌,truck=卡车,cross=叉形,sec=content,label=图标"`
 	// MediaImage 媒体图 URL（与 Icon 二选一，优先于 Icon）。
 	MediaImage string `json:"mediaImage,omitempty" ct:"media,sec=content,label=图片"`
+	// MediaAlt 媒体图替代文本：留空表示装饰性图片（alt=""，读屏跳过）。
+	// 用图标做点缀时留空是对的；放真有信息量的图（图表、产品照）时必须填。
+	MediaAlt string `json:"mediaAlt,omitempty" ct:"text,maxlen=200,sec=content,label=图片替代文本"`
 	// Loading 图片加载策略三态：空=默认（继承主题「图片管理」）/ on=开启懒加载 / off=关闭。
 	Loading string `json:"loading,omitempty" ct:"select,=默认（继承主题）,on=开启懒加载,off=关闭懒加载,lazy=懒加载（旧）,eager=立即加载（旧）,default=,sec=content,label=图片加载"`
 	// FetchPriority 资源提示优先级：空=auto（不输出属性）/ high=首屏优先 / low=次要。

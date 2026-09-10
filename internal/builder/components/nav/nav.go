@@ -188,6 +188,17 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	}
 
 	if p.MobileCollapse {
+		// 折叠开关：checkbox 必须**可聚焦**，所以用 sr-only 而不是模板里的 hidden 属性 ——
+		// hidden 的元素不进键盘序列，键盘用户无法展开移动端菜单（触屏之外全废）。
+		// sr-only 的 checkbox 仍是原生控件：空格键切换、读屏能播报「已选中/未选中」。
+		b.Add(core.BreakpointDesktop, sel+" .sky-nav-toggle", []string{
+			"position: absolute", "width: 1px", "height: 1px", "margin: -1px",
+			"padding: 0", "border: 0", "clip-path: inset(50%)", "overflow: hidden", "white-space: nowrap",
+		})
+		// 聚焦可见：焦点环画在汉堡按钮上（键盘用户看得到当前位置）。
+		b.Add(core.BreakpointDesktop, sel+" .sky-nav-toggle:focus-visible + .sky-nav-burger", []string{
+			"outline: 2px solid var(--sky-c-primary, #2563eb)", "outline-offset: 2px",
+		})
 		b.Add(core.BreakpointDesktop, sel+" .sky-nav-burger", []string{
 			"display: none", "cursor: pointer", "font-size: 22px", "line-height: 1", "padding: 8px 12px",
 		})

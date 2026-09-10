@@ -20,6 +20,8 @@ type View struct {
 	HasImage bool
 	// ImageSrc 图片地址（模板输出时由 Jet 默认转义）。
 	ImageSrc string
+	// TitleTag 标题标签名（h2~h5），默认 h3：由页面结构决定，避免标题跳级。
+	TitleTag string
 	// Title 标题（模板输出时由 Jet 默认转义）。
 	Title string
 	// Text 正文（已由 core.RichTextHTML 处理：富文本白名单清洗 / 存量纯文本段落化，
@@ -49,7 +51,15 @@ type View struct {
 
 // BuildView 生成卡片渲染视图：图片/按钮可选分支，文本字段直通。
 func BuildView(p *Props) View {
+	// 标题标签白名单：只允许 h2~h5（h1 由页面标题承担，一个页面只有一个 h1）。
+	titleTag := p.TitleTag
+	switch titleTag {
+	case "h2", "h3", "h4", "h5":
+	default:
+		titleTag = "h3"
+	}
 	return View{
+		TitleTag:      titleTag,
 		HasImage:      p.ImageSrc != "",
 		ImageSrc:      p.ImageSrc,
 		Title:         p.Title,
