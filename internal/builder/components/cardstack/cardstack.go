@@ -44,6 +44,8 @@ const (
 const (
 	ShapeFan  = "fan"
 	ShapeLine = "line"
+	// ShapeBook 翻开的书：静止时卡片竖起叠成书脊，悬停时向两侧摊开。
+	ShapeBook = "book"
 )
 
 // 排开方向（仅 line 形态）。
@@ -63,6 +65,8 @@ const (
 	defaultSpreadDistance = 120
 	defaultScaleBase      = 94
 	defaultScaleStep      = 2
+	// bookClosedDeg 书合上时每页竖起的角度（略小于 90，留一线厚度感）。
+	bookClosedDeg = 86
 	// cardLiftY 悬停上抬量（px）：容器据此在上下各预留同等空间。
 	cardLiftY = 50
 	// cardBorder 卡片边框宽度（px）：参与 border box 换算（translate 的百分比基于 border box）。
@@ -119,7 +123,7 @@ type Props struct {
 	// Trigger 触发方式：hover 悬停展开 / scroll 滚动堆叠（纯 CSS）/ drag 拖拽旋转（增强脚本）。
 	Trigger string `json:"trigger,omitempty" ct:"select,hover=悬停展开,scroll=滚动堆叠,drag=拖拽旋转,deck=堆叠轮播,slide=全屏分页,default=hover,sec=content,label=触发方式"`
 	// Shape 展开形态（悬停模式）：fan 弧线扇形 / line 排开（卡片不带任何角度）。
-	Shape string `json:"shape,omitempty" ct:"select,fan=扇形展开,line=直线排开,default=fan,sec=content,label=展开形态"`
+	Shape string `json:"shape,omitempty" ct:"select,fan=扇形展开,line=直线排开,book=翻开的书,default=fan,sec=content,label=展开形态"`
 	// Direction 排开方向（仅 shape=line 生效）：horizontal 横排一行 / vertical 竖排一列。
 	Direction string `json:"direction,omitempty" ct:"select,horizontal=横排一行,vertical=竖排一列,default=horizontal,sec=content,label=排开方向"`
 	// Count 数字占位卡数量（2~12，缺省 9）；拖入子节点后以子节点数量为准。
@@ -308,6 +312,9 @@ func effectiveTrigger(p *Props) string {
 func effectiveShape(p *Props) string {
 	if p.Shape == ShapeLine {
 		return ShapeLine
+	}
+	if p.Shape == ShapeBook {
+		return ShapeBook
 	}
 	return ShapeFan
 }
@@ -697,6 +704,7 @@ func compileHoverCSS(b *core.CSSBuckets, sel string, p *Props, n int, width, hei
 	dist := float64(effectiveSpreadDistance(p))
 	mid := float64(n-1) / 2.0
 	fan := effectiveShape(p) == ShapeFan
+	book := effectiveShape(p) == ShapeBook
 	vertical := !fan && effectiveDirection(p) == directionVertical
 
 	// 轨道高度按形态预留，保证展开后不压到下方内容：
@@ -715,7 +723,7 @@ func compileHoverCSS(b *core.CSSBuckets, sel string, p *Props, n int, width, hei
 	// min-height，内容多了会自己长高 —— 两者不一致时卡片上下溢出、压住相邻内容，
 	// 且构建期不报错（实测踩过：卡片 452px 而轨道只有 368px，盖住了上方说明文字）。
 	// grid 的同格叠放天然重叠，且格子高度取最高的那张卡，轨道会被自动撑开。
-	b.Add(core.BreakpointDesktop, track, []string{
+	trackDecls := []string{
 		"position: relative",
 		"display: grid",
 		"justify-items: center",
@@ -724,7 +732,13 @@ func compileHoverCSS(b *core.CSSBuckets, sel string, p *Props, n int, width, hei
 		// 卡片 border box 高（含上下边框）：旋转外扩与竖排收敛都要用它，
 		// 而 translate 的百分比只能拿到宽度，高度必须以变量传入。
 		fmt.Sprintf("--sky-cardstack-h: calc(%s + %dpx)", height, 2*cardBorder),
-	})
+	}
+	if book {
+		// 翻书要有透视才看得出立体：没有 perspective 时 rotateY 会被压平成横向缩放。
+		// 透视原点略高于中线，视线像从斜上方俯看书页。
+		trackDecls = append(trackDecls, "perspective: 1800px", "perspective-origin: 50% 45%")
+	}
+	b.Add(core.BreakpointDesktop, track, trackDecls)
 
 	for i := 0; i < n; i++ {
 		offset := float64(i) - mid
@@ -733,6 +747,21 @@ func compileHoverCSS(b *core.CSSBuckets, sel string, p *Props, n int, width, hei
 
 		// 基础态：同格叠放（grid-area 1/1）；数字卡带位置派生色相，内容卡保持原色。
 		decls := []string{"grid-area: 1 / 1", "justify-self: center", "align-self: center", "width: " + width}
+		if book {
+			// 书的几何：把旋转轴放在**书脊那一侧**（左半取右缘、右半取左缘），
+			// 于是"翻开"是绕书脊转，而不是绕卡片自身转 —— 这是翻书感的关键。
+			// 合上时每页竖起 ±86°（略小于 90，留一线厚度），悬停时转平并向外铺开。
+			origin := "left center"
+			closed := float64(bookClosedDeg)
+			if offset < 0 {
+				origin = "right center"
+				closed = -closed
+			}
+			decls = append(decls,
+				"transform-origin: "+origin,
+				fmt.Sprintf("transform: rotateY(%sdeg)", num(closed)),
+			)
+		}
 		if content {
 			decls = append(decls, "min-height: "+height, "height: auto")
 		} else {
@@ -749,6 +778,12 @@ func compileHoverCSS(b *core.CSSBuckets, sel string, p *Props, n int, width, hei
 			"):not(:has(> .sky-cardstack-toggle:checked))"
 		var fixed, adaptive string
 		switch {
+		case book:
+			// 摊开：转平（rotateY 0）并按序号向两外侧移，像把书页摊在桌上。
+			// 0.58 倍卡宽是刻意留的重叠量 —— 完全按卡宽铺开会显得像并排卡片，不像书页。
+			openX := offset * cssPx(width, fallbackCardW) * 0.58
+			fixed = fmt.Sprintf("rotateY(0deg) translateX(%spx)", num(openX))
+			adaptive = fixed
 		case fan:
 			// 弧线：收敛 = 视口半宽 − 留白 − 旋转外扩 −（上抬量被旋转投影的那一份），
 			// 再除以 cosθ·最大步距（dx 要先经 cosθ 才变成世界坐标的水平位移）。

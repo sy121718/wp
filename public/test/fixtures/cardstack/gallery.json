@@ -688,6 +688,57 @@
    ]
   },
   {
+   "id": "book",
+   "type": "core.container",
+   "props": {
+    "tag": "section",
+    "layout": {
+     "engine": "flex",
+     "flex": {
+      "direction": "column",
+      "gap": "14px"
+     }
+    },
+    "box": {
+     "padding": {
+      "desktop": "64px 24px"
+     }
+    }
+   },
+   "children": [
+    {
+     "id": "book-h",
+     "type": "core.heading",
+     "props": {
+      "text": "⑨ 翻开的书",
+      "tag": "h2"
+     }
+    },
+    {
+     "id": "book-t",
+     "type": "core.text",
+     "props": {
+      "mode": "plaintext",
+      "plainTag": "p",
+      "text": "默认是合着的一本书：页面竖起叠成书脊。鼠标移上去，它绕书脊摊开 —— 旋转轴在书脊那一侧，所以看起来是翻页而不是卡片自转。"
+     }
+    },
+    {
+     "id": "book-c",
+     "type": "core.cardstack",
+     "props": {
+      "trigger": "hover",
+      "shape": "book",
+      "count": 6,
+      "width": "210px",
+      "height": "300px",
+      "spreadDistance": 122,
+      "hueStep": 28
+     }
+    }
+   ]
+  },
+  {
    "id": "orbit",
    "type": "core.container",
    "props": {
