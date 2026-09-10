@@ -491,6 +491,13 @@ func Compile(p *Page, opts ...CompileOption) (res *CompiledPage, err error) {
 		RevealDefaultEntrance: cfg.theme.RevealDefaultEntranceOf(),
 		AssetProbe:            cfg.assetProbe,
 	}
+	// 顶层节点先建 view 树（含 CSS 编译），再统一渲染：main 地标要先知道每个顶层节点的
+	// 语义标签，才能决定包裹区间（渲染顺序与逐节点渲染完全一致）。
+	type rootView struct {
+		view *nodeView
+		tag  string
+	}
+	roots := make([]rootView, 0, len(p.Root))
 	for _, n := range p.Root {
 		if skippedIDs[n.ID] {
 			continue // 配置不完整，已在校验阶段跳过（日志已记录原因）
@@ -500,9 +507,35 @@ func Compile(p *Page, opts ...CompileOption) (res *CompiledPage, err error) {
 		if verr != nil {
 			return nil, verr
 		}
-		if verr = renderView(cfg.set, v, &htmlBuf); verr != nil {
+		roots = append(roots, rootView{view: v, tag: strings.ToLower(strings.TrimSpace(v.Tag))})
+	}
+
+	// main 地标（页面设置开关，默认关）：正文包进唯一的 <main>，屏幕阅读器可直接跳到内容。
+	// 首尾连续的 header / footer 顶层节点留在 main 之外 —— 它们只有在 body 直接子级下才构成
+	// banner / contentinfo 地标，一旦被包进 main 就退化成普通元素。
+	mainStart, mainEnd := -1, -1
+	if p.Settings.Layout.MainLandmark && len(roots) > 0 {
+		mainStart, mainEnd = 0, len(roots)
+		for mainStart < mainEnd && (roots[mainStart].tag == "header" || roots[mainStart].tag == "footer") {
+			mainStart++
+		}
+		for mainEnd > mainStart && (roots[mainEnd-1].tag == "footer" || roots[mainEnd-1].tag == "header") {
+			mainEnd--
+		}
+	}
+	for i, rv := range roots {
+		if i == mainStart {
+			htmlBuf.WriteString("<main id=\"main-content\">")
+		}
+		if i == mainEnd {
+			htmlBuf.WriteString("</main>")
+		}
+		if verr := renderView(cfg.set, rv.view, &htmlBuf); verr != nil {
 			return nil, verr
 		}
+	}
+	if mainStart >= 0 && mainStart < mainEnd && mainEnd == len(roots) {
+		htmlBuf.WriteString("</main>")
 	}
 
 	classes := []string{bodyClassPage}

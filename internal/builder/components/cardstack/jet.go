@@ -70,7 +70,17 @@ type View struct {
 	DeckArrows bool
 	// DeckClickNext 点击卡片是否翻下一页（而不是展开放大）。
 	DeckClickNext bool
+	// ZoomGroup 放大用 radio 的组名（每实例独立）：多组件此前共用同一个 name，
+	// 选中状态会跨组件互相取消，ARIA 上也说不清是"哪一组的单选"。
+	ZoomGroup string
+	// ListSemantics 是否输出列表语义（track = role="list"、卡片 = role="listitem"）。
+	// deck 模式带翻页按钮与主卡切换，语义是轮播而非并列列表，故排除。
+	ListSemantics bool
 }
+
+// zoomGroup 放大用 radio 的组名：以节点 ID 结尾，保证同页多个 cardstack 各自独立成组
+// （此前共用 "sky-cardstack-zoom"，一个组件里选中的卡会取消另一个组件的选中态）。
+func zoomGroup(nodeID string) string { return "sky-cardstack-zoom-" + nodeID }
 
 // IsCollection 是否内容集合模式 —— 装配层据此决定「子节点模板」还是「组件自带字段映射」。
 func IsCollection(p *Props) bool { return collectionSource(p) != "" }
@@ -98,6 +108,7 @@ func BuildView(node *core.Node, p *Props, ctx *core.RenderContext) (View, error)
 			Empty: len(cards) == 0, EmptyText: emptyText(p), HideEmpty: p.CollectionEmpty == "hide",
 			LinkText: linkText(p), Slide: slide, PageTotal: len(cards),
 			DeckVertical: deckVertical, DeckArrows: p.DeckArrows, DeckClickNext: p.DeckClick == deckClickNext,
+			ZoomGroup: zoomGroup(node.ID), ListSemantics: !deck,
 		}, nil
 	}
 
@@ -112,6 +123,7 @@ func BuildView(node *core.Node, p *Props, ctx *core.RenderContext) (View, error)
 		Drag: drag, Deck: deck, DeckIndex: len(cards) / 2, DeckLoop: p.DeckLoop,
 		Slide: slide, PageTotal: len(cards),
 		DeckVertical: deckVertical, DeckArrows: p.DeckArrows, DeckClickNext: p.DeckClick == deckClickNext,
+		ZoomGroup: zoomGroup(node.ID), ListSemantics: !deck,
 	}, nil
 }
 

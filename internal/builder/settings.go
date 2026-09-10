@@ -51,6 +51,10 @@ type PageLayout struct {
 	Mode string `json:"mode"`
 	// MaxWidth 定宽模式下的最大内容宽度，如 "1200px"。
 	MaxWidth string `json:"maxWidth,omitempty"`
+	// MainLandmark 是否把正文包进唯一的 <main> 地标（屏幕阅读器可直接跳到内容）。
+	// 默认关：关闭时产物字节与没有这个开关时完全一致（确定性构建不变量）。
+	// 首尾连续的 header / footer 顶层节点留在 main 之外，它们才能在 body 下构成地标。
+	MainLandmark bool `json:"mainLandmark,omitempty"`
 	// SafePadding 三端最小安全左右留白，防小屏贴边。
 	SafePadding struct {
 		Desktop string `json:"desktop,omitempty"`
@@ -84,6 +88,10 @@ type SEO struct {
 	Intent string `json:"intent,omitempty"`
 	// SchemaType 结构化数据类型：空=自动（WebPage）/website/article/product/faq。
 	SchemaType string `json:"schemaType,omitempty"`
+	// RobotsIndex 搜索引擎索引指令：空 = index（默认，不输出 meta）/ noindex。
+	RobotsIndex string `json:"robotsIndex,omitempty"`
+	// RobotsFollow 链接跟踪指令：空 = follow（默认，不输出 meta）/ nofollow。
+	RobotsFollow string `json:"robotsFollow,omitempty"`
 }
 
 // validateSettings 校验页面设置。
@@ -126,6 +134,17 @@ func validateSettings(s *PageSettings) (err error) {
 	}
 	if len(s.SEO.Description) > 500 {
 		return errors.New("页面描述过长（上限 500 字符）")
+	}
+	// robots 指令白名单：产物直接写进 meta content，绝不能是任意字符串。
+	switch s.SEO.RobotsIndex {
+	case "", robotIndex, robotNoIndex:
+	default:
+		return fmt.Errorf("无效的 robots 索引指令: %q", s.SEO.RobotsIndex)
+	}
+	switch s.SEO.RobotsFollow {
+	case "", robotFollow, robotNoFollow:
+	default:
+		return fmt.Errorf("无效的 robots 跟踪指令: %q", s.SEO.RobotsFollow)
 	}
 
 	for _, cls := range s.BodyClasses {

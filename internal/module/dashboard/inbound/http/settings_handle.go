@@ -24,12 +24,15 @@ import (
 // settingsView 页面设置表单数据（settings.layout / settings.seo 的子集）。
 type settingsView struct {
 	LayoutMode        string
+	MainLandmark      bool
 	SEOTitle          string
 	SEODescription    string
 	FocusKeyword      string
 	Canonical         string
 	OGImage           string
 	SchemaType        string
+	RobotsIndex       string
+	RobotsFollow      string
 	SecondaryKeywords string
 	Intent            string
 }
@@ -83,7 +86,8 @@ func settingsViewOf(doc json.RawMessage) settingsView {
 	var parsed struct {
 		Settings struct {
 			Layout struct {
-				Mode string `json:"mode"`
+				Mode         string `json:"mode"`
+				MainLandmark bool   `json:"mainLandmark"`
 			} `json:"layout"`
 			SEO struct {
 				Title             string   `json:"title"`
@@ -92,6 +96,8 @@ func settingsViewOf(doc json.RawMessage) settingsView {
 				Canonical         string   `json:"canonical"`
 				OGImage           string   `json:"ogImage"`
 				SchemaType        string   `json:"schemaType"`
+				RobotsIndex       string   `json:"robotsIndex"`
+				RobotsFollow      string   `json:"robotsFollow"`
 				SecondaryKeywords []string `json:"secondaryKeywords"`
 				Intent            string   `json:"intent"`
 			} `json:"seo"`
@@ -108,12 +114,15 @@ func settingsViewOf(doc json.RawMessage) settingsView {
 	}
 	return settingsView{
 		LayoutMode:        mode,
+		MainLandmark:      parsed.Settings.Layout.MainLandmark,
 		SEOTitle:          parsed.Settings.SEO.Title,
 		SEODescription:    parsed.Settings.SEO.Description,
 		FocusKeyword:      parsed.Settings.SEO.FocusKeyword,
 		Canonical:         parsed.Settings.SEO.Canonical,
 		OGImage:           parsed.Settings.SEO.OGImage,
 		SchemaType:        parsed.Settings.SEO.SchemaType,
+		RobotsIndex:       parsed.Settings.SEO.RobotsIndex,
+		RobotsFollow:      parsed.Settings.SEO.RobotsFollow,
 		SecondaryKeywords: strings.Join(parsed.Settings.SEO.SecondaryKeywords, " "),
 		Intent:            intent,
 	}

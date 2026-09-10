@@ -546,6 +546,21 @@ func CompileCSS(node *core.Node, p *Props, cardN int, b *core.CSSBuckets) {
 		// 触屏点按的高亮块会盖在卡片上，统一去掉（卡片自身已有按压态）。
 		"-webkit-tap-highlight-color: transparent",
 	})
+	// 放大触发层：铺满卡片的透明 label，把「点整卡放大」的命中区与卡片外壳解耦 ——
+	// 卡片外壳不再是 <label>，卡内的 <a> / <button> 于是不再违反「label 不得包含
+	// 交互式内容」的规范约束（点击链接也照旧不会触发放大：那是浏览器跳过 label
+	// 默认行为的结果，现在变成结构上就不可能）。
+	b.Add(core.BreakpointDesktop, sel+" .sky-cardstack-zoom-layer", []string{
+		"position: absolute",
+		"inset: 0",
+		"z-index: 1",
+		"cursor: zoom-in",
+	})
+	// 卡内交互元素提到触发层之上：否则覆盖层会先吃掉点击，链接与按钮全部失效。
+	b.Add(core.BreakpointDesktop, sel+" .sky-cardstack-card a, "+sel+" .sky-cardstack-card button", []string{
+		"position: relative",
+		"z-index: 2",
+	})
 
 	switch trigger {
 	case TriggerScroll:
@@ -656,6 +671,9 @@ func cardBaseDecls(content bool, p *Props) []string {
 			// 逐卡几何（扇形收敛、环形半径、每屏高度）都按 props 里的数值计算，
 			// content-box 会让实际尺寸比参数大一圈，几何随之全部偏移。
 			"box-sizing: border-box",
+			// 定位包含块：放大触发层是铺满卡片的绝对定位 label，卡片必须是定位元素，
+			// 否则会以最近的定位祖先（容器）为包含块，命中区铺满整个组件。
+			"position: relative",
 			"display: flex",
 			"flex-direction: " + layout,
 			"justify-content: " + justify,
@@ -684,6 +702,7 @@ func cardBaseDecls(content bool, p *Props) []string {
 	}
 	return []string{
 		"box-sizing: border-box",
+		"position: relative",
 		"display: flex",
 		"justify-content: center",
 		"align-items: center",

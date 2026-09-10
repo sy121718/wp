@@ -21,6 +21,43 @@ type Alternate struct {
 	Default bool
 }
 
+// robots 指令取值（页面设置的 robotsIndex / robotsFollow 白名单）。
+const (
+	robotIndex    = "index"
+	robotNoIndex  = "noindex"
+	robotFollow   = "follow"
+	robotNoFollow = "nofollow"
+)
+
+// robotsContent 组装 robots 指令：两项都取默认（index/follow）时返回空串 ——
+// 默认页面的产物字节因此与「没有这个功能」时完全一致（确定性构建不变量）。
+func robotsContent(index, follow string) string {
+	idx := strings.ToLower(strings.TrimSpace(index))
+	fol := strings.ToLower(strings.TrimSpace(follow))
+	if idx == "" {
+		idx = robotIndex
+	}
+	if fol == "" {
+		fol = robotFollow
+	}
+	if idx == robotIndex && fol == robotFollow {
+		return ""
+	}
+	return idx + "," + fol
+}
+
+// ogType Open Graph 类型：跟随结构化数据类型 —— 社交平台据此判断内容形态，
+// 固定输出 website 会让文章/商品在分享卡片里丢掉类型信息。
+func ogType(schemaType string) string {
+	switch strings.ToLower(strings.TrimSpace(schemaType)) {
+	case "article":
+		return "article"
+	case "product":
+		return "product"
+	}
+	return "website"
+}
+
 // BuildSEOHead 生成注入 <head> 的 SEO 片段（canonical / OG / Twitter / JSON-LD / hreflang）。
 // pageURL 为页面最终 URL（空则省略 URL 相关标签）。
 // alternates 为同页其他语言版本（空 = 单语言站点，输出与 P3 之前逐字节一致）；
@@ -42,6 +79,9 @@ func BuildSEOHead(seo SEO, pageURL, title, description string, alternates []Alte
 	if canonical != "" {
 		fmt.Fprintf(&sb, "<link rel=\"canonical\" href=\"%s\">\n", esc(canonical))
 	}
+	if rb := robotsContent(seo.RobotsIndex, seo.RobotsFollow); rb != "" {
+		fmt.Fprintf(&sb, "<meta name=\"robots\" content=\"%s\">\n", esc(rb))
+	}
 	if title != "" {
 		fmt.Fprintf(&sb, "<meta property=\"og:title\" content=\"%s\">\n", esc(title))
 		fmt.Fprintf(&sb, "<meta name=\"twitter:title\" content=\"%s\">\n", esc(title))
@@ -53,7 +93,7 @@ func BuildSEOHead(seo SEO, pageURL, title, description string, alternates []Alte
 	if pageURL != "" {
 		fmt.Fprintf(&sb, "<meta property=\"og:url\" content=\"%s\">\n", esc(pageURL))
 	}
-	fmt.Fprint(&sb, "<meta property=\"og:type\" content=\"website\">\n")
+	fmt.Fprintf(&sb, "<meta property=\"og:type\" content=\"%s\">\n", ogType(seo.SchemaType))
 	if seo.OGImage != "" {
 		fmt.Fprintf(&sb, "<meta property=\"og:image\" content=\"%s\">\n", esc(seo.OGImage))
 		fmt.Fprintf(&sb, "<meta name=\"twitter:image\" content=\"%s\">\n", esc(seo.OGImage))

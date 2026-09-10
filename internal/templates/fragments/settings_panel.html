@@ -8,6 +8,13 @@
         <button type="button" class="wb-seg-btn{{if .Settings.LayoutMode == "boxed"}} is-active{{end}}" data-wb-setting="settings.layout.mode" data-wb-value="boxed">定宽</button>
     </div>
 </div>
+<div class="wb-field wb-field-seg">
+    <label>页面地标</label>
+    <div class="wb-seg">
+        <button type="button" class="wb-seg-btn{{if not .Settings.MainLandmark}} is-active{{end}}" data-wb-setting="settings.layout.mainLandmark" data-wb-value="false">不用</button>
+        <button type="button" class="wb-seg-btn{{if .Settings.MainLandmark}} is-active{{end}}" data-wb-setting="settings.layout.mainLandmark" data-wb-value="true">main</button>
+    </div>
+</div>
 <div class="wb-field"><label>SEO 标题</label><input type="text" data-wb-setting="settings.seo.title" value="{{.Settings.SEOTitle}}" placeholder="浏览器标签页与搜索结果标题"></div>
 <div class="wb-field"><label>SEO 描述</label><textarea rows="3" data-wb-setting="settings.seo.description" placeholder="搜索结果里的摘要文案">{{.Settings.SEODescription}}</textarea></div>
 <div class="wb-field"><label>焦点关键词</label><input type="text" data-wb-setting="settings.seo.focusKeyword" value="{{.Settings.FocusKeyword}}" placeholder="如 disposable vape"></div>
@@ -21,6 +28,20 @@
         <button type="button" class="wb-seg-btn{{if .Settings.SchemaType == "article"}} is-active{{end}}" data-wb-setting="settings.seo.schemaType" data-wb-value="article">文章</button>
         <button type="button" class="wb-seg-btn{{if .Settings.SchemaType == "product"}} is-active{{end}}" data-wb-setting="settings.seo.schemaType" data-wb-value="product">商品</button>
         <button type="button" class="wb-seg-btn{{if .Settings.SchemaType == "faq"}} is-active{{end}}" data-wb-setting="settings.seo.schemaType" data-wb-value="faq">FAQ</button>
+    </div>
+</div>
+<div class="wb-field wb-field-seg">
+    <label>搜索引擎收录</label>
+    <div class="wb-seg">
+        <button type="button" class="wb-seg-btn{{if .Settings.RobotsIndex == ""}} is-active{{end}}" data-wb-setting="settings.seo.robotsIndex" data-wb-value="">索引</button>
+        <button type="button" class="wb-seg-btn{{if .Settings.RobotsIndex == "noindex"}} is-active{{end}}" data-wb-setting="settings.seo.robotsIndex" data-wb-value="noindex">不索引</button>
+    </div>
+</div>
+<div class="wb-field wb-field-seg">
+    <label>链接跟踪</label>
+    <div class="wb-seg">
+        <button type="button" class="wb-seg-btn{{if .Settings.RobotsFollow == ""}} is-active{{end}}" data-wb-setting="settings.seo.robotsFollow" data-wb-value="">跟随</button>
+        <button type="button" class="wb-seg-btn{{if .Settings.RobotsFollow == "nofollow"}} is-active{{end}}" data-wb-setting="settings.seo.robotsFollow" data-wb-value="nofollow">不跟随</button>
     </div>
 </div>
 <div class="wb-field"><label>次级关键词</label><input type="text" data-wb-setting="settings.seo.secondaryKeywords" data-wb-kind="list" value="{{.Settings.SecondaryKeywords}}" placeholder="空格分隔，如 puff count battery"></div>

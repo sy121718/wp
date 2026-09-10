@@ -208,9 +208,15 @@ func TestScrollCSS(t *testing.T) {
 			t.Errorf("滚动模式缺少 %q", want)
 		}
 	}
-	// absolute 只该出现在两条「隐藏单选」规则里（卡片本身是 sticky 排布）。
-	if n := strings.Count(s, "position: absolute"); n != 2 {
-		t.Errorf("滚动模式不该把卡片绝对堆叠（position: absolute 出现 %d 次，期望 2）", n)
+	// absolute 只该出现在「隐藏单选」「放大触发层」这类辅助层里，卡片本身是 sticky 排布。
+	// 按规则块判断而不是全局计数：覆盖层的绝对定位是预期内的，卡片上的才是缺陷。
+	for _, block := range strings.Split(s, "}") {
+		if !strings.Contains(block, "sky-cardstack-card") || strings.Contains(block, "zoom-layer") {
+			continue
+		}
+		if strings.Contains(block, "position: absolute") {
+			t.Errorf("滚动模式的卡片不应绝对堆叠：%s", strings.TrimSpace(block))
+		}
 	}
 }
 

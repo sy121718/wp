@@ -213,6 +213,12 @@ tada / pulse / bounce / rubber-band / spin）都改 `transform`，挂在卡片�
   PageDown / 空格 / 屏幕阅读器照旧可用；
 - **无脚本降级**：`drag` 静态成环、`deck` 按序号摊开、`scroll` 静态层叠、`slide` 原生滚动，
   四种模式都不会因为脚本没加载而白屏。
+- **卡片外壳不是 `<label>`（2026-09 改）**：外壳是 `<div class="sky-cardstack-card" role="listitem">`，
+  「点整卡放大」由铺满卡片的 `<label class="sky-cardstack-zoom-layer" for="…" aria-hidden="true">` 承担，
+  卡内的 `<a>` / `<button>` 提到触发层之上（`z-index: 2`）。这样既保留零 JS 放大，也不再违反
+  「`<label>` 不得包含交互式内容」的规范（点链接不会放大，现在从结构上就不可能）；
+  `radio` 的 `name` 按实例生成（`sky-cardstack-zoom-<节点ID>`），多组件互不干扰；
+  轨道输出 `role="list"`、卡片 `role="listitem"`（deck 模式带翻页按钮，语义是轮播，不输出列表角色）。
 - **展开位移一律按视口收敛（全形态）**：扇形 / 横排 / 竖排 / 摊开的书都用同一套收敛式 ——
   可用空间 = `50vw − 留白 − 卡半宽`，再除以**最大步距**，让最外侧那张刚好贴住视口边缘
   （`clamp(calc(-1 * …), 固定位移, …)`）。**不要退回固定 `vw` 上限**：摊开的书曾用 `45vw` 封顶，
