@@ -371,11 +371,19 @@
 
             // 捕获阶段统一处理点击：拖动产生的补发点击吞掉；点侧卡切主位（阻止放大），
             // 点主卡放行（主卡点击才进入放大）。
+            var clickNext = root.getAttribute('data-deck-click') === 'next';
             root.addEventListener('click', function (e) {
                 if (moved) {
                     moved = false;
                     e.preventDefault();
                     e.stopPropagation();
+                    return;
+                }
+                if (clickNext) {
+                    // 「看书」语义：点哪儿都往后翻一页（点侧卡也是下一页，不是切到那张）
+                    e.preventDefault();
+                    e.stopPropagation();
+                    go(active + 1);
                     return;
                 }
                 var el = e.target;

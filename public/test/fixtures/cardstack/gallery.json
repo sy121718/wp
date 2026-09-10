@@ -711,7 +711,7 @@
      "id": "book-h",
      "type": "core.heading",
      "props": {
-      "text": "⑨ 翻开的书",
+      "text": "⑨ 摊开的书（悬停翻开）",
       "tag": "h2"
      }
     },
@@ -721,7 +721,7 @@
      "props": {
       "mode": "plaintext",
       "plainTag": "p",
-      "text": "默认是合着的一本书：页面竖起叠成书脊。鼠标移上去，它绕书脊摊开 —— 旋转轴在书脊那一侧，所以看起来是翻页而不是卡片自转。"
+      "text": "默认合着：六页竖起叠成书脊。鼠标移上去，它绕**书脊**向两侧摊开成翻开的两页 —— 旋转轴在书脊那一侧，所以是翻书而不是卡片自转。手机上没有悬停，会直接摊开显示。"
      }
     },
     {
@@ -736,6 +736,197 @@
       "spreadDistance": 122,
       "hueStep": 28
      }
+    }
+   ]
+  },
+  {
+   "id": "book2",
+   "type": "core.container",
+   "props": {
+    "tag": "section",
+    "layout": {
+     "engine": "flex",
+     "flex": {
+      "direction": "column",
+      "gap": "14px"
+     }
+    },
+    "box": {
+     "padding": {
+      "desktop": "64px 24px"
+     }
+    }
+   },
+   "children": [
+    {
+     "id": "book2-h",
+     "type": "core.heading",
+     "props": {
+      "text": "⑩ 一页一页的书（点击翻页）",
+      "tag": "h2"
+     }
+    },
+    {
+     "id": "book2-t",
+     "type": "core.text",
+     "props": {
+      "mode": "plaintext",
+      "plainTag": "p",
+      "text": "一页压一页像一本合着的书。往上滑、滚轮、方向键、点 ‹ › 按钮都能翻；也可以直接点卡片 —— 点哪儿都往后翻一页，这就是看书的手感。翻到头会绕回第一页。"
+     }
+    },
+    {
+     "id": "book2-c",
+     "type": "core.cardstack",
+     "props": {
+      "trigger": "deck",
+      "deckClick": "next",
+      "deckArrows": true,
+      "deckDirection": "vertical",
+      "deckLoop": true,
+      "deckHighlight": "glow",
+      "deckTransition": "spring",
+      "deckDuration": 520,
+      "width": "620px",
+      "height": "300px",
+      "cardBackground": "#ffffff",
+      "cardRadius": "18px",
+      "deckScaleStep": 5
+     },
+     "children": [
+      {
+       "id": "p1",
+       "type": "core.container",
+       "props": {
+        "tag": "div",
+        "layout": {
+         "engine": "flex",
+         "flex": {
+          "direction": "column",
+          "gap": "8px"
+         }
+        }
+       },
+       "children": [
+        {
+         "id": "p1h",
+         "type": "core.heading",
+         "props": {
+          "text": "第一页 · 点一下就翻页",
+          "tag": "h3"
+         }
+        },
+        {
+         "id": "p1t",
+         "type": "core.text",
+         "props": {
+          "mode": "plaintext",
+          "plainTag": "p",
+          "text": "不用去找按钮，点卡片任何位置都往后翻一页。"
+         }
+        }
+       ]
+      },
+      {
+       "id": "p2",
+       "type": "core.container",
+       "props": {
+        "tag": "div",
+        "layout": {
+         "engine": "flex",
+         "flex": {
+          "direction": "column",
+          "gap": "8px"
+         }
+        }
+       },
+       "children": [
+        {
+         "id": "p2h",
+         "type": "core.heading",
+         "props": {
+          "text": "第二页 · 滑也能翻",
+          "tag": "h3"
+         }
+        },
+        {
+         "id": "p2t",
+         "type": "core.text",
+         "props": {
+          "mode": "plaintext",
+          "plainTag": "p",
+          "text": "上下滑动、滚轮、方向键同样有效，手机上用指划。"
+         }
+        }
+       ]
+      },
+      {
+       "id": "p3",
+       "type": "core.container",
+       "props": {
+        "tag": "div",
+        "layout": {
+         "engine": "flex",
+         "flex": {
+          "direction": "column",
+          "gap": "8px"
+         }
+        }
+       },
+       "children": [
+        {
+         "id": "p3h",
+         "type": "core.heading",
+         "props": {
+          "text": "第三页 · 翻到头绕回",
+          "tag": "h3"
+         }
+        },
+        {
+         "id": "p3t",
+         "type": "core.text",
+         "props": {
+          "mode": "plaintext",
+          "plainTag": "p",
+          "text": "开启循环后，最后一页再往下回到第一页。"
+         }
+        }
+       ]
+      },
+      {
+       "id": "p4",
+       "type": "core.container",
+       "props": {
+        "tag": "div",
+        "layout": {
+         "engine": "flex",
+         "flex": {
+          "direction": "column",
+          "gap": "8px"
+         }
+        }
+       },
+       "children": [
+        {
+         "id": "p4h",
+         "type": "core.heading",
+         "props": {
+          "text": "第四页 · 内容随你放",
+          "tag": "h3"
+         }
+        },
+        {
+         "id": "p4t",
+         "type": "core.text",
+         "props": {
+          "mode": "plaintext",
+          "plainTag": "p",
+          "text": "每页都是普通卡片，里面能放文章、图片、按钮。"
+         }
+        }
+       ]
+      }
+     ]
     }
    ]
   },

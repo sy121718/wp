@@ -103,6 +103,8 @@ const (
 	slideFitViewport = "viewport"
 	// slideDirectionHorizontal slideDirection 的横向取值。
 	slideDirectionHorizontal = "horizontal"
+	// deckClickNext DeckClick 的「翻下一页」取值。
+	deckClickNext = "next"
 	// dragModeCylinder DragMode 的三维环绕取值。
 	dragModeCylinder = "cylinder"
 	// fallbackCardW / fallbackCardH 拖拽旋转算环形半径时的兜底卡片尺寸（非 px 宽度时使用）。
@@ -144,6 +146,9 @@ type Props struct {
 	// HoverEffect 悬停时的循环效果（仅 hover 模式）：只挑不抢 transform 的两条词汇 ——
 	// 展开位移已经占用了 transform，swing/wobble/pulse 之类会把位移顶掉。
 	HoverEffect string `json:"hoverEffect,omitempty" ct:"select,=无,glow=发光,flash=闪烁,sec=motion,label=悬停效果"`
+	// DeckClick 点击卡片的行为：zoom 展开放大 / next 直接翻到下一页。
+	// next 是「看书」的语义 —— 点哪儿都往后翻一页，与滑动 / 拖拽 / 按钮并用。
+	DeckClick string `json:"deckClick,omitempty" ct:"select,zoom=展开放大,next=翻到下一页,default=zoom,sec=motion,label=点击卡片"`
 	// DeckArrows 显示「上一页 / 下一页」按钮（仅 deck 模式）：
 	// 点击按钮切换主卡；不用按钮时拖拽 / 滚轮 / 方向键 / 点侧卡同样能切；
 	// 点主卡则是展开放大 —— 三种操作各管一件事，互不打架。
@@ -450,9 +455,13 @@ func effectiveScaleStep(p *Props) int {
 }
 
 // zoomEnabled 点击放大默认开启（显式 off 才关）。
-// 全屏分页自动关闭：卡片本来就占满一屏，再"放大到视口中央"等于原地不动。
+// 两种触发方式自动关闭：全屏分页（卡片本来就占满一屏，再"放大"等于原地不动）、
+// deck 把点击改成「翻下一页」（点了就翻页，永远展不开）。
 func zoomEnabled(p *Props) bool {
 	if effectiveTrigger(p) == TriggerSlide {
+		return false
+	}
+	if effectiveTrigger(p) == TriggerDeck && p.DeckClick == deckClickNext {
 		return false
 	}
 	return p.Zoom != "off"
