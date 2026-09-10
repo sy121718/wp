@@ -33,6 +33,7 @@ const Type = "core.cardstack"
 const (
 	TriggerHover  = "hover"
 	TriggerScroll = "scroll"
+	TriggerDrag   = "drag"
 )
 
 // 展开形态。
@@ -81,6 +82,9 @@ const (
 	defaultSticky  = "50%"
 	// defaultCollectionLimit 内容集合缺省取几条。
 	defaultCollectionLimit = 6
+	// fallbackCardW / fallbackCardH 拖拽旋转算环形半径时的兜底卡片尺寸（非 px 宽度时使用）。
+	fallbackCardW = 320
+	fallbackCardH = 240
 )
 
 // 取色（与 badge/quote/progress 同一约定：CSS 变量 + 兜底色，主题可整体覆写）。
@@ -93,8 +97,8 @@ const (
 
 // Props 卡片堆叠属性。
 type Props struct {
-	// Trigger 触发方式：hover 悬停展开 / scroll 滚动堆叠（纯 CSS，零 JS）。
-	Trigger string `json:"trigger,omitempty" ct:"select,hover=悬停展开,scroll=滚动堆叠,default=hover,sec=content,label=触发方式"`
+	// Trigger 触发方式：hover 悬停展开 / scroll 滚动堆叠（纯 CSS）/ drag 拖拽旋转（增强脚本）。
+	Trigger string `json:"trigger,omitempty" ct:"select,hover=悬停展开,scroll=滚动堆叠,drag=拖拽旋转,default=hover,sec=content,label=触发方式"`
 	// Shape 展开形态（悬停模式）：fan 弧线扇形 / line 排开（卡片不带任何角度）。
 	Shape string `json:"shape,omitempty" ct:"select,fan=扇形展开,line=直线排开,default=fan,sec=content,label=展开形态"`
 	// Direction 排开方向（仅 shape=line 生效）：horizontal 横排一行 / vertical 竖排一列。
@@ -111,6 +115,8 @@ type Props struct {
 	SpreadAngle int `json:"spreadAngle,omitempty" ct:"slider,min=1,max=15,step=1,sec=motion,label=展开角度(deg)"`
 	// SpreadDistance 悬停展开平移系数（px/张，1~200，缺省 120；同时是「铺满」开关）。
 	SpreadDistance int `json:"spreadDistance,omitempty" ct:"slider,min=1,max=200,step=1,sec=motion,label=展开平移(px)"`
+	// DragRadius 拖拽旋转的环形半径 px（0 = 自动：按卡片宽度与数量保证相邻卡片不重叠）。
+	DragRadius int `json:"dragRadius,omitempty" ct:"slider,min=0,max=1200,step=10,sec=motion,label=环形半径(0=自动)"`
 	// Spacing 滚动模式的卡片间距（缺省 26vh）。
 	Spacing string `json:"spacing,omitempty" ct:"dimension,maxlen=20,sec=layout,label=卡片间距"`
 	// StickyTop 滚动模式卡片的粘住位置（缺省 50%，即视口垂直居中）。
@@ -205,8 +211,11 @@ func (c *Component) Validate(node *core.Node, ids map[string]bool) (err error) {
 
 // effectiveTrigger 触发方式缺省 hover。
 func effectiveTrigger(p *Props) string {
-	if p.Trigger == TriggerScroll {
+	switch p.Trigger {
+	case TriggerScroll:
 		return TriggerScroll
+	case TriggerDrag:
+		return TriggerDrag
 	}
 	return TriggerHover
 }
@@ -373,9 +382,12 @@ func CompileCSS(node *core.Node, p *Props, cardN int, b *core.CSSBuckets) {
 		"width: 100%",
 	})
 
-	if trigger == TriggerScroll {
+	switch trigger {
+	case TriggerScroll:
 		compileScrollCSS(b, sel, node.ID, p, n, width, height, content)
-	} else {
+	case TriggerDrag:
+		compileDragCSS(b, sel, p, n, width, height, content)
+	default:
 		compileHoverCSS(b, sel, p, n, width, height, content)
 	}
 	compileZoomCSS(b, sel, p, content)
@@ -650,6 +662,94 @@ func compileScrollCSS(b *core.CSSBuckets, sel, id string, p *Props, n int, width
 			fmt.Sprintf("to { scale: %s; opacity: 1 }", fnum(s)),
 		})
 	}
+}
+
+// compileDragCSS 拖拽旋转模式（路径 C：构建期输出环形骨架 + data-* 属性，
+// 公共增强脚本 enhance.js 按需初始化）。
+//
+// 几何：第 i 张卡落在半径 R 的圆周上（角度 360i/N），卡片**始终正立** ——
+// 变换链 translate(-50%,-50%) → rotate(θ+rot) → translateY(-R) → rotate(-(θ+rot))：
+// 第一个 rotate 把位移送到圆周方向，后一个把它转回来抵消朝向，所以卡片沿圆环走位而不歪。
+//
+// 降级：没有增强脚本时 --wp-cardstack-rot 恒为 0deg，卡片静态环形分布 ——
+// 比堆叠态更接近最终形态，且点击放大、键盘聚焦照旧可用，不依赖 JS 才看得见。
+func compileDragCSS(b *core.CSSBuckets, sel string, p *Props, n int, width, height string, content bool) {
+	track := sel + " .wp-cardstack-track"
+	radius := dragRadius(p, n, width, height)
+	cardH := cssPx(height, fallbackCardH)
+
+	// 容器整块可拖拽；touch-action 只让出纵向，横向留给旋转（否则移动端拖不动页面）。
+	b.Add(core.BreakpointDesktop, sel, []string{
+		"position: relative",
+		"width: 100%",
+		"cursor: grab",
+		"touch-action: pan-y",
+	})
+	b.Add(core.BreakpointDesktop, sel+".is-dragging", []string{"cursor: grabbing"})
+	// 轨道高度 = 圆周外接盒（2R + 卡高），与相邻区块不会重叠。
+	b.Add(core.BreakpointDesktop, track, []string{
+		"position: relative",
+		"display: block",
+		fmt.Sprintf("height: %dpx", int(2*radius+cardH)),
+		// 旋转角由增强脚本改写；无脚本时保持 0，卡片静态成环。
+		"--wp-cardstack-rot: 0deg",
+	})
+
+	hueStep := float64(effectiveHueStep(p))
+	for i := 0; i < n; i++ {
+		angle := 360 * float64(i) / float64(n)
+		card := track + " .wp-cardstack-card:nth-child(" + strconv.Itoa(i+1) + ")"
+		decls := []string{
+			"position: absolute",
+			"left: 50%",
+			"top: 50%",
+			"width: " + width,
+			fmt.Sprintf("transform: translate(-50%%, -50%%) rotate(calc(%sdeg + var(--wp-cardstack-rot, 0deg))) translateY(-%dpx) rotate(calc(-%sdeg - var(--wp-cardstack-rot, 0deg)))",
+				num(angle), int(radius), num(angle)),
+			"transition: transform .35s ease",
+		}
+		if content {
+			decls = append(decls, "min-height: "+height, "height: auto")
+		} else {
+			// 环形没有「中间卡」，色相直接按序号均匀铺开。
+			decls = append(decls, "height: "+height,
+				fmt.Sprintf("filter: hue-rotate(%.0fdeg)", float64(i)*hueStep))
+		}
+		decls = append(decls, cardBaseDecls(content, p)...)
+		b.Add(core.BreakpointDesktop, card, decls)
+	}
+
+	// 拖拽过程中取消过渡，否则卡片会追着指针慢半拍。
+	b.Add(core.BreakpointDesktop, sel+".is-dragging .wp-cardstack-card", []string{"transition: none"})
+}
+
+// dragRadius 环形半径：用户值优先；0 = 自动，保证相邻卡片弦长不小于卡宽。
+func dragRadius(p *Props, n int, width, height string) float64 {
+	if p.DragRadius > 0 {
+		return float64(p.DragRadius)
+	}
+	cardW := cssPx(width, fallbackCardW)
+	cardH := cssPx(height, fallbackCardH)
+	if n < 2 {
+		return cardH / 2
+	}
+	// 相邻夹角 2π/n → 弦长 2R·sin(π/n)；要 ≥ 卡宽，故 R ≥ 卡宽 / (2·sin(π/n))。
+	r := cardW / (2 * math.Sin(math.Pi/float64(n)))
+	if min := cardH/2 + 24; r < min {
+		r = min
+	}
+	return r
+}
+
+// cssPx 取 px 数值；非 px 单位退回兜底值 —— 环形半径要在编译期算三角函数，
+// 拿不到百分比（用户把宽度写成 % 时按兜底值算半径，几何仍成立，只是留白可能偏大）。
+func cssPx(v string, fallback float64) float64 {
+	if s, ok := strings.CutSuffix(v, "px"); ok {
+		if f, err := strconv.ParseFloat(strings.TrimSpace(s), 64); err == nil && f > 0 {
+			return f
+		}
+	}
+	return fallback
 }
 
 // compileZoomCSS 点击放大到视口中央（零 JS：label + radio，同组互斥，一次只放大一张）。

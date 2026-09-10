@@ -42,16 +42,19 @@ type View struct {
 	HasContent bool
 	// Collection 是否为内容集合模式：卡片由内容条数决定，卡内元素由字段映射渲染。
 	Collection bool
+	// Drag 是否为拖拽旋转模式：容器输出 data-* 属性，公共增强脚本接管指针与方向键。
+	Drag bool
 }
 
 // BuildView 生成渲染视图；内容集合模式需要 ctx.Collection（装配层注入）。
 func BuildView(node *core.Node, p *Props, ctx *core.RenderContext) (View, error) {
+	drag := effectiveTrigger(p) == TriggerDrag
 	if source := collectionSource(p); source != "" {
 		cards, err := collectionCards(node, p, ctx)
 		if err != nil {
 			return View{}, err
 		}
-		return View{Cards: cards, Collection: true}, nil
+		return View{Cards: cards, Collection: true, Drag: drag}, nil
 	}
 
 	n := cardCount(node, p)
@@ -60,7 +63,7 @@ func BuildView(node *core.Node, p *Props, ctx *core.RenderContext) (View, error)
 		label := strconv.Itoa(i + 1)
 		cards[i] = CardView{Label: label, AriaLabel: "放大第 " + label + " 张卡片"}
 	}
-	return View{Cards: cards, HasContent: hasContent(node)}, nil
+	return View{Cards: cards, HasContent: hasContent(node), Drag: drag}, nil
 }
 
 // collectionCards 解析内容集合 → 每项一张卡（字段映射取自 props）。

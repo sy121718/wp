@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"testing"
@@ -157,6 +158,64 @@ func TestScrollCSS(t *testing.T) {
 	// absolute 只该出现在两条「隐藏单选」规则里（卡片本身是 sticky 排布）。
 	if n := strings.Count(s, "position: absolute"); n != 2 {
 		t.Errorf("滚动模式不该把卡片绝对堆叠（position: absolute 出现 %d 次，期望 2）", n)
+	}
+}
+
+// TestDragCSS 拖拽旋转：环形几何在构建期算好，增强脚本只改写一个 CSS 变量。
+func TestDragCSS(t *testing.T) {
+	p := &Props{Trigger: TriggerDrag}
+	s := compiled(t, nodeOf(p, 0), p)
+
+	for _, want := range []string{
+		"cursor: grab",
+		"touch-action: pan-y", // 纵向留给页面滚动，横向才归旋转
+		"--wp-cardstack-rot: 0deg",
+		// 9 张卡、240px 宽 → 半径 240/(2·sin20°) ≈ 350.86 → 350px
+		"transform: translate(-50%, -50%) rotate(calc(0deg + var(--wp-cardstack-rot, 0deg))) translateY(-350px)",
+		"rotate(calc(-320deg - var(--wp-cardstack-rot, 0deg)))", // 第 9 张 = 360×8/9
+		"transition: transform .35s ease",
+		".wp-c-n1.is-dragging .wp-cardstack-card",
+	} {
+		if !strings.Contains(s, want) {
+			t.Errorf("拖拽模式缺少 %q", want)
+		}
+	}
+	// 不该混入其他模式的几何。
+	if strings.Contains(s, "position: sticky") || strings.Contains(s, "rotate(-20deg)") {
+		t.Errorf("拖拽模式混入了其他模式的几何")
+	}
+}
+
+// TestDragRadius 环形半径：默认按卡片宽度与数量自动（相邻不重叠），用户值优先。
+func TestDragRadius(t *testing.T) {
+	if got := dragRadius(&Props{}, 9, "240px", "320px"); math.Abs(got-350.86) > 0.5 {
+		t.Errorf("自动半径 = 卡宽/(2·sin(π/n)) ≈ 350.86，got %v", got)
+	}
+	if got := dragRadius(&Props{DragRadius: 500}, 9, "240px", "320px"); got != 500 {
+		t.Errorf("用户指定半径应优先，got %v", got)
+	}
+	if got := dragRadius(&Props{}, 1, "240px", "320px"); got != 160 {
+		t.Errorf("单张卡半径退化为卡高一半，got %v", got)
+	}
+	// 卡数多时半径自动放大（保证不重叠），不会小于下限。
+	if got := dragRadius(&Props{}, 16, "240px", "320px"); got < 600 {
+		t.Errorf("16 张卡的半径应显著变大，got %v", got)
+	}
+}
+
+// TestDragView 拖拽模式在视图上打标，模板据此输出 data-* 与键盘可达属性。
+func TestDragView(t *testing.T) {
+	v, err := BuildView(nodeOf(&Props{Trigger: TriggerDrag}, 0), &Props{Trigger: TriggerDrag}, &core.RenderContext{})
+	if err != nil {
+		t.Fatalf("BuildView: %v", err)
+	}
+	if !v.Drag {
+		t.Errorf("拖拽模式应标记 Drag")
+	}
+	p := &Props{Trigger: TriggerHover}
+	v2, _ := BuildView(nodeOf(p, 0), p, &core.RenderContext{})
+	if v2.Drag {
+		t.Errorf("悬停模式不该标记 Drag")
 	}
 }
 
