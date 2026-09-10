@@ -114,3 +114,38 @@ height: 100dvh;   /* 新 —— 后写，覆盖前者 */
 详见 `AGENTS.md` §测试 的交互改动验证清单。
 
 原子组件接入方式：Props 内嵌 `Advanced core.AdvancedProps`（json: `advanced`），`Validate` 末尾调 `core.ValidateAdvanced(&p.Advanced, node.ID, ids)`，`Render` 中调 `extraClasses, customID := core.CompileAdvanced(node.ID, &p.Advanced, ctx.CSS)` 并把附加 class/ID 织入 HTML。后续 Heading/Text/Button 照此继承。
+### 6.9 组件必须适配多端（硬规则，2026-09 确立）
+
+**由来**：cardstack 第一版只在桌面浏览器 + 鼠标下开发验证，上线到手机连爆两个问题 ——
+触屏没有悬停导致四种形态完全无响应；卡片宽度与环绕半径写死 px，620px 的卡片塞进
+390px 屏幕，文档被撑宽、页面能左右拖。两个问题的共同点是**只在一种环境下验证过**。
+
+适用范围：**所有新建与修改的组件**。产出要在访客的各种设备与各种输入方式下正确工作。
+
+#### 必做的四件事
+
+1. **宽度不写死**：元素的宽度写 `min(100%, <设计宽度>)`，不要只写 `<设计宽度>`。
+   容器变窄时它跟着缩，容器够宽时它保持设计值 —— 两端都对。
+2. **绝对值必须带上限**：编译期算出的任何 px（半径 / 位移 / 间距 / 尺寸）都可能在窄屏越界，
+   用 `min()` / `clamp()` 按视口封顶。上限**要让元素自身尺寸参与计算**：
+   `calc((100vw - <元素宽>) / 2 - 边距)`；用经验比例（如 `40vw`）在极端组合下仍会溢出。
+3. **触屏是独立环境**：`AddHover` 输出的规则包在 `@media (hover: hover)` 里，**触屏上根本不输出**。
+   任何依赖 `:hover` 的形态都必须用 `CSSBuckets.AddHoverNone` 给出触屏等价形态，
+   否则手机端这个功能等于不存在。
+4. **按压反馈不包 hover**：用 `AddActive`（不带媒体查询），触屏按下同样触发。
+
+#### 可用的机制（不要自己造）
+
+| 需求 | 用什么 |
+|---|---|
+| 三端各自不同的值（内距/字号/显隐） | `Responsive` 类型 + `core.BreakpointDesktop/Tablet/Mobile` |
+| 随容器宽度连续变化 | `min()` / `clamp()` / `cqw`（注意 `container-type` 会困住 fixed 后代） |
+| 触屏 vs 鼠标 | `AddHover` / `AddHoverNone` / `AddActive` |
+
+#### 验收（合并前自检）
+
+- **三种视口**各看一次：桌面 1440 / 平板 768 / 手机 375；
+- **四种输入**各操作一次：鼠标、滚轮与触摸板、触屏、键盘；
+- 窄视口下在浏览器控制台确认**没有横向溢出**：
+  `document.documentElement.scrollWidth === clientWidth`，
+  且不存在 `getBoundingClientRect().right > clientWidth` 的元素。
