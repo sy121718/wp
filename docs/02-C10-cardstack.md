@@ -91,6 +91,11 @@ shape: line 直接排开（**卡片不带任何角度**）
 | `spacing` | 26vh | scroll 模式的卡片间距 |
 | `stickyTop` | 50% | scroll 模式的粘住位置 |
 | `slideHeight` | 100dvh | slide 模式的每屏高度 |
+| `slideFit` | 页面内滚动区 | slide 的贴合方式：`viewport` = 铺满视口（整页分页，不受父容器内边距影响） |
+
+> `slide` 的右下角自带页码角标（**第几屏 / 共几屏**），由 CSS `counter` + 编译期写入的
+> `attr(data-total)` 生成 —— 零 JS、滚动中自动更新。卡片背景设深色时记得文字也要跟浅色
+> （默认文字色是深色，深底深字会看不清）。
 | `cardLayout` | column | 卡内排列方向 |
 | `cardGap` | 10px | 卡内间距 |
 | `cardJustify` / `cardAlign` | center | 主轴 / 交叉轴对齐 |
@@ -116,14 +121,13 @@ shape: line 直接排开（**卡片不带任何角度**）
 产品轮播
   trigger=deck + deckLoop=开 + 集合（或子节点模板）
 
-品牌故事页 / 落地页
-  trigger=slide + 子节点模板（每屏一个 container，一屏一件事）
-  ⚠ 想要「整页分页」的效果，必须 slideHeight=100dvh **且把父容器的内边距设为 0**
-     —— 否则它只是页面里的一块滚动窗口，看起来像普通内容平铺
+品牌故事页 / 落地页（整页分页）
+  trigger=slide + slideFit=viewport + 子节点模板（每屏一个 container）
+  → 容器脱离文档流铺满视口，父容器的内边距不影响它，也不必手动归零
 
-整页就是一屏一张（页面只有这一个组件）
-  trigger=slide + slideHeight=100dvh + 外层容器 padding=0
-  页面高度 ≈ 一屏，内嵌滚动即整页滚动，视觉上完全等价
+整页分页但保留页面其余内容（首屏分页 + 后面接正文）
+  trigger=slide + slideHeight=100dvh + 父容器 padding=0（inline 贴合，留在文档流里）
+  —— 这种情况不要用 slideFit=viewport：它会与同级内容重叠
 
 手工卡片墙
   trigger=hover + shape=fan + 拖 9 张内容卡
@@ -133,8 +137,9 @@ shape: line 直接排开（**卡片不带任何角度**）
 
 - **一屏内容放得下**：`slide` 用 `min-height`，内容超一屏卡片会自己长高、吸附对不齐 ——
   该拆成两张卡，不是调组件参数；
-- **`slide` 的外层内边距要归零**：轨道高度是 `slideHeight`，父容器再套一圈 padding
-  就变成「页面里的一块滚动窗口」，而不是整页分页（见 §5 配方）；
+- **`slide` 的两种贴合**：`inline` 留在文档流里，父容器内边距会把它框成「页面里的一块
+  滚动窗口」（要整页分页就加 `slideFit=viewport`，或手动把父容器内边距归零）；
+  `viewport` 脱离文档流铺满视口，**页面上不能有别的同级内容**（会重叠）；
 - **扇形展开的文字是斜的**：`fan` 好看但不好读，信息类内容用 `line` / `deck`；
 - **卡片外观是组件级**：一套样式出 N 张卡。要每张卡不同外观，用静态卡模式在卡里套一层容器；
 - **种子字段**：集合项自带 `id / slug / revision`，链接字段填 `slug` 即可（`items` 这类数组字段自动取首元素）；
