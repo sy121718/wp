@@ -1,0 +1,202 @@
+/* select-enhance.js — 原生 <select> 的可控替身（渐进增强）。
+ *
+ * 为什么换掉原生下拉：原生 <select> 的弹层由浏览器/桌面环境提供，在
+ * Linux + Wayland 的 Chrome 上是 GTK 弹窗——点击中部会瞬开瞬关（表现为
+ * 「点中间直接选中、只有点边缘才展开」），且各平台表现不一致。换成 DOM 自绘
+ * 下拉后，交互行为由我们控制，跨平台一致，也能在无头环境里验证。
+ *
+ * 契约（不破坏既有用法）：
+ *   - 原生 <select> 原样保留（只做视觉隐藏），表单提交、name/value、label[for]
+ *     全部照旧；增强只是额外挂一个可见触发器和菜单。
+ *   - 键盘：Enter/Space/↑/↓ 展开，↑/↓ 移动，Home/End 首尾，Enter 选中，Esc 收起，
+ *     字母键按前缀跳转。无障碍用 combobox + listbox 语义。
+ *   - 已有 data-wb-path 的 select（工作台自绘下拉）跳过，避免双重增强。
+ */
+(function () {
+    'use strict';
+
+    var OPEN_CLASS = 'is-open';
+
+    function labelTextFor(sel) {
+        if (sel.id) {
+            var lab = document.querySelector('label[for="' + sel.id + '"]');
+            if (lab) { return lab.textContent.trim(); }
+        }
+        var wrap = sel.closest('label');
+        if (wrap) {
+            // label 里既有说明文字又有控件：取控件之前的文本节点。
+            var t = '';
+            for (var n = wrap.firstChild; n && n !== sel; n = n.nextSibling) {
+                if (n.nodeType === 1 && n.tagName === 'SELECT') { break; }
+                t += n.textContent || '';
+            }
+            return t.trim();
+        }
+        return typeof sel.getAttribute === 'function' ? (sel.getAttribute('aria-label') || '') : '';
+    }
+
+    function enhance(sel) {
+        if (sel.dataset.wbsReady === '1') { return; }
+        // 工作台自己的下拉（data-wb-path）不碰。
+        if (sel.hasAttribute('data-wb-path')) { return; }
+        sel.dataset.wbsReady = '1';
+
+        var root = document.createElement('div');
+        root.className = 'wbs';
+        sel.parentNode.insertBefore(root, sel);
+        root.appendChild(sel);
+        sel.classList.add('wbs-native');
+        sel.setAttribute('tabindex', '-1');
+
+        var trigger = document.createElement('button');
+        trigger.type = 'button';
+        trigger.className = 'wbs-trigger';
+        trigger.setAttribute('role', 'combobox');
+        trigger.setAttribute('aria-haspopup', 'listbox');
+        trigger.setAttribute('aria-expanded', 'false');
+        var label = labelTextFor(sel);
+        if (label) { trigger.setAttribute('aria-label', label); }
+
+        var value = document.createElement('span');
+        value.className = 'wbs-value';
+        trigger.appendChild(value);
+        var caret = document.createElement('span');
+        caret.className = 'wbs-caret';
+        caret.setAttribute('aria-hidden', 'true');
+        trigger.appendChild(caret);
+
+        var menu = document.createElement('ul');
+        menu.className = 'wbs-menu';
+        menu.setAttribute('role', 'listbox');
+        menu.hidden = true;
+
+        var items = [];
+        Array.prototype.forEach.call(sel.options, function (opt, i) {
+            var li = document.createElement('li');
+            li.className = 'wbs-option';
+            li.setAttribute('role', 'option');
+            li.dataset.index = String(i);
+            li.textContent = opt.textContent;
+            if (opt.disabled) { li.setAttribute('aria-disabled', 'true'); }
+            menu.appendChild(li);
+            items.push(li);
+        });
+
+        root.appendChild(trigger);
+        root.appendChild(menu);
+
+        var active = sel.selectedIndex < 0 ? 0 : sel.selectedIndex;
+
+        function sync() {
+            var opt = sel.options[sel.selectedIndex];
+            value.textContent = opt ? opt.textContent : '';
+            items.forEach(function (li, i) {
+                li.classList.toggle('is-selected', i === sel.selectedIndex);
+                li.setAttribute('aria-selected', i === sel.selectedIndex ? 'true' : 'false');
+            });
+        }
+
+        function highlight(i) {
+            if (items.length === 0) { return; }
+            active = (i + items.length) % items.length;
+            items.forEach(function (li, k) { li.classList.toggle('is-active', k === active); });
+            var el = items[active];
+            if (el && el.scrollIntoView) { el.scrollIntoView({ block: 'nearest' }); }
+        }
+
+        function open() {
+            closeAll(root);
+            menu.hidden = false;
+            root.classList.add(OPEN_CLASS);
+            trigger.setAttribute('aria-expanded', 'true');
+            highlight(sel.selectedIndex < 0 ? 0 : sel.selectedIndex);
+        }
+
+        function close() {
+            menu.hidden = true;
+            root.classList.remove(OPEN_CLASS);
+            trigger.setAttribute('aria-expanded', 'false');
+        }
+
+        function choose(i) {
+            if (i < 0 || i >= sel.options.length || sel.options[i].disabled) { return; }
+            sel.selectedIndex = i;
+            sel.dispatchEvent(new Event('change', { bubbles: true }));
+            sel.dispatchEvent(new Event('input', { bubbles: true }));
+            sync();
+            close();
+            trigger.focus();
+        }
+
+        trigger.addEventListener('click', function (e) {
+            e.preventDefault();
+            if (root.classList.contains(OPEN_CLASS)) { close(); } else { open(); }
+        });
+        trigger.addEventListener('keydown', function (e) {
+            var open_ = root.classList.contains(OPEN_CLASS);
+            switch (e.key) {
+                case 'ArrowDown': e.preventDefault(); open_ ? highlight(active + 1) : open(); break;
+                case 'ArrowUp': e.preventDefault(); open_ ? highlight(active - 1) : open(); break;
+                case 'Home': if (open_) { e.preventDefault(); highlight(0); } break;
+                case 'End': if (open_) { e.preventDefault(); highlight(items.length - 1); } break;
+                case 'Enter': case ' ': e.preventDefault(); open_ ? choose(active) : open(); break;
+                case 'Escape': if (open_) { e.preventDefault(); close(); } break;
+                case 'Tab': close(); break;
+                default:
+                    if (e.key.length === 1 && !e.ctrlKey && !e.metaKey) {
+                        var ch = e.key.toLowerCase();
+                        var hit = sel.options.length;
+                        for (var i = 0; i < sel.options.length; i++) {
+                            if ((sel.options[i].textContent || '').trim().toLowerCase().indexOf(ch) === 0) { hit = i; break; }
+                        }
+                        if (hit < sel.options.length) { e.preventDefault(); open_ ? highlight(hit) : choose(hit); }
+                    }
+            }
+        });
+        menu.addEventListener('click', function (e) {
+            var li = e.target.closest('.wbs-option');
+            if (!li) { return; }
+            e.preventDefault();
+            choose(parseInt(li.dataset.index, 10));
+        });
+        // label[for] 点击会把焦点交给被隐藏的原生 select，转给可见触发器。
+        sel.addEventListener('focus', function () { trigger.focus(); });
+        sel.addEventListener('change', sync);
+
+        sync();
+    }
+
+    var openRoot = null;
+    function closeAll(except) {
+        if (openRoot && openRoot !== except) {
+            var t = openRoot.querySelector('.wbs-trigger');
+            var m = openRoot.querySelector('.wbs-menu');
+            if (m) { m.hidden = true; }
+            openRoot.classList.remove(OPEN_CLASS);
+            if (t) { t.setAttribute('aria-expanded', 'false'); }
+        }
+        openRoot = except || null;
+    }
+    document.addEventListener('click', function (e) {
+        if (!e.target.closest || !e.target.closest('.wbs')) { closeAll(null); return; }
+        var r = e.target.closest('.wbs');
+        if (openRoot !== r) { openRoot = r; }
+    });
+    document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape') { closeAll(null); }
+    });
+
+    function scan(rootNode) {
+        var scope = rootNode || document;
+        Array.prototype.forEach.call(scope.querySelectorAll('select:not([data-wb-path])'), enhance);
+    }
+
+    window.wbSelectEnhance = scan;
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', function () { scan(document); });
+    } else {
+        scan(document);
+    }
+    // htmx 局部替换后重新增强（后台大量片段走 htmx）。
+    document.addEventListener('htmx:afterSwap', function (e) { scan(e.target || document); });
+})();

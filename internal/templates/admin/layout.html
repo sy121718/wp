@@ -73,7 +73,10 @@
             </header>
             <div class="drawer-body" data-drawer-body></div>
         </aside>
-        <script src="/static/js/admin.js"></script>
+        {* 自绘下拉：原生 select 的弹层在 Linux + Wayland 的 Chrome 上点中部会瞬开瞬关，
+   这里做渐进增强（原生 select 保留、表单提交不变）。工作台自带的 wbDropdown 不受影响。 *}
+<script src="/static/js/select-enhance.js"></script>
+<script src="/static/js/admin.js"></script>
     </div>
 </body>
 </html>
