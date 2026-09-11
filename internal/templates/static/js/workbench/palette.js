@@ -54,13 +54,16 @@ export const paletteItems = [
     { type: 'core.productCard', label: '商品卡', hint: '吃商品数据的最小展示单元（可作集合卡模板）', props: { imageField: 'item.images', titleField: 'item.name', priceField: 'item.priceRange', comparePriceField: 'item.comparePrice', tagsField: 'item.tags', linkField: 'item.slug', linkPrefix: '/products/', currency: '¥', titleTag: 'h3' } },
     // 商品列表（issue #23）：集合型组件 —— 按筛选维度取一批商品，网格 / 列表铺开。
     // 筛选是构建期下推到集合源的等值维度（状态 / 分类 / 品牌 / 标签）；不分页，「取几条」截断。
-    { type: 'core.productList', label: '商品列表', hint: '网格 / 列表铺开一批商品', props: { collectionLimit: 8, layout: 'grid', columns: 'auto', filterStatus: 'published', imageField: 'item.images', titleField: 'item.name', priceField: 'item.priceRange', comparePriceField: 'item.comparePrice', tagsField: 'item.tags', linkField: 'item.slug', linkPrefix: '/products/', currency: '¥', titleTag: 'h3', emptyText: '暂无商品' } }
+    { type: 'core.productList', label: '商品列表', hint: '网格 / 列表铺开一批商品', props: { collectionLimit: 8, layout: 'grid', columns: 'auto', filterStatus: 'published', imageField: 'item.images', titleField: 'item.name', priceField: 'item.priceRange', comparePriceField: 'item.comparePrice', tagsField: 'item.tags', linkField: 'item.slug', linkPrefix: '/products/', currency: '¥', titleTag: 'h3', emptyText: '暂无商品' } },
+    // 规格选择器（issue #26）：从商品详情里拆出来的可拖拽部件 —— 拖到自定义详情页模板上，
+    // 选规格切组合；每档组合自带实时可用量（片段现取，issue #24）。
+    { type: 'core.productSelector', label: '规格选择器', hint: '选规格切组合（可放详情页任意位置）', props: { optionsField: 'product.options', variantsField: 'product.variants', currency: '¥', emptyText: '该商品暂无可选规格' } }
 ];
 
 /** 组件库分组：基础组件大分类平铺（细分类留给进阶组件，当前无进阶内容）；
  *  「区块」概念归全局块（页眉/页脚/区块）。 */
 export const paletteGroups = [
-    { key: 'basic', title: '基础组件', types: ['core.container', 'core.heading', 'core.text', 'core.button', 'core.image', 'core.gallery', 'core.divider', 'core.spacer', 'core.slider', 'core.list', 'core.infobox', 'core.social_buttons', 'core.video', 'core.nav', 'core.languages', 'core.tabs', 'core.accordion', 'core.marquee', 'core.counter', 'core.table', 'core.card', 'core.cardstack', 'core.faq', 'core.quote', 'core.countdown', 'core.icon', 'core.badge', 'core.progress', 'core.rating', 'core.form', 'core.product', 'core.productCard', 'core.productList'] }
+    { key: 'basic', title: '基础组件', types: ['core.container', 'core.heading', 'core.text', 'core.button', 'core.image', 'core.gallery', 'core.divider', 'core.spacer', 'core.slider', 'core.list', 'core.infobox', 'core.social_buttons', 'core.video', 'core.nav', 'core.languages', 'core.tabs', 'core.accordion', 'core.marquee', 'core.counter', 'core.table', 'core.card', 'core.cardstack', 'core.faq', 'core.quote', 'core.countdown', 'core.icon', 'core.badge', 'core.progress', 'core.rating', 'core.form', 'core.product', 'core.productCard', 'core.productList', 'core.productSelector'] }
 ];
 
 /**

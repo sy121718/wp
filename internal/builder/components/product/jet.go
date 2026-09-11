@@ -204,17 +204,17 @@ func BuildView(p *Props, content core.ContentResolver) (View, error) {
 		view.MediaAlt = view.Title
 	}
 	// 规格选择器：有维度且可展示的组合 ≥2 才输出 —— 单变体商品不输出选择器。
-	view.OptionGroups = parseOptionGroups(rawOptions)
-	view.VariantOptions = parseVariantOptions(rawVariants, view.OptionGroups, view.Currency)
+	view.OptionGroups = ParseOptionGroups(rawOptions)
+	view.VariantOptions = ParseVariantOptions(rawVariants, view.OptionGroups, view.Currency)
 	view.HasOptions = len(view.OptionGroups) > 0 && len(view.VariantOptions) > 1
 	return view, nil
 }
 
-// parseOptionGroups 规格维度 JSON → 视图结构。
+// ParseOptionGroups 规格维度 JSON → 视图结构。
 //
 // 结构对不上（空串 / 非法 JSON / 旧形态）时返回空：选择器不输出，
 // 而不是让整个商品详情页构建失败（字段本身已由白名单校验过合法性）。
-func parseOptionGroups(raw string) []OptionGroup {
+func ParseOptionGroups(raw string) []OptionGroup {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return nil
@@ -246,13 +246,13 @@ func parseOptionGroups(raw string) []OptionGroup {
 	return out
 }
 
-// parseVariantOptions 规格组合 JSON → 视图行（只保留能对上全部维度的组合）。
+// ParseVariantOptions 规格组合 JSON → 视图行（只保留能对上全部维度的组合）。
 //
 // 两条过滤规则：
 //   - 无规格组合（option_values 为空）不进规格清单 —— 它是商品的占位 / 手工变体，
 //     不是规格选择器里的一格；
 //   - 未启用的变体不上架，因而不出现在选择器里（组合计数也不含它）。
-func parseVariantOptions(raw string, groups []OptionGroup, currency string) []VariantOption {
+func ParseVariantOptions(raw string, groups []OptionGroup, currency string) []VariantOption {
 	raw = strings.TrimSpace(raw)
 	if raw == "" || len(groups) == 0 {
 		return nil
