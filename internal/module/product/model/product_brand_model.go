@@ -69,6 +69,15 @@ func (m *Model) ListBrands(ctx context.Context, projectID, keyword string) (list
 	return list, err
 }
 
+// ListBrandsByIDs 按 id 批量取品牌（集合源/构建期一次取好，零 N+1；顺序由调用方定）。
+func (m *Model) ListBrandsByIDs(ctx context.Context, ids []string) (list []*ProductBrandEntity, err error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	err = m.BrandDB(ctx).Where("id IN ?", ids).Find(&list).Error
+	return list, err
+}
+
 // CreateBrand 写入品牌。
 func (m *Model) CreateBrand(ctx context.Context, e *ProductBrandEntity) (err error) {
 	return m.BrandDB(ctx).Create(e).Error

@@ -33,6 +33,10 @@ type ProductEntity struct {
 	SEOTitle       string          `gorm:"column:seo_title;type:text;not null"`
 	SEODescription string          `gorm:"column:seo_description;type:text;not null"`
 	Images         json.RawMessage `gorm:"column:images;type:jsonb;not null"`
+	// ImageAlts 图集 alt 文本数组（issue #12，迁移 094）：与 Images 逐位对应，
+	// 元素可为空串（该图仍是装饰性图片，产物由商品名兜底）。
+	// alt 是作者文本，参与内容翻译（语境 product.imageAlts，逐元素取词）；URL 永不翻译。
+	ImageAlts json.RawMessage `gorm:"column:images_alt;type:jsonb;not null"`
 	// AttributeIDs 引用的属性组 id 数组（issue #7：同一属性组可被多个商品复用，
 	// 商品侧只存引用，组与值的定义只存在一份）。
 	AttributeIDs json.RawMessage `gorm:"column:attribute_ids;type:jsonb;not null"`

@@ -21,7 +21,8 @@ package dashboardhttp
 //
 // 跨页面复用与完成度（决策 F11/F12）：由 page_translations_index.go 的全站扫描提供。
 //
-// 本轮不做（严格边界）：AI 翻译（按钮灰置 + 接口形态预留）、CMS 字段（文章/商品未实现）、
+// 本轮不做（严格边界）：AI 翻译（按钮灰置 + 接口形态预留）、CMS 字段（文章未实现；
+// 商品域已由 issue #12 落地，见 product_translation_handle.go）、
 // 译文删除（清空输入框 = 不写入，孤儿行清理见 docs/06-D §14 D14）。
 
 import (

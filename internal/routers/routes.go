@@ -243,7 +243,7 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 		admincontract.RuleService
 	})
 	dashboardhttp.SetupDashboardRoutes(router, pageService, projectService, blockSvc, pluginSvc, collectionResolver,
-		adminCRUD, adminCRUD, adminCRUD, adminCRUD, adminCRUD, adminCRUD, adminAuthzSvc, navigationSvc, productSvc)
+		adminCRUD, adminCRUD, adminCRUD, adminCRUD, adminCRUD, adminCRUD, adminAuthzSvc, navigationSvc, productSvc, presentationSvc)
 
 	// 运行时片段端点（0-D，公开路由：capability 白名单 + 认证策略在 handler 内）。
 	runtimefragment.SetupFragmentRoutes(router)

@@ -15,7 +15,6 @@ package productservice
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -54,6 +53,7 @@ func (s *Service) ResolveCollection(ctx context.Context, source string, filter m
 	if len(rows) == 0 {
 		return items, nil
 	}
+	lang := core.BuildLang(ctx)
 	ids := make([]string, 0, len(rows))
 	attrIDs := make([]string, 0, len(rows))
 	seenAttr := map[string]bool{}
@@ -79,13 +79,75 @@ func (s *Service) ResolveCollection(ctx context.Context, source string, filter m
 	if err != nil {
 		return nil, err
 	}
+	// 分类 / 品牌 / 标签一次取好（issue #12：展示名要取译文，逐个商品查会变成 N 次）。
+	categoryIndex, brandIndex, tagIndex, ierr := s.taxonomyIndex(ctx, rows)
+	if ierr != nil {
+		return nil, ierr
+	}
 	for _, r := range rows {
-		// 与实体绑定同源：同一份派生值 + 同一份译文替换（语境 product.<字段名>）。
-		values := productFieldValues(r, byProduct[r.ID], attrs)
-		s.translateFields(ctx, values)
+		// 与实体绑定同源：同一份派生值 + 同一份译文替换（语境 实体类型.<字段名>）。
+		loc, lerr := s.localizeRelatedFrom(ctx, lang, r, categoryIndex, brandIndex, tagIndex, attrs)
+		if lerr != nil {
+			return nil, lerr
+		}
+		values := productFieldValues(r, byProduct[r.ID], attrs, loc)
+		s.translateFields(ctx, lang, productcontract.EntityTypeProduct, values)
 		items = append(items, collectionItem(r, values))
 	}
 	return items, nil
+}
+
+// taxonomyIndex 一次取回该批商品引用的分类 / 品牌 / 标签（列表页专用，零 N+1）。
+func (s *Service) taxonomyIndex(ctx context.Context, rows []*productmodel.ProductEntity) (categories map[string]*productmodel.ProductCategoryEntity, brands map[string]*productmodel.ProductBrandEntity, tags map[string]*productmodel.ProductTagEntity, err error) {
+	categoryIDs, brandIDs, tagIDs := []string{}, []string{}, []string{}
+	seenCategory, seenBrand, seenTag := map[string]bool{}, map[string]bool{}, map[string]bool{}
+	for _, r := range rows {
+		for _, id := range decodeStrings(r.CategoryIDs) {
+			if !seenCategory[id] {
+				seenCategory[id] = true
+				categoryIDs = append(categoryIDs, id)
+			}
+		}
+		if r.BrandID != nil && !seenBrand[*r.BrandID] {
+			seenBrand[*r.BrandID] = true
+			brandIDs = append(brandIDs, *r.BrandID)
+		}
+		for _, id := range decodeStrings(r.TagIDs) {
+			if !seenTag[id] {
+				seenTag[id] = true
+				tagIDs = append(tagIDs, id)
+			}
+		}
+	}
+	categories, brands, tags = map[string]*productmodel.ProductCategoryEntity{}, map[string]*productmodel.ProductBrandEntity{}, map[string]*productmodel.ProductTagEntity{}
+	if len(categoryIDs) > 0 {
+		categoryRows, cerr := s.m.ListCategoriesByIDs(ctx, categoryIDs)
+		if cerr != nil {
+			return nil, nil, nil, cerr
+		}
+		for _, row := range categoryRows {
+			categories[row.ID] = row
+		}
+	}
+	if len(brandIDs) > 0 {
+		brandRows, berr := s.m.ListBrandsByIDs(ctx, brandIDs)
+		if berr != nil {
+			return nil, nil, nil, berr
+		}
+		for _, row := range brandRows {
+			brands[row.ID] = row
+		}
+	}
+	if len(tagIDs) > 0 {
+		tagRows, terr := s.m.ListTagsByIDs(ctx, tagIDs)
+		if terr != nil {
+			return nil, nil, nil, terr
+		}
+		for _, row := range tagRows {
+			tags[row.ID] = row
+		}
+	}
+	return categories, brands, tags, nil
 }
 
 // CollectionSchemas 实现 core.CollectionSchemaProvider：商品集合源的元数据。
@@ -132,20 +194,14 @@ func collectionItem(p *productmodel.ProductEntity, values map[string]string) map
 	}
 	item["id"] = p.ID
 	item["slug"] = p.Slug
-	item["images"] = imageURLs(p)
+	item["images"] = imageURLsAny(p)
 	return item
 }
 
-// imageURLs 图集 URL 数组；未配图集但有主图时退化为单元素数组（与详情页同口径），
-// 避免列表卡出现空图。
-func imageURLs(p *productmodel.ProductEntity) []any {
-	urls := []string{}
-	if len(p.Images) > 0 {
-		_ = json.Unmarshal(p.Images, &urls)
-	}
-	if len(urls) == 0 && p.DefaultImage != "" {
-		urls = []string{p.DefaultImage}
-	}
+// imageURLsAny 图集 URL 数组（[]any 形态）；未配图集但有主图时退化为单元素数组
+// （与详情页同口径），避免列表卡出现空图。
+func imageURLsAny(p *productmodel.ProductEntity) []any {
+	urls := imageURLs(p)
 	out := make([]any, 0, len(urls))
 	for _, u := range urls {
 		out = append(out, u)

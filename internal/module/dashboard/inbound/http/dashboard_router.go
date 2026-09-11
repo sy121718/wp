@@ -36,7 +36,8 @@ func SetupDashboardRoutes(router *gin.Engine,
 	rules admincontract.RuleService,
 	authz admincontract.AuthzContextService,
 	navigations navigationcontract.NavigationService,
-	products productcontract.ProductService) {
+	products productcontract.ProductService,
+	presentations ProductTranslationInstancePort) {
 	if router == nil {
 		return
 	}
@@ -173,6 +174,11 @@ func SetupDashboardRoutes(router *gin.Engine,
 	adminPages.POST("/product-tags/recalc", builtin.CasbinMiddlewareForPath("/api/product/tag/recalc"), productPages.ProductTagsRecalc)
 	// 商品挂手工标签：属于商品更新，复用商品更新权限点（自动标签不在这份表单里）。
 	adminPages.POST("/products/tags", builtin.CasbinMiddlewareForPath("/api/product/update"), productPages.ProductsTagsSet)
+
+	// 商品域翻译工作台（issue #12）：入口在商品列表行内「多语言」按钮（与页面翻译工作台同构）。
+	// 保存写 sys_translation（engine=manual）并标记待重建，鉴权复用商品更新权限点（同一改动面）。
+	SetupProductTranslationRoutes(adminPages,
+		builtin.CasbinMiddlewareForPath("/api/product/update"), products, projects, pages, presentations)
 
 	// admin 六领域管理页（管理员/角色/菜单/权限/部门/数据权限）：
 	// 页面 GET 走 /admin 组认证（Session+CSRF，无 Casbin）；

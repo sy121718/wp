@@ -67,6 +67,20 @@ func ValidateTranslatable(spec any, fields []string) (err error) {
 	return nil
 }
 
+// ContentContextFor 拼装实体字段的内容译文语境 "{实体类型}.{字段名}"（docs/06-D §7.5）。
+//
+// 与 pkg/i18n.ContentContext 同一拼法：本函数供领域模块（商品域的分类/品牌/标签/属性）
+// 在**不依赖 pkg/i18n 语境工具**的前提下拼语境，保证全站语境只有一处语义
+// （任一段为空返回空串，空语境不参与取词，取词器直接回退原文）。
+func ContentContextFor(entityType, field string) string {
+	typ := strings.TrimSpace(entityType)
+	f := strings.TrimSpace(field)
+	if typ == "" || f == "" {
+		return ""
+	}
+	return typ + "." + f
+}
+
 // jsonFieldNames 递归收集结构体的 JSON 字段名集合。
 //
 // 覆盖：本层字段、嵌套结构体字段（如 items[].title 的 title）、指针/切片/数组/映射

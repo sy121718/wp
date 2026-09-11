@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"gorm.io/gorm"
 
 	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
@@ -112,7 +111,8 @@ func (s *Service) Create(ctx context.Context, req *productdto.CreateReq) (res *p
 		Status: productenums.StatusDraft,
 		Unit:   req.Unit, Weight: req.Weight,
 		SEOTitle: req.SEOTitle, SEODescription: req.SEODescription,
-		Images: orJSONList(req.Images), AttributeIDs: orJSONList(attributeIDs),
+		Images: orJSONList(req.Images), ImageAlts: orJSONList(req.ImageAlts),
+		AttributeIDs:      orJSONList(attributeIDs),
 		CategoryIDs:       orJSONList(categoryIDs),
 		PrimaryCategoryID: primaryCategoryID,
 		BrandID:           brandID,
@@ -193,6 +193,9 @@ func (s *Service) Update(ctx context.Context, req *productdto.UpdateReq) (res *p
 	}
 	if req.Images != nil {
 		e.Images = orJSONList(req.Images)
+	}
+	if req.ImageAlts != nil {
+		e.ImageAlts = orJSONList(req.ImageAlts)
 	}
 	if req.AttributeIDs != nil {
 		ids, aerr := s.resolveAttributeIDs(ctx, e.ProjectID, req.AttributeIDs)
@@ -373,14 +376,6 @@ func (s *Service) resolveProjectID(ctx context.Context, projectID string) (id st
 	return list[0].ID, nil
 }
 
-// mapNotFound 把 gorm 的 not found 归一为模块业务错误。
-func mapNotFound(err error) error {
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return errors.New(productenums.ErrNotFound)
-	}
-	return err
-}
-
 // pageArgs 归一化分页参数。
 func pageArgs(req *productdto.ListReq) (page, size int) {
 	page, size = 1, defaultPageSize
@@ -458,6 +453,7 @@ func (s *Service) toResp(ctx context.Context, e *productmodel.ProductEntity) (re
 		return nil, err
 	}
 	resp := s.toListResp(e)
+	resp.ImageAlts = decodeStrings(e.ImageAlts)
 	resp.Description = orJSON(e.Description, "{}")
 	resp.Subtitle = e.Subtitle
 	resp.Unit = e.Unit
@@ -491,7 +487,54 @@ func (s *Service) toResp(ctx context.Context, e *productmodel.ProductEntity) (re
 		resp.Attributes = groups[e.ID]
 	}
 	applyPriceRange(resp, variants)
+	// 挂载的分类 / 品牌 / 标签（issue #12）：翻译工作台要按分类名、品牌名、标签名
+	// 展示与取词，详情接口一并返回实体（后台翻译页不为每个 id 再打一次接口）。
+	if rerr := s.fillRelated(ctx, resp, e); rerr != nil {
+		return nil, rerr
+	}
 	return resp, nil
+}
+
+// fillRelated 把商品引用的分类 / 品牌 / 标签填入详情响应（失败不阻断详情读取）。
+func (s *Service) fillRelated(ctx context.Context, resp *productdto.ProductResp, e *productmodel.ProductEntity) (err error) {
+	ids := decodeStrings(e.CategoryIDs)
+	if len(ids) > 0 {
+		rows, cerr := s.m.ListCategoriesByIDs(ctx, ids)
+		if cerr != nil {
+			return cerr
+		}
+		byID := make(map[string]*productmodel.ProductCategoryEntity, len(rows))
+		for _, row := range rows {
+			byID[row.ID] = row
+		}
+		for _, id := range ids {
+			if row, ok := byID[id]; ok {
+				resp.Categories = append(resp.Categories, toCategoryResp(row))
+			}
+		}
+	}
+	if e.BrandID != nil && strings.TrimSpace(*e.BrandID) != "" {
+		if row, berr := s.m.GetBrand(ctx, *e.BrandID); berr == nil {
+			resp.Brand = toBrandResp(row)
+		}
+	}
+	tagIDs := decodeStrings(e.TagIDs)
+	if len(tagIDs) > 0 {
+		rows, terr := s.m.ListTagsByIDs(ctx, tagIDs)
+		if terr != nil {
+			return terr
+		}
+		byID := make(map[string]*productmodel.ProductTagEntity, len(rows))
+		for _, row := range rows {
+			byID[row.ID] = row
+		}
+		for _, id := range tagIDs {
+			if row, ok := byID[id]; ok {
+				resp.Tags = append(resp.Tags, toTagResp(row))
+			}
+		}
+	}
+	return nil
 }
 
 // toListResp 组装列表项（不含 metadata / description）。
@@ -499,6 +542,7 @@ func (s *Service) toListResp(e *productmodel.ProductEntity) *productdto.ProductR
 	resp := &productdto.ProductResp{
 		ID: e.ID, ProjectID: e.ProjectID, Name: e.Name, Slug: e.Slug,
 		Status: e.Status, Sort: e.Sort, Images: decodeStrings(e.Images),
+		ImageAlts: decodeStrings(e.ImageAlts),
 		CreatedAt: e.CreatedAt.Format(time.RFC3339), UpdatedAt: e.UpdatedAt.Format(time.RFC3339),
 	}
 	if len(resp.Images) == 0 {

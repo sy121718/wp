@@ -53,6 +53,12 @@ type Props struct {
 	ComparePriceField string `json:"comparePriceField,omitempty" ct:"string,maxlen=60,sec=content,label=划线价字段"`
 	// DescriptionField 描述字段（富文本清洗后输出，如 product.description）。
 	DescriptionField string `json:"descriptionField,omitempty" ct:"string,maxlen=60,sec=content,label=描述字段"`
+	// MediaAltField 主图 alt 文本字段（如 product.imageAlt）：作者填写的图片替代文本，
+	// 参与内容翻译（issue #12）；留空由商品名兜底。
+	MediaAltField string `json:"mediaAltField,omitempty" ct:"string,maxlen=60,sec=content,label=主图 alt 字段"`
+	// GalleryAltField 图集 alt 数组字段（JSON 数组，如 product.imageAlts）：与图集逐位对应，
+	// 元素可为空串；逐元素按构建语言取译文（issue #12）。
+	GalleryAltField string `json:"galleryAltField,omitempty" ct:"string,maxlen=60,sec=content,label=图集 alt 字段"`
 	// OptionsField 规格维度字段（JSON 数组，如 product.options）：由商品的属性组派生，
 	// 声明后才可能输出规格选择器（issue #8）。
 	OptionsField string `json:"optionsField,omitempty" ct:"string,maxlen=60,sec=content,label=规格维度字段"`
@@ -150,7 +156,9 @@ func (p *Props) slotFields() []slotField {
 	}
 	return []slotField{
 		{Slot: slotMedia, Field: strings.TrimSpace(p.MediaField)},
+		{Slot: slotMediaAlt, Field: strings.TrimSpace(p.MediaAltField)},
 		{Slot: slotGallery, Field: strings.TrimSpace(p.GalleryField)},
+		{Slot: slotGalleryAlt, Field: strings.TrimSpace(p.GalleryAltField)},
 		{Slot: slotTitle, Field: strings.TrimSpace(p.TitleField)},
 		{Slot: slotSubtitle, Field: strings.TrimSpace(p.SubtitleField)},
 		{Slot: slotPrice, Field: strings.TrimSpace(p.PriceField)},
@@ -164,7 +172,9 @@ func (p *Props) slotFields() []slotField {
 // 槽位名常量（视图与错误提示共用）。
 const (
 	slotMedia        = "media"
+	slotMediaAlt     = "mediaAlt"
 	slotGallery      = "gallery"
+	slotGalleryAlt   = "galleryAlt"
 	slotTitle        = "title"
 	slotSubtitle     = "subtitle"
 	slotPrice        = "price"

@@ -59,6 +59,10 @@
                 {{end}}
                 {{end}}
             </div>
+            {* 多语言入口（issue #12）：字段旁语言页签的落地形态是「商品域翻译工作台」——
+               行内按钮进入，按语言列全部可翻译文本（商品自身 + 引用的分类/品牌/标签/属性），
+               与页面翻译工作台同构，不做独立菜单（决策 F10）。 *}
+            <a class="btn" href="/admin/products/translations?project={{selectedProject}}&amp;product={{p.ID}}">多语言</a>
             <form method="post" action="/admin/products/delete" onsubmit="return confirm('删除该商品及其全部变体？')">
                 <input type="hidden" name="csrf_token" value="{{csrf}}">
                 <input type="hidden" name="projectId" value="{{selectedProject}}">

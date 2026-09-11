@@ -1540,7 +1540,63 @@ go test ./public/test/dashboard/feature/ -run "TestPageTranslationsListsBlockTex
   产物依赖失效（保守正确，代价是全站重建）。
 - **块内文本的「来源」按外层入口标注**：块内再引用块时，嵌套块文本沿用外层标签（不细分到嵌套块）。
 
-## 变更记录
+### 15.15 P5d 已落地（商品域多语言，issue #12，2025-09）
+
+**范围**：商品名 / 副标题 / 描述 / 图片 alt、分类名与分类描述、品牌名、标签名、属性组名与属性值展示文本
+接入同一张 `sys_translation`（内容寻址 `(source_hash, context, lang)`，语境 = `{实体类型}.{字段名}`）；
+商品管理页行内「多语言」按钮进入商品域翻译工作台，切换语言产出不同的产物文本。
+
+**与构建期同源（唯一白名单）**：候选来自 `product/service/product_translation.go`
+（字段集合 `productcontract.TranslatableFields`、语境 `FieldContext`、跳过规则 `i18n.ShouldTranslateContent`），
+构建期取词走 `pkg/i18n`（每类实体一次批量 SQL + 内存索引，渲染期零查库），无译文逐字节回退原文。
+
+**实体类型从 1 个扩到 5 个**：`product` / `product_category` / `product_brand` / `product_tag` /
+`product_attribute` 全部注册进实体类型注册表 —— 分类 / 品牌 / 标签 / 属性组既可各自作为数据源绑定
+（`binding.field`），也随商品一起进产物（`product.related` 派生值：slug 原样，只有展示名取译文）。
+
+**不翻译的标识（验收 4/5）**：`slug` / `sku` / `barcode` / 图片 URL / 价格与数字 / 属性值 `key`
+永不进候选与译文；属性值只翻 `label`，筛选参数、URL 段与规格组合里的 key 原样保留。
+
+**触发重建（验收 6）**：译文文本确实变化时两条链路
+
+- `page.MarkStaleForI18n` —— 手工页面，与 §15.12 同一链路（`i18n:content` 依赖条目判定）；
+- `presentation.MarkStaleByDependency(direct_content:{实体类型}:{实体id})` —— 自动发布实例
+  （商品页面属这类，page 侧的全站标记覆盖不到它们）；presentation 契约新增该方法，
+  编排层在 `routes.go` 注入，标记按 `presentation_dependencies` 精确反查。
+
+**入口**：`GET /admin/products/translations?project=…[&product=…]` 与
+`POST /admin/products/translations/save`（整表提交 + PRG 回跳；保存复用 `/api/product/update`
+权限点，与页面工作台同口径，不做独立菜单）。
+
+**改动文件**：
+
+| 文件 | 内容 |
+|---|---|
+| `internal/module/product/contract/product_entity.go` | 五实体类型白名单 + `translatableFields` + `TranslatableFields` / `FieldLabel` / `FieldContext` |
+| `internal/module/product/contract/product_translation.go` | `TranslationCandidate`（跨模块不可变值） |
+| `internal/module/product/service/product_translation.go` | 候选收集（商品自身 + 引用实体；工程级去重与未被引用的实体） |
+| `internal/module/product/service/entity_source.go` | 五类型解析器、关联实体译文视图、属性值逐元素取词（key 不进数组） |
+| `internal/module/product/service/collection_resolver.go` | 集合项按构建语言取译文（分类 / 品牌 / 标签一次预载，零 N+1） |
+| `internal/builder/components/product/product.go` + `jet.go` + `internal/templates/components/product.jet` | 主图 / 图集 alt 槽位（作者 alt 取译文，缺位回退商品名） |
+| `internal/templates/admin/product_translations.html` + `dashboard/inbound/http/product_translation_handle.go` | 商品域翻译工作台（渲染 + 保存 + 标记待重建） |
+| `internal/templates/admin/products.html` | 商品行内「多语言」入口 |
+| `pkg/i18n/content_fields.go` | `TranslateValues`（实体侧批量注入端口） |
+| `public/migrations/094_product_image_alts.sql` + `register.go` | `products.images_alt`（图集 alt，幂等注册） |
+| `public/test/product/feature/product_translation_test.go` | 本票 feature 测试（候选范围 / 非翻译字段 / 译文与回退 / 改原文失效 / 保存标记与实例失效 / 入口） |
+
+**验证命令**：
+
+```bash
+go test ./... -count=1
+go test ./public/test/product/feature/ -run "TestProductTranslation|TestProductArtifactTranslates|TestCategoryBrandTagAttribute|TestProductsPageShowsTranslationEntry" -count=1 -v
+```
+
+**剩余遗留**：
+
+- **字段旁语言页签的浏览器点击流**未做自动化覆盖（工作台是服务端渲染 + 原生表单，测试到 HTML 断言为止）；
+- 译文删除仍不做（清空输入框 = 本行不写入），孤儿行清理属 §14 D14；
+- 工程级候选收集上限 1000 件商品（与页面工作台同款上限）；
+- 实例失效标记是**保守超集**（命中即标，不区分该实例的构建语言），与 §15.11 的「引用块即登记依赖」同口径。
 
 - v12（2025-09）：新增 §15.14——P5b 缺口补齐：块内文本进翻译链路（`CollectContentCandidatesDeep` 覆盖页眉/页脚绑定块 + `core.globalref` 递归展开、块编译下传 lang 与同一取词器、每页每语言仍一次查库、依赖判据扩为含块引用的保守超集、Misses 含块内未命中）+ 翻译工作台同步（块内文本行 + 来源徽章 + 全站索引归属引用页面）；§15.11/§15.12 的块内文本遗留项标记为已修复。
 - v11（2025-09）：新增 §15.13——语言 URL 方案由 D1 全前缀调整为方案 A'：默认语言无前缀（/about、/index）+ 非默认语言短码（/en/about），内部语言码保持完整码；新增 `i18n.site_lang_url_mode` 枚举（default_plain/all_prefix/off）与旧键兼容映射、`i18n.lang_url_codes` 覆盖表 + 内置表 + 主语言子标签回退 + 短码冲突 fail-fast；唯一映射点收敛到 `pipeline.LangURLRule`（Path/Strip/Locate/Validate），page_routes 登记、active_path、hreflang、语言切换器、sitemap 分组、导航本地化、预览路径全部经同一规则。

@@ -38,6 +38,8 @@ type View struct {
 	HasMedia bool
 	// MediaURL 主图地址。
 	MediaURL string
+	// MediaAlt 主图替代文本（作者填写的 alt 取译文；空串时回退商品名）。
+	MediaAlt string
 	// HasGallery 是否有图集。
 	HasGallery bool
 	// Gallery 图集（多图，按商品图集顺序）。
@@ -137,9 +139,9 @@ func BuildView(p *Props, content core.ContentResolver) (View, error) {
 	}
 
 	view := View{TitleTag: effectiveTitleTag(p), Currency: effectiveCurrency(p)}
-	// 规格数据先收原值，槽位循环结束后再统一解析（组合行要按维度取标签，
-	// 而维度槽位可能声明在组合槽位之后）。
-	var rawOptions, rawVariants string
+	// 规格数据与 alt 先收原值，槽位循环结束后再统一解析（图集 alt 要按「第 i 张」
+	// 对应，而 alt 槽位可能声明在图集槽位之前；组合行要按维度取标签）。
+	var rawOptions, rawVariants, rawMediaAlt, rawGalleryAlt string
 	for _, s := range slots {
 		if s.Field == "" {
 			continue
@@ -154,11 +156,15 @@ func BuildView(p *Props, content core.ContentResolver) (View, error) {
 		switch s.Slot {
 		case slotMedia:
 			view.HasMedia, view.MediaURL = true, strings.TrimSpace(value)
+		case slotMediaAlt:
+			rawMediaAlt = strings.TrimSpace(value)
 		case slotGallery:
-			images := parseImages(value, view.Title)
+			images := parseImages(value, "")
 			if len(images) > 0 {
 				view.HasGallery, view.Gallery = true, images
 			}
+		case slotGalleryAlt:
+			rawGalleryAlt = strings.TrimSpace(value)
 		case slotTitle:
 			view.HasTitle, view.Title = true, value
 		case slotSubtitle:
@@ -175,13 +181,23 @@ func BuildView(p *Props, content core.ContentResolver) (View, error) {
 			rawVariants = value
 		}
 	}
-	// 图集 alt 用商品名兜底（商品名槽位可能声明在图集之后，这里补齐）。
-	if view.HasGallery && view.HasTitle {
-		for i := range view.Gallery {
-			if view.Gallery[i].Alt == "" {
-				view.Gallery[i].Alt = view.Title
-			}
+	// 图集 alt（issue #12）：按位填入作者填写的 alt（逐元素已按构建语言取译文）；
+	// 缺位 / 空串回退商品名（无商品名时留空 = 装饰性图片，模板仍输出 alt=""）。
+	galleryAlts := parseAltList(rawGalleryAlt)
+	for i := range view.Gallery {
+		if i < len(galleryAlts) && galleryAlts[i] != "" {
+			view.Gallery[i].Alt = galleryAlts[i]
+			continue
 		}
+		if view.HasTitle {
+			view.Gallery[i].Alt = view.Title
+		}
+	}
+	// 主图 alt：作者填了就用它（取译文后），否则回退商品名。
+	if view.HasMedia && rawMediaAlt != "" {
+		view.MediaAlt = rawMediaAlt
+	} else if view.HasMedia && view.HasTitle {
+		view.MediaAlt = view.Title
 	}
 	// 规格选择器：有维度且可展示的组合 ≥2 才输出 —— 单变体商品不输出选择器。
 	view.OptionGroups = parseOptionGroups(rawOptions)
@@ -284,6 +300,26 @@ func parseVariantOptions(raw string, groups []OptionGroup, currency string) []Va
 			row.ComparePrice = currency + r.ComparePrice
 		}
 		out = append(out, row)
+	}
+	return out
+}
+
+// parseAltList 图集 alt 字段值（JSON 字符串数组）→ alt 列表。
+//
+// 结构对不上（空串 / 非法 JSON）返回空列表：调用方逐位回退商品名，
+// 不让整个商品详情页构建失败。元素中的纯空白按「未填写」处理。
+func parseAltList(raw string) []string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+	var alts []string
+	if err := json.Unmarshal([]byte(raw), &alts); err != nil {
+		return nil
+	}
+	out := make([]string, 0, len(alts))
+	for _, a := range alts {
+		out = append(out, strings.TrimSpace(a))
 	}
 	return out
 }

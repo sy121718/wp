@@ -204,6 +204,9 @@ var productTagPermsSQL string
 //go:embed 093_product_tag_menu.sql
 var productTagMenuSQL string
 
+//go:embed 094_product_image_alts.sql
+var productImageAltsSQL string
+
 //go:embed 073_blueprint_ddl_align.sql
 var blueprintDDLAlignSQL string
 
@@ -581,6 +584,17 @@ func init() {
 		TableName:    "sys_menus",
 		ConditionSQL: "SELECT CASE WHEN COUNT(*) = 1 THEN 1 ELSE 0 END FROM sys_menus WHERE title = '商品标签' AND type = 2 AND deleted_time IS NULL",
 		SQL:          productTagMenuSQL,
+	})
+
+	// 094：商品图集 alt 文本列（issue #12 商品多语言）。
+	// products 由 081 创建，默认「表存在即跳过」必然误跳过，故按列是否存在判定
+	// （与 067/091 同一手法）：images_alt 列存在即视为已完成。
+	register(Migration{
+		Version:   "094-product-image-alts",
+		TableName: "products",
+		CheckSQL: "SELECT COUNT(*) FROM information_schema.columns " +
+			"WHERE table_schema = current_schema() AND table_name = ? AND column_name = 'images_alt'",
+		SQL: productImageAltsSQL,
 	})
 
 	// 086：商品属性组与属性值（issue #7）—— product_attributes 由 081 建好，

@@ -7,12 +7,14 @@ package dashboardhttp
 // 不映射的话打开子页面时侧边栏整组失去高亮。
 //
 // 多语言 P5c：翻译工作台 /admin/page/translations 属「页面」列表（/admin/pages）的子页面。
+// 多语言（issue #12）：商品翻译工作台 /admin/products/translations 属「商品」列表的子页面。
 
 import "strings"
 
 // navPathAlias 子页面路径 → 所属菜单项路径。
 var navPathAlias = map[string]string{
-	"/admin/page/translations": "/admin/pages",
+	"/admin/page/translations":     "/admin/pages",
+	"/admin/products/translations": "/admin/products",
 }
 
 // navPathFor 返回用于导航高亮的路径：先按既有规则归一（去尾斜杠），再映射别名。

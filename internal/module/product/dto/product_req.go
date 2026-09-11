@@ -18,6 +18,10 @@ type CreateReq struct {
 	SEOTitle       string          `json:"seoTitle"`
 	SEODescription string          `json:"seoDescription"`
 	Images         []string        `json:"images"`
+	// ImageAlts 图集 alt 文本（issue #12）：与 Images 逐位对应，元素可为空串。
+	// 单独成字段而不是把 alt 塞进 URL 字符串：alt 是作者填写的文本，参与内容翻译
+	// （语境 product.imageAlts），URL 永不翻译（验收 4/5）。
+	ImageAlts []string `json:"imageAlts"`
 	// AttributeIDs 引用的属性组 id（issue #7）：只存引用，组与值的定义唯一一份，
 	// 同一属性组可被多个商品复用。
 	AttributeIDs []string `json:"attributeIds"`
@@ -48,6 +52,9 @@ type UpdateReq struct {
 	SEOTitle       *string         `json:"seoTitle"`
 	SEODescription *string         `json:"seoDescription"`
 	Images         []string        `json:"images"`
+	// ImageAlts 图集 alt 文本（issue #12）；nil 表示本次不改，空数组表示全部清空
+	// （与 Images 的「整体替换」语义一致）。
+	ImageAlts []string `json:"imageAlts"`
 	// AttributeIDs 引用的属性组 id（issue #7）；nil 表示本次不改引用，
 	// 空数组表示解绑全部（与 CategoryIDs / TagIDs 同为「整体替换」语义）。
 	AttributeIDs []string `json:"attributeIds"`

@@ -21,6 +21,8 @@ type ProductResp struct {
 	SEOTitle       string   `json:"seoTitle"`
 	SEODescription string   `json:"seoDescription"`
 	Images         []string `json:"images"`
+	// ImageAlts 图集 alt 文本（issue #12）：与 Images 逐位对应，元素可为空串。
+	ImageAlts []string `json:"imageAlts"`
 	// AttributeIDs 商品引用的属性组 id（issue #7）。
 	AttributeIDs []string `json:"attributeIds"`
 	CategoryIDs  []string `json:"categoryIds"`
@@ -43,8 +45,15 @@ type ProductResp struct {
 	// Attributes 商品引用的属性组（含值）—— 同一属性组可被多个商品复用，
 	// 这里返回的是共享定义本身，不是副本（issue #7）。
 	Attributes []*AttributeResp `json:"attributes,omitempty"`
-	CreatedAt  string           `json:"createdAt"`
-	UpdatedAt  string           `json:"updatedAt"`
+	// Categories 商品挂载的分类（issue #12：后台翻译页要展示分类名与描述，
+	// 故详情接口一并返回引用的分类实体，而不是只给 id 列表）。
+	Categories []*CategoryResp `json:"categories,omitempty"`
+	// Brand 商品指定的品牌（同上，未指定为 nil）。
+	Brand *BrandResp `json:"brand,omitempty"`
+	// Tags 商品挂载/命中的标签（同上）。
+	Tags      []*TagResp `json:"tags,omitempty"`
+	CreatedAt string     `json:"createdAt"`
+	UpdatedAt string     `json:"updatedAt"`
 }
 
 // VariantResp 变体。

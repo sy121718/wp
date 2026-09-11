@@ -23,8 +23,8 @@ type AttributeResp struct {
 	Sort        int                  `json:"sort"`
 	Values      []AttributeValueResp `json:"values"`
 	// ValueCount / VariationValueCount 是列表展示用的只读派生值。
-	ValueCount          int `json:"valueCount"`
-	VariationValueCount int `json:"variationValueCount"`
+	ValueCount          int    `json:"valueCount"`
+	VariationValueCount int    `json:"variationValueCount"`
 	CreatedAt           string `json:"createdAt"`
 	UpdatedAt           string `json:"updatedAt"`
 }

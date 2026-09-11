@@ -23,4 +23,10 @@ type PresentationService interface {
 	List(ctx context.Context, req *presentationdto.ListReq) (list []*presentationdto.InstanceResp, err error)
 	// Delete 删除实例（级联删快照 + 反激活 URL）。
 	Delete(ctx context.Context, req *presentationdto.DeleteReq) (err error)
+	// MarkStaleByDependency 按依赖源 (kind,key) 精确标记受影响实例待重建，返回命中实例 id。
+	//
+	// 依赖失效端口（与 page 契约同名方法同义，实现 pipeline.DependencyTarget）：
+	// 编排层在依赖源变化时把失效范围落到具体实例上，而不是全量重建。
+	// 键的构造用 pipeline.DirectContentKey / ContentCollectionKey（与构建期登记逐字一致）。
+	MarkStaleByDependency(ctx context.Context, kind, key string) (ids []string, err error)
 }
