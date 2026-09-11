@@ -1,0 +1,18 @@
+{* product_list.jet — core.productList 商品列表组件（issue #23）：网格 / 列表两种布局 *}
+{* 集合项在构建期已解析、排序并截断（组件包 BuildView）；空集合渲染空态文案，
+   不输出空 <ul>。卡片内元素全部按「有值才输出」渲染：商品没填的字段不留空壳节点。
+   语义用 <ul>/<li>（读屏能报出「N 个项目」），点击路径是 <a> 而不是 div + onclick。 *}
+<div class="{{ .Classes }}"{{ if .CustomID }} id="{{ .CustomID }}"{{ end }}>
+{{ if .V.Empty }}<p class="sky-product-list-empty">{{ .V.EmptyText }}</p>{{ else }}
+<ul class="sky-product-list-items">
+{{ range _, card := .V.Cards }}<li class="sky-product-list-item">
+{{ if card.HasImage }}<a class="sky-product-list-media" href="{{ card.Href }}" tabindex="-1" aria-hidden="true"><img src="{{ card.ImageURL }}" alt="{{ card.ImageAlt }}" loading="lazy" decoding="async"></a>{{ end }}
+<div class="sky-product-list-body">
+{{ if card.HasTitle }}<{{ card.TitleTag }} class="sky-product-list-title">{{ if card.Href }}<a href="{{ card.Href }}">{{ card.Title }}</a>{{ else }}{{ card.Title }}{{ end }}</{{ card.TitleTag }}>{{ end }}
+{{ if card.HasPrice }}<div class="sky-product-list-price-row"><span class="sky-product-list-price">{{ card.Price }}</span>{{ if card.HasComparePrice }}<span class="sky-product-list-compare">{{ card.ComparePrice }}</span>{{ end }}</div>{{ end }}
+{{ if len(card.Tags) > 0 }}<ul class="sky-product-list-tags">{{ range _, tag := card.Tags }}<li class="sky-product-list-tag">{{ tag }}</li>{{ end }}</ul>{{ end }}
+</div>
+</li>{{ end }}
+</ul>
+{{ end }}
+</div>

@@ -63,6 +63,10 @@ var fieldWhitelist = map[string][]string{
 		// 与 related 里的 tags 不是重复：related 给的是 {slug,name} 完整结构（要链到标签页），
 		// tags 只给名称数组（卡片上一行小标签），拿到的形状与用途都不同。
 		"tags",
+		// createdAt 是创建时间（RFC3339，issue #22：商品列表组件要按它排序）。
+		// 集合源返回的默认序是 (sort, created_at, id)，但组件拿不到排序号 —— 想让「最新上架」
+		// 成为可选项，就必须有一个能比较的时间值进集合项。
+		"createdAt",
 	},
 	EntityTypeCategory: {
 		"name", "slug", "description", "image",

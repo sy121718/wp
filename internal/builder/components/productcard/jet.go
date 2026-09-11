@@ -84,7 +84,7 @@ func BuildView(p *Props, content core.ContentResolver) (view View, err error) {
 		}
 		switch s.Slot {
 		case slotImage:
-			if url := firstImageURL(value); url != "" {
+			if url := FirstImageURL(value); url != "" {
 				view.HasImage, view.ImageURL = true, url
 			}
 		case slotImageAlt:
@@ -97,9 +97,9 @@ func BuildView(p *Props, content core.ContentResolver) (view View, err error) {
 		case slotComparePrice:
 			view.HasComparePrice, view.ComparePrice = true, view.Currency+strings.TrimSpace(value)
 		case slotTags:
-			view.Tags = parseTagNames(value)
+			view.Tags = ParseTagNames(value)
 		case slotLink:
-			view.Href = productCardHref(p.LinkPrefix, value)
+			view.Href = CardHref(p.LinkPrefix, value)
 		}
 	}
 	// 主图 alt：作者填的 alt 字段优先，缺失回退标题（有图才有 alt 的意义）。
@@ -112,11 +112,11 @@ func BuildView(p *Props, content core.ContentResolver) (view View, err error) {
 	return view, nil
 }
 
-// firstImageURL 主图取值：解析器给的可能是单个 URL，也可能是 JSON 数组文本 —— 两种都吃下。
+// FirstImageURL 主图取值：解析器给的可能是单个 URL，也可能是 JSON 数组文本 —— 两种都吃下。
 //
 // 集合项里的 images 按既有约定已被解析器取成首元素 URL；实体绑定（product.images）
 // 给的是 JSON 文本。组件不假设调用方是哪一个，否则两种场景得写两套 props。
-func firstImageURL(value string) string {
+func FirstImageURL(value string) string {
 	trimmed := strings.TrimSpace(value)
 	if strings.HasPrefix(trimmed, "[") {
 		var urls []string
@@ -137,11 +137,11 @@ func firstImageURL(value string) string {
 	return trimmed
 }
 
-// parseTagNames 标签字段：JSON 名称数组 → 字符串数组。
+// ParseTagNames 标签字段：JSON 名称数组 → 字符串数组。
 //
 // 非数组形状按「单个标签名」处理：作者把 tagsField 指到一个字符串字段时，
 // 卡片显示那一个标签，而不是整块消失。
-func parseTagNames(value string) []string {
+func ParseTagNames(value string) []string {
 	trimmed := strings.TrimSpace(value)
 	if trimmed == "" {
 		return nil
@@ -162,7 +162,7 @@ func parseTagNames(value string) []string {
 	return []string{trimmed}
 }
 
-// productCardHref 卡片链接：前缀 + 字段值，三种写法都不会拼出坏链接。
+// CardHref 卡片链接：前缀 + 字段值，三种写法都不会拼出坏链接。
 //
 // 字段值分三类：
 //
@@ -173,7 +173,7 @@ func parseTagNames(value string) []string {
 //
 // 注意不能拿 IsSafeURL 直接判第 1 类：相对片段（无前缀、不以 / 开头）在它眼里不是合法 URL，
 // 而这里恰恰要允许它 —— 校验走「拼好之后整串」或者「补一个 / 前缀后的片段」。
-func productCardHref(prefix, value string) string {
+func CardHref(prefix, value string) string {
 	v := strings.TrimSpace(value)
 	if v == "" {
 		return ""

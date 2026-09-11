@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -229,6 +230,8 @@ func collectionItem(p *productmodel.ProductEntity, values map[string]string) map
 	item["id"] = p.ID
 	item["slug"] = p.Slug
 	item["images"] = imageURLsAny(p)
+	// createdAt 给 RFC3339（UTC）：组件要按时间排序，格式必须可解析且与时区无关。
+	item["createdAt"] = p.CreatedAt.UTC().Format(time.RFC3339)
 	return item
 }
 

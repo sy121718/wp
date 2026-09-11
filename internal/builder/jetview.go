@@ -41,6 +41,7 @@ import (
 	navPkg "go_wp/internal/builder/components/nav"
 	productPkg "go_wp/internal/builder/components/product"
 	productcardPkg "go_wp/internal/builder/components/productcard"
+	productlistPkg "go_wp/internal/builder/components/productlist"
 	progressPkg "go_wp/internal/builder/components/progress"
 	quotePkg "go_wp/internal/builder/components/quote"
 	ratingPkg "go_wp/internal/builder/components/rating"
@@ -160,6 +161,8 @@ func nodeViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeV
 		return productViewOf(node, topLevel, ctx)
 	case productcardPkg.Type:
 		return productCardViewOf(node, topLevel, ctx)
+	case productlistPkg.Type:
+		return productListViewOf(node, topLevel, ctx)
 	case ratingPkg.Type:
 		return ratingViewOf(node, topLevel, ctx)
 	case formPkg.Type:
@@ -623,6 +626,34 @@ func cardstackViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*
 		TopLevel: topLevel,
 		Props:    p,
 		Children: children,
+		V:        view,
+	}, nil
+}
+
+// productListViewOf 转换商品列表节点（issue #23）：集合型组件 ——
+// 取数 / 排序 / 截断 / 卡片映射都在组件包（BuildView），本层只做 Advanced 类名、
+// CSS 编译与 nodeView 组装（与 cardstack 的「结构型组件不走 atomViewOf」同路）。
+func productListViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeView, error) {
+	var p productlistPkg.Props
+	if len(node.Props) > 0 {
+		if err := json.Unmarshal(node.Props, &p); err != nil {
+			return nil, fmt.Errorf("节点 %s props 反序列化失败: %w", node.ID, err)
+		}
+	}
+	view, err := productlistPkg.BuildView(node, &p, ctx)
+	if err != nil {
+		return nil, err
+	}
+	classes, customID := advancedClasses(node, &p, ctx)
+	productlistPkg.CompileCSS(node.ID, &p, ctx.CSS)
+	return &nodeView{
+		Type:     productlistPkg.Type,
+		Template: "product_list",
+		NodeID:   node.ID,
+		Classes:  strings.Join(classes, " "),
+		CustomID: customID,
+		TopLevel: topLevel,
+		Props:    p,
 		V:        view,
 	}, nil
 }
