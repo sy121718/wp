@@ -11,6 +11,7 @@ import (
 	navigationcontract "go_wp/internal/module/navigation/contract"
 	pagecontract "go_wp/internal/module/page/contract"
 	plugincontract "go_wp/internal/module/plugin/contract"
+	productcontract "go_wp/internal/module/product/contract"
 	projectcontract "go_wp/internal/module/project/contract"
 
 	"github.com/gin-gonic/gin"
@@ -34,7 +35,8 @@ func SetupDashboardRoutes(router *gin.Engine,
 	depts admincontract.DeptService,
 	rules admincontract.RuleService,
 	authz admincontract.AuthzContextService,
-	navigations navigationcontract.NavigationService) {
+	navigations navigationcontract.NavigationService,
+	products productcontract.ProductService) {
 	if router == nil {
 		return
 	}
@@ -125,6 +127,15 @@ func SetupDashboardRoutes(router *gin.Engine,
 	adminPages.POST("/plugins/install", builtin.CasbinMiddlewareForPath("/api/plugin/install"), handle.PluginsInstall)
 	adminPages.POST("/plugins/toggle", builtin.CasbinMiddlewareForPath("/api/plugin/toggle"), handle.PluginsToggle)
 	adminPages.POST("/plugins/uninstall", builtin.CasbinMiddlewareForPath("/api/plugin/uninstall"), handle.PluginsUninstall)
+
+	// 商品管理页（issue #5）：页面 GET 走 /admin 组认证（Session+CSRF，无 Casbin）；
+	// 写动作复用商品 API 权限点做 Casbin 鉴权（与既有管理页一致）。
+	productPages := NewProductPageHandle(products, projects)
+	adminPages.GET("/products", productPages.ProductsPage)
+	adminPages.POST("/products/create", builtin.CasbinMiddlewareForPath("/api/product/create"), productPages.ProductsCreate)
+	adminPages.POST("/products/variant/create", builtin.CasbinMiddlewareForPath("/api/product/variant/create"), productPages.ProductsVariantCreate)
+	adminPages.POST("/products/variant/delete", builtin.CasbinMiddlewareForPath("/api/product/variant/delete"), productPages.ProductsVariantDelete)
+	adminPages.POST("/products/delete", builtin.CasbinMiddlewareForPath("/api/product/delete"), productPages.ProductsDelete)
 
 	// admin 六领域管理页（管理员/角色/菜单/权限/部门/数据权限）：
 	// 页面 GET 走 /admin 组认证（Session+CSRF，无 Casbin）；

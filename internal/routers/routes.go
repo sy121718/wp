@@ -157,7 +157,7 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 	// 内容结构模板（presentation 依赖 ResolveTemplate；模板行需 project_id 外键）。
 	contentTemplateSvc := contenttemplatehttp.SetupContentTemplateRoutes(authorizedAPI, db, projectService, entityRegistry)
 	// 商品域（issue #5）：商品与变体管理。商品是独立领域模块，不再寄居内容表。
-	producthttp.SetupProductRoutes(authorizedAPI, db, projectService)
+	productSvc := producthttp.SetupProductRoutes(authorizedAPI, db, projectService)
 	// 自动发布实例（内容实体驱动，复用编译/存储/激活管线；实例行需 project_id 外键）。
 	presentationSvc := presentationhttp.SetupPresentationRoutes(authorizedAPI, db, contentTemplateSvc, entityRegistry, projectService)
 
@@ -218,7 +218,7 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 		admincontract.RuleService
 	})
 	dashboardhttp.SetupDashboardRoutes(router, pageService, projectService, blockSvc, pluginSvc, collectionResolver,
-		adminCRUD, adminCRUD, adminCRUD, adminCRUD, adminCRUD, adminCRUD, adminAuthzSvc, navigationSvc)
+		adminCRUD, adminCRUD, adminCRUD, adminCRUD, adminCRUD, adminCRUD, adminAuthzSvc, navigationSvc, productSvc)
 
 	// 运行时片段端点（0-D，公开路由：capability 白名单 + 认证策略在 handler 内）。
 	runtimefragment.SetupFragmentRoutes(router)

@@ -1,0 +1,84 @@
+{* admin/products.html — 商品管理：商品列表 + 变体面板 + 内联新建/删除表单 *}
+{* Jet 方言：range 用 range 关键字；extends 相对本目录；range 内访问外层值先存变量 *}
+{{extends "layout.html"}}
+{{block body()}}
+{* 外层值先存变量：range 体内 . 指向当前元素，不能再取外层 map 的键 *}
+{{csrf := .["csrf_token"]}}
+{{selectedProject := .SelectedProject}}
+<div class="pages-wrap">
+    <section class="pages-card">
+        <h2>商品</h2>
+        <form method="get" action="/admin/products" class="pages-form">
+            <select name="project" onchange="this.form.submit()">
+                {{range _, p := .Projects}}
+                <option value="{{p.ID}}" {{if p.ID == selectedProject}}selected{{end}}>{{p.Name}}</option>
+                {{end}}
+            </select>
+        </form>
+        <form method="post" action="/admin/products/create" class="pages-form mt-md">
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <input type="hidden" name="projectId" value="{{selectedProject}}">
+            <input type="text" name="name" placeholder="商品名称" required>
+            <input type="text" name="slug" placeholder="URL 段（留空自动生成）">
+            <input type="text" name="defaultPrice" placeholder="默认价格（首个变体继承）">
+            <button type="submit" class="btn btn-primary">新建商品</button>
+        </form>
+    </section>
+
+    <section class="pages-card">
+        <h2>商品列表</h2>
+        {{if len(.Products) == 0}}
+        <p class="pages-empty">还没有商品。用上面的表单新建一个，系统会自动生成它的第一个变体。</p>
+        {{else}}
+        {{range _, p := .Products}}
+        <div class="pages-row">
+            <div>
+                <strong>{{p.Name}}</strong>
+                <code>/{{p.Slug}}</code>
+                <span class="badge">{{p.Status}}</span>
+                <span>{{p.VariantCount}} 个变体</span>
+                <span>价格 {{p.PriceMin}} ~ {{p.PriceMax}}</span>
+            </div>
+            <form method="post" action="/admin/products/delete" onsubmit="return confirm('删除该商品及其全部变体？')">
+                <input type="hidden" name="csrf_token" value="{{csrf}}">
+                <input type="hidden" name="projectId" value="{{selectedProject}}">
+                <input type="hidden" name="id" value="{{p.ID}}">
+                <button type="submit" class="btn btn-danger">删除商品</button>
+            </form>
+        </div>
+        <table class="pages-table">
+            <thead><tr><th>SKU</th><th>价格</th><th>对比价</th><th>成本价</th><th>启用</th><th>库存缓存</th><th></th></tr></thead>
+            <tbody>
+            {{range _, v := p.Variants}}
+            <tr>
+                <td><code>{{v.SKUCode}}</code></td>
+                <td>{{v.Price}}</td>
+                <td>{{v.ComparePrice}}</td>
+                <td>{{v.CostPrice}}</td>
+                <td>{{v.Enabled}}</td>
+                <td>{{v.StockTotal}}</td>
+                <td>
+                  <form method="post" action="/admin/products/variant/delete">
+                    <input type="hidden" name="csrf_token" value="{{csrf}}">
+                    <input type="hidden" name="projectId" value="{{selectedProject}}">
+                    <input type="hidden" name="id" value="{{v.ID}}">
+                    <button type="submit" class="btn">删除</button>
+                  </form>
+                </td>
+            </tr>
+            {{end}}
+            </tbody>
+        </table>
+        <form method="post" action="/admin/products/variant/create" class="pages-form">
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <input type="hidden" name="projectId" value="{{selectedProject}}">
+            <input type="hidden" name="productId" value="{{p.ID}}">
+            <input type="text" name="skuCode" placeholder="SKU 编码（留空自动生成）">
+            <input type="text" name="price" placeholder="价格（留空继承商品默认值）">
+            <button type="submit" class="btn">新增变体</button>
+        </form>
+        {{end}}
+        {{end}}
+    </section>
+</div>
+{{end}}

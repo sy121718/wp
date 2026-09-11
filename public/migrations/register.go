@@ -165,6 +165,9 @@ var productPermsSQL string
 //go:embed 083_product_variant_options_unique.sql
 var productVariantOptionsUniqueSQL string
 
+//go:embed 084_product_menu.sql
+var productMenuSQL string
+
 //go:embed 073_blueprint_ddl_align.sql
 var blueprintDDLAlignSQL string
 
@@ -453,6 +456,14 @@ func init() {
 		TableName:    "sys_permission",
 		ConditionSQL: "SELECT COUNT(*) FROM sys_permission WHERE permission_code = 'content:collections'",
 		SQL:          contentCollectionsPermSQL,
+	})
+
+	// 084：商品管理后台菜单（issue #5）。
+	registerSeed(Seed{
+		Version:      "084-product-menu",
+		TableName:    "sys_menus",
+		ConditionSQL: "SELECT COUNT(*) FROM sys_menus WHERE title = '商品管理' AND type = 2",
+		SQL:          productMenuSQL,
 	})
 
 	// 083：修正 product_variants 的规格组合唯一约束（改部分唯一索引）。
