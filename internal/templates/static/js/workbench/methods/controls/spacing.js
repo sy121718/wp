@@ -10,6 +10,9 @@ export function unitInput(ctx, label, path, units) {
     var row = document.createElement('div'); row.className = 'wb-unit-row';
     var input = document.createElement('input'); input.type = 'text'; input.className = 'wb-unit-value';
     var unitSel = document.createElement('select'); unitSel.className = 'wb-unit-select';
+    // 保留原生下拉：单位选择器与 spacing 控件直接联动（值/单位分开回写），
+    // 基座下拉会把它换成自绘触发器，联动就会打架 —— 显式声明「这个不要接管」。
+    unitSel.setAttribute('data-wb-native', '');
     units.forEach(function (u) {
         var o = document.createElement('option'); o.value = u; o.textContent = u; unitSel.appendChild(o);
     });
@@ -36,6 +39,9 @@ export function responsiveUnitField(ctx, label, objPath, units) {
     var row = document.createElement('div'); row.className = 'wb-unit-row';
     var input = document.createElement('input'); input.type = 'text'; input.className = 'wb-unit-value';
     var unitSel = document.createElement('select'); unitSel.className = 'wb-unit-select';
+    // 保留原生下拉：单位选择器与 spacing 控件直接联动（值/单位分开回写），
+    // 基座下拉会把它换成自绘触发器，联动就会打架 —— 显式声明「这个不要接管」。
+    unitSel.setAttribute('data-wb-native', '');
     units.forEach(function (u) {
         var o = document.createElement('option'); o.value = u; o.textContent = u; unitSel.appendChild(o);
     });
@@ -88,6 +94,9 @@ export function dimensionsField(ctx, label, objPath, units) {
     var linked = true;
     var inputs = [];  // [top, right, bottom, left]
     var unitSel = document.createElement('select'); unitSel.className = 'wb-unit-select';
+    // 保留原生下拉：单位选择器与 spacing 控件直接联动（值/单位分开回写），
+    // 基座下拉会把它换成自绘触发器，联动就会打架 —— 显式声明「这个不要接管」。
+    unitSel.setAttribute('data-wb-native', '');
     units.forEach(function (u) {
         var o = document.createElement('option'); o.value = u; o.textContent = u; unitSel.appendChild(o);
     });
@@ -186,6 +195,7 @@ export function dimensionControl(ctx, label, path, ctl) {
     var row = document.createElement('div'); row.className = 'wb-unit-row';
     var input = document.createElement('input'); input.type='text'; input.className='wb-unit-value';
     var unitSel = document.createElement('select'); unitSel.className='wb-unit-select';
+    unitSel.setAttribute('data-wb-native', '');   // 同上：保留原生
     // 单位按字段语义收敛：字号不用 %，字间距/行高不用 vw/%，
     // 避免「选了 % 却算不出来」的无效组合。
     var UNIT_SETS = {

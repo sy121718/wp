@@ -8,7 +8,10 @@
  *   - 原生 <select> 原样保留（视觉隐藏），表单提交、name/value、label[for] 全部照旧；
  *   - 键盘：Enter/Space/↑/↓ 展开与移动，Home/End 首尾，Enter 选中，Esc 收起，字母键前缀跳转；
  *   - 无障碍：combobox + listbox + aria-expanded/aria-selected；点 label 时焦点转给可见触发器；
- *   - 已有 data-wb-path 的 select（工作台自绘下拉）跳过，避免双重增强。
+ *   - 声明了 data-wb-native 的 select 跳过（如工作台的 wb-unit-select 单位选择器，
+ *     它们与 spacing 控件直接联动，接管只会打架）；
+ *   - 工作台 wbDropdown 的隐藏载体（.wb-dd-src）跳过 —— 那是已经自绘好的下拉，
+ *     再接管一次会多出一套触发器。
  */
 (function (global) {
     'use strict';
@@ -49,9 +52,12 @@
     }
 
     function enhance(sel) {
+        // 跳过判断必须在 markOnce **之前**：先打标记再跳过，会让被跳过的元素永远
+        // 带着「已增强」标记 —— 以后解除跳过时它们再也不会被增强，表现为
+        // 「改了判定却毫无效果」，且极难排查（标记在 DOM 上，不在代码里）。
+        if (sel.hasAttribute('data-wb-native') || sel.classList.contains('wb-dd-src')) { return; }
         // markOnce：htmx 局部替换后重扫时不在同一元素上叠出第二套菜单。
         if (!WBUI.markOnce(sel, 'Select')) { return; }
-        if (sel.hasAttribute('data-wb-path')) { return; }
 
         var root = document.createElement('div');
         root.className = 'wbs';
@@ -197,7 +203,7 @@
 
     // 控件登记：index.js 与 htmx 重扫都会调用。
     WBUI.register(function (scope) {
-        WBUI.each(WBUI.$$('select:not([data-wb-path])', scope), enhance);
+        WBUI.each(WBUI.$$('select:not([data-wb-native]):not(.wb-dd-src)', scope), enhance);
     });
 
     document.addEventListener('click', function (e) {

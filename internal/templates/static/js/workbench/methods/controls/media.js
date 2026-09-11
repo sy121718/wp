@@ -114,6 +114,7 @@ export function galleryItemsPanel(ctx, itemsPath) {
         // 单图加载策略（空=继承组件级 → 主题「图片管理」默认）
         var loadSel = document.createElement('select');
         loadSel.className = 'wb-unit-select'; loadSel.title = '单图加载策略';
+        loadSel.setAttribute('data-wb-native', '');   // 保留原生：紧随媒体缩略图的行内小控件
         [['', '继承组件'], ['on', '懒加载'], ['off', '立即加载']].forEach(function (o) {
             var opt = document.createElement('option');
             opt.value = o[0]; opt.textContent = o[1];
@@ -125,6 +126,7 @@ export function galleryItemsPanel(ctx, itemsPath) {
         // 单图资源提示（空=auto；轮播未设置时第 1 张自动 high、其余 low）
         var fpSel = document.createElement('select');
         fpSel.className = 'wb-unit-select'; fpSel.title = '单图加载优先级';
+        fpSel.setAttribute('data-wb-native', '');   // 同上
         [['', '优先级自动'], ['high', '高优先'], ['low', '低优先']].forEach(function (o) {
             var opt2 = document.createElement('option');
             opt2.value = o[0]; opt2.textContent = o[1];

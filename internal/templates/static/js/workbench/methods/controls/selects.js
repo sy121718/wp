@@ -11,34 +11,25 @@
 // 原生 select 保留在 DOM 里作为取值/回写载体（.wb-dd-src 隐藏），选择后派发冒泡
 // change 事件，仍由检查器既有的 [data-wb-path] 委托回写 AST —— 不新增回写通道。
 
-import { wbDropdown, wbFieldHints } from '../../core.js';
+import { wbFieldHints } from '../../core.js';
 
-// upgradeNativeSelects 把面板内的原生 select 升级为自定义下拉。
-// 幂等：同一 DOM 上重复调用只升级一次（morph 后是新节点，会重新升级）。
+// upgradeNativeSelects 面板重渲染后，把面板里的原生 select 交给**基座**接管。
+//
+// 这里原来是自己把 select 升级成 wb-dd（core.js 的 wbDropdown）。那份实现与基座
+// ui/select.js 解决的是同一个问题（见本文件头部实测记录：原生 select 在
+// Linux/Chromium 上「点开一瞬间就自动选择/关闭」），属于同一件事的第三份实现。
+// 现在只保留一个实现：
+//   · 基座保留原生 select 作为取值/回写载体（.wbs-native 视觉隐藏）；
+//   · 选中后派发冒泡 change，仍由检查器既有的 panel.onchange（[data-wb-path] 委托）
+//     回写 AST —— 回写通道一个没变；
+//   · option 动态增删由基座的 MutationObserver 同步（工作台那版没有这个能力）。
+//
+// 本函数保留为「面板增强阶段」的入口：morphHTML 之后由 inspector 调用；
+// 幂等由基座的 markOnce 保证（morph 后是新节点会重新增强）。
 export function upgradeNativeSelects(ctx) {
     var panel = ctx.panel;
-    if (!panel || !panel.querySelectorAll) return;
-    var list = panel.querySelectorAll('select[data-wb-path][data-wb-kind="select"]');
-    Array.prototype.forEach.call(list, function (sel) {
-        if (sel.dataset.wbDdUpgraded === '1') return;
-        var choices = [];
-        Array.prototype.forEach.call(sel.options, function (o) {
-            choices.push([o.value, o.textContent]);
-        });
-        var key = sel.getAttribute('data-wb-path') || '';
-        var dd = wbDropdown(choices, sel.value, {
-            key: key,
-            onChange: function (v) {
-                if (sel.value === v) return;
-                sel.value = v;
-                // 交给既有委托（inspector.js bindInspectorHtmx 的 panel.onchange）回写 AST。
-                sel.dispatchEvent(new Event('change', { bubbles: true }));
-            }
-        });
-        sel.dataset.wbDdUpgraded = '1';
-        sel.classList.add('wb-dd-src');
-        if (sel.parentNode) sel.parentNode.insertBefore(dd.root, sel.nextSibling);
-    });
+    if (!panel) return;
+    if (window.WBUI && window.WBUI.scan) { window.WBUI.scan(panel); }
 }
 
 // refreshFieldHints 按当前模型刷新提示：先清掉旧提示再重算。

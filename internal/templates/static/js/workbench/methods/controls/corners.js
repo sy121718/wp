@@ -11,6 +11,7 @@ export function cornersControl(ctx, label, ctl, prefix, CORNERS) {
 
     var unitRow = document.createElement('div'); unitRow.className = 'wb-unit-row';
     var unitSel = document.createElement('select'); unitSel.className = 'wb-unit-select';
+    unitSel.setAttribute('data-wb-native', '');   // 保留原生：与圆角/单位联动，不接受基座接管
     ['px', '%', 'em', 'rem'].forEach(function (u) {
         var o = document.createElement('option'); o.value = u; o.textContent = u; unitSel.appendChild(o);
     });

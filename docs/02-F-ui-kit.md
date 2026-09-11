@@ -20,7 +20,7 @@
 
 ```
 ③ 组件增强   static/js/enhance.js    轮播/灯箱/卡片环…   按 data-* 特征，构建期按需内联
-② 编辑器控件 static/js/workbench/    13 个检查器原语      仅工作台（ES module）—— 唯一未收敛的一层
+② 编辑器控件 static/js/workbench/    12 个检查器原语      仅工作台（ES module）—— 边界见 §8（下拉已归 ①）
 ① 原始控件   static/js/ui/           下拉/抽屉/确认框/…   后台 + 工作台 + 前台产物**共用一份**
         外观  static/css/ui.css      .wbs-* / .btn / .card / …
 ```
@@ -29,7 +29,7 @@
 
 | 控件 | 文件 | 声明式用法 | 备注 |
 |---|---|---|---|
-| 下拉 | `ui/select.js` | 自动接管原生 `<select>`（跳过 `data-wb-path`） | 自绘替身，含动态选项同步 |
+| 下拉 | `ui/select.js` | 自动接管原生 `<select>`；`data-wb-native` 与 `.wb-dd-src` 跳过 | 自绘替身 + 动态选项同步；**检查器面板的字段 select 也走它**（原先各写一份） |
 | 抽屉 | `ui/drawer.js` | `data-drawer-open` / `data-drawer-title` | 打开时对新内容 `WBUI.scan` |
 | 图标字段 | `ui/iconfield.js` | `data-icon-field`（+ hidden 存值）、`data-icon-name` | 图标库 766KB 懒加载 |
 | 确认框 | `ui/confirm.js` | `data-confirm` / `-title` / `-ok` / `-cancel` / `-danger` | `<dialog>` 承载，取代原生 confirm；另有 `WBUI.confirm` / **`WBUI.alert`** 给 JS 里调用 |
@@ -122,6 +122,7 @@ var(--sky-c-primary, var(--c-primary, 兜底))
 | 弹窗**按 Esc 关不掉** | 依赖 `<dialog>` 的原生 Esc —— 那是浏览器的 default action，合成的键盘事件不产生它 | 控件自己接管 `keydown` Escape（modal 与 confirm 都是），并按「最上层优先」`stopPropagation`，避免同时开着的抽屉被一起关掉 |
 | 上传弹窗的拖拽区**键盘够不到** | `#ml-drop` 是纯 div，只挂了 click | 补 `role="button"` + `tabindex="0"` + Enter/Space |
 | 媒体库删除**弹系统原生对话框** | JS 里 12 处 `confirm()` / `alert()`（详情删除、分类删除、已保存、已复制…） | 全走 `WBUI.confirm` 与新增的 `WBUI.alert`（同一个 `<dialog>`）；基座缺席时退回原生，功能不丢 |
+| 下拉在**检查器面板里是第二份实现** | 基座 `ui/select.js` 跳过 `data-wb-path`，工作台 `controls/selects.js` 用 `wbDropdown` 再升一次级 —— 同一件事（原生 select 在 Linux/Chromium 上「点开即选」）的第三份实现 | 基座接管检查器面板：`upgradeNativeSelects` 只触发一次 `WBUI.scan`；7 个 `wb-unit-select` 用 `data-wb-native` 显式排除，`wbDropdown` 的隐藏载体 `.wb-dd-src` 也被跳过 |
 
 ### 踩到的坑
 
@@ -130,6 +131,7 @@ var(--sky-c-primary, var(--c-primary, 兜底))
 | 拼装时多套 `<script>` | 产物里明明有基座代码，运行时 `WBUI` 是 undefined——外层模板已套 `<script>`，再套一次成了嵌套，整段语法错误 | `uiScriptFor` 只返回正文；测试断言禁止出现 script 标签 |
 | `aria-selected` 被当违规 | 走查页断言"tabs 不该输出 aria-selected"误伤基座（它合法使用该属性） | 判据改用 ARIA tab 专属词 |
 | 增强源码曾是包级变量 | 测试不注入也有值，改成注入后 golden 立刻漂移 | `document.html` golden 与改动前**逐字节一致** |
+| 跳过判定写在 `markOnce` **之后** | 被跳过的元素也留下了「已增强」标记，将来解除跳过时它们再也不会被增强，且标记只在 DOM 上、代码里看不出来 | 跳过判定必须在 `markOnce` 之前 —— 迁检查器下拉时正是这一条挡住了 `data-wb-native` 的元素（现在它们无标记） |
 | air 不监听 js/css | 改磁盘文件后台立刻生效、产物却是旧版 | `.air.toml` 的 `include_ext` 加上 js/css |
 
 ## 7. 验证方式
@@ -142,8 +144,18 @@ var(--sky-c-primary, var(--c-primary, 兜底))
 
 ## 8. 暂不做
 
-- **工作台 13 个原语的收敛**：涉及模块加载形态与既有交互，等 ① 再攒一两个控件之后再迁；
-  迁移时注意两者 API 不同（工作台那套面向检查器字段，基座这套面向页面上的原生控件）；
+- **工作台原语：13 个 → 12 个**。**下拉已经迁完** —— `controls/selects.js` 的
+  `upgradeNativeSelects` 现在只触发一次 `WBUI.scan`，实现只剩基座一份（选后派发冒泡
+  change，仍由检查器既有的 `panel.onchange` 委托回写 AST，回写通道一个没变）。
+  剩下的 12 类**不是「暂不迁」，而是不该迁**，两类原因：
+  · **检查器字段构造器**（`base.field` / `spacing.*` / `color` / `corners` / `media`）：
+    API 形如 `(ctx, label, path)` —— 面向 AST 数据路径与 `[data-wb-path]` 回写委托，
+    是「属性表单的构造器」，不是页面上的元素；
+  · **组件形状编辑器**（`repeater.js` 的 `faqPanel`/`tabsPanel`/`accordionPanel`/`navPanel`…、
+    `misc.schemaField`）：那是**组件知识**（每个组件一种字段形状），进基座等于把组件库塞进
+    控件层。
+  **判据**：它回答的是「这个元素长什么样、怎么交互」，还是「这个组件的这个属性该怎么填」——
+  前者进基座，后者留在工作台。
 - **`effects.go` 里的 ◻️ 项**（噪点/极光/逐字入场/模糊过渡/悬停展开/断点变量化）。
 - ~~**媒体库不进基座**~~ → **边界已细分**：业务脚本（`media-lib.js` 是 API 客户端与渲染工具库、
   `media-admin.js` 是媒体库页业务逻辑）不进基座 —— 硬搬会把应用逻辑塞进控件层；
