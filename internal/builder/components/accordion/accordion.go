@@ -103,7 +103,7 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		"display: flex", "align-items: center", "justify-content: space-between",
 		"padding: 14px 18px", "font-size: 15px", "font-weight: 600",
 		"background: var(--sky-c-surface, #fff)",
-		"border: 1px solid rgba(0,0,0,.1)", "border-radius: 10px",
+		"border: 1px solid var(--sky-c-border, rgba(0,0,0,.1))", "border-radius: 10px",
 	}
 	if p.BgColor != "" {
 		headRules = append(headRules, core.CSSDecl("background", p.BgColor))
@@ -126,7 +126,7 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	b.AddHover(head+":hover", []string{"background: var(--sky-c-surface, #f3f4f6)"})
 
 	b.Add(core.BreakpointDesktop, sel+" .sky-accordion-body", []string{
-		"padding: 14px 18px", "border: 1px solid rgba(0,0,0,.08)",
+		"padding: 14px 18px", "border: 1px solid var(--sky-c-border, rgba(0,0,0,.08))",
 		"border-top: 0", "border-radius: 0 0 10px 10px",
 		"margin-top: -8px",
 	})
@@ -135,7 +135,7 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	if p.Borderless {
 		b.Add(core.BreakpointDesktop, sel+".sky-accordion-borderless", []string{"gap: 0"})
 		b.Add(core.BreakpointDesktop, sel+".sky-accordion-borderless .sky-accordion-head", []string{
-			"border: 0", "border-bottom: 1px solid rgba(0,0,0,.1)", "border-radius: 0",
+			"border: 0", "border-bottom: 1px solid var(--sky-c-border, rgba(0,0,0,.1))", "border-radius: 0",
 			"padding-left: 0", "padding-right: 0",
 		})
 		b.Add(core.BreakpointDesktop, sel+".sky-accordion-borderless .sky-accordion-body", []string{

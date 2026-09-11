@@ -85,7 +85,7 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		"gap: 8px",
 	})
 	b.Add(core.BreakpointDesktop, sel+" details", []string{
-		"border: 1px solid rgba(0,0,0,0.1)",
+		"border: 1px solid var(--sky-c-border, rgba(0,0,0,0.1))",
 		"border-radius: 10px",
 		"background: var(--sky-c-surface, #fff)",
 	})

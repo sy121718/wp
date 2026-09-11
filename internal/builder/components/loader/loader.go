@@ -90,7 +90,7 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		b.Add(core.BreakpointDesktop, sel+" .sky-loader-ring", []string{
 			"width: var(--sky-loader-size)",
 			"height: var(--sky-loader-size)",
-			"border: 3px solid rgba(0,0,0,.12)",
+			"border: 3px solid var(--sky-c-border, rgba(0,0,0,.12))",
 			"border-top-color: currentColor",
 			"border-radius: 50%",
 			"animation: sky-loader-spin .8s linear infinite",

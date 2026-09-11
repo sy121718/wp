@@ -682,7 +682,7 @@ func cardBaseDecls(content bool, p *Props) []string {
 			"padding: " + padding,
 			"background-color: " + background,
 			"color: var(--sky-cardstack-text, #1f2430)",
-			fmt.Sprintf("border: %s solid rgba(0,0,0,.08)", border),
+			fmt.Sprintf("border: %s solid var(--sky-c-border, rgba(0,0,0,.08))", border),
 			"border-radius: " + radius,
 			"box-shadow: 0 15px 50px rgba(0,0,0,.12)",
 			"overflow: hidden",
@@ -707,7 +707,7 @@ func cardBaseDecls(content bool, p *Props) []string {
 		"justify-content: center",
 		"align-items: center",
 		"background-color: " + background,
-		fmt.Sprintf("border: %s solid rgba(0,0,0,.1)", border),
+		fmt.Sprintf("border: %s solid var(--sky-c-border, rgba(0,0,0,.1))", border),
 		"border-radius: " + radius,
 		"box-shadow: 0 15px 50px rgba(0,0,0,.1)",
 		"color: rgba(0,0,0,0)",
@@ -1046,7 +1046,7 @@ func compileDragCSS(b *core.CSSBuckets, sel string, p *Props, n int, width, heig
 		})
 		b.Add(core.BreakpointDesktop, sel+" .sky-cardstack-arrow--prev", []string{"left: 4px"})
 		b.Add(core.BreakpointDesktop, sel+" .sky-cardstack-arrow--next", []string{"right: 4px"})
-		b.Add(core.BreakpointDesktop, sel+" .sky-cardstack-arrow:hover", []string{"background: #ffffff"})
+		b.Add(core.BreakpointDesktop, sel+" .sky-cardstack-arrow:hover", []string{"background: var(--sky-c-surface, #ffffff)"})
 	}
 
 	b.Add(core.BreakpointDesktop, sel+".is-dragging .sky-cardstack-card", []string{"transition: none"})

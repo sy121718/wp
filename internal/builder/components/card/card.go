@@ -64,7 +64,7 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		"flex-direction: column",
 		"overflow: hidden",
 		"background: var(--sky-c-surface, #fff)",
-		"border: 1px solid rgba(0,0,0,0.1)",
+		"border: 1px solid var(--sky-c-border, rgba(0,0,0,0.1))",
 		"border-radius: 12px",
 		core.CSSDecl("padding", "var(--sky-density-pad, 16px)"),
 	})
@@ -116,7 +116,7 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		"padding: 8px 16px",
 		"border-radius: 6px",
 		"background: var(--sky-btn-bg, var(--sky-c-primary, #2563eb))",
-		"color: #fff",
+		"color: var(--sky-btn-color, #fff)",
 		"text-decoration: none",
 	})
 }

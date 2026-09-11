@@ -96,7 +96,7 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		"display: inline-flex",
 		"align-items: center",
 		"gap: 2px",
-		"color: #f59e0b",
+		"color: var(--sky-c-warning, #f59e0b)",
 		"line-height: 0",
 	})
 	b.Add(core.BreakpointDesktop, sel+" .sky-star", []string{

@@ -140,7 +140,8 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	// 基础样式。
 	borderColor := p.BorderColor
 	if borderColor == "" {
-		borderColor = "rgba(0,0,0,.1)"
+		// 未配置时跟主题边框色（写死的话主题改边框、标签页底边不动）。
+		borderColor = "var(--sky-c-border, rgba(0,0,0,.1))"
 	}
 	navJustify := "flex-start"
 	if p.NavAlign == "center" {
@@ -179,7 +180,7 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	if p.Vertical {
 		b.Add(core.BreakpointDesktop, sel+".sky-tabs-vertical", []string{"flex-direction: row", "align-items: stretch"})
 		b.Add(core.BreakpointDesktop, sel+".sky-tabs-vertical .sky-tabs-nav", []string{
-			"flex-direction: column", "border-bottom: 0", "border-right: 1px solid rgba(0,0,0,.1)",
+			"flex-direction: column", "border-bottom: 0", "border-right: 1px solid var(--sky-c-border, rgba(0,0,0,.1))",
 			"min-width: 140px", "padding: 4px 0",
 		})
 		b.Add(core.BreakpointDesktop, sel+".sky-tabs-vertical .sky-tabs-nav label", []string{

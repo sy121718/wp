@@ -173,7 +173,7 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	if p.SubmenuBg != "" {
 		sub = append(sub, core.CSSDecl("background", p.SubmenuBg))
 	} else {
-		sub = append(sub, "background: #fff")
+		sub = append(sub, "background: var(--sky-c-surface, #fff)")
 	}
 	if p.SubmenuWidth != "" {
 		sub = append(sub, "min-width: "+p.SubmenuWidth)

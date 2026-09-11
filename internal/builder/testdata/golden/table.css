@@ -25,6 +25,6 @@ body {
 .sky-c-tb1 thead th {
   font-weight: 600;
   background: var(--sky-c-surface, #f5f6f8);
-  border-bottom: 2px solid rgba(0,0,0,0.12);
+  border-bottom: 2px solid var(--sky-c-border, rgba(0,0,0,0.12));
 }
 }

@@ -12,7 +12,7 @@ body {
 }
 
 .sky-c-fq1 details {
-  border: 1px solid rgba(0,0,0,0.1);
+  border: 1px solid var(--sky-c-border, rgba(0,0,0,0.1));
   border-radius: 10px;
   background: var(--sky-c-surface, #fff);
 }

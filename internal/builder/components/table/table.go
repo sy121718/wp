@@ -107,7 +107,8 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	b.Add(core.BreakpointDesktop, sel+" thead th", []string{
 		"font-weight: 600",
 		"background: var(--sky-c-surface, #f5f6f8)",
-		"border-bottom: 2px solid rgba(0,0,0,0.12)",
+		// 表头分隔线跟主题边框色（此前写死，主题改边框它不变）。
+		"border-bottom: 2px solid var(--sky-c-border, rgba(0,0,0,0.12))",
 	})
 	// 斑马纹：tbody 偶数行浅色背景。
 	if p.Striped {
@@ -127,7 +128,7 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	// 边框：th/td 加 1px 边框。
 	if p.Bordered {
 		b.Add(core.BreakpointDesktop, sel+" th, "+sel+" td", []string{
-			"border: 1px solid rgba(0,0,0,0.12)",
+			"border: 1px solid var(--sky-c-border, rgba(0,0,0,0.12))",
 		})
 	}
 }

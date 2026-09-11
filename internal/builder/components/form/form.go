@@ -173,10 +173,11 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		"box-sizing: border-box",
 		"padding: 10px 12px",
 		"font-size: 15px",
-		"border: 1px solid rgba(0,0,0,.15)",
+		"border: 1px solid var(--sky-c-border, rgba(0,0,0,.15))",
 		"border-radius: 6px",
-		"background: #fff",
-		"color: #111",
+		// 输入框跟主题表面色/正文色走（此前写死白底黑字，主题改了输入框也不变）。
+		"background: var(--sky-c-surface, #fff)",
+		"color: var(--sky-c-text, #1f2430)",
 		core.FocusTransitionDecl(),
 	}
 	// :is() 合并同声明选择器（规则数 4→2，产物体积更小；:is 特异性取参数最高者，
@@ -202,7 +203,7 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		"padding: 11px 24px",
 		"font-size: 15px",
 		"font-weight: 600",
-		"color: #fff",
+		"color: var(--sky-btn-color, #fff)",
 		"background: var(--sky-btn-bg, var(--sky-c-primary, #2563eb))",
 		"border: none",
 		"border-radius: 6px",

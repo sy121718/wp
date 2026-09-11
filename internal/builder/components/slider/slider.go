@@ -152,7 +152,7 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	b.Add(core.BreakpointDesktop, arrow, []string{
 		"position: absolute", "top: 50%", "transform: translateY(-50%)",
 		"width: 40px", "height: 40px", "border-radius: 999px",
-		"border: 1px solid rgba(0,0,0,.12)", "background: #fff",
+		"border: 1px solid var(--sky-c-border, rgba(0,0,0,.12))", "background: var(--sky-c-surface, #fff)",
 		"cursor: pointer", "font-size: 20px", "line-height: 1",
 		"display: flex", "align-items: center", "justify-content: center",
 		"z-index: 2", "box-shadow: 0 2px 8px rgba(0,0,0,.1)",
