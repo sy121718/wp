@@ -136,6 +136,18 @@ func SetupDashboardRoutes(router *gin.Engine,
 	adminPages.POST("/products/variant/create", builtin.CasbinMiddlewareForPath("/api/product/variant/create"), productPages.ProductsVariantCreate)
 	adminPages.POST("/products/variant/delete", builtin.CasbinMiddlewareForPath("/api/product/variant/delete"), productPages.ProductsVariantDelete)
 	adminPages.POST("/products/delete", builtin.CasbinMiddlewareForPath("/api/product/delete"), productPages.ProductsDelete)
+	// 商品引用的属性组整体替换（issue #7）：复用商品更新权限点（同一改动面）。
+	adminPages.POST("/products/attributes", builtin.CasbinMiddlewareForPath("/api/product/update"), productPages.ProductsAttributesSet)
+
+	// 商品属性管理页（issue #7）：属性组与属性值可跨商品复用，故独立页面。
+	// 值编辑器的增删行走 HTMX（编辑中的行只存在于 DOM，服务端参与归一与去重）。
+	adminPages.GET("/product-attributes", productPages.ProductAttributesPage)
+	adminPages.POST("/product-attributes/create", builtin.CasbinMiddlewareForPath("/api/product/attribute/create"), productPages.ProductAttributesCreate)
+	adminPages.POST("/product-attributes/update", builtin.CasbinMiddlewareForPath("/api/product/attribute/update"), productPages.ProductAttributesUpdate)
+	adminPages.POST("/product-attributes/set-values", builtin.CasbinMiddlewareForPath("/api/product/attribute/set-values"), productPages.ProductAttributesSetValues)
+	adminPages.POST("/product-attributes/delete", builtin.CasbinMiddlewareForPath("/api/product/attribute/delete"), productPages.ProductAttributesDelete)
+	// 值编辑器的行片段：纯表单操作，不落库，故不挂 Casbin（页面组已有 Session + CSRF）。
+	adminPages.POST("/product-attributes/value-rows", productPages.ProductAttributesValueRows)
 
 	// admin 六领域管理页（管理员/角色/菜单/权限/部门/数据权限）：
 	// 页面 GET 走 /admin 组认证（Session+CSRF，无 Casbin）；

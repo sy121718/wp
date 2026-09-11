@@ -171,6 +171,15 @@ var productMenuSQL string
 //go:embed 085_product_detail_template.sql
 var productDetailTemplateSQL string
 
+//go:embed 086_product_attribute_specs.sql
+var productAttributeSpecsSQL string
+
+//go:embed 086a_product_attribute_permissions.sql
+var productAttributePermsSQL string
+
+//go:embed 086b_product_attribute_menu.sql
+var productAttributeMenuSQL string
+
 //go:embed 073_blueprint_ddl_align.sql
 var blueprintDDLAlignSQL string
 
@@ -459,6 +468,34 @@ func init() {
 		TableName:    "sys_permission",
 		ConditionSQL: "SELECT COUNT(*) FROM sys_permission WHERE permission_code = 'content:collections'",
 		SQL:          contentCollectionsPermSQL,
+	})
+
+	// 086：商品属性组与属性值（issue #7）—— product_attributes 由 081 建好，
+	// 本迁移只在其上补 key 唯一的部分索引 + 回填历史空 key + is_variation 显式 CHECK。
+	// 表早已存在，默认「表存在即跳过」必然误跳过，故按索引名判定（与 037/038/068 同一手法）。
+	register(Migration{
+		Version:   "086-product-attribute-specs",
+		TableName: "product_attributes",
+		CheckSQL: "SELECT COUNT(*) FROM information_schema.columns " +
+			"WHERE table_schema = current_schema() AND table_name = ? AND column_name = 'attribute_ids'",
+		SQL: productAttributeSpecsSQL,
+	})
+
+	// 086a：属性组权限点 + 超管策略（issue #7）。条件与 082 互斥（product:attribute_%）。
+	registerSeed(Seed{
+		Version:      "086a-product-attribute-permissions",
+		TableName:    "sys_permission",
+		ConditionSQL: "SELECT COUNT(*) FROM sys_permission WHERE permission_code LIKE 'product:attribute_%'",
+		SQL:          productAttributePermsSQL,
+	})
+
+	// 086b：属性后台菜单（issue #7）。须在 084（商品管理菜单）之后执行，
+	// 否则父菜单还不存在，COALESCE 会把「商品属性」落到顶级。
+	registerSeed(Seed{
+		Version:      "086b-product-attribute-menu",
+		TableName:    "sys_menus",
+		ConditionSQL: "SELECT COUNT(*) FROM sys_menus WHERE title = '商品属性' AND type = 2",
+		SQL:          productAttributeMenuSQL,
 	})
 
 	// 085：默认商品详情内容模板（issue #6）—— 商品发布按实体类型解析模板，

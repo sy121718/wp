@@ -1,0 +1,111 @@
+{* admin/product_attributes.html — 商品属性组与属性值（issue #7） *}
+{* Jet 方言：range 用 range 关键字；extends 相对本目录；range 内访问外层值先存变量。
+   include 的数据类是本方法构造的 struct（Jet 没有 dict() 全局函数）。 *}
+{{extends "layout.html"}}
+{{block body()}}
+{{csrf := .["csrf_token"]}}
+{{selectedProject := .SelectedProject}}
+{{if .Err != ""}}
+<p class="pages-badge pages-badge-warn">上一次操作未完成：{{.Err}}</p>
+{{end}}
+<div class="pages-wrap">
+    <section class="pages-card">
+        <h2>商品属性</h2>
+        <p class="pages-empty">
+            属性组（颜色 / 尺寸 / 口味）在工程内定义一次，可被多个商品引用；
+            「参与变体」的组会参与变体规格组合的生成。
+        </p>
+        <form method="get" action="/admin/product-attributes" class="pages-form">
+            <select name="project" onchange="this.form.submit()">
+                {{range _, p := .Projects}}
+                <option value="{{p.ID}}" {{if p.ID == selectedProject}}selected{{end}}>{{p.Name}}</option>
+                {{end}}
+            </select>
+        </form>
+    </section>
+
+    <section class="pages-card">
+        <h2>新建属性组</h2>
+        <form method="post" action="/admin/product-attributes/create" class="attr-form">
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <input type="hidden" name="projectId" value="{{selectedProject}}">
+            <input type="hidden" name="groupId" value="new">
+            <div class="attr-form-head">
+                <input type="text" name="name" placeholder="属性组名称（如 颜色）" required>
+                <input type="text" name="key" placeholder="标识（留空自动生成，如 color）" autocomplete="off">
+                <input type="number" name="sort" value="0" placeholder="排序" inputmode="numeric" step="1">
+                <label class="attr-switch">
+                    <input type="hidden" name="isVariation" value="0">
+                    <input type="checkbox" name="isVariation" value="1" checked> 参与变体
+                </label>
+            </div>
+            <div class="attr-values" id="attr-values-new">
+                {{include "partials/product_attribute_rows.html" .NewRowsCtx}}
+            </div>
+            <div class="attr-form-actions">
+                <button type="submit" class="btn btn-primary">新建属性组</button>
+            </div>
+        </form>
+    </section>
+
+    <section class="pages-card">
+        <h2>属性组列表</h2>
+        {{if len(.Attributes) == 0}}
+        <p class="pages-empty">这个工程还没有属性组。用上面的表单建一个，之后任意商品都可以引用它。</p>
+        {{else}}
+        {{range _, a := .Attributes}}
+        <details class="pages-fold attr-fold" {{if a.IsVariation}}open{{end}}>
+            <summary class="card-header">
+                <strong>{{a.Name}}</strong>
+                <code>{{a.Key}}</code>
+                {{if a.IsVariation}}
+                <span class="pages-badge pages-badge-info">参与变体</span>
+                {{else}}
+                <span class="pages-badge">不参与变体</span>
+                {{end}}
+                <span class="pages-empty">{{a.ValueCount}} 个属性值</span>
+                <span class="pages-fold-hint">展开</span>
+            </summary>
+
+            <form method="post" action="/admin/product-attributes/update" class="attr-form">
+                <input type="hidden" name="csrf_token" value="{{csrf}}">
+                <input type="hidden" name="projectId" value="{{selectedProject}}">
+                <input type="hidden" name="id" value="{{a.ID}}">
+                <div class="attr-form-head">
+                    <input type="text" name="name" value="{{a.Name}}" placeholder="属性组名称" required>
+                    <input type="text" name="key" value="{{a.Key}}" placeholder="标识" autocomplete="off">
+                    <input type="number" name="sort" value="{{a.Sort}}" placeholder="排序" inputmode="numeric" step="1">
+                    <label class="attr-switch">
+                        <input type="hidden" name="isVariation" value="0">
+                        <input type="checkbox" name="isVariation" value="1" {{if a.IsVariation}}checked{{end}}> 参与变体
+                    </label>
+                    <button type="submit" class="btn btn-sm">保存属性组</button>
+                </div>
+            </form>
+
+            <form method="post" action="/admin/product-attributes/set-values" class="attr-form">
+                <input type="hidden" name="csrf_token" value="{{csrf}}">
+                <input type="hidden" name="projectId" value="{{selectedProject}}">
+                <input type="hidden" name="id" value="{{a.ID}}">
+                <input type="hidden" name="groupId" value="{{a.ID}}">
+                <div class="attr-values" id="attr-values-{{a.ID}}">
+                    {{include "partials/product_attribute_rows.html" a.RowsCtx}}
+                </div>
+                <div class="attr-form-actions">
+                    <button type="submit" class="btn">保存属性值</button>
+                </div>
+            </form>
+
+            <form method="post" action="/admin/product-attributes/delete"
+                  onsubmit="return confirm('删除该属性组及其全部属性值？被商品引用时会拒绝删除。')">
+                <input type="hidden" name="csrf_token" value="{{csrf}}">
+                <input type="hidden" name="projectId" value="{{selectedProject}}">
+                <input type="hidden" name="id" value="{{a.ID}}">
+                <button type="submit" class="btn btn-danger btn-sm">删除属性组</button>
+            </form>
+        </details>
+        {{end}}
+        {{end}}
+    </section>
+</div>
+{{end}}

@@ -59,6 +59,11 @@ func (h *productPageHandle) ProductsPage(c *gin.Context) {
 				"PriceMin": detail.PriceMin, "PriceMax": detail.PriceMax,
 				"VariantCount": detail.VariantCount,
 				"Variants":     detail.Variants,
+				// 引用的属性组（issue #7）：同一属性组可被多个商品共用，
+				// 这里只展示引用与属性值，编辑入口在 /admin/product-attributes。
+				"AttributeIDs":   detail.AttributeIDs,
+				"AttributeIDsCSV": strings.Join(detail.AttributeIDs, ","),
+				"Attributes":     detail.Attributes,
 			})
 		}
 	}
@@ -74,9 +79,10 @@ func (h *productPageHandle) ProductsPage(c *gin.Context) {
 // ProductsCreate 新建商品（自动生成首个变体），完成后回到列表。
 func (h *productPageHandle) ProductsCreate(c *gin.Context) {
 	req := &productdto.CreateReq{
-		ProjectID: c.PostForm("projectId"),
-		Name:      c.PostForm("name"),
-		Slug:      c.PostForm("slug"),
+		ProjectID:    c.PostForm("projectId"),
+		Name:         c.PostForm("name"),
+		Slug:         c.PostForm("slug"),
+		AttributeIDs: splitIDs(c.PostForm("attributeIds")),
 	}
 	if price := strings.TrimSpace(c.PostForm("defaultPrice")); price != "" {
 		if v, perr := parseFloat(price); perr == nil {
@@ -113,6 +119,22 @@ func (h *productPageHandle) ProductsVariantCreate(c *gin.Context) {
 func (h *productPageHandle) ProductsVariantDelete(c *gin.Context) {
 	projectID := c.PostForm("projectId")
 	if err := h.products.DeleteVariant(c.Request.Context(), &productdto.DeleteVariantReq{ID: c.PostForm("id")}); err != nil {
+		c.Redirect(http.StatusFound, "/admin/products?project="+projectID+"&err="+err.Error())
+		return
+	}
+	c.Redirect(http.StatusFound, "/admin/products?project="+projectID)
+}
+
+// ProductsAttributesSet 整体替换某商品引用的属性组（issue #7）。
+//
+// 引用的组必须是同一工程内真实存在的组（service 校验）；提交空数组即解绑全部。
+func (h *productPageHandle) ProductsAttributesSet(c *gin.Context) {
+	projectID := c.PostForm("projectId")
+	req := &productdto.UpdateReq{
+		ID:           c.PostForm("id"),
+		AttributeIDs: splitIDs(c.PostForm("attributeIds")),
+	}
+	if _, err := h.products.Update(c.Request.Context(), req); err != nil {
 		c.Redirect(http.StatusFound, "/admin/products?project="+projectID+"&err="+err.Error())
 		return
 	}

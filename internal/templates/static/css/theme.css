@@ -188,6 +188,63 @@ button, input, select, textarea { font: inherit; color: inherit; }
 }
 .pages-actions .btn:hover { border-color: var(--c-primary, #2563eb); color: var(--c-primary, #2563eb); }
 .pages-empty { color: var(--c-text-mute, #6b7280); font-size: 13px; }
+.pages-empty a { color: var(--c-primary, #2563eb); }
+
+/* ===== 商品属性管理（admin/product_attributes.html，issue #7） =====
+   多端适配（硬规则）：
+     · 宽度一律 min(100%, <设计宽度>)，不写死；
+     · 行用 flex + wrap，窄屏自动折行；表头行在窄屏隐藏（.attr-value-head）；
+     · 触屏是独立环境：没有 :hover 依赖，按钮的按压反馈用 :active（不带媒体查询）；
+     · 键盘：原生 input/button/checkbox，Tab 序即视觉序，无需自定义键位。 */
+.attr-form { display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; }
+.attr-form-head { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.attr-form-head input[type="text"],
+.attr-form-head input[type="number"],
+.pages-form input.attr-id-input {
+    padding: 8px 10px; font-size: 13px; border: 1px solid var(--c-border, #e5e7eb);
+    border-radius: 8px; background: var(--c-surface, #fff); color: inherit;
+    width: min(100%, 220px); min-width: 0;
+}
+.pages-form input.attr-id-input { width: min(100%, 320px); }
+.attr-switch { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; }
+.attr-switch input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--c-primary, #2563eb); }
+.attr-form-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.attr-fold { margin-top: 12px; }
+.attr-values { display: flex; flex-direction: column; gap: 8px; margin: 8px 0; }
+.attr-value-table { display: flex; flex-direction: column; gap: 8px; }
+.attr-value-head {
+    display: grid; grid-template-columns: 28px minmax(0, 1fr) minmax(0, 1.2fr) 90px 96px 72px;
+    gap: 8px; font-size: 12px; color: var(--c-text-mute, #6b7280);
+}
+.attr-value-row {
+    display: grid; grid-template-columns: 28px minmax(0, 1fr) minmax(0, 1.2fr) 90px 96px 72px;
+    gap: 8px; align-items: center;
+}
+.attr-value-row .attr-value-idx,
+.attr-value-head .attr-value-idx { font-family: monospace; font-size: 12px; color: var(--c-text-mute, #6b7280); }
+.attr-value-row input[type="text"],
+.attr-value-row input[type="number"] {
+    padding: 6px 10px; font-size: 13px; border: 1px solid var(--c-border, #e5e7eb);
+    border-radius: 8px; background: var(--c-surface, #fff); color: inherit;
+    width: 100%; min-width: 0;
+}
+.attr-value-row .attr-value-op { display: flex; justify-content: flex-end; }
+/* 按压反馈用 :active（不带媒体查询）：触屏上 :hover 根本不触发，只有 :active 存在。 */
+.attr-value-op .btn:active, .attr-form-actions .btn:active { transform: translateY(1px); }
+@media (max-width: 720px) {
+    .attr-value-head { display: none; }
+    .attr-value-row {
+        grid-template-columns: 1fr 1fr;
+        grid-auto-rows: min-content;
+        align-items: stretch;
+        border: 1px solid var(--c-border, #e5e7eb);
+        border-radius: 10px; padding: 10px;
+    }
+    .attr-value-row .attr-value-idx { grid-column: 1 / -1; }
+    .attr-value-row .attr-value-op { grid-column: 1 / -1; }
+    .attr-value-op .btn { width: 100%; }
+    .pages-card { padding: 16px; }
+}
 /* ===== 翻译工作台（admin/page_translations.html，多语言 P5c） ===== */
 .tr-toolbar { align-items: center; gap: 12px; flex-wrap: wrap; }
 .tr-table td { vertical-align: top; }

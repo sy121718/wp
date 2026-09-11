@@ -18,6 +18,9 @@ type CreateReq struct {
 	SEOTitle       string          `json:"seoTitle"`
 	SEODescription string          `json:"seoDescription"`
 	Images         []string        `json:"images"`
+	// AttributeIDs 引用的属性组 id（issue #7）：只存引用，组与值的定义唯一一份，
+	// 同一属性组可被多个商品复用。
+	AttributeIDs   []string        `json:"attributeIds"`
 	CategoryIDs    []string        `json:"categoryIds"`
 	TagIDs         []string        `json:"tagIds"`
 	RelatedIDs     []string        `json:"relatedIds"`
@@ -41,6 +44,9 @@ type UpdateReq struct {
 	SEOTitle       *string         `json:"seoTitle"`
 	SEODescription *string         `json:"seoDescription"`
 	Images         []string        `json:"images"`
+	// AttributeIDs 引用的属性组 id（issue #7）；nil 表示本次不改引用，
+	// 空数组表示解绑全部（与 CategoryIDs / TagIDs 同为「整体替换」语义）。
+	AttributeIDs   []string        `json:"attributeIds"`
 	CategoryIDs    []string        `json:"categoryIds"`
 	TagIDs         []string        `json:"tagIds"`
 	RelatedIDs     []string        `json:"relatedIds"`

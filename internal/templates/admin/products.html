@@ -21,8 +21,13 @@
             <input type="text" name="name" placeholder="商品名称" required>
             <input type="text" name="slug" placeholder="URL 段（留空自动生成）">
             <input type="text" name="defaultPrice" placeholder="默认价格（首个变体继承）">
+            <input type="text" class="attr-id-input" name="attributeIds" placeholder="引用的属性组 id（逗号分隔，可留空）" autocomplete="off">
             <button type="submit" class="btn btn-primary">新建商品</button>
         </form>
+        <p class="pages-empty">
+            属性组在<a href="/admin/product-attributes?project={{selectedProject}}">商品属性</a>页定义，
+            同一个属性组可以被多个商品引用。
+        </p>
     </section>
 
     <section class="pages-card">
@@ -38,6 +43,13 @@
                 <span class="badge">{{p.Status}}</span>
                 <span>{{p.VariantCount}} 个变体</span>
                 <span>价格 {{p.PriceMin}} ~ {{p.PriceMax}}</span>
+                {{if len(p.Attributes) > 0}}
+                {{range _, a := p.Attributes}}
+                <span class="pages-badge {{if a.IsVariation}}pages-badge-info{{end}}">
+                    {{a.Name}}{{if a.IsVariation}}（参与变体）{{end}} × {{a.ValueCount}}
+                </span>
+                {{end}}
+                {{end}}
             </div>
             <form method="post" action="/admin/products/delete" onsubmit="return confirm('删除该商品及其全部变体？')">
                 <input type="hidden" name="csrf_token" value="{{csrf}}">
@@ -76,6 +88,14 @@
             <input type="text" name="skuCode" placeholder="SKU 编码（留空自动生成）">
             <input type="text" name="price" placeholder="价格（留空继承商品默认值）">
             <button type="submit" class="btn">新增变体</button>
+        </form>
+        <form method="post" action="/admin/products/attributes" class="pages-form">
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <input type="hidden" name="projectId" value="{{selectedProject}}">
+            <input type="hidden" name="id" value="{{p.ID}}">
+            <input type="text" class="attr-id-input" name="attributeIds" value="{{p.AttributeIDsCSV}}"
+                   placeholder="引用的属性组 id（逗号分隔，清空即解绑）" autocomplete="off">
+            <button type="submit" class="btn">保存属性引用</button>
         </form>
         {{end}}
         {{end}}

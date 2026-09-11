@@ -15,7 +15,7 @@
 - `publication/` — URL 占用、激活（两段式回执）、回滚
 - `content/` / `contenttemplate/` / `presentation/` — CMS 内容、版本化结构模板、自动发布实例
 - `blueprint/` — Page Document 初始化工具（用完即弃）
-- `product/` — 商品域：商品与变体 CRUD（价格在变体上，商品级字段是新增变体的默认值模板）；向实体类型注册表注册 `product`（字段白名单 + 构建期字段解析器，可翻译字段按构建语言取译文）
+- `product/` — 商品域：商品与变体 CRUD（价格在变体上，商品级字段是新增变体的默认值模板）；商品属性组与属性值（组 + 值合一，值走 JSONB；`is_variation` 标记是否参与变体；商品侧只存 `attribute_ids` 引用，同一属性组可跨商品复用）；向实体类型注册表注册 `product`（字段白名单 + 构建期字段解析器，可翻译字段按构建语言取译文）
 - `navigation/` — 公开站点导航（与后台 `menu` 严格隔离）
 - `plugin/` — 插件体系
 - `runtimefragment/` — 白名单动态片段（无 contract，直挂访问面路由）

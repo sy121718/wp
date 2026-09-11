@@ -1,0 +1,41 @@
+{* admin/partials/product_attribute_rows.html — 属性值编辑行（issue #7） *}
+{* 数据：Rows（[]productdto.AttributeValueResp）+ GroupID（所在组的 id）。
+   容器 id 按约定 attr-values-<GroupID>；按钮用 formaction 打回本片段，
+   hx-include 带上整个表单（hx-include 不会把按钮自身算进去），
+   服务端重建有序行数据后回渲染，替换容器 innerHTML。 *}
+{{groupId := .GroupID}}
+{{target := "#attr-values-" + groupId}}
+{{if len(.Rows) == 0}}
+<p class="pages-empty">还没有属性值。点下面的「+ 添加值」开始。</p>
+{{end}}
+<div class="attr-value-table">
+    <div class="attr-value-head" aria-hidden="true">
+        <span class="attr-value-idx">#</span>
+        <span>标识</span>
+        <span>显示名</span>
+        <span>排序</span>
+        <span>状态</span>
+        <span class="attr-value-op">操作</span>
+    </div>
+    {{range i, v := .Rows}}
+    <div class="attr-value-row">
+        <span class="attr-value-idx">{{i}}</span>
+        <input type="hidden" name="values[{{i}}].id" value="{{v.ID}}">
+        <input type="text" name="values[{{i}}].key" value="{{v.Key}}" placeholder="留空自动生成" autocomplete="off">
+        <input type="text" name="values[{{i}}].label" value="{{v.Label}}" placeholder="如 红色 / S" required>
+        <input type="number" name="values[{{i}}].sort" value="{{v.Sort}}" placeholder="0" inputmode="numeric" step="1">
+        <label class="attr-switch">
+            <input type="hidden" name="values[{{i}}].enabled" value="0">
+            <input type="checkbox" name="values[{{i}}].enabled" value="1" {{if v.Enabled}}checked{{end}}> 启用
+        </label>
+        <span class="attr-value-op">
+            <button type="button" class="btn btn-sm" formaction="/admin/product-attributes/value-rows" formmethod="post"
+                    hx-post="/admin/product-attributes/value-rows" hx-vals='{"action":"remove","removeIndex":"{{i}}"}'
+                    hx-include="{{target}}" hx-target="{{target}}" hx-swap="innerHTML">删除</button>
+        </span>
+    </div>
+    {{end}}
+</div>
+<button type="button" class="btn btn-sm" formaction="/admin/product-attributes/value-rows" formmethod="post"
+        hx-post="/admin/product-attributes/value-rows" hx-vals='{"action":"add"}'
+        hx-include="{{target}}" hx-target="{{target}}" hx-swap="innerHTML">+ 添加值</button>

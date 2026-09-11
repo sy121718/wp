@@ -29,6 +29,9 @@ type ProductEntity struct {
 	SEOTitle            string          `gorm:"column:seo_title;type:text;not null"`
 	SEODescription      string          `gorm:"column:seo_description;type:text;not null"`
 	Images              json.RawMessage `gorm:"column:images;type:jsonb;not null"`
+	// AttributeIDs 引用的属性组 id 数组（issue #7：同一属性组可被多个商品复用，
+	// 商品侧只存引用，组与值的定义只存在一份）。
+	AttributeIDs        json.RawMessage `gorm:"column:attribute_ids;type:jsonb;not null"`
 	CategoryIDs         json.RawMessage `gorm:"column:category_ids;type:jsonb;not null"`
 	TagIDs              json.RawMessage `gorm:"column:tag_ids;type:jsonb;not null"`
 	RelatedIDs          json.RawMessage `gorm:"column:related_ids;type:jsonb;not null"`

@@ -33,5 +33,14 @@ func SetupProductRoutes(rg *gin.RouterGroup, db *gorm.DB, project projectcontrac
 	g.POST("/variant/create", handle.CreateVariant)
 	g.POST("/variant/update", handle.UpdateVariant)
 	g.POST("/variant/delete", handle.DeleteVariant)
+
+	// 属性组与属性值（issue #7）：属性组可跨商品复用，故独立于商品资源。
+	// 属性值用 set-values 整体保存（全量替换），比逐行接口少一半请求、也避免半截状态。
+	g.GET("/attribute/list", handle.ListAttributes)
+	g.GET("/attribute/get", handle.GetAttribute)
+	g.POST("/attribute/create", handle.CreateAttribute)
+	g.POST("/attribute/update", handle.UpdateAttribute)
+	g.POST("/attribute/set-values", handle.SetAttributeValues)
+	g.POST("/attribute/delete", handle.DeleteAttribute)
 	return svc
 }

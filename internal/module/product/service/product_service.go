@@ -85,6 +85,11 @@ func (s *Service) Create(ctx context.Context, req *productdto.CreateReq) (res *p
 		return nil, errors.New(productenums.ErrSlugTaken)
 	}
 
+	// 属性引用先校验再落库（同一工程内 + 必须存在，见 resolveAttributeIDs）。
+	attributeIDs, err := s.resolveAttributeIDs(ctx, projectID, req.AttributeIDs)
+	if err != nil {
+		return nil, err
+	}
 	e := &productmodel.ProductEntity{
 		ID: uuid.NewString(), ProjectID: projectID,
 		Name: strings.TrimSpace(req.Name), Subtitle: req.Subtitle,
@@ -92,8 +97,9 @@ func (s *Service) Create(ctx context.Context, req *productdto.CreateReq) (res *p
 		Status: productenums.StatusDraft,
 		Unit:   req.Unit, Weight: req.Weight,
 		SEOTitle: req.SEOTitle, SEODescription: req.SEODescription,
-		Images: orJSONList(req.Images), CategoryIDs: orIDList(req.CategoryIDs),
-		TagIDs: orIDList(req.TagIDs), RelatedIDs: orIDList(req.RelatedIDs),
+		Images: orJSONList(req.Images), AttributeIDs: orJSONList(attributeIDs),
+		CategoryIDs: orIDList(req.CategoryIDs),
+		TagIDs:      orIDList(req.TagIDs), RelatedIDs: orIDList(req.RelatedIDs),
 		BundleItems:  orJSON(req.BundleItems, "[]"),
 		DefaultImage: req.DefaultImage,
 		DefaultPrice: req.DefaultPrice,
@@ -162,6 +168,13 @@ func (s *Service) Update(ctx context.Context, req *productdto.UpdateReq) (res *p
 	if req.Images != nil {
 		e.Images = orJSONList(req.Images)
 	}
+	if req.AttributeIDs != nil {
+		ids, aerr := s.resolveAttributeIDs(ctx, e.ProjectID, req.AttributeIDs)
+		if aerr != nil {
+			return nil, aerr
+		}
+		e.AttributeIDs = orJSONList(ids)
+	}
 	if req.CategoryIDs != nil {
 		e.CategoryIDs = orIDList(req.CategoryIDs)
 	}
@@ -228,9 +241,16 @@ func (s *Service) List(ctx context.Context, req *productdto.ListReq) (list []*pr
 	for _, v := range variants {
 		byProduct[v.ProductID] = append(byProduct[v.ProductID], v)
 	}
+	// 属性组按 id 全局去重后批量取一次：多个商品引用同一组时只查一次（复用语义）。
+	attrs, err := s.attributeRespByProduct(ctx, rows)
+	if err != nil {
+		return nil, err
+	}
 	list = make([]*productdto.ProductResp, 0, len(rows))
 	for _, r := range rows {
 		resp := s.toListResp(r)
+		resp.AttributeIDs = decodeStrings(r.AttributeIDs)
+		resp.Attributes = attrs[r.ID]
 		applyPriceRange(resp, byProduct[r.ID])
 		list = append(list, resp)
 	}
@@ -246,6 +266,52 @@ func (s *Service) Delete(ctx context.Context, req *productdto.DeleteReq) (err er
 		return mapNotFound(gerr)
 	}
 	return s.m.Delete(ctx, req.ID)
+}
+
+// attributeRespByProduct 批量取各商品引用的属性组（列表页专用，零 N+1）。
+//
+// products.attribute_ids 只存 id：多个商品可引用同一个属性组，定义只存一份。
+// 这里按 id 去重后一次性取回，再按商品拆分；引用已失效（组被删）时跳过，
+// 不让列表因为一条悬空引用整体失败。
+func (s *Service) attributeRespByProduct(ctx context.Context, products []*productmodel.ProductEntity) (out map[string][]*productdto.AttributeResp, err error) {
+	out = map[string][]*productdto.AttributeResp{}
+	idSet := map[string]bool{}
+	for _, p := range products {
+		for _, id := range decodeStrings(p.AttributeIDs) {
+			idSet[id] = true
+		}
+	}
+	if len(idSet) == 0 {
+		return out, nil
+	}
+	ids := make([]string, 0, len(idSet))
+	for id := range idSet {
+		ids = append(ids, id)
+	}
+	rows, lerr := s.m.ListAttributesByIDs(ctx, ids)
+	if lerr != nil {
+		return nil, lerr
+	}
+	byID := make(map[string]*productdto.AttributeResp, len(rows))
+	for _, r := range rows {
+		byID[r.ID] = toAttributeResp(r)
+	}
+	for _, p := range products {
+		refs := decodeStrings(p.AttributeIDs)
+		if len(refs) == 0 {
+			continue
+		}
+		items := make([]*productdto.AttributeResp, 0, len(refs))
+		for _, id := range refs {
+			if a, ok := byID[id]; ok {
+				items = append(items, a)
+			}
+		}
+		if len(items) > 0 {
+			out[p.ID] = items
+		}
+	}
+	return out, nil
 }
 
 // resolveProjectID 解析工程：显式指定优先，否则取唯一工程。
@@ -354,6 +420,7 @@ func (s *Service) toResp(ctx context.Context, e *productmodel.ProductEntity) (re
 	resp.Weight = e.Weight
 	resp.SEOTitle = e.SEOTitle
 	resp.SEODescription = e.SEODescription
+	resp.AttributeIDs = decodeStrings(e.AttributeIDs)
 	resp.CategoryIDs = decodeStrings(e.CategoryIDs)
 	resp.TagIDs = decodeStrings(e.TagIDs)
 	resp.RelatedIDs = decodeStrings(e.RelatedIDs)
@@ -366,6 +433,12 @@ func (s *Service) toResp(ctx context.Context, e *productmodel.ProductEntity) (re
 	}
 	for _, v := range variants {
 		resp.Variants = append(resp.Variants, toVariantResp(v))
+	}
+	// 引用到的属性组（组 + 值），供后台与详情页直接渲染规格选择器。
+	if groups, aerr := s.attributeRespByProduct(ctx, []*productmodel.ProductEntity{e}); aerr != nil {
+		return nil, aerr
+	} else {
+		resp.Attributes = groups[e.ID]
 	}
 	applyPriceRange(resp, variants)
 	return resp, nil

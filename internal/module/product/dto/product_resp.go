@@ -18,6 +18,8 @@ type ProductResp struct {
 	SEOTitle       string          `json:"seoTitle"`
 	SEODescription string          `json:"seoDescription"`
 	Images         []string        `json:"images"`
+	// AttributeIDs 商品引用的属性组 id（issue #7）。
+	AttributeIDs   []string        `json:"attributeIds"`
 	CategoryIDs    []string        `json:"categoryIds"`
 	TagIDs         []string        `json:"tagIds"`
 	RelatedIDs     []string        `json:"relatedIds"`
@@ -32,6 +34,9 @@ type ProductResp struct {
 	// VariantCount 变体数量（单变体商品在前台不显示规格选择器）。
 	VariantCount int            `json:"variantCount"`
 	Variants     []*VariantResp `json:"variants,omitempty"`
+	// Attributes 商品引用的属性组（含值）—— 同一属性组可被多个商品复用，
+	// 这里返回的是共享定义本身，不是副本（issue #7）。
+	Attributes []*AttributeResp `json:"attributes,omitempty"`
 	CreatedAt    string         `json:"createdAt"`
 	UpdatedAt    string         `json:"updatedAt"`
 }
