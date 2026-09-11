@@ -1,0 +1,12 @@
+{* product_card.jet — core.productCard 商品卡组件（issue #22）：主图 + 标题 + 价格 + 划线价 + 标签 + 链接 *}
+{* 字段已在构建期静态填入（集合里取当前商品项，集合外取当前实体）；无值的节点一个都不输出 ——
+   空 div / 空 li / 无 alt 的图都会污染产物。卡片本身是 <article>，标题里的 <a> 提供语义化的点击与
+   键盘可达路径（不用 div + onclick 冒充链接）。 *}
+<article class="{{ .Classes }}"{{ if .CustomID }} id="{{ .CustomID }}"{{ end }}>
+{{ if .V.HasImage }}<a class="sky-product-card-media" href="{{ .V.Href }}" tabindex="-1" aria-hidden="true"><img src="{{ .V.ImageURL }}" alt="{{ .V.ImageAlt }}" loading="lazy" decoding="async"></a>{{ end }}
+<div class="sky-product-card-body">
+{{ if .V.HasTitle }}<{{ .V.TitleTag }} class="sky-product-card-title">{{ if .V.Href }}<a href="{{ .V.Href }}">{{ .V.Title }}</a>{{ else }}{{ .V.Title }}{{ end }}</{{ .V.TitleTag }}>{{ end }}
+{{ if .V.HasPrice }}<div class="sky-product-card-price-row"><span class="sky-product-card-price">{{ .V.Price }}</span>{{ if .V.HasComparePrice }}<span class="sky-product-card-compare">{{ .V.ComparePrice }}</span>{{ end }}</div>{{ end }}
+{{ if len(.V.Tags) > 0 }}<ul class="sky-product-card-tags">{{ range _, tag := .V.Tags }}<li class="sky-product-card-tag">{{ tag }}</li>{{ end }}</ul>{{ end }}
+</div>
+</article>

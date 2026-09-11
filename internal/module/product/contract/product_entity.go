@@ -59,6 +59,10 @@ var fieldWhitelist = map[string][]string{
 		"price", "comparePrice", "priceRange", "minPrice", "maxPrice",
 		"options", "variants",
 		"related",
+		// tags 是标签展示名数组（issue #22：商品卡要显示标签）。
+		// 与 related 里的 tags 不是重复：related 给的是 {slug,name} 完整结构（要链到标签页），
+		// tags 只给名称数组（卡片上一行小标签），拿到的形状与用途都不同。
+		"tags",
 	},
 	EntityTypeCategory: {
 		"name", "slug", "description", "image",

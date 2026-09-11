@@ -40,6 +40,7 @@ import (
 	marqueePkg "go_wp/internal/builder/components/marquee"
 	navPkg "go_wp/internal/builder/components/nav"
 	productPkg "go_wp/internal/builder/components/product"
+	productcardPkg "go_wp/internal/builder/components/productcard"
 	progressPkg "go_wp/internal/builder/components/progress"
 	quotePkg "go_wp/internal/builder/components/quote"
 	ratingPkg "go_wp/internal/builder/components/rating"
@@ -157,6 +158,8 @@ func nodeViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeV
 		return progressViewOf(node, topLevel, ctx)
 	case productPkg.Type:
 		return productViewOf(node, topLevel, ctx)
+	case productcardPkg.Type:
+		return productCardViewOf(node, topLevel, ctx)
 	case ratingPkg.Type:
 		return ratingViewOf(node, topLevel, ctx)
 	case formPkg.Type:
@@ -442,6 +445,15 @@ func containerViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*
 // productViewOf 转换商品详情节点（字段经商品解析器静态填入，越界字段编译期报错）。
 func productViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeView, error) {
 	return contentAtomViewOf(node, topLevel, ctx, productPkg.Type, "product", productPkg.CompileCSS, productPkg.BuildView)
+}
+
+// productCardViewOf 转换商品卡节点（issue #22）。
+//
+// 与商品详情同一条链路（contentAtomViewOf）：字段经解析器静态填入 —— 在集合里解析器是
+// 集合项作用域（item.* 取当前商品），集合外是页面级解析器（product.* 取当前实体）。
+// 越界字段在编译期报错，不静默渲染成空卡。
+func productCardViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeView, error) {
+	return contentAtomViewOf(node, topLevel, ctx, productcardPkg.Type, "product_card", productcardPkg.CompileCSS, productcardPkg.BuildView)
 }
 
 // headingViewOf 转换 heading 节点（对应 core.Atom 基座的 Render 流程）。

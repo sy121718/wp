@@ -366,6 +366,7 @@ func productFieldValues(p *productmodel.ProductEntity, variants []*productmodel.
 		"options":      optionsJSON(p, attrs, loc),
 		"variants":     variantsJSON(variants),
 		"related":      relatedJSON(p, loc),
+		"tags":         tagsJSON(p, loc),
 	}
 	if len(variants) > 0 {
 		out["sku"] = variants[0].SKUCode
@@ -400,6 +401,34 @@ func productFieldValues(p *productmodel.ProductEntity, variants []*productmodel.
 		out["imageAlt"] = alts[0]
 	}
 	return out
+}
+
+// tagsJSON 商品标签的展示名数组（issue #22：商品卡要显示标签）。
+//
+// 形状是**字符串数组**而不是对象数组：卡片只需要展示名（slug 进筛选参数，
+// 不进卡片；要链到标签页的完整结构走 product.related）。展示名取译文（标签名
+// 可翻译，issue #12），无引用输出空数组 —— 组件据此不输出空壳节点。
+func tagsJSON(p *productmodel.ProductEntity, loc *relatedTexts) string {
+	names := make([]string, 0, 4)
+	if p == nil {
+		return "[]"
+	}
+	for _, id := range decodeStrings(p.TagIDs) {
+		row, ok := loc.tags[id]
+		if !ok {
+			continue
+		}
+		name := loc.name(productcontract.EntityTypeTag, id, "name", row.Name)
+		if strings.TrimSpace(name) == "" {
+			continue
+		}
+		names = append(names, name)
+	}
+	b, err := json.Marshal(names)
+	if err != nil {
+		return "[]"
+	}
+	return string(b)
 }
 
 // —— 关联实体（分类 / 品牌 / 标签 / 属性）的译文视图 ——

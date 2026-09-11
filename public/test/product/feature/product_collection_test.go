@@ -604,3 +604,48 @@ func assertPlanUsesIndex(t *testing.T, f *detailFixture, sql string, arg any, in
 		t.Fatalf("该谓词应能走索引 %s，实际计划：\n%s", indexName, joined)
 	}
 }
+
+// TestProductCollectionRelatedFieldsNotBlank 回归（issue #22 发现的 #9 遗留缺陷）：
+// 集合项的 related / tags / imageAlt 都由 ListForCollection 的投影列派生 ——
+// 漏取某一列会让对应字段**恒为空**：看起来像「这个商品没填」，实际是查询根本没取那一列。
+// 这条用例挂上分类 / 品牌 / 标签并填好图集 alt 后，再断言值真的到了集合项里。
+func TestProductCollectionRelatedFieldsNotBlank(t *testing.T) {
+	f := newDetailFixture(t)
+	if f == nil {
+		return
+	}
+	ctx := core.WithBuildProjectID(context.Background(), f.projectID)
+	pid := f.createProduct(t, "夏季衬衫", "summer-shirt", "", 99, 199)
+	cat := colCategory(t, f, "上衣", "tops")
+	brand := colBrand(t, f, "山系", "shanshan")
+	tag := colTag(t, f, "新品", "new-arrival")
+	colAttach(t, f, pid, []string{cat.ID}, &brand.ID, []string{tag.ID})
+	// 图集 alt 落在 images_alt 列上（与 images 逐位对应）。
+	if _, err := f.products.Update(ctx, &productdto.UpdateReq{
+		ID: pid, ImageAlts: []string{"蓝色衬衫", ""},
+	}); err != nil {
+		t.Fatalf("设置图集 alt 失败: %v", err)
+	}
+
+	items, err := f.products.ResolveCollection(ctx, productcontract.CollectionSourceProduct, nil)
+	if err != nil {
+		t.Fatalf("解析集合失败: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("应命中 1 个商品，实际 %d", len(items))
+	}
+	item := items[0]
+
+	if tags, _ := item["tags"].(string); !strings.Contains(tags, "新品") {
+		t.Fatalf("tags 不该为空（投影列漏取会让它恒为空）：%v", item["tags"])
+	}
+	related, _ := item["related"].(string)
+	for _, want := range []string{"tops", "shanshan", "new-arrival"} {
+		if !strings.Contains(related, want) {
+			t.Fatalf("related 应含 %s，实际 %s", want, related)
+		}
+	}
+	if alt, _ := item["imageAlt"].(string); alt != "蓝色衬衫" {
+		t.Fatalf("imageAlt 应取图集首张的 alt，实际 %q", alt)
+	}
+}

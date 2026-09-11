@@ -175,9 +175,14 @@ type CollectionFilter struct {
 // 条件以参数传入（CollectionFilter 的各个等值维度 / 分页），方法内不写死业务判断；
 // limit <= 0 表示不限条数。
 func (m *Model) ListForCollection(ctx context.Context, f CollectionFilter, limit, offset int) (list []*ProductEntity, err error) {
+	// 投影列必须覆盖集合项白名单里的全部字段来源：related（分类 / 品牌 / 标签）、
+	// tags、imageAlt / imageAlts（images_alt）都从这些列派生 —— 漏取任意一列，
+	// 对应的集合项字段就会**恒为空**（issue #22 排查商品卡标签时发现的 #9 遗留缺陷：
+	// 当时只取了列表展示需要的几列，白名单字段却已经放开了）。
 	q := m.DB(ctx).Select(
 		"id, project_id, name, subtitle, description, slug, status, sort, unit, " +
-			"images, attribute_ids, default_image, created_at, updated_at")
+			"images, images_alt, attribute_ids, category_ids, tag_ids, brand_id, related_ids, " +
+			"default_image, created_at, updated_at")
 	if f.ProjectID != "" {
 		q = q.Where("project_id = ?", f.ProjectID)
 	}

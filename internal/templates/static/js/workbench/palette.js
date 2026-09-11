@@ -47,13 +47,17 @@ export const paletteItems = [
     { type: 'core.form', label: '表单', hint: '联系/订阅表单', props: { fields: [{ type: 'text', label: '姓名', name: 'name', required: true }, { type: 'email', label: '邮箱', name: 'email', required: true }], submitLabel: '提交' } },
     // 商品详情（issue #6）：命名槽位声明需要的商品字段，构建期由商品解析器静态填入。
     // 默认槽位给到「商品详情页」的最小可用组合（标题/主图/价格/描述）。
-    { type: 'core.product', label: '商品详情', hint: '吃商品数据的详情组件', props: { source: 'product', titleField: 'product.name', subtitleField: 'product.subtitle', mediaField: 'product.defaultImage', galleryField: 'product.images', priceField: 'product.priceRange', descriptionField: 'product.description', currency: '¥', titleTag: 'h2' } }
+    { type: 'core.product', label: '商品详情', hint: '吃商品数据的详情组件', props: { source: 'product', titleField: 'product.name', subtitleField: 'product.subtitle', mediaField: 'product.defaultImage', galleryField: 'product.images', priceField: 'product.priceRange', descriptionField: 'product.description', currency: '¥', titleTag: 'h2' } },
+    // 商品卡（issue #22）：默认用 item. 前缀 —— 拖进集合组件（商品列表 / cardstack）即成为
+    // 「每个商品一张卡」的模板；单独放在页面上时把前缀换成 product. 就绑当前商品实体。
+    // 价格用 priceRange（区间），划线价用 comparePrice，标签用 tags（名称数组）。
+    { type: 'core.productCard', label: '商品卡', hint: '吃商品数据的最小展示单元（可作集合卡模板）', props: { imageField: 'item.images', titleField: 'item.name', priceField: 'item.priceRange', comparePriceField: 'item.comparePrice', tagsField: 'item.tags', linkField: 'item.slug', linkPrefix: '/products/', currency: '¥', titleTag: 'h3' } }
 ];
 
 /** 组件库分组：基础组件大分类平铺（细分类留给进阶组件，当前无进阶内容）；
  *  「区块」概念归全局块（页眉/页脚/区块）。 */
 export const paletteGroups = [
-    { key: 'basic', title: '基础组件', types: ['core.container', 'core.heading', 'core.text', 'core.button', 'core.image', 'core.gallery', 'core.divider', 'core.spacer', 'core.slider', 'core.list', 'core.infobox', 'core.social_buttons', 'core.video', 'core.nav', 'core.languages', 'core.tabs', 'core.accordion', 'core.marquee', 'core.counter', 'core.table', 'core.card', 'core.cardstack', 'core.faq', 'core.quote', 'core.countdown', 'core.icon', 'core.badge', 'core.progress', 'core.rating', 'core.form', 'core.product'] }
+    { key: 'basic', title: '基础组件', types: ['core.container', 'core.heading', 'core.text', 'core.button', 'core.image', 'core.gallery', 'core.divider', 'core.spacer', 'core.slider', 'core.list', 'core.infobox', 'core.social_buttons', 'core.video', 'core.nav', 'core.languages', 'core.tabs', 'core.accordion', 'core.marquee', 'core.counter', 'core.table', 'core.card', 'core.cardstack', 'core.faq', 'core.quote', 'core.countdown', 'core.icon', 'core.badge', 'core.progress', 'core.rating', 'core.form', 'core.product', 'core.productCard'] }
 ];
 
 /**
