@@ -136,6 +136,12 @@ type CompiledPage struct {
 	CSS string
 	// ThemeVarsCSS 主题变量块（:root --sky-*，注入 <style> 顶部；空=无主题）。
 	ThemeVarsCSS string
+	// EnhanceSource 客户端增强脚本源码（未裁剪的整份，来自 WithEnhanceSource）。
+	//
+	// 这里存的是**源码**而不是裁剪结果：裁剪要按产物 HTML 里的 data-* 特征来挑块，
+	// 而 HTML 是 Compile 的产物 —— 放在渲染阶段算，正好拿到最终 HTML。
+	// 空值表示调用方未注入：RenderDocument 会输出空增强（页面照常渲染，仅失去交互）。
+	EnhanceSource string
 }
 
 // CompileOption 编译选项。
@@ -168,6 +174,13 @@ type compileConfig struct {
 	// extraCSS 插件静态样式（插件包 assets/*.css，构建期注入主 CSS 之后；
 	// docs/06 §5.1 资产规范——复杂动画/特殊结构不在引擎内表达时由插件自带）。
 	extraCSS string
+	// enhanceSource 客户端增强脚本源码（构建期按产物特征裁剪后内联进产物）。
+	//
+	// 由调用方注入而不是 builder 自己 embed：前端资产统一放在 internal/templates/static/，
+	// 一份源文件两个出口（运行时经 /static 给后台页面、构建期经此处内联进静态产物）；
+	// 而 builder 不依赖 internal/templates（后者含 gin 依赖），所以只能走注入
+	//（与 WithComponentSet 同一条路子）。为空时产物不含增强，交互降级但不影响渲染。
+	enhanceSource string
 }
 
 // WithContentResolver 注入 CMS 内容解析器（构建期动态绑定静态填入，规范 docs/02-C1）。
@@ -241,6 +254,14 @@ func WithCurrentPath(path string) CompileOption {
 // 组件经 var(--sky-c-*) 引用——主题系统真正生效到产物）。
 func WithThemeSettings(t *ThemeSettings) CompileOption {
 	return func(c *compileConfig) { c.theme = t }
+}
+
+// WithEnhanceSource 注入客户端增强脚本源码（internal/templates 的 StaticJS("enhance.js")）。
+//
+// 不注入时产物不含增强：页面照样渲染，只是轮播/灯箱/卡片环等失去交互。
+// 调用方（page service）在装配编译选项时注入；缺失会由增强装配处告警，不静默。
+func WithEnhanceSource(js string) CompileOption {
+	return func(c *compileConfig) { c.enhanceSource = js }
 }
 
 // WithContext 注入请求上下文：构建期集合/内容解析器查库时传播（超时取消）。
@@ -588,6 +609,7 @@ func Compile(p *Page, opts ...CompileOption) (res *CompiledPage, err error) {
 		HTML:            htmlBuf.String(),
 		CSS:             css,
 		ThemeVarsCSS:    ThemeVarsCSS(cfg.theme),
+		EnhanceSource:   cfg.enhanceSource,
 	}, nil
 }
 
@@ -613,7 +635,7 @@ func RenderDocument(c *CompiledPage) (string, error) {
 		HTML:            c.HTML,
 		CSS:             c.CSS,
 		ThemeVarsCSS:    c.ThemeVarsCSS,
-		EnhanceScript:   enhanceScriptFor(c.HTML),
+		EnhanceScript:   enhanceScriptFor(c.HTML, c.EnhanceSource),
 	}
 	var sb strings.Builder
 	if err := documentTemplate().Execute(&sb, nil, v); err != nil {
@@ -660,6 +682,3 @@ func documentTemplate() *jet.Template {
 
 //go:embed document.jet
 var documentJetSrc string
-
-//go:embed enhance.js
-var enhanceScript string

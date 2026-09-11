@@ -13,6 +13,8 @@ package builder
 import (
 	"regexp"
 	"strings"
+
+	"go_wp/pkg/logger"
 )
 
 // enhanceBlock 一个可独立注入的增强块。
@@ -46,7 +48,13 @@ var scriptTagRe = regexp.MustCompile("(?s)<script[^>]*>.*?</script>")
 // 八个增强的触发特征全部登记在 enhanceBlocks 里，所以「一个都没命中」= 页面确实不需要
 // 任何增强（纯内容页），此时只注入框架骨架 + 空的 onReady 调用。
 // 新增增强时必须同时登记特征 —— 漏登记会让用到它的页面静默失去交互。
-func enhanceScriptFor(html string) string {
+func enhanceScriptFor(html, src string) string {
+	if strings.TrimSpace(src) == "" {
+		// 未注入增强源码：产物不含交互脚本（页面照常渲染）。不静默——装配层漏注入
+		// 会让「轮播不能拖、灯箱点不开」这类问题在产物里无声发生，所以这里留痕。
+		logger.Scene("build").Warn("未注入客户端增强源码（WithEnhanceSource），产物将不含交互脚本")
+		return ""
+	}
 	probe := scriptTagRe.ReplaceAllString(html, "")
 
 	want := make(map[string]bool, len(enhanceBlocks))
@@ -58,12 +66,12 @@ func enhanceScriptFor(html string) string {
 			}
 		}
 	}
-	return assembleEnhance(want)
+	return assembleEnhance(want, src)
 }
 
 // assembleEnhance 保留头部、命中的块、以及只引用命中函数的 onReady 调用段。
-func assembleEnhance(want map[string]bool) string {
-	head, blocks, tail := splitEnhance(enhanceScript)
+func assembleEnhance(want map[string]bool, src string) string {
+	head, blocks, tail := splitEnhance(src)
 
 	var sb strings.Builder
 	sb.WriteString(head)

@@ -34,6 +34,9 @@ func TestRenderDocumentGolden(t *testing.T) {
 		HTML:            `<section class="sky-c-hero sky-section"><h1 class="sky-heading">Hello &amp; World</h1></section>`,
 		CSS:             `.sky-c-hero{display:grid;max-width:1200px}`,
 		ThemeVarsCSS:    `:root{--sky-c-primary:#3366ff;--sky-c-bg:#ffffff}`,
+		// 增强源码现在由调用方注入（builder 不再自己 embed）；这里按真实调用方式给值，
+		// 才能让 golden 继续守住「增强脚本进产物且不被二次转义」这条契约。
+		EnhanceSource: enhanceSrcForTest(t),
 	}
 	got, err := RenderDocument(c)
 	if err != nil {

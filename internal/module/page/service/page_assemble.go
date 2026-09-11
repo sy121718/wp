@@ -102,6 +102,8 @@ func (s *Service) compileDocument(ctx context.Context, page *builder.Page, proje
 	// 不影响本次产物字节（确定性构建不变量，docs/06-D §2.3/§12）。
 	opts := []builder.CompileOption{
 		builder.WithContext(ctx), builder.WithBlockResolver(resolver), builder.WithComponentSet(set),
+		// 客户端增强脚本（轮播/灯箱/卡片环…）：构建期按产物特征裁剪后内联。
+		builder.WithEnhanceSource(enhanceSource()),
 		builder.WithLanguage(lang), builder.WithTranslator(i18n.Snapshot(lang)),
 	}
 	if asm != nil {

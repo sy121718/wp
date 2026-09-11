@@ -7,14 +7,30 @@ package builder
 // 本用例守住「按特征裁剪」与「漏登记特征」两条边界。
 
 import (
+	"os"
 	"strings"
 	"testing"
 )
 
+// enhanceSrcForTest 读取增强脚本源码。
+//
+// 源码已挪到 internal/templates/static/js/（运行时资产目录，构建期由装配层注入给
+// builder）；builder 不依赖 templates 包，测试里按仓库相对路径读真源码 ——
+// 这样测的是「真实文件能否被正确裁剪」，而不是随手造的一段假源码。
+func enhanceSrcForTest(t *testing.T) string {
+	t.Helper()
+	b, err := os.ReadFile("../templates/static/js/enhance.js")
+	if err != nil {
+		t.Fatalf("读取增强脚本失败: %v", err)
+	}
+	return string(b)
+}
+
 // TestEnhanceScriptForPlainPage 纯内容页：只注入框架骨架。
 func TestEnhanceScriptForPlainPage(t *testing.T) {
+	src := enhanceSrcForTest(t)
 	html := "<section class=\"sky-c-h sky-section\"><h1>纯内容</h1></section>"
-	got := enhanceScriptFor(html)
+	got := enhanceScriptFor(html, src)
 	if len(got) > 2000 {
 		t.Errorf("纯内容页不该带增强，got %d 字节", len(got))
 	}
@@ -33,8 +49,9 @@ func TestEnhanceScriptForPlainPage(t *testing.T) {
 
 // TestEnhanceScriptForSlidePage 只用 slide：只带 slide 增强。
 func TestEnhanceScriptForSlidePage(t *testing.T) {
+	src := enhanceSrcForTest(t)
 	html := "<div class=\"sky-cardstack\" data-cardstack-slide=\"\"><div data-cardstack-track></div></div>"
-	got := enhanceScriptFor(html)
+	got := enhanceScriptFor(html, src)
 	if !strings.Contains(got, "function initSlideStacks") {
 		t.Errorf("slide 页缺少 initSlideStacks")
 	}
@@ -55,8 +72,9 @@ func TestEnhanceScriptForSlidePage(t *testing.T) {
 // TestEnhanceScriptIgnoresSelfReference 特征扫描必须剥掉 script 块。
 // 否则内联的 enhance.js 源码含全部 data-* 字样，会把每个特征都"检测"出来，等于没裁。
 func TestEnhanceScriptIgnoresSelfReference(t *testing.T) {
-	html := "<h1>纯内容</h1><script>" + enhanceScript + "</script>"
-	got := enhanceScriptFor(html)
+	src := enhanceSrcForTest(t)
+	html := "<h1>纯内容</h1><script>" + src + "</script>"
+	got := enhanceScriptFor(html, src)
 	if strings.Contains(got, "function initSliders") {
 		t.Errorf("script 块内的源码把自己检测出来了，裁剪失效")
 	}
@@ -64,8 +82,9 @@ func TestEnhanceScriptIgnoresSelfReference(t *testing.T) {
 
 // TestEnhanceScriptMulti 多个交互组件共存：都要注入。
 func TestEnhanceScriptMulti(t *testing.T) {
+	src := enhanceSrcForTest(t)
 	html := "<div data-slider data-cardstack-deck data-counter></div>"
-	got := enhanceScriptFor(html)
+	got := enhanceScriptFor(html, src)
 	for _, fn := range []string{"initSliders", "initCardDecks", "initCounters"} {
 		if !strings.Contains(got, fn) {
 			t.Errorf("多组件页缺少 %s", fn)

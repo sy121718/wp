@@ -17,7 +17,10 @@ tmp_dir = "tmp"
   cmd = "go build -o ./tmp/gowp-dev ./cmd/main.go"
   bin = "./tmp/gowp-dev"
   delay = 500                       # 聚合连续改动，避免编辑时反复编译
-  include_ext = ["go", "jet", "html", "yaml"]
+  # js/css 也监听：前端资产（static/js/enhance.js 等）现在同时是构建期输入
+  # （构建期 embed 进二进制后内联进产物）。不监听会出现「改了磁盘文件、后台立刻生效、
+  # 但产物还是旧版」的错觉，所以宁可多编译一次。
+  include_ext = ["go", "jet", "html", "yaml", "js", "css"]
   include_dir = []
   exclude_dir = [
     "tmp", ".git", ".code-review-graph", "docs", "node_modules",
