@@ -162,6 +162,9 @@ var productTablesSQL string
 //go:embed 082_product_permissions.sql
 var productPermsSQL string
 
+//go:embed 083_product_variant_options_unique.sql
+var productVariantOptionsUniqueSQL string
+
 //go:embed 073_blueprint_ddl_align.sql
 var blueprintDDLAlignSQL string
 
@@ -450,6 +453,22 @@ func init() {
 		TableName:    "sys_permission",
 		ConditionSQL: "SELECT COUNT(*) FROM sys_permission WHERE permission_code = 'content:collections'",
 		SQL:          contentCollectionsPermSQL,
+	})
+
+	// 083：修正 product_variants 的规格组合唯一约束（改部分唯一索引）。
+	// 按「索引已存在且旧约束已消失」判定跳过。
+	register(Migration{
+		Version:   "083-product-variant-options-unique",
+		TableName: "product_variants",
+		CheckSQL: `SELECT COUNT(*) FROM pg_indexes i
+			WHERE i.schemaname = current_schema() AND i.tablename = ?
+			  AND i.indexname = 'uq_product_variants_product_options'
+			  AND NOT EXISTS (
+			      SELECT 1 FROM pg_constraint c
+			      WHERE c.conrelid = 'product_variants'::regclass
+			        AND c.conname = 'product_variants_product_id_option_values_key'
+			  )`,
+		SQL: productVariantOptionsUniqueSQL,
 	})
 
 	// 082：商品域权限点 + 超管策略（issue #5）。

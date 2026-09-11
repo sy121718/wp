@@ -126,10 +126,14 @@ CREATE TABLE IF NOT EXISTS product_variants (
     metadata         jsonb NOT NULL DEFAULT '{}'::jsonb,
     created_at       timestamptz NOT NULL DEFAULT now(),
     updated_at       timestamptz NOT NULL DEFAULT now(),
-    UNIQUE (product_id, sku_code),
-    UNIQUE (product_id, option_values)
+    UNIQUE (product_id, sku_code)
 );
 CREATE INDEX IF NOT EXISTS idx_product_variants_product ON product_variants(product_id);
+-- 规格组合唯一只对「有规格」的变体生效：空组合 {} 允许多行（手工新增的变体、
+-- 尚未生成规格的首个变体都落在这一档，用普通唯一约束会直接把它们挡掉）。
+CREATE UNIQUE INDEX IF NOT EXISTS uq_product_variants_product_options
+    ON product_variants(product_id, option_values)
+    WHERE option_values <> '{}'::jsonb;
 
 COMMENT ON TABLE products IS '商品主体（issue #5；价格与库存在变体上）';
 COMMENT ON TABLE product_variants IS '商品变体 / SKU（一行一个；stock_total 为仓库真源的冗余缓存）';
