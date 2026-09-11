@@ -54,7 +54,8 @@ func (h *productPageHandle) ProductAttributesPage(c *gin.Context) {
 			})
 		}
 	}
-	c.HTML(http.StatusOK, "admin/product_attributes.html", gin.H{
+	// withCSRF：注入 csrf_token（POST 表单隐藏域）+ 导航树 + 权限码 + 多语言。
+	c.HTML(http.StatusOK, "admin/product_attributes.html", withCSRF(c, gin.H{
 		"title":           "商品属性",
 		"menu":            "product-attributes",
 		"Projects":        projects,
@@ -62,7 +63,7 @@ func (h *productPageHandle) ProductAttributesPage(c *gin.Context) {
 		"Attributes":      rows,
 		"NewRowsCtx":      attrRowsCtx{GroupID: "new", Rows: nil},
 		"Err":             strings.TrimSpace(c.Query("err")),
-	})
+	}))
 }
 
 // ProductAttributesValueRows 值编辑器片段：add / remove 一次，回渲染整段行列表。

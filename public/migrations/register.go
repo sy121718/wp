@@ -195,6 +195,15 @@ var productTaxonomyPermsSQL string
 //go:embed 090_product_taxonomy_menu.sql
 var productTaxonomyMenuSQL string
 
+//go:embed 091_product_tags.sql
+var productTagsSQL string
+
+//go:embed 092_product_tag_permissions.sql
+var productTagPermsSQL string
+
+//go:embed 093_product_tag_menu.sql
+var productTagMenuSQL string
+
 //go:embed 073_blueprint_ddl_align.sql
 var blueprintDDLAlignSQL string
 
@@ -539,6 +548,39 @@ func init() {
 		TableName:    "sys_menus",
 		ConditionSQL: "SELECT CASE WHEN COUNT(*) = 2 THEN 1 ELSE 0 END FROM sys_menus WHERE title IN ('商品分类', '商品品牌') AND type = 2 AND deleted_time IS NULL",
 		SQL:          productTaxonomyMenuSQL,
+	})
+
+	// 091：商品标签规则化（issue #11）—— product_tags 由 081 建好、products 早已存在，
+	// 本迁移补 published_at（新品规则的时间基准）/ recalc_at（重算时间）+ 规则形状约束。
+	// 两张表都早已存在，默认「表存在即跳过」必然误跳过，故按列是否存在判定：
+	// 恰好一个 ? 参数（products），另一张表用字面量表名（与 070 同一手法）。
+	register(Migration{
+		Version:   "091-product-tags",
+		TableName: "products",
+		CheckSQL: "SELECT CASE WHEN COUNT(*) = 2 THEN 1 ELSE 0 END FROM information_schema.columns " +
+			"WHERE table_schema = current_schema() AND table_name IN (?, 'product_tags') " +
+			"AND column_name IN ('published_at', 'recalc_at')",
+		SQL: productTagsSQL,
+	})
+
+	// 092：标签权限点 + 超管策略（issue #11）。
+	// 条件只看本票自己的权限点，与 082 的宽匹配（product:%）互不干扰。
+	registerSeed(Seed{
+		Version:   "092-product-tag-permissions",
+		TableName: "sys_permission",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) = 8 THEN 1 ELSE 0 END FROM sys_permission WHERE permission_code IN (" +
+			"'product:tag_list', 'product:tag_get', 'product:tag_products', 'product:tag_rule_types', " +
+			"'product:tag_create', 'product:tag_update', 'product:tag_delete', 'product:tag_recalc')",
+		SQL: productTagPermsSQL,
+	})
+
+	// 093：标签后台菜单（issue #11）。须在 084（商品管理菜单）之后执行，
+	// 否则父菜单还不存在，COALESCE 会把入口落到顶级。
+	registerSeed(Seed{
+		Version:      "093-product-tag-menu",
+		TableName:    "sys_menus",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) = 1 THEN 1 ELSE 0 END FROM sys_menus WHERE title = '商品标签' AND type = 2 AND deleted_time IS NULL",
+		SQL:          productTagMenuSQL,
 	})
 
 	// 086：商品属性组与属性值（issue #7）—— product_attributes 由 081 建好，

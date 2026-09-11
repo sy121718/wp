@@ -43,7 +43,8 @@ func (h *productPageHandle) ProductCategoriesPage(c *gin.Context) {
 			"SEOTitle": node.SEOTitle, "SEODescription": node.SEODescription,
 		})
 	}
-	c.HTML(http.StatusOK, "admin/product_categories.html", gin.H{
+	// withCSRF：注入 csrf_token（POST 表单隐藏域）+ 导航树 + 权限码 + 多语言。
+	c.HTML(http.StatusOK, "admin/product_categories.html", withCSRF(c, gin.H{
 		"title":           "商品分类",
 		"menu":            "product-categories",
 		"Projects":        projects,
@@ -52,7 +53,7 @@ func (h *productPageHandle) ProductCategoriesPage(c *gin.Context) {
 		// 父级下拉选项：扁平列表 + 缩进标签（模板里排除自身，避免明显的自环提交）。
 		"Options": categoryPickOptions(flat),
 		"Err":     strings.TrimSpace(c.Query("err")),
-	})
+	}))
 }
 
 // ProductCategoriesCreate 新建分类。
@@ -126,14 +127,14 @@ func (h *productPageHandle) ProductBrandsPage(c *gin.Context) {
 		c.String(http.StatusInternalServerError, err.Error())
 		return
 	}
-	c.HTML(http.StatusOK, "admin/product_brands.html", gin.H{
+	c.HTML(http.StatusOK, "admin/product_brands.html", withCSRF(c, gin.H{
 		"title":           "商品品牌",
 		"menu":            "product-brands",
 		"Projects":        projects,
 		"SelectedProject": selected,
 		"Brands":          brands,
 		"Err":             strings.TrimSpace(c.Query("err")),
-	})
+	}))
 }
 
 // ProductBrandsCreate 新建品牌。

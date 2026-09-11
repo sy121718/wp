@@ -5,19 +5,22 @@ import "encoding/json"
 
 // ProductResp 商品详情（含变体列表）。
 type ProductResp struct {
-	ID             string          `json:"id"`
-	ProjectID      string          `json:"projectId"`
-	Name           string          `json:"name"`
-	Subtitle       string          `json:"subtitle"`
-	Description    json.RawMessage `json:"description"`
-	Slug           string          `json:"slug"`
-	Status         string          `json:"status"`
-	Sort           int             `json:"sort"`
-	Unit           string          `json:"unit"`
-	Weight         *float64        `json:"weight"`
-	SEOTitle       string          `json:"seoTitle"`
-	SEODescription string          `json:"seoDescription"`
-	Images         []string        `json:"images"`
+	ID          string          `json:"id"`
+	ProjectID   string          `json:"projectId"`
+	Name        string          `json:"name"`
+	Subtitle    string          `json:"subtitle"`
+	Description json.RawMessage `json:"description"`
+	Slug        string          `json:"slug"`
+	Status      string          `json:"status"`
+	// PublishedAt 上架时间（issue #11，RFC3339；未上架为空串）：
+	// 自动标签的「新品」规则以它为判定基准。
+	PublishedAt    string   `json:"publishedAt"`
+	Sort           int      `json:"sort"`
+	Unit           string   `json:"unit"`
+	Weight         *float64 `json:"weight"`
+	SEOTitle       string   `json:"seoTitle"`
+	SEODescription string   `json:"seoDescription"`
+	Images         []string `json:"images"`
 	// AttributeIDs 商品引用的属性组 id（issue #7）。
 	AttributeIDs []string `json:"attributeIds"`
 	CategoryIDs  []string `json:"categoryIds"`

@@ -132,6 +132,10 @@ func (s *Service) GenerateVariants(ctx context.Context, req *productdto.Generate
 		return nil, err
 	}
 	res.Created = len(created)
+	// 重算时机之一：变体写操作后 —— 组合生成会新建一整批变体，价格整体变化。
+	if err = s.recalcProjectAutoTags(ctx, p.ID); err != nil {
+		return nil, err
+	}
 
 	after, rerr := s.m.ListVariants(ctx, p.ID)
 	if rerr != nil {

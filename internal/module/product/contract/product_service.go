@@ -54,6 +54,24 @@ type ProductService interface {
 	ListBrands(ctx context.Context, req *productdto.ListBrandReq) (list []*productdto.BrandResp, err error)
 	DeleteBrand(ctx context.Context, req *productdto.DeleteBrandReq) (err error)
 
+	// 标签（issue #11）：手工标签与自动标签同表（kind 区分）。
+	//   · 手工标签可建、可手工挂到商品（引用校验同分类/品牌：同工程 + 必须存在）；
+	//   · 自动标签只接受内置规则类型与白名单参数，不接受自由表达式，非法规则被拒绝；
+	//   · 自动标签的归属由明确定义的重算时机维护（商品/变体写操作后、标签定义变更后、
+	//     显式调用），重算只替换自己那一个 tag id，绝不覆盖手工标签；
+	//   · GetTag / ListTagProducts 提供「某标签命中哪些商品」（后台核对用）。
+	CreateTag(ctx context.Context, req *productdto.CreateTagReq) (res *productdto.TagResp, err error)
+	UpdateTag(ctx context.Context, req *productdto.UpdateTagReq) (res *productdto.TagResp, err error)
+	GetTag(ctx context.Context, req *productdto.GetTagReq) (res *productdto.TagResp, err error)
+	ListTags(ctx context.Context, req *productdto.ListTagReq) (list []*productdto.TagResp, err error)
+	// ListTagProducts 某标签命中的商品（limit <= 0 用服务端默认上限）。
+	ListTagProducts(ctx context.Context, req *productdto.ListTagProductsReq) (list []*productdto.TagProductResp, err error)
+	DeleteTag(ctx context.Context, req *productdto.DeleteTagReq) (err error)
+	// ListTagRuleTypes 内置规则类型清单（后台规则下拉与参数说明的唯一来源）。
+	ListTagRuleTypes(ctx context.Context) (list []*productdto.TagRuleTypeResp)
+	// RecalcTags 手动触发重算：TagID 为空表示重算该工程下全部自动标签。
+	RecalcTags(ctx context.Context, req *productdto.RecalcTagsReq) (res *productdto.RecalcTagsResp, err error)
+
 	// RegisterEntityTypes 把本模块的实体类型（product）注册进实体类型注册表
 	// （装配期调用）。注册后内容模板与发布实例即可把商品作为数据源校验字段绑定，
 	// 构建期经注册表取商品字段解析器（不反向依赖本模块实现）。

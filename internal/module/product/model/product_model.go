@@ -16,13 +16,17 @@ import (
 
 // ProductEntity 商品主体。价格与库存在变体上；关联关系走 JSON 列。
 type ProductEntity struct {
-	ID             string          `gorm:"column:id;type:uuid;primaryKey"`
-	ProjectID      string          `gorm:"column:project_id;type:uuid;not null"`
-	Name           string          `gorm:"column:name;type:text;not null"`
-	Subtitle       string          `gorm:"column:subtitle;type:text;not null"`
-	Description    json.RawMessage `gorm:"column:description;type:jsonb;not null"`
-	Slug           string          `gorm:"column:slug;type:text;not null"`
-	Status         string          `gorm:"column:status;type:text;not null"`
+	ID          string          `gorm:"column:id;type:uuid;primaryKey"`
+	ProjectID   string          `gorm:"column:project_id;type:uuid;not null"`
+	Name        string          `gorm:"column:name;type:text;not null"`
+	Subtitle    string          `gorm:"column:subtitle;type:text;not null"`
+	Description json.RawMessage `gorm:"column:description;type:jsonb;not null"`
+	Slug        string          `gorm:"column:slug;type:text;not null"`
+	Status      string          `gorm:"column:status;type:text;not null"`
+	// PublishedAt 上架时间（issue #11）：最近一次进入 published 的时刻，由 service 在
+	// 状态转 published 时写入；自动标签的「新品」规则以它为判定基准（不用 created_at，
+	// 否则「建了草稿很久才上架」的商品会被误判成新品）。
+	PublishedAt    *time.Time      `gorm:"column:published_at"`
 	Sort           int             `gorm:"column:sort;not null"`
 	Unit           string          `gorm:"column:unit;type:text;not null"`
 	Weight         *float64        `gorm:"column:weight;type:numeric(12,3)"`

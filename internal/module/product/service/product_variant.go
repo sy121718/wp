@@ -41,6 +41,10 @@ func (s *Service) CreateVariant(ctx context.Context, req *productdto.CreateVaria
 	if err = s.m.CreateVariant(ctx, v); err != nil {
 		return nil, err
 	}
+	// 重算时机之一：变体写操作后 —— 价格 / 对比价参与自动标签规则判定。
+	if err = s.recalcProjectAutoTags(ctx, p.ID); err != nil {
+		return nil, err
+	}
 	return toVariantResp(v), nil
 }
 
@@ -95,6 +99,10 @@ func (s *Service) UpdateVariant(ctx context.Context, req *productdto.UpdateVaria
 	if err = s.m.UpdateVariant(ctx, v); err != nil {
 		return nil, err
 	}
+	// 重算时机之一：变体写操作后（改价格 / 改启用状态都会改自动标签归属）。
+	if err = s.recalcProjectAutoTags(ctx, v.ProductID); err != nil {
+		return nil, err
+	}
 	return toVariantResp(v), nil
 }
 
@@ -103,10 +111,15 @@ func (s *Service) DeleteVariant(ctx context.Context, req *productdto.DeleteVaria
 	if req == nil || req.ID == "" {
 		return errors.New(productenums.ErrInvalidParam)
 	}
-	if _, gerr := s.m.GetVariant(ctx, req.ID); gerr != nil {
+	v, gerr := s.m.GetVariant(ctx, req.ID)
+	if gerr != nil {
 		return mapNotFound(gerr)
 	}
-	return s.m.DeleteVariant(ctx, req.ID)
+	if err = s.m.DeleteVariant(ctx, req.ID); err != nil {
+		return err
+	}
+	// 重算时机之一：变体写操作后（删掉唯一命中价格区间的变体会让商品脱钩）。
+	return s.recalcProjectAutoTags(ctx, v.ProductID)
 }
 
 // newVariantFromDefaults 商品级默认值 → 新变体的**唯一填充入口**。

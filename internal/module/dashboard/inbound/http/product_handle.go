@@ -63,6 +63,13 @@ func (h *productPageHandle) ProductsPage(c *gin.Context) {
 		c.String(http.StatusInternalServerError, berr.Error())
 		return
 	}
+	// 标签一次取好（issue #11）：每个商品行要渲染「挂哪些手工标签 / 命中了哪些自动标签」，
+	// 放在循环里取会变成 N 次查询。
+	tags, terr := h.listTags(ctx, selected)
+	if terr != nil {
+		c.String(http.StatusInternalServerError, terr.Error())
+		return
+	}
 	if selected != "" {
 		list, lerr := h.products.List(ctx, &productdto.ListReq{ProjectID: selected, Size: 100})
 		if lerr != nil {
@@ -97,10 +104,17 @@ func (h *productPageHandle) ProductsPage(c *gin.Context) {
 				"BrandOptions":        brandPickOptions(brands, detail.BrandID),
 				"PrimaryCategoryName": categoryNameByID(flat, detail.PrimaryCategoryID),
 				"BrandName":           brandNameByID(brands, detail.BrandID),
+				// 标签（issue #11）：手工标签勾选挂载（勾选态服务端算好）；自动标签只读展示 ——
+				// 归属由规则重算维护，手工改会被下一次重算覆盖，故不提供勾选框。
+				"TagIDs":    detail.TagIDs,
+				"TagChecks": checkedTagOptions(tags, detail.TagIDs),
+				"AutoTags":  attachedAutoTags(tags, detail.TagIDs),
 			})
 		}
 	}
-	c.HTML(http.StatusOK, "admin/products.html", gin.H{
+	// withCSRF：注入 csrf_token（POST 表单隐藏域）+ 导航树 + 权限码 + 多语言，
+	// 与其它后台页面同一渲染入口（缺 token 时表单提交会被 CSRF 中间件挡下）。
+	c.HTML(http.StatusOK, "admin/products.html", withCSRF(c, gin.H{
 		"title":           "商品",
 		"menu":            "products",
 		"Projects":        projects,
@@ -108,7 +122,7 @@ func (h *productPageHandle) ProductsPage(c *gin.Context) {
 		"Products":        rows,
 		// 上一步的错误（上限拒绝 / 参数错误）经查询串回显 —— 同属性页的做法。
 		"Err": strings.TrimSpace(c.Query("err")),
-	})
+	}))
 }
 
 // variantRows 后台变体表的数据行：规格列把 option_values 翻成可读文本。

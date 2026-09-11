@@ -100,6 +100,11 @@ func (s *Service) Create(ctx context.Context, req *productdto.CreateReq) (res *p
 	if err != nil {
 		return nil, err
 	}
+	// 标签引用（issue #11）：手工标签才可手工挂载；自动标签由规则重算维护。
+	tagIDs, err := s.resolveTagIDs(ctx, projectID, req.TagIDs)
+	if err != nil {
+		return nil, err
+	}
 	e := &productmodel.ProductEntity{
 		ID: uuid.NewString(), ProjectID: projectID,
 		Name: strings.TrimSpace(req.Name), Subtitle: req.Subtitle,
@@ -111,7 +116,7 @@ func (s *Service) Create(ctx context.Context, req *productdto.CreateReq) (res *p
 		CategoryIDs:       orJSONList(categoryIDs),
 		PrimaryCategoryID: primaryCategoryID,
 		BrandID:           brandID,
-		TagIDs:            orIDList(req.TagIDs), RelatedIDs: orIDList(req.RelatedIDs),
+		TagIDs:            orIDList(tagIDs), RelatedIDs: orIDList(req.RelatedIDs),
 		BundleItems:  orJSON(req.BundleItems, "[]"),
 		DefaultImage: req.DefaultImage,
 		DefaultPrice: req.DefaultPrice,
@@ -121,6 +126,11 @@ func (s *Service) Create(ctx context.Context, req *productdto.CreateReq) (res *p
 	// 首个变体：由商品级默认值填充（新增路径）。
 	v := s.newVariantFromDefaults(e, nil)
 	if err = s.m.CreateWithVariants(ctx, e, []*productmodel.VariantEntity{v}); err != nil {
+		return nil, err
+	}
+	// 重算时机之一：商品写操作后 —— 新建商品若已满足某条自动规则（如价格区间），
+	// 立刻归位，不必等到下一次重算。
+	if err = s.recalcAutoTags(ctx, projectID); err != nil {
 		return nil, err
 	}
 	return s.toResp(ctx, e)
@@ -160,7 +170,14 @@ func (s *Service) Update(ctx context.Context, req *productdto.UpdateReq) (res *p
 		e.Description = req.Description
 	}
 	if req.Status != nil {
-		e.Status = *req.Status
+		newStatus := strings.TrimSpace(*req.Status)
+		// 上架时间（issue #11）：进入 published 时记录，作为自动标签「新品」规则的基准。
+		// 已是 published 的重复提交不刷新（否则改一次名字就把商品「重新上架」了）。
+		if newStatus == productenums.StatusPublished && e.Status != productenums.StatusPublished {
+			now := time.Now().UTC()
+			e.PublishedAt = &now
+		}
+		e.Status = newStatus
 	}
 	if req.Unit != nil {
 		e.Unit = *req.Unit
@@ -194,7 +211,14 @@ func (s *Service) Update(ctx context.Context, req *productdto.UpdateReq) (res *p
 		e.PrimaryCategoryID = primaryID
 	}
 	if req.TagIDs != nil {
-		e.TagIDs = orIDList(req.TagIDs)
+		// 手工标签引用先校验再落库（同一工程内 + 必须存在 + 必须手工标签）。
+		// 自动标签的归属由 recalcProjectAutoTags 在本次更新末尾重算，这里给的空数组
+		// 不会真的把它们摘掉。
+		ids, terr := s.resolveTagIDs(ctx, e.ProjectID, req.TagIDs)
+		if terr != nil {
+			return nil, terr
+		}
+		e.TagIDs = orIDList(ids)
 	}
 	if req.RelatedIDs != nil {
 		e.RelatedIDs = orIDList(req.RelatedIDs)
@@ -221,6 +245,10 @@ func (s *Service) Update(ctx context.Context, req *productdto.UpdateReq) (res *p
 	}
 	e.UpdatedAt = time.Now().UTC()
 	if err = s.m.Update(ctx, e); err != nil {
+		return nil, err
+	}
+	// 重算时机之一：商品写操作后 —— 改状态（上架 / 下架）与改标签引用都会影响自动标签归属。
+	if err = s.recalcProjectAutoTags(ctx, e.ID); err != nil {
 		return nil, err
 	}
 	return s.toResp(ctx, e)
@@ -442,6 +470,9 @@ func (s *Service) toResp(ctx context.Context, e *productmodel.ProductEntity) (re
 		resp.PrimaryCategoryID = *e.PrimaryCategoryID
 	}
 	resp.TagIDs = decodeStrings(e.TagIDs)
+	if e.PublishedAt != nil {
+		resp.PublishedAt = e.PublishedAt.Format(time.RFC3339)
+	}
 	resp.RelatedIDs = decodeStrings(e.RelatedIDs)
 	resp.BundleItems = orJSON(e.BundleItems, "[]")
 	resp.DefaultPrice = e.DefaultPrice

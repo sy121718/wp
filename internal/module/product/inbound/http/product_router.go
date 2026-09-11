@@ -57,5 +57,17 @@ func SetupProductRoutes(rg *gin.RouterGroup, db *gorm.DB, project projectcontrac
 	g.POST("/brand/create", handle.CreateBrand)
 	g.POST("/brand/update", handle.UpdateBrand)
 	g.POST("/brand/delete", handle.DeleteBrand)
+
+	// 标签与自动规则（issue #11）：手工标签手工挂载，自动标签按内置规则类型 + 参数维护，
+	// 归属由明确的重算时机更新；products 是「某标签命中哪些商品」（后台核对）。
+	// 标签可跨商品复用，故与商品资源并列而不是嵌在商品路径下。
+	g.GET("/tag/list", handle.ListTags)
+	g.GET("/tag/get", handle.GetTag)
+	g.GET("/tag/products", handle.ListTagProducts)
+	g.GET("/tag/rule-types", handle.ListTagRuleTypes)
+	g.POST("/tag/create", handle.CreateTag)
+	g.POST("/tag/update", handle.UpdateTag)
+	g.POST("/tag/delete", handle.DeleteTag)
+	g.POST("/tag/recalc", handle.RecalcTags)
 	return svc
 }

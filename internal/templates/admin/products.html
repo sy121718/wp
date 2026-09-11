@@ -32,7 +32,9 @@
             同一个属性组可以被多个商品引用；
             分类与品牌在<a href="/admin/product-categories?project={{selectedProject}}">商品分类</a>与
             <a href="/admin/product-brands?project={{selectedProject}}">商品品牌</a>页定义，
-            商品可以挂多个分类（其中一个为主分类）并指定品牌。
+            商品可以挂多个分类（其中一个为主分类）并指定品牌；
+            标签在<a href="/admin/product-tags?project={{selectedProject}}">商品标签</a>页定义，
+            手工标签可手工挂载，自动标签按内置规则自动维护归属。
         </p>
     </section>
 
@@ -185,6 +187,49 @@
                         </select>
                     </label>
                     <button type="submit" class="btn">保存分类与品牌</button>
+                </div>
+            </form>
+        </details>
+
+        {* 标签（issue #11）：手工标签可勾选挂载；自动标签只读展示 —— 归属由规则重算维护，
+           手工改会被下一次重算覆盖，故不给勾选框。控件是原生 checkbox + label：
+           鼠标点选 / 触屏点按 / 键盘（Tab + 空格）都可用，窄屏由 .var-value 折行承担。 *}
+        <details class="pages-fold var-fold">
+            <summary class="card-header">
+                <strong>商品标签</strong>
+                <span class="pages-empty">
+                    可选手工标签 {{len(p.TagChecks)}} 个 · 命中自动标签 {{len(p.AutoTags)}} 个
+                </span>
+                <span class="pages-fold-hint">展开</span>
+            </summary>
+            <form method="post" action="/admin/products/tags" class="var-form">
+                <input type="hidden" name="csrf_token" value="{{csrf}}">
+                <input type="hidden" name="projectId" value="{{selectedProject}}">
+                <input type="hidden" name="id" value="{{p.ID}}">
+                {{if len(p.TagChecks) > 0}}
+                <fieldset class="var-group">
+                    <legend>手工标签（可多选，一个都不勾即解绑全部手工标签）</legend>
+                    {{range _, t := p.TagChecks}}
+                    <label class="var-value">
+                        <input type="checkbox" name="tagIds" value="{{t.ID}}" {{if t.Checked}}checked{{end}}> {{t.Name}}
+                    </label>
+                    {{end}}
+                </fieldset>
+                {{else}}
+                <p class="pages-empty">
+                    这个工程还没有手工标签，先到<a href="/admin/product-tags?project={{selectedProject}}">商品标签</a>页建一个。
+                </p>
+                {{end}}
+                {{if len(p.AutoTags) > 0}}
+                <fieldset class="var-group">
+                    <legend>自动标签（按规则重算维护，不能手工改动）</legend>
+                    {{range _, t := p.AutoTags}}
+                    <span class="var-value">{{t.Name}}{{if t.RuleLabel != ""}}（{{t.RuleLabel}}）{{end}}</span>
+                    {{end}}
+                </fieldset>
+                {{end}}
+                <div class="var-actions">
+                    <button type="submit" class="btn">保存手工标签</button>
                 </div>
             </form>
         </details>

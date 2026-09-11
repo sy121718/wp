@@ -164,6 +164,16 @@ func SetupDashboardRoutes(router *gin.Engine,
 	// 商品挂载分类（多个 + 主分类）与品牌：属于商品更新，复用商品更新权限点。
 	adminPages.POST("/products/taxonomy", builtin.CasbinMiddlewareForPath("/api/product/update"), productPages.ProductsTaxonomySet)
 
+	// 商品标签管理页（issue #11）：手工标签 + 内置规则的自动标签（规则只接受白名单参数）。
+	// 写动作复用商品标签 API 权限点做 Casbin 鉴权；「重算」是显式重算时机之一。
+	adminPages.GET("/product-tags", productPages.ProductTagsPage)
+	adminPages.POST("/product-tags/create", builtin.CasbinMiddlewareForPath("/api/product/tag/create"), productPages.ProductTagsCreate)
+	adminPages.POST("/product-tags/update", builtin.CasbinMiddlewareForPath("/api/product/tag/update"), productPages.ProductTagsUpdate)
+	adminPages.POST("/product-tags/delete", builtin.CasbinMiddlewareForPath("/api/product/tag/delete"), productPages.ProductTagsDelete)
+	adminPages.POST("/product-tags/recalc", builtin.CasbinMiddlewareForPath("/api/product/tag/recalc"), productPages.ProductTagsRecalc)
+	// 商品挂手工标签：属于商品更新，复用商品更新权限点（自动标签不在这份表单里）。
+	adminPages.POST("/products/tags", builtin.CasbinMiddlewareForPath("/api/product/update"), productPages.ProductsTagsSet)
+
 	// admin 六领域管理页（管理员/角色/菜单/权限/部门/数据权限）：
 	// 页面 GET 走 /admin 组认证（Session+CSRF，无 Casbin）；
 	// 写动作（create/update/delete）挂对应业务 API 权限点做 Casbin 鉴权（与现有页面一致）。
