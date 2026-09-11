@@ -207,6 +207,10 @@ func SetupDashboardRoutes(router *gin.Engine,
 	adminPages.POST("/inventory/warehouse/update", builtin.CasbinMiddlewareForPath("/api/inventory/warehouse/update"), inventoryPages.InventoryWarehouseUpdate)
 	adminPages.POST("/inventory/warehouse/default", builtin.CasbinMiddlewareForPath("/api/inventory/warehouse/update"), inventoryPages.InventoryWarehouseDefault)
 	adminPages.POST("/inventory/warehouse/delete", builtin.CasbinMiddlewareForPath("/api/inventory/warehouse/delete"), inventoryPages.InventoryWarehouseDelete)
+	// 库存变动与原因字典（issue #16）：表单写动作复用对应 API 权限点。
+	// 变动走 /api/inventory/stock/change（真源行锁 + 流水），原因新建走 /api/inventory/reason/create。
+	adminPages.POST("/inventory/stock/change", builtin.CasbinMiddlewareForPath("/api/inventory/stock/change"), inventoryPages.InventoryStockChange)
+	adminPages.POST("/inventory/reason/create", builtin.CasbinMiddlewareForPath("/api/inventory/reason/create"), inventoryPages.InventoryReasonCreate)
 
 	// 商品域翻译工作台（issue #12）：入口在商品列表行内「多语言」按钮（与页面翻译工作台同构）。
 	// 保存写 sys_translation（engine=manual）并标记待重建，鉴权复用商品更新权限点（同一改动面）。

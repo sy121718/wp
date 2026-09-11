@@ -65,6 +65,11 @@ func newInvFixture(t *testing.T) *invFixture {
 	if err := migrations.Run(db); err != nil {
 		t.Fatalf("执行生产迁移建表失败: %v", err)
 	}
+	// 数据种子与生产一致（迁移 103 的内置变动原因、100/104 的权限点都要在，
+	// issue #16 的「原因必须是字典里的条目」才有可用的字典）。
+	if err := migrations.RunSeeds(db); err != nil {
+		t.Fatalf("执行生产数据种子失败: %v", err)
+	}
 	projects := projectservice.NewService(projectmodel.NewProjectModel(db))
 	project, err := projects.Create(context.Background(), &projectdto.CreateReq{Name: "库存测试工程"})
 	if err != nil {
@@ -73,6 +78,9 @@ func newInvFixture(t *testing.T) *invFixture {
 	inv := inventoryservice.NewService(inventorymodel.NewModel(db), projects)
 	products := productservice.NewService(productmodel.NewModel(db), projects)
 	products.SetVariantStock(inv)
+	// 与生产装配同形（routers.SetupRoutes）：商品侧库存缓存端口反向注入库存模块，
+	// 库存变动提交后经它把真源汇总写进展示缓存（issue #16 验收 6）。
+	inv.SetStockCache(products)
 	return &invFixture{
 		inventory: inv, products: products, db: db,
 		projects: projects, projectID: project.ID,
@@ -627,7 +635,7 @@ func TestProductPageWarehouseSelect(t *testing.T) {
 	}
 }
 
-// TestInventoryPermissionsAndMenusSeeded 迁移 100/101：
+// TestInventoryPermissionsAndMenusSeeded 迁移 100/101（+104，issue #16）：
 // 权限点与后台菜单已 seed（未 seed 时 Casbin 无策略 → 含超管全员 403）。
 func TestInventoryPermissionsAndMenusSeeded(t *testing.T) {
 	f := newInvFixture(t)
@@ -641,8 +649,20 @@ func TestInventoryPermissionsAndMenusSeeded(t *testing.T) {
 	if err := f.db.Raw("SELECT COUNT(*) FROM sys_permission WHERE module = 'inventory'").Scan(&n).Error; err != nil {
 		t.Fatalf("查询权限点失败: %v", err)
 	}
-	if n != 9 {
-		t.Fatalf("迁移 100 应 seed 9 个 inventory 权限点，实际 %d", n)
+	// 100（#15 仓库与库存记录 9 个）+ 104（#16 变动 / 流水 / 原因 / 清单 / 对账 10 个）。
+	if n != 19 {
+		t.Fatalf("迁移 100 + 104 应 seed 19 个 inventory 权限点，实际 %d", n)
+	}
+	for _, code := range []string{"inventory:stock_change", "inventory:stock_deduct", "inventory:movement_list",
+		"inventory:reason_list", "inventory:reason_create", "inventory:reason_update",
+		"inventory:bom_set", "inventory:bom_get", "inventory:cache_sync", "inventory:cache_reconcile"} {
+		var hit int64
+		if err := f.db.Raw("SELECT COUNT(*) FROM sys_permission WHERE permission_code = ?", code).Scan(&hit).Error; err != nil {
+			t.Fatalf("查询权限点 %s 失败: %v", code, err)
+		}
+		if hit != 1 {
+			t.Fatalf("权限点 %s 应已 seed，实际 %d 条", code, hit)
+		}
 	}
 	if err := f.db.Raw("SELECT COUNT(*) FROM sys_menus WHERE type = 2 AND title = '库存管理' AND deleted_time IS NULL").Scan(&n).Error; err != nil {
 		t.Fatalf("查询菜单失败: %v", err)
@@ -668,6 +688,8 @@ func newInventoryPageEngine(t *testing.T) (*gin.Engine, *invFixture) {
 	engine.POST("/admin/inventory/warehouse/update", handle.InventoryWarehouseUpdate)
 	engine.POST("/admin/inventory/warehouse/default", handle.InventoryWarehouseDefault)
 	engine.POST("/admin/inventory/warehouse/delete", handle.InventoryWarehouseDelete)
+	engine.POST("/admin/inventory/stock/change", handle.InventoryStockChange)
+	engine.POST("/admin/inventory/reason/create", handle.InventoryReasonCreate)
 	return engine, f
 }
 

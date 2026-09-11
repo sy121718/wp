@@ -6,11 +6,15 @@
 {{selectedProject := .SelectedProject}}
 {{selectedVariant := .SelectedVariant}}
 {{selectedSKU := .SelectedSKU}}
+{{reasons := .Reasons}}
 <div class="pages-wrap">
     <section class="pages-card">
         <h2>库存管理</h2>
         {{if .Err != ""}}
         <p class="pages-badge pages-badge-warn">上一次操作未完成：{{.Err}}</p>
+        {{end}}
+        {{if .Ok != ""}}
+        <p class="pages-badge pages-badge-ok">上一次操作已完成。</p>
         {{end}}
         <p class="pages-empty">
             仓库是实体：有短码、名称与状态，<strong>必须有一个默认仓</strong>作为「未指定仓库」时的兜底。
@@ -128,6 +132,7 @@
         {{else if len(.StockRows) == 0}}
         <p class="pages-empty">没有找到 SKU <code>{{selectedSKU}}</code> 的库存记录 —— 该编码不存在，或不在本工程。</p>
         {{else}}
+        <div class="pages-table-wrap" tabindex="0">
         <table class="pages-table">
             <thead><tr><th>仓库</th><th>短码</th><th>SKU</th><th>数量</th><th>更新时间</th></tr></thead>
             <tbody>
@@ -142,6 +147,138 @@
             {{end}}
             </tbody>
         </table>
+        </div>
+        {{end}}
+    </section>
+
+    <section class="pages-card">
+        <h2>库存变动（入库 / 出库 / 调整）</h2>
+        <p class="pages-empty">
+            变动一律在<strong>真源</strong>上带行锁执行，并逐条写流水（方向 / 数量 / 原因 / 来源引用）。
+            原因只能从下面的<strong>变动原因字典</strong>里选 —— 不接受自由文本，否则「按原因统计出入库」永远做不干净。
+            调整方向填的是<strong>目标绝对量</strong>（盘点口径），入库 / 出库填的是本次增减量。
+        </p>
+        <form method="post" action="/admin/inventory/stock/change" class="attr-form">
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <input type="hidden" name="projectId" value="{{selectedProject}}">
+            <div class="attr-form-head">
+                <select name="variantId" required>
+                    <option value="">（选择要变动的 SKU）</option>
+                    {{range _, o := .VariantOptions}}
+                    <option value="{{o.VariantID}}" {{if o.VariantID == selectedVariant}}selected{{end}}>{{o.Label}}</option>
+                    {{end}}
+                </select>
+                <select name="warehouseId">
+                    <option value="">（仓库：默认仓）</option>
+                    {{range _, w := .Warehouses}}
+                    <option value="{{w.ID}}">{{w.Name}}（{{w.Code}}）{{if w.IsDefault}}· 默认仓{{end}}</option>
+                    {{end}}
+                </select>
+                <select name="direction" required>
+                    {{range _, d := .Directions}}
+                    <option value="{{d.Value}}">{{d.Label}}</option>
+                    {{end}}
+                </select>
+                <input type="number" name="quantity" placeholder="数量（调整填目标量）" inputmode="numeric" step="1" min="0" required>
+                <select name="reasonCode" required>
+                    <option value="">（变动原因）</option>
+                    {{range _, r := reasons}}
+                    <option value="{{r.Code}}">[{{r.DirectionLabel}}] {{r.Name}}（{{r.Code}}）</option>
+                    {{end}}
+                </select>
+                <input type="text" name="sourceType" placeholder="来源类型（如 purchase / order）" autocomplete="off">
+                <input type="text" name="sourceRef" placeholder="来源引用（如单据号）" autocomplete="off">
+                <input type="text" name="remark" placeholder="备注" autocomplete="off">
+            </div>
+            <div class="attr-form-actions">
+                <button type="submit" class="btn btn-primary">提交变动</button>
+            </div>
+        </form>
+        {{if len(.CacheRows) > 0}}
+        <p class="pages-badge pages-badge-warn">
+            商品侧库存缓存与真源不一致（缓存只是展示值，可用量判定只读真源）：
+            {{range _, row := .CacheRows}}{{row.SKUCode}}（缓存 {{row.CachedTotal}} / 真源 {{row.TrueTotal}}） {{end}}
+        </p>
+        {{end}}
+    </section>
+
+    <section class="pages-card">
+        <h2>变动原因字典（{{len(.Reasons)}}）</h2>
+        <p class="pages-empty">
+            内置原因（采购入库 / 销售出库 / 盘点调整……）全工程可见、不可修改；
+            自定义原因在工程内建立，<code>code</code> 只允许小写字母、数字与下划线。
+            原因方向必须与变动方向一致，停用后不再能被新变动引用（历史流水保留 code 快照）。
+        </p>
+        <form method="post" action="/admin/inventory/reason/create" class="attr-form">
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <input type="hidden" name="projectId" value="{{selectedProject}}">
+            <div class="attr-form-head">
+                <input type="text" name="code" placeholder="原因 code（如 vip_gift_out）" required autocomplete="off">
+                <input type="text" name="name" placeholder="原因名称（如 会员赠品出库）" required>
+                <select name="direction" required>
+                    {{range _, d := .Directions}}
+                    <option value="{{d.Value}}">{{d.Label}}</option>
+                    {{end}}
+                </select>
+                <input type="number" name="sort" value="0" placeholder="排序" inputmode="numeric" step="1">
+                <button type="submit" class="btn btn-sm">新建自定义原因</button>
+            </div>
+        </form>
+        {{if len(.Reasons) == 0}}
+        <p class="pages-empty">这个工程还没有任何变动原因。</p>
+        {{else}}
+        <div class="pages-table-wrap" tabindex="0">
+        <table class="pages-table">
+            <thead><tr><th>方向</th><th>名称</th><th>code</th><th>来源</th><th>状态</th></tr></thead>
+            <tbody>
+            {{range _, r := .Reasons}}
+            <tr>
+                <td>{{r.DirectionLabel}}</td>
+                <td>{{r.Name}}</td>
+                <td><code>{{r.Code}}</code></td>
+                <td>{{if r.IsBuiltin}}内置{{else}}自定义{{end}}</td>
+                <td>{{r.StatusLabel}}</td>
+            </tr>
+            {{end}}
+            </tbody>
+        </table>
+        </div>
+        {{end}}
+    </section>
+
+    <section class="pages-card">
+        <h2>库存流水（最近 {{len(.Movements)}} 条）</h2>
+        <p class="pages-empty">
+            每一次真源变动都留痕：方向、数量、变动前后值、原因、来源引用与批次号。
+            按「物料清单展开扣减」产生的子项流水会标出它由哪个父 SKU 引出。
+        </p>
+        {{if len(.Movements) == 0}}
+        <p class="pages-empty">还没有库存流水 —— 先用上面的表单做一次入库。</p>
+        {{else}}
+        <div class="pages-table-wrap" tabindex="0">
+        <table class="pages-table">
+            <thead><tr><th>时间</th><th>SKU</th><th>仓库</th><th>方向</th><th>变动</th><th>数量变化</th><th>原因</th><th>来源引用</th><th>操作人</th></tr></thead>
+            <tbody>
+            {{range _, m := .Movements}}
+            <tr>
+                <td>{{m.CreatedAt}}</td>
+                <td><code>{{m.SKUCode}}</code></td>
+                <td>{{m.WarehouseName}} <span class="move-meta">{{m.WarehouseCode}}</span></td>
+                <td>{{m.DirectionLabel}}</td>
+                <td>
+                    {{if m.Direction == "in"}}<span class="move-delta-in">+{{m.Quantity}}</span>{{end}}
+                    {{if m.Direction == "out"}}<span class="move-delta-out">-{{m.Quantity}}</span>{{end}}
+                    {{if m.Direction == "adjust"}}<span class="move-delta-none">±{{m.Quantity}}</span>{{end}}
+                </td>
+                <td>{{m.QuantityBefore}} → {{m.QuantityAfter}}</td>
+                <td>{{if m.ReasonName != ""}}{{m.ReasonName}}{{else}}{{m.ReasonCode}}{{end}} <span class="move-meta">{{m.ReasonCode}}</span></td>
+                <td>{{if m.SourceRef != ""}}{{m.SourceRef}}{{else}}—{{end}} <span class="move-meta">{{m.SourceType}}</span></td>
+                <td>{{if m.OperatorID != ""}}{{m.OperatorID}}{{else}}—{{end}}</td>
+            </tr>
+            {{end}}
+            </tbody>
+        </table>
+        </div>
         {{end}}
     </section>
 </div>

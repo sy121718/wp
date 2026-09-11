@@ -156,3 +156,155 @@ func (h *Handle) ListStocks(c *gin.Context) {
 	}
 	response.SuccessWithMessage(c, inventoryenums.MsgListSuccess, list)
 }
+
+// —— 库存变动与流水（issue #16）——
+
+// ChangeStock 按 SKU 增减库存（验收 1/2/3/4）：方向 + 数量 + 原因 + 来源引用。
+func (h *Handle) ChangeStock(c *gin.Context) {
+	req := &inventorydto.ChangeStockReq{}
+	if err := c.ShouldBindJSON(req); err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, inventoryenums.ErrInvalidParam)
+		return
+	}
+	res, err := h.svc.ChangeStock(c.Request.Context(), req)
+	if err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	response.SuccessWithMessage(c, inventoryenums.MsgChangeSuccess, res)
+}
+
+// DeductStock 按 SKU 扣减（验收 1/5）：不足即整体拒绝，可展开物料清单。
+func (h *Handle) DeductStock(c *gin.Context) {
+	req := &inventorydto.DeductStockReq{}
+	if err := c.ShouldBindJSON(req); err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, inventoryenums.ErrInvalidParam)
+		return
+	}
+	res, err := h.svc.DeductStock(c.Request.Context(), req)
+	if err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	response.SuccessWithMessage(c, inventoryenums.MsgDeductSuccess, res)
+}
+
+// ListMovements 库存流水列表（验收 3）。
+func (h *Handle) ListMovements(c *gin.Context) {
+	req := &inventorydto.ListMovementReq{}
+	if err := c.ShouldBindQuery(req); err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, inventoryenums.ErrInvalidParam)
+		return
+	}
+	list, err := h.svc.ListMovements(c.Request.Context(), req)
+	if err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	response.SuccessWithMessage(c, inventoryenums.MsgListSuccess, list)
+}
+
+// ListReasons 变动原因字典列表（验收 4）。
+func (h *Handle) ListReasons(c *gin.Context) {
+	req := &inventorydto.ListReasonReq{}
+	if err := c.ShouldBindQuery(req); err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, inventoryenums.ErrInvalidParam)
+		return
+	}
+	list, err := h.svc.ListReasons(c.Request.Context(), req)
+	if err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	response.SuccessWithMessage(c, inventoryenums.MsgListSuccess, list)
+}
+
+// CreateReason 新建自定义变动原因（验收 4）。
+func (h *Handle) CreateReason(c *gin.Context) {
+	req := &inventorydto.CreateReasonReq{}
+	if err := c.ShouldBindJSON(req); err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, inventoryenums.ErrInvalidParam)
+		return
+	}
+	res, err := h.svc.CreateReason(c.Request.Context(), req)
+	if err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	response.SuccessWithMessage(c, inventoryenums.MsgCreateSuccess, res)
+}
+
+// UpdateReason 修改自定义变动原因（内置原因拒绝）。
+func (h *Handle) UpdateReason(c *gin.Context) {
+	req := &inventorydto.UpdateReasonReq{}
+	if err := c.ShouldBindJSON(req); err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, inventoryenums.ErrInvalidParam)
+		return
+	}
+	res, err := h.svc.UpdateReason(c.Request.Context(), req)
+	if err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	response.SuccessWithMessage(c, inventoryenums.MsgUpdateSuccess, res)
+}
+
+// SetBOM 全量替换某个父 SKU 的物料清单（验收 5）。
+func (h *Handle) SetBOM(c *gin.Context) {
+	req := &inventorydto.SetBOMReq{}
+	if err := c.ShouldBindJSON(req); err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, inventoryenums.ErrInvalidParam)
+		return
+	}
+	res, err := h.svc.SetBOM(c.Request.Context(), req)
+	if err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	response.SuccessWithMessage(c, inventoryenums.MsgUpdateSuccess, res)
+}
+
+// GetBOM 查看某个父 SKU 的物料清单。
+func (h *Handle) GetBOM(c *gin.Context) {
+	req := &inventorydto.GetBOMReq{}
+	if err := c.ShouldBindQuery(req); err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, inventoryenums.ErrInvalidParam)
+		return
+	}
+	res, err := h.svc.GetBOM(c.Request.Context(), req)
+	if err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	response.SuccessWithMessage(c, inventoryenums.MsgDetailSuccess, res)
+}
+
+// SyncStockCache 显式同步商品侧库存缓存（验收 6）。
+func (h *Handle) SyncStockCache(c *gin.Context) {
+	req := &inventorydto.SyncStockCacheReq{}
+	if err := c.ShouldBindJSON(req); err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, inventoryenums.ErrInvalidParam)
+		return
+	}
+	res, err := h.svc.SyncStockCache(c.Request.Context(), req)
+	if err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	response.SuccessWithMessage(c, inventoryenums.MsgSyncSuccess, res)
+}
+
+// ReconcileStockCache 缓存对账（验收 6/7：真源为唯一依据，可修复）。
+func (h *Handle) ReconcileStockCache(c *gin.Context) {
+	req := &inventorydto.ReconcileStockCacheReq{}
+	if err := c.ShouldBindJSON(req); err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, inventoryenums.ErrInvalidParam)
+		return
+	}
+	res, err := h.svc.ReconcileStockCache(c.Request.Context(), req)
+	if err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	response.SuccessWithMessage(c, inventoryenums.MsgReconcileSuccess, res)
+}

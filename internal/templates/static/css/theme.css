@@ -173,7 +173,22 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .pages-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .pages-table th, .pages-table td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--c-border, #e5e7eb); }
 .pages-table th { color: var(--c-text-mute, #6b7280); font-weight: 500; font-size: 12px; }
+/* 表格横向滚动容器（多端硬规则）：窄屏表格自身滚动，绝不撑破卡片。
+   触摸屏用惯性滚动；键盘用户可用 Tab 进入容器后方向键滚动（overflow 容器可聚焦）。 */
+.pages-table-wrap { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.pages-table-wrap:focus-visible { outline: 2px solid var(--c-primary, #2563eb); outline-offset: 2px; }
 .pages-path { font-family: monospace; }
+
+/* ===== 库存变动 / 流水 / 原因字典（admin/inventory.html，issue #16） =====
+   多端适配（硬规则）：
+     · 输入宽度一律 min(100%, <设计宽度>)，容器 flex+wrap，窄屏折行不溢出；
+     · 流水增减用符号 + 颜色双通道表达（不只靠颜色，色觉障碍下仍可读）；
+     · 触屏只需原生控件（select / input / button），按压反馈走 :active（不带媒体查询）；
+     · 键盘：原生控件 Tab 序即视觉序，无需自定义键位。 */
+.move-delta-in { color: #059669; }
+.move-delta-out { color: #dc2626; }
+.move-delta-none { color: var(--c-text-mute, #6b7280); }
+.move-meta { color: var(--c-text-mute, #6b7280); font-size: 12px; }
 .pages-badge {
     display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px;
     background: rgba(107,114,128,.12); color: var(--c-text-mute, #6b7280); margin-right: 4px;

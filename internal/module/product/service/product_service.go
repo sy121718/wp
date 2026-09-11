@@ -68,7 +68,11 @@ func (s *Service) SetVariantStock(port productcontract.VariantStockPort) {
 }
 
 // 编译期契约断言。
-var _ productcontract.ProductService = (*Service)(nil)
+var (
+	_ productcontract.ProductService = (*Service)(nil)
+	// 库存缓存端口（issue #16）：库存模块经它把真源汇总写进本模块的展示缓存。
+	_ productcontract.VariantStockCachePort = (*Service)(nil)
+)
 
 // Create 新建商品，并在同一事务内生成它的第一个变体。
 //
@@ -612,6 +616,15 @@ func toVariantResp(v *productmodel.VariantEntity) *productdto.VariantResp {
 		Price: v.Price, ComparePrice: v.ComparePrice, CostPrice: v.CostPrice,
 		Image: v.Image, OptionValues: orJSON(v.OptionValues, "{}"),
 		Enabled: v.Enabled, Sort: v.Sort, StockTotal: v.StockTotal,
-		CreatedAt: v.CreatedAt.Format(time.RFC3339), UpdatedAt: v.UpdatedAt.Format(time.RFC3339),
+		StockSyncedAt: formatTimePtr(v.StockSyncedAt),
+		CreatedAt:     v.CreatedAt.Format(time.RFC3339), UpdatedAt: v.UpdatedAt.Format(time.RFC3339),
 	}
+}
+
+// formatTimePtr 可空时间 → RFC3339（nil → 空串）。
+func formatTimePtr(t *time.Time) string {
+	if t == nil {
+		return ""
+	}
+	return t.Format(time.RFC3339)
 }

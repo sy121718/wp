@@ -261,6 +261,43 @@ func (m *Model) DeleteVariant(ctx context.Context, id string) (err error) {
 	return m.VariantDB(ctx).Where("id = ?", id).Delete(&VariantEntity{}).Error
 }
 
+// SyncVariantStockTotal 写变体的库存缓存列（stock_total + stock_synced_at，issue #16）。
+//
+// 只更新这两列：价格、状态、SKU 等业务列一个字不动 —— 库存缓存同步不是「保存变体」，
+// 用 Save(v) 全字段落库会在并发编辑下把作者刚改的价格冲掉。
+// 变体不存在时返回 gorm.ErrRecordNotFound（PostgreSQL 的 UPDATE 即使值未变
+// 也计入 RowsAffected，故 0 只可能是「没有这一行」）。
+func (m *Model) SyncVariantStockTotal(ctx context.Context, variantID string, total int, at time.Time) (err error) {
+	res := m.VariantDB(ctx).Where("id = ?", variantID).
+		Updates(map[string]any{"stock_total": total, "stock_synced_at": at})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
+}
+
+// ListVariantStockTotals 批量读变体的库存缓存值（variant id → stock_total）。
+func (m *Model) ListVariantStockTotals(ctx context.Context, variantIDs []string) (out map[string]int, err error) {
+	out = make(map[string]int, len(variantIDs))
+	if len(variantIDs) == 0 {
+		return out, nil
+	}
+	var rows []struct {
+		ID         string `gorm:"column:id"`
+		StockTotal int    `gorm:"column:stock_total"`
+	}
+	if err = m.VariantDB(ctx).Select("id, stock_total").Where("id IN ?", variantIDs).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	for _, r := range rows {
+		out[r.ID] = r.StockTotal
+	}
+	return out, nil
+}
+
 // SaveVariants 在同一事务内写一批变体改动：先更新既有行，再批量插入新行。
 //
 // 组合生成是「一次请求改多行」的聚合内原子组合（无规格占位变体就地承接第一个

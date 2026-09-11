@@ -1,9 +1,13 @@
-// Package inventoryservice inventory 模块业务实现（issue #15）。
+// Package inventoryservice inventory 模块业务实现（issue #15 / #16）。
 //
-// 边界：本模块只管仓库实体与库存真源。库存流水、按 SKU 增减（真源行锁）、
-// BOM 展开扣减、商品侧缓存同步与对账是 issue #16 的内容；本票只保证
-// 「新建变体 → 归属仓生成初始 0 的库存记录」与「按 SKU 查各仓库存」两条，
-// 并把「可用量只读真源」这条死线落在读取路径上。
+// 边界：本模块管仓库实体与库存**真源**，以及围绕真源的全部变动能力：
+//
+//	#15  仓库实体 + 「SKU × 仓库」库存记录（新建变体自动生成初始 0 的一行）；
+//	#16  按 SKU 增减（真源行锁）、库存流水、变动原因字典、物料清单展开扣减、
+//	     商品侧缓存同步与对账。
+//
+// 死线：一切影响可用量的判断只读 inventory_stocks（在行锁之内），绝不读
+// product_variants.stock_total 那个列表展示缓存 —— 缓存只被同步 / 对账。
 package inventoryservice
 
 import (
@@ -27,17 +31,30 @@ const (
 	maxWarehouseCodeLen = 8
 )
 
-// Service 仓库与库存记录业务实现。
+// Service 仓库与库存业务实现。
 //
-// 只持有本模块 model 与 project 契约；不持有 *gorm.DB。
+// 只持有本模块 model 与外部契约；不持有 *gorm.DB。
 type Service struct {
 	m       *inventorymodel.Model
 	project projectcontract.ProjectService
+	// stockCache 商品侧库存缓存的读写端口（issue #16，由 product 模块实现）。
+	// 未注入时变动的缓存同步记失败台账（真源仍然成功），对账则显式报错。
+	// 依赖方向 inventory → product：本模块调商品模块的缓存端口，
+	// 商品模块实现的库存记录端口则由顶层反向注入（两端口互不干扰）。
+	stockCache productcontract.VariantStockCachePort
 }
 
 // NewService 构造。
 func NewService(m *inventorymodel.Model, project projectcontract.ProjectService) *Service {
 	return &Service{m: m, project: project}
+}
+
+// SetStockCache 注入商品侧库存缓存端口（issue #16，装配期调用）。
+//
+// 注入时机在商品模块装配之后（缓存端口的实现属商品模块），
+// 与 product.SetVariantStock 同一模式：可选依赖不进构造参数。
+func (s *Service) SetStockCache(port productcontract.VariantStockCachePort) {
+	s.stockCache = port
 }
 
 // 编译期断言：本模块契约 + 商品模块定义的变体库存端口（依赖方向 inventory → product）。

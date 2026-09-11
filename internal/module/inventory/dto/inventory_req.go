@@ -79,3 +79,136 @@ type ListStockReq struct {
 	Page        int    `form:"page"`
 	Size        int    `form:"size"`
 }
+
+// —— 库存变动与流水（issue #16）——
+
+// StockChangeLineReq 一条目标变动（SKU × 仓库 维度）。
+//
+// WarehouseID 为空时逐级兜底：本行 → 请求级 WarehouseID → 该工程的默认仓。
+// ProductID / SKUCode 是落库快照（库存表按表隔离约定自带 sku_code 快照列）；
+// 目标行已存在时沿用既有值，故只有「首次为新 SKU 建行」才必须给全。
+type StockChangeLineReq struct {
+	WarehouseID string `json:"warehouseId"`
+	ProductID   string `json:"productId"`
+	VariantID   string `json:"variantId" binding:"required"`
+	SKUCode     string `json:"skuCode"`
+	// Quantity 语义随方向而定：in / out 是正数增减量；adjust 是目标绝对量（>= 0）。
+	Quantity int `json:"quantity"`
+}
+
+// ChangeStockReq 按 SKU 增减库存（issue #16 验收 1/2/3/4）。
+//
+// 多行（多 SKU / 多仓）在**同一事务**里整体生效：任一行可用量不足即整体拒绝，
+// 不留半截变动；加锁顺序由服务端按 (变体, 仓库) 标识升序固定，与入参顺序无关。
+type ChangeStockReq struct {
+	ProjectID   string               `json:"projectId"`
+	WarehouseID string               `json:"warehouseId"`
+	Direction   string               `json:"direction" binding:"required"`
+	ReasonCode  string               `json:"reasonCode" binding:"required"`
+	SourceType  string               `json:"sourceType"`
+	SourceRef   string               `json:"sourceRef"`
+	Remark      string               `json:"remark"`
+	OperatorID  string               `json:"operatorId"`
+	Lines       []StockChangeLineReq `json:"lines" binding:"required"`
+}
+
+// DeductStockReq 按 SKU 扣减库存（issue #16 验收 5：支持按物料清单展开多个子项 SKU）。
+//
+// ExpandBOM 为真时：入参每个 SKU 若维护了物料清单，就展开成它的子项（用量 × 请求量），
+// 递归到**叶子**为止；有清单的 SKU 被展开而不是被扣，因此中间件半成品自身的真源不动。
+// 没有清单的 SKU 就是叶子，按自身扣减。展开后的子项集合仍然整体排序加锁、整体生效
+//（任一项不足即整批拒绝）。
+type DeductStockReq struct {
+	ProjectID   string               `json:"projectId"`
+	WarehouseID string               `json:"warehouseId"`
+	ReasonCode  string               `json:"reasonCode" binding:"required"`
+	SourceType  string               `json:"sourceType"`
+	SourceRef   string               `json:"sourceRef"`
+	Remark      string               `json:"remark"`
+	OperatorID  string               `json:"operatorId"`
+	ExpandBOM   bool                 `json:"expandBom"`
+	Lines       []StockChangeLineReq `json:"lines" binding:"required"`
+}
+
+// ListMovementReq 库存流水查询（按工程 / 仓 / 商品 / 变体 / SKU / 方向 / 原因 / 来源过滤 + 分页）。
+type ListMovementReq struct {
+	ProjectID   string `form:"projectId"`
+	WarehouseID string `form:"warehouseId"`
+	ProductID   string `form:"productId"`
+	VariantID   string `form:"variantId"`
+	SKUCode     string `form:"skuCode"`
+	Direction   string `form:"direction"`
+	ReasonCode  string `form:"reasonCode"`
+	SourceType  string `form:"sourceType"`
+	SourceRef   string `form:"sourceRef"`
+	BatchID     string `form:"batchId"`
+	Page        int    `form:"page"`
+	Size        int    `form:"size"`
+}
+
+// —— 变动原因字典（issue #16 验收 4）——
+
+// ListReasonReq 变动原因列表。
+type ListReasonReq struct {
+	ProjectID       string `form:"projectId"`
+	Direction       string `form:"direction"`
+	Keyword         string `form:"keyword"`
+	IncludeDisabled bool   `form:"includeDisabled"`
+}
+
+// CreateReasonReq 新建自定义变动原因（内置原因由迁移 103 seed，全工程可见）。
+type CreateReasonReq struct {
+	ProjectID string `json:"projectId"`
+	Code      string `json:"code" binding:"required"`
+	Name      string `json:"name" binding:"required"`
+	Direction string `json:"direction" binding:"required"`
+	Sort      int    `json:"sort"`
+}
+
+// UpdateReasonReq 修改自定义变动原因（逐字段可选；内置原因一律拒绝）。
+type UpdateReasonReq struct {
+	ID     string  `json:"id" binding:"required"`
+	Name   *string `json:"name"`
+	Status *string `json:"status"`
+	Sort   *int    `json:"sort"`
+}
+
+// —— 物料清单（issue #16 验收 5）——
+
+// BOMItemReq 物料清单的一条子项。
+type BOMItemReq struct {
+	ComponentVariantID string `json:"componentVariantId" binding:"required"`
+	ComponentSKUCode   string `json:"componentSkuCode"`
+	Quantity           int    `json:"quantity"`
+}
+
+// SetBOMReq 全量替换某个父 SKU 的物料清单（派生物，非追加）。
+//
+// Items 为空表示**清空**该父 SKU 的清单（之后扣减它就按自身扣）。
+type SetBOMReq struct {
+	ProjectID       string       `json:"projectId"`
+	ParentVariantID string       `json:"parentVariantId" binding:"required"`
+	ParentSKUCode   string       `json:"parentSkuCode"`
+	Items           []BOMItemReq `json:"items"`
+}
+
+// GetBOMReq 查看某个父 SKU 的物料清单。
+type GetBOMReq struct {
+	ParentVariantID string `form:"parentVariantId" binding:"required"`
+}
+
+// —— 商品侧缓存同步与对账（issue #16 验收 6/7）——
+
+// SyncStockCacheReq 显式同步商品侧库存缓存（可指定单个变体，缺省整工程）。
+type SyncStockCacheReq struct {
+	ProjectID string `json:"projectId"`
+	VariantID string `json:"variantId"`
+}
+
+// ReconcileStockCacheReq 缓存对账（可选对齐修复）。
+type ReconcileStockCacheReq struct {
+	ProjectID string `json:"projectId"`
+	VariantID string `json:"variantId"`
+	// Repair 为真时把不一致的缓存按真源汇总写回（对账兜底）。
+	Repair bool `json:"repair"`
+}

@@ -1,4 +1,4 @@
-// inventory_router.go — inventory 模块路由自装配（issue #15）。
+// inventory_router.go — inventory 模块路由自装配（issue #15 / #16）。
 // 挂 authorizedAPI 三层链（SessionAuth + CSRF + Casbin）。
 package inventoryhttp
 
@@ -34,5 +34,19 @@ func SetupInventoryRoutes(rg *gin.RouterGroup, db *gorm.DB, project projectcontr
 	g.GET("/stock/sku", handle.ListStocksBySKU)
 	g.GET("/stock/get", handle.GetStock)
 	g.POST("/stock/ensure", handle.EnsureStock)
+
+	// 库存变动与流水（issue #16 验收 1–5）：真源行锁增减 + 流水 + 原因字典 + 物料清单。
+	g.POST("/stock/change", handle.ChangeStock)
+	g.POST("/stock/deduct", handle.DeductStock)
+	g.GET("/movement/list", handle.ListMovements)
+	g.GET("/reason/list", handle.ListReasons)
+	g.POST("/reason/create", handle.CreateReason)
+	g.POST("/reason/update", handle.UpdateReason)
+	g.POST("/bom/set", handle.SetBOM)
+	g.GET("/bom/get", handle.GetBOM)
+
+	// 商品侧缓存同步与对账（issue #16 验收 6/7）：提交后的独立步骤，不进变动事务。
+	g.POST("/cache/sync", handle.SyncStockCache)
+	g.POST("/cache/reconcile", handle.ReconcileStockCache)
 	return svc
 }

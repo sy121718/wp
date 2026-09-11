@@ -228,6 +228,15 @@ var inventoryPermsSQL string
 //go:embed 101_inventory_menu.sql
 var inventoryMenuSQL string
 
+//go:embed 102_inventory_movements.sql
+var inventoryMovementsSQL string
+
+//go:embed 103_inventory_reasons_seed.sql
+var inventoryReasonsSeedSQL string
+
+//go:embed 104_inventory_change_permissions.sql
+var inventoryChangePermsSQL string
+
 //go:embed 073_blueprint_ddl_align.sql
 var blueprintDDLAlignSQL string
 
@@ -777,6 +786,40 @@ func init() {
 		TableName:    "sys_menus",
 		ConditionSQL: "SELECT CASE WHEN COUNT(*) = 1 THEN 1 ELSE 0 END FROM sys_menus WHERE title = '库存管理' AND type = 2 AND deleted_time IS NULL",
 		SQL:          inventoryMenuSQL,
+	})
+
+	// 102：库存流水 / 变动原因字典 / 物料清单 / 缓存同步台账（issue #16）。
+	// 四张全新表，默认「表存在即跳过」检查即可；库存**真源** inventory_stocks
+	// 的结构一个字不动（行锁加在既有表既有的行上）。
+	register(Migration{
+		Version:   "102-inventory-movements",
+		TableName: "inventory_change_reasons",
+		SQL:       inventoryMovementsSQL,
+	})
+
+	// 103：内置变动原因字典（in / out / adjust 三类各若干条，issue #16）。
+	// 单条 INSERT：project_id IS NULL 表示内置（全工程可见）；
+	// 幂等条件 = 每个内置 code 都已存在，新增内置原因后重启即补齐。
+	registerSeed(Seed{
+		Version:   "103-inventory-reasons-seed",
+		TableName: "inventory_change_reasons",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) = 9 THEN 1 ELSE 0 END FROM inventory_change_reasons " +
+			"WHERE project_id IS NULL AND lower(code) IN (" +
+			"'purchase_in', 'return_in', 'transfer_in', 'production_in', " +
+			"'sale_out', 'damage_out', 'transfer_out', 'stocktake_adjust', 'manual_adjust')",
+		SQL: inventoryReasonsSeedSQL,
+	})
+
+	// 104：库存变动 / 流水 / 原因字典 / 物料清单 / 缓存对账 10 个权限点 + 超管策略（issue #16）。
+	// 条件只看本票自己的权限点，与 100 的宽匹配（inventory:%）互不干扰。
+	registerSeed(Seed{
+		Version:   "104-inventory-change-permissions",
+		TableName: "sys_permission",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) = 10 THEN 1 ELSE 0 END FROM sys_permission WHERE permission_code IN (" +
+			"'inventory:stock_change', 'inventory:stock_deduct', 'inventory:movement_list', " +
+			"'inventory:reason_list', 'inventory:reason_create', 'inventory:reason_update', " +
+			"'inventory:bom_set', 'inventory:bom_get', 'inventory:cache_sync', 'inventory:cache_reconcile')",
+		SQL: inventoryChangePermsSQL,
 	})
 
 	// 073：把历史库的 blueprints / blueprint_versions 对齐到 model（唯一真源）。

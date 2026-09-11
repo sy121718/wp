@@ -70,8 +70,11 @@ type VariantResp struct {
 	Enabled      bool            `json:"enabled"`
 	Sort         int             `json:"sort"`
 	StockTotal   int             `json:"stockTotal"`
-	CreatedAt    string          `json:"createdAt"`
-	UpdatedAt    string          `json:"updatedAt"`
+	// StockSyncedAt 库存缓存的最近一次同步时间（issue #16）；空串表示从未同步。
+	// 它只是展示值的时间戳，可用量判定一律走仓库模块的真源。
+	StockSyncedAt string `json:"stockSyncedAt"`
+	CreatedAt     string `json:"createdAt"`
+	UpdatedAt     string `json:"updatedAt"`
 }
 
 // GenerateVariantsResp 变体组合生成结果（issue #8）。
