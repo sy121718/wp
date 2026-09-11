@@ -151,6 +151,19 @@ func SetupDashboardRoutes(router *gin.Engine,
 	// 值编辑器的行片段：纯表单操作，不落库，故不挂 Casbin（页面组已有 Session + CSRF）。
 	adminPages.POST("/product-attributes/value-rows", productPages.ProductAttributesValueRows)
 
+	// 商品分类与品牌管理页（issue #10）：分类是树（父子层级 / 排序 / slug / SEO 字段），
+	// 品牌是独立实体（logo / 描述 / slug / SEO 字段）。写动作复用商品 API 权限点做 Casbin 鉴权。
+	adminPages.GET("/product-categories", productPages.ProductCategoriesPage)
+	adminPages.POST("/product-categories/create", builtin.CasbinMiddlewareForPath("/api/product/category/create"), productPages.ProductCategoriesCreate)
+	adminPages.POST("/product-categories/update", builtin.CasbinMiddlewareForPath("/api/product/category/update"), productPages.ProductCategoriesUpdate)
+	adminPages.POST("/product-categories/delete", builtin.CasbinMiddlewareForPath("/api/product/category/delete"), productPages.ProductCategoriesDelete)
+	adminPages.GET("/product-brands", productPages.ProductBrandsPage)
+	adminPages.POST("/product-brands/create", builtin.CasbinMiddlewareForPath("/api/product/brand/create"), productPages.ProductBrandsCreate)
+	adminPages.POST("/product-brands/update", builtin.CasbinMiddlewareForPath("/api/product/brand/update"), productPages.ProductBrandsUpdate)
+	adminPages.POST("/product-brands/delete", builtin.CasbinMiddlewareForPath("/api/product/brand/delete"), productPages.ProductBrandsDelete)
+	// 商品挂载分类（多个 + 主分类）与品牌：属于商品更新，复用商品更新权限点。
+	adminPages.POST("/products/taxonomy", builtin.CasbinMiddlewareForPath("/api/product/update"), productPages.ProductsTaxonomySet)
+
 	// admin 六领域管理页（管理员/角色/菜单/权限/部门/数据权限）：
 	// 页面 GET 走 /admin 组认证（Session+CSRF，无 Casbin）；
 	// 写动作（create/update/delete）挂对应业务 API 权限点做 Casbin 鉴权（与现有页面一致）。

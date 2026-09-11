@@ -20,15 +20,19 @@ type CreateReq struct {
 	Images         []string        `json:"images"`
 	// AttributeIDs 引用的属性组 id（issue #7）：只存引用，组与值的定义唯一一份，
 	// 同一属性组可被多个商品复用。
-	AttributeIDs   []string        `json:"attributeIds"`
-	CategoryIDs    []string        `json:"categoryIds"`
-	TagIDs         []string        `json:"tagIds"`
-	RelatedIDs     []string        `json:"relatedIds"`
-	BundleItems    json.RawMessage `json:"bundleItems"`
-	BrandID        string          `json:"brandId"`
-	DefaultPrice   *float64        `json:"defaultPrice"`
-	DefaultImage   string          `json:"defaultImage"`
-	Metadata       json.RawMessage `json:"metadata"`
+	AttributeIDs []string `json:"attributeIds"`
+	CategoryIDs  []string `json:"categoryIds"`
+	// PrimaryCategoryID 主分类（issue #10）。主分类必然是附属分类之一：
+	// 显式指定但它不在 CategoryIDs 里时由服务端自动纳入，不变量始终成立。
+	PrimaryCategoryID string          `json:"primaryCategoryId"`
+	TagIDs            []string        `json:"tagIds"`
+	RelatedIDs        []string        `json:"relatedIds"`
+	BundleItems       json.RawMessage `json:"bundleItems"`
+	// BrandID 品牌引用（issue #10）：必须是同工程内真实存在的品牌，空串即不指定。
+	BrandID      string          `json:"brandId"`
+	DefaultPrice *float64        `json:"defaultPrice"`
+	DefaultImage string          `json:"defaultImage"`
+	Metadata     json.RawMessage `json:"metadata"`
 }
 
 // UpdateReq 修改商品（含 slug 改名；变体单独接口）。
@@ -46,15 +50,18 @@ type UpdateReq struct {
 	Images         []string        `json:"images"`
 	// AttributeIDs 引用的属性组 id（issue #7）；nil 表示本次不改引用，
 	// 空数组表示解绑全部（与 CategoryIDs / TagIDs 同为「整体替换」语义）。
-	AttributeIDs   []string        `json:"attributeIds"`
-	CategoryIDs    []string        `json:"categoryIds"`
-	TagIDs         []string        `json:"tagIds"`
-	RelatedIDs     []string        `json:"relatedIds"`
-	BundleItems    json.RawMessage `json:"bundleItems"`
-	BrandID        *string         `json:"brandId"`
-	DefaultPrice   *float64        `json:"defaultPrice"`
-	DefaultImage   *string         `json:"defaultImage"`
-	Metadata       json.RawMessage `json:"metadata"`
+	AttributeIDs []string `json:"attributeIds"`
+	CategoryIDs  []string `json:"categoryIds"`
+	// PrimaryCategoryID 主分类（issue #10）：nil 表示本次不改，指向空串表示解绑。
+	// 附属分类被整体替换且新列表里没有原主分类时，主分类自动解绑（不变量维护）。
+	PrimaryCategoryID *string         `json:"primaryCategoryId"`
+	TagIDs            []string        `json:"tagIds"`
+	RelatedIDs        []string        `json:"relatedIds"`
+	BundleItems       json.RawMessage `json:"bundleItems"`
+	BrandID           *string         `json:"brandId"`
+	DefaultPrice      *float64        `json:"defaultPrice"`
+	DefaultImage      *string         `json:"defaultImage"`
+	Metadata          json.RawMessage `json:"metadata"`
 }
 
 // GetReq 按 ID 查询。

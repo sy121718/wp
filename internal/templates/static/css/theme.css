@@ -200,6 +200,9 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .attr-form-head { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .attr-form-head input[type="text"],
 .attr-form-head input[type="number"],
+/* 下拉与文本框同一盒模型（issue #10 的分类父级 / 主分类 / 品牌选择器）；
+   宽度按 min(100%, 220px) 收口，窄屏折行而不是撑破卡片。 */
+.attr-form-head select,
 .pages-form input.attr-id-input {
     padding: 8px 10px; font-size: 13px; border: 1px solid var(--c-border, #e5e7eb);
     border-radius: 8px; background: var(--c-surface, #fff); color: inherit;

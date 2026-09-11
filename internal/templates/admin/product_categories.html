@@ -1,0 +1,111 @@
+{* admin/product_categories.html — 商品分类管理：树形层级 + 排序 + slug + SEO 字段（issue #10） *}
+{* Jet 方言：range 用 range 关键字；extends 相对本目录；range 内访问外层值先存变量。 *}
+{{extends "layout.html"}}
+{{block body()}}
+{{csrf := .["csrf_token"]}}
+{{selectedProject := .SelectedProject}}
+{{options := .Options}}
+<div class="pages-wrap">
+    <section class="pages-card">
+        <h2>商品分类</h2>
+        {{if .Err != ""}}
+        <p class="pages-badge pages-badge-warn">上一次操作未完成：{{.Err}}</p>
+        {{end}}
+        <p class="pages-empty">
+            分类是树：可以建父子层级（父级下拉里带缩进），同级按排序号排；
+            工程内 slug 唯一，另带分类图与 SEO 标题 / 描述。
+            商品可以挂多个分类并指定其中一个为主分类；被商品引用的分类不能删除。
+        </p>
+        <form method="get" action="/admin/product-categories" class="pages-form">
+            <select name="project" onchange="this.form.submit()">
+                {{range _, p := .Projects}}
+                <option value="{{p.ID}}" {{if p.ID == selectedProject}}selected{{end}}>{{p.Name}}</option>
+                {{end}}
+            </select>
+        </form>
+    </section>
+
+    <section class="pages-card">
+        <h2>新建分类</h2>
+        <form method="post" action="/admin/product-categories/create" class="attr-form">
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <input type="hidden" name="projectId" value="{{selectedProject}}">
+            <div class="attr-form-head">
+                <input type="text" name="name" placeholder="分类名称（如 男装）" required>
+                <input type="text" name="slug" placeholder="URL 段（留空自动生成）" autocomplete="off">
+                <select name="parentId">
+                    <option value="">（顶级分类）</option>
+                    {{range _, o := options}}
+                    <option value="{{o.ID}}">{{o.Label}}</option>
+                    {{end}}
+                </select>
+                <input type="number" name="sort" value="0" placeholder="排序" inputmode="numeric" step="1">
+                <input type="text" name="image" placeholder="分类图 URL（可留空）" autocomplete="off">
+            </div>
+            <div class="attr-form-head">
+                <input type="text" name="seoTitle" placeholder="SEO 标题（可留空）">
+                <input type="text" name="seoDescription" placeholder="SEO 描述（可留空）">
+                <input type="text" name="description" placeholder="分类描述（可留空）">
+            </div>
+            <div class="attr-form-actions">
+                <button type="submit" class="btn btn-primary">新建分类</button>
+            </div>
+        </form>
+    </section>
+
+    <section class="pages-card">
+        <h2>分类树</h2>
+        {{if len(.Categories) == 0}}
+        <p class="pages-empty">这个工程还没有分类。用上面的表单建一个，再从它的「父级」里选它建子分类。</p>
+        {{else}}
+        {{range _, row := .Categories}}
+        <details class="pages-fold">
+            <summary class="card-header">
+                <strong>{{row.Label}}</strong>
+                <code>{{row.Slug}}</code>
+                <span class="pages-empty">排序 {{row.Sort}}</span>
+                {{if row.SEOTitle != ""}}
+                <span class="pages-badge pages-badge-info">SEO</span>
+                {{end}}
+                <span class="pages-fold-hint">展开</span>
+            </summary>
+
+            <form method="post" action="/admin/product-categories/update" class="attr-form">
+                <input type="hidden" name="csrf_token" value="{{csrf}}">
+                <input type="hidden" name="projectId" value="{{selectedProject}}">
+                <input type="hidden" name="id" value="{{row.ID}}">
+                <div class="attr-form-head">
+                    <input type="text" name="name" value="{{row.Name}}" placeholder="分类名称" required>
+                    <input type="text" name="slug" value="{{row.Slug}}" placeholder="URL 段" autocomplete="off">
+                    <select name="parentId">
+                        <option value="" {{if row.ParentID == ""}}selected{{end}}>（顶级分类）</option>
+                        {{range _, o := options}}
+                        {{if o.ID != row.ID}}
+                        <option value="{{o.ID}}" {{if o.ID == row.ParentID}}selected{{end}}>{{o.Label}}</option>
+                        {{end}}
+                        {{end}}
+                    </select>
+                    <input type="number" name="sort" value="{{row.Sort}}" placeholder="排序" inputmode="numeric" step="1">
+                    <input type="text" name="image" value="{{row.Image}}" placeholder="分类图 URL" autocomplete="off">
+                </div>
+                <div class="attr-form-head">
+                    <input type="text" name="seoTitle" value="{{row.SEOTitle}}" placeholder="SEO 标题">
+                    <input type="text" name="seoDescription" value="{{row.SEODescription}}" placeholder="SEO 描述">
+                    <input type="text" name="description" value="{{row.Description}}" placeholder="分类描述">
+                    <button type="submit" class="btn btn-sm">保存分类</button>
+                </div>
+            </form>
+
+            <form method="post" action="/admin/product-categories/delete"
+                  onsubmit="return confirm('删除该分类？有子分类或被商品引用时会被拒绝。')">
+                <input type="hidden" name="csrf_token" value="{{csrf}}">
+                <input type="hidden" name="projectId" value="{{selectedProject}}">
+                <input type="hidden" name="id" value="{{row.ID}}">
+                <button type="submit" class="btn btn-danger btn-sm">删除分类</button>
+            </form>
+        </details>
+        {{end}}
+        {{end}}
+    </section>
+</div>
+{{end}}

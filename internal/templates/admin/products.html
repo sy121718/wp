@@ -29,7 +29,10 @@
         </form>
         <p class="pages-empty">
             属性组在<a href="/admin/product-attributes?project={{selectedProject}}">商品属性</a>页定义，
-            同一个属性组可以被多个商品引用。
+            同一个属性组可以被多个商品引用；
+            分类与品牌在<a href="/admin/product-categories?project={{selectedProject}}">商品分类</a>与
+            <a href="/admin/product-brands?project={{selectedProject}}">商品品牌</a>页定义，
+            商品可以挂多个分类（其中一个为主分类）并指定品牌。
         </p>
     </section>
 
@@ -134,6 +137,57 @@
                    placeholder="引用的属性组 id（逗号分隔，清空即解绑）" autocomplete="off">
             <button type="submit" class="btn">保存属性引用</button>
         </form>
+
+        {* 分类与品牌（issue #10）：分类可多选（原生 checkbox + label，鼠标 / 触屏 / 键盘都可用，
+           窄屏由 .var-value 折行承担，不写死宽度）；主分类从分类里选一个 ——
+           「主分类必属于附属分类」的不变量由服务端维持（选中的主分类会自动纳入挂载列表）。 *}
+        <details class="pages-fold var-fold">
+            <summary class="card-header">
+                <strong>分类与品牌</strong>
+                <span class="pages-empty">
+                    挂载 {{len(p.CategoryIDs)}} 个分类 ·
+                    主分类 {{if p.PrimaryCategoryName != ""}}{{p.PrimaryCategoryName}}{{else}}未指定{{end}} ·
+                    品牌 {{if p.BrandName != ""}}{{p.BrandName}}{{else}}未指定{{end}}
+                </span>
+                <span class="pages-fold-hint">展开</span>
+            </summary>
+            <form method="post" action="/admin/products/taxonomy" class="var-form">
+                <input type="hidden" name="csrf_token" value="{{csrf}}">
+                <input type="hidden" name="projectId" value="{{selectedProject}}">
+                <input type="hidden" name="id" value="{{p.ID}}">
+                {{if len(p.CategoryChecks) > 0}}
+                <fieldset class="var-group">
+                    <legend>挂载分类（可多选，一个都不勾即解绑全部）</legend>
+                    {{range _, c := p.CategoryChecks}}
+                    <label class="var-value">
+                        <input type="checkbox" name="categoryIds" value="{{c.ID}}" {{if c.Checked}}checked{{end}}> {{c.Label}}
+                    </label>
+                    {{end}}
+                </fieldset>
+                {{else}}
+                <p class="pages-empty">
+                    这个工程还没有分类，先到<a href="/admin/product-categories?project={{selectedProject}}">商品分类</a>页建一个。
+                </p>
+                {{end}}
+                <div class="var-actions">
+                    <label>主分类
+                        <select name="primaryCategoryId">
+                            {{range _, o := p.PrimaryOptions}}
+                            <option value="{{o.ID}}" {{if o.Selected}}selected{{end}}>{{o.Label}}</option>
+                            {{end}}
+                        </select>
+                    </label>
+                    <label>品牌
+                        <select name="brandId">
+                            {{range _, o := p.BrandOptions}}
+                            <option value="{{o.ID}}" {{if o.Selected}}selected{{end}}>{{o.Label}}</option>
+                            {{end}}
+                        </select>
+                    </label>
+                    <button type="submit" class="btn">保存分类与品牌</button>
+                </div>
+            </form>
+        </details>
         {{end}}
         {{end}}
     </section>

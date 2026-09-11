@@ -19,15 +19,18 @@ type ProductResp struct {
 	SEODescription string          `json:"seoDescription"`
 	Images         []string        `json:"images"`
 	// AttributeIDs 商品引用的属性组 id（issue #7）。
-	AttributeIDs   []string        `json:"attributeIds"`
-	CategoryIDs    []string        `json:"categoryIds"`
-	TagIDs         []string        `json:"tagIds"`
-	RelatedIDs     []string        `json:"relatedIds"`
-	BundleItems    json.RawMessage `json:"bundleItems"`
-	BrandID        string          `json:"brandId"`
-	DefaultPrice   *float64        `json:"defaultPrice"`
-	DefaultImage   string          `json:"defaultImage"`
-	Metadata       json.RawMessage `json:"metadata"`
+	AttributeIDs []string `json:"attributeIds"`
+	CategoryIDs  []string `json:"categoryIds"`
+	// PrimaryCategoryID 主分类（issue #10）：空串表示未指定；指定时必然同时出现在
+	// CategoryIDs 里（服务端维持的不变量）。
+	PrimaryCategoryID string          `json:"primaryCategoryId"`
+	TagIDs            []string        `json:"tagIds"`
+	RelatedIDs        []string        `json:"relatedIds"`
+	BundleItems       json.RawMessage `json:"bundleItems"`
+	BrandID           string          `json:"brandId"`
+	DefaultPrice      *float64        `json:"defaultPrice"`
+	DefaultImage      string          `json:"defaultImage"`
+	Metadata          json.RawMessage `json:"metadata"`
 	// PriceMin / PriceMax 是从变体派生的只读价格区间（商品主体不存价格）。
 	PriceMin float64 `json:"priceMin"`
 	PriceMax float64 `json:"priceMax"`
@@ -37,8 +40,8 @@ type ProductResp struct {
 	// Attributes 商品引用的属性组（含值）—— 同一属性组可被多个商品复用，
 	// 这里返回的是共享定义本身，不是副本（issue #7）。
 	Attributes []*AttributeResp `json:"attributes,omitempty"`
-	CreatedAt    string         `json:"createdAt"`
-	UpdatedAt    string         `json:"updatedAt"`
+	CreatedAt  string           `json:"createdAt"`
+	UpdatedAt  string           `json:"updatedAt"`
 }
 
 // VariantResp 变体。

@@ -16,23 +16,27 @@ import (
 
 // ProductEntity 商品主体。价格与库存在变体上；关联关系走 JSON 列。
 type ProductEntity struct {
-	ID                  string          `gorm:"column:id;type:uuid;primaryKey"`
-	ProjectID           string          `gorm:"column:project_id;type:uuid;not null"`
-	Name                string          `gorm:"column:name;type:text;not null"`
-	Subtitle            string          `gorm:"column:subtitle;type:text;not null"`
-	Description         json.RawMessage `gorm:"column:description;type:jsonb;not null"`
-	Slug                string          `gorm:"column:slug;type:text;not null"`
-	Status              string          `gorm:"column:status;type:text;not null"`
-	Sort                int             `gorm:"column:sort;not null"`
-	Unit                string          `gorm:"column:unit;type:text;not null"`
-	Weight              *float64        `gorm:"column:weight;type:numeric(12,3)"`
-	SEOTitle            string          `gorm:"column:seo_title;type:text;not null"`
-	SEODescription      string          `gorm:"column:seo_description;type:text;not null"`
-	Images              json.RawMessage `gorm:"column:images;type:jsonb;not null"`
+	ID             string          `gorm:"column:id;type:uuid;primaryKey"`
+	ProjectID      string          `gorm:"column:project_id;type:uuid;not null"`
+	Name           string          `gorm:"column:name;type:text;not null"`
+	Subtitle       string          `gorm:"column:subtitle;type:text;not null"`
+	Description    json.RawMessage `gorm:"column:description;type:jsonb;not null"`
+	Slug           string          `gorm:"column:slug;type:text;not null"`
+	Status         string          `gorm:"column:status;type:text;not null"`
+	Sort           int             `gorm:"column:sort;not null"`
+	Unit           string          `gorm:"column:unit;type:text;not null"`
+	Weight         *float64        `gorm:"column:weight;type:numeric(12,3)"`
+	SEOTitle       string          `gorm:"column:seo_title;type:text;not null"`
+	SEODescription string          `gorm:"column:seo_description;type:text;not null"`
+	Images         json.RawMessage `gorm:"column:images;type:jsonb;not null"`
 	// AttributeIDs 引用的属性组 id 数组（issue #7：同一属性组可被多个商品复用，
 	// 商品侧只存引用，组与值的定义只存在一份）。
-	AttributeIDs        json.RawMessage `gorm:"column:attribute_ids;type:jsonb;not null"`
-	CategoryIDs         json.RawMessage `gorm:"column:category_ids;type:jsonb;not null"`
+	AttributeIDs json.RawMessage `gorm:"column:attribute_ids;type:jsonb;not null"`
+	CategoryIDs  json.RawMessage `gorm:"column:category_ids;type:jsonb;not null"`
+	// PrimaryCategoryID 主分类（issue #10）：附属分类是 category_ids 数组，
+	// 主分类需要「唯一 + 可反查 + 分类被删即自动解绑」，故落成真列 + 外键。
+	// 不变量：主分类必然同时出现在 category_ids 里（由 service 维护）。
+	PrimaryCategoryID   *string         `gorm:"column:primary_category_id;type:uuid"`
 	TagIDs              json.RawMessage `gorm:"column:tag_ids;type:jsonb;not null"`
 	RelatedIDs          json.RawMessage `gorm:"column:related_ids;type:jsonb;not null"`
 	BundleItems         json.RawMessage `gorm:"column:bundle_items;type:jsonb;not null"`

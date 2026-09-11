@@ -90,6 +90,16 @@ func (s *Service) Create(ctx context.Context, req *productdto.CreateReq) (res *p
 	if err != nil {
 		return nil, err
 	}
+	// 分类与品牌（issue #10）：引用先校验再落库（同一工程内 + 必须存在），
+	// 「主分类必属于附属分类」的不变量由 applyCategoryRefs 维持。
+	categoryIDs, primaryCategoryID, err := s.applyCategoryRefs(ctx, projectID, req.CategoryIDs, nil, &req.PrimaryCategoryID, nil)
+	if err != nil {
+		return nil, err
+	}
+	brandID, err := s.resolveBrandID(ctx, projectID, req.BrandID)
+	if err != nil {
+		return nil, err
+	}
 	e := &productmodel.ProductEntity{
 		ID: uuid.NewString(), ProjectID: projectID,
 		Name: strings.TrimSpace(req.Name), Subtitle: req.Subtitle,
@@ -98,16 +108,15 @@ func (s *Service) Create(ctx context.Context, req *productdto.CreateReq) (res *p
 		Unit:   req.Unit, Weight: req.Weight,
 		SEOTitle: req.SEOTitle, SEODescription: req.SEODescription,
 		Images: orJSONList(req.Images), AttributeIDs: orJSONList(attributeIDs),
-		CategoryIDs: orIDList(req.CategoryIDs),
-		TagIDs:      orIDList(req.TagIDs), RelatedIDs: orIDList(req.RelatedIDs),
+		CategoryIDs:       orJSONList(categoryIDs),
+		PrimaryCategoryID: primaryCategoryID,
+		BrandID:           brandID,
+		TagIDs:            orIDList(req.TagIDs), RelatedIDs: orIDList(req.RelatedIDs),
 		BundleItems:  orJSON(req.BundleItems, "[]"),
 		DefaultImage: req.DefaultImage,
 		DefaultPrice: req.DefaultPrice,
 		Metadata:     orJSON(req.Metadata, "{}"),
 		CreatedAt:    now, UpdatedAt: now,
-	}
-	if req.BrandID != "" {
-		e.BrandID = &req.BrandID
 	}
 	// 首个变体：由商品级默认值填充（新增路径）。
 	v := s.newVariantFromDefaults(e, nil)
@@ -175,8 +184,14 @@ func (s *Service) Update(ctx context.Context, req *productdto.UpdateReq) (res *p
 		}
 		e.AttributeIDs = orJSONList(ids)
 	}
-	if req.CategoryIDs != nil {
-		e.CategoryIDs = orIDList(req.CategoryIDs)
+	if req.CategoryIDs != nil || req.PrimaryCategoryID != nil {
+		ids, primaryID, aerr := s.applyCategoryRefs(ctx, e.ProjectID, req.CategoryIDs,
+			decodeStrings(e.CategoryIDs), req.PrimaryCategoryID, e.PrimaryCategoryID)
+		if aerr != nil {
+			return nil, aerr
+		}
+		e.CategoryIDs = orJSONList(ids)
+		e.PrimaryCategoryID = primaryID
 	}
 	if req.TagIDs != nil {
 		e.TagIDs = orIDList(req.TagIDs)
@@ -188,11 +203,12 @@ func (s *Service) Update(ctx context.Context, req *productdto.UpdateReq) (res *p
 		e.BundleItems = req.BundleItems
 	}
 	if req.BrandID != nil {
-		if *req.BrandID == "" {
-			e.BrandID = nil
-		} else {
-			e.BrandID = req.BrandID
+		// 品牌引用同样先校验（空串 = 解绑，与分类的「整体替换」语义一致）。
+		brandID, berr := s.resolveBrandID(ctx, e.ProjectID, *req.BrandID)
+		if berr != nil {
+			return nil, berr
 		}
+		e.BrandID = brandID
 	}
 	if req.DefaultPrice != nil {
 		e.DefaultPrice = req.DefaultPrice
@@ -422,6 +438,9 @@ func (s *Service) toResp(ctx context.Context, e *productmodel.ProductEntity) (re
 	resp.SEODescription = e.SEODescription
 	resp.AttributeIDs = decodeStrings(e.AttributeIDs)
 	resp.CategoryIDs = decodeStrings(e.CategoryIDs)
+	if e.PrimaryCategoryID != nil {
+		resp.PrimaryCategoryID = *e.PrimaryCategoryID
+	}
 	resp.TagIDs = decodeStrings(e.TagIDs)
 	resp.RelatedIDs = decodeStrings(e.RelatedIDs)
 	resp.BundleItems = orJSON(e.BundleItems, "[]")

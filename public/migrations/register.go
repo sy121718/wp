@@ -186,6 +186,15 @@ var productVariantGeneratePermsSQL string
 //go:embed 087b_product_variant_options_template.sql
 var productVariantOptionsTemplateSQL string
 
+//go:embed 088_product_taxonomy.sql
+var productTaxonomySQL string
+
+//go:embed 089_product_taxonomy_permissions.sql
+var productTaxonomyPermsSQL string
+
+//go:embed 090_product_taxonomy_menu.sql
+var productTaxonomyMenuSQL string
+
 //go:embed 073_blueprint_ddl_align.sql
 var blueprintDDLAlignSQL string
 
@@ -496,6 +505,40 @@ func init() {
 		TableName:    "content_templates",
 		ConditionSQL: "SELECT CASE WHEN COUNT(*) = 0 THEN 1 ELSE 0 END FROM content_templates WHERE entity_type = 'product' AND draft_document::text NOT LIKE '%\"optionsField\"%'",
 		SQL:          productVariantOptionsTemplateSQL,
+	})
+
+	// 088：商品 → 主分类列（issue #10）。product_categories / product_brands 两张表
+	// 由 081 建好，本迁移只补 products.primary_category_id 与其索引。
+	// products 早已存在，默认「表存在即跳过」必然误跳过，故按列是否存在判定
+	// （与 067/086 同一手法）。
+	register(Migration{
+		Version:   "088-product-taxonomy",
+		TableName: "products",
+		CheckSQL: "SELECT COUNT(*) FROM information_schema.columns " +
+			"WHERE table_schema = current_schema() AND table_name = ? AND column_name = 'primary_category_id'",
+		SQL: productTaxonomySQL,
+	})
+
+	// 089：分类与品牌权限点 + 超管策略（issue #10）。
+	// 条件只看本票自己的权限点，与 082 的宽匹配（product:%）互不干扰。
+	registerSeed(Seed{
+		Version:   "089-product-taxonomy-permissions",
+		TableName: "sys_permission",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) = 10 THEN 1 ELSE 0 END FROM sys_permission WHERE permission_code IN (" +
+			"'product:category_list', 'product:category_get', 'product:category_create', " +
+			"'product:category_update', 'product:category_delete', " +
+			"'product:brand_list', 'product:brand_get', 'product:brand_create', " +
+			"'product:brand_update', 'product:brand_delete')",
+		SQL: productTaxonomyPermsSQL,
+	})
+
+	// 090：分类与品牌后台菜单（issue #10）。须在 084（商品管理菜单）之后执行，
+	// 否则父菜单还不存在，COALESCE 会把两个入口落到顶级。
+	registerSeed(Seed{
+		Version:      "090-product-taxonomy-menu",
+		TableName:    "sys_menus",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) = 2 THEN 1 ELSE 0 END FROM sys_menus WHERE title IN ('商品分类', '商品品牌') AND type = 2 AND deleted_time IS NULL",
+		SQL:          productTaxonomyMenuSQL,
 	})
 
 	// 086：商品属性组与属性值（issue #7）—— product_attributes 由 081 建好，

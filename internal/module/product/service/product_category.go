@@ -1,0 +1,385 @@
+// product_category.go — 商品分类（issue #10）。
+//
+// 分类是树形自引用实体：父子层级 + 工程内唯一 slug + 排序 + SEO 字段。
+// 本文件同时落地「商品 → 分类」的引用规则：
+//
+//	· 附属分类可挂多个（products.category_ids）；
+//	· 主分类唯一（products.primary_category_id），且必然是附属分类之一 ——
+//	  接口显式指定主分类而它不在附属列表里时自动纳入，未指定而已不在列表里时解绑，
+//	  不变量始终由服务端维持，调用方不需要自己拼；
+//	· 引用必须在同一工程内且真实存在（JSONB 数组没有数据库级外键兜底）。
+//
+// 边界：分类只描述「商品属于哪里」，不生成 URL、不写产物；静态化在发布管线里。
+package productservice
+
+import (
+	"context"
+	"errors"
+	"strings"
+	"time"
+
+	"github.com/google/uuid"
+	"gorm.io/gorm"
+
+	productdto "go_wp/internal/module/product/dto"
+	productenums "go_wp/internal/module/product/enums"
+	productmodel "go_wp/internal/module/product/model"
+)
+
+// maxCategoryDepth 分类层级兜底上限：正常数据不会到这个深度，
+// 存在的意义是「历史脏数据里已有环」时不必靠递归撞栈。
+const maxCategoryDepth = 64
+
+// CreateCategory 新建分类（ParentID 为空即顶级）。
+func (s *Service) CreateCategory(ctx context.Context, req *productdto.CreateCategoryReq) (res *productdto.CategoryResp, err error) {
+	if req == nil || strings.TrimSpace(req.Name) == "" {
+		return nil, errors.New(productenums.ErrCategoryNameRequired)
+	}
+	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	slug := normalizeSlug(req.Slug)
+	if slug == "" {
+		slug = deriveSlug(req.Name)
+	}
+	if slug == "" {
+		slug = "c-" + strings.ReplaceAll(uuid.NewString(), "-", "")[:8]
+	}
+	if taken, serr := s.m.CategorySlugExists(ctx, projectID, slug, ""); serr != nil {
+		return nil, serr
+	} else if taken {
+		return nil, errors.New(productenums.ErrCategorySlugTaken)
+	}
+	parentID, err := s.resolveCategoryParent(ctx, projectID, strings.TrimSpace(req.ParentID), "")
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now().UTC()
+	e := &productmodel.ProductCategoryEntity{
+		ID: uuid.NewString(), ProjectID: projectID, ParentID: parentID,
+		Name: strings.TrimSpace(req.Name), Slug: slug,
+		Description: req.Description, Image: req.Image,
+		SEOTitle: req.SEOTitle, SEODescription: req.SEODescription,
+		Sort: req.Sort, Metadata: []byte("{}"),
+		CreatedAt: now, UpdatedAt: now,
+	}
+	if err = s.m.CreateCategory(ctx, e); err != nil {
+		return nil, err
+	}
+	return toCategoryResp(e), nil
+}
+
+// UpdateCategory 修改分类（含改名 / 换父级 / 排序 / SEO 字段）。
+//
+// 换父级走 resolveCategoryParent：跨工程、挂到自身或自己的后代下一律拒绝
+// （否则树上会出现自环或环，列表接口再也列不出这些节点）。
+func (s *Service) UpdateCategory(ctx context.Context, req *productdto.UpdateCategoryReq) (res *productdto.CategoryResp, err error) {
+	if req == nil || req.ID == "" {
+		return nil, errors.New(productenums.ErrInvalidParam)
+	}
+	e, err := s.m.GetCategory(ctx, req.ID)
+	if err != nil {
+		return nil, mapNotFound(err)
+	}
+	if req.Name != nil {
+		name := strings.TrimSpace(*req.Name)
+		if name == "" {
+			return nil, errors.New(productenums.ErrCategoryNameRequired)
+		}
+		e.Name = name
+	}
+	if req.Slug != nil {
+		slug := normalizeSlug(*req.Slug)
+		if slug == "" {
+			return nil, errors.New(productenums.ErrInvalidParam)
+		}
+		if taken, serr := s.m.CategorySlugExists(ctx, e.ProjectID, slug, e.ID); serr != nil {
+			return nil, serr
+		} else if taken {
+			return nil, errors.New(productenums.ErrCategorySlugTaken)
+		}
+		e.Slug = slug
+	}
+	if req.ParentID != nil {
+		parentID, perr := s.resolveCategoryParent(ctx, e.ProjectID, strings.TrimSpace(*req.ParentID), e.ID)
+		if perr != nil {
+			return nil, perr
+		}
+		e.ParentID = parentID
+	}
+	if req.Description != nil {
+		e.Description = *req.Description
+	}
+	if req.Image != nil {
+		e.Image = *req.Image
+	}
+	if req.SEOTitle != nil {
+		e.SEOTitle = *req.SEOTitle
+	}
+	if req.SEODescription != nil {
+		e.SEODescription = *req.SEODescription
+	}
+	if req.Sort != nil {
+		e.Sort = *req.Sort
+	}
+	e.UpdatedAt = time.Now().UTC()
+	if err = s.m.UpdateCategory(ctx, e); err != nil {
+		return nil, err
+	}
+	return toCategoryResp(e), nil
+}
+
+// GetCategory 分类详情。
+func (s *Service) GetCategory(ctx context.Context, req *productdto.GetCategoryReq) (res *productdto.CategoryResp, err error) {
+	if req == nil || req.ID == "" {
+		return nil, errors.New(productenums.ErrInvalidParam)
+	}
+	e, err := s.m.GetCategory(ctx, req.ID)
+	if err != nil {
+		return nil, mapNotFound(err)
+	}
+	return toCategoryResp(e), nil
+}
+
+// ListCategories 分类列表 —— 返回**树**（顶级在数组里，子级挂在 Children）。
+//
+// 排序在 SQL 层已定（sort ASC, created_at ASC, id ASC），这里只做父子挂接，
+// 因此同一份数据每次输出同样的顺序（构建期确定性同一条理由）。
+// 父级不在结果集里（被删/跨工程/环数据）的节点按顶级处理，保证节点不丢。
+func (s *Service) ListCategories(ctx context.Context, req *productdto.ListCategoryReq) (list []*productdto.CategoryResp, err error) {
+	var projectID, keyword string
+	if req != nil {
+		projectID, keyword = req.ProjectID, strings.TrimSpace(req.Keyword)
+	}
+	rows, err := s.m.ListCategories(ctx, projectID, keyword)
+	if err != nil {
+		return nil, err
+	}
+	return buildCategoryTree(rows), nil
+}
+
+// DeleteCategory 删除分类。
+//
+// 两条前置规则（都是「删了会留下坏数据」的场景）：
+//  1. 仍有子级 → 拒绝（外键是 SET NULL，会把子级静默提升为顶级，层级信息就丢了）；
+//  2. 仍被商品引用（附属或主分类）→ 拒绝，调用方需先解绑。
+func (s *Service) DeleteCategory(ctx context.Context, req *productdto.DeleteCategoryReq) (err error) {
+	if req == nil || req.ID == "" {
+		return errors.New(productenums.ErrInvalidParam)
+	}
+	if _, gerr := s.m.GetCategory(ctx, req.ID); gerr != nil {
+		return mapNotFound(gerr)
+	}
+	if n, cerr := s.m.CountCategoryChildren(ctx, req.ID); cerr != nil {
+		return cerr
+	} else if n > 0 {
+		return errors.New(productenums.ErrCategoryHasChildren)
+	}
+	if _, uerr := s.m.ProductUsingCategory(ctx, req.ID); uerr == nil {
+		return errors.New(productenums.ErrCategoryInUse)
+	} else if !errors.Is(uerr, gorm.ErrRecordNotFound) {
+		return uerr
+	}
+	return s.m.DeleteCategory(ctx, req.ID)
+}
+
+// resolveCategoryParent 校验父分类并归一为指针（空串 = 顶级 = nil）。
+//
+// 三条规则：父级必须存在、必须同工程、selfID 不能出现在父级到根的链上（判环）。
+func (s *Service) resolveCategoryParent(ctx context.Context, projectID, parentID, selfID string) (out *string, err error) {
+	if parentID == "" {
+		return nil, nil
+	}
+	parent, err := s.m.GetCategory(ctx, parentID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, errors.New(productenums.ErrCategoryNotFound)
+		}
+		return nil, err
+	}
+	if projectID != "" && parent.ProjectID != projectID {
+		return nil, errors.New(productenums.ErrCategoryParentMismatch)
+	}
+	if selfID != "" {
+		cur := parent
+		for depth := 0; depth < maxCategoryDepth && cur != nil; depth++ {
+			if cur.ID == selfID {
+				return nil, errors.New(productenums.ErrCategoryCycle)
+			}
+			if cur.ParentID == nil || *cur.ParentID == "" {
+				break
+			}
+			next, gerr := s.m.GetCategory(ctx, *cur.ParentID)
+			if gerr != nil {
+				if errors.Is(gerr, gorm.ErrRecordNotFound) {
+					break
+				}
+				return nil, gerr
+			}
+			cur = next
+		}
+	}
+	return &parent.ID, nil
+}
+
+// applyCategoryRefs 计算商品的分类引用与主分类，维持「主分类必属于附属分类」不变量。
+//
+// 参数语义（update 路径的「不改」与「清空」必须能区分）：
+//   - requestedIDs 为 nil → 本次不改附属分类，沿用 currentIDs（不重复校验，它们写入时已校验过）；
+//   - requestedIDs 为空数组 → 解绑全部分类；
+//   - primary 为 nil → 本次不改主分类；指向空串 → 显式解绑主分类。
+//
+// 自动纳入 / 自动解绑两条兜底规则：
+//   - 显式指定主分类但它不在附属列表里 → 自动纳入（主分类必然是附属分类之一）；
+//   - 未显式指定，而沿用/替换后的附属列表里已经没有原主分类 → 解绑主分类。
+func (s *Service) applyCategoryRefs(
+	ctx context.Context,
+	projectID string,
+	requestedIDs []string,
+	currentIDs []string,
+	primary *string,
+	currentPrimary *string,
+) (ids []string, primaryID *string, err error) {
+	ids = []string{}
+	if requestedIDs == nil {
+		for _, id := range currentIDs {
+			if id = strings.TrimSpace(id); id != "" {
+				ids = append(ids, id)
+			}
+		}
+	} else {
+		ids, err = s.validateCategoryIDs(ctx, projectID, requestedIDs)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+
+	explicit := primary != nil
+	value := ""
+	switch {
+	case explicit:
+		value = strings.TrimSpace(*primary)
+	case currentPrimary != nil:
+		value = strings.TrimSpace(*currentPrimary)
+	}
+	if value != "" {
+		row, gerr := s.m.GetCategory(ctx, value)
+		if gerr != nil {
+			if errors.Is(gerr, gorm.ErrRecordNotFound) {
+				return nil, nil, errors.New(productenums.ErrCategoryNotFound)
+			}
+			return nil, nil, gerr
+		}
+		if projectID != "" && row.ProjectID != projectID {
+			return nil, nil, errors.New(productenums.ErrCategoryProjectMismatch)
+		}
+		if !containsID(ids, value) {
+			if explicit {
+				ids = append(ids, value)
+			} else {
+				value = ""
+			}
+		}
+	}
+	if value == "" {
+		return ids, nil, nil
+	}
+	return ids, &value, nil
+}
+
+// validateCategoryIDs 校验并归一商品引用的附属分类 id（去重 + 保序 + 同工程 + 必须存在）。
+func (s *Service) validateCategoryIDs(ctx context.Context, projectID string, in []string) (out []string, err error) {
+	out = []string{}
+	if len(in) == 0 {
+		return out, nil
+	}
+	seen := map[string]bool{}
+	dedup := make([]string, 0, len(in))
+	for _, id := range in {
+		id = strings.TrimSpace(id)
+		if id == "" || seen[id] {
+			continue
+		}
+		seen[id] = true
+		dedup = append(dedup, id)
+	}
+	if len(dedup) == 0 {
+		return out, nil
+	}
+	rows, lerr := s.m.ListCategoriesByIDs(ctx, dedup)
+	if lerr != nil {
+		return nil, lerr
+	}
+	byID := make(map[string]*productmodel.ProductCategoryEntity, len(rows))
+	for _, r := range rows {
+		byID[r.ID] = r
+	}
+	for _, id := range dedup {
+		row, ok := byID[id]
+		if !ok {
+			return nil, errors.New(productenums.ErrCategoryNotFound)
+		}
+		if projectID != "" && row.ProjectID != projectID {
+			return nil, errors.New(productenums.ErrCategoryProjectMismatch)
+		}
+		out = append(out, id)
+	}
+	return out, nil
+}
+
+// containsID id 是否在切片里（小切片线性查找即可，避免为一次判断建 map）。
+func containsID(ids []string, id string) bool {
+	for _, v := range ids {
+		if v == id {
+			return true
+		}
+	}
+	return false
+}
+
+// buildCategoryTree 扁平行 → 树（父级缺失 / 自环 / 环数据一律按顶级处理，节点不丢）。
+func buildCategoryTree(rows []*productmodel.ProductCategoryEntity) []*productdto.CategoryResp {
+	byID := make(map[string]*productdto.CategoryResp, len(rows))
+	for _, r := range rows {
+		byID[r.ID] = toCategoryResp(r)
+	}
+	roots := make([]*productdto.CategoryResp, 0, len(rows))
+	for _, r := range rows {
+		node := byID[r.ID]
+		if r.ParentID != nil && *r.ParentID != "" {
+			if parent, ok := byID[*r.ParentID]; ok && parent != node {
+				parent.Children = append(parent.Children, node)
+				continue
+			}
+		}
+		roots = append(roots, node)
+	}
+	for _, root := range roots {
+		setCategoryDepth(root, 0)
+	}
+	return roots
+}
+
+// setCategoryDepth 由根向下填层级（后台据此缩进；前端不需要第二套父子规则）。
+func setCategoryDepth(node *productdto.CategoryResp, depth int) {
+	node.Depth = depth
+	for _, child := range node.Children {
+		setCategoryDepth(child, depth+1)
+	}
+}
+
+// toCategoryResp 实体 → 响应（ParentID 归一为空串，前端不必判 null）。
+func toCategoryResp(e *productmodel.ProductCategoryEntity) *productdto.CategoryResp {
+	resp := &productdto.CategoryResp{
+		ID: e.ID, ProjectID: e.ProjectID,
+		Name: e.Name, Slug: e.Slug, Description: e.Description, Image: e.Image,
+		SEOTitle: e.SEOTitle, SEODescription: e.SEODescription, Sort: e.Sort,
+		CreatedAt: e.CreatedAt.Format(time.RFC3339),
+		UpdatedAt: e.UpdatedAt.Format(time.RFC3339),
+	}
+	if e.ParentID != nil {
+		resp.ParentID = *e.ParentID
+	}
+	return resp
+}

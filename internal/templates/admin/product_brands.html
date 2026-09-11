@@ -1,0 +1,95 @@
+{* admin/product_brands.html — 商品品牌管理：logo + 描述 + slug + SEO 字段（issue #10） *}
+{* Jet 方言：range 用 range 关键字；extends 相对本目录；range 内访问外层值先存变量。 *}
+{{extends "layout.html"}}
+{{block body()}}
+{{csrf := .["csrf_token"]}}
+{{selectedProject := .SelectedProject}}
+<div class="pages-wrap">
+    <section class="pages-card">
+        <h2>商品品牌</h2>
+        {{if .Err != ""}}
+        <p class="pages-badge pages-badge-warn">上一次操作未完成：{{.Err}}</p>
+        {{end}}
+        <p class="pages-empty">
+            品牌是独立实体：名称、slug（工程内唯一）、logo、描述与 SEO 字段都定义一次，
+            多个商品可以引用同一个品牌；被商品引用的品牌不能删除。
+        </p>
+        <form method="get" action="/admin/product-brands" class="pages-form">
+            <select name="project" onchange="this.form.submit()">
+                {{range _, p := .Projects}}
+                <option value="{{p.ID}}" {{if p.ID == selectedProject}}selected{{end}}>{{p.Name}}</option>
+                {{end}}
+            </select>
+        </form>
+    </section>
+
+    <section class="pages-card">
+        <h2>新建品牌</h2>
+        <form method="post" action="/admin/product-brands/create" class="attr-form">
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <input type="hidden" name="projectId" value="{{selectedProject}}">
+            <div class="attr-form-head">
+                <input type="text" name="name" placeholder="品牌名称（如 山野）" required>
+                <input type="text" name="slug" placeholder="URL 段（留空自动生成）" autocomplete="off">
+                <input type="number" name="sort" value="0" placeholder="排序" inputmode="numeric" step="1">
+                <input type="text" name="logo" placeholder="logo URL（可留空）" autocomplete="off">
+            </div>
+            <div class="attr-form-head">
+                <input type="text" name="seoTitle" placeholder="SEO 标题（可留空）">
+                <input type="text" name="seoDescription" placeholder="SEO 描述（可留空）">
+                <input type="text" name="description" placeholder="品牌描述（可留空）">
+            </div>
+            <div class="attr-form-actions">
+                <button type="submit" class="btn btn-primary">新建品牌</button>
+            </div>
+        </form>
+    </section>
+
+    <section class="pages-card">
+        <h2>品牌列表</h2>
+        {{if len(.Brands) == 0}}
+        <p class="pages-empty">这个工程还没有品牌。用上面的表单建一个，之后在商品页可以挂到商品上。</p>
+        {{else}}
+        {{range _, b := .Brands}}
+        <details class="pages-fold">
+            <summary class="card-header">
+                <strong>{{b.Name}}</strong>
+                <code>{{b.Slug}}</code>
+                <span class="pages-empty">排序 {{b.Sort}}</span>
+                {{if b.Logo != ""}}
+                <span class="pages-badge pages-badge-info">logo</span>
+                {{end}}
+                <span class="pages-fold-hint">展开</span>
+            </summary>
+
+            <form method="post" action="/admin/product-brands/update" class="attr-form">
+                <input type="hidden" name="csrf_token" value="{{csrf}}">
+                <input type="hidden" name="projectId" value="{{selectedProject}}">
+                <input type="hidden" name="id" value="{{b.ID}}">
+                <div class="attr-form-head">
+                    <input type="text" name="name" value="{{b.Name}}" placeholder="品牌名称" required>
+                    <input type="text" name="slug" value="{{b.Slug}}" placeholder="URL 段" autocomplete="off">
+                    <input type="number" name="sort" value="{{b.Sort}}" placeholder="排序" inputmode="numeric" step="1">
+                    <input type="text" name="logo" value="{{b.Logo}}" placeholder="logo URL" autocomplete="off">
+                </div>
+                <div class="attr-form-head">
+                    <input type="text" name="seoTitle" value="{{b.SEOTitle}}" placeholder="SEO 标题">
+                    <input type="text" name="seoDescription" value="{{b.SEODescription}}" placeholder="SEO 描述">
+                    <input type="text" name="description" value="{{b.Description}}" placeholder="品牌描述">
+                    <button type="submit" class="btn btn-sm">保存品牌</button>
+                </div>
+            </form>
+
+            <form method="post" action="/admin/product-brands/delete"
+                  onsubmit="return confirm('删除该品牌？被商品引用时会被拒绝。')">
+                <input type="hidden" name="csrf_token" value="{{csrf}}">
+                <input type="hidden" name="projectId" value="{{selectedProject}}">
+                <input type="hidden" name="id" value="{{b.ID}}">
+                <button type="submit" class="btn btn-danger btn-sm">删除品牌</button>
+            </form>
+        </details>
+        {{end}}
+        {{end}}
+    </section>
+</div>
+{{end}}

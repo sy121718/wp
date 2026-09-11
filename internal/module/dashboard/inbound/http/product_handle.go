@@ -51,6 +51,18 @@ func (h *productPageHandle) ProductsPage(c *gin.Context) {
 		selected = projects[0].ID
 	}
 	rows := make([]gin.H, 0, 50)
+	// 分类树与品牌列表一次取好：每个商品行都要渲染「挂哪些分类 / 主分类 / 品牌」，
+	// 放在循环里取会变成 2×N 次查询。
+	flat, ferr := h.flatCategories(ctx, selected)
+	if ferr != nil {
+		c.String(http.StatusInternalServerError, ferr.Error())
+		return
+	}
+	brands, berr := h.listBrands(ctx, selected)
+	if berr != nil {
+		c.String(http.StatusInternalServerError, berr.Error())
+		return
+	}
 	if selected != "" {
 		list, lerr := h.products.List(ctx, &productdto.ListReq{ProjectID: selected, Size: 100})
 		if lerr != nil {
@@ -77,6 +89,14 @@ func (h *productPageHandle) ProductsPage(c *gin.Context) {
 				"Attributes":      detail.Attributes,
 				// 组合生成面板（issue #8）只列参与变体的组。
 				"VariationAttributes": variationAttributes(detail.Attributes),
+				// 分类与品牌（issue #10）：勾选态 / 选中态都由服务端算好，
+				// 模板只做展示；分类下拉带层级缩进（层级真源在 service 的树组装）。
+				"CategoryIDs":         detail.CategoryIDs,
+				"CategoryChecks":      checkedCategoryOptions(flat, detail.CategoryIDs),
+				"PrimaryOptions":      primaryCategoryOptions(flat, detail.PrimaryCategoryID),
+				"BrandOptions":        brandPickOptions(brands, detail.BrandID),
+				"PrimaryCategoryName": categoryNameByID(flat, detail.PrimaryCategoryID),
+				"BrandName":           brandNameByID(brands, detail.BrandID),
 			})
 		}
 	}

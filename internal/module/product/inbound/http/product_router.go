@@ -44,5 +44,18 @@ func SetupProductRoutes(rg *gin.RouterGroup, db *gorm.DB, project projectcontrac
 	g.POST("/attribute/update", handle.UpdateAttribute)
 	g.POST("/attribute/set-values", handle.SetAttributeValues)
 	g.POST("/attribute/delete", handle.DeleteAttribute)
+
+	// 分类与品牌（issue #10）：分类是树（list 返回树、get 取单节点），品牌是平铺列表。
+	// 分类与品牌都可跨商品复用，故与商品资源并列而不是嵌在商品路径下。
+	g.GET("/category/list", handle.ListCategories)
+	g.GET("/category/get", handle.GetCategory)
+	g.POST("/category/create", handle.CreateCategory)
+	g.POST("/category/update", handle.UpdateCategory)
+	g.POST("/category/delete", handle.DeleteCategory)
+	g.GET("/brand/list", handle.ListBrands)
+	g.GET("/brand/get", handle.GetBrand)
+	g.POST("/brand/create", handle.CreateBrand)
+	g.POST("/brand/update", handle.UpdateBrand)
+	g.POST("/brand/delete", handle.DeleteBrand)
 	return svc
 }

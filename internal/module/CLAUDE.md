@@ -15,7 +15,7 @@
 - `publication/` — URL 占用、激活（两段式回执）、回滚
 - `content/` / `contenttemplate/` / `presentation/` — CMS 内容、版本化结构模板、自动发布实例
 - `blueprint/` — Page Document 初始化工具（用完即弃）
-- `product/` — 商品域：商品与变体 CRUD（价格在变体上，商品级字段是新增变体的默认值模板）；商品属性组与属性值（组 + 值合一，值走 JSONB；`is_variation` 标记是否参与变体；商品侧只存 `attribute_ids` 引用，同一属性组可跨商品复用）；变体组合生成（#8：勾选属性值 → 笛卡尔积，`option_values` 组合幂等去重，维度/数量上限整体拒绝，新变体逐字段继承商品级默认值 —— 单变体商品前台不输出规格选择器）；向实体类型注册表注册 `product`（字段白名单 + 构建期字段解析器，可翻译字段按构建语言取译文）；注册商品集合源（#9：`content:product` 的 `CollectionResolver` + `CollectionSchemaProvider` —— 集合源元数据给字段白名单 / 过滤维度 `status` / 排序键 `sort,createdAt`，构建期按构建上下文的工程 ID 取数、按构建语言取译文；白名单外字段与维度在构建期被拒绝）
+- `product/` — 商品域：商品与变体 CRUD（价格在变体上，商品级字段是新增变体的默认值模板）；商品属性组与属性值（组 + 值合一，值走 JSONB；`is_variation` 标记是否参与变体；商品侧只存 `attribute_ids` 引用，同一属性组可跨商品复用）；变体组合生成（#8：勾选属性值 → 笛卡尔积，`option_values` 组合幂等去重，维度/数量上限整体拒绝，新变体逐字段继承商品级默认值 —— 单变体商品前台不输出规格选择器）；分类树与品牌（#10：分类父子层级 + 同级排序 + 工程内唯一 slug + SEO 字段；品牌是独立实体，含 logo/描述/slug/SEO；商品挂多个分类（`category_ids`）并指定主分类（`primary_category_id`，迁移 088），「主分类必属于附属分类」的不变量由服务端维持 —— 显式指定则自动纳入、附属列表被替换掉原主分类时自动解绑；品牌同样只存引用；有子级或被商品引用的分类、被商品引用的品牌一律拒绝删除；后台页 `/admin/product-categories` 与 `/admin/product-brands`）；向实体类型注册表注册 `product`（字段白名单 + 构建期字段解析器，可翻译字段按构建语言取译文）；注册商品集合源（#9：`content:product` 的 `CollectionResolver` + `CollectionSchemaProvider` —— 集合源元数据给字段白名单 / 过滤维度 `status` / 排序键 `sort,createdAt`，构建期按构建上下文的工程 ID 取数、按构建语言取译文；白名单外字段与维度在构建期被拒绝）
 - `navigation/` — 公开站点导航（与后台 `menu` 严格隔离）
 - `plugin/` — 插件体系
 - `runtimefragment/` — 白名单动态片段（无 contract，直挂访问面路由）

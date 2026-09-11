@@ -38,6 +38,22 @@ type ProductService interface {
 	ListAttributes(ctx context.Context, req *productdto.ListAttributeReq) (list []*productdto.AttributeResp, err error)
 	DeleteAttribute(ctx context.Context, req *productdto.DeleteAttributeReq) (err error)
 
+	// 分类与品牌（issue #10）：分类是树形自引用实体（父子层级 + 排序 + slug + SEO），
+	// 品牌是独立实体（logo + 描述 + slug + SEO）；商品挂多个分类（附属）并指定主分类，
+	// 可指定品牌。删除被引用或被下级依赖的分类/品牌一律拒绝。
+	CreateCategory(ctx context.Context, req *productdto.CreateCategoryReq) (res *productdto.CategoryResp, err error)
+	UpdateCategory(ctx context.Context, req *productdto.UpdateCategoryReq) (res *productdto.CategoryResp, err error)
+	GetCategory(ctx context.Context, req *productdto.GetCategoryReq) (res *productdto.CategoryResp, err error)
+	// ListCategories 返回分类树（顶级在数组里，子级挂在 Children，Depth 已填好）。
+	ListCategories(ctx context.Context, req *productdto.ListCategoryReq) (list []*productdto.CategoryResp, err error)
+	DeleteCategory(ctx context.Context, req *productdto.DeleteCategoryReq) (err error)
+
+	CreateBrand(ctx context.Context, req *productdto.CreateBrandReq) (res *productdto.BrandResp, err error)
+	UpdateBrand(ctx context.Context, req *productdto.UpdateBrandReq) (res *productdto.BrandResp, err error)
+	GetBrand(ctx context.Context, req *productdto.GetBrandReq) (res *productdto.BrandResp, err error)
+	ListBrands(ctx context.Context, req *productdto.ListBrandReq) (list []*productdto.BrandResp, err error)
+	DeleteBrand(ctx context.Context, req *productdto.DeleteBrandReq) (err error)
+
 	// RegisterEntityTypes 把本模块的实体类型（product）注册进实体类型注册表
 	// （装配期调用）。注册后内容模板与发布实例即可把商品作为数据源校验字段绑定，
 	// 构建期经注册表取商品字段解析器（不反向依赖本模块实现）。
