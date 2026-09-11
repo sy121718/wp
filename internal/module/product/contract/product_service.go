@@ -99,4 +99,16 @@ type ProductService interface {
 	ProductTranslationCandidates(ctx context.Context, productID string) (list []TranslationCandidate, err error)
 	// ProjectTranslationCandidates 工程内全部商品域可翻译文本（按 (hash, context) 去重）。
 	ProjectTranslationCandidates(ctx context.Context, projectID string) (list []TranslationCandidate, err error)
+	// —— 捆绑品（issue #20）——
+	// 选项规则落在 products.bundle_items（迁移 114 起是带规则的对象，不再是裸数组）：
+	// 选项来自**跨商品挑选的已存在 SKU**，每项带必选 / 可选与默认 / 最小 / 最大数量；
+	// 主体可配选项数量上限与整单最小 / 最大总件数。
+	//   · SetBundleConfig 整体替换配置，非法 / 自相矛盾的配置在保存时被拒并给出可读原因；
+	//   · GetBundleConfig 读配置 + 每个选项的 SKU 快照与可用量（可用量只读 inventory 真源）；
+	//   · ValidateBundleSelection 整单硬校验 + 算价（纯读）：前端反馈与后端拦截共用它；
+	//   · ListBundleSKUs 后台配置器的 SKU 数据源（跨商品）。
+	GetBundleConfig(ctx context.Context, req *productdto.GetBundleConfigReq) (res *productdto.BundleConfigResp, err error)
+	SetBundleConfig(ctx context.Context, req *productdto.SetBundleConfigReq) (res *productdto.BundleConfigResp, err error)
+	ValidateBundleSelection(ctx context.Context, req *productdto.ValidateBundleSelectionReq) (res *productdto.BundleSelectionResp, err error)
+	ListBundleSKUs(ctx context.Context, req *productdto.ListBundleSKUReq) (list []*productdto.BundleSKUResp, err error)
 }

@@ -39,3 +39,25 @@ func (s *Service) EnsureVariantStock(ctx context.Context, ref *productcontract.W
 	_, err = s.ensureStockRow(ctx, ref.ProjectID, ref.ID, productID, variantID, skuCode)
 	return err
 }
+
+// AvailableQuantities 批量读 SKU 的可用量（product 契约的 VariantAvailabilityPort，issue #20）。
+//
+// 读的是 inventory_stocks **真源**、跨仓求和，且与「缓存该被同步成什么值」用的是同一条
+// 汇总口径（model.StockTotals）—— 套餐里显示能买几件，与商品侧缓存里写了几件，
+// 不会出现两套算法各自算出不同数字。
+//
+// 无库存记录的变体不出现在返回值里（调用方按 0 兜底），filter 跨工程由 projectID 限定。
+func (s *Service) AvailableQuantities(ctx context.Context, projectID string, variantIDs []string) (out map[string]int, err error) {
+	out = make(map[string]int, len(variantIDs))
+	if len(variantIDs) == 0 {
+		return out, nil
+	}
+	rows, err := s.m.StockTotals(ctx, projectID, variantIDs)
+	if err != nil {
+		return nil, err
+	}
+	for _, r := range rows {
+		out[r.VariantID] = r.Total
+	}
+	return out, nil
+}

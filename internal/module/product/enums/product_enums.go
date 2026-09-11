@@ -178,3 +178,61 @@ const (
 	// ErrPricingTargetTooMany 筛选集命中的商品数超过单批上限（拒绝「一次改太多」）。
 	ErrPricingTargetTooMany = "ErrPricingTargetTooMany"
 )
+
+// 捆绑品（issue #20）。
+//
+// 配置期错误（保存时拒，运营填错了）与选择期错误（前台即时反馈，买家选错了）分开：
+// 后台与前台因此都能给出具体原因，而不是一句笼统的「不合法」。
+const (
+	// MsgBundleSaveSuccess 捆绑配置已保存。
+	MsgBundleSaveSuccess = "MsgBundleSaveSuccess"
+	// MsgBundleValidateSuccess 整单校验通过。
+	MsgBundleValidateSuccess = "MsgBundleValidateSuccess"
+
+	// ErrBundleShapeInvalid 捆绑配置形状非法（既不是空值，也不是 JSON 对象）。
+	ErrBundleShapeInvalid = "ErrBundleShapeInvalid"
+	// ErrBundleNotConfigured 该商品没有配置捆绑选项（不是捆绑品）。
+	ErrBundleNotConfigured = "ErrBundleNotConfigured"
+	// ErrBundleMaxOptionsInvalid 选项数量上限非法（超出 1..20 护栏）。
+	ErrBundleMaxOptionsInvalid = "ErrBundleMaxOptionsInvalid"
+	// ErrBundleOptionsExceeded 配置的选项数超过上限。
+	ErrBundleOptionsExceeded = "ErrBundleOptionsExceeded"
+
+	// ErrBundleVariantRequired 选项缺少 SKU（配置期与选择期共用）。
+	ErrBundleVariantRequired = "ErrBundleVariantRequired"
+	// ErrBundleVariantDuplicated 同一个 SKU 在配置里或同一次选择里出现多次。
+	ErrBundleVariantDuplicated = "ErrBundleVariantDuplicated"
+	// ErrBundleVariantNotFound 选项引用的 SKU 不存在（已被删除）。
+	ErrBundleVariantNotFound = "ErrBundleVariantNotFound"
+	// ErrBundleVariantProjectMismatch 选项引用的 SKU 不属于该商品所在工程。
+	ErrBundleVariantProjectMismatch = "ErrBundleVariantProjectMismatch"
+	// ErrBundleSelfReference 选项引用了捆绑主体自己的 SKU（自引用）。
+	ErrBundleSelfReference = "ErrBundleSelfReference"
+	// ErrBundleVariantNotInConfig 选择里出现配置之外的 SKU。
+	ErrBundleVariantNotInConfig = "ErrBundleVariantNotInConfig"
+
+	// ErrBundleQtyInvalid 数量非法（负数 / 非整数 / 超过硬上限）。
+	ErrBundleQtyInvalid = "ErrBundleQtyInvalid"
+	// ErrBundleQtyRangeInvalid 单项数量区间自相矛盾（最小 > 默认、最大 < 最小 等）。
+	ErrBundleQtyRangeInvalid = "ErrBundleQtyRangeInvalid"
+	// ErrBundleTotalRangeInvalid 整单件数区间自相矛盾（最大 < 最小，或低于必选项最小量之和）。
+	ErrBundleTotalRangeInvalid = "ErrBundleTotalRangeInvalid"
+	// ErrBundleTotalUnreachable 整单下限高于所有选项能加到的上限（永远无法满足）。
+	ErrBundleTotalUnreachable = "ErrBundleTotalUnreachable"
+
+	// ErrBundleOptionRequired 漏填必选项。
+	ErrBundleOptionRequired = "ErrBundleOptionRequired"
+	// ErrBundleQtyBelowMin 单项数量低于该项最小数量。
+	ErrBundleQtyBelowMin = "ErrBundleQtyBelowMin"
+	// ErrBundleQtyAboveMax 单项数量超过该项最大数量。
+	ErrBundleQtyAboveMax = "ErrBundleQtyAboveMax"
+	// ErrBundleTotalBelowMin 整单总件数低于最小总件数。
+	ErrBundleTotalBelowMin = "ErrBundleTotalBelowMin"
+	// ErrBundleTotalAboveMax 整单总件数超过最大总件数。
+	ErrBundleTotalAboveMax = "ErrBundleTotalAboveMax"
+
+	// ErrBundleQtyAboveStock 数量超过库存可用量（只读库房真源得出的结论）。
+	ErrBundleQtyAboveStock = "ErrBundleQtyAboveStock"
+	// ErrBundleStockUnavailable 读不到库存可用量（inventory 端口未注入）：整单校验 fail-closed。
+	ErrBundleStockUnavailable = "ErrBundleStockUnavailable"
+)

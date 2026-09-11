@@ -1,0 +1,109 @@
+{* admin/product_bundle.html — 捆绑配置：选商品 → 配选项规则 → 前台配置器预览（issue #20）。 *}
+{* 表单是原生并行数组（同名多值），零自定义 JS；表格外层 .pages-table-wrap 在窄屏可横向滚动。 *}
+{{extends "layout.html"}}
+{{block body()}}
+{{csrf := .["csrf_token"]}}
+{{selectedProject := .SelectedProject}}
+{{selectedProduct := .SelectedProduct}}
+{{maxOptions := .MaxOptions}}
+<div class="pages-wrap">
+    <section class="pages-card">
+        <h2>捆绑配置</h2>
+        {{if .Err != ""}}
+        <p class="pages-badge pages-badge-warn">保存未完成：{{.Err}}</p>
+        {{end}}
+        <p class="pages-empty">
+            捆绑套餐 = 主体自定价 + 若干<b>跨商品挑选的已存在 SKU</b>。每个选项可设必选 / 可选
+            与默认 / 最小 / 最大数量（最大填 0 = 不设上限，只受库存约束）；主体可设选项数量上限
+            与整单最小 / 最大总件数（整单下限按<b>总件数</b>判定，不是单项）。
+            数量上限同时受库存可用量约束，可用量读<b>仓库真源</b>，与商品列表里的展示缓存无关。
+        </p>
+        <form method="get" action="/admin/products/bundle" class="pages-form">
+            <select name="project" onchange="this.form.submit()">
+                {{range _, p := .Projects}}
+                <option value="{{p.ID}}" {{if p.ID == selectedProject}}selected{{end}}>{{p.Name}}</option>
+                {{end}}
+            </select>
+        </form>
+        <form method="get" action="/admin/products/bundle" class="pages-form">
+            <input type="hidden" name="project" value="{{selectedProject}}">
+            <select name="product" onchange="this.form.submit()">
+                <option value="">— 选择捆绑商品 —</option>
+                {{range _, p := .Products}}
+                <option value="{{p.ID}}" {{if p.ID == selectedProduct}}selected{{end}}>{{p.Name}}</option>
+                {{end}}
+            </select>
+            <span class="pages-empty">可选 SKU 共 {{.SkuCount}} 个（跨商品，只列启用中的变体）</span>
+        </form>
+    </section>
+
+    {{if selectedProduct != ""}}
+    <section class="pages-card">
+        <h2>选项规则{{if .Detail}} · {{.Detail.ProductName}}{{end}}</h2>
+        {{if .Detail}}
+        <p class="pages-empty">套餐价（主体自定价）：{{.Detail.BasePrice}}。子项价格不参与前台展示，成本仍在后台保留。</p>
+        <form method="post" action="/admin/products/bundle/save">
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <input type="hidden" name="productId" value="{{selectedProduct}}">
+            <div class="pages-form">
+                <label>选项数量上限
+                    <input type="number" name="maxOptions" min="1" max="{{maxOptions}}" value="{{.Detail.Config.MaxOptions}}">
+                </label>
+                <label>整单最小总件数
+                    <input type="number" name="minTotalQty" min="0" value="{{.Detail.Config.MinTotalQty}}">
+                </label>
+                <label>整单最大总件数（0 = 不设上限）
+                    <input type="number" name="maxTotalQty" min="0" value="{{.Detail.Config.MaxTotalQty}}">
+                </label>
+            </div>
+            <div class="pages-table-wrap" tabindex="0">
+                <table class="pages-table">
+                    <thead>
+                        <tr>
+                            <th>SKU</th><th>必选</th><th>默认数量</th><th>最小数量</th><th>最大数量（0 = 不限）</th><th>当前可用</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {{range _, row := .Rows}}
+                        <tr>
+                            <td>
+                                <select name="variantId">
+                                    {{range _, o := row.Options}}
+                                    <option value="{{o.ID}}" {{if o.Selected}}selected{{end}}>{{o.Label}}</option>
+                                    {{end}}
+                                </select>
+                            </td>
+                            <td>
+                                <select name="required">
+                                    <option value="1" {{if row.Required}}selected{{end}}>必选</option>
+                                    <option value="0" {{if !row.Required}}selected{{end}}>可选</option>
+                                </select>
+                            </td>
+                            <td><input type="number" name="defaultQty" min="0" value="{{row.DefaultQty}}"></td>
+                            <td><input type="number" name="minQty" min="0" value="{{row.MinQty}}"></td>
+                            <td><input type="number" name="maxQty" min="0" value="{{row.MaxQty}}"></td>
+                            <td>{{if row.VariantID != ""}}{{row.Available}}{{else}}—{{end}}</td>
+                        </tr>
+                        {{end}}
+                    </tbody>
+                </table>
+            </div>
+            <div class="pages-form mt-md">
+                <button type="submit" class="btn btn-primary">保存配置</button>
+            </div>
+        </form>
+        {{else}}
+        <p class="pages-empty">配置读取失败：商品不存在，或库存真源端口未接入（无法给出可用量）。</p>
+        {{end}}
+    </section>
+
+    {{if .Detail}}
+    <section class="pages-card">
+        <h2>前台配置器预览</h2>
+        <p class="pages-empty">这一份就是访客看到并操作的片段（与前台同一条渲染路径）。</p>
+        <div hx-get="/_fragments/bundleConfigurator?productId={{selectedProduct}}" hx-trigger="load" hx-swap="innerHTML"></div>
+    </section>
+    {{end}}
+    {{end}}
+</div>
+{{end}}

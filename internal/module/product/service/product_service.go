@@ -47,6 +47,10 @@ type Service struct {
 	// 未注入时变体创建不生成库存记录、SKU 编码不带仓短码前缀（纯商品单测路径）；
 	// 生产装配恒注入（见 routers.SetupRoutes）。依赖方向 inventory → product。
 	variantStock productcontract.VariantStockPort
+	// availability 库存真源可用量端口（issue #20，由 inventory 模块实现）。
+	// 捆绑品的数量上限与整单下限都受可用量约束，且只看真源、绝不读展示缓存；
+	// 未注入时整单校验 fail-closed（返回 ErrBundleStockUnavailable），不按「无限制」放行。
+	availability productcontract.VariantAvailabilityPort
 	// changes 主数据变更记录端口（issue #19，由 masterdata 模块实现）。
 	// 商品 / 变体的关键字段变更经它留痕（append-only）；
 	// 未注入时静默跳过（纯商品单测路径），生产装配恒注入。
@@ -71,6 +75,14 @@ func (s *Service) SetContentStore(store i18n.ContentStore) {
 // 「解析归属仓」与「在归属仓生成库存记录」两件事，不认识仓库表结构。
 func (s *Service) SetVariantStock(port productcontract.VariantStockPort) {
 	s.variantStock = port
+}
+
+// SetAvailabilityPort 注入库存真源可用量端口（issue #20，装配期调用）。
+//
+// 与 SetVariantStock 同一模式：端口定义在本模块契约、实现在 inventory 模块，
+// 由顶层装配注入（依赖方向 inventory → product）。
+func (s *Service) SetAvailabilityPort(port productcontract.VariantAvailabilityPort) {
+	s.availability = port
 }
 
 // SetMasterDataChanges 注入主数据变更记录端口（issue #19，装配期调用）。
@@ -136,6 +148,12 @@ func (s *Service) Create(ctx context.Context, req *productdto.CreateReq) (res *p
 	if err != nil {
 		return nil, err
 	}
+	// 捆绑配置形状规范化（issue #20）：空 / [] → 空配置对象；形状不对即拒绝。
+	// 语义校验（必选 / 上下限 / 整单件数）走 SetBundleConfig 专用入口，这里只保证形状合法。
+	bundleItems, berr := normalizeBundleItems(req.BundleItems)
+	if berr != nil {
+		return nil, berr
+	}
 	e := &productmodel.ProductEntity{
 		ID: uuid.NewString(), ProjectID: projectID,
 		Name: strings.TrimSpace(req.Name), Subtitle: req.Subtitle,
@@ -149,7 +167,8 @@ func (s *Service) Create(ctx context.Context, req *productdto.CreateReq) (res *p
 		PrimaryCategoryID: primaryCategoryID,
 		BrandID:           brandID,
 		TagIDs:            orIDList(tagIDs), RelatedIDs: orIDList(req.RelatedIDs),
-		BundleItems:  orJSON(req.BundleItems, "[]"),
+		BundleItems: bundleItems,
+
 		DefaultImage: req.DefaultImage,
 		DefaultPrice: req.DefaultPrice,
 		Metadata:     orJSON(req.Metadata, "{}"),
@@ -282,7 +301,12 @@ func (s *Service) Update(ctx context.Context, req *productdto.UpdateReq) (res *p
 		e.RelatedIDs = orIDList(req.RelatedIDs)
 	}
 	if req.BundleItems != nil {
-		e.BundleItems = req.BundleItems
+		// 形状规范化（issue #20）：整体替换语义不变，但写进去的必须是合法对象。
+		bundleItems, berr := normalizeBundleItems(req.BundleItems)
+		if berr != nil {
+			return nil, berr
+		}
+		e.BundleItems = bundleItems
 	}
 	if req.BrandID != nil {
 		// 品牌引用同样先校验（空串 = 解绑，与分类的「整体替换」语义一致）。
@@ -548,7 +572,7 @@ func (s *Service) toResp(ctx context.Context, e *productmodel.ProductEntity) (re
 		resp.PublishedAt = e.PublishedAt.Format(time.RFC3339)
 	}
 	resp.RelatedIDs = decodeStrings(e.RelatedIDs)
-	resp.BundleItems = orJSON(e.BundleItems, "[]")
+	resp.BundleItems = orJSON(e.BundleItems, string(defaultBundleItemsJSON))
 	resp.DefaultPrice = e.DefaultPrice
 	resp.DefaultImage = e.DefaultImage
 	resp.Metadata = orJSON(e.Metadata, "{}")

@@ -1,0 +1,22 @@
+{* issue #20 捆绑品整单校验结论片段（HTMX swap 进 .sky-bundle-result）。
+   成功：套餐价 + 总件数 + 展开后的逐项数量；失败：一句买家看得懂的提示。
+   样式自包含（可能被单独 swap 到页面上，不假设主片段在旁）。 *}
+<style>
+.sky-bundle-summary{display:grid;gap:6px;padding:10px 12px;border-radius:10px;background:rgba(0,0,0,.04)}
+.sky-bundle-lines{margin:0;padding-left:1.1rem;display:grid;gap:2px;font-size:.9rem}
+.sky-bundle-error{margin:0;color:#b3261e}
+</style>
+{{if .OK}}
+<div class="sky-bundle-summary" data-fragment="bundleConfiguratorResult" role="status">
+  <strong>{{ .Message }} · 套餐价 {{ .TotalPrice }} · 共 {{ .TotalQty }} 件</strong>
+  {{if len(.Items) > 0}}
+  <ul class="sky-bundle-lines">
+  {{range _, it := .Items}}
+    <li>{{ it.ProductName }} · {{ it.SKUCode }} × {{ it.Qty }}（当前可用 {{ it.Available }}）</li>
+  {{end}}
+  </ul>
+  {{end}}
+</div>
+{{else}}
+<p class="sky-bundle-error" data-fragment="bundleConfiguratorResult" role="alert">{{ .Message }}</p>
+{{end}}

@@ -1,0 +1,50 @@
+{* issue #20 捆绑品配置器片段：逐项数量 + 实时校验 + 套餐价。
+   自包含样式（访问面片段不依赖后台 theme.css）；
+   桌面 / 平板 / 手机三视口与鼠标 / 滚轮 / 触屏 / 键盘四类输入都要能用：
+   选项行 flex-wrap 自动折行，窄屏数量输入占满整行、提交按钮铺满。 *}
+<style>
+.sky-bundle{display:grid;gap:12px;max-width:min(100%,56rem);font-size:.95rem}
+.sky-bundle-options{display:grid;gap:8px}
+.sky-bundle-option{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:10px 12px;border:1px solid rgba(0,0,0,.12);border-radius:10px}
+.sky-bundle-name{flex:1 1 12rem;min-width:0;overflow-wrap:anywhere}
+.sky-bundle-tag{flex:0 0 auto;padding:2px 8px;border-radius:999px;background:rgba(0,0,0,.06);font-size:.8rem}
+.sky-bundle-meta{flex:0 0 auto;font-size:.8rem;opacity:.75}
+.sky-bundle-qty{flex:0 0 auto;width:min(100%,6.5rem);padding:6px 8px;border:1px solid rgba(0,0,0,.2);border-radius:8px;font:inherit}
+.sky-bundle-foot{display:flex;flex-wrap:wrap;align-items:center;gap:12px}
+.sky-bundle-price{font-weight:700}
+.sky-bundle-hint{font-size:.85rem;opacity:.75}
+.sky-bundle-submit{padding:8px 16px;border:0;border-radius:8px;background:#111;color:#fff;font:inherit;cursor:pointer}
+.sky-bundle-result:empty{display:none}
+.sky-bundle-summary{display:grid;gap:6px;padding:10px 12px;border-radius:10px;background:rgba(0,0,0,.04)}
+.sky-bundle-lines{margin:0;padding-left:1.1rem;display:grid;gap:2px;font-size:.9rem}
+.sky-bundle-error{margin:0;color:#b3261e}
+@media (max-width:520px){
+  .sky-bundle-option{align-items:flex-start}
+  .sky-bundle-name{flex-basis:100%}
+  .sky-bundle-qty{width:100%}
+  .sky-bundle-submit{width:100%}
+}
+</style>
+<form class="sky-bundle" data-fragment="bundleConfigurator"
+      hx-post="/_fragments/bundleConfiguratorCheck"
+      hx-target="next .sky-bundle-result" hx-swap="innerHTML"
+      hx-trigger="submit, input changed delay:500ms">
+  <input type="hidden" name="productId" value="{{ .ProductID }}">
+  <div class="sky-bundle-options">
+  {{range _, it := .Items}}
+    <div class="sky-bundle-option">
+      <span class="sky-bundle-name">{{ it.ProductName }} · {{ it.SKUCode }}</span>
+      <span class="sky-bundle-tag">{{ it.RequiredText }}</span>
+      <span class="sky-bundle-meta">单件 {{ it.MinQty }} ~ {{ it.MaxText }} · 可用 {{ it.Available }}</span>
+      <input type="hidden" name="variantId" value="{{ it.VariantID }}">
+      <input class="sky-bundle-qty" type="number" name="qty" value="{{ it.DefaultQty }}" min="{{ it.MinQty }}" step="1" inputmode="numeric" aria-label="数量"{{ if it.MaxAttr != "" }} max="{{ it.MaxAttr }}"{{ end }}>
+    </div>
+  {{end}}
+  </div>
+  <div class="sky-bundle-foot">
+    <span class="sky-bundle-price">套餐价 {{ .Price }}</span>
+    <span class="sky-bundle-hint">{{ .TotalHint }}</span>
+    <button type="submit" class="sky-bundle-submit">确认数量</button>
+  </div>
+</form>
+<div class="sky-bundle-result" aria-live="polite"></div>

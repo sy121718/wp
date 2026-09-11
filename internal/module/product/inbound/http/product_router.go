@@ -77,6 +77,13 @@ func SetupProductRoutes(rg *gin.RouterGroup, db *gorm.DB, project projectcontrac
 	g.POST("/tag/delete", handle.DeleteTag)
 	g.POST("/tag/recalc", handle.RecalcTags)
 
+	// 捆绑品（issue #20）：选项规则在 products.bundle_items，选项来自跨商品挑选的已存在 SKU。
+	// validate 是后端硬校验（与前台片段共用同一份校验逻辑），skus 是配置器的数据源。
+	g.GET("/bundle/get", handle.GetBundleConfig)
+	g.POST("/bundle/set", handle.SetBundleConfig)
+	g.POST("/bundle/validate", handle.ValidateBundleSelection)
+	g.GET("/bundle/skus", handle.ListBundleSKUs)
+
 	// 定价工具（issue #13）：四种内置规则 + 尾数处理，可对单个 SKU / 单商品全部变体 /
 	// 筛选集批量应用。preview 与 apply 共用同一份规则入参（预览不落库，应用落库 + 留痕）。
 	// 结果写回 product_variants.price，不参与构建期计算。

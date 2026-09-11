@@ -155,6 +155,9 @@ func SetupDashboardRoutes(router *gin.Engine,
 	// 商品详情页模板可选与预览（issue #14）：一个商品类型下可建多套命名模板，
 	// 商品发布时可选一套、发布前可预览（预览只读渲染，不落库不激活）。
 	// 写动作分别复用内容模板创建 / 实例创建 / 实例重建 / 实例预览四个 API 权限点。
+	// 捆绑配置（issue #20）：配置页 + 保存（保存复用 /api/product/bundle/set 的权限点）。
+	adminPages.GET("/products/bundle", productPages.ProductBundlePage)
+	adminPages.POST("/products/bundle/save", builtin.CasbinMiddlewareForPath("/api/product/bundle/set"), productPages.ProductBundleSave)
 	adminPages.GET("/products/template", productPages.ProductDetailTemplatePage)
 	adminPages.POST("/products/template/create", builtin.CasbinMiddlewareForPath("/api/contenttemplate/create"), productPages.ProductDetailTemplateCreate)
 	adminPages.POST("/products/template/publish", builtin.CasbinMiddlewareForPath("/api/presentation/create"), productPages.ProductDetailTemplatePublish)

@@ -56,3 +56,19 @@ type VariantStockCachePort interface {
 	// ListVariantStockTotals 批量读缓存值（对账用；键为变体 id，不存在的 id 不出现）。
 	ListVariantStockTotals(ctx context.Context, variantIDs []string) (totals map[string]int, err error)
 }
+
+// VariantAvailabilityPort SKU **可用量**的只读端口（issue #20，由 inventory 模块实现）。
+//
+// 与上面两个端口同源（inventory → product：本模块定义、inventory 实现、装配注入），
+// 但用途是第三种：前两个管「建变体时生成记录」与「变动后同步缓存」，本端口管
+// 「按真源读可用量」。捆绑品的数量上限与整单下限都要受可用量约束，而可用量的
+// 唯一权威是 inventory_stocks —— 读 product_variants.stock_total 缓存会直接变成超卖
+// （缓存滞后），这是 spec 的死线。
+//
+// 未注入时（纯商品单测路径）捆绑配置仍可保存与读取（配置本身不依赖库存），
+// 但整单校验必须 fail-closed：拿不到权威可用量就返回错误，绝不按「无限制」放行。
+type VariantAvailabilityPort interface {
+	// AvailableQuantities 批量读 SKU 的可用量（键为变体 id；无库存记录的 id 值为 0）。
+	// ProjectID 用于限定工程，避免跨工程读到同名变体。
+	AvailableQuantities(ctx context.Context, projectID string, variantIDs []string) (out map[string]int, err error)
+}

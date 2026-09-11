@@ -234,6 +234,29 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 		}
 		setter.SetMasterDataChanges(masterdataSvc)
 	}
+	// 库存真源可用量端口（issue #20）：捆绑品的单项上限与整单下限都受可用量约束，
+	// 且只读 inventory_stocks 真源 —— 读 product_variants.stock_total 缓存会直接变成超卖。
+	// 方向与 VariantStockPort 相同（inventory 实现、product 调用）：断言 + 注入，
+	// 任一未实现即 fail-fast（漏接的表现是「校验拿不到可用量」，会把套餐卖爆）。
+	availabilityPort, ok := inventorySvc.(productcontract.VariantAvailabilityPort)
+	if !ok {
+		panic("库存模块未实现可用量端口（VariantAvailabilityPort）")
+	}
+	availabilitySetter, ok := productSvc.(interface {
+		SetAvailabilityPort(productcontract.VariantAvailabilityPort)
+	})
+	if !ok {
+		panic("商品模块未提供可用量端口注入点（SetAvailabilityPort）")
+	}
+	availabilitySetter.SetAvailabilityPort(availabilityPort)
+	// 捆绑配置器片段（issue #20）：前台配置器走访问面的 /_fragments 端点，
+	// 经商品模块的窄契约（BundleConfiguratorPort）读配置与整单校验 ——
+	// 访问面不经过后台鉴权链，也不认识商品表。装配期注入，未注入即 fail-closed。
+	bundlePort, ok := productSvc.(productcontract.BundleConfiguratorPort)
+	if !ok {
+		panic("商品模块未实现捆绑配置器端口（BundleConfiguratorPort）")
+	}
+	runtimefragment.SetBundleProvider(bundlePort)
 	// 商品实体类型注册（issue #6）：注册后商品可作为内容模板的数据源
 	// （类型合法性 + 字段白名单由注册表判定），构建期经注册表取商品字段解析器。
 	// 与内容模块同样 fail-fast：注册失败即装配缺陷。

@@ -264,6 +264,15 @@ var masterDataPermsSQL string
 //go:embed 113_master_data_menu.sql
 var masterDataMenuSQL string
 
+//go:embed 114_product_bundle_config.sql
+var productBundleConfigSQL string
+
+//go:embed 115_product_bundle_permissions.sql
+var productBundlePermsSQL string
+
+//go:embed 116_product_bundle_menu.sql
+var productBundleMenuSQL string
+
 //go:embed 073_blueprint_ddl_align.sql
 var blueprintDDLAlignSQL string
 
@@ -948,6 +957,39 @@ func init() {
 		TableName:    "sys_menus",
 		ConditionSQL: "SELECT CASE WHEN COUNT(*) = 1 THEN 1 ELSE 0 END FROM sys_menus WHERE title = '变更记录' AND type = 2 AND deleted_time IS NULL",
 		SQL:          masterDataMenuSQL,
+	})
+
+	// 114：捆绑品选项规则（issue #20）。默认「表存在即跳过」在 products 上必然误跳过，
+	// 故 CheckSQL 核对形状约束是否在位（列默认值 + 规范化 UPDATE + CHECK 三者同段执行，
+	// 语句全部幂等，缺约束即整段重跑）。
+	register(Migration{
+		Version:   "114-product-bundle-config",
+		TableName: "products",
+		CheckSQL: "SELECT CASE WHEN COUNT(*) = 1 THEN 1 ELSE 0 END FROM pg_constraint c " +
+			"JOIN pg_class t ON t.oid = c.conrelid " +
+			"JOIN pg_namespace n ON n.oid = t.relnamespace " +
+			"WHERE n.nspname = current_schema() AND t.relname = ? " +
+			"AND c.conname = 'products_bundle_items_shape_check'",
+		SQL: productBundleConfigSQL,
+	})
+
+	// 115：捆绑品 4 个权限点 + 超管策略（issue #20）。
+	// 条件只看本票自己的权限点（product:bundle_%），与 082 的宽匹配互不干扰。
+	registerSeed(Seed{
+		Version:   "115-product-bundle-permissions",
+		TableName: "sys_permission",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) = 4 THEN 1 ELSE 0 END FROM sys_permission WHERE permission_code IN (" +
+			"'product:bundle_get', 'product:bundle_set', " +
+			"'product:bundle_validate', 'product:bundle_skus')",
+		SQL: productBundlePermsSQL,
+	})
+
+	// 116：捆绑配置后台菜单（issue #20）。与 084/113 同挂「站点工程」目录（sort 12）。
+	registerSeed(Seed{
+		Version:      "116-product-bundle-menu",
+		TableName:    "sys_menus",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) = 1 THEN 1 ELSE 0 END FROM sys_menus WHERE title = '捆绑配置' AND type = 2 AND deleted_time IS NULL",
+		SQL:          productBundleMenuSQL,
 	})
 
 	// 073：把历史库的 blueprints / blueprint_versions 对齐到 model（唯一真源）。

@@ -19,8 +19,11 @@ type Request struct {
 	Type string
 	// Context 语义上下文（currentProduct / visitorSession / searchQuery，可选）。
 	Context string
-	// Params 受限查询参数（已长度/枚举校验）。
+	// Params 受限查询参数（已长度/枚举校验；多值参数只保留首值）。
 	Params map[string]string
+	// Values 全部参数值（并行数组用：POST 表单里同名多值，如 variantId / qty）。
+	// 与 Params 同源同校验，只是不做「取首值」的折叠。
+	Values map[string][]string
 	// UserID 已认证用户 ID（session 策略时非空）。
 	UserID string
 }

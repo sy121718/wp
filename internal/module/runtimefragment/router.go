@@ -14,5 +14,9 @@ func SetupFragmentRoutes(router *gin.Engine) {
 	}
 	// GET /_fragments/{type}：白名单校验 + 认证策略 + 处理器。
 	router.GET("/_fragments/:type", FragmentEndpoint)
-	// POST 写操作能力（购物车等）后续按 capability 注册（带 CSRF）。
+	// POST /_fragments/{type}（issue #20）：结构化入参（并行数组）用表单传，
+	// 能力声明 Method=POST 才可达。仍然是逐 capability 白名单，不是任意 endpoint。
+	// 注意：需要写状态（购物车 / 下单）的 POST 能力必须声明 session 策略并带 CSRF，
+	// 不能沿用 anonymous（见 endpoint.go 顶部说明）。
+	router.POST("/_fragments/:type", FragmentEndpoint)
 }

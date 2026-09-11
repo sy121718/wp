@@ -220,6 +220,18 @@ func (m *Model) ListVariantsByProducts(ctx context.Context, productIDs []string)
 	return list, err
 }
 
+// ListVariantsByIDs 批量按 ID 取变体（issue #20：捆绑选项按 id 批量取 SKU，避免 N+1）。
+//
+// 返回值只有命中的行：调用方按「请求了哪些 id」与「拿到了哪些」做差集，
+// 缺的那些就是「SKU 已被删除」——那是业务判断，留在 service。
+func (m *Model) ListVariantsByIDs(ctx context.Context, ids []string) (list []*VariantEntity, err error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	err = m.VariantDB(ctx).Where("id IN ?", ids).Find(&list).Error
+	return list, err
+}
+
 // GetVariant 按 ID 查变体。
 func (m *Model) GetVariant(ctx context.Context, id string) (e *VariantEntity, err error) {
 	e = &VariantEntity{}

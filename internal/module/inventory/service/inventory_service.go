@@ -89,6 +89,8 @@ func (s *Service) SetMasterDataChanges(port masterdatacontract.MasterDataService
 var (
 	_ inventorycontract.InventoryService = (*Service)(nil)
 	_ productcontract.VariantStockPort   = (*Service)(nil)
+	// 库存真源可用量端口（issue #20）：捆绑品的数量上限与整单下限读它，而不是读展示缓存。
+	_ productcontract.VariantAvailabilityPort = (*Service)(nil)
 )
 
 // resolveProjectID 解析工程：显式指定优先，否则取唯一工程。
