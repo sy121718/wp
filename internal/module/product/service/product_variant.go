@@ -24,6 +24,7 @@ import (
 
 	"github.com/google/uuid"
 
+	masterdataenums "go_wp/internal/module/masterdata/enums"
 	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
@@ -62,6 +63,12 @@ func (s *Service) CreateVariant(ctx context.Context, req *productdto.CreateVaria
 	if err = s.ensureVariantStock(ctx, ref, p.ID, v.ID, v.SKUCode); err != nil {
 		return nil, err
 	}
+	// issue #19：新增变体 → 变更记录。带上归属仓（默认发货仓）与 SKU 编码 ——
+	// 这两件事只在此刻确定，之后编辑路径不再改动它们。
+	if err = s.recordChanges(ctx, variantChangeInput(p.ProjectID, v, masterdataenums.ActionCreate,
+		masterdataenums.OriginVariant, req.OperatorID, nil, variantChangeSnapshot(v, ref))); err != nil {
+		return nil, err
+	}
 	// 重算时机之一：变体写操作后 —— 价格 / 对比价参与自动标签规则判定。
 	if err = s.recalcProjectAutoTags(ctx, p.ID); err != nil {
 		return nil, err
@@ -80,6 +87,12 @@ func (s *Service) UpdateVariant(ctx context.Context, req *productdto.UpdateVaria
 	if err != nil {
 		return nil, mapNotFound(err)
 	}
+	// issue #19：改前快照必须在任何赋值之前取；工程维度只在留痕端口已注入时才查。
+	projectID, err := s.variantProjectID(ctx, v)
+	if err != nil {
+		return nil, err
+	}
+	before := variantChangeSnapshot(v, nil)
 	if req.SKUCode != nil {
 		code := strings.TrimSpace(*req.SKUCode)
 		if code == "" {
@@ -120,6 +133,12 @@ func (s *Service) UpdateVariant(ctx context.Context, req *productdto.UpdateVaria
 	if err = s.m.UpdateVariant(ctx, v); err != nil {
 		return nil, err
 	}
+	// issue #19：字段级变更留痕 —— SKU 编码 / 条码 / 售价 / 划线价 / 成本价 /
+	// 启用状态 / 规格组合，只写真正变化的字段。
+	if err = s.recordChanges(ctx, variantChangeInput(projectID, v, masterdataenums.ActionUpdate,
+		masterdataenums.OriginVariant, req.OperatorID, before, variantChangeSnapshot(v, nil))); err != nil {
+		return nil, err
+	}
 	// 重算时机之一：变体写操作后（改价格 / 改启用状态都会改自动标签归属）。
 	if err = s.recalcProjectAutoTags(ctx, v.ProductID); err != nil {
 		return nil, err
@@ -139,7 +158,17 @@ func (s *Service) DeleteVariant(ctx context.Context, req *productdto.DeleteVaria
 	if gerr != nil {
 		return mapNotFound(gerr)
 	}
+	// issue #19：删除前取快照与工程（删完之后这两个值都查不到了）。
+	projectID, perr := s.variantProjectID(ctx, v)
+	if perr != nil {
+		return perr
+	}
+	before := variantChangeSnapshot(v, nil)
 	if err = s.m.DeleteVariant(ctx, req.ID); err != nil {
+		return err
+	}
+	if err = s.recordChanges(ctx, variantChangeInput(projectID, v, masterdataenums.ActionDelete,
+		masterdataenums.OriginVariant, req.OperatorID, before, nil)); err != nil {
 		return err
 	}
 	// 重算时机之一：变体写操作后（删掉唯一命中价格区间的变体会让商品脱钩）。

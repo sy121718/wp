@@ -6,14 +6,43 @@ package inventoryhttp
 
 import (
 	"net/http"
+	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
+	"go_wp/internal/middleware/builtin"
 	inventorycontract "go_wp/internal/module/inventory/contract"
 	inventorydto "go_wp/internal/module/inventory/dto"
 	inventoryenums "go_wp/internal/module/inventory/enums"
 	"go_wp/pkg/response"
 )
+
+// operatorFromContext 从会话取操作人（issue #19 的变更记录操作人）。
+//
+// 优先取登录名（留痕要能直接读懂「谁改的」，与库存流水的 operator_id 同口径），
+// 缺失时退回数值 user_id，两者都没有则空串（留痕字段允许为空）。
+// 本函数不参与任何鉴权判断，只做展示用的文本化。
+func operatorFromContext(c *gin.Context) (id string) {
+	if name := strings.TrimSpace(builtin.GetUsername(c)); name != "" {
+		return name
+	}
+	value, exists := c.Get("user_id")
+	if !exists {
+		return ""
+	}
+	switch v := value.(type) {
+	case int64:
+		return strconv.FormatInt(v, 10)
+	case int:
+		return strconv.Itoa(v)
+	case string:
+		return v
+	case uint64:
+		return strconv.FormatUint(v, 10)
+	}
+	return ""
+}
 
 // Handle inventory HTTP 处理器。
 type Handle struct {
@@ -30,6 +59,8 @@ func (h *Handle) CreateSource(c *gin.Context) {
 		response.ErrorWithMessage(c, http.StatusBadRequest, inventoryenums.ErrInvalidParam)
 		return
 	}
+	// issue #19：变更记录的操作人从会话取（客户端传入被忽略）。
+	req.OperatorID = operatorFromContext(c)
 	res, err := h.svc.CreateSource(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
@@ -45,6 +76,8 @@ func (h *Handle) UpdateSource(c *gin.Context) {
 		response.ErrorWithMessage(c, http.StatusBadRequest, inventoryenums.ErrInvalidParam)
 		return
 	}
+	// issue #19：变更记录的操作人从会话取（客户端传入被忽略）。
+	req.OperatorID = operatorFromContext(c)
 	res, err := h.svc.UpdateSource(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
@@ -90,6 +123,8 @@ func (h *Handle) DeleteSource(c *gin.Context) {
 		response.ErrorWithMessage(c, http.StatusBadRequest, inventoryenums.ErrInvalidParam)
 		return
 	}
+	// issue #19：变更记录的操作人从会话取（客户端传入被忽略）。
+	req.OperatorID = operatorFromContext(c)
 	if err := h.svc.DeleteSource(c.Request.Context(), req); err != nil {
 		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
 		return

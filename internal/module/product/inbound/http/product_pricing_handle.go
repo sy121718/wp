@@ -7,9 +7,11 @@ package producthttp
 import (
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
+	"go_wp/internal/middleware/builtin"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
 	"go_wp/pkg/response"
@@ -48,7 +50,7 @@ func (h *Handle) ApplyPricing(c *gin.Context) {
 		return
 	}
 	// 操作人取自会话，客户端传什么都不作数（留痕的操作人不可伪造）。
-	req.OperatorID = pricingOperatorFromContext(c)
+	req.OperatorID = operatorFromContext(c)
 	res, err := h.svc.ApplyPricing(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
@@ -87,11 +89,16 @@ func (h *Handle) GetPriceAdjustment(c *gin.Context) {
 	response.SuccessWithMessage(c, productenums.MsgDetailSuccess, res)
 }
 
-// pricingOperatorFromContext 从会话取操作人 id（缺失返回空串；留痕字段允许为空）。
+// operatorFromContext 从会话取操作人（issue #13 定价留痕 / issue #19 变更记录共用）。
 //
-// 会话中间件写入的 user_id 是 int64（见 admin 模块的读写路径），
-// 这里只做展示用的文本化，不参与任何鉴权判断。
-func pricingOperatorFromContext(c *gin.Context) (id string) {
+// 优先取登录名：留痕与变更记录都要能直接读懂「谁改的」（与库存流水的 operator_id 同口径，
+// 后台页面路径也一直是用登录名）。登录名缺失（脚本 / 测试路径）时退回数值 id ——
+// 会话中间件写入的 user_id 是 int64，这里只做展示用的文本化，不参与任何鉴权判断。
+// 两者都没有时返回空串：留痕字段允许为空。
+func operatorFromContext(c *gin.Context) (id string) {
+	if name := strings.TrimSpace(builtin.GetUsername(c)); name != "" {
+		return name
+	}
 	value, exists := c.Get("user_id")
 	if !exists {
 		return ""

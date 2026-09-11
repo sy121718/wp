@@ -22,6 +22,7 @@ import (
 	inventorydto "go_wp/internal/module/inventory/dto"
 	inventoryenums "go_wp/internal/module/inventory/enums"
 	inventorymodel "go_wp/internal/module/inventory/model"
+	masterdatacontract "go_wp/internal/module/masterdata/contract"
 	productcontract "go_wp/internal/module/product/contract"
 	projectcontract "go_wp/internal/module/project/contract"
 )
@@ -50,6 +51,10 @@ type Service struct {
 	// product_variants.cost_price；未注入时按回写失败记在入库单行上（cost_error），
 	// 不回滚已经落地的真源库存。依赖方向同样是 inventory → product。
 	variantCost productcontract.VariantCostPort
+	// changes 主数据变更记录端口（issue #19，由 masterdata 模块实现）。
+	// 货源资料的字段级变更（编码 / 类型 / 关联方 / 结算价 / 状态 / 对接配置）经它留痕；
+	// 未注入时静默跳过（纯库存单测路径），生产装配恒注入。
+	changes masterdatacontract.MasterDataService
 }
 
 // NewService 构造。
@@ -70,6 +75,14 @@ func (s *Service) SetStockCache(port productcontract.VariantStockCachePort) {
 // 与 SetStockCache 同一模式：端口实现属商品模块，故在商品模块装配之后注入。
 func (s *Service) SetVariantCost(port productcontract.VariantCostPort) {
 	s.variantCost = port
+}
+
+// SetMasterDataChanges 注入主数据变更记录端口（issue #19，装配期调用）。
+//
+// 与 SetStockCache / SetVariantCost 同一模式：可选依赖不进构造参数。
+// 依赖方向 inventory → masterdata（本模块只把货源资料的前后快照递过去）。
+func (s *Service) SetMasterDataChanges(port masterdatacontract.MasterDataService) {
+	s.changes = port
 }
 
 // 编译期断言：本模块契约 + 商品模块定义的变体库存端口（依赖方向 inventory → product）。

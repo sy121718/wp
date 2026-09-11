@@ -295,6 +295,41 @@ button, input, select, textarea { font: inherit; color: inherit; }
     .purchase-page .attr-form-actions .btn { width: 100%; }
 }
 
+/* ===== 变更记录（admin/masterdata_changes.html，issue #19） =====
+   多端适配（硬规则）：
+     · 输入宽度一律 min(100%, <设计宽度>)，容器 flex+wrap，窄屏折行不溢出；
+     · 字段级变更表与实体清单表窄屏改堆叠块（同 .purchase-page-table 手法），
+       td 的 data-label 在堆叠态由 ::before 回显列名（读屏与视觉都还在）；
+     · 只读页面：没有写表单，也没有任何编辑 / 删除入口；
+     · 触屏只需原生控件，按压反馈走 .btn:active（不带媒体查询）；
+     · 键盘：原生控件 Tab 序即视觉序，表格横向滚动容器保留 tabindex，方向键可滚。 */
+.masterdata-page .attr-form-head input[type="text"],
+.masterdata-page .attr-form-head input[type="date"],
+.masterdata-page .attr-form-head select,
+.masterdata-page .attr-form-head .wbs { width: min(100%, 220px); }
+.masterdata-meta { color: var(--c-text-mute, #6b7280); font-size: 12px; }
+.masterdata-page-table { table-layout: fixed; }
+.masterdata-page-table th, .masterdata-page-table td { word-break: break-word; overflow-wrap: anywhere; }
+/* 手机：表格改堆叠块，列名用 data-label 回显；输入占满整行。 */
+@media (max-width: 720px) {
+    .masterdata-page-table thead { display: none; }
+    .masterdata-page-table, .masterdata-page-table tbody, .masterdata-page-table tr, .masterdata-page-table td { display: block; width: auto; }
+    .masterdata-page-table tr {
+        border: 1px solid var(--c-border, #e5e7eb); border-radius: 10px;
+        padding: 8px 10px; margin-bottom: 8px;
+    }
+    .masterdata-page-table td { border: 0; padding: 2px 0; }
+    .masterdata-page-table td::before {
+        content: attr(data-label) " ";
+        color: var(--c-text-mute, #6b7280); font-size: 12px;
+    }
+    .masterdata-page .attr-form-head input[type="text"],
+    .masterdata-page .attr-form-head input[type="date"],
+    .masterdata-page .attr-form-head select,
+    .masterdata-page .attr-form-head .wbs { width: 100%; }
+    .masterdata-page .attr-form-actions .btn { width: 100%; }
+}
+
 /* ===== 商品属性管理（admin/product_attributes.html，issue #7） =====
    多端适配（硬规则）：
      · 宽度一律 min(100%, <设计宽度>)，不写死；

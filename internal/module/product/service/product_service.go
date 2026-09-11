@@ -18,6 +18,8 @@ import (
 
 	"github.com/google/uuid"
 
+	masterdatacontract "go_wp/internal/module/masterdata/contract"
+	masterdataenums "go_wp/internal/module/masterdata/enums"
 	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
@@ -45,6 +47,10 @@ type Service struct {
 	// 未注入时变体创建不生成库存记录、SKU 编码不带仓短码前缀（纯商品单测路径）；
 	// 生产装配恒注入（见 routers.SetupRoutes）。依赖方向 inventory → product。
 	variantStock productcontract.VariantStockPort
+	// changes 主数据变更记录端口（issue #19，由 masterdata 模块实现）。
+	// 商品 / 变体的关键字段变更经它留痕（append-only）；
+	// 未注入时静默跳过（纯商品单测路径），生产装配恒注入。
+	changes masterdatacontract.MasterDataService
 }
 
 // NewService 构造。
@@ -65,6 +71,14 @@ func (s *Service) SetContentStore(store i18n.ContentStore) {
 // 「解析归属仓」与「在归属仓生成库存记录」两件事，不认识仓库表结构。
 func (s *Service) SetVariantStock(port productcontract.VariantStockPort) {
 	s.variantStock = port
+}
+
+// SetMasterDataChanges 注入主数据变更记录端口（issue #19，装配期调用）。
+//
+// 与 SetVariantStock 同一模式：可选依赖不进构造参数，装配期由顶层注入
+// masterdata 模块的实现（依赖方向 product → masterdata）。
+func (s *Service) SetMasterDataChanges(port masterdatacontract.MasterDataService) {
+	s.changes = port
 }
 
 // 编译期契约断言。
@@ -157,6 +171,16 @@ func (s *Service) Create(ctx context.Context, req *productdto.CreateReq) (res *p
 	if err = s.ensureVariantStock(ctx, ref, e.ID, v.ID, v.SKUCode); err != nil {
 		return nil, err
 	}
+	// issue #19：新增关键主数据 → 写变更记录（商品与首个变体各一条，逐字段落行）。
+	// 变体那条带上了归属仓（默认发货仓），这是该事实在商品侧唯一可留痕的地方。
+	if err = s.recordChanges(ctx,
+		productChangeInput(e, masterdataenums.ActionCreate, masterdataenums.OriginProduct, req.OperatorID,
+			nil, productChangeSnapshot(e)),
+		variantChangeInput(projectID, v, masterdataenums.ActionCreate, masterdataenums.OriginVariant, req.OperatorID,
+			nil, variantChangeSnapshot(v, ref)),
+	); err != nil {
+		return nil, err
+	}
 	// 重算时机之一：商品写操作后 —— 新建商品若已满足某条自动规则（如价格区间），
 	// 立刻归位，不必等到下一次重算。
 	if err = s.recalcAutoTags(ctx, projectID); err != nil {
@@ -174,6 +198,8 @@ func (s *Service) Update(ctx context.Context, req *productdto.UpdateReq) (res *p
 	if err != nil {
 		return nil, mapNotFound(err)
 	}
+	// issue #19：改前快照必须在任何赋值之前取（之后的字段级 diff 以它为基准）。
+	before := productChangeSnapshot(e)
 	if req.Name != nil {
 		if strings.TrimSpace(*req.Name) == "" {
 			return nil, errors.New(productenums.ErrNameRequired)
@@ -279,6 +305,12 @@ func (s *Service) Update(ctx context.Context, req *productdto.UpdateReq) (res *p
 	if err = s.m.Update(ctx, e); err != nil {
 		return nil, err
 	}
+	// issue #19：字段级变更留痕 —— 上下架状态 / 名称 / URL 段 / 商品级默认售价 / 品牌。
+	// 只写真正变化的字段：改一次备注不会在审计里留一串空记录。
+	if err = s.recordChanges(ctx, productChangeInput(e, masterdataenums.ActionUpdate,
+		masterdataenums.OriginProduct, req.OperatorID, before, productChangeSnapshot(e))); err != nil {
+		return nil, err
+	}
 	// 重算时机之一：商品写操作后 —— 改状态（上架 / 下架）与改标签引用都会影响自动标签归属。
 	if err = s.recalcProjectAutoTags(ctx, e.ID); err != nil {
 		return nil, err
@@ -338,10 +370,27 @@ func (s *Service) Delete(ctx context.Context, req *productdto.DeleteReq) (err er
 	if req == nil || req.ID == "" {
 		return errors.New(productenums.ErrInvalidParam)
 	}
-	if _, gerr := s.m.Get(ctx, req.ID); gerr != nil {
+	e, gerr := s.m.Get(ctx, req.ID)
+	if gerr != nil {
 		return mapNotFound(gerr)
 	}
-	return s.m.Delete(ctx, req.ID)
+	// issue #19：删除是最需要留痕的一类动作 —— 先取商品与全部变体的快照，
+	// 删成功后逐实体落「delete」记录（new 为空、old 为删除前的取值）。
+	variants, verr := s.m.ListVariants(ctx, req.ID)
+	if verr != nil {
+		return verr
+	}
+	if err = s.m.Delete(ctx, req.ID); err != nil {
+		return err
+	}
+	inputs := make([]*masterdatacontract.ChangeInput, 0, len(variants)+1)
+	inputs = append(inputs, productChangeInput(e, masterdataenums.ActionDelete,
+		masterdataenums.OriginProduct, req.OperatorID, productChangeSnapshot(e), nil))
+	for _, v := range variants {
+		inputs = append(inputs, variantChangeInput(e.ProjectID, v, masterdataenums.ActionDelete,
+			masterdataenums.OriginVariant, req.OperatorID, variantChangeSnapshot(v, nil), nil))
+	}
+	return s.recordChanges(ctx, inputs...)
 }
 
 // attributeRespByProduct 批量取各商品引用的属性组（列表页专用，零 N+1）。

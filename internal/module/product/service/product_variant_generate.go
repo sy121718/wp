@@ -27,6 +27,8 @@ import (
 	"strings"
 	"time"
 
+	masterdatacontract "go_wp/internal/module/masterdata/contract"
+	masterdataenums "go_wp/internal/module/masterdata/enums"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
 	productmodel "go_wp/internal/module/product/model"
@@ -109,6 +111,12 @@ func (s *Service) GenerateVariants(ctx context.Context, req *productdto.Generate
 		ProductID: p.ID, Total: total, Variants: []*productdto.VariantResp{},
 	}
 	var updated, created []*productmodel.VariantEntity
+	// issue #19：组合载体（无规格变体被首个组合承接）改的是同一个变体的 option_values，
+	// 改前快照必须先取 —— 它随后会被就地改写。载体至多一个，故一份快照即可。
+	var carrierBefore masterdatacontract.FieldSnapshot
+	if carrier != nil {
+		carrierBefore = variantChangeSnapshot(carrier, nil)
+	}
 	for i, pairs := range expandCombinations(dims) {
 		key := optionKey(pairs)
 		if taken[key] {
@@ -144,6 +152,20 @@ func (s *Service) GenerateVariants(ctx context.Context, req *productdto.Generate
 		if err = s.ensureVariantStock(ctx, ref, p.ID, v.ID, v.SKUCode); err != nil {
 			return nil, err
 		}
+	}
+	// issue #19：本批新增的变体逐条留痕（含默认发货仓与 SKU 编码）；
+	// 被承接的载体记一条修改记录（规格组合由空变为具体组合）。
+	changeInputs := make([]*masterdatacontract.ChangeInput, 0, len(created)+len(updated))
+	for _, v := range updated {
+		changeInputs = append(changeInputs, variantChangeInput(p.ProjectID, v, masterdataenums.ActionUpdate,
+			masterdataenums.OriginVariantGenerate, req.OperatorID, carrierBefore, variantChangeSnapshot(v, nil)))
+	}
+	for _, v := range created {
+		changeInputs = append(changeInputs, variantChangeInput(p.ProjectID, v, masterdataenums.ActionCreate,
+			masterdataenums.OriginVariantGenerate, req.OperatorID, nil, variantChangeSnapshot(v, ref)))
+	}
+	if err = s.recordChanges(ctx, changeInputs...); err != nil {
+		return nil, err
 	}
 	res.Created = len(created)
 	// 重算时机之一：变体写操作后 —— 组合生成会新建一整批变体，价格整体变化。

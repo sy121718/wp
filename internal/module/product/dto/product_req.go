@@ -40,6 +40,10 @@ type CreateReq struct {
 	// WarehouseID 归属仓（issue #15）：新建商品时首个变体落在该仓；
 	// 为空则兜底该工程的默认仓。归属仓的短码同时决定首个变体的 SKU 编码前缀。
 	WarehouseID string `json:"warehouseId"`
+	// OperatorID 操作人（issue #19）：由 inbound 从会话覆盖写入，客户端传入的值被忽略
+	// （json/form 标签为 "-"，不可由外部指定）。变更记录记「谁改的」，
+	// 统一取会话里的登录名；缺失时为空串（留痕字段允许为空）。
+	OperatorID string `json:"-" form:"-"`
 }
 
 // UpdateReq 修改商品（含 slug 改名；变体单独接口）。
@@ -72,6 +76,10 @@ type UpdateReq struct {
 	DefaultPrice      *float64        `json:"defaultPrice"`
 	DefaultImage      *string         `json:"defaultImage"`
 	Metadata          json.RawMessage `json:"metadata"`
+	// OperatorID 操作人（issue #19）：由 inbound 从会话覆盖写入，客户端传入的值被忽略
+	// （json/form 标签为 "-"，不可由外部指定）。变更记录记「谁改的」，
+	// 统一取会话里的登录名；缺失时为空串（留痕字段允许为空）。
+	OperatorID string `json:"-" form:"-"`
 }
 
 // GetReq 按 ID 查询。
@@ -91,6 +99,10 @@ type ListReq struct {
 // DeleteReq 删除商品（连带其变体）。
 type DeleteReq struct {
 	ID string `json:"id" binding:"required"`
+	// OperatorID 操作人（issue #19）：由 inbound 从会话覆盖写入，客户端传入的值被忽略
+	// （json/form 标签为 "-"，不可由外部指定）。变更记录记「谁改的」，
+	// 统一取会话里的登录名；缺失时为空串（留痕字段允许为空）。
+	OperatorID string `json:"-" form:"-"`
 }
 
 // CreateVariantReq 为商品新增一个变体。
@@ -110,6 +122,10 @@ type CreateVariantReq struct {
 	// WarehouseID 归属仓（issue #15）：不选则兜底该工程的默认仓；
 	// 无论选没选，该 SKU 都会在归属仓生成一条库存记录（初始 0）。
 	WarehouseID string `json:"warehouseId"`
+	// OperatorID 操作人（issue #19）：由 inbound 从会话覆盖写入，客户端传入的值被忽略
+	// （json/form 标签为 "-"，不可由外部指定）。变更记录记「谁改的」，
+	// 统一取会话里的登录名；缺失时为空串（留痕字段允许为空）。
+	OperatorID string `json:"-" form:"-"`
 }
 
 // UpdateVariantReq 修改变体（编辑路径不做默认值填充）。
@@ -124,11 +140,19 @@ type UpdateVariantReq struct {
 	OptionValues json.RawMessage `json:"optionValues"`
 	Enabled      *bool           `json:"enabled"`
 	Sort         *int            `json:"sort"`
+	// OperatorID 操作人（issue #19）：由 inbound 从会话覆盖写入，客户端传入的值被忽略
+	// （json/form 标签为 "-"，不可由外部指定）。变更记录记「谁改的」，
+	// 统一取会话里的登录名；缺失时为空串（留痕字段允许为空）。
+	OperatorID string `json:"-" form:"-"`
 }
 
 // DeleteVariantReq 删除变体。
 type DeleteVariantReq struct {
 	ID string `json:"id" binding:"required"`
+	// OperatorID 操作人（issue #19）：由 inbound 从会话覆盖写入，客户端传入的值被忽略
+	// （json/form 标签为 "-"，不可由外部指定）。变更记录记「谁改的」，
+	// 统一取会话里的登录名；缺失时为空串（留痕字段允许为空）。
+	OperatorID string `json:"-" form:"-"`
 }
 
 // VariantSelectionReq 一组被勾选的属性值（issue #8）。
@@ -159,4 +183,8 @@ type GenerateVariantsReq struct {
 	// WarehouseID 归属仓（issue #15）：本批新建的变体都落在该仓（不选则默认仓），
 	// 并在该仓为每个新变体生成初始 0 的库存记录。
 	WarehouseID string `json:"warehouseId"`
+	// OperatorID 操作人（issue #19）：由 inbound 从会话覆盖写入，客户端传入的值被忽略
+	// （json/form 标签为 "-"，不可由外部指定）。变更记录记「谁改的」，
+	// 统一取会话里的登录名；缺失时为空串（留痕字段允许为空）。
+	OperatorID string `json:"-" form:"-"`
 }

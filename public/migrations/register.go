@@ -255,6 +255,15 @@ var inventoryPurchasePermsSQL string
 //go:embed 110_inventory_purchase_menu.sql
 var inventoryPurchaseMenuSQL string
 
+//go:embed 111_master_data_changes.sql
+var masterDataChangesSQL string
+
+//go:embed 112_master_data_permissions.sql
+var masterDataPermsSQL string
+
+//go:embed 113_master_data_menu.sql
+var masterDataMenuSQL string
+
 //go:embed 073_blueprint_ddl_align.sql
 var blueprintDDLAlignSQL string
 
@@ -897,6 +906,48 @@ func init() {
 		TableName:    "sys_menus",
 		ConditionSQL: "SELECT CASE WHEN COUNT(*) = 1 THEN 1 ELSE 0 END FROM sys_menus WHERE title = '采购入库' AND type = 2 AND deleted_time IS NULL",
 		SQL:          inventoryPurchaseMenuSQL,
+	})
+
+	// 111：主数据变更记录表（issue #19）。一张 append-only 的字段级审计表，
+	// 与库存流水职责分离（后者记数量变动，本表记字段级配置变更）。
+	// 默认「表存在即跳过」在「建表成功但触发器没建成」时不安全 —— 那会让
+	// append-only 静默失效，故 CheckSQL 同时核对表与触发器（都齐了才算完成；
+	// 缺任意一个即重跑整段 SQL，语句全部幂等）。
+	// 注意：migrator.apply 固定以 TableName 作为唯一 ? 参数调用 CheckSQL。
+	register(Migration{
+		Version:   "111-master-data-changes",
+		TableName: "master_data_changes",
+		CheckSQL: "SELECT CASE WHEN COUNT(*) = 2 THEN 1 ELSE 0 END FROM (" +
+			"SELECT 1 FROM information_schema.tables " +
+			"WHERE table_schema = current_schema() AND table_name = ? " +
+			"UNION ALL " +
+			"SELECT 1 FROM pg_trigger t " +
+			"JOIN pg_class c ON c.oid = t.tgrelid " +
+			"JOIN pg_namespace n ON n.oid = c.relnamespace " +
+			"WHERE n.nspname = current_schema() AND c.relname = 'master_data_changes' " +
+			"AND t.tgname = 'trg_master_data_changes_append_only' AND NOT t.tgisinternal" +
+			") x",
+		SQL: masterDataChangesSQL,
+	})
+
+	// 112：主数据变更记录 4 个只读权限点 + 超管策略（issue #19）。
+	// 条件只看本票自己的权限点（masterdata:change_%），与 100 的宽匹配互不干扰。
+	registerSeed(Seed{
+		Version:   "112-master-data-permissions",
+		TableName: "sys_permission",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) = 4 THEN 1 ELSE 0 END FROM sys_permission WHERE permission_code IN (" +
+			"'masterdata:change_list', 'masterdata:change_count', " +
+			"'masterdata:change_entities', 'masterdata:change_entity')",
+		SQL: masterDataPermsSQL,
+	})
+
+	// 113：变更记录后台菜单（issue #19）。须在 101 之后执行，与库存管理同挂
+	// 「站点工程」目录（sort 11，排在采购入库 sort 10 之后）。
+	registerSeed(Seed{
+		Version:      "113-master-data-menu",
+		TableName:    "sys_menus",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) = 1 THEN 1 ELSE 0 END FROM sys_menus WHERE title = '变更记录' AND type = 2 AND deleted_time IS NULL",
+		SQL:          masterDataMenuSQL,
 	})
 
 	// 073：把历史库的 blueprints / blueprint_versions 对齐到 model（唯一真源）。

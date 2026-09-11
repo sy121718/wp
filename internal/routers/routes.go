@@ -25,6 +25,8 @@ import (
 	contenttemplatehttp "go_wp/internal/module/contenttemplate/inbound/http"
 	dashboardhttp "go_wp/internal/module/dashboard/inbound/http"
 	inventoryhttp "go_wp/internal/module/inventory/inbound/http"
+	masterdatacontract "go_wp/internal/module/masterdata/contract"
+	masterdatahttp "go_wp/internal/module/masterdata/inbound/http"
 	mediahttp "go_wp/internal/module/media/inbound/http"
 	navigationhttp "go_wp/internal/module/navigation/inbound/http"
 	navsource "go_wp/internal/module/navigation/outbound/source"
@@ -167,6 +169,11 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 	}
 	// 内容结构模板（presentation 依赖 ResolveTemplate；模板行需 project_id 外键）。
 	contentTemplateSvc := contenttemplatehttp.SetupContentTemplateRoutes(authorizedAPI, db, projectService, entityRegistry)
+	// 主数据变更记录（issue #19）：append-only 的字段级审计（商品 / 变体 / 货源）。
+	// 必须早于商品与库存两个模块装配：它们在写关键主数据时经本模块契约留痕
+	//（依赖方向 product / inventory → masterdata），装配期把契约注入它们的可变端口。
+	// 本模块不认识任何业务表：调用方把「改前 / 改后」字段快照递进来，它只做 diff 与落库。
+	masterdataSvc := masterdatahttp.SetupMasterDataRoutes(authorizedAPI, db, projectService)
 	// 仓库与库存记录（issue #15）：库存真源（SKU × 仓库）+ 仓库实体（短码 / 名称 / 默认仓）。
 	// 必须早于商品模块装配：商品模块的变体库存端口由本模块实现（依赖方向 inventory → product），
 	// 装配期把实现当作端口传进去 —— 建变体时解析归属仓（不选则默认仓）、并在归属仓
@@ -209,6 +216,24 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 		panic("库存模块未提供成本价端口注入点（SetVariantCost）")
 	}
 	variantCostSetter.SetVariantCost(variantCostPort)
+	// 主数据变更记录注入（issue #19）：两个模块的端口是同一套方法（SetMasterDataChanges），
+	// 同一手法断言 + 注入；任一未实现即 fail-fast（装配缺陷不该拖到运行时才暴露 ——
+	// 变更记录漏接的表现是「审计静默缺失」，比报错隐蔽得多）。
+	masterDataSetters := []struct {
+		name   string
+		target any
+	}{
+		{"商品模块", productSvc}, {"库存模块", inventorySvc},
+	}
+	for _, item := range masterDataSetters {
+		setter, sok := item.target.(interface {
+			SetMasterDataChanges(masterdatacontract.MasterDataService)
+		})
+		if !sok {
+			panic(item.name + "未提供主数据变更记录注入点（SetMasterDataChanges）")
+		}
+		setter.SetMasterDataChanges(masterdataSvc)
+	}
 	// 商品实体类型注册（issue #6）：注册后商品可作为内容模板的数据源
 	// （类型合法性 + 字段白名单由注册表判定），构建期经注册表取商品字段解析器。
 	// 与内容模块同样 fail-fast：注册失败即装配缺陷。
@@ -285,7 +310,7 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 		admincontract.RuleService
 	})
 	dashboardhttp.SetupDashboardRoutes(router, pageService, projectService, blockSvc, pluginSvc, collectionResolver,
-		adminCRUD, adminCRUD, adminCRUD, adminCRUD, adminCRUD, adminCRUD, adminAuthzSvc, navigationSvc, productSvc, presentationSvc, contentTemplateSvc, inventorySvc)
+		adminCRUD, adminCRUD, adminCRUD, adminCRUD, adminCRUD, adminCRUD, adminAuthzSvc, navigationSvc, productSvc, presentationSvc, contentTemplateSvc, inventorySvc, masterdataSvc)
 
 	// 运行时片段端点（0-D，公开路由：capability 白名单 + 认证策略在 handler 内）。
 	runtimefragment.SetupFragmentRoutes(router)

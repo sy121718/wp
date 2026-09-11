@@ -10,6 +10,7 @@ import (
 	blockcontract "go_wp/internal/module/block/contract"
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
 	inventorycontract "go_wp/internal/module/inventory/contract"
+	masterdatacontract "go_wp/internal/module/masterdata/contract"
 	navigationcontract "go_wp/internal/module/navigation/contract"
 	pagecontract "go_wp/internal/module/page/contract"
 	plugincontract "go_wp/internal/module/plugin/contract"
@@ -41,7 +42,8 @@ func SetupDashboardRoutes(router *gin.Engine,
 	products productcontract.ProductService,
 	presentations ProductPagePorts,
 	templates contenttemplatecontract.ContentTemplateService,
-	inventories inventorycontract.InventoryService) {
+	inventories inventorycontract.InventoryService,
+	masterdata masterdatacontract.MasterDataService) {
 	if router == nil {
 		return
 	}
@@ -229,6 +231,12 @@ func SetupDashboardRoutes(router *gin.Engine,
 	adminPages.POST("/inventory/purchases/create", builtin.CasbinMiddlewareForPath("/api/inventory/purchase/create"), purchasePages.InventoryPurchaseCreate)
 	adminPages.POST("/inventory/purchases/receipt", builtin.CasbinMiddlewareForPath("/api/inventory/purchase/receipt"), purchasePages.InventoryPurchaseReceipt)
 	adminPages.POST("/inventory/purchases/production", builtin.CasbinMiddlewareForPath("/api/inventory/purchase/production"), purchasePages.InventoryPurchaseProduction)
+
+	// 变更记录页（issue #19）：主数据（商品 / 变体 / 货源）的字段级变更历史。
+	// 只读页面：没有写表单 —— 记录由业务模块在写操作里经 masterdata 契约追加，
+	// 后台不提供「手工补一条」的口子。按实体查询（实体清单点一行即锁定该实体）。
+	masterDataPages := NewMasterDataChangePageHandle(masterdata, projects)
+	adminPages.GET("/masterdata/changes", masterDataPages.MasterDataChangesPage)
 
 	// 商品域翻译工作台（issue #12）：入口在商品列表行内「多语言」按钮（与页面翻译工作台同构）。
 	// 保存写 sys_translation（engine=manual）并标记待重建，鉴权复用商品更新权限点（同一改动面）。

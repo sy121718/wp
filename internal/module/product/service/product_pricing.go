@@ -28,6 +28,8 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
+	masterdatacontract "go_wp/internal/module/masterdata/contract"
+	masterdataenums "go_wp/internal/module/masterdata/enums"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
 	productmodel "go_wp/internal/module/product/model"
@@ -133,6 +135,7 @@ func (s *Service) ApplyPricing(ctx context.Context, req *productdto.PricingApply
 		byVariant[t.variant.ID] = t
 	}
 	updated := make([]*productmodel.VariantEntity, 0, counts.changed)
+	changeInputs := make([]*masterdatacontract.ChangeInput, 0, counts.changed)
 	items := make([]*productmodel.PriceAdjustmentItemEntity, 0, counts.changed)
 	changedLines := make([]*productdto.PricingLineResp, 0, counts.changed)
 	for _, line := range lines {
@@ -147,6 +150,13 @@ func (s *Service) ApplyPricing(ctx context.Context, req *productdto.PricingApply
 		t.variant.UpdatedAt = now
 		updated = append(updated, t.variant)
 		changedLines = append(changedLines, line)
+		// issue #19：定价工具改的是售价这一列主数据，逐变体留痕。
+		// 改前快照从内存里的变体复制一份并把售价换回原价即可 —— 本次只动 price 一列。
+		beforeVariant := *t.variant
+		beforeVariant.Price = line.OldPrice
+		changeInputs = append(changeInputs, variantChangeInput(pr.projectID, t.variant,
+			masterdataenums.ActionUpdate, masterdataenums.OriginPricing, req.OperatorID,
+			variantChangeSnapshot(&beforeVariant, nil), variantChangeSnapshot(t.variant, nil)))
 		items = append(items, &productmodel.PriceAdjustmentItemEntity{
 			ID: uuid.NewString(), ProductID: line.ProductID, VariantID: line.VariantID,
 			SKUCode: line.SKUCode, OldPrice: line.OldPrice, NewPrice: line.NewPrice,
@@ -176,6 +186,11 @@ func (s *Service) ApplyPricing(ctx context.Context, req *productdto.PricingApply
 		}
 		return s.m.CreateAdjustmentWithItemsTx(tx, adj, items)
 	}); err != nil {
+		return nil, err
+	}
+	// issue #19：售价留痕（来源 = pricing）。定价表里的批次留痕回答「按哪条规则改的」，
+	// 这里回答「哪个字段从多少变成了多少」—— 两者互补，不互相替代。
+	if err = s.recordChanges(ctx, changeInputs...); err != nil {
 		return nil, err
 	}
 	// 变体写操作后的重算时机（#11）：价格变了，价格区间 / 促销规则的归属可能跟着变。

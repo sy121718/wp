@@ -216,6 +216,10 @@ type CreateSourceReq struct {
 	Config       json.RawMessage `json:"config"`
 	Sort         int             `json:"sort"`
 	Metadata     json.RawMessage `json:"metadata"`
+	// OperatorID 操作人（issue #19）：由 inbound 从会话覆盖写入，客户端传入的值被忽略
+	// （json 标签为 "-"，不可由外部指定）。变更记录记「谁改的」，
+	// 统一取会话里的登录名；缺失时为空串（留痕字段允许为空）。
+	OperatorID string `json:"-"`
 }
 
 // UpdateSourceReq 修改货源（逐字段可选；nil = 本次不改）。
@@ -233,6 +237,10 @@ type UpdateSourceReq struct {
 	Config           json.RawMessage `json:"config"`
 	Sort             *int            `json:"sort"`
 	Metadata         json.RawMessage `json:"metadata"`
+	// OperatorID 操作人（issue #19）：由 inbound 从会话覆盖写入，客户端传入的值被忽略
+	// （json 标签为 "-"，不可由外部指定）。变更记录记「谁改的」，
+	// 统一取会话里的登录名；缺失时为空串（留痕字段允许为空）。
+	OperatorID string `json:"-"`
 }
 
 // GetSourceReq 按 ID 查询货源。
@@ -243,6 +251,10 @@ type GetSourceReq struct {
 // DeleteSourceReq 删除货源。
 type DeleteSourceReq struct {
 	ID string `json:"id" binding:"required"`
+	// OperatorID 操作人（issue #19）：由 inbound 从会话覆盖写入，客户端传入的值被忽略
+	// （json 标签为 "-"，不可由外部指定）。变更记录记「谁改的」，
+	// 统一取会话里的登录名；缺失时为空串（留痕字段允许为空）。
+	OperatorID string `json:"-"`
 }
 
 // ListSourceReq 货源列表（报表区分维度直接落在查询上）。

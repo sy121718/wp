@@ -26,6 +26,7 @@ import (
 	inventorydto "go_wp/internal/module/inventory/dto"
 	inventoryenums "go_wp/internal/module/inventory/enums"
 	inventorymodel "go_wp/internal/module/inventory/model"
+	masterdataenums "go_wp/internal/module/masterdata/enums"
 )
 
 const (
@@ -92,6 +93,11 @@ func (s *Service) CreateSource(ctx context.Context, req *inventorydto.CreateSour
 	if err = s.m.CreateSource(ctx, e); err != nil {
 		return nil, err
 	}
+	// issue #19：新增货源 → 变更记录（编码 / 名称 / 类型 / 关联方 / 结算价 / 状态 / 对接配置）。
+	if err = s.recordChanges(ctx, sourceChangeInput(e, masterdataenums.ActionCreate,
+		req.OperatorID, nil, sourceChangeSnapshot(e))); err != nil {
+		return nil, err
+	}
 	return toSourceResp(e), nil
 }
 
@@ -104,6 +110,8 @@ func (s *Service) UpdateSource(ctx context.Context, req *inventorydto.UpdateSour
 	if err != nil {
 		return nil, mapSourceNotFound(err)
 	}
+	// issue #19：改前快照必须在任何赋值之前取（之后的字段级 diff 以它为基准）。
+	before := sourceChangeSnapshot(e)
 	if req.Code != nil {
 		code, cerr := normalizeSourceCode(*req.Code)
 		if cerr != nil {
@@ -176,6 +184,12 @@ func (s *Service) UpdateSource(ctx context.Context, req *inventorydto.UpdateSour
 	if err = s.m.UpdateSource(ctx, e); err != nil {
 		return nil, err
 	}
+	// issue #19：字段级变更留痕（类型 / 关联方 / 结算价 / 状态 / 对接配置 / 编码 / 名称）。
+	// 只写真正变化的字段 —— 打开表单什么都没改就保存，审计里不留痕迹。
+	if err = s.recordChanges(ctx, sourceChangeInput(e, masterdataenums.ActionUpdate,
+		req.OperatorID, before, sourceChangeSnapshot(e))); err != nil {
+		return nil, err
+	}
 	return toSourceResp(e), nil
 }
 
@@ -200,7 +214,12 @@ func (s *Service) DeleteSource(ctx context.Context, req *inventorydto.DeleteSour
 	if err != nil {
 		return mapSourceNotFound(err)
 	}
-	return s.m.DeleteSource(ctx, e.ID)
+	// issue #19：删除前取快照（删完之后连名称都查不到了），删成功后落 delete 记录。
+	before := sourceChangeSnapshot(e)
+	if err = s.m.DeleteSource(ctx, e.ID); err != nil {
+		return err
+	}
+	return s.recordChanges(ctx, sourceChangeInput(e, masterdataenums.ActionDelete, req.OperatorID, before, nil))
 }
 
 // ListSources 货源列表（验收 4：类型 / 关联方 / 状态 / 关键词都是可组合的筛选维度）。

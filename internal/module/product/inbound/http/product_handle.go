@@ -29,6 +29,8 @@ func (h *Handle) Create(c *gin.Context) {
 		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
 		return
 	}
+	// issue #19：变更记录的操作人从会话取（客户端传入被忽略）。
+	req.OperatorID = operatorFromContext(c)
 	res, err := h.svc.Create(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
@@ -44,6 +46,8 @@ func (h *Handle) Update(c *gin.Context) {
 		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
 		return
 	}
+	// issue #19：变更记录的操作人从会话取（客户端传入被忽略）。
+	req.OperatorID = operatorFromContext(c)
 	res, err := h.svc.Update(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
@@ -89,6 +93,8 @@ func (h *Handle) Delete(c *gin.Context) {
 		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
 		return
 	}
+	// issue #19：变更记录的操作人从会话取（客户端传入被忽略）。
+	req.OperatorID = operatorFromContext(c)
 	if err := h.svc.Delete(c.Request.Context(), req); err != nil {
 		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
 		return
@@ -103,6 +109,8 @@ func (h *Handle) CreateVariant(c *gin.Context) {
 		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
 		return
 	}
+	// issue #19：变更记录的操作人从会话取（客户端传入被忽略）。
+	req.OperatorID = operatorFromContext(c)
 	res, err := h.svc.CreateVariant(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
@@ -118,6 +126,8 @@ func (h *Handle) UpdateVariant(c *gin.Context) {
 		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
 		return
 	}
+	// issue #19：变更记录的操作人从会话取（客户端传入被忽略）。
+	req.OperatorID = operatorFromContext(c)
 	res, err := h.svc.UpdateVariant(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
@@ -133,6 +143,8 @@ func (h *Handle) DeleteVariant(c *gin.Context) {
 		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
 		return
 	}
+	// issue #19：变更记录的操作人从会话取（客户端传入被忽略）。
+	req.OperatorID = operatorFromContext(c)
 	if err := h.svc.DeleteVariant(c.Request.Context(), req); err != nil {
 		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
 		return
@@ -150,6 +162,8 @@ func (h *Handle) GenerateVariants(c *gin.Context) {
 		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
 		return
 	}
+	// issue #19：变更记录的操作人从会话取（客户端传入被忽略）。
+	req.OperatorID = operatorFromContext(c)
 	res, err := h.svc.GenerateVariants(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())

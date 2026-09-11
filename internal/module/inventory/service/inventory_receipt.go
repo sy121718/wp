@@ -204,7 +204,7 @@ func (s *Service) RegisterReceipt(ctx context.Context, req *inventorydto.Registe
 		receipt.MovementBatchID = change.BatchID
 		receipt.Status = inventoryenums.ReceiptStatusPosted
 	}
-	s.applyReceiptCosts(ctx, items)
+	s.applyReceiptCosts(ctx, items, receipt.OperatorID)
 	return s.receiptResp(ctx, receipt, false)
 }
 
@@ -297,7 +297,7 @@ func (s *Service) RegisterProductionInbound(ctx context.Context, req *inventoryd
 		receipt.MovementBatchID = change.BatchID
 		receipt.Status = inventoryenums.ReceiptStatusPosted
 	}
-	s.applyReceiptCosts(ctx, []*inventorymodel.ReceiptItemEntity{item})
+	s.applyReceiptCosts(ctx, []*inventorymodel.ReceiptItemEntity{item}, receipt.OperatorID)
 	return s.receiptResp(ctx, receipt, false)
 }
 
@@ -395,14 +395,17 @@ func (s *Service) compensateReceipt(ctx context.Context, receiptID, orderID stri
 //
 // 跨模块写发生在库存变动提交之后，失败不回滚真源，只把失败原因记在入库单行上
 // （与 #16 的缓存同步同一口径）。
-func (s *Service) applyReceiptCosts(ctx context.Context, items []*inventorymodel.ReceiptItemEntity) {
+//
+// operatorID（issue #19）：成本价回写会进商品侧的主数据变更记录，
+// 记的操作人就是登记这次入库的人 —— 从会话带下来，不由客户端指定。
+func (s *Service) applyReceiptCosts(ctx context.Context, items []*inventorymodel.ReceiptItemEntity, operatorID string) {
 	for _, it := range items {
 		if s.variantCost == nil {
 			it.CostUpdated, it.CostError = false, inventoryenums.ErrVariantCostPortMissing
 			_ = s.m.UpdateReceiptItemCost(ctx, it.ID, false, it.CostError)
 			continue
 		}
-		if cerr := s.variantCost.UpdateVariantCost(ctx, it.VariantID, it.UnitPrice); cerr != nil {
+		if cerr := s.variantCost.UpdateVariantCost(ctx, it.VariantID, it.UnitPrice, operatorID); cerr != nil {
 			it.CostUpdated, it.CostError = false, cerr.Error()
 		} else {
 			it.CostUpdated, it.CostError = true, ""

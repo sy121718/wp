@@ -23,5 +23,8 @@ import "context"
 type VariantCostPort interface {
 	// UpdateVariantCost 把某个变体的成本价写成 cost 并盖上更新时间。
 	// 变体不存在时返回错误（调用方按回写失败记账，不影响已经落地的库存变动）。
-	UpdateVariantCost(ctx context.Context, variantID string, cost float64) (err error)
+	//
+	// operatorID 是这次入库登记的操作人（issue #19 起成本价回写要进主数据变更记录，
+	// 记录里的「谁改的」取自这里）；缺失时传空串，留痕字段允许为空。
+	UpdateVariantCost(ctx context.Context, variantID string, cost float64, operatorID string) (err error)
 }

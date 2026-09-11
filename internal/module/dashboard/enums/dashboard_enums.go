@@ -62,6 +62,12 @@ const MsgInventorySourcesTitle = "MsgInventorySourcesTitle" // 货源管理
 // MsgInventoryPurchasesTitle 采购入库页标题（issue #18）。
 const MsgInventoryPurchasesTitle = "MsgInventoryPurchasesTitle" // 采购入库
 
+// MsgMasterDataChangesTitle 主数据变更记录页标题（issue #19）。
+const MsgMasterDataChangesTitle = "MsgMasterDataChangesTitle" // 变更记录
+
+// MsgMasterDataFilterInvalid 变更记录页筛选参数无法解析（按实体查询时实体 id 不是 uuid 等）。
+const MsgMasterDataFilterInvalid = "MsgMasterDataFilterInvalid" // 筛选条件无法解析，已忽略筛选
+
 // MsgInternalError 页面 handler 内部错误统一提示（禁止直出 err.Error() 泄露内部细节）。
 const MsgInternalError = "MsgInternalError" // 系统内部错误，请稍后重试
 
