@@ -136,6 +136,8 @@ type CompiledPage struct {
 	CSS string
 	// ThemeVarsCSS 主题变量块（:root --sky-*，注入 <style> 顶部；空=无主题）。
 	ThemeVarsCSS string
+	// UISources 原始控件基座源码（来自 WithUISources，按 data-ui-* 特征挑控件注入）。
+	UISources map[string]string
 	// EnhanceSource 客户端增强脚本源码（未裁剪的整份，来自 WithEnhanceSource）。
 	//
 	// 这里存的是**源码**而不是裁剪结果：裁剪要按产物 HTML 里的 data-* 特征来挑块，
@@ -174,6 +176,9 @@ type compileConfig struct {
 	// extraCSS 插件静态样式（插件包 assets/*.css，构建期注入主 CSS 之后；
 	// docs/06 §5.1 资产规范——复杂动画/特殊结构不在引擎内表达时由插件自带）。
 	extraCSS string
+	// uiSources 原始控件基座源码（文件名 → 源码，构建期按 data-ui-* 特征挑控件注入）。
+	// 与 enhanceSource 分开：组件增强与原始控件是两层关注点（见 ui_script.go）。
+	uiSources map[string]string
 	// enhanceSource 客户端增强脚本源码（构建期按产物特征裁剪后内联进产物）。
 	//
 	// 由调用方注入而不是 builder 自己 embed：前端资产统一放在 internal/templates/static/，
@@ -262,6 +267,14 @@ func WithThemeSettings(t *ThemeSettings) CompileOption {
 // 调用方（page service）在装配编译选项时注入；缺失会由增强装配处告警，不静默。
 func WithEnhanceSource(js string) CompileOption {
 	return func(c *compileConfig) { c.enhanceSource = js }
+}
+
+// WithUISources 注入原始控件基座源码（文件名 → 源码，如 select.js / _util.js / index.js）。
+//
+// 按产物里出现的 data-ui-* 特征只注入命中的控件，基座与入口随之为其服务；
+// 一个都没命中时产物不含任何控件脚本（纯内容页不为增强付流量）。
+func WithUISources(sources map[string]string) CompileOption {
+	return func(c *compileConfig) { c.uiSources = sources }
 }
 
 // WithContext 注入请求上下文：构建期集合/内容解析器查库时传播（超时取消）。
@@ -610,6 +623,7 @@ func Compile(p *Page, opts ...CompileOption) (res *CompiledPage, err error) {
 		CSS:             css,
 		ThemeVarsCSS:    ThemeVarsCSS(cfg.theme),
 		EnhanceSource:   cfg.enhanceSource,
+		UISources:       cfg.uiSources,
 	}, nil
 }
 
@@ -635,7 +649,7 @@ func RenderDocument(c *CompiledPage) (string, error) {
 		HTML:            c.HTML,
 		CSS:             c.CSS,
 		ThemeVarsCSS:    c.ThemeVarsCSS,
-		EnhanceScript:   enhanceScriptFor(c.HTML, c.EnhanceSource),
+		EnhanceScript:   enhanceScriptFor(c.HTML, c.EnhanceSource) + uiScriptFor(c.HTML, c.UISources),
 	}
 	var sb strings.Builder
 	if err := documentTemplate().Execute(&sb, nil, v); err != nil {

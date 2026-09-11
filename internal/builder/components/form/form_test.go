@@ -181,7 +181,9 @@ func TestFormTemplateRender(t *testing.T) {
 		`<input id="sky-form-f1-name" type="text" name="name" placeholder="请输入姓名" required>`,
 		`<input id="sky-form-f1-email" type="email" name="email" placeholder="you@example.com">`,
 		`<textarea id="sky-form-f1-message" name="message" placeholder="说点什么"></textarea>`,
-		`<select id="sky-form-f1-city" name="city">`,
+		// data-ui-select：构建期据此刻断该产物要不要内联「原始控件基座」的下拉替身
+		// （原生 select 的弹层在部分桌面环境行为异常，见 js/ui/select.js）。
+		`<select data-ui-select id="sky-form-f1-city" name="city">`,
 		`<option value="北京">北京</option>`,
 		`<option value="上海 &amp; 广州">上海 &amp; 广州</option>`,
 		`<input type="checkbox" name="agree" required>`,

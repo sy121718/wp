@@ -104,6 +104,8 @@ func (s *Service) compileDocument(ctx context.Context, page *builder.Page, proje
 		builder.WithContext(ctx), builder.WithBlockResolver(resolver), builder.WithComponentSet(set),
 		// 客户端增强脚本（轮播/灯箱/卡片环…）：构建期按产物特征裁剪后内联。
 		builder.WithEnhanceSource(enhanceSource()),
+		// 原始控件基座（下拉替身等）：按产物里的 data-ui-* 特征挑控件内联。
+		builder.WithUISources(uiSources()),
 		builder.WithLanguage(lang), builder.WithTranslator(i18n.Snapshot(lang)),
 	}
 	if asm != nil {

@@ -16,6 +16,9 @@ import (
 var (
 	enhanceSourceOnce sync.Once
 	enhanceSourceVal  string
+
+	uiSourcesOnce sync.Once
+	uiSourcesVal  map[string]string
 )
 
 // enhanceSource 取客户端增强脚本源码（internal/templates/static/js/enhance.js）。
@@ -32,4 +35,28 @@ func enhanceSource() string {
 		enhanceSourceVal = js
 	})
 	return enhanceSourceVal
+}
+
+// uiFiles 原始控件基座的文件清单（与 js/ui/ 目录一致）。
+//
+// _util.js 是助手、index.js 是入口，两者随任一控件一起注入；其余按 data-ui-* 特征挑。
+var uiFiles = []string{"_util.js", "select.js", "index.js"}
+
+// uiSources 取原始控件基座源码（文件名 → 源码）。
+//
+// 读不到的文件直接不进 map：builder 侧发现「登记了控件却没有源码」会告警，
+// 而不是让整页构建失败 —— 控件增强是渐进能力，不该阻断内容发布。
+func uiSources() map[string]string {
+	uiSourcesOnce.Do(func() {
+		uiSourcesVal = make(map[string]string, len(uiFiles))
+		for _, name := range uiFiles {
+			js, err := templates.StaticJS("ui/" + name)
+			if err != nil {
+				logger.Scene("build").Error(err, "读取原始控件源码失败（该控件将不生效）")
+				continue
+			}
+			uiSourcesVal[name] = js
+		}
+	})
+	return uiSourcesVal
 }

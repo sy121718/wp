@@ -62,6 +62,9 @@ func TestA11yPageFixture(t *testing.T) {
 		`id="sky-form-form1-name"`,
 		`id="sky-form-form1-msg"`,
 		`id="sky-form-form1-city"`,
+		// 前台产物也要带原始控件基座：form 的 <select> 打出 data-ui-select 特征，
+		// 构建期据此内联下拉替身（访客页面同样不再依赖原生弹层）。
+		`<select data-ui-select`,
 	} {
 		if !strings.Contains(doc, want) {
 			t.Errorf("走查页缺少 %q", want)
@@ -70,9 +73,17 @@ func TestA11yPageFixture(t *testing.T) {
 	// 不套 ARIA tab 模式：role=tab 要求 aria-selected 跟着切换走，而零 JS 方案更新不了它
 	// —— 静态写死的 aria-selected 会在用户切换后变成假状态，比不写更糟。
 	// 原生 radio group 的语义（单选一组）与「选一个面板」本来就一致，读屏播报准确。
-	for _, unwanted := range []string{`role="tab"`, `aria-selected`, `role="tablist"`} {
+	// 用 ARIA tab 专属的词做判据（aria-selected 在原始控件基座里是合法用法，不能当违规信号）。
+	for _, unwanted := range []string{`role="tab"`, `role="tablist"`, `role="tabpanel"`} {
 		if strings.Contains(doc, unwanted) {
 			t.Errorf("tabs 不应输出 %q（零 JS 下会变成假 ARIA 状态）", unwanted)
+		}
+	}
+	// 原始控件基座必须真的内联进产物（不是只有特征标记）：基座助手 + 控件 + 入口。
+	// 只认基座自己的标识：aria-selected 之类的属性控件里也会合法出现，不能拿来当判据。
+	for _, want := range []string{"WBUI.controls", "wbs-trigger", "WBUI.register"} {
+		if !strings.Contains(doc, want) {
+			t.Errorf("产物缺少原始控件基座内容 %q（前台下拉仍未受控）", want)
 		}
 	}
 	// tabs 的 radio 不能用 display:none 隐藏（会让键盘序列里没有它）。
