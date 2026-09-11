@@ -30,6 +30,7 @@ import (
 	projectmodel "go_wp/internal/module/project/model"
 	projectservice "go_wp/internal/module/project/service"
 
+	"go_wp/internal/builder/core"
 	"go_wp/internal/pipeline"
 	"go_wp/public/migrations"
 	"go_wp/public/test/support"
@@ -65,8 +66,14 @@ func newPresFixture(t *testing.T) *presFixture {
 		t.Fatalf("创建测试工程失败: %v", err)
 	}
 	contentSvc := contentservice.NewService(contentmodel.NewModel(db))
-	tplSvc := contenttemplateservice.NewService(contenttemplatemodel.NewModel(db), projects)
-	presSvc := presentationservice.NewService(presentationmodel.NewModel(db), tplSvc, contentSvc, projects)
+	// 实体类型注册表：与真实装配同款 —— 内容模块注册自己的类型，
+	// 模板与发布实例只依赖注册表（不再直接依赖内容模块）。
+	registry := core.NewEntitySourceRegistry()
+	if err := contentSvc.RegisterEntityTypes(registry); err != nil {
+		t.Fatalf("注册实体类型失败: %v", err)
+	}
+	tplSvc := contenttemplateservice.NewService(contenttemplatemodel.NewModel(db), projects, registry)
+	presSvc := presentationservice.NewService(presentationmodel.NewModel(db), tplSvc, registry, projects)
 	return &presFixture{
 		db: db, content: contentSvc, templates: tplSvc, pres: presSvc, projectID: project.ID,
 	}

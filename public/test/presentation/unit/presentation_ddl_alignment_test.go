@@ -68,10 +68,10 @@ func TestCreateInstancePersistsRealColumns(t *testing.T) {
 	}
 
 	var row struct {
-		ProjectID        string
-		TemplateID       string
-		Stale            bool
-		ActiveArtifactID *string
+		ProjectID         string
+		TemplateID        string
+		Stale             bool
+		ActiveArtifactID  *string
 		StagedArtifactID  *string
 		CurrentSnapshotID *string
 		PublishedAt       *time.Time

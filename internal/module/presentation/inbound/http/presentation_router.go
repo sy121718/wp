@@ -3,7 +3,7 @@ package presentationhttp
 // presentation_router.go — presentation 模块路由自装配（0-A2）。
 
 import (
-	contentcontract "go_wp/internal/module/content/contract"
+	"go_wp/internal/builder/core"
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
 	presentationcontract "go_wp/internal/module/presentation/contract"
 	presentationmodel "go_wp/internal/module/presentation/model"
@@ -18,9 +18,9 @@ import (
 // project 用于解析实例所属工程（presentation_instances.project_id 为 NOT NULL 外键）。
 func SetupPresentationRoutes(rg *gin.RouterGroup, db *gorm.DB,
 	templates contenttemplatecontract.ContentTemplateService,
-	content contentcontract.ContentService,
+	registry core.EntitySourceRegistry,
 	project projectcontract.ProjectService) presentationcontract.PresentationService {
-	svc := presentationservice.NewService(presentationmodel.NewModel(db), templates, content, project)
+	svc := presentationservice.NewService(presentationmodel.NewModel(db), templates, registry, project)
 	handle := NewHandle(svc)
 
 	g := rg.Group("/presentation")

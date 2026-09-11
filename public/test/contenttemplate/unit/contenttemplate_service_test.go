@@ -9,11 +9,13 @@ package unit
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 
 	"gorm.io/gorm"
 
+	"go_wp/internal/builder/core"
 	contenttemplatedto "go_wp/internal/module/contenttemplate/dto"
 	contenttemplateenums "go_wp/internal/module/contenttemplate/enums"
 	contenttemplatemodel "go_wp/internal/module/contenttemplate/model"
@@ -49,7 +51,30 @@ func newService(t *testing.T) (*contenttemplateservice.Service, *gorm.DB, string
 	if err != nil {
 		t.Fatalf("创建测试工程失败: %v", err)
 	}
-	return contenttemplateservice.NewService(contenttemplatemodel.NewModel(db), projects), db, project.ID
+	return contenttemplateservice.NewService(contenttemplatemodel.NewModel(db), projects, testRegistry(t)), db, project.ID
+}
+
+// stubEntitySource 测试桩：只提供类型标识，不提供字段解析器。
+type stubEntitySource struct{ entityType string }
+
+func (s stubEntitySource) EntityType() string       { return s.entityType }
+func (s stubEntitySource) FieldWhitelist() []string { return nil }
+func (s stubEntitySource) ResolverFor(_ context.Context, _ string) (core.ContentResolver, error) {
+	return nil, errors.New("测试桩不提供字段解析器")
+}
+
+// testRegistry 带内容实体类型的注册表。
+//
+// 模板模块只关心「类型合法性来自注册表」，因此不引内容模块实现，保持本包测试隔离。
+func testRegistry(t *testing.T) core.EntitySourceRegistry {
+	t.Helper()
+	reg := core.NewEntitySourceRegistry()
+	for _, k := range []string{"product", "article", "category"} {
+		if err := reg.Register(stubEntitySource{entityType: k}); err != nil {
+			t.Fatalf("注册实体类型 %q 失败: %v", k, err)
+		}
+	}
+	return reg
 }
 
 // TestContentTemplateModelColumnsSubsetOfProductionDDL model 列集合必须是生产

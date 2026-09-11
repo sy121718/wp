@@ -14,7 +14,7 @@ import (
 	"gorm.io/gorm"
 
 	"go_wp/internal/builder"
-	contentcontract "go_wp/internal/module/content/contract"
+	"go_wp/internal/builder/core"
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
 	contenttemplatedto "go_wp/internal/module/contenttemplate/dto"
 	contenttemplateenums "go_wp/internal/module/contenttemplate/enums"
@@ -30,14 +30,22 @@ const systemCreator = "00000000-0000-0000-0000-000000000000"
 
 // Service contenttemplate 模块业务实现。
 type Service struct {
-	m       *contenttemplatemodel.Model
-	project projectcontract.ProjectService
+	m        *contenttemplatemodel.Model
+	project  projectcontract.ProjectService
+	registry core.EntitySourceRegistry
 }
 
-// NewService 构造（model + project 契约注入，不持有 *gorm.DB）。
-// project 用于解析模板所属工程（content_templates.project_id 为 NOT NULL 外键）。
-func NewService(m *contenttemplatemodel.Model, project projectcontract.ProjectService) *Service {
-	return &Service{m: m, project: project}
+// NewService 构造（model + project 契约 + 实体类型注册表注入，不持有 *gorm.DB）。
+// project 用于解析模板所属工程（content_templates.project_id 为 NOT NULL 外键）；
+// registry 提供「实体类型是否合法」的判据（取代对内容模块的直接依赖）。
+func NewService(m *contenttemplatemodel.Model, project projectcontract.ProjectService,
+	registry core.EntitySourceRegistry) *Service {
+	return &Service{m: m, project: project, registry: registry}
+}
+
+// validEntityType 实体类型是否合法（注册表为 nil 时视为不合法，避免静默放行）。
+func (s *Service) validEntityType(entityType string) bool {
+	return s.registry != nil && s.registry.IsValidType(entityType)
 }
 
 // 编译期契约断言。
@@ -45,7 +53,7 @@ var _ contenttemplatecontract.ContentTemplateService = (*Service)(nil)
 
 // Create 创建模板（初始 draft_version=1 并写入 version=1 快照）。
 func (s *Service) Create(ctx context.Context, req *contenttemplatedto.CreateReq) (res *contenttemplatedto.TemplateResp, err error) {
-	if req == nil || !contentcontract.IsValidType(req.EntityType) || req.Name == "" {
+	if req == nil || !s.validEntityType(req.EntityType) || req.Name == "" {
 		return nil, errors.New(contenttemplateenums.ErrInvalidParam)
 	}
 	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
@@ -127,7 +135,7 @@ func (s *Service) List(ctx context.Context, req *contenttemplatedto.ListReq) (li
 	if req == nil {
 		req = &contenttemplatedto.ListReq{}
 	}
-	if req.EntityType != "" && !contentcontract.IsValidType(req.EntityType) {
+	if req.EntityType != "" && !s.validEntityType(req.EntityType) {
 		return nil, errors.New(contenttemplateenums.ErrInvalidType)
 	}
 	rows, err := s.m.List(ctx, req.EntityType)
@@ -147,7 +155,7 @@ func (s *Service) List(ctx context.Context, req *contenttemplatedto.ListReq) (li
 //  2. 取该模板最新版本（LatestVersion）的 document；
 //  3. 组装 ResolvedTemplate{TemplateID, VersionID, Version, EntityType, Document}。
 func (s *Service) ResolveTemplate(ctx context.Context, entityType string) (res *contenttemplatecontract.ResolvedTemplate, err error) {
-	if entityType == "" || !contentcontract.IsValidType(entityType) {
+	if entityType == "" || !s.validEntityType(entityType) {
 		return nil, errors.New(contenttemplateenums.ErrInvalidType)
 	}
 	rows, err := s.m.List(ctx, entityType)

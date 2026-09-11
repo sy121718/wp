@@ -24,7 +24,6 @@ import (
 	"sync"
 	"time"
 
-	contentcontract "go_wp/internal/module/content/contract"
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
 	presentationcontract "go_wp/internal/module/presentation/contract"
 	presentationdto "go_wp/internal/module/presentation/dto"
@@ -33,6 +32,7 @@ import (
 	projectcontract "go_wp/internal/module/project/contract"
 
 	"go_wp/internal/builder"
+	"go_wp/internal/builder/core"
 	"go_wp/internal/pipeline"
 	"go_wp/internal/templates"
 
@@ -56,7 +56,7 @@ const instanceLockStripes = 64
 type Service struct {
 	m           *presentationmodel.Model
 	templates   contenttemplatecontract.ContentTemplateService
-	content     contentcontract.ContentService
+	registry    core.EntitySourceRegistry
 	project     projectcontract.ProjectService
 	store       *pipeline.LocalStore
 	publication *pipeline.LocalPublicationStore
@@ -73,15 +73,15 @@ func (s *Service) lockInstance(entityType, entityID string) *sync.Mutex {
 	return &s.instanceLocks[h.Sum32()%instanceLockStripes]
 }
 
-// NewService 构造（依赖 contenttemplate/content/project 契约 + pipeline 内核）。
+// NewService 构造（依赖 contenttemplate 契约 + 实体类型注册表 + project 契约 + pipeline 内核）。
 func NewService(m *presentationmodel.Model,
 	templates contenttemplatecontract.ContentTemplateService,
-	content contentcontract.ContentService,
+	registry core.EntitySourceRegistry,
 	project projectcontract.ProjectService) *Service {
 	return &Service{
 		m:           m,
 		templates:   templates,
-		content:     content,
+		registry:    registry,
 		project:     project,
 		store:       &pipeline.LocalStore{Root: pipeline.DefaultArtifactRoot()},
 		publication: &pipeline.LocalPublicationStore{ActiveRoot: pipeline.ActiveRoot()},
@@ -416,7 +416,10 @@ func (s *Service) buildArtifact(ctx context.Context, entityType, entityID, urlPa
 	if err != nil {
 		return built, err
 	}
-	resolver, err := s.content.ResolverFor(ctx, entityType, entityID)
+	if s.registry == nil {
+		return built, errors.New(presentationenums.ErrRegistryMissing)
+	}
+	resolver, err := s.registry.ResolverFor(ctx, entityType, entityID)
 	if err != nil {
 		return built, err
 	}

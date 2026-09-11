@@ -18,6 +18,8 @@ const (
 	ErrProjectRequired = "ErrProjectRequired"
 	// ErrProjectNotFound 显式指定的工程不存在。
 	ErrProjectNotFound = "ErrProjectNotFound"
+	// ErrRegistryMissing 实体类型注册表未装配（装配缺陷，构建期无法解析实体字段）。
+	ErrRegistryMissing = "ErrRegistryMissing"
 )
 
 // 实例发布状态（由指针列推导，非表列）。

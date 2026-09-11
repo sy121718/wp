@@ -1,10 +1,10 @@
 // routes.go — 主路由聚合（页面路由 + 各模块自装配路由）。
 //
 // 权限策略的两个坑（排查 403 时先看这里）：
-//   1. Casbin 策略在启动时从 sys_casbin_rule 载入内存，**改库后不会自动重载** ——
-//      新接口的 seed 迁移必须配合进程重启才生效，否则表现为「策略已写、接口仍 403」；
-//   2. 策略按 v0 = user_id 授权（超管是 user_id=1），**is_admin=1 不自动放行** ——
-//      新建的管理员账号需要在 seed/后台里单独授权，否则登录后各接口一律 403。
+//  1. Casbin 策略在启动时从 sys_casbin_rule 载入内存，**改库后不会自动重载** ——
+//     新接口的 seed 迁移必须配合进程重启才生效，否则表现为「策略已写、接口仍 403」；
+//  2. 策略按 v0 = user_id 授权（超管是 user_id=1），**is_admin=1 不自动放行** ——
+//     新建的管理员账号需要在 seed/后台里单独授权，否则登录后各接口一律 403。
 package routers
 
 import (
@@ -144,12 +144,19 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 	// 公开站点导航（0-C，与后台 menu 严格隔离）。
 	navigationSvc := navigationhttp.SetupNavigationRoutes(authorizedAPI, db)
 	_ = blueprintSvc // 未来 page CreatePage 消费 InitPageDocument
-	// CMS 内容（0-A2，contenttemplate/presentation 依赖其字段白名单契约）。
+	// CMS 内容（0-A2）。
 	contentSvc := contenthttp.SetupContentRoutes(authorizedAPI, db)
+	// 实体类型注册表：各领域模块在装配期注册自己的实体类型；
+	// 内容模板 / 发布实例据此校验类型与取字段解析器，不再直接依赖内容模块。
+	// 注册失败即装配缺陷（fail-fast，与本仓组件注册同口径）。
+	entityRegistry := core.NewEntitySourceRegistry()
+	if err := contentSvc.RegisterEntityTypes(entityRegistry); err != nil {
+		panic("实体类型注册失败: " + err.Error())
+	}
 	// 内容结构模板（presentation 依赖 ResolveTemplate；模板行需 project_id 外键）。
-	contentTemplateSvc := contenttemplatehttp.SetupContentTemplateRoutes(authorizedAPI, db, projectService)
+	contentTemplateSvc := contenttemplatehttp.SetupContentTemplateRoutes(authorizedAPI, db, projectService, entityRegistry)
 	// 自动发布实例（内容实体驱动，复用编译/存储/激活管线；实例行需 project_id 外键）。
-	presentationSvc := presentationhttp.SetupPresentationRoutes(authorizedAPI, db, contentTemplateSvc, contentSvc, projectService)
+	presentationSvc := presentationhttp.SetupPresentationRoutes(authorizedAPI, db, contentTemplateSvc, entityRegistry, projectService)
 
 	// 插件模块（page 构建路径依赖其装配素材，须先于 page 装配）。
 	// plugin 是外部插件宿主：注入 admin 权限上下文契约，供插件运行时读取当前用户权限。
