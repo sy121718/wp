@@ -26,8 +26,16 @@
     // 页面上只剩 confirm()/alert() 还是「系统原生」的样子：样式不可控、会冻结整页、
     // 在嵌入 / 自动化环境里直接被吞掉（用户点删除看到的就是它）。统一走基座控件
     // （js/ui/confirm.js 的同一个 <dialog>）；基座缺席时退回原生，功能不丢。
+    // 两条反馈通道，强度不同：
+    //   notify  —— 非模态轻提示（WBUI.toast）：操作做完了、复制成功这类顺带反馈；
+    //   notifyError —— 模态（WBUI.alert）：失败必须被看到，不能几秒后自己溜走。
+    // 两者都退回原生 alert 兜底，基座缺席时反馈不丢。
     function notify(message, opts) {
-        if (window.WBUI && WBUI.alert) { WBUI.alert(message, opts); return; }
+        if (window.WBUI && WBUI.toast) { WBUI.toast(message, opts); return; }
+        window.alert(message);
+    }
+    function notifyError(message) {
+        if (window.WBUI && WBUI.alert) { WBUI.alert(message, { title: '操作失败' }); return; }
         window.alert(message);
     }
     function ask(message, onOk, opts) {
@@ -80,7 +88,7 @@
                     M.api('category/delete', { method: 'POST', body: { id: node.id } }).then(function () {
                         if (state.categoryId === node.id) selectCategory(0, '全部');
                         loadTree();
-                    }).catch(function (err) { notify(err.message); });
+                    }).catch(function (err) { notifyError(err.message); });
                 }, { title: '删除分类', ok: '删除', danger: true });
             }
         });
@@ -329,7 +337,7 @@
                 state.selected = null;
                 panel.hidden = true;
                 loadList();
-            }).catch(function (err) { notify(err.message); });
+            }).catch(function (err) { notifyError(err.message); });
         });
         var delBtn = document.createElement('button'); delBtn.type = 'button'; delBtn.className = 'btn btn-danger'; delBtn.textContent = '删除';
         delBtn.addEventListener('click', function () {
@@ -338,7 +346,7 @@
                     state.selected = null;
                     panel.hidden = true;
                     loadList();
-                }).catch(function (err) { notify(err.message); });
+                }).catch(function (err) { notifyError(err.message); });
             }, { title: '删除附件', ok: '删除', danger: true });
         });
         actions.appendChild(saveBtn); actions.appendChild(delBtn);
@@ -364,7 +372,7 @@
                     renderVariantBadges(variants || []);
                     loadList();
                 })
-                .catch(function (err) { notify(err.message); })
+                .catch(function (err) { notifyError(err.message); })
                 .finally(function () { regenBtn.disabled = false; regenBtn.textContent = '重新生成变体'; });
         });
         varActions.appendChild(dlBtn); varActions.appendChild(regenBtn);
@@ -464,14 +472,14 @@
         var id = Number(document.getElementById('ml-cat-id').value || 0);
         var name = document.getElementById('ml-cat-name').value.trim();
         var parentId = Number(document.getElementById('ml-cat-parent').value || 0);
-        if (!name) { notify('请输入分类名称'); return; }
+        if (!name) { notify('请输入分类名称', { type: 'error' }); return; }
         var req = id
             ? M.api('category/update', { method: 'POST', body: { id: id, category_name: name, parent_id: parentId } })
             : M.api('category/create', { method: 'POST', body: { parent_id: parentId, category_name: name } });
         req.then(function () {
             closeCatModal();
             loadTree();
-        }).catch(function (err) { notify(err.message); });
+        }).catch(function (err) { notifyError(err.message); });
     }
 
     // ---------- 事件绑定 ----------
@@ -498,7 +506,7 @@
         // 批量下载（勾选 id 集合 → GET /api/media/download/batch?ids=1,2,3）。
         document.getElementById('ml-batch-download').addEventListener('click', function () {
             var ids = Object.keys(state.checked);
-            if (!ids.length) { notify('请先勾选要下载的图片'); return; }
+            if (!ids.length) { notify('请先勾选要下载的图片', { type: 'error' }); return; }
             window.open('/api/media/download/batch?ids=' + ids.join(','), '_blank');
         });
         // 上传。

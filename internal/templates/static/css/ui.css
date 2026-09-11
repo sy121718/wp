@@ -99,6 +99,41 @@
 .wb-modal-x:hover { opacity: 1; background: var(--sky-c-primary-bg, var(--c-primary-bg, #eceef1)); }
 .wb-modal-x:focus-visible { outline: 2px solid var(--sky-c-primary, #3d444f); outline-offset: 1px; }
 
+/* ===== 轻提示（js/ui/toast.js）=====
+   非模态操作反馈：底部居中、自动消失、不打断用户。与确认框/弹窗（模态）分工见 toast.js 头部。
+   容器本身 pointer-events:none，只有单条提示可点 —— 浮层不该挡住底下的按钮。 */
+.wb-toasts {
+    position: fixed; z-index: 3000;
+    left: 50%; transform: translateX(-50%);
+    bottom: max(16px, env(safe-area-inset-bottom, 0px));
+    display: flex; flex-direction: column; align-items: center; gap: var(--ui-sp-sm);
+    width: min(92vw, 420px);
+    pointer-events: none;
+}
+.wb-toast {
+    pointer-events: auto;
+    display: flex; align-items: center; gap: var(--ui-sp-sm);
+    width: 100%; box-sizing: border-box;
+    padding: var(--ui-sp-sm) var(--ui-sp-md, 12px);
+    border: 1px solid var(--sky-c-border, var(--c-border, #e5e7eb));
+    border-radius: var(--ui-r-md, 8px);
+    background: var(--sky-c-surface, var(--c-surface, #fff));
+    color: inherit; font-size: 13px; line-height: 1.5;
+    box-shadow: var(--ui-shadow-md);
+    animation: wb-toast-in .18s ease;
+}
+.wb-toast.is-leaving { opacity: 0; transition: opacity .22s ease; }
+.wb-toast.is-success { border-color: var(--sky-c-success, var(--c-success, #059669)); }
+.wb-toast.is-error { border-color: var(--sky-c-danger, var(--c-danger, #dc2626)); }
+.wb-toast-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.wb-toast-x {
+    flex: none; border: 0; background: transparent; cursor: pointer; color: inherit;
+    opacity: .6; font-size: 15px; line-height: 1; padding: 0 2px; border-radius: var(--ui-r-sm, 6px);
+}
+.wb-toast-x:hover { opacity: 1; }
+@keyframes wb-toast-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+
 /* ==========================================================================
    原始控件（与 js/ui/*.js 配套）—— 后台、工作台、前台产物共用一份
    ==========================================================================

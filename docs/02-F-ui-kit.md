@@ -1,7 +1,7 @@
 # 02-F · 前端控件基座（已落地）
 
 > 状态：**已实现**（2026-09）。`go test ./...` 全绿。
-> 覆盖：下拉 / 抽屉 / 图标字段 / 确认框 / **提示框** / **弹窗** / 明暗切换 + 外观层。
+> 覆盖：下拉 / 抽屉 / 图标字段 / 确认框 + 模态提示 / 弹窗 / **轻提示** / 明暗切换 + 外观层。
 
 ## 1. 这一层解决什么
 
@@ -34,13 +34,14 @@
 | 图标字段 | `ui/iconfield.js` | `data-icon-field`（+ hidden 存值）、`data-icon-name` | 图标库 766KB 懒加载 |
 | 确认框 | `ui/confirm.js` | `data-confirm` / `-title` / `-ok` / `-cancel` / `-danger` | `<dialog>` 承载，取代原生 confirm；另有 `WBUI.confirm` / **`WBUI.alert`** 给 JS 里调用 |
 | 弹窗 | `ui/modal.js` | `data-modal`、`data-modal-open` / `-close` / `-static` / `-nokeyboard` / `-autofocus` | `<dialog>` 承载；`WBUI.modal.open/close`；广播 `wbui:modal-open/close` |
+| 轻提示 | `ui/toast.js` | —（纯 API） | `WBUI.toast(msg, {type, duration, dismissible})`；非模态、自动消失，与 `WBUI.alert` 分工 |
 | 明暗切换 | `ui/themetoggle.js` | `data-theme-toggle` | 维护 `aria-pressed`；导出 `WBUI.theme` |
 | 入口 | `ui/index.js` | 自动 | DOM 就绪扫描 + `htmx:afterSwap` 重扫 |
 | 助手 | `ui/_util.js` | — | `ready` / `$$` / `each` / `markOnce` / `register` / `scan` |
 
 ### 外观层（`ui.css`）
 
-`.wbs-*`（下拉）、`.wb-confirm-*`+`.is-alert`（确认框/提示框）、`.wb-modal*`（弹窗）、`.btn`+`.btn-primary|secondary|ghost|danger|sm|icon`、
+`.wbs-*`（下拉）、`.wb-confirm-*`+`.is-alert`（确认框/模态提示）、`.wb-modal*`（弹窗）、`.wb-toast*`（轻提示）、`.btn`+`.btn-primary|secondary|ghost|danger|sm|icon`、
 `.card-*`、`.data-table`+`.table-wrap`、`.form-*`+`.checkbox`、`.badge-*`+`.dot-*`、
 `.pagination-*`、工具类、`.theme-toggle`。
 
@@ -122,6 +123,7 @@ var(--sky-c-primary, var(--c-primary, 兜底))
 | 弹窗**按 Esc 关不掉** | 依赖 `<dialog>` 的原生 Esc —— 那是浏览器的 default action，合成的键盘事件不产生它 | 控件自己接管 `keydown` Escape（modal 与 confirm 都是），并按「最上层优先」`stopPropagation`，避免同时开着的抽屉被一起关掉 |
 | 上传弹窗的拖拽区**键盘够不到** | `#ml-drop` 是纯 div，只挂了 click | 补 `role="button"` + `tabindex="0"` + Enter/Space |
 | 媒体库删除**弹系统原生对话框** | JS 里 12 处 `confirm()` / `alert()`（详情删除、分类删除、已保存、已复制…） | 全走 `WBUI.confirm` 与新增的 `WBUI.alert`（同一个 `<dialog>`）；基座缺席时退回原生，功能不丢 |
+| 操作反馈**只有模态一种强度** | 成功类反馈（已复制/已保存）也弹模态框，用户必须点一下「知道了」—— 打断，却什么都没改变 | 补齐 `WBUI.toast`：非模态、底部居中、3 秒自消；`notify`（轻反馈）与 `notifyError`（失败仍走模态）在页面脚本里分流 |
 | 下拉在**检查器面板里是第二份实现** | 基座 `ui/select.js` 跳过 `data-wb-path`，工作台 `controls/selects.js` 用 `wbDropdown` 再升一次级 —— 同一件事（原生 select 在 Linux/Chromium 上「点开即选」）的第三份实现 | 基座接管检查器面板：`upgradeNativeSelects` 只触发一次 `WBUI.scan`；7 个 `wb-unit-select` 用 `data-wb-native` 显式排除，`wbDropdown` 的隐藏载体 `.wb-dd-src` 也被跳过 |
 
 ### 踩到的坑

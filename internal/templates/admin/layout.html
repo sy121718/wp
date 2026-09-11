@@ -96,6 +96,9 @@
 {* 弹窗：<dialog> 承载，管好焦点陷阱/Esc/遮罩/焦点归还；业务逻辑留在页面脚本
    （挂 wbui:modal-open 事件），模板里只留 data-modal-open / data-modal-close。 *}
 <script src="/static/js/ui/modal.js"></script>
+{* 轻提示：WBUI.toast()。操作成功的顺带反馈走它（非模态、自动消失）；
+   必须被看到且要做决定的才用 WBUI.confirm / WBUI.alert。 *}
+<script src="/static/js/ui/toast.js"></script>
 <script src="/static/js/ui/themetoggle.js"></script>
 <script src="/static/js/ui/index.js"></script>
 <script src="/static/js/admin.js"></script>
