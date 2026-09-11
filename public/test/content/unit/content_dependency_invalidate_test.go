@@ -5,6 +5,8 @@
 //
 //	direct_content:{type}:{id}（直接引用该实体）
 //	content_collection:collection:content:{type}（渲染该类型集合）
+//
+// 迁移 080 后内容类型收敛为 article，用例统一用它。
 package unit
 
 import (
@@ -36,8 +38,8 @@ func TestContentChangeInvalidatesDependencySources(t *testing.T) {
 	svc.SetDependencyInvalidator(rec)
 
 	created, err := svc.Create(ctx, &contentdto.CreateReq{
-		EntityType: "product", Slug: "fanout-shirt",
-		Data: map[string]any{"name": "扇出衬衫"},
+		EntityType: "article", Slug: "fanout-story",
+		Data: map[string]any{"title": "扇出故事"},
 	})
 	if err != nil {
 		t.Fatalf("创建失败: %v", err)
@@ -47,10 +49,10 @@ func TestContentChangeInvalidatesDependencySources(t *testing.T) {
 		if len(rec.keys) != 2 {
 			t.Fatalf("%s 应扇出 2 条依赖键，实际 %d: %+v", stage, len(rec.keys), rec.keys)
 		}
-		if rec.keys[0] != pipeline.DirectContentKey("product", created.ID) {
+		if rec.keys[0] != pipeline.DirectContentKey("article", created.ID) {
 			t.Fatalf("%s 第一条应为 direct_content 实体键，实际 %+v", stage, rec.keys[0])
 		}
-		if rec.keys[1] != pipeline.ContentCollectionKey("product") {
+		if rec.keys[1] != pipeline.ContentCollectionKey("article") {
 			t.Fatalf("%s 第二条应为集合键，实际 %+v", stage, rec.keys[1])
 		}
 	}
@@ -58,7 +60,7 @@ func TestContentChangeInvalidatesDependencySources(t *testing.T) {
 
 	rec.keys = nil
 	if _, err = svc.Update(ctx, &contentdto.UpdateReq{
-		ID: created.ID, Data: map[string]any{"name": "扇出衬衫 v2"},
+		ID: created.ID, Data: map[string]any{"title": "扇出故事 v2"},
 	}); err != nil {
 		t.Fatalf("更新失败: %v", err)
 	}

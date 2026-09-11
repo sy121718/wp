@@ -55,13 +55,13 @@ func TestCreateInstancePersistsRealColumns(t *testing.T) {
 	ctx := context.Background()
 	f.createTemplate(t)
 	entity, err := f.content.Create(ctx, &contentdto.CreateReq{
-		EntityType: "product", Slug: "ddl-shirt", Data: map[string]any{"name": "DDL 衬衫"},
+		EntityType: "article", Slug: "ddl-shirt", Data: map[string]any{"title": "DDL 衬衫"},
 	})
 	if err != nil {
 		t.Fatalf("创建内容实体失败: %v", err)
 	}
 	inst, err := f.pres.CreateInstance(ctx, &presentationdto.CreateInstanceReq{
-		ProjectID: f.projectID, EntityType: "product", EntityID: entity.ID, URLPath: "/ddl/shirt",
+		ProjectID: f.projectID, EntityType: "article", EntityID: entity.ID, URLPath: "/ddl/shirt",
 	})
 	if err != nil {
 		t.Fatalf("CreateInstance 在真实 DDL 上失败: %v", err)
@@ -158,32 +158,32 @@ func TestContentChangeAutoRebuildAndPublish(t *testing.T) {
 
 	f.createTemplate(t)
 	entityA, err := f.content.Create(ctx, &contentdto.CreateReq{
-		EntityType: "product", Slug: "auto-a", Data: map[string]any{"name": "自动发布 A"},
+		EntityType: "article", Slug: "auto-a", Data: map[string]any{"title": "自动发布 A"},
 	})
 	if err != nil {
 		t.Fatalf("创建实体 A 失败: %v", err)
 	}
 	entityB, err := f.content.Create(ctx, &contentdto.CreateReq{
-		EntityType: "product", Slug: "auto-b", Data: map[string]any{"name": "自动发布 B"},
+		EntityType: "article", Slug: "auto-b", Data: map[string]any{"title": "自动发布 B"},
 	})
 	if err != nil {
 		t.Fatalf("创建实体 B 失败: %v", err)
 	}
 	instA, err := f.pres.CreateInstance(ctx, &presentationdto.CreateInstanceReq{
-		ProjectID: f.projectID, EntityType: "product", EntityID: entityA.ID, URLPath: "/auto/a",
+		ProjectID: f.projectID, EntityType: "article", EntityID: entityA.ID, URLPath: "/auto/a",
 	})
 	if err != nil {
 		t.Fatalf("创建实例 A 失败: %v", err)
 	}
 	instB, err := f.pres.CreateInstance(ctx, &presentationdto.CreateInstanceReq{
-		ProjectID: f.projectID, EntityType: "product", EntityID: entityB.ID, URLPath: "/auto/b",
+		ProjectID: f.projectID, EntityType: "article", EntityID: entityB.ID, URLPath: "/auto/b",
 	})
 	if err != nil {
 		t.Fatalf("创建实例 B 失败: %v", err)
 	}
 
 	// 1) 精确反查：direct_content 键只命中绑定该实体的实例。
-	ids, err := f.pres.MarkStaleByDependency(ctx, pipeline.DepKindDirectContent, "product:"+entityA.ID)
+	ids, err := f.pres.MarkStaleByDependency(ctx, pipeline.DepKindDirectContent, "article:"+entityA.ID)
 	if err != nil {
 		t.Fatalf("依赖反查失败: %v", err)
 	}
@@ -206,7 +206,7 @@ func TestContentChangeAutoRebuildAndPublish(t *testing.T) {
 
 	// 2) 内容 A 变更 → 自动链路（content → fanout → presentation.RebuildStale）。
 	if _, err = f.content.Update(ctx, &contentdto.UpdateReq{
-		ID: entityA.ID, Data: map[string]any{"name": "自动发布 A v2"},
+		ID: entityA.ID, Data: map[string]any{"title": "自动发布 A v2"},
 	}); err != nil {
 		t.Fatalf("更新实体 A 失败: %v", err)
 	}
@@ -256,13 +256,13 @@ func TestDeleteInstanceCascadesOnRealDDL(t *testing.T) {
 	ctx := context.Background()
 	f.createTemplate(t)
 	entity, err := f.content.Create(ctx, &contentdto.CreateReq{
-		EntityType: "product", Slug: "del-shirt", Data: map[string]any{"name": "删除衬衫"},
+		EntityType: "article", Slug: "del-shirt", Data: map[string]any{"title": "删除衬衫"},
 	})
 	if err != nil {
 		t.Fatalf("创建内容实体失败: %v", err)
 	}
 	inst, err := f.pres.CreateInstance(ctx, &presentationdto.CreateInstanceReq{
-		ProjectID: f.projectID, EntityType: "product", EntityID: entity.ID, URLPath: "/del/shirt",
+		ProjectID: f.projectID, EntityType: "article", EntityID: entity.ID, URLPath: "/del/shirt",
 	})
 	if err != nil {
 		t.Fatalf("CreateInstance 失败: %v", err)

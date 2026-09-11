@@ -153,6 +153,9 @@ var artifactGCPermsSQL string
 //go:embed 079_content_collections_permission.sql
 var contentCollectionsPermSQL string
 
+//go:embed 080_content_type_narrowing.sql
+var contentTypeNarrowingSQL string
+
 //go:embed 073_blueprint_ddl_align.sql
 var blueprintDDLAlignSQL string
 
@@ -441,6 +444,20 @@ func init() {
 		TableName:    "sys_permission",
 		ConditionSQL: "SELECT COUNT(*) FROM sys_permission WHERE permission_code = 'content:collections'",
 		SQL:          contentCollectionsPermSQL,
+	})
+
+	// 080：内容类型收敛 —— contents 只保留 article；content_templates 解掉类型枚举
+	// （合法性交给实体类型注册表）；pages 内容契约去掉 product / category 分支。
+	// 三张表都由更早的迁移建立，本迁移只改约束，故按「约束已收敛」判定跳过。
+	register(Migration{
+		Version:   "080-content-type-narrowing",
+		TableName: "contents",
+		CheckSQL: `SELECT COUNT(*) FROM pg_constraint
+			WHERE conrelid = ?::regclass
+			  AND conname = 'contents_entity_type_check'
+			  AND pg_get_constraintdef(oid) LIKE '%article%'
+			  AND pg_get_constraintdef(oid) NOT LIKE '%product%'`,
+		SQL: contentTypeNarrowingSQL,
 	})
 
 	// 073：把历史库的 blueprints / blueprint_versions 对齐到 model（唯一真源）。

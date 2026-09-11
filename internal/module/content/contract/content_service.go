@@ -13,9 +13,7 @@ import (
 // 键 = entity_type，值 = 允许的字段路径（ContentResolver.ResolveString 与
 // contenttemplate 的 Binding 校验共用同一白名单，禁止两处各维护一份）。
 var fieldWhitelist = map[string][]string{
-	"product":  {"name", "description", "price", "images", "seoTitle", "seoDescription"},
-	"article":  {"title", "body", "excerpt", "featuredImage", "seoTitle", "seoDescription"},
-	"category": {"name", "description", "image"},
+	"article": {"title", "body", "excerpt", "featuredImage", "seoTitle", "seoDescription"},
 }
 
 // EntityTypes 全部支持的内容类型（字典序）。

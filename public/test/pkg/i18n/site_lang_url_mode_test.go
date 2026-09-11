@@ -66,11 +66,11 @@ func TestSiteLangURLModeExplicit(t *testing.T) {
 	ensureI18nDB(t)
 
 	cases := []struct {
-		name           string
-		setup          func(*viper.Viper)
-		wantMode       i18n.SiteLangURLMode
-		wantSeparated  bool
-		wantPrefixDef  bool
+		name          string
+		setup         func(*viper.Viper)
+		wantMode      i18n.SiteLangURLMode
+		wantSeparated bool
+		wantPrefixDef bool
 	}{
 		{
 			"显式 default_plain", func(v *viper.Viper) { v.Set("i18n.site_lang_url_mode", "default_plain") },

@@ -1,5 +1,8 @@
 // Package unit content 模块 feature 测试（真实 PostgreSQL，0-A2）：
 // 内容 CRUD + revision 单调递增 + Resolver 字段白名单解析。
+//
+// 迁移 080（issue #4）后内容实体只保留 article：商品与分类改由领域模块自己的表承载，
+// 本包的用例统一用 article 作为内容类型。
 package unit
 
 import (
@@ -40,20 +43,20 @@ func TestContentCRUD(t *testing.T) {
 
 	// 创建。
 	res, err := svc.Create(ctx, &contentdto.CreateReq{
-		EntityType: "product", Slug: "summer-shirt",
-		Data: map[string]any{"name": "夏季衬衫", "price": 99.0},
+		EntityType: "article", Slug: "summer-story",
+		Data: map[string]any{"title": "夏季故事", "excerpt": "摘要"},
 	})
 	if err != nil {
 		t.Fatalf("创建失败: %v", err)
 	}
-	if res.Revision != 1 || res.Slug != "summer-shirt" {
+	if res.Revision != 1 || res.Slug != "summer-story" {
 		t.Fatalf("创建响应错误: %+v", res)
 	}
 	id := res.ID
 
 	// 更新 → revision 递增。
 	res2, err := svc.Update(ctx, &contentdto.UpdateReq{
-		ID: id, Data: map[string]any{"name": "夏季衬衫改", "price": 89.0},
+		ID: id, Data: map[string]any{"title": "夏季故事改", "excerpt": "摘要 v2"},
 	})
 	if err != nil {
 		t.Fatalf("更新失败: %v", err)
@@ -79,8 +82,8 @@ func TestContentRejectsForeignField(t *testing.T) {
 	}
 	ctx := context.Background()
 	_, err := svc.Create(ctx, &contentdto.CreateReq{
-		EntityType: "product", Slug: "x",
-		Data: map[string]any{"name": "ok", "evil": "injected"},
+		EntityType: "article", Slug: "x",
+		Data: map[string]any{"title": "ok", "evil": "injected"},
 	})
 	if err == nil || !strings.Contains(err.Error(), contentenums.ErrInvalidField) {
 		t.Fatalf("白名单外字段应拒绝: %v", err)
@@ -95,47 +98,46 @@ func TestContentResolverFieldWhitelist(t *testing.T) {
 	}
 	ctx := context.Background()
 	res, err := svc.Create(ctx, &contentdto.CreateReq{
-		EntityType: "product", Slug: "p1",
-		Data: map[string]any{"name": "测试商品", "price": 199.0, "images": []any{"https://img/a.jpg"}},
+		EntityType: "article", Slug: "a1",
+		Data: map[string]any{"title": "测试文章", "excerpt": "摘要"},
 	})
 	if err != nil {
 		t.Fatalf("创建失败: %v", err)
 	}
-	r, err := svc.ResolverFor(ctx, "product", res.ID)
+	r, err := svc.ResolverFor(ctx, "article", res.ID)
 	if err != nil {
 		t.Fatalf("ResolverFor: %v", err)
 	}
 	// 字符串字段。
-	if v, _ := r.ResolveString("product.name"); v != "测试商品" {
-		t.Fatalf("name 解析错误: %q", v)
+	if v, _ := r.ResolveString("article.title"); v != "测试文章" {
+		t.Fatalf("title 解析错误: %q", v)
 	}
-	// 数值归一（199.0 → 199）。
-	if v, _ := r.ResolveString("product.price"); v != "199" {
-		t.Fatalf("price 归一错误: %q", v)
-	}
-	// 数组取首元素。
-	if v, _ := r.ResolveString("product.images"); v != "https://img/a.jpg" {
-		t.Fatalf("images 取首错误: %q", v)
+	// 数组字段取首元素（featuredImage 声明为单值，这里用 body 富文本回归纯字符串）。
+	if v, _ := r.ResolveString("article.excerpt"); v != "摘要" {
+		t.Fatalf("excerpt 解析错误: %q", v)
 	}
 	// 未设置字段 → 空串。
-	if v, _ := r.ResolveString("product.description"); v != "" {
+	if v, _ := r.ResolveString("article.body"); v != "" {
 		t.Fatalf("未设置字段应空串: %q", v)
 	}
 	// 白名单外字段 → 错误。
-	if _, err := r.ResolveString("product.evil"); err == nil {
+	if _, err := r.ResolveString("article.evil"); err == nil {
 		t.Fatalf("白名单外字段应拒绝")
 	}
 }
 
-// TestFieldWhitelistContract 字段白名单契约（contenttemplate 未来校验依赖）。
+// TestFieldWhitelistContract 字段白名单契约：内容类型收敛为 article（迁移 080 / issue #4）。
 func TestFieldWhitelistContract(t *testing.T) {
-	if !contentcontract.IsValidType("product") || contentcontract.IsValidType("tag") {
-		t.Fatalf("类型白名单错误")
+	if !contentcontract.IsValidType("article") {
+		t.Fatalf("article 应为合法内容类型")
+	}
+	// 商品与分类已摘除（改由领域模块自己的表承载），不得再被内容白名单接受。
+	for _, gone := range []string{"product", "category", "tag"} {
+		if contentcontract.IsValidType(gone) {
+			t.Fatalf("类型 %q 已摘除，不应再合法", gone)
+		}
 	}
 	if !contentcontract.IsValidField("article", "title") || contentcontract.IsValidField("article", "price") {
-		t.Fatalf("字段白名单错误：article 无 price")
-	}
-	if len(contentcontract.FieldWhitelist("category")) != 3 {
-		t.Fatalf("category 字段数错误")
+		t.Fatalf("字段白名单错误：article 有 title、无 price")
 	}
 }

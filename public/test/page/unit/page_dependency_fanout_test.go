@@ -19,11 +19,11 @@ import (
 	"gorm.io/gorm"
 )
 
-// contentBoundPage 创建绑定内容实体的页面（kind=product 才能带 content_target）。
+// contentBoundPage 创建绑定内容实体的页面（kind=article 才能带 content_target）。
 func contentBoundPage(t *testing.T, svc pagecontract.PageService, projectID, path, entityID string) string {
 	t.Helper()
 	created, err := svc.Create(context.Background(), &pagedto.CreateReq{
-		ProjectID: projectID, Kind: "product", ContentTargetType: "product",
+		ProjectID: projectID, Kind: "article", ContentTargetType: "article",
 		ContentTargetID: &entityID, DraftPath: path, DraftDocument: []byte(pageDocument),
 	})
 	if err != nil {
@@ -37,9 +37,9 @@ func TestPageDependencyPreciseFanout(t *testing.T) {
 	db, svc, _, projectID := newPageService(t)
 	ctx := context.Background()
 
-	productA, productB := uuid.NewString(), uuid.NewString()
-	pageA := contentBoundPage(t, svc, projectID, "/products/a", productA)
-	pageB := contentBoundPage(t, svc, projectID, "/products/b", productB)
+	entityA, entityB := uuid.NewString(), uuid.NewString()
+	pageA := contentBoundPage(t, svc, projectID, "/products/a", entityA)
+	pageB := contentBoundPage(t, svc, projectID, "/products/b", entityB)
 	// 无关页面：不绑定任何内容实体。
 	pageHome := createPage(t, svc, projectID, "/home", pageDocument).ID
 
@@ -48,14 +48,14 @@ func TestPageDependencyPreciseFanout(t *testing.T) {
 	}
 
 	// 1) 依赖记录落库：A 页声明 product:{A}，B 页声明 product:{B}，首页无内容依赖。
-	assertDependencyRow(t, db, pageA, pipeline.DepKindDirectContent, "product:"+productA)
-	assertDependencyRow(t, db, pageB, pipeline.DepKindDirectContent, "product:"+productB)
+	assertDependencyRow(t, db, pageA, pipeline.DepKindDirectContent, "article:"+entityA)
+	assertDependencyRow(t, db, pageB, pipeline.DepKindDirectContent, "article:"+entityB)
 	if n := countDependencyRows(t, db, pageHome, pipeline.DepKindDirectContent); n != 0 {
 		t.Fatalf("首页不应声明 direct_content 依赖，实际 %d 条", n)
 	}
 
 	// 2) 内容 A 变更 → 精确标记：只有 pageA。
-	ids, err := svc.MarkStaleByDependency(ctx, pipeline.DepKindDirectContent, "product:"+productA)
+	ids, err := svc.MarkStaleByDependency(ctx, pipeline.DepKindDirectContent, "article:"+entityA)
 	if err != nil {
 		t.Fatalf("MarkStaleByDependency 失败: %v", err)
 	}
@@ -72,7 +72,7 @@ func TestPageDependencyPreciseFanout(t *testing.T) {
 	}
 
 	// 3) 幂等：重复标记返回同一集合，不产生额外影响面。
-	again, err := svc.MarkStaleByDependency(ctx, pipeline.DepKindDirectContent, "product:"+productA)
+	again, err := svc.MarkStaleByDependency(ctx, pipeline.DepKindDirectContent, "article:"+entityA)
 	if err != nil {
 		t.Fatalf("重复标记失败: %v", err)
 	}
@@ -81,7 +81,7 @@ func TestPageDependencyPreciseFanout(t *testing.T) {
 	}
 
 	// 4) 未声明的依赖键不命中任何页面（不会误伤）。
-	none, err := svc.MarkStaleByDependency(ctx, pipeline.DepKindDirectContent, "product:"+uuid.NewString())
+	none, err := svc.MarkStaleByDependency(ctx, pipeline.DepKindDirectContent, "article:"+uuid.NewString())
 	if err != nil {
 		t.Fatalf("未命中查询失败: %v", err)
 	}
@@ -126,8 +126,8 @@ func TestFanoutPrecisionVersusWholeSiteMarking(t *testing.T) {
 	db, svc, _, projectID := newPageService(t)
 	ctx := context.Background()
 
-	productA := uuid.NewString()
-	pageA := contentBoundPage(t, svc, projectID, "/cmp/a", productA)
+	entityA := uuid.NewString()
+	pageA := contentBoundPage(t, svc, projectID, "/cmp/a", entityA)
 	pageB := contentBoundPage(t, svc, projectID, "/cmp/b", uuid.NewString())
 	pageHome := createPage(t, svc, projectID, "/cmp/home", pageDocument).ID
 	all := []string{pageA, pageB, pageHome}
@@ -153,7 +153,7 @@ func TestFanoutPrecisionVersusWholeSiteMarking(t *testing.T) {
 	if err := db.Exec("UPDATE pages SET stale = false").Error; err != nil {
 		t.Fatalf("复位 stale 失败: %v", err)
 	}
-	ids, err := svc.MarkStaleByDependency(ctx, pipeline.DepKindDirectContent, "product:"+productA)
+	ids, err := svc.MarkStaleByDependency(ctx, pipeline.DepKindDirectContent, "article:"+entityA)
 	if err != nil {
 		t.Fatalf("精确标记失败: %v", err)
 	}

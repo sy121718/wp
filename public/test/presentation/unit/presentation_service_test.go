@@ -79,12 +79,12 @@ func newPresFixture(t *testing.T) *presFixture {
 	}
 }
 
-// createTemplate 用真实 contenttemplate service 建模板（product 类型，binding 到 name）。
+// createTemplate 用真实 contenttemplate service 建模板（article 类型，binding 到 title）。
 func (f *presFixture) createTemplate(t *testing.T) {
 	t.Helper()
-	doc := `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"h1","type":"core.heading","props":{"binding":{"field":"product.name"},"tag":"h2"}}]}`
+	doc := `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"h1","type":"core.heading","props":{"binding":{"field":"article.title"},"tag":"h2"}}]}`
 	if _, err := f.templates.Create(context.Background(), &contenttemplatedto.CreateReq{
-		EntityType: "product", Name: "商品模板", DraftDocument: []byte(doc),
+		EntityType: "article", Name: "文章模板", DraftDocument: []byte(doc),
 	}); err != nil {
 		t.Fatalf("创建模板失败: %v", err)
 	}
@@ -110,10 +110,10 @@ func TestCreateInstanceEndToEnd(t *testing.T) {
 	ctx := context.Background()
 	f.createTemplate(t)
 
-	// 建内容实体（product，name 字段）。
+	// 建内容实体（article，title 字段）。
 	entity, err := f.content.Create(ctx, &contentdto.CreateReq{
-		EntityType: "product", Slug: "summer-shirt",
-		Data: map[string]any{"name": "夏季衬衫", "price": 99.0},
+		EntityType: "article", Slug: "summer-shirt",
+		Data: map[string]any{"title": "夏季衬衫", "excerpt": "夏季摘要"},
 	})
 	if err != nil {
 		t.Fatalf("创建实体失败: %v", err)
@@ -121,7 +121,7 @@ func TestCreateInstanceEndToEnd(t *testing.T) {
 
 	// 创建自动发布实例（显式传工程；urlPath 由实体 slug 推导）。
 	inst, err := f.pres.CreateInstance(ctx, &presentationdto.CreateInstanceReq{
-		ProjectID: f.projectID, EntityType: "product", EntityID: entity.ID,
+		ProjectID: f.projectID, EntityType: "article", EntityID: entity.ID,
 		URLPath: "/products/summer-shirt",
 	})
 	if err != nil {
@@ -154,22 +154,22 @@ func TestCreateInstanceIdempotent(t *testing.T) {
 		return
 	}
 	ctx := context.Background()
-	doc := `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"h1","type":"core.heading","props":{"binding":{"field":"category.name"},"tag":"h2"}}]}`
+	doc := `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"h1","type":"core.heading","props":{"binding":{"field":"article.title"},"tag":"h2"}}]}`
 	if _, err := f.templates.Create(ctx, &contenttemplatedto.CreateReq{
-		EntityType: "category", Name: "分类模板", DraftDocument: []byte(doc),
+		EntityType: "article", Name: "文章模板", DraftDocument: []byte(doc),
 	}); err != nil {
 		t.Fatalf("创建模板失败: %v", err)
 	}
 	entity, err := f.content.Create(ctx, &contentdto.CreateReq{
-		EntityType: "category", Slug: "summer",
-		Data: map[string]any{"name": "夏季"},
+		EntityType: "article", Slug: "summer",
+		Data: map[string]any{"title": "夏季"},
 	})
 	if err != nil {
 		t.Fatalf("创建实体失败: %v", err)
 	}
 	req := &presentationdto.CreateInstanceReq{
-		ProjectID: f.projectID, EntityType: "category", EntityID: entity.ID,
-		URLPath: "/categories/summer",
+		ProjectID: f.projectID, EntityType: "article", EntityID: entity.ID,
+		URLPath: "/articles/summer",
 	}
 	a, err := f.pres.CreateInstance(ctx, req)
 	if err != nil {

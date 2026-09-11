@@ -63,13 +63,13 @@ func (s stubEntitySource) ResolverFor(_ context.Context, _ string) (core.Content
 	return nil, errors.New("测试桩不提供字段解析器")
 }
 
-// testRegistry 带内容实体类型的注册表。
+// testRegistry 带内容实体类型的注册表（迁移 080 后内容只有 article）。
 //
 // 模板模块只关心「类型合法性来自注册表」，因此不引内容模块实现，保持本包测试隔离。
 func testRegistry(t *testing.T) core.EntitySourceRegistry {
 	t.Helper()
 	reg := core.NewEntitySourceRegistry()
-	for _, k := range []string{"product", "article", "category"} {
+	for _, k := range []string{"article"} {
 		if err := reg.Register(stubEntitySource{entityType: k}); err != nil {
 			t.Fatalf("注册实体类型 %q 失败: %v", k, err)
 		}
@@ -98,8 +98,8 @@ func TestContentTemplateCreatePersistsRealColumns(t *testing.T) {
 	ctx := context.Background()
 
 	res, err := svc.Create(ctx, &contenttemplatedto.CreateReq{
-		EntityType:    "product",
-		Name:          "商品模板",
+		EntityType:    "article",
+		Name:          "文章模板",
 		DraftDocument: json.RawMessage(pageDocument),
 	})
 	if err != nil {
@@ -149,8 +149,8 @@ func TestContentTemplateCreate(t *testing.T) {
 	ctx := context.Background()
 
 	res, err := svc.Create(ctx, &contenttemplatedto.CreateReq{
-		EntityType:    "product",
-		Name:          "商品模板",
+		EntityType:    "article",
+		Name:          "文章模板",
 		DraftDocument: json.RawMessage(pageDocument),
 	})
 	if err != nil {
@@ -217,8 +217,8 @@ func TestContentTemplateResolve(t *testing.T) {
 	ctx := context.Background()
 
 	res, err := svc.Create(ctx, &contenttemplatedto.CreateReq{
-		EntityType:    "product",
-		Name:          "商品模板",
+		EntityType:    "article",
+		Name:          "文章模板",
 		DraftDocument: json.RawMessage(pageDocument),
 	})
 	if err != nil {
@@ -231,7 +231,7 @@ func TestContentTemplateResolve(t *testing.T) {
 		t.Fatalf("更新失败: %v", err)
 	}
 
-	got, err := svc.ResolveTemplate(ctx, "product")
+	got, err := svc.ResolveTemplate(ctx, "article")
 	if err != nil {
 		t.Fatalf("ResolveTemplate 失败: %v", err)
 	}
@@ -244,8 +244,8 @@ func TestContentTemplateResolve(t *testing.T) {
 	if got.TemplateID != res.ID {
 		t.Fatalf("TemplateID 应为模板 ID %s，实际 %q", res.ID, got.TemplateID)
 	}
-	if got.EntityType != "product" {
-		t.Fatalf("EntityType 应为 product: %q", got.EntityType)
+	if got.EntityType != "article" {
+		t.Fatalf("EntityType 应为 article: %q", got.EntityType)
 	}
 	if !strings.Contains(string(got.Document), "core.heading") {
 		t.Fatalf("最新版本 document 应包含标题组件: %s", got.Document)
@@ -284,7 +284,7 @@ func TestContentTemplateRejectInvalidDocument(t *testing.T) {
 	ctx := context.Background()
 
 	if _, err := svc.Create(ctx, &contenttemplatedto.CreateReq{
-		EntityType:    "product",
+		EntityType:    "article",
 		Name:          "坏文档模板",
 		DraftDocument: json.RawMessage(`{"settings":`),
 	}); err == nil || !strings.Contains(err.Error(), contenttemplateenums.ErrDataInvalid) {

@@ -77,8 +77,7 @@ func TestPageCreateKindMatrix(t *testing.T) {
 		{"search", "none", nil, false},
 		{"notFound", "none", nil, false},
 		{"article", "article", &targetID, false},
-		{"product", "product", &targetID, false},
-		{"category", "category", &targetID, false},
+		// product / category 已随迁移 080 从内容类型摘除，不再是合法页面 kind。
 		{"tag", "tag", &targetID, false},
 		{"home", "page", &targetID, true},
 		{"page", "none", nil, true},

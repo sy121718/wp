@@ -78,13 +78,13 @@ func TestContentChangeAutoPublishChain(t *testing.T) {
 
 	// 两个内容实体 + 各自绑定页面 + 一个无关页面。
 	entityA, err := contentSvc.Create(ctx, &contentdto.CreateReq{
-		EntityType: "product", Slug: "auto-a", Data: map[string]any{"name": "自动发布 A"},
+		EntityType: "article", Slug: "auto-a", Data: map[string]any{"title": "自动发布 A"},
 	})
 	if err != nil {
 		t.Fatalf("创建实体 A 失败: %v", err)
 	}
 	entityB, err := contentSvc.Create(ctx, &contentdto.CreateReq{
-		EntityType: "product", Slug: "auto-b", Data: map[string]any{"name": "自动发布 B"},
+		EntityType: "article", Slug: "auto-b", Data: map[string]any{"title": "自动发布 B"},
 	})
 	if err != nil {
 		t.Fatalf("创建实体 B 失败: %v", err)
@@ -107,7 +107,7 @@ func TestContentChangeAutoPublishChain(t *testing.T) {
 
 	// 内容 A 变更 → 自动链路。
 	if _, err = contentSvc.Update(ctx, &contentdto.UpdateReq{
-		ID: entityA.ID, Data: map[string]any{"name": "自动发布 A v2"},
+		ID: entityA.ID, Data: map[string]any{"title": "自动发布 A v2"},
 	}); err != nil {
 		t.Fatalf("更新实体 A 失败: %v", err)
 	}
@@ -142,7 +142,7 @@ func TestContentChangeFanoutAffectedSet(t *testing.T) {
 	ctx := context.Background()
 
 	entity, err := contentSvc.Create(ctx, &contentdto.CreateReq{
-		EntityType: "product", Slug: "fanout-set", Data: map[string]any{"name": "扇出集合"},
+		EntityType: "article", Slug: "fanout-set", Data: map[string]any{"title": "扇出集合"},
 	})
 	if err != nil {
 		t.Fatalf("创建实体失败: %v", err)
@@ -154,7 +154,7 @@ func TestContentChangeFanoutAffectedSet(t *testing.T) {
 
 	// 集合键（实体新增/删除都会触发）不应命中任何页面：测试 schema 里没有
 	// 声明集合绑定的组件，即「没有产物真的依赖该集合」——精确 fan-out 不误伤。
-	ids, err := svc.MarkStaleByDependency(ctx, pipeline.DepKindContentCollection, pipeline.ContentCollectionKey("product").Key)
+	ids, err := svc.MarkStaleByDependency(ctx, pipeline.DepKindContentCollection, pipeline.ContentCollectionKey("article").Key)
 	if err != nil {
 		t.Fatalf("集合键反查失败: %v", err)
 	}
@@ -163,7 +163,7 @@ func TestContentChangeFanoutAffectedSet(t *testing.T) {
 	}
 
 	// 实体键命中绑定该实体的页面。
-	ids, err = svc.MarkStaleByDependency(ctx, pipeline.DepKindDirectContent, "product:"+entity.ID)
+	ids, err = svc.MarkStaleByDependency(ctx, pipeline.DepKindDirectContent, "article:"+entity.ID)
 	if err != nil {
 		t.Fatalf("反查失败: %v", err)
 	}

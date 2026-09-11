@@ -290,6 +290,7 @@ func TestPageBuildDeterministicSameInputTwice(t *testing.T) {
 	}
 	t.Logf("确定性：zh=%s en=%s", zh1.StagedHash, en1.StagedHash)
 }
+
 // TestPageStagingsPerLanguageIndependent 「先构建两种语言、再逐个发布」可用：
 // pages.staged_artifact_id 单值时代，Build(en-US) 覆盖 Build(zh-CN) 的暂存指针，
 // 第二个 Publish(zh-CN) 复构建 hash 与暂存不一致 → ErrRebuildRequired。

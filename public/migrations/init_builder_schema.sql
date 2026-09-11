@@ -52,7 +52,7 @@ CREATE TABLE IF NOT EXISTS content_templates (
     id                  uuid PRIMARY KEY,
     project_id          uuid NOT NULL REFERENCES projects(id),
     name                text NOT NULL,
-    entity_type         text NOT NULL CHECK (entity_type IN ('product', 'article', 'category')),
+    entity_type         text NOT NULL,  -- 类型合法性由实体类型注册表判定（迁移 080 解掉枚举）
     draft_document      jsonb NOT NULL,
     draft_version       bigint NOT NULL DEFAULT 1,
     current_version_id  uuid NULL,
@@ -101,12 +101,6 @@ CREATE TABLE IF NOT EXISTS pages (
             AND content_target_id IS NOT NULL)
         OR (kind = 'article'
             AND content_target_type = 'article'
-            AND content_target_id IS NOT NULL)
-        OR (kind = 'product'
-            AND content_target_type = 'product'
-            AND content_target_id IS NOT NULL)
-        OR (kind = 'category'
-            AND content_target_type = 'category'
             AND content_target_id IS NOT NULL)
         OR (kind = 'tag'
             AND content_target_type = 'tag'
