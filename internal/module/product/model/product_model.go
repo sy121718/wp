@@ -46,8 +46,13 @@ type ProductEntity struct {
 	// PrimaryCategoryID 主分类（issue #10）：附属分类是 category_ids 数组，
 	// 主分类需要「唯一 + 可反查 + 分类被删即自动解绑」，故落成真列 + 外键。
 	// 不变量：主分类必然同时出现在 category_ids 里（由 service 维护）。
-	PrimaryCategoryID   *string         `gorm:"column:primary_category_id;type:uuid"`
-	TagIDs              json.RawMessage `gorm:"column:tag_ids;type:jsonb;not null"`
+	PrimaryCategoryID *string         `gorm:"column:primary_category_id;type:uuid"`
+	TagIDs            json.RawMessage `gorm:"column:tag_ids;type:jsonb;not null"`
+	// MinPrice 最低启用变体价（issue #28 的投影别名 min_price）。
+	//
+	// 只读：它是列表查询的派生列，不落库（写操作一律走变体自己的 price）。
+	// 没有启用变体时为 NULL —— 组件按「无价」排到最后，不当成 0 元。
+	MinPrice            *float64        `gorm:"column:min_price;->"`
 	RelatedIDs          json.RawMessage `gorm:"column:related_ids;type:jsonb;not null"`
 	BundleItems         json.RawMessage `gorm:"column:bundle_items;type:jsonb;not null"`
 	BrandID             *string         `gorm:"column:brand_id;type:uuid"`
@@ -172,6 +177,10 @@ type CollectionFilter struct {
 	TagAll bool
 	// OnSale 只看在售（存在启用变体「有划线价且划线价高于售价」，与 #11 的 on_sale 同源）。
 	OnSale bool
+	// MinPrice / MaxPrice 价格区间（issue #28）：筛「存在启用变体价格落在区间内」。
+	// 各自可选：只有下限 = ≥ 下限，只有上限 = ≤ 上限，两个都有 = 闭区间。
+	MinPrice *float64
+	MaxPrice *float64
 
 	// Options 属性值维度（issue #25）：属性组 key → 属性值 key，逐项 AND。
 	//
@@ -209,7 +218,10 @@ func (m *Model) ListForCollection(ctx context.Context, f CollectionFilter, limit
 	q := m.DB(ctx).Select(
 		"id, project_id, name, subtitle, description, slug, status, sort, unit, " +
 			"images, images_alt, attribute_ids, category_ids, tag_ids, brand_id, related_ids, " +
-			"default_image, created_at, updated_at")
+			"default_image, created_at, updated_at, " +
+			// 最低启用变体价（issue #28）：价格排序与价格区间展示都要数值，
+			// 光有 priceRange 字符串没法排序。没有启用变体的商品该列为 NULL。
+			"(SELECT MIN(v.price) FROM product_variants v WHERE v.product_id = products.id AND v.enabled) AS min_price")
 	if f.ProjectID != "" {
 		q = q.Where("project_id = ?", f.ProjectID)
 	}
@@ -244,6 +256,21 @@ func (m *Model) ListForCollection(ctx context.Context, f CollectionFilter, limit
 			}
 			q = q.Where("("+strings.Join(conds, " OR ")+")", args...)
 		}
+	}
+	// 价格区间（issue #28）：价格在变体上，与属性值同一条路 —— EXISTS 下推而不是列比较。
+	// 只认**启用**变体：下架规格的价格不该把商品筛出来（与属性维度同一口径）。
+	if f.MinPrice != nil || f.MaxPrice != nil {
+		cond := "EXISTS (SELECT 1 FROM product_variants v WHERE v.product_id = products.id AND v.enabled"
+		args := make([]any, 0, 2)
+		if f.MinPrice != nil {
+			cond += " AND v.price >= ?"
+			args = append(args, *f.MinPrice)
+		}
+		if f.MaxPrice != nil {
+			cond += " AND v.price <= ?"
+			args = append(args, *f.MaxPrice)
+		}
+		q = q.Where(cond+")", args...)
 	}
 	// 在售（issue #27）：与自动标签 on_sale 同一判定 —— 存在启用变体且划线价高于售价。
 	if f.OnSale {

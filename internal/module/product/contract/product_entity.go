@@ -278,6 +278,13 @@ const (
 	CollectionFilterTagIDs = "tagIds"
 	// CollectionFilterTagMode 多标签匹配语义：any（默认，具备任一）/ all（同时具备全部）。
 	CollectionFilterTagMode = "tagMode"
+	// CollectionFilterMinPrice / MaxPrice 价格区间（issue #28）：筛「存在**启用**变体价格落在区间内」。
+	//
+	// 价格在变体上（products 不存价格），所以与属性值一样是 EXISTS 下推而不是列比较；
+	// 两个维度各自可选，只有下限时表示「≥ 下限」，只有上限时表示「≤ 上限」。
+	CollectionFilterMinPrice = "minPrice"
+	CollectionFilterMaxPrice = "maxPrice"
+
 	// CollectionFilterOnSale 只看在售（issue #27）：存在启用变体「有划线价且划线价高于售价」。
 	// 判定与 #11 的 on_sale 自动标签规则同源 —— 同一件事只该有一份口径。
 	CollectionFilterOnSale = "onSale"
@@ -303,6 +310,9 @@ var collectionFilters = []core.CollectionFilter{
 	// 匹配语义只在多标签场景有意义，取值固定两个（工作台渲染成下拉）。
 	{Key: CollectionFilterTagMode, Enum: []string{CollectionTagModeAny, CollectionTagModeAll}},
 	{Key: CollectionFilterOnSale},
+	// 价格区间（issue #28）：两维都是任意数值，形状与取值范围在解析期校验。
+	{Key: CollectionFilterMinPrice},
+	{Key: CollectionFilterMaxPrice},
 	// 属性值维度（issue #25）：前缀维度，真实键是 `option.<属性组key>=<属性值key>`。
 	// 属性组由用户自己建（数据驱动），维度键没法穷举，所以用前缀命名空间 + 服务端校验子键。
 	{Key: CollectionFilterOption, Prefix: true},
@@ -312,7 +322,9 @@ var collectionFilters = []core.CollectionFilter{
 //
 // 字段名用驼峰（集合项字段风格，与 slug / defaultImage 一致）：
 // sort（排序号）→ createdAt（创建时间），同值再按 id 兜底，保证产物确定性。
-var collectionOrderKeys = []string{"sort", "createdAt"}
+// collectionOrderKeys 排序键白名单（issue #28 补价格升降：按**最低启用变体价**排，
+// 没有启用变体的商品排最后 —— 不按 0 元参与比较）。
+var collectionOrderKeys = []string{"sort", "createdAt", "priceAsc", "priceDesc"}
 
 // CollectionFilters 过滤维度白名单的只读拷贝（调用方不得篡改唯一来源）。
 func CollectionFilters() []core.CollectionFilter {

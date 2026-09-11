@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -242,6 +243,18 @@ func parseCollectionFilter(filter map[string]string) (f productmodel.CollectionF
 			default:
 				return f, fmt.Errorf("%s: %q", productenums.ErrCollectionFilterInvalid, k)
 			}
+		case productcontract.CollectionFilterMinPrice, productcontract.CollectionFilterMaxPrice:
+			// 价格区间（issue #28）：形状非法 / 负数 / 下限大于上限一律报错，
+			// 不伪装成空集合（配置错误与「确实没这个价位的商品」是两件事）。
+			amount, perr := strconv.ParseFloat(strings.TrimSpace(v), 64)
+			if perr != nil || amount < 0 {
+				return f, fmt.Errorf("%s: %q", productenums.ErrCollectionFilterInvalid, k)
+			}
+			if k == productcontract.CollectionFilterMinPrice {
+				f.MinPrice = &amount
+			} else {
+				f.MaxPrice = &amount
+			}
 		case productcontract.CollectionFilterOnSale:
 			switch v {
 			case "true", "1":
@@ -253,7 +266,16 @@ func parseCollectionFilter(filter map[string]string) (f productmodel.CollectionF
 			}
 		}
 	}
-	return f, nil
+	// 区间上下限的相互关系在两维都解析完之后统一校验（它们可能以任意顺序出现）。
+	return f, validatePriceRange(f)
+}
+
+// validatePriceRange 下限不得大于上限（解析完成后统一校验：两维可能任意顺序出现）。
+func validatePriceRange(f productmodel.CollectionFilter) error {
+	if f.MinPrice != nil && f.MaxPrice != nil && *f.MinPrice > *f.MaxPrice {
+		return fmt.Errorf("%s: minPrice 大于 maxPrice", productenums.ErrCollectionFilterInvalid)
+	}
+	return nil
 }
 
 // splitCSV 逗号分隔值 → 去空、去重的列表（顺序保持首次出现）。
@@ -300,6 +322,12 @@ func collectionItem(p *productmodel.ProductEntity, values map[string]string) map
 	item["images"] = imageURLsAny(p)
 	// createdAt 给 RFC3339（UTC）：组件要按时间排序，格式必须可解析且与时区无关。
 	item["createdAt"] = p.CreatedAt.UTC().Format(time.RFC3339)
+	// minPrice 给**数值**（issue #28）：priceRange 是给人看的字符串（"99 ~ 199"），
+	// 拿它排序会得到字典序（"199" < "99"）。没有启用变体的商品给 nil，
+	// 组件据此把它排到最后，而不是当成 0 元。
+	if p.MinPrice != nil {
+		item["minPrice"] = *p.MinPrice
+	}
 	return item
 }
 

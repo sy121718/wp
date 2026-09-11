@@ -279,6 +279,9 @@ var productBrandIndexSQL string
 //go:embed 118_product_variant_option_index.sql
 var productVariantOptionIndexSQL string
 
+//go:embed 119_product_variant_price_index.sql
+var productVariantPriceIndexSQL string
+
 //go:embed 073_blueprint_ddl_align.sql
 var blueprintDDLAlignSQL string
 
@@ -1018,6 +1021,17 @@ func init() {
 			"WHERE schemaname = current_schema() AND tablename = ? " +
 			"AND indexname = 'idx_product_variants_option_values'",
 		SQL: productVariantOptionIndexSQL,
+	})
+
+	// 119：变体价格的索引（issue #28）。价格维度 EXISTS 与 MIN(price) 投影都只认启用变体，
+	// 故建部分索引；CheckSQL 核对索引是否真的在位（缺索引即整段重跑，语句幂等）。
+	register(Migration{
+		Version:   "119-product-variant-price-index",
+		TableName: "product_variants",
+		CheckSQL: "SELECT CASE WHEN COUNT(*) = 1 THEN 1 ELSE 0 END FROM pg_indexes " +
+			"WHERE schemaname = current_schema() AND tablename = ? " +
+			"AND indexname = 'idx_product_variants_price_enabled'",
+		SQL: productVariantPriceIndexSQL,
 	})
 
 	// 073：把历史库的 blueprints / blueprint_versions 对齐到 model（唯一真源）。

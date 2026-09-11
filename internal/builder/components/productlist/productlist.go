@@ -86,6 +86,9 @@ const (
 	OrderDefault = "default"
 	OrderNewest  = "newest"
 	OrderOldest  = "oldest"
+	// 价格排序（issue #28）：按最低启用变体价升 / 降；键名与集合源白名单一致。
+	OrderPriceAsc  = "priceAsc"
+	OrderPriceDesc = "priceDesc"
 
 	ColumnsAuto = "auto"
 )

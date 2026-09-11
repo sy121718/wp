@@ -273,11 +273,49 @@ func itemField(item map[string]any, field string) string {
 	return core.ItemFieldText(item, name)
 }
 
+// itemPrice 取集合项的最低启用变体价（issue #28：集合源给的 minPrice 数值字段）。
+//
+// 缺失表示「没有启用变体」——与 0 元严格区分，排序时排到最后。
+func itemPrice(item map[string]any) (float64, bool) {
+	v, ok := item["minPrice"]
+	if !ok {
+		return 0, false
+	}
+	switch n := v.(type) {
+	case float64:
+		return n, true
+	case int:
+		return float64(n), true
+	case int64:
+		return float64(n), true
+	}
+	return 0, false
+}
+
 // sortItems 按 props 声明的口径重排（默认保持集合源的确定性序：排序号 → 创建时间 → id）。
 //
 // 时间解析失败的行按零值参与比较（排到最后）而不是丢弃：缺 createdAt 不该让商品消失。
 func sortItems(items []map[string]any, order string) {
 	if order == OrderDefault || len(items) < 2 {
+		return
+	}
+	if order == OrderPriceAsc || order == OrderPriceDesc {
+		// 价格排序（issue #28）：按**最低启用变体价**排。没有启用变体（minPrice 缺失）的排最后，
+		// 不按 0 元参与比较 —— 「没有可售规格」不是「免费」。
+		sort.SliceStable(items, func(i, j int) bool {
+			a, aok := itemPrice(items[i])
+			b, bok := itemPrice(items[j])
+			if aok != bok {
+				return aok
+			}
+			if !aok {
+				return false
+			}
+			if order == OrderPriceAsc {
+				return a < b
+			}
+			return a > b
+		})
 		return
 	}
 	createdAt := func(item map[string]any) time.Time {

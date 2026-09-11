@@ -186,8 +186,9 @@ func TestTagFilterToggles(t *testing.T) {
 func TestSortOptionsHaveDisabledPlaceholder(t *testing.T) {
 	view := buildViewOf(t, itemsColl(itemOf("tee", "T 恤", "2026-01-01T00:00:00Z")),
 		map[string]any{"toolbar": "sort,pageSize,columns"}, "")
-	if len(view.SortOptions) != 4 {
-		t.Fatalf("排序应有 3 个可点 + 1 个禁用占位，实际 %d", len(view.SortOptions))
+	// 默认 / 最新 / 最早 / 价格升 / 价格降 + 禁用占位（热度）。
+	if len(view.SortOptions) != 6 {
+		t.Fatalf("排序应有 5 个可点 + 1 个禁用占位，实际 %d", len(view.SortOptions))
 	}
 	last := view.SortOptions[len(view.SortOptions)-1]
 	if !last.Disabled || last.DisabledHint == "" || last.FragmentGet != "" {

@@ -156,6 +156,9 @@ func buildSortOptions(p *Props, lc linkContext, view *View) []ControlOption {
 		{OrderDefault, "默认排序"},
 		{OrderNewest, "最新上架"},
 		{OrderOldest, "最早上架"},
+		// 价格两条（issue #28）：按最低启用变体价升 / 降。
+		{OrderPriceAsc, "价格从低到高"},
+		{OrderPriceDesc, "价格从高到低"},
 	}
 	out := make([]ControlOption, 0, len(items)+1)
 	for _, it := range items {
