@@ -18,7 +18,7 @@ import (
 	"fmt"
 )
 
-//go:embed static/js/*.js
+//go:embed static/js/*.js static/js/ui/*.js
 var staticJSFS embed.FS
 
 // StaticJS 取 static/js 下的脚本源码（name 形如 "enhance.js"）。

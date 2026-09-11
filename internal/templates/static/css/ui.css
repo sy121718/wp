@@ -1,0 +1,45 @@
+/* ui.css — 原始控件基座的外观（与 js/ui/*.js 配套）。
+ *
+ * 约定：颜色一律走 --sky-* 主题变量（可被主题覆写），不写死；
+ * 单个控件一个段落，选择器统一 .wbs-*（WBUI Select）前缀。
+ * 后台/前台共用这一份：后台经 <link>，前台由构建期注入。
+ */
+
+/* ===== 自绘下拉（js/ui/select.js）=====
+   原生弹层在 Linux + Wayland 的 Chrome 上行为异常（点中部瞬开瞬关），
+   这里用 DOM 自绘菜单替代：行为跨平台一致，也能在无头环境验证。
+   原生 select 仍在 DOM 里（视觉隐藏），表单提交、name/value、label[for] 全部照旧。 */
+.wbs { position: relative; display: block; width: 100%; }
+.wbs-native {
+    position: absolute; width: 1px; height: 1px; margin: 0; padding: 0;
+    opacity: 0; pointer-events: none; border: 0;
+}
+.wbs-trigger {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    width: 100%; box-sizing: border-box; padding: 8px 10px;
+    font-size: 13px; font-family: inherit; line-height: 1.4;
+    border: 1px solid var(--sky-c-border, var(--c-border, #e5e7eb)); border-radius: 8px;
+    background: var(--sky-c-surface, var(--c-surface, #fff)); color: inherit;
+    cursor: pointer; text-align: left;
+}
+.wbs-trigger:hover { border-color: var(--sky-c-border-strong, var(--c-border-strong, #d1d5db)); }
+.wbs-trigger:focus-visible { outline: 2px solid var(--sky-c-primary, #3d444f); outline-offset: 1px; }
+.wbs.is-open .wbs-trigger { border-color: var(--sky-c-primary, #3d444f); }
+.wbs-value { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wbs-caret {
+    flex: 0 0 auto; width: 7px; height: 7px; margin-right: 3px;
+    border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor;
+    transform: translateY(-2px) rotate(45deg); opacity: .55; transition: transform .15s;
+}
+.wbs.is-open .wbs-caret { transform: translateY(1px) rotate(-135deg); }
+.wbs-menu {
+    position: absolute; z-index: 60; left: 0; right: 0; margin: 4px 0 0; padding: 4px;
+    list-style: none; max-height: 260px; overflow: auto;
+    background: var(--sky-c-surface, var(--c-surface, #fff));
+    border: 1px solid var(--sky-c-border, var(--c-border, #e5e7eb));
+    border-radius: 10px; box-shadow: 0 8px 24px rgba(16, 20, 26, .12);
+}
+.wbs-option { padding: 7px 10px; border-radius: 6px; font-size: 13px; cursor: pointer; }
+.wbs-option.is-active { background: var(--sky-c-primary-bg, var(--c-primary-bg, #eceef1)); }
+.wbs-option.is-selected { font-weight: 600; }
+.wbs-option[aria-disabled="true"] { opacity: .45; cursor: not-allowed; }

@@ -14,6 +14,8 @@
         })();
     </script>
     <link rel="stylesheet" href="/static/css/theme.css">
+{* 原始控件基座样式（下拉/输入等）：与 theme.css 分开，前台产物也引同一份。 *}
+<link rel="stylesheet" href="/static/css/ui.css">
     <script src="https://cdn.jsdelivr.net/npm/htmx.org@2.0.4/dist/htmx.min.js"></script>
 </head>
 {* hx-headers 全局注入 CSRF token（HTMX 2.0 属性继承，页面内所有 hx-post 自动携带 X-CSRF-Token）。
@@ -73,9 +75,13 @@
             </header>
             <div class="drawer-body" data-drawer-body></div>
         </aside>
-        {* 自绘下拉：原生 select 的弹层在 Linux + Wayland 的 Chrome 上点中部会瞬开瞬关，
-   这里做渐进增强（原生 select 保留、表单提交不变）。工作台自带的 wbDropdown 不受影响。 *}
-<script src="/static/js/select-enhance.js"></script>
+        {* 原始控件基座（js/ui/）：原生 select 的弹层在 Linux + Wayland 的 Chrome 上点中部
+   会瞬开瞬关，这里用 DOM 自绘替身做渐进增强（原生 select 保留、表单提交不变）。
+   按顺序加载：助手 → 各控件 → 入口（入口负责扫描与 htmx 重扫）。
+   工作台自己的 wbDropdown（data-wb-path）不受影响。 *}
+<script src="/static/js/ui/_util.js"></script>
+<script src="/static/js/ui/select.js"></script>
+<script src="/static/js/ui/index.js"></script>
 <script src="/static/js/admin.js"></script>
     </div>
 </body>

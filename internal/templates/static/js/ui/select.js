@@ -1,21 +1,34 @@
-/* select-enhance.js — 原生 <select> 的可控替身（渐进增强）。
+/* ui/select.js — 原始控件：<select> 的可控替身（渐进增强）。
  *
- * 为什么换掉原生下拉：原生 <select> 的弹层由浏览器/桌面环境提供，在
- * Linux + Wayland 的 Chrome 上是 GTK 弹窗——点击中部会瞬开瞬关（表现为
- * 「点中间直接选中、只有点边缘才展开」），且各平台表现不一致。换成 DOM 自绘
- * 下拉后，交互行为由我们控制，跨平台一致，也能在无头环境里验证。
+ * 为什么换掉原生下拉：原生 <select> 的弹层由浏览器/桌面环境提供，在 Linux + Wayland 的
+ * Chrome 上是 GTK 弹窗——点击中部会瞬开瞬关（表现为「点中间直接选中、只有点边缘才展开」），
+ * 且各平台表现不一致。换成 DOM 自绘后交互由我们控制，跨平台一致，也能在无头环境断言。
  *
  * 契约（不破坏既有用法）：
- *   - 原生 <select> 原样保留（只做视觉隐藏），表单提交、name/value、label[for]
- *     全部照旧；增强只是额外挂一个可见触发器和菜单。
- *   - 键盘：Enter/Space/↑/↓ 展开，↑/↓ 移动，Home/End 首尾，Enter 选中，Esc 收起，
- *     字母键按前缀跳转。无障碍用 combobox + listbox 语义。
+ *   - 原生 <select> 原样保留（视觉隐藏），表单提交、name/value、label[for] 全部照旧；
+ *   - 键盘：Enter/Space/↑/↓ 展开与移动，Home/End 首尾，Enter 选中，Esc 收起，字母键前缀跳转；
+ *   - 无障碍：combobox + listbox + aria-expanded/aria-selected；点 label 时焦点转给可见触发器；
  *   - 已有 data-wb-path 的 select（工作台自绘下拉）跳过，避免双重增强。
  */
-(function () {
+(function (global) {
     'use strict';
 
+    var WBUI = global.WBUI || (global.WBUI = {});
+    global.WBUI = WBUI;
+    WBUI.controls = WBUI.controls || [];
     var OPEN_CLASS = 'is-open';
+    var openRoot = null;
+
+    function closeAll(except) {
+        if (openRoot && openRoot !== except) {
+            var t = openRoot.querySelector('.wbs-trigger');
+            var m = openRoot.querySelector('.wbs-menu');
+            if (m) { m.hidden = true; }
+            openRoot.classList.remove(OPEN_CLASS);
+            if (t) { t.setAttribute('aria-expanded', 'false'); }
+        }
+        openRoot = except || null;
+    }
 
     function labelTextFor(sel) {
         if (sel.id) {
@@ -32,14 +45,13 @@
             }
             return t.trim();
         }
-        return typeof sel.getAttribute === 'function' ? (sel.getAttribute('aria-label') || '') : '';
+        return sel.getAttribute('aria-label') || '';
     }
 
     function enhance(sel) {
-        if (sel.dataset.wbsReady === '1') { return; }
-        // 工作台自己的下拉（data-wb-path）不碰。
+        // markOnce：htmx 局部替换后重扫时不在同一元素上叠出第二套菜单。
+        if (!WBUI.markOnce(sel, 'Select')) { return; }
         if (sel.hasAttribute('data-wb-path')) { return; }
-        sel.dataset.wbsReady = '1';
 
         var root = document.createElement('div');
         root.className = 'wbs';
@@ -71,7 +83,7 @@
         menu.hidden = true;
 
         var items = [];
-        Array.prototype.forEach.call(sel.options, function (opt, i) {
+        WBUI.each(sel.options, function (opt, i) {
             var li = document.createElement('li');
             li.className = 'wbs-option';
             li.setAttribute('role', 'option');
@@ -133,23 +145,23 @@
             if (root.classList.contains(OPEN_CLASS)) { close(); } else { open(); }
         });
         trigger.addEventListener('keydown', function (e) {
-            var open_ = root.classList.contains(OPEN_CLASS);
+            var opened = root.classList.contains(OPEN_CLASS);
             switch (e.key) {
-                case 'ArrowDown': e.preventDefault(); open_ ? highlight(active + 1) : open(); break;
-                case 'ArrowUp': e.preventDefault(); open_ ? highlight(active - 1) : open(); break;
-                case 'Home': if (open_) { e.preventDefault(); highlight(0); } break;
-                case 'End': if (open_) { e.preventDefault(); highlight(items.length - 1); } break;
-                case 'Enter': case ' ': e.preventDefault(); open_ ? choose(active) : open(); break;
-                case 'Escape': if (open_) { e.preventDefault(); close(); } break;
+                case 'ArrowDown': e.preventDefault(); opened ? highlight(active + 1) : open(); break;
+                case 'ArrowUp': e.preventDefault(); opened ? highlight(active - 1) : open(); break;
+                case 'Home': if (opened) { e.preventDefault(); highlight(0); } break;
+                case 'End': if (opened) { e.preventDefault(); highlight(items.length - 1); } break;
+                case 'Enter': case ' ': e.preventDefault(); opened ? choose(active) : open(); break;
+                case 'Escape': if (opened) { e.preventDefault(); close(); } break;
                 case 'Tab': close(); break;
                 default:
                     if (e.key.length === 1 && !e.ctrlKey && !e.metaKey) {
                         var ch = e.key.toLowerCase();
-                        var hit = sel.options.length;
+                        var hit = -1;
                         for (var i = 0; i < sel.options.length; i++) {
                             if ((sel.options[i].textContent || '').trim().toLowerCase().indexOf(ch) === 0) { hit = i; break; }
                         }
-                        if (hit < sel.options.length) { e.preventDefault(); open_ ? highlight(hit) : choose(hit); }
+                        if (hit >= 0) { e.preventDefault(); opened ? highlight(hit) : choose(hit); }
                     }
             }
         });
@@ -166,37 +178,16 @@
         sync();
     }
 
-    var openRoot = null;
-    function closeAll(except) {
-        if (openRoot && openRoot !== except) {
-            var t = openRoot.querySelector('.wbs-trigger');
-            var m = openRoot.querySelector('.wbs-menu');
-            if (m) { m.hidden = true; }
-            openRoot.classList.remove(OPEN_CLASS);
-            if (t) { t.setAttribute('aria-expanded', 'false'); }
-        }
-        openRoot = except || null;
-    }
+    // 控件登记：index.js 与 htmx 重扫都会调用。
+    WBUI.register(function (scope) {
+        WBUI.each(WBUI.$$('select:not([data-wb-path])', scope), enhance);
+    });
+
     document.addEventListener('click', function (e) {
         if (!e.target.closest || !e.target.closest('.wbs')) { closeAll(null); return; }
-        var r = e.target.closest('.wbs');
-        if (openRoot !== r) { openRoot = r; }
+        openRoot = e.target.closest('.wbs');
     });
     document.addEventListener('keydown', function (e) {
         if (e.key === 'Escape') { closeAll(null); }
     });
-
-    function scan(rootNode) {
-        var scope = rootNode || document;
-        Array.prototype.forEach.call(scope.querySelectorAll('select:not([data-wb-path])'), enhance);
-    }
-
-    window.wbSelectEnhance = scan;
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', function () { scan(document); });
-    } else {
-        scan(document);
-    }
-    // htmx 局部替换后重新增强（后台大量片段走 htmx）。
-    document.addEventListener('htmx:afterSwap', function (e) { scan(e.target || document); });
-})();
+})(window);
