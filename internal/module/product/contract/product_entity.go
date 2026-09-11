@@ -272,6 +272,19 @@ const (
 
 	// CollectionFilterOptionPrefix 前缀维度键的完整前缀（拼维度键用）。
 	CollectionFilterOptionPrefix = CollectionFilterOption + "."
+
+	// CollectionFilterTagIDs 多标签维度（issue #27）：值是逗号分隔的标签 id 列表。
+	// 与单值 CollectionFilterTagID 并存（后者保留兼容既有配置）。
+	CollectionFilterTagIDs = "tagIds"
+	// CollectionFilterTagMode 多标签匹配语义：any（默认，具备任一）/ all（同时具备全部）。
+	CollectionFilterTagMode = "tagMode"
+	// CollectionFilterOnSale 只看在售（issue #27）：存在启用变体「有划线价且划线价高于售价」。
+	// 判定与 #11 的 on_sale 自动标签规则同源 —— 同一件事只该有一份口径。
+	CollectionFilterOnSale = "onSale"
+
+	// CollectionTagModeAny / CollectionTagModeAll 多标签匹配语义取值（issue #27）。
+	CollectionTagModeAny = "any"
+	CollectionTagModeAll = "all"
 )
 
 // collectionFilters 集合源允许的过滤维度（顺序即工作台下拉顺序）。
@@ -286,6 +299,10 @@ var collectionFilters = []core.CollectionFilter{
 	{Key: CollectionFilterCategoryID},
 	{Key: CollectionFilterBrandID},
 	{Key: CollectionFilterTagID},
+	{Key: CollectionFilterTagIDs},
+	// 匹配语义只在多标签场景有意义，取值固定两个（工作台渲染成下拉）。
+	{Key: CollectionFilterTagMode, Enum: []string{CollectionTagModeAny, CollectionTagModeAll}},
+	{Key: CollectionFilterOnSale},
 	// 属性值维度（issue #25）：前缀维度，真实键是 `option.<属性组key>=<属性值key>`。
 	// 属性组由用户自己建（数据驱动），维度键没法穷举，所以用前缀命名空间 + 服务端校验子键。
 	{Key: CollectionFilterOption, Prefix: true},

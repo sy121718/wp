@@ -108,6 +108,10 @@ func TestProductCollectionSourceMetadata(t *testing.T) {
 		productcontract.CollectionFilterCategoryID,
 		productcontract.CollectionFilterBrandID,
 		productcontract.CollectionFilterTagID,
+		// issue #27：多标签（带匹配语义）与「只看在售」。
+		productcontract.CollectionFilterTagIDs,
+		productcontract.CollectionFilterTagMode,
+		productcontract.CollectionFilterOnSale,
 		productcontract.CollectionFilterOption,
 	}
 	if len(found.Filters) != len(wantFilters) {
@@ -132,9 +136,16 @@ func TestProductCollectionSourceMetadata(t *testing.T) {
 	if len(found.Filters[0].Enum) != 3 {
 		t.Fatalf("status 维度应带 draft/published/archived 枚举：%+v", found.Filters[0])
 	}
+	// 除 status 与 tagMode（取值固定）之外，其余维度都是任意值，不应带枚举。
 	for _, f := range found.Filters[1:] {
+		if f.Key == productcontract.CollectionFilterTagMode {
+			if strings.Join(f.Enum, ",") != "any,all" {
+				t.Fatalf("tagMode 应带 any/all 枚举：%+v", f)
+			}
+			continue
+		}
 		if len(f.Enum) != 0 {
-			t.Fatalf("id 维度是任意值，不应带枚举：%+v", f)
+			t.Fatalf("id / 开关类维度是任意值，不应带枚举：%+v", f)
 		}
 	}
 	// 排序键：确定性默认序（sort → createdAt）。

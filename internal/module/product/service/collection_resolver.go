@@ -221,9 +221,56 @@ func parseCollectionFilter(filter map[string]string) (f productmodel.CollectionF
 				return f, fmt.Errorf("%s: %q", productenums.ErrCollectionFilterInvalid, k)
 			}
 			f.TagID = v
+		case productcontract.CollectionFilterTagIDs:
+			// 多标签（issue #27）：逗号分隔的 uuid 列表；任何一个形状不对就报错，
+			// 不静默丢弃（丢一个 id 会让筛选结果莫名变多，比报错难查得多）。
+			ids := splitCSV(v)
+			for _, id := range ids {
+				if !isUUID(id) {
+					return f, fmt.Errorf("%s: %q", productenums.ErrCollectionFilterInvalid, k)
+				}
+			}
+			if len(ids) > 0 {
+				f.TagIDs = ids
+			}
+		case productcontract.CollectionFilterTagMode:
+			switch v {
+			case productcontract.CollectionTagModeAll:
+				f.TagAll = true
+			case productcontract.CollectionTagModeAny:
+				f.TagAll = false
+			default:
+				return f, fmt.Errorf("%s: %q", productenums.ErrCollectionFilterInvalid, k)
+			}
+		case productcontract.CollectionFilterOnSale:
+			switch v {
+			case "true", "1":
+				f.OnSale = true
+			case "false", "0":
+				f.OnSale = false
+			default:
+				return f, fmt.Errorf("%s: %q", productenums.ErrCollectionFilterInvalid, k)
+			}
 		}
 	}
 	return f, nil
+}
+
+// splitCSV 逗号分隔值 → 去空、去重的列表（顺序保持首次出现）。
+//
+// 空串返回空列表 = 「该维度不参与筛选」，与单值维度的空值语义一致。
+func splitCSV(raw string) []string {
+	out := make([]string, 0, 4)
+	seen := map[string]bool{}
+	for _, part := range strings.Split(raw, ",") {
+		v := strings.TrimSpace(part)
+		if v == "" || seen[v] {
+			continue
+		}
+		seen[v] = true
+		out = append(out, v)
+	}
+	return out
 }
 
 // optionKeyRe 属性维度键 / 值的形状（属性组 key 与属性值 key 都走这个字符集）。

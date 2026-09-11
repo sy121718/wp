@@ -10,6 +10,7 @@ import (
 	"context"
 	"encoding/json"
 	"sort"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -165,6 +166,13 @@ type CollectionFilter struct {
 	CategoryID string
 	BrandID    string
 	TagID      string
+	// TagIDs 多标签维度（issue #27）：与单值 TagID 并存，TagAll 决定语义。
+	TagIDs []string
+	// TagAll 多标签匹配语义：true = 同时具备全部（AND）；false = 具备任一（OR，默认）。
+	TagAll bool
+	// OnSale 只看在售（存在启用变体「有划线价且划线价高于售价」，与 #11 的 on_sale 同源）。
+	OnSale bool
+
 	// Options 属性值维度（issue #25）：属性组 key → 属性值 key，逐项 AND。
 	//
 	// 值不在商品行上（attribute_ids 只存组引用），而在变体的 option_values JSONB 里，
@@ -218,6 +226,29 @@ func (m *Model) ListForCollection(ctx context.Context, f CollectionFilter, limit
 	}
 	if f.TagID != "" {
 		q = q.Where("tag_ids @> jsonb_build_array(?::text)", f.TagID)
+	}
+	// 多标签（issue #27）：OR 用「多个 @> 以 OR 连接」（每一项都能走 081 的 GIN 索引，
+	// planner 会用 BitmapOr 合并）；AND 就是逐条 @> 叠加。不以 ?| 实现 OR ——
+	// 那个操作符不吃 jsonb_path_ops 索引。
+	if len(f.TagIDs) > 0 {
+		if f.TagAll {
+			for _, id := range f.TagIDs {
+				q = q.Where("tag_ids @> jsonb_build_array(?::text)", id)
+			}
+		} else {
+			conds := make([]string, 0, len(f.TagIDs))
+			args := make([]any, 0, len(f.TagIDs))
+			for _, id := range f.TagIDs {
+				conds = append(conds, "tag_ids @> jsonb_build_array(?::text)")
+				args = append(args, id)
+			}
+			q = q.Where("("+strings.Join(conds, " OR ")+")", args...)
+		}
+	}
+	// 在售（issue #27）：与自动标签 on_sale 同一判定 —— 存在启用变体且划线价高于售价。
+	if f.OnSale {
+		q = q.Where("EXISTS (SELECT 1 FROM product_variants v WHERE v.product_id = products.id" +
+			" AND v.enabled AND v.compare_price IS NOT NULL AND v.compare_price > v.price)")
 	}
 	// 属性值维度（issue #25）：值在变体上，逐个属性下推 EXISTS 子查询。
 	//

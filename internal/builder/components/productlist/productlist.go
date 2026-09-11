@@ -41,6 +41,9 @@ const (
 	filterKeyCategoryID = "categoryId"
 	filterKeyBrandID    = "brandId"
 	filterKeyTagID      = "tagId"
+	filterKeyTagIDs     = "tagIds"
+	filterKeyTagMode    = "tagMode"
+	filterKeyOnSale     = "onSale"
 
 	// optionFilterPrefix 属性值维度的前缀（与集合源契约的 `option.<属性key>` 一致，issue #25）。
 	optionFilterPrefix = "option."
@@ -90,6 +93,12 @@ type Props struct {
 	FilterCategoryID string `json:"filterCategoryId,omitempty" ct:"text,maxlen=64,sec=collection,label=分类 id"`
 	FilterBrandID    string `json:"filterBrandId,omitempty" ct:"text,maxlen=64,sec=collection,label=品牌 id"`
 	FilterTagID      string `json:"filterTagId,omitempty" ct:"text,maxlen=64,sec=collection,label=标签 id"`
+	// FilterTagIDs 多标签筛选（issue #27）：逗号分隔的标签 id 列表（「热卖」「新品」这类用标签表达）。
+	FilterTagIDs string `json:"filterTagIds,omitempty" ct:"text,maxlen=500,sec=collection,label=标签 id 列表"`
+	// FilterTagMode 多标签语义：any（默认，具备任一）/ all（同时具备全部）。
+	FilterTagMode string `json:"filterTagMode,omitempty" ct:"select,=具备任一,any=具备任一,all=同时具备全部,default=,sec=collection,label=多标签语义"`
+	// OnlyOnSale 只看在售（存在启用变体有划线价且高于售价，与 on_sale 自动标签同源）。
+	OnlyOnSale string `json:"onlyOnSale,omitempty" ct:"select,=不限,on=只看在售,default=,sec=collection,label=在售"`
 	// FilterOptionKey / FilterOptionValue 属性筛选（issue #25）：按「属性组 key = 属性值 key」
 	// 固定筛一个属性值（如 color + red）。访客可交互的多属性筛选走 #27 的筛选条。
 	//
@@ -211,6 +220,16 @@ func validateExtra(p *Props, _ string) (err error) {
 	}
 	if p.CollectionLimit < 0 || p.CollectionLimit > maxLimit {
 		return fmt.Errorf("取几条必须在 0~%d 之间（0 = 用默认值 %d）", maxLimit, defaultLimit)
+	}
+	switch p.FilterTagMode {
+	case "", "any", "all":
+	default:
+		return fmt.Errorf("无效的多标签语义 %q（any = 具备任一 / all = 同时具备全部）", p.FilterTagMode)
+	}
+	switch p.OnlyOnSale {
+	case "", "on":
+	default:
+		return fmt.Errorf("无效的在售开关 %q（空 = 不限 / on = 只看在售）", p.OnlyOnSale)
 	}
 	// 属性筛选必须成对：只填一半是配置错误，早点报比「筛出空列表」好排查。
 	keySet := strings.TrimSpace(p.FilterOptionKey) != ""
@@ -342,6 +361,16 @@ func collectionFilter(p *Props) map[string]string {
 	// 属性维度（issue #25）：键是 `option.<属性key>`——前缀维度，服务端校验子键形状。
 	if key, value := strings.TrimSpace(p.FilterOptionKey), strings.TrimSpace(p.FilterOptionValue); key != "" && value != "" {
 		f[optionFilterPrefix+key] = value
+	}
+	// 多标签（issue #27）：值与语义分两个键下推（语义只在有多标签时有意义）。
+	if ids := strings.TrimSpace(p.FilterTagIDs); ids != "" {
+		f[filterKeyTagIDs] = ids
+		if mode := strings.TrimSpace(p.FilterTagMode); mode == "all" {
+			f[filterKeyTagMode] = mode
+		}
+	}
+	if strings.TrimSpace(p.OnlyOnSale) == "on" {
+		f[filterKeyOnSale] = "true"
 	}
 	for _, kv := range [][2]string{
 		{filterKeyStatus, p.FilterStatus},
