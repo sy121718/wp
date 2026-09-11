@@ -595,6 +595,40 @@ a.pagination-btn:hover { background: var(--c-bg-hover); color: var(--c-text); }
 .sky-ip-clear:hover { color: var(--c-danger, #dc2626); border-color: currentColor; }
 
 
+/* ===== 商品定价工具（admin/product_pricing.html，issue #13） =====
+   多端适配（硬规则）：
+     · 表单行复用 .attr-form-head（flex + wrap，宽度 min(100%, 220px)），窄屏折行不撑破卡片；
+     · 试算与留痕表放进 .pricing-table-wrap（overflow-x: auto + tabindex="0"）：
+       窄屏下横向滚动而不是把整页撑宽，键盘可聚焦后用方向键滚动，触屏左右滑动；
+     · 折叠行（summary）在窄屏折行（一行里放了规则 / 范围 / 尾数 / 改动数 + 时间）；
+     · 控件全是原生 input / select / button：鼠标点选、触屏点按、键盘（Tab 进组、回车提交）都可用；
+     · 没有 :hover 依赖，按压反馈走 .btn:active（不带媒体查询）。 */
+.pricing-page .card-header { flex-wrap: wrap; gap: 4px 8px; }
+.pricing-page .card-header > * { min-width: 0; }
+/* <select> 被 WBUI 自绘替身接管后可见元素是 .wbs（width:100%）；
+   与原生 select 的同一档宽度收口，窄屏折行而不是铺满整张卡片。 */
+.pricing-page .attr-form-head .wbs { width: min(100%, 220px); }
+.pricing-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+/* 容器自身不是控件，但横向可滚动区域要能被键盘聚焦（否则键盘用户滚不动）。 */
+.pricing-table-wrap:focus-visible { outline: 2px solid var(--c-primary, #2563eb); outline-offset: 2px; }
+.pricing-page-table th, .pricing-page-table td { word-break: break-word; overflow-wrap: anywhere; }
+.pricing-page-table th:first-child, .pricing-page-table td:first-child { min-width: 132px; }
+/* 规则参考表是「标识符 + 长说明」，窄屏三列挤在一起会把 cost_multiple 断成
+   cost_ / multi / ple：与标签页的规则表同一手法，手机端整表堆叠成块。 */
+.pricing-rule-table th:first-child, .pricing-rule-table td:first-child { white-space: nowrap; }
+@media (max-width: 720px) {
+    .pricing-page .pages-card { padding: 16px; }
+    .pricing-page-table th:first-child, .pricing-page-table td:first-child { min-width: 0; }
+    .pricing-rule-table thead { display: none; }
+    .pricing-rule-table, .pricing-rule-table tbody, .pricing-rule-table tr, .pricing-rule-table td { display: block; width: auto; }
+    .pricing-rule-table tr {
+        border: 1px solid var(--c-border, #e5e7eb); border-radius: 10px;
+        padding: 8px 10px; margin-bottom: 8px;
+    }
+    .pricing-rule-table td { border: 0; padding: 2px 0; }
+    .pricing-rule-table td:first-child { white-space: normal; font-family: monospace; }
+}
+
 /* 固定按钮移到二级栏顶部（底部不易被发现）；改为底部分隔线。 */
 .subnav-pin {
     display: flex; align-items: center; gap: 8px;

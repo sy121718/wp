@@ -265,14 +265,22 @@ func (m *Model) SaveVariants(ctx context.Context, updated, created []*VariantEnt
 		return nil
 	}
 	return m.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		for _, v := range updated {
-			if err := tx.Model(&VariantEntity{}).Where("id = ?", v.ID).Save(v).Error; err != nil {
-				return err
-			}
-		}
-		if len(created) == 0 {
-			return nil
-		}
-		return tx.CreateInBatches(created, 100).Error
+		return m.SaveVariantsTx(tx, updated, created)
 	})
+}
+
+// SaveVariantsTx 与 SaveVariants 相同，但复用调用方事务（service 编排跨聚合原子写入）。
+//
+// 定价工具（issue #13）一次应用要同时写「变体新价格」与「调价留痕」：
+// 二者分别属变体聚合与留痕聚合，事务边界由 service 决定，model 只提供 tx 透传。
+func (m *Model) SaveVariantsTx(tx *gorm.DB, updated, created []*VariantEntity) (err error) {
+	for _, v := range updated {
+		if err = tx.Model(&VariantEntity{}).Where("id = ?", v.ID).Save(v).Error; err != nil {
+			return err
+		}
+	}
+	if len(created) == 0 {
+		return nil
+	}
+	return tx.CreateInBatches(created, 100).Error
 }

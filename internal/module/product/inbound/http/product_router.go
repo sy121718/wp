@@ -69,5 +69,15 @@ func SetupProductRoutes(rg *gin.RouterGroup, db *gorm.DB, project projectcontrac
 	g.POST("/tag/update", handle.UpdateTag)
 	g.POST("/tag/delete", handle.DeleteTag)
 	g.POST("/tag/recalc", handle.RecalcTags)
+
+	// 定价工具（issue #13）：四种内置规则 + 尾数处理，可对单个 SKU / 单商品全部变体 /
+	// 筛选集批量应用。preview 与 apply 共用同一份规则入参（预览不落库，应用落库 + 留痕）。
+	// 结果写回 product_variants.price，不参与构建期计算。
+	g.GET("/pricing/rules", handle.ListPricingRuleTypes)
+	g.GET("/pricing/roundings", handle.ListPricingRoundingOptions)
+	g.POST("/pricing/preview", handle.PreviewPricing)
+	g.POST("/pricing/apply", handle.ApplyPricing)
+	g.GET("/pricing/history", handle.ListPriceAdjustments)
+	g.GET("/pricing/adjustment", handle.GetPriceAdjustment)
 	return svc
 }

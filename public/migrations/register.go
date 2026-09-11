@@ -207,6 +207,15 @@ var productTagMenuSQL string
 //go:embed 094_product_image_alts.sql
 var productImageAltsSQL string
 
+//go:embed 095_product_pricing.sql
+var productPricingSQL string
+
+//go:embed 096_product_pricing_permissions.sql
+var productPricingPermsSQL string
+
+//go:embed 097_product_pricing_menu.sql
+var productPricingMenuSQL string
+
 //go:embed 073_blueprint_ddl_align.sql
 var blueprintDDLAlignSQL string
 
@@ -584,6 +593,35 @@ func init() {
 		TableName:    "sys_menus",
 		ConditionSQL: "SELECT CASE WHEN COUNT(*) = 1 THEN 1 ELSE 0 END FROM sys_menus WHERE title = '商品标签' AND type = 2 AND deleted_time IS NULL",
 		SQL:          productTagMenuSQL,
+	})
+
+	// 095：商品定价工具留痕（issue #13）—— 两张全新表（调价批次 + 逐变体明细）。
+	// 表此前不存在，默认「表存在即跳过」即可；定价结果写回 product_variants.price，
+	// 不新增任何构建期读取路径（不进构建管线）。
+	register(Migration{
+		Version:   "095-product-pricing",
+		TableName: "product_price_adjustments",
+		SQL:       productPricingSQL,
+	})
+
+	// 096：定价工具权限点 + 超管策略（issue #13）。
+	// 条件只看本票自己的权限点，与 082 的宽匹配（product:%）互不干扰。
+	registerSeed(Seed{
+		Version:   "096-product-pricing-permissions",
+		TableName: "sys_permission",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) = 6 THEN 1 ELSE 0 END FROM sys_permission WHERE permission_code IN (" +
+			"'product:pricing_rules', 'product:pricing_roundings', 'product:pricing_preview', " +
+			"'product:pricing_apply', 'product:pricing_history', 'product:pricing_adjustment')",
+		SQL: productPricingPermsSQL,
+	})
+
+	// 097：定价工具后台菜单（issue #13）。须在 084（商品管理菜单）之后执行，
+	// 否则父菜单还不存在，COALESCE 会把入口落到顶级。
+	registerSeed(Seed{
+		Version:      "097-product-pricing-menu",
+		TableName:    "sys_menus",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) = 1 THEN 1 ELSE 0 END FROM sys_menus WHERE title = '定价工具' AND type = 2 AND deleted_time IS NULL",
+		SQL:          productPricingMenuSQL,
 	})
 
 	// 094：商品图集 alt 文本列（issue #12 商品多语言）。

@@ -175,6 +175,12 @@ func SetupDashboardRoutes(router *gin.Engine,
 	// 商品挂手工标签：属于商品更新，复用商品更新权限点（自动标签不在这份表单里）。
 	adminPages.POST("/products/tags", builtin.CasbinMiddlewareForPath("/api/product/update"), productPages.ProductsTagsSet)
 
+	// 定价工具（issue #13）：四种内置规则 + 尾数处理，对单个 SKU / 单商品全部变体 / 筛选集
+	// 批量改价。试算走预览权限点（不落库），应用走应用权限点（落库 + 留痕）。
+	adminPages.GET("/product-pricing", productPages.ProductPricingPage)
+	adminPages.POST("/product-pricing/preview", builtin.CasbinMiddlewareForPath("/api/product/pricing/preview"), productPages.ProductPricingPreview)
+	adminPages.POST("/product-pricing/apply", builtin.CasbinMiddlewareForPath("/api/product/pricing/apply"), productPages.ProductPricingApply)
+
 	// 商品域翻译工作台（issue #12）：入口在商品列表行内「多语言」按钮（与页面翻译工作台同构）。
 	// 保存写 sys_translation（engine=manual）并标记待重建，鉴权复用商品更新权限点（同一改动面）。
 	SetupProductTranslationRoutes(adminPages,

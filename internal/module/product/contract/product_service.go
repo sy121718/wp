@@ -72,6 +72,23 @@ type ProductService interface {
 	// RecalcTags 手动触发重算：TagID 为空表示重算该工程下全部自动标签。
 	RecalcTags(ctx context.Context, req *productdto.RecalcTagsReq) (res *productdto.RecalcTagsResp, err error)
 
+	// 定价工具（issue #13）：四种内置规则（成本乘倍数 / 成本加价 / 目标毛利率 / 统一售价）
+	// + 尾数处理，可对单个 SKU / 单商品全部变体 / 筛选集批量应用。
+	//   · PreviewPricing 试算：不落库、不留痕，与 ApplyPricing 共用同一份算价逻辑；
+	//   · ApplyPricing 应用：售价写回 product_variants.price（不是运行时计算）+ 写留痕台账；
+	//     只有真正变化的变体才写库与留痕；一条都没变时返回 ErrPricingNothingChanged；
+	//     落库后立刻按「变体写操作后」重算本工程自动标签（#11 的重算时机）。
+	// 两个方法都不进构建管线：构建期读的是落库后的确定值。
+	PreviewPricing(ctx context.Context, req *productdto.PricingPreviewReq) (res *productdto.PricingPreviewResp, err error)
+	ApplyPricing(ctx context.Context, req *productdto.PricingApplyReq) (res *productdto.PricingApplyResp, err error)
+	// ListPricingRuleTypes / ListPricingRoundingOptions 内置规则与尾数清单
+	// （后台下拉与参数说明的唯一来源）。
+	ListPricingRuleTypes(ctx context.Context) (list []*productdto.PricingRuleTypeResp)
+	ListPricingRoundingOptions(ctx context.Context) (list []*productdto.PricingRoundingOptionResp)
+	// ListPriceAdjustments / GetPriceAdjustment 调价留痕（验收 4：改动有留痕）。
+	ListPriceAdjustments(ctx context.Context, req *productdto.ListPriceAdjustmentReq) (list []*productdto.PriceAdjustmentResp, err error)
+	GetPriceAdjustment(ctx context.Context, req *productdto.GetPriceAdjustmentReq) (res *productdto.PriceAdjustmentResp, err error)
+
 	// RegisterEntityTypes 把本模块的实体类型（product）注册进实体类型注册表
 	// （装配期调用）。注册后内容模板与发布实例即可把商品作为数据源校验字段绑定，
 	// 构建期经注册表取商品字段解析器（不反向依赖本模块实现）。
