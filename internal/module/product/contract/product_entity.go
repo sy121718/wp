@@ -8,7 +8,12 @@
 // issue #5 已定语义），因此对外暴露的是派生值而不是原列。
 package productcontract
 
-import "sort"
+import (
+	"sort"
+
+	"go_wp/internal/builder/core"
+	productenums "go_wp/internal/module/product/enums"
+)
 
 // EntityTypeProduct 商品实体类型标识。
 const EntityTypeProduct = "product"
@@ -80,4 +85,61 @@ func IsValidField(entityType, field string) bool {
 // IsTranslatableField 字段是否参与内容翻译。
 func IsTranslatableField(entityType, field string) bool {
 	return IsValidType(entityType) && translatableFields[field]
+}
+
+// —— 集合源（issue #9）——
+
+// CollectionSourceProduct 商品集合源标识（集合类组件 collectionSource 属性的取值）。
+//
+// 沿用既有集合源命名空间 "content:{entityType}"：内容类型收敛为 article 后
+// （issue #4），product 已不在 contents 表，该源由本模块实现 —— 集合源的标识
+// 是组件侧的契约面，不随实现模块迁移而改名（现有工作台选项与文档历史值都不变）。
+const CollectionSourceProduct = "content:product"
+
+// CollectionLabel 集合源展示名（工作台集合源下拉）。
+const CollectionLabel = "商品列表"
+
+// collectionFilters 集合源允许的过滤维度（顺序即工作台下拉顺序）。
+//
+// 维度只开放 status（商品状态）：解析期按它下推到 SQL，白名单外的维度直接报错
+// （不变量 4：不接受任意过滤表达式，只接受声明过的等值维度）。
+var collectionFilters = []core.CollectionFilter{
+	{Key: "status", Enum: []string{productenums.StatusDraft, productenums.StatusPublished, productenums.StatusArchived}},
+}
+
+// collectionOrderKeys 集合源允许的排序键白名单（顺序即默认排序优先级）。
+//
+// 字段名用驼峰（集合项字段风格，与 slug / defaultImage 一致）：
+// sort（排序号）→ createdAt（创建时间），同值再按 id 兜底，保证产物确定性。
+var collectionOrderKeys = []string{"sort", "createdAt"}
+
+// CollectionFilters 过滤维度白名单的只读拷贝（调用方不得篡改唯一来源）。
+func CollectionFilters() []core.CollectionFilter {
+	out := make([]core.CollectionFilter, 0, len(collectionFilters))
+	for _, f := range collectionFilters {
+		copied := core.CollectionFilter{Key: f.Key}
+		if len(f.Enum) > 0 {
+			copied.Enum = make([]string, len(f.Enum))
+			copy(copied.Enum, f.Enum)
+		}
+		out = append(out, copied)
+	}
+	return out
+}
+
+// IsCollectionFilterKey 过滤维度是否在集合源白名单内。
+func IsCollectionFilterKey(key string) bool {
+	for _, f := range collectionFilters {
+		if f.Key == key {
+			return true
+		}
+	}
+	return false
+}
+
+// CollectionOrderBy 排序键白名单的只读拷贝（顺序即默认排序优先级）。
+func CollectionOrderBy() []string {
+	out := make([]string, len(collectionOrderKeys))
+	copy(out, collectionOrderKeys)
+	return out
 }

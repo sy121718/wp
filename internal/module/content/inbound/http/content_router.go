@@ -4,6 +4,7 @@ package contenthttp
 // 挂 authorizedAPI 三层链（SessionAuth + CSRF + Casbin）。
 
 import (
+	"go_wp/internal/builder/core"
 	contentcontract "go_wp/internal/module/content/contract"
 	contentmodel "go_wp/internal/module/content/model"
 	contentservice "go_wp/internal/module/content/service"
@@ -13,9 +14,14 @@ import (
 )
 
 // SetupContentRoutes 装配 content 模块路由，返回模块契约。
-func SetupContentRoutes(rg *gin.RouterGroup, db *gorm.DB) contentcontract.ContentService {
+//
+// collections 为集合源元数据聚合端口（装配期的集合源注册表）：集合源已跨模块
+// （商品同样是集合源，issue #9），元数据接口必须返回全量 —— 注册表在装配期
+// 后续步骤才填充完成，这里只持有指针，请求到来时已是全量。
+func SetupContentRoutes(rg *gin.RouterGroup, db *gorm.DB, collections core.CollectionSchemaProvider) contentcontract.ContentService {
 	svc := contentservice.NewService(contentmodel.NewModel(db))
 	handle := NewHandle(svc)
+	handle.SetCollectionSchemas(collections)
 
 	g := rg.Group("/content")
 	g.POST("/create", handle.Create)

@@ -17,13 +17,16 @@ import (
 
 // SetupPresentationRoutes 装配 presentation 模块路由，返回模块契约。
 // project 用于解析实例所属工程（presentation_instances.project_id 为 NOT NULL 外键）；
-// blocks 用于内容模板内部的全局块引用展开（core.globalref，构建期内联）。
+// blocks 用于内容模板内部的全局块引用展开（core.globalref，构建期内联）；
+// collections 为集合源解析器（issue #9）：模板内的集合类组件构建期展开为静态列表。
 func SetupPresentationRoutes(rg *gin.RouterGroup, db *gorm.DB,
 	templates contenttemplatecontract.ContentTemplateService,
 	registry core.EntitySourceRegistry,
 	project projectcontract.ProjectService,
-	blocks blockcontract.BlockService) presentationcontract.PresentationService {
+	blocks blockcontract.BlockService,
+	collections core.CollectionResolver) presentationcontract.PresentationService {
 	svc := presentationservice.NewService(presentationmodel.NewModel(db), templates, registry, project, blocks)
+	svc.SetCollectionResolver(collections)
 	handle := NewHandle(svc)
 
 	g := rg.Group("/presentation")

@@ -62,7 +62,11 @@ type Service struct {
 	project   projectcontract.ProjectService
 	// blocks 全局块契约：内容模板内部可用 core.globalref 引用页眉/页脚等区块，
 	// 构建期由这里内联展开（与手工 Page 路径同一机制，docs/02-D §1.2）。
-	blocks      blockcontract.BlockService
+	blocks blockcontract.BlockService
+	// collection 集合源解析器（装配期注入，可空）：模板内的集合类组件
+	// （core.cardstack 绑定 content:product 等）在构建期展开为静态列表数据。
+	// 未注入时集合绑定节点构建期显式报错（不静默产出空列表）。
+	collection  core.CollectionResolver
 	store       *pipeline.LocalStore
 	publication *pipeline.LocalPublicationStore
 	// instanceLocks 实例分片互斥锁：并发构建同一实例时串行化
@@ -96,6 +100,10 @@ func NewService(m *presentationmodel.Model,
 		publication: &pipeline.LocalPublicationStore{ActiveRoot: pipeline.ActiveRoot()},
 	}
 }
+
+// SetCollectionResolver 注入集合源解析器（装配期调用，与其它可选依赖同模式：
+// 不进构造参数）。传入 nil 表示模板不支持集合绑定。
+func (s *Service) SetCollectionResolver(r core.CollectionResolver) { s.collection = r }
 
 // 编译期契约断言。
 var _ presentationcontract.PresentationService = (*Service)(nil)
@@ -445,15 +453,23 @@ func (s *Service) buildArtifact(ctx context.Context, entityType, entityID, urlPa
 	if err != nil {
 		return built, err
 	}
-	compiled, err := builder.Compile(page,
+	compileOpts := []builder.CompileOption{
 		builder.WithContext(buildCtx),
 		builder.WithComponentSet(set),
 		builder.WithContentResolver(resolver),
+		// 工程上下文：集合源（商品等分工程的数据）按它取数，不跨站点串数据。
+		builder.WithProjectID(projectID),
 		// 全局块内联展开（core.globalref）：内容模板可引用页眉/页脚/信任徽章等区块，
 		// 与手工 Page 路径同一机制；未注入 block 契约时引用即报错（不静默出占位）。
 		builder.WithBlockResolver(newBlockResolverAdapter(s.blocks, buildCtx)),
 		// 组件固定文案取词：构建开始时刻的词条快照（确定性构建不变量）。
-		builder.WithLanguage(lang), builder.WithTranslator(i18n.Snapshot(lang)))
+		builder.WithLanguage(lang), builder.WithTranslator(i18n.Snapshot(lang)),
+	}
+	// 集合源注入（issue #9）：模板里的集合类组件按白名单展开商品等集合数据。
+	if s.collection != nil {
+		compileOpts = append(compileOpts, builder.WithCollectionResolver(s.collection))
+	}
+	compiled, err := builder.Compile(page, compileOpts...)
 	if err != nil {
 		return built, err
 	}

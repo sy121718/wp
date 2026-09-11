@@ -28,6 +28,10 @@ const (
 	ErrAttrInUse             = "ErrAttrInUse"             // 属性组已被商品引用，不能删除
 	ErrAttrValueLabelMissing = "ErrAttrValueLabelMissing" // 属性值名称必填
 
+	// —— 集合源（issue #9）——
+	ErrCollectionSourceInvalid = "ErrCollectionSourceInvalid" // 集合源标识不合法（不是本模块实现的源）
+	ErrCollectionFilterInvalid = "ErrCollectionFilterInvalid" // 过滤维度不在集合源白名单内
+
 	// —— 变体组合生成（issue #8）——
 	// 上限类错误的详细数值由 service 拼进消息（如「：7 个组合超过上限 200」），
 	// 这里只保留稳定的错误标识，避免同一上限在多处各写一份数字。

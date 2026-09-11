@@ -142,6 +142,31 @@ func (m *Model) List(ctx context.Context, projectID, keyword, status string, lim
 	return list, err
 }
 
+// ListForCollection 集合源取数（issue #9）：一次取回集合项所需的全部白名单字段列。
+//
+// 与 List 的差异是刻意的：List 是后台列表（只要标题/图/状态那几列、按 updated_at 语义），
+// 集合源要的是「详情可绑定字段」的投影（副标题/描述/单位/属性引用等），且必须同一份
+// 确定性排序 —— 同一批数据每次构建输出同样字节（不变量 5）。
+//
+// 条件以参数传入（工程 / 状态 / 分页），方法内不写死业务判断；limit <= 0 表示不限条数。
+func (m *Model) ListForCollection(ctx context.Context, projectID, status string, limit, offset int) (list []*ProductEntity, err error) {
+	q := m.DB(ctx).Select(
+		"id, project_id, name, subtitle, description, slug, status, sort, unit, " +
+			"images, attribute_ids, default_image, created_at, updated_at")
+	if projectID != "" {
+		q = q.Where("project_id = ?", projectID)
+	}
+	if status != "" {
+		q = q.Where("status = ?", status)
+	}
+	q = q.Order("sort ASC, created_at ASC, id ASC")
+	if limit > 0 {
+		q = q.Limit(limit).Offset(offset)
+	}
+	err = q.Find(&list).Error
+	return list, err
+}
+
 // Count 列表总数（与 List 同过滤条件）。
 func (m *Model) Count(ctx context.Context, projectID, keyword, status string) (n int64, err error) {
 	q := m.DB(ctx)

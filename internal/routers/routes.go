@@ -145,8 +145,17 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 	// 公开站点导航（0-C，与后台 menu 严格隔离）。
 	navigationSvc := navigationhttp.SetupNavigationRoutes(authorizedAPI, db)
 	_ = blueprintSvc // 未来 page CreatePage 消费 InitPageDocument
-	// CMS 内容（0-A2）。
-	contentSvc := contenthttp.SetupContentRoutes(authorizedAPI, db)
+	// 集合源注册表（装配期注册，构建期只读，issue #9）：各领域模块注册自己的集合源
+	// （内容集合 / 商品集合），集合类组件与集合源元数据接口只认注册表 —— 构建层
+	// 不认识具体领域模块，新增领域（库存/分类…）只需在装配期多注册一次。
+	collectionRegistry := core.NewCollectionRegistry()
+	// CMS 内容（0-A2）。集合源元数据接口经注册表返回全量集合源（含商品等其它领域）。
+	contentSvc := contenthttp.SetupContentRoutes(authorizedAPI, db, collectionRegistry)
+	if provider, ok := contentSvc.(core.CollectionSourceProvider); !ok {
+		panic("内容模块未实现集合源契约（CollectionResolver + CollectionSchemaProvider）")
+	} else if err := collectionRegistry.Register(provider); err != nil {
+		panic("内容集合源注册失败: " + err.Error())
+	}
 	// 实体类型注册表：各领域模块在装配期注册自己的实体类型；
 	// 内容模板 / 发布实例据此校验类型与取字段解析器，不再直接依赖内容模块。
 	// 注册失败即装配缺陷（fail-fast，与本仓组件注册同口径）。
@@ -164,15 +173,24 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 	if err := productSvc.RegisterEntityTypes(entityRegistry); err != nil {
 		panic("商品实体类型注册失败: " + err.Error())
 	}
+	// 商品集合源注册（issue #9）：注册后 "content:product" 出现在集合源元数据里，
+	// 现有集合类组件绑定商品字段即可在构建期解析出集合项（字段白名单由商品
+	// contract 单一来源给出，白名单外字段在构建期被拒绝）。
+	if provider, ok := productSvc.(core.CollectionSourceProvider); !ok {
+		panic("商品模块未实现集合源契约（CollectionResolver + CollectionSchemaProvider）")
+	} else if err := collectionRegistry.Register(provider); err != nil {
+		panic("商品集合源注册失败: " + err.Error())
+	}
 	// 自动发布实例（内容实体驱动，复用编译/存储/激活管线；实例行需 project_id 外键）。
 	// blockSvc 注入用于内容模板内部的全局块引用展开（页眉/页脚等，构建期内联）。
-	presentationSvc := presentationhttp.SetupPresentationRoutes(authorizedAPI, db, contentTemplateSvc, entityRegistry, projectService, blockSvc)
+	presentationSvc := presentationhttp.SetupPresentationRoutes(authorizedAPI, db, contentTemplateSvc, entityRegistry, projectService, blockSvc, collectionRegistry)
 
 	// 插件模块（page 构建路径依赖其装配素材，须先于 page 装配）。
 	// plugin 是外部插件宿主：注入 admin 权限上下文契约，供插件运行时读取当前用户权限。
 	pluginSvc := pluginhttp.SetupPluginRoutes(authorizedAPI, db, adminAuthzSvc)
-	// content service 同时实现 core.CollectionResolver（插件集合绑定渲染）。
-	collectionResolver, _ := contentSvc.(core.CollectionResolver)
+	// 集合解析注入：注册表即 core.CollectionResolver（按源分发到内容 / 商品解析器，
+	// 同时实现 CollectionSchemaProvider 供组件按白名单严格校验）。
+	collectionResolver := core.CollectionResolver(collectionRegistry)
 	// navigationSvc 注入 page 装配：core.nav 绑定菜单位置时构建期解析菜单项。
 	pageService := pagehttp.SetupPageRoutes(authorizedAPI, db, artifactSvc, publicationSvc, projectService, blockSvc, pluginSvc, collectionResolver, navigationSvc, mediaSvc)
 

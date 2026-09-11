@@ -525,9 +525,17 @@ func Compile(p *Page, opts ...CompileOption) (res *CompiledPage, err error) {
 	// 取词函数缺省读 i18n 内存缓存并带完整兜底链（见 resolveCompileI18n）。
 	lang, translate := resolveCompileI18n(cfg)
 
+	// 构建上下文补充：目标语言与站点工程 ID 一并进 context。
+	//
+	// 组件经 RenderContext 读得到这两个值，集合解析器（CollectionResolver）
+	// 只拿得到 context.Context —— 商品集合按工程取数（不跨站点串数据）、
+	// 可翻译字段按语言取译文都依赖它们。Presenter 路径此前已在装配层包好
+	// 构建语言，这里统一兜住，两种构建路径行为一致。
+	buildCtx := core.WithBuildProjectID(core.WithBuildLang(cfg.ctx, lang), cfg.projectID)
+
 	var htmlBuf strings.Builder
 	ctx := &core.RenderContext{
-		CSS: &b, Context: cfg.ctx, Content: cfg.content, Block: cfg.block,
+		CSS: &b, Context: buildCtx, Content: cfg.content, Block: cfg.block,
 		Plugin: cfg.plugin, Collection: cfg.collection,
 		Navigation: cfg.navigation, ProjectID: cfg.projectID, CurrentPath: cfg.currentPath,
 		Lang: lang, Translate: translate, Locales: cfg.locales,
