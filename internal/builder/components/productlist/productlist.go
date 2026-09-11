@@ -106,6 +106,9 @@ type Props struct {
 	// 拆开能分别给出「只填了 key 没填 value」这种明确的配置错误。
 	FilterOptionKey   string `json:"filterOptionKey,omitempty" ct:"text,maxlen=64,sec=collection,label=属性 key"`
 	FilterOptionValue string `json:"filterOptionValue,omitempty" ct:"text,maxlen=64,sec=collection,label=属性值 key"`
+	// FilterOptions 多属性筛选（issue #27）：`颜色key:值key,尺码key:值key` 逗号分隔，逐项 AND。
+	// 访客交互的多属性筛选（筛选栏点选）在片段侧把选中值拼成这个参数；工作台也能固定写死。
+	FilterOptions string `json:"filterOptions,omitempty" ct:"text,maxlen=500,sec=collection,label=多属性筛选"`
 
 	// —— 排序 ——
 	// OrderBy 排序口径：默认 = 集合源的确定性序（排序号 → 创建时间 → id）。
@@ -240,6 +243,17 @@ func validateExtra(p *Props, _ string) (err error) {
 	if keySet && (!optionKeyRe.MatchString(strings.TrimSpace(p.FilterOptionKey)) || !optionKeyRe.MatchString(strings.TrimSpace(p.FilterOptionValue))) {
 		return fmt.Errorf("属性筛选的 key / 值形状非法（只允许字母数字下划线与连字符）")
 	}
+	// 多属性：每对必须是 `key:value` 且两半形状合法（缺冒号 / 空半都是配置错误）。
+	for _, pair := range strings.Split(p.FilterOptions, ",") {
+		pair = strings.TrimSpace(pair)
+		if pair == "" {
+			continue
+		}
+		key, value, ok := strings.Cut(pair, ":")
+		if !ok || !optionKeyRe.MatchString(strings.TrimSpace(key)) || !optionKeyRe.MatchString(strings.TrimSpace(value)) {
+			return fmt.Errorf("多属性筛选项 %q 形状非法（期望 属性key:属性值key）", pair)
+		}
+	}
 	return nil
 }
 
@@ -359,6 +373,18 @@ func collectionFilter(p *Props) map[string]string {
 	}
 	f := map[string]string{}
 	// 属性维度（issue #25）：键是 `option.<属性key>`——前缀维度，服务端校验子键形状。
+	// 多属性（issue #27）：`属性key:属性值key` 对，逐项 AND。
+	for _, pair := range strings.Split(p.FilterOptions, ",") {
+		pair = strings.TrimSpace(pair)
+		if pair == "" {
+			continue
+		}
+		key, value, ok := strings.Cut(pair, ":")
+		if !ok {
+			continue // 形状由 validateExtra 拦（这里静默跳过，不制造半个维度）
+		}
+		f[optionFilterPrefix+strings.TrimSpace(key)] = strings.TrimSpace(value)
+	}
 	if key, value := strings.TrimSpace(p.FilterOptionKey), strings.TrimSpace(p.FilterOptionValue); key != "" && value != "" {
 		f[optionFilterPrefix+key] = value
 	}

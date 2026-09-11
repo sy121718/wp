@@ -651,6 +651,34 @@ func Compile(p *Page, opts ...CompileOption) (res *CompiledPage, err error) {
 	}, nil
 }
 
+// RenderNodeHTML 把单个组件节点渲染为 HTML 片段（issue #27）。
+//
+// 为什么需要它：访问面的 Runtime Fragment 要返回**与静态产物同一份渲染**的 HTML ——
+// 若片段自己拼一遍列表，就会出现「点筛选得到的」与「直接打开页面看到的」两份实现，
+// 任何一处改动都会让两边悄悄分叉（docs/04 三路径的硬要求）。
+//
+// 用同一个 node id 渲染是关键：组件类名由 core.NodeClass(id) 派生，id 相同则类名相同，
+// 静态产物里已有的样式对片段同样生效，片段不必重复注入 CSS。
+//
+// set 为组件模板集（装配期构建一次复用），ctx 需带齐该组件依赖的解析器（列表：Collection）。
+func RenderNodeHTML(set *jet.Set, node *core.Node, ctx *core.RenderContext) (string, error) {
+	if node == nil {
+		return "", fmt.Errorf("渲染节点为空")
+	}
+	if ctx == nil {
+		return "", fmt.Errorf("渲染上下文为空")
+	}
+	view, err := nodeViewOf(node, true, ctx)
+	if err != nil {
+		return "", err
+	}
+	var sb strings.Builder
+	if err := renderView(set, view, &sb); err != nil {
+		return "", err
+	}
+	return sb.String(), nil
+}
+
 // RenderDocument 将编译输出组装为完整 HTML 文档（用于预览与静态发布产物）。
 //
 // 文档骨架经 go:embed 的 document.jet 模板渲染（声明式可见，IDE 可配平校验），

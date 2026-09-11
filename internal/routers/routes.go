@@ -290,6 +290,10 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 	// 集合解析注入：注册表即 core.CollectionResolver（按源分发到内容 / 商品解析器，
 	// 同时实现 CollectionSchemaProvider 供组件按白名单严格校验）。
 	collectionResolver := core.CollectionResolver(collectionRegistry)
+	// 商品列表片段（issue #27）：访问面的筛选/排序/分页局部刷新出口需要同一份集合解析器 ——
+	// 片段渲染调 builder.RenderNodeHTML 复用构建期组件，取数自然也要走同一个注册表，
+	// 否则「点筛选得到的」与「静态产物里的」会是两批数据。
+	runtimefragment.SetCollectionResolver(collectionResolver)
 	// navigationSvc 注入 page 装配：core.nav 绑定菜单位置时构建期解析菜单项。
 	pageService := pagehttp.SetupPageRoutes(authorizedAPI, db, artifactSvc, publicationSvc, projectService, blockSvc, pluginSvc, collectionResolver, navigationSvc, mediaSvc)
 
