@@ -138,7 +138,21 @@
    色块的棋盘格是 background-image —— JS 只改 backgroundColor，两者叠加才能同时
    表达「半透明色」和「未设置」。 */
 .wbc { position: relative; display: flex; align-items: center; gap: var(--ui-sp-xs); width: 100%; }
-.wbc > input { flex: 1 1 auto; min-width: 0; width: auto; }
+/* 输入框左侧一条色带：hex 字符串本身看不出「偏亮偏暗」，色带 + 右侧色块两处呼应，
+   用户扫一眼就知道自己填的值是不是想要的那个颜色。
+   用 background-image 而不是 border-left —— 色带两侧要各画一条极淡的分界线，
+   否则 #ffffff / #f4f5f6 这类浅色在白底输入框里等于不存在（实测过）。
+   padding-left 相应让到色带右侧，文字不压在色带上。 */
+.wbc > input {
+    flex: 1 1 auto; min-width: 0; width: auto;
+    padding-left: 14px;
+    background-repeat: no-repeat;
+    background-image: linear-gradient(to right,
+        rgba(16, 20, 26, .3) 0 1px,
+        var(--wbc-color, transparent) 1px 7px,
+        rgba(16, 20, 26, .3) 7px 8px,
+        transparent 8px);
+}
 .wbc-swatch {
     flex: none; width: 34px; height: 34px; padding: 0; cursor: pointer;
     border: 1px solid var(--sky-c-border, var(--c-border, #e5e7eb));

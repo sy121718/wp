@@ -32,7 +32,7 @@
 | 下拉 | `ui/select.js` | 自动接管原生 `<select>`；`data-wb-native` 与 `.wb-dd-src` 跳过 | 自绘替身 + 动态选项同步；**检查器面板的字段 select 也走它**（原先各写一份） |
 | 抽屉 | `ui/drawer.js` | `data-drawer-open` / `data-drawer-title` | 打开时对新内容 `WBUI.scan` |
 | 图标字段 | `ui/iconfield.js` | `data-icon-field`（+ hidden 存值）、`data-icon-name` | 图标库 766KB 懒加载 |
-| 颜色字段 | `ui/colorfield.js` | `data-color-field` | 文本框是真值来源（可留空/写 `var()`），色块只是取色入口 |
+| 颜色字段 | `ui/colorfield.js` | `data-color-field` | 文本框是真值来源（可留空/写 `var()`）；**预览两处**：输入框左侧色带 + 右侧色块（色块同时是取色入口） |
 | 按钮忙碌态 | `ui/busy.js` | —（纯 API） | `WBUI.busy(btn[, promise][, {label}])`；记住原禁用态，成功失败都恢复 |
 | 确认框 | `ui/confirm.js` | `data-confirm` / `-title` / `-ok` / `-cancel` / `-danger` | `<dialog>` 承载，取代原生 confirm；另有 `WBUI.confirm` / **`WBUI.alert`** 给 JS 里调用 |
 | 弹窗 | `ui/modal.js` | `data-modal`、`data-modal-open` / `-close` / `-static` / `-nokeyboard` / `-autofocus` | `<dialog>` 承载；`WBUI.modal.open/close`；广播 `wbui:modal-open/close` |

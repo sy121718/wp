@@ -78,6 +78,9 @@
             // 只改 backgroundColor：色块的棋盘格是 background-image，留着它才能
             // 同时表达「半透明色」与「未设置」。
             swatch.style.backgroundColor = css || '';
+            // 同一个颜色也交给输入框（ui.css 用它在左侧画一条色带）：
+            // 光看 hex 字符串判断不出「偏亮还是偏暗」，色块 + 色带两处呼应才直观。
+            wrap.style.setProperty('--wbc-color', css || 'transparent');
             wrap.classList.toggle('is-empty', !css);
             swatch.title = css ? raw
                 : (raw ? '当前值不是具体颜色（' + raw + '），点击可从取色器选一个' : '未设置（跟随内置默认），点击取色');
