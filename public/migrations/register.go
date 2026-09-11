@@ -156,6 +156,12 @@ var contentCollectionsPermSQL string
 //go:embed 080_content_type_narrowing.sql
 var contentTypeNarrowingSQL string
 
+//go:embed 081_product_tables.sql
+var productTablesSQL string
+
+//go:embed 082_product_permissions.sql
+var productPermsSQL string
+
 //go:embed 073_blueprint_ddl_align.sql
 var blueprintDDLAlignSQL string
 
@@ -444,6 +450,21 @@ func init() {
 		TableName:    "sys_permission",
 		ConditionSQL: "SELECT COUNT(*) FROM sys_permission WHERE permission_code = 'content:collections'",
 		SQL:          contentCollectionsPermSQL,
+	})
+
+	// 082：商品域权限点 + 超管策略（issue #5）。
+	registerSeed(Seed{
+		Version:      "082-product-permissions",
+		TableName:    "sys_permission",
+		ConditionSQL: "SELECT COUNT(*) FROM sys_permission WHERE permission_code LIKE 'product:%'",
+		SQL:          productPermsSQL,
+	})
+
+	// 081：商品域六张表（issue #5）。products 是新建表，默认「表存在即跳过」即可。
+	register(Migration{
+		Version:   "081-product-tables",
+		TableName: "products",
+		SQL:       productTablesSQL,
 	})
 
 	// 080：内容类型收敛 —— contents 只保留 article；content_templates 解掉类型枚举

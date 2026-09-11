@@ -30,6 +30,7 @@ import (
 	pagehttp "go_wp/internal/module/page/inbound/http"
 	pluginhttp "go_wp/internal/module/plugin/inbound/http"
 	presentationhttp "go_wp/internal/module/presentation/inbound/http"
+	producthttp "go_wp/internal/module/product/inbound/http"
 	projecthttp "go_wp/internal/module/project/inbound/http"
 	pubhttp "go_wp/internal/module/publication/inbound/http"
 	runtimefragment "go_wp/internal/module/runtimefragment"
@@ -155,6 +156,8 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 	}
 	// 内容结构模板（presentation 依赖 ResolveTemplate；模板行需 project_id 外键）。
 	contentTemplateSvc := contenttemplatehttp.SetupContentTemplateRoutes(authorizedAPI, db, projectService, entityRegistry)
+	// 商品域（issue #5）：商品与变体管理。商品是独立领域模块，不再寄居内容表。
+	producthttp.SetupProductRoutes(authorizedAPI, db, projectService)
 	// 自动发布实例（内容实体驱动，复用编译/存储/激活管线；实例行需 project_id 外键）。
 	presentationSvc := presentationhttp.SetupPresentationRoutes(authorizedAPI, db, contentTemplateSvc, entityRegistry, projectService)
 
