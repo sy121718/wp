@@ -235,6 +235,114 @@ func buildOnSaleOptions(p *Props, lc linkContext, view *View) []ControlOption {
 	return []ControlOption{controlOption(lc, "只看在售", active, override)}
 }
 
+// buildPriceSection 价格块（issue #28）：预设档位 + 可拖动滑块。
+//
+// 显示规则（写死在这里，避免「配了档位却看不到块」这种猜谜）：
+//
+//	· PriceRanges 非空 → 显示价格块（含档位）；
+//	· PriceSlider = on → 即使没有档位也显示（只想要滑块的情况）；
+//	· PriceSlider = off → 不显示滑块（档位仍按上一条显示）。
+func buildPriceSection(p *Props, lc linkContext, view *View) {
+	ranges := splitList(p.PriceRanges)
+	slider := priceSliderVisible(p, ranges)
+	currentMin, currentMax := currentPriceFilter(p)
+
+	options := make([]ControlOption, 0, len(ranges))
+	for _, raw := range ranges {
+		rng, label, err := ParsePriceRange(raw)
+		if err != nil {
+			continue // 形状在 validateExtra 已拦；这里静默跳过，不制造半个档位
+		}
+		active := priceRangeActive(rng, currentMin, currentMax)
+		override := url.Values{}
+		if active {
+			// 再点一次 = 取消该档（与其它筛选同一交互约定）。
+			override.Set("minPrice", "")
+			override.Set("maxPrice", "")
+		} else {
+			override.Set("minPrice", trimNumber(rng.Min))
+			if rng.Max != nil {
+				override.Set("maxPrice", trimNumber(*rng.Max))
+			} else {
+				override.Set("maxPrice", "")
+			}
+		}
+		override.Set("page", "") // 换价格回到第 1 页
+		options = append(options, controlOption(lc, label, active, override))
+	}
+	if len(options) == 0 && !slider {
+		return
+	}
+	view.HasPriceSection = true
+	view.PriceOptions = options
+	if !slider {
+		return
+	}
+
+	boundMin, boundMax, err := EffectivePriceBounds(p)
+	if err != nil {
+		boundMin, boundMax = 0, 1000 // 同上：形状已在配置期拦下
+	}
+	view.ShowPriceSlider = true
+	view.PriceBoundMin = trimNumber(boundMin)
+	view.PriceBoundMax = trimNumber(boundMax)
+	// 当前区间的两个端点：没设的端点回落到「滑块边界」，这样输入框里显示的总是个确切值
+	// （空 value 的 number 输入框在浏览器里会显示成空，用户不知道范围是多少）。
+	view.PriceFromValue = trimNumber(boundMin)
+	view.PriceToValue = trimNumber(boundMax)
+	if currentMin != nil {
+		view.PriceFromValue = trimNumber(*currentMin)
+	}
+	if currentMax != nil {
+		view.PriceToValue = trimNumber(*currentMax)
+	}
+	// 表单两条路：有 JS 走片段局部刷新（hx-get 带实例配置），没 JS 走原生 GET 到干净 URL
+	// （action 只带语义参数，表单字段把 minPrice / maxPrice 附上去，冷启动补正接住结果）。
+	view.PriceFragmentGet = lc.fragmentGet(url.Values{})
+	view.PriceFormAction = lc.pushURL(url.Values{})
+}
+
+// priceSliderVisible 滑块是否渲染。
+func priceSliderVisible(p *Props, ranges []string) bool {
+	if !PriceSliderEnabled(p) {
+		return false
+	}
+	if strings.TrimSpace(p.PriceSlider) == "on" {
+		return true
+	}
+	return len(ranges) > 0
+}
+
+// currentPriceFilter 当前生效的价格区间（来自 props；非法值按「未设」处理）。
+func currentPriceFilter(p *Props) (min, max *float64) {
+	if p == nil {
+		return nil, nil
+	}
+	if v, err := strconv.ParseFloat(strings.TrimSpace(p.FilterMinPrice), 64); err == nil && strings.TrimSpace(p.FilterMinPrice) != "" {
+		min = &v
+	}
+	if v, err := strconv.ParseFloat(strings.TrimSpace(p.FilterMaxPrice), 64); err == nil && strings.TrimSpace(p.FilterMaxPrice) != "" {
+		max = &v
+	}
+	return min, max
+}
+
+// priceRangeActive 当前区间是否正好等于这个档位（用于高亮）。
+func priceRangeActive(rng PriceRange, min, max *float64) bool {
+	if min == nil || *min != rng.Min {
+		return false
+	}
+	if rng.Max == nil {
+		return max == nil
+	}
+	return max != nil && *max == *rng.Max
+}
+
+// trimNumber 数字 → 最简字符串（100 而不是 100.000000；100.5 保留小数）。
+func trimNumber(v float64) string {
+	return strconv.FormatFloat(v, 'f', -1, 64)
+}
+
 // controlOption 拼一个控件的三个 URL。
 func controlOption(lc linkContext, label string, active bool, override url.Values) ControlOption {
 	return ControlOption{

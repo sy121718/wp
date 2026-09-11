@@ -75,6 +75,21 @@ type View struct {
 	ShowPageSize   bool
 	ShowColumns    bool
 	ShowOnSale     bool
+
+	// —— 价格块（issue #28）——
+	HasPriceSection bool
+	PriceOptions    []ControlOption
+	ShowPriceSlider bool
+	// PriceBoundMin / PriceBoundMax 滑块可拖区间（作者配置的展示范围，不是数据范围）。
+	PriceBoundMin string
+	PriceBoundMax string
+	// PriceFromValue / PriceToValue 滑块与输入框的当前值（未设的端点回落到边界）。
+	PriceFromValue string
+	PriceToValue   string
+	// PriceFragmentGet 有 JS 时的片段请求（带实例配置）。
+	PriceFragmentGet string
+	// PriceFormAction 无 JS 时的原生表单 action（只带语义参数）。
+	PriceFormAction string
 	// FilterSections 筛选栏各块与其选项（含每个选项的降级链接 / 片段请求 / 推送 URL）。
 	FilterSections  []FilterSection
 	SortOptions     []ControlOption
@@ -215,6 +230,7 @@ func BuildView(node *core.Node, p *Props, ctx *core.RenderContext) (View, error)
 	if toolbarWanted(p, "onSale") {
 		view.OnSaleOptions = buildOnSaleOptions(p, lc, &view)
 	}
+	buildPriceSection(p, lc, &view)
 	return view, nil
 }
 

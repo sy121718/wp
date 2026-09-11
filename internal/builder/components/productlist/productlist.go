@@ -24,6 +24,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"go_wp/internal/builder/core"
@@ -44,6 +45,8 @@ const (
 	filterKeyTagIDs     = "tagIds"
 	filterKeyTagMode    = "tagMode"
 	filterKeyOnSale     = "onSale"
+	filterKeyMinPrice   = "minPrice"
+	filterKeyMaxPrice   = "maxPrice"
 
 	// optionFilterPrefix 属性值维度的前缀（与集合源契约的 `option.<属性key>` 一致，issue #25）。
 	optionFilterPrefix = "option."
@@ -56,6 +59,66 @@ var filterBlockNames = map[string]bool{
 
 // toolbarItemNames 工具条项白名单（onSale = 参考站那个「只看在售」开关）。
 var toolbarItemNames = map[string]bool{"sort": true, "pageSize": true, "columns": true, "onSale": true}
+
+// PriceRange 一个预设价格档位（下限为 0 表示「不限下限」，上限为 nil 表示「不限上限」）。
+type PriceRange struct {
+	Min float64
+	Max *float64
+}
+
+// ParsePriceRange 解析一个档位字面量：`200-399`（闭区间）/ `799+`（该值以上）。
+//
+// 负数与非法形状一律报错：价格档位写错会让整块筛选消失或筛出莫名其妙的结果，
+// 而这类错误在页面上很难看出来（少一块筛选栏没人会注意）。
+func ParsePriceRange(raw string) (out PriceRange, label string, err error) {
+	token := strings.TrimSpace(raw)
+	if token == "" {
+		return out, "", fmt.Errorf("价格档位为空")
+	}
+	if strings.HasSuffix(token, "+") {
+		min, perr := strconv.ParseFloat(strings.TrimSuffix(token, "+"), 64)
+		if perr != nil || min < 0 {
+			return out, "", fmt.Errorf("价格档位 %q 形状非法（正数+ 表示该值以上）", raw)
+		}
+		return PriceRange{Min: min}, raw, nil
+	}
+	low, high, ok := strings.Cut(token, "-")
+	if !ok {
+		return out, "", fmt.Errorf("价格档位 %q 形状非法（期望 下限-上限 或 下限+）", raw)
+	}
+	min, merr := strconv.ParseFloat(strings.TrimSpace(low), 64)
+	max, xerr := strconv.ParseFloat(strings.TrimSpace(high), 64)
+	if merr != nil || xerr != nil || min < 0 || max < 0 || min > max {
+		return out, "", fmt.Errorf("价格档位 %q 形状非法（下限与上限必须是非负数且下限不大于上限）", raw)
+	}
+	return PriceRange{Min: min, Max: &max}, token, nil
+}
+
+// EffectivePriceBounds 滑块边界（默认 0~1000；非法即报错）。
+//
+// 边界是**作者配置的展示范围**，不是数据范围：滑块的可拖区间必须是个确定的数，
+// 不能每次渲染去问数据库「最贵的商品多少钱」—— 那样同一个页面在不同时刻会长得不一样。
+func EffectivePriceBounds(p *Props) (min, max float64, err error) {
+	min, max = 0, 1000
+	if p == nil || strings.TrimSpace(p.PriceBounds) == "" {
+		return min, max, nil
+	}
+	low, high, ok := strings.Cut(p.PriceBounds, ",")
+	if !ok {
+		return 0, 0, fmt.Errorf("滑块边界 %q 形状非法（期望 最小值,最大值）", p.PriceBounds)
+	}
+	parsedMin, merr := strconv.ParseFloat(strings.TrimSpace(low), 64)
+	parsedMax, xerr := strconv.ParseFloat(strings.TrimSpace(high), 64)
+	if merr != nil || xerr != nil || parsedMin < 0 || parsedMax <= parsedMin {
+		return 0, 0, fmt.Errorf("滑块边界 %q 非法（最小值需为非负且小于最大值）", p.PriceBounds)
+	}
+	return parsedMin, parsedMax, nil
+}
+
+// PriceSliderEnabled 是否渲染价格滑块（空 = 开启）。
+func PriceSliderEnabled(p *Props) bool {
+	return p == nil || p.PriceSlider != "off"
+}
 
 // splitList 逗号分隔 → 去空去重列表（顺序保持首次出现）。
 func splitList(raw string) []string {
@@ -143,6 +206,17 @@ type Props struct {
 	// 空 = 不渲染筛选栏（纯列表）。真正渲染得出来还要集合源实现了筛选选项能力，
 	// 否则该块自动不显示（契约缺失不阻断构建）。
 	Filters string `json:"filters,omitempty" ct:"text,maxlen=120,sec=collection,label=筛选栏维度"`
+	// PriceRanges 预设价格档位（issue #28）：`0-199,200-399,799+` 逗号分隔。
+	// 空 = 不渲染价格块。每档渲染成一条筛选链接（与其它筛选同构：无 JS 可点、URL 干净）。
+	PriceRanges string `json:"priceRanges,omitempty" ct:"text,maxlen=200,sec=collection,label=预设价格档位"`
+	// PriceSlider 可拖动价格滑块：`off` = 不渲染；空 = 渲染（双端点 range）。
+	//
+	// 滑块是**渐进增强**：没有 JS 时它是原生 range + 表单提交（整页跳转到 `?minPrice=..&maxPrice=..`，
+	// 冷启动补正会把它变成筛过的列表）；有 HTMX 时同一表单走片段局部刷新。
+	PriceSlider string `json:"priceSlider,omitempty" ct:"select,=开启,off=关闭,default=,sec=collection,label=价格滑块"`
+	// PriceBounds 滑块边界：`min,max`（如 `0,1000`），默认 0,1000。
+	PriceBounds string `json:"priceBounds,omitempty" ct:"text,maxlen=32,sec=collection,label=滑块边界"`
+
 	// Toolbar 工具条项：逗号分隔，取 sort / pageSize / columns。空 = 不渲染工具条。
 	Toolbar string `json:"toolbar,omitempty" ct:"text,maxlen=120,sec=collection,label=工具条"`
 	// PushQuery 当前语义参数（片段层渲染前灌入，如 `categoryId=x&page=2`）。
@@ -150,6 +224,11 @@ type Props struct {
 	// 为什么是渲染期输入：交互控件要「切下一页 / 换排序时带上现有筛选」，而构建期不知道
 	// 访客当前选了哪些维度 —— 只有片段层见过原始请求参数。故不作为可编辑字段。
 	PushQuery string `json:"-" ct:"-"`
+
+	// FilterMinPrice / FilterMaxPrice 价格区间（issue #28）：下推给集合源。
+	// 各自由片段参数 `minPrice` / `maxPrice` 灌入（见 PushQuery 的说明）。
+	FilterMinPrice string `json:"filterMinPrice,omitempty" ct:"text,maxlen=16,sec=collection,label=最低价"`
+	FilterMaxPrice string `json:"filterMaxPrice,omitempty" ct:"text,maxlen=16,sec=collection,label=最高价"`
 
 	// FilterOptions 多属性筛选（issue #27）：`颜色key:值key,尺码key:值key` 逗号分隔，逐项 AND。
 	// 访客交互的多属性筛选（筛选栏点选）在片段侧把选中值拼成这个参数；工作台也能固定写死。
@@ -299,8 +378,22 @@ func validateExtra(p *Props, _ string) (err error) {
 	}
 	for _, name := range splitList(p.Toolbar) {
 		if !toolbarItemNames[name] {
-			return fmt.Errorf("未知的工具条项 %q（可选：sort / pageSize / columns）", name)
+			return fmt.Errorf("未知的工具条项 %q（可选：sort / pageSize / columns / onSale）", name)
 		}
+	}
+	switch p.PriceSlider {
+	case "", "off":
+	default:
+		return fmt.Errorf("无效的价格滑块开关 %q（空 = 开启 / off = 关闭）", p.PriceSlider)
+	}
+	// 预设档位形状：`下限-上限` 或 `下限+`（正数），写错即报错（静默忽略会让作者以为配上了）。
+	for _, raw := range splitList(p.PriceRanges) {
+		if _, _, err := ParsePriceRange(raw); err != nil {
+			return err
+		}
+	}
+	if _, _, err := EffectivePriceBounds(p); err != nil {
+		return err
 	}
 	if keySet && (!optionKeyRe.MatchString(strings.TrimSpace(p.FilterOptionKey)) || !optionKeyRe.MatchString(strings.TrimSpace(p.FilterOptionValue))) {
 		return fmt.Errorf("属性筛选的 key / 值形状非法（只允许字母数字下划线与连字符）")
@@ -469,6 +562,16 @@ func collectionFilter(p *Props) map[string]string {
 	if key, value := strings.TrimSpace(p.FilterOptionKey), strings.TrimSpace(p.FilterOptionValue); key != "" && value != "" {
 		f[optionFilterPrefix+key] = value
 	}
+	// 价格区间（issue #28）：与集合源维度同名下推（minPrice / maxPrice）。
+	//
+	// 数值形状由集合源解析期校验（非数字 / 负数直接报错），组件这里只做非空传递 ——
+	// 白名单与形状校验只有一份，不在这里再判一次（两处判断迟早会不一致）。
+	if v := strings.TrimSpace(p.FilterMinPrice); v != "" {
+		f[filterKeyMinPrice] = v
+	}
+	if v := strings.TrimSpace(p.FilterMaxPrice); v != "" {
+		f[filterKeyMaxPrice] = v
+	}
 	// 多标签（issue #27）：值与语义分两个键下推（语义只在有多标签时有意义）。
 	if ids := strings.TrimSpace(p.FilterTagIDs); ids != "" {
 		f[filterKeyTagIDs] = ids
@@ -605,6 +708,48 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	b.Add(core.BreakpointDesktop, sel+" .sky-product-list-page-current", []string{
 		"font-size: .9rem",
 		"color: var(--sky-c-muted, rgba(0,0,0,0.6))",
+	})
+
+	// 价格滑块（issue #28）：原生 range 是**触屏与键盘天然可用**的控件（拖拽、方向键都行），
+	// 所以这里不自己实现把手 —— 自定义把手的代价是键盘与读屏路径全要重做一遍。
+	// accent-color 让滑块跟随主题主色（不必用伪元素重绘轨道）。
+	b.Add(core.BreakpointDesktop, sel+" .sky-product-list-price-slider", []string{
+		"display: flex",
+		"flex-direction: column",
+		"gap: 8px",
+		"margin-top: 8px",
+		"min-width: 0",
+	})
+	b.Add(core.BreakpointDesktop, sel+" .sky-product-list-price-field", []string{
+		"display: flex",
+		"align-items: center",
+		"gap: 8px",
+		"min-width: 0",
+	})
+	b.Add(core.BreakpointDesktop, sel+" .sky-product-list-price-label", []string{
+		"flex: 0 0 auto",
+		"font-size: .85rem",
+		"color: var(--sky-c-muted, rgba(0,0,0,0.6))",
+	})
+	b.Add(core.BreakpointDesktop, sel+" .sky-product-list-price-range", []string{
+		"flex: 1 1 auto",
+		"min-width: 0",
+		"accent-color: var(--sky-c-primary, #2563eb)",
+	})
+	b.Add(core.BreakpointDesktop, sel+" .sky-product-list-price-value", []string{
+		"flex: 0 0 auto",
+		"font-size: .85rem",
+		"font-variant-numeric: tabular-nums",
+		"min-width: 3ch",
+		"text-align: right",
+	})
+	b.Add(core.BreakpointDesktop, sel+" .sky-product-list-price-apply", []string{
+		"align-self: flex-start",
+		"padding: 5px 12px",
+		"border: 1px solid var(--sky-c-border, rgba(0,0,0,0.15))",
+		"border-radius: 8px",
+		"background: transparent",
+		"cursor: pointer",
 	})
 
 	// 每项：网格模式纵向卡片；列表模式图左文右（图片宽度按容器封顶）。

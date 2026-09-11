@@ -73,6 +73,9 @@ var productListFilterParams = map[string]string{
 	productcontract.CollectionFilterTagID:      "filterTagId",
 	productcontract.CollectionFilterTagIDs:     "filterTagIds",
 	productcontract.CollectionFilterTagMode:    "filterTagMode",
+	// 价格区间（issue #28）：数值形状由集合源解析期校验，片段只做透传。
+	productcontract.CollectionFilterMinPrice: "filterMinPrice",
+	productcontract.CollectionFilterMaxPrice: "filterMaxPrice",
 }
 
 // productListDisplayParams 展示参数 → 组件 props（白名单：只有这里列出的能进 props）。
