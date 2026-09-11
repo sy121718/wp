@@ -276,6 +276,9 @@ var productBundleMenuSQL string
 //go:embed 117_product_brand_index.sql
 var productBrandIndexSQL string
 
+//go:embed 118_product_variant_option_index.sql
+var productVariantOptionIndexSQL string
+
 //go:embed 073_blueprint_ddl_align.sql
 var blueprintDDLAlignSQL string
 
@@ -1004,6 +1007,17 @@ func init() {
 			"WHERE schemaname = current_schema() AND tablename = ? " +
 			"AND indexname = 'idx_products_brand_id'",
 		SQL: productBrandIndexSQL,
+	})
+
+	// 118：变体属性值的 GIN 索引（issue #25）。product_variants 表存在即默认跳过，
+	// 故 CheckSQL 核对索引是否真的在位（缺索引即整段重跑，语句幂等）。
+	register(Migration{
+		Version:   "118-product-variant-option-index",
+		TableName: "product_variants",
+		CheckSQL: "SELECT CASE WHEN COUNT(*) = 1 THEN 1 ELSE 0 END FROM pg_indexes " +
+			"WHERE schemaname = current_schema() AND tablename = ? " +
+			"AND indexname = 'idx_product_variants_option_values'",
+		SQL: productVariantOptionIndexSQL,
 	})
 
 	// 073：把历史库的 blueprints / blueprint_versions 对齐到 model（唯一真源）。

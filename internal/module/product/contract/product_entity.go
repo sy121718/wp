@@ -15,6 +15,7 @@ package productcontract
 
 import (
 	"sort"
+	"strings"
 
 	"go_wp/internal/builder/core"
 	productenums "go_wp/internal/module/product/enums"
@@ -261,6 +262,16 @@ const (
 	CollectionFilterBrandID = "brandId"
 	// CollectionFilterTagID 标签 id（手工挂载与自动命中的都在 tag_ids 里）。
 	CollectionFilterTagID = "tagId"
+
+	// CollectionFilterOption 属性值维度的**前缀键**（issue #25）：真实维度写成
+	// `option.<属性组key>=<属性值key>`（如 option.color=red），多个属性彼此 AND。
+	//
+	// 值落在**变体**上（product_variants.option_values 的 JSONB），不是商品行上的列 ——
+	// 所以它不能像 categoryId 那样一个等值条件搞定，得逐属性下推 EXISTS 子查询。
+	CollectionFilterOption = "option"
+
+	// CollectionFilterOptionPrefix 前缀维度键的完整前缀（拼维度键用）。
+	CollectionFilterOptionPrefix = CollectionFilterOption + "."
 )
 
 // collectionFilters 集合源允许的过滤维度（顺序即工作台下拉顺序）。
@@ -275,6 +286,9 @@ var collectionFilters = []core.CollectionFilter{
 	{Key: CollectionFilterCategoryID},
 	{Key: CollectionFilterBrandID},
 	{Key: CollectionFilterTagID},
+	// 属性值维度（issue #25）：前缀维度，真实键是 `option.<属性组key>=<属性值key>`。
+	// 属性组由用户自己建（数据驱动），维度键没法穷举，所以用前缀命名空间 + 服务端校验子键。
+	{Key: CollectionFilterOption, Prefix: true},
 }
 
 // collectionOrderKeys 集合源允许的排序键白名单（顺序即默认排序优先级）。
@@ -287,7 +301,7 @@ var collectionOrderKeys = []string{"sort", "createdAt"}
 func CollectionFilters() []core.CollectionFilter {
 	out := make([]core.CollectionFilter, 0, len(collectionFilters))
 	for _, f := range collectionFilters {
-		copied := core.CollectionFilter{Key: f.Key}
+		copied := core.CollectionFilter{Key: f.Key, Prefix: f.Prefix}
 		if len(f.Enum) > 0 {
 			copied.Enum = make([]string, len(f.Enum))
 			copy(copied.Enum, f.Enum)
@@ -298,8 +312,17 @@ func CollectionFilters() []core.CollectionFilter {
 }
 
 // IsCollectionFilterKey 过滤维度是否在集合源白名单内。
+//
+// 前缀维度按 "<Key>.<子键>" 判定（子键非空即形状合法）；子键的**语义**合法性
+// （属性组 key 是否属于该商品）由解析器与服务层各自负责，白名单只管形状。
 func IsCollectionFilterKey(key string) bool {
 	for _, f := range collectionFilters {
+		if f.Prefix {
+			if sub, ok := strings.CutPrefix(key, f.Key+"."); ok && sub != "" {
+				return true
+			}
+			continue
+		}
 		if f.Key == key {
 			return true
 		}

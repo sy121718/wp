@@ -129,4 +129,11 @@ type CollectionSource struct {
 type CollectionFilter struct {
 	Key  string   `json:"key"`
 	Enum []string `json:"enum,omitempty"` // 空 = 任意值
+	// Prefix 是否为**前缀维度**（issue #25）：此时 Key 是维度键前缀，真实维度是
+	// "<Key>.<子键>"，子键由集合源自己校验（商品属性值维度 `option.color=red` 就是这种）。
+	//
+	// 为什么需要它：属性组是数据驱动的（工程里能加任意属性），维度键不可能编译期穷举；
+	// 前缀维度把「键的集合」从静态白名单变成**受校验的命名空间**，仍然守住
+	// 「Binding 不是 Query DSL」—— 不接受任意过滤表达式，子键必须过服务端校验。
+	Prefix bool `json:"prefix,omitempty"`
 }

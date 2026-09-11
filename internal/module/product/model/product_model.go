@@ -9,6 +9,7 @@ package productmodel
 import (
 	"context"
 	"encoding/json"
+	"sort"
 	"time"
 
 	"gorm.io/gorm"
@@ -164,6 +165,24 @@ type CollectionFilter struct {
 	CategoryID string
 	BrandID    string
 	TagID      string
+	// Options 属性值维度（issue #25）：属性组 key → 属性值 key，逐项 AND。
+	//
+	// 值不在商品行上（attribute_ids 只存组引用），而在变体的 option_values JSONB 里，
+	// 所以每项下推一条 EXISTS：「存在启用变体在该属性上取该值」。
+	Options map[string]string
+}
+
+// sortedOptionKeys 属性维度键排序（谓词顺序确定，便于比对与排查）。
+func sortedOptionKeys(options map[string]string) []string {
+	if len(options) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(options))
+	for k := range options {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 // ListForCollection 集合源取数（issue #9）：一次取回集合项所需的全部白名单字段列。
@@ -199,6 +218,20 @@ func (m *Model) ListForCollection(ctx context.Context, f CollectionFilter, limit
 	}
 	if f.TagID != "" {
 		q = q.Where("tag_ids @> jsonb_build_array(?::text)", f.TagID)
+	}
+	// 属性值维度（issue #25）：值在变体上，逐个属性下推 EXISTS 子查询。
+	//
+	// 用 `option_values @> jsonb_build_object(key, value)` 而不是 `->> key = value`：
+	// 前者能走迁移 118 的 GIN(jsonb_path_ops)（jsonb_path_ops 只支持 @>），后者只能用
+	// 表达式索引 —— 两边的语义在这里等价（属性值 key 恒为字符串）。
+	// 键按字典序遍历，谓词顺序确定（同输入同 SQL，产物可比对）。
+	//
+	// 只认**启用**变体：下架的规格组合不该把商品筛出来。
+	for _, key := range sortedOptionKeys(f.Options) {
+		q = q.Where(
+			"EXISTS (SELECT 1 FROM product_variants v WHERE v.product_id = products.id"+
+				" AND v.enabled AND v.option_values @> jsonb_build_object(?::text, ?::text))",
+			key, f.Options[key])
 	}
 	q = q.Order("sort ASC, created_at ASC, id ASC")
 	if limit > 0 {

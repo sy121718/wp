@@ -41,7 +41,16 @@ const (
 	filterKeyCategoryID = "categoryId"
 	filterKeyBrandID    = "brandId"
 	filterKeyTagID      = "tagId"
+
+	// optionFilterPrefix 属性值维度的前缀（与集合源契约的 `option.<属性key>` 一致，issue #25）。
+	optionFilterPrefix = "option."
 )
+
+// optionKeyRe 属性 key / 值的形状（与商品域属性组 key 的字符集一致）。
+//
+// 组件侧只做形状校验（挡住空键、超长、带空格这类明显写错的配置）；
+// 属性到底存不存在由集合源解析器与 SQL 决定 —— 组件不持有商品域的数据。
+var optionKeyRe = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 
 // 布局与排序取值。
 const (
@@ -81,6 +90,13 @@ type Props struct {
 	FilterCategoryID string `json:"filterCategoryId,omitempty" ct:"text,maxlen=64,sec=collection,label=分类 id"`
 	FilterBrandID    string `json:"filterBrandId,omitempty" ct:"text,maxlen=64,sec=collection,label=品牌 id"`
 	FilterTagID      string `json:"filterTagId,omitempty" ct:"text,maxlen=64,sec=collection,label=标签 id"`
+	// FilterOptionKey / FilterOptionValue 属性筛选（issue #25）：按「属性组 key = 属性值 key」
+	// 固定筛一个属性值（如 color + red）。访客可交互的多属性筛选走 #27 的筛选条。
+	//
+	// 为什么拆成两个 props 而不是一个 "color:red"：控件层一句话写错就整块失效，
+	// 拆开能分别给出「只填了 key 没填 value」这种明确的配置错误。
+	FilterOptionKey   string `json:"filterOptionKey,omitempty" ct:"text,maxlen=64,sec=collection,label=属性 key"`
+	FilterOptionValue string `json:"filterOptionValue,omitempty" ct:"text,maxlen=64,sec=collection,label=属性值 key"`
 
 	// —— 排序 ——
 	// OrderBy 排序口径：默认 = 集合源的确定性序（排序号 → 创建时间 → id）。
@@ -195,6 +211,15 @@ func validateExtra(p *Props, _ string) (err error) {
 	}
 	if p.CollectionLimit < 0 || p.CollectionLimit > maxLimit {
 		return fmt.Errorf("取几条必须在 0~%d 之间（0 = 用默认值 %d）", maxLimit, defaultLimit)
+	}
+	// 属性筛选必须成对：只填一半是配置错误，早点报比「筛出空列表」好排查。
+	keySet := strings.TrimSpace(p.FilterOptionKey) != ""
+	valueSet := strings.TrimSpace(p.FilterOptionValue) != ""
+	if keySet != valueSet {
+		return fmt.Errorf("属性筛选需要同时填写属性 key 与属性值 key（当前 key=%q value=%q）", p.FilterOptionKey, p.FilterOptionValue)
+	}
+	if keySet && (!optionKeyRe.MatchString(strings.TrimSpace(p.FilterOptionKey)) || !optionKeyRe.MatchString(strings.TrimSpace(p.FilterOptionValue))) {
+		return fmt.Errorf("属性筛选的 key / 值形状非法（只允许字母数字下划线与连字符）")
 	}
 	return nil
 }
@@ -314,6 +339,10 @@ func collectionFilter(p *Props) map[string]string {
 		return nil
 	}
 	f := map[string]string{}
+	// 属性维度（issue #25）：键是 `option.<属性key>`——前缀维度，服务端校验子键形状。
+	if key, value := strings.TrimSpace(p.FilterOptionKey), strings.TrimSpace(p.FilterOptionValue); key != "" && value != "" {
+		f[optionFilterPrefix+key] = value
+	}
 	for _, kv := range [][2]string{
 		{filterKeyStatus, p.FilterStatus},
 		{filterKeyCategoryID, p.FilterCategoryID},

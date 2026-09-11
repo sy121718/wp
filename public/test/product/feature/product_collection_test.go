@@ -101,12 +101,14 @@ func TestProductCollectionSourceMetadata(t *testing.T) {
 	if found.Label == "" {
 		t.Fatalf("集合源应有展示名（工作台下拉用）")
 	}
-	// 过滤维度（issue #21）：status（带枚举）+ 分类 / 品牌 / 标签三条 id 维度（任意值）。
+	// 过滤维度（#21 + #25）：status（带枚举）+ 分类 / 品牌 / 标签三条 id 维度（任意值）
+	// + 属性值维度（**前缀维度**：键是命名空间，真实维度是 option.<属性key>）。
 	wantFilters := []string{
 		productcontract.CollectionFilterStatus,
 		productcontract.CollectionFilterCategoryID,
 		productcontract.CollectionFilterBrandID,
 		productcontract.CollectionFilterTagID,
+		productcontract.CollectionFilterOption,
 	}
 	if len(found.Filters) != len(wantFilters) {
 		t.Fatalf("过滤维度应为 %v，实际 %+v", wantFilters, found.Filters)
@@ -114,6 +116,17 @@ func TestProductCollectionSourceMetadata(t *testing.T) {
 	for i, key := range wantFilters {
 		if found.Filters[i].Key != key {
 			t.Fatalf("第 %d 个过滤维度应是 %s，实际 %+v", i, key, found.Filters)
+		}
+	}
+	// 前缀维度必须被标出来：工作台据此渲染成「属性组多选 + 属性值多选」，
+	// 而不是当成一个取值有限的普通下拉（它没有枚举，值由用户建的属性组决定）。
+	last := found.Filters[len(found.Filters)-1]
+	if !last.Prefix {
+		t.Fatalf("属性值维度应标记为前缀维度，实际 %+v", last)
+	}
+	for _, filter := range found.Filters[:len(found.Filters)-1] {
+		if filter.Prefix {
+			t.Fatalf("等值维度不该带前缀标记：%+v", filter)
 		}
 	}
 	if len(found.Filters[0].Enum) != 3 {

@@ -285,3 +285,31 @@ func TestColumnsDecl(t *testing.T) {
 		t.Fatalf("自适应列应折行且宽度不写死: %q", auto)
 	}
 }
+
+// TestOptionFilterProps 属性筛选 props（issue #25）：成对下推、只填一半报错、形状校验。
+func TestOptionFilterProps(t *testing.T) {
+	// 成对配置：下推成 `option.<属性key>` 前缀维度。
+	p := decodePropsOf(t, withFields(map[string]any{"filterOptionKey": "color", "filterOptionValue": "red"}))
+	if err := validateExtra(&p, "n1"); err != nil {
+		t.Fatalf("成对的属性筛选应通过校验: %v", err)
+	}
+	coll := &fakeCollection{}
+	if _, err := BuildView(nodeOf(t, nil), &p, &core.RenderContext{Collection: coll}); err != nil {
+		t.Fatalf("BuildView: %v", err)
+	}
+	if coll.Filter[optionFilterPrefix+"color"] != "red" {
+		t.Fatalf("属性维度应下推为 option.color，实际 %+v", coll.Filter)
+	}
+
+	// 只填一半 = 配置错误（比「筛出空列表」好排查）。
+	half := decodePropsOf(t, withFields(map[string]any{"filterOptionKey": "color"}))
+	if err := validateExtra(&half, "n1"); err == nil {
+		t.Fatalf("只填属性 key 应被拒绝")
+	}
+
+	// 形状非法（带空格 / 中文）：属性 key 是标识不是展示文本。
+	bad := decodePropsOf(t, withFields(map[string]any{"filterOptionKey": "color", "filterOptionValue": "红 色"}))
+	if err := validateExtra(&bad, "n1"); err == nil {
+		t.Fatalf("非法形状的属性值应被拒绝")
+	}
+}

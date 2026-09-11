@@ -16,6 +16,7 @@ package productservice
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -188,6 +189,20 @@ func parseCollectionFilter(filter map[string]string) (f productmodel.CollectionF
 		if v == "" {
 			continue
 		}
+		// 前缀维度（属性值，issue #25）：`option.<属性key>=<属性值key>`。
+		//
+		// 这里只校验**形状**（键与值的字符集 / 长度）；某个属性值到底存不存在由 SQL 决定 ——
+		// 与 categoryId / tagId 的口径一致：形状错是配置错误该报错，值匹配不到只是空集合。
+		if attrKey, ok := strings.CutPrefix(k, productcontract.CollectionFilterOptionPrefix); ok {
+			if !optionKeyRe.MatchString(attrKey) || !optionKeyRe.MatchString(v) {
+				return f, fmt.Errorf("%s: %q", productenums.ErrCollectionFilterInvalid, k)
+			}
+			if f.Options == nil {
+				f.Options = map[string]string{}
+			}
+			f.Options[attrKey] = v
+			continue
+		}
 		switch k {
 		case productcontract.CollectionFilterStatus:
 			f.Status = v
@@ -210,6 +225,12 @@ func parseCollectionFilter(filter map[string]string) (f productmodel.CollectionF
 	}
 	return f, nil
 }
+
+// optionKeyRe 属性维度键 / 值的形状（属性组 key 与属性值 key 都走这个字符集）。
+//
+// 宽松是刻意的：属性 key 由用户建属性组时填，规则不该在筛选这一层重新发明；
+// 这里的作用是挡住空键、超长键与明显不是键的输入，SQL 注入由参数化绑定兜住。
+var optionKeyRe = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 
 // isUUID 形状校验（只关心「是不是 uuid」，不关心版本）。
 func isUUID(s string) bool {
