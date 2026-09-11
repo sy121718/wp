@@ -3,30 +3,19 @@
 //   <button data-drawer-open="#tpl-id" data-drawer-title="新建XX">…</button>
 //   <template id="tpl-id"> <form>…</form> </template>
 // 列表筛选已改为服务端（GET 表单提交，条件进 SQL 与分页同源），前端不再逐行过滤。
+// 抽屉本体（开/关/遮罩/Esc/新内容扫描）已迁到控件基座 js/ui/drawer.js；
+// 本文件只保留**业务逻辑**：上级菜单候选过滤与图标字段挂载。
+// 两者都挂在基座广播的 wbui:drawer-open 上 —— 业务规则不塞进控件里。
 (function () {
     'use strict';
-    var drawer = document.querySelector('[data-drawer]');
-    var mask = document.querySelector('[data-drawer-mask]');
-    if (!drawer || !mask) return;
-    var body = drawer.querySelector('[data-drawer-body]');
-    var title = drawer.querySelector('[data-drawer-title]');
 
-    function openDrawer(tplSel, titleText) {
-        var tpl = document.querySelector(tplSel);
-        if (!tpl) return;
-        body.innerHTML = '';
-        body.appendChild(tpl.content.cloneNode(true));
+    // 抽屉打开：接管基座广播，挂载本页面的业务增强。
+    document.addEventListener('wbui:drawer-open', function (e) {
+        var body = e.detail && e.detail.body;
+        if (!body) return;
         applyParentFilter(body);
         initIconFields(body);
-        if (title) title.textContent = titleText || '';
-        drawer.hidden = false;
-        mask.hidden = false;
-        // 同步加 class：rAF 在后台标签页会无限期挂起，导致抽屉停在屏幕外（hidden 已移除
-        // 但过渡起始帧不执行）。同步切换牺牲后台页的滑入动画，换 100% 可靠。
-        document.body.classList.add('drawer-open');
-        var first = body.querySelector('input:not([type=hidden]), select, textarea');
-        if (first) first.focus();
-    }
+    });
 
     /* 上级菜单候选过滤：按当前「类型」只列出合法父级（事前预防，与后端 validateMenuPlacement 双保险）。
        目录只能挂目录下；菜单/iframe/外链可挂目录或菜单下（父级菜单可有子菜单）；按钮挂菜单下。 */
@@ -113,30 +102,6 @@
             host.dataset.iconReady = '1';
         });
     }
-
-    function closeDrawer() {
-        document.body.classList.remove('drawer-open');
-        setTimeout(function () {
-            drawer.hidden = true;
-            mask.hidden = true;
-            body.innerHTML = '';
-        }, 220);
-    }
-
-    document.addEventListener('click', function (e) {
-        var opener = e.target.closest('[data-drawer-open]');
-        if (opener) {
-            e.preventDefault();
-            openDrawer(opener.getAttribute('data-drawer-open'), opener.getAttribute('data-drawer-title') || '');
-            return;
-        }
-        if (e.target.closest('[data-drawer-close]') || e.target === mask) {
-            closeDrawer();
-        }
-    });
-    document.addEventListener('keydown', function (e) {
-        if (e.key === 'Escape') closeDrawer();
-    });
 
     /* ===== 侧边栏：一级图标切换 / 三角展开 / 导航后收起 / 内容区点击收起 / Esc 收起 / 固定 ===== */
     (function initSidebar() {

@@ -82,17 +82,28 @@
         menu.setAttribute('role', 'listbox');
         menu.hidden = true;
 
+        // rebuild 按当前原生 option 重建菜单项。
+        //
+        // 为什么不是建一次就完：页面会**动态改 option** —— 后台「上级菜单候选过滤」就按类型
+        // 逐项 setAttribute('hidden'/'disabled')，抽屉插入的新表单也自带选项。菜单若不同步，
+        // 用户看到的是过期列表，选了还会被服务端打回。所以这里既支持重建，也挂 MutationObserver。
         var items = [];
-        WBUI.each(sel.options, function (opt, i) {
-            var li = document.createElement('li');
-            li.className = 'wbs-option';
-            li.setAttribute('role', 'option');
-            li.dataset.index = String(i);
-            li.textContent = opt.textContent;
-            if (opt.disabled) { li.setAttribute('aria-disabled', 'true'); }
-            menu.appendChild(li);
-            items.push(li);
-        });
+        function rebuild() {
+            menu.innerHTML = '';
+            items = [];
+            WBUI.each(sel.options, function (opt, i) {
+                var li = document.createElement('li');
+                li.className = 'wbs-option';
+                li.setAttribute('role', 'option');
+                li.dataset.index = String(i);
+                li.textContent = opt.textContent;
+                if (opt.disabled || opt.hidden) { li.setAttribute('aria-disabled', 'true'); }
+                menu.appendChild(li);
+                items.push(li);
+            });
+            sync();
+        }
+        rebuild();
 
         root.appendChild(trigger);
         root.appendChild(menu);
@@ -131,7 +142,8 @@
         }
 
         function choose(i) {
-            if (i < 0 || i >= sel.options.length || sel.options[i].disabled) { return; }
+            if (i < 0 || i >= sel.options.length) { return; }
+            if (sel.options[i].disabled || sel.options[i].hidden) { return; }
             sel.selectedIndex = i;
             sel.dispatchEvent(new Event('change', { bubbles: true }));
             sel.dispatchEvent(new Event('input', { bubbles: true }));
@@ -174,6 +186,11 @@
         // label[for] 点击会把焦点交给被隐藏的原生 select，转给可见触发器。
         sel.addEventListener('focus', function () { trigger.focus(); });
         sel.addEventListener('change', sync);
+        // option 增删/禁用/隐藏后重建菜单（后台的「上级菜单候选过滤」就是这么改的）。
+        if (window.MutationObserver) {
+            new MutationObserver(function () { rebuild(); })
+                .observe(sel, { childList: true, subtree: true, attributes: true });
+        }
 
         sync();
     }
