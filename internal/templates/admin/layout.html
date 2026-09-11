@@ -50,12 +50,11 @@
                     <noscript><button type="submit" class="lang-submit">→</button></noscript>
                 </form>
                 {{end}}
-                <button class="theme-toggle" onclick="
-                    var html = document.documentElement;
-                    var next = html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
-                    html.setAttribute('data-theme', next);
-                    localStorage.setItem('theme', next);
-                " title="{{ .["t"]("shell.action.toggle_theme", "切换主题") }}">◐</button>
+                {* 主题切换：行为在 js/ui/themetoggle.js（aria-pressed 由控件维护）。
+                   head 里那段「CSS 前设 data-theme」的防闪烁脚本不动 —— 它必须同步且靠前。 *}
+                <button type="button" class="theme-toggle" data-theme-toggle
+                        aria-label="{{ .["t"]("shell.action.toggle_theme", "切换主题") }}"
+                        title="{{ .["t"]("shell.action.toggle_theme", "切换主题") }}">◐</button>
             </div>
         </header>
 
@@ -87,6 +86,7 @@
 <script src="/static/js/ui/iconfield.js"></script>
 {* 确认框：替代原生 confirm 与内联 onclick/onsubmit，模板里只留 data-confirm 一个属性。 *}
 <script src="/static/js/ui/confirm.js"></script>
+<script src="/static/js/ui/themetoggle.js"></script>
 <script src="/static/js/ui/index.js"></script>
 <script src="/static/js/admin.js"></script>
     </div>
