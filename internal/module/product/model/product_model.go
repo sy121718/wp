@@ -240,6 +240,12 @@ func (m *Model) SKUExists(ctx context.Context, productID, skuCode, excludeID str
 	return n > 0, nil
 }
 
+// CountVariants 某商品的变体数量（SKU 序号生成的前置计数）。
+func (m *Model) CountVariants(ctx context.Context, productID string) (n int64, err error) {
+	err = m.VariantDB(ctx).Where("product_id = ?", productID).Count(&n).Error
+	return n, err
+}
+
 // CreateVariant 写入变体。
 func (m *Model) CreateVariant(ctx context.Context, e *VariantEntity) (err error) {
 	return m.VariantDB(ctx).Create(e).Error

@@ -7,6 +7,7 @@
 package dashboardhttp
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"sort"
@@ -16,6 +17,8 @@ import (
 	"github.com/gin-gonic/gin"
 
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
+	inventorycontract "go_wp/internal/module/inventory/contract"
+	inventorydto "go_wp/internal/module/inventory/dto"
 	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
@@ -37,11 +40,21 @@ type productPageHandle struct {
 	// 未注入时该页给出装配提示，不影响商品列表页与既有测试的构造签名。
 	templates contenttemplatecontract.ContentTemplateService
 	instances ProductDetailTemplatePort
+	// inventories 仓库清单（issue #15）：变体新增表单的「归属仓」下拉，
+	// 「不选」即兜底该工程的默认仓。经 SetInventoryDeps 注入 —— 未注入时
+	// 表单不带仓库下拉（商品页其余功能一字不变，既有测试构造签名也不受影响）。
+	inventories inventorycontract.InventoryService
 }
 
 // NewProductPageHandle 构造。
 func NewProductPageHandle(products productcontract.ProductService, projects projectcontract.ProjectService) *productPageHandle {
 	return &productPageHandle{products: products, projects: projects}
+}
+
+// SetInventoryDeps 注入仓库清单依赖（issue #15，装配期调用）。
+// 未注入时商品页不渲染「归属仓」下拉，变体创建按「不指定仓库」处理。
+func (h *productPageHandle) SetInventoryDeps(inventory inventorycontract.InventoryService) {
+	h.inventories = inventory
 }
 
 // ProductsPage 商品管理页：工程切换 + 商品列表 + 每个商品的变体面板 + 内联新建表单。
@@ -118,14 +131,21 @@ func (h *productPageHandle) ProductsPage(c *gin.Context) {
 			})
 		}
 	}
+	// 归属仓下拉（issue #15）：变体的归属仓在这里选（不选 = 默认仓）。
+	warehouseOptions, werr := h.warehouseOptions(ctx, selected)
+	if werr != nil {
+		c.String(http.StatusInternalServerError, werr.Error())
+		return
+	}
 	// withCSRF：注入 csrf_token（POST 表单隐藏域）+ 导航树 + 权限码 + 多语言，
 	// 与其它后台页面同一渲染入口（缺 token 时表单提交会被 CSRF 中间件挡下）。
 	c.HTML(http.StatusOK, "admin/products.html", withCSRF(c, gin.H{
-		"title":           "商品",
-		"menu":            "products",
-		"Projects":        projects,
-		"SelectedProject": selected,
-		"Products":        rows,
+		"title":            "商品",
+		"menu":             "products",
+		"Projects":         projects,
+		"SelectedProject":  selected,
+		"WarehouseOptions": warehouseOptions,
+		"Products":         rows,
 		// 上一步的错误（上限拒绝 / 参数错误）经查询串回显 —— 同属性页的做法。
 		"Err": strings.TrimSpace(c.Query("err")),
 	}))
@@ -215,7 +235,10 @@ func formatNullableAmount(v *float64) string {
 // 那是最容易一次误造出上百个变体的路径。
 func (h *productPageHandle) ProductsVariantGenerate(c *gin.Context) {
 	projectID := c.PostForm("projectId")
-	req := &productdto.GenerateVariantsReq{ProductID: c.PostForm("productId")}
+	req := &productdto.GenerateVariantsReq{
+		ProductID:   c.PostForm("productId"),
+		WarehouseID: strings.TrimSpace(c.PostForm("warehouseId")),
+	}
 	if strings.TrimSpace(c.PostForm("mode")) != "all" {
 		_ = c.Request.ParseForm()
 		keys := make([]string, 0, len(c.Request.PostForm))
@@ -253,6 +276,8 @@ func (h *productPageHandle) ProductsCreate(c *gin.Context) {
 		Name:         c.PostForm("name"),
 		Slug:         c.PostForm("slug"),
 		AttributeIDs: splitIDs(c.PostForm("attributeIds")),
+		// 归属仓（issue #15）：空值即兜底该工程的默认仓。
+		WarehouseID: strings.TrimSpace(c.PostForm("warehouseId")),
 	}
 	if price := strings.TrimSpace(c.PostForm("defaultPrice")); price != "" {
 		if v, perr := parseFloat(price); perr == nil {
@@ -271,6 +296,8 @@ func (h *productPageHandle) ProductsVariantCreate(c *gin.Context) {
 	req := &productdto.CreateVariantReq{
 		ProductID: c.PostForm("productId"),
 		SKUCode:   strings.TrimSpace(c.PostForm("skuCode")),
+		// 归属仓（issue #15）：空值即兜底默认仓；无论选没选都会在归属仓生成库存记录。
+		WarehouseID: strings.TrimSpace(c.PostForm("warehouseId")),
 	}
 	if price := strings.TrimSpace(c.PostForm("price")); price != "" {
 		if v, perr := parseFloat(price); perr == nil {
@@ -309,6 +336,28 @@ func (h *productPageHandle) ProductsAttributesSet(c *gin.Context) {
 		return
 	}
 	c.Redirect(http.StatusFound, "/admin/products?project="+projectID)
+}
+
+// warehouseOptions 某工程的仓库下拉项（issue #15；默认仓在最前并标注）。
+//
+// 未注入仓库契约时返回空列表：模板此时不渲染下拉，变体创建按「不指定仓库」处理。
+func (h *productPageHandle) warehouseOptions(ctx context.Context, projectID string) (out []gin.H, err error) {
+	out = []gin.H{}
+	if h.inventories == nil || projectID == "" {
+		return out, nil
+	}
+	rows, lerr := h.inventories.ListWarehouses(ctx, &inventorydto.ListWarehouseReq{ProjectID: projectID})
+	if lerr != nil {
+		return nil, lerr
+	}
+	for _, w := range rows {
+		label := w.Name + "（" + w.Code + "）"
+		if w.IsDefault {
+			label += " · 默认仓"
+		}
+		out = append(out, gin.H{"ID": w.ID, "Label": label, "IsDefault": w.IsDefault})
+	}
+	return out, nil
 }
 
 // ProductsDelete 删除商品（连带变体）。

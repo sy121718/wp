@@ -5,6 +5,8 @@
 {* 外层值先存变量：range 体内 . 指向当前元素，不能再取外层 map 的键 *}
 {{csrf := .["csrf_token"]}}
 {{selectedProject := .SelectedProject}}
+{* 归属仓下拉（issue #15）：range 体内取不到外层 map，先在 range 外存变量 *}
+{{warehouseOptions := .WarehouseOptions}}
 <div class="pages-wrap">
     <section class="pages-card">
         <h2>商品</h2>
@@ -25,6 +27,17 @@
             <input type="text" name="slug" placeholder="URL 段（留空自动生成）">
             <input type="text" name="defaultPrice" placeholder="默认价格（首个变体继承）">
             <input type="text" class="attr-id-input" name="attributeIds" placeholder="引用的属性组 id（逗号分隔，可留空）" autocomplete="off">
+            {{if len(warehouseOptions) > 0}}
+            {* 归属仓（issue #15）：首个变体落在这个仓，短码即 SKU 编码前缀；不选即默认仓 *}
+            <label>归属仓
+                <select name="warehouseId">
+                    <option value="">（默认仓）</option>
+                    {{range _, w := warehouseOptions}}
+                    <option value="{{w.ID}}">{{w.Label}}</option>
+                    {{end}}
+                </select>
+            </label>
+            {{end}}
             <button type="submit" class="btn btn-primary">新建商品</button>
         </form>
         <p class="pages-empty">
@@ -73,6 +86,8 @@
             </form>
         </div>
         <table class="pages-table">
+            {* 「库存缓存」= product_variants.stock_total，仅供列表展示；
+               库存真源在仓库模块，点「各仓库存」到 /admin/inventory 按 SKU 查。 *}
             <thead><tr><th>SKU</th><th>规格</th><th>价格</th><th>对比价</th><th>成本价</th><th>启用</th><th>库存缓存</th><th></th></tr></thead>
             <tbody>
             {{range _, v := p.Variants}}
@@ -85,6 +100,7 @@
                 <td>{{v.Enabled}}</td>
                 <td>{{v.StockTotal}}</td>
                 <td>
+                  <a class="btn btn-sm" href="/admin/inventory?project={{selectedProject}}&amp;sku={{v.SKUCode}}">各仓库存</a>
                   <form method="post" action="/admin/products/variant/delete">
                     <input type="hidden" name="csrf_token" value="{{csrf}}">
                     <input type="hidden" name="projectId" value="{{selectedProject}}">
@@ -102,6 +118,16 @@
             <input type="hidden" name="productId" value="{{p.ID}}">
             <input type="text" name="skuCode" placeholder="SKU 编码（留空自动生成）">
             <input type="text" name="price" placeholder="价格（留空继承商品默认值）">
+            {{if len(warehouseOptions) > 0}}
+            <label>归属仓
+                <select name="warehouseId">
+                    <option value="">（默认仓）</option>
+                    {{range _, w := warehouseOptions}}
+                    <option value="{{w.ID}}">{{w.Label}}</option>
+                    {{end}}
+                </select>
+            </label>
+            {{end}}
             <button type="submit" class="btn">新增变体</button>
         </form>
         {{if len(p.VariationAttributes) > 0}}
@@ -118,6 +144,17 @@
                 <input type="hidden" name="csrf_token" value="{{csrf}}">
                 <input type="hidden" name="projectId" value="{{selectedProject}}">
                 <input type="hidden" name="productId" value="{{p.ID}}">
+                {* 归属仓（issue #15）：本批新变体统一落在该仓，并为每个新变体生成库存记录 *}
+                {{if len(warehouseOptions) > 0}}
+                <label>归属仓
+                    <select name="warehouseId">
+                        <option value="">（默认仓）</option>
+                        {{range _, w := warehouseOptions}}
+                        <option value="{{w.ID}}">{{w.Label}}</option>
+                        {{end}}
+                    </select>
+                </label>
+                {{end}}
                 {{range _, a := p.VariationAttributes}}
                 <fieldset class="var-group">
                     <legend>{{a.Name}}</legend>

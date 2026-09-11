@@ -9,6 +9,7 @@ import (
 	admincontract "go_wp/internal/module/admin/contract"
 	blockcontract "go_wp/internal/module/block/contract"
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
+	inventorycontract "go_wp/internal/module/inventory/contract"
 	navigationcontract "go_wp/internal/module/navigation/contract"
 	pagecontract "go_wp/internal/module/page/contract"
 	plugincontract "go_wp/internal/module/plugin/contract"
@@ -39,7 +40,8 @@ func SetupDashboardRoutes(router *gin.Engine,
 	navigations navigationcontract.NavigationService,
 	products productcontract.ProductService,
 	presentations ProductPagePorts,
-	templates contenttemplatecontract.ContentTemplateService) {
+	templates contenttemplatecontract.ContentTemplateService,
+	inventories inventorycontract.InventoryService) {
 	if router == nil {
 		return
 	}
@@ -136,6 +138,8 @@ func SetupDashboardRoutes(router *gin.Engine,
 	productPages := NewProductPageHandle(products, projects)
 	// 详情页模板选择与预览（issue #14）：模板清单 / 商品发布实例的模板绑定 / 预览渲染。
 	productPages.SetDetailTemplateDeps(templates, presentations)
+	// 归属仓下拉（issue #15）：建商品与新增变体时可选仓库（不选即默认仓）。
+	productPages.SetInventoryDeps(inventories)
 	adminPages.GET("/products", productPages.ProductsPage)
 	adminPages.POST("/products/create", builtin.CasbinMiddlewareForPath("/api/product/create"), productPages.ProductsCreate)
 	adminPages.POST("/products/variant/create", builtin.CasbinMiddlewareForPath("/api/product/variant/create"), productPages.ProductsVariantCreate)
@@ -193,6 +197,16 @@ func SetupDashboardRoutes(router *gin.Engine,
 	adminPages.GET("/product-pricing", productPages.ProductPricingPage)
 	adminPages.POST("/product-pricing/preview", builtin.CasbinMiddlewareForPath("/api/product/pricing/preview"), productPages.ProductPricingPreview)
 	adminPages.POST("/product-pricing/apply", builtin.CasbinMiddlewareForPath("/api/product/pricing/apply"), productPages.ProductPricingApply)
+
+	// 库存管理页（issue #15）：仓库实体（短码 / 名称 / 状态 / 默认仓）与「某 SKU 的各仓库存」。
+	// 页面 GET 走 /admin 组认证（Session+CSRF，无 Casbin）；写动作复用仓库 API 权限点。
+	// 库存读的是仓库模块真源，与商品页的「库存缓存」列是两回事。
+	inventoryPages := NewInventoryPageHandle(inventories, projects, products)
+	adminPages.GET("/inventory", inventoryPages.InventoryPage)
+	adminPages.POST("/inventory/warehouse/create", builtin.CasbinMiddlewareForPath("/api/inventory/warehouse/create"), inventoryPages.InventoryWarehouseCreate)
+	adminPages.POST("/inventory/warehouse/update", builtin.CasbinMiddlewareForPath("/api/inventory/warehouse/update"), inventoryPages.InventoryWarehouseUpdate)
+	adminPages.POST("/inventory/warehouse/default", builtin.CasbinMiddlewareForPath("/api/inventory/warehouse/update"), inventoryPages.InventoryWarehouseDefault)
+	adminPages.POST("/inventory/warehouse/delete", builtin.CasbinMiddlewareForPath("/api/inventory/warehouse/delete"), inventoryPages.InventoryWarehouseDelete)
 
 	// 商品域翻译工作台（issue #12）：入口在商品列表行内「多语言」按钮（与页面翻译工作台同构）。
 	// 保存写 sys_translation（engine=manual）并标记待重建，鉴权复用商品更新权限点（同一改动面）。

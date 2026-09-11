@@ -41,6 +41,10 @@ type Service struct {
 	// 构建期商品可翻译字段（name/subtitle/description）按构建语言取译文；
 	// 未注入 / 语言为空 / 查询失败一律回退原文（兜底铁律，绝不报错）。
 	contentStore i18n.ContentStore
+	// variantStock 变体归属仓与库存记录端口（issue #15，由 inventory 模块实现）。
+	// 未注入时变体创建不生成库存记录、SKU 编码不带仓短码前缀（纯商品单测路径）；
+	// 生产装配恒注入（见 routers.SetupRoutes）。依赖方向 inventory → product。
+	variantStock productcontract.VariantStockPort
 }
 
 // NewService 构造。
@@ -53,6 +57,14 @@ func NewService(m *productmodel.Model, project projectcontract.ProjectService) *
 // 传入 nil 表示不翻译（构建期商品字段输出原文）。
 func (s *Service) SetContentStore(store i18n.ContentStore) {
 	s.contentStore = store
+}
+
+// SetVariantStock 注入变体归属仓与库存记录端口（issue #15，装配期调用）。
+//
+// 端口定义在本模块契约里、实现在 inventory 模块：商品模块只知道
+// 「解析归属仓」与「在归属仓生成库存记录」两件事，不认识仓库表结构。
+func (s *Service) SetVariantStock(port productcontract.VariantStockPort) {
+	s.variantStock = port
 }
 
 // 编译期契约断言。
@@ -123,9 +135,20 @@ func (s *Service) Create(ctx context.Context, req *productdto.CreateReq) (res *p
 		Metadata:     orJSON(req.Metadata, "{}"),
 		CreatedAt:    now, UpdatedAt: now,
 	}
+	// 归属仓（issue #15）先解析再落库：req.WarehouseID 为空即兜底该工程的默认仓，
+	// 短码同时决定首个变体的 SKU 编码前缀；解析失败（如工程内没有默认仓）
+	// 时整个创建失败，不留「有商品没库存记录」的半截状态。
+	ref, err := s.resolveWarehouseRef(ctx, projectID, req.WarehouseID)
+	if err != nil {
+		return nil, err
+	}
 	// 首个变体：由商品级默认值填充（新增路径）。
-	v := s.newVariantFromDefaults(e, nil)
+	v := s.newVariantFromDefaults(ctx, e, nil, refCode(ref), nil)
 	if err = s.m.CreateWithVariants(ctx, e, []*productmodel.VariantEntity{v}); err != nil {
+		return nil, err
+	}
+	// 首个变体的库存记录落在同一个归属仓（初始 0）。
+	if err = s.ensureVariantStock(ctx, ref, e.ID, v.ID, v.SKUCode); err != nil {
 		return nil, err
 	}
 	// 重算时机之一：商品写操作后 —— 新建商品若已满足某条自动规则（如价格区间），

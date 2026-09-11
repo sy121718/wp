@@ -74,6 +74,12 @@ func (s *Service) GenerateVariants(ctx context.Context, req *productdto.Generate
 			productenums.ErrVariationCountLimit, total, MaxVariantCombinations)
 	}
 
+	// 归属仓（issue #15）：本批变体统一落在该仓（不选则默认仓），短码参与 SKU 编码，
+	// 落库后在同一个仓为每个新建变体生成初始 0 的库存记录。解析失败即整体拒绝。
+	ref, werr := s.resolveWarehouseRef(ctx, p.ProjectID, req.WarehouseID)
+	if werr != nil {
+		return nil, werr
+	}
 	now := time.Now().UTC()
 	existing, lerr := s.m.ListVariants(ctx, p.ID)
 	if lerr != nil {
@@ -121,15 +127,23 @@ func (s *Service) GenerateVariants(ctx context.Context, req *productdto.Generate
 			res.Adopted++
 			continue
 		}
-		v := s.newVariantFromDefaults(p, &productdto.CreateVariantReq{
+		// 本批的 SKU 编码逐个探测：taken 传入已占用的编码集合，
+		// 否则同一批里的新变体都会取到同一个「下一个序号」而互相撞号。
+		v := s.newVariantFromDefaults(ctx, p, &productdto.CreateVariantReq{
 			ProductID: p.ID, OptionValues: raw, Sort: i,
-		})
-		v.SKUCode = uniqueVariantSKU(p.Slug, skus, v.SKUCode)
+		}, refCode(ref), skus)
 		skus[v.SKUCode] = true
 		created = append(created, v)
 	}
 	if err = s.m.SaveVariants(ctx, updated, created); err != nil {
 		return nil, err
+	}
+	// 验收 2：每个新建变体都在归属仓有一条库存记录（初始 0）——
+	// 商品创建时的首个变体已在此路径外生成过，这里补的是本批新组合。
+	for _, v := range created {
+		if err = s.ensureVariantStock(ctx, ref, p.ID, v.ID, v.SKUCode); err != nil {
+			return nil, err
+		}
 	}
 	res.Created = len(created)
 	// 重算时机之一：变体写操作后 —— 组合生成会新建一整批变体，价格整体变化。
@@ -343,19 +357,4 @@ func encodeOptionPairs(pairs []optionPair) json.RawMessage {
 	}
 	b.WriteByte('}')
 	return json.RawMessage(b.String())
-}
-
-// uniqueVariantSKU 让批量生成的 SKU 编码在商品内唯一。
-//
-// 生成规则与单条新增一致（商品 slug + 随机后缀）；同一次批量内碰撞时重生成，
-// 不静默复用同一条编码（SKU 是仓库模块的对账键，重复会直接串号）。
-func uniqueVariantSKU(slug string, taken map[string]bool, candidate string) string {
-	code := candidate
-	if code == "" {
-		code = generateSKUCode(slug)
-	}
-	for i := 0; i < 8 && taken[code]; i++ {
-		code = generateSKUCode(slug)
-	}
-	return code
 }

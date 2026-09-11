@@ -24,12 +24,14 @@ import (
 	contenthttp "go_wp/internal/module/content/inbound/http"
 	contenttemplatehttp "go_wp/internal/module/contenttemplate/inbound/http"
 	dashboardhttp "go_wp/internal/module/dashboard/inbound/http"
+	inventoryhttp "go_wp/internal/module/inventory/inbound/http"
 	mediahttp "go_wp/internal/module/media/inbound/http"
 	navigationhttp "go_wp/internal/module/navigation/inbound/http"
 	navsource "go_wp/internal/module/navigation/outbound/source"
 	pagehttp "go_wp/internal/module/page/inbound/http"
 	pluginhttp "go_wp/internal/module/plugin/inbound/http"
 	presentationhttp "go_wp/internal/module/presentation/inbound/http"
+	productcontract "go_wp/internal/module/product/contract"
 	producthttp "go_wp/internal/module/product/inbound/http"
 	projecthttp "go_wp/internal/module/project/inbound/http"
 	pubhttp "go_wp/internal/module/publication/inbound/http"
@@ -165,8 +167,19 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 	}
 	// 内容结构模板（presentation 依赖 ResolveTemplate；模板行需 project_id 外键）。
 	contentTemplateSvc := contenttemplatehttp.SetupContentTemplateRoutes(authorizedAPI, db, projectService, entityRegistry)
+	// 仓库与库存记录（issue #15）：库存真源（SKU × 仓库）+ 仓库实体（短码 / 名称 / 默认仓）。
+	// 必须早于商品模块装配：商品模块的变体库存端口由本模块实现（依赖方向 inventory → product），
+	// 装配期把实现当作端口传进去 —— 建变体时解析归属仓（不选则默认仓）、并在归属仓
+	// 生成一条初始 0 的库存记录。
+	inventorySvc := inventoryhttp.SetupInventoryRoutes(authorizedAPI, db, projectService)
+	// 端口断言：本模块契约与 product 契约定义的端口是两套接口，同一实现同时满足两者
+	//（与 contentSvc → core.CollectionSourceProvider 同一手法）。装配缺陷即 fail-fast。
+	variantStockPort, ok := inventorySvc.(productcontract.VariantStockPort)
+	if !ok {
+		panic("库存模块未实现变体库存端口（VariantStockPort）")
+	}
 	// 商品域（issue #5）：商品与变体管理。商品是独立领域模块，不再寄居内容表。
-	productSvc := producthttp.SetupProductRoutes(authorizedAPI, db, projectService)
+	productSvc := producthttp.SetupProductRoutes(authorizedAPI, db, projectService, variantStockPort)
 	// 商品实体类型注册（issue #6）：注册后商品可作为内容模板的数据源
 	// （类型合法性 + 字段白名单由注册表判定），构建期经注册表取商品字段解析器。
 	// 与内容模块同样 fail-fast：注册失败即装配缺陷。
@@ -243,7 +256,7 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 		admincontract.RuleService
 	})
 	dashboardhttp.SetupDashboardRoutes(router, pageService, projectService, blockSvc, pluginSvc, collectionResolver,
-		adminCRUD, adminCRUD, adminCRUD, adminCRUD, adminCRUD, adminCRUD, adminAuthzSvc, navigationSvc, productSvc, presentationSvc, contentTemplateSvc)
+		adminCRUD, adminCRUD, adminCRUD, adminCRUD, adminCRUD, adminCRUD, adminAuthzSvc, navigationSvc, productSvc, presentationSvc, contentTemplateSvc, inventorySvc)
 
 	// 运行时片段端点（0-D，公开路由：capability 白名单 + 认证策略在 handler 内）。
 	runtimefragment.SetupFragmentRoutes(router)

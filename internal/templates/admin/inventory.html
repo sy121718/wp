@@ -1,0 +1,148 @@
+{* admin/inventory.html — 库存管理：仓库实体 + 某 SKU 各仓库存（issue #15） *}
+{* Jet 方言：range 用 range 关键字；extends 相对本目录；range 内访问外层值先存变量。 *}
+{{extends "layout.html"}}
+{{block body()}}
+{{csrf := .["csrf_token"]}}
+{{selectedProject := .SelectedProject}}
+{{selectedVariant := .SelectedVariant}}
+{{selectedSKU := .SelectedSKU}}
+<div class="pages-wrap">
+    <section class="pages-card">
+        <h2>库存管理</h2>
+        {{if .Err != ""}}
+        <p class="pages-badge pages-badge-warn">上一次操作未完成：{{.Err}}</p>
+        {{end}}
+        <p class="pages-empty">
+            仓库是实体：有短码、名称与状态，<strong>必须有一个默认仓</strong>作为「未指定仓库」时的兜底。
+            新建变体时选中的仓库即为该 SKU 的归属仓，系统会在那里生成一条库存记录（初始 0）；
+            SKU 编码以归属仓短码开头（如 <code>SZ_TEE_001</code>）—— 前缀表达的是默认发货仓，
+            不是「这个 SKU 只属于这个仓」，同一个 SKU 可以在多个仓各有一行库存。
+        </p>
+        <p class="pages-empty">
+            库存以「SKU × 仓库」为维度，这里显示的是<strong>库存真源</strong>；
+            商品页里的「库存缓存」列只是列表展示用的冗余字段，不参与任何可用量判断。
+        </p>
+        <form method="get" action="/admin/inventory" class="pages-form">
+            <select name="project" onchange="this.form.submit()">
+                {{range _, p := .Projects}}
+                <option value="{{p.ID}}" {{if p.ID == selectedProject}}selected{{end}}>{{p.Name}}</option>
+                {{end}}
+            </select>
+        </form>
+    </section>
+
+    <section class="pages-card">
+        <h2>新建仓库</h2>
+        <form method="post" action="/admin/inventory/warehouse/create" class="attr-form">
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <input type="hidden" name="projectId" value="{{selectedProject}}">
+            <div class="attr-form-head">
+                <input type="text" name="code" placeholder="仓库短码（如 SZ，大写字母数字）" required autocomplete="off">
+                <input type="text" name="name" placeholder="仓库名称（如 苏州仓）" required>
+                <input type="number" name="sort" value="0" placeholder="排序" inputmode="numeric" step="1">
+                <label class="var-value">
+                    <input type="checkbox" name="isDefault" value="1"> 设为默认仓
+                </label>
+            </div>
+            <div class="attr-form-actions">
+                <button type="submit" class="btn btn-primary">新建仓库</button>
+            </div>
+        </form>
+        <p class="pages-empty">这个工程还没有仓库时，第一个建成的仓库会自动成为默认仓。</p>
+    </section>
+
+    <section class="pages-card">
+        <h2>仓库列表（{{len(.Warehouses)}}）</h2>
+        {{if len(.Warehouses) == 0}}
+        <p class="pages-empty">这个工程还没有仓库。用上面的表单建一个 —— 建商品与变体时的归属仓就来自这里。</p>
+        {{else}}
+        {{range _, w := .Warehouses}}
+        <details class="pages-fold">
+            <summary class="card-header">
+                <strong>{{w.Name}}</strong>
+                <code>{{w.Code}}</code>
+                {{if w.IsDefault}}
+                <span class="pages-badge pages-badge-info">默认仓</span>
+                {{else}}
+                <span class="pages-badge">{{w.StatusLabel}}</span>
+                {{end}}
+                <span class="pages-empty">排序 {{w.Sort}}</span>
+                <span class="pages-fold-hint">展开</span>
+            </summary>
+
+            <form method="post" action="/admin/inventory/warehouse/update" class="attr-form">
+                <input type="hidden" name="csrf_token" value="{{csrf}}">
+                <input type="hidden" name="projectId" value="{{selectedProject}}">
+                <input type="hidden" name="id" value="{{w.ID}}">
+                <div class="attr-form-head">
+                    <input type="text" name="name" value="{{w.Name}}" placeholder="仓库名称" required>
+                    <input type="text" name="code" value="{{w.Code}}" placeholder="仓库短码" required autocomplete="off">
+                    <input type="number" name="sort" value="{{w.Sort}}" placeholder="排序" inputmode="numeric" step="1">
+                    <select name="status">
+                        <option value="active" {{if w.Status == "active"}}selected{{end}}>启用中</option>
+                        <option value="disabled" {{if w.Status == "disabled"}}selected{{end}}>已停用</option>
+                    </select>
+                    <button type="submit" class="btn btn-sm">保存仓库</button>
+                </div>
+            </form>
+
+            {{if not w.IsDefault}}
+            <form method="post" action="/admin/inventory/warehouse/default">
+                <input type="hidden" name="csrf_token" value="{{csrf}}">
+                <input type="hidden" name="projectId" value="{{selectedProject}}">
+                <input type="hidden" name="id" value="{{w.ID}}">
+                <button type="submit" class="btn btn-sm">设为默认仓</button>
+            </form>
+            {{end}}
+
+            <form method="post" action="/admin/inventory/warehouse/delete"
+                  onsubmit="return confirm('删除该仓库？默认仓或仓内仍有非零库存时会被拒绝。')">
+                <input type="hidden" name="csrf_token" value="{{csrf}}">
+                <input type="hidden" name="projectId" value="{{selectedProject}}">
+                <input type="hidden" name="id" value="{{w.ID}}">
+                <button type="submit" class="btn btn-danger btn-sm">删除仓库</button>
+            </form>
+        </details>
+        {{end}}
+        {{end}}
+    </section>
+
+    <section class="pages-card">
+        <h2>某 SKU 的各仓库存</h2>
+        <form method="get" action="/admin/inventory" class="pages-form">
+            <input type="hidden" name="project" value="{{selectedProject}}">
+            {{if len(.VariantOptions) > 0}}
+            <select name="variantId">
+                <option value="">（从商品变体里选一个 SKU）</option>
+                {{range _, o := .VariantOptions}}
+                <option value="{{o.VariantID}}" {{if o.VariantID == selectedVariant}}selected{{end}}>{{o.Label}}</option>
+                {{end}}
+            </select>
+            {{end}}
+            <input type="text" name="sku" value="{{selectedSKU}}" placeholder="或直接填 SKU 编码" autocomplete="off">
+            <button type="submit" class="btn">查看各仓库存</button>
+        </form>
+
+        {{if selectedSKU == ""}}
+        <p class="pages-empty">选一个 SKU 后，这里列出它在各仓的库存记录（库存以「SKU × 仓库」为维度）。</p>
+        {{else if len(.StockRows) == 0}}
+        <p class="pages-empty">没有找到 SKU <code>{{selectedSKU}}</code> 的库存记录 —— 该编码不存在，或不在本工程。</p>
+        {{else}}
+        <table class="pages-table">
+            <thead><tr><th>仓库</th><th>短码</th><th>SKU</th><th>数量</th><th>更新时间</th></tr></thead>
+            <tbody>
+            {{range _, r := .StockRows}}
+            <tr>
+                <td>{{r.WarehouseName}}</td>
+                <td><code>{{r.WarehouseCode}}</code></td>
+                <td><code>{{r.SKUCode}}</code></td>
+                <td>{{r.Quantity}}</td>
+                <td>{{r.UpdatedAt}}</td>
+            </tr>
+            {{end}}
+            </tbody>
+        </table>
+        {{end}}
+    </section>
+</div>
+{{end}}

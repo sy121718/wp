@@ -37,6 +37,9 @@ type CreateReq struct {
 	DefaultPrice *float64        `json:"defaultPrice"`
 	DefaultImage string          `json:"defaultImage"`
 	Metadata     json.RawMessage `json:"metadata"`
+	// WarehouseID 归属仓（issue #15）：新建商品时首个变体落在该仓；
+	// 为空则兜底该工程的默认仓。归属仓的短码同时决定首个变体的 SKU 编码前缀。
+	WarehouseID string `json:"warehouseId"`
 }
 
 // UpdateReq 修改商品（含 slug 改名；变体单独接口）。
@@ -104,6 +107,9 @@ type CreateVariantReq struct {
 	OptionValues json.RawMessage `json:"optionValues"`
 	Enabled      *bool           `json:"enabled"`
 	Sort         int             `json:"sort"`
+	// WarehouseID 归属仓（issue #15）：不选则兜底该工程的默认仓；
+	// 无论选没选，该 SKU 都会在归属仓生成一条库存记录（初始 0）。
+	WarehouseID string `json:"warehouseId"`
 }
 
 // UpdateVariantReq 修改变体（编辑路径不做默认值填充）。
@@ -150,4 +156,7 @@ type VariantSelectionReq struct {
 type GenerateVariantsReq struct {
 	ProductID  string                `json:"productId" binding:"required"`
 	Selections []VariantSelectionReq `json:"selections"`
+	// WarehouseID 归属仓（issue #15）：本批新建的变体都落在该仓（不选则默认仓），
+	// 并在该仓为每个新变体生成初始 0 的库存记录。
+	WarehouseID string `json:"warehouseId"`
 }

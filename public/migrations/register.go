@@ -219,6 +219,15 @@ var productPricingMenuSQL string
 //go:embed 098_product_detail_template_choice_permissions.sql
 var productDetailTemplatePermsSQL string
 
+//go:embed 099_inventory_tables.sql
+var inventoryTablesSQL string
+
+//go:embed 100_inventory_permissions.sql
+var inventoryPermsSQL string
+
+//go:embed 101_inventory_menu.sql
+var inventoryMenuSQL string
+
 //go:embed 073_blueprint_ddl_align.sql
 var blueprintDDLAlignSQL string
 
@@ -739,6 +748,35 @@ func init() {
 			  AND pg_get_constraintdef(oid) LIKE '%article%'
 			  AND pg_get_constraintdef(oid) NOT LIKE '%product%'`,
 		SQL: contentTypeNarrowingSQL,
+	})
+
+	// 099：仓库与库存记录（issue #15）。两张新表（inventory_warehouses / inventory_stocks），
+	// 默认「表存在即跳过」检查即可 —— 库存真源与仓库实体都是本票新建的对象。
+	register(Migration{
+		Version:   "099-inventory-tables",
+		TableName: "inventory_warehouses",
+		SQL:       inventoryTablesSQL,
+	})
+
+	// 100：仓库与库存权限点 + 超管策略（issue #15）。
+	// 条件只看本票自己的权限点（inventory:%），与其它模块的宽匹配互不干扰。
+	registerSeed(Seed{
+		Version:   "100-inventory-permissions",
+		TableName: "sys_permission",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) = 9 THEN 1 ELSE 0 END FROM sys_permission WHERE permission_code IN (" +
+			"'inventory:warehouse_list', 'inventory:warehouse_get', 'inventory:warehouse_create', " +
+			"'inventory:warehouse_update', 'inventory:warehouse_delete', " +
+			"'inventory:stock_list', 'inventory:stock_sku', 'inventory:stock_get', 'inventory:stock_ensure')",
+		SQL: inventoryPermsSQL,
+	})
+
+	// 101：库存管理后台菜单（issue #15）。须在 084（商品管理菜单）之后执行，
+	// 否则「站点工程」目录还不存在时 COALESCE 会把入口落到顶级。
+	registerSeed(Seed{
+		Version:      "101-inventory-menu",
+		TableName:    "sys_menus",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) = 1 THEN 1 ELSE 0 END FROM sys_menus WHERE title = '库存管理' AND type = 2 AND deleted_time IS NULL",
+		SQL:          inventoryMenuSQL,
 	})
 
 	// 073：把历史库的 blueprints / blueprint_versions 对齐到 model（唯一真源）。
