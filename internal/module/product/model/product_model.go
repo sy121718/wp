@@ -154,22 +154,46 @@ func (m *Model) List(ctx context.Context, projectID, keyword, status string, lim
 	return list, err
 }
 
+// CollectionFilter 集合源的取数条件（issue #21：状态 + 分类 / 品牌 / 标签）。
+//
+// 全部是**等值**维度且彼此 AND —— 集合源只接受声明过的维度，不接受过滤表达式
+// （不变量 4）。空串表示该维度不参与过滤；ProjectID 为空表示不限工程。
+type CollectionFilter struct {
+	ProjectID  string
+	Status     string
+	CategoryID string
+	BrandID    string
+	TagID      string
+}
+
 // ListForCollection 集合源取数（issue #9）：一次取回集合项所需的全部白名单字段列。
 //
 // 与 List 的差异是刻意的：List 是后台列表（只要标题/图/状态那几列、按 updated_at 语义），
 // 集合源要的是「详情可绑定字段」的投影（副标题/描述/单位/属性引用等），且必须同一份
 // 确定性排序 —— 同一批数据每次构建输出同样字节（不变量 5）。
 //
-// 条件以参数传入（工程 / 状态 / 分页），方法内不写死业务判断；limit <= 0 表示不限条数。
-func (m *Model) ListForCollection(ctx context.Context, projectID, status string, limit, offset int) (list []*ProductEntity, err error) {
+// 条件以参数传入（CollectionFilter 的各个等值维度 / 分页），方法内不写死业务判断；
+// limit <= 0 表示不限条数。
+func (m *Model) ListForCollection(ctx context.Context, f CollectionFilter, limit, offset int) (list []*ProductEntity, err error) {
 	q := m.DB(ctx).Select(
 		"id, project_id, name, subtitle, description, slug, status, sort, unit, " +
 			"images, attribute_ids, default_image, created_at, updated_at")
-	if projectID != "" {
-		q = q.Where("project_id = ?", projectID)
+	if f.ProjectID != "" {
+		q = q.Where("project_id = ?", f.ProjectID)
 	}
-	if status != "" {
-		q = q.Where("status = ?", status)
+	if f.Status != "" {
+		q = q.Where("status = ?", f.Status)
+	}
+	if f.BrandID != "" {
+		q = q.Where("brand_id = ?", f.BrandID)
+	}
+	// 分类 / 标签是 JSON 数组列：用 @> 包含判断（走已有 GIN 索引 idx_products_*_ids），
+	// 值经 jsonb_build_array 构造，完全参数化（不拼 SQL 字符串）。
+	if f.CategoryID != "" {
+		q = q.Where("category_ids @> jsonb_build_array(?::text)", f.CategoryID)
+	}
+	if f.TagID != "" {
+		q = q.Where("tag_ids @> jsonb_build_array(?::text)", f.TagID)
 	}
 	q = q.Order("sort ASC, created_at ASC, id ASC")
 	if limit > 0 {

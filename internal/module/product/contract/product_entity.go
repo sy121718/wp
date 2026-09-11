@@ -241,12 +241,32 @@ const CollectionSourceProduct = "content:product"
 // CollectionLabel 集合源展示名（工作台集合源下拉）。
 const CollectionLabel = "商品列表"
 
+// 集合源过滤维度的键（issue #21）。
+//
+// 键名与集合项字段风格一致（驼峰）：工作台与文档里看到的是同一套名字。
+const (
+	// CollectionFilterStatus 上下架状态（枚举维度）。
+	CollectionFilterStatus = "status"
+	// CollectionFilterCategoryID 分类 id（商品挂载的分类中命中任意一个即算命中）。
+	CollectionFilterCategoryID = "categoryId"
+	// CollectionFilterBrandID 品牌 id。
+	CollectionFilterBrandID = "brandId"
+	// CollectionFilterTagID 标签 id（手工挂载与自动命中的都在 tag_ids 里）。
+	CollectionFilterTagID = "tagId"
+)
+
 // collectionFilters 集合源允许的过滤维度（顺序即工作台下拉顺序）。
 //
-// 维度只开放 status（商品状态）：解析期按它下推到 SQL，白名单外的维度直接报错
+// 全部是**等值**维度且彼此 AND：解析期逐个下推到 SQL，白名单外的维度直接报错
 // （不变量 4：不接受任意过滤表达式，只接受声明过的等值维度）。
+//
+// status 带 Enum（取值只有三个，工作台渲染成下拉）；三条 id 维度 Enum 为空
+// （取值是工程内任意的分类 / 品牌 / 标签 id），服务层逐个做 uuid 形状校验。
 var collectionFilters = []core.CollectionFilter{
-	{Key: "status", Enum: []string{productenums.StatusDraft, productenums.StatusPublished, productenums.StatusArchived}},
+	{Key: CollectionFilterStatus, Enum: []string{productenums.StatusDraft, productenums.StatusPublished, productenums.StatusArchived}},
+	{Key: CollectionFilterCategoryID},
+	{Key: CollectionFilterBrandID},
+	{Key: CollectionFilterTagID},
 }
 
 // collectionOrderKeys 集合源允许的排序键白名单（顺序即默认排序优先级）。

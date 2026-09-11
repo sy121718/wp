@@ -19,6 +19,8 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/google/uuid"
+
 	"go_wp/internal/builder/core"
 	productcontract "go_wp/internal/module/product/contract"
 	productenums "go_wp/internal/module/product/enums"
@@ -41,11 +43,13 @@ func (s *Service) ResolveCollection(ctx context.Context, source string, filter m
 	if source != productcontract.CollectionSourceProduct {
 		return nil, fmt.Errorf("%s: %q", productenums.ErrCollectionSourceInvalid, source)
 	}
-	status, err := collectionStatusFilter(filter)
+	f, err := parseCollectionFilter(filter)
 	if err != nil {
 		return nil, err
 	}
-	rows, err := s.m.ListForCollection(ctx, core.BuildProjectID(ctx), status, collectionItemLimit, 0)
+	// 工程范围取自构建上下文（后台预览等无站点上下文的场景为空 = 不限工程）。
+	f.ProjectID = core.BuildProjectID(ctx)
+	rows, err := s.m.ListForCollection(ctx, f, collectionItemLimit, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -164,8 +168,12 @@ func (s *Service) CollectionSchemas(_ context.Context) ([]core.CollectionSchema,
 	}}, nil
 }
 
-// collectionStatusFilter 校验并取出 status 维度（其余维度一律拒绝）。
-func collectionStatusFilter(filter map[string]string) (status string, err error) {
+// parseCollectionFilter 校验并取出集合源的下推条件（issue #21）。
+//
+// 两条拒绝：白名单外的维度（不变量 4）、id 维度形状非法。后者刻意也报错而不是
+// 「让它匹配不到任何行」—— 非法 id 下推到 SQL 得到的是空集合，那是把配置错误
+// 伪装成「这个分类下没有商品」，构建期必须显式失败。空值 = 该维度不参与过滤。
+func parseCollectionFilter(filter map[string]string) (f productmodel.CollectionFilter, err error) {
 	keys := make([]string, 0, len(filter))
 	for k := range filter {
 		keys = append(keys, k)
@@ -173,13 +181,39 @@ func collectionStatusFilter(filter map[string]string) (status string, err error)
 	sort.Strings(keys) // 报错文案里的维度顺序稳定（同输入同报错）
 	for _, k := range keys {
 		if !productcontract.IsCollectionFilterKey(k) {
-			return "", fmt.Errorf("%s: %q", productenums.ErrCollectionFilterInvalid, k)
+			return f, fmt.Errorf("%s: %q", productenums.ErrCollectionFilterInvalid, k)
 		}
-		if k == "status" {
-			status = strings.TrimSpace(filter[k])
+		v := strings.TrimSpace(filter[k])
+		if v == "" {
+			continue
+		}
+		switch k {
+		case productcontract.CollectionFilterStatus:
+			f.Status = v
+		case productcontract.CollectionFilterCategoryID:
+			if !isUUID(v) {
+				return f, fmt.Errorf("%s: %q", productenums.ErrCollectionFilterInvalid, k)
+			}
+			f.CategoryID = v
+		case productcontract.CollectionFilterBrandID:
+			if !isUUID(v) {
+				return f, fmt.Errorf("%s: %q", productenums.ErrCollectionFilterInvalid, k)
+			}
+			f.BrandID = v
+		case productcontract.CollectionFilterTagID:
+			if !isUUID(v) {
+				return f, fmt.Errorf("%s: %q", productenums.ErrCollectionFilterInvalid, k)
+			}
+			f.TagID = v
 		}
 	}
-	return status, nil
+	return f, nil
+}
+
+// isUUID 形状校验（只关心「是不是 uuid」，不关心版本）。
+func isUUID(s string) bool {
+	_, err := uuid.Parse(s)
+	return err == nil
 }
 
 // collectionItem 集合项：白名单字段值 + 系统字段（id / slug）。

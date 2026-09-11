@@ -273,6 +273,9 @@ var productBundlePermsSQL string
 //go:embed 116_product_bundle_menu.sql
 var productBundleMenuSQL string
 
+//go:embed 117_product_brand_index.sql
+var productBrandIndexSQL string
+
 //go:embed 073_blueprint_ddl_align.sql
 var blueprintDDLAlignSQL string
 
@@ -990,6 +993,17 @@ func init() {
 		TableName:    "sys_menus",
 		ConditionSQL: "SELECT CASE WHEN COUNT(*) = 1 THEN 1 ELSE 0 END FROM sys_menus WHERE title = '捆绑配置' AND type = 2 AND deleted_time IS NULL",
 		SQL:          productBundleMenuSQL,
+	})
+
+	// 117：商品按品牌筛选的索引（issue #21）。products 表存在即默认跳过，
+	// 故 CheckSQL 核对索引是否真的在位（缺索引即整段重跑，语句幂等）。
+	register(Migration{
+		Version:   "117-product-brand-index",
+		TableName: "products",
+		CheckSQL: "SELECT CASE WHEN COUNT(*) = 1 THEN 1 ELSE 0 END FROM pg_indexes " +
+			"WHERE schemaname = current_schema() AND tablename = ? " +
+			"AND indexname = 'idx_products_brand_id'",
+		SQL: productBrandIndexSQL,
 	})
 
 	// 073：把历史库的 blueprints / blueprint_versions 对齐到 model（唯一真源）。
