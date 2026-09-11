@@ -41,5 +41,11 @@ public/docs/*.visual-check.*
 .backup/
 cmd_tmp_login/
 
+# 编辑器本地配置（各自环境不同，不入库）
+.vscode/
+
+# 本地演示/试验页面（public/a，随手放的 HTML，不是站点产物）
+public/a/
+
 # 数据库备份与原型稿（本地参考，不入库）
 public/backup/
