@@ -8,6 +8,8 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"go_wp/pkg/logger"
+
 	projectdto "go_wp/internal/module/project/dto"
 	projectenums "go_wp/internal/module/project/enums"
 	projectmodel "go_wp/internal/module/project/model"
@@ -43,6 +45,11 @@ func (s *Service) Create(ctx context.Context, req *projectdto.CreateReq) (res *p
 	}
 	if err = s.model.Create(ctx, e); err != nil {
 		return nil, err
+	}
+	// 建站即有主题：继承链「主题 → 页面 → 组件」要求先有主题（用后台风格的默认主题兜底）。
+	// 创建失败不阻塞建站 —— 工程本身可用，主题可在后台补建（启动时也有幂等补齐）。
+	if _, terr := s.ensureDefaultTheme(ctx, e.ID); terr != nil {
+		logger.Scene("project").With("project", e.ID).Error(terr, "创建默认主题失败")
 	}
 	return toResp(e), nil
 }

@@ -62,6 +62,11 @@ func newPageService(t *testing.T) (*gorm.DB, pagecontract.PageService, string) {
 	if err != nil {
 		t.Fatalf("创建测试工程失败: %v", err)
 	}
+	// 建站会自带一套默认主题（生产语义：先有主题再有页面）；这批用例测的是
+	// 「完全没有主题时怎么办」与「自己建的主题怎么走」，前提需要干净，所以先清掉。
+	if err := db.Exec(`DELETE FROM themes WHERE project_id = ?`, project.ID).Error; err != nil {
+		t.Fatalf("清理默认主题失败: %v", err)
+	}
 	pageModel := pagemodel.NewPageModel(db)
 	artifacts := artifactservice.NewService(artifactmodel.NewArtifactModel(db))
 	routes := pubservice.NewService(pubmodel.NewPublicationModel(db))

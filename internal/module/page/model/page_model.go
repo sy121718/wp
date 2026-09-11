@@ -80,11 +80,16 @@ func (m *Model) Transaction(ctx context.Context, fn func(tx *gorm.DB) error) err
 }
 
 // ListAll 列出未删除页面（排除大字段 draft_document，供列表页使用）。
-// themeID 为空时列全部；非空时只列挂在该主题下的页面（020_themes.sql：主题下面才是页面）。
+// themeID 为空时列全部；非空时列「挂在该主题下」与「尚未挂主题」的页面 ——
+// 主题是页面的归属（020_themes.sql：主题下面才是页面），但没归属的历史页面
+// 不能因为按主题过滤而不可见（建站已自带默认主题，NULL 分支是它们的唯一可见路径）。
 func (m *Model) ListAll(ctx context.Context, themeID string) (list []PageEntity, err error) {
 	q := m.DB(ctx).Omit("draft_document").Where("deleted_at IS NULL")
 	if themeID != "" {
-		q = q.Where("theme_id = ?", themeID)
+		// 未挂主题的页面一并列出：列表按「激活主题」浏览，但主题创建前建的页面
+		// （或绑定丢失的页面）不能因此从列表里消失 —— 那会变成「建了却找不到」。
+		// 建站已有默认主题后，这条 NULL 分支是历史数据唯一的可见路径。
+		q = q.Where("theme_id = ? OR theme_id IS NULL", themeID)
 	}
 	err = q.Order("updated_at DESC, id DESC").Find(&list).Error
 	return list, err

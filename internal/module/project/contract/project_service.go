@@ -49,6 +49,9 @@ type ProjectService interface {
 	DeleteTheme(ctx context.Context, id string) (err error)
 	// GetActiveTheme 取工程当前激活主题。
 	GetActiveTheme(ctx context.Context, projectID string) (res *projectdto.ThemeResp, err error)
+	// EnsureDefaultThemes 给尚无任何主题的工程补默认主题（后台风格色值，幂等）。
+	// 供启动时跑一次，覆盖本能力上线前建的存量工程。
+	EnsureDefaultThemes(ctx context.Context) (fixed int, err error)
 
 	// ---- 站点语言清单（多语言 P3，docs/06-D §14 D10）----
 

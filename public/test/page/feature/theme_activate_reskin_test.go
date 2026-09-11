@@ -80,6 +80,11 @@ func makeJsonbPageService(t *testing.T) (*gorm.DB, pagecontract.PageService, *pr
 	if err != nil {
 		t.Fatalf("创建测试工程失败: %v", err)
 	}
+	// 建站会自带一套默认主题（生产语义：先有主题再有页面）。本用例要自己控制
+	// 「谁是首个主题、谁被激活」，所以先清掉默认主题，前提干净。
+	if err := db.Exec(`DELETE FROM themes WHERE project_id = ?`, project.ID).Error; err != nil {
+		t.Fatalf("清理默认主题失败: %v", err)
+	}
 	pageModel := pagemodel.NewPageModel(db)
 	artifacts := artifactservice.NewService(artifactmodel.NewArtifactModel(db))
 	routes := pubservice.NewService(pubmodel.NewPublicationModel(db))

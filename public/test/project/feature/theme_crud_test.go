@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"go_wp/internal/builder"
 	projectdto "go_wp/internal/module/project/dto"
 	projectmodel "go_wp/internal/module/project/model"
 	projectservice "go_wp/internal/module/project/service"
@@ -41,13 +42,25 @@ func TestThemeLifecycleActivateAndUpdate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("创建工程失败: %v", err)
 	}
-	// 首个主题自动激活。
+	// 建站即有主题：工程创建时自动建一套默认主题并激活（继承链「主题 → 页面 → 组件」
+	// 的起点必须先存在，否则页面拿不到令牌、组件只能落到内置 fallback）。
+	seeded, err := svc.GetActiveTheme(ctx, project.ID)
+	if err != nil {
+		t.Fatalf("新工程应已有激活主题: %v", err)
+	}
+	if seeded.Name != builder.DefaultThemeName {
+		t.Fatalf("默认主题名称不符: %+v", seeded)
+	}
+	if seeded.Settings == nil || len(seeded.Settings) == 0 {
+		t.Fatalf("默认主题应带后台风格色值: %+v", seeded)
+	}
+	// 再建的主题不再自动激活（默认主题已经占住激活位）。
 	first, err := svc.CreateTheme(ctx, &projectdto.ThemeCreateReq{ProjectID: project.ID, Name: "默认主题"})
 	if err != nil {
 		t.Fatalf("创建主题失败: %v", err)
 	}
-	if !first.IsActive {
-		t.Fatalf("首个主题应自动激活: %+v", first)
+	if first.IsActive {
+		t.Fatalf("已有激活主题时新建主题不应自动激活: %+v", first)
 	}
 	// 第二个主题不激活；激活列表跟随。
 	second, err := svc.CreateTheme(ctx, &projectdto.ThemeCreateReq{ProjectID: project.ID, Name: "春季版"})
@@ -81,8 +94,9 @@ func TestThemeLifecycleActivateAndUpdate(t *testing.T) {
 	if updated.Name != first.Name {
 		t.Fatalf("未传名称时不应改名: %+v", updated)
 	}
+	// 三个主题：建站自动带的默认主题 + 上面手动建的两个；激活的排在最前。
 	themes, err := svc.ListThemes(ctx, project.ID)
-	if err != nil || len(themes) != 2 || themes[0].ID != second.ID {
+	if err != nil || len(themes) != 3 || themes[0].ID != second.ID {
 		t.Fatalf("主题列表应激活在前: %+v err=%v", themes, err)
 	}
 }
@@ -103,23 +117,27 @@ func TestThemeDeleteGuardsActive(t *testing.T) {
 	svc := newProjectThemeService(t)
 	ctx := context.Background()
 	project, _ := svc.Create(ctx, &projectdto.CreateReq{Name: "官网"})
-	first, _ := svc.CreateTheme(ctx, &projectdto.ThemeCreateReq{ProjectID: project.ID, Name: "默认主题"})
+	// 建站自带的默认主题就是当前的激活态。
+	seeded, err := svc.GetActiveTheme(ctx, project.ID)
+	if err != nil || seeded == nil {
+		t.Fatalf("新工程应有激活主题: %v", err)
+	}
 	second, _ := svc.CreateTheme(ctx, &projectdto.ThemeCreateReq{ProjectID: project.ID, Name: "春季版"})
 
 	// 激活态删除应被拒绝。
-	if err := svc.DeleteTheme(ctx, first.ID); err == nil {
+	if err := svc.DeleteTheme(ctx, seeded.ID); err == nil {
 		t.Fatalf("激活主题删除应被拒绝")
 	}
 	// 切换后可删除。
 	if err := svc.ActivateTheme(ctx, &projectdto.ThemeActivateReq{ID: second.ID}); err != nil {
 		t.Fatalf("切换激活失败: %v", err)
 	}
-	if err := svc.DeleteTheme(ctx, first.ID); err != nil {
+	if err := svc.DeleteTheme(ctx, seeded.ID); err != nil {
 		t.Fatalf("非激活主题应可删除: %v", err)
 	}
 	themes, _ := svc.ListThemes(ctx, project.ID)
 	if len(themes) != 1 {
-		t.Fatalf("删除后应只剩一个主题: %+v", themes)
+		t.Fatalf("删除后应只剩手动建的那一个主题: %+v", themes)
 	}
 }
 
@@ -139,6 +157,11 @@ func TestActivateThemeMissingTargetKeepsOtherActive(t *testing.T) {
 	first, err := svc.CreateTheme(ctx, &projectdto.ThemeCreateReq{ProjectID: project.ID, Name: "主题A"})
 	if err != nil {
 		t.Fatalf("创建主题失败: %v", err)
+	}
+	// 建站自带的默认主题是原激活态（回滚后它必须还在激活位上）。
+	seeded, err := svc.GetActiveTheme(ctx, project.ID)
+	if err != nil || seeded == nil {
+		t.Fatalf("新工程应有激活主题: %v", err)
 	}
 
 	const missing = "00000000-0000-0000-0000-000000000000"
@@ -160,8 +183,11 @@ func TestActivateThemeMissingTargetKeepsOtherActive(t *testing.T) {
 		t.Errorf("激活失败后仍应恰好有一套激活主题，got %d：%+v", active, themes)
 	}
 	for _, th := range themes {
-		if th.ID == first.ID && !th.IsActive {
+		if th.ID == seeded.ID && !th.IsActive {
 			t.Errorf("原激活主题被事务第一步抹掉了：%+v", th)
+		}
+		if th.ID == first.ID && th.IsActive {
+			t.Errorf("激活失败不应把激活位给了别的主题：%+v", th)
 		}
 	}
 }

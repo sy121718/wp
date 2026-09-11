@@ -152,6 +152,14 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 	// navigationSvc 注入 page 装配：core.nav 绑定菜单位置时构建期解析菜单项。
 	pageService := pagehttp.SetupPageRoutes(authorizedAPI, db, artifactSvc, publicationSvc, projectService, blockSvc, pluginSvc, collectionResolver, navigationSvc, mediaSvc)
 
+	// 默认主题补齐（启动时一次，幂等）：本能力上线前建的工程没有任何主题，
+	// 页面因此一直没有主题可继承 —— 继承链「主题 → 页面 → 组件」的起点缺失。
+	// 失败不阻断启动（不影响已有工程，新建工程仍会即时获得默认主题）。
+	if fixed, terr := projectService.EnsureDefaultThemes(context.Background()); terr != nil {
+		logger.Scene("init").Error(terr, "默认主题补齐失败（不阻断启动）")
+	} else if fixed > 0 {
+		logger.Scene("init").With("count", fixed).Info("已为无主题工程补默认主题（后台风格色值）")
+	}
 	// 组件注册表版本比对（启动时一次）：
 	// 组件是编译进二进制的（Go 实现 + embed 模板），部署新组件后没有任何运行时事件
 	// 能提示「已有产物由旧组件产出」。这里比对产物元数据里的 registry_version 与本进程
