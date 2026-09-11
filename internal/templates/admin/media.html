@@ -43,11 +43,16 @@
 
         {* 空态与分页 *}
         <p class="media-empty" id="ml-empty" hidden>还没有文件，点右上「上传文件」。</p>
-        <div class="media-pager" id="ml-pager" hidden>
-            <button type="button" class="btn btn-sm" id="ml-prev">上一页</button>
-            <span id="ml-page-info"></span>
-            <button type="button" class="btn btn-sm" id="ml-next">下一页</button>
-        </div>
+        {* 分页：结构与样式与后台其它列表页完全一致（ui.css 的 .pagination / .pagination-btn），
+           区别只在载体 —— 后台是服务端渲染的翻页链接，媒体库是 AJAX，所以用 button。
+           id 保持 ml-*，media-admin.js 的 renderPager 一行都不用改。 *}
+        <nav class="pagination" id="ml-pager" aria-label="分页" hidden>
+            <div class="pagination-info" id="ml-page-info"></div>
+            <div class="pagination-pages">
+                <button type="button" class="pagination-btn" id="ml-prev">上一页</button>
+                <button type="button" class="pagination-btn" id="ml-next">下一页</button>
+            </div>
+        </nav>
     </section>
 
     {* ===== 详情侧栏（点击卡片打开） ===== *}

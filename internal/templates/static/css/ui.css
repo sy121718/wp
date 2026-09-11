@@ -397,8 +397,11 @@ table.data-table { width: 100%; border-collapse: collapse; font-size: 14px; }
 }
 .pagination-info { font-size: 13px; color: var(--c-text-mute); }
 .pagination-pages { display: flex; gap: var(--ui-sp-xxs); }
-.pagination-pages a {
-    display: flex;
+/* 类选择器而非元素选择器：同一个分页条有三种载体 —— 链接（服务端渲染的翻页）、
+   span（当前页 / 不可点）、button（客户端 AJAX 分页，如媒体库）。
+   原先只写了 a，于是后台的「当前页」与「不可点」两个 span 根本没有样式。 */
+.pagination-pages .pagination-btn {
+    display: inline-flex;
     align-items: center;
     justify-content: center;
     min-width: 32px;
@@ -406,15 +409,24 @@ table.data-table { width: 100%; border-collapse: collapse; font-size: 14px; }
     padding: 0 var(--ui-sp-sm);
     border-radius: var(--ui-r-sm);
     font-size: 13px;
+    font-family: inherit;
     color: var(--c-text-secondary);
+    background: transparent;
     border: 1px solid transparent;
+    cursor: pointer;
     transition: background var(--ui-tr-fast), border-color var(--ui-tr-fast);
 }
-.pagination-pages a:hover { background: var(--c-bg-hover); text-decoration: none; }
-.pagination-pages a.active {
+.pagination-pages .pagination-btn:hover { background: var(--c-bg-hover); text-decoration: none; }
+.pagination-pages .pagination-btn.is-active {
     background: var(--c-primary-bg);
     color: var(--c-primary);
     font-weight: 500;
+}
+.pagination-pages .pagination-btn:disabled,
+.pagination-pages .pagination-btn.is-disabled {
+    opacity: .45;
+    cursor: not-allowed;
+    background: transparent;
 }
 
 /* ==========================================================================

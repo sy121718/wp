@@ -86,8 +86,8 @@
     border-top: 1px solid var(--c-border, #e5e7eb);
 }
 .media-empty { color: var(--c-text-mute, #6b7280); font-size: 13px; text-align: center; padding: 40px 0; }
-.media-pager { display: flex; align-items: center; gap: 12px; justify-content: center; padding: 8px 0; }
-.media-pager span { font-size: 13px; color: var(--c-text-mute, #6b7280); }
+/* 分页条样式已归基座（ui.css 的 .pagination / .pagination-btn）——
+   媒体库与后台其它列表页共用一份，这里不再维护第二份。 */
 
 /* --- 详情侧栏 --- */
 .media-detail {
