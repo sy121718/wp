@@ -182,15 +182,12 @@
     {* idiomorph（本地 vendor 0.8.0）：面板片段用 DOM morphing 替换，保留滚动位置/输入焦点/展开态
         （docs/06-C §四）。必须早于 workbench/index.js 加载：core.js 的 morphHTML 直接调全局 Idiomorph。 *}
     <script src="/static/vendor/idiomorph/idiomorph.min.js?v={{.jsVer}}"></script>
-    {* 原始控件基座（普通脚本，非 module）：下拉替身/确认框/图标字段/明暗切换。
-       按顺序加载：助手 → 各控件 → 入口。每个控件自己判断页面有没有对应元素，
-       没有就零成本跳过，所以整份引进来即可。
-       工作台自己的 wbDropdown（data-wb-path）会被基座自动跳过，不会双重增强。 *}
+    {* 原始控件基座：工作台**只引它需要的**。
+       不引 select.js —— 工作台的检查器有自己的下拉体系（wbDropdown）与 7 个原生
+       wb-unit-select（单位选择器，由 spacing 控件直接操作），基座接管它们只会打架。
+       confirm.js 提供 WBUI.confirm()，工作台在 JS 里的发布/恢复确认改用它。 *}
     <script src="/static/js/ui/_util.js"></script>
-    <script src="/static/js/ui/select.js"></script>
     <script src="/static/js/ui/confirm.js"></script>
-    <script src="/static/js/ui/iconfield.js"></script>
-    <script src="/static/js/ui/themetoggle.js"></script>
     <script src="/static/js/ui/index.js"></script>
     {* 工作台前端已按功能拆分为 ES modules（core + methods/*），入口 index.js（docs/09 §3） *}
     <script type="module" src="/static/js/workbench/index.js?v={{.jsVer}}"></script>

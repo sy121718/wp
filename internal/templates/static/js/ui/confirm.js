@@ -104,5 +104,22 @@
         });
     }, true);
 
+    // 代码触发的确认（给工作台这类在 JS 里 confirm() 的场景用）：
+    //   WBUI.confirm('确认发布？', function () { … }, { title, ok, cancel, danger })
+    // 走同一个 <dialog>，视觉与键盘行为与声明式用法完全一致。
+    WBUI.confirm = function (message, onOk, opts) {
+        build();
+        opts = opts || {};
+        titleEl.textContent = opts.title || '请确认';
+        msgEl.textContent = message || '确定执行该操作？';
+        okBtn.textContent = opts.ok || '确定';
+        cancelBtn.textContent = opts.cancel || '取消';
+        okBtn.classList.toggle('btn-danger', !!opts.danger);
+        pending = onOk || null;
+        dlg.returnValue = '';
+        dlg.showModal();
+        okBtn.focus();
+    };
+
     WBUI.register(function () { /* 声明式控件：无需按元素增强，事件委托已覆盖 */ });
 })(window);

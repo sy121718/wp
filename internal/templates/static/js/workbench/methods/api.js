@@ -87,7 +87,11 @@ export const apiMethods = {
             },
             buildAndPublish() {
                 if (meta.saveBase === 'block') { this.saveDraft(); return; }
-                if (confirm('将保存当前草稿并构建发布到线上，确认？')) this.publishFlow();
+                var self = this;
+                // 用基座的确认框而不是原生 confirm：发布是不可逆的对外动作，
+                // 自绘框能给出明确标题与按钮文案（原生框在 Linux 上是系统对话框，只有确定/取消）。
+                WBUI.confirm('将保存当前草稿并构建发布到线上，确认？', function () { self.publishFlow(); },
+                    { title: '发布到线上', ok: '保存并发布' });
             },
 
 };
