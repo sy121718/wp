@@ -21,8 +21,17 @@ import (
 //go:embed static/js/*.js static/js/ui/*.js
 var staticJSFS embed.FS
 
+//go:embed static/css/ui.css
+var uiCSSSource string
+
 // StaticJS 取 static/js 下的脚本源码（name 形如 "enhance.js"）。
 // 构建期由调用方（page service）注入给 builder；文件缺失返回错误，由调用方决定是否降级。
+// UICSS 原始控件基座的样式（static/css/ui.css）。
+//
+// 前台产物内联了控件脚本（下拉替身等），必须同时带上它们的样式 ——
+// 否则访客看到的是一个没有外观的空壳。只在产物真的用到控件时才注入。
+func UICSS() string { return uiCSSSource }
+
 func StaticJS(name string) (string, error) {
 	b, err := staticJSFS.ReadFile("static/js/" + name)
 	if err != nil {

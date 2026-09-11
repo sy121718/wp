@@ -55,6 +55,8 @@ func compile(t *testing.T, p *builder.Page, opts ...builder.CompileOption) (*bui
 		// 与生产装配对齐：客户端增强 + 原始控件基座都注入（源码读真文件，
 		// 否则测出来的产物和线上不是一回事，断言也就失去了意义）。
 		builder.WithEnhanceSource(realSource(t, "enhance.js")),
+		// 控件样式与脚本同进同出：只注入脚本会让产物里的控件没有外观。
+		builder.WithUIStyle(templates.UICSS()),
 		builder.WithUISources(map[string]string{
 			"_util.js":  realSource(t, "ui/_util.js"),
 			"select.js": realSource(t, "ui/select.js"),

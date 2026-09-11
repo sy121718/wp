@@ -57,3 +57,121 @@
 .wb-confirm-title { margin: 0; font-size: 15px; font-weight: 600; }
 .wb-confirm-msg { margin: 0; font-size: 13px; line-height: 1.6; color: var(--sky-c-text-mute, var(--c-text-mute, #6b7280)); }
 .wb-confirm-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; }
+
+/* ==========================================================================
+   原始控件（与 js/ui/*.js 配套）—— 后台、工作台、前台产物共用一份
+   ==========================================================================
+   变量取法：var(--sky-* 站点主题, var(--c-* 后台配色, 兜底值))
+     · --sky-* 由 ThemeVarsCSS 注入（前台产物 / 站点主题）；
+     · --c-*   是后台主题变量（theme.css）；
+     · 都取不到时用兜底值，所以本文件不依赖任何其它样式表 —— 工作台与前台产物
+       直接引也能得到一致的控件外观。
+   语义变量（间距/圆角/过渡/阴影）同理带兜底，避免"引了 ui.css 却因为没引 theme.css 而走形"。
+   ========================================================================== */
+
+/* ===== 尺寸与动效的基础量（theme.css 缺失时的兜底）===== */
+:root {
+    --ui-sp-xs: var(--sp-xs, 6px);
+    --ui-sp-sm: var(--sp-sm, 8px);
+    --ui-sp-md: var(--sp-md, 12px);
+    --ui-sp-lg: var(--sp-lg, 16px);
+    --ui-sp-xl: var(--sp-xl, 24px);
+    --ui-r-pill: var(--r-pill, 999px);
+    --ui-r-lg: var(--r-lg, 10px);
+    --ui-r-md: var(--r-md, 8px);
+    --ui-tr-fast: var(--tr-fast, 120ms ease);
+    --ui-shadow-sm: var(--shadow-sm, 0 1px 2px rgba(16, 20, 26, .06));
+}
+
+/* ==========================================================================
+   按钮
+   ========================================================================== */
+.btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--ui-sp-xs);
+    padding: var(--ui-sp-sm) var(--ui-sp-lg);
+    font-size: 14px;
+    font-family: inherit;
+    font-weight: 400;
+    line-height: 20px;
+    border: 1px solid transparent;
+    border-radius: var(--ui-r-pill);
+    cursor: pointer;
+    transition: background var(--ui-tr-fast), border-color var(--ui-tr-fast), box-shadow var(--ui-tr-fast);
+    white-space: nowrap;
+}
+.btn:active { transform: translateY(0.5px); }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-primary { background: var(--sky-c-primary, var(--c-primary, #3d444f)); color: #fff; }
+.btn-primary:hover { background: var(--sky-c-primary-deep, var(--c-primary-deep, #2f353d)); }
+.btn-secondary {
+    background: var(--sky-c-bg, var(--c-bg, #fff));
+    color: var(--sky-c-primary, var(--c-primary, #3d444f));
+    border-color: var(--sky-c-border, var(--c-border, #e5e7eb));
+}
+.btn-secondary:hover { background: var(--c-bg-hover, rgba(16, 20, 26, .04)); }
+.btn-ghost { background: transparent; color: var(--sky-c-text, var(--c-text-secondary, #4b5563)); }
+.btn-ghost:hover { background: var(--c-bg-hover, rgba(16, 20, 26, .04)); }
+.btn-danger { background: var(--sky-c-danger, var(--c-danger, #b34a4a)); color: #fff; }
+.btn-danger:hover { filter: brightness(0.9); }
+.btn-sm { padding: var(--ui-sp-xs) var(--ui-sp-md); font-size: 13px; line-height: 18px; }
+.btn-icon { padding: var(--ui-sp-sm); width: 36px; height: 36px; }
+
+/* ==========================================================================
+   卡片
+   ========================================================================== */
+.card {
+    background: var(--sky-c-surface, var(--c-bg, #fff));
+    border: 1px solid var(--sky-c-border, var(--c-border, #e5e7eb));
+    border-radius: var(--ui-r-lg);
+    box-shadow: var(--ui-shadow-sm);
+    overflow: hidden;
+}
+.card-header {
+    padding: var(--ui-sp-lg) var(--ui-sp-xl);
+    border-bottom: 1px solid var(--sky-c-border, var(--c-border, #e5e7eb));
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+.card-title { font-size: 16px; font-weight: 400; }
+.card-body { padding: var(--ui-sp-xl); }
+.card-footer {
+    padding: var(--ui-sp-lg) var(--ui-sp-xl);
+    border-top: 1px solid var(--sky-c-border, var(--c-border, #e5e7eb));
+    background: var(--c-bg-soft, #f4f5f6);
+}
+
+/* ==========================================================================
+   表格
+   ========================================================================== */
+.table-wrap {
+    background: var(--sky-c-surface, var(--c-bg, #fff));
+    border: 1px solid var(--sky-c-border, var(--c-border, #e5e7eb));
+    border-radius: var(--ui-r-lg);
+    overflow: hidden;
+}
+table.data-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.data-table thead th {
+    padding: var(--ui-sp-sm) var(--ui-sp-lg);
+    text-align: left;
+    font-weight: 500;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    color: var(--c-text-mute, #6b7280);
+    background: var(--c-bg-soft, #f4f5f6);
+    border-bottom: 1px solid var(--sky-c-border, var(--c-border, #e5e7eb));
+    white-space: nowrap;
+}
+.data-table tbody td {
+    padding: var(--ui-sp-md) var(--ui-sp-lg);
+    border-bottom: 1px solid var(--sky-c-border, var(--c-border, #e5e7eb));
+    color: var(--sky-c-text, var(--c-text, #1a1d21));
+}
+.data-table tbody tr:last-child td { border-bottom: none; }
+.data-table tbody tr { transition: background var(--ui-tr-fast); }
+.data-table tbody tr:hover { background: var(--c-bg-hover, rgba(16, 20, 26, .04)); }
+.data-table .col-actions { text-align: right; white-space: nowrap; }

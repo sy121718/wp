@@ -29,6 +29,25 @@ var uiBlocks = []uiBlock{
 	{file: "select.js", feats: []string{"data-ui-select"}},
 }
 
+// uiStyleFor 取该产物需要的控件样式（有控件命中才返回，纯内容页为空）。
+//
+// css 由装配层注入（static/css/ui.css）。控件脚本进了产物却没样式，
+// 访客看到的就是没有外观的空壳 —— 所以两者必须同进同出。
+func uiStyleFor(html, css string) string {
+	if strings.TrimSpace(css) == "" {
+		return ""
+	}
+	probe := scriptTagRe.ReplaceAllString(html, "")
+	for _, b := range uiBlocks {
+		for _, f := range b.feats {
+			if strings.Contains(probe, f) {
+				return css
+			}
+		}
+	}
+	return ""
+}
+
 // uiScriptFor 按产物 HTML 拼装需要的原始控件：基座助手 + 命中的控件 + 入口。
 //
 // sources 为文件名 → 源码（装配层从 embed 读出）。一个控件都没命中时返回空 ——

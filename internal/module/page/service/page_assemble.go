@@ -106,6 +106,8 @@ func (s *Service) compileDocument(ctx context.Context, page *builder.Page, proje
 		builder.WithEnhanceSource(enhanceSource()),
 		// 原始控件基座（下拉替身等）：按产物里的 data-ui-* 特征挑控件内联。
 		builder.WithUISources(uiSources()),
+		// 控件样式与控件脚本同进同出（没有样式的话下拉就是个没外观的空壳）。
+		builder.WithUIStyle(templates.UICSS()),
 		builder.WithLanguage(lang), builder.WithTranslator(i18n.Snapshot(lang)),
 	}
 	if asm != nil {

@@ -138,6 +138,9 @@ type CompiledPage struct {
 	ThemeVarsCSS string
 	// UISources 原始控件基座源码（来自 WithUISources，按 data-ui-* 特征挑控件注入）。
 	UISources map[string]string
+	// UIStyle 原始控件基座的样式（来自 WithUIStyle，随控件脚本一起按需注入）。
+	// 控件脚本进了产物却没样式，访客看到的就是没有外观的空壳。
+	UIStyle string
 	// EnhanceSource 客户端增强脚本源码（未裁剪的整份，来自 WithEnhanceSource）。
 	//
 	// 这里存的是**源码**而不是裁剪结果：裁剪要按产物 HTML 里的 data-* 特征来挑块，
@@ -179,6 +182,7 @@ type compileConfig struct {
 	// uiSources 原始控件基座源码（文件名 → 源码，构建期按 data-ui-* 特征挑控件注入）。
 	// 与 enhanceSource 分开：组件增强与原始控件是两层关注点（见 ui_script.go）。
 	uiSources map[string]string
+	uiStyle   string
 	// enhanceSource 客户端增强脚本源码（构建期按产物特征裁剪后内联进产物）。
 	//
 	// 由调用方注入而不是 builder 自己 embed：前端资产统一放在 internal/templates/static/，
@@ -275,6 +279,14 @@ func WithEnhanceSource(js string) CompileOption {
 // 一个都没命中时产物不含任何控件脚本（纯内容页不为增强付流量）。
 func WithUISources(sources map[string]string) CompileOption {
 	return func(c *compileConfig) { c.uiSources = sources }
+}
+
+// WithUIStyle 注入原始控件基座的样式（internal/templates 的 UICSS()）。
+//
+// 与控件脚本同进同出：产物内联了脚本却没样式，控件就是个没外观的空壳。
+// 只在产物真的用到控件（命中 data-ui-* 特征）时才注入这一段。
+func WithUIStyle(css string) CompileOption {
+	return func(c *compileConfig) { c.uiStyle = css }
 }
 
 // WithContext 注入请求上下文：构建期集合/内容解析器查库时传播（超时取消）。
@@ -624,6 +636,7 @@ func Compile(p *Page, opts ...CompileOption) (res *CompiledPage, err error) {
 		ThemeVarsCSS:    ThemeVarsCSS(cfg.theme),
 		EnhanceSource:   cfg.enhanceSource,
 		UISources:       cfg.uiSources,
+		UIStyle:         cfg.uiStyle,
 	}, nil
 }
 
@@ -647,7 +660,7 @@ func RenderDocument(c *CompiledPage) (string, error) {
 		SEOHead:         c.SEOHead,
 		BodyClass:       strings.Join(c.BodyClasses, " "),
 		HTML:            c.HTML,
-		CSS:             c.CSS,
+		CSS:             c.CSS + uiStyleFor(c.HTML, c.UIStyle),
 		ThemeVarsCSS:    c.ThemeVarsCSS,
 		EnhanceScript:   enhanceScriptFor(c.HTML, c.EnhanceSource) + uiScriptFor(c.HTML, c.UISources),
 	}

@@ -11,7 +11,10 @@
     <meta name="csrf-token" content="{{ .["csrf_token"] }}">
     <link rel="stylesheet" href="/static/css/theme.css">
     {* Trix 富文本编辑器基础样式（本地 vendor）；放在 workbench.css 之前，便于工作台覆盖 *}
-    <link rel="stylesheet" href="/static/vendor/trix/trix.css?v={{.jsVer}}">
+    {* 原始控件基座：按钮/卡片/表格/下拉等与后台共用一份（颜色走 --sky-* 优先、--c-* 回退，
+   工作台引了 theme.css 所以视觉与后台一致）。放在 workbench.css 之前，便于后者按需覆盖。 *}
+<link rel="stylesheet" href="/static/css/ui.css">
+<link rel="stylesheet" href="/static/vendor/trix/trix.css?v={{.jsVer}}">
     <link rel="stylesheet" href="/static/css/workbench.css?v=20260906c">
     {* 无障碍 P1 增量层：动效降级 + 键盘焦点轮廓（必须最后加载以覆盖焦点态） *}
     <link rel="stylesheet" href="/static/css/workbench-a11y.css?v=20260908a">
@@ -179,6 +182,16 @@
     {* idiomorph（本地 vendor 0.8.0）：面板片段用 DOM morphing 替换，保留滚动位置/输入焦点/展开态
         （docs/06-C §四）。必须早于 workbench/index.js 加载：core.js 的 morphHTML 直接调全局 Idiomorph。 *}
     <script src="/static/vendor/idiomorph/idiomorph.min.js?v={{.jsVer}}"></script>
+    {* 原始控件基座（普通脚本，非 module）：下拉替身/确认框/图标字段/明暗切换。
+       按顺序加载：助手 → 各控件 → 入口。每个控件自己判断页面有没有对应元素，
+       没有就零成本跳过，所以整份引进来即可。
+       工作台自己的 wbDropdown（data-wb-path）会被基座自动跳过，不会双重增强。 *}
+    <script src="/static/js/ui/_util.js"></script>
+    <script src="/static/js/ui/select.js"></script>
+    <script src="/static/js/ui/confirm.js"></script>
+    <script src="/static/js/ui/iconfield.js"></script>
+    <script src="/static/js/ui/themetoggle.js"></script>
+    <script src="/static/js/ui/index.js"></script>
     {* 工作台前端已按功能拆分为 ES modules（core + methods/*），入口 index.js（docs/09 §3） *}
     <script type="module" src="/static/js/workbench/index.js?v={{.jsVer}}"></script>
 </body>
