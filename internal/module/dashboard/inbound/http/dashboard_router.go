@@ -221,6 +221,15 @@ func SetupDashboardRoutes(router *gin.Engine,
 	adminPages.POST("/inventory/sources/update", builtin.CasbinMiddlewareForPath("/api/inventory/source/update"), sourcePages.InventorySourceUpdate)
 	adminPages.POST("/inventory/sources/delete", builtin.CasbinMiddlewareForPath("/api/inventory/source/delete"), sourcePages.InventorySourceDelete)
 
+	// 采购入库页（issue #18）：采购单（来源 = #17 的货源）→ 逐行登记收货入库
+	//（复用 #16 的变动契约，库存真源 + 流水 + 成本价一并落地）+ 自家工厂生产入库 + 进货历史。
+	// 页面 GET 走 /admin 组认证（Session+CSRF，无 Casbin）；写动作复用采购 API 权限点。
+	purchasePages := NewInventoryPurchasePageHandle(inventories, projects, products)
+	adminPages.GET("/inventory/purchases", purchasePages.InventoryPurchasesPage)
+	adminPages.POST("/inventory/purchases/create", builtin.CasbinMiddlewareForPath("/api/inventory/purchase/create"), purchasePages.InventoryPurchaseCreate)
+	adminPages.POST("/inventory/purchases/receipt", builtin.CasbinMiddlewareForPath("/api/inventory/purchase/receipt"), purchasePages.InventoryPurchaseReceipt)
+	adminPages.POST("/inventory/purchases/production", builtin.CasbinMiddlewareForPath("/api/inventory/purchase/production"), purchasePages.InventoryPurchaseProduction)
+
 	// 商品域翻译工作台（issue #12）：入口在商品列表行内「多语言」按钮（与页面翻译工作台同构）。
 	// 保存写 sys_translation（engine=manual）并标记待重建，鉴权复用商品更新权限点（同一改动面）。
 	SetupProductTranslationRoutes(adminPages,

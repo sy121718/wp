@@ -246,6 +246,55 @@ button, input, select, textarea { font: inherit; color: inherit; }
     .source-page .attr-form-actions .btn { width: 100%; }
 }
 
+
+/* ===== 采购入库（admin/inventory_purchases.html，issue #18） =====
+   多端适配（硬规则）：
+     · 输入宽度一律 min(100%, <设计宽度>)，容器 flex+wrap，窄屏折行不溢出；
+     · 采购行 / 进货历史表格窄屏改堆叠块（同 .source-page-table 手法），
+       td 的 data-label 在堆叠态由 ::before 回显列名（读屏与视觉都还在）；
+     · 收货表单行内排布，窄屏折行并让输入与按钮占满整行；
+     · 触屏只需原生控件，按压反馈走 .btn:active（不带媒体查询）；
+     · 键盘：原生控件 Tab 序即视觉序；表格横向滚动容器保留 tabindex，方向键可滚。 */
+.purchase-page .attr-form-head input[type="text"],
+.purchase-page .attr-form-head input[type="number"],
+.purchase-page .attr-form-head select,
+.purchase-page .attr-form-head .wbs { width: min(100%, 220px); }
+.purchase-page .receipt-form { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.purchase-page .receipt-form input[type="number"] {
+    padding: 6px 8px; font-size: 13px; border: 1px solid var(--c-border, #e5e7eb);
+    border-radius: 8px; background: var(--c-surface, #fff); color: inherit;
+    width: min(100%, 120px); min-width: 0;
+}
+.purchase-page .receipt-form input[name="unitPrice"] { width: min(100%, 180px); }
+.purchase-page-table { table-layout: fixed; }
+.purchase-page-table th, .purchase-page-table td { word-break: break-word; overflow-wrap: anywhere; }
+.purchase-page-table .receipt-form { min-width: 0; }
+.purchase-page .card-header { flex-wrap: wrap; gap: 4px 8px; }
+.purchase-page .card-header > * { min-width: 0; }
+/* 手机：表格改堆叠块，列名用 data-label 回显；输入与按钮占满整行。 */
+@media (max-width: 720px) {
+    .purchase-page-table thead { display: none; }
+    .purchase-page-table, .purchase-page-table tbody, .purchase-page-table tr, .purchase-page-table td { display: block; width: auto; }
+    .purchase-page-table tr {
+        border: 1px solid var(--c-border, #e5e7eb); border-radius: 10px;
+        padding: 8px 10px; margin-bottom: 8px;
+    }
+    .purchase-page-table td { border: 0; padding: 2px 0; }
+    .purchase-page-table td::before {
+        content: attr(data-label) " ";
+        color: var(--c-text-mute, #6b7280); font-size: 12px;
+    }
+    .purchase-page .attr-form-head input[type="text"],
+    .purchase-page .attr-form-head input[type="number"],
+    .purchase-page .attr-form-head select,
+    .purchase-page .attr-form-head .wbs { width: 100%; }
+    .purchase-page .receipt-form { width: 100%; }
+    .purchase-page .receipt-form input[type="number"],
+    .purchase-page .receipt-form input[name="unitPrice"],
+    .purchase-page .receipt-form .btn { width: 100%; }
+    .purchase-page .attr-form-actions .btn { width: 100%; }
+}
+
 /* ===== 商品属性管理（admin/product_attributes.html，issue #7） =====
    多端适配（硬规则）：
      · 宽度一律 min(100%, <设计宽度>)，不写死；

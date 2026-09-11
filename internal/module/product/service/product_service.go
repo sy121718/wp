@@ -72,6 +72,8 @@ var (
 	_ productcontract.ProductService = (*Service)(nil)
 	// 库存缓存端口（issue #16）：库存模块经它把真源汇总写进本模块的展示缓存。
 	_ productcontract.VariantStockCachePort = (*Service)(nil)
+	// 成本价写回端口（issue #18）：库存模块经它把入库单价写进 product_variants.cost_price。
+	_ productcontract.VariantCostPort = (*Service)(nil)
 )
 
 // Create 新建商品，并在同一事务内生成它的第一个变体。

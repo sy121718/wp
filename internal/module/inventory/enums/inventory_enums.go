@@ -17,6 +17,9 @@ const (
 	MsgDeductSuccess    = "MsgDeductSuccess"    // 库存扣减成功
 	MsgSyncSuccess      = "MsgSyncSuccess"      // 缓存同步成功
 	MsgReconcileSuccess = "MsgReconcileSuccess" // 缓存对账完成
+
+	// —— 采购单与入库（issue #18）——
+	MsgReceiptSuccess = "MsgReceiptSuccess" // 入库登记成功
 )
 
 // 错误消息。
@@ -83,6 +86,39 @@ const (
 	ErrSourceConfigInvalid     = "ErrSourceConfigInvalid" // 对接配置必须是 JSON 对象
 	ErrSourceFilterInvalid     = "ErrSourceFilterInvalid" // 报表筛选参数不合法（关联方标志只认 true / false）
 
+	// —— 采购单（issue #18 验收 1/2）——
+	ErrPurchaseOrderNotFound   = "ErrPurchaseOrderNotFound"   // 采购单不存在
+	ErrPurchaseCodeRequired    = "ErrPurchaseCodeRequired"    // 采购单号必填
+	ErrPurchaseCodeInvalid     = "ErrPurchaseCodeInvalid"     // 采购单号只允许大写字母 / 数字 / 下划线 / 连字符，且不超长
+	ErrPurchaseCodeTaken       = "ErrPurchaseCodeTaken"       // 同工程下采购单号已占用
+	ErrPurchaseSourceRequired  = "ErrPurchaseSourceRequired"  // 采购单必须指定货源（来源 = #17 的货源）
+	ErrPurchaseSourceDisabled  = "ErrPurchaseSourceDisabled"  // 已停用的货源不能下采购单（停用 = 不再选用）
+	ErrPurchaseLinesRequired   = "ErrPurchaseLinesRequired"   // 采购单至少要有一行
+	ErrPurchaseLinesTooMany    = "ErrPurchaseLinesTooMany"    // 采购行数超过上限
+	ErrPurchaseLineRequired    = "ErrPurchaseLineRequired"    // 采购行必须给出变体
+	ErrPurchaseLineDuplicate   = "ErrPurchaseLineDuplicate"   // 同一采购单里同一个 SKU 重复出现
+	ErrPurchaseQuantityInvalid = "ErrPurchaseQuantityInvalid" // 采购数量必须为正整数
+	ErrPurchasePriceInvalid    = "ErrPurchasePriceInvalid"    // 采购单价必须为正数
+	ErrPurchaseStatusInvalid   = "ErrPurchaseStatusInvalid"   // 状态筛选值不是 pending / partial / received
+	ErrPurchaseLinesLocked     = "ErrPurchaseLinesLocked"     // 已有入库数量的采购单不能再改行（改了状态推导就不成立）
+	ErrPurchaseLineNotFound    = "ErrPurchaseLineNotFound"    // 采购行不存在（或不属于该采购单）
+
+	// —— 入库（issue #18 验收 3/4/5）——
+	ErrReceiptLinesRequired   = "ErrReceiptLinesRequired"   // 入库清单不能为空
+	ErrReceiptQuantityInvalid = "ErrReceiptQuantityInvalid" // 入库数量必须为正整数
+	// ErrReceiptOverReceive 入库数量超过「采购数量 - 已入库数量」：超收在数据层即不可能，
+	// 服务层在同一事务内用带守卫的原子递增拒绝（不留半截、不靠读-改-写）。
+	ErrReceiptOverReceive    = "ErrReceiptOverReceive"
+	ErrReceiptOrderDone      = "ErrReceiptOrderDone"      // 采购单已全部入库，无需再收
+	ErrReceiptRequestInvalid = "ErrReceiptRequestInvalid" // 幂等键不合法（超长 / 非法字符）
+	// ErrProductionSourceNotInternal 生产入库只认内部货源（自家工厂）：外部供应商走采购单，
+	// 没有「无采购单的生产入库」这一说。
+	ErrProductionSourceNotInternal = "ErrProductionSourceNotInternal"
+	ErrProductionVariantRequired   = "ErrProductionVariantRequired" // 生产入库必须给出 SKU 变体
+	ErrProductionCostInvalid       = "ErrProductionCostInvalid"     // 生产入库的成本价必须手工填写且非负
+	// ErrVariantCostPortMissing 商品侧成本价端口未注入（装配缺陷 / 纯库存单测路径）。
+	ErrVariantCostPortMissing = "ErrVariantCostPortMissing"
+
 	// —— 物料清单（issue #16 验收 5）——
 	ErrBOMQuantityInvalid    = "ErrBOMQuantityInvalid"    // 子项用量必须为正整数
 	ErrBOMSelfReference      = "ErrBOMSelfReference"      // 父项不能把自己列为子项
@@ -131,4 +167,48 @@ const (
 const (
 	SourceStatusActive   = "active"
 	SourceStatusDisabled = "disabled"
+)
+
+// 采购单状态取值（issue #18 验收 2）。
+//
+// 三种状态**全部由「已入库数量 与 采购数量」推导**（没有任何人工置位入口）：
+//
+//	pending  —— 所有行的已入库数量都是 0（未入库）；
+//	partial  —— 有入库但至少一行还没收满（部分入库）；
+//	received —— 每一行的已入库数量都等于采购数量（已入库）。
+//
+// 推导在登记入库的同一事务内完成并写回，因此状态永远与行数据自洽。
+const (
+	PurchaseStatusPending  = "pending"
+	PurchaseStatusPartial  = "partial"
+	PurchaseStatusReceived = "received"
+)
+
+// 入库单类型（验收 3/5）。
+//
+//	purchase   —— 采购收货：必有采购单，来源是 #17 的货源，成本价取采购单价；
+//	production —— 自家工厂生产入库：无采购单，成本价手工填写。
+const (
+	ReceiptKindPurchase   = "purchase"
+	ReceiptKindProduction = "production"
+)
+
+// 入库单状态（入库是「先记账再动库存」）。
+//
+//	pending —— 记账已落库、库存变动尚未完成（中间态；进程中断时会停在这里，后台可见）；
+//	posted  —— 库存变动已提交并记下批次号（正常终态）。
+//
+// 变动失败不留 failed 单据：补偿路径把单据整体删除，状态列只有这两态。
+const (
+	ReceiptStatusPending = "pending"
+	ReceiptStatusPosted  = "posted"
+)
+
+// 入库产生的库存流水来源引用（source_type 列，验收 3 的「来源引用齐全」）。
+//
+// 采购收货的 source_ref 是采购单号，生产入库的 source_ref 是入库单号 ——
+// 流水可以反向定位到是哪张单据动的库存。
+const (
+	MovementSourcePurchaseOrder = "purchase_order"
+	MovementSourceProduction    = "production"
 )

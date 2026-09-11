@@ -246,6 +246,15 @@ var inventorySourcePermsSQL string
 //go:embed 107_inventory_source_menu.sql
 var inventorySourceMenuSQL string
 
+//go:embed 108_inventory_purchase.sql
+var inventoryPurchaseSQL string
+
+//go:embed 109_inventory_purchase_permissions.sql
+var inventoryPurchasePermsSQL string
+
+//go:embed 110_inventory_purchase_menu.sql
+var inventoryPurchaseMenuSQL string
+
 //go:embed 073_blueprint_ddl_align.sql
 var blueprintDDLAlignSQL string
 
@@ -857,6 +866,37 @@ func init() {
 		TableName:    "sys_menus",
 		ConditionSQL: "SELECT CASE WHEN COUNT(*) = 1 THEN 1 ELSE 0 END FROM sys_menus WHERE title = '货源管理' AND type = 2 AND deleted_time IS NULL",
 		SQL:          inventorySourceMenuSQL,
+	})
+
+	// 108：采购单与入库四张表（issue #18）：采购单头 / 采购行（含已入库数量）/
+	// 入库单头（采购收货与自家工厂生产入库共用，带幂等键）/ 入库单行。
+	// 四张全新表，默认「表存在即跳过」检查即可；库存**真源** inventory_stocks
+	// 一张不加、一列不改 —— 入库一律经 #16 的变动契约写它。
+	register(Migration{
+		Version:   "108-inventory-purchase",
+		TableName: "inventory_purchase_orders",
+		SQL:       inventoryPurchaseSQL,
+	})
+
+	// 109：采购单与入库 7 个权限点 + 超管策略（issue #18）。
+	// 条件只看本票自己的权限点（inventory:purchase_%），与 100 的宽匹配互不干扰。
+	registerSeed(Seed{
+		Version:   "109-inventory-purchase-permissions",
+		TableName: "sys_permission",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) = 7 THEN 1 ELSE 0 END FROM sys_permission WHERE permission_code IN (" +
+			"'inventory:purchase_list', 'inventory:purchase_get', 'inventory:purchase_create', " +
+			"'inventory:purchase_update', 'inventory:purchase_receipt', " +
+			"'inventory:purchase_production', 'inventory:purchase_history')",
+		SQL: inventoryPurchasePermsSQL,
+	})
+
+	// 110：采购入库后台菜单（issue #18）。须在 101（库存管理菜单）之后执行，
+	// 且与它同挂「站点工程」目录（sort 10，排在货源管理 sort 9 之后）。
+	registerSeed(Seed{
+		Version:      "110-inventory-purchase-menu",
+		TableName:    "sys_menus",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) = 1 THEN 1 ELSE 0 END FROM sys_menus WHERE title = '采购入库' AND type = 2 AND deleted_time IS NULL",
+		SQL:          inventoryPurchaseMenuSQL,
 	})
 
 	// 073：把历史库的 blueprints / blueprint_versions 对齐到 model（唯一真源）。

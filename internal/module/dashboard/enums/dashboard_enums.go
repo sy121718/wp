@@ -59,6 +59,9 @@ const MsgTranslationSiteScanTooMany = "MsgTranslationSiteScanTooMany" // 页面�
 // MsgInventorySourcesTitle 货源管理页标题（issue #17）。
 const MsgInventorySourcesTitle = "MsgInventorySourcesTitle" // 货源管理
 
+// MsgInventoryPurchasesTitle 采购入库页标题（issue #18）。
+const MsgInventoryPurchasesTitle = "MsgInventoryPurchasesTitle" // 采购入库
+
 // MsgInternalError 页面 handler 内部错误统一提示（禁止直出 err.Error() 泄露内部细节）。
 const MsgInternalError = "MsgInternalError" // 系统内部错误，请稍后重试
 

@@ -8,6 +8,9 @@
 //
 // 死线：一切影响可用量的判断只读 inventory_stocks（在行锁之内），绝不读
 // product_variants.stock_total 那个列表展示缓存 —— 缓存只被同步 / 对账。
+// #18 采购单与入库：采购单（来源 = #17 的货源）→ 收货入库（复用 #16 的 ChangeStock）。
+// 入库一律经同一套变动契约写库存真源（理由 / 流水 / 来源引用齐全），绝不旁路写库存；
+// 登记入库在采购单行锁内原子递增已入库数量并重算推导状态，幂等键挡住重复入库。
 package inventoryservice
 
 import (
@@ -42,6 +45,11 @@ type Service struct {
 	// 依赖方向 inventory → product：本模块调商品模块的缓存端口，
 	// 商品模块实现的库存记录端口则由顶层反向注入（两端口互不干扰）。
 	stockCache productcontract.VariantStockCachePort
+	// variantCost 商品侧**成本价**写回端口（issue #18，由 product 模块实现）。
+	// 采购入库 / 生产入库登记后（库存变动已提交）经它把单价写进
+	// product_variants.cost_price；未注入时按回写失败记在入库单行上（cost_error），
+	// 不回滚已经落地的真源库存。依赖方向同样是 inventory → product。
+	variantCost productcontract.VariantCostPort
 }
 
 // NewService 构造。
@@ -55,6 +63,13 @@ func NewService(m *inventorymodel.Model, project projectcontract.ProjectService)
 // 与 product.SetVariantStock 同一模式：可选依赖不进构造参数。
 func (s *Service) SetStockCache(port productcontract.VariantStockCachePort) {
 	s.stockCache = port
+}
+
+// SetVariantCost 注入商品侧成本价写回端口（issue #18，装配期调用）。
+//
+// 与 SetStockCache 同一模式：端口实现属商品模块，故在商品模块装配之后注入。
+func (s *Service) SetVariantCost(port productcontract.VariantCostPort) {
+	s.variantCost = port
 }
 
 // 编译期断言：本模块契约 + 商品模块定义的变体库存端口（依赖方向 inventory → product）。

@@ -195,6 +195,20 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 		panic("库存模块未提供库存缓存端口注入点（SetStockCache）")
 	}
 	stockCacheSetter.SetStockCache(stockCachePort)
+	// 成本价写回端口（issue #18）：与 VariantStockCachePort 同向（product 实现、inventory 调用）——
+	// 采购收货 / 生产入库登记后把单价写进 product_variants.cost_price。同一手法：断言 + 注入，
+	// 任一未实现即 fail-fast（装配缺陷不该拖到运行时才暴露）。
+	variantCostPort, ok := productSvc.(productcontract.VariantCostPort)
+	if !ok {
+		panic("商品模块未实现成本价写回端口（VariantCostPort）")
+	}
+	variantCostSetter, ok := inventorySvc.(interface {
+		SetVariantCost(productcontract.VariantCostPort)
+	})
+	if !ok {
+		panic("库存模块未提供成本价端口注入点（SetVariantCost）")
+	}
+	variantCostSetter.SetVariantCost(variantCostPort)
 	// 商品实体类型注册（issue #6）：注册后商品可作为内容模板的数据源
 	// （类型合法性 + 字段白名单由注册表判定），构建期经注册表取商品字段解析器。
 	// 与内容模块同样 fail-fast：注册失败即装配缺陷。

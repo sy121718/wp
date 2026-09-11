@@ -80,6 +80,27 @@ type InventoryService interface {
 	// SourceSummary 按「类型 × 关联方」分组统计（验收 4「关联方标志可用于报表区分」的数据出口）。
 	SourceSummary(ctx context.Context, req *inventorydto.SourceSummaryReq) (res *inventorydto.SourceSummaryResp, err error)
 
+	// —— 采购单与入库（issue #18）——
+	// 采购单：单头（来源 = #17 的货源 + 收货仓）+ 结构化行（SKU × 数量 × 单价），
+	// 行的「已入库数量」可原子递增；采购单状态由「已入库数量 与 采购数量」推导。
+	// CreatePurchaseOrder 新建采购单（验收 1）：单头 + 结构化行，来源必须是启用中的货源。
+	CreatePurchaseOrder(ctx context.Context, req *inventorydto.CreatePurchaseOrderReq) (res *inventorydto.PurchaseOrderResp, err error)
+	// UpdatePurchaseOrder 改单头（来源 / 收货仓 / 备注 / 预计到货），行全量替换只允许在未入库时。
+	UpdatePurchaseOrder(ctx context.Context, req *inventorydto.UpdatePurchaseOrderReq) (res *inventorydto.PurchaseOrderResp, err error)
+	GetPurchaseOrder(ctx context.Context, req *inventorydto.GetPurchaseOrderReq) (res *inventorydto.PurchaseOrderResp, err error)
+	// ListPurchaseOrders 采购单列表（状态 / 货源 / 关键词可组合筛选）。
+	ListPurchaseOrders(ctx context.Context, req *inventorydto.ListPurchaseOrderReq) (list []*inventorydto.PurchaseOrderResp, err error)
+
+	// RegisterReceipt 登记采购收货（验收 1/2/3/4）：按行累加已入库数量（原子递增、超收拒绝、
+	// 幂等键防重放），随后经 ChangeStock 增加库存并写流水（原因 = 采购入库、来源 = 采购单），
+	// 并以采购单价更新 SKU 成本价；采购单状态在这条链路上重算。
+	RegisterReceipt(ctx context.Context, req *inventorydto.RegisterReceiptReq) (res *inventorydto.ReceiptResp, err error)
+	// RegisterProductionInbound 自家工厂生产入库（验收 5）：无采购单、来源必须是内部货源、
+	// 成本价手工填写；库存变动同样走 ChangeStock（原因 = 生产入库）。
+	RegisterProductionInbound(ctx context.Context, req *inventorydto.ProductionInboundReq) (res *inventorydto.ReceiptResp, err error)
+	// ListPurchaseHistory 某 SKU 的进货历史（验收 6）：入库单行 + 单价快照 + 来源 + 收货仓。
+	ListPurchaseHistory(ctx context.Context, req *inventorydto.ListPurchaseHistoryReq) (list []*inventorydto.PurchaseHistoryResp, err error)
+
 	// —— 商品侧缓存同步与对账（验收 6/7）——
 	// SyncStockCache 显式同步（真源汇总 → 商品侧展示缓存，带时间戳）。
 	SyncStockCache(ctx context.Context, req *inventorydto.SyncStockCacheReq) (res *inventorydto.SyncStockCacheResp, err error)

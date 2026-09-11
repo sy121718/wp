@@ -762,9 +762,9 @@ func TestSourcePermissionsAndMenuSeeded(t *testing.T) {
 	if err := f.db.Raw("SELECT COUNT(*) FROM sys_permission WHERE module = 'inventory'").Scan(&n).Error; err != nil {
 		t.Fatalf("查询 inventory 权限点失败: %v", err)
 	}
-	// 100（#15 九个）+ 104（#16 十个）+ 106（#17 六个）。
-	if n != 25 {
-		t.Fatalf("inventory 模块应有 25 个权限点，实际 %d", n)
+	// 100（#15 九个）+ 104（#16 十个）+ 106（#17 六个）+ 109（#18 采购单与入库七个）。
+	if n != 32 {
+		t.Fatalf("inventory 模块应有 32 个权限点，实际 %d", n)
 	}
 	if err := f.db.Raw("SELECT COUNT(*) FROM sys_menus WHERE type = 2 AND title = '货源管理' AND deleted_time IS NULL").Scan(&n).Error; err != nil {
 		t.Fatalf("查询菜单失败: %v", err)

@@ -1,0 +1,269 @@
+{* admin/inventory_purchases.html — 采购入库：采购单 → 逐行收货 → 生产入库 → 进货历史（issue #18） *}
+{* Jet 方言：range 用 range 关键字；extends 相对本目录；range 内访问外层值先存变量。 *}
+{{extends "layout.html"}}
+{{block body()}}
+{{csrf := .["csrf_token"]}}
+{{selectedProject := .SelectedProject}}
+{{orders := .Orders}}
+{{history := .History}}
+{{filterStatus := .FilterStatus}}
+{{filterSource := .FilterSource}}
+{{filterKeyword := .FilterKeyword}}
+{{historySKU := .HistorySKU}}
+{{receiptRequestID := .ReceiptRequestID}}
+{{productionRequestID := .ProductionRequestID}}
+<div class="pages-wrap purchase-page">
+    <section class="pages-card">
+        <h2>采购入库</h2>
+        {{if .Err != ""}}
+        <p class="pages-badge pages-badge-warn">上一次操作未完成：{{.Err}}</p>
+        {{end}}
+        {{if .Ok != ""}}
+        <p class="pages-badge pages-badge-ok">上一次操作已完成。</p>
+        {{end}}
+        <p class="pages-empty">
+            <strong>采购单</strong>的来源是「货源管理」里的货源（外部供应商 / 集团内关联公司），
+            单头记收货仓，行记 SKU × 采购数量 × 采购单价。行上的<strong>已入库数量</strong>由收货原子递增，
+            单据状态（未入库 / 部分入库 / 已入库）直接由「已入库数量 与 采购数量」推出 —— 没有人工改状态的入口。
+        </p>
+        <p class="pages-empty">
+            登记入库会做三件事：经<strong>库存变动契约</strong>把对应 SKU 的库存加上去并写流水（原因 = 采购入库，
+            来源引用 = 采购单号）、按采购单价<strong>更新该 SKU 的成本价</strong>、把已入库数量与单据状态推进。
+            同一张单据重复提交由<strong>幂等键</strong>挡住：同一个键只会产生一张入库单，不会重复加库存。
+        </p>
+        <form method="get" action="/admin/inventory/purchases" class="pages-form">
+            <select name="project" onchange="this.form.submit()">
+                {{range _, p := .Projects}}
+                <option value="{{p.ID}}" {{if p.ID == selectedProject}}selected{{end}}>{{p.Name}}</option>
+                {{end}}
+            </select>
+        </form>
+    </section>
+
+    <section class="pages-card">
+        <h2>新建采购单</h2>
+        {{if len(.Sources) == 0}}
+        <p class="pages-empty">
+            这个工程还没有启用中的货源 —— 先去<a href="/admin/inventory/sources?project={{selectedProject}}">货源管理</a>
+            建一个（外部供应商或集团内关联公司），采购单的来源就是它。
+        </p>
+        {{else}}
+        <form method="post" action="/admin/inventory/purchases/create" class="attr-form">
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <input type="hidden" name="projectId" value="{{selectedProject}}">
+            <div class="attr-form-head">
+                <input type="text" name="code" placeholder="采购单号（如 PO-20260101-001）" required autocomplete="off">
+                <select name="sourceId" required>
+                    <option value="">（来源：选择货源）</option>
+                    {{range _, s := .Sources}}
+                    <option value="{{s.ID}}">{{s.Label}}</option>
+                    {{end}}
+                </select>
+                <select name="warehouseId">
+                    <option value="">（收货仓：默认仓）</option>
+                    {{range _, w := .Warehouses}}
+                    <option value="{{w.ID}}">{{w.Label}}</option>
+                    {{end}}
+                </select>
+                <input type="text" name="remark" placeholder="备注（如 合同号 / 到货批次）" autocomplete="off">
+            </div>
+            <p class="pages-empty">采购行（每行一个 SKU；空行会被忽略；同一张单里同一个 SKU 只能出现一次）：</p>
+            {{range _, row := .DraftLines}}
+            <div class="attr-form-head">
+                <select name="lineVariantId">
+                    <option value="">（选择 SKU）</option>
+                    {{range _, o := .VariantOptions}}
+                    <option value="{{o.VariantID}}">{{o.Label}}</option>
+                    {{end}}
+                </select>
+                <input type="number" name="lineQuantity" placeholder="采购数量" inputmode="numeric" step="1" min="1">
+                <input type="number" name="lineUnitPrice" placeholder="采购单价" inputmode="decimal" step="0.01" min="0.01">
+            </div>
+            {{end}}
+            <div class="attr-form-actions">
+                <button type="submit" class="btn btn-primary">新建采购单</button>
+            </div>
+        </form>
+        {{end}}
+    </section>
+
+    <section class="pages-card">
+        <h2>采购单（{{len(orders)}}）</h2>
+        <form method="get" action="/admin/inventory/purchases" class="attr-form">
+            <input type="hidden" name="project" value="{{selectedProject}}">
+            <div class="attr-form-head">
+                <select name="status">
+                    <option value="">（状态：全部）</option>
+                    {{range _, s := .StatusOptions}}
+                    <option value="{{s.Value}}" {{if s.Value == filterStatus}}selected{{end}}>{{s.Label}}</option>
+                    {{end}}
+                </select>
+                <select name="sourceId">
+                    <option value="">（来源：全部）</option>
+                    {{range _, s := .Sources}}
+                    <option value="{{s.ID}}" {{if s.ID == filterSource}}selected{{end}}>{{s.Label}}</option>
+                    {{end}}
+                </select>
+                <input type="text" name="keyword" value="{{filterKeyword}}" placeholder="单号 / 备注关键词" autocomplete="off">
+                <button type="submit" class="btn btn-sm">筛选</button>
+            </div>
+        </form>
+
+        {{if len(orders) == 0}}
+        <p class="pages-empty">没有符合条件的采购单。用上面的表单建一张（货源来自货源管理，收货仓缺省用默认仓）。</p>
+        {{else}}
+        {{range _, o := .Orders}}
+        <details class="pages-fold">
+            <summary class="card-header">
+                <strong>{{o.Code}}</strong>
+                {{if o.Status == "received"}}
+                <span class="pages-badge pages-badge-ok">{{o.StatusLabel}}</span>
+                {{else if o.Status == "partial"}}
+                <span class="pages-badge pages-badge-warn">{{o.StatusLabel}}</span>
+                {{else}}
+                <span class="pages-badge">{{o.StatusLabel}}</span>
+                {{end}}
+                <span class="pages-empty">{{o.SourceName}}（{{o.SourceTypeLabel}}）· {{o.WarehouseName}}</span>
+                <span class="pages-empty">已入库 {{o.ReceivedQuantity}} / {{o.TotalQuantity}}</span>
+                <span class="pages-fold-hint">展开</span>
+            </summary>
+
+            <div class="pages-table-wrap" tabindex="0">
+            <table class="pages-table purchase-page-table">
+                <thead><tr><th>SKU</th><th>采购数量</th><th>已入库</th><th>未入库</th><th>单价</th><th>登记入库</th></tr></thead>
+                <tbody>
+                {{range _, l := o.Lines}}
+                <tr>
+                    <td data-label="SKU"><code>{{l.SKUCode}}</code></td>
+                    <td data-label="采购数量">{{l.Quantity}}</td>
+                    <td data-label="已入库">{{l.ReceivedQuantity}}</td>
+                    <td data-label="未入库">{{l.OutstandingQuantity}}</td>
+                    <td data-label="单价">{{l.UnitPrice}}</td>
+                    <td data-label="登记入库">
+                        {{if l.Open}}
+                        <form method="post" action="/admin/inventory/purchases/receipt" class="receipt-form">
+                            <input type="hidden" name="csrf_token" value="{{csrf}}">
+                            <input type="hidden" name="projectId" value="{{selectedProject}}">
+                            <input type="hidden" name="orderId" value="{{o.ID}}">
+                            <input type="hidden" name="lineId" value="{{l.ID}}">
+                            <input type="hidden" name="requestId" value="{{o.RequestID}}">
+                            <input type="number" name="quantity" placeholder="本次数量" inputmode="numeric" step="1" min="1" max="{{l.OutstandingQuantity}}" required>
+                            <input type="number" name="unitPrice" placeholder="本次到货价（留空 = 采购价）" inputmode="decimal" step="0.01" min="0.01">
+                            <button type="submit" class="btn btn-sm btn-primary">登记入库</button>
+                        </form>
+                        {{else}}
+                        <span class="pages-empty">已收满</span>
+                        {{end}}
+                    </td>
+                </tr>
+                {{end}}
+                </tbody>
+            </table>
+            </div>
+            <p class="pages-empty">
+                下单时间 {{o.OrderedAt}} · 操作人 {{if o.OperatorID != ""}}{{o.OperatorID}}{{else}}—{{end}}
+                {{if o.Remark != ""}} · 备注 {{o.Remark}}{{end}}
+                · 本次登记入库只允许 ≤ 未入库数量（超收会被拒绝），提交后库存 / 流水 / 成本价一并更新。
+            </p>
+        </details>
+        {{end}}
+        {{end}}
+    </section>
+
+    <section class="pages-card">
+        <h2>生产入库（自家工厂）</h2>
+        <p class="pages-empty">
+            自家工厂<strong>不走采购单</strong>：没有采购单价可以引用，因此成本价在这里<strong>手工填写</strong>。
+            来源只能选<strong>内部货源</strong>（自家工厂 / 集团内关联公司）；库存变动同样走库存变动契约
+            （原因 = 生产入库，来源引用 = 本入库单号）。
+        </p>
+        {{if len(.InternalSources) == 0}}
+        <p class="pages-empty">
+            还没有内部货源 —— 去<a href="/admin/inventory/sources?project={{selectedProject}}">货源管理</a>
+            建一个「内部」类型的自家工厂货源。
+        </p>
+        {{else}}
+        <form method="post" action="/admin/inventory/purchases/production" class="attr-form">
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <input type="hidden" name="projectId" value="{{selectedProject}}">
+            <input type="hidden" name="requestId" value="{{productionRequestID}}">
+            <div class="attr-form-head">
+                <select name="sourceId" required>
+                    <option value="">（内部货源：自家工厂）</option>
+                    {{range _, s := .InternalSources}}
+                    <option value="{{s.ID}}">{{s.Label}}</option>
+                    {{end}}
+                </select>
+                <select name="variantId" required>
+                    <option value="">（选择 SKU）</option>
+                    {{range _, o := .VariantOptions}}
+                    <option value="{{o.VariantID}}">{{o.Label}}</option>
+                    {{end}}
+                </select>
+                <select name="warehouseId">
+                    <option value="">（入库仓：默认仓）</option>
+                    {{range _, w := .Warehouses}}
+                    <option value="{{w.ID}}">{{w.Label}}</option>
+                    {{end}}
+                </select>
+                <input type="number" name="quantity" placeholder="入库数量" inputmode="numeric" step="1" min="1" required>
+                <input type="number" name="unitCost" placeholder="手工成本价（必填）" inputmode="decimal" step="0.01" min="0" required>
+                <input type="text" name="remark" placeholder="备注（如 生产批次）" autocomplete="off">
+            </div>
+            <div class="attr-form-actions">
+                <button type="submit" class="btn btn-primary">生产入库</button>
+            </div>
+        </form>
+        {{end}}
+    </section>
+
+    <section class="pages-card">
+        <h2>进货历史</h2>
+        <p class="pages-empty">
+            按 SKU 查历次进货：单据号、数量、<strong>当时单价快照</strong>、来源、收货仓与时间。
+            采购收货与生产入库都在这一张表里（类型列区分）。
+        </p>
+        <form method="get" action="/admin/inventory/purchases" class="attr-form">
+            <input type="hidden" name="project" value="{{selectedProject}}">
+            <div class="attr-form-head">
+                <select name="sku">
+                    <option value="">（全部 SKU）</option>
+                    {{range _, o := .VariantOptions}}
+                    <option value="{{o.SKUCode}}" {{if o.SKUCode == historySKU}}selected{{end}}>{{o.Label}}</option>
+                    {{end}}
+                </select>
+                <button type="submit" class="btn btn-sm">查进货历史</button>
+            </div>
+        </form>
+        {{if len(history) == 0}}
+        <p class="pages-empty">没有找到进货记录 —— 换一个 SKU，或先登记一次入库。</p>
+        {{else}}
+        <div class="pages-table-wrap" tabindex="0">
+        <table class="pages-table purchase-page-table">
+            <thead><tr><th>时间</th><th>单据</th><th>类型</th><th>采购单</th><th>来源</th><th>仓库</th><th>SKU</th><th>数量</th><th>单价</th><th>成本价</th><th>操作人</th></tr></thead>
+            <tbody>
+            {{range _, r := history}}
+            <tr>
+                <td data-label="时间">{{r.ReceivedAt}}</td>
+                <td data-label="单据"><code>{{r.ReceiptCode}}</code></td>
+                <td data-label="类型">{{r.KindLabel}}</td>
+                <td data-label="采购单">{{if r.OrderCode != ""}}{{r.OrderCode}}{{else}}—{{end}}</td>
+                <td data-label="来源">{{r.SourceName}} <span class="move-meta">{{r.SourceTypeLabel}}</span></td>
+                <td data-label="仓库">{{r.WarehouseName}}</td>
+                <td data-label="SKU"><code>{{r.SKUCode}}</code></td>
+                <td data-label="数量">{{r.Quantity}}</td>
+                <td data-label="单价">{{r.UnitPrice}}</td>
+                <td data-label="成本价">
+                    {{if r.CostUpdated}}<span class="pages-badge pages-badge-ok">已写回</span>
+                    {{else}}<span class="pages-badge pages-badge-warn">未写回</span>{{end}}
+                </td>
+                <td data-label="操作人">{{if r.OperatorID != ""}}{{r.OperatorID}}{{else}}—{{end}}</td>
+            </tr>
+            {{end}}
+            </tbody>
+        </table>
+        </div>
+        {{end}}
+    </section>
+</div>
+{{end}}

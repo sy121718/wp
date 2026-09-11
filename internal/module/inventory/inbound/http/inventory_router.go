@@ -56,6 +56,17 @@ func SetupInventoryRoutes(rg *gin.RouterGroup, db *gorm.DB, project projectcontr
 	g.POST("/source/update", handle.UpdateSource)
 	g.POST("/source/delete", handle.DeleteSource)
 
+	// 采购单与入库（issue #18）：采购单（来源 = #17 的货源）→ 收货入库（复用 #16 的 ChangeStock）。
+	// receipt 支持按行分批累加已入库数量，带幂等键防重复入库；production 是自家工厂
+	// 生产入库（无采购单，成本价手工填写）；history 是某 SKU 的进货历史。
+	g.GET("/purchase/list", handle.ListPurchaseOrders)
+	g.GET("/purchase/get", handle.GetPurchaseOrder)
+	g.GET("/purchase/history", handle.ListPurchaseHistory)
+	g.POST("/purchase/create", handle.CreatePurchaseOrder)
+	g.POST("/purchase/update", handle.UpdatePurchaseOrder)
+	g.POST("/purchase/receipt", handle.RegisterReceipt)
+	g.POST("/purchase/production", handle.RegisterProductionInbound)
+
 	// 商品侧缓存同步与对账（issue #16 验收 6/7）：提交后的独立步骤，不进变动事务。
 	g.POST("/cache/sync", handle.SyncStockCache)
 	g.POST("/cache/reconcile", handle.ReconcileStockCache)

@@ -81,6 +81,9 @@ func newInvFixture(t *testing.T) *invFixture {
 	// 与生产装配同形（routers.SetupRoutes）：商品侧库存缓存端口反向注入库存模块，
 	// 库存变动提交后经它把真源汇总写进展示缓存（issue #16 验收 6）。
 	inv.SetStockCache(products)
+	// 同理注入成本价写回端口（issue #18）：采购 / 生产入库后把单价写进
+	// product_variants.cost_price。缺这一步，入库单行会记成「成本价未写回」。
+	inv.SetVariantCost(products)
 	return &invFixture{
 		inventory: inv, products: products, db: db,
 		projects: projects, projectID: project.ID,
@@ -650,9 +653,9 @@ func TestInventoryPermissionsAndMenusSeeded(t *testing.T) {
 		t.Fatalf("查询权限点失败: %v", err)
 	}
 	// 100（#15 仓库与库存记录 9 个）+ 104（#16 变动 / 流水 / 原因 / 清单 / 对账 10 个）
-	// + 106（#17 货源 6 个）。
-	if n != 25 {
-		t.Fatalf("迁移 100 + 104 + 106 应 seed 25 个 inventory 权限点，实际 %d", n)
+	// + 106（#17 货源 6 个）+ 109（#18 采购单与入库 7 个）。
+	if n != 32 {
+		t.Fatalf("迁移 100 + 104 + 106 + 109 应 seed 32 个 inventory 权限点，实际 %d", n)
 	}
 	for _, code := range []string{"inventory:stock_change", "inventory:stock_deduct", "inventory:movement_list",
 		"inventory:reason_list", "inventory:reason_create", "inventory:reason_update",

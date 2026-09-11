@@ -1055,9 +1055,9 @@ func TestInventoryChangeHTTPAndAdminPage(t *testing.T) {
 	if err := f.db.Raw("SELECT COUNT(*) FROM sys_permission WHERE module = 'inventory'").Scan(&n).Error; err != nil {
 		t.Fatalf("查询权限点失败: %v", err)
 	}
-	// 100（#15 九个）+ 104（#16 十个）+ 106（#17 货源六个）。
-	if n != 25 {
-		t.Fatalf("迁移 100 + 104 + 106 应 seed 25 个 inventory 权限点，实际 %d", n)
+	// 100（#15 九个）+ 104（#16 十个）+ 106（#17 货源六个）+ 109（#18 采购单与入库七个）。
+	if n != 32 {
+		t.Fatalf("迁移 100 + 104 + 106 + 109 应 seed 32 个 inventory 权限点，实际 %d", n)
 	}
 	var builtin int64
 	if err := f.db.Raw("SELECT COUNT(*) FROM inventory_change_reasons WHERE project_id IS NULL").Scan(&builtin).Error; err != nil {

@@ -279,7 +279,22 @@ func (m *Model) SyncVariantStockTotal(ctx context.Context, variantID string, tot
 	return nil
 }
 
-// ListVariantStockTotals 批量读变体的库存缓存值（variant id → stock_total）。
+// UpdateVariantCost 写变体成本价（只动 cost_price 一列，issue #18 的入库单价回写）。
+//
+// 售价、划线价、库存缓存一律不碰：成本口径与售价口径是两条独立的账。
+func (m *Model) UpdateVariantCost(ctx context.Context, variantID string, cost float64, at time.Time) (err error) {
+	res := m.VariantDB(ctx).Where("id = ?", variantID).
+		Updates(map[string]any{"cost_price": cost, "updated_at": at})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
+}
+
+// ListVariantStockTotals 批量读变体的库存缓存值（variant id → stock_total，库存模块对账用）。
 func (m *Model) ListVariantStockTotals(ctx context.Context, variantIDs []string) (out map[string]int, err error) {
 	out = make(map[string]int, len(variantIDs))
 	if len(variantIDs) == 0 {
