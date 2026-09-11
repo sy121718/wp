@@ -106,6 +106,14 @@ type Props struct {
 	// 拆开能分别给出「只填了 key 没填 value」这种明确的配置错误。
 	FilterOptionKey   string `json:"filterOptionKey,omitempty" ct:"text,maxlen=64,sec=collection,label=属性 key"`
 	FilterOptionValue string `json:"filterOptionValue,omitempty" ct:"text,maxlen=64,sec=collection,label=属性值 key"`
+	// PageSize 每页条数（issue #27）：0 = 不分页（整块按 collectionLimit 截断）。
+	//
+	// 分页在**集合源单次上限（100 条）以内**生效：片段每次按「第几页」取对应切片，
+	// 超过上限的部分需要集合源支持 offset（票里记为后续），当前口径在下方 BuildView 里写明。
+	PageSize int `json:"pageSize,omitempty" ct:"slider,min=0,max=60,step=1,sec=collection,label=每页条数"`
+	// Page 当前页（1 起；由片段参数或 URL 传入，构建期默认 1）。
+	Page int `json:"page,omitempty" ct:"number,min=1,max=100,sec=collection,label=页码"`
+
 	// FilterOptions 多属性筛选（issue #27）：`颜色key:值key,尺码key:值key` 逗号分隔，逐项 AND。
 	// 访客交互的多属性筛选（筛选栏点选）在片段侧把选中值拼成这个参数；工作台也能固定写死。
 	FilterOptions string `json:"filterOptions,omitempty" ct:"text,maxlen=500,sec=collection,label=多属性筛选"`
@@ -240,6 +248,12 @@ func validateExtra(p *Props, _ string) (err error) {
 	if keySet != valueSet {
 		return fmt.Errorf("属性筛选需要同时填写属性 key 与属性值 key（当前 key=%q value=%q）", p.FilterOptionKey, p.FilterOptionValue)
 	}
+	if p.PageSize < 0 || p.PageSize > 60 {
+		return fmt.Errorf("每页条数必须在 0~60 之间（0 = 不分页）")
+	}
+	if p.Page < 0 || p.Page > 100 {
+		return fmt.Errorf("页码必须在 0~100 之间（0 = 第 1 页）")
+	}
 	if keySet && (!optionKeyRe.MatchString(strings.TrimSpace(p.FilterOptionKey)) || !optionKeyRe.MatchString(strings.TrimSpace(p.FilterOptionValue))) {
 		return fmt.Errorf("属性筛选的 key / 值形状非法（只允许字母数字下划线与连字符）")
 	}
@@ -357,6 +371,25 @@ func effectiveTitleTag(p *Props) string {
 	default:
 		return defaultTitleTag
 	}
+}
+
+// EffectivePageSize 每页条数（0 = 不分页）。
+func EffectivePageSize(p *Props) int {
+	if p == nil || p.PageSize <= 0 {
+		return 0
+	}
+	if p.PageSize > 60 {
+		return 60
+	}
+	return p.PageSize
+}
+
+// EffectivePage 当前页（1 起；非法值归一到 1）。
+func EffectivePage(p *Props) int {
+	if p == nil || p.Page <= 1 {
+		return 1
+	}
+	return p.Page
 }
 
 func effectiveEmptyText(p *Props) string {

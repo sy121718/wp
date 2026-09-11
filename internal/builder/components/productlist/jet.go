@@ -48,6 +48,19 @@ type View struct {
 	EmptyText string
 	// List 是否列表布局（模板据此输出额外类名；布局样式由 CSS 编译期给出）。
 	List bool
+
+	// —— 分页（issue #27）——
+	//
+	// 口径：分页在集合源单次上限（100 条）以内生效 —— 组件按「每页条数 × 页码」在已取回
+	// 的集合项里切片；超出上限的部分需要集合源支持 offset（票里记为后续）。
+	// Page 当前页（1 起）；PageSize 0 表示不分页（此时模板不输出分页控件）。
+	Page     int
+	PageSize int
+	// HasPrev / HasNext 是否还有上一页 / 下一页（按已取回条数判断，不猜测未取回的部分）。
+	HasPrev bool
+	HasNext bool
+	// FetchedTotal 本次实际取回并参与分页的条数（上限 100）。
+	FetchedTotal int
 }
 
 // IsCollection 本组件恒为集合模式（取数来自集合源）。
@@ -78,12 +91,37 @@ func BuildView(node *core.Node, p *Props, ctx *core.RenderContext) (View, error)
 	if limit := effectiveLimit(p); len(items) > limit {
 		items = items[:limit]
 	}
+	// 分页：先截到「本页末」，再取本页那段。顺序不能反 ——
+	// 反了的话第 2 页会拿到「全部条目里的第 pageSize+1 条开始」，但总数判断却是截断后的，
+	// 于是最后一页之后还会多出一页空列表。
+	fetched := len(items)
+	page, pageSize := EffectivePage(p), EffectivePageSize(p)
+	if pageSize > 0 {
+		start := (page - 1) * pageSize
+		switch {
+		case start >= fetched:
+			items = items[:0]
+		default:
+			items = items[start:]
+			if len(items) > pageSize {
+				items = items[:pageSize]
+			}
+		}
+	}
 
 	view := View{
-		Cards:     make([]CardView, 0, len(items)),
-		Empty:     len(items) == 0,
-		EmptyText: effectiveEmptyText(p),
-		List:      effectiveLayout(p) == LayoutList,
+		Cards:        make([]CardView, 0, len(items)),
+		Empty:        len(items) == 0 && page <= 1,
+		EmptyText:    effectiveEmptyText(p),
+		List:         effectiveLayout(p) == LayoutList,
+		Page:         page,
+		PageSize:     pageSize,
+		FetchedTotal: fetched,
+	}
+	// 翻页可达性按**已取回条数**判断：不够就说明这一页之后没有更多了（不猜未取回的部分）。
+	if pageSize > 0 {
+		view.HasPrev = page > 1
+		view.HasNext = page*pageSize < fetched
 	}
 	for _, item := range items {
 		view.Cards = append(view.Cards, cardViewOf(p, item))
