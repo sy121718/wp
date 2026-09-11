@@ -82,6 +82,44 @@ func TestRenderProductListFragment(t *testing.T) {
 	}
 }
 
+// TestRenderProductListFragmentDeterministic 同一参数必须渲染出**逐字节相同**的 HTML。
+//
+// 这条用例针对的是一个真实存在的坑：筛选参数在 map 里遍历时顺序随机，属性维度若按遍历顺序
+// 拼进 filterOptions，两次渲染就会得到不同字节（缓存/CDN 与「点出来的和直接打开的不一样」的源头）。
+// 片段里对属性键排序就是为了这个，这里把它钉住。
+func TestRenderProductListFragmentDeterministic(t *testing.T) {
+	stub := &stubCollection{items: []map[string]any{listItem("summer-shirt", "夏季衬衫")}}
+	SetCollectionResolver(stub)
+	defer SetCollectionResolver(nil)
+	params := map[string]string{
+		"nodeId": "list-1", "projectId": "proj-1",
+		"titleField": "item.name", "option.color": "red", "option.size": "m",
+		"option.material": "cotton",
+	}
+	first, err := renderProductList(context.Background(), &Request{Params: params})
+	if err != nil {
+		t.Fatalf("第一次渲染失败: %v", err)
+	}
+	for i := 0; i < 5; i++ {
+		// 每次重建 map：Go 的 map 遍历顺序是随机的，重复用同一个 map 测不出问题。
+		again := map[string]string{}
+		for k, v := range params {
+			again[k] = v
+		}
+		out, rerr := renderProductList(context.Background(), &Request{Params: again})
+		if rerr != nil {
+			t.Fatalf("第 %d 次渲染失败: %v", i+2, rerr)
+		}
+		if out != first {
+			t.Fatalf("同参数渲染必须逐字节相同（第 %d 次不同）", i+2)
+		}
+	}
+	// 属性维度必须都下推（排序只是拼装顺序，筛选语义不变）。
+	if stub.filter["option.color"] != "red" || stub.filter["option.material"] != "cotton" || stub.filter["option.size"] != "m" {
+		t.Fatalf("三个属性维度都该下推: %v", stub.filter)
+	}
+}
+
 // TestRenderProductListFragmentRejectsBadField 字段槽位必须过商品字段白名单
 // （构建期保存校验管不到运行期请求，这一层是运行期的等价防线）。
 func TestRenderProductListFragmentRejectsBadField(t *testing.T) {

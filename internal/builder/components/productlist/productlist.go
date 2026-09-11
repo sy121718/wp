@@ -49,6 +49,29 @@ const (
 	optionFilterPrefix = "option."
 )
 
+// 筛选栏维度与工具条项的白名单（写错即报错，不静默忽略）。
+var filterBlockNames = map[string]bool{
+	"categories": true, "brands": true, "tags": true, "attributes": true,
+}
+
+// toolbarItemNames 工具条项白名单（onSale = 参考站那个「只看在售」开关）。
+var toolbarItemNames = map[string]bool{"sort": true, "pageSize": true, "columns": true, "onSale": true}
+
+// splitList 逗号分隔 → 去空去重列表（顺序保持首次出现）。
+func splitList(raw string) []string {
+	out := make([]string, 0, 4)
+	seen := map[string]bool{}
+	for _, part := range strings.Split(raw, ",") {
+		v := strings.TrimSpace(part)
+		if v == "" || seen[v] {
+			continue
+		}
+		seen[v] = true
+		out = append(out, v)
+	}
+	return out
+}
+
 // optionKeyRe 属性 key / 值的形状（与商品域属性组 key 的字符集一致）。
 //
 // 组件侧只做形状校验（挡住空键、超长、带空格这类明显写错的配置）；
@@ -113,6 +136,17 @@ type Props struct {
 	PageSize int `json:"pageSize,omitempty" ct:"slider,min=0,max=60,step=1,sec=collection,label=每页条数"`
 	// Page 当前页（1 起；由片段参数或 URL 传入，构建期默认 1）。
 	Page int `json:"page,omitempty" ct:"number,min=1,max=100,sec=collection,label=页码"`
+	// Filters 筛选栏维度（issue #27）：逗号分隔，取 categories / brands / tags / attributes。
+	// 空 = 不渲染筛选栏（纯列表）。真正渲染得出来还要集合源实现了筛选选项能力，
+	// 否则该块自动不显示（契约缺失不阻断构建）。
+	Filters string `json:"filters,omitempty" ct:"text,maxlen=120,sec=collection,label=筛选栏维度"`
+	// Toolbar 工具条项：逗号分隔，取 sort / pageSize / columns。空 = 不渲染工具条。
+	Toolbar string `json:"toolbar,omitempty" ct:"text,maxlen=120,sec=collection,label=工具条"`
+	// PushQuery 当前语义参数（片段层渲染前灌入，如 `categoryId=x&page=2`）。
+	//
+	// 为什么是渲染期输入：交互控件要「切下一页 / 换排序时带上现有筛选」，而构建期不知道
+	// 访客当前选了哪些维度 —— 只有片段层见过原始请求参数。故不作为可编辑字段。
+	PushQuery string `json:"-" ct:"-"`
 
 	// FilterOptions 多属性筛选（issue #27）：`颜色key:值key,尺码key:值key` 逗号分隔，逐项 AND。
 	// 访客交互的多属性筛选（筛选栏点选）在片段侧把选中值拼成这个参数；工作台也能固定写死。
@@ -253,6 +287,17 @@ func validateExtra(p *Props, _ string) (err error) {
 	}
 	if p.Page < 0 || p.Page > 100 {
 		return fmt.Errorf("页码必须在 0~100 之间（0 = 第 1 页）")
+	}
+	// 筛选栏与工具条：只接受列出的维度 / 项，写错即报错（静默忽略会让作者以为配上了）。
+	for _, name := range splitList(p.Filters) {
+		if !filterBlockNames[name] {
+			return fmt.Errorf("未知的筛选栏维度 %q（可选：categories / brands / tags / attributes）", name)
+		}
+	}
+	for _, name := range splitList(p.Toolbar) {
+		if !toolbarItemNames[name] {
+			return fmt.Errorf("未知的工具条项 %q（可选：sort / pageSize / columns）", name)
+		}
 	}
 	if keySet && (!optionKeyRe.MatchString(strings.TrimSpace(p.FilterOptionKey)) || !optionKeyRe.MatchString(strings.TrimSpace(p.FilterOptionValue))) {
 		return fmt.Errorf("属性筛选的 key / 值形状非法（只允许字母数字下划线与连字符）")
@@ -467,6 +512,98 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	b.Add(core.BreakpointMobile, sel+" .sky-product-list-items", []string{
 		"grid-template-columns: 1fr",
 	})
+	// 筛选栏与主区（issue #27）：宽屏左栏 + 右主区；窄屏筛选栏折到上方。
+	// 用 flex + 固定上限宽度而不是 grid 两列：没有筛选栏时主区自然占满，不留空洞。
+	b.Add(core.BreakpointDesktop, sel+" .sky-product-list-layout", []string{
+		"display: flex",
+		"gap: 20px",
+		"align-items: flex-start",
+		"min-width: 0",
+	})
+	b.Add(core.BreakpointMobile, sel+" .sky-product-list-layout", []string{
+		"flex-direction: column",
+	})
+	b.Add(core.BreakpointDesktop, sel+" .sky-product-list-filters", []string{
+		"flex: 0 0 min(100%, 16rem)",
+		"display: flex",
+		"flex-direction: column",
+		"gap: 16px",
+		"min-width: 0",
+	})
+	b.Add(core.BreakpointDesktop, sel+" .sky-product-list-main", []string{
+		"flex: 1 1 auto",
+		"min-width: 0",
+	})
+	b.Add(core.BreakpointDesktop, sel+" .sky-product-list-filter-title", []string{
+		"margin: 0 0 6px",
+		"font-size: .9rem",
+		"font-weight: 600",
+	})
+	b.Add(core.BreakpointDesktop, sel+" .sky-product-list-filter-options, "+sel+" .sky-product-list-tool-options", []string{
+		"display: flex",
+		"flex-wrap: wrap",
+		"gap: 6px",
+		"margin: 0",
+		"padding: 0",
+		"list-style: none",
+	})
+	// 选项用胶囊：鼠标悬停与触屏按压都给反馈，键盘焦点可见（链接原生可聚焦）。
+	b.Add(core.BreakpointDesktop, sel+" .sky-product-list-filter-option, "+sel+" .sky-product-list-tool-option", []string{
+		"display: inline-flex",
+		"align-items: center",
+		"padding: 4px 10px",
+		"border: 1px solid var(--sky-c-border, rgba(0,0,0,0.15))",
+		"border-radius: 999px",
+		"font-size: .85rem",
+		"text-decoration: none",
+		"color: inherit",
+		"max-width: 100%",
+	})
+	b.Add(core.BreakpointDesktop, sel+" .sky-product-list-filter-option.is-active, "+sel+" .sky-product-list-tool-option.is-active", []string{
+		"border-color: var(--sky-c-primary, #2563eb)",
+		"color: var(--sky-c-primary, #2563eb)",
+		"background: var(--sky-c-primary-weak, rgba(37,99,235,0.08))",
+	})
+	b.Add(core.BreakpointDesktop, sel+" .sky-product-list-filter-option.is-disabled, "+sel+" .sky-product-list-tool-option.is-disabled", []string{
+		"opacity: .45",
+		"cursor: not-allowed",
+	})
+	b.Add(core.BreakpointDesktop, sel+" .sky-product-list-toolbar", []string{
+		"display: flex",
+		"flex-wrap: wrap",
+		"align-items: center",
+		"gap: 14px",
+		"margin-bottom: 14px",
+	})
+	b.Add(core.BreakpointDesktop, sel+" .sky-product-list-tool", []string{
+		"display: flex",
+		"align-items: center",
+		"gap: 8px",
+		"min-width: 0",
+	})
+	b.Add(core.BreakpointDesktop, sel+" .sky-product-list-tool-label", []string{
+		"font-size: .85rem",
+		"color: var(--sky-c-muted, rgba(0,0,0,0.6))",
+	})
+	b.Add(core.BreakpointDesktop, sel+" .sky-product-list-pager", []string{
+		"display: flex",
+		"flex-wrap: wrap",
+		"align-items: center",
+		"gap: 10px",
+		"margin-top: 18px",
+	})
+	b.Add(core.BreakpointDesktop, sel+" .sky-product-list-page", []string{
+		"padding: 6px 14px",
+		"border: 1px solid var(--sky-c-border, rgba(0,0,0,0.15))",
+		"border-radius: 8px",
+		"text-decoration: none",
+		"color: inherit",
+	})
+	b.Add(core.BreakpointDesktop, sel+" .sky-product-list-page-current", []string{
+		"font-size: .9rem",
+		"color: var(--sky-c-muted, rgba(0,0,0,0.6))",
+	})
+
 	// 每项：网格模式纵向卡片；列表模式图左文右（图片宽度按容器封顶）。
 	b.Add(core.BreakpointDesktop, sel+" .sky-product-list-item", []string{
 		"display: flex",

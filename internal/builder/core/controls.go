@@ -120,7 +120,10 @@ func parseControls(props any, keyPrefix, goPrefix string) (controls []Control, e
 			controls = append(controls, sub...)
 			continue
 		}
-		if !ok || strings.TrimSpace(tag) == "" {
+		// ct:"-" = 不做控件（渲染期输入，如列表组件里片段层灌进来的当前筛选参数）。
+		// 与 json:"-" 同一套「忽略」惯例，但语义更准：字段存在、参与渲染、只是不由作者编辑。
+		// 不跳过的话它会以 kind "-" 出现在 schema 里，被审计判为「未覆盖的控件类型」。
+		if !ok || strings.TrimSpace(tag) == "" || strings.TrimSpace(tag) == "-" {
 			continue
 		}
 		c, parseErr := parseControlTag(f, tag)

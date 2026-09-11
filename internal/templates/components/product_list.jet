@@ -1,8 +1,22 @@
-{* product_list.jet — core.productList 商品列表组件（issue #23）：网格 / 列表两种布局 *}
-{* 集合项在构建期已解析、排序并截断（组件包 BuildView）；空集合渲染空态文案，
-   不输出空 <ul>。卡片内元素全部按「有值才输出」渲染：商品没填的字段不留空壳节点。
-   语义用 <ul>/<li>（读屏能报出「N 个项目」），点击路径是 <a> 而不是 div + onclick。 *}
-<div class="{{ .Classes }}"{{ if .CustomID }} id="{{ .CustomID }}"{{ end }}>
+{* product_list.jet — core.productList 商品列表组件（#23 / #27）。 *}
+{* 交互契约（无 JS 也能用）：
+   · 每个筛选 / 排序 / 翻页控件都是 <a>：没有 HTMX 时就是整页跳转，URL 里的语义参数照旧生效；
+   · 有 HTMX 时同一批链接带 hx-get（片段请求，含实例配置）与 hx-push-url（只推语义参数），
+     变成局部刷新，地址栏同步、可分享、可刷新、可前进后退；
+   · 容器自带 load 补正：带 query 直接打开 / 刷新 / 前进后退时，由片段补一次请求，
+     把列表换成筛过的结果（静态产物本身是「默认那一屏」）。 *}
+{* 集合项在构建期已解析、排序并分页切片；空集合渲染空态文案，不输出空 <ul>。 *}
+<div class="{{ .Classes }}"{{ if .CustomID }} id="{{ .CustomID }}"{{ end }} data-sky-product-list hx-get="/_fragments/productList?{{ .V.FragmentQuery }}" hx-vals='js:Object.fromEntries(new URLSearchParams(location.search))' hx-trigger="load[location.search.length > 1]" hx-target="this" hx-swap="outerHTML">
+<div class="sky-product-list-layout">
+{{ if len(.V.FilterSections) > 0 }}<aside class="sky-product-list-filters" aria-label="筛选">{{ range _, section := .V.FilterSections }}<div class="sky-product-list-filter sky-product-list-filter-{{ section.Kind }}">
+<h3 class="sky-product-list-filter-title">{{ section.Title }}</h3>
+<ul class="sky-product-list-filter-options">{{ range _, opt := section.Options }}<li>{{ if opt.Disabled }}<span class="sky-product-list-filter-option is-disabled" title="{{ opt.DisabledHint }}">{{ opt.Label }}</span>{{ else }}<a class="sky-product-list-filter-option{{ if opt.Active }} is-active{{ end }}" href="{{ opt.Href }}" hx-get="{{ opt.FragmentGet }}" hx-push-url="{{ opt.PushURL }}" hx-target="closest [data-sky-product-list]" hx-swap="outerHTML"{{ if opt.Active }} aria-current="true"{{ end }}>{{ opt.Label }}</a>{{ end }}</li>{{ end }}</ul>
+</div>{{ end }}</aside>{{ end }}
+<div class="sky-product-list-main">
+{{ if len(.V.SortOptions) > 0 }}<div class="sky-product-list-toolbar"><div class="sky-product-list-tool"><span class="sky-product-list-tool-label">排序</span><ul class="sky-product-list-tool-options">{{ range _, opt := .V.SortOptions }}<li>{{ if opt.Disabled }}<span class="sky-product-list-tool-option is-disabled" title="{{ opt.DisabledHint }}">{{ opt.Label }}</span>{{ else }}<a class="sky-product-list-tool-option{{ if opt.Active }} is-active{{ end }}" href="{{ opt.Href }}" hx-get="{{ opt.FragmentGet }}" hx-push-url="{{ opt.PushURL }}" hx-target="closest [data-sky-product-list]" hx-swap="outerHTML"{{ if opt.Active }} aria-current="true"{{ end }}>{{ opt.Label }}</a>{{ end }}</li>{{ end }}</ul></div></div>{{ end }}
+{{ if len(.V.PageSizeOptions) > 0 }}<div class="sky-product-list-toolbar"><div class="sky-product-list-tool"><span class="sky-product-list-tool-label">每页</span><ul class="sky-product-list-tool-options">{{ range _, opt := .V.PageSizeOptions }}<li><a class="sky-product-list-tool-option{{ if opt.Active }} is-active{{ end }}" href="{{ opt.Href }}" hx-get="{{ opt.FragmentGet }}" hx-push-url="{{ opt.PushURL }}" hx-target="closest [data-sky-product-list]" hx-swap="outerHTML"{{ if opt.Active }} aria-current="true"{{ end }}>{{ opt.Label }}</a></li>{{ end }}</ul></div></div>{{ end }}
+{{ if len(.V.ColumnOptions) > 0 }}<div class="sky-product-list-toolbar"><div class="sky-product-list-tool"><span class="sky-product-list-tool-label">视图</span><ul class="sky-product-list-tool-options">{{ range _, opt := .V.ColumnOptions }}<li><a class="sky-product-list-tool-option{{ if opt.Active }} is-active{{ end }}" href="{{ opt.Href }}" hx-get="{{ opt.FragmentGet }}" hx-push-url="{{ opt.PushURL }}" hx-target="closest [data-sky-product-list]" hx-swap="outerHTML"{{ if opt.Active }} aria-current="true"{{ end }}>{{ opt.Label }}</a></li>{{ end }}</ul></div></div>{{ end }}
+{{ if len(.V.OnSaleOptions) > 0 }}<div class="sky-product-list-toolbar"><div class="sky-product-list-tool"><span class="sky-product-list-tool-label">在售</span><ul class="sky-product-list-tool-options">{{ range _, opt := .V.OnSaleOptions }}<li><a class="sky-product-list-tool-option{{ if opt.Active }} is-active{{ end }}" href="{{ opt.Href }}" hx-get="{{ opt.FragmentGet }}" hx-push-url="{{ opt.PushURL }}" hx-target="closest [data-sky-product-list]" hx-swap="outerHTML"{{ if opt.Active }} aria-current="true"{{ end }}>{{ opt.Label }}</a></li>{{ end }}</ul></div></div>{{ end }}
 {{ if .V.Empty }}<p class="sky-product-list-empty">{{ .V.EmptyText }}</p>{{ else }}
 <ul class="sky-product-list-items">
 {{ range _, card := .V.Cards }}<li class="sky-product-list-item">
@@ -15,4 +29,7 @@
 </li>{{ end }}
 </ul>
 {{ end }}
+{{ if .V.HasPager }}<nav class="sky-product-list-pager" aria-label="分页">{{ if .V.HasPrev }}<a class="sky-product-list-page" href="{{ .V.PrevLink.Href }}" hx-get="{{ .V.PrevLink.FragmentGet }}" hx-push-url="{{ .V.PrevLink.PushURL }}" hx-target="closest [data-sky-product-list]" hx-swap="outerHTML" rel="prev">上一页</a>{{ end }}<span class="sky-product-list-page-current" aria-current="page">第 {{ .V.Page }} 页</span>{{ if .V.HasNext }}<a class="sky-product-list-page" href="{{ .V.NextLink.Href }}" hx-get="{{ .V.NextLink.FragmentGet }}" hx-push-url="{{ .V.NextLink.PushURL }}" hx-target="closest [data-sky-product-list]" hx-swap="outerHTML" rel="next">下一页</a>{{ end }}</nav>{{ end }}
+</div>
+</div>
 </div>

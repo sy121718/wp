@@ -61,6 +61,59 @@ type View struct {
 	HasNext bool
 	// FetchedTotal 本次实际取回并参与分页的条数（上限 100）。
 	FetchedTotal int
+
+	// —— 筛选栏与工具条（issue #27）——
+	//
+	// FilterOptions 集合源给出的可选筛选项（未提供 = 该块不渲染）。
+	FilterOptions core.CollectionFilterOptions
+	// Show* 实际渲染出来的块（作者勾选 + 集合源确实给了值，两者都满足才为真）。
+	ShowCategories bool
+	ShowBrands     bool
+	ShowTags       bool
+	ShowAttributes bool
+	ShowSort       bool
+	ShowPageSize   bool
+	ShowColumns    bool
+	ShowOnSale     bool
+	// FilterSections 筛选栏各块与其选项（含每个选项的降级链接 / 片段请求 / 推送 URL）。
+	FilterSections  []FilterSection
+	SortOptions     []ControlOption
+	PageSizeOptions []ControlOption
+	ColumnOptions   []ControlOption
+	OnSaleOptions   []ControlOption
+
+	// PrevPage / NextPage 上下页页码（HasPrev / HasNext 为假时前端不用）。
+	PrevPage int
+	NextPage int
+	// HasPager 是否渲染分页控件（pageSize > 0 且真的分了页）。
+	HasPager bool
+	// PrevLink / NextLink 上下页控件（含降级链接 / 片段请求 / 推送 URL）。
+	PrevLink ControlOption
+	NextLink ControlOption
+
+	// FragmentQuery 构建期拼好的实例配置（片段请求的固定部分，不进 URL）。
+	FragmentQuery string
+	// PushQuery 当前语义参数（片段渲染时才有；构建期为空 = 默认态）。
+	PushQuery string
+}
+
+// collectionFilterOptionsProvider 能力探测：上下文里的集合解析器能否给出可选筛选项。
+func collectionFilterOptionsProvider(ctx *core.RenderContext) (core.CollectionFilterOptionsProvider, bool) {
+	if ctx == nil || ctx.Collection == nil {
+		return nil, false
+	}
+	provider, ok := ctx.Collection.(core.CollectionFilterOptionsProvider)
+	return provider, ok
+}
+
+// toolbarWanted 工具条是否勾选了某项。
+func toolbarWanted(p *Props, name string) bool {
+	for _, item := range splitList(p.Toolbar) {
+		if item == name {
+			return true
+		}
+	}
+	return false
 }
 
 // IsCollection 本组件恒为集合模式（取数来自集合源）。
@@ -109,6 +162,10 @@ func BuildView(node *core.Node, p *Props, ctx *core.RenderContext) (View, error)
 		}
 	}
 
+	// 交互控件（筛选栏 / 工具条 / 分页）都在这里一次性拼好：模板只负责把字符串放进
+	// hx-get / hx-push-url / href —— 拼 URL 的逻辑要能被单测覆盖，所以不放模板里。
+	lc := newLinkContext(node.ID, p, ctx)
+
 	view := View{
 		Cards:        make([]CardView, 0, len(items)),
 		Empty:        len(items) == 0 && page <= 1,
@@ -122,9 +179,41 @@ func BuildView(node *core.Node, p *Props, ctx *core.RenderContext) (View, error)
 	if pageSize > 0 {
 		view.HasPrev = page > 1
 		view.HasNext = page*pageSize < fetched
+		view.HasPager = true
+		if view.HasPrev {
+			view.PrevPage = page - 1
+			view.PrevLink = controlOption(lc, "上一页", false, pageOverride(view.PrevPage))
+		}
+		if view.HasNext {
+			view.NextPage = page + 1
+			view.NextLink = controlOption(lc, "下一页", false, pageOverride(view.NextPage))
+		}
 	}
 	for _, item := range items {
 		view.Cards = append(view.Cards, cardViewOf(p, item))
+	}
+
+	view.FragmentQuery = lc.instanceQuery
+	view.PushQuery = lc.pushQuery
+	// 筛选选项按能力探测取：集合源没实现该能力 → 筛选栏不渲染（列表本身照常可用，
+	// 契约缺失不阻断构建，与 CollectionSchemaProvider 的处理一致）；取选项失败同理。
+	if provider, ok := collectionFilterOptionsProvider(ctx); ok && len(splitList(p.Filters)) > 0 {
+		if options, oerr := provider.CollectionFilterOptions(ctx.Context, ctx.ProjectID); oerr == nil {
+			view.FilterOptions = options
+		}
+	}
+	view.FilterSections = buildFilterSections(p, ctx, lc, &view)
+	if toolbarWanted(p, "sort") {
+		view.SortOptions = buildSortOptions(p, lc, &view)
+	}
+	if toolbarWanted(p, "pageSize") {
+		view.PageSizeOptions = buildPageSizeOptions(p, lc, &view)
+	}
+	if toolbarWanted(p, "columns") {
+		view.ColumnOptions = buildColumnOptions(p, lc, &view)
+	}
+	if toolbarWanted(p, "onSale") {
+		view.OnSaleOptions = buildOnSaleOptions(p, lc, &view)
 	}
 	return view, nil
 }
