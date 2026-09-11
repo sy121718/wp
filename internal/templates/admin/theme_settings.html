@@ -19,8 +19,10 @@
 
             {* 字段由服务端字段表驱动（与工作台全局设置面板同源）：颜色走文本框可留空，固定档位走下拉，
                字体走可填可选的 datalist —— 用户不用猜格式。
-               颜色刻意不用 input type=color：它没有「未设置」状态，总会提交一个色值，
-               保存一次就把留空的令牌写成黑色；文本框留空才真的等于「跟随内置默认」。 *}
+               颜色**不把 input type=color 当表单字段**：它没有「未设置」状态，空值会被补成 #000000，
+               保存一次就把「跟随内置默认」写成黑色；文本框留空才真的等于跟随默认。
+               取色入口由基座控件补上（js/ui/colorfield.js，data-color-field）：文本框旁一个色块，
+               点开系统取色器、结果写回文本框；留空时色块显示「未设置」。 *}
             {{range _, g := .Groups}}
             <h3>{{g.Title}}</h3>
             <div class="theme-color-grid">
@@ -38,7 +40,7 @@
                 </label>
                 {{else if f.Kind == "color"}}
                 <label>{{f.Label}}
-                    <input type="text" name="{{f.Name}}" class="theme-font-input" value="{{f.Value}}" placeholder="如 #3d444f；留空 = 内置默认" spellcheck="false">
+                    <input type="text" name="{{f.Name}}" class="theme-font-input" data-color-field value="{{f.Value}}" placeholder="如 #3d444f；留空 = 内置默认" spellcheck="false">
                 </label>
                 {{else}}
                 <label>{{f.Label}}<input type="text" name="{{f.Name}}" class="theme-font-input" value="{{f.Value}}"></label>

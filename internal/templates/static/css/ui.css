@@ -133,6 +133,36 @@
 .wb-toast-x:hover { opacity: 1; }
 @keyframes wb-toast-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 
+/* ===== 颜色字段（js/ui/colorfield.js）=====
+   文本框是唯一真值来源（可留空 / 可写 rgba() / var(--token)），色块只是取色入口。
+   色块的棋盘格是 background-image —— JS 只改 backgroundColor，两者叠加才能同时
+   表达「半透明色」和「未设置」。 */
+.wbc { position: relative; display: flex; align-items: center; gap: var(--ui-sp-xs); width: 100%; }
+.wbc > input { flex: 1 1 auto; min-width: 0; width: auto; }
+.wbc-swatch {
+    flex: none; width: 34px; height: 34px; padding: 0; cursor: pointer;
+    border: 1px solid var(--sky-c-border, var(--c-border, #e5e7eb));
+    border-radius: var(--ui-r-md, 8px);
+    background-color: var(--sky-c-surface, var(--c-surface, #fff));
+    background-image:
+        linear-gradient(45deg, rgba(16, 20, 26, .10) 25%, transparent 25%, transparent 75%, rgba(16, 20, 26, .10) 75%),
+        linear-gradient(45deg, rgba(16, 20, 26, .10) 25%, transparent 25%, transparent 75%, rgba(16, 20, 26, .10) 75%);
+    background-size: 10px 10px;
+    background-position: 0 0, 5px 5px;
+}
+.wbc-swatch:hover { border-color: var(--sky-c-border-strong, var(--c-border-strong, #d1d5db)); }
+.wbc-swatch:focus-visible { outline: 2px solid var(--sky-c-primary, #3d444f); outline-offset: 1px; }
+/* 未设置：棋盘格 + 一道斜线，与「白色」区分得开 */
+.wbc.is-empty .wbc-swatch::after {
+    content: ''; position: absolute; inset: 0; border-radius: inherit;
+    background: linear-gradient(to top right,
+        transparent 45%, var(--sky-c-danger, var(--c-danger, #dc2626)) 45%,
+        var(--sky-c-danger, var(--c-danger, #dc2626)) 55%, transparent 55%);
+}
+.wbc.is-empty .wbc-swatch { position: relative; }
+.wbc-native { position: absolute; left: 0; bottom: 0; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+
+
 
 /* ==========================================================================
    原始控件（与 js/ui/*.js 配套）—— 后台、工作台、前台产物共用一份
