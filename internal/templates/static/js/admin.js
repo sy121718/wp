@@ -1,4 +1,5 @@
-// admin.js — 后台通用交互：右侧抽屉 + 侧边栏状态 + 上级菜单候选过滤。
+// admin.js — 后台**业务逻辑**：侧边栏状态 + 上级菜单候选过滤。
+// 通用控件（抽屉、下拉、图标字段）已迁到控件基座 js/ui/，本文件不再实现控件。
 // 零框架：原生 template/dataset。页面模板只需：
 //   <button data-drawer-open="#tpl-id" data-drawer-title="新建XX">…</button>
 //   <template id="tpl-id"> <form>…</form> </template>
@@ -10,11 +11,11 @@
     'use strict';
 
     // 抽屉打开：接管基座广播，挂载本页面的业务增强。
+    // 图标字段不在这里挂 —— 它已随基座扫描（WBUI.scan(body)）一起生效。
     document.addEventListener('wbui:drawer-open', function (e) {
         var body = e.detail && e.detail.body;
         if (!body) return;
         applyParentFilter(body);
-        initIconFields(body);
     });
 
     /* 上级菜单候选过滤：按当前「类型」只列出合法父级（事前预防，与后端 validateMenuPlacement 双保险）。
@@ -36,71 +37,6 @@
         }
         typeSel.addEventListener('change', filter);
         filter();
-    }
-
-    /* 图标选择器挂载：表单里放 <div data-icon-field></div> + <input type="hidden" name="icon">，
-       打开抽屉时按 hidden 当前值初始化 WPIcons.picker（图标可不选，清除即空）。 */
-    var iconLibState = 0;
-    var iconLibCbs = [];
-    function ensureIconLib(cb) {
-        if (window.WPIcons && window.WPIcons.picker) { cb(); return; }
-        if (iconLibState === 3) return;
-        iconLibCbs.push(cb);
-        if (iconLibState === 1) return;
-        iconLibState = 1;
-        var s = document.createElement('script');
-        s.src = '/static/js/icons.js';
-        s.onload = function () {
-            iconLibState = (window.WPIcons && window.WPIcons.picker) ? 2 : 3;
-            iconLibCbs.splice(0).forEach(function (fn) { try { fn(); } catch (e) {} });
-        };
-        s.onerror = function () { iconLibState = 3; iconLibCbs.length = 0; };
-        document.head.appendChild(s);
-    }
-
-    /* 列表图标列渲染：扫描 [data-icon-name]，图标库就绪后填充 SVG。 */
-    function renderListIcons() {
-        var cells = document.querySelectorAll('[data-icon-name]');
-        if (!cells.length) return;
-        ensureIconLib(function () {
-            Array.prototype.forEach.call(cells, function (el) {
-                if (el.dataset.iconDone === '1') return;
-                var name = el.getAttribute('data-icon-name');
-                if (name && window.WPIcons && window.WPIcons.svg(name)) {
-                    el.innerHTML = window.WPIcons.svg(name);
-                    el.title = window.WPIcons.label(name);
-                    el.classList.add('has-icon');
-                } else if (name) {
-                    el.classList.add('is-unknown');
-                    el.title = name + '（图标库无此项）';
-                } else {
-                    el.classList.add('is-empty');
-                }
-                el.dataset.iconDone = '1';
-            });
-        });
-    }
-
-    function initIconFields(scope) {
-        var hosts = scope.querySelectorAll('[data-icon-field]');
-        if (!hosts.length) return;
-        ensureIconLib(function () { mountIconFields(hosts); });
-    }
-
-    function mountIconFields(hosts) {
-        if (!window.WPIcons || !window.WPIcons.picker) return;
-        Array.prototype.forEach.call(hosts, function (host) {
-            if (host.dataset.iconReady === '1') return;   // 防重复挂载
-            var wrap = host.closest('.form-group') || host.parentElement;
-            var hidden = wrap ? wrap.querySelector('input[name="icon"]') : null;
-            var picker = window.WPIcons.picker({
-                value: hidden ? hidden.value : '',
-                placeholder: '选择图标（可不选）',
-                onPick: function (name) { if (hidden) hidden.value = name || ''; }
-            });
-            host.appendChild(picker.el);
-            host.dataset.iconReady = '1';
-        });
     }
 
     /* ===== 侧边栏：一级图标切换 / 三角展开 / 导航后收起 / 内容区点击收起 / Esc 收起 / 固定 ===== */
@@ -216,6 +152,6 @@
         }
         applyPin();
     })();
-
-    renderListIcons();
+    // 列表图标与图标字段的渲染已随基座扫描执行（js/ui/iconfield.js），
+    // 且不再局限在页面加载这一次 —— htmx 局部替换后会重扫。
 })();
