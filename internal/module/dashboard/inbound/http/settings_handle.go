@@ -35,6 +35,59 @@ type settingsView struct {
 	RobotsFollow      string
 	SecondaryKeywords string
 	Intent            string
+	// ThemeOverrides 页面级主题覆盖字段（留空 = 跟随站点主题）。
+	ThemeOverrides []themeOverrideFieldView
+}
+
+// themeOverrideFieldView 页面级主题覆盖的一个字段。
+type themeOverrideFieldView struct {
+	Label string
+	// Path 回写路径：settings.themeOverride.<主题令牌路径>。
+	Path string
+	// Value 页面当前覆盖值（空 = 未覆盖，跟随站点主题）。
+	Value string
+}
+
+// themeOverrideKinds 允许页面级覆盖的字段类型。
+//
+// 先只放颜色：排版/间距这类令牌页面级覆盖的实际需求低，字段一多面板就没法用。
+// 合并逻辑本身是对全部令牌通用的（MergeThemeRawJSON 按 JSON 键合并），
+// 想放开哪一类，往这里加一个 kind 即可。
+var themeOverrideKinds = map[string]bool{"color": true}
+
+// themeOverrideFields 从主题字段表里挑出可覆盖项，并回填页面当前值。
+func themeOverrideFields(overrides map[string]any) []themeOverrideFieldView {
+	var out []themeOverrideFieldView
+	for _, g := range themeFieldGroups {
+		for _, f := range g.Fields {
+			if !themeOverrideKinds[f.Kind] {
+				continue
+			}
+			out = append(out, themeOverrideFieldView{
+				Label: g.Title + " · " + f.Label,
+				Path:  "settings.themeOverride." + f.Path,
+				Value: themePathString(overrides, f.Path),
+			})
+		}
+	}
+	return out
+}
+
+// themePathString 按点分路径从覆盖对象里取值（不存在或非字符串返回空）。
+func themePathString(obj map[string]any, path string) string {
+	var cur any = obj
+	for _, seg := range strings.Split(path, ".") {
+		m, ok := cur.(map[string]any)
+		if !ok {
+			return ""
+		}
+		cur, ok = m[seg]
+		if !ok {
+			return ""
+		}
+	}
+	s, _ := cur.(string)
+	return s
 }
 
 // scoreView SEO 评分视图（服务端渲染，客户端只处理「点击建议跳转」）。
@@ -101,6 +154,7 @@ func settingsViewOf(doc json.RawMessage) settingsView {
 				SecondaryKeywords []string `json:"secondaryKeywords"`
 				Intent            string   `json:"intent"`
 			} `json:"seo"`
+			ThemeOverride map[string]any `json:"themeOverride"`
 		} `json:"settings"`
 	}
 	_ = json.Unmarshal(doc, &parsed)
@@ -125,6 +179,7 @@ func settingsViewOf(doc json.RawMessage) settingsView {
 		RobotsFollow:      parsed.Settings.SEO.RobotsFollow,
 		SecondaryKeywords: strings.Join(parsed.Settings.SEO.SecondaryKeywords, " "),
 		Intent:            intent,
+		ThemeOverrides:    themeOverrideFields(parsed.Settings.ThemeOverride),
 	}
 }
 

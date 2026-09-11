@@ -259,3 +259,98 @@ func TestPageAttachThemeToUnassigned(t *testing.T) {
 		t.Errorf("重复回填应幂等: %v", err)
 	}
 }
+
+// themeSnapshotOf 取文档的 settings.theme 快照（已解析成 map，便于按路径断言）。
+func themeSnapshotOf(t *testing.T, doc []byte) map[string]any {
+	t.Helper()
+	raw, ok := docSettings(t, doc)["theme"]
+	if !ok {
+		t.Fatalf("文档缺少 settings.theme: %s", doc)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(raw, &m); err != nil {
+		t.Fatalf("解析快照失败: %v", err)
+	}
+	return m
+}
+
+// colorsOf 取快照里的 colors 子对象。
+func colorsOf(t *testing.T, snapshot map[string]any) map[string]any {
+	t.Helper()
+	colors, _ := snapshot["colors"].(map[string]any)
+	if colors == nil {
+		t.Fatalf("快照缺少 colors: %+v", snapshot)
+	}
+	return colors
+}
+
+// TestPageThemeOverrideMergesIntoSnapshot 页面级覆盖进快照：覆盖项生效、其余跟随主题，
+// 且覆盖本身保留在文档里（主题刷新时要靠它重算，不能与快照混成一个键）。
+func TestPageThemeOverrideMergesIntoSnapshot(t *testing.T) {
+	_, svc, projects, projectID := newPageService(t)
+	ctx := context.Background()
+	if _, err := projects.CreateTheme(ctx, &projectdto.ThemeCreateReq{
+		ProjectID: projectID, Name: "主题",
+		Settings: json.RawMessage(`{"colors":{"primary":"#111111","border":"#dddddd"}}`),
+	}); err != nil {
+		t.Fatalf("创建主题失败: %v", err)
+	}
+	doc := json.RawMessage(`{"settings":{"layout":{"mode":"full"},"themeOverride":{"colors":{"primary":"#ff0000"}}},"root":[]}`)
+	created := createPage(t, svc, projectID, "/override", string(doc))
+
+	settings := docSettings(t, created.DraftDocument)
+	colors := colorsOf(t, themeSnapshotOf(t, created.DraftDocument))
+	if colors["primary"] != "#ff0000" {
+		t.Errorf("页面覆盖的主色应进快照，got %v", colors["primary"])
+	}
+	if colors["border"] != "#dddddd" {
+		t.Errorf("页面没覆盖的边框色应跟随主题，got %v", colors["border"])
+	}
+	if _, ok := settings["themeOverride"]; !ok {
+		t.Errorf("themeOverride 必须保留在文档里（主题刷新时重算快照的唯一依据）")
+	}
+}
+
+// TestPageRefreshThemeKeepsPageOverride 主题刷新：没被页面覆盖的项跟着新主题走，
+// 被覆盖的项保持不变（否则「页面覆盖」会在每次改主题时被冲掉）。
+func TestPageRefreshThemeKeepsPageOverride(t *testing.T) {
+	_, svc, projects, projectID := newPageService(t)
+	ctx := context.Background()
+	theme, err := projects.CreateTheme(ctx, &projectdto.ThemeCreateReq{
+		ProjectID: projectID, Name: "主题",
+		Settings: json.RawMessage(`{"colors":{"primary":"#111111","border":"#dddddd"}}`),
+	})
+	if err != nil {
+		t.Fatalf("创建主题失败: %v", err)
+	}
+	overrideDoc := json.RawMessage(`{"settings":{"layout":{"mode":"full"},"themeOverride":{"colors":{"primary":"#ff0000"}}},"root":[]}`)
+	pageWithOverride := createPage(t, svc, projectID, "/refresh-override", string(overrideDoc))
+	pagePlain := createPage(t, svc, projectID, "/refresh-plain", pageDocument)
+
+	// 主题改主色与边框色后刷新。
+	newTheme := json.RawMessage(`{"colors":{"primary":"#222222","border":"#eeeeee"}}`)
+	if err := svc.RefreshThemeForTheme(ctx, theme.ID, newTheme); err != nil {
+		t.Fatalf("刷新主题失败: %v", err)
+	}
+
+	withOv, err := svc.Detail(ctx, &pagedto.DetailReq{ID: pageWithOverride.ID})
+	if err != nil {
+		t.Fatalf("详情失败: %v", err)
+	}
+	colors := colorsOf(t, themeSnapshotOf(t, withOv.DraftDocument))
+	if colors["primary"] != "#ff0000" {
+		t.Errorf("页面覆盖过的主色不应被主题刷新冲掉，got %v", colors["primary"])
+	}
+	if colors["border"] != "#eeeeee" {
+		t.Errorf("页面没覆盖的边框色应跟新主题，got %v", colors["border"])
+	}
+
+	plain, err := svc.Detail(ctx, &pagedto.DetailReq{ID: pagePlain.ID})
+	if err != nil {
+		t.Fatalf("详情失败: %v", err)
+	}
+	plainColors := colorsOf(t, themeSnapshotOf(t, plain.DraftDocument))
+	if plainColors["primary"] != "#222222" || plainColors["border"] != "#eeeeee" {
+		t.Errorf("无覆盖的页面应整体跟随新主题，got %v", plainColors)
+	}
+}

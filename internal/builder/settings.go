@@ -27,11 +27,17 @@ var bodyClassRe = regexp.MustCompile(`^[A-Za-z0-9_-]{1,100}$`)
 // PageSettings 页面级全局环境配置（规范 docs/02-A §2）。
 // 不是可视化 DOM 节点，由独立的"页面设置面板"维护，编译期直接作用于 <head> 与 <body>。
 type PageSettings struct {
-	Layout      PageLayout     `json:"layout"`
-	Base        BaseStyle      `json:"base"`
-	Theme       *ThemeSettings `json:"theme,omitempty"`
-	SEO         SEO            `json:"seo"`
-	BodyClasses []string       `json:"bodyClasses,omitempty"`
+	Layout PageLayout `json:"layout"`
+	Base   BaseStyle  `json:"base"`
+	// Theme 主题快照：「站点激活主题 + ThemeOverride」的合成结果，构建直接消费。
+	// 由保存路径自动合入，不手工编辑（改它请改 ThemeOverride 或站点主题）。
+	Theme *ThemeSettings `json:"theme,omitempty"`
+	// ThemeOverride 页面级主题覆盖：只写与站点主题不同的那几项，其余跟随主题。
+	// 三层继承的中间层 —— 站点主题（最弱）→ 本字段 → 组件 props（最强），
+	// 每层的空值都表示「继承上一层」。
+	ThemeOverride *ThemeSettings `json:"themeOverride,omitempty"`
+	SEO           SEO            `json:"seo"`
+	BodyClasses   []string       `json:"bodyClasses,omitempty"`
 	// Structure 全局结构绑定快照（保存时从激活主题 settings 合入）：
 	// 编译装配层读取，构建期内联页眉/页脚块（021_blocks.sql 方案 C）。
 	Structure StructureBindings `json:"structure,omitempty"`
@@ -134,6 +140,12 @@ func validateSettings(s *PageSettings) (err error) {
 	}
 	if len(s.SEO.Description) > 500 {
 		return errors.New("页面描述过长（上限 500 字符）")
+	}
+	// 页面级主题覆盖：与站点主题同一套校验（非法色值/尺寸不能进产物 CSS 变量）。
+	if s.ThemeOverride != nil {
+		if err := ValidateThemeSettings(s.ThemeOverride); err != nil {
+			return fmt.Errorf("页面主题覆盖非法: %w", err)
+		}
 	}
 	// robots 指令白名单：产物直接写进 meta content，绝不能是任意字符串。
 	switch s.SEO.RobotsIndex {

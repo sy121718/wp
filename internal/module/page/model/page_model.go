@@ -104,12 +104,40 @@ func (m *Model) ListDraftDocuments(ctx context.Context) (list []PageEntity, err 
 	return list, err
 }
 
-// RefreshThemeForTheme 把主题设置批量合入挂在该主题下全部页面的 settings.theme。
-// 使用 jsonb_set 只替换 settings.theme 键，不动内容与版本（主题是展示层快照）。
-func (m *Model) RefreshThemeForTheme(ctx context.Context, themeID string, themeJSON []byte) (err error) {
+// ThemePageSnapshot 主题刷新时逐页合成快照所需的「页面 ID + 页面级主题覆盖」。
+type ThemePageSnapshot struct {
+	ID       string
+	Override json.RawMessage
+}
+
+// ListThemePageSnapshots 取该主题下全部未删除页面的 ID 与 settings.themeOverride。
+//
+// 为什么刷新快照不能再一条 SQL 批量写：快照 = 站点主题 + 页面覆盖（每页覆盖不同），
+// 而 PostgreSQL 的 jsonb || 是浅合并（嵌套对象整块替换），做不了键级深合并 ——
+// 一条 SQL 写下去会把页面的覆盖项连同它没覆盖的项一起冲掉。
+func (m *Model) ListThemePageSnapshots(ctx context.Context, themeID string) (rows []ThemePageSnapshot, err error) {
+	type row struct {
+		ID         string
+		ThemeOverr json.RawMessage `gorm:"column:theme_override"`
+	}
+	var raw []row
+	if err = m.DB(ctx).
+		Select("id", "draft_document #> '{settings,themeOverride}' AS theme_override").
+		Where("theme_id = ? AND deleted_at IS NULL", themeID).
+		Find(&raw).Error; err != nil {
+		return nil, err
+	}
+	for _, r := range raw {
+		rows = append(rows, ThemePageSnapshot{ID: r.ID, Override: r.ThemeOverr})
+	}
+	return rows, nil
+}
+
+// UpdateThemeSnapshot 写单页的 settings.theme 快照（不动内容与版本，主题是展示层）。
+func (m *Model) UpdateThemeSnapshot(ctx context.Context, pageID string, themeJSON []byte) (err error) {
 	err = m.DB(ctx).Exec(
-		"UPDATE pages SET draft_document = jsonb_set(draft_document, '{settings,theme}', ?, true), updated_at = ? WHERE theme_id = ? AND deleted_at IS NULL",
-		themeJSON, time.Now().UTC(), themeID,
+		"UPDATE pages SET draft_document = jsonb_set(draft_document, '{settings,theme}', ?, true), updated_at = ? WHERE id = ? AND deleted_at IS NULL",
+		themeJSON, time.Now().UTC(), pageID,
 	).Error
 	return err
 }

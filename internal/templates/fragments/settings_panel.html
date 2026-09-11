@@ -54,5 +54,13 @@
         <button type="button" class="wb-seg-btn{{if .Settings.Intent == "local"}} is-active{{end}}" data-wb-setting="settings.seo.intent" data-wb-value="local">本地型</button>
     </div>
 </div>
+{* 主题覆盖：本页只写与站点主题不同的项，留空即继承（主题 → 页面 → 组件 三层继承的中间层）。
+   合并与快照在保存路径完成（page/service.mergeActiveTheme），产物里仍是完整主题变量。 *}
+{{if .Settings.ThemeOverrides}}
+<div class="wb-palette-group">主题覆盖（留空 = 跟随站点主题）</div>
+{{range _, f := .Settings.ThemeOverrides}}
+<div class="wb-field"><label>{{f.Label}}</label><input type="text" data-wb-setting="{{f.Path}}" value="{{f.Value}}" placeholder="留空跟随站点主题" spellcheck="false"></div>
+{{end}}
+{{end}}
 {* 评分区占位：客户端随后请求 /workbench/seo-score-panel 填入 *}
 <div class="wb-seo-score" id="wb-seo-score"></div>

@@ -61,13 +61,15 @@ func (s *Service) mergeActiveTheme(ctx context.Context, projectID string, doc js
 			return mergeSettingsKey(doc, "structure", structureJSON)
 		}
 	}
-	// settings.theme 快照：整体快照主题 settings（ThemeSettings Woodmart 级模型）。
-	// 经 ParseThemeSettings 校验合法才快照，非法则空快照（不阻塞保存）。
+	// settings.theme 快照 = 「站点主题 + 页面级覆盖」的合并结果。
+	// 三层继承：站点主题（最弱）→ settings.themeOverride → 组件 props（最强），
+	// 每层的空值表示继承上一层 —— 页面只改主色时，其余令牌继续跟随主题；
+	// 主题日后改字体，页面没显式覆盖过的字体项要跟着变（这正是快照必须合成、
+	// 而不能让页面覆盖与快照共用同一个键的原因）。
+	// 主题设置非法按空处理、页面覆盖非法按无覆盖处理，都不阻塞保存。
 	themeSnapshot := json.RawMessage(`{}`)
-	if len(theme.Settings) > 0 {
-		if _, perr := builder.ParseThemeSettings(theme.Settings); perr == nil {
-			themeSnapshot = theme.Settings
-		}
+	if merged := builder.MergeThemeRawJSON(theme.Settings, themeOverrideOf(doc)); len(merged) > 0 {
+		themeSnapshot = merged
 	}
 	if doc, err = mergeSettingsKey(doc, "theme", themeSnapshot); err != nil {
 		return nil, err
@@ -86,6 +88,19 @@ func (s *Service) mergeActiveTheme(ctx context.Context, projectID string, doc js
 		"footerBlockId": footer,
 	})
 	return mergeSettingsKey(doc, "structure", structureJSON)
+}
+
+// themeOverrideOf 取页面文档 settings.themeOverride 的原始 JSON（无则 nil）。
+func themeOverrideOf(doc json.RawMessage) json.RawMessage {
+	var page struct {
+		Settings struct {
+			ThemeOverride json.RawMessage `json:"themeOverride"`
+		} `json:"settings"`
+	}
+	if err := json.Unmarshal(doc, &page); err != nil {
+		return nil
+	}
+	return page.Settings.ThemeOverride
 }
 
 // mergeSettingsKey 深覆盖页面文档 settings 的单个键（theme/structure），其余键不动。
@@ -121,10 +136,26 @@ func (s *Service) ActiveThemeID(ctx context.Context, projectID string) string {
 	return theme.ID
 }
 
-// RefreshThemeForTheme 把主题设置批量合入挂在该主题下全部页面（主题设置保存后调用）。
+// RefreshThemeForTheme 主题设置保存后刷新挂在该主题下全部页面的主题快照。
 // 只更新 settings.theme，不动 draftVersion 与 revision（主题是展示层，不是内容变更）。
+//
+// 逐页合成而不是一条 SQL 批量写：快照 = 主题 + 页面级覆盖，每页覆盖不同；
+// 且页面没覆盖过的项必须跟着新主题走、覆盖过的项保持不变。
 func (s *Service) RefreshThemeForTheme(ctx context.Context, themeID string, theme json.RawMessage) error {
-	return s.model.RefreshThemeForTheme(ctx, themeID, theme)
+	rows, err := s.model.ListThemePageSnapshots(ctx, themeID)
+	if err != nil {
+		return err
+	}
+	for _, row := range rows {
+		snapshot := json.RawMessage(`{}`)
+		if merged := builder.MergeThemeRawJSON(theme, row.Override); len(merged) > 0 {
+			snapshot = merged
+		}
+		if err := s.model.UpdateThemeSnapshot(ctx, row.ID, snapshot); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // RefreshStructureForTheme 把主题的页眉/页脚块绑定批量合入挂在该主题下全部页面。
