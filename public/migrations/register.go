@@ -180,6 +180,12 @@ var productAttributePermsSQL string
 //go:embed 086b_product_attribute_menu.sql
 var productAttributeMenuSQL string
 
+//go:embed 087_product_variant_generate_permissions.sql
+var productVariantGeneratePermsSQL string
+
+//go:embed 087b_product_variant_options_template.sql
+var productVariantOptionsTemplateSQL string
+
 //go:embed 073_blueprint_ddl_align.sql
 var blueprintDDLAlignSQL string
 
@@ -468,6 +474,28 @@ func init() {
 		TableName:    "sys_permission",
 		ConditionSQL: "SELECT COUNT(*) FROM sys_permission WHERE permission_code = 'content:collections'",
 		SQL:          contentCollectionsPermSQL,
+	})
+
+	// 087：变体组合生成权限点 + 超管策略（issue #8）。条件只看本票自己的权限点，
+	// 与 082/086a 的宽匹配（product:% / product:attribute_%）互不干扰。
+	registerSeed(Seed{
+		Version:      "087-product-variant-generate-permissions",
+		TableName:    "sys_permission",
+		ConditionSQL: "SELECT COUNT(*) FROM sys_permission WHERE permission_code = 'product:variant_generate'",
+		SQL:          productVariantGeneratePermsSQL,
+	})
+
+	// 087b：默认商品详情模板补规格槽位（issue #8）。085 只在首次建库执行，
+	// 已执行过的库不会重跑，故这里补一次；DO 块内只重写与 085 原样一致的模板，
+	// 作者改过的模板不动（缺槽位是作者的选择）。
+	//
+	// ConditionSQL 的语义是「已存在则跳过」（与其他种子一致）：所有 product 模板
+	// 都已带 optionsField 时返回 1 跳过；仍有缺槽位的模板时返回 0 → 跑 DO 块。
+	registerSeed(Seed{
+		Version:      "087b-product-variant-options-template",
+		TableName:    "content_templates",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) = 0 THEN 1 ELSE 0 END FROM content_templates WHERE entity_type = 'product' AND draft_document::text NOT LIKE '%\"optionsField\"%'",
+		SQL:          productVariantOptionsTemplateSQL,
 	})
 
 	// 086：商品属性组与属性值（issue #7）—— product_attributes 由 081 建好，

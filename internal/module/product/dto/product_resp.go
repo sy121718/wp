@@ -59,6 +59,21 @@ type VariantResp struct {
 	UpdatedAt    string          `json:"updatedAt"`
 }
 
+// GenerateVariantsResp 变体组合生成结果（issue #8）。
+type GenerateVariantsResp struct {
+	ProductID string `json:"productId"`
+	// Total 本次笛卡尔积的组合总数（去重前）。
+	Total int `json:"total"`
+	// Created 新建的变体数。
+	Created int `json:"created"`
+	// Adopted 由商品的「无规格占位变体」就地承接的组合数（0 或 1）。
+	Adopted int `json:"adopted"`
+	// Skipped 已存在（或同一次请求内重复）而跳过的组合数。
+	Skipped int `json:"skipped"`
+	// Variants 生成后该商品的全部变体。
+	Variants []*VariantResp `json:"variants"`
+}
+
 // ListResp 商品列表项（不含变体明细与 metadata —— metadata 默认查询不取）。
 type ListResp struct {
 	ID           string   `json:"id"`

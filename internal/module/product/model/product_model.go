@@ -217,3 +217,25 @@ func (m *Model) UpdateVariant(ctx context.Context, e *VariantEntity) (err error)
 func (m *Model) DeleteVariant(ctx context.Context, id string) (err error) {
 	return m.VariantDB(ctx).Where("id = ?", id).Delete(&VariantEntity{}).Error
 }
+
+// SaveVariants 在同一事务内写一批变体改动：先更新既有行，再批量插入新行。
+//
+// 组合生成是「一次请求改多行」的聚合内原子组合（无规格占位变体就地承接第一个
+// 组合 + 其余组合新建）：半截状态会把商品留在「一部分组合已生成」的中间态，
+// 前台规格选择器随之少行，故必须原子。
+func (m *Model) SaveVariants(ctx context.Context, updated, created []*VariantEntity) (err error) {
+	if len(updated) == 0 && len(created) == 0 {
+		return nil
+	}
+	return m.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		for _, v := range updated {
+			if err := tx.Model(&VariantEntity{}).Where("id = ?", v.ID).Save(v).Error; err != nil {
+				return err
+			}
+		}
+		if len(created) == 0 {
+			return nil
+		}
+		return tx.CreateInBatches(created, 100).Error
+	})
+}

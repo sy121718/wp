@@ -81,7 +81,11 @@ func (s *Service) ResolverFor(ctx context.Context, entityType, entityID string) 
 	if verr != nil {
 		return nil, verr
 	}
-	values := productFieldValues(e, variants)
+	attrs, aerr := s.m.ListAttributesByIDs(ctx, decodeStrings(e.AttributeIDs))
+	if aerr != nil {
+		return nil, aerr
+	}
+	values := productFieldValues(e, variants, attrs)
 	s.translateFields(ctx, values)
 	return &productResolver{entityType: entityType, values: values}, nil
 }
@@ -156,7 +160,10 @@ func splitEntityField(field string) (entityType, name string, ok bool) {
 //
 // 价格全部落在变体上（商品主体不存价格，issue #5 已定语义），这里给出的是
 // 由变体派生的只读值：price 取最低变体价，priceRange 在有多价时输出 "最低 ~ 最高"。
-func productFieldValues(p *productmodel.ProductEntity, variants []*productmodel.VariantEntity) map[string]string {
+//
+// options / variants 同理是派生值（issue #8）：属性组 → 规格维度，变体行 → 规格组合，
+// 组件据此渲染规格选择器（单变体商品在前台不输出）。
+func productFieldValues(p *productmodel.ProductEntity, variants []*productmodel.VariantEntity, attrs []*productmodel.ProductAttributeEntity) map[string]string {
 	out := map[string]string{
 		"name":         p.Name,
 		"subtitle":     p.Subtitle,
@@ -165,6 +172,8 @@ func productFieldValues(p *productmodel.ProductEntity, variants []*productmodel.
 		"unit":         p.Unit,
 		"images":       imagesJSON(p),
 		"defaultImage": p.DefaultImage,
+		"options":      optionsJSON(p, attrs),
+		"variants":     variantsJSON(variants),
 	}
 	if len(variants) > 0 {
 		out["sku"] = variants[0].SKUCode
@@ -195,6 +204,92 @@ func productFieldValues(p *productmodel.ProductEntity, variants []*productmodel.
 		}
 	}
 	return out
+}
+
+// optionGroupJSON 规格维度（构建期输出的 JSON 结构，与 core.product 的解析约定一致）。
+type optionGroupJSON struct {
+	Key    string            `json:"key"`
+	Name   string            `json:"name"`
+	Values []optionValueJSON `json:"values"`
+}
+
+// optionValueJSON 规格维度下的一个可选值。
+type optionValueJSON struct {
+	Key   string `json:"key"`
+	Label string `json:"label"`
+}
+
+// variantJSON 规格组合行（构建期输出的 JSON 结构）。
+type variantJSON struct {
+	SKU          string            `json:"sku"`
+	Price        string            `json:"price"`
+	ComparePrice string            `json:"comparePrice,omitempty"`
+	Image        string            `json:"image,omitempty"`
+	Enabled      bool              `json:"enabled"`
+	Options      map[string]string `json:"options"`
+}
+
+// optionsJSON 规格维度：商品引用且「参与变体」的属性组 × 其启用值。
+//
+// 顺序 = 商品 attribute_ids 的引用顺序（作者在后台勾选的顺序），保证同一份数据
+// 每次构建输出同样的字节（不变量 5）。非参与变体 / 无启用值的组不进规格维度。
+func optionsJSON(p *productmodel.ProductEntity, attrs []*productmodel.ProductAttributeEntity) string {
+	byID := make(map[string]*productmodel.ProductAttributeEntity, len(attrs))
+	for _, a := range attrs {
+		byID[a.ID] = a
+	}
+	groups := []optionGroupJSON{}
+	for _, id := range decodeStrings(p.AttributeIDs) {
+		a, ok := byID[id]
+		if !ok || !a.IsVariation {
+			continue
+		}
+		values := []optionValueJSON{}
+		for _, v := range normalizeValuesFromRaw(a.Values) {
+			if !v.Enabled {
+				continue
+			}
+			values = append(values, optionValueJSON{Key: v.Key, Label: v.Label})
+		}
+		if len(values) == 0 {
+			continue
+		}
+		groups = append(groups, optionGroupJSON{Key: a.Key, Name: a.Name, Values: values})
+	}
+	b, err := json.Marshal(groups)
+	if err != nil {
+		return "[]"
+	}
+	return string(b)
+}
+
+// variantsJSON 规格组合行：每个变体的编码 / 价格 / 组合（属性组 key → 属性值 key）。
+//
+// 价格在这里就带上货币无关的纯数字（货币符号由组件按 Props 前缀），
+// 与 price / priceRange 的取值口径一致。
+func variantsJSON(variants []*productmodel.VariantEntity) string {
+	rows := []variantJSON{}
+	for _, v := range variants {
+		row := variantJSON{
+			SKU: v.SKUCode, Price: formatPrice(v.Price), Image: v.Image,
+			Enabled: v.Enabled, Options: map[string]string{},
+		}
+		if v.ComparePrice != nil {
+			row.ComparePrice = formatPrice(*v.ComparePrice)
+		}
+		if len(v.OptionValues) > 0 {
+			_ = json.Unmarshal(v.OptionValues, &row.Options)
+		}
+		if row.Options == nil {
+			row.Options = map[string]string{}
+		}
+		rows = append(rows, row)
+	}
+	b, err := json.Marshal(rows)
+	if err != nil {
+		return "[]"
+	}
+	return string(b)
 }
 
 // formatPrice 数值 → 展示字符串：整数不带小数尾巴，其余按最短表示。

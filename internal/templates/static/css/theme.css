@@ -245,6 +245,33 @@ button, input, select, textarea { font: inherit; color: inherit; }
     .attr-value-op .btn { width: 100%; }
     .pages-card { padding: 16px; }
 }
+/* ===== 变体组合生成（admin/products.html，issue #8） =====
+   多端适配（硬规则）：
+     · 勾选面板用 flex + wrap，窄屏自动折行；宽度一律 auto/max-width:100%，不写死像素；
+     · 按压反馈用 :active（不带媒体查询）—— 触屏上 :hover 根本不触发，只有 :active 存在；
+     · 只用原生 checkbox + label：鼠标点选 / 触屏点按 / 键盘（Tab 进组、空格勾选）都可用。 */
+.var-fold { margin-top: 12px; }
+.var-form { display: flex; flex-direction: column; gap: 10px; margin: 8px 0 4px; }
+.var-group {
+    border: 0; margin: 0; padding: 0; min-width: 0;
+    display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+}
+.var-group legend { padding: 0; margin-right: 4px; font-size: 12px; color: var(--c-text-mute, #6b7280); }
+.var-value {
+    display: inline-flex; align-items: center; gap: 6px;
+    width: auto; max-width: 100%; min-height: 36px; padding: 6px 12px;
+    border: 1px solid var(--c-border, #e5e7eb); border-radius: 8px;
+    background: var(--c-surface, #fff); color: inherit;
+    font-size: 13px; cursor: pointer; user-select: none; word-break: break-word;
+}
+.var-value input[type="checkbox"] { width: 16px; height: 16px; margin: 0; accent-color: var(--c-primary, #2563eb); }
+.var-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.var-actions .btn:active, .var-value:active { transform: translateY(1px); }
+@media (max-width: 720px) {
+    /* 手机：按压目标抬到 44px 高，触屏可点性优先。 */
+    .var-value { min-height: 44px; padding: 8px 14px; }
+    .var-actions .btn { width: 100%; }
+}
 /* ===== 翻译工作台（admin/page_translations.html，多语言 P5c） ===== */
 .tr-toolbar { align-items: center; gap: 12px; flex-wrap: wrap; }
 .tr-table td { vertical-align: top; }

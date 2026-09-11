@@ -110,3 +110,30 @@ type UpdateVariantReq struct {
 type DeleteVariantReq struct {
 	ID string `json:"id" binding:"required"`
 }
+
+// VariantSelectionReq 一组被勾选的属性值（issue #8）。
+//
+// AttributeID 必须是该商品已引用、且 IsVariation=true 的属性组；ValueIDs 是组内
+// 被勾选的属性值 id（只允许组内**启用**的值）。重复的值 id 会在生成时去重，
+// 因此「重复勾选」不会产生重复变体。
+type VariantSelectionReq struct {
+	AttributeID string   `json:"attributeId"`
+	ValueIDs    []string `json:"valueIds"`
+}
+
+// GenerateVariantsReq 按勾选的属性值生成全部变体组合（issue #8）。
+//
+// 三条调用路径共用同一份语义（后台表单 / 批量生成 / 导入接口）：
+//   - Selections 里出现的属性组按勾选的值参与组合（顺序固定为组内定义顺序，
+//     重复勾选同一个值会被去重）；
+//   - Selections 里没出现的属性组取**全部启用值**（勾了颜色不勾尺码 = 颜色按勾选的来、
+//     尺码取全部）—— 生成的组合恒覆盖全部参与变体的维度，不会产出只有部分维度的
+//     「半截组合」；
+//   - Selections 为空 = 无表单路径：全部参与变体的属性组 × 全部启用值。
+//
+// 保护性上限：参与维度与组合总数分别有上限，超过时整体拒绝，一条变体都不写。
+// 已存在的规格组合一律跳过（幂等），因此重复提交不会产生重复变体。
+type GenerateVariantsReq struct {
+	ProductID  string                `json:"productId" binding:"required"`
+	Selections []VariantSelectionReq `json:"selections"`
+}

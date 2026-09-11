@@ -12,6 +12,7 @@ package dashboardhttp
 
 import (
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -139,7 +140,10 @@ type attrRowsCtx struct {
 
 // attrRowsFromForm 从表单的 values[n].* 字段重建有序行数据。
 //
-// n 不保证连续（删了中间一行再提交），故按出现顺序收集而不是按 0..n-1 硬编码。
+// n 不保证连续（删了中间一行再提交），故先收集出现过的索引再按**数值升序**取行，
+// 而不是按 0..n-1 硬编码、也不是按 map 的遍历顺序 —— PostForm 是 map，
+// Go 的 range 顺序随机，直接按遍历顺序收集会让「删中间一行再提交」后的行序随机跳变
+// （实测：同一份表单两次提交得到不同的行序，编辑器的行会莫名其妙换位）。
 func attrRowsFromForm(c *gin.Context) []productdto.AttributeValueReq {
 	// 显式解析表单：gin 的 PostForm 缓存由 GetPostForm 系列惰性填充，
 	// 直接读 c.Request.PostForm 在未触发解析时是空 map（实测 HTMX 片段路由）。
@@ -165,6 +169,15 @@ func attrRowsFromForm(c *gin.Context) []productdto.AttributeValueReq {
 			order = append(order, idx)
 		}
 	}
+	// 数值升序 = 浏览器提交表单时的文档顺序（行不会随机换位）。
+	sort.Slice(order, func(i, j int) bool {
+		ni, ierr := strconv.Atoi(order[i])
+		nj, jerr := strconv.Atoi(order[j])
+		if ierr != nil || jerr != nil {
+			return order[i] < order[j]
+		}
+		return ni < nj
+	})
 	rows := make([]productdto.AttributeValueReq, 0, len(order))
 	for _, idx := range order {
 		base := attrRowPrefix + idx + "]."

@@ -8,8 +8,10 @@
 --   · 发布实例按实体类型解析模板（ResolveTemplate），因此**新建商品即可用上**
 --     这套模板，不需要为每个商品手工拼装；同一套模板复用于任意商品，换商品只换数据；
 --   · 文档内容 = 一个 section 容器 + core.product 商品详情组件（issue #6 新增），
---     组件用命名槽位声明它需要的商品字段（标题/副标题/主图/图集/价格/划线价/描述），
---     构建期由商品解析器按白名单静态填入；
+--     组件用命名槽位声明它需要的商品字段（标题/副标题/主图/图集/价格/划线价/描述
+--     + issue #8 补的规格维度/变体组合），构建期由商品解析器按白名单静态填入；
+--     声明规格槽位后，多变体商品的前台产物会输出规格选择器（单变体不输出）；
+--     已存在的同款默认模板由 087b 幂等补槽位（本迁移只在首次建库时执行）；
 --   · 段落走 JSON 字面量，字段白名单的唯一来源是 product 模块 contract
 --     （见 internal/module/product/contract/product_entity.go），这里只是一份数据。
 --
@@ -21,7 +23,7 @@ DECLARE
     v_project uuid;
     v_tpl     uuid := gen_random_uuid();
     v_ver     uuid := gen_random_uuid();
-    v_doc     jsonb := '{"settings":{"layout":{"mode":"full"}},"root":[{"id":"pd-section","type":"core.container","props":{"tag":"section","layout":{"engine":"flex","flex":{"direction":"column"}}},"children":[{"id":"pd-body","type":"core.product","props":{"source":"product","mediaField":"product.defaultImage","galleryField":"product.images","titleField":"product.name","subtitleField":"product.subtitle","priceField":"product.priceRange","comparePriceField":"product.comparePrice","descriptionField":"product.description","currency":"¥","titleTag":"h1"}}]}]}'::jsonb;
+    v_doc     jsonb := '{"settings":{"layout":{"mode":"full"}},"root":[{"id":"pd-section","type":"core.container","props":{"tag":"section","layout":{"engine":"flex","flex":{"direction":"column"}}},"children":[{"id":"pd-body","type":"core.product","props":{"source":"product","mediaField":"product.defaultImage","galleryField":"product.images","titleField":"product.name","subtitleField":"product.subtitle","priceField":"product.priceRange","comparePriceField":"product.comparePrice","descriptionField":"product.description","optionsField":"product.options","variantsField":"product.variants","currency":"¥","titleTag":"h1"}}]}]}'::jsonb;
 BEGIN
     IF EXISTS (SELECT 1 FROM content_templates WHERE entity_type = 'product') THEN
         RETURN;

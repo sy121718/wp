@@ -1,4 +1,4 @@
-{* admin/products.html — 商品管理：商品列表 + 变体面板 + 内联新建/删除表单 *}
+{* admin/products.html — 商品管理：商品列表 + 变体面板 + 内联新建/删除表单 + 组合生成（issue #8） *}
 {* Jet 方言：range 用 range 关键字；extends 相对本目录；range 内访问外层值先存变量 *}
 {{extends "layout.html"}}
 {{block body()}}
@@ -8,6 +8,9 @@
 <div class="pages-wrap">
     <section class="pages-card">
         <h2>商品</h2>
+        {{if .Err != ""}}
+        <p class="pages-badge pages-badge-warn">上一次操作未完成：{{.Err}}</p>
+        {{end}}
         <form method="get" action="/admin/products" class="pages-form">
             <select name="project" onchange="this.form.submit()">
                 {{range _, p := .Projects}}
@@ -59,11 +62,12 @@
             </form>
         </div>
         <table class="pages-table">
-            <thead><tr><th>SKU</th><th>价格</th><th>对比价</th><th>成本价</th><th>启用</th><th>库存缓存</th><th></th></tr></thead>
+            <thead><tr><th>SKU</th><th>规格</th><th>价格</th><th>对比价</th><th>成本价</th><th>启用</th><th>库存缓存</th><th></th></tr></thead>
             <tbody>
             {{range _, v := p.Variants}}
             <tr>
                 <td><code>{{v.SKUCode}}</code></td>
+                <td>{{v.Spec}}</td>
                 <td>{{v.Price}}</td>
                 <td>{{v.ComparePrice}}</td>
                 <td>{{v.CostPrice}}</td>
@@ -89,6 +93,39 @@
             <input type="text" name="price" placeholder="价格（留空继承商品默认值）">
             <button type="submit" class="btn">新增变体</button>
         </form>
+        {{if len(p.VariationAttributes) > 0}}
+        {* 组合生成：勾选属性值 → 笛卡尔积；不勾选用「生成全部组合」。
+           勾选控件是原生 checkbox + label：鼠标 / 触屏 / 键盘（Tab + 空格）都可用，
+           窄屏由 .var-value 折行承担，不写死宽度。 *}
+        <details class="pages-fold var-fold">
+            <summary class="card-header">
+                <strong>生成变体组合</strong>
+                <span class="pages-empty">勾选属性值后生成全部组合（未勾选的属性组取全部可选值）；已存在的组合自动跳过</span>
+                <span class="pages-fold-hint">展开</span>
+            </summary>
+            <form method="post" action="/admin/products/variant/generate" class="var-form">
+                <input type="hidden" name="csrf_token" value="{{csrf}}">
+                <input type="hidden" name="projectId" value="{{selectedProject}}">
+                <input type="hidden" name="productId" value="{{p.ID}}">
+                {{range _, a := p.VariationAttributes}}
+                <fieldset class="var-group">
+                    <legend>{{a.Name}}</legend>
+                    {{range _, v := a.Values}}
+                    {{if v.Enabled}}
+                    <label class="var-value">
+                        <input type="checkbox" name="attr:{{a.ID}}" value="{{v.ID}}"> {{v.Label}}
+                    </label>
+                    {{end}}
+                    {{end}}
+                </fieldset>
+                {{end}}
+                <div class="var-actions">
+                    <button type="submit" class="btn btn-primary" name="mode" value="selected">生成勾选组合</button>
+                    <button type="submit" class="btn" name="mode" value="all">生成全部组合</button>
+                </div>
+            </form>
+        </details>
+        {{end}}
         <form method="post" action="/admin/products/attributes" class="pages-form">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">

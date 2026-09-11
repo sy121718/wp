@@ -8,6 +8,8 @@ const (
 	MsgDeleteSuccess = "MsgDeleteSuccess"
 	MsgListSuccess   = "MsgListSuccess"
 	MsgDetailSuccess = "MsgDetailSuccess"
+	// MsgVariantGenerateSuccess 变体组合生成成功（issue #8）。
+	MsgVariantGenerateSuccess = "MsgVariantGenerateSuccess"
 
 	ErrInvalidParam = "ErrInvalidParam" // 参数错误
 	ErrInvalidType  = "ErrInvalidType"  // 实体类型不合法（构建期字段解析）
@@ -25,6 +27,16 @@ const (
 	ErrAttrProjectMismatch   = "ErrAttrProjectMismatch"   // 属性组不属于该商品所在工程
 	ErrAttrInUse             = "ErrAttrInUse"             // 属性组已被商品引用，不能删除
 	ErrAttrValueLabelMissing = "ErrAttrValueLabelMissing" // 属性值名称必填
+
+	// —— 变体组合生成（issue #8）——
+	// 上限类错误的详细数值由 service 拼进消息（如「：7 个组合超过上限 200」），
+	// 这里只保留稳定的错误标识，避免同一上限在多处各写一份数字。
+	ErrVariationNoDimension      = "ErrVariationNoDimension"      // 没有可参与变体的属性值
+	ErrVariationDimensionLimit   = "ErrVariationDimensionLimit"   // 参与变体的属性维度超过上限
+	ErrVariationCountLimit       = "ErrVariationCountLimit"       // 变体组合数超过上限
+	ErrVariationAttributeInvalid = "ErrVariationAttributeInvalid" // 勾选的属性组未参与该商品的变体
+	ErrVariationValueInvalid     = "ErrVariationValueInvalid"     // 勾选的属性值不属于该属性组或已停用
+	ErrVariationSelectionEmpty   = "ErrVariationSelectionEmpty"   // 未勾选任何属性值
 )
 
 // 商品状态。

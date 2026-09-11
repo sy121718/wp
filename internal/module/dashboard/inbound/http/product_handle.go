@@ -7,15 +7,25 @@
 package dashboardhttp
 
 import (
+	"encoding/json"
 	"net/http"
+	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 
 	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
+	productenums "go_wp/internal/module/product/enums"
 	projectcontract "go_wp/internal/module/project/contract"
 )
+
+// variantSelectionPrefix 组合生成表单里「属性组 → 勾选值」的字段名前缀。
+//
+// 字段名形如 attr:<属性组 id>（多选 checkbox），一个属性组一组值；
+// 提交时按前缀收拢成 service 的 selections。
+const variantSelectionPrefix = "attr:"
 
 // productPageHandle 商品后台页处理器。
 type productPageHandle struct {
@@ -56,14 +66,17 @@ func (h *productPageHandle) ProductsPage(c *gin.Context) {
 			rows = append(rows, gin.H{
 				"ID": detail.ID, "Name": detail.Name, "Slug": detail.Slug,
 				"Status":   detail.Status,
-				"PriceMin": detail.PriceMin, "PriceMax": detail.PriceMax,
+				"PriceMin": formatAmount(detail.PriceMin), "PriceMax": formatAmount(detail.PriceMax),
 				"VariantCount": detail.VariantCount,
-				"Variants":     detail.Variants,
+				// 变体行带「规格」列：option_values 翻成可读文本，生成后能直接核对组合。
+				"Variants": variantRows(detail),
 				// 引用的属性组（issue #7）：同一属性组可被多个商品共用，
 				// 这里只展示引用与属性值，编辑入口在 /admin/product-attributes。
-				"AttributeIDs":   detail.AttributeIDs,
+				"AttributeIDs":    detail.AttributeIDs,
 				"AttributeIDsCSV": strings.Join(detail.AttributeIDs, ","),
-				"Attributes":     detail.Attributes,
+				"Attributes":      detail.Attributes,
+				// 组合生成面板（issue #8）只列参与变体的组。
+				"VariationAttributes": variationAttributes(detail.Attributes),
 			})
 		}
 	}
@@ -73,7 +86,124 @@ func (h *productPageHandle) ProductsPage(c *gin.Context) {
 		"Projects":        projects,
 		"SelectedProject": selected,
 		"Products":        rows,
+		// 上一步的错误（上限拒绝 / 参数错误）经查询串回显 —— 同属性页的做法。
+		"Err": strings.TrimSpace(c.Query("err")),
 	})
+}
+
+// variantRows 后台变体表的数据行：规格列把 option_values 翻成可读文本。
+func variantRows(detail *productdto.ProductResp) []gin.H {
+	rows := make([]gin.H, 0, len(detail.Variants))
+	for _, v := range detail.Variants {
+		rows = append(rows, gin.H{
+			"ID": v.ID, "SKUCode": v.SKUCode, "Spec": specLabel(v.OptionValues, detail.Attributes),
+			"Price":        formatAmount(v.Price),
+			"ComparePrice": formatNullableAmount(v.ComparePrice),
+			"CostPrice":    formatNullableAmount(v.CostPrice),
+			"Enabled":      v.Enabled, "StockTotal": v.StockTotal,
+		})
+	}
+	return rows
+}
+
+// variationAttributes 参与变体的属性组（组合生成面板只勾选这些组）。
+func variationAttributes(attrs []*productdto.AttributeResp) []*productdto.AttributeResp {
+	out := make([]*productdto.AttributeResp, 0, len(attrs))
+	for _, a := range attrs {
+		if a != nil && a.IsVariation {
+			out = append(out, a)
+		}
+	}
+	return out
+}
+
+// specLabel 规格组合的可读文本：按属性组定义顺序把「组名 值名」拼起来。
+//
+// 组已被删除或 key 改过的历史组合用原始 key→值兜底显示，不让后台丢信息。
+func specLabel(raw json.RawMessage, attrs []*productdto.AttributeResp) string {
+	var m map[string]string
+	if err := json.Unmarshal(raw, &m); err != nil || len(m) == 0 {
+		return "—"
+	}
+	used := map[string]bool{}
+	parts := make([]string, 0, len(m))
+	for _, a := range attrs {
+		if a == nil {
+			continue
+		}
+		value, ok := m[a.Key]
+		if !ok {
+			continue
+		}
+		used[a.Key] = true
+		label := value
+		for _, v := range a.Values {
+			if v.Key == value {
+				label = v.Label
+				break
+			}
+		}
+		parts = append(parts, a.Name+" "+label)
+	}
+	rest := make([]string, 0, len(m))
+	for k, v := range m {
+		if !used[k] {
+			rest = append(rest, k+" "+v)
+		}
+	}
+	sort.Strings(rest)
+	parts = append(parts, rest...)
+	return strings.Join(parts, " · ")
+}
+
+// formatAmount 数值 → 后台展示文本（整数不带小数尾巴）。
+func formatAmount(v float64) string { return strconv.FormatFloat(v, 'f', -1, 64) }
+
+// formatNullableAmount 可空数值 → 展示文本（空显示为 —）。
+func formatNullableAmount(v *float64) string {
+	if v == nil {
+		return "—"
+	}
+	return formatAmount(*v)
+}
+
+// ProductsVariantGenerate 按勾选的属性值批量生成变体组合（issue #8）。
+//
+// mode=all：不勾选任何值，按商品全部参与变体的属性组 × 全部启用值生成
+// （service 的无表单路径，导入 / 接口走同一条）。
+// 其它情况按勾选生成；一个都没勾选时直接退回并提示 —— 不静默退化成「全部生成」，
+// 那是最容易一次误造出上百个变体的路径。
+func (h *productPageHandle) ProductsVariantGenerate(c *gin.Context) {
+	projectID := c.PostForm("projectId")
+	req := &productdto.GenerateVariantsReq{ProductID: c.PostForm("productId")}
+	if strings.TrimSpace(c.PostForm("mode")) != "all" {
+		_ = c.Request.ParseForm()
+		keys := make([]string, 0, len(c.Request.PostForm))
+		for key := range c.Request.PostForm {
+			if strings.HasPrefix(key, variantSelectionPrefix) {
+				keys = append(keys, key)
+			}
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			attrID := strings.TrimPrefix(key, variantSelectionPrefix)
+			if attrID == "" {
+				continue
+			}
+			req.Selections = append(req.Selections, productdto.VariantSelectionReq{
+				AttributeID: attrID, ValueIDs: c.Request.PostForm[key],
+			})
+		}
+		if len(req.Selections) == 0 {
+			c.Redirect(http.StatusFound, "/admin/products?project="+projectID+"&err="+productenums.ErrVariationSelectionEmpty)
+			return
+		}
+	}
+	if _, err := h.products.GenerateVariants(c.Request.Context(), req); err != nil {
+		c.Redirect(http.StatusFound, "/admin/products?project="+projectID+"&err="+err.Error())
+		return
+	}
+	c.Redirect(http.StatusFound, "/admin/products?project="+projectID)
 }
 
 // ProductsCreate 新建商品（自动生成首个变体），完成后回到列表。

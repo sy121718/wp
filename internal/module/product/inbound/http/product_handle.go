@@ -140,5 +140,23 @@ func (h *Handle) DeleteVariant(c *gin.Context) {
 	response.SuccessWithMessage(c, productenums.MsgDeleteSuccess, nil)
 }
 
+// GenerateVariants 按勾选的属性值生成全部变体组合（issue #8）。
+//
+// 未勾选任何属性值（或 selections 缺省）= 无表单路径：按商品全部参与变体的
+// 属性组与其启用值生成；新变体逐字段继承商品级默认值。
+func (h *Handle) GenerateVariants(c *gin.Context) {
+	req := &productdto.GenerateVariantsReq{}
+	if err := c.ShouldBindJSON(req); err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
+		return
+	}
+	res, err := h.svc.GenerateVariants(c.Request.Context(), req)
+	if err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	response.SuccessWithMessage(c, productenums.MsgVariantGenerateSuccess, res)
+}
+
 // 编辑路径的默认值语义由 service 保证：本层只做绑定与转发，不补字段。
 var _ = http.StatusOK

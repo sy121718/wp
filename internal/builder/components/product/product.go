@@ -53,6 +53,12 @@ type Props struct {
 	ComparePriceField string `json:"comparePriceField,omitempty" ct:"string,maxlen=60,sec=content,label=划线价字段"`
 	// DescriptionField 描述字段（富文本清洗后输出，如 product.description）。
 	DescriptionField string `json:"descriptionField,omitempty" ct:"string,maxlen=60,sec=content,label=描述字段"`
+	// OptionsField 规格维度字段（JSON 数组，如 product.options）：由商品的属性组派生，
+	// 声明后才可能输出规格选择器（issue #8）。
+	OptionsField string `json:"optionsField,omitempty" ct:"string,maxlen=60,sec=content,label=规格维度字段"`
+	// VariantsField 变体组合字段（JSON 数组，如 product.variants）：由商品的变体派生，
+	// 规格组合不足两个时不输出选择器（单变体商品不显示规格选择器）。
+	VariantsField string `json:"variantsField,omitempty" ct:"string,maxlen=60,sec=content,label=变体组合字段"`
 	// Currency 货币符号（价格槽位前缀；留空用默认符号）。
 	Currency string `json:"currency,omitempty" ct:"text,maxlen=8,sec=content,label=货币符号"`
 	// TitleTag 标题标签层级（h1~h3，默认 h2；h1 由页面标题承担时选 h2）。
@@ -82,7 +88,7 @@ func validateExtra(p *Props, nodeID string) (err error) {
 		}
 	}
 	if declared == 0 {
-		return fmt.Errorf("至少需要声明一个商品字段（主图/图集/标题/副标题/价格/划线价/描述）")
+		return fmt.Errorf("至少需要声明一个商品字段（主图/图集/标题/副标题/价格/划线价/描述/规格维度/变体组合）")
 	}
 	for _, s := range slots {
 		if s.Field == "" {
@@ -150,6 +156,8 @@ func (p *Props) slotFields() []slotField {
 		{Slot: slotPrice, Field: strings.TrimSpace(p.PriceField)},
 		{Slot: slotComparePrice, Field: strings.TrimSpace(p.ComparePriceField)},
 		{Slot: slotDescription, Field: strings.TrimSpace(p.DescriptionField)},
+		{Slot: slotOptions, Field: strings.TrimSpace(p.OptionsField)},
+		{Slot: slotVariants, Field: strings.TrimSpace(p.VariantsField)},
 	}
 }
 
@@ -162,6 +170,8 @@ const (
 	slotPrice        = "price"
 	slotComparePrice = "comparePrice"
 	slotDescription  = "description"
+	slotOptions      = "options"
+	slotVariants     = "variants"
 )
 
 // effectiveSource 有效数据源类型（空取默认 product）。
@@ -262,6 +272,106 @@ func compileCSS(id string, _ *Props, b *core.CSSBuckets) {
 	b.Add(core.BreakpointDesktop, sel+" .sky-product-description", []string{
 		"line-height: 1.7",
 		"word-break: break-word",
+	})
+
+	// 规格选择器（issue #8）：规格维度用原生 radio + label（键盘模型免费拿到：
+	// Tab 进组、方向键切换），组合清单用 flex 行 + wrap（窄屏不横向溢出）。
+	// 宽度一律 min(100%, …) / max-width: 100%，不写死像素（多端适配硬规则）。
+	b.Add(core.BreakpointDesktop, sel+" .sky-product-options", []string{
+		"display: flex",
+		"flex-direction: column",
+		"gap: 12px",
+		"min-width: 0",
+	})
+	b.Add(core.BreakpointDesktop, sel+" .sky-product-option", []string{
+		"display: flex",
+		"flex-wrap: wrap",
+		"align-items: center",
+		"gap: 8px",
+		"border: 0",
+		"margin: 0",
+		"padding: 0",
+		"min-width: 0",
+	})
+	b.Add(core.BreakpointDesktop, sel+" .sky-product-option legend", []string{
+		"padding: 0",
+		"margin-right: 4px",
+		"font-size: 13px",
+		"color: var(--sky-c-muted, rgba(0,0,0,0.6))",
+	})
+	// radio 视觉隐藏但**保留可聚焦**（display:none 会把整组从键盘序列里移除）。
+	b.Add(core.BreakpointDesktop, sel+" .sky-product-option-radio", []string{
+		"position: absolute",
+		"width: 1px",
+		"height: 1px",
+		"margin: -1px",
+		"padding: 0",
+		"border: 0",
+		"clip-path: inset(50%)",
+		"overflow: hidden",
+		"white-space: nowrap",
+	})
+	b.Add(core.BreakpointDesktop, sel+" .sky-product-option-value", []string{
+		"display: inline-flex",
+		"align-items: center",
+		"justify-content: center",
+		"width: auto",
+		"max-width: 100%",
+		"min-height: 36px",
+		"padding: 6px 14px",
+		"border: 1px solid var(--sky-c-border, rgba(0,0,0,0.15))",
+		"border-radius: 8px",
+		"font-size: 13px",
+		"line-height: 1.4",
+		"cursor: pointer",
+		"user-select: none",
+		"word-break: break-word",
+	})
+	// 选中态（不依赖 :hover，触屏同样可见）。
+	b.Add(core.BreakpointDesktop, sel+" .sky-product-option-radio:checked + .sky-product-option-value", []string{
+		"border-color: var(--sky-c-primary, #2563eb)",
+		"color: var(--sky-c-primary, #2563eb)",
+		"background: rgba(37,99,235,0.08)",
+	})
+	// 键盘聚焦可见：焦点环画在对应标签上。
+	b.Add(core.BreakpointDesktop, sel+" .sky-product-option-radio:focus-visible + .sky-product-option-value", []string{
+		"outline: 2px solid var(--sky-c-primary, #2563eb)",
+		"outline-offset: 2px",
+	})
+	// 鼠标/触摸板悬停：AddHover 自动包 @media (hover: hover)，触屏上不输出。
+	b.AddHover(sel+" .sky-product-option-value", []string{
+		"border-color: var(--sky-c-primary, #2563eb)",
+	})
+	// 按压反馈：AddActive 不带媒体查询，触屏按压同样生效（触屏唯一可靠的反馈）。
+	b.AddActive(sel+" .sky-product-option-value", []string{
+		"transform: translateY(1px)",
+	})
+	b.Add(core.BreakpointDesktop, sel+" .sky-product-variants", []string{
+		"display: flex",
+		"flex-direction: column",
+		"gap: 6px",
+		"min-width: 0",
+	})
+	b.Add(core.BreakpointDesktop, sel+" .sky-product-variant", []string{
+		"display: flex",
+		"flex-wrap: wrap",
+		"align-items: baseline",
+		"gap: 4px 10px",
+		"font-size: 13px",
+		"min-width: 0",
+	})
+	b.Add(core.BreakpointDesktop, sel+" .sky-product-variant-options", []string{
+		"color: var(--sky-c-muted, rgba(0,0,0,0.6))",
+		"min-width: 0",
+		"word-break: break-word",
+	})
+	b.Add(core.BreakpointDesktop, sel+" .sky-product-variant-price", []string{
+		"font-weight: 600",
+	})
+	// 窄视口（手机）：按压目标抬到 44px 高，标签内边距放宽 —— 触屏可点性优先。
+	b.Add(core.BreakpointMobile, sel+" .sky-product-option-value", []string{
+		"min-height: 44px",
+		"padding: 8px 16px",
 	})
 }
 

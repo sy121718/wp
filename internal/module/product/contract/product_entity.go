@@ -20,12 +20,15 @@ const EntityTypeProduct = "product"
 //   - slug / sku / unit —— 标识与单位，纯文本但不参与翻译；
 //   - images / defaultImage —— 图集（JSON 数组）与主图（URL）；
 //   - price / comparePrice / priceRange / minPrice / maxPrice —— 由变体派生的
-//     只读价格值，纯数字与符号，永不参与翻译。
+//     只读价格值，纯数字与符号，永不参与翻译；
+//   - options / variants —— 由属性组与变体派生的规格数据（JSON），供 core.product
+//     渲染规格选择器；单变体商品在前台不输出选择器（issue #8）。
 var fieldWhitelist = []string{
 	"name", "subtitle", "description",
 	"slug", "sku", "unit",
 	"images", "defaultImage",
 	"price", "comparePrice", "priceRange", "minPrice", "maxPrice",
+	"options", "variants",
 }
 
 // translatableFields 参与内容翻译（sys_translation）的字段。

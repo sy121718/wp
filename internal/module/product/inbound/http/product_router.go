@@ -31,6 +31,8 @@ func SetupProductRoutes(rg *gin.RouterGroup, db *gorm.DB, project projectcontrac
 	g.POST("/update", handle.Update)
 	g.POST("/delete", handle.Delete)
 	g.POST("/variant/create", handle.CreateVariant)
+	// 组合生成（issue #8）：勾选属性值 → 笛卡尔积写变体（幂等，超上限整体拒绝）。
+	g.POST("/variant/generate", handle.GenerateVariants)
 	g.POST("/variant/update", handle.UpdateVariant)
 	g.POST("/variant/delete", handle.DeleteVariant)
 

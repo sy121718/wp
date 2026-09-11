@@ -339,6 +339,92 @@ func TestProductPublishRejectsForeignFieldBinding(t *testing.T) {
 	}
 }
 
+// TestProductDetailRendersSpecSelectorForMultiVariant 验收（issue #8）：
+// 多变体商品的前台产物输出规格选择器（规格维度 + 每个组合的价格），
+// 且完全由构建期静态输出（访客请求期零查库零脚本）。
+func TestProductDetailRendersSpecSelectorForMultiVariant(t *testing.T) {
+	f := newDetailFixture(t)
+	if f == nil {
+		return
+	}
+	ctx := context.Background()
+	color, err := f.products.CreateAttribute(ctx, &productdto.CreateAttributeReq{
+		ProjectID: f.projectID, Name: "颜色", Key: "color",
+		Values: []productdto.AttributeValueReq{
+			{Label: "红色", Key: "red"},
+			{Label: "蓝色", Key: "blue"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("创建属性组失败: %v", err)
+	}
+	price := 99.0
+	created, err := f.products.Create(ctx, &productdto.CreateReq{
+		ProjectID: f.projectID, Name: "夏季衬衫", Slug: "summer-shirt",
+		AttributeIDs: []string{color.ID}, DefaultPrice: &price,
+	})
+	if err != nil {
+		t.Fatalf("创建商品失败: %v", err)
+	}
+	if _, err := f.products.GenerateVariants(ctx, &productdto.GenerateVariantsReq{ProductID: created.ID}); err != nil {
+		t.Fatalf("生成变体组合失败: %v", err)
+	}
+	f.publish(t, created.ID, "/products/summer-shirt")
+
+	html := activeHTML(t, "/products/summer-shirt")
+	// 断言的是**页面标记**而不是 CSS：编译期样式无论是否输出选择器都会进产物，
+	// 只按类名断言会在「选择器根本没渲染」时误判通过。
+	for _, want := range []string{
+		`<div class="sky-product-options">`,                    // 规格选择器容器
+		`<input type="radio" class="sky-product-option-radio"`, // 可选值（键盘 / 触屏 / 鼠标都可用）
+		`<label class="sky-product-option-value"`,
+		`<div class="sky-product-variant">`, // 规格组合行
+		"颜色", "红色", "蓝色",                    // 维度名与值显示名
+		"¥99", // 组合价格
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("激活产物应含 %q，实际: %s", want, html)
+		}
+	}
+	if strings.Contains(html, "product.options") || strings.Contains(html, "product.variants") {
+		t.Fatalf("产物不应残留绑定字段名: %s", html)
+	}
+}
+
+// TestProductDetailHidesSpecSelectorForSingleVariant 验收（issue #8）：
+// 单变体商品在前台不输出规格选择器。
+func TestProductDetailHidesSpecSelectorForSingleVariant(t *testing.T) {
+	f := newDetailFixture(t)
+	if f == nil {
+		return
+	}
+	price := 99.0
+	created, err := f.products.Create(context.Background(), &productdto.CreateReq{
+		ProjectID: f.projectID, Name: "孤品衬衫", Slug: "solo-shirt", DefaultPrice: &price,
+	})
+	if err != nil {
+		t.Fatalf("创建商品失败: %v", err)
+	}
+	if created.VariantCount != 1 {
+		t.Fatalf("前置条件：单变体商品，实际 %d 个变体", created.VariantCount)
+	}
+	f.publish(t, created.ID, "/products/solo-shirt")
+
+	html := activeHTML(t, "/products/solo-shirt")
+	// 同上：按标记判定（样式类名在 CSS 里恒存在，不能作为「已渲染」的证据）。
+	for _, unwanted := range []string{
+		`<div class="sky-product-options">`,
+		`<input type="radio"`,
+	} {
+		if strings.Contains(html, unwanted) {
+			t.Fatalf("单变体商品不应输出规格选择器标记 %q: %s", unwanted, html)
+		}
+	}
+	if !strings.Contains(html, "孤品衬衫") || !strings.Contains(html, "¥99") {
+		t.Fatalf("单变体商品仍应正常输出标题与价格: %s", html)
+	}
+}
+
 // TestProductTranslatableFieldsFollowLanguage 商品可翻译字段随构建语言切换：
 // 同一商品 + 同一模板，工程默认语言切到 en-US 后产物文本随之变化（语境 product.<字段名>）。
 func TestProductTranslatableFieldsFollowLanguage(t *testing.T) {

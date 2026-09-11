@@ -22,9 +22,15 @@ type ProductService interface {
 	CreateVariant(ctx context.Context, req *productdto.CreateVariantReq) (res *productdto.VariantResp, err error)
 	UpdateVariant(ctx context.Context, req *productdto.UpdateVariantReq) (res *productdto.VariantResp, err error)
 	DeleteVariant(ctx context.Context, req *productdto.DeleteVariantReq) (err error)
+	// GenerateVariants 按勾选的属性值生成全部变体组合（issue #8）：笛卡尔积 +
+	// 维度/数量上限保护 + 新变体逐字段继承商品级默认值；已存在的组合跳过
+	// （重复勾选不产生重复变体）；不传勾选即「全部参与变体的属性组 × 全部启用值」，
+	// 无表单路径（批量生成 / 导入 / 接口）与表单路径共用同一份填充规则。
+	GenerateVariants(ctx context.Context, req *productdto.GenerateVariantsReq) (res *productdto.GenerateVariantsResp, err error)
 
 	// 属性组与属性值（issue #7）：属性组可跨商品复用，商品只存引用。
-	// 变体的笛卡尔积生成不在这里（#8）—— 本契约只保证属性数据可定义、可管理、可被引用。
+	// 变体的笛卡尔积生成在 GenerateVariants（#8）；本组接口只保证属性数据
+	// 可定义、可管理、可被引用。
 	CreateAttribute(ctx context.Context, req *productdto.CreateAttributeReq) (res *productdto.AttributeResp, err error)
 	UpdateAttribute(ctx context.Context, req *productdto.UpdateAttributeReq) (res *productdto.AttributeResp, err error)
 	SetAttributeValues(ctx context.Context, req *productdto.SetAttributeValuesReq) (res *productdto.AttributeResp, err error)

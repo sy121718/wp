@@ -57,6 +57,63 @@ type View struct {
 	// HasDescription / DescriptionHTML 描述（已富文本白名单清洗）。
 	HasDescription  bool
 	DescriptionHTML string
+	// HasOptions 是否输出规格选择器：有规格维度、且可展示的规格组合 ≥2 才输出。
+	// 单变体商品（含只有无规格占位变体的商品）在前台不输出选择器（issue #8）。
+	HasOptions bool
+	// OptionGroups 规格维度（颜色 / 尺寸），按商品引用属性组的顺序。
+	OptionGroups []OptionGroup
+	// VariantOptions 规格组合行（每个组合一行：规格标签 + 价格）。
+	VariantOptions []VariantOption
+}
+
+// OptionValue 规格选择器里的一个可选值。
+type OptionValue struct {
+	// Key 值标识（稳定，与变体 option_values 中的值一致）。
+	Key string
+	// Label 值显示名。
+	Label string
+}
+
+// OptionGroup 一个规格维度（如颜色）。
+type OptionGroup struct {
+	// Key 维度标识（属性组 key）。
+	Key string
+	// Name 维度显示名（属性组名）。
+	Name string
+	// Values 可选值（按属性组内定义顺序）。
+	Values []OptionValue
+}
+
+// VariantOption 一个规格组合行（前台展示用）。
+type VariantOption struct {
+	// SKUCode 变体编码。
+	SKUCode string
+	// Price 价格（已带货币符号）。
+	Price string
+	// ComparePrice 划线价（已带货币符号；空串 = 不输出）。
+	ComparePrice string
+	// Labels 组合的展示文本（如「颜色 红 · 尺寸 S」）。
+	Labels string
+}
+
+// optionGroupJSON 商品解析器输出的规格维度结构（product.options）。
+type optionGroupJSON struct {
+	Key    string `json:"key"`
+	Name   string `json:"name"`
+	Values []struct {
+		Key   string `json:"key"`
+		Label string `json:"label"`
+	} `json:"values"`
+}
+
+// variantJSON 商品解析器输出的规格组合结构（product.variants）。
+type variantJSON struct {
+	SKU          string            `json:"sku"`
+	Price        string            `json:"price"`
+	ComparePrice string            `json:"comparePrice"`
+	Image        string            `json:"image"`
+	Enabled      bool              `json:"enabled"`
+	Options      map[string]string `json:"options"`
 }
 
 // BuildView 生成商品详情渲染视图：逐槽位经内容解析器取商品字段值。
@@ -73,13 +130,16 @@ func BuildView(p *Props, content core.ContentResolver) (View, error) {
 		}
 	}
 	if declared == 0 {
-		return View{}, fmt.Errorf("至少需要声明一个商品字段（主图/图集/标题/副标题/价格/划线价/描述）")
+		return View{}, fmt.Errorf("至少需要声明一个商品字段（主图/图集/标题/副标题/价格/划线价/描述/规格维度/变体组合）")
 	}
 	if content == nil {
 		return View{}, fmt.Errorf("编译上下文缺少内容解析器，无法解析商品字段（数据源 %s）", source)
 	}
 
 	view := View{TitleTag: effectiveTitleTag(p), Currency: effectiveCurrency(p)}
+	// 规格数据先收原值，槽位循环结束后再统一解析（组合行要按维度取标签，
+	// 而维度槽位可能声明在组合槽位之后）。
+	var rawOptions, rawVariants string
 	for _, s := range slots {
 		if s.Field == "" {
 			continue
@@ -109,6 +169,10 @@ func BuildView(p *Props, content core.ContentResolver) (View, error) {
 			view.HasComparePrice, view.ComparePrice = true, view.Currency+value
 		case slotDescription:
 			view.HasDescription, view.DescriptionHTML = true, core.RichTextHTML(value)
+		case slotOptions:
+			rawOptions = value
+		case slotVariants:
+			rawVariants = value
 		}
 	}
 	// 图集 alt 用商品名兜底（商品名槽位可能声明在图集之后，这里补齐）。
@@ -119,7 +183,109 @@ func BuildView(p *Props, content core.ContentResolver) (View, error) {
 			}
 		}
 	}
+	// 规格选择器：有维度且可展示的组合 ≥2 才输出 —— 单变体商品不输出选择器。
+	view.OptionGroups = parseOptionGroups(rawOptions)
+	view.VariantOptions = parseVariantOptions(rawVariants, view.OptionGroups, view.Currency)
+	view.HasOptions = len(view.OptionGroups) > 0 && len(view.VariantOptions) > 1
 	return view, nil
+}
+
+// parseOptionGroups 规格维度 JSON → 视图结构。
+//
+// 结构对不上（空串 / 非法 JSON / 旧形态）时返回空：选择器不输出，
+// 而不是让整个商品详情页构建失败（字段本身已由白名单校验过合法性）。
+func parseOptionGroups(raw string) []OptionGroup {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+	var rows []optionGroupJSON
+	if err := json.Unmarshal([]byte(raw), &rows); err != nil {
+		return nil
+	}
+	out := make([]OptionGroup, 0, len(rows))
+	for _, r := range rows {
+		if r.Key == "" {
+			continue
+		}
+		values := make([]OptionValue, 0, len(r.Values))
+		for _, v := range r.Values {
+			if v.Key == "" {
+				continue
+			}
+			values = append(values, OptionValue{Key: v.Key, Label: v.Label})
+		}
+		if len(values) == 0 {
+			continue
+		}
+		out = append(out, OptionGroup{Key: r.Key, Name: r.Name, Values: values})
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// parseVariantOptions 规格组合 JSON → 视图行（只保留能对上全部维度的组合）。
+//
+// 两条过滤规则：
+//   - 无规格组合（option_values 为空）不进规格清单 —— 它是商品的占位 / 手工变体，
+//     不是规格选择器里的一格；
+//   - 未启用的变体不上架，因而不出现在选择器里（组合计数也不含它）。
+func parseVariantOptions(raw string, groups []OptionGroup, currency string) []VariantOption {
+	raw = strings.TrimSpace(raw)
+	if raw == "" || len(groups) == 0 {
+		return nil
+	}
+	var rows []variantJSON
+	if err := json.Unmarshal([]byte(raw), &rows); err != nil {
+		return nil
+	}
+	labels := make(map[string]map[string]string, len(groups))
+	for _, g := range groups {
+		m := make(map[string]string, len(g.Values))
+		for _, v := range g.Values {
+			m[v.Key] = v.Label
+		}
+		labels[g.Key] = m
+	}
+	out := make([]VariantOption, 0, len(rows))
+	for _, r := range rows {
+		if !r.Enabled || len(r.Options) == 0 {
+			continue
+		}
+		parts := make([]string, 0, len(groups))
+		complete := true
+		for _, g := range groups {
+			key, ok := r.Options[g.Key]
+			if !ok {
+				complete = false
+				break
+			}
+			label, ok := labels[g.Key][key]
+			if !ok {
+				complete = false
+				break
+			}
+			name := g.Name
+			if name == "" {
+				name = g.Key
+			}
+			parts = append(parts, name+" "+label)
+		}
+		if !complete {
+			continue
+		}
+		row := VariantOption{
+			SKUCode: r.SKU, Labels: strings.Join(parts, " · "),
+			Price: currency + r.Price,
+		}
+		if strings.TrimSpace(r.ComparePrice) != "" {
+			row.ComparePrice = currency + r.ComparePrice
+		}
+		out = append(out, row)
+	}
+	return out
 }
 
 // parseImages 图集字段值 → 图片列表。

@@ -156,6 +156,141 @@ func TestBuildViewRequiresResolver(t *testing.T) {
 	}
 }
 
+// optionProps 声明规格槽位的 props（规格选择器相关用例共用）。
+func optionProps(t *testing.T) Props {
+	t.Helper()
+	return decodePropsOf(t, map[string]any{
+		"titleField":    "product.name",
+		"optionsField":  "product.options",
+		"variantsField": "product.variants",
+	})
+}
+
+// TestValidateAcceptsOptionSlots 规格槽位与其它槽位同规则：路径合法即通过校验。
+func TestValidateAcceptsOptionSlots(t *testing.T) {
+	node := nodeOf(t, map[string]any{
+		"titleField":    "product.name",
+		"optionsField":  "product.options",
+		"variantsField": "product.variants",
+	})
+	if err := Widget.Validate(node, map[string]bool{}); err != nil {
+		t.Fatalf("规格槽位应通过校验: %v", err)
+	}
+	refs, err := Widget.FieldBindings(node)
+	if err != nil {
+		t.Fatalf("自报字段绑定失败: %v", err)
+	}
+	if len(refs) != 3 {
+		t.Fatalf("应自报 3 条绑定（含规格两条），实际 %d: %+v", len(refs), refs)
+	}
+}
+
+// TestBuildViewOptionsOnlyForMultipleCombinations 验收（issue #8）：
+// 规格选择器只在「有规格维度且可展示组合 ≥2」时输出 —— 单变体商品不输出。
+func TestBuildViewOptionsOnlyForMultipleCombinations(t *testing.T) {
+	const options = `[{"key":"color","name":"颜色","values":[{"key":"red","label":"红色"},{"key":"blue","label":"蓝色"}]}]`
+	const oneCombo = `[{"sku":"a-1","price":"99","enabled":true,"options":{"color":"red"}}]`
+	const twoCombos = `[{"sku":"a-1","price":"99","comparePrice":"199","enabled":true,"options":{"color":"red"}},
+		{"sku":"a-2","price":"129","enabled":true,"options":{"color":"blue"}}]`
+
+	t.Run("单变体不输出", func(t *testing.T) {
+		p := optionProps(t)
+		view, err := BuildView(&p, stubResolver{values: map[string]string{
+			"product.options": options, "product.variants": oneCombo,
+		}})
+		if err != nil {
+			t.Fatalf("BuildView 失败: %v", err)
+		}
+		if view.HasOptions {
+			t.Fatalf("只有一个组合时不应输出规格选择器: %+v", view.VariantOptions)
+		}
+	})
+
+	t.Run("多变体输出且组合可读", func(t *testing.T) {
+		p := optionProps(t)
+		view, err := BuildView(&p, stubResolver{values: map[string]string{
+			"product.options": options, "product.variants": twoCombos,
+		}})
+		if err != nil {
+			t.Fatalf("BuildView 失败: %v", err)
+		}
+		if !view.HasOptions {
+			t.Fatal("两个组合应输出规格选择器")
+		}
+		if len(view.OptionGroups) != 1 || len(view.OptionGroups[0].Values) != 2 {
+			t.Fatalf("规格维度解析不符: %+v", view.OptionGroups)
+		}
+		if len(view.VariantOptions) != 2 {
+			t.Fatalf("组合行应有 2 条，实际 %d", len(view.VariantOptions))
+		}
+		first := view.VariantOptions[0]
+		if first.Labels != "颜色 红色" || first.Price != "¥99" || first.ComparePrice != "¥199" {
+			t.Fatalf("组合行文本/价格不符: %+v", first)
+		}
+		if view.VariantOptions[1].ComparePrice != "" {
+			t.Fatalf("无划线价不应输出: %+v", view.VariantOptions[1])
+		}
+	})
+
+	t.Run("无规格变体不进组合清单", func(t *testing.T) {
+		// 两个变体但都没有规格（商品占位 / 手工新增）→ 没有可选择的组合，不输出选择器。
+		p := optionProps(t)
+		view, err := BuildView(&p, stubResolver{values: map[string]string{
+			"product.options": options,
+			"product.variants": `[{"sku":"a","price":"99","enabled":true,"options":{}},
+				{"sku":"b","price":"99","enabled":true,"options":{}}]`,
+		}})
+		if err != nil {
+			t.Fatalf("BuildView 失败: %v", err)
+		}
+		if view.HasOptions || len(view.VariantOptions) != 0 {
+			t.Fatalf("无规格变体不应进入规格清单: %+v", view.VariantOptions)
+		}
+	})
+
+	t.Run("未启用变体不参与", func(t *testing.T) {
+		p := optionProps(t)
+		view, err := BuildView(&p, stubResolver{values: map[string]string{
+			"product.options": options,
+			"product.variants": `[{"sku":"a","price":"99","enabled":true,"options":{"color":"red"}},
+				{"sku":"b","price":"129","enabled":false,"options":{"color":"blue"}}]`,
+		}})
+		if err != nil {
+			t.Fatalf("BuildView 失败: %v", err)
+		}
+		if view.HasOptions || len(view.VariantOptions) != 1 {
+			t.Fatalf("未启用变体不应参与组合: %+v", view.VariantOptions)
+		}
+	})
+
+	t.Run("缺少规格维度不输出", func(t *testing.T) {
+		p := optionProps(t)
+		view, err := BuildView(&p, stubResolver{values: map[string]string{
+			"product.options": "[]", "product.variants": twoCombos,
+		}})
+		if err != nil {
+			t.Fatalf("BuildView 失败: %v", err)
+		}
+		if view.HasOptions {
+			t.Fatal("没有规格维度时不应输出选择器")
+		}
+	})
+
+	t.Run("规格数据非法不阻断构建", func(t *testing.T) {
+		p := optionProps(t)
+		view, err := BuildView(&p, stubResolver{values: map[string]string{
+			"product.options": "{不是 JSON", "product.variants": "也不是 JSON",
+			"product.name": "夏季衬衫",
+		}})
+		if err != nil {
+			t.Fatalf("规格数据形态不符不应让构建失败: %v", err)
+		}
+		if view.HasOptions || !view.HasTitle {
+			t.Fatalf("非法规格数据应降级为不输出选择器，且其它字段照常: %+v", view)
+		}
+	})
+}
+
 // TestBuildViewPropagatesResolveError 解析器报错（越界字段）必须上抛终止构建。
 func TestBuildViewPropagatesResolveError(t *testing.T) {
 	p := decodePropsOf(t, map[string]any{"titleField": "product.bogus"})
