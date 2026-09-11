@@ -345,6 +345,18 @@ func (m *Model) UpdateInstancePointersTx(tx *gorm.DB, e *InstanceEntity) error {
 	}).Error
 }
 
+// UpdateInstanceTemplateTx 事务内改写实例绑定的模板（issue #14：「详情页模板可选」）。
+//
+// template_id 曾是只读身份列（见 UpdateInstancePointers 注释），本票起它是**可切换的绑定**：
+// 切换必须与本次重建的快照/产物/指针在同一事务里落库，否则会出现「产物来自新模板、
+// 实例仍记着旧模板」的漂移，下一次重建又会退回旧模板。
+func (m *Model) UpdateInstanceTemplateTx(tx *gorm.DB, id, templateID string, at time.Time) error {
+	return tx.Model(&InstanceEntity{}).Where("id = ?", id).Updates(map[string]any{
+		"template_id": templateID,
+		"updated_at":  at,
+	}).Error
+}
+
 // ReplaceDependenciesTx 事务内全量替换依赖记录。
 func (m *Model) ReplaceDependenciesTx(tx *gorm.DB, artifactID string, rows []DependencyEntity) error {
 	if err := tx.Where("artifact_id = ?", artifactID).Delete(&DependencyEntity{}).Error; err != nil {

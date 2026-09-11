@@ -8,6 +8,7 @@ import (
 
 	admincontract "go_wp/internal/module/admin/contract"
 	blockcontract "go_wp/internal/module/block/contract"
+	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
 	navigationcontract "go_wp/internal/module/navigation/contract"
 	pagecontract "go_wp/internal/module/page/contract"
 	plugincontract "go_wp/internal/module/plugin/contract"
@@ -37,7 +38,8 @@ func SetupDashboardRoutes(router *gin.Engine,
 	authz admincontract.AuthzContextService,
 	navigations navigationcontract.NavigationService,
 	products productcontract.ProductService,
-	presentations ProductTranslationInstancePort) {
+	presentations ProductPagePorts,
+	templates contenttemplatecontract.ContentTemplateService) {
 	if router == nil {
 		return
 	}
@@ -132,6 +134,8 @@ func SetupDashboardRoutes(router *gin.Engine,
 	// 商品管理页（issue #5）：页面 GET 走 /admin 组认证（Session+CSRF，无 Casbin）；
 	// 写动作复用商品 API 权限点做 Casbin 鉴权（与既有管理页一致）。
 	productPages := NewProductPageHandle(products, projects)
+	// 详情页模板选择与预览（issue #14）：模板清单 / 商品发布实例的模板绑定 / 预览渲染。
+	productPages.SetDetailTemplateDeps(templates, presentations)
 	adminPages.GET("/products", productPages.ProductsPage)
 	adminPages.POST("/products/create", builtin.CasbinMiddlewareForPath("/api/product/create"), productPages.ProductsCreate)
 	adminPages.POST("/products/variant/create", builtin.CasbinMiddlewareForPath("/api/product/variant/create"), productPages.ProductsVariantCreate)
@@ -141,6 +145,15 @@ func SetupDashboardRoutes(router *gin.Engine,
 	adminPages.POST("/products/delete", builtin.CasbinMiddlewareForPath("/api/product/delete"), productPages.ProductsDelete)
 	// 商品引用的属性组整体替换（issue #7）：复用商品更新权限点（同一改动面）。
 	adminPages.POST("/products/attributes", builtin.CasbinMiddlewareForPath("/api/product/update"), productPages.ProductsAttributesSet)
+
+	// 商品详情页模板可选与预览（issue #14）：一个商品类型下可建多套命名模板，
+	// 商品发布时可选一套、发布前可预览（预览只读渲染，不落库不激活）。
+	// 写动作分别复用内容模板创建 / 实例创建 / 实例重建 / 实例预览四个 API 权限点。
+	adminPages.GET("/products/template", productPages.ProductDetailTemplatePage)
+	adminPages.POST("/products/template/create", builtin.CasbinMiddlewareForPath("/api/contenttemplate/create"), productPages.ProductDetailTemplateCreate)
+	adminPages.POST("/products/template/publish", builtin.CasbinMiddlewareForPath("/api/presentation/create"), productPages.ProductDetailTemplatePublish)
+	adminPages.POST("/products/template/apply", builtin.CasbinMiddlewareForPath("/api/presentation/rebuild"), productPages.ProductDetailTemplateApply)
+	adminPages.POST("/products/template/preview", builtin.CasbinMiddlewareForPath("/api/presentation/preview"), productPages.ProductDetailTemplatePreview)
 
 	// 商品属性管理页（issue #7）：属性组与属性值可跨商品复用，故独立页面。
 	// 值编辑器的增删行走 HTMX（编辑中的行只存在于 DOM，服务端参与归一与去重）。

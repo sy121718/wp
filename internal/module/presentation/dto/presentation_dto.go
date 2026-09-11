@@ -11,11 +11,45 @@ type CreateInstanceReq struct {
 	// ProjectID 实例所属站点工程（presentation_instances.project_id 为 NOT NULL 外键）。
 	// 可空：缺省时经 project 契约解析（工程唯一时取该工程），否则报参数错误。
 	ProjectID string `json:"projectId"`
+	// TemplateID 显式指定使用哪套模板（issue #14：同一实体类型下可有多套命名模板）。
+	// 可空：缺省时按实体类型取默认模板（既有行为不变）。
+	TemplateID string `json:"templateId"`
 }
 
 // RebuildReq 实体数据更新后重建。
 type RebuildReq struct {
 	EntityID string `json:"entityId" binding:"required"`
+	// TemplateID 切换实例绑定的模板后重建（issue #14）；可空 = 沿用实例当前绑定。
+	TemplateID string `json:"templateId"`
+}
+
+// GetByEntityReq 按内容实体查询实例（后台「详情页模板」页读当前绑定）。
+type GetByEntityReq struct {
+	EntityType string `form:"entityType" binding:"required"`
+	EntityID   string `form:"entityId" binding:"required"`
+}
+
+// PreviewInstanceReq 发布前预览模板渲染效果（issue #14）。
+//
+// 只读渲染：不写快照/产物/指针，不激活 URL —— 预览不得改变线上状态。
+type PreviewInstanceReq struct {
+	EntityType string `json:"entityType" form:"entityType" binding:"required"`
+	EntityID   string `json:"entityId" form:"entityId" binding:"required"`
+	// TemplateID 预览哪套模板；可空 = 按实体类型取默认模板。
+	TemplateID string `json:"templateId" form:"templateId"`
+	// ProjectID 构建上下文所属工程（集合源按工程取数）；可空时经 project 契约解析。
+	ProjectID string `json:"projectId" form:"projectId"`
+}
+
+// PreviewInstanceResp 预览响应：渲染结果 + 实际使用的模板与版本。
+type PreviewInstanceResp struct {
+	HTML              string `json:"html"`
+	EntityType        string `json:"entityType"`
+	EntityID          string `json:"entityId"`
+	TemplateID        string `json:"templateId"`
+	TemplateName      string `json:"templateName"`
+	TemplateVersionID string `json:"templateVersionId"`
+	TemplateVersion   int64  `json:"templateVersion"`
 }
 
 // GetReq 按 ID 查询。

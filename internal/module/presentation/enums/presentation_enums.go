@@ -8,6 +8,8 @@ const (
 	MsgListSuccess    = "MsgListSuccess"    // 实例列表获取成功
 	MsgDetailSuccess  = "MsgDetailSuccess"  // 实例详情获取成功
 	MsgDeleteSuccess  = "MsgDeleteSuccess"  // 实例已删除
+	// MsgPreviewSuccess 预览渲染成功（未落库、未激活，issue #14）。
+	MsgPreviewSuccess = "MsgPreviewSuccess"
 
 	ErrInvalidParam  = "ErrInvalidParam"  // 参数错误
 	ErrNotFound      = "ErrNotFound"      // 实例不存在
@@ -20,6 +22,9 @@ const (
 	ErrProjectNotFound = "ErrProjectNotFound"
 	// ErrRegistryMissing 实体类型注册表未装配（装配缺陷，构建期无法解析实体字段）。
 	ErrRegistryMissing = "ErrRegistryMissing"
+	// ErrTemplateTypeMismatch 指定的模板与内容实体类型不匹配（issue #14）：
+	// 多套命名模板之间不允许串用（拿商品模板渲染文章会在构建期产出错误数据）。
+	ErrTemplateTypeMismatch = "ErrTemplateTypeMismatch"
 )
 
 // 实例发布状态（由指针列推导，非表列）。

@@ -15,6 +15,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
 	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
@@ -31,6 +32,11 @@ const variantSelectionPrefix = "attr:"
 type productPageHandle struct {
 	products productcontract.ProductService
 	projects projectcontract.ProjectService
+	// templates / instances 供「详情页模板」页（issue #14）消费：模板列表与版本、
+	// 商品发布实例的模板绑定与预览渲染。经 SetDetailTemplateDeps 注入 ——
+	// 未注入时该页给出装配提示，不影响商品列表页与既有测试的构造签名。
+	templates contenttemplatecontract.ContentTemplateService
+	instances ProductDetailTemplatePort
 }
 
 // NewProductPageHandle 构造。

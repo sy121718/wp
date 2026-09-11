@@ -216,6 +216,9 @@ var productPricingPermsSQL string
 //go:embed 097_product_pricing_menu.sql
 var productPricingMenuSQL string
 
+//go:embed 098_product_detail_template_choice_permissions.sql
+var productDetailTemplatePermsSQL string
+
 //go:embed 073_blueprint_ddl_align.sql
 var blueprintDDLAlignSQL string
 
@@ -622,6 +625,17 @@ func init() {
 		TableName:    "sys_menus",
 		ConditionSQL: "SELECT CASE WHEN COUNT(*) = 1 THEN 1 ELSE 0 END FROM sys_menus WHERE title = '定价工具' AND type = 2 AND deleted_time IS NULL",
 		SQL:          productPricingMenuSQL,
+	})
+
+	// 098：详情页模板可选与预览权限点 + 超管策略（issue #14）。
+	// 两个新接口（preview 只读渲染 / get-by-entity 读当前绑定）各自一个权限点；
+	// 后台「详情页模板」页的写动作复用既有 presentation:create / presentation:rebuild。
+	registerSeed(Seed{
+		Version:   "098-product-detail-template-choose-perms",
+		TableName: "sys_permission",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) = 2 THEN 1 ELSE 0 END FROM sys_permission WHERE permission_code IN (" +
+			"'presentation:preview', 'presentation:get_by_entity')",
+		SQL: productDetailTemplatePermsSQL,
 	})
 
 	// 094：商品图集 alt 文本列（issue #12 商品多语言）。

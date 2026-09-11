@@ -145,7 +145,9 @@ func (s *Service) RebuildStale(ctx context.Context, ids []string) error {
 			logger.Scene("dependency").With("presentation_id", id).Warn("自动重建跳过：实例不存在或已删除")
 			continue
 		}
-		tpl, err := s.templates.ResolveTemplate(ctx, inst.EntityType)
+		// 用实例**绑定**的模板重建（issue #14）：依赖失效是内容变更触发的自动重建，
+		// 不应改变「这个商品用哪套详情模板」——按类型重解析会把切换过的模板悄悄换回去。
+		tpl, err := s.resolveBoundTemplate(ctx, inst, "")
 		if err != nil {
 			logger.Scene("dependency").With("presentation_id", id).
 				Error(err, "自动重建跳过：无可用内容模板")
@@ -185,10 +187,11 @@ func (s *Service) CreateInstance(ctx context.Context, req *presentationdto.Creat
 	if err != nil {
 		return nil, err
 	}
-	// 解析模板版本 + 实体解析器。
-	tpl, err := s.templates.ResolveTemplate(ctx, req.EntityType)
+	// 解析模板版本 + 实体解析器。req.TemplateID 非空 = 发布时显式指定用哪套命名模板
+	// （issue #14 验收 2）；为空 = 按实体类型取默认模板（既有行为逐字不变）。
+	tpl, err := s.resolveTemplate(ctx, req.EntityType, req.TemplateID)
 	if err != nil {
-		return nil, errors.New(presentationenums.ErrNoTemplate)
+		return nil, err
 	}
 	// 顺序：构建（产物落盘幂等，不触碰线上）→ 实例落库 → 快照/产物行/指针 → 激活。
 	// 落库失败时线上保持原样、可直接重试；反之「先激活后落库」会让线上渲染出
@@ -228,11 +231,97 @@ func (s *Service) Rebuild(ctx context.Context, req *presentationdto.RebuildReq) 
 	if err != nil {
 		return nil, errors.New(presentationenums.ErrNotFound)
 	}
-	tpl, err := s.templates.ResolveTemplate(ctx, inst.EntityType)
+	// req.TemplateID 非空 = 切换绑定并重新发布（验收 4：切换模板重新发布后产物随之变化）。
+	tpl, err := s.resolveBoundTemplate(ctx, inst, req.TemplateID)
+	if err != nil {
+		return nil, err
+	}
+	return s.rebuildInstance(ctx, inst, tpl)
+}
+
+// GetByEntity 按内容实体查询实例（后台「详情页模板」页读当前绑定与发布状态）。
+func (s *Service) GetByEntity(ctx context.Context, req *presentationdto.GetByEntityReq) (res *presentationdto.InstanceResp, err error) {
+	if req == nil || req.EntityType == "" || req.EntityID == "" {
+		return nil, errors.New(presentationenums.ErrInvalidParam)
+	}
+	inst, err := s.m.GetInstanceByEntity(ctx, req.EntityType, req.EntityID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, errors.New(presentationenums.ErrNotFound)
+		}
+		return nil, err
+	}
+	return s.toResp(ctx, inst)
+}
+
+// PreviewInstance 发布前预览（issue #14 验收 3）：按指定（或默认）模板渲染实体。
+//
+// 全程只读：不写快照/产物行/指针、不落盘产物、不激活 URL —— 预览看到的就是
+// 发布时会产出的字节（与 buildArtifact 共用 renderHTML），但线上与库表状态不变。
+func (s *Service) PreviewInstance(ctx context.Context, req *presentationdto.PreviewInstanceReq) (res *presentationdto.PreviewInstanceResp, err error) {
+	if req == nil || req.EntityType == "" || req.EntityID == "" {
+		return nil, errors.New(presentationenums.ErrInvalidParam)
+	}
+	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	tpl, err := s.resolveTemplate(ctx, req.EntityType, req.TemplateID)
+	if err != nil {
+		return nil, err
+	}
+	html, err := s.renderHTML(ctx, req.EntityType, req.EntityID, projectID, tpl)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", presentationenums.ErrBuildFailed, err)
+	}
+	return &presentationdto.PreviewInstanceResp{
+		HTML: string(html), EntityType: req.EntityType, EntityID: req.EntityID,
+		TemplateID: tpl.TemplateID, TemplateName: tpl.TemplateName,
+		TemplateVersionID: tpl.VersionID, TemplateVersion: tpl.Version,
+	}, nil
+}
+
+// resolveTemplate 解析本次构建使用的模板版本（issue #14）。
+//
+// templateID 非空 = 显式指定某套命名模板，并校验实体类型一致（不允许拿商品模板
+// 去渲染文章）；为空 = 按实体类型取默认模板（既有行为）。
+func (s *Service) resolveTemplate(ctx context.Context, entityType, templateID string) (tpl *contenttemplatecontract.ResolvedTemplate, err error) {
+	if id := strings.TrimSpace(templateID); id != "" {
+		tpl, err = s.templates.ResolveTemplateByID(ctx, id)
+		if err != nil {
+			return nil, errors.New(presentationenums.ErrNoTemplate)
+		}
+		if tpl.EntityType != entityType {
+			return nil, errors.New(presentationenums.ErrTemplateTypeMismatch)
+		}
+		return tpl, nil
+	}
+	tpl, err = s.templates.ResolveTemplate(ctx, entityType)
 	if err != nil {
 		return nil, errors.New(presentationenums.ErrNoTemplate)
 	}
-	return s.rebuildInstance(ctx, inst, tpl)
+	return tpl, nil
+}
+
+// resolveBoundTemplate 解析实例重建要用的模板：实例绑定的模板是权威。
+//
+// 未显式指定时**不**回落「同类型最新模板」——否则切换模板后一次内容更新
+// 就会把产物换回别的模板（验收 4 的反面）。绑定模板已被删除或类型不符时
+// 回落类型默认模板并记日志：重建优先于报错，产物仍能自愈。
+func (s *Service) resolveBoundTemplate(ctx context.Context, inst *presentationmodel.InstanceEntity,
+	explicitID string) (*contenttemplatecontract.ResolvedTemplate, error) {
+	if strings.TrimSpace(explicitID) != "" {
+		return s.resolveTemplate(ctx, inst.EntityType, explicitID)
+	}
+	if id := strings.TrimSpace(inst.TemplateID); id != "" {
+		tpl, err := s.templates.ResolveTemplateByID(ctx, id)
+		if err == nil && tpl.EntityType == inst.EntityType {
+			return tpl, nil
+		}
+		logger.Scene("build").With("presentation_id", inst.ID).With("template_id", id).
+			Warn("实例绑定的模板不可用，本次重建回落到该类型的默认模板")
+	}
+	return s.resolveTemplate(ctx, inst.EntityType, "")
 }
 
 // rebuildInstance 实例重建主链：编译发布 → 新快照 → 新产物行 → 指针切换 → 依赖落库。
@@ -280,6 +369,14 @@ func (s *Service) persistBuild(ctx context.Context, inst *presentationmodel.Inst
 	return s.m.Transaction(ctx, func(tx *gorm.DB) error {
 		if err := s.m.CreateSnapshotTx(tx, snap); err != nil {
 			return err
+		}
+		// 模板切换（issue #14）与快照/产物/指针同事务：产物来自哪套模板，
+		// 实例就必须记着哪套，否则下次重建会退回旧模板。
+		if inst.TemplateID != tpl.TemplateID {
+			if err := s.m.UpdateInstanceTemplateTx(tx, inst.ID, tpl.TemplateID, now); err != nil {
+				return err
+			}
+			inst.TemplateID = tpl.TemplateID
 		}
 		artifactID, err := s.recordArtifactTx(ctx, tx, inst, snapID, built, now)
 		if err != nil {
@@ -429,55 +526,10 @@ func (s *Service) Delete(ctx context.Context, req *presentationdto.DeleteReq) (e
 // 一旦落库失败，线上已渲染出新实体内容却没有任何恢复入口。
 func (s *Service) buildArtifact(ctx context.Context, entityType, entityID, urlPath, projectID string,
 	tpl *contenttemplatecontract.ResolvedTemplate) (built builtArtifact, err error) {
-	page, err := builder.ParsePage(tpl.Document)
+	html, err := s.renderHTML(ctx, entityType, entityID, projectID, tpl)
 	if err != nil {
 		return built, err
 	}
-	if s.registry == nil {
-		return built, errors.New(presentationenums.ErrRegistryMissing)
-	}
-	// 字段绑定的数据源白名单校验（不变量 4）：模板保存时已校验一次，这里再校一次
-	// 是为了兜住「模板保存后才新增/改名数据源」与直连 service 的调用路径。
-	if err = builder.ValidateFieldRefs(page, entityType, s.registry); err != nil {
-		return built, err
-	}
-	// 构建语言（工程默认语言）：实体字段的可翻译文本按它取译文（语境 实体.字段名）。
-	// 语言进构建上下文，解析器据此取译文——语言不进 AST，产物仍由「模板 + 数据」唯一确定。
-	lang := s.resolveLang(ctx, projectID)
-	buildCtx := core.WithBuildLang(ctx, lang)
-	resolver, err := s.registry.ResolverFor(buildCtx, entityType, entityID)
-	if err != nil {
-		return built, err
-	}
-	set, err := templates.NewEmbeddedComponentSet()
-	if err != nil {
-		return built, err
-	}
-	compileOpts := []builder.CompileOption{
-		builder.WithContext(buildCtx),
-		builder.WithComponentSet(set),
-		builder.WithContentResolver(resolver),
-		// 工程上下文：集合源（商品等分工程的数据）按它取数，不跨站点串数据。
-		builder.WithProjectID(projectID),
-		// 全局块内联展开（core.globalref）：内容模板可引用页眉/页脚/信任徽章等区块，
-		// 与手工 Page 路径同一机制；未注入 block 契约时引用即报错（不静默出占位）。
-		builder.WithBlockResolver(newBlockResolverAdapter(s.blocks, buildCtx)),
-		// 组件固定文案取词：构建开始时刻的词条快照（确定性构建不变量）。
-		builder.WithLanguage(lang), builder.WithTranslator(i18n.Snapshot(lang)),
-	}
-	// 集合源注入（issue #9）：模板里的集合类组件按白名单展开商品等集合数据。
-	if s.collection != nil {
-		compileOpts = append(compileOpts, builder.WithCollectionResolver(s.collection))
-	}
-	compiled, err := builder.Compile(page, compileOpts...)
-	if err != nil {
-		return built, err
-	}
-	doc, err := builder.RenderDocument(compiled)
-	if err != nil {
-		return built, err
-	}
-	html := []byte(doc)
 	sourceHash := pipeline.SHA256(tpl.Document)
 	artifact, err := pipeline.NewArtifact(html, &pipeline.Manifest{
 		ManifestSchemaVersion:     1,
@@ -497,6 +549,63 @@ func (s *Service) buildArtifact(ctx context.Context, entityType, entityID, urlPa
 		return built, err
 	}
 	return builtArtifact{Hash: artifact.Hash, Loc: loc, Manifest: artifact.Manifest}, nil
+}
+
+// renderHTML 把模板 AST 经实体 resolver 编译为最终 HTML 字节（**不落盘、不落库、不激活**）。
+//
+// 发布（buildArtifact）与预览（PreviewInstance）共用这一份渲染，保证「预览看到的就是
+// 发布出来的」；区别只在于发布还要把字节包成 Artifact 落盘并推进指针。
+func (s *Service) renderHTML(ctx context.Context, entityType, entityID, projectID string,
+	tpl *contenttemplatecontract.ResolvedTemplate) (html []byte, err error) {
+	page, err := builder.ParsePage(tpl.Document)
+	if err != nil {
+		return nil, err
+	}
+	if s.registry == nil {
+		return nil, errors.New(presentationenums.ErrRegistryMissing)
+	}
+	// 字段绑定的数据源白名单校验（不变量 4）：模板保存时已校验一次，这里再校一次
+	// 是为了兜住「模板保存后才新增/改名数据源」与直连 service 的调用路径。
+	if err = builder.ValidateFieldRefs(page, entityType, s.registry); err != nil {
+		return nil, err
+	}
+	// 构建语言（工程默认语言）：实体字段的可翻译文本按它取译文（语境 实体.字段名）。
+	// 语言进构建上下文，解析器据此取译文——语言不进 AST，产物仍由「模板 + 数据」唯一确定。
+	lang := s.resolveLang(ctx, projectID)
+	buildCtx := core.WithBuildLang(ctx, lang)
+	resolver, err := s.registry.ResolverFor(buildCtx, entityType, entityID)
+	if err != nil {
+		return nil, err
+	}
+	set, err := templates.NewEmbeddedComponentSet()
+	if err != nil {
+		return nil, err
+	}
+	compileOpts := []builder.CompileOption{
+		builder.WithContext(buildCtx),
+		builder.WithComponentSet(set),
+		builder.WithContentResolver(resolver),
+		// 工程上下文：集合源（商品等分工程的数据）按它取数，不跨站点串数据。
+		builder.WithProjectID(projectID),
+		// 全局块内联展开（core.globalref）：内容模板可引用页眉/页脚/信任徽章等区块，
+		// 与手工 Page 路径同一机制；未注入 block 契约时引用即报错（不静默出占位）。
+		builder.WithBlockResolver(newBlockResolverAdapter(s.blocks, buildCtx)),
+		// 组件固定文案取词：构建开始时刻的词条快照（确定性构建不变量）。
+		builder.WithLanguage(lang), builder.WithTranslator(i18n.Snapshot(lang)),
+	}
+	// 集合源注入（issue #9）：模板里的集合类组件按白名单展开商品等集合数据。
+	if s.collection != nil {
+		compileOpts = append(compileOpts, builder.WithCollectionResolver(s.collection))
+	}
+	compiled, err := builder.Compile(page, compileOpts...)
+	if err != nil {
+		return nil, err
+	}
+	doc, err := builder.RenderDocument(compiled)
+	if err != nil {
+		return nil, err
+	}
+	return []byte(doc), nil
 }
 
 // activate 把本次产物激活到线上 URL（覆盖 active 符号链接）。

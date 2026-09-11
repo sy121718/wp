@@ -176,11 +176,46 @@ func (s *Service) ResolveTemplate(ctx context.Context, entityType string) (res *
 		return nil, err
 	}
 	return &contenttemplatecontract.ResolvedTemplate{
-		TemplateID: tpl.ID,
-		VersionID:  ver.ID,
-		Version:    ver.Version,
-		EntityType: tpl.EntityType,
-		Document:   ver.Document,
+		TemplateID:   tpl.ID,
+		TemplateName: tpl.Name,
+		VersionID:    ver.ID,
+		Version:      ver.Version,
+		EntityType:   tpl.EntityType,
+		Document:     ver.Document,
+	}, nil
+}
+
+// ResolveTemplateByID 按模板 ID 解析其当前版本（issue #14：同一实体类型下可建多套
+// 命名模板，发布/预览按 ID 显式指定用哪一套）。
+//
+// 与 ResolveTemplate 共享同一条版本解析口径（都取该模板的 LatestVersion）：
+// 「模板」与「模板版本」是两层——换一套模板是换 TemplateID，
+// 同一套模板改版式则产生新版本，两条路径都不需要调用方区分。
+func (s *Service) ResolveTemplateByID(ctx context.Context, templateID string) (res *contenttemplatecontract.ResolvedTemplate, err error) {
+	if strings.TrimSpace(templateID) == "" {
+		return nil, errors.New(contenttemplateenums.ErrInvalidParam)
+	}
+	tpl, err := s.m.Get(ctx, templateID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, errors.New(contenttemplateenums.ErrNotFound)
+		}
+		return nil, err
+	}
+	ver, err := s.m.LatestVersion(ctx, tpl.ID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, errors.New(contenttemplateenums.ErrNotFound)
+		}
+		return nil, err
+	}
+	return &contenttemplatecontract.ResolvedTemplate{
+		TemplateID:   tpl.ID,
+		TemplateName: tpl.Name,
+		VersionID:    ver.ID,
+		Version:      ver.Version,
+		EntityType:   tpl.EntityType,
+		Document:     ver.Document,
 	}, nil
 }
 

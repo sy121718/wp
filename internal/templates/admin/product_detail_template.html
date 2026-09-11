@@ -1,0 +1,141 @@
+{* admin/product_detail_template.html — 商品详情页模板选择与预览（issue #14） *}
+{* Jet 方言：range 用 range 关键字；extends 相对本目录；range 内访问外层值先存变量 *}
+{{extends "layout.html"}}
+{{block body()}}
+{{csrf := .["csrf_token"]}}
+{{selectedProject := .SelectedProject}}
+<div class="pages-wrap">
+    <section class="pages-card">
+        <h2>商品详情页模板</h2>
+        {{if .Err != ""}}
+        <p class="pages-badge pages-badge-warn">上一次操作未完成：{{.Err}}</p>
+        {{end}}
+        {{if !.Ready}}
+        <p class="pages-empty">详情页模板能力未装配（缺少内容模板或自动发布契约），本页暂不可用。</p>
+        <p class="pages-empty"><a href="/admin/products?project={{selectedProject}}">返回商品列表</a></p>
+        {{else}}
+        <form method="get" action="/admin/products/template" class="pages-form">
+            <input type="hidden" name="product" value="{{.Product.ID}}">
+            <select name="project" onchange="this.form.submit()">
+                {{range _, p := .Projects}}
+                <option value="{{p.ID}}" {{if p.ID == selectedProject}}selected{{end}}>{{p.Name}}</option>
+                {{end}}
+            </select>
+        </form>
+        <p class="pages-empty">
+            同一商品类型下可建多套命名模板，每套各自版本化（版本号每次修改自增）。
+            商品发布时可选一套；没有显式选择的实例按该类型的默认模板发布。
+            <a href="/admin/products?project={{selectedProject}}">← 返回商品列表</a>
+        </p>
+        {{end}}
+    </section>
+
+    {{if .Ready}}
+    <section class="pages-card">
+        <h2>{{.Product.Name}} · 详情页</h2>
+        <p>
+            <strong>{{.Product.Name}}</strong>
+            <code>{{.Product.URLPath}}</code>
+            {{if .InstanceExists}}
+            <span class="badge">{{.InstanceStatus}}</span>
+            <span>已发布</span>
+            {{else}}
+            <span class="pages-badge">未发布</span>
+            {{end}}
+        </p>
+        {{boundID := .BoundTemplateID}}
+        <p class="pages-empty">
+            当前模板：
+            {{if .InstanceExists}}随实例绑定{{else}}未指定时按类型取默认{{end}}
+            （默认模板 id <code>{{.DefaultTemplateID}}</code>）。
+            预览在浏览器新标签页里打开渲染结果 —— 看到的就是发布会产出的字节。
+        </p>
+
+        <form method="post" action="/admin/products/template/preview" target="_blank" class="pages-form">
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <input type="hidden" name="projectId" value="{{selectedProject}}">
+            <input type="hidden" name="productId" value="{{.Product.ID}}">
+            <label>预览模板
+                <select name="templateId">
+                    {{range _, t := .Templates}}
+                    <option value="{{t.ID}}" {{if t.ID == boundID}}selected{{end}}>{{t.Name}}（v{{t.DraftVersion}}）{{if t.IsDefault}} · 类型默认{{end}}</option>
+                    {{end}}
+                </select>
+            </label>
+            <button type="submit" class="btn">预览渲染效果</button>
+        </form>
+
+        {{if .InstanceExists}}
+        <form method="post" action="/admin/products/template/apply" class="pages-form">
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <input type="hidden" name="projectId" value="{{selectedProject}}">
+            <input type="hidden" name="productId" value="{{.Product.ID}}">
+            <label>使用模板
+                <select name="templateId">
+                    {{range _, t := .Templates}}
+                    <option value="{{t.ID}}" {{if t.ID == boundID}}selected{{end}}>{{t.Name}}（v{{t.DraftVersion}}）{{if t.IsDefault}} · 类型默认{{end}}</option>
+                    {{end}}
+                </select>
+            </label>
+            <button type="submit" class="btn btn-primary">切换模板并重新发布</button>
+        </form>
+        {{else}}
+        <form method="post" action="/admin/products/template/publish" class="pages-form">
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <input type="hidden" name="projectId" value="{{selectedProject}}">
+            <input type="hidden" name="productId" value="{{.Product.ID}}">
+            <label>使用模板
+                <select name="templateId">
+                    {{range _, t := .Templates}}
+                    <option value="{{t.ID}}" {{if t.ID == boundID}}selected{{end}}>{{t.Name}}（v{{t.DraftVersion}}）{{if t.IsDefault}} · 类型默认{{end}}</option>
+                    {{end}}
+                </select>
+            </label>
+            <input type="text" name="urlPath" placeholder="发布 URL（留空按商品 slug 生成 {{.Product.URLPath}}）">
+            <button type="submit" class="btn btn-primary">发布详情页</button>
+        </form>
+        {{end}}
+    </section>
+
+    <section class="pages-card">
+        <h2>命名模板（{{.TemplateCount}} 套）</h2>
+        {{if len(.Templates) == 0}}
+        <p class="pages-empty">这个商品类型还没有任何模板。</p>
+        {{else}}
+        <table class="pages-table">
+            <thead><tr><th>模板名</th><th>当前版本</th><th>更新时间</th><th>状态</th><th>模板 id</th></tr></thead>
+            <tbody>
+            {{range _, t := .Templates}}
+            <tr>
+                <td>{{t.Name}}</td>
+                <td>v{{t.DraftVersion}}</td>
+                <td>{{t.UpdatedAt}}</td>
+                <td>
+                    {{if t.IsBound}}<span class="badge">当前使用</span>{{end}}
+                    {{if t.IsDefault}}<span class="pages-badge pages-badge-info">类型默认</span>{{end}}
+                </td>
+                <td><code>{{t.ID}}</code></td>
+            </tr>
+            {{end}}
+            </tbody>
+        </table>
+        {{end}}
+        {* 新建命名模板：复制一套现有模板的文档作为起点（内容编辑仍属模板/工作台侧）。 *}
+        <form method="post" action="/admin/products/template/create" class="pages-form mt-md">
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <input type="hidden" name="projectId" value="{{selectedProject}}">
+            <input type="hidden" name="productId" value="{{.Product.ID}}">
+            <input type="text" name="name" placeholder="新模板名（例如：夏季活动详情页）" required>
+            <label>复制自
+                <select name="copyFrom">
+                    {{range _, t := .Templates}}
+                    <option value="{{t.ID}}" {{if t.IsDefault}}selected{{end}}>{{t.Name}}（v{{t.DraftVersion}}）</option>
+                    {{end}}
+                </select>
+            </label>
+            <button type="submit" class="btn">新建命名模板</button>
+        </form>
+    </section>
+    {{end}}
+</div>
+{{end}}

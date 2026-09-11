@@ -23,6 +23,10 @@ type ContentTemplateService interface {
 	// ResolveTemplate 取 entityType 的当前激活模板版本（presentation 派生
 	// DocumentSnapshot 的唯一入口；同类型无模板时返回错误）。
 	ResolveTemplate(ctx context.Context, entityType string) (res *ResolvedTemplate, err error)
+	// ResolveTemplateByID 按模板 ID 解析其**当前版本**（issue #14：同一实体类型下
+	// 可有多套命名模板，发布与预览需按 ID 显式指定用哪一套；模板不存在时返回
+	// ErrNotFound，不静默回落到类型默认模板）。
+	ResolveTemplateByID(ctx context.Context, templateID string) (res *ResolvedTemplate, err error)
 }
 
 // ResolvedTemplate 已解析的模板版本（presentation 派生快照的输入）。
@@ -34,6 +38,8 @@ type ResolvedTemplate struct {
 	VersionID string
 	// Version 版本号。
 	Version int64
+	// TemplateName 模板名（同一类型下多套命名模板的区分依据，issue #14）。
+	TemplateName string
 	// EntityType 内容类型（product/article/category）。
 	EntityType string
 	// Document 模板 AST（json.RawMessage，含 binding 节点；presentation

@@ -16,7 +16,17 @@ type PresentationService interface {
 	CreateInstance(ctx context.Context, req *presentationdto.CreateInstanceReq) (res *presentationdto.InstanceResp, err error)
 	// Rebuild 实体数据更新（revision 变化）后重建：重解析模板+实体 →
 	// 新快照 → 重新编译发布。
+	//
+	// req.TemplateID 非空 = 切换实例绑定的模板后重建（issue #14 验收 2/4：
+	// 发布时可指定用哪套模板，切换后产物随之变化）；为空 = 沿用实例当前绑定
+	// （**不**回落「同类型最新模板」，否则一次内容更新就会悄悄换掉模板）。
 	Rebuild(ctx context.Context, req *presentationdto.RebuildReq) (res *presentationdto.InstanceResp, err error)
+	// GetByEntity 按内容实体查询实例（读当前绑定的模板与发布状态）。
+	GetByEntity(ctx context.Context, req *presentationdto.GetByEntityReq) (res *presentationdto.InstanceResp, err error)
+	// PreviewInstance 发布前预览：按指定（或默认）模板渲染实体，返回渲染结果。
+	//
+	// 只读：不写快照/产物/指针、不激活 URL、不改动线上产物（issue #14 验收 3）。
+	PreviewInstance(ctx context.Context, req *presentationdto.PreviewInstanceReq) (res *presentationdto.PreviewInstanceResp, err error)
 	// Get 按 ID 查询。
 	Get(ctx context.Context, req *presentationdto.GetReq) (res *presentationdto.InstanceResp, err error)
 	// List 按类型列表。

@@ -35,5 +35,10 @@ func SetupPresentationRoutes(rg *gin.RouterGroup, db *gorm.DB,
 	g.GET("/get", handle.Get)
 	g.GET("/list", handle.List)
 	g.POST("/delete", handle.Delete)
+	// 按内容实体查实例（issue #14）：后台「详情页模板」页读当前绑定的模板与发布状态。
+	g.GET("/get-by-entity", handle.GetByEntity)
+	// 发布前预览（issue #14 验收 3）：按指定/默认模板只读渲染，不落库不激活。
+	// 与 create/rebuild 分开，便于按「只读预览」单独授权。
+	g.POST("/preview", handle.Preview)
 	return svc
 }

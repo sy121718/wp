@@ -50,6 +50,36 @@ func (h *Handle) Rebuild(c *gin.Context) {
 	response.SuccessWithMessage(c, presentationenums.MsgRebuildSuccess, res)
 }
 
+// GetByEntity 按内容实体查询实例（后台「详情页模板」页读当前绑定）。
+func (h *Handle) GetByEntity(c *gin.Context) {
+	req := &presentationdto.GetByEntityReq{}
+	if err := c.ShouldBind(req); err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, presentationenums.ErrInvalidParam)
+		return
+	}
+	res, err := h.svc.GetByEntity(c.Request.Context(), req)
+	if err != nil {
+		response.ErrorWithMessage(c, http.StatusNotFound, err.Error())
+		return
+	}
+	response.SuccessWithMessage(c, presentationenums.MsgDetailSuccess, res)
+}
+
+// Preview 发布前预览模板渲染效果（issue #14 验收 3）：只读渲染，不落库不激活。
+func (h *Handle) Preview(c *gin.Context) {
+	req := &presentationdto.PreviewInstanceReq{}
+	if err := c.ShouldBind(req); err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, presentationenums.ErrInvalidParam)
+		return
+	}
+	res, err := h.svc.PreviewInstance(c.Request.Context(), req)
+	if err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	response.SuccessWithMessage(c, presentationenums.MsgPreviewSuccess, res)
+}
+
 // Get 实例详情。
 func (h *Handle) Get(c *gin.Context) {
 	req := &presentationdto.GetReq{}
