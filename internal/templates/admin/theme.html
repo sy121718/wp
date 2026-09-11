@@ -59,7 +59,7 @@
                     {{end}}
                     {{if !t.IsActive}}
                     <form method="post" action="/admin/themes/delete" class="pages-form" style="display:inline"
-                          onsubmit="return confirm('确定删除主题「{{t.Name|safeJs}}」？')">
+                          data-confirm="确定删除主题「{{t.Name|safeJs}}」？">
                         <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
                         <input type="hidden" name="id" value="{{t.ID}}">
                         <input type="hidden" name="projectId" value="{{t.ProjectID}}">

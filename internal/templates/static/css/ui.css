@@ -43,3 +43,17 @@
 .wbs-option.is-active { background: var(--sky-c-primary-bg, var(--c-primary-bg, #eceef1)); }
 .wbs-option.is-selected { font-weight: 600; }
 .wbs-option[aria-disabled="true"] { opacity: .45; cursor: not-allowed; }
+
+/* ===== 确认框（js/ui/confirm.js）=====
+   替代原生 confirm 与内联 onclick/onsubmit：模板里只留 data-confirm 一个属性。
+   用 <dialog> 承载 —— showModal() 自带焦点陷阱与 Esc 关闭，背景自动 inert。 */
+.wb-confirm {
+    padding: 0; border: 1px solid var(--sky-c-border, var(--c-border, #e5e7eb));
+    border-radius: 12px; background: var(--sky-c-surface, var(--c-surface, #fff));
+    color: inherit; max-width: min(92vw, 420px); box-shadow: 0 16px 48px rgba(16, 20, 26, .18);
+}
+.wb-confirm::backdrop { background: rgba(16, 20, 26, .35); }
+.wb-confirm-inner { padding: 20px; display: flex; flex-direction: column; gap: 10px; }
+.wb-confirm-title { margin: 0; font-size: 15px; font-weight: 600; }
+.wb-confirm-msg { margin: 0; font-size: 13px; line-height: 1.6; color: var(--sky-c-text-mute, var(--c-text-mute, #6b7280)); }
+.wb-confirm-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; }

@@ -37,7 +37,7 @@
                 <td class="text-mute">{{if r.UpdateTime}}{{r.UpdateTime}}{{else}}{{r.CreateTime}}{{end}}</td>
                 <td class="col-actions">
                     {{if .PermSet["datarule:update"]}}<button type="button" class="btn btn-sm btn-ghost" data-drawer-open="#tpl-rule-edit-{{r.ID}}" data-drawer-title="编辑规则：{{r.RuleName}}">编辑</button>{{end}}
-                    {{if .PermSet["datarule:delete"]}}<button type="button" class="btn btn-sm btn-danger" onclick="if(confirm('确认删除？')){document.getElementById('rule-del-{{r.ID}}').submit()}">删除</button>{{end}}
+                    {{if .PermSet["datarule:delete"]}}<button type="submit" form="rule-del-{{r.ID}}" class="btn btn-sm btn-danger" data-confirm="确认删除？" data-confirm-danger>删除</button>{{end}}
                     <form id="rule-del-{{r.ID}}" method="post" action="/admin/datarules/delete" class="hidden-form">
                         <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
                         <input type="hidden" name="id" value="{{r.ID}}">

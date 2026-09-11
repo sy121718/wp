@@ -35,7 +35,7 @@
                 <td>{{if r.Remark}}{{r.Remark}}{{end}}</td>
                 <td class="col-actions">
                     {{if .PermSet["role:update"]}}<button type="button" class="btn btn-sm btn-ghost" data-drawer-open="#tpl-role-edit-{{r.ID}}" data-drawer-title="编辑角色：{{r.RoleName}}">编辑</button>{{end}}
-                    {{if .PermSet["role:delete"]}}<button type="button" class="btn btn-sm btn-danger" onclick="if(confirm('确认删除？')){document.getElementById('role-del-{{r.ID}}').submit()}">删除</button>{{end}}
+                    {{if .PermSet["role:delete"]}}<button type="submit" form="role-del-{{r.ID}}" class="btn btn-sm btn-danger" data-confirm="确认删除？" data-confirm-danger>删除</button>{{end}}
                     <form id="role-del-{{r.ID}}" method="post" action="/admin/roles/delete" class="hidden-form">
                         <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
                         <input type="hidden" name="id" value="{{r.ID}}">

@@ -32,7 +32,7 @@
                 <td>{{if d.Remark}}{{d.Remark}}{{end}}</td>
                 <td class="col-actions">
                     {{if .PermSet["dept:update"]}}<button type="button" class="btn btn-sm btn-ghost" data-drawer-open="#tpl-dept-edit-{{d.ID}}" data-drawer-title="编辑部门：{{d.DeptName}}">编辑</button>{{end}}
-                    {{if .PermSet["dept:delete"]}}<button type="button" class="btn btn-sm btn-danger" onclick="if(confirm('确认删除？')){document.getElementById('dept-del-{{d.ID}}').submit()}">删除</button>{{end}}
+                    {{if .PermSet["dept:delete"]}}<button type="submit" form="dept-del-{{d.ID}}" class="btn btn-sm btn-danger" data-confirm="确认删除？" data-confirm-danger>删除</button>{{end}}
                     <form id="dept-del-{{d.ID}}" method="post" action="/admin/departments/delete" class="hidden-form">
                         <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
                         <input type="hidden" name="id" value="{{d.ID}}">
