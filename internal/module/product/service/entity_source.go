@@ -594,7 +594,10 @@ type optionValueJSON struct {
 }
 
 // variantJSON 规格组合行（构建期输出的 JSON 结构）。
+//
+// ID 是变体 id（issue #24）：产物里要用它构造「实时可用量片段」的请求参数。
 type variantJSON struct {
+	ID           string            `json:"id"`
 	SKU          string            `json:"sku"`
 	Price        string            `json:"price"`
 	ComparePrice string            `json:"comparePrice,omitempty"`
@@ -723,6 +726,7 @@ func variantsJSON(variants []*productmodel.VariantEntity) string {
 	rows := []variantJSON{}
 	for _, v := range variants {
 		row := variantJSON{
+			ID:  v.ID,
 			SKU: v.SKUCode, Price: formatPrice(v.Price), Image: v.Image,
 			Enabled: v.Enabled, Options: map[string]string{},
 		}

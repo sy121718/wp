@@ -88,6 +88,9 @@ type OptionGroup struct {
 
 // VariantOption 一个规格组合行（前台展示用）。
 type VariantOption struct {
+	// ID 变体 id（issue #24）：产物里烘进「实时可用量片段」的请求参数 ——
+	// 库存是运行期真源，构建期只能把 id 写进产物，可用量每次请求现取。
+	ID string
 	// SKUCode 变体编码。
 	SKUCode string
 	// Price 价格（已带货币符号）。
@@ -110,6 +113,7 @@ type optionGroupJSON struct {
 
 // variantJSON 商品解析器输出的规格组合结构（product.variants）。
 type variantJSON struct {
+	ID           string            `json:"id"`
 	SKU          string            `json:"sku"`
 	Price        string            `json:"price"`
 	ComparePrice string            `json:"comparePrice"`
@@ -293,6 +297,7 @@ func parseVariantOptions(raw string, groups []OptionGroup, currency string) []Va
 			continue
 		}
 		row := VariantOption{
+			ID:      r.ID,
 			SKUCode: r.SKU, Labels: strings.Join(parts, " · "),
 			Price: currency + r.Price,
 		}

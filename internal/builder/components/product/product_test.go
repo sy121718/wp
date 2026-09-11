@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"go_wp/internal/builder/core"
+	"go_wp/internal/templates"
 )
 
 // propsOf 把 props 键值编码为节点 props JSON（避免测试里手写 JSON 字符串）。
@@ -297,5 +298,71 @@ func TestBuildViewPropagatesResolveError(t *testing.T) {
 	_, err := BuildView(&p, stubResolver{errOn: "product.bogus"})
 	if err == nil || !strings.Contains(err.Error(), "product.bogus") {
 		t.Fatalf("解析失败应上抛: %v", err)
+	}
+}
+
+// productRenderCtx 模板渲染上下文（与装配层的 nodeView 字段同名，本包测试自带一份）。
+type productRenderCtx struct {
+	Classes  string
+	CustomID string
+	NodeID   string
+	V        View
+}
+
+// TestProductTemplateRendersVariantStockFragment 验收（issue #24）：
+// 规格组合行携带「实时可用量片段」的请求参数（变体 id）与构建期兜底文案。
+//
+// 库存是运行期真源，构建期只能把变体 id 烘进产物（可用量每次请求现取）；
+// 无 JS / HTMX 不可用时页面留下的是兜底文案，选择器本身仍是原生 radio（键盘可达）。
+func TestProductTemplateRendersVariantStockFragment(t *testing.T) {
+	p := &Props{
+		TitleField:    "product.name",
+		OptionsField:  "product.options",
+		VariantsField: "product.variants",
+	}
+	resolver := stubResolver{values: map[string]string{
+		"product.name": "夏季衬衫",
+		"product.options": `[{"key":"color","name":"颜色","values":[` +
+			`{"key":"red","label":"红"},{"key":"blue","label":"蓝"}]}]`,
+		"product.variants": `[{"id":"var-1","sku":"SKU-1","price":"99","enabled":true,` +
+			`"options":{"color":"red"}},` +
+			`{"id":"var-2","sku":"SKU-2","price":"109","enabled":true,` +
+			`"options":{"color":"blue"}}]`,
+	}}
+	view, err := BuildView(p, resolver)
+	if err != nil {
+		t.Fatalf("BuildView: %v", err)
+	}
+	if len(view.VariantOptions) != 2 {
+		t.Fatalf("应有 2 个规格组合行，实际 %d（%+v）", len(view.VariantOptions), view.VariantOptions)
+	}
+	if view.VariantOptions[0].ID != "var-1" || view.VariantOptions[1].ID != "var-2" {
+		t.Fatalf("组合行应带上变体 id（片段请求参数），实际 %+v", view.VariantOptions)
+	}
+
+	set, err := templates.NewEmbeddedComponentSet()
+	if err != nil {
+		t.Fatalf("NewEmbeddedComponentSet: %v", err)
+	}
+	tpl, err := set.GetTemplate("product")
+	if err != nil {
+		t.Fatalf("GetTemplate(product): %v", err)
+	}
+	var buf strings.Builder
+	if err := tpl.Execute(&buf, nil, productRenderCtx{
+		Classes: "sky-c-p1", NodeID: "p1", V: view,
+	}); err != nil {
+		t.Fatalf("渲染 product 模板失败: %v", err)
+	}
+	html := buf.String()
+	for _, want := range []string{
+		"/_fragments/productVariantAvailability?variantIds=var-1",
+		"hx-trigger=\"load, every 60s\"",
+		`aria-live="polite"`,
+		"以结算时库存为准", // 无脚本时的兜底文案（降级策略）
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("产物缺少 %q\n%s", want, html)
+		}
 	}
 }

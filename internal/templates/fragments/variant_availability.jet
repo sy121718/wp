@@ -1,0 +1,4 @@
+{* variant_availability.jet — 商品变体可用量片段（issue #24）。 *}
+{* 只输出服务端按可用量生成的结论文本：消息里没有用户输入（变体 id 仅在 data 属性上回声），
+   仍走模板转义。无 JS / HTMX 不可用时，页面保留的是构建期兜底文案。 *}
+{{ range _, it := .Items }}<span class="sky-variant-stock-msg{{ if !it.InStock }} is-out{{ end }}" data-variant-id="{{ it.VariantID }}">{{ it.Message }}</span>{{ end }}

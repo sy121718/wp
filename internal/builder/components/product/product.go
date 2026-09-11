@@ -284,6 +284,18 @@ func compileCSS(id string, _ *Props, b *core.CSSBuckets) {
 		"word-break: break-word",
 	})
 
+	// 实时可用量（issue #24）：构建期只烘变体 id，可用量由访问面片段每次现取（库存是真源，
+	// 烘进产物等于发布一份过期库存）。样式覆盖两种状态：默认（充足 / 以结算为准）与缺货。
+	b.Add(core.BreakpointDesktop, sel+" .sky-product-variant-stock", []string{
+		"font-size: .85rem",
+		"color: var(--sky-c-muted, rgba(0,0,0,0.6))",
+		"flex: 1 0 100%",
+	})
+	b.Add(core.BreakpointDesktop, sel+" .sky-product-variant .is-out", []string{
+		"color: var(--sky-c-danger, #dc2626)",
+		"font-weight: 600",
+	})
+
 	// 规格选择器（issue #8）：规格维度用原生 radio + label（键盘模型免费拿到：
 	// Tab 进组、方向键切换），组合清单用 flex 行 + wrap（窄屏不横向溢出）。
 	// 宽度一律 min(100%, …) / max-width: 100%，不写死像素（多端适配硬规则）。

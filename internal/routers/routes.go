@@ -257,6 +257,15 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 		panic("商品模块未实现捆绑配置器端口（BundleConfiguratorPort）")
 	}
 	runtimefragment.SetBundleProvider(bundlePort)
+	// 商品变体可用量片段（issue #24）：商品详情规格选择器旁的「实时库存」走访问面片段端点。
+	// 同一份注入模式：product 模块实现 VariantAvailabilityLookupPort（内部再调 inventory 的
+	// VariantAvailabilityPort 读真源），片段层只管渲染结论。与库存端口一样 fail-fast ——
+	// 漏接的表现是「页面上永远显示以结算时库存为准」，比启动时报错隐蔽得多。
+	availabilityLookup, ok := productSvc.(productcontract.VariantAvailabilityLookupPort)
+	if !ok {
+		panic("商品模块未实现变体可用量查询端口（VariantAvailabilityLookupPort）")
+	}
+	runtimefragment.SetVariantAvailabilityProvider(availabilityLookup)
 	// 商品实体类型注册（issue #6）：注册后商品可作为内容模板的数据源
 	// （类型合法性 + 字段白名单由注册表判定），构建期经注册表取商品字段解析器。
 	// 与内容模块同样 fail-fast：注册失败即装配缺陷。

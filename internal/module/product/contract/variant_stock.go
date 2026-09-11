@@ -72,3 +72,19 @@ type VariantAvailabilityPort interface {
 	// ProjectID 用于限定工程，避免跨工程读到同名变体。
 	AvailableQuantities(ctx context.Context, projectID string, variantIDs []string) (out map[string]int, err error)
 }
+
+// VariantAvailabilityLookupPort 按**变体 id** 查可用量的只读端口（issue #24，由 product 模块实现）。
+//
+// 与上面 VariantAvailabilityPort 的分工：那个是「product 调 inventory」的底层端口（要 ProjectID，
+// 由 inventory 实现）；本端口是它面向**访问面**的包装 —— 静态产物里烘的只有变体 id（data 属性），
+// 片段端点没有工程上下文，工程由 product 模块按变体反查补齐。调用方因此既不用认识商品表结构，
+// 也不用伪造工程 id。
+//
+// 用途：商品详情规格选择器旁的「可用量」片段（runtimefragment 的 productVariantAvailability）——
+// 库存是运行期真源，构建期不可能把可用量烘进静态产物，只能每次请求现读（docs/04 §1.1）。
+type VariantAvailabilityLookupPort interface {
+	// VariantAvailabilities 批量读可用量：键为变体 id，未知 / 已删除的 id 不出现在结果里。
+	// 端口未注入（inventory 未装配）时返回空结果而不报错 —— 调用方据此渲染「以结算为准」的降级文案；
+	// 缺货判定与加购校验另在写路径上做，不靠本端口兜底。
+	VariantAvailabilities(ctx context.Context, variantIDs []string) (map[string]int, error)
+}
