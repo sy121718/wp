@@ -205,6 +205,47 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .pages-empty { color: var(--c-text-mute, #6b7280); font-size: 13px; }
 .pages-empty a { color: var(--c-primary, #2563eb); }
 
+/* ===== 货源管理（admin/inventory_sources.html，issue #17） =====
+   多端适配（硬规则）：
+     · 输入宽度一律 min(100%, <设计宽度>)，容器 flex+wrap，窄屏折行不溢出；
+     · 对接配置是多行文本，textarea 走同一收口（min(100%, 420px)）并允许纵向拉伸；
+     · <select> 被 WBUI 自绘替身接管后可见元素是 .wbs，按同一档宽度收口；
+     · 触屏只需原生控件，按压反馈走 .btn:active（不带媒体查询）；
+     · 键盘：原生控件 Tab 序即视觉序；统计数字只作展示，不参与交互。 */
+.source-page .card-header { flex-wrap: wrap; gap: 4px 8px; }
+.source-page .card-header > * { min-width: 0; }
+.source-page .attr-form-head .wbs { width: min(100%, 220px); }
+.source-page .attr-form-head textarea {
+    padding: 8px 10px; font-size: 13px; line-height: 20px; resize: vertical;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    border: 1px solid var(--c-border, #e5e7eb); border-radius: 8px;
+    background: var(--c-surface, #fff); color: inherit;
+    width: min(100%, 420px); min-width: 0;
+}
+.source-stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; margin: 8px 0 12px; }
+.source-stat {
+    display: flex; flex-direction: column; gap: 2px; padding: 10px 12px;
+    border: 1px solid var(--c-border, #e5e7eb); border-radius: 10px; background: var(--c-surface, #fff);
+}
+.source-stat-num { font-size: 20px; font-weight: 600; }
+.source-stat-label { font-size: 12px; color: var(--c-text-mute, #6b7280); }
+.source-meta { color: var(--c-text-mute, #6b7280); font-size: 12px; }
+.source-page-table { table-layout: fixed; }
+.source-page-table th, .source-page-table td { word-break: break-word; overflow-wrap: anywhere; }
+/* 手机：交叉表改堆叠块（同 .tag-rule-table 的既有手法）—— 三列挤在窄屏里读不出来。 */
+@media (max-width: 720px) {
+    .source-page-table thead { display: none; }
+    .source-page-table, .source-page-table tbody, .source-page-table tr, .source-page-table td { display: block; width: auto; }
+    .source-page-table tr {
+        border: 1px solid var(--c-border, #e5e7eb); border-radius: 10px;
+        padding: 8px 10px; margin-bottom: 8px;
+    }
+    .source-page-table td { border: 0; padding: 2px 0; }
+    .source-page .attr-form-head .wbs,
+    .source-page .attr-form-head textarea { width: 100%; }
+    .source-page .attr-form-actions .btn { width: 100%; }
+}
+
 /* ===== 商品属性管理（admin/product_attributes.html，issue #7） =====
    多端适配（硬规则）：
      · 宽度一律 min(100%, <设计宽度>)，不写死；

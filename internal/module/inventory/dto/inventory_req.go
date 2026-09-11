@@ -117,7 +117,7 @@ type ChangeStockReq struct {
 // ExpandBOM 为真时：入参每个 SKU 若维护了物料清单，就展开成它的子项（用量 × 请求量），
 // 递归到**叶子**为止；有清单的 SKU 被展开而不是被扣，因此中间件半成品自身的真源不动。
 // 没有清单的 SKU 就是叶子，按自身扣减。展开后的子项集合仍然整体排序加锁、整体生效
-//（任一项不足即整批拒绝）。
+// （任一项不足即整批拒绝）。
 type DeductStockReq struct {
 	ProjectID   string               `json:"projectId"`
 	WarehouseID string               `json:"warehouseId"`
@@ -195,6 +195,74 @@ type SetBOMReq struct {
 // GetBOMReq 查看某个父 SKU 的物料清单。
 type GetBOMReq struct {
 	ParentVariantID string `form:"parentVariantId" binding:"required"`
+}
+
+// —— 货源（issue #17 验收 1/2/4）——
+
+// CreateSourceReq 新建货源（外部供应商 / 集团内关联公司 / 自家工厂）。
+//
+// Type 只认 external / internal；RelatedParty 为 nil 时按类型取默认 ——
+// 内部货源恒为关联方（内部交易必须能被关联方报表捕获），外部默认非关联方。
+// SettlePrice 是内部结算价，只允许出现在内部货源上。
+// Config 是**异构对接扩展信息**（JSON 对象，不同来源字段形状各不相同）。
+type CreateSourceReq struct {
+	ProjectID    string          `json:"projectId"`
+	Code         string          `json:"code" binding:"required"`
+	Name         string          `json:"name" binding:"required"`
+	Type         string          `json:"type"`
+	RelatedParty *bool           `json:"relatedParty"`
+	SettlePrice  *float64        `json:"settlePrice"`
+	Status       string          `json:"status"`
+	Config       json.RawMessage `json:"config"`
+	Sort         int             `json:"sort"`
+	Metadata     json.RawMessage `json:"metadata"`
+}
+
+// UpdateSourceReq 修改货源（逐字段可选；nil = 本次不改）。
+//
+// ClearSettlePrice 显式清空结算价 —— 指针为 nil 表示「不改」，没有它就无法把值改回 NULL。
+type UpdateSourceReq struct {
+	ID               string          `json:"id" binding:"required"`
+	Code             *string         `json:"code"`
+	Name             *string         `json:"name"`
+	Type             *string         `json:"type"`
+	RelatedParty     *bool           `json:"relatedParty"`
+	SettlePrice      *float64        `json:"settlePrice"`
+	ClearSettlePrice bool            `json:"clearSettlePrice"`
+	Status           *string         `json:"status"`
+	Config           json.RawMessage `json:"config"`
+	Sort             *int            `json:"sort"`
+	Metadata         json.RawMessage `json:"metadata"`
+}
+
+// GetSourceReq 按 ID 查询货源。
+type GetSourceReq struct {
+	ID string `form:"id" binding:"required"`
+}
+
+// DeleteSourceReq 删除货源。
+type DeleteSourceReq struct {
+	ID string `json:"id" binding:"required"`
+}
+
+// ListSourceReq 货源列表（报表区分维度直接落在查询上）。
+//
+// RelatedParty 是三态字符串："" 全部 / "true" 仅关联方 / "false" 仅非关联方 ——
+// 用字符串而不是 *bool，是因为 GET 查询里「参数缺失」与「参数为空」必须能区分开。
+type ListSourceReq struct {
+	ProjectID       string `form:"projectId"`
+	Type            string `form:"type"`
+	RelatedParty    string `form:"relatedParty"`
+	Status          string `form:"status"`
+	Keyword         string `form:"keyword"`
+	IncludeDisabled bool   `form:"includeDisabled"`
+	Page            int    `form:"page"`
+	Size            int    `form:"size"`
+}
+
+// SourceSummaryReq 货源关联方统计（按类型 × 关联方分组计数）。
+type SourceSummaryReq struct {
+	ProjectID string `form:"projectId"`
 }
 
 // —— 商品侧缓存同步与对账（issue #16 验收 6/7）——

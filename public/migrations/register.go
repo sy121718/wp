@@ -237,6 +237,15 @@ var inventoryReasonsSeedSQL string
 //go:embed 104_inventory_change_permissions.sql
 var inventoryChangePermsSQL string
 
+//go:embed 105_inventory_sources.sql
+var inventorySourcesSQL string
+
+//go:embed 106_inventory_source_permissions.sql
+var inventorySourcePermsSQL string
+
+//go:embed 107_inventory_source_menu.sql
+var inventorySourceMenuSQL string
+
 //go:embed 073_blueprint_ddl_align.sql
 var blueprintDDLAlignSQL string
 
@@ -820,6 +829,34 @@ func init() {
 			"'inventory:reason_list', 'inventory:reason_create', 'inventory:reason_update', " +
 			"'inventory:bom_set', 'inventory:bom_get', 'inventory:cache_sync', 'inventory:cache_reconcile')",
 		SQL: inventoryChangePermsSQL,
+	})
+
+	// 105：货源表（issue #17）。一张新表承载全部进货来源（外部供应商 / 集团内关联公司 /
+	// 自家工厂），类型 + 关联方标志 + 异构对接配置（config）三件事各就各位。
+	register(Migration{
+		Version:   "105-inventory-sources",
+		TableName: "inventory_sources",
+		SQL:       inventorySourcesSQL,
+	})
+
+	// 106：货源管理 6 个权限点 + 超管策略（issue #17）。
+	// 条件只看本票自己的权限点（inventory:source_%），与 100 的宽匹配互不干扰。
+	registerSeed(Seed{
+		Version:   "106-inventory-source-permissions",
+		TableName: "sys_permission",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) = 6 THEN 1 ELSE 0 END FROM sys_permission WHERE permission_code IN (" +
+			"'inventory:source_list', 'inventory:source_get', 'inventory:source_create', " +
+			"'inventory:source_update', 'inventory:source_delete', 'inventory:source_summary')",
+		SQL: inventorySourcePermsSQL,
+	})
+
+	// 107：货源管理后台菜单（issue #17）。须在 101（库存管理菜单）之后执行，
+	// 且与它同挂「站点工程」目录（sort 9，排在库存管理 sort 8 之后）。
+	registerSeed(Seed{
+		Version:      "107-inventory-source-menu",
+		TableName:    "sys_menus",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) = 1 THEN 1 ELSE 0 END FROM sys_menus WHERE title = '货源管理' AND type = 2 AND deleted_time IS NULL",
+		SQL:          inventorySourceMenuSQL,
 	})
 
 	// 073：把历史库的 blueprints / blueprint_versions 对齐到 model（唯一真源）。

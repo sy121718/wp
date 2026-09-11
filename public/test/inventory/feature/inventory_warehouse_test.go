@@ -649,9 +649,10 @@ func TestInventoryPermissionsAndMenusSeeded(t *testing.T) {
 	if err := f.db.Raw("SELECT COUNT(*) FROM sys_permission WHERE module = 'inventory'").Scan(&n).Error; err != nil {
 		t.Fatalf("查询权限点失败: %v", err)
 	}
-	// 100（#15 仓库与库存记录 9 个）+ 104（#16 变动 / 流水 / 原因 / 清单 / 对账 10 个）。
-	if n != 19 {
-		t.Fatalf("迁移 100 + 104 应 seed 19 个 inventory 权限点，实际 %d", n)
+	// 100（#15 仓库与库存记录 9 个）+ 104（#16 变动 / 流水 / 原因 / 清单 / 对账 10 个）
+	// + 106（#17 货源 6 个）。
+	if n != 25 {
+		t.Fatalf("迁移 100 + 104 + 106 应 seed 25 个 inventory 权限点，实际 %d", n)
 	}
 	for _, code := range []string{"inventory:stock_change", "inventory:stock_deduct", "inventory:movement_list",
 		"inventory:reason_list", "inventory:reason_create", "inventory:reason_update",

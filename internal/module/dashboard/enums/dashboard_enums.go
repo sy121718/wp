@@ -56,6 +56,9 @@ const MsgTranslationSiteScanSkipped = "MsgTranslationSiteScanSkipped" // 全站�
 // MsgTranslationSiteScanTooMany 全站页面数超过扫描上限，跳过全站统计。
 const MsgTranslationSiteScanTooMany = "MsgTranslationSiteScanTooMany" // 页面数超过全站扫描上限，当前仅显示本页维度
 
+// MsgInventorySourcesTitle 货源管理页标题（issue #17）。
+const MsgInventorySourcesTitle = "MsgInventorySourcesTitle" // 货源管理
+
 // MsgInternalError 页面 handler 内部错误统一提示（禁止直出 err.Error() 泄露内部细节）。
 const MsgInternalError = "MsgInternalError" // 系统内部错误，请稍后重试
 

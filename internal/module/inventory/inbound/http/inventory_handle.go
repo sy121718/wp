@@ -23,6 +23,95 @@ type Handle struct {
 // NewHandle 构造。
 func NewHandle(svc inventorycontract.InventoryService) *Handle { return &Handle{svc: svc} }
 
+// CreateSource 新建货源（issue #17 验收 1/2）。
+func (h *Handle) CreateSource(c *gin.Context) {
+	req := &inventorydto.CreateSourceReq{}
+	if err := c.ShouldBindJSON(req); err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, inventoryenums.ErrInvalidParam)
+		return
+	}
+	res, err := h.svc.CreateSource(c.Request.Context(), req)
+	if err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	response.SuccessWithMessage(c, inventoryenums.MsgCreateSuccess, res)
+}
+
+// UpdateSource 修改货源（验收 1/2）。
+func (h *Handle) UpdateSource(c *gin.Context) {
+	req := &inventorydto.UpdateSourceReq{}
+	if err := c.ShouldBindJSON(req); err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, inventoryenums.ErrInvalidParam)
+		return
+	}
+	res, err := h.svc.UpdateSource(c.Request.Context(), req)
+	if err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	response.SuccessWithMessage(c, inventoryenums.MsgUpdateSuccess, res)
+}
+
+// GetSource 货源详情。
+func (h *Handle) GetSource(c *gin.Context) {
+	req := &inventorydto.GetSourceReq{}
+	if err := c.ShouldBindQuery(req); err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, inventoryenums.ErrInvalidParam)
+		return
+	}
+	res, err := h.svc.GetSource(c.Request.Context(), req)
+	if err != nil {
+		response.ErrorWithMessage(c, http.StatusNotFound, err.Error())
+		return
+	}
+	response.SuccessWithMessage(c, inventoryenums.MsgDetailSuccess, res)
+}
+
+// ListSources 货源列表（验收 4：关联方标志是可筛选的报表维度）。
+func (h *Handle) ListSources(c *gin.Context) {
+	req := &inventorydto.ListSourceReq{}
+	if err := c.ShouldBindQuery(req); err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, inventoryenums.ErrInvalidParam)
+		return
+	}
+	list, err := h.svc.ListSources(c.Request.Context(), req)
+	if err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	response.SuccessWithMessage(c, inventoryenums.MsgListSuccess, list)
+}
+
+// DeleteSource 删除货源。
+func (h *Handle) DeleteSource(c *gin.Context) {
+	req := &inventorydto.DeleteSourceReq{}
+	if err := c.ShouldBindJSON(req); err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, inventoryenums.ErrInvalidParam)
+		return
+	}
+	if err := h.svc.DeleteSource(c.Request.Context(), req); err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	response.SuccessWithMessage(c, inventoryenums.MsgDeleteSuccess, nil)
+}
+
+// SourceSummary 货源关联方统计（验收 4）。
+func (h *Handle) SourceSummary(c *gin.Context) {
+	req := &inventorydto.SourceSummaryReq{}
+	if err := c.ShouldBindQuery(req); err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, inventoryenums.ErrInvalidParam)
+		return
+	}
+	res, err := h.svc.SourceSummary(c.Request.Context(), req)
+	if err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	response.SuccessWithMessage(c, inventoryenums.MsgListSuccess, res)
+}
+
 // CreateWarehouse 新建仓库（验收 1）。
 func (h *Handle) CreateWarehouse(c *gin.Context) {
 	req := &inventorydto.CreateWarehouseReq{}

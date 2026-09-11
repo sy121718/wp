@@ -67,6 +67,22 @@ const (
 	ErrReasonBuiltin           = "ErrReasonBuiltin"           // 内置原因不可改（自定义原因才可维护）
 	ErrReasonStatusInvalid     = "ErrReasonStatusInvalid"     // 原因状态不是 active / disabled
 
+	// —— 货源（issue #17 验收 1/2/4）——
+	ErrSourceNotFound      = "ErrSourceNotFound"      // 货源不存在
+	ErrSourceNameRequired  = "ErrSourceNameRequired"  // 货源名称必填
+	ErrSourceCodeRequired  = "ErrSourceCodeRequired"  // 货源编码必填
+	ErrSourceCodeInvalid   = "ErrSourceCodeInvalid"   // 货源编码只允许大写字母 / 数字 / 下划线，且不超长
+	ErrSourceCodeTaken     = "ErrSourceCodeTaken"     // 同工程下货源编码已占用
+	ErrSourceTypeInvalid   = "ErrSourceTypeInvalid"   // 类型只认 external / internal（决定是否按内部交易口径出报表）
+	ErrSourceStatusInvalid = "ErrSourceStatusInvalid" // 状态不是 active / disabled
+	// ErrSourceInternalNotRelated 内部货源必须标记关联方：内部交易必须能被关联方报表捕获。
+	ErrSourceInternalNotRelated = "ErrSourceInternalNotRelated"
+	// ErrSourceSettleNotInternal 结算价只属于内部货源（自产商品的成本口径，外部供应商走采购价）。
+	ErrSourceSettleNotInternal = "ErrSourceSettleNotInternal"
+	ErrSourceSettleInvalid     = "ErrSourceSettleInvalid" // 结算价不能为负
+	ErrSourceConfigInvalid     = "ErrSourceConfigInvalid" // 对接配置必须是 JSON 对象
+	ErrSourceFilterInvalid     = "ErrSourceFilterInvalid" // 报表筛选参数不合法（关联方标志只认 true / false）
+
 	// —— 物料清单（issue #16 验收 5）——
 	ErrBOMQuantityInvalid    = "ErrBOMQuantityInvalid"    // 子项用量必须为正整数
 	ErrBOMSelfReference      = "ErrBOMSelfReference"      // 父项不能把自己列为子项
@@ -97,4 +113,22 @@ const (
 const (
 	CacheSyncOK     = "ok"
 	CacheSyncFailed = "failed"
+)
+
+// 货源类型取值（写入即校验，不接受自由文本）。
+//
+//	external —— 外部供应商（第三方，采购走采购单）；
+//	internal —— 集团内（关联公司 / 自家工厂，可设内部结算价，自家工厂走生产入库）。
+//
+// 类型不是装饰性标签：它是「这笔交易是否按内部交易口径出报表」的判据，
+// 内部货源恒为关联方（见 Service.CreateSource）。
+const (
+	SourceTypeExternal = "external"
+	SourceTypeInternal = "internal"
+)
+
+// 货源状态取值（写入即校验，不接受自由文本）。
+const (
+	SourceStatusActive   = "active"
+	SourceStatusDisabled = "disabled"
 )

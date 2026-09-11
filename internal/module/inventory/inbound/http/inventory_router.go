@@ -45,6 +45,17 @@ func SetupInventoryRoutes(rg *gin.RouterGroup, db *gorm.DB, project projectcontr
 	g.POST("/bom/set", handle.SetBOM)
 	g.GET("/bom/get", handle.GetBOM)
 
+	// 货源（issue #17）：一张表承载全部进货来源 —— 外部供应商 / 集团内关联公司 / 自家工厂
+	// 用类型区分，关联方标志独立成列（报表区分），config 承载异构对接扩展信息。
+	// list 的 type / relatedParty / status / keyword 都是可组合的报表筛选维度，
+	// summary 按「类型 × 关联方」分组给出交叉计数。
+	g.GET("/source/list", handle.ListSources)
+	g.GET("/source/get", handle.GetSource)
+	g.GET("/source/summary", handle.SourceSummary)
+	g.POST("/source/create", handle.CreateSource)
+	g.POST("/source/update", handle.UpdateSource)
+	g.POST("/source/delete", handle.DeleteSource)
+
 	// 商品侧缓存同步与对账（issue #16 验收 6/7）：提交后的独立步骤，不进变动事务。
 	g.POST("/cache/sync", handle.SyncStockCache)
 	g.POST("/cache/reconcile", handle.ReconcileStockCache)

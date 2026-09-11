@@ -212,6 +212,15 @@ func SetupDashboardRoutes(router *gin.Engine,
 	adminPages.POST("/inventory/stock/change", builtin.CasbinMiddlewareForPath("/api/inventory/stock/change"), inventoryPages.InventoryStockChange)
 	adminPages.POST("/inventory/reason/create", builtin.CasbinMiddlewareForPath("/api/inventory/reason/create"), inventoryPages.InventoryReasonCreate)
 
+	// 货源管理页（issue #17）：外部供应商 / 集团内关联公司 / 自家工厂登记在同一张表，
+	// 类型与关联方标志两个结构化维度支撑报表区分，对接配置（JSON 对象）承载异构扩展信息。
+	// 页面 GET 走 /admin 组认证（Session+CSRF，无 Casbin）；写动作复用货源 API 权限点。
+	sourcePages := NewInventorySourcePageHandle(inventories, projects)
+	adminPages.GET("/inventory/sources", sourcePages.InventorySourcesPage)
+	adminPages.POST("/inventory/sources/create", builtin.CasbinMiddlewareForPath("/api/inventory/source/create"), sourcePages.InventorySourceCreate)
+	adminPages.POST("/inventory/sources/update", builtin.CasbinMiddlewareForPath("/api/inventory/source/update"), sourcePages.InventorySourceUpdate)
+	adminPages.POST("/inventory/sources/delete", builtin.CasbinMiddlewareForPath("/api/inventory/source/delete"), sourcePages.InventorySourceDelete)
+
 	// 商品域翻译工作台（issue #12）：入口在商品列表行内「多语言」按钮（与页面翻译工作台同构）。
 	// 保存写 sys_translation（engine=manual）并标记待重建，鉴权复用商品更新权限点（同一改动面）。
 	SetupProductTranslationRoutes(adminPages,

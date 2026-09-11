@@ -65,6 +65,21 @@ type InventoryService interface {
 	SetBOM(ctx context.Context, req *inventorydto.SetBOMReq) (res *inventorydto.BOMResp, err error)
 	GetBOM(ctx context.Context, req *inventorydto.GetBOMReq) (res *inventorydto.BOMResp, err error)
 
+	// —— 货源（issue #17）——
+	// 一张表承载**所有进货来源**：外部供应商、集团内关联公司、自家工厂用 type 区分，
+	// related_party 标记关联交易（报表按「类型 × 关联方」取数），config 承载异构对接扩展信息。
+	// CreateSource 新建货源（验收 1/2）：类型区分内外部、可标记关联方、可配对接扩展信息；
+	// 内部货源恒为关联方，结算价只属于内部货源。
+	CreateSource(ctx context.Context, req *inventorydto.CreateSourceReq) (res *inventorydto.SourceResp, err error)
+	// UpdateSource 改货源（改名 / 改码 / 改类型 / 改关联方 / 改结算价 / 停启用 / 改对接配置）。
+	UpdateSource(ctx context.Context, req *inventorydto.UpdateSourceReq) (res *inventorydto.SourceResp, err error)
+	GetSource(ctx context.Context, req *inventorydto.GetSourceReq) (res *inventorydto.SourceResp, err error)
+	// ListSources 货源列表（验收 4）：类型 / 关联方 / 状态 / 关键词都是可组合的筛选维度。
+	ListSources(ctx context.Context, req *inventorydto.ListSourceReq) (list []*inventorydto.SourceResp, err error)
+	DeleteSource(ctx context.Context, req *inventorydto.DeleteSourceReq) (err error)
+	// SourceSummary 按「类型 × 关联方」分组统计（验收 4「关联方标志可用于报表区分」的数据出口）。
+	SourceSummary(ctx context.Context, req *inventorydto.SourceSummaryReq) (res *inventorydto.SourceSummaryResp, err error)
+
 	// —— 商品侧缓存同步与对账（验收 6/7）——
 	// SyncStockCache 显式同步（真源汇总 → 商品侧展示缓存，带时间戳）。
 	SyncStockCache(ctx context.Context, req *inventorydto.SyncStockCacheReq) (res *inventorydto.SyncStockCacheResp, err error)
