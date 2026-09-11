@@ -54,46 +54,54 @@
     <aside class="media-detail" id="ml-detail" hidden>
         <div class="media-detail-head">
             <strong>附件详情</strong>
-            <button type="button" class="wb-icon-btn" id="ml-detail-close">×</button>
+            {* 这里原来写的是工作台的 wb-icon-btn —— 媒体库页不加载 workbench.css，
+                于是它一直渲染成浏览器裸按钮（详情面板右上角那个方框）。改用基座图标按钮。 *}
+            <button type="button" class="btn btn-icon" id="ml-detail-close" aria-label="关闭详情">×</button>
         </div>
         <div class="media-detail-body" id="ml-detail-body"></div>
     </aside>
 </div>
 
-{* 上传弹窗 *}
-<div class="wb-media-mask" id="ml-upload-mask" hidden></div>
-<div class="wb-media-modal" id="ml-upload-modal" hidden>
-    <div class="wb-media-head">
-        <strong>上传文件</strong>
-        <button type="button" class="wb-icon-btn" id="ml-upload-close">×</button>
+{* 上传弹窗：结构归基座（js/ui/modal.js）—— 焦点陷阱/Esc/遮罩/焦点归还都由它管，
+   这里只声明「有哪些元素、各自什么角色」，业务逻辑留在 media-admin.js。
+   drop 区加了 role/tabindex：此前它是个纯 div，键盘用户根本够不到「选择文件」。 *}
+<dialog class="wb-modal" id="ml-upload-modal" data-modal data-modal-autofocus="#ml-drop">
+    <div class="wb-modal-inner">
+        <header class="wb-modal-head">
+            <strong>上传文件</strong>
+            <button type="button" class="wb-modal-x" data-modal-close aria-label="关闭">×</button>
+        </header>
+        <div class="wb-modal-body">
+            <div class="wb-media-drop" id="ml-drop" role="button" tabindex="0">拖拽文件到此处，或点击选择</div>
+            <input type="file" id="ml-file-input" multiple hidden>
+            <div class="media-upload-list" id="ml-upload-list"></div>
+            <div class="media-upload-actions">
+                <label>归类到分类：</label>
+                <select id="ml-upload-category" class="media-select"></select>
+            </div>
+        </div>
     </div>
-    <div class="wb-media-drop" id="ml-drop">拖拽文件到此处，或点击选择</div>
-    <input type="file" id="ml-file-input" multiple hidden>
-    <div class="media-upload-list" id="ml-upload-list"></div>
-    <div class="media-upload-actions">
-        <label>归类到分类：</label>
-        <select id="ml-upload-category" class="media-select"></select>
-    </div>
-</div>
+</dialog>
 
 {* 分类弹窗（新建/改名） *}
-<div class="wb-media-mask" id="ml-cat-mask" hidden></div>
-<div class="wb-media-modal media-cat-modal" id="ml-cat-modal" hidden>
-    <div class="wb-media-head">
-        <strong id="ml-cat-title">新建分类</strong>
-        <button type="button" class="wb-icon-btn" id="ml-cat-close">×</button>
+<dialog class="wb-modal media-cat-modal" id="ml-cat-modal" data-modal data-modal-autofocus="#ml-cat-name">
+    <div class="wb-modal-inner">
+        <header class="wb-modal-head">
+            <strong id="ml-cat-title">新建分类</strong>
+            <button type="button" class="wb-modal-x" data-modal-close aria-label="关闭">×</button>
+        </header>
+        <div class="wb-modal-body">
+            <input type="hidden" id="ml-cat-id">
+            <label for="ml-cat-parent">上级分类</label>
+            <select id="ml-cat-parent" class="media-select"></select>
+            <label for="ml-cat-name">分类名称</label>
+            <input type="text" id="ml-cat-name" class="media-select" placeholder="分类名称">
+        </div>
+        <footer class="wb-modal-foot">
+            <button type="button" class="btn btn-primary" id="ml-cat-save">保存</button>
+        </footer>
     </div>
-    <div class="wb-media-body">
-        <input type="hidden" id="ml-cat-id">
-        <label>上级分类</label>
-        <select id="ml-cat-parent" class="media-select"></select>
-        <label>分类名称</label>
-        <input type="text" id="ml-cat-name" class="media-select" placeholder="分类名称">
-    </div>
-    <div class="media-upload-actions">
-        <button type="button" class="btn btn-primary" id="ml-cat-save">保存</button>
-    </div>
-</div>
+</dialog>
 
 <link rel="stylesheet" href="/static/css/media-lib.css">
 <script src="/static/js/media-lib.js?v={{.jsVer}}"></script>

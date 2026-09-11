@@ -22,6 +22,19 @@
         counts: {}        // 分类 → 附件数（后续可按需扩展）
     };
 
+    // ---------- 系统对话框收敛 ----------
+    // 页面上只剩 confirm()/alert() 还是「系统原生」的样子：样式不可控、会冻结整页、
+    // 在嵌入 / 自动化环境里直接被吞掉（用户点删除看到的就是它）。统一走基座控件
+    // （js/ui/confirm.js 的同一个 <dialog>）；基座缺席时退回原生，功能不丢。
+    function notify(message, opts) {
+        if (window.WBUI && WBUI.alert) { WBUI.alert(message, opts); return; }
+        window.alert(message);
+    }
+    function ask(message, onOk, opts) {
+        if (window.WBUI && WBUI.confirm) { WBUI.confirm(message, onOk, opts); return; }
+        if (window.confirm(message)) { onOk(); }
+    }
+
     // ---------- 分类树 ----------
     function loadTree() {
         M.api('category/tree').then(function (tree) {
@@ -63,11 +76,12 @@
             onAdd: function (parentId) { openCatModal(null, parentId); },
             onEdit: function (node) { openCatModal(node); },
             onDelete: function (node) {
-                if (!confirm('删除分类「' + (node.category_name || node.name) + '」？该分类下的附件将移入未分类。')) return;
-                M.api('category/delete', { method: 'POST', body: { id: node.id } }).then(function () {
-                    if (state.categoryId === node.id) selectCategory(0, '全部');
-                    loadTree();
-                }).catch(function (err) { alert(err.message); });
+                ask('删除分类「' + (node.category_name || node.name) + '」？该分类下的附件将移入未分类。', function () {
+                    M.api('category/delete', { method: 'POST', body: { id: node.id } }).then(function () {
+                        if (state.categoryId === node.id) selectCategory(0, '全部');
+                        loadTree();
+                    }).catch(function (err) { notify(err.message); });
+                }, { title: '删除分类', ok: '删除', danger: true });
             }
         });
         box.appendChild(ul);
@@ -294,7 +308,7 @@
         urlRow.className = 'media-detail-url';
         var urlInput = document.createElement('input'); urlInput.type = 'text'; urlInput.readOnly = true; urlInput.value = item.url || '';
         var copyBtn = document.createElement('button'); copyBtn.type = 'button'; copyBtn.className = 'btn btn-sm'; copyBtn.textContent = '复制';
-        copyBtn.addEventListener('click', function () { urlInput.select(); document.execCommand('copy'); alert('已复制 URL'); });
+        copyBtn.addEventListener('click', function () { urlInput.select(); document.execCommand('copy'); notify('已复制 URL'); });
         urlRow.appendChild(urlInput); urlRow.appendChild(copyBtn);
         body.appendChild(meta); body.appendChild(urlRow);
         // 保存 / 删除。
@@ -311,20 +325,21 @@
                 description: inputs.description.value.trim()
             };
             M.api('update', { method: 'POST', body: body2 }).then(function () {
-                alert('已保存');
+                notify('已保存');
                 state.selected = null;
                 panel.hidden = true;
                 loadList();
-            }).catch(function (err) { alert(err.message); });
+            }).catch(function (err) { notify(err.message); });
         });
         var delBtn = document.createElement('button'); delBtn.type = 'button'; delBtn.className = 'btn btn-danger'; delBtn.textContent = '删除';
         delBtn.addEventListener('click', function () {
-            if (!confirm('确定删除「' + (item.file_name || '') + '」？')) return;
-            M.api('delete', { method: 'POST', body: { id: item.id } }).then(function () {
-                state.selected = null;
-                panel.hidden = true;
-                loadList();
-            }).catch(function (err) { alert(err.message); });
+            ask('确定删除「' + (item.file_name || '') + '」？', function () {
+                M.api('delete', { method: 'POST', body: { id: item.id } }).then(function () {
+                    state.selected = null;
+                    panel.hidden = true;
+                    loadList();
+                }).catch(function (err) { notify(err.message); });
+            }, { title: '删除附件', ok: '删除', danger: true });
         });
         actions.appendChild(saveBtn); actions.appendChild(delBtn);
         body.appendChild(actions);
@@ -345,11 +360,11 @@
             regenBtn.disabled = true; regenBtn.textContent = '生成中…';
             M.api('variants/generate', { method: 'POST', body: { id: item.id } })
                 .then(function (variants) {
-                    alert('变体生成完成');
+                    notify('变体生成完成');
                     renderVariantBadges(variants || []);
                     loadList();
                 })
-                .catch(function (err) { alert(err.message); })
+                .catch(function (err) { notify(err.message); })
                 .finally(function () { regenBtn.disabled = false; regenBtn.textContent = '重新生成变体'; });
         });
         varActions.appendChild(dlBtn); varActions.appendChild(regenBtn);
@@ -385,30 +400,43 @@
             .catch(function () { row.textContent = '上传失败'; });
     }
 
+    // 弹窗开合交给基座控件（js/ui/modal.js）：焦点陷阱、Esc、遮罩点击、关闭后焦点归还
+    // 都由它负责。这里只留「打开前先把选项渲染好」这类业务动作 —— 顺序不能反：
+    // 先渲染选项再打开，打开时的扫描才能把新渲染的 select 一并增强。
     function openUpload() {
-        document.getElementById('ml-upload-modal').hidden = false;
-        document.getElementById('ml-upload-mask').hidden = false;
         renderCatOptions(document.getElementById('ml-upload-category'));
+        openModal('ml-upload-modal');
     }
     function closeUpload() {
-        document.getElementById('ml-upload-modal').hidden = true;
-        document.getElementById('ml-upload-mask').hidden = true;
+        closeModal('ml-upload-modal');
     }
 
     // ---------- 分类弹窗 ----------
     function openCatModal(node, defaultParent) {
-        var modal = document.getElementById('ml-cat-modal');
-        var mask = document.getElementById('ml-cat-mask');
-        if (!modal) return;
-        modal.hidden = false; mask.hidden = false;
+        if (!document.getElementById('ml-cat-modal')) return;
         document.getElementById('ml-cat-title').textContent = node ? '编辑分类' : '新建分类';
         document.getElementById('ml-cat-id').value = node ? node.id : '';
         renderCatOptions(document.getElementById('ml-cat-parent'), node ? node.parent_id : (defaultParent || 0), node ? node.id : 0);
         document.getElementById('ml-cat-name').value = node ? (node.category_name || node.name) : '';
+        openModal('ml-cat-modal');
     }
     function closeCatModal() {
-        document.getElementById('ml-cat-modal').hidden = true;
-        document.getElementById('ml-cat-mask').hidden = true;
+        closeModal('ml-cat-modal');
+    }
+
+    // openModal/closeModal 薄封装：基座控件缺席时退回原生 <dialog> 语义 ——
+    // 「少引一个脚本」不该变成「弹窗根本打不开」。
+    function openModal(id) {
+        var dlg = document.getElementById(id);
+        if (!dlg) return;
+        if (window.WBUI && WBUI.modal) { WBUI.modal.open(dlg); return; }
+        if (dlg.showModal) { dlg.showModal(); } else { dlg.setAttribute('open', ''); }
+    }
+    function closeModal(id) {
+        var dlg = document.getElementById(id);
+        if (!dlg) return;
+        if (window.WBUI && WBUI.modal) { WBUI.modal.close(dlg); return; }
+        if (dlg.close) { dlg.close(); } else { dlg.removeAttribute('open'); }
     }
 
     function renderCatOptions(select, selected, excludeId) {
@@ -436,14 +464,14 @@
         var id = Number(document.getElementById('ml-cat-id').value || 0);
         var name = document.getElementById('ml-cat-name').value.trim();
         var parentId = Number(document.getElementById('ml-cat-parent').value || 0);
-        if (!name) { alert('请输入分类名称'); return; }
+        if (!name) { notify('请输入分类名称'); return; }
         var req = id
             ? M.api('category/update', { method: 'POST', body: { id: id, category_name: name, parent_id: parentId } })
             : M.api('category/create', { method: 'POST', body: { parent_id: parentId, category_name: name } });
         req.then(function () {
             closeCatModal();
             loadTree();
-        }).catch(function (err) { alert(err.message); });
+        }).catch(function (err) { notify(err.message); });
     }
 
     // ---------- 事件绑定 ----------
@@ -470,15 +498,22 @@
         // 批量下载（勾选 id 集合 → GET /api/media/download/batch?ids=1,2,3）。
         document.getElementById('ml-batch-download').addEventListener('click', function () {
             var ids = Object.keys(state.checked);
-            if (!ids.length) { alert('请先勾选要下载的图片'); return; }
+            if (!ids.length) { notify('请先勾选要下载的图片'); return; }
             window.open('/api/media/download/batch?ids=' + ids.join(','), '_blank');
         });
         // 上传。
         document.getElementById('ml-upload-btn').addEventListener('click', openUpload);
-        document.getElementById('ml-upload-close').addEventListener('click', closeUpload);
-        document.getElementById('ml-upload-mask').addEventListener('click', closeUpload);
+        // 关闭按钮 / 遮罩 / Esc 都归基座（data-modal-close + <dialog> 原生行为），这里不再逐个绑。
         var fileInput = document.getElementById('ml-file-input');
-        document.getElementById('ml-drop').addEventListener('click', function () { fileInput.click(); });
+        var drop = document.getElementById('ml-drop');
+        drop.addEventListener('click', function () { fileInput.click(); });
+        // drop 区此前是纯 div：键盘用户够不到「选择文件」，补 Enter/Space 与 role=button 对齐。
+        drop.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') {
+                e.preventDefault();
+                fileInput.click();
+            }
+        });
         fileInput.addEventListener('change', function () {
             uploadFiles(fileInput.files, Number(document.getElementById('ml-upload-category').value || 0));
             fileInput.value = '';
@@ -490,8 +525,6 @@
         });
         // 分类管理。
         document.getElementById('ml-category-add').addEventListener('click', function () { openCatModal(null, 0); });
-        document.getElementById('ml-cat-close').addEventListener('click', closeCatModal);
-        document.getElementById('ml-cat-mask').addEventListener('click', closeCatModal);
         document.getElementById('ml-cat-save').addEventListener('click', saveCategory);
         // 详情。
         document.getElementById('ml-detail-close').addEventListener('click', function () {

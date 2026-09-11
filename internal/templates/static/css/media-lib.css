@@ -115,22 +115,11 @@
 .media-detail-actions { display: flex; gap: 8px; }
 .media-detail-actions .btn { flex: 1; }
 
-/* --- 弹窗（复用 wb-media-modal 结构） --- */
-.wb-media-modal {
-    position: fixed; z-index: 1200;
-    left: 50%; top: 50%; transform: translate(-50%, -50%);
-    width: min(480px, 92vw);
-    background: var(--c-surface, #fff);
-    border-radius: 14px;
-    box-shadow: 0 20px 60px rgba(0,0,0,.25);
-    padding: 16px;
-}
-.wb-media-mask {
-    position: fixed; inset: 0; z-index: 1190;
-    background: rgba(0,0,0,.4);
-}
-.wb-media-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
-.wb-media-body label { display: block; font-size: 12px; color: var(--c-text-mute, #6b7280); margin: 8px 0 4px; }
+/* --- 弹窗 ---
+   开合/焦点/Esc/遮罩归基座（ui.css 的 .wb-modal*，行为在 js/ui/modal.js）；
+   这里只留媒体库特有的部分：分类弹窗窄一档、表单标签、拖拽区。 */
+.wb-modal.media-cat-modal { width: min(360px, 92vw); }
+.media-cat-modal label { display: block; font-size: 12px; color: var(--c-text-mute, #6b7280); margin: 8px 0 4px; }
 .wb-media-drop {
     border: 2px dashed var(--c-border, #d1d5db);
     border-radius: 10px;

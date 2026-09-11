@@ -15,6 +15,7 @@ func uiSrcForTest() map[string]string {
 	return map[string]string{
 		"_util.js":  "/* util */ window.WBUI=window.WBUI||{};",
 		"select.js": "/* select */ WBUI.register(function(){});",
+		"modal.js":  "/* modal */ WBUI.register(function(){});",
 		"index.js":  "/* index */ WBUI.scan(document);",
 	}
 }
@@ -45,6 +46,31 @@ func TestUIScriptInjectsSelectWithBase(t *testing.T) {
 	}
 	if strings.Index(got, "/* index */") < strings.Index(got, "/* select */") {
 		t.Errorf("入口应在控件之后")
+	}
+}
+
+// TestUIScriptInjectsModalOnTrigger 弹窗特征取 "data-modal" 前缀：
+// 触发点（data-modal-open）与声明（data-modal）任一出现都要带上控件本体。
+func TestUIScriptInjectsModalOnTrigger(t *testing.T) {
+	for _, html := range []string{
+		`<button data-modal-open="f1">打开</button>`,
+		`<dialog id="f1" data-modal><button type="button" data-modal-close>×</button></dialog>`,
+	} {
+		got := uiScriptFor(html, uiSrcForTest())
+		if !strings.Contains(got, "/* modal */") {
+			t.Errorf("命中弹窗特征时应注入 modal.js；输入 %s；结果 %s", html, got)
+		}
+	}
+}
+
+// TestUIStyleFollowsControls 样式与脚本同进同出：只有命中控件特征才注入 ui.css，
+// 否则纯内容页会白付一份控件样式的流量。
+func TestUIStyleFollowsControls(t *testing.T) {
+	if got := uiStyleFor(`<button data-modal-open="f1">打开</button>`, "/* css */"); got != "/* css */" {
+		t.Errorf("命中弹窗特征时应注入控件样式，got %q", got)
+	}
+	if got := uiStyleFor(`<h1>纯内容</h1>`, "/* css */"); got != "" {
+		t.Errorf("纯内容页不该注入控件样式，got %q", got)
 	}
 }
 

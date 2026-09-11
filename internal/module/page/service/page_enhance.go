@@ -40,7 +40,7 @@ func enhanceSource() string {
 // uiFiles 原始控件基座的文件清单（与 js/ui/ 目录一致）。
 //
 // _util.js 是助手、index.js 是入口，两者随任一控件一起注入；其余按 data-ui-* 特征挑。
-var uiFiles = []string{"_util.js", "select.js", "index.js"}
+var uiFiles = []string{"_util.js", "select.js", "modal.js", "index.js"}
 
 // uiSources 取原始控件基座源码（文件名 → 源码）。
 //

@@ -1,6 +1,7 @@
 # 02-F · 前端控件基座（已落地）
 
-> 状态：**已实现**（2026-09）。11 个提交，`go test ./...` 全绿。
+> 状态：**已实现**（2026-09）。`go test ./...` 全绿。
+> 覆盖：下拉 / 抽屉 / 图标字段 / 确认框 / **提示框** / **弹窗** / 明暗切换 + 外观层。
 
 ## 1. 这一层解决什么
 
@@ -31,14 +32,15 @@
 | 下拉 | `ui/select.js` | 自动接管原生 `<select>`（跳过 `data-wb-path`） | 自绘替身，含动态选项同步 |
 | 抽屉 | `ui/drawer.js` | `data-drawer-open` / `data-drawer-title` | 打开时对新内容 `WBUI.scan` |
 | 图标字段 | `ui/iconfield.js` | `data-icon-field`（+ hidden 存值）、`data-icon-name` | 图标库 766KB 懒加载 |
-| 确认框 | `ui/confirm.js` | `data-confirm` / `-title` / `-ok` / `-cancel` / `-danger` | `<dialog>` 承载，取代原生 confirm |
+| 确认框 | `ui/confirm.js` | `data-confirm` / `-title` / `-ok` / `-cancel` / `-danger` | `<dialog>` 承载，取代原生 confirm；另有 `WBUI.confirm` / **`WBUI.alert`** 给 JS 里调用 |
+| 弹窗 | `ui/modal.js` | `data-modal`、`data-modal-open` / `-close` / `-static` / `-nokeyboard` / `-autofocus` | `<dialog>` 承载；`WBUI.modal.open/close`；广播 `wbui:modal-open/close` |
 | 明暗切换 | `ui/themetoggle.js` | `data-theme-toggle` | 维护 `aria-pressed`；导出 `WBUI.theme` |
 | 入口 | `ui/index.js` | 自动 | DOM 就绪扫描 + `htmx:afterSwap` 重扫 |
 | 助手 | `ui/_util.js` | — | `ready` / `$$` / `each` / `markOnce` / `register` / `scan` |
 
 ### 外观层（`ui.css`）
 
-`.wbs-*`（下拉）、`.wb-confirm-*`（确认框）、`.btn`+`.btn-primary|secondary|ghost|danger|sm|icon`、
+`.wbs-*`（下拉）、`.wb-confirm-*`+`.is-alert`（确认框/提示框）、`.wb-modal*`（弹窗）、`.btn`+`.btn-primary|secondary|ghost|danger|sm|icon`、
 `.card-*`、`.data-table`+`.table-wrap`、`.form-*`+`.checkbox`、`.badge-*`+`.dot-*`、
 `.pagination-*`、工具类、`.theme-toggle`。
 
@@ -55,7 +57,7 @@ shadow / shape / viewport），组件只声明词汇、编译期出 CSS，颜色
 
 ```
 static/js/ui/*.js + static/css/ui.css
-   ├── 后台    admin/layout.html         <link ui.css> + 6 个脚本（_util → 各控件 → index）
+   ├── 后台    admin/layout.html         <link ui.css> + 7 个脚本（_util → 各控件 → index）
    ├── 工作台  workbench/layout.html     同上（wbDropdown 靠 data-wb-path 被自动跳过）
    └── 前台    构建期按 data-ui-* 特征内联（CSS 与 JS **同进同出**）
 ```
@@ -115,6 +117,11 @@ var(--sky-c-primary, var(--c-primary, 兜底))
 | 确认框是**系统对话框 + 内联 JS** | 12 处 `onsubmit="return confirm(…)"` | `<dialog>` 自绘框，模板只留 `data-confirm` |
 | 主题切换按钮**读屏读不到状态** | 只有 `title` | 补 `aria-pressed` |
 | 焦点顺序 | 先聚焦原生 select（扫描后会变成视觉隐藏元素） | 先扫描再聚焦 |
+| 弹层**贴在页面左上角**（不居中） | 只写了 `position: fixed`，靠 UA 样式的 `dialog { margin: auto }` 居中 | `.wb-confirm` / `.wb-modal` 显式写 `position: fixed; inset: 0; margin: auto` —— `theme.css` 的 `* { margin: 0 }` 把 UA 的居中一起清掉了。**确认框也中招**，属迁移时就带进来的回归，只在核对计算样式时才暴露（`margin=0px`、`rect.x=0`） |
+| 后台页**另开标签页后写请求全 403** | token 只放在 `body[hx-headers]`（HTMX 用）与登录页写入的 `sessionStorage` 里，而 `media-lib.js` 找的是 `<meta name="csrf-token">`（workbench 有、admin 没有） | `admin/layout.html` 补上 meta，与 workbench 对齐；上传/分类增删改不再依赖 `sessionStorage` |
+| 弹窗**按 Esc 关不掉** | 依赖 `<dialog>` 的原生 Esc —— 那是浏览器的 default action，合成的键盘事件不产生它 | 控件自己接管 `keydown` Escape（modal 与 confirm 都是），并按「最上层优先」`stopPropagation`，避免同时开着的抽屉被一起关掉 |
+| 上传弹窗的拖拽区**键盘够不到** | `#ml-drop` 是纯 div，只挂了 click | 补 `role="button"` + `tabindex="0"` + Enter/Space |
+| 媒体库删除**弹系统原生对话框** | JS 里 12 处 `confirm()` / `alert()`（详情删除、分类删除、已保存、已复制…） | 全走 `WBUI.confirm` 与新增的 `WBUI.alert`（同一个 `<dialog>`）；基座缺席时退回原生，功能不丢 |
 
 ### 踩到的坑
 
@@ -138,8 +145,10 @@ var(--sky-c-primary, var(--c-primary, 兜底))
 - **工作台 13 个原语的收敛**：涉及模块加载形态与既有交互，等 ① 再攒一两个控件之后再迁；
   迁移时注意两者 API 不同（工作台那套面向检查器字段，基座这套面向页面上的原生控件）；
 - **`effects.go` 里的 ◻️ 项**（噪点/极光/逐字入场/模糊过渡/悬停展开/断点变量化）。
-- **媒体库不进基座**：`media-lib.js` 是 API 客户端与渲染工具库，`media-admin.js` 是媒体库页
-  的业务逻辑 —— 两者都不是"原始控件"，硬搬会把应用逻辑塞进控件层。
+- ~~**媒体库不进基座**~~ → **边界已细分**：业务脚本（`media-lib.js` 是 API 客户端与渲染工具库、
+  `media-admin.js` 是媒体库页业务逻辑）不进基座 —— 硬搬会把应用逻辑塞进控件层；
+  但页面里的**原始控件该进**：两个弹窗已改用 `ui/modal.js`（`<dialog>` + `data-modal-*`），
+  `media-admin.js` 只剩「先渲染好选项再打开」「确认后调接口」这类业务动作。
 
 ## 9. 关于"能不能不用 JS"
 

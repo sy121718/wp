@@ -5,6 +5,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+{* CSRF token 暴露给页面 JS：与 workbench/layout 对齐。
+   后台页面此前只把 token 放在 body[hx-headers]（HTMX 用）与登录页写入的 sessionStorage 里，
+   而 media-lib.js / media-admin.js 这类脚本找的是 <meta name="csrf-token">（workbench 有、
+   admin 没有）—— 于是「同一会话下另开一个标签页打开后台页」时 sessionStorage 为空，
+   所有写请求（上传/分类增删改）全部 403 CSRF 校验失败。
+   withCSRF() 已把 token 注入渲染数据，这里补一个 meta 就让两条通道对上了。 *}
+<meta name="csrf-token" content="{{ .["csrf_token"] }}">
     <title>{{.title}} — go_wp {{ .["t"]("shell.brand", "管理后台") }}</title>
     <script>
         {* 防止主题闪烁：在 CSS 加载前就从 localStorage 读取主题 *}
@@ -86,6 +93,9 @@
 <script src="/static/js/ui/iconfield.js"></script>
 {* 确认框：替代原生 confirm 与内联 onclick/onsubmit，模板里只留 data-confirm 一个属性。 *}
 <script src="/static/js/ui/confirm.js"></script>
+{* 弹窗：<dialog> 承载，管好焦点陷阱/Esc/遮罩/焦点归还；业务逻辑留在页面脚本
+   （挂 wbui:modal-open 事件），模板里只留 data-modal-open / data-modal-close。 *}
+<script src="/static/js/ui/modal.js"></script>
 <script src="/static/js/ui/themetoggle.js"></script>
 <script src="/static/js/ui/index.js"></script>
 <script src="/static/js/admin.js"></script>

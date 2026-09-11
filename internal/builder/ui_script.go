@@ -27,6 +27,9 @@ type uiBlock struct {
 // 漏登记会让用到它的页面静默失去该控件的增强（与 enhanceBlocks 同一条约定）。
 var uiBlocks = []uiBlock{
 	{file: "select.js", feats: []string{"data-ui-select"}},
+	// 弹窗：特征取 "data-modal"，同时命中 data-modal-open / data-modal-close ——
+	// 页面只要出现任一弹窗触发点，就该带上这个控件。
+	{file: "modal.js", feats: []string{"data-modal"}},
 }
 
 // uiStyleFor 取该产物需要的控件样式（有控件命中才返回，纯内容页为空）。

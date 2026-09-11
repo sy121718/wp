@@ -46,6 +46,15 @@
         cancelBtn = dlg.querySelector('.wb-confirm-cancel');
 
         cancelBtn.addEventListener('click', function () { close(false); });
+        // Esc 自己处理，不依赖 <dialog> 的原生 Esc：原生 Esc 属于浏览器的 default action，
+        // 合成键盘事件（自动化 / 部分嵌入环境）不产生它 —— 实测原生 <dialog> 在 CDP 下按
+        // Esc 不关。依赖它就等于「能手动用、测不到、真出问题时没有兜底」。
+        dlg.addEventListener('keydown', function (e) {
+            if (e.key !== 'Escape') { return; }
+            e.preventDefault();
+            e.stopPropagation();
+            close(false);
+        });
         dlg.addEventListener('close', function () {
             // Esc 关闭时 returnValue 为空串，等同于取消。
             var confirmed = dlg.returnValue === 'ok';
@@ -55,17 +64,32 @@
         });
     }
 
-    function open(el, run) {
+    // openDialog 统一入口：声明式（data-confirm）与代码调用（WBUI.confirm / WBUI.alert）
+    // 两条路都走这里，视觉与键盘行为不会分叉。
+    function openDialog(o) {
         build();
-        pending = run;
-        titleEl.textContent = el.getAttribute('data-confirm-title') || '请确认';
-        msgEl.textContent = el.getAttribute('data-confirm') || '确定执行该操作？';
-        okBtn.textContent = el.getAttribute('data-confirm-ok') || '确定';
-        cancelBtn.textContent = el.getAttribute('data-confirm-cancel') || '取消';
-        okBtn.classList.toggle('btn-danger', el.hasAttribute('data-confirm-danger'));
+        pending = o.onOk || null;
+        // is-alert：只留「确定」，取消按钮靠 CSS 隐去（不依赖 [hidden]，ui.css 不引别的样式表）。
+        dlg.classList.toggle('is-alert', !!o.alertOnly);
+        titleEl.textContent = o.title || '请确认';
+        msgEl.textContent = o.message || '确定执行该操作？';
+        okBtn.textContent = o.ok || '确定';
+        cancelBtn.textContent = o.cancel || '取消';
+        okBtn.classList.toggle('btn-danger', !!o.danger);
         dlg.returnValue = '';
         dlg.showModal();
         okBtn.focus();
+    }
+
+    function open(el, run) {
+        openDialog({
+            title: el.getAttribute('data-confirm-title') || '请确认',
+            message: el.getAttribute('data-confirm') || '确定执行该操作？',
+            ok: el.getAttribute('data-confirm-ok') || '确定',
+            cancel: el.getAttribute('data-confirm-cancel') || '取消',
+            danger: el.hasAttribute('data-confirm-danger'),
+            onOk: run
+        });
     }
 
     function close(confirmed) {
@@ -108,17 +132,31 @@
     //   WBUI.confirm('确认发布？', function () { … }, { title, ok, cancel, danger })
     // 走同一个 <dialog>，视觉与键盘行为与声明式用法完全一致。
     WBUI.confirm = function (message, onOk, opts) {
-        build();
         opts = opts || {};
-        titleEl.textContent = opts.title || '请确认';
-        msgEl.textContent = message || '确定执行该操作？';
-        okBtn.textContent = opts.ok || '确定';
-        cancelBtn.textContent = opts.cancel || '取消';
-        okBtn.classList.toggle('btn-danger', !!opts.danger);
-        pending = onOk || null;
-        dlg.returnValue = '';
-        dlg.showModal();
-        okBtn.focus();
+        openDialog({
+            title: opts.title || '请确认',
+            message: message,
+            ok: opts.ok || '确定',
+            cancel: opts.cancel || '取消',
+            danger: !!opts.danger,
+            onOk: onOk
+        });
+    };
+
+    // WBUI.alert(message, opts) —— 只有一个按钮的提示框，替代原生 alert。
+    // 原生 alert 会冻结整页、样式不可控、在 iframe/自动化下直接吞掉；后台脚本里
+    // （「已复制 URL」「已保存」「请输入分类名称」…）都用它。
+    //   opts: { title, ok, danger, onOk }
+    WBUI.alert = function (message, opts) {
+        opts = opts || {};
+        openDialog({
+            title: opts.title || '提示',
+            message: message,
+            ok: opts.ok || '知道了',
+            danger: !!opts.danger,
+            alertOnly: true,
+            onOk: opts.onOk || null
+        });
     };
 
     WBUI.register(function () { /* 声明式控件：无需按元素增强，事件委托已覆盖 */ });
