@@ -24,6 +24,7 @@ import (
 	productenums "go_wp/internal/module/product/enums"
 	productmodel "go_wp/internal/module/product/model"
 	projectcontract "go_wp/internal/module/project/contract"
+	"go_wp/pkg/i18n"
 )
 
 const (
@@ -37,11 +38,22 @@ const (
 type Service struct {
 	m       *productmodel.Model
 	project projectcontract.ProjectService
+	// contentStore 内容译文读取端口（装配期注入，可空）。
+	// 构建期商品可翻译字段（name/subtitle/description）按构建语言取译文；
+	// 未注入 / 语言为空 / 查询失败一律回退原文（兜底铁律，绝不报错）。
+	contentStore i18n.ContentStore
 }
 
 // NewService 构造。
 func NewService(m *productmodel.Model, project projectcontract.ProjectService) *Service {
 	return &Service{m: m, project: project}
+}
+
+// SetContentStore 注入内容译文读取端口（装配期调用，与其它模块的
+// SetDependencyInvalidator / SetSourceResolver 同模式：可选依赖不进构造参数）。
+// 传入 nil 表示不翻译（构建期商品字段输出原文）。
+func (s *Service) SetContentStore(store i18n.ContentStore) {
+	s.contentStore = store
 }
 
 // 编译期契约断言。

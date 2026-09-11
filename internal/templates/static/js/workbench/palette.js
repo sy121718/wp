@@ -44,13 +44,16 @@ export const paletteItems = [
     { type: 'core.badge', label: '徽章', hint: '文本徽章', props: { text: '新品', variant: 'solid' } },
     { type: 'core.progress', label: '进度条', hint: '数据进度', props: { value: 60, max: 100, label: '完成度' } },
     { type: 'core.rating', label: '评分', hint: '星形评分', props: { value: 4.5, max: 5 } },
-    { type: 'core.form', label: '表单', hint: '联系/订阅表单', props: { fields: [{ type: 'text', label: '姓名', name: 'name', required: true }, { type: 'email', label: '邮箱', name: 'email', required: true }], submitLabel: '提交' } }
+    { type: 'core.form', label: '表单', hint: '联系/订阅表单', props: { fields: [{ type: 'text', label: '姓名', name: 'name', required: true }, { type: 'email', label: '邮箱', name: 'email', required: true }], submitLabel: '提交' } },
+    // 商品详情（issue #6）：命名槽位声明需要的商品字段，构建期由商品解析器静态填入。
+    // 默认槽位给到「商品详情页」的最小可用组合（标题/主图/价格/描述）。
+    { type: 'core.product', label: '商品详情', hint: '吃商品数据的详情组件', props: { source: 'product', titleField: 'product.name', subtitleField: 'product.subtitle', mediaField: 'product.defaultImage', galleryField: 'product.images', priceField: 'product.priceRange', descriptionField: 'product.description', currency: '¥', titleTag: 'h2' } }
 ];
 
 /** 组件库分组：基础组件大分类平铺（细分类留给进阶组件，当前无进阶内容）；
  *  「区块」概念归全局块（页眉/页脚/区块）。 */
 export const paletteGroups = [
-    { key: 'basic', title: '基础组件', types: ['core.container', 'core.heading', 'core.text', 'core.button', 'core.image', 'core.gallery', 'core.divider', 'core.spacer', 'core.slider', 'core.list', 'core.infobox', 'core.social_buttons', 'core.video', 'core.nav', 'core.languages', 'core.tabs', 'core.accordion', 'core.marquee', 'core.counter', 'core.table', 'core.card', 'core.cardstack', 'core.faq', 'core.quote', 'core.countdown', 'core.icon', 'core.badge', 'core.progress', 'core.rating', 'core.form'] }
+    { key: 'basic', title: '基础组件', types: ['core.container', 'core.heading', 'core.text', 'core.button', 'core.image', 'core.gallery', 'core.divider', 'core.spacer', 'core.slider', 'core.list', 'core.infobox', 'core.social_buttons', 'core.video', 'core.nav', 'core.languages', 'core.tabs', 'core.accordion', 'core.marquee', 'core.counter', 'core.table', 'core.card', 'core.cardstack', 'core.faq', 'core.quote', 'core.countdown', 'core.icon', 'core.badge', 'core.progress', 'core.rating', 'core.form', 'core.product'] }
 ];
 
 /**

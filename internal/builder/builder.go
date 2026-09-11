@@ -84,6 +84,9 @@ import (
 	_ "go_wp/internal/builder/components/badge"
 	// core.progress：进度条（role=progressbar）。
 	_ "go_wp/internal/builder/components/progress"
+	// core.product：商品详情组件（声明所需商品字段，构建期由商品解析器静态填入，
+	// issue #6；字段白名单来自 product 模块经实体类型注册表注册的唯一来源）。
+	_ "go_wp/internal/builder/components/product"
 	// core.rating：评分（星形填充，支持半星）。
 	_ "go_wp/internal/builder/components/rating"
 	// core.form：表单（字段白名单/提交）。

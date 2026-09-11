@@ -73,7 +73,7 @@ func newPresFixture(t *testing.T) *presFixture {
 		t.Fatalf("注册实体类型失败: %v", err)
 	}
 	tplSvc := contenttemplateservice.NewService(contenttemplatemodel.NewModel(db), projects, registry)
-	presSvc := presentationservice.NewService(presentationmodel.NewModel(db), tplSvc, registry, projects)
+	presSvc := presentationservice.NewService(presentationmodel.NewModel(db), tplSvc, registry, projects, nil)
 	return &presFixture{
 		db: db, content: contentSvc, templates: tplSvc, pres: presSvc, projectID: project.ID,
 	}

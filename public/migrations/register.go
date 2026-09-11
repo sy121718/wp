@@ -168,6 +168,9 @@ var productVariantOptionsUniqueSQL string
 //go:embed 084_product_menu.sql
 var productMenuSQL string
 
+//go:embed 085_product_detail_template.sql
+var productDetailTemplateSQL string
+
 //go:embed 073_blueprint_ddl_align.sql
 var blueprintDDLAlignSQL string
 
@@ -456,6 +459,17 @@ func init() {
 		TableName:    "sys_permission",
 		ConditionSQL: "SELECT COUNT(*) FROM sys_permission WHERE permission_code = 'content:collections'",
 		SQL:          contentCollectionsPermSQL,
+	})
+
+	// 085：默认商品详情内容模板（issue #6）—— 商品发布按实体类型解析模板，
+	// 种一份类型级默认模板即可让「新建商品即用上」，无需逐商品手工拼装。
+	// 数据种子：内容模板行 + 首个不可变版本 + current_version_id 指针，
+	// 由 DO 块一次写入（applySeed 以单条语句执行整段 SQL）。
+	registerSeed(Seed{
+		Version:      "085-product-detail-template",
+		TableName:    "content_templates",
+		ConditionSQL: "SELECT COUNT(*) FROM content_templates WHERE entity_type = 'product'",
+		SQL:          productDetailTemplateSQL,
 	})
 
 	// 084：商品管理后台菜单（issue #5）。

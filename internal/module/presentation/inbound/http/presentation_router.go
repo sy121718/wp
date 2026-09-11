@@ -4,6 +4,7 @@ package presentationhttp
 
 import (
 	"go_wp/internal/builder/core"
+	blockcontract "go_wp/internal/module/block/contract"
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
 	presentationcontract "go_wp/internal/module/presentation/contract"
 	presentationmodel "go_wp/internal/module/presentation/model"
@@ -15,12 +16,14 @@ import (
 )
 
 // SetupPresentationRoutes 装配 presentation 模块路由，返回模块契约。
-// project 用于解析实例所属工程（presentation_instances.project_id 为 NOT NULL 外键）。
+// project 用于解析实例所属工程（presentation_instances.project_id 为 NOT NULL 外键）；
+// blocks 用于内容模板内部的全局块引用展开（core.globalref，构建期内联）。
 func SetupPresentationRoutes(rg *gin.RouterGroup, db *gorm.DB,
 	templates contenttemplatecontract.ContentTemplateService,
 	registry core.EntitySourceRegistry,
-	project projectcontract.ProjectService) presentationcontract.PresentationService {
-	svc := presentationservice.NewService(presentationmodel.NewModel(db), templates, registry, project)
+	project projectcontract.ProjectService,
+	blocks blockcontract.BlockService) presentationcontract.PresentationService {
+	svc := presentationservice.NewService(presentationmodel.NewModel(db), templates, registry, project, blocks)
 	handle := NewHandle(svc)
 
 	g := rg.Group("/presentation")

@@ -4,6 +4,7 @@ package productcontract
 import (
 	"context"
 
+	"go_wp/internal/builder/core"
 	productdto "go_wp/internal/module/product/dto"
 )
 
@@ -21,4 +22,9 @@ type ProductService interface {
 	CreateVariant(ctx context.Context, req *productdto.CreateVariantReq) (res *productdto.VariantResp, err error)
 	UpdateVariant(ctx context.Context, req *productdto.UpdateVariantReq) (res *productdto.VariantResp, err error)
 	DeleteVariant(ctx context.Context, req *productdto.DeleteVariantReq) (err error)
+
+	// RegisterEntityTypes 把本模块的实体类型（product）注册进实体类型注册表
+	// （装配期调用）。注册后内容模板与发布实例即可把商品作为数据源校验字段绑定，
+	// 构建期经注册表取商品字段解析器（不反向依赖本模块实现）。
+	RegisterEntityTypes(reg core.EntitySourceRegistry) error
 }

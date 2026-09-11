@@ -269,6 +269,17 @@ func TestPaletteInsertNodesFillRequiredContent(t *testing.T) {
 	})
 }
 
+// paletteContentResolver 组件库编译用例的桩解析器：任何字段返回固定占位值。
+//
+// 为什么需要它：core.product（商品详情，issue #6）声明的槽位全是数据绑定，
+// 没有内容解析器就编译不出来 —— 而真实构建（发布实例路径）必注入解析器。
+// 这里只验证「组件库条目插入后编译得出来」，字段语义由 product 模块测试覆盖，
+// 故桩实现按「有值」返回，不校验白名单（白名单校验有独立用例）。
+type paletteContentResolver struct{}
+
+// ResolveString 实现 core.ContentResolver。
+func (paletteContentResolver) ResolveString(string) (string, error) { return "示例值", nil }
+
 // TestPaletteInsertNodesCompile 组件库每个条目插入后都必须能真正编译出产物。
 func TestPaletteInsertNodesCompile(t *testing.T) {
 	set, err := templates.NewComponentSet("../templates/components")
@@ -291,7 +302,7 @@ func TestPaletteInsertNodesCompile(t *testing.T) {
 			if err != nil {
 				t.Fatalf("%s 文档解析失败: %v", n.Type, err)
 			}
-			if _, err = Compile(page, WithComponentSet(set)); err != nil {
+			if _, err = Compile(page, WithComponentSet(set), WithContentResolver(paletteContentResolver{})); err != nil {
 				t.Errorf("%s 插入后编译失败: %v", n.Type, err)
 			}
 		})

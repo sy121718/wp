@@ -29,6 +29,51 @@ type EntityFieldSource interface {
 	ResolverFor(ctx context.Context, entityID string) (ContentResolver, error)
 }
 
+// FieldRef 组件声明的实体字段绑定引用（实体类型 + 字段名）。
+//
+// 由组件经 FieldBindingProvider 自报，构建层据此在「模板保存」与「编译」两处
+// 按实体类型注册表做白名单校验（不变量 4：Document 只保存白名单绑定）。
+type FieldRef struct {
+	// EntityType 实体类型标识（如 product）。
+	EntityType string
+	// Field 字段名（不含类型前缀，如 name）。
+	Field string
+}
+
+// FieldBindingProvider 由「在节点 props 里声明实体字段绑定」的组件实现。
+//
+// 实现方只负责把自身声明的绑定原样报出（不做合法性判断）——校验统一由
+// builder.ValidateFieldRefs 按注册表执行，避免「谁校验」出现第二个来源。
+type FieldBindingProvider interface {
+	// FieldBindings 返回本节点声明的实体字段绑定（无声明返回 nil）。
+	FieldBindings(node *Node) ([]FieldRef, error)
+}
+
+// entityLangKey 构建语言在上下文里的键（私有类型，避免与其它包的 key 冲突）。
+type entityLangKey struct{}
+
+// WithBuildLang 把本次构建的目标语言放进上下文。
+//
+// 实体字段解析器（如商品名/描述这类作者填写文本）据此按语言取内容译文
+// （sys_translation，语境 实体.字段名）；未设置时解析器返回原文，不做翻译。
+func WithBuildLang(ctx context.Context, lang string) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return context.WithValue(ctx, entityLangKey{}, strings.TrimSpace(lang))
+}
+
+// BuildLang 取上下文里的构建语言（未设置 / 为空返回空串 = 原文）。
+func BuildLang(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	if v, ok := ctx.Value(entityLangKey{}).(string); ok {
+		return v
+	}
+	return ""
+}
+
 // EntitySourceRegistry 实体类型注册表（进程级；装配期注册，运行期只读）。
 type EntitySourceRegistry interface {
 	// Register 注册一个实体类型来源；重复类型或非法来源返回错误。

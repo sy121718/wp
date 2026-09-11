@@ -10,6 +10,8 @@ const (
 	MsgDetailSuccess = "MsgDetailSuccess"
 
 	ErrInvalidParam = "ErrInvalidParam" // 参数错误
+	ErrInvalidType  = "ErrInvalidType"  // 实体类型不合法（构建期字段解析）
+	ErrInvalidField = "ErrInvalidField" // 字段不在商品字段白名单内
 	ErrNotFound     = "ErrNotFound"     // 商品或变体不存在
 	ErrSlugTaken    = "ErrSlugTaken"    // 同工程下 slug 已占用
 	ErrSkuTaken     = "ErrSkuTaken"     // 同商品下 SKU 编码已占用

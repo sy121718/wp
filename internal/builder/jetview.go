@@ -39,6 +39,7 @@ import (
 	loaderPkg "go_wp/internal/builder/components/loader"
 	marqueePkg "go_wp/internal/builder/components/marquee"
 	navPkg "go_wp/internal/builder/components/nav"
+	productPkg "go_wp/internal/builder/components/product"
 	progressPkg "go_wp/internal/builder/components/progress"
 	quotePkg "go_wp/internal/builder/components/quote"
 	ratingPkg "go_wp/internal/builder/components/rating"
@@ -154,6 +155,8 @@ func nodeViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeV
 		return badgeViewOf(node, topLevel, ctx)
 	case progressPkg.Type:
 		return progressViewOf(node, topLevel, ctx)
+	case productPkg.Type:
+		return productViewOf(node, topLevel, ctx)
 	case ratingPkg.Type:
 		return ratingViewOf(node, topLevel, ctx)
 	case formPkg.Type:
@@ -434,6 +437,11 @@ func containerViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*
 		ShapeBottom: view.ShapeBottom,
 		BgSlides:    view.BgSlides,
 	}, nil
+}
+
+// productViewOf 转换商品详情节点（字段经商品解析器静态填入，越界字段编译期报错）。
+func productViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeView, error) {
+	return contentAtomViewOf(node, topLevel, ctx, productPkg.Type, "product", productPkg.CompileCSS, productPkg.BuildView)
 }
 
 // headingViewOf 转换 heading 节点（对应 core.Atom 基座的 Render 流程）。

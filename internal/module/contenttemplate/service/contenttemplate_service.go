@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -60,8 +61,9 @@ func (s *Service) Create(ctx context.Context, req *contenttemplatedto.CreateReq)
 	if err != nil {
 		return nil, err
 	}
-	// 校验 DraftDocument 是合法 Page Document 并规范化为存储字节。
-	doc, err := validateDocument(req.DraftDocument)
+	// 校验 DraftDocument 是合法 Page Document 并规范化为存储字节（含字段绑定的
+	// 数据源白名单校验：越界绑定在保存时即拒绝，不等发布才炸）。
+	doc, err := s.validateDocument(req.EntityType, req.DraftDocument)
 	if err != nil {
 		return nil, err
 	}
@@ -95,7 +97,7 @@ func (s *Service) Update(ctx context.Context, req *contenttemplatedto.UpdateReq)
 		}
 		return nil, err
 	}
-	doc, err := validateDocument(req.DraftDocument)
+	doc, err := s.validateDocument(e.EntityType, req.DraftDocument)
 	if err != nil {
 		return nil, err
 	}
@@ -217,13 +219,20 @@ func hashDocument(doc []byte) string {
 }
 
 // validateDocument 解析并校验 Page Document，返回规范化存储字节。
-func validateDocument(raw json.RawMessage) (json.RawMessage, error) {
+//
+// entityType 为模板的目标实体类型：文档内组件声明的字段绑定必须落在该数据源的
+// 字段白名单内（issue #6，不变量 4），白名单来自实体类型注册表（装配期由各领域
+// 模块注册），本模块不认识具体领域。
+func (s *Service) validateDocument(entityType string, raw json.RawMessage) (json.RawMessage, error) {
 	page, err := builder.ParsePage(raw)
 	if err != nil {
 		return nil, errors.New(contenttemplateenums.ErrDataInvalid)
 	}
 	if err = builder.ValidatePage(page); err != nil {
 		return nil, errors.New(contenttemplateenums.ErrDataInvalid)
+	}
+	if err = builder.ValidateFieldRefs(page, entityType, s.registry); err != nil {
+		return nil, fmt.Errorf("%s: %w", contenttemplateenums.ErrFieldBindingInvalid, err)
 	}
 	// 重新编码保证存储 JSON 的规范格式，不接受散乱字节。
 	doc, err := json.Marshal(page)

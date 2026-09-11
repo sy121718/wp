@@ -158,8 +158,15 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 	contentTemplateSvc := contenttemplatehttp.SetupContentTemplateRoutes(authorizedAPI, db, projectService, entityRegistry)
 	// 商品域（issue #5）：商品与变体管理。商品是独立领域模块，不再寄居内容表。
 	productSvc := producthttp.SetupProductRoutes(authorizedAPI, db, projectService)
+	// 商品实体类型注册（issue #6）：注册后商品可作为内容模板的数据源
+	// （类型合法性 + 字段白名单由注册表判定），构建期经注册表取商品字段解析器。
+	// 与内容模块同样 fail-fast：注册失败即装配缺陷。
+	if err := productSvc.RegisterEntityTypes(entityRegistry); err != nil {
+		panic("商品实体类型注册失败: " + err.Error())
+	}
 	// 自动发布实例（内容实体驱动，复用编译/存储/激活管线；实例行需 project_id 外键）。
-	presentationSvc := presentationhttp.SetupPresentationRoutes(authorizedAPI, db, contentTemplateSvc, entityRegistry, projectService)
+	// blockSvc 注入用于内容模板内部的全局块引用展开（页眉/页脚等，构建期内联）。
+	presentationSvc := presentationhttp.SetupPresentationRoutes(authorizedAPI, db, contentTemplateSvc, entityRegistry, projectService, blockSvc)
 
 	// 插件模块（page 构建路径依赖其装配素材，须先于 page 装配）。
 	// plugin 是外部插件宿主：注入 admin 权限上下文契约，供插件运行时读取当前用户权限。

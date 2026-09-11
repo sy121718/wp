@@ -24,6 +24,7 @@ import (
 	"sync"
 	"time"
 
+	blockcontract "go_wp/internal/module/block/contract"
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
 	presentationcontract "go_wp/internal/module/presentation/contract"
 	presentationdto "go_wp/internal/module/presentation/dto"
@@ -35,6 +36,7 @@ import (
 	"go_wp/internal/builder/core"
 	"go_wp/internal/pipeline"
 	"go_wp/internal/templates"
+	"go_wp/pkg/i18n"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -54,10 +56,13 @@ const instanceLockStripes = 64
 
 // Service presentation 模块业务实现。
 type Service struct {
-	m           *presentationmodel.Model
-	templates   contenttemplatecontract.ContentTemplateService
-	registry    core.EntitySourceRegistry
-	project     projectcontract.ProjectService
+	m         *presentationmodel.Model
+	templates contenttemplatecontract.ContentTemplateService
+	registry  core.EntitySourceRegistry
+	project   projectcontract.ProjectService
+	// blocks 全局块契约：内容模板内部可用 core.globalref 引用页眉/页脚等区块，
+	// 构建期由这里内联展开（与手工 Page 路径同一机制，docs/02-D §1.2）。
+	blocks      blockcontract.BlockService
 	store       *pipeline.LocalStore
 	publication *pipeline.LocalPublicationStore
 	// instanceLocks 实例分片互斥锁：并发构建同一实例时串行化
@@ -73,16 +78,20 @@ func (s *Service) lockInstance(entityType, entityID string) *sync.Mutex {
 	return &s.instanceLocks[h.Sum32()%instanceLockStripes]
 }
 
-// NewService 构造（依赖 contenttemplate 契约 + 实体类型注册表 + project 契约 + pipeline 内核）。
+// NewService 构造（依赖 contenttemplate 契约 + 实体类型注册表 + project 契约
+// + block 契约 + pipeline 内核）。blocks 为 nil 时引用区块的模板构建期显式报错，
+// 不静默产出占位结构（构建期必须失败优于线上出现空块）。
 func NewService(m *presentationmodel.Model,
 	templates contenttemplatecontract.ContentTemplateService,
 	registry core.EntitySourceRegistry,
-	project projectcontract.ProjectService) *Service {
+	project projectcontract.ProjectService,
+	blocks blockcontract.BlockService) *Service {
 	return &Service{
 		m:           m,
 		templates:   templates,
 		registry:    registry,
 		project:     project,
+		blocks:      blocks,
 		store:       &pipeline.LocalStore{Root: pipeline.DefaultArtifactRoot()},
 		publication: &pipeline.LocalPublicationStore{ActiveRoot: pipeline.ActiveRoot()},
 	}
@@ -176,7 +185,7 @@ func (s *Service) CreateInstance(ctx context.Context, req *presentationdto.Creat
 	// 顺序：构建（产物落盘幂等，不触碰线上）→ 实例落库 → 快照/产物行/指针 → 激活。
 	// 落库失败时线上保持原样、可直接重试；反之「先激活后落库」会让线上渲染出
 	// 错误实体内容且没有任何恢复入口。
-	built, err := s.buildArtifact(ctx, req.EntityType, req.EntityID, req.URLPath, tpl)
+	built, err := s.buildArtifact(ctx, req.EntityType, req.EntityID, req.URLPath, projectID, tpl)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", presentationenums.ErrBuildFailed, err)
 	}
@@ -226,7 +235,7 @@ func (s *Service) rebuildInstance(ctx context.Context, inst *presentationmodel.I
 	lock.Lock()
 	defer lock.Unlock()
 
-	built, err := s.buildArtifact(ctx, inst.EntityType, inst.EntityID, inst.URLPath, tpl)
+	built, err := s.buildArtifact(ctx, inst.EntityType, inst.EntityID, inst.URLPath, inst.ProjectID, tpl)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", presentationenums.ErrBuildFailed, err)
 	}
@@ -410,7 +419,7 @@ func (s *Service) Delete(ctx context.Context, req *presentationdto.DeleteReq) (e
 //
 // 激活由调用方在实例落库成功后单独执行（见 activate）：先激活后落库时，
 // 一旦落库失败，线上已渲染出新实体内容却没有任何恢复入口。
-func (s *Service) buildArtifact(ctx context.Context, entityType, entityID, urlPath string,
+func (s *Service) buildArtifact(ctx context.Context, entityType, entityID, urlPath, projectID string,
 	tpl *contenttemplatecontract.ResolvedTemplate) (built builtArtifact, err error) {
 	page, err := builder.ParsePage(tpl.Document)
 	if err != nil {
@@ -419,7 +428,16 @@ func (s *Service) buildArtifact(ctx context.Context, entityType, entityID, urlPa
 	if s.registry == nil {
 		return built, errors.New(presentationenums.ErrRegistryMissing)
 	}
-	resolver, err := s.registry.ResolverFor(ctx, entityType, entityID)
+	// 字段绑定的数据源白名单校验（不变量 4）：模板保存时已校验一次，这里再校一次
+	// 是为了兜住「模板保存后才新增/改名数据源」与直连 service 的调用路径。
+	if err = builder.ValidateFieldRefs(page, entityType, s.registry); err != nil {
+		return built, err
+	}
+	// 构建语言（工程默认语言）：实体字段的可翻译文本按它取译文（语境 实体.字段名）。
+	// 语言进构建上下文，解析器据此取译文——语言不进 AST，产物仍由「模板 + 数据」唯一确定。
+	lang := s.resolveLang(ctx, projectID)
+	buildCtx := core.WithBuildLang(ctx, lang)
+	resolver, err := s.registry.ResolverFor(buildCtx, entityType, entityID)
 	if err != nil {
 		return built, err
 	}
@@ -428,9 +446,14 @@ func (s *Service) buildArtifact(ctx context.Context, entityType, entityID, urlPa
 		return built, err
 	}
 	compiled, err := builder.Compile(page,
-		builder.WithContext(ctx),
+		builder.WithContext(buildCtx),
 		builder.WithComponentSet(set),
-		builder.WithContentResolver(resolver))
+		builder.WithContentResolver(resolver),
+		// 全局块内联展开（core.globalref）：内容模板可引用页眉/页脚/信任徽章等区块，
+		// 与手工 Page 路径同一机制；未注入 block 契约时引用即报错（不静默出占位）。
+		builder.WithBlockResolver(newBlockResolverAdapter(s.blocks, buildCtx)),
+		// 组件固定文案取词：构建开始时刻的词条快照（确定性构建不变量）。
+		builder.WithLanguage(lang), builder.WithTranslator(i18n.Snapshot(lang)))
 	if err != nil {
 		return built, err
 	}
@@ -485,6 +508,24 @@ func presentationDependencies(entityType, entityID, templateID string) []pipelin
 		})
 	}
 	return out
+}
+
+// resolveLang 本次构建的目标语言 = 工程默认语言（语言清单 is_default，
+// 缺失回退 i18n.default_lang）。
+//
+// 取不到时返回空串（不翻译，产物即原文）。多语言「每语言一份产物」的实例维度
+// 属商品多语言票（issue #12）范围：那时只需在此处改为按实例语言解析。
+func (s *Service) resolveLang(ctx context.Context, projectID string) string {
+	if s.project == nil || strings.TrimSpace(projectID) == "" {
+		return ""
+	}
+	lang, err := s.project.DefaultLocale(ctx, projectID)
+	if err != nil {
+		logger.Scene("build").With("project_id", projectID).
+			Warn("构建语言解析失败，本次构建按原文输出: " + err.Error())
+		return ""
+	}
+	return strings.TrimSpace(lang)
 }
 
 // resolveProjectID 解析实例所属工程：显式传入优先（校验存在），

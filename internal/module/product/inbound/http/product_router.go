@@ -7,6 +7,7 @@ import (
 	productmodel "go_wp/internal/module/product/model"
 	productservice "go_wp/internal/module/product/service"
 	projectcontract "go_wp/internal/module/project/contract"
+	"go_wp/pkg/i18n"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -14,8 +15,13 @@ import (
 
 // SetupProductRoutes 装配 product 模块路由，返回模块契约。
 // project 用于解析商品所属工程（products.project_id 为 NOT NULL 外键）。
+//
+// 装配同时注入内容译文读取端口（sys_translation）：构建期商品可翻译字段
+// （name/subtitle/description）按构建语言取译文，语境 product.<字段名>。
+// 端口在这里注入是因为本模块的 service 不持有 *gorm.DB（表隔离约定）。
 func SetupProductRoutes(rg *gin.RouterGroup, db *gorm.DB, project projectcontract.ProjectService) productcontract.ProductService {
 	svc := productservice.NewService(productmodel.NewModel(db), project)
+	svc.SetContentStore(i18n.NewDBContentStore(db))
 	handle := NewHandle(svc)
 
 	g := rg.Group("/product")

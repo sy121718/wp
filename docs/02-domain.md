@@ -206,15 +206,26 @@ interface ContentBinding {
 
 ### 2.3 Binding 约束
 
-ContentTemplate 的 Binding 只能引用 Content Entity 的固定字段：
+ContentTemplate 的 Binding 只能引用 Content Entity 的固定字段。
+每条白名单的**唯一来源**是各领域模块的 `contract`（经实体类型注册表在装配期注册，
+见 `internal/builder/core/entity_source.go`），本文只作索引：
 
 ```text
-product:  .name, .description, .price, .images, .seoTitle, .seoDescription
-article:  .title, .body, .excerpt, .featuredImage, .seoTitle, .seoDescription
-category: .name, .description, .image
+product (internal/module/product/contract/product_entity.go):
+         .name, .subtitle, .description, .slug, .sku, .unit,
+         .images, .defaultImage, .price, .comparePrice, .priceRange, .minPrice, .maxPrice
+article (internal/module/content/contract/content_service.go):
+         .title, .body, .excerpt, .featuredImage, .seoTitle, .seoDescription
 ```
 
-Compiler 拒绝 entityType 与 Binding 不匹配的组合，例如 Product 模板中出现 `article.title`。
+未注册的实体类型（如 `category`）不可作为数据源：类型合法性完全由注册表判定。
+
+校验发生在三处（同一份白名单，不另存一份）：
+
+1. **组件自校验**：组件声明 `数据源.字段名` 时校验路径与数据源一致（如 core.product 的槽位）；
+2. **模板保存**：`builder.ValidateFieldRefs` 按注册表拒绝越界字段与跨数据源绑定；
+3. **构建期**：实体字段解析器对每个字段再校验一次，Compiler 拒绝 entityType 与 Binding
+   不匹配的组合（例如 Product 模板中出现 `article.title`），构建失败而非静默出空值。
 
 ## 3. PresentationInstance 与 DocumentSnapshot
 
