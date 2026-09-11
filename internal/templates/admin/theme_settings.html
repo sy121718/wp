@@ -17,79 +17,35 @@
             <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
             <input type="hidden" name="id" value="{{.ThemeID}}">
 
-            <h3>色板</h3>
-            <p class="pages-empty">11 个全局颜色令牌，组件经 var(--sky-c-*) 引用；未设置则回退组件默认值。</p>
+            {* 字段由服务端字段表驱动（与工作台全局设置面板同源）：颜色走文本框可留空，固定档位走下拉，
+               字体走可填可选的 datalist —— 用户不用猜格式。
+               颜色刻意不用 input type=color：它没有「未设置」状态，总会提交一个色值，
+               保存一次就把留空的令牌写成黑色；文本框留空才真的等于「跟随内置默认」。 *}
+            {{range _, g := .Groups}}
+            <h3>{{g.Title}}</h3>
             <div class="theme-color-grid">
-                <label>主色<input type="color" name="colors.primary"></label>
-                <label>次色<input type="color" name="colors.secondary"></label>
-                <label>点缀色<input type="color" name="colors.accent"></label>
-                <label>成功色<input type="color" name="colors.success"></label>
-                <label>警告色<input type="color" name="colors.warning"></label>
-                <label>危险色<input type="color" name="colors.danger"></label>
-                <label>正文色<input type="color" name="colors.text"></label>
-                <label>标题色<input type="color" name="colors.heading"></label>
-                <label>页面背景<input type="color" name="colors.background"></label>
-                <label>卡片底色<input type="color" name="colors.surface"></label>
-                <label>边框色<input type="color" name="colors.border"></label>
+                {{range _, f := g.Fields}}
+                {{if f.Kind == "select"}}
+                <label>{{f.Label}}
+                    <select name="{{f.Name}}" class="theme-font-input">
+                        {{range _, o := f.Options}}<option value="{{o.Value}}"{{if o.Selected}} selected{{end}}>{{o.Label}}</option>{{end}}
+                    </select>
+                </label>
+                {{else if f.Kind == "datalist"}}
+                <label>{{f.Label}}
+                    <input type="text" name="{{f.Name}}" class="theme-font-input" list="theme-dl-{{f.Name}}" value="{{f.Value}}" spellcheck="false">
+                    <datalist id="theme-dl-{{f.Name}}">{{range _, o := f.Options}}<option value="{{o.Value}}">{{o.Label}}</option>{{end}}</datalist>
+                </label>
+                {{else if f.Kind == "color"}}
+                <label>{{f.Label}}
+                    <input type="text" name="{{f.Name}}" class="theme-font-input" value="{{f.Value}}" placeholder="如 #3d444f；留空 = 内置默认" spellcheck="false">
+                </label>
+                {{else}}
+                <label>{{f.Label}}<input type="text" name="{{f.Name}}" class="theme-font-input" value="{{f.Value}}"></label>
+                {{end}}
+                {{end}}
             </div>
-
-            <h3>标题排版</h3>
-            <div class="theme-color-grid">
-                <label>标题颜色<input type="color" name="typography.heading.color"></label>
-                <label>标题字重<input type="text" name="typography.heading.weight" class="theme-font-input" placeholder="如 700 / bold"></label>
-                <label>标题字号（h2 基准）<input type="text" name="typography.heading.size" class="theme-font-input" placeholder="如 32px / 2rem"></label>
-                <label>标题下间距<input type="text" name="typography.heading.spacing" class="theme-font-input" placeholder="如 16px"></label>
-                <label>标题字体<input type="text" name="typography.heading.font" class="theme-font-input" placeholder="如 Georgia, serif"></label>
-            </div>
-
-            <h3>正文排版</h3>
-            <div class="theme-color-grid">
-                <label>正文字色<input type="color" name="typography.body.color"></label>
-                <label>正文字号<input type="text" name="typography.body.size" class="theme-font-input" placeholder="如 16px / 1rem"></label>
-                <label>行高<input type="text" name="typography.body.line" class="theme-font-input" placeholder="如 1.6"></label>
-                <label>正文字体<input type="text" name="typography.body.font" class="theme-font-input" placeholder="如 system-ui, sans-serif"></label>
-            </div>
-
-            <h3>链接排版</h3>
-            <div class="theme-color-grid">
-                <label>链接颜色<input type="color" name="typography.link.color"></label>
-                <label>链接悬停色<input type="color" name="typography.link.hover"></label>
-                <label>下划线<input type="text" name="typography.link.underline" class="theme-font-input" placeholder="none / hover / always"></label>
-            </div>
-
-            <h3>按钮</h3>
-            <div class="theme-color-grid">
-                <label>按钮背景<input type="text" name="button.background" class="theme-font-input" placeholder="#2563eb / transparent / rgba(0,0,0,0)"></label>
-                <label>按钮文字色<input type="color" name="button.color"></label>
-                <label>按钮圆角<input type="text" name="button.radius" class="theme-font-input" placeholder="如 8px"></label>
-                <label>按钮字重<input type="text" name="button.weight" class="theme-font-input" placeholder="如 600"></label>
-                <label>纵向内边距<input type="text" name="button.py" class="theme-font-input" placeholder="如 10px"></label>
-                <label>横向内边距<input type="text" name="button.px" class="theme-font-input" placeholder="如 20px"></label>
-                <label>悬停背景<input type="text" name="button.hoverBg" class="theme-font-input" placeholder="颜色值 / transparent"></label>
-                <label>悬停文字色<input type="color" name="button.hoverColor"></label>
-            </div>
-            <h3>按钮边框 / 阴影</h3>
-            <div class="theme-color-grid">
-                <label>边框宽<input type="text" name="button.borderWidth" class="theme-font-input" placeholder="如 1px（留空无边框）"></label>
-                <label>边框样式<input type="text" name="button.borderStyle" class="theme-font-input" placeholder="solid / dashed / dotted / double"></label>
-                <label>边框色<input type="color" name="button.borderColor"></label>
-                <label>阴影级别<input type="text" name="button.shadow" class="theme-font-input" placeholder="sm / md / lg / xl"></label>
-            </div>
-
-            <h3>表面 / 边框 / 圆角</h3>
-            <div class="theme-color-grid">
-                <label>全局圆角<input type="text" name="surface.radius" class="theme-font-input" placeholder="如 12px"></label>
-                <label>全局边框宽<input type="text" name="surface.borderWidth" class="theme-font-input" placeholder="如 1px"></label>
-                <label>全局边框色<input type="color" name="surface.borderColor"></label>
-                <label>默认阴影<input type="text" name="surface.shadow" class="theme-font-input" placeholder="sm / md / lg"></label>
-            </div>
-
-            <h3>动效</h3>
-            <div class="theme-color-grid">
-                <label>过渡时长（ms）<input type="text" name="motion.duration" class="theme-font-input" placeholder="如 200"></label>
-                <label>缓动<input type="text" name="motion.easing" class="theme-font-input" placeholder="ease / ease-out / linear"></label>
-                <label>默认入场<input type="text" name="motion.entrance" class="theme-font-input" placeholder="如 fade-up"></label>
-            </div>
+            {{end}}
 
             <h3>全局页眉 / 页脚块</h3>
             <div class="theme-color-grid">

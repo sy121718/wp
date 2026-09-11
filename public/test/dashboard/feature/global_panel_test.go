@@ -49,7 +49,16 @@ func TestGlobalPanelRendersFields(t *testing.T) {
 		`data-wb-theme-color="colors.primary" data-wb-theme-path="colors.primary"`,
 		`name="typography.heading.weight"`,
 		`<option value="600" selected>半粗</option>`,
-		`name="button.py" value="12px"`,
+		`<select name="button.py"`,
+		`<option value="12px" selected>12px</option>`,
+		// 固定档位一律下拉：数字与枚举让用户手填是「不会用」的主要来源。
+		`<select name="typography.heading.size"`,
+		`<select name="typography.body.line"`,
+		`<select name="surface.radius"`,
+		`<select name="motion.duration"`,
+		`<select name="button.borderStyle"`,
+		// 字体可填可选（datalist），不锁死成固定几款。
+		`list="theme-dl-typography.heading.font"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("全局设置面板缺少 %q\n%s", want, body)

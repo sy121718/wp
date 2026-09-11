@@ -15,6 +15,12 @@
         {{range _, o := f.Options}}<option value="{{o.Value}}"{{if o.Selected}} selected{{end}}>{{o.Label}}</option>{{end}}
     </select>
 </div>
+{{else if f.Kind == "datalist"}}
+{* 字体这类「有常用值但不该锁死」的字段：可填可选。 *}
+<div class="wb-field"><label>{{f.Label}}</label>
+    <input type="text" name="{{f.Name}}" value="{{f.Value}}" list="theme-dl-{{f.Name}}" spellcheck="false">
+    <datalist id="theme-dl-{{f.Name}}">{{range _, o := f.Options}}<option value="{{o.Value}}">{{o.Label}}</option>{{end}}</datalist>
+</div>
 {{else}}
 <div class="wb-field"><label>{{f.Label}}</label><input type="text" name="{{f.Name}}" value="{{f.Value}}"></div>
 {{end}}

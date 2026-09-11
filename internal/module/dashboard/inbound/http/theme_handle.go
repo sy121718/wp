@@ -284,6 +284,10 @@ type themeSettingsData struct {
 	// ThemeSettingsJSON 完整 ThemeSettings JSON 字符串（colors 11 色 + typography +
 	// button + surface + motion），供前端面板回显/扩展使用。
 	ThemeSettingsJSON string
+	// Groups 主题设置字段分组（与工作台全局设置面板共用同一份字段表）：
+	// 颜色走取色器、固定档位走下拉、字体走可填可选的 datalist ——
+	// 让主题设置页的控件类型由数据决定，而不是手写一堆文本框让用户猜格式。
+	Groups []themeFieldGroupView
 	// HeaderBlockID/FooterBlockID 全局页眉/页脚块绑定（编译期内联装配）。
 	HeaderBlockID string
 	FooterBlockID string
@@ -314,6 +318,7 @@ func (d *themeSettingsData) templateMap() gin.H {
 		"BdColor":       d.BdColor,
 		"FontFamily":    d.FontFamily,
 		"ThemeSettings": d.ThemeSettingsJSON,
+		"Groups":        d.Groups,
 		"HeaderBlock":   d.HeaderBlockID,
 		"FooterBlock":   d.FooterBlockID,
 		"HeaderBlocks":  d.HeaderBlocks,
@@ -387,6 +392,12 @@ func (h *Handle) loadThemeSettings(c *gin.Context, themeID string) *themeSetting
 	}
 	data.HeaderBlockID = s.HeaderBlockID
 	data.FooterBlockID = s.FooterBlockID
+	// 字段分组：以原始 JSON 为准（保真，不经过结构体丢掉历史/未来的键）。
+	var rawSettings map[string]any
+	if len(theme.Settings) > 0 {
+		_ = json.Unmarshal(theme.Settings, &rawSettings)
+	}
+	data.Groups = buildThemeGroups(rawSettings)
 	// 页眉/页脚绑定候选：本工程的页眉/页脚类全局块。
 	if blocks, err := h.blocks.List(ctx, &blockcontract.ListReq{ProjectID: theme.ProjectID}); err == nil {
 		data.HeaderBlocks = []blockOption{{ID: "", Name: "（未设置）"}}
