@@ -38,6 +38,12 @@
         if (window.WBUI && WBUI.alert) { WBUI.alert(message, { title: '操作失败' }); return; }
         window.alert(message);
     }
+    // busy 薄封装：基座缺席时退回最朴素的「禁用 + 恢复」，至少挡住重复提交。
+    function busy(btn, opts) {
+        if (window.WBUI && WBUI.busy) { return WBUI.busy(btn, opts); }
+        btn.disabled = true;
+        return function () { btn.disabled = false; };
+    }
     function ask(message, onOk, opts) {
         if (window.WBUI && WBUI.confirm) { WBUI.confirm(message, onOk, opts); return; }
         if (window.confirm(message)) { onOk(); }
@@ -365,7 +371,9 @@
         regenBtn.type = 'button'; regenBtn.className = 'btn';
         regenBtn.textContent = '重新生成变体';
         regenBtn.addEventListener('click', function () {
-            regenBtn.disabled = true; regenBtn.textContent = '生成中…';
+            // 忙碌态交给基座：它记住「原来是否禁用」，且成功/失败都恢复 ——
+            // 手写版在 catch 里漏一次，按钮就永久卡在禁用（这里原来靠 finally 兜）。
+            var done = busy(regenBtn, { label: '生成中…' });
             M.api('variants/generate', { method: 'POST', body: { id: item.id } })
                 .then(function (variants) {
                     notify('变体生成完成');
@@ -373,7 +381,7 @@
                     loadList();
                 })
                 .catch(function (err) { notifyError(err.message); })
-                .finally(function () { regenBtn.disabled = false; regenBtn.textContent = '重新生成变体'; });
+                .finally(done);
         });
         varActions.appendChild(dlBtn); varActions.appendChild(regenBtn);
         body.appendChild(varActions);

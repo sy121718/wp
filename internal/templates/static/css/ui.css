@@ -162,6 +162,22 @@
 .wbc.is-empty .wbc-swatch { position: relative; }
 .wbc-native { position: absolute; left: 0; bottom: 0; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
 
+/* ===== 按钮忙碌态（js/ui/busy.js）=====
+   通用选择器（不只 .btn）：忙碌态可能加在自有样式的按钮上。
+   转圈用伪元素，不占按钮内文本流的位置。 */
+.is-busy { opacity: .75; cursor: progress; position: relative; }
+.is-busy::after {
+    content: ''; display: inline-block; vertical-align: -2px;
+    width: 12px; height: 12px; margin-left: var(--ui-sp-xs);
+    border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%;
+    animation: wb-busy-spin .6s linear infinite;
+}
+@keyframes wb-busy-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+    .is-busy::after { animation-duration: 1.6s; }
+}
+
+
 
 
 /* ==========================================================================

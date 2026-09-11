@@ -1,7 +1,7 @@
 // workbench/methods/history.js — 修订历史面板（docs/09 §3 拆分）。
 // 方法以 `this` 互调，由 index.js 用 Object.assign 合并为同一个 workbench 实例。
 import {
-    meta, initialDoc, getCSRFToken, csrfHeaders, wbDropdown, closeAllDropdowns, wbParseColor, wbHslToHsv, wbHsvToRgb, wbRgbToHsv, wbColorPicker, themePrimary, controlLabel, optionLabel, clone, componentSchemas, CONTROL_LABELS, OPTION_LABELS, paletteItems, paletteGroups, MAX_NEST_DEPTH, WB_CP_CHECKER, morphHTML,
+    meta, initialDoc, getCSRFToken, csrfHeaders, wbDropdown, closeAllDropdowns, wbParseColor, wbHslToHsv, wbHsvToRgb, wbRgbToHsv, wbColorPicker, themePrimary, controlLabel, optionLabel, clone, componentSchemas, CONTROL_LABELS, OPTION_LABELS, paletteItems, paletteGroups, MAX_NEST_DEPTH, WB_CP_CHECKER, morphHTML, wbBusy,
 } from '../core.js';
 
 export const historyMethods = {
@@ -38,7 +38,7 @@ export const historyMethods = {
                     var form = new URLSearchParams();
                     form.append('pageId', meta.pageId || '');
                     form.append('version', version);
-                    btn.disabled = true;
+                    var done = wbBusy(btn);
                     fetch('/workbench/history/restore', {
                         method: 'POST',
                         credentials: 'same-origin',
@@ -46,14 +46,14 @@ export const historyMethods = {
                         body: form.toString()
                     }).then(function (r) { return r.json(); }).then(function (j) {
                         if (!j || j.code !== 200) {
-                            btn.disabled = false;
+                            done();
                             alert((j && j.message) || '恢复失败');
                             return;
                         }
                         // 恢复即覆盖草稿：整页刷新以重新注入文档与版本号（最可靠）。
                         window.location.reload();
                     }).catch(function () {
-                        btn.disabled = false;
+                        done();
                         alert('恢复失败');
                     });
                 };

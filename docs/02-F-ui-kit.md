@@ -33,6 +33,7 @@
 | 抽屉 | `ui/drawer.js` | `data-drawer-open` / `data-drawer-title` | 打开时对新内容 `WBUI.scan` |
 | 图标字段 | `ui/iconfield.js` | `data-icon-field`（+ hidden 存值）、`data-icon-name` | 图标库 766KB 懒加载 |
 | 颜色字段 | `ui/colorfield.js` | `data-color-field` | 文本框是真值来源（可留空/写 `var()`），色块只是取色入口 |
+| 按钮忙碌态 | `ui/busy.js` | —（纯 API） | `WBUI.busy(btn[, promise][, {label}])`；记住原禁用态，成功失败都恢复 |
 | 确认框 | `ui/confirm.js` | `data-confirm` / `-title` / `-ok` / `-cancel` / `-danger` | `<dialog>` 承载，取代原生 confirm；另有 `WBUI.confirm` / **`WBUI.alert`** 给 JS 里调用 |
 | 弹窗 | `ui/modal.js` | `data-modal`、`data-modal-open` / `-close` / `-static` / `-nokeyboard` / `-autofocus` | `<dialog>` 承载；`WBUI.modal.open/close`；广播 `wbui:modal-open/close` |
 | 轻提示 | `ui/toast.js` | —（纯 API） | `WBUI.toast(msg, {type, duration, dismissible})`；非模态、自动消失，与 `WBUI.alert` 分工 |
@@ -42,7 +43,7 @@
 
 ### 外观层（`ui.css`）
 
-`.wbs-*`（下拉）、`.wb-confirm-*`+`.is-alert`（确认框/模态提示）、`.wb-modal*`（弹窗）、`.wb-toast*`（轻提示）、`.wbc*`（颜色字段）、`.btn`+`.btn-primary|secondary|ghost|danger|sm|icon`、
+`.wbs-*`（下拉）、`.wb-confirm-*`+`.is-alert`（确认框/模态提示）、`.wb-modal*`（弹窗）、`.wb-toast*`（轻提示）、`.wbc*`（颜色字段）、`.is-busy`（按钮忙碌态）、`.btn`+`.btn-primary|secondary|ghost|danger|sm|icon`、
 `.card-*`、`.data-table`+`.table-wrap`、`.form-*`+`.checkbox`、`.badge-*`+`.dot-*`、
 `.pagination-*`、工具类、`.theme-toggle`。
 
@@ -124,6 +125,7 @@ var(--sky-c-primary, var(--c-primary, 兜底))
 | 弹窗**按 Esc 关不掉** | 依赖 `<dialog>` 的原生 Esc —— 那是浏览器的 default action，合成的键盘事件不产生它 | 控件自己接管 `keydown` Escape（modal 与 confirm 都是），并按「最上层优先」`stopPropagation`，避免同时开着的抽屉被一起关掉 |
 | 上传弹窗的拖拽区**键盘够不到** | `#ml-drop` 是纯 div，只挂了 click | 补 `role="button"` + `tabindex="0"` + Enter/Space |
 | 媒体库删除**弹系统原生对话框** | JS 里 12 处 `confirm()` / `alert()`（详情删除、分类删除、已保存、已复制…） | 全走 `WBUI.confirm` 与新增的 `WBUI.alert`（同一个 `<dialog>`）；基座缺席时退回原生，功能不丢 |
+| 按钮忙碌态**手写了三遍** | 媒体库生成变体 / 工作台恢复历史 / 工作台保存设置各写一遍，且都漏同一件事：结束时一律 `disabled = false`，把本来就该禁用的按钮错误启用；reject 分支还常忘了恢复 | 收敛成 `WBUI.busy`：记住原禁用态、成功失败都恢复、忙碌中带 `aria-busy` |
 | 主题设置页的颜色**只能手敲 hex** | 早先为了「留空 = 跟随内置默认」刻意放弃 `input type=color`（它没有未设置状态，空值会被补成 #000000），代价是没有取色入口 | 基座补 `ui/colorfield.js`：文本框仍是唯一真值来源，旁边色块点开系统取色器；留空显示棋盘格 + 斜线 |
 | 操作反馈**只有模态一种强度** | 成功类反馈（已复制/已保存）也弹模态框，用户必须点一下「知道了」—— 打断，却什么都没改变 | 补齐 `WBUI.toast`：非模态、底部居中、3 秒自消；`notify`（轻反馈）与 `notifyError`（失败仍走模态）在页面脚本里分流 |
 | 下拉在**检查器面板里是第二份实现** | 基座 `ui/select.js` 跳过 `data-wb-path`，工作台 `controls/selects.js` 用 `wbDropdown` 再升一次级 —— 同一件事（原生 select 在 Linux/Chromium 上「点开即选」）的第三份实现 | 基座接管检查器面板：`upgradeNativeSelects` 只触发一次 `WBUI.scan`；7 个 `wb-unit-select` 用 `data-wb-native` 显式排除，`wbDropdown` 的隐藏载体 `.wb-dd-src` 也被跳过 |

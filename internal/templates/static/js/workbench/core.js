@@ -42,6 +42,17 @@ export function csrfHeaders(extra) {
      * 降级：idiomorph 未加载（vendor 缺失 / 脚本被拦 / 未来换构建）或 morph 抛错时，
      * 退回整块 innerHTML，行为与改造前完全一致——本函数只做替换方式升级，不改调用方语义。
      */
+// wbBusy 工作台侧的忙碌态包装：实现统一在基座（ui/busy.js 的 WBUI.busy），
+// 这里只兜住「基座脚本没加载」的情况 —— 模块里直接引用全局 WBUI 会 ReferenceError。
+// 手写忙碌态的老写法（禁用 + 改文案 + 两条分支各恢复一次）漏 catch 那条就会永久禁用，
+// 所以三处手写统一到这里。
+export function wbBusy(btn, opts) {
+    if (window.WBUI && window.WBUI.busy) { return window.WBUI.busy(btn, opts); }
+    var prev = !!btn.disabled;
+    btn.disabled = true;
+    return function () { btn.disabled = prev; };
+}
+
 export function morphHTML(el, html) {
         if (!el) return;
         var lib = window.Idiomorph;

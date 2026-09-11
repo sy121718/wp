@@ -1,7 +1,7 @@
 // workbench/methods/panels.js — 面板切换 / 页面设置 / 全局设置（docs/09 §3 拆分）。
 // 方法以 `this` 互调，由 index.js 用 Object.assign 合并为同一个 workbench 实例。
 import {
-    meta, initialDoc, getCSRFToken, csrfHeaders, wbDropdown, closeAllDropdowns, wbParseColor, wbHslToHsv, wbHsvToRgb, wbRgbToHsv, wbColorPicker, themePrimary, controlLabel, optionLabel, clone, componentSchemas, CONTROL_LABELS, OPTION_LABELS, paletteItems, paletteGroups, MAX_NEST_DEPTH, WB_CP_CHECKER, morphHTML,
+    meta, initialDoc, getCSRFToken, csrfHeaders, wbDropdown, closeAllDropdowns, wbParseColor, wbHslToHsv, wbHsvToRgb, wbRgbToHsv, wbColorPicker, themePrimary, controlLabel, optionLabel, clone, componentSchemas, CONTROL_LABELS, OPTION_LABELS, paletteItems, paletteGroups, MAX_NEST_DEPTH, WB_CP_CHECKER, morphHTML, wbBusy,
 } from '../core.js';
 
 export const panelsMethods = {
@@ -229,12 +229,10 @@ export const panelsMethods = {
                     });
                     form.append('headerBlockId', t.headerBlockId || '');
                     form.append('footerBlockId', t.footerBlockId || '');
-                    saveBtn.disabled = true;
-                    saveBtn.textContent = '保存中…';
+                    var done = wbBusy(saveBtn, { label: '保存中…' });
                     fetch('/admin/themes/settings/save', { method: 'POST', headers: csrfHeaders({}), body: form })
                         .then(function (r) {
-                            saveBtn.disabled = false;
-                            saveBtn.textContent = '保存并应用到全部页面';
+                            done();
                             if (!r.ok) { alert('保存失败，请重试'); return; }
                             // 本地缓存按提交键名回写（与后端 SaveThemeSettings 的约定一致）。
                             Array.prototype.forEach.call(body.querySelectorAll('[name]'), function (el) {
@@ -244,8 +242,7 @@ export const panelsMethods = {
                             alert('已保存，主题将合入全部页面；页面需重新构建后生效。');
                         })
                         .catch(function () {
-                            saveBtn.disabled = false;
-                            saveBtn.textContent = '保存并应用到全部页面';
+                            done();
                             alert('保存失败，请重试');
                         });
                 });
