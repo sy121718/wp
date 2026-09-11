@@ -1,9 +1,10 @@
 // Package feature product 模块 feature 测试 —— 后台属性管理页渲染链路（issue #7）。
 //
 // 覆盖验收 4「后台可管理属性组与属性值」的服务端部分：
-//  · GET /admin/product-attributes 渲染完整页（属性组、值、参与变体标记都在 HTML 里）；
-//  · POST /admin/product-attributes/value-rows 的值编辑器片段（HTMX）按 action
-//    增删一行并回渲染有序行数据 —— 这是「编辑中的值」唯一的归一路径。
+//
+//	· GET /admin/product-attributes 渲染完整页（属性组、值、参与变体标记都在 HTML 里）；
+//	· POST /admin/product-attributes/value-rows 的值编辑器片段（HTMX）按 action
+//	  增删一行并回渲染有序行数据 —— 这是「编辑中的值」唯一的归一路径。
 //
 // 用真实 Jet 模板渲染（与生产同一 template root），断言的是「页面里到底有没有
 // 那几样东西」，而不是「我们自己写下的配置」。
@@ -18,12 +19,12 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	dashboardhttp "go_wp/internal/module/dashboard/inbound/http"
 	productmodel "go_wp/internal/module/product/model"
 	productservice "go_wp/internal/module/product/service"
 	projectmodel "go_wp/internal/module/project/model"
 	projectservice "go_wp/internal/module/project/service"
 	"go_wp/internal/templates"
-	dashboardhttp "go_wp/internal/module/dashboard/inbound/http"
 
 	productdto "go_wp/internal/module/product/dto"
 	projectdto "go_wp/internal/module/project/dto"

@@ -7,8 +7,9 @@
 //  4. 后台可管理属性组与属性值（页面 GET/POST 链路 + 属性值片段渲染）。
 //
 // 另覆盖两条容易踩的边界：
-//  · 被商品引用的属性组不能删（products.attribute_ids 无数据库外键，悬空引用必须在服务层拦住）；
-//  · 跨工程引用被拒（引用别人的属性组等于把它的定义挂到本商品上）。
+//
+//	· 被商品引用的属性组不能删（products.attribute_ids 无数据库外键，悬空引用必须在服务层拦住）；
+//	· 跨工程引用被拒（引用别人的属性组等于把它的定义挂到本商品上）。
 package feature
 
 import (
@@ -381,4 +382,3 @@ func TestAttributeMigrationIndexAndBackfill(t *testing.T) {
 		t.Fatalf("历史空 key 应被回填，实际仍有 %d 行", blank)
 	}
 }
-

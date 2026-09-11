@@ -444,9 +444,10 @@ const legacyProductTemplate = `{"settings":{"layout":{"mode":"full"}},"root":[{"
 // TestVariantOptionsTemplateBackfill 迁移 087b：存量库的默认商品详情模板补规格槽位。
 //
 // 三条边界（数据迁移最容易出错的地方）：
-//   · 与 085 原样一致的模板：草稿与不可变版本都必须补上槽位，且 source_hash 重算；
-//   · 作者改过的模板：一个字节都不动（缺槽位是作者的选择）；
-//   · 幂等：补完之后种子条件不再成立，重复执行不再改写。
+//
+//	· 与 085 原样一致的模板：草稿与不可变版本都必须补上槽位，且 source_hash 重算；
+//	· 作者改过的模板：一个字节都不动（缺槽位是作者的选择）；
+//	· 幂等：补完之后种子条件不再成立，重复执行不再改写。
 func TestVariantOptionsTemplateBackfill(t *testing.T) {
 	f := newAttrFixture(t)
 	if f == nil {
