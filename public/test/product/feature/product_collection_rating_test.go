@@ -14,13 +14,16 @@ import (
 	productdto "go_wp/internal/module/product/dto"
 )
 
-// setRating 给商品设置评分与评价数（走真实的更新接口）。
-func setRating(t *testing.T, f *detailFixture, productID string, rating float64, count int) {
+// setRatings 给商品写若干条评分（issue #30：评分独立成表，走独立的评分接口 ——
+// 商品更新接口不再有 rating 字段，评分不是商品的列）。
+func setRatings(t *testing.T, f *detailFixture, productID string, scores ...float64) {
 	t.Helper()
-	if _, err := f.products.Update(context.Background(), &productdto.UpdateReq{
-		ID: productID, Rating: &rating, RatingCount: &count,
-	}); err != nil {
-		t.Fatalf("设置评分失败: %v", err)
+	for _, score := range scores {
+		if _, err := f.products.AddRating(context.Background(), &productdto.AddRatingReq{
+			ProductID: productID, Score: score,
+		}); err != nil {
+			t.Fatalf("写入评分失败: %v", err)
+		}
 	}
 }
 
@@ -36,8 +39,8 @@ func TestProductCollectionRatingFilter(t *testing.T) {
 	high := f.createProduct(t, "高分货", "high-rated", "", 99, 99)
 	low := f.createProduct(t, "低分货", "low-rated", "", 99, 99)
 	none := f.createProduct(t, "无评分货", "no-rating", "", 99, 99)
-	setRating(t, f, high, 4.5, 120)
-	setRating(t, f, low, 3, 8)
+	setRatings(t, f, high, 4.5, 5) // 平均 4.75
+	setRatings(t, f, low, 3)
 	_ = none // 不设评分：rating 保持 NULL
 
 	names := func(filter map[string]string) map[string]bool {
@@ -99,7 +102,7 @@ func TestProductCollectionItemCarriesRating(t *testing.T) {
 	ctx := core.WithBuildProjectID(context.Background(), f.projectID)
 	rated := f.createProduct(t, "已评分", "rated-one", "", 99, 99)
 	f.createProduct(t, "未评分", "unrated-one", "", 99, 99)
-	setRating(t, f, rated, 4.25, 36)
+	setRatings(t, f, rated, 4, 4.5) // 平均 4.25
 
 	items, err := reg.ResolveCollection(ctx, productcontract.CollectionSourceProduct, map[string]string{})
 	if err != nil {

@@ -335,10 +335,11 @@ func collectionItem(p *productmodel.ProductEntity, values map[string]string) map
 	if p.MinPrice != nil {
 		item["minPrice"] = *p.MinPrice
 	}
-	// ratingValue 给**数值**评分（issue #29）：白名单里的 rating 是展示用的字符串，
-	// 组件按评分排序需要数值。无评分时不给这个键 —— 组件据它把无评分的排最后。
-	if p.Rating != nil {
-		item["ratingValue"] = *p.Rating
+	// ratingValue 给**数值**评分（issue #30）：由评分明细投影算出（明细已 Preload）。
+	// 白名单里的 rating 是展示用的字符串，组件按评分排序要数值。
+	// 一条评分都没有时不给这个键 —— 组件据它把无评分的排最后（不是「0 分」）。
+	if avg, _, ok := p.RatingSummaryOf(); ok {
+		item["ratingValue"] = avg
 	}
 	return item
 }

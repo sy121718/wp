@@ -75,14 +75,7 @@ type UpdateReq struct {
 	BrandID           *string         `json:"brandId"`
 	DefaultPrice      *float64        `json:"defaultPrice"`
 	DefaultImage      *string         `json:"defaultImage"`
-	// Rating 商品评分 0~5（issue #29）：nil 表示本次不改；指向 0 表示「评分为 0」。
-	//
-	// **无评分是 NULL，不是 0**：想清空评分请显式传 null（见 Rating 的三态语义），
-	// 而不是传 0 —— 「0 分」与「还没人评过」在列表里是不同的结果。
-	Rating *float64 `json:"rating"`
-	// RatingCount 评价数量（issue #29）：nil 表示本次不改。
-	RatingCount *int            `json:"ratingCount"`
-	Metadata    json.RawMessage `json:"metadata"`
+	Metadata          json.RawMessage `json:"metadata"`
 	// OperatorID 操作人（issue #19）：由 inbound 从会话覆盖写入，客户端传入的值被忽略
 	// （json/form 标签为 "-"，不可由外部指定）。变更记录记「谁改的」，
 	// 统一取会话里的登录名；缺失时为空串（留痕字段允许为空）。

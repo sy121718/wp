@@ -396,13 +396,13 @@ func productFieldValues(p *productmodel.ProductEntity, variants []*productmodel.
 			out["comparePrice"] = formatPrice(compare)
 		}
 	}
-	// 评分（issue #29）：值就在商品行上，直接给。
+	// 评分（issue #30）：由评分明细投影算出（明细已 Preload），商品表上没有评分列。
 	//
-	// **无评分时不写这两个键**：与「评分 0」严格区分 —— 集合组件据此把它排到最后，
+	// **一条评分都没有时不写这两个键**：与「评分 0」严格区分 —— 集合组件据此把它排到最后，
 	// 而不是当成 0 分。rating 给两位小数的字符串（展示用），数值另见集合项的 ratingValue。
-	if p.Rating != nil {
-		out["rating"] = strconv.FormatFloat(*p.Rating, 'f', 2, 64)
-		out["ratingCount"] = strconv.Itoa(p.RatingCount)
+	if avg, count, ok := p.RatingSummaryOf(); ok {
+		out["rating"] = strconv.FormatFloat(avg, 'f', 2, 64)
+		out["ratingCount"] = strconv.Itoa(count)
 	}
 	// imageAlt：图集首张的 alt 单值槽位（主图 alt 直接绑它；无 alt 时组件用商品名兜底）。
 	if alts := decodeStrings(json.RawMessage(out["imageAlts"])); len(alts) > 0 {

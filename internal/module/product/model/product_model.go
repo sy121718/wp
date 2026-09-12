@@ -48,13 +48,12 @@ type ProductEntity struct {
 	// 不变量：主分类必然同时出现在 category_ids 里（由 service 维护）。
 	PrimaryCategoryID *string         `gorm:"column:primary_category_id;type:uuid"`
 	TagIDs            json.RawMessage `gorm:"column:tag_ids;type:jsonb;not null"`
-	// Rating 商品评分 0~5（issue #29）。
+	// Ratings 评分明细（issue #30）：与商品是 hasMany 关联，查询用 Preload 一次批量拉回。
 	//
-	// **NULL 与 0 分严格区分**：NULL = 尚无评分。列表按评分排序时它排最后，
-	// 与「评分是 0」不是一回事。
-	Rating *float64 `gorm:"column:rating;type:numeric(3,2)"`
-	// RatingCount 评价数量（issue #29）。
-	RatingCount int `gorm:"column:rating_count;not null;default:0"`
+	// 商品表上**没有**评分列 —— 平均分与条数由这些明细算出（投影，不落库）：
+	// 评分是明细数据的聚合结果，存成商品列就意味着每加一条评分都要回写商品行，
+	// 并且丢掉明细本身（将来评论域无从接手）。
+	Ratings []ProductRatingEntity `gorm:"foreignKey:ProductID;references:ID"`
 
 	// MinPrice 最低启用变体价（issue #28 的投影别名 min_price）。
 	//
@@ -116,6 +115,11 @@ func (m *Model) DB(ctx context.Context) *gorm.DB {
 // VariantDB 变体表句柄（同上，仅本 model 内部使用）。
 func (m *Model) VariantDB(ctx context.Context) *gorm.DB {
 	return m.db.WithContext(ctx).Model(&VariantEntity{})
+}
+
+// RatingDB 评分明细表句柄（issue #30）：只允许被本 model 的仓储方法消费。
+func (m *Model) RatingDB(ctx context.Context) *gorm.DB {
+	return m.db.WithContext(ctx).Model(&ProductRatingEntity{})
 }
 
 // CreateWithVariants 在同一事务内写商品行与其初始变体（聚合内原子组合）。
@@ -228,10 +232,13 @@ func (m *Model) ListForCollection(ctx context.Context, f CollectionFilter, limit
 	q := m.DB(ctx).Select(
 		"id, project_id, name, subtitle, description, slug, status, sort, unit, " +
 			"images, images_alt, attribute_ids, category_ids, tag_ids, brand_id, related_ids, " +
-			"default_image, created_at, updated_at, rating, rating_count, " +
+			"default_image, created_at, updated_at, " +
 			// 最低启用变体价（issue #28）：价格排序与价格区间展示都要数值，
 			// 光有 priceRange 字符串没法排序。没有启用变体的商品该列为 NULL。
 			"(SELECT MIN(v.price) FROM product_variants v WHERE v.product_id = products.id AND v.enabled) AS min_price")
+	// 评分明细（issue #30）：hasMany 关联一次批量拉回（GORM 会把它变成第二条 IN 查询，
+	// 不是逐条商品查一次）。投影值由明细在 Go 侧算出。
+	q = q.Preload("Ratings")
 	if f.ProjectID != "" {
 		q = q.Where("project_id = ?", f.ProjectID)
 	}
@@ -286,7 +293,14 @@ func (m *Model) ListForCollection(ctx context.Context, f CollectionFilter, limit
 	// 把「没有评分」当成 0 分会让新商品在「评分 ≥ 4」的筛选里永远消失，
 	// 而它其实只是还没人评过。
 	if f.MinRating != nil {
-		q = q.Where("rating IS NOT NULL AND rating >= ?", *f.MinRating)
+		// 最低评分（issue #30）：评分在独立表里，用**子查询**表达「有评分且均分 ≥ 阈值」——
+		// 走 GORM 的模型句柄由它生成嵌套 SQL，而不是手写表名拼 JOIN。
+		//
+		// 为什么筛选必须在 SQL 侧：集合源一次最多取 100 条，先取回再在内存里筛是错的
+		//（筛掉的可能本该排在前面）。排序则相反 —— 集合项已带投影出的 ratingValue，
+		// 排在组件层做，不必进 SQL。
+		rated := m.RatingDB(ctx).Select("product_id").Group("product_id").Having("AVG(score) >= ?", *f.MinRating)
+		q = q.Where("products.id IN (?)", rated)
 	}
 	// 在售（issue #27）：与自动标签 on_sale 同一判定 —— 存在启用变体且划线价高于售价。
 	if f.OnSale {

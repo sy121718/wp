@@ -1037,14 +1037,13 @@ func init() {
 		SQL: productVariantPriceIndexSQL,
 	})
 
-	// 120：商品评分字段（issue #29）。products 表存在即默认跳过，故 CheckSQL 核对两条 CHECK
-	// 约束是否真的在位（缺约束即整段重跑，语句幂等）。
+	// 120：商品评分独立表（issue #30 修正 #29 的「评分当商品列」）。CheckSQL 核对该表是否在位
+	// （缺表即整段重跑，语句幂等；DROP COLUMN 用 IF EXISTS 保证重跑安全）。
 	register(Migration{
 		Version:   "120-product-rating",
-		TableName: "products",
-		CheckSQL: "SELECT CASE WHEN COUNT(*) = 2 THEN 1 ELSE 0 END FROM pg_constraint " +
-			"WHERE conrelid = ?::regclass " +
-			"AND conname IN ('products_rating_range_check', 'products_rating_count_check')",
+		TableName: "product_ratings",
+		CheckSQL: "SELECT CASE WHEN COUNT(*) = 1 THEN 1 ELSE 0 END FROM information_schema.tables " +
+			"WHERE table_schema = current_schema() AND table_name = ?",
 		SQL: productRatingSQL,
 	})
 
