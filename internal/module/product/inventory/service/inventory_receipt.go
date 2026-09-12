@@ -125,8 +125,14 @@ func (s *Service) RegisterReceipt(ctx context.Context, req *inventorydto.Registe
 		}
 		items = make([]*inventorymodel.ReceiptItemEntity, 0, len(req.Lines))
 		stockLines = make([]inventorydto.StockChangeLineReq, 0, len(req.Lines))
+		seenLineIDs := make(map[string]struct{}, len(req.Lines))
 		for _, row := range req.Lines {
-			line, ok := byID[strings.TrimSpace(row.LineID)]
+			lineID := strings.TrimSpace(row.LineID)
+			if _, exists := seenLineIDs[lineID]; exists {
+				return errors.New(inventoryenums.ErrReceiptLineDuplicate)
+			}
+			seenLineIDs[lineID] = struct{}{}
+			line, ok := byID[lineID]
 			if !ok {
 				return errors.New(inventoryenums.ErrPurchaseLineNotFound)
 			}
@@ -149,10 +155,10 @@ func (s *Service) RegisterReceipt(ctx context.Context, req *inventorydto.Registe
 			if affected == 0 {
 				return errors.New(inventoryenums.ErrReceiptOverReceive)
 			}
-			lineID := line.ID
+			receiptLineID := line.ID
 			items = append(items, &inventorymodel.ReceiptItemEntity{
 				ID: uuid.NewString(), ReceiptID: receiptID, ProjectID: projectID,
-				LineID: &lineID, ProductID: line.ProductID, VariantID: line.VariantID,
+				LineID: &receiptLineID, ProductID: line.ProductID, VariantID: line.VariantID,
 				SKUCode: line.SKUCode, Quantity: row.Quantity, UnitPrice: unitPrice,
 				CostUpdated: false, CostError: "", CreatedAt: now,
 			})

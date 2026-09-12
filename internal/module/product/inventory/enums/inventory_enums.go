@@ -105,6 +105,7 @@ const (
 
 	// —— 入库（issue #18 验收 3/4/5）——
 	ErrReceiptLinesRequired   = "ErrReceiptLinesRequired"   // 入库清单不能为空
+	ErrReceiptLineDuplicate   = "ErrReceiptLineDuplicate"   // 同一入库请求里同一采购行只能出现一次
 	ErrReceiptQuantityInvalid = "ErrReceiptQuantityInvalid" // 入库数量必须为正整数
 	// ErrReceiptOverReceive 入库数量超过「采购数量 - 已入库数量」：超收在数据层即不可能，
 	// 服务层在同一事务内用带守卫的原子递增拒绝（不留半截、不靠读-改-写）。

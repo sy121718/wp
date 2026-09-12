@@ -277,6 +277,14 @@ func TestPurchaseOrderCreateWithAtomicReceive(t *testing.T) {
 	purchaseErr(t, err, inventoryenums.ErrPurchaseCodeInvalid)
 
 	line1, line2 := order.Lines[0], order.Lines[1]
+	// 同一请求里重复提交同一采购行必须拒绝，避免一张入库单出现重复行并让单价 / 数量语义不明确。
+	_, err = f.inventory.RegisterReceipt(ctx, &inventorydto.RegisterReceiptReq{
+		ProjectID: f.projectID, OrderID: order.ID, RequestID: "REQ-DUP-LINE",
+		Lines: []inventorydto.ReceiptLineReq{
+			{LineID: line1.ID, Quantity: 1}, {LineID: line1.ID, Quantity: 1},
+		},
+	})
+	purchaseErr(t, err, inventoryenums.ErrReceiptLineDuplicate)
 
 	// 分批入库：先收 6（部分入库），已入库数量落库、状态跟着变。
 	mustReceiveLine(t, f, order.ID, line1.ID, 6, "REQ-A1")
