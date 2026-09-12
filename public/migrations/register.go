@@ -285,6 +285,12 @@ var productVariantPriceIndexSQL string
 //go:embed 120_product_rating.sql
 var productRatingSQL string
 
+//go:embed 121_drop_stock_cache.sql
+var dropStockCacheSQL string
+
+//go:embed 122_drop_cache_permissions.sql
+var dropCachePermissionsSQL string
+
 //go:embed 073_blueprint_ddl_align.sql
 var blueprintDDLAlignSQL string
 
@@ -1045,6 +1051,27 @@ func init() {
 		CheckSQL: "SELECT CASE WHEN COUNT(*) = 1 THEN 1 ELSE 0 END FROM information_schema.tables " +
 			"WHERE table_schema = current_schema() AND table_name = ?",
 		SQL: productRatingSQL,
+	})
+
+	// 121：去掉商品侧库存缓存（issue #32）。CheckSQL 核对两个缓存列确已不存在
+	//（缺列即整段重跑，语句全部 IF EXISTS 幂等）。
+	register(Migration{
+		Version:   "121-drop-stock-cache",
+		TableName: "product_variants",
+		CheckSQL: "SELECT CASE WHEN COUNT(*) = 0 THEN 1 ELSE 0 END FROM information_schema.columns " +
+			"WHERE table_schema = current_schema() AND table_name = ? " +
+			"AND column_name IN ('stock_total', 'stock_synced_at')",
+		SQL: dropStockCacheSQL,
+	})
+
+	// 122：删缓存相关权限点与策略（issue #32）。CheckSQL 核对两个权限点确已不存在
+	//（权限点还在即整段重跑，语句幂等）。
+	register(Migration{
+		Version:   "122-drop-cache-permissions",
+		TableName: "inventory:cache_sync",
+		CheckSQL: "SELECT CASE WHEN COUNT(*) = 0 THEN 1 ELSE 0 END FROM sys_permission " +
+			"WHERE permission_code IN (?, 'inventory:cache_reconcile')",
+		SQL: dropCachePermissionsSQL,
 	})
 
 	// 073：把历史库的 blueprints / blueprint_versions 对齐到 model（唯一真源）。

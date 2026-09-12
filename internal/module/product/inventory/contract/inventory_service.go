@@ -103,7 +103,5 @@ type InventoryService interface {
 
 	// —— 商品侧缓存同步与对账（验收 6/7）——
 	// SyncStockCache 显式同步（真源汇总 → 商品侧展示缓存，带时间戳）。
-	SyncStockCache(ctx context.Context, req *inventorydto.SyncStockCacheReq) (res *inventorydto.SyncStockCacheResp, err error)
 	// ReconcileStockCache 真源与缓存逐变体对账；Repair 为真时按真源修复。
-	ReconcileStockCache(ctx context.Context, req *inventorydto.ReconcileStockCacheReq) (res *inventorydto.ReconcileStockCacheResp, err error)
 }

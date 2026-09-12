@@ -280,15 +280,5 @@ type SourceSummaryReq struct {
 // —— 商品侧缓存同步与对账（issue #16 验收 6/7）——
 
 // SyncStockCacheReq 显式同步商品侧库存缓存（可指定单个变体，缺省整工程）。
-type SyncStockCacheReq struct {
-	ProjectID string `json:"projectId"`
-	VariantID string `json:"variantId"`
-}
 
 // ReconcileStockCacheReq 缓存对账（可选对齐修复）。
-type ReconcileStockCacheReq struct {
-	ProjectID string `json:"projectId"`
-	VariantID string `json:"variantId"`
-	// Repair 为真时把不一致的缓存按真源汇总写回（对账兜底）。
-	Repair bool `json:"repair"`
-}

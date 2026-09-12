@@ -23,9 +23,9 @@ import (
 	"sync"
 	"testing"
 
+	productdto "go_wp/internal/module/product/dto"
 	inventorydto "go_wp/internal/module/product/inventory/dto"
 	inventoryenums "go_wp/internal/module/product/inventory/enums"
-	productdto "go_wp/internal/module/product/dto"
 )
 
 // —— 小工具 ——
@@ -416,7 +416,7 @@ func TestPurchaseReceiptIncreasesStockAndWritesMovement(t *testing.T) {
 		t.Fatalf("流水批次号应与入库单一致：流水 %s / 单据 %s", mv.BatchID, res.MovementBatchID)
 	}
 	// 商品侧库存展示缓存（提交之后的独立同步）也跟上了。
-	if total, _ := cacheColumns(t, f, v.ID); total != 5 {
+	if total := trueSourceTotal(t, f, v.ID); total != 5 {
 		t.Fatalf("商品侧展示缓存应被同步为 5，实际 %d", total)
 	}
 	// 第二批入库：同一行继续累加（已入库数量是累加值，不是覆盖值）。

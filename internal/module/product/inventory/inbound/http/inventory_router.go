@@ -68,7 +68,5 @@ func SetupInventoryRoutes(rg *gin.RouterGroup, db *gorm.DB, project projectcontr
 	g.POST("/purchase/production", handle.RegisterProductionInbound)
 
 	// 商品侧缓存同步与对账（issue #16 验收 6/7）：提交后的独立步骤，不进变动事务。
-	g.POST("/cache/sync", handle.SyncStockCache)
-	g.POST("/cache/reconcile", handle.ReconcileStockCache)
 	return svc
 }

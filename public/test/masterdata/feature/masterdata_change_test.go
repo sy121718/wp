@@ -22,10 +22,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
-	inventorydto "go_wp/internal/module/product/inventory/dto"
-	inventoryenums "go_wp/internal/module/product/inventory/enums"
-	inventorymodel "go_wp/internal/module/product/inventory/model"
-	inventoryservice "go_wp/internal/module/product/inventory/service"
 	masterdatacontract "go_wp/internal/module/masterdata/contract"
 	masterdatadto "go_wp/internal/module/masterdata/dto"
 	masterdataenums "go_wp/internal/module/masterdata/enums"
@@ -34,6 +30,10 @@ import (
 	masterdataservice "go_wp/internal/module/masterdata/service"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
+	inventorydto "go_wp/internal/module/product/inventory/dto"
+	inventoryenums "go_wp/internal/module/product/inventory/enums"
+	inventorymodel "go_wp/internal/module/product/inventory/model"
+	inventoryservice "go_wp/internal/module/product/inventory/service"
 	productmodel "go_wp/internal/module/product/model"
 	productservice "go_wp/internal/module/product/service"
 	projectdto "go_wp/internal/module/project/dto"
@@ -80,7 +80,6 @@ func newMDFixture(t *testing.T) *mdFixture {
 	inventory := inventoryservice.NewService(inventorymodel.NewModel(db), projects)
 	products := productservice.NewService(productmodel.NewModel(db), projects)
 	products.SetVariantStock(inventory)
-	inventory.SetStockCache(products)
 	inventory.SetVariantCost(products)
 	products.SetMasterDataChanges(changes)
 	inventory.SetMasterDataChanges(changes)

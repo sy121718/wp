@@ -23,6 +23,7 @@ import (
 	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
+	inventorymodel "go_wp/internal/module/product/inventory/model"
 	productmodel "go_wp/internal/module/product/model"
 	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/pkg/i18n"
@@ -39,6 +40,10 @@ const (
 type Service struct {
 	m       *productmodel.Model
 	project projectcontract.ProjectService
+	// inv 库存 model（issue #32：商品与库存合并为同一模块后，商品用例直接持有库存 model，
+	// 读真源汇总做**查询期投影**，不再经跨模块端口、也不再有商品侧缓存副本）。
+	// 未注入时库存投影为 0（纯商品单测路径）；注入与否都不影响任何可用量判断。
+	inv *inventorymodel.Model
 	// contentStore 内容译文读取端口（装配期注入，可空）。
 	// 构建期商品可翻译字段（name/subtitle/description）按构建语言取译文；
 	// 未注入 / 语言为空 / 查询失败一律回退原文（兜底铁律，绝不报错）。
@@ -58,6 +63,10 @@ type Service struct {
 }
 
 // NewService 构造。
+// SetInventory 注入库存 model（issue #32，装配期调用；可选依赖不进构造参数）。
+func (s *Service) SetInventory(m *inventorymodel.Model) { s.inv = m }
+
+// NewService 构造商品用例。
 func NewService(m *productmodel.Model, project projectcontract.ProjectService) *Service {
 	return &Service{m: m, project: project}
 }
@@ -97,7 +106,6 @@ func (s *Service) SetMasterDataChanges(port masterdatacontract.MasterDataService
 var (
 	_ productcontract.ProductService = (*Service)(nil)
 	// 库存缓存端口（issue #16）：库存模块经它把真源汇总写进本模块的展示缓存。
-	_ productcontract.VariantStockCachePort = (*Service)(nil)
 	// 成本价写回端口（issue #18）：库存模块经它把入库单价写进 product_variants.cost_price。
 	_ productcontract.VariantCostPort = (*Service)(nil)
 )
@@ -582,6 +590,8 @@ func (s *Service) toResp(ctx context.Context, e *productmodel.ProductEntity) (re
 	for _, v := range variants {
 		resp.Variants = append(resp.Variants, toVariantResp(v))
 	}
+	// 库存展示值查询期投影（issue #32）：一次批量取真源汇总。
+	s.fillVariantStock(ctx, resp.ProjectID, resp.Variants)
 	// 引用到的属性组（组 + 值），供后台与详情页直接渲染规格选择器。
 	if groups, aerr := s.attributeRespByProduct(ctx, []*productmodel.ProductEntity{e}); aerr != nil {
 		return nil, aerr
@@ -684,15 +694,50 @@ func decodeStrings(raw json.RawMessage) (out []string) {
 	return out
 }
 
+// fillVariantStock 用库存真源汇总填充变体响应的库存投影值（issue #32）。
+//
+// 库存不再有商品侧缓存列，展示值只能**查询期投影**：
+//
+//	· 一次批量取真源按变体汇总（不是逐条查）；
+//	· 未注入库存 model（纯商品单测路径）时保持 0 —— 调用方**不可**据此判断可用量；
+//	· 投影失败不影响商品本身的读取（库存是展示值，不是商品的组成部分）。
+//
+// 死线不变：可用量判断一律走库存真源的带行锁路径，永远不看这个投影值。
+func (s *Service) fillVariantStock(ctx context.Context, projectID string, variants []*productdto.VariantResp) {
+	if s.inv == nil || len(variants) == 0 {
+		return
+	}
+	ids := make([]string, 0, len(variants))
+	for _, v := range variants {
+		if v != nil && v.ID != "" {
+			ids = append(ids, v.ID)
+		}
+	}
+	rows, err := s.inv.StockTotals(ctx, projectID, ids)
+	if err != nil {
+		return
+	}
+	totals := make(map[string]int, len(rows))
+	for _, row := range rows {
+		if row != nil {
+			totals[row.VariantID] = row.Total
+		}
+	}
+	for _, v := range variants {
+		if v != nil {
+			v.StockTotal = totals[v.ID]
+		}
+	}
+}
+
 // toVariantResp 变体实体 → 响应。
 func toVariantResp(v *productmodel.VariantEntity) *productdto.VariantResp {
 	return &productdto.VariantResp{
 		ID: v.ID, ProductID: v.ProductID, SKUCode: v.SKUCode, Barcode: v.Barcode,
 		Price: v.Price, ComparePrice: v.ComparePrice, CostPrice: v.CostPrice,
 		Image: v.Image, OptionValues: orJSON(v.OptionValues, "{}"),
-		Enabled: v.Enabled, Sort: v.Sort, StockTotal: v.StockTotal,
-		StockSyncedAt: formatTimePtr(v.StockSyncedAt),
-		CreatedAt:     v.CreatedAt.Format(time.RFC3339), UpdatedAt: v.UpdatedAt.Format(time.RFC3339),
+		Enabled: v.Enabled, Sort: v.Sort,
+		CreatedAt: v.CreatedAt.Format(time.RFC3339), UpdatedAt: v.UpdatedAt.Format(time.RFC3339),
 	}
 }
 

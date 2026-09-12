@@ -394,7 +394,6 @@ func (s *Service) finishChange(ctx context.Context, projectID, direction string,
 		}
 		resp.Movements = append(resp.Movements, item)
 	}
-	resp.CacheTotals, resp.CacheFailures = s.syncStockCache(ctx, projectID, out.variants)
 	resp.CacheSynced = len(resp.CacheFailures) == 0
 	return resp
 }

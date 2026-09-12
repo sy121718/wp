@@ -28,10 +28,10 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	productdto "go_wp/internal/module/product/dto"
 	inventorydto "go_wp/internal/module/product/inventory/dto"
 	inventoryenums "go_wp/internal/module/product/inventory/enums"
 	inventoryhttp "go_wp/internal/module/product/inventory/inbound/http"
-	productdto "go_wp/internal/module/product/dto"
 )
 
 // slugSeq 让同一次测试里建的商品 slug 不撞车（商品 slug 工程内唯一）。
@@ -65,23 +65,6 @@ func changeIn(t *testing.T, f *invFixture, p *productdto.ProductResp, v *product
 		t.Fatalf("入库 %d 失败: %v", quantity, err)
 	}
 	return res
-}
-
-// cacheColumns 直读商品侧缓存列（库存模块不碰这张表，断言必须直查）。
-func cacheColumns(t *testing.T, f *invFixture, variantID string) (total int, syncedAt string) {
-	t.Helper()
-	var row struct {
-		Total    int
-		SyncedAt *string
-	}
-	if err := f.db.Raw("SELECT stock_total AS total, stock_synced_at::text AS synced_at FROM product_variants WHERE id = ?",
-		variantID).Scan(&row).Error; err != nil {
-		t.Fatalf("读商品侧缓存失败: %v", err)
-	}
-	if row.SyncedAt != nil {
-		syncedAt = *row.SyncedAt
-	}
-	return row.Total, syncedAt
 }
 
 // TestInventoryChangeOnTrueSourceWithRowLock 验收 1：
@@ -725,174 +708,6 @@ func TestInventoryDeductExpandsBOM(t *testing.T) {
 	}
 }
 
-// TestInventoryCacheSyncAndReconcile 验收 6：
-// 商品侧缓存可同步且带时间戳；同步失败不影响主流程；对账能发现并修复漂移。
-func TestInventoryCacheSyncAndReconcile(t *testing.T) {
-	f := newInvFixture(t)
-	if f == nil {
-		return
-	}
-	ctx := context.Background()
-	sz := f.createWarehouse(t, "SZ", "苏州仓", true)
-	sh := f.createWarehouse(t, "SH", "上海仓", false)
-	p := mustProduct(t, f, "Tee")
-	v := f.firstVariant(t, p.ID)
-
-	// 变动后在**提交之后**同步：缓存 = 真源汇总，且盖上时间戳。
-	res := changeIn(t, f, p, v, sz.ID, 6, "purchase_in")
-	if !res.CacheSynced || len(res.CacheFailures) != 0 {
-		t.Fatalf("变动后缓存应同步成功：%+v", res)
-	}
-	if got, ok := res.CacheTotals[v.ID]; !ok || got != 6 {
-		t.Fatalf("响应应带上同步后的真源汇总：%+v", res.CacheTotals)
-	}
-	total, syncedAt := cacheColumns(t, f, v.ID)
-	if total != 6 {
-		t.Fatalf("商品侧缓存应被同步为 6，实际 %d", total)
-	}
-	if syncedAt == "" {
-		t.Fatalf("商品侧缓存应带同步时间戳")
-	}
-
-	// 多仓：同一 SKU 在第二个仓也有一行时，缓存 = 各仓求和。
-	if _, err := f.inventory.EnsureStock(ctx, &inventorydto.EnsureStockReq{
-		ProjectID: f.projectID, ProductID: p.ID, VariantID: v.ID, SKUCode: v.SKUCode, WarehouseID: sh.ID,
-	}); err != nil {
-		t.Fatalf("在第二个仓生成库存记录失败: %v", err)
-	}
-	if _, err := f.inventory.ChangeStock(ctx, &inventorydto.ChangeStockReq{
-		ProjectID: f.projectID, Direction: inventoryenums.DirectionIn, ReasonCode: "transfer_in",
-		Lines: []inventorydto.StockChangeLineReq{{
-			VariantID: v.ID, ProductID: p.ID, SKUCode: v.SKUCode, WarehouseID: sh.ID, Quantity: 4,
-		}},
-	}); err != nil {
-		t.Fatalf("调拨入库失败: %v", err)
-	}
-	if total, _ = cacheColumns(t, f, v.ID); total != 10 {
-		t.Fatalf("缓存应是各仓求和（6 + 4 = 10），实际 %d", total)
-	}
-
-	// 显式同步：带时间戳的回执。
-	synced, err := f.inventory.SyncStockCache(ctx, &inventorydto.SyncStockCacheReq{ProjectID: f.projectID})
-	if err != nil {
-		t.Fatalf("显式同步缓存失败: %v", err)
-	}
-	if synced.Failed != 0 || synced.Synced == 0 {
-		t.Fatalf("显式同步应全部成功：%+v", synced)
-	}
-	found := false
-	for _, item := range synced.Items {
-		if item.VariantID == v.ID {
-			found = true
-			if item.TrueTotal != 10 || item.SyncedAt == "" || item.Status != inventoryenums.CacheSyncOK {
-				t.Fatalf("同步回执应带真源汇总与时间戳：%+v", item)
-			}
-		}
-	}
-	if !found {
-		t.Fatalf("同步回执应包含本变体：%+v", synced.Items)
-	}
-
-	// 制造漂移（缓存被别处改坏）→ 对账必须发现，Repair 后对齐真源。
-	if err = f.db.Exec("UPDATE product_variants SET stock_total = 999 WHERE id = ?", v.ID).Error; err != nil {
-		t.Fatalf("制造缓存漂移失败: %v", err)
-	}
-	report, err := f.inventory.ReconcileStockCache(ctx, &inventorydto.ReconcileStockCacheReq{ProjectID: f.projectID})
-	if err != nil {
-		t.Fatalf("对账失败: %v", err)
-	}
-	if report.Differed != 1 || report.Matched != 0 {
-		t.Fatalf("对账应发现 1 处不一致：%+v", report)
-	}
-	var drifted *inventorydto.ReconcileItemResp
-	for _, item := range report.Items {
-		if item.VariantID == v.ID {
-			drifted = item
-		}
-	}
-	if drifted == nil || drifted.TrueTotal != 10 || drifted.CachedTotal != 999 || !drifted.Differed {
-		t.Fatalf("对账明细错误：%+v", drifted)
-	}
-	repaired, err := f.inventory.ReconcileStockCache(ctx, &inventorydto.ReconcileStockCacheReq{
-		ProjectID: f.projectID, Repair: true,
-	})
-	if err != nil || repaired.Repaired != 1 {
-		t.Fatalf("对账修复失败：%v %+v", err, repaired)
-	}
-	if total, _ = cacheColumns(t, f, v.ID); total != 10 {
-		t.Fatalf("修复后缓存应等于真源汇总 10，实际 %d", total)
-	}
-	again, err := f.inventory.ReconcileStockCache(ctx, &inventorydto.ReconcileStockCacheReq{ProjectID: f.projectID})
-	if err != nil || again.Differed != 0 || again.Matched != 1 {
-		t.Fatalf("修复后再对账应完全一致：%v %+v", err, again)
-	}
-}
-
-// TestInventoryCacheSyncFailureDoesNotBlockChange 验收 6（失败路径）：
-// 缓存同步失败不影响库存变动主流程（真源照常落库），失败落台账，由对账兜底。
-func TestInventoryCacheSyncFailureDoesNotBlockChange(t *testing.T) {
-	f := newInvFixture(t)
-	if f == nil {
-		return
-	}
-	ctx := context.Background()
-	wh := f.createWarehouse(t, "SZ", "苏州仓", true)
-	p := mustProduct(t, f, "Tee")
-	v := f.firstVariant(t, p.ID)
-	changeIn(t, f, p, v, wh.ID, 3, "purchase_in")
-
-	// 换上一个必然失败的缓存端口（模拟商品侧写缓存不可用）。
-	f.inventory.SetStockCache(failingCachePort{})
-	res, err := f.inventory.ChangeStock(ctx, &inventorydto.ChangeStockReq{
-		ProjectID: f.projectID, Direction: inventoryenums.DirectionIn, ReasonCode: "purchase_in",
-		Lines: []inventorydto.StockChangeLineReq{{
-			VariantID: v.ID, ProductID: p.ID, SKUCode: v.SKUCode, WarehouseID: wh.ID, Quantity: 7,
-		}},
-	})
-	if err != nil {
-		t.Fatalf("缓存同步失败不得让库存变动报错：%v", err)
-	}
-	if res.CacheSynced || len(res.CacheFailures) == 0 {
-		t.Fatalf("响应应如实标记缓存同步失败：%+v", res)
-	}
-	if got := f.stockQty(t, v.ID, wh.ID); got != 10 {
-		t.Fatalf("真源必须照常落库（3 + 7 = 10），实际 %d", got)
-	}
-	// 台账记录失败状态与原因（对账兜底的凭据）。
-	var record struct {
-		Status      string
-		Error       string
-		TrueTotal   int
-		CachedTotal int
-	}
-	if err = f.db.Raw("SELECT status, error, true_total, cached_total FROM inventory_stock_cache_syncs WHERE variant_id = ?", v.ID).
-		Scan(&record).Error; err != nil {
-		t.Fatalf("读缓存同步台账失败: %v", err)
-	}
-	if record.Status != inventoryenums.CacheSyncFailed || record.Error == "" || record.TrueTotal != 10 {
-		t.Fatalf("同步失败应落台账：%+v", record)
-	}
-	// 商品侧缓存仍是上一次成功值（3），与真源（10）不一致 —— 正是对账要发现的。
-	if total, _ := cacheColumns(t, f, v.ID); total != 3 {
-		t.Fatalf("同步失败时缓存应保持上一次成功值 3，实际 %d", total)
-	}
-
-	// 换回正常端口 → 对账发现不一致并修复。
-	f.inventory.SetStockCache(f.products)
-	report, err := f.inventory.ReconcileStockCache(ctx, &inventorydto.ReconcileStockCacheReq{
-		ProjectID: f.projectID, Repair: true,
-	})
-	if err != nil {
-		t.Fatalf("对账失败: %v", err)
-	}
-	if report.Differed != 1 || report.Repaired != 1 {
-		t.Fatalf("对账应发现并修复 1 处漂移：%+v", report)
-	}
-	if total, _ := cacheColumns(t, f, v.ID); total != 10 {
-		t.Fatalf("对账修复后缓存应为 10，实际 %d", total)
-	}
-}
-
 // failingCachePort 必然失败的缓存端口（只用于验证「同步失败不影响主流程」）。
 type failingCachePort struct{}
 
@@ -920,9 +735,6 @@ func TestInventoryAvailabilityReadsTrueSourceNotCache(t *testing.T) {
 	changeIn(t, f, p, v, wh.ID, 3, "purchase_in")
 
 	// 把缓存吹成 1000（模拟缓存漂移 / 被别处改坏）。
-	if err := f.db.Exec("UPDATE product_variants SET stock_total = 1000 WHERE id = ?", v.ID).Error; err != nil {
-		t.Fatalf("写缓存失败: %v", err)
-	}
 	// 真源只有 3：扣 3 成功，再扣 1 必须被拒（若读缓存就会放行 → 超卖）。
 	if _, err := f.inventory.DeductStock(ctx, &inventorydto.DeductStockReq{
 		ProjectID: f.projectID, ReasonCode: "sale_out",
@@ -951,9 +763,10 @@ func TestInventoryAvailabilityReadsTrueSourceNotCache(t *testing.T) {
 	if err != nil || len(rows) != 1 || rows[0].Quantity != 0 {
 		t.Fatalf("列表也必须读真源：%v %+v", err, rows)
 	}
-	// 扣减成功后缓存被同步回真源（展示值跟上，判定依旧只认真源）。
-	if total, _ := cacheColumns(t, f, v.ID); total != 0 {
-		t.Fatalf("变动后的缓存应同步为真源值 0，实际 %d", total)
+	// 扣减之后**没有缓存要同步**（issue #32：商品侧缓存列已删）：
+	// 展示值按需从真源投影，所以这里直接核对真源仍是 0。
+	if total := trueSourceTotal(t, f, v.ID); total != 0 {
+		t.Fatalf("真源应被扣到 0，实际 %d", total)
 	}
 }
 
@@ -1077,4 +890,14 @@ func countMovements(t *testing.T, f *invFixture, variantID string) int {
 		t.Fatalf("统计流水失败: %v", err)
 	}
 	return n
+}
+
+// trueSourceTotal 读某变体的**真源**汇总（跨仓求和）——替代原 cacheColumns（缓存列已删）。
+func trueSourceTotal(t *testing.T, f *invFixture, variantID string) int {
+	t.Helper()
+	var total int
+	if err := f.db.Raw("SELECT COALESCE(SUM(quantity), 0) FROM inventory_stocks WHERE variant_id = ?", variantID).Scan(&total).Error; err != nil {
+		t.Fatalf("读真源汇总失败: %v", err)
+	}
+	return total
 }

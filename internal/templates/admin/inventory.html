@@ -198,12 +198,6 @@
                 <button type="submit" class="btn btn-primary">提交变动</button>
             </div>
         </form>
-        {{if len(.CacheRows) > 0}}
-        <p class="pages-badge pages-badge-warn">
-            商品侧库存缓存与真源不一致（缓存只是展示值，可用量判定只读真源）：
-            {{range _, row := .CacheRows}}{{row.SKUCode}}（缓存 {{row.CachedTotal}} / 真源 {{row.TrueTotal}}） {{end}}
-        </p>
-        {{end}}
     </section>
 
     <section class="pages-card">

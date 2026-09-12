@@ -402,33 +402,3 @@ func (h *Handle) GetBOM(c *gin.Context) {
 	}
 	response.SuccessWithMessage(c, inventoryenums.MsgDetailSuccess, res)
 }
-
-// SyncStockCache 显式同步商品侧库存缓存（验收 6）。
-func (h *Handle) SyncStockCache(c *gin.Context) {
-	req := &inventorydto.SyncStockCacheReq{}
-	if err := c.ShouldBindJSON(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, inventoryenums.ErrInvalidParam)
-		return
-	}
-	res, err := h.svc.SyncStockCache(c.Request.Context(), req)
-	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
-		return
-	}
-	response.SuccessWithMessage(c, inventoryenums.MsgSyncSuccess, res)
-}
-
-// ReconcileStockCache 缓存对账（验收 6/7：真源为唯一依据，可修复）。
-func (h *Handle) ReconcileStockCache(c *gin.Context) {
-	req := &inventorydto.ReconcileStockCacheReq{}
-	if err := c.ShouldBindJSON(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, inventoryenums.ErrInvalidParam)
-		return
-	}
-	res, err := h.svc.ReconcileStockCache(c.Request.Context(), req)
-	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
-		return
-	}
-	response.SuccessWithMessage(c, inventoryenums.MsgReconcileSuccess, res)
-}

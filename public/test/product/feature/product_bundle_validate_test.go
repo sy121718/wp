@@ -112,9 +112,6 @@ func TestBundleSelectionConstrainedByRealStock(t *testing.T) {
 	}
 
 	// 把商品侧展示缓存改成 999（脏数据 / 并发滞后）：结论必须完全不变。
-	if err := f.db.Exec("UPDATE product_variants SET stock_total = 999 WHERE id = ?", v.ID).Error; err != nil {
-		t.Fatalf("改缓存失败: %v", err)
-	}
 	if got := f.validateErr(t, main.ID, productdto.BundleSelectItem{VariantID: v.ID, Qty: 99}); got != productenums.ErrBundleQtyAboveStock {
 		t.Fatalf("可用量必须只读真源，缓存 999 不得放行，实际 %q", got)
 	}

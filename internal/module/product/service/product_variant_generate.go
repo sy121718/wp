@@ -180,6 +180,8 @@ func (s *Service) GenerateVariants(ctx context.Context, req *productdto.Generate
 	for _, v := range after {
 		res.Variants = append(res.Variants, toVariantResp(v))
 	}
+	// 库存展示值查询期投影（issue #32）。
+	s.fillVariantStock(ctx, p.ProjectID, res.Variants)
 	return res, nil
 }
 

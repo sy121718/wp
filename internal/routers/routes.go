@@ -35,6 +35,7 @@ import (
 	productcontract "go_wp/internal/module/product/contract"
 	producthttp "go_wp/internal/module/product/inbound/http"
 	inventoryhttp "go_wp/internal/module/product/inventory/inbound/http"
+	inventorymodel "go_wp/internal/module/product/inventory/model"
 	projecthttp "go_wp/internal/module/project/inbound/http"
 	pubhttp "go_wp/internal/module/publication/inbound/http"
 	runtimefragment "go_wp/internal/module/runtimefragment"
@@ -187,21 +188,15 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 	}
 	// 商品域（issue #5）：商品与变体管理。商品是独立领域模块，不再寄居内容表。
 	productSvc := producthttp.SetupProductRoutes(authorizedAPI, db, projectService, variantStockPort)
-	// 商品侧库存缓存端口（issue #16）：方向与上面的 VariantStockPort 相反 ——
-	// 库存变动由 inventory 发起，但 product_variants.stock_total 是商品模块的表，
-	// 跨模块写只能走商品模块自己的入口（表隔离）。两个端口在同一次装配里互相接线，
-	// 任一未实现即 fail-fast（装配缺陷不该拖到运行时才暴露）。
-	stockCachePort, ok := productSvc.(productcontract.VariantStockCachePort)
-	if !ok {
-		panic("商品模块未实现库存缓存端口（VariantStockCachePort）")
+	// 库存 model 注入商品用例（issue #32）：商品与库存合并为同一模块后，商品查询直接读
+	// 库存真源做**查询期投影**（不再有商品侧缓存列、同步台账与对账）。同模块内直调 model。
+	if setter, ok := productSvc.(interface{ SetInventory(*inventorymodel.Model) }); ok {
+		setter.SetInventory(inventorymodel.NewModel(db))
+	} else {
+		panic("商品模块未提供库存 model 注入点（SetInventory）")
 	}
-	stockCacheSetter, ok := inventorySvc.(interface {
-		SetStockCache(productcontract.VariantStockCachePort)
-	})
-	if !ok {
-		panic("库存模块未提供库存缓存端口注入点（SetStockCache）")
-	}
-	stockCacheSetter.SetStockCache(stockCachePort)
+	// 商品侧库存缓存端口（issue #16）已删除（issue #32）：商品与库存合并为同一模块后，
+	// 商品查询直接读库存真源做查询期投影，不再需要缓存副本、同步台账与对账。
 	// 成本价写回端口（issue #18）：与 VariantStockCachePort 同向（product 实现、inventory 调用）——
 	// 采购收货 / 生产入库登记后把单价写进 product_variants.cost_price。同一手法：断言 + 注入，
 	// 任一未实现即 fail-fast（装配缺陷不该拖到运行时才暴露）。

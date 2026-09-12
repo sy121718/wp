@@ -41,11 +41,9 @@ const (
 type Service struct {
 	m       *inventorymodel.Model
 	project projectcontract.ProjectService
-	// stockCache 商品侧库存缓存的读写端口（issue #16，由 product 模块实现）。
 	// 未注入时变动的缓存同步记失败台账（真源仍然成功），对账则显式报错。
 	// 依赖方向 inventory → product：本模块调商品模块的缓存端口，
 	// 商品模块实现的库存记录端口则由顶层反向注入（两端口互不干扰）。
-	stockCache productcontract.VariantStockCachePort
 	// variantCost 商品侧**成本价**写回端口（issue #18，由 product 模块实现）。
 	// 采购入库 / 生产入库登记后（库存变动已提交）经它把单价写进
 	// product_variants.cost_price；未注入时按回写失败记在入库单行上（cost_error），
@@ -66,9 +64,6 @@ func NewService(m *inventorymodel.Model, project projectcontract.ProjectService)
 //
 // 注入时机在商品模块装配之后（缓存端口的实现属商品模块），
 // 与 product.SetVariantStock 同一模式：可选依赖不进构造参数。
-func (s *Service) SetStockCache(port productcontract.VariantStockCachePort) {
-	s.stockCache = port
-}
 
 // SetVariantCost 注入商品侧成本价写回端口（issue #18，装配期调用）。
 //

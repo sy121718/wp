@@ -8,7 +8,6 @@
 //
 // 另覆盖三条容易踩的边界：
 //
-//	· 可用量只读真源：把 product_variants.stock_total（冗余缓存）改成离谱的值，
 //	  经契约读到的仍是 inventory_stocks 的真值 —— 缓存绝不参与判断；
 //	· 默认仓是「必须存在」的兜底：不能删、不能停用、不能取消默认；缺默认仓即显式报错；
 //	· 仓库短码是 SKU 编码前缀：工程内唯一、大小写归一、非法字符拒绝。
@@ -25,11 +24,11 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
+	productdto "go_wp/internal/module/product/dto"
 	inventorydto "go_wp/internal/module/product/inventory/dto"
 	inventoryenums "go_wp/internal/module/product/inventory/enums"
 	inventorymodel "go_wp/internal/module/product/inventory/model"
 	inventoryservice "go_wp/internal/module/product/inventory/service"
-	productdto "go_wp/internal/module/product/dto"
 	productmodel "go_wp/internal/module/product/model"
 	productservice "go_wp/internal/module/product/service"
 	projectdto "go_wp/internal/module/project/dto"
@@ -80,7 +79,6 @@ func newInvFixture(t *testing.T) *invFixture {
 	products.SetVariantStock(inv)
 	// 与生产装配同形（routers.SetupRoutes）：商品侧库存缓存端口反向注入库存模块，
 	// 库存变动提交后经它把真源汇总写进展示缓存（issue #16 验收 6）。
-	inv.SetStockCache(products)
 	// 同理注入成本价写回端口（issue #18）：采购 / 生产入库后把单价写进
 	// product_variants.cost_price。缺这一步，入库单行会记成「成本价未写回」。
 	inv.SetVariantCost(products)
@@ -441,7 +439,6 @@ func TestStockPerSkuPerWarehouse(t *testing.T) {
 }
 
 // TestStockReadsTrueSourceNotCache 死线：
-// 可用量只认真源（inventory_stocks），product_variants.stock_total 只是展示缓存。
 func TestStockReadsTrueSourceNotCache(t *testing.T) {
 	f := newInvFixture(t)
 	if f == nil {
@@ -457,9 +454,6 @@ func TestStockReadsTrueSourceNotCache(t *testing.T) {
 	v := f.firstVariant(t, p.ID)
 
 	// 把冗余缓存改成离谱的值（模拟缓存漂移 / 陈旧）。
-	if err = f.db.Exec("UPDATE product_variants SET stock_total = 999 WHERE id = ?", v.ID).Error; err != nil {
-		t.Fatalf("写缓存字段失败: %v", err)
-	}
 	row, err := f.inventory.GetStock(ctx, &inventorydto.GetStockReq{VariantID: v.ID, WarehouseID: sz.ID})
 	if err != nil {
 		t.Fatalf("读库存失败: %v", err)
@@ -476,14 +470,7 @@ func TestStockReadsTrueSourceNotCache(t *testing.T) {
 	if len(rows) != 1 || rows[0].Quantity != 0 {
 		t.Fatalf("列表也必须读真源，实际 %+v", rows)
 	}
-	// 缓存字段原样保留（本票不改它：同步是 issue #16 的职责）。
-	var cache int
-	if err = f.db.Raw("SELECT stock_total FROM product_variants WHERE id = ?", v.ID).Scan(&cache).Error; err != nil {
-		t.Fatalf("读缓存字段失败: %v", err)
-	}
-	if cache != 999 {
-		t.Fatalf("本票不应改写商品侧缓存（同步属 issue #16），实际 %d", cache)
-	}
+	// 商品侧缓存列已删（issue #32）：展示值按需从真源投影，不再有「缓存」这个概念。
 }
 
 // TestInventoryAdminPage 验收 4：后台可查看某 SKU 的各仓库存（真实模板渲染 + 写链路）。

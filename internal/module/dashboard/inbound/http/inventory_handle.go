@@ -110,11 +110,6 @@ func (h *inventoryPageHandle) InventoryPage(c *gin.Context) {
 		c.String(http.StatusInternalServerError, err.Error())
 		return
 	}
-	cacheRows, err := h.cacheRows(ctx, selected)
-	if err != nil {
-		c.String(http.StatusInternalServerError, err.Error())
-		return
-	}
 
 	c.HTML(http.StatusOK, "admin/inventory.html", withCSRF(c, gin.H{
 		"title":           "库存管理",
@@ -129,7 +124,6 @@ func (h *inventoryPageHandle) InventoryPage(c *gin.Context) {
 		"Reasons":         reasons,
 		"Directions":      directionOptions(),
 		"Movements":       movements,
-		"CacheRows":       cacheRows,
 		"Err":             strings.TrimSpace(c.Query("err")),
 		"Ok":              strings.TrimSpace(c.Query("ok")),
 	}))
@@ -308,30 +302,6 @@ func (h *inventoryPageHandle) listMovements(ctx context.Context, projectID, sku 
 			"ReasonName": m.ReasonName, "ReasonCode": m.ReasonCode,
 			"SourceType": m.SourceType, "SourceRef": m.SourceRef, "Remark": m.Remark,
 			"OperatorID": m.OperatorID, "BatchID": m.BatchID, "CreatedAt": m.CreatedAt,
-		})
-	}
-	return out, nil
-}
-
-// cacheRows 商品侧缓存的对账摘要（真源汇总 vs 缓存值；不一致会被标出来）。
-//
-// 对账失败不阻断页面：缓存只是展示值，页面把失败原因交给模板显示。
-func (h *inventoryPageHandle) cacheRows(ctx context.Context, projectID string) (out []gin.H, err error) {
-	out = []gin.H{}
-	if projectID == "" {
-		return out, nil
-	}
-	res, rerr := h.inventory.ReconcileStockCache(ctx, &inventorydto.ReconcileStockCacheReq{ProjectID: projectID})
-	if rerr != nil {
-		return out, nil
-	}
-	for _, item := range res.Items {
-		if !item.Differed {
-			continue
-		}
-		out = append(out, gin.H{
-			"VariantID": item.VariantID, "SKUCode": item.SKUCode,
-			"TrueTotal": item.TrueTotal, "CachedTotal": item.CachedTotal,
 		})
 	}
 	return out, nil

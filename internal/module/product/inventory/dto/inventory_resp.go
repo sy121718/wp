@@ -167,12 +167,6 @@ type CacheSyncItemResp struct {
 }
 
 // SyncStockCacheResp 缓存同步结果（Synced + Failed == len(Items)）。
-type SyncStockCacheResp struct {
-	ProjectID string               `json:"projectId"`
-	Items     []*CacheSyncItemResp `json:"items"`
-	Synced    int                  `json:"synced"`
-	Failed    int                  `json:"failed"`
-}
 
 // ReconcileItemResp 对账明细的一行。
 type ReconcileItemResp struct {
@@ -186,11 +180,3 @@ type ReconcileItemResp struct {
 }
 
 // ReconcileStockCacheResp 对账结果（Total == Matched + Differed）。
-type ReconcileStockCacheResp struct {
-	ProjectID string               `json:"projectId"`
-	Total     int                  `json:"total"`
-	Matched   int                  `json:"matched"`
-	Differed  int                  `json:"differed"`
-	Repaired  int                  `json:"repaired"`
-	Items     []*ReconcileItemResp `json:"items"`
-}
