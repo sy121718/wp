@@ -1,0 +1,146 @@
+{* admin/mail.html — 邮箱设置：发信账号 + 邮件模板（issue #37） *}
+{* Jet 方言：range 内访问外层值先存变量；csrf 用 chain 索引写法。 *}
+{{extends "layout.html"}}
+{{block body()}}
+{{csrf := .["csrf_token"]}}
+<div class="pages-wrap">
+  <section class="pages-card">
+    <h2>邮箱设置</h2>
+    {{if .Err != ""}}
+    <p class="pages-badge pages-badge-warn">上一次操作未完成：{{.Err}}</p>
+    {{end}}
+    {{if .Ok != ""}}
+    <p class="pages-badge pages-badge-ok">上一次操作已完成。</p>
+    {{end}}
+    <p class="pages-empty">
+      发信账号的密码<strong>只以密文落库</strong>，页面永不回显；编辑时密码留空表示<strong>不改</strong>。
+      「测试发送」会真的连一次 SMTP 并把服务器的真实反馈带回本页 ——
+      失败时能看到是<strong>认证失败</strong>还是<strong>连不上</strong>，而不是一句笼统的错误。
+    </p>
+    <p class="pages-empty">
+      用途（事务 / 营销）只是<strong>分类标记</strong>，不是使用限制：配好 SMTP 的账号两种邮件都能发。
+      「默认」表示事务邮件在没有显式指定时用哪一个。
+    </p>
+  </section>
+
+  <section class="pages-card">
+    <h2>发信账号</h2>
+    {{if len(.Accounts) == 0}}
+    <p class="pages-empty">还没有配置发信账号。没有账号时，注册验证之类的邮件发不出去。</p>
+    {{else}}
+    <table class="pages-table">
+      <thead><tr><th>名称</th><th>用途</th><th>发件人</th><th>服务器</th><th>密码</th><th>上次检测</th><th>操作</th></tr></thead>
+      <tbody>
+      {{range _, a := .Accounts}}
+      <tr>
+        <td>{{a.Name}}{{if a.IsDefault}} <span class="pages-badge">默认</span>{{end}}</td>
+        <td>{{a.Purpose}}</td>
+        <td>{{a.FromEmail}}</td>
+        <td>{{a.Host}}:{{a.Port}} ({{a.Encryption}})</td>
+        <td>{{if a.HasPassword}}已配置{{else}}<span class="pages-badge pages-badge-warn">未配置</span>{{end}}</td>
+        <td>
+          {{if a.LastCheckError != ""}}<span class="pages-badge pages-badge-warn">{{a.LastCheckError}}</span>
+          {{else if a.LastCheckAt != ""}}{{a.LastCheckAt}}{{else}}—{{end}}
+        </td>
+        <td>
+          <form method="post" action="/admin/mail/account/default" style="display:inline">
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <input type="hidden" name="id" value="{{a.ID}}">
+            <button type="submit">设为默认</button>
+          </form>
+          <form method="post" action="/admin/mail/account/test" style="display:inline">
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <input type="hidden" name="id" value="{{a.ID}}">
+            <input type="email" name="to_email" placeholder="收件人" required>
+            <button type="submit">测试发送</button>
+          </form>
+          <form method="post" action="/admin/mail/account/delete" style="display:inline">
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <input type="hidden" name="id" value="{{a.ID}}">
+            <button type="submit">删除</button>
+          </form>
+        </td>
+      </tr>
+      {{end}}
+      </tbody>
+    </table>
+    {{end}}
+
+    <h3>新建 / 更新账号</h3>
+    <form method="post" action="/admin/mail/account/save" class="pages-form">
+      <input type="hidden" name="csrf_token" value="{{csrf}}">
+      <input type="hidden" name="id" value="0">
+      <label>名称 <input type="text" name="name" required></label>
+      <label>用途
+        <select name="purpose">
+          <option value="transactional">事务邮件</option>
+          <option value="marketing">营销邮件</option>
+        </select>
+      </label>
+      <label>发件人名称 <input type="text" name="from_name"></label>
+      <label>发件邮箱 <input type="email" name="from_email" required></label>
+      <label>回复地址 <input type="email" name="reply_to"></label>
+      <label>服务器 <input type="text" name="host" placeholder="mail.example.com" required></label>
+      <label>端口 <input type="number" name="port" value="587"></label>
+      <label>加密
+        <select name="encryption">
+          <option value="starttls">STARTTLS (587)</option>
+          <option value="ssl">SSL (465)</option>
+          <option value="none">不加密</option>
+        </select>
+      </label>
+      <label>用户名 <input type="text" name="username"></label>
+      <label>密码 <input type="password" name="password" placeholder="更新时留空表示不改"></label>
+      <label>每小时上限 <input type="number" name="rate_per_hour" value="0"></label>
+      <button type="submit">保存账号</button>
+    </form>
+  </section>
+
+  <section class="pages-card">
+    <h2>邮件模板</h2>
+    <p class="pages-empty">
+      模板变量用 <code>{{`{{.name}}`}}</code> 这种写法。<strong>变量缺失会直接报错</strong>而不是渲染成
+      <code>&lt;no value&gt;</code> —— 否则群发时一个变量拼错就会静默发出几千封错邮件。
+    </p>
+    {{if len(.Templates) == 0}}
+    <p class="pages-empty">还没有模板。</p>
+    {{else}}
+    <table class="pages-table">
+      <thead><tr><th>标识</th><th>语言</th><th>名称</th><th>主题</th><th>变量</th><th>操作</th></tr></thead>
+      <tbody>
+      {{range _, t := .Templates}}
+      <tr>
+        <td>{{t.TemplateKey}}</td>
+        <td>{{if t.Locale == ""}}通用{{else}}{{t.Locale}}{{end}}</td>
+        <td>{{t.Name}}</td>
+        <td>{{t.Subject}}</td>
+        <td>{{if len(t.Variables) == 0}}—{{else}}{{range _, v := t.Variables}}{{v}} {{end}}{{end}}</td>
+        <td>
+          <form method="post" action="/admin/mail/template/delete" style="display:inline">
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <input type="hidden" name="template_key" value="{{t.TemplateKey}}">
+            <input type="hidden" name="locale" value="{{t.Locale}}">
+            <button type="submit">删除</button>
+          </form>
+        </td>
+      </tr>
+      {{end}}
+      </tbody>
+    </table>
+    {{end}}
+
+    <h3>新建 / 覆盖模板</h3>
+    <form method="post" action="/admin/mail/template/save" class="pages-form">
+      <input type="hidden" name="csrf_token" value="{{csrf}}">
+      <label>标识 <input type="text" name="template_key" placeholder="register_verify" required></label>
+      <label>语言 <input type="text" name="locale" placeholder="留空 = 通用"></label>
+      <label>名称 <input type="text" name="name"></label>
+      <label>主题 <input type="text" name="subject" required></label>
+      <label>HTML 正文 <textarea name="body_html" rows="8"></textarea></label>
+      <label>纯文本正文 <textarea name="body_text" rows="4"></textarea></label>
+      <label>变量（逗号分隔） <input type="text" name="variables" placeholder="name,email"></label>
+      <button type="submit">保存模板</button>
+    </form>
+  </section>
+</div>
+{{end}}

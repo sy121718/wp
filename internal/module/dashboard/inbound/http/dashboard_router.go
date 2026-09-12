@@ -9,6 +9,7 @@ import (
 	admincontract "go_wp/internal/module/admin/contract"
 	blockcontract "go_wp/internal/module/block/contract"
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
+	mailcontract "go_wp/internal/module/mail/contract"
 	masterdatacontract "go_wp/internal/module/masterdata/contract"
 	navigationcontract "go_wp/internal/module/navigation/contract"
 	pagecontract "go_wp/internal/module/page/contract"
@@ -43,12 +44,14 @@ func SetupDashboardRoutes(router *gin.Engine,
 	presentations ProductPagePorts,
 	templates contenttemplatecontract.ContentTemplateService,
 	inventories inventorycontract.InventoryService,
-	masterdata masterdatacontract.MasterDataService) {
+	masterdata masterdatacontract.MasterDataService,
+	mail mailcontract.MailService) {
 	if router == nil {
 		return
 	}
 
 	handle := NewHandle(pages, projects, blocks, plugins, collection, admins, roles, perms, menus, depts, rules, authz, navigations)
+	mailPage := &mailPageHandle{mail: mail}
 
 	// 登录页：不挂认证（未登录请求被中间件 302 到此，独立布局渲染登录表单）。
 	router.GET("/admin/login", handle.LoginPage)
@@ -284,4 +287,14 @@ func SetupDashboardRoutes(router *gin.Engine,
 	adminPages.POST("/datarules/create", builtin.CasbinMiddlewareForPath("/api/datarule/create"), handle.DatarulesCreate)
 	adminPages.POST("/datarules/update", builtin.CasbinMiddlewareForPath("/api/datarule/update"), handle.DatarulesUpdate)
 	adminPages.POST("/datarules/delete", builtin.CasbinMiddlewareForPath("/api/datarule/delete"), handle.DatarulesDelete)
+
+	// 邮箱（issue #37）：配置页（账号 / 模板）与营销页（联系人 / 群发）分成两页 ——
+	// 日常操作营销的人不需要看到 SMTP 配置。页面路由的鉴权沿用对应 API 的权限点。
+	adminPages.GET("/mail", mailPage.MailPage)
+	adminPages.POST("/mail/account/save", builtin.CasbinMiddlewareForPath("/api/mail/account/save"), mailPage.MailAccountSave)
+	adminPages.POST("/mail/account/delete", builtin.CasbinMiddlewareForPath("/api/mail/account/delete"), mailPage.MailAccountDelete)
+	adminPages.POST("/mail/account/default", builtin.CasbinMiddlewareForPath("/api/mail/account/default"), mailPage.MailAccountDefault)
+	adminPages.POST("/mail/account/test", builtin.CasbinMiddlewareForPath("/api/mail/account/test"), mailPage.MailAccountTest)
+	adminPages.POST("/mail/template/save", builtin.CasbinMiddlewareForPath("/api/mail/template/save"), mailPage.MailTemplateSave)
+	adminPages.POST("/mail/template/delete", builtin.CasbinMiddlewareForPath("/api/mail/template/delete"), mailPage.MailTemplateDelete)
 }

@@ -1,0 +1,108 @@
+package feature
+
+// mail_page_test.go — 邮箱后台页的服务端渲染（issue #37）。
+//
+// 页面模板是**运行时解析**的，`go build` 通过不代表模板正确 —— Jet 的语法错、
+// 字段名拼错、range 内访问外层值写错，都只在真正渲染时才暴露。
+// 这条测试把「渲染得出来」钉住：抓模板语法与字段对照，跑在真实 service + PG 上。
+
+import (
+	"context"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
+	"gorm.io/gorm"
+
+	dashboardhttp "go_wp/internal/module/dashboard/inbound/http"
+	maildto "go_wp/internal/module/mail/dto"
+	mailmodel "go_wp/internal/module/mail/model"
+	mailservice "go_wp/internal/module/mail/service"
+	"go_wp/internal/templates"
+	"go_wp/public/migrations"
+	"go_wp/public/test/support"
+
+	"github.com/gin-gonic/gin"
+)
+
+func newMailPageFixture(t *testing.T) (*gin.Engine, *mailservice.Service) {
+	t.Helper()
+	db, err := support.NewPGTestDB(t)
+	if err != nil {
+		t.Skipf("本地 PostgreSQL 不可用：%v", err)
+		return nil, nil
+	}
+	if err := migrations.Run(db); err != nil {
+		t.Fatalf("执行生产迁移建表失败: %v", err)
+	}
+	svc := mailservice.NewService(mailmodel.NewMailModel(db))
+	svc.SetCipherSecret("page-test-secret")
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
+	router.GET("/admin/mail", dashboardhttp.NewMailPageHandle(svc).MailPage)
+	return router, svc
+}
+
+// TestMailPageRendersWithData 账号与模板都渲染出来（含「密码不回显」的呈现）。
+func TestMailPageRendersWithData(t *testing.T) {
+	router, svc := newMailPageFixture(t)
+	if router == nil {
+		return
+	}
+	ctx := context.Background()
+	if _, err := svc.CreateAccount(ctx, &maildto.SaveAccountReq{
+		Name: "系统通知", Purpose: mailmodel.AccountPurposeTransactional,
+		FromEmail: "admin@clker.cn", Host: "mail.clker.cn", Port: 587,
+		Username: "admin@clker.cn", Password: "super-secret-password", Encryption: "starttls",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.UpsertTemplate(ctx, &maildto.SaveTemplateReq{
+		TemplateKey: "register_verify", Locale: "", Name: "注册验证",
+		Subject: "请验证你的邮箱", BodyHTML: "<p>{{.code}}</p>",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/admin/mail", nil))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("页面状态码 %d，正文前 300 字：%s", recorder.Code, firstN(recorder.Body.String(), 300))
+	}
+	body := recorder.Body.String()
+	for _, want := range []string{"邮箱设置", "系统通知", "mail.clker.cn", "register_verify", "注册验证", "已配置"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("页面缺少 %q；正文长度 %d，前 600 字：\n%s", want, len(body), firstN(body, 600))
+		}
+	}
+	if strings.Contains(body, "super-secret-password") {
+		t.Fatal("页面回显了 SMTP 明文密码")
+	}
+}
+
+// TestMailPageRendersEmpty 空状态也要能渲染（没有账号和模板时）。
+func TestMailPageRendersEmpty(t *testing.T) {
+	router, _ := newMailPageFixture(t)
+	if router == nil {
+		return
+	}
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/admin/mail", nil))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("空状态页面状态码 %d", recorder.Code)
+	}
+	if !strings.Contains(recorder.Body.String(), "还没有配置发信账号") {
+		t.Fatal("空状态提示缺失")
+	}
+}
+
+func firstN(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n]
+}
+
+var _ = gorm.ErrRecordNotFound
