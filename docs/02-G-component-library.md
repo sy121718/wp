@@ -105,6 +105,20 @@ Go 读组件同目录的 `.css`，把顶层 `&` 替换成该 node 的作用域�
 条件是「同一选择器在不同模式下是**不同的声明组**」（badge 三种外观、divider 有无嵌入），
 值替换表达不了。写在**声明块内**（而非包住整条规则）是关键：命中的分支与同块其余声明合并进
 **同一条规则**，于是产物与迁移前「Go 里按条件拼一个切片、只 `Add` 一次」逐字节一致。
+
+**规则级条件块**（`@if` 独占一行、位于规则之外）包住整条规则或指令，用来让一整段结构随变量
+存废 —— `@keyframes` 不是声明，声明级条件段包不住它（shapedivider 的漂移帧就是这种情形）：
+
+```css
+@if drift
+@keyframes sky-sd-drift {
+  from { transform: translateX(0) }
+  to { transform: translateX(-60px) }
+}
+@endif
+```
+
+两处 `@if` 同名但作用域不同：规则级在规则之外、声明级在规则块内，互不干扰。
 真值：空串 / `0` / `false` / `no` / `off` 为假（大小写不敏感）。
 
 解析器**只支持上表列出的写法**，遇到不认识的写法返回 error 而不是静默跳过 ——
@@ -156,15 +170,25 @@ P6 的结论推翻了本文件原先的设想：`--c-*`（后台 `theme.css` 的
 「原子层共享」也不做 —— 两个投递目标必须分离。真正修掉的是既有缺陷：`ui.css` 里 45 处
 `var(--c-*)` 没有 fallback，而产物只定义 `--sky-c-*`，整条声明失效。
 
-**存量迁移进度（P7）**：已迁 **10 / 37** —— `form`（P2 试点）；
-`rating` / `badge` / `progress` / `spacer` / `divider`（原子批）；
-`text` / `quote` / `image` / `list`（布局文本批）；`heading`（标题批）。
+**存量迁移进度（P7）**：已迁 **16 / 37** ——
+
+| 批次 | 组件 |
+|---|---|
+| P2 试点 | `form` |
+| 原子批 | `rating` `badge` `progress` `spacer` `divider` |
+| 布局文本批 | `text` `quote` `image` `list` |
+| 标题批 | `heading` |
+| 媒体小组件批 | `icon` `video` `countdown` `languages` |
+| 问答与形状批 | `faq` `shapedivider` |
 
 每批做法固定：先 dump 迁移前后产物要求**逐字节一致**（有 golden 的组件另由
 `TestJetViewByteEquivalent` 整页字节网兜底），再补该组件的 `xxx_css_test.go` 契约测试。
-剩余 27 个组件、约 390 处 `b.Add`。体量最大的是 `cardstack`（55）/ `productlist`（39）/
-`loader`（33）/ `container`（28）/ `product`（28），它们还会用到 `AddContainer` /
-`AddThemeQuery` / `AddHoverNone` 这些解析器尚未覆盖的桶 —— 迁之前要先把这几条补上。
+
+剩余 21 个组件、约 360 处 `b.Add`。两处要先补解析器才能动：
+`AddContainer` / `AddThemeQuery` / `AddStyleQuery` / `AddHoverNone` 这几条桶尚无对应语法
+（`counter` / `marquee` / `card` / `gallery` / `loader` / `cardstack` / `tabs` / `productcard` 在用）；
+`socialbuttons` 的品牌配色与 `button` 的变体矩阵则是「一个 switch 展开成 N 条规则」，
+需要先想清楚用变量表还是别的表达。
 
 **每阶段的验收**：全量 `go test ./... -count=1` 通过 + 浏览器比对产物 CSS 与运行时行为**不变** +
 中文提交。P2 之后停下来复盘一次，再决定是否推全量。
