@@ -55,10 +55,15 @@ func TestCompositeLoaderPathTraversal(t *testing.T) {
 }
 
 // TestCompositeLoaderBuiltinIntact 内置模板仍可经 base 加载（命名空间不相交）。
+//
+// 注意：组件模板已就近到 internal/builder/components/<name>/<name>.jet，由各组件包经
+// core.RegisterTemplate 注册，不再经过本 loader；这里负责的只剩 internal/templates/components/
+// 下残留的共享模板，所以断言用仍在目录里的 _placeholder.jet —— 验证的是 base 加载路径
+// 本身没被插件路由破坏，而不是「某个具体组件模板还在不在」。
 func TestCompositeLoaderBuiltinIntact(t *testing.T) {
 	l := newCompositeLoader(mustEmbedLoader(t), []PluginFS{{ID: "marketing", FS: testPluginFS()}})
-	if !l.Exists("heading.jet") {
-		t.Fatalf("内置模板 heading.jet 应仍可加载")
+	if !l.Exists("_placeholder.jet") {
+		t.Fatalf("内置共享模板 _placeholder.jet 应仍可加载")
 	}
 }
 

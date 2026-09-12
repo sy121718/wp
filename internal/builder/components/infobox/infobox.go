@@ -13,7 +13,10 @@ import (
 // Type 组件类型标识。
 const Type = "core.infobox"
 
-func init() { core.Register(&Component{}) }
+func init() {
+	core.Register(&Component{})
+	core.RegisterTemplate("infobox", infoboxTemplate)
+}
 
 // Component 信息框组件（原子）。
 type Component struct{}
@@ -162,3 +165,9 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		panic(fmt.Sprintf("infobox 组件样式解析失败: %v", err))
 	}
 }
+
+// infoboxTemplate 组件模板。与 .go / .css 同目录：改结构不必去 internal/templates/components/ 找
+// （注册后由 loader 优先采用，见 core.RegisterTemplate）。
+//
+//go:embed infobox.jet
+var infoboxTemplate string

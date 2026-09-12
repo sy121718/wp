@@ -30,7 +30,10 @@ import (
 // Type 组件类型标识。
 const Type = "core.languages"
 
-func init() { core.Register(&Component{}) }
+func init() {
+	core.Register(&Component{})
+	core.RegisterTemplate("languages", languagesTemplate)
+}
 
 // Component 语言切换器组件（原子，无 children）。
 type Component struct{}
@@ -113,3 +116,9 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		panic(fmt.Sprintf("languages 组件样式解析失败: %v", err))
 	}
 }
+
+// languagesTemplate 组件模板。与 .go / .css 同目录：改结构不必去 internal/templates/components/ 找
+// （注册后由 loader 优先采用，见 core.RegisterTemplate）。
+//
+//go:embed languages.jet
+var languagesTemplate string

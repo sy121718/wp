@@ -17,7 +17,10 @@ import (
 // Type 组件类型标识。
 const Type = "core.nav"
 
-func init() { core.Register(&Component{}) }
+func init() {
+	core.Register(&Component{})
+	core.RegisterTemplate("nav", navTemplate)
+}
 
 // Component 导航菜单组件（内容型，无 children 节点）。
 type Component struct{}
@@ -163,3 +166,9 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		panic(fmt.Sprintf("nav 组件样式解析失败: %v", err))
 	}
 }
+
+// navTemplate 组件模板。与 .go / .css 同目录：改结构不必去 internal/templates/components/ 找
+// （注册后由 loader 优先采用，见 core.RegisterTemplate）。
+//
+//go:embed nav.jet
+var navTemplate string

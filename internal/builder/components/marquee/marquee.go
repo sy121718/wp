@@ -15,7 +15,10 @@ import (
 // Type 组件类型标识。
 const Type = "core.marquee"
 
-func init() { core.Register(&Component{}) }
+func init() {
+	core.Register(&Component{})
+	core.RegisterTemplate("marquee", marqueeTemplate)
+}
 
 // Component 跑马灯组件（结构型）。
 type Component struct{}
@@ -132,3 +135,9 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		panic(fmt.Sprintf("marquee 组件样式解析失败: %v", err))
 	}
 }
+
+// marqueeTemplate 组件模板。与 .go / .css 同目录：改结构不必去 internal/templates/components/ 找
+// （注册后由 loader 优先采用，见 core.RegisterTemplate）。
+//
+//go:embed marquee.jet
+var marqueeTemplate string

@@ -7,6 +7,7 @@
 package globalref
 
 import (
+	_ "embed" // globalref.jet 经 //go:embed 打进二进制
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -17,7 +18,10 @@ import (
 // Type 组件类型标识。
 const Type = "core.globalref"
 
-func init() { core.Register(&Component{}) }
+func init() {
+	core.Register(&Component{})
+	core.RegisterTemplate("globalref", globalrefTemplate)
+}
 
 // Component 全局块引用组件。
 type Component struct{}
@@ -84,3 +88,9 @@ func cloneWithIDPrefix(node *core.Node, prefix string) *core.Node {
 	}
 	return &clone
 }
+
+// globalrefTemplate 组件模板。与 .go / .css 同目录：改结构不必去 internal/templates/components/ 找
+// （注册后由 loader 优先采用，见 core.RegisterTemplate）。
+//
+//go:embed globalref.jet
+var globalrefTemplate string

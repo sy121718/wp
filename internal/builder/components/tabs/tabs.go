@@ -16,7 +16,10 @@ import (
 // Type 组件类型标识。
 const Type = "core.tabs"
 
-func init() { core.Register(&Component{}) }
+func init() {
+	core.Register(&Component{})
+	core.RegisterTemplate("tabs", tabsTemplate)
+}
 
 // Component 页签组件（结构型）。
 type Component struct{}
@@ -139,3 +142,9 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		panic(fmt.Sprintf("tabs 组件样式解析失败: %v", err))
 	}
 }
+
+// tabsTemplate 组件模板。与 .go / .css 同目录：改结构不必去 internal/templates/components/ 找
+// （注册后由 loader 优先采用，见 core.RegisterTemplate）。
+//
+//go:embed tabs.jet
+var tabsTemplate string

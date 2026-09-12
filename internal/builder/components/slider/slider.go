@@ -31,6 +31,7 @@ const Type = "core.slider"
 
 func init() {
 	core.Register(&Component{})
+	core.RegisterTemplate("slider", sliderTemplate)
 	core.RegisterEnhanceBlock(core.EnhanceBlock{
 		Fns:    []string{"initSliders"},
 		Feats:  []string{"data-slider"},
@@ -144,3 +145,9 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		panic(fmt.Sprintf("slider 组件样式解析失败: %v", err))
 	}
 }
+
+// sliderTemplate 组件模板。与 .go / .css 同目录：改结构不必去 internal/templates/components/ 找
+// （注册后由 loader 优先采用，见 core.RegisterTemplate）。
+//
+//go:embed slider.jet
+var sliderTemplate string

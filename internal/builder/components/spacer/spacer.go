@@ -4,6 +4,7 @@
 package spacer
 
 import (
+	_ "embed" // spacer.jet 经 //go:embed 打进二进制
 	"fmt"
 
 	"go_wp/internal/builder/core"
@@ -45,4 +46,11 @@ var Widget = core.Atom[Props]{
 // init 注册组件。
 func init() {
 	core.Register(Widget)
+	core.RegisterTemplate("spacer", spacerTemplate)
 }
+
+// spacerTemplate 组件模板。与 .go / .css 同目录：改结构不必去 internal/templates/components/ 找
+// （注册后由 loader 优先采用，见 core.RegisterTemplate）。
+//
+//go:embed spacer.jet
+var spacerTemplate string

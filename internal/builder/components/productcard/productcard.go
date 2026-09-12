@@ -210,4 +210,11 @@ func compileCSS(id string, _ *Props, b *core.CSSBuckets) {
 
 func init() {
 	core.Register(Widget)
+	core.RegisterTemplate("product_card", productcardTemplate)
 }
+
+// productcardTemplate 组件模板。与 .go / .css 同目录：改结构不必去 internal/templates/components/ 找
+// （注册后由 loader 优先采用，见 core.RegisterTemplate）。
+//
+//go:embed product_card.jet
+var productcardTemplate string

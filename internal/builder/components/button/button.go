@@ -596,4 +596,11 @@ func isSafeURL(s string) bool {
 // init 注册按钮组件。
 func init() {
 	core.Register(Widget)
+	core.RegisterTemplate("button", buttonTemplate)
 }
+
+// buttonTemplate 组件模板。与 .go / .css 同目录：改结构不必去 internal/templates/components/ 找
+// （注册后由 loader 优先采用，见 core.RegisterTemplate）。
+//
+//go:embed button.jet
+var buttonTemplate string

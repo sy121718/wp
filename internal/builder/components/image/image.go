@@ -295,4 +295,11 @@ func (h Hover) DurationOr(d string) string {
 // init 注册图片组件。
 func init() {
 	core.Register(Widget)
+	core.RegisterTemplate("image", imageTemplate)
 }
+
+// imageTemplate 组件模板。与 .go / .css 同目录：改结构不必去 internal/templates/components/ 找
+// （注册后由 loader 优先采用，见 core.RegisterTemplate）。
+//
+//go:embed image.jet
+var imageTemplate string

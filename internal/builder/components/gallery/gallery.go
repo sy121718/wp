@@ -386,6 +386,7 @@ func defaultDur(d string) string {
 // init 注册画廊组件。
 func init() {
 	core.Register(Widget)
+	core.RegisterTemplate("gallery", galleryTemplate)
 	// 每个增强块独立注册：命中任一特征只注入它自己 —— 合并注册会让「用了轮播」的页面白背灯箱代码。
 	core.RegisterEnhanceBlock(core.EnhanceBlock{
 		Fns:    []string{"initCarousels"},
@@ -399,3 +400,9 @@ func init() {
 		Source: enhanceLightboxJS,
 	})
 }
+
+// galleryTemplate 组件模板。与 .go / .css 同目录：改结构不必去 internal/templates/components/ 找
+// （注册后由 loader 优先采用，见 core.RegisterTemplate）。
+//
+//go:embed gallery.jet
+var galleryTemplate string

@@ -14,7 +14,10 @@ import (
 // Type 组件类型标识。
 const Type = "core.list"
 
-func init() { core.Register(&Component{}) }
+func init() {
+	core.Register(&Component{})
+	core.RegisterTemplate("list", listTemplate)
+}
 
 // Component 列表组件（原子）。
 type Component struct{}
@@ -166,3 +169,9 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		panic(fmt.Sprintf("list 组件样式解析失败: %v", err))
 	}
 }
+
+// listTemplate 组件模板。与 .go / .css 同目录：改结构不必去 internal/templates/components/ 找
+// （注册后由 loader 优先采用，见 core.RegisterTemplate）。
+//
+//go:embed list.jet
+var listTemplate string

@@ -88,9 +88,16 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 // init 注册倒计时组件。
 func init() {
 	core.Register(Widget)
+	core.RegisterTemplate("countdown", countdownTemplate)
 	core.RegisterEnhanceBlock(core.EnhanceBlock{
 		Fns:    []string{"initCountdowns"},
 		Feats:  []string{"data-countdown"},
 		Source: enhanceJS,
 	})
 }
+
+// countdownTemplate 组件模板。与 .go / .css 同目录：改结构不必去 internal/templates/components/ 找
+// （注册后由 loader 优先采用，见 core.RegisterTemplate）。
+//
+//go:embed countdown.jet
+var countdownTemplate string

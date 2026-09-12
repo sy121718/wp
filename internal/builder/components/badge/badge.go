@@ -99,4 +99,11 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 // init 注册徽章组件。
 func init() {
 	core.Register(Widget)
+	core.RegisterTemplate("badge", badgeTemplate)
 }
+
+// badgeTemplate 组件模板。与 .go / .css 同目录：改结构不必去 internal/templates/components/ 找
+// （注册后由 loader 优先采用，见 core.RegisterTemplate）。
+//
+//go:embed badge.jet
+var badgeTemplate string

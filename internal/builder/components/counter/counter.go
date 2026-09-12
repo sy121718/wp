@@ -21,6 +21,7 @@ var enhanceJS string
 
 func init() {
 	core.Register(&Component{})
+	core.RegisterTemplate("counter", counterTemplate)
 	// 行为块注册：构建期按产物里是否出现 data-counter 决定要不要内联（见 builder/enhance_select.go）。
 	core.RegisterEnhanceBlock(core.EnhanceBlock{
 		Fns:    []string{"initCounters"},
@@ -151,3 +152,9 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		panic(fmt.Sprintf("counter 组件样式解析失败: %v", err))
 	}
 }
+
+// counterTemplate 组件模板。与 .go / .css 同目录：改结构不必去 internal/templates/components/ 找
+// （注册后由 loader 优先采用，见 core.RegisterTemplate）。
+//
+//go:embed counter.jet
+var counterTemplate string

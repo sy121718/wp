@@ -107,9 +107,16 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 // init 注册评分组件。
 func init() {
 	core.Register(Widget)
+	core.RegisterTemplate("rating", ratingTemplate)
 }
 
 // ratingLabel 无障碍描述文本（如「评分 4.5 / 5」）。
 func ratingLabel(p *Props) string {
 	return "评分 " + strconv.FormatFloat(p.Value, 'f', -1, 64) + " / " + strconv.Itoa(effectiveMax(p))
 }
+
+// ratingTemplate 组件模板。与 .go / .css 同目录：改结构不必去 internal/templates/components/ 找
+// （注册后由 loader 优先采用，见 core.RegisterTemplate）。
+//
+//go:embed rating.jet
+var ratingTemplate string

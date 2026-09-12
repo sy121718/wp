@@ -275,6 +275,7 @@ type Component struct{}
 // init 注册组件。
 func init() {
 	core.Register(&Component{})
+	core.RegisterTemplate("cardstack", cardstackTemplate)
 	// 每个增强块独立注册：命中任一特征只注入它自己 —— 合并注册会让「用了轮播」的页面白背灯箱代码。
 	core.RegisterEnhanceBlock(core.EnhanceBlock{
 		Fns:    []string{"initCardStacks"},
@@ -1119,3 +1120,9 @@ func slideCards(n int) []map[string]string {
 	}
 	return cards
 }
+
+// cardstackTemplate 组件模板。与 .go / .css 同目录：改结构不必去 internal/templates/components/ 找
+// （注册后由 loader 优先采用，见 core.RegisterTemplate）。
+//
+//go:embed cardstack.jet
+var cardstackTemplate string
