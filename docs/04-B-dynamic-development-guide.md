@@ -47,6 +47,98 @@
 **注意**：集合型绑定可以放进**区块**（绑定的是「类型」不是具体实体，天然可全局复用）；
 单实体型绑定**禁止**进区块，只能走 ContentTemplate → presentation 派生路径。
 
+### 1.4 新领域怎么接构建期数据源（issue #35）
+
+要给组件加一种新的数据来源（表单 / 文章 / 插件表…），照这六步做。以商品为样板：
+
+**第 1 步：业务契约包声明受限数据源接口**
+
+`go
+// internal/module/<领域>/contract/data_source.go
+type FormDataSource interface {
+    source.CollectionResolver                 // 读集合（白名单字段 + 白名单维度）
+    source.CollectionSchemaProvider           // 元数据：有哪些字段/维度可绑
+    source.CollectionFilterOptionsProvider    // 可选：本工程可筛的值
+}
+`
+
+**只放读能力**。写方法（建 / 改 / 删）不进这个接口 —— 越权防护靠接口形状，不靠调用方自觉。
+能力形状复用 `internal/builder/source`（零依赖的共享形状包）。
+
+**第 2 步：服务契约嵌入它，并加编译期断言**
+
+`go
+type FormService interface {
+    FormDataSource        // 装载配处拿到的完整契约天然能当数据源传出去
+    Create(...)           // …其余写方法
+}
+var _ formcontract.FormDataSource = (*Service)(nil)
+`
+
+**第 3 步：`RenderContext` 加字段**
+
+`go
+// internal/builder/core/render.go
+Form formcontract.FormDataSource
+`
+
+这一步会让 `builder/core` 编译期依赖该业务契约 —— 这是**有意为之的代价**：
+换来的是组件能直接调、编译期知道调哪个、字段取值有类型。
+
+**第 4 步：builder 加注入通道**
+
+`go
+// internal/builder/builder.go
+func WithFormDataSource(ds formcontract.FormDataSource) CompileOption {
+    return func(c *compileConfig) { c.form = ds }
+}
+// 构造 RenderContext 时填入：Form: cfg.form,
+`
+
+**第 5 步：装配期为三条路径注入**
+
+`go
+// internal/routers/routes.go
+runtimefragment.SetFormDataSource(formSvc)   // 片段路径
+pageService.SetFormDataSource(formSvc)       // 页面构建
+presentationSvc.SetFormDataSource(formSvc)   // 自动发布
+`
+
+三个注入点都做成「未提供即 panic」——装配缺陷不留到运行时。
+
+**第 6 步：组件用它（未注入时回退）**
+
+`go
+func resolveForms(ctx *core.RenderContext, source string, filter map[string]string) ([]map[string]any, error) {
+    if ctx.Form != nil {
+        return ctx.Form.ResolveCollection(ctx.Context, source, filter)
+    }
+    return ctx.Collection.ResolveCollection(ctx.Context, source, filter)   // 按名路由兜底
+}
+`
+
+回退分支不是可有可无：纯组件单测没有装配层，靠它才能单独跑。
+
+#### 两条必须守住的不变量
+
+1. **共享形状放 `internal/builder/source`，业务契约包不得反向 import `builder/core`。**
+   一旦反向（例如为了用 `core.CollectionSchema`），`core → 业务契约 → core` 立刻成环、编译不过 ——
+   issue #35 之前正是卡在这里，才不得不绕一层「core 定义接口 + 装配期注册」。
+2. **字段只从白名单来。** 集合源的字段/过滤维度由声明方封闭定义，组件渲染未声明字段即缺陷
+   （不变量 4：Binding 不是 Query DSL）。
+
+#### 集合项取值用访问器，不要裸索引
+
+集合项是数据驱动的键值结构（不可能给每个源定义结构体），所以取值走 `source` 的访问器：
+
+`go
+v, ok := source.ItemFloat(item, source.ItemFieldMinPrice)   // 缺写编译不过
+t, ok := source.ItemTime(item, source.ItemFieldCreatedAt)
+`
+
+**`ok=false` 表示「没有这个值」，不是「值为零」** —— 本项目的固定语义：
+「没有启用变体」与「0 元」、「尚无评分」与「0 分」是两回事（issue #28 曾因把两者混同踩过坑）。
+
 ## 2. 路径 B：HTMX Runtime Fragment（真正的运行时动态）
 
 ### 2.1 适用

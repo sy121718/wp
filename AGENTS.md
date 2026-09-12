@@ -89,6 +89,7 @@ json/ct 标签结构 + 可翻译白名单）。两者的分辨力互补：
 4. **Binding 不是 Query DSL**：Document 只保存白名单 FieldBinding / CollectionSource / MediaBinding，不能保存 SQL、过滤表达式或任意 endpoint。
 5. **确定性构建**：同一 Page Document + BuildContext + Registry + Compiler 产生相同 Artifact 字节（有 determinism/fuzz 测试背书）。
 6. **冻结边界不可越权**：每个模块、组件、协议都有明确的「负责 / 禁止」边界，详见 `docs/01-overview.md` §5 冻结边界速查。
+7. **构建期数据源的依赖方向**（issue #35）：共享形状放 `internal/builder/source`（零依赖，谁都能 import）；业务模块在**自己的契约包**里声明**受限数据源接口**（只有读集合 / 元数据 / 可筛值，写方法不进接口）；`builder/core` 直接持有这些契约接口。**契约包不得反向 import `builder/core`** —— 一旦反向即成环（`core → 契约 → core`），core 就再也无法持有业务契约。新领域接入的六步与两条不变量见 `docs/04-B-dynamic-development-guide.md` §1.4。
 
 ### 控制面与访问面
 

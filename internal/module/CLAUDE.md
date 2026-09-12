@@ -131,6 +131,28 @@ func SetupXxxRoutes(rg *gin.RouterGroup, db *gorm.DB, ...契约参数) {
 - **非必需目录**，直接引用对方 `contract` 即可满足需求时不加 outbound
 - 实现依赖契约时必须加编译期断言
 
+## 构建期数据源接入（issue #35）
+
+业务模块要给构建器（组件渲染页面时）提供数据，按这个形状接 —— 详细六步见
+`docs/04-B-dynamic-development-guide.md` §1.4：
+
+1. 在**本模块 contract 包**声明受限数据源接口（如 `ProductDataSource`）：只嵌
+   `source.CollectionResolver` / `source.CollectionSchemaProvider`（可再加
+   `source.CollectionFilterOptionsProvider`）—— **写方法不进这个接口**，
+   越权防护靠接口形状而不是调用方自觉；
+2. 本模块的服务契约**嵌入**它（`type ProductService interface { ProductDataSource; ... }`），
+   并加编译期断言 `var _ xxxcontract.XxxDataSource = (*Service)(nil)`；
+3. `builder/core` 的 `RenderContext` 加一个字段、builder 加一个 CompileOption，
+   装配期注入（片段 / 页面 / 发布三条路径都要接）。
+
+两条死线：
+
+- **共享形状放 `internal/builder/source`，本模块 contract 包不得反向 import
+  `builder/core`** —— 反向即成环（`core → 契约 → core`），core 无法再持有业务契约；
+- **读取集合项用 `source` 的访问器与字段常量**（`source.ItemFloat(item, source.ItemFieldMinPrice)`），
+  不要裸写 `item["minPrice"]`：`ok=false` 表示「没有这个值」而不是「值为零」，
+  「没有启用变体」与「0 元」是两回事。
+
 ## 表隔离约定
 
 模块间的数据表严格隔离，不允许跨模块直接关联查询。
