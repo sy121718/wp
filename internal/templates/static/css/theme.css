@@ -391,42 +391,6 @@ button, input, select, textarea { font: inherit; color: inherit; }
     .attr-value-op .btn { width: 100%; }
     .pages-card { padding: 16px; }
 }
-/* ===== 商品标签管理（admin/product_tags.html，issue #11） =====
-   多端适配（硬规则）：
-     · 表单行复用 .attr-form-head（flex + wrap，宽度 min(100%, 220px)），窄屏折行不撑破卡片；
-     · 命中商品表用固定表格布局 + 断词：三列在 375px 视口下也不横向溢出（长 slug 换行而不是撑宽）；
-     · 控件全是原生 input / select / checkbox + label：鼠标点选、触屏点按、
-       键盘（Tab 进组、空格勾选、回车提交）都可用；
-     · 没有 :hover 依赖，按压反馈走 .btn:active / .var-value:active（不带媒体查询）。 */
-/* 折叠行（summary）在窄屏折行：这一页的一行里放了标签名 / slug / 类型 / 规则描述 / 命中数，
-   合计超过 360px 时不折行会撑破卡片（.card-header 默认 flex 不换行）。 */
-.tag-page .card-header { flex-wrap: wrap; gap: 4px 8px; }
-.tag-page .card-header > * { min-width: 0; }
-/* <select> 被 WBUI 自绘替身接管后，可见元素是 .wbs（width:100%）；这里按原生 select
-   的同一档宽度收口（min(100%, 220px)），窄屏折行而不是铺满整张卡片。 */
-.tag-page .attr-form-head .wbs { width: min(100%, 220px); }
-/* 规则类型是标识符（new_arrival 等），断在中间读不出来：这一列不断行，由说明 / 参数列让步。 */
-.tag-rule-table th:first-child, .tag-rule-table td:first-child { white-space: nowrap; }
-/* 手机：规则参考表改堆叠块（同 .attr-value-row 的既有手法）——
-   三列挤在 191px 里会变成一行一两个字；堆叠后每行一块，类型 / 说明 / 参数各占一行。 */
-@media (max-width: 720px) {
-    .tag-rule-table thead { display: none; }
-    .tag-rule-table, .tag-rule-table tbody, .tag-rule-table tr, .tag-rule-table td { display: block; width: auto; }
-    .tag-rule-table tr {
-        border: 1px solid var(--c-border, #e5e7eb); border-radius: 10px;
-        padding: 8px 10px; margin-bottom: 8px;
-    }
-    .tag-rule-table td { border: 0; padding: 2px 0; }
-    .tag-rule-table td:first-child { white-space: normal; font-family: monospace; }
-}
-/* 规则类型表与命中商品表都走这一档：长 token（如 products.published_at / 1000000000）
-   允许在任意位置断行，min-content 因此小于卡片内容宽 —— 360px 视口下表格不再溢出卡片。 */
-.tag-page-table th, .tag-page-table td { word-break: break-word; overflow-wrap: anywhere; }
-.tag-hits-table { table-layout: fixed; }
-.tag-hits-name { width: 40%; }
-.tag-hits-slug { width: 40%; }
-.tag-hits-status { width: 20%; }
-
 /* ===== 变体组合生成（admin/products.html，issue #8） =====
    多端适配（硬规则）：
      · 勾选面板用 flex + wrap，窄屏自动折行；宽度一律 auto/max-width:100%，不写死像素；

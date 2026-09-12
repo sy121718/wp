@@ -309,6 +309,30 @@
 }
 .card-title { font-size: 16px; font-weight: 400; }
 .card-body { padding: var(--ui-sp-xl); }
+/* 整块表单卡片允许浮层越过边界；表格滚动由 table-wrap 独立负责。 */
+.card.card-body { padding: clamp(16px, 2vw, 24px); overflow: visible; }
+.stack, .form-stack { display: flex; flex-direction: column; min-width: 0; gap: var(--ui-sp-lg); }
+.form-inline { display: flex; flex-wrap: wrap; align-items: center; gap: var(--ui-sp-sm); min-width: 0; }
+.form-inline > :is(.form-input, .form-select, .form-textarea, .wbs) { width: min(100%, 220px); min-width: 0; }
+.disclosure { min-width: 0; }
+.disclosure > summary.card-header {
+    cursor: pointer; list-style: none; user-select: none;
+    flex-wrap: wrap; gap: var(--ui-sp-sm); padding: var(--ui-sp-md) 0;
+}
+.disclosure > summary::-webkit-details-marker { display: none; }
+.disclosure > summary.card-header::before {
+    content: ''; flex: 0 0 auto; width: 7px; height: 7px;
+    border-right: 2px solid currentColor; border-bottom: 2px solid currentColor;
+    transform: rotate(-45deg); transition: transform var(--ui-motion-fast);
+}
+.disclosure[open] > summary.card-header::before { transform: rotate(45deg); }
+.disclosure > summary.card-header > strong { flex: 1 1 140px; }
+.disclosure > summary.card-header > code { flex: 1 1 160px; overflow-wrap: anywhere; }
+.disclosure > summary.card-header > * { min-width: 0; }
+.disclosure > summary:focus-visible { outline: 2px solid var(--c-primary, #3d444f); outline-offset: 2px; }
+.disclosure[open] > summary { margin-bottom: var(--ui-sp-lg); }
+.disclosure > form + form { margin-top: var(--ui-sp-lg); }
+
 .card-footer {
     padding: var(--ui-sp-lg) var(--ui-sp-xl);
     border-top: 1px solid var(--sky-c-border, var(--c-border, #e5e7eb));
@@ -332,6 +356,7 @@
 /* 键盘用户 Tab 进容器后用方向键横向滚动（overflow 容器可聚焦）。 */
 .table-wrap:focus-visible { outline: 2px solid var(--c-primary, #2563eb); outline-offset: 2px; }
 table.data-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.data-table-wide { min-width: 480px; }
 .data-table thead th {
     padding: var(--ui-sp-sm) var(--ui-sp-lg);
     text-align: left;
@@ -448,7 +473,7 @@ table.data-table { width: 100%; border-collapse: collapse; font-size: 14px; }
 
 .form-row {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr));
     gap: var(--ui-sp-lg);
 }
 
@@ -485,6 +510,7 @@ table.data-table { width: 100%; border-collapse: collapse; font-size: 14px; }
 .badge-success { background: var(--c-success-bg, #1b2820); color: var(--c-success, #7fb28d); }
 .badge-warning { background: var(--c-warning-bg, #2a2318); color: var(--c-warning, #c2a06a); }
 .badge-danger  { background: var(--c-danger-bg, #2b1c1c);  color: var(--c-danger, #cf8080); }
+.badge-info { background: var(--c-primary-bg, #eceef1); color: var(--c-primary, #3d444f); }
 .badge-mute    { background: var(--c-bg-hover, #1f242b);   color: var(--c-text-mute, #8a9199); }
 
 .dot {
