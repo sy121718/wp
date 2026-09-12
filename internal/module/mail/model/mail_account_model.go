@@ -98,7 +98,7 @@ type MailAccountEntity struct {
 	Status         int        `gorm:"column:status;type:smallint"`
 	LastCheckAt    *time.Time `gorm:"column:last_check_at;type:timestamp(3)"`
 	LastCheckError *string    `gorm:"column:last_check_error"`
-	CreateTime     *time.Time `gorm:"column:create_time;type:timestamp(3)"`
+	CreateTime     *time.Time `gorm:"column:create_time;type:timestamp(3);autoCreateTime"`
 	UpdateTime     *time.Time `gorm:"column:update_time;type:timestamp(3)"`
 }
 
@@ -116,7 +116,7 @@ type MailTemplateEntity struct {
 	BodyText    string     `gorm:"column:body_text"`
 	Variables   JSONMap    `gorm:"column:variables;type:jsonb"`
 	Status      int        `gorm:"column:status;type:smallint"`
-	CreateTime  *time.Time `gorm:"column:create_time;type:timestamp(3)"`
+	CreateTime  *time.Time `gorm:"column:create_time;type:timestamp(3);autoCreateTime"`
 	UpdateTime  *time.Time `gorm:"column:update_time;type:timestamp(3)"`
 }
 
@@ -137,7 +137,7 @@ type MailLogEntity struct {
 	ErrorMessage  *string    `gorm:"column:error_message"`
 	RetryCount    int        `gorm:"column:retry_count"`
 	SentAt        *time.Time `gorm:"column:sent_at;type:timestamp(3)"`
-	CreateTime    *time.Time `gorm:"column:create_time;type:timestamp(3)"`
+	CreateTime    *time.Time `gorm:"column:create_time;type:timestamp(3);autoCreateTime"`
 }
 
 // TableName 表名。
@@ -150,7 +150,7 @@ type MailSuppressionEntity struct {
 	Reason     string     `gorm:"column:reason;type:varchar(16)"`
 	Source     *string    `gorm:"column:source;type:varchar(64)"`
 	Note       *string    `gorm:"column:note;type:varchar(255)"`
-	CreateTime *time.Time `gorm:"column:create_time;type:timestamp(3)"`
+	CreateTime *time.Time `gorm:"column:create_time;type:timestamp(3);autoCreateTime"`
 }
 
 // TableName 表名。
@@ -186,7 +186,7 @@ func (m *MailModel) GetAccount(ctx context.Context, id uint64) (e *MailAccountEn
 
 // ListAccounts 列出账号（可按用途过滤；purpose 为空表示全部）。
 func (m *MailModel) ListAccounts(ctx context.Context, purpose string, onlyEnabled bool) (list []*MailAccountEntity, err error) {
-	q := m.tx(ctx)
+	q := m.tx(ctx).Model(&MailAccountEntity{})
 	if p := strings.TrimSpace(purpose); p != "" {
 		q = q.Where("purpose = ?", p)
 	}
@@ -234,7 +234,7 @@ func (m *MailModel) GetTemplate(ctx context.Context, key, locale string) (e *Mai
 
 // ListTemplates 列出模板（key 为空表示全部）。
 func (m *MailModel) ListTemplates(ctx context.Context, key string) (list []*MailTemplateEntity, err error) {
-	q := m.tx(ctx)
+	q := m.tx(ctx).Model(&MailTemplateEntity{})
 	if k := strings.TrimSpace(key); k != "" {
 		q = q.Where("template_key = ?", k)
 	}
@@ -284,7 +284,7 @@ func (m *MailModel) IncrLogRetry(ctx context.Context, id uint64) (err error) {
 
 // ListLogs 按条件列日志（收件人 / 状态可空）。
 func (m *MailModel) ListLogs(ctx context.Context, toEmail, status string, offset, limit int) (list []*MailLogEntity, total int64, err error) {
-	q := m.tx(ctx)
+	q := m.tx(ctx).Model(&MailLogEntity{})
 	if e := strings.TrimSpace(toEmail); e != "" {
 		q = q.Where("lower(to_email) = lower(?)", e)
 	}
@@ -350,7 +350,7 @@ func (m *MailModel) AddSuppression(ctx context.Context, e *MailSuppressionEntity
 
 // ListSuppressions 列抑制名单。
 func (m *MailModel) ListSuppressions(ctx context.Context, reason string, offset, limit int) (list []*MailSuppressionEntity, total int64, err error) {
-	q := m.tx(ctx)
+	q := m.tx(ctx).Model(&MailSuppressionEntity{})
 	if r := strings.TrimSpace(reason); r != "" {
 		q = q.Where("reason = ?", r)
 	}

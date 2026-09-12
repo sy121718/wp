@@ -78,7 +78,7 @@ type UserEntity struct {
 	LastActiveAt        *time.Time `gorm:"column:last_active_at;type:timestamp(3)"`
 	Metadata            JSONMap    `gorm:"column:metadata;type:jsonb"`
 	CreateBy            uint64     `gorm:"column:create_by;type:bigint;default:0"`
-	CreateTime          *time.Time `gorm:"column:create_time;type:timestamp(3)"`
+	CreateTime          *time.Time `gorm:"column:create_time;type:timestamp(3);autoCreateTime"`
 	UpdateTime          *time.Time `gorm:"column:update_time;type:timestamp(3)"`
 	// DeletedAt 注销时间（**软删除**：数据保留，只是不再可见）。
 	//

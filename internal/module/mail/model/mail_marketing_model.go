@@ -9,11 +9,12 @@ package model
 
 import (
 	"context"
+	"database/sql/driver"
+	"fmt"
 	"strings"
 	"time"
 
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 // 联系人来源。
@@ -52,6 +53,106 @@ const (
 	EventTypeComplaint   = "complaint"
 )
 
+// StringArray 是 PG text[] 的 Go 映射，自己实现 driver.Valuer / sql.Scanner。
+//
+// 为什么不用现成方案（两种都**实测**失败了）：
+//
+//	· 裸 []string：GORM 经 pgx 编码成元组字面量 ('a','b')，PG 报 malformed array literal (22P02)；
+//	· pgtype.FlatArray[string]：在 pgx **原生**路径下可用，但 GORM 走 database/sql 路径，
+//	  它不被识别、仍编码成 record，PG 报 "column tags is of type text[] but expression is of
+//	  type record" (42804)。
+//
+// 所以本类型直接产出 / 解析 PG 数组字面量，不依赖 driver 的编码约定。
+type StringArray []string
+
+// Value 实现 driver.Valuer：nil 与空切片都写 '{}'（列是 NOT NULL DEFAULT '{}'）。
+func (a StringArray) Value() (driver.Value, error) {
+	if a == nil {
+		return "{}", nil
+	}
+	return encodePGTextArray(a), nil
+}
+
+// Scan 实现 sql.Scanner：接受 PG 返回的数组字面量文本。
+func (a *StringArray) Scan(src any) error {
+	if src == nil {
+		*a = StringArray{}
+		return nil
+	}
+	var raw string
+	switch v := src.(type) {
+	case string:
+		raw = v
+	case []byte:
+		raw = string(v)
+	default:
+		return fmt.Errorf("StringArray: 不支持的来源类型 %T", src)
+	}
+	parsed, err := decodePGTextArray(raw)
+	if err != nil {
+		return err
+	}
+	*a = parsed
+	return nil
+}
+
+// encodePGTextArray 编码成 PG 数组字面量 {"a","b"}。
+//
+// 元素一律加引号并转义反斜杠与双引号 —— 标签里出现逗号、空格、引号都不会破坏结构。
+func encodePGTextArray(values []string) string {
+	if len(values) == 0 {
+		return "{}"
+	}
+	parts := make([]string, 0, len(values))
+	for _, v := range values {
+		esc := strings.ReplaceAll(v, "\\", "\\\\")
+		esc = strings.ReplaceAll(esc, "\"", "\\\"")
+		parts = append(parts, "\""+esc+"\"")
+	}
+	return "{" + strings.Join(parts, ",") + "}"
+}
+
+// decodePGTextArray 解析 PG 数组字面量（处理引号、反斜杠转义、空数组）。
+func decodePGTextArray(raw string) (StringArray, error) {
+	s := strings.TrimSpace(raw)
+	if s == "" || s == "{}" {
+		return StringArray{}, nil
+	}
+	if !strings.HasPrefix(s, "{") || !strings.HasSuffix(s, "}") {
+		return nil, fmt.Errorf("StringArray: 非法数组字面量 %q", raw)
+	}
+	body := s[1 : len(s)-1]
+	out := StringArray{}
+	var cur strings.Builder
+	inQuote, escaped, started := false, false, false
+	for _, r := range body {
+		switch {
+		case escaped:
+			cur.WriteRune(r)
+			escaped = false
+		case r == '\\':
+			escaped = true
+		case r == '"':
+			inQuote = !inQuote
+			started = true
+		case r == ',' && !inQuote:
+			out = append(out, cur.String())
+			cur.Reset()
+			started = false
+		default:
+			cur.WriteRune(r)
+			started = true
+		}
+	}
+	if inQuote {
+		return nil, fmt.Errorf("StringArray: 数组字面量引号未闭合: %q", raw)
+	}
+	if started || cur.Len() > 0 {
+		out = append(out, cur.String())
+	}
+	return out, nil
+}
+
 // MailContactEntity 对应 mail_contacts 表。
 type MailContactEntity struct {
 	ID            uint64     `gorm:"column:id;primaryKey"`
@@ -62,13 +163,14 @@ type MailContactEntity struct {
 	Status        string     `gorm:"column:status;type:varchar(16)"`
 	SubscribedAt  *time.Time `gorm:"column:subscribed_at;type:timestamp(3)"`
 	ConsentSource *string    `gorm:"column:consent_source;type:varchar(64)"`
-	// Tags PG 原生 text[]。GORM 经 pgx 映射 []string —— 注意**初始化成空切片而不是 nil**：
-	// 列是 NOT NULL DEFAULT '{}'，传 nil 会写 NULL 触发约束错误。
-	Tags           []string   `gorm:"column:tags;type:text[]"`
-	Attributes     JSONMap    `gorm:"column:attributes;type:jsonb"`
-	LastActivityAt *time.Time `gorm:"column:last_activity_at;type:timestamp(3)"`
-	CreateTime     *time.Time `gorm:"column:create_time;type:timestamp(3)"`
-	UpdateTime     *time.Time `gorm:"column:update_time;type:timestamp(3)"`
+	// Tags PG 原生 text[]，用 StringArray 映射（裸 []string 会被 pgx 编码成元组字面量，
+	// 实测报 22P02；见 StringArray 的注释）。零值需注意：列是 NOT NULL DEFAULT '{}'，
+	// nil 会写成 NULL 触发约束错误，所以写入前统一兜底成空数组。
+	Tags           StringArray `gorm:"column:tags;type:text[]"`
+	Attributes     JSONMap     `gorm:"column:attributes;type:jsonb"`
+	LastActivityAt *time.Time  `gorm:"column:last_activity_at;type:timestamp(3)"`
+	CreateTime     *time.Time  `gorm:"column:create_time;type:timestamp(3);autoCreateTime"`
+	UpdateTime     *time.Time  `gorm:"column:update_time;type:timestamp(3)"`
 }
 
 // TableName 表名。
@@ -76,23 +178,23 @@ func (MailContactEntity) TableName() string { return "mail_contacts" }
 
 // MailCampaignEntity 对应 mail_campaigns 表。
 type MailCampaignEntity struct {
-	ID          uint64     `gorm:"column:id;primaryKey"`
-	Name        string     `gorm:"column:name;type:varchar(150)"`
-	AccountID   uint64     `gorm:"column:account_id"`
-	TemplateID  uint64     `gorm:"column:template_id"`
-	TargetTags  []string   `gorm:"column:target_tags;type:text[]"`
-	Subject     string     `gorm:"column:subject;type:varchar(255)"`
-	Variables   JSONMap    `gorm:"column:variables;type:jsonb"`
-	Status      string     `gorm:"column:status;type:varchar(16)"`
-	ScheduledAt *time.Time `gorm:"column:scheduled_at;type:timestamp(3)"`
-	StartedAt   *time.Time `gorm:"column:started_at;type:timestamp(3)"`
-	FinishedAt  *time.Time `gorm:"column:finished_at;type:timestamp(3)"`
-	TotalCount  int        `gorm:"column:total_count"`
-	SentCount   int        `gorm:"column:sent_count"`
-	FailedCount int        `gorm:"column:failed_count"`
-	CreateBy    uint64     `gorm:"column:create_by"`
-	CreateTime  *time.Time `gorm:"column:create_time;type:timestamp(3)"`
-	UpdateTime  *time.Time `gorm:"column:update_time;type:timestamp(3)"`
+	ID          uint64      `gorm:"column:id;primaryKey"`
+	Name        string      `gorm:"column:name;type:varchar(150)"`
+	AccountID   uint64      `gorm:"column:account_id"`
+	TemplateID  uint64      `gorm:"column:template_id"`
+	TargetTags  StringArray `gorm:"column:target_tags;type:text[]"`
+	Subject     string      `gorm:"column:subject;type:varchar(255)"`
+	Variables   JSONMap     `gorm:"column:variables;type:jsonb"`
+	Status      string      `gorm:"column:status;type:varchar(16)"`
+	ScheduledAt *time.Time  `gorm:"column:scheduled_at;type:timestamp(3)"`
+	StartedAt   *time.Time  `gorm:"column:started_at;type:timestamp(3)"`
+	FinishedAt  *time.Time  `gorm:"column:finished_at;type:timestamp(3)"`
+	TotalCount  int         `gorm:"column:total_count"`
+	SentCount   int         `gorm:"column:sent_count"`
+	FailedCount int         `gorm:"column:failed_count"`
+	CreateBy    uint64      `gorm:"column:create_by"`
+	CreateTime  *time.Time  `gorm:"column:create_time;type:timestamp(3);autoCreateTime"`
+	UpdateTime  *time.Time  `gorm:"column:update_time;type:timestamp(3)"`
 }
 
 // TableName 表名。
@@ -107,7 +209,7 @@ type MailCampaignEventEntity struct {
 	URL        *string    `gorm:"column:url;type:varchar(1000)"`
 	IP         *string    `gorm:"column:ip;type:varchar(50)"`
 	UserAgent  *string    `gorm:"column:user_agent;type:varchar(255)"`
-	CreateTime *time.Time `gorm:"column:create_time;type:timestamp(3)"`
+	CreateTime *time.Time `gorm:"column:create_time;type:timestamp(3);autoCreateTime"`
 }
 
 // TableName 表名。
@@ -147,7 +249,7 @@ func arrayLiteral(values []string) string {
 // CreateContact 新建联系人。
 func (m *MailModel) CreateContact(ctx context.Context, e *MailContactEntity) (err error) {
 	if e.Tags == nil {
-		e.Tags = []string{}
+		e.Tags = StringArray{}
 	}
 	return m.tx(ctx).Create(e).Error
 }
@@ -170,37 +272,82 @@ func (m *MailModel) GetContactByEmail(ctx context.Context, email string) (e *Mai
 	return e, err
 }
 
-// BatchUpsertContacts 批量新建或更新联系人（导入 / 拉系统客户走它）。
+// ExistingContactIDs **批量**查已存在联系人的 id（导入时先查一次，避免 ON CONFLICT）。
 //
-// 冲突键是邮箱：已存在则更新（不覆盖同意状态相关的列由 service 决定传什么）。
-// 返回实际写入条数。批大小可调：一次语句写几百行，比逐行 insert 快一个量级。
-func (m *MailModel) BatchUpsertContacts(ctx context.Context, list []*MailContactEntity, batchSize int, updateColumns []string) (err error) {
+// 为什么不用 ON CONFLICT：mail_contacts 的唯一索引是**表达式索引** lower(email)，
+// 而 ON CONFLICT (email) 匹配不到它，PG 直接报 42P10（实测）。
+// 先查后分两批写还有个额外好处：**能准确区分新增与更新**，导入报告不再是估算。
+func (m *MailModel) ExistingContactIDs(ctx context.Context, emails []string) (ids map[string]uint64, err error) {
+	ids = map[string]uint64{}
+	if len(emails) == 0 {
+		return ids, nil
+	}
+	lowered := make([]string, 0, len(emails))
+	for _, e := range emails {
+		if v := strings.TrimSpace(e); v != "" {
+			lowered = append(lowered, strings.ToLower(v))
+		}
+	}
+	if len(lowered) == 0 {
+		return ids, nil
+	}
+	var rows []struct {
+		ID    uint64
+		Email string
+	}
+	err = m.tx(ctx).Model(&MailContactEntity{}).
+		Select("id, lower(email) AS email").
+		Where("lower(email) IN ?", lowered).
+		Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	for _, r := range rows {
+		ids[strings.ToLower(r.Email)] = r.ID
+	}
+	return ids, nil
+}
+
+// BatchInsertContacts 批量新增联系人（导入的新增那一批）。
+func (m *MailModel) BatchInsertContacts(ctx context.Context, list []*MailContactEntity, batchSize int) (err error) {
 	if len(list) == 0 {
 		return nil
 	}
 	for _, e := range list {
 		if e.Tags == nil {
-			e.Tags = []string{}
+			e.Tags = StringArray{}
 		}
 	}
 	if batchSize <= 0 {
 		batchSize = 200
 	}
-	cl := clause.OnConflict{
-		Columns: []clause.Column{{Name: "email"}},
-	}
-	if len(updateColumns) > 0 {
-		cl.DoUpdates = clause.AssignmentColumns(append(updateColumns, "update_time"))
-	} else {
-		cl.DoNothing = true
-	}
+	return m.tx(ctx).CreateInBatches(list, batchSize).Error
+}
 
-	return m.tx(ctx).Clauses(cl).CreateInBatches(list, batchSize).Error
+// UpdateContactsByEmails 按邮箱批量更新若干列（导入的已存在那一批）。
+//
+// **不碰 status / subscribed_at / consent_source**：同意状态不能被一次导入悄悄改写
+// （原来退订的人，导入不该把他变回订阅）。
+func (m *MailModel) UpdateContactsByEmails(ctx context.Context, emails []string, fields map[string]any, at time.Time) (err error) {
+	if len(emails) == 0 || len(fields) == 0 {
+		return nil
+	}
+	lowered := make([]string, 0, len(emails))
+	for _, e := range emails {
+		if v := strings.TrimSpace(e); v != "" {
+			lowered = append(lowered, strings.ToLower(v))
+		}
+	}
+	if len(lowered) == 0 {
+		return nil
+	}
+	fields["update_time"] = at
+	return m.tx(ctx).Model(&MailContactEntity{}).Where("lower(email) IN ?", lowered).Updates(fields).Error
 }
 
 // ListContacts 按筛选分页取联系人。
 func (m *MailModel) ListContacts(ctx context.Context, f ContactFilter) (list []*MailContactEntity, total int64, err error) {
-	q := m.tx(ctx)
+	q := m.tx(ctx).Model(&MailContactEntity{})
 	if kw := strings.TrimSpace(f.Keyword); kw != "" {
 		like := "%" + kw + "%"
 		q = q.Where("email ILIKE ? OR name ILIKE ?", like, like)
@@ -278,7 +425,7 @@ func (m *MailModel) DeleteContact(ctx context.Context, id uint64) (err error) {
 // CreateCampaign 新建活动。
 func (m *MailModel) CreateCampaign(ctx context.Context, e *MailCampaignEntity) (err error) {
 	if e.TargetTags == nil {
-		e.TargetTags = []string{}
+		e.TargetTags = StringArray{}
 	}
 	return m.tx(ctx).Create(e).Error
 }
@@ -292,7 +439,7 @@ func (m *MailModel) GetCampaign(ctx context.Context, id uint64) (e *MailCampaign
 
 // ListCampaigns 列活动（状态可空）。
 func (m *MailModel) ListCampaigns(ctx context.Context, status string, offset, limit int) (list []*MailCampaignEntity, total int64, err error) {
-	q := m.tx(ctx)
+	q := m.tx(ctx).Model(&MailCampaignEntity{})
 	if s := strings.TrimSpace(status); s != "" {
 		q = q.Where("status = ?", s)
 	}
