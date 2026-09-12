@@ -29,6 +29,8 @@ func TestCompileCSSDefaults(t *testing.T) {
 		"background: var(--sky-c-primary, #2563eb)", // 缺省主色走主题 Token
 		"@media (hover: hover)",                     // hover 形态只在支持 hover 的环境输出
 		"filter: brightness(0.94)",                  // 按压反馈（不带媒体查询，触屏也要有）
+		":hover",                                    // 交互反馈必须带伪类：AddHover/AddActive 不替你加，
+		":active",                                   // 漏了不是「没反馈」而是「反馈恒定生效」
 		".sky-cart-add-row", ".sky-cart-add-qty", ".sky-cart-add-btn",
 	} {
 		if !strings.Contains(css, want) {
