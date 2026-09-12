@@ -51,6 +51,7 @@ func newLocaleStaleEnv(t *testing.T) (*gin.Engine, *projectservice.Service, *gor
 	for _, statement := range []string{
 		"CREATE TABLE projects (id UUID PRIMARY KEY, name TEXT NOT NULL, settings JSONB NOT NULL, created_at TIMESTAMPTZ NOT NULL, updated_at TIMESTAMPTZ NOT NULL)",
 		"CREATE TABLE project_locales (project_id UUID NOT NULL, lang TEXT NOT NULL, sort_order INTEGER NOT NULL DEFAULT 0, is_default BOOLEAN NOT NULL DEFAULT false, enabled BOOLEAN NOT NULL DEFAULT true, created_at TIMESTAMPTZ NOT NULL, updated_at TIMESTAMPTZ NOT NULL, PRIMARY KEY(project_id, lang))",
+		"CREATE TABLE page_site_slots (id UUID PRIMARY KEY, project_id UUID NOT NULL, slot TEXT NOT NULL, page_id UUID NOT NULL, created_at TIMESTAMPTZ NOT NULL, updated_at TIMESTAMPTZ NOT NULL)",
 		"CREATE TABLE pages (id UUID PRIMARY KEY, stale BOOLEAN NOT NULL DEFAULT false, deleted_at TIMESTAMPTZ, updated_at TIMESTAMPTZ NOT NULL)",
 	} {
 		if err = db.Exec(statement).Error; err != nil {

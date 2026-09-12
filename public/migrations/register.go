@@ -339,6 +339,15 @@ var orderPermsSQL string
 //go:embed 137_guest_account_template.sql
 var guestAccountTemplateSQL string
 
+//go:embed 138_page_site_slots.sql
+var pageSiteSlotsSQL string
+
+//go:embed 139_page_site_slot_permissions.sql
+var pageSiteSlotPermsSQL string
+
+//go:embed 140_page_site_slot_menu.sql
+var pageSiteSlotMenuSQL string
+
 func init() {
 	register(Migration{
 		Version:   "001-init-schema",
@@ -1475,6 +1484,37 @@ func init() {
 			"'order:list', 'order:get', 'order:create', 'order:status', " +
 			"'order:cancel', 'order:refund', 'order:item_list', 'order:log_list')",
 		SQL: orderPermsSQL,
+	})
+
+	// 138：系统页面槽位表（BIZ-1：把「结算页是哪一页」这类事实固定下来）。
+	// 条件用「表存在」而不是「有行」——空表是合法状态（新工程一个槽位都没绑）。
+	register(Migration{
+		Version:   "138-page-site-slots",
+		TableName: "page_site_slots",
+		// CheckSQL 必须接收迁移器传入的表名参数（CAST(? AS text)）——
+		// 少了这个占位符，迁移器既无法把它当作「表是否已存在」的检测，
+		// 也不会执行建表 SQL（表现是「表不存在」，而不是迁移报错）。
+		CheckSQL: "SELECT CASE WHEN COUNT(*) = 1 THEN 1 ELSE 0 END FROM information_schema.tables " +
+			"WHERE table_schema = current_schema() AND (CAST(? AS text) IS NOT NULL) " +
+			"AND table_name = 'page_site_slots'",
+		SQL: pageSiteSlotsSQL,
+	})
+
+	// 139：槽位权限点 + 超管策略（3 个权限点全部存在才算已 seed）。
+	registerSeed(Seed{
+		Version:   "139-page-site-slot-permissions",
+		TableName: "sys_permission",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) = 3 THEN 1 ELSE 0 END FROM sys_permission WHERE permission_code IN (" +
+			"'page:site_slot_list', 'page:site_slot_bind', 'page:site_slot_unbind')",
+		SQL: pageSiteSlotPermsSQL,
+	})
+
+	// 140：后台菜单入口。
+	registerSeed(Seed{
+		Version:      "140-page-site-slot-menu",
+		TableName:    "sys_menus",
+		ConditionSQL: "SELECT COUNT(*) FROM sys_menus WHERE title = '系统页面' AND type = 2 AND deleted_time IS NULL",
+		SQL:          pageSiteSlotMenuSQL,
 	})
 
 	// 137：访客下单自动开号用的「初始密码」邮件模板。

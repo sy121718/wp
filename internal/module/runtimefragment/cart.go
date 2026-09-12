@@ -32,6 +32,9 @@ import (
 	cartenums "go_wp/internal/module/cart/enums"
 	orderdto "go_wp/internal/module/order/dto"
 	orderenums "go_wp/internal/module/order/enums"
+	// 槽位键名的唯一来源：片段与后台页都从这里取，避免各处手写字符串
+	//（键名写错不会报错，只会静默不生效，是最难查的一类）。
+	pageenums "go_wp/internal/module/page/enums"
 	"go_wp/internal/templates"
 )
 
@@ -60,6 +63,11 @@ type cartFragmentData struct {
 	ItemCount    int
 	TotalLabel   string
 	Empty        bool
+	// CheckoutURL 「去结算」的目标（槽位 checkout 的线上路径）。
+	//
+	// 空 = 这个站还没指定结算页 → 模板**不输出**该按钮。不猜路径：
+	// 猜错的链接（指向一个不存在的页面）比没有按钮难查得多。
+	CheckoutURL string
 }
 
 // checkoutFragmentData 结算结果片段的模板数据。
@@ -71,6 +79,10 @@ type checkoutFragmentData struct {
 	AccountMailed bool
 	// PaymentError 非空表示订单建好了但钱没收到：页面要把它当成「待付款」而不是失败。
 	PaymentError string
+	// OrdersURL 「我的订单」目标（槽位 orders）；空 = 没配 → 不输出。
+	OrdersURL string
+	// ShopURL 「继续购物」目标（槽位 shop）；空 = 没配 → 不输出。
+	ShopURL string
 }
 
 // renderCartSummary 购物车角标计数。
@@ -216,6 +228,7 @@ func renderCheckout(ctx context.Context, r *Request) (string, error) {
 		return renderCartNotice(cartUserMessage(err))
 	}
 	safeSetCartCookie(r, res.Cookie)
+	slots := cartSitePages(r, cartProjectID(r))
 	data := checkoutFragmentData{
 		Paid:          res.Paid,
 		OrderNo:       res.OrderNo,
@@ -223,6 +236,8 @@ func renderCheckout(ctx context.Context, r *Request) (string, error) {
 		Email:         res.Email,
 		AccountMailed: res.AccountMailed,
 		PaymentError:  res.PaymentError,
+		OrdersURL:     slots[pageenums.SiteSlotOrders],
+		ShopURL:       slots[pageenums.SiteSlotShop],
 	}
 	return templates.RenderFragment("checkout_result", data)
 }
@@ -267,7 +282,12 @@ func cartUserMessage(err error) string {
 
 // cartFragmentOf 把快照拍成模板数据。
 func cartFragmentOf(r *Request, snap *cartdto.CartSnapshot) cartFragmentData {
-	data := cartFragmentData{FragmentType: r.Type, ProjectID: cartProjectID(r)}
+	projectID := cartProjectID(r)
+	data := cartFragmentData{
+		FragmentType: r.Type,
+		ProjectID:    projectID,
+		CheckoutURL:  cartSitePages(r, projectID)[pageenums.SiteSlotCheckout],
+	}
 	if snap == nil {
 		data.Empty = true
 		return data
@@ -308,6 +328,21 @@ func paramOf(r *Request, key string) string {
 
 // cartProjectID 站点工程 id（页面作者在 hx-get 里拼进来的实例配置）。
 func cartProjectID(r *Request) string { return paramOf(r, "projectId") }
+
+// cartSitePages 解析本工程在当前语言下的系统页面槽位路径（BIZ-1）。
+//
+// 语言取自请求参数 lang，缺省为站点默认语言：页面作者手写的 hx-get 通常只带 projectId，
+// 单语言站点下这与本站语义完全一致；多语言站点要在 hx-get 里带上 lang 才能拿到
+// 本语言的路径 —— 这一点写进文档，不做「从 Referer 猜语言」那种启发式：
+// 猜错时链接会在某个语言下静默指向另一语言，比缺 lang 更难查。
+//
+// 未接入解析器或解析失败一律返回 nil（模板据此不输出链接）。
+func cartSitePages(r *Request, projectID string) map[string]string {
+	if r == nil || r.SitePagesOf == nil {
+		return nil
+	}
+	return r.SitePagesOf(projectID, strings.TrimSpace(paramOf(r, "lang")))
+}
 
 // cartVariantID 变体 id。
 func cartVariantID(r *Request) string { return paramOf(r, "variantId") }

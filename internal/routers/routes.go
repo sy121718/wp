@@ -342,6 +342,10 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 	runtimefragment.SetProductDataSource(productSvc)
 	// navigationSvc 注入 page 装配：core.nav 绑定菜单位置时构建期解析菜单项。
 	pageService := pagehttp.SetupPageRoutes(authorizedAPI, db, artifactSvc, publicationSvc, projectService, blockSvc, pluginSvc, collectionResolver, navigationSvc, mediaSvc)
+	// 系统页面槽位解析器接给片段层（BIZ-1）：购物车片段的「去结算」、结算结果的
+	// 「查看订单」都要按槽位取路径。传的是 pageService —— 它嵌入了只读的
+	// SitePageResolver，发布 / 删除 / 改 URL 那部分能力传不进片段层。
+	runtimefragment.SetSitePageResolver(pageService)
 	// 页面 / 自动发布两条构建路径同样接上（issue #35）：装配处拿到的 ProductService
 	// 嵌入了 ProductDataSource，直接传即可（受限接口，写方法传不出去）。
 	if setter, ok := pageService.(interface {

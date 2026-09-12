@@ -1,0 +1,187 @@
+/* carticon.css — 购物车图标与浮层样式。
+
+   多端硬规则：
+     · 图标触发区 min-height 44px（触屏可点区域），不是 24px 的图标本身；
+     · 浮层宽度一律 min(...)，窄视口不横向溢出；
+     · 抽屉用 dvh 而不是 vh —— 移动端浏览器地址栏收放时 vh 会让面板底部跑到屏幕外；
+     · 悬停形态只输出给支持 hover 的设备（规则里用 @media (hover: hover) 包住），
+       触屏该形态退化为纯链接（CSS 改不了 DOM，这是必要的降级）。
+
+   变量：{{color}} 主色；dropdown / drawer / modal / hover 形态开关；
+         drawerLeft 抽屉贴左侧；alignLeft 下拉贴左侧。 */
+
+& {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+& .sky-cart-icon-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: {{color}};
+  font: inherit;
+  font-weight: 600;
+  line-height: 1.2;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+/* summary 的默认三角标记：去掉，但保留原生可展开行为。 */
+& .sky-cart-icon-details > summary {
+  list-style: none;
+}
+
+& .sky-cart-icon-details > summary::-webkit-details-marker {
+  display: none;
+}
+
+& .sky-cart-icon-glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+& .sky-cart-icon-glyph svg {
+  display: block;
+  width: 24px;
+  height: 24px;
+}
+
+& .sky-cart-icon-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 9999px;
+  background: {{color}};
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+& .sky-cart-icon-panel {
+  display: none;
+  box-sizing: border-box;
+  padding: 16px;
+  border: 1px solid var(--sky-c-border, #e5e7eb);
+  border-radius: 12px;
+  background: var(--sky-c-surface, #fff);
+  color: var(--sky-c-text, #111827);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.12);
+}
+
+& .sky-cart-icon-placeholder {
+  margin: 0;
+  color: var(--sky-c-text-muted, #6b7280);
+  font-size: 0.9rem;
+}
+
+& .sky-cart-icon-notice {
+  margin: 0;
+  color: var(--sky-c-text-muted, #6b7280);
+  font-size: 0.9rem;
+}
+
+& .sky-cart-icon-details[open] > .sky-cart-icon-panel {
+  display: block;
+}
+
+& .sky-cart-icon-hoverwrap {
+  position: relative;
+  display: inline-flex;
+}
+
+/* 下拉浮层：贴图标下沿，宽度按视口封顶（小屏上等于整屏减边距）。 */
+@if dropdown
+& .sky-cart-icon-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: min(100vw - 32px, 340px);
+  max-height: min(70vh, 520px);
+  overflow-y: auto;
+  z-index: 40;
+}
+@endif
+
+@if alignLeft
+& .sky-cart-icon-panel {
+  right: auto;
+  left: 0;
+}
+@endif
+
+/* 侧边抽屉：整条竖边，用 dvh 避开移动端地址栏。 */
+@if drawer
+& .sky-cart-icon-panel {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  width: min(100%, 380px);
+  height: 100dvh;
+  max-height: 100dvh;
+  border-radius: 0;
+  overflow-y: auto;
+  z-index: 60;
+}
+@endif
+
+@if drawerLeft
+& .sky-cart-icon-panel {
+  right: auto;
+  left: 0;
+}
+@endif
+
+/* 居中弹窗：整屏遮罩 + 居中面板。 */
+@if modal
+& .sky-cart-icon-panel {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(100vw - 32px, 480px);
+  max-height: min(80dvh, 640px);
+  overflow-y: auto;
+  z-index: 60;
+}
+
+& .sky-cart-icon-details[open] > summary::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  background: rgba(17, 24, 39, 0.45);
+  z-index: 50;
+}
+@endif
+
+/* 悬停浮层：桌面鼠标移上即出（容器含浮层，鼠标移进浮层也不会收起）；
+   触屏上这段根本不存在，图标就是一条通往购物车页的普通链接。 */
+@if hover
+& .sky-cart-icon-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: min(100vw - 32px, 340px);
+  max-height: min(70vh, 520px);
+  overflow-y: auto;
+  z-index: 40;
+}
+
+& .sky-cart-icon-hoverwrap:focus-within .sky-cart-icon-panel {
+  display: block;
+}
+
+/* 鼠标悬停展开的那条不在这里写：样式源只支持 max-width 断点，而 hover 的规则必须包在
+   @media (hover: hover) 里（触屏上不该输出）。它由 Go 侧的 CSSBuckets.AddHover 生成。 */
+@endif

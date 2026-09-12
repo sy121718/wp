@@ -245,3 +245,49 @@ func pageErrorMessage(err error) string {
 	}
 	return err.Error()
 }
+
+// ListSiteSlots 列出系统页面槽位及其绑定状态（含未绑定的槽位）。
+func (h *Handle) ListSiteSlots(c *gin.Context) {
+	var req pagedto.SiteSlotListReq
+	if err := c.ShouldBindQuery(&req); err != nil {
+		response.ParamError(c, pageenums.ErrInvalidParam)
+		return
+	}
+	res, err := h.svc.ListSiteSlots(c.Request.Context(), &req)
+	if err != nil {
+		response.ErrorWithMessage(c, pageErrorStatus(err), pageErrorMessage(err))
+		return
+	}
+	response.SuccessWithMessage(c, pageenums.MsgPageDetail, res)
+}
+
+// BindSiteSlot 把系统页面槽位绑到某个页面。
+//
+// 用 ShouldBind 而不是 ShouldBindJSON：后台页是原生表单 POST（与其它后台页一致），
+// 同时 API 调用方发 JSON 也走同一入口 —— DTO 的 json / form tag 同名同义。
+func (h *Handle) BindSiteSlot(c *gin.Context) {
+	var req pagedto.SiteSlotBindReq
+	if err := c.ShouldBind(&req); err != nil {
+		response.ParamError(c, pageenums.ErrInvalidParam)
+		return
+	}
+	if err := h.svc.BindSiteSlot(c.Request.Context(), &req); err != nil {
+		response.ErrorWithMessage(c, pageErrorStatus(err), pageErrorMessage(err))
+		return
+	}
+	response.SuccessWithMessage(c, pageenums.MsgSiteSlotBound, nil)
+}
+
+// UnbindSiteSlot 解绑系统页面槽位（幂等：本来没绑也返回成功）。
+func (h *Handle) UnbindSiteSlot(c *gin.Context) {
+	var req pagedto.SiteSlotUnbindReq
+	if err := c.ShouldBind(&req); err != nil {
+		response.ParamError(c, pageenums.ErrInvalidParam)
+		return
+	}
+	if err := h.svc.UnbindSiteSlot(c.Request.Context(), &req); err != nil {
+		response.ErrorWithMessage(c, pageErrorStatus(err), pageErrorMessage(err))
+		return
+	}
+	response.SuccessWithMessage(c, pageenums.MsgSiteSlotUnbound, nil)
+}

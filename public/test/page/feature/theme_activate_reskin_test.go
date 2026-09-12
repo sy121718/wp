@@ -67,6 +67,7 @@ func makeJsonbPageService(t *testing.T) (*gorm.DB, pagecontract.PageService, *pr
 		`CREATE TABLE page_artifact_objects (artifact_id UUID NOT NULL, content_hash TEXT NOT NULL, PRIMARY KEY(artifact_id, content_hash))`,
 		`CREATE TABLE publication_receipts (id UUID PRIMARY KEY, source_type TEXT NOT NULL, source_id UUID NOT NULL, action TEXT NOT NULL, path TEXT NOT NULL, from_artifact_id UUID, to_artifact_id UUID, receipt_state TEXT NOT NULL, receipt_data JSONB NOT NULL, created_at TIMESTAMPTZ NOT NULL, completed_at TIMESTAMPTZ)`,
 		// 每语言激活状态（多语言 P3，迁移 062）。
+		`CREATE TABLE page_site_slots (id UUID PRIMARY KEY, project_id UUID NOT NULL, slot TEXT NOT NULL, page_id UUID NOT NULL, created_at TIMESTAMPTZ NOT NULL, updated_at TIMESTAMPTZ NOT NULL)`,
 		`CREATE TABLE page_publications (page_id UUID NOT NULL, lang TEXT NOT NULL, active_path TEXT NOT NULL, artifact_id UUID, artifact_hash TEXT NOT NULL DEFAULT '', published_at TIMESTAMPTZ NOT NULL, updated_at TIMESTAMPTZ NOT NULL, PRIMARY KEY(page_id, lang))`,
 		`CREATE TABLE page_stagings (page_id UUID NOT NULL, lang TEXT NOT NULL, artifact_id UUID NOT NULL, artifact_hash TEXT NOT NULL DEFAULT '', draft_version BIGINT NOT NULL DEFAULT 0, updated_at TIMESTAMPTZ NOT NULL, PRIMARY KEY(page_id, lang))`,
 		`CREATE TABLE project_locales (project_id UUID NOT NULL, lang TEXT NOT NULL, sort_order INTEGER NOT NULL DEFAULT 0, is_default BOOLEAN NOT NULL DEFAULT false, enabled BOOLEAN NOT NULL DEFAULT true, created_at TIMESTAMPTZ NOT NULL, updated_at TIMESTAMPTZ NOT NULL, PRIMARY KEY(project_id, lang))`,

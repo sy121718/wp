@@ -135,6 +135,14 @@ func (s *Service) compileDocument(ctx context.Context, page *builder.Page, proje
 	// 工程 ID：页面文档不携带，由调用方按页面记录注入（导航等站点级资源取数上下文）。
 	// 当前项高亮用「实际访问路径」（多语言开启前缀时与导航项 URL 同带前缀）。
 	opts = append(opts, builder.WithProjectID(projectID), builder.WithCurrentPath(s.highlightPath(ctx, projectID, lang, currentPath)))
+	// 系统页面槽位（BIZ-1）：产物里的「去结算 / 我的订单 / 登录」等链接按这份解析烘进去。
+	// 只含已绑且已发布的槽位；没配就是空表，组件不输出链接（不是构建失败）。
+	// 按本语言解析：构建是按语言跑的，路径已经带好语言前缀。
+	if sitePages, serr := s.ResolveSitePages(ctx, projectID, lang); serr != nil {
+		return nil, fmt.Errorf("%w: %v", errCompileFailed, serr)
+	} else if len(sitePages) > 0 {
+		opts = append(opts, builder.WithSitePages(sitePages))
+	}
 	// 主题快照注入：settings.theme（保存时合入的 ThemeSettings 快照）→ 编译进产物。
 	if page.Settings.Theme != nil {
 		opts = append(opts, builder.WithThemeSettings(page.Settings.Theme))

@@ -54,6 +54,17 @@ type RenderContext struct {
 	// ProjectID 本次编译所属站点工程 ID：导航等「站点级资源」按它取数据。
 	// 页面文档本身不携带工程 ID，由装配层（page service）从 pages 表注入。
 	ProjectID string
+	// SitePages 系统页面槽位 → **当前语言**的线上路径（BIZ-1）。
+	//
+	// 来源：page_site_slots 绑定 + page_publications 激活状态，装配层解析后注入，
+	// 构建与片段层共用同一份解析（各解一次迟早分叉）。
+	//
+	// **只含已绑且已发布的槽位**：没有条目就是「这个站还没指定结算页」，
+	// 组件据此不输出链接，而不是猜一个默认路径 —— 猜错的链接比没有链接难查得多。
+	//
+	// 路径已是最终访问路径（含语言前缀），组件不要自己再拼语言前缀：
+	// 那是 pipeline.LangURLRule 的唯一职责，各处手拼是既有明文禁令。
+	SitePages map[string]string
 	// CurrentPath 本次编译的页面访问路径（如 /about），用于导航「当前项」高亮。
 	// 为空表示未知（预览块/独立编译），此时不标记当前项。
 	CurrentPath string
@@ -170,3 +181,24 @@ type NavigationResolver interface {
 	// ResolveMenu 返回该工程该位置的导航项树（根节点顺序即渲染顺序）。
 	ResolveMenu(projectID, kind string) ([]NavigationItem, error)
 }
+
+// 系统页面槽位键（BIZ-1）。
+//
+// 权威定义在 page 模块的 enums（SiteSlotDefs，带展示名与用途），但 builder **不依赖任何
+// module**（依赖方向是 module → builder），拿不到那一份。所以这里存一份键名，
+// 并由测试钉住两边一致（builder 侧键集合必须与 page 侧白名单完全相同）。
+//
+// 为什么值得为几个字符串常量专门写测试：键名写错**不会报错**，只会静默不生效
+// （引擎按已知键查表，查不到就当没配），表现为「明明绑定了，链接就是不出现」。
+const (
+	SiteSlotShop     = "shop"
+	SiteSlotBlog     = "blog"
+	SiteSlotCart     = "cart"
+	SiteSlotCheckout = "checkout"
+	SiteSlotAccount  = "account"
+	SiteSlotLogin    = "login"
+	SiteSlotRegister = "register"
+	SiteSlotForgot   = "forgot"
+	SiteSlotReset    = "reset"
+	SiteSlotOrders   = "orders"
+)

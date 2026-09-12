@@ -22,6 +22,8 @@ import (
 	"fmt"
 	"strings"
 
+	// 购物车片段内容的基础样式与购物车图标组件共用一份（幂等，见 cartfrag.go）。
+	carticon "go_wp/internal/builder/components/carticon"
 	"go_wp/internal/builder/core"
 )
 
@@ -181,6 +183,8 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	// 提亮规则会一直亮着、按压规则会把按钮一直压暗，而且不报任何错。
 	b.AddHover(sel+" .sky-cart-add-btn:hover", []string{"filter: brightness(1.08)"})
 	b.AddActive(sel+" .sky-cart-add-btn:active", []string{"filter: brightness(0.94)"})
+	// 购物车片段内容的基础样式（幂等：与 core.cartIcon 同时用也只出一份）。
+	carticon.AddCartFragmentCSS(b)
 }
 
 //go:embed add_to_cart.jet

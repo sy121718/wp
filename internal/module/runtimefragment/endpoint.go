@@ -23,6 +23,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/gin-gonic/gin"
 
@@ -69,6 +70,10 @@ func FragmentEndpoint(c *gin.Context) {
 		c.String(http.StatusBadRequest, perr.Error())
 		return
 	}
+	// 槽位解析按**请求内一次**缓存：一个片段请求只服务一个页面（一个工程一种语言），
+	// 但同一份渲染里可能问两次（购物车与结算各问一次），第二次不该再查一遍库。
+	var slotOnce sync.Once
+	var slotCache map[string]string
 	req := &Request{
 		Type:      typeName,
 		Context:   params["context"],
@@ -78,6 +83,10 @@ func FragmentEndpoint(c *gin.Context) {
 		Cookies:   collectFragmentCookies(c),
 		IP:        c.ClientIP(),
 		UserAgent: strings.TrimSpace(c.GetHeader("User-Agent")),
+		SitePagesOf: func(projectID, lang string) map[string]string {
+			slotOnce.Do(func() { slotCache = resolveSitePages(c.Request.Context(), projectID, lang) })
+			return slotCache
+		},
 	}
 	if err := validateContext(req.Context); err != nil {
 		c.String(http.StatusBadRequest, err.Error())

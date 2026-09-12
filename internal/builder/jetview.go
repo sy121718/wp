@@ -23,6 +23,7 @@ import (
 	buttonPkg "go_wp/internal/builder/components/button"
 	cardPkg "go_wp/internal/builder/components/card"
 	cardstackPkg "go_wp/internal/builder/components/cardstack"
+	carticonPkg "go_wp/internal/builder/components/carticon"
 	containerPkg "go_wp/internal/builder/components/container"
 	countdownPkg "go_wp/internal/builder/components/countdown"
 	counterPkg "go_wp/internal/builder/components/counter"
@@ -169,6 +170,8 @@ func nodeViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeV
 		return productSelectorViewOf(node, topLevel, ctx)
 	case addtocartPkg.Type:
 		return addToCartViewOf(node, topLevel, ctx)
+	case carticonPkg.Type:
+		return cartIconViewOf(node, topLevel, ctx)
 	case ratingPkg.Type:
 		return ratingViewOf(node, topLevel, ctx)
 	case formPkg.Type:
@@ -643,6 +646,33 @@ func cardstackViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*
 // （contentAtomViewOf），只是渲染的是「可独立拖拽的选择器」而不是整块详情。
 func productSelectorViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeView, error) {
 	return contentAtomViewOf(node, topLevel, ctx, productselectorPkg.Type, "product_selector", productselectorPkg.CompileCSS, productselectorPkg.BuildView)
+}
+
+// cartIconViewOf 转换购物车图标节点（BIZ-1 访问面）。
+//
+// 手写而不是走 contentAtomViewOf：它除了构建上下文还需要**槽位路径**
+// （无 JS 时图标的兜底链接目标），而那个通用助手只把内容解析器传给 BuildView。
+func cartIconViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeView, error) {
+	var p carticonPkg.Props
+	if len(node.Props) > 0 {
+		if err := json.Unmarshal(node.Props, &p); err != nil {
+			return nil, fmt.Errorf("节点 %s props 反序列化失败: %w", node.ID, err)
+		}
+	}
+	classes, customID := advancedClasses(node, &p, ctx)
+	carticonPkg.CompileCSS(node.ID, &p, ctx.CSS)
+	view := carticonPkg.BuildView(&p, ctx.ProjectID, ctx.Lang, ctx.SitePages[core.SiteSlotCart])
+	applyI18n(&view, ctx)
+	return &nodeView{
+		Type:     carticonPkg.Type,
+		Template: "cart_icon",
+		NodeID:   node.ID,
+		Classes:  strings.Join(classes, " "),
+		CustomID: customID,
+		TopLevel: topLevel,
+		Props:    p,
+		V:        view,
+	}, nil
 }
 
 // addToCartViewOf 转换加购节点（BIZ-1 访问面）。

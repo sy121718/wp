@@ -24,7 +24,24 @@ type (
 	RollbackReq   = pagedto.RollbackReq
 	UpdateURLReq  = pagedto.UpdateURLReq
 	PublishResp   = pagedto.PublishResp
+
+	// 系统页面槽位（BIZ-1）。
+	SiteSlotListReq   = pagedto.SiteSlotListReq
+	SiteSlotBindReq   = pagedto.SiteSlotBindReq
+	SiteSlotUnbindReq = pagedto.SiteSlotUnbindReq
+	SiteSlotListResp  = pagedto.SiteSlotListResp
+	SiteSlotItem      = pagedto.SiteSlotItem
 )
+
+// SitePageResolver 系统页面槽位解析能力（构建期与片段层消费的**只读**面）。
+//
+// 单独成接口而不是直接把 PageService 递出去：消费方只需要「槽位 → 当前语言线上路径」
+// 这一条读能力，拿到整个 PageService 等于把发布、删除、改 URL 也一起给了 —— 越权防护靠接口形状。
+type SitePageResolver interface {
+	// ResolveSitePages 返回「槽位 → 已发布路径」，只含已绑且已发布的槽位。
+	// 未绑定或未发布一律不出现（调用方据此不输出链接，而不是猜一个默认值）。
+	ResolveSitePages(ctx context.Context, projectID, lang string) (map[string]string, error)
+}
 
 // 预览编译错误哨兵：dashboard 预览复用本契约的编译能力时，
 // 经 errors.Is 精确分类 HTTP 状态码（解析失败 400 / 编译失败 422 / 其余 500），
@@ -38,6 +55,9 @@ var (
 
 // PageService 手工 Page 草稿、修订与发布管理能力。
 type PageService interface {
+	// SitePageResolver 槽位解析（构建期与片段层经这个只读面取「结算页在哪」）。
+	SitePageResolver
+
 	Create(ctx context.Context, req *pagedto.CreateReq) (res *pagedto.PageResp, err error)
 	// List 列出页面摘要（themeID 为空时列全部；非空时只列挂在该主题下的页面）。
 	List(ctx context.Context, themeID string) (res []pagedto.PageResp, err error)
@@ -63,6 +83,15 @@ type PageService interface {
 	Rollback(ctx context.Context, req *pagedto.RollbackReq) (res *pagedto.PublishResp, err error)
 	// UpdateURL 修改访问路径，旧路径按策略 301 或取消激活。
 	UpdateURL(ctx context.Context, req *pagedto.UpdateURLReq) (res *pagedto.PublishResp, err error)
+
+	// ListSiteSlots 列出系统页面槽位及其绑定状态（含**未绑定**的槽位，后台要一眼看全）。
+	ListSiteSlots(ctx context.Context, req *pagedto.SiteSlotListReq) (res *pagedto.SiteSlotListResp, err error)
+	// BindSiteSlot 把槽位绑到页面（校验页面存在、属本工程、未删除），并标记该工程页面待重建。
+	BindSiteSlot(ctx context.Context, req *pagedto.SiteSlotBindReq) (err error)
+	// UnbindSiteSlot 解绑槽位（幂等），并标记该工程页面待重建。
+	UnbindSiteSlot(ctx context.Context, req *pagedto.SiteSlotUnbindReq) (err error)
+	// SiteSlotRefsOfPage 列出引用了某页面的槽位键（页面删除前的引用检查）。
+	SiteSlotRefsOfPage(ctx context.Context, pageID string) (slots []string, err error)
 	// RebuildArtifact 按产物元数据里冻结的 source_document 重建丢失的产物文件
 	// （灾难恢复：只重建文件，不激活、不改 DB 指针）。重建后调用方须比对
 	// HashMatched：只有构建输入（源文档 + 组件注册表 + 编译期依赖）全部未变，

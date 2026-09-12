@@ -178,9 +178,11 @@ type compileConfig struct {
 	navigation    core.NavigationResolver
 	projectID     string
 	currentPath   string
-	assetProbe    func(string) []int
-	theme         *ThemeSettings
-	ctx           context.Context
+	// sitePages 系统页面槽位 → 当前语言线上路径（BIZ-1，装配层解析后传入）。
+	sitePages  map[string]string
+	assetProbe func(string) []int
+	theme      *ThemeSettings
+	ctx        context.Context
 	// alternates 同页其他语言版本（hreflang 互指，多语言 P3）。
 	alternates []Alternate
 	// locales 站点语言切换器条目（多语言 P3）：与 alternates 同源（装配层一次算出）。
@@ -292,6 +294,15 @@ func WithAssetProbe(fn func(string) []int) CompileOption {
 // 为空表示未知（如块预览），导航不标记当前项。
 func WithCurrentPath(path string) CompileOption {
 	return func(c *compileConfig) { c.currentPath = path }
+}
+
+// WithSitePages 注入系统页面槽位 → 当前语言线上路径（BIZ-1）。
+//
+// 由装配层经 page.ResolveSitePages 解析后传入（只含已绑且已发布的槽位）；
+// 未注入或为空时，依赖槽位的组件不输出链接 —— 这是**正常状态**（新站还没配），
+// 不是错误，所以不报构建失败。
+func WithSitePages(pages map[string]string) CompileOption {
+	return func(c *compileConfig) { c.sitePages = pages }
 }
 
 // WithThemeSettings 注入主题设置（主题色编译为 :root CSS 变量进产物 head，
@@ -580,7 +591,8 @@ func Compile(p *Page, opts ...CompileOption) (res *CompiledPage, err error) {
 		Plugin: cfg.plugin, Collection: cfg.collection,
 		Product: cfg.product, ContentSource: cfg.contentSource,
 		Navigation: cfg.navigation, ProjectID: cfg.projectID, CurrentPath: cfg.currentPath,
-		Lang: lang, Translate: translate, Locales: cfg.locales,
+		SitePages: cfg.sitePages,
+		Lang:      lang, Translate: translate, Locales: cfg.locales,
 		ContentTranslate: contentTranslateFunc(cfg.contentTranslator),
 		ImageDefaults: core.ImageDefaults{
 			LazyLoad: cfg.theme.LazyLoadEnabled(),

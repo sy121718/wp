@@ -45,6 +45,10 @@ func SetupPageRoutes(rg *gin.RouterGroup, db *gorm.DB,
 	g.POST("/publish", handle.Publish)
 	g.POST("/rollback", handle.Rollback)
 	g.POST("/url/update", handle.UpdateURL)
+	// 系统页面槽位（BIZ-1）：把「结算页是哪一页」这类事实固定下来，供链接生成与跳转使用。
+	g.GET("/site-slot/list", handle.ListSiteSlots)
+	g.POST("/site-slot/bind", handle.BindSiteSlot)
+	g.POST("/site-slot/unbind", handle.UnbindSiteSlot)
 	g.POST("/delete", handle.Delete)
 	// 灾难恢复：按产物元数据重建丢失的产物文件 + 激活面巡检。
 	g.POST("/artifact/rebuild", handle.RebuildArtifact)

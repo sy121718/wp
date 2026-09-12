@@ -3,7 +3,12 @@
    迟早会出现「加购后的车」与「改数量后的车」长得不一样 —— 那种不一致没人会当成 bug 报上来。
    用法：容器加 hx-target="closest .sky-cart" 即可局部刷新；无 HTMX 时表单原生 POST 到 action，
    整页跳转同样能改数量（降级不完美但可用）。
-   样式由站点主题 / 页面作者提供，片段只给语义结构 + sky-cart-* 类名（与 productList 同一口径）。 *}
+   样式：片段只给语义结构 + sky-cart-* 类名，但**基础样式由组件产物注入**
+   （core.cartIcon / core.addToCart 都会带上一份，见 components/carticon/cartfrag.go）。
+   这与 productList 的口径不同，原因很实际：这份 HTML 是**运行时**渲染的，
+   页面作者在编辑器里看不到它，也很难针对它调样式 —— 没有默认样式的表现是
+   「点开购物车是一列裸 HTML」，用户直接当成坏了。
+   站点主题仍可覆盖这些类名（组件注入的是基础布局，不带动画与定位）。 *}
 <div class="sky-cart" data-fragment="{{ .FragmentType }}" data-project="{{ .ProjectID }}">
 {{ if .Empty }}
 <p class="sky-cart-empty">购物车是空的</p>
@@ -30,6 +35,7 @@
 {{ end }}
 </ul>
 <p class="sky-cart-total">合计 {{ .TotalLabel }}（{{ .ItemCount }} 件）</p>
+{{ if .CheckoutURL }}<a class="sky-cart-checkout" href="{{ .CheckoutURL }}">去结算</a>{{ end }}
 <form class="sky-cart-clear" method="post" action="/_fragments/cartClear" hx-post="/_fragments/cartClear" hx-target="closest .sky-cart" hx-swap="outerHTML">
 <input type="hidden" name="projectId" value="{{ .ProjectID }}">
 <button type="submit">清空购物车</button>

@@ -58,6 +58,22 @@ func (m *Model) GetPublication(ctx context.Context, pageID, lang string) (e *Pub
 	return e, nil
 }
 
+// ListPublicationsByPages 按页面 id 批量取激活状态；lang 非空时只取该语言。
+//
+// 槽位解析要一次问出「这批页面在当前语言下的线上路径」——逐页问会退化成 N 次查询，
+// 而它在每次构建与每次片段渲染里都会跑。
+func (m *Model) ListPublicationsByPages(ctx context.Context, pageIDs []string, lang string) (list []PublicationEntity, err error) {
+	if len(pageIDs) == 0 {
+		return nil, nil
+	}
+	q := m.PublicationDB(ctx).Where("page_id IN ?", pageIDs)
+	if lang != "" {
+		q = q.Where("lang = ?", lang)
+	}
+	err = q.Find(&list).Error
+	return list, err
+}
+
 // ListPublications 列出页面全部语言的激活状态（语言升序，输出稳定）。
 func (m *Model) ListPublications(ctx context.Context, pageID string) (list []PublicationEntity, err error) {
 	err = m.PublicationDB(ctx).Where("page_id = ?", pageID).Order("lang ASC").Find(&list).Error
