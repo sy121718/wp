@@ -13,12 +13,15 @@
 
 在前端源码位置、嵌入策略和发布产物格式确定前，不应使用这些脚本生成正式发布包。
 
-当前可验证的后端命令：
+当前检查入口：
 
 ```bash
 go test ./...
 go build ./...
 go vet ./...
+bash scripts/check-workbench.sh
 ```
 
-后续实现 ArtifactStore、PublicationStore 和静态交付链路时，应重新定义发布脚本职责，而不是直接沿用当前失效的前后端打包流程。
+`check-workbench.sh` 要求开发环境有 Node：检查 Go 生成契约是否漂移、工作台 ESM 能否解析及加载、公共控件资产和实际面板编辑链路。Node 不参与生产资产构建。修改对齐重复项声明后，在仓库根目录运行 `go run ./cmd/workbench-contracts` 更新生成文件。
+
+ArtifactStore、PublicationStore 和静态交付链路已经实现；失效的旧脚本仍不代表当前发行流程。生产构建用 `go build -o app ./cmd`，后台模板和静态文件须一并交付。发行包设计见 `docs/11-foundation-and-open-source.md`。

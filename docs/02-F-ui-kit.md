@@ -1,6 +1,6 @@
 # 02-F · 前端控件基座（已落地）
 
-> 状态：**已实现**（2026-09）。`go test ./...` 全绿。
+> 状态：基础能力已实现；2026-09-12 的收敛与剩余问题见 §13。历史验收不代表后续修改自动通过。
 > 覆盖：下拉 / 抽屉 / 图标字段 / 确认框 + 模态提示 / 弹窗 / **轻提示** / 明暗切换 + 外观层。
 
 ## 1. 这一层解决什么
@@ -20,7 +20,7 @@
 
 ```
 ③ 组件增强   static/js/enhance.js    轮播/灯箱/卡片环…   按 data-* 特征，构建期按需内联
-② 编辑器控件 static/js/workbench/    12 个检查器原语      仅工作台（ES module）—— 边界见 §8（下拉已归 ①）
+② 编辑器控件 static/js/workbench/    属性编辑与文档回写   仅工作台（ES module）—— 边界见 §8
 ① 原始控件   static/js/ui/           下拉/抽屉/确认框/…   后台 + 工作台 + 前台产物**共用一份**
         外观  static/css/ui.css      .wbs-* / .btn / .card / …
 ```
@@ -60,8 +60,8 @@ shadow / shape / viewport），组件只声明词汇、编译期出 CSS，颜色
 
 ```
 static/js/ui/*.js + static/css/ui.css
-   ├── 后台    admin/layout.html         <link ui.css> + 7 个脚本（_util → 各控件 → index）
-   ├── 工作台  workbench/layout.html     同上（wbDropdown 靠 data-wb-path 被自动跳过）
+   ├── 后台    admin/layout.html         <link ui.css> + partials/ui_scripts.html
+   ├── 工作台  workbench/layout.html     同一脚本入口（已增强的 .wb-dd-src 显式跳过）
    └── 前台    构建期按 data-ui-* 特征内联（CSS 与 JS **同进同出**）
 ```
 
@@ -150,14 +150,14 @@ var(--sky-c-primary, var(--c-primary, 兜底))
 
 ## 8. 暂不做
 
-- **工作台原语：13 个 → 12 个**。**下拉已经迁完** —— `controls/selects.js` 的
-  `upgradeNativeSelects` 现在只触发一次 `WBUI.scan`，实现只剩基座一份（选后派发冒泡
-  change，仍由检查器既有的 `panel.onchange` 委托回写 AST，回写通道一个没变）。
-  剩下的 12 类**不是「暂不迁」，而是不该迁**，两类原因：
+- **schema 字段下拉已接入基座**：`controls/selects.js` 的 `upgradeNativeSelects`
+  只触发 `WBUI.scan`，选后经 `panel.onchange` 回写 AST。但复杂面板仍使用
+  `core.js` 的 `wbDropdown`，不能声称所有下拉已经迁完。
+  属性编辑逻辑仍应留在工作台，两类原因：
   · **检查器字段构造器**（`base.field` / `spacing.*` / `color` / `corners` / `media`）：
     API 形如 `(ctx, label, path)` —— 面向 AST 数据路径与 `[data-wb-path]` 回写委托，
     是「属性表单的构造器」，不是页面上的元素；
-  · **组件形状编辑器**（`repeater.js` 的 `faqPanel`/`tabsPanel`/`accordionPanel`/`navPanel`…、
+  · **组件形状编辑器**（`repeater.js` 的 `faqPanel`/`bindRepeaterPanel`/`navPanel`…、
     `misc.schemaField`）：那是**组件知识**（每个组件一种字段形状），进基座等于把组件库塞进
     控件层。
   **判据**：它回答的是「这个元素长什么样、怎么交互」，还是「这个组件的这个属性该怎么填」——
@@ -459,3 +459,14 @@ var uiBlocks = []uiBlock{
 > **第三方动画库（GSAP 等）**未落地；**自建的 CSS 动效词汇表已经落地**（`builder/core` 里有实现与全量测试）。
 两件事不是一回事。
 
+## 13. 2026-09-12 基础收敛
+
+控制面的脚本清单归到 `internal/templates/partials/ui_scripts.html`：后台、工作台和验证页共享，按助手、控件、扫描入口顺序加载。访问面继续按能力裁剪，不能直接引入整套控制面资产。
+
+公共外观补齐 `.wb-btn` / `.wb-icon-btn` 与复选框：工作台通过密度、布局和状态规则调整；输入框的全宽规则排除 checkbox/radio，避免重复项中的「默认展开」被拉成整行。schema select 补可访问名称，增强层同步禁用态。下拉边框损坏与暗色 `--c-surface` 缺失已修复。
+
+控件微动效在 `ui.css` 定义 `--ui-duration-fast/base`、`--ui-ease-out/spring`，组合成 `--ui-motion-fast/base`。面板与 toast 共享 `wb-ui-enter`；toast 退出清理由 `WBUI.transitionTime` 读取 CSS 过渡时间，不再手写第二份毫秒值。减少动态效果设置下关闭这些动画。组件的动效词汇、关键帧白名单与产物编译仍属于构建器，边界不变。
+
+`WBUI.scan` 不再吞掉初始化异常：记录日志、派发 `wbui:error`、返回错误集合并继续其它控件。检查器调用方据此显示就地提示。公共入口和工作台整页渲染有测试，JS 强制按正确脚本模式解析，检查命令为 `bash scripts/check-workbench.sh`。
+
+剩余问题明确保留：复杂面板的 `wbDropdown` 仍是一套独立行为，部分工作台输入框外观仍有覆盖，尚未达到全部控件只有一处实现。迁移时应保留原生表单语义、焦点、动态选项、撤销与降级行为，逐条通过真实浏览器验收；不能只改类名后宣称完成。

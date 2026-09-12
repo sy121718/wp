@@ -1,174 +1,94 @@
 # go_wp
 
-go_wp 是一个 `CMS + Visual Website Builder + Static Publishing Engine`。
+go_wp 是 CMS、可视化建站工具与静态发布引擎。后台编辑页面文档和内容，构建器把它们编译为不可变 HTML/CSS/JS，发布存储负责激活 URL。普通静态访问不执行模板、不查数据库；需要实时数据的功能经独立的受限 Runtime Fragment 端点提供。
 
-系统在管理控制面编辑内容与页面结构，在发布阶段将其编译为不可变的 HTML/CSS/JS Artifact，再由静态服务器或 CDN 直接交付。普通访客请求不解释模板，也不读取页面编辑态数据。
+项目处于开发阶段，协议和扩展接口仍在整理。CMS、工作台、页面与自动实例发布、回滚、组件库、主题、插件注册以及商品与库存业务均已有实现。它们的成熟度和接入范围不同，不能把「模块存在」等同于已具备完整的开源发行与插件生态。
 
-## 当前阶段
-
-仓库当前处于基础框架整理阶段：
-
-- 已保留 Go 管理控制面的启动、配置、认证、权限和基础设施能力
-- 已接入 PostgreSQL 兼容的 `sys_i18n` migration 与内存缓存组件
-- 已移除与本项目无关的旧业务模块和路由
-- CMS、Visual Builder、Publish Compiler、ArtifactStore、PublicationStore 等核心能力将按设计文档分阶段实现
-
-当前源码不包含独立前端工程。`internal/embed/dist/` 是已有的嵌入式管理端构建产物，不作为新业务源码的实现位置。
-
-## 架构边界
+## 架构
 
 ```text
-Admin
-├── CMS Admin
-└── Visual Builder
-        │
-        ▼
-BuildContext + Component Registry
-        │
-        ▼
-Publish Compiler
-        │
-        ▼
-Immutable Artifact
-        │
-        ▼
-ArtifactStore + PublicationStore
-        │
-        ▼
-Static Server / CDN
+CMS 内容 + Page / ContentTemplate
+              ↓
+DocumentSnapshot + BuildContext + Registry
+              ↓
+Publish Compiler → 不可变 Artifact
+              ↓
+ArtifactStore → PublicationStore 激活 → Static Server / CDN
+
+实时交互 → Runtime Fragment Registry → 受限业务能力 → HTML Fragment
 ```
 
-核心约束：
+Page 是手工页面；PresentationInstance 是由内容与展示模板生成的自动发布实例。两者共享编译与发布管线。Blueprint 只初始化页面，后续修改不传播。
 
-- 控制面与访问面分离
-- Page Document 保存页面结构，不复制 CMS 业务数据
-- Jet 只在 Preview/Publish 构建阶段执行
-- 公开 URL 激活不可变 Artifact，不在访问时动态套模板
-- 不同语言使用 `/{lang}/{path}` 独立构建和发布
-- 跨系统状态通过 receipt、inspect/verify 与恢复任务最终收敛
-- 相同输入必须产生确定性构建结果
+技术栈为 Go 1.26、Gin、Jet、PostgreSQL、Redis、Session + Cookie 和 Casbin。后台由 Jet 渲染 HTML，交互使用原生 JavaScript 与 HTMX，没有独立前端打包工程。Redis 是必需的关键组件。
 
-完整设计从 [`DESIGN.md`](DESIGN.md) 开始阅读。
+## 目录
 
-## 技术栈
+| 路径 | 职责 |
+|---|---|
+| `cmd/`、`config/` | 进程入口、配置与生命周期装配 |
+| `internal/builder/` | 文档协议、组件注册、受限样式编译、产物生成 |
+| `internal/builder/components/` | 组件实现及就近嵌入的模板、样式、增强资产 |
+| `internal/module/` | CMS、页面、发布、后台及业务模块；跨模块经契约协作 |
+| `internal/templates/` | 后台与工作台模板、公共控件和静态资产 |
+| `pkg/` | 基础设施能力 |
+| `public/migrations/` | 数据迁移 |
+| `public/test/` | 功能、集成测试与测试支撑 |
+| `docs/` | 架构、协议、开发指南 |
 
-当前后端基础：
-
-- Go + Gin
-- GORM + PostgreSQL
-- Viper
-- JWT
-- Casbin
-- Redis
-- Zap / lumberjack
-- Asynq（按配置启用）
-
-规划中的发布链路使用 Go 构建编译器、Jet 构建期渲染，以及可替换的 ArtifactStore / PublicationStore 实现。
-
-## 目录结构
-
-```text
-go_wp/
-├── cmd/                  # 进程入口
-├── config/               # 配置与组件生命周期编排
-├── docs/                 # 产品与系统设计
-├── internal/
-│   ├── embed/            # 嵌入式管理端构建产物
-│   ├── middleware/       # HTTP 中间件
-│   ├── module/           # 业务模块
-│   ├── routers/          # 路由聚合
-│   └── task/             # 异步任务注册
-├── pkg/                  # 通用基础设施 facade 与 provider/driver
-├── public/
-│   ├── backup/           # 初始化与备份资源
-│   ├── docs/             # 历史方案与辅助资料
-│   ├── migrations/       # 数据迁移
-│   └── test/             # 集成测试与测试支撑
-├── scripts/              # 构建和运维脚本
-├── config.yaml.example   # 配置样例
-├── DESIGN.md             # 设计索引
-└── README.md
-```
-
-## 模块分层
-
-业务模块平铺在 `internal/module/`：
-
-```text
-module_name/
-├── contract/             # 模块对外契约
-├── dto/                  # 输入输出数据结构
-├── enums/                # 响应与业务消息
-├── inbound/http/         # HTTP 入口与装配
-├── model/                # 本模块持久化访问
-├── outbound/             # 可选的外部依赖适配
-└── service/              # 业务用例
-```
-
-依赖规则：
-
-- `inbound` 负责输入绑定与响应输出
-- `service` 实现业务用例，只通过其他模块的 `contract` 跨模块调用
-- `model` 只访问本模块数据表
-- 通用技术能力放入 `pkg/`，不得扩散业务语义
-
-当前已实现模块包括 `admin`（六领域合并）、`common`、`dashboard`、`media`、`project`、`page`、`block`、`artifact`、`publication`。具体约束见 `internal/module/CLAUDE.md`，完整约定见 [AGENTS.md](./AGENTS.md)。
-
-## 启动链路
-
-后端采用显式生命周期编排：
-
-1. `config.Init("config.yaml")`
-2. `config.GetServer()`
-3. `config.InitComponents()`
-4. `middleware.Setup(router)`
-5. `routers.SetupRoutes(router, config.ValidateReady)`
-6. 启动 `http.Server`
-7. 收到退出信号后关闭 HTTP，再逆序执行 `config.CloseComponents()`
-
-组件初始化失败时返回错误，不自行结束进程。
+组件模板与样式、部分构建输入通过 `go:embed` 打入二进制。后台模板和 `/static` 当前仍从文件系统提供；部署不能只复制一个二进制后假定后台资产齐全。
 
 ## 本地运行
 
-准备配置：
+准备 PostgreSQL 与 Redis，然后配置本地连接及会话密钥：
 
 ```bash
 cp config.yaml.example config.yaml
-```
-
-按本地环境配置数据库、Redis、JWT、日志等项目，然后运行：
-
-```bash
 go mod download
 go run ./cmd
 ```
 
-健康检查：
+健康检查为 `GET /livez` 和 `GET /readyz`。生产构建在 Git 工作区执行包路径命令，保留 VCS 构建信息供组件变更识别：
 
-- `GET /livez`
-- `GET /readyz`
+```bash
+go build -o app ./cmd
+```
 
-## 验证
+组件实现变化后，已发布 Artifact 不会自行改变；启动时可标记待重建页面，再经重建或发布流程更新。
+
+## 验证与契约生成
 
 ```bash
 go test ./...
-go build ./...
 go vet ./...
+go build ./...
+
+# 工作台完整检查：要求 Node，只用于开发验证，不参与生产打包
+bash scripts/check-workbench.sh
+
+# 修改组件的对齐重复项声明后生成；生成文件随源码提交
+go run ./cmd/workbench-contracts
+go run ./cmd/workbench-contracts -check
 ```
 
-部分功能测试依赖 PostgreSQL、Redis 或其他外部组件；连接信息必须来自本地配置，不应硬编码。
+普通 `go test` 会检查生成文件漂移；没有 Node 时部分 JS 检查会跳过，完整工作台检查则明确失败。数据库测试应使用专用测试实例，可通过 `PGHOST`、`PGPORT`、`PGUSER`、`PGPASSWORD`、`PGDATABASE` 和 `TEST_REDIS_ADDR` 配置；部分测试支持容器回退。验收时须检查 skip 原因，不能只看退出码。
 
-## 设计文档
+不依赖数据库的交互验证页可按需启动，监听回环地址，15 分钟后退出：
 
-- `DESIGN.md`：设计索引与阅读顺序
-- `docs/01-overview.md`：产品定位、架构与边界
-- `docs/02-domain.md`：领域模型与数据表
-- `docs/03-pipeline.md`：构建、发布、恢复与确定性规则
-- `docs/04-runtime-and-delivery.md`：Runtime、交付阶段与测试策略
+```bash
+GOWP_REPEATER_BROWSER=1 go test ./public/test/dashboard/feature \
+  -run TestRepeaterBrowserFixture -v -timeout 20m
+```
 
-目录级开发规则：
+它使用真实面板、控件、撤销逻辑与编译器，测试文档只保存在内存。它不覆盖完整登录、持久化发布或画布交互。
 
-- `internal/module/CLAUDE.md`
-- `pkg/CLAUDE.md`
-- `public/CLAUDE.md`
-- `public/test/CLAUDE.md`
+## 阅读入口
+
+- `docs/11-foundation-and-open-source.md`：2026-09-12 基础体系审视、本轮优化、开源准备与后续验收。
+- `docs/01-overview.md`：产品定位与冻结边界。
+- `docs/02-domain.md`、`docs/03-pipeline.md`：领域模型、发布与恢复。
+- `docs/02-F-ui-kit.md`：公共控件、视觉与投递边界。
+- `docs/04-B-dynamic-development-guide.md`：动态领域与构建期数据源接入。
+- `AGENTS.md` 及目录规则：仓库开发约定。
+
+开源发行尚需确定许可证、贡献与安全报告流程，并建立自动检查和可复现发行包；这些不由已有业务模块数量替代。

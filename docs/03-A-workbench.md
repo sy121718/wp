@@ -3,6 +3,11 @@
 > 基于用户规范《03-A Visual Workbench Specification》。本文件为后端/编译侧契约的实现映射，
 > 编辑器前端外壳（顶栏/底栏/画布/大纲树 UI、拖拽交互、快捷键）属 03-B 前端工作台范围。
 
+> 2026-09-12 补充：tabs/accordion 的对齐重复项契约改由组件的 `AlignedRepeaterProvider`
+> 就近声明，注册时核对真实 Props；SSR 直接消费，JS 经 `go run ./cmd/workbench-contracts`
+> 生成。生成漂移和真实 HTTP→JS→Go 编译链路纳入 `scripts/check-workbench.sh`。
+> 基础体系、公共 UI 边界与后续收敛见 `docs/11-foundation-and-open-source.md`。
+
 ## 1. 本次实现范围（后端契约）
 
 ### 1.1 Page Document 编辑元数据（规范 §4.1 重命名/辅助控制）
