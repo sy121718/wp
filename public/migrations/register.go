@@ -297,6 +297,12 @@ var blueprintDDLAlignSQL string
 //go:embed 123_user.sql
 var userSQL string
 
+//go:embed 124_mail.sql
+var mailSQL string
+
+//go:embed 125_mail_marketing.sql
+var mailMarketingSQL string
+
 func init() {
 	register(Migration{
 		Version:   "001-init-schema",
@@ -1308,5 +1314,25 @@ func init() {
 		CheckSQL: "SELECT CASE WHEN EXISTS (SELECT 1 FROM information_schema.tables " +
 			"WHERE table_schema = current_schema() AND table_name = ?) THEN 1 ELSE 0 END",
 		SQL: userSQL,
+	})
+
+	// 124：邮箱模块基座（issue #37）。四张表：发信账号 / 模板 / 发送日志 / 抑制名单，
+	// CheckSQL 以 mail_accounts 表存在判定。
+	register(Migration{
+		Version:   "124-mail",
+		TableName: "mail_accounts",
+		CheckSQL: "SELECT CASE WHEN EXISTS (SELECT 1 FROM information_schema.tables " +
+			"WHERE table_schema = current_schema() AND table_name = ?) THEN 1 ELSE 0 END",
+		SQL: mailSQL,
+	})
+
+	// 125：营销域（issue #37）。联系人 / 列表 / 成员 / 活动 / 事件五张表，
+	// CheckSQL 以 mail_contacts 表存在判定。
+	register(Migration{
+		Version:   "125-mail-marketing",
+		TableName: "mail_contacts",
+		CheckSQL: "SELECT CASE WHEN EXISTS (SELECT 1 FROM information_schema.tables " +
+			"WHERE table_schema = current_schema() AND table_name = ?) THEN 1 ELSE 0 END",
+		SQL: mailMarketingSQL,
 	})
 }
