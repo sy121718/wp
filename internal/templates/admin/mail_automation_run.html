@@ -1,0 +1,56 @@
+{* admin/mail_automation_run.html — 实例排障详情（issue #38 P3，目标 ⑥） *}
+{{extends "layout.html"}}
+{{block body()}}
+{{d := .D}}
+<div class="pages-wrap">
+  <section class="pages-card">
+    <h2>实例排障</h2>
+    {{if .Err != ""}}<p class="pages-badge pages-badge-warn">{{.Err}}</p>{{end}}
+    <p class="pages-empty"><strong>{{d.Explain}}</strong></p>
+    <p><a href="/admin/mail/automation">← 返回列表</a></p>
+  </section>
+
+  <section class="pages-card">
+    <h2>基本信息</h2>
+    <table class="pages-table">
+      <tbody>
+        <tr><th>联系人</th><td>{{d.Email}}{{if d.Name != ""}}（{{d.Name}}）{{end}}</td></tr>
+        <tr><th>流程</th><td>{{d.AutomationName}}（id={{d.AutomationID}}）</td></tr>
+        <tr><th>状态</th><td>{{d.Run.Status}}</td></tr>
+        <tr><th>当前 / 下一节点</th><td>{{if d.Run.CurrentNode == ""}}—{{else}}{{d.Run.CurrentNode}}{{end}}</td></tr>
+        <tr><th>下次继续</th><td>{{if d.Run.NextRunAt == ""}}—{{else}}{{d.Run.NextRunAt}}{{end}}</td></tr>
+        <tr><th>由什么触发</th><td>{{if d.Run.TriggerEvent == ""}}—{{else}}{{d.Run.TriggerEvent}}{{end}}</td></tr>
+        <tr><th>开始 / 结束</th><td>{{if d.Run.StartedAt == ""}}—{{else}}{{d.Run.StartedAt}}{{end}} → {{if d.Run.FinishedAt == ""}}—{{else}}{{d.Run.FinishedAt}}{{end}}</td></tr>
+        <tr><th>错误</th><td>{{if d.Run.ErrorMessage == ""}}—{{else}}{{d.Run.ErrorMessage}}{{end}}</td></tr>
+        <tr><th>进度</th><td>已执行 {{d.DoneNodes}} / 流程共 {{d.TotalNodes}} 个节点</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="pages-card">
+    <h2>节点时间线</h2>
+    {{if len(.D.Timeline) == 0}}
+    <p class="pages-empty">还没有执行记录（实例可能刚建、任务还没跑到）。</p>
+    {{else}}
+    <table class="pages-table">
+      <thead><tr><th>时间</th><th>节点</th><th>类型</th><th>结果</th><th>详情</th></tr></thead>
+      <tbody>
+      {{range _, l := .D.Timeline}}
+      <tr>
+        <td>{{l.CreateTime}}</td>
+        <td>{{l.NodeKey}}</td>
+        <td>{{l.NodeType}}</td>
+        <td>{{l.Status}}</td>
+        <td>{{if l.Detail == ""}}—{{else}}{{l.Detail}}{{end}}</td>
+      </tr>
+      {{end}}
+      </tbody>
+    </table>
+    {{end}}
+    <p class="pages-empty">
+      时间线按执行顺序。<strong>等待</strong>节点写的是「等待 N 分钟后继续」——
+      它的「下一步」在挂起时就已经推进，所以唤醒后不会重等一次。
+    </p>
+  </section>
+</div>
+{{end}}

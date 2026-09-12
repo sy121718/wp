@@ -200,6 +200,7 @@ func automationItemOf(e *mailmodel.MailAutomationEntity) *maildto.AutomationItem
 		item.Definition = b
 	}
 	if parsed, err := ParseDefinition(e.Definition); err == nil {
+		item.Entry = parsed.Entry
 		for _, n := range parsed.Nodes {
 			item.Nodes = append(item.Nodes, maildto.AutomationNodeItem{
 				Key: n.Key, Type: n.Type, Params: n.Params, Next: n.Next, Yes: n.Yes, No: n.No,

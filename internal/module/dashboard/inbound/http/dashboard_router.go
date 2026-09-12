@@ -305,4 +305,13 @@ func SetupDashboardRoutes(router *gin.Engine,
 	adminPages.POST("/mail/campaign/delete", builtin.CasbinMiddlewareForPath("/api/mail/campaign/delete"), mailPage.MailCampaignDelete)
 	// 活动报表（#38 P1）：打开 / 点击 / 退订与收件人明细。报表是只读，权限沿用活动列表。
 	adminPages.GET("/mail/campaign", mailPage.MailCampaignPage)
+	// 自动化（#38 P3，目标 ⑦）：表单式流程编辑 + 实例排障。
+	// 页面路由在 adminPages 组（SessionAuth + CSRF），写操作额外走 Casbin 权限点。
+	adminPages.GET("/mail/automation", mailPage.MailAutomationPage)
+	adminPages.GET("/mail/automation/edit", mailPage.MailAutomationEdit)
+	adminPages.GET("/mail/automation/run", mailPage.MailAutomationRunDetail)
+	adminPages.POST("/mail/automation/save", builtin.CasbinMiddlewareForPath("/api/mail/automation/save"), mailPage.MailAutomationSave)
+	adminPages.POST("/mail/automation/status", builtin.CasbinMiddlewareForPath("/api/mail/automation/status"), mailPage.MailAutomationStatus)
+	adminPages.POST("/mail/automation/delete", builtin.CasbinMiddlewareForPath("/api/mail/automation/delete"), mailPage.MailAutomationDelete)
+	adminPages.POST("/mail/automation/tick", builtin.CasbinMiddlewareForPath("/api/mail/automation/tick"), mailPage.MailAutomationTick)
 }

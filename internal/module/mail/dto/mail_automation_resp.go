@@ -16,16 +16,18 @@ type AutomationNodeItem struct {
 
 // AutomationItem 流程条目。
 type AutomationItem struct {
-	ID            uint64               `json:"id"`
-	Name          string               `json:"name"`
-	Description   string               `json:"description"`
-	TriggerType   string               `json:"triggerType"`
-	TriggerParams map[string]any       `json:"triggerParams,omitempty"`
-	Definition    json.RawMessage      `json:"definition"`
-	Nodes         []AutomationNodeItem `json:"nodes"`
-	Status        string               `json:"status"`
-	Version       int                  `json:"version"`
-	CreateTime    string               `json:"createTime"`
+	ID            uint64          `json:"id"`
+	Name          string          `json:"name"`
+	Description   string          `json:"description"`
+	TriggerType   string          `json:"triggerType"`
+	TriggerParams map[string]any  `json:"triggerParams,omitempty"`
+	Definition    json.RawMessage `json:"definition"`
+	// Entry 入口节点标识（编辑器回填用）。
+	Entry      string               `json:"entry"`
+	Nodes      []AutomationNodeItem `json:"nodes"`
+	Status     string               `json:"status"`
+	Version    int                  `json:"version"`
+	CreateTime string               `json:"createTime"`
 }
 
 // AutomationListResp 流程列表。
