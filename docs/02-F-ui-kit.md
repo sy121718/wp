@@ -353,3 +353,70 @@ getComputedStyle(document.querySelector('.form-input')) // padding / borderRadiu
 - [ ] 三视口（1440 / 768 / 375）确认无横向越界
 - [ ] 暗色主题下看一眼（写死颜色的规则在暗色下会错）
 - [ ] 单独提交，便于出问题时回滚单页
+
+---
+
+## 12. 后台页面 vs 站点组件：控件从哪里来
+
+> 写代码前先确认自己在哪个世界 —— 两者的控件来源**不同**，混用会得到「没有样式」。
+
+### 12.1 两个世界
+
+| | 后台页面 | 站点组件（前台产物） |
+|---|---|---|
+| 模板位置 | `internal/templates/admin/*.html` | `internal/templates/components/*.jet` |
+| 谁引用它 | `admin/layout.html`（`<link>` + `<script>`） | **静态产物**：构建期编译，访客不执行模板 |
+| 控件 CSS 来源 | **直接引** `static/css/ui.css` | `core.CSSBuckets` 编译进产物的 CSS |
+| 控件 JS 来源 | **直接引** `static/js/ui/*.js` | **构建期内联**（由 `data-ui-select` 这类标记触发） |
+| 能不能用 `.form-input` / `.btn` | ✅ 可以，这就是本节的用法 | ❌ 不行 —— 产物里没有 ui.css |
+| 组件级样式 | `theme.css` 的 `pages-*` / `attr-*` 等 | 组件自己的 `sky-*` 类（如 `sky-form-field`、`sky-form-submit`） |
+
+**关键**：两者**共用同一份「原始控件基座」**（`static/js/ui/` + `ui.css`），只是**投递方式不同** ——
+后台是页面直接引，前台是构建期内联。所以「控件长什么样、怎么交互」是一致的，
+不一致的只是「你怎么拿到它」。
+
+`ui/index.js` 的注释写得很直白：
+
+> `ui/index.js` — 原始控件基座入口（后台页面直接引用；前台由构建期内联）。
+
+### 12.2 写后台页面（可以直接调控件类）
+
+```html
+<form class="pages-form" method="post" action="/api/xxx/save">
+  <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
+  <p class="w-full">
+    <label class="form-label" for="f-name">名称</label>
+    <input class="form-input" id="f-name" type="text" name="name" required>
+    <span class="form-hint">显示在列表页的标题</span>
+  </p>
+  <p class="w-full">
+    <label class="form-label" for="f-type">类型</label>
+    <select class="form-select" id="f-type" name="type">…</select>
+  </p>
+  <p class="w-full"><button type="submit" class="btn btn-primary">保存</button></p>
+</form>
+```
+
+要点：
+
+- `btn` 是**基类，必须带**（`class="btn btn-primary"`，不是只写 `btn-primary`）；
+- `<select>` 会在 DOM 就绪后被 `static/js/ui/select.js` **自动接管**（增强后类名变成
+  `form-select wbs-native`），**不需要**写 `data-ui-select` —— 那个标记是给**构建期**判断
+  「这个产物要不要内联下拉替身」用的，后台不需要；
+- htmx 局部替换出来的片段会被自动重扫（`htmx:afterSwap` → `WBUI.scan`），
+  所以片段里直接写控件类即可，不用手动初始化。
+
+### 12.3 写站点组件（不能用后台的类）
+
+- 产物里**没有** `ui.css`，写 `.form-input` / `.btn` 不会有任何效果；
+- 需要「原始控件」的行为（下拉替身等）→ 在组件模板上写 `data-ui-select` 这类标记，
+  构建期据此把基座内联进该产物；
+- 组件自己的外观 → 用组件级类名（`sky-*`）走 `core.CSSBuckets`；
+- 多端硬规则同样适用（见 §10.3 第 5 条）：宽度 `min(100%, …)`、触屏用 `AddActive` 给按压反馈、
+  `AddHover` 的规则在触屏上不输出，必须补等价形态。
+
+### 12.4 一句话判据
+
+> **模板在 `admin/` 下 → 直接用控件类；模板在 `components/` 下 → 走组件的 `sky-*` + CSSBuckets。**
+
+拿不准时看这个页面有没有引 `ui.css`：引了就能用类，没引就只能靠自带样式。
