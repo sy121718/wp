@@ -41,10 +41,15 @@ internal/builder/components/form/
 
 ## 3. 四个机制（都要保留现有约束）
 
-### 3.1 模板就近（P1 已完成）
+### 3.1 模板就近（已完成：37 / 37）
 
-组件包自己 `//go:embed form.jet`，经 `core.RegisterTemplate(name, source)` 登记；加载器
-**兼容两处查找**（组件目录优先，`internal/templates/components/*.jet` 兜底），存量组件不动也能继续工作。
+组件包自己 `//go:embed <模板名>.jet`，经 `core.RegisterTemplate(name, source)` 登记。加载器
+**兼容两处查找**（组件目录优先，`internal/templates/components/*.jet` 兜底）—— 逐批搬迁期间
+靠它不断档，现在 `internal/templates/components/` 只剩一个不属于任何组件的共享模板
+`_placeholder.jet` 走兜底路径。
+
+三个组件的模板名与目录名不同：`productcard` → `product_card.jet`、`productlist` →
+`product_list.jet`、`productselector` → `product_selector.jet`，注册名以**模板名**为准。
 
 影子发现：模板漏注册由 `//go:embed` 编译期兜住（缺文件即 `[setup failed]`），行为漏注册由
 `TestComponentAssetsConsistent` 兜住 —— 两条链都不需要额外看护。
@@ -208,7 +213,11 @@ P6 的结论推翻了本文件原先的设想：`--c-*`（后台 `theme.css` 的
 「原子层共享」也不做 —— 两个投递目标必须分离。真正修掉的是既有缺陷：`ui.css` 里 45 处
 `var(--c-*)` 没有 fallback，而产物只定义 `--sky-c-*`，整条声明失效。
 
-**存量迁移进度（P7）**：已迁 **36 / 37**（余下的 `globalref` 的 `CompileCSS` 是空实现，不参与迁移）——
+**存量迁移进度（P7）**：样式源 **36 / 37**（余下的 `globalref` 的 `CompileCSS` 是空实现，
+不参与迁移）、模板就近 **37 / 37**。至此「一个组件一个自包含目录」在样式与模板两类资产上
+都已落地：每个组件目录里是 `<name>.go` / `<name>.jet` / `<name>.css`（`globalref` 无样式），
+行为块（`enhance*.js`）也在其中。
+
 
 | 批次 | 组件 |
 |---|---|
