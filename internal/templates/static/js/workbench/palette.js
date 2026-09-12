@@ -59,13 +59,18 @@ export const paletteItems = [
     { type: 'core.productList', label: '商品列表', hint: '网格 / 列表铺开一批商品', props: { collectionLimit: 8, layout: 'grid', columns: 'auto', filterStatus: 'published', imageField: 'item.images', titleField: 'item.name', priceField: 'item.priceRange', comparePriceField: 'item.comparePrice', tagsField: 'item.tags', linkField: 'item.slug', linkPrefix: '/products/', currency: '¥', titleTag: 'h3', emptyText: '暂无商品' } },
     // 规格选择器（issue #26）：从商品详情里拆出来的可拖拽部件 —— 拖到自定义详情页模板上，
     // 选规格切组合；每档组合自带实时可用量（片段现取，issue #24）。
-    { type: 'core.productSelector', label: '规格选择器', hint: '选规格切组合（可放详情页任意位置）', props: { optionsField: 'product.options', variantsField: 'product.variants', currency: '¥', emptyText: '该商品暂无可选规格' } }
+    { type: 'core.productSelector', label: '规格选择器', hint: '选规格切组合（可放详情页任意位置）', props: { optionsField: 'product.options', variantsField: 'product.variants', currency: '¥', emptyText: '该商品暂无可选规格' } },
+    // 加购按钮（BIZ-1 访问面）：把「变体 id 烘进产物 + 提交到购物车片段」变成一次拖拽。
+    // 变体与规格标签和规格选择器同源（同一个 product.variants / product.options）；
+    // 默认单变体模式（一键加购第一档）适合放商品卡或详情页，多变体商品改用逐变体模式。
+    // 购物车容器选择器（cartTarget）要指向页面上放 cartView 片段的那个元素，默认 #cart。
+    { type: 'core.addToCart', label: '加购按钮', hint: '加入购物车（提交到购物车片段）', props: { source: 'product', optionsField: 'product.options', variantsField: 'product.variants', variantMode: 'single', showQuantity: false, buttonText: '加入购物车', cartTarget: '#cart', currency: '¥' } }
 ];
 
 /** 组件库分组：基础组件大分类平铺（细分类留给进阶组件，当前无进阶内容）；
  *  「区块」概念归全局块（页眉/页脚/区块）。 */
 export const paletteGroups = [
-    { key: 'basic', title: '基础组件', types: ['core.container', 'core.heading', 'core.text', 'core.button', 'core.image', 'core.gallery', 'core.divider', 'core.spacer', 'core.slider', 'core.list', 'core.infobox', 'core.social_buttons', 'core.video', 'core.nav', 'core.languages', 'core.tabs', 'core.accordion', 'core.marquee', 'core.counter', 'core.table', 'core.card', 'core.cardstack', 'core.faq', 'core.quote', 'core.countdown', 'core.icon', 'core.badge', 'core.progress', 'core.rating', 'core.form', 'core.product', 'core.productCard', 'core.productList', 'core.productSelector'] }
+    { key: 'basic', title: '基础组件', types: ['core.container', 'core.heading', 'core.text', 'core.button', 'core.image', 'core.gallery', 'core.divider', 'core.spacer', 'core.slider', 'core.list', 'core.infobox', 'core.social_buttons', 'core.video', 'core.nav', 'core.languages', 'core.tabs', 'core.accordion', 'core.marquee', 'core.counter', 'core.table', 'core.card', 'core.cardstack', 'core.faq', 'core.quote', 'core.countdown', 'core.icon', 'core.badge', 'core.progress', 'core.rating', 'core.form', 'core.product', 'core.productCard', 'core.productList', 'core.productSelector', 'core.addToCart'] }
 ];
 
 /**

@@ -18,6 +18,7 @@ import (
 	"github.com/CloudyKit/jet/v6"
 
 	accordionPkg "go_wp/internal/builder/components/accordion"
+	addtocartPkg "go_wp/internal/builder/components/addtocart"
 	badgePkg "go_wp/internal/builder/components/badge"
 	buttonPkg "go_wp/internal/builder/components/button"
 	cardPkg "go_wp/internal/builder/components/card"
@@ -166,6 +167,8 @@ func nodeViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeV
 		return productListViewOf(node, topLevel, ctx)
 	case productselectorPkg.Type:
 		return productSelectorViewOf(node, topLevel, ctx)
+	case addtocartPkg.Type:
+		return addToCartViewOf(node, topLevel, ctx)
 	case ratingPkg.Type:
 		return ratingViewOf(node, topLevel, ctx)
 	case formPkg.Type:
@@ -640,6 +643,37 @@ func cardstackViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*
 // （contentAtomViewOf），只是渲染的是「可独立拖拽的选择器」而不是整块详情。
 func productSelectorViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeView, error) {
 	return contentAtomViewOf(node, topLevel, ctx, productselectorPkg.Type, "product_selector", productselectorPkg.CompileCSS, productselectorPkg.BuildView)
+}
+
+// addToCartViewOf 转换加购节点（BIZ-1 访问面）。
+//
+// 手写而不是走 contentAtomViewOf：加购表单除了商品字段还要**站点工程 id**
+// （片段端据此定位工程），而那个通用助手只把内容解析器传给 BuildView。
+// 工程 id 来自构建上下文（与导航取站点级资源同源），不猜、不从字段里凑。
+func addToCartViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeView, error) {
+	var p addtocartPkg.Props
+	if len(node.Props) > 0 {
+		if err := json.Unmarshal(node.Props, &p); err != nil {
+			return nil, fmt.Errorf("节点 %s props 反序列化失败: %w", node.ID, err)
+		}
+	}
+	classes, customID := advancedClasses(node, &p, ctx)
+	addtocartPkg.CompileCSS(node.ID, &p, ctx.CSS)
+	view, err := addtocartPkg.BuildView(&p, ctx.Content, ctx.ProjectID)
+	if err != nil {
+		return nil, fmt.Errorf("节点 %s: %w", node.ID, err)
+	}
+	applyI18n(&view, ctx)
+	return &nodeView{
+		Type:     addtocartPkg.Type,
+		Template: "add_to_cart",
+		NodeID:   node.ID,
+		Classes:  strings.Join(classes, " "),
+		CustomID: customID,
+		TopLevel: topLevel,
+		Props:    p,
+		V:        view,
+	}, nil
 }
 
 func productListViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeView, error) {

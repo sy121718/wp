@@ -1,0 +1,110 @@
+/* addtocart.css — 加购组件样式。
+
+   多端硬规则（docs/02-C0 §6.9）：
+     · 宽度一律 min(100%, <设计宽度>)，不写死像素；
+     · 按钮 min-height 44px（触屏可点区域），按压反馈用 :active（不带媒体查询）；
+     · :hover 的形态包在 @media (hover: hover) 里 —— 触屏上根本不输出，
+       否则「鼠标划过变亮」这件事在手机上等于不存在；
+     · 窄视口下逐变体模式纵向堆叠，标签允许折行（overflow-wrap: anywhere），
+       一个长规格名不会把按钮挤出屏幕。
+
+   两个变量：
+     {{color}}   按钮主色（Go 侧按 Props 算出，空则主题 Token 兜底）
+     perVariant  逐变体开关（规则级 @if：那一组独有规则） */
+
+& {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(100%, 520px);
+}
+
+& .sky-cart-add-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+}
+
+& .sky-cart-add-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 0.9rem;
+  color: var(--sky-c-text-muted, #6b7280);
+  overflow-wrap: anywhere;
+}
+
+& .sky-cart-add-price {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  font-weight: 600;
+  color: var(--sky-c-text, #111827);
+  white-space: nowrap;
+}
+
+& .sky-cart-add-compare {
+  font-weight: 400;
+  font-size: 0.85rem;
+  color: var(--sky-c-text-muted, #9ca3af);
+}
+
+& .sky-cart-add-qty {
+  width: 72px;
+  min-height: 44px;
+  padding: 6px 8px;
+  border: 1px solid var(--sky-c-border, #d1d5db);
+  border-radius: 8px;
+  background: var(--sky-c-surface, #fff);
+  color: inherit;
+  font: inherit;
+  text-align: center;
+}
+
+& .sky-cart-add-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 10px 18px;
+  border: 0;
+  border-radius: 8px;
+  background: {{color}};
+  color: #fff;
+  font: inherit;
+  font-weight: 600;
+  line-height: 1.2;
+  cursor: pointer;
+}
+
+/* 交互反馈（:hover 提亮 / :active 按压）不在这里写：
+   样式源只支持 max-width 断点（桌面优先），而 hover 的规则必须包在 @media (hover: hover) 里
+   —— 触屏上那类规则根本不该输出。两条都由 Go 侧的 CSSBuckets.AddHover / AddActive 生成。 */
+
+& .sky-cart-add-notice {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--sky-c-text-muted, #6b7280);
+}
+
+/* 逐变体模式：每一行独立成块（标签与价格一行、控件一行），窄屏也读得顺。
+   用 border-top 而不是卡片：加购组件常放在卡片里，再套一层卡会显得很重。 */
+@if perVariant
+& .sky-cart-add-row {
+  flex-direction: column;
+  align-items: stretch;
+  padding-top: 10px;
+  border-top: 1px solid var(--sky-c-border, #e5e7eb);
+}
+
+& .sky-cart-add-row:first-of-type {
+  padding-top: 0;
+  border-top: 0;
+}
+
+& .sky-cart-add-btn {
+  width: min(100%, 240px);
+}
+@endif

@@ -1,0 +1,14 @@
+{* add_to_cart.jet — 加购组件（core.addToCart）。
+
+   两条路径同一个 action：
+     · 有 HTMX —— hx-post 局部刷新购物车容器（默认 #cart）；
+     · 无 JS  —— 原生表单 POST 到同一端点，浏览器整页跳到片段 HTML（可用但朴素）。
+
+   variantId 由构建期烘进 hidden input：客户端改它也只能买到他自己选的那件，
+   价格与库存仍由服务端现算（订单域只认变体与数量，请求里没有价格字段）。
+
+   变量在循环外取好：Jet 的 range 只引入循环变量，外层 . 不变，
+   但把用到的字段一次性取成具名变量，模板改起来不容易踩错作用域。 *}
+<div class="{{ .Classes }}"{{ if .CustomID }} id="{{ .CustomID }}"{{ end }} data-add-to-cart>
+{{ if .V.Notice }}<p class="sky-cart-add-notice">{{ .V.Notice }}</p>{{ else }}{{ action := .V.Action }}{{ target := .V.Target }}{{ projectID := .V.ProjectID }}{{ btn := .V.ButtonText }}{{ showQty := .V.ShowQuantity }}{{ range _, row := .V.Rows }}<form class="sky-cart-add-row" method="post" action="{{ action }}" hx-post="{{ action }}" hx-target="{{ target }}" hx-swap="innerHTML"><input type="hidden" name="projectId" value="{{ projectID }}"><input type="hidden" name="variantId" value="{{ row.VariantID }}">{{ if row.Label }}<span class="sky-cart-add-label">{{ row.Label }}</span>{{ end }}{{ if row.Price }}<span class="sky-cart-add-price">{{ row.Price }}{{ if row.ComparePrice }} <s class="sky-cart-add-compare">{{ row.ComparePrice }}</s>{{ end }}</span>{{ end }}{{ if showQty }}<input class="sky-cart-add-qty" type="number" name="quantity" value="1" min="1" inputmode="numeric" aria-label="数量">{{ end }}<button class="sky-cart-add-btn" type="submit">{{ btn }}</button></form>
+{{ end }}{{ end }}</div>
