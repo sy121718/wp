@@ -282,6 +282,9 @@ var productVariantOptionIndexSQL string
 //go:embed 119_product_variant_price_index.sql
 var productVariantPriceIndexSQL string
 
+//go:embed 120_product_rating.sql
+var productRatingSQL string
+
 //go:embed 073_blueprint_ddl_align.sql
 var blueprintDDLAlignSQL string
 
@@ -1032,6 +1035,17 @@ func init() {
 			"WHERE schemaname = current_schema() AND tablename = ? " +
 			"AND indexname = 'idx_product_variants_price_enabled'",
 		SQL: productVariantPriceIndexSQL,
+	})
+
+	// 120：商品评分字段（issue #29）。products 表存在即默认跳过，故 CheckSQL 核对两条 CHECK
+	// 约束是否真的在位（缺约束即整段重跑，语句幂等）。
+	register(Migration{
+		Version:   "120-product-rating",
+		TableName: "products",
+		CheckSQL: "SELECT CASE WHEN COUNT(*) = 2 THEN 1 ELSE 0 END FROM pg_constraint " +
+			"WHERE conrelid = ?::regclass " +
+			"AND conname IN ('products_rating_range_check', 'products_rating_count_check')",
+		SQL: productRatingSQL,
 	})
 
 	// 073：把历史库的 blueprints / blueprint_versions 对齐到 model（唯一真源）。

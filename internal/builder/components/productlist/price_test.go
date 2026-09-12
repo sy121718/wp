@@ -103,3 +103,76 @@ func TestPriceConfigRejected(t *testing.T) {
 		t.Fatalf("合法价格配置不该报错: %v", err)
 	}
 }
+
+// TestRatingSection 评分块（issue #29）：每档一条「≥ N 星」，当前档高亮、再点取消。
+func TestRatingSection(t *testing.T) {
+	view := buildViewOf(t, itemsColl(itemOf("tee", "T 恤", "2026-01-01T00:00:00Z")), map[string]any{
+		"ratingOptions": "4.5,4,3", "filterMinRating": "4",
+	}, "minRating=4")
+	if !view.HasRatingSection || len(view.RatingOptions) != 3 {
+		t.Fatalf("应渲染 3 个评分档位: %+v", view.RatingOptions)
+	}
+	var active ControlOption
+	for _, opt := range view.RatingOptions {
+		if opt.Active {
+			active = opt
+		}
+	}
+	if active.Label != "≥ 4 星" {
+		t.Fatalf("当前评分档应高亮: %+v", view.RatingOptions)
+	}
+	if strings.Contains(active.PushURL, "minRating=4") {
+		t.Fatalf("再点已选档位应清除评分条件: %s", active.PushURL)
+	}
+	// 未勾选评分时整块不渲染。
+	plain := buildViewOf(t, itemsColl(itemOf("tee", "T 恤", "2026-01-01T00:00:00Z")), map[string]any{}, "")
+	if plain.HasRatingSection {
+		t.Fatalf("没配 ratingOptions 时不该渲染评分块")
+	}
+}
+
+// TestRatingSortPutsUnratedLast 评分排序把**无评分**的商品排最后（不是当 0 分）。
+func TestRatingSortPutsUnratedLast(t *testing.T) {
+	rated := itemOf("rated", "已评分", "2026-01-01T00:00:00Z")
+	rated["ratingValue"] = 4.25
+	unrated := itemOf("unrated", "未评分", "2026-01-02T00:00:00Z")
+	zero := itemOf("zero", "零分", "2026-01-03T00:00:00Z")
+	zero["ratingValue"] = 0.0
+
+	view := buildViewOf(t, itemsColl(unrated, zero, rated), map[string]any{
+		"toolbar": "sort", "orderBy": "ratingDesc", "titleField": "item.name",
+	}, "")
+	order := []string{}
+	for _, card := range view.Cards {
+		order = append(order, card.Title)
+	}
+	if len(order) != 3 || order[0] != "已评分" || order[len(order)-1] != "未评分" {
+		t.Fatalf("评分降序应把无评分的排最后，实际 %v", order)
+	}
+}
+
+// TestPriceSortOrdersByMinPrice 价格排序按最低启用变体价（含「无价排最后」）。
+//
+// 这条与评分排序是同一类断言：只看「选项渲染出来了」是不够的 ——
+// 排序键不在 effectiveOrder 白名单里时，选项照样显示，点下去却静默回落默认序。
+func TestPriceSortOrdersByMinPrice(t *testing.T) {
+	cheap := itemOf("cheap", "便宜", "2026-01-01T00:00:00Z")
+	cheap["minPrice"] = 50.0
+	pricey := itemOf("pricey", "贵", "2026-01-02T00:00:00Z")
+	pricey["minPrice"] = 300.0
+	none := itemOf("none", "无价", "2026-01-03T00:00:00Z")
+
+	asc := buildViewOf(t, itemsColl(none, pricey, cheap), map[string]any{
+		"toolbar": "sort", "orderBy": "priceAsc", "titleField": "item.name",
+	}, "")
+	if len(asc.Cards) != 3 || asc.Cards[0].Title != "便宜" || asc.Cards[2].Title != "无价" {
+		t.Fatalf("价格升序不正确（无价应排最后）: %+v", asc.Cards)
+	}
+
+	desc := buildViewOf(t, itemsColl(none, cheap, pricey), map[string]any{
+		"toolbar": "sort", "orderBy": "priceDesc", "titleField": "item.name",
+	}, "")
+	if len(desc.Cards) != 3 || desc.Cards[0].Title != "贵" || desc.Cards[2].Title != "无价" {
+		t.Fatalf("价格降序不正确（无价应排最后）: %+v", desc.Cards)
+	}
+}

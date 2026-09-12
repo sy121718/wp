@@ -45,6 +45,7 @@ const (
 	filterKeyTagIDs     = "tagIds"
 	filterKeyTagMode    = "tagMode"
 	filterKeyOnSale     = "onSale"
+	filterKeyMinRating  = "minRating"
 	filterKeyMinPrice   = "minPrice"
 	filterKeyMaxPrice   = "maxPrice"
 
@@ -150,8 +151,10 @@ const (
 	OrderNewest  = "newest"
 	OrderOldest  = "oldest"
 	// 价格排序（issue #28）：按最低启用变体价升 / 降；键名与集合源白名单一致。
-	OrderPriceAsc  = "priceAsc"
-	OrderPriceDesc = "priceDesc"
+	// 评分排序（issue #29）：按评分降序；无评分的排最后。
+	OrderRatingDesc = "ratingDesc"
+	OrderPriceAsc   = "priceAsc"
+	OrderPriceDesc  = "priceDesc"
 
 	ColumnsAuto = "auto"
 )
@@ -230,6 +233,12 @@ type Props struct {
 	FilterMinPrice string `json:"filterMinPrice,omitempty" ct:"text,maxlen=16,sec=collection,label=最低价"`
 	FilterMaxPrice string `json:"filterMaxPrice,omitempty" ct:"text,maxlen=16,sec=collection,label=最高价"`
 
+	// RatingOptions 评分档位（issue #29）：4.5,4,3 逗号分隔，每档表示「≥ N 星」。
+	// 空 = 不渲染评分块。取值 0~5，形状在配置期校验。
+	RatingOptions string `json:"ratingOptions,omitempty" ct:"text,maxlen=64,sec=collection,label=评分档位"`
+	// FilterMinRating 最低评分（issue #29）：由片段参数 minRating 灌入，下推给集合源。
+	FilterMinRating string `json:"filterMinRating,omitempty" ct:"text,maxlen=8,sec=collection,label=最低评分"`
+
 	// FilterOptions 多属性筛选（issue #27）：`颜色key:值key,尺码key:值key` 逗号分隔，逐项 AND。
 	// 访客交互的多属性筛选（筛选栏点选）在片段侧把选中值拼成这个参数；工作台也能固定写死。
 	FilterOptions string `json:"filterOptions,omitempty" ct:"text,maxlen=500,sec=collection,label=多属性筛选"`
@@ -239,7 +248,7 @@ type Props struct {
 	// orderBy 的空值即「默认序」：选项里第一项必须是空 key —— `default=` 是 ct 的保留键
 	//（表示控件默认值），把「默认」写成 `default=默认（排序号）` 会被解析成默认值指令而不是选项，
 	// 白名单里就只剩后面两个值，工作台插入的默认配置会被自己的控件校验拒掉。
-	OrderBy string `json:"orderBy,omitempty" ct:"select,=默认（排序号）,newest=最新创建,oldest=最早创建,default=,sec=collection,label=排序"`
+	OrderBy string `json:"orderBy,omitempty" ct:"select,=默认（排序号）,newest=最新创建,oldest=最早创建,priceAsc=价格从低到高,priceDesc=价格从高到低,ratingDesc=评分最高,default=,sec=collection,label=排序"`
 
 	// —— 布局 ——
 	Layout string `json:"layout,omitempty" ct:"select,grid=网格,list=列表,default=grid,sec=style,label=布局"`
@@ -392,6 +401,13 @@ func validateExtra(p *Props, _ string) (err error) {
 			return err
 		}
 	}
+	// 评分档位：0~5 的数值，写错即报错。
+	for _, raw := range splitList(p.RatingOptions) {
+		score, rerr := strconv.ParseFloat(strings.TrimSpace(raw), 64)
+		if rerr != nil || score < 0 || score > 5 {
+			return fmt.Errorf("评分档位 %q 非法（应为 0~5 的数值）", raw)
+		}
+	}
 	if _, _, err := EffectivePriceBounds(p); err != nil {
 		return err
 	}
@@ -488,7 +504,10 @@ func effectiveOrder(p *Props) string {
 		return OrderDefault
 	}
 	switch p.OrderBy {
-	case OrderNewest, OrderOldest:
+	// 白名单必须与控件选项、集合源排序键**三处一致** ——
+	// 少列一个的后果是「排序选项看得到、点了没反应」（静默回落默认序），
+	// 这种缺陷在只看配置的测试里发现不了，只有断言渲染顺序才抓得住。
+	case OrderNewest, OrderOldest, OrderPriceAsc, OrderPriceDesc, OrderRatingDesc:
 		return p.OrderBy
 	default:
 		return OrderDefault
@@ -561,6 +580,10 @@ func collectionFilter(p *Props) map[string]string {
 	}
 	if key, value := strings.TrimSpace(p.FilterOptionKey), strings.TrimSpace(p.FilterOptionValue); key != "" && value != "" {
 		f[optionFilterPrefix+key] = value
+	}
+	// 最低评分（issue #29）：与集合源维度同名下推；形状由集合源解析期校验。
+	if v := strings.TrimSpace(p.FilterMinRating); v != "" {
+		f[filterKeyMinRating] = v
 	}
 	// 价格区间（issue #28）：与集合源维度同名下推（minPrice / maxPrice）。
 	//

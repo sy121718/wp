@@ -73,6 +73,8 @@ var productListFilterParams = map[string]string{
 	productcontract.CollectionFilterTagID:      "filterTagId",
 	productcontract.CollectionFilterTagIDs:     "filterTagIds",
 	productcontract.CollectionFilterTagMode:    "filterTagMode",
+	// 最低评分（issue #29）：0~5 的数值，形状由集合源解析期校验。
+	productcontract.CollectionFilterMinRating: "filterMinRating",
 	// 价格区间（issue #28）：数值形状由集合源解析期校验，片段只做透传。
 	productcontract.CollectionFilterMinPrice: "filterMinPrice",
 	productcontract.CollectionFilterMaxPrice: "filterMaxPrice",

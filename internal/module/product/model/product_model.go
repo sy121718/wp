@@ -48,6 +48,14 @@ type ProductEntity struct {
 	// 不变量：主分类必然同时出现在 category_ids 里（由 service 维护）。
 	PrimaryCategoryID *string         `gorm:"column:primary_category_id;type:uuid"`
 	TagIDs            json.RawMessage `gorm:"column:tag_ids;type:jsonb;not null"`
+	// Rating 商品评分 0~5（issue #29）。
+	//
+	// **NULL 与 0 分严格区分**：NULL = 尚无评分。列表按评分排序时它排最后，
+	// 与「评分是 0」不是一回事。
+	Rating *float64 `gorm:"column:rating;type:numeric(3,2)"`
+	// RatingCount 评价数量（issue #29）。
+	RatingCount int `gorm:"column:rating_count;not null;default:0"`
+
 	// MinPrice 最低启用变体价（issue #28 的投影别名 min_price）。
 	//
 	// 只读：它是列表查询的派生列，不落库（写操作一律走变体自己的 price）。
@@ -177,6 +185,8 @@ type CollectionFilter struct {
 	TagAll bool
 	// OnSale 只看在售（存在启用变体「有划线价且划线价高于售价」，与 #11 的 on_sale 同源）。
 	OnSale bool
+	// MinRating 最低评分（issue #29）：只出 rating >= 该值的商品；无评分的不入选。
+	MinRating *float64
 	// MinPrice / MaxPrice 价格区间（issue #28）：筛「存在启用变体价格落在区间内」。
 	// 各自可选：只有下限 = ≥ 下限，只有上限 = ≤ 上限，两个都有 = 闭区间。
 	MinPrice *float64
@@ -218,7 +228,7 @@ func (m *Model) ListForCollection(ctx context.Context, f CollectionFilter, limit
 	q := m.DB(ctx).Select(
 		"id, project_id, name, subtitle, description, slug, status, sort, unit, " +
 			"images, images_alt, attribute_ids, category_ids, tag_ids, brand_id, related_ids, " +
-			"default_image, created_at, updated_at, " +
+			"default_image, created_at, updated_at, rating, rating_count, " +
 			// 最低启用变体价（issue #28）：价格排序与价格区间展示都要数值，
 			// 光有 priceRange 字符串没法排序。没有启用变体的商品该列为 NULL。
 			"(SELECT MIN(v.price) FROM product_variants v WHERE v.product_id = products.id AND v.enabled) AS min_price")
@@ -271,6 +281,12 @@ func (m *Model) ListForCollection(ctx context.Context, f CollectionFilter, limit
 			args = append(args, *f.MaxPrice)
 		}
 		q = q.Where(cond+")", args...)
+	}
+	// 最低评分（issue #29）：rating 为 NULL 的商品**直接排除**（不是当 0 分比较）——
+	// 把「没有评分」当成 0 分会让新商品在「评分 ≥ 4」的筛选里永远消失，
+	// 而它其实只是还没人评过。
+	if f.MinRating != nil {
+		q = q.Where("rating IS NOT NULL AND rating >= ?", *f.MinRating)
 	}
 	// 在售（issue #27）：与自动标签 on_sale 同一判定 —— 存在启用变体且划线价高于售价。
 	if f.OnSale {

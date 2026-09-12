@@ -115,6 +115,8 @@ func TestProductCollectionSourceMetadata(t *testing.T) {
 		// issue #28：价格区间两维（价格在变体上，EXISTS 下推）。
 		productcontract.CollectionFilterMinPrice,
 		productcontract.CollectionFilterMaxPrice,
+		// issue #29：最低评分。
+		productcontract.CollectionFilterMinRating,
 		productcontract.CollectionFilterOption,
 	}
 	if len(found.Filters) != len(wantFilters) {
@@ -152,7 +154,7 @@ func TestProductCollectionSourceMetadata(t *testing.T) {
 		}
 	}
 	// 排序键：确定性默认序（sort → createdAt）。
-	if strings.Join(found.OrderBy, ",") != "sort,createdAt,priceAsc,priceDesc" {
+	if strings.Join(found.OrderBy, ",") != "sort,createdAt,priceAsc,priceDesc,ratingDesc" {
 		t.Fatalf("排序键白名单不符：%v", found.OrderBy)
 	}
 	// 内容集合源仍在（注册表是多源聚合，不是替换）。

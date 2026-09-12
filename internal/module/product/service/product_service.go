@@ -256,6 +256,21 @@ func (s *Service) Update(ctx context.Context, req *productdto.UpdateReq) (res *p
 	if req.Unit != nil {
 		e.Unit = *req.Unit
 	}
+	// 评分（issue #29）：取值范围由数据库 CHECK 兜底，这里先做友好校验（0~5、非负评价数）——
+	// 让错误在 service 层就带上明确文案，而不是抛一个约束冲突出去。
+	if req.Rating != nil {
+		if *req.Rating < 0 || *req.Rating > 5 {
+			return nil, errors.New(productenums.ErrInvalidParam)
+		}
+		rating := *req.Rating
+		e.Rating = &rating
+	}
+	if req.RatingCount != nil {
+		if *req.RatingCount < 0 {
+			return nil, errors.New(productenums.ErrInvalidParam)
+		}
+		e.RatingCount = *req.RatingCount
+	}
 	if req.Weight != nil {
 		e.Weight = req.Weight
 	}

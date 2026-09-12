@@ -243,6 +243,13 @@ func parseCollectionFilter(filter map[string]string) (f productmodel.CollectionF
 			default:
 				return f, fmt.Errorf("%s: %q", productenums.ErrCollectionFilterInvalid, k)
 			}
+		case productcontract.CollectionFilterMinRating:
+			// 最低评分（issue #29）：0~5 的数值，越界 / 非数字一律报错。
+			rating, rerr := strconv.ParseFloat(strings.TrimSpace(v), 64)
+			if rerr != nil || rating < 0 || rating > 5 {
+				return f, fmt.Errorf("%s: %q", productenums.ErrCollectionFilterInvalid, k)
+			}
+			f.MinRating = &rating
 		case productcontract.CollectionFilterMinPrice, productcontract.CollectionFilterMaxPrice:
 			// 价格区间（issue #28）：形状非法 / 负数 / 下限大于上限一律报错，
 			// 不伪装成空集合（配置错误与「确实没这个价位的商品」是两件事）。
@@ -327,6 +334,11 @@ func collectionItem(p *productmodel.ProductEntity, values map[string]string) map
 	// 组件据此把它排到最后，而不是当成 0 元。
 	if p.MinPrice != nil {
 		item["minPrice"] = *p.MinPrice
+	}
+	// ratingValue 给**数值**评分（issue #29）：白名单里的 rating 是展示用的字符串，
+	// 组件按评分排序需要数值。无评分时不给这个键 —— 组件据它把无评分的排最后。
+	if p.Rating != nil {
+		item["ratingValue"] = *p.Rating
 	}
 	return item
 }

@@ -76,6 +76,10 @@ type View struct {
 	ShowColumns    bool
 	ShowOnSale     bool
 
+	// —— 评分块（issue #29）——
+	HasRatingSection bool
+	RatingOptions    []ControlOption
+
 	// —— 价格块（issue #28）——
 	HasPriceSection bool
 	PriceOptions    []ControlOption
@@ -231,6 +235,7 @@ func BuildView(node *core.Node, p *Props, ctx *core.RenderContext) (View, error)
 		view.OnSaleOptions = buildOnSaleOptions(p, lc, &view)
 	}
 	buildPriceSection(p, lc, &view)
+	buildRatingSection(p, lc, &view)
 	return view, nil
 }
 
@@ -308,11 +313,46 @@ func itemPrice(item map[string]any) (float64, bool) {
 	return 0, false
 }
 
+// itemRating 取集合项的**数值**评分（issue #29 的 ratingValue）。
+//
+// 缺失表示「尚无评分」——与 0 分严格区分，排序时排到最后。
+func itemRating(item map[string]any) (float64, bool) {
+	v, ok := item["ratingValue"]
+	if !ok {
+		return 0, false
+	}
+	switch n := v.(type) {
+	case float64:
+		return n, true
+	case int:
+		return float64(n), true
+	case int64:
+		return float64(n), true
+	}
+	return 0, false
+}
+
 // sortItems 按 props 声明的口径重排（默认保持集合源的确定性序：排序号 → 创建时间 → id）。
 //
 // 时间解析失败的行按零值参与比较（排到最后）而不是丢弃：缺 createdAt 不该让商品消失。
 func sortItems(items []map[string]any, order string) {
 	if order == OrderDefault || len(items) < 2 {
+		return
+	}
+	if order == OrderRatingDesc {
+		// 评分排序（issue #29）：无评分（ratingValue 缺失）的排最后 —— 与价格同一口径，
+		// 「还没人评过」不是「0 分」。
+		sort.SliceStable(items, func(i, j int) bool {
+			a, aok := itemRating(items[i])
+			b, bok := itemRating(items[j])
+			if aok != bok {
+				return aok
+			}
+			if !aok {
+				return false
+			}
+			return a > b
+		})
 		return
 	}
 	if order == OrderPriceAsc || order == OrderPriceDesc {

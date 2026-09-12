@@ -58,6 +58,8 @@ var fieldWhitelist = map[string][]string{
 		"slug", "sku", "unit",
 		"images", "defaultImage",
 		"price", "comparePrice", "priceRange", "minPrice", "maxPrice",
+		// 评分（issue #29）：rating 是 0~5 的数值，ratingCount 是评价数。
+		"rating", "ratingCount",
 		"options", "variants",
 		"related",
 		// tags 是标签展示名数组（issue #22：商品卡要显示标签）。
@@ -285,6 +287,12 @@ const (
 	CollectionFilterMinPrice = "minPrice"
 	CollectionFilterMaxPrice = "maxPrice"
 
+	// CollectionFilterMinRating 最低评分（issue #29）：只出评分 >= 该值的商品。
+	//
+	// **无评分（rating IS NULL）的商品不出现在结果里** —— 「没有评分」不能被当成「评分 0」
+	// 参与比较，那会让新上架的商品永远沉底（与价格维度里「没有启用变体」的处理同源）。
+	CollectionFilterMinRating = "minRating"
+
 	// CollectionFilterOnSale 只看在售（issue #27）：存在启用变体「有划线价且划线价高于售价」。
 	// 判定与 #11 的 on_sale 自动标签规则同源 —— 同一件事只该有一份口径。
 	CollectionFilterOnSale = "onSale"
@@ -313,6 +321,8 @@ var collectionFilters = []core.CollectionFilter{
 	// 价格区间（issue #28）：两维都是任意数值，形状与取值范围在解析期校验。
 	{Key: CollectionFilterMinPrice},
 	{Key: CollectionFilterMaxPrice},
+	// 最低评分（issue #29）：取值 0~5，形状在解析期校验。
+	{Key: CollectionFilterMinRating},
 	// 属性值维度（issue #25）：前缀维度，真实键是 `option.<属性组key>=<属性值key>`。
 	// 属性组由用户自己建（数据驱动），维度键没法穷举，所以用前缀命名空间 + 服务端校验子键。
 	{Key: CollectionFilterOption, Prefix: true},
@@ -324,7 +334,7 @@ var collectionFilters = []core.CollectionFilter{
 // sort（排序号）→ createdAt（创建时间），同值再按 id 兜底，保证产物确定性。
 // collectionOrderKeys 排序键白名单（issue #28 补价格升降：按**最低启用变体价**排，
 // 没有启用变体的商品排最后 —— 不按 0 元参与比较）。
-var collectionOrderKeys = []string{"sort", "createdAt", "priceAsc", "priceDesc"}
+var collectionOrderKeys = []string{"sort", "createdAt", "priceAsc", "priceDesc", "ratingDesc"}
 
 // CollectionFilters 过滤维度白名单的只读拷贝（调用方不得篡改唯一来源）。
 func CollectionFilters() []core.CollectionFilter {

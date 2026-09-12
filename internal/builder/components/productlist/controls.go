@@ -156,6 +156,8 @@ func buildSortOptions(p *Props, lc linkContext, view *View) []ControlOption {
 		{OrderDefault, "默认排序"},
 		{OrderNewest, "最新上架"},
 		{OrderOldest, "最早上架"},
+		// 评分（issue #29）：按评分降序，无评分的排最后。
+		{OrderRatingDesc, "评分最高"},
 		// 价格两条（issue #28）：按最低启用变体价升 / 降。
 		{OrderPriceAsc, "价格从低到高"},
 		{OrderPriceDesc, "价格从高到低"},
@@ -341,6 +343,32 @@ func priceRangeActive(rng PriceRange, min, max *float64) bool {
 // trimNumber 数字 → 最简字符串（100 而不是 100.000000；100.5 保留小数）。
 func trimNumber(v float64) string {
 	return strconv.FormatFloat(v, 'f', -1, 64)
+}
+
+// buildRatingSection 评分块（issue #29）：每档一条「≥ N 星」的筛选链接。',
+//
+// 与其它筛选同构：无 JS 可点、推送干净的语义 URL、再点一次取消、参与高亮。
+func buildRatingSection(p *Props, lc linkContext, view *View) {
+	scores := splitList(p.RatingOptions)
+	if len(scores) == 0 {
+		return
+	}
+	current := strings.TrimSpace(p.FilterMinRating)
+	options := make([]ControlOption, 0, len(scores))
+	for _, raw := range scores {
+		score := strings.TrimSpace(raw)
+		active := current != "" && current == score
+		override := url.Values{}
+		if active {
+			override.Set("minRating", "")
+		} else {
+			override.Set("minRating", score)
+		}
+		override.Set("page", "")
+		options = append(options, controlOption(lc, "≥ "+score+" 星", active, override))
+	}
+	view.HasRatingSection = true
+	view.RatingOptions = options
 }
 
 // controlOption 拼一个控件的三个 URL。
