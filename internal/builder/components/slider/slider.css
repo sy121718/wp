@@ -1,0 +1,96 @@
+/* core.slider 轮播样式（轨道 scroll-snap + slide 宽度）。
+
+   静态优先：轨道横向 flex + CSS scroll-snap，零 JS 也能滑；箭头与圆点是轻量增强。
+   三端 perView 只改 slide 的 flex-basis，其余骨架不动。 */
+
+& {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+  overflow-x: auto;
+  scrollbar-width: none;
+  scroll-behavior: smooth;
+  /* 负外边距抵消 slide 的左右内边距，让首尾 slide 与容器边缘对齐。 */
+  margin: 0 calc(-{{gap}} / 2);
+}
+
+& .sky-slide {
+  flex: 0 0 {{slideDesktop}};
+  scroll-snap-align: start;
+  min-width: 0;
+  padding: 0 calc({{gap}} / 2);
+}
+
+/* 三端 perView：变量为空即「该端沿用上一档」，整段不产出。 */
+@media (max-width: 1024px) {
+  & .sky-slide {
+    flex: 0 0 {{slideTablet}};
+  }
+}
+
+@media (max-width: 767px) {
+  & .sky-slide {
+    flex: 0 0 {{slideMobile}};
+  }
+}
+
+/* slide 内部块级填充。 */
+& .sky-slide > * {
+  height: 100%;
+  margin: 0;
+}
+
+/* 箭头与圆点（增强）：无 JS 时它们不存在，产物里保留样式不产生副作用。 */
+& .sky-slider-arrow {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  border: 1px solid var(--sky-c-border, rgba(0,0,0,.12));
+  background: var(--sky-c-surface, #fff);
+  cursor: pointer;
+  font-size: 20px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2;
+  box-shadow: 0 2px 8px rgba(0,0,0,.1);
+}
+
+& .sky-slider-prev {
+  left: 12px;
+}
+
+& .sky-slider-next {
+  right: 12px;
+}
+
+& .sky-slider-dots {
+  position: absolute;
+  bottom: 10px;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  z-index: 2;
+}
+
+& .sky-slider-dots button {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  border: none;
+  background: rgba(0,0,0,.25);
+  cursor: pointer;
+  padding: 0;
+}
+
+& .sky-slider-dots button.is-active {
+  background: currentColor;
+}

@@ -5,6 +5,7 @@
 package accordion
 
 import (
+	_ "embed" // accordion.css 经 //go:embed 打进二进制
 	"encoding/json"
 	"fmt"
 
@@ -91,55 +92,33 @@ func (c *Component) Validate(node *core.Node, ids map[string]bool) (err error) {
 	return nil
 }
 
+// accordionCSS 组件样式源。与组件同目录：改样式不必再进 Go 字符串数组。
+//
+//go:embed accordion.css
+var accordionCSS string
+
 // compileCSS 手风琴样式。
+//
+// Go 侧只把属性翻成变量（描边色、对齐映射、标题字号），无边框模式是一个规则级开关。
 func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	sel := "." + core.NodeClass(id)
 
-	b.Add(core.BreakpointDesktop, sel, []string{"display: flex", "flex-direction: column", "gap: 8px"})
+	// 对齐映射：center 保持 center，right 要翻成 flex-end（容器是 flex）。
+	justify := ""
+	switch p.TitleAlign {
+	case "center":
+		justify = "center"
+	case "right":
+		justify = "flex-end"
+	}
 
-	head := sel + " .sky-accordion-head"
-	headRules := []string{
-		"list-style: none", "cursor: pointer", "user-select: none",
-		"display: flex", "align-items: center", "justify-content: space-between",
-		"padding: 14px 18px", "font-size: 15px", "font-weight: 600",
-		"background: var(--sky-c-surface, #fff)",
-		"border: 1px solid var(--sky-c-border, rgba(0,0,0,.1))", "border-radius: 10px",
+	vars := map[string]string{
+		"bgColor":    p.BgColor,
+		"justify":    justify,
+		"titleSize":  p.TitleSize,
+		"borderless": core.BoolVar(p.Borderless),
 	}
-	if p.BgColor != "" {
-		headRules = append(headRules, core.CSSDecl("background", p.BgColor))
-	}
-	if p.TitleAlign == "center" || p.TitleAlign == "right" {
-		headRules = append(headRules, core.CSSDecl("justify-content", map[string]string{"center": "center", "right": "flex-end"}[p.TitleAlign]))
-	}
-	if p.TitleSize != "" {
-		headRules = append(headRules, core.CSSDecl("font-size", p.TitleSize))
-	}
-	b.Add(core.BreakpointDesktop, head, headRules)
-	// 展开箭头（summary 伪元素）。
-	b.Add(core.BreakpointDesktop, head+"::-webkit-details-marker", []string{"display: none"})
-	b.Add(core.BreakpointDesktop, head+"::after", []string{
-		"content: '＋'", "font-size: 14px", "color: rgba(0,0,0,.4)",
-		"transition: transform .2s", "margin-left: 12px",
-	})
-	b.Add(core.BreakpointDesktop, sel+" details[open] "+head+"::after", []string{"transform: rotate(45deg)"})
-	b.Add(core.BreakpointDesktop, head, []string{"transition: background .2s ease"})
-	b.AddHover(head+":hover", []string{"background: var(--sky-c-surface, #f3f4f6)"})
-
-	b.Add(core.BreakpointDesktop, sel+" .sky-accordion-body", []string{
-		"padding: 14px 18px", "border: 1px solid var(--sky-c-border, rgba(0,0,0,.08))",
-		"border-top: 0", "border-radius: 0 0 10px 10px",
-		"margin-top: -8px",
-	})
-
-	// 无边框模式。
-	if p.Borderless {
-		b.Add(core.BreakpointDesktop, sel+".sky-accordion-borderless", []string{"gap: 0"})
-		b.Add(core.BreakpointDesktop, sel+".sky-accordion-borderless .sky-accordion-head", []string{
-			"border: 0", "border-bottom: 1px solid var(--sky-c-border, rgba(0,0,0,.1))", "border-radius: 0",
-			"padding-left: 0", "padding-right: 0",
-		})
-		b.Add(core.BreakpointDesktop, sel+".sky-accordion-borderless .sky-accordion-body", []string{
-			"border: 0", "border-radius: 0", "padding-left: 0", "padding-right: 0",
-		})
+	if err := core.ApplyComponentCSSTmpl(b, sel, accordionCSS, vars); err != nil {
+		panic(fmt.Sprintf("accordion 组件样式解析失败: %v", err))
 	}
 }

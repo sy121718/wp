@@ -103,25 +103,23 @@ func (c *Component) Validate(node *core.Node, ids map[string]bool) (err error) {
 	return nil
 }
 
-// compileCSS 编译轮播样式（轨道 scroll-snap + slide 宽度 + 自动播放动画）。
+// sliderCSS 组件样式源。与组件同目录：改样式不必再进 Go 字符串数组。
+//
+//go:embed slider.css
+var sliderCSS string
+
+// compileCSS 编译轮播样式（轨道 scroll-snap + slide 宽度）。
+//
+// Go 侧只把 perView 折算成 flex-basis 百分比、补齐间距默认值；哪一档存在由样式源的
+// 媒体查询 + 空变量省略决定（这端没设 slidesPerView 时变量为空，整段不产出）。
 func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	sel := "." + core.NodeClass(id)
 
-	var desktop, tablet, mobile []string
-
-	// 容器基础。
-	desktop = append(desktop, "position: relative")
-	desktop = append(desktop, "overflow: hidden")
-
-	// 轨道。
-	desktop = append(desktop, "display: flex")
-	desktop = append(desktop, "scroll-snap-type: x mandatory")
-	desktop = append(desktop, "-webkit-overflow-scrolling: touch")
-	desktop = append(desktop, "overflow-x: auto")
-	desktop = append(desktop, "scrollbar-width: none")
-	desktop = append(desktop, "scroll-behavior: smooth")
-
-	// slide：每屏宽度按 perView 折算；scroll-snap-align 对齐。
+	gap := p.Gap
+	if gap == "" {
+		gap = "16px"
+	}
+	// 每屏宽度：下限 1 屏、上限 4 屏（再多每屏挤不下东西）。
 	perView := p.PerView.Desktop
 	if perView <= 0 {
 		perView = 1
@@ -129,66 +127,20 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	if perView > 4 {
 		perView = 4
 	}
-	gap := p.Gap
-	if gap == "" {
-		gap = "16px"
-	}
-	slideW := 100.0 / float64(perView)
-	slideSel := sel + " .sky-slide"
-	slide := []string{
-		"flex: 0 0 " + strconv.FormatFloat(slideW, 'f', 4, 64) + "%",
-		"scroll-snap-align: start",
-		"min-width: 0",
-		"padding: 0 calc(" + gap + " / 2)",
-	}
-	desktop = append(desktop, "margin: 0 calc(-"+gap+" / 2)")
-
-	// 三端 perView：调整 slide 宽度（覆盖 flex-basis）。
-	tablet = append(tablet, perViewSlideRules(p.PerView.Tablet, gap)...)
-	mobile = append(mobile, perViewSlideRules(p.PerView.Mobile, gap)...)
-
-	b.Add(core.BreakpointDesktop, sel, desktop)
-	b.Add(core.BreakpointDesktop, slideSel, slide)
-	if len(tablet) > 0 {
-		b.Add(core.BreakpointTablet, slideSel, tablet)
-	}
-	if len(mobile) > 0 {
-		b.Add(core.BreakpointMobile, slideSel, mobile)
+	slideW := func(n int) string {
+		if n <= 0 || n > 4 {
+			return "" // 该端沿用上一档
+		}
+		return strconv.FormatFloat(100.0/float64(n), 'f', 4, 64) + "%"
 	}
 
-	// slide 内部块级填充。
-	inner := sel + " .sky-slide > *"
-	b.Add(core.BreakpointDesktop, inner, []string{"height: 100%", "margin: 0"})
-
-	// 箭头与圆点（增强）。
-	arrow := sel + " .sky-slider-arrow"
-	b.Add(core.BreakpointDesktop, arrow, []string{
-		"position: absolute", "top: 50%", "transform: translateY(-50%)",
-		"width: 40px", "height: 40px", "border-radius: 999px",
-		"border: 1px solid var(--sky-c-border, rgba(0,0,0,.12))", "background: var(--sky-c-surface, #fff)",
-		"cursor: pointer", "font-size: 20px", "line-height: 1",
-		"display: flex", "align-items: center", "justify-content: center",
-		"z-index: 2", "box-shadow: 0 2px 8px rgba(0,0,0,.1)",
-	})
-	b.Add(core.BreakpointDesktop, sel+" .sky-slider-prev", []string{"left: 12px"})
-	b.Add(core.BreakpointDesktop, sel+" .sky-slider-next", []string{"right: 12px"})
-	dots := sel + " .sky-slider-dots"
-	b.Add(core.BreakpointDesktop, dots, []string{
-		"position: absolute", "bottom: 10px", "left: 0", "right: 0",
-		"display: flex", "justify-content: center", "gap: 6px", "z-index: 2",
-	})
-	b.Add(core.BreakpointDesktop, sel+" .sky-slider-dots button", []string{
-		"width: 8px", "height: 8px", "border-radius: 999px", "border: none",
-		"background: rgba(0,0,0,.25)", "cursor: pointer", "padding: 0",
-	})
-	b.Add(core.BreakpointDesktop, sel+" .sky-slider-dots button.is-active", []string{"background: currentColor"})
-}
-
-// perViewSlideRules 按每屏显示数生成 .sky-slide 的 flex-basis 规则（0=沿用上一档）。
-func perViewSlideRules(n int, gap string) []string {
-	if n <= 0 || n > 4 {
-		return nil
+	vars := map[string]string{
+		"gap":          gap,
+		"slideDesktop": slideW(perView),
+		"slideTablet":  slideW(p.PerView.Tablet),
+		"slideMobile":  slideW(p.PerView.Mobile),
 	}
-	w := 100.0 / float64(n)
-	return []string{"flex: 0 0 " + strconv.FormatFloat(w, 'f', 4, 64) + "%"}
+	if err := core.ApplyComponentCSSTmpl(b, sel, sliderCSS, vars); err != nil {
+		panic(fmt.Sprintf("slider 组件样式解析失败: %v", err))
+	}
 }

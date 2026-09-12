@@ -1,0 +1,83 @@
+/* core.accordion 手风琴样式。零 JS：原生 <details>/<summary> 展开收起。 */
+
+& {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+& .sky-accordion-head {
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  font-size: 15px;
+  font-weight: 600;
+  background: var(--sky-c-surface, #fff);
+  border: 1px solid var(--sky-c-border, rgba(0,0,0,.1));
+  border-radius: 10px;
+  /* 三个可选值追加在末尾：属性没设时变量为空，声明整条省略，顺序与迁移前一致。 */
+  background: {{bgColor}};
+  justify-content: {{justify}};
+  font-size: {{titleSize}};
+}
+
+/* 展开箭头（summary 伪元素）：加减号由 content 提供，无 JS。 */
+& .sky-accordion-head::-webkit-details-marker {
+  display: none;
+}
+
+& .sky-accordion-head::after {
+  content: '＋';
+  font-size: 14px;
+  color: rgba(0,0,0,.4);
+  transition: transform .2s;
+  margin-left: 12px;
+}
+
+/* 展开态由 [open] 属性驱动：＋ 旋转 45° 成 ×。 */
+& details[open] & .sky-accordion-head::after {
+  transform: rotate(45deg);
+}
+
+& .sky-accordion-head {
+  transition: background .2s ease;
+}
+
+/* 触屏没有悬停，标题底色不变（不构成功能缺口：展开靠点击）。 */
+@hover & .sky-accordion-head:hover {
+  background: var(--sky-c-surface, #f3f4f6);
+}
+
+& .sky-accordion-body {
+  padding: 14px 18px;
+  border: 1px solid var(--sky-c-border, rgba(0,0,0,.08));
+  border-top: 0;
+  border-radius: 0 0 10px 10px;
+  margin-top: -8px;
+}
+
+@if borderless
+/* 无边框模式：去掉盒子的边与留白，只留标题下的一条分隔线。 */
+&.sky-accordion-borderless {
+  gap: 0;
+}
+
+&.sky-accordion-borderless .sky-accordion-head {
+  border: 0;
+  border-bottom: 1px solid var(--sky-c-border, rgba(0,0,0,.1));
+  border-radius: 0;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+&.sky-accordion-borderless .sky-accordion-body {
+  border: 0;
+  border-radius: 0;
+  padding-left: 0;
+  padding-right: 0;
+}
+@endif
