@@ -74,6 +74,9 @@ type inspectorField struct {
 	// Slot 非空表示该字段由客户端增强控件渲染（取色器/联动锁/媒体选择等）：
 	// 服务端只输出定位占位 div，客户端用既有控件函数填充（避免两套控件实现）。
 	Slot string
+	// HTML 非空表示该字段的整块结构已由服务端生成（重复项面板等）：模板原样输出，
+	// 客户端只绑行为 —— 结构只有一处定义（inspector_repeater.go）。
+	HTML string
 }
 
 // inspectorSection 面板分组（WP 式折叠分组）。
@@ -134,9 +137,12 @@ func (h *Handle) InspectorPanel(c *gin.Context) {
 	}
 	// tab：content / style（空 = 渲染全部，向后兼容旧调用）。
 	tab := strings.TrimSpace(c.PostForm("tab"))
+	sections := buildInspectorSections(items, props, tab)
+	// 重复项面板（折叠项 / 页签）：结构由服务端生成，客户端只绑行为。
+	sections = appendRepeaterPanel(sections, node, props, tab)
 	c.HTML(http.StatusOK, "fragments/inspector_panel", gin.H{
 		"NodeID": nodeID, "NodeType": node.Type,
-		"Sections": buildInspectorSections(items, props, tab),
+		"Sections": sections,
 	})
 }
 

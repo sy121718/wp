@@ -140,7 +140,7 @@ export function socialPanel(ctx) {
 // applyAligned 落地一次对齐结果。顺序关键：先 snapshot（记录改动前的整文档），
 // 再同时写 props 与 children —— 一次撤销即可同时回退标签与面板，不会留下
 // 「撤销后数量又不一致」的中间态。
-function applyAligned(ctx, next) {
+export function applyAligned(ctx, next) {
     if (!next) return;
     ctx.self.snapshot();
     set(ctx, 'props.' + next.key, next.list);
@@ -164,7 +164,56 @@ function alignedRepeater(ctx, cfg) {
     function mutate(action) {
         applyAligned(ctx, alignMutation(type, list, kids, action, ctx.self.makeIdAllocator()));
     }
-    function rowButton(text, title, onClick, cls) {
+    // bindRepeaterPanel 把服务端渲染的重复项面板接上行为（一次事件委托，不逐元素挂监听）。
+//
+// 结构在服务端（inspector_repeater.go），这里只处理「做了什么」：改条目名回写 props；
+// 上移 / 下移 / 删除 / 添加走对齐语义（同时移动或增删画布上对应的面板节点）。
+// 返回 false 表示面板里没有服务端骨架，调用方回退到客户端渲染。
+export function bindRepeaterPanel(ctx) {
+    var root = ctx.panel.querySelector("[data-wb-rep]");
+    if (!root) return false;
+    var type = root.getAttribute("data-wb-rep");
+    var field = root.getAttribute("data-wb-rep-field");
+    var key = alignKeyOf(type);
+    if (!key || !field) return false;
+    var list = get(ctx, "props." + key);
+    if (!Array.isArray(list)) return false;
+    var kids = ctx.node.children || [];
+    function mutate(action) {
+        applyAligned(ctx, alignMutation(type, list, kids, action, ctx.self.makeIdAllocator()));
+    }
+    root.addEventListener("click", function (e) {
+        var btn = e.target && e.target.closest ? e.target.closest("[data-wb-rep-op]") : null;
+        if (!btn || !root.contains(btn)) return;
+        var op = btn.getAttribute("data-wb-rep-op");
+        var idx = parseInt(btn.getAttribute("data-wb-rep-index"), 10);
+        if (op === "add") { mutate({ op: "add" }); return; }
+        if (op === "remove") { mutate({ op: "remove", index: idx }); return; }
+        if (op === "move") {
+            var to = idx + parseInt(btn.getAttribute("data-wb-rep-to"), 10);
+            mutate({ op: "move", index: idx, to: to });
+        }
+    });
+    root.addEventListener("change", function (e) {
+        var t = e.target;
+        if (!t || !t.getAttribute) return;
+        if (t.getAttribute("data-wb-rep-input") !== null) {
+            var i = parseInt(t.getAttribute("data-wb-rep-input"), 10);
+            list[i][field] = t.value;
+            commit(ctx, "props." + key, list);
+            return;
+        }
+        var extra = t.getAttribute("data-wb-rep-extra");
+        if (extra) {
+            var j = parseInt(t.getAttribute("data-wb-rep-index"), 10);
+            list[j][extra] = t.checked;
+            commit(ctx, "props." + key, list);
+        }
+    });
+    return true;
+}
+
+function rowButton(text, title, onClick, cls) {
         var b = document.createElement('button');
         b.type = 'button';
         b.className = cls || 'wb-btn wb-btn-sm wb-btn-ghost';
@@ -229,6 +278,9 @@ export function tabsPanel(ctx) {
 
 // accordion 面板：折叠项标题 repeater，与 children 内容严格一一对应。
 export function accordionPanel(ctx) {
+    // 结构由服务端渲染（inspector_repeater.go），这里只接行为；
+    // 拿不到服务端骨架时（旧片段 / 其他入口）回退到客户端渲染，行为一致。
+    if (bindRepeaterPanel(ctx)) return;
     alignedRepeater(ctx, {
         type: 'core.accordion',
         noun: '折叠项',

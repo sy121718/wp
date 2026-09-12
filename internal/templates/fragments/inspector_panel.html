@@ -8,7 +8,10 @@
 <details class="wb-inspector-group" data-wb-section="{{s.Key}}"{{if s.Open}} open{{end}}>
     <summary class="wb-inspector-section">{{s.Title}}{{if s.Used}} <span class="wb-group-count">{{s.Used}}</span>{{end}}</summary>
     {{range _, f := s.Fields}}
-    {{if f.Slot != ""}}
+    {{if f.HTML != ""}}
+    {* 整块结构已由服务端生成（重复项面板等），原样输出，客户端只绑行为 *}
+    <div class="wb-field wb-field-repeater">{{f.HTML | unsafe}}</div>
+    {{else if f.Slot != ""}}
     {* 增强字段：客户端用既有控件函数填充（取色器/联动锁/媒体选择），服务端只给定位占位 *}
     <div class="wb-field-slot" data-wb-slot="{{f.Key}}" data-wb-enhance="{{f.Slot}}"></div>
     {{else if f.UI == "bool"}}
