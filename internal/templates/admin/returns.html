@@ -10,6 +10,7 @@
 {{rows := .Rows}}
 {{detail := .Detail}}
 {{statuses := .Statuses}}
+{{warehouses := .Warehouses}}
 <div class="stack returns-page">
     <section class="card card-body">
         <h2>退货入库</h2>
@@ -168,7 +169,12 @@
             <input type="hidden" name="limit" value="{{detail.Form.Limit}}">
             <div class="form-inline">
                 <input type="text" class="form-input" name="remark" placeholder="审核意见（可选，客户可见）" autocomplete="off">
-                <input type="text" class="form-input" name="warehouseId" placeholder="入库仓库 ID（留空 = 默认仓）" autocomplete="off">
+<select class="form-select" name="warehouseId">
+                <option value="">入库仓库（默认仓）</option>
+                {{range _, w := warehouses}}
+                <option value="{{w.ID}}">{{w.Label}}</option>
+                {{end}}
+            </select>
                 <input type="text" class="form-input" name="transactionId" placeholder="退款流水号（可选，留空则沿用原流水号）" autocomplete="off">
             </div>
             <label class="hint">
@@ -204,7 +210,12 @@
             <input type="hidden" name="page" value="{{detail.Form.Page}}">
             <input type="hidden" name="limit" value="{{detail.Form.Limit}}">
             <div class="form-inline">
-                <input type="text" class="form-input" name="warehouseId" placeholder="入库仓库 ID（留空 = 默认仓）" autocomplete="off">
+<select class="form-select" name="warehouseId">
+                <option value="">入库仓库（默认仓）</option>
+                {{range _, w := warehouses}}
+                <option value="{{w.ID}}">{{w.Label}}</option>
+                {{end}}
+            </select>
                 <input type="text" class="form-input" name="transactionId" placeholder="退款流水号（可选，留空则沿用原流水号）" autocomplete="off">
                 <input type="text" class="form-input" name="remark" placeholder="备注（可选，如「外箱破损已拍照」）" autocomplete="off">
             </div>

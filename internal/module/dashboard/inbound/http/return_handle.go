@@ -26,6 +26,7 @@
 package dashboardhttp
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -38,6 +39,8 @@ import (
 	ordercontract "go_wp/internal/module/order/contract"
 	orderdto "go_wp/internal/module/order/dto"
 	orderenums "go_wp/internal/module/order/enums"
+	inventorycontract "go_wp/internal/module/product/inventory/contract"
+	inventorydto "go_wp/internal/module/product/inventory/dto"
 	projectcontract "go_wp/internal/module/project/contract"
 
 	"go_wp/internal/middleware/builtin"
@@ -103,11 +106,71 @@ var returnFacingExtras = []string{
 type returnPageHandle struct {
 	orders   ordercontract.OrderService
 	projects projectcontract.ProjectService
+	// inventories 只用来渲染「入库仓库」下拉：退货入库落在哪个仓是**运营的决定**，
+	// 让运营填一个仓库 ID 是把内部标识当输入项 —— 填错不报错，货就进错仓了。
+	inventories inventorycontract.InventoryService
 }
 
 // NewReturnPageHandle 构造。
-func NewReturnPageHandle(orders ordercontract.OrderService, projects projectcontract.ProjectService) *returnPageHandle {
-	return &returnPageHandle{orders: orders, projects: projects}
+func NewReturnPageHandle(orders ordercontract.OrderService, projects projectcontract.ProjectService,
+	inventories inventorycontract.InventoryService) *returnPageHandle {
+	return &returnPageHandle{orders: orders, projects: projects, inventories: inventories}
+}
+
+// returnWarehouseOption 入库仓库下拉项（value 是仓库 id，Label 带短码与默认标记）。
+type returnWarehouseOption struct {
+	ID    string
+	Label string
+}
+
+// warehouseOptions 某工程的仓库下拉项（默认仓在最前，由 inventory 侧排序保证）。
+//
+// 取不到时返回空表：页面据此只渲染「默认仓」一个选项，而不是让整页报错 ——
+// 退货审核本身不依赖仓库列表（服务端在仓库为空时会兜底到默认仓）。
+func (h *returnPageHandle) warehouseOptions(ctx context.Context, projectID string) []returnWarehouseOption {
+	if h.inventories == nil || strings.TrimSpace(projectID) == "" {
+		return nil
+	}
+	list, err := h.inventories.ListWarehouses(ctx, &inventorydto.ListWarehouseReq{ProjectID: projectID})
+	if err != nil {
+		return nil
+	}
+	out := make([]returnWarehouseOption, 0, len(list))
+	for _, w := range list {
+		if opt, ok := warehouseOptionOf(w); ok {
+			out = append(out, opt)
+		}
+	}
+	return out
+}
+
+// warehouseOptionOf 仓库 → 下拉项（纯函数：IO 与文案拼装分开，口径可单测）。
+//
+// 三条取舍：
+//
+//	· **停用的仓不进下拉**（历史流水仍按 id 可读，但新入库不该再选它）；
+//	· 标签带短码 —— 短码是仓库在 SKU 编码里的前缀，运营认得出「SZ」比认全名快；
+//	· 默认仓显式标注 —— 留空时的兜底目标要让运营看得见，否则「我什么都没选」与
+//	  「我以为会进某个仓」之间就靠猜。
+func warehouseOptionOf(w *inventorydto.WarehouseResp) (opt returnWarehouseOption, ok bool) {
+	if w == nil || strings.TrimSpace(w.ID) == "" {
+		return opt, false
+	}
+	if w.Status != "" && w.Status != "enabled" {
+		return opt, false
+	}
+	label := strings.TrimSpace(w.Name)
+	if code := strings.TrimSpace(w.Code); code != "" {
+		if label == "" {
+			label = code
+		} else {
+			label = label + "（" + code + "）"
+		}
+	}
+	if w.IsDefault {
+		label += " · 默认仓"
+	}
+	return returnWarehouseOption{ID: w.ID, Label: label}, true
 }
 
 // returnFilter 页面筛选条件（GET 参数，全部可选）。
@@ -196,6 +259,7 @@ func (h *returnPageHandle) ReturnsPage(c *gin.Context) {
 		"PendingHint":     returnPendingHint(counters),
 		"Rows":            rows,
 		"Total":           total,
+		"Warehouses":      h.warehouseOptions(ctx, selected),
 		"Detail":          detail,
 		// 显式布尔：Jet 对空 map 的真值判断不值得押注，页面靠这个键决定要不要渲染详情块。
 		"HasDetail": len(detail) > 0,

@@ -264,7 +264,7 @@ func SetupDashboardRoutes(router *gin.Engine,
 
 	// 退货入库（BIZ-1）：客户申请 → 审核 → **先入库、后退款**。
 	// 页面 GET 走 /admin 组认证（Session+CSRF，无 Casbin）；写动作复用退货 API 权限点（迁移 145）。
-	returnPages := NewReturnPageHandle(orders, projects)
+	returnPages := NewReturnPageHandle(orders, projects, inventories)
 	adminPages.GET("/returns", returnPages.ReturnsPage)
 	adminPages.POST("/returns/approve", builtin.CasbinMiddlewareForPath("/api/order/return/approve"), returnPages.ReturnApprove)
 	adminPages.POST("/returns/reject", builtin.CasbinMiddlewareForPath("/api/order/return/reject"), returnPages.ReturnReject)
