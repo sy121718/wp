@@ -12,6 +12,7 @@ import (
 	ordermodel "go_wp/internal/module/order/model"
 	orderservice "go_wp/internal/module/order/service"
 	productcontract "go_wp/internal/module/product/contract"
+	usercontract "go_wp/internal/module/user/contract"
 )
 
 // SetupOrderRoutes 装配订单模块路由，返回模块契约。
@@ -23,6 +24,7 @@ func SetupOrderRoutes(
 	db *gorm.DB,
 	product productcontract.VariantSnapshotPort,
 	stock ordercontract.StockOperator,
+	guest usercontract.GuestAccountProvisioner,
 ) ordercontract.OrderService {
 	svc := orderservice.NewService(
 		ordermodel.NewOrderModel(db),
@@ -30,6 +32,7 @@ func SetupOrderRoutes(
 		ordermodel.NewOrderStatusLogModel(db),
 		product,
 		stock,
+		guest,
 	)
 	h := NewHandle(svc)
 

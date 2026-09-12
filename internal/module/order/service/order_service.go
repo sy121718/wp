@@ -12,6 +12,7 @@ import (
 	ordercontract "go_wp/internal/module/order/contract"
 	ordermodel "go_wp/internal/module/order/model"
 	productcontract "go_wp/internal/module/product/contract"
+	usercontract "go_wp/internal/module/user/contract"
 )
 
 // Service 订单模块用例。
@@ -21,6 +22,9 @@ type Service struct {
 	logs    *ordermodel.OrderStatusLogModel
 	product productcontract.VariantSnapshotPort
 	stock   ordercontract.StockOperator
+	// guest 访客开号：下单邮箱没有账号时建一个并回填 user_id。
+	// 允许为 nil（装配期未接用户模块时，下单仍可用，只是不自动开号）。
+	guest usercontract.GuestAccountProvisioner
 }
 
 // NewService 构造（参数直传，不用 Deps 结构体）。
@@ -33,8 +37,12 @@ func NewService(
 	logs *ordermodel.OrderStatusLogModel,
 	product productcontract.VariantSnapshotPort,
 	stock ordercontract.StockOperator,
+	guest usercontract.GuestAccountProvisioner,
 ) *Service {
-	return &Service{orders: orders, items: items, logs: logs, product: product, stock: stock}
+	return &Service{
+		orders: orders, items: items, logs: logs,
+		product: product, stock: stock, guest: guest,
+	}
 }
 
 // 编译期断言：本 service 实现模块对外契约。

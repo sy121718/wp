@@ -32,6 +32,8 @@ import (
 	projectdto "go_wp/internal/module/project/dto"
 	projectmodel "go_wp/internal/module/project/model"
 	projectservice "go_wp/internal/module/project/service"
+	usermodel "go_wp/internal/module/user/model"
+	userservice "go_wp/internal/module/user/service"
 
 	"go_wp/public/migrations"
 	"go_wp/public/test/support"
@@ -42,6 +44,8 @@ type orderFixture struct {
 	orders    *orderservice.Service
 	products  *productservice.Service
 	inventory *inventoryservice.Service
+	users     *userservice.Service
+	mail      *fakeMail
 	db        *gorm.DB
 	projectID string
 	warehouse string
@@ -78,15 +82,24 @@ func newOrderFixture(t *testing.T) *orderFixture {
 	if err != nil {
 		t.Fatalf("建默认仓失败: %v", err)
 	}
+	mail := &fakeMail{}
+	users := userservice.NewService(
+		usermodel.NewUserModel(db),
+		usermodel.NewUserSessionModel(db),
+		usermodel.NewUserProfileModel(db),
+		usermodel.NewUserPreferenceModel(db),
+		mail, "测试站",
+	)
 	orders := orderservice.NewService(
 		ordermodel.NewOrderModel(db),
 		ordermodel.NewOrderItemModel(db),
 		ordermodel.NewOrderStatusLogModel(db),
 		products,
 		inv,
+		users,
 	)
 	return &orderFixture{
-		orders: orders, products: products, inventory: inv,
+		orders: orders, products: products, inventory: inv, users: users, mail: mail,
 		db: db, projectID: project.ID, warehouse: wh.ID,
 	}
 }
@@ -416,7 +429,16 @@ func TestOrderPersistsAttributionAndAdminNote(t *testing.T) {
 		Session: orderdto.SessionInfo{
 			Entry: "/landing", Pages: 4, Count: 2, StartTime: "2026-09-12T10:00:00Z", DurationSeconds: 320,
 		},
-		Device:  orderdto.DeviceInfo{Type: "mobile", UserAgent: "UA/1.0", Screen: "390x844"},
+		Device: orderdto.DeviceInfo{Type: "mobile", UserAgent: "UA/1.0", Screen: "390x844"},
+		// 首次触点与本次会话来源**故意不同**：先点广告来、隔几天搜品牌词才下单，
+		// 两个口径必须各存各的，否则 first-touch 会被 last-touch 覆盖掉。
+		First: orderdto.FirstTouch{
+			SourceType: "referral",
+			Referrer:   "https://blog.example.com/post",
+			UTM:        orderdto.UTMInfo{Source: "weibo", Medium: "social", Campaign: "brand_awareness"},
+			Landing:    "/ad-landing",
+			At:         "2026-09-01T08:00:00Z",
+		},
 		Landing: "/",
 		Trail: []orderdto.TrailPage{
 			{URL: "/products/a", Title: "商品 A", At: "2026-09-12T10:02:11Z", Seconds: 42},
@@ -450,6 +472,13 @@ func TestOrderPersistsAttributionAndAdminNote(t *testing.T) {
 	}
 	if len(a.Trail) != 2 || a.Trail[0].URL != "/products/a" || a.Trail[1].Seconds != 8 {
 		t.Fatalf("下单前浏览轨迹应落库: %+v", a.Trail)
+	}
+	if a.First.SourceType != "referral" || a.First.UTM.Campaign != "brand_awareness" ||
+		a.First.Landing != "/ad-landing" || a.First.At != "2026-09-01T08:00:00Z" {
+		t.Fatalf("首次触点应独立落库（last-touch 与 first-touch 是两个口径）: %+v", a.First)
+	}
+	if a.First.UTM.Campaign == a.UTM.Campaign {
+		t.Fatalf("本用例里两个口径故意不同，若相等说明有一边被覆盖了")
 	}
 	if h.CreatedVia != ordermodel.CreatedViaAdmin {
 		t.Fatalf("下单入口应落库，实际 %q", h.CreatedVia)

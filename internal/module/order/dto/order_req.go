@@ -47,6 +47,8 @@ type CreateOrderReq struct {
 	CreatedVia string `json:"createdVia"`
 	// AdminNote 后台备注：自建订单（createdVia=admin）与代发订单的填写位置。
 	AdminNote string `json:"adminNote"`
+	// Locale 访客语言：决定自动开号的初始密码邮件用哪套模板（空 = 通用模板）。
+	Locale string `json:"locale"`
 	// Attribution 归因与轨迹（流量来源 / 广告参数 / 会话 / 下单前浏览轨迹）。
 	// 由 inbound 从访客追踪上下文组装，允许为 nil（后台代客下单没有访客上下文）。
 	Attribution *Attribution `json:"attribution"`

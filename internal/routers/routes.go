@@ -207,7 +207,8 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 	// 订单模块（BIZ-1 销售侧）：依赖两条**收窄过**的端口 —— product 的变体快照（只读，
 	// 一个方法）与 inventory 的扣减 / 归还（两个方法），不是各自模块的完整 Service。
 	// 建单会读商品事实落快照、并扣减库存，两者缺失都只能在建单那一刻失败，故不设可选依赖。
-	orderSvc := orderhttp.SetupOrderRoutes(authorizedAPI, db, productSvc, inventorySvc)
+	// guest 传 userSvc：订单用它为访客下单自动开号（收窄的单方法接口，见 user contract）。
+	orderSvc := orderhttp.SetupOrderRoutes(authorizedAPI, db, productSvc, inventorySvc, userSvc)
 	_ = orderSvc // 暂未被其它模块消费，保留契约返回值以示对外能力就绪
 	// 库存 model 注入商品用例（issue #32）：商品与库存合并为同一模块后，商品查询直接读
 	// 库存真源做**查询期投影**（不再有商品侧缓存列、同步台账与对账）。同模块内直调 model。

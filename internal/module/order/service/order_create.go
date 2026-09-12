@@ -28,6 +28,7 @@ import (
 	ordermodel "go_wp/internal/module/order/model"
 	productcontract "go_wp/internal/module/product/contract"
 	inventorydto "go_wp/internal/module/product/inventory/dto"
+	userdto "go_wp/internal/module/user/dto"
 )
 
 const (
@@ -148,6 +149,25 @@ func (s *Service) CreateOrder(ctx context.Context, req *orderdto.CreateOrderReq)
 	}
 	total := subtotal - discount + shipping
 
+	// 访客开号：该邮箱还没有账号就建一个（随机初始密码，邮件发给客户），并把新账号
+	// 关联到订单 —— 否则访客下完单无处可查自己的订单。
+	//
+	// 失败**不阻断下单**：订单是主体、账号是附赠能力；开号失败时订单照常落库、user_id 留空
+	// （客户仍可用这个邮箱走「忘记密码」自己开号）。
+	// 邮箱已有账号时只关联、**绝不改密码** —— 那条安全边界在 user 模块里守着。
+	userID := req.UserID
+	if userID == nil && s.guest != nil {
+		if gres, gerr := s.guest.EnsureGuestAccount(ctx, &userdto.GuestAccountReq{
+			Email:      email,
+			Name:       strings.TrimSpace(req.CustomerName),
+			Locale:     req.Locale,
+			RegisterIP: req.IPAddress,
+		}); gerr == nil && gres != nil && gres.UserID != 0 {
+			id := gres.UserID
+			userID = &id
+		}
+	}
+
 	orderNo, err := s.newOrderNo(ctx, projectID)
 	if err != nil {
 		return nil, err
@@ -157,7 +177,7 @@ func (s *Service) CreateOrder(ctx context.Context, req *orderdto.CreateOrderReq)
 		ProjectID:          projectID,
 		OrderNo:            orderNo,
 		Status:             ordermodel.OrderStatusPending,
-		UserID:             req.UserID,
+		UserID:             userID,
 		CustomerEmail:      email,
 		CustomerName:       strings.TrimSpace(req.CustomerName),
 		CustomerPhone:      strings.TrimSpace(req.CustomerPhone),

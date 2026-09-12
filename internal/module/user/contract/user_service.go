@@ -14,6 +14,11 @@ import (
 // 也是「模板写好了但没人用」与「真的被业务用上」之间的差别。
 // admin 侧 CRUD 与用户侧登录 / 账号中心属 #36 的后续部分，未在此接口内。
 type UserService interface {
+	// GuestAccountProvisioner 来访客下单自动开号（单方法接口）。
+	// 嵌进来的理由同 product 的 VariantSnapshotPort：装配处拿到的 UserService
+	// 天然也能当开号端口传给订单模块，不必再做类型断言。
+	GuestAccountProvisioner
+
 	// Register 注册：写用户（待激活）并发送验证邮件。
 	//
 	// 邮件发送失败**不回滚注册** —— 用户已经建好了，验证邮件可以重发；
@@ -29,6 +34,19 @@ type UserService interface {
 	RequestPasswordReset(ctx context.Context, req *userdto.PasswordResetReqRequest) error
 	// ResetPassword 用重置码改密。
 	ResetPassword(ctx context.Context, req *userdto.ResetPasswordReq) error
+}
+
+// GuestAccountProvisioner 供订单域为访客下单自动开号。
+//
+// 单独一个接口而不是并进 UserService：订单只需要这一条能力，而 UserService 是访客侧的
+// 完整契约（注册 / 激活 / 登录 / 重置 / 账号中心）。理由同下面的 MailSender ——
+// 依赖面越小，越不容易在不经意间用上不该用的能力。
+type GuestAccountProvisioner interface {
+	// EnsureGuestAccount 确保 email 对应账号存在。
+	//
+	// 不存在才建号（随机初始密码，经邮件发给客户）；**已存在则只返回既有账号，
+	// 绝不触碰它的密码** —— 否则任何人拿别人邮箱下一单就能把对方密码换掉。
+	EnsureGuestAccount(ctx context.Context, req *userdto.GuestAccountReq) (res *userdto.GuestAccountResp, err error)
 }
 
 // MailSender 用户模块需要的邮件能力 —— **只有发送这一条**。

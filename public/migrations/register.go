@@ -336,6 +336,9 @@ var orderTablesSQL string
 //go:embed 136_order_permissions.sql
 var orderPermsSQL string
 
+//go:embed 137_guest_account_template.sql
+var guestAccountTemplateSQL string
+
 func init() {
 	register(Migration{
 		Version:   "001-init-schema",
@@ -1472,5 +1475,13 @@ func init() {
 			"'order:list', 'order:get', 'order:create', 'order:status', " +
 			"'order:cancel', 'order:refund', 'order:item_list', 'order:log_list')",
 		SQL: orderPermsSQL,
+	})
+
+	// 137：访客下单自动开号用的「初始密码」邮件模板。
+	registerSeed(Seed{
+		Version:      "137-guest-account-template",
+		TableName:    "mail_templates",
+		ConditionSQL: "SELECT COUNT(*) FROM mail_templates WHERE template_key = 'guest_account'",
+		SQL:          guestAccountTemplateSQL,
 	})
 }
