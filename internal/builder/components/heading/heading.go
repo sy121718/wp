@@ -5,6 +5,7 @@
 package heading
 
 import (
+	_ "embed" // heading.css 经 //go:embed 打进二进制
 	"fmt"
 	"regexp"
 	"strconv"
@@ -179,137 +180,131 @@ func textAnimOn(p *Props) bool {
 	return p.TextAnim != "" && p.HighlightColor == ""
 }
 
+// headingCSS 组件样式源。与组件同目录：改样式不必再进 Go 字符串数组
+// （有补全 / lint / 格式化），而作用域替换、桶划分、确定性输出仍由构建期负责。
+//
+//go:embed heading.css
+var headingCSS string
+
+// typoDecls 把某一端的排版组声明拼成可交给样式源的「多条声明」字符串。
+func typoDecls(p *Props, bp string) string {
+	return strings.Join(p.Typography.BreakpointDecls(bp), "; ")
+}
+
+// boolVar 条件段变量的真值形态（非空即真）。
+func boolVar(v bool) string {
+	if v {
+		return "1"
+	}
+	return ""
+}
+
+// segDelay 分段延迟值：未开启文本动画时返回空串（空值让对应声明省略）。
+func segDelay(on bool, ms int) string {
+	if !on {
+		return ""
+	}
+	return fmt.Sprintf("%dms", ms)
+}
+
 // compileCSS 标题样式：排版组三端声明 + 字重/间距/转换/装饰/颜色/截断/阴影。
+//
+// 与迁移前的差别只在「值怎么算、声明怎么拼」：值与分支判定仍在 Go（白名单、字号预设、
+// 描边库、逐段延迟），属性的组合与可选性全部搬进 heading.css。
 func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	sel := "." + core.NodeClass(id)
 
-	var desktop, tablet, mobile []string
-	desktop = append(desktop, p.Typography.BreakpointDecls(core.BreakpointDesktop)...)
-	tablet = append(tablet, p.Typography.BreakpointDecls(core.BreakpointTablet)...)
-	mobile = append(mobile, p.Typography.BreakpointDecls(core.BreakpointMobile)...)
-
-	if w, err := resolveWeight(p.Weight); err == nil && w != "" {
-		desktop = append(desktop, core.CSSDecl("font-weight", w))
+	weight := ""
+	if w, err := resolveWeight(p.Weight); err == nil {
+		weight = w
 	}
-	if p.LetterSpacing != "" {
-		desktop = append(desktop, core.CSSDecl("letter-spacing", p.LetterSpacing))
-	}
+	transform := ""
 	if p.Transform != "" && p.Transform != "none" {
-		desktop = append(desktop, core.CSSDecl("text-transform", p.Transform))
+		transform = p.Transform
 	}
+	decoration := ""
 	if p.Decor.Decoration != "" && p.Decor.Decoration != "none" {
-		decl := core.CSSDecl("text-decoration", p.Decor.Decoration)
+		decoration = core.CSSDecl("text-decoration", p.Decor.Decoration)
 		if p.Decor.DecorationColor != "" {
-			decl += " " + p.Decor.DecorationColor
+			decoration += " " + p.Decor.DecorationColor
 		}
-		desktop = append(desktop, decl)
 	}
-	if p.Color != "" {
-		desktop = append(desktop, core.CSSDecl("color", p.Color))
-	}
+	textShadow := ""
 	if v, ok := textShadowPresets[p.TextShadow]; p.TextShadow != "" && ok {
-		desktop = append(desktop, core.CSSDecl("text-shadow", v))
+		textShadow = v
 	}
-	// 标题平衡换行（现代 CSS，H5 窄屏长标题观感提升；不支持的浏览器自动忽略）。
-	desktop = append(desktop, "text-wrap: balance")
-	// 文字描边（效果基本库 core.TextStrokeDecls，分类目录文本 FX）。
+	// 文字描边（效果基本库 core.TextStrokeDecls，分类目录文本 FX）—— 返回一组声明。
+	stroke := ""
 	switch p.TextStroke {
 	case "thin":
-		desktop = append(desktop, core.TextStrokeDecls("1px", "currentColor")...)
+		stroke = strings.Join(core.TextStrokeDecls("1px", "currentColor"), "; ")
 	case "bold":
-		desktop = append(desktop, core.TextStrokeDecls("2px", "currentColor")...)
+		stroke = strings.Join(core.TextStrokeDecls("2px", "currentColor"), "; ")
 	}
 
-	// 副标题样式（默认基底 + 用户覆盖：颜色/字号/字重/间距）。
-	subDecls := []string{
-		"display: block", "font-size: 0.62em", "font-weight: 500",
-		"letter-spacing: 0.08em", "text-transform: uppercase",
-		"margin-bottom: 0.4em", "opacity: .7",
-	}
-	if p.SubtitleFontSize != "" {
-		subDecls = append(subDecls, core.CSSDecl("font-size", p.SubtitleFontSize), "opacity: 1")
-	}
-	if p.SubtitleFontWeight != "" {
-		subDecls = append(subDecls, core.CSSDecl("font-weight", p.SubtitleFontWeight))
-	}
-	if p.SubtitleSpacing != "" {
-		subDecls = append(subDecls, core.CSSDecl("margin-bottom", p.SubtitleSpacing))
-	}
-	// 副标题在 DOM 中是根元素的**前置兄弟**（heading.jet：subtitle 在标题标签之前），
-	// 因此后代选择器 sel+" .sky-heading-sub" 永远匹配不到任何元素 —— 副标题的颜色、
-	// 字号、字重、间距此前全部静默失效。用 :has() 从副标题侧反向限定到本节点。
-	subSel := ".sky-heading-sub:has(+ " + sel + ")"
-	b.Add(core.BreakpointDesktop, subSel, subDecls)
-	if p.SubtitleColor != "" {
-		b.Add(core.BreakpointDesktop, subSel, []string{core.CSSDecl("color", p.SubtitleColor), "opacity: 1"})
-	}
-	// 高亮背景盒。
-	if p.HighlightColor != "" {
-		hl := []string{core.CSSDecl("background", p.HighlightColor)}
-		if p.HighlightPadding != "" {
-			hl = append(hl, core.CSSDecl("padding", p.HighlightPadding))
-		}
-		if p.HighlightRadius != "" {
-			hl = append(hl, core.CSSDecl("border-radius", p.HighlightRadius))
-		}
-		b.Add(core.BreakpointDesktop, sel+" .sky-heading-highlight", hl)
-	}
-	// 对齐与宽度（三端）。
-	appendAlign := func(target *[]string, a string) {
+	alignOf := func(a string) string {
 		switch a {
-		case "left":
-			*target = append(*target, "text-align: left")
-		case "center":
-			*target = append(*target, "text-align: center")
-		case "right":
-			*target = append(*target, "text-align: right")
+		case "left", "center", "right":
+			return a
 		}
+		return ""
 	}
-	appendAlign(&desktop, p.Align.Desktop)
-	appendAlign(&tablet, p.Align.Tablet)
-	appendAlign(&mobile, p.Align.Mobile)
-	appendWidth := func(target *[]string, w string) {
+	widthOf := func(w string) string {
 		if w != "" && core.IsSafeCSSValue(w) {
-			*target = append(*target, core.CSSDecl("width", w))
+			return w
 		}
-	}
-	appendWidth(&desktop, p.Width.Desktop)
-	appendWidth(&tablet, p.Width.Tablet)
-	appendWidth(&mobile, p.Width.Mobile)
-
-	b.Add(core.BreakpointDesktop, sel, desktop)
-	b.Add(core.BreakpointTablet, sel, tablet)
-	b.Add(core.BreakpointMobile, sel, mobile)
-
-	// 多行截断：-webkit-box 标准组合。
-	// 文本动画（逐字/逐词错落入场）：分段 span 自左向右递增延迟。
-	// 前 20 段逐段递增；第 21 段起用统一档位兜底（避免为长标题生成大量规则）。
-	if textAnimOn(p) {
-		delay := p.TextAnimDelay
-		if delay <= 0 {
-			delay = 40
-		}
-		b.Add(core.BreakpointDesktop, sel+" .sky-h-seg", []string{
-			"display: inline-block",
-			"white-space: pre",
-			"animation: sky-fade-up 0.6s ease backwards",
-		})
-		for i := 1; i <= 20; i++ {
-			b.Add(core.BreakpointDesktop, fmt.Sprintf("%s .sky-h-seg:nth-child(%d)", sel, i),
-				[]string{fmt.Sprintf("animation-delay: %dms", (i-1)*delay)})
-		}
-		b.Add(core.BreakpointDesktop, sel+" .sky-h-seg:nth-child(n+21)",
-			[]string{fmt.Sprintf("animation-delay: %dms", 20*delay)})
-		b.NeedKeyframes("sky-fade-up")
+		return ""
 	}
 
+	anim := textAnimOn(p)
+	delay := p.TextAnimDelay
+	if delay <= 0 {
+		delay = 40
+	}
+	clamp := ""
 	if p.LineClamp > 0 {
-		b.Add(core.BreakpointDesktop, sel, []string{
-			"display: -webkit-box",
-			fmt.Sprintf("-webkit-line-clamp: %d", p.LineClamp),
-			"-webkit-box-orient: vertical",
-			"overflow: hidden",
-		})
+		clamp = strconv.Itoa(p.LineClamp)
+	}
+
+	vars := map[string]string{
+		// scope 供 @global 规则把「副标题的前置兄弟」限定到本实例。
+		"scope":           sel,
+		"typo_desktop":    typoDecls(p, core.BreakpointDesktop),
+		"typo_tablet":     typoDecls(p, core.BreakpointTablet),
+		"typo_mobile":     typoDecls(p, core.BreakpointMobile),
+		"weight":          weight,
+		"letter_spacing":  p.LetterSpacing,
+		"transform":       transform,
+		"decoration":      decoration,
+		"color":           p.Color,
+		"text_shadow":     textShadow,
+		"stroke":          stroke,
+		"align_desktop":   alignOf(p.Align.Desktop),
+		"align_tablet":    alignOf(p.Align.Tablet),
+		"align_mobile":    alignOf(p.Align.Mobile),
+		"width_desktop":   widthOf(p.Width.Desktop),
+		"width_tablet":    widthOf(p.Width.Tablet),
+		"width_mobile":    widthOf(p.Width.Mobile),
+		"hl_color":        p.HighlightColor,
+		"hl_padding":      p.HighlightPadding,
+		"hl_radius":       p.HighlightRadius,
+		"sub_font_size":   p.SubtitleFontSize,
+		"sub_font_weight": p.SubtitleFontWeight,
+		"sub_spacing":     p.SubtitleSpacing,
+		"sub_color":       p.SubtitleColor,
+		"text_anim":       boolVar(anim),
+		"clamp":           clamp,
+	}
+	// 逐段延迟：前 20 段逐段递增；第 21 段起用统一档位兜底（避免为长标题生成大量规则）。
+	// 未开启文本动画时全部留空 —— 空值让那 21 条延迟规则整体不产出（迁移前是 if 包住整段）。
+	for i := 1; i <= 20; i++ {
+		vars[fmt.Sprintf("seg_d%d", i)] = segDelay(anim, (i-1)*delay)
+	}
+	vars["seg_d21"] = segDelay(anim, 20*delay)
+
+	if err := core.ApplyComponentCSSTmpl(b, sel, headingCSS, vars); err != nil {
+		// 样式源解析失败属于构建期缺陷，必须在测试/构建时暴露；静默跳过的后果是产物悄悄少了样式。
+		panic(fmt.Sprintf("heading 组件样式解析失败: %v", err))
 	}
 }
 

@@ -174,3 +174,25 @@ func TestComponentCSSVarsInsideMedia(t *testing.T) {
 		t.Errorf("断点块内的条件段未生效:\n%s", out)
 	}
 }
+
+// TestComponentCSSSelectorShapes 选择器提取必须同时吃下两种形态。
+//
+// 多行规则的花括号在行尾，单行规则的花括号在中间；而选择器本身又可能含 {{变量}}
+// （:has(+ {{scope}}) 这类反向限定），一律取「第一个花括号」会把选择器从中间截断。
+func TestComponentCSSSelectorShapes(t *testing.T) {
+	const src = "@global .sub:has(+ {{scope}}) {\n  color: #000;\n}\n" +
+		"& .one { display: block; }\n"
+	var b CSSBuckets
+	if err := ApplyComponentCSSTmpl(&b, ".sky-c-t", src, map[string]string{"scope": ".sky-c-t"}); err != nil {
+		t.Fatalf("解析失败: %v", err)
+	}
+	out := b.String()
+	for _, want := range []string{
+		".sub:has(+ .sky-c-t) {",
+		".sky-c-t .one {\n  display: block;",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("产物缺少 %q\n%s", want, out)
+		}
+	}
+}

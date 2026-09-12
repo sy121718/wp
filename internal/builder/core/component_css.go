@@ -131,7 +131,7 @@ func (p *cssSourceParser) run() error {
 		// @keyframes：整体取出（含花括号内部），交给 AddKeyframes。
 		if strings.HasPrefix(line, "@keyframes ") {
 			name := strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(line, "@keyframes "), "{"))
-			body, next, err := collectBlock(lines, i, line)
+			body, next, err := collectBlock(lines, i, line, strings.Index(line, "{"))
 			if err != nil {
 				return cssApplyError(i+1, "%v", err)
 			}
@@ -141,7 +141,7 @@ func (p *cssSourceParser) run() error {
 		}
 		// @media：块内是普通规则，按其断点归桶。
 		if strings.HasPrefix(line, "@media") {
-			body, next, err := collectBlock(lines, i, line)
+			body, next, err := collectBlock(lines, i, line, strings.Index(line, "{"))
 			if err != nil {
 				return cssApplyError(i+1, "%v", err)
 			}
@@ -160,11 +160,19 @@ func (p *cssSourceParser) run() error {
 		if !strings.Contains(line, "{") {
 			return cssApplyError(i+1, "看不懂这一行（期望「选择器 {」或 @media/@keyframes）：%q", line)
 		}
-		// 取**第一个** { 之前的内容作选择器：既支持多行格式（"sel {"），
-		// 也支持单行规则（"sel { a: 1; b: 2; }"）—— 后者用 TrimSuffix(line, "{") 会拿到整行，
-		// 于是选择器里混进声明文本，产物看起来「多了个奇怪的选择器」而样式全部失效。
-		selector := strings.TrimSpace(line[:strings.Index(line, "{")])
-		body, next, err := collectBlock(lines, i, line)
+		// 选择器提取分两种形态：
+		//   · 多行格式（"sel {"）：去掉行尾的 {；
+		//   · 单行规则（"sel { a: 1; b: 2; }"）：取第一个 { 之前 —— 用 TrimSuffix 会拿到整行，
+		//     于是选择器里混进声明文本，产物看起来「多了个奇怪的选择器」而样式全部失效。
+		// **不能一律取第一个 {**：选择器里可能有 {{变量}} 占位（如 :has(+ {{scope}})），
+		// 那会让 { 提前出现，把选择器从中间截断成 "@global .x:has(+ "。
+		var selector string
+		braceAt := strings.Index(line, "{")
+		if strings.HasSuffix(line, "{") {
+			braceAt = len(line) - 1
+		}
+		selector = strings.TrimSpace(line[:braceAt])
+		body, next, err := collectBlock(lines, i, line, braceAt)
 		if err != nil {
 			return cssApplyError(i+1, "%v", err)
 		}
@@ -298,6 +306,17 @@ func (p *cssSourceParser) parseDecls(body string) ([]string, error) {
 				}
 				continue
 			}
+			// @need-keyframes <name>：登记「本组件用到某个内建关键帧」，本身不产出声明。
+			// 动效词汇表白名单留在 Go（安全检查与 prefers-reduced-motion 判定都在那边），
+			// 这里只是把「需要哪一帧」这件事从 Go 代码挪到样式源里 —— 与 @focus-ring 同思路。
+			if strings.HasPrefix(d, "@need-keyframes ") {
+				name := strings.TrimSpace(strings.TrimPrefix(d, "@need-keyframes "))
+				if name == "" {
+					return nil, fmt.Errorf("@need-keyframes 缺少名称")
+				}
+				p.buckets.NeedKeyframes(name)
+				continue
+			}
 			// 占位指令：Go 侧计算的声明（保持「一份实现」）。
 			switch d {
 			case "@focus-ring":
@@ -383,15 +402,20 @@ func truthy(v string) bool {
 }
 
 // collectBlock 从 start 行开始收集花括号块的内容（不含最外层花括号），返回内容与下一行下标。
-func collectBlock(lines []string, start int, firstLine string) (string, int, error) {
-	depth := strings.Count(firstLine, "{") - strings.Count(firstLine, "}")
+//
+// braceAt 是**规则块那个 {** 的下标，由调用方给出：选择器里可能出现 {{变量}} 占位
+// （如 :has(+ {{scope}})），自行用 strings.Index 找第一个花括号会在那对占位花括号上找错位置。
+func collectBlock(lines []string, start int, firstLine string, braceAt int) (string, int, error) {
+	if braceAt < 0 || braceAt >= len(firstLine) {
+		return "", start, fmt.Errorf("规则块缺少起始花括号")
+	}
+	block := firstLine[braceAt:]
+	depth := strings.Count(block, "{") - strings.Count(block, "}")
 	var buf []string
 	// 第一行花括号之后的内容属于块内。
-	if idx := strings.Index(firstLine, "{"); idx >= 0 {
-		rest := strings.TrimSpace(firstLine[idx+1:])
-		if rest != "" && rest != "}" {
-			buf = append(buf, strings.TrimSuffix(rest, "}"))
-		}
+	rest := strings.TrimSpace(firstLine[braceAt+1:])
+	if rest != "" && rest != "}" {
+		buf = append(buf, strings.TrimSuffix(rest, "}"))
 	}
 	if depth == 0 {
 		return strings.Join(buf, "\n"), start + 1, nil

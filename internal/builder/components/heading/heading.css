@@ -1,0 +1,124 @@
+/* heading.css — 标题组件样式（来源：原 heading.go 的 compileCSS）。
+ *
+ * 语法见 internal/builder/core/component_css.go。
+ * 排版组三端由 Go 侧 core.TextStyle 算出（一组声明），经值变量整组传入；
+ * 可选属性一律由「空值省略整条声明」承担，未配置的规则整体不产出。
+ */
+
+/* 副标题：在 DOM 中是根元素的**前置兄弟**（heading.jet：subtitle 在标题标签之前），
+ * 因此后代选择器 & .sky-heading-sub 永远匹配不到任何元素 —— 副标题的颜色、字号、
+ * 字重、间距曾因此全部静默失效。这里用 :has() 从副标题侧反向限定到本节点。
+ * {{scope}} 就是本实例的作用域选择器（@global 不做 & 替换，但仍展开变量）。 */
+@global .sky-heading-sub:has(+ {{scope}}) {
+  display: block;
+  font-size: 0.62em;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-bottom: 0.4em;
+  opacity: .7;
+
+  /* 用户覆盖：配了字号时同时把 opacity 提满（默认 0.7 是给「小字副题」的视觉退让）。 */
+  @if sub_font_size
+  font-size: {{sub_font_size}};
+  opacity: 1;
+  @endif
+  @if sub_font_weight
+  font-weight: {{sub_font_weight}};
+  @endif
+  @if sub_spacing
+  margin-bottom: {{sub_spacing}};
+  @endif
+}
+
+/* 副标题颜色：单独一条规则（与基座同选择器但声明不同，产物里是两段）。 */
+@global .sky-heading-sub:has(+ {{scope}}) {
+  color: {{sub_color}};
+  @if sub_color
+  opacity: 1;
+  @endif
+}
+
+/* 高亮背景盒：未配高亮色则三点全空，整条规则不产出。 */
+& .sky-heading-highlight {
+  background: {{hl_color}};
+  padding: {{hl_padding}};
+  border-radius: {{hl_radius}};
+}
+
+/* 标题主体（桌面端）：排版组 + 字重/间距/转换/装饰/颜色/阴影/描边 + 对齐 + 宽度。
+ * text-wrap: balance 是无条件的（现代 CSS 的平衡换行，不支持的浏览器忽略）。 */
+& {
+  {{typo_desktop}};
+  font-weight: {{weight}};
+  letter-spacing: {{letter_spacing}};
+  text-transform: {{transform}};
+  {{decoration}};
+  color: {{color}};
+  text-shadow: {{text_shadow}};
+  text-wrap: balance;
+  {{stroke}};
+  text-align: {{align_desktop}};
+  width: {{width_desktop}};
+}
+
+/* 平板 / 手机：各自的排版组、对齐与宽度。 */
+@media (max-width: 1024px) {
+  & {
+    {{typo_tablet}};
+    text-align: {{align_tablet}};
+    width: {{width_tablet}};
+  }
+}
+
+@media (max-width: 767px) {
+  & {
+    {{typo_mobile}};
+    text-align: {{align_mobile}};
+    width: {{width_mobile}};
+  }
+}
+
+/* 文本动画：分段 span 自左向右递增延迟（错落入场）。
+ * 关键帧「需要哪一帧」由 @need-keyframes 登记 —— 动效词汇表白名单仍留在 Go。
+ * 未开启文本动画时所有 seg_* 变量为空，基线规则与 21 条延迟规则整体不产出。 */
+& .sky-h-seg {
+  @if text_anim
+  display: inline-block;
+  white-space: pre;
+  animation: sky-fade-up 0.6s ease backwards;
+  @need-keyframes sky-fade-up;
+  @endif
+}
+
+& .sky-h-seg:nth-child(1) { animation-delay: {{seg_d1}}; }
+& .sky-h-seg:nth-child(2) { animation-delay: {{seg_d2}}; }
+& .sky-h-seg:nth-child(3) { animation-delay: {{seg_d3}}; }
+& .sky-h-seg:nth-child(4) { animation-delay: {{seg_d4}}; }
+& .sky-h-seg:nth-child(5) { animation-delay: {{seg_d5}}; }
+& .sky-h-seg:nth-child(6) { animation-delay: {{seg_d6}}; }
+& .sky-h-seg:nth-child(7) { animation-delay: {{seg_d7}}; }
+& .sky-h-seg:nth-child(8) { animation-delay: {{seg_d8}}; }
+& .sky-h-seg:nth-child(9) { animation-delay: {{seg_d9}}; }
+& .sky-h-seg:nth-child(10) { animation-delay: {{seg_d10}}; }
+& .sky-h-seg:nth-child(11) { animation-delay: {{seg_d11}}; }
+& .sky-h-seg:nth-child(12) { animation-delay: {{seg_d12}}; }
+& .sky-h-seg:nth-child(13) { animation-delay: {{seg_d13}}; }
+& .sky-h-seg:nth-child(14) { animation-delay: {{seg_d14}}; }
+& .sky-h-seg:nth-child(15) { animation-delay: {{seg_d15}}; }
+& .sky-h-seg:nth-child(16) { animation-delay: {{seg_d16}}; }
+& .sky-h-seg:nth-child(17) { animation-delay: {{seg_d17}}; }
+& .sky-h-seg:nth-child(18) { animation-delay: {{seg_d18}}; }
+& .sky-h-seg:nth-child(19) { animation-delay: {{seg_d19}}; }
+& .sky-h-seg:nth-child(20) { animation-delay: {{seg_d20}}; }
+& .sky-h-seg:nth-child(n+21) { animation-delay: {{seg_d21}}; }
+
+/* 多行截断：单独一条规则（与标题主体同选择器但声明不同，产物里是两段）。 */
+& {
+  @if clamp
+  display: -webkit-box;
+  -webkit-line-clamp: {{clamp}};
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  @endif
+}
