@@ -294,6 +294,9 @@ var dropCachePermissionsSQL string
 //go:embed 073_blueprint_ddl_align.sql
 var blueprintDDLAlignSQL string
 
+//go:embed 123_user.sql
+var userSQL string
+
 func init() {
 	register(Migration{
 		Version:   "001-init-schema",
@@ -1295,5 +1298,15 @@ func init() {
 			"AND (SELECT COUNT(*) FROM pg_constraint pc JOIN target_constraints tc ON tc.oid = pc.oid " +
 			"WHERE pg_get_constraintdef(pc.oid) LIKE '%i18n%') = 2 THEN 1 ELSE 0 END",
 		SQL: dependencyFanoutSQL,
+	})
+
+	// 123：访客账号模块（issue #36）。七张表一次性建（identity / profile / preferences /
+	// roles / sessions / app passwords / meta），CheckSQL 以 users 表存在判定。
+	register(Migration{
+		Version:   "123-user",
+		TableName: "users",
+		CheckSQL: "SELECT CASE WHEN EXISTS (SELECT 1 FROM information_schema.tables " +
+			"WHERE table_schema = current_schema() AND table_name = ?) THEN 1 ELSE 0 END",
+		SQL: userSQL,
 	})
 }
