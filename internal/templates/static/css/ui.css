@@ -328,24 +328,79 @@ table.data-table { width: 100%; border-collapse: collapse; font-size: 14px; }
     color: var(--c-text-secondary);
 }
 .form-label .req { color: var(--c-danger); }
+/* 原始控件：输入 / 下拉 / 多行文本。
+ *
+ * 这一层是**唯一视觉来源**。以前 theme.css 里逐页又写了一版（.pages-form input、
+ * .attr-form-head input、.locale-add input …十几处），结果两套字号不同、focus 态只有一份、
+ * 语义色还写死成蓝色（--c-primary 是深灰）。现在的规则是：
+ *   · 视觉（尺寸 / 边框 / 圆角 / 焦点 / 禁用）只在这里定义一次；
+ *   · 各页面的容器规则**只允许写布局差异**（宽度、间距、排列），不再重复写视觉；
+ *   · 新页面直接用 class="form-input" / "form-select"，不要依赖容器选择器 ——
+ *     依赖容器的写法正是「换个地方用就掉样式」的根源。
+ */
+/* 存量桥接：老页面靠**容器类**上样式（.pages-form input / .attr-form-head input …）。
+ * 把容器选择器也列进同一组规则，视觉仍然只有这一处定义，存量页面不会掉样式。
+ *
+ * 新页面请直接用 class="form-input" / "form-select" —— 桥接只为存量，不再扩大使用面。
+ * 逐页迁移的进度与规则见 docs/02-F-ui-kit.md §10。
+ */
 .form-input,
 .form-select,
-.form-textarea {
+.form-textarea,
+.pages-form input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]):not([type="submit"]):not([type="button"]),
+.pages-form select,
+.pages-form textarea,
+.attr-form-head input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),
+.attr-form-head select,
+.attr-form-head textarea,
+.locale-add input {
     width: 100%;
     padding: var(--ui-sp-sm) var(--ui-sp-md);
     background: var(--c-bg);
     border: 1px solid var(--c-border-input);
     border-radius: var(--ui-r-sm);
     color: var(--c-text);
-    font-size: 14px;
+    /* 13px：与后台既有观感一致（此前 theme.css 各页写的是 13px，改基座比改十几个页面稳）。 */
+    font-size: 13px;
     transition: border-color var(--ui-tr-fast), box-shadow var(--ui-tr-fast);
     outline: none;
 }
+/* 键盘可见焦点：鼠标点击不显得脏，Tab 进来必须看得见（无障碍硬要求）。 */
+.form-input:focus-visible,
+.form-select:focus-visible,
+.form-textarea:focus-visible,
+.pages-form input:focus-visible,
+.pages-form select:focus-visible,
+.attr-form-head input:focus-visible {
+    outline: 2px solid var(--c-primary);
+    outline-offset: 1px;
+}
 .form-input:focus,
 .form-select:focus,
-.form-textarea:focus {
+.form-textarea:focus,
+.pages-form input:focus,
+.pages-form select:focus,
+.attr-form-head input:focus,
+.attr-form-head select:focus {
     border-color: var(--c-primary);
     box-shadow: 0 0 0 3px var(--c-primary-bg);
+}
+.form-input:disabled,
+.form-select:disabled,
+.form-textarea:disabled {
+    opacity: .6;
+    cursor: not-allowed;
+    background: var(--c-bg-hover, #f4f5f7);
+}
+/* 校验失败（服务端回填 aria-invalid 时）：边框与提示同一套语义色。 */
+.form-input[aria-invalid="true"],
+.form-select[aria-invalid="true"],
+.form-textarea[aria-invalid="true"] {
+    border-color: var(--c-danger);
+}
+.form-input[aria-invalid="true"]:focus,
+.form-select[aria-invalid="true"]:focus {
+    box-shadow: 0 0 0 3px rgb(179 74 74 / 15%);
 }
 .form-input::placeholder { color: var(--c-text-faint); }
 .form-textarea { resize: vertical; min-height: 100px; }

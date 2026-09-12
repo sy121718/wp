@@ -33,13 +33,13 @@
     <aside class="auto-side" id="autoSide">
       <p class="auto-hint" id="autoSideHint">点一个节点（或按 Tab 选中后按 Enter）在这里改它的参数与出边。</p>
       <form id="autoNodeForm" class="auto-form" hidden>
-        <p><label>节点标识 <input type="text" id="fKey" readonly></label></p>
-        <p><label>类型 <input type="text" id="fType" readonly></label></p>
-        <p><label>参数 <input type="text" id="fParam"></label></p>
+        <p><label>节点标识 <input type="text" id="fKey" class="form-input" readonly></label></p>
+        <p><label>类型 <input type="text" id="fType" class="form-input" readonly></label></p>
+        <p><label>参数 <input type="text" id="fParam" class="form-input"></label></p>
         <p class="auto-hint" id="fParamHint"></p>
-        <p><label>下一步 <select id="fNext"></select></label></p>
-        <p><label>条件为真走（yes） <select id="fYes"></select></label></p>
-        <p><label>条件为假走（no） <select id="fNo"></select></label></p>
+        <p><label>下一步 <select id="fNext" class="form-select"></select></label></p>
+        <p><label>条件为真走（yes） <select id="fYes" class="form-select"></select></label></p>
+        <p><label>条件为假走（no） <select id="fNo" class="form-select"></select></label></p>
         <p class="auto-hint">
           改完点下面的「保存结构」——它会走和表单页<strong>同一套图校验</strong>
           （有环、指向不存在的节点、走不到的节点都会被拒绝）。

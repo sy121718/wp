@@ -86,7 +86,9 @@
 }
 .auto-form p { margin: 6px 0; }
 .auto-form label { display: block; font-size: 13px; }
-.auto-form input, .auto-form select { width: 100%; box-sizing: border-box; }
+/* 控件视觉不在这里写：用 ui.css 的 .form-input / .form-select（唯一视觉来源）。
+   之前这里只写了 width，结果侧栏输入框的边框/圆角/焦点态全靠浏览器默认 ——
+   看起来就像「掉样式」。 */
 
 /* 键盘移动时的即时反馈（不依赖任何动画库）。 */
 .auto-node[data-moved="1"] { box-shadow: 0 0 0 4px rgb(47 111 237 / 25%); }

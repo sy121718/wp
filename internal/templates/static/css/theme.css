@@ -160,16 +160,17 @@ button, input, select, textarea { font: inherit; color: inherit; }
     border-radius: 12px; padding: 20px 24px;
 }
 .pages-card h2 { margin: 0 0 14px; font-size: 16px; }
-.pages-form { display: flex; flex-wrap: wrap; gap: 8px; }
-.pages-form input, .pages-form select {
-    padding: 8px 10px; font-size: 13px; border: 1px solid var(--c-border, #e5e7eb);
-    border-radius: 8px; background: var(--c-surface, #fff); color: inherit; min-width: 220px;
-}
-.pages-form .btn {
-    padding: 8px 16px; font-size: 13px; border-radius: 8px; cursor: pointer;
-    border: 1px solid var(--c-border, #e5e7eb); background: var(--c-surface, #fff);
-}
-.pages-form .btn-primary { background: var(--c-primary, #2563eb); color: #fff; border-color: transparent; }
+/* 表单容器：**只负责布局**（flex 换行 + 间距），视觉一律交给 ui.css 的原始控件层。
+ *
+ * 这里曾经逐项写着 padding / border / radius / font-size，还有一条把主按钮写死成蓝色
+ * （#2563eb）—— 而 --c-primary 是深灰 #3d444f，于是同一个主题下「表单里的主按钮」
+ * 和「其它地方的主按钮」颜色不一样。控件视觉只该有一处定义。
+ *
+ * 保留 min-width 是因为它是**布局约束**（小输入框也要有个可用宽度），不是视觉。
+ */
+.pages-form { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.pages-form input:not([type="checkbox"]):not([type="radio"]),
+.pages-form select { min-width: 220px; }
 .pages-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .pages-table th, .pages-table td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--c-border, #e5e7eb); }
 .pages-table th { color: var(--c-text-mute, #6b7280); font-weight: 500; font-size: 12px; }
