@@ -35,6 +35,10 @@ CREATE TABLE IF NOT EXISTS mail_contacts (
     -- 明确同意的时间与来源（合规留痕，退订/投诉时保留原值以便追溯）
     subscribed_at   TIMESTAMP(3),
     consent_source  VARCHAR(64),
+    -- 标签：分组用。用 PG 原生数组而不是关联表 —— 营销里一个人会有多个标签、
+    -- 且要按标签动态筛人群（tags @> ARRAY['vip'] 走 GIN 索引），
+    -- 比「列表 + 成员表」少两张表、查询更直接。
+    tags            TEXT[]       NOT NULL DEFAULT '{}',
     -- 导入来的杂字段与自定义属性（结构化字段放列，其余进这里，与 user_meta 同一判据）
     attributes      JSONB,
     last_activity_at TIMESTAMP(3),
@@ -44,40 +48,20 @@ CREATE TABLE IF NOT EXISTS mail_contacts (
 -- 一个邮箱一个联系人（大小写不敏感）
 CREATE UNIQUE INDEX IF NOT EXISTS idx_mail_contacts_email ON mail_contacts (lower(email));
 CREATE INDEX IF NOT EXISTS idx_mail_contacts_status ON mail_contacts (status);
+CREATE INDEX IF NOT EXISTS idx_mail_contacts_tags ON mail_contacts USING GIN (tags);
 CREATE INDEX IF NOT EXISTS idx_mail_contacts_user_id ON mail_contacts (user_id) WHERE user_id IS NOT NULL;
 
--- 2. mail_lists —— 列表
-CREATE TABLE IF NOT EXISTS mail_lists (
-    id          BIGSERIAL    PRIMARY KEY,
-    name        VARCHAR(100) NOT NULL,
-    description VARCHAR(255),
-    -- 前台订阅表单可用的短标识（为空则不可被前台订阅）
-    slug        VARCHAR(100),
-    status      SMALLINT     NOT NULL DEFAULT 1,
-    create_time TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    update_time TIMESTAMP(3)
-);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_mail_lists_slug ON mail_lists (slug) WHERE slug IS NOT NULL AND slug <> '';
-
--- 3. mail_list_members —— 列表成员（联系人 × 列表，多对多）
-CREATE TABLE IF NOT EXISTS mail_list_members (
-    id          BIGSERIAL    PRIMARY KEY,
-    list_id     BIGINT       NOT NULL,
-    contact_id  BIGINT       NOT NULL,
-    create_time TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_mail_list_members_pair ON mail_list_members (list_id, contact_id);
-CREATE INDEX IF NOT EXISTS idx_mail_list_members_contact ON mail_list_members (contact_id);
-
--- 4. mail_campaigns —— 群发活动
+-- 2. mail_campaigns —— 群发活动
 CREATE TABLE IF NOT EXISTS mail_campaigns (
     id            BIGSERIAL    PRIMARY KEY,
     name          VARCHAR(150) NOT NULL,
     -- 用哪个发信账号（用户拍板：配置好 SMTP 的账号既能发事务也能发营销，这里显式选）
     account_id    BIGINT       NOT NULL,
     template_id   BIGINT       NOT NULL,
-    -- 投递目标列表（本期单列表；多列表将来加关联表，不改本表语义）
-    list_id       BIGINT       NOT NULL,
+    -- 投递目标：按标签筛人（空数组 = 全部「已订阅」联系人）。
+    -- 不用「列表 + 成员表」：营销的实际需求是「发给人群」，标签订阅状态就够表达，
+    -- 少两张表与一次 join。
+    target_tags   TEXT[]       NOT NULL DEFAULT '{}',
     subject       VARCHAR(255) NOT NULL,
     -- 发送时覆盖模板变量（JSONB 对象）
     variables     JSONB,
@@ -96,7 +80,7 @@ CREATE TABLE IF NOT EXISTS mail_campaigns (
 );
 CREATE INDEX IF NOT EXISTS idx_mail_campaigns_status ON mail_campaigns (status);
 
--- 5. mail_campaign_events —— 打开 / 点击 / 退信 / 退订事件
+-- 3. mail_campaign_events —— 打开 / 点击 / 退信 / 退订事件
 CREATE TABLE IF NOT EXISTS mail_campaign_events (
     id          BIGSERIAL    PRIMARY KEY,
     campaign_id BIGINT       NOT NULL,
