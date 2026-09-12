@@ -290,11 +290,13 @@ go_wp/
 | `navigation` | 已实现 | 公开站点菜单、位置和 revision | 后台权限菜单；后者始终属于 `menu` |
 | `plugin` | 已实现 | 插件体系：组件注册、能力分层、manifest 编译与原子切换 | 第三方任意脚本/查询扩展 |
 | `runtimefragment` | 已实现 | capability 白名单、受控 HTML Fragment handler（`capability.go` 首批 `loginPanel`/`cartSummary`） | 读取 Page Document、执行 Jet、接受任意 endpoint |
+| `mail` | 已实现 | 发信账号 / 邮件模板 / 联系人 / 群发活动 / 自动化 / 事务发送（`SendTemplate`）/ 追踪与退订；后台走 `MailService`，公开追踪走 `TrackingService` | 短信 / 站内信；访客账号本身（在 `user`） |
+| `user` | 已实现（issue #36） | 访问面访客账号：注册 / 邮箱验证 / 登录 / 密码重置 / 账号中心（资料 / 偏好 / 改密码 / 登录设备）；独立 cookie 与会话命名空间，公开面路由、不经 Casbin | CMS 内容与后台管理；会员等级 / 权益（BIZ-3） |
 
 关键命名约束：
 
 - `menu` 固定表示管理后台权限菜单；公开站点的 Header/Footer 导航统一属于 `navigation`。
-- `admin` 固定表示管理控制面账号；未来访客账号或客户账号必须另建明确领域模块，不能复用 `admin` 表和会话语义。
+- `admin` 固定表示管理控制面账号；访客账号是独立的 `user` 模块（issue #36 已落地），两者各有自己的表、cookie、会话命名空间与鉴权链，不能复用 `admin` 表和会话语义 —— 共用会让访客 cookie 顶掉后台登录态，并让两套 id 空间相互污染。
 - `content` 只聚合共享同一发布/revision 生命周期的固定 CMS 内容。若 Product、Article 后续出现独立事务和高频跨模块参数，应拆为独立模块，而不是让 `content/service` 演变为总控层。
 - `build` 内核（`internal/builder` 编译 + `internal/pipeline` 发布）、`artifact`、`publication` 是单向流水线边界：`build → artifact → publication`。后者不得反向导入前者实现；跨模块只使用 `contract` 和不可变 DTO。
 
