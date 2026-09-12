@@ -20,6 +20,7 @@
 package languages
 
 import (
+	_ "embed" // languages.css 经 //go:embed 打进二进制
 	"encoding/json"
 	"fmt"
 
@@ -84,41 +85,39 @@ func (c *Component) Validate(node *core.Node, ids map[string]bool) (err error) {
 	return core.ValidateSpec(&p, node.ID)
 }
 
-// compileCSS 生成语言切换器样式（三端；纯静态，无 hover 之外的交互）。
+// languagesCSS 组件样式源。与组件同目录：改样式不必再进 Go 字符串数组
+// （有补全 / lint / 格式化），而作用域替换、桶划分、确定性输出仍由构建期负责。
+//
+//go:embed languages.css
+var languagesCSS string
+
+// compileCSS 生成语言切换器样式（纯静态，无 hover 之外的交互）。
+//
+// 「当前语言」与「语言链接」的排版逐条一致（迁移前 Go 侧就是复用同一个切片），
+// 差别只有 cursor 与不可点 —— 这条一致性在样式源里是两段重复的声明，刻意保留重复，
+// 因为它比「共用一段」更能让人一眼看出两者的关系与差异。
 func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	sel := "." + core.NodeClass(id)
+	vars := map[string]string{
+		"vertical":      boolVar(p.Orientation == "vertical"),
+		"gap":           p.Gap,
+		"color":         p.Color,
+		"hover_color":   p.HoverColor,
+		"current_color": p.CurrentColor,
+		"font_size":     p.FontSize,
+		"font_weight":   p.FontWeight,
+		"item_padding":  p.ItemPadding,
+	}
+	if err := core.ApplyComponentCSSTmpl(b, sel, languagesCSS, vars); err != nil {
+		// 样式源解析失败属于构建期缺陷，必须在测试/构建时暴露；静默跳过的后果是产物悄悄少了样式。
+		panic(fmt.Sprintf("languages 组件样式解析失败: %v", err))
+	}
+}
 
-	list := []string{"display: flex", "align-items: center", "flex-wrap: wrap", "list-style: none", "margin: 0", "padding: 0"}
-	if p.Orientation == "vertical" {
-		list = append(list, "flex-direction: column", "align-items: flex-start")
+// boolVar 条件段变量的真值形态（非空即真）。
+func boolVar(v bool) string {
+	if v {
+		return "1"
 	}
-	if p.Gap != "" {
-		list = append(list, core.CSSDecl("gap", p.Gap))
-	}
-	b.Add(core.BreakpointDesktop, sel+" .sky-lang-list", list)
-
-	item := []string{"display: inline-flex", "align-items: center", "text-decoration: none", "transition: color .15s ease"}
-	if p.Color != "" {
-		item = append(item, core.CSSDecl("color", p.Color))
-	}
-	if p.FontSize != "" {
-		item = append(item, core.CSSDecl("font-size", p.FontSize))
-	}
-	if p.FontWeight != "" {
-		item = append(item, core.CSSDecl("font-weight", p.FontWeight))
-	}
-	if p.ItemPadding != "" {
-		item = append(item, core.CSSDecl("padding", p.ItemPadding))
-	}
-	b.Add(core.BreakpointDesktop, sel+" .sky-lang-link", item)
-	// 当前语言不可点（span 而非 a），与链接同样的排版但明确区分。
-	current := []string{"display: inline-flex", "align-items: center", "cursor: default"}
-	current = append(current, item[2:]...)
-	b.Add(core.BreakpointDesktop, sel+" .sky-lang-current", current)
-	if p.HoverColor != "" {
-		b.Add(core.BreakpointDesktop, sel+" .sky-lang-link:hover", []string{core.CSSDecl("color", p.HoverColor)})
-	}
-	if p.CurrentColor != "" {
-		b.Add(core.BreakpointDesktop, sel+" .sky-lang-current", []string{core.CSSDecl("color", p.CurrentColor)})
-	}
+	return ""
 }

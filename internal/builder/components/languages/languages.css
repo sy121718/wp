@@ -1,0 +1,56 @@
+/* languages.css — 语言切换器样式（来源：原 languages.go 的 compileCSS）。
+ *
+ * 语法见 internal/builder/core/component_css.go。
+ */
+
+/* 语言列表：横向排列、可换行；纵向模式改为列 + 左对齐。 */
+& .sky-lang-list {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  @if vertical
+  flex-direction: column;
+  align-items: flex-start;
+  @endif
+  gap: {{gap}};
+}
+
+/* 语言链接。 */
+& .sky-lang-link {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+  transition: color .15s ease;
+  color: {{color}};
+  font-size: {{font_size}};
+  font-weight: {{font_weight}};
+  padding: {{item_padding}};
+}
+
+/* 当前语言是 span 而非 a（不可点）—— 排版必须与链接逐条一致，
+ * 两者在同一行里除了光标看不出差别，否则切换器会「跳一下」。
+ * 与迁移前一致：这段排版与 .sky-lang-link 的前几条同源（Go 侧原本就是复用同一个切片）。 */
+& .sky-lang-current {
+  display: inline-flex;
+  align-items: center;
+  cursor: default;
+  text-decoration: none;
+  transition: color .15s ease;
+  color: {{color}};
+  font-size: {{font_size}};
+  font-weight: {{font_weight}};
+  padding: {{item_padding}};
+}
+
+/* 悬停文字色（可选）。 */
+& .sky-lang-link:hover {
+  color: {{hover_color}};
+}
+
+/* 当前语言文字色（可选）：单独一条规则，覆盖上面的继承色。 */
+& .sky-lang-current {
+  color: {{current_color}};
+}

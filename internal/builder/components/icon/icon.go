@@ -6,6 +6,7 @@
 package icon
 
 import (
+	_ "embed" // icon.css 经 //go:embed 打进二进制
 	"fmt"
 
 	"go_wp/internal/builder/core"
@@ -60,28 +61,28 @@ func validateExtra(p *Props, nodeID string) (err error) {
 	return nil
 }
 
+// iconCSS 组件样式源。与组件同目录：改样式不必再进 Go 字符串数组
+// （有补全 / lint / 格式化），而作用域替换、桶划分、确定性输出仍由构建期负责。
+//
+//go:embed icon.css
+var iconCSS string
+
 // compileCSS 图标容器尺寸与颜色样式。
+//
+// 尺寸与颜色在 Go 侧兜底（缺省 1.5em / currentColor），样式源只负责属性怎么组合。
 func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	sel := "." + core.NodeClass(id)
-
-	decls := []string{
-		"display: inline-flex",
-		"align-items: center",
-		"justify-content: center",
-		"line-height: 0",
-	}
+	vars := map[string]string{"size": "1.5em", "color": "currentColor"}
 	if p.Size != "" {
-		decls = append(decls, core.CSSDecl("width", p.Size), core.CSSDecl("height", p.Size))
-	} else {
-		decls = append(decls, "width: 1.5em", "height: 1.5em")
+		vars["size"] = p.Size
 	}
 	if p.Color != "" {
-		decls = append(decls, core.CSSDecl("color", p.Color))
-	} else {
-		decls = append(decls, "color: currentColor")
+		vars["color"] = p.Color
 	}
-	b.Add(core.BreakpointDesktop, sel, decls)
-	b.Add(core.BreakpointDesktop, sel+" svg", []string{"width: 100%", "height: 100%"})
+	if err := core.ApplyComponentCSSTmpl(b, sel, iconCSS, vars); err != nil {
+		// 样式源解析失败属于构建期缺陷，必须在测试/构建时暴露；静默跳过的后果是产物悄悄少了样式。
+		panic(fmt.Sprintf("icon 组件样式解析失败: %v", err))
+	}
 }
 
 // init 注册图标组件。

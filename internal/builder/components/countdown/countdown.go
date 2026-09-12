@@ -70,44 +70,19 @@ func parseTargetDate(s string) (time.Time, bool) {
 	return time.Time{}, false
 }
 
-// compileCSS 倒计时容器/数字位/分隔符/单位标签样式。
+// countdownCSS 组件样式源。与组件同目录：改样式不必再进 Go 字符串数组
+// （有补全 / lint / 格式化），而作用域替换、桶划分、确定性输出仍由构建期负责。
+//
+//go:embed countdown.css
+var countdownCSS string
+
+// compileCSS 倒计时容器/数字位/分隔符/单位标签样式（纯静态，与 Props 无关）。
 func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	sel := "." + core.NodeClass(id)
-
-	b.Add(core.BreakpointDesktop, sel, []string{
-		"display: inline-flex",
-		"align-items: flex-start",
-		"gap: 8px",
-		"font-variant-numeric: tabular-nums",
-	})
-	b.Add(core.BreakpointDesktop, sel+" .cd-item", []string{
-		"display: inline-flex",
-		"flex-direction: column",
-		"align-items: center",
-		"gap: 2px",
-	})
-	b.Add(core.BreakpointDesktop, sel+" .cd-num", []string{
-		"min-width: 2ch",
-		"font-size: 2rem",
-		"font-weight: 700",
-		"line-height: 1",
-		"text-align: center",
-		"padding: 8px 10px",
-		"background: rgba(0,0,0,0.05)",
-		"border-radius: 6px",
-	})
-	b.Add(core.BreakpointDesktop, sel+" .cd-sep", []string{
-		"font-size: 2rem",
-		"font-weight: 700",
-		"line-height: 1",
-		"opacity: 0.5",
-		"padding-top: 8px",
-	})
-	b.Add(core.BreakpointDesktop, sel+" .cd-label", []string{
-		"font-size: 0.75rem",
-		"font-weight: 400",
-		"opacity: 0.6",
-	})
+	if err := core.ApplyComponentCSS(b, sel, countdownCSS); err != nil {
+		// 样式源解析失败属于构建期缺陷，必须在测试/构建时暴露；静默跳过的后果是产物悄悄少了样式。
+		panic(fmt.Sprintf("countdown 组件样式解析失败: %v", err))
+	}
 }
 
 // init 注册倒计时组件。

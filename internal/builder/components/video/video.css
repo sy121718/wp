@@ -1,0 +1,35 @@
+/* video.css — 视频组件样式（来源：原 video.go 的 compileCSS）。
+ *
+ * 语法见 internal/builder/core/component_css.go。
+ * 比例用 padding-top 撑高（iframe/video 绝对定位填充）—— 浏览器原生 aspect-ratio 在
+ * 嵌入第三方播放器时不适用，所以保留 padding 方案。
+ */
+
+/* 视频容器：宽度自适应 + 对齐（margin 控制）+ 可选全宽与圆角。
+ * 对齐三条 margin 是无条件的（居中也是显式声明），只是取值随 Align 变。 */
+& {
+  position: relative;
+  overflow: hidden;
+  max-width: 100%;
+  {{align_decls}};
+  width: {{full_width}};
+  border-radius: {{radius}};
+}
+
+/* 比例占位框。 */
+& .sky-video-frame {
+  position: relative;
+  width: 100%;
+  padding-top: {{pad}};
+}
+
+/* 播放器本体：绝对定位铺满比例框；border-radius: inherit 让圆角跟着容器走。 */
+& .sky-video-frame iframe, & .sky-video-frame video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  border-radius: inherit;
+  display: block;
+}

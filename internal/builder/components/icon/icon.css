@@ -1,0 +1,22 @@
+/* icon.css — 图标组件样式（来源：原 icon.go 的 compileCSS）。
+ *
+ * 语法见 internal/builder/core/component_css.go。
+ * 尺寸与颜色在 Go 侧兜底（1.5em / currentColor），这里只写属性的组合。
+ */
+
+/* 图标容器：尺寸 + 颜色。line-height: 0 让容器高度严格等于图标高度。 */
+& {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
+  width: {{size}};
+  height: {{size}};
+  color: {{color}};
+}
+
+/* 图标 SVG 撑满容器（尺寸由容器决定，SVG 自身不参与排版）。 */
+& svg {
+  width: 100%;
+  height: 100%;
+}

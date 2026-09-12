@@ -3,6 +3,7 @@
 package video
 
 import (
+	_ "embed" // video.css 经 //go:embed 打进二进制
 	"encoding/json"
 	"fmt"
 	"net/url"
@@ -125,7 +126,16 @@ func embedHostAllowed(host string) bool {
 	return false
 }
 
+// videoCSS 组件样式源。与组件同目录：改样式不必再进 Go 字符串数组
+// （有补全 / lint / 格式化），而作用域替换、桶划分、确定性输出仍由构建期负责。
+//
+//go:embed video.css
+var videoCSS string
+
 // compileCSS 视频样式。
+//
+// 比例 → padding-top 百分比的映射留在 Go（是「预设名 → 数值」的翻译，不是样式组合）；
+// 对齐的 margin 三条属于同一组，作为多声明值变量整组传入。
 func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	sel := "." + core.NodeClass(id)
 
@@ -145,30 +155,27 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		pad = "56.25%"
 	}
 
-	desktop := []string{"position: relative", "overflow: hidden", "max-width: 100%"}
+	alignDecls := "margin-left: auto; margin-right: auto"
 	switch p.Align {
 	case "left":
-		desktop = append(desktop, "margin-left: 0", "margin-right: auto")
+		alignDecls = "margin-left: 0; margin-right: auto"
 	case "right":
-		desktop = append(desktop, "margin-left: auto", "margin-right: 0")
-	default:
-		desktop = append(desktop, "margin-left: auto", "margin-right: auto")
+		alignDecls = "margin-left: auto; margin-right: 0"
 	}
-	if p.FullWidth {
-		desktop = append(desktop, "width: 100%")
-	}
-	if p.Radius != "" {
-		desktop = append(desktop, core.CSSDecl("border-radius", p.Radius))
-	}
-	b.Add(core.BreakpointDesktop, sel, desktop)
 
-	frame := []string{"position: relative", "width: 100%"}
-	if pad != "" {
-		frame = append(frame, core.CSSDecl("padding-top", pad))
+	fullWidth := ""
+	if p.FullWidth {
+		fullWidth = "100%"
 	}
-	b.Add(core.BreakpointDesktop, sel+" .sky-video-frame", frame)
-	b.Add(core.BreakpointDesktop, sel+" .sky-video-frame iframe, "+sel+" .sky-video-frame video", []string{
-		"position: absolute", "inset: 0", "width: 100%", "height: 100%",
-		"border: 0", "border-radius: inherit", "display: block",
-	})
+
+	vars := map[string]string{
+		"align_decls": alignDecls,
+		"full_width":  fullWidth,
+		"radius":      p.Radius,
+		"pad":         pad,
+	}
+	if err := core.ApplyComponentCSSTmpl(b, sel, videoCSS, vars); err != nil {
+		// 样式源解析失败属于构建期缺陷，必须在测试/构建时暴露；静默跳过的后果是产物悄悄少了样式。
+		panic(fmt.Sprintf("video 组件样式解析失败: %v", err))
+	}
 }

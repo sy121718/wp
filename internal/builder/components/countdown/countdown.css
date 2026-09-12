@@ -1,0 +1,48 @@
+/* countdown.css — 倒计时组件样式（来源：原 countdown.go 的 compileCSS）。
+ *
+ * 纯静态：没有任何随 Props 变化的声明。
+ */
+
+/* 容器：横向排列的数字组；tabular-nums 让数字等宽，倒计时不抖动。 */
+& {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 单个数字组（数字 + 单位标签纵向排列）。 */
+& .cd-item {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+/* 数字位：min-width 用 ch（等宽数字的字符宽）保证 1 位与 2 位不跳宽度。 */
+& .cd-num {
+  min-width: 2ch;
+  font-size: 2rem;
+  font-weight: 700;
+  line-height: 1;
+  text-align: center;
+  padding: 8px 10px;
+  background: rgba(0,0,0,0.05);
+  border-radius: 6px;
+}
+
+/* 分隔符（冒号）：与数字同位但更淡。padding-top 让它在基线上与数字对齐。 */
+& .cd-sep {
+  font-size: 2rem;
+  font-weight: 700;
+  line-height: 1;
+  opacity: 0.5;
+  padding-top: 8px;
+}
+
+/* 单位标签（天/时/分/秒）。 */
+& .cd-label {
+  font-size: 0.75rem;
+  font-weight: 400;
+  opacity: 0.6;
+}
