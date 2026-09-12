@@ -1,108 +1,97 @@
 package builder
 
-// ui_script.go — 原始控件基座（js/ui/）的按需拼装。
-//
-// 与 enhance.js 的关系：enhance.js 是**组件级**增强（轮播/灯箱/卡片环，按 data-* 挑块），
-// 这里是**原始控件级**（下拉/输入/标签页…，按 data-ui-* 挑块）。两者都会内联进产物，
-// 但来源与关注点不同，所以各有一份拼装逻辑，共用同一套「特征命中才注入」的思路。
-//
-// 源文件在 internal/templates/static/js/ui/：运行时经 /static 给后台页面，
-// 构建期由装配层读出后注入（builder 不依赖 internal/templates）。
+// 控件资源来自公共 UI Kit；后台通过静态路径加载，访问产物只携带实际用到的闭包。
 
 import (
+	"fmt"
 	"strings"
 
-	"go_wp/pkg/logger"
+	"golang.org/x/net/html"
 )
 
-// uiBlock 一个可独立注入的原始控件（文件名对应 static/js/ui/<file>）。
+// 文件与触发属性在这里声明一次；装配层从 UIAssetFiles 获取源码清单。
+// 属性按名称精确匹配，不将正文、注释、脚本中的示例当成控件。
 type uiBlock struct {
-	// file 控件实现文件名（不含路径）。
-	file string
-	// feats 触发注入的产物特征（任一命中即注入）。
-	feats []string
+	file  string
+	attrs []string
 }
 
-// uiBlocks 控件清单，顺序即输出顺序。新增控件时必须同时登记特征 ——
-// 漏登记会让用到它的页面静默失去该控件的增强（与 enhanceBlocks 同一条约定）。
 var uiBlocks = []uiBlock{
-	{file: "select.js", feats: []string{"data-ui-select"}},
-	// 弹窗：特征取 "data-modal"，同时命中 data-modal-open / data-modal-close ——
-	// 页面只要出现任一弹窗触发点，就该带上这个控件。
-	{file: "modal.js", feats: []string{"data-modal"}},
+	{file: "select.js", attrs: []string{"data-ui-select"}},
+	{file: "modal.js", attrs: []string{"data-modal", "data-modal-open", "data-modal-close"}},
 }
 
-// uiStyleFor 取该产物需要的控件样式（有控件命中才返回，纯内容页为空）。
-//
-// css 由装配层注入（static/css/ui.css）。控件脚本进了产物却没样式，
-// 访客看到的就是没有外观的空壳 —— 所以两者必须同进同出。
-func uiStyleFor(html, css string) string {
-	if strings.TrimSpace(css) == "" {
-		return ""
+// UIAssetFiles 是访问产物可用的公共控件资源清单，顺序为助手、控件、扫描入口。
+// 每次返回独立切片，调用方不能修改编译器的注册表。
+func UIAssetFiles() []string {
+	files := make([]string, 0, len(uiBlocks)+2)
+	files = append(files, "_util.js")
+	for _, block := range uiBlocks {
+		files = append(files, block.file)
 	}
-	probe := scriptTagRe.ReplaceAllString(html, "")
-	for _, b := range uiBlocks {
-		for _, f := range b.feats {
-			if strings.Contains(probe, f) {
-				return css
-			}
-		}
-	}
-	return ""
+	return append(files, "index.js")
 }
 
-// uiScriptFor 按产物 HTML 拼装需要的原始控件：基座助手 + 命中的控件 + 入口。
-//
-// sources 为文件名 → 源码（装配层从 embed 读出）。一个控件都没命中时返回空 ——
-// 纯内容页不该为空增强付流量。基座（_util.js）与入口（index.js）只在有控件时注入。
-func uiScriptFor(html string, sources map[string]string) string {
-	if len(sources) == 0 {
-		return ""
-	}
-	probe := scriptTagRe.ReplaceAllString(html, "")
-
-	var parts []string
-	for _, b := range uiBlocks {
-		hit := false
-		for _, f := range b.feats {
-			if strings.Contains(probe, f) {
-				hit = true
-				break
-			}
+func usedUIFiles(content string) []string {
+	hits := make([]bool, len(uiBlocks))
+	z := html.NewTokenizer(strings.NewReader(content))
+	for {
+		kind := z.Next()
+		if kind == html.ErrorToken {
+			break // 输入是已编译的 HTML 字符串，读取到 EOF 即结束。
 		}
-		if !hit {
+		if kind != html.StartTagToken && kind != html.SelfClosingTagToken {
 			continue
 		}
-		src := sources[b.file]
+		_, more := z.TagName()
+		for more {
+			var key []byte
+			key, _, more = z.TagAttr()
+			for i, block := range uiBlocks {
+				if hits[i] {
+					continue
+				}
+				for _, attr := range block.attrs {
+					if string(key) == attr {
+						hits[i] = true
+						break
+					}
+				}
+			}
+		}
+	}
+	var files []string
+	for i, block := range uiBlocks {
+		if hits[i] {
+			files = append(files, block.file)
+		}
+	}
+	return files
+}
+
+// uiAssetsFor 一次识别能力并同时组装 CSS/JS，防止两次扫描的规则漂移。
+// sources=nil 表示调用方选择无脚本输出；非 nil（含空 map）表示已启用控件增强，
+// 命中的控件、基座、入口或样式缺失都返回构建错误，不能生成残缺产物。
+func uiAssetsFor(content, css string, sources map[string]string) (string, string, error) {
+	files := usedUIFiles(content)
+	if len(files) == 0 {
+		return "", "", nil
+	}
+	if sources == nil {
+		return css, "", nil
+	}
+	files = append(append([]string{"_util.js"}, files...), "index.js")
+	parts := make([]string, 0, len(files))
+	for _, file := range files {
+		src := sources[file]
 		if strings.TrimSpace(src) == "" {
-			// 登记了控件却没有源码：产物会少一个控件的交互，必须留痕而不是静默。
-			logger.Scene("build").With("file", b.file).Warn("原始控件源码缺失，产物将不含该控件增强")
-			continue
+			return "", "", fmt.Errorf("控件资源缺失: %s", file)
 		}
 		parts = append(parts, src)
 	}
-	if len(parts) == 0 {
-		return ""
+	if strings.TrimSpace(css) == "" {
+		return "", "", fmt.Errorf("控件资源缺失: ui.css")
 	}
-	// 基座助手与扫描入口是所有控件的闭包依赖；缺任一项都不能输出半截脚本。
-	// 半截脚本比整段不注入更危险：页面看似带了控件，运行时却在 WBUI 未定义或
-	// 未扫描时静默失效。与控件源码缺失保持同一条 fail-closed 规则。
-	if strings.TrimSpace(sources["_util.js"]) == "" || strings.TrimSpace(sources["index.js"]) == "" {
-		logger.Scene("build").With("file", "_util.js/index.js").Warn("原始控件基座闭包不完整，产物将不含控件增强")
-		return ""
-	}
-	// 顺序固定：助手 → 各控件 → 入口（入口负责扫描与 htmx 重扫，必须最后）。
-	//
-	// 只返回脚本正文，**不带 <script> 标签** —— document.jet 已在外层套了 <script>，
-	// 这里再套一次会拼成 `</script><script>` 嵌套，整段脚本语法错误、全部失效
-	//（enhanceScriptFor 同样只返回正文，两者拼接后才进模板）。
-	var sb strings.Builder
-	sb.WriteString(sources["_util.js"])
-	for _, p := range parts {
-		sb.WriteString("\n")
-		sb.WriteString(p)
-	}
-	sb.WriteString("\n")
-	sb.WriteString(sources["index.js"])
-	return sb.String()
+	// document.jet 提供外层 script 标签；此处只输出正文，顺序与注册表一致。
+	return css, strings.Join(parts, "\n"), nil
 }

@@ -6,6 +6,7 @@ package builder
 // （否则控件脚本会因 WBUI 未定义而报错，或扫描逻辑缺席导致控件不生效）。
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -22,7 +23,7 @@ func uiSrcForTest() map[string]string {
 
 // TestUIScriptSkippedWithoutFeature 纯内容页：不注入任何控件脚本。
 func TestUIScriptSkippedWithoutFeature(t *testing.T) {
-	got := uiScriptFor(`<section><h1>纯内容</h1></section>`, uiSrcForTest())
+	got := uiScriptForTest(t, `<section><h1>纯内容</h1></section>`, uiSrcForTest())
 	if got != "" {
 		t.Errorf("没有 data-ui-* 特征时不该注入控件，got %q", got)
 	}
@@ -30,7 +31,7 @@ func TestUIScriptSkippedWithoutFeature(t *testing.T) {
 
 // TestUIScriptInjectsSelectWithBase 用到下拉：控件 + 基座助手 + 入口都要在。
 func TestUIScriptInjectsSelectWithBase(t *testing.T) {
-	got := uiScriptFor(`<select data-ui-select name="city"></select>`, uiSrcForTest())
+	got := uiScriptForTest(t, `<select data-ui-select name="city"></select>`, uiSrcForTest())
 	for _, want := range []string{"/* util */", "/* select */", "/* index */"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("拼装结果缺少 %q\n%s", want, got)
@@ -49,28 +50,30 @@ func TestUIScriptInjectsSelectWithBase(t *testing.T) {
 	}
 }
 
-// TestUIScriptInjectsModalOnTrigger 弹窗特征取 "data-modal" 前缀：
+// TestUIScriptInjectsModalOnTrigger 精确匹配弹窗能力属性：
 // 触发点（data-modal-open）与声明（data-modal）任一出现都要带上控件本体。
 func TestUIScriptInjectsModalOnTrigger(t *testing.T) {
 	for _, html := range []string{
 		`<button data-modal-open="f1">打开</button>`,
 		`<dialog id="f1" data-modal><button type="button" data-modal-close>×</button></dialog>`,
 	} {
-		got := uiScriptFor(html, uiSrcForTest())
+		got := uiScriptForTest(t, html, uiSrcForTest())
 		if !strings.Contains(got, "/* modal */") {
 			t.Errorf("命中弹窗特征时应注入 modal.js；输入 %s；结果 %s", html, got)
 		}
 	}
 }
 
-// TestUIStyleFollowsControls 样式与脚本同进同出：只有命中控件特征才注入 ui.css，
-// 否则纯内容页会白付一份控件样式的流量。
+// CSS/JS 在同一次能力选择中产生；无控件不输出额外样式。
 func TestUIStyleFollowsControls(t *testing.T) {
-	if got := uiStyleFor(`<button data-modal-open="f1">打开</button>`, "/* css */"); got != "/* css */" {
-		t.Errorf("命中弹窗特征时应注入控件样式，got %q", got)
-	}
-	if got := uiStyleFor(`<h1>纯内容</h1>`, "/* css */"); got != "" {
-		t.Errorf("纯内容页不该注入控件样式，got %q", got)
+	for _, tt := range []struct{ html, want string }{
+		{`<button data-modal-open="f1">打开</button>`, "/* css */"},
+		{`<h1>纯内容</h1>`, ""},
+	} {
+		css, _, err := uiAssetsFor(tt.html, "/* css */", uiSrcForTest())
+		if err != nil || css != tt.want {
+			t.Fatalf("样式 = %q, err = %v", css, err)
+		}
 	}
 }
 
@@ -78,26 +81,101 @@ func TestUIStyleFollowsControls(t *testing.T) {
 // 否则内联过的产物再次编译时，脚本源码里的 data-ui-select 字样会把自己"检测"出来。
 func TestUIScriptIgnoresSelfReference(t *testing.T) {
 	html := `<h1>纯内容</h1><script>var s = "data-ui-select";</script>`
-	if got := uiScriptFor(html, uiSrcForTest()); got != "" {
+	if got := uiScriptForTest(t, html, uiSrcForTest()); got != "" {
 		t.Errorf("script 块内的字样不应触发注入，got %q", got)
 	}
 }
 
-// TestUIScriptMissingSourceIsSkipped 登记了控件但源码缺失：跳过并告警，不产出半截脚本。
-func TestUIScriptMissingSourceIsSkipped(t *testing.T) {
-	got := uiScriptFor(`<select data-ui-select></select>`, map[string]string{"_util.js": "x"})
-	if got != "" {
-		t.Errorf("控件源码缺失时不该拼出残缺脚本，got %q", got)
+func uiScriptForTest(t *testing.T, content string, sources map[string]string) string {
+	t.Helper()
+	_, script, err := uiAssetsFor(content, "/* css */", sources)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return script
+}
+
+func TestUIAssetRegistryAndSelection(t *testing.T) {
+	want := []string{"_util.js", "select.js", "modal.js", "index.js"}
+	got := UIAssetFiles()
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("资源清单 = %v", got)
+	}
+	got[0] = "mutated"
+	if !reflect.DeepEqual(UIAssetFiles(), want) {
+		t.Fatal("调用方改变了资源注册表")
+	}
+	_, script, err := uiAssetsFor(`<dialog data-modal></dialog><SELECT DATA-UI-SELECT></SELECT><select data-ui-select></select>`, "/* css */", uiSrcForTest())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Count(script, "/* select */") != 1 || strings.Count(script, "/* modal */") != 1 || strings.Index(script, "/* select */") > strings.Index(script, "/* modal */") {
+		t.Fatal("控件必须去重且按注册顺序输出")
+	}
+	// 不相关资源缺失不会阻断；不用到的控件不进产物。
+	sources := uiSrcForTest()
+	delete(sources, "modal.js")
+	_, script, err = uiAssetsFor(`<select data-ui-select></select>`, "/* css */", sources)
+	if err != nil || strings.Contains(script, "/* modal */") {
+		t.Fatalf("不应要求无关控件：%v", err)
 	}
 }
 
-func TestUIScriptMissingBaseIsSkipped(t *testing.T) {
-	for _, sources := range []map[string]string{
-		{"select.js": "select"},
-		{"_util.js": "util", "select.js": "select"},
+func TestUIAssetsExplicitNoScriptMode(t *testing.T) {
+	css, script, err := uiAssetsFor(`<select data-ui-select></select>`, "/* css */", nil)
+	if err != nil || script != "" || css != "/* css */" {
+		t.Fatalf("无脚本模式失效：css=%q js=%q err=%v", css, script, err)
+	}
+	_, _, err = uiAssetsFor(`<select data-ui-select></select>`, "/* css */", map[string]string{})
+	if err == nil {
+		t.Fatal("已启用增强却缺全部资源时必须报错")
+	}
+	css, script, err = uiAssetsFor(`<p>内容</p>`, "", map[string]string{})
+	if err != nil || css != "" || script != "" {
+		t.Fatal("纯内容页不应依赖控件资源")
+	}
+}
+
+func TestRenderDocumentRejectsIncompleteUIAssets(t *testing.T) {
+	for _, missing := range []string{"_util.js", "select.js", "modal.js", "index.js", "ui.css"} {
+		t.Run(missing, func(t *testing.T) {
+			sources, css := uiSrcForTest(), "/* ui css */"
+			if missing == "ui.css" {
+				css = ""
+			} else {
+				delete(sources, missing)
+			}
+			out, err := RenderDocument(&CompiledPage{HTML: `<select data-ui-select></select><dialog data-modal></dialog>`, UISources: sources, UIStyle: css})
+			if err == nil || !strings.Contains(err.Error(), missing) || out != "" {
+				t.Fatalf("缺失 %s 应阻断文档产出并给出资源名，got html=%q err=%v", missing, out, err)
+			}
+		})
+	}
+}
+
+func TestUIAssetsRejectBlankSource(t *testing.T) {
+	sources := uiSrcForTest()
+	sources["select.js"] = " \n\t"
+	_, _, err := uiAssetsFor(`<select data-ui-select></select>`, "/* css */", sources)
+	if err == nil || !strings.Contains(err.Error(), "select.js") {
+		t.Fatalf("空白源码必须视作缺失：%v", err)
+	}
+}
+
+func TestRenderDocumentUIUsesAttributesOnly(t *testing.T) {
+	for _, content := range []string{
+		`<p>data-ui-select / data-modal 示例</p>`,
+		`<!-- <select data-ui-select></select> -->`,
+		`<script>var sample = '<dialog data-modal></dialog>';</script>`,
+		`<div title="data-modal" data-modal-example=""></div>`,
+		`<style>.example::before { content: 'data-ui-select' }</style>`,
 	} {
-		if got := uiScriptFor(`<select data-ui-select></select>`, sources); got != "" {
-			t.Fatalf("基座闭包缺失时不应输出半截脚本: %q", got)
+		out, err := RenderDocument(&CompiledPage{HTML: content, UISources: uiSrcForTest(), UIStyle: "/* ui css */"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(out, "/* util */") || strings.Contains(out, "/* ui css */") {
+			t.Errorf("正文、脚本、样式、注释或属性值不应触发控件注入：%s", content)
 		}
 	}
 }

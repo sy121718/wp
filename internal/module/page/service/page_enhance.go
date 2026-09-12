@@ -9,6 +9,7 @@ package pageservice
 import (
 	"sync"
 
+	"go_wp/internal/builder"
 	"go_wp/internal/templates"
 	"go_wp/pkg/logger"
 )
@@ -37,22 +38,18 @@ func enhanceSource() string {
 	return enhanceSourceVal
 }
 
-// uiFiles 原始控件基座的文件清单（与 js/ui/ 目录一致）。
-//
-// _util.js 是助手、index.js 是入口，两者随任一控件一起注入；其余按 data-ui-* 特征挑。
-var uiFiles = []string{"_util.js", "select.js", "modal.js", "index.js"}
-
 // uiSources 取原始控件基座源码（文件名 → 源码）。
 //
-// 读不到的文件直接不进 map：builder 侧发现「登记了控件却没有源码」会告警，
-// 而不是让整页构建失败 —— 控件增强是渐进能力，不该阻断内容发布。
+// 始终返回非 nil map，表示生产装配启用控件增强。读不到的文件不进 map，
+// builder 仅在页面实际使用该控件时返回资源缺失错误，不影响无关内容页。
 func uiSources() map[string]string {
 	uiSourcesOnce.Do(func() {
+		uiFiles := builder.UIAssetFiles()
 		uiSourcesVal = make(map[string]string, len(uiFiles))
 		for _, name := range uiFiles {
 			js, err := templates.StaticJS("ui/" + name)
 			if err != nil {
-				logger.Scene("build").Error(err, "读取原始控件源码失败（该控件将不生效）")
+				logger.Scene("build").Error(err, "读取原始控件源码失败（使用该控件的页面将构建失败）")
 				continue
 			}
 			uiSourcesVal[name] = js

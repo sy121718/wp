@@ -50,6 +50,10 @@ func realSource(t *testing.T, name string) string {
 
 func compile(t *testing.T, p *builder.Page, opts ...builder.CompileOption) (*builder.CompiledPage, error) {
 	t.Helper()
+	uiSources := make(map[string]string)
+	for _, file := range builder.UIAssetFiles() {
+		uiSources[file] = realSource(t, "ui/"+file)
+	}
 	opts = append([]builder.CompileOption{
 		builder.WithComponentSet(componentSet(t)),
 		// 与生产装配对齐：客户端增强 + 原始控件基座都注入（源码读真文件，
@@ -57,11 +61,7 @@ func compile(t *testing.T, p *builder.Page, opts ...builder.CompileOption) (*bui
 		builder.WithEnhanceSource(realSource(t, "enhance.js")),
 		// 控件样式与脚本同进同出：只注入脚本会让产物里的控件没有外观。
 		builder.WithUIStyle(templates.UICSS()),
-		builder.WithUISources(map[string]string{
-			"_util.js":  realSource(t, "ui/_util.js"),
-			"select.js": realSource(t, "ui/select.js"),
-			"index.js":  realSource(t, "ui/index.js"),
-		}),
+		builder.WithUISources(uiSources),
 	}, opts...)
 	return builder.Compile(p, opts...)
 }

@@ -300,6 +300,7 @@ func WithEnhanceSource(js string) CompileOption {
 //
 // 按产物里出现的 data-ui-* 特征只注入命中的控件，基座与入口随之为其服务；
 // 一个都没命中时产物不含任何控件脚本（纯内容页不为增强付流量）。
+// nil 表示无脚本模式；非 nil 时命中的资源必须完整，否则 RenderDocument 返回错误。
 func WithUISources(sources map[string]string) CompileOption {
 	return func(c *compileConfig) { c.uiSources = sources }
 }
@@ -713,6 +714,10 @@ func RenderNodeHTML(set *jet.Set, node *core.Node, ctx *core.RenderContext) (str
 // CSS/HTML/ThemeVarsCSS/增强脚本是编译产物，用 unsafe 原样输出，避免二次转义；
 // BodyClass 保持现状未转义（父代理单独处理转义问题），同样 unsafe 原样输出。
 func RenderDocument(c *CompiledPage) (string, error) {
+	uiCSS, uiScript, err := uiAssetsFor(c.HTML, c.UIStyle, c.UISources)
+	if err != nil {
+		return "", fmt.Errorf("组装文档控件资源失败: %w", err)
+	}
 	// <html lang>：目标语言缺省回退站点默认语言（i18n 未初始化时内部回退 zh-CN），
 	// 绝不输出空 lang 属性（空 lang 会让浏览器与屏幕阅读器失去语言线索）。
 	lang := strings.TrimSpace(c.Lang)
@@ -726,9 +731,9 @@ func RenderDocument(c *CompiledPage) (string, error) {
 		SEOHead:         c.SEOHead,
 		BodyClass:       strings.Join(c.BodyClasses, " "),
 		HTML:            c.HTML,
-		CSS:             c.CSS + uiStyleFor(c.HTML, c.UIStyle),
+		CSS:             c.CSS + uiCSS,
 		ThemeVarsCSS:    c.ThemeVarsCSS,
-		EnhanceScript:   enhanceScriptFor(c.HTML, c.EnhanceSource) + uiScriptFor(c.HTML, c.UISources),
+		EnhanceScript:   enhanceScriptFor(c.HTML, c.EnhanceSource) + uiScript,
 	}
 	var sb strings.Builder
 	if err := documentTemplate().Execute(&sb, nil, v); err != nil {
