@@ -77,6 +77,12 @@ func (s *Service) UpdateContactStatus(ctx context.Context, req *maildto.UpdateCo
 	if err = s.m.UpdateContactFields(ctx, req.ID, fields); err != nil {
 		return err
 	}
+	// 变为已订阅时才触发自动化（#38 P3）。判断「原来不是订阅」而不是「现在是订阅」——
+	// 否则重复保存一次订阅状态就会给人再塞进一条欢迎流程。触发失败不影响状态变更。
+	if req.Status == mailmodel.ContactStatusSubscribed && row.Status != mailmodel.ContactStatusSubscribed {
+		s.OnContactSubscribed(ctx, req.ID)
+	}
+
 	// 退订 / 投诉 / 硬退信一律进抑制名单（发送前必查），避免换个活动又发出去。
 	switch req.Status {
 	case mailmodel.ContactStatusUnsubscribed:

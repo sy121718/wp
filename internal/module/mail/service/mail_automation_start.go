@@ -92,6 +92,53 @@ func (s *Service) StartRunsByTrigger(ctx context.Context, triggerType string, co
 	return started, nil
 }
 
+// ---- 事件触发（issue #38 P3）----
+//
+// 每个业务动作结束后调用对应方法，把「发生了什么」交给引擎去匹配流程。
+// **触发失败绝不影响主流程**：注册 / 导入 / 订阅 / 追踪这些动作本身是用户要的结果，
+// 自动化只是附加行为 —— 它出问题不该让注册失败。
+//
+// 一条边界：**自动化内部的标签节点不再触发 tag_added**。否则「流程 A 加了 tag X」
+// 会触发「流程 B」，B 又加 tag Y 触发 A，形成跨流程的递归。标签触发只认**外部**改动
+//（后台手工、导入、前台订阅）。
+
+// OnContactCreated 新联系人产生（导入 / 拉系统用户 / 注册）。
+func (s *Service) OnContactCreated(ctx context.Context, contactID uint64) {
+	s.fireTrigger(ctx, mailmodel.TriggerContactCreated, contactID, nil)
+}
+
+// OnContactSubscribed 联系人变为已订阅。
+func (s *Service) OnContactSubscribed(ctx context.Context, contactID uint64) {
+	s.fireTrigger(ctx, mailmodel.TriggerContactSubscribed, contactID, nil)
+}
+
+// OnTagsAdded 联系人被外部加上标签（自动化内部的标签动作不调用它）。
+func (s *Service) OnTagsAdded(ctx context.Context, contactID uint64, tags []string) {
+	for _, tag := range tags {
+		s.fireTrigger(ctx, mailmodel.TriggerTagAdded, contactID, map[string]any{"tag": tag})
+	}
+}
+
+// OnEmailOpened / OnEmailClicked 追踪事件（在事件落库之后调用）。
+func (s *Service) OnEmailOpened(ctx context.Context, contactID uint64) {
+	if contactID > 0 {
+		s.fireTrigger(ctx, mailmodel.TriggerEmailOpened, contactID, nil)
+	}
+}
+
+// OnEmailClicked 点击事件触发。
+func (s *Service) OnEmailClicked(ctx context.Context, contactID uint64) {
+	if contactID > 0 {
+		s.fireTrigger(ctx, mailmodel.TriggerEmailClicked, contactID, nil)
+	}
+}
+
+// fireTrigger 内部入口：吞掉错误（触发不该影响调用方的主流程）。
+func (s *Service) fireTrigger(ctx context.Context, triggerType string, contactID uint64, extra map[string]any) {
+	defer func() { _ = recover() }()
+	_, _ = s.StartRunsByTrigger(ctx, triggerType, contactID, extra)
+}
+
 // triggerParamsMatch 判断流程的触发条件是否与本次事件相符。
 //
 // 目前只认 tag_added 的 tag 字段：不匹配就跳过。其余触发方式不带条件。
