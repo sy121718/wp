@@ -73,6 +73,7 @@ static/js/ui/*.js + static/css/ui.css
 
 **为什么 builder 要注入而不是自己 embed**：`builder` 不依赖 `internal/templates`（后者含 gin 依赖），
 所以走 `WithUISources` / `WithUIStyle` / `WithEnhanceSource`（与 `WithComponentSet` 同一条路）。
+生产装配统一在 `internal/pipeline/compile_assets.go` 的 `ClientAssetOptions()`：手工页面、自动发布预览/发布与 `DefaultCompile` 都从这里取得同一份 embed 资源。页眉/页脚先合入整页 HTML，再统一选择客户端资源；不在片段编译时重复装配。
 
 **为什么控件脚本与样式必须同进同出**：产物内联了脚本却没样式，访客看到的是**没有外观的空壳**。
 `uiAssetsFor` 扫描 HTML 标签的真实属性，一次决定 CSS 与 JS；正文、注释、脚本和属性值里的示例不会触发注入，纯内容页两个都不注入。
