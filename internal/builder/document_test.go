@@ -25,7 +25,8 @@ var updateDocumentGolden = flag.Bool("update-document-golden", false, "更新 Re
 // 用例覆盖全部槽位 + 转义边界：
 //   - Title/MetaDescription 含 &<>'" → 默认 HTML 转义（等价 html.EscapeString）；
 //   - BodyClass 含 join 空格 → unsafe 原样（保持现状未转义，父代理单独处理）；
-//   - HTML/CSS/ThemeVarsCSS/enhanceScript → unsafe 原样（编译产物，不二次转义）。
+//   - HTML/CSS/ThemeVarsCSS → unsafe 原样（编译产物，不二次转义）。
+//   - 纯内容页不输出空增强脚本。
 func TestRenderDocumentGolden(t *testing.T) {
 	c := &CompiledPage{
 		Title:           "测试页 & <Title> \"双引号\" '单引号'",
@@ -34,8 +35,7 @@ func TestRenderDocumentGolden(t *testing.T) {
 		HTML:            `<section class="sky-c-hero sky-section"><h1 class="sky-heading">Hello &amp; World</h1></section>`,
 		CSS:             `.sky-c-hero{display:grid;max-width:1200px}`,
 		ThemeVarsCSS:    `:root{--sky-c-primary:#3366ff;--sky-c-bg:#ffffff}`,
-		// 增强源码现在由调用方注入（builder 不再自己 embed）；这里按真实调用方式给值，
-		// 才能让 golden 继续守住「增强脚本进产物且不被二次转义」这条契约。
+		// 即使装配了真实增强源码，无交互能力时也不输出空框架。
 		EnhanceSource: enhanceSrcForTest(t),
 	}
 	got, err := RenderDocument(c)

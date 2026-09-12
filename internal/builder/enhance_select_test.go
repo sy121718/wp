@@ -26,24 +26,12 @@ func enhanceSrcForTest(t *testing.T) string {
 	return string(b)
 }
 
-// TestEnhanceScriptForPlainPage 纯内容页：只注入框架骨架。
+// TestEnhanceScriptForPlainPage 纯内容页无需空增强框架。
 func TestEnhanceScriptForPlainPage(t *testing.T) {
 	src := enhanceSrcForTest(t)
-	html := "<section class=\"sky-c-h sky-section\"><h1>纯内容</h1></section>"
-	got := enhanceScriptFor(html, src)
-	if len(got) > 2000 {
-		t.Errorf("纯内容页不该带增强，got %d 字节", len(got))
-	}
-	for _, fn := range []string{"function initSliders", "function initCounters", "function initSlideStacks"} {
-		if strings.Contains(got, fn) {
-			t.Errorf("纯内容页不该注入 %s", fn)
-		}
-	}
-	// 骨架必须完整（否则内联脚本会语法错误）
-	for _, want := range []string{"(function ()", "onReady(function ()", "})();"} {
-		if !strings.Contains(got, want) {
-			t.Errorf("骨架不完整，缺少 %q", want)
-		}
+	got := enhanceScriptFor(collectHTMLFeatures(`<section><h1>纯内容</h1></section>`), src)
+	if got != "" {
+		t.Errorf("纯内容页不应输出增强，got %d 字节", len(got))
 	}
 }
 
@@ -51,7 +39,7 @@ func TestEnhanceScriptForPlainPage(t *testing.T) {
 func TestEnhanceScriptForSlidePage(t *testing.T) {
 	src := enhanceSrcForTest(t)
 	html := "<div class=\"sky-cardstack\" data-cardstack-slide=\"\"><div data-cardstack-track></div></div>"
-	got := enhanceScriptFor(html, src)
+	got := enhanceScriptFor(collectHTMLFeatures(html), src)
 	if !strings.Contains(got, "function initSlideStacks") {
 		t.Errorf("slide 页缺少 initSlideStacks")
 	}
@@ -74,7 +62,7 @@ func TestEnhanceScriptForSlidePage(t *testing.T) {
 func TestEnhanceScriptIgnoresSelfReference(t *testing.T) {
 	src := enhanceSrcForTest(t)
 	html := "<h1>纯内容</h1><script>" + src + "</script>"
-	got := enhanceScriptFor(html, src)
+	got := enhanceScriptFor(collectHTMLFeatures(html), src)
 	if strings.Contains(got, "function initSliders") {
 		t.Errorf("script 块内的源码把自己检测出来了，裁剪失效")
 	}
@@ -84,7 +72,7 @@ func TestEnhanceScriptIgnoresSelfReference(t *testing.T) {
 func TestEnhanceScriptMulti(t *testing.T) {
 	src := enhanceSrcForTest(t)
 	html := "<div data-slider data-cardstack-deck data-counter></div>"
-	got := enhanceScriptFor(html, src)
+	got := enhanceScriptFor(collectHTMLFeatures(html), src)
 	for _, fn := range []string{"initSliders", "initCardDecks", "initCounters"} {
 		if !strings.Contains(got, fn) {
 			t.Errorf("多组件页缺少 %s", fn)
@@ -102,7 +90,7 @@ func TestEnhanceScriptMulti(t *testing.T) {
 // 会静默失去「数字递增」交互 —— 页面照常渲染，只是数字不动，很难归因。
 func TestEnhanceOwnedBlockFromComponent(t *testing.T) {
 	src := loadEnhanceSrc(t)
-	out := enhanceScriptFor(`<div data-counter></div>`, src)
+	out := enhanceScriptFor(collectHTMLFeatures(`<div data-counter></div>`), src)
 	if !strings.Contains(out, "function initCounters") {
 		t.Errorf("命中 data-counter 应内联组件自带的 initCounters")
 	}
@@ -123,4 +111,35 @@ func loadEnhanceSrc(t *testing.T) string {
 		t.Fatal(err)
 	}
 	return string(b)
+}
+
+func TestRenderDocumentSkipsEmptyAndExampleEnhancements(t *testing.T) {
+	for _, content := range []string{
+		`<h1>纯内容</h1>`,
+		`<p>data-slider 与 data-counter 是示例</p>`,
+		`<!-- <div data-countdown></div> -->`,
+		`<div title="data-lightbox" data-counter-example></div>`,
+		`<style>.demo::before{content:'data-slider'}</style>`,
+	} {
+		out, err := RenderDocument(&CompiledPage{HTML: content, EnhanceSource: enhanceSrcForTest(t)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(out, "<script") {
+			t.Errorf("没有真实增强能力的内容不应输出脚本：%s", content)
+		}
+	}
+}
+
+func TestEnhanceAttributesIgnoreEmbeddedMarkupAndMatchCase(t *testing.T) {
+	src := enhanceSrcForTest(t)
+	out := enhanceScriptFor(collectHTMLFeatures(`<SCRIPT>const sample='<div data-slider></div>'</SCRIPT><textarea><div data-lightbox></div></textarea><DIV DATA-COUNTER></DIV>`), src)
+	if !strings.Contains(out, "function initCounters") {
+		t.Fatal("应识别 HTML 大写属性名")
+	}
+	for _, unwanted := range []string{"function initSliders", "function initLightboxes"} {
+		if strings.Contains(out, unwanted) {
+			t.Errorf("脚本和原始文本示例不能触发 %s", unwanted)
+		}
+	}
 }

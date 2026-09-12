@@ -32,13 +32,16 @@ func UIAssetFiles() []string {
 	return append(files, "index.js")
 }
 
-func usedUIFiles(content string) []string {
-	hits := make([]bool, len(uiBlocks))
+// htmlFeatures 是同一份最终 HTML 的能力属性集合，控件与组件增强共享。
+type htmlFeatures map[string]struct{}
+
+func collectHTMLFeatures(content string) htmlFeatures {
+	attrs := make(htmlFeatures)
 	z := html.NewTokenizer(strings.NewReader(content))
 	for {
 		kind := z.Next()
 		if kind == html.ErrorToken {
-			break // 输入是已编译的 HTML 字符串，读取到 EOF 即结束。
+			break // 内存字符串读取到 EOF；脚本、样式和原始文本不当成标签。
 		}
 		if kind != html.StartTagToken && kind != html.SelfClosingTagToken {
 			continue
@@ -47,23 +50,22 @@ func usedUIFiles(content string) []string {
 		for more {
 			var key []byte
 			key, _, more = z.TagAttr()
-			for i, block := range uiBlocks {
-				if hits[i] {
-					continue
-				}
-				for _, attr := range block.attrs {
-					if string(key) == attr {
-						hits[i] = true
-						break
-					}
-				}
+			if strings.HasPrefix(string(key), "data-") {
+				attrs[string(key)] = struct{}{}
 			}
 		}
 	}
+	return attrs
+}
+
+func usedUIFiles(attrs htmlFeatures) []string {
 	var files []string
-	for i, block := range uiBlocks {
-		if hits[i] {
-			files = append(files, block.file)
+	for _, block := range uiBlocks {
+		for _, attr := range block.attrs {
+			if _, ok := attrs[attr]; ok {
+				files = append(files, block.file)
+				break
+			}
 		}
 	}
 	return files
@@ -72,8 +74,8 @@ func usedUIFiles(content string) []string {
 // uiAssetsFor 一次识别能力并同时组装 CSS/JS，防止两次扫描的规则漂移。
 // sources=nil 表示调用方选择无脚本输出；非 nil（含空 map）表示已启用控件增强，
 // 命中的控件、基座、入口或样式缺失都返回构建错误，不能生成残缺产物。
-func uiAssetsFor(content, css string, sources map[string]string) (string, string, error) {
-	files := usedUIFiles(content)
+func uiAssetsFor(attrs htmlFeatures, css string, sources map[string]string) (string, string, error) {
+	files := usedUIFiles(attrs)
 	if len(files) == 0 {
 		return "", "", nil
 	}

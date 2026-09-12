@@ -28,7 +28,7 @@ import (
 type EnhanceBlock struct {
 	// Fns 本块包含的初始化函数名（产物拼装时据此决定 onReady 里保留哪些调用项）。
 	Fns []string
-	// Feats 触发注入的产物特征（任一命中即注入整块）。
+	// Feats 触发注入的真实 data-* 属性名（小写、精确匹配，任一命中即注入整块）。
 	Feats []string
 	// Source 块源码（含它自己的注释头），原样内联进产物。
 	Source string

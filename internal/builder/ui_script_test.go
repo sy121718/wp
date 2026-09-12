@@ -70,7 +70,7 @@ func TestUIStyleFollowsControls(t *testing.T) {
 		{`<button data-modal-open="f1">打开</button>`, "/* css */"},
 		{`<h1>纯内容</h1>`, ""},
 	} {
-		css, _, err := uiAssetsFor(tt.html, "/* css */", uiSrcForTest())
+		css, _, err := uiAssetsFor(collectHTMLFeatures(tt.html), "/* css */", uiSrcForTest())
 		if err != nil || css != tt.want {
 			t.Fatalf("样式 = %q, err = %v", css, err)
 		}
@@ -88,7 +88,7 @@ func TestUIScriptIgnoresSelfReference(t *testing.T) {
 
 func uiScriptForTest(t *testing.T, content string, sources map[string]string) string {
 	t.Helper()
-	_, script, err := uiAssetsFor(content, "/* css */", sources)
+	_, script, err := uiAssetsFor(collectHTMLFeatures(content), "/* css */", sources)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,7 +105,7 @@ func TestUIAssetRegistryAndSelection(t *testing.T) {
 	if !reflect.DeepEqual(UIAssetFiles(), want) {
 		t.Fatal("调用方改变了资源注册表")
 	}
-	_, script, err := uiAssetsFor(`<dialog data-modal></dialog><SELECT DATA-UI-SELECT></SELECT><select data-ui-select></select>`, "/* css */", uiSrcForTest())
+	_, script, err := uiAssetsFor(collectHTMLFeatures(`<dialog data-modal></dialog><SELECT DATA-UI-SELECT></SELECT><select data-ui-select></select>`), "/* css */", uiSrcForTest())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -115,22 +115,22 @@ func TestUIAssetRegistryAndSelection(t *testing.T) {
 	// 不相关资源缺失不会阻断；不用到的控件不进产物。
 	sources := uiSrcForTest()
 	delete(sources, "modal.js")
-	_, script, err = uiAssetsFor(`<select data-ui-select></select>`, "/* css */", sources)
+	_, script, err = uiAssetsFor(collectHTMLFeatures(`<select data-ui-select></select>`), "/* css */", sources)
 	if err != nil || strings.Contains(script, "/* modal */") {
 		t.Fatalf("不应要求无关控件：%v", err)
 	}
 }
 
 func TestUIAssetsExplicitNoScriptMode(t *testing.T) {
-	css, script, err := uiAssetsFor(`<select data-ui-select></select>`, "/* css */", nil)
+	css, script, err := uiAssetsFor(collectHTMLFeatures(`<select data-ui-select></select>`), "/* css */", nil)
 	if err != nil || script != "" || css != "/* css */" {
 		t.Fatalf("无脚本模式失效：css=%q js=%q err=%v", css, script, err)
 	}
-	_, _, err = uiAssetsFor(`<select data-ui-select></select>`, "/* css */", map[string]string{})
+	_, _, err = uiAssetsFor(collectHTMLFeatures(`<select data-ui-select></select>`), "/* css */", map[string]string{})
 	if err == nil {
 		t.Fatal("已启用增强却缺全部资源时必须报错")
 	}
-	css, script, err = uiAssetsFor(`<p>内容</p>`, "", map[string]string{})
+	css, script, err = uiAssetsFor(collectHTMLFeatures(`<p>内容</p>`), "", map[string]string{})
 	if err != nil || css != "" || script != "" {
 		t.Fatal("纯内容页不应依赖控件资源")
 	}
@@ -156,7 +156,7 @@ func TestRenderDocumentRejectsIncompleteUIAssets(t *testing.T) {
 func TestUIAssetsRejectBlankSource(t *testing.T) {
 	sources := uiSrcForTest()
 	sources["select.js"] = " \n\t"
-	_, _, err := uiAssetsFor(`<select data-ui-select></select>`, "/* css */", sources)
+	_, _, err := uiAssetsFor(collectHTMLFeatures(`<select data-ui-select></select>`), "/* css */", sources)
 	if err == nil || !strings.Contains(err.Error(), "select.js") {
 		t.Fatalf("空白源码必须视作缺失：%v", err)
 	}

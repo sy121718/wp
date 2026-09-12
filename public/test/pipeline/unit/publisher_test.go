@@ -384,3 +384,16 @@ func TestDefaultCompileIncludesOnlyUsedClientAssets(t *testing.T) {
 		}
 	}
 }
+
+// 即使生产装配提供全套资源，无交互页面也不应包含空脚本或公共控件 CSS。
+func TestDefaultCompilePlainPageHasNoClientAssets(t *testing.T) {
+	out, err := pipeline.DefaultCompile(context.Background(), pipeline.BuildInput{DocJSON: []byte(docV2)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, unwanted := range []string{"<script", "WBUI", ".wbs-trigger"} {
+		if strings.Contains(string(out), unwanted) {
+			t.Errorf("纯内容产物不应包含 %s", unwanted)
+		}
+	}
+}

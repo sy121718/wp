@@ -5,9 +5,8 @@ package builder
 // 背景：客户端增强此前集中在 538 行的 enhance.js 里（8 个互不相关的增强），而每个产物都全量内联 ——
 // 一个只用了 slide 的页面要背其余 85% 的用不到代码，纯内容页也背着 22KB。
 //
-// 做法：构建期按产物里实际出现的 data-* 特征挑选要注入的增强块，只拼这一份。
-// 特征扫描前必须剥掉 script 块 —— 增强脚本自身内联在页面里，含全部 data-* 字样，
-// 不剥离会让每个特征都「被检测到」，等于没裁。
+// 做法：与公共控件共用最终 HTML 的能力属性集合，精确挑选增强块。
+// 文本、注释和脚本中的示例不触发增强；没有命中任何能力时不输出框架。
 //
 // 块现在**全部来自组件目录**（组件 //go:embed enhance.js，经 core.RegisterEnhanceBlock 注册）：
 // counter / slider / gallery / countdown / cardstack。enhance.js 只剩框架（IIFE + onReady 包装）。
@@ -16,7 +15,6 @@ package builder
 // 块之间彼此独立、onReady 逐个调用，所以顺序不影响行为与产物语义。
 
 import (
-	"regexp"
 	"strings"
 
 	"go_wp/internal/builder/core"
@@ -46,31 +44,27 @@ func allEnhanceBlocks() []enhanceBlock {
 	return out
 }
 
-// scriptTagRe script 标签（含内容）；特征扫描前剥离，避免内联脚本自我误报。
-var scriptTagRe = regexp.MustCompile("(?s)<script[^>]*>.*?</script>")
-
-// enhanceScriptFor 按产物 HTML 拼装需要的增强块。
-//
-// 全部增强的触发特征都登记在组件里，所以「一个都没命中」= 页面确实不需要任何增强
-// （纯内容页），此时只注入框架骨架 + 空的 onReady 调用。
-func enhanceScriptFor(html, src string) string {
-	if strings.TrimSpace(src) == "" {
-		// 未注入增强源码：产物不含交互脚本（页面照常渲染）。不静默——装配层漏注入
-		// 会让「轮播不能拖、灯箱点不开」这类问题在产物里无声发生，所以这里留痕。
-		logger.Scene("build").Warn("未注入客户端增强源码（WithEnhanceSource），产物将不含交互脚本")
-		return ""
-	}
-	probe := scriptTagRe.ReplaceAllString(html, "")
-
+// enhanceScriptFor 按 HTML 真实属性拼装需要的增强块。
+// 纯内容页不输出框架或初始化入口；仅命中能力时才需要增强源码。
+func enhanceScriptFor(attrs htmlFeatures, src string) string {
 	blocks := allEnhanceBlocks()
 	hit := make([]bool, len(blocks))
+	anyHit := false
 	for i, b := range blocks {
-		for _, f := range b.feats {
-			if strings.Contains(probe, f) {
+		for _, attr := range b.feats {
+			if _, ok := attrs[attr]; ok {
 				hit[i] = true
+				anyHit = true
 				break
 			}
 		}
+	}
+	if !anyHit {
+		return ""
+	}
+	if strings.TrimSpace(src) == "" {
+		logger.Scene("build").Warn("未注入客户端增强源码（WithEnhanceSource），产物将不含交互脚本")
+		return ""
 	}
 	return assembleEnhance(hit, blocks, src)
 }

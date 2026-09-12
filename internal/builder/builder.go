@@ -714,7 +714,8 @@ func RenderNodeHTML(set *jet.Set, node *core.Node, ctx *core.RenderContext) (str
 // CSS/HTML/ThemeVarsCSS/增强脚本是编译产物，用 unsafe 原样输出，避免二次转义；
 // BodyClass 保持现状未转义（父代理单独处理转义问题），同样 unsafe 原样输出。
 func RenderDocument(c *CompiledPage) (string, error) {
-	uiCSS, uiScript, err := uiAssetsFor(c.HTML, c.UIStyle, c.UISources)
+	features := collectHTMLFeatures(c.HTML)
+	uiCSS, uiScript, err := uiAssetsFor(features, c.UIStyle, c.UISources)
 	if err != nil {
 		return "", fmt.Errorf("组装文档控件资源失败: %w", err)
 	}
@@ -733,7 +734,7 @@ func RenderDocument(c *CompiledPage) (string, error) {
 		HTML:            c.HTML,
 		CSS:             c.CSS + uiCSS,
 		ThemeVarsCSS:    c.ThemeVarsCSS,
-		EnhanceScript:   enhanceScriptFor(c.HTML, c.EnhanceSource) + uiScript,
+		EnhanceScript:   enhanceScriptFor(features, c.EnhanceSource) + uiScript,
 	}
 	var sb strings.Builder
 	if err := documentTemplate().Execute(&sb, nil, v); err != nil {
