@@ -361,3 +361,26 @@ func TestPublisherSaveDraftSnapshot(t *testing.T) {
 		t.Fatalf("快照应隔离调用方修改: %v", err)
 	}
 }
+
+func TestDefaultCompileIncludesOnlyUsedClientAssets(t *testing.T) {
+	doc := `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"form","type":"core.form","props":{"fields":[{"type":"select","name":"city","label":"城市","options":["北京","上海"]}]}},{"id":"counter","type":"core.counter","props":{"end":12.5,"decimals":1}}]}`
+	input := pipeline.BuildInput{DocJSON: []byte(doc)}
+	out, err := pipeline.DefaultCompile(context.Background(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	again, err := pipeline.DefaultCompile(context.Background(), input)
+	if err != nil || string(again) != string(out) {
+		t.Fatalf("重复编译必须字节一致：%v", err)
+	}
+	for _, required := range []string{"WBUI.select", ".wbs-trigger", "function initCounters"} {
+		if !strings.Contains(string(out), required) {
+			t.Errorf("默认编译缺少 %s", required)
+		}
+	}
+	for _, unused := range []string{"WBUI.modal", "function initSliders"} {
+		if strings.Contains(string(out), unused) {
+			t.Errorf("默认编译不应携带 %s", unused)
+		}
+	}
+}

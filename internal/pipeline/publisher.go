@@ -115,8 +115,9 @@ func DefaultCompile(ctx context.Context, in BuildInput) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	compiled, err := builder.Compile(page,
+	opts := append(ClientAssetOptions(),
 		builder.WithContext(ctx), builder.WithComponentSet(set), builder.WithLanguage(in.Lang))
+	compiled, err := builder.Compile(page, opts...)
 	if err != nil {
 		return nil, err
 	}

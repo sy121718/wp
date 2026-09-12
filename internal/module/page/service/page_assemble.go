@@ -102,14 +102,9 @@ func (s *Service) compileDocument(ctx context.Context, page *builder.Page, proje
 	// 不影响本次产物字节（确定性构建不变量，docs/06-D §2.3/§12）。
 	opts := []builder.CompileOption{
 		builder.WithContext(ctx), builder.WithBlockResolver(resolver), builder.WithComponentSet(set),
-		// 客户端增强脚本（轮播/灯箱/卡片环…）：构建期按产物特征裁剪后内联。
-		builder.WithEnhanceSource(enhanceSource()),
-		// 原始控件基座（下拉替身等）：按产物里的 data-ui-* 特征挑控件内联。
-		builder.WithUISources(uiSources()),
-		// 控件样式与控件脚本同进同出（没有样式的话下拉就是个没外观的空壳）。
-		builder.WithUIStyle(templates.UICSS()),
 		builder.WithLanguage(lang), builder.WithTranslator(i18n.Snapshot(lang)),
 	}
+	opts = append(opts, pipeline.ClientAssetOptions()...)
 	if asm != nil {
 		opts = append(opts, builder.WithPluginResolver(plugincontract.AssemblyResolver(asm)))
 		// 插件静态样式（assets/*.css）：构建期注入主 CSS 之后（docs/06 §5.1）。

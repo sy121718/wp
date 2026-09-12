@@ -1,9 +1,9 @@
-package pageservice
+package pipeline
 
-// page_enhance.go — 客户端增强脚本的读取（一份源文件，两个出口）。
+// compile_assets.go — 手工页面、自动发布与默认编译共享的客户端资源装配。
 //
 // enhance.js 放在 internal/templates/static/js/ 下：运行时经 /static 给后台页面用，
-// 构建期由这里取出交给 builder 内联进静态产物（builder 不依赖 templates，所以走注入）。
+// 构建期由这里取出交给 builder 按需内联，业务模块不再维护各自的文件清单。
 // embed 读取是内存操作，进程内读一次即可。
 
 import (
@@ -56,4 +56,14 @@ func uiSources() map[string]string {
 		}
 	})
 	return uiSourcesVal
+}
+
+// ClientAssetOptions 提供所有发布入口共同使用的客户端资源。
+// 源码只从 embed 读取一次；是否进入产物由 builder 按实际 HTML 决定。
+func ClientAssetOptions() []builder.CompileOption {
+	return []builder.CompileOption{
+		builder.WithEnhanceSource(enhanceSource()),
+		builder.WithUISources(uiSources()),
+		builder.WithUIStyle(templates.UICSS()),
+	}
 }

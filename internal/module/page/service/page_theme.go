@@ -222,9 +222,7 @@ func (s *Service) compileBlockFragment(ctx context.Context, blockID, lang string
 	}
 	opts := []builder.CompileOption{
 		builder.WithContext(ctx), builder.WithComponentSet(set),
-		// 块内也可能含需要交互的组件（轮播/卡片环等），同样注入增强源码。
-		builder.WithEnhanceSource(enhanceSource()),
-		builder.WithUISources(uiSources()), builder.WithUIStyle(templates.UICSS()),
+		// 这里只取块 HTML/CSS；客户端资源在整页组装时按合并后的 HTML 统一注入。
 		// 语言与取词函数：与 compileDocument 的页面主体编译保持同一口径
 		//（构建期冻结快照，构建中途刷新 i18n 缓存不影响本次产物字节）。
 		builder.WithLanguage(lang), builder.WithTranslator(i18n.Snapshot(lang)),

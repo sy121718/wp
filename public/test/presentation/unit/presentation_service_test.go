@@ -183,3 +183,50 @@ func TestCreateInstanceIdempotent(t *testing.T) {
 		t.Fatalf("重复创建应幂等返回同一实例: %s vs %s", a.ID, b.ID)
 	}
 }
+
+// 模板中同时使用公共控件与组件增强，验证真实预览和激活文件都包含所需资源。
+func TestPresentationPreviewAndPublishedAssets(t *testing.T) {
+	f := newPresFixture(t)
+	if f == nil {
+		return
+	}
+	ctx := context.Background()
+	doc := `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"heading","type":"core.heading","props":{"binding":{"field":"article.title"},"tag":"h2"}},{"id":"form","type":"core.form","props":{"fields":[{"type":"select","name":"city","label":"城市","options":["北京","上海"]}]}},{"id":"counter","type":"core.counter","props":{"end":12.5,"decimals":1}}]}`
+	if _, err := f.templates.Create(ctx, &contenttemplatedto.CreateReq{
+		EntityType: "article", Name: "交互资源模板", DraftDocument: []byte(doc),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	entity, err := f.content.Create(ctx, &contentdto.CreateReq{
+		EntityType: "article", Slug: "interactive-assets", Data: map[string]any{"title": "交互资源"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	preview, err := f.pres.PreviewInstance(ctx, &presentationdto.PreviewInstanceReq{
+		ProjectID: f.projectID, EntityType: "article", EntityID: entity.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = f.pres.CreateInstance(ctx, &presentationdto.CreateInstanceReq{
+		ProjectID: f.projectID, EntityType: "article", EntityID: entity.ID, URLPath: "/interactive-assets",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	published := activeHTML(t, "/interactive-assets")
+	if published != preview.HTML {
+		t.Fatal("预览与激活产物字节不一致")
+	}
+	for _, required := range []string{"<select data-ui-select", "WBUI.select", ".wbs-trigger", "function initCounters"} {
+		if !strings.Contains(published, required) {
+			t.Errorf("激活产物缺少 %s", required)
+		}
+	}
+	for _, unused := range []string{"WBUI.modal", "function initSliders", "function initCountdowns"} {
+		if strings.Contains(published, unused) {
+			t.Errorf("激活产物不应携带未使用的 %s", unused)
+		}
+	}
+}

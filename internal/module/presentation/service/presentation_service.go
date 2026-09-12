@@ -597,6 +597,7 @@ func (s *Service) renderHTML(ctx context.Context, entityType, entityID, projectI
 		// 组件固定文案取词：构建开始时刻的词条快照（确定性构建不变量）。
 		builder.WithLanguage(lang), builder.WithTranslator(i18n.Snapshot(lang)),
 	}
+	compileOpts = append(compileOpts, pipeline.ClientAssetOptions()...)
 	// 集合源注入（issue #9）：模板里的集合类组件按白名单展开商品等集合数据。
 	if s.collection != nil {
 		compileOpts = append(compileOpts, builder.WithCollectionResolver(s.collection))
