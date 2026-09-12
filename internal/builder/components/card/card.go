@@ -4,6 +4,7 @@
 package card
 
 import (
+	_ "embed" // card.css 经 //go:embed 打进二进制
 	"fmt"
 
 	"go_wp/internal/builder/core"
@@ -55,70 +56,19 @@ func validateExtra(p *Props, nodeID string) (err error) {
 	return nil
 }
 
-// compileCSS 卡片样式：布局 + 图片 + 标题 + 正文 + 按钮。
+// cardCSS 组件样式源。与组件同目录：改样式不必再进 Go 字符串数组
+// （有补全 / lint / 格式化），而作用域替换、容器查询分桶、确定性输出仍由构建期负责。
+//
+//go:embed card.css
+var cardCSS string
+
+// compileCSS 卡片样式：布局 + 图片 + 标题 + 正文 + 按钮（样式与 Props 无关）。
 func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	sel := "." + core.NodeClass(id)
-
-	b.Add(core.BreakpointDesktop, sel, []string{
-		"display: flex",
-		"flex-direction: column",
-		"overflow: hidden",
-		"background: var(--sky-c-surface, #fff)",
-		"border: 1px solid var(--sky-c-border, rgba(0,0,0,0.1))",
-		"border-radius: 12px",
-		core.CSSDecl("padding", "var(--sky-density-pad, 16px)"),
-	})
-	b.Add(core.BreakpointDesktop, sel+" img", []string{
-		"width: 100%",
-		"display: block",
-		"border-radius: 8px",
-		"margin-bottom: 12px",
-		"object-fit: cover",
-	})
-	// 容器级自适应（@container）：组件被放进宽容器时图左文右，窄容器保持纵向堆叠。
-	// 外层未启用「容器查询上下文」时规则不匹配（自然降级为默认纵向，零副作用）。
-	b.AddContainer("(width >= 480px)", sel, []string{
-		"flex-direction: row",
-		"align-items: center",
-		"gap: 16px",
-	})
-	b.AddContainer("(width >= 480px)", sel+" img", []string{
-		"width: 40%",
-		"margin-bottom: 0",
-	})
-	// 结构变体（样式查询 @container style()）：外层容器显式声明
-	// --sky-card-layout: horizontal 时横排——由作者/主题显式决定结构，不依赖宽度。
-	b.AddStyleQuery("sky-theme", "--sky-card-layout", "horizontal", sel, []string{
-		"flex-direction: row",
-		"align-items: center",
-		"gap: 16px",
-	})
-	// 密度结构差异（样式查询）：紧凑档位下卡片横排——更省纵向空间、信息密度更高。
-	b.AddThemeQuery("sky-theme", "--sky-density", "compact", sel, []string{
-		"flex-direction: row",
-		"align-items: center",
-		"gap: var(--sky-density-gap, 16px)",
-	})
-	b.Add(core.BreakpointDesktop, sel+" h3", []string{
-		"margin: 0 0 8px",
-		"font-size: 18px",
-		"line-height: 1.4",
-	})
-	b.Add(core.BreakpointDesktop, sel+" p", []string{
-		"margin: 0",
-		"color: rgba(0,0,0,0.65)",
-		"line-height: 1.6",
-	})
-	b.Add(core.BreakpointDesktop, sel+" a.sky-card-btn", []string{
-		"margin-top: 16px",
-		"align-self: flex-start",
-		"display: inline-block",
-		"padding: 8px 16px",
-		"border-radius: 6px",
-		"background: var(--sky-btn-bg, var(--sky-c-primary, #2563eb))",
-		"color: var(--sky-btn-color, #fff)",
-		"text-decoration: none",
-	})
+	if err := core.ApplyComponentCSS(b, sel, cardCSS); err != nil {
+		// 样式源解析失败属于构建期缺陷，必须在测试/构建时暴露；静默跳过的后果是产物悄悄少了样式。
+		panic(fmt.Sprintf("card 组件样式解析失败: %v", err))
+	}
 }
 
 // init 注册卡片组件。

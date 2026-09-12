@@ -14,8 +14,9 @@ package core
 // 设计取舍：
 //   · **只支持现有代码实际用到的语法**，遇到不认识的写法**返回 error** 而不是静默漏掉 ——
 //     静默漏掉的样式会在产物里「看起来正常但少了点什么」，比构建失败难查得多；
-//   · 桶（desktop / tablet / mobile / hover / active）默认 desktop，与迁移前逐条 b.Add 的行为一致；
-//     需要别的桶时用 `@media`（按断点）或 `@hover` / `@active` 分组；
+//   · 桶（desktop / tablet / mobile / hover / active / 容器查询）默认 desktop，与迁移前逐条 b.Add 的行为一致；
+//     需要别的桶时用 `@media`（按断点）、`@hover` / `@active` / `@hovernone`，或容器查询
+//     `@container (…) &` / `@theme <容器> <属性> <值> &` / `@style <容器> <属性> <值> &`；
 //   · Go 侧的计算声明（FocusRingDecls / FocusTransitionDecl）用**占位指令**表达，
 //     如 `@focus-ring;` —— 这样「一份实现」没有变成两份。
 //
@@ -142,11 +143,17 @@ func (p *cssSourceParser) run() error {
 			if err != nil {
 				return cssApplyError(i+1, "%v", err)
 			}
-			if truthy(v) {
-				inner := &cssSourceParser{src: body, scope: p.scope, buckets: p.buckets, mediaBP: p.mediaBP, vars: p.vars, used: p.used}
-				if err := inner.run(); err != nil {
-					return err
-				}
+			// 命中与未命中都要解析一遍，区别只在「写到哪」：未命中的分支把输出丢进一个
+			// 临时 CSSBuckets（用完即弃）。理由与声明级 @if 相同 —— Go 侧总是提供全部业务变量，
+			// 若未命中的分支干脆不解析，分支内的变量就不会被标记为「已消费」，
+			// 反向校验会误报「提供了却没用到」。顺带让未命中分支的语法错误也能在构建期暴露。
+			target := p.buckets
+			if !truthy(v) {
+				target = &CSSBuckets{}
+			}
+			inner := &cssSourceParser{src: body, scope: p.scope, buckets: target, mediaBP: p.mediaBP, vars: p.vars, used: p.used}
+			if err := inner.run(); err != nil {
+				return err
 			}
 			i = next
 			continue
@@ -181,6 +188,37 @@ func (p *cssSourceParser) run() error {
 			inner := &cssSourceParser{src: body, scope: p.scope, buckets: p.buckets, mediaBP: bp, vars: p.vars, used: p.used}
 			if err := inner.run(); err != nil {
 				return err
+			}
+			i = next
+			continue
+		}
+		// 容器类指令：@hovernone / @container / @theme / @style。
+		// 必须拦在下面普通规则的 switch 之前 —— @hovernone 与 @hover 共享前缀，
+		// 落进那段的 HasPrefix 判断会被当成 @hover，规则静默进错桶（触屏等价形态消失）。
+		if name, ok := bucketDirective(line); ok {
+			// 容器查询与视口断点是两套正交的适配档位，混在同一处会让「哪一档先赢」
+			// 取决于源顺序；这里直接拒绝，保持「一个选择器只受一层适配控制」。
+			if p.mediaBP != "" {
+				return cssApplyError(i+1, "%s 不能写在 @media 块内（容器查询与视口断点是两套档位，混用会互相打架）", name)
+			}
+			braceAt := strings.Index(line, "{")
+			if strings.HasSuffix(line, "{") {
+				braceAt = len(line) - 1
+			}
+			if braceAt <= 0 {
+				return cssApplyError(i+1, "%s 缺少规则块（写成「%s … { 声明 }」）", name, name)
+			}
+			head := strings.TrimSpace(line[:braceAt])
+			body, next, err := collectBlock(lines, i, line, braceAt)
+			if err != nil {
+				return cssApplyError(i+1, "%v", err)
+			}
+			decls, err := p.parseDecls(body)
+			if err != nil {
+				return cssApplyError(i+1, "%v", err)
+			}
+			if err := p.applyBucketQuery(name, strings.TrimSpace(strings.TrimPrefix(head, name)), decls); err != nil {
+				return cssApplyError(i+1, "%v", err)
 			}
 			i = next
 			continue
@@ -236,10 +274,13 @@ func (p *cssSourceParser) run() error {
 		// @hover / @active 用标记前缀指定桶（构建期据此决定要不要包 @media (hover: hover)）。
 		scoped := replaceAmp(selector, p.scope)
 		switch {
-		case strings.HasPrefix(selector, "@hover"):
+		// 前缀带空格：@hovernone 以 @hover 开头，这里少一个空格就会把触屏等价形态
+		// 错当成 @hover 收下（虽然上面的 bucketDirective 已经拦过一道，但两处判断
+		// 不该靠「执行顺序」互相担保）。
+		case strings.HasPrefix(selector, "@hover "):
 			scoped = replaceAmp(strings.TrimSpace(strings.TrimPrefix(selector, "@hover")), p.scope)
 			p.buckets.AddHover(scoped, decls)
-		case strings.HasPrefix(selector, "@active"):
+		case strings.HasPrefix(selector, "@active "):
 			scoped = replaceAmp(strings.TrimSpace(strings.TrimPrefix(selector, "@active")), p.scope)
 			p.buckets.AddActive(scoped, decls)
 		default:
@@ -528,4 +569,127 @@ func stripCSSComment(line string) string {
 		}
 		line = line[:start] + line[start+end+2:]
 	}
+}
+
+// bucketDirective 识别容器类指令（选择器前缀形态），返回指令名。
+//
+// 与 @hover / @active 同族但参数不止选择器：容器条件与样式查询的键值要先切出来。
+// 要求指令名后跟空格或 ( —— 单看前缀会把将来的 @containerstyle 之类误收进来。
+func bucketDirective(line string) (string, bool) {
+	for _, d := range []string{"@hovernone", "@container", "@theme", "@style"} {
+		if strings.HasPrefix(line, d+" ") || strings.HasPrefix(line, d+"(") {
+			return d, true
+		}
+	}
+	return "", false
+}
+
+// applyBucketQuery 把容器类指令写入对应桶：从参数文本里切出查询条件与选择器。
+//
+// 参数形状各不相同，故逐个处理而不是统一「去掉指令名剩下就是选择器」：
+//
+//	@hovernone &                         → 参数即选择器
+//	@container (width >= 480px) &        → 条件（含空格） + 选择器
+//	@theme sky-theme --sky-density compact &  → 三个 token + 选择器
+func (p *cssSourceParser) applyBucketQuery(name, args string, decls []string) error {
+	switch name {
+	case "@hovernone":
+		sel, err := p.bucketSelector(args)
+		if err != nil {
+			return err
+		}
+		p.buckets.AddHoverNone(sel, decls)
+	case "@container":
+		condition, tail, err := cutParen(args)
+		if err != nil {
+			return err
+		}
+		sel, err := p.bucketSelector(tail)
+		if err != nil {
+			return err
+		}
+		p.buckets.AddContainer(condition, sel, decls)
+	case "@theme", "@style":
+		tokens, tail, err := cutTokens(args, 3)
+		if err != nil {
+			return err
+		}
+		sel, err := p.bucketSelector(tail)
+		if err != nil {
+			return err
+		}
+		if name == "@theme" {
+			p.buckets.AddThemeQuery(tokens[0], tokens[1], tokens[2], sel, decls)
+		} else {
+			p.buckets.AddStyleQuery(tokens[0], tokens[1], tokens[2], sel, decls)
+		}
+	}
+	return nil
+}
+
+// bucketSelector 取出容器类指令的选择器：展开变量、要求含 &、替换成实例作用域。
+//
+// 与普通规则同一条安全约束 —— 缺少 & 的选择器会滑出实例作用域泄漏到全站。
+// 变量在这里也展开（@global 同样如此），免得 {{x}} 原样进产物：那在页面上
+// 只表现为「样式不太对」，比构建期报错难查得多。
+func (p *cssSourceParser) bucketSelector(raw string) (string, error) {
+	if raw == "" {
+		return "", fmt.Errorf("缺少选择器")
+	}
+	sel, empty, err := p.expandVars(raw)
+	if err != nil {
+		return "", err
+	}
+	if empty {
+		return "", fmt.Errorf("选择器里的变量取到空值：%q", raw)
+	}
+	if !strings.Contains(sel, "&") {
+		return "", fmt.Errorf("选择器必须以 & 开头（& 会被替换成该组件实例的作用域），got %q", sel)
+	}
+	return replaceAmp(sel, p.scope), nil
+}
+
+// cutParen 从 `(…)` 形态的容器条件里切出条件与其余文本。
+//
+// 按括号配平找闭合，而不是取第一个 ) —— 选择器里也会出现括号（:is() / :has()），
+// 拿第一个 ) 会把选择器前半截当成条件的一部分。
+func cutParen(s string) (condition, rest string, err error) {
+	if !strings.HasPrefix(s, "(") {
+		return "", "", fmt.Errorf("@container 的条件要以 ( 开头（如 (width >= 480px)），got %q", s)
+	}
+	depth := 0
+	for i := 0; i < len(s); i++ {
+		switch s[i] {
+		case '(':
+			depth++
+		case ')':
+			depth--
+			if depth == 0 {
+				return s[:i+1], strings.TrimSpace(s[i+1:]), nil
+			}
+		}
+	}
+	return "", "", fmt.Errorf("@container 的条件括号没有闭合：%q", s)
+}
+
+// cutTokens 取走前 n 个空格分隔的 token，返回它们与剩余文本。
+//
+// 不能用 strings.Fields：剩余部分是选择器，可能自带空格（后代选择器 `& img`），
+// Fields 之后无法还原「哪一段属于选择器」。
+func cutTokens(s string, n int) (tokens []string, rest string, err error) {
+	rest = strings.TrimSpace(s)
+	for len(tokens) < n {
+		if rest == "" {
+			return nil, "", fmt.Errorf("参数不足，需要 %d 个（容器名 属性 值），got %q", n, s)
+		}
+		i := strings.IndexAny(rest, " \t")
+		if i < 0 {
+			tokens = append(tokens, rest)
+			rest = ""
+			break
+		}
+		tokens = append(tokens, rest[:i])
+		rest = strings.TrimSpace(rest[i+1:])
+	}
+	return tokens, rest, nil
 }

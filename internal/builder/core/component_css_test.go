@@ -252,3 +252,117 @@ func TestComponentCSSSelectorShapes(t *testing.T) {
 		}
 	}
 }
+
+// TestComponentCSSRuleLevelIfConsumesVars 规则级 @if 未命中时，分支内的变量仍算「已消费」。
+//
+// Go 侧总是提供全部业务变量（它不该跟着样式源的分支结构走），因此未命中分支若不解析，
+// 「提供的变量必须被样式源消费」这条反向校验就会把分支专属变量误判成拼写错误。
+// gallery 是第一个踩到的组件：isGrid 为假时 colsDesktop 等变量就在未命中分支里。
+func TestComponentCSSRuleLevelIfConsumesVars(t *testing.T) {
+	const src = "@if flag\n& { width: {{w}}; }\n@endif\n"
+	var off CSSBuckets
+	if err := ApplyComponentCSSTmpl(&off, ".x", src, map[string]string{"flag": "", "w": "10px"}); err != nil {
+		t.Fatalf("未命中的规则级分支不该让变量校验误报: %v", err)
+	}
+	if strings.Contains(off.String(), "width") {
+		t.Errorf("未命中的分支不该产出声明:\n%s", off.String())
+	}
+
+	var on CSSBuckets
+	if err := ApplyComponentCSSTmpl(&on, ".x", src, map[string]string{"flag": "1", "w": "10px"}); err != nil {
+		t.Fatalf("解析失败: %v", err)
+	}
+	if !strings.Contains(on.String(), "width: 10px") {
+		t.Errorf("命中的分支应产出声明:\n%s", on.String())
+	}
+}
+
+// TestComponentCSSBucketQueries 容器类指令（@hovernone / @container / @theme / @style）
+// 的产物必须与 Go 侧直接调用对应桶**逐字节一致**。
+//
+// 这是把 counter / card / gallery 这些用了容器查询的组件从 Go 迁到样式源的前提：
+// 只要有一条指令的参数切错（容器条件含空格、样式查询的键值错位），产物就会变形，
+// 而变形后的 CSS 在浏览器里多半仍「看起来能跑」——只能靠字节比对拦住。
+// ContainerQueryCSS 单独比一次：容器查询与基础样式是两条装配路径。
+func TestComponentCSSBucketQueries(t *testing.T) {
+	const src = "@hovernone & { box-shadow: none }\n" +
+		"@container (width >= 480px) & { flex-direction: row }\n" +
+		"@container (width < 400px) & .grid { grid-template-columns: 1fr }\n" +
+		"@theme sky-theme --sky-density compact & .body { padding: 8px }\n" +
+		"@style sky-theme --sky-card-layout horizontal & { display: grid }\n"
+	var b CSSBuckets
+	if err := ApplyComponentCSS(&b, ".x", src); err != nil {
+		t.Fatalf("解析失败: %v", err)
+	}
+
+	var want CSSBuckets
+	want.AddHoverNone(".x", []string{"box-shadow: none"})
+	want.AddContainer("(width >= 480px)", ".x", []string{"flex-direction: row"})
+	want.AddContainer("(width < 400px)", ".x .grid", []string{"grid-template-columns: 1fr"})
+	want.AddThemeQuery("sky-theme", "--sky-density", "compact", ".x .body", []string{"padding: 8px"})
+	want.AddStyleQuery("sky-theme", "--sky-card-layout", "horizontal", ".x", []string{"display: grid"})
+
+	if got := b.String(); got != want.String() {
+		t.Errorf("基础样式产物不一致\n样式源:\n%s\nGo 调用:\n%s", got, want.String())
+	}
+	if got := b.ContainerQueryCSS(); got != want.ContainerQueryCSS() {
+		t.Errorf("容器查询产物不一致\n样式源:\n%s\nGo 调用:\n%s", got, want.ContainerQueryCSS())
+	}
+}
+
+// TestComponentCSSHovernoneIsNotHover 钉住 @hovernone 与 @hover 的边界。
+//
+// 二者共享前缀，判断少一个空格就会把触屏等价形态收进 hover 桶：
+// 产物里出现 @media (hover: hover)，触屏上整段不输出 —— 而桌面预览完全正常，
+// 属于「只有真机才看得见」的静默错桶。
+func TestComponentCSSHovernoneIsNotHover(t *testing.T) {
+	var b CSSBuckets
+	if err := ApplyComponentCSS(&b, ".x", "@hovernone & { transform: none }\n"); err != nil {
+		t.Fatalf("解析失败: %v", err)
+	}
+	out := b.String()
+	if !strings.Contains(out, "@media (hover: none)") {
+		t.Errorf("@hovernone 应产出 (hover: none) 块\n%s", out)
+	}
+	if strings.Contains(out, "(hover: hover)") {
+		t.Errorf("@hovernone 被当成了 @hover（触屏等价形态会消失）\n%s", out)
+	}
+}
+
+// TestComponentCSSBucketQueryErrors 容器类指令的参数错误必须在构建期报错。
+//
+// 这些形态写错后产物仍是一份合法 CSS（只是少了一条适配、或选择器滑出作用域），
+// 浏览器不会报任何错 —— 只能在这里拦。
+func TestComponentCSSBucketQueryErrors(t *testing.T) {
+	cases := []struct {
+		name string
+		src  string
+	}{
+		{"条件缺括号", "@container width >= 480px & { color: red }"},
+		{"条件括号未闭合", "@container (width >= 480px & { color: red }"},
+		{"选择器缺 &", "@container (width >= 480px) .noamp { color: red }"},
+		{"hovernone 缺 &", "@hovernone .noamp { color: red }"},
+		{"样式查询参数不足", "@theme sky-theme --sky-density & { color: red }"},
+		{"样式查询缺选择器", "@style sky-theme --sky-card-layout horizontal { color: red }"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			var b CSSBuckets
+			if err := ApplyComponentCSS(&b, ".x", c.src); err == nil {
+				t.Errorf("应当报错却通过了：%s\n产物:\n%s", c.src, b.String())
+			}
+		})
+	}
+}
+
+// TestComponentCSSBucketQueryInsideMedia 容器查询不能被 @media 包住。
+//
+// 两套适配档位混在一处时「谁先赢」取决于源顺序，属于会随编辑漂移的隐式规则；
+// 直接拒绝，逼作者把适配写在一层里。
+func TestComponentCSSBucketQueryInsideMedia(t *testing.T) {
+	const src = "@media (max-width: 767px) {\n  @container (width >= 480px) & { color: red }\n}\n"
+	var b CSSBuckets
+	if err := ApplyComponentCSS(&b, ".x", src); err == nil {
+		t.Errorf("容器查询写在 @media 内应当报错\n产物:\n%s", b.String())
+	}
+}

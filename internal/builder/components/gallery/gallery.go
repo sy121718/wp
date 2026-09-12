@@ -266,159 +266,83 @@ func parseValues(v string) (items []Item, err error) {
 // 单图项渲染视图逻辑已迁移至 jet.go 的 buildItemView + gallery.jet 模板
 //（HTML 结构下沉 .jet，Jet 默认转义），旧 renderItem 手拼 HTML 已删除。
 
+// galleryCSS 组件样式源。与组件同目录：改样式不必再进 Go 字符串数组，
+// 而作用域替换、三端分桶、容器查询分层与确定性输出仍由构建期负责。
+//
+//go:embed gallery.css
+var galleryCSS string
+
 // compileCSS 图集样式：Grid 三端/间距、Carousel 骨架、统一样式（比例/适配/圆角/边框/悬浮）、图注。
+//
+// 只做一件事：把属性翻译成样式源的变量。分支结构（哪种模式 / 哪端列数 / 有没有悬浮）
+// 全部在 gallery.css 里用 @if 描述 —— 因此这里不再拼声明切片，也不必用 if 包住 b.Add。
 func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	sel := "." + core.NodeClass(id)
 
-	// 统一子图样式。
-	var base []string
-	if ar, ok := presetRatios[p.AspectRatio]; ok && ar != "" {
-		base = append(base, core.CSSDecl("aspect-ratio", ar))
+	// 列数：0 视为「该端不单独设列数」（变量为空 → 整段规则不产出）；
+	// 桌面端例外，兜底 4 列（与迁移前一致）。
+	cols := func(n int) string {
+		if n <= 0 {
+			return ""
+		}
+		return strconv.Itoa(n)
 	}
+	colsDesktop := cols(p.Grid.Columns.Desktop)
+	if colsDesktop == "" {
+		colsDesktop = "4"
+	}
+	// 单屏宽度：slidesPerView 换算成 flex-basis 百分比（定长三位小数，确定性）。
+	slideW := func(n float64) string {
+		if n <= 0 {
+			return ""
+		}
+		return fmt.Sprintf("%.3f%%", 100/n)
+	}
+	slideDesktop := slideW(p.Carousel.SlidesPerView.Desktop)
+	if slideDesktop == "" {
+		slideDesktop = "100.000%" // 默认单屏一张
+	}
+	// 裁剪方式只在非默认值时输出：cover 是默认值，写出来是冗余声明。
+	objectFit := ""
 	if p.ObjectFit != "" && p.ObjectFit != "cover" {
-		base = append(base, core.CSSDecl("object-fit", p.ObjectFit))
+		objectFit = p.ObjectFit
 	}
-	if p.Radius != "" {
-		base = append(base, core.CSSDecl("border-radius", p.Radius))
-	}
-	if p.BorderWidth != "" && p.BorderColor != "" {
-		base = append(base, core.CSSDecl("border", p.BorderWidth, "solid", p.BorderColor))
-	}
-	b.Add(core.BreakpointDesktop, sel+" .gi", base)
-
-	// Grid 模式：三端列数与间距。
-	if p.Mode == LayoutGrid {
-		c := p.Grid.Columns
-		gridDecl := func(n int) string {
-			if n <= 0 {
-				n = 4 // 默认 4 列
-			}
-			return fmt.Sprintf("display: grid; grid-template-columns: repeat(%d, 1fr)", n)
-		}
-		gaps := func() []string {
-			var g []string
-			if p.Grid.ColumnGap != "" {
-				g = append(g, core.CSSDecl("column-gap", p.Grid.ColumnGap))
-			}
-			if p.Grid.RowGap != "" {
-				g = append(g, core.CSSDecl("row-gap", p.Grid.RowGap))
-			}
-			return g
-		}
-		b.Add(core.BreakpointDesktop, sel, append(splitDecls(gridDecl(c.Desktop)), gaps()...))
-		// 容器级自适应（@container）：组件放进窄容器（侧栏/窄区块）时降为单列，
-		// 避免窄容器里挤成多列碎图。外层未启用容器查询上下文时不匹配（自然忽略）。
-		b.AddContainer("(width < 400px)", sel, []string{"grid-template-columns: 1fr"})
-		if c.Tablet > 0 {
-			b.Add(core.BreakpointTablet, sel, splitDecls(gridDecl(c.Tablet)))
-		}
-		if c.Mobile > 0 {
-			b.Add(core.BreakpointMobile, sel, splitDecls(gridDecl(c.Mobile)))
-		}
+	overlayColor := ""
+	switch p.Hover.Overlay {
+	case "dark":
+		overlayColor = "rgba(0,0,0,0.35)"
+	case "":
+	default:
+		overlayColor = "rgba(255,255,255,0.35)"
 	}
 
-	// Carousel 骨架：横向滚动 + 滚动吸附 + 单屏宽度（按 slidesPerView）。
-	if p.Mode == LayoutCarousel {
-		c := p.Carousel
-		b.Add(core.BreakpointDesktop, sel+" .gallery-track", []string{
-			"display: flex",
-			"overflow-x: auto",
-			"scroll-snap-type: x mandatory",
-			"scrollbar-width: none",
-		})
-		if p.Grid.ColumnGap != "" {
-			b.Add(core.BreakpointDesktop, sel+" .gallery-track", []string{core.CSSDecl("column-gap", p.Grid.ColumnGap), core.CSSDecl("gap", p.Grid.ColumnGap)})
-		}
-		slideW := func(n float64) string {
-			if n <= 0 {
-				n = 1
-			}
-			// 基础宽度百分比（剩余给 gap 由浏览器按 flex 分配，用 basis 近似）。
-			return fmt.Sprintf("flex: 0 0 %.3f%%", 100/n)
-		}
-		// 默认 desktop = slides 或 1。
-		b.Add(core.BreakpointDesktop, sel+" .gallery-slide", []string{
-			"scroll-snap-align: start",
-			slideW(c.SlidesPerView.Desktop),
-		})
-		if c.SlidesPerView.Tablet > 0 {
-			b.Add(core.BreakpointTablet, sel+" .gallery-slide", splitDecls(slideW(c.SlidesPerView.Tablet)))
-		}
-		if c.SlidesPerView.Mobile > 0 {
-			b.Add(core.BreakpointMobile, sel+" .gallery-slide", splitDecls(slideW(c.SlidesPerView.Mobile)))
-		}
-		b.Add(core.BreakpointDesktop, sel+" .gallery-prev, "+sel+" .gallery-next", []string{
-			"position: absolute", "top: 50%", "transform: translateY(-50%)",
-			"z-index: 2", "width: 36px", "height: 36px",
-			"border-radius: 50%", "border: none",
-		})
-		b.Add(core.BreakpointDesktop, sel+" .gallery-dots", []string{
-			"display: flex", "justify-content: center", "gap: 6px", "margin-top: 8px",
-		})
+	vars := map[string]string{
+		"ratio":        presetRatios[p.AspectRatio],
+		"objectFit":    objectFit,
+		"radius":       p.Radius,
+		"borderWidth":  p.BorderWidth,
+		"borderColor":  p.BorderColor,
+		"isGrid":       core.BoolVar(p.Mode == LayoutGrid),
+		"colsDesktop":  colsDesktop,
+		"columnGap":    p.Grid.ColumnGap,
+		"rowGap":       p.Grid.RowGap,
+		"colsTablet":   cols(p.Grid.Columns.Tablet),
+		"colsMobile":   cols(p.Grid.Columns.Mobile),
+		"isCarousel":   core.BoolVar(p.Mode == LayoutCarousel),
+		"slideDesktop": slideDesktop,
+		"slideTablet":  slideW(p.Carousel.SlidesPerView.Tablet),
+		"slideMobile":  slideW(p.Carousel.SlidesPerView.Mobile),
+		"hasHover":     core.BoolVar(p.Hover.Scale != "" || p.Hover.Overlay != "" || p.Hover.Deepen),
+		"duration":     defaultDur(p.Hover.Duration),
+		"scale":        p.Hover.Scale,
+		"deepen":       core.BoolVar(p.Hover.Deepen),
+		"hasOverlay":   core.BoolVar(p.Hover.Overlay != ""),
+		"overlayColor": overlayColor,
+		"captionHover": core.BoolVar(p.CaptionMode == CaptionHover),
 	}
-
-	// 统一悬浮反馈：过渡 + hover 缩放/遮罩/阴影加深。
-	if p.Hover.Scale != "" || p.Hover.Overlay != "" || p.Hover.Deepen {
-		duration := p.Hover.Duration
-		if duration == "" {
-			duration = "300ms"
-		}
-		b.Add(core.BreakpointDesktop, sel+" .gi", []string{
-			"transition: transform " + duration + " ease, box-shadow " + duration + " ease, filter " + duration + " ease",
-		})
-		var hoverDecls []string
-		if p.Hover.Scale != "" {
-			hoverDecls = append(hoverDecls, "transform: scale("+p.Hover.Scale+")")
-		}
-		if p.Hover.Deepen {
-			hoverDecls = append(hoverDecls, "box-shadow: 0 10px 28px rgba(0,0,0,0.16)")
-		}
-		if len(hoverDecls) > 0 {
-			b.Add(core.BreakpointDesktop, sel+" .gi:hover", hoverDecls)
-		}
+	if err := core.ApplyComponentCSSTmpl(b, sel, galleryCSS, vars); err != nil {
+		panic(fmt.Sprintf("gallery 组件样式解析失败: %v", err))
 	}
-	// 遮罩：::after 覆盖层（纯 CSS）。
-	if p.Hover.Overlay != "" {
-		var overlayColor string
-		if p.Hover.Overlay == "dark" {
-			overlayColor = "rgba(0,0,0,0.35)"
-		} else {
-			overlayColor = "rgba(255,255,255,0.35)"
-		}
-		b.Add(core.BreakpointDesktop, sel+" .gi", []string{"position: relative"})
-		b.Add(core.BreakpointDesktop, sel+" .gi::after", []string{
-			"content: \"\"",
-			"position: absolute", "inset: 0",
-			"background: transparent",
-			"transition: background " + defaultDur(p.Hover.Duration) + " ease",
-		})
-		b.Add(core.BreakpointDesktop, sel+" .gi:hover::after", []string{core.CSSDecl("background", overlayColor)})
-	}
-
-	// 图注 hover 模式：常显于底部滑出。
-	if p.CaptionMode == CaptionHover {
-		b.Add(core.BreakpointDesktop, sel+" figcaption", []string{
-			"position: absolute", "left: 0", "right: 0", "bottom: 0",
-			"padding: 8px", "background: rgba(0,0,0,0.55)", "color: #fff",
-			"opacity: 0", "transition: opacity " + defaultDur(p.Hover.Duration) + " ease",
-		})
-		b.Add(core.BreakpointDesktop, sel+" figure", []string{"position: relative", "overflow: hidden"})
-		b.Add(core.BreakpointDesktop, sel+" figure:hover figcaption", []string{"opacity: 1"})
-	}
-}
-
-// splitDecls "a: b; c: d" → 声明列表。
-func splitDecls(s string) []string {
-	if s == "" {
-		return nil
-	}
-	var out []string
-	for _, d := range strings.Split(s, ";") {
-		if d = strings.TrimSpace(d); d != "" {
-			out = append(out, d)
-		}
-	}
-	return out
 }
 
 // slideNum slides 数值序列化（确定性，小数保留原值）。

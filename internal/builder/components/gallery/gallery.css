@@ -1,0 +1,158 @@
+/* core.gallery 图集与画廊样式：Grid 三端 / 间距、Carousel 骨架、
+   统一样式（比例 / 裁剪 / 圆角 / 边框 / 悬浮）、图注。
+
+   分支与取值分开：结构（哪种模式、哪端列数、有没有悬浮）由本文件的 @if 描述，
+   Go 侧只把属性翻译成值 —— 值缺失即整条声明省略，因此不必在 Go 里拼声明切片。 */
+
+/* 统一子图样式：比例 / 裁剪 / 圆角 / 边框都按属性可选。 */
+& .gi {
+  aspect-ratio: {{ratio}};
+  object-fit: {{objectFit}};
+  border-radius: {{radius}};
+  border: {{borderWidth}} solid {{borderColor}};
+}
+
+@if isGrid
+/* Grid 模式：三端列数与间距。 */
+& {
+  display: grid;
+  grid-template-columns: repeat({{colsDesktop}}, 1fr);
+  column-gap: {{columnGap}};
+  row-gap: {{rowGap}};
+}
+
+/* 容器级自适应：组件放进窄容器（侧栏 / 窄区块）时降为单列，
+   避免窄容器里挤成多列碎图。外层未启用容器查询上下文时不匹配（自然忽略）。 */
+@container (width < 400px) & {
+  grid-template-columns: 1fr;
+}
+
+/* 列数为空即「该端不单独设列数」，整段不产出（与迁移前的 if n > 0 等价）——
+   display: grid 必须与列数同进同退，所以整块用规则级 @if 一并控制。 */
+@if colsTablet
+@media (max-width: 1024px) {
+  & {
+    display: grid;
+    grid-template-columns: repeat({{colsTablet}}, 1fr);
+  }
+}
+@endif
+
+@if colsMobile
+@media (max-width: 767px) {
+  & {
+    display: grid;
+    grid-template-columns: repeat({{colsMobile}}, 1fr);
+  }
+}
+@endif
+@endif
+
+@if isCarousel
+/* Carousel 模式：横向滚动 + 滚动吸附 + 单屏宽度（按 slidesPerView）。 */
+& .gallery-track {
+  display: flex;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+}
+
+/* 间距为空即整条规则不产出。 */
+& .gallery-track {
+  column-gap: {{columnGap}};
+  gap: {{columnGap}};
+}
+
+& .gallery-slide {
+  scroll-snap-align: start;
+  flex: 0 0 {{slideDesktop}};
+}
+
+@media (max-width: 1024px) {
+  & .gallery-slide {
+    flex: 0 0 {{slideTablet}};
+  }
+}
+
+@media (max-width: 767px) {
+  & .gallery-slide {
+    flex: 0 0 {{slideMobile}};
+  }
+}
+
+& .gallery-prev, & .gallery-next {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 2;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: none;
+}
+
+& .gallery-dots {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 8px;
+}
+@endif
+
+/* 统一悬浮反馈：过渡 + hover 缩放 / 遮罩 / 阴影加深。
+   三态任一开启才产出过渡；两个 hover 声明都可能缺席，缺席即不产出该规则。 */
+@if hasHover
+& .gi {
+  transition: transform {{duration}} ease, box-shadow {{duration}} ease, filter {{duration}} ease;
+}
+
+& .gi:hover {
+  transform: scale({{scale}});
+  @if deepen
+  box-shadow: 0 10px 28px rgba(0,0,0,0.16);
+  @endif
+}
+@endif
+
+/* 遮罩：::after 覆盖层（纯 CSS）。 */
+@if hasOverlay
+& .gi {
+  position: relative;
+}
+
+& .gi::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: transparent;
+  transition: background {{duration}} ease;
+}
+
+& .gi:hover::after {
+  background: {{overlayColor}};
+}
+@endif
+
+/* 图注 hover 模式：常显于底部滑出。 */
+@if captionHover
+& figcaption {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 8px;
+  background: rgba(0,0,0,0.55);
+  color: #fff;
+  opacity: 0;
+  transition: opacity {{duration}} ease;
+}
+
+& figure {
+  position: relative;
+  overflow: hidden;
+}
+
+& figure:hover figcaption {
+  opacity: 1;
+}
+@endif
