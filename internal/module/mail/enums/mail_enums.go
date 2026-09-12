@@ -3,12 +3,13 @@ package mailenums
 // mail_enums.go — 邮箱模块的响应消息与业务错误（模块内统一出口）。
 
 const (
-	MsgSendSuccess     = "发送成功"
-	MsgSaveSuccess     = "保存成功"
-	MsgDeleteSuccess   = "删除成功"
-	MsgImportSuccess   = "导入完成"
-	MsgTestSent        = "测试邮件已发送"
-	MsgCampaignStarted = "活动已开始发送"
+	MsgSendSuccess       = "发送成功"
+	MsgSaveSuccess       = "保存成功"
+	MsgDeleteSuccess     = "删除成功"
+	MsgImportSuccess     = "导入完成"
+	MsgTestSent          = "测试邮件已发送"
+	MsgCampaignStarted   = "活动已开始发送"
+	MsgAutomationStarted = "已加入流程"
 )
 
 const (
@@ -34,6 +35,7 @@ const (
 	ErrAutomationTriggerInvalid = "触发方式不合法"
 	ErrAutomationGraphInvalid   = "流程定义不合法"
 	ErrAutomationRunExists      = "该联系人已在此流程中"
+	ErrAutomationRunNotFound    = "自动化实例不存在"
 )
 
 // 测试邮件内容（后台「测试发送」触发，用于验证 SMTP 配置）。

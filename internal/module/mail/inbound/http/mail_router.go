@@ -51,5 +51,18 @@ func SetupMailRoutes(rg *gin.RouterGroup, db *gorm.DB) mailcontract.MailService 
 	g.POST("/campaign/delete", handle.CampaignDelete)
 	g.POST("/campaign/start", handle.CampaignStart)
 
+	// 自动化（#38 P3）：流程定义 CRUD + 实例排障。
+	// 保存与启用都会校验图（无环 / 可达 / 形状）—— 这是引擎正确性的第一道关。
+	g.GET("/automation/list", handle.AutomationList)
+	g.GET("/automation/get", handle.AutomationGet)
+	g.POST("/automation/save", handle.AutomationSave)
+	g.POST("/automation/status", handle.AutomationStatus)
+	g.POST("/automation/delete", handle.AutomationDelete)
+	g.POST("/automation/start", handle.AutomationStartRun)
+	g.GET("/automation/run/list", handle.AutomationRunList)
+	g.GET("/automation/run/detail", handle.AutomationRunDetail)
+	// 延时兜底的手工触发：队列延时任务失效时，运维可立刻补投一轮。
+	g.POST("/automation/tick", handle.AutomationTick)
+
 	return svc
 }

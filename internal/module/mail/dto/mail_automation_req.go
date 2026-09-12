@@ -41,3 +41,30 @@ type AutomationRunReq struct {
 	ContactID    uint64
 	OperatorID   uint64
 }
+
+// AutomationRunListReq 实例列表筛选。
+type AutomationRunListReq struct {
+	AutomationID uint64
+	Status       string
+	Page         int
+	PageSize     int
+}
+
+// AutomationRunDetailResp 实例排障详情。
+//
+// **Explain 是这个页面存在的理由**：光有 status 字段（running / waiting / failed）没人看得懂
+// 「为什么这个人停在这里」。Explain 用一句人话回答：在等什么、等到什么时候、失败在哪一步、为什么。
+type AutomationRunDetailResp struct {
+	Run            AutomationRunItem `json:"run"`
+	AutomationID   uint64            `json:"automationId"`
+	AutomationName string            `json:"automationName"`
+	Email          string            `json:"email"`
+	Name           string            `json:"name"`
+	// DoneNodes / TotalNodes 进度：让「卡住了」与「正常在跑」一眼可分。
+	DoneNodes  int `json:"doneNodes"`
+	TotalNodes int `json:"totalNodes"`
+	// Explain 一句话解释当前状态。
+	Explain string `json:"explain"`
+	// Timeline 节点执行时间线（排障的主视图）。
+	Timeline []AutomationNodeLogItem `json:"timeline"`
+}

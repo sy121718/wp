@@ -11,6 +11,8 @@ import (
 	"context"
 	"strings"
 	"time"
+
+	"gorm.io/gorm"
 )
 
 // 流程状态。
@@ -245,6 +247,68 @@ func (m *MailModel) StopRunsOfAutomation(ctx context.Context, automationID uint6
 	return m.tx(ctx).Model(&MailAutomationRunEntity{}).
 		Where("automation_id = ? AND status IN ?", automationID, []string{RunStatusRunning, RunStatusWaiting}).
 		Updates(map[string]any{"status": RunStatusStopped, "finished_at": at, "update_time": at}).Error
+}
+
+// RunRow 实例 + 联系人邮箱（排障列表用）。
+//
+// JOIN 本模块的 mail_contacts 取邮箱：列表里只显示 contact_id 对排障毫无帮助 ——
+// 「第 47 号实例失败了」跟「a@b.com 的实例失败了」是两种可用性。
+type RunRow struct {
+	MailAutomationRunEntity
+	Email          string  `gorm:"column:email"`
+	Name           *string `gorm:"column:contact_name"`
+	AutomationName string  `gorm:"column:automation_name"`
+}
+
+// ListRunRows 列实例（带联系人邮箱与流程名）。
+func (m *MailModel) ListRunRows(ctx context.Context, automationID uint64, status string, offset, limit int) (list []RunRow, total int64, err error) {
+	// 条件只构造一次并复用到 count 与列表：两处各写一遍时，「列表带了筛选、计数没带」
+	// 会让分页显示的总数与实际列表对不上，而且这种错很难在页面上看出来。
+	applyFilter := func(q *gorm.DB) *gorm.DB {
+		if automationID > 0 {
+			q = q.Where("r.automation_id = ?", automationID)
+		}
+		if s := strings.TrimSpace(status); s != "" {
+			q = q.Where("r.status = ?", s)
+		}
+		return q
+	}
+	if err = applyFilter(m.tx(ctx).Table("mail_automation_runs AS r")).Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	if limit <= 0 {
+		limit = 20
+	}
+	q := m.tx(ctx).Table("mail_automation_runs AS r").
+		Select("r.*, c.email AS email, c.name AS contact_name, a.name AS automation_name").
+		Joins("LEFT JOIN mail_contacts c ON c.id = r.contact_id").
+		Joins("LEFT JOIN mail_automations a ON a.id = r.automation_id")
+	err = applyFilter(q).Order("r.id DESC").Offset(offset).Limit(limit).Scan(&list).Error
+	return list, total, err
+}
+
+// RunRowByID 取单个实例（带联系人邮箱与流程名）。
+func (m *MailModel) RunRowByID(ctx context.Context, runID uint64) (row RunRow, err error) {
+	err = m.tx(ctx).Table("mail_automation_runs AS r").
+		Select("r.*, c.email AS email, c.name AS contact_name, a.name AS automation_name").
+		Joins("LEFT JOIN mail_contacts c ON c.id = r.contact_id").
+		Joins("LEFT JOIN mail_automations a ON a.id = r.automation_id").
+		Where("r.id = ?", runID).Limit(1).Scan(&row).Error
+	return row, err
+}
+
+// ListRunsOfContact 列某联系人的实例（联系人详情页的自动化历史）。
+func (m *MailModel) ListRunsOfContact(ctx context.Context, contactID uint64, limit int) (list []RunRow, err error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	err = m.tx(ctx).Table("mail_automation_runs AS r").
+		Select("r.*, c.email AS email, c.name AS contact_name, a.name AS automation_name").
+		Joins("LEFT JOIN mail_contacts c ON c.id = r.contact_id").
+		Joins("LEFT JOIN mail_automations a ON a.id = r.automation_id").
+		Where("r.contact_id = ?", contactID).
+		Order("r.id DESC").Limit(limit).Scan(&list).Error
+	return list, err
 }
 
 // ---- 节点日志 ----

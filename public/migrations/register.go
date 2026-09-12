@@ -321,6 +321,9 @@ var mailTemplateVarsSQL string
 //go:embed 131_mail_automation.sql
 var mailAutomationSQL string
 
+//go:embed 132_mail_automation.sql
+var mailAutomationPermSQL string
+
 func init() {
 	register(Migration{
 		Version:   "001-init-schema",
@@ -1404,5 +1407,13 @@ func init() {
 		TableName: "mail_automations",
 		CheckSQL:  "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = current_schema() AND table_name = ?",
 		SQL:       mailAutomationSQL,
+	})
+
+	// 132：自动化流程权限点与菜单按钮（issue #38 P3）。用 Seed（见 126 说明）。
+	registerSeed(Seed{
+		Version:      "132-mail-automation",
+		TableName:    "sys_permission",
+		ConditionSQL: "SELECT COUNT(*) FROM sys_permission WHERE permission_code = 'mail:automation_list'",
+		SQL:          mailAutomationPermSQL,
 	})
 }

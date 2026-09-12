@@ -41,6 +41,22 @@ type MailService interface {
 	// ---- 报表（#38 P1）----
 	CampaignReport(ctx context.Context, campaignID uint64, page, pageSize int) (*maildto.CampaignReport, error)
 
+	// ---- 自动化（#38 P3）----
+	SaveAutomation(ctx context.Context, req *maildto.SaveAutomationReq) (*maildto.AutomationItem, error)
+	ListAutomations(ctx context.Context, req *maildto.AutomationListReq) (*maildto.AutomationListResp, error)
+	GetAutomation(ctx context.Context, id uint64) (*maildto.AutomationItem, error)
+	SetAutomationStatus(ctx context.Context, req *maildto.SetAutomationStatusReq) error
+	DeleteAutomation(ctx context.Context, id uint64) error
+	// StartRun 启动实例；返回是否新启动（false = 该联系人已在此流程中）。
+	StartRun(ctx context.Context, automationID, contactID uint64, triggerEvent string) (bool, error)
+	// RunAutomation 推进实例（由队列任务调用）。
+	RunAutomation(ctx context.Context, runID uint64) error
+	// ListAutomationRuns / AutomationRunDetail 排障视图（目标 ⑥）。
+	ListAutomationRuns(ctx context.Context, req *maildto.AutomationRunListReq) (*maildto.AutomationRunListResp, error)
+	AutomationRunDetail(ctx context.Context, runID uint64) (*maildto.AutomationRunDetailResp, error)
+	// EnqueueDueRuns 延时调度兜底：把到点的等待实例重新投递。
+	EnqueueDueRuns(ctx context.Context, limit int) (int, error)
+
 	// ---- 事务发送 ----
 	SendTemplate(ctx context.Context, req *maildto.SendTemplateReq) (*maildto.SendResult, error)
 
