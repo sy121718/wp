@@ -433,3 +433,29 @@ var uiBlocks = []uiBlock{
 
 多端硬规则对两者同样适用（见 §10.3 第 5 条）：宽度 `min(100%, …)`、触屏用 `AddActive` 给按压反馈、
 `AddHover` 的规则在触屏上不输出必须补等价形态。
+### 12.5 动效系统不在这份基座里（与控件的关键差异）
+
+控件是「**一份源、两种投递**」；**动效不是** —— 它只属于产物侧。
+
+| | 控件基座 | 动效系统 |
+|---|---|---|
+| **源** | `static/css/ui.css` + `static/js/ui/*` | `internal/builder/core/effects.go` + `keyframes_animate.go` |
+| **后台页面** | ✅ 常驻加载，任何控件类可用 | ❌ **用不到** |
+| **站点产物** | ✅ 命中 `data-ui-*` 后整份注入 | ✅ 编译进产物 CSS |
+| **谁写的** | 手写 CSS / JS | **Go 编译期从 props 生成**（`InteractionProps` → keyframes） |
+| **是否共用** | **是** | **否** |
+
+动效的实际规模（`builder/core`）：入场 ×40（含 Animate.css 拆解 24 词）、循环 ×17（拆解 7 词）、
+悬浮 ×8（触屏治理包 `@media (hover: hover)`）、滚动触发、吸顶、`prefers-reduced-motion` 无障碍。
+全部走 `InteractionProps` + `ValidateInteraction` 白名单，由构建期编译成产物 CSS。
+
+**后台自己只有 3 个反馈动画**（不是动效系统）：`wb-toast-in`（提示弹入）、`wb-busy-spin`（加载转圈）、
+`wb-panel-in`（工作台面板）。且 `ui.css` 同样守 `@media (prefers-reduced-motion: reduce)`。
+
+所以：**在后台页面上写动效词（如 `fade-up`）不会生效** —— 那是产物的词汇表。
+后台要动效只能按需手写 CSS（目前只有上面那三个反馈动画）。
+
+> 文档状态易误读：`docs/02-F-motion-animation.md` 写「选型评估完成，**未落地**」指的是
+> **第三方动画库（GSAP 等）**未落地；**自建的 CSS 动效词汇表已经落地**（`builder/core` 里有实现与全量测试）。
+两件事不是一回事。
+
