@@ -80,10 +80,10 @@ func (s *Service) SetMasterDataChanges(port masterdatacontract.MasterDataService
 	s.changes = port
 }
 
-// 编译期断言：本模块契约 + 商品模块定义的变体库存端口（依赖方向 inventory → product）。
+// 编译期断言：本模块契约 + 仍保留的跨模块能力。
+// （issue #32：归属仓解析与库存记录生成不再走端口 —— 商品与库存同模块，商品用例直接调本服务。）
 var (
 	_ inventorycontract.InventoryService = (*Service)(nil)
-	_ productcontract.VariantStockPort   = (*Service)(nil)
 	// 库存真源可用量端口（issue #20）：捆绑品的数量上限与整单下限读它，而不是读展示缓存。
 	_ productcontract.VariantAvailabilityPort = (*Service)(nil)
 )

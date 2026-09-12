@@ -66,7 +66,7 @@ func newBundleFixture(t *testing.T) *bundleFixture {
 	}
 	inv := inventoryservice.NewService(inventorymodel.NewModel(db), projects)
 	products := productservice.NewService(productmodel.NewModel(db), projects)
-	products.SetVariantStock(inv)
+	products.SetInventoryService(inv)
 	inv.SetVariantCost(products)
 	// issue #20：捆绑的可用量端口（生产装配同形，见 routers.SetupRoutes）。
 	products.SetAvailabilityPort(inv)

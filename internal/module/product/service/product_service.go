@@ -24,6 +24,7 @@ import (
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
 	inventorymodel "go_wp/internal/module/product/inventory/model"
+	inventoryservice "go_wp/internal/module/product/inventory/service"
 	productmodel "go_wp/internal/module/product/model"
 	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/pkg/i18n"
@@ -48,10 +49,10 @@ type Service struct {
 	// 构建期商品可翻译字段（name/subtitle/description）按构建语言取译文；
 	// 未注入 / 语言为空 / 查询失败一律回退原文（兜底铁律，绝不报错）。
 	contentStore i18n.ContentStore
-	// variantStock 变体归属仓与库存记录端口（issue #15，由 inventory 模块实现）。
-	// 未注入时变体创建不生成库存记录、SKU 编码不带仓短码前缀（纯商品单测路径）；
-	// 生产装配恒注入（见 routers.SetupRoutes）。依赖方向 inventory → product。
-	variantStock productcontract.VariantStockPort
+	// invSvc 库存用例（issue #32：商品与库存合并为同一模块后直接持有对方 service，
+	// 不再经跨模块端口 —— 归属仓解析与库存记录生成本就是库存模块的用例）。
+	// 未注入时变体创建不生成库存记录、SKU 编码不带仓短码前缀（纯商品单测路径）。
+	invSvc *inventoryservice.Service
 	// availability 库存真源可用量端口（issue #20，由 inventory 模块实现）。
 	// 捆绑品的数量上限与整单下限都受可用量约束，且只看真源、绝不读展示缓存；
 	// 未注入时整单校验 fail-closed（返回 ErrBundleStockUnavailable），不按「无限制」放行。
@@ -82,8 +83,8 @@ func (s *Service) SetContentStore(store i18n.ContentStore) {
 //
 // 端口定义在本模块契约里、实现在 inventory 模块：商品模块只知道
 // 「解析归属仓」与「在归属仓生成库存记录」两件事，不认识仓库表结构。
-func (s *Service) SetVariantStock(port productcontract.VariantStockPort) {
-	s.variantStock = port
+func (s *Service) SetInventoryService(svc *inventoryservice.Service) {
+	s.invSvc = svc
 }
 
 // SetAvailabilityPort 注入库存真源可用量端口（issue #20，装配期调用）。

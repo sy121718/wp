@@ -76,7 +76,7 @@ func newInvFixture(t *testing.T) *invFixture {
 	}
 	inv := inventoryservice.NewService(inventorymodel.NewModel(db), projects)
 	products := productservice.NewService(productmodel.NewModel(db), projects)
-	products.SetVariantStock(inv)
+	products.SetInventoryService(inv)
 	// 与生产装配同形（routers.SetupRoutes）：商品侧库存缓存端口反向注入库存模块，
 	// 库存变动提交后经它把真源汇总写进展示缓存（issue #16 验收 6）。
 	// 同理注入成本价写回端口（issue #18）：采购 / 生产入库后把单价写进

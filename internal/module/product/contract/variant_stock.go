@@ -30,10 +30,6 @@ type WarehouseRef struct {
 //
 // 库存记录是**真源**（inventory_stocks）；商品侧的 product_variants.stock_total
 // 只是列表展示用缓存，商品模块自身不做任何可用量判断。
-type VariantStockPort interface {
-	ResolveWarehouse(ctx context.Context, projectID, warehouseID string) (ref *WarehouseRef, err error)
-	EnsureVariantStock(ctx context.Context, ref *WarehouseRef, productID, variantID, skuCode string) (err error)
-}
 
 // VariantAvailabilityPort SKU **可用量**的只读端口（issue #20，由 inventory 模块实现）。
 //

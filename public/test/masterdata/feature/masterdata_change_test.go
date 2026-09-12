@@ -79,7 +79,7 @@ func newMDFixture(t *testing.T) *mdFixture {
 	changes := masterdataservice.NewService(masterdatamodel.NewModel(db), projects)
 	inventory := inventoryservice.NewService(inventorymodel.NewModel(db), projects)
 	products := productservice.NewService(productmodel.NewModel(db), projects)
-	products.SetVariantStock(inventory)
+	products.SetInventoryService(inventory)
 	inventory.SetVariantCost(products)
 	products.SetMasterDataChanges(changes)
 	inventory.SetMasterDataChanges(changes)

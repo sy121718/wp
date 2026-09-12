@@ -35,7 +35,7 @@ import (
 	productcontract "go_wp/internal/module/product/contract"
 	producthttp "go_wp/internal/module/product/inbound/http"
 	inventoryhttp "go_wp/internal/module/product/inventory/inbound/http"
-	inventorymodel "go_wp/internal/module/product/inventory/model"
+	inventoryservice "go_wp/internal/module/product/inventory/service"
 	projecthttp "go_wp/internal/module/project/inbound/http"
 	pubhttp "go_wp/internal/module/publication/inbound/http"
 	runtimefragment "go_wp/internal/module/runtimefragment"
@@ -180,20 +180,22 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 	// 装配期把实现当作端口传进去 —— 建变体时解析归属仓（不选则默认仓）、并在归属仓
 	// 生成一条初始 0 的库存记录。
 	inventorySvc := inventoryhttp.SetupInventoryRoutes(authorizedAPI, db, projectService)
-	// 端口断言：本模块契约与 product 契约定义的端口是两套接口，同一实现同时满足两者
-	//（与 contentSvc → core.CollectionSourceProvider 同一手法）。装配缺陷即 fail-fast。
-	variantStockPort, ok := inventorySvc.(productcontract.VariantStockPort)
-	if !ok {
-		panic("库存模块未实现变体库存端口（VariantStockPort）")
-	}
 	// 商品域（issue #5）：商品与变体管理。商品是独立领域模块，不再寄居内容表。
-	productSvc := producthttp.SetupProductRoutes(authorizedAPI, db, projectService, variantStockPort)
+	productSvc := producthttp.SetupProductRoutes(authorizedAPI, db, projectService)
 	// 库存 model 注入商品用例（issue #32）：商品与库存合并为同一模块后，商品查询直接读
 	// 库存真源做**查询期投影**（不再有商品侧缓存列、同步台账与对账）。同模块内直调 model。
-	if setter, ok := productSvc.(interface{ SetInventory(*inventorymodel.Model) }); ok {
-		setter.SetInventory(inventorymodel.NewModel(db))
+	// 商品与库存同属一个模块（issue #32）：库存用例直接交给商品用例，
+	// 归属仓解析 / 库存记录生成 / 库存展示值投影都走它，不再经跨模块端口。
+	invConcrete, ok := inventorySvc.(*inventoryservice.Service)
+	if !ok {
+		panic("库存模块装配返回的不是具体 service（无法注入商品用例）")
+	}
+	if setter, ok := productSvc.(interface {
+		SetInventoryService(*inventoryservice.Service)
+	}); ok {
+		setter.SetInventoryService(invConcrete)
 	} else {
-		panic("商品模块未提供库存 model 注入点（SetInventory）")
+		panic("商品模块未提供库存 service 注入点（SetInventoryService）")
 	}
 	// 商品侧库存缓存端口（issue #16）已删除（issue #32）：商品与库存合并为同一模块后，
 	// 商品查询直接读库存真源做查询期投影，不再需要缓存副本、同步台账与对账。

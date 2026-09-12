@@ -301,25 +301,24 @@ func randomSegment() string {
 
 // resolveWarehouseRef 解析变体归属仓。
 //
-// 端口（productcontract.VariantStockPort）由 inventory 模块实现、装配期注入；
-// 未注入时返回 nil —— 表示「不生成库存记录、SKU 不带仓前缀」（纯商品单测路径），
-// 生产装配恒注入。
+// issue #32：商品与库存同属一个模块，这里直接调库存用例（不再是跨模块端口）；
+// 未注入时返回 nil —— 表示「不生成库存记录、SKU 不带仓前缀」（纯商品单测路径）。
 func (s *Service) resolveWarehouseRef(ctx context.Context, projectID, warehouseID string) (ref *productcontract.WarehouseRef, err error) {
-	if s.variantStock == nil {
+	if s.invSvc == nil {
 		return nil, nil
 	}
-	return s.variantStock.ResolveWarehouse(ctx, projectID, warehouseID)
+	return s.invSvc.ResolveWarehouse(ctx, projectID, warehouseID)
 }
 
 // ensureVariantStock 在归属仓为该 SKU 生成库存记录（初始 0，幂等）。
 //
-// 库存真源在仓库模块；商品侧只保留 stock_total 这个列表展示用缓存，
-// 不做任何可用量判断（spec §库存 死线）。端口未注入 / 未解析到归属仓时空转。
+// 库存真源在库存模块；商品侧不留任何库存副本（issue #32 删掉了缓存列），
+// 展示值按需投影、可用量判断一律走真源。未注入 / 未解析到归属仓时空转。
 func (s *Service) ensureVariantStock(ctx context.Context, ref *productcontract.WarehouseRef, productID, variantID, skuCode string) (err error) {
-	if s.variantStock == nil || ref == nil {
+	if s.invSvc == nil || ref == nil {
 		return nil
 	}
-	return s.variantStock.EnsureVariantStock(ctx, ref, productID, variantID, skuCode)
+	return s.invSvc.EnsureVariantStock(ctx, ref, productID, variantID, skuCode)
 }
 
 // refCode 归属仓短码（ref 为 nil 时为空串，即「无仓前缀」路径）。

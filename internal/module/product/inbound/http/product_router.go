@@ -20,15 +20,11 @@ import (
 // （name/subtitle/description）按构建语言取译文，语境 product.<字段名>。
 // 端口在这里注入是因为本模块的 service 不持有 *gorm.DB（表隔离约定）。
 //
-// variantStock 是变体归属仓与库存记录端口（issue #15，由 inventory 模块实现）：
-// 建变体时解析归属仓（不选则默认仓）、取仓短码生成 SKU 编码前缀，并在归属仓生成
-// 初始 0 的库存记录。依赖方向是 inventory → product，顶层装配时把 inventory 的
-// 实现当作本契约的端口传进来（传 nil 表示不生成库存记录，仅用于纯商品路径）。
-func SetupProductRoutes(rg *gin.RouterGroup, db *gorm.DB, project projectcontract.ProjectService,
-	variantStock productcontract.VariantStockPort) productcontract.ProductService {
+// issue #32：归属仓解析与库存记录生成不再经跨模块端口 —— 商品与库存同属一个模块，
+// 装配时把库存 service 直接交给商品用例（传 nil 表示不生成库存记录，纯商品单测路径）。
+func SetupProductRoutes(rg *gin.RouterGroup, db *gorm.DB, project projectcontract.ProjectService) productcontract.ProductService {
 	svc := productservice.NewService(productmodel.NewModel(db), project)
 	svc.SetContentStore(i18n.NewDBContentStore(db))
-	svc.SetVariantStock(variantStock)
 	handle := NewHandle(svc)
 
 	g := rg.Group("/product")
