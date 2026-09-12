@@ -5,6 +5,32 @@ import (
 	"testing"
 )
 
+// TestKeyframeSourcesBalanced 关键帧源里每个块的花括号必须平衡。
+//
+// animate.css 的 33 个块曾经每个都多一个 `}`（从 Go 常量迁出时带过来的）。
+// 它不止是丑：Chromium 实测会吞掉**紧随其后的那一整条规则** —— 而产物里关键帧区
+// 之后紧跟的正是桌面规则，等于「用了某个动效的页面会静默少一条组件样式」。
+// 静态校验比事后在浏览器里发现便宜得多。
+func TestKeyframeSourcesBalanced(t *testing.T) {
+	sources := []struct{ name, body string }{
+		{"keyframes/builtin.css", builtinKeyframesSource},
+		{"keyframes/animate.css", animateKeyframesSource},
+	}
+	for _, src := range sources {
+		ks, err := ParseKeyframeCSS(src.body)
+		if err != nil {
+			t.Fatalf("%s: %v", src.name, err)
+		}
+		for _, k := range ks {
+			open, closed := strings.Count(k.CSS, "{"), strings.Count(k.CSS, "}")
+			if open != closed {
+				t.Errorf("%s 的 %s 花括号不平衡：{ %d 个、} %d 个 —— 多出的 } 会吞掉紧随其后的一条规则",
+					src.name, k.Name, open, closed)
+			}
+		}
+	}
+}
+
 // TestKeyframesSourceParsed 关键帧 CSS 源的解析正确性。
 //
 // 背景：63 条关键帧的 CSS 从 Go 字符串字面量迁到 keyframes/*.css，中间多了一层解析。

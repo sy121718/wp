@@ -5,7 +5,7 @@
 @keyframes sky-loop-flash {
   0%, 10%, 20%, 100% { opacity: 1 }
   25%, 50% { opacity: 0 }
-}}
+}
 
 @keyframes sky-loop-rubber-band {
   from { transform: scale(1, 1) }
@@ -15,7 +15,7 @@
   65% { transform: scale(0.95, 1.05) }
   75% { transform: scale(1.05, 0.95) }
   to { transform: scale(1, 1) }
-}}
+}
 
 @keyframes sky-loop-swing {
   0%, 100% { transform-origin: top center; transform: rotate(0) }
@@ -23,7 +23,7 @@
   40% { transform-origin: top center; transform: rotate3d(0, 0, 1, -10deg) }
   60% { transform-origin: top center; transform: rotate3d(0, 0, 1, 5deg) }
   80% { transform-origin: top center; transform: rotate3d(0, 0, 1, -5deg) }
-}}
+}
 
 @keyframes sky-loop-tada {
   from { transform: scale(1) rotate(0) }
@@ -31,7 +31,7 @@
   30%, 50%, 70%, 90% { transform: scale(1.1) rotate(3deg) }
   40%, 60%, 80% { transform: scale(1.1) rotate(-3deg) }
   to { transform: scale(1) rotate(0) }
-}}
+}
 
 @keyframes sky-loop-wobble {
   from { transform: translate3d(0, 0, 0) }
@@ -41,7 +41,7 @@
   60% { transform: translate3d(10%, 0, 0) rotate3d(0, 0, 1, 2deg) }
   75% { transform: translate3d(-5%, 0, 0) rotate3d(0, 0, 1, -1deg) }
   to { transform: translate3d(0, 0, 0) }
-}}
+}
 
 @keyframes sky-loop-head-shake {
   0% { transform: translateX(0) }
@@ -50,32 +50,32 @@
   31.5% { transform: translateX(-3px) rotateY(-5deg) }
   43.5% { transform: translateX(2px) rotateY(3deg) }
   50% { transform: translateX(0) }
-}}
+}
 
 @keyframes sky-loop-bounce {
   0%, 100% { transform: translateY(0); animation-timing-function: cubic-bezier(0.445, 0.05, 0.55, 0.95) }
   50% { transform: translateY(-12px); animation-timing-function: cubic-bezier(0.55, 0.085, 0.68, 0.53) }
-}}
+}
 
 @keyframes sky-back-in-up {
   from { transform: translate3d(0, 100%, 0) scale3d(0.7, 0.7, 0.7); opacity: 0; animation-timing-function: cubic-bezier(0.34, 1.56, 0.64, 1) }
   to { transform: translate3d(0, 0, 0) scale3d(1, 1, 1); opacity: 1 }
-}}
+}
 
 @keyframes sky-back-in-down {
   from { transform: translate3d(0, -100%, 0) scale3d(0.7, 0.7, 0.7); opacity: 0; animation-timing-function: cubic-bezier(0.34, 1.56, 0.64, 1) }
   to { transform: translate3d(0, 0, 0) scale3d(1, 1, 1); opacity: 1 }
-}}
+}
 
 @keyframes sky-back-in-left {
   from { transform: translate3d(100%, 0, 0) scale3d(0.7, 0.7, 0.7); opacity: 0; animation-timing-function: cubic-bezier(0.34, 1.56, 0.64, 1) }
   to { transform: translate3d(0, 0, 0) scale3d(1, 1, 1); opacity: 1 }
-}}
+}
 
 @keyframes sky-back-in-right {
   from { transform: translate3d(-100%, 0, 0) scale3d(0.7, 0.7, 0.7); opacity: 0; animation-timing-function: cubic-bezier(0.34, 1.56, 0.64, 1) }
   to { transform: translate3d(0, 0, 0) scale3d(1, 1, 1); opacity: 1 }
-}}
+}
 
 @keyframes sky-bounce-in-down {
   from, 60%, 75%, 90%, to { animation-timing-function: cubic-bezier(0.215, 0.61, 0.355, 1) }
@@ -84,7 +84,7 @@
   75% { transform: translate3d(0, -10px, 0) }
   90% { transform: translate3d(0, 5px, 0) }
   to { opacity: 1; transform: translate3d(0, 0, 0) }
-}}
+}
 
 @keyframes sky-bounce-in-up {
   from, 60%, 75%, 90%, to { animation-timing-function: cubic-bezier(0.215, 0.61, 0.355, 1) }
@@ -93,7 +93,7 @@
   75% { transform: translate3d(0, 10px, 0) }
   90% { transform: translate3d(0, -5px, 0) }
   to { opacity: 1; transform: translate3d(0, 0, 0) }
-}}
+}
 
 @keyframes sky-bounce-in-left {
   from, 60%, 75%, 90%, to { animation-timing-function: cubic-bezier(0.215, 0.61, 0.355, 1) }
@@ -102,7 +102,7 @@
   75% { transform: translate3d(-10px, 0, 0) }
   90% { transform: translate3d(5px, 0, 0) }
   to { opacity: 1; transform: translate3d(0, 0, 0) }
-}}
+}
 
 @keyframes sky-bounce-in-right {
   from, 60%, 75%, 90%, to { animation-timing-function: cubic-bezier(0.215, 0.61, 0.355, 1) }
@@ -111,93 +111,93 @@
   75% { transform: translate3d(10px, 0, 0) }
   90% { transform: translate3d(-5px, 0, 0) }
   to { opacity: 1; transform: translate3d(0, 0, 0) }
-}}
+}
 
 @keyframes sky-fade-in-top-left {
   from { opacity: 0; transform: translate3d(-100%, -100%, 0) }
   to { opacity: 1; transform: translate3d(0, 0, 0) }
-}}
+}
 
 @keyframes sky-fade-in-top-right {
   from { opacity: 0; transform: translate3d(100%, -100%, 0) }
   to { opacity: 1; transform: translate3d(0, 0, 0) }
-}}
+}
 
 @keyframes sky-fade-in-bottom-left {
   from { opacity: 0; transform: translate3d(-100%, 100%, 0) }
   to { opacity: 1; transform: translate3d(0, 0, 0) }
-}}
+}
 
 @keyframes sky-fade-in-bottom-right {
   from { opacity: 0; transform: translate3d(100%, 100%, 0) }
   to { opacity: 1; transform: translate3d(0, 0, 0) }
-}}
+}
 
 @keyframes sky-light-speed-in-left {
   from { transform: translate3d(100%, 0, 0) skewX(-30deg); opacity: 0 }
   60% { transform: skewX(20deg); opacity: 1 }
   80% { transform: skewX(-5deg) }
   to { transform: translate3d(0, 0, 0) }
-}}
+}
 
 @keyframes sky-light-speed-in-right {
   from { transform: translate3d(-100%, 0, 0) skewX(30deg); opacity: 0 }
   60% { transform: skewX(-20deg); opacity: 1 }
   80% { transform: skewX(5deg) }
   to { transform: translate3d(0, 0, 0) }
-}}
+}
 
 @keyframes sky-roll-in {
   from { opacity: 0; transform: translate3d(-100%, 0, 0) rotate3d(0, 0, 1, -120deg) }
   to { opacity: 1; transform: translate3d(0, 0, 0) }
-}}
+}
 
 @keyframes sky-jack-in-the-box {
   from { opacity: 0; transform: scale(0.1) rotate(30deg); transform-origin: center bottom; animation-timing-function: ease-in }
   50% { transform: scale(1.5) rotate(-10deg); opacity: 1; animation-timing-function: ease-out }
   70% { transform: scale(0.9) rotate(5deg); animation-timing-function: ease-out }
   to { transform: scale(1) rotate(0) }
-}}
+}
 
 @keyframes sky-zoom-in-down {
   from { opacity: 0; transform: scale3d(0.1, 0.1, 0.1) translate3d(0, -3000px, 0); animation-timing-function: cubic-bezier(0.55, 0.055, 0.675, 0.19) }
   60% { opacity: 1; transform: scale3d(0.475, 0.475, 0.475) translate3d(0, 60px, 0); animation-timing-function: cubic-bezier(0.175, 0.885, 0.32, 1) }
-}}
+}
 
 @keyframes sky-zoom-in-up {
   from { opacity: 0; transform: scale3d(0.1, 0.1, 0.1) translate3d(0, 3000px, 0); animation-timing-function: cubic-bezier(0.55, 0.055, 0.675, 0.19) }
   60% { opacity: 1; transform: scale3d(0.475, 0.475, 0.475) translate3d(0, -60px, 0); animation-timing-function: cubic-bezier(0.175, 0.885, 0.32, 1) }
-}}
+}
 
 @keyframes sky-zoom-in-left {
   from { opacity: 0; transform: scale3d(0.1, 0.1, 0.1) translate3d(-3000px, 0, 0); animation-timing-function: cubic-bezier(0.55, 0.055, 0.675, 0.19) }
   60% { opacity: 1; transform: scale3d(0.475, 0.475, 0.475) translate3d(60px, 0, 0); animation-timing-function: cubic-bezier(0.175, 0.885, 0.32, 1) }
-}}
+}
 
 @keyframes sky-zoom-in-right {
   from { opacity: 0; transform: scale3d(0.1, 0.1, 0.1) translate3d(3000px, 0, 0); animation-timing-function: cubic-bezier(0.55, 0.055, 0.675, 0.19) }
   60% { opacity: 1; transform: scale3d(0.475, 0.475, 0.475) translate3d(-60px, 0, 0); animation-timing-function: cubic-bezier(0.175, 0.885, 0.32, 1) }
-}}
+}
 
 @keyframes sky-rotate-in-down-left {
   from { transform-origin: left bottom; transform: rotate3d(0, 0, 1, -45deg); opacity: 0 }
   to { transform-origin: left bottom; transform: translate3d(0, 0, 0) rotate3d(0, 0, 1, 0); opacity: 1 }
-}}
+}
 
 @keyframes sky-rotate-in-down-right {
   from { transform-origin: right bottom; transform: rotate3d(0, 0, 1, 45deg); opacity: 0 }
   to { transform-origin: right bottom; transform: translate3d(0, 0, 0) rotate3d(0, 0, 1, 0); opacity: 1 }
-}}
+}
 
 @keyframes sky-rotate-in-up-left {
   from { transform-origin: left top; transform: rotate3d(0, 0, 1, 45deg); opacity: 0 }
   to { transform-origin: left top; transform: translate3d(0, 0, 0) rotate3d(0, 0, 1, 0); opacity: 1 }
-}}
+}
 
 @keyframes sky-rotate-in-up-right {
   from { transform-origin: right top; transform: rotate3d(0, 0, 1, -45deg); opacity: 0 }
   to { transform-origin: right top; transform: translate3d(0, 0, 0) rotate3d(0, 0, 1, 0); opacity: 1 }
-}}
+}
 
 @keyframes sky-flip-in-x {
   from { transform: perspective(400px) rotate3d(1, 0, 0, 90deg); opacity: 0; animation-timing-function: ease-in }
@@ -205,7 +205,7 @@
   60% { transform: perspective(400px) rotate3d(1, 0, 0, 10deg); opacity: 1; animation-timing-function: ease-in }
   80% { transform: perspective(400px) rotate3d(1, 0, 0, -5deg) }
   to { transform: perspective(400px) }
-}}
+}
 
 @keyframes sky-flip-in-y {
   from { transform: perspective(400px) rotate3d(0, 1, 0, 90deg); opacity: 0; animation-timing-function: ease-in }
@@ -213,4 +213,4 @@
   60% { transform: perspective(400px) rotate3d(0, 1, 0, 10deg); opacity: 1; animation-timing-function: ease-in }
   80% { transform: perspective(400px) rotate3d(0, 1, 0, -5deg) }
   to { transform: perspective(400px) }
-}}
+}
