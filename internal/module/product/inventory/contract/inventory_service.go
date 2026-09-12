@@ -4,7 +4,7 @@ package inventorycontract
 import (
 	"context"
 
-	inventorydto "go_wp/internal/module/inventory/dto"
+	inventorydto "go_wp/internal/module/product/inventory/dto"
 )
 
 // InventoryService 仓库与库存管理契约。

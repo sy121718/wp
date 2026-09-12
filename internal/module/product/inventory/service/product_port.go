@@ -13,8 +13,8 @@ import (
 	"errors"
 	"strings"
 
-	inventoryenums "go_wp/internal/module/inventory/enums"
 	productcontract "go_wp/internal/module/product/contract"
+	inventoryenums "go_wp/internal/module/product/inventory/enums"
 )
 
 // ResolveWarehouse 解析归属仓（warehouseID 为空 → 该工程的默认仓），返回只读引用。

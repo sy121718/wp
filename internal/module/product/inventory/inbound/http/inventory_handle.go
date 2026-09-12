@@ -12,9 +12,9 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"go_wp/internal/middleware/builtin"
-	inventorycontract "go_wp/internal/module/inventory/contract"
-	inventorydto "go_wp/internal/module/inventory/dto"
-	inventoryenums "go_wp/internal/module/inventory/enums"
+	inventorycontract "go_wp/internal/module/product/inventory/contract"
+	inventorydto "go_wp/internal/module/product/inventory/dto"
+	inventoryenums "go_wp/internal/module/product/inventory/enums"
 	"go_wp/pkg/response"
 )
 

@@ -23,10 +23,10 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
-	inventorydto "go_wp/internal/module/inventory/dto"
-	inventoryenums "go_wp/internal/module/inventory/enums"
-	inventorymodel "go_wp/internal/module/inventory/model"
 	masterdataenums "go_wp/internal/module/masterdata/enums"
+	inventorydto "go_wp/internal/module/product/inventory/dto"
+	inventoryenums "go_wp/internal/module/product/inventory/enums"
+	inventorymodel "go_wp/internal/module/product/inventory/model"
 )
 
 const (

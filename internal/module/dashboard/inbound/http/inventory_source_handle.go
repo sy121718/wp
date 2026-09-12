@@ -28,9 +28,9 @@ import (
 	"github.com/gin-gonic/gin"
 
 	dashboardenums "go_wp/internal/module/dashboard/enums"
-	inventorycontract "go_wp/internal/module/inventory/contract"
-	inventorydto "go_wp/internal/module/inventory/dto"
-	inventoryenums "go_wp/internal/module/inventory/enums"
+	inventorycontract "go_wp/internal/module/product/inventory/contract"
+	inventorydto "go_wp/internal/module/product/inventory/dto"
+	inventoryenums "go_wp/internal/module/product/inventory/enums"
 	projectcontract "go_wp/internal/module/project/contract"
 )
 

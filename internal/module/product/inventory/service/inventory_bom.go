@@ -18,9 +18,9 @@ import (
 
 	"github.com/google/uuid"
 
-	inventorydto "go_wp/internal/module/inventory/dto"
-	inventoryenums "go_wp/internal/module/inventory/enums"
-	inventorymodel "go_wp/internal/module/inventory/model"
+	inventorydto "go_wp/internal/module/product/inventory/dto"
+	inventoryenums "go_wp/internal/module/product/inventory/enums"
+	inventorymodel "go_wp/internal/module/product/inventory/model"
 )
 
 // SetBOM 全量替换某个父 SKU 的物料清单（验收 5）。

@@ -19,9 +19,9 @@ import (
 
 	"github.com/google/uuid"
 
-	inventorydto "go_wp/internal/module/inventory/dto"
-	inventoryenums "go_wp/internal/module/inventory/enums"
-	inventorymodel "go_wp/internal/module/inventory/model"
+	inventorydto "go_wp/internal/module/product/inventory/dto"
+	inventoryenums "go_wp/internal/module/product/inventory/enums"
+	inventorymodel "go_wp/internal/module/product/inventory/model"
 )
 
 // SyncStockCache 显式同步商品侧库存缓存（可指定单个变体，缺省整工程）。

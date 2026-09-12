@@ -18,12 +18,12 @@ import (
 	"errors"
 	"strings"
 
-	inventorycontract "go_wp/internal/module/inventory/contract"
-	inventorydto "go_wp/internal/module/inventory/dto"
-	inventoryenums "go_wp/internal/module/inventory/enums"
-	inventorymodel "go_wp/internal/module/inventory/model"
 	masterdatacontract "go_wp/internal/module/masterdata/contract"
 	productcontract "go_wp/internal/module/product/contract"
+	inventorycontract "go_wp/internal/module/product/inventory/contract"
+	inventorydto "go_wp/internal/module/product/inventory/dto"
+	inventoryenums "go_wp/internal/module/product/inventory/enums"
+	inventorymodel "go_wp/internal/module/product/inventory/model"
 	projectcontract "go_wp/internal/module/project/contract"
 )
 

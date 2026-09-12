@@ -17,11 +17,11 @@ import (
 	"github.com/gin-gonic/gin"
 
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
-	inventorycontract "go_wp/internal/module/inventory/contract"
-	inventorydto "go_wp/internal/module/inventory/dto"
 	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
+	inventorycontract "go_wp/internal/module/product/inventory/contract"
+	inventorydto "go_wp/internal/module/product/inventory/dto"
 	projectcontract "go_wp/internal/module/project/contract"
 )
 

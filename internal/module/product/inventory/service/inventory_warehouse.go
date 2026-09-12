@@ -18,9 +18,9 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
-	inventorydto "go_wp/internal/module/inventory/dto"
-	inventoryenums "go_wp/internal/module/inventory/enums"
-	inventorymodel "go_wp/internal/module/inventory/model"
+	inventorydto "go_wp/internal/module/product/inventory/dto"
+	inventoryenums "go_wp/internal/module/product/inventory/enums"
+	inventorymodel "go_wp/internal/module/product/inventory/model"
 )
 
 // CreateWarehouse 新建仓库（验收 1）。

@@ -19,12 +19,12 @@ import (
 
 	"gorm.io/gorm"
 
-	inventorydto "go_wp/internal/module/inventory/dto"
-	inventoryenums "go_wp/internal/module/inventory/enums"
-	inventorymodel "go_wp/internal/module/inventory/model"
-	inventoryservice "go_wp/internal/module/inventory/service"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
+	inventorydto "go_wp/internal/module/product/inventory/dto"
+	inventoryenums "go_wp/internal/module/product/inventory/enums"
+	inventorymodel "go_wp/internal/module/product/inventory/model"
+	inventoryservice "go_wp/internal/module/product/inventory/service"
 	productmodel "go_wp/internal/module/product/model"
 	productservice "go_wp/internal/module/product/service"
 	projectdto "go_wp/internal/module/project/dto"

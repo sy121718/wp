@@ -19,8 +19,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	inventorydto "go_wp/internal/module/inventory/dto"
-	inventoryenums "go_wp/internal/module/inventory/enums"
+	inventorydto "go_wp/internal/module/product/inventory/dto"
+	inventoryenums "go_wp/internal/module/product/inventory/enums"
 	productdto "go_wp/internal/module/product/dto"
 
 	dashboardhttp "go_wp/internal/module/dashboard/inbound/http"

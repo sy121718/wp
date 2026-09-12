@@ -23,8 +23,8 @@ import (
 	"sync"
 	"testing"
 
-	inventorydto "go_wp/internal/module/inventory/dto"
-	inventoryenums "go_wp/internal/module/inventory/enums"
+	inventorydto "go_wp/internal/module/product/inventory/dto"
+	inventoryenums "go_wp/internal/module/product/inventory/enums"
 	productdto "go_wp/internal/module/product/dto"
 )
 

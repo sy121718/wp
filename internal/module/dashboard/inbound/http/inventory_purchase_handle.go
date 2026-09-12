@@ -27,11 +27,11 @@ import (
 	"github.com/google/uuid"
 
 	dashboardenums "go_wp/internal/module/dashboard/enums"
-	inventorycontract "go_wp/internal/module/inventory/contract"
-	inventorydto "go_wp/internal/module/inventory/dto"
-	inventoryenums "go_wp/internal/module/inventory/enums"
 	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
+	inventorycontract "go_wp/internal/module/product/inventory/contract"
+	inventorydto "go_wp/internal/module/product/inventory/dto"
+	inventoryenums "go_wp/internal/module/product/inventory/enums"
 	projectcontract "go_wp/internal/module/project/contract"
 
 	"go_wp/internal/middleware/builtin"

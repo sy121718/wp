@@ -3,9 +3,9 @@
 package inventoryhttp
 
 import (
-	inventorycontract "go_wp/internal/module/inventory/contract"
-	inventorymodel "go_wp/internal/module/inventory/model"
-	inventoryservice "go_wp/internal/module/inventory/service"
+	inventorycontract "go_wp/internal/module/product/inventory/contract"
+	inventorymodel "go_wp/internal/module/product/inventory/model"
+	inventoryservice "go_wp/internal/module/product/inventory/service"
 	projectcontract "go_wp/internal/module/project/contract"
 
 	"github.com/gin-gonic/gin"

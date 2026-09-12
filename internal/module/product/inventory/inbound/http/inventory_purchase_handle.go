@@ -9,8 +9,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	inventorydto "go_wp/internal/module/inventory/dto"
-	inventoryenums "go_wp/internal/module/inventory/enums"
+	inventorydto "go_wp/internal/module/product/inventory/dto"
+	inventoryenums "go_wp/internal/module/product/inventory/enums"
 	"go_wp/pkg/response"
 )
 

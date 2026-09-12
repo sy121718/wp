@@ -9,12 +9,12 @@ import (
 	admincontract "go_wp/internal/module/admin/contract"
 	blockcontract "go_wp/internal/module/block/contract"
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
-	inventorycontract "go_wp/internal/module/inventory/contract"
 	masterdatacontract "go_wp/internal/module/masterdata/contract"
 	navigationcontract "go_wp/internal/module/navigation/contract"
 	pagecontract "go_wp/internal/module/page/contract"
 	plugincontract "go_wp/internal/module/plugin/contract"
 	productcontract "go_wp/internal/module/product/contract"
+	inventorycontract "go_wp/internal/module/product/inventory/contract"
 	projectcontract "go_wp/internal/module/project/contract"
 
 	"github.com/gin-gonic/gin"
