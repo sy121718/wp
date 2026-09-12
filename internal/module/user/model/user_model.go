@@ -26,14 +26,7 @@ const (
 	UserStatusPending = 2
 )
 
-// 内置角色 code（种子数据见迁移 123；判定逻辑不写死在这里，service 按表查）。
-const (
-	RoleCodeMember = "member"
-	RoleCodeVIP    = "vip"
-)
-
-// DefaultRoleCode 注册时的兜底角色（表里标了 is_default 的那个；这里只是兜底常量）。
-const DefaultRoleCode = RoleCodeMember
+const ()
 
 // JSONMap 可序列化的 JSON 扩展字段（实现 sql.Scanner / driver.Valuer）。
 //
@@ -68,7 +61,6 @@ type UserEntity struct {
 	Email               string     `gorm:"column:email;type:varchar(100)"`
 	EmailVerifiedAt     *time.Time `gorm:"column:email_verified_at;type:timestamp(3)"`
 	Status              int        `gorm:"column:status;type:smallint;default:1"`
-	RoleCode            string     `gorm:"column:role_code;type:varchar(32);default:'member'"`
 	Nickname            *string    `gorm:"column:nickname;type:varchar(60)"`
 	DisplayName         *string    `gorm:"column:display_name;type:varchar(250)"`
 	Avatar              *string    `gorm:"column:avatar;type:varchar(255)"`
@@ -115,10 +107,8 @@ type UserFilter struct {
 	Keyword string
 	// Status <0 表示不过滤。
 	Status int
-	// RoleCode 空表示不过滤。
-	RoleCode string
-	Offset   int
-	Limit    int
+	Offset int
+	Limit  int
 }
 
 // Create 新建用户（唯一索引冲突由 service 转成业务错误）。
@@ -164,9 +154,6 @@ func (m *UserModel) List(ctx context.Context, f UserFilter) (list []*UserEntity,
 	}
 	if f.Status >= 0 {
 		q = q.Where("status = ?", f.Status)
-	}
-	if rc := strings.TrimSpace(f.RoleCode); rc != "" {
-		q = q.Where("role_code = ?", rc)
 	}
 	if err = q.Count(&total).Error; err != nil {
 		return nil, 0, err

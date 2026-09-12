@@ -21,7 +21,6 @@ CREATE TABLE IF NOT EXISTS users (
     email_verified_at     TIMESTAMP(3),
     -- 1 正常 / 0 禁用 / 2 待激活（等待邮箱验证）；与 WP 的 user_status 同义但取值有定义
     status                SMALLINT     NOT NULL DEFAULT 1,
-    role_code             VARCHAR(32)  NOT NULL DEFAULT 'member',
     -- nickname 是站内称呼、display_name 是公开展示名（WP 两者分离，保留这个区分）
     nickname              VARCHAR(60),
     display_name          VARCHAR(250),
@@ -51,7 +50,6 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username ON users (lower(username));
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users (lower(email));
 CREATE INDEX IF NOT EXISTS idx_users_status ON users (status);
-CREATE INDEX IF NOT EXISTS idx_users_role_code ON users (role_code);
 CREATE INDEX IF NOT EXISTS idx_users_activation_key ON users (activation_key) WHERE activation_key IS NOT NULL;
 
 -- 2. user_profiles —— 资料（一对一）
@@ -101,25 +99,7 @@ CREATE TABLE IF NOT EXISTS user_preferences (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_user_preferences_user_id ON user_preferences (user_id);
 
--- 4. user_roles —— 角色字典（替掉 WP 的序列化 capabilities）
---
--- 一期单角色（users.role_code 引用本表）。WP 的多能力数组是给「一个用户同时是作者+编辑」
--- 这类后台权限组合用的；访客站不需要，真需要时再升成关联表。
-CREATE TABLE IF NOT EXISTS user_roles (
-    id          BIGSERIAL   PRIMARY KEY,
-    code        VARCHAR(32) NOT NULL,
-    name        VARCHAR(64) NOT NULL,
-    description VARCHAR(255),
-    -- 注册时的默认角色（有且只有一个，由服务层守卫）
-    is_default  BOOLEAN     NOT NULL DEFAULT FALSE,
-    sort        INTEGER     NOT NULL DEFAULT 0,
-    status      SMALLINT    NOT NULL DEFAULT 1,
-    create_time TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    update_time TIMESTAMP(3)
-);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_user_roles_code ON user_roles (code);
-
--- 5. user_sessions —— 登录设备台账（WP 的 session_tokens 用途）
+-- 4. user_sessions —— 登录设备台账（WP 的 session_tokens 用途）
 --
 -- 会话状态仍在 Redis（与 admin 共用基础设施）；本表负责让用户**看见并踢掉**自己的其它设备，
 -- 以及回答「这个账号最近在哪登录过」。
@@ -138,7 +118,7 @@ CREATE TABLE IF NOT EXISTS user_sessions (
 CREATE INDEX IF NOT EXISTS idx_user_sessions_user_id ON user_sessions (user_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_user_sessions_token_hash ON user_sessions (token_hash);
 
--- 6. user_app_passwords —— 应用密码（WP 的 _application_passwords，给 API 访问）
+-- 5. user_app_passwords —— 应用密码（WP 的 _application_passwords，给 API 访问）
 CREATE TABLE IF NOT EXISTS user_app_passwords (
     id             BIGSERIAL    PRIMARY KEY,
     user_id        BIGINT       NOT NULL,
@@ -151,7 +131,7 @@ CREATE TABLE IF NOT EXISTS user_app_passwords (
 );
 CREATE INDEX IF NOT EXISTS idx_user_app_passwords_user_id ON user_app_passwords (user_id);
 
--- 7. user_meta —— **只给插件**的 key-value（学 WP 的灵活性，但划死边界）
+-- 6. user_meta —— **只给插件**的 key-value（学 WP 的灵活性，但划死边界）
 --
 -- 死线：核心功能禁止依赖本表。能用列表达的就必须建列 ——
 -- 否则这里会长成第二张 wp_usermeta，而那正是本模块要避开的写法。
@@ -164,10 +144,3 @@ CREATE TABLE IF NOT EXISTS user_meta (
     update_time TIMESTAMP(3)
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_user_meta_key ON user_meta (user_id, meta_key);
-
--- 内置角色：member 为注册默认，vip 作为「角色可扩」的示范（一期不参与任何判定逻辑）
-INSERT INTO user_roles (code, name, description, is_default, sort)
-VALUES
-    ('member', '普通会员', '注册后的默认角色', TRUE, 0),
-    ('vip', 'VIP 会员', '预留：升级后享受的权益角色', FALSE, 10)
-ON CONFLICT (code) DO NOTHING;
