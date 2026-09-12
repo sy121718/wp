@@ -130,6 +130,24 @@ Go 读组件同目录的 `.css`，把顶层 `&` 替换成该 node 的作用域�
 变量（它不该跟着样式源的分支结构走），若未命中就完全不解析，分支内的变量不会被标记为
 「已消费」，反向校验会把它们误判成拼写错误。顺带让未命中分支里的语法错误也能在构建期暴露。
 
+**数量随数据变化的规则走 `@each`**：列表由 Go 侧提供，块内用 `<循环变量>.<字段>` 取值。
+值变量表达不了这类规则 —— 变量表是扁平的，而这里每条规则要取自己那一项的值：
+
+```css
+@each tab in tabs
+&:has({{tab.radio}}:checked) .sky-tab-panel[data-index="{{tab.index}}"] {
+  display: block;
+}
+@endfor
+```
+
+Go 侧经 `ApplyComponentCSSTmplLists` 传 `map[string][]map[string]string`。列表名与值变量
+共用同一套反向校验（提供了没用到、引用了没提供都报错）；块内字段拼错会在**第一次循环**
+就失败，不会静默少一条规则。`@if` 与 `@each` 的块深度**一起计** —— 两种块互相嵌套时
+只数自己那一种，内层的结束标记会被当成外层的，块被提前截断，后半段规则凭空消失。
+
+选择器里的变量同样会展开（`@each` 的循环项最常用在选择器里）。
+
 最后三条容器类指令的层序 `sky-auto < sky-theme < sky-local` 就是优先级：自动适配要被主题档位
 盖住，主题档位又要被作者显式声明盖住。层归属写错的表现是「主题调了没反应」—— 产物是一份
 合法 CSS，浏览器不报任何错，所以 `card` 的契约测试专门钉住它。
@@ -186,7 +204,7 @@ P6 的结论推翻了本文件原先的设想：`--c-*`（后台 `theme.css` 的
 「原子层共享」也不做 —— 两个投递目标必须分离。真正修掉的是既有缺陷：`ui.css` 里 45 处
 `var(--c-*)` 没有 fallback，而产物只定义 `--sky-c-*`，整条声明失效。
 
-**存量迁移进度（P7）**：已迁 **25 / 37** ——
+**存量迁移进度（P7）**：已迁 **27 / 37** ——
 
 | 批次 | 组件 |
 |---|---|
@@ -199,13 +217,14 @@ P6 的结论推翻了本文件原先的设想：`--c-*`（后台 `theme.css` 的
 | 卡片与图集批 | `card` `gallery` `productcard` |
 | 表格与计数批 | `table` `counter` `marquee` |
 | 轮播与折叠批 | `slider` `accordion` |
+| 页签与社交批 | `tabs` `socialbuttons` |
 
 每批做法固定：先 dump 迁移前后产物要求**逐字节一致**（有 golden 的组件另由
 `TestJetViewByteEquivalent` 整页字节网兜底），再补该组件的 `xxx_css_test.go` 契约测试。
 
-剩余 11 个组件待迁（另有 `globalref` 的 `CompileCSS` 是空实现，不参与迁移）：
+剩余 9 个组件待迁（另有 `globalref` 的 `CompileCSS` 是空实现，不参与迁移）：
 `button` `cardstack` `container` `infobox` `loader` `nav` `product` `productlist`
-`productselector` `socialbuttons` `tabs`。
+`productselector`。
 解析器的能力已经够用：容器类四条桶（`@hovernone` / `@container` / `@style` / `@theme`）、
 `@property`、关键帧名与帧体的变量，都在迁移过程中被真实组件逼了出来 ——
 `gallery` 暴露了规则级 `@if` 未命中时分支内变量不算被消费（分支一多就误报），
