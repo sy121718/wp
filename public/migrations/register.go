@@ -318,6 +318,9 @@ var mailBuiltinTemplatesSQL string
 //go:embed 130_mail_template_variables.sql
 var mailTemplateVarsSQL string
 
+//go:embed 131_mail_automation.sql
+var mailAutomationSQL string
+
 func init() {
 	register(Migration{
 		Version:   "001-init-schema",
@@ -1393,5 +1396,13 @@ func init() {
 		TableName: "mail_templates",
 		CheckSQL:  "SELECT CASE WHEN EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = ? AND column_name = 'variables' AND data_type = 'ARRAY') THEN 1 ELSE 0 END",
 		SQL:       mailTemplateVarsSQL,
+	})
+
+	// 131：自动化流程三张表（issue #38 P3）。
+	register(Migration{
+		Version:   "131-mail-automation",
+		TableName: "mail_automations",
+		CheckSQL:  "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = current_schema() AND table_name = ?",
+		SQL:       mailAutomationSQL,
 	})
 }
