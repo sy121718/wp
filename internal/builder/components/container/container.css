@@ -1,0 +1,314 @@
+/* core.container 容器样式（样式源）。
+
+   顺序即产物：文件里规则与声明的先后，就是迁移前 compileCSS 里 b.Add 的调用顺序。
+   背景轮播的骨架规则先于主规则进桶，主规则之后依次是定位系统与样式扩展。
+
+   交互/动效段（入场 / 循环 / 悬浮 / 吸顶）走 core.CompileInteraction —— 它按 Props 的
+   动效词汇表产出多条规则到多个桶，不是声明能表达的形态，所以文件在 @interaction-point
+   处切开：前半段应用完、交互管线落桶之后，再应用后半段，产物字节与迁移前一致。
+   两段各自做变量双向校验（提供的变量必须被本段消费）。 */
+
+/* ===== 背景轮播：按张数生成的关键帧 ===== */
+
+/* 帧名与帧内百分比都由张数算出；slides 为空时 @each 不展开，
+   不会留下一条谁都不引用的关键帧。 */
+@each slide in slides
+@keyframes sky-bg-fade-{{slideCount}} {
+  0% { opacity: 0 }
+  4% { opacity: 1 }
+  {{fadeHold}}% { opacity: 1 }
+  {{fadeEnd}}% { opacity: 0 }
+  100% { opacity: 0 }
+}
+@endfor
+
+/* ===== 背景轮播：骨架规则 ===== */
+
+@if hasSlides
+/* 背景层：铺满并压在内容之下。 */
+& .sky-bg-slides {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* 内容层抬到背景之上（背景层是唯一直接子元素例外）。 */
+& > :not(.sky-bg-slides) {
+  position: relative;
+  z-index: 1;
+}
+
+/* 每张幻灯片交叉淡入：总时长 = 张数 x 间隔。 */
+& .sky-bg-slide {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  opacity: 0;
+  animation: sky-bg-fade-{{slideCount}} {{slideTotal}} ease-in-out infinite;
+}
+@endif
+
+/* 逐张错开的延迟（条数随张数变化，值变量表达不了）。 */
+@each slide in slides
+& .sky-bg-slide:nth-child({{slide.index}}) {
+  animation-delay: {{slide.delay}}s;
+}
+@endfor
+
+/* ===== 主规则：布局 + 盒模型 + 视觉装饰 ===== */
+
+& {
+  /* 布局与排版（两引擎互斥；flex 参数缺失时只留 display）。 */
+  @if flexEngine
+  display: flex;
+  flex-direction: {{flexDirection}};
+  justify-content: {{flexJustify}};
+  align-items: {{flexAlign}};
+  flex-wrap: {{flexWrap}};
+  gap: {{flexGap}};
+  @endif
+  @if gridEngine
+  display: grid;
+  grid-template-columns: repeat({{gridColsDesktop}}, 1fr);
+  column-gap: {{gridColumnGap}};
+  row-gap: {{gridRowGap}};
+  @endif
+
+  /* 盒模型（三端独立，桌面端在此、另两端在下方媒体查询里）。 */
+  padding: {{padDesktop}};
+  margin: {{marginDesktop}};
+  min-height: {{minHeight}};
+  max-height: {{maxHeight}};
+  overflow: {{overflow}};
+
+  /* 视觉装饰：渐变 > 背景图 > 图案（互斥，同写 background-image）。 */
+  background-color: {{bgColor}};
+  @if hasGradient
+  background-image: {{bgGradient}};
+  @if gradientAnimated
+  {{bgFlow}};
+  /* 渐变流动用到内建关键帧 sky-bg-flow（词汇表白名单留在 Go）。 */
+  @need-keyframes sky-bg-flow;
+  @endif
+  @endif
+  @if hasImage
+  background-image: url({{bgImage}});
+  background-position: {{bgPosition}};
+  background-attachment: {{bgAttachment}};
+  background-repeat: {{bgRepeat}};
+  background-size: {{bgSize}};
+  @endif
+  @if hasPattern
+  {{patternDecls}};
+  @endif
+  /* 背景轮播要求自身成为定位上下文并裁剪溢出的背景层。 */
+  @if hasSlides
+  position: relative;
+  overflow: hidden;
+  @endif
+
+  /* 边框：任一要素填写即生效，缺失项由 Go 侧兜底（1px solid currentColor）。 */
+  @if hasBorder
+  border: {{borderDecl}};
+  @endif
+  /* 圆角：四角字段优先，其次统一值。 */
+  @if hasCorners
+  border-radius: {{radiusCorners}};
+  @endif
+  @if hasRadius
+  border-radius: {{radius}};
+  @endif
+  /* 阴影：自定义四参 与 预设级别 互斥。 */
+  @if shadowCustom
+  box-shadow: {{shadowCustomDecl}};
+  @endif
+  @if shadowLevel
+  box-shadow: {{shadowLevelDecl}};
+  @endif
+}
+
+/* 平板端：栅格降级列数 + 盒模型覆盖。 */
+@media (max-width: 1024px) {
+  & {
+    grid-template-columns: repeat({{gridColsTablet}}, 1fr);
+    padding: {{padTablet}};
+    margin: {{marginTablet}};
+  }
+}
+
+/* 手机端：栅格降级列数 + 盒模型覆盖。 */
+@media (max-width: 767px) {
+  & {
+    grid-template-columns: repeat({{gridColsMobile}}, 1fr);
+    padding: {{padMobile}};
+    margin: {{marginMobile}};
+  }
+}
+
+/* 交互/动效段由 Go 侧插在此处（core.CompileInteraction）。 */
+/* @interaction-point */
+
+/* ===== 定位系统 ===== */
+
+@if posRelative
+& {
+  position: relative;
+}
+@endif
+
+/* 绝对定位：坐标可选项由变量表达（空则整条省略）。 */
+@if posAbsolute
+& {
+  position: absolute;
+  top: {{posTop}};
+  right: {{posRight}};
+  bottom: {{posBottom}};
+  left: {{posLeft}};
+}
+@endif
+
+@if posSticky
+& {
+  position: sticky;
+  top: 0;
+}
+@endif
+
+/* 抽屉：fixed + 移出视口，:target 滑入（触发协议 href="#sky-drawer-<id>"，零 JS）。 */
+@if posDrawer
+& {
+  position: fixed;
+  transition: transform 0.3s ease;
+  z-index: 900;
+  @if drawerLeft
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 300px;
+  transform: translateX(-100%);
+  @endif
+  @if drawerRight
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 300px;
+  transform: translateX(100%);
+  @endif
+  @if drawerBottom
+  left: 0;
+  right: 0;
+  bottom: 0;
+  transform: translateY(100%);
+  @endif
+}
+
+&:target {
+  transform: none;
+}
+@endif
+
+/* ===== 样式扩展 ===== */
+
+/* 子项顺序（flex/grid 中 -1~99；0 表示未设置）。 */
+& {
+  order: {{order}};
+}
+
+/* 悬停背景：过渡留在基础规则里，悬停本身走 @hover（触屏不输出）。 */
+@if hasBgHover
+& {
+  transition: background 0.2s ease;
+}
+
+@hover &:hover {
+  background: {{bgHover}};
+}
+@endif
+
+/* 容器查询上下文：内部组件的尺寸查询与样式查询都以本容器为最近锚点。 */
+@if containerQuery
+& {
+  container-type: inline-size;
+  container-name: sky-theme;
+}
+@endif
+
+/* 内部卡片布局语义开关：声明自定义属性，内部卡片用样式查询响应。 */
+@if cardLayoutHorizontal
+& {
+  --sky-card-layout: horizontal;
+}
+@endif
+
+/* 视口外跳过渲染（占位尺寸防滚动条跳动）。 */
+@if contentVisibility
+& {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 480px;
+}
+@endif
+
+/* 底部安全区垫高（声明组来自 core.SafeAreaDecls，保持一份实现）。 */
+& {
+  {{safeAreaDecls}};
+}
+
+/* 背景覆盖层：静态定位的容器需要先建立定位上下文。 */
+@if hasOverlay
+@if posStatic
+& {
+  position: relative;
+}
+@endif
+
+&::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: {{overlay}};
+  z-index: 0;
+}
+
+& > * {
+  position: relative;
+  z-index: 1;
+}
+@endif
+
+/* 形状分隔线：位置关键字同时进选择器与属性名；颜色跟随容器背景反色缺省。 */
+@if hasShape
+& .sky-shape {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 48px;
+  line-height: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+
+& .sky-shape svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+& .sky-shape-{{shapePos}} {
+  {{shapePos}}: 0;
+}
+
+& .sky-shape svg {
+  color: {{shapeColor}};
+}
+
+@if posStatic
+& {
+  position: relative;
+}
+@endif
+@endif

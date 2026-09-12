@@ -1,0 +1,112 @@
+/* core.productSelector 规格选择器样式（来源：原 productselector.go 的 compileCSS）。
+
+   原生 radio + label 的胶囊值组 + 组合清单行。
+   多端硬规则：值组与组合行都折行，宽度一律 min(100%, ...)；
+   radio 视觉隐藏但仍可聚焦（position + clip-path 而不是 display:none，
+   后者会把键盘 Tab / 方向键路径一起删掉）—— 读屏仍读得到 label。 */
+
+& {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+& .sky-selector-group {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+
+& .sky-selector-legend {
+  font-size: .9rem;
+  font-weight: 600;
+  margin-bottom: 6px;
+  padding: 0;
+}
+
+& .sky-selector-values {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+& .sky-selector-radio {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+& .sky-selector-value {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border: 1px solid var(--sky-c-border, rgba(0,0,0,0.15));
+  border-radius: 999px;
+  cursor: pointer;
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* 选中态与焦点环都靠兄弟选择器（radio 在 label 之前），零 JS。 */
+& .sky-selector-radio:checked + .sky-selector-value {
+  border-color: var(--sky-c-primary, #2563eb);
+  color: var(--sky-c-primary, #2563eb);
+  background: var(--sky-c-primary-weak, rgba(37,99,235,0.08));
+}
+
+& .sky-selector-radio:focus-visible + .sky-selector-value {
+  outline: 2px solid var(--sky-c-primary, #2563eb);
+  outline-offset: 2px;
+}
+
+& .sky-selector-variants {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+& .sky-selector-variant {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--sky-c-border, rgba(0,0,0,0.08));
+  border-radius: 8px;
+  min-width: 0;
+}
+
+& .sky-selector-variant-price {
+  font-weight: 700;
+  color: var(--sky-c-primary, #2563eb);
+}
+
+& .sky-selector-variant-compare {
+  text-decoration: line-through;
+  color: var(--sky-c-muted, rgba(0,0,0,0.45));
+  font-size: .9em;
+}
+
+& .sky-selector-stock {
+  font-size: .85rem;
+  color: var(--sky-c-muted, rgba(0,0,0,0.6));
+  flex: 1 0 100%;
+}
+
+& .sky-selector-variant .is-out {
+  color: var(--sky-c-danger, #dc2626);
+  font-weight: 600;
+}
+
+& .sky-selector-empty {
+  margin: 0;
+  color: var(--sky-c-muted, rgba(0,0,0,0.55));
+}

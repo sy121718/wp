@@ -11,6 +11,7 @@
 package button
 
 import (
+	_ "embed" // button.css 经 //go:embed 打进二进制
 	"fmt"
 	"regexp"
 	"strings"
@@ -290,78 +291,54 @@ func validateExtra(p *Props, nodeID string) (err error) {
 	return nil
 }
 
-// compileCSS 按钮样式：尺寸/变体/双态/图标动效/块级。
+// buttonCSS 组件样式源。与组件同目录：改样式不必再进 Go 字符串数组
+// （有补全 / lint / 格式化），而作用域替换、桶划分、确定性输出仍由构建期负责。
+//
+//go:embed button.css
+var buttonCSS string
+
+// compileCSS 按钮样式：尺寸 / 变体 / 双态 / 图标动效 / 块级。
+//
+// Go 侧只留「业务判定与兜底值计算」—— 尺寸查表、扁平字段回退嵌套 State、变体的边框
+// 三分支、主题回退链、布尔开关；属性的组合方式与声明顺序全部在 button.css 里。
+// 变体三分支（solid / outline / ghost）在样式源里是同一个声明块内的条件段，
+// 命中的分支与基础声明合并成一条规则，与迁移前「按条件拼一个切片、只 Add 一次」等价。
 func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	sel := "." + core.NodeClass(id)
 
-	var base []string
-	base = append(base,
-		"display: inline-flex",
-		"align-items: center",
-		"justify-content: center",
-		"text-decoration: none",
-		"cursor: pointer",
-		"border: none",
-	)
+	sizePadding, sizeFontSize := "10px 20px", "1rem"
 	if preset, ok := sizePresets[p.Size]; ok {
-		base = append(base, core.CSSDecl("padding", preset[0]), core.CSSDecl("font-size", preset[1]))
-	} else {
-		base = append(base, "padding: 10px 20px", "font-size: 1rem")
+		sizePadding, sizeFontSize = preset[0], preset[1]
 	}
-	if p.FontSize != "" {
-		base = append(base, core.CSSDecl("font-size", p.FontSize))
-	}
-	if p.FontWeight != "" {
-		base = append(base, core.CSSDecl("font-weight", p.FontWeight))
-	}
-	if p.LetterSpacing != "" {
-		base = append(base, core.CSSDecl("letter-spacing", p.LetterSpacing))
-	}
+
+	// 大小写转换：空与 none 都表示「不输出」。
+	textTransform := ""
 	if p.Transform != "" && p.Transform != "none" {
-		base = append(base, core.CSSDecl("text-transform", p.Transform))
+		textTransform = p.Transform
 	}
-	// 圆角：四角独立（通用外观字段）；四角全空时回退主题级按钮圆角。
-	if p.RadiusTL == "" && p.RadiusTR == "" && p.RadiusBR == "" && p.RadiusBL == "" {
-		base = append(base, "border-radius: var(--sky-btn-radius, 8px)")
-	} else {
+
+	// 圆角：四角全空回退主题级按钮圆角，否则四角独立（缺角补 0）。
+	radius := "var(--sky-btn-radius, 8px)"
+	if p.RadiusTL != "" || p.RadiusTR != "" || p.RadiusBR != "" || p.RadiusBL != "" {
 		corner := func(v string) string {
 			if v == "" {
 				return "0"
 			}
 			return v
 		}
-		base = append(base, core.CSSDecl("border-radius",
-			corner(p.RadiusTL), corner(p.RadiusTR), corner(p.RadiusBR), corner(p.RadiusBL)))
-	}
-	if p.FontFamily != "" {
-		base = append(base, core.CSSDecl("font-family", p.FontFamily))
-	}
-	if p.LineHeight != "" {
-		base = append(base, core.CSSDecl("line-height", p.LineHeight))
-	}
-	if p.FullWidth {
-		base = append(base, "width: 100%")
-	}
-	// 悬停态（颜色由增强层之外的 CSS :hover 处理，零 JS）。
-	if p.HoverBg != "" || p.HoverColor != "" {
-		var hv []string
-		if p.HoverBg != "" {
-			hv = append(hv, core.CSSDecl("background", p.HoverBg))
-		}
-		if p.HoverColor != "" {
-			hv = append(hv, core.CSSDecl("color", p.HoverColor))
-		}
-		b.AddHover(sel+":hover", hv)
+		radius = strings.Join([]string{
+			corner(p.RadiusTL), corner(p.RadiusTR), corner(p.RadiusBR), corner(p.RadiusBL),
+		}, " ")
 	}
 
-	// 图标间距 + 排布方向（图标在上/下时按钮改纵向排列）。
+	// 图标：间距 / 纵横排布 / 悬停位移（三者互不影响）。
+	iconSpacing, iconShift := "", ""
+	iconStacked, iconShiftOn := false, false
 	if p.Icon != nil {
-		if p.Icon.Spacing != "" {
-			base = append(base, core.CSSDecl("gap", p.Icon.Spacing))
-		}
-		if p.Icon.Position == "top" || p.Icon.Position == "bottom" {
-			base = append(base, "flex-direction: column")
-		}
+		iconSpacing = p.Icon.Spacing
+		iconStacked = p.Icon.Position == "top" || p.Icon.Position == "bottom"
+		iconShift = p.Icon.HoverShift
+		iconShiftOn = p.Icon.HoverShift != ""
 	}
 
 	// 外观取值：扁平字段优先（检查器直接编辑），缺省回退嵌套 State（兼容旧文档）。
@@ -382,93 +359,41 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		shadowLevel = p.Normal.Shadow
 	}
 
-	// 变体基础。
-	switch p.Variant {
-	case VariantGhost:
-		// 幽灵按钮：透明底；显式设了背景（含 transparent）则尊重用户设置。
-		if bg != "" {
-			base = append(base, core.CSSDecl("background", bg))
-		} else {
-			base = append(base, "background: transparent")
-		}
-		if p.Text == "" {
-			base = append(base, "padding: 6px 0")
-		}
-	case VariantOutline:
-		if bg != "" {
-			base = append(base, core.CSSDecl("background", bg))
-		} else {
-			base = append(base, "background: transparent")
-		}
-		// 边框：宽度 + 样式 + 颜色（用户可自定义，缺省 1px solid currentColor）。
-		if p.BorderWidth != "" {
-			bstyle := p.BorderStyle
-			if bstyle == "" {
-				bstyle = "solid"
-			}
-			bcol := borderColor
-			if bcol == "" {
-				bcol = "currentColor"
-			}
-			base = append(base, core.CSSDecl("border", p.BorderWidth, bstyle, bcol))
-		} else if borderColor != "" {
-			base = append(base, core.CSSDecl("border", "1px", "solid", borderColor))
-		} else {
-			base = append(base, "border: 1px solid currentColor")
-		}
-		if textColor != "" {
-			base = append(base, core.CSSDecl("color", textColor))
-		}
-	default: // solid
-		if bg != "" {
-			base = append(base, core.CSSDecl("background", bg))
-		} else {
-			// 主题回退链：主题按钮背景 → 主题主色 → 硬编码兜底。
-			base = append(base, "background: var(--sky-btn-bg, var(--sky-c-primary, #2563eb))")
-		}
-		if textColor != "" {
-			base = append(base, core.CSSDecl("color", textColor))
-		} else {
-			base = append(base, "color: var(--sky-btn-color, #fff)")
-		}
-		if p.BorderWidth != "" {
-			bstyle := p.BorderStyle
-			if bstyle == "" {
-				bstyle = "solid"
-			}
-			bcol := borderColor
-			if bcol == "" {
-				bcol = "currentColor"
-			}
-			base = append(base, core.CSSDecl("border", p.BorderWidth, bstyle, bcol))
-		} else if borderColor != "" {
-			base = append(base, core.CSSDecl("border", "1px", "solid", borderColor))
-		} else {
-			// 组件未设边框 → 回退主题级按钮边框变量（主题未配置时宽度 0 = 无边框）。
-			base = append(base, "border: var(--sky-btn-border-width, 0) var(--sky-btn-border-style, solid) var(--sky-btn-border-color, transparent)")
-		}
+	// 变体归一：空与未知一律兜底实心（与迁移前 switch 的 default 分支一致）。
+	variant := p.Variant
+	switch variant {
+	case VariantGhost, VariantOutline:
+	default:
+		variant = VariantSolid
 	}
-	if v, ok := core.ShadowPresets[shadowLevel]; ok {
-		base = append(base, core.CSSDecl("box-shadow", v))
-	} else {
-		// 组件未设阴影 → 回退主题级按钮阴影变量。
-		base = append(base, "box-shadow: var(--sky-btn-shadow, none)")
-	}
-	// 变换（标准态）。
-	if t := transformDecl(p, false); t != "" {
-		base = append(base, t)
-	}
-	b.Add(core.BreakpointDesktop, sel, base)
 
-	// 悬浮/聚焦态：悬停扁平字段优先（HoverBg/HoverColor/HoverBorderColor/HoverShadow），
-	// 缺省回退嵌套 Hover State，再回退正常态推导。
-	var hoverDecls []string
-	hoverBase := p.Hover
+	// 各变体的背景取值：ghost / outline 透明底，显式设了背景（含 transparent）则尊重用户设置。
+	transparentBg := "transparent"
+	if bg != "" {
+		transparentBg = bg
+	}
+	solidBg := "var(--sky-btn-bg, var(--sky-c-primary, #2563eb))"
+	if bg != "" {
+		solidBg = bg
+	}
+	solidColor := "var(--sky-btn-color, #fff)"
+	if textColor != "" {
+		solidColor = textColor
+	}
+	solidBorder := borderValue(p, borderColor,
+		"var(--sky-btn-border-width, 0) var(--sky-btn-border-style, solid) var(--sky-btn-border-color, transparent)")
+
+	shadow := "var(--sky-btn-shadow, none)"
+	if v, ok := core.ShadowPresets[shadowLevel]; ok {
+		shadow = v
+	}
+
+	// 悬浮 / 聚焦态：悬停扁平字段优先，缺省回退嵌套 Hover State，再回退正常态推导。
 	hoverBg := p.HoverBg
 	if hoverBg == "" {
-		hoverBg = hoverBase.Background
+		hoverBg = p.Hover.Background
 	}
-	switch p.Variant {
+	switch variant {
 	case VariantOutline:
 		if hoverBg == "" {
 			hoverBg = textColor
@@ -478,61 +403,98 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 			hoverBg = bg
 		}
 	}
-	if hoverBg != "" {
-		hoverDecls = append(hoverDecls, core.CSSDecl("background", hoverBg))
-	}
 	hoverColor := p.HoverColor
 	if hoverColor == "" {
-		hoverColor = hoverBase.Color
-	}
-	if hoverColor != "" {
-		hoverDecls = append(hoverDecls, core.CSSDecl("color", hoverColor))
+		hoverColor = p.Hover.Color
 	}
 	hoverBorder := p.HoverBorderColor
 	if hoverBorder == "" {
-		hoverBorder = hoverBase.Border
-	}
-	if hoverBorder != "" {
-		hoverDecls = append(hoverDecls, core.CSSDecl("border-color", hoverBorder))
+		hoverBorder = p.Hover.Border
 	}
 	hoverShadow := p.HoverShadow
 	if hoverShadow == "" {
-		hoverShadow = hoverBase.Shadow
+		hoverShadow = p.Hover.Shadow
 	}
-	if hoverShadow != "" {
-		if v, ok := core.ShadowPresets[hoverShadow]; ok {
-			hoverDecls = append(hoverDecls, core.CSSDecl("box-shadow", v))
-		}
+	hoverShadowValue := ""
+	if v, ok := core.ShadowPresets[hoverShadow]; ok {
+		hoverShadowValue = v
 	}
-	if t := transformDecl(p, true); t != "" {
-		hoverDecls = append(hoverDecls, t)
-	}
-	if len(hoverDecls) > 0 {
-		b.Add(core.BreakpointDesktop, sel, []string{transitionDecl(p)})
-		b.Add(core.BreakpointDesktop, sel+":hover, "+sel+":focus", hoverDecls)
-	}
+	hoverTransform := transformValue(p, true)
+	// 一条悬停声明都没有时整段不产出（过渡也不产出）—— 与迁移前 len(hoverDecls) == 0 等价。
+	hoverState := hoverBg != "" || hoverColor != "" || hoverBorder != "" ||
+		hoverShadowValue != "" || hoverTransform != ""
 
-	// 图标悬停位移。
-	if p.Icon != nil && p.Icon.HoverShift != "" {
-		b.Add(core.BreakpointDesktop, sel+" .bt-icon-shift", []string{"transition: transform 0.2s ease"})
-		b.Add(core.BreakpointDesktop, sel+":hover .bt-icon-shift", []string{"transform: translateX(" + p.Icon.HoverShift + ")"})
+	vars := map[string]string{
+		"sizePadding":      sizePadding,
+		"sizeFontSize":     sizeFontSize,
+		"fontSize":         p.FontSize,
+		"fontWeight":       p.FontWeight,
+		"letterSpacing":    p.LetterSpacing,
+		"textTransform":    textTransform,
+		"radius":           radius,
+		"fontFamily":       p.FontFamily,
+		"lineHeight":       p.LineHeight,
+		"fullWidth":        core.BoolVar(p.FullWidth),
+		"iconSpacing":      iconSpacing,
+		"iconStacked":      core.BoolVar(iconStacked),
+		"variantGhost":     core.BoolVar(variant == VariantGhost),
+		"ghostBg":          transparentBg,
+		"ghostCompact":     core.BoolVar(p.Text == ""),
+		"variantOutline":   core.BoolVar(variant == VariantOutline),
+		"outlineBg":        transparentBg,
+		"outlineBorder":    borderValue(p, borderColor, "1px solid currentColor"),
+		"outlineColor":     textColor,
+		"variantSolid":     core.BoolVar(variant == VariantSolid),
+		"solidBg":          solidBg,
+		"solidColor":       solidColor,
+		"solidBorder":      solidBorder,
+		"shadow":           shadow,
+		"transform":        transformValue(p, false),
+		"hoverBg":          p.HoverBg,
+		"hoverColor":       p.HoverColor,
+		"hoverState":       core.BoolVar(hoverState),
+		"transition":       transitionValue(p),
+		"hoverStateBg":     hoverBg,
+		"hoverStateColor":  hoverColor,
+		"hoverStateBorder": hoverBorder,
+		"hoverStateShadow": hoverShadowValue,
+		"hoverTransform":   hoverTransform,
+		"iconShiftOn":      core.BoolVar(iconShiftOn),
+		"iconShift":        iconShift,
+		"blockDesktop":     core.BoolVar(p.Block.Desktop),
+		"blockTablet":      core.BoolVar(p.Block.Tablet),
+		"blockMobile":      core.BoolVar(p.Block.Mobile),
 	}
-
-	// 块级铺满（三端）。
-	if p.Block.Desktop {
-		b.Add(core.BreakpointDesktop, sel, []string{"display: flex", "width: 100%"})
-	}
-	if p.Block.Tablet {
-		b.Add(core.BreakpointTablet, sel, []string{"display: flex", "width: 100%"})
-	}
-	if p.Block.Mobile {
-		b.Add(core.BreakpointMobile, sel, []string{"display: flex", "width: 100%"})
+	if err := core.ApplyComponentCSSTmpl(b, sel, buttonCSS, vars); err != nil {
+		// 样式源解析失败属于构建期缺陷，必须在测试/构建时暴露；静默跳过的后果是产物悄悄少了样式。
+		panic(fmt.Sprintf("button 组件样式解析失败: %v", err))
 	}
 }
 
-// transformDecl 合成 transform 声明（旋转 / 偏移 / 缩放 / 倾斜 / 翻转）。
+// borderValue 合成边框声明的值部分（宽度 / 样式 / 颜色，缺省 1px solid currentColor）。
+// fallback 是该变体三分支都不命中时的兜底值（outline 与 solid 的回退链不同）。
+func borderValue(p *Props, borderColor, fallback string) string {
+	if p.BorderWidth != "" {
+		style := p.BorderStyle
+		if style == "" {
+			style = "solid"
+		}
+		color := borderColor
+		if color == "" {
+			color = "currentColor"
+		}
+		return strings.Join([]string{p.BorderWidth, style, color}, " ")
+	}
+	if borderColor != "" {
+		return "1px solid " + borderColor
+	}
+	return fallback
+}
+
+// transformValue 合成 transform 声明的**值部分**（旋转 / 偏移 / 缩放 / 倾斜 / 翻转）。
+// 属性名与声明位置由 button.css 给出，这里只算值 —— 「属性怎么组合」是样式源的事。
 // hover=true 时取悬停态字段；悬停态全部未设置则返回空串（继承标准态，不覆盖）。
-func transformDecl(p *Props, hover bool) string {
+func transformValue(p *Props, hover bool) string {
 	rotate, tx, ty, scale, skewX, skewY := p.Rotate, p.TranslateX, p.TranslateY, p.Scale, p.SkewX, p.SkewY
 	flipX, flipY := p.FlipX, p.FlipY
 	if hover {
@@ -594,14 +556,11 @@ func transformDecl(p *Props, hover bool) string {
 	if flipY {
 		parts = append(parts, "scaleY(-1)")
 	}
-	if len(parts) == 0 {
-		return ""
-	}
-	return "transform: " + strings.Join(parts, " ")
+	return strings.Join(parts, " ")
 }
 
-// transitionDecl 通用过渡声明：时长 / 缓动 / 延迟，缺省 all 0.2s ease。
-func transitionDecl(p *Props) string {
+// transitionValue 通用过渡声明的**值部分**：时长 / 缓动 / 延迟，缺省 all 0.2s ease。
+func transitionValue(p *Props) string {
 	d := p.TransitionDuration
 	if d == "" {
 		d = "0.2s"
@@ -614,7 +573,7 @@ func transitionDecl(p *Props) string {
 	if p.TransitionDelay != "" {
 		parts = append(parts, p.TransitionDelay)
 	}
-	return "transition: " + strings.Join(parts, " ")
+	return strings.Join(parts, " ")
 }
 
 // isSafeURL 外链白名单（仅 http/https）。

@@ -129,6 +129,9 @@ type cssSourceParser struct {
 	usedLists map[string]bool
 	// loopVars 当前循环项展开出的变量（键形如 "tab.radio"），只在 @each 块内非空。
 	loopVars map[string]string
+	// lenientLoop 空列表的试解析模式：循环项变量没有真实取值，当空值处理而不报错。
+	// 只为标记「已消费」与检查语法，输出全部丢弃。
+	lenientLoop bool
 }
 
 // run 扫描源文本，按规则块逐个处理。
@@ -170,6 +173,16 @@ func (p *cssSourceParser) run() error {
 			body, next, err := collectCondBlock(lines, i)
 			if err != nil {
 				return cssApplyError(i+1, "%v", err)
+			}
+			if len(items) == 0 {
+				// 空列表也要解析一遍（输出丢弃），理由与未命中的 @if 相同：
+				// Go 侧总是提供全部业务变量，若空列表干脆不解析，循环体内的变量就不会被
+				// 标记为「已消费」，反向校验会误报「提供了却没用到」。
+				// 此时循环项没有真实取值，循环变量当空值处理（lenient 模式）。
+				probe := &cssSourceParser{src: body, scope: p.scope, buckets: &CSSBuckets{}, mediaBP: p.mediaBP, vars: p.vars, lists: p.lists, used: p.used, usedLists: p.usedLists, loopVars: p.loopVars, lenientLoop: true}
+				if err := probe.run(); err != nil {
+					return cssApplyError(i+1, "%v", err)
+				}
 			}
 			for _, item := range items {
 				loopVars := make(map[string]string, len(item)+len(p.loopVars))
@@ -458,12 +471,16 @@ func (p *cssSourceParser) parseDecls(body string) ([]string, error) {
 		}
 		return true
 	}
+	// 注释必须在按分号切分**之前**清掉，而且要先整块清 ——
+	// 注释里出现分号（「三档：a; b」这种说明）会把一行劈成两半，
+	// 后半段被当成声明，报出「看不懂这条声明」；跨行注释同理，会在块内留下半截文本。
+	body = stripCSSComments(body)
 	// 声明之间用 ; 分隔，但要注意值里可能有 var(--x, a:b) 这类带冒号的内容 ——
 	// 这里只按 ; 切分，不碰冒号，交给浏览器解析。@if / @endif 独占一行（不带分号），
 	// 所以按 ; 切完再按换行切时仍是独立的一行，顺序不乱。
 	for _, part := range strings.Split(body, ";") {
 		for _, one := range strings.Split(part, "\n") {
-			d := strings.TrimSpace(stripCSSComment(one))
+			d := strings.TrimSpace(one)
 			if d == "" {
 				continue
 			}
@@ -498,7 +515,14 @@ func (p *cssSourceParser) parseDecls(body string) ([]string, error) {
 			// 动效词汇表白名单留在 Go（安全检查与 prefers-reduced-motion 判定都在那边），
 			// 这里只是把「需要哪一帧」这件事从 Go 代码挪到样式源里 —— 与 @focus-ring 同思路。
 			if strings.HasPrefix(d, "@need-keyframes ") {
-				name := strings.TrimSpace(strings.TrimPrefix(d, "@need-keyframes "))
+				// 名字支持变量：效果名常常是 props 算出来的（cardstack 的悬停 / 轮播效果），
+				// 不展开就会登记成字面量 `{{x}}`，对应的关键帧永远不输出 ——
+				// 页面上只表现为「这个动效没生效」。白名单校验仍留在 Go 侧（值由那里算出）。
+				raw := strings.TrimSpace(strings.TrimPrefix(d, "@need-keyframes "))
+				name, _, err := p.expandVars(raw)
+				if err != nil {
+					return nil, err
+				}
 				if name == "" {
 					return nil, fmt.Errorf("@need-keyframes 缺少名称")
 				}
@@ -571,6 +595,11 @@ func (p *cssSourceParser) expandVars(s string) (out string, empty bool, err erro
 			// 循环项变量（如 tab.radio）只在该 @each 块内可见。
 			val, ok = p.loopVars[name]
 		}
+		if !ok && p.lenientLoop && strings.Contains(name, ".") {
+			// 空列表的试解析：这一项本来就不存在，给个占位值 ——
+			// 空值会在选择器里触发「变量取到空值」的报错，而那正是试解析要绕开的。
+			val, ok = "x", true
+		}
 		if !ok {
 			return "", false, fmt.Errorf("样式源引用了未提供的变量 %q（声明：%q）", name, s)
 		}
@@ -641,17 +670,23 @@ func BoolVar(v bool) string {
 // 只是那条动画永远不动。
 func (p *cssSourceParser) expandBlockLines(body string) ([]string, error) {
 	lines := frameLines(body)
-	for i, ln := range lines {
+	out := make([]string, 0, len(lines))
+	for _, ln := range lines {
 		expanded, empty, err := p.expandVars(ln)
 		if err != nil {
 			return nil, err
 		}
 		if empty {
+			if p.lenientLoop {
+				// 空列表的试解析：这一帧的变量本来就没有取值（轮播没配就没有百分比），
+				// 跳过这一帧即可 —— 输出反正会被丢弃。
+				continue
+			}
 			return nil, fmt.Errorf("块内变量取到空值：%q", ln)
 		}
-		lines[i] = expanded
+		out = append(out, expanded)
 	}
-	return lines, nil
+	return out, nil
 }
 
 // frameLines 把关键帧块内容按行拆成帧列表（每行一帧，与内建关键帧文件同约定）。
@@ -714,6 +749,30 @@ func collectBlock(lines []string, start int, firstLine string, braceAt int) (str
 // replaceAmp 把选择器里的 & 替换成作用域前缀。
 func replaceAmp(selector, scope string) string {
 	return strings.ReplaceAll(selector, "&", scope)
+}
+
+// stripCSSComments 去掉整块文本里的 CSS 注释（含跨行）。
+//
+// 与 stripCSSComment（单行版）的区别是能吃掉跨行注释 —— 规则块内的说明常写成多行，
+// 单行版会把 `/*` 之后到行尾的内容切掉，剩下的注释体却留在块里当声明解析。
+// 注释没闭合时保留原文：宁可让后续解析报错，也不静默吞掉半份样式源。
+func stripCSSComments(s string) string {
+	var sb strings.Builder
+	for {
+		i := strings.Index(s, "/*")
+		if i < 0 {
+			sb.WriteString(s)
+			return sb.String()
+		}
+		sb.WriteString(s[:i])
+		rest := s[i:]
+		j := strings.Index(rest, "*/")
+		if j < 0 {
+			sb.WriteString(rest)
+			return sb.String()
+		}
+		s = rest[j+2:]
+	}
 }
 
 // stripCSSComment 去掉行内的 /* … */ 注释。

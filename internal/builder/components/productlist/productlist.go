@@ -21,6 +21,7 @@
 package productlist
 
 import (
+	_ "embed" // productlist.css 经 //go:embed 打进二进制
 	"encoding/json"
 	"fmt"
 	"regexp"
@@ -621,253 +622,28 @@ func collectionFilter(p *Props) map[string]string {
 	return f
 }
 
+// productListCSS 组件样式源。与组件同目录：改样式不必再进 Go 字符串数组。
+//
+//go:embed productlist.css
+var productListCSS string
+
 // compileCSS 商品列表样式：网格 / 列表两种布局 + 窄屏恒单列。
 //
 // 多端硬规则：列数与间距都在宽视口生效，窄视口一律单列（列数再多也不能横向溢出）；
-// 宽度一律 min(100%, …)，不写死像素。
+// 宽度一律 min(100%, ...)，不写死像素。
+//
+// Go 侧只保留业务判定：布局归一与列声明计算。网格列数是「值变量」{{cols}}，
+// 列表布局独有的两条规则走规则级 @if isList（整块随布局存废）。
 func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	sel := "." + core.NodeClass(id)
 	layout := effectiveLayout(p)
-	cols := columnsDecl(layout, effectiveColumns(p))
-
-	b.Add(core.BreakpointDesktop, sel+" .sky-product-list-items", []string{
-		"display: grid",
-		"gap: 16px",
-		"margin: 0",
-		"padding: 0",
-		"list-style: none",
-		"grid-template-columns: " + cols,
-	})
-	b.Add(core.BreakpointMobile, sel+" .sky-product-list-items", []string{
-		"grid-template-columns: 1fr",
-	})
-	// 筛选栏与主区（issue #27）：宽屏左栏 + 右主区；窄屏筛选栏折到上方。
-	// 用 flex + 固定上限宽度而不是 grid 两列：没有筛选栏时主区自然占满，不留空洞。
-	b.Add(core.BreakpointDesktop, sel+" .sky-product-list-layout", []string{
-		"display: flex",
-		"gap: 20px",
-		"align-items: flex-start",
-		"min-width: 0",
-	})
-	b.Add(core.BreakpointMobile, sel+" .sky-product-list-layout", []string{
-		"flex-direction: column",
-	})
-	b.Add(core.BreakpointDesktop, sel+" .sky-product-list-filters", []string{
-		"flex: 0 0 min(100%, 16rem)",
-		"display: flex",
-		"flex-direction: column",
-		"gap: 16px",
-		"min-width: 0",
-	})
-	b.Add(core.BreakpointDesktop, sel+" .sky-product-list-main", []string{
-		"flex: 1 1 auto",
-		"min-width: 0",
-	})
-	b.Add(core.BreakpointDesktop, sel+" .sky-product-list-filter-title", []string{
-		"margin: 0 0 6px",
-		"font-size: .9rem",
-		"font-weight: 600",
-	})
-	b.Add(core.BreakpointDesktop, sel+" .sky-product-list-filter-options, "+sel+" .sky-product-list-tool-options", []string{
-		"display: flex",
-		"flex-wrap: wrap",
-		"gap: 6px",
-		"margin: 0",
-		"padding: 0",
-		"list-style: none",
-	})
-	// 选项用胶囊：鼠标悬停与触屏按压都给反馈，键盘焦点可见（链接原生可聚焦）。
-	b.Add(core.BreakpointDesktop, sel+" .sky-product-list-filter-option, "+sel+" .sky-product-list-tool-option", []string{
-		"display: inline-flex",
-		"align-items: center",
-		"padding: 4px 10px",
-		"border: 1px solid var(--sky-c-border, rgba(0,0,0,0.15))",
-		"border-radius: 999px",
-		"font-size: .85rem",
-		"text-decoration: none",
-		"color: inherit",
-		"max-width: 100%",
-	})
-	b.Add(core.BreakpointDesktop, sel+" .sky-product-list-filter-option.is-active, "+sel+" .sky-product-list-tool-option.is-active", []string{
-		"border-color: var(--sky-c-primary, #2563eb)",
-		"color: var(--sky-c-primary, #2563eb)",
-		"background: var(--sky-c-primary-weak, rgba(37,99,235,0.08))",
-	})
-	b.Add(core.BreakpointDesktop, sel+" .sky-product-list-filter-option.is-disabled, "+sel+" .sky-product-list-tool-option.is-disabled", []string{
-		"opacity: .45",
-		"cursor: not-allowed",
-	})
-	b.Add(core.BreakpointDesktop, sel+" .sky-product-list-toolbar", []string{
-		"display: flex",
-		"flex-wrap: wrap",
-		"align-items: center",
-		"gap: 14px",
-		"margin-bottom: 14px",
-	})
-	b.Add(core.BreakpointDesktop, sel+" .sky-product-list-tool", []string{
-		"display: flex",
-		"align-items: center",
-		"gap: 8px",
-		"min-width: 0",
-	})
-	b.Add(core.BreakpointDesktop, sel+" .sky-product-list-tool-label", []string{
-		"font-size: .85rem",
-		"color: var(--sky-c-muted, rgba(0,0,0,0.6))",
-	})
-	b.Add(core.BreakpointDesktop, sel+" .sky-product-list-pager", []string{
-		"display: flex",
-		"flex-wrap: wrap",
-		"align-items: center",
-		"gap: 10px",
-		"margin-top: 18px",
-	})
-	b.Add(core.BreakpointDesktop, sel+" .sky-product-list-page", []string{
-		"padding: 6px 14px",
-		"border: 1px solid var(--sky-c-border, rgba(0,0,0,0.15))",
-		"border-radius: 8px",
-		"text-decoration: none",
-		"color: inherit",
-	})
-	b.Add(core.BreakpointDesktop, sel+" .sky-product-list-page-current", []string{
-		"font-size: .9rem",
-		"color: var(--sky-c-muted, rgba(0,0,0,0.6))",
-	})
-
-	// 价格滑块（issue #28）：原生 range 是**触屏与键盘天然可用**的控件（拖拽、方向键都行），
-	// 所以这里不自己实现把手 —— 自定义把手的代价是键盘与读屏路径全要重做一遍。
-	// accent-color 让滑块跟随主题主色（不必用伪元素重绘轨道）。
-	b.Add(core.BreakpointDesktop, sel+" .sky-product-list-price-slider", []string{
-		"display: flex",
-		"flex-direction: column",
-		"gap: 8px",
-		"margin-top: 8px",
-		"min-width: 0",
-	})
-	b.Add(core.BreakpointDesktop, sel+" .sky-product-list-price-field", []string{
-		"display: flex",
-		"align-items: center",
-		"gap: 8px",
-		"min-width: 0",
-	})
-	b.Add(core.BreakpointDesktop, sel+" .sky-product-list-price-label", []string{
-		"flex: 0 0 auto",
-		"font-size: .85rem",
-		"color: var(--sky-c-muted, rgba(0,0,0,0.6))",
-	})
-	b.Add(core.BreakpointDesktop, sel+" .sky-product-list-price-range", []string{
-		"flex: 1 1 auto",
-		"min-width: 0",
-		"accent-color: var(--sky-c-primary, #2563eb)",
-	})
-	b.Add(core.BreakpointDesktop, sel+" .sky-product-list-price-value", []string{
-		"flex: 0 0 auto",
-		"font-size: .85rem",
-		"font-variant-numeric: tabular-nums",
-		"min-width: 3ch",
-		"text-align: right",
-	})
-	b.Add(core.BreakpointDesktop, sel+" .sky-product-list-price-apply", []string{
-		"align-self: flex-start",
-		"padding: 5px 12px",
-		"border: 1px solid var(--sky-c-border, rgba(0,0,0,0.15))",
-		"border-radius: 8px",
-		"background: transparent",
-		"cursor: pointer",
-	})
-
-	// 每项：网格模式纵向卡片；列表模式图左文右（图片宽度按容器封顶）。
-	b.Add(core.BreakpointDesktop, sel+" .sky-product-list-item", []string{
-		"display: flex",
-		"flex-direction: column",
-		"overflow: hidden",
-		"height: 100%",
-		"min-width: 0",
-		"background: var(--sky-c-surface, #fff)",
-		"border: 1px solid var(--sky-c-border, rgba(0,0,0,0.1))",
-		"border-radius: 12px",
-	})
-	if layout == LayoutList {
-		b.Add(core.BreakpointDesktop, sel+" .sky-product-list-item", []string{
-			"flex-direction: row",
-			"align-items: center",
-			"gap: 16px",
-		})
-		b.Add(core.BreakpointDesktop, sel+" .sky-product-list-media", []string{
-			"flex: 0 0 auto",
-			"width: min(100%, 12rem)",
-		})
+	vars := map[string]string{
+		"isList": core.BoolVar(layout == LayoutList),
+		"cols":   columnsDecl(layout, effectiveColumns(p)),
 	}
-	b.Add(core.BreakpointDesktop, sel+" .sky-product-list-media", []string{
-		"display: block",
-		"background: var(--sky-c-surface-alt, rgba(0,0,0,0.03))",
-		"overflow: hidden",
-	})
-	b.Add(core.BreakpointDesktop, sel+" .sky-product-list-media img", []string{
-		"display: block",
-		"width: min(100%, 100%)",
-		"height: 100%",
-		"aspect-ratio: 4 / 3",
-		"object-fit: cover",
-	})
-	b.Add(core.BreakpointDesktop, sel+" .sky-product-list-body", []string{
-		"display: flex",
-		"flex-direction: column",
-		"gap: 6px",
-		"min-width: 0",
-		"flex: 1 1 auto",
-		core.CSSDecl("padding", "var(--sky-density-pad, 14px)"),
-	})
-	b.Add(core.BreakpointDesktop, sel+" .sky-product-list-title", []string{
-		"margin: 0",
-		"font-size: 1rem",
-		"line-height: 1.4",
-		"overflow-wrap: anywhere",
-	})
-	b.Add(core.BreakpointDesktop, sel+" .sky-product-list-title a", []string{
-		"color: inherit",
-		"text-decoration: none",
-	})
-	b.Add(core.BreakpointDesktop, sel+" .sky-product-list-price-row", []string{
-		"display: flex",
-		"align-items: baseline",
-		"gap: 8px",
-		"flex-wrap: wrap",
-	})
-	b.Add(core.BreakpointDesktop, sel+" .sky-product-list-price", []string{
-		"font-weight: 700",
-		"color: var(--sky-c-primary, #2563eb)",
-	})
-	b.Add(core.BreakpointDesktop, sel+" .sky-product-list-compare", []string{
-		"text-decoration: line-through",
-		"color: var(--sky-c-muted, rgba(0,0,0,0.45))",
-		"font-size: .9em",
-	})
-	b.Add(core.BreakpointDesktop, sel+" .sky-product-list-tags", []string{
-		"display: flex",
-		"flex-wrap: wrap",
-		"gap: 6px",
-		"margin: 0",
-		"padding: 0",
-		"list-style: none",
-	})
-	b.Add(core.BreakpointDesktop, sel+" .sky-product-list-tag", []string{
-		"font-size: .78rem",
-		"line-height: 1.6",
-		"padding: 0 8px",
-		"border-radius: 999px",
-		"background: var(--sky-c-surface-alt, rgba(0,0,0,0.05))",
-		"color: var(--sky-c-muted, rgba(0,0,0,0.65))",
-	})
-	b.Add(core.BreakpointDesktop, sel+" .sky-product-list-empty", []string{
-		"margin: 0",
-		"padding: 24px 0",
-		"text-align: center",
-		"color: var(--sky-c-muted, rgba(0,0,0,0.55))",
-	})
-
-	// 悬停抬升只在支持 hover 的设备上输出（触屏等价形态用按压反馈）。
-	b.AddHover(sel+" .sky-product-list-item", []string{"box-shadow: 0 6px 18px rgba(0,0,0,.08)"})
-	b.AddActive(sel+" .sky-product-list-item", []string{"box-shadow: none"})
+	if err := core.ApplyComponentCSSTmpl(b, sel, productListCSS, vars); err != nil {
+		panic(fmt.Sprintf("productlist 组件样式解析失败: %v", err))
+	}
 }
 
 // columnsDecl 网格列声明（窄视口由 BreakpointMobile 覆盖为单列）。

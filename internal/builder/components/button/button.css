@@ -1,0 +1,123 @@
+/* core.button 按钮样式（来源：原 button.go 的 compileCSS）。
+
+   语法见 internal/builder/core/component_css.go：
+     &                  该组件实例的作用域选择器（同页多实例互不污染）
+     @hover &           hover 桶（构建期包 @media (hover: hover)，触屏不输出）
+     @if name / @endif  规则级（规则之外，包住整条规则）与声明级（声明块内，与同块其余声明合并）条件段
+     {{name}}           值变量（空则整条声明省略）
+
+   声明的书写顺序 = 迁移前 Go 里 append 的顺序（产物字节包含顺序）。
+   变体三分支是「不同的声明组」而不是「同一属性的不同取值」，所以在同一个声明块内用条件段表达：
+   命中的分支与基础声明合并成同一条规则，与迁移前「Go 里按条件拼一个声明切片、只 Add 一次」逐字节一致。 */
+
+/* 显式悬停色（HoverBg / HoverColor）：等价于 Go 的 AddHover —— 两个都没设时不产出规则，
+   触屏上没有粘滞 hover 态。 */
+@hover &:hover {
+  background: {{hoverBg}};
+  color: {{hoverColor}};
+}
+
+& {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  cursor: pointer;
+  border: none;
+  padding: {{sizePadding}};
+  font-size: {{sizeFontSize}};
+  font-size: {{fontSize}};
+  font-weight: {{fontWeight}};
+  letter-spacing: {{letterSpacing}};
+  text-transform: {{textTransform}};
+  border-radius: {{radius}};
+  font-family: {{fontFamily}};
+  line-height: {{lineHeight}};
+
+  @if fullWidth
+  width: 100%;
+  @endif
+
+  gap: {{iconSpacing}};
+
+  @if iconStacked
+  flex-direction: column;
+  @endif
+
+  /* 幽灵按钮：透明底（显式设了背景就尊重用户设置）；无文案时收紧左右内边距。 */
+  @if variantGhost
+  background: {{ghostBg}};
+  @if ghostCompact
+  padding: 6px 0;
+  @endif
+  @endif
+
+  /* 轮廓按钮：透明底 + 描边 + 文字色（悬停填充由下面 hoverState 段接管）。 */
+  @if variantOutline
+  background: {{outlineBg}};
+  border: {{outlineBorder}};
+  color: {{outlineColor}};
+  @endif
+
+  /* 实心按钮（含未知 / 空变体兜底）：主题回退链。 */
+  @if variantSolid
+  background: {{solidBg}};
+  color: {{solidColor}};
+  border: {{solidBorder}};
+  @endif
+
+  box-shadow: {{shadow}};
+  transform: {{transform}};
+}
+
+/* 悬浮 / 聚焦态：过渡与悬停声明只在确有悬停取值时产出。 */
+@if hoverState
+& {
+  transition: {{transition}};
+}
+
+&:hover, &:focus {
+  background: {{hoverStateBg}};
+  color: {{hoverStateColor}};
+  border-color: {{hoverStateBorder}};
+  box-shadow: {{hoverStateShadow}};
+  transform: {{hoverTransform}};
+}
+@endif
+
+/* 图标悬停位移：过渡必须与位移成对产出，缺一就是瞬变。 */
+@if iconShiftOn
+& .bt-icon-shift {
+  transition: transform 0.2s ease;
+}
+
+&:hover .bt-icon-shift {
+  transform: translateX({{iconShift}});
+}
+@endif
+
+/* 块级铺满（三端各自独立，互不干扰）。 */
+@if blockDesktop
+& {
+  display: flex;
+  width: 100%;
+}
+@endif
+
+@if blockTablet
+@media (max-width: 1024px) {
+& {
+  display: flex;
+  width: 100%;
+}
+}
+@endif
+
+@if blockMobile
+@media (max-width: 767px) {
+& {
+  display: flex;
+  width: 100%;
+}
+}
+@endif

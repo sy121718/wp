@@ -40,6 +40,11 @@ var enhanceDeckJS string
 //go:embed enhance-slide.js
 var enhanceSlideJS string
 
+// cardstackCSS 组件样式源。与 .go / .css / .jet 同目录：改样式不必再进 Go 字符串数组。
+//
+//go:embed cardstack.css
+var cardstackCSS string
+
 // Type 组件类型标识。
 const Type = "core.cardstack"
 
@@ -89,7 +94,7 @@ const (
 	// 桌面浏览器 100vw 含经典滚动条（≈15px，即半宽 7.5px），收敛式按 50vw 算出的位移
 	// 会比实际可视半宽多 7.5px —— 留白必须盖住这份误差（实测 1024 视口曾溢出 7px）。
 	viewportGutter = 16
-	// dragPerspective 圆柱环绕的透视距离（px），与 compileDragCSS 输出的 perspective 保持一致。
+	// dragPerspective 圆柱环绕的透视距离（px），与样式源里输出的 perspective 保持一致。
 	// 卡片在 translateZ(R) 处被放大 d/(d−R) 倍，算单侧可用空间时必须把这份放大计入占位。
 	dragPerspective = 1600.0
 	// dragGutter 环形/圆柱每侧留白（px）：12px 视觉留白 + 7.5px 滚动条误差 + 余量。
@@ -134,10 +139,9 @@ const (
 )
 
 // 取色（与 badge/quote/progress 同一约定：CSS 变量 + 兜底色，主题可整体覆写）。
+// 色值本身写在 cardstack.css 里；这里只留 Go 侧算兜底值时引用的两个。
 const (
 	colorPrimary = "var(--sky-c-primary, #5e5cfc)"
-	colorLabel   = "var(--sky-cardstack-label, rgba(0,0,0,.25))"
-	colorDim     = "var(--sky-cardstack-dim, #333)"
 	colorSurface = "var(--sky-c-surface, #fff)"
 )
 
@@ -555,6 +559,9 @@ func keyframesName(id string, i int) string { return "sky-cs-" + id + "-" + strc
 
 // CompileCSS 生成容器 / 轨道 / 卡片 / 放大层全部样式。
 //
+// 拆分：几何与兜底值留在 Go（同 props 同字节、无随机、无运行时测量），
+// 规则的存废、声明顺序与逐卡展开交给同目录的 cardstack.css（顺序即产物字节序）。
+//
 // 不变量：
 //   - 逐卡几何编译期展开成 :nth-child(N) 规则，增删卡片 CSS 自动重算；
 //   - 同 props 同字节（无随机、无运行时测量）；
@@ -573,213 +580,134 @@ func CompileCSS(node *core.Node, p *Props, cardN int, b *core.CSSBuckets) {
 	}
 	width, height := cardSize(p, trigger, content)
 
-	// 容器：相对定位，同时是悬停模式绝对定位卡片的包含块。
-	b.Add(core.BreakpointDesktop, sel, []string{
-		"position: relative",
-		"width: 100%",
-		// 触屏点按的高亮块会盖在卡片上，统一去掉（卡片自身已有按压态）。
-		"-webkit-tap-highlight-color: transparent",
-	})
-	// 放大触发层：铺满卡片的透明 label，把「点整卡放大」的命中区与卡片外壳解耦 ——
-	// 卡片外壳不再是 <label>，卡内的 <a> / <button> 于是不再违反「label 不得包含
-	// 交互式内容」的规范约束（点击链接也照旧不会触发放大：那是浏览器跳过 label
-	// 默认行为的结果，现在变成结构上就不可能）。
-	b.Add(core.BreakpointDesktop, sel+" .sky-cardstack-zoom-layer", []string{
-		"position: absolute",
-		"inset: 0",
-		"z-index: 1",
-		"cursor: zoom-in",
-	})
-	// 卡内交互元素提到触发层之上：否则覆盖层会先吃掉点击，链接与按钮全部失效。
-	b.Add(core.BreakpointDesktop, sel+" .sky-cardstack-card a, "+sel+" .sky-cardstack-card button", []string{
-		"position: relative",
-		"z-index: 2",
-	})
+	// 值变量必须给全：样式源里每一种触发方式的分支都会被解析（未命中的输出进临时桶），
+	// 它们引用的变量同样要做「引用即须存在」校验。
+	vars := cardstackVars(p, trigger, content, width, height)
+	cardStyleVars(p, vars)
+	hoverCSSVars(p, n, height, vars)
+	scrollCSSVars(p, vars)
+	dragCSSVars(p, n, width, height, vars)
+	deckCSSVars(p, n, width, height, vars)
+	slideCSSVars(p, vars)
 
+	// 逐卡列表全部按当前卡片数填满：未命中的触发方式分支输出进临时桶被丢弃，
+	// 但它的 @each 会真实展开 —— 循环体里的变量因此同样要通过「引用即须存在」的校验，
+	// 少填一份列表会让一批样式错误只在特定触发方式下才暴露。
+	lists := map[string][]map[string]string{
+		"hoverCards":  hoverCards(p, n, width),
+		"scrollCards": scrollCards(node.ID, p, n),
+		"dragCards":   dragCards(p, n, width, height),
+		"deckCards":   deckCards(p, n, width, height),
+		"slideCards":  slideCards(n),
+	}
+
+	// 动效关键帧由 Go 侧登记：词表白名单（loopEffectKey / slideEffectKeyframe）本来就在这里，
+	// 且样式源的 @need-keyframes 只认字面名 -- 效果名是 props 算出来的，写进样式源登记不上。
 	switch trigger {
-	case TriggerScroll:
-		compileScrollCSS(b, sel, node.ID, p, n, width, height, content)
-	case TriggerDrag:
-		compileDragCSS(b, sel, p, n, width, height, content)
 	case TriggerDeck:
-		compileDeckCSS(b, sel, p, n, width, height, content)
+		needKeyframe(b, loopEffectKey(p.DeckHighlight))
 	case TriggerSlide:
-		compileSlideCSS(b, sel, p, n, height, content)
-	default:
-		compileHoverCSS(b, sel, p, n, width, height, content)
+		needKeyframe(b, slideEffectKeyframe(p))
+		needKeyframe(b, loopEffectKey(p.SlideHighlight))
+	case TriggerHover:
+		needKeyframe(b, loopEffectKey(p.HoverEffect))
 	}
-	compileZoomCSS(b, sel, p, content)
-	if collectionSource(p) != "" {
-		compileCollectionCSS(b, sel)
-		// 空状态：集合没有内容时给一块可见占位，而不是留一片空白（也可整体隐藏）。
-		b.Add(core.BreakpointDesktop, sel+" .sky-cardstack-empty", []string{
-			"margin: 0",
-			"padding: 48px 24px",
-			"text-align: center",
-			"opacity: .6",
-			"background-color: " + colorSurface,
-			"border: 1px dashed rgba(0,0,0,.16)",
-			"border-radius: 16px",
-		})
-		b.Add(core.BreakpointDesktop, sel+".is-empty-hidden", []string{"display: none"})
-	}
-	// 键盘可达：拖拽类模式的容器可聚焦（tabindex=0），焦点环与组件库其余组件一致。
-	if trigger == TriggerDrag || trigger == TriggerDeck {
-		b.Add(core.BreakpointDesktop, sel+":focus-visible", core.FocusRingDecls())
+
+	if err := core.ApplyComponentCSSTmplLists(b, sel, cardstackCSS, vars, lists); err != nil {
+		panic(fmt.Sprintf("cardstack 组件样式解析失败: %v", err))
 	}
 }
 
-// compileCollectionCSS 集合卡片内部元素样式：卡内从上往下排（图 → 标题 → 正文 → 附注 → 链接）。
-func compileCollectionCSS(b *core.CSSBuckets, sel string) {
-	b.Add(core.BreakpointDesktop, sel+" .sky-cardstack-card", []string{
-		"justify-content: flex-start",
-		"gap: 10px",
-	})
-	b.Add(core.BreakpointDesktop, sel+" .sky-cardstack-img", []string{
-		"width: 100%",
-		"height: 150px",
-		"object-fit: cover",
-		"border-radius: 10px",
-		"flex: 0 0 auto",
-	})
-	b.Add(core.BreakpointDesktop, sel+" .sky-cardstack-title", []string{
-		"margin: 0",
-		"font-size: 1.15em",
-		"line-height: 1.35",
-	})
-	b.Add(core.BreakpointDesktop, sel+" .sky-cardstack-text", []string{
-		"margin: 0",
-		"font-size: .92em",
-		"line-height: 1.55",
-		"opacity: .78",
-	})
-	b.Add(core.BreakpointDesktop, sel+" .sky-cardstack-meta", []string{
-		"margin: 0",
-		"font-size: 1.05em",
-		"font-weight: 700",
-		"color: " + colorPrimary,
-	})
-	b.Add(core.BreakpointDesktop, sel+" .sky-cardstack-link", []string{
-		"align-self: flex-start",
-		"margin-top: auto",
-		"font-size: .88em",
-		"color: " + colorPrimary,
-		"text-decoration: none",
-		"border-bottom: 1px solid currentColor",
-	})
+// needKeyframe 登记内建关键帧（无效果时不登记）。
+func needKeyframe(b *core.CSSBuckets, name string) {
+	if name != "" {
+		b.NeedKeyframes(name)
+	}
 }
 
-// cardBaseDecls 卡片外观（两种触发方式共用，差异部分由调用方追加）。
+// cardstackVars 触发方式 / 内容来源 / 各开关的值变量（Go 侧只翻译判定，不拼样式文本）。
+func cardstackVars(p *Props, trigger string, content bool, width, height string) map[string]string {
+	return map[string]string{
+		"triggerHover":  core.BoolVar(trigger == TriggerHover),
+		"triggerScroll": core.BoolVar(trigger == TriggerScroll),
+		"triggerDrag":   core.BoolVar(trigger == TriggerDrag),
+		"triggerDeck":   core.BoolVar(trigger == TriggerDeck),
+		"triggerSlide":  core.BoolVar(trigger == TriggerSlide),
+		"content":       core.BoolVar(content),
+		"solid":         core.BoolVar(!content),
+		"zoom":          core.BoolVar(zoomEnabled(p)),
+		"collection":    core.BoolVar(collectionSource(p) != ""),
+		"focusRing":     core.BoolVar(trigger == TriggerDrag || trigger == TriggerDeck),
+		"width":         width,
+		"height":        height,
+		// 卡片 border box 高（含上下边框）由样式源用 calc 相加，这里只给 2 倍边框宽。
+		"cardBorderX2": strconv.Itoa(2 * cardBorder),
+	}
+}
+
+// cardStyleVars 卡片外观（背景/内边距/圆角/边框宽度/卡内布局）的兜底值。
 //
-// 卡片级样式（背景/内边距/圆角/边框宽度）都由 props 决定，缺省按卡片来源取值 ——
-// 这样「每张卡一个背景」不必再套一层容器，而套容器仍可用于更细的内部分区样式。
-func cardBaseDecls(content bool, p *Props) []string {
+// 两套：内容卡要读得下正文、数字卡是巨字号居中；props 给了值就一律以用户值为准。
+func cardStyleVars(p *Props, vars map[string]string) {
 	padding := p.CardPadding
+	if padding == "" {
+		padding = contentPad
+	}
 	radius := p.CardRadius
-	border := p.CardBorder
-	background := p.CardBackground
-
-	if content {
-		if padding == "" {
-			padding = contentPad
-		}
-		if radius == "" {
-			radius = "16px"
-		}
-		if border == "" {
-			border = strconv.Itoa(cardBorder) + "px"
-		}
-		if background == "" {
-			background = colorSurface
-		}
-		// 卡内布局：与容器组件的 flex 参数同源，卡片因此可以当容器用。
-		layout := pickEnum(p.CardLayout, "column", "column", "row")
-		justify := pickEnum(p.CardJustify, "center", "flex-start", "center", "flex-end", "space-between")
-		align := pickEnum(p.CardAlign, "center", "flex-start", "center", "flex-end", "stretch")
-		gap := p.CardGap
-		if gap == "" {
-			gap = defaultCardGap
-		}
-		return []string{
-			// border-box：卡片有内边距时，"卡片宽度/高度"必须含 padding 才是外尺寸 ——
-			// 逐卡几何（扇形收敛、环形半径、每屏高度）都按 props 里的数值计算，
-			// content-box 会让实际尺寸比参数大一圈，几何随之全部偏移。
-			"box-sizing: border-box",
-			// 定位包含块：放大触发层是铺满卡片的绝对定位 label，卡片必须是定位元素，
-			// 否则会以最近的定位祖先（容器）为包含块，命中区铺满整个组件。
-			"position: relative",
-			"display: flex",
-			"flex-direction: " + layout,
-			"justify-content: " + justify,
-			"align-items: " + align,
-			"gap: " + gap,
-			"padding: " + padding,
-			"background-color: " + background,
-			"color: var(--sky-cardstack-text, #1f2430)",
-			fmt.Sprintf("border: %s solid var(--sky-c-border, rgba(0,0,0,.08))", border),
-			"border-radius: " + radius,
-			"box-shadow: 0 15px 50px rgba(0,0,0,.12)",
-			"overflow: hidden",
-			"transition: .5s",
-			"cursor: zoom-in",
-			"user-select: none",
-		}
-	}
 	if radius == "" {
-		radius = "8px"
+		radius = "16px"
 	}
+	border := p.CardBorder
 	if border == "" {
 		border = strconv.Itoa(cardBorder) + "px"
 	}
+	background := p.CardBackground
 	if background == "" {
-		background = colorPrimary
+		background = colorSurface
 	}
-	return []string{
-		"box-sizing: border-box",
-		"position: relative",
-		"display: flex",
-		"justify-content: center",
-		"align-items: center",
-		"background-color: " + background,
-		fmt.Sprintf("border: %s solid var(--sky-c-border, rgba(0,0,0,.1))", border),
-		"border-radius: " + radius,
-		"box-shadow: 0 15px 50px rgba(0,0,0,.1)",
-		"color: rgba(0,0,0,0)",
-		"font-size: 8em",
-		"font-weight: 700",
-		"transition: .5s",
-		"cursor: zoom-in",
-		"user-select: none",
+	gap := p.CardGap
+	if gap == "" {
+		gap = defaultCardGap
 	}
+	// 卡内布局：与容器组件的 flex 参数同源，卡片因此可以当容器用。
+	vars["cardLayoutContent"] = pickEnum(p.CardLayout, "column", "column", "row")
+	vars["cardJustifyContent"] = pickEnum(p.CardJustify, "center", "flex-start", "center", "flex-end", "space-between")
+	vars["cardAlignContent"] = pickEnum(p.CardAlign, "center", "flex-start", "center", "flex-end", "stretch")
+	vars["cardGapContent"] = gap
+	vars["cardPaddingContent"] = padding
+	vars["cardBackgroundContent"] = background
+	vars["cardBorderContent"] = border
+	vars["cardRadiusContent"] = radius
+
+	solidRadius := p.CardRadius
+	if solidRadius == "" {
+		solidRadius = "8px"
+	}
+	solidBorder := p.CardBorder
+	if solidBorder == "" {
+		solidBorder = strconv.Itoa(cardBorder) + "px"
+	}
+	solidBackground := p.CardBackground
+	if solidBackground == "" {
+		solidBackground = colorPrimary
+	}
+	vars["cardRadiusSolid"] = solidRadius
+	vars["cardBorderSolid"] = solidBorder
+	vars["cardBackgroundSolid"] = solidBackground
 }
 
-// compileHoverCSS 悬停展开模式：卡片绝对堆叠于轨道中心，悬停时按位置派生散开。
+// hoverCSSVars 悬停展开的轨道高度与形态开关。
 //
-// 形态差异只有一处 —— 变换顺序：
-// 三种形态：
-//   - fan              弧线：rotate() translate()，位移落在旋转后的坐标系，卡片沿弧线切向散开；
-//   - line + horizontal 横排：纯 translate(x)，**不带任何旋转**，卡片平铺成一行；
-//   - line + vertical   竖排：纯 translate(0, y)，**不带任何旋转**，卡片堆成一列。
+// 轨道高度按形态预留，保证展开后不压到下方内容：
 //
-// 收敛公式随之不同，三者都保证展开不撑出视口：
-//
-//	fan          |dx·cosθ + L·sinθ| + (W/2)cosθ + (H/2)sinθ ≤ 50vw − gutter
-//	line 横排     |dx| + W/2 ≤ 50vw − gutter
-//	line 竖排     |dy| + H/2 ≤ 50vh − gutter
-func compileHoverCSS(b *core.CSSBuckets, sel string, p *Props, n int, width, height string, content bool) {
-	track := sel + " .sky-cardstack-track"
-	hueStep := float64(effectiveHueStep(p))
-	angle := float64(effectiveSpreadAngle(p))
+//	fan        卡高 + 2x 上抬量（展开时卡片整体上抬）
+//	line 横排  卡高（只横向铺开，纵向不越界）
+//	line 竖排  卡高 + 2x 最大步距 x 位移（纵向整列铺开）
+func hoverCSSVars(p *Props, n int, height string, vars map[string]string) {
 	dist := float64(effectiveSpreadDistance(p))
 	mid := float64(n-1) / 2.0
 	fan := effectiveShape(p) == ShapeFan
-	book := effectiveShape(p) == ShapeBook
 	vertical := !fan && effectiveDirection(p) == directionVertical
-
-	// 轨道高度按形态预留，保证展开后不压到下方内容：
-	//   fan        卡高 + 2×上抬量（展开时卡片整体上抬）
-	//   line 横排  卡高（只横向铺开，纵向不越界）
-	//   line 竖排  卡高 + 2×最大步距×位移（纵向整列铺开）
 	trackHeight := fmt.Sprintf("min-height: calc(%s + %dpx)", height, 2*cardLiftY)
 	switch {
 	case vertical:
@@ -787,82 +715,65 @@ func compileHoverCSS(b *core.CSSBuckets, sel string, p *Props, n int, width, hei
 	case !fan:
 		trackHeight = "min-height: " + height
 	}
-	// 用 grid 同格叠放而不是「flex 居中 + 卡片 absolute」：
-	// absolute 的卡片不参与父元素高度计算，轨道只能按参数值预留高度；而内容卡是
-	// min-height，内容多了会自己长高 —— 两者不一致时卡片上下溢出、压住相邻内容，
-	// 且构建期不报错（实测踩过：卡片 452px 而轨道只有 368px，盖住了上方说明文字）。
-	// grid 的同格叠放天然重叠，且格子高度取最高的那张卡，轨道会被自动撑开。
-	trackDecls := []string{
-		"position: relative",
-		"display: grid",
-		"justify-items: center",
-		"align-items: center",
-		trackHeight,
-		// 卡片 border box 高（含上下边框）：旋转外扩与竖排收敛都要用它，
-		// 而 translate 的百分比只能拿到宽度，高度必须以变量传入。
-		fmt.Sprintf("--sky-cardstack-h: calc(%s + %dpx)", height, 2*cardBorder),
-	}
-	if book {
-		// 翻书要有透视才看得出立体：没有 perspective 时 rotateY 会被压平成横向缩放。
-		// 透视原点略高于中线，视线像从斜上方俯看书页。
-		trackDecls = append(trackDecls, "perspective: 1800px", "perspective-origin: 50% 45%")
-	}
-	b.Add(core.BreakpointDesktop, track, trackDecls)
+	vars["hoverTrackHeight"] = trackHeight
+	vars["book"] = core.BoolVar(effectiveShape(p) == ShapeBook)
+	kf := loopEffectKey(p.HoverEffect)
+	vars["hoverEffect"] = core.BoolVar(kf != "")
+	vars["hoverEffectKey"] = kf
+}
 
+// hoverCards 悬停展开的逐卡几何。
+//
+// 形态差异只有一处 —— 变换顺序：
+//   - fan               弧线：rotate() translate()，位移落在旋转后的坐标系，卡片沿弧线切向散开；
+//   - line + horizontal 横排：纯 translate(x)，不带任何旋转，卡片平铺成一行；
+//   - line + vertical   竖排：纯 translate(0, y)，不带任何旋转，卡片堆成一列。
+//
+// 收敛公式随之不同，三者都保证展开不撑出视口：
+//
+//	fan          |dx*cosT + L*sinT| + (W/2)cosT + (H/2)sinT <= 50vw - gutter
+//	line 横排     |dx| + W/2 <= 50vw - gutter
+//	line 竖排     |dy| + H/2 <= 50vh - gutter
+func hoverCards(p *Props, n int, width string) []map[string]string {
+	mid := float64(n-1) / 2.0
+	hueStep := float64(effectiveHueStep(p))
+	angle := float64(effectiveSpreadAngle(p))
+	dist := float64(effectiveSpreadDistance(p))
+	fan := effectiveShape(p) == ShapeFan
+	book := effectiveShape(p) == ShapeBook
+	vertical := !fan && effectiveDirection(p) == directionVertical
+
+	cards := make([]map[string]string, 0, n)
 	for i := 0; i < n; i++ {
 		offset := float64(i) - mid
-		nth := strconv.Itoa(i + 1)
-		card := track + " .sky-cardstack-card:nth-child(" + nth + ")"
-
-		// 基础态：同格叠放（grid-area 1/1）；数字卡带位置派生色相，内容卡保持原色。
-		decls := []string{"grid-area: 1 / 1", "justify-self: center", "align-self: center", "width: min(100%, " + width + ")"}
-		if book {
-			// 书的几何：把旋转轴放在**书脊那一侧**（左半取右缘、右半取左缘），
-			// 于是"翻开"是绕书脊转，而不是绕卡片自身转 —— 这是翻书感的关键。
-			// 合上时每页竖起 ±86°（略小于 90，留一线厚度），悬停时转平并向外铺开。
-			origin := "left center"
-			closed := float64(bookClosedDeg)
-			if offset < 0 {
-				origin = "right center"
-				closed = -closed
-			}
-			decls = append(decls,
-				"transform-origin: "+origin,
-				fmt.Sprintf("transform: rotateY(%sdeg)", num(closed)),
-			)
+		item := map[string]string{
+			"nth": strconv.Itoa(i + 1),
+			// 数字卡带位置派生色相（中间卡 0 偏移，两侧按 +/-step 渐变）。
+			"hue": fmt.Sprintf("%.0f", offset*hueStep),
+			// 书的几何：旋转轴放在书脊那一侧（左半取右缘、右半取左缘），
+			// 合上时每页竖起 +/-86 度（略小于 90，留一线厚度）。
+			"origin":    "left center",
+			"closedDeg": num(float64(bookClosedDeg)),
 		}
-		if content {
-			decls = append(decls, "min-height: "+height, "height: auto")
-		} else {
-			decls = append(decls, "height: "+height,
-				fmt.Sprintf("filter: hue-rotate(%.0fdeg)", offset*hueStep))
+		if offset < 0 {
+			item["origin"] = "right center"
+			item["closedDeg"] = num(-float64(bookClosedDeg))
 		}
-		decls = append(decls, cardBaseDecls(content, p)...)
-		b.Add(core.BreakpointDesktop, card, decls)
 
-		// 悬停展开：旋转 + 平移 + 文字/阴影加深；被放大的那张卡退出扇形逻辑。
-		// 注意：:hover 挂在容器上，经轨道下到卡片；track 变量本身已含 sel 前缀，
-		// 这里不能再拼一次（否则是「容器:hover 容器 轨道 …」这种永不匹配的选择器）。
-		hover := sel + ":hover .sky-cardstack-track .sky-cardstack-card:nth-child(" + nth +
-			"):not(:has(> .sky-cardstack-toggle:checked))"
 		var fixed, adaptive string
 		switch {
 		case book:
 			// 摊开：转平（rotateY 0）并按序号向两外侧移，像把书页摊在桌上。
 			// 0.58 倍卡宽是刻意留的重叠量 —— 完全按卡宽铺开会显得像并排卡片，不像书页。
-			// 摊开位移必须按视口收敛：手机上六页摊开的物理宽度远超屏宽（见下方 allow）。
 			openX := offset * cssPx(width, fallbackCardW) * 0.58
-			// 收敛与 fan/line 同一套：可用空间 = 视口半宽 − 留白 − 卡半宽，再除以最大步距 mid，
-			// 让最外侧那页刚好贴住视口边缘。**不能再用 45vw 封顶** —— 2×45vw + 卡宽恒大于 100vw，
-			// 窄屏上六页摊开会把页面撑出横向滚动（实测 440 视口溢出 37px、375 视口溢出 99px），
-			// 手机上表现为「右侧一片空白、页面能左右拖」，与 fan / line 的收敛写法也不一致。
+			// 收敛与 fan/line 同一套：可用空间 = 视口半宽 - 留白 - 卡半宽，再除以最大步距 mid。
 			allow := fmt.Sprintf("calc((50vw - %dpx - 50%%) / %s)", viewportGutter, fnum(mid))
 			openXDecl := fmt.Sprintf("clamp(calc(-1 * %s), %spx, %s)", allow, num(openX), allow)
 			fixed = "rotateY(0deg) translateX(" + openXDecl + ")"
 			adaptive = fixed
 		case fan:
-			// 弧线：收敛 = 视口半宽 − 留白 − 旋转外扩 −（上抬量被旋转投影的那一份），
-			// 再除以 cosθ·最大步距（dx 要先经 cosθ 才变成世界坐标的水平位移）。
+			// 弧线：收敛 = 视口半宽 - 留白 - 旋转外扩 -（上抬量被旋转投影的那一份），
+			// 再除以 cosT*最大步距（dx 要先经 cosT 才变成世界坐标的水平位移）。
 			rad := math.Abs(offset*angle) * math.Pi / 180
 			cosT, sinT := math.Cos(rad), math.Sin(rad)
 			allow := fmt.Sprintf("calc((50vw - %dpx - %spx - %s * 50%% - %s * var(--sky-cardstack-h) / 2) / %s)",
@@ -871,219 +782,85 @@ func compileHoverCSS(b *core.CSSBuckets, sel string, p *Props, n int, width, hei
 			adaptive = fmt.Sprintf("rotate(%sdeg) translate(calc(%s * clamp(0px, %s, %dpx)), -%dpx)",
 				num(offset*angle), num(offset), allow, int(dist), cardLiftY)
 		case vertical:
-			// 竖排：不带旋转、横向不动，收敛 = 视口半高 − 留白 − 卡半高。
+			// 竖排：不带旋转、横向不动，收敛 = 视口半高 - 留白 - 卡半高。
 			allow := fmt.Sprintf("calc((50vh - %dpx - var(--sky-cardstack-h) / 2) / %s)", viewportGutter, num(mid))
 			fixed = fmt.Sprintf("translate(0px, %spx)", num(offset*dist))
 			adaptive = fmt.Sprintf("translate(0px, calc(%s * clamp(0px, %s, %dpx)))",
 				num(offset), allow, int(dist))
 		default:
 			// 横排：不带旋转、纵向不动（堆叠态本来就在容器中线），
-			// 收敛 = 视口半宽 − 留白 − 卡半宽（50% 即 border box 半宽）。
+			// 收敛 = 视口半宽 - 留白 - 卡半宽（50% 即 border box 半宽）。
 			allow := fmt.Sprintf("calc((50vw - %dpx - 50%%) / %s)", viewportGutter, num(mid))
 			fixed = fmt.Sprintf("translate(%spx, 0px)", num(offset*dist))
 			adaptive = fmt.Sprintf("translate(calc(%s * clamp(0px, %s, %dpx)), 0px)",
 				num(offset), allow, int(dist))
 		}
-		hoverDecls := []string{
-			"transform: " + fixed,
-			"transform: " + adaptive,
-			"color: " + colorLabel,
-			"box-shadow: 0 15px 50px rgba(0,0,0,.25)",
-		}
-		// 悬停循环效果：只加在悬停规则里，移开鼠标动画自然停止。
-		if kf := loopEffectKey(p.HoverEffect); kf != "" {
-			b.NeedKeyframes(kf)
-			hoverDecls = append(hoverDecls, "animation: "+kf+" 2s ease-in-out infinite")
-		}
-		b.AddHover(hover, hoverDecls)
-		// 触屏没有悬停：把展开态直接给出去，否则手机上这一整块永远保持合上的样子、
-		// 看起来像"没反应"（AddHover 的规则在 hover: none 下根本不输出）。
-		// 用 adaptive（含 clamp 收敛）而不是 fixed —— 窄屏上卡片多时不会横向溢出。
-		// 注意选择器要**去掉 :hover** —— hover 变量是「容器:hover 轨道 卡片」，
-		// 直接复用的话会在 @media (hover: none) 里输出「容器:hover …」，
-		// 触屏上依然不匹配，等于没写（这个 bug 让手机端卡片一直叠着、文字互相透出来）。
-		b.AddHoverNone(strings.Replace(hover, ":hover", "", 1), []string{"transform: " + adaptive})
+		// fixed 是参数原值（宽屏形态），adaptive 带 clamp 收敛（窄屏不横向溢出）。
+		item["fixed"] = fixed
+		item["adaptive"] = adaptive
+		cards = append(cards, item)
 	}
-
-	// 按压：容器按下时全部卡变暗；被点的卡恢复原色（并显形数字）后置顶。
-	// 走 AddActive（不包 hover:hover）：触屏按下同样触发 —— 触屏没有 hover，
-	// 数字颜色若只写在悬停规则里，移动端将永远看不到卡片数字。
-	b.AddActive(sel+":active .sky-cardstack-card", []string{"background-color: " + colorDim})
-	b.AddActive(sel+" .sky-cardstack-card:active", []string{
-		"background-color: " + colorPrimary,
-		"color: " + colorLabel,
-		"z-index: 100",
-	})
+	return cards
 }
 
-// compileScrollCSS 滚动堆叠模式（sticky + CSS scroll-driven，零 JS）。
-//
-// 基础规则本身就是「降级形态」：sticky 层叠 + 静态缩放，完全不依赖新特性。
-// 跟手收敛叠在同一条规则的 animation 声明上 —— 支持 scroll-driven 的浏览器用
-// view() 时间线驱动它；不支持的浏览器把 animation-timeline / animation-range
-// 当未知属性丢弃，动画按 0s 播完并由 fill-mode: both 停在终态，视觉与静态缩放一致。
-// 因此不需要 @supports 包裹：未知属性天然被忽略，降级是「白送」的。
-func compileScrollCSS(b *core.CSSBuckets, sel, id string, p *Props, n int, width, height string, content bool) {
-	track := sel + " .sky-cardstack-track"
-	spacing := effectiveSpacing(p)
-	stickyTop := effectiveStickyTop(p)
+// scrollCSSVars 滚动堆叠的间距与粘住位置。
+func scrollCSSVars(p *Props, vars map[string]string) {
+	vars["spacing"] = effectiveSpacing(p)
+	vars["stickyTop"] = effectiveStickyTop(p)
+}
+
+// scrollCards 滚动堆叠的逐卡几何：每张卡一份独立关键帧，终态是该卡的静态缩放。
+func scrollCards(id string, p *Props, n int) []map[string]string {
 	base, step := effectiveScaleBase(p), effectiveScaleStep(p)
-
-	// 轨道：块级垂直排列（sticky 在块流里行为最稳），上下留一点滚动余量。
-	b.Add(core.BreakpointDesktop, track, []string{"display: block", "padding: 6vh 0"})
-
+	cards := make([]map[string]string, 0, n)
 	for i := 0; i < n; i++ {
-		nth := strconv.Itoa(i + 1)
-		card := track + " .sky-cardstack-card:nth-child(" + nth + ")"
 		s := scaleOf(i, base, step)
-		kf := keyframesName(id, i)
-		decls := []string{
-			"position: sticky",
-			"top: " + stickyTop,
-			// 配合 top 把卡片在粘住位置垂直居中（独立属性，与悬停模式的 transform 互不干扰）。
-			"translate: 0 -50%",
-			"margin: 0 auto " + spacing,
-			// 序号越大越靠上：后出现的卡盖住先出现的。
-			"z-index: " + strconv.Itoa(i+1),
-			fmt.Sprintf("scale: %s", fnum(s)),
-			"width: min(100%, " + width + ")",
-			// 跟手收敛：卡片进入视口的区间内从略大略淡收到目标态。
-			"animation: " + kf + " linear both",
-			"animation-timeline: view()",
-			"animation-range: entry 0% entry 60%",
-		}
-		if content {
-			decls = append(decls, "min-height: "+height)
-		} else {
-			decls = append(decls, "height: "+height)
-		}
-		decls = append(decls, cardBaseDecls(content, p)...)
-		b.Add(core.BreakpointDesktop, card, decls)
-
-		// 每张卡独立关键帧：终态是该卡的静态缩放，降级时正好停在同一点。
-		b.AddKeyframesDecls(kf, []string{
-			fmt.Sprintf("from { scale: %s; opacity: .5 }", fnum(s*1.12)),
-			fmt.Sprintf("to { scale: %s; opacity: 1 }", fnum(s)),
+		cards = append(cards, map[string]string{
+			"nth":       strconv.Itoa(i + 1),
+			"scale":     fnum(s),
+			"scaleFrom": fnum(s * 1.12),
+			"kf":        keyframesName(id, i),
 		})
 	}
+	return cards
 }
 
-// compileDragCSS 拖拽旋转模式（路径 C：构建期输出环形骨架 + data-* 属性，
-// 公共增强脚本 enhance.js 按需初始化）。
+// dragCSSVars 拖拽旋转的轨道几何与开关。
 //
-// 几何：第 i 张卡落在半径 R 的圆周上（角度 360i/N），卡片**始终正立** ——
-// 变换链 translate(-50%,-50%) → rotate(θ+rot) → translateY(-R) → rotate(-(θ+rot))：
-// 第一个 rotate 把位移送到圆周方向，后一个把它转回来抵消朝向，所以卡片沿圆环走位而不歪。
-//
-// 降级：没有增强脚本时 --sky-cardstack-rot 恒为 0deg，卡片静态环形分布 ——
-// 比堆叠态更接近最终形态，且点击放大、键盘聚焦照旧可用，不依赖 JS 才看得见。
-func compileDragCSS(b *core.CSSBuckets, sel string, p *Props, n int, width, height string, content bool) {
-	track := sel + " .sky-cardstack-track"
+// 单侧可用空间 = (视口宽 - 卡片实际占位) / 2 - 留白。圆柱还要再扣掉透视放大：
+// 卡片在 translateZ(R) 处被 perspective 放大 d/(d-R) 倍，只按卡宽预留会漏掉这一份。
+func dragCSSVars(p *Props, n int, width, height string, vars map[string]string) {
 	radius := dragRadius(p, n, width, height)
 	cardH := cssPx(height, fallbackCardH)
-
-	// 容器整块可拖拽；touch-action 只让出纵向，横向留给旋转（否则移动端拖不动页面）。
-	b.Add(core.BreakpointDesktop, sel, []string{
-		"position: relative",
-		"width: 100%",
-		"cursor: grab",
-		"touch-action: pan-y",
-		// 触屏点按的高亮块会盖在卡片上，去掉（卡片自身已有按压态）。
-		"-webkit-tap-highlight-color: transparent",
-	})
-	b.Add(core.BreakpointDesktop, sel+".is-dragging", []string{"cursor: grabbing"})
 	cylinder := p.DragMode == dragModeCylinder
-	// 单侧可用空间 = (视口宽 − 卡片实际占位) ÷ 2 − 留白。
-	// 环形/环绕的半径与翻书的摊开位移都不能超过它，否则卡片会被推到屏幕外 ——
-	// 之前用 40vw/45vw 这种经验值，卡宽 186px 时算出来 150px，两边一加就 486px，
-	// 在 375px 的手机上直接横向溢出（实测）。用卡宽参与计算才是准的。
-	//
-	// 圆柱还要再扣掉**透视放大**：卡片在 translateZ(R) 处被 perspective 放大 k = d/(d−R) 倍，
-	// 只按卡宽预留会漏掉这一份 —— 实测 900 视口溢出 68px、1024 视口溢出 7px（⑧ 环绕画廊）。
-	// z 的硬上限是 radius（min(radius, side) 里的常量项），所以 k 的上界能在构建期算准。
 	occupancy := width
 	if cylinder && radius > 0 && radius < dragPerspective {
 		occupancy = fmt.Sprintf("calc(%s * %.4f)", width, dragPerspective/(dragPerspective-radius))
 	}
-	sideRoom := fmt.Sprintf("max(0px, calc((100vw - %s) / 2 - %dpx))", occupancy, dragGutter)
 	// 轨道高度 = 圆周外接盒（2R + 卡高），与相邻区块不会重叠。
-	trackDecls := []string{
-		"position: relative",
-		// 同格叠放 + 内容可撑开：min-height 只作下限（环形外接盒是几何下限）。
-		"display: grid",
-		"justify-items: center",
-		"align-items: center",
-		fmt.Sprintf("min-height: %dpx", int(2*radius+cardH)),
-		// 旋转角由增强脚本改写；无脚本时保持 0，卡片静态成环。
-		"--sky-cardstack-rot: 0deg",
-		"--sky-cardstack-side: " + sideRoom,
-	}
-	if cylinder {
-		// 透视：值越小"圆柱"越粗、卡片变形越明显；1600px 接近真实相机距离。
-		trackDecls = append(trackDecls, fmt.Sprintf("perspective: %dpx", int(dragPerspective)), "perspective-origin: 50% 50%")
-	}
-	b.Add(core.BreakpointDesktop, track, trackDecls)
+	vars["dragTrackMinHeight"] = fmt.Sprintf("min-height: %dpx", int(2*radius+cardH))
+	vars["dragSideRoom"] = fmt.Sprintf("max(0px, calc((100vw - %s) / 2 - %dpx))", occupancy, dragGutter)
+	vars["dragCylinder"] = core.BoolVar(cylinder)
+	vars["dragPerspective"] = strconv.Itoa(int(dragPerspective))
+	vars["deckArrows"] = core.BoolVar(p.DeckArrows)
+}
 
+// dragCards 拖拽旋转的逐卡几何：第 i 张卡落在半径 R 的圆周上（角度 360i/N）。
+func dragCards(p *Props, n int, width, height string) []map[string]string {
+	radius := dragRadius(p, n, width, height)
+	cylinder := p.DragMode == dragModeCylinder
 	hueStep := float64(effectiveHueStep(p))
+	cards := make([]map[string]string, 0, n)
 	for i := 0; i < n; i++ {
 		angle := 360 * float64(i) / float64(n)
-		card := track + " .sky-cardstack-card:nth-child(" + strconv.Itoa(i+1) + ")"
-		decls := []string{
-			// 居中交给 grid（同格叠放）：卡片不再 absolute，轨道因此能被内容撑开。
-			"grid-area: 1 / 1",
-			"justify-self: center",
-			"align-self: center",
-			"width: min(100%, " + width + ")",
-			dragCardTransform(angle, radius, cylinder),
-			"transition: transform .35s ease",
-		}
-		if cylinder {
-			// 背对观察者的那半圈藏起来 —— 圆柱环绕只需要看到前面，
-			// 否则背面的卡片会以镜像姿态透出来（文字反着）。
-			decls = append(decls, "backface-visibility: hidden")
-		}
-		if content {
-			decls = append(decls, "min-height: "+height, "height: auto")
-		} else {
+		cards = append(cards, map[string]string{
+			"nth":       strconv.Itoa(i + 1),
+			"transform": dragCardTransform(angle, radius, cylinder),
 			// 环形没有「中间卡」，色相直接按序号均匀铺开。
-			decls = append(decls, "height: "+height,
-				fmt.Sprintf("filter: hue-rotate(%.0fdeg)", float64(i)*hueStep))
-		}
-		decls = append(decls, cardBaseDecls(content, p)...)
-		b.Add(core.BreakpointDesktop, card, decls)
-	}
-
-	// 拖拽过程中取消过渡，否则卡片会追着指针慢半拍。
-	// 翻页按钮：卡片区两侧的半透明圆钮。点它切主卡；不用按钮时拖拽 / 滚轮 / 方向键 /
-	// 点侧卡同样能切；点主卡则是展开放大 —— 三种操作各管一件事，互不打架。
-	if p.DeckArrows {
-		b.Add(core.BreakpointDesktop, sel+" .sky-cardstack-arrow", []string{
-			"position: absolute",
-			"top: 50%",
-			"transform: translateY(-50%)",
-			"z-index: 70",
-			"display: flex",
-			"align-items: center",
-			"justify-content: center",
-			"width: 40px",
-			"height: 40px",
-			"border: 0",
-			"padding: 0",
-			"border-radius: 9999px",
-			"font-size: 22px",
-			"line-height: 1",
-			"color: " + colorLabel,
-			"background: rgba(255,255,255,.92)",
-			"box-shadow: 0 6px 20px rgba(0,0,0,.16)",
-			"cursor: pointer",
-			"transition: background .2s",
+			"hue": fmt.Sprintf("%.0f", float64(i)*hueStep),
 		})
-		b.Add(core.BreakpointDesktop, sel+" .sky-cardstack-arrow--prev", []string{"left: 4px"})
-		b.Add(core.BreakpointDesktop, sel+" .sky-cardstack-arrow--next", []string{"right: 4px"})
-		b.Add(core.BreakpointDesktop, sel+" .sky-cardstack-arrow:hover", []string{"background: var(--sky-c-surface, #ffffff)"})
 	}
-
-	b.Add(core.BreakpointDesktop, sel+".is-dragging .sky-cardstack-card", []string{"transition: none"})
+	return cards
 }
 
 // slideEffectKeyframe 切换动画 → 通用动效词汇名（不新增关键帧，直接复用 core 那套）。
@@ -1231,359 +1008,114 @@ func cssPx(v string, fallback float64) float64 {
 	return fallback
 }
 
-// compileDeckCSS 堆叠轮播：主卡居中正立，两侧卡片按「相对主卡的偏移」叠开。
-//
-// 几何全部由每张卡的两个 CSS 变量驱动：
-//
-//	--sky-deck-off  相对当前主卡的偏移（整数，0 = 主卡）
-//	--sky-deck-abs  偏移的绝对值（CSS 没有 abs()，缩放/层级要用它）
-//
-// 编译期逐卡写入的是**静态降级值**（i - mid）：没有增强脚本时卡片按序号摊开成一摞，
-// 依旧可点、可放大；脚本接管后改写为「相对主卡」的偏移 —— 切换主卡只改这两个变量，
-// 位移/倾斜/缩放/层级的关系全在静态 CSS 里，脚本端不碰任何几何数值。
-func compileDeckCSS(b *core.CSSBuckets, sel string, p *Props, n int, width, height string, content bool) {
-	track := sel + " .sky-cardstack-track"
-	offset := effectiveDeckOffset(p)
+// deckCSSVars 堆叠轮播的轨道高度、切换轴与过渡参数。
+func deckCSSVars(p *Props, n int, width, height string, vars map[string]string) {
 	rot := effectiveDeckRotate(p)
-	scaleStep := float64(effectiveDeckScaleStep(p)) / 100
 	vertical := effectiveDeckDirection(p) == "vertical"
+	// 纵向切换且没给偏移时走纵向缺省档（偏移影响的是逐卡位移，见 deckCards）。
 	if vertical && p.DeckOffset <= 0 {
-		offset = defaultDeckOffsetVertical
 		// 纵向倾斜减半：竖向位移配大角度会显得歪。
 		if p.DeckRotate <= 0 {
 			rot = defaultDeckRotate / 2
 		}
 	}
 	mid := float64(n-1) / 2.0
-
 	// 轨道高度：倾斜 + 缩放后卡片的外接盒，按最大偏移保守预留。
 	maxOff := math.Max(mid, 1)
 	cardW := cssPx(width, fallbackCardW)
 	cardH := cssPx(height, fallbackCardH)
 	tiltOut := cardW * math.Sin(float64(rot)*math.Pi/180) * maxOff * 0.35
 	trackH := cardH + 2*math.Max(24, tiltOut)
-
-	// touch-action 必须**跟着切换轴走**：切换方向的轴归 JS（否则触摸手势被浏览器
+	// touch-action 必须跟着切换轴走：切换方向的轴归脚本（否则触摸手势被浏览器
 	// 拿去滚页面，滑动切换在触屏上完全失效），另一个轴让给页面滚动。
 	touchAction := "pan-y" // 横向切换：纵向留给页面
 	if vertical {
 		touchAction = "pan-x" // 纵向切换：横向留给页面
 	}
-	b.Add(core.BreakpointDesktop, sel, []string{
-		"position: relative",
-		"width: 100%",
-		"cursor: grab",
-		"touch-action: " + touchAction,
-		// 触屏点按的高亮块会盖在卡片上，去掉（卡片自身已有按压态）。
-		"-webkit-tap-highlight-color: transparent",
-	})
-	b.Add(core.BreakpointDesktop, sel+".is-dragging", []string{"cursor: grabbing"})
-	b.Add(core.BreakpointDesktop, track, []string{
-		"position: relative",
-		// 同格叠放 + 内容可撑开：min-height 只作下限（内容卡的 height 是最小高度）。
-		"display: grid",
-		"justify-items: center",
-		"align-items: center",
-		fmt.Sprintf("min-height: %dpx", int(trackH)),
-	})
-
-	hueStep := float64(effectiveHueStep(p))
-	for i := 0; i < n; i++ {
-		static := float64(i) - mid
-		card := track + " .sky-cardstack-card:nth-child(" + strconv.Itoa(i+1) + ")"
-		decls := []string{
-			// 静态降级值：按序号摊开（无脚本时的形态）。
-			fmt.Sprintf("--sky-deck-off: %s", num(static)),
-			fmt.Sprintf("--sky-deck-abs: %s", num(math.Abs(static))),
-			"grid-area: 1 / 1",
-			"justify-self: center",
-			"align-self: center",
-			"width: min(100%, " + width + ")",
-			deckTransform(offset, rot, scaleStep, vertical),
-			"z-index: calc(50 - var(--sky-deck-abs, 0))",
-			// 越远越淡：卡片多时不至于在两侧无限堆远（max() 不被支持时退化为全不透明，不影响可用性）。
-			"opacity: max(0, calc(1 - var(--sky-deck-abs, 0) * 0.28))",
-			"transition: transform " + strconv.Itoa(effectiveDeckDuration(p)) + "ms " + deckEasing(p) + ", box-shadow .3s, opacity .3s",
-			"cursor: pointer",
-		}
-		if content {
-			decls = append(decls, "min-height: "+height, "height: auto")
-		} else {
-			decls = append(decls, "height: "+height,
-				fmt.Sprintf("filter: hue-rotate(%.0fdeg)", static*hueStep))
-		}
-		decls = append(decls, cardBaseDecls(content, p)...)
-		b.Add(core.BreakpointDesktop, card, decls)
-	}
-
-	// 主卡：抬升层级 + 加重投影（由脚本切 is-active 类）；可选循环高亮。
-	activeDecls := []string{
-		"z-index: 60",
-		"box-shadow: 0 24px 60px rgba(0,0,0,.26)",
-	}
-	if kf := loopEffectKey(p.DeckHighlight); kf != "" {
-		b.NeedKeyframes(kf)
-		activeDecls = append(activeDecls, "animation: "+kf+" 2s ease-in-out infinite")
-	}
-	b.Add(core.BreakpointDesktop, sel+" .sky-cardstack-card.is-active", activeDecls)
-	// 拖动过程中取消过渡，否则卡片追着指针慢半拍。
-	b.Add(core.BreakpointDesktop, sel+".is-dragging .sky-cardstack-card", []string{"transition: none"})
+	vars["deckTouchAction"] = touchAction
+	vars["deckTrackMinHeight"] = fmt.Sprintf("min-height: %dpx", int(trackH))
+	vars["deckDurationMs"] = strconv.Itoa(effectiveDeckDuration(p))
+	vars["deckEasing"] = deckEasing(p)
+	kf := loopEffectKey(p.DeckHighlight)
+	vars["deckHighlight"] = core.BoolVar(kf != "")
+	vars["deckHighlightKey"] = kf
 }
 
-// compileSlideCSS 全屏分页：一屏一张卡，原生滚动吸附切换。
+// deckCards 堆叠轮播的逐卡静态降级值（i - mid）：没有增强脚本时卡片按序号摊开成一摞。
+func deckCards(p *Props, n int, width, height string) []map[string]string {
+	offset := effectiveDeckOffset(p)
+	rot := effectiveDeckRotate(p)
+	scaleStep := float64(effectiveDeckScaleStep(p)) / 100
+	vertical := effectiveDeckDirection(p) == "vertical"
+	if vertical && p.DeckOffset <= 0 {
+		offset = defaultDeckOffsetVertical
+		if p.DeckRotate <= 0 {
+			rot = defaultDeckRotate / 2
+		}
+	}
+	mid := float64(n-1) / 2.0
+	hueStep := float64(effectiveHueStep(p))
+	cards := make([]map[string]string, 0, n)
+	for i := 0; i < n; i++ {
+		static := float64(i) - mid
+		cards = append(cards, map[string]string{
+			"nth":       strconv.Itoa(i + 1),
+			"static":    num(static),
+			"staticAbs": num(math.Abs(static)),
+			"transform": deckTransform(offset, rot, scaleStep, vertical),
+			"hue":       fmt.Sprintf("%.0f", static*hueStep),
+		})
+	}
+	return cards
+}
+
+// slideCSSVars 全屏分页的每屏高度与滚动轴参数。
 //
-// 关键取舍：**用 scroll-snap，不劫持滚动**。滚动条本身仍归浏览器管 ——
-// 惯性、触控板、键盘 PageDown/空格、屏幕阅读器全都照旧可用；JS 滚动劫持
-// （wheel + preventDefault + 自算动画）在移动端与辅助技术上是灾难，不值得。
-//
-// 每屏高度用 dvh 而非 vh：移动端地址栏收放时 vh 会跳、内容跟着抖，dvh 会跟着变。
-// 卡片给 min-height（不是 height）：内容超出一屏时卡片自己长高、原地可读，
-// 而不是被裁掉或压成卡内滚动条 —— 但这属于「这一屏内容太多了」，应在内容侧解决。
-func compileSlideCSS(b *core.CSSBuckets, sel string, p *Props, n int, height string, content bool) {
-	track := sel + " .sky-cardstack-track"
+// 每屏高度降级链：dvh 不认识时退回 vh（老浏览器仍是一屏一张，只是地址栏收放时略跳）。
+// 降级链顺序是「旧值在前、新值在后」—— 后写的覆盖先写的；反过来写 dvh 会被 vh 永久盖掉。
+func slideCSSVars(p *Props, vars map[string]string) {
 	screen := strings.TrimSpace(p.SlideHeight)
 	if screen == "" {
 		screen = defaultSlideHeight
 	}
-	// 每屏高度降级链：dvh 不认识时退回 vh（老浏览器仍是一屏一张，只是地址栏收放时略跳）。
-	// 降级链顺序：**旧值在前、新值在后** —— 后写的覆盖先写的。
-	// 反过来写的话 dvh 会被 vh 永久盖掉，等于白写。
-	screenDecl := []string{"height: " + screen}
-	cardMin := []string{"min-height: " + screen}
-	if strings.HasSuffix(screen, "dvh") {
-		fallback := strings.TrimSuffix(screen, "dvh") + "vh"
-		screenDecl = []string{"height: " + fallback, "height: " + screen}
-		cardMin = []string{"min-height: " + fallback, "min-height: " + screen}
+	fallback := screen
+	dvh := strings.HasSuffix(screen, "dvh")
+	if dvh {
+		fallback = strings.TrimSuffix(screen, "dvh") + "vh"
 	}
-
-	b.Add(core.BreakpointDesktop, sel, []string{
-		"position: relative",
-		"width: 100%",
-	})
-	// 铺满视口：容器脱离文档流，父容器的内边距与宽度都不再影响它 —— 省掉「手动把
-	// 父容器 padding 归零」这一步。代价是它与页面同级内容会重叠，只适合「整页只有它」。
-	if p.SlideFit == slideFitViewport {
-		fitDecls := []string{
-			"position: fixed",
-			"inset: 0",
-			"z-index: 30",
-			"width: 100vw",
-		}
-		fitDecls = append(fitDecls, screenDecl...)
-		b.Add(core.BreakpointDesktop, sel, fitDecls)
-	}
-	// 滚动方向：纵向滚动用 Y 轴与 pan-y，横向滚动把整套换成 X 轴。
 	horizontal := p.SlideDirection == slideDirectionHorizontal
-	scrollAxis, snapAxis := "y", "y"
 	overflowMain, overflowCross := "overflow-y: auto", "overflow-x: hidden"
-	snapAlign := "scroll-snap-align: start"
+	snapAxis := "y"
 	stickyAxis := "top: 0"
 	if horizontal {
-		scrollAxis, snapAxis = "x", "x"
 		overflowMain, overflowCross = "overflow-x: auto", "overflow-y: hidden"
-		snapAlign = "scroll-snap-align: start"
+		snapAxis = "x"
 		stickyAxis = "left: 0"
 	}
-	_ = scrollAxis
+	vars["slideFitViewport"] = core.BoolVar(p.SlideFit == slideFitViewport)
+	vars["slideScreenDvh"] = core.BoolVar(dvh)
+	vars["slideScreen"] = screen
+	vars["slideScreenFallback"] = fallback
+	vars["slideOverflowMain"] = overflowMain
+	vars["slideOverflowCross"] = overflowCross
+	vars["slideSnapAxis"] = snapAxis
+	vars["slideHorizontal"] = core.BoolVar(horizontal)
+	vars["slideStack"] = core.BoolVar(p.SlideStack)
+	vars["slideStickyAxis"] = stickyAxis
 
-	// 滚动容器：原生滚动 + 强制吸附（一次只翻一屏）。
-	trackDecls := append([]string{
-		"position: relative",
-		"display: block",
-		overflowMain,
-		overflowCross,
-		"scroll-snap-type: " + snapAxis + " mandatory",
-		"-webkit-overflow-scrolling: touch",
-		// 隐藏滚动条：全屏分页里滚动条是纯视觉噪音，右下角的页码角标已经说明了位置。
-		// 隐藏不影响滚动本身 —— 滚轮、触摸板、键盘、触屏手势照旧。
-		"scrollbar-width: none",
-		"-ms-overflow-style: none",
-	}, screenDecl...)
-	// WebKit/Blink 用伪元素隐藏（scrollbar-width 在它们上面还不生效）。
-	b.Add(core.BreakpointDesktop, track+"::-webkit-scrollbar", []string{
-		"display: none",
-		"width: 0",
-		"height: 0",
-	})
-	if horizontal {
-		// 横向分页必须让卡片真正横排：块级元素默认纵向堆叠，宽度不会溢出，
-		// 轨道 scrollWidth 恒等于 clientWidth —— 滚动条根本出不来（实测踩过）。
-		trackDecls = append(trackDecls, "display: flex", "flex-direction: row")
-	}
-	// 页码：CSS counter 自动编号（卡片逐个 increment），总数由编译期写进 attr()——
-	// 全程零 JS，滚动中也能看出「第几屏 / 共几屏」。
-	trackDecls = append(trackDecls, "counter-reset: sky-page")
-	b.Add(core.BreakpointDesktop, track, trackDecls)
-	b.Add(core.BreakpointDesktop, track+" .sky-cardstack-page", []string{
-		"position: absolute",
-		"right: 20px",
-		"bottom: 16px",
-		"font-size: 13px",
-		"letter-spacing: .08em",
-		"opacity: .45",
-		"pointer-events: none",
-	})
-	b.Add(core.BreakpointDesktop, track+" .sky-cardstack-page::before", []string{
-		`content: counter(sky-page) " / " attr(data-total)`,
-	})
-	if p.SlideStack {
-		// 堆叠翻页时页码只给当前屏显示：卡片粘在同一位置、后面的卡又因缩放递减而更小，
-		// 前面那张的页码会从更小的卡边缘露出来，右下角叠成一片（实测 1/3 与 2/3 重影）。
-		// 用 :has 表达「一旦有当前屏，就隐藏其余的」—— 脚本没跑时页码照旧可见（只是重影），
-		// 比默认全隐藏稳妥：看不到页码会让人以为功能坏了，而重影一看就知道是样式问题。
-		b.Add(core.BreakpointDesktop, track+" .sky-cardstack-card .sky-cardstack-page", []string{
-			"transition: opacity .3s",
-		})
-		b.Add(core.BreakpointDesktop,
-			track+":has(.sky-cardstack-card.is-current) .sky-cardstack-card:not(.is-current) .sky-cardstack-page",
-			[]string{"opacity: 0"})
-	}
-
-	for i := 0; i < n; i++ {
-		card := track + " .sky-cardstack-card:nth-child(" + strconv.Itoa(i+1) + ")"
-		decls := []string{
-			"width: 100%",
-			"counter-increment: sky-page",
-			snapAlign,
-			// always：一次手势只翻一屏，不会连跳好几屏。
-			"scroll-snap-stop: always",
-		}
-		if horizontal {
-			// flex 子项不能靠 width: 100% 定宽（会被压缩），用 flex 基准定成整屏宽。
-			decls = append(decls, "flex: 0 0 100%")
-		}
-		// 卡片本身不挂动画：入场动画与当前屏高亮都由脚本在卡片上切换类名触发
-		// （见本函数末尾的 .is-enter / .is-current 规则）。
-		//
-		// 为什么不用 animation-timeline: view()：slide 的轨道是**内嵌滚动容器**，
-		// 实测 view() 时间线在该场景下不驱动动画 —— 时间线对象创建成功、进度随滚动
-		// 正常变化，但元素的计算值（transform / filter）恒为初始值，动画等于没跑。
-		// 换成脚本驱动后行为与 hover / deck 的循环效果一致，且不依赖浏览器新特性。
-		if p.SlideStack {
-			// 堆叠翻页：每张卡都粘在同一位置，靠递增 z-index 让后一张**盖住**前一张。
-			// 平铺时上滑会把前一张推走，堆叠时它留在原地被覆盖 —— 视觉上是「翻页」。
-			// 纯 sticky + z-index，零 JS、不依赖 scroll-driven。
-			decls = append(decls,
-				"position: sticky",
-				stickyAxis,
-				"z-index: "+strconv.Itoa(i+1),
-			)
-		}
-		decls = append(decls, cardMin...)
-		if content {
-			decls = append(decls, "height: auto")
-		}
-		decls = append(decls, cardBaseDecls(content, p)...)
-		// 全屏卡片自己就是页面，圆角与投影会露出拼接感，去掉。
-		decls = append(decls, "border-radius: 0", "box-shadow: none")
-		b.Add(core.BreakpointDesktop, card, decls)
-	}
-
-	// 入场动画：卡片进入轨道视口时脚本加 .is-enter，播一次后由脚本在它离开时移除，
-	// 这样往回滚可以重播。duration 固定 800ms —— 参数只负责「选哪种效果」。
-	if kf := slideEffectKeyframe(p); kf != "" {
-		b.NeedKeyframes(kf)
-		b.Add(core.BreakpointDesktop, track+" .sky-cardstack-card.is-enter", []string{
-			"animation: " + kf + " 800ms cubic-bezier(.22,.61,.36,1) both",
-		})
-	}
-	// 当前屏高亮：卡片基本占满视口时脚本加 .is-current，离开即移除，持续循环。
-	if kf := loopEffectKey(p.SlideHighlight); kf != "" {
-		b.NeedKeyframes(kf)
-		b.Add(core.BreakpointDesktop, track+" .sky-cardstack-card.is-current", []string{
-			"animation: " + kf + " 2s ease-in-out infinite",
-		})
-	}
+	kf := slideEffectKeyframe(p)
+	vars["slideEffect"] = core.BoolVar(kf != "")
+	vars["slideEffectKey"] = kf
+	highlight := loopEffectKey(p.SlideHighlight)
+	vars["slideHighlight"] = core.BoolVar(highlight != "")
+	vars["slideHighlightKey"] = highlight
 }
 
-// compileZoomCSS 点击放大到视口中央（零 JS：label + radio，同组互斥，一次只放大一张）。
-//
-// 卡片本身就是 label，内部藏一个 radio：点卡片即选中它；遮罩是末尾那个 label，
-// 点它选中同组的关闭 radio，所有卡随之回到原位。
-func compileZoomCSS(b *core.CSSBuckets, sel string, p *Props, content bool) {
-	if !zoomEnabled(p) {
-		return
+// slideCards 全屏分页的逐卡序号（其余声明由每屏高度与滚动轴参数决定，与序号无关）。
+func slideCards(n int) []map[string]string {
+	cards := make([]map[string]string, 0, n)
+	for i := 0; i < n; i++ {
+		cards = append(cards, map[string]string{"nth": strconv.Itoa(i + 1)})
 	}
-	// 隐藏但可聚焦的单选：键盘 Tab 能聚焦、Space/方向键能切换。
-	// 关闭单选单独写一条：它不能共用 toggle 类，否则「有 toggle 被选中」在关闭后
-	// 依然为真（关闭单选自己被选中），遮罩与关闭按钮就再也收不回去。
-	b.Add(core.BreakpointDesktop, sel+" .sky-cardstack-toggle", []string{
-		"position: absolute",
-		"width: 1px",
-		"height: 1px",
-		"margin: 0",
-		"padding: 0",
-		"border: 0",
-		"opacity: 0",
-		// 点击穿透到 label：label 的原生行为会激活它内部的控件。
-		"pointer-events: none",
-	})
-	b.Add(core.BreakpointDesktop, sel+" .sky-cardstack-close", []string{
-		"position: absolute",
-		"width: 1px",
-		"height: 1px",
-		"margin: 0",
-		"padding: 0",
-		"border: 0",
-		"opacity: 0",
-		"pointer-events: none",
-	})
-	b.Add(core.BreakpointDesktop, sel+" .sky-cardstack-card:focus-within", core.FocusRingDecls())
-
-	// 放大态：脱离堆叠、居中到视口。用 inset:0 + margin:auto 居中而不是 transform，
-	// 免得和悬停展开/滚动位移抢属性；同时清掉独立属性 translate/scale 的残留。
-	zoom := []string{
-		"position: fixed",
-		"inset: 0",
-		"margin: auto",
-		"width: min(88vw, 560px)",
-		"height: auto",
-		"min-height: min(70vh, 560px)",
-		"max-height: 86vh",
-		"translate: none",
-		"scale: 1",
-		"transform: none",
-		"z-index: 1001",
-		"box-shadow: 0 30px 90px rgba(0,0,0,.45)",
-		"cursor: zoom-out",
-	}
-	if content {
-		zoom = append(zoom, "overflow: auto")
-	} else {
-		zoom = append(zoom, "color: "+colorLabel, "font-size: clamp(3rem, 20vw, 13rem)")
-	}
-	b.Add(core.BreakpointDesktop, sel+" .sky-cardstack-card:has(> .sky-cardstack-toggle:checked)", zoom)
-
-	// 遮罩：默认不占位；有卡被放大时铺满视口，点它即关闭。
-	b.Add(core.BreakpointDesktop, sel+" .sky-cardstack-scrim", []string{
-		"display: none",
-		"position: fixed",
-		"inset: 0",
-		"z-index: 1000",
-		"background: rgba(12,14,26,.72)",
-		"cursor: zoom-out",
-	})
-	b.Add(core.BreakpointDesktop, sel+":has(.sky-cardstack-toggle:checked) .sky-cardstack-scrim", []string{"display: block"})
-
-	// 显式关闭按钮：radio 无法「再点一次取消」，所以关闭必须由另一个控件完成 ——
-	// 遮罩（点空白处）与这个按钮（点右上角）都指向同一个关闭单选。
-	b.Add(core.BreakpointDesktop, sel+" .sky-cardstack-close-btn", []string{
-		"display: none",
-		"position: fixed",
-		"top: 20px",
-		"right: 24px",
-		"z-index: 1002",
-		"width: 40px",
-		"height: 40px",
-		"align-items: center",
-		"justify-content: center",
-		"font-size: 20px",
-		"line-height: 1",
-		"color: #fff",
-		"background: rgba(255,255,255,.16)",
-		"border-radius: 9999px",
-		"cursor: zoom-out",
-		"user-select: none",
-	})
-	b.Add(core.BreakpointDesktop, sel+":has(.sky-cardstack-toggle:checked) .sky-cardstack-close-btn", []string{"display: flex"})
+	return cards
 }

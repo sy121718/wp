@@ -1,0 +1,766 @@
+/* core.cardstack 卡片堆叠样式源.
+   几何全部在编译期展开:逐卡 :nth-child 规则 + 每卡独立的 scroll-driven 关键帧.
+   逐卡规则走 @each(列表由 Go 侧提供),触发方式 / 内容来源 / 各种开关走 @if,
+   与迁移前逐条 b.Add 的调用顺序一一对应. */
+
+/* 容器:相对定位,同时是悬停模式绝对定位卡片的包含块. */
+& {
+  position: relative;
+  width: 100%;
+  /* 触屏点按的高亮块会盖在卡片上,统一去掉(卡片自身已有按压态). */
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* 放大触发层:铺满卡片的透明 label,把"点整卡放大"的命中区与卡片外壳解耦. */
+& .sky-cardstack-zoom-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  cursor: zoom-in;
+}
+
+/* 卡内交互元素提到触发层之上,否则覆盖层会先吃掉点击. */
+& .sky-cardstack-card a, & .sky-cardstack-card button {
+  position: relative;
+  z-index: 2;
+}
+
+/* --- 滚动堆叠(sticky + CSS scroll-driven)--- */
+@if triggerScroll
+& .sky-cardstack-track {
+  display: block;
+  padding: 6vh 0;
+}
+
+@each card in scrollCards
+& .sky-cardstack-track .sky-cardstack-card:nth-child({{card.nth}}) {
+  position: sticky;
+  top: {{stickyTop}};
+  /* 配合 top 把卡片在粘住位置垂直居中(独立属性,与悬停模式的 transform 互不干扰). */
+  translate: 0 -50%;
+  margin: 0 auto {{spacing}};
+  /* 序号越大越靠上:后出现的卡盖住先出现的. */
+  z-index: {{card.nth}};
+  scale: {{card.scale}};
+  width: min(100%, {{width}});
+  /* 跟手收敛:支持 scroll-driven 的浏览器用 view() 时间线驱动,不支持时按 0s 播完停在终态. */
+  animation: {{card.kf}} linear both;
+  animation-timeline: view();
+  animation-range: entry 0% entry 60%;
+  @if content
+  min-height: {{height}};
+  @endif
+  @if solid
+  height: {{height}};
+  @endif
+  @if content
+  box-sizing: border-box;
+  position: relative;
+  display: flex;
+  flex-direction: {{cardLayoutContent}};
+  justify-content: {{cardJustifyContent}};
+  align-items: {{cardAlignContent}};
+  gap: {{cardGapContent}};
+  padding: {{cardPaddingContent}};
+  background-color: {{cardBackgroundContent}};
+  color: var(--sky-cardstack-text, #1f2430);
+  border: {{cardBorderContent}} solid var(--sky-c-border, rgba(0,0,0,.08));
+  border-radius: {{cardRadiusContent}};
+  box-shadow: 0 15px 50px rgba(0,0,0,.12);
+  overflow: hidden;
+  transition: .5s;
+  cursor: zoom-in;
+  user-select: none;
+  @endif
+  @if solid
+  box-sizing: border-box;
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background-color: {{cardBackgroundSolid}};
+  border: {{cardBorderSolid}} solid var(--sky-c-border, rgba(0,0,0,.1));
+  border-radius: {{cardRadiusSolid}};
+  box-shadow: 0 15px 50px rgba(0,0,0,.1);
+  color: rgba(0,0,0,0);
+  font-size: 8em;
+  font-weight: 700;
+  transition: .5s;
+  cursor: zoom-in;
+  user-select: none;
+  @endif
+}
+
+/* 每张卡独立关键帧:终态是该卡的静态缩放,降级时正好停在同一点. */
+@keyframes {{card.kf}} {
+  from { scale: {{card.scaleFrom}}; opacity: .5 }
+  to { scale: {{card.scale}}; opacity: 1 }
+}
+@endfor
+@endif
+
+/* --- 拖拽旋转(环形 / 圆柱,增强脚本接管旋转角)--- */
+@if triggerDrag
+/* 容器整块可拖拽,touch-action 只让出纵向,横向留给旋转. */
+& {
+  position: relative;
+  width: 100%;
+  cursor: grab;
+  touch-action: pan-y;
+  -webkit-tap-highlight-color: transparent;
+}
+
+&.is-dragging {
+  cursor: grabbing;
+}
+
+& .sky-cardstack-track {
+  position: relative;
+  /* 同格叠放 + 内容可撑开:min-height 只作下限(环形外接盒是几何下限). */
+  display: grid;
+  justify-items: center;
+  align-items: center;
+  {{dragTrackMinHeight}};
+  /* 旋转角由增强脚本改写,无脚本时保持 0,卡片静态成环. */
+  --sky-cardstack-rot: 0deg;
+  --sky-cardstack-side: {{dragSideRoom}};
+  @if dragCylinder
+  /* 透视:值越小圆柱越粗,卡片变形越明显,1600px 接近真实相机距离. */
+  perspective: {{dragPerspective}}px;
+  perspective-origin: 50% 50%;
+  @endif
+}
+
+@each card in dragCards
+& .sky-cardstack-track .sky-cardstack-card:nth-child({{card.nth}}) {
+  /* 居中交给 grid(同格叠放):卡片不再 absolute,轨道因此能被内容撑开. */
+  grid-area: 1 / 1;
+  justify-self: center;
+  align-self: center;
+  width: min(100%, {{width}});
+  {{card.transform}};
+  transition: transform .35s ease;
+  @if dragCylinder
+  /* 背对观察者的那半圈藏起来,否则背面的卡片会以镜像姿态透出来. */
+  backface-visibility: hidden;
+  @endif
+  @if content
+  min-height: {{height}};
+  height: auto;
+  @endif
+  @if solid
+  height: {{height}};
+  filter: hue-rotate({{card.hue}}deg);
+  @endif
+  @if content
+  box-sizing: border-box;
+  position: relative;
+  display: flex;
+  flex-direction: {{cardLayoutContent}};
+  justify-content: {{cardJustifyContent}};
+  align-items: {{cardAlignContent}};
+  gap: {{cardGapContent}};
+  padding: {{cardPaddingContent}};
+  background-color: {{cardBackgroundContent}};
+  color: var(--sky-cardstack-text, #1f2430);
+  border: {{cardBorderContent}} solid var(--sky-c-border, rgba(0,0,0,.08));
+  border-radius: {{cardRadiusContent}};
+  box-shadow: 0 15px 50px rgba(0,0,0,.12);
+  overflow: hidden;
+  transition: .5s;
+  cursor: zoom-in;
+  user-select: none;
+  @endif
+  @if solid
+  box-sizing: border-box;
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background-color: {{cardBackgroundSolid}};
+  border: {{cardBorderSolid}} solid var(--sky-c-border, rgba(0,0,0,.1));
+  border-radius: {{cardRadiusSolid}};
+  box-shadow: 0 15px 50px rgba(0,0,0,.1);
+  color: rgba(0,0,0,0);
+  font-size: 8em;
+  font-weight: 700;
+  transition: .5s;
+  cursor: zoom-in;
+  user-select: none;
+  @endif
+}
+@endfor
+
+/* 翻页按钮:卡片区两侧的半透明圆钮(钩子名沿用 deck,脚本共用一份). */
+@if deckArrows
+& .sky-cardstack-arrow {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 70;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: 0;
+  padding: 0;
+  border-radius: 9999px;
+  font-size: 22px;
+  line-height: 1;
+  color: var(--sky-cardstack-label, rgba(0,0,0,.25));
+  background: rgba(255,255,255,.92);
+  box-shadow: 0 6px 20px rgba(0,0,0,.16);
+  cursor: pointer;
+  transition: background .2s;
+}
+
+& .sky-cardstack-arrow--prev {
+  left: 4px;
+}
+
+& .sky-cardstack-arrow--next {
+  right: 4px;
+}
+
+& .sky-cardstack-arrow:hover {
+  background: var(--sky-c-surface, #ffffff);
+}
+@endif
+
+/* 拖拽过程中取消过渡,否则卡片会追着指针慢半拍. */
+&.is-dragging .sky-cardstack-card {
+  transition: none;
+}
+@endif
+
+/* --- 堆叠轮播(主卡居中正立,两侧叠开)--- */
+@if triggerDeck
+/* touch-action 跟着切换轴走:切换方向的轴归脚本,另一个轴让给页面滚动. */
+& {
+  position: relative;
+  width: 100%;
+  cursor: grab;
+  touch-action: {{deckTouchAction}};
+  -webkit-tap-highlight-color: transparent;
+}
+
+&.is-dragging {
+  cursor: grabbing;
+}
+
+& .sky-cardstack-track {
+  position: relative;
+  /* 同格叠放 + 内容可撑开:min-height 只作下限. */
+  display: grid;
+  justify-items: center;
+  align-items: center;
+  {{deckTrackMinHeight}};
+}
+
+@each card in deckCards
+& .sky-cardstack-track .sky-cardstack-card:nth-child({{card.nth}}) {
+  /* 静态降级值:按序号摊开(无脚本时的形态),脚本接管后改写为相对主卡的偏移. */
+  --sky-deck-off: {{card.static}};
+  --sky-deck-abs: {{card.staticAbs}};
+  grid-area: 1 / 1;
+  justify-self: center;
+  align-self: center;
+  width: min(100%, {{width}});
+  {{card.transform}};
+  z-index: calc(50 - var(--sky-deck-abs, 0));
+  /* 越远越淡:卡片多时不至于在两侧无限堆远. */
+  opacity: max(0, calc(1 - var(--sky-deck-abs, 0) * 0.28));
+  transition: transform {{deckDurationMs}}ms {{deckEasing}}, box-shadow .3s, opacity .3s;
+  cursor: pointer;
+  @if content
+  min-height: {{height}};
+  height: auto;
+  @endif
+  @if solid
+  height: {{height}};
+  filter: hue-rotate({{card.hue}}deg);
+  @endif
+  @if content
+  box-sizing: border-box;
+  position: relative;
+  display: flex;
+  flex-direction: {{cardLayoutContent}};
+  justify-content: {{cardJustifyContent}};
+  align-items: {{cardAlignContent}};
+  gap: {{cardGapContent}};
+  padding: {{cardPaddingContent}};
+  background-color: {{cardBackgroundContent}};
+  color: var(--sky-cardstack-text, #1f2430);
+  border: {{cardBorderContent}} solid var(--sky-c-border, rgba(0,0,0,.08));
+  border-radius: {{cardRadiusContent}};
+  box-shadow: 0 15px 50px rgba(0,0,0,.12);
+  overflow: hidden;
+  transition: .5s;
+  cursor: zoom-in;
+  user-select: none;
+  @endif
+  @if solid
+  box-sizing: border-box;
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background-color: {{cardBackgroundSolid}};
+  border: {{cardBorderSolid}} solid var(--sky-c-border, rgba(0,0,0,.1));
+  border-radius: {{cardRadiusSolid}};
+  box-shadow: 0 15px 50px rgba(0,0,0,.1);
+  color: rgba(0,0,0,0);
+  font-size: 8em;
+  font-weight: 700;
+  transition: .5s;
+  cursor: zoom-in;
+  user-select: none;
+  @endif
+}
+@endfor
+
+/* 主卡:抬升层级 + 加重投影(由脚本切 is-active 类). */
+& .sky-cardstack-card.is-active {
+  z-index: 60;
+  box-shadow: 0 24px 60px rgba(0,0,0,.26);
+  @if deckHighlight
+  animation: {{deckHighlightKey}} 2s ease-in-out infinite;
+  @endif
+}
+
+/* 拖拽过程中取消过渡,否则卡片会追着指针慢半拍. */
+&.is-dragging .sky-cardstack-card {
+  transition: none;
+}
+@endif
+
+/* --- 全屏分页(原生滚动吸附,不劫持滚动)--- */
+@if triggerSlide
+& {
+  position: relative;
+  width: 100%;
+}
+
+/* 铺满视口:容器脱离文档流,父容器的内边距与宽度都不再影响它. */
+@if slideFitViewport
+& {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  width: 100vw;
+  @if slideScreenDvh
+  height: {{slideScreenFallback}};
+  @endif
+  height: {{slideScreen}};
+}
+@endif
+
+/* WebKit/Blink 用伪元素隐藏滚动条(scrollbar-width 在它们上面还不生效). */
+& .sky-cardstack-track::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+/* 滚动容器:原生滚动 + 强制吸附(一次只翻一屏). */
+& .sky-cardstack-track {
+  position: relative;
+  display: block;
+  {{slideOverflowMain}};
+  {{slideOverflowCross}};
+  scroll-snap-type: {{slideSnapAxis}} mandatory;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  @if slideScreenDvh
+  height: {{slideScreenFallback}};
+  @endif
+  height: {{slideScreen}};
+  @if slideHorizontal
+  /* 横向分页必须让卡片真正横排,否则轨道 scrollWidth 恒等于 clientWidth. */
+  display: flex;
+  flex-direction: row;
+  @endif
+  counter-reset: sky-page;
+}
+
+/* 页码:CSS counter 自动编号,总数由编译期写进 attr(),全程零 JS. */
+& .sky-cardstack-track .sky-cardstack-page {
+  position: absolute;
+  right: 20px;
+  bottom: 16px;
+  font-size: 13px;
+  letter-spacing: .08em;
+  opacity: .45;
+  pointer-events: none;
+}
+
+& .sky-cardstack-track .sky-cardstack-page::before {
+  content: counter(sky-page) " / " attr(data-total);
+}
+
+/* 堆叠翻页:页码只给当前屏显示,否则会叠成一片重影. */
+@if slideStack
+& .sky-cardstack-track .sky-cardstack-card .sky-cardstack-page {
+  transition: opacity .3s;
+}
+
+& .sky-cardstack-track:has(.sky-cardstack-card.is-current) .sky-cardstack-card:not(.is-current) .sky-cardstack-page {
+  opacity: 0;
+}
+@endif
+
+@each card in slideCards
+& .sky-cardstack-track .sky-cardstack-card:nth-child({{card.nth}}) {
+  width: 100%;
+  counter-increment: sky-page;
+  scroll-snap-align: start;
+  /* always:一次手势只翻一屏,不会连跳好几屏. */
+  scroll-snap-stop: always;
+  @if slideHorizontal
+  /* flex 子项不能靠 width: 100% 定宽(会被压缩),用 flex 基准定成整屏宽. */
+  flex: 0 0 100%;
+  @endif
+  @if slideStack
+  /* 堆叠翻页:每张卡都粘在同一位置,靠递增 z-index 让后一张盖住前一张. */
+  position: sticky;
+  {{slideStickyAxis}};
+  z-index: {{card.nth}};
+  @endif
+  @if slideScreenDvh
+  min-height: {{slideScreenFallback}};
+  @endif
+  min-height: {{slideScreen}};
+  @if content
+  height: auto;
+  @endif
+  @if content
+  box-sizing: border-box;
+  position: relative;
+  display: flex;
+  flex-direction: {{cardLayoutContent}};
+  justify-content: {{cardJustifyContent}};
+  align-items: {{cardAlignContent}};
+  gap: {{cardGapContent}};
+  padding: {{cardPaddingContent}};
+  background-color: {{cardBackgroundContent}};
+  color: var(--sky-cardstack-text, #1f2430);
+  border: {{cardBorderContent}} solid var(--sky-c-border, rgba(0,0,0,.08));
+  border-radius: {{cardRadiusContent}};
+  box-shadow: 0 15px 50px rgba(0,0,0,.12);
+  overflow: hidden;
+  transition: .5s;
+  cursor: zoom-in;
+  user-select: none;
+  @endif
+  @if solid
+  box-sizing: border-box;
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background-color: {{cardBackgroundSolid}};
+  border: {{cardBorderSolid}} solid var(--sky-c-border, rgba(0,0,0,.1));
+  border-radius: {{cardRadiusSolid}};
+  box-shadow: 0 15px 50px rgba(0,0,0,.1);
+  color: rgba(0,0,0,0);
+  font-size: 8em;
+  font-weight: 700;
+  transition: .5s;
+  cursor: zoom-in;
+  user-select: none;
+  @endif
+  /* 全屏卡片自己就是页面,圆角与投影会露出拼接感,去掉. */
+  border-radius: 0;
+  box-shadow: none;
+}
+@endfor
+
+/* 入场动画:脚本加 .is-enter,播一次后离开时移除,往回滚可以重播. */
+@if slideEffect
+& .sky-cardstack-track .sky-cardstack-card.is-enter {
+  animation: {{slideEffectKey}} 800ms cubic-bezier(.22,.61,.36,1) both;
+}
+@endif
+
+/* 当前屏高亮:卡片基本占满视口时脚本加 .is-current,离开即移除,持续循环. */
+@if slideHighlight
+& .sky-cardstack-track .sky-cardstack-card.is-current {
+  animation: {{slideHighlightKey}} 2s ease-in-out infinite;
+}
+@endif
+@endif
+
+/* --- 悬停展开(堆叠于轨道中心,悬停时按位置派生散开)--- */
+@if triggerHover
+/* 用 grid 同格叠放而不是"flex 居中 + 卡片 absolute":absolute 的卡片不参与父元素
+   高度计算,内容卡长高时会溢出压住相邻内容,grid 的格子高度取最高的那张卡. */
+& .sky-cardstack-track {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  align-items: center;
+  {{hoverTrackHeight}};
+  /* 卡片 border box 高(含上下边框):旋转外扩与竖排收敛都要用它. */
+  --sky-cardstack-h: calc({{height}} + {{cardBorderX2}}px);
+  @if book
+  /* 翻书要有透视才看得出立体:没有 perspective 时 rotateY 会被压平成横向缩放. */
+  perspective: 1800px;
+  perspective-origin: 50% 45%;
+  @endif
+}
+
+@each card in hoverCards
+& .sky-cardstack-track .sky-cardstack-card:nth-child({{card.nth}}) {
+  /* 基础态:同格叠放(grid-area 1/1). */
+  grid-area: 1 / 1;
+  justify-self: center;
+  align-self: center;
+  width: min(100%, {{width}});
+  @if book
+  /* 书的几何:旋转轴放在书脊那一侧,于是翻开是绕书脊转. */
+  transform-origin: {{card.origin}};
+  transform: rotateY({{card.closedDeg}}deg);
+  @endif
+  @if content
+  min-height: {{height}};
+  height: auto;
+  @endif
+  @if solid
+  height: {{height}};
+  filter: hue-rotate({{card.hue}}deg);
+  @endif
+  @if content
+  box-sizing: border-box;
+  position: relative;
+  display: flex;
+  flex-direction: {{cardLayoutContent}};
+  justify-content: {{cardJustifyContent}};
+  align-items: {{cardAlignContent}};
+  gap: {{cardGapContent}};
+  padding: {{cardPaddingContent}};
+  background-color: {{cardBackgroundContent}};
+  color: var(--sky-cardstack-text, #1f2430);
+  border: {{cardBorderContent}} solid var(--sky-c-border, rgba(0,0,0,.08));
+  border-radius: {{cardRadiusContent}};
+  box-shadow: 0 15px 50px rgba(0,0,0,.12);
+  overflow: hidden;
+  transition: .5s;
+  cursor: zoom-in;
+  user-select: none;
+  @endif
+  @if solid
+  box-sizing: border-box;
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background-color: {{cardBackgroundSolid}};
+  border: {{cardBorderSolid}} solid var(--sky-c-border, rgba(0,0,0,.1));
+  border-radius: {{cardRadiusSolid}};
+  box-shadow: 0 15px 50px rgba(0,0,0,.1);
+  color: rgba(0,0,0,0);
+  font-size: 8em;
+  font-weight: 700;
+  transition: .5s;
+  cursor: zoom-in;
+  user-select: none;
+  @endif
+}
+
+/* 悬停展开:旋转 + 平移 + 文字/阴影加深.
+   注意 :hover 挂在容器上,经轨道下到卡片(track 变量本身已含作用域前缀). */
+@hover &:hover .sky-cardstack-track .sky-cardstack-card:nth-child({{card.nth}}):not(:has(> .sky-cardstack-toggle:checked)) {
+  transform: {{card.fixed}};
+  transform: {{card.adaptive}};
+  color: var(--sky-cardstack-label, rgba(0,0,0,.25));
+  box-shadow: 0 15px 50px rgba(0,0,0,.25);
+  /* 悬停循环效果:只加在悬停规则里,移开鼠标动画自然停止. */
+  /* 关键帧登记在 Go 侧(词表白名单留在那里,@need-keyframes 只认字面名). */
+  @if hoverEffect
+  animation: {{hoverEffectKey}} 2s ease-in-out infinite;
+  @endif
+}
+
+/* 触屏没有悬停:把展开态直接给出去,否则手机上这一整块永远保持合上的样子.
+   选择器必须去掉 :hover,否则在 (hover: none) 里依然不匹配. */
+@hovernone & .sky-cardstack-track .sky-cardstack-card:nth-child({{card.nth}}):not(:has(> .sky-cardstack-toggle:checked)) {
+  transform: {{card.adaptive}};
+}
+@endfor
+
+/* 按压:容器按下时全部卡变暗,被点的卡恢复原色(并显形数字)后置顶.
+   走 active 桶(不包 hover:hover),触屏按下同样触发. */
+@active &:active .sky-cardstack-card {
+  background-color: var(--sky-cardstack-dim, #333);
+}
+
+@active & .sky-cardstack-card:active {
+  background-color: var(--sky-c-primary, #5e5cfc);
+  color: var(--sky-cardstack-label, rgba(0,0,0,.25));
+  z-index: 100;
+}
+@endif
+
+/* --- 点击放大(零 JS:label + radio,同组互斥)--- */
+@if zoom
+/* 隐藏但可聚焦的单选:键盘 Tab 能聚焦,Space/方向键能切换.
+   关闭单选单独写一条:它不能共用 toggle 类,否则关闭后遮罩再也收不回去. */
+& .sky-cardstack-toggle {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+& .sky-cardstack-close {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+& .sky-cardstack-card:focus-within {
+  @focus-ring
+}
+
+/* 放大态:脱离堆叠,居中到视口.用 inset:0 + margin:auto 居中而不是 transform,
+   免得和悬停展开/滚动位移抢属性,同时清掉独立属性 translate/scale 的残留. */
+& .sky-cardstack-card:has(> .sky-cardstack-toggle:checked) {
+  position: fixed;
+  inset: 0;
+  margin: auto;
+  width: min(88vw, 560px);
+  height: auto;
+  min-height: min(70vh, 560px);
+  max-height: 86vh;
+  translate: none;
+  scale: 1;
+  transform: none;
+  z-index: 1001;
+  box-shadow: 0 30px 90px rgba(0,0,0,.45);
+  cursor: zoom-out;
+  @if content
+  overflow: auto;
+  @endif
+  @if solid
+  color: var(--sky-cardstack-label, rgba(0,0,0,.25));
+  font-size: clamp(3rem, 20vw, 13rem);
+  @endif
+}
+
+/* 遮罩:默认不占位,有卡被放大时铺满视口,点它即关闭. */
+& .sky-cardstack-scrim {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(12,14,26,.72);
+  cursor: zoom-out;
+}
+
+&:has(.sky-cardstack-toggle:checked) .sky-cardstack-scrim {
+  display: block;
+}
+
+/* 显式关闭按钮:radio 无法"再点一次取消",关闭必须由另一个控件完成. */
+& .sky-cardstack-close-btn {
+  display: none;
+  position: fixed;
+  top: 20px;
+  right: 24px;
+  z-index: 1002;
+  width: 40px;
+  height: 40px;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  line-height: 1;
+  color: #fff;
+  background: rgba(255,255,255,.16);
+  border-radius: 9999px;
+  cursor: zoom-out;
+  user-select: none;
+}
+
+&:has(.sky-cardstack-toggle:checked) .sky-cardstack-close-btn {
+  display: flex;
+}
+@endif
+
+/* --- 内容集合(自动出卡)--- */
+@if collection
+/* 卡内从上往下排(图 -> 标题 -> 正文 -> 附注 -> 链接). */
+& .sky-cardstack-card {
+  justify-content: flex-start;
+  gap: 10px;
+}
+
+& .sky-cardstack-img {
+  width: 100%;
+  height: 150px;
+  object-fit: cover;
+  border-radius: 10px;
+  flex: 0 0 auto;
+}
+
+& .sky-cardstack-title {
+  margin: 0;
+  font-size: 1.15em;
+  line-height: 1.35;
+}
+
+& .sky-cardstack-text {
+  margin: 0;
+  font-size: .92em;
+  line-height: 1.55;
+  opacity: .78;
+}
+
+& .sky-cardstack-meta {
+  margin: 0;
+  font-size: 1.05em;
+  font-weight: 700;
+  color: var(--sky-c-primary, #5e5cfc);
+}
+
+& .sky-cardstack-link {
+  align-self: flex-start;
+  margin-top: auto;
+  font-size: .88em;
+  color: var(--sky-c-primary, #5e5cfc);
+  text-decoration: none;
+  border-bottom: 1px solid currentColor;
+}
+
+/* 空状态:集合没有内容时给一块可见占位,而不是留一片空白(也可整体隐藏). */
+& .sky-cardstack-empty {
+  margin: 0;
+  padding: 48px 24px;
+  text-align: center;
+  opacity: .6;
+  background-color: var(--sky-c-surface, #fff);
+  border: 1px dashed rgba(0,0,0,.16);
+  border-radius: 16px;
+}
+
+&.is-empty-hidden {
+  display: none;
+}
+@endif
+
+/* 键盘可达:拖拽类模式的容器可聚焦(tabindex=0),焦点环与组件库其余组件一致. */
+@if focusRing
+&:focus-visible {
+  @focus-ring
+}
+@endif

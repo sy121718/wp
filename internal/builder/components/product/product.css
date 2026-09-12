@@ -1,0 +1,216 @@
+/* core.product 商品详情样式 (纯静态, 与 Props 无关).
+
+   桌面两栏 (媒体 + 信息), 窄屏纵向堆叠. 宽度一律走 min(100%, ...) / minmax(0, ...),
+   不写死像素宽度 (多端适配硬规则): 大卡片 + 窄视口组合下也不会溢出. */
+
+& {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
+  gap: 24px;
+  align-items: start;
+}
+
+/* 窄视口 (手机): 两栏改纵向堆叠. */
+@media (max-width: 767px) {
+  & {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+}
+
+/* 主图. */
+& .sky-product-media img {
+  display: block;
+  width: min(100%, 100%);
+  height: auto;
+  border-radius: 12px;
+}
+
+/* 图集: 自适应列数, 单列最小宽度用 min(100%, ...) 封顶, 窄屏不横向溢出. */
+& .sky-product-gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 96px), 1fr));
+  gap: 8px;
+  margin-top: 8px;
+}
+
+& .sky-product-gallery img {
+  display: block;
+  width: min(100%, 100%);
+  height: auto;
+  aspect-ratio: 1 / 1;
+  object-fit: cover;
+  border-radius: 8px;
+}
+
+/* 信息栏. */
+& .sky-product-info {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+& .sky-product-title {
+  margin: 0;
+  font-size: 1.5rem;
+  line-height: 1.35;
+}
+
+& .sky-product-subtitle {
+  margin: 0;
+  color: var(--sky-c-muted, rgba(0,0,0,0.6));
+  line-height: 1.6;
+}
+
+& .sky-product-price-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+& .sky-product-price {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--sky-c-primary, #2563eb);
+}
+
+& .sky-product-compare {
+  text-decoration: line-through;
+  color: var(--sky-c-muted, rgba(0,0,0,0.45));
+}
+
+& .sky-product-description {
+  line-height: 1.7;
+  word-break: break-word;
+}
+
+/* 实时可用量 (issue #24): 构建期只烘变体 id, 可用量由访问面片段每次现取 (库存是真源,
+   烘进产物等于发布一份过期库存). 样式覆盖两种状态: 默认 (充足 / 以结算为准) 与缺货. */
+& .sky-product-variant-stock {
+  font-size: .85rem;
+  color: var(--sky-c-muted, rgba(0,0,0,0.6));
+  flex: 1 0 100%;
+}
+
+& .sky-product-variant .is-out {
+  color: var(--sky-c-danger, #dc2626);
+  font-weight: 600;
+}
+
+/* 规格选择器 (issue #8): 规格维度用原生 radio + label (键盘模型免费拿到:
+   Tab 进组, 方向键切换), 组合清单用 flex 行 + wrap (窄屏不横向溢出).
+   宽度一律 min(100%, ...) / max-width: 100%, 不写死像素 (多端适配硬规则). */
+& .sky-product-options {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+& .sky-product-option {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+
+& .sky-product-option legend {
+  padding: 0;
+  margin-right: 4px;
+  font-size: 13px;
+  color: var(--sky-c-muted, rgba(0,0,0,0.6));
+}
+
+/* radio 视觉隐藏但保留可聚焦 (display:none 会把整组从键盘序列里移除). */
+& .sky-product-option-radio {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  clip-path: inset(50%);
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+& .sky-product-option-value {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: auto;
+  max-width: 100%;
+  min-height: 36px;
+  padding: 6px 14px;
+  border: 1px solid var(--sky-c-border, rgba(0,0,0,0.15));
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.4;
+  cursor: pointer;
+  user-select: none;
+  word-break: break-word;
+}
+
+/* 选中态 (不依赖 :hover, 触屏同样可见). */
+& .sky-product-option-radio:checked + .sky-product-option-value {
+  border-color: var(--sky-c-primary, #2563eb);
+  color: var(--sky-c-primary, #2563eb);
+  background: rgba(37,99,235,0.08);
+}
+
+/* 键盘聚焦可见: 焦点环画在对应标签上. */
+& .sky-product-option-radio:focus-visible + .sky-product-option-value {
+  outline: 2px solid var(--sky-c-primary, #2563eb);
+  outline-offset: 2px;
+}
+
+/* 鼠标 / 触摸板悬停: @hover 会按构建期决定包不包 @media (hover: hover), 触屏上不输出. */
+@hover & .sky-product-option-value {
+  border-color: var(--sky-c-primary, #2563eb);
+}
+
+/* 按压反馈: @active 不带媒体查询, 触屏按压同样生效 (触屏唯一可靠的反馈). */
+@active & .sky-product-option-value {
+  transform: translateY(1px);
+}
+
+& .sky-product-variants {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+& .sky-product-variant {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  font-size: 13px;
+  min-width: 0;
+}
+
+& .sky-product-variant-options {
+  color: var(--sky-c-muted, rgba(0,0,0,0.6));
+  min-width: 0;
+  word-break: break-word;
+}
+
+& .sky-product-variant-price {
+  font-weight: 600;
+}
+
+/* 窄视口 (手机): 按压目标抬到 44px 高, 标签内边距放宽 -- 触屏可点性优先. */
+@media (max-width: 767px) {
+  & .sky-product-option-value {
+    min-height: 44px;
+    padding: 8px 16px;
+  }
+}

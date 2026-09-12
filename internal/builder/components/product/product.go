@@ -15,6 +15,7 @@
 package product
 
 import (
+	_ "embed" // product.css 经 //go:embed 打进二进制
 	"encoding/json"
 	"fmt"
 	"regexp"
@@ -210,191 +211,19 @@ func effectiveTitleTag(p *Props) string {
 	}
 }
 
+// productCSS 组件样式源。与组件同目录：改样式不必再进 Go 字符串数组。
+//
+//go:embed product.css
+var productCSS string
+
 // compileCSS 商品详情样式：桌面两栏（媒体 + 信息），窄屏纵向堆叠。
 //
-// 宽度一律走 min(100%, …) / minmax(0, …)，不写死像素宽度（多端适配硬规则）：
-// 大卡片 + 窄视口组合下也不会溢出。
+// 规则与 Props 无关（纯静态样式），故不传变量表；样式源里也没有 {{...}} 占位。
 func compileCSS(id string, _ *Props, b *core.CSSBuckets) {
 	sel := "." + core.NodeClass(id)
-
-	b.Add(core.BreakpointDesktop, sel, []string{
-		"display: grid",
-		"grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr)",
-		"gap: 24px",
-		"align-items: start",
-	})
-	b.Add(core.BreakpointMobile, sel, []string{
-		"display: flex",
-		"flex-direction: column",
-		"gap: 16px",
-	})
-	b.Add(core.BreakpointDesktop, sel+" .sky-product-media img", []string{
-		"display: block",
-		"width: min(100%, 100%)",
-		"height: auto",
-		"border-radius: 12px",
-	})
-	b.Add(core.BreakpointDesktop, sel+" .sky-product-gallery", []string{
-		"display: grid",
-		"grid-template-columns: repeat(auto-fill, minmax(min(100%, 96px), 1fr))",
-		"gap: 8px",
-		"margin-top: 8px",
-	})
-	b.Add(core.BreakpointDesktop, sel+" .sky-product-gallery img", []string{
-		"display: block",
-		"width: min(100%, 100%)",
-		"height: auto",
-		"aspect-ratio: 1 / 1",
-		"object-fit: cover",
-		"border-radius: 8px",
-	})
-	b.Add(core.BreakpointDesktop, sel+" .sky-product-info", []string{
-		"display: flex",
-		"flex-direction: column",
-		"gap: 10px",
-		"min-width: 0",
-	})
-	b.Add(core.BreakpointDesktop, sel+" .sky-product-title", []string{
-		"margin: 0",
-		"font-size: 1.5rem",
-		"line-height: 1.35",
-	})
-	b.Add(core.BreakpointDesktop, sel+" .sky-product-subtitle", []string{
-		"margin: 0",
-		"color: var(--sky-c-muted, rgba(0,0,0,0.6))",
-		"line-height: 1.6",
-	})
-	b.Add(core.BreakpointDesktop, sel+" .sky-product-price-row", []string{
-		"display: flex",
-		"align-items: baseline",
-		"gap: 10px",
-		"flex-wrap: wrap",
-	})
-	b.Add(core.BreakpointDesktop, sel+" .sky-product-price", []string{
-		"font-size: 1.5rem",
-		"font-weight: 700",
-		"color: var(--sky-c-primary, #2563eb)",
-	})
-	b.Add(core.BreakpointDesktop, sel+" .sky-product-compare", []string{
-		"text-decoration: line-through",
-		"color: var(--sky-c-muted, rgba(0,0,0,0.45))",
-	})
-	b.Add(core.BreakpointDesktop, sel+" .sky-product-description", []string{
-		"line-height: 1.7",
-		"word-break: break-word",
-	})
-
-	// 实时可用量（issue #24）：构建期只烘变体 id，可用量由访问面片段每次现取（库存是真源，
-	// 烘进产物等于发布一份过期库存）。样式覆盖两种状态：默认（充足 / 以结算为准）与缺货。
-	b.Add(core.BreakpointDesktop, sel+" .sky-product-variant-stock", []string{
-		"font-size: .85rem",
-		"color: var(--sky-c-muted, rgba(0,0,0,0.6))",
-		"flex: 1 0 100%",
-	})
-	b.Add(core.BreakpointDesktop, sel+" .sky-product-variant .is-out", []string{
-		"color: var(--sky-c-danger, #dc2626)",
-		"font-weight: 600",
-	})
-
-	// 规格选择器（issue #8）：规格维度用原生 radio + label（键盘模型免费拿到：
-	// Tab 进组、方向键切换），组合清单用 flex 行 + wrap（窄屏不横向溢出）。
-	// 宽度一律 min(100%, …) / max-width: 100%，不写死像素（多端适配硬规则）。
-	b.Add(core.BreakpointDesktop, sel+" .sky-product-options", []string{
-		"display: flex",
-		"flex-direction: column",
-		"gap: 12px",
-		"min-width: 0",
-	})
-	b.Add(core.BreakpointDesktop, sel+" .sky-product-option", []string{
-		"display: flex",
-		"flex-wrap: wrap",
-		"align-items: center",
-		"gap: 8px",
-		"border: 0",
-		"margin: 0",
-		"padding: 0",
-		"min-width: 0",
-	})
-	b.Add(core.BreakpointDesktop, sel+" .sky-product-option legend", []string{
-		"padding: 0",
-		"margin-right: 4px",
-		"font-size: 13px",
-		"color: var(--sky-c-muted, rgba(0,0,0,0.6))",
-	})
-	// radio 视觉隐藏但**保留可聚焦**（display:none 会把整组从键盘序列里移除）。
-	b.Add(core.BreakpointDesktop, sel+" .sky-product-option-radio", []string{
-		"position: absolute",
-		"width: 1px",
-		"height: 1px",
-		"margin: -1px",
-		"padding: 0",
-		"border: 0",
-		"clip-path: inset(50%)",
-		"overflow: hidden",
-		"white-space: nowrap",
-	})
-	b.Add(core.BreakpointDesktop, sel+" .sky-product-option-value", []string{
-		"display: inline-flex",
-		"align-items: center",
-		"justify-content: center",
-		"width: auto",
-		"max-width: 100%",
-		"min-height: 36px",
-		"padding: 6px 14px",
-		"border: 1px solid var(--sky-c-border, rgba(0,0,0,0.15))",
-		"border-radius: 8px",
-		"font-size: 13px",
-		"line-height: 1.4",
-		"cursor: pointer",
-		"user-select: none",
-		"word-break: break-word",
-	})
-	// 选中态（不依赖 :hover，触屏同样可见）。
-	b.Add(core.BreakpointDesktop, sel+" .sky-product-option-radio:checked + .sky-product-option-value", []string{
-		"border-color: var(--sky-c-primary, #2563eb)",
-		"color: var(--sky-c-primary, #2563eb)",
-		"background: rgba(37,99,235,0.08)",
-	})
-	// 键盘聚焦可见：焦点环画在对应标签上。
-	b.Add(core.BreakpointDesktop, sel+" .sky-product-option-radio:focus-visible + .sky-product-option-value", []string{
-		"outline: 2px solid var(--sky-c-primary, #2563eb)",
-		"outline-offset: 2px",
-	})
-	// 鼠标/触摸板悬停：AddHover 自动包 @media (hover: hover)，触屏上不输出。
-	b.AddHover(sel+" .sky-product-option-value", []string{
-		"border-color: var(--sky-c-primary, #2563eb)",
-	})
-	// 按压反馈：AddActive 不带媒体查询，触屏按压同样生效（触屏唯一可靠的反馈）。
-	b.AddActive(sel+" .sky-product-option-value", []string{
-		"transform: translateY(1px)",
-	})
-	b.Add(core.BreakpointDesktop, sel+" .sky-product-variants", []string{
-		"display: flex",
-		"flex-direction: column",
-		"gap: 6px",
-		"min-width: 0",
-	})
-	b.Add(core.BreakpointDesktop, sel+" .sky-product-variant", []string{
-		"display: flex",
-		"flex-wrap: wrap",
-		"align-items: baseline",
-		"gap: 4px 10px",
-		"font-size: 13px",
-		"min-width: 0",
-	})
-	b.Add(core.BreakpointDesktop, sel+" .sky-product-variant-options", []string{
-		"color: var(--sky-c-muted, rgba(0,0,0,0.6))",
-		"min-width: 0",
-		"word-break: break-word",
-	})
-	b.Add(core.BreakpointDesktop, sel+" .sky-product-variant-price", []string{
-		"font-weight: 600",
-	})
-	// 窄视口（手机）：按压目标抬到 44px 高，标签内边距放宽 —— 触屏可点性优先。
-	b.Add(core.BreakpointMobile, sel+" .sky-product-option-value", []string{
-		"min-height: 44px",
-		"padding: 8px 16px",
-	})
+	if err := core.ApplyComponentCSS(b, sel, productCSS); err != nil {
+		panic(fmt.Sprintf("product 组件样式解析失败: %v", err))
+	}
 }
 
 // init 注册商品详情组件。

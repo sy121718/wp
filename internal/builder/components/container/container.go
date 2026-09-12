@@ -6,6 +6,7 @@
 package container
 
 import (
+	_ "embed" // container.css 经 //go:embed 打进二进制
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -344,159 +345,147 @@ func (Container) Validate(node *core.Node, ids map[string]bool) (err error) {
 	return nil
 }
 
-// compileCSS 编译容器样式规则到三端 bucket。
+// containerCSS 组件样式源：与组件同目录，改样式不必再进 Go 字符串数组。
+//
+//go:embed container.css
+var containerCSS string
+
+// cssInteractionPoint 样式源的分段标记：两段样式源之间插入 core.CompileInteraction
+// （按 Props 动效词汇表产出多条规则的 Go 计算，样式源表达不了）。交互规则在主规则之后、
+// 定位系统之前落桶，顺序即产物字节，所以在这里切开而不是整段后置。
+const cssInteractionPoint = "/* @interaction-point */"
+
+// compileCSS 编译容器样式到三端 bucket。
+//
+// Go 侧只保留业务判定与兜底值计算（哪些分支生效、缺省值取什么），属性组合与规则顺序
+// 全部在 container.css 里；解析失败属于构建期缺陷，直接 panic（静默跳过 = 样式悄悄少了）。
 func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	sel := "." + core.NodeClass(id)
+	head, tail, ok := strings.Cut(containerCSS, cssInteractionPoint)
+	if !ok {
+		panic("container.css 缺少分段标记 " + cssInteractionPoint)
+	}
+	if err := core.ApplyComponentCSSTmplLists(b, sel, head, cssVarsHead(p), cssLists(p)); err != nil {
+		panic(fmt.Sprintf("container 组件样式解析失败: %v", err))
+	}
+	// 交互状态与动画：与全部 Atom 组件共用同一动效管线（docs/06 §6 同源：
+	// 弹簧缓动、滚动触发、循环词汇、触屏治理 hover 一次性获得）。
+	core.CompileInteraction(sel, p.Interaction, b)
+	if err := core.ApplyComponentCSSTmpl(b, sel, tail, cssVarsTail(p)); err != nil {
+		panic(fmt.Sprintf("container 组件样式解析失败: %v", err))
+	}
+}
 
-	var desktop, tablet, mobile []string
+// cssVarsHead 样式源前半段（背景轮播 + 主规则 + 三端媒体查询）的变量表。
+// 空值即「该属性没设」，声明由样式源自行省略 —— 迁移前 Go 里的逐个 if 由它吸收。
+func cssVarsHead(p *Props) map[string]string {
+	vars := map[string]string{
+		// 布局引擎（两分支互斥，其余值不产出 display）。
+		"flexEngine":      core.BoolVar(p.Layout.Engine == EngineFlex),
+		"gridEngine":      core.BoolVar(p.Layout.Engine == EngineGrid),
+		"flexDirection":   "",
+		"flexJustify":     "",
+		"flexAlign":       "",
+		"flexWrap":        "",
+		"flexGap":         "",
+		"gridColsDesktop": "",
+		"gridColsTablet":  "",
+		"gridColsMobile":  "",
+		"gridColumnGap":   "",
+		"gridRowGap":      "",
+		// 盒模型（三端独立）。
+		"padDesktop":    p.Box.Padding.Desktop,
+		"padTablet":     p.Box.Padding.Tablet,
+		"padMobile":     p.Box.Padding.Mobile,
+		"marginDesktop": p.Box.Margin.Desktop,
+		"marginTablet":  p.Box.Margin.Tablet,
+		"marginMobile":  p.Box.Margin.Mobile,
+		"minHeight":     p.Box.MinHeight,
+		"maxHeight":     p.Box.MaxHeight,
+		"overflow":      p.Box.Overflow,
+		// 视觉装饰。
+		"bgColor":          p.Visual.BgColor,
+		"hasGradient":      "",
+		"bgGradient":       p.Visual.BgGradient,
+		"gradientAnimated": "",
+		"bgFlow":           "",
+		"hasImage":         "",
+		"bgImage":          p.Visual.BgImage,
+		"bgPosition":       "",
+		"bgAttachment":     "",
+		"bgRepeat":         "",
+		"bgSize":           "",
+		"hasPattern":       "",
+		"patternDecls":     "",
+		"hasSlides":        "",
+		"slideCount":       "",
+		"slideTotal":       "",
+		// 轮播关键帧的百分比：没有轮播时为空。它们只出现在 @each 块内的帧体里，
+		// 而空列表的 @each 也会被试解析一遍（标记变量已消费），所以必须无条件提供。
+		"fadeHold":         "",
+		"fadeEnd":          "",
+		"hasBorder":        "",
+		"borderDecl":       "",
+		"hasCorners":       "",
+		"radiusCorners":    "",
+		"hasRadius":        "",
+		"radius":           p.Visual.Radius,
+		"shadowCustom":     "",
+		"shadowCustomDecl": "",
+		"shadowLevel":      "",
+		"shadowLevelDecl":  "",
+	}
+	// Flex 参数（为 nil 时只剩 display: flex）。
+	if f := p.Layout.Flex; f != nil {
+		vars["flexDirection"] = f.Direction
+		vars["flexJustify"] = justifyMap[f.Justify]
+		vars["flexAlign"] = alignMap[f.Align]
+		if f.Wrap {
+			vars["flexWrap"] = "wrap"
+		}
+		vars["flexGap"] = f.Gap
+	}
+	// Grid 参数（列数 0 = 该端不降级，声明整条省略）。
+	if g := p.Layout.Grid; g != nil {
+		vars["gridColsDesktop"] = repeatCount(g.Columns.Desktop)
+		vars["gridColsTablet"] = repeatCount(g.Columns.Tablet)
+		vars["gridColsMobile"] = repeatCount(g.Columns.Mobile)
+		vars["gridColumnGap"] = g.ColumnGap
+		vars["gridRowGap"] = g.RowGap
+	}
 
-	// --- 布局与排版 ---
-	switch p.Layout.Engine {
-	case EngineFlex:
-		desktop = append(desktop, "display: flex")
-		if f := p.Layout.Flex; f != nil {
-			if f.Direction != "" {
-				desktop = append(desktop, core.CSSDecl("flex-direction", f.Direction))
-			}
-			if f.Justify != "" {
-				desktop = append(desktop, core.CSSDecl("justify-content", justifyMap[f.Justify]))
-			}
-			if f.Align != "" {
-				desktop = append(desktop, core.CSSDecl("align-items", alignMap[f.Align]))
-			}
-			if f.Wrap {
-				desktop = append(desktop, "flex-wrap: wrap")
-			}
-			if f.Gap != "" {
-				desktop = append(desktop, core.CSSDecl("gap", f.Gap))
-			}
-		}
-	case EngineGrid:
-		desktop = append(desktop, "display: grid")
-		if g := p.Layout.Grid; g != nil {
-			if g.Columns.Desktop > 0 {
-				desktop = append(desktop, fmt.Sprintf("grid-template-columns: repeat(%d, 1fr)", g.Columns.Desktop))
-			}
-			if g.Columns.Tablet > 0 {
-				tablet = append(tablet, fmt.Sprintf("grid-template-columns: repeat(%d, 1fr)", g.Columns.Tablet))
-			}
-			if g.Columns.Mobile > 0 {
-				mobile = append(mobile, fmt.Sprintf("grid-template-columns: repeat(%d, 1fr)", g.Columns.Mobile))
-			}
-			if g.ColumnGap != "" {
-				desktop = append(desktop, core.CSSDecl("column-gap", g.ColumnGap))
-			}
-			if g.RowGap != "" {
-				desktop = append(desktop, core.CSSDecl("row-gap", g.RowGap))
-			}
-		}
+	// 背景三分支互斥：渐变 > 背景图 > 图案（三者同写 background-image）。
+	hasGradient := p.Visual.BgGradient != ""
+	hasImage := !hasGradient && p.Visual.BgImage != ""
+	hasPattern := !hasGradient && p.Visual.BgImage == "" && p.Visual.Pattern != ""
+	vars["hasGradient"] = core.BoolVar(hasGradient)
+	vars["gradientAnimated"] = core.BoolVar(p.Visual.BgGradientAnimated)
+	if hasGradient && p.Visual.BgGradientAnimated {
+		// 渐变流动：声明组来自效果基本库（一份实现）。
+		vars["bgFlow"] = strings.Join(core.BackgroundFlowDecls(), "; ")
+	}
+	vars["hasImage"] = core.BoolVar(hasImage)
+	vars["bgPosition"] = bgPositionValue(p)
+	vars["bgAttachment"] = bgKeywordValue(p.Visual.BgAttachment)
+	vars["bgRepeat"] = bgKeywordValue(p.Visual.BgRepeat)
+	vars["bgSize"] = bgSizeValue(p)
+	vars["hasPattern"] = core.BoolVar(hasPattern)
+	if hasPattern {
+		vars["patternDecls"] = strings.Join(core.BackgroundPatternDecls(p.Visual.Pattern, p.Visual.PatternColor), "; ")
 	}
 
-	// --- 盒模型（三端独立） ---
-	if v := p.Box.Padding.Desktop; v != "" {
-		desktop = append(desktop, core.CSSDecl("padding", v))
-	}
-	if v := p.Box.Padding.Tablet; v != "" {
-		tablet = append(tablet, core.CSSDecl("padding", v))
-	}
-	if v := p.Box.Padding.Mobile; v != "" {
-		mobile = append(mobile, core.CSSDecl("padding", v))
-	}
-	if v := p.Box.Margin.Desktop; v != "" {
-		desktop = append(desktop, core.CSSDecl("margin", v))
-	}
-	if v := p.Box.Margin.Tablet; v != "" {
-		tablet = append(tablet, core.CSSDecl("margin", v))
-	}
-	if v := p.Box.Margin.Mobile; v != "" {
-		mobile = append(mobile, core.CSSDecl("margin", v))
-	}
-	if v := p.Box.MinHeight; v != "" {
-		desktop = append(desktop, core.CSSDecl("min-height", v))
-	}
-	if v := p.Box.MaxHeight; v != "" {
-		desktop = append(desktop, core.CSSDecl("max-height", v))
-	}
-	if v := p.Box.Overflow; v != "" {
-		desktop = append(desktop, core.CSSDecl("overflow", v))
-	}
-
-	// --- 视觉装饰 ---
-	if v := p.Visual.BgColor; v != "" {
-		desktop = append(desktop, core.CSSDecl("background-color", v))
-	}
-	// 渐变优先于背景图。
-	if v := p.Visual.BgGradient; v != "" {
-		desktop = append(desktop, core.CSSDecl("background-image", v))
-		// 渐变流动（效果基本库 core.BackgroundFlowDecls；未开启零输出）。
-		if p.Visual.BgGradientAnimated {
-			desktop = append(desktop, core.BackgroundFlowDecls()...)
-			b.NeedKeyframes("sky-bg-flow")
-		}
-	} else if v := p.Visual.BgImage; v != "" {
-		desktop = append(desktop, "background-image: url("+v+")")
-		// 背景显示控制（对齐 Elementor：定位/附着/重复/尺寸），仅背景图存在时输出。
-		if v := p.Visual.BgPosition; v != "" && v != "default" {
-			if v == "custom" && p.Visual.BgPositionXY != "" {
-				desktop = append(desktop, core.CSSDecl("background-position", p.Visual.BgPositionXY))
-			} else if v != "custom" {
-				desktop = append(desktop, core.CSSDecl("background-position", v))
-			}
-		}
-		if v := p.Visual.BgAttachment; v != "" && v != "default" {
-			desktop = append(desktop, core.CSSDecl("background-attachment", v))
-		}
-		if v := p.Visual.BgRepeat; v != "" && v != "default" {
-			desktop = append(desktop, core.CSSDecl("background-repeat", v))
-		}
-		if v := p.Visual.BgSize; v != "" && v != "default" {
-			if v == "custom" && p.Visual.BgSizeValue != "" {
-				desktop = append(desktop, core.CSSDecl("background-size", p.Visual.BgSizeValue))
-			} else if v != "custom" {
-				desktop = append(desktop, core.CSSDecl("background-size", v))
-			}
-		}
-	} else if v := p.Visual.Pattern; v != "" {
-		// 图案背景（纯 CSS 平铺，20 种；零图片资产；与渐变/背景图互斥，校验层拦截）。
-		desktop = append(desktop, core.BackgroundPatternDecls(v, p.Visual.PatternColor)...)
-	}
-	// 背景轮播（多图交叉淡入，纯 CSS；填写后优先于单张背景图）。
-	if slides := p.Visual.BgSlides; len(slides) > 0 {
-		interval := 6
-		if v, err := strconv.Atoi(strings.TrimSuffix(strings.TrimSpace(p.Visual.BgSlideInterval), "s")); err == nil && v > 0 && v <= 60 {
-			interval = v
-		}
-		n := len(slides)
+	// 背景轮播：张数决定关键帧名与总时长，逐张延迟走列表变量。
+	if n := len(p.Visual.BgSlides); n > 0 {
+		interval := slideInterval(p.Visual.BgSlideInterval)
 		seg := 100 / n
-		total := fmt.Sprintf("%ds", n*interval)
-		kf := "@keyframes sky-bg-fade-" + strconv.Itoa(n) + " {\n" +
-			"  0% { opacity: 0 }\n" +
-			"  4% { opacity: 1 }\n" +
-			"  " + strconv.Itoa(seg-4) + "% { opacity: 1 }\n" +
-			"  " + strconv.Itoa(seg) + "% { opacity: 0 }\n" +
-			"  100% { opacity: 0 }\n" +
-			"}"
-		b.AddKeyframes("sky-bg-fade-"+strconv.Itoa(n), kf)
-		desktop = append(desktop, "position: relative", "overflow: hidden")
-		b.Add(core.BreakpointDesktop, sel+" .sky-bg-slides", []string{
-			"position: absolute", "inset: 0", "overflow: hidden", "pointer-events: none", "z-index: 0",
-		})
-		// 内容层抬到背景之上（背景层是唯一直接子元素例外）。
-		b.Add(core.BreakpointDesktop, sel+" > :not(.sky-bg-slides)", []string{"position: relative", "z-index: 1"})
-		b.Add(core.BreakpointDesktop, sel+" .sky-bg-slide", []string{
-			"position: absolute", "inset: 0",
-			"background-size: cover", "background-position: center", "background-repeat: no-repeat",
-			"opacity: 0",
-			fmt.Sprintf("animation: sky-bg-fade-%d %s ease-in-out infinite", n, total),
-		})
-		for i := range slides {
-			b.Add(core.BreakpointDesktop, fmt.Sprintf("%s .sky-bg-slide:nth-child(%d)", sel, i+1), []string{
-				fmt.Sprintf("animation-delay: %ds", i*interval),
-			})
-		}
+		vars["hasSlides"] = core.BoolVar(true)
+		vars["slideCount"] = strconv.Itoa(n)
+		vars["slideTotal"] = fmt.Sprintf("%ds", n*interval)
+		vars["fadeHold"] = strconv.Itoa(seg - 4)
+		vars["fadeEnd"] = strconv.Itoa(seg)
 	}
 
-	// 边框：任一要素填写即生效，缺失项用缺省值兜底（1px solid currentColor）。
+	// 边框：任一要素填写即生效，缺失项兜底（1px solid currentColor）。
 	if p.Visual.BorderWidth != "" || p.Visual.BorderStyle != "" || p.Visual.BorderColor != "" {
 		bw := p.Visual.BorderWidth
 		if bw == "" {
@@ -510,10 +499,15 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		if bc == "" {
 			bc = "currentColor"
 		}
-		desktop = append(desktop, core.CSSDecl("border", bw, bs, bc))
+		vars["hasBorder"] = core.BoolVar(true)
+		vars["borderDecl"] = strings.Join([]string{bw, bs, bc}, " ")
 	}
-	// 圆角：四角字段优先，其次统一值。
-	if p.Visual.RadiusTL != "" || p.Visual.RadiusTR != "" || p.Visual.RadiusBR != "" || p.Visual.RadiusBL != "" {
+
+	// 圆角：四角字段优先，其次统一值（缺角用统一值兜底，都为空则 0）。
+	hasCorners := p.Visual.RadiusTL != "" || p.Visual.RadiusTR != "" ||
+		p.Visual.RadiusBR != "" || p.Visual.RadiusBL != ""
+	vars["hasCorners"] = core.BoolVar(hasCorners)
+	if hasCorners {
 		fallback := p.Visual.Radius
 		if fallback == "" {
 			fallback = "0"
@@ -524,11 +518,14 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 			}
 			return v
 		}
-		desktop = append(desktop, core.CSSDecl("border-radius",
-			corner(p.Visual.RadiusTL), corner(p.Visual.RadiusTR), corner(p.Visual.RadiusBR), corner(p.Visual.RadiusBL)))
-	} else if v := p.Visual.Radius; v != "" {
-		desktop = append(desktop, core.CSSDecl("border-radius", v))
+		vars["radiusCorners"] = strings.Join([]string{
+			corner(p.Visual.RadiusTL), corner(p.Visual.RadiusTR),
+			corner(p.Visual.RadiusBR), corner(p.Visual.RadiusBL),
+		}, " ")
 	}
+	vars["hasRadius"] = core.BoolVar(!hasCorners && p.Visual.Radius != "")
+
+	// 阴影：自定义四参 与 预设级别 互斥。
 	if p.Visual.Shadow == "custom" {
 		x, y, blur, spread := p.Visual.ShadowX, p.Visual.ShadowY, p.Visual.ShadowBlur, p.Visual.ShadowSpread
 		if x == "" {
@@ -547,122 +544,122 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		if color == "" {
 			color = "rgba(0,0,0,.12)"
 		}
-		desktop = append(desktop, core.CSSDecl("box-shadow", x, y, blur, spread, color))
-	} else if v, ok := shadowLevels[p.Visual.Shadow]; p.Visual.Shadow != "" && ok {
-		desktop = append(desktop, core.CSSDecl("box-shadow", v))
+		vars["shadowCustom"] = core.BoolVar(true)
+		vars["shadowCustomDecl"] = strings.Join([]string{x, y, blur, spread, color}, " ")
 	}
-
-	// --- 交互状态与动画（统一走 core.CompileInteraction：入场/循环/悬浮/吸顶） ---
-	// 与全部 Atom 组件共用同一动效管线（docs/06 §6 同源）：弹簧缓动、滚动触发、
-	// 循环词汇、触屏治理 hover 一次性获得，不再维护容器私有实现。
-	b.Add(core.BreakpointDesktop, sel, desktop)
-	b.Add(core.BreakpointTablet, sel, tablet)
-	b.Add(core.BreakpointMobile, sel, mobile)
-
-	core.CompileInteraction(sel, p.Interaction, b)
-
-	// --- 定位系统（03-A） ---
-	switch p.Position.Type {
-	case "relative":
-		b.Add(core.BreakpointDesktop, sel, []string{"position: relative"})
-	case "absolute":
-		abs := []string{"position: absolute"}
-		if p.Position.Top != "" {
-			abs = append(abs, core.CSSDecl("top", p.Position.Top))
-		}
-		if p.Position.Right != "" {
-			abs = append(abs, core.CSSDecl("right", p.Position.Right))
-		}
-		if p.Position.Bottom != "" {
-			abs = append(abs, core.CSSDecl("bottom", p.Position.Bottom))
-		}
-		if p.Position.Left != "" {
-			abs = append(abs, core.CSSDecl("left", p.Position.Left))
-		}
-		b.Add(core.BreakpointDesktop, sel, abs)
-	case "sticky":
-		b.Add(core.BreakpointDesktop, sel, []string{"position: sticky", "top: 0"})
-	case "drawer":
-		// 抽屉：fixed + 移出视口，:target 滑入（触发协议 `href="#sky-drawer-<id>"`，零 JS）。
-		var drawer []string
-		drawer = append(drawer, "position: fixed", "transition: transform 0.3s ease", "z-index: 900")
-		switch p.Position.DrawerSide {
-		case "left":
-			drawer = append(drawer, "left: 0", "top: 0", "bottom: 0", "width: 300px", "transform: translateX(-100%)")
-		case "right":
-			drawer = append(drawer, "right: 0", "top: 0", "bottom: 0", "width: 300px", "transform: translateX(100%)")
-		case "bottom":
-			drawer = append(drawer, "left: 0", "right: 0", "bottom: 0", "transform: translateY(100%)")
-		}
-		b.Add(core.BreakpointDesktop, sel, drawer)
-		b.Add(core.BreakpointDesktop, sel+":target", []string{"transform: none"})
+	if v, ok := shadowLevels[p.Visual.Shadow]; p.Visual.Shadow != "" && ok {
+		vars["shadowLevel"] = core.BoolVar(true)
+		vars["shadowLevelDecl"] = v
 	}
+	return vars
+}
 
-	// --- 样式扩展（03-A） ---
+// cssLists 样式源前半段的列表变量（@each）：背景轮播的逐张延迟。
+// 列表为空也要提供 —— 「@each 引用了这个列表」本身要参与反向校验。
+func cssLists(p *Props) map[string][]map[string]string {
+	items := make([]map[string]string, 0, len(p.Visual.BgSlides))
+	if n := len(p.Visual.BgSlides); n > 0 {
+		interval := slideInterval(p.Visual.BgSlideInterval)
+		for i := range p.Visual.BgSlides {
+			items = append(items, map[string]string{
+				"index": strconv.Itoa(i + 1),
+				"delay": strconv.Itoa(i * interval),
+			})
+		}
+	}
+	return map[string][]map[string]string{"slides": items}
+}
+
+// cssVarsTail 样式源后半段（定位系统与样式扩展）的变量表。
+func cssVarsTail(p *Props) map[string]string {
+	order := ""
 	if p.StyleEx.Order != 0 {
-		b.Add(core.BreakpointDesktop, sel, []string{fmt.Sprintf("order: %d", p.StyleEx.Order)})
+		order = strconv.Itoa(p.StyleEx.Order)
 	}
-	if p.StyleEx.BackgroundHover != "" {
-		b.Add(core.BreakpointDesktop, sel, []string{"transition: background 0.2s ease"})
-		b.AddHover(sel+":hover", []string{core.CSSDecl("background", p.StyleEx.BackgroundHover)})
-	}
-	// 底部安全区垫高（H5 viewport 适配：iPhone 底部横条；效果基本库 core.SafeAreaDecls）。
-	// 容器查询上下文（组件级响应式）：内部组件的 @container 规则以本容器宽度为准。
-	if p.StyleEx.ContainerQuery {
-		// 同时命名容器：内部组件的尺寸查询与样式查询（style()）都以本容器为最近锚点。
-		b.Add(core.BreakpointDesktop, sel, []string{"container-type: inline-size", "container-name: sky-theme"})
-	}
-	// 内部卡片布局语义开关（结构变体）：声明自定义属性，内部卡片用样式查询响应。
-	if p.StyleEx.CardLayout == "horizontal" {
-		b.Add(core.BreakpointDesktop, sel, []string{"--sky-card-layout: horizontal"})
-	}
-	// 视口外跳过渲染（H5 长页面滚动性能；占位尺寸防滚动条跳动）。
-	// 与滚动吸顶互斥：content-visibility 创建 containment，吸顶元素在视口外被
-	// 跳过渲染时定位不可靠（校验层拦截同时开启）。
-	if p.StyleEx.ContentVisibility {
-		b.Add(core.BreakpointDesktop, sel, []string{
-			"content-visibility: auto",
-			"contain-intrinsic-size: auto 480px",
-		})
-	}
+	safeArea := ""
 	if p.StyleEx.SafeAreaBottom {
-		b.Add(core.BreakpointDesktop, sel, core.SafeAreaDecls("bottom"))
+		safeArea = strings.Join(core.SafeAreaDecls("bottom"), "; ")
 	}
-	if p.StyleEx.Overlay != "" {
-		if p.Position.Type == "static" {
-			b.Add(core.BreakpointDesktop, sel, []string{"position: relative"})
-		}
-		b.Add(core.BreakpointDesktop, sel+"::before", []string{
-			"content: \"\"",
-			"position: absolute",
-			"inset: 0",
-			"pointer-events: none",
-			core.CSSDecl("background", p.StyleEx.Overlay),
-			"z-index: 0",
-		})
-		b.Add(core.BreakpointDesktop, sel+" > *", []string{"position: relative", "z-index: 1"})
+	// 形状分隔线位置：默认 bottom；它同时进选择器与属性名，变量不能为空。
+	shapePos := "bottom"
+	if p.StyleEx.ShapeDividerPosition == "top" {
+		shapePos = "top"
 	}
-	// 形状分隔线样式。
-	if p.StyleEx.ShapeDivider != "" {
-		shapePos := p.StyleEx.ShapeDividerPosition
-		if shapePos == "" {
-			shapePos = "bottom"
-		}
-		b.Add(core.BreakpointDesktop, sel+" .sky-shape", []string{
-			"position: absolute",
-			"left: 0", "right: 0",
-			"height: 48px",
-			"line-height: 0",
-			"z-index: 2",
-			"pointer-events: none",
-		})
-		b.Add(core.BreakpointDesktop, sel+" .sky-shape svg", []string{"width: 100%", "height: 100%", "display: block"})
-		b.Add(core.BreakpointDesktop, sel+" .sky-shape-"+shapePos, []string{shapePos + ": 0"})
-		b.Add(core.BreakpointDesktop, sel+" .sky-shape svg", []string{core.CSSDecl("color", shapeColor(p))})
-		if p.Position.Type == "static" {
-			b.Add(core.BreakpointDesktop, sel, []string{"position: relative"})
-		}
+	return map[string]string{
+		"posRelative":          core.BoolVar(p.Position.Type == "relative"),
+		"posAbsolute":          core.BoolVar(p.Position.Type == "absolute"),
+		"posSticky":            core.BoolVar(p.Position.Type == "sticky"),
+		"posDrawer":            core.BoolVar(p.Position.Type == "drawer"),
+		"posStatic":            core.BoolVar(p.Position.Type == "static"),
+		"posTop":               p.Position.Top,
+		"posRight":             p.Position.Right,
+		"posBottom":            p.Position.Bottom,
+		"posLeft":              p.Position.Left,
+		"drawerLeft":           core.BoolVar(p.Position.DrawerSide == "left"),
+		"drawerRight":          core.BoolVar(p.Position.DrawerSide == "right"),
+		"drawerBottom":         core.BoolVar(p.Position.DrawerSide == "bottom"),
+		"order":                order,
+		"hasBgHover":           core.BoolVar(p.StyleEx.BackgroundHover != ""),
+		"bgHover":              p.StyleEx.BackgroundHover,
+		"containerQuery":       core.BoolVar(p.StyleEx.ContainerQuery),
+		"cardLayoutHorizontal": core.BoolVar(p.StyleEx.CardLayout == "horizontal"),
+		"contentVisibility":    core.BoolVar(p.StyleEx.ContentVisibility),
+		"safeAreaDecls":        safeArea,
+		"hasOverlay":           core.BoolVar(p.StyleEx.Overlay != ""),
+		"overlay":              p.StyleEx.Overlay,
+		"hasShape":             core.BoolVar(p.StyleEx.ShapeDivider != ""),
+		"shapePos":             shapePos,
+		"shapeColor":           shapeColor(p),
 	}
+}
+
+// repeatCount 栅格列数的变量形态：未设置（<=0）给空串，声明整条省略。
+func repeatCount(n int) string {
+	if n <= 0 {
+		return ""
+	}
+	return strconv.Itoa(n)
+}
+
+// slideInterval 轮播间隔（秒）：空 / 非法 / 越界（1~60）一律回退 6。
+func slideInterval(raw string) int {
+	v, err := strconv.Atoi(strings.TrimSuffix(strings.TrimSpace(raw), "s"))
+	if err != nil || v <= 0 || v > 60 {
+		return 6
+	}
+	return v
+}
+
+// bgPositionValue 背景定位值：default / 空不产出；custom 取自定义值（空则不产出）。
+func bgPositionValue(p *Props) string {
+	switch v := p.Visual.BgPosition; {
+	case v == "" || v == "default":
+		return ""
+	case v == "custom":
+		return p.Visual.BgPositionXY
+	default:
+		return v
+	}
+}
+
+// bgKeywordValue 背景附着 / 重复的关键词值：default 与空都不产出。
+func bgKeywordValue(v string) string {
+	if v == "default" {
+		return ""
+	}
+	return v
+}
+
+// bgSizeValue 背景尺寸值：default / 空不产出；custom 取自定义值（空则不产出）。
+func bgSizeValue(p *Props) string {
+	v := p.Visual.BgSize
+	if v == "" || v == "default" {
+		return ""
+	}
+	if v == "custom" {
+		return p.Visual.BgSizeValue
+	}
+	return v
 }
 
 // shapeColor 形状分隔线颜色（跟随容器背景反色缺省：当前色）。

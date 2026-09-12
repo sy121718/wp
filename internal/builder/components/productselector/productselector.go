@@ -12,6 +12,7 @@
 package productselector
 
 import (
+	_ "embed" // productselector.css 经 //go:embed 打进二进制
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -137,104 +138,22 @@ func CompileCSS(id string, p *Props, b *core.CSSBuckets) {
 	compileCSS(id, p, b)
 }
 
+// productselectorCSS 组件样式源。与组件同目录：改样式不必再进 Go 字符串数组
+// （有补全 / lint / 格式化），而作用域替换、桶划分、确定性输出仍由构建期负责。
+//
+//go:embed productselector.css
+var productselectorCSS string
+
 // compileCSS 选择器样式：原生 radio + label 的胶囊值组 + 组合清单行。
 //
-// 多端硬规则：值组与组合行都折行，宽度一律 min(100%, …)；
-// radio 视觉隐藏但仍可聚焦（键盘 Tab / 方向键可用，读屏读得到 label）——
-// 用 position + clip-path 而不是 display:none，后者会把键盘路径一起删掉。
+// 选项全部是静态规则（无条件分支、无 Props 驱动取值），所以 Go 侧只交出作用域选择器，
+// 声明与顺序整体放在样式源里。
 func compileCSS(id string, _ *Props, b *core.CSSBuckets) {
 	sel := "." + core.NodeClass(id)
-	b.Add(core.BreakpointDesktop, sel, []string{
-		"display: flex",
-		"flex-direction: column",
-		"gap: 14px",
-		"min-width: 0",
-	})
-	b.Add(core.BreakpointDesktop, sel+" .sky-selector-group", []string{
-		"border: 0",
-		"margin: 0",
-		"padding: 0",
-		"min-width: 0",
-	})
-	b.Add(core.BreakpointDesktop, sel+" .sky-selector-legend", []string{
-		"font-size: .9rem",
-		"font-weight: 600",
-		"margin-bottom: 6px",
-		"padding: 0",
-	})
-	b.Add(core.BreakpointDesktop, sel+" .sky-selector-values", []string{
-		"display: flex",
-		"flex-wrap: wrap",
-		"gap: 8px",
-	})
-	b.Add(core.BreakpointDesktop, sel+" .sky-selector-radio", []string{
-		"position: absolute",
-		"width: 1px",
-		"height: 1px",
-		"margin: -1px",
-		"padding: 0",
-		"overflow: hidden",
-		"clip-path: inset(50%)",
-		"white-space: nowrap",
-	})
-	b.Add(core.BreakpointDesktop, sel+" .sky-selector-value", []string{
-		"display: inline-flex",
-		"align-items: center",
-		"gap: 6px",
-		"padding: 6px 14px",
-		"border: 1px solid var(--sky-c-border, rgba(0,0,0,0.15))",
-		"border-radius: 999px",
-		"cursor: pointer",
-		"min-width: 0",
-		"max-width: 100%",
-	})
-	// 选中态与焦点环都靠兄弟选择器（radio 在 label 之前），零 JS。
-	b.Add(core.BreakpointDesktop, sel+" .sky-selector-radio:checked + .sky-selector-value", []string{
-		"border-color: var(--sky-c-primary, #2563eb)",
-		"color: var(--sky-c-primary, #2563eb)",
-		"background: var(--sky-c-primary-weak, rgba(37,99,235,0.08))",
-	})
-	b.Add(core.BreakpointDesktop, sel+" .sky-selector-radio:focus-visible + .sky-selector-value", []string{
-		"outline: 2px solid var(--sky-c-primary, #2563eb)",
-		"outline-offset: 2px",
-	})
-	b.Add(core.BreakpointDesktop, sel+" .sky-selector-variants", []string{
-		"display: flex",
-		"flex-direction: column",
-		"gap: 8px",
-	})
-	b.Add(core.BreakpointDesktop, sel+" .sky-selector-variant", []string{
-		"display: flex",
-		"flex-wrap: wrap",
-		"align-items: baseline",
-		"gap: 10px",
-		"padding: 8px 10px",
-		"border: 1px solid var(--sky-c-border, rgba(0,0,0,0.08))",
-		"border-radius: 8px",
-		"min-width: 0",
-	})
-	b.Add(core.BreakpointDesktop, sel+" .sky-selector-variant-price", []string{
-		"font-weight: 700",
-		"color: var(--sky-c-primary, #2563eb)",
-	})
-	b.Add(core.BreakpointDesktop, sel+" .sky-selector-variant-compare", []string{
-		"text-decoration: line-through",
-		"color: var(--sky-c-muted, rgba(0,0,0,0.45))",
-		"font-size: .9em",
-	})
-	b.Add(core.BreakpointDesktop, sel+" .sky-selector-stock", []string{
-		"font-size: .85rem",
-		"color: var(--sky-c-muted, rgba(0,0,0,0.6))",
-		"flex: 1 0 100%",
-	})
-	b.Add(core.BreakpointDesktop, sel+" .sky-selector-variant .is-out", []string{
-		"color: var(--sky-c-danger, #dc2626)",
-		"font-weight: 600",
-	})
-	b.Add(core.BreakpointDesktop, sel+" .sky-selector-empty", []string{
-		"margin: 0",
-		"color: var(--sky-c-muted, rgba(0,0,0,0.55))",
-	})
+	if err := core.ApplyComponentCSS(b, sel, productselectorCSS); err != nil {
+		// 样式源解析失败属于构建期缺陷，必须在测试/构建时暴露；静默跳过的后果是产物悄悄少了样式。
+		panic(fmt.Sprintf("productselector 组件样式解析失败: %v", err))
+	}
 }
 
 func init() {

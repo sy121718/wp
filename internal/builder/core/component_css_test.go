@@ -308,6 +308,29 @@ func TestComponentCSSEachNested(t *testing.T) {
 	}
 }
 
+// TestComponentCSSEachEmptyListStillConsumesVars 空列表也要把循环体内解析一遍。
+//
+// 与「未命中的 @if 分支也要解析」同一条理由：Go 侧总是提供全部业务变量，
+// 若空列表干脆不解析，循环体内的变量不会被标记为「已消费」，
+// 反向校验就会报「提供了却没用到」—— 一个只在数据为空时才出现的构建失败。
+// container 的背景轮播是第一个踩到的：幻灯片为空时 fadeHold / fadeEnd 就成了误报源头。
+func TestComponentCSSEachEmptyListStillConsumesVars(t *testing.T) {
+	const src = "@each s in slides\n&[data-i=\"{{s.nth}}\"] {\n  opacity: {{hold}};\n}\n@endfor\n& {\n  display: block;\n}\n"
+	var b CSSBuckets
+	lists := map[string][]map[string]string{"slides": {}}
+	vars := map[string]string{"hold": ".5"}
+	if err := ApplyComponentCSSTmplLists(&b, ".x", src, vars, lists); err != nil {
+		t.Fatalf("空列表不该让变量校验误报: %v", err)
+	}
+	if strings.Contains(b.String(), "data-i") {
+		t.Errorf("空列表不该产出循环体内的规则:\n%s", b.String())
+	}
+	// 循环之后的规则必须还在。
+	if !strings.Contains(b.String(), ".x {\n  display: block;") {
+		t.Errorf("循环后的规则丢失:\n%s", b.String())
+	}
+}
+
 // TestComponentCSSEachErrors @each 的用法错误必须在构建期报错。
 func TestComponentCSSEachErrors(t *testing.T) {
 	cases := []struct {
