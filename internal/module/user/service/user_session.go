@@ -282,6 +282,19 @@ func (s *Service) ResolveSession(ctx context.Context, token string) (sess *UserA
 	return &got, nil
 }
 
+// ResolveVisitorID 把会话令牌解成 user id（实现 usercontract.VisitorIdentityResolver）。
+//
+// 不存在、过期、Redis 读不到一律返回 (0, false)：调用方要的是「认出来了没有」，
+// 而不是「为什么没认出来」—— 后者会把「Redis 挂了」与「没登录」变成两条不同的路径，
+// 而它们对访客的行为应当完全一样（去登录）。
+func (s *Service) ResolveVisitorID(ctx context.Context, token string) (userID uint64, ok bool) {
+	sess, err := s.ResolveSession(ctx, token)
+	if err != nil || sess == nil || sess.UserID == 0 {
+		return 0, false
+	}
+	return sess.UserID, true
+}
+
 // TouchSession 刷新设备最后活跃时间。
 //
 // 失败只记日志：用户已经登录成功这件事，不该因为「活跃时间没写上」而改变。

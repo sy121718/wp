@@ -38,9 +38,13 @@ type CreateOrderReq struct {
 	PaymentMethodTitle string         `json:"paymentMethodTitle"`
 	// ShippingTotal / DiscountTotal 由调用方给出（运费与优惠是业务策略，不属于商品域）；
 	// Subtotal / Total 由服务端按商品价格算出，不接受传入。
-	ShippingTotal int64  `json:"shippingTotal"`
-	DiscountTotal int64  `json:"discountTotal"`
-	Remark        string `json:"remark"`
+	ShippingTotal int64 `json:"shippingTotal"`
+	DiscountTotal int64 `json:"discountTotal"`
+	// CouponCode 优惠码。给了它就以**服务端试算**的折扣为准并忽略 DiscountTotal ——
+	// 客户端能定价的接口等于把收银台交给客人自己看。
+	// 核销与建单在同一个事务里完成，不会出现「单建了、券没核销」或反之。
+	CouponCode string `json:"couponCode"`
+	Remark     string `json:"remark"`
 	// RequestID 幂等键：同一键重复提交只落一单。
 	RequestID string `json:"requestId"`
 	// CreatedVia 下单入口（checkout / admin / api），空则按 checkout。
@@ -125,4 +129,96 @@ type RefundOrderReq struct {
 	OperatorType string `json:"-"`
 	OperatorID   uint64 `json:"-"`
 	OperatorName string `json:"-"`
+}
+
+// GetOrderByNoReq 按商户单号取订单。
+//
+// 支付通道的异步回调只带商户单号（它不认识我们的自增 id），而 PayOrder 只接受内部 id ——
+// 这条入口就是两者之间的那层翻译。
+type GetOrderByNoReq struct {
+	ProjectID string `form:"projectId" json:"projectId"`
+	OrderNo   string `form:"orderNo" json:"orderNo"`
+}
+
+// VisitorOrderListReq 访客查自己的订单。
+//
+// UserID 由片段层从访客会话写入；归属过滤落在 SQL 条件里（user_id = ?），
+// 而不是「查出来再比对」—— 后者一旦有人调换了查询顺序，越权就只剩一行代码的距离。
+type VisitorOrderListReq struct {
+	ProjectID string
+	Status    string
+	Offset    int
+	Limit     int
+	UserID    uint64
+}
+
+// VisitorOrderDetailReq 访客查自己的订单详情（同样按 user_id 收口）。
+type VisitorOrderDetailReq struct {
+	OrderID   uint64
+	ProjectID string
+	UserID    uint64
+}
+
+// CouponSaveReq 优惠码新建 / 修改。
+//
+// 时间窗用**字符串**而不是 *time.Time：同一份结构既要服务后台原生表单（form）
+// 也要服务 JSON 接口，而表单里的日期天生是文本。解析只发生在 service，
+// 非法格式在那里统一报错，而不是让两种绑定器各解出一套结果。
+type CouponSaveReq struct {
+	ID        uint64 `form:"id" json:"id"`
+	ProjectID string `form:"projectId" json:"projectId"`
+	// Code 券码：建后不可改 —— 改码等于换一张券，历史核销记录会指向一个查不到的码。
+	Code string `form:"code" json:"code"`
+	Name string `form:"name" json:"name"`
+	// DiscountType percent（折扣力度，1..100）/ fixed（固定金额，单位分）。
+	DiscountType  string `form:"discountType" json:"discountType"`
+	DiscountValue int64  `form:"discountValue" json:"discountValue"`
+	// MinSubtotal 门槛（分）：小计低于它不能用。
+	MinSubtotal int64 `form:"minSubtotal" json:"minSubtotal"`
+	// MaxUses 总可用次数，0 = 不限。
+	MaxUses int `form:"maxUses" json:"maxUses"`
+	// PerUserLimit 每人可用次数，0 = 不限（匿名下单统计不到人，按不限口径）。
+	PerUserLimit int `form:"perUserLimit" json:"perUserLimit"`
+	// StartsAt / EndsAt 生效时间窗（文本，空 = 不限）。接受 2006-01-02 与
+	// 2006-01-02 15:04(:05) 两种写法（后台表单用前者，接口调用方常用后者）。
+	StartsAt string `form:"startsAt" json:"startsAt"`
+	EndsAt   string `form:"endsAt" json:"endsAt"`
+	// Status 1 启用 / 0 停用。停用不删：历史核销记录还要读它。
+	Status int    `form:"status" json:"status"`
+	Remark string `form:"remark" json:"remark"`
+
+	// 操作人由 inbound 覆盖写入，客户端不可伪造。
+	OperatorID   uint64 `form:"-" json:"-"`
+	OperatorName string `form:"-" json:"-"`
+}
+
+// CouponListReq 优惠码列表查询（各维度可组合）。
+type CouponListReq struct {
+	ProjectID string `form:"projectId" json:"projectId"`
+	Keyword   string `form:"keyword" json:"keyword"`
+	// Status "" 全部 / enabled / disabled / expired / exhausted（后两者按时间与次数算出来）。
+	Status string `form:"status" json:"status"`
+	Offset int    `form:"offset" json:"offset"`
+	Limit  int    `form:"limit" json:"limit"`
+}
+
+// CouponValidateReq 优惠码试算（纯读，不占用次数）。
+type CouponValidateReq struct {
+	ProjectID string `form:"projectId" json:"projectId"`
+	Code      string `form:"code" json:"code"`
+	// Subtotal 订单小计（分）：折扣按它算，折后价不由客户端决定。
+	Subtotal int64 `form:"subtotal" json:"subtotal"`
+	// UserID 0 = 匿名访客（按人限次对匿名不生效）。
+	// 由调用方从**会话 / 片段身份**写入：客户端传了也不生效，否则限次可以被绕过。
+	UserID uint64 `form:"-" json:"-"`
+}
+
+// CouponRedemptionListReq 核销记录查询。
+type CouponRedemptionListReq struct {
+	ProjectID string `form:"projectId" json:"projectId"`
+	CouponID  uint64 `form:"couponId" json:"couponId"`
+	Code      string `form:"code" json:"code"`
+	OrderID   uint64 `form:"orderId" json:"orderId"`
+	Offset    int    `form:"offset" json:"offset"`
+	Limit     int    `form:"limit" json:"limit"`
 }

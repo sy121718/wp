@@ -74,3 +74,22 @@ type CheckoutResp struct {
 	// Cookie 结算成功后应写回的（空）购物车 cookie 值。
 	Cookie string
 }
+
+// PaymentCallbackResp 回调处理结果。
+//
+// 三个布尔值各有各的意思，不能合并：
+//   - Paid 这次回调声明的付款结果；
+//   - Already 订单此前就已经是付款状态（幂等命中，本次没改任何列）；
+//   - Applied 本次调用**真的改了订单状态**。
+//
+// 通道重发通知是常态，所以要能回答「这次我做了什么」而不是只说「收到了」。
+type PaymentCallbackResp struct {
+	OrderID uint64
+	OrderNo string
+	Status  string
+	Paid    bool
+	Already bool
+	Applied bool
+	// Message 面向运维的一句话结论（落日志 / 回给通道都够用）。
+	Message string
+}

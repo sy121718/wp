@@ -135,8 +135,28 @@ func (s *Service) CreateOrder(ctx context.Context, req *orderdto.CreateOrderReq)
 		})
 	}
 
-	// 金额：小计 - 优惠 + 运费 + 税。优惠不得低于 0、也不得超过小计（负数总额没有意义）。
+	// 优惠码：给了码就以**服务端试算**的折扣为准，**忽略调用方传入的 DiscountTotal** ——
+	// 客户端能定价的接口等于把收银台交给客人自己看。
+	//
+	// 这里只做「券自身」的判定（状态 / 时间窗 / 门槛 / 总数），
+	// 每人限次要等 userID 解析出来之后再查（见下方），因为访客下单时账号是"这一单才建的"。
+	var appliedCoupon *ordermodel.CouponEntity
 	discount := req.DiscountTotal
+	if code := normalizeCouponCode(req.CouponCode); code != "" {
+		ce, cerr := s.coupons.GetByCode(ctx, projectID, code)
+		if cerr != nil {
+			return nil, cerr
+		}
+		if ce == nil {
+			return nil, errors.New(orderenums.ErrCouponNotFound)
+		}
+		if reason := couponRuleCheck(ce, subtotal, time.Now()); reason != "" {
+			return nil, errors.New(reason)
+		}
+		discount = couponDiscount(ce, subtotal)
+		appliedCoupon = ce
+	}
+	// 金额：小计 - 优惠 + 运费 + 税。优惠不得低于 0、也不得超过小计（负数总额没有意义）。
 	if discount < 0 {
 		discount = 0
 	}
@@ -170,6 +190,18 @@ func (s *Service) CreateOrder(ctx context.Context, req *orderdto.CreateOrderReq)
 			// 邮箱已有账号时我们只关联、绝不改密码（那条安全边界在 user 模块里守着），
 			// 此时告诉客户「密码已发到你邮箱」会让他在邮箱里白找一场。
 			accountMailed = gres.Created && gres.PasswordMailed
+		}
+	}
+
+	// 优惠码的每人限次：必须在 userID 解析之后判（访客下单时账号是这一单才建的，
+	// 之前拿到的 userID 恒为 nil，检查会整段跳过）。
+	if appliedCoupon != nil && appliedCoupon.PerUserLimit > 0 && userID != nil {
+		used, cerr := s.coupons.CountRedemptions(ctx, appliedCoupon.ID, userID)
+		if cerr != nil {
+			return nil, cerr
+		}
+		if used >= int64(appliedCoupon.PerUserLimit) {
+			return nil, errors.New(orderenums.ErrCouponUserLimit)
 		}
 	}
 
@@ -233,7 +265,7 @@ func (s *Service) CreateOrder(ctx context.Context, req *orderdto.CreateOrderReq)
 		if cerr := s.items.CreateBatchTx(ctx, tx, items); cerr != nil {
 			return cerr
 		}
-		return s.logs.CreateTx(ctx, tx, &ordermodel.OrderStatusLogEntity{
+		if lerr := s.logs.CreateTx(ctx, tx, &ordermodel.OrderStatusLogEntity{
 			OrderID:      head.ID,
 			FromStatus:   "",
 			ToStatus:     ordermodel.OrderStatusPending,
@@ -241,7 +273,12 @@ func (s *Service) CreateOrder(ctx context.Context, req *orderdto.CreateOrderReq)
 			OperatorID:   head.CreateBy,
 			Remark:       "建单",
 			CreateTime:   now,
-		})
+		}); lerr != nil {
+			return lerr
+		}
+		// 券的核销与订单同生共死：核销失败（用尽）则订单一起回滚，
+		// 不会出现「券核销了但单没下成」或「单下了但券没用掉」两种半截状态。
+		return s.redeemCouponTx(ctx, tx, appliedCoupon, head.ID, head.OrderNo, discount, userID, now)
 	})
 	if err != nil {
 		return nil, err

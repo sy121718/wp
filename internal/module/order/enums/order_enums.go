@@ -79,5 +79,30 @@ var UserFacingMessages = []string{
 	ErrAlreadyCancelled, ErrAlreadyRefunded, ErrCancelReasonRequired,
 	ErrPaymentMethodRequired, ErrPaymentChannelFailed,
 	ErrVariantNotFound, ErrStockInsufficient, ErrStockUnavailable,
+	// 优惠码：结算链路会把它们直接显示给访客。
+	ErrCouponNotFound, ErrCouponCodeRequired, ErrCouponDisabled,
+	ErrCouponNotStarted, ErrCouponExpired, ErrCouponExhausted,
+	ErrCouponUserLimit, ErrCouponMinSubtotal,
 	ErrInternal,
 }
+
+// 优惠码。
+const (
+	MsgCouponCreated = "优惠码已创建"
+	MsgCouponUpdated = "优惠码已更新"
+	MsgCouponDeleted = "优惠码已删除"
+
+	ErrCouponNotFound      = "优惠码不存在"
+	ErrCouponCodeRequired  = "请填写优惠码"
+	ErrCouponCodeTaken     = "这个优惠码已经存在"
+	ErrCouponTypeInvalid   = "优惠类型只支持按比例折扣或固定金额"
+	ErrCouponValueInvalid  = "优惠值不合法"
+	ErrCouponWindowInvalid = "生效时间不合法"
+	ErrCouponDisabled      = "优惠码已停用"
+	ErrCouponNotStarted    = "优惠码尚未开始"
+	ErrCouponExpired       = "优惠码已过期"
+	ErrCouponExhausted     = "优惠码已被用完"
+	ErrCouponUserLimit     = "你已使用过该优惠码"
+	ErrCouponMinSubtotal   = "订单金额未达到该优惠码的使用门槛"
+	ErrCouponInUse         = "该优惠码已有核销记录，不能删除"
+)

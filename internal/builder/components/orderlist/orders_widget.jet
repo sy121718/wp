@@ -1,0 +1,11 @@
+{* orders_widget.jet — 访客订单列表外壳（core.orderList，BIZ-1）。
+
+   产物里只有外壳，订单由片段 /_fragments/ordersList 现拉：
+   订单是「谁买过什么」的事实，烘进静态产物等于把某一个人的订单发给所有人。
+
+   容器的默认内容（hx-get 生效之前）是**未登录引导**：
+   无 JS 时它就是访客看到的东西，所以不能是空的 —— 空容器在无 JS 下等于这个组件不存在。
+   登录链接来自系统页面槽位 login，订单页链接来自槽位 orders；槽位没配就不输出该链接。 *}
+<div class="{{ .Classes }}"{{ if .CustomID }} id="{{ .CustomID }}"{{ end }} data-orders-widget>
+{{ if .V.Notice }}<p class="sky-orders-notice">{{ .V.Notice }}</p>{{ else }}{{ title := .V.Title }}{{ showTitle := .V.ShowTitle }}{{ mountURL := .V.FragmentURL }}{{ loginURL := .V.LoginURL }}{{ hasLogin := .V.HasLoginURL }}{{ pageURL := .V.OrderPageURL }}{{ hasPage := .V.HasOrderPage }}{{ if showTitle }}<h2 class="sky-orders-title">{{ title }}</h2>{{ end }}<div class="sky-orders-mount" hx-get="{{ mountURL }}" hx-trigger="load" hx-swap="innerHTML" aria-live="polite"><p class="sky-orders-notice">登录后可以查看你的订单。</p>{{ if hasLogin }}<a class="sky-orders-action" href="{{ loginURL }}">去登录</a>{{ end }}{{ if hasPage }}<a class="sky-orders-action" href="{{ pageURL }}">订单页</a>{{ end }}</div>{{ end }}
+</div>

@@ -49,6 +49,17 @@ type CartViewReq struct {
 	Cookie    string
 }
 
+// PaymentCallbackReq 支付通道的异步回调。
+//
+// ProjectID 从**回调 URL 的查询参数**取（通道只回传它拿到的那些东西，
+// 工程 id 是我们自己拼进 notify_url 的）；Headers 是原始请求头（键已归一化为小写），
+// RawBody 是**未经解析的原始报文** —— 验签要拿它算，不能拿解析结果算。
+type PaymentCallbackReq struct {
+	ProjectID string
+	Headers   map[string]string
+	RawBody   []byte
+}
+
 // CartCheckoutReq 结算：把 cookie 里的购物车变成一张订单并完成支付。
 type CartCheckoutReq struct {
 	ProjectID string

@@ -348,6 +348,15 @@ var pageSiteSlotPermsSQL string
 //go:embed 140_page_site_slot_menu.sql
 var pageSiteSlotMenuSQL string
 
+//go:embed 141_order_coupons.sql
+var orderCouponsSQL string
+
+//go:embed 142_order_coupon_permissions.sql
+var orderCouponPermsSQL string
+
+//go:embed 143_order_menu.sql
+var orderMenuSQL string
+
 func init() {
 	register(Migration{
 		Version:   "001-init-schema",
@@ -1523,5 +1532,34 @@ func init() {
 		TableName:    "mail_templates",
 		ConditionSQL: "SELECT COUNT(*) FROM mail_templates WHERE template_key = 'guest_account'",
 		SQL:          guestAccountTemplateSQL,
+	})
+
+	// 141：优惠码与核销记录（BIZ-1）。两张表都建好才算已执行 ——
+	// 只查 coupons 的话，中途失败会留下「券表在、核销表不在」却被永久跳过的状态（与 134/135 同因）。
+	register(Migration{
+		Version:   "141-order-coupons",
+		TableName: "coupons",
+		CheckSQL: "SELECT CASE WHEN COUNT(*) = 2 THEN 1 ELSE 0 END FROM information_schema.tables " +
+			"WHERE table_schema = current_schema() AND (CAST(? AS text) IS NOT NULL) " +
+			"AND table_name IN ('coupons', 'coupon_redemptions')",
+		SQL: orderCouponsSQL,
+	})
+
+	// 142：优惠码权限点 + 超管策略（7 个权限点全部存在才算已 seed）。
+	registerSeed(Seed{
+		Version:   "142-order-coupon-permissions",
+		TableName: "sys_permission",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) = 7 THEN 1 ELSE 0 END FROM sys_permission WHERE permission_code IN (" +
+			"'order:coupon_list', 'order:coupon_get', 'order:coupon_create', 'order:coupon_update', " +
+			"'order:coupon_delete', 'order:coupon_validate', 'order:coupon_redemption')",
+		SQL: orderCouponPermsSQL,
+	})
+
+	// 143：订单与优惠码的后台菜单入口（两条都是幂等 seed）。
+	registerSeed(Seed{
+		Version:      "143-order-menu",
+		TableName:    "sys_menus",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) = 2 THEN 1 ELSE 0 END FROM sys_menus WHERE type = 2 AND deleted_time IS NULL AND title IN ('订单管理', '优惠码')",
+		SQL:          orderMenuSQL,
 	})
 }

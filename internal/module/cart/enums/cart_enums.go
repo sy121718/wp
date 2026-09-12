@@ -41,6 +41,14 @@ const (
 	// ErrPaymentFailed 支付通道没扣成：**订单已经建好了**，留在待付款，
 	// 访客可以稍后重试或换成人工处理，绝不能因为扣款失败就把订单丢掉。
 	ErrPaymentFailed = "支付未成功，订单已创建，请稍后在订单中继续支付"
+	// ErrCallbackSignature 回调验签失败。对外只说「签名不合法」，
+	// 不区分「没有签名 / 签名错误 / 用了旧密钥」—— 那是给攻击者的信息。
+	ErrCallbackSignature = "回调签名校验失败"
+	// ErrCallbackOrderMissing 回调里的商户单号在本站找不到。
+	ErrCallbackOrderMissing = "回调对应的订单不存在"
+	// ErrCallbackAmountMismatch 回调金额与订单总额不一致：
+	// 入账会让账目对不平，所以宁可停在这一步让人来看。
+	ErrCallbackAmountMismatch = "回调金额与订单金额不一致"
 )
 
 // ErrInternal 未归类的系统错误对外统一文案。

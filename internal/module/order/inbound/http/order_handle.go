@@ -180,3 +180,125 @@ func (h *Handle) ListLogs(c *gin.Context) {
 	}
 	response.Success(c, res.Logs)
 }
+
+// ---------------------------------------------------------------------------
+// 优惠码（BIZ-1）：后台管理 + 试算。
+//
+// 试算是 GET（纯读，不占次数）；核销**没有独立入口** —— 它发生在建单事务里。
+// 单独暴露一个「核销」接口，必然会被用出「券核销了但单没下成」这种状态。
+// ---------------------------------------------------------------------------
+
+// ListCoupons 优惠码列表。
+func (h *Handle) ListCoupons(c *gin.Context) {
+	req := &orderdto.CouponListReq{}
+	if err := c.ShouldBindQuery(req); err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, orderenums.ErrInvalidParam)
+		return
+	}
+	res, err := h.svc.ListCoupons(c.Request.Context(), req)
+	if err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	response.Success(c, res)
+}
+
+// GetCoupon 优惠码详情。
+func (h *Handle) GetCoupon(c *gin.Context) {
+	id, err := strconv.ParseUint(strings.TrimSpace(c.Query("couponId")), 10, 64)
+	if err != nil || id == 0 {
+		response.ErrorWithMessage(c, http.StatusBadRequest, orderenums.ErrInvalidParam)
+		return
+	}
+	res, err := h.svc.GetCoupon(c.Request.Context(), id)
+	if err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	response.Success(c, res)
+}
+
+// CreateCoupon 新建优惠码。
+func (h *Handle) CreateCoupon(c *gin.Context) {
+	req := &orderdto.CouponSaveReq{}
+	if err := c.ShouldBind(req); err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, orderenums.ErrInvalidParam)
+		return
+	}
+	applyCouponOperator(c, req)
+	res, err := h.svc.CreateCoupon(c.Request.Context(), req)
+	if err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	response.SuccessWithMessage(c, orderenums.MsgCouponCreated, res)
+}
+
+// UpdateCoupon 修改优惠码（券码不可改：改码等于换一张券）。
+func (h *Handle) UpdateCoupon(c *gin.Context) {
+	req := &orderdto.CouponSaveReq{}
+	if err := c.ShouldBind(req); err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, orderenums.ErrInvalidParam)
+		return
+	}
+	applyCouponOperator(c, req)
+	res, err := h.svc.UpdateCoupon(c.Request.Context(), req)
+	if err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	response.SuccessWithMessage(c, orderenums.MsgCouponUpdated, res)
+}
+
+// DeleteCoupon 删除优惠码（有核销记录的一律拒绝，请改用停用）。
+func (h *Handle) DeleteCoupon(c *gin.Context) {
+	id, err := strconv.ParseUint(strings.TrimSpace(c.PostForm("couponId")), 10, 64)
+	if err != nil || id == 0 {
+		response.ErrorWithMessage(c, http.StatusBadRequest, orderenums.ErrInvalidParam)
+		return
+	}
+	if err := h.svc.DeleteCoupon(c.Request.Context(), id); err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	response.SuccessWithMessage(c, orderenums.MsgCouponDeleted, nil)
+}
+
+// ValidateCoupon 优惠码试算（纯读，不占次数）。
+func (h *Handle) ValidateCoupon(c *gin.Context) {
+	req := &orderdto.CouponValidateReq{}
+	if err := c.ShouldBindQuery(req); err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, orderenums.ErrInvalidParam)
+		return
+	}
+	res, err := h.svc.ValidateCoupon(c.Request.Context(), req)
+	if err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	response.Success(c, res)
+}
+
+// ListCouponRedemptions 核销记录列表。
+func (h *Handle) ListCouponRedemptions(c *gin.Context) {
+	req := &orderdto.CouponRedemptionListReq{}
+	if err := c.ShouldBindQuery(req); err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, orderenums.ErrInvalidParam)
+		return
+	}
+	res, err := h.svc.ListCouponRedemptions(c.Request.Context(), req)
+	if err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	response.Success(c, res)
+}
+
+// applyCouponOperator 把当前后台操作人写进请求。
+//
+// 客户端传什么都不看：操作人是审计字段，能被伪造的审计等于没有审计。
+func applyCouponOperator(c *gin.Context, req *orderdto.CouponSaveReq) {
+	id, name := operatorFromContext(c)
+	req.OperatorID = id
+	req.OperatorName = name
+}

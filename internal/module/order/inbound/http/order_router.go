@@ -30,6 +30,9 @@ func SetupOrderRoutes(
 		ordermodel.NewOrderModel(db),
 		ordermodel.NewOrderItemModel(db),
 		ordermodel.NewOrderStatusLogModel(db),
+		// 优惠码与订单同模块：核销要和建单落在同一个事务里，
+		// 跨模块事务在这里是不允许的，所以它必须是本模块的 model。
+		ordermodel.NewCouponModel(db),
 		product,
 		stock,
 		guest,
@@ -47,6 +50,16 @@ func SetupOrderRoutes(
 	g.POST("/status", h.ChangeStatus)
 	g.POST("/cancel", h.CancelOrder)
 	g.POST("/refund", h.RefundOrder)
+
+	// 优惠码（BIZ-1）：管理 + 试算。核销不在这里 —— 它在建单事务内完成。
+	cg := rg.Group("/order/coupon")
+	cg.GET("/list", h.ListCoupons)
+	cg.GET("/get", h.GetCoupon)
+	cg.GET("/validate", h.ValidateCoupon)
+	cg.GET("/redemption/list", h.ListCouponRedemptions)
+	cg.POST("/create", h.CreateCoupon)
+	cg.POST("/update", h.UpdateCoupon)
+	cg.POST("/delete", h.DeleteCoupon)
 
 	return svc
 }

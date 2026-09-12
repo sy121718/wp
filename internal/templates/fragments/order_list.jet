@@ -1,0 +1,62 @@
+{* order_list.jet — 访客订单列表片段（BIZ-1 访问面）。
+
+   为什么只能走片段：站点是已编译的静态产物，同一份 HTML 发给所有访客，
+   而「我下过哪些单」每个人都不同 —— 静态页面给不了这个。
+
+   三种状态各有各的话要说：
+     · Notice 非空 —— 业务结论（订单不存在 / 参数不合法）或装配缺失，只显示这句话；
+     · NeedLogin —— 未登录。**不报 401**：HTMX 默认不替换 401 响应的目标节点，
+       访客会看到一个毫无变化的页面，完全不知道自己需要登录；
+     · 正常 —— 页签 + 列表 + 分页。
+
+   筛选与分页各带两个地址：页面地址（无 JS 时整页跳，指向系统页面槽位 orders 的线上路径）
+   与片段地址（HTMX 局部替换）。只给其中一个，就会出现「点一下是筛选后的、刷新一下又变回全部」。
+
+   样式：与购物车片段同口径 —— 基础样式由 core.orderList 组件注入（这份 HTML 是运行时渲染的，
+   页面作者在编辑器里看不到它，也难针对它调样式）。站点主题仍可覆盖 sky-orders-* 类名。 *}
+{{items := .Items}}
+{{tabs := .Tabs}}
+<div class="sky-orders" data-fragment="{{ .FragmentType }}" data-project="{{ .ProjectID }}">
+{{if .Notice}}
+<p class="sky-orders-notice">{{ .Notice }}</p>
+{{else if .NeedLogin}}
+<p class="sky-orders-notice">登录后可以查看你的订单。</p>
+{{if .LoginURL}}<a class="sky-orders-action" href="{{ .LoginURL }}">去登录</a>{{end}}
+{{else}}
+{{if tabs}}
+<nav class="sky-orders-tabs" aria-label="订单状态筛选">
+{{range _, t := tabs}}
+{{if t.FragmentURL}}<a class="sky-orders-tab{{if t.Active}} is-active{{end}}" href="{{ t.URL }}" hx-get="{{ t.FragmentURL }}" hx-target="closest .sky-orders" hx-swap="outerHTML">{{ t.Label }}</a>
+{{else}}<span class="sky-orders-tab{{if t.Active}} is-active{{end}}">{{ t.Label }}</span>
+{{end}}
+{{end}}
+</nav>
+{{end}}
+{{if len(items) == 0}}
+<p class="sky-orders-empty">这里还没有订单。</p>
+{{if .ShopURL}}<a class="sky-orders-action" href="{{ .ShopURL }}">去看看</a>{{end}}
+{{else}}
+<ul class="sky-orders-list">
+{{range _, o := items}}
+<li class="sky-orders-item is-{{ o.Status }}">
+<div class="sky-orders-head">
+<span class="sky-orders-no">{{ o.OrderNo }}</span>
+<span class="sky-orders-status">{{ o.StatusLabel }}</span>
+<span class="sky-orders-total">{{ o.TotalLabel }}</span>
+<span class="sky-orders-time">{{ o.TimeLabel }}</span>
+</div>
+<button type="button" class="sky-orders-toggle" hx-get="{{ o.ItemURL }}" hx-target="next .sky-orders-detail" hx-swap="innerHTML">查看明细</button>
+<div class="sky-orders-detail"></div>
+</li>
+{{end}}
+</ul>
+{{end}}
+{{if .HasPrev || .HasNext}}
+<nav class="sky-orders-pager" aria-label="订单分页">
+{{if .HasPrev}}<a class="sky-orders-page" href="{{ .PrevURL }}" hx-get="{{ .PrevFragmentURL }}" hx-target="closest .sky-orders" hx-swap="outerHTML">上一页</a>{{end}}
+<span class="sky-orders-count">共 {{ .Total }} 单</span>
+{{if .HasNext}}<a class="sky-orders-page" href="{{ .NextURL }}" hx-get="{{ .NextFragmentURL }}" hx-target="closest .sky-orders" hx-swap="outerHTML">下一页</a>{{end}}
+</nav>
+{{end}}
+{{end}}
+</div>

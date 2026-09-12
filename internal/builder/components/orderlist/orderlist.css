@@ -1,0 +1,27 @@
+/* orderlist.css — core.orderList 外壳样式。
+   片段内容（.sky-orders*）的基础样式在 orderfrag.go —— 那份 HTML 是运行时才渲染的，
+   页面作者在编辑器里看不到它，所以一并由组件注入。
+   外壳只做布局：间距、最小宽度、标题层级。颜色走主题 token（带兜底）。 */
+& {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-width: 0;
+}
+& .sky-orders-title {
+    margin: 0;
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: {{color}};
+}
+& .sky-orders-mount {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-width: 0;
+}
+@media (max-width: 767px) {
+    & .sky-orders-title {
+        font-size: 1.05rem;
+    }
+}

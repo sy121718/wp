@@ -1,0 +1,434 @@
+package runtimefragment
+
+// orders.go — 访客订单片段（BIZ-1 访问面）。
+//
+// 为什么这件事只能走片段：站点是**已编译的静态产物**，同一份 HTML 发给所有访客，
+// 而「我下过哪些单」每个人都不同 —— 静态页面给不了这个。
+//
+// 与购物车的关键差别：购物车是「还没决定买什么」，可以放在客户端 cookie 里；
+// 订单是**已发生的事实**，只能从服务端按身份取，而身份只能来自访客会话。
+// 未登录时片段**不报 401**，而是渲染一句引导：「登录后就看到了」——
+// 401 会让 HTMX 静默不替换目标节点，访客看到的是一个毫无变化的页面。
+//
+// 归属校验不在这里：片段把 userID 交给 order 模块的 VisitorOrderReader，
+// 由它在 SQL 条件里收口。本层唯一的责任是「把身份如实传下去」。
+
+import (
+	"context"
+	"fmt"
+	"strconv"
+	"strings"
+
+	ordercontract "go_wp/internal/module/order/contract"
+	orderdto "go_wp/internal/module/order/dto"
+	orderenums "go_wp/internal/module/order/enums"
+	pageenums "go_wp/internal/module/page/enums"
+	"go_wp/internal/templates"
+)
+
+// visitorOrders 访客订单查询能力（装配期注入；nil = 未接入）。
+var visitorOrders ordercontract.VisitorOrderReader
+
+// SetVisitorOrderReader 注入访客订单查询能力（装配期调用；传 nil 表示未接入）。
+func SetVisitorOrderReader(r ordercontract.VisitorOrderReader) { visitorOrders = r }
+
+func init() {
+	Register(Spec{Type: "ordersList", Method: "GET", Auth: AuthAnonymous, Render: renderOrdersList})
+	Register(Spec{Type: "orderDetail", Method: "GET", Auth: AuthAnonymous, Render: renderOrderDetail})
+}
+
+const (
+	// msgOrdersUnavailable 装配缺失时的提示（与 cartenums 的文案区分：这不是业务结果）。
+	msgOrdersUnavailable = "订单查询尚未接入"
+	// defaultOrdersPageSize 一屏订单数；maxOrdersPageSize 上限（分页参数来自 URL）。
+	defaultOrdersPageSize = 10
+	maxOrdersPageSize     = 50
+)
+
+// orderStatusLabels 订单状态的展示文案。
+//
+// 刻意在本层再写一份，而不是去 import order 模块的 model：跨模块只能依赖
+// contract 与不可变 dto（AGENTS.md 命名约束），而状态常量在 model 里。
+// 代价是新增状态要改两处 —— 收益是这条依赖方向不会被打穿。
+var orderStatusLabels = map[string]string{
+	"pending":   "待付款",
+	"paid":      "已付款",
+	"shipped":   "已发货",
+	"completed": "已完成",
+	"cancelled": "已取消",
+	"refunded":  "已退款",
+}
+
+// orderStatusFilter 状态筛选页签的取值（顺序即展示顺序）。
+var orderStatusFilter = []string{"", "pending", "paid", "shipped", "completed", "cancelled", "refunded"}
+
+// orderListItem 列表里的一行（模板直接读这些字段，不做任何算术）。
+type orderListItem struct {
+	ID          uint64
+	OrderNo     string
+	Status      string
+	StatusLabel string
+	TotalLabel  string
+	TimeLabel   string
+	ItemURL     string // 展开详情的片段地址（HTMX）
+}
+
+// orderStatusTab 状态筛选页签。
+type orderStatusTab struct {
+	Value  string
+	Label  string
+	Active bool
+	// URL 无 JS 时的落点：订单页的线上路径 + 查询参数（真实可点，不是伪链接）。
+	URL string
+	// FragmentURL 有 HTMX 时的落点：同一份条件的**片段**地址（局部替换，不整页跳）。
+	// 两个地址必须带同一组条件，否则「点一下」与「刷新一次」会看到不同的列表。
+	FragmentURL string
+}
+
+// ordersFragmentData 订单列表片段数据。
+type ordersFragmentData struct {
+	FragmentType    string
+	ProjectID       string
+	Notice          string // 非空时只渲染这句话（未接入 / 业务错误）
+	NeedLogin       bool
+	LoginURL        string
+	ShopURL         string
+	Items           []orderListItem
+	Status          string
+	Tabs            []orderStatusTab
+	Total           int64
+	HasPrev         bool
+	HasNext         bool
+	PrevURL         string
+	PrevFragmentURL string
+	NextURL         string
+	NextFragmentURL string
+	PageSize        int
+}
+
+// orderDetailFragmentData 订单详情片段数据。
+type orderDetailFragmentData struct {
+	FragmentType  string
+	Notice        string
+	NeedLogin     bool
+	LoginURL      string
+	OrderNo       string
+	Status        string
+	StatusLabel   string
+	TotalLabel    string
+	DiscountLabel string
+	ShippingLabel string
+	TimeLabel     string
+	PayMethod     string
+	PaidAtLabel   string
+	Address       string
+	Remark        string
+	Items         []orderDetailItem
+	Logs          []orderDetailLog
+}
+
+type orderDetailItem struct {
+	ProductName  string
+	VariantLabel string
+	SKU          string
+	UnitPrice    string
+	Quantity     int
+	LineTotal    string
+}
+
+type orderDetailLog struct {
+	FromStatus   string
+	FromLabel    string
+	ToStatus     string
+	ToLabel      string
+	OperatorName string
+	Remark       string
+	TimeLabel    string
+}
+
+// renderOrdersList 访客订单列表。
+func renderOrdersList(ctx context.Context, r *Request) (string, error) {
+	projectID := paramOf(r, "projectId")
+	slots := cartSitePages(r, projectID)
+	data := ordersFragmentData{
+		FragmentType: r.Type,
+		ProjectID:    projectID,
+		LoginURL:     slots[pageenums.SiteSlotLogin],
+		ShopURL:      slots[pageenums.SiteSlotShop],
+		Status:       strings.TrimSpace(paramOf(r, "status")),
+		PageSize:     ordersPageSizeOf(r),
+	}
+	uid, ok := visitorIDOf(r)
+	if !ok {
+		data.NeedLogin = true
+		return templates.RenderFragment("order_list", data)
+	}
+	if visitorOrders == nil {
+		data.Notice = msgOrdersUnavailable
+		return templates.RenderFragment("order_list", data)
+	}
+	offset := ordersOffsetOf(r)
+	res, err := visitorOrders.ListVisitorOrders(ctx, &orderdto.VisitorOrderListReq{
+		ProjectID: projectID,
+		Status:    data.Status,
+		Offset:    offset,
+		Limit:     data.PageSize,
+		UserID:    uid,
+	})
+	if err != nil {
+		data.Notice = orderUserMessage(err)
+		return templates.RenderFragment("order_list", data)
+	}
+	if res != nil {
+		data.Total = res.Total
+		for _, o := range res.List {
+			data.Items = append(data.Items, orderListItem{
+				ID:          o.ID,
+				OrderNo:     o.OrderNo,
+				Status:      o.Status,
+				StatusLabel: orderStatusLabelOf(o.Status),
+				TotalLabel:  yuanLabel(o.Total),
+				TimeLabel:   o.CreateTime.Format("2006-01-02 15:04"),
+				ItemURL:     orderDetailURL(r, projectID, o.ID),
+			})
+		}
+	}
+	base := slots[pageenums.SiteSlotOrders]
+	data.Tabs = orderStatusTabs(r, projectID, base, data.Status)
+	data.HasPrev = offset > 0
+	prev := offset - data.PageSize
+	if prev < 0 {
+		prev = 0
+	}
+	data.PrevURL = orderListPageURL(base, data.Status, prev)
+	data.PrevFragmentURL = orderListFragmentURL(r, projectID, data.Status, prev, data.PageSize)
+	data.HasNext = offset+data.PageSize < int(data.Total)
+	data.NextURL = orderListPageURL(base, data.Status, offset+data.PageSize)
+	data.NextFragmentURL = orderListFragmentURL(r, projectID, data.Status, offset+data.PageSize, data.PageSize)
+	return templates.RenderFragment("order_list", data)
+}
+
+// renderOrderDetail 访客订单详情（订单项 + 状态流转链）。
+func renderOrderDetail(ctx context.Context, r *Request) (string, error) {
+	projectID := paramOf(r, "projectId")
+	slots := cartSitePages(r, projectID)
+	data := orderDetailFragmentData{
+		FragmentType: r.Type,
+		LoginURL:     slots[pageenums.SiteSlotLogin],
+	}
+	uid, ok := visitorIDOf(r)
+	if !ok {
+		data.NeedLogin = true
+		return templates.RenderFragment("order_detail", data)
+	}
+	if visitorOrders == nil {
+		data.Notice = msgOrdersUnavailable
+		return templates.RenderFragment("order_detail", data)
+	}
+	orderID, perr := strconv.ParseUint(strings.TrimSpace(paramOf(r, "orderId")), 10, 64)
+	if perr != nil || orderID == 0 {
+		data.Notice = orderenums.ErrInvalidParam
+		return templates.RenderFragment("order_detail", data)
+	}
+	res, err := visitorOrders.GetVisitorOrder(ctx, &orderdto.VisitorOrderDetailReq{
+		OrderID:   orderID,
+		ProjectID: projectID,
+		UserID:    uid,
+	})
+	if err != nil {
+		data.Notice = orderUserMessage(err)
+		return templates.RenderFragment("order_detail", data)
+	}
+	if res == nil || res.Head == nil {
+		data.Notice = orderenums.ErrOrderNotFound
+		return templates.RenderFragment("order_detail", data)
+	}
+	head := res.Head
+	data.OrderNo = head.OrderNo
+	data.Status = head.Status
+	data.StatusLabel = orderStatusLabelOf(head.Status)
+	data.TotalLabel = yuanLabel(head.Total)
+	data.DiscountLabel = yuanLabel(head.DiscountTotal)
+	data.ShippingLabel = yuanLabel(head.ShippingTotal)
+	data.TimeLabel = head.CreateTime.Format("2006-01-02 15:04")
+	data.PayMethod = head.PaymentMethodTitle
+	if head.PaidAt != nil {
+		data.PaidAtLabel = head.PaidAt.Format("2006-01-02 15:04")
+	}
+	data.Address = orderAddressOf(head)
+	data.Remark = head.Remark
+	for _, it := range res.Items {
+		data.Items = append(data.Items, orderDetailItem{
+			ProductName:  it.ProductName,
+			VariantLabel: it.VariantLabel,
+			SKU:          it.SKU,
+			UnitPrice:    yuanLabel(it.UnitPrice),
+			Quantity:     it.Quantity,
+			LineTotal:    yuanLabel(it.LineTotal),
+		})
+	}
+	for _, lg := range res.Logs {
+		data.Logs = append(data.Logs, orderDetailLog{
+			FromStatus:   lg.FromStatus,
+			FromLabel:    orderStatusLabelOf(lg.FromStatus),
+			ToStatus:     lg.ToStatus,
+			ToLabel:      orderStatusLabelOf(lg.ToStatus),
+			OperatorName: lg.OperatorName,
+			Remark:       lg.Remark,
+			TimeLabel:    lg.CreateTime.Format("2006-01-02 15:04"),
+		})
+	}
+	return templates.RenderFragment("order_detail", data)
+}
+
+// visitorIDOf 取本次请求的访客身份（未登录返回 false）。
+func visitorIDOf(r *Request) (uint64, bool) {
+	if r == nil {
+		return 0, false
+	}
+	id, err := strconv.ParseUint(strings.TrimSpace(r.UserID), 10, 64)
+	if err != nil || id == 0 {
+		return 0, false
+	}
+	return id, true
+}
+
+// ordersPageSizeOf 一屏订单数（参数来自 URL，越界即回落默认值）。
+func ordersPageSizeOf(r *Request) int {
+	n, err := strconv.Atoi(paramOf(r, "limit"))
+	if err != nil || n <= 0 {
+		return defaultOrdersPageSize
+	}
+	if n > maxOrdersPageSize {
+		return maxOrdersPageSize
+	}
+	return n
+}
+
+// ordersOffsetOf 分页偏移（负数按 0 处理）。
+func ordersOffsetOf(r *Request) int {
+	n, err := strconv.Atoi(paramOf(r, "offset"))
+	if err != nil || n < 0 {
+		return 0
+	}
+	return n
+}
+
+// orderStatusLabelOf 状态 → 文案；未知状态原样显示（不吞掉，便于发现新状态没登记）。
+func orderStatusLabelOf(status string) string {
+	if label, ok := orderStatusLabels[status]; ok {
+		return label
+	}
+	return status
+}
+
+// orderStatusTabs 状态筛选页签（含「全部」）。
+//
+// 每个页签给两个地址：页面地址（无 JS 时整页跳）与片段地址（HTMX 局部替换）。
+// 两者带同一组条件 —— 只给其中一个，会出现「点一下看到的是筛选后的、刷新一下又回到全部」。
+func orderStatusTabs(r *Request, projectID, baseURL, current string) []orderStatusTab {
+	tabs := make([]orderStatusTab, 0, len(orderStatusFilter))
+	for _, v := range orderStatusFilter {
+		label := "全部"
+		if v != "" {
+			label = orderStatusLabelOf(v)
+		}
+		tabs = append(tabs, orderStatusTab{
+			Value:       v,
+			Label:       label,
+			Active:      v == current,
+			URL:         orderListPageURL(baseURL, v, 0),
+			FragmentURL: orderListFragmentURL(r, projectID, v, 0, 0),
+		})
+	}
+	return tabs
+}
+
+// orderListFragmentURL 订单列表片段的地址（HTMX 局部刷新用）。
+//
+// pageSize 传 0 表示「不覆盖」：页签切换时不该把当前的每页条数重置成默认值，
+// 而分页按钮则必须带上它，否则翻到第二页会变回默认条数。
+func orderListFragmentURL(r *Request, projectID, status string, offset, pageSize int) string {
+	url := "/_fragments/ordersList?projectId=" + projectID
+	if status != "" {
+		url += "&status=" + status
+	}
+	if offset > 0 {
+		url += "&offset=" + strconv.Itoa(offset)
+	}
+	if pageSize > 0 {
+		url += "&limit=" + strconv.Itoa(pageSize)
+	}
+	if lang := strings.TrimSpace(paramOf(r, "lang")); lang != "" {
+		url += "&lang=" + lang
+	}
+	return url
+}
+
+// orderListPageURL 订单页 + 查询参数。baseURL 为空（站点还没指定订单页）时返回空串，
+// 模板据此不输出链接 —— 不猜路径：猜错的链接比没有链接难查得多。
+func orderListPageURL(baseURL, status string, offset int) string {
+	base := strings.TrimSpace(baseURL)
+	if base == "" {
+		return ""
+	}
+	sep := "?"
+	if strings.Contains(base, "?") {
+		sep = "&"
+	}
+	url := base + sep + "offset=" + strconv.Itoa(offset)
+	if status != "" {
+		url += "&status=" + status
+	}
+	return url
+}
+
+// orderDetailURL 详情片段的地址（HTMX 展开用）。
+func orderDetailURL(r *Request, projectID string, orderID uint64) string {
+	url := "/_fragments/orderDetail?projectId=" + projectID + "&orderId=" + strconv.FormatUint(orderID, 10)
+	if lang := strings.TrimSpace(paramOf(r, "lang")); lang != "" {
+		url += "&lang=" + lang
+	}
+	return url
+}
+
+// orderAddressOf 收货地址一行展示（空字段跳过，不留一串逗号）。
+func orderAddressOf(o *orderdto.OrderResp) string {
+	if o == nil {
+		return ""
+	}
+	parts := make([]string, 0, 6)
+	for _, p := range []string{o.ShipProvince, o.ShipCity, o.ShipDistrict, o.ShipAddress, o.ShipZip} {
+		if s := strings.TrimSpace(p); s != "" {
+			parts = append(parts, s)
+		}
+	}
+	return strings.Join(parts, " ")
+}
+
+// yuanLabel 分 → 元展示串。
+//
+// 用整数除法而不是 float64：金额一旦经过浮点就可能出现 0.30000000000000004
+// 这种展示，而账单上多出来的小数位没有一个客户会接受。
+func yuanLabel(cents int64) string {
+	neg := ""
+	if cents < 0 {
+		neg = "-"
+		cents = -cents
+	}
+	return fmt.Sprintf("%s%d.%02d 元", neg, cents/100, cents%100)
+}
+
+// orderUserMessage 把订单域错误映射成可原样给访客看的中文文案。
+func orderUserMessage(err error) string {
+	if err == nil {
+		return ""
+	}
+	msg := strings.TrimSpace(err.Error())
+	for _, m := range orderenums.UserFacingMessages {
+		if m == msg {
+			return msg
+		}
+	}
+	return orderenums.ErrInternal
+}

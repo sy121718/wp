@@ -12,6 +12,7 @@ import (
 	mailcontract "go_wp/internal/module/mail/contract"
 	masterdatacontract "go_wp/internal/module/masterdata/contract"
 	navigationcontract "go_wp/internal/module/navigation/contract"
+	ordercontract "go_wp/internal/module/order/contract"
 	pagecontract "go_wp/internal/module/page/contract"
 	plugincontract "go_wp/internal/module/plugin/contract"
 	productcontract "go_wp/internal/module/product/contract"
@@ -45,7 +46,8 @@ func SetupDashboardRoutes(router *gin.Engine,
 	templates contenttemplatecontract.ContentTemplateService,
 	inventories inventorycontract.InventoryService,
 	masterdata masterdatacontract.MasterDataService,
-	mail mailcontract.MailService) {
+	mail mailcontract.MailService,
+	orders ordercontract.OrderService) {
 	if router == nil {
 		return
 	}
@@ -247,6 +249,25 @@ func SetupDashboardRoutes(router *gin.Engine,
 	// 后台不提供「手工补一条」的口子。按实体查询（实体清单点一行即锁定该实体）。
 	masterDataPages := NewMasterDataChangePageHandle(masterdata, projects)
 	adminPages.GET("/masterdata/changes", masterDataPages.MasterDataChangesPage)
+
+	// 订单管理页（BIZ-1）：列表 + 状态计数 + 详情（同一页面靠 orderId 展开）+ 流转 / 取消 / 退款。
+	// 页面 GET 走 /admin 组认证（Session+CSRF，无 Casbin）；写动作复用订单 API 权限点做 Casbin 鉴权。
+	// 状态合法性不在这里判断：服务端状态机拒绝哪条边，页面就把哪条边藏起来 ——
+	// 前端最多只能少给一个按钮，给多了也只是被服务端拒掉并原样回显原因。
+	orderPages := NewOrderPageHandle(orders, projects)
+	adminPages.GET("/orders", orderPages.OrdersPage)
+	adminPages.POST("/orders/status", builtin.CasbinMiddlewareForPath("/api/order/status"), orderPages.OrderStatusChange)
+	adminPages.POST("/orders/cancel", builtin.CasbinMiddlewareForPath("/api/order/cancel"), orderPages.OrderCancel)
+	adminPages.POST("/orders/refund", builtin.CasbinMiddlewareForPath("/api/order/refund"), orderPages.OrderRefund)
+
+	// 优惠码管理页（BIZ-1）：列表 + 新建 + 修改（含停用/启用）+ 删除 + 核销记录。
+	// 核销**没有手工入口** —— 它发生在建单事务内，页面只展示结果。
+	// 写动作复用优惠码 API 权限点（迁移 142）。
+	couponPages := NewCouponPageHandle(orders, projects)
+	adminPages.GET("/coupons", couponPages.CouponsPage)
+	adminPages.POST("/coupons/create", builtin.CasbinMiddlewareForPath("/api/order/coupon/create"), couponPages.CouponCreate)
+	adminPages.POST("/coupons/update", builtin.CasbinMiddlewareForPath("/api/order/coupon/update"), couponPages.CouponUpdate)
+	adminPages.POST("/coupons/delete", builtin.CasbinMiddlewareForPath("/api/order/coupon/delete"), couponPages.CouponDelete)
 
 	// 商品域翻译工作台（issue #12）：入口在商品列表行内「多语言」按钮（与页面翻译工作台同构）。
 	// 保存写 sys_translation（engine=manual）并标记待重建，鉴权复用商品更新权限点（同一改动面）。

@@ -8,12 +8,32 @@ import (
 	userdto "go_wp/internal/module/user/dto"
 )
 
+// VisitorContextKey 访客身份在 gin context 里的键。
+//
+// 放在契约包里：写入方是 user 模块的中间件，读取方在 runtimefragment ——
+// 两边各自写字面量，改一处漏一处的表现是「访客永远没登录」，
+// 而且这种失败在本地开发（cookie 刚设过）里常常复现不出来。
+const VisitorContextKey = "gowp_visitor_user_id"
+
+// VisitorIdentityResolver 把访客会话令牌解成 user id。
+//
+// 只给这一条能力：访问面的片段层需要的是「这个请求是谁」，
+// 不是账号资料、更不是账号管理。依赖面越小，越不容易被顺手用出越权。
+type VisitorIdentityResolver interface {
+	// ResolveVisitorID 令牌有效且未过期时返回 userID 与 true。
+	// 令牌为空 / 无效 / 已过期一律返回 (0, false)：调用方只关心「认出来了没有」。
+	ResolveVisitorID(ctx context.Context, token string) (userID uint64, ok bool)
+}
+
 // UserService 用户模块对外能力。
 //
 // 目前只暴露注册链路 —— 它是**邮件模块的第一个真实消费者**（注册验证邮件），
 // 也是「模板写好了但没人用」与「真的被业务用上」之间的差别。
 // admin 侧 CRUD 与用户侧登录 / 账号中心属 #36 的后续部分，未在此接口内。
 type UserService interface {
+	// VisitorIdentityResolver 来访客会话令牌 → user id（片段层解析访客身份用）。
+	VisitorIdentityResolver
+
 	// GuestAccountProvisioner 来访客下单自动开号（单方法接口）。
 	// 嵌进来的理由同 product 的 VariantSnapshotPort：装配处拿到的 UserService
 	// 天然也能当开号端口传给订单模块，不必再做类型断言。

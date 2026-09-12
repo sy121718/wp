@@ -38,6 +38,11 @@ type CartService interface {
 	// 返回 error 只表示「订单没建出来」（商品下架、库存不足、参数缺失）；
 	// 订单建成而支付没走通时返回 Paid=false 的成功结果，订单号照样给到访客。
 	Checkout(ctx context.Context, req *cartdto.CartCheckoutReq) (res *cartdto.CheckoutResp, err error)
+	// HandlePaymentCallback 处理通道的异步回调：验签 → 按商户单号找单 → 核对金额 → 幂等落账。
+	//
+	// 与 Checkout 的关系：Checkout 是「同步扣款 + 立刻落账」，这条是「通道事后通知」。
+	// 两条路径最终都汇聚到同一个幂等的 PayOrder 上，所以哪条先到都不会重复记账。
+	HandlePaymentCallback(ctx context.Context, req *cartdto.PaymentCallbackReq) (res *cartdto.PaymentCallbackResp, err error)
 }
 
 // PaymentGateway 支付通道。
@@ -56,6 +61,36 @@ type PaymentGateway interface {
 	// 实现必须是**幂等**的：同一个 OrderNo 重复调用返回同一个流水号，
 	// 绝不能扣两次钱（结算流程在重试与重发下会重复调用它）。
 	Charge(ctx context.Context, req *PaymentChargeReq) (res *PaymentChargeResult, err error)
+	// VerifyCallback 校验异步回调的**来源真实性**并解出支付事实。
+	//
+	// 为什么收原始字节与请求头而不是一个解析好的结构体：真通道的签名算法各不相同
+	// （HMAC / RSA / 证书链），但都要拿**原始报文**参与计算 —— 先解析成结构体再验签，
+	// 会在任何一次字段重排或空格差异上失败；更糟的情况是有人为了「让它通过」
+	// 把验签换成了对解析结果做判断，那时伪造一个回调就只剩字段拼装。
+	//
+	// 验签失败必须返回 error：调用方据此直接拒绝，不落任何账。
+	VerifyCallback(headers map[string]string, rawBody []byte) (res *PaymentCallback, err error)
+}
+
+// PaymentCallback 从异步回调里解出的支付事实。
+//
+// 通道无关的形状：不管上游是 PayPal 的 webhook 还是微信的支付通知，
+// 购物车与订单域需要的都只有这几件事。
+type PaymentCallback struct {
+	// OrderNo 商户单号（我们这边的订单号，回调里必须带回来）。
+	OrderNo string
+	// TransactionID 通道流水号。
+	TransactionID string
+	// Paid 回调声明的支付结果。**失败通知也要处理** ——
+	// 它告诉我们这笔没成，比沉默有用；把它丢掉会让订单永远停在「待付款」。
+	Paid bool
+	// Amount 回调声明的金额（分）：与订单总额核对后才允许入账。
+	Amount int64
+	// Method / MethodTitle 落订单列（对账要看钱从哪条通道进来）。
+	Method      string
+	MethodTitle string
+	// Sandbox 演示通道标记：后台据此区分演示单与真金白银的单。
+	Sandbox bool
 }
 
 // PaymentChargeReq 扣款请求。

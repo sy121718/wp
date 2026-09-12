@@ -1,0 +1,281 @@
+package model
+
+// coupon_model.go — 优惠码与核销记录的表访问单元（BIZ-1）。
+//
+// 优惠码与核销记录是**同一个聚合**：次数上限（coupons.used_count）与核销明细
+// （coupon_redemptions）必须一起变，否则会出现「明细两条、计数只加了一次」这种
+// 只能靠对账发现的脏数据。因此核销的「插明细 + 加计数 + 次数守卫」作为
+// 聚合内原子组合放在本 model，由 service 决定事务边界（Transaction 透传）。
+
+import (
+	"context"
+	"errors"
+	"strings"
+	"time"
+
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
+)
+
+// 优惠类型：percent 按小计百分比 / fixed 固定金额（分）。
+const (
+	CouponTypePercent = "percent"
+	CouponTypeFixed   = "fixed"
+)
+
+// 优惠码状态列取值。
+const (
+	CouponStatusDisabled = 0
+	CouponStatusEnabled  = 1
+)
+
+// CouponEntity 对应 coupons 表。
+type CouponEntity struct {
+	ID        uint64 `gorm:"column:id;primaryKey"`
+	ProjectID string `gorm:"column:project_id;type:uuid"`
+	// Code 券码（存归一化后的大写）：工程内唯一。
+	Code string `gorm:"column:code;type:varchar(64)"`
+	Name string `gorm:"column:name;type:varchar(120)"`
+	// DiscountType / DiscountValue 折扣口径：百分比 1..100 或固定金额（分）。
+	DiscountType  string `gorm:"column:discount_type;type:varchar(16)"`
+	DiscountValue int64  `gorm:"column:discount_value"`
+	// MinSubtotal 使用门槛（分）。
+	MinSubtotal int64 `gorm:"column:min_subtotal"`
+	// MaxUses 总可用次数（0 = 不限）；UsedCount 由核销原子递增。
+	MaxUses   int `gorm:"column:max_uses"`
+	UsedCount int `gorm:"column:used_count"`
+	// PerUserLimit 每人可用次数（0 = 不限）。
+	PerUserLimit int        `gorm:"column:per_user_limit"`
+	StartsAt     *time.Time `gorm:"column:starts_at;type:timestamp(3)"`
+	EndsAt       *time.Time `gorm:"column:ends_at;type:timestamp(3)"`
+	// Status 1 启用 / 0 停用。停用不删：历史核销记录还要读它。
+	Status int `gorm:"column:status"`
+	// Remark 备注（活动说明 / 内部口径）。
+	Remark     string    `gorm:"column:remark;type:varchar(255)"`
+	CreateBy   uint64    `gorm:"column:create_by"`
+	UpdateBy   uint64    `gorm:"column:update_by"`
+	CreateTime time.Time `gorm:"column:create_time;type:timestamp(3)"`
+	UpdateTime time.Time `gorm:"column:update_time;type:timestamp(3)"`
+}
+
+// TableName 实现 gorm 表名（显式给：默认复数推断会得到 coupon_entities）。
+func (CouponEntity) TableName() string { return "coupons" }
+
+// CouponRedemptionEntity 对应 coupon_redemptions 表。
+//
+// 订单号在这里存**快照**：核销记录是「哪张券在哪一单上用掉」的凭据，
+// 它必须能独立读出来，不该依赖 orders 表当前的状态。
+type CouponRedemptionEntity struct {
+	ID        uint64 `gorm:"column:id;primaryKey"`
+	CouponID  uint64 `gorm:"column:coupon_id"`
+	ProjectID string `gorm:"column:project_id;type:uuid"`
+	Code      string `gorm:"column:code;type:varchar(64)"`
+	OrderID   uint64 `gorm:"column:order_id"`
+	OrderNo   string `gorm:"column:order_no;type:varchar(40)"`
+	// DiscountAmount 本次实际抵扣（分）。
+	DiscountAmount int64 `gorm:"column:discount_amount"`
+	// UserID 核销人（匿名下单时为 NULL）。
+	UserID     *uint64   `gorm:"column:user_id"`
+	CreateTime time.Time `gorm:"column:create_time;type:timestamp(3)"`
+}
+
+// TableName 实现 gorm 表名。
+func (CouponRedemptionEntity) TableName() string { return "coupon_redemptions" }
+
+// CouponFilter 优惠码列表查询条件。
+//
+// 这里只有**条件**没有业务判断：status=expired 这类语义由 service 翻译成
+// 下面的 Expired / Exhausted / Status 三个参数，model 不认识「过期」这个词。
+type CouponFilter struct {
+	ProjectID string
+	Keyword   string
+	// Status 状态列取值过滤（nil = 不过滤）。
+	Status *int
+	// Expired true 只要已过期的 / false 只要未过期的（nil = 不过滤）。
+	Expired *bool
+	// Exhausted true 只要次数用尽的 / false 只要还有额的（nil = 不过滤）。
+	Exhausted *bool
+	Offset    int
+	Limit     int
+}
+
+// CouponRedemptionFilter 核销记录查询条件。
+type CouponRedemptionFilter struct {
+	ProjectID string
+	CouponID  uint64
+	Code      string
+	OrderID   uint64
+	Offset    int
+	Limit     int
+}
+
+// CouponModel 优惠码聚合的表访问单元。
+type CouponModel struct{ db *gorm.DB }
+
+// NewCouponModel 构造。
+func NewCouponModel(db *gorm.DB) *CouponModel { return &CouponModel{db: db} }
+
+// DB 返回绑定本表的句柄（只允许本 model 的仓储方法消费）。
+func (m *CouponModel) DB(ctx context.Context) *gorm.DB {
+	return m.db.WithContext(ctx).Model(&CouponEntity{})
+}
+
+// Transaction 透传事务：核销要与建单同生共死，边界由 service 决定。
+func (m *CouponModel) Transaction(ctx context.Context, fn func(tx *gorm.DB) error) error {
+	return m.db.WithContext(ctx).Transaction(fn)
+}
+
+// Create 新建优惠码。
+func (m *CouponModel) Create(ctx context.Context, e *CouponEntity) (err error) {
+	return m.DB(ctx).Create(e).Error
+}
+
+// GetByID 按主键取；不存在返回 (nil, nil)，由 service 决定报什么错。
+func (m *CouponModel) GetByID(ctx context.Context, id uint64) (e *CouponEntity, err error) {
+	e = &CouponEntity{}
+	if err = m.DB(ctx).Where("id = ?", id).First(e).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return e, nil
+}
+
+// GetByCode 按券码取（工程内唯一）；code 传归一化后的大写。
+func (m *CouponModel) GetByCode(ctx context.Context, projectID string, code string) (e *CouponEntity, err error) {
+	e = &CouponEntity{}
+	if err = m.DB(ctx).Where("project_id = ? AND code = ?", projectID, code).First(e).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return e, nil
+}
+
+// LockByIDTx 事务内按主键加行锁取券（核销路径用）。
+func (m *CouponModel) LockByIDTx(ctx context.Context, tx *gorm.DB, id uint64) (e *CouponEntity, err error) {
+	e = &CouponEntity{}
+	if err = tx.WithContext(ctx).Model(&CouponEntity{}).
+		Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("id = ?", id).First(e).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return e, nil
+}
+
+// List 优惠码列表。
+func (m *CouponModel) List(ctx context.Context, f CouponFilter) (list []*CouponEntity, total int64, err error) {
+	q := m.DB(ctx).Where("project_id = ?", f.ProjectID)
+	if f.Status != nil {
+		q = q.Where("status = ?", *f.Status)
+	}
+	if f.Expired != nil {
+		now := time.Now()
+		if *f.Expired {
+			q = q.Where("ends_at IS NOT NULL AND ends_at < ?", now)
+		} else {
+			q = q.Where("ends_at IS NULL OR ends_at >= ?", now)
+		}
+	}
+	if f.Exhausted != nil {
+		if *f.Exhausted {
+			q = q.Where("max_uses > 0 AND used_count >= max_uses")
+		} else {
+			q = q.Where("max_uses = 0 OR used_count < max_uses")
+		}
+	}
+	if kw := strings.TrimSpace(f.Keyword); kw != "" {
+		like := "%" + kw + "%"
+		q = q.Where("code ILIKE ? OR name ILIKE ?", like, like)
+	}
+	if err = q.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	limit := f.Limit
+	if limit <= 0 || limit > 200 {
+		limit = 20
+	}
+	err = q.Order("id DESC").Offset(f.Offset).Limit(limit).Find(&list).Error
+	return list, total, err
+}
+
+// UpdateFields 更新指定列（可改列由 service 决定，model 不写死业务规则）。
+func (m *CouponModel) UpdateFields(ctx context.Context, id uint64, fields map[string]any) (err error) {
+	return m.DB(ctx).Where("id = ?", id).Updates(fields).Error
+}
+
+// Delete 删除优惠码（是否允许删由 service 判断：有核销记录的不许删）。
+func (m *CouponModel) Delete(ctx context.Context, id uint64) (err error) {
+	return m.DB(ctx).Where("id = ?", id).Delete(&CouponEntity{}).Error
+}
+
+// CountRedemptions 统计核销条数；userID 非 nil 时只数该用户的。
+func (m *CouponModel) CountRedemptions(ctx context.Context, couponID uint64, userID *uint64) (n int64, err error) {
+	q := m.db.WithContext(ctx).Model(&CouponRedemptionEntity{}).Where("coupon_id = ?", couponID)
+	if userID != nil {
+		q = q.Where("user_id = ?", *userID)
+	}
+	err = q.Count(&n).Error
+	return n, err
+}
+
+// InsertRedemptionTx 事务内插一条核销明细，返回是否为**本次新插入**。
+//
+// ON CONFLICT DO NOTHING 命中唯一键 (coupon_id, order_id) 时 RowsAffected 为 0 ——
+// 那就是「这一单之前已经核销过这张券」，调用方据此幂等返回，而不是把它当失败。
+// 幂等兜底放在数据库唯一约束上而不是「先查一次再插」：后者在并发下必然漏判。
+func (m *CouponModel) InsertRedemptionTx(ctx context.Context, tx *gorm.DB, e *CouponRedemptionEntity) (inserted bool, err error) {
+	res := tx.WithContext(ctx).Model(&CouponRedemptionEntity{}).
+		Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "coupon_id"}, {Name: "order_id"}},
+			DoNothing: true,
+		}).
+		Create(e)
+	if res.Error != nil {
+		return false, res.Error
+	}
+	return res.RowsAffected > 0, nil
+}
+
+// IncrementUsedTx 事务内把已用次数加一，返回是否**真的加上了**。
+//
+// 守卫写在 WHERE 里（max_uses = 0 表示不限次；否则要求 used_count < max_uses），
+// affected=0 就是用尽 —— 这是原子的：并发两单抢最后一次，只会有一个拿到。
+// 不写成「先读出来判断再更新」，那中间有窗口，超发一张券的代价是真金白银。
+func (m *CouponModel) IncrementUsedTx(ctx context.Context, tx *gorm.DB, couponID uint64) (ok bool, err error) {
+	res := tx.WithContext(ctx).Model(&CouponEntity{}).
+		Where("id = ? AND (max_uses = 0 OR used_count < max_uses)", couponID).
+		UpdateColumns(map[string]any{"used_count": gorm.Expr("used_count + 1"), "update_time": time.Now()})
+	if res.Error != nil {
+		return false, res.Error
+	}
+	return res.RowsAffected > 0, nil
+}
+
+// ListRedemptions 核销记录列表。
+func (m *CouponModel) ListRedemptions(ctx context.Context, f CouponRedemptionFilter) (list []*CouponRedemptionEntity, total int64, err error) {
+	q := m.db.WithContext(ctx).Model(&CouponRedemptionEntity{}).Where("project_id = ?", f.ProjectID)
+	if f.CouponID != 0 {
+		q = q.Where("coupon_id = ?", f.CouponID)
+	}
+	if code := strings.TrimSpace(f.Code); code != "" {
+		q = q.Where("code = ?", code)
+	}
+	if f.OrderID != 0 {
+		q = q.Where("order_id = ?", f.OrderID)
+	}
+	if err = q.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	limit := f.Limit
+	if limit <= 0 || limit > 200 {
+		limit = 20
+	}
+	err = q.Order("id DESC").Offset(f.Offset).Limit(limit).Find(&list).Error
+	return list, total, err
+}

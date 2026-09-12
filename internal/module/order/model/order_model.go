@@ -157,6 +157,22 @@ func (m *OrderModel) GetByID(ctx context.Context, id uint64) (e *OrderEntity, er
 	return e, nil
 }
 
+// GetByIDForUser 按主键 + 归属取单（访客侧专用）。
+//
+// 归属条件写在 SQL 里而不是「取回来再比对」：后者的失败模式是「访客看到别人的订单」，
+// 而它只差一次调用顺序的调整。查不到与不属于本人返回同一个结果（nil），
+// 让调用方无法用响应差异探测订单是否存在。
+func (m *OrderModel) GetByIDForUser(ctx context.Context, id uint64, userID uint64) (e *OrderEntity, err error) {
+	e = &OrderEntity{}
+	if err = m.DB(ctx).Where("id = ? AND user_id = ?", id, userID).First(e).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return e, nil
+}
+
 // LockByIDTx 事务内按主键加行锁取单。
 //
 // 状态流转必须串行：并发的两次「发货」只应成功一次，否则会写出两条流转记录、

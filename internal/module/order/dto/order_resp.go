@@ -6,6 +6,9 @@ package orderdto
 
 import "time"
 
+// 说明：金额与折扣一律带一份 Label 字段。分与元的换算只在 service 里发生一次，
+// 后台页面与片段模板都不做算术 —— 两处换算迟早会分叉。
+
 // OrderResp 订单头视图。
 type OrderResp struct {
 	ID                 uint64       `json:"id"`
@@ -117,4 +120,79 @@ type OrderListResp struct {
 	List   []*OrderResp     `json:"list"`
 	Total  int64            `json:"total"`
 	Counts map[string]int64 `json:"counts"`
+}
+
+// VisitorOrderListResp 访客自己的订单列表。
+//
+// 刻意不带 Counts：订单管理页的「各状态各有多少单」是全站口径，
+// 给访客看等于把别人的单量也一并告诉他。
+type VisitorOrderListResp struct {
+	List  []*OrderResp `json:"list"`
+	Total int64        `json:"total"`
+}
+
+// CouponResp 优惠码视图。
+type CouponResp struct {
+	ID               uint64     `json:"id"`
+	ProjectID        string     `json:"projectId"`
+	Code             string     `json:"code"`
+	Name             string     `json:"name"`
+	DiscountType     string     `json:"discountType"`
+	DiscountValue    int64      `json:"discountValue"`
+	DiscountLabel    string     `json:"discountLabel"`
+	MinSubtotal      int64      `json:"minSubtotal"`
+	MinSubtotalLabel string     `json:"minSubtotalLabel"`
+	MaxUses          int        `json:"maxUses"`
+	UsedCount        int        `json:"usedCount"`
+	PerUserLimit     int        `json:"perUserLimit"`
+	StartsAt         *time.Time `json:"startsAt"`
+	EndsAt           *time.Time `json:"endsAt"`
+	Status           int        `json:"status"`
+	StatusLabel      string     `json:"statusLabel"`
+	Remark           string     `json:"remark"`
+	CreateTime       time.Time  `json:"createTime"`
+	UpdateTime       time.Time  `json:"updateTime"`
+}
+
+// CouponListResp 列表结果。
+type CouponListResp struct {
+	List  []*CouponResp `json:"list"`
+	Total int64         `json:"total"`
+}
+
+// CouponValidateResp 试算结论。
+type CouponValidateResp struct {
+	CouponID       uint64 `json:"couponId"`
+	Code           string `json:"code"`
+	Name           string `json:"name"`
+	DiscountType   string `json:"discountType"`
+	DiscountValue  int64  `json:"discountValue"`
+	DiscountAmount int64  `json:"discountAmount"`
+	DiscountLabel  string `json:"discountLabel"`
+	Subtotal       int64  `json:"subtotal"`
+	// Total 折后应付（不含运费与税：运费是另一件事，不能混进优惠口径）。
+	Total      int64  `json:"total"`
+	TotalLabel string `json:"totalLabel"`
+	// Message 面向访客的结论文案（可用，或为什么不可用）。
+	Message string `json:"message"`
+	Usable  bool   `json:"usable"`
+}
+
+// CouponRedemptionResp 核销记录（一行 = 一次核销）。
+type CouponRedemptionResp struct {
+	ID             uint64    `json:"id"`
+	CouponID       uint64    `json:"couponId"`
+	Code           string    `json:"code"`
+	OrderID        uint64    `json:"orderId"`
+	OrderNo        string    `json:"orderNo"`
+	DiscountAmount int64     `json:"discountAmount"`
+	DiscountLabel  string    `json:"discountLabel"`
+	UserID         *uint64   `json:"userId"`
+	CreateTime     time.Time `json:"createTime"`
+}
+
+// CouponRedemptionListResp 核销记录列表。
+type CouponRedemptionListResp struct {
+	List  []*CouponRedemptionResp `json:"list"`
+	Total int64                   `json:"total"`
 }

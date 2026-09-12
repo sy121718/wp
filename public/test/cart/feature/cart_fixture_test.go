@@ -72,6 +72,11 @@ func (failingGateway) Charge(_ context.Context, _ *cartcontract.PaymentChargeReq
 	return nil, errors.New("模拟通道不可用")
 }
 
+// VerifyCallback 失败通道同样不提供回调能力：它连扣款都失败，不可能有成功的通知。
+func (failingGateway) VerifyCallback(map[string]string, []byte) (*cartcontract.PaymentCallback, error) {
+	return nil, errors.New("模拟通道不可用")
+}
+
 // cartFixture 隔离 PG + 生产迁移与种子 + 真实跨模块 service。
 type cartFixture struct {
 	cart      *cartservice.Service
@@ -88,7 +93,7 @@ type cartFixture struct {
 // newCartFixture 装配（支付通道 = 模拟 PayPal）。
 func newCartFixture(t *testing.T) *cartFixture {
 	t.Helper()
-	return newCartFixtureWithGateway(t, mockpaypal.New())
+	return newCartFixtureWithGateway(t, mockpaypal.New(cartTestSecret))
 }
 
 // newCartFixtureWithGateway 装配（指定支付通道，用于验证失败路径）。
@@ -139,6 +144,7 @@ func newCartFixtureWithGateway(t *testing.T, gateway cartcontract.PaymentGateway
 		ordermodel.NewOrderModel(db),
 		ordermodel.NewOrderItemModel(db),
 		ordermodel.NewOrderStatusLogModel(db),
+		ordermodel.NewCouponModel(db),
 		products,
 		inv,
 		users,

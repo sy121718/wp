@@ -68,6 +68,9 @@ var navConfig = []navGroup{
 		Title: "系统",
 		Nodes: []navNode{
 			{Title: "页面", Path: "/admin/pages", Perm: "page:list"},
+			// 订单与优惠码（BIZ-1）：权限点来自迁移 136（order:list）与 142（order:coupon_list）。
+			{Title: "订单", Path: "/admin/orders", Perm: "order:list"},
+			{Title: "优惠码", Path: "/admin/coupons", Perm: "order:coupon_list"},
 			{Title: "主题管理", Path: "/admin/themes", Perm: "project:theme_list"},
 			{Title: "全局块", Path: "/admin/blocks", Perm: "block:list"},
 			{Title: "导航菜单", Path: "/admin/navigations", Perm: "navigation:list"},

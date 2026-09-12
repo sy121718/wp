@@ -41,6 +41,7 @@ import (
 	loaderPkg "go_wp/internal/builder/components/loader"
 	marqueePkg "go_wp/internal/builder/components/marquee"
 	navPkg "go_wp/internal/builder/components/nav"
+	orderlistPkg "go_wp/internal/builder/components/orderlist"
 	productPkg "go_wp/internal/builder/components/product"
 	productcardPkg "go_wp/internal/builder/components/productcard"
 	productlistPkg "go_wp/internal/builder/components/productlist"
@@ -172,6 +173,8 @@ func nodeViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeV
 		return addToCartViewOf(node, topLevel, ctx)
 	case carticonPkg.Type:
 		return cartIconViewOf(node, topLevel, ctx)
+	case orderlistPkg.Type:
+		return orderListViewOf(node, topLevel, ctx)
 	case ratingPkg.Type:
 		return ratingViewOf(node, topLevel, ctx)
 	case formPkg.Type:
@@ -666,6 +669,33 @@ func cartIconViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*n
 	return &nodeView{
 		Type:     carticonPkg.Type,
 		Template: "cart_icon",
+		NodeID:   node.ID,
+		Classes:  strings.Join(classes, " "),
+		CustomID: customID,
+		TopLevel: topLevel,
+		Props:    p,
+		V:        view,
+	}, nil
+}
+
+// orderListViewOf 转换访客订单列表节点（BIZ-1 访问面）。
+//
+// 手写而不是走 contentAtomViewOf：它需要两条**槽位路径**（未登录引导的登录页、
+// 无 JS 时的订单页），而那个通用助手只把内容解析器传给 BuildView。
+func orderListViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeView, error) {
+	var p orderlistPkg.Props
+	if len(node.Props) > 0 {
+		if err := json.Unmarshal(node.Props, &p); err != nil {
+			return nil, fmt.Errorf("节点 %s props 反序列化失败: %w", node.ID, err)
+		}
+	}
+	classes, customID := advancedClasses(node, &p, ctx)
+	orderlistPkg.CompileCSS(node.ID, &p, ctx.CSS)
+	view := orderlistPkg.BuildView(&p, ctx.ProjectID, ctx.Lang,
+		ctx.SitePages[core.SiteSlotLogin], ctx.SitePages[core.SiteSlotOrders])
+	return &nodeView{
+		Type:     orderlistPkg.Type,
+		Template: "orders_widget",
 		NodeID:   node.ID,
 		Classes:  strings.Join(classes, " "),
 		CustomID: customID,

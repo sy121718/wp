@@ -54,7 +54,13 @@ type Request struct {
 	// Values 全部参数值（并行数组用：POST 表单里同名多值，如 variantId / qty）。
 	// 与 Params 同源同校验，只是不做「取首值」的折叠。
 	Values map[string][]string
-	// UserID 已认证用户 ID（session 策略时非空）。
+	// UserID 已认证身份 id（十进制字符串）。
+	//
+	// 两个来源，按优先级取：① session 策略命中的**后台账号** id；
+	// ② 访客身份中间件解出的**访客账号** id（未登录时为空）。
+	// 顺序不能反：后台会话与访客会话是两套 cookie、两个身份域，
+	// 同一次请求里同时存在是可能的（管理员在前台逛自己的站），
+	// 而后台身份是更强的那个声明。
 	UserID string
 	// Cookies 本次请求携带的 cookie（原样，未解析）。
 	//

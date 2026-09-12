@@ -23,6 +23,7 @@ import (
 	artifacthttp "go_wp/internal/module/artifact/inbound/http"
 	blockhttp "go_wp/internal/module/block/inbound/http"
 	blueprinthttp "go_wp/internal/module/blueprint/inbound/http"
+	carthttp "go_wp/internal/module/cart/inbound/http"
 	mockpaypal "go_wp/internal/module/cart/outbound/mockpaypal"
 	cartservice "go_wp/internal/module/cart/service"
 	captcharouter "go_wp/internal/module/common/captcha/router"
@@ -202,8 +203,8 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 	// 用户模块（issue #36）：访客账号（注册 / 验证 / 登录 / 账号中心）。
 	// 依赖 mail 只取 SendTemplate 一条能力（usercontract.MailSender），不是整个 mail 契约。
 	// 路由挂在 public 面（不带 Casbin）：访客账号没有权限点，理由见 userhttp 包注释。
+	// userSvc 的消费方：order（访客下单自动开号）与访问面片段端点（访客身份解析中间件）。
 	userSvc := userhttp.SetupUserRoutes(router, db, mailSvc, "go_wp")
-	_ = userSvc // 暂未被其它模块消费，保留契约返回值以示对外能力就绪
 	// 营销追踪端点（#38 P1）：公开路由（访问面），无鉴权 —— 能力由 TrackingService 收窄。
 	mailhttp.SetupTrackingRoutes(router, mailSvc)
 	_ = mailSvc
@@ -211,8 +212,10 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 	// 一个方法）与 inventory 的扣减 / 归还（两个方法），不是各自模块的完整 Service。
 	// 建单会读商品事实落快照、并扣减库存，两者缺失都只能在建单那一刻失败，故不设可选依赖。
 	// guest 传 userSvc：订单用它为访客下单自动开号（收窄的单方法接口，见 user contract）。
+	// orderSvc 的消费方有三个：cart（结算建单 + 支付落账）、dashboard（订单管理页）、
+	// runtimefragment（访客订单片段）。契约里同时含访客查询与优惠码两组能力，
+	// 各消费方拿到的都是同一个实现 —— 不加壳、不复制。
 	orderSvc := orderhttp.SetupOrderRoutes(authorizedAPI, db, productSvc, inventorySvc, userSvc)
-	_ = orderSvc // 暂未被其它模块消费，保留契约返回值以示对外能力就绪
 	// 库存 model 注入商品用例（issue #32）：商品与库存合并为同一模块后，商品查询直接读
 	// 库存真源做**查询期投影**（不再有商品侧缓存列、同步台账与对账）。同模块内直调 model。
 	// 商品与库存同属一个模块（issue #32）：库存用例直接交给商品用例，
@@ -307,8 +310,14 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 		// 这是装配缺陷（auth 组件必须在本函数之前 Init），fail-fast 而不是降级。
 		panic("会话密钥未初始化（auth 组件未 Init），购物车 cookie 无法签名")
 	}
-	cartSvc := cartservice.NewService(orderSvc, productSvc, availabilityLookup, mockpaypal.New(), secret)
+	// 支付通道用会话密钥做回调验签的共享密钥：模拟通道的签名是
+	// HMAC-SHA256(secret, 原始报文)，换成真通道时只改这一行。
+	cartSvc := cartservice.NewService(orderSvc, productSvc, availabilityLookup, mockpaypal.New(secret), secret)
 	runtimefragment.SetCartProvider(cartSvc)
+	// 支付回调（BIZ-1）：公开路由，靠签名验签 —— 通道不可能持有后台会话与 CSRF token，
+	// 所以它不进 /api 的三层链，也不走片段端点（片段有参数与上下文两条协议约束，
+	// 而回调带的是原始报文）。
+	carthttp.SetupCartRoutes(router, cartSvc)
 	// 商品实体类型注册（issue #6）：注册后商品可作为内容模板的数据源
 	// （类型合法性 + 字段白名单由注册表判定），构建期经注册表取商品字段解析器。
 	// 与内容模块同样 fail-fast：注册失败即装配缺陷。
@@ -346,6 +355,14 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 	// 「查看订单」都要按槽位取路径。传的是 pageService —— 它嵌入了只读的
 	// SitePageResolver，发布 / 删除 / 改 URL 那部分能力传不进片段层。
 	runtimefragment.SetSitePageResolver(pageService)
+	// 访客订单片段（BIZ-1）：片段端点按访客会话取自己的订单。传的是 orderSvc ——
+	// 它嵌入了只读的 VisitorOrderReader，写路径（建单 / 状态流转 / 优惠码管理）
+	// 那部分能力传不进片段层。归属校验在 order 模块的 SQL 条件里，不在这层。
+	runtimefragment.SetVisitorOrderReader(orderSvc)
+	// 访客身份解析中间件：片段端点需要知道「这个请求是谁」。
+	// 它与后台的 SessionAuthMiddleware 是两套身份（不同 cookie、不同存储），
+	// 挂在片段组上只做「尽力解析」，未登录不阻断 —— 必须登录的能力自己渲染引导文案。
+	runtimefragment.SetVisitorIdentityMiddleware(userhttp.VisitorIdentityMiddleware(userSvc))
 	// 页面 / 自动发布两条构建路径同样接上（issue #35）：装配处拿到的 ProductService
 	// 嵌入了 ProductDataSource，直接传即可（受限接口，写方法传不出去）。
 	if setter, ok := pageService.(interface {
@@ -412,7 +429,10 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 		admincontract.RuleService
 	})
 	dashboardhttp.SetupDashboardRoutes(router, pageService, projectService, blockSvc, pluginSvc, collectionResolver,
-		adminCRUD, adminCRUD, adminCRUD, adminCRUD, adminCRUD, adminCRUD, adminAuthzSvc, navigationSvc, productSvc, presentationSvc, contentTemplateSvc, inventorySvc, masterdataSvc, mailSvc)
+		adminCRUD, adminCRUD, adminCRUD, adminCRUD, adminCRUD, adminCRUD, adminAuthzSvc, navigationSvc, productSvc, presentationSvc, contentTemplateSvc, inventorySvc, masterdataSvc, mailSvc,
+		// 订单管理页（BIZ-1）：orderSvc 是在前面装配订单模块时拿到的契约
+		//（它同时提供访客查询与优惠码能力，后台页只用查询与状态流转那几条）。
+		orderSvc)
 
 	// 运行时片段端点（0-D，公开路由：capability 白名单 + 认证策略在 handler 内）。
 	runtimefragment.SetupFragmentRoutes(router)

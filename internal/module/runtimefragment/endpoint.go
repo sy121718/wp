@@ -27,6 +27,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	usercontract "go_wp/internal/module/user/contract"
 	"go_wp/pkg/auth"
 )
 
@@ -63,6 +64,18 @@ func FragmentEndpoint(c *gin.Context) {
 			return
 		}
 		userID = strconv.FormatUint(cs.UserID, 10)
+	}
+	// 访客身份：user 模块的 VisitorIdentityMiddleware 已尽力解析并挂到 context（不阻断）。
+	//
+	// 未登录时**留空**而不是让端点回 401：HTMX 默认不替换 401 响应的目标节点，
+	// 访客会看到一个毫无变化的页面，完全不知道自己需要登录。
+	// 所以「必须登录」由具体能力自己声明，并渲染一句引导文案 + 登录链接。
+	if userID == "" {
+		if v, ok := c.Get(usercontract.VisitorContextKey); ok {
+			if id, ok := v.(uint64); ok && id != 0 {
+				userID = strconv.FormatUint(id, 10)
+			}
+		}
 	}
 	// 参数白名单限制（长度/数量/上下文枚举）。
 	params, values, perr := collectFragmentParams(c)

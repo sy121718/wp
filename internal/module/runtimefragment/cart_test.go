@@ -25,6 +25,13 @@ import (
 	cartenums "go_wp/internal/module/cart/enums"
 )
 
+// HandlePaymentCallback 支付回调**不经片段层**（它是服务端到服务端的通知，
+// 挂在 /payment/callback 上）。这里返回明确错误，而不是静默给零值 ——
+// 万一将来有人把回调塞进片段注册表，测试会立刻失败而不是留下一条无人察觉的通路。
+func (f *fakeCart) HandlePaymentCallback(context.Context, *cartdto.PaymentCallbackReq) (*cartdto.PaymentCallbackResp, error) {
+	return nil, errors.New("支付回调不经片段层")
+}
+
 // fakeCart 购物车替身：记录入参、返回可控结果。
 type fakeCart struct {
 	addReq       *cartdto.CartAddReq

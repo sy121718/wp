@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 
 	orderdto "go_wp/internal/module/order/dto"
 	orderenums "go_wp/internal/module/order/enums"
@@ -27,6 +28,12 @@ func (s *Service) GetOrder(ctx context.Context, orderID uint64) (res *orderdto.O
 	if head == nil {
 		return nil, errors.New(orderenums.ErrOrderNotFound)
 	}
+	return s.detailOf(ctx, head)
+}
+
+// detailOf 用已取到的订单头组装详情（后台按 id 查与访客按归属查共用同一份组装）。
+func (s *Service) detailOf(ctx context.Context, head *ordermodel.OrderEntity) (res *orderdto.OrderDetailResp, err error) {
+	orderID := head.ID
 	items, err := s.items.ListByOrderID(ctx, orderID)
 	if err != nil {
 		return nil, err
@@ -92,6 +99,80 @@ func (s *Service) ListOrders(ctx context.Context, req *orderdto.ListOrderReq) (r
 		res.List = append(res.List, toOrderResp(e))
 	}
 	return res, nil
+}
+
+// GetOrderByNo 按商户单号取订单（支付通道回调的唯一入口：它只有单号）。
+//
+// 与 GetOrder 的区别只在入口参数，归属与展示口径完全一致 ——
+// 回调是通道服务端发起的，没有会话，所以这里不做归属校验；
+// 越权面由「单号不可枚举 + 端点验签」两条一起收口。
+func (s *Service) GetOrderByNo(ctx context.Context, req *orderdto.GetOrderByNoReq) (res *orderdto.OrderResp, err error) {
+	if req == nil || strings.TrimSpace(req.ProjectID) == "" || strings.TrimSpace(req.OrderNo) == "" {
+		return nil, errors.New(orderenums.ErrOrderNoInvalid)
+	}
+	head, err := s.orders.GetByNo(ctx, req.ProjectID, strings.TrimSpace(req.OrderNo))
+	if err != nil {
+		return nil, err
+	}
+	if head == nil {
+		return nil, errors.New(orderenums.ErrOrderNotFound)
+	}
+	return toOrderResp(head), nil
+}
+
+// ListVisitorOrders 访客查自己的订单。
+//
+// user_id 是**必填**的：请求里没带就报错，而不是「不过滤」——
+// 少传一次归属条件就等于把全站订单列表发给某个访客。
+func (s *Service) ListVisitorOrders(ctx context.Context, req *orderdto.VisitorOrderListReq) (res *orderdto.VisitorOrderListResp, err error) {
+	if req == nil || strings.TrimSpace(req.ProjectID) == "" {
+		return nil, errors.New(orderenums.ErrProjectRequired)
+	}
+	if req.UserID == 0 {
+		return nil, errors.New(orderenums.ErrInvalidParam)
+	}
+	uid := req.UserID
+	list, total, err := s.orders.List(ctx, ordermodel.OrderFilter{
+		ProjectID: req.ProjectID,
+		Status:    req.Status,
+		UserID:    &uid,
+		Offset:    req.Offset,
+		Limit:     req.Limit,
+	})
+	if err != nil {
+		return nil, err
+	}
+	res = &orderdto.VisitorOrderListResp{
+		List:  make([]*orderdto.OrderResp, 0, len(list)),
+		Total: total,
+	}
+	for _, e := range list {
+		res.List = append(res.List, toOrderResp(e))
+	}
+	return res, nil
+}
+
+// GetVisitorOrder 访客查自己的订单详情。
+//
+// 归属校验写在 SQL 条件里（GetByIDForUser 的 WHERE 带 user_id）：
+// 「取回来再看是不是他的」一旦有人调整了调用顺序就会漏判，
+// 而这里的失败模式是「访客看到别人的订单」—— 不可接受。
+func (s *Service) GetVisitorOrder(ctx context.Context, req *orderdto.VisitorOrderDetailReq) (res *orderdto.OrderDetailResp, err error) {
+	if req == nil || req.OrderID == 0 || req.UserID == 0 {
+		return nil, errors.New(orderenums.ErrInvalidParam)
+	}
+	head, err := s.orders.GetByIDForUser(ctx, req.OrderID, req.UserID)
+	if err != nil {
+		return nil, err
+	}
+	if head == nil {
+		// 别人的单与不存在的单返回同一句话：区分开来就是一个订单号探测器。
+		return nil, errors.New(orderenums.ErrOrderNotFound)
+	}
+	if pid := strings.TrimSpace(req.ProjectID); pid != "" && head.ProjectID != pid {
+		return nil, errors.New(orderenums.ErrOrderNotFound)
+	}
+	return s.detailOf(ctx, head)
 }
 
 // toOrderResp 实体 → 视图。归因列在这里反序列化：形状由 dto 定义，

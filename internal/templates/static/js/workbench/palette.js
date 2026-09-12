@@ -68,13 +68,14 @@ export const paletteItems = [
     // 购物车图标（BIZ-1）：页头常驻的购物车入口，四种形态（下拉浮层 / 侧边抽屉 /
     // 居中弹窗 / 悬停浮层）共用同一份内容 —— 由 cartView 片段现拉，不是烘进产物的静态列表。
     // 三种浮层用原生 <details> 承载（无 JS 也能展开、键盘可达），只有「点外部关闭」走一小段 enhance。
-    { type: 'core.cartIcon', label: '购物车图标', hint: '页头购物车入口（下拉 / 抽屉 / 弹窗 / 悬停）', props: { mode: 'dropdown', align: 'right', drawerSide: 'right', icon: 'shopping-cart', label: '购物车', showLabel: false, showCount: true } }
+    { type: 'core.cartIcon', label: '购物车图标', hint: '页头购物车入口（下拉 / 抽屉 / 弹窗 / 悬停）', props: { mode: 'dropdown', align: 'right', drawerSide: 'right', icon: 'shopping-cart', label: '购物车', showLabel: false, showCount: true } },
+    { type: 'core.orderList', label: '我的订单', hint: '访客订单列表（登录后可见，片段现拉）', props: { title: '我的订单', showTitle: true, pageSize: 10 } }
 ];
 
 /** 组件库分组：基础组件大分类平铺（细分类留给进阶组件，当前无进阶内容）；
  *  「区块」概念归全局块（页眉/页脚/区块）。 */
 export const paletteGroups = [
-    { key: 'basic', title: '基础组件', types: ['core.container', 'core.heading', 'core.text', 'core.button', 'core.image', 'core.gallery', 'core.divider', 'core.spacer', 'core.slider', 'core.list', 'core.infobox', 'core.social_buttons', 'core.video', 'core.nav', 'core.languages', 'core.tabs', 'core.accordion', 'core.marquee', 'core.counter', 'core.table', 'core.card', 'core.cardstack', 'core.faq', 'core.quote', 'core.countdown', 'core.icon', 'core.badge', 'core.progress', 'core.rating', 'core.form', 'core.product', 'core.productCard', 'core.productList', 'core.productSelector', 'core.addToCart', 'core.cartIcon'] }
+    { key: 'basic', title: '基础组件', types: ['core.container', 'core.heading', 'core.text', 'core.button', 'core.image', 'core.gallery', 'core.divider', 'core.spacer', 'core.slider', 'core.list', 'core.infobox', 'core.social_buttons', 'core.video', 'core.nav', 'core.languages', 'core.tabs', 'core.accordion', 'core.marquee', 'core.counter', 'core.table', 'core.card', 'core.cardstack', 'core.faq', 'core.quote', 'core.countdown', 'core.icon', 'core.badge', 'core.progress', 'core.rating', 'core.form', 'core.product', 'core.productCard', 'core.productList', 'core.productSelector', 'core.addToCart', 'core.cartIcon', 'core.orderList'] }
 ];
 
 /**

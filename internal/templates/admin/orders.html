@@ -1,0 +1,247 @@
+{* admin/orders.html — 订单管理：状态计数 / 筛选 / 列表 / 详情 / 状态流转 · 取消 · 退款（BIZ-1 销售侧） *}
+{* Jet 方言：extends 相对本目录；range 用 range 关键字；map 用 ["key"] 索引；range 内访问外层值先存变量。 *}
+{* 无 JS 也能用：列表与详情都是普通 GET 链接（同一页面靠 orderId 参数展开）， *}
+{* 三个写操作都是原生表单 POST + csrf_token 隐藏域，提交后 302 回本页并把结论经 ?ok= / ?err= 回显。 *}
+{{extends "layout.html"}}
+{{block body()}}
+{{csrf := .["csrf_token"]}}
+{{selectedProject := .SelectedProject}}
+{{rows := .Rows}}
+{{detail := .Detail}}
+{{statuses := .Statuses}}
+<div class="stack orders-page">
+    <section class="card card-body">
+        <h2>订单管理</h2>
+        {{if .Err != ""}}
+        <p class="badge badge-warning">上一次操作未完成：{{.Err}}</p>
+        {{end}}
+        {{if .Ok != ""}}
+        <p class="badge badge-success">{{.Ok}}</p>
+        {{end}}
+        <p class="hint">
+            这里的每一单都是<strong>下单当时的事实快照</strong>：商品后来改名改价，历史订单里的商品名、
+            规格与单价都不变。金额一律以<strong>分</strong>存储，页面上换算成元展示（保留两位小数）。
+        </p>
+        <p class="hint">
+            状态流转有<strong>合法边</strong>：待付款 → 已付款 → 已发货 → 已完成；
+            待付款 / 已付款可以取消（取消会归还尚未发货那部分库存）；
+            已付款 / 已发货 / 已完成可以退款（<strong>退款不归还库存</strong> —— 钱与货分开，退货入库是另一件事）。
+            页面只列出「可能」的目标，<strong>合法性由服务端裁决</strong>：选了不允许的边，
+            服务端会把中文原因回显在页面顶部。
+        </p>
+        <form method="get" action="/admin/orders" class="form-inline">
+            <select class="form-select" name="project" onchange="this.form.submit()">
+                {{range _, p := .Projects}}
+                <option value="{{p.ID}}" {{if p.ID == selectedProject}}selected{{end}}>{{p.Name}}</option>
+                {{end}}
+            </select>
+        </form>
+        {{if len(.Projects) == 0}}
+        <p class="hint">还没有站点工程 —— 先去<a href="/admin/pages">页面管理</a>建一个工程，订单是挂在工程下的。</p>
+        {{end}}
+    </section>
+
+    <section class="card card-body">
+        <h2>状态与筛选</h2>
+        <p class="hint">点下面的状态即按该状态筛选（再点一次「全部」清掉）。计数回答的是「各状态各有多少单」，不受下面的筛选影响。</p>
+        <div class="action-row">
+            {{range _, s := statuses}}
+            <a class="badge {{s.Badge}}" href="{{s.URL}}" {{if s.Active}}aria-current="page"{{end}}>{{s.Label}} {{s.Count}}</a>
+            {{end}}
+        </div>
+        <form method="get" action="/admin/orders" class="form-stack">
+            <input type="hidden" name="project" value="{{selectedProject}}">
+            <div class="form-inline">
+                <select class="form-select" name="status">
+                    <option value="">（状态：全部）</option>
+                    {{range _, s := .StatusOptions}}
+                    <option value="{{s.Value}}" {{if s.Value == .FilterStatus}}selected{{end}}>{{s.Label}}</option>
+                    {{end}}
+                </select>
+                <input type="text" class="form-input" name="keyword" value="{{.FilterKeyword}}" placeholder="关键词：订单号 / 客户邮箱 / 客户姓名" autocomplete="off">
+                <input type="text" class="form-input" name="paymentMethod" value="{{.FilterPayment}}" placeholder="支付方式（如 paypal）" autocomplete="off">
+                <button type="submit" class="btn">筛选</button>
+                <a class="btn btn-ghost" href="/admin/orders?project={{selectedProject}}">重置</a>
+            </div>
+        </form>
+    </section>
+
+    {{if .HasDetail}}
+    <section class="card card-body">
+        <h2>订单详情 <code>{{detail.Head.OrderNo}}</code></h2>
+        <p class="hint">
+            <span class="badge {{detail.Head.Badge}}">{{detail.Head.StatusLabel}}</span>
+            <strong>客户</strong> {{detail.Head.CustomerName}} · {{detail.Head.CustomerEmail}} · {{detail.Head.CustomerPhone}}
+        </p>
+        <p class="hint">
+            <strong>金额</strong> 合计 <strong>{{detail.Head.TotalLabel}}</strong>
+            （小计 {{detail.Head.SubtotalLabel}} · 优惠 {{detail.Head.DiscountLabel}} · 运费 {{detail.Head.ShippingLabel}} · 税 {{detail.Head.TaxLabel}}）
+            · <strong>支付</strong> {{detail.Head.PaymentLabel}} · 通道流水号 {{detail.Head.TransactionID}}
+        </p>
+        <p class="hint">
+            <strong>下单时间</strong> {{detail.Head.CreatedAt}} · <strong>付款时间</strong> {{detail.Head.PaidAt}}
+            · <strong>完成时间</strong> {{detail.Head.CompletedAt}} · <strong>入口</strong> {{detail.Head.CreatedViaLabel}}
+            · <strong>IP</strong> {{detail.Head.IPAddress}}
+        </p>
+        <p class="hint"><strong>收货地址</strong> {{if detail.Head.ShippingAddress}}{{detail.Head.ShippingAddress}}{{else}}（未填写）{{end}}</p>
+        <p class="hint"><strong>账单地址</strong> {{if detail.Head.BillingAddress}}{{detail.Head.BillingAddress}}{{else}}（未填写）{{end}}</p>
+        <p class="hint">
+            <strong>客户备注</strong> {{detail.Head.Remark}} · <strong>后台备注</strong> {{detail.Head.AdminNote}}
+            {{if detail.Head.CancelReason != "—"}}· <strong>取消原因</strong> {{detail.Head.CancelReason}}{{end}}
+        </p>
+
+        <h3>订单项</h3>
+        {{if len(detail.Items) == 0}}
+        <p class="hint">这一单没有订单项 —— 正常下单不会出现这种情况，请人工核查。</p>
+        {{else}}
+        <div class="table-wrap" tabindex="0">
+        <table class="data-table data-table-wide orders-page-table">
+            <thead>
+            <tr><th>商品</th><th>规格</th><th>SKU</th><th>单价</th><th>数量</th><th>行小计</th><th>优惠</th><th>税</th><th>行合计</th></tr>
+            </thead>
+            <tbody>
+            {{range _, it := detail.Items}}
+            <tr>
+                <td data-label="商品">{{it.ProductName}}</td>
+                <td data-label="规格">{{it.VariantLabel}}</td>
+                <td data-label="SKU"><code>{{it.SKU}}</code></td>
+                <td data-label="单价">{{it.UnitPrice}}</td>
+                <td data-label="数量">{{it.Quantity}}</td>
+                <td data-label="行小计">{{it.LineSubtotal}}</td>
+                <td data-label="优惠">{{it.LineDiscount}}</td>
+                <td data-label="税">{{it.LineTax}}</td>
+                <td data-label="行合计">{{it.LineTotal}}</td>
+            </tr>
+            {{end}}
+            </tbody>
+        </table>
+        </div>
+        <p class="hint">订单项是<strong>下单时的快照</strong>（含当时的价格与规格），不是商品当前的值。</p>
+        {{end}}
+
+        <h3>状态流转链</h3>
+        {{if len(detail.Logs) == 0}}
+        <p class="hint">这一单还没有任何流转记录。</p>
+        {{else}}
+        <div class="table-wrap" tabindex="0">
+        <table class="data-table data-table-wide orders-page-table">
+            <thead>
+            <tr><th>时间</th><th>从</th><th>到</th><th>操作人类型</th><th>操作人</th><th>备注</th></tr>
+            </thead>
+            <tbody>
+            {{range _, lg := detail.Logs}}
+            <tr>
+                <td data-label="时间">{{lg.Time}}</td>
+                <td data-label="从">{{lg.FromLabel}}</td>
+                <td data-label="到">{{lg.ToLabel}}</td>
+                <td data-label="操作人类型">{{lg.OperatorTypeLabel}}</td>
+                <td data-label="操作人">{{lg.OperatorName}}</td>
+                <td data-label="备注">{{lg.Remark}}</td>
+            </tr>
+            {{end}}
+            </tbody>
+        </table>
+        </div>
+        {{end}}
+
+        <h3>操作</h3>
+        {{if len(detail.Transitions) > 0}}
+        <form method="post" action="/admin/orders/status" class="form-inline">
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <input type="hidden" name="project" value="{{detail.Form.Project}}">
+            <input type="hidden" name="orderId" value="{{detail.Form.OrderID}}">
+            <input type="hidden" name="status" value="{{detail.Form.Status}}">
+            <input type="hidden" name="keyword" value="{{detail.Form.Keyword}}">
+            <input type="hidden" name="paymentMethod" value="{{detail.Form.PaymentMethod}}">
+            <input type="hidden" name="page" value="{{detail.Form.Page}}">
+            <input type="hidden" name="limit" value="{{detail.Form.Limit}}">
+            <select class="form-select" name="toStatus" required>
+                {{range _, t := detail.Transitions}}
+                <option value="{{t.Value}}">{{t.Label}}</option>
+                {{end}}
+            </select>
+            <input type="text" class="form-input" name="remark" placeholder="流转备注（可选，如「已联系快递」）" autocomplete="off">
+            <button type="submit" class="btn btn-sm btn-primary">流转状态</button>
+        </form>
+        {{else}}
+        <p class="hint">当前状态没有可用的通用流转目标（已取消与已退款是终态，不能再改）。</p>
+        {{end}}
+
+        {{if detail.CanCancel}}
+        <form method="post" action="/admin/orders/cancel" class="form-inline">
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <input type="hidden" name="project" value="{{detail.Form.Project}}">
+            <input type="hidden" name="orderId" value="{{detail.Form.OrderID}}">
+            <input type="hidden" name="status" value="{{detail.Form.Status}}">
+            <input type="hidden" name="keyword" value="{{detail.Form.Keyword}}">
+            <input type="hidden" name="paymentMethod" value="{{detail.Form.PaymentMethod}}">
+            <input type="hidden" name="page" value="{{detail.Form.Page}}">
+            <input type="hidden" name="limit" value="{{detail.Form.Limit}}">
+            <input type="text" class="form-input" name="reason" placeholder="取消原因（必填）" required autocomplete="off">
+            <button type="submit" class="btn btn-sm">取消订单</button>
+        </form>
+        {{end}}
+
+        {{if detail.CanRefund}}
+        <form method="post" action="/admin/orders/refund" class="form-inline">
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <input type="hidden" name="project" value="{{detail.Form.Project}}">
+            <input type="hidden" name="orderId" value="{{detail.Form.OrderID}}">
+            <input type="hidden" name="status" value="{{detail.Form.Status}}">
+            <input type="hidden" name="keyword" value="{{detail.Form.Keyword}}">
+            <input type="hidden" name="paymentMethod" value="{{detail.Form.PaymentMethod}}">
+            <input type="hidden" name="page" value="{{detail.Form.Page}}">
+            <input type="hidden" name="limit" value="{{detail.Form.Limit}}">
+            <input type="text" class="form-input" name="reason" placeholder="退款原因（必填）" required autocomplete="off">
+            <input type="text" class="form-input" name="transactionId" placeholder="通道流水号（可选，留空则沿用原流水号）" autocomplete="off">
+            <button type="submit" class="btn btn-sm">退款</button>
+        </form>
+        {{end}}
+
+        <p class="hint">
+            取消与退款各是独立用例：取消会归还<strong>尚未发货</strong>那部分库存，
+            退款只动钱与状态（不归还库存）。后台备注（adminNote）属于订单更新，
+            订单模块当前没有更新订单的接口，所以本页不提供备注编辑 —— 需要改备注请走下单入口。
+        </p>
+    </section>
+    {{end}}
+
+    <section class="card card-body">
+        <h2>订单（共 {{.Total}} 单）</h2>
+        {{if len(rows) == 0}}
+        <p class="hint">
+            {{if selectedProject}}这个工程还没有订单{{else}}还没有站点工程{{end}} ——
+            台前下单后（或后台代客建单）就会出现在这里。若已经下过单，检查上面的筛选条件是不是过窄了。
+        </p>
+        {{else}}
+        <div class="table-wrap" tabindex="0">
+        <table class="data-table data-table-wide orders-page-table">
+            <thead>
+            <tr><th>订单号</th><th>状态</th><th>客户</th><th>金额</th><th>支付方式</th><th>下单时间</th><th>操作</th></tr>
+            </thead>
+            <tbody>
+            {{range _, o := rows}}
+            <tr>
+                <td data-label="订单号"><code>{{o.OrderNo}}</code></td>
+                <td data-label="状态"><span class="badge {{o.Badge}}">{{o.StatusLabel}}</span></td>
+                <td data-label="客户">{{o.CustomerName}} <span class="hint">{{o.CustomerEmail}}</span></td>
+                <td data-label="金额"><strong>{{o.TotalLabel}}</strong></td>
+                <td data-label="支付方式">{{o.PaymentLabel}}</td>
+                <td data-label="下单时间">{{o.CreatedAt}}</td>
+                <td data-label="操作">
+                    {{if o.Expanded}}
+                    <a class="btn btn-sm" href="{{o.DetailURL}}">收起详情</a>
+                    {{else}}
+                    <a class="btn btn-sm" href="{{o.DetailURL}}">查看详情</a>
+                    {{end}}
+                </td>
+            </tr>
+            {{end}}
+            </tbody>
+        </table>
+        </div>
+        {{include "partials/pagination.html"}}
+        {{end}}
+    </section>
+</div>
+{{end}}

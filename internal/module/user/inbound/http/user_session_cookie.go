@@ -25,6 +25,7 @@ import (
 	"github.com/gin-gonic/gin"
 	gsessions "github.com/gorilla/sessions"
 
+	usercontract "go_wp/internal/module/user/contract"
 	"go_wp/pkg/auth"
 )
 
@@ -105,6 +106,33 @@ func writeUserToken(c *gin.Context, token string, rememberMe bool) error {
 		sess.Options.MaxAge = userSessionMaxAge
 	}
 	return sess.Save(c.Request, c.Writer)
+}
+
+// VisitorIdentityMiddleware 尽力解析访客会话，把 userID 挂到 gin context（**不阻断**）。
+//
+// 这是给访问面片段端点用的最小版本，与 attachUserSession 有三处刻意的差别：
+//
+//	· 只挂 user id，不挂会话对象 —— 片段层不需要昵称头像，也不需要撤销设备的行 id；
+//	· **不做活跃时间续期**：片段请求量远大于页面请求，每个都 UPDATE 一次 user_sessions，
+//	  是拿数据库写放大去换一个没人看的时间戳；
+//	· 未登录不是错误 —— 访客未登录照样要看购物车计数与商品可用量，
+//	  「必须登录」由具体片段能力自己声明（AuthVisitor）。
+func VisitorIdentityMiddleware(svc usercontract.UserService) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if svc == nil {
+			c.Next()
+			return
+		}
+		token := readUserToken(c)
+		if token == "" {
+			c.Next()
+			return
+		}
+		if id, ok := svc.ResolveVisitorID(c.Request.Context(), token); ok && id != 0 {
+			c.Set(usercontract.VisitorContextKey, id)
+		}
+		c.Next()
+	}
 }
 
 // clearUserSession 清空访客 cookie 会话（登出：MaxAge=-1 让浏览器删掉它）。
