@@ -25,11 +25,8 @@
   border: 1px solid var(--ui-border, #ccd); background: var(--ui-surface-2, #f4f6f8);
 }
 
-.auto-btn {
-  font: inherit; padding: 5px 12px; border-radius: 6px; cursor: pointer;
-  border: 1px solid var(--ui-border, #ccd); background: var(--ui-surface, #fff);
-}
-.auto-btn-primary { background: var(--ui-accent, #2f6fed); color: #fff; border-color: transparent; }
+/* 按钮统一用 ui.css 的 .btn / .btn-primary —— 后台各页面的控件外观必须一致，
+   不在这里另造一套（之前自查发现画布页用的 auto-btn 与其它页面不统一）。 */
 
 /* 主区：宽屏左右分栏，窄屏上下堆叠（画布在上、侧栏在下）。 */
 .auto-main {

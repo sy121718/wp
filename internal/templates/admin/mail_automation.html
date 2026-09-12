@@ -20,7 +20,8 @@
     {{if len(.Automations) == 0}}
     <p class="pages-empty">还没有流程。先新建一条，比如「新订阅 → 等 1 天 → 发欢迎邮件 → 打上 welcomed 标签」。</p>
     {{else}}
-    <table class="pages-table">
+    <div class="pages-table-wrap" tabindex="0">
+      <table class="pages-table">
       <thead><tr><th>名称</th><th>触发方式</th><th>状态</th><th>版本</th><th>操作</th></tr></thead>
       <tbody>
       {{range _, a := .Automations}}
@@ -39,16 +40,16 @@
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="id" value="{{a.ID}}">
             {{if a.Status == "active"}}
-            <input type="hidden" name="status" value="paused"><button type="submit">暂停</button>
+            <input type="hidden" name="status" value="paused"><button type="submit" class="btn btn-sm">暂停</button>
             {{else}}
-            <input type="hidden" name="status" value="active"><button type="submit">启用</button>
+            <input type="hidden" name="status" value="active"><button type="submit" class="btn btn-sm">启用</button>
             {{end}}
           </form>
           <form method="post" action="/admin/mail/automation/delete" style="display:inline"
                 onsubmit="return confirm('删除流程？进行中的实例会先停止。')">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="id" value="{{a.ID}}">
-            <button type="submit">删除</button>
+            <button type="submit" class="btn btn-sm">删除</button>
           </form>
         </td>
       </tr>
@@ -69,11 +70,11 @@
       运行中 {{.CountRunning}} · 等待中 {{.CountWaiting}} ·
       已完成 {{.CountCompleted}} · 失败 {{.CountFailed}} · 已停止 {{.CountStopped}}
     </p>
-    <form method="post" action="/admin/mail/automation/tick">
+    <form class="pages-form" method="post" action="/admin/mail/automation/tick">
       <input type="hidden" name="csrf_token" value="{{csrf}}">
-      <button type="submit">补投延时实例（扫一轮到点的）</button>
+      <button type="submit" class="btn btn-sm">补投延时实例（扫一轮到点的）</button>
     </form>
-    <form method="get" action="/admin/mail/automation">
+    <form class="pages-form" method="get" action="/admin/mail/automation">
       <label>按流程 id 筛：<input type="text" name="automationId" value="{{.FilterID}}" size="6"></label>
       <label>按状态筛：
         <select name="runStatus">
@@ -85,10 +86,11 @@
           <option value="stopped">已停止</option>
         </select>
       </label>
-      <button type="submit">筛选</button>
+      <button type="submit" class="btn btn-sm">筛选</button>
     </form>
     {{if .Runs}}
-    <table class="pages-table">
+    <div class="pages-table-wrap" tabindex="0">
+      <table class="pages-table">
       <thead><tr><th>邮箱</th><th>状态</th><th>当前 / 下一节点</th><th>下次继续</th><th>触发</th><th>说明</th><th></th></tr></thead>
       <tbody>
       {{range _, r := .Runs}}

@@ -324,6 +324,9 @@ var mailAutomationSQL string
 //go:embed 132_mail_automation.sql
 var mailAutomationPermSQL string
 
+//go:embed 133_mail_automation_layout_perm.sql
+var mailAutomationLayoutPermSQL string
+
 func init() {
 	register(Migration{
 		Version:   "001-init-schema",
@@ -1415,5 +1418,13 @@ func init() {
 		TableName:    "sys_permission",
 		ConditionSQL: "SELECT COUNT(*) FROM sys_permission WHERE permission_code = 'mail:automation_list'",
 		SQL:          mailAutomationPermSQL,
+	})
+
+	// 133：画布位置接口权限点（issue #38 P4）。用 Seed（见 126 说明）。
+	registerSeed(Seed{
+		Version:      "133-mail-automation-layout",
+		TableName:    "sys_permission",
+		ConditionSQL: "SELECT COUNT(*) FROM sys_permission WHERE permission_code = 'mail:automation_layout'",
+		SQL:          mailAutomationLayoutPermSQL,
 	})
 }

@@ -7,7 +7,7 @@
   <div class="auto-bar">
     <strong>{{.A.Name}}</strong>
     <span class="auto-badge">v{{.A.Version}} · {{.A.Status}}</span>
-    <button type="button" id="autoSavePos" class="auto-btn">保存位置</button>
+    <button type="button" id="autoSavePos" class="btn">保存位置</button>
     <span id="autoStatus" class="auto-status" role="status" aria-live="polite"></span>
     <span class="auto-spacer"></span>
     <a href="/admin/mail/automation/edit?id={{.A.ID}}">改用表单编辑</a>
@@ -44,7 +44,7 @@
           改完点下面的「保存结构」——它会走和表单页<strong>同一套图校验</strong>
           （有环、指向不存在的节点、走不到的节点都会被拒绝）。
         </p>
-        <p><button type="submit" class="auto-btn auto-btn-primary">保存结构</button></p>
+        <p><button type="submit" class="btn btn-primary">保存结构</button></p>
       </form>
     </aside>
   </div>

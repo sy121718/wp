@@ -12,7 +12,8 @@
 
   <section class="pages-card">
     <h2>基本信息</h2>
-    <table class="pages-table">
+    <div class="pages-table-wrap" tabindex="0">
+      <table class="pages-table">
       <tbody>
         <tr><th>联系人</th><td>{{d.Email}}{{if d.Name != ""}}（{{d.Name}}）{{end}}</td></tr>
         <tr><th>流程</th><td>{{d.AutomationName}}（id={{d.AutomationID}}）</td></tr>
@@ -32,7 +33,8 @@
     {{if len(.D.Timeline) == 0}}
     <p class="pages-empty">还没有执行记录（实例可能刚建、任务还没跑到）。</p>
     {{else}}
-    <table class="pages-table">
+    <div class="pages-table-wrap" tabindex="0">
+      <table class="pages-table">
       <thead><tr><th>时间</th><th>节点</th><th>类型</th><th>结果</th><th>详情</th></tr></thead>
       <tbody>
       {{range _, l := .D.Timeline}}

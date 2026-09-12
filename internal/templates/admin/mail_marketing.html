@@ -35,13 +35,14 @@
         <option value="bounced">硬退信</option>
         <option value="complained">投诉</option>
       </select>
-      <button type="submit">筛选</button>
+      <button type="submit" class="btn btn-sm">筛选</button>
     </form>
 
     {{if len(.Contacts) == 0}}
     <p class="pages-empty">没有匹配的联系人。</p>
     {{else}}
-    <table class="pages-table">
+    <div class="pages-table-wrap" tabindex="0">
+      <table class="pages-table">
       <thead><tr><th>邮箱</th><th>姓名</th><th>状态</th><th>标签</th><th>来源</th><th>同意来源</th><th>操作</th></tr></thead>
       <tbody>
       {{range _, c := .Contacts}}
@@ -66,7 +67,7 @@
               <option value="unsubscribed">退订</option>
             </select>
             <input type="text" name="note" placeholder="来源备注">
-            <button type="submit">更新</button>
+            <button type="submit" class="btn btn-sm">更新</button>
           </form>
         </td>
       </tr>
@@ -90,7 +91,7 @@
       <label>同意来源 <input type="text" name="consent_source" placeholder="例如：2026-09 线下展会收集，已获口头同意"></label>
       <label><input type="checkbox" name="update_existing"> 已存在的联系人更新标签（<strong>不会</strong>改动他们的同意状态）</label>
       <label>内容 <textarea name="content" rows="10" placeholder="a@example.com&#10;b@example.com&#10;或 CSV：email,name,tags"></textarea></label>
-      <button type="submit">导入</button>
+      <button type="submit" class="btn btn-primary">导入</button>
     </form>
   </section>
 
@@ -99,7 +100,8 @@
     {{if len(.Campaigns) == 0}}
     <p class="pages-empty">还没有活动。新建后点「启动群发」开始发送。</p>
     {{else}}
-    <table class="pages-table">
+    <div class="pages-table-wrap" tabindex="0">
+      <table class="pages-table">
       <thead><tr><th>名称</th><th>状态</th><th>目标标签</th><th>进度</th><th>操作</th></tr></thead>
       <tbody>
       {{range _, cp := .Campaigns}}
@@ -118,12 +120,12 @@
           <form method="post" action="/admin/mail/campaign/start" style="display:inline">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="id" value="{{cp.ID}}">
-            <button type="submit">启动群发</button>
+            <button type="submit" class="btn btn-sm">启动群发</button>
           </form>
           <form method="post" action="/admin/mail/campaign/delete" style="display:inline">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="id" value="{{cp.ID}}">
-            <button type="submit">删除</button>
+            <button type="submit" class="btn btn-sm">删除</button>
           </form>
         </td>
       </tr>
@@ -154,7 +156,7 @@
       </label>
       <label>目标标签（逗号分隔，留空 = 全部已订阅） <input type="text" name="target_tags" placeholder="vip"></label>
       <label>邮件主题 <input type="text" name="subject" required></label>
-      <button type="submit">保存活动</button>
+      <button type="submit" class="btn btn-primary">保存活动</button>
     </form>
   </section>
 </div>

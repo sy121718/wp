@@ -29,7 +29,8 @@
     {{if len(.Accounts) == 0}}
     <p class="pages-empty">还没有配置发信账号。没有账号时，注册验证之类的邮件发不出去。</p>
     {{else}}
-    <table class="pages-table">
+    <div class="pages-table-wrap" tabindex="0">
+      <table class="pages-table">
       <thead><tr><th>名称</th><th>用途</th><th>发件人</th><th>服务器</th><th>密码</th><th>上次检测</th><th>操作</th></tr></thead>
       <tbody>
       {{range _, a := .Accounts}}
@@ -47,18 +48,18 @@
           <form method="post" action="/admin/mail/account/default" style="display:inline">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="id" value="{{a.ID}}">
-            <button type="submit">设为默认</button>
+            <button type="submit" class="btn btn-sm">设为默认</button>
           </form>
           <form method="post" action="/admin/mail/account/test" style="display:inline">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="id" value="{{a.ID}}">
             <input type="email" name="to_email" placeholder="收件人" required>
-            <button type="submit">测试发送</button>
+            <button type="submit" class="btn btn-sm">测试发送</button>
           </form>
           <form method="post" action="/admin/mail/account/delete" style="display:inline">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="id" value="{{a.ID}}">
-            <button type="submit">删除</button>
+            <button type="submit" class="btn btn-sm">删除</button>
           </form>
         </td>
       </tr>
@@ -93,7 +94,7 @@
       <label>用户名 <input type="text" name="username"></label>
       <label>密码 <input type="password" name="password" placeholder="更新时留空表示不改"></label>
       <label>每小时上限 <input type="number" name="rate_per_hour" value="0"></label>
-      <button type="submit">保存账号</button>
+      <button type="submit" class="btn btn-primary">保存账号</button>
     </form>
   </section>
 
@@ -106,7 +107,8 @@
     {{if len(.Templates) == 0}}
     <p class="pages-empty">还没有模板。</p>
     {{else}}
-    <table class="pages-table">
+    <div class="pages-table-wrap" tabindex="0">
+      <table class="pages-table">
       <thead><tr><th>标识</th><th>语言</th><th>名称</th><th>主题</th><th>变量</th><th>操作</th></tr></thead>
       <tbody>
       {{range _, t := .Templates}}
@@ -121,7 +123,7 @@
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="template_key" value="{{t.TemplateKey}}">
             <input type="hidden" name="locale" value="{{t.Locale}}">
-            <button type="submit">删除</button>
+            <button type="submit" class="btn btn-sm">删除</button>
           </form>
         </td>
       </tr>
@@ -140,7 +142,7 @@
       <label>HTML 正文 <textarea name="body_html" rows="8"></textarea></label>
       <label>纯文本正文 <textarea name="body_text" rows="4"></textarea></label>
       <label>变量（逗号分隔） <input type="text" name="variables" placeholder="name,email"></label>
-      <button type="submit">保存模板</button>
+      <button type="submit" class="btn btn-primary">保存模板</button>
     </form>
   </section>
 </div>

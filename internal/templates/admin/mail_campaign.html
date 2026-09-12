@@ -23,7 +23,8 @@
 
   <section class="pages-card">
     <h2>投递与互动</h2>
-    <table class="pages-table">
+    <div class="pages-table-wrap" tabindex="0">
+      <table class="pages-table">
       <thead><tr><th>指标</th><th>数值</th><th>说明</th></tr></thead>
       <tbody>
         <tr><td>目标人数</td><td>{{r.Target}}</td><td>启动时按标签统计的快照</td></tr>
@@ -45,7 +46,8 @@
     {{if len(r.Links) == 0}}
     <p class="pages-empty">还没有点击数据。</p>
     {{else}}
-    <table class="pages-table">
+    <div class="pages-table-wrap" tabindex="0">
+      <table class="pages-table">
       <thead><tr><th>链接</th><th>点击人数</th><th>点击次数</th></tr></thead>
       <tbody>
       {{range _, l := r.Links}}
@@ -62,7 +64,8 @@
     {{if len(r.Recipients) == 0}}
     <p class="pages-empty">还没有投递记录。</p>
     {{else}}
-    <table class="pages-table">
+    <div class="pages-table-wrap" tabindex="0">
+      <table class="pages-table">
       <thead><tr><th>邮箱</th><th>姓名</th><th>状态</th><th>发送时间</th><th>打开</th><th>点击</th><th>错误</th></tr></thead>
       <tbody>
       {{range _, p := r.Recipients}}
