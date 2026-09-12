@@ -183,3 +183,85 @@ var(--sky-c-primary, var(--c-primary, 兜底))
   而不是"能省则省"。
 
 **倒计时（需要真实当前时间）与拖拽（需要指针事件）永远得留 JS。**
+
+---
+
+## 10. 原始控件层：类名、硬规则与迁移进度
+
+> 这一节是「新页面该用什么类」的唯一依据。写页面时先看这里，别再看别的页面抄。
+
+### 10.1 为什么会有这一节
+
+控件视觉一度是**绑在容器类上**的（`.pages-form input { … }`）。后果是：**不套那个容器就没样式**。
+画布页的侧栏用了自己的 `.auto-form` 容器，输入框就退化成了浏览器默认外观 ——
+看起来像「掉样式」，实际是「没进容器」。这类问题每写一个新页面就复现一次。
+
+同一个控件还被写了十几遍：`.pages-form input` / `.attr-form-head input` / `.locale-add input` /
+`.theme-font-input` …，字号各不相同（13 与 14），focus 态只有一份，
+而主按钮的颜色甚至有两套 —— `.pages-form .btn-primary` 写死蓝色 `#2563eb`，
+而 `--c-primary` 其实是深灰 `#3d444f`。**同一个主题下，表单里的主按钮和别处的主按钮颜色不一样。**
+
+### 10.2 类名清单（唯一来源：`static/css/ui.css`）
+
+| 控件 | 类名 | 说明 |
+|---|---|---|
+| 文本输入 | `form-input` | 含 `:focus` / `:focus-visible` / `:disabled` / `[aria-invalid=true]` |
+| 下拉 | `form-select` | 同上 |
+| 多行文本 | `form-textarea` | 同上，`resize: vertical` |
+| 字段容器 | `form-group` | 下边距 |
+| 标签 | `form-label` | 必填标记用内部 `<span class="req">` |
+| 提示 / 错误 | `form-hint` / `form-error` | 小字说明 |
+| 行内多列 | `form-row` | 一行放几个字段 |
+| 复选框 | `checkbox` | 包 `<input type="checkbox">` |
+| 按钮 | `btn` + `btn-primary` / `btn-secondary` / `btn-ghost` / `btn-danger` / `btn-sm` / `btn-icon` | `btn` 是基类，必须带 |
+| 卡片 | `card` + `card-header` / `card-title` / `card-body` / `card-footer` | |
+| 表格 | `data-table` | |
+| 徽标 / 状态点 | `badge(-success/-warning/-danger/-mute)` / `dot(-…)` | |
+
+工具类：`w-full` `text-sm` `text-xs` `text-mute` `text-right` `mt-*` `mb-*` `gap-*` `flex` `items-center` `justify-between`。
+
+### 10.3 硬规则
+
+1. **新页面直接用类**：`<input class="form-input">`、`<select class="form-select">`、`<button class="btn btn-primary">`。
+   **不要**写「容器选择器给内部控件上样式」（`.xxx-form input { … }`）—— 那是掉样式的根源，
+   而且同一个控件会被重写很多遍。
+2. **容器类只写布局**：宽度、间距、排列、栅格可以写；边框 / 圆角 / 内边距 / 字号 / 焦点态**不写**。
+3. **视觉只有一处定义**：`ui.css`。发现某处视觉不一致时改 `ui.css`，不要在页面里覆盖。
+4. **语义色走变量**：`var(--c-primary)` / `var(--c-danger)` …，不要写死十六进制。
+   主题切换与暗色模式依赖它们（写死色的那些规则在暗色下必然错）。
+5. **多端**（与组件同一条硬规则）：输入宽度写 `min(100%, <设计宽度>)`；
+   触屏只依赖原生控件（不要自造）；键盘焦点必须可见（`:focus-visible` 已在基座里）。
+
+### 10.4 存量桥接与迁移进度
+
+存量页面（约 630 个控件、540 个仍靠容器类上样式）**不可能一次改完**，所以 `ui.css` 里有一组
+**桥接选择器**：把 `.pages-form input` / `.attr-form-head input` / `.locale-add input` 等容器选择器
+列进**同一组视觉规则**。
+
+于是：
+
+- 视觉仍然只有一处定义（没有第二套值）；
+- 存量页面**不会掉样式**；
+- 新页面用类名，天生不依赖容器。
+
+**桥接只为存量，不再扩大使用面。** 逐页迁移的做法：给控件加 `class="form-input"` / `form-select` /
+`form-textarea`，然后把该页容器规则里的**视觉部分删掉、只留宽度**。
+
+已迁移：画布侧栏（`mail_automation_canvas.html`）。
+待迁移：product / inventory / masterdata / theme / navigation 等页面（迁移时逐页浏览器验证，
+不要一次全改 —— 一处视觉回归在几十个页面里很难定位）。
+
+### 10.5 验证方式
+
+改完控件样式必须**在浏览器里读计算值**，不能只看自己写的 CSS：
+
+```js
+getComputedStyle(document.querySelector('.form-input')) // padding / borderRadius / fontSize / borderColor
+```
+
+再配合三种视口（1440 / 768 / 375）与四种输入（鼠标 / 滚轮 / 触屏 / 键盘）各过一遍。
+本项目多次出现「核对了自己写的配置、没核对系统实际做的事」导致的误判。
+
+另一个常见陷阱：**改完 CSS 记得硬刷新**（`Page.reload { ignoreCache: true }`）——
+浏览器缓存会让你以为改动没生效。
+
