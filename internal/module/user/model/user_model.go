@@ -131,9 +131,17 @@ func (m *UserModel) GetByUsername(ctx context.Context, username string) (e *User
 }
 
 // GetByEmail 按邮箱取（同样大小写不敏感）。
+//
+// **空邮箱直接返回未找到**：第三方注册的账号可能没有邮箱（微信 / QQ 默认不返回），
+// 而迁移 123 里空串是允许重复的 —— 若拿空串去查，会把**另一个也没邮箱的账号**匹配出来，
+// 等于串号。空邮箱不是有效的查询条件。
 func (m *UserModel) GetByEmail(ctx context.Context, email string) (e *UserEntity, err error) {
+	addr := strings.TrimSpace(email)
+	if addr == "" {
+		return nil, gorm.ErrRecordNotFound
+	}
 	e = &UserEntity{}
-	err = m.DB(ctx).Where("lower(email) = lower(?)", strings.TrimSpace(email)).First(e).Error
+	err = m.DB(ctx).Where("lower(email) = lower(?)", addr).First(e).Error
 	return e, err
 }
 
@@ -189,9 +197,15 @@ func (m *UserModel) Delete(ctx context.Context, id uint64) (err error) {
 	return m.DB(ctx).Where("id = ?", id).Delete(&UserEntity{}).Error
 }
 
-// CountByExistence 统计同名 / 同邮箱的其它用户数（唯一性校验用，排除自身）。
+// CountByExistence 统计登录名 / 邮箱冲突的其它用户数（唯一性校验用，排除自身）。
+//
+// 邮箱为空时不参与判断：空邮箱在库里允许重复（第三方账号可能没有邮箱），
+// 拿它去比对会把两个都没邮箱的账号判成冲突。
 func (m *UserModel) CountByExistence(ctx context.Context, username, email string, excludeID uint64) (count int64, err error) {
-	q := m.DB(ctx).Where("lower(username) = lower(?) OR lower(email) = lower(?)", strings.TrimSpace(username), strings.TrimSpace(email))
+	q := m.DB(ctx).Where("lower(username) = lower(?)", strings.TrimSpace(username))
+	if addr := strings.TrimSpace(email); addr != "" {
+		q = q.Or("lower(email) = lower(?)", addr)
+	}
 	if excludeID > 0 {
 		q = q.Where("id <> ?", excludeID)
 	}

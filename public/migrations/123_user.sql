@@ -16,8 +16,12 @@
 CREATE TABLE IF NOT EXISTS users (
     id                    BIGSERIAL    PRIMARY KEY,
     username              VARCHAR(60)  NOT NULL,
-    password              VARCHAR(100) NOT NULL,
-    email                 VARCHAR(100) NOT NULL,
+    -- 第三方登录注册的账号**没有密码**：空串表示「只能走第三方登录」，
+    -- 登录逻辑据此拒绝密码登录（而不是让空串能匹配上任何哈希）。
+    password              VARCHAR(100) NOT NULL DEFAULT '',
+    -- 邮箱可空：微信 / QQ 默认**不返回邮箱**（需额外申请权限），第三方注册的账号可能没有。
+    -- 空串（而非 NULL）表示「未提供」，配合下面的部分唯一索引：空串可重复，真实邮箱仍唯一。
+    email                 VARCHAR(100) NOT NULL DEFAULT '',
     email_verified_at     TIMESTAMP(3),
     -- 1 正常 / 0 禁用 / 2 待激活（等待邮箱验证）；与 WP 的 user_status 同义但取值有定义
     status                SMALLINT     NOT NULL DEFAULT 1,
@@ -48,7 +52,8 @@ CREATE TABLE IF NOT EXISTS users (
 );
 -- 登录名与邮箱**大小写不敏感唯一**（登录时不该因为大小写差异变成两个账号）
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username ON users (lower(username));
-CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users (lower(email));
+-- 邮箱唯一但**排除空串**：多个第三方账号可以都没有邮箱，真实邮箱仍不许重复。
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users (lower(email)) WHERE email <> '';
 CREATE INDEX IF NOT EXISTS idx_users_status ON users (status);
 CREATE INDEX IF NOT EXISTS idx_users_activation_key ON users (activation_key) WHERE activation_key IS NOT NULL;
 
@@ -144,3 +149,34 @@ CREATE TABLE IF NOT EXISTS user_meta (
     update_time TIMESTAMP(3)
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_user_meta_key ON user_meta (user_id, meta_key);
+
+-- 7. user_oauth_bindings —— 第三方登录绑定（**预留给后续扩展**：Google / QQ / 微信 / GitHub…）
+--
+-- 现在就建表的理由：这类「身份绑定」的落点一旦定错，后补要动 users 表与登录逻辑；
+-- 表放在这里不影响任何现有代码，接 provider 时直接用。
+--
+-- 设计要点：
+--   · 唯一键是 (provider, open_id)：同一平台的同一账号只能绑一个用户；
+--   · 微信特殊：openid 是「应用内」标识、unionid 是「同一开放平台下跨应用」标识，
+--     两个都要存 —— 只存 openid 会导致同一用户在不同应用里被认成两个人；
+--   · nickname / avatar 是**第三方返回的快照**，随时可能变，只作展示与回填参考，
+--     不作为账号的权威字段（权威字段始终在 users 上）；
+--   · raw 存原始返回，排障与将来适配用。
+--
+-- 归属：本表只管**访客账号**的绑定。后台管理员的第三方登录走 admin 模块自己的绑定表 ——
+-- 不共用一张表（AGENTS.md 表隔离约定）；共用的只有 pkg/oauth 里的协议实现。
+CREATE TABLE IF NOT EXISTS user_oauth_bindings (
+    id            BIGSERIAL    PRIMARY KEY,
+    user_id       BIGINT       NOT NULL,
+    provider      VARCHAR(32)  NOT NULL,
+    open_id       VARCHAR(191) NOT NULL,
+    union_id      VARCHAR(191),
+    nickname      VARCHAR(191),
+    avatar        VARCHAR(500),
+    raw           JSONB,
+    bound_at      TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_login_at TIMESTAMP(3)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_user_oauth_provider_openid ON user_oauth_bindings (provider, open_id);
+CREATE INDEX IF NOT EXISTS idx_user_oauth_user_id ON user_oauth_bindings (user_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_user_oauth_unionid ON user_oauth_bindings (provider, union_id) WHERE union_id IS NOT NULL;
