@@ -3,6 +3,7 @@
 package loader
 
 import (
+	_ "embed" // loader.css 经 //go:embed 打进二进制
 	"fmt"
 	"strconv"
 
@@ -71,188 +72,71 @@ func validateExtra(p *Props, nodeID string) (err error) {
 }
 
 // compileCSS 容器/形态/尺寸/颜色样式（keyframes 组件内私有：加载节奏
-// 与通用循环动效的 2.4s 节奏不同，仅本组件消费）。
+// loaderCSS 组件样式源。与组件同目录：改样式不必再进 Go 字符串数组。
+//
+//go:embed loader.css
+var loaderCSS string
+
+// compileCSS 加载指示器样式（9 种形态）。
+//
+// Go 侧只做两件事：补尺寸默认值、把「用哪个形态」翻成布尔量；
+// 各形态的相位延迟（按序号逐条）交给样式源的 @each 展开。
 func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	sel := "." + core.NodeClass(id)
 	size := p.Size
 	if size == "" {
 		size = "32px"
 	}
-	b.Add(core.BreakpointDesktop, sel, []string{
-		"display: inline-flex",
-		"align-items: center",
-		"gap: 12px",
-		core.CSSDecl("color", p.Color),
-		"--sky-loader-size: " + size,
-	})
-	switch effectiveVariant(p) {
-	case VariantSpinner:
-		b.Add(core.BreakpointDesktop, sel+" .sky-loader-ring", []string{
-			"width: var(--sky-loader-size)",
-			"height: var(--sky-loader-size)",
-			"border: 3px solid var(--sky-c-border, rgba(0,0,0,.12))",
-			"border-top-color: currentColor",
-			"border-radius: 50%",
-			"animation: sky-loader-spin .8s linear infinite",
-		})
-		b.AddKeyframesDecls("sky-loader-spin", []string{
-			"to { transform: rotate(360deg) }",
-		})
-	case VariantDots:
-		b.Add(core.BreakpointDesktop, sel+" .sky-loader-dot", []string{
-			"width: calc(var(--sky-loader-size) / 4)",
-			"height: calc(var(--sky-loader-size) / 4)",
-			"border-radius: 50%",
-			"background: currentColor",
-			"animation: sky-loader-dot .6s ease-in-out infinite alternate",
-		})
-		b.Add(core.BreakpointDesktop, sel+" .sky-loader-dot:nth-child(2)", []string{"animation-delay: .15s"})
-		b.Add(core.BreakpointDesktop, sel+" .sky-loader-dot:nth-child(3)", []string{"animation-delay: .3s"})
-		b.AddKeyframesDecls("sky-loader-dot", []string{
-			"from { transform: translateY(0); opacity: .4 }",
-			"to { transform: translateY(calc(var(--sky-loader-size) / -4)); opacity: 1 }",
-		})
-	case VariantBars:
-		b.Add(core.BreakpointDesktop, sel+" .sky-loader-bar", []string{
-			"width: calc(var(--sky-loader-size) / 8)",
-			"height: calc(var(--sky-loader-size) * .75)",
-			"border-radius: 2px",
-			"background: currentColor",
-			"animation: sky-loader-bar .9s ease-in-out infinite",
-		})
-		b.Add(core.BreakpointDesktop, sel+" .sky-loader-bar:nth-child(2)", []string{"animation-delay: .15s"})
-		b.Add(core.BreakpointDesktop, sel+" .sky-loader-bar:nth-child(3)", []string{"animation-delay: .3s"})
-		b.Add(core.BreakpointDesktop, sel+" .sky-loader-bar:nth-child(4)", []string{"animation-delay: .45s"})
-		b.AddKeyframesDecls("sky-loader-bar", []string{
-			"0%, 100% { transform: scaleY(.4) }",
-			"50% { transform: scaleY(1) }",
-		})
-	case VariantPulse:
-		b.Add(core.BreakpointDesktop, sel+" .sky-loader-pulse", []string{
-			"position: relative",
-			"width: var(--sky-loader-size)",
-			"height: var(--sky-loader-size)",
-		})
-		pulseBase := []string{
-			"content: ''",
-			"position: absolute",
-			"inset: 0",
-			"border-radius: 50%",
-			"border: 3px solid currentColor",
+	variant := effectiveVariant(p)
+
+	// 相位延迟列表：nth 是子元素序号（从 1 起），delay 直接进 animation-delay。
+	delays := func(vals ...string) []map[string]string {
+		out := make([]map[string]string, 0, len(vals))
+		for i, d := range vals {
+			out = append(out, map[string]string{"nth": strconv.Itoa(i + 1), "delay": d})
 		}
-		b.Add(core.BreakpointDesktop, sel+" .sky-loader-pulse::before", append(pulseBase, "animation: sky-loader-pulse 1.2s ease-out infinite"))
-		b.Add(core.BreakpointDesktop, sel+" .sky-loader-pulse::after", append(pulseBase, "animation: sky-loader-pulse 1.2s ease-out .6s infinite"))
-		b.AddKeyframesDecls("sky-loader-pulse", []string{
-			"from { transform: scale(.5); opacity: 1 }",
-			"to { transform: scale(1.4); opacity: 0 }",
-		})
-	case VariantPlane:
-		// 平面翻转：单方块绕 X/Y 轴循环翻转（3D，合成器友好）。
-		b.Add(core.BreakpointDesktop, sel+" .sky-loader-plane", []string{
-			"width: var(--sky-loader-size)",
-			"height: var(--sky-loader-size)",
-			"background: currentColor",
-			"border-radius: 4px",
-			"animation: sky-loader-plane 1.6s ease-in-out infinite",
-		})
-		b.AddKeyframesDecls("sky-loader-plane", []string{
-			"0%, 100% { transform: perspective(400px) rotateX(0) rotateY(0) }",
-			"25% { transform: perspective(400px) rotateX(180deg) rotateY(0) }",
-			"50% { transform: perspective(400px) rotateX(180deg) rotateY(180deg) }",
-			"75% { transform: perspective(400px) rotateX(0) rotateY(180deg) }",
-		})
-	case VariantGrid:
-		// 九宫格脉冲：3×3 方块按对角线错落缩放。
-		b.Add(core.BreakpointDesktop, sel+" .sky-loader-grid", []string{
-			"display: grid",
-			"grid-template-columns: repeat(3, 1fr)",
-			"gap: calc(var(--sky-loader-size) / 12)",
-			"width: var(--sky-loader-size)",
-			"height: var(--sky-loader-size)",
-		})
-		b.Add(core.BreakpointDesktop, sel+" .sky-loader-grid i", []string{
-			"background: currentColor",
-			"border-radius: 2px",
-			"animation: sky-loader-grid 1.3s ease-in-out infinite",
-		})
-		delays := []float64{0, .1, .2, .1, .2, .3, .2, .3, .4}
-		for i, d := range delays {
-			b.Add(core.BreakpointDesktop, sel+" .sky-loader-grid i:nth-child("+strconv.Itoa(i+1)+")",
-				[]string{fmt.Sprintf("animation-delay: %.1fs", d)})
+		return out
+	}
+	// dots / bars 的首个子元素不设延迟，序号从 2 起。
+	shifted := func(vals ...string) []map[string]string {
+		out := make([]map[string]string, 0, len(vals))
+		for i, d := range vals {
+			out = append(out, map[string]string{"nth": strconv.Itoa(i + 2), "delay": d})
 		}
-		b.AddKeyframesDecls("sky-loader-grid", []string{
-			"0%, 70%, 100% { transform: scale(1); opacity: 1 }",
-			"35% { transform: scale(.45); opacity: .35 }",
-		})
-	case VariantOrbit:
-		// 环绕点：单点绕容器中心匀速旋转（线性，最省合成开销）。
-		b.Add(core.BreakpointDesktop, sel+" .sky-loader-orbit", []string{
-			"position: relative",
-			"width: var(--sky-loader-size)",
-			"height: var(--sky-loader-size)",
-			"animation: sky-loader-orbit 1.4s linear infinite",
-		})
-		b.Add(core.BreakpointDesktop, sel+" .sky-loader-orbit::before", []string{
-			"content: ''",
-			"position: absolute",
-			"top: 0",
-			"left: 50%",
-			"width: calc(var(--sky-loader-size) / 5)",
-			"height: calc(var(--sky-loader-size) / 5)",
-			"margin-left: calc(var(--sky-loader-size) / -10)",
-			"border-radius: 50%",
-			"background: currentColor",
-		})
-		b.AddKeyframesDecls("sky-loader-orbit", []string{"to { transform: rotate(360deg) }"})
-	case VariantWave:
-		// 波浪条（SpinKit wave）：五根竖条共用一条 scaleY 帧，靠负延迟错开相位。
-		// 负延迟让首帧就落在动画中段——加载态刚出现时不会先静止一拍。
-		b.Add(core.BreakpointDesktop, sel+" .sky-loader-wave", []string{
-			"display: flex",
-			"align-items: center",
-			"gap: calc(var(--sky-loader-size) / 8)",
-			"height: var(--sky-loader-size)",
-		})
-		b.Add(core.BreakpointDesktop, sel+" .sky-loader-wave i", []string{
-			"width: calc(var(--sky-loader-size) / 10)",
-			"height: 100%",
-			"border-radius: 1px",
-			"background: currentColor",
-			"animation: sky-loader-wave 1.2s ease-in-out infinite",
-		})
-		for i, d := range []string{"-1.2s", "-1.1s", "-1s", "-.9s", "-.8s"} {
-			b.Add(core.BreakpointDesktop,
-				fmt.Sprintf("%s .sky-loader-wave i:nth-child(%d)", sel, i+1),
-				[]string{"animation-delay: " + d})
-		}
-		b.AddKeyframesDecls("sky-loader-wave", []string{
-			"0%, 40%, 100% { transform: scaleY(.4) }",
-			"20% { transform: scaleY(1) }",
-		})
-	case VariantBounce:
-		// 三点弹跳（SpinKit three-bounce）：缩放出现 + 相位错开，同样用负延迟。
-		b.Add(core.BreakpointDesktop, sel+" .sky-loader-bounce", []string{
-			"width: calc(var(--sky-loader-size) / 4)",
-			"height: calc(var(--sky-loader-size) / 4)",
-			"border-radius: 50%",
-			"background: currentColor",
-			"animation: sky-loader-bounce 1.4s ease-in-out infinite both",
-		})
-		for i, d := range []string{"-.32s", "-.16s", "0s"} {
-			b.Add(core.BreakpointDesktop,
-				fmt.Sprintf("%s .sky-loader-bounce:nth-child(%d)", sel, i+1),
-				[]string{"animation-delay: " + d})
-		}
-		b.AddKeyframesDecls("sky-loader-bounce", []string{
-			"0%, 80%, 100% { transform: scale(0) }",
-			"40% { transform: scale(1) }",
+		return out
+	}
+	// 九宫格的延迟是等差序列，按对角线错落，用一位小数（与迁移前同一格式）。
+	gridDelays := make([]map[string]string, 0, 9)
+	for i, d := range []float64{0, .1, .2, .1, .2, .3, .2, .3, .4} {
+		gridDelays = append(gridDelays, map[string]string{
+			"nth":   strconv.Itoa(i + 1),
+			"delay": fmt.Sprintf("%.1fs", d),
 		})
 	}
-	if p.Label != "" {
-		b.Add(core.BreakpointDesktop, sel+" .sky-loader-label", []string{
-			"font-size: 14px",
-			"line-height: 1",
-		})
+
+	vars := map[string]string{
+		"size":     size,
+		"color":    p.Color,
+		"spinner":  core.BoolVar(variant == VariantSpinner),
+		"dots":     core.BoolVar(variant == VariantDots),
+		"bars":     core.BoolVar(variant == VariantBars),
+		"pulse":    core.BoolVar(variant == VariantPulse),
+		"plane":    core.BoolVar(variant == VariantPlane),
+		"grid":     core.BoolVar(variant == VariantGrid),
+		"orbit":    core.BoolVar(variant == VariantOrbit),
+		"wave":     core.BoolVar(variant == VariantWave),
+		"bounce":   core.BoolVar(variant == VariantBounce),
+		"hasLabel": core.BoolVar(p.Label != ""),
+	}
+	lists := map[string][]map[string]string{
+		"dotsDelays":   shifted(".15s", ".3s"),
+		"barsDelays":   shifted(".15s", ".3s", ".45s"),
+		"gridDelays":   gridDelays,
+		"waveDelays":   delays("-1.2s", "-1.1s", "-1s", "-.9s", "-.8s"),
+		"bounceDelays": delays("-.32s", "-.16s", "0s"),
+	}
+	if err := core.ApplyComponentCSSTmplLists(b, sel, loaderCSS, vars, lists); err != nil {
+		panic(fmt.Sprintf("loader 组件样式解析失败: %v", err))
 	}
 }
 

@@ -1,0 +1,232 @@
+/* core.loader 加载指示器样式：9 种形态，纯 CSS 动画，零客户端 JS。
+
+   每个形态是一整块结构（规则 + 相位延迟 + 关键帧），所以走规则级 @if；
+   相位延迟是「按序号逐条」的重复规则，交给 @each 展开。
+   尺寸只用 --sky-loader-size 一处定义，其余全部按它换算 —— 改尺寸不必改动画。 */
+
+& {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  color: {{color}};
+  --sky-loader-size: {{size}};
+}
+
+@if spinner
+& .sky-loader-ring {
+  width: var(--sky-loader-size);
+  height: var(--sky-loader-size);
+  border: 3px solid var(--sky-c-border, rgba(0,0,0,.12));
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: sky-loader-spin .8s linear infinite;
+}
+
+@keyframes sky-loader-spin {
+  to { transform: rotate(360deg) }
+}
+@endif
+
+@if dots
+& .sky-loader-dot {
+  width: calc(var(--sky-loader-size) / 4);
+  height: calc(var(--sky-loader-size) / 4);
+  border-radius: 50%;
+  background: currentColor;
+  animation: sky-loader-dot .6s ease-in-out infinite alternate;
+}
+
+@each d in dotsDelays
+& .sky-loader-dot:nth-child({{d.nth}}) {
+  animation-delay: {{d.delay}};
+}
+@endfor
+
+@keyframes sky-loader-dot {
+  from { transform: translateY(0); opacity: .4 }
+  to { transform: translateY(calc(var(--sky-loader-size) / -4)); opacity: 1 }
+}
+@endif
+
+@if bars
+& .sky-loader-bar {
+  width: calc(var(--sky-loader-size) / 8);
+  height: calc(var(--sky-loader-size) * .75);
+  border-radius: 2px;
+  background: currentColor;
+  animation: sky-loader-bar .9s ease-in-out infinite;
+}
+
+@each d in barsDelays
+& .sky-loader-bar:nth-child({{d.nth}}) {
+  animation-delay: {{d.delay}};
+}
+@endfor
+
+@keyframes sky-loader-bar {
+  0%, 100% { transform: scaleY(.4) }
+  50% { transform: scaleY(1) }
+}
+@endif
+
+@if pulse
+& .sky-loader-pulse {
+  position: relative;
+  width: var(--sky-loader-size);
+  height: var(--sky-loader-size);
+}
+
+& .sky-loader-pulse::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 3px solid currentColor;
+  animation: sky-loader-pulse 1.2s ease-out infinite;
+}
+
+& .sky-loader-pulse::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 3px solid currentColor;
+  animation: sky-loader-pulse 1.2s ease-out .6s infinite;
+}
+
+@keyframes sky-loader-pulse {
+  from { transform: scale(.5); opacity: 1 }
+  to { transform: scale(1.4); opacity: 0 }
+}
+@endif
+
+@if plane
+/* 平面翻转：单方块绕 X/Y 轴循环翻转（3D，合成器友好）。 */
+& .sky-loader-plane {
+  width: var(--sky-loader-size);
+  height: var(--sky-loader-size);
+  background: currentColor;
+  border-radius: 4px;
+  animation: sky-loader-plane 1.6s ease-in-out infinite;
+}
+
+@keyframes sky-loader-plane {
+  0%, 100% { transform: perspective(400px) rotateX(0) rotateY(0) }
+  25% { transform: perspective(400px) rotateX(180deg) rotateY(0) }
+  50% { transform: perspective(400px) rotateX(180deg) rotateY(180deg) }
+  75% { transform: perspective(400px) rotateX(0) rotateY(180deg) }
+}
+@endif
+
+@if grid
+/* 九宫格脉冲：3×3 方块按对角线错落缩放。 */
+& .sky-loader-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: calc(var(--sky-loader-size) / 12);
+  width: var(--sky-loader-size);
+  height: var(--sky-loader-size);
+}
+
+& .sky-loader-grid i {
+  background: currentColor;
+  border-radius: 2px;
+  animation: sky-loader-grid 1.3s ease-in-out infinite;
+}
+
+@each d in gridDelays
+& .sky-loader-grid i:nth-child({{d.nth}}) {
+  animation-delay: {{d.delay}};
+}
+@endfor
+
+@keyframes sky-loader-grid {
+  0%, 70%, 100% { transform: scale(1); opacity: 1 }
+  35% { transform: scale(.45); opacity: .35 }
+}
+@endif
+
+@if orbit
+/* 环绕点：单点绕容器中心匀速旋转（线性，最省合成开销）。 */
+& .sky-loader-orbit {
+  position: relative;
+  width: var(--sky-loader-size);
+  height: var(--sky-loader-size);
+  animation: sky-loader-orbit 1.4s linear infinite;
+}
+
+& .sky-loader-orbit::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: calc(var(--sky-loader-size) / 5);
+  height: calc(var(--sky-loader-size) / 5);
+  margin-left: calc(var(--sky-loader-size) / -10);
+  border-radius: 50%;
+  background: currentColor;
+}
+
+@keyframes sky-loader-orbit {
+  to { transform: rotate(360deg) }
+}
+@endif
+
+@if wave
+/* 波浪条（SpinKit wave）：五根竖条共用一条 scaleY 帧，靠负延迟错开相位。
+   负延迟让首帧就落在动画中段 —— 加载态刚出现时不会先静止一拍。 */
+& .sky-loader-wave {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--sky-loader-size) / 8);
+  height: var(--sky-loader-size);
+}
+
+& .sky-loader-wave i {
+  width: calc(var(--sky-loader-size) / 10);
+  height: 100%;
+  border-radius: 1px;
+  background: currentColor;
+  animation: sky-loader-wave 1.2s ease-in-out infinite;
+}
+
+@each d in waveDelays
+& .sky-loader-wave i:nth-child({{d.nth}}) {
+  animation-delay: {{d.delay}};
+}
+@endfor
+
+@keyframes sky-loader-wave {
+  0%, 40%, 100% { transform: scaleY(.4) }
+  20% { transform: scaleY(1) }
+}
+@endif
+
+@if bounce
+/* 三点弹跳（SpinKit three-bounce）：缩放出现 + 相位错开，同样用负延迟。 */
+& .sky-loader-bounce {
+  width: calc(var(--sky-loader-size) / 4);
+  height: calc(var(--sky-loader-size) / 4);
+  border-radius: 50%;
+  background: currentColor;
+  animation: sky-loader-bounce 1.4s ease-in-out infinite both;
+}
+
+@each d in bounceDelays
+& .sky-loader-bounce:nth-child({{d.nth}}) {
+  animation-delay: {{d.delay}};
+}
+@endfor
+
+@keyframes sky-loader-bounce {
+  0%, 80%, 100% { transform: scale(0) }
+  40% { transform: scale(1) }
+}
+@endif
+
+@if hasLabel
+& .sky-loader-label {
+  font-size: 14px;
+  line-height: 1;
+}
+@endif
