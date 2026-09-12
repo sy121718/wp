@@ -303,6 +303,9 @@ var mailSQL string
 //go:embed 125_mail_marketing.sql
 var mailMarketingSQL string
 
+//go:embed 126_mail.sql
+var mailPermissionSQL string
+
 func init() {
 	register(Migration{
 		Version:   "001-init-schema",
@@ -1334,5 +1337,13 @@ func init() {
 		CheckSQL: "SELECT CASE WHEN EXISTS (SELECT 1 FROM information_schema.tables " +
 			"WHERE table_schema = current_schema() AND table_name = ?) THEN 1 ELSE 0 END",
 		SQL: mailMarketingSQL,
+	})
+
+	// 126：邮箱模块权限点与菜单（issue #37），以权限点存在判定。
+	register(Migration{
+		Version:   "126-mail-permission",
+		TableName: "sys_permission",
+		CheckSQL:  "SELECT CASE WHEN EXISTS (SELECT 1 FROM sys_permission WHERE permission_code = ?) THEN 1 ELSE 0 END",
+		SQL:       mailPermissionSQL,
 	})
 }

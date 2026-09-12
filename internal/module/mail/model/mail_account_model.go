@@ -368,3 +368,20 @@ func (m *MailModel) ListSuppressions(ctx context.Context, reason string, offset,
 func (m *MailModel) DeleteSuppression(ctx context.Context, id uint64) (err error) {
 	return m.tx(ctx).Where("id = ?", id).Delete(&MailSuppressionEntity{}).Error
 }
+
+// GetLog 按主键取发送日志。
+//
+// worker 用它做**幂等判断**：只有 pending 才投递 —— 队列重试时前一次可能已经成功，
+// 不加这一步会把同一封信再发一遍（对收件人是骚扰，对域名声誉是损耗）。
+func (m *MailModel) GetLog(ctx context.Context, id uint64) (e *MailLogEntity, err error) {
+	e = &MailLogEntity{}
+	err = m.tx(ctx).Where("id = ?", id).First(e).Error
+	return e, err
+}
+
+// DeleteTemplate 删除模板（按 key + locale）。
+func (m *MailModel) DeleteTemplate(ctx context.Context, key, locale string) (err error) {
+	return m.tx(ctx).
+		Where("template_key = ? AND locale = ?", strings.TrimSpace(key), strings.TrimSpace(locale)).
+		Delete(&MailTemplateEntity{}).Error
+}

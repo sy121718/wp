@@ -24,6 +24,7 @@ import (
 	contenthttp "go_wp/internal/module/content/inbound/http"
 	contenttemplatehttp "go_wp/internal/module/contenttemplate/inbound/http"
 	dashboardhttp "go_wp/internal/module/dashboard/inbound/http"
+	mailhttp "go_wp/internal/module/mail/inbound/http"
 	masterdatacontract "go_wp/internal/module/masterdata/contract"
 	masterdatahttp "go_wp/internal/module/masterdata/inbound/http"
 	mediahttp "go_wp/internal/module/media/inbound/http"
@@ -182,6 +183,9 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 	inventorySvc := inventoryhttp.SetupInventoryRoutes(authorizedAPI, db, projectService)
 	// 商品域（issue #5）：商品与变体管理。商品是独立领域模块，不再寄居内容表。
 	productSvc := producthttp.SetupProductRoutes(authorizedAPI, db, projectService)
+	// 邮箱模块（issue #37）：加密密钥在 SetupMailRoutes 内从 config.yaml 的 app.secret 注入。
+	mailSvc := mailhttp.SetupMailRoutes(authorizedAPI, db)
+	_ = mailSvc
 	// 库存 model 注入商品用例（issue #32）：商品与库存合并为同一模块后，商品查询直接读
 	// 库存真源做**查询期投影**（不再有商品侧缓存列、同步台账与对账）。同模块内直调 model。
 	// 商品与库存同属一个模块（issue #32）：库存用例直接交给商品用例，

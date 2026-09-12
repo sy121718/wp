@@ -27,6 +27,7 @@ const (
 	ErrCampaignNoRecipient = "投递目标为 0 人，无法发送"
 	ErrCipherSecretMissing = "未配置敏感数据加密密钥（config.yaml 的 app.secret），无法保存邮箱密码"
 	ErrCipherUnavailable   = "邮箱密码无法解密：加密密钥可能已变更，请重新填写密码"
+	ErrTemplateSyntax      = "模板语法错误"
 )
 
 // 测试邮件内容（后台「测试发送」触发，用于验证 SMTP 配置）。
