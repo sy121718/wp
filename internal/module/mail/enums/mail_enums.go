@@ -25,4 +25,13 @@ const (
 	ErrImportTooLarge      = "导入内容过大"
 	ErrCampaignNotDraft    = "只有草稿状态的活动可以修改"
 	ErrCampaignNoRecipient = "投递目标为 0 人，无法发送"
+	ErrCipherSecretMissing = "未配置敏感数据加密密钥（config.yaml 的 app.secret），无法保存邮箱密码"
+	ErrCipherUnavailable   = "邮箱密码无法解密：加密密钥可能已变更，请重新填写密码"
+)
+
+// 测试邮件内容（后台「测试发送」触发，用于验证 SMTP 配置）。
+const (
+	TestMailSubject = "go_wp 邮件配置测试"
+	TestMailHTML    = `<div style="font-family:system-ui,sans-serif;line-height:1.6"><h2>邮件配置连通性测试</h2><p>如果你看到这封邮件，说明发信账号的配置可用：</p><ul><li>SMTP 连接与认证通过</li><li>中文主题编码正常</li><li>HTML 与纯文本正文正常</li></ul><p style="color:#888;font-size:13px">本邮件由后台「测试发送」触发。</p></div>`
+	TestMailText    = "邮件配置连通性测试\n\n如果你看到这封邮件，说明发信账号的配置可用：\n- SMTP 连接与认证通过\n- 中文主题编码正常\n- 纯文本正文正常\n\n本邮件由后台「测试发送」触发。"
 )
