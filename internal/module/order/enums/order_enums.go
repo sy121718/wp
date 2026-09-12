@@ -53,6 +53,26 @@ const (
 	ErrPaymentChannelFailed = "支付未成功，请稍后重试"
 )
 
+// 退货入库（RMA）。
+const (
+	MsgReturnRequested = "退货申请已提交，等待审核"
+	MsgReturnApproved  = "退货申请已同意"
+	MsgReturnRejected  = "退货申请已拒绝"
+	MsgReturnReceived  = "退货已入库，退款完成"
+	MsgReturnCancelled = "退货申请已撤销"
+
+	ErrReturnNotFound             = "退货申请不存在"
+	ErrReturnItemsRequired        = "请至少选择一件要退的商品"
+	ErrReturnQuantityInvalid      = "退货数量必须是正整数"
+	ErrReturnQuantityExceeded     = "退货数量超过可退数量"
+	ErrReturnReasonRequired       = "请说明退货原因"
+	ErrReturnNotCancellable       = "该申请已进入处理流程，无法撤销"
+	ErrReturnOrderNotReturnable   = "该订单当前状态不支持退货"
+	ErrReturnNotReviewable        = "该申请不在待审核状态"
+	ErrReturnNotReceivable        = "该申请不在待收货状态（或已完成）"
+	ErrReturnRejectReasonRequired = "请填写拒绝原因"
+)
+
 // 商品与库存。
 const (
 	ErrVariantNotFound   = "商品规格不存在或已下架"
@@ -83,6 +103,10 @@ var UserFacingMessages = []string{
 	ErrCouponNotFound, ErrCouponCodeRequired, ErrCouponDisabled,
 	ErrCouponNotStarted, ErrCouponExpired, ErrCouponExhausted,
 	ErrCouponUserLimit, ErrCouponMinSubtotal,
+	// 退货申请：访客在订单里点「申请退货」时会看到这些。
+	MsgReturnRequested, MsgReturnCancelled,
+	ErrReturnItemsRequired, ErrReturnQuantityInvalid, ErrReturnQuantityExceeded,
+	ErrReturnReasonRequired, ErrReturnNotCancellable, ErrReturnOrderNotReturnable,
 	ErrInternal,
 }
 

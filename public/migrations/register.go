@@ -357,6 +357,12 @@ var orderCouponPermsSQL string
 //go:embed 143_order_menu.sql
 var orderMenuSQL string
 
+//go:embed 144_order_returns.sql
+var orderReturnsSQL string
+
+//go:embed 145_order_return_permissions.sql
+var orderReturnPermsSQL string
+
 func init() {
 	register(Migration{
 		Version:   "001-init-schema",
@@ -1561,5 +1567,25 @@ func init() {
 		TableName:    "sys_menus",
 		ConditionSQL: "SELECT CASE WHEN COUNT(*) = 2 THEN 1 ELSE 0 END FROM sys_menus WHERE type = 2 AND deleted_time IS NULL AND title IN ('订单管理', '优惠码')",
 		SQL:          orderMenuSQL,
+	})
+
+	// 144：退货表（退货单 + 明细）。两张表都建好才算已执行（与 134/135/141 同因）。
+	register(Migration{
+		Version:   "144-order-returns",
+		TableName: "order_returns",
+		CheckSQL: "SELECT CASE WHEN COUNT(*) = 2 THEN 1 ELSE 0 END FROM information_schema.tables " +
+			"WHERE table_schema = current_schema() AND (CAST(? AS text) IS NOT NULL) " +
+			"AND table_name IN ('order_returns', 'order_return_items')",
+		SQL: orderReturnsSQL,
+	})
+
+	// 145：退货权限点 + 超管策略（5 个权限点全部存在才算已 seed）。
+	registerSeed(Seed{
+		Version:   "145-order-return-permissions",
+		TableName: "sys_permission",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) = 5 THEN 1 ELSE 0 END FROM sys_permission WHERE permission_code IN (" +
+			"'order:return_list', 'order:return_get', 'order:return_approve', " +
+			"'order:return_reject', 'order:return_receive')",
+		SQL: orderReturnPermsSQL,
 	})
 }

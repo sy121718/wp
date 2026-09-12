@@ -33,6 +33,8 @@ func SetupOrderRoutes(
 		// 优惠码与订单同模块：核销要和建单落在同一个事务里，
 		// 跨模块事务在这里是不允许的，所以它必须是本模块的 model。
 		ordermodel.NewCouponModel(db),
+		// 退货聚合（单头 + 明细）同理：建单头与写明细要同生共死。
+		ordermodel.NewReturnModel(db),
 		product,
 		stock,
 		guest,
@@ -60,6 +62,15 @@ func SetupOrderRoutes(
 	cg.POST("/create", h.CreateCoupon)
 	cg.POST("/update", h.UpdateCoupon)
 	cg.POST("/delete", h.DeleteCoupon)
+
+	// 退货入库（RMA）：客户在访问面提交申请，后台在这里审核与收货。
+	// **先入库、后退款**的强顺序由 service 保证（见 return_review.go）。
+	rgp := rg.Group("/order/return")
+	rgp.GET("/list", h.ListReturns)
+	rgp.GET("/get", h.GetReturn)
+	rgp.POST("/approve", h.ApproveReturn)
+	rgp.POST("/reject", h.RejectReturn)
+	rgp.POST("/receive", h.ReceiveReturn)
 
 	return svc
 }

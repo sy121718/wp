@@ -1,0 +1,283 @@
+{* admin/returns.html — 退货入库（RMA）：状态计数 / 筛选 / 列表 / 详情 / 审核（BIZ-1 销售侧） *}
+{* 流程只有一条：客户申请 → 审核 → **先入库、后退款**（入库成功之后才会退款）。 *}
+{* Jet 方言：extends 相对本目录；range 用 range 关键字；map 用 ["key"] 索引；range 内访问外层值先存变量；条件里 or 不支持（用 ||）。 *}
+{* 无 JS 也能用：列表与详情都是普通 GET 链接（同一页面靠 returnId 参数展开）， *}
+{* 三个写操作都是原生表单 POST + csrf_token 隐藏域，提交后 302 回本页并把结论经 ?ok= / ?err= 回显。 *}
+{{extends "layout.html"}}
+{{block body()}}
+{{csrf := .["csrf_token"]}}
+{{selectedProject := .SelectedProject}}
+{{rows := .Rows}}
+{{detail := .Detail}}
+{{statuses := .Statuses}}
+<div class="stack returns-page">
+    <section class="card card-body">
+        <h2>退货入库</h2>
+        {{if .Err != ""}}
+        <p class="badge badge-warning">上一次操作未完成：{{.Err}}</p>
+        {{end}}
+        {{if .Ok != ""}}
+        <p class="badge badge-success">{{.Ok}}</p>
+        {{end}}
+        <p class="hint">
+            流程只有一条：<strong>客户提交退货申请 → 管理员审核 → 先入库、后退款</strong>。
+            「入库」是把货加回库存（原因字典里的退货入库），<strong>入库成功之后系统才会退款</strong>。
+            顺序不能反 —— 反过来就是「钱退了、货没回来」，这是退货流程最容易被薅的地方，
+            所以这个页面<strong>没有「只退款」的按钮</strong>。
+        </p>
+        <p class="hint">
+            状态：待审核 → 已同意待收货 → 已入库待退款 → 已完成；已拒绝 / 已撤销是终态。
+            现实里货往往早就到了（客户先联系客服、客服再走系统），所以「同意」时可以勾选
+            <strong>同意并立即完成入库 + 退款</strong>（一步到底）。
+            「已入库待退款」是退款那一步没做完（通道抖动 / 网络断了）留下的状态，补退款即可，不会重复入库。
+        </p>
+        {{if .PendingHint != ""}}
+        <p class="hint"><strong>{{.PendingHint}}</strong></p>
+        {{end}}
+        <form method="get" action="/admin/returns" class="form-inline">
+            <select class="form-select" name="project" onchange="this.form.submit()">
+                {{range _, p := .Projects}}
+                <option value="{{p.ID}}" {{if p.ID == selectedProject}}selected{{end}}>{{p.Name}}</option>
+                {{end}}
+            </select>
+        </form>
+        {{if len(.Projects) == 0}}
+        <p class="hint">还没有站点工程 —— 退货申请是挂在工程下的，先去<a href="/admin/pages">页面管理</a>建一个工程。</p>
+        {{end}}
+    </section>
+
+    <section class="card card-body">
+        <h2>状态与筛选</h2>
+        <p class="hint">
+            点下面的状态即按该状态筛选（再点「全部」清掉）。计数回答的是「各状态各有多少单」，不受下面的筛选影响；
+            <strong>加粗的数字</strong>（待审核 / 待退款）是有人在等着处理的。
+        </p>
+        <div class="action-row">
+            {{range _, s := statuses}}
+            <a class="badge {{s.Badge}}" href="{{s.URL}}" {{if s.Active}}aria-current="page"{{end}}>{{s.Label}} {{if s.Highlight}}<strong>{{s.Count}}</strong>{{else}}{{s.Count}}{{end}}</a>
+            {{end}}
+        </div>
+        <form method="get" action="/admin/returns" class="form-stack">
+            <input type="hidden" name="project" value="{{selectedProject}}">
+            {{if .FilterOrderID != ""}}
+            <input type="hidden" name="orderId" value="{{.FilterOrderID}}">
+            {{end}}
+            <div class="form-inline">
+                <select class="form-select" name="status">
+                    <option value="">（状态：全部）</option>
+                    {{range _, s := .StatusOptions}}
+                    <option value="{{s.Value}}" {{if s.Value == .FilterStatus}}selected{{end}}>{{s.Label}}</option>
+                    {{end}}
+                </select>
+                <input type="text" class="form-input" name="keyword" value="{{.FilterKeyword}}" placeholder="关键词：退货单号 / 订单号 / 客户邮箱" autocomplete="off">
+                <button type="submit" class="btn">筛选</button>
+                <a class="btn btn-ghost" href="/admin/returns?project={{selectedProject}}">重置</a>
+            </div>
+        </form>
+        {{if .FilterOrderID != ""}}
+        <p class="hint">
+            正在筛选订单 <strong>ID {{.FilterOrderID}}</strong> 的退货申请 ——
+            列表为空通常就是这个筛选在起作用（这个订单没有退货申请，或申请不在当前状态筛选里）。
+            <a href="{{.ClearOrderURL}}">清除该筛选</a>
+        </p>
+        {{end}}
+    </section>
+
+    {{if .HasDetail}}
+    <section class="card card-body">
+        <h2>退货单详情 <code>{{detail.Head.ReturnNo}}</code></h2>
+        <p class="hint">
+            <span class="badge {{detail.Head.Badge}}">{{detail.Head.StatusLabel}}</span>
+            <strong>订单</strong> <a href="{{detail.Head.OrderURL}}"><code>{{detail.Head.OrderNo}}</code></a>
+            · <strong>客户</strong> {{detail.Head.CustomerName}} · {{detail.Head.CustomerEmail}}
+            · <strong>申请时间</strong> {{detail.Head.CreatedAt}}
+        </p>
+        <p class="hint">
+            <strong>退货原因</strong> {{detail.Head.Reason}}
+            · <strong>审核人</strong> {{detail.Head.ReviewerName}}
+            · <strong>审核时间</strong> {{detail.Head.ReviewedAt}}
+            · <strong>入库时间</strong> {{detail.Head.ReceivedAt}}
+            · <strong>退款时间</strong> {{detail.Head.RefundedAt}}
+        </p>
+        <p class="hint">
+            <strong>审核意见</strong> {{detail.Head.AdminNote}}
+            · <strong>退款流水号</strong> {{detail.Head.TransactionID}}
+            · <strong>退款合计</strong> <strong>{{detail.Head.RefundLabel}}</strong>
+        </p>
+
+        <h3>退货明细</h3>
+        {{if len(detail.Items) == 0}}
+        <p class="hint">这张退货单没有明细行 —— 正常提交不会出现这种情况，请人工核查。</p>
+        {{else}}
+        <div class="table-wrap" tabindex="0">
+        <table class="data-table data-table-wide">
+            <thead>
+            <tr><th>商品</th><th>规格</th><th>SKU</th><th>单价</th><th>申请数量</th><th>已入库数量</th><th>行退款额</th><th>可退数量</th></tr>
+            </thead>
+            <tbody>
+            {{range _, it := detail.Items}}
+            <tr>
+                <td data-label="商品">{{it.ProductName}}</td>
+                <td data-label="规格">{{it.VariantLabel}}</td>
+                <td data-label="SKU"><code>{{it.SKU}}</code></td>
+                <td data-label="单价">{{it.UnitPriceLabel}}</td>
+                <td data-label="申请数量">{{it.Quantity}}</td>
+                <td data-label="已入库数量">{{it.ReceivedQuantity}}</td>
+                <td data-label="行退款额">{{it.RefundLabel}}</td>
+                <td data-label="可退数量">{{it.Returnable}}</td>
+            </tr>
+            {{end}}
+            </tbody>
+        </table>
+        </div>
+        <p class="hint">
+            「可退数量」= 该订单项<strong>还能退多少</strong>（购买数量减去其它未撤销申请已占用的数量）——
+            它回答的是「这一单还能不能再收一件退货」，不是本次申请的数量。
+        </p>
+        {{end}}
+
+        <h3>订单摘要</h3>
+        {{if detail.HasOrder}}
+        <p class="hint">
+            <strong>{{detail.Order.OrderNo}}</strong>
+            <span class="badge {{detail.Order.Badge}}">{{detail.Order.StatusLabel}}</span>
+            · <strong>订单总额</strong> {{detail.Order.TotalLabel}}
+            · <strong>下单时间</strong> {{detail.Order.CreatedAt}}
+            · <strong>客户</strong> {{detail.Order.CustomerName}} · {{detail.Order.CustomerEmail}}
+        </p>
+        <p class="hint">
+            <strong>收货人</strong> {{detail.Order.ShipName}} {{detail.Order.ShipPhone}}
+            {{if detail.Order.ShipAddress}}· <strong>收货地址</strong> {{detail.Order.ShipAddress}}{{end}}
+        </p>
+        {{else}}
+        <p class="hint">取不到订单摘要（订单可能已被删除）—— 审核前请人工核对，不要凭这一屏就放行。</p>
+        {{end}}
+
+        <h3>操作</h3>
+        <p class="hint">{{detail.Note}}</p>
+
+        {{if detail.CanApprove}}
+        <form method="post" action="/admin/returns/approve" class="form-stack">
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <input type="hidden" name="project" value="{{detail.Form.Project}}">
+            <input type="hidden" name="returnId" value="{{detail.Form.ReturnID}}">
+            <input type="hidden" name="orderId" value="{{detail.Form.OrderID}}">
+            <input type="hidden" name="status" value="{{detail.Form.Status}}">
+            <input type="hidden" name="keyword" value="{{detail.Form.Keyword}}">
+            <input type="hidden" name="page" value="{{detail.Form.Page}}">
+            <input type="hidden" name="limit" value="{{detail.Form.Limit}}">
+            <div class="form-inline">
+                <input type="text" class="form-input" name="remark" placeholder="审核意见（可选，客户可见）" autocomplete="off">
+                <input type="text" class="form-input" name="warehouseId" placeholder="入库仓库 ID（留空 = 默认仓）" autocomplete="off">
+                <input type="text" class="form-input" name="transactionId" placeholder="退款流水号（可选，留空则沿用原流水号）" autocomplete="off">
+            </div>
+            <label class="hint">
+                <input type="checkbox" name="autoReceive" value="1">
+                同意并立即完成入库 + 退款（autoReceive）—— 货已经在仓库里、不用再等物流时勾这个
+            </label>
+            <div class="action-row">
+                <button type="submit" class="btn btn-sm btn-primary">同意退货</button>
+            </div>
+        </form>
+        <form method="post" action="/admin/returns/reject" class="form-inline">
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <input type="hidden" name="project" value="{{detail.Form.Project}}">
+            <input type="hidden" name="returnId" value="{{detail.Form.ReturnID}}">
+            <input type="hidden" name="orderId" value="{{detail.Form.OrderID}}">
+            <input type="hidden" name="status" value="{{detail.Form.Status}}">
+            <input type="hidden" name="keyword" value="{{detail.Form.Keyword}}">
+            <input type="hidden" name="page" value="{{detail.Form.Page}}">
+            <input type="hidden" name="limit" value="{{detail.Form.Limit}}">
+            <input type="text" class="form-input" name="remark" placeholder="拒绝原因（必填，客户要知道为什么）" required autocomplete="off">
+            <button type="submit" class="btn btn-sm">拒绝申请</button>
+        </form>
+        {{end}}
+
+        {{if detail.CanReceive}}
+        <form method="post" action="/admin/returns/receive" class="form-stack">
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <input type="hidden" name="project" value="{{detail.Form.Project}}">
+            <input type="hidden" name="returnId" value="{{detail.Form.ReturnID}}">
+            <input type="hidden" name="orderId" value="{{detail.Form.OrderID}}">
+            <input type="hidden" name="status" value="{{detail.Form.Status}}">
+            <input type="hidden" name="keyword" value="{{detail.Form.Keyword}}">
+            <input type="hidden" name="page" value="{{detail.Form.Page}}">
+            <input type="hidden" name="limit" value="{{detail.Form.Limit}}">
+            <div class="form-inline">
+                <input type="text" class="form-input" name="warehouseId" placeholder="入库仓库 ID（留空 = 默认仓）" autocomplete="off">
+                <input type="text" class="form-input" name="transactionId" placeholder="退款流水号（可选，留空则沿用原流水号）" autocomplete="off">
+                <input type="text" class="form-input" name="remark" placeholder="备注（可选，如「外箱破损已拍照」）" autocomplete="off">
+            </div>
+            <div class="action-row">
+                <button type="submit" class="btn btn-sm btn-primary">确认收货并退货（先入库、后退款）</button>
+            </div>
+        </form>
+        {{end}}
+
+        {{if detail.CanRetryRefund}}
+        <form method="post" action="/admin/returns/receive" class="form-stack">
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <input type="hidden" name="project" value="{{detail.Form.Project}}">
+            <input type="hidden" name="returnId" value="{{detail.Form.ReturnID}}">
+            <input type="hidden" name="orderId" value="{{detail.Form.OrderID}}">
+            <input type="hidden" name="status" value="{{detail.Form.Status}}">
+            <input type="hidden" name="keyword" value="{{detail.Form.Keyword}}">
+            <input type="hidden" name="page" value="{{detail.Form.Page}}">
+            <input type="hidden" name="limit" value="{{detail.Form.Limit}}">
+            <p class="hint">
+                货已经入库了，缺的是退款那一步。这个按钮走的是<strong>同一个入口</strong>：
+                服务端会识别出入库已完成，只补做退款（幂等，不会重复加库存）。
+            </p>
+            <div class="form-inline">
+                <input type="text" class="form-input" name="transactionId" placeholder="退款流水号（可选，留空则沿用原流水号）" autocomplete="off">
+                <input type="text" class="form-input" name="remark" placeholder="备注（可选）" autocomplete="off">
+            </div>
+            <div class="action-row">
+                <button type="submit" class="btn btn-sm btn-primary">补退款</button>
+            </div>
+        </form>
+        {{end}}
+    </section>
+    {{end}}
+
+    <section class="card card-body">
+        <h2>退货申请（共 {{.Total}} 单）</h2>
+        {{if len(rows) == 0}}
+        <p class="hint">
+            {{if selectedProject}}这个工程还没有退货申请{{else}}还没有站点工程{{end}} ——
+            客户在订单里提交退货申请后就会出现在这里。
+            {{if .FilterOrderID != ""}}当前还带着订单筛选（订单 ID {{.FilterOrderID}}），<a href="{{.ClearOrderURL}}">清掉它</a>再看看。{{end}}
+            {{if .FilterStatus != ""}}当前还带着状态筛选「{{.FilterLabel}}」—— 点上面的「全部」可以清掉。{{end}}
+        </p>
+        {{else}}
+        <div class="table-wrap" tabindex="0">
+        <table class="data-table data-table-wide">
+            <thead>
+            <tr><th>退货单号</th><th>订单号</th><th>客户</th><th>状态</th><th>退款金额</th><th>申请时间</th><th>操作</th></tr>
+            </thead>
+            <tbody>
+            {{range _, r := rows}}
+            <tr>
+                <td data-label="退货单号"><code>{{r.ReturnNo}}</code></td>
+                <td data-label="订单号"><code>{{r.OrderNo}}</code></td>
+                <td data-label="客户">{{r.CustomerName}} <span class="hint">{{r.CustomerEmail}}</span></td>
+                <td data-label="状态"><span class="badge {{r.Badge}}">{{r.StatusLabel}}</span></td>
+                <td data-label="退款金额"><strong>{{r.RefundLabel}}</strong></td>
+                <td data-label="申请时间">{{r.CreatedAt}}</td>
+                <td data-label="操作">
+                    {{if r.Expanded}}
+                    <a class="btn btn-sm" href="{{r.DetailURL}}">收起详情</a>
+                    {{else}}
+                    <a class="btn btn-sm" href="{{r.DetailURL}}">查看 / 审核</a>
+                    {{end}}
+                </td>
+            </tr>
+            {{end}}
+            </tbody>
+        </table>
+        </div>
+        {{include "partials/pagination.html"}}
+        {{end}}
+    </section>
+</div>
+{{end}}

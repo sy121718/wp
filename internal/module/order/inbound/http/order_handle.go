@@ -294,6 +294,102 @@ func (h *Handle) ListCouponRedemptions(c *gin.Context) {
 	response.Success(c, res)
 }
 
+// ---------------------------------------------------------------------------
+// 退货入库（RMA）：后台侧的审核与收货。
+//
+// 客户侧的「提交申请 / 撤销 / 查自己的」不走这里 —— 它们是访问面的片段能力
+//（访客没有权限点，能做的只有「操作自己的订单」）。
+// ---------------------------------------------------------------------------
+
+// ListReturns 退货申请列表 + 各状态计数。
+func (h *Handle) ListReturns(c *gin.Context) {
+	req := &orderdto.ReturnListReq{}
+	if err := c.ShouldBindQuery(req); err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, orderenums.ErrInvalidParam)
+		return
+	}
+	res, err := h.svc.ListReturns(c.Request.Context(), req)
+	if err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	response.Success(c, res)
+}
+
+// GetReturn 退货申请详情（含订单摘要与逐行可退数量）。
+func (h *Handle) GetReturn(c *gin.Context) {
+	id, err := strconv.ParseUint(strings.TrimSpace(c.Query("returnId")), 10, 64)
+	if err != nil || id == 0 {
+		response.ErrorWithMessage(c, http.StatusBadRequest, orderenums.ErrInvalidParam)
+		return
+	}
+	res, gerr := h.svc.GetReturn(c.Request.Context(), id)
+	if gerr != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, gerr.Error())
+		return
+	}
+	response.Success(c, res)
+}
+
+// ApproveReturn 同意退货（autoReceive=true 时一步完成入库 + 退款）。
+func (h *Handle) ApproveReturn(c *gin.Context) {
+	req := &orderdto.ReturnReviewReq{}
+	if err := c.ShouldBind(req); err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, orderenums.ErrInvalidParam)
+		return
+	}
+	applyReturnOperator(c, req)
+	res, err := h.svc.ApproveReturn(c.Request.Context(), req)
+	if err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	response.SuccessWithMessage(c, orderenums.MsgReturnApproved, res)
+}
+
+// RejectReturn 拒绝退货（必须给理由）。
+func (h *Handle) RejectReturn(c *gin.Context) {
+	req := &orderdto.ReturnReviewReq{}
+	if err := c.ShouldBind(req); err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, orderenums.ErrInvalidParam)
+		return
+	}
+	applyReturnOperator(c, req)
+	res, err := h.svc.RejectReturn(c.Request.Context(), req)
+	if err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	response.SuccessWithMessage(c, orderenums.MsgReturnRejected, res)
+}
+
+// ReceiveReturn 确认收货：**先入库、后退款**。
+func (h *Handle) ReceiveReturn(c *gin.Context) {
+	req := &orderdto.ReturnReceiveReq{}
+	if err := c.ShouldBind(req); err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, orderenums.ErrInvalidParam)
+		return
+	}
+	id, name := operatorFromContext(c)
+	req.OperatorType = "admin"
+	req.OperatorID = id
+	req.OperatorName = name
+	res, err := h.svc.ReceiveReturn(c.Request.Context(), req)
+	if err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	response.SuccessWithMessage(c, orderenums.MsgReturnReceived, res)
+}
+
+// applyReturnOperator 把当前后台操作人写进审核请求。
+func applyReturnOperator(c *gin.Context, req *orderdto.ReturnReviewReq) {
+	id, name := operatorFromContext(c)
+	req.OperatorType = "admin"
+	req.OperatorID = id
+	req.OperatorName = name
+}
+
 // applyCouponOperator 把当前后台操作人写进请求。
 //
 // 客户端传什么都不看：操作人是审计字段，能被伪造的审计等于没有审计。

@@ -15,6 +15,8 @@ import "strings"
 var navPathAlias = map[string]string{
 	"/admin/page/translations":     "/admin/pages",
 	"/admin/products/translations": "/admin/products",
+	// 退货入库挂在「订单」菜单下（它是订单的售后环节，不单独占一级菜单）。
+	"/admin/returns": "/admin/orders",
 }
 
 // navPathFor 返回用于导航高亮的路径：先按既有规则归一（去尾斜杠），再映射别名。

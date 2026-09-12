@@ -260,6 +260,22 @@ func SetupDashboardRoutes(router *gin.Engine,
 	adminPages.POST("/orders/cancel", builtin.CasbinMiddlewareForPath("/api/order/cancel"), orderPages.OrderCancel)
 	adminPages.POST("/orders/refund", builtin.CasbinMiddlewareForPath("/api/order/refund"), orderPages.OrderRefund)
 
+	// 退货入库（BIZ-1）：客户申请 → 审核 → **先入库、后退款**。
+	// 页面 GET 走 /admin 组认证（Session+CSRF，无 Casbin）；写动作复用退货 API 权限点（迁移 145）。
+	returnPages := NewReturnPageHandle(orders, projects)
+	adminPages.GET("/returns", returnPages.ReturnsPage)
+	adminPages.POST("/returns/approve", builtin.CasbinMiddlewareForPath("/api/order/return/approve"), returnPages.ReturnApprove)
+	adminPages.POST("/returns/reject", builtin.CasbinMiddlewareForPath("/api/order/return/reject"), returnPages.ReturnReject)
+	adminPages.POST("/returns/receive", builtin.CasbinMiddlewareForPath("/api/order/return/receive"), returnPages.ReturnReceive)
+
+	// 系统页面槽位（BIZ-1）：把「结算页是哪一页」这类事实固定下来。
+	// 页面 GET 走 /admin 组认证（Session+CSRF，无 Casbin）；写动作复用槽位 API 权限点（迁移 139）。
+	// 侧栏入口见 nav_menu.go 的 system 组（迁移 140 只 seed 了 sys_menus，后台侧栏读的是 navConfig）。
+	siteSlotPages := NewSiteSlotPageHandle(pages, projects)
+	adminPages.GET("/site-slots", siteSlotPages.SiteSlotsPage)
+	adminPages.POST("/site-slots/bind", builtin.CasbinMiddlewareForPath("/api/page/site-slot/bind"), siteSlotPages.SiteSlotBind)
+	adminPages.POST("/site-slots/unbind", builtin.CasbinMiddlewareForPath("/api/page/site-slot/unbind"), siteSlotPages.SiteSlotUnbind)
+
 	// 优惠码管理页（BIZ-1）：列表 + 新建 + 修改（含停用/启用）+ 删除 + 核销记录。
 	// 核销**没有手工入口** —— 它发生在建单事务内，页面只展示结果。
 	// 写动作复用优惠码 API 权限点（迁移 142）。

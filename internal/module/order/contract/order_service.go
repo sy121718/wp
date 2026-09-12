@@ -16,6 +16,8 @@ type OrderService interface {
 	OrderNoReader
 	// CouponService 优惠码：后台管理 + 结算试算。
 	CouponService
+	// ReturnService 退货入库（RMA）：客户申请 → 审核 → 先入库后退款。
+	ReturnService
 
 	// CreateOrder 建单：读商品事实落快照 → 扣库存 → 写订单（落在同一事务里）。
 	CreateOrder(ctx context.Context, req *orderdto.CreateOrderReq) (res *orderdto.CreateOrderResp, err error)
@@ -39,6 +41,53 @@ type OrderService interface {
 	// （比如只退运费、或有质量问题直接退款不退货）。合并成一步会让「只退款」
 	// 这种正常诉求没法表达。
 	RefundOrder(ctx context.Context, req *orderdto.RefundOrderReq) (err error)
+}
+
+// VisitorReturnPort 访客侧的退货能力（访问面片段层消费的**收窄面**）。
+//
+// 为什么单独成接口：片段层不该拿到「后台审核 / 入库 / 退款」那几条 ——
+// 越权防护靠接口形状，而不是靠调用方自觉。三条方法都以 userID 收口，
+// 调用方没有「不传身份」这个选项。
+type VisitorReturnPort interface {
+	// RequestReturn 提交退货申请（UserID 由片段层从会话写入）。
+	RequestReturn(ctx context.Context, req *orderdto.ReturnRequestReq) (res *orderdto.ReturnResp, err error)
+	// ReturnableOfOrder 该订单各订单项的当前可退数量（渲染表单用）。
+	ReturnableOfOrder(ctx context.Context, req *orderdto.VisitorOrderDetailReq) (res *orderdto.ReturnableResp, err error)
+	// ListVisitorReturns 访客查自己的退货申请。
+	ListVisitorReturns(ctx context.Context, req *orderdto.VisitorReturnListReq) (res *orderdto.ReturnListResp, err error)
+}
+
+// ReturnService 退货申请（RMA）：客户申请 → 管理员审核 → **先入库、后退款**。
+//
+// 与 CancelOrder / RefundOrder 的分工：
+//
+//	· CancelOrder 是「货还没出去」，它直接归还库存；
+//	· RefundOrder 只处理钱（契约里明写「不归还库存」）；
+//	· 本接口把两者串起来，**但顺序不能反**：先入库（货真的回来了）再退款 ——
+//	  反过来就是「钱退了、货没回来」，而这正是退货流程最容易被薅的地方。
+//
+// 部分退货是一等公民：按订单项记数量，「已退多少」由明细聚合算出（不存冗余计数 ——
+// 冗余计数总有一天会与明细对不上，而对不上的时候没人知道该信哪一个）。
+type ReturnService interface {
+	// VisitorReturnPort 客户侧的三条（片段层只拿得到这些）。
+	VisitorReturnPort
+
+	// CancelReturn 客户撤销自己**尚未审核**的申请。
+	CancelReturn(ctx context.Context, req *orderdto.ReturnCancelReq) (err error)
+
+	// ListReturns 后台列表（含各状态计数）。
+	ListReturns(ctx context.Context, req *orderdto.ReturnListReq) (res *orderdto.ReturnListResp, err error)
+	// GetReturn 详情（含订单摘要与逐行**可退数量**）。
+	GetReturn(ctx context.Context, returnID uint64) (res *orderdto.ReturnDetailResp, err error)
+	// ApproveReturn 同意（AutoReceive=true 时一步完成入库 + 退款）。
+	ApproveReturn(ctx context.Context, req *orderdto.ReturnReviewReq) (res *orderdto.ReturnResp, err error)
+	// RejectReturn 拒绝（必须给理由 —— 客户要知道为什么，否则他会再申请一次）。
+	RejectReturn(ctx context.Context, req *orderdto.ReturnReviewReq) (res *orderdto.ReturnResp, err error)
+	// ReceiveReturn 确认收货：入库 + 退款。
+	//
+	// 幂等且**可重入**：入库成功后网络断了、再点一次只会补做没完成的那一步
+	//（入库里有唯一来源引用与状态守卫，退款走幂等的 PayOrder/RefundOrder 口径）。
+	ReceiveReturn(ctx context.Context, req *orderdto.ReturnReceiveReq) (res *orderdto.ReturnResp, err error)
 }
 
 // StockOperator 订单需要的库存能力 —— **只有扣减与增加这两条**。

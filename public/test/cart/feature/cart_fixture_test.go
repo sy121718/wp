@@ -145,6 +145,7 @@ func newCartFixtureWithGateway(t *testing.T, gateway cartcontract.PaymentGateway
 		ordermodel.NewOrderItemModel(db),
 		ordermodel.NewOrderStatusLogModel(db),
 		ordermodel.NewCouponModel(db),
+		ordermodel.NewReturnModel(db),
 		products,
 		inv,
 		users,

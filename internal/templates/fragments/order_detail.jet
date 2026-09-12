@@ -1,14 +1,16 @@
 {* order_detail.jet — 访客订单明细片段（BIZ-1 访问面）。
 
-   只显示「这一单是什么」：订单项快照 + 状态流转链 + 金额分解 + 收货地址。
+   只显示「这一单是什么」：订单项快照 + 状态流转链 + 金额分解 + 收货地址，
+   外加**退货区**（已有申请的状态 + 申请表单）。
+
    金额一律由服务端算好成展示串（模板不做算术）—— 同一份数字在多处各算一遍，
    迟早会出现两个页面显示不同的合计。
 
-   归属：这一层不做校验。片段把访客身份交给 order 模块的 VisitorOrderReader，
-   由它在 SQL 条件里收口（别人的单与不存在的单返回同一句话，
-   区分开来就是一个订单号探测器）。 *}
+   归属：这一层不做校验。片段把访客身份交给 order 模块，由它在 SQL 条件里收口
+   （别人的单与不存在的单返回同一句话，区分开来就是一个订单号探测器）。 *}
 {{items := .Items}}
 {{logs := .Logs}}
+{{returns := .Returns}}
 <div class="sky-order-detail" data-fragment="{{ .FragmentType }}">
 {{if .Notice}}
 <p class="sky-orders-notice">{{ .Notice }}</p>
@@ -16,6 +18,7 @@
 <p class="sky-orders-notice">登录后可以查看订单明细。</p>
 {{if .LoginURL}}<a class="sky-orders-action" href="{{ .LoginURL }}">去登录</a>{{end}}
 {{else}}
+{{if .NoticeOK}}<p class="sky-return-ok">{{ .NoticeOK }}</p>{{end}}
 <div class="sky-order-meta">
 <span class="sky-orders-no">{{ .OrderNo }}</span>
 <span class="sky-orders-status">{{ .StatusLabel }}</span>
@@ -50,6 +53,51 @@
 </li>
 {{end}}
 </ol>
+{{end}}
+
+{{if returns}}
+<div class="sky-returns">
+<p class="sky-returns-title">退货申请</p>
+<ul class="sky-returns-list">
+{{range _, rt := returns}}
+<li class="sky-return-item">
+<span class="sky-return-no">{{ rt.ReturnNo }}</span>
+<span class="sky-orders-status">{{ rt.StatusLabel }}</span>
+<span class="sky-order-line-total">{{ rt.RefundLabel }}</span>
+<span class="sky-orders-time">{{ rt.TimeLabel }}</span>
+{{if rt.Reason}}<span class="sky-return-reason">{{ rt.Reason }}</span>{{end}}
+</li>
+{{end}}
+</ul>
+</div>
+{{end}}
+
+{{if .CanRequestReturn}}
+<form class="sky-return-form" method="post" action="/_fragments/{{ .ReturnActionURL }}" hx-post="/_fragments/{{ .ReturnActionURL }}" hx-target="closest .sky-order-detail" hx-swap="outerHTML">
+<input type="hidden" name="projectId" value="{{ .ProjectID }}">
+<input type="hidden" name="orderId" value="{{ .OrderID }}">
+<input type="hidden" name="requestId" value="{{ .ReturnRequestID }}">
+<p class="sky-returns-title">申请退货</p>
+<p class="sky-order-pay">只填要退的数量，留空表示这一行不退。提交后由客服审核，审核通过并收到货后按原支付方式退款。</p>
+<ul class="sky-return-lines">
+{{range _, it := items}}
+{{if it.Returnable}}
+<li class="sky-return-line">
+<span class="sky-order-line-name">{{ it.ProductName }}{{if it.VariantLabel}}<span class="sky-order-line-variant">{{ it.VariantLabel }}</span>{{end}}</span>
+<span class="sky-orders-time">买了 {{ it.Quantity }} 件，可退 {{ it.Returnable }} 件</span>
+<input type="hidden" name="orderItemId" value="{{ it.OrderItemID }}">
+<input class="sky-return-qty" type="number" name="quantity" min="0" max="{{ it.Returnable }}" step="1" inputmode="numeric" placeholder="退几件" aria-label="退货数量">
+</li>
+{{end}}
+{{end}}
+</ul>
+<label class="sky-return-label">退货原因
+<textarea class="sky-return-reason-input" name="reason" rows="2" maxlength="200" required placeholder="例如：尺码不合适 / 收到时已破损"></textarea>
+</label>
+<button class="sky-return-submit" type="submit">提交退货申请</button>
+</form>
+{{else}}
+{{if not returns}}<p class="sky-order-pay">这单当前没有可退的商品。</p>{{end}}
 {{end}}
 {{end}}
 </div>

@@ -24,6 +24,8 @@ import (
 	orderenums "go_wp/internal/module/order/enums"
 	pageenums "go_wp/internal/module/page/enums"
 	"go_wp/internal/templates"
+
+	"github.com/google/uuid"
 )
 
 // visitorOrders 访客订单查询能力（装配期注入；nil = 未接入）。
@@ -108,7 +110,10 @@ type ordersFragmentData struct {
 
 // orderDetailFragmentData 订单详情片段数据。
 type orderDetailFragmentData struct {
-	FragmentType  string
+	FragmentType string
+	// ProjectID / OrderID 退货表单要回传它们（片段端点据此定位工程与订单）。
+	ProjectID     string
+	OrderID       uint64
 	Notice        string
 	NeedLogin     bool
 	LoginURL      string
@@ -125,9 +130,36 @@ type orderDetailFragmentData struct {
 	Remark        string
 	Items         []orderDetailItem
 	Logs          []orderDetailLog
+
+	// ── 退货（BIZ-1）──────────────────────────────────────────────
+	// CanRequestReturn 这单现在还能不能申请退货（有可退数量 且 订单状态允许）。
+	CanRequestReturn bool
+	// ReturnRequestID 提交表单的一次性幂等键：页面渲染时生成，重复提交只落一张申请单。
+	ReturnRequestID string
+	// ReturnActionURL 退货申请片段的地址（表单 action 与 hx-post 共用）。
+	ReturnActionURL string
+	// ReturnableTotal 整单还能退的总件数（0 时不给表单，只给说明）。
+	ReturnableTotal int
+	// Returns 已有的退货申请（含状态），按时间倒序列出。
+	Returns []orderReturnSummary
+	// NoticeOK 非空时是一句成功提示（提交成功后原地重渲染详情页，用户不必刷新）。
+	NoticeOK string
+}
+
+// orderReturnSummary 订单详情里的一条退货申请摘要。
+type orderReturnSummary struct {
+	ReturnNo    string
+	StatusLabel string
+	Reason      string
+	RefundLabel string
+	TimeLabel   string
 }
 
 type orderDetailItem struct {
+	// OrderItemID 退货表单要用它标识「退哪一行」（服务端据此校验行属于本单）。
+	OrderItemID uint64
+	// Returnable 该行当前可退数量（输入框的 max；0 表示这行不能再退）。
+	Returnable   int
 	ProductName  string
 	VariantLabel string
 	SKU          string
@@ -208,13 +240,25 @@ func renderOrdersList(ctx context.Context, r *Request) (string, error) {
 	return templates.RenderFragment("order_list", data)
 }
 
-// renderOrderDetail 访客订单详情（订单项 + 状态流转链）。
+// renderOrderDetail 访客订单详情（订单项 + 状态流转链 + 退货区）。
 func renderOrderDetail(ctx context.Context, r *Request) (string, error) {
+	return renderOrderDetailWith(ctx, r, "")
+}
+
+// renderOrderDetailWith 渲染订单详情；noticeOK 非空时额外交给模板一句成功提示。
+//
+// 退货提交成功后**原地重渲染详情**（而不是返回一个小提示片段）：用户刚申请完，
+// 最想看的是「这单现在什么状态」。多一次查询换掉一次「自己刷新一下」。
+func renderOrderDetailWith(ctx context.Context, r *Request, noticeOK string) (string, error) {
 	projectID := paramOf(r, "projectId")
 	slots := cartSitePages(r, projectID)
 	data := orderDetailFragmentData{
-		FragmentType: r.Type,
-		LoginURL:     slots[pageenums.SiteSlotLogin],
+		FragmentType:    r.Type,
+		ProjectID:       projectID,
+		LoginURL:        slots[pageenums.SiteSlotLogin],
+		NoticeOK:        noticeOK,
+		ReturnRequestID: uuid.NewString(),
+		ReturnActionURL: "returnRequest",
 	}
 	uid, ok := visitorIDOf(r)
 	if !ok {
@@ -244,6 +288,7 @@ func renderOrderDetail(ctx context.Context, r *Request) (string, error) {
 		return templates.RenderFragment("order_detail", data)
 	}
 	head := res.Head
+	data.OrderID = head.ID
 	data.OrderNo = head.OrderNo
 	data.Status = head.Status
 	data.StatusLabel = orderStatusLabelOf(head.Status)
@@ -259,6 +304,7 @@ func renderOrderDetail(ctx context.Context, r *Request) (string, error) {
 	data.Remark = head.Remark
 	for _, it := range res.Items {
 		data.Items = append(data.Items, orderDetailItem{
+			OrderItemID:  it.ID,
 			ProductName:  it.ProductName,
 			VariantLabel: it.VariantLabel,
 			SKU:          it.SKU,
@@ -267,6 +313,39 @@ func renderOrderDetail(ctx context.Context, r *Request) (string, error) {
 			LineTotal:    yuanLabel(it.LineTotal),
 		})
 	}
+	// 退货区（BIZ-1）：可退数量按行取，已有申请按状态列出。
+	// 读不到就当作「不可退」—— 页面少一个区块，胜过整段详情 500。
+	if visitorReturns != nil {
+		if rb, rerr := visitorReturns.ReturnableOfOrder(ctx, &orderdto.VisitorOrderDetailReq{
+			OrderID: orderID, ProjectID: projectID, UserID: uid,
+		}); rerr == nil && rb != nil {
+			byItem := make(map[uint64]*orderdto.ReturnableItem, len(rb.Items))
+			for _, x := range rb.Items {
+				byItem[x.OrderItemID] = x
+			}
+			for i := range data.Items {
+				if x, hit := byItem[data.Items[i].OrderItemID]; hit {
+					data.Items[i].Returnable = x.Returnable
+				}
+			}
+			data.ReturnableTotal = rb.ReturnableTotal
+		}
+		if list, lerr := visitorReturns.ListVisitorReturns(ctx, &orderdto.VisitorReturnListReq{
+			ProjectID: projectID, OrderID: orderID, UserID: uid, Limit: 20,
+		}); lerr == nil && list != nil {
+			for _, rt := range list.List {
+				data.Returns = append(data.Returns, orderReturnSummary{
+					ReturnNo:    rt.ReturnNo,
+					StatusLabel: rt.StatusLabel,
+					Reason:      rt.Reason,
+					RefundLabel: rt.RefundLabel,
+					TimeLabel:   rt.CreateTime.Format("2006-01-02 15:04"),
+				})
+			}
+		}
+	}
+	// 能申请退货 = 有可退数量 且 订单状态允许（与 order 模块同一口径）。
+	data.CanRequestReturn = data.ReturnableTotal > 0 && orderReturnableStatus(head.Status)
 	for _, lg := range res.Logs {
 		data.Logs = append(data.Logs, orderDetailLog{
 			FromStatus:   lg.FromStatus,
@@ -312,6 +391,15 @@ func ordersOffsetOf(r *Request) int {
 		return 0
 	}
 	return n
+}
+
+// orderReturnableStatus 允许申请退货的订单状态。
+//
+// 与 order 模块同一口径（见 return_request.go 的 returnableOrderStatuses）：
+// 片段层不能 import 订单模块的 model，所以这里再写一份 —— 代价是新增状态要改两处，
+// 收益是这条依赖方向不会被打穿（与状态标签同一取舍）。
+func orderReturnableStatus(status string) bool {
+	return status == "paid" || status == "shipped" || status == "completed"
 }
 
 // orderStatusLabelOf 状态 → 文案；未知状态原样显示（不吞掉，便于发现新状态没登记）。

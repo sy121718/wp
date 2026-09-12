@@ -138,6 +138,65 @@ func AddOrdersFragmentCSS(b *core.CSSBuckets) {
 	b.Add(core.BreakpointDesktop, ".sky-order-log-remark", []string{
 		"color: var(--sky-c-text-muted, #6b7280)",
 	})
+	// 退货区（BIZ-1 退货入库）：已有申请列表 + 申请表单 + 提交结果。
+	b.Add(core.BreakpointDesktop, ".sky-returns", []string{
+		"display: flex", "flex-direction: column", "gap: 8px", "min-width: 0",
+	})
+	b.Add(core.BreakpointDesktop, ".sky-returns-title", []string{"margin: 0", "font-weight: 600"})
+	b.Add(core.BreakpointDesktop, ".sky-returns-list", []string{
+		"display: flex", "flex-direction: column", "gap: 6px",
+		"margin: 0", "padding: 0", "list-style: none",
+	})
+	b.Add(core.BreakpointDesktop, ".sky-return-item", []string{
+		"display: flex", "flex-wrap: wrap", "align-items: baseline", "gap: 8px 12px", "min-width: 0",
+	})
+	b.Add(core.BreakpointDesktop, ".sky-return-no", []string{
+		"font-weight: 600", "overflow-wrap: anywhere",
+	})
+	b.Add(core.BreakpointDesktop, ".sky-return-reason", []string{
+		"color: var(--sky-c-text-muted, #6b7280)", "font-size: 0.85rem", "overflow-wrap: anywhere",
+	})
+	b.Add(core.BreakpointDesktop, ".sky-return-form", []string{
+		"display: flex", "flex-direction: column", "gap: 10px", "min-width: 0",
+		"padding-top: 12px", "border-top: 1px solid var(--sky-c-border, #e5e7eb)",
+	})
+	b.Add(core.BreakpointDesktop, ".sky-return-lines", []string{
+		"display: flex", "flex-direction: column", "gap: 8px",
+		"margin: 0", "padding: 0", "list-style: none",
+	})
+	b.Add(core.BreakpointDesktop, ".sky-return-line", []string{
+		"display: flex", "flex-wrap: wrap", "align-items: center", "gap: 8px 12px", "min-width: 0",
+	})
+	b.Add(core.BreakpointDesktop, ".sky-return-qty", []string{
+		"width: 96px", "min-height: 40px", "padding: 6px 8px",
+		"border: 1px solid var(--sky-c-border, #d1d5db)", "border-radius: 8px",
+		"background: var(--sky-c-surface, #fff)", "color: inherit", "font: inherit",
+	})
+	b.Add(core.BreakpointDesktop, ".sky-return-label", []string{
+		"display: flex", "flex-direction: column", "gap: 6px", "font-size: 0.9rem",
+	})
+	b.Add(core.BreakpointDesktop, ".sky-return-reason-input", []string{
+		"min-height: 64px", "padding: 8px 10px", "font: inherit",
+		"border: 1px solid var(--sky-c-border, #d1d5db)", "border-radius: 8px",
+		"background: var(--sky-c-surface, #fff)", "color: inherit",
+	})
+	b.Add(core.BreakpointDesktop, ".sky-return-submit", []string{
+		"align-self: flex-start", "min-height: 44px", "padding: 10px 18px",
+		"border: 0", "border-radius: 8px", "cursor: pointer",
+		"background: var(--sky-c-primary, #2563eb)", "color: #fff", "font: inherit", "font-weight: 600",
+	})
+	b.Add(core.BreakpointDesktop, ".sky-return-ok", []string{
+		"margin: 0", "padding: 8px 12px", "border-radius: 8px",
+		"background: var(--sky-c-surface-muted, #f3f4f6)", "font-weight: 600",
+	})
+	b.Add(core.BreakpointDesktop, ".sky-return-result", []string{
+		"display: flex", "flex-direction: column", "gap: 6px", "padding: 12px",
+		"border: 1px solid var(--sky-c-border, #e5e7eb)", "border-radius: 10px",
+	})
+	b.Add(core.BreakpointDesktop, ".sky-return-title", []string{"margin: 0", "font-weight: 600"})
+	b.Add(core.BreakpointDesktop, ".sky-return-note", []string{
+		"margin: 0", "color: var(--sky-c-text-muted, #6b7280)", "font-size: 0.9rem",
+	})
 	// 窄屏：金额与时间挪到第二行（首行只留订单号与状态），避免挤压成一列两三个字。
 	b.Add(core.BreakpointMobile, ".sky-orders-total", []string{"margin-left: 0"})
 	b.Add(core.BreakpointMobile, ".sky-orders-tab", []string{"padding: 6px 10px"})

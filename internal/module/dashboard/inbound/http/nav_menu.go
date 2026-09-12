@@ -68,8 +68,12 @@ var navConfig = []navGroup{
 		Title: "系统",
 		Nodes: []navNode{
 			{Title: "页面", Path: "/admin/pages", Perm: "page:list"},
+			// 系统页面槽位：后台侧栏读的是这份 navConfig（迁移 140 seed 的 sys_menus 只用于权限菜单管理页）。
+			{Title: "系统页面", Path: "/admin/site-slots", Perm: "page:site_slot_list"},
 			// 订单与优惠码（BIZ-1）：权限点来自迁移 136（order:list）与 142（order:coupon_list）。
 			{Title: "订单", Path: "/admin/orders", Perm: "order:list"},
+			// 退货入库（RMA）：订单的售后环节，权限点来自迁移 145。
+			{Title: "退货入库", Path: "/admin/returns", Perm: "order:return_list"},
 			{Title: "优惠码", Path: "/admin/coupons", Perm: "order:coupon_list"},
 			{Title: "主题管理", Path: "/admin/themes", Perm: "project:theme_list"},
 			{Title: "全局块", Path: "/admin/blocks", Perm: "block:list"},

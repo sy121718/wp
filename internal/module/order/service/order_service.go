@@ -21,6 +21,7 @@ type Service struct {
 	items   *ordermodel.OrderItemModel
 	logs    *ordermodel.OrderStatusLogModel
 	coupons *ordermodel.CouponModel
+	returns *ordermodel.ReturnModel
 	product productcontract.VariantSnapshotPort
 	stock   ordercontract.StockOperator
 	// guest 访客开号：下单邮箱没有账号时建一个并回填 user_id。
@@ -37,12 +38,13 @@ func NewService(
 	items *ordermodel.OrderItemModel,
 	logs *ordermodel.OrderStatusLogModel,
 	coupons *ordermodel.CouponModel,
+	returns *ordermodel.ReturnModel,
 	product productcontract.VariantSnapshotPort,
 	stock ordercontract.StockOperator,
 	guest usercontract.GuestAccountProvisioner,
 ) *Service {
 	return &Service{
-		orders: orders, items: items, logs: logs, coupons: coupons,
+		orders: orders, items: items, logs: logs, coupons: coupons, returns: returns,
 		product: product, stock: stock, guest: guest,
 	}
 }

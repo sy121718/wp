@@ -95,6 +95,7 @@ func newOrderFixture(t *testing.T) *orderFixture {
 		ordermodel.NewOrderItemModel(db),
 		ordermodel.NewOrderStatusLogModel(db),
 		ordermodel.NewCouponModel(db),
+		ordermodel.NewReturnModel(db),
 		products,
 		inv,
 		users,
