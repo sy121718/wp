@@ -18,7 +18,7 @@
     <div class="wb-field wb-field-check"><label><input type="checkbox" data-wb-path="{{f.Key}}" data-wb-kind="bool"{{if f.Bool}} checked{{end}}> {{f.Label}}</label></div>
     {{else if f.UI == "select"}}
     <div class="wb-field wb-field-compact"><label>{{f.Label}}</label>
-        <select data-wb-path="{{f.Key}}" data-wb-kind="select">
+        <select data-wb-path="{{f.Key}}" data-wb-kind="select" aria-label="{{f.Label}}">
             {{if f.Value == ""}}<option value="" selected>（默认）</option>{{end}}
             {{range _, o := f.Options}}<option value="{{o.Value}}"{{if o.Selected}} selected{{end}}>{{o.Label}}</option>{{end}}
         </select>

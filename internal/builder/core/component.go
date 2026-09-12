@@ -55,6 +55,15 @@ func Register(c Component) {
 	if c == nil {
 		panic("core.Register: 组件为 nil")
 	}
+	if rp, ok := c.(AlignedRepeaterProvider); ok {
+		var props any
+		if sp, ok := c.(SpecProvider); ok {
+			props = sp.PropsSpec()
+		}
+		if err := ValidateAlignedRepeater(props, rp.AlignedRepeater()); err != nil {
+			panic(fmt.Sprintf("组件 %s 对齐面板契约非法: %v", c.Type(), err))
+		}
+	}
 	if tp, ok := c.(TranslatableProvider); ok {
 		var spec any
 		if sp, ok := c.(SpecProvider); ok {

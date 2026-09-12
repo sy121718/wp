@@ -33,6 +33,15 @@ func (c *Component) Translatable() []string { return []string{"title"} }
 // PropsSpec 实现 SpecProvider：暴露 Props 生成检查器 schema（样式字段声明式）。
 func (c *Component) PropsSpec() any { return &Props{} }
 
+// AlignedRepeater 是服务端面板和客户端对齐操作共同消费的唯一声明。
+func (c *Component) AlignedRepeater() core.AlignedRepeaterSpec {
+	return core.AlignedRepeaterSpec{
+		AlignKey: "items", Field: "title", Noun: "折叠项", Label: "标题",
+		AddText: "+ 添加折叠项（自动创建内容）",
+		Extra:   []core.RepeaterExtra{{Key: "open", Label: "默认展开"}},
+	}
+}
+
 // Item 折叠项。
 type Item struct {
 	// Title 标题。

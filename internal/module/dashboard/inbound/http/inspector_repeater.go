@@ -27,33 +27,16 @@ package dashboardhttp
 //	                        富文本答案字段（客户端增强控件），服务端只能给占位。
 //	嵌套数组（nav）          条目带子项递归、两个字段、目标切换，行结构不是一维的。
 //
-// 判据是 palette.js 的 ALIGN_ARRAY 只登记了 core.tabs 与 core.accordion 两个 ——
-// 不在表里的组件就没有对齐语义，一维行骨架套上去会得到「看着像、点了不对」的面板。
-// 要收那两类，先定它们各自的 spec 形状（普通数组只需去掉对齐与数量提示；嵌套要能表达
-// 子项层级），而不是在这里加一行配置。
+// 支持范围由组件的 AlignedRepeaterProvider 声明，注册时核对真实 Props 类型；
+// Go 面板与 generated-contracts.js 共用声明，不在 dashboard 维护组件配置表。
 
 import (
 	"fmt"
 	"html"
 	"strings"
+
+	"go_wp/internal/builder/core"
 )
-
-// repeaterExtra 额外字段（目前只有布尔形态：折叠项的「默认展开」）。
-type repeaterExtra struct {
-	Key   string
-	Label string
-}
-
-// repeaterSpec 一个重复项面板的静态配置 —— 服务端渲染所需的全部信息。
-type repeaterSpec struct {
-	Type     string // 组件类型（客户端据此推对齐键）
-	Noun     string // 条目名词（按钮提示、数量提示里用）
-	Field    string // 主字段键
-	Label    string // 主字段名（拼 placeholder 用）
-	AlignKey string // props 里的数组键（与客户端 alignKeyOf 一致）
-	AddText  string
-	Extra    []repeaterExtra
-}
 
 // repeaterRow 一条重复项的数据。
 type repeaterRow struct {
@@ -61,26 +44,8 @@ type repeaterRow struct {
 	Extras map[string]bool
 }
 
-// repeaterSpecFor 组件类型 → 面板配置（该组件没有重复项面板时返回 nil）。
-func repeaterSpecFor(nodeType string) *repeaterSpec {
-	switch nodeType {
-	case "core.accordion":
-		return &repeaterSpec{
-			Type: "core.accordion", Noun: "折叠项", Field: "title", Label: "标题",
-			AlignKey: "items", AddText: "+ 添加折叠项（自动创建内容）",
-			Extra: []repeaterExtra{{Key: "open", Label: "默认展开"}},
-		}
-	case "core.tabs":
-		return &repeaterSpec{
-			Type: "core.tabs", Noun: "页签", Field: "label", Label: "标签",
-			AlignKey: "tabs", AddText: "+ 添加页签（自动创建面板）",
-		}
-	}
-	return nil
-}
-
 // repeaterRowsOf 从 props 里取出重复项数据（取不到就是空列表，与客户端同口径）。
-func repeaterRowsOf(props map[string]any, spec *repeaterSpec) []repeaterRow {
+func repeaterRowsOf(props map[string]any, spec *core.AlignedRepeaterSpec) []repeaterRow {
 	raw, _ := props[spec.AlignKey].([]any)
 	rows := make([]repeaterRow, 0, len(raw))
 	for _, it := range raw {
@@ -103,7 +68,7 @@ func repeaterRowsOf(props map[string]any, spec *repeaterSpec) []repeaterRow {
 //
 // panelCount 是画布上对应的面板节点数：两者不一致时给红色提示（历史脏数据或直接在
 // 画布上增删面板都可能造成不一致），让用户保存前就知道会被校验拦下。
-func renderRepeaterHTML(spec *repeaterSpec, rows []repeaterRow, panelCount int) string {
+func renderRepeaterHTML(spec *core.AlignedRepeaterSpec, rows []repeaterRow, panelCount int) string {
 	var b strings.Builder
 	b.WriteString(`<div class="wb-repeater" data-wb-rep="` + html.EscapeString(spec.Type) +
 		`" data-wb-rep-field="` + html.EscapeString(spec.Field) + `">`)
@@ -119,7 +84,7 @@ func renderRepeaterHTML(spec *repeaterSpec, rows []repeaterRow, panelCount int) 
 				checked = " checked"
 			}
 			b.WriteString(`<label class="wb-check-field"><input type="checkbox" data-wb-rep-extra="` +
-				ex.Key + `" data-wb-rep-index="` + fmt.Sprint(i) + `"` + checked + `> ` + html.EscapeString(ex.Label) + `</label>`)
+				html.EscapeString(ex.Key) + `" data-wb-rep-index="` + fmt.Sprint(i) + `"` + checked + `> ` + html.EscapeString(ex.Label) + `</label>`)
 		}
 		b.WriteString(`</div><div class="wb-repeater-acts">`)
 		if i > 0 {
@@ -166,7 +131,7 @@ func appendRepeaterPanel(sections []inspectorSection, node *docNode, props map[s
 	if tab == "style" || tab == "motion" {
 		return sections
 	}
-	spec := repeaterSpecFor(node.Type)
+	spec := core.AlignedRepeaterFor(node.Type)
 	if spec == nil {
 		return sections
 	}

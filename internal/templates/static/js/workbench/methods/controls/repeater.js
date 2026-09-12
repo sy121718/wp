@@ -1,6 +1,7 @@
 // workbench/methods/controls/repeater.js — 各组件 repeater 手写面板（从 methods/inspector.js 提取）。
 
-import { wbDropdown, alignKeyOf, alignMutation } from '../../core.js';
+import { wbDropdown, alignMutation } from '../../core.js';
+import { alignedRepeaters } from '../../generated-contracts.js';
 import { commit, get, set, heading } from './base.js';
 import { iconPopupPicker, richTextField } from './text.js';
 
@@ -151,151 +152,63 @@ export function applyAligned(ctx, next) {
     ctx.self.patchCanvas(ctx.node.id);
 }
 
-// alignedRepeater tabs / accordion 共用的编辑面板（两者差异只有行内附加字段）。
-function alignedRepeater(ctx, cfg) {
-    var type = cfg.type;
-    var key = alignKeyOf(type);
-    if (!key) return;
-    if (!Array.isArray(get(ctx, 'props.' + key))) set(ctx, 'props.' + key, []);
-    var list = get(ctx, 'props.' + key);
-    var kids = ctx.node.children || [];
-    // mutate 统一走纯函数；allocId 用 canvas.js 的 makeIdAllocator（与当前文档已有
-    // ID 去重，本批新增的面板容器 + 文本 ID 由同一分配器记账，不会自撞）。
-    function mutate(action) {
-        applyAligned(ctx, alignMutation(type, list, kids, action, ctx.self.makeIdAllocator()));
-    }
-    // bindRepeaterPanel 把服务端渲染的重复项面板接上行为（一次事件委托，不逐元素挂监听）。
-//
-// 结构在服务端（inspector_repeater.go），这里只处理「做了什么」：改条目名回写 props；
-// 上移 / 下移 / 删除 / 添加走对齐语义（同时移动或增删画布上对应的面板节点）。
-// 返回 false 表示面板里没有服务端骨架，调用方回退到客户端渲染。
+// 服务端负责全部结构，客户端只绑定行为。预期骨架缺失或契约错位必须报错。
+// morph 会保留根节点，使用覆盖式委托，重复增强不会累积旧闭包。
 export function bindRepeaterPanel(ctx) {
-    var root = ctx.panel.querySelector("[data-wb-rep]");
-    if (!root) return false;
-    var type = root.getAttribute("data-wb-rep");
-    var field = root.getAttribute("data-wb-rep-field");
-    var key = alignKeyOf(type);
-    if (!key || !field) return false;
-    var list = get(ctx, "props." + key);
-    if (!Array.isArray(list)) return false;
-    var kids = ctx.node.children || [];
-    function mutate(action) {
-        applyAligned(ctx, alignMutation(type, list, kids, action, ctx.self.makeIdAllocator()));
+    var spec = alignedRepeaters[ctx.node.type];
+    if (!spec) return false;
+    var root = ctx.panel.querySelector('[data-wb-rep]');
+    if (!root || root.getAttribute('data-wb-rep') !== ctx.node.type ||
+        root.getAttribute('data-wb-rep-field') !== spec.field) {
+        throw new Error('重复项面板契约不一致：' + ctx.node.type);
     }
-    root.addEventListener("click", function (e) {
-        var btn = e.target && e.target.closest ? e.target.closest("[data-wb-rep-op]") : null;
+    var path = 'props.' + spec.alignKey;
+    function entries() {
+        var list = get(ctx, path);
+        if (list == null) return [];
+        if (!Array.isArray(list)) throw new Error('重复项属性必须是数组：' + path);
+        return list;
+    }
+    entries();
+    function mutate(action) {
+        var next = alignMutation(ctx.node.type, entries(), ctx.node.children || [], action, ctx.self.makeIdAllocator());
+        if (!next) throw new Error('重复项操作无效：' + action.op);
+        applyAligned(ctx, next);
+    }
+    root.onclick = function (e) {
+        var btn = e.target && e.target.closest ? e.target.closest('[data-wb-rep-op]') : null;
         if (!btn || !root.contains(btn)) return;
-        var op = btn.getAttribute("data-wb-rep-op");
-        var idx = parseInt(btn.getAttribute("data-wb-rep-index"), 10);
-        if (op === "add") { mutate({ op: "add" }); return; }
-        if (op === "remove") { mutate({ op: "remove", index: idx }); return; }
-        if (op === "move") {
-            var to = idx + parseInt(btn.getAttribute("data-wb-rep-to"), 10);
-            mutate({ op: "move", index: idx, to: to });
-        }
-    });
-    root.addEventListener("change", function (e) {
-        var t = e.target;
-        if (!t || !t.getAttribute) return;
-        if (t.getAttribute("data-wb-rep-input") !== null) {
-            var i = parseInt(t.getAttribute("data-wb-rep-input"), 10);
-            list[i][field] = t.value;
-            commit(ctx, "props." + key, list);
+        var op = btn.getAttribute('data-wb-rep-op');
+        var idx = Number(btn.getAttribute('data-wb-rep-index'));
+        if (op === 'add') { mutate({ op: 'add' }); return; }
+        if (op === 'remove') { mutate({ op: 'remove', index: idx }); return; }
+        if (op === 'move') {
+            mutate({ op: 'move', index: idx, to: idx + Number(btn.getAttribute('data-wb-rep-to')) });
             return;
         }
-        var extra = t.getAttribute("data-wb-rep-extra");
-        if (extra) {
-            var j = parseInt(t.getAttribute("data-wb-rep-index"), 10);
-            list[j][extra] = t.checked;
-            commit(ctx, "props." + key, list);
+        throw new Error('未知重复项操作：' + op);
+    };
+    root.onchange = function (e) {
+        var t = e.target;
+        if (!t || !t.getAttribute) return;
+        var inputIndex = t.getAttribute('data-wb-rep-input');
+        var extra = t.getAttribute('data-wb-rep-extra');
+        if (inputIndex === null && !extra) return;
+        if (extra && !(spec.extra || []).some(function (field) { return field.key === extra; })) {
+            throw new Error('未知重复项字段：' + extra);
         }
-    });
+        var idx = Number(inputIndex !== null ? inputIndex : t.getAttribute('data-wb-rep-index'));
+        var list = entries();
+        if (!Number.isInteger(idx) || idx < 0 || idx >= list.length) {
+            throw new Error('重复项序号越界：' + idx);
+        }
+        // 先复制再交给 commit；原数组不能提前改，否则 snapshot 无法记录编辑前的值。
+        var next = list.slice();
+        next[idx] = Object.assign({}, list[idx]);
+        next[idx][inputIndex !== null ? spec.field : extra] = inputIndex !== null ? t.value : t.checked;
+        commit(ctx, path, next);
+    };
     return true;
-}
-
-function rowButton(text, title, onClick, cls) {
-        var b = document.createElement('button');
-        b.type = 'button';
-        b.className = cls || 'wb-btn wb-btn-sm wb-btn-ghost';
-        b.textContent = text; b.title = title;
-        b.addEventListener('click', onClick);
-        return b;
-    }
-    list.forEach(function (entry, idx) {
-        var row = document.createElement('div'); row.className = 'wb-repeater-row';
-        var mid = document.createElement('div'); mid.className = 'wb-repeater-mid';
-        var input = document.createElement('input'); input.type = 'text';
-        input.placeholder = cfg.noun + (idx + 1) + ' ' + cfg.fieldLabel;
-        input.value = entry[cfg.field] || '';
-        input.addEventListener('change', function () {
-            entry[cfg.field] = input.value;
-            commit(ctx, 'props.' + key, list);
-        });
-        mid.appendChild(input);
-        if (cfg.extraField) cfg.extraField(entry, mid, function () { commit(ctx, 'props.' + key, list); });
-        row.appendChild(mid);
-        var acts = document.createElement('div'); acts.className = 'wb-repeater-acts';
-        if (idx > 0) acts.appendChild(rowButton('↑', '上移（面板一起移动）', function () {
-            mutate({ op: 'move', index: idx, to: idx - 1 });
-        }));
-        if (idx < list.length - 1) acts.appendChild(rowButton('↓', '下移（面板一起移动）', function () {
-            mutate({ op: 'move', index: idx, to: idx + 1 });
-        }));
-        acts.appendChild(rowButton('✕', '删除该' + cfg.noun + '（同时删除对应面板）', function () {
-            mutate({ op: 'remove', index: idx });
-        }, 'wb-icon-btn'));
-        row.appendChild(acts);
-        ctx.panel.appendChild(row);
-    });
-    var add = document.createElement('button'); add.type = 'button';
-    add.className = 'wb-btn wb-btn-secondary wb-btn-sm wb-repeater-add';
-    add.textContent = cfg.addText;
-    add.addEventListener('click', function () { mutate({ op: 'add' }); });
-    ctx.panel.appendChild(add);
-    // 数量提示：一致时说明可整体调序；不一致时（历史脏数据 / 画布直接增删面板）
-    // 显式提示，避免用户保存时才发现编译失败。
-    var tip = document.createElement('p'); tip.className = 'wb-empty';
-    if (list.length === kids.length) {
-        tip.textContent = cfg.noun + '与面板数量一致（' + list.length + '）：↑ ↓ 可整体调序，面板内容在画布中编辑。';
-    } else {
-        tip.style.color = 'var(--c-danger, #d93425)';
-        tip.textContent = '数量不一致（' + cfg.noun + ' ' + list.length + ' 个 / 面板 ' + kids.length +
-            ' 个），保存会被校验拦下：点「+ 添加」补齐，或删除多余标签。';
-    }
-    ctx.panel.appendChild(tip);
-}
-
-// tabs 页签面板：标签 repeater，与 children 面板严格一一对应（加/删/调序同步子节点）。
-export function tabsPanel(ctx) {
-    alignedRepeater(ctx, {
-        type: 'core.tabs',
-        noun: '页签',
-        field: 'label',
-        fieldLabel: '标签',
-        addText: '+ 添加页签（自动创建面板）'
-    });
-}
-
-// accordion 面板：折叠项标题 repeater，与 children 内容严格一一对应。
-export function accordionPanel(ctx) {
-    // 结构由服务端渲染（inspector_repeater.go），这里只接行为；
-    // 拿不到服务端骨架时（旧片段 / 其他入口）回退到客户端渲染，行为一致。
-    if (bindRepeaterPanel(ctx)) return;
-    alignedRepeater(ctx, {
-        type: 'core.accordion',
-        noun: '折叠项',
-        field: 'title',
-        fieldLabel: '标题',
-        addText: '+ 添加折叠项（自动创建内容）',
-        extraField: function (entry, mid, save) {
-            var openCk = document.createElement('label'); openCk.className = 'wb-check-field';
-            var ck = document.createElement('input'); ck.type = 'checkbox'; ck.checked = !!entry.open;
-            ck.addEventListener('change', function () { entry.open = ck.checked; save(); });
-            openCk.appendChild(ck); openCk.appendChild(document.createTextNode('默认展开'));
-            mid.appendChild(openCk);
-        }
-    });
-    // 同时只开一个 / 无边框已由 schema 驱动（ct tag）渲染。
 }
 
 // marquee 面板。

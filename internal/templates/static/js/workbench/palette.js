@@ -1,3 +1,5 @@
+import { alignedRepeaters } from './generated-contracts.js';
+
 // workbench/palette.js — 组件库清单与「插入默认内容」（无 DOM 依赖的纯数据/纯函数模块）。
 //
 // 为什么独立成文件：组件库数据与「插入时补齐的最小内容」是纯数据，抽出来后可被
@@ -153,13 +155,6 @@ export const DEFAULT_CONTENT = {
     'core.video': { fallbackProps: { url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ' } }
 };
 
-/**
- * ALIGN_ARRAY 结构型组件的「内容数组」prop 键：该数组长度必须与子节点数量严格一致
- * （tabs 标签数 = 面板数；accordion 标题数 = 折叠项数）。插入时以默认子节点数量为准
- * 裁剪/补齐数组，杜绝「标签比面板多」这类必然编译失败的状态。
- */
-const ALIGN_ARRAY = { 'core.tabs': 'tabs', 'core.accordion': 'items' };
-
 /** 空值判定：undefined / null / 空串 / 空数组 / 空对象 视为「没内容」。 */
 function isEmptyValue(v) {
     if (v === undefined || v === null || v === '') return true;
@@ -207,7 +202,7 @@ export function buildInsertNode(item, allocId) {
     var props = deepClone(item.props) || {};
     if (def.fallbackProps) props = mergeMissing(props, def.fallbackProps);
     // 结构型：内容数组与默认子节点数量对齐（多则裁剪，少则用兜底项补齐）。
-    var alignKey = ALIGN_ARRAY[item.type];
+    var alignKey = alignKeyOf(item.type);
     if (alignKey && def.children && def.children.length) {
         var list = Array.isArray(props[alignKey]) ? props[alignKey].slice(0, def.children.length) : [];
         var fill = (def.fallbackProps && def.fallbackProps[alignKey]) || [];
@@ -228,19 +223,9 @@ export function buildInsertNode(item, allocId) {
     return node;
 }
 
-/**
- * ALIGN_ENTRY 结构型组件「内容数组条目」的文案字段与默认前缀：
- * 检查器点「+ 添加」时按当前序号生成「页签2」「折叠项2」，与既有条目文案不重复
- * （Validate 要求每个标签/标题非空）。
- */
-const ALIGN_ENTRY = {
-    'core.tabs': { field: 'label', prefix: '页签' },
-    'core.accordion': { field: 'title', prefix: '折叠项' }
-};
-
 /** alignKeyOf 结构型组件的内容数组 prop 键（tabs→tabs，accordion→items；非结构型返回 ''）。 */
 export function alignKeyOf(type) {
-    return ALIGN_ARRAY[type] || '';
+    return alignedRepeaters[type] ? alignedRepeaters[type].alignKey : '';
 }
 
 /**
@@ -262,15 +247,15 @@ export function buildDefaultChild(type, index, allocId) {
  * fallbackProps[alignKey] 第一条深拷贝，并按序号覆写文案字段（页签2 / 折叠项2…）。
  */
 export function buildDefaultAlignEntry(type, index) {
-    var key = ALIGN_ARRAY[type];
+    var key = alignKeyOf(type);
     if (!key) return null;
     var fill = ((DEFAULT_CONTENT[type] || {}).fallbackProps || {})[key] || [];
     if (!fill.length) return null;
     var at = Math.abs(Number(index) || 0);
     var entry = deepClone(fill[at % fill.length]);
     if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return null;
-    var conf = ALIGN_ENTRY[type];
-    if (conf && conf.field) entry[conf.field] = conf.prefix + (at + 1);
+    var conf = alignedRepeaters[type];
+    if (conf && conf.field) entry[conf.field] = conf.noun + (at + 1);
     return entry;
 }
 
@@ -294,7 +279,7 @@ export function buildDefaultAlignEntry(type, index) {
  * 不变式：在 list 与 children 长度一致的前提下，任何 add/remove/move 后两者仍一致。
  */
 export function alignMutation(type, list, children, action, allocId) {
-    var key = ALIGN_ARRAY[type];
+    var key = alignKeyOf(type);
     if (!key) return null;
     var nextList = Array.isArray(list) ? list.slice() : [];
     var nextKids = Array.isArray(children) ? children.slice() : [];
@@ -364,7 +349,7 @@ export function alignMutation(type, list, children, action, allocId) {
  * alignedRepeater）继续红字提示，由用户用「+ 添加 / ✕ 删除」把数量修齐。
  */
 export function alignFromChildren(type, list, children, action) {
-    var key = ALIGN_ARRAY[type];
+    var key = alignKeyOf(type);
     if (!key) return null;
     var cur = Array.isArray(list) ? list : [];
     var kids = Array.isArray(children) ? children : [];

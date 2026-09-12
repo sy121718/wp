@@ -3,6 +3,8 @@ package dashboardhttp
 import (
 	"strings"
 	"testing"
+
+	"go_wp/internal/builder/core"
 )
 
 // TestRenderAccordionRepeaterHTML 折叠项面板的服务端骨架。
@@ -10,7 +12,7 @@ import (
 // 钉住的是**数据契约**：客户端绑定函数（repeater.js 的 bindRepeaterPanel）靠这些
 // data-* 属性工作，改名而不同步改绑定函数，面板就会「看着正常但点了没反应」。
 func TestRenderAccordionRepeaterHTML(t *testing.T) {
-	spec := repeaterSpecFor("core.accordion")
+	spec := core.AlignedRepeaterFor("core.accordion")
 	if spec == nil {
 		t.Fatal("accordion 应有重复项面板配置")
 	}
@@ -56,7 +58,7 @@ func TestRenderAccordionRepeaterHTML(t *testing.T) {
 // 不一致是真实会发生的：历史脏数据、或者用户直接在画布上增删了面板。
 // 提示要让用户保存前就知道会被校验拦下，而不是保存后才发现。
 func TestRenderRepeaterHTMLCountMismatch(t *testing.T) {
-	spec := repeaterSpecFor("core.tabs")
+	spec := core.AlignedRepeaterFor("core.tabs")
 	rows := []repeaterRow{{Value: "A"}, {Value: "B"}}
 	out := renderRepeaterHTML(spec, rows, 3)
 	if !strings.Contains(out, "数量不一致（页签 2 个 / 面板 3 个）") {
@@ -74,7 +76,7 @@ func TestRenderRepeaterHTMLCountMismatch(t *testing.T) {
 
 // TestRepeaterRowsOf props 里取不到数据时给空列表（与客户端同口径，不报错）。
 func TestRepeaterRowsOf(t *testing.T) {
-	spec := repeaterSpecFor("core.accordion")
+	spec := core.AlignedRepeaterFor("core.accordion")
 	props := map[string]any{
 		"items": []any{
 			map[string]any{"title": "甲", "open": true},

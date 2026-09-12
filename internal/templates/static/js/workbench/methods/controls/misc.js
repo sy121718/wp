@@ -7,7 +7,7 @@ import { cornersControl } from './corners.js';
 import { unitInput, dimensionsField, dimensionControl, marginControl, spacingControl, boxSpacingControl, rtextControl } from './spacing.js';
 import { mediaControl, mediaListControl, galleryItemsPanel, carouselFirstEagerControl } from './media.js';
 import { richTextField, typographyPanel, classesControl } from './text.js';
-import { listPanel, infoboxPanel, socialPanel, tabsPanel, accordionPanel, marqueePanel, navPanel, faqPanel } from './repeater.js';
+import { listPanel, infoboxPanel, socialPanel, bindRepeaterPanel, marqueePanel, navPanel, faqPanel } from './repeater.js';
 
 // schema 控件 → 表单字段（key 即 props 顶层键，与后端 JSON 序列化一致）。
 export function schemaField(ctx, ctl) {
@@ -421,8 +421,7 @@ export function renderInspectorExtras(ctx) {
             if (ctx.node.type === 'core.faq') faqPanel(ctx);
             if (ctx.node.type === 'core.social_buttons') socialPanel(ctx);
             if (ctx.node.type === 'core.nav') navPanel(ctx);
-            if (ctx.node.type === 'core.tabs') tabsPanel(ctx);
-            if (ctx.node.type === 'core.accordion') accordionPanel(ctx);
+            bindRepeaterPanel(ctx);
             if (ctx.node.type === 'core.marquee') marqueePanel(ctx);
             if (ctx.node.type === 'core.gallery') {
                 heading(ctx, '图片列表');
