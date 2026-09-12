@@ -1,9 +1,54 @@
 package core
 
 import (
+	"sort"
 	"strings"
 	"testing"
 )
+
+// TestInteractionWhitelistMatchesKeyframes 三个动效白名单的每个名字都必须有对应关键帧。
+//
+// 名字到关键帧的对应是一条**约定**：入场 `sky-<name>`、循环 `sky-loop-<name>`、
+// 滚动叙事 `sky-story-<name>`。而白名单（groups.go）、拼名（CompileInteraction）、
+// 关键帧源（keyframes/*.css）是三处各自手写维护的东西，没有任何机制保证它们同步。
+//
+// 三者一旦错位，产物里就会出现「有 animation 引用、没有 @keyframes 定义」的 CSS：
+// 白名单校验通过、构建成功、产物字节合法，页面上那个动效就是不动 —— 没有任何地方报错。
+// 这条用例把约定变成构建期强制：往白名单加名字却忘了写关键帧，测试立刻失败。
+//
+// 反向（关键帧源里有、白名单没引用）**不做断言**：那是允许的 —— 效果基本库里的
+// sky-bg-flow / sky-border-flow 就由 BackgroundFlowDecls / BorderFlowAngleProperty
+// 走另一条路径激活，不经交互白名单。
+func TestInteractionWhitelistMatchesKeyframes(t *testing.T) {
+	have := map[string]bool{}
+	for _, k := range keyframesCatalog {
+		have[k.Name] = true
+	}
+	cases := []struct {
+		kind   string
+		names  map[string]bool
+		prefix string
+	}{
+		{"入场", allowedEntrance, "sky-"},
+		{"循环", allowedLoopEffect, "sky-loop-"},
+		{"滚动叙事", allowedScrollStory, "sky-story-"},
+	}
+	for _, c := range cases {
+		names := make([]string, 0, len(c.names))
+		for name := range c.names {
+			if name != "" {
+				names = append(names, name)
+			}
+		}
+		sort.Strings(names) // 稳定顺序，失败信息便于逐条对照
+		for _, name := range names {
+			if !have[c.prefix+name] {
+				t.Errorf("%s白名单里的 %q 没有对应的关键帧 %q —— 产物会引用一个不存在的动画，页面上只表现为「不动」",
+					c.kind, name, c.prefix+name)
+			}
+		}
+	}
+}
 
 // TestInteractionLoopDrift 通用循环动效 drift：白名单放行 + 编译输出 + keyframes 按需激活。
 // drift 属于「效果基本库」通用词汇：任意组件经 Advanced.Interaction.LoopEffect 自由选用，
