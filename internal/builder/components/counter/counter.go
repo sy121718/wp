@@ -23,7 +23,7 @@ func init() {
 	core.Register(&Component{})
 	// 行为块注册：构建期按产物里是否出现 data-counter 决定要不要内联（见 builder/enhance_select.go）。
 	core.RegisterEnhanceBlock(core.EnhanceBlock{
-		Fn:     "initCounters",
+		Fns:    []string{"initCounters"},
 		Feats:  []string{"data-counter"},
 		Source: enhanceJS,
 	})

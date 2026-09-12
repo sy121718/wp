@@ -13,6 +13,7 @@
 package slider
 
 import (
+	_ "embed" // enhance.js 经 //go:embed 打进二进制
 	"encoding/json"
 	"fmt"
 	"strconv"
@@ -20,10 +21,22 @@ import (
 	"go_wp/internal/builder/core"
 )
 
+// enhanceJS 组件行为源。与 .go / .css / .jet 同目录：改交互不必再去 enhance.js 里找。
+//
+//go:embed enhance.js
+var enhanceJS string
+
 // Type 组件类型标识。
 const Type = "core.slider"
 
-func init() { core.Register(&Component{}) }
+func init() {
+	core.Register(&Component{})
+	core.RegisterEnhanceBlock(core.EnhanceBlock{
+		Fns:    []string{"initSliders"},
+		Feats:  []string{"data-slider"},
+		Source: enhanceJS,
+	})
+}
 
 // Component 轮播组件（结构型：children 为各 slide）。
 type Component struct{}

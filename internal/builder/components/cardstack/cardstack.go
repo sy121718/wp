@@ -17,6 +17,7 @@
 package cardstack
 
 import (
+	_ "embed" // enhance.js 经 //go:embed 打进二进制
 	"encoding/json"
 	"fmt"
 	"math"
@@ -25,6 +26,19 @@ import (
 
 	"go_wp/internal/builder/core"
 )
+
+// 组件行为源。与 .go / .css / .jet 同目录：改交互不必再去 enhance.js 里找。
+//
+//go:embed enhance-drag.js
+var enhanceDragJS string
+
+//
+//go:embed enhance-deck.js
+var enhanceDeckJS string
+
+//
+//go:embed enhance-slide.js
+var enhanceSlideJS string
 
 // Type 组件类型标识。
 const Type = "core.cardstack"
@@ -255,7 +269,27 @@ type Props struct {
 type Component struct{}
 
 // init 注册组件。
-func init() { core.Register(&Component{}) }
+func init() {
+	core.Register(&Component{})
+	// 每个增强块独立注册：命中任一特征只注入它自己 —— 合并注册会让「用了轮播」的页面白背灯箱代码。
+	core.RegisterEnhanceBlock(core.EnhanceBlock{
+		Fns:    []string{"initCardStacks"},
+		Feats:  []string{"data-cardstack-drag"},
+		Source: enhanceDragJS,
+	})
+	// 每个增强块独立注册：命中任一特征只注入它自己 —— 合并注册会让「用了轮播」的页面白背灯箱代码。
+	core.RegisterEnhanceBlock(core.EnhanceBlock{
+		Fns:    []string{"initCardDecks"},
+		Feats:  []string{"data-cardstack-deck"},
+		Source: enhanceDeckJS,
+	})
+	// 每个增强块独立注册：命中任一特征只注入它自己 —— 合并注册会让「用了轮播」的页面白背灯箱代码。
+	core.RegisterEnhanceBlock(core.EnhanceBlock{
+		Fns:    []string{"initSlideStacks"},
+		Feats:  []string{"data-cardstack-slide"},
+		Source: enhanceSlideJS,
+	})
+}
 
 // Type 实现组件接口。
 func (c *Component) Type() string { return Type }

@@ -12,6 +12,7 @@
 package gallery
 
 import (
+	_ "embed" // enhance.js 经 //go:embed 打进二进制
 	"encoding/json"
 	"fmt"
 	"regexp"
@@ -20,6 +21,15 @@ import (
 
 	"go_wp/internal/builder/core"
 )
+
+// 组件行为源。与 .go / .css / .jet 同目录：改交互不必再去 enhance.js 里找。
+//
+//go:embed enhance-carousel.js
+var enhanceCarouselJS string
+
+//
+//go:embed enhance-lightbox.js
+var enhanceLightboxJS string
 
 // Type 组件类型标识。
 const Type = "core.gallery"
@@ -452,4 +462,16 @@ func defaultDur(d string) string {
 // init 注册画廊组件。
 func init() {
 	core.Register(Widget)
+	// 每个增强块独立注册：命中任一特征只注入它自己 —— 合并注册会让「用了轮播」的页面白背灯箱代码。
+	core.RegisterEnhanceBlock(core.EnhanceBlock{
+		Fns:    []string{"initCarousels"},
+		Feats:  []string{"data-carousel"},
+		Source: enhanceCarouselJS,
+	})
+	// 每个增强块独立注册：命中任一特征只注入它自己 —— 合并注册会让「用了轮播」的页面白背灯箱代码。
+	core.RegisterEnhanceBlock(core.EnhanceBlock{
+		Fns:    []string{"initLightboxes"},
+		Feats:  []string{"data-lightbox"},
+		Source: enhanceLightboxJS,
+	})
 }

@@ -7,11 +7,17 @@
 package countdown
 
 import (
+	_ "embed" // enhance.js 经 //go:embed 打进二进制
 	"fmt"
 	"time"
 
 	"go_wp/internal/builder/core"
 )
+
+// enhanceJS 组件行为源。与 .go / .css / .jet 同目录：改交互不必再去 enhance.js 里找。
+//
+//go:embed enhance.js
+var enhanceJS string
 
 // Type 组件类型标识。
 const Type = "core.countdown"
@@ -107,4 +113,9 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 // init 注册倒计时组件。
 func init() {
 	core.Register(Widget)
+	core.RegisterEnhanceBlock(core.EnhanceBlock{
+		Fns:    []string{"initCountdowns"},
+		Feats:  []string{"data-countdown"},
+		Source: enhanceJS,
+	})
 }
