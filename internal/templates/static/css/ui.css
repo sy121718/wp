@@ -18,7 +18,7 @@
     display: flex; align-items: center; justify-content: space-between; gap: 8px;
     width: 100%; box-sizing: border-box; padding: 8px 10px;
     font-size: 13px; font-family: inherit; line-height: 1.4;
-    border: 1px solid var(--sky-c-border, var(--c-border, #e5e7eb)); border-radius: 8px;
+    border: 1px solid var(--sky-c-border, var(--c-border, #232830)#e5e7eb)); border-radius: 8px;
     background: var(--sky-c-surface, var(--c-surface, #fff)); color: inherit;
     cursor: pointer; text-align: left;
 }
@@ -325,9 +325,9 @@ table.data-table { width: 100%; border-collapse: collapse; font-size: 14px; }
     margin-bottom: var(--ui-sp-xs);
     font-size: 13px;
     font-weight: 500;
-    color: var(--c-text-secondary);
+    color: var(--c-text-secondary, #c2c8cf);
 }
-.form-label .req { color: var(--c-danger); }
+.form-label .req { color: var(--c-danger, #cf8080); }
 /* 原始控件：输入 / 下拉 / 多行文本。
  *
  * 这一层是**唯一视觉来源**。以前 theme.css 里逐页又写了一版（.pages-form input、
@@ -356,10 +356,10 @@ table.data-table { width: 100%; border-collapse: collapse; font-size: 14px; }
 .locale-add input {
     width: 100%;
     padding: var(--ui-sp-sm) var(--ui-sp-md);
-    background: var(--c-bg);
-    border: 1px solid var(--c-border-input);
+    background: var(--c-bg, #101318);
+    border: 1px solid var(--c-border-input, #3a424d);
     border-radius: var(--ui-r-sm);
-    color: var(--c-text);
+    color: var(--c-text, #e8eaed);
     /* 13px：与后台既有观感一致（此前 theme.css 各页写的是 13px，改基座比改十几个页面稳）。 */
     font-size: 13px;
     transition: border-color var(--ui-tr-fast), box-shadow var(--ui-tr-fast);
@@ -372,7 +372,7 @@ table.data-table { width: 100%; border-collapse: collapse; font-size: 14px; }
 .pages-form input:focus-visible,
 .pages-form select:focus-visible,
 .attr-form-head input:focus-visible {
-    outline: 2px solid var(--c-primary);
+    outline: 2px solid var(--c-primary, #aeb6c0);
     outline-offset: 1px;
 }
 .form-input:focus,
@@ -382,8 +382,8 @@ table.data-table { width: 100%; border-collapse: collapse; font-size: 14px; }
 .pages-form select:focus,
 .attr-form-head input:focus,
 .attr-form-head select:focus {
-    border-color: var(--c-primary);
-    box-shadow: 0 0 0 3px var(--c-primary-bg);
+    border-color: var(--c-primary, #aeb6c0);
+    box-shadow: 0 0 0 3px var(--c-primary-bg, #2a3038);
 }
 .form-input:disabled,
 .form-select:disabled,
@@ -396,16 +396,16 @@ table.data-table { width: 100%; border-collapse: collapse; font-size: 14px; }
 .form-input[aria-invalid="true"],
 .form-select[aria-invalid="true"],
 .form-textarea[aria-invalid="true"] {
-    border-color: var(--c-danger);
+    border-color: var(--c-danger, #cf8080);
 }
 .form-input[aria-invalid="true"]:focus,
 .form-select[aria-invalid="true"]:focus {
     box-shadow: 0 0 0 3px rgb(179 74 74 / 15%);
 }
-.form-input::placeholder { color: var(--c-text-faint); }
+.form-input::placeholder { color: var(--c-text-faint, #5d656e); }
 .form-textarea { resize: vertical; min-height: 100px; }
-.form-hint { margin-top: var(--ui-sp-xs); font-size: 12px; color: var(--c-text-mute); }
-.form-error { margin-top: var(--ui-sp-xs); font-size: 12px; color: var(--c-danger); }
+.form-hint { margin-top: var(--ui-sp-xs); font-size: 12px; color: var(--c-text-mute, #8a9199); }
+.form-error { margin-top: var(--ui-sp-xs); font-size: 12px; color: var(--c-danger, #cf8080); }
 
 .form-row {
     display: grid;
@@ -420,9 +420,9 @@ table.data-table { width: 100%; border-collapse: collapse; font-size: 14px; }
     gap: var(--ui-sp-xs);
     cursor: pointer;
     font-size: 14px;
-    color: var(--c-text-secondary);
+    color: var(--c-text-secondary, #c2c8cf);
 }
-.checkbox input { width: 16px; height: 16px; accent-color: var(--c-primary); }
+.checkbox input { width: 16px; height: 16px; accent-color: var(--c-primary, #aeb6c0); }
 
 /* ==========================================================================
    徽章 / 标签 / 状态
@@ -436,10 +436,10 @@ table.data-table { width: 100%; border-collapse: collapse; font-size: 14px; }
     border-radius: var(--ui-r-pill);
     line-height: 20px;
 }
-.badge-success { background: var(--c-success-bg); color: var(--c-success); }
-.badge-warning { background: var(--c-warning-bg); color: var(--c-warning); }
-.badge-danger  { background: var(--c-danger-bg);  color: var(--c-danger); }
-.badge-mute    { background: var(--c-bg-hover);   color: var(--c-text-mute); }
+.badge-success { background: var(--c-success-bg, #1b2820); color: var(--c-success, #7fb28d); }
+.badge-warning { background: var(--c-warning-bg, #2a2318); color: var(--c-warning, #c2a06a); }
+.badge-danger  { background: var(--c-danger-bg, #2b1c1c);  color: var(--c-danger, #cf8080); }
+.badge-mute    { background: var(--c-bg-hover, #1f242b);   color: var(--c-text-mute, #8a9199); }
 
 .dot {
     display: inline-block;
@@ -448,10 +448,10 @@ table.data-table { width: 100%; border-collapse: collapse; font-size: 14px; }
     border-radius: 50%;
     margin-right: var(--ui-sp-xs);
 }
-.dot-success { background: var(--c-success); }
-.dot-warning { background: var(--c-warning); }
-.dot-danger  { background: var(--c-danger); }
-.dot-mute    { background: var(--c-text-faint); }
+.dot-success { background: var(--c-success, #7fb28d); }
+.dot-warning { background: var(--c-warning, #c2a06a); }
+.dot-danger  { background: var(--c-danger, #cf8080); }
+.dot-mute    { background: var(--c-text-faint, #5d656e); }
 
 /* ==========================================================================
    分页
@@ -461,10 +461,10 @@ table.data-table { width: 100%; border-collapse: collapse; font-size: 14px; }
     align-items: center;
     gap: var(--ui-sp-xs);
     padding: var(--ui-sp-md) var(--ui-sp-lg);
-    border-top: 1px solid var(--c-border);
+    border-top: 1px solid var(--c-border, #232830);
     justify-content: space-between;
 }
-.pagination-info { font-size: 13px; color: var(--c-text-mute); }
+.pagination-info { font-size: 13px; color: var(--c-text-mute, #8a9199); }
 .pagination-pages { display: flex; gap: var(--ui-sp-xxs); }
 /* 类选择器而非元素选择器：同一个分页条有三种载体 —— 链接（服务端渲染的翻页）、
    span（当前页 / 不可点）、button（客户端 AJAX 分页，如媒体库）。
@@ -479,16 +479,16 @@ table.data-table { width: 100%; border-collapse: collapse; font-size: 14px; }
     border-radius: var(--ui-r-sm);
     font-size: 13px;
     font-family: inherit;
-    color: var(--c-text-secondary);
+    color: var(--c-text-secondary, #c2c8cf);
     background: transparent;
     border: 1px solid transparent;
     cursor: pointer;
     transition: background var(--ui-tr-fast), border-color var(--ui-tr-fast);
 }
-.pagination-pages .pagination-btn:hover { background: var(--c-bg-hover); text-decoration: none; }
+.pagination-pages .pagination-btn:hover { background: var(--c-bg-hover, #1f242b); text-decoration: none; }
 .pagination-pages .pagination-btn.is-active {
-    background: var(--c-primary-bg);
-    color: var(--c-primary);
+    background: var(--c-primary-bg, #2a3038);
+    color: var(--c-primary, #aeb6c0);
     font-weight: 500;
 }
 .pagination-pages .pagination-btn:disabled,
@@ -515,7 +515,7 @@ table.data-table { width: 100%; border-collapse: collapse; font-size: 14px; }
 .mb-md { margin-bottom: var(--ui-sp-md); }
 .mb-lg { margin-bottom: var(--ui-sp-lg); }
 .mb-xl { margin-bottom: var(--ui-sp-xl); }
-.text-mute { color: var(--c-text-mute); }
+.text-mute { color: var(--c-text-mute, #8a9199); }
 .text-sm { font-size: 13px; }
 .text-xs { font-size: 12px; }
 .text-right { text-align: right; }
@@ -530,15 +530,15 @@ table.data-table { width: 100%; border-collapse: collapse; font-size: 14px; }
     justify-content: center;
     width: 36px;
     height: 36px;
-    border: 1px solid var(--c-border);
+    border: 1px solid var(--c-border, #232830);
     border-radius: var(--ui-r-pill);
-    background: var(--c-bg);
+    background: var(--c-bg, #101318);
     cursor: pointer;
     font-size: 16px;
-    color: var(--c-text-secondary);
+    color: var(--c-text-secondary, #c2c8cf);
     transition: background var(--ui-tr-fast), border-color var(--ui-tr-fast);
 }
-.theme-toggle:hover { background: var(--c-bg-hover); }
+.theme-toggle:hover { background: var(--c-bg-hover, #1f242b); }
 
 /* ==========================================================================
    语言切换（后台外壳，多语言 P1 第二步）：GET /admin/lang 表单，零 JS 依赖
@@ -549,20 +549,20 @@ table.data-table { width: 100%; border-collapse: collapse; font-size: 14px; }
     padding: 0 8px;
     font-size: 13px;
     font-family: inherit;
-    color: var(--c-text-secondary);
-    background: var(--c-bg);
-    border: 1px solid var(--c-border);
+    color: var(--c-text-secondary, #c2c8cf);
+    background: var(--c-bg, #101318);
+    border: 1px solid var(--c-border, #232830);
     border-radius: var(--ui-r-pill);
     cursor: pointer;
 }
-.lang-select:hover { background: var(--c-bg-hover); }
+.lang-select:hover { background: var(--c-bg-hover, #1f242b); }
 .lang-submit {
     height: 36px;
     padding: 0 10px;
-    border: 1px solid var(--c-border);
+    border: 1px solid var(--c-border, #232830);
     border-radius: var(--ui-r-pill);
-    background: var(--c-bg);
-    color: var(--c-text-secondary);
+    background: var(--c-bg, #101318);
+    color: var(--c-text-secondary, #c2c8cf);
     cursor: pointer;
 }
 /* 登录页语言切换：卡片内居中、与副标题留出间距（链接式，登录前不写 Cookie） */
@@ -575,7 +575,7 @@ table.data-table { width: 100%; border-collapse: collapse; font-size: 14px; }
     border: 1px solid var(--c-border, #e5e7eb);
     border-radius: var(--ui-r-pill);
 }
-.lang-link:hover { background: var(--c-bg-hover); }
+.lang-link:hover { background: var(--c-bg-hover, #1f242b); }
 .lang-link.is-active { color: var(--c-text, #1a1d21); border-color: var(--c-primary-soft, #5b6572); cursor: default; }
 /* 视觉隐藏但屏幕阅读器可读（语言下拉的 label） */
 .sr-only {
