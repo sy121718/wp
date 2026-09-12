@@ -141,6 +141,18 @@ func Init(v *viper.Viper) error {
 	return nil
 }
 
+// SessionSecret 返回 Init 时确定的会话签名密钥（未初始化时为空串）。
+//
+// 供**同一部署内的其它签名用途**复用 —— 购物车 cookie 的 HMAC 就取它。
+// 理由与 NamedCookieStore 同一条：签名密钥属于部署，不属于某个身份域；
+// 再造一个配置项只会制造「两个密钥、轮换时改一个漏一个」的机会，
+// 而漏掉的那个会让购物车 cookie 在某次密钥轮换后集体失效（表现是「所有人的购物车都空了」）。
+func SessionSecret() string {
+	sessionMu.RLock()
+	defer sessionMu.RUnlock()
+	return sessionSecret
+}
+
 // NamedCookieStore 按指定的 cookie 名创建会话存储，供**第二身份域**使用。
 //
 // 为什么需要：一个站点会有多个互不相干的登录态（管理后台、访客账号、将来的客户账号）。

@@ -385,15 +385,39 @@ func TestDefaultCompileIncludesOnlyUsedClientAssets(t *testing.T) {
 	}
 }
 
-// 即使生产装配提供全套资源，无交互页面也不应包含空脚本或公共控件 CSS。
+// 即使生产装配提供全套资源，无交互页面也不应包含无关的控件脚本 / 样式。
+//
+// 2026-09 起有一处**明文例外**：流量采集脚本（track.js）每一页都要注入。
+// 归因是页面级的，采不到的那一页就是归因断点，而断点往往正好落在转化页上 ——
+// 「首页有脚本、结算页没有」这种省法，省掉的恰好是最该记下来的一段。
+// 代价是每页多 ~10KB 源码（gzip 后 ~4KB），换取的是产物**自包含**
+//（访问面可能只有静态文件，外链 /static 会在纯 CDN 部署下 404）。
+//
+// 因此断言从「不含任何 script」改成「除采集脚本外不含别的脚本」，并保留
+// 「不得输出空脚本」这条原本的意思。
 func TestDefaultCompilePlainPageHasNoClientAssets(t *testing.T) {
 	out, err := pipeline.DefaultCompile(context.Background(), pipeline.BuildInput{DocJSON: []byte(docV2)})
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, unwanted := range []string{"<script", "WBUI", ".wbs-trigger"} {
-		if strings.Contains(string(out), unwanted) {
+	body := string(out)
+	// 无关控件资源一个都不许有（这条不因采集脚本而放松）。
+	for _, unwanted := range []string{"WBUI", ".wbs-trigger"} {
+		if strings.Contains(body, unwanted) {
 			t.Errorf("纯内容产物不应包含 %s", unwanted)
+		}
+	}
+	// 采集脚本恰好一个，且得真的是采集脚本（防止有人把它换成别的而测试仍然通过）。
+	if got := strings.Count(body, "<script"); got != 1 {
+		t.Fatalf("纯内容产物应只含采集脚本这一个 <script>，实际 %d 个", got)
+	}
+	if !strings.Contains(body, "gw_src") || !strings.Contains(body, "gw_sess") {
+		t.Error("注入的脚本不是流量采集脚本")
+	}
+	// 空脚本仍然是缺陷：它会被下载、被解析，却什么都不做。
+	for _, empty := range []string{"<script></script>", "<script>\n</script>", "<script>\n\n</script>"} {
+		if strings.Contains(body, empty) {
+			t.Errorf("不应输出空脚本 %q", empty)
 		}
 	}
 }

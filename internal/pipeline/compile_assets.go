@@ -18,6 +18,9 @@ var (
 	enhanceSourceOnce sync.Once
 	enhanceSourceVal  string
 
+	trackSourceOnce sync.Once
+	trackSourceVal  string
+
 	uiSourcesOnce sync.Once
 	uiSourcesVal  map[string]string
 )
@@ -36,6 +39,24 @@ func enhanceSource() string {
 		enhanceSourceVal = js
 	})
 	return enhanceSourceVal
+}
+
+// trackSource 取流量来源采集脚本源码（internal/templates/static/js/track.js）。
+//
+// 与 enhanceSource 分开放：两者的注入策略不同（增强按特征挑块、采集每页无条件带上），
+// 合成一个变量会让 builder 那边只能二选一。
+//
+// 读不到时返回空串并告警：产物不含采集脚本，订单归因为空 —— 页面与下单都不受影响。
+func trackSource() string {
+	trackSourceOnce.Do(func() {
+		js, err := templates.StaticJS("track.js")
+		if err != nil {
+			logger.Scene("build").Error(err, "读取流量采集脚本失败（产物将不含归因采集）")
+			return
+		}
+		trackSourceVal = js
+	})
+	return trackSourceVal
 }
 
 // uiSources 取原始控件基座源码（文件名 → 源码）。
@@ -63,6 +84,7 @@ func uiSources() map[string]string {
 func ClientAssetOptions() []builder.CompileOption {
 	return []builder.CompileOption{
 		builder.WithEnhanceSource(enhanceSource()),
+		builder.WithTrackSource(trackSource()),
 		builder.WithUISources(uiSources()),
 		builder.WithUIStyle(templates.UICSS()),
 	}

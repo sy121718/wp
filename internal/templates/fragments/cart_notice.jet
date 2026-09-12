@@ -1,0 +1,5 @@
+{* cart_notice.jet — 购物车 / 结算路径上的提示片段（校验失败、库存不足、功能未接入）。
+   为什么不直接返回 HTTP 500：端点把 error 变成「片段渲染失败」那句通用话，
+   对访客没有任何信息量；而「库存不足，无法下单」是他必须看到的结论。
+   role="alert" 让屏幕阅读器立刻读出这段 —— 提示往往出现在一次表单提交之后。 *}
+<div class="sky-cart-notice" data-fragment="cartNotice" role="alert">{{ .Message }}</div>

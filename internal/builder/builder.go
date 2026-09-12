@@ -153,6 +153,12 @@ type CompiledPage struct {
 	// 而 HTML 是 Compile 的产物 —— 放在渲染阶段算，正好拿到最终 HTML。
 	// 空值表示调用方未注入：RenderDocument 会输出空增强（页面照常渲染，仅失去交互）。
 	EnhanceSource string
+	// TrackSource 流量来源采集脚本源码（来自 WithTrackSource，整份、不裁剪）。
+	//
+	// 与 EnhanceSource 的差别是**注入策略**而不是内容：增强按产物特征挑块，
+	// 采集每页都要有（漏掉的那页就是归因断点，而断点往往落在转化页上）。
+	// 空值表示调用方未注入：产物不含采集脚本，订单归因为空，其余一切照常。
+	TrackSource string
 }
 
 // CompileOption 编译选项。
@@ -200,6 +206,12 @@ type compileConfig struct {
 	// 而 builder 不依赖 internal/templates（后者含 gin 依赖），所以只能走注入
 	//（与 WithComponentSet 同一条路子）。为空时产物不含增强，交互降级但不影响渲染。
 	enhanceSource string
+	// trackSource 流量来源采集脚本源码（internal/templates/static/js/track.js）。
+	//
+	// 内容是常量，因此不改产物字节的确定性（同 Document + BuildContext → 同字节）；
+	// 但它会让**每一页**的字节都变一次 —— 这是组件更新的正常代价，
+	// 装配层会在启动时把既有产物标记为待重建（见 builder.RegistryVersion 说明）。
+	trackSource string
 }
 
 // WithContentResolver 注入 CMS 内容解析器（构建期动态绑定静态填入，规范 docs/02-C1）。
@@ -294,6 +306,14 @@ func WithThemeSettings(t *ThemeSettings) CompileOption {
 // 调用方（page service）在装配编译选项时注入；缺失会由增强装配处告警，不静默。
 func WithEnhanceSource(js string) CompileOption {
 	return func(c *compileConfig) { c.enhanceSource = js }
+}
+
+// WithTrackSource 注入流量来源采集脚本源码（internal/templates/static/js/track.js）。
+//
+// 不注入时产物不含采集脚本：页面照常渲染，只是订单归因为空 —— 采集是增强能力，
+// 既不阻断内容发布，也不阻断下单（订单的 attribution 列落在 "{}"）。
+func WithTrackSource(js string) CompileOption {
+	return func(c *compileConfig) { c.trackSource = js }
 }
 
 // WithUISources 注入原始控件基座源码（文件名 → 源码，如 select.js / _util.js / index.js）。
@@ -674,6 +694,7 @@ func Compile(p *Page, opts ...CompileOption) (res *CompiledPage, err error) {
 		CSS:             css,
 		ThemeVarsCSS:    ThemeVarsCSS(cfg.theme),
 		EnhanceSource:   cfg.enhanceSource,
+		TrackSource:     cfg.trackSource,
 		UISources:       cfg.uiSources,
 		UIStyle:         cfg.uiStyle,
 	}, nil
@@ -734,7 +755,10 @@ func RenderDocument(c *CompiledPage) (string, error) {
 		HTML:            c.HTML,
 		CSS:             c.CSS + uiCSS,
 		ThemeVarsCSS:    c.ThemeVarsCSS,
-		EnhanceScript:   enhanceScriptFor(features, c.EnhanceSource) + uiScript,
+		// 采集脚本无条件排在最前：一是每页都要有（不像增强按特征挑块），
+		// 二是它要尽早写 cookie —— 排在交互脚本后面的话，前一个脚本抛错会连坐，
+		// 而归因丢数据是静默的，没人会发现少了什么。
+		EnhanceScript: c.TrackSource + enhanceScriptFor(features, c.EnhanceSource) + uiScript,
 	}
 	var sb strings.Builder
 	if err := documentTemplate().Execute(&sb, nil, v); err != nil {

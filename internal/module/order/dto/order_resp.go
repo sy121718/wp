@@ -88,6 +88,21 @@ type CreateOrderResp struct {
 	Currency string `json:"currency"`
 	// Duplicated 为真表示命中幂等键，返回的是既有单（不是新建的）。
 	Duplicated bool `json:"duplicated"`
+	// AccountMailed 为真表示这次下单顺带新建了访客账号，并把初始密码寄到了订单邮箱。
+	// 前台据此提示「去邮箱收密码」—— 不提示的话，客户不知道自己已经有了账号，
+	// 下次回来还会去走一遍注册。
+	AccountMailed bool `json:"accountMailed"`
+}
+
+// PayOrderResp 支付落账结果。
+type PayOrderResp struct {
+	ID            uint64 `json:"id"`
+	OrderNo       string `json:"orderNo"`
+	Status        string `json:"status"`
+	TransactionID string `json:"transactionId"`
+	// AlreadyPaid 为真表示这一单此前已经付过：本次调用**没有改动任何列**，
+	// 返回的是当时的结论。网关重发通知、访客连点两次下单都会命中这里。
+	AlreadyPaid bool `json:"alreadyPaid"`
 }
 
 // OrderDetailResp 详情（头 + 项 + 流转链）。

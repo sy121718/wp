@@ -156,6 +156,7 @@ func (s *Service) CreateOrder(ctx context.Context, req *orderdto.CreateOrderReq)
 	// （客户仍可用这个邮箱走「忘记密码」自己开号）。
 	// 邮箱已有账号时只关联、**绝不改密码** —— 那条安全边界在 user 模块里守着。
 	userID := req.UserID
+	accountMailed := false
 	if userID == nil && s.guest != nil {
 		if gres, gerr := s.guest.EnsureGuestAccount(ctx, &userdto.GuestAccountReq{
 			Email:      email,
@@ -165,6 +166,10 @@ func (s *Service) CreateOrder(ctx context.Context, req *orderdto.CreateOrderReq)
 		}); gerr == nil && gres != nil && gres.UserID != 0 {
 			id := gres.UserID
 			userID = &id
+			// 只有「这次确实新建了账号、且初始密码寄出去了」才提示客户去收邮件。
+			// 邮箱已有账号时我们只关联、绝不改密码（那条安全边界在 user 模块里守着），
+			// 此时告诉客户「密码已发到你邮箱」会让他在邮箱里白找一场。
+			accountMailed = gres.Created && gres.PasswordMailed
 		}
 	}
 
@@ -275,6 +280,7 @@ func (s *Service) CreateOrder(ctx context.Context, req *orderdto.CreateOrderReq)
 	return &orderdto.CreateOrderResp{
 		ID: head.ID, OrderNo: head.OrderNo, Status: head.Status,
 		Total: head.Total, Currency: head.Currency, Duplicated: false,
+		AccountMailed: accountMailed,
 	}, nil
 }
 

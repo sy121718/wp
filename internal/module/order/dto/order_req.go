@@ -97,6 +97,25 @@ type CancelOrderReq struct {
 	OperatorName string `json:"-"`
 }
 
+// PayOrderReq 支付落账：网关扣款成功后把订单推进到「已付款」。
+//
+// 只接受内部订单 id，不支持按商户单号找单：当前唯一的调用方是结算流程，
+// 它刚建完单、手上就是 id。将来接真网关的异步回调时再补「按单号加锁」的入口 ——
+// 现在写出来没有消费方，只会是一段没人跑的代码。
+type PayOrderReq struct {
+	OrderID uint64 `json:"orderId"`
+
+	// 支付通道信息落的是订单列（对账要看），所以由调用方给出而不是订单域猜。
+	PaymentMethod      string `json:"paymentMethod"`
+	PaymentMethodTitle string `json:"paymentMethodTitle"`
+	TransactionID      string `json:"transactionId"`
+	Remark             string `json:"remark"`
+
+	OperatorType string `json:"-"`
+	OperatorID   uint64 `json:"-"`
+	OperatorName string `json:"-"`
+}
+
 // RefundOrderReq 退款。
 type RefundOrderReq struct {
 	OrderID       uint64 `json:"orderId"`

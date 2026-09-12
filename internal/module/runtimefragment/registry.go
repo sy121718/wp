@@ -9,6 +9,7 @@ package runtimefragment
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"sort"
 	"sync"
 )
@@ -26,6 +27,49 @@ type Request struct {
 	Values map[string][]string
 	// UserID 已认证用户 ID（session 策略时非空）。
 	UserID string
+	// Cookies 本次请求携带的 cookie（原样，未解析）。
+	//
+	// 它替代的是「处理器直接摸 *gin.Context」：购物车与归因采集都把状态放在客户端
+	// 签名 cookie 里，处理器必须读得到，但读 cookie 这件事本身不该带来操作响应的能力。
+	// go 标准库的 Request.Cookies() 已经带数量与长度防护，不需要在这里再包一层。
+	Cookies map[string]string
+	// IP 客户端地址（按部署的 TrustedProxies 配置解析）。
+	//
+	// 订单表有这一列，归因里也用它判「同一访客」；但要清楚它是**尽力而为**的：
+	// 反向代理配置、NAT、移动网络都会让它失真。用于分析可以，用于身份判定不行。
+	IP string
+	// UserAgent 请求头里的 UA（服务端看到的那个，不是脚本自报的）。
+	UserAgent string
+	// SetCookies 处理器要求写入响应的 cookie（由 endpoint 在渲染成功后统一写出）。
+	//
+	// 为什么不把 *gin.Context 交给处理器：处理器是「请求 → HTML」的白名单注册体，
+	// 让它直接操作响应会让「片段能不能改响应头」变成每个处理器各自为政的问题。
+	// 收成一个声明式字段之后，需要审核的地方就只有 endpoint 里那一小段。
+	//
+	// 渲染失败时这些 cookie **不会**被写出：一个报错的响应配上「购物车已更新」的
+	// cookie，会让前端与服务端各说各话。
+	SetCookies []ResponseCookie
+}
+
+// ResponseCookie 片段处理器要写到响应上的 cookie。
+//
+// 刻意不暴露 Domain / Expires：跨子域共享与绝对过期时间都是**部署策略**，
+// 不该由某一个能力自己决定。
+type ResponseCookie struct {
+	Name  string
+	Value string
+	// MaxAge 秒；0 表示会话 cookie（不写 Max-Age）。
+	MaxAge int
+	// HTTPOnly 是否禁止脚本读取。购物车 cookie 必须是 true ——
+	// 没有脚本需要读它，而放开了就等于把「买了什么」暴露给任何一段注入脚本。
+	HTTPOnly bool
+	// SameSite 同站策略；请显式给值，零值等同于浏览器默认行为。
+	//
+	// 匿名写能力的 CSRF 防线就在这里：SameSite=Lax 让跨站 POST **不携带** cookie，
+	// 攻击者构造的请求拿到的是一辆空车，只会得到一个「购物车是空的」。
+	SameSite http.SameSite
+	// Path 缺省为 "/"。
+	Path string
 }
 
 // Spec 一个运行时片段能力（capability 白名单条目）。

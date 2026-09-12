@@ -23,6 +23,8 @@ import (
 	artifacthttp "go_wp/internal/module/artifact/inbound/http"
 	blockhttp "go_wp/internal/module/block/inbound/http"
 	blueprinthttp "go_wp/internal/module/blueprint/inbound/http"
+	mockpaypal "go_wp/internal/module/cart/outbound/mockpaypal"
+	cartservice "go_wp/internal/module/cart/service"
 	captcharouter "go_wp/internal/module/common/captcha/router"
 	contenthttp "go_wp/internal/module/content/inbound/http"
 	contenttemplatehttp "go_wp/internal/module/contenttemplate/inbound/http"
@@ -47,6 +49,7 @@ import (
 	userhttp "go_wp/internal/module/user/inbound/http"
 	"go_wp/internal/pipeline"
 	"go_wp/internal/templates"
+	"go_wp/pkg/auth"
 	"go_wp/pkg/casbin"
 	"go_wp/pkg/database"
 	"go_wp/pkg/logger"
@@ -291,6 +294,21 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 		panic("商品模块未实现变体可用量查询端口（VariantAvailabilityLookupPort）")
 	}
 	runtimefragment.SetVariantAvailabilityProvider(availabilityLookup)
+
+	// 购物车与访客结算（BIZ-1 访问面）：
+	//   · 购物车状态在**客户端签名 cookie** 里（访客未登录也要能加购），服务端不持久化；
+	//   · 结算走订单域建单（落快照 + 扣库存 + 幂等）→ 支付通道扣款 → 订单落账；
+	//   · 支付通道现在是**模拟 PayPal**（orders.payment_method = paypal，
+	//     流水号由订单号派生，因此天然幂等）。接真通道时只换这一行的实现，
+	//     购物车、订单与片段层的代码都不动 —— 通道的接口定义在 cart 模块的契约里。
+	secret := auth.SessionSecret()
+	if strings.TrimSpace(secret) == "" {
+		// 没有签名密钥的购物车 cookie 等于没有签名：任何人都能伪造一辆车。
+		// 这是装配缺陷（auth 组件必须在本函数之前 Init），fail-fast 而不是降级。
+		panic("会话密钥未初始化（auth 组件未 Init），购物车 cookie 无法签名")
+	}
+	cartSvc := cartservice.NewService(orderSvc, productSvc, availabilityLookup, mockpaypal.New(), secret)
+	runtimefragment.SetCartProvider(cartSvc)
 	// 商品实体类型注册（issue #6）：注册后商品可作为内容模板的数据源
 	// （类型合法性 + 字段白名单由注册表判定），构建期经注册表取商品字段解析器。
 	// 与内容模块同样 fail-fast：注册失败即装配缺陷。

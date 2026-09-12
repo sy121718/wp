@@ -19,13 +19,9 @@ func init() {
 		Auth:   AuthAnonymous,
 		Render: renderLoginPanel,
 	})
-	// cartSummary：购物车计数片段（session，需登录）。
-	Register(Spec{
-		Type:   "cartSummary",
-		Method: "GET",
-		Auth:   AuthSession,
-		Render: renderCartSummary,
-	})
+	// cartSummary 与购物车 / 结算能力已迁到 cart.go —— 它们要读客户端签名 cookie，
+	// 而 cookie 名与购物车逻辑都归那里。留在本文件会造成**两处注册同一类型**，
+	// 后注册的覆盖先注册的，而 init 顺序不保证：那是一个只在特定构建顺序下复现的 bug。
 }
 
 // renderLoginPanel 登录面板：提示文案（Jet 模板渲染，用户数据默认转义）。
@@ -36,10 +32,4 @@ func renderLoginPanel(_ context.Context, r *Request) (string, error) {
 		label = "继续购物"
 	}
 	return templates.RenderFragment("login_panel", struct{ Label string }{Label: label})
-}
-
-// renderCartSummary 购物车计数（session；购物车数据模块后续接入，MVP 占位 0）。
-func renderCartSummary(_ context.Context, r *Request) (string, error) {
-	// MVP：购物车数据模块未落地，返回占位计数 0（结构真实，数据占位）。
-	return templates.RenderFragment("cart_summary", struct{ Count string }{Count: "0"})
 }

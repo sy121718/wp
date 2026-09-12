@@ -1,0 +1,38 @@
+{* cart_view.jet — 购物车片段（cartView / cartAdd / cartSetQty / cartClear 共用一份渲染）。
+   为什么共用一个模板：四个能力返回的都是「变更之后的购物车」，各自写一份模板，
+   迟早会出现「加购后的车」与「改数量后的车」长得不一样 —— 那种不一致没人会当成 bug 报上来。
+   用法：容器加 hx-target="closest .sky-cart" 即可局部刷新；无 HTMX 时表单原生 POST 到 action，
+   整页跳转同样能改数量（降级不完美但可用）。
+   样式由站点主题 / 页面作者提供，片段只给语义结构 + sky-cart-* 类名（与 productList 同一口径）。 *}
+<div class="sky-cart" data-fragment="{{ .FragmentType }}" data-project="{{ .ProjectID }}">
+{{ if .Empty }}
+<p class="sky-cart-empty">购物车是空的</p>
+{{ else }}
+<ul class="sky-cart-items">
+{{ range _, it := .Items }}
+<li class="sky-cart-item{{ if it.Missing }} is-missing{{ end }}" data-variant-id="{{ it.VariantID }}">
+<span class="sky-cart-name">{{ it.ProductName }}{{ if it.VariantLabel }}<span class="sky-cart-variant">{{ it.VariantLabel }}</span>{{ end }}</span>
+<span class="sky-cart-unit">{{ it.UnitPriceLabel }}</span>
+{{ if it.Missing }}
+<span class="sky-cart-line">—</span>
+<span class="sky-cart-note">{{ it.AvailableText }}</span>
+{{ else }}
+<form class="sky-cart-qty" method="post" action="/_fragments/cartSetQty" hx-post="/_fragments/cartSetQty" hx-target="closest .sky-cart" hx-swap="outerHTML">
+<input type="hidden" name="projectId" value="{{ .ProjectID }}">
+<input type="hidden" name="variantId" value="{{ it.VariantID }}">
+<input class="sky-cart-qty-input" type="number" name="quantity" value="{{ it.Quantity }}" min="0" max="{{ it.MaxQuantity }}" inputmode="numeric" aria-label="数量">
+<button class="sky-cart-qty-submit" type="submit">更新</button>
+</form>
+<span class="sky-cart-line">{{ it.LineTotalLabel }}</span>
+<span class="sky-cart-note">{{ it.AvailableText }}</span>
+{{ end }}
+</li>
+{{ end }}
+</ul>
+<p class="sky-cart-total">合计 {{ .TotalLabel }}（{{ .ItemCount }} 件）</p>
+<form class="sky-cart-clear" method="post" action="/_fragments/cartClear" hx-post="/_fragments/cartClear" hx-target="closest .sky-cart" hx-swap="outerHTML">
+<input type="hidden" name="projectId" value="{{ .ProjectID }}">
+<button type="submit">清空购物车</button>
+</form>
+{{ end }}
+</div>

@@ -4,6 +4,7 @@ package runtimefragment
 // handler escape 用户数据、认证策略、参数限制。
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -52,9 +53,19 @@ func TestFragmentEndpointUnknownCapability(t *testing.T) {
 }
 
 // TestFragmentEndpointSessionAuth session 能力未登录拒绝。
+//
+// 这里注册一个**测试专用**的 session 能力，而不是拿某个业务能力当样本：
+// 业务能力的认证策略会随产品需要变化（购物车就是从 session 改成 anonymous 的 ——
+// 访客必须能在登录之前加购）。拿业务能力当样本，会让一条与它无关的协议断言
+// 跟着一起变红，而红的原因还看不出是协议坏了还是产品改了。
 func TestFragmentEndpointSessionAuth(t *testing.T) {
+	const probe = "sessionProbeTestOnly"
+	Register(Spec{
+		Type: probe, Method: "GET", Auth: AuthSession,
+		Render: func(_ context.Context, _ *Request) (string, error) { return "<span>ok</span>", nil },
+	})
 	r := newRouter()
-	w := doGet(t, r, "/_fragments/cartSummary")
+	w := doGet(t, r, "/_fragments/"+probe)
 	if w.Code != http.StatusUnauthorized {
 		t.Fatalf("session 能力未登录应 401: %d", w.Code)
 	}

@@ -9,6 +9,7 @@ const (
 	MsgStatusChanged = "订单状态已更新"
 	MsgCancelled     = "订单已取消"
 	MsgRefunded      = "订单已退款"
+	MsgPaid          = "支付成功，订单已确认"
 )
 
 // 参数与校验。
@@ -43,6 +44,15 @@ const (
 	ErrCancelReasonRequired = "请填写取消原因"
 )
 
+// 支付。
+const (
+	// ErrPaymentMethodRequired 没有支付方式的「已付款」订单无法对账 ——
+	// 账上多了一笔钱，却不知道它从哪条通道进来。
+	ErrPaymentMethodRequired = "缺少支付方式"
+	// ErrPaymentChannelFailed 支付通道失败：钱没扣成，订单留在待付款，可重试。
+	ErrPaymentChannelFailed = "支付未成功，请稍后重试"
+)
+
 // 商品与库存。
 const (
 	ErrVariantNotFound   = "商品规格不存在或已下架"
@@ -60,13 +70,14 @@ const ErrInternal = "操作失败，请稍后重试"
 //
 // 新增面向访客的订单错误文案时必须同步加到这里，否则页面只会显示 ErrInternal。
 var UserFacingMessages = []string{
-	MsgCreateSuccess, MsgStatusChanged, MsgCancelled, MsgRefunded,
+	MsgCreateSuccess, MsgStatusChanged, MsgCancelled, MsgRefunded, MsgPaid,
 	ErrInvalidParam, ErrProjectRequired, ErrItemsRequired, ErrItemLimitExceeded,
 	ErrQuantityInvalid, ErrCustomerEmailRequired, ErrCustomerEmailInvalid,
 	ErrOrderNoInvalid, ErrStatusInvalid,
 	ErrOrderNotFound, ErrOrderNoTaken, ErrOrderHasNoItems,
 	ErrStatusTransition, ErrOrderNotCancellable, ErrOrderNotRefundable,
 	ErrAlreadyCancelled, ErrAlreadyRefunded, ErrCancelReasonRequired,
+	ErrPaymentMethodRequired, ErrPaymentChannelFailed,
 	ErrVariantNotFound, ErrStockInsufficient, ErrStockUnavailable,
 	ErrInternal,
 }

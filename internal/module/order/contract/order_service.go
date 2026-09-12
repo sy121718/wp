@@ -18,6 +18,12 @@ type OrderService interface {
 	ListOrders(ctx context.Context, req *orderdto.ListOrderReq) (res *orderdto.OrderListResp, err error)
 	// ChangeStatus 状态流转（哪条边合法由状态机判定）。
 	ChangeStatus(ctx context.Context, req *orderdto.ChangeStatusReq) (err error)
+	// PayOrder 支付落账：pending 推进到 paid，写 paid_at / 支付通道 / 支付流水号。
+	//
+	// 幂等：已经是 paid / shipped / completed 时原样返回成功且**不改任何列** ——
+	// 网关重复通知、访客连点两次、失败重试都会走到这条路径上，
+	// 把重复当错误会让对方无限重试。
+	PayOrder(ctx context.Context, req *orderdto.PayOrderReq) (res *orderdto.PayOrderResp, err error)
 	// CancelOrder 取消订单：归还库存 + 记流转。
 	CancelOrder(ctx context.Context, req *orderdto.CancelOrderReq) (err error)
 	// RefundOrder 退款：改状态 + 记流水号。

@@ -6,9 +6,16 @@ package runtimefragment
 // Registry 内）；参数长度/枚举受限；handler 输出经统一 escape 边界。
 //
 // issue #20 起支持 POST：结构化入参（表单里的并行数组）用 GET 的 query 传既受长度
-// 限制也不合语义。POST 片段仍然是**无副作用**的（bundleConfiguratorCheck 是纯计算校验，
-// 不写库、不预占库存），因此 anonymous 策略下不要求 CSRF；一旦某个 POST 片段真的产生
-// 状态变更（购物车 / 下单），它必须改用 session 策略并带 CSRF —— 见 Spec.Method 的注释。
+// 限制也不合语义。POST 片段分两类：
+//
+//   · **无副作用**（bundleConfiguratorCheck 是纯计算校验）—— anonymous 即可；
+//   · **有副作用**（购物车 / 结算）—— 必须满足下面两条之一，否则就是 CSRF 缺口：
+//     ① session 策略（认证态自带 cookie 身份 + CSRF token）；或
+//     ② 状态落在**客户端签名 cookie** 里、且该 cookie 是 SameSite=Lax。
+//     第 ② 条为什么成立：跨站 POST 在 Lax 下不携带本站 cookie，攻击者构造的请求
+//     拿到的是一辆空车 —— 他既无法预置受害者浏览器里的购物车（跨域写不了别家的 cookie），
+//     也无法用表单字段伪造一辆车（结算只读 cookie 里的车，不认表单里的商品）。
+//     购物车与访客结算走的正是第 ② 条（见 runtimefragment/cart.go 顶部说明）。
 
 import (
 	"errors"
@@ -63,11 +70,14 @@ func FragmentEndpoint(c *gin.Context) {
 		return
 	}
 	req := &Request{
-		Type:    typeName,
-		Context: params["context"],
-		Params:  params,
-		Values:  values,
-		UserID:  userID,
+		Type:      typeName,
+		Context:   params["context"],
+		Params:    params,
+		Values:    values,
+		UserID:    userID,
+		Cookies:   collectFragmentCookies(c),
+		IP:        c.ClientIP(),
+		UserAgent: strings.TrimSpace(c.GetHeader("User-Agent")),
 	}
 	if err := validateContext(req.Context); err != nil {
 		c.String(http.StatusBadRequest, err.Error())
@@ -79,7 +89,56 @@ func FragmentEndpoint(c *gin.Context) {
 		c.String(http.StatusInternalServerError, "片段渲染失败")
 		return
 	}
+	// 渲染**成功之后**才写 cookie：失败响应配上一个已经更新的 cookie，
+	// 会让「页面显示什么」与「服务端记住了什么」各说各话。
+	writeFragmentCookies(c, req)
 	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(strings.TrimSpace(htmlFragment)))
+}
+
+// collectFragmentCookies 收集请求携带的 cookie（名字 → 值）。
+func collectFragmentCookies(c *gin.Context) map[string]string {
+	if c == nil || c.Request == nil {
+		return nil
+	}
+	raw := c.Request.Cookies()
+	if len(raw) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(raw))
+	for _, ck := range raw {
+		if ck == nil || ck.Name == "" {
+			continue
+		}
+		out[ck.Name] = ck.Value
+	}
+	return out
+}
+
+// writeFragmentCookies 写出处理器声明的响应 cookie。
+//
+// Secure 按请求协议推断（直连 TLS，或前置代理声明了 X-Forwarded-Proto: https）：
+// 访问面的片段端点通常跑在反向代理后面，只看 c.Request.TLS 会把 HTTPS 站点的
+// cookie 判成非安全传输，表现是「线上写不进 cookie、本地一切正常」。
+func writeFragmentCookies(c *gin.Context, r *Request) {
+	if c == nil || r == nil || len(r.SetCookies) == 0 {
+		return
+	}
+	secure := false
+	if c.Request != nil {
+		secure = c.Request.TLS != nil ||
+			strings.EqualFold(strings.TrimSpace(c.GetHeader("X-Forwarded-Proto")), "https")
+	}
+	for _, ck := range r.SetCookies {
+		if ck.Name == "" {
+			continue
+		}
+		path := ck.Path
+		if path == "" {
+			path = "/"
+		}
+		c.SetSameSite(ck.SameSite)
+		c.SetCookie(ck.Name, ck.Value, ck.MaxAge, path, "", secure, ck.HTTPOnly)
+	}
 }
 
 // collectFragmentParams 收集并校验入参：GET 走 query，POST 走表单。
