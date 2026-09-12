@@ -37,3 +37,29 @@ func TestAdminPagesExposePublicUIClasses(t *testing.T) {
 		}
 	}
 }
+
+// 已迁移页面不得重新依赖 pages-* 兼容层；这些页面的结构由公共 UI Kit 提供。
+func TestMigratedAdminPagesDoNotUseLegacyClasses(t *testing.T) {
+	for _, name := range []string{"theme.html", "theme_settings.html", "pages.html", "blocks.html", "plugins.html", "product_brands.html", "product_categories.html", "product_tags.html"} {
+		path := filepath.Join("admin", name)
+		src, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		html := string(src)
+		for _, legacy := range []string{"pages-", "attr-form"} {
+			if strings.Contains(html, legacy) {
+				t.Errorf("%s 仍依赖旧兼容类 %q", path, legacy)
+			}
+		}
+		if !strings.Contains(html, "card") {
+			t.Errorf("%s 未使用公共类 %q", path, "card")
+		}
+		if !strings.Contains(html, "form-inline") && !strings.Contains(html, "form-stack") {
+			t.Errorf("%s 未使用公共表单布局类", path)
+		}
+		if name == "theme_settings.html" && strings.Contains(html, "theme-font-input") {
+			t.Errorf("%s 仍依赖主题页私有控件视觉类", path)
+		}
+	}
+}

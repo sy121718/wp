@@ -314,6 +314,11 @@
 .stack, .form-stack { display: flex; flex-direction: column; min-width: 0; gap: var(--ui-sp-lg); }
 .form-inline { display: flex; flex-wrap: wrap; align-items: center; gap: var(--ui-sp-sm); min-width: 0; }
 .form-inline > :is(.form-input, .form-select, .form-textarea, .wbs) { width: min(100%, 220px); min-width: 0; }
+.inline-form { display: inline-flex; align-items: center; gap: var(--ui-sp-xs); margin: 0; }
+.action-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--ui-sp-xs); }
+.action-row .inline-form { flex: 0 0 auto; }
+.hint { margin: 0; color: var(--c-text-mute, #6b7280); font-size: 13px; line-height: 1.5; }
+.text-mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; }
 .disclosure { min-width: 0; }
 .disclosure > summary.card-header {
     cursor: pointer; list-style: none; user-select: none;

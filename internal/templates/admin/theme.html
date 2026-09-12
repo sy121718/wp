@@ -2,16 +2,16 @@
 {* Jet 方言：range 用 range 关键字；方法调用圆括号；extends 相对本目录 *}
 {{extends "layout.html"}}
 {{block body()}}
-<div class="pages-wrap">
+<div class="stack">
     {{if len(.Projects) == 0}}
-    <section class="pages-card card">
-        <p class="pages-empty">请先在「页面」里创建一个站点工程，再管理主题。</p>
+    <section class="card card-body">
+        <p class="text-mute text-sm">请先在「页面」里创建一个站点工程，再管理主题。</p>
     </section>
     {{else}}
-    <section class="pages-card card">
+    <section class="card card-body">
         <h2>主题管理</h2>
         {* 工程切换（聚焦工程的主题列表） *}
-        <form method="get" action="/admin/themes" class="pages-form form-row">
+        <form method="get" action="/admin/themes" class="form-inline">
             <select name="project" onchange="this.form.submit()">
                 {{range _, p := .Projects}}
                 <option value="{{p.ID}}" {{if p.ID == .SelectedProject}}selected{{end}}>{{p.Name}}</option>
@@ -19,7 +19,7 @@
             </select>
         </form>
         {* 新建主题 *}
-        <form method="post" action="/admin/themes/create" class="pages-form form-row mt-md">
+        <form method="post" action="/admin/themes/create" class="form-inline mt-md">
             <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
             <input type="hidden" name="projectId" value="{{.SelectedProject}}">
             <input type="text" name="name" placeholder="主题名称，如：春季促销版" required>
@@ -27,12 +27,12 @@
         </form>
     </section>
 
-    <section class="pages-card card">
+    <section class="card card-body">
         <h2>主题列表</h2>
         {{if len(.Themes) == 0}}
-        <p class="pages-empty">还没有主题，用上方表单创建第一个（首个主题自动激活）。</p>
+        <p class="text-mute text-sm">还没有主题，用上方表单创建第一个（首个主题自动激活）。</p>
         {{else}}
-        <table class="pages-table data-table">
+        <div class="table-wrap" tabindex="0" role="region" aria-label="主题列表"><table class="data-table">
             <thead>
             <tr><th>名称</th><th>状态</th><th>创建时间</th><th>更新时间</th><th>操作</th></tr>
             </thead>
@@ -42,15 +42,15 @@
                 <td>{{t.Name}}</td>
                 <td>
                     {{if t.IsActive}}
-                    <span class="pages-badge pages-badge-ok">激活中</span>
-                    {{else}}<span class="pages-badge">未激活</span>{{end}}
+                    <span class="badge badge-success">激活中</span>
+                    {{else}}<span class="badge badge-mute">未激活</span>{{end}}
                 </td>
                 <td>{{t.CreatedAt}}</td>
                 <td>{{t.UpdatedAt}}</td>
-                <td class="pages-actions">
+                <td class="action-row">
                     <a class="btn" href="/admin/themes/settings?id={{t.ID}}">设置</a>
                     {{if !t.IsActive}}
-                    <form method="post" action="/admin/themes/activate" class="pages-form form-row" style="display:inline">
+                    <form method="post" action="/admin/themes/activate" class="inline-form">
                         <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
                         <input type="hidden" name="id" value="{{t.ID}}">
                         <input type="hidden" name="projectId" value="{{t.ProjectID}}">
@@ -58,7 +58,7 @@
                     </form>
                     {{end}}
                     {{if !t.IsActive}}
-                    <form method="post" action="/admin/themes/delete" class="pages-form form-row" style="display:inline"
+                    <form method="post" action="/admin/themes/delete" class="inline-form"
                           data-confirm="确定删除主题「{{t.Name|safeJs}}」？">
                         <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
                         <input type="hidden" name="id" value="{{t.ID}}">
@@ -70,13 +70,13 @@
             </tr>
             {{end}}
             </tbody>
-        </table>
+        </table></div>
         {{end}}
     </section>
 
-    <section class="pages-card card">
+    <section class="card card-body">
         <h2>说明</h2>
-        <p class="pages-empty">
+        <p class="text-mute text-sm">
             主题 = 站点前端项目（全局颜色/字体/页眉页脚引用），一次一套激活；页面挂在主题下。
             切换激活主题即整站前端换皮，页面内容不动。「设置」里编辑颜色与字体，保存后合入该主题下全部页面，
             构建产物注入 :root CSS 变量——已发布页面需重新构建才会带新主题。

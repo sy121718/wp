@@ -5,15 +5,15 @@
     + 顶层 headerBlockId / footerBlockId。全部值经 IsSafeCSSValue 白名单校验。 *}
 {{extends "layout.html"}}
 {{block body()}}
-<div class="pages-wrap">
-    <section class="pages-card card">
+<div class="stack">
+    <section class="card card-body">
         <h2>主题设置：{{.ThemeName}}
             <a class="btn" href="/admin/themes?project={{.ProjectID}}" style="float:right">返回列表</a>
         </h2>
         {* 完整 ThemeSettings JSON 供前端按点分键回显（11 色 + typography + button + surface + motion）。
            用了 unsafe 输出真实 JSON 到 application/json 脚本块；服务端已由 ParseThemeSettings 校验过值安全。 *}
         <script type="application/json" id="theme-settings-json">{{ .ThemeSettings | unsafe }}</script>
-        <form method="post" action="/admin/themes/settings/save" class="theme-form" id="theme-settings-form">
+        <form method="post" action="/admin/themes/settings/save" class="theme-form form-stack" id="theme-settings-form">
             <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
             <input type="hidden" name="id" value="{{.ThemeID}}">
 
@@ -29,21 +29,21 @@
                 {{range _, f := g.Fields}}
                 {{if f.Kind == "select"}}
                 <label>{{f.Label}}
-                    <select name="{{f.Name}}" class="theme-font-input">
+                    <select name="{{f.Name}}" class="form-select">
                         {{range _, o := f.Options}}<option value="{{o.Value}}"{{if o.Selected}} selected{{end}}>{{o.Label}}</option>{{end}}
                     </select>
                 </label>
                 {{else if f.Kind == "datalist"}}
                 <label>{{f.Label}}
-                    <input type="text" name="{{f.Name}}" class="theme-font-input" list="theme-dl-{{f.Name}}" value="{{f.Value}}" spellcheck="false">
+                    <input type="text" name="{{f.Name}}" class="form-input" list="theme-dl-{{f.Name}}" value="{{f.Value}}" spellcheck="false">
                     <datalist id="theme-dl-{{f.Name}}">{{range _, o := f.Options}}<option value="{{o.Value}}">{{o.Label}}</option>{{end}}</datalist>
                 </label>
                 {{else if f.Kind == "color"}}
                 <label>{{f.Label}}
-                    <input type="text" name="{{f.Name}}" class="theme-font-input" data-color-field value="{{f.Value}}" placeholder="如 #3d444f；留空 = 内置默认" spellcheck="false">
+                    <input type="text" name="{{f.Name}}" class="form-input" data-color-field value="{{f.Value}}" placeholder="如 #3d444f；留空 = 内置默认" spellcheck="false">
                 </label>
                 {{else}}
-                <label>{{f.Label}}<input type="text" name="{{f.Name}}" class="theme-font-input" value="{{f.Value}}"></label>
+                <label>{{f.Label}}<input type="text" name="{{f.Name}}" class="form-input" value="{{f.Value}}"></label>
                 {{end}}
                 {{end}}
             </div>
@@ -52,14 +52,14 @@
             <h3>全局页眉 / 页脚块</h3>
             <div class="theme-color-grid">
                 <label>页眉块
-                    <select name="headerBlockId" class="theme-font-input">
+                    <select name="headerBlockId" class="form-select">
                         {{range _, b := .HeaderBlocks}}
                         <option value="{{b.ID}}" {{if b.ID == .HeaderBlock}}selected{{end}}>{{b.Name}}</option>
                         {{end}}
                     </select>
                 </label>
                 <label>页脚块
-                    <select name="footerBlockId" class="theme-font-input">
+                    <select name="footerBlockId" class="form-select">
                         {{range _, b := .FooterBlocks}}
                         <option value="{{b.ID}}" {{if b.ID == .FooterBlock}}selected{{end}}>{{b.Name}}</option>
                         {{end}}
@@ -67,14 +67,14 @@
                 </label>
             </div>
 
-            <div class="theme-actions">
+            <div class="form-inline theme-actions">
                 <button type="submit" class="btn btn-primary">保存并应用到该主题页面</button>
             </div>
         </form>
     </section>
-    <section class="pages-card card">
+    <section class="card card-body">
         <h2>说明</h2>
-        <p class="pages-empty">
+        <p class="text-mute text-sm">
             所有设计令牌保存后合入该主题下全部页面的文档（settings.theme），构建产物注入 :root CSS 变量
             （--sky-c-* 色板、--sky-heading-* / --sky-body-* / --sky-link-* 排版、--sky-btn-* 按钮、
             --sky-radius / --sky-border-* / --sky-shadow 表面、--sky-tr-duration / --sky-easing 动效）——
