@@ -441,6 +441,18 @@ func collectIfBlock(lines []string, start int) (body string, next int, err error
 	return "", start, fmt.Errorf("@if 没有对应的 @endif")
 }
 
+// BoolVar 条件段变量的真值形态：真给 "1"、假给空串。
+//
+// 组件把 Go 侧的布尔判定交给样式源的 @if 时用它。真值约定是「空串与 0/false/no/off 为假、
+// 其余为真」，这里只产生两端之一 —— 放在 core 是因为它是样式源协议的一部分
+// （与 @if 的真值规则成对），不是某个组件的业务。
+func BoolVar(v bool) string {
+	if v {
+		return "1"
+	}
+	return ""
+}
+
 // frameLines 把关键帧块内容按行拆成帧列表（每行一帧，与内建关键帧文件同约定）。
 //
 // 约定「每行一帧」而不是按花括号解析：关键帧的帧体通常很短（from { opacity: 0 }），

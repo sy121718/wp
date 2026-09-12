@@ -242,7 +242,7 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		"align_mobile":    alignOf(p.Align.Mobile),
 		"border_radius":   p.BorderRadius,
 		"filter":          filterDecls(p.Filters),
-		"hover_on":        boolVar(hoverOn),
+		"hover_on":        core.BoolVar(hoverOn),
 		"transition":      transition,
 		"hover_scale":     hoverScale,
 		"hover_filter":    hoverFilter,
@@ -251,14 +251,6 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		// 样式源解析失败属于构建期缺陷，必须在测试/构建时暴露；静默跳过的后果是产物悄悄少了样式。
 		panic(fmt.Sprintf("image 组件样式解析失败: %v", err))
 	}
-}
-
-// boolVar 条件段变量的真值形态（非空即真）。
-func boolVar(v bool) string {
-	if v {
-		return "1"
-	}
-	return ""
 }
 
 // filterDecls 滤镜五值 → CSS 声明。

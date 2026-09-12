@@ -64,19 +64,11 @@ var quoteCSS string
 // compileCSS 引用样式：左边框 + 斜体 + 对齐 + cite。
 func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	sel := "." + core.NodeClass(id)
-	vars := map[string]string{"center": boolVar(p.Align == AlignCenter)}
+	vars := map[string]string{"center": core.BoolVar(p.Align == AlignCenter)}
 	if err := core.ApplyComponentCSSTmpl(b, sel, quoteCSS, vars); err != nil {
 		// 样式源解析失败属于构建期缺陷，必须在测试/构建时暴露；静默跳过的后果是产物悄悄少了样式。
 		panic(fmt.Sprintf("quote 组件样式解析失败: %v", err))
 	}
-}
-
-// boolVar 条件段变量的真值形态（非空即真）。
-func boolVar(v bool) string {
-	if v {
-		return "1"
-	}
-	return ""
 }
 
 // init 注册引用组件。

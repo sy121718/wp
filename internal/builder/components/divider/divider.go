@@ -156,8 +156,8 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	}
 
 	vars := map[string]string{
-		"no_inset":          boolVar(!hasInset),
-		"has_inset":         boolVar(hasInset),
+		"no_inset":          core.BoolVar(!hasInset),
+		"has_inset":         core.BoolVar(hasInset),
 		"line_decl":         lineDecl(p),
 		"left_flex":         leftFlex,
 		"right_flex":        rightFlex,
@@ -190,14 +190,6 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		// 样式源解析失败属于构建期缺陷，必须在测试/构建时暴露；静默跳过的后果是产物悄悄少了样式。
 		panic(fmt.Sprintf("divider 组件样式解析失败: %v", err))
 	}
-}
-
-// boolVar 条件段变量的真值形态（非空即真）。
-func boolVar(v bool) string {
-	if v {
-		return "1"
-	}
-	return ""
 }
 
 // lineDecl 统一线声明（border-top；double 缺省权重提升到 3px 保证最小辨识度）。

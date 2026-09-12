@@ -99,7 +99,7 @@ var languagesCSS string
 func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	sel := "." + core.NodeClass(id)
 	vars := map[string]string{
-		"vertical":      boolVar(p.Orientation == "vertical"),
+		"vertical":      core.BoolVar(p.Orientation == "vertical"),
 		"gap":           p.Gap,
 		"color":         p.Color,
 		"hover_color":   p.HoverColor,
@@ -112,12 +112,4 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		// 样式源解析失败属于构建期缺陷，必须在测试/构建时暴露；静默跳过的后果是产物悄悄少了样式。
 		panic(fmt.Sprintf("languages 组件样式解析失败: %v", err))
 	}
-}
-
-// boolVar 条件段变量的真值形态（非空即真）。
-func boolVar(v bool) string {
-	if v {
-		return "1"
-	}
-	return ""
 }

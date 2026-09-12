@@ -183,20 +183,12 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		"h_desktop": hd,
 		"h_tablet":  ht,
 		"h_mobile":  hm,
-		"drift":     boolVar(p.Animate == AnimDrift),
+		"drift":     core.BoolVar(p.Animate == AnimDrift),
 	}
 	if err := core.ApplyComponentCSSTmpl(b, sel, shapedividerCSS, vars); err != nil {
 		// 样式源解析失败属于构建期缺陷，必须在测试/构建时暴露；静默跳过的后果是产物悄悄少了样式。
 		panic(fmt.Sprintf("shapedivider 组件样式解析失败: %v", err))
 	}
-}
-
-// boolVar 条件段变量的真值形态（非空即真）。
-func boolVar(v bool) string {
-	if v {
-		return "1"
-	}
-	return ""
 }
 
 // flipDecls 镜像声明（CSS transform，作用于 svg 元素）。

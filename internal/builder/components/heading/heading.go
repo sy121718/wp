@@ -191,14 +191,6 @@ func typoDecls(p *Props, bp string) string {
 	return strings.Join(p.Typography.BreakpointDecls(bp), "; ")
 }
 
-// boolVar 条件段变量的真值形态（非空即真）。
-func boolVar(v bool) string {
-	if v {
-		return "1"
-	}
-	return ""
-}
-
 // segDelay 分段延迟值：未开启文本动画时返回空串（空值让对应声明省略）。
 func segDelay(on bool, ms int) string {
 	if !on {
@@ -292,7 +284,7 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		"sub_font_weight": p.SubtitleFontWeight,
 		"sub_spacing":     p.SubtitleSpacing,
 		"sub_color":       p.SubtitleColor,
-		"text_anim":       boolVar(anim),
+		"text_anim":       core.BoolVar(anim),
 		"clamp":           clamp,
 	}
 	// 逐段延迟：前 20 段逐段递增；第 21 段起用统一档位兜底（避免为长标题生成大量规则）。
