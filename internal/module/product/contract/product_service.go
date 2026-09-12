@@ -4,7 +4,7 @@ package productcontract
 import (
 	"context"
 
-	"go_wp/internal/builder/core"
+	"go_wp/internal/builder/source"
 	productdto "go_wp/internal/module/product/dto"
 )
 
@@ -98,7 +98,7 @@ type ProductService interface {
 	// RegisterEntityTypes 把本模块的实体类型（product）注册进实体类型注册表
 	// （装配期调用）。注册后内容模板与发布实例即可把商品作为数据源校验字段绑定，
 	// 构建期经注册表取商品字段解析器（不反向依赖本模块实现）。
-	RegisterEntityTypes(reg core.EntitySourceRegistry) error
+	RegisterEntityTypes(reg source.EntitySourceRegistry) error
 
 	// ProductTranslationCandidates 单个商品及其引用实体的全部可翻译文本（issue #12）。
 	// 翻译工作台在 dashboard 模块，跨模块只能经契约取值，故这两个方法留在契约上。

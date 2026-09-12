@@ -1,7 +1,7 @@
 // product_entity.go — 商品域实体类型与字段白名单（issue #6；issue #12 扩到分类/品牌/标签/属性）。
 //
 // 本模块是自身实体类型字段白名单的唯一来源（与 content 模块的 contract 白名单同构）：
-// 装配期把商品域实体类型注册进实体类型注册表（core.EntitySourceRegistry），内容模板与
+// 装配期把商品域实体类型注册进实体类型注册表（source.EntitySourceRegistry），内容模板与
 // 发布实例据此做类型与字段校验，构建期解析器据此拒绝白名单之外的绑定（不变量 4）。
 //
 // 白名单只放「可展示」的字段：价格全部由变体派生（商品主体不存价格，issue #5 已定
@@ -17,7 +17,7 @@ import (
 	"sort"
 	"strings"
 
-	"go_wp/internal/builder/core"
+	"go_wp/internal/builder/source"
 	productenums "go_wp/internal/module/product/enums"
 )
 
@@ -237,7 +237,7 @@ func FieldLabel(entityType, field string) string {
 // 不经过注册表查找 —— 解析器与工作台在同一处拼装，避免两个来源各拼各的。
 // 任一段为空返回空串（空语境不参与取词，取词器直接回退原文）。
 func FieldContext(entityType, field string) string {
-	return core.ContentContextFor(entityType, field)
+	return source.ContentContextFor(entityType, field)
 }
 
 // —— 集合源（issue #9）——
@@ -309,7 +309,7 @@ const (
 //
 // status 带 Enum（取值只有三个，工作台渲染成下拉）；三条 id 维度 Enum 为空
 // （取值是工程内任意的分类 / 品牌 / 标签 id），服务层逐个做 uuid 形状校验。
-var collectionFilters = []core.CollectionFilter{
+var collectionFilters = []source.CollectionFilter{
 	{Key: CollectionFilterStatus, Enum: []string{productenums.StatusDraft, productenums.StatusPublished, productenums.StatusArchived}},
 	{Key: CollectionFilterCategoryID},
 	{Key: CollectionFilterBrandID},
@@ -337,10 +337,10 @@ var collectionFilters = []core.CollectionFilter{
 var collectionOrderKeys = []string{"sort", "createdAt", "priceAsc", "priceDesc", "ratingDesc"}
 
 // CollectionFilters 过滤维度白名单的只读拷贝（调用方不得篡改唯一来源）。
-func CollectionFilters() []core.CollectionFilter {
-	out := make([]core.CollectionFilter, 0, len(collectionFilters))
+func CollectionFilters() []source.CollectionFilter {
+	out := make([]source.CollectionFilter, 0, len(collectionFilters))
 	for _, f := range collectionFilters {
-		copied := core.CollectionFilter{Key: f.Key, Prefix: f.Prefix}
+		copied := source.CollectionFilter{Key: f.Key, Prefix: f.Prefix}
 		if len(f.Enum) > 0 {
 			copied.Enum = make([]string, len(f.Enum))
 			copy(copied.Enum, f.Enum)

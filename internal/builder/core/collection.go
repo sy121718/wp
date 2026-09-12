@@ -8,48 +8,23 @@
 package core
 
 import (
-	"context"
 	"fmt"
+	"go_wp/internal/builder/source"
 	"strconv"
 	"strings"
 )
 
-// CollectionResolver 集合内容解析契约：集合源 → 静态列表数据（构建期填入）。
-type CollectionResolver interface {
-	// ResolveCollection 按集合源 + 白名单过滤解析为字段值列表（有序）。
-	// source 格式："content:{entityType}"（content 实体集合，MVP）；
-	// 后续扩展 "plugin:{pluginID}.{table}"（插件 L1 表集合）。
-	// filter 为白名单过滤维度（键值等值匹配）；字段集由调用方（组件声明）
-	// 的白名单决定，实现方只返回声明字段。
-	// ctx 为发起构建的请求上下文，实现方查库时传播（支持超时取消）。
-	ResolveCollection(ctx context.Context, source string, filter map[string]string) (items []map[string]any, err error)
-}
+// CollectionResolver — 定义已搬到 internal/builder/source（issue #35），
+// 此处保留别名：既有引用（组件、构建管线、工作台）不必跟着改。
+type CollectionResolver = source.CollectionResolver
 
-// CollectionSchema 集合源元数据（字段白名单 + 过滤/排序维度）。
-//
-// 这是「内置组件也能声明集合」的通用契约：解析器实现方（content 模块）给出
-// 每个集合源允许渲染的字段，内置组件在构建期据此校验字段映射（不变量 4），
-// 工作台据它渲染字段下拉 —— 白名单只有一处来源，不在组件里各写一份。
-type CollectionSchema struct {
-	// Source 集合源标识（"content:article" 等）。
-	Source string
-	// Label 展示名（工作台下拉用）。
-	Label string
-	// Fields 允许渲染的字段白名单。
-	Fields []string
-	// Filters 允许的过滤维度（键 + 枚举）。
-	Filters []CollectionFilter
-	// OrderBy 允许的排序键白名单。
-	OrderBy []string
-}
+// CollectionSchema — 定义已搬到 internal/builder/source（issue #35），
+// 此处保留别名：既有引用（组件、构建管线、工作台）不必跟着改。
+type CollectionSchema = source.CollectionSchema
 
-// CollectionSchemaProvider 可选能力：解析器能给出集合源元数据。
-//
-// 实现方为内容模块。组件侧按「能力探测」使用：实现了就按白名单严格校验，
-// 没实现则退回按数据实际字段判断 —— 契约缺失不阻断构建。
-type CollectionSchemaProvider interface {
-	CollectionSchemas(ctx context.Context) ([]CollectionSchema, error)
-}
+// CollectionSchemaProvider — 定义已搬到 internal/builder/source（issue #35），
+// 此处保留别名：既有引用（组件、构建管线、工作台）不必跟着改。
+type CollectionSchemaProvider = source.CollectionSchemaProvider
 
 // ItemFieldPrefix 集合项字段前缀：绑定写成 item.title 表示「当前集合项的字段」，
 // 由集合组件在展开每张卡时注入作用域（见 ItemScope）。
@@ -125,15 +100,6 @@ type CollectionSource struct {
 	OrderBy []string `json:"orderBy,omitempty"`
 }
 
-// CollectionFilter 集合过滤维度白名单。
-type CollectionFilter struct {
-	Key  string   `json:"key"`
-	Enum []string `json:"enum,omitempty"` // 空 = 任意值
-	// Prefix 是否为**前缀维度**（issue #25）：此时 Key 是维度键前缀，真实维度是
-	// "<Key>.<子键>"，子键由集合源自己校验（商品属性值维度 `option.color=red` 就是这种）。
-	//
-	// 为什么需要它：属性组是数据驱动的（工程里能加任意属性），维度键不可能编译期穷举；
-	// 前缀维度把「键的集合」从静态白名单变成**受校验的命名空间**，仍然守住
-	// 「Binding 不是 Query DSL」—— 不接受任意过滤表达式，子键必须过服务端校验。
-	Prefix bool `json:"prefix,omitempty"`
-}
+// CollectionFilter — 定义已搬到 internal/builder/source（issue #35），
+// 此处保留别名：既有引用（组件、构建管线、工作台）不必跟着改。
+type CollectionFilter = source.CollectionFilter

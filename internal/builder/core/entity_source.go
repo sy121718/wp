@@ -13,32 +13,18 @@ package core
 import (
 	"context"
 	"fmt"
+	"go_wp/internal/builder/source"
 	"strings"
 	"sync"
 )
 
-// EntityFieldSource 一个实体类型的字段来源。
-//
-// 一个来源对应一个实体类型；同一模块支持多个类型时注册多个来源。
-type EntityFieldSource interface {
-	// EntityType 类型标识（如 article / product）。
-	EntityType() string
-	// FieldWhitelist 该类型允许绑定的字段路径（不变量 4 的唯一来源，只读拷贝）。
-	FieldWhitelist() []string
-	// ResolverFor 返回绑定单个实体的字段解析器。
-	ResolverFor(ctx context.Context, entityID string) (ContentResolver, error)
-}
+// EntityFieldSource — 定义已搬到 internal/builder/source（issue #35），
+// 此处保留别名：既有引用（组件、构建管线、工作台）不必跟着改。
+type EntityFieldSource = source.EntityFieldSource
 
-// FieldRef 组件声明的实体字段绑定引用（实体类型 + 字段名）。
-//
-// 由组件经 FieldBindingProvider 自报，构建层据此在「模板保存」与「编译」两处
-// 按实体类型注册表做白名单校验（不变量 4：Document 只保存白名单绑定）。
-type FieldRef struct {
-	// EntityType 实体类型标识（如 product）。
-	EntityType string
-	// Field 字段名（不含类型前缀，如 name）。
-	Field string
-}
+// FieldRef — 定义已搬到 internal/builder/source（issue #35），
+// 此处保留别名：既有引用（组件、构建管线、工作台）不必跟着改。
+type FieldRef = source.FieldRef
 
 // FieldBindingProvider 由「在节点 props 里声明实体字段绑定」的组件实现。
 //
@@ -74,19 +60,9 @@ func BuildLang(ctx context.Context) string {
 	return ""
 }
 
-// EntitySourceRegistry 实体类型注册表（进程级；装配期注册，运行期只读）。
-type EntitySourceRegistry interface {
-	// Register 注册一个实体类型来源；重复类型或非法来源返回错误。
-	Register(src EntityFieldSource) error
-	// Lookup 按类型取来源。
-	Lookup(entityType string) (EntityFieldSource, bool)
-	// IsValidType 类型是否已注册。
-	IsValidType(entityType string) bool
-	// FieldWhitelist 该类型字段白名单（只读拷贝；未知类型返回 nil）。
-	FieldWhitelist(entityType string) []string
-	// ResolverFor 取该类型某实体的字段解析器。
-	ResolverFor(ctx context.Context, entityType, entityID string) (ContentResolver, error)
-}
+// EntitySourceRegistry — 定义已搬到 internal/builder/source（issue #35），
+// 此处保留别名：既有引用（组件、构建管线、工作台）不必跟着改。
+type EntitySourceRegistry = source.EntitySourceRegistry
 
 // entitySourceRegistry EntitySourceRegistry 的默认实现。
 type entitySourceRegistry struct {

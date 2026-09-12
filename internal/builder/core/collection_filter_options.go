@@ -8,44 +8,22 @@
 // 构建器与组件包都不该依赖具体业务模块（那会把依赖方向反过来）。
 package core
 
-import "context"
+import (
+	"go_wp/internal/builder/source"
+)
 
-// CollectionFilterChoice 一个可选的筛选值。
-type CollectionFilterChoice struct {
-	// ID 实体 id（分类 / 品牌 / 标签是 uuid）。
-	ID string
-	// Key 属性值 key（仅属性值非空 —— 属性值没有独立 id，它的标识就是 key）。
-	Key string
-	// Name 展示名（按构建语言取译文，与集合项字段同一套口径）。
-	Name string
-	// ParentID 分类的父分类 id（渲染分类树用；根节点为空）。
-	ParentID string
-}
+// CollectionFilterChoice — 定义已搬到 internal/builder/source（issue #35），
+// 此处保留别名：既有引用（组件、构建管线、工作台）不必跟着改。
+type CollectionFilterChoice = source.CollectionFilterChoice
 
-// CollectionFilterAttributeGroup 一个可筛的属性组及其可选值。
-type CollectionFilterAttributeGroup struct {
-	// Key 属性组 key（筛选参数里写成 `option.<Key>=<值Key>`）。
-	Key  string
-	Name string
-	// Values 可选值（按属性组定义顺序）。
-	Values []CollectionFilterChoice
-}
+// CollectionFilterAttributeGroup — 定义已搬到 internal/builder/source（issue #35），
+// 此处保留别名：既有引用（组件、构建管线、工作台）不必跟着改。
+type CollectionFilterAttributeGroup = source.CollectionFilterAttributeGroup
 
-// CollectionFilterOptions 集合源给出的可选筛选项。
-//
-// 空切片表示该维度没有可选值（例如工程里一个品牌都没建）：组件据此**不渲染**那一块，
-// 而不是渲染一个空标题。
-type CollectionFilterOptions struct {
-	Categories []CollectionFilterChoice
-	Brands     []CollectionFilterChoice
-	Tags       []CollectionFilterChoice
-	Attributes []CollectionFilterAttributeGroup
-}
+// CollectionFilterOptions — 定义已搬到 internal/builder/source（issue #35），
+// 此处保留别名：既有引用（组件、构建管线、工作台）不必跟着改。
+type CollectionFilterOptions = source.CollectionFilterOptions
 
-// CollectionFilterOptionsProvider 可选能力：集合源能给出「这个工程有哪些可筛的值」。
-//
-// 未实现该能力的集合源：列表组件不渲染筛选栏（降级为纯粹的列表，不报错）——
-// 契约缺失不该阻断构建，这条与 CollectionSchemaProvider 的处理一致。
-type CollectionFilterOptionsProvider interface {
-	CollectionFilterOptions(ctx context.Context, projectID string) (CollectionFilterOptions, error)
-}
+// CollectionFilterOptionsProvider — 定义已搬到 internal/builder/source（issue #35），
+// 此处保留别名：既有引用（组件、构建管线、工作台）不必跟着改。
+type CollectionFilterOptionsProvider = source.CollectionFilterOptionsProvider

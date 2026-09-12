@@ -5,7 +5,7 @@ import (
 	"context"
 	"sort"
 
-	"go_wp/internal/builder/core"
+	"go_wp/internal/builder/source"
 	"go_wp/internal/module/content/dto"
 )
 
@@ -64,10 +64,10 @@ type ContentService interface {
 	Delete(ctx context.Context, req *contentdto.DeleteReq) (err error)
 	// ResolverFor 返回绑定单个实体的内容解析器（构建期注入：presentation
 	// 模块构建 DocumentSnapshot 时按 entityType+entityID 取实体解析 Binding）。
-	ResolverFor(ctx context.Context, entityType, entityID string) (r core.ContentResolver, err error)
+	ResolverFor(ctx context.Context, entityType, entityID string) (r source.ContentResolver, err error)
 	// RegisterEntityTypes 把本模块支持的实体类型注册进实体类型注册表（装配期调用）。
 	// 注册后，构建层（内容模板 / 发布实例）不再直接依赖本模块的类型判断函数。
-	RegisterEntityTypes(reg core.EntitySourceRegistry) error
+	RegisterEntityTypes(reg source.EntitySourceRegistry) error
 	// SetDependencyInvalidator 注入依赖失效扇出端口（编排层装配，可空）。
 	// 内容实体变更后由本模块推导依赖源键（实体自身 + 所属集合）并交给端口，
 	// 端口负责按依赖表反查受影响产物（PIPE-3）。

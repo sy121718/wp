@@ -21,6 +21,7 @@ package core
 
 import (
 	"fmt"
+	"go_wp/internal/builder/source"
 	"reflect"
 	"regexp"
 	"strings"
@@ -73,12 +74,7 @@ func ValidateTranslatable(spec any, fields []string) (err error) {
 // 在**不依赖 pkg/i18n 语境工具**的前提下拼语境，保证全站语境只有一处语义
 // （任一段为空返回空串，空语境不参与取词，取词器直接回退原文）。
 func ContentContextFor(entityType, field string) string {
-	typ := strings.TrimSpace(entityType)
-	f := strings.TrimSpace(field)
-	if typ == "" || f == "" {
-		return ""
-	}
-	return typ + "." + f
+	return source.ContentContextFor(entityType, field)
 }
 
 // jsonFieldNames 递归收集结构体的 JSON 字段名集合。
