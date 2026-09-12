@@ -3,6 +3,7 @@
 package list
 
 import (
+	_ "embed" // list.css 经 //go:embed 打进二进制
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -121,87 +122,47 @@ func (c *Component) Validate(node *core.Node, ids map[string]bool) (err error) {
 	return nil
 }
 
+// listCSS 组件样式源。与组件同目录：改样式不必再进 Go 字符串数组
+// （有补全 / lint / 格式化），而作用域替换、桶划分、确定性输出仍由构建期负责。
+//
+//go:embed list.css
+var listCSS string
+
 // compileCSS 列表样式。
+//
+// 每个「可选属性」在样式源里各是一条独立规则（与迁移前「一处可选属性 = 一次 b.Add」对应），
+// 未配置时变量为空、该规则的声明全被省略，于是整条规则不产出。
 func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	sel := "." + core.NodeClass(id)
-
-	var desktop []string
-	desktop = append(desktop, "list-style: none")
-	desktop = append(desktop, "margin: 0")
-	desktop = append(desktop, "padding: 0")
 
 	spacing := p.Spacing
 	if spacing == "" {
 		spacing = "10px"
 	}
-	b.Add(core.BreakpointDesktop, sel, desktop)
-	b.Add(core.BreakpointDesktop, sel+" .sky-list-item", []string{
-		"display: flex", "align-items: flex-start", "gap: 10px",
-		"padding: calc(" + spacing + " / 2) 0",
-	})
-	b.Add(core.BreakpointDesktop, sel+" .sky-list-marker", []string{
-		"flex: none", "display: inline-flex", "align-items: center",
-		"justify-content: center", "width: 1.3em", "height: 1.3em",
-		"margin-top: 2px",
-	})
-	b.Add(core.BreakpointDesktop, sel+" .sky-list-marker svg", []string{
-		"width: 1em", "height: 1em", "display: block",
-	})
-	b.Add(core.BreakpointDesktop, sel+" .sky-list-text", []string{
-		"flex: 1", "min-width: 0",
-	})
-	b.Add(core.BreakpointDesktop, sel+" a.sky-list-text", []string{
-		"text-decoration: none", "color: inherit",
-	})
-	b.Add(core.BreakpointDesktop, sel+" a.sky-list-text:hover", []string{
-		"text-decoration: underline",
-	})
-	b.Add(core.BreakpointDesktop, sel+" .sky-list-dot", []string{
-		"width: 8px", "height: 8px", "border-radius: 999px",
-		"background: currentColor", "display: block", "margin-top: 6px",
-	})
+	// 对齐：仅 center / right 产出（且 CSS 的 flex 对齐值与配置值不同名）。
+	alignItems := ""
+	switch p.Align {
+	case "center":
+		alignItems = "center"
+	case "right":
+		alignItems = "flex-end"
+	}
 
-	if p.IconColor != "" {
-		b.Add(core.BreakpointDesktop, sel+" .sky-list-marker", []string{core.CSSDecl("color", p.IconColor)})
+	vars := map[string]string{
+		"spacing":          spacing,
+		"icon_color":       p.IconColor,
+		"icon_bg":          p.IconBgColor,
+		"icon_color_hover": p.IconColorHover,
+		"icon_bg_hover":    p.IconBgColorHover,
+		"text_color":       p.TextColor,
+		"text_size":        p.TextSize,
+		"link_color":       p.LinkColor,
+		"link_color_hover": p.LinkColorHover,
+		"icon_size":        p.IconSize,
+		"align_items":      alignItems,
 	}
-	if p.IconBgColor != "" {
-		b.Add(core.BreakpointDesktop, sel+" .sky-list-marker", []string{
-			core.CSSDecl("background", p.IconBgColor), "border-radius: 999px",
-			"width: 1.8em", "height: 1.8em",
-		})
-	}
-	if p.IconColorHover != "" || p.IconBgColorHover != "" {
-		var hv []string
-		if p.IconColorHover != "" {
-			hv = append(hv, core.CSSDecl("color", p.IconColorHover))
-		}
-		if p.IconBgColorHover != "" {
-			hv = append(hv, core.CSSDecl("background", p.IconBgColorHover))
-		}
-		b.Add(core.BreakpointDesktop, sel+" .sky-list-item:hover .sky-list-marker", hv)
-	}
-	if p.TextColor != "" {
-		b.Add(core.BreakpointDesktop, sel+" .sky-list-text", []string{core.CSSDecl("color", p.TextColor)})
-	}
-	if p.TextSize != "" {
-		b.Add(core.BreakpointDesktop, sel+" .sky-list-text", []string{core.CSSDecl("font-size", p.TextSize)})
-	}
-	if p.LinkColor != "" {
-		b.Add(core.BreakpointDesktop, sel+" a.sky-list-text", []string{core.CSSDecl("color", p.LinkColor)})
-	}
-	if p.LinkColorHover != "" {
-		b.Add(core.BreakpointDesktop, sel+" a.sky-list-text:hover", []string{core.CSSDecl("color", p.LinkColorHover)})
-	}
-	if p.IconSize != "" {
-		b.Add(core.BreakpointDesktop, sel+" .sky-list-marker", []string{core.CSSDecl("font-size", p.IconSize)})
-	}
-	if p.Align == "center" || p.Align == "right" {
-		j := "flex-start"
-		if p.Align == "center" {
-			j = "center"
-		} else {
-			j = "flex-end"
-		}
-		b.Add(core.BreakpointDesktop, sel, []string{core.CSSDecl("align-items", j)})
+	if err := core.ApplyComponentCSSTmpl(b, sel, listCSS, vars); err != nil {
+		// 样式源解析失败属于构建期缺陷，必须在测试/构建时暴露；静默跳过的后果是产物悄悄少了样式。
+		panic(fmt.Sprintf("list 组件样式解析失败: %v", err))
 	}
 }

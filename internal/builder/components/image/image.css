@@ -1,0 +1,87 @@
+/* image.css — 图片组件样式（来源：原 image.go 的 compileCSS）。
+ *
+ * 语法见 internal/builder/core/component_css.go。
+ * 尺寸/对齐三端各自成组；可选属性一律由「空值省略整条声明」承担。
+ */
+
+/* 图片基底：填充方式 / 定位 / 比例 / 尺寸 / 圆角 / 滤镜（桌面端）。
+   对齐用 display:block + margin 控制，只有配了对齐才产出这三条。 */
+& {
+  object-fit: {{object_fit}};
+  object-position: {{object_position}};
+  aspect-ratio: {{aspect_ratio}};
+  width: {{width}};
+  max-width: {{max_width}};
+  height: {{h_desktop}};
+  @if align_desktop
+  display: block;
+  {{align_desktop}};
+  @endif
+  border-radius: {{border_radius}};
+  {{filter}};
+}
+
+/* 平板 / 手机：各自的固定高度与对齐。 */
+@media (max-width: 1024px) {
+  & {
+    height: {{h_tablet}};
+    @if align_tablet
+    display: block;
+    {{align_tablet}};
+    @endif
+  }
+}
+
+@media (max-width: 767px) {
+  & {
+    height: {{h_mobile}};
+    @if align_mobile
+    display: block;
+    {{align_mobile}};
+    @endif
+  }
+}
+
+/* 悬浮微动的过渡：与下面的 :hover 形态成对出现（要么都有、要么都没有）。 */
+& {
+  @if hover_on
+  transition: {{transition}};
+  @endif
+}
+
+/* 悬浮形态：进 hover 桶（构建期包 @media (hover: hover)，触屏不输出）。 */
+@hover &:hover {
+  transform: {{hover_scale}};
+  filter: {{hover_filter}};
+}
+
+/* 灯箱浮层：**全局**选择器 —— 同一页面多个图片共用一份浮层，重复登记由 CSSBuckets 去重。
+   零 JS 用 :target 显隐（点开链接加 #id，浏览器原生切换 :target）。 */
+@global .sky-lightbox {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.85);
+  z-index: 1000;
+  align-items: center;
+  justify-content: center;
+}
+
+@global .sky-lightbox:target {
+  display: flex;
+}
+
+@global .sky-lightbox img {
+  max-width: 90vw;
+  max-height: 90vh;
+}
+
+@global .sky-lightbox-close {
+  position: absolute;
+  top: 16px;
+  right: 24px;
+  color: #fff;
+  font-size: 2rem;
+  line-height: 1;
+  text-decoration: none;
+}

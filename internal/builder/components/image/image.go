@@ -6,6 +6,7 @@
 package image
 
 import (
+	_ "embed" // image.css 经 //go:embed 打进二进制
 	"fmt"
 	"regexp"
 	"strings"
@@ -170,110 +171,94 @@ var fieldPathRe = regexp.MustCompile(`^[a-z][a-z0-9_]*\.[a-zA-Z][a-zA-Z0-9_]*$`)
 // 灯箱浮层结构已迁移至 image.jet 模板（HTML 下沉 .jet，Jet 默认转义），
 // 旧 lightboxHTML 手拼 HTML 已删除。
 
+// imageCSS 组件样式源。与组件同目录：改样式不必再进 Go 字符串数组
+// （有补全 / lint / 格式化），而作用域替换、桶划分、确定性输出仍由构建期负责。
+//
+//go:embed image.css
+var imageCSS string
+
 // compileCSS 图片样式：比例/适应/对齐/尺寸/滤镜/悬浮过渡/灯箱浮层。
 func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	sel := "." + core.NodeClass(id)
 
-	var desktop, tablet, mobile []string
-	if p.ObjectFit != "" && p.ObjectFit != "cover" {
-		desktop = append(desktop, core.CSSDecl("object-fit", p.ObjectFit))
-	}
-	if p.ObjectPosition != "" {
-		desktop = append(desktop, core.CSSDecl("object-position", p.ObjectPosition))
-	}
-	if ar, ok := presetRatios[p.AspectRatio]; ok && ar != "" {
-		desktop = append(desktop, core.CSSDecl("aspect-ratio", ar))
-	} else if p.AspectRatio == "custom" {
-		desktop = append(desktop, core.CSSDecl("aspect-ratio", p.AspectRatioValue))
-	}
-	if p.Width != "" {
-		desktop = append(desktop, core.CSSDecl("width", p.Width))
-	}
-	if p.MaxWidth != "" {
-		desktop = append(desktop, core.CSSDecl("max-width", p.MaxWidth))
-	}
 	// 固定高度（三端独立）。编译期容错：非法值跳过声明（对齐「降级不阻断编译」，
 	// validateExtra 已在校验阶段拦截，此处为防御性兜底）。
-	appendHeight := func(target *[]string, h string) {
+	heightOf := func(h string) string {
 		if h != "" && core.IsSafeCSSValue(h) {
-			*target = append(*target, core.CSSDecl("height", h))
+			return h
 		}
+		return ""
 	}
-	appendHeight(&desktop, p.Height.Desktop)
-	appendHeight(&tablet, p.Height.Tablet)
-	appendHeight(&mobile, p.Height.Mobile)
-	if p.BorderRadius != "" {
-		desktop = append(desktop, core.CSSDecl("border-radius", p.BorderRadius))
-	}
-
-	// 对齐：块级 margin 控制。
-	appendAlign := func(target *[]string, a string) {
+	// 对齐：块级用 margin 控制。返回的是**两条声明**（值变量允许承载多条，展开后逐条收录）。
+	alignOf := func(a string) string {
 		switch a {
 		case "left":
-			*target = append(*target, "display: block", "margin-left: 0", "margin-right: auto")
+			return "margin-left: 0; margin-right: auto"
 		case "center":
-			*target = append(*target, "display: block", "margin-left: auto", "margin-right: auto")
+			return "margin-left: auto; margin-right: auto"
 		case "right":
-			*target = append(*target, "display: block", "margin-left: auto", "margin-right: 0")
+			return "margin-left: auto; margin-right: 0"
 		}
-	}
-	appendAlign(&desktop, p.Align.Desktop)
-	appendAlign(&tablet, p.Align.Tablet)
-	appendAlign(&mobile, p.Align.Mobile)
-
-	// CSS 滤镜。
-	if f := filterDecls(p.Filters); f != "" {
-		desktop = append(desktop, f)
+		return ""
 	}
 
-	b.Add(core.BreakpointDesktop, sel, desktop)
-	b.Add(core.BreakpointTablet, sel, tablet)
-	b.Add(core.BreakpointMobile, sel, mobile)
-
-	// 悬浮微动：过渡 + :hover 规则。
-	if p.Hover.Scale != "" || p.Hover.RestoreColor {
-		var transition []string
-		if p.Hover.Scale != "" {
-			transition = append(transition, "transform "+p.Hover.DurationOr("300ms")+" ease")
-		}
-		if p.Hover.RestoreColor {
-			transition = append(transition, "filter "+p.Hover.DurationOr("300ms")+" ease")
-		}
-		b.Add(core.BreakpointDesktop, sel, []string{core.CSSDecl("transition", strings.Join(transition, ", "))})
-
-		var hoverDecls []string
-		if p.Hover.Scale != "" {
-			hoverDecls = append(hoverDecls, "transform: scale("+p.Hover.Scale+")")
-		}
-		if p.Hover.RestoreColor {
-			hoverDecls = append(hoverDecls, "filter: none")
-		}
-		b.AddHover(sel+":hover", hoverDecls)
+	objectFit := ""
+	if p.ObjectFit != "" && p.ObjectFit != "cover" {
+		objectFit = p.ObjectFit
+	}
+	aspectRatio := ""
+	if ar, ok := presetRatios[p.AspectRatio]; ok && ar != "" {
+		aspectRatio = ar
+	} else if p.AspectRatio == "custom" {
+		aspectRatio = p.AspectRatioValue
 	}
 
-	// 灯箱浮层样式（零 JS :target 显隐）。
-	b.Add(core.BreakpointDesktop, ".sky-lightbox", []string{
-		"display: none",
-		"position: fixed",
-		"inset: 0",
-		"background: rgba(0,0,0,0.85)",
-		"z-index: 1000",
-		"align-items: center",
-		"justify-content: center",
-	})
-	b.Add(core.BreakpointDesktop, ".sky-lightbox:target", []string{"display: flex"})
-	b.Add(core.BreakpointDesktop, ".sky-lightbox img", []string{
-		"max-width: 90vw", "max-height: 90vh",
-	})
-	b.Add(core.BreakpointDesktop, ".sky-lightbox-close", []string{
-		"position: absolute",
-		"top: 16px",
-		"right: 24px",
-		"color: #fff",
-		"font-size: 2rem",
-		"line-height: 1",
-		"text-decoration: none",
-	})
+	// 悬浮微动：过渡与 :hover 形态成对出现（有过渡必有形态，反之亦然）。
+	hoverOn := p.Hover.Scale != "" || p.Hover.RestoreColor
+	var transition, hoverScale, hoverFilter string
+	if p.Hover.Scale != "" {
+		transition = "transform " + p.Hover.DurationOr("300ms") + " ease"
+		hoverScale = "scale(" + p.Hover.Scale + ")"
+	}
+	if p.Hover.RestoreColor {
+		if transition != "" {
+			transition += ", "
+		}
+		transition += "filter " + p.Hover.DurationOr("300ms") + " ease"
+		hoverFilter = "none"
+	}
+
+	vars := map[string]string{
+		"object_fit":      objectFit,
+		"object_position": p.ObjectPosition,
+		"aspect_ratio":    aspectRatio,
+		"width":           p.Width,
+		"max_width":       p.MaxWidth,
+		"h_desktop":       heightOf(p.Height.Desktop),
+		"h_tablet":        heightOf(p.Height.Tablet),
+		"h_mobile":        heightOf(p.Height.Mobile),
+		"align_desktop":   alignOf(p.Align.Desktop),
+		"align_tablet":    alignOf(p.Align.Tablet),
+		"align_mobile":    alignOf(p.Align.Mobile),
+		"border_radius":   p.BorderRadius,
+		"filter":          filterDecls(p.Filters),
+		"hover_on":        boolVar(hoverOn),
+		"transition":      transition,
+		"hover_scale":     hoverScale,
+		"hover_filter":    hoverFilter,
+	}
+	if err := core.ApplyComponentCSSTmpl(b, sel, imageCSS, vars); err != nil {
+		// 样式源解析失败属于构建期缺陷，必须在测试/构建时暴露；静默跳过的后果是产物悄悄少了样式。
+		panic(fmt.Sprintf("image 组件样式解析失败: %v", err))
+	}
+}
+
+// boolVar 条件段变量的真值形态（非空即真）。
+func boolVar(v bool) string {
+	if v {
+		return "1"
+	}
+	return ""
 }
 
 // filterDecls 滤镜五值 → CSS 声明。

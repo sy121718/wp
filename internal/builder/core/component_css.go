@@ -172,9 +172,28 @@ func (p *cssSourceParser) run() error {
 		if err != nil {
 			return cssApplyError(i+1, "%v", err)
 		}
+		// @global：**故意**产出跨实例共享的全局规则（如灯箱浮层 —— 同一页多个图片共用一份）。
+		// 必须显式写出来：不含 & 又不带标记的选择器一律拒绝，避免「以为在作用域内其实漏了 &」
+		// 导致样式泄漏到全站。多个实例重复登记同一条全局规则由 CSSBuckets 去重。
+		if strings.HasPrefix(selector, "@global") {
+			global, _, err := p.expandVars(strings.TrimSpace(strings.TrimPrefix(selector, "@global")))
+			if err != nil {
+				return cssApplyError(i+1, "%v", err)
+			}
+			if global == "" {
+				return cssApplyError(i+1, "@global 缺少选择器")
+			}
+			bp := p.mediaBP
+			if bp == "" {
+				bp = BreakpointDesktop
+			}
+			p.buckets.Add(bp, global, decls)
+			i = next
+			continue
+		}
 		// 选择器里的 & 一律替换成作用域前缀；不含 & 的写法拒绝（避免「以为在作用域内其实不是」）。
 		if !strings.Contains(selector, "&") {
-			return cssApplyError(i+1, "选择器必须以 & 开头（& 会被替换成该组件实例的作用域），got %q", selector)
+			return cssApplyError(i+1, "选择器必须以 & 开头（& 会被替换成该组件实例的作用域），或用 @global 显式声明全局规则，got %q", selector)
 		}
 
 		// @hover / @active 用标记前缀指定桶（构建期据此决定要不要包 @media (hover: hover)）。
@@ -297,10 +316,18 @@ func (p *cssSourceParser) parseDecls(body string) ([]string, error) {
 			if empty {
 				continue
 			}
-			if !strings.Contains(expanded, ":") {
-				return nil, fmt.Errorf("看不懂这条声明：%q", d)
+			// 变量值可以是**多条声明**（Go 侧用 "; " 连接，如排版组三端产出的一组声明）：
+			// 展开后再按分号拆开逐条收录，顺序保持。
+			for _, piece := range strings.Split(expanded, ";") {
+				piece = strings.TrimSpace(piece)
+				if piece == "" {
+					continue
+				}
+				if !strings.Contains(piece, ":") {
+					return nil, fmt.Errorf("看不懂这条声明：%q", piece)
+				}
+				decls = append(decls, piece)
 			}
-			decls = append(decls, expanded)
 		}
 	}
 	if len(cond) != 0 {

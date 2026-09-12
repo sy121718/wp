@@ -4,6 +4,7 @@
 package quote
 
 import (
+	_ "embed" // quote.css 经 //go:embed 打进二进制
 	"fmt"
 
 	"go_wp/internal/builder/core"
@@ -54,35 +55,28 @@ func validateExtra(p *Props, nodeID string) (err error) {
 	return nil
 }
 
+// quoteCSS 组件样式源。与组件同目录：改样式不必再进 Go 字符串数组
+// （有补全 / lint / 格式化），而作用域替换、桶划分、确定性输出仍由构建期负责。
+//
+//go:embed quote.css
+var quoteCSS string
+
 // compileCSS 引用样式：左边框 + 斜体 + 对齐 + cite。
 func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	sel := "." + core.NodeClass(id)
+	vars := map[string]string{"center": boolVar(p.Align == AlignCenter)}
+	if err := core.ApplyComponentCSSTmpl(b, sel, quoteCSS, vars); err != nil {
+		// 样式源解析失败属于构建期缺陷，必须在测试/构建时暴露；静默跳过的后果是产物悄悄少了样式。
+		panic(fmt.Sprintf("quote 组件样式解析失败: %v", err))
+	}
+}
 
-	decls := []string{
-		"margin: 0",
-		"padding: 16px 20px",
-		"border-left: 4px solid var(--sky-c-primary, #2563eb)",
-		"font-style: italic",
+// boolVar 条件段变量的真值形态（非空即真）。
+func boolVar(v bool) string {
+	if v {
+		return "1"
 	}
-	if p.Align == AlignCenter {
-		decls = append(decls, "text-align: center")
-	}
-	b.Add(core.BreakpointDesktop, sel, decls)
-	b.Add(core.BreakpointDesktop, sel+" p", []string{
-		"margin: 0",
-		"line-height: 1.7",
-	})
-	b.Add(core.BreakpointDesktop, sel+" cite", []string{
-		"display: block",
-		"margin-top: 12px",
-		"font-style: normal",
-		"font-weight: 600",
-		"color: rgba(0,0,0,0.6)",
-	})
-	b.Add(core.BreakpointDesktop, sel+" cite a", []string{
-		"color: inherit",
-		"text-decoration: none",
-	})
+	return ""
 }
 
 // init 注册引用组件。

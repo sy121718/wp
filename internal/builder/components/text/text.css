@@ -1,0 +1,48 @@
+/* text.css — 正文组件样式（来源：原 text.go 的 compileCSS）。
+ *
+ * 语法见 internal/builder/core/component_css.go。
+ * 排版组三端的声明由 Go 侧 core.Typography 算出（一组声明），经值变量整组传入 ——
+ * 变量值允许含分号，展开后会拆成多条声明，顺序保持。
+ */
+
+/* 正文基底：排版组（桌面）+ 文字颜色。 */
+& {
+  {{typo_desktop}};
+  color: {{color}};
+}
+
+/* 链接颜色必须落在 & a 上，不能与 color 同规则：两条 color 声明写进同一个选择器时
+   后者覆盖前者，结果是「配了链接色 → 正文颜色被改掉，而链接本身没变色」。 */
+& a {
+  color: {{link_color}};
+}
+
+/* 排版组：平板 / 手机。 */
+@media (max-width: 1024px) {
+  & {
+    {{typo_tablet}};
+  }
+}
+
+@media (max-width: 767px) {
+  & {
+    {{typo_mobile}};
+  }
+}
+
+/* 段间距：富文本模式下的内部块级元素。 */
+& p, & ul, & blockquote {
+  margin-top: {{para_spacing}};
+  margin-bottom: {{para_spacing}};
+}
+
+/* 多行截断（含省略号）：单独一条规则 —— 与正文基底同选择器但声明不同，
+   产物里是两段（与迁移前「各调一次 b.Add」一致）。 */
+& {
+  @if clamp
+  display: -webkit-box;
+  -webkit-line-clamp: {{clamp}};
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  @endif
+}

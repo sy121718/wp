@@ -1,0 +1,120 @@
+/* list.css — 列表组件样式（来源：原 list.go 的 compileCSS）。
+ *
+ * 语法见 internal/builder/core/component_css.go。
+ * 可选项（图标配色 / 文本配色 / 链接色 / 对齐）各自是**独立规则**，
+ * 与迁移前「一处可选属性 = 一次 b.Add」逐一对应；未配置时该规则不产出。
+ */
+
+/* 列表基底。 */
+& {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* 列表项：图标与文本横向排列，长文本换行不挤图标。 */
+& .sky-list-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: calc({{spacing}} / 2) 0;
+}
+
+/* 图标位。 */
+& .sky-list-marker {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.3em;
+  height: 1.3em;
+  margin-top: 2px;
+}
+
+/* 图标 SVG 撑满图标位。 */
+& .sky-list-marker svg {
+  width: 1em;
+  height: 1em;
+  display: block;
+}
+
+/* 文本列：占满剩余宽度（min-width: 0 让长词可断）。 */
+& .sky-list-text {
+  flex: 1;
+  min-width: 0;
+}
+
+/* 链接文本：继承颜色、默认无下划线。 */
+& a.sky-list-text {
+  text-decoration: none;
+  color: inherit;
+}
+
+& a.sky-list-text:hover {
+  text-decoration: underline;
+}
+
+/* 圆点样式（style=dot）。 */
+& .sky-list-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: currentColor;
+  display: block;
+  margin-top: 6px;
+}
+
+/* --- 以下均为可选项：未配置则整条规则不产出 --- */
+
+/* 图标颜色。 */
+& .sky-list-marker {
+  color: {{icon_color}};
+}
+
+/* 图标圆形底（同时放大图标位以容纳底色）。 */
+& .sky-list-marker {
+  background: {{icon_bg}};
+  @if icon_bg
+  border-radius: 999px;
+  width: 1.8em;
+  height: 1.8em;
+  @endif
+}
+
+/* 图标悬停形态（悬停落到整行上，而不是只在内核图标上）。 */
+& .sky-list-item:hover .sky-list-marker {
+  color: {{icon_color_hover}};
+  background: {{icon_bg_hover}};
+}
+
+/* 文本颜色。 */
+& .sky-list-text {
+  color: {{text_color}};
+}
+
+/* 文本字号。 */
+& .sky-list-text {
+  font-size: {{text_size}};
+}
+
+/* 链接颜色。 */
+& a.sky-list-text {
+  color: {{link_color}};
+}
+
+/* 链接悬停色。 */
+& a.sky-list-text:hover {
+  color: {{link_color_hover}};
+}
+
+/* 图标字号。 */
+& .sky-list-marker {
+  font-size: {{icon_size}};
+}
+
+/* 对齐：非左对齐时才产出。 */
+& {
+  @if align_items
+  align-items: {{align_items}};
+  @endif
+}

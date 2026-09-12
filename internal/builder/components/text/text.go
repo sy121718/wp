@@ -4,8 +4,10 @@
 package text
 
 import (
+	_ "embed" // text.css 经 //go:embed 打进二进制
 	"fmt"
 	"regexp"
+	"strings"
 
 	"go_wp/internal/builder/core"
 )
@@ -107,45 +109,37 @@ func truncateRunes(s string, n int) string {
 	return string(r[:n])
 }
 
+// textCSS 组件样式源。与组件同目录：改样式不必再进 Go 字符串数组
+// （有补全 / lint / 格式化），而作用域替换、桶划分、确定性输出仍由构建期负责。
+//
+//go:embed text.css
+var textCSS string
+
+// typoDecls 把某一端的排版组声明拼成可交给样式源的「多条声明」字符串。
+// core.Typography 的产出是一组声明（可能为空），这里不做筛选，空组自然整组不产出。
+func typoDecls(p *Props, bp string) string {
+	return strings.Join(p.Typography.BreakpointDecls(bp), "; ")
+}
+
 // compileCSS 正文样式：排版组三端 + 颜色/链接色 + 段间距 + 截断。
 func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	sel := "." + core.NodeClass(id)
-
-	var desktop, tablet, mobile []string
-	desktop = append(desktop, p.Typography.BreakpointDecls(core.BreakpointDesktop)...)
-	tablet = append(tablet, p.Typography.BreakpointDecls(core.BreakpointTablet)...)
-	mobile = append(mobile, p.Typography.BreakpointDecls(core.BreakpointMobile)...)
-
-	if p.Color != "" {
-		desktop = append(desktop, core.CSSDecl("color", p.Color))
-	}
-
-	b.Add(core.BreakpointDesktop, sel, desktop)
-
-	// 链接颜色必须落在 sel a 上，不能与 Color 同规则：两条 color 声明写进同一个
-	// 选择器时后者覆盖前者，结果是「配了链接色 → 正文颜色被改掉，而链接本身没变色」。
-	if p.LinkColor != "" {
-		b.Add(core.BreakpointDesktop, sel+" a", []string{core.CSSDecl("color", p.LinkColor)})
-	}
-	b.Add(core.BreakpointTablet, sel, tablet)
-	b.Add(core.BreakpointMobile, sel, mobile)
-
-	// 段间距：富文本模式下内部块级元素。
-	if p.ParagraphSpacing != "" {
-		b.Add(core.BreakpointDesktop, sel+" p, "+sel+" ul, "+sel+" blockquote", []string{
-			core.CSSDecl("margin-top", p.ParagraphSpacing),
-			core.CSSDecl("margin-bottom", p.ParagraphSpacing),
-		})
-	}
-
-	// 多行截断（含省略号）。
+	clamp := ""
 	if p.LineClamp > 0 {
-		b.Add(core.BreakpointDesktop, sel, []string{
-			"display: -webkit-box",
-			fmt.Sprintf("-webkit-line-clamp: %d", p.LineClamp),
-			"-webkit-box-orient: vertical",
-			"overflow: hidden",
-		})
+		clamp = fmt.Sprintf("%d", p.LineClamp)
+	}
+	vars := map[string]string{
+		"typo_desktop": typoDecls(p, core.BreakpointDesktop),
+		"typo_tablet":  typoDecls(p, core.BreakpointTablet),
+		"typo_mobile":  typoDecls(p, core.BreakpointMobile),
+		"color":        p.Color,
+		"link_color":   p.LinkColor,
+		"para_spacing": p.ParagraphSpacing,
+		"clamp":        clamp,
+	}
+	if err := core.ApplyComponentCSSTmpl(b, sel, textCSS, vars); err != nil {
+		// 样式源解析失败属于构建期缺陷，必须在测试/构建时暴露；静默跳过的后果是产物悄悄少了样式。
+		panic(fmt.Sprintf("text 组件样式解析失败: %v", err))
 	}
 }
 
