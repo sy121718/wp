@@ -10,7 +10,7 @@
 | 位置 | 形态 | 谁在用 | 覆盖范围 |
 |---|---|---|---|
 | `static/js/enhance.js` | 普通脚本，构建期**按需内联** | 前台产物（访客） | 8 个**组件级**增强：计数器/轮播/图集/倒计时/灯箱/卡片环/堆叠/全屏分页 |
-| `static/js/workbench/` | **ES module** | 只有工作台 | 13 个编辑器原语（`wbDropdown` / `wbColorPicker` …） |
+| `static/js/workbench/` | **ES module** | 只有工作台 | 属性字段、颜色编辑与文档交互（普通下拉已归公共层） |
 | ~~`select-enhance.js`~~ | 普通脚本 | ~~只有后台~~ | 已并入基座，删除 |
 
 **根因**：没有"原始控件"这一层。①是组件级能力（轮播要滚、灯箱要开），②只有工作台能加载，
@@ -29,7 +29,7 @@
 
 | 控件 | 文件 | 声明式用法 | 备注 |
 |---|---|---|---|
-| 下拉 | `ui/select.js` | 自动接管原生 `<select>`；`data-wb-native` 与 `.wb-dd-src` 跳过 | 自绘替身 + 动态选项同步；**检查器面板的字段 select 也走它**（原先各写一份） |
+| 下拉 | `ui/select.js` | 自动接管单选 `<select>`；`data-wb-native`、多选与列表模式保留原生 | 自绘替身 + 动态选项同步；**检查器面板的字段 select 也走它**（原先各写一份） |
 | 抽屉 | `ui/drawer.js` | `data-drawer-open` / `data-drawer-title` | 打开时对新内容 `WBUI.scan` |
 | 图标字段 | `ui/iconfield.js` | `data-icon-field`（+ hidden 存值）、`data-icon-name` | 图标库 766KB 懒加载 |
 | 颜色字段 | `ui/colorfield.js` | `data-color-field` | 文本框是真值来源（可留空/写 `var()`）；**预览两处**：输入框左侧色带 + 右侧色块（色块同时是取色入口） |
@@ -61,7 +61,7 @@ shadow / shape / viewport），组件只声明词汇、编译期出 CSS，颜色
 ```
 static/js/ui/*.js + static/css/ui.css
    ├── 后台    admin/layout.html         <link ui.css> + partials/ui_scripts.html
-   ├── 工作台  workbench/layout.html     同一脚本入口（已增强的 .wb-dd-src 显式跳过）
+   ├── 工作台  workbench/layout.html     同一脚本入口；复杂字段使用 `WBUI.select.create`
    └── 前台    构建期按 data-ui-* 特征内联（CSS 与 JS **同进同出**）
 ```
 
@@ -128,7 +128,7 @@ var(--sky-c-primary, var(--c-primary, 兜底))
 | 按钮忙碌态**手写了三遍** | 媒体库生成变体 / 工作台恢复历史 / 工作台保存设置各写一遍，且都漏同一件事：结束时一律 `disabled = false`，把本来就该禁用的按钮错误启用；reject 分支还常忘了恢复 | 收敛成 `WBUI.busy`：记住原禁用态、成功失败都恢复、忙碌中带 `aria-busy` |
 | 主题设置页的颜色**只能手敲 hex** | 早先为了「留空 = 跟随内置默认」刻意放弃 `input type=color`（它没有未设置状态，空值会被补成 #000000），代价是没有取色入口 | 基座补 `ui/colorfield.js`：文本框仍是唯一真值来源，旁边色块点开系统取色器；留空显示棋盘格 + 斜线 |
 | 操作反馈**只有模态一种强度** | 成功类反馈（已复制/已保存）也弹模态框，用户必须点一下「知道了」—— 打断，却什么都没改变 | 补齐 `WBUI.toast`：非模态、底部居中、3 秒自消；`notify`（轻反馈）与 `notifyError`（失败仍走模态）在页面脚本里分流 |
-| 下拉在**检查器面板里是第二份实现** | 基座 `ui/select.js` 跳过 `data-wb-path`，工作台 `controls/selects.js` 用 `wbDropdown` 再升一次级 —— 同一件事（原生 select 在 Linux/Chromium 上「点开即选」）的第三份实现 | 基座接管检查器面板：`upgradeNativeSelects` 只触发一次 `WBUI.scan`；7 个 `wb-unit-select` 用 `data-wb-native` 显式排除，`wbDropdown` 的隐藏载体 `.wb-dd-src` 也被跳过 |
+| 下拉在**检查器面板里是第二份实现** | 基座 `ui/select.js` 跳过 `data-wb-path`，工作台 `controls/selects.js` 用 `wbDropdown` 再升一次级 —— 同一件事（原生 select 在 Linux/Chromium 上「点开即选」）的第三份实现 | 基座接管简单和复杂字段：`upgradeNativeSelects` 扫描原生字段，复杂字段调用 `WBUI.select.create`；单位字段用 `data-wb-native` 显式排除。旧下拉实现与样式已删除 |
 
 ### 踩到的坑
 
@@ -150,9 +150,7 @@ var(--sky-c-primary, var(--c-primary, 兜底))
 
 ## 8. 暂不做
 
-- **schema 字段下拉已接入基座**：`controls/selects.js` 的 `upgradeNativeSelects`
-  只触发 `WBUI.scan`，选后经 `panel.onchange` 回写 AST。但复杂面板仍使用
-  `core.js` 的 `wbDropdown`，不能声称所有下拉已经迁完。
+- **schema 与复杂字段下拉均接入基座**：`controls/selects.js` 为原生字段设置通用状态键并触发 `WBUI.scan`，选后经 `panel.onchange` 回写 AST；复杂字段使用 `WBUI.select.create`，选后通过工作台 `commit` 回写。
   属性编辑逻辑仍应留在工作台，两类原因：
   · **检查器字段构造器**（`base.field` / `spacing.*` / `color` / `corners` / `media`）：
     API 形如 `(ctx, label, path)` —— 面向 AST 数据路径与 `[data-wb-path]` 回写委托，
@@ -469,4 +467,10 @@ var uiBlocks = []uiBlock{
 
 `WBUI.scan` 不再吞掉初始化异常：记录日志、派发 `wbui:error`、返回错误集合并继续其它控件。检查器调用方据此显示就地提示。公共入口和工作台整页渲染有测试，JS 强制按正确脚本模式解析，检查命令为 `bash scripts/check-workbench.sh`。
 
-剩余问题明确保留：复杂面板的 `wbDropdown` 仍是一套独立行为，部分工作台输入框外观仍有覆盖，尚未达到全部控件只有一处实现。迁移时应保留原生表单语义、焦点、动态选项、撤销与降级行为，逐条通过真实浏览器验收；不能只改类名后宣称完成。
+复杂面板的 `wbDropdown` 与 `.wb-dd-*` 已删除。`WBUI.select.create(choices, current, {key, label, onChange})` 返回 `{root, value, open, close}`；程序赋值只同步外观，真实选择才派发 input/change，同值选择不重复提交。`data-ui-key` 用于重建前后的展开态恢复，控件层不解释工作台字段路径。
+
+下拉使用 WeakMap 记录实际节点的实例，克隆外观后重新扫描会重建行为，不会照抄「已增强」标记；重复扫描不增加触发器。动态选项文字、禁用、隐藏以及禁用选项组会同步，方向键跳过不可选项。多选和列表模式保留原生，原生表单 reset 后同步可见值。快捷键保护改为识别公共 `.wbs`，焦点留在下拉按钮时 Delete 不会误删组件。
+
+本批验证包含公共控件事件回归、工作台模块加载和真实面板交互：原生与复杂字段选择、禁用项跳过、长菜单滚轮（scrollTop 从 0 到 340）、整块克隆重扫、展开态跨重建恢复（控件 ID 确实变化）、动效字段修改后的编译与撤销/重做。375 / 768 / 1440 视口均核对无横向溢出。浏览器工具未提供触屏手势，本批没有把真实触屏验证记为通过。
+
+仍需继续清理后台 `pages-*` 桥接类、工作台部分输入框覆盖与复杂属性表单生成。
