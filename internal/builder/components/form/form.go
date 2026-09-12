@@ -7,6 +7,7 @@
 package form
 
 import (
+	_ "embed" // form.css 经 //go:embed 打进二进制
 	"fmt"
 	"regexp"
 
@@ -134,85 +135,19 @@ func validateExtra(p *Props, nodeID string) (err error) {
 	return nil
 }
 
-// compileCSS 表单样式：字段纵向排列、label 样式、input/textarea/select 边框、submit button 样式。
+// formCSS 组件样式源。与组件同目录：改样式不必再进 Go 字符串数组（有补全 / lint / 格式化），
+// 而作用域替换、桶划分、确定性输出仍由构建期负责（见 core/component_css.go）。
+//
+//go:embed form.css
+var formCSS string
+
+// compileCSS 表单样式：来自 form.css（字段纵向排列、label 样式、输入控件边框、submit 按钮）。
 func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	sel := "." + core.NodeClass(id)
-
-	// 表单容器：纵向布局 + 字段间距。
-	b.Add(core.BreakpointDesktop, sel, []string{
-		"display: flex",
-		"flex-direction: column",
-		"gap: 16px",
-	})
-	// 单个字段：纵向排列。
-	b.Add(core.BreakpointDesktop, sel+" .sky-form-field", []string{
-		"display: flex",
-		"flex-direction: column",
-		"gap: 6px",
-	})
-	// 标签样式。
-	b.Add(core.BreakpointDesktop, sel+" .sky-form-field label", []string{
-		"font-size: 14px",
-		"font-weight: 600",
-		"color: inherit",
-	})
-	// checkbox 标签：横向排列 + 字重回退（覆盖上方统一 label 样式）。
-	b.Add(core.BreakpointDesktop, sel+" .sky-form-field label.sky-form-check", []string{
-		"display: inline-flex",
-		"align-items: center",
-		"gap: 8px",
-		"font-weight: 400",
-	})
-	b.Add(core.BreakpointDesktop, sel+" .sky-form-field label.sky-form-check input", []string{
-		"width: auto",
-		"margin: 0",
-	})
-	// 输入控件通用边框样式。
-	inputDecls := []string{
-		"width: 100%",
-		"box-sizing: border-box",
-		"padding: 10px 12px",
-		"font-size: 15px",
-		"border: 1px solid var(--sky-c-border, rgba(0,0,0,.15))",
-		"border-radius: 6px",
-		// 输入框跟主题表面色/正文色走（此前写死白底黑字，主题改了输入框也不变）。
-		"background: var(--sky-c-surface, #fff)",
-		"color: var(--sky-c-text, #1f2430)",
-		core.FocusTransitionDecl(),
+	if err := core.ApplyComponentCSS(b, sel, formCSS); err != nil {
+		// 样式源解析失败属于构建期缺陷，必须在测试/构建时暴露；静默跳过的后果是产物悄悄少了样式。
+		panic(fmt.Sprintf("form 组件样式解析失败: %v", err))
 	}
-	// :is() 合并同声明选择器（规则数 4→2，产物体积更小；:is 特异性取参数最高者，
-	// 与拆分写法一致，不改变覆盖行为）。
-	b.Add(core.BreakpointDesktop, sel+" :is(input[type=text],input[type=email],select)", inputDecls)
-	b.Add(core.BreakpointDesktop, sel+" textarea", append(append([]string{}, inputDecls...), "min-height: 96px", "resize: vertical"))
-	// 聚焦边框高亮 + 光晕 ring（效果基本库 core.FocusRingDecls，--sky-focus-ring 可主题覆写）。
-	focusDecls := core.FocusRingDecls()
-	b.Add(core.BreakpointDesktop, sel+" :is(input,textarea,select):focus", focusDecls)
-	// 校验错误态（:has() 父选择器 + 原生 :user-invalid，零 JS）：
-	// 用户交互后字段非法 → 字段容器与输入框同步标红，无需 JS 遍历 DOM。
-	// 用 :user-invalid 而非 :invalid：避开「刚打开页面就全部标红」的体验问题。
-	b.Add(core.BreakpointDesktop, sel+" .sky-form-field:has(:user-invalid)", []string{
-		"color: var(--sky-danger, #dc2626)",
-	})
-	b.Add(core.BreakpointDesktop, sel+" :user-invalid", []string{
-		"border-color: var(--sky-danger, #dc2626)",
-		"box-shadow: 0 0 0 3px rgba(220, 38, 38, .12)",
-	})
-	// 提交按钮样式。
-	b.Add(core.BreakpointDesktop, sel+" .sky-form-submit", []string{
-		"align-self: flex-start",
-		"padding: 11px 24px",
-		"font-size: 15px",
-		"font-weight: 600",
-		"color: var(--sky-btn-color, #fff)",
-		"background: var(--sky-btn-bg, var(--sky-c-primary, #2563eb))",
-		"border: none",
-		"border-radius: 6px",
-		"cursor: pointer",
-		"transition: background .15s",
-	})
-	b.Add(core.BreakpointDesktop, sel+" .sky-form-submit:hover", []string{
-		"background: var(--sky-btn-hover-bg, var(--sky-c-primary, #1d4ed8))",
-	})
 }
 
 // init 注册表单组件。

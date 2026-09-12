@@ -1,0 +1,100 @@
+/* form.css — 表单组件样式（来源：原 form.go 的 compileCSS）。
+ *
+ * 语法约定（见 internal/builder/core/component_css.go）：
+ *   &                 该组件实例的作用域选择器（同一组件多实例互不污染）
+ *   @focus-transition / @focus-ring   Go 侧计算的声明占位（效果基本库，保持一份实现）
+ *   @hover / @active   选择器前缀，指定进哪个桶（构建期决定要不要包 @media (hover: hover)）
+ *   @media (max-width: Npx)          只认既有断点 1024 / 767，自造断点会构建期报错
+ */
+
+/* 表单容器：纵向布局 + 字段间距。 */
+& {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* 单个字段：纵向排列。 */
+& .sky-form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* 标签样式。 */
+& .sky-form-field label {
+  font-size: 14px;
+  font-weight: 600;
+  color: inherit;
+}
+
+/* checkbox 标签：横向排列 + 字重回退（覆盖上方统一 label 样式）。 */
+& .sky-form-field label.sky-form-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 400;
+}
+& .sky-form-field label.sky-form-check input {
+  width: auto;
+  margin: 0;
+}
+
+/* 输入控件通用边框样式（:is() 合并同声明选择器，与迁移前一致）。 */
+& :is(input[type=text],input[type=email],select) {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  font-size: 15px;
+  border: 1px solid var(--sky-c-border, rgba(0,0,0,.15));
+  border-radius: 6px;
+  background: var(--sky-c-surface, #fff);
+  color: var(--sky-c-text, #1f2430);
+  @focus-transition;
+}
+& textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  font-size: 15px;
+  border: 1px solid var(--sky-c-border, rgba(0,0,0,.15));
+  border-radius: 6px;
+  background: var(--sky-c-surface, #fff);
+  color: var(--sky-c-text, #1f2430);
+  @focus-transition;
+  min-height: 96px;
+  resize: vertical;
+}
+
+/* 聚焦边框高亮 + 光晕 ring（--sky-focus-ring 可主题覆写）。 */
+& :is(input,textarea,select):focus {
+  @focus-ring;
+}
+
+/* 校验错误态（:has() 父选择器 + 原生 :user-invalid，零 JS）：
+   用户交互后字段非法 → 字段容器与输入框同步标红，无需 JS 遍历 DOM。
+   用 :user-invalid 而非 :invalid：避开「刚打开页面就全部标红」的体验问题。 */
+& .sky-form-field:has(:user-invalid) {
+  color: var(--sky-danger, #dc2626);
+}
+& :user-invalid {
+  border-color: var(--sky-danger, #dc2626);
+  box-shadow: 0 0 0 3px rgba(220, 38, 38, .12);
+}
+
+/* 提交按钮样式。 */
+& .sky-form-submit {
+  align-self: flex-start;
+  padding: 11px 24px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--sky-btn-color, #fff);
+  background: var(--sky-btn-bg, var(--sky-c-primary, #2563eb));
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background .15s;
+}
+& .sky-form-submit:hover {
+  background: var(--sky-btn-hover-bg, var(--sky-c-primary, #1d4ed8));
+}
