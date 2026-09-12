@@ -235,6 +235,32 @@ func (h *orderPageHandle) OrderStatusChange(c *gin.Context) {
 	orderRedirect(c, orderenums.MsgStatusChanged, "")
 }
 
+// OrderNoteSave 保存后台备注（POST /admin/orders/note）。
+//
+// 备注**不是状态流转**：只改 admin_note 一列，不写 status_logs —— 那条链回答的是
+// 「订单处在哪一步、什么时候变过」，把备注混进去会让「这单什么时候发的货」变成要翻记录才看得出来。
+func (h *orderPageHandle) OrderNoteSave(c *gin.Context) {
+	orderID := orderQueryID(c.PostForm("orderId"))
+	if orderID == 0 {
+		orderRedirect(c, "", "订单编号不合法，请回到列表页重新操作。")
+		return
+	}
+	res, err := h.orders.UpdateOrderNote(c.Request.Context(), &orderdto.UpdateOrderNoteReq{
+		OrderID:   orderID,
+		AdminNote: strings.TrimSpace(c.PostForm("adminNote")),
+		// 操作人由会话覆盖写入，绝不受表单影响。
+		OperatorType: orderOperatorTypeAdmin,
+		OperatorID:   orderOperatorID(c),
+		OperatorName: builtin.GetUsername(c),
+	})
+	if err != nil {
+		orderRedirect(c, "", orderFacingError(c, err))
+		return
+	}
+	_ = res
+	orderRedirect(c, orderenums.MsgNoteUpdated, "")
+}
+
 // OrderCancel 取消订单（POST /admin/orders/cancel）：服务端会归还尚未发货那部分库存。
 func (h *orderPageHandle) OrderCancel(c *gin.Context) {
 	orderID := orderQueryID(c.PostForm("orderId"))

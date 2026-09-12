@@ -363,6 +363,9 @@ var orderReturnsSQL string
 //go:embed 145_order_return_permissions.sql
 var orderReturnPermsSQL string
 
+//go:embed 146_order_note_permission.sql
+var orderNotePermSQL string
+
 func init() {
 	register(Migration{
 		Version:   "001-init-schema",
@@ -1587,5 +1590,13 @@ func init() {
 			"'order:return_list', 'order:return_get', 'order:return_approve', " +
 			"'order:return_reject', 'order:return_receive')",
 		SQL: orderReturnPermsSQL,
+	})
+
+	// 146：订单备注权限点 + 超管策略。
+	registerSeed(Seed{
+		Version:      "146-order-note-permission",
+		TableName:    "sys_permission",
+		ConditionSQL: "SELECT COUNT(*) FROM sys_permission WHERE permission_code = 'order:note'",
+		SQL:          orderNotePermSQL,
 	})
 }

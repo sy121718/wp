@@ -259,6 +259,8 @@ func SetupDashboardRoutes(router *gin.Engine,
 	adminPages.POST("/orders/status", builtin.CasbinMiddlewareForPath("/api/order/status"), orderPages.OrderStatusChange)
 	adminPages.POST("/orders/cancel", builtin.CasbinMiddlewareForPath("/api/order/cancel"), orderPages.OrderCancel)
 	adminPages.POST("/orders/refund", builtin.CasbinMiddlewareForPath("/api/order/refund"), orderPages.OrderRefund)
+	// 后台备注（迁移 146 的 order:note）：只改 admin_note 一列，不写状态流转。
+	adminPages.POST("/orders/note", builtin.CasbinMiddlewareForPath("/api/order/note"), orderPages.OrderNoteSave)
 
 	// 退货入库（BIZ-1）：客户申请 → 审核 → **先入库、后退款**。
 	// 页面 GET 走 /admin 组认证（Session+CSRF，无 Casbin）；写动作复用退货 API 权限点（迁移 145）。

@@ -200,9 +200,24 @@
 
         <p class="hint">
             取消与退款各是独立用例：取消会归还<strong>尚未发货</strong>那部分库存，
-            退款只动钱与状态（不归还库存）。后台备注（adminNote）属于订单更新，
-            订单模块当前没有更新订单的接口，所以本页不提供备注编辑 —— 需要改备注请走下单入口。
+            退款只动钱与状态（不归还库存）。
         </p>
+
+        <h3>后台备注</h3>
+        <p class="hint">
+            备注记的是<strong>人对这张单的判断</strong>（客服记客户说了什么、仓库记为什么改地址），
+            它<strong>不改变订单状态</strong>，也不会写进下面的状态流转链 ——
+            那一列回答的是「订单处在哪一步」，混进备注就再也看不出什么时候发的货。
+            客户自己填的备注在详情上方另有一栏，两者互不覆盖。
+        </p>
+        <form method="post" action="/admin/orders/note" class="form-stack">
+            <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
+            <input type="hidden" name="orderId" value="{{ detail.Head.ID }}">
+            <textarea class="form-input" name="adminNote" rows="3" maxlength="500" placeholder="例如：客户电话说改地址，已同步仓库">{{ detail.Head.AdminNote }}</textarea>
+            <div class="action-row">
+                <button type="submit" class="btn btn-sm btn-primary">保存备注</button>
+            </div>
+        </form>
     </section>
     {{end}}
 

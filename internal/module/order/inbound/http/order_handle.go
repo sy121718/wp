@@ -382,6 +382,25 @@ func (h *Handle) ReceiveReturn(c *gin.Context) {
 	response.SuccessWithMessage(c, orderenums.MsgReturnReceived, res)
 }
 
+// UpdateOrderNote 改订单的后台备注（adminNote）。
+func (h *Handle) UpdateOrderNote(c *gin.Context) {
+	req := &orderdto.UpdateOrderNoteReq{}
+	if err := c.ShouldBind(req); err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, orderenums.ErrInvalidParam)
+		return
+	}
+	id, name := operatorFromContext(c)
+	req.OperatorType = "admin"
+	req.OperatorID = id
+	req.OperatorName = name
+	res, err := h.svc.UpdateOrderNote(c.Request.Context(), req)
+	if err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	response.SuccessWithMessage(c, orderenums.MsgNoteUpdated, res)
+}
+
 // applyReturnOperator 把当前后台操作人写进审核请求。
 func applyReturnOperator(c *gin.Context, req *orderdto.ReturnReviewReq) {
 	id, name := operatorFromContext(c)

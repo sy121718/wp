@@ -35,6 +35,11 @@ type OrderService interface {
 	PayOrder(ctx context.Context, req *orderdto.PayOrderReq) (res *orderdto.PayOrderResp, err error)
 	// CancelOrder 取消订单：归还库存 + 记流转。
 	CancelOrder(ctx context.Context, req *orderdto.CancelOrderReq) (err error)
+	// UpdateOrderNote 改订单的后台备注（adminNote）。
+	//
+	// 备注不是状态流转：它不改变订单处在哪一步，因此不写 status_logs ——
+	// 混进流转链会让「这单什么时候发的货」变成要翻记录才能看出来。
+	UpdateOrderNote(ctx context.Context, req *orderdto.UpdateOrderNoteReq) (res *orderdto.OrderResp, err error)
 	// RefundOrder 退款：改状态 + 记流水号。
 	//
 	// **不归还库存** —— 退款是钱的事，退货入库是货的事，两者可以不同步

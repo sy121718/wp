@@ -52,6 +52,8 @@ func SetupOrderRoutes(
 	g.POST("/status", h.ChangeStatus)
 	g.POST("/cancel", h.CancelOrder)
 	g.POST("/refund", h.RefundOrder)
+	// 后台备注：只改一列，不写状态流转（备注不是状态变化）。
+	g.POST("/note", h.UpdateOrderNote)
 
 	// 优惠码（BIZ-1）：管理 + 试算。核销不在这里 —— 它在建单事务内完成。
 	cg := rg.Group("/order/coupon")

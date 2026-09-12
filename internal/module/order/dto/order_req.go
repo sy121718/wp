@@ -131,6 +131,21 @@ type RefundOrderReq struct {
 	OperatorName string `json:"-"`
 }
 
+// UpdateOrderNoteReq 改订单的后台备注（adminNote）。
+//
+// 只改这一列：备注**不是状态流转**（它不改变订单处在哪一步），所以不写 status_logs ——
+// 把备注变更混进流转链，会让「这单什么时候发的货」变得要翻记录才能看出来。
+// 客户填的 remark 不在这里（那是客户的话，后台不该替它改写）。
+type UpdateOrderNoteReq struct {
+	OrderID   uint64 `json:"orderId" form:"orderId"`
+	AdminNote string `json:"adminNote" form:"adminNote"`
+
+	// 操作人由 inbound 覆盖写入，客户端不可伪造。
+	OperatorType string `json:"-" form:"-"`
+	OperatorID   uint64 `json:"-" form:"-"`
+	OperatorName string `json:"-" form:"-"`
+}
+
 // GetOrderByNoReq 按商户单号取订单。
 //
 // 支付通道的异步回调只带商户单号（它不认识我们的自增 id），而 PayOrder 只接受内部 id ——

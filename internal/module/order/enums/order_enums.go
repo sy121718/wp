@@ -10,6 +10,7 @@ const (
 	MsgCancelled     = "订单已取消"
 	MsgRefunded      = "订单已退款"
 	MsgPaid          = "支付成功，订单已确认"
+	MsgNoteUpdated   = "备注已保存"
 )
 
 // 参数与校验。
@@ -23,6 +24,8 @@ const (
 	ErrCustomerEmailInvalid  = "客户邮箱格式不正确"
 	ErrOrderNoInvalid        = "订单号格式不合法"
 	ErrStatusInvalid         = "订单状态取值不合法"
+	// ErrNoteTooLong 备注超长：直接拒绝而不是静默截断 —— 截断会让运营以为写进去了。
+	ErrNoteTooLong = "备注内容过长"
 )
 
 // 订单本体。
