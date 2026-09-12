@@ -23,6 +23,12 @@ type UserService interface {
 	ActivateEmail(ctx context.Context, req *userdto.ActivateEmailReq) (*userdto.ActivateResp, error)
 	// ResendActivation 重发验证邮件（未激活的用户）。
 	ResendActivation(ctx context.Context, req *userdto.ResendActivationReq) error
+	// RequestPasswordReset 申请重置密码。
+	//
+	// **无论邮箱是否存在都返回 nil**：对存在与否给出不同回应会把这个接口变成账号枚举器。
+	RequestPasswordReset(ctx context.Context, req *userdto.PasswordResetReqRequest) error
+	// ResetPassword 用重置码改密。
+	ResetPassword(ctx context.Context, req *userdto.ResetPasswordReq) error
 }
 
 // MailSender 用户模块需要的邮件能力 —— **只有发送这一条**。

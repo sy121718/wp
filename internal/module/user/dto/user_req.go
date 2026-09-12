@@ -30,3 +30,16 @@ type ResendActivationReq struct {
 	Email  string
 	Locale string
 }
+
+// PasswordResetReqRequest 申请重置密码。
+type PasswordResetReqRequest struct {
+	Email  string
+	Locale string
+}
+
+// ResetPasswordReq 用重置码改密。
+type ResetPasswordReq struct {
+	Email       string
+	Key         string
+	NewPassword string
+}
