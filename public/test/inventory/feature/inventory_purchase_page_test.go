@@ -211,8 +211,9 @@ func TestPurchasePageMultiDeviceContract(t *testing.T) {
 		t.Fatalf("页面缺少多端适配的根类 purchase-page")
 	}
 	// 键盘可滚的表格容器（宽表在窄视口下靠它横向滚动，且能 Tab 聚焦后用方向键滚）。
-	if !strings.Contains(body, "class=\"pages-table-wrap\" tabindex=\"0\"") {
-		t.Fatalf("采购行 / 进货历史表应包在可聚焦的滚动容器里（tabindex=0）")
+	// 容器类由 pages-table-wrap 迁到公共类 table-wrap（滚动与键盘聚焦都在 .table-wrap 上）。
+	if !strings.Contains(body, "table-wrap\" tabindex=\"0\"") {
+		t.Fatalf("采购行 / 进货历史表应包在可聚焦的滚动容器里（table-wrap + tabindex=0）")
 	}
 	// 窄屏堆叠态靠 data-label 回显列名（列名不随表头消失而丢失）。
 	if !strings.Contains(body, "data-label=\"登记入库\"") || !strings.Contains(body, "data-label=\"单价\"") {

@@ -154,8 +154,9 @@ func TestMasterDataChangePageMultiDeviceContract(t *testing.T) {
 		t.Fatalf("页面缺少多端适配的根类 masterdata-page")
 	}
 	// 键盘可滚的表格容器（宽表在窄视口下靠它横向滚动，且能 Tab 聚焦后用方向键滚）。
-	if !strings.Contains(body, `class="pages-table-wrap" tabindex="0"`) {
-		t.Fatalf("表格应包在可聚焦的滚动容器里（tabindex=0）")
+	// 容器类由 pages-table-wrap 迁到公共类 table-wrap（滚动与键盘聚焦都在 .table-wrap 上）。
+	if !strings.Contains(body, `table-wrap" tabindex="0"`) {
+		t.Fatalf("表格应包在可聚焦的滚动容器里（table-wrap + tabindex=0）")
 	}
 	// 这一页自己的模板不含任何 <script>：交互全由原生表单（GET 筛选）完成。
 	tplRaw, terr := os.ReadFile(templateRoot() + "/admin/masterdata_changes.html")

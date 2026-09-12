@@ -291,8 +291,15 @@
     background: var(--sky-c-surface, var(--c-bg, #fff));
     border: 1px solid var(--sky-c-border, var(--c-border, #e5e7eb));
     border-radius: var(--ui-r-lg);
-    overflow: hidden;
+    /* 多端硬规则：宽表在窄视口下由容器自身横向滚动，绝不撑破卡片。
+       overflow-y 保持 hidden 以维持圆角裁切 —— 与 overflow-x: auto 是合法组合，
+       两者同时写不会把对方提升成 auto。 */
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
 }
+/* 键盘用户 Tab 进容器后用方向键横向滚动（overflow 容器可聚焦）。 */
+.table-wrap:focus-visible { outline: 2px solid var(--c-primary, #2563eb); outline-offset: 2px; }
 table.data-table { width: 100%; border-collapse: collapse; font-size: 14px; }
 .data-table thead th {
     padding: var(--ui-sp-sm) var(--ui-sp-lg);

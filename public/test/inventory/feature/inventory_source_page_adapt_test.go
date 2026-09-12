@@ -36,8 +36,10 @@ func TestSourcePageMultiDeviceContract(t *testing.T) {
 		t.Fatalf("页面缺少多端适配的根类 source-page")
 	}
 	// 键盘可滚的表格容器（宽表在窄视口下靠它横向滚动，且能 Tab 聚焦后用方向键滚）。
-	if !strings.Contains(body, `class="pages-table-wrap" tabindex="0"`) {
-		t.Fatalf("交叉表应包在可聚焦的滚动容器里（tabindex=0）")
+	// 容器类由 pages-table-wrap 迁到公共类 table-wrap（overflow-x: auto + focus-visible
+	// 都在 ui.css 的 .table-wrap 上）。断言只锚定 table-wrap + tabindex，避免类名顺序变化就误报。
+	if !strings.Contains(body, `table-wrap" tabindex="0"`) {
+		t.Fatalf("交叉表应包在可聚焦的滚动容器里（table-wrap + tabindex=0）")
 	}
 	// 这一页自己的模板不含任何 <script>：交互全由原生表单提交完成
 	//（layout.html 里的 HTMX / 后台脚本是全局壳，不由本页引入）。
