@@ -15,6 +15,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	maildto "go_wp/internal/module/mail/dto"
+	"go_wp/pkg/response"
 )
 
 // mailMarketingPageSize 联系人 / 活动每页条数。
@@ -136,6 +137,45 @@ func (h *mailPageHandle) MailCampaignStart(c *gin.Context) {
 	}
 	msg := "活动已开始发送，目标 " + strconv.FormatInt(res.Total, 10) + " 人；进度可在下方列表刷新查看。"
 	c.Redirect(http.StatusFound, "/admin/mail/marketing?ok="+urlQueryEscape(msg))
+}
+
+// MailCampaignPage 活动报表页（打开 / 点击 / 退订与收件人明细）。
+//
+// 页面上把「打开率是估算」写清楚：多数客户端默认不加载图片（漏报），Apple Mail 还会代理预取
+// （虚高）。点击 / 退信 / 退订这三个数是准的，运营决策该靠它们。
+func (h *mailPageHandle) MailCampaignPage(c *gin.Context) {
+	ctx := c.Request.Context()
+	id := parseUint64(c.Query("id"))
+	page := int(parseUint64(c.Query("page")))
+	if page <= 0 {
+		page = 1
+	}
+	report, err := h.mail.CampaignReport(ctx, id, page, mailMarketingPageSize)
+	if err != nil {
+		c.Redirect(http.StatusFound, "/admin/mail/marketing?err="+urlQueryEscape(err.Error()))
+		return
+	}
+	c.HTML(http.StatusOK, "admin/mail_campaign.html", withCSRF(c, gin.H{
+		"title": "活动报表",
+		"R":     report,
+		"Page":  page,
+		"Err":   c.Query("err"),
+	}))
+}
+
+// MailCampaignReportJSON 报表数据接口（图表 / 外部核对用同一份口径）。
+func (h *mailPageHandle) MailCampaignReportJSON(c *gin.Context) {
+	page := int(parseUint64(c.Query("page")))
+	if page <= 0 {
+		page = 1
+	}
+	report, err := h.mail.CampaignReport(c.Request.Context(), parseUint64(c.Query("id")), page, mailMarketingPageSize)
+	if err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		return
+
+	}
+	response.Success(c, report)
 }
 
 // MailCampaignDelete 删除活动。

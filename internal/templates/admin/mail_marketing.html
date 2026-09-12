@@ -113,6 +113,7 @@
         <td>{{if len(cp.TargetTags) == 0}}全部已订阅{{else}}{{range _, t := cp.TargetTags}}{{t}} {{end}}{{end}}</td>
         <td>成功 {{cp.SentCount}} / 失败 {{cp.FailedCount}} / 目标 {{cp.TotalCount}}</td>
         <td>
+          <a href="/admin/mail/campaign?id={{cp.ID}}">报表</a>
           <form method="post" action="/admin/mail/campaign/start" style="display:inline">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="id" value="{{cp.ID}}">

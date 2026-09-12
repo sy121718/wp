@@ -519,3 +519,77 @@ func (m *MailModel) CountEventsByType(ctx context.Context, campaignID uint64) (c
 	}
 	return counts, nil
 }
+
+// ---- 报表（issue #38 P1 的可视部分）----
+
+// CountDistinctContactsByEvent 统计某活动某类事件的**去重人数**。
+//
+// 与 CountEventsByType 的区别很关键：那个统计的是**次数**，这个统计的是**人数**。
+// 报表上的「打开率 / 点击率」是「有多少人打开过」，同一个人开三次只算一个 ——
+// 用次数当分子会算出超过 100% 的打开率。两个数都有用（人均打开次数 = 次数 / 人数），
+// 但必须分清是哪一个。
+func (m *MailModel) CountDistinctContactsByEvent(ctx context.Context, campaignID uint64, eventType string) (count int64, err error) {
+	err = m.tx(ctx).Model(&MailCampaignEventEntity{}).
+		Where("campaign_id = ? AND event_type = ?", campaignID, eventType).
+		Distinct("contact_id").Count(&count).Error
+	return count, err
+}
+
+// ClickStat 链接点击统计。
+type ClickStat struct {
+	URL   string
+	Total int64
+	// Contacts 去重人数（同一人点多次算一次）。
+	Contacts int64
+}
+
+// ClickRanking 链接点击排行（按去重人数降序）。
+//
+// 按人数而不是次数排序：一个人把同一个链接点十次不该让这个链接排到第一，
+// 排行应该反映「有多少人感兴趣」。
+func (m *MailModel) ClickRanking(ctx context.Context, campaignID uint64, limit int) (list []ClickStat, err error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	err = m.tx(ctx).Model(&MailCampaignEventEntity{}).
+		Select("url, COUNT(*) AS total, COUNT(DISTINCT contact_id) AS contacts").
+		Where("campaign_id = ? AND event_type = ? AND url IS NOT NULL AND url <> ''", campaignID, EventTypeClick).
+		Group("url").Order("contacts DESC, total DESC").Limit(limit).Scan(&list).Error
+	return list, err
+}
+
+// RecipientRow 收件人投递明细（收件人 × 该活动的投递与互动状态）。
+type RecipientRow struct {
+	ContactID uint64
+	Email     string
+	Name      *string
+	Status    string
+	SentAt    *time.Time
+	ErrorKind *string
+	Opened    int64
+	Clicked   int64
+}
+
+// ListRecipients 列某活动的收件人投递明细（按日志聚合）。
+//
+// 用左连接把「投递投得怎么样」和「打开 / 点击了多少次」并到一行，
+// 一次查询拿到运营关心的全部信息，避免每行再查两次。
+func (m *MailModel) ListRecipients(ctx context.Context, campaignID uint64, offset, limit int) (list []RecipientRow, total int64, err error) {
+	base := m.tx(ctx).Table("mail_logs AS l").Where("l.campaign_id = ?", campaignID)
+	if err = base.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	if limit <= 0 {
+		limit = 20
+	}
+	err = m.tx(ctx).Table("mail_logs AS l").
+		Select("l.contact_id AS contact_id, l.to_email AS email, c.name AS name, l.status AS status, "+
+			"l.sent_at AS sent_at, l.error_kind AS error_kind, "+
+			"COALESCE(o.total, 0) AS opened, COALESCE(k.total, 0) AS clicked").
+		Joins("LEFT JOIN mail_contacts c ON c.id = l.contact_id").
+		Joins("LEFT JOIN (SELECT contact_id, COUNT(*) AS total FROM mail_campaign_events WHERE campaign_id = ? AND event_type = 'open' GROUP BY contact_id) o ON o.contact_id = l.contact_id", campaignID).
+		Joins("LEFT JOIN (SELECT contact_id, COUNT(*) AS total FROM mail_campaign_events WHERE campaign_id = ? AND event_type = 'click' GROUP BY contact_id) k ON k.contact_id = l.contact_id", campaignID).
+		Where("l.campaign_id = ?", campaignID).
+		Order("l.id DESC").Offset(offset).Limit(limit).Scan(&list).Error
+	return list, total, err
+}

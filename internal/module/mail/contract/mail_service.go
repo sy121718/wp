@@ -38,6 +38,9 @@ type MailService interface {
 	DeleteCampaign(ctx context.Context, id uint64) error
 	StartCampaign(ctx context.Context, req *maildto.StartCampaignReq) (*maildto.StartCampaignResp, error)
 
+	// ---- 报表（#38 P1）----
+	CampaignReport(ctx context.Context, campaignID uint64, page, pageSize int) (*maildto.CampaignReport, error)
+
 	// ---- 事务发送 ----
 	SendTemplate(ctx context.Context, req *maildto.SendTemplateReq) (*maildto.SendResult, error)
 
