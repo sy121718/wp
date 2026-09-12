@@ -186,7 +186,7 @@ P6 的结论推翻了本文件原先的设想：`--c-*`（后台 `theme.css` 的
 「原子层共享」也不做 —— 两个投递目标必须分离。真正修掉的是既有缺陷：`ui.css` 里 45 处
 `var(--c-*)` 没有 fallback，而产物只定义 `--sky-c-*`，整条声明失效。
 
-**存量迁移进度（P7）**：已迁 **23 / 37** ——
+**存量迁移进度（P7）**：已迁 **25 / 37** ——
 
 | 批次 | 组件 |
 |---|---|
@@ -198,11 +198,14 @@ P6 的结论推翻了本文件原先的设想：`--c-*`（后台 `theme.css` 的
 | 问答与形状批 | `faq` `shapedivider` |
 | 卡片与图集批 | `card` `gallery` `productcard` |
 | 表格与计数批 | `table` `counter` `marquee` |
+| 轮播与折叠批 | `slider` `accordion` |
 
 每批做法固定：先 dump 迁移前后产物要求**逐字节一致**（有 golden 的组件另由
 `TestJetViewByteEquivalent` 整页字节网兜底），再补该组件的 `xxx_css_test.go` 契约测试。
 
-剩余 13 个组件待迁（另有 `globalref` 的 `CompileCSS` 是空实现，不参与迁移）。
+剩余 11 个组件待迁（另有 `globalref` 的 `CompileCSS` 是空实现，不参与迁移）：
+`button` `cardstack` `container` `infobox` `loader` `nav` `product` `productlist`
+`productselector` `socialbuttons` `tabs`。
 解析器的能力已经够用：容器类四条桶（`@hovernone` / `@container` / `@style` / `@theme`）、
 `@property`、关键帧名与帧体的变量，都在迁移过程中被真实组件逼了出来 ——
 `gallery` 暴露了规则级 `@if` 未命中时分支内变量不算被消费（分支一多就误报），
