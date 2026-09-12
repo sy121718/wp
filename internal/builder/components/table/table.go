@@ -5,6 +5,7 @@
 package table
 
 import (
+	_ "embed" // table.css 经 //go:embed 打进二进制
 	"fmt"
 
 	"go_wp/internal/builder/core"
@@ -82,54 +83,23 @@ func validateExtra(p *Props, nodeID string) (err error) {
 	return nil
 }
 
+// tableCSS 组件样式源。与组件同目录：改样式不必再进 Go 字符串数组。
+//
+//go:embed table.css
+var tableCSS string
+
 // compileCSS 表格样式：基础布局 + 斑马纹 + 边框。
+//
+// 三个开关是「整条规则存在与否」，所以走样式源的规则级 @if —— Go 侧只翻译布尔值。
 func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	sel := "." + core.NodeClass(id)
-
-	// 表格基础布局。
-	b.Add(core.BreakpointDesktop, sel, []string{
-		"width: 100%",
-		"border-collapse: collapse",
-	})
-	// 标题样式。
-	b.Add(core.BreakpointDesktop, sel+" caption", []string{
-		"caption-side: top",
-		"text-align: left",
-		"padding: 8px 0",
-		"font-weight: 600",
-	})
-	// 单元格基础内边距与对齐。
-	b.Add(core.BreakpointDesktop, sel+" th, "+sel+" td", []string{
-		"padding: 10px 12px",
-		"text-align: left",
-	})
-	// 表头底纹与分隔线。
-	b.Add(core.BreakpointDesktop, sel+" thead th", []string{
-		"font-weight: 600",
-		"background: var(--sky-c-surface, #f5f6f8)",
-		// 表头分隔线跟主题边框色（此前写死，主题改边框它不变）。
-		"border-bottom: 2px solid var(--sky-c-border, rgba(0,0,0,0.12))",
-	})
-	// 斑马纹：tbody 偶数行浅色背景。
-	if p.Striped {
-		b.Add(core.BreakpointDesktop, sel+" tbody tr:nth-child(even)", []string{
-			"background: rgba(0,0,0,0.04)",
-		})
+	vars := map[string]string{
+		"striped":  core.BoolVar(p.Striped),
+		"rowHover": core.BoolVar(p.RowHover),
+		"bordered": core.BoolVar(p.Bordered),
 	}
-	// 行悬停高亮（H5 触屏治理：AddHover 包 @media hover:hover，触屏不粘滞）。
-	if p.RowHover {
-		b.Add(core.BreakpointDesktop, sel+" tbody tr", []string{
-			"transition: background 0.15s ease",
-		})
-		b.AddHover(sel+" tbody tr:hover", []string{
-			"background: rgba(0,0,0,0.05)",
-		})
-	}
-	// 边框：th/td 加 1px 边框。
-	if p.Bordered {
-		b.Add(core.BreakpointDesktop, sel+" th, "+sel+" td", []string{
-			"border: 1px solid var(--sky-c-border, rgba(0,0,0,0.12))",
-		})
+	if err := core.ApplyComponentCSSTmpl(b, sel, tableCSS, vars); err != nil {
+		panic(fmt.Sprintf("table 组件样式解析失败: %v", err))
 	}
 }
 

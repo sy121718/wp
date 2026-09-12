@@ -1,0 +1,61 @@
+/* core.counter 计数器样式。
+
+   对齐 / 字号 / 颜色由变量给值（缺省值在 Go 侧补，样式源不写 fallback ——
+   产物字节要求与迁移前逐字节一致，多一层 var() 就变了）。 */
+
+& {
+  display: flex;
+  align-items: baseline;
+  justify-content: {{align}};
+  gap: 4px;
+  text-align: {{align}};
+  font-size: {{fontSize}};
+  color: {{color}};
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+& .sky-counter-value {
+  font-variant-numeric: tabular-nums;
+}
+
+/* 整数模式零 JS 计数：@property 注册 <integer> 自定义属性 + counter() 显示。
+   动画由 view() 时间线驱动（滚动进入视口计数），老浏览器忽略 timeline 后动画立即
+   完成并显示终值（优雅降级）。小数位模式 CSS counter 表达不了，仍走内嵌脚本。 */
+@if cssCounter
+& {
+  --sky-counter-from: {{from}};
+  --sky-counter-to: {{to}};
+  --sky-counter-duration: {{duration}};
+  counter-reset: wpcount var(--sky-count);
+  animation: sky-counter-run var(--sky-counter-duration) linear both;
+  animation-timeline: view();
+  animation-range: entry 0% entry 80%;
+}
+
+& .sky-counter-value::after {
+  content: counter(wpcount);
+}
+
+@property --sky-count {
+  syntax: "<integer>"
+  initial-value: 0
+  inherits: false
+}
+
+/* 共享资源：同名关键帧只输出一份，同页多个计数器不重复。 */
+@keyframes sky-counter-run {
+  from { --sky-count: var(--sky-counter-from) }
+  to { --sky-count: var(--sky-counter-to) }
+}
+@endif
+
+/* 标签：第一条把作用域拼进元素名（div.sky-c-x-label），第二条是既有的无作用域兜底，
+   两条同属一条规则 —— 拆成两条会改变产物字节。 */
+div&-label.sky-counter-label, .sky-counter-label {
+  font-size: 0.85rem;
+  font-weight: 400;
+  opacity: .7;
+  margin-top: 6px;
+  text-align: {{align}};
+}

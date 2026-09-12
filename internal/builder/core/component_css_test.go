@@ -253,6 +253,49 @@ func TestComponentCSSSelectorShapes(t *testing.T) {
 	}
 }
 
+// TestComponentCSSProperty @property 注册块的产物必须与 AddPropertyDecls 一致。
+//
+// 注册块不能进任何 @layer（放层里会让浏览器对「层内注册」产生实现差异），
+// 所以它走的是顶层桶而不是普通规则 —— 这条同时钉住「没有混进基础样式」。
+func TestComponentCSSProperty(t *testing.T) {
+	const src = "@property --sky-count {\n  syntax: \"<integer>\"\n  initial-value: 0\n  inherits: false\n}\n"
+	var b CSSBuckets
+	if err := ApplyComponentCSS(&b, ".x", src); err != nil {
+		t.Fatalf("解析失败: %v", err)
+	}
+	var want CSSBuckets
+	want.AddPropertyDecls("--sky-count", []string{
+		"syntax: \"<integer>\"",
+		"initial-value: 0",
+		"inherits: false",
+	})
+	if b.TopLevelCSS() != want.TopLevelCSS() {
+		t.Errorf("顶层注册块不一致\n样式源:\n%s\nGo 调用:\n%s", b.TopLevelCSS(), want.TopLevelCSS())
+	}
+	if b.String() != want.String() {
+		t.Errorf("@property 不该混进基础样式:\n%s", b.String())
+	}
+}
+
+// TestComponentCSSKeyframesNameVar 关键帧名里的变量必须展开。
+//
+// 每个实例一份帧名的组件（marquee）靠它；名字里留着 {{id}} 会产出一个谁都不引用的
+// 关键帧，动画照旧不动。
+func TestComponentCSSKeyframesNameVar(t *testing.T) {
+	const src = "@keyframes sky-marquee-{{id}} {\n  from { transform: translateX(0) }\n  to { transform: translateX(-100%) }\n}\n"
+	var b CSSBuckets
+	if err := ApplyComponentCSSTmpl(&b, ".x", src, map[string]string{"id": "abc"}); err != nil {
+		t.Fatalf("解析失败: %v", err)
+	}
+	out := b.String()
+	if !strings.Contains(out, "@keyframes sky-marquee-abc {") {
+		t.Errorf("关键帧名里的变量未展开:\n%s", out)
+	}
+	if strings.Contains(out, "{{") {
+		t.Errorf("产物里残留占位:\n%s", out)
+	}
+}
+
 // TestComponentCSSRuleLevelIfConsumesVars 规则级 @if 未命中时，分支内的变量仍算「已消费」。
 //
 // Go 侧总是提供全部业务变量（它不该跟着样式源的分支结构走），因此未命中分支若不解析，

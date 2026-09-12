@@ -136,6 +136,25 @@ func (b *CSSBuckets) AddKeyframesDecls(name string, frames []string) {
 	b.AddKeyframes(name, sb.String())
 }
 
+// AddPropertyDecls 以声明列表形式注册 @property 顶层规则（块内每行一条声明）。
+//
+// 与 AddKeyframesDecls 同思路：装配（缩进 / 花括号）由这里负责，
+// 从 Go 常量迁过来的注册块与从样式源迁过来的产物才会逐字节一致。
+// 走 AddKeyframes 入桶 —— 它认得 @property 前缀，会把它转入未分层的顶层桶
+// （注册是全局的，放任何 @layer 里都会让浏览器对「层内注册」产生实现差异）。
+func (b *CSSBuckets) AddPropertyDecls(name string, decls []string) {
+	if len(decls) == 0 {
+		return
+	}
+	var sb strings.Builder
+	sb.WriteString("@property " + name + " {\n")
+	for _, d := range decls {
+		sb.WriteString("  " + d + "\n")
+	}
+	sb.WriteString("}")
+	b.AddKeyframes(name, sb.String())
+}
+
 // Add 向指定断点追加一条规则；空声明被忽略，无有效声明的规则不输出。
 func (b *CSSBuckets) Add(breakpoint, selector string, decls []string) {
 	// 防护：@keyframes 只能进桌面桶（媒体查询内的 @keyframes 虽合法但语义混乱，

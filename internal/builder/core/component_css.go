@@ -166,12 +166,46 @@ func (p *cssSourceParser) run() error {
 		// "@keyframes name { … }" 整段文本，前者负责这个格式；走同一条装配路径，
 		// 从 Go 迁过来的关键帧与从 @keyframes 迁过来的产物才会逐字节一致。
 		if strings.HasPrefix(line, "@keyframes ") {
-			name := strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(line, "@keyframes "), "{"))
-			body, next, err := collectBlock(lines, i, line, strings.Index(line, "{"))
+			braceAt := blockBraceAt(line)
+			// 关键帧名支持变量（如每个实例一份的 `sky-marquee-{{id}}`）：名字里若原样留着
+			// {{id}}，产物中会出现一个谁都不引用的关键帧 —— 动画照旧不动，
+			// 页面上只表现为「这个动效没生效」。
+			name, _, err := p.expandVars(strings.TrimSpace(strings.TrimPrefix(line[:braceAt], "@keyframes ")))
 			if err != nil {
 				return cssApplyError(i+1, "%v", err)
 			}
-			p.buckets.AddKeyframesDecls(name, frameLines(body))
+			if name == "" {
+				return cssApplyError(i+1, "@keyframes 缺少名称")
+			}
+			body, next, err := collectBlock(lines, i, line, braceAt)
+			if err != nil {
+				return cssApplyError(i+1, "%v", err)
+			}
+			frames, err := p.expandBlockLines(body)
+			if err != nil {
+				return cssApplyError(i+1, "%v", err)
+			}
+			p.buckets.AddKeyframesDecls(name, frames)
+			i = next
+			continue
+		}
+		// @property：顶层注册规则（自定义属性的类型 / 初值）。块内每行一条声明，
+		// 与 @keyframes 同约定；装配交给 AddPropertyDecls，产物与 Go 侧常量一致。
+		if strings.HasPrefix(line, "@property ") {
+			braceAt := blockBraceAt(line)
+			name := strings.TrimSpace(strings.TrimPrefix(line[:braceAt], "@property "))
+			if name == "" {
+				return cssApplyError(i+1, "@property 缺少名称")
+			}
+			body, next, err := collectBlock(lines, i, line, braceAt)
+			if err != nil {
+				return cssApplyError(i+1, "%v", err)
+			}
+			lines, err := p.expandBlockLines(body)
+			if err != nil {
+				return cssApplyError(i+1, "%v", err)
+			}
+			p.buckets.AddPropertyDecls(name, lines)
 			i = next
 			continue
 		}
@@ -293,6 +327,17 @@ func (p *cssSourceParser) run() error {
 		i = next
 	}
 	return nil
+}
+
+// blockBraceAt 取块指令（@keyframes / @property）头部那个 { 的下标。
+//
+// 行尾就是 { 时取行尾：关键帧名里可能有 {{变量}} 占位（marquee 的每实例帧名），
+// 一律取「第一个 {」会落在那对占位花括号上，把名字从中间截断。
+func blockBraceAt(line string) int {
+	if strings.HasSuffix(line, "{") {
+		return len(line) - 1
+	}
+	return strings.Index(line, "{")
 }
 
 // mediaBreakpointOf 解析 @media 语句，返回对应的断点桶名。
@@ -492,6 +537,26 @@ func BoolVar(v bool) string {
 		return "1"
 	}
 	return ""
+}
+
+// expandBlockLines 展开块内逐行文本（关键帧帧体 / @property 声明）里的变量。
+//
+// 这类块不走 parseDecls —— 它们不是「选择器 + 声明块」，所以变量展开要单独做一遍。
+// 漏掉的后果很隐蔽：帧体里留着 {{from}} 的 @keyframes 仍是一份合法 CSS，
+// 只是那条动画永远不动。
+func (p *cssSourceParser) expandBlockLines(body string) ([]string, error) {
+	lines := frameLines(body)
+	for i, ln := range lines {
+		expanded, empty, err := p.expandVars(ln)
+		if err != nil {
+			return nil, err
+		}
+		if empty {
+			return nil, fmt.Errorf("块内变量取到空值：%q", ln)
+		}
+		lines[i] = expanded
+	}
+	return lines, nil
 }
 
 // frameLines 把关键帧块内容按行拆成帧列表（每行一帧，与内建关键帧文件同约定）。

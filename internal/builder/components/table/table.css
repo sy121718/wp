@@ -1,0 +1,57 @@
+/* core.table 表格样式：基础布局 + 斑马纹 + 边框。
+
+   三个开关（斑马纹 / 行悬停 / 单元格边框）用规则级 @if 控制整条规则的存废；
+   Go 侧只把它们翻译成 BoolVar。 */
+
+& {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+/* 标题样式。 */
+& caption {
+  caption-side: top;
+  text-align: left;
+  padding: 8px 0;
+  font-weight: 600;
+}
+
+/* 单元格基础内边距与对齐。 */
+& th, & td {
+  padding: 10px 12px;
+  text-align: left;
+}
+
+/* 表头底纹与分隔线。 */
+& thead th {
+  font-weight: 600;
+  background: var(--sky-c-surface, #f5f6f8);
+  /* 表头分隔线跟主题边框色（此前写死，主题改边框它不变）。 */
+  border-bottom: 2px solid var(--sky-c-border, rgba(0,0,0,0.12));
+}
+
+@if striped
+/* 斑马纹：tbody 偶数行浅色背景。 */
+& tbody tr:nth-child(even) {
+  background: rgba(0,0,0,0.04);
+}
+@endif
+
+@if rowHover
+/* 行悬停高亮。过渡写在基础规则里，悬停本身走 @hover —— 触屏没有悬停，
+   包进 (hover: hover) 后触屏不会出现「点一下卡住高亮」的粘滞态。 */
+& tbody tr {
+  transition: background 0.15s ease;
+}
+
+@hover & tbody tr:hover {
+  background: rgba(0,0,0,0.05);
+}
+@endif
+
+@if bordered
+/* 边框：th/td 加 1px 边框（与上面那条同选择器，是两条独立规则）。 */
+& th, & td {
+  border: 1px solid var(--sky-c-border, rgba(0,0,0,0.12));
+}
+@endif

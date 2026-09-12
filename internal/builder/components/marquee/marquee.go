@@ -4,6 +4,7 @@
 package marquee
 
 import (
+	_ "embed" // marquee.css 经 //go:embed 打进二进制
 	"encoding/json"
 	"fmt"
 	"strconv"
@@ -87,7 +88,15 @@ func (c *Component) Validate(node *core.Node, ids map[string]bool) (err error) {
 	return nil
 }
 
+// marqueeCSS 组件样式源。与组件同目录：改样式不必再进 Go 字符串数组，
+// 而作用域替换、每实例帧名装配与确定性输出仍由构建期负责。
+//
+//go:embed marquee.css
+var marqueeCSS string
+
 // compileCSS 跑马灯样式（位移动画）。
+//
+// Go 侧只把方向翻译成帧的起止值、把属性翻译成变量；哪条规则存在由样式源的 @if 决定。
 func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	sel := "." + core.NodeClass(id)
 
@@ -99,42 +108,27 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	if dir == "" {
 		dir = DirLeft
 	}
-	from := "0"
-	to := "-50%"
+	from, to := "0", "-50%"
 	if dir == DirRight {
-		from = "-50%"
-		to = "0"
+		from, to = "-50%", "0"
 	}
-
+	// 间距过白名单校验：非法值退回默认（样式源不承担安全性判断）。
 	gap := p.Gap
 	if gap == "" || !core.IsSafeCSSValue(gap) {
 		gap = "24px"
 	}
 
-	b.Add(core.BreakpointDesktop, sel, []string{
-		"display: flex", "overflow: hidden",
-		"white-space: nowrap",
-	})
-	b.Add(core.BreakpointDesktop, sel+" .sky-marquee-track", []string{
-		"display: flex", "align-items: center", "flex: none",
-		core.CSSDecl("gap", gap), core.CSSDecl("padding-right", gap),
-		"animation: sky-marquee-" + id + " " + strconv.FormatFloat(speed, 'f', -1, 64) + "s linear infinite",
-	})
-	// keyframes：整个轨道位移自身宽度一半（双份内容无缝衔接）。
-	b.AddKeyframesDecls("sky-marquee-"+id, []string{
-		"from { transform: translateX(" + from + ") }",
-		"to { transform: translateX(" + to + ") }",
-	})
-	b.Add(core.BreakpointDesktop, sel+" .sky-marquee-item", []string{
-		"flex: none", "display: inline-flex", "align-items: center",
-	})
-	if p.PauseOnHover {
-		b.Add(core.BreakpointDesktop, sel+":hover .sky-marquee-track", []string{"animation-play-state: paused"})
+	vars := map[string]string{
+		"id":           id,
+		"speed":        strconv.FormatFloat(speed, 'f', -1, 64),
+		"from":         from,
+		"to":           to,
+		"gap":          gap,
+		"pauseOnHover": core.BoolVar(p.PauseOnHover),
+		"background":   p.Background,
+		"padding":      p.Padding,
 	}
-	if p.Background != "" {
-		b.Add(core.BreakpointDesktop, sel, []string{core.CSSDecl("background", p.Background)})
-	}
-	if p.Padding != "" {
-		b.Add(core.BreakpointDesktop, sel+" .sky-marquee-track", []string{core.CSSDecl("padding-top", p.Padding), core.CSSDecl("padding-bottom", p.Padding)})
+	if err := core.ApplyComponentCSSTmpl(b, sel, marqueeCSS, vars); err != nil {
+		panic(fmt.Sprintf("marquee 组件样式解析失败: %v", err))
 	}
 }

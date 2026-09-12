@@ -1,0 +1,48 @@
+/* core.marquee 跑马灯样式（位移动画，零 JS）。
+
+   双份内容 + 整条轨道位移自身宽度一半，衔接处看不出接缝；
+   每个实例一份帧名（`sky-marquee-{{id}}`），所以同页多个跑马灯各有各的速度与方向。 */
+
+& {
+  display: flex;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+& .sky-marquee-track {
+  display: flex;
+  align-items: center;
+  flex: none;
+  gap: {{gap}};
+  padding-right: {{gap}};
+  animation: sky-marquee-{{id}} {{speed}}s linear infinite;
+}
+
+@keyframes sky-marquee-{{id}} {
+  from { transform: translateX({{from}}) }
+  to { transform: translateX({{to}}) }
+}
+
+& .sky-marquee-item {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+}
+
+@if pauseOnHover
+/* 悬停暂停：触屏没有悬停，这条规则在手机上自然不生效（不构成功能缺口 ——
+   触屏用户可以直接滑动页面，跑马灯不是需要停下的东西）。 */
+&:hover .sky-marquee-track {
+  animation-play-state: paused;
+}
+@endif
+
+/* 背景与内边距缺失即整条规则不产出。 */
+& {
+  background: {{background}};
+}
+
+& .sky-marquee-track {
+  padding-top: {{padding}};
+  padding-bottom: {{padding}};
+}

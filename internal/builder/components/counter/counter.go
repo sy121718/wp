@@ -108,7 +108,16 @@ func formatInt(v float64) string {
 	return strconv.FormatFloat(v, 'f', 0, 64)
 }
 
+// counterCSS 组件样式源。与组件同目录：改样式不必再进 Go 字符串数组，
+// 而作用域替换、桶划分、@property / @keyframes 装配与确定性输出仍由构建期负责。
+//
+//go:embed counter.css
+var counterCSS string
+
 // compileCSS 计数器样式。
+//
+// Go 侧只补缺省值（对齐 / 字号 / 颜色）并决定走不走零 JS 计数 —— 那是业务判定
+// （小数位模式 CSS counter 表达不了），不是样式本身。
 func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	sel := "." + core.NodeClass(id)
 
@@ -116,53 +125,29 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	if align == "" {
 		align = "center"
 	}
-	textAlign := align
+	fontSize := p.FontSize
+	if fontSize == "" {
+		fontSize = "2rem"
+	}
+	color := p.Color
+	if color == "" {
+		color = "inherit"
+	}
+	dur := p.Duration
+	if dur <= 0 {
+		dur = 2
+	}
 
-	desktop := []string{
-		"display: flex", "align-items: baseline", core.CSSDecl("justify-content", align),
-		"gap: 4px", core.CSSDecl("text-align", textAlign),
+	vars := map[string]string{
+		"align":      align,
+		"fontSize":   fontSize,
+		"color":      color,
+		"cssCounter": core.BoolVar(p.Decimals == 0),
+		"from":       formatInt(p.Start),
+		"to":         formatInt(p.End),
+		"duration":   strconv.FormatFloat(dur, 'f', -1, 64) + "s",
 	}
-	if p.FontSize != "" {
-		desktop = append(desktop, core.CSSDecl("font-size", p.FontSize))
-	} else {
-		desktop = append(desktop, "font-size: 2rem")
+	if err := core.ApplyComponentCSSTmpl(b, sel, counterCSS, vars); err != nil {
+		panic(fmt.Sprintf("counter 组件样式解析失败: %v", err))
 	}
-	if p.Color != "" {
-		desktop = append(desktop, core.CSSDecl("color", p.Color))
-	} else {
-		desktop = append(desktop, "color: inherit")
-	}
-	desktop = append(desktop, "font-weight: 700", "line-height: 1.2")
-	b.Add(core.BreakpointDesktop, sel, desktop)
-
-	b.Add(core.BreakpointDesktop, sel+" .sky-counter-value", []string{"font-variant-numeric: tabular-nums"})
-	// 整数模式零 JS 计数（@property 注册 <integer> 自定义属性 + counter() 显示）：
-	// 动画由 view() 时间线驱动（滚动进入视口计数），老浏览器忽略 timeline 后
-	// 动画立即完成显示终值（优雅降级）。小数位模式仍走内嵌脚本（CSS counter 只支持整数）。
-	if p.Decimals == 0 {
-		dur := p.Duration
-		if dur <= 0 {
-			dur = 2
-		}
-		b.Add(core.BreakpointDesktop, sel, []string{
-			core.CSSDecl("--sky-counter-from", formatInt(p.Start)),
-			core.CSSDecl("--sky-counter-to", formatInt(p.End)),
-			core.CSSDecl("--sky-counter-duration", strconv.FormatFloat(dur, 'f', -1, 64)+"s"),
-			"counter-reset: wpcount var(--sky-count)",
-			"animation: sky-counter-run var(--sky-counter-duration) linear both",
-			"animation-timeline: view()",
-			"animation-range: entry 0% entry 80%",
-		})
-		b.Add(core.BreakpointDesktop, sel+" .sky-counter-value::after", []string{"content: counter(wpcount)"})
-		// 共享资源（AddKeyframes 按名去重：多计数器只输出一份）。
-		b.AddKeyframes("sky-counter-property", "@property --sky-count {\n  syntax: \"<integer>\"\n  initial-value: 0\n  inherits: false\n}")
-		b.AddKeyframesDecls("sky-counter-run", []string{
-			"from { --sky-count: var(--sky-counter-from) }",
-			"to { --sky-count: var(--sky-counter-to) }",
-		})
-	}
-	b.Add(core.BreakpointDesktop, "div"+sel+"-label.sky-counter-label, .sky-counter-label", []string{
-		"font-size: 0.85rem", "font-weight: 400", "opacity: .7",
-		"margin-top: 6px", core.CSSDecl("text-align", textAlign),
-	})
 }
