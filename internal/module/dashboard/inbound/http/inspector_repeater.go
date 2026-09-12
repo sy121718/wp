@@ -60,7 +60,7 @@ func repeaterSpecFor(nodeType string) *repeaterSpec {
 	case "core.tabs":
 		return &repeaterSpec{
 			Type: "core.tabs", Noun: "页签", Field: "label", Label: "标签",
-			AlignKey: "items", AddText: "+ 添加页签（自动创建面板）",
+			AlignKey: "tabs", AddText: "+ 添加页签（自动创建面板）",
 		}
 	}
 	return nil
@@ -157,15 +157,18 @@ func appendRepeaterPanel(sections []inspectorSection, node *docNode, props map[s
 	if spec == nil {
 		return sections
 	}
-	for i := range sections {
-		if sections[i].Key != "content" {
-			continue
-		}
-		sections[i].Fields = append(sections[i].Fields, inspectorField{
-			Key:  "__repeater",
-			HTML: renderRepeaterHTML(spec, repeaterRowsOf(props, spec), len(node.Children)),
-		})
-		break
+	field := inspectorField{
+		Key:  "__repeater",
+		HTML: renderRepeaterHTML(spec, repeaterRowsOf(props, spec), len(node.Children)),
 	}
-	return sections
+	for i := range sections {
+		if sections[i].Key == "content" {
+			sections[i].Fields = append(sections[i].Fields, field)
+			return sections
+		}
+	}
+	// 组件没有内容分组时补一个：tabs 的字段全在样式里（竖向 / 对齐 / 配色），
+	// 但「页签列表」本身是内容 —— 挂在样式分组里位置不对。
+	// content 是分组顺序表 inspectorSectionOrder 的第一项，前置插入即可。
+	return append([]inspectorSection{{Key: "content", Title: "内容", Open: true, Fields: []inspectorField{field}}}, sections...)
 }
