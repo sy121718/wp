@@ -13,6 +13,8 @@ import (
 
 	productcard "go_wp/internal/builder/components/productcard"
 	"go_wp/internal/builder/core"
+
+	"go_wp/internal/builder/source"
 )
 
 // CompileCSS 商品列表样式编译（jetview 经本入口调用，实现仍在 productlist.go）。
@@ -298,38 +300,14 @@ func itemField(item map[string]any, field string) string {
 //
 // 缺失表示「没有启用变体」——与 0 元严格区分，排序时排到最后。
 func itemPrice(item map[string]any) (float64, bool) {
-	v, ok := item["minPrice"]
-	if !ok {
-		return 0, false
-	}
-	switch n := v.(type) {
-	case float64:
-		return n, true
-	case int:
-		return float64(n), true
-	case int64:
-		return float64(n), true
-	}
-	return 0, false
+	return source.ItemFloat(item, source.ItemFieldMinPrice)
 }
 
 // itemRating 取集合项的**数值**评分（issue #29 的 ratingValue）。
 //
 // 缺失表示「尚无评分」——与 0 分严格区分，排序时排到最后。
 func itemRating(item map[string]any) (float64, bool) {
-	v, ok := item["ratingValue"]
-	if !ok {
-		return 0, false
-	}
-	switch n := v.(type) {
-	case float64:
-		return n, true
-	case int:
-		return float64(n), true
-	case int64:
-		return float64(n), true
-	}
-	return 0, false
+	return source.ItemFloat(item, source.ItemFieldRatingValue)
 }
 
 // sortItems 按 props 声明的口径重排（默认保持集合源的确定性序：排序号 → 创建时间 → id）。
@@ -375,11 +353,7 @@ func sortItems(items []map[string]any, order string) {
 		return
 	}
 	createdAt := func(item map[string]any) time.Time {
-		s, _ := item["createdAt"].(string)
-		t, err := time.Parse(time.RFC3339, strings.TrimSpace(s))
-		if err != nil {
-			return time.Time{}
-		}
+		t, _ := source.ItemTime(item, source.ItemFieldCreatedAt)
 		return t
 	}
 	sort.SliceStable(items, func(i, j int) bool {
