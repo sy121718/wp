@@ -75,7 +75,9 @@ static/js/ui/*.js + static/css/ui.css
 所以走 `WithUISources` / `WithUIStyle` / `WithEnhanceSource`（与 `WithComponentSet` 同一条路）。
 
 **为什么控件脚本与样式必须同进同出**：产物内联了脚本却没样式，访客看到的是**没有外观的空壳**。
-`uiStyleFor` 与 `uiScriptFor` 用同一套特征判定，纯内容页两个都不注入。
+`uiAssetsFor` 扫描 HTML 标签的真实属性，一次决定 CSS 与 JS；正文、注释、脚本和属性值里的示例不会触发注入，纯内容页两个都不注入。
+
+装配层从 `builder.UIAssetFiles()` 取得资源清单。`WithUISources` 传非 nil map 表示启用增强：用到的控件、`_util.js`、`index.js` 或 `ui.css` 缺失时，`RenderDocument` 返回包含文件名的错误。不使用的控件缺失不影响当前页面。nil map 明确表示无脚本输出，保留原生控件降级。
 
 ## 4. 变量取法
 
@@ -134,7 +136,7 @@ var(--sky-c-primary, var(--c-primary, 兜底))
 
 | 坑 | 现象 | 现在怎么防 |
 |---|---|---|
-| 拼装时多套 `<script>` | 产物里明明有基座代码，运行时 `WBUI` 是 undefined——外层模板已套 `<script>`，再套一次成了嵌套，整段语法错误 | `uiScriptFor` 只返回正文；测试断言禁止出现 script 标签 |
+| 拼装时多套 `<script>` | 产物里明明有基座代码，运行时 `WBUI` 是 undefined——外层模板已套 `<script>`，再套一次成了嵌套，整段语法错误 | `uiAssetsFor` 的脚本结果只返回正文；测试断言禁止出现 script 标签 |
 | `aria-selected` 被当违规 | 走查页断言"tabs 不该输出 aria-selected"误伤基座（它合法使用该属性） | 判据改用 ARIA tab 专属词 |
 | 增强源码曾是包级变量 | 测试不注入也有值，改成注入后 golden 立刻漂移 | `document.html` golden 与改动前**逐字节一致** |
 | 跳过判定写在 `markOnce` **之后** | 被跳过的元素也留下了「已增强」标记，将来解除跳过时它们再也不会被增强，且标记只在 DOM 上、代码里看不出来 | 跳过判定必须在 `markOnce` 之前 —— 迁检查器下拉时正是这一条挡住了 `data-wb-native` 的元素（现在它们无标记） |
@@ -379,13 +381,13 @@ getComputedStyle(document.querySelector('.form-input')) // padding / borderRadiu
 
 ```go
 var uiBlocks = []uiBlock{
-    {file: "select.js", feats: []string{"data-ui-select"}},
-    {file: "modal.js",  feats: []string{"data-modal"}},   // 同时命中 data-modal-open / -close
+    {file: "select.js", attrs: []string{"data-ui-select"}},
+    {file: "modal.js",  attrs: []string{"data-modal", "data-modal-open", "data-modal-close"}},
 }
 ```
 
 - **JS**：按 `data-ui-*` 特征逐个控件注入（源文件来自 `js/ui/`）；
-- **CSS**：`uiStyleFor()` 只判断「**有没有任何控件命中**」，命中就注入**整份** ui.css ——
+- **CSS**：`uiAssetsFor()` 只判断「**有没有任何控件命中**」，命中就注入**整份** ui.css ——
   **它不看 class 名**。
 
 官方注释解释了为什么必须同进同出：
