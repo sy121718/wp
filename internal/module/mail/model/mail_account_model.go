@@ -125,10 +125,13 @@ func (MailTemplateEntity) TableName() string { return "mail_templates" }
 
 // MailLogEntity 对应 mail_logs 表。
 type MailLogEntity struct {
-	ID            uint64     `gorm:"column:id;primaryKey"`
-	AccountID     *uint64    `gorm:"column:account_id"`
-	TemplateKey   *string    `gorm:"column:template_key;type:varchar(64)"`
-	ToEmail       string     `gorm:"column:to_email;type:varchar(254)"`
+	ID          uint64  `gorm:"column:id;primaryKey"`
+	AccountID   *uint64 `gorm:"column:account_id"`
+	TemplateKey *string `gorm:"column:template_key;type:varchar(64)"`
+	ToEmail     string  `gorm:"column:to_email;type:varchar(254)"`
+	// CampaignID / ContactID 只由群发链路填：事务邮件（注册验证等）不属于任何活动。
+	CampaignID    *uint64    `gorm:"column:campaign_id"`
+	ContactID     *uint64    `gorm:"column:contact_id"`
 	Subject       *string    `gorm:"column:subject;type:varchar(255)"`
 	Status        string     `gorm:"column:status;type:varchar(16)"`
 	Provider      *string    `gorm:"column:provider;type:varchar(32)"`
@@ -229,6 +232,13 @@ func (m *MailModel) DeleteAccount(ctx context.Context, id uint64) (err error) {
 func (m *MailModel) GetTemplate(ctx context.Context, key, locale string) (e *MailTemplateEntity, err error) {
 	e = &MailTemplateEntity{}
 	err = m.tx(ctx).Where("template_key = ? AND locale = ?", strings.TrimSpace(key), strings.TrimSpace(locale)).First(e).Error
+	return e, err
+}
+
+// GetTemplateByID 按主键取模板（群发展开按绑定的模板 id 取）。
+func (m *MailModel) GetTemplateByID(ctx context.Context, id uint64) (e *MailTemplateEntity, err error) {
+	e = &MailTemplateEntity{}
+	err = m.tx(ctx).Where("id = ?", id).First(e).Error
 	return e, err
 }
 

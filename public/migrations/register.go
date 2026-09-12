@@ -306,6 +306,12 @@ var mailMarketingSQL string
 //go:embed 126_mail.sql
 var mailPermissionSQL string
 
+//go:embed 127_mail_log_links.sql
+var mailLogLinksSQL string
+
+//go:embed 128_mail_campaign.sql
+var mailCampaignSQL string
+
 func init() {
 	register(Migration{
 		Version:   "001-init-schema",
@@ -1345,5 +1351,21 @@ func init() {
 		TableName: "sys_permission",
 		CheckSQL:  "SELECT CASE WHEN EXISTS (SELECT 1 FROM sys_permission WHERE permission_code = ?) THEN 1 ELSE 0 END",
 		SQL:       mailPermissionSQL,
+	})
+
+	// 127：邮件日志补活动 / 联系人关联（issue #37），以列存在判定。
+	register(Migration{
+		Version:   "127-mail-log-links",
+		TableName: "mail_logs",
+		CheckSQL:  "SELECT CASE WHEN EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = ? AND column_name = 'campaign_id') THEN 1 ELSE 0 END",
+		SQL:       mailLogLinksSQL,
+	})
+
+	// 128：群发活动权限点与菜单（issue #37），以权限点存在判定。
+	register(Migration{
+		Version:   "128-mail-campaign",
+		TableName: "sys_permission",
+		CheckSQL:  "SELECT CASE WHEN EXISTS (SELECT 1 FROM sys_permission WHERE permission_code = ?) THEN 1 ELSE 0 END",
+		SQL:       mailCampaignSQL,
 	})
 }

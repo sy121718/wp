@@ -31,6 +31,13 @@ type MailService interface {
 	ListContacts(ctx context.Context, req *maildto.ContactFilterReq) (*maildto.ContactListResp, error)
 	UpdateContactStatus(ctx context.Context, req *maildto.UpdateContactStatusReq) error
 
+	// ---- 群发活动 ----
+	SaveCampaign(ctx context.Context, req *maildto.SaveCampaignReq) (*maildto.CampaignItem, error)
+	ListCampaigns(ctx context.Context, req *maildto.CampaignListReq) (*maildto.CampaignListResp, error)
+	GetCampaign(ctx context.Context, id uint64) (*maildto.CampaignItem, error)
+	DeleteCampaign(ctx context.Context, id uint64) error
+	StartCampaign(ctx context.Context, req *maildto.StartCampaignReq) (*maildto.StartCampaignResp, error)
+
 	// ---- 事务发送 ----
 	SendTemplate(ctx context.Context, req *maildto.SendTemplateReq) (*maildto.SendResult, error)
 }

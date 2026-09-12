@@ -51,11 +51,51 @@ func enqueueMailSend(p MailSendPayload) error {
 	return mailSendTask.Enqueue(p)
 }
 
-// RegisterMailTaskHandler 把投递 handler 注册进队列 worker（路由装配时调用）。
+// TaskMailCampaignDispatch 群发展开任务类型。
+//
+// 启动活动时只入队这一个任务；收件人展开由它分批完成（见 mail_campaign_dispatch.go）。
+// 一场万人活动若在启动时一次性入队一万个任务，请求会挂住几十秒、内存瞬时膨胀，
+// 中途失败还会留下「一半已入队」的残缺状态。
+const TaskMailCampaignDispatch = "mail:campaign_dispatch"
+
+// CampaignDispatchPayload 展开任务载荷（AfterID 是主键游标）。
+type CampaignDispatchPayload struct {
+	CampaignID uint64 `json:"campaign_id"`
+	AfterID    uint64 `json:"after_id"`
+}
+
+var campaignDispatchTask = queue.NewTask(TaskMailCampaignDispatch, queue.WithQueue("default"), queue.WithMaxRetry(3))
+
+// enqueueCampaignDispatch 投递一段展开任务。
+func enqueueCampaignDispatch(p CampaignDispatchPayload) error {
+	if !queue.IsInited() {
+		return errors.New("队列未启用，无法异步展开群发")
+	}
+	return campaignDispatchTask.Enqueue(p)
+}
+
+// RegisterMailTaskHandler 把 handler 注册进队列 worker（路由装配时调用）。
 //
 // 需要 cipherSecret：worker 要解密账号密码才能发信。密钥在装配期从 config 读入后传进来。
 func RegisterMailTaskHandler(db *gorm.DB, cipherSecret string) {
 	queue.Register(TaskMailSend, handleMailSend(db, cipherSecret))
+	queue.Register(TaskMailCampaignDispatch, handleCampaignDispatch(db, cipherSecret))
+}
+
+// handleCampaignDispatch 群发展开 handler。
+func handleCampaignDispatch(db *gorm.DB, cipherSecret string) queue.Handler {
+	return func(ctx context.Context, raw []byte) error {
+		var p CampaignDispatchPayload
+		if err := json.Unmarshal(raw, &p); err != nil {
+			return err
+		}
+		if p.CampaignID == 0 {
+			return errors.New("展开任务载荷缺少 campaign_id")
+		}
+		svc := NewService(mailmodel.NewMailModel(db))
+		svc.SetCipherSecret(cipherSecret)
+		return svc.DispatchCampaign(ctx, p.CampaignID, p.AfterID)
+	}
 }
 
 // handleMailSend 投递 handler。
@@ -107,6 +147,10 @@ func handleMailSend(db *gorm.DB, cipherSecret string) queue.Handler {
 				"sent_at":  now,
 				"provider": sender.Name(),
 			})
+			// 群发活动：成功计数在此**原子递增**（并发投递下读-改-写必然丢计数）。
+			if logRow.CampaignID != nil {
+				_ = svc.m.IncrCampaignCounts(ctx, *logRow.CampaignID, 1, 0)
+			}
 			return nil
 		}
 
@@ -131,6 +175,9 @@ func handleMailSend(db *gorm.DB, cipherSecret string) queue.Handler {
 				"error_kind":    kind,
 				"error_message": msg,
 			})
+			if logRow.CampaignID != nil {
+				_ = svc.m.IncrCampaignCounts(ctx, *logRow.CampaignID, 0, 1)
+			}
 			_ = svc.m.AddSuppression(ctx, &mailmodel.MailSuppressionEntity{
 				Email: p.To, Reason: mailmodel.SuppressionReasonHardBounce, Source: strPtr("smtp"),
 			})

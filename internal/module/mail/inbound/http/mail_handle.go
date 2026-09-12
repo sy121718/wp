@@ -192,6 +192,69 @@ func (h *Handle) ContactStatus(c *gin.Context) {
 	response.SuccessWithMessage(c, mailenums.MsgSaveSuccess, nil)
 }
 
+// CampaignList 活动列表。
+func (h *Handle) CampaignList(c *gin.Context) {
+	res, err := h.svc.ListCampaigns(c.Request.Context(), &maildto.CampaignListReq{
+		Status:   c.Query("status"),
+		Page:     parseInt(c.Query("page"), 1),
+		PageSize: parseInt(c.Query("pageSize"), 20),
+	})
+	if err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	response.Success(c, res)
+}
+
+// CampaignGet 活动详情。
+func (h *Handle) CampaignGet(c *gin.Context) {
+	res, err := h.svc.GetCampaign(c.Request.Context(), parseID(c.Query("id")))
+	if err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	response.Success(c, res)
+}
+
+// CampaignSave 新建 / 更新活动。
+func (h *Handle) CampaignSave(c *gin.Context) {
+	var req maildto.SaveCampaignReq
+	if err := c.ShouldBind(&req); err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, mailenums.ErrInvalidParam)
+		return
+	}
+	res, err := h.svc.SaveCampaign(c.Request.Context(), &req)
+	if err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	response.SuccessWithMessage(c, mailenums.MsgSaveSuccess, res)
+}
+
+// CampaignDelete 删除活动。
+func (h *Handle) CampaignDelete(c *gin.Context) {
+	if err := h.svc.DeleteCampaign(c.Request.Context(), parseID(c.Query("id"))); err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	response.SuccessWithMessage(c, mailenums.MsgDeleteSuccess, nil)
+}
+
+// CampaignStart 启动群发（HTTP 秒回，收件人展开在后台分批进行）。
+func (h *Handle) CampaignStart(c *gin.Context) {
+	var req maildto.StartCampaignReq
+	if err := c.ShouldBind(&req); err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, mailenums.ErrInvalidParam)
+		return
+	}
+	res, err := h.svc.StartCampaign(c.Request.Context(), &req)
+	if err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	response.SuccessWithMessage(c, mailenums.MsgCampaignStarted, res)
+}
+
 func parseID(raw string) uint64 {
 	v, _ := strconv.ParseUint(strings.TrimSpace(raw), 10, 64)
 	return v

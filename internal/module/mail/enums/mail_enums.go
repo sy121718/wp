@@ -3,11 +3,12 @@ package mailenums
 // mail_enums.go — 邮箱模块的响应消息与业务错误（模块内统一出口）。
 
 const (
-	MsgSendSuccess   = "发送成功"
-	MsgSaveSuccess   = "保存成功"
-	MsgDeleteSuccess = "删除成功"
-	MsgImportSuccess = "导入完成"
-	MsgTestSent      = "测试邮件已发送"
+	MsgSendSuccess     = "发送成功"
+	MsgSaveSuccess     = "保存成功"
+	MsgDeleteSuccess   = "删除成功"
+	MsgImportSuccess   = "导入完成"
+	MsgTestSent        = "测试邮件已发送"
+	MsgCampaignStarted = "活动已开始发送"
 )
 
 const (
@@ -28,6 +29,7 @@ const (
 	ErrCipherSecretMissing = "未配置敏感数据加密密钥（config.yaml 的 app.secret），无法保存邮箱密码"
 	ErrCipherUnavailable   = "邮箱密码无法解密：加密密钥可能已变更，请重新填写密码"
 	ErrTemplateSyntax      = "模板语法错误"
+	ErrCampaignSending     = "活动正在发送中，无法删除"
 )
 
 // 测试邮件内容（后台「测试发送」触发，用于验证 SMTP 配置）。

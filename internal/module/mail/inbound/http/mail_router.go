@@ -40,6 +40,12 @@ func SetupMailRoutes(rg *gin.RouterGroup, db *gorm.DB) mailcontract.MailService 
 	g.GET("/contact/list", handle.ContactList)
 	g.POST("/contact/import", handle.ContactImport)
 	g.POST("/contact/status", handle.ContactStatus)
+	// 群发活动：启动只受理（统计人数 + 改状态 + 入队展开任务），收件人展开在后台分批完成。
+	g.GET("/campaign/list", handle.CampaignList)
+	g.GET("/campaign/get", handle.CampaignGet)
+	g.POST("/campaign/save", handle.CampaignSave)
+	g.POST("/campaign/delete", handle.CampaignDelete)
+	g.POST("/campaign/start", handle.CampaignStart)
 
 	return svc
 }

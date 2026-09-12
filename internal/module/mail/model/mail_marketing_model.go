@@ -437,6 +437,11 @@ func (m *MailModel) GetCampaign(ctx context.Context, id uint64) (e *MailCampaign
 	return e, err
 }
 
+// DeleteCampaign 删除活动。
+func (m *MailModel) DeleteCampaign(ctx context.Context, id uint64) (err error) {
+	return m.tx(ctx).Where("id = ?", id).Delete(&MailCampaignEntity{}).Error
+}
+
 // ListCampaigns 列活动（状态可空）。
 func (m *MailModel) ListCampaigns(ctx context.Context, status string, offset, limit int) (list []*MailCampaignEntity, total int64, err error) {
 	q := m.tx(ctx).Model(&MailCampaignEntity{})
