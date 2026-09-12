@@ -16,6 +16,8 @@ import (
 	"strconv"
 	"strings"
 
+	"go_wp/config"
+
 	admincontract "go_wp/internal/module/admin/contract"
 	blockcontract "go_wp/internal/module/block/contract"
 	dashboardenums "go_wp/internal/module/dashboard/enums"
@@ -113,7 +115,18 @@ func (h *Handle) LoginPage(c *gin.Context) {
 		"title":         translateFor(c)("shell.login.title", "登录"),
 		"captcha_id":    id,
 		"captcha_image": image,
+		// debug 模式才显示一键登录入口（release 下路由压根不存在，显示了也是个死链）。
+		"DevLogin": devLoginEnabled(),
 	}))
+}
+
+// devLoginEnabled 是否处于 debug 模式（决定登录页是否显示一键登录入口）。
+//
+// 与 routers 里注册 /admin/dev-login 用的是同一个判断：两处必须一致，
+// 否则会出现「显示了链接但路由不存在」（release 下点进去 404）。
+func devLoginEnabled() bool {
+	v, err := config.GetViper()
+	return err == nil && strings.EqualFold(v.GetString("server.mode"), "debug")
 }
 
 // withCSRF 向模板数据注入当前会话的 CSRF token（layout 的 hx-headers 使用）。

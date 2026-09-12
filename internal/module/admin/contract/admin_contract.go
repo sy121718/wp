@@ -15,6 +15,11 @@ import (
 type AdminService interface {
 	AdminList(ctx context.Context, req *admindto.AdminListReq) (*admindto.AdminListResp, error)
 	AdminLogin(ctx context.Context, req *admindto.AdminLoginReq, clientIP string) (*admindto.AdminLoginResp, error)
+	// DevLogin 开发阶段免密登录（仅 debug 模式的路由会调用它）。
+	//
+	// 放在契约里不是「对外开放」的意思：调用方只有装配层（routers）在 debug 模式下挂的那一个页面路由。
+	// 它只登超管，且会话建立与 AdminLogin 完全共用同一条路径。
+	DevLogin(ctx context.Context, username string) (*admindto.AdminLoginResp, error)
 	AdminLogout(ctx context.Context, userID uint64) error
 	AdminProfile(ctx context.Context, userID uint64) (*admindto.AdminProfileResp, error)
 	AdminCreate(ctx context.Context, req *admindto.AdminCreateReq) (*admindto.AdminCreateResp, error)

@@ -10,8 +10,11 @@ package routers
 import (
 	"context"
 	"net/http"
+	"strings"
 
 	"go_wp/internal/middleware/builtin"
+
+	"go_wp/config"
 
 	"go_wp/internal/builder"
 	"go_wp/internal/builder/core"
@@ -141,6 +144,12 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 	captcharouter.SetupCaptchaRoutes(api)
 	// admin 对外权限上下文查询契约（供外部模块/插件消费，见 AuthzContextService）。
 	adminAuthzSvc := adminhttp.SetupAdminRoutes(api, db)
+	// 开发阶段一键登录（浏览器直接访问 /admin/dev-login?to=/admin/xxx）：
+	// **只在 debug 模式下注册** —— release 环境这个路由根本不存在，比运行时判断更可靠。
+	// 具体安全约束（只认环回地址、只登超管、走同一套会话路径）见 admin/inbound/http/dev_login.go。
+	if v, err := config.GetViper(); err == nil && strings.EqualFold(v.GetString("server.mode"), "debug") {
+		router.GET("/admin/dev-login", adminhttp.DevLoginHandler(db))
+	}
 
 	authorizedAPI := api.Group("", builtin.SessionAuthMiddleware(), builtin.CSRFMiddleware(), builtin.CasbinMiddleware())
 	mediaSvc := mediahttp.SetupMediaRoutes(authorizedAPI, db)

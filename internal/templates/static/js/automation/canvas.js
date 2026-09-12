@@ -252,7 +252,9 @@ if (saveBtn) {
             return r.json().catch(function () { return {}; });
         }).then(function (body) {
             saveBtn.disabled = false;
-            if (body && body.code === 0) {
+            // 项目的成功码是 HTTP 200（见 pkg/response.Success），不是 0。
+            // 写错不会影响保存本身，但会显示「保存失败：保存成功」这种自相矛盾的提示。
+            if (body && body.code === 200) {
                 dirty = false;
                 setStatus('位置已保存（版本号不变）');
             } else {
@@ -303,7 +305,7 @@ if (form) {
         }).then(function (r) {
             return r.json().catch(function () { return {}; });
         }).then(function (body) {
-            if (body && body.code === 0) {
+            if (body && body.code === 200) {
                 setStatus('结构已保存，正在刷新…');
                 window.location.reload();
             } else {

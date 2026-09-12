@@ -227,3 +227,69 @@ const (
 	loginFailureLockThreshold = 5
 	loginFailureLockDuration  = 30 * time.Minute
 )
+
+// DevLogin 开发阶段免密登录（仅 debug 模式的路由会调用它）。
+//
+// 与 AdminLogin 的区别只有「不验证码、不校验密码」，**会话建立那一整段完全共用**：
+// 同一个 NewSessionID、同一份 Redis 会话结构、同样的在线心跳。
+// 刻意不做「直接塞一个 cookie 就放行」的旁路 —— 那种旁路会让开发环境的会话行为
+// 与生产不一致，用它验出来的东西不算数。
+//
+// 只允许登录超管：这个入口的存在意义是「本机开发便利」，不是「任意管理员后门」。
+func (s *Service) DevLogin(ctx context.Context, username string) (*admindto.AdminLoginResp, error) {
+	var entity adminmodel.AdminEntity
+	q := s.am.DB(ctx).Where("is_admin = ?", 1)
+	if username != "" {
+		q = q.Where("username = ?", username)
+	}
+	if err := q.Order("id ASC").First(&entity).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, errors.New("没有可用的超管账号（is_admin=1）")
+		}
+		return nil, err
+	}
+	if !entity.IsActive() {
+		return nil, errors.New(adminenums.ErrAccountDisabled)
+	}
+
+	sessionID, err := auth.NewSessionID()
+	if err != nil {
+		return nil, fmt.Errorf("生成会话 ID 失败: %w", err)
+	}
+	name, avatar, email, phone := "", "", "", ""
+	if entity.Name != nil {
+		name = *entity.Name
+	}
+	if entity.Avatar != nil {
+		avatar = *entity.Avatar
+	}
+	if entity.Email != nil {
+		email = *entity.Email
+	}
+	if entity.Phone != nil {
+		phone = *entity.Phone
+	}
+	if err := auth.SaveUserSession(ctx, &auth.UserSession{
+		ID:        entity.ID,
+		SessionID: sessionID,
+		Username:  entity.Username,
+		Name:      name,
+		Avatar:    avatar,
+		Email:     email,
+		Phone:     phone,
+		Status:    entity.Status,
+		IsAdmin:   entity.IsAdmin,
+		DeptID:    entity.DeptID,
+	}, auth.SessionTTLFor(false)); err != nil {
+		return nil, fmt.Errorf("写入用户会话失败: %w", err)
+	}
+	if err := auth.RefreshOnline(ctx, entity.ID, 0); err != nil {
+		return nil, fmt.Errorf("刷新在线状态失败: %w", err)
+	}
+	return &admindto.AdminLoginResp{
+		UserID:    entity.ID,
+		Username:  entity.Username,
+		SessionID: sessionID,
+		IssuedAt:  time.Now().Unix(),
+	}, nil
+}
