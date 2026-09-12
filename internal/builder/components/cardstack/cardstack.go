@@ -868,60 +868,71 @@ func dragCards(p *Props, n int, width, height string) []map[string]string {
 // 返回空串 = 无动画（缺省，只有位置变化）。
 func slideEffectKeyframe(p *Props) string {
 	horizontal := p.SlideDirection == slideDirectionHorizontal
+	// 只写词汇名，关键帧名由 core 拼 —— 前缀只有一处定义（core.EffectKeyframeName），
+	// 改命名空间时这里跟着走，不必逐个改字面量。
+	name := ""
 	switch p.SlideEffect {
 	case "fade":
 		if horizontal {
-			return "sky-fade-in-bottom-right"
+			name = "fade-in-bottom-right"
+		} else {
+			name = "fade-in-bottom-left"
 		}
-		return "sky-fade-in-bottom-left"
 	case "zoom":
 		if horizontal {
-			return "sky-zoom-in-right"
+			name = "zoom-in-right"
+		} else {
+			name = "zoom-in-up"
 		}
-		return "sky-zoom-in-up"
 	case "flip":
 		if horizontal {
-			return "sky-flip-in-y"
+			name = "flip-in-y"
+		} else {
+			name = "flip-in-x"
 		}
-		return "sky-flip-in-x"
 	case "bounce":
 		if horizontal {
-			return "sky-bounce-in-right"
+			name = "bounce-in-right"
+		} else {
+			name = "bounce-in-up"
 		}
-		return "sky-bounce-in-up"
 	case "back":
 		if horizontal {
-			return "sky-back-in-right"
+			name = "back-in-right"
+		} else {
+			name = "back-in-up"
 		}
-		return "sky-back-in-up"
 	case "rotate":
 		if horizontal {
-			return "sky-rotate-in-up-right"
+			name = "rotate-in-up-right"
+		} else {
+			name = "rotate-in-up-left"
 		}
-		return "sky-rotate-in-up-left"
 	case "light":
 		if horizontal {
-			return "sky-light-speed-in-right"
+			name = "light-speed-in-right"
+		} else {
+			name = "light-speed-in-left"
 		}
-		return "sky-light-speed-in-left"
 	case "roll":
-		return "sky-roll-in"
+		name = "roll-in"
 	case "jack":
-		return "sky-jack-in-the-box"
+		name = "jack-in-the-box"
 	}
-	return ""
+	return core.EffectKeyframeName(core.KindEntrance, name)
 }
 
 // loopEffectKey 循环效果 → 通用词汇名（只返回不占用 transform 的两条：
 // glow 走 filter、flash 走 opacity；其余 loop 词汇都改 transform，会顶掉位移/缩放）。
 func loopEffectKey(v string) string {
+	name := ""
 	switch v {
 	case "glow":
-		return "sky-loop-glow"
+		name = "glow"
 	case "flash":
-		return "sky-loop-flash"
+		name = "flash"
 	}
-	return ""
+	return core.EffectKeyframeName(core.KindLoop, name)
 }
 
 // deckEasing 切换曲线预设（缺省平滑缓出）。

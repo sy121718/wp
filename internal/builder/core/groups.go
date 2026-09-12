@@ -181,12 +181,67 @@ func entranceDurationCSS(d string) string {
 	}
 }
 
+// effectKind 交互动效的类别。三类各自独立命名空间，关键帧名互不占用。
+//
+// 与悬浮 / 按压效果的区别：那两类走过渡与滤镜（transition / filter），
+// **不产生关键帧**，所以不在这里，也没有前缀。
+type EffectKind string
+
+// 三个动效类别。跨包使用（组件把属性值映射成词汇名时），故导出。
+const (
+	KindEntrance EffectKind = "entrance"
+	KindLoop     EffectKind = "loop"
+	KindStory    EffectKind = "story"
+)
+
+// effectKindPrefix 类别 → 关键帧名前缀。
+//
+// **这是「名字 → 关键帧」的唯一规则**：白名单校验、关键帧激活（NeedKeyframes）、
+// animation 声明全部经 effectKeyframeName 取名字，没有任何地方再手拼前缀。
+// 前缀散落在多处时，改一次命名空间要翻遍编译逻辑，漏掉一处就是产物里
+// 引用一个不存在的动画 —— 页面上只表现为「不动」，没有任何报错。
+var effectKindPrefix = map[EffectKind]string{
+	KindEntrance: "sky-",
+	KindLoop:     "sky-loop-",
+	KindStory:    "sky-story-",
+}
+
+// effectNames 类别 → 该类别允许的名字（即三张白名单；空串＝不启用，处处合法）。
+//
+// 校验与拼名共用它，于是不会出现「校验放行的名字、编译时拼不出来」这种错位。
+var effectNames = map[EffectKind]map[string]bool{
+	KindEntrance: allowedEntrance,
+	KindLoop:     allowedLoopEffect,
+	KindStory:    allowedScrollStory,
+}
+
+// EffectKeyframeName 交互动效词汇对应的关键帧名；名字为空返回空串。
+//
+// 不做白名单判断：校验与编译各自决定要不要拒绝非法名字（编译路径由 Validate 先把关）。
+// 导出是为了让「把属性值映射成词汇名」的组件（cardstack 的逐卡错落效果）也不必
+// 手写完整关键帧名 —— 前缀只有一处定义，改命名空间时不会有人掉队。
+func EffectKeyframeName(kind EffectKind, name string) string {
+	if name == "" {
+		return ""
+	}
+	return effectKindPrefix[kind] + name
+}
+
+// EffectAllowed 名字是否在该类别的词汇表里（空串恒为真 —— 它表示不启用）。
+func EffectAllowed(kind EffectKind, name string) bool {
+	allowed, ok := effectNames[kind]
+	if !ok {
+		return false
+	}
+	return allowed[name]
+}
+
 // ValidateInteraction 交互组校验（效果基本库白名单 + 限幅）。
 // interactionFieldChecks 字段级校验表（表驱动：新增动效字段只需加一行校验器，
 // 返回非空字符串 = 校验失败详情）。文案与词表由各自白名单维护。
 var interactionFieldChecks = []func(p InteractionProps) string{
 	func(p InteractionProps) string {
-		if !allowedEntrance[p.Entrance] {
+		if !EffectAllowed(KindEntrance, p.Entrance) {
 			return fmt.Sprintf("无效的入场动效: %q", p.Entrance)
 		}
 		return ""
@@ -216,7 +271,7 @@ var interactionFieldChecks = []func(p InteractionProps) string{
 		return ""
 	},
 	func(p InteractionProps) string {
-		if !allowedScrollStory[p.ScrollStory] {
+		if !EffectAllowed(KindStory, p.ScrollStory) {
 			return fmt.Sprintf("无效的滚动叙事: %q（zoom/rise/fade）", p.ScrollStory)
 		}
 		return ""
@@ -234,7 +289,7 @@ var interactionFieldChecks = []func(p InteractionProps) string{
 		return ""
 	},
 	func(p InteractionProps) string {
-		if !allowedLoopEffect[p.LoopEffect] {
+		if !EffectAllowed(KindLoop, p.LoopEffect) {
 			return fmt.Sprintf("无效的循环动画: %q（pulse/float/glow/spin）", p.LoopEffect)
 		}
 		return ""
@@ -288,9 +343,10 @@ func CompileInteraction(sel string, p InteractionProps, b *CSSBuckets) {
 	// 入场动效（含时长/延迟/滚动触发）。
 	if p.Entrance != "" {
 		dur := entranceDurationCSS(p.EntranceDuration)
-		anim := fmt.Sprintf("animation: sky-%s %s ease backwards", p.Entrance, dur)
+		kf := EffectKeyframeName(KindEntrance, p.Entrance)
+		anim := fmt.Sprintf("animation: %s %s ease backwards", kf, dur)
 		if p.EntranceDelay > 0 {
-			anim = fmt.Sprintf("animation: sky-%s %s ease %.1fs backwards", p.Entrance, dur, p.EntranceDelay)
+			anim = fmt.Sprintf("animation: %s %s ease %.1fs backwards", kf, dur, p.EntranceDelay)
 		}
 		decls = append(decls, anim)
 		// 默认弹簧缓动（Apple 式过冲回弹）：timing 覆盖声明在简写之后，
@@ -307,7 +363,7 @@ func CompileInteraction(sel string, p InteractionProps, b *CSSBuckets) {
 		default: // "" 与 "spring" 均走标准弹簧
 			decls = append(decls, timingOverride(SpringStandardCurve, withLoop))
 		}
-		b.NeedKeyframes("sky-" + p.Entrance)
+		b.NeedKeyframes(kf)
 		// 滚动触发：视口进入时播放（现代浏览器；旧浏览器不识别 timeline 即直接入场）。
 		if p.ScrollReveal == "reveal" {
 			decls = append(decls,
@@ -318,7 +374,7 @@ func CompileInteraction(sel string, p InteractionProps, b *CSSBuckets) {
 	// 循环动画（attention；与入场互不冲突——loop 走独立 animation 名，
 	// 同元素多动画用逗号并接）。
 	if p.LoopEffect != "" {
-		loop := fmt.Sprintf("animation: sky-loop-%s 2.4s ease-in-out infinite", p.LoopEffect)
+		loop := fmt.Sprintf("animation: %s 2.4s ease-in-out infinite", EffectKeyframeName(KindLoop, p.LoopEffect))
 		if p.Entrance != "" {
 			// 已有入场动画：并接（入场结束后循环接管）。
 			for i, d := range decls {
@@ -329,17 +385,17 @@ func CompileInteraction(sel string, p InteractionProps, b *CSSBuckets) {
 		} else {
 			decls = append(decls, loop)
 		}
-		b.NeedKeyframes("sky-loop-" + p.LoopEffect)
+		b.NeedKeyframes(EffectKeyframeName(KindLoop, p.LoopEffect))
 	}
 	// 滚动叙事（view() 进度连续绑定）：linear + both 保证进度可逆跟手；
 	// 区间覆盖「进入视口 → 离开视口」全程。旧浏览器忽略 timeline 后
 	// 保留静态 from 帧（opacity/位移初值），仍优于无效果。
 	if p.ScrollStory != "" {
 		decls = append(decls,
-			"animation: sky-story-"+p.ScrollStory+" linear both",
+			"animation: "+EffectKeyframeName(KindStory, p.ScrollStory)+" linear both",
 			"animation-timeline: view()",
 			"animation-range: entry 0% exit 100%")
-		b.NeedKeyframes("sky-story-" + p.ScrollStory)
+		b.NeedKeyframes(EffectKeyframeName(KindStory, p.ScrollStory))
 	}
 	// 滚动吸顶（全组件共享；StickyTop 未设置时缺省 0）。
 	if p.Sticky {

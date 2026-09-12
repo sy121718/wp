@@ -24,27 +24,29 @@ func TestInteractionWhitelistMatchesKeyframes(t *testing.T) {
 	for _, k := range keyframesCatalog {
 		have[k.Name] = true
 	}
-	cases := []struct {
-		kind   string
-		names  map[string]bool
-		prefix string
+	// 走 EffectKeyframeName 取名，而不是在测试里另拼一份前缀 ——
+	// 那样等于把「名字 → 关键帧」的规则又抄了一遍，抄错就测不出东西。
+	kinds := []struct {
+		kind  EffectKind
+		label string
 	}{
-		{"入场", allowedEntrance, "sky-"},
-		{"循环", allowedLoopEffect, "sky-loop-"},
-		{"滚动叙事", allowedScrollStory, "sky-story-"},
+		{KindEntrance, "入场"},
+		{KindLoop, "循环"},
+		{KindStory, "滚动叙事"},
 	}
-	for _, c := range cases {
-		names := make([]string, 0, len(c.names))
-		for name := range c.names {
+	for _, kd := range kinds {
+		names := make([]string, 0, len(effectNames[kd.kind]))
+		for name := range effectNames[kd.kind] {
 			if name != "" {
 				names = append(names, name)
 			}
 		}
 		sort.Strings(names) // 稳定顺序，失败信息便于逐条对照
 		for _, name := range names {
-			if !have[c.prefix+name] {
+			kf := EffectKeyframeName(kd.kind, name)
+			if !have[kf] {
 				t.Errorf("%s白名单里的 %q 没有对应的关键帧 %q —— 产物会引用一个不存在的动画，页面上只表现为「不动」",
-					c.kind, name, c.prefix+name)
+					kd.label, name, kf)
 			}
 		}
 	}
