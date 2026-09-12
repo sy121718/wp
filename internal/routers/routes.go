@@ -40,6 +40,8 @@ import (
 	projecthttp "go_wp/internal/module/project/inbound/http"
 	pubhttp "go_wp/internal/module/publication/inbound/http"
 	runtimefragment "go_wp/internal/module/runtimefragment"
+	usermodel "go_wp/internal/module/user/model"
+	userservice "go_wp/internal/module/user/service"
 	"go_wp/internal/pipeline"
 	"go_wp/internal/templates"
 	"go_wp/pkg/casbin"
@@ -185,6 +187,10 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 	productSvc := producthttp.SetupProductRoutes(authorizedAPI, db, projectService)
 	// 邮箱模块（issue #37）：加密密钥在 SetupMailRoutes 内从 config.yaml 的 app.secret 注入。
 	mailSvc := mailhttp.SetupMailRoutes(authorizedAPI, db)
+	// 用户模块（issue #36）目前只装配注册链路：它是邮件模块的第一个真实消费者。
+	// 只依赖 usercontract.MailSender（发送这一条能力），不是整个 mail 契约。
+	userSvc := userservice.NewService(usermodel.NewUserModel(db), mailSvc, "go_wp")
+	_ = userSvc // 用户侧路由（注册 / 登录 / 账号中心）在 #36 后续部分落地
 	// 营销追踪端点（#38 P1）：公开路由（访问面），无鉴权 —— 能力由 TrackingService 收窄。
 	mailhttp.SetupTrackingRoutes(router, mailSvc)
 	_ = mailSvc
