@@ -6,7 +6,7 @@
 {{groupId := .GroupID}}
 {{target := "#attr-values-" + groupId}}
 {{if len(.Rows) == 0}}
-<p class="pages-empty">还没有属性值。点下面的「+ 添加值」开始。</p>
+<p class="hint">还没有属性值。点下面的「+ 添加值」开始。</p>
 {{end}}
 <div class="attr-value-table">
     <div class="attr-value-head" aria-hidden="true">
@@ -21,9 +21,9 @@
     <div class="attr-value-row">
         <span class="attr-value-idx">{{i}}</span>
         <input type="hidden" name="values[{{i}}].id" value="{{v.ID}}">
-        <input type="text" name="values[{{i}}].key" value="{{v.Key}}" placeholder="留空自动生成" autocomplete="off">
-        <input type="text" name="values[{{i}}].label" value="{{v.Label}}" placeholder="如 红色 / S" required>
-        <input type="number" name="values[{{i}}].sort" value="{{v.Sort}}" placeholder="0" inputmode="numeric" step="1">
+        <input type="text" class="form-input" name="values[{{i}}].key" value="{{v.Key}}" placeholder="留空自动生成" autocomplete="off">
+        <input type="text" class="form-input" name="values[{{i}}].label" value="{{v.Label}}" placeholder="如 红色 / S" required>
+        <input type="number" class="form-input" name="values[{{i}}].sort" value="{{v.Sort}}" placeholder="0" inputmode="numeric" step="1">
         <label class="attr-switch">
             <input type="hidden" name="values[{{i}}].enabled" value="0">
             <input type="checkbox" name="values[{{i}}].enabled" value="1" {{if v.Enabled}}checked{{end}}> 启用

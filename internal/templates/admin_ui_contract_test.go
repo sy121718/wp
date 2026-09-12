@@ -40,7 +40,7 @@ func TestAdminPagesExposePublicUIClasses(t *testing.T) {
 
 // 已迁移页面不得重新依赖 pages-* 兼容层；这些页面的结构由公共 UI Kit 提供。
 func TestMigratedAdminPagesDoNotUseLegacyClasses(t *testing.T) {
-	for _, name := range []string{"theme.html", "theme_settings.html", "pages.html", "blocks.html", "plugins.html", "product_brands.html", "product_categories.html", "product_tags.html"} {
+	for _, name := range []string{"theme.html", "theme_settings.html", "pages.html", "blocks.html", "plugins.html", "product_brands.html", "product_categories.html", "product_tags.html", "products.html", "product_attributes.html"} {
 		path := filepath.Join("admin", name)
 		src, err := os.ReadFile(path)
 		if err != nil {
