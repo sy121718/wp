@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"gorm.io/gorm"
 
@@ -25,6 +26,70 @@ import (
 
 	"github.com/gin-gonic/gin"
 )
+
+// mailFixture 两个页面测试共用的最小装配（一个 PG schema + 一个 mail service）。
+type mailFixture struct {
+	svc *mailservice.Service
+	db  *gorm.DB
+}
+
+// newMailFeatureFixture 建 fixture（PG 不可用时 t.Skip）。
+func newMailFeatureFixture(t *testing.T) *mailFixture {
+	t.Helper()
+	db, err := support.NewPGTestDB(t)
+	if err != nil {
+		t.Skipf("本地 PostgreSQL 不可用：%v", err)
+		return nil
+	}
+	if err := migrations.Run(db); err != nil {
+		t.Fatalf("执行生产迁移建表失败: %v", err)
+	}
+	svc := mailservice.NewService(mailmodel.NewMailModel(db))
+	svc.SetCipherSecret("page-test-secret")
+	return &mailFixture{svc: svc, db: db}
+}
+
+// seedContact 造一个联系人。
+func (f *mailFixture) seedContact(ctx context.Context, email, name, status, tag string) error {
+	nameVal := name
+	e := &mailmodel.MailContactEntity{
+		Email: email, Name: &nameVal, Source: mailmodel.ContactSourceImport, Status: status,
+	}
+	if tag != "" {
+		e.Tags = mailmodel.StringArray{tag}
+	}
+	if status == mailmodel.ContactStatusSubscribed {
+		now := time.Now()
+		e.SubscribedAt = &now
+		src := "测试"
+		e.ConsentSource = &src
+	}
+	return mailmodel.NewMailModel(f.db).CreateContact(ctx, e)
+}
+
+// seedCampaign 造账号 + 模板 + 一个草稿活动（页面要能列出它）。
+func (f *mailFixture) seedCampaign(ctx context.Context, name string) error {
+	acc, err := f.svc.CreateAccount(ctx, &maildto.SaveAccountReq{
+		Name: "营销账号", Purpose: mailmodel.AccountPurposeMarketing,
+		FromEmail: "news@clker.cn", Host: "mail.clker.cn", Port: 587, Password: "p",
+	})
+	if err != nil {
+		return err
+	}
+	if _, err = f.svc.UpsertTemplate(ctx, &maildto.SaveTemplateReq{
+		TemplateKey: "campaign_tpl", Name: "活动模板", Subject: "主题", BodyHTML: "<p>x</p>",
+	}); err != nil {
+		return err
+	}
+	tpls, err := f.svc.ListTemplates(ctx, "campaign_tpl")
+	if err != nil || len(tpls) == 0 {
+		return err
+	}
+	_, err = f.svc.SaveCampaign(ctx, &maildto.SaveCampaignReq{
+		Name: name, AccountID: acc.ID, TemplateID: tpls[0].ID, Subject: "九月上新",
+	})
+	return err
+}
 
 func newMailPageFixture(t *testing.T) (*gin.Engine, *mailservice.Service) {
 	t.Helper()

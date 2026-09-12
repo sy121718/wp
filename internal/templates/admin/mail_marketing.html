@@ -1,0 +1,159 @@
+{* admin/mail_marketing.html — 邮件营销：联系人与群发活动（issue #37） *}
+{{extends "layout.html"}}
+{{block body()}}
+{{csrf := .["csrf_token"]}}
+<div class="pages-wrap">
+  <section class="pages-card">
+    <h2>邮件营销</h2>
+    {{if .Err != ""}}
+    <p class="pages-badge pages-badge-warn">上一次操作未完成：{{.Err}}</p>
+    {{end}}
+    {{if .Ok != ""}}
+    <p class="pages-badge pages-badge-ok">{{.Ok}}</p>
+    {{end}}
+    <p class="pages-empty">
+      群发<strong>只发给「已订阅」的人</strong>。未确认同意的联系人（待确认）不会被发送 ——
+      未经同意就群发，收件方会标记垃圾邮件，发信域名的声誉会被打烂，之后连注册验证邮件都进垃圾箱。
+      所以导入时问的「这批人是否已同意」不是走形式，而是<strong>留痕</strong>：谁在什么时候声明过什么。
+    </p>
+    <p class="pages-empty">
+      失败的投递按错误分类处理：临时故障交给队列退避重试；<strong>硬退信</strong>会标记失败并把地址
+      加入抑制名单（再发只会继续伤域名声誉）；配置类错误（密码 / 端口）直接标失败不重试。
+    </p>
+  </section>
+
+  <section class="pages-card">
+    <h2>联系人（共 {{.ContactTotal}} 人）</h2>
+    <form method="get" action="/admin/mail/marketing" class="pages-form">
+      <input type="text" name="keyword" value="{{.Keyword}}" placeholder="邮箱或姓名">
+      <select name="status">
+        <option value="">全部状态</option>
+        <option value="pending">待确认</option>
+        <option value="subscribed">已订阅</option>
+        <option value="unsubscribed">已退订</option>
+        <option value="bounced">硬退信</option>
+        <option value="complained">投诉</option>
+      </select>
+      <button type="submit">筛选</button>
+    </form>
+
+    {{if len(.Contacts) == 0}}
+    <p class="pages-empty">没有匹配的联系人。</p>
+    {{else}}
+    <table class="pages-table">
+      <thead><tr><th>邮箱</th><th>姓名</th><th>状态</th><th>标签</th><th>来源</th><th>同意来源</th><th>操作</th></tr></thead>
+      <tbody>
+      {{range _, c := .Contacts}}
+      <tr>
+        <td>{{c.Email}}</td>
+        <td>{{if c.Name == ""}}—{{else}}{{c.Name}}{{end}}</td>
+        <td>
+          {{if c.Status == "subscribed"}}<span class="pages-badge pages-badge-ok">已订阅</span>
+          {{else if c.Status == "pending"}}<span class="pages-badge">待确认</span>
+          {{else}}<span class="pages-badge pages-badge-warn">{{c.Status}}</span>{{end}}
+        </td>
+        <td>{{if len(c.Tags) == 0}}—{{else}}{{range _, t := c.Tags}}{{t}} {{end}}{{end}}</td>
+        <td>{{c.Source}}</td>
+        <td>{{if c.ConsentSource == ""}}—{{else}}{{c.ConsentSource}}{{end}}</td>
+        <td>
+          <form method="post" action="/admin/mail/contact/status" style="display:inline">
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <input type="hidden" name="id" value="{{c.ID}}">
+            <select name="status">
+              <option value="subscribed">订阅</option>
+              <option value="pending">待确认</option>
+              <option value="unsubscribed">退订</option>
+            </select>
+            <input type="text" name="note" placeholder="来源备注">
+            <button type="submit">更新</button>
+          </form>
+        </td>
+      </tr>
+      {{end}}
+      </tbody>
+    </table>
+    <p class="pages-empty">
+      退订 / 投诉 / 硬退信会<strong>同时写入抑制名单</strong> —— 后台点了退订却还能被发出去，比不点退订更糟。
+    </p>
+    {{end}}
+
+    <h3>导入联系人</h3>
+    <p class="pages-empty">
+      支持纯文本（每行一个邮箱）或 CSV（表头识别 email / name / tags 三列）。
+      退订过的地址会被自动跳过（导进来也发不出去）；格式非法的行会逐行报出，不影响其余行。
+    </p>
+    <form method="post" action="/admin/mail/contact/import" class="pages-form">
+      <input type="hidden" name="csrf_token" value="{{csrf}}">
+      <label>批量标签（逗号分隔） <input type="text" name="tags" placeholder="vip,华南"></label>
+      <label><input type="checkbox" name="consent_declared"> 这批人<strong>已同意</strong>接收营销邮件（勾选后置为「已订阅」并记录来源）</label>
+      <label>同意来源 <input type="text" name="consent_source" placeholder="例如：2026-09 线下展会收集，已获口头同意"></label>
+      <label><input type="checkbox" name="update_existing"> 已存在的联系人更新标签（<strong>不会</strong>改动他们的同意状态）</label>
+      <label>内容 <textarea name="content" rows="10" placeholder="a@example.com&#10;b@example.com&#10;或 CSV：email,name,tags"></textarea></label>
+      <button type="submit">导入</button>
+    </form>
+  </section>
+
+  <section class="pages-card">
+    <h2>群发活动</h2>
+    {{if len(.Campaigns) == 0}}
+    <p class="pages-empty">还没有活动。新建后点「启动群发」开始发送。</p>
+    {{else}}
+    <table class="pages-table">
+      <thead><tr><th>名称</th><th>状态</th><th>目标标签</th><th>进度</th><th>操作</th></tr></thead>
+      <tbody>
+      {{range _, cp := .Campaigns}}
+      <tr>
+        <td>{{cp.Name}}</td>
+        <td>
+          {{if cp.Status == "sending"}}<span class="pages-badge">发送中</span>
+          {{else if cp.Status == "sent"}}<span class="pages-badge pages-badge-ok">已完成</span>
+          {{else if cp.Status == "failed"}}<span class="pages-badge pages-badge-warn">失败</span>
+          {{else}}{{cp.Status}}{{end}}
+        </td>
+        <td>{{if len(cp.TargetTags) == 0}}全部已订阅{{else}}{{range _, t := cp.TargetTags}}{{t}} {{end}}{{end}}</td>
+        <td>成功 {{cp.SentCount}} / 失败 {{cp.FailedCount}} / 目标 {{cp.TotalCount}}</td>
+        <td>
+          <form method="post" action="/admin/mail/campaign/start" style="display:inline">
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <input type="hidden" name="id" value="{{cp.ID}}">
+            <button type="submit">启动群发</button>
+          </form>
+          <form method="post" action="/admin/mail/campaign/delete" style="display:inline">
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <input type="hidden" name="id" value="{{cp.ID}}">
+            <button type="submit">删除</button>
+          </form>
+        </td>
+      </tr>
+      {{end}}
+      </tbody>
+    </table>
+    <p class="pages-empty">
+      「启动」是<strong>受理</strong>而不是同步发完：目标人数上万时，一次入队几万个任务会让请求挂住、
+      内存膨胀，中途失败还会留下「一半已入队」的残缺状态。所以启动只统计人数、改状态、入队一个展开任务，
+      收件人在后台按主键游标分批展开。启动后刷新本页即可看到进度。
+    </p>
+    {{end}}
+
+    <h3>新建活动</h3>
+    <form method="post" action="/admin/mail/campaign/save" class="pages-form">
+      <input type="hidden" name="csrf_token" value="{{csrf}}">
+      <input type="hidden" name="id" value="0">
+      <label>名称 <input type="text" name="name" required></label>
+      <label>发信账号
+        <select name="account_id" required>
+          {{range _, a := .Accounts}}<option value="{{a.ID}}">{{a.Name}}（{{a.FromEmail}}）</option>{{end}}
+        </select>
+      </label>
+      <label>邮件模板
+        <select name="template_id" required>
+          {{range _, t := .Templates}}<option value="{{t.ID}}">{{t.TemplateKey}} · {{t.Name}}（id={{t.ID}}）</option>{{end}}
+        </select>
+      </label>
+      <label>目标标签（逗号分隔，留空 = 全部已订阅） <input type="text" name="target_tags" placeholder="vip"></label>
+      <label>邮件主题 <input type="text" name="subject" required></label>
+      <button type="submit">保存活动</button>
+    </form>
+  </section>
+</div>
+{{end}}

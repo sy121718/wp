@@ -4,6 +4,8 @@ package maildto
 
 // TemplateItem 模板条目。
 type TemplateItem struct {
+	// ID 供「新建活动选模板」用：活动存的是 template_id 而不是 key。
+	ID          uint64   `json:"id"`
 	TemplateKey string   `json:"templateKey"`
 	Locale      string   `json:"locale"`
 	Name        string   `json:"name"`

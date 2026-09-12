@@ -198,6 +198,7 @@ func isMissingKeyErr(err error) bool {
 
 func templateItemOf(e *mailmodel.MailTemplateEntity) *maildto.TemplateItem {
 	item := &maildto.TemplateItem{
+		ID:          e.ID,
 		TemplateKey: e.TemplateKey,
 		Locale:      e.Locale,
 		Name:        e.Name,
