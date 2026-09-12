@@ -144,14 +144,14 @@
 
 | # | 事项 | 出处 | 现状 | 优先级 | 依赖/前置 |
 |---|---|---|---|---|---|
-| BIZ-1 | \`commerce\` 本体模块（商品/分类/SKU/库存/订单状态机/支付回调验签/优惠码幂等核销） | \`06-A\` §4（L70-83）、\`06-B\` 变更记录 v2（L70-81） | **商品 / 分类 / SKU / 库存已落地**（\`internal/module/product\` 与 \`product/inventory\`，#5–#32 —— v2 决策里的 \`commerce\` 实际以 \`product\` 命名）；**订单已落地**（\`internal/module/order\`，建单 / 状态机 / 取消 / 退款 / 查询 + 归因冗余，迁移 135/136）；**支付回调验签与优惠码幂等核销未开始** | 高 | 已拍板方向，可先行 |
-| BIZ-2 | 首批商品 capability（\`productList\` / \`searchResults\` / \`productAvailability\` / \`productLivePrice\` / \`cartSummary\` 接真实数据 / \`cartAdd\`） | \`04-A-dynamic-capabilities.md\` §7（L128-142）、\`04-B\` §6 索引（L152） | 未开始（\`runtimefragment/capability.go\` 仅 \`loginPanel\` / \`cartSummary\` 占位） | 中 | BIZ-1 |
+| BIZ-1 | \`commerce\` 本体模块（商品/分类/SKU/库存/订单状态机/支付回调验签/优惠码幂等核销） | \`06-A\` §4（L70-83）、\`06-B\` 变更记录 v2（L70-81） | **商品 / 分类 / SKU / 库存已落地**（\`internal/module/product\` 与 \`product/inventory\`，#5–#32 —— v2 决策里的 \`commerce\` 实际以 \`product\` 命名）；**订单已落地**（\`internal/module/order\`，建单 / 状态机 / 取消 / 退款 / 查询 + 归因冗余，迁移 135/136）；**购物车与访客结算已落地**（\`internal/module/cart\`：HMAC 签名 cookie 购物车 + 六个 anonymous 片段能力 + 结算四步；支付通道当前为**模拟 PayPal**，零迁移）；**归因采集链路已落地**（构建期内联 \`track.js\` + 下单定格）；**支付回调验签与优惠码幂等核销未开始** | 高 | 已拍板方向，可先行 |
+| BIZ-2 | 首批商品 capability（\`productList\` / \`searchResults\` / \`productAvailability\` / \`productLivePrice\` / \`cartSummary\` 接真实数据 / \`cartAdd\`） | \`04-A-dynamic-capabilities.md\` §7（L128-142）、\`04-B\` §6 索引（L152） | **购物车侧已落地**（\`runtimefragment/cart.go\`：cartSummary 真实计数 / cartView / cartAdd / cartSetQty / cartClear / checkout）；\`productList\` / \`productVariantAvailability\` / \`bundleConfigurator\` 亦已落地；\`searchResults\` / \`productLivePrice\` 未开始 | 中 | BIZ-1 |
 | BIZ-3 | 会员 membership（访客账号领域，admin 之外另建） | \`06-A\` §3 表 #6（L60）、\`AGENTS.md\` 命名约束 | **账号底座已落地（issue #36）**：\`internal/module/user\` 提供注册 / 邮箱验证 / 登录 / 密码重置 / 账号中心（资料 / 偏好 / 登录设备），与 \`admin\` 完全隔离；**会员等级与权益未开始** | 中 | 无 |
 | BIZ-4 | 积分 points（流水对账/幂等） | \`06-A\` §3 表 #7（L61） | 未开始 | 低 | BIZ-3 |
 | BIZ-5 | 评论 comments（提交走 fragment + 审核） | \`06-A\` §3 表 #9（L63） | 未开始 | 低 | BIZ-3 |
 | BIZ-6 | 站内搜索 capability（\`searchResults\`，白名单排序） | \`06-A\` §3 表 #10（L64） | 未开始 | 低 | 无 |
 | BIZ-7 | 邮件 smtp（配置 + 队列，表单/会员通知依赖） | \`06-A\` §3 表 #11（L65） | **已落地（issue #37 / #38）**：\`internal/module/mail\`（发信账号 / 模板 / 联系人 / 群发 / 自动化 / 事务发送 / 追踪退订），队列未启用时 \`SendTemplate\` 降级同步发送；\`user\` 模块的验证信与重置信已实际接入 | 低 | 无 |
-| BIZ-8 | 统计 analytics（GA4/gtag 注入 + 访问计数） | \`06-A\` §3 表 #5（L59） | 未开始 | 低 | PIPE-8 |
+| BIZ-8 | 统计 analytics（GA4/gtag 注入 + 访问计数） | \`06-A\` §3 表 #5（L59） | **客户端采集链路已落地**（构建期内联 \`track.js\`：UTM 家族 / 广告点击 id / referrer / 会话 / 浏览轨迹 → 签名 cookie → 下单定格进 \`orders.attribution\`）；GA4/gtag 注入与访问计数未开始 | 低 | PIPE-8 |
 | BIZ-9 | 商品数据进可视化（\`content:product\` 集合源本体化注册） | \`06-A\` §4 前置硬骨头 1（L86）、\`06-B\` 变更记录 v2 理由 4（L79-80） | 文档滞后-部分已有：\`content\` service 已实现 \`core.CollectionResolver\`（\`content:{product\|article\|category}\`），通道已通；缺商品实体本身 | 中 | BIZ-1 |
 
 ---

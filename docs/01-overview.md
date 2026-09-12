@@ -292,7 +292,8 @@ go_wp/
 | `runtimefragment` | 已实现 | capability 白名单、受控 HTML Fragment handler（`capability.go` 首批 `loginPanel`/`cartSummary`） | 读取 Page Document、执行 Jet、接受任意 endpoint |
 | `mail` | 已实现 | 发信账号 / 邮件模板 / 联系人 / 群发活动 / 自动化 / 事务发送（`SendTemplate`）/ 追踪与退订；后台走 `MailService`，公开追踪走 `TrackingService` | 短信 / 站内信；访客账号本身（在 `user`） |
 | `user` | 已实现（issue #36） | 访问面访客账号：注册 / 邮箱验证 / 登录 / 密码重置 / 账号中心（资料 / 偏好 / 改密码 / 登录设备）；独立 cookie 与会话命名空间，公开面路由、不经 Casbin | CMS 内容与后台管理；会员等级 / 权益（BIZ-3） |
-| `order` | 已实现（BIZ-1 销售侧） | 订单：建单（商品快照 + 扣库存）/ 状态机（表驱动 + 行锁）/ 取消（归还库存）/ 退款（不还库存 —— 钱与货分开）/ 查询（列表 + 状态计数 + 详情含流转链）；金额一律整数分；归因与流量来源与下单前浏览轨迹冗余在 `orders.attribution`（JSONB），后台备注 `admin_note` 供自建与代发订单填写 | 购物车 / 结算页 / 支付网关对接；库存真源（在 `product/inventory`）；退货入库流程 |
+| `order` | 已实现（BIZ-1 销售侧） | 订单：建单（商品快照 + 扣库存）/ 状态机（表驱动 + 行锁）/ 取消（归还库存）/ 退款（不还库存 —— 钱与货分开）/ 查询（列表 + 状态计数 + 详情含流转链）；金额一律整数分；归因与流量来源与下单前浏览轨迹冗余在 `orders.attribution`（JSONB），后台备注 `admin_note` 供自建与代发订单填写（**采集链路已落地**：构建期内联 `track.js` 按 Sourcebuster 三条覆盖规则写签名 cookie，下单时由 `cart` 定格） | 购物车与结算页（在 `cart`）；支付网关对接（在 `cart/outbound`）；库存真源（在 `product/inventory`）；退货入库流程 |
+| `cart` | 已实现（BIZ-1 访问面） | 购物车与访客结算：状态在**客户端签名 cookie**（服务端零持久化）/ 六个 anonymous 片段能力（cartSummary / cartView / cartAdd / cartSetQty / cartClear / checkout）/ 结算四步（建单 → 支付通道扣款 → 落账 → 清空购物车；支付失败不回滚订单）/ 归因采集链路（构建期内联 track.js 按 Sourcebuster 三条覆盖规则写 cookie，下单时定格进 orders.attribution）/ 支付通道当前为**模拟 PayPal**；零迁移 | 订单持久化与状态机（在 `order`）；商品与库存真源（在 `product`）；真支付网关对接（换 outbound 实现）；结算页外观 |
 
 关键命名约束：
 
