@@ -249,6 +249,9 @@ func TestMailAutomationCanvasPageRenders(t *testing.T) {
 	body := rec.Body.String()
 	for _, want := range []string{
 		"autoCanvas", "autoEdges", "autoNodes", "autoMeta",
+		// 后台按需内联动效：本页声明了 sky-fade-up，layout 才输出它的 @keyframes。
+		// 未声明的页面为零字节（见 core.KeyframeCSS 的单测）。
+		"@keyframes sky-fade-up",
 		"/static/js/automation/canvas.js", "/static/css/automation.css",
 		"画布页流程", "保存位置", "改用表单编辑",
 	} {

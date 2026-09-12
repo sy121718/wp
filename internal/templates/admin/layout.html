@@ -23,6 +23,9 @@
     <link rel="stylesheet" href="/static/css/theme.css">
 {* 原始控件基座样式（下拉/输入等）：与 theme.css 分开，前台产物也引同一份。 *}
 <link rel="stylesheet" href="/static/css/ui.css">
+{* 页面按需内联的动效关键帧：页面 handler 用 core.KeyframeCSS([]string{"sky-fade-up"}) 声明，
+   未声明时为缺 key（链式索引安全）→ 不输出任何字节。后台不常驻加载那 63 条营销动效。 *}
+{{if .["KeyframesCSS"]}}<style>{{ .["KeyframesCSS"] | unsafe }}</style>{{end}}
     <script src="https://cdn.jsdelivr.net/npm/htmx.org@2.0.4/dist/htmx.min.js"></script>
 </head>
 {* hx-headers 全局注入 CSRF token（HTMX 2.0 属性继承，页面内所有 hx-post 自动携带 X-CSRF-Token）。

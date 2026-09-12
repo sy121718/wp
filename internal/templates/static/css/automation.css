@@ -92,3 +92,13 @@
 
 /* 键盘移动时的即时反馈（不依赖任何动画库）。 */
 .auto-node[data-moved="1"] { box-shadow: 0 0 0 4px rgb(47 111 237 / 25%); }
+
+/* ===== 顶栏入场动效（按需内联的关键帧） ===== 
+   动效词汇 sky-fade-up 的 @keyframes 由**页面 handler 按需声明**（core.KeyframeCSS），
+   本文件只声明引用 —— 后台不常驻加载那 63 条营销动效，谁用谁声明。
+   包在 prefers-reduced-motion: no-preference 里：用户要求减少动效时不播放（无障碍基线）。 */
+@media (prefers-reduced-motion: no-preference) {
+  .auto-bar {
+    animation: sky-fade-up .28s ease-out both;
+  }
+}

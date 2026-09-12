@@ -19,6 +19,8 @@ import (
 	"strconv"
 	"strings"
 
+	"go_wp/internal/builder/core"
+
 	"github.com/gin-gonic/gin"
 )
 
@@ -57,6 +59,9 @@ func (h *mailPageHandle) MailAutomationCanvas(c *gin.Context) {
 		"Templates": templates,
 		"jsVer":     automationJsVer(),
 		"Err":       c.Query("err"),
+		// 按需内联动效关键帧（本次只用到入场一个）。不声明就是零字节 ——
+		// 后台不常驻加载 63 条营销动效，谁用谁声明（见 core.KeyframeCSS）。
+		"KeyframesCSS": core.KeyframeCSS([]string{"sky-fade-up"}),
 	}))
 }
 
