@@ -27,6 +27,19 @@ var emptyEl = document.getElementById('autoEmpty');
 var selected = null;
 var dirty = false;
 
+// 兜底：容器或 SVG 层缺失时补建一个。真实模板里必定存在，但缺了不该让整个脚本抛错
+// —— 脚本一抛错，页面上其它交互也跟着失效，排查时会误以为是别的问题。
+if (!canvas) {
+    canvas = document.createElement('div');
+    canvas.className = 'auto-canvas';
+    document.body.appendChild(canvas);
+}
+if (!svg) {
+    svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('id', 'autoEdges');
+    canvas.appendChild(svg);
+}
+
 /** setStatus 顶栏的一句话反馈（aria-live 会读出来）。 */
 function setStatus(msg) {
     if (statusEl) { statusEl.textContent = msg || ''; }
@@ -44,7 +57,7 @@ function csrf() {
  * 超出视口的连线会被裁掉。内容层固定大小 + 画布滚动，连线就完整了。
  */
 var stage = document.createElement('div');
-stage.className = 'auto-stage');
+stage.className = 'auto-stage';
 stage.style.position = 'relative';
 stage.style.width = '2400px';
 stage.style.height = '1600px';
@@ -97,13 +110,18 @@ function fillForm(n) {
     document.getElementById('fType').value = NODE_LABEL[n.type] || n.type;
     document.getElementById('fParam').value = nodeParamText(n);
     document.getElementById('fParamHint').textContent = PARAM_HINT[n.type] || '';
-    fillSelect('fNext', n.next || '', n.type === 'branch');
-    fillSelect('fYes', n.yes || '', n.type !== 'branch');
-    fillSelect('fNo', n.no || '', n.type !== 'branch');
-    // 结构编辑能力受限时（流程已启用）禁用表单，并说明原因。
+
+    // 顺序要紧：先按「流程是否启用」整体禁用 / 启用，**再**按节点类型设出边可用性。
+    // 反过来的话，整体启用那一遍会把「分支节点的 next 本来就该禁用」给覆盖掉
+    // （表现为分支节点上 next 可编辑，但保存时根本不读它 —— 用户白改一遍）。
     var locked = meta.structureEditable === false;
     var inputs = form.querySelectorAll('input, select, button');
     for (var i = 0; i < inputs.length; i++) { inputs[i].disabled = locked; }
+
+    // 分支节点的 next 无意义（它走 yes / no），非分支节点的 yes / no 无意义。
+    fillSelect('fNext', n.next || '', locked || n.type === 'branch');
+    fillSelect('fYes', n.yes || '', locked || n.type !== 'branch');
+    fillSelect('fNo', n.no || '', locked || n.type !== 'branch');
     var lockNote = document.getElementById('autoLockNote');
     if (locked) {
         if (!lockNote) {

@@ -134,7 +134,7 @@ export function renderNodes(stage, nodes, entryKey, onSelect) {
     for (var i = 0; i < nodes.length; i++) {
         var n = nodes[i];
         var el = document.createElement('div');
-        el.className = 'auto-node');
+        el.className = 'auto-node';
         el.setAttribute('data-key', n.key);
         el.setAttribute('data-type', n.type);
         el.setAttribute('tabindex', '0');
