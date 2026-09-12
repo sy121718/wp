@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"html"
+	"net/url"
 	"strings"
 )
 
@@ -192,37 +193,35 @@ func buildJSONLD(url, title, description, image, schemaType string) string {
 }
 
 // breadcrumbList 由 URL 路径生成面包屑（/a/b → 首页 + a + b）。
-func breadcrumbList(url string) []map[string]any {
-	u := strings.TrimSpace(url)
-	if u == "" {
+func breadcrumbList(rawURL string) []map[string]any {
+	rawURL = strings.TrimSpace(rawURL)
+	if rawURL == "" {
 		return nil
 	}
-	// 去掉协议与主机，仅取路径段。
-	if i := strings.Index(u, "://"); i >= 0 {
-		u = u[i+3:]
-		if j := strings.Index(u, "/"); j >= 0 {
-			u = u[j:]
-		} else {
-			u = "/"
+	u, err := url.Parse(rawURL)
+	if err != nil || u.Opaque != "" {
+		return nil
+	}
+	// 路径不是基址；查询和锚点也不参与层级。保留编码后的路径段，
+	// 否则 a%2Fb 会被错误拆成两级，只有展示名称才进行解码。
+	base := ""
+	if u.Host != "" {
+		base = "//" + u.Host
+		if u.Scheme != "" {
+			base = u.Scheme + ":" + base
 		}
 	}
-	base := strings.TrimRight(url, "/")
-	if i := strings.Index(base, "://"); i >= 0 {
-		rest := base[i+3:]
-		if j := strings.Index(rest, "/"); j >= 0 {
-			base = base[:i+3] + rest[:j]
-		}
-	}
-	parts := strings.Split(strings.Trim(u, "/"), "/")
+	parts := strings.Split(strings.TrimPrefix(u.EscapedPath(), "/"), "/")
 	out := []map[string]any{{"@type": "ListItem", "position": 1, "name": "Home", "item": base + "/"}}
 	cur := base
-	for i, p := range parts {
+	for _, p := range parts {
+		cur += "/" + p
 		if p == "" {
 			continue
 		}
-		cur += "/" + p
+		name, _ := url.PathUnescape(p) // EscapedPath 已保证转义合法。
 		out = append(out, map[string]any{
-			"@type": "ListItem", "position": i + 2, "name": p, "item": cur,
+			"@type": "ListItem", "position": len(out) + 1, "name": name, "item": cur,
 		})
 	}
 	return out
