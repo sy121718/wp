@@ -131,7 +131,9 @@
 
         {* 开发阶段一键登录（仅 debug 模式注入 DevLogin；release 下不显示，因为路由不存在）。
            用途见 docs/08-dev-login.md：本地开发与自动化端到端验证不必每次输密码过验证码。 *}
-        {{if .DevLogin}}
+        {* 链式索引写法：Jet 对缺 key 会运行时报错（{{if .DevLogin}} 在测试 fixture 里就炸过），
+           与 layout 里 {{ .["csrf_token"] }} 同一原因。 *}
+        {{if .["DevLogin"]}}
         <p class="text-sm text-mute" style="margin-top:14px;text-align:center;line-height:1.7">
           <a href="/admin/dev-login?to=/admin">开发环境一键登录</a><br>
           <span class="text-xs">免密码，仅本机可访问；release 模式不提供</span>
