@@ -1,0 +1,23 @@
+{{extends "layout.html"}}
+{{block body()}}
+<div class="g-narrow">
+  <div class="g-card">
+    <div class="g-mark">{{if .["ok"]}}✓{{else}}!{{end}}</div>
+    <h1>{{ .["title"] }}</h1>
+
+    {{if .["ok"]}}
+    <div class="g-alert g-alert--ok">{{ .["message"] }}</div>
+    {{else}}
+    <div class="g-alert g-alert--error">{{ .["message"] }}</div>
+    {{end}}
+
+    <div class="g-note">
+      {{if .["user"]}}
+      <a href="/user/account">返回账号中心</a>
+      {{else}}
+      <a href="/user/login">去登录</a> · <a href="/user/register">注册新账号</a>
+      {{end}}
+    </div>
+  </div>
+</div>
+{{end}}

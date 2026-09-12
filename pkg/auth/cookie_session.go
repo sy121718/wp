@@ -44,6 +44,10 @@ var (
 	sessionMu    sync.RWMutex
 	cookieStore  sessions.Store
 	sessionReady bool
+	// sessionSecret / sessionSecure 保留 Init 时的实际取值，
+	// 供 NamedCookieStore 为别的身份域创建**同源密钥、不同 cookie 名**的存储。
+	sessionSecret string
+	sessionSecure bool
 )
 
 // CookieSession 认证 cookie 中保存的最小会话信息。
@@ -130,9 +134,54 @@ func Init(v *viper.Viper) error {
 	})
 
 	cookieStore = store
+	sessionSecret = secret
+	sessionSecure = secure
 	sessionReady = true
 	logger.Scene("init").Info("会话存储（Session + Cookie）初始化成功")
 	return nil
+}
+
+// NamedCookieStore 按指定的 cookie 名创建会话存储，供**第二身份域**使用。
+//
+// 为什么需要：一个站点会有多个互不相干的登录态（管理后台、访客账号、将来的客户账号）。
+// 它们必须用不同的 cookie 名 —— 同一个 cookie 只能存一份会话，
+// 后登录的一方会把先登录的一方顶掉（后台管理员会莫名其妙被踢出去）。
+// 同理，Redis 那边的会话 key 也必须分开，见 user 模块的会话说明。
+//
+// 密钥与后台会话**同源**（同一个 auth.session_secret）：签名密钥属于部署，不属于某个身份域。
+// 隔离靠 cookie 名，不靠「各用一份密钥」—— 后者只会让运维多管一个密钥、
+// 并在轮换时漏掉其中一个。隔离后的 cookie 之间不会互相解码，因为名不同。
+func NamedCookieStore(name string) (sessions.Store, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return nil, errors.New("cookie 名不能为空")
+	}
+
+	sessionMu.RLock()
+	secret := sessionSecret
+	secure := sessionSecure
+	ready := sessionReady
+	existing := cookieStore
+	sessionMu.RUnlock()
+
+	if !ready || secret == "" {
+		return nil, errors.New("会话存储未初始化（请先调用 auth.Init）")
+	}
+	// 同名直接复用：避免同一身份域在不同装配点得到两个 store 实例
+	//（虽然后果只是多解析一次，但两个实例意味着「Options 可能不一致」的隐患）。
+	if name == sessionName && existing != nil {
+		return existing, nil
+	}
+
+	store := cookie.NewStore([]byte(secret))
+	store.Options(sessions.Options{
+		Path:     "/",
+		MaxAge:   defaultSessionMaxAge,
+		HttpOnly: true,
+		Secure:   secure,
+		SameSite: http.SameSiteLaxMode,
+	})
+	return store, nil
 }
 
 // Ready 检查会话存储是否已初始化。

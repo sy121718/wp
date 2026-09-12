@@ -112,6 +112,29 @@ func TTL(ctx context.Context, key string) (time.Duration, error) {
 	return client.TTL(ctx, key).Result()
 }
 
+// Delete 删除一个或多个缓存 key（不存在的 key 不视为错误）。
+//
+// 与 SetJSON 对称的基础操作。刻意不返回「删掉了几条」：调用方要的是
+// 「这个 key 之后不再存在」，而不是「这次删掉了几条」——后者会让
+// 「本来就没这条」变成一个需要被处理的分支，而它并不是错误。
+//
+// 使用示例：
+// - `cache.Delete(ctx, "userauth:sess:abc")`
+// - `cache.Delete(ctx, key1, key2)`
+func Delete(ctx context.Context, keys ...string) error {
+	if len(keys) == 0 {
+		return nil
+	}
+	client, err := GetRedis()
+	if err != nil {
+		return err
+	}
+	if err := client.Del(ctx, keys...).Err(); err != nil {
+		return fmt.Errorf("删除缓存失败: %w", err)
+	}
+	return nil
+}
+
 // GetJSON 从缓存中读取 JSON 并反序列化为指定类型。
 //
 // 参数说明：

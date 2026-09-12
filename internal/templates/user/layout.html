@@ -1,0 +1,277 @@
+{* user/layout.html — 访客账号页面母版（注册 / 登录 / 找回 / 账号中心）。
+
+   刻意**不引后台的 theme.css / ui.css**：
+     · 访客页面是公开站点的一部分，不该随后台主题一起变；
+     · 后台主题靠 data-theme 属性 + localStorage 切换，那需要 JS，而访客侧要求无脚本可用；
+     · 自包含的代价只是一个模板里的几十行 CSS，换来的是「改后台样式不会弄坏注册页」。
+
+   注意 Jet 定界符：本文件里的 CSS 必须写成多行格式，避免出现连续的两个右花括号
+   （Jet 在块语法之后会把它当作结束符，历史上已经踩过一次）。 *}
+<!DOCTYPE html>
+<html lang="{{ .["lang"] }}">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{ .["title"] }} — {{ .["site"] }}</title>
+<meta name="robots" content="noindex">
+<style>
+:root{
+  --g-bg:#f5f4f0;
+  --g-bg-accent:#eae7df;
+  --g-surface:#fffdf9;
+  --g-ink:#1a1917;
+  --g-muted:#6d6862;
+  --g-line:#e2ded4;
+  --g-line-strong:#cfc9bb;
+  --g-accent:#0e6b5c;
+  --g-accent-hover:#0a5449;
+  --g-accent-soft:#e6f1ee;
+  --g-danger:#a3341f;
+  --g-danger-soft:#fbeae5;
+  --g-ok:#1d6b43;
+  --g-ok-soft:#e5f3eb;
+  --g-radius:12px;
+  --g-radius-sm:8px;
+  --g-shadow:0 1px 2px rgba(26,25,23,.05), 0 16px 40px -20px rgba(26,25,23,.28);
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --g-bg:#131211;
+    --g-bg-accent:#1b1a18;
+    --g-surface:#1d1c1a;
+    --g-ink:#f3f1ed;
+    --g-muted:#a09a91;
+    --g-line:#302e2a;
+    --g-line-strong:#433f39;
+    --g-accent:#4fbfa8;
+    --g-accent-hover:#6bd0ba;
+    --g-accent-soft:#16302b;
+    --g-danger:#f0907a;
+    --g-danger-soft:#331914;
+    --g-ok:#63c48c;
+    --g-ok-soft:#152b1f;
+    --g-shadow:0 1px 2px rgba(0,0,0,.4), 0 16px 40px -20px rgba(0,0,0,.7);
+  }
+}
+*,*::before,*::after{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0;
+  min-height:100vh;
+  display:flex;
+  flex-direction:column;
+  background:var(--g-bg);
+  background-image:
+    radial-gradient(60rem 24rem at 12% -6%, var(--g-bg-accent), transparent 62%),
+    radial-gradient(50rem 22rem at 92% 4%, var(--g-bg-accent), transparent 58%);
+  color:var(--g-ink);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  font-size:16px;
+  line-height:1.6;
+}
+.g-wrap{width:min(100% - 2.5rem,68rem);margin-inline:auto}
+.g-header{
+  border-bottom:1px solid var(--g-line);
+  background:color-mix(in srgb,var(--g-surface) 72%,transparent);
+  backdrop-filter:saturate(1.4) blur(8px);
+}
+.g-header-inner{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:1rem;
+  min-height:4rem;
+  flex-wrap:wrap;
+  padding-block:.5rem;
+}
+.g-brand{
+  font-family:ui-serif,Georgia,"Songti SC","SimSun",serif;
+  font-size:1.375rem;
+  font-weight:600;
+  letter-spacing:.01em;
+  color:var(--g-ink);
+  text-decoration:none;
+}
+.g-brand:hover{color:var(--g-accent)}
+.g-nav{display:flex;align-items:center;gap:1.25rem;flex-wrap:wrap}
+.g-nav a{color:var(--g-muted);text-decoration:none;font-size:.9375rem}
+.g-nav a:hover{color:var(--g-accent)}
+.g-nav form{display:inline;margin:0}
+.g-linklike{
+  background:none;border:0;padding:0;cursor:pointer;
+  font:inherit;font-size:.9375rem;color:var(--g-muted);
+}
+.g-linklike:hover{color:var(--g-accent)}
+.g-main{flex:1;padding-block:clamp(2rem,6vw,4.5rem)}
+.g-footer{
+  border-top:1px solid var(--g-line);
+  padding-block:1.5rem;
+  color:var(--g-muted);
+  font-size:.875rem;
+}
+.g-narrow{width:min(100%,26rem);margin-inline:auto}
+.g-card{
+  background:var(--g-surface);
+  border:1px solid var(--g-line);
+  border-radius:var(--g-radius);
+  box-shadow:var(--g-shadow);
+  padding:clamp(1.5rem,4vw,2.25rem);
+}
+.g-card h1{
+  margin:0 0 .375rem;
+  font-size:1.5rem;
+  line-height:1.3;
+  letter-spacing:-.01em;
+}
+.g-sub{margin:0 0 1.75rem;color:var(--g-muted);font-size:.9375rem}
+.g-field{margin-bottom:1.125rem}
+.g-field label{display:block;margin-bottom:.375rem;font-size:.875rem;font-weight:500}
+.g-field .g-hint{margin-top:.375rem;color:var(--g-muted);font-size:.8125rem}
+input[type=text],input[type=email],input[type=password],input[type=url],input[type=tel],input[type=date],input[type=number],select,textarea{
+  width:100%;
+  padding:.625rem .75rem;
+  border:1px solid var(--g-line-strong);
+  border-radius:var(--g-radius-sm);
+  background:var(--g-bg);
+  color:var(--g-ink);
+  font:inherit;
+  font-size:.9375rem;
+}
+textarea{min-height:5.5rem;resize:vertical}
+input:focus-visible,select:focus-visible,textarea:focus-visible{
+  outline:2px solid var(--g-accent);
+  outline-offset:1px;
+  border-color:var(--g-accent);
+}
+.g-check{display:flex;align-items:center;gap:.5rem;font-size:.875rem}
+.g-check input{width:auto}
+.g-btn{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:.5rem;
+  width:100%;
+  padding:.6875rem 1rem;
+  border:1px solid transparent;
+  border-radius:var(--g-radius-sm);
+  background:var(--g-accent);
+  color:#fff;
+  font:inherit;
+  font-size:.9375rem;
+  font-weight:500;
+  cursor:pointer;
+}
+.g-btn:hover{background:var(--g-accent-hover)}
+.g-btn--ghost{
+  width:auto;
+  background:transparent;
+  border-color:var(--g-line-strong);
+  color:var(--g-ink);
+}
+.g-btn--ghost:hover{background:var(--g-bg-accent);color:var(--g-ink)}
+.g-btn--danger{background:transparent;border-color:var(--g-line-strong);color:var(--g-danger)}
+.g-btn--danger:hover{background:var(--g-danger-soft);color:var(--g-danger)}
+.g-actions{display:flex;gap:.625rem;flex-wrap:wrap;margin-top:1.5rem}
+.g-note{margin-top:1.5rem;padding-top:1.25rem;border-top:1px solid var(--g-line);color:var(--g-muted);font-size:.875rem}
+.g-note a{color:var(--g-accent)}
+.g-alert{
+  margin-bottom:1.25rem;
+  padding:.75rem .875rem;
+  border-radius:var(--g-radius-sm);
+  border:1px solid transparent;
+  font-size:.875rem;
+}
+.g-alert--error{background:var(--g-danger-soft);border-color:color-mix(in srgb,var(--g-danger) 35%,transparent);color:var(--g-danger)}
+.g-alert--ok{background:var(--g-ok-soft);border-color:color-mix(in srgb,var(--g-ok) 35%,transparent);color:var(--g-ok)}
+.g-mark{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  width:2.75rem;height:2.75rem;
+  margin-bottom:1rem;
+  border-radius:999px;
+  font-size:1.375rem;
+  background:var(--g-accent-soft);
+  color:var(--g-accent);
+}
+.g-stack{display:grid;gap:1.5rem}
+.g-panel{
+  background:var(--g-surface);
+  border:1px solid var(--g-line);
+  border-radius:var(--g-radius);
+  padding:clamp(1.25rem,3vw,1.75rem);
+}
+.g-panel > h2{
+  margin:0 0 1.25rem;
+  font-size:1.0625rem;
+  letter-spacing:.01em;
+}
+.g-grid2{display:grid;gap:1rem;grid-template-columns:1fr}
+@media (min-width:640px){
+  .g-grid2{grid-template-columns:1fr 1fr}
+}
+.g-meta{display:grid;gap:.5rem;grid-template-columns:auto 1fr;font-size:.875rem}
+.g-meta dt{color:var(--g-muted)}
+.g-meta dd{margin:0}
+.g-devices{list-style:none;margin:0;padding:0;display:grid;gap:.75rem}
+.g-device{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:1rem;
+  padding:.875rem;
+  border:1px solid var(--g-line);
+  border-radius:var(--g-radius-sm);
+  flex-wrap:wrap;
+}
+.g-device-info{min-width:0;flex:1 1 14rem}
+.g-device-ua{
+  font-size:.9375rem;
+  overflow-wrap:anywhere;
+}
+.g-device-meta{color:var(--g-muted);font-size:.8125rem;overflow-wrap:anywhere}
+.g-tag{
+  display:inline-block;
+  margin-left:.375rem;
+  padding:.0625rem .4375rem;
+  border-radius:999px;
+  background:var(--g-accent-soft);
+  color:var(--g-accent);
+  font-size:.75rem;
+  vertical-align:middle;
+}
+.g-empty{color:var(--g-muted);font-size:.875rem}
+@media (max-width:480px){
+  .g-wrap{width:min(100% - 1.75rem,68rem)}
+  .g-nav{gap:.875rem}
+}
+</style>
+</head>
+<body>
+<header class="g-header">
+  <div class="g-wrap g-header-inner">
+    <a class="g-brand" href="/">{{ .["site"] }}</a>
+    <nav class="g-nav">
+      {{if .["user"]}}
+      <a href="/user/account">账号中心</a>
+      <form method="post" action="/user/logout">
+        <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
+        <button type="submit" class="g-linklike">退出</button>
+      </form>
+      {{else}}
+      <a href="/user/login">登录</a>
+      <a href="/user/register">注册</a>
+      {{end}}
+    </nav>
+  </div>
+</header>
+<main class="g-main">
+  <div class="g-wrap">
+{{block body()}}{{end}}
+  </div>
+</main>
+<footer class="g-footer">
+  <div class="g-wrap">{{ .["site"] }} 账号服务</div>
+</footer>
+</body>
+</html>

@@ -1,0 +1,31 @@
+{{extends "layout.html"}}
+{{block body()}}
+<div class="g-narrow">
+  <div class="g-card">
+    <h1>找回密码</h1>
+    <p class="g-sub">填写注册时使用的邮箱，我们会发送一封重置邮件。</p>
+
+    {{if .["error"]}}
+    <div class="g-alert g-alert--error">{{ .["error"] }}</div>
+    {{end}}
+
+    <form method="post" action="/user/forgot" novalidate>
+      <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
+
+      <div class="g-field">
+        <label for="email">邮箱</label>
+        <input type="email" id="email" name="email" value="{{ .["email"] }}"
+               autocomplete="email" required autofocus>
+      </div>
+
+      <div class="g-actions">
+        <button type="submit" class="g-btn">发送重置邮件</button>
+      </div>
+    </form>
+
+    <div class="g-note">
+      想起来了？<a href="/user/login">返回登录</a>
+    </div>
+  </div>
+</div>
+{{end}}

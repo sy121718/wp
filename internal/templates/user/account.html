@@ -1,0 +1,222 @@
+{{extends "layout.html"}}
+{{block body()}}
+<div class="g-stack">
+
+  {{if .["actionError"]}}
+  <div class="g-alert g-alert--error">{{ .["actionError"] }}</div>
+  {{end}}
+
+  {* ===== 身份概览 ===== *}
+  <section class="g-panel">
+    <h2>账号</h2>
+    <dl class="g-meta">
+      <dt>用户名</dt><dd>{{ .["account"].Username }}</dd>
+      <dt>邮箱</dt>
+      <dd>
+        {{ .["account"].Email }}
+        {{if .["account"].EmailVerified}}
+        <span class="g-tag">已验证</span>
+        {{else}}
+        <span class="g-tag">未验证</span>
+        {{end}}
+      </dd>
+      <dt>注册时间</dt><dd>{{ .["account"].RegisteredAtText }}</dd>
+      <dt>上次登录</dt>
+      <dd>{{ .["account"].LastLoginTimeText }}{{if .["account"].LastLoginIP}} · {{ .["account"].LastLoginIP }}{{end}}</dd>
+    </dl>
+  </section>
+
+  {* ===== 基本资料 ===== *}
+  <section class="g-panel">
+    <h2>资料</h2>
+    <form method="post" action="/user/account/profile">
+      <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
+
+      <div class="g-grid2">
+        <div class="g-field">
+          <label for="nickname">昵称</label>
+          <input type="text" id="nickname" name="nickname" value="{{ .["account"].Nickname }}">
+        </div>
+        <div class="g-field">
+          <label for="gender">性别</label>
+          <select id="gender" name="gender">
+            <option value="0"{{if .["account"].Gender == 0}} selected{{end}}>未填写</option>
+            <option value="1"{{if .["account"].Gender == 1}} selected{{end}}>男</option>
+            <option value="2"{{if .["account"].Gender == 2}} selected{{end}}>女</option>
+          </select>
+        </div>
+        <div class="g-field">
+          <label for="firstName">名</label>
+          <input type="text" id="firstName" name="firstName" value="{{ .["account"].FirstName }}">
+        </div>
+        <div class="g-field">
+          <label for="lastName">姓</label>
+          <input type="text" id="lastName" name="lastName" value="{{ .["account"].LastName }}">
+        </div>
+        <div class="g-field">
+          <label for="birthday">生日</label>
+          <input type="date" id="birthday" name="birthday" value="{{ .["account"].Birthday }}">
+        </div>
+        <div class="g-field">
+          <label for="phone">电话</label>
+          <input type="tel" id="phone" name="phone" value="{{ .["account"].Phone }}">
+        </div>
+        <div class="g-field">
+          <label for="website">个人主页</label>
+          <input type="url" id="website" name="website" value="{{ .["account"].Website }}"
+                 placeholder="https://">
+        </div>
+        <div class="g-field">
+          <label for="company">公司 / 组织</label>
+          <input type="text" id="company" name="company" value="{{ .["account"].Company }}">
+        </div>
+      </div>
+
+      <div class="g-field">
+        <label for="bio">简介</label>
+        <textarea id="bio" name="bio">{{ .["account"].Bio }}</textarea>
+      </div>
+
+      <div class="g-field">
+        <label for="address">地址</label>
+        <input type="text" id="address" name="address" value="{{ .["account"].Address }}">
+      </div>
+      <div class="g-grid2">
+        <div class="g-field">
+          <label for="country">国家 / 地区</label>
+          <input type="text" id="country" name="country" value="{{ .["account"].Country }}">
+        </div>
+        <div class="g-field">
+          <label for="province">省 / 州</label>
+          <input type="text" id="province" name="province" value="{{ .["account"].Province }}">
+        </div>
+        <div class="g-field">
+          <label for="city">城市</label>
+          <input type="text" id="city" name="city" value="{{ .["account"].City }}">
+        </div>
+        <div class="g-field">
+          <label for="postcode">邮编</label>
+          <input type="text" id="postcode" name="postcode" value="{{ .["account"].Postcode }}">
+        </div>
+      </div>
+
+      <div class="g-actions">
+        <button type="submit" class="g-btn">保存资料</button>
+      </div>
+    </form>
+  </section>
+
+  {* ===== 偏好 ===== *}
+  <section class="g-panel">
+    <h2>偏好</h2>
+    <form method="post" action="/user/account/preference">
+      <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
+
+      <div class="g-grid2">
+        <div class="g-field">
+          <label for="pageSize">每页条数</label>
+          <input type="number" id="pageSize" name="pageSize" min="1" max="200"
+                 value="{{ .["account"].PageSize }}">
+        </div>
+        <div class="g-field">
+          <label for="profileVisibility">主页可见性</label>
+          <select id="profileVisibility" name="profileVisibility">
+            <option value="public"{{if .["account"].ProfileVisibility == "public"}} selected{{end}}>所有人可见</option>
+            <option value="members"{{if .["account"].ProfileVisibility == "members"}} selected{{end}}>仅登录用户</option>
+            <option value="private"{{if .["account"].ProfileVisibility == "private"}} selected{{end}}>仅自己</option>
+          </select>
+        </div>
+        <div class="g-field">
+          <label for="timezone">时区</label>
+          <input type="text" id="timezone" name="timezone" value="{{ .["account"].Timezone }}"
+                 placeholder="Asia/Shanghai">
+        </div>
+      </div>
+
+      <div class="g-field g-check">
+        <input type="checkbox" id="emailNotify" name="emailNotify" value="1"
+               {{if .["account"].EmailNotify}}checked{{end}}>
+        <label for="emailNotify">接收邮件通知</label>
+      </div>
+      <div class="g-field g-check">
+        <input type="checkbox" id="smsNotify" name="smsNotify" value="1"
+               {{if .["account"].SmsNotify}}checked{{end}}>
+        <label for="smsNotify">接收短信通知</label>
+      </div>
+      <div class="g-field g-check">
+        <input type="checkbox" id="showOnline" name="showOnline" value="1"
+               {{if .["account"].ShowOnline}}checked{{end}}>
+        <label for="showOnline">公开我的在线状态</label>
+      </div>
+
+      <div class="g-actions">
+        <button type="submit" class="g-btn">保存偏好</button>
+      </div>
+    </form>
+  </section>
+
+  {* ===== 登录设备 ===== *}
+  <section class="g-panel">
+    <h2>登录设备</h2>
+    {{if .["sessions"]}}
+    <ul class="g-devices">
+      {{range _, s := .["sessions"]}}
+      <li class="g-device">
+        <div class="g-device-info">
+          <div class="g-device-ua">
+            {{if s.UserAgent}}{{ s.UserAgent }}{{else}}未知浏览器{{end}}
+            {{if s.Current}}<span class="g-tag">当前设备</span>{{end}}
+          </div>
+          <div class="g-device-meta">
+            {{if s.IP}}{{ s.IP }}{{else}}IP 未知{{end}}
+            · 最近活跃 {{ s.LastActiveText }}
+            · 登录于 {{ s.CreatedText }}
+          </div>
+        </div>
+        {{if s.Current}}
+        {{else}}
+        <form method="post" action="/user/account/sessions/revoke">
+          <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
+          <input type="hidden" name="id" value="{{ s.ID }}">
+          <button type="submit" class="g-btn g-btn--ghost g-btn--danger">踢出</button>
+        </form>
+        {{end}}
+      </li>
+      {{end}}
+    </ul>
+
+    <form method="post" action="/user/account/sessions/revoke-others" class="g-actions">
+      <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
+      <button type="submit" class="g-btn g-btn--ghost">退出其它所有设备</button>
+    </form>
+    {{else}}
+    <p class="g-empty">没有其它登录设备。</p>
+    {{end}}
+  </section>
+
+  {* ===== 修改密码 ===== *}
+  <section class="g-panel">
+    <h2>修改密码</h2>
+    <form method="post" action="/user/account/password">
+      <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
+
+      <div class="g-field">
+        <label for="oldPassword">当前密码</label>
+        <input type="password" id="oldPassword" name="oldPassword"
+               autocomplete="current-password" required>
+      </div>
+      <div class="g-field">
+        <label for="newPassword">新密码</label>
+        <input type="password" id="newPassword" name="newPassword"
+               autocomplete="new-password" required>
+        <div class="g-hint">至少 8 位。修改成功后所有设备都会退出登录。</div>
+      </div>
+
+      <div class="g-actions">
+        <button type="submit" class="g-btn">修改密码</button>
+      </div>
+    </form>
+  </section>
+
+</div>
+{{end}}

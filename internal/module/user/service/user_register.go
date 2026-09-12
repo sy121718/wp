@@ -18,7 +18,6 @@ import (
 	"context"
 	"crypto/rand"
 	"errors"
-	"fmt"
 	"net/mail"
 	"strings"
 	"time"
@@ -140,6 +139,12 @@ func (s *Service) ActivateEmail(ctx context.Context, req *userdto.ActivateEmailR
 }
 
 // ResendActivation 重发验证邮件（仅对未激活的账号，且重新签发激活码）。
+//
+// 与 RequestPasswordReset 的差别（**有意，不是疏漏**）：这里对「邮箱不存在」明确报错，
+// 而密码重置一律静默成功。判断依据是这个接口**不新增任何信息**：
+// 注册接口本来就会回「邮箱已被注册」，注册与否本来就能被逐个试出来，
+// 这里再掩饰一次不会提高攻击成本，只会让真实用户在「我到底注册没注册过」上多绕一圈。
+// 密码重置不同 —— 它只需要一个邮箱、匿名可调，静默与否直接决定它能不能当批量枚举器用。
 func (s *Service) ResendActivation(ctx context.Context, req *userdto.ResendActivationReq) (err error) {
 	if req == nil || strings.TrimSpace(req.Email) == "" {
 		return errors.New(userenums.ErrInvalidParam)
@@ -253,5 +258,3 @@ func firstNonEmpty(values ...string) string {
 	}
 	return ""
 }
-
-var _ = fmt.Sprintf

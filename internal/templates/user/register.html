@@ -1,0 +1,51 @@
+{{extends "layout.html"}}
+{{block body()}}
+<div class="g-narrow">
+  <div class="g-card">
+    <h1>注册账号</h1>
+    <p class="g-sub">注册后需完成邮箱验证才能登录。</p>
+
+    {{if .["error"]}}
+    <div class="g-alert g-alert--error">{{ .["error"] }}</div>
+    {{end}}
+
+    <form method="post" action="/user/register" novalidate>
+      <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
+
+      <div class="g-field">
+        <label for="username">用户名</label>
+        <input type="text" id="username" name="username" value="{{ .["form"]["username"] }}"
+               autocomplete="username" required autofocus>
+      </div>
+
+      <div class="g-field">
+        <label for="email">邮箱</label>
+        <input type="email" id="email" name="email" value="{{ .["form"]["email"] }}"
+               autocomplete="email" required>
+        <div class="g-hint">验证邮件会发到这个地址。</div>
+      </div>
+
+      <div class="g-field">
+        <label for="nickname">昵称（可选）</label>
+        <input type="text" id="nickname" name="nickname" value="{{ .["form"]["nickname"] }}"
+               autocomplete="nickname">
+      </div>
+
+      <div class="g-field">
+        <label for="password">密码</label>
+        <input type="password" id="password" name="password"
+               autocomplete="new-password" required>
+        <div class="g-hint">至少 8 位。</div>
+      </div>
+
+      <div class="g-actions">
+        <button type="submit" class="g-btn">创建账号</button>
+      </div>
+    </form>
+
+    <div class="g-note">
+      已有账号？<a href="/user/login">直接登录</a>
+    </div>
+  </div>
+</div>
+{{end}}

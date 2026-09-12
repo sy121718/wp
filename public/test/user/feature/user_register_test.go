@@ -43,9 +43,12 @@ type mailUnavailable struct{}
 func (m *mailUnavailable) Error() string { return "邮件服务不可用（测试替身）" }
 
 type userFixture struct {
-	svc  *userservice.Service
-	m    *usermodel.UserModel
-	mail *fakeMail
+	svc   *userservice.Service
+	m     *usermodel.UserModel
+	sm    *usermodel.UserSessionModel
+	pm    *usermodel.UserProfileModel
+	prefm *usermodel.UserPreferenceModel
+	mail  *fakeMail
 }
 
 func newUserFixture(t *testing.T) *userFixture {
@@ -59,8 +62,18 @@ func newUserFixture(t *testing.T) *userFixture {
 		t.Fatalf("执行生产迁移建表失败: %v", err)
 	}
 	m := usermodel.NewUserModel(db)
+	sm := usermodel.NewUserSessionModel(db)
+	pm := usermodel.NewUserProfileModel(db)
+	prefm := usermodel.NewUserPreferenceModel(db)
 	fm := &fakeMail{}
-	return &userFixture{svc: userservice.NewService(m, fm, "测试站"), m: m, mail: fm}
+	return &userFixture{
+		svc:   userservice.NewService(m, sm, pm, prefm, fm, "测试站"),
+		m:     m,
+		sm:    sm,
+		pm:    pm,
+		prefm: prefm,
+		mail:  fm,
+	}
 }
 
 // TestRegisterSendsVerifyMailThenActivates 注册发验证邮件，码能激活，且接口不回传码。

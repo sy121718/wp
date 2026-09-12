@@ -26,8 +26,6 @@ const (
 	UserStatusPending = 2
 )
 
-const ()
-
 // JSONMap 可序列化的 JSON 扩展字段（实现 sql.Scanner / driver.Valuer）。
 //
 // 与 admin 模块同名类型是**有意重复**：跨模块不得 import 对方的 model
@@ -73,13 +71,16 @@ type UserEntity struct {
 	RegisterLocation    *string    `gorm:"column:register_location;type:varchar(100)"`
 	LastLoginIP         *string    `gorm:"column:last_login_ip;type:varchar(50)"`
 	LastLoginLocation   *string    `gorm:"column:last_login_location;type:varchar(100)"`
-	RegisteredAt        *time.Time `gorm:"column:registered_at;type:timestamp(3)"`
-	LastLoginTime       *time.Time `gorm:"column:last_login_time;type:timestamp(3)"`
-	LastActiveAt        *time.Time `gorm:"column:last_active_at;type:timestamp(3)"`
-	Metadata            JSONMap    `gorm:"column:metadata;type:jsonb"`
-	CreateBy            uint64     `gorm:"column:create_by;type:bigint;default:0"`
-	CreateTime          *time.Time `gorm:"column:create_time;type:timestamp(3);autoCreateTime"`
-	UpdateTime          *time.Time `gorm:"column:update_time;type:timestamp(3)"`
+	// RegisteredAt 是 NOT NULL 列：必须由 model 自己兜底填值，
+	// 否则调用方漏填时 GORM 会显式插入 NULL 撞约束（不是「用数据库默认值」，
+	// 显式列在 INSERT 列表里就会覆盖掉 DEFAULT CURRENT_TIMESTAMP）。
+	RegisteredAt  *time.Time `gorm:"column:registered_at;type:timestamp(3);autoCreateTime"`
+	LastLoginTime *time.Time `gorm:"column:last_login_time;type:timestamp(3)"`
+	LastActiveAt  *time.Time `gorm:"column:last_active_at;type:timestamp(3)"`
+	Metadata      JSONMap    `gorm:"column:metadata;type:jsonb"`
+	CreateBy      uint64     `gorm:"column:create_by;type:bigint;default:0"`
+	CreateTime    *time.Time `gorm:"column:create_time;type:timestamp(3);autoCreateTime"`
+	UpdateTime    *time.Time `gorm:"column:update_time;type:timestamp(3)"`
 	// DeletedAt 注销时间（**软删除**：数据保留，只是不再可见）。
 	//
 	// 用 GORM 的软删除类型：Delete 自动变成 UPDATE deleted_at，所有查询自动加
@@ -234,11 +235,18 @@ func (m *UserModel) Restore(ctx context.Context, id uint64) (err error) {
 // 邮箱为空时不参与判断：空邮箱在库里允许重复（第三方账号可能没有邮箱），
 // 拿它去比对会把两个都没邮箱的账号判成冲突。
 func (m *UserModel) CountByExistence(ctx context.Context, username, email string, excludeID uint64) (count int64, err error) {
-	q := m.db.WithContext(ctx).Unscoped().Model(&UserEntity{}).
-		Where("lower(username) = lower(?)", strings.TrimSpace(username))
+	// 「用户名命中 或 邮箱命中」必须整体成组，再加上「排除自身」。
+	//
+	// 不能写成链式 Where(用户名).Or(邮箱).Where(id <> ?)：GORM 会拼出
+	// `lower(username) = ? OR lower(email) = ? AND id <> ?`，而 SQL 里 AND 优先级高于 OR，
+	// 实际语义变成 `用户名命中 OR (邮箱命中 AND 不是自己)` —— 自己那行会被用户名条件捞回来，
+	// 于是「只改昵称、用户名邮箱原样提交」这种最常见的改资料操作会被判成自己与自己冲突。
+	// 分组靠把子条件当参数传给 Where 实现（GORM 会为其加括号）。
+	group := m.db.WithContext(ctx).Where("lower(username) = lower(?)", strings.TrimSpace(username))
 	if addr := strings.TrimSpace(email); addr != "" {
-		q = q.Or("lower(email) = lower(?)", addr)
+		group = group.Or("lower(email) = lower(?)", addr)
 	}
+	q := m.db.WithContext(ctx).Unscoped().Model(&UserEntity{}).Where(group)
 	if excludeID > 0 {
 		q = q.Where("id <> ?", excludeID)
 	}
@@ -246,24 +254,35 @@ func (m *UserModel) CountByExistence(ctx context.Context, username, email string
 	return count, err
 }
 
-// IncrLoginFailure 原子递增登录失败计数（禁止读-改-写回，见 AGENTS.md「登录安全」）。
-func (m *UserModel) IncrLoginFailure(ctx context.Context, id uint64, at time.Time) (err error) {
+// IncrLoginFailure 原子累加登录失败计数，连续达到阈值时锁定（口径与 admin 逐字一致）。
+//
+// 必须用**单条**原子 SQL（count = count + 1）而非读-改-写：并发失败请求读到相同计数会丢计数，
+// 结果是永远触发不了锁定，可被无限暴力破解。锁定条件也写在同一条 SQL 里（CASE WHEN）——
+// 「先加计数、再读回来判断要不要锁」是同一类竞态，只是换了个位置。
+//
+// 锁定**只写 locked_until_time，绝不修改 status**：status 表达的是管理状态
+// （正常 / 禁用），把它改成「锁定」之后到期也不会自己变回来，一次失败就能永久锁死账号。
+func (m *UserModel) IncrLoginFailure(ctx context.Context, id uint64, lockThreshold int, lockDuration time.Duration) (err error) {
+	now := time.Now()
+	lockedUntil := now.Add(lockDuration)
 	return m.DB(ctx).Where("id = ?", id).
 		Updates(map[string]any{
 			"login_failure_count": gorm.Expr("login_failure_count + 1"),
-			"last_failure_time":   at,
+			"last_failure_time":   now,
+			"locked_until_time": gorm.Expr(
+				"CASE WHEN login_failure_count + 1 >= ? THEN ? ELSE locked_until_time END",
+				lockThreshold, lockedUntil),
 		}).Error
 }
 
-// ResetLoginFailure 登录成功后清零失败计数与锁定。
+// ResetLoginFailure 登录成功后原子清零失败计数与锁定（含 last_failure_time，不留半截状态）。
 func (m *UserModel) ResetLoginFailure(ctx context.Context, id uint64) (err error) {
 	return m.DB(ctx).Where("id = ?", id).
-		Updates(map[string]any{"login_failure_count": 0, "locked_until_time": nil}).Error
-}
-
-// SetLockedUntil 设置锁定截止时间（只写这一个列，**绝不改 status** —— 见 AGENTS.md「登录安全」）。
-func (m *UserModel) SetLockedUntil(ctx context.Context, id uint64, until time.Time) (err error) {
-	return m.DB(ctx).Where("id = ?", id).Update("locked_until_time", until).Error
+		Updates(map[string]any{
+			"login_failure_count": 0,
+			"locked_until_time":   nil,
+			"last_failure_time":   nil,
+		}).Error
 }
 
 // RecordLogin 记录一次成功登录（IP / 归属地 / 时间 / 活跃时间一次写完）。
