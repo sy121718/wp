@@ -1351,12 +1351,16 @@ func init() {
 		SQL: mailMarketingSQL,
 	})
 
-	// 126：邮箱模块权限点与菜单（issue #37），以权限点存在判定。
-	register(Migration{
-		Version:   "126-mail-permission",
-		TableName: "sys_permission",
-		CheckSQL:  "SELECT CASE WHEN EXISTS (SELECT 1 FROM sys_permission WHERE permission_code = ?) THEN 1 ELSE 0 END",
-		SQL:       mailPermissionSQL,
+	// 126：邮箱模块权限点与菜单（issue #37）。
+	//
+	// 用 Seed 而不是 Migration：Migration 的 CheckSQL 走**参数绑定**（? 是值占位符，表名不能参数化），
+	// 只能判定「表或列是否存在」；这里要判定的是「这批数据是否已插入」，Seed 的 ConditionSQL
+	// 不带占位符、可写任意条件，正是干这个的。
+	registerSeed(Seed{
+		Version:      "126-mail-permission",
+		TableName:    "sys_permission",
+		ConditionSQL: "SELECT COUNT(*) FROM sys_permission WHERE permission_code = 'mail:account_list'",
+		SQL:          mailPermissionSQL,
 	})
 
 	// 127：邮件日志补活动 / 联系人关联（issue #37），以列存在判定。
@@ -1367,20 +1371,20 @@ func init() {
 		SQL:       mailLogLinksSQL,
 	})
 
-	// 128：群发活动权限点与菜单（issue #37），以权限点存在判定。
-	register(Migration{
-		Version:   "128-mail-campaign",
-		TableName: "sys_permission",
-		CheckSQL:  "SELECT CASE WHEN EXISTS (SELECT 1 FROM sys_permission WHERE permission_code = ?) THEN 1 ELSE 0 END",
-		SQL:       mailCampaignSQL,
+	// 128：群发活动权限点与菜单（issue #37）。同样用 Seed（见 126 的说明）。
+	registerSeed(Seed{
+		Version:      "128-mail-campaign",
+		TableName:    "sys_permission",
+		ConditionSQL: "SELECT COUNT(*) FROM sys_permission WHERE permission_code = 'mail:campaign_list'",
+		SQL:          mailCampaignSQL,
 	})
 
-	// 129：内置事务邮件模板（issue #37），以模板存在判定。
-	register(Migration{
-		Version:   "129-mail-templates",
-		TableName: "mail_templates",
-		CheckSQL:  "SELECT CASE WHEN EXISTS (SELECT 1 FROM mail_templates WHERE template_key = ?) THEN 1 ELSE 0 END",
-		SQL:       mailBuiltinTemplatesSQL,
+	// 129：内置事务邮件模板（issue #37）。同样用 Seed（见 126 的说明）。
+	registerSeed(Seed{
+		Version:      "129-mail-templates",
+		TableName:    "mail_templates",
+		ConditionSQL: "SELECT COUNT(*) FROM mail_templates WHERE template_key = 'register_verify'",
+		SQL:          mailBuiltinTemplatesSQL,
 	})
 
 	// 130：mail_templates.variables 改 text[]（与 tags / target_tags 同一套编解码）。

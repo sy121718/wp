@@ -23,7 +23,7 @@ VALUES
  '<p style="color:#888;font-size:13px">本邮件由系统自动发送，请勿直接回复。</p>'
  '</div>',
  '{{.name}}，你好：\n\n你的验证码是：{{.code}}\n\n验证码 {{.expire_minutes}} 分钟内有效。如果这不是你本人的操作，忽略本邮件即可。\n\n本邮件由系统自动发送，请勿直接回复。',
- '["name","code","expire_minutes"]'::jsonb, 1, NOW()),
+ ARRAY['name','code','expire_minutes'], 1, NOW()),
 ('welcome', '', '注册欢迎',
  '欢迎加入 {{.site_name}}',
  '<div style="font-family:system-ui,-apple-system,Segoe UI,sans-serif;line-height:1.7;max-width:560px">'
@@ -33,7 +33,7 @@ VALUES
  '<p style="color:#888;font-size:13px">本邮件由系统自动发送，请勿直接回复。</p>'
  '</div>',
  '{{.name}}，你好：\n\n欢迎加入 {{.site_name}}。\n你的账号已经创建好了，之后可以用注册邮箱或用户名登录。\n\n本邮件由系统自动发送，请勿直接回复。',
- '["name","site_name"]'::jsonb, 1, NOW()),
+ ARRAY['name','site_name'], 1, NOW()),
 ('password_reset', '', '密码重置',
  '重置你的密码',
  '<div style="font-family:system-ui,-apple-system,Segoe UI,sans-serif;line-height:1.7;max-width:560px">'
@@ -45,5 +45,5 @@ VALUES
  '<p style="color:#888;font-size:13px">本邮件由系统自动发送，请勿直接回复。</p>'
  '</div>',
  '{{.name}}，你好：\n\n你的密码重置验证码是：{{.code}}\n\n验证码 {{.expire_minutes}} 分钟内有效。如果不是你本人申请，请忽略本邮件 —— 你的密码不会被改动。\n\n本邮件由系统自动发送，请勿直接回复。',
- '["name","code","expire_minutes"]'::jsonb, 1, NOW())
+ ARRAY['name','code','expire_minutes'], 1, NOW())
 ON CONFLICT (template_key, locale) DO NOTHING;

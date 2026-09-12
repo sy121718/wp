@@ -63,7 +63,7 @@ CREATE TABLE IF NOT EXISTS mail_templates (
     body_html   TEXT         NOT NULL DEFAULT '',
     body_text   TEXT         NOT NULL DEFAULT '',
     -- 该模板声明会用到的变量（JSONB 数组）：发送前校验，避免「变量拼错静默发出去几千封」
-    variables   JSONB,
+    variables   TEXT[]       NOT NULL DEFAULT '{}',
     status      SMALLINT     NOT NULL DEFAULT 1,
     create_time TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     update_time TIMESTAMP(3)
