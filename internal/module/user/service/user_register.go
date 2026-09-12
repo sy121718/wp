@@ -40,6 +40,8 @@ const (
 	minPasswordLen = 8
 	// registerVerifyTemplate 注册验证邮件模板 key（见迁移 129）。
 	registerVerifyTemplate = "register_verify"
+	// welcomeTemplate 激活成功后的欢迎邮件模板 key（见迁移 129）。
+	welcomeTemplate = "welcome"
 )
 
 // Register 注册：写用户（待激活）并发验证邮件。
@@ -199,7 +201,7 @@ func (s *Service) sendWelcomeMail(ctx context.Context, email, name, locale strin
 		return
 	}
 	_, _ = s.mail.SendTemplate(ctx, &maildto.SendTemplateReq{
-		TemplateKey: "welcome",
+		TemplateKey: welcomeTemplate,
 		Locale:      locale,
 		To:          email,
 		Vars:        map[string]any{"name": name, "site_name": s.siteName},
