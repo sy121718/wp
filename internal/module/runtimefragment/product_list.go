@@ -44,6 +44,14 @@ var (
 	productListSetOnce sync.Once
 )
 
+// productDataSource 商品构建期数据源（issue #35）；未注入（nil）时组件回退按名路由。
+var productDataSource productcontract.ProductDataSource
+
+// SetProductDataSource 注入商品构建期数据源（issue #35，装配期调用）。
+//
+// 片段路径渲染商品列表时优先用它（受限接口：只有读集合 / 元数据 / 可筛值）。
+func SetProductDataSource(ds productcontract.ProductDataSource) { productDataSource = ds }
+
 // SetCollectionResolver 注入集合解析器（装配期调用）。
 func SetCollectionResolver(r core.CollectionResolver) { collectionResolver = r }
 
@@ -140,6 +148,7 @@ func renderProductList(ctx context.Context, r *Request) (string, error) {
 		CSS:        &core.CSSBuckets{},
 		Context:    core.WithBuildProjectID(ctx, projectID),
 		Collection: collectionResolver,
+		Product:    productDataSource,
 	}
 	return builder.RenderNodeHTML(set, &core.Node{ID: nodeID, Type: productlist.Type, Props: propsJSON}, rctx)
 }

@@ -92,6 +92,9 @@ import (
 	// core.form：表单（字段白名单/提交）。
 	_ "go_wp/internal/builder/components/form"
 	"go_wp/internal/builder/core"
+
+	contentcontract "go_wp/internal/module/content/contract"
+	productcontract "go_wp/internal/module/product/contract"
 )
 
 // Page 页面文档：页面级设置 + 顶级容器（Section）列表。
@@ -157,17 +160,21 @@ type CompileOption func(*compileConfig)
 
 // compileConfig 编译配置。
 type compileConfig struct {
-	content     core.ContentResolver
-	block       core.BlockResolver
-	set         *jet.Set
-	plugin      core.PluginResolver
-	collection  core.CollectionResolver
-	navigation  core.NavigationResolver
-	projectID   string
-	currentPath string
-	assetProbe  func(string) []int
-	theme       *ThemeSettings
-	ctx         context.Context
+	content    core.ContentResolver
+	block      core.BlockResolver
+	set        *jet.Set
+	plugin     core.PluginResolver
+	collection core.CollectionResolver
+	// issue #35：构建期数据源（业务侧声明的受限接口）。专用组件优先用它，
+	// 通用组件仍走上面的 collection 按名路由。
+	product       productcontract.ProductDataSource
+	contentSource contentcontract.ContentDataSource
+	navigation    core.NavigationResolver
+	projectID     string
+	currentPath   string
+	assetProbe    func(string) []int
+	theme         *ThemeSettings
+	ctx           context.Context
 	// alternates 同页其他语言版本（hreflang 互指，多语言 P3）。
 	alternates []Alternate
 	// locales 站点语言切换器条目（多语言 P3）：与 alternates 同源（装配层一次算出）。
@@ -231,6 +238,19 @@ func WithPluginResolver(r core.PluginResolver) CompileOption {
 
 // WithCollectionResolver 注入集合内容解析器（插件组件集合绑定渲染，docs/06 §9）。
 // 调用方（page service / dashboard）注入 content 模块的 CollectionResolver。
+// WithProductDataSource 注入商品构建期数据源（issue #35）。
+//
+// 传的是**受限接口**：只有读集合 / 元数据 / 可筛值，写方法不在它上面 ——
+// 组件拿不到改商品的能力。
+func WithProductDataSource(ds productcontract.ProductDataSource) CompileOption {
+	return func(c *compileConfig) { c.product = ds }
+}
+
+// WithContentDataSource 注入内容构建期数据源（issue #35）。
+func WithContentDataSource(ds contentcontract.ContentDataSource) CompileOption {
+	return func(c *compileConfig) { c.contentSource = ds }
+}
+
 func WithCollectionResolver(r core.CollectionResolver) CompileOption {
 	return func(c *compileConfig) { c.collection = r }
 }
@@ -537,6 +557,7 @@ func Compile(p *Page, opts ...CompileOption) (res *CompiledPage, err error) {
 	ctx := &core.RenderContext{
 		CSS: &b, Context: buildCtx, Content: cfg.content, Block: cfg.block,
 		Plugin: cfg.plugin, Collection: cfg.collection,
+		Product: cfg.product, ContentSource: cfg.contentSource,
 		Navigation: cfg.navigation, ProjectID: cfg.projectID, CurrentPath: cfg.currentPath,
 		Lang: lang, Translate: translate, Locales: cfg.locales,
 		ContentTranslate: contentTranslateFunc(cfg.contentTranslator),

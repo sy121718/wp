@@ -291,6 +291,9 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 	// 片段渲染调 builder.RenderNodeHTML 复用构建期组件，取数自然也要走同一个注册表，
 	// 否则「点筛选得到的」与「静态产物里的」会是两批数据。
 	runtimefragment.SetCollectionResolver(collectionResolver)
+	// 商品构建期数据源（issue #35）：组件直连受限接口，不再只靠按名路由。
+	// ProductService 嵌入了 ProductDataSource，装配处拿到的契约天然能传。
+	runtimefragment.SetProductDataSource(productSvc)
 	// navigationSvc 注入 page 装配：core.nav 绑定菜单位置时构建期解析菜单项。
 	pageService := pagehttp.SetupPageRoutes(authorizedAPI, db, artifactSvc, publicationSvc, projectService, blockSvc, pluginSvc, collectionResolver, navigationSvc, mediaSvc)
 

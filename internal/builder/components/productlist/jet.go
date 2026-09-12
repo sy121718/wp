@@ -155,7 +155,7 @@ func BuildView(node *core.Node, p *Props, ctx *core.RenderContext) (View, error)
 	if ctx == nil || ctx.Collection == nil {
 		return View{}, fmt.Errorf("节点 %s: 编译上下文缺少集合解析器（无法解析商品集合 %s）", node.ID, source)
 	}
-	items, err := ctx.Collection.ResolveCollection(ctx.Context, source, collectionFilter(p))
+	items, err := resolveProducts(ctx, source, collectionFilter(p))
 	if err != nil {
 		return View{}, fmt.Errorf("节点 %s: 商品集合解析失败: %w", node.ID, err)
 	}
@@ -389,4 +389,15 @@ func sortItems(items []map[string]any, order string) {
 		}
 		return a.Before(b)
 	})
+}
+
+// resolveProducts 取商品集合数据（issue #35）。
+//
+// 优先用**商品数据源** —— 装配期注入的受限接口，只有读集合 / 元数据 / 可筛值，
+// 写方法不在它上面；未注入时回退到按名路由（纯组件单测路径 + 渐进切换期间的旧路径）。
+func resolveProducts(ctx *core.RenderContext, source string, filter map[string]string) ([]map[string]any, error) {
+	if ctx.Product != nil {
+		return ctx.Product.ResolveCollection(ctx.Context, source, filter)
+	}
+	return ctx.Collection.ResolveCollection(ctx.Context, source, filter)
 }

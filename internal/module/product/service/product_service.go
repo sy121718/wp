@@ -106,7 +106,9 @@ func (s *Service) SetMasterDataChanges(port masterdatacontract.MasterDataService
 // 编译期契约断言。
 var (
 	_ productcontract.ProductService = (*Service)(nil)
-	// 库存缓存端口（issue #16）：库存模块经它把真源汇总写进本模块的展示缓存。
+	// 构建期数据源（issue #35）：组件取商品数据只走这个受限接口，
+	// 写方法不在它上面。
+	_ productcontract.ProductDataSource = (*Service)(nil)
 	// 成本价写回端口（issue #18）：库存模块经它把入库单价写进 product_variants.cost_price。
 	_ productcontract.VariantCostPort = (*Service)(nil)
 )

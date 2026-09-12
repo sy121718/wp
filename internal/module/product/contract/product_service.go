@@ -12,7 +12,14 @@ import (
 //
 // 只暴露商品与变体的管理能力。库存、采购、订单、客户均由各自模块负责，
 // 商品侧不反向依赖它们（跨模块只走 contract）。
+// ProductService 商品完整契约（后台 / API 用）。
+//
+// issue #35 起嵌入 ProductDataSource：构建期只该拿到**受限的那一半**（读集合 / 字段 / 元数据），
+// 而装配处拿到的 ProductService 天然也能当数据源传出去 —— 不必再做一次类型断言。
 type ProductService interface {
+	// ProductDataSource 构建期数据源（只读；写方法不在它上面）。
+	ProductDataSource
+
 	Create(ctx context.Context, req *productdto.CreateReq) (res *productdto.ProductResp, err error)
 	Update(ctx context.Context, req *productdto.UpdateReq) (res *productdto.ProductResp, err error)
 	Get(ctx context.Context, req *productdto.GetReq) (res *productdto.ProductResp, err error)

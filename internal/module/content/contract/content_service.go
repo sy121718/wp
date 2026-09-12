@@ -51,7 +51,11 @@ func FieldWhitelist(entityType string) []string {
 }
 
 // ContentService CMS 内容管理契约 + 构建期内容解析器工厂。
+// ContentService 内容完整契约；issue #35 起嵌入 ContentDataSource（构建期只给受限的一半）。
 type ContentService interface {
+	// ContentDataSource 构建期数据源（只读）。
+	ContentDataSource
+
 	// Create 新建内容实体（revision=1）。
 	Create(ctx context.Context, req *contentdto.CreateReq) (res *contentdto.ContentResp, err error)
 	// Update 更新内容（revision 递增）。

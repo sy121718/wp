@@ -3,6 +3,12 @@ package core
 import (
 	"context"
 	"go_wp/internal/builder/source"
+
+	// issue #35：core 直接持有业务侧声明的受限数据源接口。
+	// 这一步能成立，正是因为共享形状已剥到 builder/source ——
+	// 业务契约包不再反向依赖 core，环断了。
+	contentcontract "go_wp/internal/module/content/contract"
+	productcontract "go_wp/internal/module/product/contract"
 )
 
 // RenderContext 单次编译的渲染上下文：CSS 收集器与编译期外部服务。
@@ -29,7 +35,19 @@ type RenderContext struct {
 	Plugin PluginResolver
 	// Collection 集合内容解析器（插件组件绑定集合时展开列表数据，docs/06 §9）。
 	// 未注入时集合绑定组件返回明确错误。
+	//
+	// issue #35 起：**专用组件优先用下面两个具体数据源字段**，本字段保留给
+	// 通用组件（cardstack 这类要绑任意集合源的）做按名路由。
 	Collection CollectionResolver
+	// Product 商品构建期数据源（issue #35）：业务侧声明的**受限接口** ——
+	// 只有读集合 / 元数据 / 可筛值，写方法不在它上面。
+	//
+	// 专用组件（productlist / productcard / productselector）直接用它：
+	// 编译期知道调哪个、字段取值有类型、越权在接口形状上就被挡住。
+	// 未注入（nil）时组件回退到 Collection 的按名路由（兼容单测与渐进切换）。
+	Product productcontract.ProductDataSource
+	// ContentSource 内容构建期数据源（issue #35），与 Product 同构。
+	ContentSource contentcontract.ContentDataSource
 	// Navigation 公开站点导航解析器（构建期展开 core.nav 的菜单位置绑定）。
 	// 未注入时绑定菜单位置的导航节点返回明确错误（不静默渲染空菜单）。
 	Navigation NavigationResolver

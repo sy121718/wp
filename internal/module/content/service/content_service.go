@@ -59,6 +59,9 @@ func NewService(m *contentmodel.Model) *Service { return &Service{m: m} }
 // 编译期契约断言。
 var _ contentcontract.ContentService = (*Service)(nil)
 
+// 构建期数据源（issue #35）：组件取内容数据只走这个受限接口，写方法不在它上面。
+var _ contentcontract.ContentDataSource = (*Service)(nil)
+
 // Create 新建内容实体（revision=1）。
 func (s *Service) Create(ctx context.Context, req *contentdto.CreateReq) (res *contentdto.ContentResp, err error) {
 	if req == nil || !contentcontract.IsValidType(req.EntityType) || req.Slug == "" {
