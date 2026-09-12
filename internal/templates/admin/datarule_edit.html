@@ -1,11 +1,11 @@
 {* admin/datarule_edit.html — 数据规则编辑：detail 回显 + config JSON + 保存/返回 *}
 {{extends "layout.html"}}
 {{block body()}}
-<div class="pages-wrap">
+<div class="stack">
     <section class="card">
         <div class="card-header"><span class="card-title">编辑数据规则 #{{.Detail.ID}}</span></div>
         <div class="card-body">
-            <form method="post" action="/admin/datarules/update" class="pages-form form-row">
+            <form method="post" action="/admin/datarules/update" class="form-inline">
                 <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
                 <input type="hidden" name="id" value="{{.Detail.ID}}">
                 <div class="form-row">

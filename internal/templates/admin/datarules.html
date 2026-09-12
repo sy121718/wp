@@ -3,7 +3,7 @@
    需要改规则配置走抽屉底部「编辑规则配置」链接到独立页 /admin/datarules/edit?id=。 *}
 {{extends "layout.html"}}
 {{block body()}}
-<div class="pages-wrap">
+<div class="stack">
     <section class="card">
         <div class="card-header">
             <span class="card-title">数据权限规则（共 {{.Total}}）</span>
@@ -20,7 +20,7 @@
         </form>
         <div class="card-body">
             {{if len(.Rows) == 0}}
-            <p class="pages-empty">还没有数据规则，点右上「新建规则」创建一个。</p>
+            <p class="hint">还没有数据规则，点右上「新建规则」创建一个。</p>
             {{else}}
             <div class="table-wrap">
             <table class="data-table">
