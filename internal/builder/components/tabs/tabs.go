@@ -5,8 +5,10 @@
 package tabs
 
 import (
+	_ "embed" // tabs.css 经 //go:embed 打进二进制
 	"encoding/json"
 	"fmt"
+	"strconv"
 
 	"go_wp/internal/builder/core"
 )
@@ -89,103 +91,51 @@ func (c *Component) Validate(node *core.Node, ids map[string]bool) (err error) {
 	return nil
 }
 
+// tabsCSS 组件样式源。与组件同目录：改样式不必再进 Go 字符串数组。
+//
+//go:embed tabs.css
+var tabsCSS string
+
 // compileCSS 页签样式（radio hack 显隐 + 高亮）。
+//
+// 每个页签的一组规则交给样式源的 @each 展开：规则数量随标签数变化，值变量表达不了。
+// Go 侧只负责把「第 i 个页签的 radio id / 面板下标 / 标签序号」算出来，
+// 以及对齐映射与两个色值的默认值。
 func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	sel := "." + core.NodeClass(id)
 
-	b.Add(core.BreakpointDesktop, sel, []string{
-		"display: flex", "flex-direction: column",
-	})
-	// radio 视觉隐藏但**保留可聚焦**（sr-only）：display:none 会把 tab 从键盘序列里彻底移除，
-	// 键盘用户无法切换页签。原生 radio group 自带正确的键盘模型 —— Tab 进组、方向键切换。
-	b.Add(core.BreakpointDesktop, sel+" .sky-tabs-radio", []string{
-		"position: absolute",
-		"width: 1px",
-		"height: 1px",
-		"margin: -1px",
-		"padding: 0",
-		"border: 0",
-		"clip-path: inset(50%)",
-		"overflow: hidden",
-		"white-space: nowrap",
-	})
-	// 聚焦可见：sr-only 的 radio 聚焦时把焦点环画在对应标签上（键盘用户能看见当前位置）。
-	b.Add(core.BreakpointDesktop, sel+" .sky-tabs-radio:focus-visible + .sky-tabs-tab", []string{
-		"outline: 2px solid var(--sky-c-primary, #2563eb)",
-		"outline-offset: 2px",
-	})
-	// 面板默认隐藏，选中对应 radio 时显示（面板是 radio 的后续兄弟）。
+	// 页签列表：radio 的 id 与面板下标共用同一个实例内序号。
+	tabs := make([]map[string]string, 0, len(p.Tabs))
 	for i := range p.Tabs {
-		radio := "#sky-tabs-" + id + "-" + fmt.Sprintf("%d", i)
-		// 面板定位用模板已输出的 data-index（tabs.jet：data-index="{{ i }}"）。
-		// 不能用 nth-of-type：它按「元素类型」计数而非按类名，而容器内 .sky-tabs-nav
-		// 同样是 div，会占掉 div:nth-of-type(1)，导致所有面板选择器整体错位一位、
-		// 匹配不到任何元素 —— 页签切换完全失效（radio 可点但面板永不显示）。
-		// 面板选择器**不含 sel 前缀**：:has() 已经挂在容器上，再拼一次会变成
-		// `.sel:has(...) .sel .panel`（要求嵌套两层容器）—— 永不匹配、面板永远不显示。
-		panel := " .sky-tab-panel[data-index=\"" + fmt.Sprintf("%d", i) + "\"]"
-		// 用 :has() 而不是「radio:checked ~ 面板」：radio 现在与标签同处 .sky-tabs-nav，
-		// 已不是面板的前兄弟（标签要在同一个容器里，读屏才把单选组读成一组）。
-		b.Add(core.BreakpointDesktop, sel+":has("+radio+":checked)"+panel, []string{"display: block"})
-	}
-	// 标签高亮。
-	for i := range p.Tabs {
-		radio := "#sky-tabs-" + id + "-" + fmt.Sprintf("%d", i)
-		label := " .sky-tabs-nav label:nth-of-type(" + fmt.Sprintf("%d", i+1) + ")"
-		b.Add(core.BreakpointDesktop, sel+":has("+radio+":checked)"+label, []string{
-			"color: #fff", "background: var(--sky-c-primary, #2563eb)",
+		n := strconv.Itoa(i)
+		tabs = append(tabs, map[string]string{
+			"radio": "#sky-tabs-" + id + "-" + n,
+			"index": n,
+			"nth":   strconv.Itoa(i + 1),
 		})
 	}
 
-	// 基础样式。
+	// 未配置时跟主题边框色（写死的话主题改边框、页签底边不动）。
 	borderColor := p.BorderColor
 	if borderColor == "" {
-		// 未配置时跟主题边框色（写死的话主题改边框、标签页底边不动）。
 		borderColor = "var(--sky-c-border, rgba(0,0,0,.1))"
 	}
 	navJustify := "flex-start"
-	if p.NavAlign == "center" {
+	switch p.NavAlign {
+	case "center":
 		navJustify = "center"
-	} else if p.NavAlign == "right" {
+	case "right":
 		navJustify = "flex-end"
 	}
-	b.Add(core.BreakpointDesktop, sel+" .sky-tabs-nav", []string{
-		"display: flex", "gap: 4px", "flex-wrap: wrap",
-		core.CSSDecl("justify-content", navJustify),
-		core.CSSDecl("border-bottom", "1px", "solid", borderColor), "padding: 0 4px",
-	})
-	if p.ActiveColor != "" {
-		for i := range p.Tabs {
-			radio := "#sky-tabs-" + id + "-" + fmt.Sprintf("%d", i)
-			label := sel + " .sky-tabs-nav label:nth-of-type(" + fmt.Sprintf("%d", i+1) + ")"
-			b.Add(core.BreakpointDesktop, radio+":checked ~ "+label, []string{
-				core.CSSDecl("background", p.ActiveColor),
-			})
-		}
+
+	vars := map[string]string{
+		"navJustify":  navJustify,
+		"borderColor": borderColor,
+		"activeColor": p.ActiveColor,
+		"vertical":    core.BoolVar(p.Vertical),
 	}
-	b.Add(core.BreakpointDesktop, sel+" .sky-tabs-nav label", []string{
-		"padding: 9px 18px", "cursor: pointer", "font-size: 14px",
-		"border-radius: 8px 8px 0 0", "transition: background .15s, color .15s",
-		"user-select: none",
-	})
-	b.Add(core.BreakpointDesktop, sel+" .sky-tabs-nav label:hover", []string{"background: rgba(0,0,0,.05)"})
-	b.Add(core.BreakpointDesktop, sel+" .sky-tab-panel", []string{
-		"display: none", "padding: 18px 4px", "animation: sky-tabs-fade .25s ease",
-	})
-	// 渐显动画。
-	b.AddKeyframesDecls("sky-tabs-fade", []string{
-		"from { opacity: 0 }", "to { opacity: 1 }",
-	})
-	// 竖向布局。
-	if p.Vertical {
-		b.Add(core.BreakpointDesktop, sel+".sky-tabs-vertical", []string{"flex-direction: row", "align-items: stretch"})
-		b.Add(core.BreakpointDesktop, sel+".sky-tabs-vertical .sky-tabs-nav", []string{
-			"flex-direction: column", "border-bottom: 0", "border-right: 1px solid var(--sky-c-border, rgba(0,0,0,.1))",
-			"min-width: 140px", "padding: 4px 0",
-		})
-		b.Add(core.BreakpointDesktop, sel+".sky-tabs-vertical .sky-tabs-nav label", []string{
-			"border-radius: 8px", "margin: 2px 4px",
-		})
-		b.Add(core.BreakpointDesktop, sel+".sky-tabs-vertical .sky-tab-panel", []string{"flex: 1", "padding: 0 18px"})
+	lists := map[string][]map[string]string{"tabs": tabs}
+	if err := core.ApplyComponentCSSTmplLists(b, sel, tabsCSS, vars, lists); err != nil {
+		panic(fmt.Sprintf("tabs 组件样式解析失败: %v", err))
 	}
 }

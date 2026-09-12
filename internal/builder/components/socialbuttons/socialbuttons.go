@@ -3,6 +3,7 @@
 package socialbuttons
 
 import (
+	_ "embed" // socialbuttons.css 经 //go:embed 打进二进制
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -144,7 +145,15 @@ func (c *Component) Validate(node *core.Node, ids map[string]bool) (err error) {
 	return nil
 }
 
+// socialCSS 组件样式源。与组件同目录：改样式不必再进 Go 字符串数组。
+//
+//go:embed socialbuttons.css
+var socialCSS string
+
 // compileCSS 社交按钮样式。
+//
+// Go 侧只把形状与三选一的配色翻成变量：形状三档的差别只有一个圆角值，配色靠规则级 @if，
+// 品牌色的 23 条规则交给 @each 展开。
 func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	sel := "." + core.NodeClass(id)
 
@@ -153,64 +162,53 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		align = "left"
 	}
 	justify := "flex-start"
-	if align == "center" {
+	switch align {
+	case "center":
 		justify = "center"
-	} else if align == "right" {
+	case "right":
 		justify = "flex-end"
 	}
 	size := p.Size
 	if size == "" {
 		size = "40px"
 	}
-
-	b.Add(core.BreakpointDesktop, sel, []string{
-		"display: flex", "gap: 8px", core.CSSDecl("justify-content", justify),
-	})
-	b.Add(core.BreakpointDesktop, sel+" .sky-social-btn", []string{
-		core.CSSDecl("width", size), core.CSSDecl("height", size),
-		"display: inline-flex", "align-items: center", "justify-content: center",
-		"font-size: calc(" + size + " * 0.55)",
-		"text-decoration: none",
-		"transition: transform .15s, opacity .15s",
-	})
-	b.Add(core.BreakpointDesktop, sel+" .sky-social-btn:hover", []string{"transform: translateY(-2px)"})
-
-	// 形状。
 	shape := p.Shape
 	if shape == "" {
 		shape = "circle"
 	}
+	radius := "999px"
 	switch shape {
 	case "rounded":
-		b.Add(core.BreakpointDesktop, sel+" .sky-social-btn", []string{"border-radius: 10px"})
+		radius = "10px"
 	case "square":
-		b.Add(core.BreakpointDesktop, sel+" .sky-social-btn", []string{"border-radius: 0"})
-	default:
-		b.Add(core.BreakpointDesktop, sel+" .sky-social-btn", []string{"border-radius: 999px"})
+		radius = "0"
+	}
+	customColor := p.CustomColor
+	if customColor == "" {
+		customColor = "#2563eb"
 	}
 
-	// 配色。
-	switch p.Color {
-	case ColorMono:
-		b.Add(core.BreakpointDesktop, sel+" .sky-social-btn", []string{
-			"color: #6b7280", "background: rgba(0,0,0,.06)",
-		})
-	case ColorCustom:
-		col := p.CustomColor
-		if col == "" {
-			col = "#2563eb"
+	// 品牌色列表：按 brandOrder 的固定顺序取，缺色的平台跳过（确定性构建）。
+	brands := make([]map[string]string, 0, len(brandOrder))
+	for _, platform := range brandOrder {
+		color, ok := brandColors[platform]
+		if !ok {
+			continue
 		}
-		b.Add(core.BreakpointDesktop, sel+" .sky-social-btn", []string{
-			core.CSSDecl("color", col), "background: rgba(0,0,0,.06)",
-		})
-	default: // brand（有序输出，保证确定性构建）
-		for _, platform := range brandOrder {
-			color, ok := brandColors[platform]
-			if !ok {
-				continue
-			}
-			cls := sel + " a[aria-label=\"" + platform + "\"]"
-			b.Add(core.BreakpointDesktop, cls, []string{"color: #fff", core.CSSDecl("background", color)})
-		}
+		brands = append(brands, map[string]string{"label": platform, "color": color})
+	}
+
+	vars := map[string]string{
+		"justify":     justify,
+		"size":        size,
+		"radius":      radius,
+		"customColor": customColor,
+		"colorMono":   core.BoolVar(p.Color == ColorMono),
+		"colorCustom": core.BoolVar(p.Color == ColorCustom),
+		"colorBrand":  core.BoolVar(p.Color != ColorMono && p.Color != ColorCustom),
+	}
+	lists := map[string][]map[string]string{"brands": brands}
+	if err := core.ApplyComponentCSSTmplLists(b, sel, socialCSS, vars, lists); err != nil {
+		panic(fmt.Sprintf("socialButtons 组件样式解析失败: %v", err))
 	}
 }

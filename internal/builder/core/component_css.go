@@ -69,13 +69,28 @@ func ApplyComponentCSS(b *CSSBuckets, scope, source string) error {
 // 返回 error 时 b 可能已被部分写入 —— 调用方（组件 compileCSS）应当 panic 而非吞掉：
 // 样式解析失败属于构建期缺陷，静默跳过的后果是产物悄悄少了样式。
 func ApplyComponentCSSTmpl(b *CSSBuckets, scope, source string, vars map[string]string) error {
+	return ApplyComponentCSSTmplLists(b, scope, source, vars, nil)
+}
+
+// ApplyComponentCSSTmplLists 在值变量之外再提供**列表变量**（供 @each 使用）。
+//
+// 列表用于「Go 侧一个循环展开成 N 条规则」的形态：tabs 的每个页签一组显隐与高亮
+// 规则、socialbuttons 的每个平台一条配色规则。这类「数量随数据变化」的规则用值变量
+// 表达不了 —— 变量表是扁平的，而这里每条规则要取自己那一项的值。
+//
+// 列表项的键在样式源里写成 `<循环变量>.<字段>`（如 tab.radio），与值变量共用同一套
+// 「引用未提供即报错」的校验：某个字段拼错时，第一次循环就会失败。
+func ApplyComponentCSSTmplLists(b *CSSBuckets, scope, source string, vars map[string]string, lists map[string][]map[string]string) error {
 	if b == nil {
 		return fmt.Errorf("CSSBuckets 为空")
 	}
 	if strings.TrimSpace(source) == "" {
 		return nil
 	}
-	parser := &cssSourceParser{src: source, scope: scope, buckets: b, vars: vars, used: map[string]bool{}}
+	parser := &cssSourceParser{
+		src: source, scope: scope, buckets: b, vars: vars, lists: lists,
+		used: map[string]bool{}, usedLists: map[string]bool{},
+	}
 	if err := parser.run(); err != nil {
 		return err
 	}
@@ -85,6 +100,11 @@ func ApplyComponentCSSTmpl(b *CSSBuckets, scope, source string, vars map[string]
 	for name := range vars {
 		if !parser.used[name] {
 			return fmt.Errorf("组件样式变量 %q 未被样式源使用（Go 侧与 .css 变量名不一致？）", name)
+		}
+	}
+	for name := range lists {
+		if !parser.usedLists[name] {
+			return fmt.Errorf("组件样式列表 %q 未被样式源使用（Go 侧与 .css 列表名不一致？）", name)
 		}
 	}
 	return nil
@@ -104,6 +124,11 @@ type cssSourceParser struct {
 	// used 记录已被消费的变量名（@if 与 {{name}} 都算），用于反向校验。
 	// 递归解析 @media / @if 块时共享同一个 map。
 	used map[string]bool
+	// lists 列表变量表（@each 用），usedLists 同 used 的作用。
+	lists     map[string][]map[string]string
+	usedLists map[string]bool
+	// loopVars 当前循环项展开出的变量（键形如 "tab.radio"），只在 @each 块内非空。
+	loopVars map[string]string
 }
 
 // run 扫描源文本，按规则块逐个处理。
@@ -129,6 +154,43 @@ func (p *cssSourceParser) run() error {
 			i++
 			continue
 		}
+		// @each <变量名> in <列表名>：把一个列表逐项展开成若干条规则。
+		// 块内用 `<变量名>.<字段>` 取值（如 {{tab.radio}}），列表由 Go 侧经
+		// ApplyComponentCSSTmplLists 提供 —— 这是「数量随数据变化」的规则唯一的表达方式。
+		if strings.HasPrefix(line, "@each ") {
+			varName, listName, ok := parseEachSpec(strings.TrimSpace(strings.TrimPrefix(line, "@each ")))
+			if !ok {
+				return cssApplyError(i+1, "@each 的写法是「@each <变量名> in <列表名>」，got %q", line)
+			}
+			items, ok := p.lists[listName]
+			if !ok {
+				return cssApplyError(i+1, "@each 引用了未提供的列表 %q", listName)
+			}
+			p.usedLists[listName] = true
+			body, next, err := collectCondBlock(lines, i)
+			if err != nil {
+				return cssApplyError(i+1, "%v", err)
+			}
+			for _, item := range items {
+				loopVars := make(map[string]string, len(item)+len(p.loopVars))
+				// 外层循环的变量先铺上（支持 @each 嵌套），内层同名键覆盖外层。
+				for k, v := range p.loopVars {
+					loopVars[k] = v
+				}
+				for k, v := range item {
+					loopVars[varName+"."+k] = v
+				}
+				inner := &cssSourceParser{src: body, scope: p.scope, buckets: p.buckets, mediaBP: p.mediaBP, vars: p.vars, lists: p.lists, used: p.used, usedLists: p.usedLists, loopVars: loopVars}
+				if err := inner.run(); err != nil {
+					return err
+				}
+			}
+			i = next
+			continue
+		}
+		if line == "@endfor" {
+			return cssApplyError(i+1, "@endfor 没有对应的 @each")
+		}
 		// @if：**规则级**条件块，包住整条规则或指令（声明块内的条件段由 parseDecls 处理）。
 		// 两处同名但作用域不同：这里的 @if 独占一行、位于规则之外，用来让一整段规则
 		// （典型是 @keyframes —— 它不是一个声明，声明级条件段包不住）随变量决定存废。
@@ -139,7 +201,7 @@ func (p *cssSourceParser) run() error {
 				return cssApplyError(i+1, "@if 引用了未提供的变量 %q", name)
 			}
 			p.used[name] = true
-			body, next, err := collectIfBlock(lines, i)
+			body, next, err := collectCondBlock(lines, i)
 			if err != nil {
 				return cssApplyError(i+1, "%v", err)
 			}
@@ -151,7 +213,7 @@ func (p *cssSourceParser) run() error {
 			if !truthy(v) {
 				target = &CSSBuckets{}
 			}
-			inner := &cssSourceParser{src: body, scope: p.scope, buckets: target, mediaBP: p.mediaBP, vars: p.vars, used: p.used}
+			inner := &cssSourceParser{src: body, scope: p.scope, buckets: target, mediaBP: p.mediaBP, vars: p.vars, lists: p.lists, used: p.used, usedLists: p.usedLists, loopVars: p.loopVars}
 			if err := inner.run(); err != nil {
 				return err
 			}
@@ -219,7 +281,7 @@ func (p *cssSourceParser) run() error {
 			if err != nil {
 				return cssApplyError(i+1, "%v", err)
 			}
-			inner := &cssSourceParser{src: body, scope: p.scope, buckets: p.buckets, mediaBP: bp, vars: p.vars, used: p.used}
+			inner := &cssSourceParser{src: body, scope: p.scope, buckets: p.buckets, mediaBP: bp, vars: p.vars, lists: p.lists, used: p.used, usedLists: p.usedLists, loopVars: p.loopVars}
 			if err := inner.run(); err != nil {
 				return err
 			}
@@ -300,9 +362,20 @@ func (p *cssSourceParser) run() error {
 			i = next
 			continue
 		}
-		// 选择器里的 & 一律替换成作用域前缀；不含 & 的写法拒绝（避免「以为在作用域内其实不是」）。
+		// 选择器里的变量也要展开：@each 的循环项最常用在选择器里
+		// （`&:has({{tab.radio}}:checked) …`）。不展开就会留下 {{...}}，规则永不匹配，
+		// 而产物仍是一份合法 CSS —— 页面上只表现为「点了没反应」。
+		expanded, empty, err := p.expandVars(selector)
+		if err != nil {
+			return cssApplyError(i+1, "%v", err)
+		}
+		if empty {
+			return cssApplyError(i+1, "选择器里的变量取到空值：%q", selector)
+		}
+		selector = expanded
+		// 不含 & 的写法拒绝（避免「以为在作用域内其实不是」）。
 		if !strings.Contains(selector, "&") {
-			return cssApplyError(i+1, "选择器必须以 & 开头（& 会被替换成该组件实例的作用域），或用 @global 显式声明全局规则，got %q", selector)
+			return cssApplyError(i+1, "选择器必须含 &（& 会被替换成该组件实例的作用域），或用 @global 显式声明全局规则，got %q", selector)
 		}
 
 		// @hover / @active 用标记前缀指定桶（构建期据此决定要不要包 @media (hover: hover)）。
@@ -494,6 +567,10 @@ func (p *cssSourceParser) expandVars(s string) (out string, empty bool, err erro
 		sb.WriteString(rest[:i])
 		name := strings.TrimSpace(rest[i+2 : i+j])
 		val, ok := p.vars[name]
+		if !ok && p.loopVars != nil {
+			// 循环项变量（如 tab.radio）只在该 @each 块内可见。
+			val, ok = p.loopVars[name]
+		}
 		if !ok {
 			return "", false, fmt.Errorf("样式源引用了未提供的变量 %q（声明：%q）", name, s)
 		}
@@ -507,16 +584,34 @@ func (p *cssSourceParser) expandVars(s string) (out string, empty bool, err erro
 	return sb.String(), empty, nil
 }
 
-// collectIfBlock 从规则级 @if 行开始收集到与之匹配的 @endif 的内容（支持嵌套）。
-func collectIfBlock(lines []string, start int) (body string, next int, err error) {
+// parseEachSpec 解析 @each 的「<变量名> in <列表名>」。
+// 变量名不允许含点与空格 —— 点已经是「循环变量.字段」的分隔符。
+func parseEachSpec(spec string) (varName, listName string, ok bool) {
+	idx := strings.Index(spec, " in ")
+	if idx < 0 {
+		return "", "", false
+	}
+	varName = strings.TrimSpace(spec[:idx])
+	listName = strings.TrimSpace(spec[idx+len(" in "):])
+	if varName == "" || listName == "" || strings.ContainsAny(varName, ". ") {
+		return "", "", false
+	}
+	return varName, listName, true
+}
+
+// collectCondBlock 从 @if / @each 行开始收集到与之匹配的结束标记的内容（支持嵌套）。
+//
+// 深度按**两种块一起**计：@if 里嵌 @each（或反过来）时，只数自己那一种会让内层的结束
+// 标记被当成外层的，块被提前截断 —— 表现是「后半段规则凭空消失」。
+func collectCondBlock(lines []string, start int) (body string, next int, err error) {
 	depth := 1
 	var buf []string
 	for i := start + 1; i < len(lines); i++ {
 		t := strings.TrimSpace(stripCSSComment(lines[i]))
 		switch {
-		case strings.HasPrefix(t, "@if "):
+		case strings.HasPrefix(t, "@if "), strings.HasPrefix(t, "@each "):
 			depth++
-		case t == "@endif":
+		case t == "@endif", t == "@endfor":
 			depth--
 			if depth == 0 {
 				return strings.Join(buf, "\n"), i + 1, nil
@@ -524,7 +619,7 @@ func collectIfBlock(lines []string, start int) (body string, next int, err error
 		}
 		buf = append(buf, lines[i])
 	}
-	return "", start, fmt.Errorf("@if 没有对应的 @endif")
+	return "", start, fmt.Errorf("条件块没有对应的结束标记（@endif / @endfor）")
 }
 
 // BoolVar 条件段变量的真值形态：真给 "1"、假给空串。

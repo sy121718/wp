@@ -1,0 +1,118 @@
+/* core.tabs 页签样式（radio hack 显隐 + 高亮）。零 JS 切换。
+
+   每个页签的一组规则由 @each 展开（数量随标签数变化，值变量表达不了）。
+   列表项字段：radio（原生 input 的 id）、index（面板下标）、nth（标签序号，从 1 起）。 */
+
+& {
+  display: flex;
+  flex-direction: column;
+}
+
+/* radio 视觉隐藏但**保留可聚焦**（sr-only）：display:none 会把页签从键盘序列里彻底移除，
+   键盘用户无法切换。原生 radio group 自带正确的键盘模型 —— Tab 进组、方向键切换。 */
+& .sky-tabs-radio {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  clip-path: inset(50%);
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+/* 聚焦可见：sr-only 的 radio 聚焦时把焦点环画在对应标签上（键盘用户能看见当前位置）。 */
+& .sky-tabs-radio:focus-visible + .sky-tabs-tab {
+  outline: 2px solid var(--sky-c-primary, #2563eb);
+  outline-offset: 2px;
+}
+
+/* 面板默认隐藏，选中对应 radio 时显示。
+   定位用模板输出的 data-index，而不是 nth-of-type —— 后者按元素类型计数，
+   容器内的 .sky-tabs-nav 同样是 div，会占掉 div:nth-of-type(1)，
+   导致所有面板选择器整体错位一位、匹配不到任何元素（切换完全失效）。
+   面板选择器**不带实例作用域前缀**：:has() 已经挂在容器上，再拼一次会要求嵌套两层容器。 */
+@each tab in tabs
+&:has({{tab.radio}}:checked) .sky-tab-panel[data-index="{{tab.index}}"] {
+  display: block;
+}
+@endfor
+
+/* 标签高亮。 */
+@each tab in tabs
+&:has({{tab.radio}}:checked) .sky-tabs-nav label:nth-of-type({{tab.nth}}) {
+  color: #fff;
+  background: var(--sky-c-primary, #2563eb);
+}
+@endfor
+
+/* 基础样式。 */
+& .sky-tabs-nav {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  justify-content: {{navJustify}};
+  border-bottom: 1px solid {{borderColor}};
+  padding: 0 4px;
+}
+
+@if activeColor
+/* 自定义激活色：radio 与标签同处导航容器，故用 :checked ~ 而不是 :has()。 */
+@each tab in tabs
+{{tab.radio}}:checked ~ & .sky-tabs-nav label:nth-of-type({{tab.nth}}) {
+  background: {{activeColor}};
+}
+@endfor
+@endif
+
+& .sky-tabs-nav label {
+  padding: 9px 18px;
+  cursor: pointer;
+  font-size: 14px;
+  border-radius: 8px 8px 0 0;
+  transition: background .15s, color .15s;
+  user-select: none;
+}
+
+& .sky-tabs-nav label:hover {
+  background: rgba(0,0,0,.05);
+}
+
+& .sky-tab-panel {
+  display: none;
+  padding: 18px 4px;
+  animation: sky-tabs-fade .25s ease;
+}
+
+/* 渐显动画。 */
+@keyframes sky-tabs-fade {
+  from { opacity: 0 }
+  to { opacity: 1 }
+}
+
+@if vertical
+/* 竖向布局：标签在左。 */
+&.sky-tabs-vertical {
+  flex-direction: row;
+  align-items: stretch;
+}
+
+&.sky-tabs-vertical .sky-tabs-nav {
+  flex-direction: column;
+  border-bottom: 0;
+  border-right: 1px solid var(--sky-c-border, rgba(0,0,0,.1));
+  min-width: 140px;
+  padding: 4px 0;
+}
+
+&.sky-tabs-vertical .sky-tabs-nav label {
+  border-radius: 8px;
+  margin: 2px 4px;
+}
+
+&.sky-tabs-vertical .sky-tab-panel {
+  flex: 1;
+  padding: 0 18px;
+}
+@endif

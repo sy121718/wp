@@ -253,6 +253,85 @@ func TestComponentCSSSelectorShapes(t *testing.T) {
 	}
 }
 
+// TestComponentCSSEach @each 把一个列表逐项展开成规则，块内按「循环变量.字段」取值。
+//
+// 这是「数量随数据变化」的规则唯一的表达方式：tabs 的每个页签一组显隐与高亮规则、
+// socialbuttons 的每个平台一条配色规则。值变量做不到 —— 变量表是扁平的，
+// 而这里每条规则要取自己那一项的值。
+func TestComponentCSSEach(t *testing.T) {
+	const src = "@each tab in tabs\n&:has({{tab.radio}}:checked) .panel[data-index=\"{{tab.index}}\"] {\n  display: block;\n}\n@endfor\n"
+	lists := map[string][]map[string]string{
+		"tabs": {
+			{"radio": "#r0", "index": "0"},
+			{"radio": "#r1", "index": "1"},
+		},
+	}
+	var b CSSBuckets
+	if err := ApplyComponentCSSTmplLists(&b, ".x", src, nil, lists); err != nil {
+		t.Fatalf("解析失败: %v", err)
+	}
+	out := b.String()
+	for _, want := range []string{
+		".x:has(#r0:checked) .panel[data-index=\"0\"] {\n  display: block;",
+		".x:has(#r1:checked) .panel[data-index=\"1\"] {\n  display: block;",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("产物缺少 %q\n%s", want, out)
+		}
+	}
+}
+
+// TestComponentCSSEachNested @each 里嵌 @if / @media：块深度按两种块一起计。
+//
+// 只数自己那一种会让内层的结束标记被当成外层的，块被提前截断 ——
+// 表现是后半段规则凭空消失，产物仍是一份合法 CSS。
+func TestComponentCSSEachNested(t *testing.T) {
+	const src = "@each tab in tabs\n@if flag\n&[data-i=\"{{tab.index}}\"] {\n  color: red;\n}\n@endif\n@media (max-width: 767px) {\n  &[data-i=\"{{tab.index}}\"] {\n    color: blue;\n  }\n}\n@endfor\n& {\n  display: block;\n}\n"
+	lists := map[string][]map[string]string{"tabs": {{"index": "0"}, {"index": "1"}}}
+	var b CSSBuckets
+	if err := ApplyComponentCSSTmplLists(&b, ".x", src, map[string]string{"flag": "1"}, lists); err != nil {
+		t.Fatalf("解析失败: %v", err)
+	}
+	out := b.String()
+	for _, want := range []string{
+		".x[data-i=\"0\"] {\n  color: red;",
+		".x[data-i=\"1\"] {\n  color: red;",
+		"@media (max-width: 767px) {",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("产物缺少 %q\n%s", want, out)
+		}
+	}
+	// 循环之后的规则必须还在（块提前截断的话这条会消失）。
+	if !strings.Contains(out, ".x {\n  display: block;") {
+		t.Errorf("循环后的规则丢失，@each 块可能被提前截断:\n%s", out)
+	}
+}
+
+// TestComponentCSSEachErrors @each 的用法错误必须在构建期报错。
+func TestComponentCSSEachErrors(t *testing.T) {
+	cases := []struct {
+		name  string
+		src   string
+		lists map[string][]map[string]string
+	}{
+		{"列表未提供", "@each tab in missing\n& { color: red }\n@endfor\n", nil},
+		{"写法缺 in", "@each tab\n& { color: red }\n@endfor\n", map[string][]map[string]string{"tab": {{"a": "1"}}}},
+		{"字段未提供", "@each tab in tabs\n& { color: {{tab.nope}} }\n@endfor\n", map[string][]map[string]string{"tabs": {{"a": "1"}}}},
+		{"列表提供了却没用到", "& { color: red }\n", map[string][]map[string]string{"tabs": {{"a": "1"}}}},
+		{"孤立的 endfor", "& { color: red }\n@endfor\n", nil},
+		{"块未闭合", "@each tab in tabs\n& { color: red }\n", map[string][]map[string]string{"tabs": {{"a": "1"}}}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			var b CSSBuckets
+			if err := ApplyComponentCSSTmplLists(&b, ".x", c.src, nil, c.lists); err == nil {
+				t.Errorf("应当报错却通过了：%s\n产物:\n%s", c.src, b.String())
+			}
+		})
+	}
+}
+
 // TestComponentCSSProperty @property 注册块的产物必须与 AddPropertyDecls 一致。
 //
 // 注册块不能进任何 @layer（放层里会让浏览器对「层内注册」产生实现差异），
