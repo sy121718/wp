@@ -12,7 +12,7 @@
 
   <section class="pages-card card">
     <h2>基本信息</h2>
-    <div class="pages-table data-table-wrap table-wrap" tabindex="0">
+    <div class="table-wrap" tabindex="0">
       <table class="pages-table data-table">
       <tbody>
         <tr><th>联系人</th><td>{{d.Email}}{{if d.Name != ""}}（{{d.Name}}）{{end}}</td></tr>
@@ -33,7 +33,7 @@
     {{if len(.D.Timeline) == 0}}
     <p class="pages-empty">还没有执行记录（实例可能刚建、任务还没跑到）。</p>
     {{else}}
-    <div class="pages-table data-table-wrap table-wrap" tabindex="0">
+    <div class="table-wrap" tabindex="0">
       <table class="pages-table data-table">
       <thead><tr><th>时间</th><th>节点</th><th>类型</th><th>结果</th><th>详情</th></tr></thead>
       <tbody>

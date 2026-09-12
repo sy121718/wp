@@ -20,7 +20,7 @@
     {{if len(.Automations) == 0}}
     <p class="pages-empty">还没有流程。先新建一条，比如「新订阅 → 等 1 天 → 发欢迎邮件 → 打上 welcomed 标签」。</p>
     {{else}}
-    <div class="pages-table data-table-wrap table-wrap" tabindex="0">
+    <div class="table-wrap" tabindex="0">
       <table class="pages-table data-table">
       <thead><tr><th>名称</th><th>触发方式</th><th>状态</th><th>版本</th><th>操作</th></tr></thead>
       <tbody>
@@ -89,7 +89,7 @@
       <button type="submit" class="btn btn-sm">筛选</button>
     </form>
     {{if .Runs}}
-    <div class="pages-table data-table-wrap table-wrap" tabindex="0">
+    <div class="table-wrap" tabindex="0">
       <table class="pages-table data-table">
       <thead><tr><th>邮箱</th><th>状态</th><th>当前 / 下一节点</th><th>下次继续</th><th>触发</th><th>说明</th><th></th></tr></thead>
       <tbody>
