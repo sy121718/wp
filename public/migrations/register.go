@@ -1357,7 +1357,7 @@ func init() {
 	register(Migration{
 		Version:   "127-mail-log-links",
 		TableName: "mail_logs",
-		CheckSQL:  "SELECT CASE WHEN EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = ? AND column_name = 'campaign_id') THEN 1 ELSE 0 END",
+		CheckSQL:  "SELECT CASE WHEN EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = ? AND column_name = 'campaign_id') THEN 1 ELSE 0 END",
 		SQL:       mailLogLinksSQL,
 	})
 
