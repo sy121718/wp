@@ -5,24 +5,24 @@
 {{block body()}}
 {{csrf := .["csrf_token"]}}
 {{selectedProject := .SelectedProject}}
-<div class="pages-wrap masterdata-page">
-    <section class="pages-card card">
+<div class="stack masterdata-page">
+    <section class="card card-body">
         <h2>变更记录</h2>
         {{if .Err != ""}}
-        <p class="pages-badge pages-badge-warn">部分数据未取到：{{.Err}}</p>
+        <p class="badge badge-warning">部分数据未取到：{{.Err}}</p>
         {{end}}
-        <p class="pages-empty">
+        <p class="hint">
             这张表记的是<strong>配置变更</strong>：谁在什么时候把哪条主数据的哪个字段从什么改成了什么
             （商品 / 变体 / 货源）。一次写操作改了几个字段就是几条记录，新增与删除同样逐字段落行。
         </p>
-        <p class="pages-empty">
+        <p class="hint">
             它与<strong>库存流水</strong>分工不同：流水记「库存数量怎么变的」（入库 / 出库 / 盘点），
             本表记「主数据字段怎么变的」。同一次采购收货会同时出现在两处 ——
             流水里是「+10」，这里是「成本价 12.00 → 13.50」，回答的是两个问题。
             记录一旦写入<strong>不可改写</strong>（数据库层拒绝 UPDATE / DELETE），本页也没有编辑入口。
         </p>
-        <form method="get" action="/admin/masterdata/changes" class="pages-form form-row">
-            <select name="project" onchange="this.form.submit()">
+        <form method="get" action="/admin/masterdata/changes" class="form-inline">
+            <select class="form-select" name="project" onchange="this.form.submit()">
                 {{range _, p := .Projects}}
                 <option value="{{p.ID}}" {{if p.ID == selectedProject}}selected{{end}}>{{p.Name}}</option>
                 {{end}}
@@ -30,62 +30,62 @@
         </form>
     </section>
 
-    <section class="pages-card card">
+    <section class="card card-body">
         <h2>筛选（按实体查变更历史）</h2>
-        <form method="get" action="/admin/masterdata/changes" class="attr-form">
+        <form method="get" action="/admin/masterdata/changes" class="form-stack">
             <input type="hidden" name="project" value="{{selectedProject}}">
-            <div class="attr-form-head">
-                <select name="entityType">
+            <div class="form-inline">
+                <select class="form-select" name="entityType">
                     <option value="">（实体类型：全部）</option>
                     {{range _, t := .EntityTypes}}
                     <option value="{{t.Value}}" {{if t.Value == .FilterEntityType}}selected{{end}}>{{t.Label}}</option>
                     {{end}}
                 </select>
-                <input type="text" name="entityId" value="{{.FilterEntityID}}" placeholder="实体 id（uuid）" autocomplete="off">
-                <input type="text" name="field" value="{{.FilterField}}" placeholder="字段（如 price / status）" autocomplete="off">
-                <select name="action">
+                <input type="text" class="form-input" name="entityId" value="{{.FilterEntityID}}" placeholder="实体 id（uuid）" autocomplete="off">
+                <input type="text" class="form-input" name="field" value="{{.FilterField}}" placeholder="字段（如 price / status）" autocomplete="off">
+                <select class="form-select" name="action">
                     <option value="">（动作：全部）</option>
                     {{range _, a := .Actions}}
                     <option value="{{a.Value}}" {{if a.Value == .FilterAction}}selected{{end}}>{{a.Label}}</option>
                     {{end}}
                 </select>
-                <input type="text" name="keyword" value="{{.FilterKeyword}}" placeholder="实体名关键词" autocomplete="off">
-                <input type="text" name="operatorId" value="{{.FilterOperatorID}}" placeholder="操作人" autocomplete="off">
-                <input type="date" name="since" value="{{.FilterSince}}">
-                <input type="date" name="until" value="{{.FilterUntil}}">
+                <input type="text" class="form-input" name="keyword" value="{{.FilterKeyword}}" placeholder="实体名关键词" autocomplete="off">
+                <input type="text" class="form-input" name="operatorId" value="{{.FilterOperatorID}}" placeholder="操作人" autocomplete="off">
+                <input type="date" class="form-input" name="since" value="{{.FilterSince}}">
+                <input type="date" class="form-input" name="until" value="{{.FilterUntil}}">
                 <button type="submit" class="btn">筛选</button>
                 <a class="btn btn-ghost" href="/admin/masterdata/changes?project={{selectedProject}}">重置</a>
             </div>
         </form>
-        <p class="pages-empty">
+        <p class="hint">
             实体类型 + 实体 id 一起填即锁定单个实体，页面给出它的完整字段级时间线；
             时间区间是半开区间：since 含当天、until 含当天（内部转成次日零点）。
         </p>
     </section>
 
     {{if .FilterSpecific}}
-    <section class="pages-card card">
+    <section class="card card-body">
         <h2>当前实体</h2>
         {{if .Current}}
-        <p class="pages-empty">
+        <p class="hint">
             {{.Current.EntityTypeLabel}}（{{.Current.EntityType}}）·
             实体 id <code>{{.Current.EntityID}}</code> ·
             名称快照 <strong>{{.Current.EntityLabel}}</strong> ·
             共 {{.Current.Total}} 条变更记录
         </p>
         {{else}}
-        <p class="pages-empty">该实体没有任何变更记录（从没被改过，或历史在别处）。</p>
+        <p class="hint">该实体没有任何变更记录（从没被改过，或历史在别处）。</p>
         {{end}}
     </section>
     {{end}}
 
-    <section class="pages-card card">
+    <section class="card card-body">
         <h2>字段级变更（共 {{.Total}} 条）</h2>
         {{if len(.Rows) == 0}}
-        <p class="pages-empty">没有符合条件的变更记录。改一次商品价格或货源资料，这里就会出现一条。</p>
+        <p class="hint">没有符合条件的变更记录。改一次商品价格或货源资料，这里就会出现一条。</p>
         {{else}}
-        <div class="pages-table data-table-wrap table-wrap" tabindex="0">
-        <table class="pages-table data-table masterdata-page-table">
+        <div class="table-wrap" tabindex="0">
+        <table class="data-table data-table-wide masterdata-page-table">
             <thead>
             <tr><th>时间</th><th>实体</th><th>动作</th><th>字段</th><th>旧值</th><th>新值</th><th>来源</th><th>操作人</th></tr>
             </thead>
@@ -101,7 +101,7 @@
                 <td data-label="字段">{{r.FieldLabel}} <span class="masterdata-meta">{{r.Field}}</span></td>
                 <td data-label="旧值">{{r.OldValue}}</td>
                 <td data-label="新值">{{r.NewValue}}</td>
-                <td data-label="来源"><span class="pages-badge">{{r.Origin}}</span></td>
+                <td data-label="来源"><span class="badge badge-mute">{{r.Origin}}</span></td>
                 <td data-label="操作人">{{r.OperatorID}}</td>
             </tr>
             {{end}}
@@ -112,14 +112,14 @@
         {{end}}
     </section>
 
-    <section class="pages-card card">
+    <section class="card card-body">
         <h2>按实体汇总（共 {{.EntityTotal}} 个实体）</h2>
         {{if len(.Entities) == 0}}
-        <p class="pages-empty">还没有任何主数据变更记录。</p>
+        <p class="hint">还没有任何主数据变更记录。</p>
         {{else}}
-        <p class="pages-empty">点「查看历史」即锁定该实体（等价于在上面填实体类型 + 实体 id）。</p>
-        <div class="pages-table data-table-wrap table-wrap" tabindex="0">
-        <table class="pages-table data-table masterdata-page-table">
+        <p class="hint">点「查看历史」即锁定该实体（等价于在上面填实体类型 + 实体 id）。</p>
+        <div class="table-wrap" tabindex="0">
+        <table class="data-table data-table-wide masterdata-page-table">
             <thead>
             <tr><th>实体</th><th>变更条数</th><th>最后一次动作</th><th>最后变更字段</th><th>最后变更时间</th><th>最后操作人</th><th>操作</th></tr>
             </thead>
@@ -144,7 +144,7 @@
         </table>
         </div>
         {{if .EntityTruncated}}
-        <p class="pages-empty">共 {{.EntityTotal}} 个实体，本页列出前 {{.EntityShown}} 个 —— 用上面的筛选条件收窄范围。</p>
+        <p class="hint">共 {{.EntityTotal}} 个实体，本页列出前 {{.EntityShown}} 个 —— 用上面的筛选条件收窄范围。</p>
         {{end}}
         {{end}}
     </section>
