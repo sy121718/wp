@@ -296,6 +296,22 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 	runtimefragment.SetProductDataSource(productSvc)
 	// navigationSvc 注入 page 装配：core.nav 绑定菜单位置时构建期解析菜单项。
 	pageService := pagehttp.SetupPageRoutes(authorizedAPI, db, artifactSvc, publicationSvc, projectService, blockSvc, pluginSvc, collectionResolver, navigationSvc, mediaSvc)
+	// 页面 / 自动发布两条构建路径同样接上（issue #35）：装配处拿到的 ProductService
+	// 嵌入了 ProductDataSource，直接传即可（受限接口，写方法传不出去）。
+	if setter, ok := pageService.(interface {
+		SetProductDataSource(productcontract.ProductDataSource)
+	}); ok {
+		setter.SetProductDataSource(productSvc)
+	} else {
+		panic("页面模块未提供商品数据源注入点（SetProductDataSource）")
+	}
+	if setter, ok := presentationSvc.(interface {
+		SetProductDataSource(productcontract.ProductDataSource)
+	}); ok {
+		setter.SetProductDataSource(productSvc)
+	} else {
+		panic("发布实例模块未提供商品数据源注入点（SetProductDataSource）")
+	}
 
 	// 默认主题补齐（启动时一次，幂等）：本能力上线前建的工程没有任何主题，
 	// 页面因此一直没有主题可继承 —— 继承链「主题 → 页面 → 组件」的起点缺失。

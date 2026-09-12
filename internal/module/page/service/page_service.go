@@ -21,6 +21,8 @@ import (
 	"go_wp/pkg/i18n"
 
 	"gorm.io/gorm"
+
+	productcontract "go_wp/internal/module/product/contract"
 )
 
 var _ pagecontract.PageService = (*Service)(nil)
@@ -37,6 +39,9 @@ type Service struct {
 	blocks    blockcontract.BlockService
 	plugins   plugincontract.PluginService
 	content   core.CollectionResolver
+	// productDS 商品构建期数据源（issue #35）：页面里的商品列表组件直连它（受限接口），
+	// 未注入时组件回退按名路由。可选依赖不进构造参数，与其它端口同模式。
+	productDS productcontract.ProductDataSource
 	// navigation 公开站点导航契约：core.nav 绑定菜单位置时构建期解析菜单项。
 	navigation navigationcontract.NavigationService
 	// media 媒体契约：构建期探测图片变体，输出响应式 srcset（访客零查询）。
@@ -111,3 +116,6 @@ func (s *Service) getExistingPage(ctx context.Context, id string) (page *pagemod
 	}
 	return page, nil
 }
+
+// SetProductDataSource 注入商品构建期数据源（issue #35，装配期调用）。
+func (s *Service) SetProductDataSource(ds productcontract.ProductDataSource) { s.productDS = ds }

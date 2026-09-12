@@ -42,6 +42,8 @@ import (
 	"gorm.io/gorm"
 
 	"go_wp/pkg/logger"
+
+	productcontract "go_wp/internal/module/product/contract"
 )
 
 // systemCreator 产物行 created_by 的占位（NOT NULL uuid 列不接受空串）。
@@ -66,7 +68,9 @@ type Service struct {
 	// collection 集合源解析器（装配期注入，可空）：模板内的集合类组件
 	// （core.cardstack 绑定 content:product 等）在构建期展开为静态列表数据。
 	// 未注入时集合绑定节点构建期显式报错（不静默产出空列表）。
-	collection  core.CollectionResolver
+	collection core.CollectionResolver
+	// productDS 商品构建期数据源（issue #35）：模板里的商品组件直连受限接口。
+	productDS   productcontract.ProductDataSource
 	store       *pipeline.LocalStore
 	publication *pipeline.LocalPublicationStore
 	// instanceLocks 实例分片互斥锁：并发构建同一实例时串行化
@@ -597,6 +601,10 @@ func (s *Service) renderHTML(ctx context.Context, entityType, entityID, projectI
 	if s.collection != nil {
 		compileOpts = append(compileOpts, builder.WithCollectionResolver(s.collection))
 	}
+	// 商品数据源（issue #35）：与 page 路径同一注入方式。
+	if s.productDS != nil {
+		compileOpts = append(compileOpts, builder.WithProductDataSource(s.productDS))
+	}
 	compiled, err := builder.Compile(page, compileOpts...)
 	if err != nil {
 		return nil, err
@@ -719,3 +727,6 @@ func (s *Service) toResp(ctx context.Context, e *presentationmodel.InstanceEntit
 	}
 	return resp, nil
 }
+
+// SetProductDataSource 注入商品构建期数据源（issue #35，装配期调用）。
+func (s *Service) SetProductDataSource(ds productcontract.ProductDataSource) { s.productDS = ds }

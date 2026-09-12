@@ -120,6 +120,10 @@ func (s *Service) compileDocument(ctx context.Context, page *builder.Page, proje
 	if s.content != nil {
 		opts = append(opts, builder.WithCollectionResolver(s.content))
 	}
+	// 商品数据源（issue #35）：商品专用组件直连受限接口取数据。
+	if s.productDS != nil {
+		opts = append(opts, builder.WithProductDataSource(s.productDS))
+	}
 	// 导航注入：core.nav 绑定菜单位置（header/footer）时构建期解析为静态菜单项。
 	// 缓存按「工程 + 位置」单次编译内复用（同一页面多个导航节点只查一次库）。
 	if s.navigation != nil {
