@@ -76,7 +76,7 @@ static/js/ui/*.js + static/css/ui.css
 生产装配统一在 `internal/pipeline/compile_assets.go` 的 `ClientAssetOptions()`：手工页面、自动发布预览/发布与 `DefaultCompile` 都从这里取得同一份 embed 资源。页眉/页脚先合入整页 HTML，再统一选择客户端资源；不在片段编译时重复装配。
 
 **为什么控件脚本与样式必须同进同出**：产物内联了脚本却没样式，访客看到的是**没有外观的空壳**。
-`uiAssetsFor` 扫描 HTML 标签的真实属性，一次决定 CSS 与 JS；正文、注释、脚本和属性值里的示例不会触发注入，纯内容页两个都不注入。
+`RenderDocument` 只扫描一次 HTML 标签的真实属性，公共控件与组件增强共用这份集合；正文、注释、脚本、样式和属性值里的示例不会触发注入。`uiAssetsFor` 据此决定控件 CSS 与 JS。没有命中任何增强时，不输出空框架或空 `<script>` 标签。
 
 装配层从 `builder.UIAssetFiles()` 取得资源清单。`WithUISources` 传非 nil map 表示启用增强：用到的控件、`_util.js`、`index.js` 或 `ui.css` 缺失时，`RenderDocument` 返回包含文件名的错误。不使用的控件缺失不影响当前页面。nil map 明确表示无脚本输出，保留原生控件降级。
 
