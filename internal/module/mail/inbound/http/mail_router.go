@@ -26,6 +26,8 @@ func SetupMailRoutes(rg *gin.RouterGroup, db *gorm.DB) mailcontract.MailService 
 	svc.SetCipherSecret(secret)
 	// 队列 handler 与 service 用同一份密钥（注册是幂等的，路由装配期调一次）。
 	mailservice.RegisterMailTaskHandler(db, secret)
+	// 追踪事件落库也走队列（端点只验签 + 入队，不写库）。
+	mailservice.RegisterMailTrackTaskHandler(db)
 
 	handle := NewHandle(svc)
 	g := rg.Group("/mail")

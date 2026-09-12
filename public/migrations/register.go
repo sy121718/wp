@@ -312,6 +312,9 @@ var mailLogLinksSQL string
 //go:embed 128_mail_campaign.sql
 var mailCampaignSQL string
 
+//go:embed 129_mail_templates.sql
+var mailBuiltinTemplatesSQL string
+
 func init() {
 	register(Migration{
 		Version:   "001-init-schema",
@@ -1367,5 +1370,13 @@ func init() {
 		TableName: "sys_permission",
 		CheckSQL:  "SELECT CASE WHEN EXISTS (SELECT 1 FROM sys_permission WHERE permission_code = ?) THEN 1 ELSE 0 END",
 		SQL:       mailCampaignSQL,
+	})
+
+	// 129：内置事务邮件模板（issue #37），以模板存在判定。
+	register(Migration{
+		Version:   "129-mail-templates",
+		TableName: "mail_templates",
+		CheckSQL:  "SELECT CASE WHEN EXISTS (SELECT 1 FROM mail_templates WHERE template_key = ?) THEN 1 ELSE 0 END",
+		SQL:       mailBuiltinTemplatesSQL,
 	})
 }

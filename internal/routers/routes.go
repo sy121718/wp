@@ -185,6 +185,8 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 	productSvc := producthttp.SetupProductRoutes(authorizedAPI, db, projectService)
 	// 邮箱模块（issue #37）：加密密钥在 SetupMailRoutes 内从 config.yaml 的 app.secret 注入。
 	mailSvc := mailhttp.SetupMailRoutes(authorizedAPI, db)
+	// 营销追踪端点（#38 P1）：公开路由（访问面），无鉴权 —— 能力由 TrackingService 收窄。
+	mailhttp.SetupTrackingRoutes(router, mailSvc)
 	_ = mailSvc
 	// 库存 model 注入商品用例（issue #32）：商品与库存合并为同一模块后，商品查询直接读
 	// 库存真源做**查询期投影**（不再有商品侧缓存列、同步台账与对账）。同模块内直调 model。

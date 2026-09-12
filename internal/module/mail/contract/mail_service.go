@@ -40,4 +40,25 @@ type MailService interface {
 
 	// ---- 事务发送 ----
 	SendTemplate(ctx context.Context, req *maildto.SendTemplateReq) (*maildto.SendResult, error)
+
+	// ---- 追踪（#38 P1）----
+	SignTrackToken(p maildto.TrackPayload) (string, error)
+	ParseTrackToken(token string) (maildto.TrackPayload, error)
+	InjectTracking(html string, p maildto.TrackPayload) (string, error)
+	RecordTrackEvent(ctx context.Context, p maildto.TrackPayload, eventType, ip, ua string)
+	UnsubscribeByToken(ctx context.Context, token, ip, ua string) (string, error)
+}
+
+// TrackingService 追踪端点需要的最小能力。
+//
+// 单独一个接口而不并进 MailService：公开路由不该拿到账号 / 模板 / 群发这些后台能力，
+// 越权防护靠**接口形状**，而不是靠调用方自觉。
+//
+// 注意 UnsubscribeByToken 的语义：退订是反垃圾邮件法要求的能力，所以它不需要登录态与 csrf，
+// 安全性由「token 只能由我们签发」保证，且操作幂等。
+type TrackingService interface {
+	ParseTrackToken(token string) (maildto.TrackPayload, error)
+	InjectTracking(html string, p maildto.TrackPayload) (string, error)
+	RecordTrackEvent(ctx context.Context, p maildto.TrackPayload, eventType, ip, ua string)
+	UnsubscribeByToken(ctx context.Context, token, ip, ua string) (string, error)
 }
