@@ -3,6 +3,7 @@
 package counter
 
 import (
+	_ "embed" // enhance.js 经 //go:embed 打进二进制
 	"encoding/json"
 	"fmt"
 	"strconv"
@@ -13,7 +14,20 @@ import (
 // Type 组件类型标识。
 const Type = "core.counter"
 
-func init() { core.Register(&Component{}) }
+// enhanceJS 组件行为源。与 .go / .css / .jet 同目录：改计数器的交互不必再去 538 行的 enhance.js 里找。
+//
+//go:embed enhance.js
+var enhanceJS string
+
+func init() {
+	core.Register(&Component{})
+	// 行为块注册：构建期按产物里是否出现 data-counter 决定要不要内联（见 builder/enhance_select.go）。
+	core.RegisterEnhanceBlock(core.EnhanceBlock{
+		Fn:     "initCounters",
+		Feats:  []string{"data-counter"},
+		Source: enhanceJS,
+	})
+}
 
 // Component 计数器组件（原子）。
 type Component struct{}

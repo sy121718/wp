@@ -94,3 +94,33 @@ func TestEnhanceScriptMulti(t *testing.T) {
 		t.Errorf("未用到的 slide 不该注入")
 	}
 }
+
+// TestEnhanceOwnedBlockFromComponent 组件自带的增强块（就近放置）能正确内联。
+//
+// counter 的行为块已从 enhance.js 迁到 components/counter/enhance.js，经 core.RegisterEnhanceBlock
+// 注册。这条路径在此前不存在，所以单独钉住：注册没生效的话，命中 data-counter 的页面
+// 会静默失去「数字递增」交互 —— 页面照常渲染，只是数字不动，很难归因。
+func TestEnhanceOwnedBlockFromComponent(t *testing.T) {
+	src := loadEnhanceSrc(t)
+	out := enhanceScriptFor(`<div data-counter></div>`, src)
+	if !strings.Contains(out, "function initCounters") {
+		t.Errorf("命中 data-counter 应内联组件自带的 initCounters")
+	}
+	if !strings.Contains(out, "initCounters()") {
+		t.Errorf("命中 data-counter 应调用 initCounters")
+	}
+	// 组件自带的块不该影响存量段落的挑选。
+	if strings.Contains(out, "function initSliders") {
+		t.Errorf("未命中 data-slider 不该内联 initSliders")
+	}
+}
+
+// loadEnhanceSrc 读存量增强源码（enhance.js 现只剩框架 + 未迁移的段落）。
+func loadEnhanceSrc(t *testing.T) string {
+	t.Helper()
+	b, err := os.ReadFile("../templates/static/js/enhance.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
+}
