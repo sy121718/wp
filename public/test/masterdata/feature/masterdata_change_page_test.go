@@ -150,7 +150,7 @@ func TestMasterDataChangePageMultiDeviceContract(t *testing.T) {
 		t.Fatalf("变更记录页应 200，实际 %d", rec.Code)
 	}
 	body := rec.Body.String()
-	if !strings.Contains(body, `class="pages-wrap masterdata-page"`) {
+	if !strings.Contains(body, `class="stack masterdata-page"`) {
 		t.Fatalf("页面缺少多端适配的根类 masterdata-page")
 	}
 	// 键盘可滚的表格容器（宽表在窄视口下靠它横向滚动，且能 Tab 聚焦后用方向键滚）。
@@ -185,7 +185,7 @@ func TestMasterDataChangePageMultiDeviceContract(t *testing.T) {
 	}
 	css := string(raw)
 	for _, want := range []string{
-		`.masterdata-page .attr-form-head input[type="text"]`,
+		`.masterdata-page .form-inline input[type="text"]`,
 		".masterdata-page-table",
 		".masterdata-meta",
 		"width: min(100%, 220px)",
