@@ -292,6 +292,7 @@ go_wp/
 | `runtimefragment` | 已实现 | capability 白名单、受控 HTML Fragment handler（`capability.go` 首批 `loginPanel`/`cartSummary`） | 读取 Page Document、执行 Jet、接受任意 endpoint |
 | `mail` | 已实现 | 发信账号 / 邮件模板 / 联系人 / 群发活动 / 自动化 / 事务发送（`SendTemplate`）/ 追踪与退订；后台走 `MailService`，公开追踪走 `TrackingService` | 短信 / 站内信；访客账号本身（在 `user`） |
 | `user` | 已实现（issue #36） | 访问面访客账号：注册 / 邮箱验证 / 登录 / 密码重置 / 账号中心（资料 / 偏好 / 改密码 / 登录设备）；独立 cookie 与会话命名空间，公开面路由、不经 Casbin | CMS 内容与后台管理；会员等级 / 权益（BIZ-3） |
+| `order` | 已实现（BIZ-1 销售侧） | 订单：建单（商品快照 + 扣库存）/ 状态机（表驱动 + 行锁）/ 取消（归还库存）/ 退款（不还库存 —— 钱与货分开）/ 查询（列表 + 状态计数 + 详情含流转链）；金额一律整数分；归因与流量来源与下单前浏览轨迹冗余在 `orders.attribution`（JSONB），后台备注 `admin_note` 供自建与代发订单填写 | 购物车 / 结算页 / 支付网关对接；库存真源（在 `product/inventory`）；退货入库流程 |
 
 关键命名约束：
 

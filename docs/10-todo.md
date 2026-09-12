@@ -144,7 +144,7 @@
 
 | # | 事项 | 出处 | 现状 | 优先级 | 依赖/前置 |
 |---|---|---|---|---|---|
-| BIZ-1 | \`commerce\` 本体模块（商品/分类/SKU/库存/订单状态机/支付回调验签/优惠码幂等核销） | \`06-A\` §4（L70-83）、\`06-B\` 变更记录 v2（L70-81） | 未开始（\`internal/module/\` 无 commerce） | 高 | 已拍板方向，可先行 |
+| BIZ-1 | \`commerce\` 本体模块（商品/分类/SKU/库存/订单状态机/支付回调验签/优惠码幂等核销） | \`06-A\` §4（L70-83）、\`06-B\` 变更记录 v2（L70-81） | **商品 / 分类 / SKU / 库存已落地**（\`internal/module/product\` 与 \`product/inventory\`，#5–#32 —— v2 决策里的 \`commerce\` 实际以 \`product\` 命名）；**订单已落地**（\`internal/module/order\`，建单 / 状态机 / 取消 / 退款 / 查询 + 归因冗余，迁移 135/136）；**支付回调验签与优惠码幂等核销未开始** | 高 | 已拍板方向，可先行 |
 | BIZ-2 | 首批商品 capability（\`productList\` / \`searchResults\` / \`productAvailability\` / \`productLivePrice\` / \`cartSummary\` 接真实数据 / \`cartAdd\`） | \`04-A-dynamic-capabilities.md\` §7（L128-142）、\`04-B\` §6 索引（L152） | 未开始（\`runtimefragment/capability.go\` 仅 \`loginPanel\` / \`cartSummary\` 占位） | 中 | BIZ-1 |
 | BIZ-3 | 会员 membership（访客账号领域，admin 之外另建） | \`06-A\` §3 表 #6（L60）、\`AGENTS.md\` 命名约束 | **账号底座已落地（issue #36）**：\`internal/module/user\` 提供注册 / 邮箱验证 / 登录 / 密码重置 / 账号中心（资料 / 偏好 / 登录设备），与 \`admin\` 完全隔离；**会员等级与权益未开始** | 中 | 无 |
 | BIZ-4 | 积分 points（流水对账/幂等） | \`06-A\` §3 表 #7（L61） | 未开始 | 低 | BIZ-3 |
