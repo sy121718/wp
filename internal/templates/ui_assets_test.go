@@ -49,9 +49,31 @@ func TestUIAssetEntry(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	matches := regexp.MustCompile(`/static/js/(ui/[a-z_]+\.js)`).FindAllStringSubmatch(string(entry), -1)
-	if len(matches) < 3 || matches[0][1] != "ui/_util.js" || matches[len(matches)-1][1] != "ui/index.js" {
-		t.Fatal("控件入口必须按助手、控件、扫描入口的顺序加载")
+	// 名字里允许点与数字：htmx.min.js 这类**前置库**同样是入口的一部分
+	//（原先从 CDN 引它，CDN 不可达时后台的局部刷新会静默退化成整页刷新）。
+	matches := regexp.MustCompile(`/static/js/(ui/[a-z0-9_.\.]*\.js)`).FindAllStringSubmatch(string(entry), -1)
+	if len(matches) < 3 || matches[len(matches)-1][1] != "ui/index.js" {
+		t.Fatal("控件入口必须按助手、控件、扫描入口的顺序加载（扫描入口放最后）")
+	}
+	// 断言的是**顺序的性质**而不是固定清单：_util.js 必须在 index.js 之前，
+	// 前置库（htmx）必须在 _util.js 之前 —— 控件入口监听 htmx:afterSwap，反了就静默失效。
+	idx := func(name string) int {
+		for i, m := range matches {
+			if m[1] == name {
+				return i
+			}
+		}
+		return -1
+	}
+	utilIdx, indexIdx := idx("ui/_util.js"), idx("ui/index.js")
+	if utilIdx < 0 {
+		t.Fatal("控件入口缺少 ui/_util.js（控件靠它注册）")
+	}
+	if utilIdx > indexIdx {
+		t.Fatal("控件入口顺序不对：_util.js 必须在 index.js 之前")
+	}
+	if htmxIdx := idx("ui/htmx.min.js"); htmxIdx >= 0 && htmxIdx > utilIdx {
+		t.Fatal("前置库（htmx）必须排在控件助手之前")
 	}
 	node, nodeErr := exec.LookPath("node")
 	seen := map[string]bool{}

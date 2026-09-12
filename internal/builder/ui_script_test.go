@@ -14,10 +14,11 @@ import (
 // uiSrcForTest 构造件名 → 源码，模拟装配层从 embed 读出的结果。
 func uiSrcForTest() map[string]string {
 	return map[string]string{
-		"_util.js":  "/* util */ window.WBUI=window.WBUI||{};",
-		"select.js": "/* select */ WBUI.register(function(){});",
-		"modal.js":  "/* modal */ WBUI.register(function(){});",
-		"index.js":  "/* index */ WBUI.scan(document);",
+		"_util.js":    "/* util */ window.WBUI=window.WBUI||{};",
+		"htmx.min.js": "/* htmx */ var htmx=function(){};",
+		"select.js":   "/* select */ WBUI.register(function(){});",
+		"modal.js":    "/* modal */ WBUI.register(function(){});",
+		"index.js":    "/* index */ WBUI.scan(document);",
 	}
 }
 
@@ -96,7 +97,7 @@ func uiScriptForTest(t *testing.T, content string, sources map[string]string) st
 }
 
 func TestUIAssetRegistryAndSelection(t *testing.T) {
-	want := []string{"_util.js", "select.js", "modal.js", "index.js"}
+	want := []string{"_util.js", "htmx.min.js", "select.js", "modal.js", "index.js"}
 	got := UIAssetFiles()
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("资源清单 = %v", got)
@@ -133,6 +134,66 @@ func TestUIAssetsExplicitNoScriptMode(t *testing.T) {
 	css, script, err = uiAssetsFor(collectHTMLFeatures(`<p>内容</p>`), "", map[string]string{})
 	if err != nil || css != "" || script != "" {
 		t.Fatal("纯内容页不应依赖控件资源")
+	}
+}
+
+// TestHtmxInjectedOnlyWhenUsed 访问面此前从不携带 htmx，组件写下的 hx-* 全是哑属性。
+// 判据：出现任一 hx-* 属性即注入，一个都没有就不注入。
+func TestHtmxInjectedOnlyWhenUsed(t *testing.T) {
+	for _, html := range []string{
+		`<div hx-get="/_fragments/cartView" hx-trigger="load"></div>`,
+		`<button HX-POST="/_fragments/cartAdd">加购</button>`,
+		`<form hx-swap="outerHTML"><input name="q"></form>`,
+	} {
+		if got := uiScriptForTest(t, html, uiSrcForTest()); !strings.Contains(got, "/* htmx */") {
+			t.Errorf("命中 hx-* 属性时必须注入 htmx；输入 %s；结果 %q", html, got)
+		}
+	}
+	for _, html := range []string{
+		`<section><h1>纯内容</h1></section>`,
+		`<div data-hx-get="/x"></div>`,
+		`<script>var s = 'hx-get';</script>`,
+		`<p title="hx-get">示例</p>`,
+	} {
+		if got := uiScriptForTest(t, html, uiSrcForTest()); strings.Contains(got, "/* htmx */") {
+			t.Errorf("非 hx-* 属性不应触发 htmx 注入；输入 %s；结果 %q", html, got)
+		}
+	}
+}
+
+// TestHtmxDoesNotDragControlBase 只用 htmx 的页面不该带上控件基座：
+// htmx 是行为库，_util.js / index.js / ui.css 服务的是控件外观与扫描入口。
+func TestHtmxDoesNotDragControlBase(t *testing.T) {
+	got := uiScriptForTest(t, `<div hx-get="/x" hx-trigger="load"></div>`, uiSrcForTest())
+	for _, unwanted := range []string{"/* util */", "/* index */", "/* select */"} {
+		if strings.Contains(got, unwanted) {
+			t.Errorf("纯 htmx 页面不该注入 %q\n%s", unwanted, got)
+		}
+	}
+	// 与控件混用时基座助手仍最前，htmx 在扫描入口之前。
+	mixed := uiScriptForTest(t, `<div hx-get="/x" hx-trigger="load"></div><select data-ui-select></select>`, uiSrcForTest())
+	for _, want := range []string{"/* util */", "/* htmx */", "/* select */", "/* index */"} {
+		if !strings.Contains(mixed, want) {
+			t.Fatalf("混用页面缺少 %q\n%s", want, mixed)
+		}
+	}
+	if strings.Index(mixed, "/* htmx */") > strings.Index(mixed, "/* index */") {
+		t.Error("htmx 应在控件扫描入口之前就位")
+	}
+}
+
+// TestHtmxOnlyPageNeedsNoUIStyle 只用到 htmx 时 ui.css 缺失不该阻断构建。
+func TestHtmxOnlyPageNeedsNoUIStyle(t *testing.T) {
+	css, script, err := uiAssetsFor(collectHTMLFeatures(`<div hx-get="/x"></div>`), "", uiSrcForTest())
+	if err != nil {
+		t.Fatalf("htmx 页面不该因缺少控件样式而失败：%v", err)
+	}
+	if css != "" || !strings.Contains(script, "/* htmx */") {
+		t.Fatalf("css=%q script=%q", css, script)
+	}
+	// 控件页面仍然必须带样式（回归保护）。
+	if _, _, err := uiAssetsFor(collectHTMLFeatures(`<select data-ui-select></select>`), "", uiSrcForTest()); err == nil {
+		t.Fatal("控件页面缺 ui.css 必须报错")
 	}
 }
 

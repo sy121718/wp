@@ -1,5 +1,8 @@
 {* 控制面的控件基座唯一入口：后台、工作台和控件验证页共用。
-   顺序为助手 → 控件 → 扫描入口。访问面仍由 builder 按能力裁剪。 *}
+   顺序为 htmx → 助手 → 控件 → 扫描入口。访问面仍由 builder 按能力裁剪。
+   htmx 排在最前：控件入口 index.js 监听 htmx:afterSwap 重扫，后台所有局部刷新
+   都建立在它之上（原先从 CDN 引，CDN 不可达时下拉/抽屉/按钮会静默退化成整页刷新）。 *}
+<script src="/static/js/ui/htmx.min.js"></script>
 <script src="/static/js/ui/_util.js"></script>
 <script src="/static/js/ui/select.js"></script>
 <script src="/static/js/ui/drawer.js"></script>

@@ -26,7 +26,6 @@
 {* 页面按需内联的动效关键帧：页面 handler 用 core.KeyframeCSS([]string{"sky-fade-up"}) 声明，
    未声明时为缺 key（链式索引安全）→ 不输出任何字节。后台不常驻加载那 63 条营销动效。 *}
 {{if .["KeyframesCSS"]}}<style>{{ .["KeyframesCSS"] | unsafe }}</style>{{end}}
-    <script src="https://cdn.jsdelivr.net/npm/htmx.org@2.0.4/dist/htmx.min.js"></script>
 </head>
 {* hx-headers 全局注入 CSRF token（HTMX 2.0 属性继承，页面内所有 hx-post 自动携带 X-CSRF-Token）。
    渲染数据未传 csrf_token 时输出空串（chain 索引写法对 map 缺 key 安全，不会渲染报错），
