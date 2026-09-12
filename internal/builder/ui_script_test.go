@@ -90,3 +90,14 @@ func TestUIScriptMissingSourceIsSkipped(t *testing.T) {
 		t.Errorf("控件源码缺失时不该拼出残缺脚本，got %q", got)
 	}
 }
+
+func TestUIScriptMissingBaseIsSkipped(t *testing.T) {
+	for _, sources := range []map[string]string{
+		{"select.js": "select"},
+		{"_util.js": "util", "select.js": "select"},
+	} {
+		if got := uiScriptFor(`<select data-ui-select></select>`, sources); got != "" {
+			t.Fatalf("基座闭包缺失时不应输出半截脚本: %q", got)
+		}
+	}
+}

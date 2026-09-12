@@ -6,7 +6,7 @@
 {{csrf := .["csrf_token"]}}
 {{selectedProject := .SelectedProject}}
 <div class="pages-wrap masterdata-page">
-    <section class="pages-card">
+    <section class="pages-card card">
         <h2>变更记录</h2>
         {{if .Err != ""}}
         <p class="pages-badge pages-badge-warn">部分数据未取到：{{.Err}}</p>
@@ -21,7 +21,7 @@
             流水里是「+10」，这里是「成本价 12.00 → 13.50」，回答的是两个问题。
             记录一旦写入<strong>不可改写</strong>（数据库层拒绝 UPDATE / DELETE），本页也没有编辑入口。
         </p>
-        <form method="get" action="/admin/masterdata/changes" class="pages-form">
+        <form method="get" action="/admin/masterdata/changes" class="pages-form form-row">
             <select name="project" onchange="this.form.submit()">
                 {{range _, p := .Projects}}
                 <option value="{{p.ID}}" {{if p.ID == selectedProject}}selected{{end}}>{{p.Name}}</option>
@@ -30,7 +30,7 @@
         </form>
     </section>
 
-    <section class="pages-card">
+    <section class="pages-card card">
         <h2>筛选（按实体查变更历史）</h2>
         <form method="get" action="/admin/masterdata/changes" class="attr-form">
             <input type="hidden" name="project" value="{{selectedProject}}">
@@ -64,7 +64,7 @@
     </section>
 
     {{if .FilterSpecific}}
-    <section class="pages-card">
+    <section class="pages-card card">
         <h2>当前实体</h2>
         {{if .Current}}
         <p class="pages-empty">
@@ -79,13 +79,13 @@
     </section>
     {{end}}
 
-    <section class="pages-card">
+    <section class="pages-card card">
         <h2>字段级变更（共 {{.Total}} 条）</h2>
         {{if len(.Rows) == 0}}
         <p class="pages-empty">没有符合条件的变更记录。改一次商品价格或货源资料，这里就会出现一条。</p>
         {{else}}
-        <div class="pages-table-wrap" tabindex="0">
-        <table class="pages-table masterdata-page-table">
+        <div class="pages-table data-table-wrap table-wrap" tabindex="0">
+        <table class="pages-table data-table masterdata-page-table">
             <thead>
             <tr><th>时间</th><th>实体</th><th>动作</th><th>字段</th><th>旧值</th><th>新值</th><th>来源</th><th>操作人</th></tr>
             </thead>
@@ -112,14 +112,14 @@
         {{end}}
     </section>
 
-    <section class="pages-card">
+    <section class="pages-card card">
         <h2>按实体汇总（共 {{.EntityTotal}} 个实体）</h2>
         {{if len(.Entities) == 0}}
         <p class="pages-empty">还没有任何主数据变更记录。</p>
         {{else}}
         <p class="pages-empty">点「查看历史」即锁定该实体（等价于在上面填实体类型 + 实体 id）。</p>
-        <div class="pages-table-wrap" tabindex="0">
-        <table class="pages-table masterdata-page-table">
+        <div class="pages-table data-table-wrap table-wrap" tabindex="0">
+        <table class="pages-table data-table masterdata-page-table">
             <thead>
             <tr><th>实体</th><th>变更条数</th><th>最后一次动作</th><th>最后变更字段</th><th>最后变更时间</th><th>最后操作人</th><th>操作</th></tr>
             </thead>

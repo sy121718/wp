@@ -7,9 +7,7 @@
 // wbDropdown 当初存在的理由，但面板改成服务端渲染后只有手写面板（动效等）
 // 用了 wb-dd，schema 驱动的 select 全部退回原生控件，老问题因此回归。
 //
-// 修法：在面板增强阶段把原生 select 就地升级为 wb-dd（同一份交互实现，三端一致）。
-// 原生 select 保留在 DOM 里作为取值/回写载体（.wb-dd-src 隐藏），选择后派发冒泡
-// change 事件，仍由检查器既有的 [data-wb-path] 委托回写 AST —— 不新增回写通道。
+// 面板只调用公共 WBUI.scan；基座缺失或初始化失败会进入面板错误提示。
 
 import { wbFieldHints } from '../../core.js';
 
@@ -29,7 +27,12 @@ import { wbFieldHints } from '../../core.js';
 export function upgradeNativeSelects(ctx) {
     var panel = ctx.panel;
     if (!panel) return;
-    if (window.WBUI && window.WBUI.scan) { window.WBUI.scan(panel); }
+    if (!window.WBUI || typeof window.WBUI.scan !== 'function') {
+        throw new Error('工作台缺少控件基座：请通过 partials/ui_scripts.html 加载');
+    }
+    if (window.WBUI.scan(panel).length) {
+        throw new Error('工作台控件初始化失败，详情见 WBUI 错误日志');
+    }
 }
 
 // refreshFieldHints 按当前模型刷新提示：先清掉旧提示再重算。

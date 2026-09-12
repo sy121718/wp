@@ -5,7 +5,7 @@
     <section class="card">
         <div class="card-header"><span class="card-title">编辑数据规则 #{{.Detail.ID}}</span></div>
         <div class="card-body">
-            <form method="post" action="/admin/datarules/update" class="pages-form">
+            <form method="post" action="/admin/datarules/update" class="pages-form form-row">
                 <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
                 <input type="hidden" name="id" value="{{.Detail.ID}}">
                 <div class="form-row">

@@ -12,6 +12,7 @@
     --c-primary-bg:        #eceef1;
 
     --c-bg:               #ffffff;
+    --c-surface:          #ffffff;
     --c-bg-soft:          #f4f5f6;
     --c-bg-hover:         #ececec;
     --c-bg-active:        #e4e4e4;
@@ -46,6 +47,7 @@
     --c-primary-bg:        #2a3038;
 
     --c-bg:               #101318;
+    --c-surface:          #171b21;
     --c-bg-soft:          #171b21;
     --c-bg-hover:         #1f242b;
     --c-bg-active:        #262c34;

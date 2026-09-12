@@ -22,17 +22,7 @@
 .wb-status { color: var(--c-text-mute, #6b7280); font-size: 12px; margin-right: 4px; }
 
 /* ===== 按钮 ===== */
-.wb-btn {
-    border: 1px solid transparent; border-radius: 8px; cursor: pointer;
-    padding: 6px 12px; font-size: 13px; background: transparent;
-    text-decoration: none; display: inline-flex; align-items: center;
-}
-.wb-btn:disabled { opacity: .5; cursor: not-allowed; }
-.wb-btn-primary { background: var(--c-primary, #3d444f); color: #fff; }
-.wb-btn-secondary { border-color: var(--c-border, #e5e7eb); background: var(--c-surface, #fff); }
-.wb-btn-ghost:hover { background: rgba(0,0,0,.05); }
 .wb-chip.is-active { border-color: var(--c-primary, #3d444f); color: var(--c-primary, #3d444f); }
-.wb-icon-btn { border: none; background: none; cursor: pointer; font-size: 15px; }
 
 /* ===== 主区三栏 ===== */
 .wb-main { display: flex; flex: 1; min-height: 0; position: relative; }
@@ -65,8 +55,8 @@
 .wb-palette-item strong, .wb-palette-item span { display: block; }
 .wb-palette-item strong { font-size: 13px; }
 .wb-palette-item span { margin-top: 2px; color: var(--c-text-mute, #6b7280); font-size: 11px; }
-.wb-field label { display: block; font-size: 12px; color: var(--c-text-mute, #6b7280); margin-bottom: 4px; }
-.wb-field input, .wb-field select, .wb-field textarea {
+.wb-field label:not(.wb-check-field):not(.checkbox) { display: block; font-size: 12px; color: var(--c-text-mute, #6b7280); margin-bottom: 4px; }
+.wb-field input:not([type="checkbox"]):not([type="radio"]), .wb-field select, .wb-field textarea {
     width: 100%; box-sizing: border-box; padding: 6px 8px; font-size: 13px;
     border: 1px solid var(--c-border, #e5e7eb); border-radius: 6px;
 }
@@ -311,7 +301,7 @@
 .wb-repeater-row { display: flex; gap: 6px; align-items: center; border: 1px solid var(--c-border, #e5e7eb); border-radius: 8px; padding: 6px; margin-bottom: 6px; }
 .wb-repeater-thumb { width: 44px; height: 44px; object-fit: cover; border-radius: 6px; background: #f3f4f6; flex: none; }
 .wb-repeater-mid { flex: 1 1 auto; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-.wb-repeater-mid input { width: 100%; box-sizing: border-box; padding: 4px 6px; font-size: 12px; border: 1px solid var(--c-border, #e5e7eb); border-radius: 5px; }
+.wb-repeater-mid input:not([type="checkbox"]):not([type="radio"]) { width: 100%; box-sizing: border-box; padding: 4px 6px; font-size: 12px; border: 1px solid var(--c-border, #e5e7eb); border-radius: 5px; }
 .wb-repeater-add { width: 100%; }
 /* ===== 颜色行 ===== */
 .wb-color-row { display: flex; gap: 6px; align-items: center; }
@@ -581,28 +571,23 @@ button.wb-palette-group:hover { color: var(--c-primary, #3d444f); }
 .wb-backup-banner span { flex: 1; min-width: 0; }
 
 /* ===== 动效增强（2026-09 重设计：统一缓动 + 微交互） ===== */
-/* 缓动曲线 token（theme.css 已有 --tr-fast/--tr-norm，这里统一定义质量感） */
-:root {
-    --ease-out: cubic-bezier(0.16, 1, 0.3, 1);   /* 快速缓出，编辑器 UI 主力 */
-    --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1); /* 轻微回弹，用于浮层/选中 */
-}
-
+/* 动效时间与曲线统一由 ui.css 提供。 */
 /* —— 通用元素过渡基线：color/背景/边框/阴影 统一 150ms 缓出 —— */
 .wb-btn, .wb-icon-btn, .wb-chip, .wb-seg-btn, .wb-dev-btn,
 .wb-rail-btn, .wb-node-action, .wb-dims-link, .wb-unit-select {
-    transition: background-color var(--tr-fast, 120ms) var(--ease-out),
-                color var(--tr-fast, 120ms) var(--ease-out),
-                border-color var(--tr-fast, 120ms) var(--ease-out),
-                box-shadow var(--tr-fast, 120ms) var(--ease-out),
-                transform var(--tr-fast, 120ms) var(--ease-out);
+    transition: background-color var(--ui-motion-fast),
+                color var(--ui-motion-fast),
+                border-color var(--ui-motion-fast),
+                box-shadow var(--ui-motion-fast),
+                transform var(--ui-motion-fast);
 }
 
 /* —— 组件库项：hover 上浮 + 阴影（GrapesJS 式拖拽卡片感） —— */
 .wb-palette-item {
-    transition: transform 150ms var(--ease-out),
-                box-shadow 150ms var(--ease-out),
-                border-color 150ms var(--ease-out),
-                background-color 150ms var(--ease-out);
+    transition: transform 150ms var(--ui-ease-out),
+                box-shadow 150ms var(--ui-ease-out),
+                border-color 150ms var(--ui-ease-out),
+                background-color 150ms var(--ui-ease-out);
 }
 .wb-palette-item:hover {
     transform: translateY(-1px);
@@ -612,9 +597,9 @@ button.wb-palette-group:hover { color: var(--c-primary, #3d444f); }
 }
 
 /* —— 结构树节点：背景过渡 + 选中弹簧感 —— */
-.wb-node { transition: background-color 120ms var(--ease-out), outline-color 120ms var(--ease-out); }
+.wb-node { transition: background-color 120ms var(--ui-ease-out), outline-color 120ms var(--ui-ease-out); }
 .wb-node.is-selected {
-    transition: background-color 180ms var(--ease-spring), outline-color 120ms var(--ease-out);
+    transition: background-color 180ms var(--ui-ease-spring), outline-color 120ms var(--ui-ease-out);
 }
 
 /* —— 左侧图标栏：hover 背景 + 激活指示条滑入 —— */
@@ -624,22 +609,17 @@ button.wb-palette-group:hover { color: var(--c-primary, #3d444f); }
     width: 3px; height: 0; border-radius: 0 3px 3px 0;
     background: var(--c-primary, #3d444f);
     transform: translateY(-50%);
-    transition: height 150ms var(--ease-out);
+    transition: height 150ms var(--ui-ease-out);
 }
 .wb-rail-btn:hover::before { height: 55%; }
 .wb-rail-btn.is-active::before { height: 70%; }
 
-/* —— 面板切换：淡入 + 轻微上移（不闪烁） —— */
-.wb-panel { animation: wb-panel-in 180ms var(--ease-out); }
-@keyframes wb-panel-in {
-    from { opacity: 0; transform: translateY(3px); }
-    to   { opacity: 1; transform: translateY(0); }
-}
+/* 面板进场动效由 ui.css 的 .wb-panel 提供。 */
 
 /* —— 检查器字段：焦点高亮过渡 —— */
 .wb-field input[type="text"], .wb-field input[type="number"], .wb-field textarea,
 .wb-field select, .wb-unit-value, .wb-color-text {
-    transition: border-color 150ms var(--ease-out), box-shadow 150ms var(--ease-out);
+    transition: border-color 150ms var(--ui-ease-out), box-shadow 150ms var(--ui-ease-out);
 }
 .wb-field input:focus, .wb-field textarea:focus, .wb-field select:focus,
 .wb-unit-value:focus, .wb-color-text:focus {
@@ -650,7 +630,7 @@ button.wb-palette-group:hover { color: var(--c-primary, #3d444f); }
 
 /* —— 分段按钮/色板选中态 —— */
 .wb-seg-btn.is-active {
-    transition: background-color 120ms var(--ease-out), color 120ms var(--ease-out);
+    transition: background-color 120ms var(--ui-ease-out), color 120ms var(--ui-ease-out);
 }
 
 /* —— 滚动条美化（编辑器质感） —— */
@@ -675,7 +655,7 @@ button.wb-palette-group:hover { color: var(--c-primary, #3d444f); }
     justify-content: space-between; gap: 6px; padding: 6px 8px; font-size: 13px;
     color: var(--c-text, #1f2937); background: var(--c-surface, #fff);
     border: 1px solid var(--c-border, #e5e7eb); border-radius: 6px; cursor: pointer;
-    text-align: left; transition: border-color 150ms var(--ease-out), box-shadow 150ms var(--ease-out);
+    text-align: left; transition: border-color 150ms var(--ui-ease-out), box-shadow 150ms var(--ui-ease-out);
 }
 .wb-dd-btn::after {
     content: ''; flex: 0 0 auto; width: 0; height: 0; margin-left: auto;
@@ -707,7 +687,7 @@ button.wb-palette-group:hover { color: var(--c-primary, #3d444f); }
 .wb-field-hint { margin: 6px 0 0; font-size: 12px; line-height: 1.5; color: var(--c-warn, #b45309); }
 
 /* 原生 select 兜底（repeater 等非 wb-field 容器）：去 UA 灰底，统一观感。 */
-.wb-field select, .wb-repeater-mid select, .wb-repeater-mid input {
+.wb-field select, .wb-repeater-mid select, .wb-repeater-mid input:not([type="checkbox"]):not([type="radio"]) {
     background: var(--c-surface, #fff); color: var(--c-text, #1f2937); cursor: pointer;
 }
 
@@ -999,8 +979,6 @@ button.wb-color-swatch:hover { border-color: var(--c-primary, #3d444f); }
 
 /* 复选框行：单行 28px，标签与控件同行 */
 .wb-field-check { display: flex; align-items: center; min-height: 28px; }
-.wb-field-check > label { display: inline-flex; align-items: center; gap: 8px; margin-bottom: 0; font-size: 12px; color: var(--c-text-secondary, #4b5563); }
-.wb-field-check input[type="checkbox"] { width: 14px; height: 14px; min-height: 0; margin: 0; padding: 0; flex: none; accent-color: var(--c-primary, #3d444f); }
 
 /* ---- 3. 字号：分组标题 14px / 字段标签 12px / 控件值 13px / 辅助 11px ---- */
 .wb-inspector-section {
@@ -1014,7 +992,7 @@ button.wb-color-swatch:hover { border-color: var(--c-primary, #3d444f); }
 .wb-inspector-empty { font-size: 12px; padding: 12px; }
 
 /* ---- 4. 控件高度 32px / 紧凑 28px，圆角 6px ---- */
-.wb-field input, .wb-field select, .wb-field textarea {
+.wb-field input:not([type="checkbox"]):not([type="radio"]), .wb-field select, .wb-field textarea {
     padding: 4px 8px; font-size: 13px; border-radius: 6px;
     border-color: var(--c-border-input, var(--c-border, #e5e7eb));
 }
@@ -1024,8 +1002,6 @@ button.wb-color-swatch:hover { border-color: var(--c-primary, #3d444f); }
 .wb-field-compact input[type="number"] { text-align: right; }
 
 /* ---- 5. 按钮 / 分段 / 子标签：28px 紧凑、32px 默认、圆角 6px ---- */
-.wb-btn { min-height: 32px; padding: 4px 12px; border-radius: 6px; font-size: 13px; }
-.wb-btn-sm { min-height: 28px; padding: 4px 8px; border-radius: 6px; font-size: 12px; }
 .wb-subtabs { gap: 4px; margin: 0 0 8px; }
 .wb-subtab { min-height: 28px; padding: 4px 8px; border-radius: 6px; color: var(--c-text-mute, #6b7280); }
 .wb-group-tabs .wb-subtab, .wb-device-tabs .wb-subtab, .wb-state-tabs .wb-subtab { padding: 4px 8px; }
@@ -1063,7 +1039,7 @@ button.wb-color-swatch:hover { border-color: var(--c-primary, #3d444f); }
 .wb-repeater-row { gap: 8px; padding: 8px; margin-bottom: 8px; border-radius: 8px; }
 .wb-repeater-thumb { border-radius: 6px; background: var(--c-bg-soft, #f3f4f6); }
 .wb-repeater-mid { gap: 4px; }
-.wb-repeater-mid input { padding: 4px 8px; font-size: 13px; border-radius: 6px; }
+.wb-repeater-mid input:not([type="checkbox"]):not([type="radio"]) { padding: 4px 8px; font-size: 13px; border-radius: 6px; }
 .wb-media-row { gap: 8px; }
 .wb-media-field { background-color: var(--c-bg, #f9fafb); }
 .wb-media-cell img { background: var(--c-bg-soft, #f3f4f6); }

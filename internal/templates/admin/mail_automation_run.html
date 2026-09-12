@@ -3,17 +3,17 @@
 {{block body()}}
 {{d := .D}}
 <div class="pages-wrap">
-  <section class="pages-card">
+  <section class="pages-card card">
     <h2>实例排障</h2>
     {{if .Err != ""}}<p class="pages-badge pages-badge-warn">{{.Err}}</p>{{end}}
     <p class="pages-empty"><strong>{{d.Explain}}</strong></p>
     <p><a href="/admin/mail/automation">← 返回列表</a></p>
   </section>
 
-  <section class="pages-card">
+  <section class="pages-card card">
     <h2>基本信息</h2>
-    <div class="pages-table-wrap" tabindex="0">
-      <table class="pages-table">
+    <div class="pages-table data-table-wrap table-wrap" tabindex="0">
+      <table class="pages-table data-table">
       <tbody>
         <tr><th>联系人</th><td>{{d.Email}}{{if d.Name != ""}}（{{d.Name}}）{{end}}</td></tr>
         <tr><th>流程</th><td>{{d.AutomationName}}（id={{d.AutomationID}}）</td></tr>
@@ -28,13 +28,13 @@
     </table>
   </section>
 
-  <section class="pages-card">
+  <section class="pages-card card">
     <h2>节点时间线</h2>
     {{if len(.D.Timeline) == 0}}
     <p class="pages-empty">还没有执行记录（实例可能刚建、任务还没跑到）。</p>
     {{else}}
-    <div class="pages-table-wrap" tabindex="0">
-      <table class="pages-table">
+    <div class="pages-table data-table-wrap table-wrap" tabindex="0">
+      <table class="pages-table data-table">
       <thead><tr><th>时间</th><th>节点</th><th>类型</th><th>结果</th><th>详情</th></tr></thead>
       <tbody>
       {{range _, l := .D.Timeline}}

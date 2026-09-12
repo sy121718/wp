@@ -2,10 +2,10 @@
 {{extends "layout.html"}}
 {{block body()}}
 <div class="pages-wrap">
-    <section class="pages-card">
+    <section class="pages-card card">
         <h2>安装插件</h2>
         <p class="pages-hint">上传 zip 插件包（manifest.json + 组件模板 + 样式声明 + 资产）。安装后启用即出现在可视化工作台组件库。</p>
-        <form method="post" action="/admin/plugins/install" enctype="multipart/form-data" class="pages-form mt-md">
+        <form method="post" action="/admin/plugins/install" enctype="multipart/form-data" class="pages-form form-row mt-md">
             <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
             <input type="file" name="file" accept=".zip" required>
             <button type="submit" class="btn btn-primary">上传并安装</button>
@@ -15,12 +15,12 @@
         {{end}}
     </section>
 
-    <section class="pages-card">
+    <section class="pages-card card">
         <h2>已安装插件</h2>
         {{if len(.Plugins) == 0}}
         <p class="pages-empty">还没有安装插件。上传 zip 包安装你的第一个插件。</p>
         {{else}}
-        <table class="pages-table">
+        <table class="pages-table data-table">
             <thead>
                 <tr>
                     <th>名称</th>

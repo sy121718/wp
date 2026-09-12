@@ -7,7 +7,7 @@
 {{selectedProduct := .SelectedProduct}}
 {{maxOptions := .MaxOptions}}
 <div class="pages-wrap">
-    <section class="pages-card">
+    <section class="pages-card card">
         <h2>捆绑配置</h2>
         {{if .Err != ""}}
         <p class="pages-badge pages-badge-warn">保存未完成：{{.Err}}</p>
@@ -18,14 +18,14 @@
             与整单最小 / 最大总件数（整单下限按<b>总件数</b>判定，不是单项）。
             数量上限同时受库存可用量约束，可用量读<b>仓库真源</b>，与商品列表里的展示缓存无关。
         </p>
-        <form method="get" action="/admin/products/bundle" class="pages-form">
+        <form method="get" action="/admin/products/bundle" class="pages-form form-row">
             <select name="project" onchange="this.form.submit()">
                 {{range _, p := .Projects}}
                 <option value="{{p.ID}}" {{if p.ID == selectedProject}}selected{{end}}>{{p.Name}}</option>
                 {{end}}
             </select>
         </form>
-        <form method="get" action="/admin/products/bundle" class="pages-form">
+        <form method="get" action="/admin/products/bundle" class="pages-form form-row">
             <input type="hidden" name="project" value="{{selectedProject}}">
             <select name="product" onchange="this.form.submit()">
                 <option value="">— 选择捆绑商品 —</option>
@@ -38,14 +38,14 @@
     </section>
 
     {{if selectedProduct != ""}}
-    <section class="pages-card">
+    <section class="pages-card card">
         <h2>选项规则{{if .Detail}} · {{.Detail.ProductName}}{{end}}</h2>
         {{if .Detail}}
         <p class="pages-empty">套餐价（主体自定价）：{{.Detail.BasePrice}}。子项价格不参与前台展示，成本仍在后台保留。</p>
         <form method="post" action="/admin/products/bundle/save">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="productId" value="{{selectedProduct}}">
-            <div class="pages-form">
+            <div class="pages-form form-row">
                 <label>选项数量上限
                     <input type="number" name="maxOptions" min="1" max="{{maxOptions}}" value="{{.Detail.Config.MaxOptions}}">
                 </label>
@@ -56,8 +56,8 @@
                     <input type="number" name="maxTotalQty" min="0" value="{{.Detail.Config.MaxTotalQty}}">
                 </label>
             </div>
-            <div class="pages-table-wrap" tabindex="0">
-                <table class="pages-table">
+            <div class="pages-table data-table-wrap table-wrap" tabindex="0">
+                <table class="pages-table data-table">
                     <thead>
                         <tr>
                             <th>SKU</th><th>必选</th><th>默认数量</th><th>最小数量</th><th>最大数量（0 = 不限）</th><th>当前可用</th>
@@ -88,7 +88,7 @@
                     </tbody>
                 </table>
             </div>
-            <div class="pages-form mt-md">
+            <div class="pages-form form-row mt-md">
                 <button type="submit" class="btn btn-primary">保存配置</button>
             </div>
         </form>
@@ -98,7 +98,7 @@
     </section>
 
     {{if .Detail}}
-    <section class="pages-card">
+    <section class="pages-card card">
         <h2>前台配置器预览</h2>
         <p class="pages-empty">这一份就是访客看到并操作的片段（与前台同一条渲染路径）。</p>
         <div hx-get="/_fragments/bundleConfigurator?productId={{selectedProduct}}" hx-trigger="load" hx-swap="innerHTML"></div>

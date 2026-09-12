@@ -84,6 +84,13 @@ func uiScriptFor(html string, sources map[string]string) string {
 	if len(parts) == 0 {
 		return ""
 	}
+	// 基座助手与扫描入口是所有控件的闭包依赖；缺任一项都不能输出半截脚本。
+	// 半截脚本比整段不注入更危险：页面看似带了控件，运行时却在 WBUI 未定义或
+	// 未扫描时静默失效。与控件源码缺失保持同一条 fail-closed 规则。
+	if strings.TrimSpace(sources["_util.js"]) == "" || strings.TrimSpace(sources["index.js"]) == "" {
+		logger.Scene("build").With("file", "_util.js/index.js").Warn("原始控件基座闭包不完整，产物将不含控件增强")
+		return ""
+	}
 	// 顺序固定：助手 → 各控件 → 入口（入口负责扫描与 htmx 重扫，必须最后）。
 	//
 	// 只返回脚本正文，**不带 <script> 标签** —— document.jet 已在外层套了 <script>，

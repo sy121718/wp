@@ -5,7 +5,7 @@
 {{extends "layout.html"}}
 {{block body()}}
 <div class="pages-wrap">
-    <section class="pages-card">
+    <section class="pages-card card">
         <h2>多语言 · {{.PagePath}}</h2>
 
         {{if .Errors}}
@@ -26,7 +26,7 @@
         {{end}}
 
         {* 语言切换 + 完成度 + 一键 AI（灰置，待接入；决策 F13） *}
-        <form method="get" action="/admin/page/translations" class="pages-form tr-toolbar">
+        <form method="get" action="/admin/page/translations" class="pages-form form-row tr-toolbar">
             <input type="hidden" name="pageId" value="{{.PageID}}">
             <label>语言
                 <select name="lang" onchange="this.form.submit()">
@@ -62,7 +62,7 @@
     </section>
 
     {{if len(.Groups) == 0}}
-    <section class="pages-card mt-md">
+    <section class="pages-card card mt-md">
         <p class="pages-empty">
             {{if .PageTotal == 0}}
             本页没有可翻译文本（只有组件白名单字段参与翻译；纯数字/纯符号与链接、色值等字段不翻译）。
@@ -78,9 +78,9 @@
         <input type="hidden" name="lang" value="{{.Lang}}">
 
         {{range _, g := .Groups}}
-        <section class="pages-card mt-md">
+        <section class="pages-card card mt-md">
             <h2>{{g.Component}} <span class="pages-empty">（{{len(g.Rows)}} 条）</span></h2>
-            <table class="pages-table tr-table">
+            <table class="pages-table data-table tr-table">
                 <thead>
                 <tr><th>字段</th><th>原文</th><th>译文</th><th>状态</th><th>来源</th></tr>
                 </thead>
@@ -131,7 +131,7 @@
         </section>
         {{end}}
 
-        <section class="pages-card mt-md">
+        <section class="pages-card card mt-md">
             <button type="submit" class="btn btn-primary">保存全部</button>
             <span class="pages-empty">
                 保存写入 sys_translation（来源 manual）；清空输入框表示「本行不写入」，不会删除已有译文。

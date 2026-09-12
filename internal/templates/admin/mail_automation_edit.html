@@ -3,7 +3,7 @@
 {{block body()}}
 {{csrf := .["csrf_token"]}}
 <div class="pages-wrap">
-  <section class="pages-card">
+  <section class="pages-card card">
     <h2>{{if .IsNew}}新建自动化流程{{else}}编辑：{{.A.Name}}{{end}}</h2>
     {{if .Err != ""}}<p class="pages-badge pages-badge-warn">{{.Err}}</p>{{end}}
     {{if .Ok != ""}}<p class="pages-badge">{{.Ok}}</p>{{end}}
@@ -19,11 +19,11 @@
     </p>
   </section>
 
-  <form class="pages-form" method="post" action="/admin/mail/automation/save">
+  <form class="pages-form form-row" method="post" action="/admin/mail/automation/save">
     <input type="hidden" name="csrf_token" value="{{csrf}}">
     <input type="hidden" name="id" value="{{if .IsNew}}0{{else}}{{.A.ID}}{{end}}">
 
-    <section class="pages-card">
+    <section class="pages-card card">
       <h2>基本信息</h2>
       <p class="w-full"><label>流程名称 <input class="form-input" type="text" name="name" value="{{if .IsNew}}{{else}}{{.A.Name}}{{end}}" required size="40"></label></p>
       <p class="w-full"><label>说明 <input class="form-input" type="text" name="description" value="{{if .IsNew}}{{else}}{{.A.Description}}{{end}}" size="60"></label></p>
@@ -42,10 +42,10 @@
       <p class="pages-empty">入口节点的标识（通常就是第一行的标识）。</p>
     </section>
 
-    <section class="pages-card">
+    <section class="pages-card card">
       <h2>节点</h2>
-      <div class="pages-table-wrap" tabindex="0">
-      <table class="pages-table">
+      <div class="pages-table data-table-wrap table-wrap" tabindex="0">
+      <table class="pages-table data-table">
         <thead>
           <tr><th>#</th><th>标识</th><th>类型</th><th>参数</th><th>下一步</th><th>yes</th><th>no</th></tr>
         </thead>
@@ -71,8 +71,8 @@
       </table>
       </div>
       <p class="pages-empty"><strong>类型与参数</strong>：</p>
-      <div class="pages-table-wrap" tabindex="0">
-      <table class="pages-table">
+      <div class="pages-table data-table-wrap table-wrap" tabindex="0">
+      <table class="pages-table data-table">
         <thead><tr><th>类型</th><th>参数怎么写</th></tr></thead>
         <tbody>
         {{range _, t := .Types}}
@@ -92,7 +92,7 @@
       {{end}}
     </section>
 
-    <section class="pages-card">
+    <section class="pages-card card">
       <button type="submit" class="btn btn-primary">保存</button>
       {{if not .IsNew}}
       <span class="pages-empty">保存会推进版本号；已运行的实例继续用它们启动时的版本（改图不影响在跑的人）。</span>

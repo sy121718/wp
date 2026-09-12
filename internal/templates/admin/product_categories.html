@@ -6,7 +6,7 @@
 {{selectedProject := .SelectedProject}}
 {{options := .Options}}
 <div class="pages-wrap">
-    <section class="pages-card">
+    <section class="pages-card card">
         <h2>商品分类</h2>
         {{if .Err != ""}}
         <p class="pages-badge pages-badge-warn">上一次操作未完成：{{.Err}}</p>
@@ -16,7 +16,7 @@
             工程内 slug 唯一，另带分类图与 SEO 标题 / 描述。
             商品可以挂多个分类并指定其中一个为主分类；被商品引用的分类不能删除。
         </p>
-        <form method="get" action="/admin/product-categories" class="pages-form">
+        <form method="get" action="/admin/product-categories" class="pages-form form-row">
             <select name="project" onchange="this.form.submit()">
                 {{range _, p := .Projects}}
                 <option value="{{p.ID}}" {{if p.ID == selectedProject}}selected{{end}}>{{p.Name}}</option>
@@ -25,7 +25,7 @@
         </form>
     </section>
 
-    <section class="pages-card">
+    <section class="pages-card card">
         <h2>新建分类</h2>
         <form method="post" action="/admin/product-categories/create" class="attr-form">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
@@ -53,7 +53,7 @@
         </form>
     </section>
 
-    <section class="pages-card">
+    <section class="pages-card card">
         <h2>分类树</h2>
         {{if len(.Categories) == 0}}
         <p class="pages-empty">这个工程还没有分类。用上面的表单建一个，再从它的「父级」里选它建子分类。</p>

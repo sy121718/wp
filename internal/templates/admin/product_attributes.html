@@ -9,13 +9,13 @@
 <p class="pages-badge pages-badge-warn">上一次操作未完成：{{.Err}}</p>
 {{end}}
 <div class="pages-wrap">
-    <section class="pages-card">
+    <section class="pages-card card">
         <h2>商品属性</h2>
         <p class="pages-empty">
             属性组（颜色 / 尺寸 / 口味）在工程内定义一次，可被多个商品引用；
             「参与变体」的组会参与变体规格组合的生成。
         </p>
-        <form method="get" action="/admin/product-attributes" class="pages-form">
+        <form method="get" action="/admin/product-attributes" class="pages-form form-row">
             <select name="project" onchange="this.form.submit()">
                 {{range _, p := .Projects}}
                 <option value="{{p.ID}}" {{if p.ID == selectedProject}}selected{{end}}>{{p.Name}}</option>
@@ -24,7 +24,7 @@
         </form>
     </section>
 
-    <section class="pages-card">
+    <section class="pages-card card">
         <h2>新建属性组</h2>
         <form method="post" action="/admin/product-attributes/create" class="attr-form">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
@@ -48,7 +48,7 @@
         </form>
     </section>
 
-    <section class="pages-card">
+    <section class="pages-card card">
         <h2>属性组列表</h2>
         {{if len(.Attributes) == 0}}
         <p class="pages-empty">这个工程还没有属性组。用上面的表单建一个，之后任意商品都可以引用它。</p>

@@ -5,7 +5,7 @@
 {{csrf := .["csrf_token"]}}
 {{selectedProject := .SelectedProject}}
 <div class="pages-wrap">
-    <section class="pages-card">
+    <section class="pages-card card">
         <h2>商品品牌</h2>
         {{if .Err != ""}}
         <p class="pages-badge pages-badge-warn">上一次操作未完成：{{.Err}}</p>
@@ -14,7 +14,7 @@
             品牌是独立实体：名称、slug（工程内唯一）、logo、描述与 SEO 字段都定义一次，
             多个商品可以引用同一个品牌；被商品引用的品牌不能删除。
         </p>
-        <form method="get" action="/admin/product-brands" class="pages-form">
+        <form method="get" action="/admin/product-brands" class="pages-form form-row">
             <select name="project" onchange="this.form.submit()">
                 {{range _, p := .Projects}}
                 <option value="{{p.ID}}" {{if p.ID == selectedProject}}selected{{end}}>{{p.Name}}</option>
@@ -23,7 +23,7 @@
         </form>
     </section>
 
-    <section class="pages-card">
+    <section class="pages-card card">
         <h2>新建品牌</h2>
         <form method="post" action="/admin/product-brands/create" class="attr-form">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
@@ -45,7 +45,7 @@
         </form>
     </section>
 
-    <section class="pages-card">
+    <section class="pages-card card">
         <h2>品牌列表</h2>
         {{if len(.Brands) == 0}}
         <p class="pages-empty">这个工程还没有品牌。用上面的表单建一个，之后在商品页可以挂到商品上。</p>

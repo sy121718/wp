@@ -12,7 +12,7 @@
 {{rules := .Rules}}
 {{roundings := .Roundings}}
 <div class="pages-wrap pricing-page">
-    <section class="pages-card">
+    <section class="pages-card card">
         <h2>定价工具</h2>
         {{if .Err != ""}}
         <p class="pages-badge pages-badge-warn">上一次操作未完成：{{.Err}}</p>
@@ -25,7 +25,7 @@
             可对单个 SKU、单个商品的全部变体、或筛选出的商品集应用。
             算完的售价直接写库（不是运行时计算），应用前先预览，每次应用都留下台账。
         </p>
-        <form method="get" action="/admin/product-pricing" class="pages-form">
+        <form method="get" action="/admin/product-pricing" class="pages-form form-row">
             <select name="project" onchange="this.form.submit()">
                 {{range _, p := .Projects}}
                 <option value="{{p.ID}}" {{if p.ID == selectedProject}}selected{{end}}>{{p.Name}}</option>
@@ -34,9 +34,9 @@
         </form>
     </section>
 
-    <section class="pages-card">
+    <section class="pages-card card">
         <h2>内置定价规则</h2>
-        <table class="pages-table pricing-page-table pricing-rule-table">
+        <table class="pages-table data-table pricing-page-table pricing-rule-table">
             <thead><tr><th>类型</th><th>说明</th><th>参数</th></tr></thead>
             <tbody>
             {{range _, r := rules}}
@@ -55,7 +55,7 @@
         <p class="pages-empty">尾数处理一律「向上取」：只抬不降，保证按规则算出的售价不会被凑尾数压低。</p>
     </section>
 
-    <section class="pages-card">
+    <section class="pages-card card">
         <h2>按规则改价</h2>
         <form method="post" action="/admin/product-pricing/preview" class="attr-form">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
@@ -112,7 +112,7 @@
     </section>
 
     {{if .HasPreview}}
-    <section class="pages-card">
+    <section class="pages-card card">
         <h2>试算预览（未落库）</h2>
         <p class="pages-empty">
             规则：{{.PreviewSummary.RuleLabel}} · 尾数：{{.PreviewSummary.RoundingLabel}} · 范围：{{.PreviewSummary.ScopeLabel}} ·
@@ -122,7 +122,7 @@
         <p class="pages-empty">这个范围下没有变体。</p>
         {{else}}
         <div class="pricing-table-wrap" tabindex="0" role="region" aria-label="试算明细（可横向滚动查看）">
-            <table class="pages-table pricing-page-table">
+            <table class="pages-table data-table pricing-page-table">
                 <thead><tr><th>商品</th><th>SKU</th><th>成本价</th><th>原价</th><th>新价</th><th>差值</th><th>结果</th></tr></thead>
                 <tbody>
                 {{range _, l := .PreviewRows}}
@@ -147,7 +147,7 @@
     </section>
     {{end}}
 
-    <section class="pages-card">
+    <section class="pages-card card">
         <h2>调价留痕</h2>
         {{if len(.History) == 0}}
         <p class="pages-empty">这个工程还没有调价记录。应用一次调价后，这里会逐批记录规则、范围、改动数量与逐变体「原价 → 新价」。</p>
@@ -167,7 +167,7 @@
             <p class="pages-empty">这一批没有逐变体明细。</p>
             {{else}}
             <div class="pricing-table-wrap" tabindex="0" role="region" aria-label="调价明细（可横向滚动查看）">
-                <table class="pages-table pricing-page-table">
+                <table class="pages-table data-table pricing-page-table">
                     <thead><tr><th>商品</th><th>SKU</th><th>原价</th><th>新价</th><th>差值</th></tr></thead>
                     <tbody>
                     {{range _, it := a.Items}}

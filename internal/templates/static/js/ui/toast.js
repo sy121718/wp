@@ -31,7 +31,6 @@
 
     var HOST_CLASS = 'wb-toasts';
     var MAX = 4;          // 同屏最多几条，超了先挤掉最早的
-    var LEAVE_MS = 220;   // 与 ui.css 的退场过渡时长对齐
 
     function host() {
         var el = document.querySelector('.' + HOST_CLASS);
@@ -50,7 +49,7 @@
         el.classList.add('is-leaving');
         global.setTimeout(function () {
             if (el.parentNode) { el.parentNode.removeChild(el); }
-        }, LEAVE_MS);
+        }, WBUI.transitionTime(el));
     }
 
     function toast(message, opts) {

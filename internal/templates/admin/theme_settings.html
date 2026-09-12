@@ -6,7 +6,7 @@
 {{extends "layout.html"}}
 {{block body()}}
 <div class="pages-wrap">
-    <section class="pages-card">
+    <section class="pages-card card">
         <h2>主题设置：{{.ThemeName}}
             <a class="btn" href="/admin/themes?project={{.ProjectID}}" style="float:right">返回列表</a>
         </h2>
@@ -72,7 +72,7 @@
             </div>
         </form>
     </section>
-    <section class="pages-card">
+    <section class="pages-card card">
         <h2>说明</h2>
         <p class="pages-empty">
             所有设计令牌保存后合入该主题下全部页面的文档（settings.theme），构建产物注入 :root CSS 变量

@@ -44,14 +44,33 @@
         WBUI.controls.push(init);
     };
 
+    // 读取实际 CSS 过渡时长，JS 收尾不再维护第二份毫秒常量。
+    WBUI.transitionTime = function (el) {
+        var style = global.getComputedStyle(el);
+        function times(value) {
+            return value.split(',').map(function (part) {
+                part = part.trim();
+                return (parseFloat(part) || 0) * (part.endsWith('ms') ? 1 : 1000);
+            });
+        }
+        var durations = times(style.transitionDuration);
+        var delays = times(style.transitionDelay);
+        return Math.max.apply(null, durations.map(function (time, i) { return time + delays[i % delays.length]; }));
+    };
+
     // scan 对给定范围跑一遍全部已登记控件。
     WBUI.scan = function (scope) {
+        var errors = [];
         WBUI.controls.forEach(function (init) {
             try {
                 init(scope || document);
             } catch (e) {
-                // 单个控件失败不拖累其余：与 enhance.js 的隔离策略一致。
+                // 保留其余控件的初始化，但错误必须可观测，调用方可显示就地提示。
+                errors.push(e);
+                console.error('[WBUI] 控件初始化失败', e);
+                document.dispatchEvent(new CustomEvent('wbui:error', { detail: { error: e, scope: scope } }));
             }
         });
+        return errors;
     };
 })(window);

@@ -4,14 +4,14 @@
 {{block body()}}
 <div class="pages-wrap">
     {{if len(.Projects) == 0}}
-    <section class="pages-card">
+    <section class="pages-card card">
         <p class="pages-empty">请先在「页面」里创建一个站点工程，再管理全局块。</p>
     </section>
     {{else}}
-    <section class="pages-card">
+    <section class="pages-card card">
         <h2>全局块</h2>
         {* 工程切换 *}
-        <form method="get" action="/admin/blocks" class="pages-form">
+        <form method="get" action="/admin/blocks" class="pages-form form-row">
             <select name="project" onchange="this.form.submit()">
                 {{range _, p := .Projects}}
                 <option value="{{p.ID}}" {{if p.ID == .SelectedProject}}selected{{end}}>{{p.Name}}</option>
@@ -19,7 +19,7 @@
             </select>
         </form>
         {* 新建块（原生 POST 提交，携带 CSRF 隐藏域；hx-headers 只对 htmx 请求生效） *}
-        <form method="post" action="/admin/blocks/create" class="pages-form mt-md">
+        <form method="post" action="/admin/blocks/create" class="pages-form form-row mt-md">
             <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
             <input type="hidden" name="projectId" value="{{.SelectedProject}}">
             <input type="text" name="name" placeholder="块名称，如：站点页眉" required>
@@ -49,12 +49,12 @@
         </form>
     </section>
 
-    <section class="pages-card">
+    <section class="pages-card card">
         <h2>页眉</h2>
         {{if len(.Headers) == 0}}
         <p class="pages-empty">还没有页眉块。在「主题管理 → 设置」里把页眉块绑定到主题后，整站页面构建时自动内联。</p>
         {{else}}
-        <table class="pages-table">
+        <table class="pages-table data-table">
             <thead><tr><th>名称</th><th>更新时间</th><th>操作</th></tr></thead>
             <tbody>
             {{range _, b := .Headers}}
@@ -63,7 +63,7 @@
                 <td>{{b.UpdatedAt}}</td>
                 <td class="pages-actions">
                     <a class="btn" href="/workbench?block={{b.ID}}">编辑</a>
-                    <form method="post" action="/admin/blocks/delete" class="pages-form" style="display:inline"
+                    <form method="post" action="/admin/blocks/delete" class="pages-form form-row" style="display:inline"
                           data-confirm="确定删除块「{{b.Name|safeJs}}」？绑定了它的主题下页面将重新构建。">
                         <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
                         <input type="hidden" name="id" value="{{b.ID}}">
@@ -78,12 +78,12 @@
         {{end}}
     </section>
 
-    <section class="pages-card">
+    <section class="pages-card card">
         <h2>页脚</h2>
         {{if len(.Footers) == 0}}
         <p class="pages-empty">还没有页脚块。</p>
         {{else}}
-        <table class="pages-table">
+        <table class="pages-table data-table">
             <thead><tr><th>名称</th><th>更新时间</th><th>操作</th></tr></thead>
             <tbody>
             {{range _, b := .Footers}}
@@ -92,7 +92,7 @@
                 <td>{{b.UpdatedAt}}</td>
                 <td class="pages-actions">
                     <a class="btn" href="/workbench?block={{b.ID}}">编辑</a>
-                    <form method="post" action="/admin/blocks/delete" class="pages-form" style="display:inline"
+                    <form method="post" action="/admin/blocks/delete" class="pages-form form-row" style="display:inline"
                           data-confirm="确定删除块「{{b.Name|safeJs}}」？绑定了它的主题下页面将重新构建。">
                         <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
                         <input type="hidden" name="id" value="{{b.ID}}">
@@ -107,12 +107,12 @@
         {{end}}
     </section>
 
-    <section class="pages-card">
+    <section class="pages-card card">
         <h2>区块 / 复用资产</h2>
         {{if len(.Blocks) == 0}}
         <p class="pages-empty">还没有区块。区块用于跨页面复用的结构片段（对应 WP 的同步块），工作台「全局块」页签可一键引用。</p>
         {{else}}
-        <table class="pages-table">
+        <table class="pages-table data-table">
             <thead><tr><th>名称</th><th>类型</th><th>复用方式</th><th>更新时间</th><th>操作</th></tr></thead>
             <tbody>
             {{range _, b := .Blocks}}
@@ -123,7 +123,7 @@
                 <td>{{b.UpdatedAt}}</td>
                 <td class="pages-actions">
                     <a class="btn" href="/workbench?block={{b.ID}}">编辑</a>
-                    <form method="post" action="/admin/blocks/delete" class="pages-form" style="display:inline"
+                    <form method="post" action="/admin/blocks/delete" class="pages-form form-row" style="display:inline"
                           data-confirm="确定删除块「{{b.Name|safeJs}}」？">
                         <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
                         <input type="hidden" name="id" value="{{b.ID}}">
@@ -138,7 +138,7 @@
         {{end}}
     </section>
 
-    <section class="pages-card">
+    <section class="pages-card card">
         <h2>说明</h2>
         <p class="pages-empty">
             全局块 = 跨页面复用的结构片段（对应 WP 的 HTML 块 / template part）。页眉/页脚块在

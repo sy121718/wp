@@ -8,19 +8,19 @@
 {* 归属仓下拉（issue #15）：range 体内取不到外层 map，先在 range 外存变量 *}
 {{warehouseOptions := .WarehouseOptions}}
 <div class="pages-wrap">
-    <section class="pages-card">
+    <section class="pages-card card">
         <h2>商品</h2>
         {{if .Err != ""}}
         <p class="pages-badge pages-badge-warn">上一次操作未完成：{{.Err}}</p>
         {{end}}
-        <form method="get" action="/admin/products" class="pages-form">
+        <form method="get" action="/admin/products" class="pages-form form-row">
             <select name="project" onchange="this.form.submit()">
                 {{range _, p := .Projects}}
                 <option value="{{p.ID}}" {{if p.ID == selectedProject}}selected{{end}}>{{p.Name}}</option>
                 {{end}}
             </select>
         </form>
-        <form method="post" action="/admin/products/create" class="pages-form mt-md">
+        <form method="post" action="/admin/products/create" class="pages-form form-row mt-md">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <input type="text" name="name" placeholder="商品名称" required>
@@ -51,7 +51,7 @@
         </p>
     </section>
 
-    <section class="pages-card">
+    <section class="pages-card card">
         <h2>商品列表</h2>
         {{if len(.Products) == 0}}
         <p class="pages-empty">还没有商品。用上面的表单新建一个，系统会自动生成它的第一个变体。</p>
@@ -85,7 +85,7 @@
                 <button type="submit" class="btn btn-danger">删除商品</button>
             </form>
         </div>
-        <table class="pages-table">
+        <table class="pages-table data-table">
             {* 库存展示值（issue #32）：缓存列已删，这里读的是**查询期投影**（真源跨仓汇总，
                一次批量取）。可用量判定一律走真源，点「各仓库存」到 /admin/inventory 按 SKU 查。 *}
             <thead><tr><th>SKU</th><th>规格</th><th>价格</th><th>对比价</th><th>成本价</th><th>启用</th><th>库存</th><th></th></tr></thead>
@@ -122,7 +122,7 @@
                 <span class="pages-fold-hint">展开</span>
             </summary>
             {{if len(p.Ratings) > 0}}
-            <table class="pages-table">
+            <table class="pages-table data-table">
                 <thead><tr><th>评分</th><th>来源</th><th>时间</th><th></th></tr></thead>
                 <tbody>
                 {{range _, r := p.Ratings}}
@@ -143,7 +143,7 @@
                 </tbody>
             </table>
             {{end}}
-            <form method="post" action="/admin/products/rating/add" class="pages-form">
+            <form method="post" action="/admin/products/rating/add" class="pages-form form-row">
                 <input type="hidden" name="csrf_token" value="{{csrf}}">
                 <input type="hidden" name="projectId" value="{{selectedProject}}">
                 <input type="hidden" name="productId" value="{{p.ID}}">
@@ -151,7 +151,7 @@
                 <button type="submit" class="btn">添加评分</button>
             </form>
         </details>
-        <form method="post" action="/admin/products/variant/create" class="pages-form">
+        <form method="post" action="/admin/products/variant/create" class="pages-form form-row">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <input type="hidden" name="productId" value="{{p.ID}}">
@@ -213,7 +213,7 @@
             </form>
         </details>
         {{end}}
-        <form method="post" action="/admin/products/attributes" class="pages-form">
+        <form method="post" action="/admin/products/attributes" class="pages-form form-row">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <input type="hidden" name="id" value="{{p.ID}}">

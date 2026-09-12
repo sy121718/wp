@@ -13,7 +13,7 @@
 {{receiptRequestID := .ReceiptRequestID}}
 {{productionRequestID := .ProductionRequestID}}
 <div class="pages-wrap purchase-page">
-    <section class="pages-card">
+    <section class="pages-card card">
         <h2>采购入库</h2>
         {{if .Err != ""}}
         <p class="pages-badge pages-badge-warn">上一次操作未完成：{{.Err}}</p>
@@ -31,7 +31,7 @@
             来源引用 = 采购单号）、按采购单价<strong>更新该 SKU 的成本价</strong>、把已入库数量与单据状态推进。
             同一张单据重复提交由<strong>幂等键</strong>挡住：同一个键只会产生一张入库单，不会重复加库存。
         </p>
-        <form method="get" action="/admin/inventory/purchases" class="pages-form">
+        <form method="get" action="/admin/inventory/purchases" class="pages-form form-row">
             <select name="project" onchange="this.form.submit()">
                 {{range _, p := .Projects}}
                 <option value="{{p.ID}}" {{if p.ID == selectedProject}}selected{{end}}>{{p.Name}}</option>
@@ -40,7 +40,7 @@
         </form>
     </section>
 
-    <section class="pages-card">
+    <section class="pages-card card">
         <h2>新建采购单</h2>
         {{if len(.Sources) == 0}}
         <p class="pages-empty">
@@ -87,7 +87,7 @@
         {{end}}
     </section>
 
-    <section class="pages-card">
+    <section class="pages-card card">
         <h2>采购单（{{len(orders)}}）</h2>
         <form method="get" action="/admin/inventory/purchases" class="attr-form">
             <input type="hidden" name="project" value="{{selectedProject}}">
@@ -128,8 +128,8 @@
                 <span class="pages-fold-hint">展开</span>
             </summary>
 
-            <div class="pages-table-wrap" tabindex="0">
-            <table class="pages-table purchase-page-table">
+            <div class="pages-table data-table-wrap table-wrap" tabindex="0">
+            <table class="pages-table data-table purchase-page-table">
                 <thead><tr><th>SKU</th><th>采购数量</th><th>已入库</th><th>未入库</th><th>单价</th><th>登记入库</th></tr></thead>
                 <tbody>
                 {{range _, l := o.Lines}}
@@ -170,7 +170,7 @@
         {{end}}
     </section>
 
-    <section class="pages-card">
+    <section class="pages-card card">
         <h2>生产入库（自家工厂）</h2>
         <p class="pages-empty">
             自家工厂<strong>不走采购单</strong>：没有采购单价可以引用，因此成本价在这里<strong>手工填写</strong>。
@@ -217,7 +217,7 @@
         {{end}}
     </section>
 
-    <section class="pages-card">
+    <section class="pages-card card">
         <h2>进货历史</h2>
         <p class="pages-empty">
             按 SKU 查历次进货：单据号、数量、<strong>当时单价快照</strong>、来源、收货仓与时间。
@@ -238,8 +238,8 @@
         {{if len(history) == 0}}
         <p class="pages-empty">没有找到进货记录 —— 换一个 SKU，或先登记一次入库。</p>
         {{else}}
-        <div class="pages-table-wrap" tabindex="0">
-        <table class="pages-table purchase-page-table">
+        <div class="pages-table data-table-wrap table-wrap" tabindex="0">
+        <table class="pages-table data-table purchase-page-table">
             <thead><tr><th>时间</th><th>单据</th><th>类型</th><th>采购单</th><th>来源</th><th>仓库</th><th>SKU</th><th>数量</th><th>单价</th><th>成本价</th><th>操作人</th></tr></thead>
             <tbody>
             {{range _, r := history}}

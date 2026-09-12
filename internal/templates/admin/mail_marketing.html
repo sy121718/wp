@@ -3,7 +3,7 @@
 {{block body()}}
 {{csrf := .["csrf_token"]}}
 <div class="pages-wrap">
-  <section class="pages-card">
+  <section class="pages-card card">
     <h2>邮件营销</h2>
     <p class="pages-empty">相关：<a href="/admin/mail">邮箱设置</a> · <a href="/admin/mail/automation">自动化流程</a></p>
     {{if .Err != ""}}
@@ -23,9 +23,9 @@
     </p>
   </section>
 
-  <section class="pages-card">
+  <section class="pages-card card">
     <h2>联系人（共 {{.ContactTotal}} 人）</h2>
-    <form method="get" action="/admin/mail/marketing" class="pages-form">
+    <form method="get" action="/admin/mail/marketing" class="pages-form form-row">
       <input class="form-input" type="text" name="keyword" value="{{.Keyword}}" placeholder="邮箱或姓名">
       <select class="form-select" name="status">
         <option value="">全部状态</option>
@@ -41,8 +41,8 @@
     {{if len(.Contacts) == 0}}
     <p class="pages-empty">没有匹配的联系人。</p>
     {{else}}
-    <div class="pages-table-wrap" tabindex="0">
-      <table class="pages-table">
+    <div class="pages-table data-table-wrap table-wrap" tabindex="0">
+      <table class="pages-table data-table">
       <thead><tr><th>邮箱</th><th>姓名</th><th>状态</th><th>标签</th><th>来源</th><th>同意来源</th><th>操作</th></tr></thead>
       <tbody>
       {{range _, c := .Contacts}}
@@ -84,7 +84,7 @@
       支持纯文本（每行一个邮箱）或 CSV（表头识别 email / name / tags 三列）。
       退订过的地址会被自动跳过（导进来也发不出去）；格式非法的行会逐行报出，不影响其余行。
     </p>
-    <form method="post" action="/admin/mail/contact/import" class="pages-form">
+    <form method="post" action="/admin/mail/contact/import" class="pages-form form-row">
       <input type="hidden" name="csrf_token" value="{{csrf}}">
       <label>批量标签（逗号分隔） <input class="form-input" type="text" name="tags" placeholder="vip,华南"></label>
       <label><input type="checkbox" name="consent_declared"> 这批人<strong>已同意</strong>接收营销邮件（勾选后置为「已订阅」并记录来源）</label>
@@ -95,13 +95,13 @@
     </form>
   </section>
 
-  <section class="pages-card">
+  <section class="pages-card card">
     <h2>群发活动</h2>
     {{if len(.Campaigns) == 0}}
     <p class="pages-empty">还没有活动。新建后点「启动群发」开始发送。</p>
     {{else}}
-    <div class="pages-table-wrap" tabindex="0">
-      <table class="pages-table">
+    <div class="pages-table data-table-wrap table-wrap" tabindex="0">
+      <table class="pages-table data-table">
       <thead><tr><th>名称</th><th>状态</th><th>目标标签</th><th>进度</th><th>操作</th></tr></thead>
       <tbody>
       {{range _, cp := .Campaigns}}
@@ -140,7 +140,7 @@
     {{end}}
 
     <h3>新建活动</h3>
-    <form method="post" action="/admin/mail/campaign/save" class="pages-form">
+    <form method="post" action="/admin/mail/campaign/save" class="pages-form form-row">
       <input type="hidden" name="csrf_token" value="{{csrf}}">
       <input type="hidden" name="id" value="0">
       <label>名称 <input class="form-input" type="text" name="name" required></label>

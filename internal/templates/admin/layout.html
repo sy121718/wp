@@ -50,7 +50,7 @@
                 <form class="lang-switch" method="get" action="/admin/lang">
                     <input type="hidden" name="redirect" value="{{ .["lang_redirect"] }}">
                     <label class="sr-only" for="lang-select">{{ .["t"]("shell.lang.label", "语言") }}</label>
-                    <select class="lang-select" id="lang-select" name="lang"
+                    <select class="lang-select form-select" id="lang-select" name="lang"
                             title="{{ .["t"]("shell.lang.label", "语言") }}"
                             onchange="this.form.submit()">
                         {{range _, l := .["langs"]}}
@@ -62,7 +62,7 @@
                 {{end}}
                 {* 主题切换：行为在 js/ui/themetoggle.js（aria-pressed 由控件维护）。
                    head 里那段「CSS 前设 data-theme」的防闪烁脚本不动 —— 它必须同步且靠前。 *}
-                <button type="button" class="theme-toggle" data-theme-toggle
+                <button type="button" class="theme-toggle btn btn-ghost btn-icon" data-theme-toggle
                         aria-label="{{ .["t"]("shell.action.toggle_theme", "切换主题") }}"
                         title="{{ .["t"]("shell.action.toggle_theme", "切换主题") }}">◐</button>
             </div>

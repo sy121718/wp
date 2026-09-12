@@ -4,7 +4,7 @@
 {{block body()}}
 {{csrf := .["csrf_token"]}}
 <div class="pages-wrap">
-  <section class="pages-card">
+  <section class="pages-card card">
     <h2>邮箱设置</h2>
     <p class="pages-empty">相关：<a href="/admin/mail/marketing">邮件营销</a> · <a href="/admin/mail/automation">自动化流程</a></p>
     {{if .Err != ""}}
@@ -24,13 +24,13 @@
     </p>
   </section>
 
-  <section class="pages-card">
+  <section class="pages-card card">
     <h2>发信账号</h2>
     {{if len(.Accounts) == 0}}
     <p class="pages-empty">还没有配置发信账号。没有账号时，注册验证之类的邮件发不出去。</p>
     {{else}}
-    <div class="pages-table-wrap" tabindex="0">
-      <table class="pages-table">
+    <div class="pages-table data-table-wrap table-wrap" tabindex="0">
+      <table class="pages-table data-table">
       <thead><tr><th>名称</th><th>用途</th><th>发件人</th><th>服务器</th><th>密码</th><th>上次检测</th><th>操作</th></tr></thead>
       <tbody>
       {{range _, a := .Accounts}}
@@ -69,7 +69,7 @@
     {{end}}
 
     <h3>新建 / 更新账号</h3>
-    <form method="post" action="/admin/mail/account/save" class="pages-form">
+    <form method="post" action="/admin/mail/account/save" class="pages-form form-row">
       <input type="hidden" name="csrf_token" value="{{csrf}}">
       <input type="hidden" name="id" value="0">
       <label>名称 <input class="form-input" type="text" name="name" required></label>
@@ -98,7 +98,7 @@
     </form>
   </section>
 
-  <section class="pages-card">
+  <section class="pages-card card">
     <h2>邮件模板</h2>
     <p class="pages-empty">
       模板变量用 <code>{{`{{.name}}`}}</code> 这种写法。<strong>变量缺失会直接报错</strong>而不是渲染成
@@ -107,8 +107,8 @@
     {{if len(.Templates) == 0}}
     <p class="pages-empty">还没有模板。</p>
     {{else}}
-    <div class="pages-table-wrap" tabindex="0">
-      <table class="pages-table">
+    <div class="pages-table data-table-wrap table-wrap" tabindex="0">
+      <table class="pages-table data-table">
       <thead><tr><th>标识</th><th>语言</th><th>名称</th><th>主题</th><th>变量</th><th>操作</th></tr></thead>
       <tbody>
       {{range _, t := .Templates}}
@@ -133,7 +133,7 @@
     {{end}}
 
     <h3>新建 / 覆盖模板</h3>
-    <form method="post" action="/admin/mail/template/save" class="pages-form">
+    <form method="post" action="/admin/mail/template/save" class="pages-form form-row">
       <input type="hidden" name="csrf_token" value="{{csrf}}">
       <label>标识 <input class="form-input" type="text" name="template_key" placeholder="register_verify" required></label>
       <label>语言 <input class="form-input" type="text" name="locale" placeholder="留空 = 通用"></label>

@@ -5,7 +5,7 @@
 {{csrf := .["csrf_token"]}}
 {{selectedProject := .SelectedProject}}
 <div class="pages-wrap">
-    <section class="pages-card">
+    <section class="pages-card card">
         <h2>商品详情页模板</h2>
         {{if .Err != ""}}
         <p class="pages-badge pages-badge-warn">上一次操作未完成：{{.Err}}</p>
@@ -14,7 +14,7 @@
         <p class="pages-empty">详情页模板能力未装配（缺少内容模板或自动发布契约），本页暂不可用。</p>
         <p class="pages-empty"><a href="/admin/products?project={{selectedProject}}">返回商品列表</a></p>
         {{else}}
-        <form method="get" action="/admin/products/template" class="pages-form">
+        <form method="get" action="/admin/products/template" class="pages-form form-row">
             <input type="hidden" name="product" value="{{.Product.ID}}">
             <select name="project" onchange="this.form.submit()">
                 {{range _, p := .Projects}}
@@ -31,7 +31,7 @@
     </section>
 
     {{if .Ready}}
-    <section class="pages-card">
+    <section class="pages-card card">
         <h2>{{.Product.Name}} · 详情页</h2>
         <p>
             <strong>{{.Product.Name}}</strong>
@@ -51,7 +51,7 @@
             预览在浏览器新标签页里打开渲染结果 —— 看到的就是发布会产出的字节。
         </p>
 
-        <form method="post" action="/admin/products/template/preview" target="_blank" class="pages-form">
+        <form method="post" action="/admin/products/template/preview" target="_blank" class="pages-form form-row">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <input type="hidden" name="productId" value="{{.Product.ID}}">
@@ -66,7 +66,7 @@
         </form>
 
         {{if .InstanceExists}}
-        <form method="post" action="/admin/products/template/apply" class="pages-form">
+        <form method="post" action="/admin/products/template/apply" class="pages-form form-row">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <input type="hidden" name="productId" value="{{.Product.ID}}">
@@ -80,7 +80,7 @@
             <button type="submit" class="btn btn-primary">切换模板并重新发布</button>
         </form>
         {{else}}
-        <form method="post" action="/admin/products/template/publish" class="pages-form">
+        <form method="post" action="/admin/products/template/publish" class="pages-form form-row">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <input type="hidden" name="productId" value="{{.Product.ID}}">
@@ -97,12 +97,12 @@
         {{end}}
     </section>
 
-    <section class="pages-card">
+    <section class="pages-card card">
         <h2>命名模板（{{.TemplateCount}} 套）</h2>
         {{if len(.Templates) == 0}}
         <p class="pages-empty">这个商品类型还没有任何模板。</p>
         {{else}}
-        <table class="pages-table">
+        <table class="pages-table data-table">
             <thead><tr><th>模板名</th><th>当前版本</th><th>更新时间</th><th>状态</th><th>模板 id</th></tr></thead>
             <tbody>
             {{range _, t := .Templates}}
@@ -121,7 +121,7 @@
         </table>
         {{end}}
         {* 新建命名模板：复制一套现有模板的文档作为起点（内容编辑仍属模板/工作台侧）。 *}
-        <form method="post" action="/admin/products/template/create" class="pages-form mt-md">
+        <form method="post" action="/admin/products/template/create" class="pages-form form-row mt-md">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <input type="hidden" name="productId" value="{{.Product.ID}}">

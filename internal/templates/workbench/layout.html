@@ -182,24 +182,7 @@
     {* idiomorph（本地 vendor 0.8.0）：面板片段用 DOM morphing 替换，保留滚动位置/输入焦点/展开态
         （docs/06-C §四）。必须早于 workbench/index.js 加载：core.js 的 morphHTML 直接调全局 Idiomorph。 *}
     <script src="/static/vendor/idiomorph/idiomorph.min.js?v={{.jsVer}}"></script>
-    {* 原始控件基座：工作台**只引它需要的**。
-       select.js：检查器面板由服务端片段渲染，字段里的原生 select 在 Linux/Chromium 上是
-       「按下展开、松开即选」（弹层首项压在控件原位，松手就选中）—— 这正是 wbDropdown
-       当初存在的理由，也是基座 select.js 在解决的同一件事。现在统一走基座：
-       DOM 自绘替身 + 动态选项同步，选后派发冒泡 change 回到 [data-wb-path] 委托。
-       基座会跳过的两类（不会二次接管）：7 个 wb-unit-select 已声明 data-wb-native
-       （与 spacing 控件直接联动）；wbDropdown 的隐藏载体 .wb-dd-src。
-       confirm.js 提供 WBUI.confirm() / WBUI.alert()，工作台在 JS 里的确认与提示改用它。 *}
-    <script src="/static/js/ui/_util.js"></script>
-    <script src="/static/js/ui/select.js"></script>
-    <script src="/static/js/ui/confirm.js"></script>
-    {* 轻提示：工作台里「已保存 / 已复制 / 生成完成」这类反馈不再弹模态框。 *}
-    <script src="/static/js/ui/toast.js"></script>
-    {* 颜色字段：给后台表单用（data-color-field）；工作台检查器仍走自己的 wbColorPicker。 *}
-    <script src="/static/js/ui/colorfield.js"></script>
-    {* 按钮忙碌态：WBUI.busy(btn[, promise][, opts])。 *}
-    <script src="/static/js/ui/busy.js"></script>
-    <script src="/static/js/ui/index.js"></script>
+    {{include "../partials/ui_scripts.html"}}
     {* 工作台前端已按功能拆分为 ES modules（core + methods/*），入口 index.js（docs/09 §3） *}
     <script type="module" src="/static/js/workbench/index.js?v={{.jsVer}}"></script>
 </body>

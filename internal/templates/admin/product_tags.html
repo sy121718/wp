@@ -10,7 +10,7 @@
 {{selectedProject := .SelectedProject}}
 {{ruleTypes := .RuleTypes}}
 <div class="pages-wrap tag-page">
-    <section class="pages-card">
+    <section class="pages-card card">
         <h2>商品标签</h2>
         {{if .Err != ""}}
         <p class="pages-badge pages-badge-warn">上一次操作未完成：{{.Err}}</p>
@@ -20,23 +20,23 @@
             归属在明确的重算时机更新：商品写操作后、变体写操作后、标签规则变更后，以及这里的「重算」按钮。
             重算只替换该自动标签自己的归属，不会覆盖手工标签。
         </p>
-        <form method="get" action="/admin/product-tags" class="pages-form">
+        <form method="get" action="/admin/product-tags" class="pages-form form-row">
             <select name="project" onchange="this.form.submit()">
                 {{range _, p := .Projects}}
                 <option value="{{p.ID}}" {{if p.ID == selectedProject}}selected{{end}}>{{p.Name}}</option>
                 {{end}}
             </select>
         </form>
-        <form method="post" action="/admin/product-tags/recalc" class="pages-form mt-md">
+        <form method="post" action="/admin/product-tags/recalc" class="pages-form form-row mt-md">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <button type="submit" class="btn">重算本工程全部自动标签</button>
         </form>
     </section>
 
-    <section class="pages-card">
+    <section class="pages-card card">
         <h2>内置规则类型</h2>
-        <table class="pages-table tag-page-table tag-rule-table">
+        <table class="pages-table data-table tag-page-table tag-rule-table">
             <thead><tr><th>类型</th><th>说明</th><th>参数</th></tr></thead>
             <tbody>
             {{range _, r := ruleTypes}}
@@ -51,7 +51,7 @@
         <p class="pages-empty">规则参数越界或带未知键一律拒绝；类型与参数只有服务端一份定义。</p>
     </section>
 
-    <section class="pages-card">
+    <section class="pages-card card">
         <h2>新建标签</h2>
         <form method="post" action="/admin/product-tags/create" class="attr-form">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
@@ -88,7 +88,7 @@
         </form>
     </section>
 
-    <section class="pages-card">
+    <section class="pages-card card">
         <h2>标签列表</h2>
         {{if len(.Tags) == 0}}
         <p class="pages-empty">这个工程还没有标签。用上面的表单建一个手工标签去商品页挂载，或者建一个自动标签按规则维护归属。</p>
@@ -156,7 +156,7 @@
             {{if len(t.Products) == 0}}
             <p class="pages-empty">当前没有商品命中这个标签。</p>
             {{else}}
-            <table class="pages-table tag-page-table tag-hits-table">
+            <table class="pages-table data-table tag-page-table tag-hits-table">
                 <thead><tr><th class="tag-hits-name">商品</th><th class="tag-hits-slug">URL 段</th><th class="tag-hits-status">状态</th></tr></thead>
                 <tbody>
                 {{range _, p := t.Products}}

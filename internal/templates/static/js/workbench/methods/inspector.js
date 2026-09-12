@@ -30,7 +30,14 @@ export const inspectorMethods = {
                     if (done) {
                         // done 里的增强渲染（slot 填充/手写面板/事件绑定）异常必须单独兜底：
                         // 否则会被下方 catch 捕获并把面板覆盖成「加载失败」，掩盖真实原因。
-                        try { done(); } catch (e) { console.error('[workbench] 检查器增强渲染失败', e); }
+                        try { done(); } catch (e) {
+                            console.error('[workbench] 检查器增强渲染失败', e);
+                            var notice = document.createElement('p');
+                            notice.className = 'wb-empty';
+                            notice.setAttribute('role', 'alert');
+                            notice.textContent = '部分编辑控件加载失败，请刷新页面后重试。';
+                            panel.prepend(notice);
+                        }
                     }
                 }).catch(function () {
                     if (seq !== self._inspectorReq) return;

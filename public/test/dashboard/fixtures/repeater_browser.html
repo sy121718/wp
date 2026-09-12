@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="csrf-token" content="local-test-fixture">
+<title>重复项面板浏览器验证</title>
+<link rel="stylesheet" href="/static/css/theme.css?v=ui-contract-1">
+<link rel="stylesheet" href="/static/css/ui.css?v=ui-contract-1">
+<link rel="stylesheet" href="/static/css/workbench.css?v=ui-contract-1">
+<style>
+body { margin: 0; padding: 24px 16px; }
+main { width: min(100%, 760px); margin: auto; }
+h1 { font-size: 24px; font-weight: 600; margin-bottom: 8px; }
+#qa-status { display: block; margin-bottom: 16px; color: var(--c-success); font-size: 13px; }
+#qa-error { color: var(--c-danger); margin-top: 12px; }
+nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
+#inspector-panel { max-height: 60vh; overflow: auto; }
+pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+</style>
+<main class="card"><div class="card-body">
+<h1>重复项面板浏览器验证</h1>
+<p>真实面板、事件绑定、撤销与编译；测试文档只保存在内存。</p>
+<nav>
+<button class="btn btn-secondary btn-sm" id="tabs" type="button">页签示例</button>
+<button class="btn btn-secondary btn-sm" id="accordion" type="button">折叠项示例</button>
+<button class="btn btn-secondary btn-sm" id="content" type="button">内容</button>
+<button class="btn btn-secondary btn-sm" id="style" type="button">样式</button>
+<button class="btn btn-secondary btn-sm" id="rebind" type="button">再次增强</button>
+<button class="btn btn-secondary btn-sm" id="undo" type="button">撤销</button>
+<button class="btn btn-secondary btn-sm" id="redo" type="button">重做</button>
+<button class="btn btn-secondary btn-sm" type="button" data-theme-toggle>切换明暗</button>
+<button class="btn btn-secondary btn-sm" id="toast" type="button">提示动效</button>
+</nav>
+<output id="qa-status" aria-live="polite">正在加载</output>
+<div class="wb-inspector-body" id="inspector-panel"></div>
+<details><summary>操作后的文档</summary><pre id="qa-document"></pre></details>
+<p id="qa-error" role="alert"></p>
+</div></main>
+<script src="/static/vendor/idiomorph/idiomorph.min.js"></script>
+<!-- UI_SCRIPTS -->
+<script type="module" src="/fixture.mjs"></script>
+</html>

@@ -5,15 +5,15 @@
 {{block body()}}
 <div class="pages-wrap">
     {{if len(.Projects) == 0}}
-    <section class="pages-card">
+    <section class="pages-card card">
         <h2>站点设置</h2>
         <p class="pages-empty">还没有站点工程。请先在「页面」里创建一个站点工程，再配置站点设置。</p>
     </section>
     {{else}}
-    <section class="pages-card">
+    <section class="pages-card card">
         <h2>站点设置</h2>
         {* 工程切换：站点设置属于具体工程（每个工程一份 SiteSettings） *}
-        <form method="get" action="/admin/settings" class="pages-form">
+        <form method="get" action="/admin/settings" class="pages-form form-row">
             <select name="project" onchange="this.form.submit()">
                 {{range _, p := .Projects}}
                 <option value="{{p.ID}}" {{if p.ID == .Selected}}selected{{end}}>{{p.Name}}</option>
@@ -47,7 +47,7 @@
 
         {* 语言分组（多语言 P3）：站点语言清单真源 project_locales，经 project 契约读写。
            行片段走 HTMX 服务端渲染（增/删一行即时回显），整表提交落库。 *}
-        <section class="pages-card mt-md">
+        <section class="pages-card card mt-md">
             <h2>语言</h2>
             {{if .LocaleError}}
             <p class="pages-empty" role="alert">{{ .["t"](.LocaleError, "语言清单不合法：至少保留一种语言；至多一个默认语言且必须启用；语言码只能包含字母、数字与连字符") }}</p>
@@ -55,7 +55,7 @@
             {{if .LocaleSaved}}
             <p class="pages-empty" role="status">语言清单已保存。</p>
             {{end}}
-            <form id="locale-form" method="post" action="/admin/settings/locales/save" class="pages-form">
+            <form id="locale-form" method="post" action="/admin/settings/locales/save" class="pages-form form-row">
                 <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
                 <input type="hidden" name="projectId" value="{{.Selected}}">
                 <div id="locale-rows">
@@ -91,7 +91,7 @@
             </form>
         </section>
 
-        <section class="pages-card mt-md">
+        <section class="pages-card card mt-md">
             <h2>待实现能力</h2>
             <p class="pages-empty">
                 以下站点级能力目前尚未在后端实现，仅作规划占位，落地后将在此页开放配置：

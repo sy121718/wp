@@ -8,7 +8,7 @@
 {{selectedSKU := .SelectedSKU}}
 {{reasons := .Reasons}}
 <div class="pages-wrap">
-    <section class="pages-card">
+    <section class="pages-card card">
         <h2>库存管理</h2>
         {{if .Err != ""}}
         <p class="pages-badge pages-badge-warn">上一次操作未完成：{{.Err}}</p>
@@ -26,7 +26,7 @@
             库存以「SKU × 仓库」为维度，这里显示的是<strong>库存真源</strong>；
             商品页里的「库存缓存」列只是列表展示用的冗余字段，不参与任何可用量判断。
         </p>
-        <form method="get" action="/admin/inventory" class="pages-form">
+        <form method="get" action="/admin/inventory" class="pages-form form-row">
             <select name="project" onchange="this.form.submit()">
                 {{range _, p := .Projects}}
                 <option value="{{p.ID}}" {{if p.ID == selectedProject}}selected{{end}}>{{p.Name}}</option>
@@ -39,7 +39,7 @@
         </p>
     </section>
 
-    <section class="pages-card">
+    <section class="pages-card card">
         <h2>新建仓库</h2>
         <form method="post" action="/admin/inventory/warehouse/create" class="attr-form">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
@@ -59,7 +59,7 @@
         <p class="pages-empty">这个工程还没有仓库时，第一个建成的仓库会自动成为默认仓。</p>
     </section>
 
-    <section class="pages-card">
+    <section class="pages-card card">
         <h2>仓库列表（{{len(.Warehouses)}}）</h2>
         {{if len(.Warehouses) == 0}}
         <p class="pages-empty">这个工程还没有仓库。用上面的表单建一个 —— 建商品与变体时的归属仓就来自这里。</p>
@@ -115,9 +115,9 @@
         {{end}}
     </section>
 
-    <section class="pages-card">
+    <section class="pages-card card">
         <h2>某 SKU 的各仓库存</h2>
-        <form method="get" action="/admin/inventory" class="pages-form">
+        <form method="get" action="/admin/inventory" class="pages-form form-row">
             <input type="hidden" name="project" value="{{selectedProject}}">
             {{if len(.VariantOptions) > 0}}
             <select name="variantId">
@@ -136,8 +136,8 @@
         {{else if len(.StockRows) == 0}}
         <p class="pages-empty">没有找到 SKU <code>{{selectedSKU}}</code> 的库存记录 —— 该编码不存在，或不在本工程。</p>
         {{else}}
-        <div class="pages-table-wrap" tabindex="0">
-        <table class="pages-table">
+        <div class="pages-table data-table-wrap table-wrap" tabindex="0">
+        <table class="pages-table data-table">
             <thead><tr><th>仓库</th><th>短码</th><th>SKU</th><th>数量</th><th>更新时间</th></tr></thead>
             <tbody>
             {{range _, r := .StockRows}}
@@ -155,7 +155,7 @@
         {{end}}
     </section>
 
-    <section class="pages-card">
+    <section class="pages-card card">
         <h2>库存变动（入库 / 出库 / 调整）</h2>
         <p class="pages-empty">
             变动一律在<strong>真源</strong>上带行锁执行，并逐条写流水（方向 / 数量 / 原因 / 来源引用）。
@@ -200,7 +200,7 @@
         </form>
     </section>
 
-    <section class="pages-card">
+    <section class="pages-card card">
         <h2>变动原因字典（{{len(.Reasons)}}）</h2>
         <p class="pages-empty">
             内置原因（采购入库 / 销售出库 / 盘点调整……）全工程可见、不可修改；
@@ -225,8 +225,8 @@
         {{if len(.Reasons) == 0}}
         <p class="pages-empty">这个工程还没有任何变动原因。</p>
         {{else}}
-        <div class="pages-table-wrap" tabindex="0">
-        <table class="pages-table">
+        <div class="pages-table data-table-wrap table-wrap" tabindex="0">
+        <table class="pages-table data-table">
             <thead><tr><th>方向</th><th>名称</th><th>code</th><th>来源</th><th>状态</th></tr></thead>
             <tbody>
             {{range _, r := .Reasons}}
@@ -244,7 +244,7 @@
         {{end}}
     </section>
 
-    <section class="pages-card">
+    <section class="pages-card card">
         <h2>库存流水（最近 {{len(.Movements)}} 条）</h2>
         <p class="pages-empty">
             每一次真源变动都留痕：方向、数量、变动前后值、原因、来源引用与批次号。
@@ -253,8 +253,8 @@
         {{if len(.Movements) == 0}}
         <p class="pages-empty">还没有库存流水 —— 先用上面的表单做一次入库。</p>
         {{else}}
-        <div class="pages-table-wrap" tabindex="0">
-        <table class="pages-table">
+        <div class="pages-table data-table-wrap table-wrap" tabindex="0">
+        <table class="pages-table data-table">
             <thead><tr><th>时间</th><th>SKU</th><th>仓库</th><th>方向</th><th>变动</th><th>数量变化</th><th>原因</th><th>来源引用</th><th>操作人</th></tr></thead>
             <tbody>
             {{range _, m := .Movements}}

@@ -65,6 +65,7 @@
         root.appendChild(sel);
         sel.classList.add('wbs-native');
         sel.setAttribute('tabindex', '-1');
+        sel.setAttribute('aria-hidden', 'true');
 
         var trigger = document.createElement('button');
         trigger.type = 'button';
@@ -119,6 +120,9 @@
         function sync() {
             var opt = sel.options[sel.selectedIndex];
             value.textContent = opt ? opt.textContent : '';
+            trigger.disabled = sel.disabled;
+            trigger.setAttribute('aria-disabled', sel.disabled ? 'true' : 'false');
+            if (sel.disabled) close();
             items.forEach(function (li, i) {
                 li.classList.toggle('is-selected', i === sel.selectedIndex);
                 li.setAttribute('aria-selected', i === sel.selectedIndex ? 'true' : 'false');
@@ -134,6 +138,7 @@
         }
 
         function open() {
+            if (sel.disabled) return;
             closeAll(root);
             menu.hidden = false;
             root.classList.add(OPEN_CLASS);
@@ -148,6 +153,7 @@
         }
 
         function choose(i) {
+            if (sel.disabled) return;
             if (i < 0 || i >= sel.options.length) { return; }
             if (sel.options[i].disabled || sel.options[i].hidden) { return; }
             sel.selectedIndex = i;
