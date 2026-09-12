@@ -207,7 +207,7 @@ func TestPurchasePageMultiDeviceContract(t *testing.T) {
 		t.Fatalf("采购入库页应 200，实际 %d", rec.Code)
 	}
 	body := rec.Body.String()
-	if !strings.Contains(body, "pages-wrap purchase-page") {
+	if !strings.Contains(body, "stack purchase-page") {
 		t.Fatalf("页面缺少多端适配的根类 purchase-page")
 	}
 	// 键盘可滚的表格容器（宽表在窄视口下靠它横向滚动，且能 Tab 聚焦后用方向键滚）。
@@ -250,7 +250,7 @@ func TestPurchasePageMultiDeviceContract(t *testing.T) {
 	css := string(raw)
 	for _, want := range []string{
 		".purchase-page-table",
-		".purchase-page .attr-form-head .wbs",
+		".purchase-page .form-inline .wbs",
 		".purchase-page .receipt-form",
 	} {
 		if !strings.Contains(css, want) {

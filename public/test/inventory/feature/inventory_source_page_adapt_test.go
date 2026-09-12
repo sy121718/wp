@@ -32,7 +32,7 @@ func TestSourcePageMultiDeviceContract(t *testing.T) {
 		t.Fatalf("货源页应 200，实际 %d", rec.Code)
 	}
 	body := rec.Body.String()
-	if !strings.Contains(body, `class="pages-wrap source-page"`) {
+	if !strings.Contains(body, `class="stack source-page"`) {
 		t.Fatalf("页面缺少多端适配的根类 source-page")
 	}
 	// 键盘可滚的表格容器（宽表在窄视口下靠它横向滚动，且能 Tab 聚焦后用方向键滚）。
@@ -75,8 +75,8 @@ func TestSourcePageMultiDeviceContract(t *testing.T) {
 	css := string(raw)
 	for _, want := range []string{
 		".source-page-table",
-		".source-page .attr-form-head textarea",
-		".source-page .attr-form-head .wbs",
+		".source-page .form-inline textarea",
+		".source-page .form-inline .wbs",
 		".source-stats",
 	} {
 		if !strings.Contains(css, want) {

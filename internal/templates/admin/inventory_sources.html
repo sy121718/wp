@@ -9,28 +9,28 @@
 {{filterRelated := .FilterRelated}}
 {{filterStatus := .FilterStatus}}
 {{filterKeyword := .FilterKeyword}}
-<div class="pages-wrap source-page">
-    <section class="pages-card card">
+<div class="stack source-page">
+    <section class="card card-body">
         <h2>货源管理</h2>
         {{if .Err != ""}}
-        <p class="pages-badge pages-badge-warn">上一次操作未完成：{{.Err}}</p>
+        <p class="badge badge-warning">上一次操作未完成：{{.Err}}</p>
         {{end}}
         {{if .Ok != ""}}
-        <p class="pages-badge pages-badge-ok">上一次操作已完成。</p>
+        <p class="badge badge-success">上一次操作已完成。</p>
         {{end}}
-        <p class="pages-empty">
+        <p class="hint">
             货源表承载<strong>所有进货来源</strong>：外部供应商、集团内关联公司、自家工厂登记在同一处。
             <strong>类型</strong>区分内外部 —— 内部货源按内部交易口径出报表，可设内部结算价（自家工厂走生产入库，无采购单）；
             <strong>关联方标志</strong>独立于类型，是「这笔交易是不是关联交易」的判据，
             报表按「类型 × 关联方」两维交叉取数。外部供应商也可以被标成关联方（同一实控人下的另一家公司）。
         </p>
-        <p class="pages-empty">
+        <p class="hint">
             不同来源的字段形状天然不同，异构的对接信息统一放进<strong>对接配置（JSON 对象）</strong>：
             类型 / 关联方 / 结算价 / 状态都必须结构化（报表要按它们分组、采购单要按它们校验），
             只有对接配置是自由形状。
         </p>
-        <form method="get" action="/admin/inventory/sources" class="pages-form form-row">
-            <select name="project" onchange="this.form.submit()">
+        <form method="get" action="/admin/inventory/sources" class="form-inline">
+            <select class="form-select" name="project" onchange="this.form.submit()">
                 {{range _, p := .Projects}}
                 <option value="{{p.ID}}" {{if p.ID == selectedProject}}selected{{end}}>{{p.Name}}</option>
                 {{end}}
@@ -39,9 +39,9 @@
     </section>
 
     {{if .HasSummary}}
-    <section class="pages-card card">
+    <section class="card card-body">
         <h2>关联方报表区分（类型 × 关联方）</h2>
-        <p class="pages-empty">
+        <p class="hint">
             统计不带状态过滤：停用只是「不再选用」，历史关联交易的口径不该随停用而改变。
         </p>
         <div class="source-stats">
@@ -53,8 +53,8 @@
             <div class="source-stat"><span class="source-stat-num">{{summary.SettlePriced}}</span><span class="source-stat-label">已设结算价</span></div>
         </div>
         {{if len(summary.Groups) > 0}}
-        <div class="pages-table data-table-wrap table-wrap" tabindex="0">
-        <table class="pages-table data-table source-page-table">
+        <div class="table-wrap" tabindex="0">
+        <table class="data-table data-table-wide source-page-table">
             <thead><tr><th>类型</th><th>关联方</th><th>数量</th></tr></thead>
             <tbody>
             {{range _, g := summary.Groups}}
@@ -71,125 +71,124 @@
     </section>
     {{end}}
 
-    <section class="pages-card card">
+    <section class="card card-body">
         <h2>新建货源</h2>
-        <form method="post" action="/admin/inventory/sources/create" class="attr-form">
+        <form method="post" action="/admin/inventory/sources/create" class="form-stack">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
-            <div class="attr-form-head">
-                <input type="text" name="code" placeholder="货源编码（如 SZ_SUPPLIER）" required autocomplete="off">
-                <input type="text" name="name" placeholder="货源名称（如 苏州通达电子）" required>
-                <select name="type">
+            <div class="form-inline">
+                <input type="text" class="form-input" name="code" placeholder="货源编码（如 SZ_SUPPLIER）" required autocomplete="off">
+                <input type="text" class="form-input" name="name" placeholder="货源名称（如 苏州通达电子）" required>
+                <select class="form-select" name="type">
                     {{range _, t := .TypeOptions}}
                     <option value="{{t.Value}}">{{t.Label}}</option>
                     {{end}}
                 </select>
-                <select name="relatedParty">
+                <select class="form-select" name="relatedParty">
                     {{range _, r := .RelatedOptions}}
                     <option value="{{r.Value}}">{{r.Label}}</option>
                     {{end}}
                 </select>
-                <input type="number" name="settlePrice" placeholder="内部结算价（仅内部货源）" inputmode="decimal" step="0.01" min="0">
-                <input type="number" name="sort" value="0" placeholder="排序" inputmode="numeric" step="1">
+                <input type="number" class="form-input" name="settlePrice" placeholder="内部结算价（仅内部货源）" inputmode="decimal" step="0.01" min="0">
+                <input type="number" class="form-input" name="sort" value="0" placeholder="排序" inputmode="numeric" step="1">
             </div>
-            <div class="attr-form-head">
-                <textarea name="config" rows="2" placeholder='对接配置（JSON 对象，如 {"erp":"sap","endpoint":"https://ERP_HOST/api","warehouseCode":"SZ01"}）'></textarea>
+            <div class="form-inline">
+                <textarea class="form-textarea" name="config" rows="2" placeholder='对接配置（JSON 对象，如 {"erp":"sap","endpoint":"https://ERP_HOST/api","warehouseCode":"SZ01"}）'></textarea>
             </div>
-            <div class="attr-form-actions">
+            <div class="action-row">
                 <button type="submit" class="btn btn-primary">新建货源</button>
             </div>
         </form>
-        <p class="pages-empty">
+        <p class="hint">
             类型选「内部」时<strong>自动成为关联方</strong>（内部交易必须能被关联方报表捕获）；
             内部货源才能填结算价 —— 外部供应商的成本口径是采购单价，不在这里填。
         </p>
     </section>
 
-    <section class="pages-card card">
+    <section class="card card-body">
         <h2>筛选（报表区分维度）</h2>
-        <form method="get" action="/admin/inventory/sources" class="attr-form">
+        <form method="get" action="/admin/inventory/sources" class="form-stack">
             <input type="hidden" name="project" value="{{selectedProject}}">
-            <div class="attr-form-head">
-                <select name="type">
+            <div class="form-inline">
+                <select class="form-select" name="type">
                     <option value="">（类型：全部）</option>
                     {{range _, t := .TypeOptions}}
                     <option value="{{t.Value}}" {{if t.Value == filterType}}selected{{end}}>{{t.Label}}</option>
                     {{end}}
                 </select>
-                <select name="relatedParty">
+                <select class="form-select" name="relatedParty">
                     <option value="">（关联方：全部）</option>
                     <option value="true" {{if filterRelated == "true"}}selected{{end}}>仅关联方</option>
                     <option value="false" {{if filterRelated == "false"}}selected{{end}}>仅非关联方</option>
                 </select>
-                <select name="status">
+                <select class="form-select" name="status">
                     <option value="">（状态：启用中）</option>
                     {{range _, s := .StatusOptions}}
                     <option value="{{s.Value}}" {{if s.Value == filterStatus}}selected{{end}}>{{s.Label}}</option>
                     {{end}}
                     <option value="{{.FilterStatusAll}}" {{if filterStatus == .FilterStatusAll}}selected{{end}}>全部（含停用）</option>
                 </select>
-                <input type="text" name="keyword" value="{{filterKeyword}}" placeholder="名称 / 编码关键词" autocomplete="off">
+                <input type="text" class="form-input" name="keyword" value="{{filterKeyword}}" placeholder="名称 / 编码关键词" autocomplete="off">
                 <button type="submit" class="btn">筛选</button>
             </div>
         </form>
-        <p class="pages-empty">状态默认只列启用中的货源；只看已停用选「已停用」，要连停用的一起看选「全部（含停用）」（等价于接口的 includeDisabled）。</p>
+        <p class="hint">状态默认只列启用中的货源；只看已停用选「已停用」，要连停用的一起看选「全部（含停用）」（等价于接口的 includeDisabled）。</p>
     </section>
 
-    <section class="pages-card card">
+    <section class="card card-body">
         <h2>货源列表（{{len(.Sources)}}）</h2>
         {{if len(.Sources) == 0}}
-        <p class="pages-empty">没有符合条件的货源。用上面的表单建一个 —— 采购单（后续）的货源就来自这里。</p>
+        <p class="hint">没有符合条件的货源。用上面的表单建一个 —— 采购单（后续）的货源就来自这里。</p>
         {{else}}
         {{range _, s := .Sources}}
-        <details class="pages-fold">
+        <details class="disclosure">
             <summary class="card-header">
                 <strong>{{s.Name}}</strong>
                 <code>{{s.Code}}</code>
-                <span class="pages-badge">{{s.TypeLabel}}</span>
+                <span class="badge badge-mute">{{s.TypeLabel}}</span>
                 {{if s.RelatedParty}}
-                <span class="pages-badge pages-badge-info">{{s.RelatedPartyLabel}}</span>
+                <span class="badge badge-info">{{s.RelatedPartyLabel}}</span>
                 {{else}}
-                <span class="pages-badge">{{s.RelatedPartyLabel}}</span>
+                <span class="badge badge-mute">{{s.RelatedPartyLabel}}</span>
                 {{end}}
                 {{if s.Status == "disabled"}}
-                <span class="pages-badge pages-badge-warn">{{s.StatusLabel}}</span>
+                <span class="badge badge-warning">{{s.StatusLabel}}</span>
                 {{else}}
-                <span class="pages-empty">{{s.StatusLabel}}</span>
+                <span class="hint">{{s.StatusLabel}}</span>
                 {{end}}
                 {{if s.HasSettlePrice}}
-                <span class="pages-empty">结算价 {{s.SettlePrice}}</span>
+                <span class="hint">结算价 {{s.SettlePrice}}</span>
                 {{end}}
-                <span class="pages-fold-hint">展开</span>
             </summary>
 
-            <form method="post" action="/admin/inventory/sources/update" class="attr-form">
+            <form method="post" action="/admin/inventory/sources/update" class="form-stack">
                 <input type="hidden" name="csrf_token" value="{{csrf}}">
                 <input type="hidden" name="projectId" value="{{selectedProject}}">
                 <input type="hidden" name="id" value="{{s.ID}}">
-                <div class="attr-form-head">
-                    <input type="text" name="name" value="{{s.Name}}" placeholder="货源名称" required>
-                    <input type="text" name="code" value="{{s.Code}}" placeholder="货源编码" required autocomplete="off">
-                    <select name="type">
+                <div class="form-inline">
+                    <input type="text" class="form-input" name="name" value="{{s.Name}}" placeholder="货源名称" required>
+                    <input type="text" class="form-input" name="code" value="{{s.Code}}" placeholder="货源编码" required autocomplete="off">
+                    <select class="form-select" name="type">
                         {{range _, t := .TypeOptions}}
                         <option value="{{t.Value}}" {{if t.Value == s.Type}}selected{{end}}>{{t.Label}}</option>
                         {{end}}
                     </select>
-                    <select name="relatedParty">
+                    <select class="form-select" name="relatedParty">
                         <option value="">（不改 / 按类型默认）</option>
                         <option value="true" {{if s.RelatedParty}}selected{{end}}>关联方</option>
                         <option value="false" {{if not s.RelatedParty}}selected{{end}}>非关联方</option>
                     </select>
-                    <select name="status">
+                    <select class="form-select" name="status">
                         {{range _, st := .StatusOptions}}
                         <option value="{{st.Value}}" {{if st.Value == s.Status}}selected{{end}}>{{st.Label}}</option>
                         {{end}}
                     </select>
-                    <input type="number" name="settlePrice" value="{{if s.HasSettlePrice}}{{s.SettlePrice}}{{end}}" placeholder="内部结算价（留空 = 无）" inputmode="decimal" step="0.01" min="0">
-                    <input type="number" name="sort" value="{{s.Sort}}" placeholder="排序" inputmode="numeric" step="1">
+                    <input type="number" class="form-input" name="settlePrice" value="{{if s.HasSettlePrice}}{{s.SettlePrice}}{{end}}" placeholder="内部结算价（留空 = 无）" inputmode="decimal" step="0.01" min="0">
+                    <input type="number" class="form-input" name="sort" value="{{s.Sort}}" placeholder="排序" inputmode="numeric" step="1">
                     <button type="submit" class="btn btn-sm">保存货源</button>
                 </div>
-                <div class="attr-form-head">
-                    <textarea name="config" rows="3" placeholder="对接配置（JSON 对象）">{{s.Config}}</textarea>
+                <div class="form-inline">
+                    <textarea class="form-textarea" name="config" rows="3" placeholder="对接配置（JSON 对象）">{{s.Config}}</textarea>
                 </div>
             </form>
 

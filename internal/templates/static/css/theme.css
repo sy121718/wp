@@ -217,8 +217,8 @@ button, input, select, textarea { font: inherit; color: inherit; }
      · 键盘：原生控件 Tab 序即视觉序；统计数字只作展示，不参与交互。 */
 .source-page .card-header { flex-wrap: wrap; gap: 4px 8px; }
 .source-page .card-header > * { min-width: 0; }
-.source-page .attr-form-head .wbs { width: min(100%, 220px); }
-.source-page .attr-form-head textarea {
+.source-page .form-inline .wbs { width: min(100%, 220px); }
+.source-page .form-inline textarea {
     padding: 8px 10px; font-size: 13px; line-height: 20px; resize: vertical;
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     border: 1px solid var(--c-border, #e5e7eb); border-radius: 8px;
@@ -244,9 +244,9 @@ button, input, select, textarea { font: inherit; color: inherit; }
         padding: 8px 10px; margin-bottom: 8px;
     }
     .source-page-table td { border: 0; padding: 2px 0; }
-    .source-page .attr-form-head .wbs,
-    .source-page .attr-form-head textarea { width: 100%; }
-    .source-page .attr-form-actions .btn { width: 100%; }
+    .source-page .form-inline .wbs,
+    .source-page .form-inline textarea { width: 100%; }
+    .source-page .action-row .btn { width: 100%; }
 }
 
 
@@ -258,10 +258,10 @@ button, input, select, textarea { font: inherit; color: inherit; }
      · 收货表单行内排布，窄屏折行并让输入与按钮占满整行；
      · 触屏只需原生控件，按压反馈走 .btn:active（不带媒体查询）；
      · 键盘：原生控件 Tab 序即视觉序；表格横向滚动容器保留 tabindex，方向键可滚。 */
-.purchase-page .attr-form-head input[type="text"],
-.purchase-page .attr-form-head input[type="number"],
-.purchase-page .attr-form-head select,
-.purchase-page .attr-form-head .wbs { width: min(100%, 220px); }
+.purchase-page .form-inline input[type="text"],
+.purchase-page .form-inline input[type="number"],
+.purchase-page .form-inline select,
+.purchase-page .form-inline .wbs { width: min(100%, 220px); }
 .purchase-page .receipt-form { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .purchase-page .receipt-form input[type="number"] {
     padding: 6px 8px; font-size: 13px; border: 1px solid var(--c-border, #e5e7eb);
@@ -287,15 +287,15 @@ button, input, select, textarea { font: inherit; color: inherit; }
         content: attr(data-label) " ";
         color: var(--c-text-mute, #6b7280); font-size: 12px;
     }
-    .purchase-page .attr-form-head input[type="text"],
-    .purchase-page .attr-form-head input[type="number"],
-    .purchase-page .attr-form-head select,
-    .purchase-page .attr-form-head .wbs { width: 100%; }
+    .purchase-page .form-inline input[type="text"],
+    .purchase-page .form-inline input[type="number"],
+    .purchase-page .form-inline select,
+    .purchase-page .form-inline .wbs { width: 100%; }
     .purchase-page .receipt-form { width: 100%; }
     .purchase-page .receipt-form input[type="number"],
     .purchase-page .receipt-form input[name="unitPrice"],
     .purchase-page .receipt-form .btn { width: 100%; }
-    .purchase-page .attr-form-actions .btn { width: 100%; }
+    .purchase-page .action-row .btn { width: 100%; }
 }
 
 /* ===== 变更记录（admin/masterdata_changes.html，issue #19） =====
