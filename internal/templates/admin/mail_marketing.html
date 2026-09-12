@@ -26,8 +26,8 @@
   <section class="pages-card">
     <h2>联系人（共 {{.ContactTotal}} 人）</h2>
     <form method="get" action="/admin/mail/marketing" class="pages-form">
-      <input type="text" name="keyword" value="{{.Keyword}}" placeholder="邮箱或姓名">
-      <select name="status">
+      <input class="form-input" type="text" name="keyword" value="{{.Keyword}}" placeholder="邮箱或姓名">
+      <select class="form-select" name="status">
         <option value="">全部状态</option>
         <option value="pending">待确认</option>
         <option value="subscribed">已订阅</option>
@@ -61,12 +61,12 @@
           <form method="post" action="/admin/mail/contact/status" style="display:inline">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="id" value="{{c.ID}}">
-            <select name="status">
+            <select class="form-select" name="status">
               <option value="subscribed">订阅</option>
               <option value="pending">待确认</option>
               <option value="unsubscribed">退订</option>
             </select>
-            <input type="text" name="note" placeholder="来源备注">
+            <input class="form-input" type="text" name="note" placeholder="来源备注">
             <button type="submit" class="btn btn-sm">更新</button>
           </form>
         </td>
@@ -86,9 +86,9 @@
     </p>
     <form method="post" action="/admin/mail/contact/import" class="pages-form">
       <input type="hidden" name="csrf_token" value="{{csrf}}">
-      <label>批量标签（逗号分隔） <input type="text" name="tags" placeholder="vip,华南"></label>
+      <label>批量标签（逗号分隔） <input class="form-input" type="text" name="tags" placeholder="vip,华南"></label>
       <label><input type="checkbox" name="consent_declared"> 这批人<strong>已同意</strong>接收营销邮件（勾选后置为「已订阅」并记录来源）</label>
-      <label>同意来源 <input type="text" name="consent_source" placeholder="例如：2026-09 线下展会收集，已获口头同意"></label>
+      <label>同意来源 <input class="form-input" type="text" name="consent_source" placeholder="例如：2026-09 线下展会收集，已获口头同意"></label>
       <label><input type="checkbox" name="update_existing"> 已存在的联系人更新标签（<strong>不会</strong>改动他们的同意状态）</label>
       <label>内容 <textarea name="content" rows="10" placeholder="a@example.com&#10;b@example.com&#10;或 CSV：email,name,tags"></textarea></label>
       <button type="submit" class="btn btn-primary">导入</button>
@@ -143,19 +143,19 @@
     <form method="post" action="/admin/mail/campaign/save" class="pages-form">
       <input type="hidden" name="csrf_token" value="{{csrf}}">
       <input type="hidden" name="id" value="0">
-      <label>名称 <input type="text" name="name" required></label>
+      <label>名称 <input class="form-input" type="text" name="name" required></label>
       <label>发信账号
-        <select name="account_id" required>
+        <select class="form-select" name="account_id" required>
           {{range _, a := .Accounts}}<option value="{{a.ID}}">{{a.Name}}（{{a.FromEmail}}）</option>{{end}}
         </select>
       </label>
       <label>邮件模板
-        <select name="template_id" required>
+        <select class="form-select" name="template_id" required>
           {{range _, t := .Templates}}<option value="{{t.ID}}">{{t.TemplateKey}} · {{t.Name}}（id={{t.ID}}）</option>{{end}}
         </select>
       </label>
-      <label>目标标签（逗号分隔，留空 = 全部已订阅） <input type="text" name="target_tags" placeholder="vip"></label>
-      <label>邮件主题 <input type="text" name="subject" required></label>
+      <label>目标标签（逗号分隔，留空 = 全部已订阅） <input class="form-input" type="text" name="target_tags" placeholder="vip"></label>
+      <label>邮件主题 <input class="form-input" type="text" name="subject" required></label>
       <button type="submit" class="btn btn-primary">保存活动</button>
     </form>
   </section>

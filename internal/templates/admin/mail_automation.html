@@ -75,9 +75,9 @@
       <button type="submit" class="btn btn-sm">补投延时实例（扫一轮到点的）</button>
     </form>
     <form class="pages-form" method="get" action="/admin/mail/automation">
-      <label>按流程 id 筛：<input type="text" name="automationId" value="{{.FilterID}}" size="6"></label>
+      <label>按流程 id 筛：<input class="form-input" type="text" name="automationId" value="{{.FilterID}}" size="6"></label>
       <label>按状态筛：
-        <select name="runStatus">
+        <select class="form-select" name="runStatus">
           <option value="">全部</option>
           <option value="running">运行中</option>
           <option value="waiting">等待中</option>

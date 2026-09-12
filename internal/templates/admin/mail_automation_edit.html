@@ -25,10 +25,10 @@
 
     <section class="pages-card">
       <h2>基本信息</h2>
-      <p class="w-full"><label>流程名称 <input type="text" name="name" value="{{if .IsNew}}{{else}}{{.A.Name}}{{end}}" required size="40"></label></p>
-      <p class="w-full"><label>说明 <input type="text" name="description" value="{{if .IsNew}}{{else}}{{.A.Description}}{{end}}" size="60"></label></p>
+      <p class="w-full"><label>流程名称 <input class="form-input" type="text" name="name" value="{{if .IsNew}}{{else}}{{.A.Name}}{{end}}" required size="40"></label></p>
+      <p class="w-full"><label>说明 <input class="form-input" type="text" name="description" value="{{if .IsNew}}{{else}}{{.A.Description}}{{end}}" size="60"></label></p>
       <p class="w-full"><label>触发方式
-        <select name="trigger_type">
+        <select class="form-select" name="trigger_type">
         {{range _, t := .Triggers}}
           <option value="{{t.Value}}"{{if t.Selected}} selected{{end}}>{{t.Label}}</option>
         {{end}}
@@ -38,7 +38,7 @@
         触发方式决定「谁会进入流程」。<strong>手工添加</strong>最可控（后台挑人加入，适合先试跑）；
         事件触发随业务动作自动发生。注意：批量导入<strong>不会</strong>逐条触发（1000 次查询太贵），需要时用后台批量加入。
       </p>
-      <p class="w-full"><label>入口节点标识 <input type="text" name="entry" value="{{if .IsNew}}n1{{else}}{{.Entry}}{{end}}" size="8"></label></p>
+      <p class="w-full"><label>入口节点标识 <input class="form-input" type="text" name="entry" value="{{if .IsNew}}n1{{else}}{{.Entry}}{{end}}" size="8"></label></p>
       <p class="pages-empty">入口节点的标识（通常就是第一行的标识）。</p>
     </section>
 
@@ -53,18 +53,18 @@
         {{range _, r := .Rows}}
         <tr>
           <td>{{r.Index}}</td>
-          <td><input type="text" name="node_key_{{r.Index}}" value="{{r.Key}}" size="6"></td>
+          <td><input class="form-input" type="text" name="node_key_{{r.Index}}" value="{{r.Key}}" size="6"></td>
           <td>
-            <select name="node_type_{{r.Index}}">
+            <select class="form-select" name="node_type_{{r.Index}}">
             {{range _, o := r.Options}}
               <option value="{{o.Value}}"{{if o.Selected}} selected{{end}}>{{o.Label}}</option>
             {{end}}
             </select>
           </td>
-          <td><input type="text" name="param_{{r.Index}}" value="{{r.Param}}" size="26"></td>
-          <td><input type="text" name="next_{{r.Index}}" value="{{r.Next}}" size="6"></td>
-          <td><input type="text" name="yes_{{r.Index}}" value="{{r.Yes}}" size="6"></td>
-          <td><input type="text" name="no_{{r.Index}}" value="{{r.No}}" size="6"></td>
+          <td><input class="form-input" type="text" name="param_{{r.Index}}" value="{{r.Param}}" size="26"></td>
+          <td><input class="form-input" type="text" name="next_{{r.Index}}" value="{{r.Next}}" size="6"></td>
+          <td><input class="form-input" type="text" name="yes_{{r.Index}}" value="{{r.Yes}}" size="6"></td>
+          <td><input class="form-input" type="text" name="no_{{r.Index}}" value="{{r.No}}" size="6"></td>
         </tr>
         {{end}}
         </tbody>
