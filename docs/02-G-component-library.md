@@ -72,7 +72,8 @@ Go 读组件同目录的 `.css`，把顶层 `&` 替换成该 node 的作用域�
 | `@style <容器> <属性> <值> & { … }` | 容器样式查询（`@layer sky-local`）—— 作者 / 容器显式声明的语义开关 |
 | `@theme <容器> <属性> <值> & { … }` | 容器样式查询（`@layer sky-theme`）—— 主题档位 |
 | `@media (max-width: 1024px / 767px)` | `tablet` / `mobile`（只认这两档，自造断点构建期报错） |
-| `@keyframes …` | `AddKeyframes`（同名只输出一次） |
+| `@keyframes …` | `AddKeyframes`（同名只输出一次）。**名字与帧体都支持变量** —— 每实例一份帧名的组件（`marquee`）靠它，`{{id}}` 没展开就会多出一个谁都不引用的关键帧 |
+| `@property <名> { … }` | `AddPropertyDecls` → **未分层顶层桶**（注册是全局的，放进 `@layer` 会让浏览器对「层内注册」产生实现差异）；块内每行一条声明，与 `@keyframes` 同约定 |
 | `@global <sel> { … }` | **跨实例共享**的全局规则（如灯箱浮层：同页多个图片共用一份，重复登记由 `CSSBuckets` 去重）。不做 `&` 替换，但**仍然展开变量**；不含 `&` 又不带此标记的选择器一律拒绝 —— 漏写 `&` 会让样式静默泄漏到全站 |
 | `@focus-ring;` / `@focus-transition;` | 展开成 Go 侧的计算声明（效果基本库保持一份实现） |
 | `@need-keyframes <name>;` | 登记「本组件用到某个内建关键帧」，不产出声明（动效词汇表白名单留在 Go） |
@@ -185,7 +186,7 @@ P6 的结论推翻了本文件原先的设想：`--c-*`（后台 `theme.css` 的
 「原子层共享」也不做 —— 两个投递目标必须分离。真正修掉的是既有缺陷：`ui.css` 里 45 处
 `var(--c-*)` 没有 fallback，而产物只定义 `--sky-c-*`，整条声明失效。
 
-**存量迁移进度（P7）**：已迁 **20 / 37** ——
+**存量迁移进度（P7）**：已迁 **23 / 37** ——
 
 | 批次 | 组件 |
 |---|---|
@@ -196,14 +197,16 @@ P6 的结论推翻了本文件原先的设想：`--c-*`（后台 `theme.css` 的
 | 媒体小组件批 | `icon` `video` `countdown` `languages` |
 | 问答与形状批 | `faq` `shapedivider` |
 | 卡片与图集批 | `card` `gallery` `productcard` |
+| 表格与计数批 | `table` `counter` `marquee` |
 
 每批做法固定：先 dump 迁移前后产物要求**逐字节一致**（有 golden 的组件另由
 `TestJetViewByteEquivalent` 整页字节网兜底），再补该组件的 `xxx_css_test.go` 契约测试。
 
-剩余 17 个组件。四条容器类桶的语法已在「卡片与图集批」补齐（`@hovernone` / `@container` /
-`@style` / `@theme`），`cardstack` / `loader` / `tabs` / `counter` / `marquee` 可以直接推进；
-`gallery` 顺带暴露并修掉了解析器的一个缺口 —— 规则级 `@if` 未命中时分支内的变量不算被消费，
-分支一多就会误报「提供的变量没被使用」。
+剩余 13 个组件待迁（另有 `globalref` 的 `CompileCSS` 是空实现，不参与迁移）。
+解析器的能力已经够用：容器类四条桶（`@hovernone` / `@container` / `@style` / `@theme`）、
+`@property`、关键帧名与帧体的变量，都在迁移过程中被真实组件逼了出来 ——
+`gallery` 暴露了规则级 `@if` 未命中时分支内变量不算被消费（分支一多就误报），
+`marquee` 暴露了关键帧名与帧体不走声明解析因而变量不会被展开。
 
 仍要先设计表达方式的是两处「一个 `switch` 展开成 N 条规则」：`socialbuttons` 的品牌配色
 （23 个平台各一条规则）与 `button` 的变体矩阵（solid / outline / ghost × 双态 × 三端）。
