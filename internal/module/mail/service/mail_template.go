@@ -42,11 +42,7 @@ func (s *Service) UpsertTemplate(ctx context.Context, req *maildto.SaveTemplateR
 		Status:      mailmodel.TemplateStatusEnabled,
 	}
 	if len(req.Variables) > 0 {
-		vars := mailmodel.JSONMap{}
-		for _, v := range req.Variables {
-			vars[v] = true
-		}
-		e.Variables = vars
+		e.Variables = mailmodel.StringArray(req.Variables)
 	}
 	if err = s.m.UpsertTemplate(ctx, e); err != nil {
 		return nil, err
@@ -207,10 +203,8 @@ func templateItemOf(e *mailmodel.MailTemplateEntity) *maildto.TemplateItem {
 		BodyText:    e.BodyText,
 		Status:      e.Status,
 	}
-	if e.Variables != nil {
-		for k := range e.Variables {
-			item.Variables = append(item.Variables, k)
-		}
+	if len(e.Variables) > 0 {
+		item.Variables = append(item.Variables, e.Variables...)
 	}
 	if e.UpdateTime != nil {
 		item.UpdateTime = e.UpdateTime.Format(time.RFC3339)

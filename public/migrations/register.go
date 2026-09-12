@@ -315,6 +315,9 @@ var mailCampaignSQL string
 //go:embed 129_mail_templates.sql
 var mailBuiltinTemplatesSQL string
 
+//go:embed 130_mail_template_variables.sql
+var mailTemplateVarsSQL string
+
 func init() {
 	register(Migration{
 		Version:   "001-init-schema",
@@ -1378,5 +1381,13 @@ func init() {
 		TableName: "mail_templates",
 		CheckSQL:  "SELECT CASE WHEN EXISTS (SELECT 1 FROM mail_templates WHERE template_key = ?) THEN 1 ELSE 0 END",
 		SQL:       mailBuiltinTemplatesSQL,
+	})
+
+	// 130：mail_templates.variables 改 text[]（与 tags / target_tags 同一套编解码）。
+	register(Migration{
+		Version:   "130-mail-template-vars",
+		TableName: "mail_templates",
+		CheckSQL:  "SELECT CASE WHEN EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = ? AND column_name = 'variables' AND data_type = 'ARRAY') THEN 1 ELSE 0 END",
+		SQL:       mailTemplateVarsSQL,
 	})
 }

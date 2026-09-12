@@ -105,6 +105,14 @@ func newMailPageFixture(t *testing.T) (*gin.Engine, *mailservice.Service) {
 	svc.SetCipherSecret("page-test-secret")
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
+	// 捕获渲染错误：Jet 是流式渲染，出错时已经写了一部分响应（表现为「200 但正文截断」），
+	// 不主动打印错误就会误判成「模板渲染正常但内容缺失」。
+	router.Use(func(c *gin.Context) {
+		c.Next()
+		for _, e := range c.Errors {
+			t.Logf("gin 渲染错误: %v", e.Err)
+		}
+	})
 	router.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
 	router.GET("/admin/mail", dashboardhttp.NewMailPageHandle(svc).MailPage)
 	return router, svc

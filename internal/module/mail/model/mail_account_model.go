@@ -107,17 +107,19 @@ func (MailAccountEntity) TableName() string { return "mail_accounts" }
 
 // MailTemplateEntity 对应 mail_templates 表。
 type MailTemplateEntity struct {
-	ID          uint64     `gorm:"column:id;primaryKey"`
-	TemplateKey string     `gorm:"column:template_key;type:varchar(64)"`
-	Locale      string     `gorm:"column:locale;type:varchar(16)"`
-	Name        string     `gorm:"column:name;type:varchar(100)"`
-	Subject     string     `gorm:"column:subject;type:varchar(255)"`
-	BodyHTML    string     `gorm:"column:body_html"`
-	BodyText    string     `gorm:"column:body_text"`
-	Variables   JSONMap    `gorm:"column:variables;type:jsonb"`
-	Status      int        `gorm:"column:status;type:smallint"`
-	CreateTime  *time.Time `gorm:"column:create_time;type:timestamp(3);autoCreateTime"`
-	UpdateTime  *time.Time `gorm:"column:update_time;type:timestamp(3)"`
+	ID          uint64 `gorm:"column:id;primaryKey"`
+	TemplateKey string `gorm:"column:template_key;type:varchar(64)"`
+	Locale      string `gorm:"column:locale;type:varchar(16)"`
+	Name        string `gorm:"column:name;type:varchar(100)"`
+	Subject     string `gorm:"column:subject;type:varchar(255)"`
+	BodyHTML    string `gorm:"column:body_html"`
+	BodyText    string `gorm:"column:body_text"`
+	// Variables 模板用到的变量名列表。存 JSON **数组**（[\"name\",\"code\"]）而不是对象 ——
+	// 语义上它是「用到哪些变量」，不是「变量用什么值」（值在发送时由调用方给）。
+	Variables  StringArray `gorm:"column:variables;type:jsonb"`
+	Status     int         `gorm:"column:status;type:smallint"`
+	CreateTime *time.Time  `gorm:"column:create_time;type:timestamp(3);autoCreateTime"`
+	UpdateTime *time.Time  `gorm:"column:update_time;type:timestamp(3)"`
 }
 
 // TableName 表名。
