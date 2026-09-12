@@ -80,6 +80,12 @@ type UserEntity struct {
 	CreateBy            uint64     `gorm:"column:create_by;type:bigint;default:0"`
 	CreateTime          *time.Time `gorm:"column:create_time;type:timestamp(3)"`
 	UpdateTime          *time.Time `gorm:"column:update_time;type:timestamp(3)"`
+	// DeletedAt 注销时间（**软删除**：数据保留，只是不再可见）。
+	//
+	// 用 GORM 的软删除类型：Delete 自动变成 UPDATE deleted_at，所有查询自动加
+	// `deleted_at IS NULL`（注销的账号自然登录不上、列表里也不出现），
+	// 需要看已注销的用 Unscoped()。
+	DeletedAt gorm.DeletedAt `gorm:"column:deleted_at;type:timestamp(3);index"`
 }
 
 // TableName 表名（迁移 123）。
@@ -107,8 +113,13 @@ type UserFilter struct {
 	Keyword string
 	// Status <0 表示不过滤。
 	Status int
-	Offset int
-	Limit  int
+	// IncludeDeleted 是否包含**已注销**用户（默认不含）。
+	//
+	// 管理员有时要查「谁注销过」，所以这里给一个显式开关，而不是让默认查询看得见 ——
+	// 默认可见会让各处忘记过滤，把注销用户当成正常用户。
+	IncludeDeleted bool
+	Offset         int
+	Limit          int
 }
 
 // Create 新建用户（唯一索引冲突由 service 转成业务错误）。
@@ -155,6 +166,9 @@ func (m *UserModel) GetByActivationKey(ctx context.Context, key string) (e *User
 // List 按筛选条件分页取用户（返回列表与总数）。
 func (m *UserModel) List(ctx context.Context, f UserFilter) (list []*UserEntity, total int64, err error) {
 	q := m.DB(ctx)
+	if f.IncludeDeleted {
+		q = q.Unscoped()
+	}
 	if kw := strings.TrimSpace(f.Keyword); kw != "" {
 		// ILIKE 的等价写法：位置参数化，不做字符串拼接。
 		like := "%" + kw + "%"
@@ -192,17 +206,36 @@ func (m *UserModel) UpdateFieldsTx(ctx context.Context, tx *gorm.DB, id uint64, 
 	return tx.WithContext(ctx).Model(&UserEntity{}).Where("id = ?", id).Updates(fields).Error
 }
 
-// Delete 删除用户（级联清理由 service 在事务内编排）。
-func (m *UserModel) Delete(ctx context.Context, id uint64) (err error) {
-	return m.DB(ctx).Where("id = ?", id).Delete(&UserEntity{}).Error
+// SoftDelete 注销用户（**软删除：数据不删**，只写 deleted_at）。
+//
+// 关联网的处理（会话全部失效、应用密码吊销）由 service 在同一事务内编排 ——
+// model 只负责本表这一行。
+func (m *UserModel) SoftDelete(ctx context.Context, id uint64, at time.Time) (err error) {
+	return m.DB(ctx).Where("id = ?", id).Update("deleted_at", at).Error
+}
+
+// Restore 撤销注销（管理员用：误注销 / 客服申诉恢复）。
+//
+// 必须 Unscoped：默认查询条件会自动带上 `deleted_at IS NULL`，
+// 那正好会把要恢复的那一行排除在外。
+func (m *UserModel) Restore(ctx context.Context, id uint64) (err error) {
+	return m.db.WithContext(ctx).Unscoped().Model(&UserEntity{}).
+		Where("id = ?", id).Update("deleted_at", nil).Error
 }
 
 // CountByExistence 统计登录名 / 邮箱冲突的其它用户数（唯一性校验用，排除自身）。
 //
+// **必须 Unscoped（含已注销用户）**：用户名与邮箱对注销用户是**永久占用**的
+// （见迁移 123 的注释：防「顶着刚注销的名字」冒充），而数据库唯一索引建在表上、
+// 不区分是否注销 —— 若这里跟着默认的软删除过滤走，应用层会判断「可以用」、
+// 数据库唯一索引却拒绝插入，最后抛给用户一个难懂的 DB 错误。
+// 两边的口径必须一致：**注册查重看全表，登录才只看未注销的**。
+//
 // 邮箱为空时不参与判断：空邮箱在库里允许重复（第三方账号可能没有邮箱），
 // 拿它去比对会把两个都没邮箱的账号判成冲突。
 func (m *UserModel) CountByExistence(ctx context.Context, username, email string, excludeID uint64) (count int64, err error) {
-	q := m.DB(ctx).Where("lower(username) = lower(?)", strings.TrimSpace(username))
+	q := m.db.WithContext(ctx).Unscoped().Model(&UserEntity{}).
+		Where("lower(username) = lower(?)", strings.TrimSpace(username))
 	if addr := strings.TrimSpace(email); addr != "" {
 		q = q.Or("lower(email) = lower(?)", addr)
 	}

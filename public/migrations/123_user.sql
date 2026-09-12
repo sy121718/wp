@@ -48,8 +48,18 @@ CREATE TABLE IF NOT EXISTS users (
     metadata              JSONB,
     create_by             BIGINT       NOT NULL DEFAULT 0,
     create_time           TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    update_time           TIMESTAMP(3)
+    update_time           TIMESTAMP(3),
+    -- 注销 = **软删除**：行保留、数据不删，只标记注销时间。
+    --
+    -- 与「删除」的区别写在这里以免将来被改成物理删除：注销是可追溯的业务事实
+    -- （历史内容、订单、审计要指向这个人），物理删除会让所有引用变成孤儿。
+    --
+    -- 连带取舍：用户名与邮箱**永久占用** —— 别人不能注册「刚刚注销的那个名字」，
+    -- 否则会出现冒充（外人顶着原用户名与历史内容混淆）。若将来要允许复用，
+    -- 把下面两个唯一索引改成部分唯一索引 WHERE deleted_at IS NULL 即可。
+    deleted_at            TIMESTAMP(3)
 );
+CREATE INDEX IF NOT EXISTS idx_users_deleted_at ON users (deleted_at);
 -- 登录名与邮箱**大小写不敏感唯一**（登录时不该因为大小写差异变成两个账号）
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username ON users (lower(username));
 -- 邮箱唯一但**排除空串**：多个第三方账号可以都没有邮箱，真实邮箱仍不许重复。
