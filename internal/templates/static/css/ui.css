@@ -325,6 +325,7 @@
 .entity-row > :first-child { flex: 1 1 320px; min-width: 0; }
 .entity-row > .btn, .entity-row > .inline-form { flex: 0 0 auto; }
 .hint { margin: 0; color: var(--c-text-mute, #6b7280); font-size: 13px; line-height: 1.5; }
+.list-reset { list-style: none; margin: 0; padding: 0; }
 .text-mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; }
 .disclosure { min-width: 0; }
 .disclosure > summary.card-header {

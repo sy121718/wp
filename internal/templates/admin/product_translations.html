@@ -5,14 +5,14 @@
    同一份 contract 白名单与语境界定），写入 pkg/i18n.ContentWriter（sys_translation）。 *}
 {{extends "layout.html"}}
 {{block body()}}
-<div class="pages-wrap">
-    <section class="pages-card card">
+<div class="stack">
+    <section class="card card-body">
         <h2>商品多语言</h2>
 
         {{if .Errors}}
         <div class="tr-alert" role="alert">
             <strong>未保存：请先修正以下问题</strong>
-            <ul class="pages-list">
+            <ul class="list-reset">
                 {{range _, e := .Errors}}
                 <li>{{e}}</li>
                 {{end}}
@@ -21,12 +21,12 @@
         {{end}}
 
         {{if .Saved}}
-        <p class="pages-empty" role="status">{{.SavedNote}}</p>
+        <p class="hint" role="status">{{.SavedNote}}</p>
         {{end}}
 
-        <form method="get" action="/admin/products/translations" class="pages-form form-row tr-toolbar">
+        <form method="get" action="/admin/products/translations" class="form-inline tr-toolbar">
             <label>工程
-                <select name="project" onchange="this.form.submit()">
+                <select class="form-select" name="project" onchange="this.form.submit()">
                     {{range _, p := .ProjectOptions}}
                     <option value="{{p.ID}}"{{if p.Selected}} selected{{end}}>{{p.Name}}</option>
                     {{end}}
@@ -34,18 +34,18 @@
             </label>
             {{if .ProductID}}<input type="hidden" name="product" value="{{.ProductID}}">{{end}}
             <label>语言
-                <select name="lang" onchange="this.form.submit()">
+                <select class="form-select" name="lang" onchange="this.form.submit()">
                     {{range _, l := .Langs}}
                     <option value="{{l.Code}}"{{if l.Active}} selected{{end}}>{{l.Label}}</option>
                     {{end}}
                 </select>
             </label>
             <noscript><button type="submit" class="btn btn-sm">切换</button></noscript>
-            <span class="pages-empty">完成度 {{.Done}} / {{.Total}} 条</span>
+            <span class="hint">完成度 {{.Done}} / {{.Total}} 条</span>
             {{if .ProductID}}<a class="btn btn-sm btn-secondary" href="/admin/products/translations?project={{.ProjectID}}">查看整个工程</a>{{end}}
         </form>
 
-        <p class="pages-empty">
+        <p class="hint">
             商品域可翻译文本：商品名 / 副标题 / 描述 / 图片 alt、分类名与描述、品牌名与描述、
             标签名、属性组名与属性值展示文本。slug / SKU / 条码 / 价格 / 属性值 key
             不参与翻译（它们进 URL、筛选参数与规格组合）。无译文时产物逐字节回退原文。
@@ -53,8 +53,8 @@
     </section>
 
     {{if len(.Groups) == 0}}
-    <section class="pages-card card mt-md">
-        <p class="pages-empty">
+    <section class="card card-body mt-md">
+        <p class="hint">
             没有可翻译文本（只有白名单字段参与翻译；纯数字 / 纯符号与链接、色值等字段不翻译）。
         </p>
     </section>
@@ -66,36 +66,36 @@
         <input type="hidden" name="lang" value="{{.Lang}}">
 
         {{range _, g := .Groups}}
-        <section class="pages-card card mt-md">
-            <h2>{{g.Title}} <span class="pages-empty">（{{len(g.Rows)}} 条 · {{g.Subtitle}}）</span></h2>
-            <div class="tr-table-wrap">
-                <table class="pages-table data-table tr-table">
+        <section class="card card-body mt-md">
+            <h2>{{g.Title}} <span class="hint">（{{len(g.Rows)}} 条 · {{g.Subtitle}}）</span></h2>
+            <div class="table-wrap tr-table-wrap">
+                <table class="data-table data-table-wide tr-table">
                     <thead>
                     <tr><th>字段</th><th>原文</th><th>译文</th><th>状态</th><th>来源</th></tr>
                     </thead>
                     <tbody>
                     {{range _, r := g.Rows}}
                     <tr>
-                        <td class="tr-field">{{r.FieldLabel}}<br><span class="pages-empty">{{r.Context}}</span></td>
+                        <td class="tr-field">{{r.FieldLabel}}<br><span class="hint">{{r.Context}}</span></td>
                         <td class="tr-source">{{r.Source}}</td>
                         <td class="tr-target">
-                            <textarea name="rowTarget" rows="{{if r.Rich}}4{{else}}2{{end}}" placeholder="填写译文（留空则不写入）">{{r.Target}}</textarea>
+                            <textarea class="form-textarea" name="rowTarget" rows="{{if r.Rich}}4{{else}}2{{end}}" placeholder="填写译文（留空则不写入）">{{r.Target}}</textarea>
                             <input type="hidden" name="rowContext" value="{{r.Context}}">
                             <input type="hidden" name="rowHash" value="{{r.SourceHash}}">
-                            {{if r.Rich}}<div class="pages-empty">原文含 HTML 标签时译文也必须含标签（形态一致）</div>{{end}}
+                            {{if r.Rich}}<div class="hint">原文含 HTML 标签时译文也必须含标签（形态一致）</div>{{end}}
                         </td>
                         <td>
                             {{if r.Translated}}
-                            <span class="pages-badge pages-badge-ok">已翻译</span>
+                            <span class="badge badge-success">已翻译</span>
                             {{else}}
-                            <span class="pages-badge pages-badge-warn">缺失</span>
+                            <span class="badge badge-warning">缺失</span>
                             {{end}}
                         </td>
                         <td>
                             {{if r.Engine}}
-                            <span class="pages-badge{{if r.Engine == "ai"}} pages-badge-info{{end}}">{{r.Engine}}</span>
+                            <span class="badge{{if r.Engine == "ai"}} badge-info{{else}} badge-mute{{end}}">{{r.Engine}}</span>
                             {{else}}
-                            <span class="pages-empty">—</span>
+                            <span class="hint">—</span>
                             {{end}}
                         </td>
                     </tr>
@@ -106,9 +106,9 @@
         </section>
         {{end}}
 
-        <section class="pages-card card mt-md">
+        <section class="card card-body mt-md">
             <button type="submit" class="btn btn-primary">保存全部</button>
-            <span class="pages-empty">
+            <span class="hint">
                 写入 sys_translation（来源 manual）并按同一语境的 hash 寻址；改原文后旧译文自动失效。
                 清空输入框表示「本行不写入」，不会删除已有译文。
             </span>
