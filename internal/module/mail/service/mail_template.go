@@ -160,9 +160,12 @@ func (s *Service) SendTemplate(ctx context.Context, req *maildto.SendTemplateReq
 		LogID: logID, AccountID: accountID, To: to,
 		Subject: subject, HTML: html, Text: text,
 	}); err != nil {
-		// 入队失败：把日志标成失败并回传错误（不静默丢信）。
-		_ = s.m.UpdateLogResult(ctx, logID, map[string]any{"status": mailmodel.LogStatusFailed, "error_message": err.Error()})
-		return nil, err
+		// 队列未启用（开发 / 测试环境常见）：**降级为同步发送**，与 media / 群发一致。
+		// 生产应启用队列 —— 同步发送会占住调用方（注册接口会因此变慢）。
+		if serr := s.sendNow(ctx, logID, accountID, to, subject, html, text); serr != nil {
+			_ = s.m.UpdateLogResult(ctx, logID, map[string]any{"status": mailmodel.LogStatusFailed, "error_message": serr.Error()})
+			return nil, serr
+		}
 	}
 	return &maildto.SendResult{LogID: logID, To: to, Queued: true}, nil
 }

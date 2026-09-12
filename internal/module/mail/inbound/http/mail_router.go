@@ -28,6 +28,8 @@ func SetupMailRoutes(rg *gin.RouterGroup, db *gorm.DB) mailcontract.MailService 
 	mailservice.RegisterMailTaskHandler(db, secret)
 	// 追踪事件落库也走队列（端点只验签 + 入队，不写库）。
 	mailservice.RegisterMailTrackTaskHandler(db)
+	// 自动化实例推进（P3）：事件触发立即投递，等待节点按 next_run_at 延时投递。
+	mailservice.RegisterMailAutomationTaskHandler(db, secret)
 
 	handle := NewHandle(svc)
 	g := rg.Group("/mail")

@@ -254,6 +254,35 @@ func (m *MailModel) CreateNodeLog(ctx context.Context, e *MailAutomationNodeLogE
 	return m.tx(ctx).Create(e).Error
 }
 
+// NodeLogExists 判断某实例的某节点是否已成功执行过（**幂等的基础**）。
+//
+// 队列重试、重复投递、人工重跑都会让同一个节点被再次执行。没有这条判断，
+// 重试就会变成「同一个人再收一封一模一样的自动化邮件」。
+// 只认 ok —— failed / waiting 的节点本来就该重试。
+func (m *MailModel) NodeLogExists(ctx context.Context, runID uint64, nodeKey string) (done bool, err error) {
+	var count int64
+	err = m.tx(ctx).Model(&MailAutomationNodeLogEntity{}).
+		Where("run_id = ? AND node_key = ? AND status = ?", runID, nodeKey, NodeStatusOK).
+		Count(&count).Error
+	return count > 0, err
+}
+
+// ContactHasEvent 判断某联系人是否产生过某类事件（条件分支求值用）。
+func (m *MailModel) ContactHasEvent(ctx context.Context, contactID uint64, eventType string) (has bool, err error) {
+	var count int64
+	err = m.tx(ctx).Model(&MailCampaignEventEntity{}).
+		Where("contact_id = ? AND event_type = ?", contactID, eventType).
+		Count(&count).Error
+	return count > 0, err
+}
+
+// GetContactTags 取联系人标签（条件与标签节点用）。
+func (m *MailModel) GetContactTags(ctx context.Context, contactID uint64) (tags StringArray, err error) {
+	var row struct{ Tags StringArray }
+	err = m.tx(ctx).Model(&MailContactEntity{}).Select("tags").Where("id = ?", contactID).Scan(&row).Error
+	return row.Tags, err
+}
+
 // ListNodeLogs 列某实例的节点日志（按执行顺序）。
 func (m *MailModel) ListNodeLogs(ctx context.Context, runID uint64, limit int) (list []*MailAutomationNodeLogEntity, err error) {
 	if limit <= 0 {
