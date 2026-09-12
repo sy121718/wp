@@ -143,6 +143,17 @@ func (m *Model) Get(ctx context.Context, id string) (e *ProductEntity, err error
 	return e, err
 }
 
+// ListByIDs 批量按 ID 取商品（订单落快照时按变体反查商品名，避免 N+1）。
+//
+// 只返回命中的行：缺的那些就是「商品已被删除」，由 service 判断怎么处理。
+func (m *Model) ListByIDs(ctx context.Context, ids []string) (list []*ProductEntity, err error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	err = m.DB(ctx).Where("id IN ?", ids).Find(&list).Error
+	return list, err
+}
+
 // SlugExists 同工程下 slug 是否被占用（excludeID 为空表示新建场景）。
 func (m *Model) SlugExists(ctx context.Context, projectID, slug, excludeID string) (exists bool, err error) {
 	q := m.DB(ctx).Where("project_id = ? AND slug = ?", projectID, slug)

@@ -330,6 +330,12 @@ var mailAutomationLayoutPermSQL string
 //go:embed 134_inventory_reference_fks.sql
 var inventoryReferenceFKsSQL string
 
+//go:embed 135_order.sql
+var orderTablesSQL string
+
+//go:embed 136_order_permissions.sql
+var orderPermsSQL string
+
 func init() {
 	register(Migration{
 		Version:   "001-init-schema",
@@ -1444,5 +1450,27 @@ func init() {
 			"'fk_inventory_receipt_items_variant', 'fk_inventory_movements_product'," +
 			"'fk_product_price_adjustment_items_product', 'fk_product_price_adjustment_items_variant')",
 		SQL: inventoryReferenceFKsSQL,
+	})
+
+	// 135：订单头 / 订单项快照 / 状态流转流水（BIZ-1 销售侧）。
+	register(Migration{
+		Version:   "135-order",
+		TableName: "orders",
+		// 三张表**全部**建好才算已执行：只查 orders 的话，中途失败会留下
+		// 「orders 在、order_items 不在」却被永久跳过的状态（与 134 同因）。
+		CheckSQL: "SELECT CASE WHEN COUNT(*) = 3 THEN 1 ELSE 0 END FROM information_schema.tables " +
+			"WHERE table_schema = current_schema() AND (CAST(? AS text) IS NOT NULL) " +
+			"AND table_name IN ('orders', 'order_items', 'order_status_logs')",
+		SQL: orderTablesSQL,
+	})
+
+	// 136：订单权限点 + 超管策略（8 个权限点全部存在才算已 seed）。
+	registerSeed(Seed{
+		Version:   "136-order-permissions",
+		TableName: "sys_permission",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) = 8 THEN 1 ELSE 0 END FROM sys_permission WHERE permission_code IN (" +
+			"'order:list', 'order:get', 'order:create', 'order:status', " +
+			"'order:cancel', 'order:refund', 'order:item_list', 'order:log_list')",
+		SQL: orderPermsSQL,
 	})
 }

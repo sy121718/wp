@@ -33,6 +33,7 @@ import (
 	mediahttp "go_wp/internal/module/media/inbound/http"
 	navigationhttp "go_wp/internal/module/navigation/inbound/http"
 	navsource "go_wp/internal/module/navigation/outbound/source"
+	orderhttp "go_wp/internal/module/order/inbound/http"
 	pagehttp "go_wp/internal/module/page/inbound/http"
 	pluginhttp "go_wp/internal/module/plugin/inbound/http"
 	presentationhttp "go_wp/internal/module/presentation/inbound/http"
@@ -203,6 +204,11 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 	// 营销追踪端点（#38 P1）：公开路由（访问面），无鉴权 —— 能力由 TrackingService 收窄。
 	mailhttp.SetupTrackingRoutes(router, mailSvc)
 	_ = mailSvc
+	// 订单模块（BIZ-1 销售侧）：依赖两条**收窄过**的端口 —— product 的变体快照（只读，
+	// 一个方法）与 inventory 的扣减 / 归还（两个方法），不是各自模块的完整 Service。
+	// 建单会读商品事实落快照、并扣减库存，两者缺失都只能在建单那一刻失败，故不设可选依赖。
+	orderSvc := orderhttp.SetupOrderRoutes(authorizedAPI, db, productSvc, inventorySvc)
+	_ = orderSvc // 暂未被其它模块消费，保留契约返回值以示对外能力就绪
 	// 库存 model 注入商品用例（issue #32）：商品与库存合并为同一模块后，商品查询直接读
 	// 库存真源做**查询期投影**（不再有商品侧缓存列、同步台账与对账）。同模块内直调 model。
 	// 商品与库存同属一个模块（issue #32）：库存用例直接交给商品用例，

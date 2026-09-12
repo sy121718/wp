@@ -19,6 +19,10 @@ import (
 type ProductService interface {
 	// ProductDataSource 构建期数据源（只读；写方法不在它上面）。
 	ProductDataSource
+	// VariantSnapshotPort 订单域按下单快照取商品事实（只读，一个方法）。
+	// 嵌进来的理由同 ProductDataSource：装配处拿到的 ProductService 天然也能当
+	// 快照端口传出去，不必再做类型断言。
+	VariantSnapshotPort
 
 	Create(ctx context.Context, req *productdto.CreateReq) (res *productdto.ProductResp, err error)
 	Update(ctx context.Context, req *productdto.UpdateReq) (res *productdto.ProductResp, err error)
