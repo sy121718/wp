@@ -78,6 +78,12 @@ func AddImageSkeletonCSS(b *CSSBuckets) {
 		"background-size: 400% 100%",
 		"animation: sky-skeleton-shimmer 1.4s ease infinite",
 	})
-	b.AddKeyframes("sky-skeleton-shimmer",
-		"0% { background-position: 100% 50% } 100% { background-position: 0 50% }")
+	// 帧体行写法（AddKeyframesDecls）：AddKeyframes 要的是带外壳的完整块。
+	// 这里原先传的是裸帧体，装配时原样输出 —— 产物里只有一段无外壳的声明，
+	// 上面那条 animation 引用的关键帧从未存在，骨架屏动画一直没生效。
+	// 由产物自洽校验 verifyAnimationRefs 抓出来。
+	b.AddKeyframesDecls("sky-skeleton-shimmer", []string{
+		"0% { background-position: 100% 50% }",
+		"100% { background-position: 0 50% }",
+	})
 }

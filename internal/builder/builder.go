@@ -656,6 +656,12 @@ func Compile(p *Page, opts ...CompileOption) (res *CompiledPage, err error) {
 	if vt := cfg.theme.ViewTransitionsCSS(); vt != "" {
 		css = css + "\n\n" + vt
 	}
+	// 产物自洽校验：引用的动画必须有定义。放在这里是因为此刻 css 已经拼完整
+	// （基础层 / 插件层 / 容器查询 / 顶层 / 无障碍 / 页面转场都在内），
+	// 是唯一能一次看到全部动画名来源的位置（见 css_verify.go）。
+	if err := verifyAnimationRefs(css); err != nil {
+		return nil, err
+	}
 
 	return &CompiledPage{
 		Lang:            lang,

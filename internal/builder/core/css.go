@@ -110,6 +110,12 @@ func (b *CSSBuckets) AddKeyframes(name, css string) {
 		b.topLevel = append(b.topLevel, css)
 		return
 	}
+	// 只写帧体是常见误用：本方法原样输出内容，产物里会变成一段无外壳的声明，
+	// 而引用它的 animation 永远找不到对应关键帧 —— 页面上只表现为「不动」。
+	// 这里直接拦下（构建期缺陷必须尽早暴露，别等上线看效果）。
+	if !strings.HasPrefix(css, "@keyframes ") {
+		panic("core.AddKeyframes: " + name + " 的内容必须以 \"@keyframes \" 开头；只写帧体请用 AddKeyframesDecls")
+	}
 	if b.customKeyframes == nil {
 		b.customKeyframes = map[string]string{}
 	}
