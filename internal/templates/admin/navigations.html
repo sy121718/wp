@@ -1,15 +1,15 @@
 {* admin/navigations.html — 前台导航菜单：结构树 + 排序 + 打开方式（零 JS，原生 details 展开编辑） *}
 {{extends "layout.html"}}
 {{block body()}}
-<div class="pages-wrap">
+<div class="stack">
     {{if len(.Projects) == 0}}
-    <section class="pages-card card">
-        <p class="pages-empty">请先在「页面」里创建一个站点工程，再管理前台导航菜单。</p>
+    <section class="card card-body">
+        <p class="hint">请先在「页面」里创建一个站点工程，再管理前台导航菜单。</p>
     </section>
     {{else}}
-    <section class="pages-card card">
+    <section class="card card-body">
         <h2>导航菜单</h2>
-        <form method="get" action="/admin/navigations" class="pages-form form-row">
+        <form method="get" action="/admin/navigations" class="form-inline">
             <select name="project" onchange="this.form.submit()">
                 {{range _, p := .Projects}}
                 <option value="{{p.ID}}" {{if p.ID == .SelectedProject}}selected{{end}}>{{p.Name}}</option>
@@ -20,12 +20,12 @@
                 <option value="footer" {{if .Kind == "footer"}}selected{{end}}>页脚导航</option>
             </select>
         </form>
-        <p class="pages-hint">在工作台拖入「导航菜单」组件，把它的「导航位置」设为页眉或页脚；构建时这里的菜单项会编译进静态产物（访客请求不查库）。</p>
+        <p class="hint">在工作台拖入「导航菜单」组件，把它的「导航位置」设为页眉或页脚；构建时这里的菜单项会编译进静态产物（访客请求不查库）。</p>
     </section>
 
-    <section class="pages-card card">
+    <section class="card card-body">
         <h2>添加菜单项</h2>
-        <form method="post" action="/admin/navigations/create" class="pages-form form-row">
+        <form method="post" action="/admin/navigations/create" class="form-inline">
             <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
             <input type="hidden" name="projectId" value="{{.SelectedProject}}">
             <input type="hidden" name="kind" value="{{.Kind}}">
@@ -46,13 +46,13 @@
     </section>
 
     {{if .SourceGroups}}
-    <section class="pages-card card">
+    <section class="card card-body">
         <h2>从已有内容添加</h2>
-        <p class="pages-hint">勾选后加入菜单：标题与链接取自来源实体（页面用 SEO 标题与访问路径，文章/产品/分类用标题与已发布路径），来源变更后重新构建即同步。</p>
+        <p class="hint">勾选后加入菜单：标题与链接取自来源实体（页面用 SEO 标题与访问路径，文章/产品/分类用标题与已发布路径），来源变更后重新构建即同步。</p>
         {{range _, g := .SourceGroups}}
         <details class="nav-source-group">
             <summary class="btn">{{g.Title}}（{{len(g.Items)}}）</summary>
-            <form method="post" action="/admin/navigations/add-source" class="pages-form form-row">
+            <form method="post" action="/admin/navigations/add-source" class="form-inline">
                 <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
                 <input type="hidden" name="projectId" value="{{.SelectedProject}}">
                 <input type="hidden" name="kind" value="{{.Kind}}">
@@ -71,12 +71,12 @@
     </section>
     {{end}}
 
-    <section class="pages-card card">
+    <section class="card card-body">
         <h2>菜单结构</h2>
         {{if len(.Rows) == 0}}
-        <p class="pages-empty">这个位置还没有菜单项：用上面的表单添加，或在页面里给导航组件绑定这个位置。</p>
+        <p class="hint">这个位置还没有菜单项：用上面的表单添加，或在页面里给导航组件绑定这个位置。</p>
         {{else}}
-        <table class="pages-table data-table">
+        <table class="data-table data-table-wide">
             <thead>
             <tr><th>菜单项</th><th>链接</th><th>打开方式</th><th>排序</th><th>操作</th></tr>
             </thead>
@@ -86,8 +86,8 @@
                 <td style="padding-left:{{r.Indent}}">{{if r.Depth > 0}}↳ {{end}}{{r.Title}}</td>
                 <td><code>{{r.Path}}</code></td>
                 <td>{{r.TargetLabel}}</td>
-                <td class="pages-actions">
-                    <form method="post" action="/admin/navigations/move" class="pages-form form-row" style="display:inline">
+                <td class="action-row">
+                    <form method="post" action="/admin/navigations/move" class="form-inline" style="display:inline">
                         <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
                         <input type="hidden" name="projectId" value="{{.SelectedProject}}">
                         <input type="hidden" name="kind" value="{{.Kind}}">
@@ -95,7 +95,7 @@
                         <input type="hidden" name="dir" value="up">
                         <button type="submit" class="btn" {{if r.First}}disabled{{end}} title="上移">↑</button>
                     </form>
-                    <form method="post" action="/admin/navigations/move" class="pages-form form-row" style="display:inline">
+                    <form method="post" action="/admin/navigations/move" class="form-inline" style="display:inline">
                         <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
                         <input type="hidden" name="projectId" value="{{.SelectedProject}}">
                         <input type="hidden" name="kind" value="{{.Kind}}">
@@ -104,10 +104,10 @@
                         <button type="submit" class="btn" {{if r.Last}}disabled{{end}} title="下移">↓</button>
                     </form>
                 </td>
-                <td class="pages-actions">
+                <td class="action-row">
                     <details style="display:inline-block">
                         <summary class="btn">编辑</summary>
-                        <form method="post" action="/admin/navigations/update" class="pages-form form-row">
+                        <form method="post" action="/admin/navigations/update" class="form-inline">
                             <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
                             <input type="hidden" name="projectId" value="{{.SelectedProject}}">
                             <input type="hidden" name="kind" value="{{.Kind}}">
@@ -121,7 +121,7 @@
                             <button type="submit" class="btn btn-primary">保存</button>
                         </form>
                     </details>
-                    <form method="post" action="/admin/navigations/delete" class="pages-form form-row" style="display:inline"
+                    <form method="post" action="/admin/navigations/delete" class="form-inline" style="display:inline"
                           data-confirm="确定删除「{{r.Title|safeJs}}」？它的子菜单项会一并删除。">
                         <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
                         <input type="hidden" name="projectId" value="{{.SelectedProject}}">

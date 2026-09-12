@@ -1,7 +1,7 @@
 {* admin/departments.html — 部门管理：顶部筛选 + 新建/编辑走右侧抽屉（admin.js），列表纯展示。 *}
 {{extends "layout.html"}}
 {{block body()}}
-<div class="pages-wrap">
+<div class="stack">
     <section class="card">
         <div class="card-header">
             <span class="card-title">部门管理（共 {{len(.Rows)}}）</span>
@@ -15,7 +15,7 @@
         </div>
         <div class="card-body">
             {{if len(.Rows) == 0}}
-            <p class="pages-empty">还没有部门，点右上「新建部门」创建一个。</p>
+            <p class="hint">还没有部门，点右上「新建部门」创建一个。</p>
             {{else}}
             <div class="table-wrap">
             <table class="data-table">

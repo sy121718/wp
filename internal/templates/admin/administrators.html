@@ -1,7 +1,7 @@
 {* admin/administrators.html — 管理员列表：顶部筛选 + 新建/编辑走右侧抽屉（admin.js），列表纯展示。 *}
 {{extends "layout.html"}}
 {{block body()}}
-<div class="pages-wrap">
+<div class="stack">
     <section class="card">
         <div class="card-header">
             <span class="card-title">管理员列表（共 {{.Total}}）</span>
@@ -21,7 +21,7 @@
         </form>
         <div class="card-body">
             {{if len(.Rows) == 0}}
-            <p class="pages-empty">还没有管理员，点右上「新建管理员」创建一个。</p>
+            <p class="hint">还没有管理员，点右上「新建管理员」创建一个。</p>
             {{else}}
             <div class="table-wrap">
             <table class="data-table">

@@ -3,17 +3,17 @@
    「待实现能力」为占位清单，对应后端尚无的站点级能力，随功能落地逐步解锁。 *}
 {{extends "layout.html"}}
 {{block body()}}
-<div class="pages-wrap">
+<div class="stack">
     {{if len(.Projects) == 0}}
-    <section class="pages-card card">
+    <section class="card card-body">
         <h2>站点设置</h2>
-        <p class="pages-empty">还没有站点工程。请先在「页面」里创建一个站点工程，再配置站点设置。</p>
+        <p class="hint">还没有站点工程。请先在「页面」里创建一个站点工程，再配置站点设置。</p>
     </section>
     {{else}}
-    <section class="pages-card card">
+    <section class="card card-body">
         <h2>站点设置</h2>
         {* 工程切换：站点设置属于具体工程（每个工程一份 SiteSettings） *}
-        <form method="get" action="/admin/settings" class="pages-form form-row">
+        <form method="get" action="/admin/settings" class="form-inline">
             <select name="project" onchange="this.form.submit()">
                 {{range _, p := .Projects}}
                 <option value="{{p.ID}}" {{if p.ID == .Selected}}selected{{end}}>{{p.Name}}</option>
@@ -47,15 +47,15 @@
 
         {* 语言分组（多语言 P3）：站点语言清单真源 project_locales，经 project 契约读写。
            行片段走 HTMX 服务端渲染（增/删一行即时回显），整表提交落库。 *}
-        <section class="pages-card card mt-md">
+        <section class="card card-body mt-md">
             <h2>语言</h2>
             {{if .LocaleError}}
-            <p class="pages-empty" role="alert">{{ .["t"](.LocaleError, "语言清单不合法：至少保留一种语言；至多一个默认语言且必须启用；语言码只能包含字母、数字与连字符") }}</p>
+            <p class="hint" role="alert">{{ .["t"](.LocaleError, "语言清单不合法：至少保留一种语言；至多一个默认语言且必须启用；语言码只能包含字母、数字与连字符") }}</p>
             {{end}}
             {{if .LocaleSaved}}
-            <p class="pages-empty" role="status">语言清单已保存。</p>
+            <p class="hint" role="status">语言清单已保存。</p>
             {{end}}
-            <form id="locale-form" method="post" action="/admin/settings/locales/save" class="pages-form form-row">
+            <form id="locale-form" method="post" action="/admin/settings/locales/save" class="form-inline">
                 <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
                 <input type="hidden" name="projectId" value="{{.Selected}}">
                 <div id="locale-rows">
@@ -79,10 +79,10 @@
                     <option value="ru">Русский</option>
                     <option value="ar">العربية</option>
                 </datalist>
-                <p class="pages-empty">
+                <p class="hint">
                     规则：至少保留一种语言；至多一个默认语言，且默认语言必须处于启用状态；语言码只允许字母、数字与连字符。
                 </p>
-                <p class="pages-empty">
+                <p class="hint">
                     注意：<strong>禁用某语言后，该语言已激活的站点路由不会自动清理</strong>（需手动取消激活或删除路由占用）；
                     访问路径的语言方案由配置 <code>i18n.site_lang_url_mode</code> 控制：<code>default_plain</code>（默认语言无前缀 <code>/about</code>、非默认语言短码 <code>/en/about</code>）、<code>all_prefix</code>（全语言短码前缀 <code>/zh/about</code>）、<code>off</code>（各语言映射到同一路径，同一页多语言无法同时在线）。
                     改动语言清单后，已发布页面需要重新构建/发布才会更新产物里的语言切换链接与 hreflang。
@@ -91,12 +91,12 @@
             </form>
         </section>
 
-        <section class="pages-card card mt-md">
+        <section class="card card-body mt-md">
             <h2>待实现能力</h2>
-            <p class="pages-empty">
+            <p class="hint">
                 以下站点级能力目前尚未在后端实现，仅作规划占位，落地后将在此页开放配置：
             </p>
-            <ul class="pages-list">
+            <ul class="list-reset">
                 <li>站点 SEO 全局设置（关键词/描述/og 标签）</li>
                 <li>统计与分析（自定义统计脚本注入）</li>
                 <li>验证码/安全策略</li>
