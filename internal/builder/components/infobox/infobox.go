@@ -3,6 +3,7 @@
 package infobox
 
 import (
+	_ "embed" // infobox.css 经 //go:embed 打进二进制
 	"encoding/json"
 	"fmt"
 
@@ -113,101 +114,51 @@ func (c *Component) Validate(node *core.Node, ids map[string]bool) (err error) {
 	return nil
 }
 
+// infoboxCSS 组件样式源。与组件同目录：改样式不必再进 Go 字符串数组。
+//
+//go:embed infobox.css
+var infoboxCSS string
+
 // compileCSS 信息框样式。
+//
+// Go 侧只做三件事：对齐档位映射、可选值兜底、把「有没有」翻成布尔量。
 func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	sel := "." + core.NodeClass(id)
 
-	var desktop []string
-	desktop = append(desktop, "display: flex", "flex-direction: column", "gap: 10px")
 	align := p.Align
 	if align == "" {
 		align = "center"
 	}
+	alignItems, textAlign := "center", "center"
 	switch align {
 	case "left":
-		desktop = append(desktop, "align-items: flex-start", "text-align: left")
+		alignItems, textAlign = "flex-start", "left"
 	case "right":
-		desktop = append(desktop, "align-items: flex-end", "text-align: right")
-	default:
-		desktop = append(desktop, "align-items: center", "text-align: center")
+		alignItems, textAlign = "flex-end", "right"
 	}
-	if p.Padding != "" {
-		desktop = append(desktop, core.CSSDecl("padding", p.Padding))
-	}
-	if p.Background != "" {
-		desktop = append(desktop, core.CSSDecl("background", p.Background))
-	}
-	b.Add(core.BreakpointDesktop, sel, desktop)
-	b.Add(core.BreakpointDesktop, sel+".sky-infobox", []string{
-		"text-decoration: none", "color: inherit",
-		"transition: transform .18s, box-shadow .18s",
-	})
-	b.Add(core.BreakpointDesktop, sel+".sky-infobox:hover", []string{
-		"transform: translateY(-2px)",
-	})
-
 	iconSize := p.IconSize
 	if iconSize == "" {
 		iconSize = "40px"
 	}
-	b.Add(core.BreakpointDesktop, sel+" .sky-infobox-icon", []string{
-		core.CSSDecl("width", iconSize), core.CSSDecl("height", iconSize),
-		"display: inline-flex", "align-items: center", "justify-content: center",
-		"font-size: calc(" + iconSize + " * 0.6)",
-		"border-radius: 999px",
-		"background: rgba(0,0,0,.05)",
-	})
-	if p.IconColor != "" {
-		b.Add(core.BreakpointDesktop, sel+" .sky-infobox-icon", []string{core.CSSDecl("color", p.IconColor)})
+
+	vars := map[string]string{
+		"alignItems":      alignItems,
+		"textAlign":       textAlign,
+		"padding":         p.Padding,
+		"background":      p.Background,
+		"iconSize":        iconSize,
+		"iconColor":       p.IconColor,
+		"titleColor":      p.TitleColor,
+		"textColor":       p.TextColor,
+		"subtitleColor":   p.SubtitleColor,
+		"radius":          p.Radius,
+		"hoverBg":         p.HoverBg,
+		"iconBgColor":     p.IconBgColor,
+		"iconBorderColor": p.IconBorderColor,
+		"hasSubtitle":     core.BoolVar(p.Subtitle != ""),
+		"btnText":         core.BoolVar(p.BtnText != ""),
 	}
-	b.Add(core.BreakpointDesktop, sel+" .sky-infobox-media img", []string{
-		"max-width: 100%", "height: auto", "border-radius: 8px",
-	})
-	b.Add(core.BreakpointDesktop, sel+" .sky-infobox-title", []string{
-		"margin: 0", "font-size: 1.15em", "line-height: 1.3",
-	})
-	if p.TitleColor != "" {
-		b.Add(core.BreakpointDesktop, sel+" .sky-infobox-title", []string{core.CSSDecl("color", p.TitleColor)})
-	}
-	b.Add(core.BreakpointDesktop, sel+" .sky-infobox-text", []string{
-		"font-size: 0.92em", "line-height: 1.6",
-		"opacity: .85",
-	})
-	if p.TextColor != "" {
-		b.Add(core.BreakpointDesktop, sel+" .sky-infobox-text", []string{core.CSSDecl("color", p.TextColor), "opacity: 1"})
-	}
-	if p.Subtitle != "" {
-		sub := []string{
-			"display: inline-block", "font-size: 0.75em", "font-weight: 600",
-			"letter-spacing: 0.06em", "text-transform: uppercase",
-			"padding: 3px 10px", "border-radius: 999px",
-			"background: rgba(0,0,0,.06)",
-		}
-		b.Add(core.BreakpointDesktop, sel+" .sky-infobox-subtitle", sub)
-		if p.SubtitleColor != "" {
-			b.Add(core.BreakpointDesktop, sel+" .sky-infobox-subtitle", []string{core.CSSDecl("color", p.SubtitleColor)})
-		}
-	}
-	if p.Radius != "" {
-		b.Add(core.BreakpointDesktop, sel, []string{core.CSSDecl("border-radius", p.Radius), "overflow: hidden"})
-	}
-	if p.HoverBg != "" {
-		b.Add(core.BreakpointDesktop, sel+".sky-infobox:hover", []string{core.CSSDecl("background", p.HoverBg)})
-	}
-	if p.IconBgColor != "" {
-		b.Add(core.BreakpointDesktop, sel+" .sky-infobox-icon", []string{core.CSSDecl("background", p.IconBgColor)})
-	}
-	if p.IconBorderColor != "" {
-		b.Add(core.BreakpointDesktop, sel+" .sky-infobox-icon", []string{core.CSSDecl("border", "1px", "solid", p.IconBorderColor)})
-	}
-	if p.BtnText != "" {
-		b.Add(core.BreakpointDesktop, sel+" .sky-infobox-btn", []string{
-			"display: inline-flex", "align-items: center", "justify-content: center",
-			"padding: 10px 22px", "border-radius: 999px",
-			"background: var(--sky-btn-bg, var(--sky-c-primary, #2563eb))", "color: var(--sky-btn-color, #fff)",
-			"text-decoration: none", "font-size: 0.9em", "font-weight: 500",
-			"margin-top: 6px", "transition: opacity .15s",
-		})
-		b.Add(core.BreakpointDesktop, sel+" .sky-infobox-btn:hover", []string{"opacity: .85"})
+	if err := core.ApplyComponentCSSTmpl(b, sel, infoboxCSS, vars); err != nil {
+		panic(fmt.Sprintf("infobox 组件样式解析失败: %v", err))
 	}
 }

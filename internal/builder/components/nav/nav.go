@@ -6,6 +6,7 @@
 package nav
 
 import (
+	_ "embed" // nav.css 经 //go:embed 打进二进制
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -125,92 +126,40 @@ func validateItems(items []Item, nodeID string, depth int) (err error) {
 	return nil
 }
 
+// navCSS 组件样式源。与组件同目录：改样式不必再进 Go 字符串数组。
+//
+//go:embed nav.css
+var navCSS string
+
 // compileCSS 生成导航样式（三端）。
+//
+// Go 侧只做兜底与映射：子菜单底色未配时跟主题面、对齐档位翻成 flex 值、
+// 竖向与移动端折叠翻成布尔量。
 func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	sel := "." + core.NodeClass(id)
 
-	list := []string{"display: flex", "align-items: center", "list-style: none", "margin: 0", "padding: 0"}
-	if p.Orientation == "vertical" {
-		list = append(list, "flex-direction: column", "align-items: flex-start")
+	// 子菜单底色未配置时跟主题面（写死的话换主题它不动）。
+	submenuBg := p.SubmenuBg
+	if submenuBg == "" {
+		submenuBg = "var(--sky-c-surface, #fff)"
 	}
-	if p.Gap != "" {
-		list = append(list, core.CSSDecl("gap", p.Gap))
-	}
-	if v := map[string]string{"left": "flex-start", "center": "center", "right": "flex-end"}[p.Align]; v != "" {
-		list = append(list, "justify-content: "+v)
-	}
-	b.Add(core.BreakpointDesktop, sel+" .sky-nav-list", list)
-	b.Add(core.BreakpointDesktop, sel+" .sky-nav-item", []string{"position: relative", "margin: 0"})
+	justify := map[string]string{"left": "flex-start", "center": "center", "right": "flex-end"}[p.Align]
 
-	link := []string{"display: inline-flex", "align-items: center", "text-decoration: none", "transition: color .15s ease"}
-	if p.Color != "" {
-		link = append(link, core.CSSDecl("color", p.Color))
+	vars := map[string]string{
+		"vertical":       core.BoolVar(p.Orientation == "vertical"),
+		"gap":            p.Gap,
+		"justify":        justify,
+		"color":          p.Color,
+		"fontSize":       p.FontSize,
+		"fontWeight":     p.FontWeight,
+		"itemPadding":    p.ItemPadding,
+		"hoverColor":     p.HoverColor,
+		"activeColor":    p.ActiveColor,
+		"submenuBg":      submenuBg,
+		"submenuWidth":   p.SubmenuWidth,
+		"mobileCollapse": core.BoolVar(p.MobileCollapse),
 	}
-	if p.FontSize != "" {
-		link = append(link, core.CSSDecl("font-size", p.FontSize))
-	}
-	if p.FontWeight != "" {
-		link = append(link, core.CSSDecl("font-weight", p.FontWeight))
-	}
-	if p.ItemPadding != "" {
-		link = append(link, core.CSSDecl("padding", p.ItemPadding))
-	}
-	b.Add(core.BreakpointDesktop, sel+" .sky-nav-item > a", link)
-	if p.HoverColor != "" {
-		b.Add(core.BreakpointDesktop, sel+" .sky-nav-item > a:hover", []string{core.CSSDecl("color", p.HoverColor)})
-	}
-	if p.ActiveColor != "" {
-		b.Add(core.BreakpointDesktop, sel+" .sky-nav-item.is-current > a", []string{core.CSSDecl("color", p.ActiveColor)})
-		b.Add(core.BreakpointDesktop, sel+" .sky-nav-sub-item.is-current > a", []string{core.CSSDecl("color", p.ActiveColor)})
-	}
-
-	sub := []string{
-		"position: absolute", "top: 100%", "left: 0", "z-index: 20",
-		"min-width: 180px", "list-style: none", "margin: 0", "padding: 8px 0",
-		"border-radius: 8px", "box-shadow: 0 8px 24px rgba(0,0,0,.12)",
-		"opacity: 0", "visibility: hidden", "transition: opacity .15s ease, visibility .15s ease",
-	}
-	if p.SubmenuBg != "" {
-		sub = append(sub, core.CSSDecl("background", p.SubmenuBg))
-	} else {
-		sub = append(sub, "background: var(--sky-c-surface, #fff)")
-	}
-	if p.SubmenuWidth != "" {
-		sub = append(sub, "min-width: "+p.SubmenuWidth)
-	}
-	b.Add(core.BreakpointDesktop, sel+" .sky-nav-sub", sub)
-	b.Add(core.BreakpointDesktop, sel+" .sky-nav-item:hover > .sky-nav-sub", []string{"opacity: 1", "visibility: visible"})
-	b.Add(core.BreakpointDesktop, sel+" .sky-nav-sub a", []string{
-		"display: block", "padding: 8px 16px", "text-decoration: none", "color: inherit", "white-space: nowrap",
-	})
-	if p.HoverColor != "" {
-		b.Add(core.BreakpointDesktop, sel+" .sky-nav-sub a:hover", []string{core.CSSDecl("color", p.HoverColor)})
-	}
-
-	if p.MobileCollapse {
-		// 折叠开关：checkbox 必须**可聚焦**，所以用 sr-only 而不是模板里的 hidden 属性 ——
-		// hidden 的元素不进键盘序列，键盘用户无法展开移动端菜单（触屏之外全废）。
-		// sr-only 的 checkbox 仍是原生控件：空格键切换、读屏能播报「已选中/未选中」。
-		b.Add(core.BreakpointDesktop, sel+" .sky-nav-toggle", []string{
-			"position: absolute", "width: 1px", "height: 1px", "margin: -1px",
-			"padding: 0", "border: 0", "clip-path: inset(50%)", "overflow: hidden", "white-space: nowrap",
-		})
-		// 聚焦可见：焦点环画在汉堡按钮上（键盘用户看得到当前位置）。
-		b.Add(core.BreakpointDesktop, sel+" .sky-nav-toggle:focus-visible + .sky-nav-burger", []string{
-			"outline: 2px solid var(--sky-c-primary, #2563eb)", "outline-offset: 2px",
-		})
-		b.Add(core.BreakpointDesktop, sel+" .sky-nav-burger", []string{
-			"display: none", "cursor: pointer", "font-size: 22px", "line-height: 1", "padding: 8px 12px",
-		})
-		b.Add(core.BreakpointMobile, sel+" .sky-nav-burger", []string{"display: block"})
-		b.Add(core.BreakpointMobile, sel+" .sky-nav-list", []string{
-			"display: none", "flex-direction: column", "align-items: stretch", "gap: 0", "width: 100%", "padding: 8px 0",
-		})
-		b.Add(core.BreakpointMobile, sel+" .sky-nav-toggle:checked ~ .sky-nav-list", []string{"display: flex"})
-		b.Add(core.BreakpointMobile, sel+" .sky-nav-item > a", []string{"padding: 10px 12px", "width: 100%"})
-		b.Add(core.BreakpointMobile, sel+" .sky-nav-sub", []string{
-			"position: static", "opacity: 1", "visibility: visible", "box-shadow: none",
-			"padding: 0 0 0 16px", "background: transparent",
-		})
+	if err := core.ApplyComponentCSSTmpl(b, sel, navCSS, vars); err != nil {
+		panic(fmt.Sprintf("nav 组件样式解析失败: %v", err))
 	}
 }

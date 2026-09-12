@@ -1,0 +1,147 @@
+/* core.nav 导航样式（三端）。
+
+   可选属性大多只有一条声明，走「变量为空即整条省略」；
+   竖向与移动端折叠是成组的结构开关，走规则级 @if。 */
+
+& .sky-nav-list {
+  display: flex;
+  align-items: center;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  @if vertical
+  flex-direction: column;
+  align-items: flex-start;
+  @endif
+  gap: {{gap}};
+  justify-content: {{justify}};
+}
+
+& .sky-nav-item {
+  position: relative;
+  margin: 0;
+}
+
+& .sky-nav-item > a {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+  transition: color .15s ease;
+  color: {{color}};
+  font-size: {{fontSize}};
+  font-weight: {{fontWeight}};
+  padding: {{itemPadding}};
+}
+
+& .sky-nav-item > a:hover {
+  color: {{hoverColor}};
+}
+
+/* 当前项：顶级项与子项各一条同色规则。 */
+& .sky-nav-item.is-current > a {
+  color: {{activeColor}};
+}
+
+& .sky-nav-sub-item.is-current > a {
+  color: {{activeColor}};
+}
+
+& .sky-nav-sub {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 20;
+  min-width: 180px;
+  list-style: none;
+  margin: 0;
+  padding: 8px 0;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.12);
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity .15s ease, visibility .15s ease;
+  background: {{submenuBg}};
+  min-width: {{submenuWidth}};
+}
+
+& .sky-nav-item:hover > .sky-nav-sub {
+  opacity: 1;
+  visibility: visible;
+}
+
+& .sky-nav-sub a {
+  display: block;
+  padding: 8px 16px;
+  text-decoration: none;
+  color: inherit;
+  white-space: nowrap;
+}
+
+& .sky-nav-sub a:hover {
+  color: {{hoverColor}};
+}
+
+@if mobileCollapse
+/* 折叠开关：checkbox 必须**可聚焦**，所以用 sr-only 而不是模板里的 hidden 属性 ——
+   hidden 的元素不进键盘序列，键盘用户无法展开移动端菜单（触屏之外全废）。
+   sr-only 的 checkbox 仍是原生控件：空格键切换、读屏能播报「已选中/未选中」。 */
+& .sky-nav-toggle {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  clip-path: inset(50%);
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+/* 聚焦可见：焦点环画在汉堡按钮上（键盘用户看得到当前位置）。 */
+& .sky-nav-toggle:focus-visible + .sky-nav-burger {
+  outline: 2px solid var(--sky-c-primary, #2563eb);
+  outline-offset: 2px;
+}
+
+& .sky-nav-burger {
+  display: none;
+  cursor: pointer;
+  font-size: 22px;
+  line-height: 1;
+  padding: 8px 12px;
+}
+
+@media (max-width: 767px) {
+  & .sky-nav-burger {
+    display: block;
+  }
+
+  & .sky-nav-list {
+    display: none;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+    width: 100%;
+    padding: 8px 0;
+  }
+
+  & .sky-nav-toggle:checked ~ .sky-nav-list {
+    display: flex;
+  }
+
+  & .sky-nav-item > a {
+    padding: 10px 12px;
+    width: 100%;
+  }
+
+  /* 移动端子菜单改为常显的内联列表（没有悬停可用）。 */
+  & .sky-nav-sub {
+    position: static;
+    opacity: 1;
+    visibility: visible;
+    box-shadow: none;
+    padding: 0 0 0 16px;
+    background: transparent;
+  }
+}
+@endif
