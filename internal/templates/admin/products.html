@@ -86,9 +86,9 @@
             </form>
         </div>
         <table class="pages-table">
-            {* 「库存缓存」= product_variants.stock_total，仅供列表展示；
-               库存真源在仓库模块，点「各仓库存」到 /admin/inventory 按 SKU 查。 *}
-            <thead><tr><th>SKU</th><th>规格</th><th>价格</th><th>对比价</th><th>成本价</th><th>启用</th><th>库存缓存</th><th></th></tr></thead>
+            {* 库存展示值（issue #32）：缓存列已删，这里读的是**查询期投影**（真源跨仓汇总，
+               一次批量取）。可用量判定一律走真源，点「各仓库存」到 /admin/inventory 按 SKU 查。 *}
+            <thead><tr><th>SKU</th><th>规格</th><th>价格</th><th>对比价</th><th>成本价</th><th>启用</th><th>库存</th><th></th></tr></thead>
             <tbody>
             {{range _, v := p.Variants}}
             <tr>
@@ -112,6 +112,45 @@
             {{end}}
             </tbody>
         </table>
+        {* 评分（issue #30 / #33）：评分是独立明细表，不是商品上的列。
+           **没有评分 ≠ 0 分** —— 空态单独给文案，不显示「平均 0.00」；
+           加 / 删都是原生表单 + csrf_token，数字输入带 inputmode 以便触屏弹数字键盘。 *}
+        <details class="pages-fold">
+            <summary class="card-header">
+                <strong>评分{{if p.HasRating}}（{{p.RatingAvg}} 分 / {{p.RatingCount}} 条）{{else}}（暂无）{{end}}</strong>
+                <span class="pages-empty">{{if p.HasRating}}平均值与条数由评分明细算出，改评分不会改动商品本身的字段{{else}}还没有评分 —— 「没有评分」与「评分 0 分」是两回事，它不参与最低评分筛选{{end}}</span>
+                <span class="pages-fold-hint">展开</span>
+            </summary>
+            {{if len(p.Ratings) > 0}}
+            <table class="pages-table">
+                <thead><tr><th>评分</th><th>来源</th><th>时间</th><th></th></tr></thead>
+                <tbody>
+                {{range _, r := p.Ratings}}
+                <tr>
+                    <td>{{r.Score}}</td>
+                    <td>{{r.Source}}</td>
+                    <td>{{r.CreatedAt}}</td>
+                    <td>
+                        <form method="post" action="/admin/products/rating/delete">
+                            <input type="hidden" name="csrf_token" value="{{csrf}}">
+                            <input type="hidden" name="projectId" value="{{selectedProject}}">
+                            <input type="hidden" name="id" value="{{r.ID}}">
+                            <button type="submit" class="btn">删除</button>
+                        </form>
+                    </td>
+                </tr>
+                {{end}}
+                </tbody>
+            </table>
+            {{end}}
+            <form method="post" action="/admin/products/rating/add" class="pages-form">
+                <input type="hidden" name="csrf_token" value="{{csrf}}">
+                <input type="hidden" name="projectId" value="{{selectedProject}}">
+                <input type="hidden" name="productId" value="{{p.ID}}">
+                <input type="number" name="score" min="0" max="5" step="0.01" inputmode="decimal" placeholder="评分 0~5" required>
+                <button type="submit" class="btn">添加评分</button>
+            </form>
+        </details>
         <form method="post" action="/admin/products/variant/create" class="pages-form">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">

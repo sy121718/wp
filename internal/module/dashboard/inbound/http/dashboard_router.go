@@ -151,6 +151,10 @@ func SetupDashboardRoutes(router *gin.Engine,
 	adminPages.POST("/products/delete", builtin.CasbinMiddlewareForPath("/api/product/delete"), productPages.ProductsDelete)
 	// 商品引用的属性组整体替换（issue #7）：复用商品更新权限点（同一改动面）。
 	adminPages.POST("/products/attributes", builtin.CasbinMiddlewareForPath("/api/product/update"), productPages.ProductsAttributesSet)
+	// 商品评分（issue #33）：评分是独立明细表（#30），增删复用商品更新权限点 ——
+	// 评分属商品维护，不另立权限点与菜单。
+	adminPages.POST("/products/rating/add", builtin.CasbinMiddlewareForPath("/api/product/update"), productPages.ProductsRatingAdd)
+	adminPages.POST("/products/rating/delete", builtin.CasbinMiddlewareForPath("/api/product/update"), productPages.ProductsRatingDelete)
 
 	// 商品详情页模板可选与预览（issue #14）：一个商品类型下可建多套命名模板，
 	// 商品发布时可选一套、发布前可预览（预览只读渲染，不落库不激活）。

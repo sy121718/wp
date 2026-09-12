@@ -16,6 +16,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"go_wp/internal/middleware/builtin"
+
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
 	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
@@ -101,6 +103,15 @@ func (h *productPageHandle) ProductsPage(c *gin.Context) {
 			if derr != nil {
 				continue
 			}
+			// 评分读一次：明细 + 投影值（issue #33）。读不到按「没有评分」处理，页面照常渲染。
+			rating := ratingOf(h.products, ctx, detail.ID)
+			ratingRows := make([]gin.H, 0, len(rating.Items))
+			for _, it := range rating.Items {
+				ratingRows = append(ratingRows, gin.H{
+					"ID": it.ID, "Score": formatScore(it.Score),
+					"Source": it.Source, "CreatedAt": it.CreatedAt,
+				})
+			}
 			rows = append(rows, gin.H{
 				"ID": detail.ID, "Name": detail.Name, "Slug": detail.Slug,
 				"Status":   detail.Status,
@@ -128,6 +139,14 @@ func (h *productPageHandle) ProductsPage(c *gin.Context) {
 				"TagIDs":    detail.TagIDs,
 				"TagChecks": checkedTagOptions(tags, detail.TagIDs),
 				"AutoTags":  attachedAutoTags(tags, detail.TagIDs),
+				// 评分（issue #30 / #33）：明细 + 投影值。评分是独立表，这里读的是
+				// ListRatings 算出的平均值与条数；**没有评分时 HasRating=false** ——
+				// 空态与「评分 0」是两回事，模板据它给出不同文案。
+				// 一个商品只查一次（下面的 ratingRows 复用同一次结果）。
+				"Ratings":     ratingRows,
+				"HasRating":   rating.HasRating,
+				"RatingAvg":   formatScore(rating.Rating),
+				"RatingCount": rating.RatingCount,
 			})
 		}
 	}
@@ -320,6 +339,57 @@ func (h *productPageHandle) ProductsVariantDelete(c *gin.Context) {
 		return
 	}
 	c.Redirect(http.StatusFound, "/admin/products?project="+projectID)
+}
+
+// ProductsRatingAdd 补录一条商品评分（issue #33）。
+//
+// 评分是**独立明细表**（#30），所以这是「加一条记录」而不是「改商品字段」——
+// 分值范围由 service 与数据库 CHECK 双重兜底，这里只把非数字提前拦下并给出可读文案。
+func (h *productPageHandle) ProductsRatingAdd(c *gin.Context) {
+	projectID := c.PostForm("projectId")
+	score, perr := strconv.ParseFloat(strings.TrimSpace(c.PostForm("score")), 64)
+	if perr != nil {
+		c.Redirect(http.StatusFound, "/admin/products?project="+projectID+"&err=评分必须是 0~5 的数字")
+		return
+	}
+	if _, err := h.products.AddRating(c.Request.Context(), &productdto.AddRatingReq{
+		ProductID:  c.PostForm("productId"),
+		Score:      score,
+		OperatorID: builtin.GetUsername(c),
+	}); err != nil {
+		c.Redirect(http.StatusFound, "/admin/products?project="+projectID+"&err="+err.Error())
+		return
+	}
+	c.Redirect(http.StatusFound, "/admin/products?project="+projectID)
+}
+
+// ProductsRatingDelete 删掉一条评分（issue #33）：录错了能撤掉。
+func (h *productPageHandle) ProductsRatingDelete(c *gin.Context) {
+	projectID := c.PostForm("projectId")
+	if err := h.products.DeleteRating(c.Request.Context(), &productdto.DeleteRatingReq{
+		ID: c.PostForm("id"),
+	}); err != nil {
+		c.Redirect(http.StatusFound, "/admin/products?project="+projectID+"&err="+err.Error())
+		return
+	}
+	c.Redirect(http.StatusFound, "/admin/products?project="+projectID)
+}
+
+// formatScore 评分统一两位小数（4.5 → 4.50）。
+//
+// 与集合源给前台的 rating 字段同一口径：评分是 0~5 的小数，
+// 用最短表示会得到 4.5 / 4.25 混排，两位小数更符合评分展示习惯。
+func formatScore(v float64) string {
+	return strconv.FormatFloat(v, 'f', 2, 64)
+}
+
+// ratingOf 读某商品的评分明细与投影值（读不到就按「没有评分」处理，页面照常渲染）。
+func ratingOf(svc productcontract.ProductService, ctx context.Context, productID string) *productdto.RatingResp {
+	res, err := svc.ListRatings(ctx, &productdto.ListRatingsReq{ProductID: productID})
+	if err != nil || res == nil {
+		return &productdto.RatingResp{}
+	}
+	return res
 }
 
 // ProductsAttributesSet 整体替换某商品引用的属性组（issue #7）。

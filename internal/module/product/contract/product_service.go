@@ -19,6 +19,12 @@ type ProductService interface {
 	List(ctx context.Context, req *productdto.ListReq) (list []*productdto.ProductResp, err error)
 	Delete(ctx context.Context, req *productdto.DeleteReq) (err error)
 
+	// 商品评分（issue #30 / #33）：评分是**独立明细表**（product_ratings），不是商品上的列，
+	// 所以维护走这三个用例；平均分与条数由明细投影算在返回里。
+	AddRating(ctx context.Context, req *productdto.AddRatingReq) (res *productdto.RatingResp, err error)
+	ListRatings(ctx context.Context, req *productdto.ListRatingsReq) (res *productdto.RatingResp, err error)
+	DeleteRating(ctx context.Context, req *productdto.DeleteRatingReq) (err error)
+
 	CreateVariant(ctx context.Context, req *productdto.CreateVariantReq) (res *productdto.VariantResp, err error)
 	UpdateVariant(ctx context.Context, req *productdto.UpdateVariantReq) (res *productdto.VariantResp, err error)
 	DeleteVariant(ctx context.Context, req *productdto.DeleteVariantReq) (err error)
