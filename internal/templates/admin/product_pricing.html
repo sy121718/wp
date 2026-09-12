@@ -1,6 +1,6 @@
 {* admin/product_pricing.html — 定价工具：四种规则 + 尾数处理，批量改价并留痕（issue #13） *}
 {* Jet 方言：range 用 range 关键字；extends 相对本目录；range 内访问外层值先存变量。 *}
-{* 多端适配（硬规则）：表单行用 .attr-form-head（flex + wrap，宽度 min(100%,220px)），
+{* 多端适配（硬规则）：表单行用 .form-inline（flex + wrap，宽度 min(100%,220px)），
    窄屏折行不撑破卡片；预览与留痕表用 .pricing-table-wrap（横向滚动，触屏可左右滑）；
    控件全是原生 input/select/button + label —— 鼠标点选、触屏点按、
    键盘（Tab 进组、回车提交）都可用；没有 :hover 依赖，按压反馈走 .btn:active。 *}
@@ -11,22 +11,22 @@
 {{form := .Form}}
 {{rules := .Rules}}
 {{roundings := .Roundings}}
-<div class="pages-wrap pricing-page">
-    <section class="pages-card card">
+<div class="stack pricing-page">
+    <section class="card card-body">
         <h2>定价工具</h2>
         {{if .Err != ""}}
-        <p class="pages-badge pages-badge-warn">上一次操作未完成：{{.Err}}</p>
+        <p class="badge badge-warning">上一次操作未完成：{{.Err}}</p>
         {{end}}
         {{if .Applied != ""}}
-        <p class="pages-badge pages-badge-info">已应用调价：本次改动 {{.Applied}} 个变体，明细见下方留痕台账。</p>
+        <p class="badge badge-info">已应用调价：本次改动 {{.Applied}} 个变体，明细见下方留痕台账。</p>
         {{end}}
-        <p class="pages-empty">
+        <p class="hint">
             按规则批量生成售价：成本乘倍数 / 成本加价 / 目标毛利率 / 统一售价，含尾数处理；
             可对单个 SKU、单个商品的全部变体、或筛选出的商品集应用。
             算完的售价直接写库（不是运行时计算），应用前先预览，每次应用都留下台账。
         </p>
-        <form method="get" action="/admin/product-pricing" class="pages-form form-row">
-            <select name="project" onchange="this.form.submit()">
+        <form method="get" action="/admin/product-pricing" class="form-inline">
+            <select class="form-select" name="project" onchange="this.form.submit()">
                 {{range _, p := .Projects}}
                 <option value="{{p.ID}}" {{if p.ID == selectedProject}}selected{{end}}>{{p.Name}}</option>
                 {{end}}
@@ -34,9 +34,9 @@
         </form>
     </section>
 
-    <section class="pages-card card">
+    <section class="card card-body">
         <h2>内置定价规则</h2>
-        <table class="pages-table data-table pricing-page-table pricing-rule-table">
+        <div class="table-wrap" tabindex="0" role="region" aria-label="内置定价规则"><table class="data-table data-table-wide pricing-page-table pricing-rule-table">
             <thead><tr><th>类型</th><th>说明</th><th>参数</th></tr></thead>
             <tbody>
             {{range _, r := rules}}
@@ -47,62 +47,62 @@
             </tr>
             {{end}}
             </tbody>
-        </table>
-        <p class="pages-empty">
+        </table></div>
+        <p class="hint">
             规则与参数只有服务端一份定义：未知类型、未知参数键、类型不符与取值越界一律拒绝，
             不接受自由表达式（没有 SQL / 脚本入口）。
         </p>
-        <p class="pages-empty">尾数处理一律「向上取」：只抬不降，保证按规则算出的售价不会被凑尾数压低。</p>
+        <p class="hint">尾数处理一律「向上取」：只抬不降，保证按规则算出的售价不会被凑尾数压低。</p>
     </section>
 
-    <section class="pages-card card">
+    <section class="card card-body">
         <h2>按规则改价</h2>
-        <form method="post" action="/admin/product-pricing/preview" class="attr-form">
+        <form method="post" action="/admin/product-pricing/preview" class="form-stack">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
-            <div class="attr-form-head">
-                <span class="pages-empty">规则</span>
-                <select name="ruleType" aria-label="定价规则类型">
+            <div class="form-inline">
+                <span class="hint">规则</span>
+                <select class="form-select" name="ruleType" aria-label="定价规则类型">
                     {{range _, r := rules}}
                     <option value="{{r.Type}}" {{if r.Type == form.RuleType}}selected{{end}}>{{r.Name}}</option>
                     {{end}}
                 </select>
-                <input type="text" name="multiplier" value="{{form.Multiplier}}" placeholder="multiplier（成本乘倍数）" inputmode="decimal" autocomplete="off">
-                <input type="text" name="amount" value="{{form.Amount}}" placeholder="amount（成本加价 / 统一售价）" inputmode="decimal" autocomplete="off">
-                <input type="text" name="margin" value="{{form.Margin}}" placeholder="margin（目标毛利率，0.3 = 30%）" inputmode="decimal" autocomplete="off">
+                <input type="text" class="form-input" name="multiplier" value="{{form.Multiplier}}" placeholder="multiplier（成本乘倍数）" inputmode="decimal" autocomplete="off">
+                <input type="text" class="form-input" name="amount" value="{{form.Amount}}" placeholder="amount（成本加价 / 统一售价）" inputmode="decimal" autocomplete="off">
+                <input type="text" class="form-input" name="margin" value="{{form.Margin}}" placeholder="margin（目标毛利率，0.3 = 30%）" inputmode="decimal" autocomplete="off">
             </div>
-            <div class="attr-form-head">
-                <span class="pages-empty">尾数</span>
-                <select name="rounding" aria-label="尾数处理">
+            <div class="form-inline">
+                <span class="hint">尾数</span>
+                <select class="form-select" name="rounding" aria-label="尾数处理">
                     {{range _, r := roundings}}
                     <option value="{{r.Value}}" {{if r.Value == form.Rounding}}selected{{end}}>{{r.Name}}</option>
                     {{end}}
                 </select>
-                <span class="pages-empty">范围</span>
-                <select name="scope" aria-label="作用范围">
+                <span class="hint">范围</span>
+                <select class="form-select" name="scope" aria-label="作用范围">
                     <option value="sku" {{if form.Scope == "sku"}}selected{{end}}>单个 SKU（变体 id）</option>
                     <option value="product" {{if form.Scope == "product"}}selected{{end}}>单个商品的全部变体</option>
                     <option value="filter" {{if form.Scope == "filter"}}selected{{end}}>筛选出的商品集</option>
                 </select>
-                <input type="text" name="targetId" value="{{form.TargetID}}" placeholder="目标 id（SKU 范围填变体 id，商品范围填商品 id）" autocomplete="off">
+                <input type="text" class="form-input" name="targetId" value="{{form.TargetID}}" placeholder="目标 id（SKU 范围填变体 id，商品范围填商品 id）" autocomplete="off">
             </div>
-            <div class="attr-form-head">
-                <span class="pages-empty">筛选集</span>
-                <input type="text" name="status" value="{{form.Status}}" placeholder="status（draft / published / archived）" autocomplete="off">
-                <input type="text" name="keyword" value="{{form.Keyword}}" placeholder="关键词（商品名）" autocomplete="off">
-                <input type="text" name="categoryId" value="{{form.CategoryID}}" placeholder="分类 id" autocomplete="off">
-                <input type="text" name="brandId" value="{{form.BrandID}}" placeholder="品牌 id" autocomplete="off">
-                <input type="text" name="tagId" value="{{form.TagID}}" placeholder="标签 id" autocomplete="off">
+            <div class="form-inline">
+                <span class="hint">筛选集</span>
+                <input type="text" class="form-input" name="status" value="{{form.Status}}" placeholder="status（draft / published / archived）" autocomplete="off">
+                <input type="text" class="form-input" name="keyword" value="{{form.Keyword}}" placeholder="关键词（商品名）" autocomplete="off">
+                <input type="text" class="form-input" name="categoryId" value="{{form.CategoryID}}" placeholder="分类 id" autocomplete="off">
+                <input type="text" class="form-input" name="brandId" value="{{form.BrandID}}" placeholder="品牌 id" autocomplete="off">
+                <input type="text" class="form-input" name="tagId" value="{{form.TagID}}" placeholder="标签 id" autocomplete="off">
             </div>
-            <div class="attr-form-head">
-                <input type="text" name="note" value="{{form.Note}}" placeholder="备注（写进留痕台账，如「国庆前提价」）" autocomplete="off">
+            <div class="form-inline">
+                <input type="text" class="form-input" name="note" value="{{form.Note}}" placeholder="备注（写进留痕台账，如「国庆前提价」）" autocomplete="off">
             </div>
-            <div class="attr-form-actions">
+            <div class="action-row">
                 <button type="submit" class="btn btn-primary">预览试算（不落库）</button>
                 <button type="submit" class="btn" formaction="/admin/product-pricing/apply"
                         onclick="return confirm('按当前规则应用调价？售价会立刻写库，并留下调价台账。')">应用调价（落库）</button>
             </div>
-            <p class="pages-empty">
+            <p class="hint">
                 规则参数只取当前规则类型用得上的那一格：成本乘倍数填 multiplier，成本加价与统一售价填 amount，
                 目标毛利率填 margin（0.3 表示 30%）。筛选集范围必须指定工程（页面顶部切换），
                 空筛选不会全表改价；单批命中商品数有上限，超过请收紧条件。
@@ -112,17 +112,17 @@
     </section>
 
     {{if .HasPreview}}
-    <section class="pages-card card">
+    <section class="card card-body">
         <h2>试算预览（未落库）</h2>
-        <p class="pages-empty">
+        <p class="hint">
             规则：{{.PreviewSummary.RuleLabel}} · 尾数：{{.PreviewSummary.RoundingLabel}} · 范围：{{.PreviewSummary.ScopeLabel}} ·
             参与 {{.PreviewSummary.TargetCount}} 个变体（改价 {{.PreviewSummary.ChangedCount}} / 价格不变 {{.PreviewSummary.UnchangedCount}} / 跳过 {{.PreviewSummary.SkippedCount}}）
         </p>
         {{if len(.PreviewRows) == 0}}
-        <p class="pages-empty">这个范围下没有变体。</p>
+        <p class="hint">这个范围下没有变体。</p>
         {{else}}
         <div class="pricing-table-wrap" tabindex="0" role="region" aria-label="试算明细（可横向滚动查看）">
-            <table class="pages-table data-table pricing-page-table">
+            <table class="data-table data-table-wide pricing-page-table">
                 <thead><tr><th>商品</th><th>SKU</th><th>成本价</th><th>原价</th><th>新价</th><th>差值</th><th>结果</th></tr></thead>
                 <tbody>
                 {{range _, l := .PreviewRows}}
@@ -134,40 +134,39 @@
                     <td><strong>{{l.NewPrice}}</strong></td>
                     <td>{{l.Diff}}</td>
                     <td>
-                        <span class="pages-badge {{if l.IsChanged}}pages-badge-info{{end}}">{{l.StatusLabel}}</span>
-                        {{if l.ReasonLabel != ""}}<span class="pages-empty">{{l.ReasonLabel}}</span>{{end}}
+                        <span class="badge {{if l.IsChanged}}badge-info{{else}}badge-mute{{end}}">{{l.StatusLabel}}</span>
+                        {{if l.ReasonLabel != ""}}<span class="hint">{{l.ReasonLabel}}</span>{{end}}
                     </td>
                 </tr>
                 {{end}}
                 </tbody>
             </table>
         </div>
-        <p class="pages-empty">确认无误后回到上面的表单点「应用调价」：写库的是刚刚预览过的同一份参数。</p>
+        <p class="hint">确认无误后回到上面的表单点「应用调价」：写库的是刚刚预览过的同一份参数。</p>
         {{end}}
     </section>
     {{end}}
 
-    <section class="pages-card card">
+    <section class="card card-body">
         <h2>调价留痕</h2>
         {{if len(.History) == 0}}
-        <p class="pages-empty">这个工程还没有调价记录。应用一次调价后，这里会逐批记录规则、范围、改动数量与逐变体「原价 → 新价」。</p>
+        <p class="hint">这个工程还没有调价记录。应用一次调价后，这里会逐批记录规则、范围、改动数量与逐变体「原价 → 新价」。</p>
         {{else}}
         {{range _, a := .History}}
-        <details class="pages-fold">
+        <details class="disclosure">
             <summary class="card-header">
                 <strong>{{a.RuleLabel}}</strong>
-                <span class="pages-badge">{{a.ScopeLabel}}</span>
-                <span class="pages-badge">{{a.RoundingLabel}}</span>
-                <span class="pages-empty">改动 {{a.ChangedCount}}/{{a.VariantCount}} 个变体 · {{a.CreatedAtText}}{{if a.OperatorID != ""}} · 操作人 {{a.OperatorID}}{{end}}</span>
-                <span class="pages-fold-hint">展开</span>
+                <span class="badge badge-mute">{{a.ScopeLabel}}</span>
+                <span class="badge badge-mute">{{a.RoundingLabel}}</span>
+                <span class="hint">改动 {{a.ChangedCount}}/{{a.VariantCount}} 个变体 · {{a.CreatedAtText}}{{if a.OperatorID != ""}} · 操作人 {{a.OperatorID}}{{end}}</span>
             </summary>
-            {{if a.FilterLabel != ""}}<p class="pages-empty">筛选条件：{{a.FilterLabel}}</p>{{end}}
-            {{if a.Note != ""}}<p class="pages-empty">备注：{{a.Note}}</p>{{end}}
+            {{if a.FilterLabel != ""}}<p class="hint">筛选条件：{{a.FilterLabel}}</p>{{end}}
+            {{if a.Note != ""}}<p class="hint">备注：{{a.Note}}</p>{{end}}
             {{if len(a.Items) == 0}}
-            <p class="pages-empty">这一批没有逐变体明细。</p>
+            <p class="hint">这一批没有逐变体明细。</p>
             {{else}}
             <div class="pricing-table-wrap" tabindex="0" role="region" aria-label="调价明细（可横向滚动查看）">
-                <table class="pages-table data-table pricing-page-table">
+                <table class="data-table data-table-wide pricing-page-table">
                     <thead><tr><th>商品</th><th>SKU</th><th>原价</th><th>新价</th><th>差值</th></tr></thead>
                     <tbody>
                     {{range _, it := a.Items}}

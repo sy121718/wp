@@ -713,7 +713,7 @@ a.pagination-btn:hover { background: var(--c-bg-hover); color: var(--c-text); }
 .pricing-page .card-header > * { min-width: 0; }
 /* <select> 被 WBUI 自绘替身接管后可见元素是 .wbs（width:100%）；
    与原生 select 的同一档宽度收口，窄屏折行而不是铺满整张卡片。 */
-.pricing-page .attr-form-head .wbs { width: min(100%, 220px); }
+.pricing-page .form-inline .wbs { width: min(100%, 220px); }
 .pricing-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 /* 容器自身不是控件，但横向可滚动区域要能被键盘聚焦（否则键盘用户滚不动）。 */
 .pricing-table-wrap:focus-visible { outline: 2px solid var(--c-primary, #2563eb); outline-offset: 2px; }
@@ -723,7 +723,7 @@ a.pagination-btn:hover { background: var(--c-bg-hover); color: var(--c-text); }
    cost_ / multi / ple：与标签页的规则表同一手法，手机端整表堆叠成块。 */
 .pricing-rule-table th:first-child, .pricing-rule-table td:first-child { white-space: nowrap; }
 @media (max-width: 720px) {
-    .pricing-page .pages-card { padding: 16px; }
+    .pricing-page .card-body { padding: 16px; }
     .pricing-page-table th:first-child, .pricing-page-table td:first-child { min-width: 0; }
     .pricing-rule-table thead { display: none; }
     .pricing-rule-table, .pricing-rule-table tbody, .pricing-rule-table tr, .pricing-rule-table td { display: block; width: auto; }
