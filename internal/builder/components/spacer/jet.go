@@ -6,22 +6,29 @@
 package spacer
 
 import (
+	_ "embed" // spacer.css 经 //go:embed 打进二进制
+	"fmt"
+
 	"go_wp/internal/builder/core"
 )
 
-// CompileCSS 导出间隔组件样式编译（与 render 内部三端高度 CSS 逻辑一致）。
-// 说明：spacer 无独立 compileCSS 私有函数，render 内联三端高度写入 CSSBuckets，
-// 此处复刻同一逻辑保证新路径 CSS 字节与旧路径一致。
+// spacerCSS 组件样式源。与组件同目录：改样式不必再进 Go 字符串数组
+// （有补全 / lint / 格式化），而作用域替换、桶划分、确定性输出仍由构建期负责。
+//
+//go:embed spacer.css
+var spacerCSS string
+
+// CompileCSS 导出间隔组件样式编译（三端高度；某端为空则该端不产出声明）。
 func CompileCSS(id string, p *Props, b *core.CSSBuckets) {
 	sel := "." + core.NodeClass(id)
-	if v := p.Height.Desktop; v != "" {
-		b.Add(core.BreakpointDesktop, sel, []string{"height: " + v})
+	vars := map[string]string{
+		"h_desktop": p.Height.Desktop,
+		"h_tablet":  p.Height.Tablet,
+		"h_mobile":  p.Height.Mobile,
 	}
-	if v := p.Height.Tablet; v != "" {
-		b.Add(core.BreakpointTablet, sel, []string{"height: " + v})
-	}
-	if v := p.Height.Mobile; v != "" {
-		b.Add(core.BreakpointMobile, sel, []string{"height: " + v})
+	if err := core.ApplyComponentCSSTmpl(b, sel, spacerCSS, vars); err != nil {
+		// 样式源解析失败属于构建期缺陷，必须在测试/构建时暴露；静默跳过的后果是产物悄悄少了样式。
+		panic(fmt.Sprintf("spacer 组件样式解析失败: %v", err))
 	}
 }
 

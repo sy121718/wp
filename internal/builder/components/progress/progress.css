@@ -1,0 +1,34 @@
+/* progress.css — 进度条组件样式（来源：原 progress.go 的 compileCSS）。
+ *
+ * 语法见 internal/builder/core/component_css.go。
+ */
+
+/* 容器：轨道 + 填充 + 可选标签横向排列。 */
+& {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* 轨道：撑满剩余宽度（标签占位后自动让出），浅底圆角。 */
+& .sky-progress-track {
+  flex: 1;
+  height: 8px;
+  background: rgba(0,0,0,0.08);
+  border-radius: 9999px;
+  overflow: hidden;
+}
+
+/* 填充：宽度由 value/max 百分比算出（Go 侧），颜色可为色值或主题 Token。 */
+& .sky-progress-bar {
+  width: {{width}};
+  background: {{color}};
+  height: 100%;
+  border-radius: inherit;
+}
+
+/* 标签：贴右的说明文字。 */
+& .sky-progress-label {
+  font-size: 0.875rem;
+  opacity: 0.8;
+}

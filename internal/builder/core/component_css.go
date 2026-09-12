@@ -18,6 +18,32 @@ package core
 //     需要别的桶时用 `@media`（按断点）或 `@hover` / `@active` 分组；
 //   · Go 侧的计算声明（FocusRingDecls / FocusTransitionDecl）用**占位指令**表达，
 //     如 `@focus-ring;` —— 这样「一份实现」没有变成两份。
+//
+// 属性驱动的样式（颜色 / 宽度 / 比例等由 Props 算出的值）用**值变量**表达：
+//
+//	& { width: {{width}}; background: {{color}}; }
+//
+// 变量由调用方经 ApplyComponentCSSTmpl 传入。两条配套规则：
+//   · **任一变量为空 → 整条声明省略**（而不是输出 `width: ;` 这种无效声明）。
+//     这让「可选属性」不必在 Go 里写 if：CSS 里的声明天然表达「设了才输出」，
+//     与迁移前 b.Add 的条件拼装等价。
+//   · **变量必须双向对齐**：源里引用了未提供的变量、或提供的变量没被源消费，都返回 error。
+//     Go 侧与 .css 各写一半，拼写错误只会表现为「样式悄悄少了」，必须在构建期拦住。
+//
+// 结构性分支（同一选择器在不同模式下是**不同的声明组**，如 badge 的三种变体、
+// divider 的有/无嵌入）用**声明块内的条件段**表达：
+//
+//	& {
+//	  display: block;
+//	  @if outline
+//	  color: {{color}};
+//	  border: 1px solid {{color}};
+//	  @endif
+//	}
+//
+// 条件段写在声明块里，命中的分支与同块其余声明**合并进同一条规则** ——
+// 产物与「Go 里按条件拼一个声明切片、只 Add 一次」等价，这是迁移能做到逐字节一致的前提。
+// 真值判定：变量为空串 / "0" / "false" / "no" / "off" 即假（大小写不敏感），其余为真。
 
 import (
 	"fmt"
@@ -29,19 +55,38 @@ func cssApplyError(line int, format string, args ...any) error {
 	return fmt.Errorf("组件样式第 %d 行: %s", line, fmt.Sprintf(format, args...))
 }
 
-// ApplyComponentCSS 解析组件 CSS 源并写入 b。
+// ApplyComponentCSS 解析组件 CSS 源并写入 b（样式源不含变量时的入口）。
 //
-// scope 是该 node 的作用域选择器（形如 ".sky-node-xxxx"），顶层 `&` 会被替换成它。
-// container 用于 @media 断点归桶时判断版式（tablet / mobile）。
+// scope 是该 node 的作用域选择器（形如 ".sky-c-xxxx"），顶层 `&` 会被替换成它。
 func ApplyComponentCSS(b *CSSBuckets, scope, source string) error {
+	return ApplyComponentCSSTmpl(b, scope, source, nil)
+}
+
+// ApplyComponentCSSTmpl 解析带变量的组件 CSS 源并写入 b。
+//
+// vars 是样式源可用的变量表：`{{name}}` 取值、`@if name` 判真。
+// 返回 error 时 b 可能已被部分写入 —— 调用方（组件 compileCSS）应当 panic 而非吞掉：
+// 样式解析失败属于构建期缺陷，静默跳过的后果是产物悄悄少了样式。
+func ApplyComponentCSSTmpl(b *CSSBuckets, scope, source string, vars map[string]string) error {
 	if b == nil {
 		return fmt.Errorf("CSSBuckets 为空")
 	}
 	if strings.TrimSpace(source) == "" {
 		return nil
 	}
-	parser := &cssSourceParser{src: source, scope: scope, buckets: b}
-	return parser.run()
+	parser := &cssSourceParser{src: source, scope: scope, buckets: b, vars: vars, used: map[string]bool{}}
+	if err := parser.run(); err != nil {
+		return err
+	}
+	// 反向校验：提供的变量必须全部被样式源消费。
+	// 组件迁移最容易出的错是「Go 侧改了变量名、.css 没跟着改」（或少改一处），
+	// 这类错误不会让构建失败，只会让某个属性在产物里消失 —— 在这里拦住。
+	for name := range vars {
+		if !parser.used[name] {
+			return fmt.Errorf("组件样式变量 %q 未被样式源使用（Go 侧与 .css 变量名不一致？）", name)
+		}
+	}
+	return nil
 }
 
 // cssSourceParser 极简 CSS 源解析器：只覆盖组件样式的实际用法。
@@ -53,6 +98,11 @@ type cssSourceParser struct {
 	buckets *CSSBuckets
 	// mediaBP 非空表示当前处于某个 @media 块内，规则进该断点桶。
 	mediaBP string
+	// vars 值变量表（nil 表示样式源不含变量）。
+	vars map[string]string
+	// used 记录已被消费的变量名（@if 与 {{name}} 都算），用于反向校验。
+	// 递归解析 @media / @if 块时共享同一个 map。
+	used map[string]bool
 }
 
 // run 扫描源文本，按规则块逐个处理。
@@ -99,7 +149,7 @@ func (p *cssSourceParser) run() error {
 			if err != nil {
 				return cssApplyError(i+1, "%v", err)
 			}
-			inner := &cssSourceParser{src: body, scope: p.scope, buckets: p.buckets, mediaBP: bp}
+			inner := &cssSourceParser{src: body, scope: p.scope, buckets: p.buckets, mediaBP: bp, vars: p.vars, used: p.used}
 			if err := inner.run(); err != nil {
 				return err
 			}
@@ -110,7 +160,10 @@ func (p *cssSourceParser) run() error {
 		if !strings.Contains(line, "{") {
 			return cssApplyError(i+1, "看不懂这一行（期望「选择器 {」或 @media/@keyframes）：%q", line)
 		}
-		selector := strings.TrimSpace(strings.TrimSuffix(line, "{"))
+		// 取**第一个** { 之前的内容作选择器：既支持多行格式（"sel {"），
+		// 也支持单行规则（"sel { a: 1; b: 2; }"）—— 后者用 TrimSuffix(line, "{") 会拿到整行，
+		// 于是选择器里混进声明文本，产物看起来「多了个奇怪的选择器」而样式全部失效。
+		selector := strings.TrimSpace(line[:strings.Index(line, "{")])
 		body, next, err := collectBlock(lines, i, line)
 		if err != nil {
 			return cssApplyError(i+1, "%v", err)
@@ -173,14 +226,57 @@ func mediaBreakpointOf(header string) (string, error) {
 }
 
 // parseDecls 把声明块文本拆成声明列表（`prop: value`），保留顺序以保证确定性。
+//
+// 声明块内支持**条件段** `@if name` … `@endif`：段内声明只在变量为真时产出。
+// 它表达「同一选择器在不同模式下是不同声明组」的情形（badge 三种变体、divider 有无嵌入），
+// 这类分支不是值替换能表达的 —— 而在声明块内做，各分支的声明会合并进同一条规则，
+// 产物与「Go 里按条件拼一个声明切片、只 Add 一次」逐字节一致。
 func (p *cssSourceParser) parseDecls(body string) ([]string, error) {
 	var decls []string
+	// cond 是条件段栈：内层声明只有在所有外层都生效时才解析（支持嵌套）。
+	var cond []bool
+	active := func() bool {
+		for _, ok := range cond {
+			if !ok {
+				return false
+			}
+		}
+		return true
+	}
 	// 声明之间用 ; 分隔，但要注意值里可能有 var(--x, a:b) 这类带冒号的内容 ——
-	// 这里只按 ; 切分，不碰冒号，交给浏览器解析。
+	// 这里只按 ; 切分，不碰冒号，交给浏览器解析。@if / @endif 独占一行（不带分号），
+	// 所以按 ; 切完再按换行切时仍是独立的一行，顺序不乱。
 	for _, part := range strings.Split(body, ";") {
 		for _, one := range strings.Split(part, "\n") {
 			d := strings.TrimSpace(stripCSSComment(one))
 			if d == "" {
+				continue
+			}
+			if strings.HasPrefix(d, "@if ") {
+				name := strings.TrimSpace(strings.TrimPrefix(d, "@if "))
+				v, ok := p.vars[name]
+				if !ok {
+					return nil, fmt.Errorf("@if 引用了未提供的变量 %q", name)
+				}
+				p.used[name] = true
+				cond = append(cond, truthy(v))
+				continue
+			}
+			if d == "@endif" {
+				if len(cond) == 0 {
+					return nil, fmt.Errorf("@endif 没有对应的 @if")
+				}
+				cond = cond[:len(cond)-1]
+				continue
+			}
+			// 未命中的分支：声明不产出，但**仍然展开变量**。
+			// 展开是为了让「提供的变量必须被样式源消费」这条校验在分支场景下依然成立 ——
+			// 否则 A 分支命中时，B 分支专属的变量会被判成「提供了却没用到」而误报。
+			// 引用了未提供的变量在任何分支都是错误，照旧报出。
+			if !active() {
+				if _, _, err := p.expandVars(d); err != nil {
+					return nil, err
+				}
 				continue
 			}
 			// 占位指令：Go 侧计算的声明（保持「一份实现」）。
@@ -192,13 +288,71 @@ func (p *cssSourceParser) parseDecls(body string) ([]string, error) {
 				decls = append(decls, FocusTransitionDecl())
 				continue
 			}
-			if !strings.Contains(d, ":") {
+			expanded, empty, err := p.expandVars(d)
+			if err != nil {
+				return nil, err
+			}
+			// 变量为空 → 整条声明省略。语义是「该属性没设」，而不是「赋一个空值」：
+			// `width: ;` 在浏览器里会被丢弃，但会以无效声明的形式留在产物里污染字节。
+			if empty {
+				continue
+			}
+			if !strings.Contains(expanded, ":") {
 				return nil, fmt.Errorf("看不懂这条声明：%q", d)
 			}
-			decls = append(decls, d)
+			decls = append(decls, expanded)
 		}
 	}
+	if len(cond) != 0 {
+		return nil, fmt.Errorf("@if 没有对应的 @endif")
+	}
 	return decls, nil
+}
+
+// expandVars 把声明文本里的 {{name}} 替换成变量值。
+//
+// 返回的 empty 表示**至少有一个占位取到空值** —— 调用方据此省略整条声明。
+// 引用了未提供的变量直接报错：Go 侧与 .css 各写一半，静默留着 {{x}} 会让产物里
+// 出现浏览器看不懂的声明，而那在页面上只表现为「样式不太对」。
+func (p *cssSourceParser) expandVars(s string) (out string, empty bool, err error) {
+	if !strings.Contains(s, "{{") {
+		return s, false, nil
+	}
+	var sb strings.Builder
+	rest := s
+	for {
+		i := strings.Index(rest, "{{")
+		if i < 0 {
+			sb.WriteString(rest)
+			break
+		}
+		j := strings.Index(rest[i:], "}}")
+		if j < 0 {
+			return "", false, fmt.Errorf("变量占位没有闭合：%q", s)
+		}
+		sb.WriteString(rest[:i])
+		name := strings.TrimSpace(rest[i+2 : i+j])
+		val, ok := p.vars[name]
+		if !ok {
+			return "", false, fmt.Errorf("样式源引用了未提供的变量 %q（声明：%q）", name, s)
+		}
+		p.used[name] = true
+		if strings.TrimSpace(val) == "" {
+			empty = true
+		}
+		sb.WriteString(val)
+		rest = rest[i+j+2:]
+	}
+	return sb.String(), empty, nil
+}
+
+// truthy 条件段真值判定：空串与常见假值为假，其余为真（大小写不敏感）。
+func truthy(v string) bool {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "", "0", "false", "no", "off":
+		return false
+	}
+	return true
 }
 
 // collectBlock 从 start 行开始收集花括号块的内容（不含最外层花括号），返回内容与下一行下标。

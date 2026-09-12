@@ -1,0 +1,41 @@
+/* badge.css — 徽章组件样式（来源：原 badge.go 的 compileCSS）。
+ *
+ * 语法见 internal/builder/core/component_css.go：
+ *   &                  该组件实例的作用域选择器（同页多实例互不污染）
+ *   @if name / @endif  声明块内的条件段（三变体各是一组不同声明）
+ *   {{name}}           值变量（空值省略整条声明）
+ */
+
+/* 基础盒模型 + 三种外观范式。
+   三支写在同一个声明块内：命中的那一支与基础声明合并成同一条规则，
+   与迁移前「Go 里按条件拼一个声明切片、只 Add 一次」的产物逐字节一致。 */
+& {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 10px;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.6;
+  white-space: nowrap;
+
+  /* 实心：主色背景 + 白字。 */
+  @if solid
+  background: {{color}};
+  color: #fff;
+  @endif
+
+  /* 描边：主色边框 + 主色文字（背景显式 transparent，叠在任意底上口径一致）。 */
+  @if outline
+  color: {{color}};
+  background: transparent;
+  border: 1px solid {{color}};
+  @endif
+
+  /* 浅底：主色 12% 混合透明 + 主色文字。 */
+  @if soft
+  color: {{color}};
+  background: color-mix(in srgb, {{color}} 12%, transparent);
+  @endif
+}

@@ -6,6 +6,7 @@
 package rating
 
 import (
+	_ "embed" // rating.css 经 //go:embed 打进二进制
 	"fmt"
 	"math"
 	"strconv"
@@ -88,26 +89,19 @@ func hasHalf(p *Props) bool {
 	return frac > 0 && fullCount(p) < effectiveMax(p)
 }
 
+// ratingCSS 组件样式源。与组件同目录：改样式不必再进 Go 字符串数组
+// （有补全 / lint / 格式化），而作用域替换、桶划分、确定性输出仍由构建期负责。
+//
+//go:embed rating.css
+var ratingCSS string
+
 // compileCSS 评分容器/星形尺寸/配色样式。
 func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	sel := "." + core.NodeClass(id)
-
-	b.Add(core.BreakpointDesktop, sel, []string{
-		"display: inline-flex",
-		"align-items: center",
-		"gap: 2px",
-		"color: var(--sky-c-warning, #f59e0b)",
-		"line-height: 0",
-	})
-	b.Add(core.BreakpointDesktop, sel+" .sky-star", []string{
-		"display: inline-flex",
-		"width: 1.25em",
-		"height: 1.25em",
-	})
-	b.Add(core.BreakpointDesktop, sel+" .sky-star svg", []string{
-		"width: 100%",
-		"height: 100%",
-	})
+	if err := core.ApplyComponentCSS(b, sel, ratingCSS); err != nil {
+		// 样式源解析失败属于构建期缺陷，必须在测试/构建时暴露；静默跳过的后果是产物悄悄少了样式。
+		panic(fmt.Sprintf("rating 组件样式解析失败: %v", err))
+	}
 }
 
 // init 注册评分组件。

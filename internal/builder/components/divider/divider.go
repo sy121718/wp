@@ -6,6 +6,7 @@
 package divider
 
 import (
+	_ "embed" // divider.css 经 //go:embed 打进二进制
 	"fmt"
 
 	"go_wp/internal/builder/core"
@@ -130,79 +131,73 @@ func validateExtra(p *Props, nodeID string) (err error) {
 	return nil
 }
 
+// dividerCSS 组件样式源。与组件同目录：改样式不必再进 Go 字符串数组
+// （有补全 / lint / 格式化），而作用域替换、桶划分、确定性输出仍由构建期负责。
+//
+//go:embed divider.css
+var dividerCSS string
+
 // compileCSS 线条/嵌入/对齐/宽度三端样式。
+//
+// 无嵌入与有嵌入是两套结构（纯 <hr> vs 两段线夹元素），在样式源里用 no_inset / has_inset
+// 两个条件段分工；「宽度某端为空则该端不产出」「留白/字号/字重/颜色可选」由空值省略声明承担。
 func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	sel := "." + core.NodeClass(id)
 
-	// 无嵌入：hr 直用线样式。
-	if p.Inset.Kind == InsetNone || p.Inset.Kind == "" {
-		decls := []string{lineDecl(p), "margin: 0"}
-		b.Add(core.BreakpointDesktop, sel, decls)
-	} else {
-		// 有嵌入：flex 容器 + 两段线。
-		b.Add(core.BreakpointDesktop, sel, []string{
-			"display: flex",
-			"align-items: center",
-			"width: 100%",
-		})
-		// 线段基础（flex 比例由 position 决定：center 等分，left 左短右长，right 反之）。
-		lineBase := []string{"height: 0", lineDecl(p)}
-		var leftFlex, rightFlex string
-		switch p.Inset.Position {
-		case PosLeft:
-			leftFlex, rightFlex = "0.5", "1.5"
-		case PosRight:
-			leftFlex, rightFlex = "1.5", "0.5"
-		default:
-			leftFlex, rightFlex = "1", "1"
-		}
-		b.Add(core.BreakpointDesktop, sel+" .dt-line", append([]string{core.CSSDecl("flex", leftFlex)}, lineBase...))
-		b.Add(core.BreakpointDesktop, sel+" .dt-line + .dt-inset + .dt-line", nil)
-		b.Add(core.BreakpointDesktop, sel+" .dt-line:last-child", append([]string{core.CSSDecl("flex", rightFlex)}, lineBase...))
+	hasInset := !(p.Inset.Kind == InsetNone || p.Inset.Kind == "")
 
-		insetDecls := []string{"display: inline-flex", "align-items: center"}
-		if p.Inset.Spacing != "" {
-			insetDecls = append(insetDecls, core.CSSDecl("padding", "0", p.Inset.Spacing))
-		}
-		insetDecls = append(insetDecls, "white-space: nowrap")
-		if p.Inset.FontSize != "" {
-			insetDecls = append(insetDecls, core.CSSDecl("font-size", p.Inset.FontSize))
-		}
-		if p.Inset.FontWeight != "" {
-			insetDecls = append(insetDecls, core.CSSDecl("font-weight", p.Inset.FontWeight))
-		}
-		if p.Inset.Color != "" {
-			insetDecls = append(insetDecls, core.CSSDecl("color", p.Inset.Color))
-		}
-		b.Add(core.BreakpointDesktop, sel+" .dt-inset", insetDecls)
-		b.Add(core.BreakpointDesktop, sel+" .dt-inset svg", []string{"width: 1em", "height: 1em"})
+	// 线段 flex 比例由嵌入位置决定：center 等分，left 左短右长，right 反之。
+	leftFlex, rightFlex := "1", "1"
+	switch p.Inset.Position {
+	case PosLeft:
+		leftFlex, rightFlex = "0.5", "1.5"
+	case PosRight:
+		leftFlex, rightFlex = "1.5", "0.5"
 	}
 
-	// 总宽度（三端）+ 对齐（非 100%）。
-	widthDecl := func(bp string, w string) []string {
+	vars := map[string]string{
+		"no_inset":          boolVar(!hasInset),
+		"has_inset":         boolVar(hasInset),
+		"line_decl":         lineDecl(p),
+		"left_flex":         leftFlex,
+		"right_flex":        rightFlex,
+		"inset_spacing":     p.Inset.Spacing,
+		"inset_font_size":   p.Inset.FontSize,
+		"inset_font_weight": p.Inset.FontWeight,
+		"inset_color":       p.Inset.Color,
+	}
+	// 三端宽度 + 对齐（宽度为空则该端的 width 与两条 margin 一起省略）。
+	setWidth := func(suffix, w string) {
+		vars["width_"+suffix] = w
 		if w == "" {
-			return nil
+			vars["ml_"+suffix], vars["mr_"+suffix] = "", ""
+			return
 		}
-		out := []string{core.CSSDecl("width", w)}
 		switch p.Align {
 		case "left":
-			out = append(out, "margin-left: 0", "margin-right: auto")
+			vars["ml_"+suffix], vars["mr_"+suffix] = "0", "auto"
 		case "right":
-			out = append(out, "margin-left: auto", "margin-right: 0")
+			vars["ml_"+suffix], vars["mr_"+suffix] = "auto", "0"
 		default: // center
-			out = append(out, "margin-left: auto", "margin-right: auto")
+			vars["ml_"+suffix], vars["mr_"+suffix] = "auto", "auto"
 		}
-		return out
 	}
-	if decls := widthDecl(core.BreakpointDesktop, p.Width.Desktop); decls != nil {
-		b.Add(core.BreakpointDesktop, sel, decls)
+	setWidth("desktop", p.Width.Desktop)
+	setWidth("tablet", p.Width.Tablet)
+	setWidth("mobile", p.Width.Mobile)
+
+	if err := core.ApplyComponentCSSTmpl(b, sel, dividerCSS, vars); err != nil {
+		// 样式源解析失败属于构建期缺陷，必须在测试/构建时暴露；静默跳过的后果是产物悄悄少了样式。
+		panic(fmt.Sprintf("divider 组件样式解析失败: %v", err))
 	}
-	if decls := widthDecl(core.BreakpointTablet, p.Width.Tablet); decls != nil {
-		b.Add(core.BreakpointTablet, sel, decls)
+}
+
+// boolVar 条件段变量的真值形态（非空即真）。
+func boolVar(v bool) string {
+	if v {
+		return "1"
 	}
-	if decls := widthDecl(core.BreakpointMobile, p.Width.Mobile); decls != nil {
-		b.Add(core.BreakpointMobile, sel, decls)
-	}
+	return ""
 }
 
 // lineDecl 统一线声明（border-top；double 缺省权重提升到 3px 保证最小辨识度）。

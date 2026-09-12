@@ -1,0 +1,84 @@
+/* divider.css — 分割线组件样式（来源：原 divider.go 的 compileCSS）。
+ *
+ * 语法见 internal/builder/core/component_css.go。
+ *
+ * 无嵌入与有嵌入是**两套完全不同的结构**（纯 <hr> vs 两段线夹一个元素），
+ * 用 no_inset / has_inset 两个条件段在同一个声明块里分工，命中的那一支才产出声明。
+ */
+
+/* 容器：无嵌入时是纯线（margin 归零，避免浏览器默认外边距）；
+   有嵌入时是横向 flex，两段线等分或偏置。 */
+& {
+  @if no_inset
+  {{line_decl}};
+  margin: 0;
+  @endif
+
+  @if has_inset
+  display: flex;
+  align-items: center;
+  width: 100%;
+  @endif
+}
+
+/* 前段线：flex 比例由嵌入位置决定（center 等分 / left 左短右长 / right 反之）。 */
+& .dt-line {
+  @if has_inset
+  flex: {{left_flex}};
+  height: 0;
+  {{line_decl}};
+  @endif
+}
+
+/* 后段线。 */
+& .dt-line:last-child {
+  @if has_inset
+  flex: {{right_flex}};
+  height: 0;
+  {{line_decl}};
+  @endif
+}
+
+/* 嵌入元素：留白 / 字号 / 字重 / 颜色都是可选属性，未设则该条声明不产出。 */
+& .dt-inset {
+  @if has_inset
+  display: inline-flex;
+  align-items: center;
+  padding: 0 {{inset_spacing}};
+  white-space: nowrap;
+  font-size: {{inset_font_size}};
+  font-weight: {{inset_font_weight}};
+  color: {{inset_color}};
+  @endif
+}
+
+/* 嵌入图标（内联 SVG 随字号缩放）。 */
+& .dt-inset svg {
+  @if has_inset
+  width: 1em;
+  height: 1em;
+  @endif
+}
+
+/* 总宽度（三端）+ 对齐：宽度为空则该端整组不产出。 */
+& {
+  width: {{width_desktop}};
+  margin-left: {{ml_desktop}};
+  margin-right: {{mr_desktop}};
+}
+
+@media (max-width: 1024px) {
+  & {
+    width: {{width_tablet}};
+    margin-left: {{ml_tablet}};
+    margin-right: {{mr_tablet}};
+  }
+}
+
+@media (max-width: 767px) {
+  & {
+    width: {{width_mobile}};
+    margin-left: {{ml_mobile}};
+    margin-right: {{mr_mobile}};
+  }
+}

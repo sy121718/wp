@@ -6,6 +6,7 @@
 package badge
 
 import (
+	_ "embed" // badge.css 经 //go:embed 打进二进制
 	"fmt"
 
 	"go_wp/internal/builder/core"
@@ -63,46 +64,36 @@ func effectiveColor(p *Props) string {
 	return p.Color
 }
 
+// badgeCSS 组件样式源。与组件同目录：改样式不必再进 Go 字符串数组
+// （有补全 / lint / 格式化），而作用域替换、桶划分、确定性输出仍由构建期负责。
+//
+//go:embed badge.css
+var badgeCSS string
+
 // compileCSS 徽章基础盒模型 + 三种变体样式。
+//
+// 三种变体各自是一组**不同的声明**（不是同一个属性的不同取值），所以在样式源里用
+// @if 条件段表达；主色由 Props 算出，作为值变量传入。空变体与未知变体一律兜底为实心，
+// 与迁移前 switch 的 default 分支行为一致。
 func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	sel := "." + core.NodeClass(id)
-	color := effectiveColor(p)
 	variant := p.Variant
-	if variant == "" {
+	switch variant {
+	case VariantOutline, VariantSoft:
+	default:
 		variant = VariantSolid
 	}
-
-	base := []string{
-		"display: inline-flex",
-		"align-items: center",
-		"justify-content: center",
-		"padding: 2px 10px",
-		"border-radius: 9999px",
-		"font-size: 0.75rem",
-		"font-weight: 600",
-		"line-height: 1.6",
-		"white-space: nowrap",
+	vars := map[string]string{
+		"solid":   "",
+		"outline": "",
+		"soft":    "",
+		"color":   effectiveColor(p),
 	}
-	switch variant {
-	case VariantOutline:
-		base = append(base,
-			core.CSSDecl("color", color),
-			"background: transparent",
-			core.CSSDecl("border", "1px", "solid", color),
-		)
-	case VariantSoft:
-		// 浅底：主色 12% 混合透明，文字用主色。
-		base = append(base,
-			core.CSSDecl("color", color),
-			core.CSSDecl("background", "color-mix(in srgb, "+color+" 12%, transparent)"),
-		)
-	default: // solid
-		base = append(base,
-			core.CSSDecl("background", color),
-			"color: #fff",
-		)
+	vars[variant] = "1"
+	if err := core.ApplyComponentCSSTmpl(b, sel, badgeCSS, vars); err != nil {
+		// 样式源解析失败属于构建期缺陷，必须在测试/构建时暴露；静默跳过的后果是产物悄悄少了样式。
+		panic(fmt.Sprintf("badge 组件样式解析失败: %v", err))
 	}
-	b.Add(core.BreakpointDesktop, sel, base)
 }
 
 // init 注册徽章组件。

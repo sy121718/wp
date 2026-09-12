@@ -6,6 +6,7 @@
 package progress
 
 import (
+	_ "embed" // progress.css 经 //go:embed 打进二进制
 	"fmt"
 
 	"go_wp/internal/builder/core"
@@ -81,37 +82,27 @@ func percent(p *Props) int {
 	return v * 100 / max
 }
 
-// compileCSS 进度条轨道/填充/标签样式（宽度由百分比生成）。
+// progressCSS 组件样式源。与组件同目录：改样式不必再进 Go 字符串数组
+// （有补全 / lint / 格式化），而作用域替换、桶划分、确定性输出仍由构建期负责。
+//
+//go:embed progress.css
+var progressCSS string
+
+// compileCSS 进度条轨道/填充/标签样式（宽度由百分比生成，颜色可为色值或主题 Token）。
 func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	sel := "." + core.NodeClass(id)
 	color := p.Color
 	if color == "" {
 		color = "var(--sky-c-primary, #2563eb)"
 	}
-	pct := percent(p)
-
-	b.Add(core.BreakpointDesktop, sel, []string{
-		"display: flex",
-		"align-items: center",
-		"gap: 10px",
-	})
-	b.Add(core.BreakpointDesktop, sel+" .sky-progress-track", []string{
-		"flex: 1",
-		"height: 8px",
-		"background: rgba(0,0,0,0.08)",
-		"border-radius: 9999px",
-		"overflow: hidden",
-	})
-	b.Add(core.BreakpointDesktop, sel+" .sky-progress-bar", []string{
-		core.CSSDecl("width", fmt.Sprintf("%d%%", pct)),
-		core.CSSDecl("background", color),
-		"height: 100%",
-		"border-radius: inherit",
-	})
-	b.Add(core.BreakpointDesktop, sel+" .sky-progress-label", []string{
-		"font-size: 0.875rem",
-		"opacity: 0.8",
-	})
+	vars := map[string]string{
+		"width": fmt.Sprintf("%d%%", percent(p)),
+		"color": color,
+	}
+	if err := core.ApplyComponentCSSTmpl(b, sel, progressCSS, vars); err != nil {
+		// 样式源解析失败属于构建期缺陷，必须在测试/构建时暴露；静默跳过的后果是产物悄悄少了样式。
+		panic(fmt.Sprintf("progress 组件样式解析失败: %v", err))
+	}
 }
 
 // init 注册进度条组件。
