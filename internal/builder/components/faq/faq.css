@@ -1,0 +1,55 @@
+/* faq.css — 常见问题组件样式（来源：原 faq.go 的 compileCSS）。
+ *
+ * 纯静态：无任何随 Props 变化的声明。
+ * 零 JS 展开靠原生 <details>/<summary>，展开态用 [open] 属性选择器。
+ */
+
+/* 条目容器：纵向排列，条目之间留白。 */
+& {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* 单条问答：卡片式边框 + 圆角。 */
+& details {
+  border: 1px solid var(--sky-c-border, rgba(0,0,0,0.1));
+  border-radius: 10px;
+  background: var(--sky-c-surface, #fff);
+}
+
+/* 问题行：去掉原生三角，改用自绘的加减号。 */
+& summary {
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  font-weight: 600;
+}
+
+/* 去掉 WebKit 的原生展开三角。 */
+& summary::-webkit-details-marker {
+  display: none;
+}
+
+/* 自绘加减号：收起是「＋」，展开时旋转 45° 变「×」。 */
+& summary::after {
+  content: '＋';
+  font-size: 14px;
+  color: rgba(0,0,0,0.4);
+  transition: transform .2s;
+}
+
+& details[open] summary::after {
+  transform: rotate(45deg);
+}
+
+/* 答案正文。 */
+& .sky-faq-answer {
+  padding: 0 18px 14px;
+  color: rgba(0,0,0,0.65);
+  line-height: 1.6;
+}

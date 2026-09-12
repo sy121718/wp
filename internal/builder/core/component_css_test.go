@@ -175,6 +175,62 @@ func TestComponentCSSVarsInsideMedia(t *testing.T) {
 	}
 }
 
+// TestComponentCSSRuleLevelIf 规则级条件块能包住整条规则与指令（声明级包不住 @keyframes）。
+func TestComponentCSSRuleLevelIf(t *testing.T) {
+	const src = "& .a {\n  color: red;\n}\n" +
+		"@if drift\n" +
+		"& .b {\n  color: blue;\n}\n" +
+		"@keyframes sky-x {\n  from { opacity: 0 }\n  to { opacity: 1 }\n}\n" +
+		"@endif\n"
+
+	var on CSSBuckets
+	if err := ApplyComponentCSSTmpl(&on, ".x", src, map[string]string{"drift": "1"}); err != nil {
+		t.Fatalf("解析失败: %v", err)
+	}
+	out := on.String()
+	for _, want := range []string{"color: blue", "@keyframes sky-x"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("条件为真时缺少 %q\n%s", want, out)
+		}
+	}
+
+	var off CSSBuckets
+	if err := ApplyComponentCSSTmpl(&off, ".x", src, map[string]string{"drift": ""}); err != nil {
+		t.Fatalf("解析失败: %v", err)
+	}
+	out2 := off.String()
+	for _, nw := range []string{"color: blue", "@keyframes sky-x"} {
+		if strings.Contains(out2, nw) {
+			t.Errorf("条件为假时不该产出 %q\n%s", nw, out2)
+		}
+	}
+	if !strings.Contains(out2, "color: red") {
+		t.Errorf("条件块外的规则应当保留\n%s", out2)
+	}
+}
+
+// TestComponentCSSKeyframes 关键帧块的产物格式必须与 AddKeyframesDecls 一致。
+//
+// 组件自定义关键帧有两条来源：Go 侧直接调 AddKeyframesDecls，样式源里写 @keyframes。
+// 两条路径必须产出同样的字节（含缩进），否则同一个关键帧「从 Go 迁到 CSS」会改变产物。
+func TestComponentCSSKeyframes(t *testing.T) {
+	const src = "@keyframes sky-sd-drift {\n  from { transform: translateX(0) }\n  to { transform: translateX(-60px) }\n}\n"
+	var b CSSBuckets
+	if err := ApplyComponentCSS(&b, ".x", src); err != nil {
+		t.Fatalf("解析失败: %v", err)
+	}
+	got := b.String()
+
+	var want CSSBuckets
+	want.AddKeyframesDecls("sky-sd-drift", []string{
+		"from { transform: translateX(0) }",
+		"to { transform: translateX(-60px) }",
+	})
+	if got != want.String() {
+		t.Errorf("两条路径的关键帧产物不一致\n@keyframes 写法:\n%s\nAddKeyframesDecls 写法:\n%s", got, want.String())
+	}
+}
+
 // TestComponentCSSSelectorShapes 选择器提取必须同时吃下两种形态。
 //
 // 多行规则的花括号在行尾，单行规则的花括号在中间；而选择器本身又可能含 {{变量}}

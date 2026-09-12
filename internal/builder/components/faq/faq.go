@@ -4,6 +4,7 @@
 package faq
 
 import (
+	_ "embed" // faq.css 经 //go:embed 打进二进制
 	"fmt"
 
 	"go_wp/internal/builder/core"
@@ -75,43 +76,19 @@ func validateExtra(p *Props, nodeID string) (err error) {
 	return nil
 }
 
-// compileCSS 常见问题样式：条目容器 + summary 展开箭头。
+// faqCSS 组件样式源。与组件同目录：改样式不必再进 Go 字符串数组
+// （有补全 / lint / 格式化），而作用域替换、桶划分、确定性输出仍由构建期负责。
+//
+//go:embed faq.css
+var faqCSS string
+
+// compileCSS 常见问题样式：条目容器 + summary 展开箭头（纯静态，与 Props 无关）。
 func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	sel := "." + core.NodeClass(id)
-
-	b.Add(core.BreakpointDesktop, sel, []string{
-		"display: flex",
-		"flex-direction: column",
-		"gap: 8px",
-	})
-	b.Add(core.BreakpointDesktop, sel+" details", []string{
-		"border: 1px solid var(--sky-c-border, rgba(0,0,0,0.1))",
-		"border-radius: 10px",
-		"background: var(--sky-c-surface, #fff)",
-	})
-	b.Add(core.BreakpointDesktop, sel+" summary", []string{
-		"list-style: none",
-		"cursor: pointer",
-		"user-select: none",
-		"display: flex",
-		"align-items: center",
-		"justify-content: space-between",
-		"padding: 14px 18px",
-		"font-weight: 600",
-	})
-	b.Add(core.BreakpointDesktop, sel+" summary::-webkit-details-marker", []string{"display: none"})
-	b.Add(core.BreakpointDesktop, sel+" summary::after", []string{
-		"content: '＋'",
-		"font-size: 14px",
-		"color: rgba(0,0,0,0.4)",
-		"transition: transform .2s",
-	})
-	b.Add(core.BreakpointDesktop, sel+" details[open] summary::after", []string{"transform: rotate(45deg)"})
-	b.Add(core.BreakpointDesktop, sel+" .sky-faq-answer", []string{
-		"padding: 0 18px 14px",
-		"color: rgba(0,0,0,0.65)",
-		"line-height: 1.6",
-	})
+	if err := core.ApplyComponentCSS(b, sel, faqCSS); err != nil {
+		// 样式源解析失败属于构建期缺陷，必须在测试/构建时暴露；静默跳过的后果是产物悄悄少了样式。
+		panic(fmt.Sprintf("faq 组件样式解析失败: %v", err))
+	}
 }
 
 // init 注册常见问题组件。

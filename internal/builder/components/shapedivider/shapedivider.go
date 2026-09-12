@@ -8,6 +8,7 @@
 package shapedivider
 
 import (
+	_ "embed" // shapedivider.css 经 //go:embed 打进二进制
 	"fmt"
 	"strings"
 
@@ -152,17 +153,18 @@ func checkFill(name, v string) error {
 	return nil
 }
 
+// shapedividerCSS 组件样式源。与组件同目录：改样式不必再进 Go 字符串数组
+// （有补全 / lint / 格式化），而作用域替换、桶划分、确定性输出仍由构建期负责。
+//
+//go:embed shapedivider.css
+var shapedividerCSS string
+
 // compileCSS 容器/SVG 三端高度/镜像/漂移动画样式。
+//
+// 三端高度的缺省值与镜像的四种组合仍在 Go 算好（那是取值逻辑），
+// 样式源负责把结果摆到正确的位置与桶里。
 func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	sel := "." + core.NodeClass(id)
-
-	b.Add(core.BreakpointDesktop, sel, []string{
-		"position: relative",
-		"display: block",
-		"width: 100%",
-		"line-height: 0",
-		"overflow: hidden",
-	})
 
 	// SVG 高度：三端各有缺省（120/90/64px），显式设置覆盖。
 	hd, ht, hm := p.Height.Desktop, p.Height.Tablet, p.Height.Mobile
@@ -175,26 +177,26 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	if hm == "" {
 		hm = "64px"
 	}
-	base := append(flipDecls(p),
-		core.CSSDecl("height", hd),
-		"display: block",
-		"width: 100%",
-	)
-	b.Add(core.BreakpointDesktop, sel+" svg", base)
-	b.Add(core.BreakpointTablet, sel+" svg", []string{core.CSSDecl("height", ht)})
-	b.Add(core.BreakpointMobile, sel+" svg", []string{core.CSSDecl("height", hm)})
 
-	// 层漂移：中层正放慢速、背景层反向更慢（alternate 往返，无跳变）。
-	if p.Animate == AnimDrift {
-		b.Add(core.BreakpointDesktop, sel+" .sd-l2", []string{
-			"animation: sky-sd-drift 14s ease-in-out infinite alternate",
-		})
-		b.Add(core.BreakpointDesktop, sel+" .sd-l3", []string{
-			"animation: sky-sd-drift 22s ease-in-out infinite alternate-reverse",
-		})
-		// 位移量 60 远小于 path 两侧外扩量（720），平移不露边。
-		b.AddKeyframes("sky-sd-drift", "@keyframes sky-sd-drift {\n  from { transform: translateX(0) }\n  to { transform: translateX(-60px) }\n}")
+	vars := map[string]string{
+		"flip":      strings.Join(flipDecls(p), "; "),
+		"h_desktop": hd,
+		"h_tablet":  ht,
+		"h_mobile":  hm,
+		"drift":     boolVar(p.Animate == AnimDrift),
 	}
+	if err := core.ApplyComponentCSSTmpl(b, sel, shapedividerCSS, vars); err != nil {
+		// 样式源解析失败属于构建期缺陷，必须在测试/构建时暴露；静默跳过的后果是产物悄悄少了样式。
+		panic(fmt.Sprintf("shapedivider 组件样式解析失败: %v", err))
+	}
+}
+
+// boolVar 条件段变量的真值形态（非空即真）。
+func boolVar(v bool) string {
+	if v {
+		return "1"
+	}
+	return ""
 }
 
 // flipDecls 镜像声明（CSS transform，作用于 svg 元素）。

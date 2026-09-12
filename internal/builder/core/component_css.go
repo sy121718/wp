@@ -128,14 +128,43 @@ func (p *cssSourceParser) run() error {
 			i++
 			continue
 		}
-		// @keyframes：整体取出（含花括号内部），交给 AddKeyframes。
+		// @if：**规则级**条件块，包住整条规则或指令（声明块内的条件段由 parseDecls 处理）。
+		// 两处同名但作用域不同：这里的 @if 独占一行、位于规则之外，用来让一整段规则
+		// （典型是 @keyframes —— 它不是一个声明，声明级条件段包不住）随变量决定存废。
+		if strings.HasPrefix(line, "@if ") {
+			name := strings.TrimSpace(strings.TrimPrefix(line, "@if "))
+			v, ok := p.vars[name]
+			if !ok {
+				return cssApplyError(i+1, "@if 引用了未提供的变量 %q", name)
+			}
+			p.used[name] = true
+			body, next, err := collectIfBlock(lines, i)
+			if err != nil {
+				return cssApplyError(i+1, "%v", err)
+			}
+			if truthy(v) {
+				inner := &cssSourceParser{src: body, scope: p.scope, buckets: p.buckets, mediaBP: p.mediaBP, vars: p.vars, used: p.used}
+				if err := inner.run(); err != nil {
+					return err
+				}
+			}
+			i = next
+			continue
+		}
+		if line == "@endif" {
+			return cssApplyError(i+1, "@endif 没有对应的 @if")
+		}
+		// @keyframes：整体取出（含花括号内部）。块内**每行是一帧**（与内建关键帧文件同约定），
+		// 交给 AddKeyframesDecls 而不是 AddKeyframes —— 后者要求调用方自己拼好
+		// "@keyframes name { … }" 整段文本，前者负责这个格式；走同一条装配路径，
+		// 从 Go 迁过来的关键帧与从 @keyframes 迁过来的产物才会逐字节一致。
 		if strings.HasPrefix(line, "@keyframes ") {
 			name := strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(line, "@keyframes "), "{"))
 			body, next, err := collectBlock(lines, i, line, strings.Index(line, "{"))
 			if err != nil {
 				return cssApplyError(i+1, "%v", err)
 			}
-			p.buckets.AddKeyframes(name, body)
+			p.buckets.AddKeyframesDecls(name, frameLines(body))
 			i = next
 			continue
 		}
@@ -390,6 +419,41 @@ func (p *cssSourceParser) expandVars(s string) (out string, empty bool, err erro
 		rest = rest[i+j+2:]
 	}
 	return sb.String(), empty, nil
+}
+
+// collectIfBlock 从规则级 @if 行开始收集到与之匹配的 @endif 的内容（支持嵌套）。
+func collectIfBlock(lines []string, start int) (body string, next int, err error) {
+	depth := 1
+	var buf []string
+	for i := start + 1; i < len(lines); i++ {
+		t := strings.TrimSpace(stripCSSComment(lines[i]))
+		switch {
+		case strings.HasPrefix(t, "@if "):
+			depth++
+		case t == "@endif":
+			depth--
+			if depth == 0 {
+				return strings.Join(buf, "\n"), i + 1, nil
+			}
+		}
+		buf = append(buf, lines[i])
+	}
+	return "", start, fmt.Errorf("@if 没有对应的 @endif")
+}
+
+// frameLines 把关键帧块内容按行拆成帧列表（每行一帧，与内建关键帧文件同约定）。
+//
+// 约定「每行一帧」而不是按花括号解析：关键帧的帧体通常很短（from { opacity: 0 }），
+// 拆行读得清楚；按括号解析会让多行帧体（例如从别处粘过来的 keyframes）产出与内建帧
+// 不同的缩进，而缩进是要进产物字节的。
+func frameLines(body string) []string {
+	var frames []string
+	for _, ln := range strings.Split(body, "\n") {
+		if s := strings.TrimSpace(ln); s != "" {
+			frames = append(frames, s)
+		}
+	}
+	return frames
 }
 
 // truthy 条件段真值判定：空串与常见假值为假，其余为真（大小写不敏感）。
