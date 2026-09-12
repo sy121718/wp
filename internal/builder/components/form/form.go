@@ -7,7 +7,7 @@
 package form
 
 import (
-	_ "embed" // form.css 经 //go:embed 打进二进制
+	_ "embed" // form.css / form.jet 经 //go:embed 打进二进制
 	"fmt"
 	"regexp"
 
@@ -141,6 +141,12 @@ func validateExtra(p *Props, nodeID string) (err error) {
 //go:embed form.css
 var formCSS string
 
+// formTemplate 组件模板。与 .go / .css 同目录：改表单结构不必去 internal/templates/components/ 找，
+// 一个组件的东西都在一个目录里（注册后由 loader 优先采用，见 core.RegisterTemplate）。
+//
+//go:embed form.jet
+var formTemplate string
+
 // compileCSS 表单样式：来自 form.css（字段纵向排列、label 样式、输入控件边框、submit 按钮）。
 func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	sel := "." + core.NodeClass(id)
@@ -153,4 +159,5 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 // init 注册表单组件。
 func init() {
 	core.Register(Widget)
+	core.RegisterTemplate("form", formTemplate)
 }

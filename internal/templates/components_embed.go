@@ -77,5 +77,6 @@ func newEmbeddedComponentLoader() (*embedLoader, error) {
 			files = append(files, e.Name())
 		}
 	}
+	// 组件自带模板由 newEmbedLoader 统一合并（见 embed_loader.go，避免漏掉其它构造点）。
 	return newEmbedLoader(sub, files), nil
 }
