@@ -1,20 +1,5 @@
-// dropdown_contract_test.go — 工作台自定义下拉（core.js wbDropdown）交互契约测试。
-//
-// 背景（用户报障）：面板下拉「点开一瞬间就自动选择/关闭，无法选择」。真实浏览器
-// 实测定位到两件事：
-//  1) 面板里 schema 驱动的下拉是服务端渲染的原生 <select>（fragments/inspector_panel.html），
-//     原生 select 在 Linux/Chromium 是「按下展开、松开即选」，正是 wbDropdown 当初
-//     存在的理由；修复是 controls/selects.js 把原生 select 升级为 wb-dd；
-//  2) wb-dd 的展开态只存在 DOM（is-open class）里，而面板由 idiomorph morph 整体替换
-//     （客户端创建的 wb-dd 不在服务端片段里，必然被删掉重建），所以任何一次面板重渲染
-//     都会把用户刚点开的下拉强制收起。修复是 core.js 的 wbOpenDropdownKeys /
-//     wbRestoreDropdowns 按稳定 key 搬运展开态。
-//
-// 本测试用 node + 极简 DOM stub 求值 core.js 的同一份实现（不抄逻辑），断言：
-// 展开 → 选择 → 关闭、document 级监听不会误关（stopPropagation 生效）、
-// 以及展开态可以跨「DOM 被替换」恢复。环境没有 node 时自动跳过。
-
-package builder
+// 公共下拉的事件与状态契约。DOM 适配器不验证布局，布局与真实输入由浏览器夹具覆盖。
+package templates
 
 import (
 	"encoding/json"
@@ -39,24 +24,27 @@ type dropdownProbe struct {
 	ClosedByDoc   bool     `json:"closedByDoc"`   // 点击下拉外部后是否收起
 }
 
-// runDropdownProbe 用 node 求值 core.js 的 wbDropdown 并跑完交互场景。
+// runDropdownProbe 用 node 求值 ui/select.js 的 公共下拉 并跑完交互场景。
 func runDropdownProbe(t *testing.T) dropdownProbe {
 	t.Helper()
-	abs, err := filepath.Abs(coreJSRel)
+	abs, err := filepath.Abs("static/js/ui")
 	if err != nil {
-		t.Fatalf("解析 core.js 路径失败: %v", err)
+		t.Fatalf("解析 ui/select.js 路径失败: %v", err)
 	}
 	if _, err = os.Stat(abs); err != nil {
-		t.Fatalf("core.js 不存在: %v", err)
+		t.Fatalf("ui/select.js 不存在: %v", err)
 	}
 	nodeBin, err := exec.LookPath("node")
 	if err != nil {
+		if os.Getenv("GOWP_REQUIRE_NODE") == "1" {
+			t.Fatal("公共控件回归要求 Node")
+		}
 		t.Skip("未找到 node，跳过下拉交互契约测试")
 	}
-	url := "file://" + filepath.ToSlash(abs)
+	url := filepath.ToSlash(abs)
 	out, err := exec.Command(nodeBin, "--input-type=module", "--eval", fmt.Sprintf(dropdownProbeScript, url)).CombinedOutput()
 	if err != nil {
-		t.Fatalf("node 求值 wbDropdown 失败: %v\n%s", err, out)
+		t.Fatalf("node 求值 公共下拉 失败: %v\n%s", err, out)
 	}
 	var p dropdownProbe
 	if err = json.Unmarshal(out, &p); err != nil {
@@ -101,12 +89,12 @@ func TestDropdownInteractionContract(t *testing.T) {
 	}
 }
 
-// dropdownProbeScript node 侧探针：极简 DOM stub + 真实 core.js 的 wbDropdown。
+// dropdownProbeScript node 侧探针：极简 DOM stub + 真实 ui/select.js 的 公共下拉。
 const dropdownProbeScript = `
-// ---- 极简 DOM stub：只实现 wbDropdown / wbOpenDropdownKeys / wbRestoreDropdowns 用到的 API ----
+// ---- DOM 事件适配器：不承担浏览器布局验证 ----
 function parseSel(sel) {
   var attr = null;
-  var m = /\[([^=\]]+)="([^"]*)"\]/.exec(sel);
+  var m = /\[([^=\]]+)(?:="([^"]*)")?\]/.exec(sel);
   if (m) { attr = { name: m[1], value: m[2] }; sel = sel.replace(/\[[^\]]*\]/g, ''); }
   var parts = sel.split('.').filter(function (x) { return x !== ''; });
   var tag = '';
@@ -115,20 +103,33 @@ function parseSel(sel) {
 }
 function camel(name) { return name.replace(/^data-/, '').replace(/-(\w)/g, function (_, c) { return c.toUpperCase(); }); }
 function matches(el, sel) {
+  var excluded = /:not\(([^)]+)\)/g;
+  var exclusions = Array.from(sel.matchAll(excluded));
+  if (exclusions.some(m=>matches(el,m[1]))) return false;
+  sel=sel.replace(excluded,'');
+  var segments = sel.split(' ');
+  if (segments.length > 1) {
+    if (!matches(el, segments.pop())) return false;
+    for (var parent = el.parentNode; parent; parent = parent.parentNode) {
+      if (matches(parent, segments.join(' '))) return true;
+    }
+    return false;
+  }
+  if (!el.classList) return false;
   var p = parseSel(sel);
   if (p.tag && el.nodeName.toLowerCase() !== p.tag) return false;
   for (var i = 0; i < p.classes.length; i++) if (!el.classList.contains(p.classes[i])) return false;
   if (p.attr) {
     var v = el.attrs[p.attr.name];
     if (v === undefined) v = el.dataset[camel(p.attr.name)];
-    if (String(v) !== p.attr.value) return false;
+    if (p.attr.value === undefined ? v === undefined : String(v) !== p.attr.value) return false;
   }
   return true;
 }
 function El(tag) {
   this.nodeName = String(tag).toUpperCase();
   this.children = []; this.parentNode = null; this._cls = {}; this._listeners = {};
-  this.dataset = {}; this.attrs = {}; this.textContent = '';
+  this.dataset = {}; this.attrs = {}; this.textContent = ''; this._selectedIndex = -1;
   var self = this;
   this.classList = {
     add: function () { for (var i = 0; i < arguments.length; i++) self._cls[arguments[i]] = true; },
@@ -143,13 +144,29 @@ Object.defineProperty(El.prototype, 'className', {
 });
 El.prototype.setAttribute = function (k, v) { this.attrs[k] = String(v); };
 El.prototype.getAttribute = function (k) { return Object.prototype.hasOwnProperty.call(this.attrs, k) ? this.attrs[k] : null; };
-El.prototype.appendChild = function (c) { c.parentNode = this; this.children.push(c); return c; };
+El.prototype.appendChild = function (c) { if(c.parentNode) c.parentNode.children.splice(c.parentNode.children.indexOf(c),1); c.parentNode = this; this.children.push(c); return c; };
 El.prototype.insertBefore = function (c, ref) {
   c.parentNode = this;
   var i = this.children.indexOf(ref);
   if (i < 0) this.children.push(c); else this.children.splice(i, 0, c);
   return c;
 };
+Object.defineProperties(El.prototype, {
+ tagName: {get() {return this.nodeName;}}, parentElement: {get() {return this.parentNode;}},
+ options: {get() {return this.descendants().filter(el=>el.tagName==='OPTION');}},
+ label: {get() {return this.textContent;}},
+ selectedIndex: {get() {return this._selectedIndex;}, set(v) {this._selectedIndex=v;}},
+ value: {get() {return this.tagName==='SELECT' ? (this.options[this.selectedIndex]?.value || '') : (this._value || '');},
+         set(v) {if(this.tagName==='SELECT') this.selectedIndex=this.options.findIndex(o=>o.value===String(v)); else this._value=String(v);}},
+ innerHTML: {set(v) {if(v!=='') throw Error('适配器只支持清空'); this.children.forEach(c=>c.parentNode=null); this.children=[];}}
+});
+El.prototype.hasAttribute=function(k) {return Object.hasOwn(this.attrs,k);};
+El.prototype.removeAttribute=function(k) {delete this.attrs[k];};
+El.prototype.contains=function(el) {return el===this || this.descendants().includes(el);};
+El.prototype.closest=function(sel) {for(var n=this;n;n=n.parentNode) if(matches(n,sel)) return n; return null;};
+El.prototype.focus=function() {documentStub.activeElement=this;};
+El.prototype.removeEventListener=function(t,fn) {this._listeners[t]=(this._listeners[t]||[]).filter(f=>f!==fn);};
+globalThis.Event=class {constructor(type,opts) {this.type=type; Object.assign(this,opts);}};
 El.prototype.addEventListener = function (t, fn) { (this._listeners[t] = this._listeners[t] || []).push(fn); };
 El.prototype.dispatchEvent = function (ev) {
   if (typeof ev === 'string') ev = { type: ev };
@@ -184,42 +201,77 @@ var documentStub = {
   querySelectorAll: function (sel) { return documentStub.body.querySelectorAll(sel); },
   querySelector: function (sel) { return documentStub.body.querySelector(sel); }
 };
+documentStub.children=[documentStub.body];
 documentStub.body.parentNode = documentStub;
 globalThis.document = documentStub;
 
-const m = await import(%q);
+globalThis.window = globalThis;
+const fs = await import('node:fs'), vm = await import('node:vm');
+const assets = %q;
+vm.runInThisContext(fs.readFileSync(assets + '/_util.js', 'utf8'));
+vm.runInThisContext(fs.readFileSync(assets + '/select.js', 'utf8'));
+const m = window.WBUI.select;
 const scope = documentStub.body;
 
 // ---- 场景 1：展开 → 选择 → 关闭 ----
 var changes = [];
-var dd = m.wbDropdown([['a', '选项A'], ['b', '选项B']], 'a', {
+var dd = m.create([['a', '选项A'], ['b', '选项B']], 'a', {
   key: 'core.button.value',
   onChange: function (v) { changes.push(v); }
 });
 scope.appendChild(dd.root);
-var btn = dd.root.querySelector('.wb-dd-btn');
+var btn = dd.root.querySelector('.wbs-trigger');
 btn.click();
 var opened = dd.root.classList.contains('is-open');
 var openAfterDoc = dd.root.classList.contains('is-open');   // document 监听若触发会立刻置 false
-var itemB = dd.root.querySelectorAll('.wb-dd-item')[1];
+var itemB = dd.root.querySelectorAll('.wbs-option')[1];
 itemB.click();
 var closedAfter = !dd.root.classList.contains('is-open');
 
 // ---- 场景 2：展开态跨 DOM 重建恢复（模拟 morph 整体替换）----
-var dd2 = m.wbDropdown([['a', '选项A'], ['b', '选项B']], 'b', { key: 'core.button.value' });
+var dd2 = m.create([['a', '选项A'], ['b', '选项B']], 'b', { key: 'core.button.value' });
 scope.appendChild(dd2.root);
-dd2.root.querySelector('.wb-dd-btn').click();
-var keysBefore = m.wbOpenDropdownKeys(scope);
+dd2.root.querySelector('.wbs-trigger').click();
+var keysBefore = m.openKeys(scope);
 // 模拟 morph：旧节点被移除、增强阶段重建了一个全新节点（同 key）
-dd2.root.parentNode.children.length = 0;
-var dd3 = m.wbDropdown([['a', '选项A'], ['b', '选项B']], 'b', { key: 'core.button.value' });
+dd2.root.parentNode.children.forEach(c=>c.parentNode=null); scope.children.length = 0;
+var dd3 = m.create([['a', '选项A'], ['b', '选项B']], 'b', { key: 'core.button.value' });
 scope.appendChild(dd3.root);
-m.wbRestoreDropdowns(scope, keysBefore);
+m.restoreOpen(scope, keysBefore);
 var restoredOpen = dd3.root.classList.contains('is-open');
 
 // ---- 场景 3：点击下拉外部（document 级监听）关闭 ----
 documentStub.body.click();
 var closedByDoc = !dd3.root.classList.contains('is-open');
+
+// 程序赋值不提交；同值点选不再污染撤销栈；重复扫描保持单实例。
+const assert = (await import('node:assert/strict')).default;
+dd3.value='a';
+assert.equal(dd3.root.querySelector('.wbs-value').textContent,'选项A');
+assert.equal(WBUI.scan(scope).length,0);
+assert.equal(scope.querySelectorAll('.wbs-trigger').length,1);
+
+let count=0;
+const keyboard=m.create([['a','A'],['b','B'],['c','C'],['z','Z']], 'a', {onChange(){count++;}});
+scope.appendChild(keyboard.root);
+const native=keyboard.root.querySelector('select');
+native.options[1].disabled=true; native.options[2].hidden=true;
+keyboard.trigger.click();
+keyboard.trigger.dispatchEvent({type:'keydown',key:'ArrowDown'});
+keyboard.trigger.dispatchEvent({type:'keydown',key:'Enter'});
+assert.equal(keyboard.value,'z'); assert.equal(count,1);
+assert.equal(keyboard.trigger.getAttribute('aria-expanded'),'false');
+keyboard.trigger.click();
+keyboard.trigger.dispatchEvent({type:'keydown',key:'Enter'});
+assert.equal(count,1);
+keyboard.trigger.click();
+keyboard.trigger.dispatchEvent({type:'keydown',key:'Home'});
+keyboard.trigger.dispatchEvent({type:'keydown',key:'Enter'});
+assert.equal(keyboard.value,'a'); assert.equal(count,2);
+keyboard.value='z'; assert.equal(count,2);
+native.disabled=true; keyboard.sync(); keyboard.trigger.click();
+assert.equal(keyboard.trigger.disabled,true);
+assert.equal(keyboard.trigger.getAttribute('aria-expanded'),'false');
 
 console.log(JSON.stringify({
   opened: opened,
@@ -227,7 +279,7 @@ console.log(JSON.stringify({
   itemValue: dd.value,
   changeCalls: changes,
   closedAfter: closedAfter,
-  btnText: btn.textContent,
+  btnText: dd.root.querySelector('.wbs-value').textContent,
   keysBefore: keysBefore,
   restoredOpen: restoredOpen,
   recreatedNode: dd3.root !== dd2.root,

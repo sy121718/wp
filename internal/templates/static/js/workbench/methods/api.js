@@ -1,7 +1,7 @@
 // workbench/methods/api.js — API 接线（草稿保存 / 构建 / 发布）（docs/09 §3 拆分）。
 // 方法以 `this` 互调，由 index.js 用 Object.assign 合并为同一个 workbench 实例。
 import {
-    meta, initialDoc, getCSRFToken, csrfHeaders, wbDropdown, closeAllDropdowns, wbParseColor, wbHslToHsv, wbHsvToRgb, wbRgbToHsv, wbColorPicker, themePrimary, controlLabel, optionLabel, clone, componentSchemas, CONTROL_LABELS, OPTION_LABELS, paletteItems, paletteGroups, MAX_NEST_DEPTH, WB_CP_CHECKER,
+    meta, initialDoc, getCSRFToken, csrfHeaders, wbParseColor, wbHslToHsv, wbHsvToRgb, wbRgbToHsv, wbColorPicker, themePrimary, controlLabel, optionLabel, clone, componentSchemas, CONTROL_LABELS, OPTION_LABELS, paletteItems, paletteGroups, MAX_NEST_DEPTH, WB_CP_CHECKER,
 } from '../core.js';
 
 export const apiMethods = {

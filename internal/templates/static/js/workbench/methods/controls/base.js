@@ -1,7 +1,7 @@
 // workbench/methods/controls/base.js — 检查器基础字段原语（从 methods/inspector.js 的 syncInspector 闭包提取）。
 // 约定：所有函数首参为 ctx = { panel, node, self }；ctx.panel 可被临时改写（slot 填充 / 分组挂载）。
 
-import { wbDropdown, wbColorPicker, optionLabel } from '../../core.js';
+import { wbColorPicker, optionLabel } from '../../core.js';
 
 export function get(ctx, path) {
     return path.split('.').reduce(function (value, key) { return value == null ? undefined : value[key]; }, ctx.node);
@@ -62,7 +62,8 @@ export function field(ctx, label, path, kind, choices, after, extra) {
     if (kind === 'select') {
         // 自定义下拉：跨平台一致交互（原生 select 在 Linux 为按下即选）；
         // 点选即 commit，程序化赋值不触发（对齐原生 change 语义）。
-        wrap.appendChild(wbDropdown(choices, get(ctx, path) == null ? '' : String(get(ctx, path)), {
+        wrap.appendChild(window.WBUI.select.create(choices, get(ctx, path) == null ? '' : String(get(ctx, path)), {
+            key: path, label: label,
             onChange: function (v) { commit(ctx, path, v, after); }
         }).root);
         ctx.panel.appendChild(wrap);
@@ -210,4 +211,3 @@ export function segmentedField(ctx, label, path, ctl, after) {
     });
     wrap.appendChild(seg); ctx.panel.appendChild(wrap);
 }
-

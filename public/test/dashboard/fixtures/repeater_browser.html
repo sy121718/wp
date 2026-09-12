@@ -4,9 +4,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="csrf-token" content="local-test-fixture">
 <title>重复项面板浏览器验证</title>
-<link rel="stylesheet" href="/static/css/theme.css?v=ui-contract-1">
-<link rel="stylesheet" href="/static/css/ui.css?v=ui-contract-1">
-<link rel="stylesheet" href="/static/css/workbench.css?v=ui-contract-1">
+<link rel="stylesheet" href="/qa-static/css/theme.css">
+<link rel="stylesheet" href="/qa-static/css/ui.css">
+<link rel="stylesheet" href="/qa-static/css/workbench.css">
 <style>
 body { margin: 0; padding: 24px 16px; }
 main { width: min(100%, 760px); margin: auto; }
@@ -31,6 +31,25 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere; }
 <button class="btn btn-secondary btn-sm" type="button" data-theme-toggle>切换明暗</button>
 <button class="btn btn-secondary btn-sm" id="toast" type="button">提示动效</button>
 </nav>
+<details id="qa-ui"><summary>公共下拉验证</summary>
+<form id="qa-ui-form">
+<label for="qa-native">原生字段</label>
+<select id="qa-native" name="choice" data-ui-key="native-choice">
+<option value="a">选项 A</option><option value="b" disabled>禁用 B</option>
+<option value="hidden" hidden>隐藏项</option><optgroup label="禁用组" disabled><option value="group">禁用组项</option></optgroup>
+<option value="z">选项 Z</option>
+</select>
+<button class="btn btn-secondary btn-sm" type="reset">重置字段</button>
+</form>
+<div id="qa-dynamic"></div>
+<nav>
+<button class="btn btn-secondary btn-sm" id="qa-replace" type="button">重建控件</button>
+<button class="btn btn-secondary btn-sm" id="qa-options" type="button">追加选项</button>
+<button class="btn btn-secondary btn-sm" id="qa-disable" type="button">切换字段禁用</button>
+<button class="btn btn-secondary btn-sm" id="qa-set" type="button">程序赋值</button>
+</nav>
+<output id="qa-ui-status" aria-live="polite"></output>
+</details>
 <output id="qa-status" aria-live="polite">正在加载</output>
 <div class="wb-inspector-body" id="inspector-panel"></div>
 <details><summary>操作后的文档</summary><pre id="qa-document"></pre></details>

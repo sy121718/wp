@@ -1,7 +1,7 @@
 // workbench/methods/panels.js — 面板切换 / 页面设置 / 全局设置（docs/09 §3 拆分）。
 // 方法以 `this` 互调，由 index.js 用 Object.assign 合并为同一个 workbench 实例。
 import {
-    meta, initialDoc, getCSRFToken, csrfHeaders, wbDropdown, closeAllDropdowns, wbParseColor, wbHslToHsv, wbHsvToRgb, wbRgbToHsv, wbColorPicker, themePrimary, controlLabel, optionLabel, clone, componentSchemas, CONTROL_LABELS, OPTION_LABELS, paletteItems, paletteGroups, MAX_NEST_DEPTH, WB_CP_CHECKER, morphHTML, wbBusy,
+    meta, initialDoc, getCSRFToken, csrfHeaders, wbParseColor, wbHslToHsv, wbHsvToRgb, wbRgbToHsv, wbColorPicker, themePrimary, controlLabel, optionLabel, clone, componentSchemas, CONTROL_LABELS, OPTION_LABELS, paletteItems, paletteGroups, MAX_NEST_DEPTH, WB_CP_CHECKER, morphHTML, wbBusy,
 } from '../core.js';
 
 export const panelsMethods = {

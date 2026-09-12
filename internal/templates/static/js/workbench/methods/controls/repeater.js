@@ -1,6 +1,6 @@
 // workbench/methods/controls/repeater.js — 各组件 repeater 手写面板（从 methods/inspector.js 提取）。
 
-import { wbDropdown, alignMutation } from '../../core.js';
+import { alignMutation } from '../../core.js';
 import { alignedRepeaters } from '../../generated-contracts.js';
 import { commit, get, set, heading } from './base.js';
 import { iconPopupPicker, richTextField } from './text.js';
@@ -111,7 +111,8 @@ export function socialPanel(ctx) {
         var row = document.createElement('div'); row.className = 'wb-repeater-row';
         var mid = document.createElement('div'); mid.className = 'wb-repeater-mid';
         var platChoices = platforms.map(function (pl) { return [pl, labels[pl]]; });
-        var sel = wbDropdown(platChoices, item.platform || 'facebook', {
+        var sel = window.WBUI.select.create(platChoices, item.platform || 'facebook', {
+            key: 'props.items.' + idx + '.platform', label: '社交平台',
             onChange: function (v) { item.platform = v; save(); }
         }).root;
         var link = document.createElement('input'); link.type = 'text'; link.placeholder = '链接地址'; link.value = item.url || '';
@@ -284,4 +285,3 @@ export function navPanel(ctx) {
     });
     ctx.panel.appendChild(add);
 }
-

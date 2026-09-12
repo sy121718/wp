@@ -84,31 +84,7 @@
             </header>
             <div class="drawer-body" data-drawer-body></div>
         </aside>
-        {* 原始控件基座（js/ui/）：原生 select 的弹层在 Linux + Wayland 的 Chrome 上点中部
-   会瞬开瞬关，这里用 DOM 自绘替身做渐进增强（原生 select 保留、表单提交不变）。
-   按顺序加载：助手 → 各控件 → 入口（入口负责扫描与 htmx 重扫）。
-   工作台自己的 wbDropdown（data-wb-path）不受影响。 *}
-<script src="/static/js/ui/_util.js"></script>
-<script src="/static/js/ui/select.js"></script>
-{* 抽屉：开合 + 打开时对新插入内容做一次扫描（否则抽屉里的表单控件得不到增强）。 *}
-<script src="/static/js/ui/drawer.js"></script>
-{* 图标字段与列表图标：图标库 766KB 懒加载，只在页面真的用到图标时才拉。 *}
-<script src="/static/js/ui/iconfield.js"></script>
-{* 颜色字段：文本框旁挂一个色块取色入口（文本框仍是唯一真值来源，可留空）。
-   主题设置页的颜色项就是这么用的（data-color-field）。 *}
-<script src="/static/js/ui/colorfield.js"></script>
-{* 按钮忙碌态：WBUI.busy(btn[, promise][, opts]) —— 记住原禁用态、成功失败都恢复。 *}
-<script src="/static/js/ui/busy.js"></script>
-{* 确认框：替代原生 confirm 与内联 onclick/onsubmit，模板里只留 data-confirm 一个属性。 *}
-<script src="/static/js/ui/confirm.js"></script>
-{* 弹窗：<dialog> 承载，管好焦点陷阱/Esc/遮罩/焦点归还；业务逻辑留在页面脚本
-   （挂 wbui:modal-open 事件），模板里只留 data-modal-open / data-modal-close。 *}
-<script src="/static/js/ui/modal.js"></script>
-{* 轻提示：WBUI.toast()。操作成功的顺带反馈走它（非模态、自动消失）；
-   必须被看到且要做决定的才用 WBUI.confirm / WBUI.alert。 *}
-<script src="/static/js/ui/toast.js"></script>
-<script src="/static/js/ui/themetoggle.js"></script>
-<script src="/static/js/ui/index.js"></script>
+        {{include "../partials/ui_scripts.html"}}
 <script src="/static/js/admin.js"></script>
     </div>
 </body>

@@ -41,7 +41,7 @@ a[href]:focus-visible,
 .wb-field select:focus-visible,
 .wb-unit-value:focus-visible,
 .wb-color-text:focus-visible,
-.wb-dd-btn:focus-visible,
+.wbs-trigger:focus-visible,
 .wb-dims-input:focus-visible,
 .wb-icon-search:focus-visible,
 .wb-search:focus-visible {
@@ -124,7 +124,7 @@ a[href]:focus-visible,
     .wb-canvas-frame,
     .wb-navigator,
     .wb-cp,
-    .wb-dd-list,
+    .wbs-menu,
     .wb-media-panel {
         transition: none !important;
     }
@@ -155,7 +155,7 @@ a[href]:focus-visible,
     .wb-field select,
     .wb-unit-value,
     .wb-color-text,
-    .wb-dd-btn {
+    .wbs-trigger {
         transition-property: background-color, color, border-color, box-shadow, outline-color, opacity;
     }
 }

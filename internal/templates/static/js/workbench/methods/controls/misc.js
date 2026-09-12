@@ -1,6 +1,6 @@
 // workbench/methods/controls/misc.js — schema 字段分发、手写面板编排与 slot 填充（从 methods/inspector.js 提取）。
 
-import { wbDropdown, componentSchemas, controlLabel, optionLabel } from '../../core.js';
+import { componentSchemas, controlLabel, optionLabel } from '../../core.js';
 import { get, set, commit, heading, field, checkbox, segmentedField } from './base.js';
 import { colorControl } from './color.js';
 import { cornersControl } from './corners.js';
@@ -170,7 +170,8 @@ function collectionFieldControl(ctx, label, path) {
         }
         holder.textContent = '';
         holder.className = '';
-        holder.appendChild(wbDropdown(options, get(ctx, path) || '', {
+        holder.appendChild(window.WBUI.select.create(options, get(ctx, path) || '', {
+            key: path, label: label,
             onChange: function (v) { commit(ctx, path, v); }
         }).root);
     });
@@ -206,7 +207,8 @@ function bindingFieldControl(ctx, label, path) {
         });
         holder.textContent = '';
         holder.className = '';
-        holder.appendChild(wbDropdown(options, get(ctx, path) || '', {
+        holder.appendChild(window.WBUI.select.create(options, get(ctx, path) || '', {
+            key: path, label: label,
             onChange: function (v) { commit(ctx, path, v); }
         }).root);
     });
@@ -442,4 +444,3 @@ export function renderInspectorExtras(ctx) {
     });
     ctx.panel.appendChild(actions);
 }
-

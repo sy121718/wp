@@ -26,6 +26,8 @@ func TestRepeaterBrowserFixture(t *testing.T) {
 	router := newInspectorRouter(t)
 	router.Use(builtin.StaticCacheMiddleware())
 	router.Static("/static", "../../../../internal/templates/static")
+	// 与历史页面缓存隔离，验证时始终从本次工作区读取实际资产。
+	router.Static("/qa-static", "../../../../internal/templates/static")
 	fixture, err := os.ReadFile("../fixtures/repeater_browser.html")
 	if err != nil {
 		t.Fatal(err)
@@ -36,7 +38,7 @@ func TestRepeaterBrowserFixture(t *testing.T) {
 	}
 	router.GET("/", func(c *gin.Context) {
 		// 夹具升级前曾不带缓存头；版本参数避免浏览器复用旧控件脚本。
-		uiScripts := strings.ReplaceAll(assets.Body.String(), `.js"`, `.js?v=ui-contract-2"`)
+		uiScripts := strings.ReplaceAll(assets.Body.String(), `/static/`, `/qa-static/`)
 		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(strings.ReplaceAll(string(fixture), "<!-- UI_SCRIPTS -->", uiScripts)))
 	})
 	router.StaticFile("/fixture.mjs", "../fixtures/repeater_browser.mjs")

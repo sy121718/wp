@@ -1,7 +1,7 @@
 // workbench/methods/inspector.js — 检查器面板与事件接线（docs/09 §3 拆分）。
 // 方法以 `this` 互调，由 index.js 用 Object.assign 合并为同一个 workbench 实例。
 // 控件函数已按功能拆分到 methods/controls/*（base/color/corners/spacing/media/text/repeater/misc）。
-import { csrfHeaders, morphHTML, wbLinkedPatch, wbOpenDropdownKeys, wbRestoreDropdowns } from '../core.js';
+import { csrfHeaders, morphHTML, wbLinkedPatch } from '../core.js';
 import { fillInspectorSlots, inlineSlots, renderInspectorExtras } from './controls/misc.js';
 import { set } from './controls/base.js';
 import { upgradeNativeSelects, renderFieldHints, refreshFieldHints } from './controls/selects.js';
@@ -148,19 +148,19 @@ export const inspectorMethods = {
                 // 联动锁/媒体选择等）由服务端输出 slot，这里用既有控件函数就地填充。
                 // 旧「schema → DOM」渲染路径已删除，此处是唯一入口。
                 var ctx = { panel: panel, node: node, self: self };
-                // 展开态搬运：morph 会整体替换客户端创建的 wb-dd 子树（服务端片段里没有它），
+                // 展开态搬运：morph 会整体替换客户端创建的下拉子树（服务端片段里没有它），
                 // 不在这里记录，重渲染就等于把用户刚点开的下拉强行收起。
-                var openDdKeys = wbOpenDropdownKeys(panel);
+                var openSelectKeys = window.WBUI && window.WBUI.select ? window.WBUI.select.openKeys(panel) : [];
                 self.fetchInspectorPanel(node, panel, function () {
                     fillInspectorSlots(ctx);
                     // 最小/最大高度并到一行（WP 式紧凑布局）。
                     inlineSlots(ctx, 'box.minHeight', 'box.maxHeight');
-                    // 原生 select → 自定义下拉（与 wb-dd 统一交互，见 controls/selects.js）。
+                    // 原生字段与复杂字段使用同一个公共下拉。
                     upgradeNativeSelects(ctx);
                     renderInspectorExtras(ctx);
                     // 联动后仍非法的字段给出就地提示（如 native 动作缺号码）。
                     renderFieldHints(ctx);
-                    wbRestoreDropdowns(panel, openDdKeys);
+                    window.WBUI.select.restoreOpen(panel, openSelectKeys);
                     self.bindInspectorHtmx();
                 });
             },

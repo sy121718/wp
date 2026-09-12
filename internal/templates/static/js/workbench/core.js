@@ -93,98 +93,6 @@ export function morphHTML(el, html) {
     }
 
     /**
-     * 自定义下拉（替换面板内原生 select）。
-     *
-     * 根因：Linux/Chromium 原生 select 为「按下展开、松开即选」交互，弹层首项
-     * 恰好压在 select 原位置，单击的松开动作会立即选中首项并收起——表现为
-     * 「下拉一出来瞬间就选中了，无法做出选择」。本组件用 click 展开、click
-     * 选项、点击外部关闭，三端交互一致。
-     *
-     * choices: [[value, label], ...]；current: 当前值；
-     * opts.onChange(value) 仅在用户点选时回调（程序化赋值不触发，对齐原生 change 语义）。
-     *
-     * 返回对象带 value getter/setter：主题面板 allInputs 收集只用 .value；
-     * root 是渲染 DOM（.wb-dd），样式见 workbench.css。
-     */
-export function wbDropdown(choices, current, opts) {
-        opts = opts || {};
-        var root = document.createElement('div'); root.className = 'wb-dd';
-        // 稳定 key（字段路径）：面板重渲染后据此恢复展开态，见 wbOpenDropdownKeys。
-        if (opts.key) root.dataset.wbDdKey = String(opts.key);
-        var btn = document.createElement('button'); btn.type = 'button'; btn.className = 'wb-dd-btn';
-        var list = document.createElement('div'); list.className = 'wb-dd-list';
-        var value = String(current == null ? '' : current);
-        function labelOf(v) {
-            for (var i = 0; i < choices.length; i++) {
-                if (String(choices[i][0]) === v) return choices[i][1];
-            }
-            return opts.placeholder || (choices.length ? choices[0][1] : '');
-        }
-        function close() { root.classList.remove('is-open'); }
-        btn.textContent = labelOf(value);
-        choices.forEach(function (ch) {
-            var item = document.createElement('button'); item.type = 'button'; item.className = 'wb-dd-item';
-            item.textContent = ch[1];
-            if (String(ch[0]) === value) item.classList.add('is-active');
-            item.addEventListener('click', function (e) {
-                e.stopPropagation();
-                value = String(ch[0]);
-                btn.textContent = labelOf(value);
-                Array.from(list.querySelectorAll('.wb-dd-item')).forEach(function (x) { x.classList.toggle('is-active', x === item); });
-                close();
-                if (opts.onChange) opts.onChange(value);
-            });
-            list.appendChild(item);
-        });
-        btn.addEventListener('click', function (e) {
-            e.stopPropagation();
-            var wasOpen = root.classList.contains('is-open');
-            closeAllDropdowns();
-            if (!wasOpen) root.classList.add('is-open');
-        });
-        root.appendChild(btn); root.appendChild(list);
-        return {
-            root: root,
-            get value() { return value; },
-            set value(v) { value = String(v == null ? '' : v); btn.textContent = labelOf(value); }
-        };
-    }
-
-    /** 关闭页面上所有已展开的自定义下拉（点击外部 / 打开另一个前调用）。 */
-export function closeAllDropdowns() {
-        if (typeof document === 'undefined') return;
-        Array.from(document.querySelectorAll('.wb-dd.is-open')).forEach(function (d) { d.classList.remove('is-open'); });
-    }
-    if (typeof document !== 'undefined') document.addEventListener('click', function () { closeAllDropdowns(); });
-
-    /**
-     * wbOpenDropdownKeys / wbRestoreDropdowns：下拉展开态跨面板重渲染保留。
-     *
-     * 根因：检查器面板由服务端片段经 idiomorph morph 整体替换，而 wb-dd 是客户端
-     * 创建的节点（服务端片段里没有），morph 必然删掉旧节点、增强阶段再建一个新的
-     * （实测：重渲染后旧节点 isConnected=false，.wb-dd.is-open 数量归零）。
-     * 于是「面板重渲染」= 「下拉被强制收起」。这里用稳定 key（字段路径）在
-     * 重渲染前后做状态搬运，而不是靠 setTimeout 之类时序补丁。
-     */
-export function wbOpenDropdownKeys(scope) {
-        var root = scope || (typeof document !== 'undefined' ? document : null);
-        if (!root || !root.querySelectorAll) return [];
-        return Array.prototype.map.call(root.querySelectorAll('.wb-dd.is-open'), function (d) {
-            return (d.dataset && d.dataset.wbDdKey) || '';
-        }).filter(function (k) { return !!k; });
-    }
-export function wbRestoreDropdowns(scope, keys) {
-        if (!keys || !keys.length) return;
-        var root = scope || (typeof document !== 'undefined' ? document : null);
-        if (!root || !root.querySelectorAll) return;
-        keys.forEach(function (k) {
-            var sel = '.wb-dd[data-wb-dd-key="' + String(k).replace(/["\\]/g, '') + '"]';
-            var el = root.querySelector(sel);
-            if (el) el.classList.add('is-open');
-        });
-    }
-
-    /**
      * wbActionValue — core.button「点击动作 → 动作值」联动（纯函数，无 DOM）。
      *
      * 根因：action 与 value 是两个独立字段，切换 action 时 value 不联动，于是
@@ -379,7 +287,7 @@ export const WB_CP_CHECKER = 'repeating-conic-gradient(#d0d5dd 0% 25%, #fff 0% 5
      * 半透明输出 rgba(r, g, b, a)；不透明输出 #rrggbb。文本框接受任意 CSS 值（含 var(--token)）。
      *
      * opts: { value, placeholder, onInput(value, final) }
-     * 返回带 value getter/setter 的 root（可放进主题面板 allInputs 收集，对齐 wbDropdown）。
+     * 返回带 value getter/setter 的 root（可放进主题面板 allInputs 收集，与公共下拉一致）。
      */
 export function wbColorPicker(opts) {
         opts = opts || {};

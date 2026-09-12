@@ -1,7 +1,7 @@
 // workbench/methods/shortcuts.js — 快捷键体系与初始化（docs/09 §3 拆分）。
 // 方法以 `this` 互调，由 index.js 用 Object.assign 合并为同一个 workbench 实例。
 import {
-    meta, initialDoc, getCSRFToken, csrfHeaders, wbDropdown, closeAllDropdowns, wbParseColor, wbHslToHsv, wbHsvToRgb, wbRgbToHsv, wbColorPicker, themePrimary, controlLabel, optionLabel, clone, componentSchemas, CONTROL_LABELS, OPTION_LABELS, paletteItems, paletteGroups, MAX_NEST_DEPTH, WB_CP_CHECKER,
+    meta, initialDoc, getCSRFToken, csrfHeaders, wbParseColor, wbHslToHsv, wbHsvToRgb, wbRgbToHsv, wbColorPicker, themePrimary, controlLabel, optionLabel, clone, componentSchemas, CONTROL_LABELS, OPTION_LABELS, paletteItems, paletteGroups, MAX_NEST_DEPTH, WB_CP_CHECKER,
 } from '../core.js';
 
 export const shortcutsMethods = {
@@ -9,17 +9,17 @@ export const shortcutsMethods = {
             onKeydown(e) {
                 var mod = e.ctrlKey || e.metaKey;
                 // 自定义下拉展开时 Escape 先收起下拉（与原生 select 一致），不触发组件快捷键。
-                if (e.key === 'Escape' && document.querySelector('.wb-dd.is-open')) {
-                    closeAllDropdowns();
+                if (e.key === 'Escape' && document.querySelector('.wbs.is-open')) {
+                    window.WBUI.select.closeAll();
                     e.preventDefault();
                     return;
                 }
                 // 焦点在输入控件内时不触发任何组件快捷键（否则输入框里按退格会误删组件）。
-                // 自定义下拉（.wb-dd）由 button 组成，不在这三类里，必须单独排除：
+                // 自定义下拉（.wbs）由 button 组成，不在这三类里，必须单独排除：
                 // 选中选项后焦点停在按钮上，此时按 Delete 会误删整个组件。
                 var ae = document.activeElement;
                 var inField = ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.tagName === 'SELECT'
-                    || ae.isContentEditable || (ae.closest && ae.closest('.wb-dd')));
+                    || ae.isContentEditable || (ae.closest && ae.closest('.wbs')));
                 if (inField) return;
                 if (!mod) {
                     if (e.key === 'Delete' || e.key === 'Backspace') { this.deleteSelected(); e.preventDefault(); }

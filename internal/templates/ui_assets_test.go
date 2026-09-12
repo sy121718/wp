@@ -36,6 +36,15 @@ func TestWorkbenchShellLoadsSharedUI(t *testing.T) {
 
 // 公共入口中的资产必须存在且顺序正确，所有控件都按普通脚本解析。
 func TestUIAssetEntry(t *testing.T) {
+	for _, path := range []string{"admin/layout.html", "workbench/layout.html"} {
+		shell, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Count(string(shell), `{{include "../partials/ui_scripts.html"}}`) != 1 || strings.Contains(string(shell), `/static/js/ui/`) {
+			t.Fatalf("%s 必须只经公共入口加载控件，不能另抄脚本清单", path)
+		}
+	}
 	entry, err := os.ReadFile("partials/ui_scripts.html")
 	if err != nil {
 		t.Fatal(err)
