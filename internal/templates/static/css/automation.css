@@ -1,0 +1,95 @@
+/* automation.css — 自动化流程画布（issue #38 P4）。
+ *
+ * 三条布局原则（与项目「组件必须适配多端」的硬规则一致）：
+ *   1. 宽度写 min(100%, ...)，不写死；
+ *   2. 画布在窄屏下不产生横向滚动 —— 节点位置允许负坐标/超界时由画布自身滚动承接；
+ *   3. 触屏：拖拽用 pointer events（不用 HTML5 DnD，它在触屏上完全无效），
+ *      并在可拖元素上设 touch-action: none，否则浏览器会把拖动当成页面滚动。
+ */
+
+.auto-wrap { display: flex; flex-direction: column; gap: 10px; }
+
+.auto-bar {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+}
+.auto-spacer { flex: 1 1 auto; }
+.auto-badge {
+  font-size: 12px; padding: 1px 8px; border-radius: 10px;
+  background: var(--ui-surface-2, #eef1f5); color: var(--ui-text-2, #556);
+}
+.auto-status { font-size: 13px; color: var(--ui-text-2, #556); }
+.auto-warn { color: #b3261e; }
+.auto-hint { font-size: 13px; color: var(--ui-text-2, #556); line-height: 1.6; }
+.auto-hint kbd {
+  font: inherit; font-size: 12px; padding: 0 5px; border-radius: 4px;
+  border: 1px solid var(--ui-border, #ccd); background: var(--ui-surface-2, #f4f6f8);
+}
+
+.auto-btn {
+  font: inherit; padding: 5px 12px; border-radius: 6px; cursor: pointer;
+  border: 1px solid var(--ui-border, #ccd); background: var(--ui-surface, #fff);
+}
+.auto-btn-primary { background: var(--ui-accent, #2f6fed); color: #fff; border-color: transparent; }
+
+/* 主区：宽屏左右分栏，窄屏上下堆叠（画布在上、侧栏在下）。 */
+.auto-main {
+  display: grid; grid-template-columns: minmax(0, 1fr) min(360px, 100%);
+  gap: 12px; align-items: start;
+}
+@media (max-width: 900px) {
+  .auto-main { grid-template-columns: minmax(0, 1fr); }
+}
+
+.auto-canvas {
+  position: relative; overflow: auto;
+  width: min(100%, 1600px);
+  /* 高度用 vh 并留出上下栏，避免在小屏上被压成一条缝。 */
+  height: clamp(320px, 62vh, 760px);
+  border: 1px solid var(--ui-border, #ccd); border-radius: 8px;
+  background:
+    linear-gradient(0deg, transparent 23px, var(--ui-grid, #eef1f5) 24px) 0 0 / 24px 24px,
+    linear-gradient(90deg, transparent 23px, var(--ui-grid, #eef1f5) 24px) 0 0 / 24px 24px,
+    var(--ui-surface, #fff);
+  outline-offset: 2px;
+}
+
+.auto-edges { position: absolute; left: 0; top: 0; width: 100%; height: 100%; pointer-events: none; }
+.auto-edges path { fill: none; stroke: var(--ui-border-strong, #98a); stroke-width: 2; }
+.auto-edges path.edge-yes { stroke: #2e7d32; }
+.auto-edges path.edge-no { stroke: #b3261e; }
+.auto-edges marker path { fill: var(--ui-border-strong, #98a); stroke: none; }
+.auto-edges text { font-size: 11px; fill: var(--ui-text-2, #667); }
+
+.auto-empty { position: absolute; left: 12px; top: 12px; margin: 0; font-size: 13px; color: #889; }
+
+/* 节点：绝对定位，位置来自图定义里的 x / y。 */
+.auto-node {
+  position: absolute; min-width: 150px; max-width: 240px;
+  padding: 8px 10px; border-radius: 8px;
+  border: 2px solid var(--ui-border, #ccd); background: var(--ui-surface, #fff);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 12%);
+  cursor: grab;
+  /* 触屏：不设 none 的话浏览器会把拖动当成页面滚动，拖不动节点。 */
+  touch-action: none;
+  user-select: none;
+}
+.auto-node:focus-visible { outline: 3px solid var(--ui-accent, #2f6fed); outline-offset: 2px; }
+.auto-node[data-selected="1"] { border-color: var(--ui-accent, #2f6fed); }
+.auto-node[data-dragging="1"] { cursor: grabbing; opacity: .9; }
+.auto-node-key { font-size: 12px; color: var(--ui-text-2, #667); }
+.auto-node-type { font-weight: 600; }
+.auto-node-param { font-size: 12px; color: var(--ui-text-2, #667); word-break: break-all; }
+.auto-node-entry { float: right; font-size: 11px; color: var(--ui-accent, #2f6fed); }
+
+/* 侧栏表单：窄屏下与画布同宽堆叠。 */
+.auto-side {
+  border: 1px solid var(--ui-border, #ccd); border-radius: 8px;
+  padding: 10px 12px; background: var(--ui-surface, #fff);
+  width: min(100%, 360px);
+}
+.auto-form p { margin: 6px 0; }
+.auto-form label { display: block; font-size: 13px; }
+.auto-form input, .auto-form select { width: 100%; box-sizing: border-box; }
+
+/* 键盘移动时的即时反馈（不依赖任何动画库）。 */
+.auto-node[data-moved="1"] { box-shadow: 0 0 0 4px rgb(47 111 237 / 25%); }

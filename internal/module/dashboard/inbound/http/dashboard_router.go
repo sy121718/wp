@@ -310,6 +310,8 @@ func SetupDashboardRoutes(router *gin.Engine,
 	adminPages.GET("/mail/automation", mailPage.MailAutomationPage)
 	adminPages.GET("/mail/automation/edit", mailPage.MailAutomationEdit)
 	adminPages.GET("/mail/automation/run", mailPage.MailAutomationRunDetail)
+	// 画布（P4）：可视化摆放节点。连线仍在侧栏下拉里改（触屏 / 键盘都能用）。
+	adminPages.GET("/mail/automation/canvas", mailPage.MailAutomationCanvas)
 	adminPages.POST("/mail/automation/save", builtin.CasbinMiddlewareForPath("/api/mail/automation/save"), mailPage.MailAutomationSave)
 	adminPages.POST("/mail/automation/status", builtin.CasbinMiddlewareForPath("/api/mail/automation/status"), mailPage.MailAutomationStatus)
 	adminPages.POST("/mail/automation/delete", builtin.CasbinMiddlewareForPath("/api/mail/automation/delete"), mailPage.MailAutomationDelete)

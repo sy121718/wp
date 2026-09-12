@@ -25,7 +25,7 @@
       <tbody>
       {{range _, a := .Automations}}
       <tr>
-        <td><a href="/admin/mail/automation/edit?id={{a.ID}}">{{a.Name}}</a>
+        <td><a href="/admin/mail/automation/edit?id={{a.ID}}">{{a.Name}}</a> · <a href="/admin/mail/automation/canvas?id={{a.ID}}">画布</a>
             {{if a.Description != ""}}<br><span class="pages-empty">{{a.Description}}</span>{{end}}</td>
         <td>{{a.TriggerType}}</td>
         <td>

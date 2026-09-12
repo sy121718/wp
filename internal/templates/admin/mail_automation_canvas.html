@@ -1,0 +1,56 @@
+{* admin/mail_automation_canvas.html — 流程画布（issue #38 P4） *}
+{{extends "layout.html"}}
+{{block body()}}
+{{csrf := .["csrf_token"]}}
+<link rel="stylesheet" href="/static/css/automation.css?v={{.jsVer}}">
+<div class="auto-wrap">
+  <div class="auto-bar">
+    <strong>{{.A.Name}}</strong>
+    <span class="auto-badge">v{{.A.Version}} · {{.A.Status}}</span>
+    <button type="button" id="autoSavePos" class="auto-btn">保存位置</button>
+    <span id="autoStatus" class="auto-status" role="status" aria-live="polite"></span>
+    <span class="auto-spacer"></span>
+    <a href="/admin/mail/automation/edit?id={{.A.ID}}">改用表单编辑</a>
+    <a href="/admin/mail/automation">← 返回列表</a>
+  </div>
+
+  {{if .Err != ""}}<p class="auto-warn">{{.Err}}</p>{{end}}
+
+  <p class="auto-hint">
+    拖动节点摆位置（鼠标 / 触摸屏都可以）；<strong>连线在右侧下拉里改</strong> ——
+    鼠标、触屏、键盘都能用。<br>
+    键盘：<kbd>Tab</kbd> 选中节点，<kbd>方向键</kbd> 移动，<kbd>Shift</kbd>+方向键一次移 40px，
+    <kbd>Enter</kbd> 打开右侧参数编辑。
+  </p>
+
+  <div class="auto-main">
+    <div class="auto-canvas" id="autoCanvas" tabindex="0" role="application"
+         aria-label="流程画布：Tab 选择节点，方向键移动位置，Enter 编辑参数">
+      <svg class="auto-edges" id="autoEdges" aria-hidden="true"></svg>
+      <p class="auto-empty" id="autoEmpty">这个流程还没有节点。</p>
+    </div>
+
+    <aside class="auto-side" id="autoSide">
+      <p class="auto-hint" id="autoSideHint">点一个节点（或按 Tab 选中后按 Enter）在这里改它的参数与出边。</p>
+      <form id="autoNodeForm" class="auto-form" hidden>
+        <p><label>节点标识 <input type="text" id="fKey" readonly></label></p>
+        <p><label>类型 <input type="text" id="fType" readonly></label></p>
+        <p><label>参数 <input type="text" id="fParam"></label></p>
+        <p class="auto-hint" id="fParamHint"></p>
+        <p><label>下一步 <select id="fNext"></select></label></p>
+        <p><label>条件为真走（yes） <select id="fYes"></select></label></p>
+        <p><label>条件为假走（no） <select id="fNo"></select></label></p>
+        <p class="auto-hint">
+          改完点下面的「保存结构」——它会走和表单页<strong>同一套图校验</strong>
+          （有环、指向不存在的节点、走不到的节点都会被拒绝）。
+        </p>
+        <p><button type="submit" class="auto-btn auto-btn-primary">保存结构</button></p>
+      </form>
+    </aside>
+  </div>
+</div>
+
+<script type="application/json" id="autoNodes">{{.NodesJSON | unsafe}}</script>
+<script type="application/json" id="autoMeta">{{.MetaJSON | unsafe}}</script>
+<script type="module" src="/static/js/automation/canvas.js?v={{.jsVer}}"></script>
+{{end}}

@@ -7,6 +7,7 @@ package feature
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -205,3 +206,58 @@ func TestMailAutomationFormSaveThenRunDetailRenders(t *testing.T) {
 }
 
 func idStr2(v uint64) string { return strconv.FormatUint(v, 10) }
+
+// TestMailAutomationCanvasPageRenders 画布页渲染（P4）：节点数据、SVG 层、module 脚本都在。
+func TestMailAutomationCanvasPageRenders(t *testing.T) {
+	f := newMailFeatureFixture(t)
+	if f == nil {
+		return
+	}
+	ctx := context.Background()
+	// dashboard 测试包没有 mail feature 包的 seedAutomation helper，这里直接建。
+	def := map[string]any{"entry": "n1", "nodes": []any{
+		map[string]any{"key": "n1", "type": "trigger", "next": "n2"},
+		map[string]any{"key": "n2", "type": "tag", "params": map[string]any{"add": []any{"x"}}, "next": "n3"},
+		map[string]any{"key": "n3", "type": "end"},
+	}}
+	raw, _ := json.Marshal(def)
+	item, err := f.svc.SaveAutomation(ctx, &maildto.SaveAutomationReq{
+		Name: "画布页流程", TriggerType: mailmodel.TriggerManual, Definition: raw,
+	})
+	if err != nil {
+		t.Fatalf("建流程失败: %v", err)
+	}
+	id := item.ID
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Next()
+		for _, e := range c.Errors {
+			t.Logf("gin 渲染错误: %v", e.Err)
+		}
+	})
+	router.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
+	h := dashboardhttp.NewMailPageHandle(f.svc)
+	router.GET("/admin/mail/automation/canvas", h.MailAutomationCanvas)
+
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/mail/automation/canvas?id="+strconv.FormatUint(id, 10), nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("状态码 %d", rec.Code)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{
+		"autoCanvas", "autoEdges", "autoNodes", "autoMeta",
+		"/static/js/automation/canvas.js", "/static/css/automation.css",
+		"画布页流程", "保存位置", "改用表单编辑",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("画布页缺少 %q；前 600 字：\n%s", want, firstN(body, 600))
+		}
+	}
+	// 节点数据以 JSON 注入（不是内联脚本执行）。
+	if !strings.Contains(body, "\"key\":\"n1\"") {
+		t.Fatalf("节点数据没注入；前 800 字：\n%s", firstN(body, 800))
+	}
+}
