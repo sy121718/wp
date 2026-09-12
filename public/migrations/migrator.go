@@ -59,10 +59,30 @@ func AllSeeds() []Seed {
 
 // Run 依次执行全部迁移。
 func Run(db *gorm.DB) error {
+	if err := ValidateRegistry(); err != nil {
+		return err
+	}
 	for _, m := range All() {
 		if err := apply(db, m); err != nil {
 			return fmt.Errorf("迁移 %s (%s) 失败: %w", m.Version, m.TableName, err)
 		}
+	}
+	return nil
+}
+
+// ValidateRegistry 在真正连接数据库前检查迁移版本是否重复或为空。
+// 版本重复会让排序结果依赖注册顺序，升级时可能出现同一环境执行顺序不一致。
+func ValidateRegistry() error {
+	seen := make(map[string]string, len(allMigrations))
+	for _, m := range allMigrations {
+		v := strings.TrimSpace(m.Version)
+		if v == "" {
+			return fmt.Errorf("迁移版本不能为空（表 %s）", m.TableName)
+		}
+		if prev, ok := seen[v]; ok {
+			return fmt.Errorf("迁移版本重复 %q：%s 与 %s", v, prev, m.TableName)
+		}
+		seen[v] = m.TableName
 	}
 	return nil
 }
@@ -74,7 +94,14 @@ func apply(db *gorm.DB, m Migration) error {
 	}
 
 	var count int64
-	if err := db.Raw(checkSQL, m.TableName).Scan(&count).Error; err != nil {
+	// 自定义 CheckSQL 不一定用 ? 占位符（例如按 pg_constraint / pg_indexes 检查对象是否已建），
+	// 而无条件传参会让这类检查直接报 "expected 0 arguments, got 1"，迁移永远跑不起来。
+	// 只在 SQL 里真的出现占位符时才传表名。
+	check := db.Raw(checkSQL)
+	if strings.Contains(checkSQL, "?") {
+		check = db.Raw(checkSQL, m.TableName)
+	}
+	if err := check.Scan(&count).Error; err != nil {
 		return err
 	}
 	if count > 0 {

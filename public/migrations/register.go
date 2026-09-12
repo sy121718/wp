@@ -327,6 +327,9 @@ var mailAutomationPermSQL string
 //go:embed 133_mail_automation_layout_perm.sql
 var mailAutomationLayoutPermSQL string
 
+//go:embed 134_inventory_reference_fks.sql
+var inventoryReferenceFKsSQL string
+
 func init() {
 	register(Migration{
 		Version:   "001-init-schema",
@@ -1426,5 +1429,20 @@ func init() {
 		TableName:    "sys_permission",
 		ConditionSQL: "SELECT COUNT(*) FROM sys_permission WHERE permission_code = 'mail:automation_layout'",
 		SQL:          mailAutomationLayoutPermSQL,
+	})
+
+	// 134：库存与采购行的商品 / 变体引用完整性。
+	register(Migration{
+		Version:   "134-inventory-reference-fks",
+		TableName: "inventory_stocks",
+		// 8 个约束必须**全部**存在才算已执行：只查其中一个的话，部分缺失时会被判成
+		// 「已存在」而永久跳过，缺的那几条外键再也不会补上。SQL 本身逐条 IF NOT EXISTS，
+		// 判为未执行时重跑是安全的。
+		CheckSQL: "SELECT CASE WHEN COUNT(*) = 8 THEN 1 ELSE 0 END FROM pg_constraint c WHERE (CAST(? AS text) IS NOT NULL) AND c.conname IN (" +
+			"'fk_inventory_stocks_product', 'fk_inventory_purchase_lines_product'," +
+			"'fk_inventory_purchase_lines_variant', 'fk_inventory_receipt_items_product'," +
+			"'fk_inventory_receipt_items_variant', 'fk_inventory_movements_product'," +
+			"'fk_product_price_adjustment_items_product', 'fk_product_price_adjustment_items_variant')",
+		SQL: inventoryReferenceFKsSQL,
 	})
 }
