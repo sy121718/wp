@@ -57,6 +57,8 @@ func SetupMailRoutes(rg *gin.RouterGroup, db *gorm.DB) mailcontract.MailService 
 	g.GET("/automation/get", handle.AutomationGet)
 	g.POST("/automation/save", handle.AutomationSave)
 	g.POST("/automation/status", handle.AutomationStatus)
+	// 画布位置（P4）：与 save 分开，位置不推进版本号。权限点沿用 save。
+	g.POST("/automation/layout", handle.AutomationLayout)
 	g.POST("/automation/delete", handle.AutomationDelete)
 	g.POST("/automation/start", handle.AutomationStartRun)
 	g.GET("/automation/run/list", handle.AutomationRunList)

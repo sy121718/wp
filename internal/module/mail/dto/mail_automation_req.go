@@ -35,6 +35,22 @@ type SetAutomationStatusReq struct {
 	OperatorID uint64
 }
 
+// AutomationPosition 节点在画布上的位置。
+type AutomationPosition struct {
+	X float64 `json:"x"`
+	Y float64 `json:"y"`
+}
+
+// SaveAutomationLayoutReq 保存画布位置。
+//
+// 单独一个接口而不是复用 SaveAutomation：位置不是流程语义，
+// **不该推进版本号** —— 否则在画布上挪一下节点，所有正在跑的实例都会变成
+// 「版本落后于流程」，排障页面会误导人。
+type SaveAutomationLayoutReq struct {
+	ID        uint64                        `json:"id"`
+	Positions map[string]AutomationPosition `json:"positions"`
+}
+
 // AutomationRunReq 手工把联系人加进流程（manual 触发）。
 type AutomationRunReq struct {
 	AutomationID uint64

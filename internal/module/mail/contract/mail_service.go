@@ -46,6 +46,8 @@ type MailService interface {
 	ListAutomations(ctx context.Context, req *maildto.AutomationListReq) (*maildto.AutomationListResp, error)
 	GetAutomation(ctx context.Context, id uint64) (*maildto.AutomationItem, error)
 	SetAutomationStatus(ctx context.Context, req *maildto.SetAutomationStatusReq) error
+	// SaveAutomationLayout 保存画布位置（P4）。位置不是流程语义，**不推进版本号**。
+	SaveAutomationLayout(ctx context.Context, req *maildto.SaveAutomationLayoutReq) error
 	DeleteAutomation(ctx context.Context, id uint64) error
 	// StartRun 启动实例；返回是否新启动（false = 该联系人已在此流程中）。
 	StartRun(ctx context.Context, automationID, contactID uint64, triggerEvent string) (bool, error)

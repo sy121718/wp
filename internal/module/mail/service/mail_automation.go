@@ -94,6 +94,56 @@ func (s *Service) SaveAutomation(ctx context.Context, req *maildto.SaveAutomatio
 	return automationItemOf(row), nil
 }
 
+// SaveAutomationLayout 保存画布位置（P4）。
+//
+// 三个刻意的决定：
+//
+//  1. **不动版本号**：位置不是流程语义。挪一下节点就让所有在跑的实例「版本落后」，
+//     排障页面会给出误导信息。
+//  2. **只改位置，不改结构**：从库里的定义读出来、只覆盖 x/y、再写回去。
+//     这样即使编辑器传来的数据不完整，也不会把节点或连线弄丢。
+//  3. **不认识的 key 直接忽略**：可能来自另一个标签页的旧画布。
+func (s *Service) SaveAutomationLayout(ctx context.Context, req *maildto.SaveAutomationLayoutReq) (err error) {
+	if req == nil || req.ID == 0 || len(req.Positions) == 0 {
+		return errors.New(mailenums.ErrInvalidParam)
+	}
+	row, gerr := s.m.GetAutomation(ctx, req.ID)
+	if gerr != nil {
+		return errors.New(mailenums.ErrAutomationNotFound)
+	}
+	def, derr := ParseDefinition(row.Definition)
+	if derr != nil {
+		return errors.New(mailenums.ErrAutomationGraphInvalid + ": " + derr.Error())
+	}
+	changed := false
+	for i := range def.Nodes {
+		p, ok := req.Positions[def.Nodes[i].Key]
+		if !ok {
+			continue
+		}
+		if def.Nodes[i].X == p.X && def.Nodes[i].Y == p.Y {
+			continue
+		}
+		def.Nodes[i].X = p.X
+		def.Nodes[i].Y = p.Y
+		changed = true
+	}
+	if !changed {
+		return nil
+	}
+	raw, merr := json.Marshal(def)
+	if merr != nil {
+		return merr
+	}
+	var definition mailmodel.JSONMap
+	if uerr := json.Unmarshal(raw, &definition); uerr != nil {
+		return uerr
+	}
+	return s.m.UpdateAutomationFields(ctx, req.ID, map[string]any{
+		"definition": definition, "update_time": time.Now(),
+	})
+}
+
 // ListAutomations 流程列表。
 func (s *Service) ListAutomations(ctx context.Context, req *maildto.AutomationListReq) (res *maildto.AutomationListResp, err error) {
 	if req == nil {
@@ -204,6 +254,7 @@ func automationItemOf(e *mailmodel.MailAutomationEntity) *maildto.AutomationItem
 		for _, n := range parsed.Nodes {
 			item.Nodes = append(item.Nodes, maildto.AutomationNodeItem{
 				Key: n.Key, Type: n.Type, Params: n.Params, Next: n.Next, Yes: n.Yes, No: n.No,
+				X: n.X, Y: n.Y,
 			})
 		}
 	}

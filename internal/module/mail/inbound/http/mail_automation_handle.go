@@ -46,6 +46,22 @@ func (h *Handle) AutomationSave(c *gin.Context) {
 	response.Success(c, item)
 }
 
+// AutomationLayout 保存画布位置（P4）。
+//
+// 与 AutomationSave 分开：位置不是流程语义，不该推进版本号。见 service 里的说明。
+func (h *Handle) AutomationLayout(c *gin.Context) {
+	var req maildto.SaveAutomationLayoutReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, mailenums.ErrInvalidParam)
+		return
+	}
+	if err := h.svc.SaveAutomationLayout(c.Request.Context(), &req); err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	response.SuccessWithMessage(c, mailenums.MsgSaveSuccess, nil)
+}
+
 // AutomationList 流程列表。
 func (h *Handle) AutomationList(c *gin.Context) {
 	res, err := h.svc.ListAutomations(c.Request.Context(), &maildto.AutomationListReq{

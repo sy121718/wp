@@ -12,6 +12,9 @@ type AutomationNodeItem struct {
 	Next   string         `json:"next,omitempty"`
 	Yes    string         `json:"yes,omitempty"`
 	No     string         `json:"no,omitempty"`
+	// X / Y 画布位置（P4，引擎完全忽略）。
+	X float64 `json:"x,omitempty"`
+	Y float64 `json:"y,omitempty"`
 }
 
 // AutomationItem 流程条目。

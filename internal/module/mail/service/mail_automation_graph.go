@@ -49,6 +49,14 @@ type AutomationNode struct {
 	// Yes / No 条件分支的两条出边（branch 用）。
 	Yes string `json:"yes,omitempty"`
 	No  string `json:"no,omitempty"`
+
+	// X / Y 节点在可视化画布上的位置（P4）。
+	//
+	// **引擎完全忽略它们** —— 它们是编辑器的布局数据，不是流程语义。放同一个 JSONB 里
+	// 是因为「节点的位置」与「节点本身」同生命周期（删节点即删位置），拆出去反而要维护两份。
+	// 保存位置走单独的接口、**不推进版本号**：挪一下位置不该让正在跑的实例「版本落后」。
+	X float64 `json:"x,omitempty"`
+	Y float64 `json:"y,omitempty"`
 }
 
 // outgoing 返回该节点的所有出边。
