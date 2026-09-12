@@ -9,7 +9,7 @@
 - `dashboard/` — 需要后端逻辑的后台页面入口（仪表盘、可视化工作台 Workbench、媒体库、主题管理）
 - `media/` — 附件与文件分类（LIKE 通配符转义、软删除过滤）
 - `project/` — 站点工程、SiteSettings、多主题 Theme（list/activate/delete/settings）
-- `page/` — 手工 Page 与 Page Document：草稿/构建/发布/回滚/改 URL
+- `page/` — 手工 Page 与 Page Document：草稿/构建/发布/回滚/改 URL；**系统页面槽位**（BIZ-1：把「结算页是哪一页」这类事实固定下来）：`page_site_slots` 表（迁移 138，一工程一槽位至多一页；**不限制一页被多个槽位引用** —— 「个人中心页同时担任订单页」是合理用法），十个槽位 shop / blog / cart / checkout / account / login / register / forgot / reset / orders（白名单在 enums 与 DDL CHECK 各一份，**键名写错不报错、只静默不生效**）；绑的是**页面 id**（uuid，不可变）而不是 URL —— 改 URL 是页面的常规操作，绑 id 之后链接自动跟着走，绑路径则一改就失效。`ResolveSitePages` 解析「槽位 → 当前语言线上路径」，**只含已绑且已发布的**（绑定存在与访问面真的有产物是两件事，未发布给空路径让调用方降级，不输出死链）；消费方经**只读**的 `SitePageResolver` 取用（拿不到发布/删除/改 URL）。槽位变更、以及被绑定页面的 URL 变更，都会标记该工程页面待重建（构建期把路径烘进了链接）。接口 `/api/page/site-slot/{list,bind,unbind}`（list 含**未绑定**的槽位，一屏看全），迁移 139（权限点）/140（菜单）
 - `block/` — 复用资产（全局块）：16 种 kind + reuse_mode（global 引用/template 一次性复制）与 stale 传播编排
 - `artifact/` — Artifact 元数据与内容对象闭包
 - `publication/` — URL 占用、激活（两段式回执）、回滚
