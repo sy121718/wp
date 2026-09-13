@@ -1,5 +1,10 @@
 -- 150 · 文章管理菜单（INF-1）。
--- 与 084/090/093/097/101/107/110/113/140/143/149 同构：菜单（type=2）挂在「内容」目录下，绑定查看权限点。
+-- 与 084/090/093/097/101/107/110/113/140/143/149 同构：菜单（type=2）挂在「站点工程」目录下，
+-- 绑定查看权限点（content:list，来自迁移 033）。
+--
+-- 父目录取「站点工程」而不是新造一个「内容」目录：sys_menus 里现有的一级目录只有「站点工程」，
+-- 新造目录会让菜单管理页冒出一个别处都不存在的分类；文章是站点内容，挂在站点工程下语义也成立
+--（与 149 的「访问统计」同一手法）。
 --
 -- 注意两份菜单配置的分工（与 140 同口径，别把这里当成侧栏真源）：
 --   · 后台侧栏由代码配置 internal/module/dashboard/inbound/http/nav_menu.go 的 navConfig 驱动
@@ -11,6 +16,6 @@
 
 INSERT INTO sys_menus (title, parent_id, type, path, component, permission_code, is_system, sort_order, create_by, create_time, update_by, update_time)
 SELECT '文章',
-       COALESCE((SELECT id FROM sys_menus WHERE title = '内容' AND type = 1 AND deleted_time IS NULL), 0),
+       COALESCE((SELECT id FROM sys_menus WHERE title = '站点工程' AND type = 1 AND deleted_time IS NULL), 0),
        2, '/articles', 'view.articles', 'content:list', 1, 5, 0, NOW(), 0, NOW()
 WHERE NOT EXISTS (SELECT 1 FROM sys_menus WHERE title = '文章' AND type = 2 AND deleted_time IS NULL);
