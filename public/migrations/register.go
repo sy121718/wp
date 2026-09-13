@@ -378,6 +378,9 @@ var analyticsMenuSQL string
 //go:embed 150_article_menu.sql
 var articleMenuSQL string
 
+//go:embed 151_missing_permission_points.sql
+var missingPermissionPointsSQL string
+
 func init() {
 	register(Migration{
 		Version:   "001-init-schema",
@@ -1649,5 +1652,19 @@ func init() {
 		TableName:    "sys_menus",
 		ConditionSQL: "SELECT COUNT(*) FROM sys_menus WHERE type = 2 AND deleted_time IS NULL AND title = '文章'",
 		SQL:          articleMenuSQL,
+	})
+
+	// 151：补齐「有路由、无权限点」的接口（删页面 / 区块克隆）。
+	//
+	// 跳过条件必须同时看**两张表**：权限点齐了但策略没齐时仍要执行 ——
+	// 只查权限点会让"权限点先落库、策略后补"的那一半永远补不上（051/079 踩过这个坑）。
+	registerSeed(Seed{
+		Version:   "151-missing-permission-points",
+		TableName: "sys_permission",
+		ConditionSQL: "SELECT CASE WHEN " +
+			"(SELECT COUNT(*) FROM sys_permission WHERE permission_code IN ('page:delete', 'block:clone')) = 2 " +
+			"AND (SELECT COUNT(*) FROM sys_casbin_rule WHERE ptype = 'p' AND v3 IN ('page:delete', 'block:clone')) >= 2 " +
+			"THEN 1 ELSE 0 END",
+		SQL: missingPermissionPointsSQL,
 	})
 }

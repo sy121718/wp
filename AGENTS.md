@@ -230,6 +230,10 @@ Cookie 属性：`HttpOnly`、`Secure`（release 自动启用）、`SameSite=Lax`
 - 统一走 dbx MCP，默认连接 `WSL_PostgreSQL@16.14`（127.0.0.1:5432），默认库 `base`；调用时显式传 `connection_name`
 - 查询一律参数化；context 必须传播（`WithContext`）
 - 迁移：`public/migrations/` 版本化 SQL（幂等），`register.go` 注册；seed 用 ConditionSQL（030 权限点 / 031 超管策略）
+- **新增挂在 `authorizedAPI` 下的接口，必须同批 seed 权限点 + 超管策略**：该组统一挂
+  `CasbinMiddleware()`，按**实际请求路径** enforce，权限点缺失时没有任何策略能匹配，
+  **含超管在内全员 403**（072/077/078/079 各踩过一次，151 又补了 page:delete 与 block:clone）。
+  改完跑 `bash scripts/check-permission-gaps.sh` 审计「有路由、无权限点」的接口
 - datarule 插件字段引用按方言（PG 双引号 / MySQL 反引号）；部门范围整段精确匹配
 
 ### model 层定位（重要，评审与开发共同遵守）
