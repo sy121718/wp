@@ -88,6 +88,8 @@ func TestArticleEditTemplateRendersSEOFields(t *testing.T) {
 		"/storage/image/cover.webp",
 		"trix-editor", "article-body", "/admin/articles/score", "/admin/articles/update",
 		"SEO 评测", "重新评分", "保存",
+		// 导入到画布区块（06-B 决策 5 的入口）：能力未装配时给提示而不是按钮。
+		"导入到画布",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("编辑页渲染结果缺少 %q", want)

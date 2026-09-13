@@ -112,7 +112,7 @@ func (h *articlePageHandle) ArticleRebuild(c *gin.Context) {
 // articlePublishView 组装发布区块渲染数据（纯函数，取数在 articlePublishViewData）。
 //
 // id 为空（新建中）时不查任何东西：还没有实体，发布无从谈起。
-func articlePublishView(ctx context.Context, h *articlePageHandle, id, slug string) gin.H {
+func articlePublishView(ctx context.Context, h *articlePageHandle, id, slug string, projectOptions []gin.H) gin.H {
 	if strings.TrimSpace(id) == "" {
 		return gin.H{
 			"PublishConfigured": false,
@@ -140,7 +140,8 @@ func articlePublishView(ctx context.Context, h *articlePageHandle, id, slug stri
 	}
 	out["Published"] = false
 	out["DefaultURLPath"] = articleDefaultURLPath(slug)
-	out["Projects"] = articleProjectOptions(ctx, h)
+	// 工程列表由调用方查一次后传进来（同一屏里的发布区块与导入区块都要它）。
+	out["Projects"] = projectOptions
 	out["Templates"] = articleTemplateOptions(ctx, h)
 	out["HasTemplates"] = len(out["Templates"].([]gin.H)) > 0
 	out["NoTemplateHint"] = articleNoTemplateHint

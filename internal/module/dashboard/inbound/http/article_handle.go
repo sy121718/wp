@@ -38,6 +38,7 @@ import (
 	contentdto "go_wp/internal/module/content/dto"
 	contentenums "go_wp/internal/module/content/enums"
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
+	pagecontract "go_wp/internal/module/page/contract"
 	presentationdto "go_wp/internal/module/presentation/dto"
 	projectcontract "go_wp/internal/module/project/contract"
 )
@@ -115,12 +116,19 @@ type articlePageHandle struct {
 	templates contenttemplatecontract.ContentTemplateService
 	// instances 发布能力（装配期注入；为空时发布区块整体不渲染）。
 	instances articlePublishPort
+	// pages 页面能力（导入到画布用）：只调 Create 新建一页草稿，不碰发布/删除。
+	// 为空时导入区块明确提示"能力未装配"，而不是给一个点了会 500 的按钮。
+	pages pagecontract.PageService
 }
 
 // NewArticlePageHandle 构造。
 func NewArticlePageHandle(contents contentcontract.ContentService, projects projectcontract.ProjectService,
-	templates contenttemplatecontract.ContentTemplateService, instances articlePublishPort) *articlePageHandle {
-	return &articlePageHandle{contents: contents, projects: projects, templates: templates, instances: instances}
+	templates contenttemplatecontract.ContentTemplateService, instances articlePublishPort,
+	pages pagecontract.PageService) *articlePageHandle {
+	return &articlePageHandle{
+		contents: contents, projects: projects, templates: templates,
+		instances: instances, pages: pages,
+	}
 }
 
 // ArticlesPage 文章列表（GET /admin/articles）。
@@ -357,8 +365,60 @@ func articleEditPageData(ctx context.Context, h *articlePageHandle, item *conten
 		// （改动后按「重新评分」走 HTMX 片段，见 ArticleScorePanel）。
 		"Score": articleScoreViewOf(data, articlePreviewURL(articleSlugOf(item))),
 	}
-	for k, v := range articlePublishView(ctx, h, id, articleSlugOf(item)) {
+	// 工程列表查一次、两个区块共用（发布区块与导入区块都要它）。
+	projectOptions := articleProjectOptions(ctx, h)
+	for k, v := range articlePublishView(ctx, h, id, articleSlugOf(item), projectOptions) {
+		out[k] = v
+	}
+	for k, v := range articleImportBlockView(h, item, id, projectOptions) {
 		out[k] = v
 	}
 	return out
+}
+
+// articleImportBlockView 「导入到画布」区块的渲染数据（纯组装，不取数）。
+//
+// 三个按钮的可用性条件必须在这里判清楚：一个点了会 500 的按钮比不给按钮更糟。
+// 新建中（还没有文章 id）、没有工程、页面能力未装配 —— 三种情况各给各的说法。
+func articleImportBlockView(h *articlePageHandle, item *contentdto.ContentResp, id string,
+	projectOptions []gin.H) gin.H {
+	if id == "" {
+		return gin.H{
+			"ImportAvailable": false,
+			"ImportHint":      "先保存这篇文章，再回来把它导入画布。",
+		}
+	}
+	if h == nil || h.pages == nil {
+		return gin.H{
+			"ImportAvailable": false,
+			"ImportHint":      articleImportDepsText,
+		}
+	}
+	if len(projectOptions) == 0 {
+		return gin.H{
+			"ImportAvailable": false,
+			"ImportHint":      "还没有站点工程：先在「页面」里建一个工程，导入需要知道页面挂到哪个站。",
+		}
+	}
+	// 默认路径 /article-<slug>：slug 为空时给一个能直接改的占位，不留空表单。
+	slug := articleSlugOf(item)
+	defaultPath := articleImportPathPrefix + "new"
+	if slug != "" {
+		defaultPath = articleImportPathPrefix + slug
+	}
+	return gin.H{
+		"ImportAvailable":     true,
+		"ImportProjects":      projectOptions,
+		"ImportDefaultPath":   defaultPath,
+		"ImportHasPublished":  articleStr(itemData(item), "body") != "",
+		"ImportPreviewTarget": "#article-import-result",
+	}
+}
+
+// itemData 取实体字段（item 为空时给空表，避免调用方到处判空）。
+func itemData(item *contentdto.ContentResp) map[string]any {
+	if item == nil || item.Data == nil {
+		return map[string]any{}
+	}
+	return item.Data
 }

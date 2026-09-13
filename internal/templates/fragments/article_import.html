@@ -1,0 +1,26 @@
+{* fragments/article_import.html — 文章导入画布的转换预览（HTMX 局部刷新）
+   数据：Err（可展示的错误文案）、Preview（articleImportPreviewView）。
+   为什么要有这一块：转换是有损的（不可逆组件变占位、白名单外标签被剥壳），
+   必须让使用者在点「创建页面」之前看到损失清单 —— 决策 5「降级不静默」。 *}
+{{if .Err != ""}}
+<p class="badge badge-warning">{{.Err}}</p>
+{{else if .Preview.OK}}
+<p class="hint">转换结果：<strong>{{.Preview.NodeCount}}</strong> 个组件</p>
+<div class="action-row">
+    {{range _, t := .Preview.Types}}
+    <span class="badge badge-mute">{{t.Label}} × {{t.Count}}</span>
+    {{end}}
+</div>
+{{if .Preview.Lossless}}
+<p class="badge badge-success">无损转换：这些内容都能在画布里继续编辑</p>
+{{else}}
+<p class="badge badge-warning">有损转换：下面这些内容在导入时发生了降级</p>
+<ul class="hint">
+    {{range _, w := .Preview.Warnings}}
+    <li><code>{{w.Tag}}</code> · {{w.Action}} —— {{w.Detail}}</li>
+    {{end}}
+</ul>
+{{end}}
+{{else}}
+<p class="hint">还没有预览。点「预览转换结果」看看正文会变成多少个组件、有没有损失。</p>
+{{end}}

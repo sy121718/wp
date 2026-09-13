@@ -92,7 +92,7 @@
 | CMP-12 | 服务端持 AST（编辑操作服务端化，彻底压缩 workbench.js） | \`09-session-handoff.md\` §3 收益天花板（L355-356） | 未开始（评估项） | 低 | CMP-11 |
 | CMP-13 | htmx 官方扩展引入（head-support / response-targets / loading-states / class-tools 等） | \`06-C-htmx-extensions.md\` §二（L21-37） | 部分完成：idiomorph 已引入（\`layout.html:181\` + \`core.js\` \`morphHTML\`）；其余待评估 | 低 | 无 |
 | CMP-14 | 结构树拖拽 DOM 级自动化测试 | \`09-session-handoff.md\` §3 交互走查补充（L268） | 未开始（\`moveNode\` 已有 Go 侧行为覆盖） | 低 | 无 |
-| CMP-15 | 富文本 ⇄ 可视化组件树的等价转换（\`06-B\` 决策 5） | \`06-B-dual-track-adr.md\` 决策 5（L52-59） | **转换能力已落地（2026-09）**：\`internal/builder/richdoc\` 的 \`HTMLToNodes\`（块级标签 → 组件：h1~h6→heading / p→text / ul,ol→list / blockquote→quote / pre→text / img,figure→image / hr→divider / table→table；行级格式留在 core.text 内）与 \`NodesToHTML\`（可逆子集反向导出；不可逆组件输出占位并标 \`Lossless=false\`）+ fuzz 背书（\`FuzzRichTextRoundTrip\` 90 秒 72.9 万次执行通过，两个历史失败用例留在 \`testdata/fuzz/\`）。**未做**：① 真源改造（文章 body 仍存 HTML 字符串，「双视图单真源」还不成立）② UI 入口（文章导入画布 / 模板起稿） | 中 | 无 |
+| CMP-15 | 富文本 ⇄ 可视化组件树的等价转换（\`06-B\` 决策 5） | \`06-B-dual-track-adr.md\` 决策 5（L52-59） | **转换能力已落地（2026-09）**：\`internal/builder/richdoc\` 的 \`HTMLToNodes\`（块级标签 → 组件：h1~h6→heading / p→text / ul,ol→list / blockquote→quote / pre→text / img,figure→image / hr→divider / table→table；行级格式留在 core.text 内）与 \`NodesToHTML\`（可逆子集反向导出；不可逆组件输出占位并标 \`Lossless=false\`）+ fuzz 背书（\`FuzzRichTextRoundTrip\` 90 秒 72.9 万次执行通过，两个历史失败用例留在 \`testdata/fuzz/\`）。**入口已落地（2026-09）**：文章编辑页「导入到画布」区块 —— 预览（纯计算，展示组件统计与损失清单）→ 创建页面草稿并跳工作台；端到端实测（正文 → 6 组件 → Page 草稿 → 预览编译出真实 HTML）。**未做**：① 真源改造（文章 body 仍存 HTML 字符串，「双视图单真源」还不成立）② 模板起稿入口（只做了文章 → 页面） | 中 | 无 |
 
 ---
 

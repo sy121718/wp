@@ -179,6 +179,54 @@
                 <p class="hint">{{.PublishHint}}</p>
                 {{end}}
             </section>
+
+            <section class="card card-body">
+                <h2>导入到画布</h2>
+                {{if .["ImportAvailable"]}}
+                <p class="hint">
+                    把正文转换成<strong>组件树</strong>，新建一个页面草稿并在工作台里打开它。
+                    这是一次<strong>复制</strong>而不是绑定：之后改文章不会改页面，改页面也不会改文章
+                    —— 两边各有各的真源，互不影响。
+                </p>
+                <p class="hint">
+                    预览读的是<strong>已保存</strong>的正文（预览与创建必须基于同一份内容，
+                    否则"预览没问题的"和"创建出来的"会不一样）：改完正文先保存，再预览。
+                </p>
+                <p class="hint">
+                    <strong>只有存得进正文的元素才能被导入。</strong>正文保存时会过一遍富文本白名单
+                    （段落、标题、列表、引用、代码块、链接、图片），
+                    <strong>分隔线与表格不在白名单里</strong> —— 它们在保存那一刻就被剥掉了，
+                    导入自然也看不到。需要分隔线或表格，请到画布里添加对应组件。
+                </p>
+                {{if !.ImportHasPublished}}
+                <p class="badge badge-warning">正文还是空的 —— 导入会得到零个组件，先去上面写点内容。</p>
+                {{end}}
+                <form method="post" action="/admin/articles/import-page" id="article-import-form" class="stack-sm">
+                    <input type="hidden" name="csrf_token" value="{{csrf}}">
+                    <input type="hidden" name="id" value="{{form.ID}}">
+                    <label class="form-label" for="article-import-project">目标工程</label>
+                    <select class="form-select" id="article-import-project" name="projectId" required>
+                        {{range _, p := .ImportProjects}}
+                        <option value="{{p.ID}}">{{p.Name}}</option>
+                        {{end}}
+                    </select>
+                    <label class="form-label" for="article-import-path">新页面路径</label>
+                    <input class="form-input" id="article-import-path" type="text" name="draftPath"
+                           value="{{.ImportDefaultPath}}" required>
+                    <div class="action-row">
+                        <button type="button" class="btn"
+                                hx-post="/admin/articles/import-preview" hx-include="#article-import-form"
+                                hx-target="#article-import-result" hx-swap="innerHTML">预览转换结果</button>
+                        <button type="submit" class="btn btn-primary">创建页面并打开画布</button>
+                    </div>
+                </form>
+                <div id="article-import-result">
+                    <p class="hint">还没有预览。点「预览转换结果」看看正文会变成多少个组件、有没有损失。</p>
+                </div>
+                {{else}}
+                <p class="hint">{{.ImportHint}}</p>
+                {{end}}
+            </section>
         </aside>
     </div>
 </div>

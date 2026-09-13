@@ -288,7 +288,7 @@ func SetupDashboardRoutes(router *gin.Engine,
 	// 页面 GET 走 /admin 组认证（Session+CSRF，无 Casbin）；写动作复用既有 content:* 权限点（迁移 033），
 	// 本次不新增权限点；发布复用商品详情模板页那两条 presentation 权限点（同一行为，只是实体类型不同）。
 	// 侧栏入口见 nav_menu.go 的 content 组。
-	articlePages := NewArticlePageHandle(contents, projects, templates, presentations)
+	articlePages := NewArticlePageHandle(contents, projects, templates, presentations, pages)
 	adminPages.GET("/articles", articlePages.ArticlesPage)
 	adminPages.GET("/articles/edit", articlePages.ArticleEditPage)
 	adminPages.POST("/articles/create", builtin.CasbinMiddlewareForPath("/api/content/create"), articlePages.ArticleCreate)
@@ -297,6 +297,10 @@ func SetupDashboardRoutes(router *gin.Engine,
 	// 评分是纯计算（不写库、不写产物），只走组级 Session+CSRF，不再叠权限点：
 	// 能打开编辑页的人就能算分，分数本身不构成新的信息公开面。
 	adminPages.POST("/articles/score", articlePages.ArticleScorePanel)
+	// 文章 → 画布（06-B 决策 5 的第一个真实用途）：预览是纯计算不叠权限点，
+	// 创建页面复用页面创建权限点（写的是 Page 草稿，与 /admin/pages 新建同一件事）。
+	adminPages.POST("/articles/import-preview", articlePages.ArticleImportPreview)
+	adminPages.POST("/articles/import-page", builtin.CasbinMiddlewareForPath("/api/page/create"), articlePages.ArticleImportCreate)
 	adminPages.POST("/articles/publish", builtin.CasbinMiddlewareForPath("/api/presentation/create"), articlePages.ArticlePublish)
 	adminPages.POST("/articles/rebuild", builtin.CasbinMiddlewareForPath("/api/presentation/rebuild"), articlePages.ArticleRebuild)
 
