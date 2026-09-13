@@ -20,6 +20,7 @@ import (
 	"go_wp/internal/builder/core"
 	admincontract "go_wp/internal/module/admin/contract"
 	adminhttp "go_wp/internal/module/admin/inbound/http"
+	analyticshttp "go_wp/internal/module/analytics/inbound/http"
 	artifacthttp "go_wp/internal/module/artifact/inbound/http"
 	blockhttp "go_wp/internal/module/block/inbound/http"
 	blueprinthttp "go_wp/internal/module/blueprint/inbound/http"
@@ -27,6 +28,7 @@ import (
 	mockpaypal "go_wp/internal/module/cart/outbound/mockpaypal"
 	cartservice "go_wp/internal/module/cart/service"
 	captcharouter "go_wp/internal/module/common/captcha/router"
+	contentcontract "go_wp/internal/module/content/contract"
 	contenthttp "go_wp/internal/module/content/inbound/http"
 	contenttemplatehttp "go_wp/internal/module/contenttemplate/inbound/http"
 	dashboardhttp "go_wp/internal/module/dashboard/inbound/http"
@@ -39,6 +41,7 @@ import (
 	orderhttp "go_wp/internal/module/order/inbound/http"
 	pagehttp "go_wp/internal/module/page/inbound/http"
 	pluginhttp "go_wp/internal/module/plugin/inbound/http"
+	presentationcontract "go_wp/internal/module/presentation/contract"
 	presentationhttp "go_wp/internal/module/presentation/inbound/http"
 	productcontract "go_wp/internal/module/product/contract"
 	producthttp "go_wp/internal/module/product/inbound/http"
@@ -297,6 +300,15 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 		panic("商品模块未实现变体可用量查询端口（VariantAvailabilityLookupPort）")
 	}
 	runtimefragment.SetVariantAvailabilityProvider(availabilityLookup)
+	// 商品实时价格核对片段（BIZ-2）：定价工具改价只落库、不进构建管线，所以产物里的价
+	// 与库里的当前价在时间窗内可能不一致；片段读**当前事实**并在不一致时给访客一句交代。
+	// 端口直接复用订单域的 VariantSnapshotPort（按变体 id 读当前价 / 启用态，收窄只读），
+	// 不为「读个价」再造一条几乎相同的端口。断言 + 注入，与上面同模式。
+	variantSnapshots, ok := productSvc.(productcontract.VariantSnapshotPort)
+	if !ok {
+		panic("商品模块未实现变体快照端口（VariantSnapshotPort）")
+	}
+	runtimefragment.SetVariantSnapshotProvider(variantSnapshots)
 
 	// 购物车与访客结算（BIZ-1 访问面）：
 	//   · 购物车状态在**客户端签名 cookie** 里（访客未登录也要能加购），服务端不持久化；
@@ -318,6 +330,13 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 	// 所以它不进 /api 的三层链，也不走片段端点（片段有参数与上下文两条协议约束，
 	// 而回调带的是原始报文）。
 	carthttp.SetupCartRoutes(router, cartSvc)
+	// 访问统计（BIZ-8）：打点端点挂**公开路由** —— 访客浏览器直连，没有后台会话也没有
+	// CSRF token（与 mail 追踪、支付回调同一位置与同一理由）。越权防护靠接口形状：
+	// 公开路由拿到的那份契约只有「写一条浏览记录」，查询与删除能力传不出去。
+	// 后台只读聚合（/api/analytics/summary）走 authorizedAPI 三层链，权限点 analytics:view。
+	// pepper 用会话密钥：IP 与访客标识只以带盐哈希落库 —— 裸哈希在 IPv4 空间（2^32）里
+	// 等于把明文换个写法存下来。
+	analyticsSvc := analyticshttp.SetupAnalyticsRoutes(authorizedAPI, router, db, secret)
 	// 商品实体类型注册（issue #6）：注册后商品可作为内容模板的数据源
 	// （类型合法性 + 字段白名单由注册表判定），构建期经注册表取商品字段解析器。
 	// 与内容模块同样 fail-fast：注册失败即装配缺陷。
@@ -349,6 +368,28 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 	// 商品构建期数据源（issue #35）：组件直连受限接口，不再只靠按名路由。
 	// ProductService 嵌入了 ProductDataSource，装配处拿到的契约天然能传。
 	runtimefragment.SetProductDataSource(productSvc)
+	// 站内搜索片段（BIZ-2）：两条检索端口 + 一条「实体 → 已上线路径」解析端口。
+	//
+	// 检索端口是「按消费方收窄」的又一例：访问面片段只需要「按关键词取一批」这一条
+	// 只读能力，而 content / product 的服务契约各自带着全部写方法。路径端口拿的是
+	// 自动发布模块的只读面 —— 搜索结果要给链接，而链接必须指向**真实已上线**的页面
+	// （未发布 / 查不到就不给链接，绝不输出死链）。三条都 fail-fast：漏接的表现是
+	// 「搜索永远没有结果」，比启动时报错隐蔽得多。
+	contentSearch, ok := contentSvc.(contentcontract.SearchPort)
+	if !ok {
+		panic("内容模块未实现检索端口（SearchPort）")
+	}
+	runtimefragment.SetContentSearchProvider(contentSearch)
+	productSearch, ok := productSvc.(productcontract.SearchPort)
+	if !ok {
+		panic("商品模块未实现检索端口（SearchPort）")
+	}
+	runtimefragment.SetProductSearchProvider(productSearch)
+	publishedLocator, ok := presentationSvc.(presentationcontract.PublishedEntityLocator)
+	if !ok {
+		panic("自动发布模块未实现已上线路径解析端口（PublishedEntityLocator）")
+	}
+	runtimefragment.SetPublishedEntityLocator(publishedLocator)
 	// navigationSvc 注入 page 装配：core.nav 绑定菜单位置时构建期解析菜单项。
 	pageService := pagehttp.SetupPageRoutes(authorizedAPI, db, artifactSvc, publicationSvc, projectService, blockSvc, pluginSvc, collectionResolver, navigationSvc, mediaSvc)
 	// 系统页面槽位解析器接给片段层（BIZ-1）：购物车片段的「去结算」、结算结果的
@@ -363,6 +404,9 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 	// 它与后台的 SessionAuthMiddleware 是两套身份（不同 cookie、不同存储），
 	// 挂在片段组上只做「尽力解析」，未登录不阻断 —— 必须登录的能力自己渲染引导文案。
 	runtimefragment.SetVisitorIdentityMiddleware(userhttp.VisitorIdentityMiddleware(userSvc))
+	// 账号中心片段（资料 / 偏好 / 改密码 / 登录设备）：只注入**收窄后的**只读端口 ——
+	// 片段层拿不到注册、改密码、踢出设备这些写能力，越权防护靠接口形状。
+	runtimefragment.SetVisitorAccountPort(userSvc)
 	// 页面 / 自动发布两条构建路径同样接上（issue #35）：装配处拿到的 ProductService
 	// 嵌入了 ProductDataSource，直接传即可（受限接口，写方法传不出去）。
 	if setter, ok := pageService.(interface {
@@ -432,7 +476,9 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 		adminCRUD, adminCRUD, adminCRUD, adminCRUD, adminCRUD, adminCRUD, adminAuthzSvc, navigationSvc, productSvc, presentationSvc, contentTemplateSvc, inventorySvc, masterdataSvc, mailSvc,
 		// 订单管理页（BIZ-1）：orderSvc 是在前面装配订单模块时拿到的契约
 		//（它同时提供访客查询与优惠码能力，后台页只用查询与状态流转那几条）。
-		orderSvc)
+		orderSvc,
+		// 访问统计页（BIZ-8）：只读聚合（按天 / 按路径 + 时间范围筛选 + 分页）。
+		analyticsSvc)
 
 	// 运行时片段端点（0-D，公开路由：capability 白名单 + 认证策略在 handler 内）。
 	runtimefragment.SetupFragmentRoutes(router)
