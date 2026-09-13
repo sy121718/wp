@@ -159,6 +159,11 @@ type CompiledPage struct {
 	// 采集每页都要有（漏掉的那页就是归因断点，而断点往往落在转化页上）。
 	// 空值表示调用方未注入：产物不含采集脚本，订单归因为空，其余一切照常。
 	TrackSource string
+	// TrackConfig 打点脚本的运行时配置（window.__skyTrack，BIZ-8 访问计数）。
+	// 内容是构建期的工程 ID 与语言（json.Marshal 后的字面量）；工程 ID 为空时零字节。
+	TrackConfig string
+	// GA4Head 站点统计代码片段（来自 WithGA4MeasurementID；空 = 零字节注入）。
+	GA4Head string
 }
 
 // CompileOption 编译选项。
@@ -201,6 +206,9 @@ type compileConfig struct {
 	// 与 enhanceSource 分开：组件增强与原始控件是两层关注点（见 ui_script.go）。
 	uiSources map[string]string
 	uiStyle   string
+	// ga4MeasurementID 站点 GA4 测量 ID（SiteSettings 快照，空 = 不注入统计代码）。
+	// 站点级设置在这里进构建上下文：它属于本次构建的输入，不是进程级全局状态。
+	ga4MeasurementID string
 	// enhanceSource 客户端增强脚本源码（构建期按产物特征裁剪后内联进产物）。
 	//
 	// 由调用方注入而不是 builder 自己 embed：前端资产统一放在 internal/templates/static/，
@@ -701,6 +709,8 @@ func Compile(p *Page, opts ...CompileOption) (res *CompiledPage, err error) {
 		Title:           p.Settings.SEO.Title,
 		MetaDescription: p.Settings.SEO.Description,
 		SEOHead:         seoHead,
+		GA4Head:         buildGA4Head(cfg.ga4MeasurementID),
+		TrackConfig:     buildTrackConfig(cfg.projectID, lang),
 		BodyClasses:     classes,
 		HTML:            htmlBuf.String(),
 		CSS:             css,
@@ -763,6 +773,7 @@ func RenderDocument(c *CompiledPage) (string, error) {
 		Title:           c.Title,
 		MetaDescription: c.MetaDescription,
 		SEOHead:         c.SEOHead,
+		GA4Head:         c.GA4Head,
 		BodyClass:       strings.Join(c.BodyClasses, " "),
 		HTML:            c.HTML,
 		CSS:             c.CSS + uiCSS,
@@ -770,7 +781,8 @@ func RenderDocument(c *CompiledPage) (string, error) {
 		// 采集脚本无条件排在最前：一是每页都要有（不像增强按特征挑块），
 		// 二是它要尽早写 cookie —— 排在交互脚本后面的话，前一个脚本抛错会连坐，
 		// 而归因丢数据是静默的，没人会发现少了什么。
-		EnhanceScript: c.TrackSource + enhanceScriptFor(features, c.EnhanceSource) + uiScript,
+		// 打点配置（工程 ID / 语言）排在采集脚本之前：脚本运行时就要读它。
+		EnhanceScript: c.TrackConfig + c.TrackSource + enhanceScriptFor(features, c.EnhanceSource) + uiScript,
 	}
 	var sb strings.Builder
 	if err := documentTemplate().Execute(&sb, nil, v); err != nil {
@@ -788,6 +800,7 @@ type documentView struct {
 	Title           string
 	MetaDescription string
 	SEOHead         string // canonical / OG / Twitter / JSON-LD（已转义，模板 unsafe 输出）
+	GA4Head         string // 站点统计代码（服务端拼装、ID 过白名单；模板 unsafe 输出）
 	BodyClass       string // strings.Join(c.BodyClasses, " ")，模板 unsafe 原样输出
 	HTML            string
 	CSS             string

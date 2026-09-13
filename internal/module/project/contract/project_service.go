@@ -20,7 +20,12 @@ type (
 	LocaleItem       = projectdto.LocaleItem
 	LocalesSaveReq   = projectdto.LocalesSaveReq
 	LocaleResp       = projectdto.LocaleResp
+	// SiteSettings 站点级设置的结构化视图（构建期读取 GA4 测量 ID 等站点级字段）。
+	SiteSettings = projectdto.SiteSettings
 )
+
+// ParseSiteSettings 解析 projects.settings JSON（缺失 / 非对象按零值处理）。
+var ParseSiteSettings = projectdto.ParseSiteSettings
 
 // ProjectService 站点工程与 SiteSettings 业务能力。
 type ProjectService interface {

@@ -1,14 +1,15 @@
 package dashboardhttp
 
-// 站点设置页：展示/编辑站点基础信息（站点名/简介/联系邮箱）。
+// 站点设置页：展示/编辑站点基础信息（站点名/简介/联系邮箱）与统计代码（GA4 测量 ID）。
 // 数据源为 project 模块 SiteSettings（projects.settings JSON），经 project 契约读写。
-// 其余站点级能力（SEO/多语言/统计等）尚未落地，页面以「待实现能力」占位标注。
+// 其余站点级能力（SEO 全局设置等）尚未落地，页面以「待实现能力」占位标注。
 
 import (
 	"encoding/json"
 	"net/http"
 	"strings"
 
+	"go_wp/internal/builder"
 	dashboardenums "go_wp/internal/module/dashboard/enums"
 	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/pkg/logger"
@@ -27,6 +28,8 @@ type siteSettingsData struct {
 	SiteName     string // 站点显示名
 	SiteDesc     string // 站点简介
 	ContactEmail string // 联系邮箱
+	// GA4MeasurementID 站点 GA4 测量 ID（构建期注入产物 head 的 gtag；空 = 不注入）。
+	GA4MeasurementID string
 
 	// Locales 站点语言清单编辑行（多语言 P3，project_locales）。
 	Locales []localeRow
@@ -47,9 +50,11 @@ func (d *siteSettingsData) templateMap() gin.H {
 		"SiteName":     d.SiteName,
 		"SiteDesc":     d.SiteDesc,
 		"ContactEmail": d.ContactEmail,
-		"Locales":      d.Locales,
-		"LocaleError":  d.LocaleError,
-		"LocaleSaved":  d.LocaleSaved,
+
+		"GA4MeasurementID": d.GA4MeasurementID,
+		"Locales":          d.Locales,
+		"LocaleError":      d.LocaleError,
+		"LocaleSaved":      d.LocaleSaved,
 	}
 }
 
@@ -89,16 +94,22 @@ func (h *Handle) fillProjectSettings(c *gin.Context, data *siteSettingsData) {
 	}
 	data.Name = project.Name
 	// settings 为 json.RawMessage：解析基础字段回显；非对象或缺失字段按空处理。
-	fields := parseSiteSettingsFields(project.Settings)
+	fields := projectcontract.ParseSiteSettings(project.Settings)
 	data.SiteName = fields.SiteName
 	data.SiteDesc = fields.SiteDesc
 	data.ContactEmail = fields.ContactEmail
+	data.GA4MeasurementID = fields.GA4MeasurementID
 	// 语言清单（project_locales）：站点「有哪几种语言」的唯一真源，与构建/路由同源。
 	data.Locales = h.localeRowsOf(c, data.Selected)
 }
 
 // SaveSiteSettings 保存站点设置（POST /admin/settings/save）。
-// 仅更新基础信息字段并合入现有 SiteSettings JSON（其余保留），再经 project.Update 持久化。
+//
+// 两条口径：
+//  1. **只动本页管的键**：在现有 settings 的键集合上合并（其它模块写进同一列的键原样保留），
+//     整份覆盖会把别人写的配置悄悄删掉 —— 那种丢失在页面上看不出来，只在功能失效时才暴露。
+//  2. **GA4 测量 ID 在保存时就校验**（与构建期注入同一判据）：不合法直接拒绝，
+//     而不是存进去等构建期静默丢弃 —— 后者运维会以为统计代码已经装好了。
 func (h *Handle) SaveSiteSettings(c *gin.Context) {
 	projectID := strings.TrimSpace(c.PostForm("projectId"))
 	name := strings.TrimSpace(c.PostForm("name"))
@@ -106,17 +117,27 @@ func (h *Handle) SaveSiteSettings(c *gin.Context) {
 		c.String(http.StatusBadRequest, "工程与站点名称不能为空")
 		return
 	}
-	// 读取当前 settings，合并基础字段。
+	// 读取当前 settings，合并本页字段。
 	project, err := h.projects.Detail(c.Request.Context(), &projectcontract.DetailReq{ID: projectID})
 	if err != nil || project == nil {
 		c.String(http.StatusNotFound, "站点工程不存在")
 		return
 	}
-	cur := parseSiteSettingsFields(project.Settings)
-	cur.SiteName = strings.TrimSpace(c.PostForm("siteName"))
-	cur.SiteDesc = strings.TrimSpace(c.PostForm("siteDesc"))
-	cur.ContactEmail = strings.TrimSpace(c.PostForm("contactEmail"))
-	settingsJSON, err := json.Marshal(cur)
+	ga4ID := ""
+	if raw := strings.TrimSpace(c.PostForm("ga4MeasurementId")); raw != "" {
+		id, ok := builder.NormalizeGA4MeasurementID(raw)
+		if !ok {
+			c.String(http.StatusBadRequest, "GA4 测量 ID 格式不合法（形如 G-XXXXXXXXXX，只允许字母与数字）")
+			return
+		}
+		ga4ID = id
+	}
+	settingsJSON, err := mergeSiteSettings(project.Settings, projectcontract.SiteSettings{
+		SiteName:         strings.TrimSpace(c.PostForm("siteName")),
+		SiteDesc:         strings.TrimSpace(c.PostForm("siteDesc")),
+		ContactEmail:     strings.TrimSpace(c.PostForm("contactEmail")),
+		GA4MeasurementID: ga4ID,
+	})
 	if err != nil {
 		response.ErrorWithMessage(c, http.StatusInternalServerError, dashboardenums.MsgInternalError)
 		return
@@ -130,20 +151,39 @@ func (h *Handle) SaveSiteSettings(c *gin.Context) {
 	c.Redirect(http.StatusSeeOther, "/admin/settings?project="+projectID)
 }
 
-// siteSettingsFields 站点设置基础字段（settings JSON 对象，缺失字段返回空串）。
-// 后续扩展站点级能力时在此追加字段，其余 settings 键保持不变。
-type siteSettingsFields struct {
-	SiteName     string `json:"siteName,omitempty"`
-	SiteDesc     string `json:"siteDesc,omitempty"`
-	ContactEmail string `json:"contactEmail,omitempty"`
-}
-
-// parseSiteSettingsFields 解析并返回基础站点信息字段。
-func parseSiteSettingsFields(raw json.RawMessage) *siteSettingsFields {
-	f := &siteSettingsFields{}
-	if len(raw) == 0 {
-		return f
+// mergeSiteSettings 把本页管理的站点设置字段合入现有 settings JSON：
+// 其余键（本页不认识的）原样保留；字段为空串即删除该键（不落空值噪声，
+// 也让「清空测量 ID = 停止注入统计代码」在存储层与实际行为一致）。
+func mergeSiteSettings(raw json.RawMessage, fields projectcontract.SiteSettings) (json.RawMessage, error) {
+	obj := map[string]json.RawMessage{}
+	if len(raw) > 0 {
+		if err := json.Unmarshal(raw, &obj); err != nil {
+			return nil, err
+		}
 	}
-	_ = json.Unmarshal(raw, f)
-	return f
+	setString := func(key, value string) error {
+		if value == "" {
+			delete(obj, key)
+			return nil
+		}
+		encoded, err := json.Marshal(value)
+		if err != nil {
+			return err
+		}
+		obj[key] = encoded
+		return nil
+	}
+	if err := setString("siteName", fields.SiteName); err != nil {
+		return nil, err
+	}
+	if err := setString("siteDesc", fields.SiteDesc); err != nil {
+		return nil, err
+	}
+	if err := setString("contactEmail", fields.ContactEmail); err != nil {
+		return nil, err
+	}
+	if err := setString("ga4MeasurementId", fields.GA4MeasurementID); err != nil {
+		return nil, err
+	}
+	return json.Marshal(obj)
 }

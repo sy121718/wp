@@ -23,6 +23,8 @@
   var MAX_TRAIL = 8;
   var MAX_TITLE = 60;
   var MAX_PATH = 120;
+  // 访问计数端点（公开路由，静默失败；只读表单编码）。
+  var COLLECT_URL = '/analytics/collect';
 
   var SEARCH = ['google.', 'bing.', 'yahoo.', 'baidu.', 'yandex.', 'duckduckgo.', 'ask.',
     'ecosia.', 'sogou.', 'so.com', 'naver.', 'qwant.', 'brave.', 'startpage.', '360.cn'];
@@ -251,5 +253,35 @@
     if (encoded) writeCookie(C_TRAIL, encoded, 0);
   }
 
+  // 页面浏览上报（BIZ-8 访问计数）。
+  //
+  // 为什么计数只能在浏览器侧：访问面是**静态产物直出**（/site 由 http.Dir 提供），
+  // Go 根本不在访客请求路径上 —— 服务端数不出任何一次访问。
+  //
+  // 两条纪律：
+  //   1. 只发**匿名派生标识**（会话开始时间戳、访客序号与首访时间），不发原始 cookie 值；
+  //      服务端还会再 hash 一次，库里最终只有不可逆的 hash（与 IP 同一口径）。
+  //   2. 静默失败：sendBeacon 返回 false、端点 500、网络断了都不影响页面 ——
+  //      统计是增强能力，绝不能因为一次打点失败而影响访客看到的内容。
+  function report() {
+    if (!navigator.sendBeacon || typeof URLSearchParams === 'undefined') return;
+    var cfg = window.__skyTrack;
+    if (!cfg || !cfg.projectId) return;
+    var sess = parseKV(readCookie(C_SESS));
+    var vis = parseKV(readCookie(C_VIS));
+    var body = new URLSearchParams();
+    body.set('projectId', cfg.projectId);
+    body.set('path', location.pathname.slice(0, MAX_PATH));
+    body.set('lang', cfg.lang || '');
+    // 只发 referrer 的域名（不发完整 URL：外部链接里可能带查询串与个人信息）。
+    body.set('referrer', document.referrer ? hostOf(document.referrer) : '');
+    body.set('session', sess.st ? 's' + sess.st : '');
+    body.set('visitor', vis.f ? 'v' + vis.f + '-' + (vis.n || '') : '');
+    // 表单编码（不是 JSON）：sendBeacon 只发简单请求，JSON Content-Type 会触发
+    // 预检而 sendBeacon 不做预检 —— 那种失败是静默的（浏览器控制台才看得见）。
+    navigator.sendBeacon(COLLECT_URL, body);
+  }
+
   try { touch(); } catch (e) { /* 采集永不影响页面本身 */ }
+  try { report(); } catch (e) { /* 打点失败同样静默 */ }
 })();

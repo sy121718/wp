@@ -172,6 +172,12 @@ func (s *Service) compileDocument(ctx context.Context, page *builder.Page, proje
 			opts = append(opts, builder.WithContentTranslator(contentTranslator))
 		}
 	}
+	// 站点统计代码（BIZ-8）：GA4 测量 ID 来自 SiteSettings 快照（空值 = 零字节注入）。
+	// 与页面设置里的 SEO 头同一位置注入 —— 都在产物 <head>，都由构建期决定，
+	// 访问面因此不需要任何运行时脚本注入或后端参与。
+	if ga4 := s.siteGA4MeasurementID(ctx, projectID); ga4 != "" {
+		opts = append(opts, builder.WithGA4MeasurementID(ga4))
+	}
 	compiled, err := builder.Compile(page, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", errCompileFailed, err)

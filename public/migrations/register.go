@@ -366,6 +366,15 @@ var orderReturnPermsSQL string
 //go:embed 146_order_note_permission.sql
 var orderNotePermSQL string
 
+//go:embed 147_page_views.sql
+var pageViewsSQL string
+
+//go:embed 148_analytics_permissions.sql
+var analyticsPermSQL string
+
+//go:embed 149_analytics_menu.sql
+var analyticsMenuSQL string
+
 func init() {
 	register(Migration{
 		Version:   "001-init-schema",
@@ -1598,5 +1607,35 @@ func init() {
 		TableName:    "sys_permission",
 		ConditionSQL: "SELECT COUNT(*) FROM sys_permission WHERE permission_code = 'order:note'",
 		SQL:          orderNotePermSQL,
+	})
+
+	// 147：页面浏览记录表（BIZ-8 访问计数）。
+	//
+	// CheckSQL 必须接收迁移器传入的表名参数（CAST(? AS text)）——缺了这个占位符，
+	// 迁移器既无法把它当作「表是否已存在」的检测，也不会执行建表 SQL
+	//（表现是「表不存在」，而不是迁移报错）。
+	register(Migration{
+		Version:   "147-page-views",
+		TableName: "page_views",
+		CheckSQL: "SELECT CASE WHEN COUNT(*) = 1 THEN 1 ELSE 0 END FROM information_schema.tables " +
+			"WHERE table_schema = current_schema() AND (CAST(? AS text) IS NOT NULL) " +
+			"AND table_name = 'page_views'",
+		SQL: pageViewsSQL,
+	})
+
+	// 148：访问统计权限点 + 超管策略（1 个只读权限点存在才算已 seed）。
+	registerSeed(Seed{
+		Version:      "148-analytics-permissions",
+		TableName:    "sys_permission",
+		ConditionSQL: "SELECT COUNT(*) FROM sys_permission WHERE permission_code = 'analytics:view'",
+		SQL:          analyticsPermSQL,
+	})
+
+	// 149：访问统计后台菜单入口（幂等 seed）。
+	registerSeed(Seed{
+		Version:      "149-analytics-menu",
+		TableName:    "sys_menus",
+		ConditionSQL: "SELECT COUNT(*) FROM sys_menus WHERE type = 2 AND deleted_time IS NULL AND title = '访问统计'",
+		SQL:          analyticsMenuSQL,
 	})
 }

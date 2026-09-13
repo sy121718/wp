@@ -1,0 +1,94 @@
+{* admin/analytics.html — 访问统计（BIZ-8）：按天 / 按路径聚合 + 时间范围筛选 + 路径表分页。 *}
+{* 只读页：没有任何写操作，全部是 GET（工程切换 / 时间范围 / 分页）。 *}
+{* Jet 方言：map 用 ["key"] 索引；range 内访问外层值先在块顶存变量；条件里 or 不支持（用 ||）。 *}
+{{extends "layout.html"}}
+{{block body()}}
+{{selectedProject := .SelectedProject}}
+{{daily := .Daily}}
+{{paths := .Paths}}
+<div class="stack analytics-page">
+    <section class="card card-body">
+        <h2>访问统计</h2>
+        <p class="hint">
+            数据由访客浏览器打点（<code>POST /analytics/collect</code>）：访问面是静态产物直出，
+            服务端不在访客请求路径上，所以计数只能从客户端来。打点失败静默丢弃 ——
+            统计永远不会影响访客看到的页面。
+        </p>
+        <p class="hint">
+            「浏览数」是页面打开次数（PV）；「独立访客」按匿名标识去重（UV）——
+            匿名标识由客户端派生、服务端再加盐哈希后落库，库里既没有 IP 明文，也没有原始 cookie 值。
+            日期按 <strong>UTC 日界</strong>切分：产物由全球访客访问，用 UTC 才不会有跨时区的口径歧义。
+        </p>
+        {{if .Err != ""}}
+        <p class="badge badge-warning">统计读取失败：{{.Err}}</p>
+        {{end}}
+        <form method="get" action="/admin/analytics" class="form-inline">
+            <select class="form-select" name="project" onchange="this.form.submit()">
+                {{range _, p := .Projects}}
+                <option value="{{p.ID}}" {{if p.ID == selectedProject}}selected{{end}}>{{p.Name}}</option>
+                {{end}}
+            </select>
+        </form>
+        {{if len(.Projects) == 0}}
+        <p class="hint">还没有站点工程 —— 统计按工程归集，先去<a href="/admin/pages">页面管理</a>建一个工程并发布页面。</p>
+        {{end}}
+    </section>
+
+    {{if selectedProject != ""}}
+    <section class="card card-body">
+        <h2>时间范围</h2>
+        <form method="get" action="/admin/analytics" class="form-inline">
+            <input type="hidden" name="project" value="{{selectedProject}}">
+            <label>起始日期 <input type="date" name="from" value="{{.FilterFrom}}"></label>
+            <label>结束日期 <input type="date" name="to" value="{{.FilterTo}}"></label>
+            <button type="submit" class="btn btn-primary">查询</button>
+            <a class="btn btn-sm" href="/admin/analytics?project={{selectedProject}}">最近 30 天</a>
+        </form>
+        {{if .RangeFrom != ""}}
+        <p class="hint">实际统计窗口：<strong>{{.RangeFrom}}</strong> 至 <strong>{{.RangeTo}}</strong>（含当天）。两个日期留空即最近 30 天；结束日期不会超过今天。</p>
+        {{end}}
+        <div class="action-row">
+            <span class="badge">总浏览数 {{.Total}}</span>
+            <span class="badge">独立访客 {{.Visitors}}</span>
+            <span class="badge">不同路径 {{.PathTotal}}</span>
+        </div>
+    </section>
+
+    <section class="card card-body">
+        <h2>按天</h2>
+        {{if len(daily) == 0}}
+        <p class="hint">
+            这个窗口里还没有浏览记录。<strong>发布页面之后</strong>才会有数据 ——
+            打点脚本是随产物一起发出去的（统计代码在构建期烘进 HTML），改配置不会回溯已有产物。
+        </p>
+        {{else}}
+        <table class="table">
+            <thead><tr><th>日期（UTC）</th><th>浏览数</th><th>独立访客</th></tr></thead>
+            <tbody>
+                {{range _, d := daily}}
+                <tr><td>{{d.Day}}</td><td>{{d.Views}}</td><td>{{d.Visitors}}</td></tr>
+                {{end}}
+            </tbody>
+        </table>
+        {{end}}
+    </section>
+
+    <section class="card card-body">
+        <h2>按路径</h2>
+        {{if len(paths) == 0}}
+        <p class="hint">没有路径数据。</p>
+        {{else}}
+        <table class="table">
+            <thead><tr><th>路径</th><th>浏览数</th><th>独立访客</th></tr></thead>
+            <tbody>
+                {{range _, p := paths}}
+                <tr><td><code>{{p.Path}}</code></td><td>{{p.Views}}</td><td>{{p.Visitors}}</td></tr>
+                {{end}}
+            </tbody>
+        </table>
+        {{end}}
+        {{include "partials/pagination.html"}}
+    </section>
+    {{end}}
+</div>
+{{end}}

@@ -7,6 +7,7 @@ import (
 	"go_wp/internal/builder/core"
 
 	admincontract "go_wp/internal/module/admin/contract"
+	analyticscontract "go_wp/internal/module/analytics/contract"
 	blockcontract "go_wp/internal/module/block/contract"
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
 	mailcontract "go_wp/internal/module/mail/contract"
@@ -47,7 +48,9 @@ func SetupDashboardRoutes(router *gin.Engine,
 	inventories inventorycontract.InventoryService,
 	masterdata masterdatacontract.MasterDataService,
 	mail mailcontract.MailService,
-	orders ordercontract.OrderService) {
+	orders ordercontract.OrderService,
+	// analytics 访问统计契约（BIZ-8）：只读聚合，页面据此渲染按天 / 按路径报表。
+	analytics analyticscontract.AnalyticsService) {
 	if router == nil {
 		return
 	}
@@ -249,6 +252,12 @@ func SetupDashboardRoutes(router *gin.Engine,
 	// 后台不提供「手工补一条」的口子。按实体查询（实体清单点一行即锁定该实体）。
 	masterDataPages := NewMasterDataChangePageHandle(masterdata, projects)
 	adminPages.GET("/masterdata/changes", masterDataPages.MasterDataChangesPage)
+
+	// 访问统计（BIZ-8）：只读报表页（按天 / 按路径聚合 + 时间范围筛选 + 分页）。
+	// 页面组已有 Session + CSRF；这里没有写操作，因此不挂 CasbinMiddlewareForPath ——
+	// 权限点 analytics:view 用在菜单过滤与只读 API 的 Casbin 策略上。
+	analyticsPages := NewAnalyticsPageHandle(analytics, projects)
+	adminPages.GET("/analytics", analyticsPages.AnalyticsPage)
 
 	// 订单管理页（BIZ-1）：列表 + 状态计数 + 详情（同一页面靠 orderId 展开）+ 流转 / 取消 / 退款。
 	// 页面 GET 走 /admin 组认证（Session+CSRF，无 Casbin）；写动作复用订单 API 权限点做 Casbin 鉴权。

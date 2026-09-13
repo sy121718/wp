@@ -42,6 +42,18 @@
                 <label>联系邮箱</label>
                 <input type="email" name="contactEmail" value="{{.ContactEmail}}" maxlength="200" placeholder="business@example.com">
             </div>
+            {* 统计代码（BIZ-8）：GA4 测量 ID 留空即不注入 —— 产物里一个字节都不多。
+               形状不合法的值在保存时就被拒绝（构建期注入是同一份判据，不会出现「存了却不生效」）。 *}
+            <div class="form-field">
+                <label>Google Analytics 4 测量 ID</label>
+                <input type="text" name="ga4MeasurementId" value="{{.GA4MeasurementID}}" maxlength="32"
+                       pattern="[Gg]-[A-Za-z0-9]{4,20}" placeholder="G-XXXXXXXXXX">
+                <p class="hint">
+                    填 GA4 的测量 ID（形如 <code>G-XXXXXXXXXX</code>，全站生效）。保存后<strong>需要重新发布页面</strong>才会写进产物 ——
+                    统计代码是构建期烘进 HTML 的，产物是静态字节，不会随后台配置实时变化。
+                    留空或清空即不注入：产物里一个字节都不会多。只接受 GA4 测量 ID，不接受自定义脚本片段。
+                </p>
+            </div>
             <button type="submit" class="btn btn-primary">保存设置</button>
         </form>
 
@@ -98,7 +110,6 @@
             </p>
             <ul class="list-reset">
                 <li>站点 SEO 全局设置（关键词/描述/og 标签）</li>
-                <li>统计与分析（自定义统计脚本注入）</li>
                 <li>验证码/安全策略</li>
                 <li>备案信息与页脚附加文案</li>
             </ul>

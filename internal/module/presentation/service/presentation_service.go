@@ -606,6 +606,11 @@ func (s *Service) renderHTML(ctx context.Context, entityType, entityID, projectI
 	if s.productDS != nil {
 		compileOpts = append(compileOpts, builder.WithProductDataSource(s.productDS))
 	}
+	// 站点统计代码（BIZ-8）：GA4 测量 ID 来自 SiteSettings 快照（空值 = 零字节注入）。
+	// 与手工 Page 路径同一来源、同一判据（形状校验在 builder 侧单点）。
+	if ga4 := s.siteGA4MeasurementID(ctx, projectID); ga4 != "" {
+		compileOpts = append(compileOpts, builder.WithGA4MeasurementID(ga4))
+	}
 	compiled, err := builder.Compile(page, compileOpts...)
 	if err != nil {
 		return nil, err
