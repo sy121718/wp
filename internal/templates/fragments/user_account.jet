@@ -1,0 +1,19 @@
+{* user_account.jet — 表单由片段渲染（静态产物烘不进访客域的 CSRF token）。 账号面板：已登录给入口，未登录给引导。
+   提交目标仍是 user 模块的 POST 路由：无 JS 时原生提交整页跳转，链路完全一样。 *}
+<div class="sky-user-form" data-fragment="accountPanel">
+{{if .Notice}}<p class="sky-user-notice">{{ .Notice }}</p>{{end}}
+{{if .LoggedIn}}
+<p class="sky-user-note">你已登录。</p>
+<ul class="sky-user-links">
+{{if .AccountURL}}<li><a href="{{ .AccountURL }}">进入账号中心</a>（资料 / 偏好 / 改密码 / 登录设备）</li>{{end}}
+</ul>
+<form class="sky-user-fields" method="post" action="/user/logout">
+<input type="hidden" name="csrf_token" value="{{ .CSRFToken }}">
+<button class="sky-user-submit sky-user-submit-quiet" type="submit">退出登录</button>
+</form>
+{{else}}
+<p class="sky-user-note">你还没有登录。</p>
+{{if .LoginURL}}<p class="sky-user-alt"><a href="{{ .LoginURL }}">去登录</a></p>{{end}}
+{{if .RegisterURL}}<p class="sky-user-alt">没有账号？<a href="{{ .RegisterURL }}">注册一个</a></p>{{end}}
+{{end}}
+</div>

@@ -15,6 +15,13 @@ import (
 // 而且这种失败在本地开发（cookie 刚设过）里常常复现不出来。
 const VisitorContextKey = "gowp_visitor_user_id"
 
+// VisitorCSRFContextKey 访客 CSRF token 在 gin context 里的键。
+//
+// 访问面的片段渲染表单（登录 / 注册 / 找回密码）必须带上访客域的 CSRF token，
+// 而 token 存在**签名会话 cookie** 里、静态产物烘不进去 —— 只能由片段现读现写。
+// 与 VisitorContextKey 同理：两边各写字面量，改一处漏一处的表现是「表单永远 403」。
+const VisitorCSRFContextKey = "gowp_visitor_csrf_token"
+
 // VisitorIdentityResolver 把访客会话令牌解成 user id。
 //
 // 只给这一条能力：访问面的片段层需要的是「这个请求是谁」，

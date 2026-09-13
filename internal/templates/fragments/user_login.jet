@@ -1,0 +1,20 @@
+{* user_login.jet — 表单由片段渲染（静态产物烘不进访客域的 CSRF token）。 登录表单。
+   提交目标仍是 user 模块的 POST 路由：无 JS 时原生提交整页跳转，链路完全一样。 *}
+<div class="sky-user-form" data-fragment="loginForm">
+{{if .Notice}}<p class="sky-user-notice">{{ .Notice }}</p>{{end}}
+{{if not .CSRFToken}}<p class="sky-user-error">会话未就绪，请刷新页面后重试。</p>{{end}}
+<form class="sky-user-fields" method="post" action="/user/login" novalidate>
+<input type="hidden" name="csrf_token" value="{{ .CSRFToken }}">
+{{if .Next}}<input type="hidden" name="next" value="{{ .Next }}">{{end}}
+<label class="sky-user-field">邮箱或用户名
+<input class="sky-user-input" type="text" name="account" required autocomplete="username">
+</label>
+<label class="sky-user-field">密码
+<input class="sky-user-input" type="password" name="password" required autocomplete="current-password">
+</label>
+<label class="sky-user-check"><input type="checkbox" name="remember" value="1"> 记住我（7 天）</label>
+<button class="sky-user-submit" type="submit">登录</button>
+</form>
+{{if .RegisterURL}}<p class="sky-user-alt">还没有账号？<a href="{{ .RegisterURL }}">去注册</a></p>{{end}}
+{{if .ForgotURL}}<p class="sky-user-alt"><a href="{{ .ForgotURL }}">忘记密码？</a></p>{{end}}
+</div>

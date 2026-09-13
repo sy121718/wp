@@ -1,0 +1,12 @@
+{* user_forms_widget.jet — 访客账号表单外壳（core.userForms）。
+
+   产物里只有外壳，表单由片段 /_fragments/{type} 现拉：
+   表单要带访客域的 CSRF token，而 token 在签名会话 cookie 里 —— 静态产物烘不进去。
+
+   容器的默认内容（hx-get 生效之前）是**降级链接**：
+   无 JS 时它就是访客看到的东西，所以不能是空的 —— 空容器在无 JS 下等于这个组件不存在。 *}
+<div class="{{ .Classes }}"{{ if .CustomID }} id="{{ .CustomID }}"{{ end }} data-user-form="{{ .V.Mode }}">
+{{ if .V.Notice }}<p class="sky-user-notice">{{ .V.Notice }}</p>{{ else }}{{ title := .V.Title }}{{ showTitle := .V.ShowTitle }}{{ formURL := .V.FragmentURL }}{{ fallback := .V.FallbackURL }}{{ fallbackText := .V.FallbackText }}{{ if showTitle }}<h2 class="sky-user-title">{{ title }}</h2>{{ end }}<div class="sky-user-mount" hx-get="{{ formURL }}" hx-trigger="load" hx-swap="innerHTML">
+<p class="sky-user-alt">{{ fallbackText }}表单需要脚本加载；也可以<a href="{{ fallback }}">打开{{ fallbackText }}页</a>。</p>
+</div>{{ end }}
+</div>

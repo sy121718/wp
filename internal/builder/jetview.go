@@ -56,6 +56,7 @@ import (
 	tablePkg "go_wp/internal/builder/components/table"
 	tabsPkg "go_wp/internal/builder/components/tabs"
 	textPkg "go_wp/internal/builder/components/text"
+	userformsPkg "go_wp/internal/builder/components/userforms"
 	videoPkg "go_wp/internal/builder/components/video"
 	"go_wp/internal/builder/core"
 )
@@ -175,6 +176,8 @@ func nodeViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeV
 		return cartIconViewOf(node, topLevel, ctx)
 	case orderlistPkg.Type:
 		return orderListViewOf(node, topLevel, ctx)
+	case userformsPkg.Type:
+		return userFormsViewOf(node, topLevel, ctx)
 	case ratingPkg.Type:
 		return ratingViewOf(node, topLevel, ctx)
 	case formPkg.Type:
@@ -696,6 +699,32 @@ func orderListViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*
 	return &nodeView{
 		Type:     orderlistPkg.Type,
 		Template: "orders_widget",
+		NodeID:   node.ID,
+		Classes:  strings.Join(classes, " "),
+		CustomID: customID,
+		TopLevel: topLevel,
+		Props:    p,
+		V:        view,
+	}, nil
+}
+
+// userFormsViewOf 转换访客账号表单节点（issue #36）。
+//
+// 手写而不是走 contentAtomViewOf：它要的是构建上下文里的**工程 id 与语言**
+// （片段地址带它们），而那个通用助手只把内容解析器传给 BuildView。
+func userFormsViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeView, error) {
+	var p userformsPkg.Props
+	if len(node.Props) > 0 {
+		if err := json.Unmarshal(node.Props, &p); err != nil {
+			return nil, fmt.Errorf("节点 %s props 反序列化失败: %w", node.ID, err)
+		}
+	}
+	classes, customID := advancedClasses(node, &p, ctx)
+	userformsPkg.CompileCSS(node.ID, &p, ctx.CSS)
+	view := userformsPkg.BuildView(&p, ctx.ProjectID, ctx.Lang)
+	return &nodeView{
+		Type:     userformsPkg.Type,
+		Template: "user_forms_widget",
 		NodeID:   node.ID,
 		Classes:  strings.Join(classes, " "),
 		CustomID: customID,

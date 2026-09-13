@@ -65,6 +65,15 @@ func FragmentEndpoint(c *gin.Context) {
 		}
 		userID = strconv.FormatUint(cs.UserID, 10)
 	}
+	// 访客域的 CSRF token：由同一个中间件挂到 context。未登录也会有 ——
+	// 登录 / 注册表单本身就要它（这是片段渲染表单与静态产物最本质的区别）。
+	csrfToken := ""
+	if v, ok := c.Get(usercontract.VisitorCSRFContextKey); ok {
+		if s, ok := v.(string); ok {
+			csrfToken = s
+		}
+	}
+
 	// 访客身份：user 模块的 VisitorIdentityMiddleware 已尽力解析并挂到 context（不阻断）。
 	//
 	// 未登录时**留空**而不是让端点回 401：HTMX 默认不替换 401 响应的目标节点，
@@ -93,6 +102,7 @@ func FragmentEndpoint(c *gin.Context) {
 		Params:    params,
 		Values:    values,
 		UserID:    userID,
+		CSRFToken: csrfToken,
 		Cookies:   collectFragmentCookies(c),
 		IP:        c.ClientIP(),
 		UserAgent: strings.TrimSpace(c.GetHeader("User-Agent")),

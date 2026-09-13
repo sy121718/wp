@@ -25,6 +25,7 @@ import (
 	"github.com/gin-gonic/gin"
 	gsessions "github.com/gorilla/sessions"
 
+	"go_wp/internal/middleware/builtin"
 	usercontract "go_wp/internal/module/user/contract"
 	"go_wp/pkg/auth"
 )
@@ -119,6 +120,12 @@ func writeUserToken(c *gin.Context, token string, rememberMe bool) error {
 //	  「必须登录」由具体片段能力自己声明（AuthVisitor）。
 func VisitorIdentityMiddleware(svc usercontract.UserService) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		// CSRF token 先于身份：片段渲染出的表单需要一个能通过校验的 token，
+		// 而**未登录访客也要能提交登录 / 注册表单** —— 这条不能挂在「已登录」之后。
+		// EnsureCSRFTokenWith 存在即复用，没有才生成并写会话（Set-Cookie 在片段端点上有效）。
+		if csrf, err := builtin.EnsureCSRFTokenWith(c, userCSRFStore{}); err == nil && csrf != "" {
+			c.Set(usercontract.VisitorCSRFContextKey, csrf)
+		}
 		if svc == nil {
 			c.Next()
 			return

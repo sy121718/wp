@@ -54,6 +54,11 @@ type Request struct {
 	// Values 全部参数值（并行数组用：POST 表单里同名多值，如 variantId / qty）。
 	// 与 Params 同源同校验，只是不做「取首值」的折叠。
 	Values map[string][]string
+	// CSRFToken 访客域的 CSRF token（片段渲染表单用）。
+	//
+	// 静态产物烘不进它（token 在签名会话 cookie 里），所以带表单的片段必须现读现写：
+	// 少了它，片段渲染出的表单提交永远 403。
+	CSRFToken string
 	// UserID 已认证身份 id（十进制字符串）。
 	//
 	// 两个来源，按优先级取：① session 策略命中的**后台账号** id；
