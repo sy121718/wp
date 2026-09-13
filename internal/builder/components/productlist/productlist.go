@@ -267,7 +267,13 @@ type Props struct {
 	TagsField         string `json:"tagsField,omitempty" ct:"string,maxlen=60,sec=content,label=标签字段"`
 	LinkField         string `json:"linkField,omitempty" ct:"string,maxlen=60,sec=content,label=链接字段"`
 	LinkPrefix        string `json:"linkPrefix,omitempty" ct:"text,maxlen=200,sec=content,label=链接前缀"`
-	Currency          string `json:"currency,omitempty" ct:"text,maxlen=8,sec=content,label=货币符号"`
+	// ListPageLink 列表页链接文案（留空用「全部商品」）。
+	//
+	// 链接**目标不是作者填的**：它来自系统页面槽位 shop（BIZ-2）——「商品列表在哪一页」
+	// 是站点级事实，由运维在槽位里绑一次，改 URL 时链接自动跟着走。
+	// 作者在这里只能改文案，改不了目标：让作者手填路径就是允许产物里长出死链。
+	ListPageLink string `json:"listPageLink,omitempty" ct:"text,maxlen=30,sec=content,label=列表页链接文案"`
+	Currency     string `json:"currency,omitempty" ct:"text,maxlen=8,sec=content,label=货币符号"`
 	TitleTag          string `json:"titleTag,omitempty" ct:"select,h2=二级标题,h3=三级标题,h4=四级标题,default=h3,sec=content,label=标题层级"`
 
 	// Advanced 通用高级属性（docs/02-C0）。
@@ -551,6 +557,17 @@ func EffectivePage(p *Props) int {
 		return 1
 	}
 	return p.Page
+}
+
+// defaultListPageLinkText 列表页链接的缺省文案。
+const defaultListPageLinkText = "全部商品"
+
+// effectiveListPageLinkText 列表页链接文案（留空用缺省）。
+func effectiveListPageLinkText(p *Props) string {
+	if p == nil || strings.TrimSpace(p.ListPageLink) == "" {
+		return defaultListPageLinkText
+	}
+	return strings.TrimSpace(p.ListPageLink)
 }
 
 func effectiveEmptyText(p *Props) string {

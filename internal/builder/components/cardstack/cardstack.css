@@ -742,6 +742,38 @@
   border-bottom: 1px solid currentColor;
 }
 
+/* 列表页入口(BIZ-2):指向系统页面槽位(文章集合 -> blog / 商品集合 -> shop).
+   槽位没绑或那页没发布时模板根本不输出这个节点,所以这里只描述"有链接"的那一态.
+   位置在 track 之后(普通流里的一个块),不参与卡片几何 —— 悬停 / 拖拽 / 轮播三种排布
+   都不受它影响.宽度写 min(100%, 320px):窄屏占满可用宽度,宽屏不拉成一条长条. */
+& .sky-cardstack-more {
+  display: flex;
+  justify-content: center;
+  margin: 18px 0 0;
+}
+
+& .sky-cardstack-more-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: min(100%, 320px);
+  min-height: 44px;
+  padding: 10px 18px;
+  border: 1px solid var(--sky-c-border, rgba(0,0,0,.12));
+  border-radius: 999px;
+  color: var(--sky-c-primary, #5e5cfc);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+@hover & .sky-cardstack-more-link {
+  border-color: var(--sky-c-primary, #5e5cfc);
+}
+
+@active & .sky-cardstack-more-link {
+  transform: translateY(1px);
+}
+
 /* 空状态:集合没有内容时给一块可见占位,而不是留一片空白(也可整体隐藏). */
 & .sky-cardstack-empty {
   margin: 0;

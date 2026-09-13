@@ -42,6 +42,7 @@
 </ul>
 {{ end }}
 {{ if .V.HasPager }}<nav class="sky-product-list-pager" aria-label="分页">{{ if .V.HasPrev }}<a class="sky-product-list-page" href="{{ .V.PrevLink.Href }}" hx-get="{{ .V.PrevLink.FragmentGet }}" hx-push-url="{{ .V.PrevLink.PushURL }}" hx-target="closest [data-sky-product-list]" hx-swap="outerHTML" rel="prev">上一页</a>{{ end }}<span class="sky-product-list-page-current" aria-current="page">第 {{ .V.Page }} 页</span>{{ if .V.HasNext }}<a class="sky-product-list-page" href="{{ .V.NextLink.Href }}" hx-get="{{ .V.NextLink.FragmentGet }}" hx-push-url="{{ .V.NextLink.PushURL }}" hx-target="closest [data-sky-product-list]" hx-swap="outerHTML" rel="next">下一页</a>{{ end }}</nav>{{ end }}
+{{ if .V.HasListPageLink }}<p class="sky-product-list-more"><a class="sky-product-list-more-link" href="{{ .V.ListPageLinkHref }}">{{ .V.ListPageLinkText }}</a></p>{{ end }}
 </div>
 </div>
 </div>

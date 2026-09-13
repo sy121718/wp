@@ -8,6 +8,9 @@ package product
 import (
 	"encoding/json"
 	"fmt"
+	"math"
+	"net/url"
+	"strconv"
 	"strings"
 
 	"go_wp/internal/builder/core"
@@ -99,6 +102,16 @@ type VariantOption struct {
 	ComparePrice string
 	// Labels 组合的展示文本（如「颜色 红 · 尺寸 S」）。
 	Labels string
+	// PriceCents 构建期价（**分**）：随 LivePriceGet 一起烘进产物，供实时价格核对片段
+	// 与库里的当前价比对（BIZ-2）。用分而不是元文本，是为了与跨模块的
+	// VariantSnapshotPort 同一口径 —— 少一次浮点解析，就少一次「99.90 读成 99.9」的假提示。
+	PriceCents int64
+	// LivePriceGet 实时价格核对片段的请求 URL（构建期拼好；模板只把它放进 hx-get）。
+	//
+	// 为什么把「构建期价格」也放进 URL：产物是静态字节，改价只落库不进构建管线，
+	// 所以片段唯一能拿来对比的基准就是**产物自己烘下来的那份价**。空串 = 价格形状不可解析，
+	// 此时不请求片段（片段也只会沉默）。
+	LivePriceGet string
 }
 
 // optionGroupJSON 商品解析器输出的规格维度结构（product.options）。
@@ -301,12 +314,50 @@ func ParseVariantOptions(raw string, groups []OptionGroup, currency string) []Va
 			SKUCode: r.SKU, Labels: strings.Join(parts, " · "),
 			Price: currency + r.Price,
 		}
+		// 实时价格核对（BIZ-2）：价格形状可解析时才烘 URL —— 解析不出来的价拿去比对
+		// 只会得到一句错话，不如不请求。
+		if cents, ok := priceYuanCents(r.Price); ok {
+			row.PriceCents = cents
+			row.LivePriceGet = livePriceFragmentURL(r.ID, cents, currency)
+		}
 		if strings.TrimSpace(r.ComparePrice) != "" {
 			row.ComparePrice = currency + r.ComparePrice
 		}
 		out = append(out, row)
 	}
 	return out
+}
+
+// LivePriceFragmentPath 实时价格核对片段端点（与 runtimefragment 的 capability 名一致）。
+const LivePriceFragmentPath = "/_fragments/productLivePrice"
+
+// livePriceFragmentURL 拼实时价格核对片段的请求 URL（逐变体一行一个请求，与库存片段同构）。
+//
+// 参数只有三个：变体 id、构建期价（分）、货币符号；工程上下文由商品模块按变体反查补齐，
+// 组件不需要也不该知道工程表结构。
+func livePriceFragmentURL(variantID string, cents int64, currency string) string {
+	if strings.TrimSpace(variantID) == "" {
+		return ""
+	}
+	q := url.Values{}
+	q.Set("variantIds", variantID)
+	q.Set("prices", strconv.FormatInt(cents, 10))
+	if strings.TrimSpace(currency) != "" {
+		q.Set("currency", currency)
+	}
+	return LivePriceFragmentPath + "?" + q.Encode()
+}
+
+// priceYuanCents 元文本（商品字段解析器 formatPrice 的输出形态，如 "99" / "99.5"）→ 分。
+//
+// 解析失败或负值返回 false：调用方据此不请求片段（而不是按 0 元比对，
+// 那会把每个变体都判成「价格已更新」）。
+func priceYuanCents(text string) (int64, bool) {
+	v, err := strconv.ParseFloat(strings.TrimSpace(text), 64)
+	if err != nil || math.IsNaN(v) || math.IsInf(v, 0) || v < 0 {
+		return 0, false
+	}
+	return int64(math.Round(v * 100)), true
 }
 
 // parseAltList 图集 alt 字段值（JSON 字符串数组）→ alt 列表。

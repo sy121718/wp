@@ -150,6 +150,12 @@ func renderProductList(ctx context.Context, r *Request) (string, error) {
 		Collection: collectionResolver,
 		Product:    productDataSource,
 	}
+	// 系统页面槽位（BIZ-2）：列表里的「全部商品」链接按站点槽位取路径，构建期与片段期
+	// 必须是同一份解析（各解一次迟早分叉：静态页上的链接能点、片段刷新后变 404）。
+	// 语言留空 = 按站点默认语言解析（片段 URL 里没有语言维度，静态产物本来也只服务一种语言）。
+	if r.SitePagesOf != nil {
+		rctx.SitePages = r.SitePagesOf(projectID, "")
+	}
 	return builder.RenderNodeHTML(set, &core.Node{ID: nodeID, Type: productlist.Type, Props: propsJSON}, rctx)
 }
 

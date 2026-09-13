@@ -87,6 +87,15 @@
   word-break: break-word;
 }
 
+/* 实时价格核对 (BIZ-2): 构建期价与库里当前价不一致时, 由片段在价格旁说一句话.
+   一致 / 改价未发生 / 端口未接入时该节点为空 (片段返回空), 所以这里只描述"有话要说"的那一态.
+   颜色走 danger token: 这是需要访客注意的更正信息, 而不是普通说明. */
+& .sky-product-variant-live {
+  font-size: .85rem;
+  color: var(--sky-c-danger, #dc2626);
+  flex: 1 0 100%;
+}
+
 /* 实时可用量 (issue #24): 构建期只烘变体 id, 可用量由访问面片段每次现取 (库存是真源,
    烘进产物等于发布一份过期库存). 样式覆盖两种状态: 默认 (充足 / 以结算为准) 与缺货. */
 & .sky-product-variant-stock {

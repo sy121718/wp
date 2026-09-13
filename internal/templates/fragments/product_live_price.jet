@@ -1,0 +1,6 @@
+{* product_live_price.jet — 商品实时价格核对片段（BIZ-2）。 *}
+{* 只输出「产物里的价与库里的价不一致」的那句提示：一致 / 查不到 / 无构建期价时片段整体为空，
+   目标节点（价格旁的提示位）保持空白，访客看到的就是产物里的构建期价格。
+   文案里的价格由服务端按「分 → 元」统一格式化，没有用户输入参与拼接；变体 id 仅在 data 属性上
+   回声，仍走模板转义（RenderFragment 默认 HTML 转义，等价 html.EscapeString）。 *}
+{{ range _, it := .Items }}<span class="sky-live-price{{ if it.Changed }} is-changed{{ end }}" data-variant-id="{{ it.VariantID }}">{{ it.Message }}</span>{{ end }}

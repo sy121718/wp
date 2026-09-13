@@ -4,6 +4,7 @@ package contentmodel
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -90,4 +91,48 @@ func (m *Model) Save(ctx context.Context, e *Entity) error {
 // Delete 删除实体。
 func (m *Model) Delete(ctx context.Context, id string) error {
 	return m.db.WithContext(ctx).Where("id = ?", id).Delete(&Entity{}).Error
+}
+
+// maxSearchLimit 单次检索的硬上限。
+//
+// 检索的消费方是访问面片段（anonymous 请求）：调用方传 0（忘了传）或传一个很大的值时，
+// 查询都不能退化成「扫全表再截断」。
+const maxSearchLimit = 50
+
+// SearchArticles 按关键词检索某类内容实体的标题与摘要，只读、限量。
+//
+// 两条必须一起成立的约束：
+//
+//  1. **全参数化**：关键词只经占位符传递，绝不拼进 SQL；
+//  2. **LIKE 通配符转义**（与 media 模块同一手法）：关键词里的 % 与 _ 是字面量。
+//     不转义时搜「50%」会变成「以 50 开头」、搜「a_b」会命中「axb」——
+//     用户以为搜到了，其实是搜索在按另一套规则工作。ESCAPE '\' 与转义函数成对出现，
+//     少一个都会让转义失效（反斜杠不再被当作转义符）。
+//
+// 标题与摘要在 contents.data（JSONB）里取：excerpt 是内容字段白名单的一员，
+// 缺失时 data->>'excerpt' 为 NULL —— 只要标题命中仍然入选（OR，不是 AND）。
+func (m *Model) SearchArticles(ctx context.Context, entityType, keyword string, limit int) (list []*Entity, err error) {
+	keyword = strings.TrimSpace(keyword)
+	if keyword == "" {
+		return nil, nil
+	}
+	if limit <= 0 || limit > maxSearchLimit {
+		limit = maxSearchLimit
+	}
+	pattern := "%" + escapeLikePattern(keyword) + "%"
+	err = m.db.WithContext(ctx).
+		Where("entity_type = ?", entityType).
+		Where("(data->>'title' ILIKE ? ESCAPE '\\' OR data->>'excerpt' ILIKE ? ESCAPE '\\')", pattern, pattern).
+		Order("updated_at DESC, id DESC").
+		Limit(limit).
+		Find(&list).Error
+	return list, err
+}
+
+// escapeLikePattern 转义 LIKE 通配符（\ % _ 全部按字面量匹配，配合 ESCAPE '\'）。
+//
+// 顺序不能反：先转义反斜杠本身，否则后两步插入的反斜杠会被自己再转义一遍
+// （"a\%" 会变成 "a\\\%" 这种多了一层的结果）。
+func escapeLikePattern(s string) string {
+	return strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(s)
 }

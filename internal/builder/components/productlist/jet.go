@@ -116,6 +116,15 @@ type View struct {
 	FragmentQuery string
 	// PushQuery 当前语义参数（片段渲染时才有；构建期为空 = 默认态）。
 	PushQuery string
+
+	// —— 列表页链接（系统页面槽位 shop）——
+	//
+	// HasListPageLink 为真才输出链接：槽位没绑、或绑了但那页没发布，ctx.SitePages 里
+	// 就没有 shop 这个键，组件**不输出任何链接**（也绝不猜一个默认路径）——
+	// 猜错的链接是死链，而页面作者从产物上看不出它是猜的。
+	HasListPageLink  bool
+	ListPageLinkHref string
+	ListPageLinkText string
 }
 
 // collectionFilterOptionsProvider 能力探测：上下文里的集合解析器能否给出可选筛选项。
@@ -216,6 +225,12 @@ func BuildView(node *core.Node, p *Props, ctx *core.RenderContext) (View, error)
 
 	view.FragmentQuery = lc.instanceQuery
 	view.PushQuery = lc.pushQuery
+	// 槽位解析是零成本的 map 读：没有条目就是「这个站还没指定商品列表页」，
+	// 与「槽位绑了但那页没发布」同一条路（page 侧只返回已发布的绑定）。
+	if href := strings.TrimSpace(ctx.SitePages[core.SiteSlotShop]); href != "" {
+		view.HasListPageLink, view.ListPageLinkHref = true, href
+		view.ListPageLinkText = effectiveListPageLinkText(p)
+	}
 	// 筛选选项按能力探测取：集合源没实现该能力 → 筛选栏不渲染（列表本身照常可用，
 	// 契约缺失不阻断构建，与 CollectionSchemaProvider 的处理一致）；取选项失败同理。
 	if provider, ok := collectionFilterOptionsProvider(ctx); ok && len(splitList(p.Filters)) > 0 {

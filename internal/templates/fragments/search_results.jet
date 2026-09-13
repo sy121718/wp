@@ -1,0 +1,10 @@
+{* search_results.jet — 站内搜索结果片段（BIZ-2）。 *}
+{* 只输出服务端给定的标题 / 摘要 / 链接：全部经模板默认 HTML 转义（等价 html.EscapeString）。
+   关键词会出现在提示文案里（「没有找到与「xxx」相关的内容」），那是用户输入，绝不拼 HTML。
+   链接一律来自发布面（已上线的详情页路径），拿不到路径的条目只输出标题文本 —— 没有死链。
+   结构不带样式：片段 HTML 是运行时渲染的，样式由使用方（容器组件 / 主题）决定。 *}
+<div class="sky-search-results">
+{{ if .HasMessage }}<p class="sky-search-note" role="status">{{ .Message }}</p>{{ end }}
+{{ if .HasContent }}<ul class="sky-search-list" role="list">{{ range _, h := .ContentHits }}<li class="sky-search-item">{{ if h.HasURL }}<a class="sky-search-title" href="{{ h.URL }}">{{ h.Title }}</a>{{ else }}<span class="sky-search-title">{{ h.Title }}</span>{{ end }}{{ if h.HasExcerpt }}<p class="sky-search-excerpt">{{ h.Excerpt }}</p>{{ end }}</li>{{ end }}</ul>{{ end }}
+{{ if .HasProducts }}<ul class="sky-search-list sky-search-products" role="list">{{ range _, h := .ProductHits }}<li class="sky-search-item">{{ if h.HasURL }}<a class="sky-search-title" href="{{ h.URL }}">{{ h.Title }}</a>{{ else }}<span class="sky-search-title">{{ h.Title }}</span>{{ end }}{{ if h.HasExcerpt }}<p class="sky-search-excerpt">{{ h.Excerpt }}</p>{{ end }}</li>{{ end }}</ul>{{ end }}
+</div>

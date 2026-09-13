@@ -282,6 +282,29 @@
   color: var(--sky-c-muted, rgba(0,0,0,0.55));
 }
 
+/* 列表页入口（系统页面槽位 shop，BIZ-2）：槽位没绑 / 那页没发布时模板根本不输出这个节点，
+   所以这里的样式只描述"有链接"的那一态。宽度写 min(100%, 320px)：窄屏占满可用宽度，
+   宽屏不拉成一条长条。 */
+& .sky-product-list-more {
+  display: flex;
+  justify-content: center;
+  margin: 18px 0 0;
+}
+
+& .sky-product-list-more-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: min(100%, 320px);
+  min-height: 44px;
+  padding: 10px 18px;
+  border: 1px solid var(--sky-c-border, rgba(0,0,0,0.12));
+  border-radius: 8px;
+  color: var(--sky-c-primary, #2563eb);
+  font-weight: 600;
+  text-decoration: none;
+}
+
 /* 悬停抬升只在支持 hover 的设备上输出 (触屏等价形态用按压反馈). */
 @hover & .sky-product-list-item {
   box-shadow: 0 6px 18px rgba(0,0,0,.08);

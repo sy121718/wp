@@ -95,6 +95,13 @@
   font-size: .9em;
 }
 
+/* 实时价格核对 (BIZ-2): 与 core.product 同一口径 —— 只在价格对不上时由片段说一句话. */
+& .sky-selector-live {
+  font-size: .85rem;
+  color: var(--sky-c-danger, #dc2626);
+  flex: 1 0 100%;
+}
+
 & .sky-selector-stock {
   font-size: .85rem;
   color: var(--sky-c-muted, rgba(0,0,0,0.6));

@@ -76,6 +76,15 @@ type View struct {
 	// ListSemantics 是否输出列表语义（track = role="list"、卡片 = role="listitem"）。
 	// deck 模式带翻页按钮与主卡切换，语义是轮播而非并列列表，故排除。
 	ListSemantics bool
+
+	// —— 列表页入口（系统页面槽位 blog / shop）——
+	//
+	// 只对能对上系统页面语义的集合源输出：文章集合 → blog（更多文章）、
+	// 商品集合 → shop（全部商品）。其余集合源（分类列表等）没有对应的系统页面，恒不输出。
+	// HasListPageLink 为假时模板整块不渲染 —— 未绑定或未发布都不输出死链。
+	HasListPageLink  bool
+	ListPageLinkHref string
+	ListPageLinkText string
 }
 
 // zoomGroup 放大用 radio 的组名：以节点 ID 结尾，保证同页多个 cardstack 各自独立成组
@@ -102,6 +111,7 @@ func BuildView(node *core.Node, p *Props, ctx *core.RenderContext) (View, error)
 		if err != nil {
 			return View{}, err
 		}
+		hasListLink, listHref, listText := collectionListPageLink(source, p, ctx)
 		return View{
 			Cards: cards, Collection: true,
 			Drag: drag, Deck: deck, DeckIndex: len(cards) / 2, DeckLoop: p.DeckLoop,
@@ -109,6 +119,7 @@ func BuildView(node *core.Node, p *Props, ctx *core.RenderContext) (View, error)
 			LinkText: linkText(p), Slide: slide, PageTotal: len(cards),
 			DeckVertical: deckVertical, DeckArrows: p.DeckArrows, DeckClickNext: p.DeckClick == deckClickNext,
 			ZoomGroup: zoomGroup(node.ID), ListSemantics: !deck,
+			HasListPageLink: hasListLink, ListPageLinkHref: listHref, ListPageLinkText: listText,
 		}, nil
 	}
 

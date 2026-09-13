@@ -14,7 +14,7 @@ func productSelectorCSSFor(t *testing.T, p *Props) string {
 	return b.String()
 }
 
-// TestProductSelectorCSSRules 逐条核对 15 条规则与它们的顺序。
+// TestProductSelectorCSSRules 逐条核对 16 条规则与它们的顺序。
 //
 // 产物的字节包含声明顺序，顺序漂移在页面上表现为「同优先级的规则谁赢变了」——
 // 合法 CSS、浏览器不报错，只能在这里钉住。选择器一律带 " {"，避免
@@ -34,6 +34,7 @@ func TestProductSelectorCSSRules(t *testing.T) {
 		".sky-c-t .sky-selector-variant {",
 		".sky-c-t .sky-selector-variant-price {",
 		".sky-c-t .sky-selector-variant-compare {",
+		".sky-c-t .sky-selector-live {",
 		".sky-c-t .sky-selector-stock {",
 		".sky-c-t .sky-selector-variant .is-out {",
 		".sky-c-t .sky-selector-empty {",
