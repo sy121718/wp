@@ -12,11 +12,11 @@ package seo
 //  1. **SEO 标题/描述优先取 seoTitle / seoDescription**，缺了才回落 title / excerpt：
 //     与运营的心智一致（专门的 SEO 字段填了就该用它），也与构建期 meta 的取法同向。
 //
-//  2. **hasCanonical / hasSchema 一律 false**，不随「正文有标题结构」乐观判真。
-//     页面走 builder.BuildSEOHead 时会注入 canonical 与 JSON-LD，文章详情页不走那条路
-//     （它的 <head> 由内容模板的 settings.seo 决定），实体字段里也没有 canonical。
-//     这里如实给 false —— 评分器替编辑者假装「已经注入了」比给低分更糟：
-//     那会让一处真实缺口在侧栏里消失。
+//  2. **hasCanonical / hasSchema 判真**：这两项由构建期注入，不由编辑者补。
+//     文章详情页的产物现在带 canonical（来自实例线上路径）与 JSON-LD
+//     （schemaType=article），实现在 presentation/service/presentation_seo.go。
+//     —— 这里的口径随现实走：那块缺口补上之前，本文件判 false 并写了理由；
+//     补上之后继续判 false 会让侧栏永远挂着两条改了也没用的「未达标」。
 //
 //  3. **正文按富文本处理**：body 是 Trix 输出（也可能是纯文本），
 //     字数/标题结构/图片/链接全部从 HTML 里提取，而不是把标签当正文算进字数
@@ -60,6 +60,11 @@ func ScoreArticle(data map[string]any, articleURL string) *scoring.Result {
 	in.Headings = articleHeadings(body)
 	in.Images = articleImages(body, articleField(data, "featuredImage"))
 	in.InternalLinks, in.ExternalLinks, in.AnchorTexts = articleLinks(body)
+	// canonical 与结构化数据由构建期注入（presentation 侧的 applyEntitySEO）：
+	// 发布出来的详情页一定带这两样，所以判真 —— 评分侧栏只该显示"编辑者能改的东西"，
+	// 把系统保证项挂在上面只会教人忽略它。
+	in.HasCanonical = true
+	in.HasSchema = true
 	return scoring.Score(in, nil)
 }
 

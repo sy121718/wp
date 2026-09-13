@@ -355,18 +355,23 @@ func splitEntityField(field string) (entityType, name string, ok bool) {
 // 本函数保持无副作用的纯计算，便于单测与集合源复用。
 func productFieldValues(p *productmodel.ProductEntity, variants []*productmodel.VariantEntity, attrs []*productmodel.ProductAttributeEntity, loc *relatedTexts) map[string]string {
 	out := map[string]string{
-		"name":         p.Name,
-		"subtitle":     p.Subtitle,
-		"description":  descriptionHTML(p.Description),
-		"imageAlts":    imageAltsJSON(p, loc),
-		"slug":         p.Slug,
-		"unit":         p.Unit,
-		"images":       imagesJSON(p),
-		"defaultImage": p.DefaultImage,
-		"options":      optionsJSON(p, attrs, loc),
-		"variants":     variantsJSON(variants),
-		"related":      relatedJSON(p, loc),
-		"tags":         tagsJSON(p, loc),
+		"name":        p.Name,
+		"subtitle":    p.Subtitle,
+		"description": descriptionHTML(p.Description),
+		// SEO 字段原样透出（不套 descriptionHTML）：它们是给 <title> 与 meta description
+		// 用的纯文本，套上富文本包装反而要在消费侧再去标签
+		//（presentation 侧仍会做一次归一，兜住历史数据里混进的标记）。
+		"seoTitle":       p.SEOTitle,
+		"seoDescription": p.SEODescription,
+		"imageAlts":      imageAltsJSON(p, loc),
+		"slug":           p.Slug,
+		"unit":           p.Unit,
+		"images":         imagesJSON(p),
+		"defaultImage":   p.DefaultImage,
+		"options":        optionsJSON(p, attrs, loc),
+		"variants":       variantsJSON(variants),
+		"related":        relatedJSON(p, loc),
+		"tags":           tagsJSON(p, loc),
 	}
 	if len(variants) > 0 {
 		out["sku"] = variants[0].SKUCode

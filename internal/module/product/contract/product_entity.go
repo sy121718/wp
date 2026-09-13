@@ -54,6 +54,11 @@ const (
 var fieldWhitelist = map[string][]string{
 	EntityTypeProduct: {
 		"name", "subtitle", "description",
+		// SEO 字段（products.seo_title / seo_description，迁移 088 起就有列）：
+		// 既是模板可绑定的字段，也是自动发布实例构建期 SEO 头的来源
+		//（见 presentation/service/presentation_seo.go）—— 少登记一项，
+		// 商品详情页就会用商品名当 SEO 标题、用描述当前两者都取不到。
+		"seoTitle", "seoDescription",
 		"imageAlt", "imageAlts",
 		"slug", "sku", "unit",
 		"images", "defaultImage",
@@ -100,6 +105,12 @@ var translatableFields = map[string]map[string]bool{
 		"subtitle":    true,
 		"description": true,
 		"imageAlts":   true,
+		// SEO 文案与其他可翻译字段一样按语言取译文：多语言站点里商品详情页的
+		// <title> 与 meta description 不该永远是建站时填的那一种语言。
+		// （分类 / 品牌只登记了 seoTitle，seoDescription 缺登记 —— 属既有不一致，
+		// 不在本次改动范围内，留待统一。）
+		"seoTitle":       true,
+		"seoDescription": true,
 	},
 	EntityTypeCategory: {
 		"name":        true,

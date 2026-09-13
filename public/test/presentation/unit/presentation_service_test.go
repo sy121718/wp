@@ -216,8 +216,23 @@ func TestPresentationPreviewAndPublishedAssets(t *testing.T) {
 		t.Fatal(err)
 	}
 	published := activeHTML(t, "/interactive-assets")
-	if published != preview.HTML {
-		t.Fatal("预览与激活产物字节不一致")
+	// 预览不激活 URL，发布产物带实例线上路径 —— canonical / og:url / 由 URL 生成面包屑
+	// 的 JSON-LD 是两者唯一的有意差异（见 presentation_seo.go 取舍 2）：
+	// 剥掉这些 URL 相关片段后必须逐字节一致，并各自断言 SEO 头的有无。
+	if stripURLTags(published) != stripURLTags(preview.HTML) {
+		t.Fatal("预览与激活产物（除 URL 相关 SEO 片段外）字节不一致")
+	}
+	if got := canonicalOf(published); got != "/interactive-assets" {
+		t.Fatalf("发布产物应带实例路径的 canonical，实际 %q", got)
+	}
+	if !strings.Contains(published, "<meta property=\"og:url\" content=\"/interactive-assets\">") {
+		t.Fatal("发布产物应带 og:url")
+	}
+	if got := canonicalOf(preview.HTML); got != "" {
+		t.Fatalf("预览不应输出 canonical，实际 %q", got)
+	}
+	if !strings.Contains(preview.HTML, "<script type=\"application/ld+json\">") {
+		t.Fatal("预览仍应输出结构化数据（只是不含 URL）")
 	}
 	for _, required := range []string{"<select data-ui-select", "WBUI.select", ".wbs-trigger", "function initCounters"} {
 		if !strings.Contains(published, required) {

@@ -274,7 +274,9 @@ func (s *Service) PreviewInstance(ctx context.Context, req *presentationdto.Prev
 	if err != nil {
 		return nil, err
 	}
-	html, err := s.renderHTML(ctx, req.EntityType, req.EntityID, projectID, tpl)
+	// urlPath 传空：预览不激活 URL，canonical 由模板 settings.seo 决定（通常为空）。
+	// 这是预览与发布在字节上的唯一有意差异（见 presentation_seo.go 取舍 2）。
+	html, err := s.renderHTML(ctx, req.EntityType, req.EntityID, "", projectID, tpl)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", presentationenums.ErrBuildFailed, err)
 	}
@@ -530,7 +532,7 @@ func (s *Service) Delete(ctx context.Context, req *presentationdto.DeleteReq) (e
 // 一旦落库失败，线上已渲染出新实体内容却没有任何恢复入口。
 func (s *Service) buildArtifact(ctx context.Context, entityType, entityID, urlPath, projectID string,
 	tpl *contenttemplatecontract.ResolvedTemplate) (built builtArtifact, err error) {
-	html, err := s.renderHTML(ctx, entityType, entityID, projectID, tpl)
+	html, err := s.renderHTML(ctx, entityType, entityID, urlPath, projectID, tpl)
 	if err != nil {
 		return built, err
 	}
@@ -559,7 +561,10 @@ func (s *Service) buildArtifact(ctx context.Context, entityType, entityID, urlPa
 //
 // 发布（buildArtifact）与预览（PreviewInstance）共用这一份渲染，保证「预览看到的就是
 // 发布出来的」；区别只在于发布还要把字节包成 Artifact 落盘并推进指针。
-func (s *Service) renderHTML(ctx context.Context, entityType, entityID, projectID string,
+//
+// urlPath 是该实例的线上路径（预览传空）：它是 SEO 头 canonical 的来源，
+// 见 presentation_seo.go —— 唯一注入点的第二半（渲染函数本身不认识 SEO）。
+func (s *Service) renderHTML(ctx context.Context, entityType, entityID, urlPath, projectID string,
 	tpl *contenttemplatecontract.ResolvedTemplate) (html []byte, err error) {
 	page, err := builder.ParsePage(tpl.Document)
 	if err != nil {
@@ -579,6 +584,13 @@ func (s *Service) renderHTML(ctx context.Context, entityType, entityID, projectI
 	buildCtx := core.WithBuildLang(ctx, lang)
 	resolver, err := s.registry.ResolverFor(buildCtx, entityType, entityID)
 	if err != nil {
+		return nil, err
+	}
+	// 实体字段驱动的 SEO 头（见 presentation_seo.go）：把 seoTitle / seoDescription 等
+	// 喂进 page.Settings.SEO，随后的 builder.Compile 由既有的 BuildSEOHead 统一产出
+	// canonical / OG / Twitter / JSON-LD。放在 Compile 之前是唯一有效的时机 ——
+	// SEO 头在 compile 内一次性生成，之后没有回填入口。
+	if err = applyEntitySEO(page, entityType, urlPath, s.registry.FieldWhitelist(entityType), resolver); err != nil {
 		return nil, err
 	}
 	set, err := templates.NewEmbeddedComponentSet()

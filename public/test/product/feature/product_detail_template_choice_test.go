@@ -73,6 +73,52 @@ func (f *detailFixture) publishWithTemplate(t *testing.T, productID, urlPath, te
 	return inst
 }
 
+// canonicalOf 取产物里的 canonical href（不存在返回空串）。
+func canonicalOf(html string) string {
+	const prefix = "<link rel=\"canonical\" href=\""
+	i := strings.Index(html, prefix)
+	if i < 0 {
+		return ""
+	}
+	rest := html[i+len(prefix):]
+	j := strings.Index(rest, "\">")
+	if j < 0 {
+		return ""
+	}
+	return rest[:j]
+}
+
+// urlSEOFragments 只在有 URL 时输出的 SEO 片段前缀：canonical、og:url，
+// 以及由 URL 生成面包屑的结构化数据块（JSON-LD 单行输出）。
+//
+// 预览不激活 URL（urlPath 传空），发布产物带实例线上路径 —— 这是预览与发布在字节上
+// 唯一的差异来源（见 internal/module/presentation/service/presentation_seo.go 取舍 2）。
+var urlSEOFragments = []string{
+	"<link rel=\"canonical\"",
+	"<meta property=\"og:url\"",
+	"<script type=\"application/ld+json\">",
+}
+
+// stripURLTags 去掉产物里 URL 相关的 SEO 片段（比较「预览与发布除 URL 外逐字节一致」用）。
+func stripURLTags(html string) string {
+	lines := strings.Split(html, "\n")
+	out := make([]string, 0, len(lines))
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		skip := false
+		for _, frag := range urlSEOFragments {
+			if strings.HasPrefix(trimmed, frag) {
+				skip = true
+				break
+			}
+		}
+		if !skip {
+			out = append(out, line)
+		}
+	}
+	return strings.Join(out, "\n")
+}
+
 // countRows 统计某表的行数（where 可空）。
 func countRows(t *testing.T, db *gorm.DB, table, where string, args ...any) int {
 	t.Helper()
@@ -236,10 +282,25 @@ func TestProductPreviewBeforePublish(t *testing.T) {
 		t.Fatalf("预览不应激活访问面产物")
 	}
 
-	// 预览字节与随后发布的产物字节一致（预览看到的就是发布出来的）。
+	// 预览字节与随后发布的产物字节一致（预览看到的就是发布出来的）；唯一例外是
+	// URL 相关的 SEO 片段 —— 预览不激活 URL，只有发布产物带实例线上路径
+	// （见 internal/module/presentation/service/presentation_seo.go 的取舍 2）。
 	f.publishWithTemplate(t, productID, "/products/summer-shirt", chosen.ID)
-	if html := activeHTML(t, "/products/summer-shirt"); html != res.HTML {
-		t.Fatalf("发布产物应与预览渲染一致\n预览: %s\n产物: %s", res.HTML, html)
+	published := activeHTML(t, "/products/summer-shirt")
+	if stripURLTags(published) != stripURLTags(res.HTML) {
+		t.Fatalf("发布产物应与预览渲染（除 URL 相关 SEO 片段外）一致\n预览: %s\n产物: %s", res.HTML, published)
+	}
+	if got := canonicalOf(published); got != "/products/summer-shirt" {
+		t.Fatalf("发布产物应带实例路径的 canonical，实际 %q", got)
+	}
+	if !strings.Contains(published, "<meta property=\"og:url\" content=\"/products/summer-shirt\">") {
+		t.Fatal("发布产物应带 og:url")
+	}
+	if got := canonicalOf(res.HTML); got != "" {
+		t.Fatalf("预览不应输出 canonical，实际 %q", got)
+	}
+	if !strings.Contains(res.HTML, "<script type=\"application/ld+json\">") {
+		t.Fatal("预览仍应输出结构化数据（只是不含 URL）")
 	}
 
 	// 不指定模板 → 预览走类型默认模板（既有行为）。
