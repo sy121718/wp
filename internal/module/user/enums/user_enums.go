@@ -59,6 +59,28 @@ const (
 	ErrInternal = "操作失败，请稍后重试"
 )
 
+// 后台客户管理（/admin/customers 与 /api/customer/*）的文案。
+//
+// 与上面的访客文案分开一块：它们服务的是**运营**而不是访客 —— 同一个「账号已停用」
+// 对客户是拒绝登录的理由，对运营是刚做完的操作回执。混在一堆里，读代码的人
+// 会以为后台的回执也会出现在访客页面上。
+//
+// 这些文案同样要登记进 UserFacingMessages：后台页面把 service 的错误经那份白名单回显，
+// 没登记的话页面上只会显示一句「操作失败，请稍后重试」——
+// 运营分不清是「被拒绝了」还是「系统坏了」。
+const (
+	MsgCustomerEnabled  = "账号已启用"
+	MsgCustomerDisabled = "账号已停用"
+	MsgCustomerUnlocked = "账号已解除锁定"
+	// MsgCustomerNotLocked 解锁时账号本来就没锁：如实回执，不谎报「已解除」。
+	MsgCustomerNotLocked = "该账号没有处于锁定状态，无需解除"
+	// MsgCustomerFailuresCleared 没被锁、但有残留的失败计数被清掉：
+	// 与「无需解除」分开说，否则运营会以为这个按钮什么都没做。
+	MsgCustomerFailuresCleared = "账号未处于锁定状态，登录失败计数已清零"
+	// ErrCustomerStatusInvalid 只允许「正常」与「已停用」两个目标值。
+	ErrCustomerStatusInvalid = "账号状态取值不合法"
+)
+
 // UserFacingMessages 可以原样展示给访客的全部业务文案。
 //
 // 存在的理由：service 的业务错误来自这里，而基础设施错误（数据库 / Redis）的原文
@@ -80,4 +102,7 @@ var UserFacingMessages = []string{
 	// 账号中心
 	ErrOldPasswordWrong, ErrNewPasswordSame, ErrProfileVisibilityInvalid,
 	ErrPageSizeInvalid,
+	// 后台客户管理（页面回显 + /api/customer/* 的错误）
+	MsgCustomerEnabled, MsgCustomerDisabled, MsgCustomerUnlocked, MsgCustomerNotLocked,
+	MsgCustomerFailuresCleared, ErrCustomerStatusInvalid,
 }

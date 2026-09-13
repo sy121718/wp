@@ -1,0 +1,131 @@
+{* admin/customer_detail.html — 客户详情：资料 + 登录事实 + 订单摘要 + 停用启用 / 解除锁定 *}
+{* Jet 方言：extends 相对本目录；range 用 range 关键字；可能缺键的 map 用 ["key"] 索引访问。 *}
+{{extends "layout.html"}}
+{{block body()}}
+{{csrf := .["csrf_token"]}}
+<div class="stack customer-detail-page">
+    <section class="card card-body">
+        <h2>客户详情</h2>
+        {{if .Err != ""}}
+        <p class="badge badge-warning">上一次操作未完成：{{.Err}}</p>
+        {{end}}
+        {{if .Ok != ""}}
+        <p class="badge badge-success">{{.Ok}}</p>
+        {{end}}
+        <p class="hint"><a href="{{.ListURL}}">← 返回客户列表</a>（返回时保留你的筛选条件）</p>
+        {{if not .HasDetail}}
+        <p class="hint">
+            客户信息读不出来（多半是装配问题），页面只显示这个外壳。请联系开发确认
+            用户模块的后台客户能力是否已注入。
+        </p>
+        {{end}}
+    </section>
+
+    {{if .HasDetail}}
+    <section class="card card-body">
+        <h2>{{.DisplayLabel}} <span class="badge {{.StatusBadge}}">{{.StatusLabel}}</span></h2>
+        <dl class="kv">
+            <dt>登录名</dt><dd>{{.Username}}</dd>
+            <dt>邮箱</dt><dd>{{.Email}} <span class="badge {{if .EmailVerified}}badge-success{{else}}badge-warning{{end}}">{{.EmailVerifiedLabel}}</span></dd>
+            <dt>注册时间</dt><dd>{{.RegisteredAtText}}</dd>
+            <dt>注册来源</dt><dd>{{.RegisterIP}}{{if .RegisterLocation}} · {{.RegisterLocation}}{{end}}</dd>
+            <dt>最近登录</dt><dd>{{.LastLoginTimeText}}</dd>
+            <dt>最近登录 IP</dt><dd>{{.LastLoginIP}}{{if .LastLoginLocation}} · {{.LastLoginLocation}}{{end}}</dd>
+            <dt>登录失败次数</dt><dd>{{.LoginFailureCount}}</dd>
+            <dt>锁定状态</dt>
+            <dd>
+                {{if .Locked}}
+                <span class="badge badge-warning">已锁定</span> 至 {{.LockedUntilText}}（到时间会自动解除）
+                {{else}}
+                <span class="badge badge-mute">未锁定</span>
+                {{end}}
+            </dd>
+        </dl>
+        <p class="hint">
+            「最近登录 IP」是客户上一次成功登录时的地址；「注册来源」是他注册时的地址。
+            客服判断「是不是本人操作」时看这两个。
+        </p>
+        {{if .["LockHint"]}}<p class="hint">{{ .["LockHint"] }}</p>{{end}}
+    </section>
+
+    <section class="card card-body">
+        <h2>订单摘要</h2>
+        {{if .HasProjects}}
+        <form method="get" action="/admin/customers/detail" class="form-inline">
+            <input type="hidden" name="id" value="{{.ID}}">
+            <select class="form-select" name="project" onchange="this.form.submit()">
+                {{range _, p := .Projects}}
+                <option value="{{p.ID}}" {{if p.ID == .SelectedProject}}selected{{end}}>{{p.Name}}</option>
+                {{end}}
+            </select>
+        </form>
+        {{end}}
+        {{if .SummaryFailed}}
+        <p class="hint">订单摘要暂时读不出来 —— 客户资料本身不受影响，可以稍后重新打开本页。</p>
+        {{else if not .HasProjects}}
+        <p class="hint">
+            还没有站点工程，因此没有订单可统计。客户资料本身不受影响；
+            在<a href="/admin/pages">页面管理</a>里建好工程后，这一块会显示该客户在这个工程的消费情况。
+        </p>
+        {{else if .HasSummary}}
+        <div class="action-row">
+            <span class="badge badge-mute">订单数 {{.OrderCount}}</span>
+            <span class="badge badge-success">计入消费 {{.PaidOrderCount}} 单</span>
+            <span class="badge badge-info">累计消费 ¥{{.TotalAmountLabel}}</span>
+        </div>
+        <p class="hint">
+            <strong>最近一单</strong>
+            {{if .LastOrderTimeText}}
+            <a href="{{.LastOrderURL}}"><code>{{.LastOrderNo}}</code></a> · {{.LastOrderStatusLabel}} · {{.LastOrderTimeText}}
+            {{else}}
+            这个客户在当前工程里还没有下过单。
+            {{end}}
+        </p>
+        <p class="hint">
+            累计消费只统计<strong>已付款 / 已发货 / 已完成</strong>的订单实付总额：
+            待付款的单还没付钱，取消与退款的单的钱没有留下 —— 把三类都算进去会得到一个
+            「比实际流水大」的数字。切换上面的工程可以看他在别的站点的情况。
+            这里只给摘要：具体单据在<a href="/admin/orders">订单管理</a>里，
+            上面「最近一单」的订单号点进去就是那一单。
+        </p>
+        {{end}}
+    </section>
+
+    <section class="card card-body">
+        <h2>操作</h2>
+        <p class="hint">
+            <strong>停用</strong>是管理动作：账号从此登不上去（数据全部保留），需要在这里重新启用。
+            <strong>解除锁定</strong>只针对连续输错密码被临时锁住的账号：那个状态到时间会自己解除，
+            这里只是让客户不用等。
+        </p>
+        {{if .Actionable}}
+        <form method="post" action="/admin/customers/status" class="form-inline">
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <input type="hidden" name="customerId" value="{{.ID}}">
+            <input type="hidden" name="toStatus" value="{{.NextStatus}}">
+            <input type="hidden" name="project" value="{{.SelectedProject}}">
+            <button type="submit" class="btn btn-primary">{{.StatusActionLabel}}这个账号</button>
+        </form>
+        {{else}}
+        <p class="hint">
+            {{if .["PendingHint"]}}{{ .["PendingHint"] }}{{else}}这个账号的状态当前不能在这里修改。{{end}}
+        </p>
+        {{end}}
+        {{if .Locked}}
+        <form method="post" action="/admin/customers/unlock" class="form-inline">
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <input type="hidden" name="customerId" value="{{.ID}}">
+            <input type="hidden" name="project" value="{{.SelectedProject}}">
+            <button type="submit" class="btn">解除锁定</button>
+        </form>
+        {{else}}
+        <p class="hint">
+            该账号当前没有被锁定
+            {{if .LoginFailureCount}}（但还有 {{.LoginFailureCount}} 次未清零的失败计数：客户再错几次就会进入锁定，
+            可以点「解除锁定」把它清零）{{end}}。
+        </p>
+        {{end}}
+    </section>
+    {{end}}
+</div>
+{{end}}

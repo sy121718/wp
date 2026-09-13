@@ -19,6 +19,8 @@ var navPathAlias = map[string]string{
 	"/admin/returns": "/admin/orders",
 	// 文章编辑页挂在「文章」列表下（入口在列表行内，不单独占菜单）。
 	"/admin/articles/edit": "/admin/articles",
+	// 客户详情挂在「客户管理」列表下（从列表行点进去，不单独占菜单）。
+	"/admin/customers/detail": "/admin/customers",
 }
 
 // navPathFor 返回用于导航高亮的路径：先按既有规则归一（去尾斜杠），再映射别名。

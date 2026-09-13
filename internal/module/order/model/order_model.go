@@ -276,3 +276,43 @@ func (m *OrderModel) CountByStatus(ctx context.Context, projectID string) (count
 	}
 	return counts, nil
 }
+
+// paidStatuses 计入「累计消费」的订单状态。
+//
+// 取消与退款不算消费（钱没进来，或者已经退回去了），待付款的单还没付。
+// 这份名单只在这里出现一次：页面上的数字与聚合的条件必须同源，
+// 两边各写一份的话，它们会在某次「顺手加个状态」之后悄悄分叉。
+var paidStatuses = []string{OrderStatusPaid, OrderStatusShipped, OrderStatusCompleted}
+
+// CustomerOrderAggregate 按客户聚合的订单事实。
+type CustomerOrderAggregate struct {
+	OrderCount     int64
+	PaidOrderCount int64
+	TotalAmount    int64
+}
+
+// AggregateByUser 按「工程 + 客户」聚合订单数量与累计消费（分）。
+//
+// 单数与金额在**同一条 SQL** 里算出来：分两次查时，第二次之前刚好落了一单，
+// 就会得到「3 单 200 元」这种自相矛盾的数字 —— 对不上账的汇总比没有汇总更糟。
+func (m *OrderModel) AggregateByUser(ctx context.Context, projectID string, userID uint64) (agg CustomerOrderAggregate, err error) {
+	var row struct {
+		OrderCount     int64 `gorm:"column:order_count"`
+		PaidOrderCount int64 `gorm:"column:paid_order_count"`
+		TotalAmount    int64 `gorm:"column:total_amount"`
+	}
+	if err = m.DB(ctx).
+		Select("COUNT(*) AS order_count, "+
+			"COALESCE(SUM(CASE WHEN status IN ? THEN 1 ELSE 0 END), 0) AS paid_order_count, "+
+			"COALESCE(SUM(CASE WHEN status IN ? THEN total ELSE 0 END), 0) AS total_amount",
+			paidStatuses, paidStatuses).
+		Where("project_id = ? AND user_id = ?", projectID, userID).
+		Scan(&row).Error; err != nil {
+		return agg, err
+	}
+	return CustomerOrderAggregate{
+		OrderCount:     row.OrderCount,
+		PaidOrderCount: row.PaidOrderCount,
+		TotalAmount:    row.TotalAmount,
+	}, nil
+}

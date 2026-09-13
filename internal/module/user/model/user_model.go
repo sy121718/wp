@@ -108,12 +108,32 @@ func (m *UserModel) Transaction(ctx context.Context, fn func(tx *gorm.DB) error)
 	return m.db.WithContext(ctx).Transaction(fn)
 }
 
+// 邮箱验证筛选的取值。
+//
+// 「不过滤」必须是 0（零值）：把它写成 1/0 表示「已验证/未验证」的话，
+// 任何忘了设这个字段的调用方都会静默变成「只看未验证」——
+// 而后台客户列表正是「不设这个字段就显示全部」的那种用法。
+const (
+	EmailVerifiedAny  = 0
+	EmailVerifiedOnly = 1
+	EmailVerifiedNone = 2
+)
+
 // UserFilter 列表筛选（条件以参数传入，方法内不写死业务条件）。
 type UserFilter struct {
-	// Keyword 模糊匹配 登录名 / 邮箱 / 昵称（大小写不敏感）。
+	// Keyword 模糊匹配 登录名 / 邮箱 / 昵称 / 展示名（大小写不敏感）。
+	//
+	// 展示名也要匹配：后台是按「客户叫什么」来找人的，而展示名往往才是他在页面上
+	// 留下的那个名字 —— 只搜昵称会让「明明有这个客户却搜不到」。
 	Keyword string
 	// Status <0 表示不过滤。
 	Status int
+	// EmailVerified EmailVerifiedAny / Only / None（0 = 不过滤）。
+	// 判定看 email_verified_at 是否为空，与 service 侧的「已验证」口径同源。
+	EmailVerified int
+	// RegisteredFrom / RegisteredTo 注册时间范围（闭区间，nil = 该端不限）。
+	RegisteredFrom *time.Time
+	RegisteredTo   *time.Time
 	// IncludeDeleted 是否包含**已注销**用户（默认不含）。
 	//
 	// 管理员有时要查「谁注销过」，所以这里给一个显式开关，而不是让默认查询看得见 ——
@@ -173,10 +193,23 @@ func (m *UserModel) List(ctx context.Context, f UserFilter) (list []*UserEntity,
 	if kw := strings.TrimSpace(f.Keyword); kw != "" {
 		// ILIKE 的等价写法：位置参数化，不做字符串拼接。
 		like := "%" + kw + "%"
-		q = q.Where("username ILIKE ? OR email ILIKE ? OR nickname ILIKE ?", like, like, like)
+		q = q.Where("username ILIKE ? OR email ILIKE ? OR nickname ILIKE ? OR display_name ILIKE ?",
+			like, like, like, like)
 	}
 	if f.Status >= 0 {
 		q = q.Where("status = ?", f.Status)
+	}
+	switch f.EmailVerified {
+	case EmailVerifiedOnly:
+		q = q.Where("email_verified_at IS NOT NULL")
+	case EmailVerifiedNone:
+		q = q.Where("email_verified_at IS NULL")
+	}
+	if f.RegisteredFrom != nil {
+		q = q.Where("registered_at >= ?", *f.RegisteredFrom)
+	}
+	if f.RegisteredTo != nil {
+		q = q.Where("registered_at <= ?", *f.RegisteredTo)
 	}
 	if err = q.Count(&total).Error; err != nil {
 		return nil, 0, err
@@ -299,4 +332,50 @@ func (m *UserModel) RecordLogin(ctx context.Context, id uint64, ip, location str
 // TouchActive 更新最后活跃时间（轻量，供心跳类调用）。
 func (m *UserModel) TouchActive(ctx context.Context, id uint64, at time.Time) (err error) {
 	return m.DB(ctx).Where("id = ?", id).Update("last_active_at", at).Error
+}
+
+// CustomerCounters 客户账号的分布计数（后台客户列表页的计数条）。
+type CustomerCounters struct {
+	Total      int64 `gorm:"column:total"`
+	Active     int64 `gorm:"column:active"`
+	Disabled   int64 `gorm:"column:disabled"`
+	Pending    int64 `gorm:"column:pending"`
+	Locked     int64 `gorm:"column:locked"`
+	Verified   int64 `gorm:"column:verified"`
+	Unverified int64 `gorm:"column:unverified"`
+}
+
+// CountCustomers 统计未注销账号的状态 / 邮箱验证 / 锁定分布。
+//
+// now 由调用方传入，不在方法里取时间：判「是否锁定」比较的是 locked_until_time > now，
+// 若同一个请求里两处各自取时间，跨过锁定到期那一刻时页面会自相矛盾
+// （计数条说 1 个已锁定，列表里那一行却显示「未锁定」）。
+//
+// 一条 SQL 出全部计数：分几次查只会在两次之间被并发注册/失败登录插进来，
+// 于是「总数」与「各状态之和」对不上。
+func (m *UserModel) CountCustomers(ctx context.Context, now time.Time) (c CustomerCounters, err error) {
+	if err = m.DB(ctx).
+		Select("COUNT(*) AS total, "+
+			"COALESCE(SUM(CASE WHEN status = ? THEN 1 ELSE 0 END), 0) AS active, "+
+			"COALESCE(SUM(CASE WHEN status = ? THEN 1 ELSE 0 END), 0) AS disabled, "+
+			"COALESCE(SUM(CASE WHEN status = ? THEN 1 ELSE 0 END), 0) AS pending, "+
+			"COALESCE(SUM(CASE WHEN email_verified_at IS NOT NULL THEN 1 ELSE 0 END), 0) AS verified, "+
+			"COALESCE(SUM(CASE WHEN locked_until_time IS NOT NULL AND locked_until_time > ? THEN 1 ELSE 0 END), 0) AS locked",
+			UserStatusActive, UserStatusDisabled, UserStatusPending, now).
+		Scan(&c).Error; err != nil {
+		return c, err
+	}
+	// 未验证 = 总数 - 已验证：在 Go 里减而不是再加一条 SQL 条件，
+	// 两者的口径因此不可能分叉（少一项 COUNT 就少一处能写错的地方）。
+	c.Unverified = c.Total - c.Verified
+	return c, nil
+}
+
+// SetStatus 改账号状态（管理侧：正常 / 已停用）。
+//
+// 只动 status 一列，**不碰锁定字段**：那是另一条轴 ——
+// 把它们混在一起，就会出现「解除停用之后账号还带着上一次的失败计数」这种状态，
+// 于是「刚恢复的账号第一次输错密码就被锁」。
+func (m *UserModel) SetStatus(ctx context.Context, id uint64, status int) (err error) {
+	return m.DB(ctx).Where("id = ?", id).Update("status", status).Error
 }

@@ -20,6 +20,7 @@ import (
 	productcontract "go_wp/internal/module/product/contract"
 	inventorycontract "go_wp/internal/module/product/inventory/contract"
 	projectcontract "go_wp/internal/module/project/contract"
+	usercontract "go_wp/internal/module/user/contract"
 
 	"github.com/gin-gonic/gin"
 )
@@ -54,7 +55,11 @@ func SetupDashboardRoutes(router *gin.Engine,
 	mail mailcontract.MailService,
 	orders ordercontract.OrderService,
 	// analytics 访问统计契约（BIZ-8）：只读聚合，页面据此渲染按天 / 按路径报表。
-	analytics analyticscontract.AnalyticsService) {
+	analytics analyticscontract.AnalyticsService,
+	// customerAdmin 用户模块的**后台面**（收窄到四条方法，见 usercontract.CustomerAdminPort）：
+	// 客户管理页此前完全不存在 —— users 表有全套字段，但后台没有任何地方读它。
+	// 与访客面（/user/*）共用同一个实现，两个面各拿各的接口。
+	customerAdmin usercontract.CustomerAdminPort) {
 	if router == nil {
 		return
 	}
@@ -303,6 +308,18 @@ func SetupDashboardRoutes(router *gin.Engine,
 	adminPages.POST("/articles/import-page", builtin.CasbinMiddlewareForPath("/api/page/create"), articlePages.ArticleImportCreate)
 	adminPages.POST("/articles/publish", builtin.CasbinMiddlewareForPath("/api/presentation/create"), articlePages.ArticlePublish)
 	adminPages.POST("/articles/rebuild", builtin.CasbinMiddlewareForPath("/api/presentation/rebuild"), articlePages.ArticleRebuild)
+
+	// 客户管理页：后台此前没有任何地方读 users 表 —— 管理员看不到客户列表、不能按客户看订单、
+	// 不能停用或解锁账号。页面 GET 走 /admin 组认证（Session+CSRF，无 Casbin）；
+	// 写动作走新权限点 user:customer_status / user:customer_unlock（迁移 152），
+	// 与 /api/customer/* 那组接口是同一个权限点（页面的动作不另立一套授权）。
+	customerPages := NewCustomerPageHandle(customerAdmin, orders, projects)
+	adminPages.GET("/customers", customerPages.CustomersPage)
+	adminPages.GET("/customers/detail", customerPages.CustomerDetailPage)
+	adminPages.POST("/customers/status",
+		builtin.CasbinMiddlewareForPath("/api/customer/status"), customerPages.CustomerStatusSave)
+	adminPages.POST("/customers/unlock",
+		builtin.CasbinMiddlewareForPath("/api/customer/unlock"), customerPages.CustomerUnlock)
 
 	// 系统页面槽位（BIZ-1）：把「结算页是哪一页」这类事实固定下来。
 	// 页面 GET 走 /admin 组认证（Session+CSRF，无 Casbin）；写动作复用槽位 API 权限点（迁移 139）。

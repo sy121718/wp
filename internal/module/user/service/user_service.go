@@ -41,3 +41,7 @@ func NewService(
 
 // 编译期断言：本模块服务满足对外契约。
 var _ usercontract.UserService = (*Service)(nil)
+
+// 后台客户管理是**另一条契约**（不并进 UserService，理由见 contract/customer_admin.go）：
+// 断言放在这里，装配处拿到的 *Service 两个面都有。
+var _ usercontract.CustomerAdminPort = (*Service)(nil)

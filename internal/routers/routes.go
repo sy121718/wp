@@ -50,6 +50,7 @@ import (
 	projecthttp "go_wp/internal/module/project/inbound/http"
 	pubhttp "go_wp/internal/module/publication/inbound/http"
 	runtimefragment "go_wp/internal/module/runtimefragment"
+	usercontract "go_wp/internal/module/user/contract"
 	userhttp "go_wp/internal/module/user/inbound/http"
 	"go_wp/internal/pipeline"
 	"go_wp/internal/templates"
@@ -208,6 +209,15 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 	// 路由挂在 public 面（不带 Casbin）：访客账号没有权限点，理由见 userhttp 包注释。
 	// userSvc 的消费方：order（访客下单自动开号）与访问面片段端点（访客身份解析中间件）。
 	userSvc := userhttp.SetupUserRoutes(router, db, mailSvc, "go_wp")
+	// 后台客户管理（/api/customer/*，权限点见迁移 152）：同一个 service 的**管理面**。
+	// 与访客面共用一份实现，但刻意是两条契约 —— 拿得到 CustomerAdminPort 的地方
+	// 才能列出全部客户、停用别人的账号，而片段层拿到的那份接口里没有这些能力。
+	// 这里断言而不是裸类型转换：装配缺陷要在启动时炸掉，而不是等运营点开客户页。
+	userAdminSvc, userAdminOK := userSvc.(usercontract.CustomerAdminPort)
+	if !userAdminOK {
+		panic("用户模块未实现 CustomerAdminPort（后台客户管理契约），装配缺陷")
+	}
+	userhttp.SetupCustomerAdminRoutes(authorizedAPI, userAdminSvc)
 	// 营销追踪端点（#38 P1）：公开路由（访问面），无鉴权 —— 能力由 TrackingService 收窄。
 	mailhttp.SetupTrackingRoutes(router, mailSvc)
 	_ = mailSvc
@@ -481,7 +491,11 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 		//（它同时提供访客查询与优惠码能力，后台页只用查询与状态流转那几条）。
 		orderSvc,
 		// 访问统计页（BIZ-8）：只读聚合（按天 / 按路径 + 时间范围筛选 + 分页）。
-		analyticsSvc)
+		analyticsSvc,
+		// 客户管理页：用户模块的后台面（收窄到四条方法，见 usercontract.CustomerAdminPort）。
+		// 它同时也是「访客面 /user/*」那套 service 的同一个实例 —— 两个面共用实现，
+		// 但页面拿到的接口里只有「读客户 + 停用启用 + 解除锁定」。
+		userAdminSvc)
 
 	// 运行时片段端点（0-D，公开路由：capability 白名单 + 认证策略在 handler 内）。
 	runtimefragment.SetupFragmentRoutes(router)

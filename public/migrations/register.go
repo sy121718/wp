@@ -381,6 +381,12 @@ var articleMenuSQL string
 //go:embed 151_missing_permission_points.sql
 var missingPermissionPointsSQL string
 
+//go:embed 152_customer_admin_permissions.sql
+var customerAdminPermissionsSQL string
+
+//go:embed 153_customer_admin_menu.sql
+var customerAdminMenuSQL string
+
 func init() {
 	register(Migration{
 		Version:   "001-init-schema",
@@ -1666,5 +1672,31 @@ func init() {
 			"AND (SELECT COUNT(*) FROM sys_casbin_rule WHERE ptype = 'p' AND v3 IN ('page:delete', 'block:clone')) >= 2 " +
 			"THEN 1 ELSE 0 END",
 		SQL: missingPermissionPointsSQL,
+	})
+
+	// 152：后台客户管理权限点（4 条）+ 超管策略。
+	//
+	// 跳过条件同时看两张表（与 151 同因）：4 条权限点齐了、且超管策略至少各有 1 行，
+	// 才算这条 seed 已完成 —— 只查权限点会留下「权限点有了、策略没补」的空窗，
+	// 而那种状态下超管点客户页的按钮就是 403。
+	registerSeed(Seed{
+		Version:   "152-customer-admin-permissions",
+		TableName: "sys_permission",
+		ConditionSQL: "SELECT CASE WHEN " +
+			"(SELECT COUNT(*) FROM sys_permission WHERE permission_code IN " +
+			"('user:customer_list', 'user:customer_detail', 'user:customer_status', 'user:customer_unlock')) = 4 " +
+			"AND (SELECT COUNT(*) FROM sys_casbin_rule WHERE ptype = 'p' AND v3 IN " +
+			"('user:customer_list', 'user:customer_detail', 'user:customer_status', 'user:customer_unlock')) >= 4 " +
+			"THEN 1 ELSE 0 END",
+		SQL: customerAdminPermissionsSQL,
+	})
+
+	// 153：客户管理后台菜单入口（幂等 seed）。
+	// 侧栏真源是代码配置（nav_menu.go 的「系统」组），本 seed 服务于后台「菜单管理」页。
+	registerSeed(Seed{
+		Version:      "153-customer-admin-menu",
+		TableName:    "sys_menus",
+		ConditionSQL: "SELECT COUNT(*) FROM sys_menus WHERE type = 2 AND deleted_time IS NULL AND title = '客户管理'",
+		SQL:          customerAdminMenuSQL,
 	})
 }

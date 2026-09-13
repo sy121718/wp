@@ -18,6 +18,8 @@ type OrderService interface {
 	CouponService
 	// ReturnService 退货入库（RMA）：客户申请 → 审核 → 先入库后退款。
 	ReturnService
+	// CustomerOrderSummaryReader 后台客户管理页的订单摘要（只读，一条方法）。
+	CustomerOrderSummaryReader
 
 	// CreateOrder 建单：读商品事实落快照 → 扣库存 → 写订单（落在同一事务里）。
 	CreateOrder(ctx context.Context, req *orderdto.CreateOrderReq) (res *orderdto.CreateOrderResp, err error)
@@ -108,6 +110,18 @@ type StockOperator interface {
 	DeductStock(ctx context.Context, req *inventorydto.DeductStockReq) (res *inventorydto.StockChangeResp, err error)
 	// ChangeStock 按 SKU 增减库存：取消订单时用来归还。
 	ChangeStock(ctx context.Context, req *inventorydto.ChangeStockReq) (res *inventorydto.StockChangeResp, err error)
+}
+
+// CustomerOrderSummaryReader 按客户取订单聚合事实（只读，一条方法）。
+//
+// 后台客户管理页要用它 —— 而客户页需要的东西只有一件：这个客户在本工程里
+// 下过几单、累计消费多少、最近一单是什么时候。所以它既不是 ListOrders
+// （那会顺带给出全站状态计数与客户列表），也不是任何写能力。
+// 与 VisitorOrderReader 同一条思路：越权防护靠接口形状，不靠调用方自觉。
+type CustomerOrderSummaryReader interface {
+	// CustomerOrderSummaryOf 累计口径（哪些状态算消费）由订单模块决定，
+	// 调用方只拿到结论，不参与计算。
+	CustomerOrderSummaryOf(ctx context.Context, req *orderdto.CustomerOrderSummaryReq) (res *orderdto.CustomerOrderSummaryResp, err error)
 }
 
 // OrderNoReader 按商户单号取订单。

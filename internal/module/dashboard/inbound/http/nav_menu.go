@@ -76,6 +76,9 @@ var navConfig = []navGroup{
 			{Title: "订单", Path: "/admin/orders", Perm: "order:list"},
 			// 退货入库（RMA）：订单的售后环节，权限点来自迁移 145。
 			{Title: "退货入库", Path: "/admin/returns", Perm: "order:return_list"},
+			// 客户管理（访客账号的后台面）：权限点来自迁移 152（user:customer_list）。
+			// 访客账号此前只有前台链路，后台看不到 —— 客户列表 / 按客户看订单 / 停用与解锁。
+			{Title: "客户管理", Path: "/admin/customers", Perm: "user:customer_list"},
 			{Title: "优惠码", Path: "/admin/coupons", Perm: "order:coupon_list"},
 			{Title: "主题管理", Path: "/admin/themes", Perm: "project:theme_list"},
 			{Title: "全局块", Path: "/admin/blocks", Perm: "block:list"},
