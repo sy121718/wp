@@ -13,7 +13,10 @@ import (
 // 键 = entity_type，值 = 允许的字段路径（ContentResolver.ResolveString 与
 // contenttemplate 的 Binding 校验共用同一白名单，禁止两处各维护一份）。
 var fieldWhitelist = map[string][]string{
-	"article": {"title", "body", "excerpt", "featuredImage", "seoTitle", "seoDescription"},
+	// focusKeyword（主关键词）是编辑期 SEO 评分器的输入之一：关键词密度、关键词位置、
+	// H1 是否含关键词这几项检查都以它为基准，缺了它这些项恒判「未设置主关键词」。
+	// 它不参与构建产物（不进页面字节），只是给评分器与编辑者用的一句话主题。
+	"article": {"title", "body", "excerpt", "featuredImage", "seoTitle", "seoDescription", "focusKeyword"},
 }
 
 // EntityTypes 全部支持的内容类型（字典序）。

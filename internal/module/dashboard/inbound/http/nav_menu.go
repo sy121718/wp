@@ -59,9 +59,11 @@ var navConfig = []navGroup{
 	{
 		Key:   "content",
 		Title: "内容",
-		// 内容组暂无已实现页面：文章（本体 CMS 页）、商品（重轨插件）、分类标签（随商品）
-		// 均未落地 handler，故不配置节点（空分组会被 buildNav 自动过滤，避免点开 404）。
-		Nodes: nil,
+		Nodes: []navNode{
+			// 文章（INF-1）：CMS 内容实体（contents，迁移 080 起只保留 article）。
+			// 权限点用 content:list（迁移 033），与写操作的 content:create/update/delete 同源。
+			{Title: "文章", Path: "/admin/articles", Perm: "content:list"},
+		},
 	},
 	{
 		Key:   "system",

@@ -9,6 +9,7 @@ import (
 	admincontract "go_wp/internal/module/admin/contract"
 	analyticscontract "go_wp/internal/module/analytics/contract"
 	blockcontract "go_wp/internal/module/block/contract"
+	contentcontract "go_wp/internal/module/content/contract"
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
 	mailcontract "go_wp/internal/module/mail/contract"
 	masterdatacontract "go_wp/internal/module/masterdata/contract"
@@ -45,6 +46,9 @@ func SetupDashboardRoutes(router *gin.Engine,
 	products productcontract.ProductService,
 	presentations ProductPagePorts,
 	templates contenttemplatecontract.ContentTemplateService,
+	// contents CMS 内容契约（INF-1 文章管理页）：内容实体此前只有 JSON API，
+	// 后台缺入口。本页直接调契约做列表 / 编辑 / 删除（本地调用，不绕回自己的 HTTP API）。
+	contents contentcontract.ContentService,
 	inventories inventorycontract.InventoryService,
 	masterdata masterdatacontract.MasterDataService,
 	mail mailcontract.MailService,
@@ -278,6 +282,23 @@ func SetupDashboardRoutes(router *gin.Engine,
 	adminPages.POST("/returns/approve", builtin.CasbinMiddlewareForPath("/api/order/return/approve"), returnPages.ReturnApprove)
 	adminPages.POST("/returns/reject", builtin.CasbinMiddlewareForPath("/api/order/return/reject"), returnPages.ReturnReject)
 	adminPages.POST("/returns/receive", builtin.CasbinMiddlewareForPath("/api/order/return/receive"), returnPages.ReturnReceive)
+
+	// 文章管理页（INF-1）：CMS 内容实体（contents，迁移 080 起只保留 article）的后台入口，
+	// 以及 SEO-10 要求的编辑期评测侧栏（密度 / 长度 / 可读性 / 内链）。
+	// 页面 GET 走 /admin 组认证（Session+CSRF，无 Casbin）；写动作复用既有 content:* 权限点（迁移 033），
+	// 本次不新增权限点；发布复用商品详情模板页那两条 presentation 权限点（同一行为，只是实体类型不同）。
+	// 侧栏入口见 nav_menu.go 的 content 组。
+	articlePages := NewArticlePageHandle(contents, projects, templates, presentations)
+	adminPages.GET("/articles", articlePages.ArticlesPage)
+	adminPages.GET("/articles/edit", articlePages.ArticleEditPage)
+	adminPages.POST("/articles/create", builtin.CasbinMiddlewareForPath("/api/content/create"), articlePages.ArticleCreate)
+	adminPages.POST("/articles/update", builtin.CasbinMiddlewareForPath("/api/content/update"), articlePages.ArticleUpdate)
+	adminPages.POST("/articles/delete", builtin.CasbinMiddlewareForPath("/api/content/delete"), articlePages.ArticleDelete)
+	// 评分是纯计算（不写库、不写产物），只走组级 Session+CSRF，不再叠权限点：
+	// 能打开编辑页的人就能算分，分数本身不构成新的信息公开面。
+	adminPages.POST("/articles/score", articlePages.ArticleScorePanel)
+	adminPages.POST("/articles/publish", builtin.CasbinMiddlewareForPath("/api/presentation/create"), articlePages.ArticlePublish)
+	adminPages.POST("/articles/rebuild", builtin.CasbinMiddlewareForPath("/api/presentation/rebuild"), articlePages.ArticleRebuild)
 
 	// 系统页面槽位（BIZ-1）：把「结算页是哪一页」这类事实固定下来。
 	// 页面 GET 走 /admin 组认证（Session+CSRF，无 Casbin）；写动作复用槽位 API 权限点（迁移 139）。

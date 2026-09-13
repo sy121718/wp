@@ -17,6 +17,8 @@ var navPathAlias = map[string]string{
 	"/admin/products/translations": "/admin/products",
 	// 退货入库挂在「订单」菜单下（它是订单的售后环节，不单独占一级菜单）。
 	"/admin/returns": "/admin/orders",
+	// 文章编辑页挂在「文章」列表下（入口在列表行内，不单独占菜单）。
+	"/admin/articles/edit": "/admin/articles",
 }
 
 // navPathFor 返回用于导航高亮的路径：先按既有规则归一（去尾斜杠），再映射别名。

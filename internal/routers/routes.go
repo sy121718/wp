@@ -473,7 +473,10 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 		admincontract.RuleService
 	})
 	dashboardhttp.SetupDashboardRoutes(router, pageService, projectService, blockSvc, pluginSvc, collectionResolver,
-		adminCRUD, adminCRUD, adminCRUD, adminCRUD, adminCRUD, adminCRUD, adminAuthzSvc, navigationSvc, productSvc, presentationSvc, contentTemplateSvc, inventorySvc, masterdataSvc, mailSvc,
+		adminCRUD, adminCRUD, adminCRUD, adminCRUD, adminCRUD, adminCRUD, adminAuthzSvc, navigationSvc, productSvc, presentationSvc, contentTemplateSvc,
+		// 文章管理页（INF-1）：content 契约在注入片段端口时已拿到，这里复用同一个实例。
+		contentSvc,
+		inventorySvc, masterdataSvc, mailSvc,
 		// 订单管理页（BIZ-1）：orderSvc 是在前面装配订单模块时拿到的契约
 		//（它同时提供访客查询与优惠码能力，后台页只用查询与状态流转那几条）。
 		orderSvc,

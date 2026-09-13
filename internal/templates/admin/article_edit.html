@@ -1,0 +1,186 @@
+{* admin/article_edit.html — 文章编辑页（INF-1）+ 编辑期 SEO 评测侧栏（SEO-10） *}
+{* Jet 方言：extends 相对本目录；{{include}} 共享当前数据上下文；map 取值用 ["key"]。 *}
+{{extends "layout.html"}}
+{{block body()}}
+{{csrf := .["csrf_token"]}}
+{{form := .Form}}
+{{listURL := .ListURL}}
+<link rel="stylesheet" href="/static/vendor/trix/trix.css">
+<div class="stack article-edit-page">
+    <section class="card card-body">
+        <div class="action-row">
+            <h2>{{.title}}</h2>
+            <a class="btn" href="{{listURL}}">← 返回列表</a>
+            {{if .["Published"]}}
+            <a class="btn" href="{{.PublicURL}}" target="_blank" rel="noopener">查看线上</a>
+            {{end}}
+        </div>
+        {{if .Err != ""}}
+        <p class="badge badge-warning">上一次操作未完成：{{.Err}}</p>
+        {{end}}
+        {{if .Ok != ""}}
+        <p class="badge badge-success">{{.Ok}}</p>
+        {{end}}
+        {{if .IsNew}}
+        <p class="hint">直接打开这个地址时没有带文章 id —— 这里是新建表单，填完保存即可。</p>
+        {{else}}
+        <p class="hint">
+            版本 v{{form.Revision}}，最近更新 {{form.UpdatedAt}}。
+            保存后，引用这篇文章的页面与已发布的详情页会被<strong>标记待重建</strong> ——
+            访问面的静态产物不会自己变，重新构建那些页面才会带上新内容。
+        </p>
+        {{end}}
+    </section>
+
+    <div class="article-edit-grid">
+        <form method="post" class="article-edit-main"
+              action="{{if .IsNew}}/admin/articles/create{{else}}/admin/articles/update{{end}}"
+              id="article-form">
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            {{if !.IsNew}}<input type="hidden" name="id" value="{{form.ID}}">{{end}}
+
+            <section class="card card-body">
+                <h2>正文</h2>
+                <label class="form-label" for="article-title">标题</label>
+                <input class="form-input" id="article-title" type="text" name="title"
+                       value="{{form.Title}}" placeholder="文章标题" required>
+
+                <label class="form-label" for="article-slug">路径（slug）</label>
+                {{if .IsNew}}
+                <input class="form-input" id="article-slug" type="text" name="slug"
+                       value="{{form.Slug}}" placeholder="hello-world" required>
+                <p class="hint">路径片段，创建后<strong>不可修改</strong>（它是文章的稳定身份）。</p>
+                {{else}}
+                <input class="form-input" id="article-slug" type="text" value="{{form.Slug}}" readonly>
+                <p class="hint">路径创建后不可修改：已发出去的链接、集合里的条目都指着它。</p>
+                {{end}}
+
+                <label class="form-label" for="article-excerpt">摘要</label>
+                <textarea class="form-input" id="article-excerpt" name="excerpt" rows="2"
+                          placeholder="列表卡片上显示的一句话">{{form.Excerpt}}</textarea>
+
+                <label class="form-label" for="article-body">内容</label>
+                {* Trix：本地 vendor，零 CDN。编辑器把富文本写回隐藏 input（name=body），
+                   服务端落库前过 core.SanitizeRichHTML 白名单清洗。 *}
+                <input id="article-body" type="hidden" name="body" value="{{form.Body}}">
+                <trix-editor input="article-body" class="trix-content article-trix"></trix-editor>
+                <p class="hint">
+                    正文支持标题、列表、引用、代码块、链接与图片（受白名单限制，脚本类标签会被清洗掉）。
+                    正文里写的 h2/h3 会进入 SEO 的标题结构评测。
+                </p>
+
+                <label class="form-label" for="article-cover">封面图</label>
+                <input class="form-input" id="article-cover" type="text" name="featuredImage"
+                       value="{{form.FeaturedImage}}" placeholder="/storage/image/... 或完整地址">
+                <p class="hint">封面用于列表卡片（组件的图片字段绑 <code>featuredImage</code>）与详情页头图。</p>
+            </section>
+
+            <section class="card card-body">
+                <h2>SEO 字段</h2>
+                <label class="form-label" for="article-focus">主关键词</label>
+                <input class="form-input" id="article-focus" type="text" name="focusKeyword"
+                       value="{{form.FocusKeyword}}" placeholder="这篇文章主打的那一个词">
+                <p class="hint">
+                    评测里的<strong>关键词密度、关键词位置、H1/H2 是否含关键词</strong>都以它为准。
+                    留空时这几项一律判「未设置主关键词」——它们是这套评测里权重最高的几项，
+                    所以别跳过这一栏。
+                </p>
+
+                <label class="form-label" for="article-seo-title">SEO 标题</label>
+                <input class="form-input" id="article-seo-title" type="text" name="seoTitle"
+                       value="{{form.SEOTitle}}" placeholder="留空则按标题评测">
+                <p class="hint">留空时评测与 SERP 预览用文章标题；搜索引擎结果页看的是这一条。</p>
+
+                <label class="form-label" for="article-seo-desc">SEO 描述</label>
+                <textarea class="form-input" id="article-seo-desc" name="seoDescription" rows="2"
+                          placeholder="留空则按摘要评测">{{form.SEODescription}}</textarea>
+            </section>
+
+            <section class="card card-body">
+                <div class="action-row">
+                    <button type="submit" class="btn btn-primary">保存</button>
+                    {{if !.IsNew}}
+                    <button type="button" class="btn"
+                            hx-post="/admin/articles/score" hx-include="#article-form"
+                            hx-target="#article-seo-score" hx-swap="innerHTML">重新评分</button>
+                    {{end}}
+                </div>
+                <p class="hint">
+                    「重新评分」只算分，不保存 —— 先看分数再决定要不要改，改完再保存。
+                    评分是提示性的，<strong>不会拦住保存</strong>：草稿先存下来是常态。
+                </p>
+            </section>
+        </form>
+
+        <aside class="article-edit-side">
+            <section class="card card-body">
+                <h2>SEO 评测</h2>
+                <div id="article-seo-score">{{include "../fragments/seo_score.html"}}</div>
+                <p class="hint">
+                    评测覆盖四个维度：<strong>基础</strong>（标题/描述/URL）、<strong>内容</strong>
+                    （字数/段落/句长可读性）、<strong>关键词</strong>（密度/出现位置）、
+                    <strong>链接与图片</strong>（内链数/锚文本/图片 alt）。
+                </p>
+                <p class="hint">
+                    两项<strong>永远不会绿</strong>：<strong>canonical 与结构化数据</strong>。
+                    文章详情页的 <code>&lt;head&gt;</code> 由内容模板的页面设置决定，
+                    不由文章字段驱动，所以这里如实判未达标 —— 它是构建侧的缺口，
+                    不是这一页能改的东西。
+                </p>
+            </section>
+
+            <section class="card card-body">
+                <h2>发布</h2>
+                {{if .["Published"]}}
+                <p>
+                    线上路径：<a href="{{.PublicURL}}" target="_blank" rel="noopener" class="text-mono">{{.URLPath}}</a>
+                </p>
+                {{if .["Stale"]}}
+                <p class="badge badge-warning">内容有更新，产物待重建</p>
+                <p class="hint">
+                    文章改完保存后不会自动变更线上文件 —— 要么等依赖扇出触发的重建，
+                    要么在这里手动重新发布一次。
+                </p>
+                {{else}}
+                <p class="badge badge-success">已是最新</p>
+                {{end}}
+                <form method="post" action="/admin/articles/rebuild">
+                    <input type="hidden" name="csrf_token" value="{{csrf}}">
+                    <input type="hidden" name="id" value="{{form.ID}}">
+                    <button type="submit" class="btn">重新发布</button>
+                </form>
+                {{else if .["PublishConfigured"]}}
+                {{if .["HasTemplates"]}}
+                <p class="hint">这篇文章还没有线上详情页。选一套模板与站点工程，发布后即可访问。</p>
+                <form method="post" action="/admin/articles/publish" class="stack-sm">
+                    <input type="hidden" name="csrf_token" value="{{csrf}}">
+                    <input type="hidden" name="id" value="{{form.ID}}">
+                    <label class="form-label" for="article-publish-project">站点工程</label>
+                    <select class="form-select" id="article-publish-project" name="projectId" required>
+                        {{range _, p := .Projects}}
+                        <option value="{{p.ID}}">{{p.Name}}</option>
+                        {{end}}
+                    </select>
+                    <label class="form-label" for="article-publish-url">访问路径</label>
+                    <input class="form-input" id="article-publish-url" type="text" name="urlPath"
+                           value="{{.DefaultURLPath}}" required>
+                    <label class="form-label" for="article-publish-template">详情模板</label>
+                    <select class="form-select" id="article-publish-template" name="templateId">
+                        {{range _, t := .Templates}}
+                        <option value="{{t.ID}}">{{t.Name}}（v{{t.Version}}）</option>
+                        {{end}}
+                    </select>
+                    <button type="submit" class="btn btn-primary">发布</button>
+                </form>
+                {{else}}
+                <p class="hint">{{.NoTemplateHint}}</p>
+                {{end}}
+                {{else}}
+                <p class="hint">{{.PublishHint}}</p>
+                {{end}}
+            </section>
+        </aside>
+    </div>
+</div>
+<script src="/static/vendor/trix/trix.umd.js"></script>
+{{end}}

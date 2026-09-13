@@ -375,6 +375,9 @@ var analyticsPermSQL string
 //go:embed 149_analytics_menu.sql
 var analyticsMenuSQL string
 
+//go:embed 150_article_menu.sql
+var articleMenuSQL string
+
 func init() {
 	register(Migration{
 		Version:   "001-init-schema",
@@ -1637,5 +1640,14 @@ func init() {
 		TableName:    "sys_menus",
 		ConditionSQL: "SELECT COUNT(*) FROM sys_menus WHERE type = 2 AND deleted_time IS NULL AND title = '访问统计'",
 		SQL:          analyticsMenuSQL,
+	})
+
+	// 150：文章管理后台菜单入口（INF-1，幂等 seed）。
+	// 侧栏真源是代码配置（nav_menu.go 的「内容」组），本 seed 服务于后台「菜单管理」页 —— 见 SQL 顶部注释。
+	registerSeed(Seed{
+		Version:      "150-article-menu",
+		TableName:    "sys_menus",
+		ConditionSQL: "SELECT COUNT(*) FROM sys_menus WHERE type = 2 AND deleted_time IS NULL AND title = '文章'",
+		SQL:          articleMenuSQL,
 	})
 }
