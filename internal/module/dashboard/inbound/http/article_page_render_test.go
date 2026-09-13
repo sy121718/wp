@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -180,4 +181,39 @@ func firstArticleBody(data gin.H) string {
 		return "Score 数据缺失"
 	}
 	return fmt.Sprintf("Score.OK=%v Total=%d", sv.OK, sv.Total)
+}
+
+// TestArticleScorePanelRendersFragment 直接打 handler（而不是绕过它去渲染模板）。
+//
+// 这个测试是被一个真实缺陷补出来的：handler 里的模板名与模板文件对不上时，
+// 响应是「HTTP 200 + 空 body」—— 只测模板本身、不经过 handler 的测试看不见它。
+func TestArticleScorePanelRendersFragment(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	engine := gin.New()
+	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
+
+	h := &articlePageHandle{}
+	engine.POST("/admin/articles/score", h.ArticleScorePanel)
+
+	form := url.Values{
+		"title":        {"一篇有标题的文章"},
+		"body":         {"<h2>小标题</h2><p>正文内容写长一些，够评分器判断内容长度与结构。</p>"},
+		"excerpt":      {"摘要"},
+		"focusKeyword": {"文章"},
+	}
+	req := httptest.NewRequest(http.MethodPost, "/admin/articles/score", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("评分片段渲染失败，状态 %d", rec.Code)
+	}
+	body := rec.Body.String()
+	if strings.TrimSpace(body) == "" {
+		t.Fatal("评分片段响应体为空 —— handler 里的模板名很可能与模板文件对不上")
+	}
+	if !strings.Contains(body, "SEO 评分（0-100）") {
+		t.Errorf("评分片段缺少总分块：%s", body[:min(len(body), 200)])
+	}
 }

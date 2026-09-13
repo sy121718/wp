@@ -216,9 +216,12 @@ func (h *articlePageHandle) ArticleDelete(c *gin.Context) {
 // 走 HTMX 局部刷新而不是整页重绘：编辑者刚改完标题/关键词就按「重新评分」，
 // 表单不重画，光标与未保存的正文都不会丢。无 JS 时退化为「保存后刷新整页看分数」——
 // 编辑页的初始评分就是服务端算好后直接渲染进去的。
+//
+// 复用页面设置面板那份片段（fragments/seo_score）：两边吃的是同一个 scoreView，
+// 各写一份模板只会让「哪些检查项算未达标」的呈现方式慢慢分叉。
 func (h *articlePageHandle) ArticleScorePanel(c *gin.Context) {
 	data := articleFormOf(c).data()
-	c.HTML(http.StatusOK, "fragments/article_seo_score",
+	c.HTML(http.StatusOK, "fragments/seo_score",
 		gin.H{"Score": articleScoreViewOf(data, strings.TrimSpace(c.PostForm("url")))})
 }
 
