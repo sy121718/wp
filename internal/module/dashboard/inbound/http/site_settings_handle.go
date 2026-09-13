@@ -12,11 +12,34 @@ import (
 	"go_wp/internal/builder"
 	dashboardenums "go_wp/internal/module/dashboard/enums"
 	projectcontract "go_wp/internal/module/project/contract"
+	"go_wp/internal/siteurl"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
 
 	"github.com/gin-gonic/gin"
 )
+
+// urlPatternRow URL 规则的一行（一个实体类型）。
+type urlPatternRow struct {
+	Kind    string // 实体类型键（表单字段名 = urlPattern_<Kind>）
+	Label   string // 展示名（"文章详情页"）
+	Value   string // 当前配置值；空 = 未配置
+	Default string // 默认模式（placeholder："留空 = 用这个"要看得见）
+}
+
+// buildURLPatternRows 组装 URL 规则编辑行（顺序取 siteurl.KnownKinds，稳定）。
+func buildURLPatternRows(configured map[string]string) []urlPatternRow {
+	rows := make([]urlPatternRow, 0, len(siteurl.KnownKinds))
+	for _, k := range siteurl.KnownKinds {
+		rows = append(rows, urlPatternRow{
+			Kind:    k.Kind,
+			Label:   k.Label,
+			Value:   strings.TrimSpace(configured[k.Kind]),
+			Default: siteurl.PatternOf(k.Kind, nil),
+		})
+	}
+	return rows
+}
 
 // siteSettingsData 站点设置页数据。
 type siteSettingsData struct {
@@ -30,6 +53,8 @@ type siteSettingsData struct {
 	ContactEmail string // 联系邮箱
 	// GA4MeasurementID 站点 GA4 测量 ID（构建期注入产物 head 的 gtag；空 = 不注入）。
 	GA4MeasurementID string
+	// URLPatterns URL 规则编辑行（各实体类型的详情页路径模式，WP 固定链接的等价物）。
+	URLPatterns []urlPatternRow
 
 	// Locales 站点语言清单编辑行（多语言 P3，project_locales）。
 	Locales []localeRow
@@ -52,6 +77,7 @@ func (d *siteSettingsData) templateMap() gin.H {
 		"ContactEmail": d.ContactEmail,
 
 		"GA4MeasurementID": d.GA4MeasurementID,
+		"URLPatterns":      d.URLPatterns,
 		"Locales":          d.Locales,
 		"LocaleError":      d.LocaleError,
 		"LocaleSaved":      d.LocaleSaved,
@@ -99,6 +125,8 @@ func (h *Handle) fillProjectSettings(c *gin.Context, data *siteSettingsData) {
 	data.SiteDesc = fields.SiteDesc
 	data.ContactEmail = fields.ContactEmail
 	data.GA4MeasurementID = fields.GA4MeasurementID
+	// URL 规则：当前配置（可能为空）+ 默认模式（placeholder，"留空 = 用默认"要看得见）。
+	data.URLPatterns = buildURLPatternRows(fields.URLPatterns)
 	// 语言清单（project_locales）：站点「有哪几种语言」的唯一真源，与构建/路由同源。
 	data.Locales = h.localeRowsOf(c, data.Selected)
 }
@@ -123,6 +151,20 @@ func (h *Handle) SaveSiteSettings(c *gin.Context) {
 		c.String(http.StatusNotFound, "站点工程不存在")
 		return
 	}
+	// URL 规则：逐实体类型读表单。留空 = 不配置该项（回落 siteurl 的默认模式）；
+	// 非空则必须在保存时就校验 —— 存进去等构建期才发现问题的代价是"详情页路径莫名其妙"。
+	patterns := map[string]string{}
+	for _, k := range siteurl.KnownKinds {
+		raw := strings.TrimSpace(c.PostForm("urlPattern_" + k.Kind))
+		if raw == "" {
+			continue
+		}
+		if perr := siteurl.ValidatePattern(raw); perr != nil {
+			c.String(http.StatusBadRequest, k.Label+"的路径模式不合法："+perr.Error())
+			return
+		}
+		patterns[k.Kind] = siteurl.Normalize(raw)
+	}
 	ga4ID := ""
 	if raw := strings.TrimSpace(c.PostForm("ga4MeasurementId")); raw != "" {
 		id, ok := builder.NormalizeGA4MeasurementID(raw)
@@ -137,6 +179,7 @@ func (h *Handle) SaveSiteSettings(c *gin.Context) {
 		SiteDesc:         strings.TrimSpace(c.PostForm("siteDesc")),
 		ContactEmail:     strings.TrimSpace(c.PostForm("contactEmail")),
 		GA4MeasurementID: ga4ID,
+		URLPatterns:      patterns,
 	})
 	if err != nil {
 		response.ErrorWithMessage(c, http.StatusInternalServerError, dashboardenums.MsgInternalError)
@@ -161,6 +204,18 @@ func mergeSiteSettings(raw json.RawMessage, fields projectcontract.SiteSettings)
 			return nil, err
 		}
 	}
+	setMap := func(key string, value map[string]string) error {
+		if len(value) == 0 {
+			delete(obj, key)
+			return nil
+		}
+		encoded, err := json.Marshal(value)
+		if err != nil {
+			return err
+		}
+		obj[key] = encoded
+		return nil
+	}
 	setString := func(key, value string) error {
 		if value == "" {
 			delete(obj, key)
@@ -177,6 +232,9 @@ func mergeSiteSettings(raw json.RawMessage, fields projectcontract.SiteSettings)
 		return nil, err
 	}
 	if err := setString("siteDesc", fields.SiteDesc); err != nil {
+		return nil, err
+	}
+	if err := setMap("urlPatterns", fields.URLPatterns); err != nil {
 		return nil, err
 	}
 	if err := setString("contactEmail", fields.ContactEmail); err != nil {

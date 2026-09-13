@@ -29,6 +29,7 @@ import (
 	contenttemplatedto "go_wp/internal/module/contenttemplate/dto"
 	presentationdto "go_wp/internal/module/presentation/dto"
 	productdto "go_wp/internal/module/product/dto"
+	"go_wp/internal/siteurl"
 )
 
 // productEntityType 商品详情模板的实体类型（与 product 模块注册进实体类型注册表的
@@ -133,7 +134,8 @@ func (h *productPageHandle) ProductDetailTemplatePage(c *gin.Context) {
 	}
 	data["Product"] = gin.H{
 		"ID": product.ID, "Name": product.Name, "Slug": product.Slug,
-		"URLPath": productDetailPath(product.Slug),
+		// 表单预填的发布路径：按选中工程的 URL 规则派生（用户可改）。
+		"URLPath": siteDetailPath(ctx, h.projects, selected, siteurl.KindProduct, product.Slug, product.ID),
 	}
 	data["Templates"] = templates
 	data["TemplateCount"] = len(templates)
@@ -153,13 +155,6 @@ func withDetailTemplateMissing(data gin.H) gin.H {
 }
 
 // productDetailPath 商品详情页的默认 URL（与商品 slug 一致；发布实例按它激活静态产物）。
-func productDetailPath(slug string) string {
-	if strings.TrimSpace(slug) == "" {
-		return "/products"
-	}
-	return "/products/" + strings.TrimPrefix(strings.TrimSpace(slug), "/")
-}
-
 // ProductDetailTemplateCreate POST /admin/products/template/create：
 // 新建一套命名模板（复制指定模板或当前默认模板的文档），初始版本 v1。
 //
@@ -229,7 +224,10 @@ func (h *productPageHandle) ProductDetailTemplatePublish(c *gin.Context) {
 			c.Redirect(http.StatusFound, h.detailTemplateBackURL(projectID, productID, err.Error()))
 			return
 		}
-		req.URLPath = productDetailPath(product.Slug)
+		// 路径按站点 URL 规则派生（SiteSettings.urlPatterns，未配置则用 siteurl 的默认模式）：
+		// 这里只是把表单预填好，用户填了就用用户的 —— 见 internal/siteurl 的三条口径。
+		req.URLPath = siteDetailPath(c.Request.Context(), h.projects, projectID,
+			siteurl.KindProduct, product.Slug, productID)
 	}
 	if _, err := h.instances.CreateInstance(c.Request.Context(), req); err != nil {
 		c.Redirect(http.StatusFound, h.detailTemplateBackURL(projectID, productID, err.Error()))

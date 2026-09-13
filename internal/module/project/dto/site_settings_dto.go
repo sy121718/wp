@@ -20,6 +20,15 @@ type SiteSettings struct {
 	// 构建期由 builder 注入产物 <head> 的 gtag 片段；空值 = 一个字节都不注入。
 	// 形状校验唯一出口是 builder.NormalizeGA4MeasurementID（保存与注入同一判据）。
 	GA4MeasurementID string `json:"ga4MeasurementId,omitempty"`
+	// URLPatterns 各实体类型的详情页路径模式（WordPress 固定链接的等价物）。
+	//
+	// 键 = 实体类型（article / product / product_category / product_brand / product_tag），
+	// 值 = 路径模板，用 {slug} / {id} 占位，例如 "/blog/{slug}"。
+	//
+	// 未配置的类型回落到 siteurl.DefaultPatterns，所以"设置页什么都不填"也能自动派生 ——
+	// 配置是**覆盖**，不是前置条件。派生值只是后台表单的预填：发布时显式传入的路径永远优先，
+	// 且路径一旦发布就独立于内容（改标题 / 正文 / slug 都不动它）。
+	URLPatterns map[string]string `json:"urlPatterns,omitempty"`
 }
 
 // ParseSiteSettings 解析站点设置：非对象、空值、字段缺失一律按零值处理，

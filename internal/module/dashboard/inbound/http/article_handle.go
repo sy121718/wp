@@ -400,7 +400,10 @@ func articleImportBlockView(h *articlePageHandle, item *contentdto.ContentResp, 
 			"ImportHint":      "还没有站点工程：先在「页面」里建一个工程，导入需要知道页面挂到哪个站。",
 		}
 	}
-	// 默认路径 /article-<slug>：slug 为空时给一个能直接改的占位，不留空表单。
+	// 默认路径 /article-<slug>：这里**刻意不走**站点 URL 规则（siteurl）——
+	// 导入生成的是一个**手工页面**，页面路径本身就是它的身份（没有 slug 可依），
+	// 走文章详情页的模式反而会得到一个"看起来像文章详情页"的页面路径。
+	// slug 为空时给一个能直接改的占位，不留空表单。
 	slug := articleSlugOf(item)
 	defaultPath := articleImportPathPrefix + "new"
 	if slug != "" {

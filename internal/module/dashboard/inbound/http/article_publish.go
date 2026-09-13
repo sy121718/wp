@@ -22,6 +22,7 @@ import (
 	dashboardenums "go_wp/internal/module/dashboard/enums"
 	presentationdto "go_wp/internal/module/presentation/dto"
 	presentationenums "go_wp/internal/module/presentation/enums"
+	"go_wp/internal/siteurl"
 )
 
 // 发布区块的提示文案（同样登记在白名单里，因为它们会进 ?ok= / ?err=）。
@@ -139,13 +140,34 @@ func articlePublishView(ctx context.Context, h *articlePageHandle, id, slug stri
 		return out
 	}
 	out["Published"] = false
-	out["DefaultURLPath"] = articleDefaultURLPath(slug)
-	// 工程列表由调用方查一次后传进来（同一屏里的发布区块与导入区块都要它）。
+	// 默认路径按站点 URL 规则派生（取表单里第一个工程；用户可改工程、也可直接改路径）。
+	// 派生只是预填 —— 派生不出来时回落到一个不会撞车的占位，让用户自己写。
+	out["DefaultURLPath"] = articleDetailDefaultPath(ctx, h, projectOptions, slug, id)
 	out["Projects"] = projectOptions
 	out["Templates"] = articleTemplateOptions(ctx, h)
 	out["HasTemplates"] = len(out["Templates"].([]gin.H)) > 0
 	out["NoTemplateHint"] = articleNoTemplateHint
 	return out
+}
+
+// articleDetailDefaultPath 文章详情页的默认发布路径：按 URL 规则派生，派生不出来时兜底。
+//
+// 兜底用 /article-<slug>（而不是 /blog/<slug>）：规则派生不出来说明"这个站没给文章配模式"，
+// 此时猜一个常见前缀反而可能撞上真实存在的列表页（博客列表常占 /blog）——
+// 撞车的表现是发布被拒，而用户根本不知道是"默认值"的错。
+func articleDetailDefaultPath(ctx context.Context, h *articlePageHandle,
+	projectOptions []gin.H, slug, id string) string {
+	if len(projectOptions) > 0 {
+		if pid, ok := projectOptions[0]["ID"].(string); ok && pid != "" {
+			if p := siteDetailPath(ctx, h.projects, pid, siteurl.KindArticle, slug, id); p != "" {
+				return p
+			}
+		}
+	}
+	if slug == "" {
+		return articleImportPathPrefix + "new"
+	}
+	return articleImportPathPrefix + slug
 }
 
 // articleProjectOptions 工程下拉（发布时必须落到一个工程：实例表的 project_id 非空）。

@@ -54,6 +54,34 @@
                     留空或清空即不注入：产物里一个字节都不会多。只接受 GA4 测量 ID，不接受自定义脚本片段。
                 </p>
             </div>
+
+            {* URL 规则（WP 固定链接的等价物）：各实体类型详情页的路径模式。
+               留空 = 用默认模式（placeholder 里显示默认值）；派生值只是表单预填，
+               发布时显式填的路径优先，且路径一旦发布就独立于内容。 *}
+            <div class="form-field">
+                <label>URL 结构（详情页路径）</label>
+                <table class="data-table">
+                    <thead><tr><th>类型</th><th>路径模式</th><th>默认</th></tr></thead>
+                    <tbody>
+                    {{range _, p := .URLPatterns}}
+                    <tr>
+                        <td>{{p.Label}}</td>
+                        <td><input type="text" name="urlPattern_{{p.Kind}}" value="{{p.Value}}" maxlength="120" placeholder="{{p.Default}}"></td>
+                        <td class="text-mono hint">{{p.Default}}</td>
+                    </tr>
+                    {{end}}
+                    </tbody>
+                </table>
+                <p class="hint">
+                    用 <code>{slug}</code>（内容的路径片段）或 <code>{id}</code> 占位，必须以 <code>/</code> 开头。
+                    留空即用默认模式。<strong>发布时表单里填的路径优先于这里</strong> ——
+                    这里定的是"默认长什么样"，不是"必须长这样"。
+                </p>
+                <p class="hint">
+                    路径发布之后<strong>不随内容变化</strong>：改标题、改正文、甚至改 slug 都不会动已经发出去的 URL
+                    （已收录的链接不会因为改一次称呼就集体失效）。
+                </p>
+            </div>
             <button type="submit" class="btn btn-primary">保存设置</button>
         </form>
 
