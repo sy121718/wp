@@ -42,7 +42,7 @@
 - 页面设置评分面板：总分/等级/红黄绿圆点/逐项建议（**可点击跳转**到字段或画布组件）/SERP 预览，改字段自动重算
 - 构建期 meta：canonical / OG / Twitter / JSON-LD（按 `settings.seo.schemaType` 输出 WebSite/Article/Product/FAQPage + URL 多级时自动 BreadcrumbList），见 `internal/builder/seo_head.go`
 - `internal/seo/sitemap.go`：sitemap.xml + robots.txt；**发布成功后自动刷新**（`page/service/page_publish.go` → `routes.RefreshSiteFiles`）；站点根地址读环境变量 `WP_SITE_BASE_URL`
-- 未做：文章编辑页评分入口（项目还没有文章编辑页）
+- ✅ **文章编辑页评分入口已落地（2026-09，INF-1 + SEO-10）**：文章后台页 `/admin/articles`（列表 / 新建 / 删除 / 发布状态）+ `/admin/articles/edit`（Trix 富文本 + SEO 字段 + 评测侧栏 + 发布区块）；评分提取在 `internal/seo/article.go`（`ScoreArticle`），页面侧栏走 `POST /admin/articles/score`（HTMX 局部刷新）。**仍缺**：文章详情页的 canonical / JSON-LD 注入 —— 那条 `head` 目前由内容模板的 `settings.seo` 决定，不由文章字段驱动，所以评分里这两项恒判未达标（见 `docs/10-todo.md` 的 SEO-10 备注）
 
 ### 1.5 工作台 UI
 - 画布选中 → 结构树自动滚动定位并高亮

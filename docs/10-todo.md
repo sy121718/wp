@@ -53,7 +53,7 @@
 | SEO-7 | 标题长度改用**像素宽**判定（Yoast 做法） | \`02-E\` §8.3 差异登记（L186）、§7 印证结论 2（L137） | 未开始（当前仅字符数） | 低 | 无 |
 | SEO-8 | 关键词密度建议区收紧到 1–1.5%（RankMath 印证） | \`02-E\` §8.3（L187）、§7 结论 2 | 未开始（当前 0.5–2.0% 主判） | 低 | 无 |
 | SEO-9 | 商品结构化数据（Product JSON-LD 由商品数据驱动） | \`06-A\` §2.1 表行 3（L39） | 部分完成：\`schemaType=product\` 与 JSON-LD 输出已就绪；缺商品实体数据源 | 中 | BIZ-1 |
-| SEO-10 | 文章编辑页评分入口（正文侧栏：密度/长度/可读性/内链） | \`02-E\` §9 表（L197）、\`09-session-handoff.md\` §1.4（L45「未做：项目还没有文章编辑页」） | 未开始 | 中 | INF-1 |
+| SEO-10 | 文章编辑页评分入口（正文侧栏：密度/长度/可读性/内链） | \`02-E\` §9 表（L197）、\`09-session-handoff.md\` §1.4（L45） | ✅ **已落地（2026-09）**：\`internal/seo/article.go\` 的 \`ScoreArticle\`（文章字段 → \`scoring.Input\`：seoTitle/seoDescription 回落、正文去标签算字数、h1-h6 结构、正文图片 + 封面、内外链与锚文本）；编辑页侧栏 \`POST /admin/articles/score\`（HTMX 局部刷新，无 JS 时打开 / 保存后整页渲染同一份分）。两个刻意如实：**canonical 与结构化数据恒判未达标**（文章详情页的 head 由内容模板决定，文章字段不驱动它们），侧栏里写明原因 | — | INF-1（已完成） |
 
 ---
 
@@ -160,7 +160,7 @@
 
 | # | 事项 | 出处 | 现状 | 优先级 | 依赖/前置 |
 |---|---|---|---|---|---|
-| INF-1 | CMS 内容**后台管理页** + 文章编辑页 | \`05-implementation-plan.md\` 阶段 4 验收（L215）、\`09-session-handoff.md\` §1.4（L45） | 未开始（\`content\` 模块有 CRUD API，\`templates/admin/\` 无文章/内容页） | 高 | 无 |
+| INF-1 | CMS 内容**后台管理页** + 文章编辑页 | \`05-implementation-plan.md\` 阶段 4 验收（L215）、\`09-session-handoff.md\` §1.4（L45） | ✅ **已落地（2026-09）**：\`/admin/articles\`（列表 + 新建 + 删除 + 发布状态）、\`/admin/articles/edit\`（Trix 富文本 + 摘要 + 封面 + SEO 字段 + 评测侧栏 + 发布区块）、侧栏「内容」组入口（\`nav_menu.go\`）。写操作复用既有 \`content:*\` 权限点（**未新增权限点**），正文落库前过 \`core.SanitizeRichHTML\`，保存即触发依赖扇出（引用它的页面与已发布实例标记待重建）。迁移 150 只 seed「菜单管理」页的条目（侧栏真源仍是代码配置） | — | 无 |
 | INF-2 | CMS 实体变更 → 自动派生 DocumentSnapshot → 自动发布 | \`05\` 阶段 4 任务（L208）、\`03-pipeline.md\` §8.2 典型 fan-out（L462-472） | ✅ **两侧均已落地（2026-09）**：page 侧（PIPE-3）内容变更 → 精确反查 → 自动重建 + 已发布页面自动回写；presentation 侧在 DDL 对齐修复后接入同一 fan-out（内容变更 → 精确反查 → 自动重建并重新发布，\`presentation_dependencies\` 落库） | — | 无 |
 | INF-3 | 02-B 媒体中心三表与实现不一致 | \`02-B-media-center.md\` §7（L85-88：\`media_asset\`/\`media_asset_variant\`/\`media_reference\`） | ✅ **已修正（2026-09）**：\`02-B\` §7 改为实际三表，并说明 \`media_asset\`/\`media_asset_variant\`/\`media_reference\` 仅为 \`init_schema.sql\` 建表、无任何 Go 引用的遗留；§6 实现映射同步改为真实代码位置（原引用的 \`internal/builder/media/\` 不存在） | — | 无 |
 | INF-4 | 媒体下载接口（单图 + 批量 zip） | \`media-variants-recon.md\` §C（L200-204） | 文档滞后-代码已有：\`media_router.go:37-38\` \`/download\` 与 \`/download/batch\` | — | 无 |
@@ -214,7 +214,7 @@
 
 \`PIPE-3\`（依赖 fan-out + stale 状态机）是阶段 4 的核心验收门禁，也是 \`INF-2\`（CMS 变更自动发布）、\`PIPE-4\`（插件生效后重建）、\`I18N-2\` 的共同前置。
 它解掉之后：\`INF-2\`（presentation 自动重建）→ \`PIPE-2\`（构建队列）→ \`PIPE-1\`（GC 与取消发布）形成完整生命周期。
-\`INF-1\`（CMS 后台内容管理页 + 文章编辑页）可与本步并行：它只依赖现有 \`content\` API，且是 \`SEO-10\`（文章评分入口）与 \`I18N-7\`（CMS 翻译）的入口。
+\`INF-1\`（CMS 后台内容管理页 + 文章编辑页）✅ **已完成（2026-09）** —— 它只依赖现有 \`content\` API，落地后同时解掉 \`SEO-10\`（文章评分入口）。\`I18N-7\`（CMS 翻译）现在有了入口（文章编辑页），可以接着做。
 
 ### 第 3 步：插件生态的 L2 补齐（3–4 天）
 

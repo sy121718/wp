@@ -124,14 +124,14 @@ Artifact          ≠ 可编辑源码
 |---|---|---|
 | `admin` | 管理控制面大模块：管理员、角色、权限点、菜单、部门、数据权限（六领域已合并，同包直调）。对外经 `contract.AuthzContextService` 暴露只读权限上下文查询（IsSuperAdmin/角色码/权限码/路由树），供外部模块与插件消费 | CMS 内容、公开站点用户 |
 | `common` | 公共业务入口（当前为验证码：标准库自绘 PNG 图片化，答案绝不下发） | 通用基础设施 |
-| `dashboard` | 需要后端逻辑的后台页面入口（仪表盘、可视化工作台 Workbench、媒体库、主题管理） | — |
+| \`dashboard\` | 需要后端逻辑的后台页面入口（仪表盘、可视化工作台 Workbench、媒体库、主题管理、**文章管理页**）。文章管理页（INF-1）是 CMS 内容实体的唯一后台入口：\`/admin/articles\` 列表 + 新建，\`/admin/articles/edit\` 编辑（Trix 富文本 + SEO 字段）与**编辑期 SEO 评测侧栏**（SEO-10：密度 / 长度 / 可读性 / 内链，\`POST /admin/articles/score\` 走 HTMX 局部刷新），另有发布区块（\`/admin/articles/publish\` 首次发布、\`/admin/articles/rebuild\` 重新发布）。写操作复用 \`content:*\` 权限点（迁移 033），本次不新增权限点；正文落库前过 \`core.SanitizeRichHTML\` 白名单清洗 | — |
 | `media` | 附件与文件分类（LIKE 通配符转义、软删除过滤） | — |
 | `project` | 站点工程、SiteSettings、多主题 Theme（list/activate/delete/settings） | — |
 | `page` | 手工 Page 与 Page Document：草稿/构建/发布/回滚/改 URL；**系统页面槽位**（BIZ-1，迁移 138/139/140）：`page_site_slots` 表 —— 一工程一槽位至多一页，**允许一页被多个槽位引用**（「个人中心页同时担任订单页」是合理用法）；十个槽位 shop / blog / cart / checkout / account / login / register / forgot / reset / orders（白名单在 enums 与 DDL CHECK 各一份，**键名写错不报错、只静默不生效**）；绑的是**页面 id**（uuid，不可变）而不是 URL —— 改 URL 是页面的常规操作，绑 id 之后链接自动跟着走；`ResolveSitePages` 返回「槽位 → 当前语言线上路径」，**只含已绑且已发布的**（绑定存在 ≠ 访问面真的有产物，未发布给空路径让调用方降级，不输出死链）；消费方经**只读**的 `SitePageResolver` 取用（拿不到发布 / 删除 / 改 URL）；槽位变更与被绑定页面的 URL 变更都标记该工程页面待重建（构建期把路径烘进了链接）；接口 `/api/page/site-slot/{list,bind,unbind}`（list 含**未绑定**的槽位）。**十个槽位现在都有消费方**（BIZ-2 补齐 shop / blog）：`shop` → `core.productList` 页脚的「全部商品」与 `core.cardstack` 商品集合链接；`blog` → `core.cardstack` 文章集合的「更多文章」（全屏 slide 模式刻意不输出 —— 会破坏整屏布局；其余三种排布只把链接放在轨道之后，不参与卡片几何）；其余八个分别归购物车片段、账号表单片段与订单列表组件。**未绑定或未发布一律整块不渲染**（绝不猜路径 —— 猜错的链接比没有链接难查得多），且**片段渲染路径与构建期用同一份槽位解析**，否则会出现「静态页上的链接能点、片段刷新后 404」 | 槽位指向的那些页面本身的外观（结算页 / 个人中心怎么排版由页面作者用组件与片段组合；引擎只负责「去哪找」，不替它们排版） |
 | `block` | 复用资产（全局块）：16 种 kind + reuse_mode（global 引用/template 一次性复制）、stale 传播编排、删除引用拦截、CloneAST | — |
 | `artifact` | Artifact 元数据与内容对象闭包（不可变写入、同版本重构建原地替换） | — |
 | `publication` | URL 占用、激活（两段式回执 pending→committed/rolled_back）、回滚 | — |
-| `content` | 固定 CMS 内容 | — |
+| \`content\` | 固定 CMS 内容（迁移 080 起 \`contents\` 只保留 \`article\` 一种类型）。字段白名单：title / body / excerpt / featuredImage / seoTitle / seoDescription / **focusKeyword**（focusKeyword 只喂编辑期评分器 —— 关键词密度 / 位置 / H1 含词都以它为基准，不进构建产物）；后台入口在 \`dashboard\` 的 \`/admin/articles\` | — |
 | `contenttemplate` | PresentationInstance DocumentSnapshot 的版本化结构模板 | — |
 | `presentation` | 自动发布实例（依赖 content/contenttemplate 契约，走同一发布管线） | 手工 Page |
 | `blueprint` | Page Document 初始化工具（用完即弃） | 构建期/运行时模板 |
