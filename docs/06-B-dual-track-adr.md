@@ -58,6 +58,22 @@
 - 复杂组件在富文本视图显示为只读占位块（Notion 模式）；
 - 不做 WP Gutenberg 式区块编辑器（投入大、与 workbench 重叠、作者体验差）。
 
+### 落地状态（2026-09）
+
+转换能力已落地（`internal/builder/richdoc`），**真源改造与 UI 入口未做** —— 逐条对照：
+
+| 决策 5 的条款 | 状态 |
+|---|---|
+| 块级标签 ↔ 组件一一映射 | ✅ `HTMLToNodes` / `NodesToHTML`：h1~h6→heading、p→text、ul/ol→list、blockquote→quote、pre→text、img/figure→image、hr→divider、table→table |
+| 行级格式（strong/em/a）留在 core.text 内 | ✅ 随所在段落一起进 `core.text` 的富文本字段，不单独成组件 |
+| 双向唯一、round-trip fuzz 背书 | ✅ `FuzzRichTextRoundTrip`（90s / 729,288 次执行通过）；fuzz 抓到的两个真实缺陷已修并留作回归语料 |
+| 白名单外标签降级不静默 | ✅ `Warning` 区分 unwrap（剥壳保内容）/ drop（内容真丢了）/ trim / placeholder —— 前者与后者混记，运营就分不清"少了一层壳"和"东西没了" |
+| 复杂组件在富文本视图显示只读占位块 | ✅ 导出方向输出占位文字并标 `Lossless=false`（占位**不可还原**：Trix 会洗掉任何 data-* 还原标记，所以不假装无损） |
+| **底层唯一真源 = 组件树** | ❌ **未做**：文章正文仍是 `contents.data.body` 里的 HTML 字符串，富文本目前是**并列的另一条轨**，不是"组件树的一个视图" |
+
+第 4 步（把文章 body 改成组件树、让 Trix 退居为编辑视图之一）要动 `contents` 数据形态、内容模板绑定与 presentation 渲染路径，**单独一轮做**；
+在那之前，本包的价值是"两条轨之间可以来回搬"，而不是"两条轨已经合一"。
+
 ## 决策 6：SEO 分工
 
 - 基建（sitemap/canonical/OG/JSON-LD/GSC 验证）→ 本体管线（影响 Artifact 字节，必须确定性）；
