@@ -46,6 +46,13 @@ type UserService interface {
 	// 天然也能当开号端口传给订单模块，不必再做类型断言。
 	GuestAccountProvisioner
 
+	// VisitorAccountPort 来账号中心片段读**本人**的资料 / 偏好 / 登录设备。
+	//
+	// 嵌进来的理由同上：装配处拿到的 UserService 直接就能当这个端口传给 runtimefragment。
+	// 但注意它**本身是收窄的**（只有两条只读方法）—— 片段层拿到的那份接口里
+	// 没有注册、没有改密码、没有踢出设备，userID 也只能由会话推出。
+	VisitorAccountPort
+
 	// Register 注册：写用户（待激活）并发送验证邮件。
 	//
 	// 邮件发送失败**不回滚注册** —— 用户已经建好了，验证邮件可以重发；

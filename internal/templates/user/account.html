@@ -1,5 +1,16 @@
 {{extends "layout.html"}}
 {{block body()}}
+{*
+  account.html — 内置账号页（资料 / 偏好 / 登录设备 / 改密码）。
+
+  它是**无 JS 时的降级落点**，也是这套账号功能的默认载体。表单提交到这里，
+  服务端整页重渲染（不是片段）：片段版由 runtimefragment 的 accountProfileForm 等
+  四个能力渲染，走同一批 POST 路由 —— 两边的字段名与校验完全一致，
+  差的只是「谁来渲染这一页」。
+
+  这里的表单**不带 next 隐藏域**：整页渲染本身就是落点，不需要回跳；
+  片段版才需要它（作者页面上的账号中心不该被中途甩到这一页）。
+*}
 <div class="g-stack">
 
   {{if .["actionError"]}}

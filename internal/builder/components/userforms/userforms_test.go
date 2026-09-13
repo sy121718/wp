@@ -24,6 +24,10 @@ func TestEffectiveMode(t *testing.T) {
 		{ModeForgot, ModeForgot},
 		{ModeReset, ModeReset},
 		{ModeAccount, ModeAccount},
+		{ModeProfile, ModeProfile},
+		{ModePreference, ModePreference},
+		{ModePassword, ModePassword},
+		{ModeSessions, ModeSessions},
 	} {
 		if got := effectiveMode(&Props{Mode: tt.in}); got != tt.want {
 			t.Errorf("effectiveMode(%q)=%q, want=%q", tt.in, got, tt.want)
@@ -96,7 +100,11 @@ func TestCompileCSSIncludesFragmentStyles(t *testing.T) {
 	var b core.CSSBuckets
 	CompileCSS("t", &Props{Color: "#c00"}, &b)
 	css := b.String()
-	for _, want := range []string{".sky-user-form", ".sky-user-input", ".sky-user-submit", "#c00"} {
+	// 账号中心四块用到的新类也要在（片段 HTML 运行时才渲染，样式必须由组件带上）。
+	for _, want := range []string{
+		".sky-user-form", ".sky-user-input", ".sky-user-submit", "#c00",
+		".sky-user-meta", ".sky-user-grid", ".sky-user-device", ".sky-user-tag",
+	} {
 		if !strings.Contains(css, want) {
 			t.Fatalf("样式缺少 %q；实际样式：\n%s", want, css)
 		}

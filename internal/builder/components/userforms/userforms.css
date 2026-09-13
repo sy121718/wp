@@ -91,6 +91,61 @@
     color: var(--sky-c-danger, #dc2626);
     background: var(--sky-c-surface-muted, #f3f4f6);
 }
+& .sky-user-textarea {
+    min-height: 88px;
+    resize: vertical;
+}
+& .sky-user-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr));
+    gap: 10px;
+}
+& .sky-user-meta {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 4px 12px;
+    margin: 0;
+    font-size: 0.9rem;
+}
+& .sky-user-meta dt {
+    color: var(--sky-c-text-muted, #6b7280);
+}
+& .sky-user-meta dd {
+    margin: 0;
+}
+& .sky-user-tag {
+    padding: 1px 6px;
+    font-size: 0.75rem;
+    border: 1px solid var(--sky-c-border, #d1d5db);
+    border-radius: 999px;
+}
+& .sky-user-devices {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+& .sky-user-device {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 10px 12px;
+    border: 1px solid var(--sky-c-border, #d1d5db);
+    border-radius: 8px;
+}
+& .sky-user-device-ua {
+    font-size: 0.9rem;
+    font-weight: 600;
+    word-break: break-word;
+}
+& .sky-user-device-meta {
+    margin: 0;
+    font-size: 0.8rem;
+    color: var(--sky-c-text-muted, #6b7280);
+    word-break: break-word;
+}
 & .sky-user-links {
     display: flex;
     flex-direction: column;

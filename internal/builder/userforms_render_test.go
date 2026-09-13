@@ -61,7 +61,7 @@ func TestUserFormsCompilesToFragmentMount(t *testing.T) {
 	}
 }
 
-// TestUserFormsModesMapToFragments 五种形态在产物里各自指向自己的片段。
+// TestUserFormsModesMapToFragments 九种形态在产物里各自指向自己的片段。
 func TestUserFormsModesMapToFragments(t *testing.T) {
 	set, err := templates.NewComponentSet("../templates/components")
 	if err != nil {
@@ -70,6 +70,10 @@ func TestUserFormsModesMapToFragments(t *testing.T) {
 	for mode, fragment := range map[string]string{
 		"login": "loginForm", "register": "registerForm",
 		"forgot": "forgotForm", "reset": "resetForm", "account": "accountPanel",
+		// 账号中心四块：它们渲染的是本人数据，但**容器**这一侧与上面五个同构
+		// （都是「外壳 + hx-get 拉片段」），所以走同一条断言。
+		"profile": "accountProfileForm", "preference": "accountPreferenceForm",
+		"password": "accountPasswordForm", "sessions": "accountSessionsPanel",
 	} {
 		page := userFormsDoc(t, map[string]any{"mode": mode})
 		compiled, cerr := Compile(page, WithComponentSet(set), WithProjectID("proj-1"))

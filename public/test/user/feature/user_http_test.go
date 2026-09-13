@@ -23,6 +23,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 
+	"go_wp/internal/module/runtimefragment"
 	userhttp "go_wp/internal/module/user/inbound/http"
 	usermodel "go_wp/internal/module/user/model"
 	"go_wp/internal/templates"
@@ -58,7 +59,14 @@ func newUserHTTPEnv(t *testing.T) *userHTTPEnv {
 	router.HTMLRender = templates.NewJetHTMLRender(filepath.Join(repoRoot(t), "internal/templates"), true)
 
 	mail := &fakeMail{}
-	userhttp.SetupUserRoutes(router, db, mail, "测试站")
+	svc := userhttp.SetupUserRoutes(router, db, mail, "测试站")
+	// 访问面片段（/_fragments/*）：账号中心那四个片段要读**当前访客**的账号事实，
+	// 而「当前访客是谁」由访客身份中间件从签名 cookie 里解出来。
+	// 这里接的是与生产同一条链（同一中间件、同一收窄端口）：
+	// 单测直接调 handler 时手工塞 context，看不到「中间件到底挂没挂上」。
+	runtimefragment.SetVisitorIdentityMiddleware(userhttp.VisitorIdentityMiddleware(svc))
+	runtimefragment.SetVisitorAccountPort(svc)
+	runtimefragment.SetupFragmentRoutes(router)
 	return &userHTTPEnv{router: router, db: db, mail: mail}
 }
 

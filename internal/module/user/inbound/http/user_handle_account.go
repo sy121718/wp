@@ -9,12 +9,53 @@ package userhttp
 import (
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
 	userdto "go_wp/internal/module/user/dto"
 	userenums "go_wp/internal/module/user/enums"
 )
+
+// accountNextTarget 取「保存类操作完成后的站内回跳目标」；没有或不可信则返回空串。
+//
+// 为什么需要它：账号表单现在是**片段**，可以出现在作者自己排的账号页上。
+// 提交后停在内置账号页，会让作者页面上的账号中心半途跳到另一个页面 ——
+// 那正好抵消了「把账号功能放到自己页面上」的意义。
+//
+// 为什么必须校验而不是照抄表单值：直接把 next 塞进 Location 就是**开放重定向**，
+// 站点会变成任意目的地的跳板，而页面看起来一切正常，没人会去查。
+// 规则取最保守的一档（站内相对路径），够用且不留解释空间：
+//   - 必须以单个 / 开头（//evil.com 是协议相对 URL，会被浏览器当外部站点）；
+//   - 不得含反斜杠（多数浏览器把它归一成正斜杠，于是「斜杠 + 反斜杠 + 主机名」会被解析成站外地址）；
+//   - 不得含控制字符（换行会污染响应头）；
+//   - 长度封顶，避免把超长串带进 Location。
+func accountNextTarget(c *gin.Context) string {
+	next := strings.TrimSpace(c.PostForm("next"))
+	if next == "" || len(next) > 512 {
+		return ""
+	}
+	if !strings.HasPrefix(next, "/") || strings.HasPrefix(next, "//") {
+		return ""
+	}
+	if strings.ContainsAny(next, "\\\r\n") {
+		return ""
+	}
+	return next
+}
+
+// redirectAfterSave 保存成功后的落点：带了合法的站内 next 就回跳，否则留在内置账号页。
+//
+// 只在**成功**路径上回跳：失败必须把错误显示出来，而错误现在只有内置账号页会渲染。
+// 把失败也送走，用户会得到一个「点了保存、页面刷新了、什么都没变」的界面。
+func redirectAfterSave(c *gin.Context) bool {
+	target := accountNextTarget(c)
+	if target == "" {
+		return false
+	}
+	c.Redirect(http.StatusFound, target)
+	return true
+}
 
 // ShowAccount 账号中心。
 func (h *Handle) ShowAccount(c *gin.Context) {
@@ -82,6 +123,9 @@ func (h *Handle) DoUpdateProfile(c *gin.Context) {
 		h.renderAccount(c, http.StatusBadRequest, userMessage(err))
 		return
 	}
+	if redirectAfterSave(c) {
+		return
+	}
 	h.renderAccount(c, http.StatusOK, "")
 }
 
@@ -105,6 +149,9 @@ func (h *Handle) DoUpdatePreference(c *gin.Context) {
 	})
 	if err != nil {
 		h.renderAccount(c, http.StatusBadRequest, userMessage(err))
+		return
+	}
+	if redirectAfterSave(c) {
 		return
 	}
 	h.renderAccount(c, http.StatusOK, "")
@@ -151,6 +198,9 @@ func (h *Handle) DoRevokeSession(c *gin.Context) {
 		h.renderAccount(c, http.StatusBadRequest, userMessage(err))
 		return
 	}
+	if redirectAfterSave(c) {
+		return
+	}
 	h.renderAccount(c, http.StatusOK, "")
 }
 
@@ -163,6 +213,9 @@ func (h *Handle) DoRevokeOtherSessions(c *gin.Context) {
 	}
 	if _, err := h.svc.RevokeOtherSessions(c.Request.Context(), sess.UserID, currentToken(c)); err != nil {
 		h.renderAccount(c, http.StatusBadRequest, userMessage(err))
+		return
+	}
+	if redirectAfterSave(c) {
 		return
 	}
 	h.renderAccount(c, http.StatusOK, "")

@@ -138,6 +138,10 @@ func VisitorIdentityMiddleware(svc usercontract.UserService) gin.HandlerFunc {
 		if id, ok := svc.ResolveVisitorID(c.Request.Context(), token); ok && id != 0 {
 			c.Set(usercontract.VisitorContextKey, id)
 		}
+		// 令牌本身也挂上去：片段层要用它判定登录设备列表里「哪一台是当前设备」
+		// （台账存的是令牌的 sha256，比对需要原值）。挂了不等于能用 —— 消费方
+		// 只有 VisitorAccountPort.SessionsOf 一处，且不得把它渲染进输出。
+		c.Set(usercontract.VisitorTokenContextKey, token)
 		c.Next()
 	}
 }

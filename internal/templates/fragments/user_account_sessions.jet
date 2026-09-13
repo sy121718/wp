@@ -1,0 +1,38 @@
+{* user_account_sessions.jet — 登录设备管理。
+   由片段渲染：设备台账是每个访客各自的数据，且每个「踢出」按钮都要带访客域的 CSRF token。
+   当前设备不给踢出按钮 —— 那个操作真正的名字是「退出登录」，另有入口。 *}
+<div class="sky-user-form" data-fragment="accountSessionsPanel">
+{{if .Unavailable}}
+<p class="sky-user-note">登录设备暂不可用，请稍后再试。</p>
+{{else if .NeedLogin}}
+<p class="sky-user-note">请先登录后再查看登录设备。</p>
+{{if .LoginURL}}<p class="sky-user-alt"><a href="{{ .LoginURL }}">去登录</a></p>{{end}}
+{{else}}
+{{if not .CSRFToken}}<p class="sky-user-error">会话未就绪，请刷新页面后重试。</p>{{end}}
+{{if len(.Sessions) == 0}}
+<p class="sky-user-note">没有其它登录设备。</p>
+{{else}}
+<ul class="sky-user-devices">
+{{range _, s := .Sessions}}
+<li class="sky-user-device">
+<div class="sky-user-device-ua">{{if s.UserAgent}}{{ s.UserAgent }}{{else}}未知浏览器{{end}}{{if s.Current}} <span class="sky-user-tag">当前设备</span>{{end}}</div>
+<p class="sky-user-device-meta">{{if s.IP}}{{ s.IP }}{{else}}IP 未知{{end}} · 最近活跃 {{ s.LastActiveText }} · 登录于 {{ s.CreatedText }}</p>
+{{if not s.Current}}
+<form method="post" action="/user/account/sessions/revoke">
+<input type="hidden" name="csrf_token" value="{{ .CSRFToken }}">
+{{if .Next}}<input type="hidden" name="next" value="{{ .Next }}">{{end}}
+<input type="hidden" name="id" value="{{ s.ID }}">
+<button class="sky-user-submit sky-user-submit-quiet" type="submit">踢出</button>
+</form>
+{{end}}
+</li>
+{{end}}
+</ul>
+<form method="post" action="/user/account/sessions/revoke-others">
+<input type="hidden" name="csrf_token" value="{{ .CSRFToken }}">
+{{if .Next}}<input type="hidden" name="next" value="{{ .Next }}">{{end}}
+<button class="sky-user-submit sky-user-submit-quiet" type="submit">退出其它所有设备</button>
+</form>
+{{end}}
+{{end}}
+</div>

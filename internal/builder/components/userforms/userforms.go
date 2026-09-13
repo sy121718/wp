@@ -27,12 +27,21 @@ import (
 const Type = "core.userForms"
 
 // 形态取值。
+//
+// 前五个是**匿名**形态（登录前与登录后都能看），后四个是**账号中心**形态：
+// 它们渲染的是访客本人的资料 / 偏好 / 改密码 / 登录设备，未登录时只给一句引导。
+// 所以后四个应当放在「登录后才可见的页面」上（账号页），而不是公开首页。
 const (
 	ModeLogin    = "login"
 	ModeRegister = "register"
 	ModeForgot   = "forgot"
 	ModeReset    = "reset"
 	ModeAccount  = "account"
+
+	ModeProfile    = "profile"
+	ModePreference = "preference"
+	ModePassword   = "password"
+	ModeSessions   = "sessions"
 )
 
 // formSpec 形态 → 片段能力与内置页面。
@@ -51,12 +60,18 @@ var formSpecs = map[string]formSpec{
 	ModeForgot:   {fragment: "forgotForm", page: "/user/forgot", title: "找回密码"},
 	ModeReset:    {fragment: "resetForm", page: "/user/reset", title: "重置密码"},
 	ModeAccount:  {fragment: "accountPanel", page: "/user/account", title: "我的账号"},
+	// 账号中心四块：降级目标都是内置账号页 —— 片段只是把这一页的四块
+	// 拆到作者自己排的页面上，不为它们单独造四个路由。
+	ModeProfile:    {fragment: "accountProfileForm", page: "/user/account", title: "账号资料"},
+	ModePreference: {fragment: "accountPreferenceForm", page: "/user/account", title: "账号偏好"},
+	ModePassword:   {fragment: "accountPasswordForm", page: "/user/account", title: "修改密码"},
+	ModeSessions:   {fragment: "accountSessionsPanel", page: "/user/account", title: "登录设备"},
 }
 
 // Props 访客账号表单属性。
 type Props struct {
 	// Mode 形态（登录 / 注册 / 找回密码 / 重置密码 / 账号面板）。
-	Mode string `json:"mode,omitempty" ct:"select,login=登录,register=注册,forgot=找回密码,reset=重置密码,account=账号面板,default=login,sec=content,label=表单形态"`
+	Mode string `json:"mode,omitempty" ct:"select,login=登录,register=注册,forgot=找回密码,reset=重置密码,account=账号面板,profile=账号资料,preference=账号偏好,password=修改密码,sessions=登录设备,default=login,sec=content,label=表单形态"`
 	// Title 区块标题（留空用该形态的默认标题）。
 	Title string `json:"title,omitempty" ct:"text,maxlen=30,sec=content,label=标题"`
 	// ShowTitle 是否显示标题。
