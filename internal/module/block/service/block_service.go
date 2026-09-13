@@ -265,6 +265,16 @@ func (s *Service) CloneAST(ctx context.Context, req *blockdto.CloneReq) (res *bl
 }
 
 func (s *Service) getExistingBlock(ctx context.Context, id string) (e *blockmodel.BlockEntity, err error) {
+	// 不是合法 uuid 的 id 直接判「不存在」，别让查询落到 PG 上：blocks.id 是 uuid 列，
+	// 传一个随手写的字符串会让驱动报 invalid input syntax for type uuid ——
+	// 那不是 gorm.ErrRecordNotFound，上层只能映射成 500，用户看到「系统内部错误」，
+	// 实际原因只是 id 写错了（实测 POST /api/block/clone 传 "nonexistent" 就是这么 500 的）。
+	//
+	// 判「不存在」而不是「参数错误」：这四个调用方（详情 / 更新 / 删除 / 克隆）
+	// 对这两种情况的处理本来就一样，多一个 400 分支只会逼每条调用路径判断两种错。
+	if _, perr := uuid.Parse(strings.TrimSpace(id)); perr != nil {
+		return nil, ErrNotFound
+	}
 	e, err = s.model.GetByID(ctx, id)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, ErrNotFound

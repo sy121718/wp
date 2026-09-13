@@ -53,7 +53,7 @@
 | SEO-7 | 标题长度改用**像素宽**判定（Yoast 做法） | \`02-E\` §8.3 差异登记（L186）、§7 印证结论 2（L137） | 未开始（当前仅字符数） | 低 | 无 |
 | SEO-8 | 关键词密度建议区收紧到 1–1.5%（RankMath 印证） | \`02-E\` §8.3（L187）、§7 结论 2 | 未开始（当前 0.5–2.0% 主判） | 低 | 无 |
 | SEO-9 | 商品结构化数据（Product JSON-LD 由商品数据驱动） | \`06-A\` §2.1 表行 3（L39） | 部分完成：\`schemaType=product\` 与 JSON-LD 输出已就绪；缺商品实体数据源 | 中 | BIZ-1 |
-| SEO-10 | 文章编辑页评分入口（正文侧栏：密度/长度/可读性/内链） | \`02-E\` §9 表（L197）、\`09-session-handoff.md\` §1.4（L45） | ✅ **已落地（2026-09）**：\`internal/seo/article.go\` 的 \`ScoreArticle\`（文章字段 → \`scoring.Input\`：seoTitle/seoDescription 回落、正文去标签算字数、h1-h6 结构、正文图片 + 封面、内外链与锚文本）；编辑页侧栏 \`POST /admin/articles/score\`（HTMX 局部刷新，无 JS 时打开 / 保存后整页渲染同一份分）。两个刻意如实：**canonical 与结构化数据恒判未达标**（文章详情页的 head 由内容模板决定，文章字段不驱动它们），侧栏里写明原因 | — | INF-1（已完成） |
+| SEO-10 | 文章编辑页评分入口（正文侧栏：密度/长度/可读性/内链） | \`02-E\` §9 表（L197）、\`09-session-handoff.md\` §1.4（L45） | ✅ **已落地（2026-09）**：\`internal/seo/article.go\` 的 \`ScoreArticle\`（文章字段 → \`scoring.Input\`：seoTitle/seoDescription 回落、正文去标签算字数、h1-h6 结构、正文图片 + 封面、内外链与锚文本）；编辑页侧栏 \`POST /admin/articles/score\`（HTMX 局部刷新，无 JS 时打开 / 保存后整页渲染同一份分）。**本次补记（2026-09）**：canonical 与结构化数据原先恒判未达标（当时的真实缺口），现由构建期注入（`presentation/service/presentation_seo.go`：canonical 取实例线上路径、JSON-LD 按 `schemaType=article`），`ScoreArticle` 已同步判真 —— 侧栏只显示编辑者能改的东西，系统保证项不挂在上面 | — | INF-1（已完成） |
 
 ---
 
@@ -101,7 +101,7 @@
 | # | 事项 | 出处 | 现状 | 优先级 | 依赖/前置 |
 |---|---|---|---|---|---|
 | I18N-1 | 灰度开关 \`i18n.site_lang_prefix\` 默认 \`false\`，多语言**不能同时在线** | \`06-D-site-i18n.md\` §15.3（L953-965）、§15.8 语义口径（L1044）、§15.9 遗留（L1133） | ✅ **已解决（2026-09 复核）**：\`config.yaml:66\` 与 \`config.yaml.example:65\` 均为 \`site_lang_prefix: true\`，开关已启用（原记录「默认关闭」已过时） | 高 | 无 |
-| I18N-2 | 块内文本不翻译（\`compileBlockFragment\` 未传 lang 与取词器） | \`06-D\` §15.11 已知缺口（L1269-1271）、§15.12（L1365-1366） | 未开始 | 中 | 无 |
+| I18N-2 | 块内文本不翻译（\`compileBlockFragment\` 未传 lang 与取词器） | \`06-D\` §15.11 已知缺口（L1269-1271）、§15.12（L1365-1366） | ✅ **已落地（2026-09 复核）**：\`compileBlockFragment(ctx, blockID, lang string, translator *i18n.ContentTranslator)\` 已带 lang 与取词器，调用点（\`page_assemble.go\` 的页眉 / 页脚内联）两个参数都传了。**本次回填修正**：「未传 lang 与取词器」这句已不成立 | — | 无 |
 | I18N-3 | \`core.nav\` 菜单标签多语言归属未定（标签来自 navigation 数据） | \`06-D\` §15.11（L1272-1273）、§15.12（L1370-1371） | 未开始（未定论） | 中 | 无 |
 | I18N-4 | 站内链接本地化只覆盖导航（按钮/图片/文本内链接仍是逻辑路径） | \`06-D\` §15.5 第 5 条（L984）、§15.8 仍属后续（L1064） | 未开始 | 中 | 无 |
 | I18N-5 | Runtime Fragment 语言（\`/_fragments\` 无 \`lang\`、无 \`Vary\`） | \`06-D\` §15.5 第 7 条（L986）、§11（L855） | 未开始 | 中 | 无 |
@@ -133,7 +133,7 @@
 | PIPE-6 | AccessGuard（密码保护 / 登录用户可见，Manifest 标记 + 静态守卫页） | \`0-A2-page-routing-meta.md\` §2.2（L37-38）、§5（L84） | 未开始（无 \`AccessGuard\` 相关代码） | 中 | 访客账号域（BIZ-3）做「登录可见」 |
 | PIPE-7 | 定时上下线（Scheduled Publishing） | \`0-A2\` §2.2（L39-41）、§5（L85） | 未开始（无 \`internal/task\` 目录、无 scheduled 字段） | 中 | 无 |
 | PIPE-8 | Head / Body 代码注入（页面级统计与营销脚本） | \`0-A2\` §2.3（L45-48）、§5（L86） | 未开始（无 \`HeadScripts\`/\`BodyScripts\`） | 中 | 需安全白名单评审 |
-| PIPE-9 | Robots meta（\`index/noindex\` + \`follow/nofollow\`） | \`0-A2\` §2.1（L28-30）、§5（L83） | 未开始（\`PageSettings.SEO\` 与设置面板均无该字段） | 中 | 无 |
+| PIPE-9 | Robots meta（\`index/noindex\` + \`follow/nofollow\`） | \`0-A2\` §2.1（L28-30）、§5（L83） | ✅ **已落地（2026-09 复核）**：\`PageSettings.SEO\` 有 \`robotsIndex\` / \`robotsFollow\` 两个字段；构建期由 \`builder/seo_head.go\` 的 \`robotsContent\` 组装并输出 \`<meta name=\"robots\">\`（两项都取默认 index/follow 时**返回空串**，默认页面的产物字节与没这个功能时逐字节一致）；工作台页面设置面板有「搜索引擎收录」与「链接跟踪」两组按钮。**本次回填修正**：上一版说「两个字段都没有」是盘点时的滞后 | — | 无 |
 | PIPE-10 | Meta Keywords 字段 | \`0-A2\` §2.1（L27） | 未开始（现代搜索引擎已不看重，可低优先） | 低 | 无 |
 | PIPE-11 | OGTitle / OGDescription 独立字段 | \`0-A2\` §2.1（L32）、§5（L83） | 文档滞后-代码已有：\`seo_head.go:46/50\` 已输出 \`og:title\`/\`og:description\`（取自页面 SEO 标题/描述） | — | 无 |
 | PIPE-12 | 一键设为全站首页（根路径 \`/\`） | \`0-A2\` §1（L13）、§5（L80） | 未开始（设置面板与 service 无该动作） | 中 | 无 |
@@ -146,13 +146,13 @@
 | # | 事项 | 出处 | 现状 | 优先级 | 依赖/前置 |
 |---|---|---|---|---|---|
 | BIZ-1 | \`commerce\` 本体模块（商品/分类/SKU/库存/订单状态机/支付回调验签/优惠码幂等核销） | \`06-A\` §4（L70-83）、\`06-B\` 变更记录 v2（L70-81） | **商品 / 分类 / SKU / 库存已落地**（\`internal/module/product\` 与 \`product/inventory\`，#5–#32 —— v2 决策里的 \`commerce\` 实际以 \`product\` 命名）；**订单已落地**（\`internal/module/order\`，建单 / 状态机 / 取消 / 退款 / 查询 + 归因冗余，迁移 135/136）；**购物车与访客结算已落地**（\`internal/module/cart\`：HMAC 签名 cookie 购物车 + 六个 anonymous 片段能力 + 结算四步；支付通道当前为**模拟 PayPal**，零迁移）；**归因采集链路已落地**（构建期内联 \`track.js\` + 下单定格）；**支付回调验签已落地**（`cart/inbound/http` 的 `POST /payment/callback`：先验签后解析 + 常量时间比较 + 金额核对 + 幂等落账）；**优惠码已落地**（迁移 141/142/143：口径 / 门槛 / 次数 / 每人限次 / 时间窗 + **与建单同事务的幂等核销** + 后台页 `/admin/coupons`）；**后台订单管理页已落地**（`/admin/orders`）；**访客账号表单已片段化**（login / register / forgot / reset / account 五个片段 + `core.userForms` 组件：表单带 CSRF token 必须现渲染，槽位从此可指向作者自建的登录页 / 个人中心页）；**后台备注可编辑已落地**（`POST /api/order/note`，只开放备注一列、不写流转链，迁移 146）；**退货入库已落地**（迁移 144/145：按订单项申请 → 审核 → **先入库、后退款**；收货门闩保证重复点击不会二次入库；全额才转订单已退款；后台页 /admin/returns，访客侧片段 returnRequest）；**访客自助订单查询已落地**（`ordersList` / `orderDetail` 片段 + `core.orderList` 组件，归属由 SQL 条件收口） | 高 | 已拍板方向，可先行 |
-| BIZ-2 | 首批商品 capability（\`productList\` / \`searchResults\` / \`productAvailability\` / \`productLivePrice\` / \`cartSummary\` 接真实数据 / \`cartAdd\`） | \`04-A-dynamic-capabilities.md\` §7（L128-142）、\`04-B\` §6 索引（L152） | **购物车侧已落地**（\`runtimefragment/cart.go\`：cartSummary 真实计数 / cartView / cartAdd / cartSetQty / cartClear / checkout）；\`productList\` / \`productVariantAvailability\` / \`bundleConfigurator\` 亦已落地；\`searchResults\` / \`productLivePrice\` 未开始 | 中 | BIZ-1 |
+| BIZ-2 | 首批商品 capability（\`productList\` / \`searchResults\` / \`productAvailability\` / \`productLivePrice\` / \`cartSummary\` 接真实数据 / \`cartAdd\`） | \`04-A-dynamic-capabilities.md\` §7（L128-142）、\`04-B\` §6 索引（L152） | ✅ **全部已落地（2026-09 复核）**：\`runtimefragment/\` 下已注册 \`cartSummary\` / \`cartView\` / \`cartAdd\` / \`cartSetQty\` / \`cartClear\` / \`checkout\`（cart.go）、\`productList\`（product_list.go）、\`productVariantAvailability\`（variant_availability.go）、\`productLivePrice\`（live_price.go）、\`searchResults\`（search_results.go）、\`bundleConfigurator\`（bundle_configurator.go）。**本次回填修正**：上一版把 \`searchResults\` / \`productLivePrice\` 记为未开始，是盘点时的滞后 | — | BIZ-1 |
 | BIZ-3 | 会员 membership（访客账号领域，admin 之外另建） | \`06-A\` §3 表 #6（L60）、\`AGENTS.md\` 命名约束 | **账号底座已落地（issue #36）**：\`internal/module/user\` 提供注册 / 邮箱验证 / 登录 / 密码重置 / 账号中心（资料 / 偏好 / 登录设备），与 \`admin\` 完全隔离；**会员等级与权益未开始** | 中 | 无 |
 | BIZ-4 | 积分 points（流水对账/幂等） | \`06-A\` §3 表 #7（L61） | 未开始 | 低 | BIZ-3 |
 | BIZ-5 | 评论 comments（提交走 fragment + 审核） | \`06-A\` §3 表 #9（L63） | 未开始 | 低 | BIZ-3 |
-| BIZ-6 | 站内搜索 capability（\`searchResults\`，白名单排序） | \`06-A\` §3 表 #10（L64） | 未开始 | 低 | 无 |
+| BIZ-6 | 站内搜索 capability（\`searchResults\`，白名单排序） | \`06-A\` §3 表 #10（L64） | ✅ **已落地（2026-09 复核）**：\`runtimefragment/search_results.go\` 注册 anonymous GET 片段 \`searchResults\`（参数 q / projectId / limit），经收窄只读端口 \`SetContentSearchProvider\` / \`SetProductSearchProvider\` 取数（未注入时降级为空片段而不是 500）；内容检索按原文匹配，**有译文的文章用中文关键词搜不到**（多语言检索属后续票） | — | 无 |
 | BIZ-7 | 邮件 smtp（配置 + 队列，表单/会员通知依赖） | \`06-A\` §3 表 #11（L65） | **已落地（issue #37 / #38）**：\`internal/module/mail\`（发信账号 / 模板 / 联系人 / 群发 / 自动化 / 事务发送 / 追踪退订），队列未启用时 \`SendTemplate\` 降级同步发送；\`user\` 模块的验证信与重置信已实际接入 | 低 | 无 |
-| BIZ-8 | 统计 analytics（GA4/gtag 注入 + 访问计数） | \`06-A\` §3 表 #5（L59） | **客户端采集链路已落地**（构建期内联 \`track.js\`：UTM 家族 / 广告点击 id / referrer / 会话 / 浏览轨迹 → 签名 cookie → 下单定格进 \`orders.attribution\`）；GA4/gtag 注入与访问计数未开始 | 低 | PIPE-8 |
+| BIZ-8 | 统计 analytics（GA4/gtag 注入 + 访问计数） | \`06-A\` §3 表 #5（L59） | ✅ **全部已落地（2026-09 复核）**：① 归因采集 —— 构建期内联 \`track.js\`（UTM 家族 / 广告点击 id / referrer / 会话 / 浏览轨迹 → 签名 cookie → 下单定格进 \`orders.attribution\`）；② GA4/gtag 注入 —— 真源 \`projects.settings.ga4MeasurementId\`，构建期经 \`builder.WithGA4MeasurementID\` 进 head（空值 / 非法值零字节注入）；③ 访问计数 —— \`internal/module/analytics\`（公开面 \`POST /analytics/collect\` 只写一条记录 + 后台只读 \`GET /api/analytics/summary\`，落库只存匿名派生值），后台页 \`/admin/analytics\`，迁移 147/148/149。**本次回填修正**：上一版把后两项记为未开始，是盘点时的滞后 | — | PIPE-8 |
 | BIZ-9 | 商品数据进可视化（\`content:product\` 集合源本体化注册） | \`06-A\` §4 前置硬骨头 1（L86）、\`06-B\` 变更记录 v2 理由 4（L79-80） | 文档滞后-部分已有：\`content\` service 已实现 \`core.CollectionResolver\`（\`content:{product\|article\|category}\`），通道已通；缺商品实体本身 | 中 | BIZ-1 |
 
 ---
@@ -171,7 +171,7 @@
 | INF-8 | 后台「菜单管理」页未收录 \`/admin/navigations\` | \`09-session-handoff.md\` §4（L390） | 未开始（侧边栏走代码配置，功能不受影响） | 低 | 无 |
 | INF-9 | 复刻页外链图片本地化（走媒体库，顺带验证变体管线） | \`09-session-handoff.md\` §4（L383） | 文档滞后-代码已有：同文 §3（L270-274）已记录完成（10 张图本地化，仅剩 \`<a>\` 链接保留外链） | — | 无 |
 | INF-10 | 访客面零 JS 校验 / 依赖 fan-out E2E 验收清单保持规划态 | \`04-runtime-and-delivery.md\`（L148） | 文档滞后：依赖 fan-out 见 PIPE-3；Runtime Fragment / Client Enhancement / PresentationInstance / ContentTemplate 均已落地 | — | 见 PIPE-3 |
-| INF-11 | 页面设置面板缺 Robots / Keywords 字段（与 PIPE-9/PIPE-10 同源，此处记录 UI 侧） | \`0-A2\` §2.1、\`templates/fragments/settings_panel.html\`（仅 title/description/focusKeyword/canonical/ogImage/schemaType/secondaryKeywords/intent） | 未开始 | 中 | PIPE-9 |
+| INF-11 | 页面设置面板缺 Robots / Keywords 字段（与 PIPE-9/PIPE-10 同源，此处记录 UI 侧） | \`0-A2\` §2.1、\`templates/fragments/settings_panel.html\` | **部分完成（2026-09 复核）**：Robots 侧已落地 —— 面板有「搜索引擎收录」（index/noindex）与「链接跟踪」（follow/nofollow）两组按钮（见 \`settings_panel.html\` 的 \`data-wb-setting=\"settings.seo.robotsIndex\" / robotsFollow\`），后端 \`settingsViewOf\` 也解析了这两个字段；**Keywords 仍未做**（同 PIPE-10，\`builder.SEO\` 结构里没有 keywords，只有 secondaryKeywords）。**本次回填修正**：上一版写「面板仅 title/description/…」漏了 robots 两组 | 低 | PIPE-10 |
 
 ---
 
