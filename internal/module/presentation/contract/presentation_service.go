@@ -27,6 +27,12 @@ type PresentationService interface {
 	//
 	// 只读：不写快照/产物/指针、不激活 URL、不改动线上产物（issue #14 验收 3）。
 	PreviewInstance(ctx context.Context, req *presentationdto.PreviewInstanceReq) (res *presentationdto.PreviewInstanceResp, err error)
+	// UpdateURL 修改已发布实例的线上路径（改 URL）。
+	//
+	// 新路径构建激活后，旧路径按 req.WithRedirect 登记 301 永久重定向或
+	// 直接取消激活（与手工页面 page.Service.UpdateURL 同一语义）。
+	// 详情页 URL 因此不再需要「删实例再重建」才能改。
+	UpdateURL(ctx context.Context, req *presentationdto.UpdateURLReq) (res *presentationdto.InstanceResp, err error)
 	// Get 按 ID 查询。
 	Get(ctx context.Context, req *presentationdto.GetReq) (res *presentationdto.InstanceResp, err error)
 	// List 按类型列表。

@@ -9,15 +9,17 @@ import (
 
 // 请求/响应 DTO 重导出：跨模块调用方只依赖 contract，不直接 import publication/dto。
 type (
-	ActivateReq        = pubdto.ActivateReq
-	DeactivateReq      = pubdto.DeactivateReq
-	RedirectReq        = pubdto.RedirectReq
-	RenameReservedReq  = pubdto.RenameReservedReq
-	ReserveReq         = pubdto.ReserveReq
-	DeleteRoutesReq    = pubdto.DeleteRoutesReq
-	ListActivePathsReq = pubdto.ListActivePathsReq
-	IsOccupiedReq      = pubdto.IsOccupiedReq
-	RouteResp          = pubdto.RouteResp
+	ActivateReq                      = pubdto.ActivateReq
+	DeactivateReq                    = pubdto.DeactivateReq
+	RedirectReq                      = pubdto.RedirectReq
+	RenameReservedReq                = pubdto.RenameReservedReq
+	ReserveReq                       = pubdto.ReserveReq
+	DeleteRoutesReq                  = pubdto.DeleteRoutesReq
+	DeleteRoutesByPresentationReq    = pubdto.DeleteRoutesByPresentationReq
+	ListActivePathsByPresentationReq = pubdto.ListActivePathsByPresentationReq
+	ListActivePathsReq               = pubdto.ListActivePathsReq
+	IsOccupiedReq                    = pubdto.IsOccupiedReq
+	RouteResp                        = pubdto.RouteResp
 )
 
 // PublicationService URL 占用、激活与回滚控制能力。
@@ -40,6 +42,15 @@ type PublicationService interface {
 	RefreshSiteFiles(ctx context.Context, projectID, baseURL, dir string, langs []string, defaultLang string) (err error)
 	// DeleteRoutesByPage 清理页面全部路径占用（页面删除时释放，幂等）。
 	DeleteRoutesByPage(ctx context.Context, req *pubdto.DeleteRoutesReq) (err error)
+	// ListActivePathsByPresentation 返回展示实例已激活（active/redirect）的路径集合。
+	//
+	// 删除实例前必须按它逐个解除访问面激活：改过 URL 的实例除新路径外还有一条
+	// 旧路径的 redirect 链接，只清 DB 路由行在线上的表现仍是 301 到一个死页面。
+	ListActivePathsByPresentation(ctx context.Context, req *pubdto.ListActivePathsByPresentationReq) (paths []string, err error)
+	// DeleteRoutesByPresentation 清理展示实例全部路径占用（实例删除时释放，幂等）。
+	// 与 DeleteRoutesByPage 分开：归属列不同，合成一个可空组合参数会让
+	// 「忘了传归属者」变成静默全删。
+	DeleteRoutesByPresentation(ctx context.Context, req *pubdto.DeleteRoutesByPresentationReq) (err error)
 	// ListActivePaths 返回页面已激活（active/redirect）的路径集合。
 	//
 	// 调用方（页面删除）须按这些路径解除访问面激活：/site 直接服务 active 目录的

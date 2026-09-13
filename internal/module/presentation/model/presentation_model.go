@@ -357,6 +357,42 @@ func (m *Model) UpdateInstanceTemplateTx(tx *gorm.DB, id, templateID string, at 
 	}).Error
 }
 
+// UpdateInstanceURLTx 事务内改写实例的线上路径（改 URL）。
+//
+// url_path 曾是只读身份列（见 UpdateInstancePointers 注释：project_id /
+// template_id / entity_* 不可变），本次起它是**可变更的站点事实**，与手工页面的
+// draft_path 同一性质：内容（实体、模板、快照）不变，路径可以搬。
+// 改动必须与本次重建的产物行/指针在同一事务里落库，否则会出现「产物烘的是新
+// 路径 canonical、实例仍指向旧路径」的漂移，且下次重建会退回旧路径。
+//
+// 只改 url_path 一列：归属身份（project_id / entity_type / entity_id /
+// template_id）不动 —— 改 URL 不是换实体。
+func (m *Model) UpdateInstanceURLTx(tx *gorm.DB, id, urlPath string, at time.Time) error {
+	return tx.Model(&InstanceEntity{}).Where("id = ?", id).Updates(map[string]any{
+		"url_path":   urlPath,
+		"updated_at": at,
+	}).Error
+}
+
+// FindInstanceByPath 查同工程内占用该路径的其他展示实例（改 URL 的占用预检）。
+//
+// 为什么必须查本表而不只查 page_routes：详情页实例的 URL 占用登记进 page_routes
+// 是本次才补上的，历史实例在路由表里没有行；以本表为真源，预检不依赖路由登记的
+// 完整性（漏登只影响「别人防我」，不影响「我防别人」）。返回 ErrRecordNotFound
+// 表示路径空闲。
+func (m *Model) FindInstanceByPath(ctx context.Context, projectID, urlPath, excludeInstanceID string) (e *InstanceEntity, err error) {
+	q := m.InstanceDB(ctx).
+		Where("project_id = ? AND url_path = ? AND deleted_at IS NULL", projectID, urlPath)
+	if excludeInstanceID != "" {
+		q = q.Where("id <> ?", excludeInstanceID)
+	}
+	var row InstanceEntity
+	if err = q.First(&row).Error; err != nil {
+		return nil, err
+	}
+	return &row, nil
+}
+
 // ReplaceDependenciesTx 事务内全量替换依赖记录。
 func (m *Model) ReplaceDependenciesTx(tx *gorm.DB, artifactID string, rows []DependencyEntity) error {
 	if err := tx.Where("artifact_id = ?", artifactID).Delete(&DependencyEntity{}).Error; err != nil {

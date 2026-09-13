@@ -108,13 +108,17 @@ func (s *Service) Activate(ctx context.Context, req *pubdto.ActivateReq) (res *p
 	if err != nil {
 		return nil, err
 	}
+	owner, err := parseRouteOwner(req.PageID, req.PresentationID)
+	if err != nil {
+		return nil, err
+	}
 	now := time.Now().UTC()
 	receiptData, merr := json.Marshal(receiptPayload{To: req.ArtifactID})
 	if merr != nil {
 		receiptData = json.RawMessage(`{}`)
 	}
 	receipt := &pubmodel.ReceiptEntity{
-		ID: uuid.NewString(), SourceType: "page", SourceID: req.PageID,
+		ID: uuid.NewString(), SourceType: owner.sourceType(), SourceID: owner.sourceID(),
 		Action: receiptAction(req.Action, "activate"), Path: path,
 		ToArtifact: strPtr(req.ArtifactID), ReceiptState: pubmodel.ReceiptPending,
 		ReceiptData: receiptData, CreatedAt: now,
@@ -140,17 +144,17 @@ func (s *Service) Activate(ctx context.Context, req *pubdto.ActivateReq) (res *p
 	// 消除原实现 SELECT→CREATE 的 TOCTOU 窗口：并发抢占时败者不再产生失败的
 	// CREATE 撞 23505 与补偿回执，唯一约束冲突在语句内被原子消化。
 	err = s.model.Transaction(ctx, func(tx *gorm.DB) error {
-		pageIDCopy := req.PageID
 		result := tx.Clauses(clause.OnConflict{
 			Columns: []clause.Column{{Name: "project_id"}, {Name: "path"}},
-			// DO UPDATE 仅当冲突行归属者本人（page_id 相同）；他人页面或
-			// 展示实例（page_id 为 NULL）时 WHERE 不成立 → 0 行 → occupied。
-			Where: clause.Where{Exprs: []clause.Expression{
-				clause.Expr{SQL: "page_routes.page_id = EXCLUDED.page_id"},
-			}},
+			// DO UPDATE 仅当冲突行归属者本人：页面按 page_id、展示实例按
+			// presentation_id 比对（用 IS NOT DISTINCT FROM 让 NULL 也能相等，
+			// 否则「实例行 page_id 为 NULL」这一半永远匹配不上）。他人时
+			// WHERE 不成立 → 0 行 → occupied。
+			Where:     clause.Where{Exprs: []clause.Expression{owner.ownershipExpr()}},
 			DoUpdates: clause.AssignmentColumns([]string{"route_kind", "artifact_id", "updated_at"}),
 		}).Create(&pubmodel.RouteEntity{
-			ProjectID: req.ProjectID, Path: path, PageID: &pageIDCopy,
+			ProjectID: req.ProjectID, Path: path,
+			PageID: owner.pageIDPtr(), PresentationID: owner.presentationIDPtr(),
 			RouteKind: pubmodel.RouteActive, ArtifactID: strPtr(req.ArtifactID), UpdatedAt: now,
 		})
 		if result.Error != nil {
@@ -230,6 +234,18 @@ func (s *Service) DeleteRoutesByPage(ctx context.Context, req *pubdto.DeleteRout
 	return result.Error
 }
 
+// DeleteRoutesByPresentation 清理展示实例全部路径占用（实例删除时释放）。
+// 幂等（无占用时 RowsAffected=0 不报错）。
+func (s *Service) DeleteRoutesByPresentation(ctx context.Context, req *pubdto.DeleteRoutesByPresentationReq) (err error) {
+	if req == nil {
+		return errors.New(pubenums.ErrInvalidParam)
+	}
+	result := s.model.RouteDB(ctx).
+		Where("project_id = ? AND presentation_id = ?", req.ProjectID, req.PresentationID).
+		Delete(&pubmodel.RouteEntity{})
+	return result.Error
+}
+
 // ListReferencedArtifactIDs 返回全部被路由引用的产物行 ID（产物 GC 的保护集合）。
 func (s *Service) ListReferencedArtifactIDs(ctx context.Context) (ids []string, err error) {
 	return s.model.ListReferencedArtifactIDs(ctx)
@@ -253,6 +269,25 @@ func (s *Service) ListActivePaths(ctx context.Context, req *pubdto.ListActivePat
 	return paths, nil
 }
 
+// ListActivePathsByPresentation 返回展示实例已激活（active/redirect）的路径集合。
+//
+// 改过 URL 的实例有两条路径：新路径（active）与旧路径（redirect）。删除实例时
+// 必须按这两条都解除访问面激活 —— 只删 DB 路由行会让旧路径的符号链接留在
+// active 目录里继续 301，指向一个已经不存在的页面。
+func (s *Service) ListActivePathsByPresentation(ctx context.Context, req *pubdto.ListActivePathsByPresentationReq) (paths []string, err error) {
+	if req == nil {
+		return nil, errors.New(pubenums.ErrInvalidParam)
+	}
+	paths = []string{}
+	if err = s.model.RouteDB(ctx).
+		Where("project_id = ? AND presentation_id = ? AND route_kind IN ?",
+			req.ProjectID, req.PresentationID, []string{pubmodel.RouteActive, pubmodel.RouteRedirect}).
+		Pluck("path", &paths).Error; err != nil {
+		return nil, err
+	}
+	return paths, nil
+}
+
 // IsPathOccupied 查询路径是否被其他实体占用（page_id 为空即展示实例占用，
 // page_id 非 excludePageID 即他人页面占用），供页面创建/发布前预检。
 func (s *Service) IsPathOccupied(ctx context.Context, req *pubdto.IsOccupiedReq) (occupied bool, err error) {
@@ -270,6 +305,11 @@ func (s *Service) IsPathOccupied(ctx context.Context, req *pubdto.IsOccupiedReq)
 	if exclude := strings.TrimSpace(req.ExcludePageID); exclude != "" {
 		q = q.Where("(page_id IS NULL OR page_id <> ?)", exclude)
 	}
+	// 展示实例改 URL 时排除自身：它的行 page_id 为 NULL，用 ExcludePageID
+	// 排除不掉自己，会把「自己占着旧路径」误判成冲突而无法改名。
+	if exclude := strings.TrimSpace(req.ExcludePresentationID); exclude != "" {
+		q = q.Where("(presentation_id IS NULL OR presentation_id <> ?)", exclude)
+	}
 	if err = q.Count(&foreign).Error; err != nil {
 		return false, err
 	}
@@ -277,6 +317,11 @@ func (s *Service) IsPathOccupied(ctx context.Context, req *pubdto.IsOccupiedReq)
 }
 
 // Deactivate 取消路径占用；路由不存在时幂等返回。
+//
+// 归属者三分支：展示实例按 presentation_id 精确匹配（它的行 page_id 为 NULL，
+// 历史判据 page_id IS NOT NULL 够不着）、页面按 page_id 精确匹配、都未指定时
+// 保持「任意页面占用」的历史行为（page 侧既有调用不携带归属者，逐字不变）。
+// 只删 active 行：redirect 行是「旧路径的 301 承诺」，取消激活不该顺手销毁它。
 func (s *Service) Deactivate(ctx context.Context, req *pubdto.DeactivateReq) (err error) {
 	if req == nil {
 		return errors.New(pubenums.ErrInvalidParam)
@@ -285,10 +330,17 @@ func (s *Service) Deactivate(ctx context.Context, req *pubdto.DeactivateReq) (er
 	if err != nil {
 		return err
 	}
-	result := s.model.RouteDB(ctx).
-		Where("project_id = ? AND path = ? AND page_id IS NOT NULL AND route_kind = ?",
-			req.ProjectID, path, pubmodel.RouteActive).
-		Delete(&pubmodel.RouteEntity{})
+	q := s.model.RouteDB(ctx).
+		Where("project_id = ? AND path = ? AND route_kind = ?", req.ProjectID, path, pubmodel.RouteActive)
+	switch {
+	case strings.TrimSpace(req.PresentationID) != "":
+		q = q.Where("presentation_id = ?", strings.TrimSpace(req.PresentationID))
+	case strings.TrimSpace(req.PageID) != "":
+		q = q.Where("page_id = ?", strings.TrimSpace(req.PageID))
+	default:
+		q = q.Where("page_id IS NOT NULL")
+	}
+	result := q.Delete(&pubmodel.RouteEntity{})
 	if result.Error != nil {
 		logger.Scene("publication").With("url", path).With("kind", "deactivate").Error(result.Error, "路由取消失败")
 		return result.Error
@@ -310,6 +362,10 @@ func (s *Service) Redirect(ctx context.Context, req *pubdto.RedirectReq) (res *p
 	if err != nil {
 		return nil, err
 	}
+	owner, err := parseRouteOwner(req.PageID, req.PresentationID)
+	if err != nil {
+		return nil, err
+	}
 	now := time.Now().UTC()
 
 	// ArtifactID 允许为空（重定向产物不入库，DTO 契约）：回执不得写入空串 uuid。
@@ -322,7 +378,7 @@ func (s *Service) Redirect(ctx context.Context, req *pubdto.RedirectReq) (res *p
 		receiptData = json.RawMessage(`{}`)
 	}
 	receipt := &pubmodel.ReceiptEntity{
-		ID: uuid.NewString(), SourceType: "page", SourceID: req.PageID,
+		ID: uuid.NewString(), SourceType: owner.sourceType(), SourceID: owner.sourceID(),
 		Action: "redirect", Path: oldPath,
 		ToArtifact: toArtifact, ReceiptState: pubmodel.ReceiptPending,
 		ReceiptData: receiptData, CreatedAt: now,
@@ -338,20 +394,22 @@ func (s *Service) Redirect(ctx context.Context, req *pubdto.RedirectReq) (res *p
 
 	// 第二段：路由事务（占用切换 + 置 committed）。
 	err = s.model.Transaction(ctx, func(tx *gorm.DB) error {
-		result := tx.Model(&pubmodel.RouteEntity{}).
-			Where("project_id = ? AND path = ? AND page_id = ?", req.ProjectID, oldPath, req.PageID).
-			Updates(map[string]any{
-				"route_kind": pubmodel.RouteRedirect,
-				"updated_at": now,
-			})
+		matchSQL, matchArgs := owner.match()
+		q := tx.Model(&pubmodel.RouteEntity{}).
+			Where("project_id = ? AND path = ?", req.ProjectID, oldPath).
+			Where(matchSQL, matchArgs...)
+		result := q.Updates(map[string]any{
+			"route_kind": pubmodel.RouteRedirect,
+			"updated_at": now,
+		})
 		if result.Error != nil {
 			return result.Error
 		}
 		if result.RowsAffected == 0 {
 			// 无既有占用时直接建立 redirect 行（幂等）。
-			pageIDCopy := req.PageID
 			if err := tx.Create(&pubmodel.RouteEntity{
-				ProjectID: req.ProjectID, Path: oldPath, PageID: &pageIDCopy,
+				ProjectID: req.ProjectID, Path: oldPath,
+				PageID: owner.pageIDPtr(), PresentationID: owner.presentationIDPtr(),
 				RouteKind: pubmodel.RouteRedirect, UpdatedAt: now,
 			}).Error; err != nil {
 				// 对他人占用路径建 redirect 行撞 (project_id, path) 唯一约束——
@@ -458,8 +516,81 @@ func strPtr(s string) *string { return &s }
 func routeResp(e *pubmodel.RouteEntity) *pubdto.RouteResp {
 	return &pubdto.RouteResp{
 		ProjectID: e.ProjectID, Path: e.Path, PageID: e.PageID,
-		RouteKind: e.RouteKind, ArtifactID: e.ArtifactID, UpdatedAt: e.UpdatedAt,
+		PresentationID: e.PresentationID,
+		RouteKind:      e.RouteKind, ArtifactID: e.ArtifactID, UpdatedAt: e.UpdatedAt,
 	}
+}
+
+// routeOwner 路由行归属者：page_routes 的 CHECK 约束要求 page_id 与
+// presentation_id 恰好一个非空（见 init_builder_schema.sql），所以归属者
+// 用「二选一」表达，而不是两个可空参数——后者会让「两个都传」变成一行
+// 违反 CHECK 的写入，报错点落在数据库而不是参数校验。
+type routeOwner struct {
+	pageID         string
+	presentationID string
+}
+
+// parseRouteOwner 解析归属者并校验恰好一个非空。
+func parseRouteOwner(pageID, presentationID string) (routeOwner, error) {
+	o := routeOwner{
+		pageID:         strings.TrimSpace(pageID),
+		presentationID: strings.TrimSpace(presentationID),
+	}
+	if (o.pageID == "") == (o.presentationID == "") {
+		return routeOwner{}, errors.New(pubenums.ErrInvalidParam)
+	}
+	return o, nil
+}
+
+// sourceType 回执来源类型（publication_receipts.source_type）。
+func (o routeOwner) sourceType() string {
+	if o.presentationID != "" {
+		return "presentation"
+	}
+	return "page"
+}
+
+// sourceID 回执来源 id（source_id 是 uuid NOT NULL 列，必须写归属者本身）。
+func (o routeOwner) sourceID() string {
+	if o.presentationID != "" {
+		return o.presentationID
+	}
+	return o.pageID
+}
+
+// pageIDPtr 页面侧归属列：展示实例归属时必须留 NULL，否则违反 CHECK。
+func (o routeOwner) pageIDPtr() *string {
+	if o.pageID == "" {
+		return nil
+	}
+	return strPtr(o.pageID)
+}
+
+// presentationIDPtr 展示实例侧归属列（页面归属时留 NULL）。
+func (o routeOwner) presentationIDPtr() *string {
+	if o.presentationID == "" {
+		return nil
+	}
+	return strPtr(o.presentationID)
+}
+
+// match 归属者匹配条件（UPDATE / DELETE 精确定位本归属者的行）。
+func (o routeOwner) match() (string, []any) {
+	if o.presentationID != "" {
+		return "presentation_id = ?", []any{o.presentationID}
+	}
+	return "page_id = ?", []any{o.pageID}
+}
+
+// ownershipExpr ON CONFLICT DO UPDATE 的归属者一致性判定。
+//
+// 用 IS NOT DISTINCT FROM 而不是 = ：展示实例的行 page_id 为 NULL，而
+// NULL = NULL 在 SQL 里求值为 NULL（不成立），按 page_id 比会让实例连
+// 「重复激活自己」都失败（第二次发布会误判成 ErrRouteOccupied）。
+// IS NOT DISTINCT FROM 把 NULL 当作可比较值，两类归属者都能正确判等。
+func (o routeOwner) ownershipExpr() clause.Expression {
+	return clause.Expr{SQL: "page_routes.page_id IS NOT DISTINCT FROM EXCLUDED.page_id" +
+		" AND page_routes.presentation_id IS NOT DISTINCT FROM EXCLUDED.presentation_id"}
 }
 
 // RefreshSiteFiles 生成/刷新站点级 SEO 产物（sitemap.xml + robots.txt）。

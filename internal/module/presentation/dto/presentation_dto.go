@@ -23,6 +23,21 @@ type RebuildReq struct {
 	TemplateID string `json:"templateId"`
 }
 
+// UpdateURLReq 修改已发布实例的线上路径（改 URL）。
+//
+// 实例定位二选一：ID，或 EntityType + EntityID（后台页面通常只持有实体，
+// 拿不到实例 id）。NewPath 为空或定位信息不全属于参数错误。
+type UpdateURLReq struct {
+	ID         string `json:"id" form:"id"`
+	EntityType string `json:"entityType" form:"entityType"`
+	EntityID   string `json:"entityId" form:"entityId"`
+	// NewPath 新的线上路径（站内绝对路径，如 /shop/phone-x）。
+	NewPath string `json:"newPath" form:"newPath"`
+	// WithRedirect 旧路径登记 301 永久重定向；false = 直接取消旧路径激活。
+	// 与手工页面改 URL 的 WithRedirect 同一语义（page_publish.go §UpdateURL）。
+	WithRedirect bool `json:"withRedirect" form:"withRedirect"`
+}
+
 // GetByEntityReq 按内容实体查询实例（后台「详情页模板」页读当前绑定）。
 type GetByEntityReq struct {
 	EntityType string `form:"entityType" binding:"required"`

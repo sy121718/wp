@@ -10,6 +10,8 @@ const (
 	MsgDeleteSuccess  = "MsgDeleteSuccess"  // 实例已删除
 	// MsgPreviewSuccess 预览渲染成功（未落库、未激活，issue #14）。
 	MsgPreviewSuccess = "MsgPreviewSuccess"
+	// MsgUpdateURLSuccess 实例 URL 修改成功（新路径已激活、旧路径已按策略处置）。
+	MsgUpdateURLSuccess = "MsgUpdateURLSuccess"
 
 	ErrInvalidParam  = "ErrInvalidParam"  // 参数错误
 	ErrNotFound      = "ErrNotFound"      // 实例不存在
@@ -25,6 +27,13 @@ const (
 	// ErrTemplateTypeMismatch 指定的模板与内容实体类型不匹配（issue #14）：
 	// 多套命名模板之间不允许串用（拿商品模板渲染文章会在构建期产出错误数据）。
 	ErrTemplateTypeMismatch = "ErrTemplateTypeMismatch"
+	// ErrInvalidPath 目标路径不合法（归一化失败：缺前导斜杠 / 含非法段 / 超长等）。
+	ErrInvalidPath = "ErrInvalidPath"
+	// ErrSamePath 新路径与实例当前路径相同（改 URL 的空操作）。
+	ErrSamePath = "ErrSamePath"
+	// ErrPathOccupied 目标路径已被其他页面或展示实例占用。
+	// 与 page 侧 ErrPathOccupied 同一文案口径（改 URL 抢路径的失败原因对用户是同一件事）。
+	ErrPathOccupied = "ErrPathOccupied"
 )
 
 // 实例发布状态（由指针列推导，非表列）。

@@ -10,6 +10,7 @@ import (
 	presentationmodel "go_wp/internal/module/presentation/model"
 	presentationservice "go_wp/internal/module/presentation/service"
 	projectcontract "go_wp/internal/module/project/contract"
+	pubcontract "go_wp/internal/module/publication/contract"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -24,8 +25,9 @@ func SetupPresentationRoutes(rg *gin.RouterGroup, db *gorm.DB,
 	registry core.EntitySourceRegistry,
 	project projectcontract.ProjectService,
 	blocks blockcontract.BlockService,
-	collections core.CollectionResolver) presentationcontract.PresentationService {
-	svc := presentationservice.NewService(presentationmodel.NewModel(db), templates, registry, project, blocks)
+	collections core.CollectionResolver,
+	publication pubcontract.PublicationService) presentationcontract.PresentationService {
+	svc := presentationservice.NewService(presentationmodel.NewModel(db), templates, registry, project, blocks, publication)
 	svc.SetCollectionResolver(collections)
 	handle := NewHandle(svc)
 
@@ -40,5 +42,8 @@ func SetupPresentationRoutes(rg *gin.RouterGroup, db *gorm.DB,
 	// 发布前预览（issue #14 验收 3）：按指定/默认模板只读渲染，不落库不激活。
 	// 与 create/rebuild 分开，便于按「只读预览」单独授权。
 	g.POST("/preview", handle.Preview)
+	// 改 URL（已发布详情页的线上路径变更）：新路径激活 + 旧路径 301/取消激活。
+	// 独立端点而非复用 create：改 URL 不是重建，它还要处置旧路径与路由占用。
+	g.POST("/update-url", handle.UpdateURL)
 	return svc
 }

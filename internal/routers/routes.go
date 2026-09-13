@@ -363,7 +363,7 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 	}
 	// 自动发布实例（内容实体驱动，复用编译/存储/激活管线；实例行需 project_id 外键）。
 	// blockSvc 注入用于内容模板内部的全局块引用展开（页眉/页脚等，构建期内联）。
-	presentationSvc := presentationhttp.SetupPresentationRoutes(authorizedAPI, db, contentTemplateSvc, entityRegistry, projectService, blockSvc, collectionRegistry)
+	presentationSvc := presentationhttp.SetupPresentationRoutes(authorizedAPI, db, contentTemplateSvc, entityRegistry, projectService, blockSvc, collectionRegistry, publicationSvc)
 
 	// 插件模块（page 构建路径依赖其装配素材，须先于 page 装配）。
 	// plugin 是外部插件宿主：注入 admin 权限上下文契约，供插件运行时读取当前用户权限。
@@ -520,5 +520,9 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 // （审计 Low：/site 目录列表开启）。
 // 访问面文本产物（HTML/CSS/JS）经 StaticGzipMiddleware 传输压缩提速。
 func setupStaticFace(router *gin.Engine) {
-	router.Group("/site", builtin.StaticGzipMiddleware()).StaticFS("/", gin.Dir(pipeline.ActiveRoot(), false))
+	// SiteRedirectMiddleware 在前：改 URL 后的旧路径是「指向 redirect.json 的激活链接」，
+	// http.FileServer 只读文件、不认识它 —— 少了这一层，勾了「保留旧链接」的旧路径
+	// 表现是 404（承诺未兑现）。重定向判定不查库，访问面零查库不变量不变。
+	router.Group("/site", builtin.SiteRedirectMiddleware(), builtin.StaticGzipMiddleware()).
+		StaticFS("/", gin.Dir(pipeline.ActiveRoot(), false))
 }

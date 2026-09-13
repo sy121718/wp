@@ -31,6 +31,8 @@ import (
 	projectdto "go_wp/internal/module/project/dto"
 	projectmodel "go_wp/internal/module/project/model"
 	projectservice "go_wp/internal/module/project/service"
+	pubmodel "go_wp/internal/module/publication/model"
+	pubservice "go_wp/internal/module/publication/service"
 
 	"go_wp/internal/builder/core"
 	"go_wp/pkg/i18n"
@@ -306,7 +308,8 @@ func newSEOProductFixture(t *testing.T) *seoProductFixture {
 		t.Fatalf("注册商品实体类型失败: %v", err)
 	}
 	tplSvc := contenttemplateservice.NewService(contenttemplatemodel.NewModel(db), projects, registry)
-	presSvc := presentationservice.NewService(presentationmodel.NewModel(db), tplSvc, registry, projects, nil)
+	presSvc := presentationservice.NewService(presentationmodel.NewModel(db), tplSvc, registry, projects, nil,
+		pubservice.NewService(pubmodel.NewPublicationModel(db)))
 	return &seoProductFixture{
 		db: db, products: products, templates: tplSvc, pres: presSvc, projectID: project.ID,
 	}

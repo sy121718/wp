@@ -149,6 +149,22 @@
                     <input type="hidden" name="id" value="{{form.ID}}">
                     <button type="submit" class="btn">重新发布</button>
                 </form>
+                <form method="post" action="/admin/articles/url" class="stack-sm">
+                    <input type="hidden" name="csrf_token" value="{{csrf}}">
+                    <input type="hidden" name="id" value="{{form.ID}}">
+                    <label class="form-label" for="article-url-path">修改访问路径</label>
+                    <input class="form-input" id="article-url-path" type="text" name="newPath"
+                           value="{{.URLPath}}" required>
+                    <label class="checkbox">
+                        <input type="checkbox" name="withRedirect" value="1" checked>
+                        旧链接保留 301 跳转（不勾则旧链接直接失效）
+                    </label>
+                    <button type="submit" class="btn">改 URL</button>
+                    <p class="hint">
+                        改 URL 不动文章内容：正文、SEO 字段、模板绑定都保持原样，
+                        只是把产物重建到新路径，并按上面的选择处置旧链接。
+                    </p>
+                </form>
                 {{else if .["PublishConfigured"]}}
                 {{if .["HasTemplates"]}}
                 <p class="hint">这篇文章还没有线上详情页。选一套模板与站点工程，发布后即可访问。</p>

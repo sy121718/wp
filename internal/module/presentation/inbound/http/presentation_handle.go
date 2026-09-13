@@ -80,6 +80,25 @@ func (h *Handle) Preview(c *gin.Context) {
 	response.SuccessWithMessage(c, presentationenums.MsgPreviewSuccess, res)
 }
 
+// UpdateURL 修改已发布实例的线上路径（改 URL）：新路径构建激活后，
+// 旧路径按 WithRedirect 登记 301 或取消激活。
+//
+// 用 ShouldBind 而非 ShouldBindJSON：后台入口走表单 POST（dashboard 的
+// 详情页模板页 / 文章发布区块），JSON 与表单都要能绑。
+func (h *Handle) UpdateURL(c *gin.Context) {
+	req := &presentationdto.UpdateURLReq{}
+	if err := c.ShouldBind(req); err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, presentationenums.ErrInvalidParam)
+		return
+	}
+	res, err := h.svc.UpdateURL(c.Request.Context(), req)
+	if err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	response.SuccessWithMessage(c, presentationenums.MsgUpdateURLSuccess, res)
+}
+
 // Get 实例详情。
 func (h *Handle) Get(c *gin.Context) {
 	req := &presentationdto.GetReq{}

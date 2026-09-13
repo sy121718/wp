@@ -387,6 +387,9 @@ var customerAdminPermissionsSQL string
 //go:embed 153_customer_admin_menu.sql
 var customerAdminMenuSQL string
 
+//go:embed 154_presentation_update_url_permission.sql
+var presentationUpdateURLPermissionSQL string
+
 func init() {
 	register(Migration{
 		Version:   "001-init-schema",
@@ -1698,5 +1701,20 @@ func init() {
 		TableName:    "sys_menus",
 		ConditionSQL: "SELECT COUNT(*) FROM sys_menus WHERE type = 2 AND deleted_time IS NULL AND title = '客户管理'",
 		SQL:          customerAdminMenuSQL,
+	})
+
+	// 154：详情页改 URL 权限点（1 条）+ 超管策略。
+	//
+	// 跳过条件同时看两张表（与 151/152 同因）：权限点齐了但策略没齐时仍要执行 ——
+	// 只查权限点会留下「权限点有了、策略没补」的空窗，那种状态下超管点
+	// 「改 URL」就是 403。
+	registerSeed(Seed{
+		Version:   "154-presentation-update-url-permission",
+		TableName: "sys_permission",
+		ConditionSQL: "SELECT CASE WHEN " +
+			"(SELECT COUNT(*) FROM sys_permission WHERE permission_code = 'presentation:update_url') = 1 " +
+			"AND (SELECT COUNT(*) FROM sys_casbin_rule WHERE ptype = 'p' AND v3 = 'presentation:update_url') >= 1 " +
+			"THEN 1 ELSE 0 END",
+		SQL: presentationUpdateURLPermissionSQL,
 	})
 }

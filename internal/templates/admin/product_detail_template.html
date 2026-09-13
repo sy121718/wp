@@ -79,6 +79,18 @@
             </label>
             <button type="submit" class="btn btn-primary">切换模板并重新发布</button>
         </form>
+
+        <form method="post" action="/admin/products/template/url" class="form-inline">
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <input type="hidden" name="projectId" value="{{selectedProject}}">
+            <input type="hidden" name="productId" value="{{.Product.ID}}">
+            <label>改 URL
+                <input type="text" class="form-input" name="newPath" value="{{.InstanceURL}}" required>
+            </label>
+            <label class="checkbox"><input type="checkbox" name="withRedirect" value="1" checked> 旧链接 301</label>
+            <button type="submit" class="btn">改 URL</button>
+        </form>
+        <p class="hint">改 URL 不动商品数据与模板绑定：只重建产物到新路径并处置旧链接。</p>
         {{else}}
         <form method="post" action="/admin/products/template/publish" class="form-inline">
             <input type="hidden" name="csrf_token" value="{{csrf}}">

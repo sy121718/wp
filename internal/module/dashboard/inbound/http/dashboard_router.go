@@ -184,6 +184,9 @@ func SetupDashboardRoutes(router *gin.Engine,
 	adminPages.POST("/products/template/publish", builtin.CasbinMiddlewareForPath("/api/presentation/create"), productPages.ProductDetailTemplatePublish)
 	adminPages.POST("/products/template/apply", builtin.CasbinMiddlewareForPath("/api/presentation/rebuild"), productPages.ProductDetailTemplateApply)
 	adminPages.POST("/products/template/preview", builtin.CasbinMiddlewareForPath("/api/presentation/preview"), productPages.ProductDetailTemplatePreview)
+	// 改 URL：详情页发布后换路径（新路径激活 + 旧路径 301 或取消激活）。
+	// 权限点独立于创建/重建：改 URL 会动旧链接的未来行为，是不同影响面的动作。
+	adminPages.POST("/products/template/url", builtin.CasbinMiddlewareForPath("/api/presentation/update-url"), productPages.ProductDetailTemplateUpdateURL)
 
 	// 商品属性管理页（issue #7）：属性组与属性值可跨商品复用，故独立页面。
 	// 值编辑器的增删行走 HTMX（编辑中的行只存在于 DOM，服务端参与归一与去重）。
@@ -308,6 +311,7 @@ func SetupDashboardRoutes(router *gin.Engine,
 	adminPages.POST("/articles/import-page", builtin.CasbinMiddlewareForPath("/api/page/create"), articlePages.ArticleImportCreate)
 	adminPages.POST("/articles/publish", builtin.CasbinMiddlewareForPath("/api/presentation/create"), articlePages.ArticlePublish)
 	adminPages.POST("/articles/rebuild", builtin.CasbinMiddlewareForPath("/api/presentation/rebuild"), articlePages.ArticleRebuild)
+	adminPages.POST("/articles/url", builtin.CasbinMiddlewareForPath("/api/presentation/update-url"), articlePages.ArticleUpdateURL)
 
 	// 客户管理页：后台此前没有任何地方读 users 表 —— 管理员看不到客户列表、不能按客户看订单、
 	// 不能停用或解锁账号。页面 GET 走 /admin 组认证（Session+CSRF，无 Casbin）；

@@ -28,6 +28,7 @@ import (
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
 	contenttemplatedto "go_wp/internal/module/contenttemplate/dto"
 	presentationdto "go_wp/internal/module/presentation/dto"
+	presentationenums "go_wp/internal/module/presentation/enums"
 	productdto "go_wp/internal/module/product/dto"
 	"go_wp/internal/siteurl"
 )
@@ -55,6 +56,8 @@ type ProductDetailTemplatePort interface {
 	PreviewInstance(ctx context.Context, req *presentationdto.PreviewInstanceReq) (res *presentationdto.PreviewInstanceResp, err error)
 	CreateInstance(ctx context.Context, req *presentationdto.CreateInstanceReq) (res *presentationdto.InstanceResp, err error)
 	Rebuild(ctx context.Context, req *presentationdto.RebuildReq) (res *presentationdto.InstanceResp, err error)
+	// UpdateURL 改 URL（发布后换路径）：新路径激活 + 旧路径 301 / 取消激活。
+	UpdateURL(ctx context.Context, req *presentationdto.UpdateURLReq) (res *presentationdto.InstanceResp, err error)
 }
 
 // SetDetailTemplateDeps 注入「详情页模板」页所需的两份契约（装配期调用）。
@@ -230,7 +233,36 @@ func (h *productPageHandle) ProductDetailTemplatePublish(c *gin.Context) {
 			siteurl.KindProduct, product.Slug, productID)
 	}
 	if _, err := h.instances.CreateInstance(c.Request.Context(), req); err != nil {
-		c.Redirect(http.StatusFound, h.detailTemplateBackURL(projectID, productID, err.Error()))
+		c.Redirect(http.StatusFound, h.detailTemplateBackURL(projectID, productID, detailTemplateFacingError(err)))
+		return
+	}
+	c.Redirect(http.StatusFound, h.detailTemplateBackURL(projectID, productID, ""))
+}
+
+// ProductDetailTemplateUpdateURL POST /admin/products/template/url：
+// 修改商品详情页的线上路径（改 URL）。
+//
+// 内容（商品字段、模板绑定、产物内容）完全不动 —— 路径是站点事实而不是内容
+// 的一部分：改它的代价是重建产物 + 处置旧链接，不是重新编辑商品。
+func (h *productPageHandle) ProductDetailTemplateUpdateURL(c *gin.Context) {
+	if h.instances == nil {
+		c.Redirect(http.StatusFound, productDetailTemplatePath+"?err="+errTemplateDepsMissing)
+		return
+	}
+	projectID := c.PostForm("projectId")
+	productID := c.PostForm("productId")
+	newPath := strings.TrimSpace(c.PostForm("newPath"))
+	if newPath == "" {
+		c.Redirect(http.StatusFound, h.detailTemplateBackURL(projectID, productID, "请填写新的访问路径。"))
+		return
+	}
+	if _, err := h.instances.UpdateURL(c.Request.Context(), &presentationdto.UpdateURLReq{
+		EntityType:   productEntityType,
+		EntityID:     productID,
+		NewPath:      newPath,
+		WithRedirect: c.PostForm("withRedirect") != "",
+	}); err != nil {
+		c.Redirect(http.StatusFound, h.detailTemplateBackURL(projectID, productID, detailTemplateFacingError(err)))
 		return
 	}
 	c.Redirect(http.StatusFound, h.detailTemplateBackURL(projectID, productID, ""))
@@ -248,7 +280,7 @@ func (h *productPageHandle) ProductDetailTemplateApply(c *gin.Context) {
 	if _, err := h.instances.Rebuild(c.Request.Context(), &presentationdto.RebuildReq{
 		EntityID: productID, TemplateID: strings.TrimSpace(c.PostForm("templateId")),
 	}); err != nil {
-		c.Redirect(http.StatusFound, h.detailTemplateBackURL(projectID, productID, err.Error()))
+		c.Redirect(http.StatusFound, h.detailTemplateBackURL(projectID, productID, detailTemplateFacingError(err)))
 		return
 	}
 	c.Redirect(http.StatusFound, h.detailTemplateBackURL(projectID, productID, ""))
@@ -274,6 +306,41 @@ func (h *productPageHandle) ProductDetailTemplatePreview(c *gin.Context) {
 		c.Header("X-Preview-Template", fmt.Sprintf("%s@v%d", res.TemplateName, res.TemplateVersion))
 	}
 	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(res.HTML))
+}
+
+// detailTemplateFacingMessages 详情页模板页可展示的失败文案（键是 presentation 的 enums 常量值）。
+//
+// presentation 返回的错误是 enums key（ErrPathOccupied 这种），直接回显到页面
+// 等于让运营看常量名 —— 而改 URL 最常见的失败恰恰是「路径撞车」，必须说人话。
+// 发布 / 切换模板 / 改 URL 三个写动作共用同一张表。
+var detailTemplateFacingMessages = map[string]string{
+	presentationenums.ErrInvalidParam:         "参数不完整，请检查工程、商品与路径。",
+	presentationenums.ErrNotFound:             "这个商品还没有详情页实例，先发布一次。",
+	presentationenums.ErrNoTemplate:           "该类型没有可用的内容模板，先建一套商品详情模板。",
+	presentationenums.ErrBuildFailed:          "构建失败，请检查模板与商品数据后重试。",
+	presentationenums.ErrTemplateTypeMismatch: "这套模板不是商品类型的，换一套再试。",
+	presentationenums.ErrInvalidPath:          "访问路径不合法：必须以 / 开头，且不含空格、引号与 .. 路径段。",
+	presentationenums.ErrSamePath:             "新路径与当前路径相同，没有需要修改的地方。",
+	presentationenums.ErrPathOccupied:         "这个路径已被其他页面或详情页占用，换一个再试。",
+}
+
+// detailTemplateFacingError 把 presentation 的错误翻译成可展示文案。
+// 拿不到映射时原样返回：宁可显示原始错误，也不要吞掉一个没见过的失败原因。
+func detailTemplateFacingError(err error) string {
+	if err == nil {
+		return ""
+	}
+	raw := strings.TrimSpace(err.Error())
+	if msg, ok := detailTemplateFacingMessages[raw]; ok {
+		return msg
+	}
+	// service 会用 fmt.Errorf("%s: %w", enumsKey, err) 包装，取冒号前的 key 再查一次。
+	if idx := strings.IndexByte(raw, ':'); idx > 0 {
+		if msg, ok := detailTemplateFacingMessages[strings.TrimSpace(raw[:idx])]; ok {
+			return msg
+		}
+	}
+	return raw
 }
 
 // detailTemplateBackURL 详情页模板页的回跳地址（带工程与商品，错误经查询串回显）。

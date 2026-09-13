@@ -31,6 +31,7 @@ import (
 	presentationenums "go_wp/internal/module/presentation/enums"
 	presentationmodel "go_wp/internal/module/presentation/model"
 	projectcontract "go_wp/internal/module/project/contract"
+	pubcontract "go_wp/internal/module/publication/contract"
 
 	"go_wp/internal/builder"
 	"go_wp/internal/builder/core"
@@ -73,6 +74,14 @@ type Service struct {
 	productDS   productcontract.ProductDataSource
 	store       *pipeline.LocalStore
 	publication *pipeline.LocalPublicationStore
+	// routes URL 占用登记契约（publication 模块）。
+	//
+	// 详情页实例的路径此前只切换访问面符号链接、从不登记 page_routes：页面侧
+	// 占用预检看不见详情页，详情页也看不见页面，两边可以先后激活同一路径，
+	// 后者直接覆盖前者的线上内容且全程无报错。本次补上登记，改 URL 也才有
+	// 「占用预检 + 旧路径 301」的落点。可空（单元测试 / 降级装配）：为 nil 时
+	// 只做实例表内的占用预检。
+	routes pubcontract.PublicationService
 	// instanceLocks 实例分片互斥锁：并发构建同一实例时串行化
 	// 「构建 → 落库 → 激活」整段序列，避免产物版本号 MAX+1 竞态与
 	// active_artifact_id 指针交错覆盖（线上内容与 DB 指针分裂）。
@@ -93,7 +102,8 @@ func NewService(m *presentationmodel.Model,
 	templates contenttemplatecontract.ContentTemplateService,
 	registry core.EntitySourceRegistry,
 	project projectcontract.ProjectService,
-	blocks blockcontract.BlockService) *Service {
+	blocks blockcontract.BlockService,
+	routes pubcontract.PublicationService) *Service {
 	return &Service{
 		m:           m,
 		templates:   templates,
@@ -102,6 +112,7 @@ func NewService(m *presentationmodel.Model,
 		blocks:      blocks,
 		store:       &pipeline.LocalStore{Root: pipeline.DefaultArtifactRoot()},
 		publication: &pipeline.LocalPublicationStore{ActiveRoot: pipeline.ActiveRoot()},
+		routes:      routes,
 	}
 }
 
@@ -197,10 +208,22 @@ func (s *Service) CreateInstance(ctx context.Context, req *presentationdto.Creat
 	if err != nil {
 		return nil, err
 	}
+	// 路径先归一化：产物 canonical、访问面符号链接与 page_routes 登记必须落在
+	// 同一个字符串上（FS 侧本来就归一化），否则 /shop/x/ 与 /shop/x 会被当成
+	// 两个路径，路由行指向的位置与实际内容不符。
+	urlPath, err := pipeline.NormalizeURL(strings.TrimSpace(req.URLPath))
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", presentationenums.ErrInvalidPath, err)
+	}
+	// 占用预检必须在任何写操作之前：FS 激活一旦先跑并覆盖了别人的线上产物，
+	// 就没有回滚入口（产物内容寻址，旧链接指向的是别人的产物）。
+	if err = s.ensurePathFree(ctx, projectID, urlPath, ""); err != nil {
+		return nil, err
+	}
 	// 顺序：构建（产物落盘幂等，不触碰线上）→ 实例落库 → 快照/产物行/指针 → 激活。
 	// 落库失败时线上保持原样、可直接重试；反之「先激活后落库」会让线上渲染出
 	// 错误实体内容且没有任何恢复入口。
-	built, err := s.buildArtifact(ctx, req.EntityType, req.EntityID, req.URLPath, projectID, tpl)
+	built, err := s.buildArtifact(ctx, req.EntityType, req.EntityID, urlPath, projectID, tpl)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", presentationenums.ErrBuildFailed, err)
 	}
@@ -208,19 +231,27 @@ func (s *Service) CreateInstance(ctx context.Context, req *presentationdto.Creat
 	now := time.Now().UTC()
 	inst := &presentationmodel.InstanceEntity{
 		ID: uuid.NewString(), ProjectID: projectID, EntityType: req.EntityType,
-		EntityID: req.EntityID, URLPath: req.URLPath, TemplateID: tpl.TemplateID,
+		EntityID: req.EntityID, URLPath: urlPath, TemplateID: tpl.TemplateID,
 		Stale: true, CreatedAt: now, UpdatedAt: now,
 	}
 	if err = s.m.CreateInstance(ctx, inst); err != nil {
 		return nil, err
 	}
-	if err = s.persistBuild(ctx, inst, tpl, built, now); err != nil {
+	artifactID, err := s.persistBuild(ctx, inst, tpl, built, now, "")
+	if err != nil {
 		return nil, err
 	}
 	// 落库全部成功后才上线。激活失败时实例与指针已存在（线上仍是旧内容），
 	// 可经 Rebuild 自愈，不产生「线上有内容、DB 无记录」的分裂。
-	if err = s.activate(req.URLPath, built); err != nil {
+	if err = s.activate(urlPath, built); err != nil {
 		return nil, fmt.Errorf("%s: %w", presentationenums.ErrBuildFailed, err)
+	}
+	// 路由登记放在激活之后（占用已预检，同归属者重复登记幂等）：登记失败只记
+	// 日志 —— 线上已激活是不可逆事实，把失败抛给调用方只会让它重发同一内容；
+	// 缺的登记由下一次重建补上（Rebuild 也会登记）。
+	if rerr := s.registerRoute(ctx, inst, urlPath, artifactID); rerr != nil {
+		logger.Scene("build").With("instanceId", inst.ID).With("url", urlPath).
+			Warn("详情页路由登记失败（线上已激活，下次重建自动补登）: " + rerr.Error())
 	}
 	return s.toResp(ctx, inst)
 }
@@ -342,11 +373,18 @@ func (s *Service) rebuildInstance(ctx context.Context, inst *presentationmodel.I
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", presentationenums.ErrBuildFailed, err)
 	}
-	if err = s.persistBuild(ctx, inst, tpl, built, time.Now().UTC()); err != nil {
+	artifactID, err := s.persistBuild(ctx, inst, tpl, built, time.Now().UTC(), "")
+	if err != nil {
 		return nil, err
 	}
 	if err = s.activate(inst.URLPath, built); err != nil {
 		return nil, fmt.Errorf("%s: %w", presentationenums.ErrBuildFailed, err)
+	}
+	// 重建时重新登记路由：本次之前创建的实例从未登记过，重建是它们自愈的
+	// 唯一时机（幂等，已登记的同归属者行原地升级不会报冲突）。
+	if rerr := s.registerRoute(ctx, inst, inst.URLPath, artifactID); rerr != nil {
+		logger.Scene("build").With("instanceId", inst.ID).With("url", inst.URLPath).
+			Warn("详情页路由登记失败（线上已激活）: " + rerr.Error())
 	}
 	return s.toResp(ctx, inst)
 }
@@ -362,8 +400,14 @@ type builtArtifact struct {
 //
 // 顺序不可颠倒：presentation_artifacts 以复合外键引用 (snapshot_id, instance_id)，
 // 快照必须先存在；实例的 active/staged 指针又引用产物行。
+//
+// urlPath 非空且与实例当前路径不同 = 本次是改 URL：url_path 与产物行/指针
+// 同事务改写（理由见 model.UpdateInstanceURLTx）。返回值是本次生效的产物行
+// ID，调用方用它登记 page_routes（路由的 artifact_id 是 uuid 列，必须写产物
+// 行主键而非内容 hash）。
 func (s *Service) persistBuild(ctx context.Context, inst *presentationmodel.InstanceEntity,
-	tpl *contenttemplatecontract.ResolvedTemplate, built builtArtifact, now time.Time) error {
+	tpl *contenttemplatecontract.ResolvedTemplate, built builtArtifact, now time.Time,
+	urlPath string) (artifactID string, err error) {
 	snapID := uuid.NewString()
 	snap := &presentationmodel.SnapshotEntity{
 		ID: snapID, PresentationInstanceID: inst.ID,
@@ -372,34 +416,44 @@ func (s *Service) persistBuild(ctx context.Context, inst *presentationmodel.Inst
 	}
 	// 四步跨四张表，必须同一事务：任一中间失败都会留下自相矛盾的实例状态
 	//（产物行已写而 active 指针仍指旧产物、依赖记录指向不存在的产物等）。
-	return s.m.Transaction(ctx, func(tx *gorm.DB) error {
-		if err := s.m.CreateSnapshotTx(tx, snap); err != nil {
-			return err
+	err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
+		if cerr := s.m.CreateSnapshotTx(tx, snap); cerr != nil {
+			return cerr
 		}
 		// 模板切换（issue #14）与快照/产物/指针同事务：产物来自哪套模板，
 		// 实例就必须记着哪套，否则下次重建会退回旧模板。
 		if inst.TemplateID != tpl.TemplateID {
-			if err := s.m.UpdateInstanceTemplateTx(tx, inst.ID, tpl.TemplateID, now); err != nil {
-				return err
+			if uerr := s.m.UpdateInstanceTemplateTx(tx, inst.ID, tpl.TemplateID, now); uerr != nil {
+				return uerr
 			}
 			inst.TemplateID = tpl.TemplateID
 		}
-		artifactID, err := s.recordArtifactTx(ctx, tx, inst, snapID, built, now)
-		if err != nil {
-			return err
+		// 改 URL 与快照/产物/指针同事务：产物烘的是新路径的 canonical，实例
+		// 必须同步指向新路径，否则下次重建会拿旧路径重编，线上内容与路由脱节。
+		if urlPath != "" && inst.URLPath != urlPath {
+			if uerr := s.m.UpdateInstanceURLTx(tx, inst.ID, urlPath, now); uerr != nil {
+				return uerr
+			}
+			inst.URLPath = urlPath
 		}
+		aid, aerr := s.recordArtifactTx(ctx, tx, inst, snapID, built, now)
+		if aerr != nil {
+			return aerr
+		}
+		artifactID = aid
 		inst.CurrentSnapshotID = &snapID
 		inst.StagedSnapshotID = &snapID
-		inst.StagedArtifactID = &artifactID
-		inst.ActiveArtifactID = &artifactID
+		inst.StagedArtifactID = &aid
+		inst.ActiveArtifactID = &aid
 		inst.Stale = false
 		inst.PublishedAt = &now
 		inst.UpdatedAt = now
-		if err = s.m.UpdateInstancePointersTx(tx, inst); err != nil {
-			return err
+		if uerr := s.m.UpdateInstancePointersTx(tx, inst); uerr != nil {
+			return uerr
 		}
-		return s.persistDependenciesTx(tx, inst.ID, artifactID, built.Manifest.Dependencies, now)
+		return s.persistDependenciesTx(tx, inst.ID, aid, built.Manifest.Dependencies, now)
 	})
+	return artifactID, err
 }
 
 // recordArtifactTx 事务内写产物行（同 hash 幂等复用，避免重建时产物行膨胀）。
@@ -520,13 +574,47 @@ func (s *Service) Delete(ctx context.Context, req *presentationdto.DeleteReq) (e
 	}
 	// 反激活失败必须中止删除：否则实例行已删、URL 占用残留，后续同路径
 	// 发布/激活会被「已占用」拒绝且无实例可查（状态分裂）。
-	if err = s.publication.Deactivate(inst.URLPath); err != nil {
-		return fmt.Errorf("删除实例前反激活 URL 失败: %w", err)
+	//
+	// 要覆盖**全部**已激活路径而不只是当前 url_path：改过 URL 的实例还有一条
+	// 旧路径的 301 链接，漏掉它 = 实例删了、线上旧路径仍 301 到一个死页面。
+	for _, p := range s.instanceActivePaths(ctx, inst) {
+		if derr := s.publication.Deactivate(p); derr != nil {
+			return fmt.Errorf("删除实例前反激活 URL 失败 %s: %w", p, derr)
+		}
+	}
+	// 路由占用同步释放：只删实例行会把 page_routes 里本实例的 active/redirect
+	// 行留成悬空引用（外键指向已删除的实例），同路径再发布永远被拒。
+	if s.routes != nil {
+		if rerr := s.routes.DeleteRoutesByPresentation(ctx, &pubcontract.DeleteRoutesByPresentationReq{
+			ProjectID: inst.ProjectID, PresentationID: inst.ID,
+		}); rerr != nil {
+			return fmt.Errorf("删除实例前释放路由占用失败: %w", rerr)
+		}
 	}
 	return s.m.DeleteInstance(ctx, req.ID)
 }
 
-// buildArtifact 编译模板 AST（经实体 resolver）→ 产物落盘（**不激活**）。
+// instanceActivePaths 实例在访问面上已激活的全部路径（当前路径 + 历史 301 路径）。
+//
+// 查询失败时退化为当前 url_path：清理不完整优于因查询失败而删不掉实例 ——
+// 前者是可发现、可重试的残留，后者是卡死的资源。
+func (s *Service) instanceActivePaths(ctx context.Context, inst *presentationmodel.InstanceEntity) []string {
+	paths := []string{inst.URLPath}
+	if s.routes == nil {
+		return paths
+	}
+	extra, err := s.routes.ListActivePathsByPresentation(ctx, &pubcontract.ListActivePathsByPresentationReq{
+		ProjectID: inst.ProjectID, PresentationID: inst.ID,
+	})
+	if err != nil {
+		logger.Scene("build").With("instanceId", inst.ID).
+			Warn("读取实例已激活路径失败，仅清理当前路径: " + err.Error())
+		return paths
+	}
+	return append(paths, extra...)
+}
+
+// buildArtifact 编译模板 AST（经 entity resolver）→ 产物落盘（**不激活**）。
 //
 // 激活由调用方在实例落库成功后单独执行（见 activate）：先激活后落库时，
 // 一旦落库失败，线上已渲染出新实体内容却没有任何恢复入口。

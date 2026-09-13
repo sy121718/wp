@@ -29,6 +29,7 @@ import (
 const (
 	articlePublishedText      = "已发布。文章详情页已上线，访问面立即可见。"
 	articleRebuiltText        = "已重新发布。原路径的产物已更新。"
+	articleURLUpdatedText     = "已改 URL。新路径已上线，旧路径按你的选择处理（301 跳转或直接失效）。"
 	articleNoProjectText      = "请先选择这篇文章属于哪个站点工程。"
 	articleNoURLPathText      = "请填写文章详情页的访问路径。"
 	articleNoTemplatePickText = "请选择一套文章详情模板。"
@@ -52,8 +53,12 @@ var articlePublishFacingMessages = map[string]string{
 	presentationenums.ErrProjectNotFound:      "选择的站点工程不存在，请刷新后重试。",
 	presentationenums.ErrRegistryMissing:      "实体类型注册表未装配（装配缺陷），请联系管理员。",
 	presentationenums.ErrTemplateTypeMismatch: "这套模板不是文章类型的，换一套再试。",
+	presentationenums.ErrInvalidPath:          "访问路径不合法：必须以 / 开头，且不含空格、引号与 .. 路径段。",
+	presentationenums.ErrSamePath:             "新路径与当前路径相同，没有需要修改的地方。",
+	presentationenums.ErrPathOccupied:         "这个路径已被其他页面或详情页占用，换一个再试。",
 	articlePublishedText:                      articlePublishedText,
 	articleRebuiltText:                        articleRebuiltText,
+	articleURLUpdatedText:                     articleURLUpdatedText,
 	articleNoProjectText:                      articleNoProjectText,
 	articleNoURLPathText:                      articleNoURLPathText,
 	articleNoTemplatePickText:                 articleNoTemplatePickText,
@@ -108,6 +113,34 @@ func (h *articlePageHandle) ArticleRebuild(c *gin.Context) {
 		return
 	}
 	articleRedirectEdit(c, id, articleRebuiltText, "")
+}
+
+// ArticleUpdateURL 修改已发布文章详情页的线上路径（POST /admin/articles/url）。
+//
+// 正文、SEO 字段、模板绑定一律不动 —— 改 URL 只重建产物并把旧链接按策略处置
+// （勾选 = 301，不勾 = 直接失效）。这是「路径是站点事实、不是内容的一部分」
+// 在后台的出口：改标题不会动 URL，改 URL 也不需要重新编辑文章。
+func (h *articlePageHandle) ArticleUpdateURL(c *gin.Context) {
+	id := strings.TrimSpace(c.PostForm("id"))
+	if h.instances == nil {
+		articleRedirectEdit(c, id, "", "发布能力未装配，请联系管理员。")
+		return
+	}
+	newPath := strings.TrimSpace(c.PostForm("newPath"))
+	if newPath == "" {
+		articleRedirectEdit(c, id, "", "请填写新的访问路径。")
+		return
+	}
+	if _, err := h.instances.UpdateURL(c.Request.Context(), &presentationdto.UpdateURLReq{
+		EntityType:   articleEntityType,
+		EntityID:     id,
+		NewPath:      newPath,
+		WithRedirect: c.PostForm("withRedirect") != "",
+	}); err != nil {
+		articleRedirectEdit(c, id, "", articlePublishFacingError(c, err))
+		return
+	}
+	articleRedirectEdit(c, id, articleURLUpdatedText, "")
 }
 
 // articlePublishView 组装发布区块渲染数据（纯函数，取数在 articlePublishViewData）。

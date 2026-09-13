@@ -36,6 +36,8 @@ import (
 	projectdto "go_wp/internal/module/project/dto"
 	projectmodel "go_wp/internal/module/project/model"
 	projectservice "go_wp/internal/module/project/service"
+	pubmodel "go_wp/internal/module/publication/model"
+	pubservice "go_wp/internal/module/publication/service"
 
 	"go_wp/internal/pipeline"
 	"go_wp/pkg/i18n"
@@ -90,7 +92,8 @@ func newDetailFixture(t *testing.T) *detailFixture {
 	}
 	templates := contenttemplateservice.NewService(contenttemplatemodel.NewModel(db), projects, registry)
 	blocks := blockservice.NewService(blockmodel.NewBlockModel(db), projects)
-	pres := presentationservice.NewService(presentationmodel.NewModel(db), templates, registry, projects, blocks)
+	pres := presentationservice.NewService(presentationmodel.NewModel(db), templates, registry, projects, blocks,
+		pubservice.NewService(pubmodel.NewPublicationModel(db)))
 	return &detailFixture{
 		db: db, products: products, templates: templates, blocks: blocks,
 		pres: pres, projects: projects, projectID: project.ID,

@@ -101,12 +101,14 @@ const (
 
 // articlePublishPort 发布区块所需的自动发布能力（消费者侧最窄接口）。
 //
-// 只列本页真正用到的三个方法：读绑定、首次发布、重建。不直接依赖
+// 只列本页真正用到的方法：读绑定、首次发布、重建、改 URL。不直接依赖
 // presentationcontract 全量契约（它还带着删除、切换模板等本页不碰的写能力）。
 type articlePublishPort interface {
 	GetByEntity(ctx context.Context, req *presentationdto.GetByEntityReq) (res *presentationdto.InstanceResp, err error)
 	CreateInstance(ctx context.Context, req *presentationdto.CreateInstanceReq) (res *presentationdto.InstanceResp, err error)
 	Rebuild(ctx context.Context, req *presentationdto.RebuildReq) (res *presentationdto.InstanceResp, err error)
+	// UpdateURL 改 URL（发布后换路径）：新路径激活 + 旧路径 301 / 取消激活。
+	UpdateURL(ctx context.Context, req *presentationdto.UpdateURLReq) (res *presentationdto.InstanceResp, err error)
 }
 
 // articlePageHandle 文章管理页处理器。

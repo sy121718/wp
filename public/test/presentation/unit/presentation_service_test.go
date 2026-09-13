@@ -29,6 +29,9 @@ import (
 	projectdto "go_wp/internal/module/project/dto"
 	projectmodel "go_wp/internal/module/project/model"
 	projectservice "go_wp/internal/module/project/service"
+	pubcontract "go_wp/internal/module/publication/contract"
+	pubmodel "go_wp/internal/module/publication/model"
+	pubservice "go_wp/internal/module/publication/service"
 
 	"go_wp/internal/builder/core"
 	"go_wp/internal/pipeline"
@@ -44,6 +47,9 @@ type presFixture struct {
 	content   contentcontract.ContentService
 	templates contenttemplatecontract.ContentTemplateService
 	pres      *presentationservice.Service
+	// routes URL 占用登记（page_routes）：详情页的占用是否真的落库，只能从
+	// 这个契约的外部视角验证（不新增只为测试存在的读取接口）。
+	routes    pubcontract.PublicationService
 	projectID string
 }
 
@@ -73,9 +79,11 @@ func newPresFixture(t *testing.T) *presFixture {
 		t.Fatalf("注册实体类型失败: %v", err)
 	}
 	tplSvc := contenttemplateservice.NewService(contenttemplatemodel.NewModel(db), projects, registry)
-	presSvc := presentationservice.NewService(presentationmodel.NewModel(db), tplSvc, registry, projects, nil)
+	pubSvc := pubservice.NewService(pubmodel.NewPublicationModel(db))
+	presSvc := presentationservice.NewService(presentationmodel.NewModel(db), tplSvc, registry, projects, nil, pubSvc)
 	return &presFixture{
-		db: db, content: contentSvc, templates: tplSvc, pres: presSvc, projectID: project.ID,
+		db: db, content: contentSvc, templates: tplSvc, pres: presSvc,
+		routes: pubSvc, projectID: project.ID,
 	}
 }
 
