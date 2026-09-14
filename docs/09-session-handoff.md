@@ -6,7 +6,7 @@
 
 | 项 | 值 |
 |---|---|
-| 项目 | `/home/sky/project/go/wp`（Go + Gin + Jet v6 + HTMX） |
+| 项目 | 仓库根目录（Go + Gin + Jet v6 + HTMX） |
 | 服务 | **air 热重载**，端口 8080（改代码自动重编译；当前进程 gosky-dev，`curl 127.0.0.1:8080/livez` 应为 200） |
 | 启动命令 | `export WP_SITE_BASE_URL='http://127.0.0.1:8080/site' && air -c .air.toml`（或 `bash scripts/dev.sh`） |
 | 配置 | `.air.toml`（go/jet/html/yaml 触发重编译；static 的 js/css 直读不重启） |

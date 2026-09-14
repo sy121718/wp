@@ -7,7 +7,7 @@
 
 | 规范条目 | 实现 |
 |---|---|
-| 单层语义化标签 | 动作类型驱动：modal → `<button type="button" data-modal-target="...">`（无 wrapper）；其余 → 单层 `<a>` |
+| 单层语义化标签 | 动作类型驱动：modal → `<button type="button" data-modal-open="...">`（无 wrapper）；其余 → 单层 `<a>` |
 | 统一链接协议 | `action`：internal（站内路径白名单）/ external / anchor（元素 ID 白名单）/ native（tel:/mailto: 协议白名单）/ modal / link（动态绑定） |
 | 外部链接打开方式 | `target`：self / blank（自动 rel="noopener noreferrer"） |
 | SEO 策略 | `rel`：nofollow / sponsored（与 noopener noreferrer 正确合并） |

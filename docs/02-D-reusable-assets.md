@@ -314,6 +314,30 @@ func (s *Service) propagateStale(ctx context.Context, blockID string) {
 - **构建期误用防御**：`page_assemble.go` 的 `blockResolverAdapter` 拒绝展开 `reuse_mode='template'` 的块（构建期报错而非静默渲染）。
 - **template 无升级路径**：v1 明确不提供「模板更新批量刷新已插入页面」能力（副本独立是语义特性，不是缺陷）；如需强复用请用 global。
 
+## 8. 站点骨架：三条正交路径（VIS-009）
+
+决定「站点顶部长什么样」时，有三条**语义相关但职责不同**的配置路径，不要混为一谈：
+
+```text
+┌─────────────────┐   ┌──────────────────────┐   ┌─────────────────────────┐
+│ block.kind      │   │ theme.headerBlockId  │   │ core.nav 的 Menu 绑定   │
+│ header/footer   │   │ footerBlockId        │   │ header / footer 导航    │
+│ （分类维度）    │   │ （结构绑定维度）     │   │ （数据源维度）          │
+└─────────────────┘   └──────────────────────┘   └─────────────────────────┘
+        │                         │                            │
+   后台块列表筛选            主题设置里选全局块              navigation 模块
+   便于管理页眉类资产        决定整站渲染哪两个块            决定菜单项与链接
+```
+
+| 维度 | 问的问题 | 配置入口 | 常见误配 |
+|---|---|---|---|
+| **kind** | 这块是页眉类还是页脚类资产？ | `/admin/blocks` 新建时选 kind | 以为 kind 会自动出现在每个页面（不会，只是分类） |
+| **structure** | 全站实际渲染哪两个全局块？ | 主题设置 → 页眉/页脚块绑定 | 只建了 header kind 的块但未绑到主题 |
+| **navigation** | 顶栏/底栏菜单项与链接从哪来？ | `/admin/navigations` + 页面上的 `core.nav` | 在 nav 里手写 URL 而不绑 header/footer 菜单 |
+
+**心智模型**：kind = 图书馆分类号；theme 绑定 = 把哪两本书钉在站点框架上；navigation = 菜单内容本身。
+三者正交，文档与后台入口应分开说明（未来 UI 可收拢到同一「站点骨架」页，实现不必合并）。
+
 ## 关联文档
 
 - [02-domain.md](./02-domain.md) — Project/Blueprint/Page/ContentTemplate 领域模型（权威）。

@@ -4,6 +4,19 @@
 
 ## 1. 架构逻辑：继承与组合
 
+### 1.0 为何内置组件是 Go 代码而非 JSON/YAML 注册表
+
+Props schema 已是声明式（struct 的 `json` / `ct` 标签），但**组件本体不能全量 JSON 化**：
+
+| 能力 | 示例 | 声明式引擎能否覆盖 |
+|---|---|---|
+| 编译期几何计算 | `cardstack` 按卡片数/形状算半径、`:nth-child` 规则 | 否（需 Go + 三角函数） |
+| 条件 HTML 结构 | `button` 在 `<a>` 与 `<button>` 间选择、内联 SVG 图标 | 否 |
+| CSS 分桶治理 | `@container` 三桶、`AddHover` / `AddHoverNone` 触屏等价 | 插件样式引擎约 2–3 成表达力 |
+
+**结论**：内置组件 = 「带编译期计算的渲染单元」；插件走受控样式声明 + manifest（见 `docs/06-plugin-system.md`）。
+新增内置组件 = 在 `internal/builder/components/` 建目录 + 一处 import（REG-001/002 消灭双清单与漏注册）。
+
 编辑器 Inspector 面板统一分为两层：
 
 - **内容与专属配置**：每个组件自身的特有功能（如 Heading 的标签等级、Button 的链接跳转、Image 的图片选择）。
