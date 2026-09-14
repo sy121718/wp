@@ -62,6 +62,16 @@ func SecurityHeadersMiddleware() gin.HandlerFunc {
 		// 进链前先清一次，拦截先前中间件的残留设置。
 		c.Writer.Header().Del("X-Powered-By")
 
+		// debug/test 模式打一个可见标记头。
+		//
+		// 目的不是功能，而是**让误配可见**：debug 模式带着一键登录、CORS 反射任意
+		// Origin、信任所有代理三处放宽（监听地址已在 cmd/main.go 的 listenAddr 收紧），
+		// 一旦 debug 配置被带到线上，一条 `curl -I https://站点/` 就能看出
+		// X-GOWP-Debug: 1 —— 比翻日志、比读配置快得多，也更容易被发现者上报。
+		if gin.Mode() != gin.ReleaseMode {
+			c.Writer.Header().Set("X-GOWP-Debug", "1")
+		}
+
 		// Process 写入上述安全头；当前配置未启用任何中断型检查
 		// （SSLRedirect / AllowedHosts 等），err 恒为 nil，此分支为防御性兜底。
 		if err := securityHeaders.Process(c.Writer, c.Request); err != nil {

@@ -13,6 +13,21 @@ server:
   rate_limit_limit: 120
   rate_limit_window: 1m
   port_strategy: ""  # auto_release / report_only；留空时按 mode 推导
+  cors_allowed_origins: []  # CORS 白名单；空时 release 模式拒绝跨域（不反射 Origin）、debug/test 模式反射回退
+  # 站点对外协议（cookie 的 Secure 属性真源）：
+  #   true  = 站点对外是 HTTPS —— 反向代理终结 TLS 时**也要写 true**（进程本身跑在 HTTP 上）
+  #   false = 明确声明站点是纯 HTTP（内网 / 本地开发）
+  # 未配置时按 server.mode 推导：release → true，debug/test → false。
+  # 为什么不按 X-Forwarded-Proto 推断：那个头由上游产生、客户端可伪造，
+  # 而「反代没传这个头」恰恰是自托管最常见的误配 —— 表现是「HTTPS 站点的 cookie
+  # 悄悄丢了 Secure」，看起来一切正常。所以协议是配置事实，不是请求事实。
+  site_https: false
+  # debug/test 模式是否允许绑定非环回地址：
+  #   false（默认）= 服务只监听 127.0.0.1；
+  #   true          = 绑定全部接口（用手机 / 局域网设备连本地环境时才需要），启动打醒目警告。
+  # debug 模式带三处放宽（一键登录、CORS 反射任意 Origin、信任所有代理），
+  # 落到公网可达的地址上就是一条完整入侵路径，故默认收紧。
+  debug_allow_public: false
 
 # 数据库配置
 database:
@@ -20,10 +35,13 @@ database:
   host: 127.0.0.1
   port: 5432
   user: root
-  password: "your-database-password"
+  password: ""  # 生产环境推荐用环境变量 GOWP_DATABASE_PASSWORD 注入，勿落盘明文
   dbname: wp
   max_idle_conns: 10
   max_open_conns: 100
+  conn_max_lifetime: 1h
+  conn_max_idle_time: 10m
+  statement_timeout: 30s
   log_level: ""  # 留空时按 server.mode 推导
   prepare_stmt: false
   skip_default_transaction: false
@@ -46,7 +64,7 @@ redis:
 
 # 认证配置（Session + Cookie）
 auth:
-  session_secret: your-session-secret-key-change-this  # Cookie 会话签名密钥，生产环境必须修改
+  session_secret: ""  # 生产环境用 GOWP_AUTH_SESSION_SECRET 注入（release 模式至少 32 字符）
 
 # Casbin 配置
 casbin:

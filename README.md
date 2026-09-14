@@ -56,6 +56,24 @@ go build -o app ./cmd
 
 组件实现变化后，已发布 Artifact 不会自行改变；启动时可标记待重建页面，再经重建或发布流程更新。
 
+## 生产部署检查清单
+
+debug 模式带三处放宽 —— 一键登录入口、CORS 反射任意 Origin、信任所有代理，
+所以下面几条不是建议而是发布前必须核对的取值：
+
+| 配置 | 生产取值 | 误配的表现 |
+|---|---|---|
+| `server.mode` | `release` | debug 实例注册 `/admin/dev-login`（无需凭据的登录入口）、所有响应带 `X-GOWP-Debug: 1`、未配白名单时反射任意 Origin |
+| `server.cors_allowed_origins` | 显式列出后台域名 | release 下白名单为空会拒绝一切跨域（fail-closed，不会静默放开），需要跨域访问的运维台连不上 |
+| `server.site_https` | `true` | 站点对外的协议真源。未显式配置时 release 默认 `true`；只有明确声明纯 HTTP 站点才写 `false`。错写 `false` 会让会话 cookie 丢掉 `Secure` |
+| `server.debug_allow_public` | `false` | 为 `true` 时 debug/test 绑定全部网络接口（默认只绑 `127.0.0.1`），启动日志会有一条醒目警告 |
+| `auth.session_secret` | ≥32 字符随机值 | release 下弱密钥直接拒绝启动 |
+
+反向代理必须正确传递 `Host`（否则产物里的绝对链接指向错误域名）。
+`X-Forwarded-For` 与 `X-Forwarded-Proto` 当前**不参与任何安全判定**：release 模式
+`SetTrustedProxies(nil)`，`c.ClientIP()` 恒取直连对端，cookie 的 `Secure` 由
+`server.site_https` 决定。也就是说伪造这两个头影响不了 cookie 安全属性；
+代价是前置反代时审计日志记到的是反代地址而不是真实访客 IP。
 ## 验证与契约生成
 
 ```bash

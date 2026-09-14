@@ -69,7 +69,7 @@ func run() error {
 		return err
 	}
 
-	addr := fmt.Sprintf(":%d", serverCfg.Port)
+	addr := listenAddr(serverCfg)
 	logger.Scene("init").With("addr", addr).Info("服务启动")
 
 	// 4) 创建 http.Server 实例，配置超时参数。
@@ -181,6 +181,39 @@ func buildHTTPRouter(
 	return router
 }
 
+// listenAddr 决定 HTTP 服务的监听地址。
+//
+// release：绑定全部接口（:PORT）—— 生产由反向代理前置，绑定 0.0.0.0 是常态。
+// debug / test：默认收紧到 127.0.0.1:PORT，只有显式配置 server.debug_allow_public:
+// true 才绑定全部接口。
+//
+// 为什么收紧：debug 模式带着三处放宽 ——
+//  ① /admin/dev-login 一键登录（不校验凭据，只认 RemoteAddr 环回）；
+//  ② CORS 未配白名单时反射任意 Origin 且带 Allow-Credentials: true；
+//  ③ Gin 默认信任所有代理，c.ClientIP() 采信 X-Forwarded-For ——
+//     基于 IP 的限流可被绕过、登录审计 IP 失真。
+// ① 自身的环回锁用 RemoteAddr（不受 XFF 影响，改 XFF 绕不过去），单看 ②③ 也只是
+// 开发体验问题。但它们的共同前提是「这台机器只在本地被访问」：一旦 debug 实例
+// 落到公网可达的地址上，② 会让任意站点带着受害者浏览器里的凭据发起跨域请求，
+// ③ 会让 IP 维度的防护（限流、审计）整体失效。本地开发用不到「局域网可达」，
+// 要用手机 / 局域网设备连本地环境时再显式打开。
+func listenAddr(cfg config.ServerConfig) string {
+	if gin.Mode() == gin.ReleaseMode {
+		return fmt.Sprintf(":%d", cfg.Port)
+	}
+	if cfg.DebugAllowPublic {
+		logger.Scene("init").With("port", cfg.Port).Warn(
+			"debug/test 模式且 server.debug_allow_public=true：绑定全部网络接口。" +
+				"该模式下存在一键登录、CORS 反射任意 Origin、信任所有代理三处放宽，" +
+				"仅限隔离的开发网络使用；生产环境必须 server.mode=release")
+		return fmt.Sprintf(":%d", cfg.Port)
+	}
+	local := fmt.Sprintf("127.0.0.1:%d", cfg.Port)
+	logger.Scene("init").With("addr", local).Info(
+		"debug/test 模式：仅监听 127.0.0.1（需局域网 / 手机访问时设置 server.debug_allow_public: true）")
+	return local
+}
+
 // buildHTTPServer 创建标准 http.Server 实例。
 //
 // 超时参数说明：
@@ -192,7 +225,7 @@ func buildHTTPRouter(
 // 这些超时从 config.yaml server 段读取，由 config.GetServer() 解析。
 func buildHTTPServer(serverCfg config.ServerConfig, handler http.Handler) *http.Server {
 	return &http.Server{
-		Addr:              fmt.Sprintf(":%d", serverCfg.Port),
+		Addr:              listenAddr(serverCfg),
 		Handler:           handler,
 		ReadHeaderTimeout: serverCfg.ReadHeaderTimeout,
 		ReadTimeout:       serverCfg.ReadTimeout,

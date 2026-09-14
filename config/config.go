@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"go_wp/pkg/logger"
+	"go_wp/pkg/sitehttps"
 
 	"github.com/spf13/viper"
 )
@@ -31,6 +32,13 @@ type ServerConfig struct {
 	RateLimitLimit    int
 	RateLimitWindow   time.Duration
 	PortStrategy      string
+	// DebugAllowPublic 是否允许 debug/test 模式绑定非环回地址（server.debug_allow_public）。
+	//
+	// 默认 false：debug/test 只监听 127.0.0.1。理由见 cmd/main.go 的 listenAddr ——
+	// debug 模式的放宽项（一键登录、CORS 反射任意 Origin、信任所有代理因而采信
+	// X-Forwarded-For）任意一条落在公网可达的地址上都是完整的入侵路径。
+	// 要用手机 / 局域网设备访问本地开发环境时才显式打开。
+	DebugAllowPublic bool
 }
 
 func Init(configPath string) error {
@@ -48,7 +56,15 @@ func Init(configPath string) error {
 		return fmt.Errorf("读取配置文件失败: %w", err)
 	}
 
+	// OSS-014：环境变量覆盖 YAML（GOWP_DATABASE_PASSWORD → database.password）。
+	cfg.SetEnvPrefix("GOWP")
+	cfg.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+	cfg.AutomaticEnv()
+
 	v = cfg
+	// 站点协议判定（cookie 的 Secure 属性）由 pkg/sitehttps 承担：它不反向 import
+	// 本包（config → pkg/auth → 这里会成环），所以在这里单向注入配置实例。
+	sitehttps.Init(cfg)
 	logger.Scene("init").With("path", configPath).Info("配置加载成功")
 	return nil
 }
@@ -75,6 +91,7 @@ func GetServer() (ServerConfig, error) {
 		RateLimitLimit    int    `mapstructure:"rate_limit_limit"`
 		RateLimitWindow   string `mapstructure:"rate_limit_window"`
 		PortStrategy      string `mapstructure:"port_strategy"`
+		DebugAllowPublic  bool   `mapstructure:"debug_allow_public"`
 	}
 
 	var raw serverConfigRaw
@@ -132,6 +149,7 @@ func GetServer() (ServerConfig, error) {
 		RateLimitLimit:    raw.RateLimitLimit,
 		RateLimitWindow:   rateLimitWindow,
 		PortStrategy:      raw.PortStrategy,
+		DebugAllowPublic:  raw.DebugAllowPublic,
 	}, nil
 }
 
@@ -187,4 +205,5 @@ func ResetForTest() {
 	mu.Lock()
 	defer mu.Unlock()
 	v = nil
+	sitehttps.ResetForTest()
 }
