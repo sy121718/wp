@@ -104,6 +104,14 @@ func (m *Model) Append(ctx context.Context, rows []*ChangeEntity) (err error) {
 	return m.DB(ctx).Create(rows).Error
 }
 
+// AppendTx 在外部事务内追加变更记录（与业务写操作同事务）。
+func (m *Model) AppendTx(tx *gorm.DB, rows []*ChangeEntity) (err error) {
+	if len(rows) == 0 || tx == nil {
+		return nil
+	}
+	return tx.Create(rows).Error
+}
+
 // applyChangeFilter 把查询条件施加到变更记录查询上（条件以参数传入）。
 func applyChangeFilter(q *gorm.DB, f ChangeFilter) *gorm.DB {
 	if f.ProjectID != "" {

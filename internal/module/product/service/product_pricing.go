@@ -184,15 +184,15 @@ func (s *Service) ApplyPricing(ctx context.Context, req *productdto.PricingApply
 		if uerr := s.m.SaveVariantsTx(tx, updated, nil); uerr != nil {
 			return uerr
 		}
-		return s.m.CreateAdjustmentWithItemsTx(tx, adj, items)
+		if cerr := s.m.CreateAdjustmentWithItemsTx(tx, adj, items); cerr != nil {
+			return cerr
+		}
+		// issue #19：售价留痕与改价同事务，避免「价已改、审计没记」的半截状态（CQ-026）。
+		return s.recordChangesTx(ctx, tx, changeInputs...)
 	}); err != nil {
 		return nil, err
 	}
-	// issue #19：售价留痕（来源 = pricing）。定价表里的批次留痕回答「按哪条规则改的」，
-	// 这里回答「哪个字段从多少变成了多少」—— 两者互补，不互相替代。
-	if err = s.recordChanges(ctx, changeInputs...); err != nil {
-		return nil, err
-	}
+	s.bumpFragmentCache(ctx, pr.projectID)
 	// 变体写操作后的重算时机（#11）：价格变了，价格区间 / 促销规则的归属可能跟着变。
 	recalc, rerr := s.recalcPricingAutoTags(ctx, pr.projectID)
 	if rerr != nil {
@@ -472,7 +472,7 @@ func (s *Service) resolvePricingTargets(ctx context.Context, pr *pricingRequest)
 			}
 			return nil, gerr
 		}
-		p, perr := s.m.Get(ctx, v.ProductID)
+		p, perr := s.m.Get(ctx, v.ProductID, "")
 		if perr != nil {
 			if errors.Is(perr, gorm.ErrRecordNotFound) {
 				return nil, errors.New(productenums.ErrPricingTargetNotFound)
@@ -482,7 +482,7 @@ func (s *Service) resolvePricingTargets(ctx context.Context, pr *pricingRequest)
 		return []*pricingTarget{{product: p, variant: v}}, nil
 
 	case productenums.PricingScopeProduct:
-		p, perr := s.m.Get(ctx, pr.targetID)
+		p, perr := s.m.Get(ctx, pr.targetID, "")
 		if perr != nil {
 			if errors.Is(perr, gorm.ErrRecordNotFound) {
 				return nil, errors.New(productenums.ErrPricingTargetNotFound)

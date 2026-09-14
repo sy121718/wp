@@ -21,6 +21,8 @@ import (
 	"strings"
 
 	masterdatadto "go_wp/internal/module/masterdata/dto"
+
+	"gorm.io/gorm"
 )
 
 // FieldSnapshot 一次写操作的字段快照：字段名 → 已格式化的取值。
@@ -66,6 +68,8 @@ type MasterDataService interface {
 	// 一次调用可以携带多条 ChangeInput（例如删商品时连带它的全部变体），
 	// 保持同一次写操作产生的记录在同一批里落库。
 	RecordChanges(ctx context.Context, inputs []*ChangeInput) (err error)
+	// RecordChangesTx 在外部事务内追加变更记录（与业务写操作同事务，CQ-026）。
+	RecordChangesTx(ctx context.Context, tx *gorm.DB, inputs []*ChangeInput) (err error)
 
 	// ListChanges 按条件查字段级变更（时间倒序）。
 	ListChanges(ctx context.Context, req *masterdatadto.ListChangeReq) (list []*masterdatadto.ChangeResp, err error)

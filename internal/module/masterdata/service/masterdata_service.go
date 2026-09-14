@@ -23,6 +23,7 @@ import (
 	masterdatacontract "go_wp/internal/module/masterdata/contract"
 	masterdataenums "go_wp/internal/module/masterdata/enums"
 	masterdatamodel "go_wp/internal/module/masterdata/model"
+	"go_wp/pkg/utils"
 	projectcontract "go_wp/internal/module/project/contract"
 )
 
@@ -125,20 +126,11 @@ func (s *Service) resolveProjectID(ctx context.Context, projectID string) (id st
 
 // normalizePage / normalizeSize 分页归一化（越界一律收口，不报错）。
 func normalizePage(page int) int {
-	if page < 1 {
-		return 1
-	}
-	return page
+	return utils.NormalizePaging(page, defaultPageSize, defaultPageSize, maxPageSize).Page
 }
 
 func normalizeSize(size int) int {
-	if size <= 0 {
-		return defaultPageSize
-	}
-	if size > maxPageSize {
-		return maxPageSize
-	}
-	return size
+	return utils.NormalizePaging(1, size, defaultPageSize, maxPageSize).Size
 }
 
 // parseTimeValue 解析时间入参：支持 RFC3339、'2006-01-02 15:04:05' 与纯日期 '2006-01-02'。

@@ -23,6 +23,7 @@ import (
 	masterdatamodel "go_wp/internal/module/masterdata/model"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 // RecordChanges 追加变更记录（append-only）。
@@ -30,22 +31,39 @@ import (
 // 输入为空、或某条输入一个字段都没变时，不写任何行（返回 nil）——
 // 「打开表单什么都没改就点保存」不应该在审计里留下痕迹。
 func (s *Service) RecordChanges(ctx context.Context, inputs []*masterdatacontract.ChangeInput) (err error) {
+	rows, err := buildChangeRowsBatch(inputs)
+	if err != nil || len(rows) == 0 {
+		return err
+	}
+	return s.m.Append(ctx, rows)
+}
+
+// RecordChangesTx 在外部事务内追加变更记录。
+func (s *Service) RecordChangesTx(ctx context.Context, tx *gorm.DB, inputs []*masterdatacontract.ChangeInput) (err error) {
+	if tx == nil {
+		return s.RecordChanges(ctx, inputs)
+	}
+	rows, err := buildChangeRowsBatch(inputs)
+	if err != nil || len(rows) == 0 {
+		return err
+	}
+	return s.m.AppendTx(tx, rows)
+}
+
+func buildChangeRowsBatch(inputs []*masterdatacontract.ChangeInput) (rows []*masterdatamodel.ChangeEntity, err error) {
 	now := time.Now().UTC()
-	rows := make([]*masterdatamodel.ChangeEntity, 0, len(inputs))
+	rows = make([]*masterdatamodel.ChangeEntity, 0, len(inputs))
 	for _, in := range inputs {
 		if in == nil {
 			continue
 		}
 		built, berr := buildChangeRows(in, now)
 		if berr != nil {
-			return berr
+			return nil, berr
 		}
 		rows = append(rows, built...)
 	}
-	if len(rows) == 0 {
-		return nil
-	}
-	return s.m.Append(ctx, rows)
+	return rows, nil
 }
 
 // buildChangeRows 把一条变更输入展开成字段级记录行。
