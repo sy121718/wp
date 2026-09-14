@@ -111,7 +111,7 @@ func (s *Service) GetReturn(ctx context.Context, returnID uint64) (res *orderdto
 	if ierr != nil {
 		return nil, ierr
 	}
-	order, oerr := s.orders.GetByID(ctx, e.OrderID)
+	order, oerr := s.orders.GetByID(ctx, e.OrderID, "")
 	if oerr != nil {
 		return nil, oerr
 	}
@@ -343,9 +343,8 @@ func (s *Service) stockInReturn(ctx context.Context, rt *ordermodel.ReturnEntity
 		// 入库失败基本都是库存服务不可用（它不是「不足」——入库不会被库存挡住）。
 		return errors.New(orderenums.ErrStockUnavailable)
 	}
-	// 登记每行的实际入库数量（首版一次收齐）。写失败不回滚入库：
-	// 货已经在库里了，少一列记录远轻于「库存加了却查不到来源」。
-	_ = s.returns.Transaction(ctx, func(tx *gorm.DB) error {
+	// 登记每行的实际入库数量（首版一次收齐）。失败向上返回以便重试补写。
+	return s.returns.Transaction(ctx, func(tx *gorm.DB) error {
 		for _, it := range items {
 			if uerr := s.returns.UpdateItemReceivedTx(ctx, tx, it.ID, it.Quantity, it.UnitPrice*int64(it.Quantity)); uerr != nil {
 				return uerr
@@ -353,7 +352,6 @@ func (s *Service) stockInReturn(ctx context.Context, rt *ordermodel.ReturnEntity
 		}
 		return nil
 	})
-	return nil
 }
 
 // rollbackReceive 入库失败后的补偿：状态退回 approved 并留痕。
@@ -383,39 +381,50 @@ func (s *Service) rollbackReceive(ctx context.Context, returnID uint64, cause st
 // 全额 → 走 RefundOrder 把订单推进到 refunded（它自带行锁与幂等）；
 // 部分 → 订单状态不动，只在流转链上记一条说明（还有没退的货）。
 func (s *Service) refundReturn(ctx context.Context, rt *ordermodel.ReturnEntity, transactionID, operatorType string, operatorID uint64, operatorName string) error {
-	order, oerr := s.orders.GetByID(ctx, rt.OrderID)
-	if oerr != nil {
-		return oerr
-	}
-	if order == nil {
-		return errors.New(orderenums.ErrOrderNotFound)
-	}
-	orderItems, ierr := s.items.ListByOrderID(ctx, rt.OrderID)
-	if ierr != nil {
-		return ierr
-	}
-	ids, derr := s.returns.IDsByOrder(ctx, rt.OrderID, ordermodel.ReturnActiveStatuses)
-	if derr != nil {
-		return derr
-	}
-	itemIDs := make([]uint64, 0, len(orderItems))
-	for _, it := range orderItems {
-		itemIDs = append(itemIDs, it.ID)
-	}
-	sums, serr := s.returns.SumQuantityByOrderItems(ctx, ids, itemIDs)
-	if serr != nil {
-		return serr
-	}
-	full := true
-	for _, it := range orderItems {
-		if sums[it.ID] < it.Quantity {
-			full = false
-			break
+	var orderID uint64
+	var orderStatus string
+	var full bool
+	err := s.orders.Transaction(ctx, func(tx *gorm.DB) error {
+		order, lerr := s.orders.LockByIDTx(ctx, tx, rt.OrderID)
+		if lerr != nil {
+			return lerr
 		}
+		if order == nil {
+			return errors.New(orderenums.ErrOrderNotFound)
+		}
+		orderID = order.ID
+		orderStatus = order.Status
+		orderItems, ierr := s.items.ListByOrderID(ctx, rt.OrderID)
+		if ierr != nil {
+			return ierr
+		}
+		ids, derr := s.returns.IDsByOrder(ctx, rt.OrderID, ordermodel.ReturnActiveStatuses)
+		if derr != nil {
+			return derr
+		}
+		itemIDs := make([]uint64, 0, len(orderItems))
+		for _, it := range orderItems {
+			itemIDs = append(itemIDs, it.ID)
+		}
+		sums, serr := s.returns.SumQuantityByOrderItems(ctx, ids, itemIDs)
+		if serr != nil {
+			return serr
+		}
+		full = true
+		for _, it := range orderItems {
+			if sums[it.ID] < it.Quantity {
+				full = false
+				break
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return err
 	}
 	if full {
 		return s.RefundOrder(ctx, &orderdto.RefundOrderReq{
-			OrderID:       order.ID,
+			OrderID:       orderID,
 			Reason:        "退货入库后退款（" + rt.ReturnNo + "）",
 			TransactionID: strings.TrimSpace(transactionID),
 			OperatorType:  operatorType,
@@ -427,9 +436,9 @@ func (s *Service) refundReturn(ctx context.Context, rt *ordermodel.ReturnEntity,
 	// 财务对账看的是「这单退了多少钱」，而不是只看状态列。
 	return s.logs.Transaction(ctx, func(tx *gorm.DB) error {
 		return s.logs.CreateTx(ctx, tx, &ordermodel.OrderStatusLogEntity{
-			OrderID:      order.ID,
-			FromStatus:   order.Status,
-			ToStatus:     order.Status,
+			OrderID:      orderID,
+			FromStatus:   orderStatus,
+			ToStatus:     orderStatus,
 			OperatorType: defaultString(operatorType, ordermodel.OperatorTypeAdmin),
 			OperatorID:   operatorID,
 			OperatorName: strings.TrimSpace(operatorName),

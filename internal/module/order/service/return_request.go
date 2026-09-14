@@ -16,6 +16,8 @@ import (
 
 	"gorm.io/gorm"
 
+	"go_wp/pkg/database"
+
 	orderdto "go_wp/internal/module/order/dto"
 	orderenums "go_wp/internal/module/order/enums"
 	ordermodel "go_wp/internal/module/order/model"
@@ -96,7 +98,7 @@ func (s *Service) RequestReturn(ctx context.Context, req *orderdto.ReturnRequest
 		}
 	}
 
-	order, oerr := s.orders.GetByID(ctx, req.OrderID)
+	order, oerr := s.orders.GetByID(ctx, req.OrderID, "")
 	if oerr != nil {
 		return nil, oerr
 	}
@@ -127,45 +129,12 @@ func (s *Service) RequestReturn(ctx context.Context, req *orderdto.ReturnRequest
 	for _, it := range orderItems {
 		byID[it.ID] = it
 	}
-	returnable, rerr := s.returnableByItem(ctx, order.ID, orderItems)
-	if rerr != nil {
-		return nil, rerr
-	}
-
-	now := time.Now()
-	var total int64
-	items := make([]*ordermodel.ReturnItemEntity, 0, len(req.Items))
-	for _, line := range req.Items {
-		it := byID[line.OrderItemID]
-		if it == nil {
-			// 传了不属于这张订单的订单项：不是「查不到」，是构造出来的请求。
-			return nil, errors.New(orderenums.ErrInvalidParam)
-		}
-		if line.Quantity <= 0 || line.Quantity > maxReturnQuantity {
-			return nil, errors.New(orderenums.ErrReturnQuantityInvalid)
-		}
-		if line.Quantity > returnable[it.ID] {
-			return nil, fmt.Errorf("%s：%s", orderenums.ErrReturnQuantityExceeded, it.ProductName)
-		}
-		amount := it.UnitPrice * int64(line.Quantity)
-		total += amount
-		items = append(items, &ordermodel.ReturnItemEntity{
-			OrderItemID:  it.ID,
-			ProductID:    it.ProductID,
-			VariantID:    it.VariantID,
-			ProductName:  it.ProductName,
-			VariantLabel: it.VariantLabel,
-			SKU:          it.SKU,
-			UnitPrice:    it.UnitPrice,
-			Quantity:     line.Quantity,
-			CreateTime:   now,
-		})
-	}
-
+	// 可退数量与退款额在事务内、订单行锁下重算，避免并发超退。
 	returnNo, nerr := s.newReturnNo(ctx, projectID)
 	if nerr != nil {
 		return nil, nerr
 	}
+	now := time.Now()
 	userID := req.UserID
 	head := &ordermodel.ReturnEntity{
 		ProjectID:     projectID,
@@ -174,7 +143,6 @@ func (s *Service) RequestReturn(ctx context.Context, req *orderdto.ReturnRequest
 		ReturnNo:      returnNo,
 		Status:        ordermodel.ReturnStatusRequested,
 		Reason:        reason,
-		RefundAmount:  total,
 		UserID:        &userID,
 		CustomerEmail: order.CustomerEmail,
 		CustomerName:  order.CustomerName,
@@ -182,8 +150,50 @@ func (s *Service) RequestReturn(ctx context.Context, req *orderdto.ReturnRequest
 		CreateTime:    now,
 		UpdateTime:    now,
 	}
+	var items []*ordermodel.ReturnItemEntity
+	var returnable map[uint64]int
 
 	err = s.returns.Transaction(ctx, func(tx *gorm.DB) error {
+		locked, lerr := s.orders.LockByIDTx(ctx, tx, order.ID)
+		if lerr != nil {
+			return lerr
+		}
+		if locked == nil {
+			return errors.New(orderenums.ErrOrderNotFound)
+		}
+		returnable, lerr = s.returnableByItemTx(ctx, tx, locked.ID, orderItems)
+		if lerr != nil {
+			return lerr
+		}
+		var total int64
+		items = make([]*ordermodel.ReturnItemEntity, 0, len(req.Items))
+		for _, line := range req.Items {
+			it := byID[line.OrderItemID]
+			if it == nil {
+				return errors.New(orderenums.ErrInvalidParam)
+			}
+			if line.Quantity <= 0 || line.Quantity > maxReturnQuantity {
+				return errors.New(orderenums.ErrReturnQuantityInvalid)
+			}
+			if line.Quantity > returnable[it.ID] {
+				return fmt.Errorf("%s：%s", orderenums.ErrReturnQuantityExceeded, it.ProductName)
+			}
+			amount := lineRefundAmount(it, line.Quantity)
+			total += amount
+			items = append(items, &ordermodel.ReturnItemEntity{
+				OrderItemID:  it.ID,
+				ProductID:    it.ProductID,
+				VariantID:    it.VariantID,
+				ProductName:  it.ProductName,
+				VariantLabel: it.VariantLabel,
+				SKU:          it.SKU,
+				UnitPrice:    it.UnitPrice,
+				Quantity:     line.Quantity,
+				RefundAmount: amount,
+				CreateTime:   now,
+			})
+		}
+		head.RefundAmount = total
 		if cerr := s.returns.CreateTx(ctx, tx, head); cerr != nil {
 			return cerr
 		}
@@ -193,6 +203,15 @@ func (s *Service) RequestReturn(ctx context.Context, req *orderdto.ReturnRequest
 		return s.returns.CreateItemsTx(ctx, tx, items)
 	})
 	if err != nil {
+		if reqID := strings.TrimSpace(req.RequestID); reqID != "" && database.IsUniqueViolation(err) {
+			if existing, gerr := s.returns.GetByRequestID(ctx, projectID, reqID); gerr == nil && existing != nil {
+				items, ierr := s.returns.ItemsByReturnID(ctx, existing.ID)
+				if ierr != nil {
+					return nil, ierr
+				}
+				return toReturnResp(existing, items, nil), nil
+			}
+		}
 		return nil, err
 	}
 	return toReturnResp(head, items, returnable), nil
@@ -276,6 +295,27 @@ func (s *Service) returnableByItem(ctx context.Context, orderID uint64, items []
 	if serr != nil {
 		return nil, serr
 	}
+	return returnableFromSums(items, sums), nil
+}
+
+// returnableByItemTx 事务内计算可退数量（与订单行锁配合）。
+func (s *Service) returnableByItemTx(ctx context.Context, tx *gorm.DB, orderID uint64, items []*ordermodel.OrderItemEntity) (map[uint64]int, error) {
+	ids, err := s.returns.IDsByOrderTx(ctx, tx, orderID, ordermodel.ReturnActiveStatuses)
+	if err != nil {
+		return nil, err
+	}
+	itemIDs := make([]uint64, 0, len(items))
+	for _, it := range items {
+		itemIDs = append(itemIDs, it.ID)
+	}
+	sums, serr := s.returns.SumQuantityByOrderItemsTx(ctx, tx, ids, itemIDs)
+	if serr != nil {
+		return nil, serr
+	}
+	return returnableFromSums(items, sums), nil
+}
+
+func returnableFromSums(items []*ordermodel.OrderItemEntity, sums map[uint64]int) map[uint64]int {
 	out := make(map[uint64]int, len(items))
 	for _, it := range items {
 		left := it.Quantity - sums[it.ID]
@@ -284,7 +324,7 @@ func (s *Service) returnableByItem(ctx context.Context, orderID uint64, items []
 		}
 		out[it.ID] = left
 	}
-	return out, nil
+	return out
 }
 
 // newReturnNo 生成退货单号：RTR + 日期 + 随机后缀（唯一约束兜底，撞了重试）。

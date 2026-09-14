@@ -264,6 +264,17 @@ func (m *ReturnModel) IDsByOrder(ctx context.Context, orderID uint64, statuses [
 	return ids, err
 }
 
+// IDsByOrderTx 事务内取占用额度的申请 id。
+func (m *ReturnModel) IDsByOrderTx(ctx context.Context, tx *gorm.DB, orderID uint64, statuses []string) (ids []uint64, err error) {
+	if orderID == 0 || len(statuses) == 0 {
+		return nil, nil
+	}
+	err = tx.WithContext(ctx).Model(&ReturnEntity{}).
+		Where("order_id = ? AND status IN ?", orderID, statuses).
+		Order("id ASC").Pluck("id", &ids).Error
+	return ids, err
+}
+
 // SumQuantityByOrderItems 统计这些申请里、这些订单项的**已申请退货数量**。
 //
 // returnIDs 为空表示没有任何额度被占用（返回空表，不是「全部」—— 语义差一个词，
@@ -278,6 +289,28 @@ func (m *ReturnModel) SumQuantityByOrderItems(ctx context.Context, returnIDs []u
 		Qty         int64  `gorm:"column:qty"`
 	}
 	if err = m.db.WithContext(ctx).Model(&ReturnItemEntity{}).
+		Select("order_item_id, SUM(quantity) AS qty").
+		Where("return_id IN ? AND order_item_id IN ?", returnIDs, orderItemIDs).
+		Group("order_item_id").Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	for _, r := range rows {
+		sums[r.OrderItemID] = int(r.Qty)
+	}
+	return sums, nil
+}
+
+// SumQuantityByOrderItemsTx 事务内统计已申请退货数量。
+func (m *ReturnModel) SumQuantityByOrderItemsTx(ctx context.Context, tx *gorm.DB, returnIDs []uint64, orderItemIDs []uint64) (sums map[uint64]int, err error) {
+	sums = map[uint64]int{}
+	if len(returnIDs) == 0 || len(orderItemIDs) == 0 {
+		return sums, nil
+	}
+	var rows []struct {
+		OrderItemID uint64 `gorm:"column:order_item_id"`
+		Qty         int64  `gorm:"column:qty"`
+	}
+	if err = tx.WithContext(ctx).Model(&ReturnItemEntity{}).
 		Select("order_item_id, SUM(quantity) AS qty").
 		Where("return_id IN ? AND order_item_id IN ?", returnIDs, orderItemIDs).
 		Group("order_item_id").Scan(&rows).Error; err != nil {
