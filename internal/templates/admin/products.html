@@ -78,7 +78,15 @@
             <a class="btn" href="/admin/products/translations?project={{selectedProject}}&amp;product={{p.ID}}">多语言</a>
             {* 详情页模板（issue #14）：同一商品类型下可选多套命名模板、发布前可预览。 *}
             <a class="btn" href="/admin/products/template?project={{selectedProject}}&amp;product={{p.ID}}">详情页模板</a>
-            <form method="post" action="/admin/products/delete" onsubmit="return confirm('删除该商品及其全部变体？')">
+            {* EDT-018：列表行内一键预览详情页（走 presentation.PreviewInstance，只读渲染）。 *}
+            <form method="post" action="/admin/products/template/preview" target="_blank" class="form-inline">
+                <input type="hidden" name="csrf_token" value="{{csrf}}">
+                <input type="hidden" name="projectId" value="{{selectedProject}}">
+                <input type="hidden" name="productId" value="{{p.ID}}">
+                <button type="submit" class="btn">预览详情页</button>
+            </form>
+            <form method="post" action="/admin/products/delete"
+                  data-confirm="删除该商品及其全部变体？" data-confirm-danger>
                 <input type="hidden" name="csrf_token" value="{{csrf}}">
                 <input type="hidden" name="projectId" value="{{selectedProject}}">
                 <input type="hidden" name="id" value="{{p.ID}}">

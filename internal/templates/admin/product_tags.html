@@ -146,7 +146,7 @@
             {{end}}
 
             <form method="post" action="/admin/product-tags/delete"
-                  onsubmit="return confirm('删除该标签？商品上的这个标签会被一并解绑。')">
+                  data-confirm="删除该标签？商品上的这个标签会被一并解绑。" data-confirm-danger>
                 <input type="hidden" name="csrf_token" value="{{csrf}}">
                 <input type="hidden" name="projectId" value="{{selectedProject}}">
                 <input type="hidden" name="id" value="{{t.ID}}">

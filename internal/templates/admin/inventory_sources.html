@@ -193,7 +193,7 @@
             </form>
 
             <form method="post" action="/admin/inventory/sources/delete"
-                  onsubmit="return confirm('删除该货源？此操作不可撤销。')">
+                  data-confirm="删除该货源？此操作不可撤销。" data-confirm-danger>
                 <input type="hidden" name="csrf_token" value="{{csrf}}">
                 <input type="hidden" name="projectId" value="{{selectedProject}}">
                 <input type="hidden" name="id" value="{{s.ID}}">

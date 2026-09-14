@@ -103,7 +103,7 @@
             {{end}}
 
             <form method="post" action="/admin/inventory/warehouse/delete"
-                  onsubmit="return confirm('删除该仓库？默认仓或仓内仍有非零库存时会被拒绝。')">
+                  data-confirm="删除该仓库？默认仓或仓内仍有非零库存时会被拒绝。" data-confirm-danger>
                 <input type="hidden" name="csrf_token" value="{{csrf}}">
                 <input type="hidden" name="projectId" value="{{selectedProject}}">
                 <input type="hidden" name="id" value="{{w.ID}}">

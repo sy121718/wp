@@ -14,6 +14,9 @@
             {{if .["Published"]}}
             <a class="btn" href="{{.PublicURL}}" target="_blank" rel="noopener">查看线上</a>
             {{end}}
+            {{if .TemplateEditURL != ""}}
+            <a class="btn" href="{{.TemplateEditURL}}">编辑详情页模板</a>
+            {{end}}
         </div>
         {{if .Err != ""}}
         <p class="badge badge-warning">上一次操作未完成：{{.Err}}</p>

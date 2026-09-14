@@ -96,7 +96,7 @@
             </form>
 
             <form method="post" action="/admin/product-attributes/delete"
-                  onsubmit="return confirm('删除该属性组及其全部属性值？被商品引用时会拒绝删除。')">
+                  data-confirm="删除该属性组及其全部属性值？被商品引用时会拒绝删除。" data-confirm-danger>
                 <input type="hidden" name="csrf_token" value="{{csrf}}">
                 <input type="hidden" name="projectId" value="{{selectedProject}}">
                 <input type="hidden" name="id" value="{{a.ID}}">

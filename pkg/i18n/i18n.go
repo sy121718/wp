@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/spf13/viper"
+
+	"go_wp/pkg/logger"
 )
 
 const fallbackDefaultLang string = "zh-CN"
@@ -59,6 +61,10 @@ func Init(v *viper.Viper) error {
 	StopAutoRefresh()
 	if cfg.autoRefresh {
 		StartAutoRefresh(cfg.refreshInterval)
+	}
+	if cfg.siteURLMode == SiteLangURLModeOff {
+		logger.WithFields(map[string]any{"mode": SiteLangURLModeOff}).Warn(
+			"i18n.site_lang_url_mode=off：各语言映射到同一路径，语言切换器不会渲染；启用多种语言时请改用 default_plain 或 all_prefix")
 	}
 	return nil
 }

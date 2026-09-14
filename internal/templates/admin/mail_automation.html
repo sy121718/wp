@@ -46,7 +46,7 @@
             {{end}}
           </form>
           <form method="post" action="/admin/mail/automation/delete" style="display:inline"
-                onsubmit="return confirm('删除流程？进行中的实例会先停止。')">
+                data-confirm="删除流程？进行中的实例会先停止。" data-confirm-danger>
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="id" value="{{a.ID}}">
             <button type="submit" class="btn btn-sm">删除</button>

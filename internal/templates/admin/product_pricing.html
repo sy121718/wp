@@ -100,7 +100,7 @@
             <div class="action-row">
                 <button type="submit" class="btn btn-primary">预览试算（不落库）</button>
                 <button type="submit" class="btn" formaction="/admin/product-pricing/apply"
-                        onclick="return confirm('按当前规则应用调价？售价会立刻写库，并留下调价台账。')">应用调价（落库）</button>
+                        data-confirm="按当前规则应用调价？售价会立刻写库，并留下调价台账。">应用调价（落库）</button>
             </div>
             <p class="hint">
                 规则参数只取当前规则类型用得上的那一格：成本乘倍数填 multiplier，成本加价与统一售价填 amount，

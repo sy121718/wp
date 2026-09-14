@@ -126,7 +126,10 @@
                     {{if t.IsBound}}<span class="badge">当前使用</span>{{end}}
                     {{if t.IsDefault}}<span class="badge badge-info">类型默认</span>{{end}}
                 </td>
-                <td><code>{{t.ID}}</code></td>
+                <td>
+                    <code>{{t.ID}}</code>
+                    <a class="btn btn-sm" href="/workbench?template={{t.ID}}&entityType=product&entityId={{.Product.ID}}&projectId={{selectedProject}}">可视化编辑</a>
+                </td>
             </tr>
             {{end}}
             </tbody>

@@ -70,7 +70,7 @@
                     <a class="btn" href="{{r.PublicURL}}" target="_blank" rel="noopener">线上</a>
                     {{end}}
                     <form method="post" action="/admin/articles/delete"
-                          onsubmit="return confirm('删除这篇文章？引用它的页面会在下次构建时失去内容。')">
+                          data-confirm="删除这篇文章？引用它的页面会在下次构建时失去内容。" data-confirm-danger>
                         <input type="hidden" name="csrf_token" value="{{csrf}}">
                         <input type="hidden" name="id" value="{{r.ID}}">
                         <button type="submit" class="btn btn-danger">删除</button>

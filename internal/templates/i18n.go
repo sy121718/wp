@@ -38,24 +38,21 @@ type LanguageOption struct {
 	Active bool   // 是否为当前语言
 }
 
-// supportedLanguages 后台外壳提供的语言选项。
+// LanguageOptions 返回语言下拉选项；current 未匹配任何选项时选中第一项。
 //
-// 与 pkg/response 的 normalizeLang 白名单一致（zh / zh-Hans / en / en-GB 等变体都规范化到这两个码）；
-// 选项经 GET /admin/lang 切换，非法值由该路由回退默认语言，故此处与白名单偶发不一致也不会报错。
-var supportedLanguages = []struct{ Code, Label string }{
-	{Code: "zh-CN", Label: "简体中文"},
-	{Code: "en-US", Label: "English"},
-}
-
-// LanguageOptions 返回语言下拉选项；current 未匹配任何选项时选中第一项（默认语言）。
+// 选项来自 sys_i18n 已有词条的语言集合（I18N-004），随词条 seed 自动扩展；
+// 非法 lang 由 GET /admin/lang 回退默认语言。
 func LanguageOptions(current string) []LanguageOption {
 	current = strings.TrimSpace(current)
-	options := make([]LanguageOption, 0, len(supportedLanguages))
+	langs := i18n.AvailableLangs()
+	options := make([]LanguageOption, 0, len(langs))
 	matched := false
-	for _, l := range supportedLanguages {
-		active := l.Code == current
+	for _, code := range langs {
+		active := code == current
 		matched = matched || active
-		options = append(options, LanguageOption{Code: l.Code, Label: l.Label, Active: active})
+		options = append(options, LanguageOption{
+			Code: code, Label: i18n.LangLabel(code), Active: active,
+		})
 	}
 	if !matched && len(options) > 0 {
 		options[0].Active = true

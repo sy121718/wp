@@ -96,7 +96,7 @@
             </form>
 
             <form method="post" action="/admin/product-categories/delete"
-                  onsubmit="return confirm('删除该分类？有子分类或被商品引用时会被拒绝。')">
+                  data-confirm="删除该分类？有子分类或被商品引用时会被拒绝。" data-confirm-danger>
                 <input type="hidden" name="csrf_token" value="{{csrf}}">
                 <input type="hidden" name="projectId" value="{{selectedProject}}">
                 <input type="hidden" name="id" value="{{row.ID}}">

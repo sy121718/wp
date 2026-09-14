@@ -45,6 +45,16 @@
             {* 统计代码（BIZ-8）：GA4 测量 ID 留空即不注入 —— 产物里一个字节都不多。
                形状不合法的值在保存时就被拒绝（构建期注入是同一份判据，不会出现「存了却不生效」）。 *}
             <div class="form-field">
+                <label>IndexNow 密钥</label>
+                <input type="text" name="indexNowKey" value="{{.IndexNowKey}}" maxlength="128"
+                       placeholder="留空则不 ping">
+                <p class="hint">
+                    发布成功后异步通知 Bing / Yandex 等 IndexNow 合作搜索引擎（需同时配置环境变量
+                    <code>WP_SITE_BASE_URL</code> 为站点公开根地址）。失败只记日志，不影响发布。
+                    验证文件需放在站点根目录 <code>/{密钥}.txt</code>。
+                </p>
+            </div>
+            <div class="form-field">
                 <label>Google Analytics 4 测量 ID</label>
                 <input type="text" name="ga4MeasurementId" value="{{.GA4MeasurementID}}" maxlength="32"
                        pattern="[Gg]-[A-Za-z0-9]{4,20}" placeholder="G-XXXXXXXXXX">
@@ -94,6 +104,9 @@
             {{end}}
             {{if .LocaleSaved}}
             <p class="hint" role="status">语言清单已保存。</p>
+            {{end}}
+            {{if .LangURLOffWarning}}
+            <p class="hint" role="alert">{{ .["t"]("MsgSiteLangURLOffWarning", "当前语言 URL 方案为 off：各语言映射到同一路径，语言切换器不会渲染；如需多语言独立 URL，请将 i18n.site_lang_url_mode 设为 default_plain 或 all_prefix") }}</p>
             {{end}}
             <form id="locale-form" method="post" action="/admin/settings/locales/save" class="form-inline">
                 <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">

@@ -8,6 +8,21 @@ const MsgDashboardTitle = "MsgDashboardTitle" // 仪表盘
 // MsgPagesTitle 页面列表页标题。
 const MsgPagesTitle = "MsgPagesTitle" // 页面管理
 
+// MsgArticlesTitle 文章列表页标题（I18N-005）。
+const MsgArticlesTitle = "MsgArticlesTitle" // 文章
+
+// MsgArticlesEditTitle 文章编辑页标题（I18N-005）。
+const MsgArticlesEditTitle = "MsgArticlesEditTitle" // 编辑文章
+
+// MsgProductsTitle 商品列表页标题（I18N-005）。
+const MsgProductsTitle = "MsgProductsTitle" // 商品
+
+// MsgSiteLangURLOffWarning 多语言启用但 url_mode=off 时的后台提示（I18N-016）。
+const MsgSiteLangURLOffWarning = "MsgSiteLangURLOffWarning" // 当前语言 URL 方案为 off：各语言映射到同一路径，语言切换器不会渲染；如需多语言独立 URL，请将 i18n.site_lang_url_mode 设为 default_plain 或 all_prefix
+
+// MsgContentTemplatesTitle 内容模板列表页标题（EDT-001）。
+const MsgContentTemplatesTitle = "MsgContentTemplatesTitle" // 内容模板
+
 // MsgThemesTitle 主题管理页标题。
 const MsgThemesTitle = "MsgThemesTitle" // 主题管理
 
