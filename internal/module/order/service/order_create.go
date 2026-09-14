@@ -1,6 +1,6 @@
 package orderservice
 
-// order_create.go — 建单（BIZ-1 销售侧）。
+// order_create.go — 建单（BIZ-1 销售侧）：**编排**。
 //
 // 事务边界与补偿策略照采购入库（#18）的既有先例：
 //   ① 先在**一个事务**里写订单头 + 订单项 + 流转流水（订单是主记录，也是扣减的依据）；
@@ -11,6 +11,13 @@ package orderservice
 // 两种顺序都能做。选「先写单」是因为它让失败**留痕** —— 补偿后库里留下一条
 // 「因库存不足而失败」的已取消订单，能看出发生过什么；反过来先扣库存、写单失败，
 // 就只能把库存悄悄归还，事后查不出任何痕迹。
+//
+// 文件分工（CQ-023：此前是 278 行的单函数）：
+//   · 本文件 —— 编排、入参校验、幂等查、订单号与展示辅助；
+//   · order_create_draft.go —— 事务之前的一切（商品快照 / 金额 / 优惠码 / 归因 / 访客开号）；
+//   · order_create_persist.go —— 事务写入 + 扣库存与失败补偿。
+// 拆开的理由不是「行数好看」：这个函数里藏着本次审计发现的两个资损缺陷
+//（无券时采信客户端折扣、每人限次在事务外判定），越长的函数越难发现这类问题。
 
 import (
 	"context"
@@ -21,14 +28,11 @@ import (
 	"strings"
 	"time"
 
-	"gorm.io/gorm"
+	"go_wp/pkg/database"
 
 	orderdto "go_wp/internal/module/order/dto"
 	orderenums "go_wp/internal/module/order/enums"
 	ordermodel "go_wp/internal/module/order/model"
-	productcontract "go_wp/internal/module/product/contract"
-	inventorydto "go_wp/internal/module/product/inventory/dto"
-	userdto "go_wp/internal/module/user/dto"
 )
 
 const (
@@ -41,310 +45,91 @@ const (
 	maxItemQuantity = 100000
 )
 
-// CreateOrder 建单。
+// CreateOrder 建单：校验 → 幂等 → 备料 → 落库 → 扣库存（失败补偿）。
 func (s *Service) CreateOrder(ctx context.Context, req *orderdto.CreateOrderReq) (res *orderdto.CreateOrderResp, err error) {
-	if req == nil {
-		return nil, errors.New(orderenums.ErrInvalidParam)
+	if err = validateCreateOrderReq(req); err != nil {
+		return nil, err
 	}
 	projectID := strings.TrimSpace(req.ProjectID)
-	if projectID == "" {
-		return nil, errors.New(orderenums.ErrProjectRequired)
+
+	// 幂等：同一 request_id 命中既有单就原样返回，绝不再扣一次库存。
+	existing, err := s.orderByRequestID(ctx, projectID, req.RequestID)
+	if err != nil {
+		return nil, err
+	}
+	if existing != nil {
+		return existing, nil
+	}
+
+	// 备料：商品事实、金额、优惠码、归因、访客账号 —— 全部在事务之外算好。
+	draft, err := s.buildOrderDraft(ctx, req, projectID)
+	if err != nil {
+		return nil, err
+	}
+
+	// ① 订单（头 + 项 + 流水 + 券核销）一个事务。
+	if err = s.persistOrder(ctx, draft); err != nil {
+		// 并发同键撞唯一索引：另一个请求已经把单建出来了，回读它原样返回。
+		if database.IsUniqueViolation(err) {
+			if dup, derr := s.orderByRequestID(ctx, projectID, req.RequestID); derr == nil && dup != nil {
+				return dup, nil
+			}
+		}
+		return nil, err
+	}
+
+	// ② 扣库存（跨模块，落在订单事务之外）；③ 失败补偿在同一函数内。
+	if err = s.deductStockOrCompensate(ctx, draft); err != nil {
+		return nil, err
+	}
+
+	return draft.response(), nil
+}
+
+// validateCreateOrderReq 入参校验：不碰数据库，纯形状检查。
+func validateCreateOrderReq(req *orderdto.CreateOrderReq) error {
+	if req == nil {
+		return errors.New(orderenums.ErrInvalidParam)
+	}
+	if strings.TrimSpace(req.ProjectID) == "" {
+		return errors.New(orderenums.ErrProjectRequired)
 	}
 	email := strings.TrimSpace(req.CustomerEmail)
 	if email == "" {
-		return nil, errors.New(orderenums.ErrCustomerEmailRequired)
+		return errors.New(orderenums.ErrCustomerEmailRequired)
 	}
 	if !strings.Contains(email, "@") || len(email) < 3 {
-		return nil, errors.New(orderenums.ErrCustomerEmailInvalid)
+		return errors.New(orderenums.ErrCustomerEmailInvalid)
 	}
 	if len(req.Items) == 0 {
-		return nil, errors.New(orderenums.ErrItemsRequired)
+		return errors.New(orderenums.ErrItemsRequired)
 	}
 	if len(req.Items) > maxOrderItems {
-		return nil, errors.New(orderenums.ErrItemLimitExceeded)
+		return errors.New(orderenums.ErrItemLimitExceeded)
 	}
-
-	// 幂等：同一 request_id 命中既有单就原样返回，绝不再扣一次库存。
-	if reqID := strings.TrimSpace(req.RequestID); reqID != "" {
-		existing, gerr := s.orders.GetByRequestID(ctx, projectID, reqID)
-		if gerr != nil {
-			return nil, gerr
-		}
-		if existing != nil {
-			return &orderdto.CreateOrderResp{
-				ID: existing.ID, OrderNo: existing.OrderNo, Status: existing.Status,
-				Total: existing.Total, Currency: existing.Currency, Duplicated: true,
-			}, nil
-		}
-	}
-
-	// 商品事实：一次批量取，不逐条查。
-	variantIDs := make([]string, 0, len(req.Items))
-	for _, it := range req.Items {
-		variantIDs = append(variantIDs, strings.TrimSpace(it.VariantID))
-	}
-	snapshots, err := s.product.VariantSnapshots(ctx, variantIDs)
-	if err != nil {
-		return nil, err
-	}
-	byID := make(map[string]*productcontract.VariantSnapshot, len(snapshots))
-	for _, sn := range snapshots {
-		byID[sn.VariantID] = sn
-	}
-
-	// 落快照并算钱。**价格全部来自服务端**：请求体里没有价格字段，
-	// 客户端能传价格的接口等于把收银台交给客人自己看。
-	items := make([]*ordermodel.OrderItemEntity, 0, len(req.Items))
-	var subtotal int64
-	now := time.Now()
-	for _, it := range req.Items {
-		vid := strings.TrimSpace(it.VariantID)
-		if vid == "" {
-			return nil, errors.New(orderenums.ErrInvalidParam)
-		}
-		if it.Quantity <= 0 || it.Quantity > maxItemQuantity {
-			return nil, errors.New(orderenums.ErrQuantityInvalid)
-		}
-		sn := byID[vid]
-		if sn == nil {
-			return nil, fmt.Errorf("%w: %s", errors.New(orderenums.ErrVariantNotFound), vid)
-		}
-		if sn.ProjectID != "" && sn.ProjectID != projectID {
-			// 跨工程下单是越权，不是「查不到」。
-			return nil, errors.New(orderenums.ErrVariantNotFound)
-		}
-		if !sn.Enabled {
-			return nil, errors.New(orderenums.ErrVariantNotFound)
-		}
-		lineSubtotal := sn.Price * int64(it.Quantity)
-		subtotal += lineSubtotal
-		items = append(items, &ordermodel.OrderItemEntity{
-			ProductID:    sn.ProductID,
-			VariantID:    sn.VariantID,
-			ProductName:  sn.ProductName,
-			VariantLabel: sn.VariantLabel,
-			SKU:          sn.SKU,
-			UnitPrice:    sn.Price,
-			Quantity:     it.Quantity,
-			LineSubtotal: lineSubtotal,
-			LineDiscount: 0,
-			LineTax:      0,
-			LineTotal:    lineSubtotal,
-			CostPrice:    sn.CostPrice,
-			CreateTime:   now,
-		})
-	}
-
-	// 优惠码：给了码就以**服务端试算**的折扣为准，**忽略调用方传入的 DiscountTotal** ——
-	// 客户端能定价的接口等于把收银台交给客人自己看。
-	//
-	// 这里只做「券自身」的判定（状态 / 时间窗 / 门槛 / 总数），
-	// 每人限次要等 userID 解析出来之后再查（见下方），因为访客下单时账号是"这一单才建的"。
-	var appliedCoupon *ordermodel.CouponEntity
-	discount := req.DiscountTotal
-	if code := normalizeCouponCode(req.CouponCode); code != "" {
-		ce, cerr := s.coupons.GetByCode(ctx, projectID, code)
-		if cerr != nil {
-			return nil, cerr
-		}
-		if ce == nil {
-			return nil, errors.New(orderenums.ErrCouponNotFound)
-		}
-		if reason := couponRuleCheck(ce, subtotal, time.Now()); reason != "" {
-			return nil, errors.New(reason)
-		}
-		discount = couponDiscount(ce, subtotal)
-		appliedCoupon = ce
-	}
-	// 金额：小计 - 优惠 + 运费 + 税。优惠不得低于 0、也不得超过小计（负数总额没有意义）。
-	if discount < 0 {
-		discount = 0
-	}
-	if discount > subtotal {
-		discount = subtotal
-	}
-	shipping := req.ShippingTotal
-	if shipping < 0 {
-		shipping = 0
-	}
-	total := subtotal - discount + shipping
-
-	// 访客开号：该邮箱还没有账号就建一个（随机初始密码，邮件发给客户），并把新账号
-	// 关联到订单 —— 否则访客下完单无处可查自己的订单。
-	//
-	// 失败**不阻断下单**：订单是主体、账号是附赠能力；开号失败时订单照常落库、user_id 留空
-	// （客户仍可用这个邮箱走「忘记密码」自己开号）。
-	// 邮箱已有账号时只关联、**绝不改密码** —— 那条安全边界在 user 模块里守着。
-	userID := req.UserID
-	accountMailed := false
-	if userID == nil && s.guest != nil {
-		if gres, gerr := s.guest.EnsureGuestAccount(ctx, &userdto.GuestAccountReq{
-			Email:      email,
-			Name:       strings.TrimSpace(req.CustomerName),
-			Locale:     req.Locale,
-			RegisterIP: req.IPAddress,
-		}); gerr == nil && gres != nil && gres.UserID != 0 {
-			id := gres.UserID
-			userID = &id
-			// 只有「这次确实新建了账号、且初始密码寄出去了」才提示客户去收邮件。
-			// 邮箱已有账号时我们只关联、绝不改密码（那条安全边界在 user 模块里守着），
-			// 此时告诉客户「密码已发到你邮箱」会让他在邮箱里白找一场。
-			accountMailed = gres.Created && gres.PasswordMailed
-		}
-	}
-
-	// 优惠码的每人限次：必须在 userID 解析之后判（访客下单时账号是这一单才建的，
-	// 之前拿到的 userID 恒为 nil，检查会整段跳过）。
-	if appliedCoupon != nil && appliedCoupon.PerUserLimit > 0 && userID != nil {
-		used, cerr := s.coupons.CountRedemptions(ctx, appliedCoupon.ID, userID)
-		if cerr != nil {
-			return nil, cerr
-		}
-		if used >= int64(appliedCoupon.PerUserLimit) {
-			return nil, errors.New(orderenums.ErrCouponUserLimit)
-		}
-	}
-
-	orderNo, err := s.newOrderNo(ctx, projectID)
-	if err != nil {
-		return nil, err
-	}
-
-	head := &ordermodel.OrderEntity{
-		ProjectID:          projectID,
-		OrderNo:            orderNo,
-		Status:             ordermodel.OrderStatusPending,
-		UserID:             userID,
-		CustomerEmail:      email,
-		CustomerName:       strings.TrimSpace(req.CustomerName),
-		CustomerPhone:      strings.TrimSpace(req.CustomerPhone),
-		Currency:           "CNY",
-		Subtotal:           subtotal,
-		DiscountTotal:      discount,
-		ShippingTotal:      shipping,
-		TaxTotal:           0,
-		Total:              total,
-		ShipName:           strings.TrimSpace(req.Shipping.Name),
-		ShipPhone:          strings.TrimSpace(req.Shipping.Phone),
-		ShipProvince:       strings.TrimSpace(req.Shipping.Province),
-		ShipCity:           strings.TrimSpace(req.Shipping.City),
-		ShipDistrict:       strings.TrimSpace(req.Shipping.District),
-		ShipAddress:        strings.TrimSpace(req.Shipping.Address),
-		ShipZip:            strings.TrimSpace(req.Shipping.Zip),
-		BillName:           strings.TrimSpace(req.Billing.Name),
-		BillPhone:          strings.TrimSpace(req.Billing.Phone),
-		BillProvince:       strings.TrimSpace(req.Billing.Province),
-		BillCity:           strings.TrimSpace(req.Billing.City),
-		BillDistrict:       strings.TrimSpace(req.Billing.District),
-		BillAddress:        strings.TrimSpace(req.Billing.Address),
-		BillZip:            strings.TrimSpace(req.Billing.Zip),
-		PaymentMethod:      strings.TrimSpace(req.PaymentMethod),
-		PaymentMethodTitle: strings.TrimSpace(req.PaymentMethodTitle),
-		CreatedVia:         defaultString(req.CreatedVia, ordermodel.CreatedViaCheckout),
-		IPAddress:          strings.TrimSpace(req.IPAddress),
-		UserAgent:          strings.TrimSpace(req.UserAgent),
-		RequestID:          strings.TrimSpace(req.RequestID),
-		Remark:             strings.TrimSpace(req.Remark),
-		AdminNote:          strings.TrimSpace(req.AdminNote),
-		CreateBy:           req.CreateBy,
-		CreateTime:         now,
-		UpdateTime:         now,
-	}
-	if head.Attribution, err = marshalAttribution(req.Attribution); err != nil {
-		return nil, err
-	}
-
-	// ① 订单（头 + 项 + 流水）一个事务。
-	err = s.orders.Transaction(ctx, func(tx *gorm.DB) error {
-		if cerr := s.orders.CreateTx(ctx, tx, head); cerr != nil {
-			return cerr
-		}
-		for _, it := range items {
-			it.OrderID = head.ID
-		}
-		if cerr := s.items.CreateBatchTx(ctx, tx, items); cerr != nil {
-			return cerr
-		}
-		if lerr := s.logs.CreateTx(ctx, tx, &ordermodel.OrderStatusLogEntity{
-			OrderID:      head.ID,
-			FromStatus:   "",
-			ToStatus:     ordermodel.OrderStatusPending,
-			OperatorType: operatorTypeOf(head.CreatedVia),
-			OperatorID:   head.CreateBy,
-			Remark:       "建单",
-			CreateTime:   now,
-		}); lerr != nil {
-			return lerr
-		}
-		// 券的核销与订单同生共死：核销失败（用尽）则订单一起回滚，
-		// 不会出现「券核销了但单没下成」或「单下了但券没用掉」两种半截状态。
-		return s.redeemCouponTx(ctx, tx, appliedCoupon, head.ID, head.OrderNo, discount, userID, now)
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	// ② 扣库存（跨模块，落在订单事务之外）。
-	lines := make([]inventorydto.StockChangeLineReq, 0, len(items))
-	for _, it := range items {
-		lines = append(lines, inventorydto.StockChangeLineReq{
-			ProductID: it.ProductID,
-			VariantID: it.VariantID,
-			SKUCode:   it.SKU,
-			Quantity:  it.Quantity,
-		})
-	}
-	_, dErr := s.stock.DeductStock(ctx, &inventorydto.DeductStockReq{
-		ProjectID:  projectID,
-		ReasonCode: "sale_out",
-		SourceType: "order",
-		SourceRef:  head.OrderNo,
-		Remark:     "订单出库",
-		Lines:      lines,
-	})
-	if dErr != nil {
-		// ③ 补偿：标记取消。库存不足是业务常态（并发抢最后一件），
-		// 不能把「没扣到库存」的单留成待付款。
-		reason := orderenums.ErrStockInsufficient
-		msg := strings.ToLower(dErr.Error())
-		if !strings.Contains(msg, "不足") && !strings.Contains(msg, "insufficient") {
-			reason = orderenums.ErrStockUnavailable
-		}
-		_ = s.markAutoCancelled(ctx, head.ID, reason)
-		return nil, errors.New(reason)
-	}
-
-	return &orderdto.CreateOrderResp{
-		ID: head.ID, OrderNo: head.OrderNo, Status: head.Status,
-		Total: head.Total, Currency: head.Currency, Duplicated: false,
-		AccountMailed: accountMailed,
-	}, nil
+	return nil
 }
 
-// markAutoCancelled 库存失败后的补偿：把订单置为已取消并记一条流转。
+// orderByRequestID 幂等键命中则返回既有单的响应；无键或未命中返回 nil。
 //
-// 补偿本身的失败**不再向上冒**：调用方已经要拿到「库存不足」这个结论了，
-// 再叠一个补偿错误只会让原因变得看不出主次；订单留在 pending 会被后续的人工处理看到。
-func (s *Service) markAutoCancelled(ctx context.Context, orderID uint64, reason string) error {
-	now := time.Now()
-	err := s.orders.Transaction(ctx, func(tx *gorm.DB) error {
-		if uerr := s.orders.UpdateFieldsTx(ctx, tx, orderID, map[string]any{
-			"status":        ordermodel.OrderStatusCancelled,
-			"cancel_reason": reason,
-			"update_time":   now,
-		}); uerr != nil {
-			return uerr
-		}
-		return s.logs.CreateTx(ctx, tx, &ordermodel.OrderStatusLogEntity{
-			OrderID:      orderID,
-			FromStatus:   ordermodel.OrderStatusPending,
-			ToStatus:     ordermodel.OrderStatusCancelled,
-			OperatorType: ordermodel.OperatorTypeSystem,
-			Remark:       reason,
-			CreateTime:   now,
-		})
-	})
-	return err
+// 首次查（进入建单前）与唯一冲突后的回读共用它，保证两条路径返回**同一份形状**
+//（Duplicated=true 的响应），不会一条带 accountMailed、另一条不带。
+func (s *Service) orderByRequestID(ctx context.Context, projectID, requestID string) (*orderdto.CreateOrderResp, error) {
+	reqID := strings.TrimSpace(requestID)
+	if reqID == "" {
+		return nil, nil
+	}
+	existing, err := s.orders.GetByRequestID(ctx, projectID, reqID)
+	if err != nil {
+		return nil, err
+	}
+	if existing == nil {
+		return nil, nil
+	}
+	return &orderdto.CreateOrderResp{
+		ID: existing.ID, OrderNo: existing.OrderNo, Status: existing.Status,
+		Total: existing.Total, Currency: existing.Currency, Duplicated: true,
+	}, nil
 }
 
 // newOrderNo 生成订单号：时间前缀 + 随机后缀。
