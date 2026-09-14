@@ -101,6 +101,9 @@ func (p *localProvider) Upload(_ context.Context, _ RuntimeConfig, file File, re
 
 	targetPath := filepath.Join(rootDir, filepath.FromSlash(objectKey))
 	targetPath = filepath.Clean(targetPath)
+	if rel, err := filepath.Rel(rootDir, targetPath); err != nil || strings.HasPrefix(rel, "..") {
+		return Result{}, fmt.Errorf("上传路径越界")
+	}
 
 	if err := os.MkdirAll(filepath.Dir(targetPath), 0o755); err != nil {
 		return Result{}, fmt.Errorf("创建上传目录失败: %w", err)
