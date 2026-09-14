@@ -58,7 +58,11 @@ func (s *Service) MenuCreate(ctx context.Context, req *admindto.MenuCreateReq) e
 		entity.Remark = &req.Remark
 	}
 
-	return s.mm.Create(ctx, entity)
+	if err := s.mm.Create(ctx, entity); err != nil {
+		return err
+	}
+	invalidateMenuCache()
+	return nil
 }
 
 // MenuUpdate 更新菜单。
@@ -120,7 +124,11 @@ func (s *Service) MenuUpdate(ctx context.Context, req *admindto.MenuUpdateReq) e
 		entity.Remark = nil
 	}
 
-	return s.mm.Update(ctx, entity)
+	if err := s.mm.Update(ctx, entity); err != nil {
+		return err
+	}
+	invalidateMenuCache()
+	return nil
 }
 
 // MenuDelete 批量删除菜单（软删除）。
@@ -148,7 +156,11 @@ func (s *Service) MenuDelete(ctx context.Context, req *admindto.MenuDeleteReq) e
 	}
 
 	_, err := s.mm.SoftDelete(ctx, req.IDs)
-	return err
+	if err != nil {
+		return err
+	}
+	invalidateMenuCache()
+	return nil
 }
 
 // component 兼容三种格式：
