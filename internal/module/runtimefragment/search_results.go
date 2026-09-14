@@ -107,14 +107,15 @@ func renderSearchResults(ctx context.Context, r *Request) (string, error) {
 	view := searchResultsView{}
 	if query == "" {
 		// 空关键词不是错误：搜索框还没输入就触发了请求，提示一句即可。
-		view.HasMessage, view.Message = true, "请输入搜索关键词"
+		view.HasMessage, view.Message = true, r.tr("site.fragment.search.empty_query", "请输入搜索关键词")
 		return templates.RenderFragment("search_results", view)
 	}
 	if contentSearchProvider == nil && productSearchProvider == nil {
-		view.HasMessage, view.Message = true, "搜索功能暂未接入，请稍后再试"
+		view.HasMessage, view.Message = true, r.tr("site.fragment.search.degraded", "搜索功能暂未接入，请稍后再试")
 		return templates.RenderFragment("search_results", view)
 	}
 	projectID := strings.TrimSpace(r.Params[searchParamProjectID])
+	lang := searchLang(r)
 	limit := searchResultLimit(r.Params[searchParamLimit])
 
 	if contentSearchProvider != nil {
@@ -122,7 +123,7 @@ func renderSearchResults(ctx context.Context, r *Request) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		view.ContentHits = contentSearchHits(ctx, hits, projectID)
+		view.ContentHits = contentSearchHits(ctx, hits, projectID, lang)
 	}
 	// 商品检索需要工程上下文（商品表按工程隔离）：没有工程 id 就不搜，
 	// 而不是跨工程搜一批别人的商品出来。
@@ -131,13 +132,13 @@ func renderSearchResults(ctx context.Context, r *Request) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		view.ProductHits = productSearchHits(ctx, hits, projectID)
+		view.ProductHits = productSearchHits(ctx, hits, projectID, lang)
 	}
 	view.HasContent = len(view.ContentHits) > 0
 	view.HasProducts = len(view.ProductHits) > 0
 	if !view.HasContent && !view.HasProducts {
 		view.HasMessage = true
-		view.Message = "没有找到与「" + query + "」相关的内容"
+		view.Message = fmt.Sprintf(r.tr("site.fragment.search.no_results", "没有找到与「%s」相关的内容"), query)
 	}
 	return templates.RenderFragment("search_results", view)
 }
@@ -147,7 +148,7 @@ func renderSearchResults(ctx context.Context, r *Request) (string, error) {
 // 没有已上线路径的命中**直接丢弃**：contents 表没有状态列，「已发布」在这里
 // 只能等同于「有线上页面」。这条约束是硬的 —— 搜索结果是任何人可构造、可观察的，
 // 把未发布内容的标题漏出去就等于把草稿箱敞开。
-func contentSearchHits(ctx context.Context, hits []*contentcontract.ArticleSearchHit, projectID string) []searchHit {
+func contentSearchHits(ctx context.Context, hits []*contentcontract.ArticleSearchHit, projectID, lang string) []searchHit {
 	if len(hits) == 0 {
 		return nil
 	}
@@ -157,7 +158,7 @@ func contentSearchHits(ctx context.Context, hits []*contentcontract.ArticleSearc
 			ids = append(ids, hit.ID)
 		}
 	}
-	paths := searchPublishedPaths(ctx, projectID, contentcontract.EntityTypeArticle, ids)
+	paths := searchPublishedPaths(ctx, projectID, contentcontract.EntityTypeArticle, lang, ids)
 	out := make([]searchHit, 0, len(hits))
 	for _, hit := range hits {
 		if hit == nil {
@@ -184,7 +185,7 @@ func contentSearchHits(ctx context.Context, hits []*contentcontract.ArticleSearc
 // 与内容侧的不对称：商品「已上架」已由商品域的 SQL 条件保证，所以没有线上详情页时
 // 仍然输出条目（只是不带链接）—— 宁可让访客看到「有这个商品但点不进去」，
 // 也不要假装它不存在。路径拿不到就绝不拼一个 slug 约定出来。
-func productSearchHits(ctx context.Context, hits []*productcontract.ProductSearchHit, projectID string) []searchHit {
+func productSearchHits(ctx context.Context, hits []*productcontract.ProductSearchHit, projectID, lang string) []searchHit {
 	if len(hits) == 0 {
 		return nil
 	}
@@ -194,7 +195,7 @@ func productSearchHits(ctx context.Context, hits []*productcontract.ProductSearc
 			ids = append(ids, hit.ID)
 		}
 	}
-	paths := searchPublishedPaths(ctx, projectID, productcontract.EntityTypeProduct, ids)
+	paths := searchPublishedPaths(ctx, projectID, productcontract.EntityTypeProduct, lang, ids)
 	out := make([]searchHit, 0, len(hits))
 	for _, hit := range hits {
 		if hit == nil {
@@ -219,15 +220,23 @@ func productSearchHits(ctx context.Context, hits []*productcontract.ProductSearc
 	return out
 }
 
+// searchLang 片段请求语言（endpoint 已校验；空时 locator 自行回落默认语言）。
+func searchLang(r *Request) string {
+	if r == nil {
+		return ""
+	}
+	return strings.TrimSpace(r.Lang)
+}
+
 // searchPublishedPaths 解析这批实体的线上路径。
 //
 // 解析失败只记日志并返回空表：链接是增强，不是搜索能否出结果的前提 ——
 // 为它把整个搜索打成 500，损失远大于收益（与槽位解析同一条口径）。
-func searchPublishedPaths(ctx context.Context, projectID, entityType string, ids []string) map[string]string {
+func searchPublishedPaths(ctx context.Context, projectID, entityType, lang string, ids []string) map[string]string {
 	if publishedEntityLocator == nil || strings.TrimSpace(projectID) == "" || len(ids) == 0 {
 		return nil
 	}
-	paths, err := publishedEntityLocator.PublishedEntityPaths(ctx, projectID, entityType, ids)
+	paths, err := publishedEntityLocator.PublishedEntityPaths(ctx, projectID, entityType, lang, ids)
 	if err != nil {
 		logger.Scene("fragment").Error(err, "站内搜索：解析实体的线上路径失败")
 		return nil

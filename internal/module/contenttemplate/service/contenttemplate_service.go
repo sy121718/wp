@@ -17,6 +17,8 @@ import (
 	"go_wp/internal/builder"
 	"go_wp/internal/builder/core"
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
+	"go_wp/internal/pipeline"
+	"go_wp/pkg/logger"
 	contenttemplatedto "go_wp/internal/module/contenttemplate/dto"
 	contenttemplateenums "go_wp/internal/module/contenttemplate/enums"
 	contenttemplatemodel "go_wp/internal/module/contenttemplate/model"
@@ -61,9 +63,17 @@ func (s *Service) Create(ctx context.Context, req *contenttemplatedto.CreateReq)
 	if err != nil {
 		return nil, err
 	}
+	if !json.Valid(req.DraftDocument) {
+		return nil, errors.New(contenttemplateenums.ErrDataInvalid)
+	}
+	// 合入激活主题快照（EDT-003：与手工 Page 保存同口径）。
+	merged, err := pipeline.MergeActiveThemeIntoDocument(ctx, s.project, projectID, req.DraftDocument)
+	if err != nil {
+		return nil, err
+	}
 	// 校验 DraftDocument 是合法 Page Document 并规范化为存储字节（含字段绑定的
 	// 数据源白名单校验：越界绑定在保存时即拒绝，不等发布才炸）。
-	doc, err := s.validateDocument(req.EntityType, req.DraftDocument)
+	doc, err := s.validateDocument(req.EntityType, merged)
 	if err != nil {
 		return nil, err
 	}
@@ -97,7 +107,14 @@ func (s *Service) Update(ctx context.Context, req *contenttemplatedto.UpdateReq)
 		}
 		return nil, err
 	}
-	doc, err := s.validateDocument(e.EntityType, req.DraftDocument)
+	if !json.Valid(req.DraftDocument) {
+		return nil, errors.New(contenttemplateenums.ErrDataInvalid)
+	}
+	merged, err := pipeline.MergeActiveThemeIntoDocument(ctx, s.project, e.ProjectID, req.DraftDocument)
+	if err != nil {
+		return nil, err
+	}
+	doc, err := s.validateDocument(e.EntityType, merged)
 	if err != nil {
 		return nil, err
 	}
@@ -153,7 +170,7 @@ func (s *Service) List(ctx context.Context, req *contenttemplatedto.ListReq) (li
 
 // ResolveTemplate 取 entityType 的当前激活模板版本（presentation 派生
 // DocumentSnapshot 的唯一入口）。逻辑：
-//  1. 取该类型最新的模板（updated_at 倒序首条），无则 ErrNotFound；
+//  1. 优先取 is_default=true 的模板；无默认时回落 updated_at 最新一条并记 warn（EDT-014）；
 //  2. 取该模板最新版本（LatestVersion）的 document；
 //  3. 组装 ResolvedTemplate{TemplateID, VersionID, Version, EntityType, Document}。
 func (s *Service) ResolveTemplate(ctx context.Context, entityType string) (res *contenttemplatecontract.ResolvedTemplate, err error) {
@@ -168,6 +185,10 @@ func (s *Service) ResolveTemplate(ctx context.Context, entityType string) (res *
 		return nil, errors.New(contenttemplateenums.ErrNotFound)
 	}
 	tpl := rows[0]
+	if !tpl.IsDefault {
+		logger.Scene("contenttemplate").With("entityType", entityType).With("templateId", tpl.ID).
+			Warn("未标记默认模板，回落到最新更新的模板")
+	}
 	ver, err := s.m.LatestVersion(ctx, tpl.ID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -175,14 +196,7 @@ func (s *Service) ResolveTemplate(ctx context.Context, entityType string) (res *
 		}
 		return nil, err
 	}
-	return &contenttemplatecontract.ResolvedTemplate{
-		TemplateID:   tpl.ID,
-		TemplateName: tpl.Name,
-		VersionID:    ver.ID,
-		Version:      ver.Version,
-		EntityType:   tpl.EntityType,
-		Document:     ver.Document,
-	}, nil
+	return s.resolvedTemplateFromVersion(tpl, ver)
 }
 
 // ResolveTemplateByID 按模板 ID 解析其当前版本（issue #14：同一实体类型下可建多套
@@ -209,13 +223,22 @@ func (s *Service) ResolveTemplateByID(ctx context.Context, templateID string) (r
 		}
 		return nil, err
 	}
+	return s.resolvedTemplateFromVersion(tpl, ver)
+}
+
+// resolvedTemplateFromVersion 组装 ResolvedTemplate；发布取用前走严格校验（EDT-013）。
+func (s *Service) resolvedTemplateFromVersion(tpl *contenttemplatemodel.TemplateEntity, ver *contenttemplatemodel.VersionEntity) (*contenttemplatecontract.ResolvedTemplate, error) {
+	doc, err := s.validateDocumentStrict(tpl.EntityType, ver.Document)
+	if err != nil {
+		return nil, err
+	}
 	return &contenttemplatecontract.ResolvedTemplate{
 		TemplateID:   tpl.ID,
 		TemplateName: tpl.Name,
 		VersionID:    ver.ID,
 		Version:      ver.Version,
 		EntityType:   tpl.EntityType,
-		Document:     ver.Document,
+		Document:     doc,
 	}, nil
 }
 
@@ -253,23 +276,31 @@ func hashDocument(doc []byte) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// validateDocument 解析并校验 Page Document，返回规范化存储字节。
-//
-// entityType 为模板的目标实体类型：文档内组件声明的字段绑定必须落在该数据源的
-// 字段白名单内（issue #6，不变量 4），白名单来自实体类型注册表（装配期由各领域
-// 模块注册），本模块不认识具体领域。
+// validateDocument 草稿保存：ValidatePageTolerant + 字段绑定白名单（EDT-013）。
 func (s *Service) validateDocument(entityType string, raw json.RawMessage) (json.RawMessage, error) {
+	return s.validateDocumentMode(entityType, raw, true)
+}
+
+// validateDocumentStrict 发布/解析口径：完整 ValidatePage，非法模板在取用前拒绝。
+func (s *Service) validateDocumentStrict(entityType string, raw json.RawMessage) (json.RawMessage, error) {
+	return s.validateDocumentMode(entityType, raw, false)
+}
+
+func (s *Service) validateDocumentMode(entityType string, raw json.RawMessage, tolerant bool) (json.RawMessage, error) {
 	page, err := builder.ParsePage(raw)
 	if err != nil {
 		return nil, errors.New(contenttemplateenums.ErrDataInvalid)
 	}
-	if err = builder.ValidatePage(page); err != nil {
+	if tolerant {
+		if _, err = builder.ValidatePageTolerant(page); err != nil {
+			return nil, errors.New(contenttemplateenums.ErrDataInvalid)
+		}
+	} else if err = builder.ValidatePage(page); err != nil {
 		return nil, errors.New(contenttemplateenums.ErrDataInvalid)
 	}
 	if err = builder.ValidateFieldRefs(page, entityType, s.registry); err != nil {
 		return nil, fmt.Errorf("%s: %w", contenttemplateenums.ErrFieldBindingInvalid, err)
 	}
-	// 重新编码保证存储 JSON 的规范格式，不接受散乱字节。
 	doc, err := json.Marshal(page)
 	if err != nil {
 		return nil, errors.New(contenttemplateenums.ErrDataInvalid)

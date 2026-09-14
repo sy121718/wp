@@ -36,10 +36,13 @@ import (
 	masterdatacontract "go_wp/internal/module/masterdata/contract"
 	masterdatahttp "go_wp/internal/module/masterdata/inbound/http"
 	mediahttp "go_wp/internal/module/media/inbound/http"
+	navigationcontract "go_wp/internal/module/navigation/contract"
 	navigationhttp "go_wp/internal/module/navigation/inbound/http"
 	navsource "go_wp/internal/module/navigation/outbound/source"
 	orderhttp "go_wp/internal/module/order/inbound/http"
+	pagecontract "go_wp/internal/module/page/contract"
 	pagehttp "go_wp/internal/module/page/inbound/http"
+	plugincontract "go_wp/internal/module/plugin/contract"
 	pluginhttp "go_wp/internal/module/plugin/inbound/http"
 	presentationcontract "go_wp/internal/module/presentation/contract"
 	presentationhttp "go_wp/internal/module/presentation/inbound/http"
@@ -88,7 +91,12 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 
 	// 媒体上传存储（pkg/upload local provider 默认 public/storage）。
 	// 同样禁目录列表（审计 Low：/storage 目录列表开启）。
-	router.StaticFS("/storage", gin.Dir("public/storage", false))
+	// SEC-014：用户上传文件同域直出，加 nosniff 降低 MIME 嗅探执行风险。
+	storage := router.Group("/storage", func(c *gin.Context) {
+		c.Header("X-Content-Type-Options", "nosniff")
+		c.Next()
+	})
+	storage.StaticFS("/", gin.Dir("public/storage", false))
 
 	// 静态访问面：已发布站点直出激活产物（只读文件系统，零查库零模板）。
 	// ActiveRoot 位于产物根下两级（{root}/public/active），符号链接目标相对可达。
@@ -400,12 +408,23 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 		panic("自动发布模块未实现已上线路径解析端口（PublishedEntityLocator）")
 	}
 	runtimefragment.SetPublishedEntityLocator(publishedLocator)
+	if setter, ok := productSvc.(interface {
+		SetPublishedEntityLocator(presentationcontract.PublishedEntityLocator)
+	}); ok {
+		setter.SetPublishedEntityLocator(publishedLocator)
+	}
+	if setter, ok := productSvc.(interface {
+		SetFragmentCacheBumper(func(context.Context, string))
+	}); ok {
+		setter.SetFragmentCacheBumper(runtimefragment.BumpFragmentCacheVersion)
+	}
 	// navigationSvc 注入 page 装配：core.nav 绑定菜单位置时构建期解析菜单项。
 	pageService := pagehttp.SetupPageRoutes(authorizedAPI, db, artifactSvc, publicationSvc, projectService, blockSvc, pluginSvc, collectionResolver, navigationSvc, mediaSvc)
 	// 系统页面槽位解析器接给片段层（BIZ-1）：购物车片段的「去结算」、结算结果的
 	// 「查看订单」都要按槽位取路径。传的是 pageService —— 它嵌入了只读的
 	// SitePageResolver，发布 / 删除 / 改 URL 那部分能力传不进片段层。
 	runtimefragment.SetSitePageResolver(pageService)
+	runtimefragment.SetFragmentProject(projectService)
 	// 访客订单片段（BIZ-1）：片段端点按访客会话取自己的订单。传的是 orderSvc ——
 	// 它嵌入了只读的 VisitorOrderReader，写路径（建单 / 状态流转 / 优惠码管理）
 	// 那部分能力传不进片段层。归属校验在 order 模块的 SQL 条件里，不在这层。
@@ -432,6 +451,20 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 		setter.SetProductDataSource(productSvc)
 	} else {
 		panic("发布实例模块未提供商品数据源注入点（SetProductDataSource）")
+	}
+	// 自动发布详情页与手工页面共用站点级装配（EDT-003）：导航 / 槽位 / 响应式图片。
+	if setter, ok := presentationSvc.(interface {
+		SetNavigationService(navigationcontract.NavigationService)
+		SetSitePageResolver(pagecontract.SitePageResolver)
+		SetMediaProbe(func(context.Context, string) []int)
+		SetPluginService(plugincontract.PluginService)
+	}); ok {
+		setter.SetNavigationService(navigationSvc)
+		setter.SetSitePageResolver(pageService)
+		setter.SetMediaProbe(mediaSvc.ProbeImageVariants)
+		setter.SetPluginService(pluginSvc)
+	} else {
+		panic("发布实例模块未提供站点装配注入点（SetNavigationService / SetSitePageResolver / SetMediaProbe / SetPluginService）")
 	}
 
 	// 默认主题补齐（启动时一次，幂等）：本能力上线前建的工程没有任何主题，
@@ -523,6 +556,6 @@ func setupStaticFace(router *gin.Engine) {
 	// SiteRedirectMiddleware 在前：改 URL 后的旧路径是「指向 redirect.json 的激活链接」，
 	// http.FileServer 只读文件、不认识它 —— 少了这一层，勾了「保留旧链接」的旧路径
 	// 表现是 404（承诺未兑现）。重定向判定不查库，访问面零查库不变量不变。
-	router.Group("/site", builtin.SiteRedirectMiddleware(), builtin.StaticGzipMiddleware()).
+	router.Group("/site", builtin.SiteRedirectMiddleware(), builtin.SiteCacheMiddleware(), builtin.StaticGzipMiddleware()).
 		StaticFS("/", gin.Dir(pipeline.ActiveRoot(), false))
 }

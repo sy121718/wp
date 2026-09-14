@@ -1,7 +1,7 @@
 // Package productservice 商品模块业务实现（issue #5 / T3a）。
 //
-// 边界：本模块只管商品与变体。库存、采购、订单、客户各由自己的模块负责；
-// 这里不反向依赖它们（跨模块只走 contract）。
+// 边界：本模块只管商品与变体。库存已并入 product/inventory/（同模块直调）；
+// 订单、购物车、客户等仍由各自模块负责，跨模块只走 contract，不 import 对方 service/model。
 //
 // 两条已定语义在本文件落地：
 //  1. 商品主体不存价格 —— 价格全在变体上，商品侧的「价格区间」是从变体派生的只读结果；
@@ -20,6 +20,7 @@ import (
 
 	masterdatacontract "go_wp/internal/module/masterdata/contract"
 	masterdataenums "go_wp/internal/module/masterdata/enums"
+	presentationcontract "go_wp/internal/module/presentation/contract"
 	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
@@ -28,6 +29,7 @@ import (
 	productmodel "go_wp/internal/module/product/model"
 	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/pkg/i18n"
+	"go_wp/pkg/utils"
 )
 
 const (
@@ -61,6 +63,11 @@ type Service struct {
 	// 商品 / 变体的关键字段变更经它留痕（append-only）；
 	// 未注入时静默跳过（纯商品单测路径），生产装配恒注入。
 	changes masterdatacontract.MasterDataService
+	// publishedLocator 实体 → 已上线详情页路径（BIZ-2 / EDT-012）。
+	// 集合项 url 字段只填真实已发布路径；未注入时留空（预览无站点上下文时正常）。
+	publishedLocator presentationcontract.PublishedEntityLocator
+	// fragmentCacheBumper 商品写操作后使运行时片段 HTML 缓存失效（PERF-002）。
+	fragmentCacheBumper func(context.Context, string)
 }
 
 // NewService 构造。
@@ -101,6 +108,22 @@ func (s *Service) SetAvailabilityPort(port productcontract.VariantAvailabilityPo
 // masterdata 模块的实现（依赖方向 product → masterdata）。
 func (s *Service) SetMasterDataChanges(port masterdatacontract.MasterDataService) {
 	s.changes = port
+}
+
+// SetPublishedEntityLocator 注入已上线详情页路径解析端口（装配期调用）。
+func (s *Service) SetPublishedEntityLocator(port presentationcontract.PublishedEntityLocator) {
+	s.publishedLocator = port
+}
+
+// SetFragmentCacheBumper 注入片段缓存失效回调（装配期调用；传 nil 表示跳过）。
+func (s *Service) SetFragmentCacheBumper(fn func(context.Context, string)) {
+	s.fragmentCacheBumper = fn
+}
+
+func (s *Service) bumpFragmentCache(ctx context.Context, projectID string) {
+	if s.fragmentCacheBumper != nil && strings.TrimSpace(projectID) != "" {
+		s.fragmentCacheBumper(ctx, projectID)
+	}
 }
 
 // 编译期契约断言。
@@ -216,6 +239,7 @@ func (s *Service) Create(ctx context.Context, req *productdto.CreateReq) (res *p
 	if err = s.recalcAutoTags(ctx, projectID); err != nil {
 		return nil, err
 	}
+	s.bumpFragmentCache(ctx, projectID)
 	return s.toResp(ctx, e)
 }
 
@@ -224,7 +248,7 @@ func (s *Service) Update(ctx context.Context, req *productdto.UpdateReq) (res *p
 	if req == nil || req.ID == "" {
 		return nil, errors.New(productenums.ErrInvalidParam)
 	}
-	e, err := s.m.Get(ctx, req.ID)
+	e, err := s.m.Get(ctx, req.ID, "")
 	if err != nil {
 		return nil, mapNotFound(err)
 	}
@@ -350,6 +374,7 @@ func (s *Service) Update(ctx context.Context, req *productdto.UpdateReq) (res *p
 	if err = s.recalcProjectAutoTags(ctx, e.ID); err != nil {
 		return nil, err
 	}
+	s.bumpFragmentCache(ctx, e.ProjectID)
 	return s.toResp(ctx, e)
 }
 
@@ -358,7 +383,11 @@ func (s *Service) Get(ctx context.Context, req *productdto.GetReq) (res *product
 	if req == nil || req.ID == "" {
 		return nil, errors.New(productenums.ErrInvalidParam)
 	}
-	e, err := s.m.Get(ctx, req.ID)
+	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	e, err := s.m.Get(ctx, req.ID, projectID)
 	if err != nil {
 		return nil, mapNotFound(err)
 	}
@@ -405,7 +434,7 @@ func (s *Service) Delete(ctx context.Context, req *productdto.DeleteReq) (err er
 	if req == nil || req.ID == "" {
 		return errors.New(productenums.ErrInvalidParam)
 	}
-	e, gerr := s.m.Get(ctx, req.ID)
+	e, gerr := s.m.Get(ctx, req.ID, "")
 	if gerr != nil {
 		return mapNotFound(gerr)
 	}
@@ -425,7 +454,11 @@ func (s *Service) Delete(ctx context.Context, req *productdto.DeleteReq) (err er
 		inputs = append(inputs, variantChangeInput(e.ProjectID, v, masterdataenums.ActionDelete,
 			masterdataenums.OriginVariant, req.OperatorID, variantChangeSnapshot(v, nil), nil))
 	}
-	return s.recordChanges(ctx, inputs...)
+	if err = s.recordChanges(ctx, inputs...); err != nil {
+		return err
+	}
+	s.bumpFragmentCache(ctx, e.ProjectID)
+	return nil
 }
 
 // attributeRespByProduct 批量取各商品引用的属性组（列表页专用，零 N+1）。
@@ -491,20 +524,12 @@ func (s *Service) resolveProjectID(ctx context.Context, projectID string) (id st
 
 // pageArgs 归一化分页参数。
 func pageArgs(req *productdto.ListReq) (page, size int) {
-	page, size = 1, defaultPageSize
-	if req == nil {
-		return page, size
+	inPage, inSize := 0, 0
+	if req != nil {
+		inPage, inSize = req.Page, req.Size
 	}
-	if req.Page > 0 {
-		page = req.Page
-	}
-	if req.Size > 0 {
-		size = req.Size
-		if size > maxPageSize {
-			size = maxPageSize
-		}
-	}
-	return page, size
+	paging := utils.NormalizePaging(inPage, inSize, defaultPageSize, maxPageSize)
+	return paging.Page, paging.Size
 }
 
 // normalizeSlug 规范化传入 slug（小写 + 去首尾空白）。
