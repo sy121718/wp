@@ -28,6 +28,7 @@ import (
 	inventorydto "go_wp/internal/module/product/inventory/dto"
 	inventoryenums "go_wp/internal/module/product/inventory/enums"
 	inventorymodel "go_wp/internal/module/product/inventory/model"
+	"go_wp/pkg/database"
 )
 
 const (
@@ -189,25 +190,50 @@ func (s *Service) RegisterReceipt(ctx context.Context, req *inventorydto.Registe
 		return s.m.UpdatePurchaseOrderStatusTx(ctx, tx, locked.ID, status, now)
 	})
 	if err != nil {
+		// 并发重复提交：两路同时通过 idempotentReceipt 预检，第二路在 request_id 唯一键上撞车。
+		if database.IsUniqueViolation(err) {
+			if replay, rerr := s.idempotentReceipt(ctx, projectID, requestID); rerr == nil && replay != nil {
+				return s.receiptResp(ctx, replay, true)
+			}
+		}
 		return nil, err
 	}
 
 	// ③ 库存变动：与 #16 完全同一套契约（真源行锁 + 流水 + 原因字典 + 来源引用）。
-	change, cerr := s.ChangeStock(ctx, &inventorydto.ChangeStockReq{
-		ProjectID: projectID, Direction: inventoryenums.DirectionIn,
-		ReasonCode: reasonCodePurchaseIn,
-		SourceType: inventoryenums.MovementSourcePurchaseOrder, SourceRef: order.Code,
-		Remark: strings.TrimSpace(req.Remark), OperatorID: strings.TrimSpace(req.OperatorID),
-		Lines: stockLines,
-	})
-	if cerr != nil {
-		// ④ 库存没动成功：退回已入库数量并删除入库单（不留「记了账没动库存」）。
+	// 重试保护：ChangeStock 成功后 SetReceiptMovement 失败时，下次重试先查流水是否已存在。
+	var batchID string
+	exists, merr := s.m.ExistsMovementBySource(ctx, projectID, inventoryenums.MovementSourcePurchaseOrder, order.Code)
+	if merr != nil {
 		_ = s.compensateReceipt(ctx, receipt.ID, order.ID, items)
-		return nil, cerr
+		return nil, merr
+	}
+	if exists {
+		rows, lerr := s.m.ListMovementRows(ctx, inventorymodel.MovementFilter{
+			ProjectID: projectID, SourceType: inventoryenums.MovementSourcePurchaseOrder, SourceRef: order.Code,
+		}, 1, 0)
+		if lerr != nil || len(rows) == 0 {
+			_ = s.compensateReceipt(ctx, receipt.ID, order.ID, items)
+			return nil, lerr
+		}
+		batchID = rows[0].BatchID
+	} else {
+		change, cerr := s.ChangeStock(ctx, &inventorydto.ChangeStockReq{
+			ProjectID: projectID, Direction: inventoryenums.DirectionIn,
+			ReasonCode: reasonCodePurchaseIn,
+			SourceType: inventoryenums.MovementSourcePurchaseOrder, SourceRef: order.Code,
+			Remark: strings.TrimSpace(req.Remark), OperatorID: strings.TrimSpace(req.OperatorID),
+			Lines: stockLines,
+		})
+		if cerr != nil {
+			// ④ 库存没动成功：退回已入库数量并删除入库单（不留「记了账没动库存」）。
+			_ = s.compensateReceipt(ctx, receipt.ID, order.ID, items)
+			return nil, cerr
+		}
+		batchID = change.BatchID
 	}
 	// ⑤ 提交之后：记批次号 + 置 posted + 回写成本价。
-	if serr := s.m.SetReceiptMovement(ctx, receipt.ID, change.BatchID, inventoryenums.ReceiptStatusPosted); serr == nil {
-		receipt.MovementBatchID = change.BatchID
+	if serr := s.m.SetReceiptMovement(ctx, receipt.ID, batchID, inventoryenums.ReceiptStatusPosted); serr == nil {
+		receipt.MovementBatchID = batchID
 		receipt.Status = inventoryenums.ReceiptStatusPosted
 	}
 	s.applyReceiptCosts(ctx, items, receipt.OperatorID)
@@ -283,6 +309,11 @@ func (s *Service) RegisterProductionInbound(ctx context.Context, req *inventoryd
 	if err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
 		return s.m.CreateReceiptTx(ctx, tx, receipt, []*inventorymodel.ReceiptItemEntity{item})
 	}); err != nil {
+		if database.IsUniqueViolation(err) {
+			if replay, rerr := s.idempotentReceipt(ctx, projectID, requestID); rerr == nil && replay != nil {
+				return s.receiptResp(ctx, replay, true)
+			}
+		}
 		return nil, err
 	}
 	change, cerr := s.ChangeStock(ctx, &inventorydto.ChangeStockReq{
