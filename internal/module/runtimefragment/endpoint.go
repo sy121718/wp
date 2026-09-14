@@ -23,12 +23,13 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
-	"sync"
 
 	"github.com/gin-gonic/gin"
 
 	usercontract "go_wp/internal/module/user/contract"
 	"go_wp/pkg/auth"
+	"go_wp/pkg/i18n"
+	"go_wp/pkg/sitehttps"
 )
 
 // maxParamLen 查询参数值长度上限（防超长注入）。
@@ -101,10 +102,9 @@ func FragmentEndpoint(c *gin.Context) {
 		c.String(http.StatusBadRequest, perr.Error())
 		return
 	}
-	// 槽位解析按**请求内一次**缓存：一个片段请求只服务一个页面（一个工程一种语言），
-	// 但同一份渲染里可能问两次（购物车与结算各问一次），第二次不该再查一遍库。
-	var slotOnce sync.Once
-	var slotCache map[string]string
+	// 槽位解析按 (projectID, lang) 缓存：同请求内购物车/结算可能各问一次。
+	slotCache := map[slotCacheKey]map[string]string{}
+	lang := resolveRequestLang(c.Request.Context(), params["projectId"], params["lang"])
 	req := &Request{
 		Type:         typeName,
 		Context:      params["context"],
@@ -116,25 +116,45 @@ func FragmentEndpoint(c *gin.Context) {
 		Cookies:      collectFragmentCookies(c),
 		IP:           c.ClientIP(),
 		UserAgent:    strings.TrimSpace(c.GetHeader("User-Agent")),
-		SitePagesOf: func(projectID, lang string) map[string]string {
-			slotOnce.Do(func() { slotCache = resolveSitePages(c.Request.Context(), projectID, lang) })
-			return slotCache
-		},
+		Lang:         lang,
+		T:            i18n.Snapshot(lang),
+	}
+	req.SitePagesOf = func(projectID, slotLang string) map[string]string {
+		useLang := req.Lang
+		if slotLang != "" {
+			useLang = slotLang
+		}
+		k := slotCacheKey{projectID: projectID, lang: useLang}
+		if v, ok := slotCache[k]; ok {
+			return v
+		}
+		v := resolveSitePages(c.Request.Context(), projectID, useLang)
+		slotCache[k] = v
+		return v
 	}
 	if err := validateContext(req.Context); err != nil {
 		c.String(http.StatusBadRequest, err.Error())
 		return
 	}
 	// 处理器：返回 HTML 片段（handler 内部对用户数据 escape）。
-	htmlFragment, err := spec.Render(c.Request.Context(), req)
+	htmlFragment, cacheHit, err := renderWithOptionalCache(c.Request.Context(), typeName, spec, req)
 	if err != nil {
 		c.String(http.StatusInternalServerError, "片段渲染失败")
 		return
 	}
+	if cacheHit {
+		c.Header("X-Fragment-Cache", "HIT")
+	}
 	// 渲染**成功之后**才写 cookie：失败响应配上一个已经更新的 cookie，
 	// 会让「页面显示什么」与「服务端记住了什么」各说各话。
 	writeFragmentCookies(c, req)
+	c.Header("Vary", "Accept-Language")
 	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(strings.TrimSpace(htmlFragment)))
+}
+
+type slotCacheKey struct {
+	projectID string
+	lang      string
 }
 
 // collectFragmentCookies 收集请求携带的 cookie（名字 → 值）。
@@ -165,10 +185,14 @@ func writeFragmentCookies(c *gin.Context, r *Request) {
 	if c == nil || r == nil || len(r.SetCookies) == 0 {
 		return
 	}
-	secure := false
-	if c.Request != nil {
-		secure = c.Request.TLS != nil ||
-			strings.EqualFold(strings.TrimSpace(c.GetHeader("X-Forwarded-Proto")), "https")
+	// 部署事实优先（pkg/sitehttps），直连 TLS 作为兜底。
+	//
+	// **不看 X-Forwarded-Proto**：那个头由上游产生、客户端可伪造，凭它决定 Secure
+	// 等于把 cookie 的安全属性交给请求方；而反代没传这个头恰恰是自托管最常见的误配，
+	// 表现是「HTTPS 站点的 cookie 悄悄丢了 Secure」，看起来一切正常。
+	secure := sitehttps.Enabled()
+	if c.Request != nil && c.Request.TLS != nil {
+		secure = true
 	}
 	for _, ck := range r.SetCookies {
 		if ck.Name == "" {

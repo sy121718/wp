@@ -4,7 +4,16 @@
 package runtimefragment
 
 import (
+	"time"
+
 	"github.com/gin-gonic/gin"
+
+	"go_wp/internal/middleware/builtin"
+)
+
+const (
+	fragmentRateLimit  = 90
+	fragmentRateWindow = time.Minute
 )
 
 // visitorIdentityMiddleware 访客身份解析中间件（装配期注入，可缺）。
@@ -24,7 +33,9 @@ func SetupFragmentRoutes(router *gin.Engine) {
 	if router == nil {
 		return
 	}
-	handlers := make([]gin.HandlerFunc, 0, 2)
+	handlers := []gin.HandlerFunc{
+		builtin.RequestRateLimitMiddleware(fragmentRateLimit, fragmentRateWindow),
+	}
 	if visitorIdentityMiddleware != nil {
 		handlers = append(handlers, visitorIdentityMiddleware)
 	}

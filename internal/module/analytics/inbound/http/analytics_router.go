@@ -7,12 +7,21 @@ package analyticshttp
 // 后台只读聚合挂 authorizedAPI（Session + CSRF + Casbin，权限点 analytics:view）。
 
 import (
+	"time"
+
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+
+	"go_wp/internal/middleware/builtin"
 
 	analyticscontract "go_wp/internal/module/analytics/contract"
 	analyticsmodel "go_wp/internal/module/analytics/model"
 	analyticsservice "go_wp/internal/module/analytics/service"
+)
+
+const (
+	analyticsCollectRateLimit  = 60
+	analyticsCollectRateWindow = time.Minute
 )
 
 // SetupAnalyticsRoutes 装配访问统计模块并注册路由，返回模块契约。
@@ -22,11 +31,14 @@ import (
 func SetupAnalyticsRoutes(rg *gin.RouterGroup, router *gin.Engine, db *gorm.DB,
 	pepper string) analyticscontract.AnalyticsService {
 	svc := analyticsservice.NewService(analyticsmodel.NewModel(db), pepper)
+	analyticsservice.StartAnalyticsRetentionScheduler(svc)
 	handle := NewHandle(svc)
 
 	// 公开打点（访问面）：只写一条浏览记录，没有查询与删除能力。
 	if router != nil {
-		router.POST("/analytics/collect", handle.Collect)
+		router.POST("/analytics/collect",
+			builtin.RequestRateLimitMiddleware(analyticsCollectRateLimit, analyticsCollectRateWindow),
+			handle.Collect)
 	}
 	// 后台只读聚合（后台统计页与只读 API 共用同一份实现）。
 	if rg != nil {

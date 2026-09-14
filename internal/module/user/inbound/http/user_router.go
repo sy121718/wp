@@ -11,6 +11,8 @@ package userhttp
 // 公开路由的先例：mailhttp.SetupTrackingRoutes（营销追踪端点）。
 
 import (
+	"time"
+
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
@@ -18,6 +20,11 @@ import (
 	usercontract "go_wp/internal/module/user/contract"
 	usermodel "go_wp/internal/module/user/model"
 	userservice "go_wp/internal/module/user/service"
+)
+
+const (
+	userSensitiveRateLimit  = 10
+	userSensitiveRateWindow = time.Minute
 )
 
 // SetupUserRoutes 装配用户模块并注册访客路由，返回对外契约。
@@ -54,16 +61,17 @@ func SetupUserRoutes(
 	public := router.Group("/user", attachUserSession(svc), csrf)
 	{
 		public.GET("/register", h.ShowRegister)
-		public.POST("/register", h.DoRegister)
+		sensitive := builtin.RequestRateLimitMiddleware(userSensitiveRateLimit, userSensitiveRateWindow)
+		public.POST("/register", sensitive, h.DoRegister)
 		public.GET("/activate", h.Activate)
-		public.POST("/resend", h.DoResendActivation)
+		public.POST("/resend", sensitive, h.DoResendActivation)
 		public.GET("/login", h.ShowLogin)
-		public.POST("/login", h.DoLogin)
+		public.POST("/login", sensitive, h.DoLogin)
 		public.POST("/logout", h.Logout)
 		public.GET("/forgot", h.ShowForgot)
-		public.POST("/forgot", h.DoForgot)
+		public.POST("/forgot", sensitive, h.DoForgot)
 		public.GET("/reset", h.ShowReset)
-		public.POST("/reset", h.DoReset)
+		public.POST("/reset", sensitive, h.DoReset)
 	}
 
 	// 账号中心：必须已登录。
