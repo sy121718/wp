@@ -7,12 +7,18 @@ package migrations
 import (
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
+	"time"
+	"unicode"
 
 	"go_wp/pkg/logger"
 
 	"gorm.io/gorm"
 )
+
+// migrationAdvisoryLockKey 多实例启动时迁移互斥锁（PostgreSQL pg_advisory_lock）。
+const migrationAdvisoryLockKey int64 = 0x677077706D6967 // "gwp mig"
 
 // Migration 描述一次表结构迁移。
 type Migration struct {
@@ -41,10 +47,73 @@ func registerSeed(s Seed) {
 	allSeeds = append(allSeeds, s)
 }
 
+// compareVersion 按「主编号 → 后缀 → 整串」排序：
+//
+//  1. 主编号按**数值**比较 —— 字符串比较会让 "1000_bar" 排在 "999_foo" 前面，
+//     迁移一旦跨过 99x 就开始乱序执行；
+//  2. 同主编号下按后缀比较（空串在前）：086 < 086a < 086b < 087 < 087b < 088；
+//  3. 主编号与后缀都相同才退到整串比较（保证顺序稳定、可复现）。
+func compareVersion(a, b string) bool {
+	na, sa, ea := parseVersionPrefix(a)
+	nb, sb, eb := parseVersionPrefix(b)
+	if ea != nil {
+		panic(ea)
+	}
+	if eb != nil {
+		panic(eb)
+	}
+	if na != nb {
+		return na < nb
+	}
+	if sa != sb {
+		return sa < sb
+	}
+	return a < b
+}
+
+// parseVersionPrefix 解析迁移版本前缀：数字 + 可选小写字母后缀 + 分隔符。
+//
+// 合法形状：
+//
+//	001-init                      → 1, ""
+//	086a-product-attribute-perms  → 86, "a"
+//	087b-product-variant-options  → 87, "b"
+//
+// 字母后缀是**有语义的补丁位**（「086 之后的第一个补丁」），必须合法：仓库里三个
+// 存量版本号就是这么写的（086a / 086b / 087b），改名字会让已执行过的库与新代码
+// 记的版本对不上，排查时两边的历史对不起来。
+func parseVersionPrefix(version string) (major int, suffix string, err error) {
+	v := strings.TrimSpace(version)
+	if v == "" {
+		return 0, "", fmt.Errorf("迁移版本不能为空")
+	}
+	i := 0
+	for i < len(v) && unicode.IsDigit(rune(v[i])) {
+		i++
+	}
+	if i == 0 {
+		return 0, "", fmt.Errorf("迁移版本 %q 格式不合法（应为 001-name）", version)
+	}
+	// 可选后缀：紧跟数字的连续小写字母。
+	j := i
+	for j < len(v) && unicode.IsLower(rune(v[j])) {
+		j++
+	}
+	suffix = v[i:j]
+	if j >= len(v) || (v[j] != '_' && v[j] != '-') {
+		return 0, "", fmt.Errorf("迁移版本 %q 格式不合法（应为 001-name 或 001a-name）", version)
+	}
+	major, perr := strconv.Atoi(v[:i])
+	if perr != nil {
+		return 0, "", fmt.Errorf("迁移版本 %q 前缀不是整数: %w", version, perr)
+	}
+	return major, suffix, nil
+}
+
 // All 返回按版本号排序的全部迁移。
 func All() []Migration {
 	sort.Slice(allMigrations, func(i, j int) bool {
-		return allMigrations[i].Version < allMigrations[j].Version
+		return compareVersion(allMigrations[i].Version, allMigrations[j].Version)
 	})
 	return allMigrations
 }
@@ -52,7 +121,7 @@ func All() []Migration {
 // AllSeeds 返回按版本号排序的全部种子数据。
 func AllSeeds() []Seed {
 	sort.Slice(allSeeds, func(i, j int) bool {
-		return allSeeds[i].Version < allSeeds[j].Version
+		return compareVersion(allSeeds[i].Version, allSeeds[j].Version)
 	})
 	return allSeeds
 }
@@ -62,6 +131,12 @@ func Run(db *gorm.DB) error {
 	if err := ValidateRegistry(); err != nil {
 		return err
 	}
+	if db.Dialector != nil && db.Dialector.Name() == "postgres" {
+		if err := acquireMigrationAdvisoryLock(db); err != nil {
+			return fmt.Errorf("获取迁移锁失败: %w", err)
+		}
+		defer releaseMigrationAdvisoryLock(db)
+	}
 	for _, m := range All() {
 		if err := apply(db, m); err != nil {
 			return fmt.Errorf("迁移 %s (%s) 失败: %w", m.Version, m.TableName, err)
@@ -70,14 +145,39 @@ func Run(db *gorm.DB) error {
 	return nil
 }
 
+func acquireMigrationAdvisoryLock(db *gorm.DB) error {
+	const maxWait = 10 * time.Minute
+	deadline := time.Now().Add(maxWait)
+	for {
+		var locked bool
+		if err := db.Raw("SELECT pg_try_advisory_lock(?)", migrationAdvisoryLockKey).Scan(&locked).Error; err != nil {
+			return err
+		}
+		if locked {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("等待迁移锁超时（%s）", maxWait)
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+}
+
+func releaseMigrationAdvisoryLock(db *gorm.DB) {
+	var unlocked bool
+	if err := db.Raw("SELECT pg_advisory_unlock(?)", migrationAdvisoryLockKey).Scan(&unlocked).Error; err != nil {
+		logger.Scene("init").Error(err, "释放迁移锁失败")
+	}
+}
+
 // ValidateRegistry 在真正连接数据库前检查迁移版本是否重复或为空。
 // 版本重复会让排序结果依赖注册顺序，升级时可能出现同一环境执行顺序不一致。
 func ValidateRegistry() error {
 	seen := make(map[string]string, len(allMigrations))
 	for _, m := range allMigrations {
 		v := strings.TrimSpace(m.Version)
-		if v == "" {
-			return fmt.Errorf("迁移版本不能为空（表 %s）", m.TableName)
+		if _, _, err := parseVersionPrefix(v); err != nil {
+			return fmt.Errorf("迁移 %s（表 %s）: %w", v, m.TableName, err)
 		}
 		if prev, ok := seen[v]; ok {
 			return fmt.Errorf("迁移版本重复 %q：%s 与 %s", v, prev, m.TableName)
