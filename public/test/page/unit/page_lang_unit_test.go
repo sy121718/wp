@@ -92,7 +92,7 @@ func TestPageLangDefaultPlainFullChain(t *testing.T) {
 	if _, err = svc.Publish(ctx, &pagedto.PublishReq{ID: created.ID}); err != nil {
 		t.Fatalf("发布失败: %v", err)
 	}
-	detail, err := svc.Detail(ctx, &pagedto.DetailReq{ID: created.ID})
+	detail, err := svc.Detail(ctx, &pagedto.DetailReq{ProjectID: projectID, ID: created.ID})
 	if err != nil {
 		t.Fatalf("查询页面失败: %v", err)
 	}

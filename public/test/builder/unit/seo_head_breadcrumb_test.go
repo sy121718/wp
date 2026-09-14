@@ -24,7 +24,7 @@ func TestSEOHeadBreadcrumbURLs(t *testing.T) {
 		{"只有主机与查询", "https://example.test?next=/news/post", nil, nil},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			out := builder.BuildSEOHead(builder.SEO{Title: `标题 </script><script>alert(1)</script>`}, tt.url, "", "", nil)
+			out := builder.BuildSEOHead(builder.SEO{Title: `标题 </script><script>alert(1)</script>`}, tt.url, "", "", "", nil)
 			const start = `<script type="application/ld+json">`
 			_, rest, found := strings.Cut(out, start)
 			if !found {
@@ -59,7 +59,7 @@ func TestSEOHeadBreadcrumbURLs(t *testing.T) {
 			if !reflect.DeepEqual(names, tt.names) {
 				t.Errorf("名称 = %q，期望 %q", names, tt.names)
 			}
-			if again := builder.BuildSEOHead(builder.SEO{Title: `标题 </script><script>alert(1)</script>`}, tt.url, "", "", nil); again != out {
+			if again := builder.BuildSEOHead(builder.SEO{Title: `标题 </script><script>alert(1)</script>`}, tt.url, "", "", "", nil); again != out {
 				t.Fatal("同输入输出不确定")
 			}
 		})

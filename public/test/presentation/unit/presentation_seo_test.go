@@ -376,3 +376,33 @@ func TestPresentationSEOProductUsesEntityFields(t *testing.T) {
 	}
 	containsAll(t, preview.HTML, "<meta property=\"og:type\" content=\"product\">")
 }
+
+// TestPresentationSEOProductJSONLDContainsOffers 商品详情页：实体有价格时
+// ProductOffer 写入 settings.seo，JSON-LD 应含 offers（构建期静态快照，SEO-005）。
+func TestPresentationSEOProductJSONLDContainsOffers(t *testing.T) {
+	f := newSEOProductFixture(t)
+	if f == nil {
+		return
+	}
+	ctx := context.Background()
+	tplID := createSEOTemplate(t, f.templates, f.projectID, "product", seoDoc(""))
+	productID := f.createSEOProduct(t, "offer-shirt")
+	const urlPath = "/products/offer-shirt"
+	if _, err := f.pres.CreateInstance(ctx, &presentationdto.CreateInstanceReq{
+		ProjectID: f.projectID, EntityType: "product", EntityID: productID,
+		URLPath: urlPath, TemplateID: tplID,
+	}); err != nil {
+		t.Fatalf("创建商品发布实例失败: %v", err)
+	}
+	published := activeHTML(t, urlPath)
+	containsAll(t, published,
+		"<script type=\"application/ld+json\">",
+		"\"@type\":\"Product\"",
+		"\"offers\":",
+		"\"@type\":\"Offer\"",
+		"\"price\":\"99\"",
+		"\"priceCurrency\":\"CNY\"",
+		"\"availability\":\"https://schema.org/InStock\"",
+		"\"url\":\""+urlPath+"\"",
+	)
+}

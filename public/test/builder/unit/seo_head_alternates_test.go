@@ -12,13 +12,13 @@ import (
 // TestBuildSEOHeadAlternates hreflang 输出：≥2 语言才输出，语言码升序、x-default 最后。
 func TestBuildSEOHeadAlternates(t *testing.T) {
 	seo := builder.SEO{Title: "关于我们", Description: "描述"}
-	base := builder.BuildSEOHead(seo, "/zh-CN/about", "关于我们", "描述", nil)
+	base := builder.BuildSEOHead(seo, "/zh-CN/about", "关于我们", "描述", "", nil)
 	if strings.Contains(base, "hreflang") {
 		t.Fatalf("无互指时不应输出 hreflang:\n%s", base)
 	}
 
 	// 单条互指（自指）无意义：不输出。
-	one := builder.BuildSEOHead(seo, "/zh-CN/about", "", "", []builder.Alternate{{Lang: "zh-CN", Href: "/zh-CN/about"}})
+	one := builder.BuildSEOHead(seo, "/zh-CN/about", "", "", "", []builder.Alternate{{Lang: "zh-CN", Href: "/zh-CN/about"}})
 	if strings.Contains(one, "hreflang") {
 		t.Fatalf("单条互指不应输出 hreflang:\n%s", one)
 	}
@@ -28,7 +28,7 @@ func TestBuildSEOHeadAlternates(t *testing.T) {
 		{Lang: "ja-JP", Href: "/ja-JP/about"},
 		{Lang: "en-US", Href: "/en-US/about"},
 	}
-	out := builder.BuildSEOHead(seo, "/zh-CN/about", "", "", alts)
+	out := builder.BuildSEOHead(seo, "/zh-CN/about", "", "", "", alts)
 	for _, want := range []string{
 		`hreflang="zh-CN" href="/zh-CN/about"`,
 		`hreflang="en-US" href="/en-US/about"`,
@@ -47,11 +47,11 @@ func TestBuildSEOHeadAlternates(t *testing.T) {
 		t.Fatalf("x-default 应最后输出:\n%s", out)
 	}
 	// 确定性：同输入两次字节一致。
-	if again := builder.BuildSEOHead(seo, "/zh-CN/about", "", "", alts); again != out {
+	if again := builder.BuildSEOHead(seo, "/zh-CN/about", "", "", "", alts); again != out {
 		t.Fatal("同输入两次输出不一致")
 	}
 	// 空语言/空 href 的互指被忽略（不会输出非法标签）。
-	dirty := builder.BuildSEOHead(seo, "/zh-CN/about", "", "", []builder.Alternate{
+	dirty := builder.BuildSEOHead(seo, "/zh-CN/about", "", "", "", []builder.Alternate{
 		{Lang: "", Href: "/x"}, {Lang: "en-US", Href: ""}, {Lang: "zh-CN", Href: "/zh-CN/about"},
 	})
 	if strings.Contains(dirty, "hreflang") {

@@ -39,7 +39,7 @@ func TestPageThemeBindingAndFilter(t *testing.T) {
 	if err = svc.AttachThemeToUnassigned(ctx, projectID, theme.ID); err != nil {
 		t.Fatalf("回填未挂页面失败: %v", err)
 	}
-	bound, err := svc.Detail(ctx, &pagedto.DetailReq{ID: first.ID})
+	bound, err := svc.Detail(ctx, &pagedto.DetailReq{ProjectID: projectID, ID: first.ID})
 	if err != nil || bound.ThemeID != theme.ID {
 		t.Fatalf("历史页面应回填到新主题: %+v err=%v", bound, err)
 	}
@@ -55,15 +55,15 @@ func TestPageThemeBindingAndFilter(t *testing.T) {
 	if second.ThemeID != theme.ID {
 		t.Fatalf("新页面应自动挂激活主题: %+v", second)
 	}
-	byTheme, err := svc.List(ctx, theme.ID)
+	byTheme, err := svc.List(ctx, &pagedto.ListReq{ProjectID: projectID, ThemeID: theme.ID})
 	if err != nil || len(byTheme) != 2 {
 		t.Fatalf("按激活主题过滤应见两页: n=%d err=%v", len(byTheme), err)
 	}
-	byEmpty, err := svc.List(ctx, "")
+	byEmpty, err := svc.List(ctx, &pagedto.ListReq{ProjectID: projectID})
 	if err != nil || len(byEmpty) != 2 {
-		t.Fatalf("空主题应列全部页面: n=%d err=%v", len(byEmpty), err)
+		t.Fatalf("空主题应列该工程全部页面: n=%d err=%v", len(byEmpty), err)
 	}
-	byOther, err := svc.List(ctx, "00000000-0000-0000-0000-000000000000")
+	byOther, err := svc.List(ctx, &pagedto.ListReq{ProjectID: projectID, ThemeID: "00000000-0000-0000-0000-000000000000"})
 	if err != nil || len(byOther) != 0 {
 		t.Fatalf("其他主题过滤应为空: n=%d err=%v", len(byOther), err)
 	}

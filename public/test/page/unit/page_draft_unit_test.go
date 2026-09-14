@@ -386,7 +386,7 @@ func TestPageSaveDraftPathOccupied(t *testing.T) {
 		t.Fatalf("改到他人路径应被拒绝: %v", err)
 	}
 	// 事务回滚：A 路径与版本均未变，B 占用完好。
-	detail, err := svc.Detail(ctx, &pagedto.DetailReq{ID: pageA.ID})
+	detail, err := svc.Detail(ctx, &pagedto.DetailReq{ProjectID: projectID, ID: pageA.ID})
 	if err != nil || detail.DraftPath != "/a" || detail.DraftVersion != pageA.DraftVersion {
 		t.Errorf("失败保存不应迁移路径或版本: %+v err=%v", detail, err)
 	}

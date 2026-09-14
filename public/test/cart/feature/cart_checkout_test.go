@@ -53,7 +53,7 @@ func TestCartCheckoutCreatesPaidOrderAndDeductsStock(t *testing.T) {
 		t.Fatalf("结算结果必须带单号与订单 id: %+v", res)
 	}
 
-	detail, err := f.orders.GetOrder(ctx, res.OrderID)
+	detail, err := f.orders.GetOrder(ctx, &orderdto.GetOrderReq{ProjectID: f.projectID, OrderID: res.OrderID})
 	if err != nil {
 		t.Fatalf("读订单失败: %v", err)
 	}
@@ -130,7 +130,7 @@ func TestCartCheckoutPersistsAttributionFromCookies(t *testing.T) {
 	if err != nil {
 		t.Fatalf("结算失败: %v", err)
 	}
-	detail, err := f.orders.GetOrder(ctx, res.OrderID)
+	detail, err := f.orders.GetOrder(ctx, &orderdto.GetOrderReq{ProjectID: f.projectID, OrderID: res.OrderID})
 	if err != nil {
 		t.Fatalf("读订单失败: %v", err)
 	}
@@ -289,7 +289,7 @@ func TestCartCheckoutKeepsOrderWhenPaymentFails(t *testing.T) {
 		t.Fatal("支付失败也要清空购物车：东西已经变成订单了")
 	}
 
-	detail, err := f.orders.GetOrder(ctx, res.OrderID)
+	detail, err := f.orders.GetOrder(ctx, &orderdto.GetOrderReq{ProjectID: f.projectID, OrderID: res.OrderID})
 	if err != nil {
 		t.Fatalf("读订单失败: %v", err)
 	}

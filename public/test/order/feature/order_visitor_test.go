@@ -38,12 +38,12 @@ func TestVisitorOrdersScopedToOwnUser(t *testing.T) {
 		t.Fatalf("B 建单失败: %v", err)
 	}
 
-	detailA, err := f.orders.GetOrder(ctx, orderA.ID)
+	detailA, err := f.orders.GetOrder(ctx, &orderdto.GetOrderReq{ProjectID: f.projectID, OrderID: orderA.ID})
 	if err != nil || detailA.Head.UserID == nil {
 		t.Fatalf("取 A 的订单失败或未开号: %v / %+v", err, detailA)
 	}
 	uidA := *detailA.Head.UserID
-	detailB, _ := f.orders.GetOrder(ctx, orderB.ID)
+	detailB, _ := f.orders.GetOrder(ctx, &orderdto.GetOrderReq{ProjectID: f.projectID, OrderID: orderB.ID})
 	if detailB == nil || detailB.Head.UserID == nil {
 		t.Fatal("B 的订单未开号")
 	}
@@ -84,7 +84,29 @@ func TestVisitorOrdersScopedToOwnUser(t *testing.T) {
 	}
 }
 
-// TestVisitorOrdersRequireUserID 没有身份时**报错**而不是「不过滤」。
+// TestGetOrderCrossProject 后台按 id 查单必须带工程 scope。
+func TestGetOrderCrossProject(t *testing.T) {
+	f := newOrderFixture(t)
+	if f == nil {
+		return
+	}
+	ctx := context.Background()
+	_, vid := f.addProduct(t, "跨工程隔离", 88.00, 5)
+	res, err := f.orders.CreateOrder(ctx, f.createBaseReq(vid, 1))
+	if err != nil {
+		t.Fatalf("建单失败: %v", err)
+	}
+	otherProject := "00000000-0000-4000-8000-000000000099"
+	_, err = f.orders.GetOrder(ctx, &orderdto.GetOrderReq{ProjectID: otherProject, OrderID: res.ID})
+	if err == nil || !strings.Contains(err.Error(), orderenums.ErrOrderNotFound) {
+		t.Fatalf("跨工程访问应返回 %q: %v", orderenums.ErrOrderNotFound, err)
+	}
+	_, err = f.orders.GetOrder(ctx, &orderdto.GetOrderReq{ProjectID: f.projectID, OrderID: res.ID})
+	if err != nil {
+		t.Fatalf("同工程应能取到订单: %v", err)
+	}
+}
+
 //
 // 少传一次归属条件就等于把全站订单列表发给某个访客 ——
 // 所以 UserID 是必填的，不能有「缺省 = 全部」这种便利。

@@ -14,7 +14,7 @@ import (
 // service 返回的错误必须能被 errors.Is 匹配到本包 sentinel，
 // 而不是仅靠 err.Error() 文案相等（文案改动/拼接前缀即失效）。
 func TestPageServiceErrorsAreSentinel(t *testing.T) {
-	_, svc, _, _ := newPageService(t)
+	_, svc, _, projectID := newPageService(t)
 	ctx := context.Background()
 
 	// Create(nil) → ErrInvalidParam（参数错误）
@@ -24,7 +24,7 @@ func TestPageServiceErrorsAreSentinel(t *testing.T) {
 	}
 
 	// 合法 ID 无页面 → ErrPageNotFound（资源不存在）
-	_, err = svc.Detail(ctx, &pagedto.DetailReq{ID: "6f2c9d0e-1a2b-3c4d-8e9f-0a1b2c3d4e5f"})
+	_, err = svc.Detail(ctx, &pagedto.DetailReq{ProjectID: projectID, ID: "6f2c9d0e-1a2b-3c4d-8e9f-0a1b2c3d4e5f"})
 	if !errors.Is(err, pageservice.ErrPageNotFound) {
 		t.Fatalf("不存在的页面应匹配 ErrPageNotFound: %v", err)
 	}

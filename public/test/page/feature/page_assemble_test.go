@@ -61,7 +61,7 @@ func TestPageAssembleInlinesHeaderBlock(t *testing.T) {
 	if page.ThemeID != theme.ID {
 		t.Fatalf("页面应挂激活主题: %+v", page)
 	}
-	detail, err := svc.Detail(ctx, &pagedto.DetailReq{ID: page.ID})
+	detail, err := svc.Detail(ctx, &pagedto.DetailReq{ProjectID: projectID, ID: page.ID})
 	if err != nil {
 		t.Fatalf("查询页面失败: %v", err)
 	}
@@ -96,7 +96,7 @@ func TestPageAssembleInlinesHeaderBlock(t *testing.T) {
 	if err = svc.MarkStaleForTheme(ctx, theme.ID); err != nil {
 		t.Fatalf("标记 stale 失败: %v", err)
 	}
-	staled, err := svc.Detail(ctx, &pagedto.DetailReq{ID: page.ID})
+	staled, err := svc.Detail(ctx, &pagedto.DetailReq{ProjectID: projectID, ID: page.ID})
 	if err != nil || !staled.Stale {
 		t.Fatalf("页眉变更后页面应标 stale: %+v err=%v", staled, err)
 	}

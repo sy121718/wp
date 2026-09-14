@@ -40,7 +40,7 @@ func TestPageUpdateURLUnpublishedWithRedirect(t *testing.T) {
 	t.Logf("BUG 复现：UpdateURL 返回错误 %v", err)
 
 	// 证据 1：DB 草稿路径已被迁移（MoveDraftPath 先于失败点执行）。
-	detail, derr := svc.Detail(ctx, &pagedto.DetailReq{ID: created.ID})
+	detail, derr := svc.Detail(ctx, &pagedto.DetailReq{ProjectID: projectID, ID: created.ID})
 	if derr != nil || detail.DraftPath != "/u-new" {
 		t.Errorf("分裂证据：DB draft_path 已被迁移到 %q（err=%v）", detail.DraftPath, derr)
 	}

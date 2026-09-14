@@ -171,7 +171,7 @@ func TestPagePublicationsLanguageScopedLifecycle(t *testing.T) {
 	}
 
 	// ---- 6) 详情投影带每语言激活状态（多语言真源） ----
-	detail, err := svc.Detail(ctx, &pagedto.DetailReq{ID: page.ID})
+	detail, err := svc.Detail(ctx, &pagedto.DetailReq{ProjectID: projectID, ID: page.ID})
 	if err != nil {
 		t.Fatalf("查询页面失败: %v", err)
 	}

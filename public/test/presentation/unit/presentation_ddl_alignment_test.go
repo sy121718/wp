@@ -39,6 +39,7 @@ func TestPresentationModelColumnsSubsetOfProductionDDL(t *testing.T) {
 		{"document_snapshots", &presentationmodel.SnapshotEntity{}},
 		{"presentation_artifacts", &presentationmodel.ArtifactEntity{}},
 		{"presentation_dependencies", &presentationmodel.DependencyEntity{}},
+		{"presentation_publications", &presentationmodel.PublicationEntity{}},
 	} {
 		t.Run(tc.table, func(t *testing.T) {
 			support.AssertModelColumnsSubset(t, f.db, tc.table, tc.dest)
@@ -152,6 +153,7 @@ func TestContentChangeAutoRebuildAndPublish(t *testing.T) {
 
 	// 接入依赖扇出（编排层装配的同形调用）。
 	fanout := pipeline.NewFanout()
+	fanout.SetSyncRebuild(true) // 断言需等重建完成，避免与 PERF-001 异步重建竞态
 	fanout.Register(pipeline.SourceTypePresentation, f.pres)
 	fanout.SetRebuilder(pipeline.SourceTypePresentation, f.pres)
 	f.content.SetDependencyInvalidator(fanout)

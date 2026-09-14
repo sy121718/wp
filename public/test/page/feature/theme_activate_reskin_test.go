@@ -144,7 +144,7 @@ func TestActivateThemeReskinsWholeSite(t *testing.T) {
 
 	// 断言：整站页面已转挂 B、快照为 B 的外观、全部标记待重建。
 	for _, p := range []*pagedto.PageResp{pageA, pageB} {
-		detail, err := svc.Detail(ctx, &pagedto.DetailReq{ID: p.ID})
+		detail, err := svc.Detail(ctx, &pagedto.DetailReq{ProjectID: projectID, ID: p.ID})
 		if err != nil {
 			t.Fatalf("查询页面失败: %v", err)
 		}

@@ -12,11 +12,19 @@ import (
 // 公共入口迁移必须经过整页渲染；仅片段测试看不到编辑器外壳丢失。
 func TestWorkbenchShellLoadsSharedUI(t *testing.T) {
 	renderer := NewJetHTMLRender(".", true)
-	for _, isBlock := range []bool{false, true} {
+	for _, tc := range []struct {
+		isBlock, isTemplate bool
+		previewQS           string
+	}{
+		{false, false, ""},
+		{true, false, ""},
+		{false, true, "template=t1&entityType=product&entityId=e1&editor=1"},
+	} {
 		recorder := httptest.NewRecorder()
 		err := renderer.Instance("workbench/layout.html", map[string]any{
 			"title": "控件检查", "csrf_token": "test", "jsVer": "test",
-			"isBlock": isBlock, "pageId": "test-page", "document": `{}`, "meta": `{}`, "schemas": `{}`,
+			"isBlock": tc.isBlock, "isTemplate": tc.isTemplate, "previewQS": tc.previewQS,
+			"pageId": "test-page", "document": `{}`, "meta": `{}`, "schemas": `{}`,
 		}).Render(recorder)
 		if err != nil {
 			t.Fatal(err)

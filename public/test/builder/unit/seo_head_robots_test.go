@@ -13,7 +13,7 @@ import (
 )
 
 func TestBuildSEOHeadRobots(t *testing.T) {
-	defaults := builder.BuildSEOHead(builder.SEO{}, "https://x.test/a", "标题", "描述", nil)
+	defaults := builder.BuildSEOHead(builder.SEO{}, "https://x.test/a", "标题", "描述", "", nil)
 	if strings.Contains(defaults, "name=\"robots\"") {
 		t.Errorf("默认（index/follow）不该输出 robots meta：%s", defaults)
 	}
@@ -22,13 +22,13 @@ func TestBuildSEOHeadRobots(t *testing.T) {
 	}
 
 	none := builder.BuildSEOHead(builder.SEO{RobotsIndex: "noindex", RobotsFollow: "nofollow"},
-		"https://x.test/a", "标题", "描述", nil)
+		"https://x.test/a", "标题", "描述", "", nil)
 	if !strings.Contains(none, "<meta name=\"robots\" content=\"noindex,nofollow\">") {
 		t.Errorf("noindex,nofollow 未输出：%s", none)
 	}
 
 	// 只设一项时另一项补默认值：只写 noindex 不该丢掉 follow 语义。
-	partial := builder.BuildSEOHead(builder.SEO{RobotsIndex: "noindex"}, "https://x.test/a", "标题", "描述", nil)
+	partial := builder.BuildSEOHead(builder.SEO{RobotsIndex: "noindex"}, "https://x.test/a", "标题", "描述", "", nil)
 	if !strings.Contains(partial, "content=\"noindex,follow\"") {
 		t.Errorf("缺省项应补 follow：%s", partial)
 	}
@@ -43,7 +43,7 @@ func TestBuildSEOHeadOGTypeFollowsSchemaType(t *testing.T) {
 		{"product", "product"},
 		{"Article", "article"}, // 大小写不敏感
 	} {
-		got := builder.BuildSEOHead(builder.SEO{SchemaType: tc.schema}, "https://x.test/a", "标题", "描述", nil)
+		got := builder.BuildSEOHead(builder.SEO{SchemaType: tc.schema}, "https://x.test/a", "标题", "描述", "", nil)
 		if !strings.Contains(got, "og:type\" content=\""+tc.want+"\"") {
 			t.Errorf("schemaType=%q 时 og:type 应为 %q：%s", tc.schema, tc.want, got)
 		}

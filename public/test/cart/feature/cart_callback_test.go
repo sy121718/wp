@@ -74,7 +74,7 @@ func TestPaymentCallbackPaysOrder(t *testing.T) {
 		t.Fatalf("订单应推进到 paid，实际 %s", res.Status)
 	}
 
-	detail, err := f.orders.GetOrder(context.Background(), res.OrderID)
+	detail, err := f.orders.GetOrder(context.Background(), &orderdto.GetOrderReq{ProjectID: f.projectID, OrderID: res.OrderID})
 	if err != nil {
 		t.Fatalf("读订单失败: %v", err)
 	}

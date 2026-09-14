@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	maildto "go_wp/internal/module/mail/dto"
+	orderdto "go_wp/internal/module/order/dto"
 	userdto "go_wp/internal/module/user/dto"
 )
 
@@ -43,7 +44,7 @@ func TestOrderCreateProvisionsGuestAccount(t *testing.T) {
 	if err != nil {
 		t.Fatalf("访客下单失败: %v", err)
 	}
-	detail, err := f.orders.GetOrder(ctx, res.ID)
+	detail, err := f.orders.GetOrder(ctx, &orderdto.GetOrderReq{ProjectID: f.projectID, OrderID: res.ID})
 	if err != nil {
 		t.Fatalf("读订单失败: %v", err)
 	}
@@ -116,7 +117,7 @@ func TestOrderCreateNeverResetsExistingAccountPassword(t *testing.T) {
 		t.Fatalf("已有账号的密码被下单流程改动了 —— 这是账户接管")
 	}
 
-	detail, err := f.orders.GetOrder(ctx, res.ID)
+	detail, err := f.orders.GetOrder(ctx, &orderdto.GetOrderReq{ProjectID: f.projectID, OrderID: res.ID})
 	if err != nil {
 		t.Fatalf("读订单失败: %v", err)
 	}

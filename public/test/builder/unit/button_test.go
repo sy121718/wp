@@ -44,7 +44,7 @@ func TestButtonExternal(t *testing.T) {
 	}
 }
 
-// TestButtonModal 弹窗触发：原生 <button> + data-modal-target，无 href。
+// TestButtonModal 弹窗触发：原生 <button> + data-modal-open，无 href。
 func TestButtonModal(t *testing.T) {
 	props := `{"text":"联系商务合作","action":"modal","value":"contact-modal"}`
 	c, err := compile(t, buttonDoc(t, props))
@@ -52,7 +52,7 @@ func TestButtonModal(t *testing.T) {
 		t.Fatalf("编译失败: %v", err)
 	}
 	for _, want := range []string{
-		`<button class="sky-c-b1" type="button" data-modal-target="contact-modal">`,
+		`<button class="sky-c-b1" type="button" data-modal-open="contact-modal">`,
 		`<span class="bt-text">联系商务合作</span>`,
 		"</button>",
 	} {

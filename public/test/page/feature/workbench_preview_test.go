@@ -31,7 +31,7 @@ func TestWorkbenchPreviewDraft(t *testing.T) {
 	if err != nil {
 		t.Fatalf("创建测试页面失败: %v", err)
 	}
-	before, err := svc.Detail(ctx, &pagedto.DetailReq{ID: created.ID})
+	before, err := svc.Detail(ctx, &pagedto.DetailReq{ProjectID: projectID, ID: created.ID})
 	if err != nil {
 		t.Fatalf("查询初始草稿失败: %v", err)
 	}
@@ -66,7 +66,7 @@ func TestWorkbenchPreviewDraft(t *testing.T) {
 		t.Fatalf("临时预览缺少编译内容或编辑器桥接: %s", recorder.Body.String())
 	}
 
-	page, err := svc.Detail(ctx, &pagedto.DetailReq{ID: created.ID})
+	page, err := svc.Detail(ctx, &pagedto.DetailReq{ProjectID: projectID, ID: created.ID})
 	if err != nil {
 		t.Fatalf("查询测试页面失败: %v", err)
 	}

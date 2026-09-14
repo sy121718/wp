@@ -43,7 +43,7 @@ func TestPageDeleteReleasedReservedRoute(t *testing.T) {
 	}
 
 	// 1) 列表不可见。
-	list, err := svc.List(ctx, "")
+	list, err := svc.List(ctx, &pagedto.ListReq{ProjectID: projectID})
 	if err != nil {
 		t.Fatalf("列表查询失败: %v", err)
 	}
@@ -53,7 +53,7 @@ func TestPageDeleteReleasedReservedRoute(t *testing.T) {
 		}
 	}
 	// 2) 详情不可见。
-	if _, err := svc.Detail(ctx, &pagedto.DetailReq{ID: created.ID}); err == nil || err.Error() != pageenums.ErrPageNotFound {
+	if _, err := svc.Detail(ctx, &pagedto.DetailReq{ProjectID: projectID, ID: created.ID}); err == nil || err.Error() != pageenums.ErrPageNotFound {
 		t.Errorf("软删后详情应不可见: %v", err)
 	}
 	// 3) 路由占用释放（修复前软删后 routeCount==1 残留、路径永久占用）。
@@ -146,7 +146,7 @@ func TestPageDeleteIdempotent(t *testing.T) {
 		t.Errorf("重复删除应返回 %q: %v", pageenums.ErrPageNotFound, err)
 	}
 	// 其他页面与其路由不受影响。
-	if _, err := svc.Detail(ctx, &pagedto.DetailReq{ID: other.ID}); err != nil {
+	if _, err := svc.Detail(ctx, &pagedto.DetailReq{ProjectID: projectID, ID: other.ID}); err != nil {
 		t.Errorf("其他页面应不受影响: %v", err)
 	}
 	if kind := routeKind(t, db, projectID, "/del-keep"); kind != pubmodel.RouteReserved {

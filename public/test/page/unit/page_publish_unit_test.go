@@ -309,7 +309,7 @@ func TestPageUpdateURLSuccess(t *testing.T) {
 	if moved.OldPath != "/old-url" || moved.DraftPath != "/new-url" {
 		t.Errorf("URL 结果错误: %+v", moved)
 	}
-	detail, err := svc.Detail(ctx, &pagedto.DetailReq{ID: created.ID})
+	detail, err := svc.Detail(ctx, &pagedto.DetailReq{ProjectID: projectID, ID: created.ID})
 	if err != nil || detail.DraftPath != "/new-url" || detail.ActivePath == nil || *detail.ActivePath != "/new-url" {
 		t.Errorf("改 URL 后详情错误: %+v err=%v", detail, err)
 	}
@@ -377,7 +377,7 @@ func TestPageUpdateURLRejectsOccupiedPath(t *testing.T) {
 		t.Errorf("占用者路由应保持 active: %s", kind)
 	}
 	// 失败方草稿路径未迁移。
-	detail, err := svc.Detail(ctx, &pagedto.DetailReq{ID: pageA.ID})
+	detail, err := svc.Detail(ctx, &pagedto.DetailReq{ProjectID: projectID, ID: pageA.ID})
 	if err != nil || detail.DraftPath != "/occ-a" {
 		t.Errorf("被拒绝方草稿路径不应迁移: %+v err=%v", detail, err)
 	}

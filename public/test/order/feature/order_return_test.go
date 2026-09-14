@@ -39,7 +39,7 @@ func (f *orderFixture) paidOrder(t *testing.T, email string, variantID string, q
 	}); perr != nil {
 		t.Fatalf("支付落账失败: %v", perr)
 	}
-	detail, derr := f.orders.GetOrder(ctx, created.ID)
+	detail, derr := f.orders.GetOrder(ctx, &orderdto.GetOrderReq{ProjectID: f.projectID, OrderID: created.ID})
 	if derr != nil || detail.Head == nil || detail.Head.UserID == nil || len(detail.Items) == 0 {
 		t.Fatalf("读订单详情失败: %v / %+v", derr, detail)
 	}
@@ -190,7 +190,7 @@ func TestReturnApproveAndReceiveReturnsStockAndRefund(t *testing.T) {
 	if got := f.stockOf(t, vid); got != 10 {
 		t.Fatalf("退货入库后库存应回到 10，实际 %d", got)
 	}
-	detail, _ := f.orders.GetOrder(ctx, orderID)
+	detail, _ := f.orders.GetOrder(ctx, &orderdto.GetOrderReq{ProjectID: f.projectID, OrderID: orderID})
 	if detail.Head.Status != ordermodel.OrderStatusRefunded {
 		t.Fatalf("全额退货后订单应为已退款，实际 %s", detail.Head.Status)
 	}
@@ -318,7 +318,7 @@ func TestReturnPartialRefundKeepsOrderStatus(t *testing.T) {
 	if got := f.stockOf(t, vid); got != 8 {
 		t.Fatalf("退回 1 件后库存应为 8（10-3+1），实际 %d", got)
 	}
-	detail, _ := f.orders.GetOrder(ctx, orderID)
+	detail, _ := f.orders.GetOrder(ctx, &orderdto.GetOrderReq{ProjectID: f.projectID, OrderID: orderID})
 	if detail.Head.Status == ordermodel.OrderStatusRefunded {
 		t.Fatal("部分退货不该把整单标成已退款 —— 还有没退的货，财务会因此对不上账")
 	}
@@ -383,7 +383,7 @@ func TestReturnRequestRejectedForUnpaidOrder(t *testing.T) {
 	if err != nil {
 		t.Fatalf("建单失败: %v", err)
 	}
-	detail, _ := f.orders.GetOrder(ctx, created.ID)
+	detail, _ := f.orders.GetOrder(ctx, &orderdto.GetOrderReq{ProjectID: f.projectID, OrderID: created.ID})
 	if detail.Head.UserID == nil {
 		t.Fatal("访客下单应自动开号")
 	}

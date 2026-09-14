@@ -32,6 +32,7 @@ func newContentFanoutPageService(t *testing.T) (*gorm.DB, pagecontract.PageServi
 	db, svc, _, projectID := newPageService(t)
 	contentSvc := contentservice.NewService(contentmodel.NewModel(db))
 	fanout := pipeline.NewFanout()
+	fanout.SetSyncRebuild(true)
 	fanout.Register(pipeline.SourceTypePage, svc)
 	fanout.SetRebuilder(pipeline.SourceTypePage, svc)
 	contentSvc.SetDependencyInvalidator(fanout)

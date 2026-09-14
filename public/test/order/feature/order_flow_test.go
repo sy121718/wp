@@ -182,7 +182,7 @@ func TestOrderCreateDeductsStockAndSnapshotsPrice(t *testing.T) {
 		t.Fatalf("库存应从 10 扣到 8，实际 %d", got)
 	}
 
-	detail, err := f.orders.GetOrder(context.Background(), res.ID)
+	detail, err := f.orders.GetOrder(context.Background(), &orderdto.GetOrderReq{ProjectID: f.projectID, OrderID: res.ID})
 	if err != nil {
 		t.Fatalf("读订单详情失败: %v", err)
 	}
@@ -214,7 +214,7 @@ func TestOrderItemSnapshotSurvivesProductRename(t *testing.T) {
 	if _, err := f.products.Update(ctx, &productdto.UpdateReq{ID: pid, Name: &newName}); err != nil {
 		t.Fatalf("改商品名失败: %v", err)
 	}
-	detail, err := f.orders.GetOrder(ctx, res.ID)
+	detail, err := f.orders.GetOrder(ctx, &orderdto.GetOrderReq{ProjectID: f.projectID, OrderID: res.ID})
 	if err != nil {
 		t.Fatalf("读订单详情失败: %v", err)
 	}
@@ -335,7 +335,7 @@ func TestOrderStatusFlowFollowsAllowedEdges(t *testing.T) {
 		t.Fatalf("completed 之后不该还能回到 paid")
 	}
 	// 流转链要留痕（4 条：建单 + 三次流转）。
-	detail, err := f.orders.GetOrder(ctx, res.ID)
+	detail, err := f.orders.GetOrder(ctx, &orderdto.GetOrderReq{ProjectID: f.projectID, OrderID: res.ID})
 	if err != nil {
 		t.Fatalf("读详情失败: %v", err)
 	}
@@ -359,7 +359,7 @@ func TestOrderCancelReturnsStock(t *testing.T) {
 	if got := f.stockOf(t, vid); got != 2 {
 		t.Fatalf("建单后应剩 2，实际 %d", got)
 	}
-	if err := f.orders.CancelOrder(ctx, &orderdto.CancelOrderReq{
+	if _, err := f.orders.CancelOrder(ctx, &orderdto.CancelOrderReq{
 		OrderID: res.ID, Reason: "买家改主意", OperatorName: "tester",
 	}); err != nil {
 		t.Fatalf("取消失败: %v", err)
@@ -368,7 +368,7 @@ func TestOrderCancelReturnsStock(t *testing.T) {
 		t.Fatalf("取消后库存应回到 6，实际 %d", got)
 	}
 	// 已取消的单不能再取消。
-	if err := f.orders.CancelOrder(ctx, &orderdto.CancelOrderReq{
+	if _, err := f.orders.CancelOrder(ctx, &orderdto.CancelOrderReq{
 		OrderID: res.ID, Reason: "再来一次",
 	}); err == nil {
 		t.Fatalf("重复取消应被拒绝")
@@ -400,7 +400,7 @@ func TestOrderRefundDoesNotReturnStock(t *testing.T) {
 	if got := f.stockOf(t, vid); got != 3 {
 		t.Fatalf("退款不该动库存（应仍是 3），实际 %d", got)
 	}
-	detail, err := f.orders.GetOrder(ctx, res.ID)
+	detail, err := f.orders.GetOrder(ctx, &orderdto.GetOrderReq{ProjectID: f.projectID, OrderID: res.ID})
 	if err != nil {
 		t.Fatalf("读详情失败: %v", err)
 	}
@@ -451,7 +451,7 @@ func TestOrderPersistsAttributionAndAdminNote(t *testing.T) {
 	if err != nil {
 		t.Fatalf("建单失败: %v", err)
 	}
-	detail, err := f.orders.GetOrder(ctx, res.ID)
+	detail, err := f.orders.GetOrder(ctx, &orderdto.GetOrderReq{ProjectID: f.projectID, OrderID: res.ID})
 	if err != nil {
 		t.Fatalf("读详情失败: %v", err)
 	}

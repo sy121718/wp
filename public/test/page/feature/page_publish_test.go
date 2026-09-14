@@ -100,7 +100,7 @@ func TestPagePublishLifecycle(t *testing.T) {
 	if moved.OldPath != "/about" || moved.DraftPath != "/about-us" {
 		t.Fatalf("URL 结果错误: %+v", moved)
 	}
-	detail, err := svc.Detail(ctx, &pagedto.DetailReq{ID: created.ID})
+	detail, err := svc.Detail(ctx, &pagedto.DetailReq{ProjectID: projectID, ID: created.ID})
 	if err != nil || detail.DraftPath != "/about-us" || detail.ActivePath == nil || *detail.ActivePath != "/about-us" {
 		t.Fatalf("改 URL 后详情错误: %+v err=%v", detail, err)
 	}
@@ -189,12 +189,12 @@ func TestPageUpdateURLRejectsOccupiedPath(t *testing.T) {
 	if kind != pubmodel.RouteActive || ownerID == nil {
 		t.Fatalf("/b 路由应保持 active: kind=%s owner=%v", kind, ownerID)
 	}
-	detailB, err := svc.Detail(ctx, &pagedto.DetailReq{ID: *ownerID})
+	detailB, err := svc.Detail(ctx, &pagedto.DetailReq{ProjectID: projectID, ID: *ownerID})
 	if err != nil || detailB.DraftPath != "/b" {
 		t.Fatalf("占用者页面详情错误: %+v err=%v", detailB, err)
 	}
 	// 失败者草稿路径保持原值，未发生迁移。
-	detailA, err := svc.Detail(ctx, &pagedto.DetailReq{ID: pageA.ID})
+	detailA, err := svc.Detail(ctx, &pagedto.DetailReq{ProjectID: projectID, ID: pageA.ID})
 	if err != nil || detailA.DraftPath != "/a" {
 		t.Fatalf("被拒绝方草稿路径不应迁移: %+v err=%v", detailA, err)
 	}

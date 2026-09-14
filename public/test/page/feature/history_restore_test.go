@@ -62,7 +62,7 @@ func TestHistoryRestoreOverwritesDraft(t *testing.T) {
 		t.Fatalf("恢复失败，状态码 %d：%s", recorder.Code, recorder.Body.String())
 	}
 
-	detail, err := svc.Detail(ctx, &pagedto.DetailReq{ID: created.ID})
+	detail, err := svc.Detail(ctx, &pagedto.DetailReq{ProjectID: projectID, ID: created.ID})
 	if err != nil {
 		t.Fatalf("查询页面失败: %v", err)
 	}

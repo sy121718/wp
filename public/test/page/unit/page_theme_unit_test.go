@@ -41,6 +41,24 @@ func assertThemeSnapshot(t *testing.T, doc []byte, wantPrimary, wantFont string)
 	}
 }
 
+func mergePageStructure(t *testing.T, base []byte, header, footer string) json.RawMessage {
+	t.Helper()
+	settings := docSettings(t, base)
+	structure, _ := json.Marshal(map[string]string{
+		"headerBlockId": header,
+		"footerBlockId": footer,
+	})
+	if settings == nil {
+		settings = map[string]json.RawMessage{}
+	}
+	settings["structure"] = structure
+	out, err := json.Marshal(map[string]any{"settings": settings, "root": json.RawMessage(`[]`)})
+	if err != nil {
+		t.Fatalf("构造 structure 文档失败: %v", err)
+	}
+	return out
+}
+
 // assertStructureSnapshot 断言 settings.structure 页眉/页脚绑定。
 func assertStructureSnapshot(t *testing.T, doc []byte, wantHeader, wantFooter string) {
 	t.Helper()
@@ -163,7 +181,7 @@ func TestPageRefreshThemeForTheme(t *testing.T) {
 		t.Fatalf("刷新主题失败: %v", err)
 	}
 	for _, p := range []*pagedto.PageResp{pageA, pageB} {
-		detail, err := svc.Detail(ctx, &pagedto.DetailReq{ID: p.ID})
+		detail, err := svc.Detail(ctx, &pagedto.DetailReq{ProjectID: projectID, ID: p.ID})
 		if err != nil {
 			t.Fatalf("详情失败: %v", err)
 		}
@@ -190,11 +208,29 @@ func TestPageRefreshStructureForTheme(t *testing.T) {
 	if err := svc.RefreshStructureForTheme(ctx, theme.ID, json.RawMessage(`{"headerBlockId":"new-header"}`)); err != nil {
 		t.Fatalf("刷新结构失败: %v", err)
 	}
-	detail, err := svc.Detail(ctx, &pagedto.DetailReq{ID: page.ID})
+	detail, err := svc.Detail(ctx, &pagedto.DetailReq{ProjectID: projectID, ID: page.ID})
 	if err != nil {
 		t.Fatalf("详情失败: %v", err)
 	}
 	assertStructureSnapshot(t, detail.DraftDocument, "new-header", "")
+
+	// 页面已显式绑定 footer 时不应被主题刷新覆盖（VIS-003）。
+	footerDoc := mergePageStructure(t, []byte(pageDocument), "keep-footer", "")
+	_, err = svc.SaveDraft(ctx, &pagedto.SaveDraftReq{
+		ID: page.ID, ExpectedVersion: detail.DraftVersion,
+		DraftPath: "/struct", DraftDocument: footerDoc,
+	})
+	if err != nil {
+		t.Fatalf("保存页脚绑定失败: %v", err)
+	}
+	if err := svc.RefreshStructureForTheme(ctx, theme.ID, json.RawMessage(`{"headerBlockId":"new-header-2","footerBlockId":"theme-footer"}`)); err != nil {
+		t.Fatalf("二次刷新结构失败: %v", err)
+	}
+	detail2, err := svc.Detail(ctx, &pagedto.DetailReq{ProjectID: projectID, ID: page.ID})
+	if err != nil {
+		t.Fatalf("详情失败: %v", err)
+	}
+	assertStructureSnapshot(t, detail2.DraftDocument, "new-header-2", "keep-footer")
 }
 
 // TestPageMarkStaleForTheme 主题块变更批量标记挂接页面为待重建。
@@ -249,7 +285,7 @@ func TestPageAttachThemeToUnassigned(t *testing.T) {
 	// 回填到激活主题的页面仍应显示激活主题（AttachThemeToUnassigned
 	// 按调用方传入的 themeID 回填；此处验证列已从 NULL 变为非 NULL）。
 	for _, id := range []string{pageA.ID, pageB.ID} {
-		detail, err := svc.Detail(ctx, &pagedto.DetailReq{ID: id})
+		detail, err := svc.Detail(ctx, &pagedto.DetailReq{ProjectID: projectID, ID: id})
 		if err != nil || detail.ThemeID == "" {
 			t.Errorf("页面 %s 应被回填主题: %+v err=%v", id, detail, err)
 		}
@@ -333,7 +369,7 @@ func TestPageRefreshThemeKeepsPageOverride(t *testing.T) {
 		t.Fatalf("刷新主题失败: %v", err)
 	}
 
-	withOv, err := svc.Detail(ctx, &pagedto.DetailReq{ID: pageWithOverride.ID})
+	withOv, err := svc.Detail(ctx, &pagedto.DetailReq{ProjectID: projectID, ID: pageWithOverride.ID})
 	if err != nil {
 		t.Fatalf("详情失败: %v", err)
 	}
@@ -345,7 +381,7 @@ func TestPageRefreshThemeKeepsPageOverride(t *testing.T) {
 		t.Errorf("页面没覆盖的边框色应跟新主题，got %v", colors["border"])
 	}
 
-	plain, err := svc.Detail(ctx, &pagedto.DetailReq{ID: pagePlain.ID})
+	plain, err := svc.Detail(ctx, &pagedto.DetailReq{ProjectID: projectID, ID: pagePlain.ID})
 	if err != nil {
 		t.Fatalf("详情失败: %v", err)
 	}

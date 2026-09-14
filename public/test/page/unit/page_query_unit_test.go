@@ -16,9 +16,10 @@ import (
 
 // TestPageDetailNotFound 不存在的页面详情应返回页面不存在。
 func TestPageDetailNotFound(t *testing.T) {
-	_, svc, _, _ := newPageService(t)
+	_, svc, _, projectID := newPageService(t)
 	_, err := svc.Detail(context.Background(), &pagedto.DetailReq{
-		ID: "6f2c9d0e-1a2b-3c4d-8e9f-0a1b2c3d4e5f",
+		ProjectID: projectID,
+		ID:        "6f2c9d0e-1a2b-3c4d-8e9f-0a1b2c3d4e5f",
 	})
 	if err == nil || err.Error() != pageenums.ErrPageNotFound {
 		t.Fatalf("应返回 %q: %v", pageenums.ErrPageNotFound, err)
@@ -44,7 +45,7 @@ func TestPageDetailSuccess(t *testing.T) {
 	_, svc, _, projectID := newPageService(t)
 	created := createPage(t, svc, projectID, "/detail", headingDocument)
 
-	detail, err := svc.Detail(context.Background(), &pagedto.DetailReq{ID: created.ID})
+	detail, err := svc.Detail(context.Background(), &pagedto.DetailReq{ProjectID: projectID, ID: created.ID})
 	if err != nil {
 		t.Fatalf("详情查询失败: %v", err)
 	}
@@ -56,12 +57,28 @@ func TestPageDetailSuccess(t *testing.T) {
 	}
 }
 
+// TestPageDetailCrossProject 跨工程 id 访问应表现为「页面不存在」。
+func TestPageDetailCrossProject(t *testing.T) {
+	_, svc, projects, projectA := newPageService(t)
+	ctx := context.Background()
+	created := createPage(t, svc, projectA, "/scoped", pageDocument)
+
+	projectB, err := projects.Create(ctx, &projectdto.CreateReq{Name: "另一工程"})
+	if err != nil {
+		t.Fatalf("创建第二工程失败: %v", err)
+	}
+	_, err = svc.Detail(ctx, &pagedto.DetailReq{ProjectID: projectB.ID, ID: created.ID})
+	if err == nil || err.Error() != pageenums.ErrPageNotFound {
+		t.Fatalf("跨工程访问应返回 %q: %v", pageenums.ErrPageNotFound, err)
+	}
+}
+
 // ---- 列表 ----
 
 // TestPageListEmpty 空库返回空切片（非 nil）。
 func TestPageListEmpty(t *testing.T) {
-	_, svc, _, _ := newPageService(t)
-	list, err := svc.List(context.Background(), "")
+	_, svc, _, projectID := newPageService(t)
+	list, err := svc.List(context.Background(), &pagedto.ListReq{ProjectID: projectID})
 	if err != nil {
 		t.Fatalf("空列表查询失败: %v", err)
 	}
@@ -83,7 +100,7 @@ func TestPageListAll(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("保存失败: %v", err)
 	}
-	list, err := svc.List(ctx, "")
+	list, err := svc.List(ctx, &pagedto.ListReq{ProjectID: projectID})
 	if err != nil {
 		t.Fatalf("列表查询失败: %v", err)
 	}
@@ -114,7 +131,7 @@ func TestPageListByTheme(t *testing.T) {
 		t.Fatalf("回填主题失败: %v", err)
 	}
 
-	list, err := svc.List(ctx, theme.ID)
+	list, err := svc.List(ctx, &pagedto.ListReq{ProjectID: projectID, ThemeID: theme.ID})
 	if err != nil {
 		t.Fatalf("按主题查询失败: %v", err)
 	}
@@ -193,10 +210,10 @@ func TestPageDetailAfterSoftDelete(t *testing.T) {
 		Update("deleted_at", now).Error; err != nil {
 		t.Fatalf("模拟软删失败: %v", err)
 	}
-	if _, err := svc.Detail(ctx, &pagedto.DetailReq{ID: created.ID}); err == nil || err.Error() != pageenums.ErrPageNotFound {
+	if _, err := svc.Detail(ctx, &pagedto.DetailReq{ProjectID: projectID, ID: created.ID}); err == nil || err.Error() != pageenums.ErrPageNotFound {
 		t.Errorf("软删后详情应不可见: %v", err)
 	}
-	list, err := svc.List(ctx, "")
+	list, err := svc.List(ctx, &pagedto.ListReq{ProjectID: projectID})
 	if err != nil {
 		t.Fatalf("列表查询失败: %v", err)
 	}

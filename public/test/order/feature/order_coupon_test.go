@@ -57,6 +57,24 @@ func (f *orderFixture) orderCount(t *testing.T) int64 {
 	return res.Total
 }
 
+// TestOrderNoCouponIgnoresClientDiscount 无券时客户端 discountTotal 一律忽略（SEC-001）。
+func TestOrderNoCouponIgnoresClientDiscount(t *testing.T) {
+	f := newOrderFixture(t)
+	if f == nil {
+		return
+	}
+	_, vid := f.addProduct(t, "笔记本", 100.00, 10)
+	req := f.createBaseReq(vid, 1)
+	req.DiscountTotal = 10000 // 企图做成 0 元单
+	res, err := f.orders.CreateOrder(context.Background(), req)
+	if err != nil {
+		t.Fatalf("建单失败: %v", err)
+	}
+	if res.Total != 10000 {
+		t.Fatalf("无券时总额应为 10000 分，实际 %d", res.Total)
+	}
+}
+
 // TestOrderCouponAppliesServerSideDiscount 带券建单：折扣按服务端口径算，客户端的金额被忽略。
 func TestOrderCouponAppliesServerSideDiscount(t *testing.T) {
 	f := newOrderFixture(t)
