@@ -65,7 +65,10 @@ func SetupDashboardRoutes(router *gin.Engine,
 	}
 
 	handle := NewHandle(pages, projects, blocks, plugins, collection, admins, roles, perms, menus, depts, rules, authz, navigations)
+	handle.SetProductDataSource(products)
+	handle.SetTemplateWorkbenchDeps(templates, presentations)
 	mailPage := &mailPageHandle{mail: mail}
+	contentTemplatePages := newContentTemplatePageHandle(templates, projects, products, contents)
 
 	// 登录页：不挂认证（未登录请求被中间件 302 到此，独立布局渲染登录表单）。
 	router.GET("/admin/login", handle.LoginPage)
@@ -97,6 +100,9 @@ func SetupDashboardRoutes(router *gin.Engine,
 	authPages.POST("/workbench/seo-score", handle.SEOScore)
 	// 全局块画布预览（工作台块编辑模式 iframe 内嵌）。
 	authPages.GET("/workbench/block/preview", handle.BlockPreview)
+	// 内容模板画布预览（EDT-001）：样例实体 + 模板 AST，GET 已保存 / POST 未保存草稿。
+	authPages.GET("/workbench/template/preview", handle.TemplatePreview)
+	authPages.POST("/workbench/template/preview", handle.TemplatePreviewDraft)
 
 	// /admin/* 后台页面统一挂 Session 认证 + CSRF 校验。
 	// 页面内原生 POST 表单已注入 csrf_token 隐藏域（模板），JS fetch 请求统一带 X-CSRF-Token 头。
@@ -299,6 +305,9 @@ func SetupDashboardRoutes(router *gin.Engine,
 	articlePages := NewArticlePageHandle(contents, projects, templates, presentations, pages)
 	adminPages.GET("/articles", articlePages.ArticlesPage)
 	adminPages.GET("/articles/edit", articlePages.ArticleEditPage)
+	// 内容模板（EDT-001）：列表 + 编辑入口（302 到工作台）。
+	adminPages.GET("/content-templates", contentTemplatePages.ContentTemplatesPage)
+	adminPages.GET("/content-templates/edit", contentTemplatePages.ContentTemplateEditPage)
 	adminPages.POST("/articles/create", builtin.CasbinMiddlewareForPath("/api/content/create"), articlePages.ArticleCreate)
 	adminPages.POST("/articles/update", builtin.CasbinMiddlewareForPath("/api/content/update"), articlePages.ArticleUpdate)
 	adminPages.POST("/articles/delete", builtin.CasbinMiddlewareForPath("/api/content/delete"), articlePages.ArticleDelete)

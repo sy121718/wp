@@ -14,7 +14,7 @@ type PublishedEntityLocator interface {
 	// 的实例。未发布 / 已删除 / 查不到的实体不会出现在结果里 —— 调用方按「没有条目」处理。
 	//
 	// projectID / entityType 为空或 entityIDs 为空时返回空表且不报错：这是正常状态
-	// （站内还没这类内容），不是错误。路径已是最终访问路径（含语言前缀），
-	// 调用方不要再拼语言前缀 —— 拼前缀是 pipeline.LangURLRule 的唯一职责。
-	PublishedEntityPaths(ctx context.Context, projectID, entityType string, entityIDs []string) (map[string]string, error)
+	// （站内还没这类内容），不是错误。lang 为空时取站点默认语言（I18N-013）。
+	// 路径已是最终访问路径（含语言前缀），调用方不要再拼语言前缀。
+	PublishedEntityPaths(ctx context.Context, projectID, entityType, lang string, entityIDs []string) (map[string]string, error)
 }

@@ -183,9 +183,9 @@ type Props struct {
 
 	// —— 筛选（构建期下推到集合源，issue #21 的四个维度）——
 	FilterStatus     string `json:"filterStatus,omitempty" ct:"select,=全部,draft=草稿,published=已发布,archived=已归档,default=,sec=collection,label=状态"`
-	FilterCategoryID string `json:"filterCategoryId,omitempty" ct:"text,maxlen=64,sec=collection,label=分类 id"`
-	FilterBrandID    string `json:"filterBrandId,omitempty" ct:"text,maxlen=64,sec=collection,label=品牌 id"`
-	FilterTagID      string `json:"filterTagId,omitempty" ct:"text,maxlen=64,sec=collection,label=标签 id"`
+	FilterCategoryID string `json:"filterCategoryId,omitempty" ct:"entityref,category,label=分类"`
+	FilterBrandID    string `json:"filterBrandId,omitempty" ct:"entityref,brand,label=品牌"`
+	FilterTagID      string `json:"filterTagId,omitempty" ct:"entityref,tag,label=标签"`
 	// FilterTagIDs 多标签筛选（issue #27）：逗号分隔的标签 id 列表（「热卖」「新品」这类用标签表达）。
 	FilterTagIDs string `json:"filterTagIds,omitempty" ct:"text,maxlen=500,sec=collection,label=标签 id 列表"`
 	// FilterTagMode 多标签语义：any（默认，具备任一）/ all（同时具备全部）。

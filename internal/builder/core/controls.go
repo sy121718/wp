@@ -9,6 +9,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/google/uuid"
 )
 
 // ControlKind 控件类型（声明式描述符，对标 WP register_controls 的控件体系）。
@@ -39,6 +41,8 @@ const (
 	ControlRText     ControlKind = "rtext"     // 三端文本值（Responsive{desktop,tablet,mobile}）
 	ControlNumber    ControlKind = "number"    // 浮点数（min/max 可选，文本输入）
 	ControlCSSDecls  ControlKind = "cssdecls"  // 分号分隔的 CSS 声明（按端覆盖，白名单校验）
+	// ControlEntityRef 实体引用（分类 / 品牌 / 标签 id）：检查器渲染为下拉，值域由集合源可选能力提供。
+	ControlEntityRef ControlKind = "entityref"
 )
 
 // ctTag / ctRegexTag 字段标签：
@@ -233,6 +237,9 @@ func parseControlTag(f reflect.StructField, tag string) (c Control, err error) {
 	if c.Kind == ControlSelect && len(c.Options) == 0 {
 		return c, fmt.Errorf("select 控件必须提供选项")
 	}
+	if c.Kind == ControlEntityRef && len(c.Options) == 0 {
+		return c, fmt.Errorf("entityref 控件必须指定实体类型（如 category）")
+	}
 	return c, nil
 }
 
@@ -314,6 +321,10 @@ func validateControlValue(c Control, fv reflect.Value, nodeID string) (err error
 		case ControlURL:
 			if !IsSafeURL(s) {
 				return msg("链接协议非法: %q", s)
+			}
+		case ControlEntityRef:
+			if _, parseErr := uuid.Parse(s); parseErr != nil {
+				return msg("实体 id 非法: %q", s)
 			}
 		}
 	case reflect.Bool:

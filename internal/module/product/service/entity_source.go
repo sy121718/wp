@@ -106,7 +106,7 @@ func (s *Service) ResolverFor(ctx context.Context, entityType, entityID string) 
 		return &entityResolver{entityType: entityType, values: s.attributeValues(ctx, lang, row)}, nil
 	}
 
-	e, gerr := s.m.Get(ctx, entityID)
+	e, gerr := s.m.Get(ctx, entityID, "")
 	if gerr != nil {
 		return nil, mapNotFound(gerr)
 	}
@@ -209,29 +209,59 @@ func (s *Service) translatedValueLabelsJSON(ctx context.Context, lang string, e 
 // 数组字段（product_attribute.values）不在此处翻 —— 它逐元素取词，见
 // attributeValueTranslations。
 func (s *Service) translateFields(ctx context.Context, lang string, entityType string, values map[string]string) map[string]string {
-	if lang == "" || s.contentStore == nil || len(values) == 0 {
+	if len(values) == 0 {
 		return values
 	}
-	texts := map[string]string{}
-	fields := map[string]string{}
-	for _, f := range productcontract.TranslatableFields(entityType) {
-		if f == "values" {
+	s.translateFieldsBatch(ctx, lang, entityType, []map[string]string{values})
+	return values
+}
+
+// translateFieldsBatch 对多组字段值一次性批量取词（PERF-009：集合解析不再逐商品查库）。
+func (s *Service) translateFieldsBatch(ctx context.Context, lang, entityType string, batches []map[string]string) {
+	if lang == "" || s.contentStore == nil || len(batches) == 0 {
+		return
+	}
+	type workItem struct {
+		batchIdx int
+		field    string
+		context  string
+		source   string
+	}
+	work := make([]workItem, 0, len(batches)*4)
+	hashes := make([]string, 0, len(batches)*4)
+	seenHash := map[string]bool{}
+	for i, values := range batches {
+		if len(values) == 0 {
 			continue
 		}
-		if v, ok := values[f]; ok {
-			contextName := productcontract.FieldContext(entityType, f)
-			texts[contextName] = v
-			fields[contextName] = f
+		for _, f := range productcontract.TranslatableFields(entityType) {
+			if f == "values" {
+				continue
+			}
+			v, ok := values[f]
+			if !ok || !i18n.ShouldTranslateContent(v) {
+				continue
+			}
+			h := i18n.ContentHash(v)
+			if !seenHash[h] {
+				seenHash[h] = true
+				hashes = append(hashes, h)
+			}
+			work = append(work, workItem{
+				batchIdx: i,
+				field:    f,
+				context:  productcontract.FieldContext(entityType, f),
+				source:   v,
+			})
 		}
 	}
-	if len(texts) == 0 {
-		return values
+	if len(hashes) == 0 {
+		return
 	}
-	i18n.TranslateValues(ctx, lang, s.contentStore, texts)
-	for contextName, field := range fields {
-		values[field] = texts[contextName]
+	tr := i18n.NewContentTranslatorWith(ctx, s.contentStore, lang, hashes)
+	for _, item := range work {
+		batches[item.batchIdx][item.field] = tr.TranslateContent(item.source, item.context)
 	}
-	return values
 }
 
 // translateTexts 批量取一组文本在指定语境下的译文（同一语境，逐元素）。

@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 
 	presentationcontract "go_wp/internal/module/presentation/contract"
+	"go_wp/internal/pipeline"
 )
 
 // 编译期断言：本 service 提供访问面解析线上路径需要的只读能力。
@@ -21,12 +22,15 @@ var _ presentationcontract.PublishedEntityLocator = (*Service)(nil)
 //
 // 实现只做两件事：形状过滤（uuid）与查询下推；「已上线」的判定在 SQL 条件里
 // （active_artifact_id IS NOT NULL），不在这里二次过滤。
-func (s *Service) PublishedEntityPaths(ctx context.Context, projectID, entityType string, entityIDs []string) (map[string]string, error) {
+func (s *Service) PublishedEntityPaths(ctx context.Context, projectID, entityType, lang string, entityIDs []string) (map[string]string, error) {
 	ids := normalizeLocatorIDs(entityIDs)
 	if len(ids) == 0 {
 		return map[string]string{}, nil
 	}
-	return s.m.ListActiveURLPaths(ctx, projectID, entityType, ids)
+	if strings.TrimSpace(lang) == "" {
+		lang = pipeline.DefaultLocale(ctx, s.project, projectID)
+	}
+	return s.m.ListActiveURLPaths(ctx, projectID, entityType, lang, ids)
 }
 
 // normalizeEntityIDs 去空、去重、**形状过滤**（uuid），保持首次出现顺序。

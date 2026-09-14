@@ -53,10 +53,10 @@ export const paletteItems = [
     // 商品卡（issue #22）：默认用 item. 前缀 —— 拖进集合组件（商品列表 / cardstack）即成为
     // 「每个商品一张卡」的模板；单独放在页面上时把前缀换成 product. 就绑当前商品实体。
     // 价格用 priceRange（区间），划线价用 comparePrice，标签用 tags（名称数组）。
-    { type: 'core.productCard', label: '商品卡', hint: '吃商品数据的最小展示单元（可作集合卡模板）', props: { imageField: 'item.images', titleField: 'item.name', priceField: 'item.priceRange', comparePriceField: 'item.comparePrice', tagsField: 'item.tags', linkField: 'item.slug', linkPrefix: '/products/', currency: '¥', titleTag: 'h3' } },
+    { type: 'core.productCard', label: '商品卡', hint: '吃商品数据的最小展示单元（可作集合卡模板）', props: { imageField: 'item.images', titleField: 'item.name', priceField: 'item.priceRange', comparePriceField: 'item.comparePrice', tagsField: 'item.tags', linkField: 'item.url', linkPrefix: '', currency: '¥', titleTag: 'h3' } },
     // 商品列表（issue #23）：集合型组件 —— 按筛选维度取一批商品，网格 / 列表铺开。
     // 筛选是构建期下推到集合源的等值维度（状态 / 分类 / 品牌 / 标签）；不分页，「取几条」截断。
-    { type: 'core.productList', label: '商品列表', hint: '网格 / 列表铺开一批商品', props: { collectionLimit: 8, layout: 'grid', columns: 'auto', filterStatus: 'published', imageField: 'item.images', titleField: 'item.name', priceField: 'item.priceRange', comparePriceField: 'item.comparePrice', tagsField: 'item.tags', linkField: 'item.slug', linkPrefix: '/products/', currency: '¥', titleTag: 'h3', emptyText: '暂无商品' } },
+    { type: 'core.productList', label: '商品列表', hint: '网格 / 列表铺开一批商品', props: { collectionLimit: 8, layout: 'grid', columns: 'auto', filterStatus: 'published', imageField: 'item.images', titleField: 'item.name', priceField: 'item.priceRange', comparePriceField: 'item.comparePrice', tagsField: 'item.tags', linkField: 'item.url', linkPrefix: '', currency: '¥', titleTag: 'h3', emptyText: '暂无商品' } },
     // 规格选择器（issue #26）：从商品详情里拆出来的可拖拽部件 —— 拖到自定义详情页模板上，
     // 选规格切组合；每档组合自带实时可用量（片段现取，issue #24）。
     { type: 'core.productSelector', label: '规格选择器', hint: '选规格切组合（可放详情页任意位置）', props: { optionsField: 'product.options', variantsField: 'product.variants', currency: '¥', emptyText: '该商品暂无可选规格' } },

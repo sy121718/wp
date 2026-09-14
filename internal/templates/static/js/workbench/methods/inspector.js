@@ -1,7 +1,7 @@
 // workbench/methods/inspector.js — 检查器面板与事件接线（docs/09 §3 拆分）。
 // 方法以 `this` 互调，由 index.js 用 Object.assign 合并为同一个 workbench 实例。
 // 控件函数已按功能拆分到 methods/controls/*（base/color/corners/spacing/media/text/repeater/misc）。
-import { csrfHeaders, morphHTML, wbLinkedPatch } from '../core.js';
+import { csrfHeaders, meta, morphHTML, wbLinkedPatch } from '../core.js';
 import { fillInspectorSlots, inlineSlots, renderInspectorExtras } from './controls/misc.js';
 import { set } from './controls/base.js';
 import { upgradeNativeSelects, renderFieldHints, refreshFieldHints } from './controls/selects.js';
@@ -18,6 +18,7 @@ export const inspectorMethods = {
                 body.set('nodeId', node.id);
                 body.set('document', JSON.stringify(this.doc));
                 body.set('tab', this.tab || 'content');   // 内容/样式页签由服务端过滤分组
+                if (meta.projectId) body.set('projectId', meta.projectId);
                 fetch('/workbench/inspector', {
                     method: 'POST',
                     credentials: 'same-origin',

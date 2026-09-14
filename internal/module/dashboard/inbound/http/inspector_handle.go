@@ -9,6 +9,7 @@ package dashboardhttp
 // 端点：POST /workbench/inspector（HTMX 片段），参数 document（草稿 JSON）+ nodeId。
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -137,7 +138,8 @@ func (h *Handle) InspectorPanel(c *gin.Context) {
 	}
 	// tab：content / style（空 = 渲染全部，向后兼容旧调用）。
 	tab := strings.TrimSpace(c.PostForm("tab"))
-	sections := buildInspectorSections(items, props, tab)
+	projectID := strings.TrimSpace(c.PostForm("projectId"))
+	sections := buildInspectorSections(c.Request.Context(), h, items, props, tab, projectID)
 	// 重复项面板（折叠项 / 页签）：结构由服务端生成，客户端只绑行为。
 	sections = appendRepeaterPanel(sections, node, props, tab)
 	c.HTML(http.StatusOK, "fragments/inspector_panel", gin.H{
@@ -173,7 +175,7 @@ func findDocNode(doc json.RawMessage, nodeID string) (*docNode, error) {
 }
 
 // buildInspectorSections 把 schema 控件按分组转成模板数据（跳过 hidden 与不满足条件的字段）。
-func buildInspectorSections(items []inspectorSchemaItem, props map[string]any, tab string) []inspectorSection {
+func buildInspectorSections(ctx context.Context, h *Handle, items []inspectorSchemaItem, props map[string]any, tab, projectID string) []inspectorSection {
 	buckets := map[string][]inspectorField{}
 	used := map[string]int{}
 	// corners 合并：radiusTL/TR/BR/BL 与 advanced.radius.topLeft/… 各只渲染一次。
@@ -197,7 +199,7 @@ func buildInspectorSections(items []inspectorSchemaItem, props map[string]any, t
 		if isCornerTailKey(ctl.Key) {
 			continue
 		}
-		f := inspectorFieldOf(ctl, props)
+		f := inspectorFieldOf(ctx, h, ctl, props, projectID)
 		if f.Key == "" {
 			continue
 		}
@@ -255,13 +257,21 @@ func sectionInTab(section, tab string) bool {
 }
 
 // inspectorFieldOf 单个 schema 控件 → 模板字段。
-func inspectorFieldOf(ctl inspectorSchemaItem, props map[string]any) inspectorField {
+func inspectorFieldOf(ctx context.Context, h *Handle, ctl inspectorSchemaItem, props map[string]any, projectID string) inspectorField {
 	f := inspectorField{Key: ctl.Key, Label: ctl.Label, Min: ctl.Min, Max: ctl.Max, Step: ctl.Step}
 	if f.Label == "" {
 		f.Label = ctl.Key
 	}
 	value := propString(props, ctl.Key)
 	switch ctl.Kind {
+	case "entityref":
+		f.UI = "select"
+		f.Value = value
+		refKind := ""
+		if len(ctl.Options) > 0 {
+			refKind = ctl.Options[0].Value
+		}
+		f.Options = entityRefInspectorOptions(ctx, h, projectID, refKind, value)
 	case "bool":
 		f.UI = "bool"
 		f.Bool = value == "true"
