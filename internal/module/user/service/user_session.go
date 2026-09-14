@@ -228,7 +228,9 @@ func (s *Service) Login(ctx context.Context, req *userdto.LoginReq, meta Session
 	if uerr := cache.SetJSON(ctx, sessionKey(token), sess, ttl); uerr != nil {
 		// Redis 写不进去 → 会话并不存在：把台账行撤销掉，
 		// 不留一条「查得到却用不了」的记录（那会变成用户在设备列表里看到一个假设备）。
-		_, _ = s.sm.RevokeByTokenHash(ctx, tokenHash(token), now)
+		if _, rerr := s.sm.RevokeByTokenHash(ctx, tokenHash(token), now); rerr != nil {
+			logger.Scene("user").Error(rerr, "登录失败回滚会话台账失败")
+		}
 		return nil, uerr
 	}
 
@@ -257,8 +259,11 @@ func (s *Service) Logout(ctx context.Context, token string) (err error) {
 	}
 	if uerr := cache.Delete(ctx, sessionKey(token)); uerr != nil {
 		logger.Scene("user").Error(uerr, "登出时删除 Redis 会话失败")
+		return errors.New(userenums.ErrLogoutFailed)
 	}
-	_, _ = s.sm.RevokeByTokenHash(ctx, tokenHash(token), time.Now())
+	if _, rerr := s.sm.RevokeByTokenHash(ctx, tokenHash(token), time.Now()); rerr != nil {
+		logger.Scene("user").Error(rerr, "登出时撤销会话台账失败")
+	}
 	return nil
 }
 
@@ -358,7 +363,9 @@ func (s *Service) RevokeSession(ctx context.Context, userID, rowID uint64) (err 
 		return uerr
 	}
 	// 台账里存的就是 Redis key 的后半段，直接删得掉，不需要反查明文令牌。
-	s.dropRedisSession(row.TokenHash)
+	if err := s.dropRedisSession(row.TokenHash); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -385,7 +392,9 @@ func (s *Service) RevokeOtherSessions(ctx context.Context, userID uint64, curren
 		if keep != "" && r.TokenHash == keep {
 			continue
 		}
-		s.dropRedisSession(r.TokenHash)
+		if err := s.dropRedisSession(r.TokenHash); err != nil {
+			return n, err
+		}
 	}
 	return n, nil
 }
@@ -403,19 +412,24 @@ func (s *Service) RevokeAllSessions(ctx context.Context, userID uint64) (err err
 		return rerr
 	}
 	for _, r := range rows {
-		s.dropRedisSession(r.TokenHash)
+		if err := s.dropRedisSession(r.TokenHash); err != nil {
+			return err
+		}
 	}
 	return nil
 }
 
-// dropRedisSession 删除令牌哈希对应的 Redis 会话（失败只记日志，不回滚已完成的台账撤销）。
-func (s *Service) dropRedisSession(hash string) {
+// dropRedisSession 删除令牌哈希对应的 Redis 会话。
+// 踢设备场景下 Redis 删除失败必须返回错误（会话仍有效）。
+func (s *Service) dropRedisSession(hash string) error {
 	if strings.TrimSpace(hash) == "" {
-		return
+		return nil
 	}
 	if err := cache.Delete(context.Background(), sessionKeyByHash(hash)); err != nil {
 		logger.Scene("user").Error(err, "删除 Redis 会话失败")
+		return errors.New(userenums.ErrLogoutFailed)
 	}
+	return nil
 }
 
 // optString 空串转 nil（库里用 NULL 表达「未提供」，不用空串）。

@@ -47,6 +47,7 @@ const (
 	ErrPasswordLoginUnavailable = "该账号不支持密码登录，请使用第三方账号登录"
 	ErrSessionNotFound          = "登录设备不存在或已被移除"
 	ErrSessionExpired           = "登录已过期，请重新登录"
+	ErrLogoutFailed             = "退出登录失败，请重试"
 	ErrOldPasswordWrong         = "当前密码不正确"
 	ErrNewPasswordSame          = "新密码不能与当前密码相同"
 	ErrProfileVisibilityInvalid = "主页可见性取值不合法"

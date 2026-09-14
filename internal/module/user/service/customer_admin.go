@@ -24,6 +24,7 @@ import (
 	userdto "go_wp/internal/module/user/dto"
 	userenums "go_wp/internal/module/user/enums"
 	usermodel "go_wp/internal/module/user/model"
+	"go_wp/pkg/utils"
 )
 
 // 客户列表的每页条数：默认与上限。
@@ -45,17 +46,7 @@ func (s *Service) ListCustomers(ctx context.Context, req *userdto.CustomerListRe
 		// 而且交换后的结果与运营预期的往往相反（他以为筛的是 9 月，实际给了 10 月）。
 		return nil, errors.New(userenums.ErrInvalidParam)
 	}
-	limit := req.Limit
-	if limit <= 0 {
-		limit = customerDefaultPageSize
-	}
-	if limit > customerMaxPageSize {
-		limit = customerMaxPageSize
-	}
-	offset := req.Offset
-	if offset < 0 {
-		offset = 0
-	}
+	limit, offset := utils.NormalizeLimitOffset(req.Limit, req.Offset, customerDefaultPageSize, customerMaxPageSize)
 
 	now := time.Now()
 	list, total, lerr := s.m.List(ctx, usermodel.UserFilter{
