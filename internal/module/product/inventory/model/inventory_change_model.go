@@ -255,6 +255,18 @@ func (m *Model) movementRows(ctx context.Context) *gorm.DB {
 		Joins("LEFT JOIN inventory_change_reasons AS r ON r.id = mv.reason_id")
 }
 
+// ExistsMovementBySource 是否已有指定来源引用的库存流水（采购/生产入库幂等重试用）。
+func (m *Model) ExistsMovementBySource(ctx context.Context, projectID, sourceType, sourceRef string) (bool, error) {
+	if projectID == "" || sourceType == "" || sourceRef == "" {
+		return false, nil
+	}
+	var count int64
+	err := m.DB(ctx).Table("inventory_stock_movements").
+		Where("project_id = ? AND source_type = ? AND source_ref = ?", projectID, sourceType, sourceRef).
+		Limit(1).Count(&count).Error
+	return count > 0, err
+}
+
 // ListMovementRows 流水列表（按条件过滤 + 分页；limit <= 0 表示不限条数）。
 //
 // 排序固定「时间倒序 → id 倒序」：同一批次的流水顺序确定，便于后台核对与对比。

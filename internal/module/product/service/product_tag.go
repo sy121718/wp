@@ -426,7 +426,7 @@ func (s *Service) recalcProjectAutoTags(ctx context.Context, productID string) (
 	if productID == "" {
 		return nil
 	}
-	p, gerr := s.m.Get(ctx, productID)
+	p, gerr := s.m.Get(ctx, productID, "")
 	if gerr != nil {
 		if errors.Is(gerr, gorm.ErrRecordNotFound) {
 			return nil

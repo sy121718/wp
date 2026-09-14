@@ -99,6 +99,10 @@ type Request struct {
 	// 渲染失败时这些 cookie **不会**被写出：一个报错的响应配上「购物车已更新」的
 	// cookie，会让前端与服务端各说各话。
 	SetCookies []ResponseCookie
+	// Lang 本次片段请求语言（endpoint 解析 ?lang= 并按 project_locales 校验后写入，I18N-011）。
+	Lang string
+	// T 构建期冻结的 sys_i18n 取词函数（签名 func(key, fallback string) string）。
+	T func(key, fallback string) string
 	// SitePagesOf 解析「系统页面槽位 → 当前语言线上路径」（BIZ-1）。
 	//
 	// 做成**函数**而不是预填的 map：多数片段（库存、商品列表）不需要槽位，

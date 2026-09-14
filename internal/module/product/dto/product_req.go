@@ -84,7 +84,8 @@ type UpdateReq struct {
 
 // GetReq 按 ID 查询。
 type GetReq struct {
-	ID string `form:"id" binding:"required"`
+	ProjectID string `form:"projectId" json:"projectId"`
+	ID        string `form:"id" binding:"required"`
 }
 
 // ListReq 商品列表（分页 + 可选过滤）。

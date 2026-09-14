@@ -229,6 +229,12 @@ func (m *Model) CountNonZeroStocks(ctx context.Context, warehouseID string) (n i
 	return n, err
 }
 
+// CountNonZeroStocksByVariant 某变体在各仓的非零库存行数（删变体前的守卫依据）。
+func (m *Model) CountNonZeroStocksByVariant(ctx context.Context, variantID string) (n int64, err error) {
+	err = m.StockDB(ctx).Where("variant_id = ? AND quantity <> 0", variantID).Count(&n).Error
+	return n, err
+}
+
 // stockRows 库存行 + 仓库信息的只读投影查询（本模块两表 join 的唯一定义处）。
 func (m *Model) stockRows(ctx context.Context) *gorm.DB {
 	return m.db.WithContext(ctx).Table("inventory_stocks AS s").

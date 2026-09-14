@@ -46,15 +46,22 @@ func (s *Service) SetStalePropagator(p func(ctx context.Context, blockID string)
 }
 
 // SetReferenceChecker 注入引用检查器（dashboard 在 page/project 装配后绑定，
-// 与 SetStalePropagator 同模式）。未注入时删除/切换不做引用拦截。
+// 与 SetStalePropagator 同模式）。生产装配必须调用 RequireWiring。
 func (s *Service) SetReferenceChecker(r func(ctx context.Context, blockID string) (bool, error)) {
 	s.referenced = r
 }
 
-// blockReferenced 判断块是否仍被引用（检查器未注入视为未引用）。
+// RequireWiring 编排完成后调用：传播器或引用检查器未注入则 fail-fast。
+func (s *Service) RequireWiring() {
+	if s.propagate == nil || s.referenced == nil {
+		panic("block.Service: stale 传播器与引用检查器必须注入（dashboard 装配后调用 RequireWiring）")
+	}
+}
+
+// blockReferenced 判断块是否仍被引用（检查器未注入视为仍被引用，宁拒勿删）。
 func (s *Service) blockReferenced(ctx context.Context, blockID string) bool {
 	if s.referenced == nil {
-		return false
+		return true
 	}
 	ok, err := s.referenced(ctx, blockID)
 	if err != nil {
@@ -73,7 +80,10 @@ func (s *Service) propagateStale(ctx context.Context, blockID, reuseMode string)
 		return // 一次性复制的片段不传播 stale
 	}
 	if s.propagate == nil {
-		logger.Scene("block").With("block_id", blockID).Warn("stale 传播器未注入，引用页面不会标待重建")
+		logger.Scene("block").With("block_id", blockID).Error(
+			errors.New("stale 传播器未注入"),
+			"全局块变更未传播 stale，请检查 dashboard 装配是否调用 RequireWiring",
+		)
 		return
 	}
 	if err := s.propagate(ctx, blockID); err != nil {
@@ -108,11 +118,17 @@ func (s *Service) List(ctx context.Context, req *blockdto.ListReq) (res []blockd
 
 // Detail 按 ID 查询块。
 func (s *Service) Detail(ctx context.Context, req *blockdto.DetailReq) (res *blockdto.BlockResp, err error) {
-	// 参数缺失（nil/空 ID）是调用方错误，与「ID 对应块不存在」区分开。
-	if req == nil || strings.TrimSpace(req.ID) == "" {
+	// 参数缺失（nil/空 ID/空 projectID）是调用方错误，与「ID 对应块不存在」区分开。
+	if req == nil || strings.TrimSpace(req.ID) == "" || strings.TrimSpace(req.ProjectID) == "" {
 		return nil, ErrParamRequired
 	}
-	entity, err := s.getExistingBlock(ctx, req.ID)
+	if err = s.requireProject(ctx, req.ProjectID); err != nil {
+		return nil, err
+	}
+	entity, err := s.model.GetByID(ctx, req.ID, req.ProjectID)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, ErrNotFound
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -275,7 +291,7 @@ func (s *Service) getExistingBlock(ctx context.Context, id string) (e *blockmode
 	if _, perr := uuid.Parse(strings.TrimSpace(id)); perr != nil {
 		return nil, ErrNotFound
 	}
-	e, err = s.model.GetByID(ctx, id)
+	e, err = s.model.GetByID(ctx, id, "")
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, ErrNotFound
 	}

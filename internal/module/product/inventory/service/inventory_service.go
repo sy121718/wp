@@ -24,6 +24,7 @@ import (
 	inventorydto "go_wp/internal/module/product/inventory/dto"
 	inventoryenums "go_wp/internal/module/product/inventory/enums"
 	inventorymodel "go_wp/internal/module/product/inventory/model"
+	"go_wp/pkg/utils"
 	projectcontract "go_wp/internal/module/project/contract"
 )
 
@@ -105,18 +106,10 @@ func (s *Service) resolveProjectID(ctx context.Context, projectID string) (id st
 
 // pageArgs 归一化分页参数。
 func pageArgs(req *inventorydto.ListStockReq) (page, size int) {
-	page, size = 1, defaultPageSize
-	if req == nil {
-		return page, size
+	inPage, inSize := 0, 0
+	if req != nil {
+		inPage, inSize = req.Page, req.Size
 	}
-	if req.Page > 0 {
-		page = req.Page
-	}
-	if req.Size > 0 {
-		size = req.Size
-		if size > maxPageSize {
-			size = maxPageSize
-		}
-	}
-	return page, size
+	paging := utils.NormalizePaging(inPage, inSize, defaultPageSize, maxPageSize)
+	return paging.Page, paging.Size
 }

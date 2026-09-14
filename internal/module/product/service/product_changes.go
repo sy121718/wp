@@ -22,6 +22,8 @@ import (
 	masterdataenums "go_wp/internal/module/masterdata/enums"
 	productcontract "go_wp/internal/module/product/contract"
 	productmodel "go_wp/internal/module/product/model"
+
+	"gorm.io/gorm"
 )
 
 // productChangeSnapshot 商品主数据的字段白名单快照。
@@ -75,7 +77,7 @@ func (s *Service) variantProjectID(ctx context.Context, v *productmodel.VariantE
 	if s.changes == nil || v == nil {
 		return "", nil
 	}
-	p, gerr := s.m.Get(ctx, v.ProductID)
+	p, gerr := s.m.Get(ctx, v.ProductID, "")
 	if gerr != nil {
 		return "", mapNotFound(gerr)
 	}
@@ -91,6 +93,13 @@ func (s *Service) recordChanges(ctx context.Context, inputs ...*masterdatacontra
 		return nil
 	}
 	return s.changes.RecordChanges(ctx, inputs)
+}
+
+func (s *Service) recordChangesTx(ctx context.Context, tx *gorm.DB, inputs ...*masterdatacontract.ChangeInput) (err error) {
+	if s.changes == nil || len(inputs) == 0 {
+		return nil
+	}
+	return s.changes.RecordChangesTx(ctx, tx, inputs)
 }
 
 // productChangeInput 组装商品级变更输入。

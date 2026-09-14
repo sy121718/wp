@@ -67,6 +67,31 @@ type userFormData struct {
 	LoggedIn bool
 }
 
+type userLoginFormView struct {
+	userFormData
+	Labels userLoginLabels
+}
+
+type userRegisterFormView struct {
+	userFormData
+	Labels userRegisterLabels
+}
+
+type userForgotFormView struct {
+	userFormData
+	Labels userForgotLabels
+}
+
+type userResetFormView struct {
+	userFormData
+	Labels userResetLabels
+}
+
+type userAccountPanelView struct {
+	userFormData
+	Labels userAccountPanelLabels
+}
+
 // renderUserForm 生成某个形态的渲染函数。
 func renderUserForm(mode userFormMode) func(ctx context.Context, r *Request) (string, error) {
 	return func(_ context.Context, r *Request) (string, error) {
@@ -86,6 +111,19 @@ func renderUserForm(mode userFormMode) func(ctx context.Context, r *Request) (st
 		if _, ok := visitorIDOf(r); ok {
 			data.LoggedIn = true
 		}
-		return templates.RenderFragment("user_"+string(mode), data)
+		switch mode {
+		case userFormLogin:
+			return templates.RenderFragment("user_login", userLoginFormView{userFormData: data, Labels: userLoginLabelsOf(r)})
+		case userFormRegister:
+			return templates.RenderFragment("user_register", userRegisterFormView{userFormData: data, Labels: userRegisterLabelsOf(r)})
+		case userFormForgot:
+			return templates.RenderFragment("user_forgot", userForgotFormView{userFormData: data, Labels: userForgotLabelsOf(r)})
+		case userFormReset:
+			return templates.RenderFragment("user_reset", userResetFormView{userFormData: data, Labels: userResetLabelsOf(r)})
+		case userFormAccount:
+			return templates.RenderFragment("user_account", userAccountPanelView{userFormData: data, Labels: userAccountPanelLabelsOf(r)})
+		default:
+			return "", nil
+		}
 	}
 }

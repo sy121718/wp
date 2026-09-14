@@ -104,7 +104,7 @@ func (s *Service) GetBundleConfig(ctx context.Context, req *productdto.GetBundle
 	if req == nil || strings.TrimSpace(req.ProductID) == "" {
 		return nil, errors.New(productenums.ErrInvalidParam)
 	}
-	e, gerr := s.m.Get(ctx, strings.TrimSpace(req.ProductID))
+	e, gerr := s.m.Get(ctx, strings.TrimSpace(req.ProductID), "")
 	if gerr != nil {
 		return nil, mapNotFound(gerr)
 	}
@@ -116,7 +116,7 @@ func (s *Service) SetBundleConfig(ctx context.Context, req *productdto.SetBundle
 	if req == nil || strings.TrimSpace(req.ProductID) == "" {
 		return nil, errors.New(productenums.ErrInvalidParam)
 	}
-	e, gerr := s.m.Get(ctx, strings.TrimSpace(req.ProductID))
+	e, gerr := s.m.Get(ctx, strings.TrimSpace(req.ProductID), "")
 	if gerr != nil {
 		return nil, mapNotFound(gerr)
 	}

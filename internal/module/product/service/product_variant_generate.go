@@ -58,7 +58,7 @@ func (s *Service) GenerateVariants(ctx context.Context, req *productdto.Generate
 	if req == nil || strings.TrimSpace(req.ProductID) == "" {
 		return nil, errors.New(productenums.ErrInvalidParam)
 	}
-	p, gerr := s.m.Get(ctx, req.ProductID)
+	p, gerr := s.m.Get(ctx, req.ProductID, "")
 	if gerr != nil {
 		return nil, mapNotFound(gerr)
 	}

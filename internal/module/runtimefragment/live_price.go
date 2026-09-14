@@ -119,7 +119,9 @@ func renderProductLivePrice(ctx context.Context, r *Request) (string, error) {
 		if !snap.Enabled {
 			// 已下架是产物里没有的事实，且与「价格对不对」无关，独立提示。
 			view.Items = append(view.Items, livePriceItem{
-				VariantID: pair.id, Message: "该规格已下架，以结算为准", Changed: true,
+				VariantID: pair.id,
+				Message:   r.tr("site.fragment.live_price.delisted", "该规格已下架，以结算为准"),
+				Changed:   true,
 			})
 			continue
 		}
@@ -128,10 +130,12 @@ func renderProductLivePrice(ctx context.Context, r *Request) (string, error) {
 			// 出现两个价，正是本方案要避免的）。
 			continue
 		}
+		amount := currency + centsToYuanText(snap.Price)
 		view.Items = append(view.Items, livePriceItem{
 			VariantID: pair.id,
-			Message:   "价格已更新为 " + currency + centsToYuanText(snap.Price) + "，以结算为准",
-			Changed:   true,
+			Message: fmt.Sprintf(
+				r.tr("site.fragment.live_price.updated", "价格已更新为 %s，以结算为准"), amount),
+			Changed: true,
 		})
 	}
 	if len(view.Items) == 0 {

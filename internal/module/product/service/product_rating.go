@@ -31,7 +31,7 @@ func (s *Service) AddRating(ctx context.Context, req *productdto.AddRatingReq) (
 	if req.Score < 0 || req.Score > maxRatingScore {
 		return nil, errors.New(productenums.ErrInvalidParam)
 	}
-	product, err := s.m.Get(ctx, strings.TrimSpace(req.ProductID))
+	product, err := s.m.Get(ctx, strings.TrimSpace(req.ProductID), "")
 	if err != nil {
 		return nil, mapNotFound(err)
 	}
@@ -59,7 +59,7 @@ func (s *Service) ListRatings(ctx context.Context, req *productdto.ListRatingsRe
 	if req == nil || strings.TrimSpace(req.ProductID) == "" {
 		return nil, errors.New(productenums.ErrInvalidParam)
 	}
-	if _, err = s.m.Get(ctx, strings.TrimSpace(req.ProductID)); err != nil {
+	if _, err = s.m.Get(ctx, strings.TrimSpace(req.ProductID), ""); err != nil {
 		return nil, mapNotFound(err)
 	}
 	return s.ratingRespOf(ctx, strings.TrimSpace(req.ProductID))

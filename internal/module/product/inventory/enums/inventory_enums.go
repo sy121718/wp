@@ -146,7 +146,8 @@ const (
 	DirectionAdjust = "adjust"
 )
 
-// 缓存同步台账状态取值。
+// 缓存同步台账状态取值（历史：对应表 inventory_stock_cache_syncs，迁移 121 已删除；
+// 常量仍被 legacy DTO/响应字段引用，勿用于新逻辑）。
 const (
 	CacheSyncOK     = "ok"
 	CacheSyncFailed = "failed"

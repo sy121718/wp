@@ -105,6 +105,26 @@ type userAccountFormData struct {
 	Sessions []*userdto.SessionItem
 }
 
+type userAccountProfileView struct {
+	userAccountFormData
+	Labels userAccountProfileLabels
+}
+
+type userAccountPreferenceView struct {
+	userAccountFormData
+	Labels userAccountPreferenceLabels
+}
+
+type userAccountPasswordView struct {
+	userAccountFormData
+	Labels userAccountPasswordLabels
+}
+
+type userAccountSessionsView struct {
+	userAccountFormData
+	Labels userAccountSessionsLabels
+}
+
 // renderAccountForm 生成某个形态的渲染函数。
 func renderAccountForm(fragment string) func(ctx context.Context, r *Request) (string, error) {
 	spec, ok := accountFormSpecs[fragment]
@@ -123,15 +143,29 @@ func renderAccountForm(fragment string) func(ctx context.Context, r *Request) (s
 			LoginURL:   slots[pageenums.SiteSlotLogin],
 			AccountURL: accountPageURL(slots),
 		}
+		render := func(data userAccountFormData) (string, error) {
+			switch fragment {
+			case accountFragmentProfile:
+				return templates.RenderFragment(spec.template, userAccountProfileView{userAccountFormData: data, Labels: userAccountProfileLabelsOf(r)})
+			case accountFragmentPreference:
+				return templates.RenderFragment(spec.template, userAccountPreferenceView{userAccountFormData: data, Labels: userAccountPreferenceLabelsOf(r)})
+			case accountFragmentPassword:
+				return templates.RenderFragment(spec.template, userAccountPasswordView{userAccountFormData: data, Labels: userAccountPasswordLabelsOf(r)})
+			case accountFragmentSessions:
+				return templates.RenderFragment(spec.template, userAccountSessionsView{userAccountFormData: data, Labels: userAccountSessionsLabelsOf(r)})
+			default:
+				return "", nil
+			}
+		}
 		userID, ok := visitorIDOf(r)
 		if !ok {
 			// 未登录：没有任何可渲染的数据，也不必查库。
 			data.NeedLogin = true
-			return templates.RenderFragment(spec.template, data)
+			return render(data)
 		}
 		if visitorAccountPort == nil {
 			data.Unavailable = true
-			return templates.RenderFragment(spec.template, data)
+			return render(data)
 		}
 		if spec.needAccount {
 			acc, err := visitorAccountPort.AccountOf(ctx, userID)
@@ -142,7 +176,7 @@ func renderAccountForm(fragment string) func(ctx context.Context, r *Request) (s
 			}
 			if acc == nil {
 				data.Unavailable = true
-				return templates.RenderFragment(spec.template, data)
+				return render(data)
 			}
 			data.Account = acc
 		}
@@ -153,7 +187,7 @@ func renderAccountForm(fragment string) func(ctx context.Context, r *Request) (s
 			}
 			data.Sessions = items
 		}
-		return templates.RenderFragment(spec.template, data)
+		return render(data)
 	}
 }
 

@@ -91,7 +91,7 @@ func renderVariantAvailability(ctx context.Context, r *Request) (string, error) 
 			Available: n,
 			Known:     known,
 			InStock:   known && n > 0,
-			Message:   availabilityMessage(known, n),
+			Message:   availabilityMessageOf(r, known, n),
 		})
 	}
 	return templates.RenderFragment("variant_availability", view)
@@ -113,21 +113,4 @@ func splitVariantIDs(raw string) []string {
 		}
 	}
 	return out
-}
-
-// availabilityMessage 把可用量翻成顾客能读的结论。
-//
-// 「未知」与「为 0」必须区分：查不到（变体已删 / 端口未接入）说「以结算时库存为准」，
-// 查到 0 才说「暂时缺货」—— 把未知说成缺货会让下架商品一直显示缺货，误导顾客。
-func availabilityMessage(known bool, n int) string {
-	switch {
-	case !known:
-		return "以结算时库存为准"
-	case n <= 0:
-		return "暂时缺货"
-	case n <= AvailabilityLowStockThreshold:
-		return fmt.Sprintf("仅剩 %d 件", n)
-	default:
-		return "库存充足"
-	}
 }

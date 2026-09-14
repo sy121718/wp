@@ -16,6 +16,7 @@ package runtimefragment
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -55,8 +56,10 @@ type bundleConfiguratorView struct {
 	ProductID   string
 	ProductName string
 	Price       string
+	PriceLabel  string
 	TotalHint   string
 	Items       []bundleOptionView
+	Labels      bundleConfiguratorLabels
 }
 
 // bundleOptionView 一个选项的展示数据（数量上限为 0 时按「不设上限」呈现）。
@@ -69,17 +72,20 @@ type bundleOptionView struct {
 	MinQty       int
 	MaxAttr      string
 	MaxText      string
+	OptionMeta   string
 	Available    int
 	Disabled     bool
 }
 
 // bundleResultView 校验结论片段的模板数据。
 type bundleResultView struct {
-	OK         bool
-	Message    string
-	TotalQty   int
-	TotalPrice string
-	Items      []bundleResultItemView
+	OK          bool
+	Message     string
+	SummaryLine string
+	TotalQty    int
+	TotalPrice  string
+	Items       []bundleResultItemView
+	Labels      bundleConfiguratorLabels
 }
 
 type bundleResultItemView struct {
@@ -88,6 +94,7 @@ type bundleResultItemView struct {
 	Qty         int
 	UnitPrice   string
 	Available   int
+	LineText    string
 }
 
 // renderBundleConfigurator 渲染配置器（GET /_fragments/bundleConfigurator?productId=…）。
@@ -103,23 +110,28 @@ func renderBundleConfigurator(ctx context.Context, r *Request) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	price := formatAmount(data.BasePrice)
 	view := bundleConfiguratorView{
 		ProductID:   data.ProductID,
 		ProductName: data.ProductName,
-		Price:       formatAmount(data.BasePrice),
-		TotalHint:   totalHint(data.Config),
+		Price:       price,
+		PriceLabel:  bundlePriceLine(r, price),
+		TotalHint:   totalHint(r, data.Config),
 		Items:       make([]bundleOptionView, 0, len(data.Options)),
+		Labels:      bundleConfiguratorLabelsOf(r),
 	}
 	for _, o := range data.Options {
+		maxT := maxText(r, o.MaxQty)
 		view.Items = append(view.Items, bundleOptionView{
 			VariantID:    o.VariantID,
 			SKUCode:      o.SKUCode,
 			ProductName:  o.ProductName,
-			RequiredText: requiredText(o.Required),
+			RequiredText: requiredText(r, o.Required),
 			DefaultQty:   o.DefaultQty,
 			MinQty:       o.MinQty,
 			MaxAttr:      maxAttr(o.MaxQty),
-			MaxText:      maxText(o.MaxQty),
+			MaxText:      maxT,
+			OptionMeta:   bundleOptionMetaLine(r, o.MinQty, maxT, o.Available),
 			Available:    o.Available,
 			Disabled:     !o.Enabled,
 		})
@@ -151,7 +163,7 @@ func renderBundleConfiguratorCheck(ctx context.Context, r *Request) (string, err
 				if cerr != nil {
 					// 非整数数量：按参数错误呈现给买家（不是 500）。
 					return templates.RenderFragment("bundle_configurator_result", bundleResultView{
-						OK: false, Message: bundleMessage(productenums.ErrBundleQtyInvalid),
+						OK: false, Message: bundleMessage(r, productenums.ErrBundleQtyInvalid), Labels: bundleConfiguratorLabelsOf(r),
 					})
 				}
 				qty = n
@@ -165,20 +177,25 @@ func renderBundleConfiguratorCheck(ctx context.Context, r *Request) (string, err
 	})
 	if err != nil {
 		return templates.RenderFragment("bundle_configurator_result", bundleResultView{
-			OK: false, Message: bundleMessage(err.Error()),
+			OK: false, Message: bundleMessage(r, err.Error()), Labels: bundleConfiguratorLabelsOf(r),
 		})
 	}
+	totalPrice := formatAmount(res.TotalPrice)
+	msg := r.tr("site.fragment.bundle.calc_ok", "已按当前数量计算套餐价")
 	view := bundleResultView{
-		OK:         true,
-		Message:    "已按当前数量计算套餐价",
-		TotalQty:   res.TotalQty,
-		TotalPrice: formatAmount(res.TotalPrice),
-		Items:      make([]bundleResultItemView, 0, len(res.Items)),
+		OK:          true,
+		Message:     msg,
+		SummaryLine: bundleResultSummaryLine(r, msg, totalPrice, res.TotalQty),
+		TotalQty:    res.TotalQty,
+		TotalPrice:  totalPrice,
+		Items:       make([]bundleResultItemView, 0, len(res.Items)),
+		Labels:      bundleConfiguratorLabelsOf(r),
 	}
 	for _, it := range res.Items {
 		view.Items = append(view.Items, bundleResultItemView{
 			SKUCode: it.SKUCode, ProductName: it.ProductName, Qty: it.Qty,
 			UnitPrice: formatAmount(it.UnitPrice), Available: it.Available,
+			LineText: bundleResultItemLine(r, it.ProductName, it.SKUCode, it.Qty, it.Available),
 		})
 	}
 	return templates.RenderFragment("bundle_configurator_result", view)
@@ -190,11 +207,11 @@ func formatAmount(v float64) string {
 	return strconv.FormatFloat(v, 'f', 2, 64)
 }
 
-func requiredText(required bool) string {
+func requiredText(r *Request, required bool) string {
 	if required {
-		return "必选"
+		return r.tr("site.fragment.bundle.required", "必选")
 	}
-	return "可选"
+	return r.tr("site.fragment.bundle.optional", "可选")
 }
 
 // maxAttr 数量输入的 max 属性（不设上限时返回空串，模板据此省略该属性）。
@@ -205,26 +222,26 @@ func maxAttr(maxQty int) string {
 	return ""
 }
 
-func maxText(maxQty int) string {
+func maxText(r *Request, maxQty int) string {
 	if maxQty > 0 {
-		return strconv.Itoa(maxQty) + " 件"
+		return fmt.Sprintf(r.tr("site.fragment.bundle.max_pieces", "%d 件"), maxQty)
 	}
-	return "不限"
+	return r.tr("site.fragment.bundle.unlimited", "不限")
 }
 
 // totalHint 整单件数区间的可读描述。
-func totalHint(cfg productdto.BundleConfig) string {
+func totalHint(r *Request, cfg productdto.BundleConfig) string {
 	min := cfg.MinTotalQty
 	max := cfg.MaxTotalQty
 	switch {
 	case min > 0 && max > 0:
-		return "整单 " + strconv.Itoa(min) + " ~ " + strconv.Itoa(max) + " 件"
+		return fmt.Sprintf(r.tr("site.fragment.bundle.total_range", "整单 %d ~ %d 件"), min, max)
 	case min > 0:
-		return "整单至少 " + strconv.Itoa(min) + " 件"
+		return fmt.Sprintf(r.tr("site.fragment.bundle.total_min", "整单至少 %d 件"), min)
 	case max > 0:
-		return "整单最多 " + strconv.Itoa(max) + " 件"
+		return fmt.Sprintf(r.tr("site.fragment.bundle.total_max", "整单最多 %d 件"), max)
 	default:
-		return "整单件数不限"
+		return r.tr("site.fragment.bundle.total_unlimited", "整单件数不限")
 	}
 }
 
@@ -232,31 +249,31 @@ func totalHint(cfg productdto.BundleConfig) string {
 //
 // 访问面自持文案（后台的 enums key 走 admin 的 i18n 链路）：片段返回的是公开站点的 HTML，
 // 不能把内部错误码原样显示给访客。未知错误码回退成一句通用提示，绝不漏出内部细节。
-func bundleMessage(code string) string {
+func bundleMessage(r *Request, code string) string {
 	switch code {
 	case productenums.ErrBundleNotConfigured:
-		return "该商品未配置可选规格"
+		return r.tr("site.fragment.bundle.not_configured", "该商品未配置可选规格")
 	case productenums.ErrBundleOptionRequired:
-		return "有必选项还没选数量"
+		return r.tr("site.fragment.bundle.option_required", "有必选项还没选数量")
 	case productenums.ErrBundleQtyInvalid:
-		return "数量必须是整数且不为负"
+		return r.tr("site.fragment.bundle.qty_invalid", "数量必须是整数且不为负")
 	case productenums.ErrBundleQtyBelowMin:
-		return "有选项的数量低于该项的最小数量"
+		return r.tr("site.fragment.bundle.qty_below_min", "有选项的数量低于该项的最小数量")
 	case productenums.ErrBundleQtyAboveMax:
-		return "有选项的数量超过了该项的最大数量"
+		return r.tr("site.fragment.bundle.qty_above_max", "有选项的数量超过了该项的最大数量")
 	case productenums.ErrBundleTotalBelowMin:
-		return "整单总件数未达到最小购买数量"
+		return r.tr("site.fragment.bundle.total_below_min", "整单总件数未达到最小购买数量")
 	case productenums.ErrBundleTotalAboveMax:
-		return "整单总件数超过了上限"
+		return r.tr("site.fragment.bundle.total_above_max", "整单总件数超过了上限")
 	case productenums.ErrBundleQtyAboveStock:
-		return "有选项的数量超过了当前可用库存"
+		return r.tr("site.fragment.bundle.qty_above_stock", "有选项的数量超过了当前可用库存")
 	case productenums.ErrBundleVariantNotInConfig:
-		return "选择的规格不属于该套餐"
+		return r.tr("site.fragment.bundle.variant_not_in_config", "选择的规格不属于该套餐")
 	case productenums.ErrBundleVariantDuplicated:
-		return "同一个规格重复提交了数量"
+		return r.tr("site.fragment.bundle.variant_dup", "同一个规格重复提交了数量")
 	case productenums.ErrBundleStockUnavailable:
-		return "暂时无法确认库存，请稍后再试"
+		return r.tr("site.fragment.bundle.stock_unavailable", "暂时无法确认库存，请稍后再试")
 	default:
-		return "当前选择无法下单，请检查数量"
+		return r.tr("site.fragment.bundle.cannot_order", "当前选择无法下单，请检查数量")
 	}
 }

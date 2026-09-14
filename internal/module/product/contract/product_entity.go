@@ -61,6 +61,8 @@ var fieldWhitelist = map[string][]string{
 		"seoTitle", "seoDescription",
 		"imageAlt", "imageAlts",
 		"slug", "sku", "unit",
+		// url 为已上线详情页路径（集合源构建期填入，与 presentation 路径真源同口径）。
+		"url",
 		"images", "defaultImage",
 		"price", "comparePrice", "priceRange", "minPrice", "maxPrice",
 		// 评分（issue #29）：rating 是 0~5 的数值，ratingCount 是评价数。

@@ -28,7 +28,7 @@ import (
 // 返回顺序：商品自身 → 分类（商品引用顺序）→ 品牌 → 标签 → 属性组。
 // 实体不存在 / 引用已失效 → 跳过该实体，不报错（与详情页读取口径一致）。
 func (s *Service) ProductTranslationCandidates(ctx context.Context, productID string) (list []productcontract.TranslationCandidate, err error) {
-	e, gerr := s.m.Get(ctx, productID)
+	e, gerr := s.m.Get(ctx, productID, "")
 	if gerr != nil {
 		return nil, mapNotFound(gerr)
 	}

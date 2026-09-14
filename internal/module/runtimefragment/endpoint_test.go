@@ -96,6 +96,18 @@ func TestFragmentRenderEscapes(t *testing.T) {
 	}
 }
 
+// TestFragmentEndpointVaryLang 响应声明按语言变化；非法 lang 回落默认（I18N-011）。
+func TestFragmentEndpointVaryLang(t *testing.T) {
+	r := newRouter()
+	w := doGet(t, r, "/_fragments/loginPanel?lang=not-a-real-lang")
+	if w.Code != http.StatusOK {
+		t.Fatalf("应 200: %d", w.Code)
+	}
+	if got := w.Header().Get("Vary"); got != "Accept-Language" {
+		t.Fatalf("应设 Vary: Accept-Language，实际 %q", got)
+	}
+}
+
 // TestRegistryTypes 能力白名单类型列表确定性。
 func TestRegistryTypes(t *testing.T) {
 	types := Types()

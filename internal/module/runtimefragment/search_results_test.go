@@ -16,6 +16,7 @@ import (
 	"testing"
 
 	contentcontract "go_wp/internal/module/content/contract"
+	presentationcontract "go_wp/internal/module/presentation/contract"
 	productcontract "go_wp/internal/module/product/contract"
 )
 
@@ -51,7 +52,7 @@ type stubPublishedLocator struct {
 	err   error
 }
 
-func (s *stubPublishedLocator) PublishedEntityPaths(_ context.Context, _, _ string, ids []string) (map[string]string, error) {
+func (s *stubPublishedLocator) PublishedEntityPaths(_ context.Context, _, _, _ string, ids []string) (map[string]string, error) {
 	if s.err != nil {
 		return nil, s.err
 	}
@@ -79,7 +80,11 @@ func resetSearchProviders(t *testing.T) {
 
 // searchRequest 一次搜索请求（工程 id 由构建期烘进 URL）。
 func searchRequest(q string) *Request {
-	return &Request{Type: "searchResults", Params: map[string]string{"q": q, "projectId": "p1"}}
+	return &Request{
+		Type: "searchResults", Lang: "zh-CN",
+		T:      func(_, fallback string) string { return fallback },
+		Params: map[string]string{"q": q, "projectId": "p1"},
+	}
 }
 
 // TestSearchResultsEmptyQuery 空关键词：提示而不是报错（搜索框还没输入就会触发请求）。
@@ -183,6 +188,46 @@ func TestSearchResultsEscapesQuery(t *testing.T) {
 	if !strings.Contains(out, "&lt;script&gt;") {
 		t.Fatalf("转义后的关键词应出现在提示里:\n%s", out)
 	}
+}
+
+// TestSearchResultsPassesLangToLocator 片段 lang 参数透传给路径解析端口。
+func TestSearchResultsPassesLangToLocator(t *testing.T) {
+	resetSearchProviders(t)
+	langSeen := ""
+	loc := &stubPublishedLocator{paths: map[string]string{"a1": "/en/blog/hello"}}
+	locHook := &langCapturingLocator{inner: loc, lang: &langSeen}
+	SetContentSearchProvider(&stubContentSearch{hits: []*contentcontract.ArticleSearchHit{
+		{ID: "a1", Slug: "hello", Title: "Hello"},
+	}})
+	SetPublishedEntityLocator(locHook)
+
+	req := &Request{
+		Type: "searchResults", Lang: "en-US",
+		T: func(_, fallback string) string { return fallback },
+		Params: map[string]string{
+			"q": "hello", "projectId": "p1", "lang": "en-US",
+		},
+	}
+	out, err := renderSearchResults(context.Background(), req)
+	if err != nil {
+		t.Fatalf("渲染失败: %v", err)
+	}
+	if langSeen != "en-US" {
+		t.Fatalf("locator 应收到 lang=en-US，实际 %q", langSeen)
+	}
+	if !strings.Contains(out, `href="/en/blog/hello"`) {
+		t.Fatalf("缺少 en 路径链接:\n%s", out)
+	}
+}
+
+type langCapturingLocator struct {
+	inner presentationcontract.PublishedEntityLocator
+	lang  *string
+}
+
+func (l *langCapturingLocator) PublishedEntityPaths(ctx context.Context, projectID, entityType, lang string, entityIDs []string) (map[string]string, error) {
+	*l.lang = lang
+	return l.inner.PublishedEntityPaths(ctx, projectID, entityType, lang, entityIDs)
 }
 
 // TestSearchResultsPortError 检索端口报错要上抛（端点转 500）。

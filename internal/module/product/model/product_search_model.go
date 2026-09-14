@@ -10,6 +10,8 @@ package productmodel
 import (
 	"context"
 	"strings"
+
+	"go_wp/pkg/database"
 )
 
 // maxProductSearchLimit 单次检索的硬上限（访问面 anonymous 请求，不能退化成全表扫描）。
@@ -36,7 +38,7 @@ func (m *Model) SearchPublished(ctx context.Context, projectID, keyword string, 
 	if limit <= 0 || limit > maxProductSearchLimit {
 		limit = maxProductSearchLimit
 	}
-	pattern := "%" + escapeLikeKeyword(keyword) + "%"
+	pattern := "%" + database.EscapeLikePattern(keyword) + "%"
 	err = m.db.WithContext(ctx).
 		Select("id, project_id, name, subtitle, slug, status, default_image, updated_at").
 		Where("project_id = ?", projectID).
@@ -54,9 +56,3 @@ func (m *Model) SearchPublished(ctx context.Context, projectID, keyword string, 
 // 引一层包只为拿一个字符串会让「状态值改了什么」这件事更难追。
 const productStatusPublished = "published"
 
-// escapeLikeKeyword 转义 LIKE 通配符（\ % _ 按字面量匹配，配合 ESCAPE '\'）。
-//
-// 反斜杠必须先转义：否则后两步插入的反斜杠会被自己再转义一遍。
-func escapeLikeKeyword(s string) string {
-	return strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(s)
-}

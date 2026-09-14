@@ -16,13 +16,13 @@ package runtimefragment
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 	"strings"
 
 	ordercontract "go_wp/internal/module/order/contract"
 	orderdto "go_wp/internal/module/order/dto"
 	orderenums "go_wp/internal/module/order/enums"
-	pageenums "go_wp/internal/module/page/enums"
 	"go_wp/internal/templates"
 )
 
@@ -46,31 +46,32 @@ type returnResultData struct {
 	StatusLabel string
 	RefundLabel string
 	Reason      string
-	// DetailURL 提交成功后重新拉取订单详情的地址（把表单替换回最新状态）。
-	DetailURL string
+	StatusLine  string
+	RefundNote  string
+	Labels      returnResultLabels
 }
 
 // renderReturnRequest 客户提交退货申请。
 func renderReturnRequest(ctx context.Context, r *Request) (string, error) {
 	projectID := paramOf(r, "projectId")
-	loginURL := cartSitePages(r, projectID)[pageenums.SiteSlotLogin]
+	labels := returnResultLabelsOf(r)
 	uid, ok := visitorIDOf(r)
 	if !ok {
-		return renderReturnResult(returnResultData{
-			Notice: "请先登录再申请退货。",
+		return renderReturnResult(r, returnResultData{
+			Notice: labels.NeedLogin,
+			Labels: labels,
 		})
 	}
 	if visitorReturns == nil {
-		return renderReturnResult(returnResultData{Notice: msgReturnsUnavailable})
+		return renderReturnResult(r, returnResultData{Notice: labels.ProviderUnavailable, Labels: labels})
 	}
-	_ = loginURL
 	orderID, perr := strconv.ParseUint(strings.TrimSpace(paramOf(r, "orderId")), 10, 64)
 	if perr != nil || orderID == 0 {
-		return renderReturnResult(returnResultData{Notice: orderenums.ErrInvalidParam})
+		return renderReturnResult(r, returnResultData{Notice: fragmentUserMessage(r, orderenums.ErrInvalidParam), Labels: labels})
 	}
 	items := returnItemsOf(r)
 	if len(items) == 0 {
-		return renderReturnResult(returnResultData{Notice: orderenums.ErrReturnItemsRequired})
+		return renderReturnResult(r, returnResultData{Notice: fragmentUserMessage(r, orderenums.ErrReturnItemsRequired), Labels: labels})
 	}
 	res, err := visitorReturns.RequestReturn(ctx, &orderdto.ReturnRequestReq{
 		ProjectID: projectID,
@@ -81,16 +82,19 @@ func renderReturnRequest(ctx context.Context, r *Request) (string, error) {
 		UserID:    uid,
 	})
 	if err != nil {
-		return renderReturnResult(returnResultData{Notice: orderUserMessage(err)})
+		return renderReturnResult(r, returnResultData{Notice: orderUserMessage(r, err), Labels: labels})
 	}
 	if res == nil {
-		return renderReturnResult(returnResultData{Notice: orderenums.ErrInternal})
+		return renderReturnResult(r, returnResultData{Notice: fragmentUserMessage(r, orderenums.ErrInternal), Labels: labels})
 	}
-	return renderReturnResult(returnResultData{
+	return renderReturnResult(r, returnResultData{
 		ReturnNo:    res.ReturnNo,
 		StatusLabel: res.StatusLabel,
 		RefundLabel: res.RefundLabel,
 		Reason:      res.Reason,
+		StatusLine:  fmt.Sprintf(labels.StatusLine, res.ReturnNo, res.StatusLabel),
+		RefundNote:  fmt.Sprintf(labels.RefundNote, res.RefundLabel),
+		Labels:      labels,
 	})
 }
 
@@ -123,9 +127,9 @@ func returnItemsOf(r *Request) []orderdto.ReturnItemReq {
 }
 
 // renderReturnResult 渲染提交结果。
-func renderReturnResult(data returnResultData) (string, error) {
+func renderReturnResult(r *Request, data returnResultData) (string, error) {
+	if data.Labels == (returnResultLabels{}) {
+		data.Labels = returnResultLabelsOf(r)
+	}
 	return templates.RenderFragment("return_result", data)
 }
-
-// msgReturnsUnavailable 装配缺失时的提示（不是业务结果）。
-const msgReturnsUnavailable = "退货功能尚未接入"

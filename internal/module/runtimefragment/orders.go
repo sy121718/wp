@@ -47,20 +47,6 @@ const (
 	maxOrdersPageSize     = 50
 )
 
-// orderStatusLabels 订单状态的展示文案。
-//
-// 刻意在本层再写一份，而不是去 import order 模块的 model：跨模块只能依赖
-// contract 与不可变 dto（AGENTS.md 命名约束），而状态常量在 model 里。
-// 代价是新增状态要改两处 —— 收益是这条依赖方向不会被打穿。
-var orderStatusLabels = map[string]string{
-	"pending":   "待付款",
-	"paid":      "已付款",
-	"shipped":   "已发货",
-	"completed": "已完成",
-	"cancelled": "已取消",
-	"refunded":  "已退款",
-}
-
 // orderStatusFilter 状态筛选页签的取值（顺序即展示顺序）。
 var orderStatusFilter = []string{"", "pending", "paid", "shipped", "completed", "cancelled", "refunded"}
 
@@ -106,6 +92,8 @@ type ordersFragmentData struct {
 	NextURL         string
 	NextFragmentURL string
 	PageSize        int
+	TotalCountLabel string
+	Labels          orderListLabels
 }
 
 // orderDetailFragmentData 订单详情片段数据。
@@ -144,6 +132,7 @@ type orderDetailFragmentData struct {
 	Returns []orderReturnSummary
 	// NoticeOK 非空时是一句成功提示（提交成功后原地重渲染详情页，用户不必刷新）。
 	NoticeOK string
+	Labels   orderDetailLabels
 }
 
 // orderReturnSummary 订单详情里的一条退货申请摘要。
@@ -159,13 +148,14 @@ type orderDetailItem struct {
 	// OrderItemID 退货表单要用它标识「退哪一行」（服务端据此校验行属于本单）。
 	OrderItemID uint64
 	// Returnable 该行当前可退数量（输入框的 max；0 表示这行不能再退）。
-	Returnable   int
-	ProductName  string
-	VariantLabel string
-	SKU          string
-	UnitPrice    string
-	Quantity     int
-	LineTotal    string
+	Returnable    int
+	ReturnQtyHint string
+	ProductName   string
+	VariantLabel  string
+	SKU           string
+	UnitPrice     string
+	Quantity      int
+	LineTotal     string
 }
 
 type orderDetailLog struct {
@@ -182,6 +172,7 @@ type orderDetailLog struct {
 func renderOrdersList(ctx context.Context, r *Request) (string, error) {
 	projectID := paramOf(r, "projectId")
 	slots := cartSitePages(r, projectID)
+	labels := orderListLabelsOf(r)
 	data := ordersFragmentData{
 		FragmentType: r.Type,
 		ProjectID:    projectID,
@@ -189,6 +180,7 @@ func renderOrdersList(ctx context.Context, r *Request) (string, error) {
 		ShopURL:      slots[pageenums.SiteSlotShop],
 		Status:       strings.TrimSpace(paramOf(r, "status")),
 		PageSize:     ordersPageSizeOf(r),
+		Labels:       labels,
 	}
 	uid, ok := visitorIDOf(r)
 	if !ok {
@@ -196,7 +188,7 @@ func renderOrdersList(ctx context.Context, r *Request) (string, error) {
 		return templates.RenderFragment("order_list", data)
 	}
 	if visitorOrders == nil {
-		data.Notice = msgOrdersUnavailable
+		data.Notice = labels.ReaderUnavailable
 		return templates.RenderFragment("order_list", data)
 	}
 	offset := ordersOffsetOf(r)
@@ -208,7 +200,7 @@ func renderOrdersList(ctx context.Context, r *Request) (string, error) {
 		UserID:    uid,
 	})
 	if err != nil {
-		data.Notice = orderUserMessage(err)
+		data.Notice = orderUserMessage(r, err)
 		return templates.RenderFragment("order_list", data)
 	}
 	if res != nil {
@@ -218,8 +210,8 @@ func renderOrdersList(ctx context.Context, r *Request) (string, error) {
 				ID:          o.ID,
 				OrderNo:     o.OrderNo,
 				Status:      o.Status,
-				StatusLabel: orderStatusLabelOf(o.Status),
-				TotalLabel:  yuanLabel(o.Total),
+				StatusLabel: orderStatusLabelOf(r, o.Status),
+				TotalLabel:  formatCentsLabel(r, o.Total),
 				TimeLabel:   o.CreateTime.Format("2006-01-02 15:04"),
 				ItemURL:     orderDetailURL(r, projectID, o.ID),
 			})
@@ -237,6 +229,7 @@ func renderOrdersList(ctx context.Context, r *Request) (string, error) {
 	data.HasNext = offset+data.PageSize < int(data.Total)
 	data.NextURL = orderListPageURL(base, data.Status, offset+data.PageSize)
 	data.NextFragmentURL = orderListFragmentURL(r, projectID, data.Status, offset+data.PageSize, data.PageSize)
+	data.TotalCountLabel = fmt.Sprintf(labels.TotalCount, data.Total)
 	return templates.RenderFragment("order_list", data)
 }
 
@@ -252,6 +245,7 @@ func renderOrderDetail(ctx context.Context, r *Request) (string, error) {
 func renderOrderDetailWith(ctx context.Context, r *Request, noticeOK string) (string, error) {
 	projectID := paramOf(r, "projectId")
 	slots := cartSitePages(r, projectID)
+	labels := orderDetailLabelsOf(r)
 	data := orderDetailFragmentData{
 		FragmentType:    r.Type,
 		ProjectID:       projectID,
@@ -259,6 +253,7 @@ func renderOrderDetailWith(ctx context.Context, r *Request, noticeOK string) (st
 		NoticeOK:        noticeOK,
 		ReturnRequestID: uuid.NewString(),
 		ReturnActionURL: "returnRequest",
+		Labels:          labels,
 	}
 	uid, ok := visitorIDOf(r)
 	if !ok {
@@ -266,12 +261,12 @@ func renderOrderDetailWith(ctx context.Context, r *Request, noticeOK string) (st
 		return templates.RenderFragment("order_detail", data)
 	}
 	if visitorOrders == nil {
-		data.Notice = msgOrdersUnavailable
+		data.Notice = labels.ReaderUnavailable
 		return templates.RenderFragment("order_detail", data)
 	}
 	orderID, perr := strconv.ParseUint(strings.TrimSpace(paramOf(r, "orderId")), 10, 64)
 	if perr != nil || orderID == 0 {
-		data.Notice = orderenums.ErrInvalidParam
+		data.Notice = fragmentUserMessage(r, orderenums.ErrInvalidParam)
 		return templates.RenderFragment("order_detail", data)
 	}
 	res, err := visitorOrders.GetVisitorOrder(ctx, &orderdto.VisitorOrderDetailReq{
@@ -280,21 +275,21 @@ func renderOrderDetailWith(ctx context.Context, r *Request, noticeOK string) (st
 		UserID:    uid,
 	})
 	if err != nil {
-		data.Notice = orderUserMessage(err)
+		data.Notice = orderUserMessage(r, err)
 		return templates.RenderFragment("order_detail", data)
 	}
 	if res == nil || res.Head == nil {
-		data.Notice = orderenums.ErrOrderNotFound
+		data.Notice = fragmentUserMessage(r, orderenums.ErrOrderNotFound)
 		return templates.RenderFragment("order_detail", data)
 	}
 	head := res.Head
 	data.OrderID = head.ID
 	data.OrderNo = head.OrderNo
 	data.Status = head.Status
-	data.StatusLabel = orderStatusLabelOf(head.Status)
-	data.TotalLabel = yuanLabel(head.Total)
-	data.DiscountLabel = yuanLabel(head.DiscountTotal)
-	data.ShippingLabel = yuanLabel(head.ShippingTotal)
+	data.StatusLabel = orderStatusLabelOf(r, head.Status)
+	data.TotalLabel = formatCentsLabel(r, head.Total)
+	data.DiscountLabel = formatCentsLabel(r, head.DiscountTotal)
+	data.ShippingLabel = formatCentsLabel(r, head.ShippingTotal)
 	data.TimeLabel = head.CreateTime.Format("2006-01-02 15:04")
 	data.PayMethod = head.PaymentMethodTitle
 	if head.PaidAt != nil {
@@ -308,9 +303,9 @@ func renderOrderDetailWith(ctx context.Context, r *Request, noticeOK string) (st
 			ProductName:  it.ProductName,
 			VariantLabel: it.VariantLabel,
 			SKU:          it.SKU,
-			UnitPrice:    yuanLabel(it.UnitPrice),
+			UnitPrice:    formatCentsLabel(r, it.UnitPrice),
 			Quantity:     it.Quantity,
-			LineTotal:    yuanLabel(it.LineTotal),
+			LineTotal:    formatCentsLabel(r, it.LineTotal),
 		})
 	}
 	// 退货区（BIZ-1）：可退数量按行取，已有申请按状态列出。
@@ -326,6 +321,7 @@ func renderOrderDetailWith(ctx context.Context, r *Request, noticeOK string) (st
 			for i := range data.Items {
 				if x, hit := byItem[data.Items[i].OrderItemID]; hit {
 					data.Items[i].Returnable = x.Returnable
+					data.Items[i].ReturnQtyHint = fmt.Sprintf(labels.ReturnQtyHint, data.Items[i].Quantity, x.Returnable)
 				}
 			}
 			data.ReturnableTotal = rb.ReturnableTotal
@@ -349,9 +345,9 @@ func renderOrderDetailWith(ctx context.Context, r *Request, noticeOK string) (st
 	for _, lg := range res.Logs {
 		data.Logs = append(data.Logs, orderDetailLog{
 			FromStatus:   lg.FromStatus,
-			FromLabel:    orderStatusLabelOf(lg.FromStatus),
+			FromLabel:    orderStatusLabelOf(r, lg.FromStatus),
 			ToStatus:     lg.ToStatus,
-			ToLabel:      orderStatusLabelOf(lg.ToStatus),
+			ToLabel:      orderStatusLabelOf(r, lg.ToStatus),
 			OperatorName: lg.OperatorName,
 			Remark:       lg.Remark,
 			TimeLabel:    lg.CreateTime.Format("2006-01-02 15:04"),
@@ -402,24 +398,17 @@ func orderReturnableStatus(status string) bool {
 	return status == "paid" || status == "shipped" || status == "completed"
 }
 
-// orderStatusLabelOf 状态 → 文案；未知状态原样显示（不吞掉，便于发现新状态没登记）。
-func orderStatusLabelOf(status string) string {
-	if label, ok := orderStatusLabels[status]; ok {
-		return label
-	}
-	return status
-}
-
 // orderStatusTabs 状态筛选页签（含「全部」）。
 //
 // 每个页签给两个地址：页面地址（无 JS 时整页跳）与片段地址（HTMX 局部替换）。
 // 两者带同一组条件 —— 只给其中一个，会出现「点一下看到的是筛选后的、刷新一下又回到全部」。
 func orderStatusTabs(r *Request, projectID, baseURL, current string) []orderStatusTab {
+	tabAll := orderListLabelsOf(r).TabAll
 	tabs := make([]orderStatusTab, 0, len(orderStatusFilter))
 	for _, v := range orderStatusFilter {
-		label := "全部"
+		label := tabAll
 		if v != "" {
-			label = orderStatusLabelOf(v)
+			label = orderStatusLabelOf(r, v)
 		}
 		tabs = append(tabs, orderStatusTab{
 			Value:       v,
@@ -494,29 +483,16 @@ func orderAddressOf(o *orderdto.OrderResp) string {
 	return strings.Join(parts, " ")
 }
 
-// yuanLabel 分 → 元展示串。
-//
-// 用整数除法而不是 float64：金额一旦经过浮点就可能出现 0.30000000000000004
-// 这种展示，而账单上多出来的小数位没有一个客户会接受。
-func yuanLabel(cents int64) string {
-	neg := ""
-	if cents < 0 {
-		neg = "-"
-		cents = -cents
-	}
-	return fmt.Sprintf("%s%d.%02d 元", neg, cents/100, cents%100)
-}
-
-// orderUserMessage 把订单域错误映射成可原样给访客看的中文文案。
-func orderUserMessage(err error) string {
+// orderUserMessage 把订单域错误映射成可原样给访客看的文案。
+func orderUserMessage(r *Request, err error) string {
 	if err == nil {
 		return ""
 	}
 	msg := strings.TrimSpace(err.Error())
 	for _, m := range orderenums.UserFacingMessages {
 		if m == msg {
-			return msg
+			return fragmentUserMessage(r, msg)
 		}
 	}
-	return orderenums.ErrInternal
+	return fragmentUserMessage(r, orderenums.ErrInternal)
 }

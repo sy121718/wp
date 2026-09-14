@@ -56,7 +56,12 @@ func (h *Handle) List(c *gin.Context) {
 
 // Detail 块详情。
 func (h *Handle) Detail(c *gin.Context) {
-	res, err := h.svc.Detail(c.Request.Context(), &blockdto.DetailReq{ID: c.Query("id")})
+	var req blockdto.DetailReq
+	if err := c.ShouldBindQuery(&req); err != nil {
+		response.ParamError(c, err.Error())
+		return
+	}
+	res, err := h.svc.Detail(c.Request.Context(), &req)
 	if err != nil {
 		response.ErrorWithMessage(c, blockErrorStatus(err), blockErrorMessage(err))
 		return

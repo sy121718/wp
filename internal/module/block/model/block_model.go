@@ -4,6 +4,7 @@ package blockmodel
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -103,10 +104,14 @@ func (m *Model) ExistsByName(ctx context.Context, projectID, name string) (exist
 	return count > 0, err
 }
 
-// GetByID 按 ID 查询块。
-func (m *Model) GetByID(ctx context.Context, id string) (e *BlockEntity, err error) {
+// GetByID 按 ID 查询块。projectID 非空时追加工程归属条件（防跨工程 IDOR）。
+func (m *Model) GetByID(ctx context.Context, id, projectID string) (e *BlockEntity, err error) {
 	e = &BlockEntity{}
-	if err = m.DB(ctx).Where("id = ?", id).First(e).Error; err != nil {
+	q := m.DB(ctx).Where("id = ?", id)
+	if strings.TrimSpace(projectID) != "" {
+		q = q.Where("project_id = ?", projectID)
+	}
+	if err = q.First(e).Error; err != nil {
 		return nil, err
 	}
 	return e, nil

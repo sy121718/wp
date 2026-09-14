@@ -27,7 +27,8 @@ type UpdateReq struct {
 
 // DetailReq 按 ID 查询块请求。
 type DetailReq struct {
-	ID string `json:"id" binding:"required"`
+	ProjectID string `form:"projectId" json:"projectId" binding:"required"`
+	ID        string `form:"id" json:"id" binding:"required"`
 }
 
 // ListReq 列出工程块请求（kind/category/reuseMode 可选过滤）。

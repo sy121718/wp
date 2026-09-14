@@ -279,6 +279,6 @@ type SourceSummaryReq struct {
 
 // —— 商品侧缓存同步与对账（issue #16 验收 6/7）——
 
-// SyncStockCacheReq 显式同步商品侧库存缓存（可指定单个变体，缺省整工程）。
+// SyncStockCacheReq 【已废弃，121 删缓存列】历史 DTO，仅保留类型兼容。
 
 // ReconcileStockCacheReq 缓存对账（可选对齐修复）。
