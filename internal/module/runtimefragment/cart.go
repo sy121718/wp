@@ -23,6 +23,7 @@ package runtimefragment
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -32,6 +33,7 @@ import (
 	cartenums "go_wp/internal/module/cart/enums"
 	orderdto "go_wp/internal/module/order/dto"
 	orderenums "go_wp/internal/module/order/enums"
+
 	// 槽位键名的唯一来源：片段与后台页都从这里取，避免各处手写字符串
 	//（键名写错不会报错，只会静默不生效，是最难查的一类）。
 	pageenums "go_wp/internal/module/page/enums"
@@ -58,6 +60,7 @@ type cartFragmentData struct {
 	// FragmentType 自身能力名（模板写成 data-fragment 属性，与 loginPanel / cartSummary 同口径）。
 	FragmentType string
 	ProjectID    string
+	Labels       cartViewLabels
 	Items        []*cartdto.CartItem
 	LineCount    int
 	ItemCount    int
@@ -77,6 +80,8 @@ type checkoutFragmentData struct {
 	TotalLabel    string
 	Email         string
 	AccountMailed bool
+	Labels        checkoutViewLabels
+	AccountNote   string
 	// PaymentError 非空表示订单建好了但钱没收到：页面要把它当成「待付款」而不是失败。
 	PaymentError string
 	// OrdersURL 「我的订单」目标（槽位 orders）；空 = 没配 → 不输出。
@@ -106,14 +111,14 @@ func renderCartSummary(ctx context.Context, r *Request) (string, error) {
 // renderCartView 渲染购物车。
 func renderCartView(ctx context.Context, r *Request) (string, error) {
 	if cartService == nil {
-		return renderCartNotice(msgCartUnavailable)
+		return renderCartNotice(r, msgCartUnavailable)
 	}
 	snap, err := cartService.View(ctx, &cartdto.CartViewReq{
 		ProjectID: cartProjectID(r),
 		Cookie:    cartCookieValue(r),
 	})
 	if err != nil {
-		return renderCartNotice(cartUserMessage(err))
+		return renderCartNotice(r, cartUserMessage(r, err))
 	}
 	return templates.RenderFragment("cart_view", cartFragmentOf(r, snap))
 }
@@ -121,11 +126,11 @@ func renderCartView(ctx context.Context, r *Request) (string, error) {
 // renderCartAdd 加入购物车（同变体累加）。
 func renderCartAdd(ctx context.Context, r *Request) (string, error) {
 	if cartService == nil {
-		return renderCartNotice(msgCartUnavailable)
+		return renderCartNotice(r, msgCartUnavailable)
 	}
 	quantity, qerr := cartAddQuantity(r)
 	if qerr != nil {
-		return renderCartNotice(cartUserMessage(qerr))
+		return renderCartNotice(r, cartUserMessage(r, qerr))
 	}
 	snap, err := cartService.Add(ctx, &cartdto.CartAddReq{
 		ProjectID: cartProjectID(r),
@@ -134,7 +139,7 @@ func renderCartAdd(ctx context.Context, r *Request) (string, error) {
 		Cookie:    cartCookieValue(r),
 	})
 	if err != nil {
-		return renderCartNotice(cartUserMessage(err))
+		return renderCartNotice(r, cartUserMessage(r, err))
 	}
 	safeSetCartCookie(r, snap.Cookie)
 	return templates.RenderFragment("cart_view", cartFragmentOf(r, snap))
@@ -143,13 +148,13 @@ func renderCartAdd(ctx context.Context, r *Request) (string, error) {
 // renderCartSetQty 设置数量（0 = 移除）。
 func renderCartSetQty(ctx context.Context, r *Request) (string, error) {
 	if cartService == nil {
-		return renderCartNotice(msgCartUnavailable)
+		return renderCartNotice(r, msgCartUnavailable)
 	}
 	// 这个能力**不接受缺省值**：数量输入框没填出一个数字时静默按 1 件处理，
 	// 会把「我没想改数量」变成一次真实的改单。
 	quantity, qerr := cartSetQuantity(r)
 	if qerr != nil {
-		return renderCartNotice(cartUserMessage(qerr))
+		return renderCartNotice(r, cartUserMessage(r, qerr))
 	}
 	snap, err := cartService.SetQuantity(ctx, &cartdto.CartSetQuantityReq{
 		ProjectID: cartProjectID(r),
@@ -158,7 +163,7 @@ func renderCartSetQty(ctx context.Context, r *Request) (string, error) {
 		Cookie:    cartCookieValue(r),
 	})
 	if err != nil {
-		return renderCartNotice(cartUserMessage(err))
+		return renderCartNotice(r, cartUserMessage(r, err))
 	}
 	safeSetCartCookie(r, snap.Cookie)
 	return templates.RenderFragment("cart_view", cartFragmentOf(r, snap))
@@ -167,14 +172,14 @@ func renderCartSetQty(ctx context.Context, r *Request) (string, error) {
 // renderCartClear 清空购物车。
 func renderCartClear(ctx context.Context, r *Request) (string, error) {
 	if cartService == nil {
-		return renderCartNotice(msgCartUnavailable)
+		return renderCartNotice(r, msgCartUnavailable)
 	}
 	snap, err := cartService.Clear(ctx, &cartdto.CartViewReq{
 		ProjectID: cartProjectID(r),
 		Cookie:    cartCookieValue(r),
 	})
 	if err != nil {
-		return renderCartNotice(cartUserMessage(err))
+		return renderCartNotice(r, cartUserMessage(r, err))
 	}
 	safeSetCartCookie(r, snap.Cookie)
 	return templates.RenderFragment("cart_view", cartFragmentOf(r, snap))
@@ -187,7 +192,7 @@ func renderCartClear(ctx context.Context, r *Request) (string, error) {
 // remark / requestId / locale，账单地址用 bill* 前缀（缺省与收货地址相同）。
 func renderCheckout(ctx context.Context, r *Request) (string, error) {
 	if cartService == nil {
-		return renderCartNotice(msgCheckoutUnavailable)
+		return renderCartNotice(r, msgCheckoutUnavailable)
 	}
 	res, err := cartService.Checkout(ctx, &cartdto.CartCheckoutReq{
 		ProjectID: cartProjectID(r),
@@ -225,10 +230,11 @@ func renderCheckout(ctx context.Context, r *Request) (string, error) {
 	if err != nil {
 		// 订单没建出来：把模块给的原因原样透出（「库存不足」必须让访客看到），
 		// 但只认白名单里的文案，其余收口到通用提示。
-		return renderCartNotice(cartUserMessage(err))
+		return renderCartNotice(r, cartUserMessage(r, err))
 	}
 	safeSetCartCookie(r, res.Cookie)
 	slots := cartSitePages(r, cartProjectID(r))
+	labels := checkoutViewLabelsOf(r)
 	data := checkoutFragmentData{
 		Paid:          res.Paid,
 		OrderNo:       res.OrderNo,
@@ -238,6 +244,10 @@ func renderCheckout(ctx context.Context, r *Request) (string, error) {
 		PaymentError:  res.PaymentError,
 		OrdersURL:     slots[pageenums.SiteSlotOrders],
 		ShopURL:       slots[pageenums.SiteSlotShop],
+		Labels:        labels,
+	}
+	if res.AccountMailed && res.Email != "" {
+		data.AccountNote = fmt.Sprintf(labels.AccountMailed, res.Email)
 	}
 	return templates.RenderFragment("checkout_result", data)
 }
@@ -253,9 +263,15 @@ const (
 //
 // 不返回 error：片段端点把 error 变成 500 + 一句「片段渲染失败」，
 // 那对访客没有任何信息量。校验失败、库存不足这类结论要**看得见**。
-func renderCartNotice(message string) (string, error) {
+func renderCartNotice(r *Request, message string) (string, error) {
 	if strings.TrimSpace(message) == "" {
 		message = cartenums.ErrInternal
+	}
+	switch message {
+	case msgCartUnavailable:
+		message = r.tr("site.fragment.cart.unavailable", msgCartUnavailable)
+	case msgCheckoutUnavailable:
+		message = r.tr("site.fragment.checkout.unavailable", msgCheckoutUnavailable)
 	}
 	return templates.RenderFragment("cart_notice", struct{ Message string }{Message: message})
 }
@@ -265,7 +281,7 @@ func renderCartNotice(message string) (string, error) {
 // 白名单来自两个模块（cart / order）：结算链路会穿过订单域，
 // 而「库存不足」这种话必须原样透出 —— 否则访客看到的是「操作失败」，
 // 既不知道发生了什么，也不知道能不能重试。
-func cartUserMessage(err error) string {
+func cartUserMessage(r *Request, err error) string {
 	if err == nil {
 		return ""
 	}
@@ -273,11 +289,11 @@ func cartUserMessage(err error) string {
 	for _, list := range [][]string{cartenums.UserFacingMessages, orderenums.UserFacingMessages} {
 		for _, m := range list {
 			if m == msg {
-				return msg
+				return fragmentUserMessage(r, msg)
 			}
 		}
 	}
-	return cartenums.ErrInternal
+	return fragmentUserMessage(r, cartenums.ErrInternal)
 }
 
 // cartFragmentOf 把快照拍成模板数据。
@@ -286,6 +302,7 @@ func cartFragmentOf(r *Request, snap *cartdto.CartSnapshot) cartFragmentData {
 	data := cartFragmentData{
 		FragmentType: r.Type,
 		ProjectID:    projectID,
+		Labels:       cartViewLabelsOf(r),
 		CheckoutURL:  cartSitePages(r, projectID)[pageenums.SiteSlotCheckout],
 	}
 	if snap == nil {
@@ -341,7 +358,11 @@ func cartSitePages(r *Request, projectID string) map[string]string {
 	if r == nil || r.SitePagesOf == nil {
 		return nil
 	}
-	return r.SitePagesOf(projectID, strings.TrimSpace(paramOf(r, "lang")))
+	lang := r.Lang
+	if lang == "" {
+		lang = strings.TrimSpace(paramOf(r, "lang"))
+	}
+	return r.SitePagesOf(projectID, lang)
 }
 
 // cartVariantID 变体 id。

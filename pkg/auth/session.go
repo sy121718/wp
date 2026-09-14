@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"go_wp/pkg/cache"
@@ -30,6 +31,8 @@ const (
 	// 之后回到后台，浏览器仍带着登录 cookie，却被判定未登录并跳回登录页。
 	defaultRememberMeTTL = 7 * 24 * time.Hour
 	defaultOnlineTTL     = 5 * time.Minute
+	// onlineRefreshMaxTrack 进程内心跳节流表容量上限（PERF-005）。
+	onlineRefreshMaxTrack = 10000
 
 	// blockedTTL 封禁标记的固定存活时长。
 	// RevokeUserSession 传 time.Now() 时 time.Until(blockedUntil) 为负值，Redis 会报
@@ -176,15 +179,43 @@ func IsBlocked(ctx context.Context, userID uint64, sessionIssuedAt int64) (bool,
 	return false, nil
 }
 
+// onlineLastRefresh 进程内记录上次写 Redis 心跳的时间，用于节流（PERF-005）。
+var (
+	onlineRefreshMu   sync.Mutex
+	onlineLastRefresh = make(map[uint64]time.Time, 256)
+)
+
 // RefreshOnline 刷新用户在线心跳。
 // ttl 传 0 时使用默认 5 分钟。
+//
+// 后台 HTMX 局部刷新会让每个已认证请求都触发一次写；只在距上次刷新超过 ttl/3
+// 时才写 Redis，在线判定误差不超过该间隔。
 func RefreshOnline(ctx context.Context, userID uint64, ttl time.Duration) error {
+	if ttl <= 0 {
+		ttl = defaultOnlineTTL
+	}
+	minInterval := ttl / 3
+	now := time.Now()
+	onlineRefreshMu.Lock()
+	if last, ok := onlineLastRefresh[userID]; ok && now.Sub(last) < minInterval {
+		onlineRefreshMu.Unlock()
+		return nil
+	}
+	if len(onlineLastRefresh) >= onlineRefreshMaxTrack {
+		for id, t := range onlineLastRefresh {
+			if now.Sub(t) >= ttl {
+				delete(onlineLastRefresh, id)
+			}
+		}
+	}
+	if len(onlineLastRefresh) < onlineRefreshMaxTrack {
+		onlineLastRefresh[userID] = now
+	}
+	onlineRefreshMu.Unlock()
+
 	client, err := cache.GetRedis()
 	if err != nil {
 		return err
-	}
-	if ttl <= 0 {
-		ttl = defaultOnlineTTL
 	}
 	return client.Set(ctx, onlineKey(userID), "1", ttl).Err()
 }

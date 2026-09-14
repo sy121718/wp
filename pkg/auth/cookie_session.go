@@ -17,6 +17,7 @@ import (
 
 	"go_wp/pkg/cache"
 	"go_wp/pkg/logger"
+	"go_wp/pkg/sitehttps"
 
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-contrib/sessions/cookie"
@@ -68,9 +69,14 @@ var weakSessionSecrets = map[string]struct{}{
 	"your-secret-key":                     {},
 }
 
-// weakSessionSecret 判断会话密钥是否为空或命中弱密钥集合。
-func weakSessionSecret(secret string) bool {
+const minSessionSecretLen = 32
+
+// weakSessionSecret 判断会话密钥是否为空、过短或命中弱密钥集合。
+func weakSessionSecret(secret string, release bool) bool {
 	if secret == "" {
+		return true
+	}
+	if release && len(secret) < minSessionSecretLen {
 		return true
 	}
 	_, ok := weakSessionSecrets[secret]
@@ -83,7 +89,12 @@ func weakSessionSecret(secret string) bool {
 //   - M6：server.mode=release 时，密钥为空或命中弱密钥集合直接返回错误拒绝启动；debug 模式维持告警。
 //   - H3 防御：配置已启用 redis 但 cache 组件未就绪时返回错误，避免「启动正常、登录后全站 503」。
 //
-// Secure 属性按 server.mode 推导：release 时启用，避免生产环境明文 HTTP 泄露 cookie。
+// Secure 属性的真源是 pkg/sitehttps（server.site_https 显式声明 > server.mode 推导）。
+//
+// 为什么不再直接看 server.mode：反代终结 TLS 是自托管最常见的部署形态，此时
+// 进程自身跑在 HTTP 上，"非 release 就不带 Secure" 的口径会让 HTTPS 站点的
+// admin_session / 访客会话 cookie 少了 Secure —— 而 debug 模式又恰恰是最常被
+// 误配到公网的那种（见 cmd/main.go 的 listenAddr 护栏）。
 func Init(v *viper.Viper) error {
 	sessionMu.Lock()
 	defer sessionMu.Unlock()
@@ -105,9 +116,9 @@ func Init(v *viper.Viper) error {
 	}
 
 	// M6：release 模式弱密钥 fail-fast；debug 模式仅告警，保持本地开发零配置可用。
-	if weakSessionSecret(secret) {
+	if weakSessionSecret(secret, release) {
 		if release {
-			return errors.New("生产环境（server.mode=release）auth.session_secret 未配置或使用了弱默认值，拒绝启动：请配置高强度随机密钥")
+			return errors.New("生产环境（server.mode=release）auth.session_secret 未配置、过短（<32 字符）或使用了弱默认值，拒绝启动：请配置高强度随机密钥")
 		}
 		if configured == "" {
 			logger.Scene("init").Warn("auth.session_secret 未配置，使用开发默认值，生产环境必须修改")
@@ -123,7 +134,7 @@ func Init(v *viper.Viper) error {
 		return errors.New("认证会话存储不可用：cache（Redis）组件未就绪，请检查 redis 配置与组件初始化顺序")
 	}
 
-	secure := release
+	secure := sitehttps.Enabled()
 	store := cookie.NewStore([]byte(secret))
 	store.Options(sessions.Options{
 		Path:     "/",

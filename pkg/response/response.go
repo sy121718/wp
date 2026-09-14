@@ -8,6 +8,7 @@ import (
 	"go_wp/pkg/enums"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
+	"go_wp/pkg/sitehttps"
 
 	"github.com/gin-gonic/gin"
 )
@@ -132,7 +133,7 @@ func SetLangCookie(c *gin.Context, lang string) {
 		Path:     "/",
 		MaxAge:   langCookieMaxAge,
 		HttpOnly: true,
-		Secure:   gin.Mode() == gin.ReleaseMode,
+		Secure:   sitehttps.Enabled(),
 		SameSite: http.SameSiteLaxMode,
 	})
 }
