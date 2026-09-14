@@ -390,6 +390,42 @@ var customerAdminMenuSQL string
 //go:embed 154_presentation_update_url_permission.sql
 var presentationUpdateURLPermissionSQL string
 
+//go:embed 155_presentation_i18n.sql
+var presentationI18nSQL string
+
+//go:embed 156_i18n_seed_fragments.sql
+var i18nSeedFragmentsSQL string
+
+//go:embed 157_i18n_seed_fragments_user_orders.sql
+var i18nSeedFragmentsUserOrdersSQL string
+
+//go:embed 158_i18n_seed_fragments_bundle_jet.sql
+var i18nSeedFragmentsBundleJetSQL string
+
+//go:embed 163_i18n_seed_dashboard_titles.sql
+var i18nSeedDashboardTitlesSQL string
+
+//go:embed 159_article_detail_template.sql
+var articleDetailTemplateSQL string
+
+//go:embed 160_presentation_entity_types.sql
+var presentationEntityTypesSQL string
+
+//go:embed 161_data_retention.sql
+var dataRetentionSQL string
+
+//go:embed 162_inventory_movements_wh_time_index.sql
+var inventoryMovementsWhTimeIndexSQL string
+
+//go:embed 164_content_template_is_default.sql
+var contentTemplateIsDefaultSQL string
+
+//go:embed 165_orders_status_check.sql
+var ordersStatusCheckSQL string
+
+//go:embed 166_blocks_kind_check.sql
+var blocksKindCheckSQL string
+
 func init() {
 	register(Migration{
 		Version:   "001-init-schema",
@@ -1716,5 +1752,96 @@ func init() {
 			"AND (SELECT COUNT(*) FROM sys_casbin_rule WHERE ptype = 'p' AND v3 = 'presentation:update_url') >= 1 " +
 			"THEN 1 ELSE 0 END",
 		SQL: presentationUpdateURLPermissionSQL,
+	})
+
+	// 155：presentation 多语言产物（I18N-013）。
+	register(Migration{
+		Version:   "155-presentation-i18n",
+		TableName: "presentation_publications",
+		SQL:       presentationI18nSQL,
+	})
+	// presentation_artifacts.lang 列（同批迁移，按列存在判定避免误跳过）。
+	register(Migration{
+		Version:   "155-presentation-artifacts-lang",
+		TableName: "presentation_artifacts",
+		CheckSQL:  "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = ? AND column_name = 'lang'",
+		SQL:       presentationI18nSQL,
+	})
+	registerSeed(Seed{
+		Version:      "156-i18n-seed-fragments",
+		TableName:    "sys_i18n",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 1 THEN 1 ELSE 0 END FROM sys_i18n WHERE item_key = 'site.fragment.cart.empty' AND lang = 'zh-CN'",
+		SQL:          i18nSeedFragmentsSQL,
+	})
+	registerSeed(Seed{
+		Version:      "157-i18n-seed-fragments-user-orders",
+		TableName:    "sys_i18n",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 1 THEN 1 ELSE 0 END FROM sys_i18n WHERE item_key = 'site.fragment.common.session_not_ready' AND lang = 'zh-CN'",
+		SQL:          i18nSeedFragmentsUserOrdersSQL,
+	})
+	registerSeed(Seed{
+		Version:      "158-i18n-seed-fragments-bundle-jet",
+		TableName:    "sys_i18n",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 1 THEN 1 ELSE 0 END FROM sys_i18n WHERE item_key = 'site.fragment.bundle.qty_aria' AND lang = 'zh-CN'",
+		SQL:          i18nSeedFragmentsBundleJetSQL,
+	})
+
+	// 159：默认文章详情内容模板（EDT-002）。
+	registerSeed(Seed{
+	 Version:      "159-article-detail-template",
+	 TableName:    "content_templates",
+	 ConditionSQL: "SELECT COUNT(*) FROM content_templates WHERE entity_type = 'article'",
+	 SQL:          articleDetailTemplateSQL,
+	})
+
+	register(Migration{
+		Version:   "160-presentation-entity-types",
+		TableName: "presentation_instances",
+		CheckSQL:  "SELECT CASE WHEN COUNT(*) = 0 THEN 1 ELSE 0 END FROM pg_constraint WHERE conrelid = ?::regclass AND conname = 'presentation_instances_entity_type_check'",
+		SQL:       presentationEntityTypesSQL,
+	})
+
+	register(Migration{
+		Version:   "161-data-retention",
+		TableName: "page_views_daily",
+		SQL:       dataRetentionSQL,
+	})
+
+	// 162：库存流水按仓库 + 时间索引（IDX-007）。
+	register(Migration{
+		Version:   "162-inventory-movements-wh-time-index",
+		TableName: "inventory_stock_movements",
+		CheckSQL: "SELECT CASE WHEN COUNT(*) = 1 THEN 1 ELSE 0 END FROM pg_indexes " +
+			"WHERE schemaname = current_schema() AND tablename = ? " +
+			"AND indexname = 'idx_inventory_movements_wh_time'",
+		SQL: inventoryMovementsWhTimeIndexSQL,
+	})
+
+	registerSeed(Seed{
+		Version:      "163-i18n-seed-dashboard-titles",
+		TableName:    "sys_i18n",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 1 THEN 1 ELSE 0 END FROM sys_i18n WHERE item_key = 'MsgArticlesTitle' AND lang = 'zh-CN'",
+		SQL:          i18nSeedDashboardTitlesSQL,
+	})
+
+	register(Migration{
+		Version:   "164-content-template-is-default",
+		TableName: "content_templates",
+		CheckSQL:  "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = ? AND column_name = 'is_default'",
+		SQL:       contentTemplateIsDefaultSQL,
+	})
+
+	register(Migration{
+		Version:   "165-orders-status-check",
+		TableName: "orders",
+		CheckSQL:  "SELECT CASE WHEN COUNT(*) = 0 THEN 1 ELSE 0 END FROM pg_constraint WHERE conrelid = ?::regclass AND conname = 'orders_status_check'",
+		SQL:       ordersStatusCheckSQL,
+	})
+
+	register(Migration{
+		Version:   "166-blocks-kind-check",
+		TableName: "blocks",
+		CheckSQL:  "SELECT CASE WHEN COUNT(*) = 1 THEN 1 ELSE 0 END FROM pg_constraint WHERE conrelid = ?::regclass AND conname = 'blocks_kind_check'",
+		SQL:       blocksKindCheckSQL,
 	})
 }
