@@ -16,14 +16,17 @@ import (
 )
 
 const (
-	defaultDatabaseDriver       = "postgres"
-	defaultDatabaseHost         = "127.0.0.1"
-	defaultDatabasePort         = 5432
-	defaultDatabaseUser         = "root"
-	defaultDatabasePassword     = ""
-	defaultDatabaseName         = ""
-	defaultDatabaseMaxIdleConns = 10
-	defaultDatabaseMaxOpenConns = 100
+	defaultDatabaseDriver            = "postgres"
+	defaultDatabaseHost              = "127.0.0.1"
+	defaultDatabasePort              = 5432
+	defaultDatabaseUser              = "root"
+	defaultDatabasePassword          = ""
+	defaultDatabaseName              = ""
+	defaultDatabaseMaxIdleConns      = 10
+	defaultDatabaseMaxOpenConns      = 100
+	defaultDatabaseConnMaxLifetime   = time.Hour
+	defaultDatabaseConnMaxIdleTime   = 10 * time.Minute
+	defaultDatabaseStatementTimeout  = 30 * time.Second
 )
 
 // Config 数据库配置。
@@ -36,6 +39,9 @@ type Config struct {
 	DBName                 string         `mapstructure:"dbname"`
 	MaxIdleConns           int            `mapstructure:"max_idle_conns"`
 	MaxOpenConns           int            `mapstructure:"max_open_conns"`
+	ConnMaxLifetime        string         `mapstructure:"conn_max_lifetime"`
+	ConnMaxIdleTime        string         `mapstructure:"conn_max_idle_time"`
+	StatementTimeout       string         `mapstructure:"statement_timeout"`
 	LogLevel               string         `mapstructure:"log_level"`
 	PrepareStmt            bool           `mapstructure:"prepare_stmt"`
 	SkipDefaultTransaction bool           `mapstructure:"skip_default_transaction"`
@@ -170,21 +176,22 @@ func resolveLogLevel(serverMode string, dbLogLevel string) gormlogger.LogLevel {
 	}
 }
 
-func toDriverConfig(cfg Config) dbdriver.Config {
+func toDriverConfig(cfg Config, statementTimeout time.Duration) dbdriver.Config {
 	return dbdriver.Config{
-		Driver:       cfg.Driver,
-		Host:         cfg.Host,
-		Port:         cfg.Port,
-		User:         cfg.User,
-		Password:     cfg.Password,
-		DBName:       cfg.DBName,
-		MaxIdleConns: cfg.MaxIdleConns,
-		MaxOpenConns: cfg.MaxOpenConns,
+		Driver:           cfg.Driver,
+		Host:             cfg.Host,
+		Port:             cfg.Port,
+		User:             cfg.User,
+		Password:         cfg.Password,
+		DBName:           cfg.DBName,
+		MaxIdleConns:     cfg.MaxIdleConns,
+		MaxOpenConns:     cfg.MaxOpenConns,
+		StatementTimeout: statementTimeout,
 	}
 }
 
-func buildDialector(cfg Config) (gorm.Dialector, error) {
-	driverCfg := dbdriver.NormalizeConfig(toDriverConfig(cfg))
+func buildDialector(cfg Config, statementTimeout time.Duration) (gorm.Dialector, error) {
+	driverCfg := dbdriver.NormalizeConfig(toDriverConfig(cfg, statementTimeout))
 	switch driverCfg.Driver {
 	case "mysql":
 		return dbdriver.OpenMySQL(driverCfg), nil
@@ -204,7 +211,20 @@ func initDB(v *viper.Viper) (*gorm.DB, error) {
 		}
 	}
 
-	driverCfg := dbdriver.NormalizeConfig(toDriverConfig(cfg))
+	connMaxLifetime, err := parseDatabaseDuration("conn_max_lifetime", cfg.ConnMaxLifetime, defaultDatabaseConnMaxLifetime)
+	if err != nil {
+		return nil, err
+	}
+	connMaxIdleTime, err := parseDatabaseDuration("conn_max_idle_time", cfg.ConnMaxIdleTime, defaultDatabaseConnMaxIdleTime)
+	if err != nil {
+		return nil, err
+	}
+	statementTimeout, err := parseDatabaseDuration("statement_timeout", cfg.StatementTimeout, defaultDatabaseStatementTimeout)
+	if err != nil {
+		return nil, err
+	}
+
+	driverCfg := dbdriver.NormalizeConfig(toDriverConfig(cfg, statementTimeout))
 	cfg.Driver = driverCfg.Driver
 	cfg.Host = driverCfg.Host
 	cfg.Port = driverCfg.Port
@@ -214,7 +234,7 @@ func initDB(v *viper.Viper) (*gorm.DB, error) {
 	cfg.MaxIdleConns = driverCfg.MaxIdleConns
 	cfg.MaxOpenConns = driverCfg.MaxOpenConns
 
-	dialector, err := buildDialector(cfg)
+	dialector, err := buildDialector(cfg, statementTimeout)
 	if err != nil {
 		return nil, err
 	}
@@ -252,7 +272,8 @@ func initDB(v *viper.Viper) (*gorm.DB, error) {
 
 	sqlDB.SetMaxIdleConns(cfg.MaxIdleConns)
 	sqlDB.SetMaxOpenConns(cfg.MaxOpenConns)
-	sqlDB.SetConnMaxLifetime(time.Hour)
+	sqlDB.SetConnMaxLifetime(connMaxLifetime)
+	sqlDB.SetConnMaxIdleTime(connMaxIdleTime)
 
 	if err := sqlDB.Ping(); err != nil {
 		return nil, fmt.Errorf("数据库连接测试失败: %w", err)
@@ -260,6 +281,21 @@ func initDB(v *viper.Viper) (*gorm.DB, error) {
 
 	logger.Scene("init").With("driver", strings.ToLower(cfg.Driver)).Info("数据库初始化成功")
 	return gormDB, nil
+}
+
+func parseDatabaseDuration(field, raw string, fallback time.Duration) (time.Duration, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return fallback, nil
+	}
+	duration, err := time.ParseDuration(raw)
+	if err != nil {
+		return 0, fmt.Errorf("解析 database.%s 失败: %w", field, err)
+	}
+	if duration <= 0 {
+		return 0, fmt.Errorf("解析 database.%s 失败: 值必须大于 0", field)
+	}
+	return duration, nil
 }
 
 func parseRuntimeOptions(v *viper.Viper) (runtimeOptions, error) {

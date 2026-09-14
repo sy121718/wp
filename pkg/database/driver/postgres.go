@@ -16,5 +16,8 @@ func OpenPostgres(cfg Config) gorm.Dialector {
 		cfg.DBName,
 		cfg.Port,
 	)
+	if cfg.StatementTimeout > 0 {
+		dsn += fmt.Sprintf(" options='-c statement_timeout=%d'", cfg.StatementTimeout.Milliseconds())
+	}
 	return postgres.Open(dsn)
 }

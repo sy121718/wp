@@ -1,17 +1,21 @@
 package dbdriver
 
-import "strings"
+import (
+	"strings"
+	"time"
+)
 
 // Config 数据库驱动配置
 type Config struct {
-	Driver       string
-	Host         string
-	Port         int
-	User         string
-	Password     string
-	DBName       string
-	MaxIdleConns int
-	MaxOpenConns int
+	Driver           string
+	Host             string
+	Port             int
+	User             string
+	Password         string
+	DBName           string
+	MaxIdleConns     int
+	MaxOpenConns     int
+	StatementTimeout time.Duration
 }
 
 // NormalizeConfig 归一化数据库配置
