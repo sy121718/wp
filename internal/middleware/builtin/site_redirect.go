@@ -22,6 +22,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"go_wp/internal/pipeline"
+	"go_wp/internal/seo"
 )
 
 // siteFacePrefix 访问面挂载前缀（与 setupStaticFace 的 Group("/site") 保持一致）。
@@ -30,6 +31,11 @@ const siteFacePrefix = "/site"
 // SiteRedirectMiddleware 见文件头注释。
 func SiteRedirectMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		if target, ok := indexAliasRedirectOf(c.Request.URL.Path); ok {
+			c.Redirect(http.StatusMovedPermanently, target)
+			c.Abort()
+			return
+		}
 		target, code, ok := redirectTargetOf(c.Request.URL.Path)
 		if !ok {
 			c.Next()
@@ -38,6 +44,26 @@ func SiteRedirectMiddleware() gin.HandlerFunc {
 		c.Redirect(code, target)
 		c.Abort()
 	}
+}
+
+// indexAliasRedirectOf /index 语言根别名 301 到规范路径（I18N-022）。
+func indexAliasRedirectOf(fullPath string) (target string, ok bool) {
+	if !strings.HasPrefix(fullPath, siteFacePrefix+"/") {
+		return "", false
+	}
+	rel := strings.TrimPrefix(fullPath, siteFacePrefix)
+	rel = strings.TrimSuffix(rel, "/")
+	if rel == "" {
+		return "", false
+	}
+	sitePath := rel
+	if !strings.HasPrefix(sitePath, "/") {
+		sitePath = "/" + sitePath
+	}
+	if !seo.IsPublicIndexAlias(sitePath) {
+		return "", false
+	}
+	return seo.CanonicalPublicPath(sitePath), true
 }
 
 // redirectTargetOf 判断访问面路径是否指向重定向产物，返回目标路径与状态码。

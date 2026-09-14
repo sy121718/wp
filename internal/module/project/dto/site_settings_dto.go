@@ -20,6 +20,8 @@ type SiteSettings struct {
 	// 构建期由 builder 注入产物 <head> 的 gtag 片段；空值 = 一个字节都不注入。
 	// 形状校验唯一出口是 builder.NormalizeGA4MeasurementID（保存与注入同一判据）。
 	GA4MeasurementID string `json:"ga4MeasurementId,omitempty"`
+	// IndexNowKey IndexNow 协议密钥（SEO-022）；空 = 不 ping。
+	IndexNowKey string `json:"indexNowKey,omitempty"`
 	// URLPatterns 各实体类型的详情页路径模式（WordPress 固定链接的等价物）。
 	//
 	// 键 = 实体类型（article / product / product_category / product_brand / product_tag），

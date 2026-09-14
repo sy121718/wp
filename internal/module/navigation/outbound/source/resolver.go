@@ -78,14 +78,11 @@ func (r *Resolver) pageCandidates(ctx context.Context, projectID string) navigat
 	if r.pages == nil {
 		return group
 	}
-	pages, err := r.pages.List(ctx, "")
+	pages, err := r.pages.List(ctx, &pagecontract.ListReq{ProjectID: projectID})
 	if err != nil {
 		return group
 	}
 	for _, p := range pages {
-		if p.ProjectID != projectID {
-			continue
-		}
 		url := p.DraftPath
 		if p.ActivePath != nil && *p.ActivePath != "" {
 			url = *p.ActivePath

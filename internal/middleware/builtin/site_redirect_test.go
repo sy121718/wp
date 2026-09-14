@@ -76,6 +76,9 @@ func TestSiteRedirectMiddleware(t *testing.T) {
 		{"普通页面放行", "/site/plain-path/", http.StatusOK, ""},
 		// 未激活路径：放行（由静态面决定 404）。
 		{"未激活路径放行", "/site/never-activated/", http.StatusOK, ""},
+		// /index 语言根别名 301 到 /（I18N-022）。
+		{"index 别名 301", "/site/index", http.StatusMovedPermanently, "/"},
+		{"index 带尾斜杠 301", "/site/index/", http.StatusMovedPermanently, "/"},
 		// 路径越界：必须放行，而不是替攻击者读出激活目录之外的重定向指令。
 		{"越界路径放行", "/site/../site/old-path", http.StatusOK, ""},
 	}
