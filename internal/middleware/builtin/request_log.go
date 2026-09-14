@@ -4,11 +4,34 @@ import (
 	"errors"
 	"fmt"
 	"go_wp/pkg/logger"
+	"net/url"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 )
+
+// sensitiveQueryKeys 日志中需打码的 query 参数名（小写比对）。
+var sensitiveQueryKeys = map[string]struct{}{
+	"token": {}, "code": {}, "key": {}, "password": {}, "secret": {},
+	"csrf_token": {}, "reset_token": {}, "activation_key": {},
+}
+
+func redactRawQuery(rawQuery string) string {
+	if rawQuery == "" {
+		return ""
+	}
+	vals, err := url.ParseQuery(rawQuery)
+	if err != nil {
+		return "[invalid-query]"
+	}
+	for k := range vals {
+		if _, ok := sensitiveQueryKeys[strings.ToLower(k)]; ok {
+			vals.Set(k, "[redacted]")
+		}
+	}
+	return vals.Encode()
+}
 
 // RequestLogCaptureMiddleware 结构化 HTTP 请求日志中间件。
 //
@@ -52,7 +75,7 @@ func RequestLogCaptureMiddleware(enabled bool) gin.HandlerFunc {
 			"latency_ms": latency.Milliseconds(),
 		}
 		if rawQuery != "" {
-			fields["query"] = rawQuery
+			fields["query"] = redactRawQuery(rawQuery)
 		}
 
 		entry := logger.Scene(scene).WithFields(fields)
