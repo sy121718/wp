@@ -32,6 +32,30 @@ export const apiMethods = {
             },
             saveDraft() {
                 var self = this;
+                // 内容模板：保存走 contenttemplate API（严格校验，产生新版本）。
+                if (meta.saveBase === 'template') {
+                    self.busy = true; self.renderUI();
+                    fetch('/api/contenttemplate/update', {
+                        method: 'POST',
+                        headers: csrfHeaders({ 'Content-Type': 'application/json' }),
+                        body: JSON.stringify({ id: meta.pageId, draftDocument: this.doc })
+                    }).then(function (r) { return r.json(); })
+                      .then(function (j) {
+                          self.busy = false;
+                          if (j.code && j.code >= 400) {
+                              self.saveState = 'error'; self.renderUI();
+                              alert(j.message || '保存失败');
+                              return;
+                          }
+                          var data = j.data || {};
+                          self.draftVersion = data.draftVersion || (self.draftVersion + 1);
+                          self.saveState = 'saved';
+                          self.clearBackup();
+                          self.flushCanvas();
+                      })
+                      .catch(function () { self.busy = false; self.saveState = 'error'; self.renderUI(); });
+                    return;
+                }
                 // 全局块编辑：保存到 dashboard 编排端点（保存后自动传播 stale）。
                 if (meta.saveBase === 'block') {
                     self.busy = true; self.renderUI();
@@ -68,7 +92,7 @@ export const apiMethods = {
             },
             publishFlow() {
                 var self = this;
-                if (meta.saveBase === 'block') { this.saveDraft(); return; }
+                if (meta.saveBase === 'block' || meta.saveBase === 'template') { this.saveDraft(); return; }
                 // 先保存草稿 → Build（预期版本为服务端新版本）→ Publish。
                 this.api('draft/save', {
                     id: meta.pageId,
@@ -86,7 +110,7 @@ export const apiMethods = {
                 });
             },
             buildAndPublish() {
-                if (meta.saveBase === 'block') { this.saveDraft(); return; }
+                if (meta.saveBase === 'block' || meta.saveBase === 'template') { this.saveDraft(); return; }
                 var self = this;
                 // 用基座的确认框而不是原生 confirm：发布是不可逆的对外动作，
                 // 自绘框能给出明确标题与按钮文案（原生框在 Linux 上是系统对话框，只有确定/取消）。

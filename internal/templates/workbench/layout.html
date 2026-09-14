@@ -46,7 +46,9 @@
 
         <div class="wb-topbar-right">
             <span class="wb-status" id="wb-status">就绪</span>
-            {{if not .isBlock}}
+            {{if .isTemplate}}
+            <a class="wb-btn wb-btn-ghost" id="wb-preview-link" href="/workbench/template/preview?{{.previewQS}}" target="_blank">预览</a>
+            {{else if not .isBlock}}
             <a class="wb-btn wb-btn-ghost" id="wb-preview-link" href="/workbench/preview?id={{.pageId}}" target="_blank">预览</a>
             <button type="button" class="wb-btn wb-btn-primary" id="wb-publish">发布</button>
             {{end}}
@@ -118,7 +120,7 @@
         {* ===== 中央画布 ===== *}
         <section class="wb-canvas-wrap">
             <div class="wb-canvas-frame" id="wb-canvas-frame">
-                <iframe id="wb-canvas" name="wb-canvas" title="画布" src="{{if .isBlock}}/workbench/block/preview?id={{.pageId}}&editor=1{{else}}/workbench/preview?id={{.pageId}}&editor=1{{end}}"></iframe>
+                <iframe id="wb-canvas" name="wb-canvas" title="画布" src="{{if .isBlock}}/workbench/block/preview?id={{.pageId}}&editor=1{{else if .isTemplate}}/workbench/template/preview?{{.previewQS}}{{else}}/workbench/preview?id={{.pageId}}&editor=1{{end}}"></iframe>
             </div>
         </section>
 

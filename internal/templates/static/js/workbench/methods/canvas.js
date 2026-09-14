@@ -393,6 +393,10 @@ export const canvasMethods = {
             submitCanvas() {
                 var frame = document.getElementById('wb-canvas');
                 if (!frame) return;
+                if (meta.saveBase === 'template') {
+                    this.submitTemplateCanvas();
+                    return;
+                }
                 var form = document.getElementById('wb-preview-form');
                 if (!form) {
                     form = document.createElement('form');
@@ -414,9 +418,51 @@ export const canvasMethods = {
                 form.elements.csrf_token.value = getCSRFToken();
                 form.submit();
             },
+            submitTemplateCanvas() {
+                var frame = document.getElementById('wb-canvas');
+                if (!frame) return;
+                var form = document.getElementById('wb-template-preview-form');
+                if (!form) {
+                    form = document.createElement('form');
+                    form.id = 'wb-template-preview-form';
+                    form.method = 'POST';
+                    form.action = '/workbench/template/preview';
+                    form.target = frame.name || 'wb-canvas';
+                    form.style.display = 'none';
+                    ['id', 'entityType', 'entityId', 'projectId', 'draftDocument', 'csrf_token'].forEach(function (name) {
+                        var el = document.createElement('input');
+                        el.name = name;
+                        form.appendChild(el);
+                    });
+                    document.body.appendChild(form);
+                }
+                form.elements.id.value = meta.pageId;
+                form.elements.entityType.value = meta.entityType || '';
+                form.elements.entityId.value = meta.entityId || '';
+                form.elements.projectId.value = meta.projectId || '';
+                form.elements.draftDocument.value = JSON.stringify(this.doc);
+                form.elements.csrf_token.value = getCSRFToken();
+                form.submit();
+            },
             // fetchCanvasHTML 拉取整页预览 HTML（不重载 iframe），供局部刷新提取节点片段。
             fetchCanvasHTML() {
                 var body = new URLSearchParams();
+                if (meta.saveBase === 'template') {
+                    body.set('id', meta.pageId);
+                    body.set('entityType', meta.entityType || '');
+                    body.set('entityId', meta.entityId || '');
+                    body.set('projectId', meta.projectId || '');
+                    body.set('draftDocument', JSON.stringify(this.doc));
+                    body.set('csrf_token', getCSRFToken());
+                    return fetch('/workbench/template/preview', {
+                        method: 'POST',
+                        headers: csrfHeaders({ 'Content-Type': 'application/x-www-form-urlencoded' }),
+                        body: body.toString(),
+                    }).then(function (res) {
+                        if (!res.ok) return Promise.reject(new Error('preview ' + res.status));
+                        return res.text();
+                    });
+                }
                 body.set('id', meta.pageId);
                 body.set('expectedVersion', this.draftVersion);
                 body.set('draftDocument', JSON.stringify(this.doc));

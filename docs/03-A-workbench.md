@@ -3,6 +3,10 @@
 > 基于用户规范《03-A Visual Workbench Specification》。本文件为后端/编译侧契约的实现映射，
 > 编辑器前端外壳（顶栏/底栏/画布/大纲树 UI、拖拽交互、快捷键）属 03-B 前端工作台范围。
 
+> **实现状态以代码为准**（最后核对：2026-09-13）。撤销/重做（100 层栈）、画布拖拽、
+> 结构树 HTMX、检查器 HTMX 等已在 `internal/templates/static/js/workbench/` 落地；
+> 下文 §2「明确不做」仅指 03-B 规划项中**尚未实现或未迁入本仓库**的部分。
+>
 > 2026-09-12 补充：tabs/accordion 的对齐重复项契约改由组件的 `AlignedRepeaterProvider`
 > 就近声明，注册时核对真实 Props；SSR 直接消费，JS 经 `go run ./cmd/workbench-contracts`
 > 生成。生成漂移和真实 HTTP→JS→Go 编译链路纳入 `scripts/check-workbench.sh`。
@@ -49,11 +53,19 @@
 前端产 AST JSON → `builder.Compile` 全链路已经闭环（02 系实现），本次校验层完备：
 Node 新字段均过白名单后持久化，编译输出零影响。
 
-## 2. 明确不做（03-B 前端工作台）
+## 2. 前端实现状态（原 03-B 范围）
 
-四区布局 UI、顶栏/底栏控件、选择器/大纲树渲染、拖拽重排与嵌套、快捷键体系、
-右键菜单、多选、历史快照（Undo/Redo 前端状态机）、Live Preview 新标签页、保存/发布按钮。
-上述均为编辑器前端；后端已提供其全部数据契约（AST/元数据/编译接口）。
+| 能力 | 状态 | 落点 |
+|---|---|---|
+| 撤销 / 重做 | ✅ 已实现 | `methods/state.js`（栈深 100，Ctrl+Z / Ctrl+Y） |
+| 画布拖拽 / pointer 交互 | ✅ 已实现 | `methods/canvas.js` |
+| 结构树渲染与拖拽 | ✅ 已实现 | HTMX `outline_tree` + `methods/tree.js` |
+| 检查器 / 设置 / 全局 / 历史面板 | ✅ 已实现 | HTMX 片段 + 薄 JS 绑定 |
+| 四区布局 UI、顶栏/底栏完整视觉 | 部分 | 外壳在 Jet `workbench/layout.html`，非 Elementor 式四区 |
+| Live Preview 新标签页 | 未做 | 预览仍在 iframe 内 |
+| 多选、完整快捷键矩阵 | 部分 | 见 `methods/shortcuts.js` |
+
+后端 AST/编译契约（§1）始终有效；前端以 ES modules + HTMX 为主路径（见 `docs/09-session-handoff.md` §3）。
 
 ## 3. 实现位置
 

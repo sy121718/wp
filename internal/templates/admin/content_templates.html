@@ -1,0 +1,72 @@
+{{* admin/content_templates.html — 内容模板列表（EDT-001） *}}
+{{extends "layout.html"}}
+{{block body()}}
+{{selectedProject := .SelectedProject}}
+<div class="stack">
+    <section class="card card-body">
+        <h2>内容模板</h2>
+        {{if .Err != ""}}
+        <p class="badge badge-warning">提示：{{.Err}}</p>
+        {{end}}
+        {{if !.Ready}}
+        <p class="hint">内容模板能力未装配，本页暂不可用。</p>
+        {{else}}
+        <p class="hint">
+            内容模板决定商品 / 文章等详情页的排版。可视化编辑在工作台进行，预览需绑定一条样例实体以解析字段绑定。
+        </p>
+        <form method="get" action="/admin/content-templates" class="form-inline">
+            <label>工程
+                <select class="form-select" name="project" onchange="this.form.submit()">
+                    {{range _, p := .Projects}}
+                    <option value="{{p.ID}}" {{if p.ID == selectedProject}}selected{{end}}>{{p.Name}}</option>
+                    {{end}}
+                </select>
+            </label>
+            <label>实体类型
+                <select class="form-select" name="entityType" onchange="this.form.submit()">
+                    <option value="" {{if .EntityType == ""}}selected{{end}}>全部</option>
+                    <option value="product" {{if .EntityType == "product"}}selected{{end}}>product</option>
+                    <option value="article" {{if .EntityType == "article"}}selected{{end}}>article</option>
+                </select>
+            </label>
+        </form>
+        {{end}}
+    </section>
+
+    {{if .Ready}}
+    <section class="card card-body">
+        <h2>模板列表（{{.TemplateCount}}）</h2>
+        {{if .TemplateCount == 0}}
+        <p class="hint">还没有任何内容模板。商品侧可在「详情页模板」页新建；文章侧需先跑迁移种子或 API 创建。</p>
+        {{else}}
+        <div class="table-wrap" tabindex="0" role="region" aria-label="内容模板列表"><table class="data-table data-table-wide">
+            <thead><tr><th>名称</th><th>实体类型</th><th>版本</th><th>更新时间</th><th>操作</th></tr></thead>
+            <tbody>
+            {{range _, t := .Templates}}
+            <tr>
+                <td>{{t.Name}}</td>
+                <td><code>{{t.EntityType}}</code></td>
+                <td>v{{t.DraftVersion}}</td>
+                <td>{{t.UpdatedAt}}</td>
+                <td>
+                    {{if t.EditURL != ""}}
+                    <a class="btn btn-sm" href="{{t.EditURL}}">可视化编辑</a>
+                    <a class="btn btn-sm btn-ghost" href="/admin/content-templates/edit?id={{t.ID}}&projectId={{selectedProject}}">编辑入口</a>
+                    {{else}}
+                    <span class="hint">{{t.SampleErr}}</span>
+                    {{end}}
+                </td>
+            </tr>
+            {{end}}
+            </tbody>
+        </table></div>
+        {{end}}
+        <p class="hint mt-md">
+            商品详情模板的新建 / 发布仍在
+            <a href="/admin/products?project={{selectedProject}}">商品列表 → 详情页模板</a>；
+            文章发布在 <a href="/admin/articles?project={{selectedProject}}">文章编辑页</a>。
+        </p>
+    </section>
+    {{end}}
+</div>
+{{end}}
