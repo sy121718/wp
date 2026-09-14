@@ -3,17 +3,17 @@
 <div class="sky-user-form" data-fragment="accountPanel">
 {{if .Notice}}<p class="sky-user-notice">{{ .Notice }}</p>{{end}}
 {{if .LoggedIn}}
-<p class="sky-user-note">你已登录。</p>
+<p class="sky-user-note">{{ .Labels.LoggedIn }}</p>
 <ul class="sky-user-links">
-{{if .AccountURL}}<li><a href="{{ .AccountURL }}">进入账号中心</a>（资料 / 偏好 / 改密码 / 登录设备）</li>{{end}}
+{{if .AccountURL}}<li><a href="{{ .AccountURL }}">{{ .Labels.AccountCenter }}</a>{{ .Labels.AccountHint }}</li>{{end}}
 </ul>
 <form class="sky-user-fields" method="post" action="/user/logout">
 <input type="hidden" name="csrf_token" value="{{ .CSRFToken }}">
-<button class="sky-user-submit sky-user-submit-quiet" type="submit">退出登录</button>
+<button class="sky-user-submit sky-user-submit-quiet" type="submit">{{ .Labels.Logout }}</button>
 </form>
 {{else}}
-<p class="sky-user-note">你还没有登录。</p>
-{{if .LoginURL}}<p class="sky-user-alt"><a href="{{ .LoginURL }}">去登录</a></p>{{end}}
-{{if .RegisterURL}}<p class="sky-user-alt">没有账号？<a href="{{ .RegisterURL }}">注册一个</a></p>{{end}}
+<p class="sky-user-note">{{ .Labels.Guest }}</p>
+{{if .LoginURL}}<p class="sky-user-alt"><a href="{{ .LoginURL }}">{{ .Labels.GoLogin }}</a></p>{{end}}
+{{if .RegisterURL}}<p class="sky-user-alt">{{ .Labels.NoAccount }}<a href="{{ .RegisterURL }}">{{ .Labels.Register }}</a></p>{{end}}
 {{end}}
 </div>

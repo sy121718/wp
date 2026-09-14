@@ -19,7 +19,7 @@ func (h *Handle) SEOScore(c *gin.Context) {
 		response.ErrorWithMessage(c, http.StatusBadRequest, "草稿文档为空")
 		return
 	}
-	res, err := seoscore.ScoreDocument(document, c.PostForm("url"))
+	res, err := seoscore.ScoreDocument(document, c.PostForm("url"), requestScoreLang(c))
 	if err != nil {
 		response.ErrorWithMessage(c, http.StatusBadRequest, "SEO 评分失败: "+err.Error())
 		return

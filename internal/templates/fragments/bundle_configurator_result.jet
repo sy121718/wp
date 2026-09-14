@@ -8,11 +8,11 @@
 </style>
 {{if .OK}}
 <div class="sky-bundle-summary" data-fragment="bundleConfiguratorResult" role="status">
-  <strong>{{ .Message }} · 套餐价 {{ .TotalPrice }} · 共 {{ .TotalQty }} 件</strong>
+  <strong>{{ .SummaryLine }}</strong>
   {{if len(.Items) > 0}}
   <ul class="sky-bundle-lines">
   {{range _, it := .Items}}
-    <li>{{ it.ProductName }} · {{ it.SKUCode }} × {{ it.Qty }}（当前可用 {{ it.Available }}）</li>
+    <li>{{ it.LineText }}</li>
   {{end}}
   </ul>
   {{end}}

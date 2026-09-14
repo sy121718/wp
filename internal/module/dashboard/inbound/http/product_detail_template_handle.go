@@ -5,7 +5,8 @@
 //
 //	· 同一实体类型（product）下可建多套**命名模板**，每套各自版本化
 //	  （模板与版本是 contenttemplate 模块的两层：换一套模板换 TemplateID，
-//	   改版式产生新版本，本页只做创建与查看，编辑仍在模板/工作台侧）；
+//	   改版式产生新版本，本页只做创建与查看；模板 Document 编辑走
+//	   /workbench?template={templateId}（contenttemplate 模块，非商品页工作台））；
 //	· 商品发布时可指定使用某套模板（首次发布 = create 带 templateId，
 //	   已发布 = rebuild 带 templateId 切换绑定）；
 //	· 发布前可预览：预览走 presentation.PreviewInstance（只读渲染，不落库不激活），
@@ -161,7 +162,7 @@ func withDetailTemplateMissing(data gin.H) gin.H {
 // ProductDetailTemplateCreate POST /admin/products/template/create：
 // 新建一套命名模板（复制指定模板或当前默认模板的文档），初始版本 v1。
 //
-// 不在本页做模板可视化编辑：模板内容编辑仍属模板/工作台侧；本页解决的是
+// 不在本页做模板可视化编辑：模板内容编辑走 /workbench?template=…；本页解决的是
 // 「同一个商品类型下有多套命名模板可选、各自版本化」的落地与选择。
 func (h *productPageHandle) ProductDetailTemplateCreate(c *gin.Context) {
 	if h.templates == nil {

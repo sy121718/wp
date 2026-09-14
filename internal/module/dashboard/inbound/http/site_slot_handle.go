@@ -112,7 +112,7 @@ func (h *siteSlotPageHandle) SiteSlotsPage(c *gin.Context) {
 	if selected != "" {
 		// 页面下拉候选：themeID 传空串 = 列全部页面（与页面管理页按激活主题过滤不同 ——
 		// 槽位要指向任何一页，包括还没挂主题的）。
-		list, lerr := h.pages.List(ctx, "")
+		list, lerr := h.pages.List(ctx, &pagecontract.ListReq{ProjectID: selected})
 		if lerr != nil {
 			pageErr = firstNonEmpty(pageErr, siteSlotFacingError(c, lerr))
 		} else {

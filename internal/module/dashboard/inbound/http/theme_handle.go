@@ -138,21 +138,23 @@ func (h *Handle) ActivateTheme(c *gin.Context) {
 		c.Redirect(http.StatusSeeOther, h.backToThemes(c))
 		return
 	}
-	// 换皮：整站页面转挂新激活主题 + 刷新快照 + 标待重建（激活不因刷新失败而回滚）。
-	h.reskinProjectPages(c, theme.ID, theme.ProjectID, theme.Settings)
+	themeJSON, structureJSON, err := themeSnapshots(theme.Settings)
+	if err != nil {
+		logger.Scene("theme").With("theme_id", theme.ID).Error(err, "序列化主题快照失败")
+		c.Redirect(http.StatusSeeOther, h.backToThemes(c))
+		return
+	}
+	if err := h.pages.ReskinProjectForTheme(c.Request.Context(), theme.ProjectID, theme.ID, themeJSON, structureJSON); err != nil {
+		logger.Scene("theme").With("theme_id", theme.ID).With("project", theme.ProjectID).Error(err, "整站换皮失败")
+		c.String(http.StatusInternalServerError, dashboardenums.MsgInternalError)
+		return
+	}
 	c.Redirect(http.StatusSeeOther, h.backToThemes(c))
 }
 
-// reskinProjectPages 切换激活主题后的「整站换皮」编排：
-// 1) 工程内全部页面转挂到新激活主题（ReattachProjectPagesToTheme）；
-// 2) 刷新 settings.theme / settings.structure 快照（新主题设置）；
-// 3) 全部页面标记待重建，下次构建即以新主题换皮。
-// 每一步失败都只记日志并继续（激活已提交，不做回滚），保证激活结果页正常返回。
+// reskinProjectPages 主题设置保存路径的换皮（非激活路径，逐步刷新；失败返回 HTTP 状态码）。
 func (h *Handle) reskinProjectPages(c *gin.Context, themeID, projectID string, settings json.RawMessage) {
 	ctx := c.Request.Context()
-	if err := h.pages.ReattachProjectPagesToTheme(ctx, projectID, themeID); err != nil {
-		logger.Scene("theme").With("theme_id", themeID).With("project", projectID).Error(err, "转挂页面到新主题失败")
-	}
 	themeJSON, structureJSON, err := themeSnapshots(settings)
 	if err != nil {
 		logger.Scene("theme").With("theme_id", themeID).Error(err, "序列化主题快照失败")

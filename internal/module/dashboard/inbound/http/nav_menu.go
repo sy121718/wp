@@ -63,6 +63,8 @@ var navConfig = []navGroup{
 			// 文章（INF-1）：CMS 内容实体（contents，迁移 080 起只保留 article）。
 			// 权限点用 content:list（迁移 033），与写操作的 content:create/update/delete 同源。
 			{Title: "文章", Path: "/admin/articles", Perm: "content:list"},
+			// 内容模板（EDT-001）：可视化编辑走 /workbench?template=…，列表在此。
+			{Title: "内容模板", Path: "/admin/content-templates", Perm: "contenttemplate:list"},
 		},
 	},
 	{

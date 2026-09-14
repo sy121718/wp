@@ -2,17 +2,17 @@
    提交目标仍是 user 模块的 POST 路由：无 JS 时原生提交整页跳转，链路完全一样。 *}
 <div class="sky-user-form" data-fragment="resetForm">
 {{if .Notice}}<p class="sky-user-notice">{{ .Notice }}</p>{{end}}
-{{if not .CSRFToken}}<p class="sky-user-error">会话未就绪，请刷新页面后重试。</p>{{end}}
+{{if not .CSRFToken}}<p class="sky-user-error">{{ .Labels.SessionNotReady }}</p>{{end}}
 <form class="sky-user-fields" method="post" action="/user/reset" novalidate>
 <input type="hidden" name="csrf_token" value="{{ .CSRFToken }}">
 <input type="hidden" name="key" value="{{ .Key }}">
-<label class="sky-user-field">邮箱
+<label class="sky-user-field">{{ .Labels.Email }}
 <input class="sky-user-input" type="email" name="email" value="{{ .Email }}" required autocomplete="email">
 </label>
-<label class="sky-user-field">新密码
+<label class="sky-user-field">{{ .Labels.Password }}
 <input class="sky-user-input" type="password" name="password" required autocomplete="new-password">
 </label>
-<button class="sky-user-submit" type="submit">设置新密码</button>
+<button class="sky-user-submit" type="submit">{{ .Labels.Submit }}</button>
 </form>
-<p class="sky-user-alt">改完密码会撤销该账号的<strong>全部</strong>登录会话（包括其它设备）。</p>
+<p class="sky-user-alt">{{ .Labels.RevokeNote }}</p>
 </div>

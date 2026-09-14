@@ -4,16 +4,16 @@
    换成一句「下单失败」，客户手里就什么都不剩，而这笔订单其实已经扣过库存了。 *}
 <div class="sky-checkout-result{{ if .Paid }} is-paid{{ else }} is-pending{{ end }}" data-fragment="checkout" role="status">
 {{ if .Paid }}
-<p class="sky-checkout-title">下单成功</p>
+<p class="sky-checkout-title">{{ .Labels.TitlePaid }}</p>
 {{ else }}
-<p class="sky-checkout-title">订单已创建，支付未完成</p>
+<p class="sky-checkout-title">{{ .Labels.TitlePending }}</p>
 {{ end }}
-<p class="sky-checkout-order">订单号：{{ .OrderNo }}</p>
-<p class="sky-checkout-total">合计：{{ .TotalLabel }}</p>
+<p class="sky-checkout-order">{{ .Labels.OrderNoPrefix }}{{ .OrderNo }}</p>
+<p class="sky-checkout-total">{{ .Labels.TotalPrefix }}{{ .TotalLabel }}</p>
 {{ if .PaymentError }}
 <p class="sky-checkout-error">{{ .PaymentError }}</p>
 {{ end }}
 {{ if .AccountMailed }}
-<p class="sky-checkout-account">账号初始密码已发送至 {{ .Email }}，登录后可在账号中心查看订单。</p>
+<p class="sky-checkout-account">{{ .AccountNote }}</p>
 {{ end }}
 </div>

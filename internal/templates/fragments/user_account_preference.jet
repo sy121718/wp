@@ -3,34 +3,34 @@
    提交目标仍是 /user/account/preference：无 JS 时原生提交整页跳转。 *}
 <div class="sky-user-form" data-fragment="accountPreferenceForm">
 {{if .Unavailable}}
-<p class="sky-user-note">账号偏好暂不可用，请稍后再试。</p>
+<p class="sky-user-note">{{ .Labels.Unavailable }}</p>
 {{else if .NeedLogin}}
-<p class="sky-user-note">请先登录后再查看账号偏好。</p>
-{{if .LoginURL}}<p class="sky-user-alt"><a href="{{ .LoginURL }}">去登录</a></p>{{end}}
+<p class="sky-user-note">{{ .Labels.NeedLogin }}</p>
+{{if .LoginURL}}<p class="sky-user-alt"><a href="{{ .LoginURL }}">{{ .Labels.GoLogin }}</a></p>{{end}}
 {{else}}
-{{if not .CSRFToken}}<p class="sky-user-error">会话未就绪，请刷新页面后重试。</p>{{end}}
+{{if not .CSRFToken}}<p class="sky-user-error">{{ .Labels.SessionNotReady }}</p>{{end}}
 <form class="sky-user-fields" method="post" action="/user/account/preference" novalidate>
 <input type="hidden" name="csrf_token" value="{{ .CSRFToken }}">
 {{if .Next}}<input type="hidden" name="next" value="{{ .Next }}">{{end}}
 <div class="sky-user-grid">
-<label class="sky-user-field">每页条数
+<label class="sky-user-field">{{ .Labels.PageSize }}
 <input class="sky-user-input" type="number" name="pageSize" min="1" max="200" value="{{ .Account.PageSize }}">
 </label>
-<label class="sky-user-field">主页可见性
+<label class="sky-user-field">{{ .Labels.Visibility }}
 <select class="sky-user-input" name="profileVisibility">
-<option value="public"{{if .Account.ProfileVisibility == "public"}} selected{{end}}>所有人可见</option>
-<option value="members"{{if .Account.ProfileVisibility == "members"}} selected{{end}}>仅登录用户</option>
-<option value="private"{{if .Account.ProfileVisibility == "private"}} selected{{end}}>仅自己</option>
+<option value="public"{{if .Account.ProfileVisibility == "public"}} selected{{end}}>{{ .Labels.VisibilityPublic }}</option>
+<option value="members"{{if .Account.ProfileVisibility == "members"}} selected{{end}}>{{ .Labels.VisibilityMembers }}</option>
+<option value="private"{{if .Account.ProfileVisibility == "private"}} selected{{end}}>{{ .Labels.VisibilityPrivate }}</option>
 </select>
 </label>
-<label class="sky-user-field">时区
+<label class="sky-user-field">{{ .Labels.Timezone }}
 <input class="sky-user-input" type="text" name="timezone" value="{{ .Account.Timezone }}" placeholder="Asia/Shanghai">
 </label>
 </div>
-<label class="sky-user-check"><input type="checkbox" name="emailNotify" value="1"{{if .Account.EmailNotify}} checked{{end}}> 接收邮件通知</label>
-<label class="sky-user-check"><input type="checkbox" name="smsNotify" value="1"{{if .Account.SmsNotify}} checked{{end}}> 接收短信通知</label>
-<label class="sky-user-check"><input type="checkbox" name="showOnline" value="1"{{if .Account.ShowOnline}} checked{{end}}> 公开我的在线状态</label>
-<button class="sky-user-submit" type="submit">保存偏好</button>
+<label class="sky-user-check"><input type="checkbox" name="emailNotify" value="1"{{if .Account.EmailNotify}} checked{{end}}> {{ .Labels.EmailNotify }}</label>
+<label class="sky-user-check"><input type="checkbox" name="smsNotify" value="1"{{if .Account.SmsNotify}} checked{{end}}> {{ .Labels.SmsNotify }}</label>
+<label class="sky-user-check"><input type="checkbox" name="showOnline" value="1"{{if .Account.ShowOnline}} checked{{end}}> {{ .Labels.ShowOnline }}</label>
+<button class="sky-user-submit" type="submit">{{ .Labels.Save }}</button>
 </form>
 {{end}}
 </div>

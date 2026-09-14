@@ -80,7 +80,7 @@ func TestArticleEditTemplateRendersSEOFields(t *testing.T) {
 			"seoTitle": "SEO 标题", "seoDescription": "SEO 描述", "focusKeyword": "关键词",
 			"featuredImage": "/storage/image/cover.webp",
 		}}
-	data := articleEditPageData(context.Background(), &articlePageHandle{}, item, "a1", "", "")
+	data := articleEditPageData(context.Background(), &articlePageHandle{}, item, "a1", "", "", "zh-CN")
 	body := renderAdminTemplate(t, "admin/article_edit.html", articleLayoutData(data))
 
 	for _, want := range []string{
@@ -145,7 +145,7 @@ func TestArticleEditPublishStates(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			h := &articlePageHandle{}
-			data := articleEditPageData(context.Background(), h, item, "a1", "", "")
+			data := articleEditPageData(context.Background(), h, item, "a1", "", "", "zh-CN")
 			for k, v := range tc.view {
 				data[k] = v
 			}
@@ -169,7 +169,7 @@ func TestArticleScoreFragmentRenders(t *testing.T) {
 	score := articleScoreViewOf(map[string]any{
 		"title": "一篇有标题的文章", "body": "<h2>小标题</h2><p>正文内容</p>",
 		"excerpt": "摘要", "focusKeyword": "文章",
-	}, "/blog/x")
+	}, "/blog/x", "zh-CN")
 	body := renderAdminTemplate(t, "fragments/seo_score", gin.H{"Score": score})
 	if !strings.Contains(body, "SEO 评分（0-100）") {
 		t.Errorf("评分片段未渲染出总分块：%s", body[:min(len(body), 200)])

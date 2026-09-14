@@ -2,24 +2,24 @@
    提交目标仍是 user 模块的 POST 路由：无 JS 时原生提交整页跳转，链路完全一样。 *}
 <div class="sky-user-form" data-fragment="registerForm">
 {{if .Notice}}<p class="sky-user-notice">{{ .Notice }}</p>{{end}}
-{{if not .CSRFToken}}<p class="sky-user-error">会话未就绪，请刷新页面后重试。</p>{{end}}
+{{if not .CSRFToken}}<p class="sky-user-error">{{ .Labels.SessionNotReady }}</p>{{end}}
 <form class="sky-user-fields" method="post" action="/user/register" novalidate>
 <input type="hidden" name="csrf_token" value="{{ .CSRFToken }}">
 {{if .Next}}<input type="hidden" name="next" value="{{ .Next }}">{{end}}
-<label class="sky-user-field">用户名
+<label class="sky-user-field">{{ .Labels.Username }}
 <input class="sky-user-input" type="text" name="username" required autocomplete="username">
 </label>
-<label class="sky-user-field">邮箱
+<label class="sky-user-field">{{ .Labels.Email }}
 <input class="sky-user-input" type="email" name="email" required autocomplete="email">
 </label>
-<label class="sky-user-field">昵称（可选）
+<label class="sky-user-field">{{ .Labels.Nickname }}
 <input class="sky-user-input" type="text" name="nickname" autocomplete="nickname">
 </label>
-<label class="sky-user-field">密码
+<label class="sky-user-field">{{ .Labels.Password }}
 <input class="sky-user-input" type="password" name="password" required autocomplete="new-password">
 </label>
-<button class="sky-user-submit" type="submit">注册</button>
+<button class="sky-user-submit" type="submit">{{ .Labels.Submit }}</button>
 </form>
-<p class="sky-user-alt">注册后需要去邮箱点激活链接才能登录。</p>
-{{if .LoginURL}}<p class="sky-user-alt">已经有账号？<a href="{{ .LoginURL }}">去登录</a></p>{{end}}
+<p class="sky-user-alt">{{ .Labels.AfterNote }}</p>
+{{if .LoginURL}}<p class="sky-user-alt">{{ .Labels.HasAccount }}<a href="{{ .LoginURL }}">{{ .Labels.Login }}</a></p>{{end}}
 </div>

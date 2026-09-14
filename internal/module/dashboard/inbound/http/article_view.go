@@ -159,8 +159,8 @@ func scoreViewFromResult(res *scoring.Result) scoreView {
 }
 
 // articleScoreViewOf 文章字段 → 评分视图（编辑页初始渲染与评分片段共用）。
-func articleScoreViewOf(data map[string]any, articleURL string) scoreView {
-	sv := scoreViewFromResult(seoscore.ScoreArticle(data, articleURL))
+func articleScoreViewOf(data map[string]any, articleURL, lang string) scoreView {
+	sv := scoreViewFromResult(seoscore.ScoreArticle(data, articleURL, lang))
 	if !sv.OK {
 		return sv
 	}

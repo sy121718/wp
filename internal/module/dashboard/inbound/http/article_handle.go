@@ -34,6 +34,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"go_wp/internal/builder/core"
+	dashboardenums "go_wp/internal/module/dashboard/enums"
 	contentcontract "go_wp/internal/module/content/contract"
 	contentdto "go_wp/internal/module/content/dto"
 	contentenums "go_wp/internal/module/content/enums"
@@ -53,8 +54,8 @@ const (
 	articleListLimit = 50
 	// 页面标题（字面量走 withI18n 的 fallback 链路：t(标题, 标题) 回落原文，
 	// 与系统页面槽位页、商品详情模板页同口径；不新增 dashboard enums 集合）。
-	articlePageTitle = "文章"
-	articleEditTitle = "编辑文章"
+	articlePageTitle = dashboardenums.MsgArticlesTitle
+	articleEditTitle = dashboardenums.MsgArticlesEditTitle
 	articleNewTitle  = "新建文章"
 	// articleEmptyField 空字段展示占位（表格空白单元格读不出「没有值」）。
 	articleEmptyField = "—"
@@ -164,7 +165,7 @@ func (h *articlePageHandle) ArticleEditPage(c *gin.Context) {
 		}
 	}
 	c.HTML(http.StatusOK, "admin/article_edit.html",
-		withCSRF(c, articleEditPageData(ctx, h, item, id, pageErr, pageOk)))
+		withCSRF(c, articleEditPageData(ctx, h, item, id, pageErr, pageOk, requestScoreLang(c))))
 }
 
 // ArticleCreate 新建文章（POST /admin/articles/create，权限点 content:create）。
@@ -232,7 +233,7 @@ func (h *articlePageHandle) ArticleDelete(c *gin.Context) {
 func (h *articlePageHandle) ArticleScorePanel(c *gin.Context) {
 	data := articleFormOf(c).data()
 	c.HTML(http.StatusOK, "fragments/seo_score",
-		gin.H{"Score": articleScoreViewOf(data, strings.TrimSpace(c.PostForm("url")))})
+		gin.H{"Score": articleScoreViewOf(data, strings.TrimSpace(c.PostForm("url")), requestScoreLang(c))})
 }
 
 // —— 表单与视图 ——
@@ -337,7 +338,7 @@ func articleStateLabel(published bool) string {
 // item 为 nil 表示新建（表单全空）；id 非空但 item 为 nil 表示读取失败
 // （pageErr 已带上原因），此时仍渲染空表单让编辑者能重新保存。
 func articleEditPageData(ctx context.Context, h *articlePageHandle, item *contentdto.ContentResp,
-	id string, pageErr, pageOk string) gin.H {
+	id string, pageErr, pageOk, lang string) gin.H {
 	data := gin.H{}
 	if item != nil {
 		data = item.Data
@@ -365,7 +366,7 @@ func articleEditPageData(ctx context.Context, h *articlePageHandle, item *conten
 		"ListURL": "/admin/articles",
 		// 初始评分：已保存的正文直接算一遍，编辑者打开页面就能看到当前水平
 		// （改动后按「重新评分」走 HTMX 片段，见 ArticleScorePanel）。
-		"Score": articleScoreViewOf(data, articlePreviewURL(articleSlugOf(item))),
+		"Score": articleScoreViewOf(data, articlePreviewURL(articleSlugOf(item)), lang),
 	}
 	// 工程列表查一次、两个区块共用（发布区块与导入区块都要它）。
 	projectOptions := articleProjectOptions(ctx, h)
@@ -374,6 +375,17 @@ func articleEditPageData(ctx context.Context, h *articlePageHandle, item *conten
 	}
 	for k, v := range articleImportBlockView(h, item, id, projectOptions) {
 		out[k] = v
+	}
+	if h != nil && h.templates != nil && id != "" {
+		if resolved, err := h.templates.ResolveTemplate(ctx, articleEntityType); err == nil {
+			projectID := ""
+			if len(projectOptions) > 0 {
+				if pid, ok := projectOptions[0]["ID"].(string); ok {
+					projectID = pid
+				}
+			}
+			out["TemplateEditURL"] = workbenchTemplateURL(resolved.TemplateID, articleEntityType, id, projectID)
+		}
 	}
 	return out
 }

@@ -176,7 +176,9 @@ func (h *orderPageHandle) OrdersPage(c *gin.Context) {
 			}
 		}
 		if filter.OrderID > 0 {
-			det, derr := h.orders.GetOrder(ctx, filter.OrderID)
+			det, derr := h.orders.GetOrder(ctx, &orderdto.GetOrderReq{
+				ProjectID: selected, OrderID: filter.OrderID,
+			})
 			if derr != nil {
 				pageErr = firstNonEmpty(pageErr, orderFacingError(c, derr))
 			} else {
@@ -275,11 +277,16 @@ func (h *orderPageHandle) OrderCancel(c *gin.Context) {
 		OperatorID:   orderOperatorID(c),
 		OperatorName: builtin.GetUsername(c),
 	}
-	if err := h.orders.CancelOrder(c.Request.Context(), req); err != nil {
+	resp, err := h.orders.CancelOrder(c.Request.Context(), req)
+	if err != nil {
 		orderRedirect(c, "", orderFacingError(c, err))
 		return
 	}
-	orderRedirect(c, orderenums.MsgCancelled, "")
+	msg := orderenums.MsgCancelled
+	if resp != nil && len(resp.Warnings) > 0 {
+		msg = resp.Warnings[0]
+	}
+	orderRedirect(c, msg, "")
 }
 
 // OrderRefund 退款（POST /admin/orders/refund）：**不归还库存**（退货入库是另一件事）。

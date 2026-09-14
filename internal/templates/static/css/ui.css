@@ -55,10 +55,6 @@
    替代原生 confirm 与内联 onclick/onsubmit：模板里只留 data-confirm 一个属性。
    用 <dialog> 承载 —— showModal() 自带焦点陷阱与 Esc 关闭，背景自动 inert。 */
 .wb-confirm {
-    /* 居中必须显式写：theme.css 的全局 reset（* { margin: 0 }）把 UA 样式里
-       <dialog> 的 margin: auto 一起清掉了，只留 position:fixed + inset:0 会让弹层
-       贴到左上角。实测计算值 margin=0px / rect.x=0 / rect.y=0 —— 是 reset 与 UA 样式的
-       对抗，不是浏览器差异。inset + margin:auto + 确定宽度 = 居中，不依赖 UA。 */
     position: fixed; inset: 0; margin: auto;
     padding: 0; border: 1px solid var(--sky-c-border, var(--c-border, #e5e7eb));
     border-radius: 12px; background: var(--sky-c-surface, var(--c-surface, #fff));
@@ -78,7 +74,6 @@
    弹窗本体**不设内边距**，内容包在 .wb-modal-inner 里 —— 这样「点框内留白区」的
    事件 target 是 inner 而不是 dialog，不会误判成点遮罩。 */
 .wb-modal {
-    /* 同上：居中靠自己，不靠 UA 的 dialog { margin: auto }。 */
     position: fixed; inset: 0; margin: auto;
     padding: 0; border: 1px solid var(--sky-c-border, var(--c-border, #e5e7eb));
     border-radius: 14px; background: var(--sky-c-surface, var(--c-surface, #fff));

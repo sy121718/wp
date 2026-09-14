@@ -2,7 +2,8 @@ package dashboardhttp
 
 // 站点设置页：展示/编辑站点基础信息（站点名/简介/联系邮箱）与统计代码（GA4 测量 ID）。
 // 数据源为 project 模块 SiteSettings（projects.settings JSON），经 project 契约读写。
-// 其余站点级能力（SEO 全局设置等）尚未落地，页面以「待实现能力」占位标注。
+// GA4 测量 ID、系统页面槽位绑定等站点级能力已在其它入口落地（主题/页面模块）；
+// 本页聚焦 projects.settings 中的基础信息与统计代码字段。
 
 import (
 	"encoding/json"
@@ -13,6 +14,7 @@ import (
 	dashboardenums "go_wp/internal/module/dashboard/enums"
 	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/internal/siteurl"
+	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
 
@@ -62,6 +64,10 @@ type siteSettingsData struct {
 	LocaleError string
 	// LocaleSaved 语言清单刚保存成功（?locales_saved=1，PRG 回跳提示）。
 	LocaleSaved bool
+	// IndexNowKey IndexNow 协议密钥（SEO-022）。
+	IndexNowKey string
+	// LangURLOffWarning 启用多语言但 url_mode=off 时的提示（I18N-016）。
+	LangURLOffWarning bool
 }
 
 // templateMap 转 Jet 模板键 map（layout 以小写 title/menu 取值）。
@@ -78,9 +84,11 @@ func (d *siteSettingsData) templateMap() gin.H {
 
 		"GA4MeasurementID": d.GA4MeasurementID,
 		"URLPatterns":      d.URLPatterns,
-		"Locales":          d.Locales,
-		"LocaleError":      d.LocaleError,
-		"LocaleSaved":      d.LocaleSaved,
+		"Locales":            d.Locales,
+		"LocaleError":        d.LocaleError,
+		"LocaleSaved":        d.LocaleSaved,
+		"IndexNowKey":        d.IndexNowKey,
+		"LangURLOffWarning":  d.LangURLOffWarning,
 	}
 }
 
@@ -125,10 +133,26 @@ func (h *Handle) fillProjectSettings(c *gin.Context, data *siteSettingsData) {
 	data.SiteDesc = fields.SiteDesc
 	data.ContactEmail = fields.ContactEmail
 	data.GA4MeasurementID = fields.GA4MeasurementID
+	data.IndexNowKey = fields.IndexNowKey
 	// URL 规则：当前配置（可能为空）+ 默认模式（placeholder，"留空 = 用默认"要看得见）。
 	data.URLPatterns = buildURLPatternRows(fields.URLPatterns)
 	// 语言清单（project_locales）：站点「有哪几种语言」的唯一真源，与构建/路由同源。
 	data.Locales = h.localeRowsOf(c, data.Selected)
+	data.LangURLOffWarning = langURLOffWarning(data.Locales)
+}
+
+// langURLOffWarning 启用多种语言且 url_mode=off 时提示（I18N-016）。
+func langURLOffWarning(rows []localeRow) bool {
+	if i18n.SiteLangURLModeValue() != i18n.SiteLangURLModeOff {
+		return false
+	}
+	enabled := 0
+	for _, r := range rows {
+		if r.Enabled {
+			enabled++
+		}
+	}
+	return enabled > 1
 }
 
 // SaveSiteSettings 保存站点设置（POST /admin/settings/save）。
@@ -179,6 +203,7 @@ func (h *Handle) SaveSiteSettings(c *gin.Context) {
 		SiteDesc:         strings.TrimSpace(c.PostForm("siteDesc")),
 		ContactEmail:     strings.TrimSpace(c.PostForm("contactEmail")),
 		GA4MeasurementID: ga4ID,
+		IndexNowKey:      strings.TrimSpace(c.PostForm("indexNowKey")),
 		URLPatterns:      patterns,
 	})
 	if err != nil {
@@ -241,6 +266,9 @@ func mergeSiteSettings(raw json.RawMessage, fields projectcontract.SiteSettings)
 		return nil, err
 	}
 	if err := setString("ga4MeasurementId", fields.GA4MeasurementID); err != nil {
+		return nil, err
+	}
+	if err := setString("indexNowKey", fields.IndexNowKey); err != nil {
 		return nil, err
 	}
 	return json.Marshal(obj)

@@ -2,14 +2,14 @@
    提交目标仍是 user 模块的 POST 路由：无 JS 时原生提交整页跳转，链路完全一样。 *}
 <div class="sky-user-form" data-fragment="forgotForm">
 {{if .Notice}}<p class="sky-user-notice">{{ .Notice }}</p>{{end}}
-{{if not .CSRFToken}}<p class="sky-user-error">会话未就绪，请刷新页面后重试。</p>{{end}}
+{{if not .CSRFToken}}<p class="sky-user-error">{{ .Labels.SessionNotReady }}</p>{{end}}
 <form class="sky-user-fields" method="post" action="/user/forgot" novalidate>
 <input type="hidden" name="csrf_token" value="{{ .CSRFToken }}">
-<label class="sky-user-field">注册邮箱
+<label class="sky-user-field">{{ .Labels.Email }}
 <input class="sky-user-input" type="email" name="email" value="{{ .Email }}" required autocomplete="email">
 </label>
-<button class="sky-user-submit" type="submit">发送重置链接</button>
+<button class="sky-user-submit" type="submit">{{ .Labels.Submit }}</button>
 </form>
-<p class="sky-user-alt">无论邮箱是否存在，提交后都会显示同一句提示 —— 那样可以避免被人拿来试探哪些邮箱注册过。</p>
-{{if .LoginURL}}<p class="sky-user-alt"><a href="{{ .LoginURL }}">返回登录</a></p>{{end}}
+<p class="sky-user-alt">{{ .Labels.Privacy }}</p>
+{{if .LoginURL}}<p class="sky-user-alt"><a href="{{ .LoginURL }}">{{ .Labels.BackLogin }}</a></p>{{end}}
 </div>

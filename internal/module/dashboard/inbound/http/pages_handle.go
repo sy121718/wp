@@ -78,8 +78,12 @@ func (h *Handle) buildPagesData(c *gin.Context) (*pagesPageData, error) {
 			themeID = theme.ID
 		}
 	}
-	// 第二步：按激活主题过滤页面（themeID 为空列全部）。
-	pages, err := h.pages.List(ctx, themeID)
+	// 第二步：按当前工程与激活主题过滤页面。
+	projectID := ""
+	if len(projects) > 0 {
+		projectID = projects[0].ID
+	}
+	pages, err := h.pages.List(ctx, &pagecontract.ListReq{ProjectID: projectID, ThemeID: themeID})
 	if err != nil {
 		return nil, err
 	}

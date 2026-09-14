@@ -1,16 +1,13 @@
-{* return_result.jet — 退货申请提交结果（BIZ-1，退货入库）。
-
-   两态：失败只渲染一句话；成功给出申请单号与「接下来会发生什么」。
-   把流程写清楚是刻意的 —— 退货是客户最焦虑的一段流程，
-   「提交成功」四个字不足以回答他真正关心的问题：什么时候退钱。 *}
+{* return_result.jet — 退货申请提交结果（BIZ-1，退货入库）。 *}
+{{labels := .Labels}}
 <div class="sky-return-result{{if .Notice}} is-error{{else}} is-ok{{end}}" data-fragment="returnRequest" role="status">
 {{if .Notice}}
-<p class="sky-return-title">提交未完成</p>
+<p class="sky-return-title">{{ labels.TitleError }}</p>
 <p class="sky-return-note">{{ .Notice }}</p>
 {{else}}
-<p class="sky-return-title">退货申请已提交</p>
-<p class="sky-return-note">申请单号 <code>{{ .ReturnNo }}</code> · 当前状态：{{ .StatusLabel }}</p>
-<p class="sky-return-note">预计退款 {{ .RefundLabel }} —— 客服审核通过并收到货后按原支付方式退回。</p>
-{{if .Reason}}<p class="sky-return-note">退货原因：{{ .Reason }}</p>{{end}}
+<p class="sky-return-title">{{ labels.TitleSuccess }}</p>
+<p class="sky-return-note">{{ .StatusLine }}</p>
+<p class="sky-return-note">{{ .RefundNote }}</p>
+{{if .Reason}}<p class="sky-return-note">{{ labels.ReasonPrefix }}{{ .Reason }}</p>{{end}}
 {{end}}
 </div>

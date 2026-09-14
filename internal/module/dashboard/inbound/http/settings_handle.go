@@ -17,9 +17,15 @@ import (
 	"strings"
 
 	seoscore "go_wp/internal/seo"
+	"go_wp/pkg/response"
 
 	"github.com/gin-gonic/gin"
 )
+
+// requestScoreLang 评分使用的语言（后台 Cookie / Accept-Language，SEO-001）。
+func requestScoreLang(c *gin.Context) string {
+	return response.RequestLanguage(c)
+}
 
 // settingsView 页面设置表单数据（settings.layout / settings.seo 的子集）。
 type settingsView struct {
@@ -131,7 +137,7 @@ func (h *Handle) SettingsPanel(c *gin.Context) {
 // SeoScorePanel 渲染 SEO 评分区片段（字段改动后局部刷新，避免整块表单重绘丢焦点）。
 func (h *Handle) SeoScorePanel(c *gin.Context) {
 	doc := json.RawMessage(c.PostForm("document"))
-	c.HTML(http.StatusOK, "fragments/seo_score", gin.H{"Score": scoreViewOf(doc, c.PostForm("url"))})
+	c.HTML(http.StatusOK, "fragments/seo_score", gin.H{"Score": scoreViewOf(doc, c.PostForm("url"), requestScoreLang(c))})
 }
 
 // settingsViewOf 解析草稿文档的 settings 片段。
@@ -184,11 +190,11 @@ func settingsViewOf(doc json.RawMessage) settingsView {
 }
 
 // scoreViewOf 计算并转换 SEO 评分（文档为空/评分失败时返回 OK=false，模板显示空态）。
-func scoreViewOf(doc json.RawMessage, pageURL string) scoreView {
+func scoreViewOf(doc json.RawMessage, pageURL, lang string) scoreView {
 	if len(doc) == 0 {
 		return scoreView{}
 	}
-	res, err := seoscore.ScoreDocument(doc, pageURL)
+	res, err := seoscore.ScoreDocument(doc, pageURL, lang)
 	if err != nil || res == nil {
 		return scoreView{}
 	}
@@ -213,6 +219,8 @@ func scoreViewOf(doc json.RawMessage, pageURL string) scoreView {
 	sv.SerpTitle = settingsViewOf(doc).SEOTitle
 	if sv.SerpTitle == "" {
 		sv.SerpTitle = "（未填写 SEO 标题）"
+	} else {
+		sv.SerpTitle = seoscore.TruncateDisplayWidth(sv.SerpTitle, 60)
 	}
 	sv.SerpDesc = settingsViewOf(doc).SEODescription
 	if sv.SerpDesc == "" {

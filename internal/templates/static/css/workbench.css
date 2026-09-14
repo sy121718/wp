@@ -129,7 +129,10 @@
 .wb-caret { white-space: nowrap; font-size: 11px; color: var(--c-text-mute, #6b7280); }
 .wb-node-flag { font-size: 10px; color: var(--c-text-mute, #6b7280); border: 1px solid var(--c-border, #e5e7eb); border-radius: 4px; padding: 0 3px; flex: none; }
 .wb-node-actions { margin-left: auto; display: none; gap: 2px; flex: none; }
+.wb-node.is-selected .wb-node-actions { display: inline-flex; }
+@media (hover: hover) {
 .wb-node:hover .wb-node-actions, .wb-node:focus-within .wb-node-actions { display: inline-flex; }
+}
 .wb-node-action {
     border: none; background: none; cursor: pointer; font-size: 12px; line-height: 1;
     padding: 2px 4px; border-radius: 4px; color: var(--c-text-mute, #6b7280);
@@ -177,7 +180,7 @@
 .wb-media-panel {
     position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
     /* 弹窗尺寸：宽度 800px 起、按视口放大，高度 90vh（列表能放下更多缩略图）。 */
-    width: clamp(800px, 86vw, 1280px); height: 90vh; max-height: 90vh;
+    width: min(calc(100vw - 32px), 1280px); height: 90vh; max-height: 90vh;
     display: flex; flex-direction: column;
     background: var(--c-surface, #fff); border-radius: 12px;
     box-shadow: 0 20px 60px rgba(0,0,0,.25); overflow: hidden;

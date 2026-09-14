@@ -2,6 +2,7 @@
    自包含样式（访问面片段不依赖后台 theme.css）；
    桌面 / 平板 / 手机三视口与鼠标 / 滚轮 / 触屏 / 键盘四类输入都要能用：
    选项行 flex-wrap 自动折行，窄屏数量输入占满整行、提交按钮铺满。 *}
+{{labels := .Labels}}
 <style>
 .sky-bundle{display:grid;gap:12px;max-width:min(100%,56rem);font-size:.95rem}
 .sky-bundle-options{display:grid;gap:8px}
@@ -35,16 +36,16 @@
     <div class="sky-bundle-option">
       <span class="sky-bundle-name">{{ it.ProductName }} · {{ it.SKUCode }}</span>
       <span class="sky-bundle-tag">{{ it.RequiredText }}</span>
-      <span class="sky-bundle-meta">单件 {{ it.MinQty }} ~ {{ it.MaxText }} · 可用 {{ it.Available }}</span>
+      <span class="sky-bundle-meta">{{ it.OptionMeta }}</span>
       <input type="hidden" name="variantId" value="{{ it.VariantID }}">
-      <input class="sky-bundle-qty" type="number" name="qty" value="{{ it.DefaultQty }}" min="{{ it.MinQty }}" step="1" inputmode="numeric" aria-label="数量"{{ if it.MaxAttr != "" }} max="{{ it.MaxAttr }}"{{ end }}>
+      <input class="sky-bundle-qty" type="number" name="qty" value="{{ it.DefaultQty }}" min="{{ it.MinQty }}" step="1" inputmode="numeric" aria-label="{{ labels.QtyAria }}"{{ if it.MaxAttr != "" }} max="{{ it.MaxAttr }}"{{ end }}>
     </div>
   {{end}}
   </div>
   <div class="sky-bundle-foot">
-    <span class="sky-bundle-price">套餐价 {{ .Price }}</span>
+    <span class="sky-bundle-price">{{ .PriceLabel }}</span>
     <span class="sky-bundle-hint">{{ .TotalHint }}</span>
-    <button type="submit" class="sky-bundle-submit">确认数量</button>
+    <button type="submit" class="sky-bundle-submit">{{ labels.Submit }}</button>
   </div>
 </form>
 <div class="sky-bundle-result" aria-live="polite"></div>

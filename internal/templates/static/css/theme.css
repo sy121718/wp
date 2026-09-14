@@ -102,7 +102,20 @@
 }
 
 /* ===== Reset ===== */
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+*, *::before, *::after { box-sizing: border-box; }
+/* 显式归零 —— 不用通配符 margin/padding，避免清掉 <dialog> 的 UA margin:auto（showModal 居中）。 */
+html, body, h1, h2, h3, h4, h5, h6, p,
+blockquote, figure, figcaption,
+ul, ol, li, dl, dd,
+pre, hr,
+table, caption, tbody, tfoot, thead, tr, th, td,
+form, fieldset, legend,
+menu, nav,
+article, aside, section, header, footer, main, address,
+details, summary {
+    margin: 0;
+    padding: 0;
+}
 html { font-size: 15px; -webkit-font-smoothing: antialiased; }
 body {
     font-family: var(--font-sans);

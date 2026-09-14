@@ -3,70 +3,70 @@
    提交目标仍是 user 模块的 POST 路由：无 JS 时原生提交整页跳转，链路完全一样。 *}
 <div class="sky-user-form" data-fragment="accountProfileForm">
 {{if .Unavailable}}
-<p class="sky-user-note">账号资料暂不可用，请稍后再试。</p>
+<p class="sky-user-note">{{ .Labels.Unavailable }}</p>
 {{else if .NeedLogin}}
-<p class="sky-user-note">请先登录后再查看账号资料。</p>
-{{if .LoginURL}}<p class="sky-user-alt"><a href="{{ .LoginURL }}">去登录</a></p>{{end}}
+<p class="sky-user-note">{{ .Labels.NeedLogin }}</p>
+{{if .LoginURL}}<p class="sky-user-alt"><a href="{{ .LoginURL }}">{{ .Labels.GoLogin }}</a></p>{{end}}
 {{else}}
-{{if not .CSRFToken}}<p class="sky-user-error">会话未就绪，请刷新页面后重试。</p>{{end}}
+{{if not .CSRFToken}}<p class="sky-user-error">{{ .Labels.SessionNotReady }}</p>{{end}}
 <dl class="sky-user-meta">
-<dt>用户名</dt><dd>{{ .Account.Username }}</dd>
-<dt>邮箱</dt><dd>{{ .Account.Email }} {{if .Account.EmailVerified}}<span class="sky-user-tag">已验证</span>{{else}}<span class="sky-user-tag">未验证</span>{{end}}</dd>
-<dt>注册时间</dt><dd>{{ .Account.RegisteredAtText }}</dd>
-<dt>上次登录</dt><dd>{{ .Account.LastLoginTimeText }}{{if .Account.LastLoginIP}} · {{ .Account.LastLoginIP }}{{end}}</dd>
+<dt>{{ .Labels.Username }}</dt><dd>{{ .Account.Username }}</dd>
+<dt>{{ .Labels.Email }}</dt><dd>{{ .Account.Email }} {{if .Account.EmailVerified}}<span class="sky-user-tag">{{ .Labels.Verified }}</span>{{else}}<span class="sky-user-tag">{{ .Labels.Unverified }}</span>{{end}}</dd>
+<dt>{{ .Labels.RegisteredAt }}</dt><dd>{{ .Account.RegisteredAtText }}</dd>
+<dt>{{ .Labels.LastLogin }}</dt><dd>{{ .Account.LastLoginTimeText }}{{if .Account.LastLoginIP}} · {{ .Account.LastLoginIP }}{{end}}</dd>
 </dl>
 <form class="sky-user-fields" method="post" action="/user/account/profile" novalidate>
 <input type="hidden" name="csrf_token" value="{{ .CSRFToken }}">
 {{if .Next}}<input type="hidden" name="next" value="{{ .Next }}">{{end}}
 <div class="sky-user-grid">
-<label class="sky-user-field">昵称
+<label class="sky-user-field">{{ .Labels.Nickname }}
 <input class="sky-user-input" type="text" name="nickname" value="{{ .Account.Nickname }}" autocomplete="nickname">
 </label>
-<label class="sky-user-field">性别
+<label class="sky-user-field">{{ .Labels.Gender }}
 <select class="sky-user-input" name="gender">
-<option value="0"{{if .Account.Gender == 0}} selected{{end}}>未填写</option>
-<option value="1"{{if .Account.Gender == 1}} selected{{end}}>男</option>
-<option value="2"{{if .Account.Gender == 2}} selected{{end}}>女</option>
+<option value="0"{{if .Account.Gender == 0}} selected{{end}}>{{ .Labels.GenderUnset }}</option>
+<option value="1"{{if .Account.Gender == 1}} selected{{end}}>{{ .Labels.GenderMale }}</option>
+<option value="2"{{if .Account.Gender == 2}} selected{{end}}>{{ .Labels.GenderFemale }}</option>
 </select>
 </label>
-<label class="sky-user-field">名
+<label class="sky-user-field">{{ .Labels.FirstName }}
 <input class="sky-user-input" type="text" name="firstName" value="{{ .Account.FirstName }}" autocomplete="given-name">
 </label>
-<label class="sky-user-field">姓
+<label class="sky-user-field">{{ .Labels.LastName }}
 <input class="sky-user-input" type="text" name="lastName" value="{{ .Account.LastName }}" autocomplete="family-name">
 </label>
-<label class="sky-user-field">生日
+<label class="sky-user-field">{{ .Labels.Birthday }}
 <input class="sky-user-input" type="date" name="birthday" value="{{ .Account.Birthday }}" autocomplete="bday">
 </label>
-<label class="sky-user-field">电话
+<label class="sky-user-field">{{ .Labels.Phone }}
 <input class="sky-user-input" type="tel" name="phone" value="{{ .Account.Phone }}" autocomplete="tel">
 </label>
-<label class="sky-user-field">个人主页
+<label class="sky-user-field">{{ .Labels.Website }}
 <input class="sky-user-input" type="url" name="website" value="{{ .Account.Website }}" placeholder="https://">
 </label>
-<label class="sky-user-field">公司 / 组织
+<label class="sky-user-field">{{ .Labels.Company }}
 <input class="sky-user-input" type="text" name="company" value="{{ .Account.Company }}" autocomplete="organization">
 </label>
-<label class="sky-user-field">国家 / 地区
+<label class="sky-user-field">{{ .Labels.Country }}
 <input class="sky-user-input" type="text" name="country" value="{{ .Account.Country }}" autocomplete="country-name">
 </label>
-<label class="sky-user-field">省 / 州
+<label class="sky-user-field">{{ .Labels.Province }}
 <input class="sky-user-input" type="text" name="province" value="{{ .Account.Province }}" autocomplete="address-level1">
 </label>
-<label class="sky-user-field">城市
+<label class="sky-user-field">{{ .Labels.City }}
 <input class="sky-user-input" type="text" name="city" value="{{ .Account.City }}" autocomplete="address-level2">
 </label>
-<label class="sky-user-field">邮编
+<label class="sky-user-field">{{ .Labels.Zip }}
 <input class="sky-user-input" type="text" name="postcode" value="{{ .Account.Postcode }}" autocomplete="postal-code">
 </label>
 </div>
-<label class="sky-user-field">地址
+<label class="sky-user-field">{{ .Labels.Address }}
 <input class="sky-user-input" type="text" name="address" value="{{ .Account.Address }}" autocomplete="street-address">
 </label>
-<label class="sky-user-field">简介
+<label class="sky-user-field">{{ .Labels.Bio }}
 <textarea class="sky-user-input sky-user-textarea" name="bio">{{ .Account.Bio }}</textarea>
 </label>
-<button class="sky-user-submit" type="submit">保存资料</button>
+<button class="sky-user-submit" type="submit">{{ .Labels.Save }}</button>
 </form>
 {{end}}
 </div>

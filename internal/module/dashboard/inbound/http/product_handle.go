@@ -18,6 +18,7 @@ import (
 
 	"go_wp/internal/middleware/builtin"
 
+	dashboardenums "go_wp/internal/module/dashboard/enums"
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
 	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
@@ -159,7 +160,7 @@ func (h *productPageHandle) ProductsPage(c *gin.Context) {
 	// withCSRF：注入 csrf_token（POST 表单隐藏域）+ 导航树 + 权限码 + 多语言，
 	// 与其它后台页面同一渲染入口（缺 token 时表单提交会被 CSRF 中间件挡下）。
 	c.HTML(http.StatusOK, "admin/products.html", withCSRF(c, gin.H{
-		"title":            "商品",
+		"title":            dashboardenums.MsgProductsTitle,
 		"menu":             "products",
 		"Projects":         projects,
 		"SelectedProject":  selected,

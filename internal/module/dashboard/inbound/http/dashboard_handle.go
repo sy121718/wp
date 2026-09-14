@@ -20,10 +20,14 @@ import (
 
 	admincontract "go_wp/internal/module/admin/contract"
 	blockcontract "go_wp/internal/module/block/contract"
+	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
+	contenttemplatedto "go_wp/internal/module/contenttemplate/dto"
 	dashboardenums "go_wp/internal/module/dashboard/enums"
 	navigationcontract "go_wp/internal/module/navigation/contract"
+	presentationdto "go_wp/internal/module/presentation/dto"
 	pagecontract "go_wp/internal/module/page/contract"
 	plugincontract "go_wp/internal/module/plugin/contract"
+	productcontract "go_wp/internal/module/product/contract"
 	projectcontract "go_wp/internal/module/project/contract"
 
 	"go_wp/pkg/logger"
@@ -54,6 +58,8 @@ type Handle struct {
 	authz      admincontract.AuthzContextService
 	// navigations 公开站点导航契约（导航菜单管理页，与后台权限菜单严格隔离）。
 	navigations navigationcontract.NavigationService
+	// products 商品构建期数据源（检查器 entityref 下拉取 CollectionFilterOptions）。
+	products productcontract.ProductDataSource
 
 	// contentStore 内容译文读写端口（翻译工作台，多语言 P5c）。
 	// 为 nil 时按默认实现（pkg/i18n.ContentWriter + 默认数据库）惰性构造；
@@ -62,6 +68,23 @@ type Handle struct {
 	// siteIndex 全站可翻译内容索引缓存（跨页面复用提示 + 全站完成度，见
 	// page_translations_index.go）。
 	siteIndex siteContentIndexCache
+
+	// templates / templatePreview 内容模板可视化编辑（EDT-001）：workbench?template=
+	// 加载模板草稿，保存走 contenttemplate.Update，预览走 presentation.PreviewInstance。
+	templates       contenttemplatecontract.ContentTemplateService
+	templatePreview TemplatePreviewPort
+}
+
+// TemplatePreviewPort 模板工作台预览所需的最窄 presentation 能力。
+type TemplatePreviewPort interface {
+	PreviewInstance(ctx context.Context, req *presentationdto.PreviewInstanceReq) (res *presentationdto.PreviewInstanceResp, err error)
+}
+
+// SetTemplateWorkbenchDeps 注入内容模板编辑与预览契约（装配期调用）。
+func (h *Handle) SetTemplateWorkbenchDeps(templates contenttemplatecontract.ContentTemplateService,
+	preview TemplatePreviewPort) {
+	h.templates = templates
+	h.templatePreview = preview
 }
 
 // NewHandle 创建页面处理器；pages/projects/blocks/plugins 为各模块契约。
@@ -93,7 +116,15 @@ func NewHandle(pages pagecontract.PageService, projects projectcontract.ProjectS
 	}); ok {
 		setter.SetReferenceChecker(h.blockReferencedCtx)
 	}
+	if wired, ok := blocks.(interface{ RequireWiring() }); ok {
+		wired.RequireWiring()
+	}
 	return h
+}
+
+// SetProductDataSource 注入商品构建期数据源（检查器 entityref 下拉，EDT-005）。
+func (h *Handle) SetProductDataSource(p productcontract.ProductDataSource) {
+	h.products = p
 }
 
 // Dashboard 仪表盘页面。
@@ -251,9 +282,14 @@ func jsonSafe(s string) string {
 
 // Workbench 可视化编辑器外壳：注入 Page 草稿 AST 与保存接口所需元数据。
 // ?block=ID 进入全局块编辑模式（同一画布，保存走块接口、无发布链）。
+// ?template=ID 进入内容模板编辑模式（保存走 contenttemplate.Update，预览需样例实体）。
 func (h *Handle) Workbench(c *gin.Context) {
 	if blockID := strings.TrimSpace(c.Query("block")); blockID != "" {
 		h.workbenchBlock(c, blockID)
+		return
+	}
+	if templateID := strings.TrimSpace(c.Query("template")); templateID != "" {
+		h.workbenchTemplate(c, templateID)
 		return
 	}
 	pageID := strings.TrimSpace(c.Query("id"))
@@ -285,6 +321,7 @@ func (h *Handle) Workbench(c *gin.Context) {
 	}
 	metaJSON, err := json.Marshal(gin.H{
 		"pageId":    page.ID,
+		"projectId": page.ProjectID,
 		"draftPath": page.DraftPath,
 		"version":   page.DraftVersion,
 		// 全局块引用（core.globalref）候选：本工程全部块（组件库「全局块」分组）。
@@ -372,6 +409,7 @@ func (h *Handle) workbenchBlock(c *gin.Context, blockID string) {
 	}
 	metaJSON, err := json.Marshal(gin.H{
 		"pageId":    block.ID, // 复用键名：前端保存逻辑按 saveBase 切换接口
+		"projectId": block.ProjectID,
 		"saveBase":  "block",
 		"blockName": block.Name,
 		"kind":      block.Kind,
@@ -401,6 +439,131 @@ func (h *Handle) workbenchBlock(c *gin.Context, blockID string) {
 		"schemas":  jsonSafe(string(schemasJSON)),
 		"jsVer":    workbenchJsVer(),
 	}))
+}
+
+// workbenchTemplate 内容模板编辑模式（EDT-001）：复用工作台画布与检查器，
+// 保存走 /api/contenttemplate/update；预览经 presentation 用样例实体解析字段绑定。
+func (h *Handle) workbenchTemplate(c *gin.Context, templateID string) {
+	if h.templates == nil || h.templatePreview == nil {
+		c.String(http.StatusServiceUnavailable, "内容模板编辑能力未装配")
+		return
+	}
+	tpl, err := h.templates.Get(c.Request.Context(), &contenttemplatedto.GetReq{ID: templateID})
+	if err != nil {
+		c.String(http.StatusNotFound, "模板不存在")
+		return
+	}
+	entityID := strings.TrimSpace(c.Query("entityId"))
+	entityType := strings.TrimSpace(c.Query("entityType"))
+	if entityType == "" {
+		entityType = tpl.EntityType
+	}
+	projectID := strings.TrimSpace(c.Query("projectId"))
+	if entityID == "" {
+		c.String(http.StatusBadRequest, "缺少预览样例实体 entityId（字段绑定预览需要一条真实 "+entityType+" 记录）")
+		return
+	}
+	documentJSON, err := json.Marshal(tpl.DraftDocument)
+	if err != nil {
+		c.String(http.StatusInternalServerError, "模板文档序列化失败")
+		return
+	}
+	metaJSON, err := json.Marshal(gin.H{
+		"pageId":       tpl.ID,
+		"saveBase":     "template",
+		"templateName": tpl.Name,
+		"entityType":   entityType,
+		"entityId":     entityID,
+		"projectId":    projectID,
+		"draftPath":    "",
+		"version":      tpl.DraftVersion,
+	})
+	if err != nil {
+		c.String(http.StatusInternalServerError, "编辑器元数据序列化失败")
+		return
+	}
+	schemas, err := builder.ComponentSchemas()
+	if err != nil {
+		c.String(http.StatusInternalServerError, "组件 schema 生成失败")
+		return
+	}
+	schemasJSON, err := json.Marshal(schemas)
+	if err != nil {
+		c.String(http.StatusInternalServerError, "组件 schema 序列化失败")
+		return
+	}
+	previewQS := templatePreviewQuery(tpl.ID, entityType, entityID, projectID)
+	c.HTML(http.StatusOK, "workbench/layout", withCSRF(c, gin.H{
+		"title":      "编辑模板：" + tpl.Name,
+		"pageId":     tpl.ID,
+		"isBlock":    false,
+		"isTemplate": true,
+		"document":   jsonSafe(string(documentJSON)),
+		"meta":       jsonSafe(string(metaJSON)),
+		"schemas":    jsonSafe(string(schemasJSON)),
+		"previewQS":  previewQS,
+		"jsVer":      workbenchJsVer(),
+	}))
+}
+
+// templatePreviewQuery 模板画布 iframe 与「新标签预览」共用的查询串。
+func templatePreviewQuery(templateID, entityType, entityID, projectID string) string {
+	q := "template=" + templateID + "&entityType=" + entityType + "&entityId=" + entityID + "&editor=1"
+	if projectID != "" {
+		q += "&projectId=" + projectID
+	}
+	return q
+}
+
+// TemplatePreview 基于已保存模板 + 样例实体编译预览（画布 iframe GET）。
+func (h *Handle) TemplatePreview(c *gin.Context) {
+	if h.templates == nil || h.templatePreview == nil {
+		c.String(http.StatusServiceUnavailable, "内容模板预览能力未装配")
+		return
+	}
+	templateID := strings.TrimSpace(c.Query("template"))
+	entityType := strings.TrimSpace(c.Query("entityType"))
+	entityID := strings.TrimSpace(c.Query("entityId"))
+	if templateID == "" || entityType == "" || entityID == "" {
+		c.String(http.StatusBadRequest, "缺少 template / entityType / entityId")
+		return
+	}
+	h.renderTemplatePreview(c, templateID, entityType, entityID, c.Query("projectId"), nil,
+		c.Query("editor") == "1")
+}
+
+// TemplatePreviewDraft 基于未保存 AST + 样例实体返回临时预览（POST，画布刷新）。
+func (h *Handle) TemplatePreviewDraft(c *gin.Context) {
+	if h.templates == nil || h.templatePreview == nil {
+		c.String(http.StatusServiceUnavailable, "内容模板预览能力未装配")
+		return
+	}
+	templateID := strings.TrimSpace(c.PostForm("id"))
+	entityType := strings.TrimSpace(c.PostForm("entityType"))
+	entityID := strings.TrimSpace(c.PostForm("entityId"))
+	document := json.RawMessage(c.PostForm("draftDocument"))
+	if templateID == "" || entityType == "" || entityID == "" || len(document) == 0 {
+		c.String(http.StatusBadRequest, "预览参数不完整")
+		return
+	}
+	h.renderTemplatePreview(c, templateID, entityType, entityID, c.PostForm("projectId"), document, true)
+}
+
+func (h *Handle) renderTemplatePreview(c *gin.Context, templateID, entityType, entityID, projectID string,
+	draftDocument json.RawMessage, withEditorBridge bool) {
+	res, err := h.templatePreview.PreviewInstance(c.Request.Context(), &presentationdto.PreviewInstanceReq{
+		EntityType: entityType, EntityID: entityID, TemplateID: templateID,
+		ProjectID: projectID, DraftDocument: draftDocument,
+	})
+	if err != nil {
+		c.String(http.StatusUnprocessableEntity, dashboardenums.MsgCompileFailed+"："+err.Error())
+		return
+	}
+	html := res.HTML
+	if withEditorBridge {
+		html = injectEditorBridge(html)
+	}
+	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(html))
 }
 
 // blockSummaries 工程块列表的轻量投影（id/name/kind/category/reuseMode，不含文档大字段）。
