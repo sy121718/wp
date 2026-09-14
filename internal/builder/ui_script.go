@@ -22,6 +22,14 @@ type uiBlock struct {
 	noStyle bool
 }
 
+// uiBaseClasses 基座样式类名：只写 class 也应注入 ui.css（UIK-002：样式与行为解耦）。
+var uiBaseClasses = []string{
+	"btn", "btn-primary", "btn-secondary", "btn-ghost", "btn-danger", "btn-sm", "btn-icon",
+	"wb-btn", "wb-btn-primary", "wb-btn-secondary", "wb-btn-ghost", "wb-icon-btn",
+	"form-input", "form-select", "form-textarea", "form-label", "form-hint", "form-error",
+	"wbs", "form-inline", "form-row",
+}
+
 var uiBlocks = []uiBlock{
 	// htmx 是访问面所有 hx-* 属性的唯一执行者，也是控件入口 index.js 监听
 	// htmx:afterSwap 的前提。产物此前从不携带它 —— 组件按 HTMX 约定写出的
@@ -30,6 +38,11 @@ var uiBlocks = []uiBlock{
 	{file: "htmx.min.js", prefixes: []string{"hx-"}, noStyle: true},
 	{file: "select.js", attrs: []string{"data-ui-select"}},
 	{file: "modal.js", attrs: []string{"data-modal", "data-modal-open", "data-modal-close"}},
+	{file: "drawer.js", attrs: []string{"data-drawer-open", "data-drawer-close", "data-drawer", "data-drawer-mask"}},
+	{file: "confirm.js", attrs: []string{"data-confirm"}},
+	{file: "colorfield.js", attrs: []string{"data-color-field"}},
+	{file: "iconfield.js", attrs: []string{"data-icon-field", "data-icon-name"}},
+	{file: "themetoggle.js", attrs: []string{"data-theme-toggle"}},
 }
 
 // UIAssetFiles 是访问产物可用的公共控件资源清单，顺序为助手、控件、扫描入口。
@@ -46,8 +59,18 @@ func UIAssetFiles() []string {
 // htmlFeatures 是同一份最终 HTML 的能力属性集合，控件与组件增强共享。
 type htmlFeatures map[string]struct{}
 
+// htmlScan 是同一份 HTML 的能力扫描结果：属性驱动行为脚本，class 驱动基座样式。
+type htmlScan struct {
+	attrs   htmlFeatures
+	classes htmlFeatures
+}
+
 func collectHTMLFeatures(content string) htmlFeatures {
-	attrs := make(htmlFeatures)
+	return collectHTMLScan(content).attrs
+}
+
+func collectHTMLScan(content string) htmlScan {
+	out := htmlScan{attrs: make(htmlFeatures), classes: make(htmlFeatures)}
 	z := html.NewTokenizer(strings.NewReader(content))
 	for {
 		kind := z.Next()
@@ -59,17 +82,31 @@ func collectHTMLFeatures(content string) htmlFeatures {
 		}
 		_, more := z.TagName()
 		for more {
-			var key []byte
-			key, _, more = z.TagAttr()
-			// 属性名归一化到小写后再判定：HTML 解析器对源码里的大写属性名
-			// 与浏览器实际生效的属性名口径不一致时，产物会漏掉本该注入的资源。
+			var key, val []byte
+			key, val, more = z.TagAttr()
 			name := strings.ToLower(string(key))
 			if strings.HasPrefix(name, "data-") || strings.HasPrefix(name, "hx-") {
-				attrs[name] = struct{}{}
+				out.attrs[name] = struct{}{}
+			}
+			if name == "class" {
+				for _, token := range strings.Fields(string(val)) {
+					if c := strings.ToLower(strings.TrimSpace(token)); c != "" {
+						out.classes[c] = struct{}{}
+					}
+				}
 			}
 		}
 	}
-	return attrs
+	return out
+}
+
+func hasUIBaseClass(classes htmlFeatures) bool {
+	for _, c := range uiBaseClasses {
+		if _, ok := classes[c]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 // hit 判断这个资源是否被页面实际用到（精确属性名或前缀任一命中）。
@@ -110,16 +147,26 @@ func usedUIFiles(attrs htmlFeatures) (files []string, needBase bool) {
 // sources=nil 表示调用方选择无脚本输出；非 nil（含空 map）表示已启用控件增强，
 // 命中的控件、基座、入口或样式缺失都返回构建错误，不能生成残缺产物。
 func uiAssetsFor(attrs htmlFeatures, css string, sources map[string]string) (string, string, error) {
-	files, needBase := usedUIFiles(attrs)
-	if len(files) == 0 {
+	return uiAssetsForScan(htmlScan{attrs: attrs}, css, sources)
+}
+
+func uiAssetsForScan(scan htmlScan, css string, sources map[string]string) (string, string, error) {
+	files, needStyleFromAttrs := usedUIFiles(scan.attrs)
+	needStyle := needStyleFromAttrs || hasUIBaseClass(scan.classes)
+	if len(files) == 0 && !needStyle {
 		return "", "", nil
 	}
 	if sources == nil {
-		return css, "", nil
+		if needStyle {
+			return css, "", nil
+		}
+		return "", "", nil
 	}
-	if needBase {
-		// 基座助手在控件之前（控件靠它注册），入口在最后（它负责扫描已注册的控件）。
-		files = append(append([]string{"_util.js"}, files...), "index.js")
+	if len(files) > 0 {
+		if needStyleFromAttrs {
+			// 基座助手在控件之前（控件靠它注册），入口在最后（它负责扫描已注册的控件）。
+			files = append(append([]string{"_util.js"}, files...), "index.js")
+		}
 	}
 	parts := make([]string, 0, len(files))
 	for _, file := range files {
@@ -129,10 +176,12 @@ func uiAssetsFor(attrs htmlFeatures, css string, sources map[string]string) (str
 		}
 		parts = append(parts, src)
 	}
-	if needBase && strings.TrimSpace(css) == "" {
-		// 控件外观缺失会让访客看到一个没有外观的空壳；htmx 这类行为库则不需要样式。
+	if needStyle && strings.TrimSpace(css) == "" {
 		return "", "", fmt.Errorf("控件资源缺失: ui.css")
 	}
-	// document.jet 提供外层 script 标签；此处只输出正文，顺序与注册表一致。
-	return css, strings.Join(parts, "\n"), nil
+	outCSS := ""
+	if needStyle {
+		outCSS = css
+	}
+	return outCSS, strings.Join(parts, "\n"), nil
 }

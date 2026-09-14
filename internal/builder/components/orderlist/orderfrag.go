@@ -168,7 +168,7 @@ func AddOrdersFragmentCSS(b *core.CSSBuckets) {
 		"display: flex", "flex-wrap: wrap", "align-items: center", "gap: 8px 12px", "min-width: 0",
 	})
 	b.Add(core.BreakpointDesktop, ".sky-return-qty", []string{
-		"width: 96px", "min-height: 40px", "padding: 6px 8px",
+		"width: min(100%, 96px)", "min-height: 40px", "padding: 6px 8px",
 		"border: 1px solid var(--sky-c-border, #d1d5db)", "border-radius: 8px",
 		"background: var(--sky-c-surface, #fff)", "color: inherit", "font: inherit",
 	})

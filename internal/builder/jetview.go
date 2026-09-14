@@ -1,5 +1,8 @@
 // jetview.go — 组件渲染从「Go 字符串拼接」迁移到 Jet 模板的转换层（Phase 0 + Phase 1）。
 //
+// 本文件同时是内置组件包的**唯一 import hub**：下方 import 触发各组件 init() 的
+// core.Register，勿在 builder.go 再维护一份空导入清单（见 REG-001）。
+//
 // 职责划分：
 //   - nodeViewOf 把 core.Node 树转换为 nodeView 视图树（props 解码、CSS 生成、校验与递归驱动）；
 //   - Jet 模板（button.jet / container.jet / <组件>.jet）只根据 nodeView 的字段拼装 HTML；
@@ -49,6 +52,7 @@ import (
 	progressPkg "go_wp/internal/builder/components/progress"
 	quotePkg "go_wp/internal/builder/components/quote"
 	ratingPkg "go_wp/internal/builder/components/rating"
+	searchresultsPkg "go_wp/internal/builder/components/searchresults"
 	shapedividerPkg "go_wp/internal/builder/components/shapedivider"
 	sliderPkg "go_wp/internal/builder/components/slider"
 	socialbuttonsPkg "go_wp/internal/builder/components/socialbuttons"
@@ -176,6 +180,8 @@ func nodeViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeV
 		return cartIconViewOf(node, topLevel, ctx)
 	case orderlistPkg.Type:
 		return orderListViewOf(node, topLevel, ctx)
+	case searchresultsPkg.Type:
+		return searchResultsViewOf(node, topLevel, ctx)
 	case userformsPkg.Type:
 		return userFormsViewOf(node, topLevel, ctx)
 	case ratingPkg.Type:
@@ -672,6 +678,29 @@ func cartIconViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*n
 	return &nodeView{
 		Type:     carticonPkg.Type,
 		Template: "cart_icon",
+		NodeID:   node.ID,
+		Classes:  strings.Join(classes, " "),
+		CustomID: customID,
+		TopLevel: topLevel,
+		Props:    p,
+		V:        view,
+	}, nil
+}
+
+// searchResultsViewOf 转换站内搜索节点（BIZ-2）。
+func searchResultsViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeView, error) {
+	var p searchresultsPkg.Props
+	if len(node.Props) > 0 {
+		if err := json.Unmarshal(node.Props, &p); err != nil {
+			return nil, fmt.Errorf("节点 %s props 反序列化失败: %w", node.ID, err)
+		}
+	}
+	classes, customID := advancedClasses(node, &p, ctx)
+	searchresultsPkg.CompileCSS(node.ID, &p, ctx.CSS)
+	view := searchresultsPkg.BuildView(&p, ctx.ProjectID, ctx.Lang)
+	return &nodeView{
+		Type:     searchresultsPkg.Type,
+		Template: "search_widget",
 		NodeID:   node.ID,
 		Classes:  strings.Join(classes, " "),
 		CustomID: customID,

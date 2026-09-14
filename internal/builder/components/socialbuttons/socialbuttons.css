@@ -20,10 +20,13 @@
   transition: transform .15s, opacity .15s;
 }
 
-/* 悬停抬升：与 productcard 不同，这里走桌面桶（不包 hover 媒体查询），
-   与迁移前的行为一致 —— 触屏上「点住」也能看到同样的位移。 */
-& .sky-social-btn:hover {
+@hover & .sky-social-btn:hover {
   transform: translateY(-2px);
+}
+
+@active & .sky-social-btn:active {
+  transform: translateY(0);
+  opacity: 0.88;
 }
 
 /* 形状：三档的差别只有一个圆角值，所以是一条规则 + 变量。 */

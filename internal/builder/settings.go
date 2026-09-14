@@ -78,6 +78,16 @@ type BaseStyle struct {
 	BackgroundFixed bool `json:"backgroundFixed,omitempty"`
 }
 
+// ProductOfferLD 商品结构化数据扩展（SEO-005：构建期静态 Offer/评分，不含实时库存）。
+type ProductOfferLD struct {
+	SKU            string  `json:"sku,omitempty"`
+	Price          string  `json:"price,omitempty"`
+	PriceCurrency  string  `json:"priceCurrency,omitempty"`
+	Availability   string  `json:"availability,omitempty"` // InStock / OutOfStock
+	RatingValue    float64 `json:"ratingValue,omitempty"`
+	RatingCount    int     `json:"ratingCount,omitempty"`
+}
+
 // SEO SEO 与全局元信息。
 type SEO struct {
 	Title       string `json:"title,omitempty"`
@@ -94,6 +104,8 @@ type SEO struct {
 	Intent string `json:"intent,omitempty"`
 	// SchemaType 结构化数据类型：空=自动（WebPage）/website/article/product/faq。
 	SchemaType string `json:"schemaType,omitempty"`
+	// ProductOffer 商品 JSON-LD 扩展（构建期静态快照，不含实时库存）。
+	ProductOffer *ProductOfferLD `json:"productOffer,omitempty"`
 	// RobotsIndex 搜索引擎索引指令：空 = index（默认，不输出 meta）/ noindex。
 	RobotsIndex string `json:"robotsIndex,omitempty"`
 	// RobotsFollow 链接跟踪指令：空 = follow（默认，不输出 meta）/ nofollow。

@@ -48,7 +48,7 @@ func AddCartFragmentCSS(b *core.CSSBuckets) {
 		"display: inline-flex", "align-items: center", "gap: 6px", "margin: 0",
 	})
 	b.Add("", ".sky-cart-qty-input", []string{
-		"width: 72px", "min-height: 40px", "padding: 6px 8px",
+		"width: min(100%, 72px)", "min-height: 40px", "padding: 6px 8px",
 		"border: 1px solid var(--sky-c-border, #d1d5db)", "border-radius: 8px",
 		"background: var(--sky-c-surface, #fff)", "color: inherit", "font: inherit",
 		"text-align: center",

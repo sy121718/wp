@@ -1,0 +1,68 @@
+/* searchresults.css — 站内搜索外壳样式 */
+& {
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+	width: min(100%, 640px);
+}
+
+& .sky-search-form {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	align-items: stretch;
+	width: 100%;
+}
+
+& .sky-search-label {
+	flex: 1 1 12rem;
+	display: flex;
+	min-width: 0;
+}
+
+& .sky-search-input {
+	width: 100%;
+	min-height: 44px;
+	padding: 8px 12px;
+	border: 1px solid #d1d5db;
+	border-radius: 8px;
+	font: inherit;
+}
+
+& .sky-search-submit {
+	min-height: 44px;
+	padding: 8px 16px;
+	border: 0;
+	border-radius: 8px;
+	background: #111827;
+	color: #fff;
+	font: inherit;
+	cursor: pointer;
+}
+
+& .sky-search-submit:active {
+	opacity: 0.85;
+}
+
+& .sky-search-notice {
+	margin: 0;
+	color: #6b7280;
+}
+
+& .sky-search-sr {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	padding: 0;
+	margin: -1px;
+	overflow: hidden;
+	clip: rect(0, 0, 0, 0);
+	white-space: nowrap;
+	border: 0;
+}
+
+@media (hover: hover) {
+	& .sky-search-submit:hover {
+		background: #374151;
+	}
+}

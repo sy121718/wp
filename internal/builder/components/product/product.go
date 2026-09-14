@@ -9,9 +9,9 @@
 // builder.ValidateFieldRefs 按实体类型注册表校验，构建期解析器再拒一次越界字段；
 // 白名单的唯一来源是 product 模块的 contract（不在组件里另写一份）。
 //
-// 槽位用自由文本而不是 bindingfield 下拉：商品集合源（issue #9）尚未注册进
-// 集合元数据，bindingfield 的下拉当前取不到任何 product 字段，用它会让作者在
-// #9 落地前根本无法选择商品字段；白名单已由上述两道服务端校验兜住。
+// 槽位用自由文本而不是 bindingfield 下拉：bindingfield 的下拉依赖集合元数据注册，
+// 部分场景仍不如自由文本灵活；白名单由 ValidateFieldRefs 与构建期解析器两道校验兜住。
+// 商品集合源 content:product 已在装配层注册（routes.go）。
 package product
 
 import (

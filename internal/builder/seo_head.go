@@ -61,9 +61,10 @@ func ogType(schemaType string) string {
 
 // BuildSEOHead 生成注入 <head> 的 SEO 片段（canonical / OG / Twitter / JSON-LD / hreflang）。
 // pageURL 为页面最终 URL（空则省略 URL 相关标签）。
+// breadcrumbHome 为 JSON-LD 面包屑首项文案（空则回退 "Home"）。
 // alternates 为同页其他语言版本（空 = 单语言站点，输出与 P3 之前逐字节一致）；
 // 至少两种语言时才输出 hreflang（自指单条无意义）。
-func BuildSEOHead(seo SEO, pageURL, title, description string, alternates []Alternate) string {
+func BuildSEOHead(seo SEO, pageURL, title, description, breadcrumbHome string, alternates []Alternate) string {
 	if title == "" {
 		title = seo.Title
 	}
@@ -73,12 +74,16 @@ func BuildSEOHead(seo SEO, pageURL, title, description string, alternates []Alte
 	var sb strings.Builder
 	esc := html.EscapeString
 
-	canonical := strings.TrimSpace(seo.Canonical)
+	canonical := canonicalPublicPath(strings.TrimSpace(seo.Canonical))
 	if canonical == "" {
-		canonical = strings.TrimSpace(pageURL)
+		canonical = canonicalPublicPath(strings.TrimSpace(pageURL))
 	}
 	if canonical != "" {
 		fmt.Fprintf(&sb, "<link rel=\"canonical\" href=\"%s\">\n", esc(canonical))
+	}
+	pubURL := canonicalPublicPath(strings.TrimSpace(pageURL))
+	if pubURL == "" {
+		pubURL = canonical
 	}
 	if rb := robotsContent(seo.RobotsIndex, seo.RobotsFollow); rb != "" {
 		fmt.Fprintf(&sb, "<meta name=\"robots\" content=\"%s\">\n", esc(rb))
@@ -91,8 +96,8 @@ func BuildSEOHead(seo SEO, pageURL, title, description string, alternates []Alte
 		fmt.Fprintf(&sb, "<meta property=\"og:description\" content=\"%s\">\n", esc(description))
 		fmt.Fprintf(&sb, "<meta name=\"twitter:description\" content=\"%s\">\n", esc(description))
 	}
-	if pageURL != "" {
-		fmt.Fprintf(&sb, "<meta property=\"og:url\" content=\"%s\">\n", esc(pageURL))
+	if pubURL != "" {
+		fmt.Fprintf(&sb, "<meta property=\"og:url\" content=\"%s\">\n", esc(pubURL))
 	}
 	fmt.Fprintf(&sb, "<meta property=\"og:type\" content=\"%s\">\n", ogType(seo.SchemaType))
 	if seo.OGImage != "" {
@@ -102,12 +107,49 @@ func BuildSEOHead(seo SEO, pageURL, title, description string, alternates []Alte
 	} else {
 		fmt.Fprint(&sb, "<meta name=\"twitter:card\" content=\"summary\">\n")
 	}
-	if ld := buildJSONLD(canonical, title, description, seo.OGImage, seo.SchemaType); ld != "" {
+	if ld := buildJSONLD(canonical, title, description, seo.OGImage, seo.SchemaType, seo.ProductOffer, breadcrumbHome); ld != "" {
 		sb.WriteString(ld)
 		sb.WriteString("\n")
 	}
-	sb.WriteString(alternateLinks(alternates))
+	sb.WriteString(alternateLinks(normalizeAlternates(alternates)))
 	return strings.TrimRight(sb.String(), "\n")
+}
+
+func canonicalPublicPath(path string) string {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return ""
+	}
+	if path == "/index" || path == "/index.html" {
+		return "/"
+	}
+	if strings.HasSuffix(path, "/index") {
+		parent := strings.TrimSuffix(path, "/index")
+		if parent == "" {
+			return "/"
+		}
+		return parent
+	}
+	if strings.HasSuffix(path, "/index.html") {
+		parent := strings.TrimSuffix(path, "/index.html")
+		if parent == "" {
+			return "/"
+		}
+		return parent
+	}
+	return path
+}
+
+func normalizeAlternates(alternates []Alternate) []Alternate {
+	if len(alternates) == 0 {
+		return nil
+	}
+	out := make([]Alternate, 0, len(alternates))
+	for _, a := range alternates {
+		a.Href = canonicalPublicPath(a.Href)
+		out = append(out, a)
+	}
+	return out
 }
 
 // alternateLinks 生成 hreflang 互指标签（语言码升序，x-default 固定最后）。
@@ -154,7 +196,7 @@ var schemaTypeMap = map[string]string{
 }
 
 // buildJSONLD 生成结构化数据（JSON-LD）：按页面类型输出主实体 + 面包屑。
-func buildJSONLD(url, title, description, image, schemaType string) string {
+func buildJSONLD(url, title, description, image, schemaType string, offer *ProductOfferLD, breadcrumbHome string) string {
 	if title == "" && description == "" {
 		return ""
 	}
@@ -179,7 +221,28 @@ func buildJSONLD(url, title, description, image, schemaType string) string {
 	if image != "" {
 		doc["image"] = image
 	}
-	if crumbs := breadcrumbList(url); len(crumbs) > 1 {
+	if offer != nil && strings.EqualFold(schemaType, "product") {
+		if offer.SKU != "" {
+			doc["sku"] = offer.SKU
+		}
+		if offer.Price != "" {
+			doc["offers"] = map[string]any{
+				"@type":         "Offer",
+				"price":         offer.Price,
+				"priceCurrency": seoDefaultString(offer.PriceCurrency, "CNY"),
+				"availability":  "https://schema.org/" + seoDefaultString(offer.Availability, "InStock"),
+				"url":           url,
+			}
+		}
+		if offer.RatingCount > 0 && offer.RatingValue > 0 {
+			doc["aggregateRating"] = map[string]any{
+				"@type":       "AggregateRating",
+				"ratingValue": offer.RatingValue,
+				"reviewCount": offer.RatingCount,
+			}
+		}
+	}
+	if crumbs := breadcrumbList(url, breadcrumbHome); len(crumbs) > 1 {
 		doc["breadcrumb"] = map[string]any{
 			"@type":           "BreadcrumbList",
 			"itemListElement": crumbs,
@@ -193,7 +256,11 @@ func buildJSONLD(url, title, description, image, schemaType string) string {
 }
 
 // breadcrumbList 由 URL 路径生成面包屑（/a/b → 首页 + a + b）。
-func breadcrumbList(rawURL string) []map[string]any {
+func breadcrumbList(rawURL, homeName string) []map[string]any {
+	homeName = strings.TrimSpace(homeName)
+	if homeName == "" {
+		homeName = "Home"
+	}
 	rawURL = strings.TrimSpace(rawURL)
 	if rawURL == "" {
 		return nil
@@ -212,7 +279,7 @@ func breadcrumbList(rawURL string) []map[string]any {
 		}
 	}
 	parts := strings.Split(strings.TrimPrefix(u.EscapedPath(), "/"), "/")
-	out := []map[string]any{{"@type": "ListItem", "position": 1, "name": "Home", "item": base + "/"}}
+	out := []map[string]any{{"@type": "ListItem", "position": 1, "name": homeName, "item": base + "/"}}
 	cur := base
 	for _, p := range parts {
 		cur += "/" + p
@@ -225,4 +292,11 @@ func breadcrumbList(rawURL string) []map[string]any {
 		})
 	}
 	return out
+}
+
+func seoDefaultString(v, fallback string) string {
+	if strings.TrimSpace(v) != "" {
+		return v
+	}
+	return fallback
 }

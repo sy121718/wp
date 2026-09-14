@@ -65,16 +65,14 @@ const reducedMotionCSS = `@media (prefers-reduced-motion: reduce) {
   }
 }`
 
-// ReducedMotionEnabled 主题是否开启「减弱动态效果」跟随系统开关。
+// ReducedMotionEnabled 主题是否显式开启「减弱动态效果」跟随系统（历史字段，默认 false）。
 func (t *ThemeSettings) ReducedMotionEnabled() bool {
 	return t != nil && t.Motion.ReducedMotion
 }
 
-// ReducedMotionCSS 无障碍块（未开启返回空，产物字节不变）。
+// ReducedMotionCSS 无障碍块：无条件输出 prefers-reduced-motion 规则。
+// 媒体查询本身只在访客系统偏好开启时生效，不影响其它用户；主题开关不再 gate 输出。
 func (t *ThemeSettings) ReducedMotionCSS() string {
-	if t == nil || !t.ReducedMotionEnabled() {
-		return ""
-	}
 	return reducedMotionCSS
 }
 

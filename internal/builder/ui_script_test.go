@@ -65,6 +65,28 @@ func TestUIScriptInjectsModalOnTrigger(t *testing.T) {
 	}
 }
 
+// TestUIStyleFromClassOnly 只写基座 class 应注入 CSS、不注入 JS（UIK-002）。
+func TestUIStyleFromClassOnly(t *testing.T) {
+	css, script, err := uiAssetsForScan(collectHTMLScan(`<button class="btn btn-primary">提交</button>`), "/* css */", uiSrcForTest())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if css != "/* css */" {
+		t.Errorf("基座 class 应注入 ui.css，got css=%q", css)
+	}
+	if script != "" {
+		t.Errorf("仅 class 不应注入控件脚本，got %q", script)
+	}
+}
+
+// TestUIStyleClassWithoutSources 无脚本源时 class 仍应带出样式。
+func TestUIStyleClassWithoutSources(t *testing.T) {
+	css, script, err := uiAssetsForScan(collectHTMLScan(`<input class="form-input" />`), "/* css */", nil)
+	if err != nil || css != "/* css */" || script != "" {
+		t.Fatalf("css=%q script=%q err=%v", css, script, err)
+	}
+}
+
 // CSS/JS 在同一次能力选择中产生；无控件不输出额外样式。
 func TestUIStyleFollowsControls(t *testing.T) {
 	for _, tt := range []struct{ html, want string }{
@@ -97,7 +119,7 @@ func uiScriptForTest(t *testing.T, content string, sources map[string]string) st
 }
 
 func TestUIAssetRegistryAndSelection(t *testing.T) {
-	want := []string{"_util.js", "htmx.min.js", "select.js", "modal.js", "index.js"}
+	want := []string{"_util.js", "htmx.min.js", "select.js", "modal.js", "drawer.js", "confirm.js", "colorfield.js", "iconfield.js", "themetoggle.js", "index.js"}
 	got := UIAssetFiles()
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("资源清单 = %v", got)

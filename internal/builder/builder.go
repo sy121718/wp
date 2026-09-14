@@ -22,75 +22,7 @@ import (
 
 	"github.com/CloudyKit/jet/v6"
 
-	// 内置组件注册（core.container 为组件树唯一结构载体，包 init 自注册）。
-	_ "go_wp/internal/builder/components/container"
-	// core.heading：标题组件（CMS 绑定发布期静态填入）。
-	_ "go_wp/internal/builder/components/heading"
-	// core.text：正文组件（纯文本/富文本双模式，富文本白名单清洗）。
-	_ "go_wp/internal/builder/components/text"
-	// core.spacer：间隔组件（首个泛型基座 core.Atom 组件）。
-	_ "go_wp/internal/builder/components/spacer"
-	// core.gallery：图集与画廊组件（网格纯静态直出 / 轮播语义骨架 + 增强属性）。
-	_ "go_wp/internal/builder/components/gallery"
-	// core.button：按钮与 CTA 组件（统一链接协议 + 双态外观范式）。
-	_ "go_wp/internal/builder/components/button"
-	// core.divider：分割线组件（纯线 hr 直出 / Flex 嵌入文本或图标）。
-	_ "go_wp/internal/builder/components/divider"
-	// core.loader：加载器（spinner/dots/bars/pulse 纯 CSS 动画，零 JS）。
-	_ "go_wp/internal/builder/components/loader"
-	// core.shapedivider：形状分隔线（区块过渡 SVG 装饰，多层景深，WD wd_shapedivider）。
-	_ "go_wp/internal/builder/components/shapedivider"
-	// core.image：媒体引用组件（构建期 URL 直出，零解析）。
-	_ "go_wp/internal/builder/components/image"
-	// core.globalref：全局块引用组件（构建期经 BlockResolver 内联展开，方案 C）。
-	_ "go_wp/internal/builder/components/globalref"
-	// core.slider：容器型轮播（children 即各 slide，可嵌套任意组件，WD wd_slider）。
-	_ "go_wp/internal/builder/components/slider"
-	// core.list：列表（图标/序号/圆点，WD wd_list）。
-	_ "go_wp/internal/builder/components/list"
-	// core.infobox：信息框（图标/图+标题+文本+链接，WD wd_infobox）。
-	_ "go_wp/internal/builder/components/infobox"
-	// core.social_buttons：社交图标组（内联 SVG 品牌图标，WD wd_social_buttons）。
-	_ "go_wp/internal/builder/components/socialbuttons"
-	// core.video：视频（外链嵌入/本地 MP4，WD wd_video）。
-	_ "go_wp/internal/builder/components/video"
-	// core.tabs：页签（结构型，radio hack 零 JS 切换，WD wd_tabs）。
-	_ "go_wp/internal/builder/components/nav"
-	// core.languages：站点语言切换器（构建期注入各语言链接，纯链接零 JS，docs/06-D）。
-	_ "go_wp/internal/builder/components/languages"
-	_ "go_wp/internal/builder/components/tabs"
-	// core.accordion：手风琴（结构型，details/summary 原生，WD wd_accordion）。
-	_ "go_wp/internal/builder/components/accordion"
-	// core.marquee：跑马灯（容器型，双份内容无缝滚动，WD wd_marquee）。
-	_ "go_wp/internal/builder/components/marquee"
-	// core.counter：数字计数器（滚动动画增强，WD wd_counter）。
-	_ "go_wp/internal/builder/components/counter"
-	// 组件库补齐（对标 GrapesJS 组件生态）：
-	// core.table：表格（表头/数据行/斑马纹/边框）。
-	_ "go_wp/internal/builder/components/table"
-	// core.card：卡片（标题/正文/图片/按钮）。
-	_ "go_wp/internal/builder/components/card"
-	// core.cardstack：卡片堆叠（悬停扇形/直排展开 + 滚动堆叠 + 点击放大，零 JS）。
-	_ "go_wp/internal/builder/components/cardstack"
-	// core.faq：常见问题（details/summary 原生折叠）。
-	_ "go_wp/internal/builder/components/faq"
-	// core.quote：引用块（blockquote/cite）。
-	_ "go_wp/internal/builder/components/quote"
-	// core.countdown：倒计时（客户端增强，构建期零 time.Now）。
-	_ "go_wp/internal/builder/components/countdown"
-	// core.icon：通用 SVG 图标（白名单）。
-	_ "go_wp/internal/builder/components/icon"
-	// core.badge：徽章（solid/outline/soft 三态）。
-	_ "go_wp/internal/builder/components/badge"
-	// core.progress：进度条（role=progressbar）。
-	_ "go_wp/internal/builder/components/progress"
-	// core.product：商品详情组件（声明所需商品字段，构建期由商品解析器静态填入，
-	// issue #6；字段白名单来自 product 模块经实体类型注册表注册的唯一来源）。
-	_ "go_wp/internal/builder/components/product"
-	// core.rating：评分（星形填充，支持半星）。
-	_ "go_wp/internal/builder/components/rating"
-	// core.form：表单（字段白名单/提交）。
-	_ "go_wp/internal/builder/components/form"
+	// 内置组件在各自包的 init() 中 core.Register；import 触发见 jetview.go（唯一 hub）。
 	"go_wp/internal/builder/core"
 
 	contentcontract "go_wp/internal/module/content/contract"
@@ -666,7 +598,11 @@ func Compile(p *Page, opts ...CompileOption) (res *CompiledPage, err error) {
 	classes = append(classes, p.Settings.BodyClasses...)
 
 	// 构建期 SEO 头：canonical / OG / Twitter / JSON-LD（三级回落由 BuildSEOHead 处理）。
-	seoHead := BuildSEOHead(p.Settings.SEO, p.Settings.SEO.Canonical, p.Settings.SEO.Title, p.Settings.SEO.Description, cfg.alternates)
+	breadcrumbHome := "Home"
+	if cfg.translate != nil {
+		breadcrumbHome = cfg.translate("site.breadcrumb.home", "首页")
+	}
+	seoHead := BuildSEOHead(p.Settings.SEO, p.Settings.SEO.Canonical, p.Settings.SEO.Title, p.Settings.SEO.Description, breadcrumbHome, cfg.alternates)
 
 	// 产物 CSS = 内核编译样式 + 插件静态样式，用 @layer 显式分层：
 	//   sky-base（内核基础）< sky-plugin（插件）< sky-auto（容器宽度自动适配）<
@@ -739,7 +675,10 @@ func RenderNodeHTML(set *jet.Set, node *core.Node, ctx *core.RenderContext) (str
 	if ctx == nil {
 		return "", fmt.Errorf("渲染上下文为空")
 	}
-	view, err := nodeViewOf(node, true, ctx)
+	// 片段只要 HTML：样式已在静态产物内联，跳过 CSS 编译（EDT-016）。
+	fragCtx := *ctx
+	fragCtx.CSS = core.DiscardCSS()
+	view, err := nodeViewOf(node, true, &fragCtx)
 	if err != nil {
 		return "", err
 	}
@@ -757,8 +696,8 @@ func RenderNodeHTML(set *jet.Set, node *core.Node, ctx *core.RenderContext) (str
 // CSS/HTML/ThemeVarsCSS/增强脚本是编译产物，用 unsafe 原样输出，避免二次转义；
 // BodyClass 保持现状未转义（父代理单独处理转义问题），同样 unsafe 原样输出。
 func RenderDocument(c *CompiledPage) (string, error) {
-	features := collectHTMLFeatures(c.HTML)
-	uiCSS, uiScript, err := uiAssetsFor(features, c.UIStyle, c.UISources)
+	scan := collectHTMLScan(c.HTML)
+	uiCSS, uiScript, err := uiAssetsForScan(scan, c.UIStyle, c.UISources)
 	if err != nil {
 		return "", fmt.Errorf("组装文档控件资源失败: %w", err)
 	}
@@ -782,7 +721,7 @@ func RenderDocument(c *CompiledPage) (string, error) {
 		// 二是它要尽早写 cookie —— 排在交互脚本后面的话，前一个脚本抛错会连坐，
 		// 而归因丢数据是静默的，没人会发现少了什么。
 		// 打点配置（工程 ID / 语言）排在采集脚本之前：脚本运行时就要读它。
-		EnhanceScript: c.TrackConfig + c.TrackSource + enhanceScriptFor(features, c.EnhanceSource) + uiScript,
+		EnhanceScript: c.TrackConfig + c.TrackSource + enhanceScriptFor(scan.attrs, c.EnhanceSource) + uiScript,
 	}
 	var sb strings.Builder
 	if err := documentTemplate().Execute(&sb, nil, v); err != nil {

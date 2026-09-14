@@ -5,21 +5,16 @@ import (
 	"testing"
 )
 
-// TestReducedMotionCSS 减弱动态效果：默认关闭零输出；开启输出无障碍块。
+// TestReducedMotionCSS 减弱动态效果：无条件输出 prefers-reduced-motion 块。
 func TestReducedMotionCSS(t *testing.T) {
 	off := &ThemeSettings{}
-	if off.ReducedMotionCSS() != "" {
-		t.Errorf("默认关闭时应零输出")
-	}
-	nilSettings := (*ThemeSettings)(nil)
-	if nilSettings.ReducedMotionCSS() != "" {
-		t.Errorf("nil 主题应零输出")
-	}
-	on := &ThemeSettings{Motion: ThemeMotion{ReducedMotion: true}}
-	css := on.ReducedMotionCSS()
+	css := off.ReducedMotionCSS()
 	for _, want := range []string{"@media (prefers-reduced-motion: reduce)", "animation-duration: 0.01ms !important", "transition-duration: 0.01ms !important"} {
 		if !strings.Contains(css, want) {
 			t.Errorf("无障碍块缺少 %q\n%s", want, css)
 		}
+	}
+	if (*ThemeSettings)(nil).ReducedMotionCSS() == "" {
+		t.Error("nil 主题也应输出无障碍块")
 	}
 }

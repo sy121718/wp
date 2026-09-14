@@ -22,7 +22,7 @@ func CompileCSS(id string, p *Props, b *core.CSSBuckets) {
 type View struct {
 	// Tag 语义标签：a（跳转）或 button（弹窗触发）。
 	Tag string
-	// Attrs 前导空格 + 属性串（href/target/rel/data-modal-target，均已转义）。
+	// Attrs 前导空格 + 属性串（href/target/rel/data-modal-open，均已转义）。
 	Attrs string
 	// Text 按钮文本（模板输出时由 Jet 默认转义）。
 	Text string
@@ -108,7 +108,7 @@ func buildAttrs(p *Props, content core.ContentResolver) (tag, attrs string, err 
 	switch p.Action {
 	case ActionModal:
 		tag = "button"
-		attrs = ` type="button" data-modal-target="` + html.EscapeString(p.Value) + `"`
+		attrs = ` type="button" data-modal-open="` + html.EscapeString(p.Value) + `"`
 	case ActionLink:
 		if content == nil {
 			return "", "", fmt.Errorf("编译上下文缺少内容解析器，无法解析动态链接")

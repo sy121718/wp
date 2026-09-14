@@ -1,3 +1,8 @@
+// 工作台「对齐重复项」契约生成（tabs / accordion 的 AlignedRepeaterSpec）。
+//
+// 本文件只覆盖对齐重复项，不是编辑器的完整组件契约。完整组件 schema 见
+// ComponentSchemas 与 cmd/workbench-contracts 的另一条生成线；文件名 editor_contract.go
+// 是历史遗留，阅读时勿与 ComponentSchemas 混淆。
 package builder
 
 import (

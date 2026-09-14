@@ -20,6 +20,27 @@ import (
 
 const componentRoot = "components"
 
+// TestComponentRegistryComplete 组件目录数与 core.Registry 注册数一致（漏 import 即失败）。
+func TestComponentRegistryComplete(t *testing.T) {
+	entries, err := os.ReadDir(componentRoot)
+	if err != nil {
+		t.Fatalf("读取组件目录失败: %v", err)
+	}
+	dirCount := 0
+	for _, e := range entries {
+		if e.IsDir() {
+			dirCount++
+		}
+	}
+	if dirCount == 0 {
+		t.Fatal("组件目录为空")
+	}
+	regCount := len(core.Types())
+	if regCount != dirCount {
+		t.Fatalf("core.Registry 注册数 %d != 组件目录数 %d（漏 import 或多余注册）\n已注册: %v", regCount, dirCount, core.Types())
+	}
+}
+
 // TestComponentAssetsConsistent 组件目录里的资产必须与注册表对得上。
 func TestComponentAssetsConsistent(t *testing.T) {
 	entries, err := os.ReadDir(componentRoot)

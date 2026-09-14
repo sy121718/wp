@@ -1,0 +1,18 @@
+{* search_widget.jet — 站内搜索外壳（core.searchResults，BIZ-2）。
+
+   表单无 JS 时原生 GET 提交到当前页（?q=…）；有 HTMX 时 hx-get 拉片段。
+   结果区在 URL 已带 q 时 load 补正（与 productList 同法）。 *}
+<div class="{{ .Classes }}"{{ if .CustomID }} id="{{ .CustomID }}"{{ end }} data-sky-search>
+{{ if .V.Notice }}<p class="sky-search-notice">{{ .V.Notice }}</p>{{ else }}
+<form class="sky-search-form" method="get" action="" hx-get="{{ .V.BaseFragmentURL }}" hx-target=".sky-search-mount" hx-swap="innerHTML" hx-include="[name='q']" role="search">
+<label class="sky-search-label"><span class="sky-search-sr">搜索</span><input class="sky-search-input" type="search" name="q" placeholder="{{ .V.Placeholder }}" autocomplete="off" enterkeyhint="search"></label>
+<button class="sky-search-submit" type="submit">搜索</button>
+</form>
+<div class="sky-search-mount" aria-live="polite"
+     hx-get="{{ .V.BaseFragmentURL }}"
+     hx-vals='js:Object.fromEntries(new URLSearchParams(location.search))'
+     hx-trigger="load[location.search.length > 1]"
+     hx-target="this"
+     hx-swap="innerHTML"></div>
+{{ end }}
+</div>

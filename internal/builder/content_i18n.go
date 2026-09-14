@@ -76,6 +76,24 @@ func CollectContentCandidatesOfRoots(roots []*core.Node) []ContentCandidate {
 // 返回错误 / 空 roots 表示块不可用，按渲染期同一降级语义跳过（不计缺失、不阻断）。
 type BlockRootFunc func(blockID string) ([]*core.Node, error)
 
+// CollectContentCandidatesForDocument 收集文档 + 页眉/页脚绑定块 + globalref 内联块的可翻译候选。
+//
+// page 与 presentation 装配层共用：extraBlockIDs 来自 settings.structure，
+// 块展开经 resolve 回调（与渲染期 BlockResolver 同源）。
+func CollectContentCandidatesForDocument(p *Page, resolve BlockRootFunc) []ContentCandidate {
+	if p == nil {
+		return nil
+	}
+	extra := make([]string, 0, 2)
+	if id := p.Settings.Structure.HeaderBlockID; id != "" {
+		extra = append(extra, id)
+	}
+	if id := p.Settings.Structure.FooterBlockID; id != "" {
+		extra = append(extra, id)
+	}
+	return CollectContentCandidatesDeep(p, extra, resolve)
+}
+
 // CollectContentCandidatesDeep 收集「页面文档 + 构建期内联块」的全部可翻译候选。
 //
 // 为什么需要它（docs/06-D §15.11 遗留项）：块是**构建期展开**的——

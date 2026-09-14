@@ -75,6 +75,9 @@ func CSSDecl(prop string, values ...string) string {
 }
 
 type CSSBuckets struct {
+	// discard 为 true 时所有 Add* 为 no-op（RenderNodeHTML 等只产 HTML、样式已在
+	// 静态产物内联的路径用，避免白算一整轮 CSS 编译，EDT-016）。
+	discard bool
 	desktop []string
 	tablet  []string
 	mobile  []string
@@ -98,8 +101,20 @@ type CSSBuckets struct {
 	customOrder     []string
 }
 
+// DiscardCSS 返回 no-op CSS 收集器：规则写入被丢弃，String 恒为空。
+func DiscardCSS() *CSSBuckets {
+	return &CSSBuckets{discard: true}
+}
+
+func (b *CSSBuckets) discardCSS() bool {
+	return b != nil && b.discard
+}
+
 // AddKeyframes 追加组件自定义关键帧（name 唯一，重复调用只保留首份，保证确定性）。
 func (b *CSSBuckets) AddKeyframes(name, css string) {
+	if b.discardCSS() {
+		return
+	}
 	// 注册类顶层规则（@property 等）不进层：转存未分层桶（装配层置于层块之后）。
 	if strings.HasPrefix(css, "@property") {
 		for _, r := range b.topLevel {
@@ -130,7 +145,7 @@ func (b *CSSBuckets) AddKeyframes(name, css string) {
 // 与 AddKeyframes 同区输出（单一关键帧区），避免 @keyframes 混入断点桶
 // （媒体查询内的 @keyframes 语义混乱，Add 已加防护拦截）。
 func (b *CSSBuckets) AddKeyframesDecls(name string, frames []string) {
-	if len(frames) == 0 {
+	if b.discardCSS() || len(frames) == 0 {
 		return
 	}
 	var sb strings.Builder
@@ -149,7 +164,7 @@ func (b *CSSBuckets) AddKeyframesDecls(name string, frames []string) {
 // 走 AddKeyframes 入桶 —— 它认得 @property 前缀，会把它转入未分层的顶层桶
 // （注册是全局的，放任何 @layer 里都会让浏览器对「层内注册」产生实现差异）。
 func (b *CSSBuckets) AddPropertyDecls(name string, decls []string) {
-	if len(decls) == 0 {
+	if b.discardCSS() || len(decls) == 0 {
 		return
 	}
 	var sb strings.Builder
@@ -163,6 +178,9 @@ func (b *CSSBuckets) AddPropertyDecls(name string, decls []string) {
 
 // Add 向指定断点追加一条规则；空声明被忽略，无有效声明的规则不输出。
 func (b *CSSBuckets) Add(breakpoint, selector string, decls []string) {
+	if b.discardCSS() {
+		return
+	}
 	// 防护：@keyframes 只能进桌面桶（媒体查询内的 @keyframes 虽合法但语义混乱，
 	// 且关键帧本不该受断点限制）。组件自定义帧用 AddKeyframes 或桌面桶。
 	if breakpoint != BreakpointDesktop && strings.HasPrefix(selector, "@keyframes ") {
@@ -200,6 +218,9 @@ func (b *CSSBuckets) Add(breakpoint, selector string, decls []string) {
 // 指针设备生效——触屏设备不再出现「点一下卡住 hover 态」的粘滞问题
 // （H5 移动端适配标准做法，docs/06 视觉层：分类效果库 viewport 适配）。
 func (b *CSSBuckets) AddHover(sel string, decls []string) {
+	if b.discardCSS() {
+		return
+	}
 	filtered := make([]string, 0, len(decls))
 	for _, d := range decls {
 		if d != "" {
@@ -234,6 +255,9 @@ func (b *CSSBuckets) AddHover(sel string, decls []string) {
 // 否则手机上永远不触发（cardstack 的四种悬停形态踩过的坑）。
 // 复用 hover 桶输出 —— 两个媒体查询互斥，顺序无关。
 func (b *CSSBuckets) AddHoverNone(sel string, decls []string) {
+	if b.discardCSS() {
+		return
+	}
 	filtered := make([]string, 0, len(decls))
 	for _, d := range decls {
 		if d != "" {
@@ -257,6 +281,9 @@ func (b *CSSBuckets) AddHoverNone(sel string, decls []string) {
 }
 
 func (b *CSSBuckets) AddActive(sel string, decls []string) {
+	if b.discardCSS() {
+		return
+	}
 	filtered := make([]string, 0, len(decls))
 	for _, d := range decls {
 		if d != "" {
@@ -282,6 +309,9 @@ func (b *CSSBuckets) AddActive(sel string, decls []string) {
 // 与三端媒体查询（视口级）并存、互不干扰。condition 形如 "(width >= 480px)"。
 // 未包裹在启用 container-type 的容器内时不匹配（自然降级为默认样式，零副作用）。
 func (b *CSSBuckets) AddContainer(condition, sel string, decls []string) {
+	if b.discardCSS() {
+		return
+	}
 	filtered := make([]string, 0, len(decls))
 	for _, d := range decls {
 		if d != "" {
@@ -312,6 +342,9 @@ func (b *CSSBuckets) AddThemeQuery(containerName, prop, value, sel string, decls
 
 // addQuery 样式查询规则写入指定桶（三桶共用：局部/主题）。
 func (b *CSSBuckets) addQuery(bucket *[]string, containerName, prop, value, sel string, decls []string) {
+	if b.discardCSS() {
+		return
+	}
 	filtered := make([]string, 0, len(decls))
 	for _, d := range decls {
 		if d != "" {
@@ -338,6 +371,9 @@ func (b *CSSBuckets) addQuery(bucket *[]string, containerName, prop, value, sel 
 // ContainerQueryCSS 容器查询块输出（按层聚合）：sky-auto → sky-theme → sky-local。
 // 与 String()（内核基础样式）分离，由装配层按层序追加到产物 CSS。
 func (b *CSSBuckets) ContainerQueryCSS() string {
+	if b.discardCSS() {
+		return ""
+	}
 	var parts []string
 	for _, g := range []struct {
 		layer string
@@ -356,6 +392,9 @@ func (b *CSSBuckets) ContainerQueryCSS() string {
 
 // TopLevelCSS 未分层顶层规则（@property 注册等），装配层置于全部 @layer 块之后。
 func (b *CSSBuckets) TopLevelCSS() string {
+	if b.discardCSS() {
+		return ""
+	}
 	return strings.Join(b.topLevel, "\n")
 }
 
@@ -369,6 +408,9 @@ func (b *CSSBuckets) AddStyleQuery(containerName, prop, value, sel string, decls
 
 // NeedKeyframes 标记需要输出的关键帧。
 func (b *CSSBuckets) NeedKeyframes(name string) {
+	if b.discardCSS() {
+		return
+	}
 	if b.keyframes == nil {
 		b.keyframes = map[string]bool{}
 	}
@@ -377,6 +419,9 @@ func (b *CSSBuckets) NeedKeyframes(name string) {
 
 // String 按固定顺序拼接全部 CSS。
 func (b *CSSBuckets) String() string {
+	if b.discardCSS() {
+		return ""
+	}
 	parts := make([]string, 0, len(b.desktop)+len(b.tablet)+len(b.mobile)+2)
 	for _, k := range keyframesCatalog {
 		if b.keyframes[k.Name] {

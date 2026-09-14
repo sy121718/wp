@@ -76,12 +76,16 @@
   transition: {{transition}};
 }
 
-&:hover, &:focus {
+@hover &:hover, &:focus {
   background: {{hoverStateBg}};
   color: {{hoverStateColor}};
   border-color: {{hoverStateBorder}};
   box-shadow: {{hoverStateShadow}};
   transform: {{hoverTransform}};
+}
+
+@active &:active {
+  opacity: 0.92;
 }
 @endif
 
@@ -91,7 +95,7 @@
   transition: transform 0.2s ease;
 }
 
-&:hover .bt-icon-shift {
+@hover &:hover .bt-icon-shift {
   transform: translateX({{iconShift}});
 }
 @endif
