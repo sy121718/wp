@@ -18,6 +18,7 @@ import (
 	orderenums "go_wp/internal/module/order/enums"
 	ordermodel "go_wp/internal/module/order/model"
 	inventorydto "go_wp/internal/module/product/inventory/dto"
+	"go_wp/pkg/logger"
 )
 
 // allowedTransitions 合法流转边。终态（cancelled / refunded）无出边。
@@ -132,13 +133,13 @@ func (s *Service) ChangeStatus(ctx context.Context, req *orderdto.ChangeStatusRe
 // 顺序照建单的同一套规则：**先落账、后动库存、失败留痕**。
 // 归还失败时状态已经是取消（对用户而言结论正确），额外记一条流水说明
 // 「库存归还未完成，需人工处理」—— 少还了库存是商家吃亏，留着痕比回滚状态好定位。
-func (s *Service) CancelOrder(ctx context.Context, req *orderdto.CancelOrderReq) (err error) {
+func (s *Service) CancelOrder(ctx context.Context, req *orderdto.CancelOrderReq) (res *orderdto.CancelOrderResp, err error) {
 	if req == nil || req.OrderID == 0 {
-		return errors.New(orderenums.ErrInvalidParam)
+		return nil, errors.New(orderenums.ErrInvalidParam)
 	}
 	reason := strings.TrimSpace(req.Reason)
 	if reason == "" {
-		return errors.New(orderenums.ErrCancelReasonRequired)
+		return nil, errors.New(orderenums.ErrCancelReasonRequired)
 	}
 
 	now := time.Now()
@@ -174,17 +175,20 @@ func (s *Service) CancelOrder(ctx context.Context, req *orderdto.CancelOrderReq)
 		})
 	})
 	if err != nil {
-		return err
+		return nil, err
 	}
+
+	// 释放优惠码核销（与建单 redeem 对称；失败不阻断取消主链）。
+	s.releaseCouponForOrder(ctx, req.OrderID)
 
 	// 归还库存（跨模块，事务之外）。只归还**还没发货**的单：已发货的取消发生在
 	// 货物已出库之后，归还应该走退货入库流程（有实物验收环节），不能凭空加回来。
 	items, ierr := s.items.ListByOrderID(ctx, req.OrderID)
 	if ierr != nil {
-		return ierr
+		return nil, ierr
 	}
 	if len(items) == 0 {
-		return errors.New(orderenums.ErrOrderHasNoItems)
+		return nil, errors.New(orderenums.ErrOrderHasNoItems)
 	}
 	lines := make([]inventorydto.StockChangeLineReq, 0, len(items))
 	for _, it := range items {
@@ -206,7 +210,8 @@ func (s *Service) CancelOrder(ctx context.Context, req *orderdto.CancelOrderReq)
 	}); rerr != nil {
 		// 留痕不阻断：状态已经是取消（对调用方而言结论正确），库存归属问题留给人工处理。
 		// 用**独立事务**写 —— 上面那个事务已经提交，拿它的句柄再写会 panic（tx 为 nil）。
-		_ = s.logs.Transaction(ctx, func(tx *gorm.DB) error {
+		warn := orderenums.MsgCancelledStockWarning + "：" + rerr.Error()
+		if lerr := s.logs.Transaction(ctx, func(tx *gorm.DB) error {
 			return s.logs.CreateTx(ctx, tx, &ordermodel.OrderStatusLogEntity{
 				OrderID:      req.OrderID,
 				FromStatus:   ordermodel.OrderStatusCancelled,
@@ -215,10 +220,12 @@ func (s *Service) CancelOrder(ctx context.Context, req *orderdto.CancelOrderReq)
 				Remark:       "库存归还未完成，需人工处理：" + rerr.Error(),
 				CreateTime:   time.Now(),
 			})
-		})
-		return nil
+		}); lerr != nil {
+			logger.Scene("order").With("order_id", req.OrderID).Error(lerr, "库存归还失败且留痕写入失败")
+		}
+		return &orderdto.CancelOrderResp{Warnings: []string{warn}}, nil
 	}
-	return nil
+	return &orderdto.CancelOrderResp{}, nil
 }
 
 // RefundOrder 退款：改状态 + 记支付流水号。**不归还库存**（理由见契约注释）。

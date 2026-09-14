@@ -77,7 +77,9 @@ func (s *Service) HandlePaymentCallback(ctx context.Context, req *cartdto.Paymen
 		return nil, perr
 	}
 	message := "回调已入账"
-	if paid.AlreadyPaid {
+	if paid.NeedsManualReview {
+		message = "支付成功但订单已终态，已记流水待人工核对"
+	} else if paid.AlreadyPaid {
 		message = "订单此前已付款，本次未改动（幂等命中）"
 	}
 	return &cartdto.PaymentCallbackResp{

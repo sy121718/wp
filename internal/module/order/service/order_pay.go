@@ -61,9 +61,28 @@ func (s *Service) PayOrder(ctx context.Context, req *orderdto.PayOrderReq) (res 
 			res.AlreadyPaid = true
 			return nil
 		case ordermodel.OrderStatusCancelled, ordermodel.OrderStatusRefunded:
-			// 已取消（比如库存不足的补偿取消）的单收到支付成功，是真的异常：
-			// 钱可能真的扣了，但不能靠改状态掩盖过去，留给人工按单号退款。
-			return errors.New(transitionError(e.Status, ordermodel.OrderStatusPaid))
+			// 支付通道可能在取消/退款之后才回调成功：钱已扣，不能对通道报错
+			// （否则无限重试），也不能静默改状态。记流水 + 返回待人工核对。
+			remark := defaultString(remark, "支付成功但订单已终态，待人工核对")
+			if txnID != "" {
+				remark += "（流水号 " + txnID + "）"
+			}
+			if cerr := s.logs.CreateTx(ctx, tx, &ordermodel.OrderStatusLogEntity{
+				OrderID:      e.ID,
+				FromStatus:   e.Status,
+				ToStatus:     e.Status,
+				OperatorType: defaultString(req.OperatorType, ordermodel.OperatorTypeSystem),
+				OperatorID:   req.OperatorID,
+				OperatorName: strings.TrimSpace(req.OperatorName),
+				Remark:       remark,
+				CreateTime:   now,
+			}); cerr != nil {
+				return cerr
+			}
+			res.ID, res.OrderNo, res.Status = e.ID, e.OrderNo, e.Status
+			res.TransactionID = txnID
+			res.NeedsManualReview = true
+			return nil
 		}
 		if !canTransition(e.Status, ordermodel.OrderStatusPaid) {
 			return errors.New(transitionError(e.Status, ordermodel.OrderStatusPaid))
