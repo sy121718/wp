@@ -24,7 +24,7 @@ type OrderService interface {
 	// CreateOrder 建单：读商品事实落快照 → 扣库存 → 写订单（落在同一事务里）。
 	CreateOrder(ctx context.Context, req *orderdto.CreateOrderReq) (res *orderdto.CreateOrderResp, err error)
 	// GetOrder 订单详情（头 + 订单项 + 状态流转链）。
-	GetOrder(ctx context.Context, orderID uint64) (res *orderdto.OrderDetailResp, err error)
+	GetOrder(ctx context.Context, req *orderdto.GetOrderReq) (res *orderdto.OrderDetailResp, err error)
 	// ListOrders 订单列表 + 各状态计数。
 	ListOrders(ctx context.Context, req *orderdto.ListOrderReq) (res *orderdto.OrderListResp, err error)
 	// ChangeStatus 状态流转（哪条边合法由状态机判定）。
@@ -36,7 +36,8 @@ type OrderService interface {
 	// 把重复当错误会让对方无限重试。
 	PayOrder(ctx context.Context, req *orderdto.PayOrderReq) (res *orderdto.PayOrderResp, err error)
 	// CancelOrder 取消订单：归还库存 + 记流转。
-	CancelOrder(ctx context.Context, req *orderdto.CancelOrderReq) (err error)
+	// 订单状态已取消但库存归还失败时返回 Warnings（不视为整体失败）。
+	CancelOrder(ctx context.Context, req *orderdto.CancelOrderReq) (res *orderdto.CancelOrderResp, err error)
 	// UpdateOrderNote 改订单的后台备注（adminNote）。
 	//
 	// 备注不是状态流转：它不改变订单处在哪一步，因此不写 status_logs ——

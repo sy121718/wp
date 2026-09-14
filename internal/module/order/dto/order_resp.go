@@ -72,6 +72,11 @@ type OrderItemResp struct {
 	CostPrice    int64  `json:"costPrice"`
 }
 
+// CancelOrderResp 取消订单结果（订单已取消时仍可能带库存归还警告）。
+type CancelOrderResp struct {
+	Warnings []string `json:"warnings,omitempty"`
+}
+
 // StatusLogResp 状态流转记录。
 type StatusLogResp struct {
 	FromStatus   string    `json:"fromStatus"`
@@ -106,6 +111,8 @@ type PayOrderResp struct {
 	// AlreadyPaid 为真表示这一单此前已经付过：本次调用**没有改动任何列**，
 	// 返回的是当时的结论。网关重发通知、访客连点两次下单都会命中这里。
 	AlreadyPaid bool `json:"alreadyPaid"`
+	// NeedsManualReview 为真表示支付成功但订单已取消/已退款，只记流水不改状态，待人工核对。
+	NeedsManualReview bool `json:"needsManualReview"`
 }
 
 // OrderDetailResp 详情（头 + 项 + 流转链）。

@@ -17,11 +17,11 @@ import (
 //
 // 一次取齐三块而不是三个接口：订单详情一屏就是这些，拆开只会让页面出现
 // 「上半截已显示、下半截还在转」的中间态。
-func (s *Service) GetOrder(ctx context.Context, orderID uint64) (res *orderdto.OrderDetailResp, err error) {
-	if orderID == 0 {
-		return nil, errors.New(orderenums.ErrInvalidParam)
+func (s *Service) GetOrder(ctx context.Context, req *orderdto.GetOrderReq) (res *orderdto.OrderDetailResp, err error) {
+	if req == nil || req.OrderID == 0 || strings.TrimSpace(req.ProjectID) == "" {
+		return nil, errors.New(orderenums.ErrProjectRequired)
 	}
-	head, err := s.orders.GetByID(ctx, orderID)
+	head, err := s.orders.GetByID(ctx, req.OrderID, req.ProjectID)
 	if err != nil {
 		return nil, err
 	}

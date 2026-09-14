@@ -75,12 +75,12 @@ func (h *Handle) CreateOrder(c *gin.Context) {
 
 // GetOrder 订单详情。
 func (h *Handle) GetOrder(c *gin.Context) {
-	id, err := strconv.ParseUint(strings.TrimSpace(c.Query("orderId")), 10, 64)
-	if err != nil || id == 0 {
+	req := &orderdto.GetOrderReq{}
+	if err := c.ShouldBindQuery(req); err != nil || req.OrderID == 0 {
 		response.ErrorWithMessage(c, http.StatusBadRequest, orderenums.ErrInvalidParam)
 		return
 	}
-	res, err := h.svc.GetOrder(c.Request.Context(), id)
+	res, err := h.svc.GetOrder(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
 		return
@@ -128,11 +128,16 @@ func (h *Handle) CancelOrder(c *gin.Context) {
 	}
 	req.OperatorID, req.OperatorName = operatorFromContext(c)
 	req.OperatorType = "admin"
-	if err := h.svc.CancelOrder(c.Request.Context(), req); err != nil {
+	resp, err := h.svc.CancelOrder(c.Request.Context(), req)
+	if err != nil {
 		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
 		return
 	}
-	response.SuccessWithMessage(c, orderenums.MsgCancelled, nil)
+	msg := orderenums.MsgCancelled
+	if resp != nil && len(resp.Warnings) > 0 {
+		msg = resp.Warnings[0]
+	}
+	response.SuccessWithMessage(c, msg, resp)
 }
 
 // RefundOrder 退款。
@@ -153,12 +158,12 @@ func (h *Handle) RefundOrder(c *gin.Context) {
 
 // ListItems 某单的订单项。
 func (h *Handle) ListItems(c *gin.Context) {
-	id, err := strconv.ParseUint(strings.TrimSpace(c.Query("orderId")), 10, 64)
-	if err != nil || id == 0 {
+	req := &orderdto.GetOrderReq{}
+	if err := c.ShouldBindQuery(req); err != nil || req.OrderID == 0 {
 		response.ErrorWithMessage(c, http.StatusBadRequest, orderenums.ErrInvalidParam)
 		return
 	}
-	res, err := h.svc.GetOrder(c.Request.Context(), id)
+	res, err := h.svc.GetOrder(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
 		return
@@ -168,12 +173,12 @@ func (h *Handle) ListItems(c *gin.Context) {
 
 // ListLogs 某单的状态流转流水。
 func (h *Handle) ListLogs(c *gin.Context) {
-	id, err := strconv.ParseUint(strings.TrimSpace(c.Query("orderId")), 10, 64)
-	if err != nil || id == 0 {
+	req := &orderdto.GetOrderReq{}
+	if err := c.ShouldBindQuery(req); err != nil || req.OrderID == 0 {
 		response.ErrorWithMessage(c, http.StatusBadRequest, orderenums.ErrInvalidParam)
 		return
 	}
-	res, err := h.svc.GetOrder(c.Request.Context(), id)
+	res, err := h.svc.GetOrder(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
 		return

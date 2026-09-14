@@ -36,7 +36,8 @@ type CreateOrderReq struct {
 	Billing            OrderAddress   `json:"billing"`
 	PaymentMethod      string         `json:"paymentMethod"`
 	PaymentMethodTitle string         `json:"paymentMethodTitle"`
-	// ShippingTotal / DiscountTotal 由调用方给出（运费与优惠是业务策略，不属于商品域）；
+	// ShippingTotal 由调用方给出（运费策略不属于商品域）。
+	// DiscountTotal 无 CouponCode 时一律忽略；有券时以服务端试算为准。
 	// Subtotal / Total 由服务端按商品价格算出，不接受传入。
 	ShippingTotal int64 `json:"shippingTotal"`
 	DiscountTotal int64 `json:"discountTotal"`
@@ -77,7 +78,8 @@ type ListOrderReq struct {
 
 // GetOrderReq 订单详情查询。
 type GetOrderReq struct {
-	OrderID uint64 `form:"orderId"`
+	ProjectID string `form:"projectId" json:"projectId"`
+	OrderID   uint64 `form:"orderId" json:"orderId"`
 }
 
 // ChangeStatusReq 状态流转。

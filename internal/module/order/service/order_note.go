@@ -28,7 +28,7 @@ func (s *Service) UpdateOrderNote(ctx context.Context, req *orderdto.UpdateOrder
 	if len(note) > maxAdminNoteLen {
 		return nil, errors.New(orderenums.ErrNoteTooLong)
 	}
-	head, err := s.orders.GetByID(ctx, req.OrderID)
+	head, err := s.orders.GetByID(ctx, req.OrderID, "")
 	if err != nil {
 		return nil, err
 	}
@@ -41,7 +41,7 @@ func (s *Service) UpdateOrderNote(ctx context.Context, req *orderdto.UpdateOrder
 	}); err != nil {
 		return nil, err
 	}
-	updated, err := s.orders.GetByID(ctx, head.ID)
+	updated, err := s.orders.GetByID(ctx, head.ID, "")
 	if err != nil {
 		return nil, err
 	}

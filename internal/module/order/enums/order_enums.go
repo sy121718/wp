@@ -7,7 +7,8 @@ package orderenums
 const (
 	MsgCreateSuccess = "订单已创建"
 	MsgStatusChanged = "订单状态已更新"
-	MsgCancelled     = "订单已取消"
+	MsgCancelled              = "订单已取消"
+	MsgCancelledStockWarning  = "订单已取消，但库存归还未完成，请人工处理"
 	MsgRefunded      = "订单已退款"
 	MsgPaid          = "支付成功，订单已确认"
 	MsgNoteUpdated   = "备注已保存"

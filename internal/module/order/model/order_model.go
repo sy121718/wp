@@ -145,10 +145,15 @@ func (m *OrderModel) CreateTx(ctx context.Context, tx *gorm.DB, e *OrderEntity) 
 	return tx.WithContext(ctx).Model(&OrderEntity{}).Create(e).Error
 }
 
-// GetByID 按主键取单；不存在返回 (nil, nil)，由 service 决定报什么错。
-func (m *OrderModel) GetByID(ctx context.Context, id uint64) (e *OrderEntity, err error) {
+// GetByID 按主键取单；projectID 非空时追加工程归属条件（防跨工程 IDOR）。
+// 不存在返回 (nil, nil)，由 service 决定报什么错。
+func (m *OrderModel) GetByID(ctx context.Context, id uint64, projectID string) (e *OrderEntity, err error) {
 	e = &OrderEntity{}
-	if err = m.DB(ctx).Where("id = ?", id).First(e).Error; err != nil {
+	q := m.DB(ctx).Where("id = ?", id)
+	if strings.TrimSpace(projectID) != "" {
+		q = q.Where("project_id = ?", projectID)
+	}
+	if err = q.First(e).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
 		}
@@ -246,7 +251,7 @@ func (m *OrderModel) List(ctx context.Context, f OrderFilter) (list []*OrderEnti
 	if limit <= 0 || limit > 200 {
 		limit = 20
 	}
-	err = q.Order("id DESC").Offset(f.Offset).Limit(limit).Find(&list).Error
+	err = q.Omit("attribution").Order("id DESC").Offset(f.Offset).Limit(limit).Find(&list).Error
 	return list, total, err
 }
 
@@ -258,6 +263,16 @@ func (m *OrderModel) UpdateFields(ctx context.Context, id uint64, fields map[str
 // UpdateFieldsTx 事务内更新指定字段。
 func (m *OrderModel) UpdateFieldsTx(ctx context.Context, tx *gorm.DB, id uint64, fields map[string]any) (err error) {
 	return tx.WithContext(ctx).Model(&OrderEntity{}).Where("id = ?", id).Updates(fields).Error
+}
+
+// ListPendingCreatedBefore 列出创建时间早于 cutoff 的待付款订单（超时取消扫描用）。
+func (m *OrderModel) ListPendingCreatedBefore(ctx context.Context, cutoff time.Time, limit int) (list []*OrderEntity, err error) {
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+	err = m.DB(ctx).Where("status = ? AND create_time < ?", OrderStatusPending, cutoff).
+		Order("create_time ASC").Limit(limit).Find(&list).Error
+	return list, err
 }
 
 // CountByStatus 按状态分组计数（列表页状态页签的角标）。
