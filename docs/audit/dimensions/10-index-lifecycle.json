@@ -1,0 +1,1056 @@
+{
+  "dimension": "index-lifecycle",
+  "dimensionTitle": "索引与查询匹配度、数据生命周期与表膨胀风险",
+  "scope": "各模块 model 层的实际查询与 public/migrations 里的索引定义双向对照、真实库的索引与表结构核对、磁盘产物与数据库的一致性",
+  "verdict": "索引做得好的地方很好：page_routes 的主键就是查询键、商品集合源的 JSONB 操作符与 jsonb_path_ops 索引配对正确（AGENTS.md 自己提到的不用 ?| 的判断是对的）、部分索引的谓词与查询谓词完全对齐、068 与 118 还有 EXPLAIN 断言测试背书。问题集中在两类：一是所有 ILIKE 关键词搜索无索引可用（因为 pg_trgm 没装），二是六张只增不减的表完全没有清理策略，其中 master_data_changes 的 append-only 触发器让它连清理的可能性都没有。另外产物 GC 默认 dryRun 且只能手动触发，磁盘会一直涨。实测还发现 sys_attachment 一张 6 行的表挂了 15 个索引，其中有一对是完全重复的。",
+  "findings": [
+    {
+      "id": "IDX-001",
+      "title": "page_views 增长最快且完全没有清理策略",
+      "severity": "critical",
+      "type": "design-flaw",
+      "confidence": "confirmed",
+      "problem": "每次访客 PV 插一行，只有 INSERT 路径，代码里没有任何 DELETE、归档或分区。AGENTS.md 自己写明「当前无清理策略」。按天聚合用 (viewed_at AT TIME ZONE 'UTC')::date 表达式分组，大表上无法完全走索引。",
+      "evidence": [
+        {
+          "file": "internal/module/analytics/model/analytics_model.go",
+          "lines": "0",
+          "snippet": "Insert 每次 PV 一行；CountRange / CountByDay / CountByPath 聚合查询",
+          "note": "无 DELETE 路径"
+        },
+        {
+          "file": "public/migrations/147_page_views.sql",
+          "lines": "0",
+          "snippet": "idx_page_views_project_time 与 idx_page_views_project_path_time",
+          "note": "索引与时间窗查询基本匹配，但表本身无生命周期管理"
+        }
+      ],
+      "impact": "中等流量站点每天 10 万 PV，一年三千万行。索引与堆表持续膨胀，VACUUM 时间变长，备份体积增长，聚合查询变慢。这是全库增长最快的表，也是最先会出问题的。",
+      "rootCause": "统计功能落地时只考虑了写入与查询，没有考虑保留期。",
+      "remediation": {
+        "approach": "按月 RANGE 分区（见 DB-004）加可配的保留期，配合按天预聚合（见 DB-005）：明细只保留近期用于下钻，历史看汇总表。",
+        "steps": [
+          "分区改造（DB-004）",
+          "日汇总表（DB-005）",
+          "保留期配置项（默认 90 天明细）",
+          "定时任务 DETACH 加 DROP 过期分区",
+          "BRIN 索引可作为分区的补充（viewed_at 上的 BRIN 体积极小）",
+          "按天聚合的表达式分组改为对分区键直接分组，或在汇总表上查"
+        ],
+        "effortDays": 2,
+        "risk": "medium",
+        "breaking": false,
+        "migrationNeeded": true
+      },
+      "verification": [
+        "过期分区能自动清理",
+        "统计数字不受清理影响（汇总表保留）",
+        "表体积稳定"
+      ],
+      "dependsOn": [
+        "DB-004",
+        "DB-005"
+      ],
+      "blocks": [],
+      "phase": "P1",
+      "tags": [
+        "lifecycle",
+        "analytics",
+        "index",
+        "scalability"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：迁移 161 + PurgeExpiredViews 日调度；默认保留 90 天。"
+    },
+    {
+      "id": "IDX-002",
+      "title": "订单列表的三列 ILIKE OR 无索引，且复合索引与实际查询条件错位",
+      "severity": "high",
+      "type": "performance",
+      "confidence": "confirmed",
+      "problem": "订单 List 的条件组合是：project_id 加可选的 status / user_id / payment_method / create_time 范围，再加关键词对 order_no 与 customer_email 与 customer_name 三列做 OR ILIKE，最后 Count 加 ORDER BY id DESC 加 Offset Limit。现有索引是 (project_id, status) 与 (create_time DESC) 与 user_id 部分索引。关键词 ILIKE 无索引；带时间范围加排序时没有 (project_id, status, create_time) 这样的复合索引。",
+      "evidence": [
+        {
+          "file": "internal/module/order/model/order_model.go",
+          "lines": "220-250",
+          "snippet": "多条件筛选 + 三列 OR ILIKE + Count + Offset/Limit + ORDER BY id DESC",
+          "note": ""
+        },
+        {
+          "file": "public/migrations/135_order.sql",
+          "lines": "98-103",
+          "snippet": "idx_orders_project_status、idx_orders_create_time、idx_orders_user 部分索引、uk_orders_request_id",
+          "note": "缺 trgm 与缺三列复合"
+        }
+      ],
+      "impact": "订单是最核心的业务表也是必然增长的表。订单量上万后后台列表的关键词搜索会明显卡顿，带时间范围的筛选也会在 status 过滤后大量回表排序。深分页（大 offset）的成本随页码线性增长。",
+      "rootCause": "索引按单条件加，没有按实际的条件组合设计。ILIKE 需要 trgm 而扩展没装（DB-001）。",
+      "remediation": {
+        "approach": "装 pg_trgm 建三列 trgm 索引；加 (project_id, status, create_time DESC) 复合索引；列表分页改 keyset（用 id 游标而非 offset）。",
+        "steps": [
+          "CREATE EXTENSION pg_trgm（DB-001）",
+          "CREATE INDEX idx_orders_no_trgm ON orders USING gin (order_no gin_trgm_ops)，email 与 name 同样",
+          "CREATE INDEX idx_orders_project_status_time ON orders (project_id, status, create_time DESC)",
+          "列表改 keyset：WHERE project_id = ? AND id < ? ORDER BY id DESC LIMIT n（前端传游标而非页码）",
+          "总数仍需 Count，但可以只在首页算或改为估算加「还有更多」",
+          "配合 PERF-003 的列投影（不拉 attribution）",
+          "用 EXPLAIN 断言测试固化索引使用"
+        ],
+        "effortDays": 2,
+        "risk": "medium",
+        "breaking": false,
+        "migrationNeeded": true
+      },
+      "verification": [
+        "关键词搜索走 trgm 索引",
+        "时间范围筛选走复合索引",
+        "深页码响应时间稳定"
+      ],
+      "dependsOn": [
+        "DB-001"
+      ],
+      "blocks": [],
+      "phase": "P1",
+      "tags": [
+        "order",
+        "index",
+        "performance",
+        "pagination"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "IDX-003",
+      "title": "master_data_changes 是 append-only 且触发器禁止删除，永久增长无法清理",
+      "severity": "critical",
+      "type": "design-flaw",
+      "confidence": "confirmed",
+      "problem": "字段级审计表，每次写操作的每个变化字段一行。迁移 111 建了 BEFORE UPDATE OR DELETE 触发器直接 RAISE EXCEPTION。这意味着不改触发器就永远无法清理。同时 operator_id 筛选无索引、entity_label 的 ILIKE 无索引。",
+      "evidence": [
+        {
+          "file": "public/migrations/111_master_data_changes.sql",
+          "lines": "56-66",
+          "snippet": "trg_master_data_changes_append_only：BEFORE UPDATE OR DELETE RAISE EXCEPTION",
+          "note": "禁止删除是有意设计（审计表能被改写就等于没有审计表）"
+        },
+        {
+          "file": "internal/module/masterdata/model/masterdata_model.go",
+          "lines": "0",
+          "snippet": "applyChangeFilter 支持 operator_id 与 entity_label ILIKE 筛选",
+          "note": "两者都无索引"
+        },
+        {
+          "file": "public/migrations/111_master_data_changes.sql",
+          "lines": "0",
+          "snippet": "三个索引：entity 组合、时间、字段",
+          "note": "缺 operator_id 与 entity_label"
+        }
+      ],
+      "impact": "定价批量改价与变体组合生成这类操作会一次写很多行。两三年后到百万甚至千万行量级，后台的审计查询（尤其带 ILIKE 与深分页）会变得不可用，而且没有任何办法清理。append-only 的设计目标是防篡改，但「不可删除」与「不可篡改」是两件事，前者不该是后者的必然代价。",
+      "rootCause": "为了审计可信度选择了最强的不可变约束，但没有设计归档路径。",
+      "remediation": {
+        "approach": "改为分区加归档：触发器只禁止 UPDATE 与单行 DELETE，允许整个分区 DETACH。归档分区导出到冷存储后 DROP。这样既防篡改（无法改单行）又能管理体积。",
+        "steps": [
+          "按 created_at 月分区（DB-004）",
+          "触发器调整：保留 UPDATE 与 DELETE 的禁止，但分区 DETACH 不受触发器影响（DETACH 是 DDL 不触发行级触发器）",
+          "归档流程：DETACH 旧分区 → 导出到文件或冷库 → DROP",
+          "归档保留期按合规要求配置（审计数据通常要求几年）",
+          "补 (project_id, operator_id, created_at DESC) 索引",
+          "补 entity_label 的 trgm 索引",
+          "文档说明归档流程与谁有权执行"
+        ],
+        "effortDays": 2.5,
+        "risk": "medium",
+        "breaking": false,
+        "migrationNeeded": true
+      },
+      "verification": [
+        "单行仍无法 UPDATE 或 DELETE",
+        "旧分区可归档",
+        "按操作人与关键词筛选走索引"
+      ],
+      "dependsOn": [
+        "DB-004",
+        "DB-001"
+      ],
+      "blocks": [],
+      "phase": "P1",
+      "tags": [
+        "lifecycle",
+        "masterdata",
+        "audit",
+        "index"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：迁移 161 masterdata_retention_days 配置列（分区归档留 DB-004）。"
+    },
+    {
+      "id": "IDX-004",
+      "title": "产物 GC 缺专用索引且默认 dryRun 只能手动触发，磁盘会一直涨",
+      "severity": "high",
+      "type": "design-flaw",
+      "confidence": "confirmed",
+      "problem": "GC 候选查询是 payload_state 加 created_at 加 NOT IN 保护集合，registry 版本扫描是 payload_state 加 registry_version，按 hash 查产物是 page_id 加 artifact_hash。page_artifacts 只有 (page_id, version, lang) 唯一索引，这三个查询都无索引可用。而 GarbageCollectArtifacts 默认 dryRun 为 true 且没有定时任务，只能人工调接口。",
+      "evidence": [
+        {
+          "file": "internal/module/artifact/model/artifact_model.go",
+          "lines": "0",
+          "snippet": "ListGCCandidates 用 payload_state 与 created_at 与 NOT IN；ListPageIDsByOtherRegistryVersion 用 payload_state 与 registry_version；GetByHash 用 page_id 与 artifact_hash",
+          "note": "三个查询都无对应索引"
+        },
+        {
+          "file": "public/migrations/061_page_artifacts_lang.sql",
+          "lines": "0",
+          "snippet": "只有 uk_page_artifacts_page_version_lang",
+          "note": ""
+        },
+        {
+          "file": "internal/module/page/service/page_artifact_rebuild.go",
+          "lines": "0",
+          "snippet": "GarbageCollectArtifacts 默认 30 天保留、dryRun 默认 true、无定时任务",
+          "note": "需人工 POST 调用"
+        }
+      ],
+      "impact": "两个问题叠加。索引缺失让 GC 与启动期的 registry 扫描全表扫（启动扫描会拖慢启动）。GC 不自动执行意味着每次构建产生的行与磁盘文件永久累积：多语言站点频繁发布时，artifacts 目录与 page_artifacts 表会同步膨胀，最终撑满磁盘。source_document 这个 JSONB 列单行就很大。",
+      "rootCause": "GC 做成了运维工具而不是自动机制，索引也没跟上。",
+      "remediation": {
+        "approach": "补三个索引；GC 改为定时执行（保留 dryRun 参数用于人工预演，但定时任务用 dryRun=false）；磁盘与数据库的清理要一致（先删 DB 行再删文件，或反之并容忍孤儿文件）。",
+        "steps": [
+          "CREATE INDEX idx_page_artifacts_gc ON page_artifacts (created_at) WHERE payload_state = 'available'",
+          "CREATE INDEX idx_page_artifacts_registry ON page_artifacts (registry_version) WHERE payload_state = 'available'",
+          "CREATE INDEX idx_page_artifacts_page_hash ON page_artifacts (page_id, artifact_hash)",
+          "GC 定时任务（每天一次），保留期可配",
+          "GC 的删除顺序：先确认不在保护集合（已激活与已暂存的产物）→ 删 DB 行 → 删磁盘目录",
+          "磁盘删除失败只记日志（孤儿文件由反向对账处理，见 IDX-016）",
+          "后台可见 GC 的执行历史与回收量"
+        ],
+        "effortDays": 2,
+        "risk": "medium",
+        "breaking": false,
+        "migrationNeeded": true
+      },
+      "verification": [
+        "GC 自动执行并回收磁盘",
+        "激活与暂存的产物永不被回收（保护集合正确）",
+        "启动期 registry 扫描走索引"
+      ],
+      "dependsOn": [],
+      "blocks": [
+        "IDX-016"
+      ],
+      "phase": "P1",
+      "tags": [
+        "lifecycle",
+        "artifact",
+        "index",
+        "disk"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "IDX-005",
+      "title": "page_revisions 每次草稿保存存一整份文档 JSONB，无保留上限",
+      "severity": "high",
+      "type": "design-flaw",
+      "confidence": "confirmed",
+      "problem": "SaveDraftWithRevision 每次保存都 Create 一个新 revision，内含完整的 draft_document。表只有 (page_id, version) 唯一约束，没有保留上限也没有清理。",
+      "evidence": [
+        {
+          "file": "internal/module/page/model/page_model.go",
+          "lines": "0",
+          "snippet": "SaveDraftWithRevision 与 CreateWithRevision 每次 tx.Create(revision)",
+          "note": "每次保存一份完整文档"
+        },
+        {
+          "file": "public/migrations/010_page_revisions.sql",
+          "lines": "0",
+          "snippet": "只有 UNIQUE (page_id, version)",
+          "note": "无保留策略"
+        }
+      ],
+      "impact": "活跃编辑的页面 revision 数等于保存次数。工作台可能有自动保存（需确认），那样增长会更快。粗算 1000 个页面每个平均 200 次保存每份 50KB，就是 10GB 纯历史数据。这个体积会显著影响备份与恢复时间。",
+      "rootCause": "版本历史按无限保留实现。",
+      "remediation": {
+        "approach": "保留策略：每页保留最近 N 版（建议 30）加所有已发布版本对应的 revision。超出的删除。可选进阶：只存差分而非全量文档。",
+        "steps": [
+          "确认工作台是否有自动保存（若有，保留策略更重要）",
+          "保存时清理超出保留数的旧 revision（同事务内，避免额外任务）",
+          "已发布版本对应的 revision 不删（回滚需要）",
+          "保留数可配",
+          "存量数据一次性清理（分批，避免大事务）",
+          "差分存储作为后续优化项记入 backlog"
+        ],
+        "effortDays": 1.5,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": true
+      },
+      "verification": [
+        "每页 revision 数不超过上限",
+        "已发布版本仍可回滚",
+        "存量清理后表体积下降"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P1",
+      "tags": [
+        "lifecycle",
+        "page",
+        "disk"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "IDX-006",
+      "title": "商品后台列表的关键词 ILIKE 无索引，且缺 (project_id, status) 与排序复合索引",
+      "severity": "medium",
+      "type": "performance",
+      "confidence": "confirmed",
+      "problem": "后台商品 List 与 Count 用 name ILIKE 百分号匹配，无 trgm 索引。集合源的 ListForCollection 常带 project_id 加 status，排序按 sort 与 created_at 与 id，没有对应的复合索引。JSONB 的分类与标签筛选倒是配对正确（@> 加 jsonb_path_ops）。",
+      "evidence": [
+        {
+          "file": "internal/module/product/model/product_model.go",
+          "lines": "177,349",
+          "snippet": "name ILIKE 百分号匹配",
+          "note": "无 trgm"
+        },
+        {
+          "file": "internal/module/product/model/product_model.go",
+          "lines": "237-339",
+          "snippet": "ListForCollection 的多维筛选与排序",
+          "note": "JSONB 部分配对正确"
+        },
+        {
+          "file": "public/migrations/081_product_tables.sql",
+          "lines": "108-109",
+          "snippet": "idx_products_category_ids 与 tag_ids 用 GIN jsonb_path_ops",
+          "note": "这部分做得对"
+        }
+      ],
+      "impact": "商品数上万的站点，后台搜索与集合源查询都会变慢。集合源还会在构建期与片段期反复执行，影响放大。",
+      "rootCause": "同 IDX-002：索引按需加，没有按条件组合设计。",
+      "remediation": {
+        "approach": "补 trgm 索引与复合索引。",
+        "steps": [
+          "CREATE INDEX idx_products_name_trgm ON products USING gin (name gin_trgm_ops)",
+          "CREATE INDEX idx_products_project_status ON products (project_id, status, sort, created_at, id)",
+          "评估 MinRating 子查询：如果使用频繁，考虑物化平均分（但要注意 NULL 与 0 分的区分语义不能破坏）",
+          "EXPLAIN 断言测试"
+        ],
+        "effortDays": 1,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": true
+      },
+      "verification": [
+        "商品搜索与集合查询走索引",
+        "排序不再需要额外 sort"
+      ],
+      "dependsOn": [
+        "DB-001"
+      ],
+      "blocks": [],
+      "phase": "P1",
+      "tags": [
+        "product",
+        "index",
+        "performance"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "IDX-007",
+      "title": "库存流水按仓库维度查询缺索引",
+      "severity": "medium",
+      "type": "performance",
+      "confidence": "confirmed",
+      "problem": "ListMovementRows 支持按 warehouse_id 筛选（后台常用：看某个仓的出入库记录），但索引只有 (project_id, created_at)、(variant_id, created_at)、batch_id、reason_code，没有 (warehouse_id, created_at)。",
+      "evidence": [
+        {
+          "file": "internal/module/product/inventory/model/inventory_change_model.go",
+          "lines": "0",
+          "snippet": "ListMovementRows 支持 warehouse_id 筛选",
+          "note": ""
+        },
+        {
+          "file": "public/migrations/102_inventory_movements.sql",
+          "lines": "70-76",
+          "snippet": "四个索引，无 warehouse_id 维度",
+          "note": ""
+        }
+      ],
+      "impact": "按仓库查流水会走 project_time 索引再过滤，流水量大时慢。库存流水是只增不减的表，长期会有大量数据。",
+      "rootCause": "索引按最初的查询维度设计，仓库维度是后加的需求。",
+      "remediation": {
+        "approach": "补 (warehouse_id, created_at DESC) 索引。同时这张表也需要分区（DB-004）。",
+        "steps": [
+          "CREATE INDEX idx_inventory_movements_wh_time ON inventory_stock_movements (warehouse_id, created_at DESC)",
+          "评估 reason_code 单列索引是否值得保留（低基数，多与其它条件组合）",
+          "分区改造（DB-004）"
+        ],
+        "effortDays": 0.5,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": true
+      },
+      "verification": [
+        "按仓库查流水走索引"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P1",
+      "tags": [
+        "inventory",
+        "index"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：迁移 162 inventory_stock_movements (warehouse_id, created_at DESC)。"
+    },
+    {
+      "id": "IDX-008",
+      "title": "删仓守卫查询可用部分索引优化",
+      "severity": "low",
+      "type": "performance",
+      "confidence": "confirmed",
+      "problem": "删除仓库前的守卫查询是 WHERE warehouse_id = ? AND quantity <> 0，现有索引是 warehouse_id 单列。部分索引 (warehouse_id) WHERE quantity <> 0 更精确。",
+      "evidence": [
+        {
+          "file": "internal/module/product/inventory/model/inventory_model.go",
+          "lines": "227-228",
+          "snippet": "WHERE warehouse_id = ? AND quantity <> 0",
+          "note": ""
+        },
+        {
+          "file": "public/migrations/099_inventory_tables.sql",
+          "lines": "0",
+          "snippet": "idx_inventory_stocks_warehouse 单列索引",
+          "note": ""
+        }
+      ],
+      "impact": "低。库存记录数通常不大（SKU 数乘仓库数），当前索引够用。",
+      "rootCause": "索引未针对这个特定查询优化。",
+      "remediation": {
+        "approach": "低优先级。若库存表增长到需要优化时再加部分索引。",
+        "steps": [
+          "观察实际查询耗时后决定",
+          "需要时加 (warehouse_id) WHERE quantity <> 0"
+        ],
+        "effortDays": 0.25,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": true
+      },
+      "verification": [
+        "删仓守卫查询走索引"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P7",
+      "tags": [
+        "inventory",
+        "index"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "IDX-009",
+      "title": "客户列表四列 ILIKE 无索引",
+      "severity": "medium",
+      "type": "performance",
+      "confidence": "confirmed",
+      "problem": "user_model 的 List 对四列做 ILIKE OR 匹配（用户名、邮箱、昵称、显示名）。索引只有 status 与 email 唯一（精确匹配用），无 trgm。",
+      "evidence": [
+        {
+          "file": "internal/module/user/model/user_model.go",
+          "lines": "193-221",
+          "snippet": "四列 ILIKE OR",
+          "note": ""
+        },
+        {
+          "file": "public/migrations/123_user.sql",
+          "lines": "0",
+          "snippet": "idx_users_status 与 email 唯一索引（表达式 lower(email)）",
+          "note": "精确匹配可用，模糊不可用"
+        }
+      ],
+      "impact": "客户量上万后后台客户搜索全表扫。客户管理是刚落地的能力（迁移 152/153），现在解决成本最低。",
+      "rootCause": "同 DB-001。",
+      "remediation": {
+        "approach": "四列建 trgm 索引，或建一个合并的搜索列（generated column 拼接四列）加单个 trgm 索引（后者索引更少但需要额外列）。",
+        "steps": [
+          "方案一：四个 trgm 索引（简单，但四个 GIN 索引写入成本高）",
+          "方案二：生成列 search_text = username 加 email 加 nickname 加 display_name，单个 trgm 索引（推荐）",
+          "查询改为对 search_text 匹配",
+          "EXPLAIN 断言"
+        ],
+        "effortDays": 1,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": true
+      },
+      "verification": [
+        "客户搜索走索引",
+        "搜索结果与改造前一致"
+      ],
+      "dependsOn": [
+        "DB-001"
+      ],
+      "blocks": [],
+      "phase": "P1",
+      "tags": [
+        "user",
+        "index",
+        "performance"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "IDX-010",
+      "title": "analytics 路径排行用 GROUP BY 加 COUNT DISTINCT 加深分页",
+      "severity": "medium",
+      "type": "performance",
+      "confidence": "confirmed",
+      "problem": "CountByPath 对 page_views 做 GROUP BY path 加 ORDER BY views DESC 加 Offset Limit。COUNT DISTINCT 无法用索引优化，深 offset 成本高。",
+      "evidence": [
+        {
+          "file": "internal/module/analytics/model/analytics_model.go",
+          "lines": "0",
+          "snippet": "CountByPath：GROUP BY path ORDER BY views DESC OFFSET/LIMIT",
+          "note": ""
+        }
+      ],
+      "impact": "统计页面的路径排行随数据量变慢。与 IDX-001 是同一张表的问题。",
+      "rootCause": "实时聚合大表。",
+      "remediation": {
+        "approach": "查日汇总表（DB-005）而非明细表。排行用 keyset 分页（按 views 与 path 游标）。",
+        "steps": [
+          "DB-005 的日汇总表落地后改查汇总",
+          "排行分页改 keyset",
+          "当天数据仍查明细（量小）"
+        ],
+        "effortDays": 0.5,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "路径排行响应时间与数据量无关"
+      ],
+      "dependsOn": [
+        "DB-005"
+      ],
+      "blocks": [],
+      "phase": "P1",
+      "tags": [
+        "analytics",
+        "index",
+        "pagination"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "IDX-011",
+      "title": "user_sessions 的撤销行永不物理删除，且活跃设备查询缺部分索引",
+      "severity": "medium",
+      "type": "design-flaw",
+      "confidence": "confirmed",
+      "problem": "会话台账的 revoked_at 标记撤销，但撤销行永远留在表里。活跃设备列表查询是 user_id 加 revoked_at IS NULL 加 ORDER BY COALESCE(last_active_at, created_at) DESC，索引只有 user_id 单列。",
+      "evidence": [
+        {
+          "file": "internal/module/user/model/user_session_model.go",
+          "lines": "78-81",
+          "snippet": "WHERE user_id = ? AND revoked_at IS NULL ORDER BY COALESCE(last_active_at, created_at) DESC",
+          "note": ""
+        },
+        {
+          "file": "public/migrations/123_user.sql",
+          "lines": "0",
+          "snippet": "只有 idx_user_sessions_user_id",
+          "note": "缺部分索引"
+        }
+      ],
+      "impact": "活跃用户每次登录一行，撤销的不删。用户量与登录频率决定增长速度。活跃设备列表在撤销行多时会扫很多无用行。",
+      "rootCause": "会话台账保留历史（可用于安全审计），但没有保留期。",
+      "remediation": {
+        "approach": "补部分索引；撤销超过 N 天的行定期清理（会话历史的审计价值随时间衰减，90 天足够）。",
+        "steps": [
+          "CREATE INDEX idx_user_sessions_active ON user_sessions (user_id, last_active_at DESC) WHERE revoked_at IS NULL",
+          "定时清理 revoked_at 超过 90 天的行",
+          "同时清理已过期但未标记撤销的行（Redis 里已经没了，台账留着无意义）",
+          "保留期可配"
+        ],
+        "effortDays": 0.75,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": true
+      },
+      "verification": [
+        "活跃设备查询走部分索引",
+        "过期会话行被清理"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P1",
+      "tags": [
+        "user",
+        "index",
+        "lifecycle"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "IDX-012",
+      "title": "邮件追踪事件表无时间索引且无清理，大群发会快速膨胀",
+      "severity": "medium",
+      "type": "design-flaw",
+      "confidence": "confirmed",
+      "problem": "mail_campaign_events 记每次打开与点击，索引是 (campaign_id, event_type) 与 contact_id，没有 create_time 索引。mail_logs 记每封邮件。两者都没有清理策略。",
+      "evidence": [
+        {
+          "file": "internal/module/mail/model/mail_marketing_model.go",
+          "lines": "169,359",
+          "snippet": "CreateEvent 与 BatchCreateEvents",
+          "note": ""
+        },
+        {
+          "file": "public/migrations/125_mail_marketing.sql",
+          "lines": "0",
+          "snippet": "(campaign_id, event_type) 与 (contact_id) 索引，无 create_time",
+          "note": ""
+        }
+      ],
+      "impact": "一次十万人的群发，打开与点击事件可能几十万行。多做几次活动就是百万级。报表查询与清理都会成问题。",
+      "rootCause": "追踪数据按无限保留实现。",
+      "remediation": {
+        "approach": "补 (campaign_id, create_time DESC) 索引；事件明细按保留期清理（报表所需的汇总数在活动结束后固化到 campaign 汇总字段）。",
+        "steps": [
+          "补时间索引",
+          "活动结束后固化汇总（发送数、打开数、点击数、退订数）到 campaign 记录",
+          "明细按保留期清理（建议 180 天）",
+          "mail_logs 同样处理"
+        ],
+        "effortDays": 1.5,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": true
+      },
+      "verification": [
+        "报表数字在明细清理后仍正确",
+        "表体积可控"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P1",
+      "tags": [
+        "mail",
+        "index",
+        "lifecycle"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "IDX-013",
+      "title": "sys_attachment 一张 6 行的表挂了 15 个索引，其中一对完全重复",
+      "severity": "medium",
+      "type": "tech-debt",
+      "confidence": "confirmed",
+      "problem": "本次审计查真实库发现 sys_attachment 有 15 个索引（含主键）。其中 idx_att_md5_type 与 uq_attachment_md5_type_active 是同列同谓词（md5, file_type WHERE status=1 AND md5 IS NOT NULL），一个普通一个唯一，完全重复。另有三个单列索引被复合索引前缀覆盖：idx_att_category_id 被 idx_att_cat_time_alive 覆盖、idx_att_status 被 idx_att_status_time 覆盖、idx_att_file_type 被 idx_att_type_status 覆盖。还有三个索引（file_size、storage_type、update_time）看不出对应的查询场景。全库 90 表 285 索引，这个比例说明索引是想到就加而非按查询设计。",
+      "evidence": [
+        {
+          "file": "public/migrations/067_media_center.sql",
+          "lines": "80-81",
+          "snippet": "媒体中心迁移建的索引",
+          "note": "实测真实库共 15 个索引"
+        },
+        {
+          "file": "public/migrations/070_sys_status_index_audit.sql",
+          "lines": "32-33,57-58",
+          "snippet": "070 是一次索引审计迁移，加了部分索引",
+          "note": "但没有删除被覆盖的旧索引"
+        }
+      ],
+      "impact": "每次上传或修改附件要维护 15 个索引。索引本身占的空间超过数据（实测表总大小 264KB 而只有 6 行）。写入放大明显。这个表在媒体库频繁使用时会有真实的写入成本。",
+      "rootCause": "070 那次索引审计只加不删，旧索引留在原地。",
+      "remediation": {
+        "approach": "删除重复与被覆盖的索引。删除前用 pg_stat_user_indexes 观察实际使用情况（生产库上观察一段时间更稳妥）。",
+        "steps": [
+          "确定删除清单：idx_att_md5_type（与唯一索引完全重复）、idx_att_category_id、idx_att_status、idx_att_file_type（被复合索引覆盖）",
+          "评估 idx_att_file_size 与 idx_att_storage_type 与 idx_att_update_time 是否有查询场景（grep model 层）",
+          "生产库先用 pg_stat_user_indexes 观察 idx_scan 计数",
+          "写迁移 DROP INDEX",
+          "顺带用同一方法扫全库找其它冗余索引（285 个索引里可能还有）"
+        ],
+        "effortDays": 1,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": true
+      },
+      "verification": [
+        "媒体库的查询仍走索引（EXPLAIN 核对）",
+        "写入性能提升",
+        "索引数量下降"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P1",
+      "tags": [
+        "media",
+        "index",
+        "redundancy"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "IDX-014",
+      "title": "全库 12 处列表查询用 Count 加 Offset 分页，深分页成本随页码线性增长",
+      "severity": "medium",
+      "type": "performance",
+      "confidence": "confirmed",
+      "problem": "orders、order_returns、coupons 与核销、users、products、库存流水与库存记录、master_data_changes、mail 的日志与活动与联系人、媒体附件、analytics 路径、采购单与进货历史，全部是 Count(*) 加 Offset Limit 模式。",
+      "evidence": [
+        {
+          "file": "internal/module/order/model/order_model.go",
+          "lines": "221-250",
+          "snippet": "Count 加 Offset Limit",
+          "note": "12 处中的一例"
+        },
+        {
+          "file": "internal/module/masterdata/model/masterdata_model.go",
+          "lines": "0",
+          "snippet": "同一模式",
+          "note": ""
+        }
+      ],
+      "impact": "翻到第 100 页时数据库要扫过前面 99 页的行再丢弃。审计表与流水表这类大表尤其明显。Count(*) 本身在大表上也贵（虽然后台分页 UI 需要准确总数，不宜用估算）。",
+      "rootCause": "标准分页实现，没有针对大表优化。",
+      "remediation": {
+        "approach": "分两类处理：审计与流水这类只需要「往前翻」的表改 keyset 分页（游标）；需要跳页的后台列表保留 offset 但限制最大页码，或首次算总数后缓存。",
+        "steps": [
+          "优先改 orders 与 master_data_changes 与 inventory_stock_movements 三张最大的表",
+          "keyset 分页需要前端配合（传游标而非页码），要评估改动范围",
+          "或者折中：offset 超过阈值（比如 1000 行）时提示用户用筛选条件收窄",
+          "Count 可以只在第一页算并缓存到会话（翻页时不重算）"
+        ],
+        "effortDays": 2.5,
+        "risk": "medium",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "大表深页码响应时间稳定",
+        "总数仍准确"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P7",
+      "tags": [
+        "pagination",
+        "performance",
+        "index"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "IDX-015",
+      "title": "磁盘产物与数据库只有单向巡检，缺「DB 有记录但文件缺失」与「文件孤儿」的对账",
+      "severity": "high",
+      "type": "missing-feature",
+      "confidence": "confirmed",
+      "problem": "访问面的真源是 active 目录的符号链接，控制面真源是 page_routes 与 page_publications 与 pages 的指针，元数据在 page_artifacts。当前只有 AuditActiveLinks 检查 symlink 是否可达。没有检查「DB 里有激活路由但磁盘文件不存在」（会静默 404），也没有检查「磁盘有文件但 DB 无引用」（孤儿文件占磁盘）。",
+      "evidence": [
+        {
+          "file": "internal/pipeline/publication.go",
+          "lines": "239-286",
+          "snippet": "AuditActiveLinks 只遍历 active 目录检查 symlink 可达性与异物",
+          "note": "单向检查"
+        }
+      ],
+      "impact": "误删文件、磁盘损坏、GC bug 都会导致线上页面 404，而巡检发现不了（因为它只从磁盘方向看，DB 里有的路由如果磁盘上连 symlink 都没有就不在遍历范围内）。反向的孤儿文件会持续占磁盘且没人知道。",
+      "rootCause": "巡检为解决「symlink 指向丢失产物」这个具体问题而写，没有做成完整对账。",
+      "remediation": {
+        "approach": "补双向对账：从 page_routes 出发检查每个激活路径的文件是否存在；从 artifacts 目录出发检查每个产物目录是否被 page_artifacts 引用。结果落库并在后台可见。",
+        "steps": [
+          "正向：遍历 page_routes 的 active 路由，检查对应 symlink 与目标文件存在",
+          "反向：遍历 artifacts 目录，检查每个 hash 目录在 page_artifacts 里有对应行",
+          "孤儿文件不自动删（交给 GC 按保留期处理），只报告",
+          "缺失文件要告警（这是线上故障）并提供按 source_document 重建的入口（已有接口）",
+          "对账结果落库并在后台展示",
+          "与 SEO-019 的产物体检可以共用一次遍历"
+        ],
+        "effortDays": 2,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": true
+      },
+      "verification": [
+        "故意删一个产物文件能被检出并告警",
+        "孤儿文件能被列出"
+      ],
+      "dependsOn": [
+        "IDX-004"
+      ],
+      "blocks": [],
+      "phase": "P1",
+      "tags": [
+        "artifact",
+        "publication",
+        "audit",
+        "disk"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "IDX-016",
+      "title": "content_objects 无 GC，内容寻址对象只增不减",
+      "severity": "medium",
+      "type": "design-flaw",
+      "confidence": "confirmed",
+      "problem": "产物的内容对象闭包用内容寻址存储（ON CONFLICT DO NOTHING 幂等写入），但没有引用计数也没有 GC。迁移 068 的注释已说明这一点待落地。",
+      "evidence": [
+        {
+          "file": "internal/module/artifact/model/artifact_record.go",
+          "lines": "288-299",
+          "snippet": "ON CONFLICT DO NOTHING 幂等写入",
+          "note": "只写不删"
+        },
+        {
+          "file": "public/migrations/068_pg_jsonb_partial_index.sql",
+          "lines": "0",
+          "snippet": "注释说明 content_objects 的 GC 待落地",
+          "note": "已知缺口"
+        }
+      ],
+      "impact": "内容对象随产物累积。因为是内容寻址（相同内容只存一份），增长比产物慢，但没有上限。产物 GC 删了产物行之后，它引用的内容对象成为孤儿。",
+      "rootCause": "内容寻址存储的 GC 需要引用计数或标记清除，成本高于直接删除。",
+      "remediation": {
+        "approach": "标记清除式 GC：产物 GC 之后，找出不被任何现存产物引用的内容对象并删除。与 IDX-004 的产物 GC 同一个任务里做（顺序：先删产物行，再清孤儿内容对象）。",
+        "steps": [
+          "产物 GC 后跑一次内容对象清理（NOT EXISTS 子查询找孤儿）",
+          "孤儿判定要包含全部引用来源（page_artifacts 与 presentation_artifacts 等）",
+          "首次执行前先 dryRun 看数量",
+          "加索引支持这个查询（若需要）"
+        ],
+        "effortDays": 1,
+        "risk": "medium",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "孤儿内容对象被清理",
+        "在用的内容对象不被误删（回滚测试：清理后回滚一个旧版本仍成功）"
+      ],
+      "dependsOn": [
+        "IDX-004"
+      ],
+      "blocks": [],
+      "phase": "P1",
+      "tags": [
+        "artifact",
+        "lifecycle",
+        "gc"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "IDX-017",
+      "title": "order_status_logs 与 product_ratings 与 mail_automation_node_logs 同样只增不减",
+      "severity": "low",
+      "type": "design-flaw",
+      "confidence": "confirmed",
+      "problem": "订单状态流转日志每次流转一行、评分明细每条评分一行、自动化流程节点日志每次推进一行。三者都无清理策略。",
+      "evidence": [
+        {
+          "file": "public/migrations/135_order.sql",
+          "lines": "0",
+          "snippet": "order_status_logs 表",
+          "note": "无清理"
+        },
+        {
+          "file": "public/migrations/120_product_rating.sql",
+          "lines": "0",
+          "snippet": "product_ratings 明细表",
+          "note": "评论功能放量后会增长"
+        }
+      ],
+      "impact": "增长速度低于前面几张表。order_status_logs 与订单量同阶（每单 3 到 5 行），评分明细取决于评论量，节点日志取决于自动化使用频率。中期不是问题，但应该有策略。",
+      "rootCause": "同类问题：只考虑写入不考虑生命周期。",
+      "remediation": {
+        "approach": "订单状态日志随订单归档（订单本身也应该有归档策略，比如三年前的完结订单归档）。评分明细不清理（是业务数据）但要有索引支撑聚合。节点日志按保留期清理。",
+        "steps": [
+          "制定订单归档策略（含订单项与状态日志与退货记录一并归档）",
+          "评分明细保留，确认聚合查询有索引（PERF-004 会改为 SQL 聚合）",
+          "节点日志按保留期清理（建议 90 天）",
+          "先出策略文档，实施可以后置"
+        ],
+        "effortDays": 1.5,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": true
+      },
+      "verification": [
+        "三张表有明确的生命周期策略"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P7",
+      "tags": [
+        "lifecycle",
+        "order",
+        "product",
+        "mail"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "IDX-018",
+      "title": "疑似冗余索引清单（需用 pg_stat_user_indexes 确认后删除）",
+      "severity": "low",
+      "type": "tech-debt",
+      "confidence": "likely",
+      "problem": "除 sys_attachment 的明确冗余（IDX-013）外，还有几个索引值得评估：idx_orders_create_time（单列全局时间索引，很少单独按全局时间查订单）、idx_inventory_movements_reason（低基数且多与其它条件组合）、idx_product_ratings_project_id（若查询总是先按 product_id）、idx_products_primary_category（分类包含判断已有 GIN 覆盖）。",
+      "evidence": [
+        {
+          "file": "public/migrations/135_order.sql",
+          "lines": "0",
+          "snippet": "idx_orders_create_time 单列",
+          "note": "加了 (project_id, status, create_time) 后可评估删除"
+        },
+        {
+          "file": "public/migrations/102_inventory_movements.sql",
+          "lines": "0",
+          "snippet": "idx_inventory_movements_reason 低基数单列",
+          "note": ""
+        }
+      ],
+      "impact": "每个多余索引都是写入成本与存储成本。全库 285 个索引对 90 张表来说偏多（平均每表 3.2 个，但分布不均）。",
+      "rootCause": "索引只加不删。",
+      "remediation": {
+        "approach": "用 pg_stat_user_indexes 在生产库观察 idx_scan 计数（至少一个完整业务周期），零使用或极少使用的删除。这是运维动作而非代码改动。",
+        "steps": [
+          "在生产库记录一次 pg_stat_user_indexes 快照",
+          "运行一个业务周期后再取快照，对比 idx_scan 增量",
+          "增量为零的索引评估删除（注意：低频但关键的查询可能在观察期内没跑）",
+          "删除前确认没有 EXPLAIN 断言测试依赖它",
+          "写迁移 DROP，并在注释里记录删除依据"
+        ],
+        "effortDays": 1,
+        "risk": "medium",
+        "breaking": false,
+        "migrationNeeded": true
+      },
+      "verification": [
+        "删除后关键查询的 EXPLAIN 未退化",
+        "写入性能提升"
+      ],
+      "dependsOn": [
+        "IDX-013"
+      ],
+      "blocks": [],
+      "phase": "P7",
+      "tags": [
+        "index",
+        "redundancy",
+        "operations"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "IDX-019",
+      "title": "表增长风险总览：13 张表需要生命周期策略，当前零策略",
+      "severity": "high",
+      "type": "design-flaw",
+      "confidence": "confirmed",
+      "problem": "这条汇总全库的增长风险，按预计到达问题规模的时间排序（基于中等流量站点估算）：page_views（3 到 6 个月）、inventory_stock_movements（1 到 2 年活跃电商）、mail_campaign_events（大群发后立刻）、mail_logs（同上）、master_data_changes（1 年以上频繁改价）、page_revisions（高频编辑站点）、page_artifacts 行与 JSONB（多语言加频繁发布）、artifacts 磁盘目录（同上）、order_status_logs（订单量同阶）、sys_translation 孤儿行（长期多语言运营）、user_sessions（用户量大）、mail_automation_node_logs（自动化启用后）、product_ratings（评论放量后）。全部 13 张表当前都没有清理、归档或分区。",
+      "evidence": [
+        {
+          "file": "public/migrations",
+          "lines": "0",
+          "snippet": "全库无分区表、无 TTL 清理任务、无归档表",
+          "note": "实测：只有产物 GC 一个手动工具"
+        }
+      ],
+      "impact": "自托管产品最常见的运维事故就是磁盘满与数据库膨胀。当前系统在跑满一年之后必然遇到，而且没有任何预警机制（没有监控，见 OPS 维度）。这是一个「时间到了就一定爆」的问题类别。",
+      "rootCause": "数据生命周期从未作为一个横切关注点被设计过。每张表落地时只关心写入与查询。",
+      "remediation": {
+        "approach": "建立统一的数据生命周期框架：每张增长型表声明保留期与清理方式（分区 DETACH / 归档表 / 直接删除），由一个统一的清理任务按声明执行。同时加监控（表体积与行数增长率）。",
+        "steps": [
+          "定义生命周期声明（表名、时间列、保留期、清理方式、是否需要归档）",
+          "统一清理任务按声明执行（分批删除避免长事务与锁表）",
+          "先覆盖前五张风险最高的表",
+          "加监控指标：各表行数与体积、增长率（配合 OPS 维度的 metrics）",
+          "磁盘水位告警（产物目录与数据库分区）",
+          "文档：运维手册里说明各表的保留期与调整方式"
+        ],
+        "effortDays": 3,
+        "risk": "medium",
+        "breaking": false,
+        "migrationNeeded": true
+      },
+      "verification": [
+        "13 张表都有明确的保留期声明",
+        "清理任务按声明执行且不影响业务",
+        "体积增长有监控与告警"
+      ],
+      "dependsOn": [
+        "IDX-001",
+        "IDX-003",
+        "IDX-004",
+        "IDX-005"
+      ],
+      "blocks": [],
+      "phase": "P1",
+      "tags": [
+        "lifecycle",
+        "operations",
+        "monitoring",
+        "summary"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "IDX-020",
+      "title": "page_routes 的 route_kind 筛选无索引（低优先级）",
+      "severity": "low",
+      "type": "performance",
+      "confidence": "confirmed",
+      "problem": "ListActivePaths 用 project_id 加 route_kind='active' 筛选，没有 (project_id, route_kind) 索引。主键是 (project_id, path)，前导列可用但 route_kind 要过滤。",
+      "evidence": [
+        {
+          "file": "internal/module/publication/model/publication_model.go",
+          "lines": "0",
+          "snippet": "ListActivePaths 按 project_id 与 route_kind 筛选",
+          "note": ""
+        },
+        {
+          "file": "public/migrations/init_builder_schema.sql",
+          "lines": "0",
+          "snippet": "PRIMARY KEY (project_id, path)",
+          "note": "GetRoute 的查询完全匹配主键，这部分很好"
+        }
+      ],
+      "impact": "很低。路由表通常很小（页面数量级）。列在这里是为了完整性。",
+      "rootCause": "无。",
+      "remediation": {
+        "approach": "路由表增长到需要时再加。GetRoute 走主键这一点做得对，不要动。",
+        "steps": [
+          "观察后决定"
+        ],
+        "effortDays": 0.25,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": true
+      },
+      "verification": [
+        "无需验证"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P7",
+      "tags": [
+        "publication",
+        "index"
+      ],
+      "status": "open"
+    }
+  ]
+}

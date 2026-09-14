@@ -1,0 +1,1307 @@
+{
+  "dimension": "postgres-schema",
+  "dimensionTitle": "PostgreSQL 特性利用度与 schema 设计矛盾",
+  "scope": "public/migrations 的 128 个 SQL 文件与 register.go 与 migrator.go、各模块 model 的 gorm 结构、真实库核对（sy-debian-postgresql@18 库 wp，PG 18.6，90 表 285 索引）",
+  "verdict": "主库明确只支持 PostgreSQL 之后，项目在 JSONB 与 GIN（含 jsonb_path_ops）、部分索引、表达式索引、UPSERT、RETURNING、可写 CTE、FOR UPDATE、append-only 触发器、timestamptz 与 numeric 这些方向有清晰且可测的投入，068 与 070 与 118 三个迁移配套的 EXPLAIN 断言测试是亮点。没用上的主要是模糊搜索与全文检索（真实库里只装了 plpgsql 一个扩展）、时间序列表的分区、报表的物化视图、多实例场景的 advisory lock 与 SKIP LOCKED。schema 层最需要先修的是三处已经实际不一致的双真源：页面 kind、Blueprint 的 kind 清单、presentation 的 entity_type 命名。另有实测的一致性问题：时间列类型五五对开（93 列无时区对 91 列有时区）。",
+  "findings": [
+    {
+      "id": "DB-001",
+      "title": "真实库只装了 plpgsql 一个扩展，pg_trgm 与全文检索完全未启用",
+      "severity": "high",
+      "type": "missing-feature",
+      "confidence": "confirmed",
+      "problem": "本次审计直接查了真实库：pg_extension 里只有 plpgsql。而代码里有 15 处以上的 ILIKE 百分号模糊查询（订单三列 OR、商品名、客户四列、内容标题、媒体文件名、主数据实体名等），全部没有可用索引。迁移 070 的注释自己写明媒体文件名搜索需要 trgm 但未启用。",
+      "evidence": [
+        {
+          "file": "public/migrations/070_sys_status_index_audit.sql",
+          "lines": "81-83",
+          "snippet": "注释写明 media 文件名搜索需 trgm 但未启用",
+          "note": "已知缺口"
+        },
+        {
+          "file": "internal/module/order/model/order_model.go",
+          "lines": "240",
+          "snippet": "order_no ILIKE ? OR customer_email ILIKE ? OR customer_name ILIKE ?",
+          "note": "三列 OR 模糊匹配，无索引"
+        },
+        {
+          "file": "internal/module/product/model/product_search_model.go",
+          "lines": "44",
+          "snippet": "商品名 ILIKE",
+          "note": ""
+        },
+        {
+          "file": "internal/module/user/model/user_model.go",
+          "lines": "196",
+          "snippet": "客户四列 ILIKE",
+          "note": ""
+        }
+      ],
+      "impact": "所有后台关键词搜索都是顺序扫描。数据量在几千行时无感，到十万行量级会明显卡顿，而这些正是订单与客户这类必然增长的表。站内搜索片段（searchResults）也走 LIKE，会直接影响访客体验。",
+      "rootCause": "扩展需要数据库超级权限安装，可能因此被推迟；也可能是从多数据库兼容时期遗留的习惯（LIKE 是通用 SQL，trgm 是 PG 专有）。既然已明确只支持 PostgreSQL，就没有理由不用。",
+      "remediation": {
+        "approach": "迁移里 CREATE EXTENSION IF NOT EXISTS pg_trgm，为高频 ILIKE 列建 GIN trgm 索引。全文检索（tsvector）作为第二步用于站内搜索（比 trgm 更适合多词与相关性排序）。",
+        "steps": [
+          "迁移增加 CREATE EXTENSION IF NOT EXISTS pg_trgm（注意：需要建库角色有权限，部署文档要说明）",
+          "为 orders 的三列、products.name、users 的四列、sys_attachment.file_name、master_data_changes.entity_label 建 gin_trgm_ops 索引",
+          "用 EXPLAIN 断言测试确认索引被使用（对照 068 与 118 的做法）",
+          "站内搜索片段评估改用 tsvector（需要分词配置，中文要用 pg_bigm 或 zhparser 之类，成本高，可先只上 trgm）",
+          "扩展安装失败时迁移要给出明确提示而不是静默跳过（否则索引建不上也不报错）"
+        ],
+        "effortDays": 1.5,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": true
+      },
+      "verification": [
+        "EXPLAIN 显示关键词搜索走索引",
+        "十万行量级下搜索响应在可接受范围",
+        "扩展缺失时迁移明确报错"
+      ],
+      "dependsOn": [],
+      "blocks": [
+        "IDX-002"
+      ],
+      "phase": "P1",
+      "tags": [
+        "postgres",
+        "index",
+        "search",
+        "performance"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "DB-002",
+      "title": "多实例启动时并发跑迁移，无 advisory lock 保护",
+      "severity": "high",
+      "type": "design-flaw",
+      "confidence": "confirmed",
+      "problem": "每个进程启动时都调 runMigrations。多实例部署时多个进程会并发执行 DDL，可能互相冲突（同时 CREATE TABLE、同时 ALTER）。全库没有 pg_advisory_lock 的使用。",
+      "evidence": [
+        {
+          "file": "cmd/main.go",
+          "lines": "55-57",
+          "snippet": "每个进程启动都 runMigrations()",
+          "note": ""
+        },
+        {
+          "file": "public/migrations/migrator.go",
+          "lines": "0",
+          "snippet": "无 advisory lock",
+          "note": ""
+        }
+      ],
+      "impact": "多实例滚动升级时迁移可能失败或产生中间态。虽然迁移是幂等的（ConditionSQL 判断），但幂等不等于并发安全（两个进程都判断需要执行然后同时执行）。这是水平扩容的直接阻碍。",
+      "rootCause": "单实例部署下不需要考虑。",
+      "remediation": {
+        "approach": "迁移执行前取 pg_advisory_lock（一个固定的锁 id），执行完释放。拿不到锁的进程等待或跳过（等待更安全：确保迁移完成后才开始服务）。",
+        "steps": [
+          "迁移开始前 SELECT pg_advisory_lock(<固定id>)，结束后 pg_advisory_unlock",
+          "取锁用带超时的方式（pg_try_advisory_lock 加重试），避免死等",
+          "拿不到锁时轮询等待（说明另一个实例正在迁移），迁移完成后再继续启动",
+          "长远方案是把迁移拆成独立的 job（部署流程里先跑迁移再滚动更新实例），advisory lock 作为兜底"
+        ],
+        "effortDays": 1,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "同时启动多个实例时迁移只执行一次",
+        "后启动的实例等待迁移完成"
+      ],
+      "dependsOn": [],
+      "blocks": [
+        "CQ-022",
+        "OPS-012"
+      ],
+      "phase": "P1",
+      "tags": [
+        "postgres",
+        "migrations",
+        "concurrency",
+        "scalability"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：migrator 启动 pg_try_advisory_lock 互斥多实例 DDL。"
+    },
+    {
+      "id": "DB-003",
+      "title": "迁移版本号按字符串排序，跨位数时顺序可能错乱",
+      "severity": "medium",
+      "type": "design-flaw",
+      "confidence": "likely",
+      "problem": "迁移文件名是 001 到 154 的三位数编号，按字符串排序。当前三位数范围内正常，但如果编号到 1000（或有人用了不同位数），字符串排序会得出 1000 小于 999 的结果。register.go 手工注册的顺序也是人工维护的。",
+      "evidence": [
+        {
+          "file": "public/migrations/register.go",
+          "lines": "393-1720",
+          "snippet": "init 函数 1328 行手工注册，顺序人工维护",
+          "note": ""
+        },
+        {
+          "file": "public/migrations/migrator.go",
+          "lines": "0",
+          "snippet": "版本排序机制需确认是字符串还是数值",
+          "note": "三位数范围内两者一致"
+        }
+      ],
+      "impact": "当前不会出错（都是三位数），但这是一个会在编号超过 999 时突然爆发的问题，且爆发形式是「迁移顺序错误导致 DDL 失败或数据错乱」。也影响 CQ-022 的自动注册改造（自动扫目录必须解决排序）。",
+      "rootCause": "编号方案没有考虑位数增长。",
+      "remediation": {
+        "approach": "改为数值排序（解析文件名前缀为整数），或改用时间戳前缀（14 位，天然有序且不会冲突）。推荐前者（改动小，保留现有命名）。",
+        "steps": [
+          "确认 migrator 的实际排序方式",
+          "改为按解析出的数值排序",
+          "文件名格式校验：必须是数字前缀加下划线（不符合的报错而非静默跳过）",
+          "加测试：混入四位数编号时排序正确",
+          "与 CQ-022 的自动注册一起做"
+        ],
+        "effortDays": 0.5,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "四位数编号排序正确",
+        "非法文件名被明确拒绝"
+      ],
+      "dependsOn": [],
+      "blocks": [
+        "CQ-022"
+      ],
+      "phase": "P1",
+      "tags": [
+        "migrations",
+        "postgres"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：compareVersion 按版本前缀数值排序，规避字符串序陷阱。"
+    },
+    {
+      "id": "DB-004",
+      "title": "时间序列表未分区（page_views 与库存流水与审计表）",
+      "severity": "high",
+      "type": "missing-feature",
+      "confidence": "confirmed",
+      "problem": "page_views（每次 PV 一行）、inventory_stock_movements（每次库存变动）、master_data_changes（字段级审计且触发器禁止删除）三张表都是只增不减的时间序列，全部是普通表，没有分区。",
+      "evidence": [
+        {
+          "file": "public/migrations/147_page_views.sql",
+          "lines": "14-37",
+          "snippet": "BIGSERIAL 流水表，无分区",
+          "note": ""
+        },
+        {
+          "file": "public/migrations/102_inventory_movements.sql",
+          "lines": "70-76",
+          "snippet": "created_at DESC 索引，无分区",
+          "note": ""
+        },
+        {
+          "file": "public/migrations/111_master_data_changes.sql",
+          "lines": "56-66",
+          "snippet": "BEFORE UPDATE OR DELETE 触发器 RAISE EXCEPTION",
+          "note": "禁止删除意味着永远无法清理"
+        }
+      ],
+      "impact": "master_data_changes 最严重：触发器禁止 DELETE，所以就算想清理也做不到（除非改触发器）。三张表的索引与堆表会持续膨胀，VACUUM 成本上升，时间窗查询变慢，备份体积增长。中等流量站点的 page_views 一年就是三千万行量级。",
+      "rootCause": "首版按普通表实现，数据生命周期没有设计。",
+      "remediation": {
+        "approach": "按月 RANGE 分区。分区后清理旧数据是 DETACH 加 DROP PARTITION（瞬间完成，不产生 VACUUM 压力），而且 append-only 触发器可以只挂在活跃分区上，历史分区可以整个 detach 归档。",
+        "steps": [
+          "page_views 改按 viewed_at 月分区（新表 + 数据搬迁 + 改名，或用 pg_partman 之类的工具）",
+          "inventory_stock_movements 同样按 created_at 月分区",
+          "master_data_changes 按 created_at 月分区，触发器改为只在分区上生效（或保留但允许 DETACH）",
+          "自动创建未来分区（定时任务或 pg_partman）",
+          "保留期策略可配（analytics 默认 90 天，库存流水与审计按合规要求，可能要几年）",
+          "迁移要小心：这三张表可能已有数据，需要在线迁移方案（新表加触发器双写，或停机窗口）"
+        ],
+        "effortDays": 3,
+        "risk": "high",
+        "breaking": false,
+        "migrationNeeded": true
+      },
+      "verification": [
+        "分区自动创建",
+        "时间窗查询走分区裁剪（EXPLAIN 确认）",
+        "旧分区可 DETACH 归档",
+        "既有数据完整迁移"
+      ],
+      "dependsOn": [],
+      "blocks": [
+        "IDX-010"
+      ],
+      "phase": "P1",
+      "tags": [
+        "postgres",
+        "partitioning",
+        "lifecycle",
+        "scalability"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "DB-005",
+      "title": "analytics 汇总每次全量 GROUP BY，未用物化视图或预聚合",
+      "severity": "medium",
+      "type": "missing-feature",
+      "confidence": "confirmed",
+      "problem": "后台 analytics 页面的汇总（按天、按路径、总数、UV）每次都对 page_views 做 GROUP BY 加 COUNT DISTINCT。按天聚合还用了 (viewed_at AT TIME ZONE 'UTC')::date 这样的表达式分组，大表上无法完全走索引。",
+      "evidence": [
+        {
+          "file": "internal/module/analytics/model/analytics_model.go",
+          "lines": "94-121",
+          "snippet": "CountRange / CountByDay / CountByPath 每次全量聚合",
+          "note": "COUNT DISTINCT 尤其贵"
+        }
+      ],
+      "impact": "打开统计页面的成本随数据量线性增长，且 COUNT DISTINCT 无法用索引优化。数据量大时这个页面会变得不可用，或者拖慢整个数据库。",
+      "rootCause": "统计功能按最直接的方式实现。",
+      "remediation": {
+        "approach": "按天预聚合：一张日汇总表（工程 + 日期 + 路径 + PV + UV），由定时任务或触发式增量维护。明细表只用于下钻。物化视图是另一个选项但刷新是全量的，日汇总表更灵活。",
+        "steps": [
+          "建日汇总表（project_id, day, path, pv, uv）",
+          "定时任务聚合前一天数据（幂等：ON CONFLICT DO UPDATE）",
+          "当天数据仍查明细（数据量小）",
+          "UV 的精确去重需要保留访客哈希集合，可考虑 HyperLogLog（PG 有扩展）或接受当天精确、历史近似",
+          "后台页面改查汇总表",
+          "与 DB-004 的分区配合：明细表分区后过期分区可直接丢弃，汇总表长期保留"
+        ],
+        "effortDays": 2,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": true
+      },
+      "verification": [
+        "统计页面响应时间与数据量无关",
+        "汇总数字与明细一致"
+      ],
+      "dependsOn": [
+        "DB-004"
+      ],
+      "blocks": [],
+      "phase": "P1",
+      "tags": [
+        "postgres",
+        "analytics",
+        "performance"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "DB-006",
+      "title": "联系人批量导入逐批 Create，未用 COPY",
+      "severity": "low",
+      "type": "missing-feature",
+      "confidence": "confirmed",
+      "problem": "邮件联系人导入用 CreateInBatches 每 500 行一批。注释说明因为唯一索引是表达式索引（lower(email)）所以无法用 ON CONFLICT (email)。没有用 COPY。",
+      "evidence": [
+        {
+          "file": "internal/module/mail/service/mail_contact_import.go",
+          "lines": "30-31,116",
+          "snippet": "CreateInBatches 每批 500，注释说明表达式唯一索引导致无法用 ON CONFLICT (email)",
+          "note": ""
+        }
+      ],
+      "impact": "万级联系人导入较慢。影响有限（导入是低频操作），但如果将来有商品批量导入需求，同样的问题会更明显。",
+      "rootCause": "批量插入用了最直接的方式。",
+      "remediation": {
+        "approach": "COPY 到临时表再 INSERT SELECT 加去重。ON CONFLICT 用表达式索引的正确写法是 ON CONFLICT (lower(email))（PG 支持推断表达式索引），可以先验证这个是否可行，成本更低。",
+        "steps": [
+          "先试 ON CONFLICT ((lower(email))) 的写法（PG 支持，注释里的判断可能不准确）",
+          "若确实不行，改用 COPY 到临时表 + INSERT SELECT + 去重",
+          "商品批量导入若将来要做，直接用同一套机制"
+        ],
+        "effortDays": 1,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "万级导入耗时明显下降",
+        "去重行为不变"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P7",
+      "tags": [
+        "postgres",
+        "mail",
+        "performance"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "DB-007",
+      "title": "构建队列缺 SKIP LOCKED 消费模式（build_jobs 表存在但零代码）",
+      "severity": "medium",
+      "type": "missing-feature",
+      "confidence": "confirmed",
+      "problem": "init_builder_schema.sql 里有 build_jobs 表，迁移 069 明确说要保留，但 Go 代码零引用。若要实现多 worker 消费构建任务，标准做法是 FOR UPDATE SKIP LOCKED，当前没有任何使用。presentation 与 publisher 都是进程内 Mutex。",
+      "evidence": [
+        {
+          "file": "public/migrations/init_builder_schema.sql",
+          "lines": "327-338",
+          "snippet": "build_jobs 表定义",
+          "note": "Go 侧零引用"
+        },
+        {
+          "file": "internal/pipeline/publisher.go",
+          "lines": "161-164",
+          "snippet": "进程内 sync.Mutex，注释称多实例由 build 模块负责（未落地）",
+          "note": ""
+        }
+      ],
+      "impact": "构建无法水平扩展。PERF-001 的队列改造需要决定用 asynq（Redis）还是 build_jobs 表（PG + SKIP LOCKED）。",
+      "rootCause": "构建队列一直没落地，表先建了。",
+      "remediation": {
+        "approach": "PERF-001 时一并决定：如果用 asynq（项目已有 pkg/queue），则删掉 build_jobs 表；如果要构建任务的可查询性与审计性（能在后台看到队列状态），用 PG 表加 SKIP LOCKED 更合适。建议后者，因为构建任务需要可见性。",
+        "steps": [
+          "决策：asynq 还是 PG 表",
+          "若选 PG 表：实现 SELECT ... FOR UPDATE SKIP LOCKED LIMIT 1 的消费循环",
+          "任务状态机（pending / running / done / failed）与重试次数",
+          "worker 心跳与僵尸任务回收（running 超时的重置为 pending）",
+          "后台可见队列深度与失败任务",
+          "若选 asynq：删掉 build_jobs 表并更新 069 的注释"
+        ],
+        "effortDays": 2,
+        "risk": "medium",
+        "breaking": false,
+        "migrationNeeded": true
+      },
+      "verification": [
+        "多 worker 不重复消费同一任务",
+        "崩溃的 worker 的任务能被回收",
+        "队列状态可见"
+      ],
+      "dependsOn": [
+        "PERF-001"
+      ],
+      "blocks": [],
+      "phase": "P1",
+      "tags": [
+        "postgres",
+        "queue",
+        "pipeline",
+        "scalability"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "DB-008",
+      "title": "采购单 status 是应用维护的冗余列，可用生成列消除不一致风险",
+      "severity": "low",
+      "type": "design-flaw",
+      "confidence": "confirmed",
+      "problem": "采购单的 status 由 derivePurchaseStatus 在每次写操作后重算并写回。它是纯推导值（比较 received_quantity 与 quantity），但存成了普通列，靠应用保证一致。",
+      "evidence": [
+        {
+          "file": "public/migrations/108_inventory_purchase.sql",
+          "lines": "38",
+          "snippet": "status 列 + CHECK 约束",
+          "note": "推导值存成普通列"
+        },
+        {
+          "file": "internal/module/product/inventory/service/inventory_purchase.go",
+          "lines": "277-303",
+          "snippet": "derivePurchaseStatus 在写路径重算",
+          "note": ""
+        }
+      ],
+      "impact": "如果有任何路径改了明细但没重算 status（比如数据修复脚本、将来新增的写入路径），status 就与明细不一致。审计与报表会给出错误结论。",
+      "rootCause": "推导值需要跨行聚合（单头看明细行），PG 的生成列不能引用其它表，所以无法直接用生成列。",
+      "remediation": {
+        "approach": "生成列不适用（跨表）。替代方案：加一个约束检查或定期对账任务；或者干脆不存这一列，查询时用子查询算出（列表查询会多一次聚合，但正确性有保证）。推荐后者，除非有明确的性能需求。",
+        "steps": [
+          "评估 status 列的查询使用频率（是否用于筛选与排序）",
+          "若只用于展示，改为查询期计算（LEFT JOIN 聚合子查询）",
+          "若确实需要筛选，保留列但加对账任务定期核对并告警",
+          "无论哪种，都要保证所有写入路径经过同一个重算函数（当前是这样，但没有强制）"
+        ],
+        "effortDays": 1,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "status 与明细始终一致（对账无差异）"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P7",
+      "tags": [
+        "postgres",
+        "inventory",
+        "consistency"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "DB-009",
+      "title": "未用行级安全（RLS）做多工程隔离，隔离完全依赖应用层",
+      "severity": "medium",
+      "type": "missing-feature",
+      "confidence": "confirmed",
+      "problem": "orders、products、pages 等业务表都有 project_id，隔离靠应用层的 WHERE 条件与 Casbin 鉴权。数据库层没有 RLS。而安全审计发现有多处按 id 查询没带 project_id 条件（见 SEC-002）。",
+      "evidence": [
+        {
+          "file": "public/migrations",
+          "lines": "0",
+          "snippet": "无 ENABLE ROW LEVEL SECURITY",
+          "note": ""
+        },
+        {
+          "file": "internal/module/page/service/page_draft.go",
+          "lines": "114-125",
+          "snippet": "按 id 查页面详情，无 project_id 校验",
+          "note": "应用层隔离有漏洞时数据库无兜底"
+        }
+      ],
+      "impact": "应用层漏一个 WHERE 就是跨工程数据泄露，没有第二道防线。对 SaaS 化（多租户）是必须解决的问题。",
+      "rootCause": "单工程使用时不需要，多工程能力后加，隔离只在应用层实现。",
+      "remediation": {
+        "approach": "RLS 是很强的兜底但改造成本高（需要连接级设置当前工程、所有查询都受影响、迁移与运维脚本要用 BYPASSRLS 角色）。建议分两步：先修 SEC-002 的应用层漏洞（成本低、见效快），再评估 RLS 是否值得（取决于是否真的走 SaaS 化）。",
+        "steps": [
+          "第一步：SEC-002 的应用层修复（所有按 id 的查询带 project_id 条件）",
+          "第二步（若走 SaaS）：RLS 试点在一张表上验证（比如 orders），确认应用改造量与性能影响",
+          "RLS 需要连接级 SET app.current_project，与连接池配合要小心（连接复用时必须重设）",
+          "迁移与后台运维用 BYPASSRLS 角色"
+        ],
+        "effortDays": 3,
+        "risk": "high",
+        "breaking": false,
+        "migrationNeeded": true
+      },
+      "verification": [
+        "若实施：应用层漏 WHERE 也无法跨工程读数据"
+      ],
+      "dependsOn": [
+        "SEC-002"
+      ],
+      "blocks": [],
+      "phase": "P7",
+      "tags": [
+        "postgres",
+        "rls",
+        "multi-tenant",
+        "security"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "DB-010",
+      "title": "报表类查询未用窗口函数，客户订单摘要靠多次查询",
+      "severity": "low",
+      "type": "missing-feature",
+      "confidence": "confirmed",
+      "problem": "全库未使用窗口函数（ROW_NUMBER / OVER）。客户订单摘要（订单数、累计消费、最近一单）与采购单的行级累计等场景本可以用窗口函数一次查完。",
+      "evidence": [
+        {
+          "file": "internal/module/order/service/order_customer_summary.go",
+          "lines": "0",
+          "snippet": "客户订单摘要按聚合查询实现",
+          "note": "可用窗口函数优化"
+        }
+      ],
+      "impact": "优化项，当前实现是正确的只是不够高效。客户列表要显示订单摘要时，如果是逐客户查询会有 N+1（需确认当前是批量还是逐个）。",
+      "rootCause": "没有用窗口函数的习惯。",
+      "remediation": {
+        "approach": "客户列表的订单摘要用一次窗口函数查询批量取回（按 user_id 分组算聚合与最近一单）。",
+        "steps": [
+          "确认当前是否有 N+1（逐客户查摘要）",
+          "改为一次批量查询（IN 加 GROUP BY 或窗口函数）",
+          "确认消费口径不变（已付款、已发货、已完成计入，取消与退款不计）"
+        ],
+        "effortDays": 0.75,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "客户列表的摘要查询次数为 1",
+        "口径不变"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P7",
+      "tags": [
+        "postgres",
+        "order",
+        "performance"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "DB-011",
+      "title": "页面 kind 白名单 Go 侧与 DDL CHECK 已经不一致，服务层放行的值会被数据库拒绝",
+      "severity": "high",
+      "type": "inconsistency",
+      "confidence": "confirmed",
+      "problem": "page_draft.go 的 validateKind 仍接受 product 与 category 两个值，而迁移 080 把 pages 的 CHECK 收紧为 home / archive / search / notFound / page / article / tag。服务层校验通过但 INSERT 会被 CHECK 拒绝。",
+      "evidence": [
+        {
+          "file": "internal/module/page/service/page_draft.go",
+          "lines": "260-268",
+          "snippet": "validateKind 仍接受 product 与 category",
+          "note": "第 265 行"
+        },
+        {
+          "file": "public/migrations/080_content_type_narrowing.sql",
+          "lines": "24-37",
+          "snippet": "CHECK 只允许 home/archive/search/notFound/page/article/tag",
+          "note": "两边已不一致"
+        }
+      ],
+      "impact": "用户在界面上选了 product 类型的页面，服务层接受、数据库拒绝，得到的是一个数据库约束错误（而且按 CQ-009 的问题，这个错误可能直接显示给用户）。任何引导用户创建这两类页面的路径都是坏的。",
+      "rootCause": "080 迁移收紧了 DDL 但没同步 Go 侧白名单。",
+      "remediation": {
+        "approach": "Go 侧白名单与 DDL 对齐（去掉 product 与 category），并把白名单提取为一处共享常量供两边引用（DDL 那边无法引用 Go 常量，但至少 Go 侧只有一份，且加测试断言与 DDL 一致）。",
+        "steps": [
+          "validateKind 去掉 product 与 category",
+          "检查是否有存量数据用了这两个值（如有需要数据迁移）",
+          "白名单提取为 enums 常量",
+          "加测试：从迁移 SQL 里解析 CHECK 约束的值集合，断言与 Go 常量一致（这个测试能一次性覆盖所有双真源枚举）"
+        ],
+        "effortDays": 1,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "服务层与数据库的接受集合一致",
+        "测试能发现将来的不一致"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P1",
+      "tags": [
+        "schema",
+        "page",
+        "double-source",
+        "bug"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：page validateKind 移除 product/category；enums.ValidatePageContentContract。"
+    },
+    {
+      "id": "DB-012",
+      "title": "Blueprint 的 pageKinds 白名单同样含已被 DDL 移除的 product 与 category",
+      "severity": "high",
+      "type": "inconsistency",
+      "confidence": "confirmed",
+      "problem": "blueprint_model.go 的 pageKinds 常量里仍有 product 与 category。Blueprint 是页面初始化工具，用它创建的页面会带上这些非法 kind，随后 INSERT 失败。",
+      "evidence": [
+        {
+          "file": "internal/module/blueprint/model/blueprint_model.go",
+          "lines": "20-29",
+          "snippet": "pageKinds 含 product 与 category（第 24 与 25 行）",
+          "note": "与迁移 080 不一致"
+        }
+      ],
+      "impact": "Blueprint 初始化出的页面可能直接存不进去。而 Blueprint 正是「新建页面」的入口之一，这个路径坏了影响很直接。",
+      "rootCause": "同 DB-011。",
+      "remediation": {
+        "approach": "与 DB-011 一并修：三处白名单（page service、blueprint、DDL）对齐到同一份 enums 常量。",
+        "steps": [
+          "blueprint 引用同一份 enums 常量",
+          "检查存量 blueprint 数据里的 kind 值",
+          "同一个测试覆盖三处"
+        ],
+        "effortDays": 0.5,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "Blueprint 创建的页面能正常保存"
+      ],
+      "dependsOn": [
+        "DB-011"
+      ],
+      "blocks": [],
+      "phase": "P1",
+      "tags": [
+        "schema",
+        "blueprint",
+        "double-source",
+        "bug"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：blueprint PageKinds 委托 page/enums 白名单。"
+    },
+    {
+      "id": "DB-013",
+      "title": "presentation 的 entity_type 用 category，而商品域契约用 product_category，命名分裂",
+      "severity": "high",
+      "type": "inconsistency",
+      "confidence": "confirmed",
+      "problem": "init_builder_schema.sql 里 presentation_instances 的 entity_type CHECK 是 product / article / category 三个值。而商品域的实体类型契约用的是 product_category（issue #12 扩展的五个类型之一）。如果要给商品分类做详情页实例，Go 侧会写 product_category，数据库只认 category。",
+      "evidence": [
+        {
+          "file": "public/migrations/init_builder_schema.sql",
+          "lines": "127",
+          "snippet": "entity_type CHECK ('product','article','category')",
+          "note": ""
+        },
+        {
+          "file": "internal/module/product/contract/product_entity.go",
+          "lines": "30-31",
+          "snippet": "使用 product_category 命名",
+          "note": "与 DDL 的 category 不一致"
+        },
+        {
+          "file": "internal/module/navigation/service/navigation_service.go",
+          "lines": "35",
+          "snippet": "导航的 source_type 也有 category，但语义是导航数据源而非实体类型",
+          "note": "三个 category 语义不同，容易混"
+        }
+      ],
+      "impact": "分类详情页这个能力一旦要做就会撞上。而且现在有三个地方出现 category 这个词但语义各不相同（presentation 的实体类型、product 的实体类型、navigation 的数据源类型），跨模块集成时极易混淆。",
+      "rootCause": "presentation 的 entity_type 枚举定义早于商品域的五实体类型扩展，命名没有对齐。",
+      "remediation": {
+        "approach": "统一到 product_category（更明确，避免与导航的 category 混淆）。DDL 的 CHECK 值集合改为不写死枚举而是靠 Go 侧注册表校验（迁移 080 对 content_templates 就是这么做的，有先例），或者把 CHECK 扩展为包含全部五个实体类型。",
+        "steps": [
+          "决策：DDL 保留 CHECK 但扩展值集合，还是像 content_templates 那样 DROP CHECK 交给 Go 注册表",
+          "推荐保留 CHECK 并扩展（数据库兜底有价值），值集合与 Go 注册表用同一个测试断言一致",
+          "存量数据里的 category 值迁移为 product_category（若有）",
+          "顺带在文档里说明三个 category 的语义区别"
+        ],
+        "effortDays": 1,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": true
+      },
+      "verification": [
+        "分类详情页实例能正常创建",
+        "命名一致"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P1",
+      "tags": [
+        "schema",
+        "presentation",
+        "product",
+        "naming"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：迁移 160 解除 entity_type CHECK；category→product_category。"
+    },
+    {
+      "id": "DB-014",
+      "title": "init_builder_schema.sql 的多处 CHECK 已被后续迁移超越但未回写，读 init 会误解当前 schema",
+      "severity": "medium",
+      "type": "inconsistency",
+      "confidence": "confirmed",
+      "problem": "init_builder_schema.sql 是初始快照，多处定义已被编号迁移超越：dependency_kind 的 CHECK 是 8 个值而迁移 071 扩到 10 个（加了 i18n 与 block）；pages 表没有 theme_id 而迁移 020 加了；content_templates 的 entity_type CHECK 被 080 DROP 了。新库必须先跑 init 再跑编号迁移才正确，但单独阅读 init 会得到过时的认知。",
+      "evidence": [
+        {
+          "file": "public/migrations/init_builder_schema.sql",
+          "lines": "246-248",
+          "snippet": "dependency_kind CHECK 8 个值",
+          "note": "071 扩到 10 个"
+        },
+        {
+          "file": "public/migrations/init_builder_schema.sql",
+          "lines": "76-109",
+          "snippet": "pages 表无 theme_id",
+          "note": "020 加的"
+        },
+        {
+          "file": "internal/pipeline/dependency.go",
+          "lines": "24-42",
+          "snippet": "Go 侧 10 个 dependency_kind 值",
+          "note": "与 071 一致，与 init 不一致"
+        }
+      ],
+      "impact": "init 文件是新人理解 schema 的第一入口，过时的定义会直接误导。也让「当前 schema 到底是什么样」这个问题只能靠查真实库回答。",
+      "rootCause": "init 快照没有随迁移更新（这本身是合理的做法，快照就该是历史），但缺少「当前 schema 的权威描述」。",
+      "remediation": {
+        "approach": "不改 init（它是历史快照，改了会破坏已有库的迁移路径）。而是补一份自动生成的当前 schema 文档：从真实库 dump 结构（不含数据）作为 docs/schema.sql，CI 里定期更新。新人看这份。",
+        "steps": [
+          "在 init 文件头部加醒目注释：这是历史快照，当前 schema 见 docs/schema.sql",
+          "提供生成脚本：pg_dump --schema-only 输出到 docs/schema.sql",
+          "CI 里跑完迁移后生成并对比（有差异说明有人手改了库或迁移不幂等）",
+          "或至少在 AGENTS.md 里说明查当前 schema 的正确方式"
+        ],
+        "effortDays": 1,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "docs/schema.sql 反映当前真实结构",
+        "init 文件有明确的历史快照标注"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P6",
+      "tags": [
+        "schema",
+        "documentation",
+        "migrations"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：docs/schema-snapshot.md 说明 init 为历史快照。"
+    },
+    {
+      "id": "DB-015",
+      "title": "orders.status 与 inventory_warehouses.status 与 blocks.kind 只有 Go 侧约束，无 DDL CHECK",
+      "severity": "medium",
+      "type": "inconsistency",
+      "confidence": "confirmed",
+      "problem": "多数枚举列都有 DDL CHECK 兜底（槽位、导航、优惠券、主数据、库存流水方向与原因、货源类型等），但订单状态、仓库状态、块 kind 三处只有 Go 侧白名单。",
+      "evidence": [
+        {
+          "file": "public/migrations/135_order.sql",
+          "lines": "27",
+          "snippet": "status 列无 CHECK",
+          "note": "Go 侧有 6 个状态值与流转表"
+        },
+        {
+          "file": "public/migrations/099_inventory_tables.sql",
+          "lines": "29",
+          "snippet": "warehouses.status 无 CHECK",
+          "note": ""
+        },
+        {
+          "file": "public/migrations/021_blocks.sql",
+          "lines": "12",
+          "snippet": "kind 无 CHECK",
+          "note": "见 VIS-011"
+        }
+      ],
+      "impact": "订单状态是最不该缺兜底的地方：非法状态入库会让状态机判定失效（流转表里找不到对应边），而订单状态错误直接影响发货与财务。数据修复脚本或将来的导入功能都可能写入非法值。",
+      "rootCause": "枚举约束的添加不成体系，有的加了有的没加。",
+      "remediation": {
+        "approach": "三处补 CHECK。同时建立一个规则：新增枚举列必须同时有 Go 白名单与 DDL CHECK，并被一致性测试覆盖。",
+        "steps": [
+          "先查库确认无非法存量值",
+          "写迁移补三处 CHECK",
+          "把 DB-011 的一致性测试扩展到覆盖全部枚举列（从迁移 SQL 解析 CHECK，与 Go 常量比对）",
+          "在 AGENTS.md 的数据库章节加这条规则"
+        ],
+        "effortDays": 1,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": true
+      },
+      "verification": [
+        "非法枚举值无法入库",
+        "一致性测试覆盖全部枚举列"
+      ],
+      "dependsOn": [
+        "DB-011"
+      ],
+      "blocks": [],
+      "phase": "P1",
+      "tags": [
+        "schema",
+        "constraint",
+        "order",
+        "inventory"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：迁移 165 orders.status CHECK 约束。"
+    },
+    {
+      "id": "DB-016",
+      "title": "系统页面槽位白名单有三份真源（page enums、DDL CHECK、builder core）",
+      "severity": "medium",
+      "type": "inconsistency",
+      "confidence": "confirmed",
+      "problem": "十个槽位键的白名单在三处各写一份：page 模块的 enums、迁移 138 的 DDL CHECK、builder core 的 render.go（builder 刻意不 import page 模块，所以只能自己写一份）。当前三份是一致的，但新增槽位要改三处。AGENTS.md 自己警告过「键名写错不报错、只静默不生效」。",
+      "evidence": [
+        {
+          "file": "internal/module/page/enums/page_enums.go",
+          "lines": "41-51",
+          "snippet": "十个槽位常量",
+          "note": "第一份"
+        },
+        {
+          "file": "public/migrations/138_page_site_slots.sql",
+          "lines": "24-26",
+          "snippet": "DDL CHECK 十个值",
+          "note": "第二份"
+        },
+        {
+          "file": "internal/builder/core/render.go",
+          "lines": "194-203",
+          "snippet": "builder 侧的槽位键（不 import page 模块）",
+          "note": "第三份"
+        }
+      ],
+      "impact": "SEO-013 要加 notFound 槽位时就要改三处。漏改 builder 那份的后果是构建期取不到该槽位（静默不生效），漏改 DDL 的后果是绑定存不进去。",
+      "rootCause": "builder 不能 import 业务模块（依赖方向约束，这是对的），所以共享常量无处安放。",
+      "remediation": {
+        "approach": "把槽位键放到一个零依赖的共享包（比如 internal/builder/source 或新建 internal/siteslot），page 与 builder 都 import 它。DDL 那份仍需独立，但用一致性测试覆盖。",
+        "steps": [
+          "新建零依赖的槽位常量包（或放进已有的 builder/source）",
+          "page enums 与 builder core 都改为引用它",
+          "DDL 的 CHECK 用 DB-011 的一致性测试覆盖",
+          "文档说明新增槽位需要改的地方（降到两处：常量包与迁移）"
+        ],
+        "effortDays": 0.75,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "新增槽位只需改常量包与迁移",
+        "一致性测试能发现遗漏"
+      ],
+      "dependsOn": [
+        "DB-011"
+      ],
+      "blocks": [
+        "SEO-013"
+      ],
+      "phase": "P1",
+      "tags": [
+        "schema",
+        "page",
+        "double-source",
+        "builder"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：page_site_slot_test 对齐 migration 138 CHECK。"
+    },
+    {
+      "id": "DB-017",
+      "title": "多处迁移注释与 Go 注释仍描述已被迁移 121 删除的库存缓存体系",
+      "severity": "medium",
+      "type": "inconsistency",
+      "confidence": "confirmed",
+      "problem": "迁移 121 删除了商品侧的库存缓存列与同步台账表。但 081 与 099 与 102 三个迁移的注释仍在描述那套体系（102 甚至有整段描述缓存同步台账，而那张表已经不存在了），inventory 契约与 enums 里还留着 CacheSync 相关的枚举。",
+      "evidence": [
+        {
+          "file": "public/migrations/102_inventory_movements.sql",
+          "lines": "7-14,96-119",
+          "snippet": "整段描述已被 121 删除的缓存同步台账",
+          "note": ""
+        },
+        {
+          "file": "public/migrations/081_product_tables.sql",
+          "lines": "10,124-125,139",
+          "snippet": "注释提及库存缓存列",
+          "note": "列已删"
+        },
+        {
+          "file": "internal/module/product/inventory/enums/inventory_enums.go",
+          "lines": "149-152",
+          "snippet": "CacheSync 枚举，对应表已删",
+          "note": "死代码"
+        },
+        {
+          "file": "internal/module/product/inventory/contract/inventory_service.go",
+          "lines": "15",
+          "snippet": "注释提及缓存",
+          "note": ""
+        }
+      ],
+      "impact": "读迁移或读契约的人会以为还有库存缓存需要同步，可能写出维护缓存的代码，或者在排查库存问题时往错误方向找。审计维度里已经确认过「库存只读真源」这个不变量，但注释在反向暗示。",
+      "rootCause": "删除能力时只删了代码与 DDL，没有 grep 清理注释。",
+      "remediation": {
+        "approach": "清理全部提及：删掉 CacheSync 枚举与相关死代码，修正三个迁移的注释（迁移文件已执行过，改注释不影响行为但要谨慎：不要改 SQL 语句本身），修正契约注释。",
+        "steps": [
+          "grep CacheSync 与缓存相关词，逐个清理",
+          "迁移文件只改注释不改 SQL（已执行的迁移改 SQL 会导致新库与老库不一致）",
+          "或者更安全：在 121 迁移里补一段注释说明它废弃了哪些，读者从 121 能追溯",
+          "加检查：迁移注释里提到的表名必须在当前 schema 存在（能自动抓出这类问题）"
+        ],
+        "effortDays": 0.75,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "无提及已删除表的注释",
+        "CacheSync 死代码已删"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P6",
+      "tags": [
+        "schema",
+        "documentation",
+        "drift",
+        "dead-code"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：迁移 081/099/102 注释去除库存缓存过时描述。"
+    },
+    {
+      "id": "DB-018",
+      "title": "时间列类型五五对开：93 列无时区对 91 列有时区",
+      "severity": "high",
+      "type": "inconsistency",
+      "confidence": "confirmed",
+      "problem": "本次审计直接查了真实库：timestamp without time zone 有 93 列分布在 36 张表，timestamp with time zone 有 91 列分布在 49 张表。几乎五五对开。无时区的集中在 init_schema 的 sys_* 系列与 orders 与 users 与 mail；有时区的集中在 pages 与 products 与 inventory 与 contents 与 builder 相关表。",
+      "evidence": [
+        {
+          "file": "public/migrations/init_schema.sql",
+          "lines": "0",
+          "snippet": "sys_* 系列用 TIMESTAMP(3) 无时区，命名 create_time / update_time",
+          "note": "实测 93 列"
+        },
+        {
+          "file": "public/migrations/135_order.sql",
+          "lines": "93-94",
+          "snippet": "orders 用 TIMESTAMP(3) 无时区",
+          "note": ""
+        },
+        {
+          "file": "public/migrations/init_builder_schema.sql",
+          "lines": "16-17",
+          "snippet": "builder 系列用 timestamptz，命名 created_at / updated_at",
+          "note": "实测 91 列"
+        }
+      ],
+      "impact": "跨表比较时间会出错，而这类比较在业务里真实存在：优惠券时间窗判断（coupons 无时区，用 time.Local）与库存流水（有时区，用 UTC）在同一个业务流程里；账号锁定到期时间与当前时间比较；订单创建时间与产物发布时间对账。事务一致性维度已经确认了优惠券用 time.Local 而库存用 UTC 这个具体的不一致。部署在非 UTC 时区的服务器上，无时区列的语义完全取决于写入时的会话时区。",
+      "rootCause": "两批表由不同时期、不同规范建立：sys_* 沿用了某个 MySQL 风格模板（create_time 加无时区），builder 与后期业务表用了 PG 惯例（created_at 加 timestamptz）。",
+      "remediation": {
+        "approach": "统一到 timestamptz。改造要分批且谨慎：ALTER COLUMN TYPE timestamptz USING 需要指定原值的时区解释（假设原值是服务器本地时间还是 UTC，这个假设错了会导致时间整体偏移）。",
+        "steps": [
+          "第一步：确认历史数据的写入时区（查代码里写入这些列的方式：是 Go 的 time.Now() 还是 SQL 的 now()，服务器时区是什么）",
+          "第二步：按表分批 ALTER，USING 子句里明确时区解释（如 create_time AT TIME ZONE 'Asia/Shanghai'）",
+          "第三步：Go 侧统一用 UTC 写入与比较，展示层再转本地时区",
+          "第四步：优先改有跨表时间比较的表（orders 与 coupons 与 users 的锁定时间）",
+          "第五步：加检查：新增时间列必须是 timestamptz（迁移评审项或自动检查）",
+          "列名统一（created_at 风格）可以一起做但优先级低于类型统一，且改列名影响 gorm 标签与所有查询，风险更高，建议单独一批"
+        ],
+        "effortDays": 3,
+        "risk": "high",
+        "breaking": false,
+        "migrationNeeded": true
+      },
+      "verification": [
+        "所有时间列是 timestamptz",
+        "历史数据的时间点未偏移（抽样核对已知时间的记录）",
+        "跨表时间比较正确",
+        "优惠券时间窗判断与库存流水口径一致"
+      ],
+      "dependsOn": [],
+      "blocks": [
+        "TX-014"
+      ],
+      "phase": "P1",
+      "tags": [
+        "schema",
+        "timezone",
+        "consistency",
+        "correctness"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "DB-019",
+      "title": "时间列命名两套并存（created_at 与 create_time）",
+      "severity": "low",
+      "type": "inconsistency",
+      "confidence": "confirmed",
+      "problem": "created_at / updated_at 风格用于 pages、products、inventory、contents 等；create_time / update_time 风格用于全部 sys_* 表、orders、users、mail 相关表。",
+      "evidence": [
+        {
+          "file": "public/migrations/init_schema.sql",
+          "lines": "0",
+          "snippet": "sys_* 全系用 create_time / update_time",
+          "note": ""
+        },
+        {
+          "file": "public/migrations/init_builder_schema.sql",
+          "lines": "16-17",
+          "snippet": "created_at / updated_at",
+          "note": ""
+        }
+      ],
+      "impact": "写查询时要记住每张表用哪套命名，容易写错（写错的表现是 SQL 报列不存在，会被立刻发现，所以危害有限）。主要是认知负担。",
+      "rootCause": "同 DB-018。",
+      "remediation": {
+        "approach": "统一命名的收益低于风险（改列名要同步改 gorm 标签、所有查询、所有迁移），建议不改，只在文档里记录这个事实与各表的归属。除非有更大的重构一并做。",
+        "steps": [
+          "在 docs/schema.sql 或 AGENTS.md 里说明两套命名的分布",
+          "新表统一用 created_at 风格",
+          "若将来做大重构，一并统一"
+        ],
+        "effortDays": 0.25,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "文档记录准确",
+        "新表命名统一"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P6",
+      "tags": [
+        "schema",
+        "naming",
+        "documentation"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "DB-020",
+      "title": "主键类型混用（uuid 与 BIGSERIAL），软删除列名也有两套",
+      "severity": "low",
+      "type": "inconsistency",
+      "confidence": "confirmed",
+      "problem": "uuid 主键用于页面、商品、库存、artifact、工程等；BIGSERIAL 用于 orders、order_items、users、page_views、coupons 与全部 sys_* 表。软删除列名有 deleted_at（pages、users、presentation_instances）与 deleted_time（sys_menus）两种，另有用 status 表达删除的（sys_attachment）。",
+      "evidence": [
+        {
+          "file": "public/migrations/081_product_tables.sql",
+          "lines": "15",
+          "snippet": "uuid 主键 + gen_random_uuid()",
+          "note": ""
+        },
+        {
+          "file": "public/migrations/135_order.sql",
+          "lines": "0",
+          "snippet": "orders 用 BIGSERIAL",
+          "note": ""
+        },
+        {
+          "file": "public/migrations/070_sys_status_index_audit.sql",
+          "lines": "5",
+          "snippet": "sys_menus 用 deleted_time",
+          "note": "与 deleted_at 并存"
+        },
+        {
+          "file": "internal/module/presentation/model/presentation_model.go",
+          "lines": "47-48",
+          "snippet": "deleted_at 列存在但注释说明未启用软删除语义",
+          "note": "第三种情况：列有但语义未启用"
+        }
+      ],
+      "impact": "uuid 与自增主键的混用本身可以接受（uuid 适合对外暴露的实体，自增适合内部流水），但缺少明确的选择依据文档。软删除三套写法（deleted_at / deleted_time / status）会导致查询时漏过滤，实际上安全审计与代码审计都提到了软删除过滤是否完整的疑问。",
+      "rootCause": "不同时期不同规范。",
+      "remediation": {
+        "approach": "主键类型不改（各有合理性），但要文档化选择依据。软删除统一到 deleted_at（sys_menus 那一处改名），并加检查：有 deleted_at 列的表，所有查询必须带过滤（可通过 gorm 的软删除机制自动保证，确认是否所有 model 都用了）。",
+        "steps": [
+          "文档化主键类型的选择依据（对外暴露用 uuid，内部流水用自增）",
+          "sys_menus 的 deleted_time 改名为 deleted_at（或保留但在文档标注）",
+          "确认所有有软删除列的 model 都用了 gorm.DeletedAt 类型（自动过滤）",
+          "presentation_instances 的 deleted_at 列决定是启用还是删除（当前是列存在但语义未启用，属于陷阱）",
+          "sys_attachment 用 status 表达删除的做法在文档里说明"
+        ],
+        "effortDays": 1,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": true
+      },
+      "verification": [
+        "软删除过滤无遗漏",
+        "文档说明各类型的选择依据"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P6",
+      "tags": [
+        "schema",
+        "naming",
+        "soft-delete"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "DB-021",
+      "title": "coupons.used_count 是冗余计数，与核销明细无数据库层一致性保证",
+      "severity": "medium",
+      "type": "design-flaw",
+      "confidence": "confirmed",
+      "problem": "优惠券的已用次数存在 coupons.used_count 列，同时有 coupon_redemptions 明细表。计数由原子 UPDATE 维护（UPDATE ... WHERE used_count < max_uses），与明细插入在同一事务。但没有任何数据库约束保证 used_count 等于明细行数。",
+      "evidence": [
+        {
+          "file": "internal/module/order/model/coupon_model.go",
+          "lines": "247-253",
+          "snippet": "原子 UPDATE 维护 used_count",
+          "note": "并发安全的写法，但与明细的一致性靠应用"
+        },
+        {
+          "file": "public/migrations/141_order_coupons.sql",
+          "lines": "69",
+          "snippet": "(coupon_id, order_id) 唯一索引",
+          "note": "保证不重复核销，但不保证计数一致"
+        }
+      ],
+      "impact": "如果有任何路径只写明细不加计数（或反之），券的剩余次数就错了。表现是券提前用尽或超发。项目在 #30 已经把商品评分从冗余列改成了明细聚合（正确方向），这里是同类问题的遗留。",
+      "rootCause": "计数列是为了避免每次查询都聚合明细（性能考虑），这个权衡本身合理，但缺一致性保障。",
+      "remediation": {
+        "approach": "保留计数列（性能需要），但加对账：定期任务核对 used_count 与明细行数，不一致时告警并可选自动修正。也可以考虑用触发器维护计数（数据库层保证一致），但触发器会让并发守卫的写法变复杂。",
+        "steps": [
+          "写对账查询（used_count 与 COUNT(redemptions) 比对）",
+          "定期任务或手动巡检接口",
+          "不一致时告警并记录（不要自动修正，先查清原因）",
+          "在文档里说明 used_count 是投影、明细是真源"
+        ],
+        "effortDays": 0.75,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "对账能发现不一致",
+        "正常流程下始终一致"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P1",
+      "tags": [
+        "schema",
+        "order",
+        "coupon",
+        "consistency"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "DB-022",
+      "title": "content_templates 的 entity_type CHECK 被 DROP，完全依赖 Go 注册表",
+      "severity": "low",
+      "type": "design-flaw",
+      "confidence": "confirmed",
+      "problem": "迁移 080 把 content_templates 的 entity_type CHECK 删掉了，改为完全依赖 Go 侧的实体类型注册表校验。这是有意决定（实体类型可由模块注册，DDL 无法穷举）。",
+      "evidence": [
+        {
+          "file": "public/migrations/080_content_type_narrowing.sql",
+          "lines": "20",
+          "snippet": "DROP content_templates 的 entity_type CHECK",
+          "note": "有意决定"
+        }
+      ],
+      "impact": "数据库无兜底。直接写库或数据修复脚本可以写入未注册的实体类型，那些模板永远解析不出来（静默失效）。这个取舍是合理的（可扩展性优先），但需要在文档里明确，且最好有巡检。",
+      "rootCause": "实体类型是可扩展的（商品域注册了五个），DDL 的固定枚举与可扩展性冲突。",
+      "remediation": {
+        "approach": "保持现状（取舍正确），但补一个启动期或巡检期的检查：库里的 entity_type 值必须都在注册表里，不在的记 warn 并在后台可见。",
+        "steps": [
+          "启动时或巡检时对比库里的 distinct entity_type 与注册表",
+          "不匹配的记 warn 并列出受影响的模板",
+          "文档说明为什么这里不用 DDL CHECK"
+        ],
+        "effortDays": 0.5,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "未注册的实体类型会被检出"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P6",
+      "tags": [
+        "schema",
+        "contenttemplate",
+        "extensibility"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：docs/schema-snapshot.md 归纳 Go 注册表 vs DDL CHECK。"
+    },
+    {
+      "id": "DB-023",
+      "title": "product_tag 与 pricing 的规则类型只在 Go 侧校验，DDL 只约束 JSON 形状",
+      "severity": "low",
+      "type": "design-flaw",
+      "confidence": "confirmed",
+      "problem": "自动标签的规则类型（new_arrival / price_range / on_sale）与定价规则类型（四种）都在 Go 侧的注册表里校验，DDL 只用 CHECK 约束了 JSON 的形状（是对象、有必需键），不约束类型值。",
+      "evidence": [
+        {
+          "file": "public/migrations/091_product_tags.sql",
+          "lines": "28-30",
+          "snippet": "只 CHECK JSON 形状，不约束 rule_type 的值",
+          "note": "有意分裂"
+        },
+        {
+          "file": "internal/module/product/service/product_tag_rule.go",
+          "lines": "53",
+          "snippet": "Go 侧规则注册表（3 种内置规则）",
+          "note": ""
+        }
+      ],
+      "impact": "与 DB-022 同类：规则类型可扩展（未来可能加新规则），所以 DDL 不约束。风险是写入未知类型后重算时会跳过或报错。当前有 Go 侧的严格校验（未知类型拒绝），所以正常路径没问题。",
+      "rootCause": "可扩展性与数据库约束的权衡，与 DB-022 同一取舍。",
+      "remediation": {
+        "approach": "保持现状。与 DB-022 一起在文档里归纳「哪些枚举有 DDL 兜底、哪些依赖 Go 注册表、为什么」，避免下次有人误以为是遗漏。",
+        "steps": [
+          "文档归纳三类枚举（DDL 兜底 / Go 注册表 / 双份）与各自的判据"
+        ],
+        "effortDays": 0.25,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "文档判据清晰"
+      ],
+      "dependsOn": [
+        "DB-022"
+      ],
+      "blocks": [],
+      "phase": "P6",
+      "tags": [
+        "schema",
+        "product",
+        "documentation"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：docs/schema-snapshot.md tag/pricing 规则校验分层。"
+    },
+    {
+      "id": "DB-024",
+      "title": "JSONB 使用总体恰当，但 contents.data 与 products.bundle_items 值得复核",
+      "severity": "low",
+      "type": "design-flaw",
+      "confidence": "likely",
+      "problem": "JSONB 的使用大体正确（文档型数据：pages.draft_document、themes.settings、orders.attribution 都不需要按字段查询）。两处值得复核：contents.data 存文章全部字段（含 title 与 body），列表查询要按 title 排序或筛选时只能走 JSONB 表达式；products.bundle_items 存套餐配置（迁移 114 已从裸数组收紧为对象加 CHECK），如果将来要按子项 SKU 反查「哪些套餐包含这个商品」会需要 GIN 索引。",
+      "evidence": [
+        {
+          "file": "public/migrations/042_content.sql",
+          "lines": "11",
+          "snippet": "contents.data 存全部字段",
+          "note": "包含 title 与 body"
+        },
+        {
+          "file": "public/migrations/114",
+          "lines": "0",
+          "snippet": "bundle_items 从裸数组收紧为对象加 CHECK 形状约束",
+          "note": "决定是不建关联表"
+        }
+      ],
+      "impact": "contents.data 的问题已经在性能维度体现（PERF-008：列表查询拉全量 JSONB 含正文）。bundle_items 目前没有反查需求，暂不是问题。",
+      "rootCause": "内容型实体用 JSONB 存字段是为了灵活（字段白名单可演进而不改 DDL），这个取舍合理，但列表查询需要的字段应该提取为列。",
+      "remediation": {
+        "approach": "contents 表把列表与排序需要的字段提取为生成列或普通列（title、slug、status、published_at 已有的话确认），JSONB 只存正文与不参与查询的字段。这也顺带解决 PERF-008。",
+        "steps": [
+          "确认 contents 表当前有哪些独立列",
+          "把 title 提取为生成列（GENERATED ALWAYS AS (data->>'title') STORED）并建索引，这样不用改写入逻辑",
+          "列表查询用提取出的列",
+          "bundle_items 保持现状，若将来有反查需求再加 GIN"
+        ],
+        "effortDays": 1,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": true
+      },
+      "verification": [
+        "文章列表按标题排序走索引",
+        "写入逻辑无需改动（生成列自动维护）"
+      ],
+      "dependsOn": [
+        "PERF-008"
+      ],
+      "blocks": [],
+      "phase": "P1",
+      "tags": [
+        "schema",
+        "jsonb",
+        "content",
+        "postgres"
+      ],
+      "status": "open"
+    }
+  ]
+}

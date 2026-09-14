@@ -1,0 +1,367 @@
+{
+  "meta": {
+    "title": "go_wp 全面审查 2026-09",
+    "date": "2026-09-13",
+    "repo": "go_wp",
+    "commit": "13d78a4",
+    "branch": "main",
+    "language": "zh-CN",
+    "status": "remediation-in-progress",
+    "scopeNote": "2026-09-14 起按 P0→P7 分批落地；115 条已 resolved，153 条仍 open。P0 已全部收口（SEC-004 / SEC-007 / SEC-009 / TX-016 / CQ-023）。分维明细在 dimensions/。",
+    "readMe": "docs/audit/README.md"
+  },
+  "summary": {
+    "findingsTotal": 268,
+    "resolved": 115,
+    "open": 153,
+    "bySeverity": {
+      "critical": 16,
+      "high": 58,
+      "medium": 123,
+      "low": 71
+    },
+    "byType": {
+      "missing-feature": 66,
+      "design-flaw": 55,
+      "tech-debt": 36,
+      "inconsistency": 27,
+      "implementation-bug": 26,
+      "performance": 23,
+      "security": 18,
+      "correctness": 17
+    },
+    "byDimension": [
+      {
+        "id": "visual-system",
+        "file": "dimensions/01-visual-system.json",
+        "count": 15
+      },
+      {
+        "id": "dynamic-pages-editor",
+        "file": "dimensions/02-dynamic-pages-editor.json",
+        "count": 18
+      },
+      {
+        "id": "i18n",
+        "file": "dimensions/03-i18n.json",
+        "count": 25
+      },
+      {
+        "id": "seo",
+        "file": "dimensions/04-seo.json",
+        "count": 25
+      },
+      {
+        "id": "performance",
+        "file": "dimensions/05-performance.json",
+        "count": 21
+      },
+      {
+        "id": "code-quality",
+        "file": "dimensions/06-code-quality.json",
+        "count": 26
+      },
+      {
+        "id": "plugin-opensource",
+        "file": "dimensions/07-plugin-opensource.json",
+        "count": 21
+      },
+      {
+        "id": "ui-multidevice",
+        "file": "dimensions/08-ui-multidevice.json",
+        "count": 22
+      },
+      {
+        "id": "postgres-schema",
+        "file": "dimensions/09-postgres-schema.json",
+        "count": 24
+      },
+      {
+        "id": "index-lifecycle",
+        "file": "dimensions/10-index-lifecycle.json",
+        "count": 20
+      },
+      {
+        "id": "security",
+        "file": "dimensions/11-security.json",
+        "count": 16
+      },
+      {
+        "id": "transaction-correctness",
+        "file": "dimensions/12-transaction-correctness.json",
+        "count": 16
+      },
+      {
+        "id": "ui-kit-and-registry",
+        "file": "dimensions/14-ui-kit-and-registry.json",
+        "count": 19
+      }
+    ]
+  },
+  "headline": "控制面与访问面分离、确定性构建、库存锁序这些骨架是对的。真正挡发布与开源的是：动态页编辑器断了、page/presentation 装配分裂、同步整站重建、几处资损窗口、以及「控件基座声称两端共用但产物侧几乎接不住」。",
+  "critical": [
+    {
+      "id": "SEC-001",
+      "phase": "P0",
+      "title": "后台建单无券时采信客户端 discountTotal，可做成 0 元单"
+    },
+    {
+      "id": "TX-001",
+      "phase": "P0",
+      "title": "建单与扣库存跨事务，待付款占用库存无释放"
+    },
+    {
+      "id": "TX-002",
+      "phase": "P0",
+      "title": "优惠码每人限次在事务外判定，并发可超发"
+    },
+    {
+      "id": "TX-003",
+      "phase": "P0",
+      "title": "退货可退数量无锁，并发可超退"
+    },
+    {
+      "id": "TX-004",
+      "phase": "P0",
+      "title": "退款按订单项原价、未分摊订单优惠，会多退"
+    },
+    {
+      "id": "TX-006",
+      "phase": "P0",
+      "title": "已取消单支付成功直接报错，钱已扣"
+    },
+    {
+      "id": "PERF-001",
+      "phase": "P0",
+      "title": "内容保存在同一请求里同步 RebuildStale（最多 20 页 × 语言）"
+    },
+    {
+      "id": "IDX-001",
+      "phase": "P1",
+      "title": "page_views 只增不减，无清理"
+    },
+    {
+      "id": "IDX-003",
+      "phase": "P1",
+      "title": "master_data_changes append-only 且触发器禁删，无法清理"
+    },
+    {
+      "id": "EDT-003",
+      "phase": "P2",
+      "title": "page 与 presentation 装配不对齐，自动发布缺六项构建期能力"
+    },
+    {
+      "id": "I18N-013",
+      "phase": "P2",
+      "title": "presentation 只构建默认语言，详情页没有多语言产物"
+    },
+    {
+      "id": "EDT-001",
+      "phase": "P3",
+      "title": "ContentTemplate 没有可视化编辑入口"
+    },
+    {
+      "id": "EDT-002",
+      "phase": "P3",
+      "title": "文章没有默认模板种子，发布文章直接被拦"
+    },
+    {
+      "id": "SEO-005",
+      "phase": "P5",
+      "title": "商品 JSON-LD 缺 Offer / 价格 / 库存 / 评分"
+    },
+    {
+      "id": "OSS-009",
+      "phase": "P7",
+      "title": "没有 LICENSE"
+    },
+    {
+      "id": "OSS-010",
+      "phase": "P7",
+      "title": "没有 CI；缺库时测试全绿等于没测"
+    }
+  ],
+  "strengths": [
+    "控制面与访问面分离：访客请求不查库、不跑 Jet（analytics collect 是写死的唯一例外）。",
+    "库存真源锁序按 (variant_id, warehouse_id) 升序，三段式建行/加锁/应用，BOM 展开后仍排序。",
+    "admin / user 双会话域隔离（cookie 名、Redis 前缀、CSRF store 三条都独立）。",
+    "组件动效词汇表已落地：入场 ×40 / 循环 ×17 / 悬浮 ×8 + css_verify 校验动画名。",
+    "插件轻轨已有 manifest.json，展示型组件不必进内核。",
+    "商品集合源的 JSONB 谓词与 jsonb_path_ops / 部分索引配对正确。"
+  ],
+  "contradictions": [
+    {
+      "id": "CX-001",
+      "title": "文档说控件基座「一份源、两端共用」，产物侧白名单只有 3 个块",
+      "left": "docs/02-F-ui-kit.md §2 / §12",
+      "right": "internal/builder/ui_script.go uiBlocks（htmx / select / modal）",
+      "see": [
+        "UIK-001",
+        "UIK-002",
+        "UIK-014"
+      ]
+    },
+    {
+      "id": "CX-002",
+      "title": "动效文档写「未落地」，代码里已有 63 条共享词汇表",
+      "left": "docs/02-F-motion-animation.md 标题「选型评估完成，未落地」",
+      "right": "internal/builder/core/effects.go + keyframes + css_verify.go",
+      "see": [
+        "UIK-007",
+        "UIK-006"
+      ]
+    },
+    {
+      "id": "CX-003",
+      "title": "按钮弹窗协议与基座监听属性不是同一个名字",
+      "left": "button jet.go / docs/02-C8 data-modal-target",
+      "right": "ui/modal.js data-modal-open",
+      "see": [
+        "UIK-014"
+      ]
+    },
+    {
+      "id": "CX-004",
+      "title": "AGENTS.md 写默认库 WSL_PostgreSQL@16.14 / base，真实环境是 PG 18.6 / wp",
+      "left": "AGENTS.md 数据库段",
+      "right": "现场 DBX 连接",
+      "see": [
+        "OSS-014"
+      ]
+    },
+    {
+      "id": "CX-005",
+      "title": "page kind 的 Go 枚举与迁移 080 DDL 不一致",
+      "left": "internal/module/page enums",
+      "right": "public/migrations/080 的 CHECK",
+      "see": [
+        "DB-001"
+      ]
+    }
+  ],
+  "decisions": [
+    {
+      "id": "DEC-REG-JSON",
+      "question": "内置组件注册能不能改成 json/yaml？",
+      "answer": "不能全量改。CompileCSS / BuildView / Validate 是编译期逻辑，声明式引擎盖不住（cardstack 三角函数、button 的 a/button 二选一、AddHover 三桶）。插件已经走 manifest.json，展示型继续那条。内置组件该修的是双 import 清单和漏登记无测试（REG-001 / REG-002），外加 palette 元数据上移（REG-005）。",
+      "see": [
+        "REG-003",
+        "REG-001",
+        "REG-002",
+        "REG-004",
+        "REG-005",
+        "VIS-015"
+      ]
+    },
+    {
+      "id": "DEC-UI-SHARED",
+      "question": "控件库能不能同时给组件和后台调用？",
+      "answer": "源可以继续共用，投递必须分层：后台常驻、产物按特征裁剪。当前卡在三件事：产物白名单远小于后台清单、注入只认 data-* 不认 class、组件与基座属性名对不上。令牌层应该先统一变量名，keyframes 清单不要硬共享（营销动效不该进后台）。",
+      "see": [
+        "UIK-001",
+        "UIK-002",
+        "UIK-003",
+        "UIK-004",
+        "UIK-007",
+        "UIK-013",
+        "UIK-014"
+      ]
+    }
+  ],
+  "roadmap": {
+    "note": "仅作追踪顺序，本次不施工。",
+    "phases": [
+      {
+        "id": "P0",
+        "name": "止血",
+        "days": "8-12",
+        "focus": [
+          "SEC-001",
+          "TX-001",
+          "TX-002",
+          "TX-003",
+          "TX-004",
+          "TX-006",
+          "PERF-001"
+        ]
+      },
+      {
+        "id": "P1",
+        "name": "数据库地基",
+        "days": "6-8",
+        "focus": [
+          "IDX-001",
+          "IDX-003"
+        ]
+      },
+      {
+        "id": "P2",
+        "name": "统一编译装配",
+        "days": "8-12",
+        "focus": [
+          "EDT-003",
+          "I18N-013",
+          "VIS-001"
+        ]
+      },
+      {
+        "id": "P3",
+        "name": "动态页可视化",
+        "days": "8-12",
+        "focus": [
+          "EDT-001",
+          "EDT-002"
+        ]
+      },
+      {
+        "id": "P4",
+        "name": "多语言收口",
+        "days": "6-8",
+        "focus": [
+          "I18N-001"
+        ]
+      },
+      {
+        "id": "P5",
+        "name": "SEO 补齐",
+        "days": "5-7",
+        "focus": [
+          "SEO-005"
+        ]
+      },
+      {
+        "id": "P6",
+        "name": "体系收敛与组件注册",
+        "days": "6-8",
+        "focus": [
+          "REG-001",
+          "REG-002",
+          "REG-005"
+        ]
+      },
+      {
+        "id": "P7",
+        "name": "开源与插件",
+        "days": "6-10",
+        "focus": [
+          "OSS-009",
+          "OSS-010",
+          "REG-004"
+        ]
+      },
+      {
+        "id": "P8",
+        "name": "UI 基座、动画与多端",
+        "days": "8-12",
+        "focus": [
+          "UIK-001",
+          "UIK-002",
+          "UIK-006",
+          "UIK-007",
+          "UIK-014",
+          "UI-001"
+        ]
+      }
+    ]
+  }
+}

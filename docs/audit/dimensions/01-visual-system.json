@@ -1,0 +1,715 @@
+{
+  "dimension": "visual-system",
+  "dimensionTitle": "可视化体系骨架：组件 / 区块 / 页面 / 主题四层",
+  "scope": "internal/builder/core（Document AST）、internal/module/block、internal/module/page、internal/module/project（Theme）、internal/builder/theme_*.go、page_site_slots",
+  "verdict": "四层抽象基本自洽，统一 Page AST 与 reuse_mode 正交于 kind 是正确决定。两个结构性短板：缺 Layout 层（页眉页脚在 AST 外用字符串拼接），以及主题不是可分发的站点包（只有设计令牌 + 两个块 id），后者直接堵死主题商店与开源生态。",
+  "findings": [
+    {
+      "id": "VIS-001",
+      "title": "缺 Layout 层：页眉页脚在编译后用字符串拼接，不在 Page AST 内",
+      "severity": "high",
+      "type": "design-flaw",
+      "confidence": "confirmed",
+      "problem": "页眉与页脚不是 Document AST 的节点，而是分别编译成 HTML/CSS 片段后与页面主体做字符串相加。四层叙事里没有 Layout 这一层，页面骨架被拆到装配层去拼。",
+      "evidence": [
+        {
+          "file": "internal/module/page/service/page_assemble.go",
+          "lines": "185-192",
+          "snippet": "headerHTML, headerCSS := s.compileBlockFragment(ctx, page.Settings.Structure.HeaderBlockID, ...)\nfooterHTML, footerCSS := s.compileBlockFragment(ctx, page.Settings.Structure.FooterBlockID, ...)\ncompiled.HTML = headerHTML + compiled.HTML + footerHTML\ncompiled.CSS = headerCSS + compiled.CSS + footerCSS",
+          "note": "装配层拼接，页面文档本身不包含页眉页脚"
+        },
+        {
+          "file": "internal/builder/settings.go",
+          "lines": "60-63",
+          "snippet": "MainLandmark 相关逻辑需要特殊处理首尾 header/footer 节点",
+          "note": "缺 Layout 层的连带成本：landmark 判定要特判"
+        }
+      ],
+      "impact": "三处连带成本：一是 workbench 画布看不到完整页面结构（编辑时看到的不是访客看到的）；二是 SEO 与 a11y landmark 逻辑要特判首尾节点；三是 stale 传播与翻译候选收集要额外扫 settings.structure 与 globalref 两条路径，任何新增的整页级构建能力都要在装配层再写一遍。",
+      "rootCause": "页眉页脚被建模成「页面设置里的两个块 id」而不是「页面结构的一部分」，导致它们无法参与 AST 级的任何统一处理。",
+      "remediation": {
+        "approach": "把 header/footer 升格为 Page AST 的固定插槽节点（保留 block 引用语义，但让它们出现在 root 里），装配层不再做字符串相加。",
+        "steps": [
+          "在 core 定义 layout slot 节点类型（或给 root 增加 header/footer 两个具名区），保持 Props 只存 blockId",
+          "compileDocument 改为在解析阶段把 structure 展开成 AST 节点，走同一 nodeViewOf 路径",
+          "MainLandmark 与 SEO 相关的首尾特判改为按节点类型判断",
+          "workbench 画布渲染完整 AST（页眉页脚只读展示，编辑跳转到块编辑器）",
+          "stale 传播与翻译候选统一走 AST 遍历，删掉 structure 专项扫描"
+        ],
+        "effortDays": 4,
+        "risk": "medium",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "同一页面在改造前后编译出的 HTML 逐字节一致（determinism 测试扩展）",
+        "workbench 预览与正式产物的 DOM 结构一致",
+        "改一个被页眉引用的全局块，断言引用页被标记 stale"
+      ],
+      "dependsOn": [],
+      "blocks": [
+        "EDT-002"
+      ],
+      "phase": "P2",
+      "tags": [
+        "builder",
+        "layout",
+        "architecture"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "VIS-002",
+      "title": "Theme JSON 混合设计令牌与结构绑定，边界模糊",
+      "severity": "medium",
+      "type": "design-flaw",
+      "confidence": "confirmed",
+      "problem": "themes.settings 这一个 JSONB 里同时存 ThemeSettings（颜色/字体/按钮/动效等设计令牌）与 headerBlockId / footerBlockId（结构绑定）。后者不在 ThemeSettings 结构体内，而是 marshal 时挂在 JSON 顶层。",
+      "evidence": [
+        {
+          "file": "internal/module/dashboard/inbound/http/theme_handle.go",
+          "lines": "521-525",
+          "snippet": "同一次 marshal 里包含 ThemeSettings 与 HeaderBlockID / FooterBlockID",
+          "note": "两类语义完全不同的数据共用一个 JSON 真源"
+        },
+        {
+          "file": "internal/builder/theme_settings.go",
+          "lines": "21-35",
+          "snippet": "type ThemeSettings struct { Colors ...; Typography ...; Button ...; Surface ...; Motion ...; Images ... }",
+          "note": "结构体里没有 header/footer 字段"
+        }
+      ],
+      "impact": "主题导出、主题包格式、主题版本化都会被这个混合结构拖住：令牌可以安全合并（空值继承上一层），结构绑定不能（block id 是引用，跨站点无意义）。现在两者用同一套合并逻辑。",
+      "rootCause": "主题概念在演进中被追加了结构职责，但存储结构没有跟着分层。",
+      "remediation": {
+        "approach": "把主题 settings 拆成 tokens 与 structure 两个命名空间（同一列内的两个子对象即可，不必拆表），合并逻辑分别处理。",
+        "steps": [
+          "定义 themes.settings = { tokens: ThemeSettings, structure: { headerBlockId, footerBlockId } }",
+          "写一个幂等迁移把旧的顶层 headerBlockId/footerBlockId 搬进 structure",
+          "MergeThemeRawJSON 只合并 tokens；structure 走独立的覆盖规则",
+          "读取侧兼容旧形状一个版本后删除兼容代码"
+        ],
+        "effortDays": 1.5,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": true
+      },
+      "verification": [
+        "旧主题数据迁移后页眉页脚仍正确解析",
+        "主题合并的既有单测全绿"
+      ],
+      "dependsOn": [],
+      "blocks": [
+        "OSS-012"
+      ],
+      "phase": "P6",
+      "tags": [
+        "theme",
+        "schema"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "VIS-003",
+      "title": "换主题时 RefreshStructureForTheme 直接覆盖页面级页眉页脚设置，与保存期的「页面非空优先」语义冲突",
+      "severity": "high",
+      "type": "implementation-bug",
+      "confidence": "likely",
+      "problem": "草稿保存时 mergeActiveTheme 的语义是「页面 settings.structure 非空则优先于主题默认」。但激活主题时 RefreshStructureForTheme 用 jsonb_set 直接批量写入主题的 header/footer，没有 merge 逻辑，会覆盖页面自己指定的页眉页脚。",
+      "evidence": [
+        {
+          "file": "internal/module/page/service/page_theme.go",
+          "lines": "77-89",
+          "snippet": "保存期：页面 settings.structure 非空优先于主题默认",
+          "note": "写入语义"
+        },
+        {
+          "file": "internal/module/page/model/page_model.go",
+          "lines": "152-157",
+          "snippet": "RefreshStructureForTheme 用 jsonb_set 批量写入，无 merge",
+          "note": "换主题语义与保存期语义相反"
+        }
+      ],
+      "impact": "任何为某个页面单独指定过页眉（比如落地页用无导航的精简页眉）的设置，会在下一次换主题时静默丢失。用户看不到任何提示，只会发现页面变了。",
+      "rootCause": "两条写入路径各自实现了一遍「主题与页面谁优先」，没有共用同一个合并函数。",
+      "remediation": {
+        "approach": "RefreshStructureForTheme 改为只填空值（COALESCE 语义），或先读出页面 structure 再走同一个 merge 函数。",
+        "steps": [
+          "把 mergeActiveTheme 里的 structure 合并逻辑抽成独立纯函数",
+          "RefreshStructureForTheme 改为逐页读取 + 调用该函数 + 写回（或改 SQL 为只在字段为空时 set）",
+          "补测试：页面指定了 header，换主题后 header 不变；页面未指定，换主题后跟随新主题"
+        ],
+        "effortDays": 1,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "页面级页眉覆盖在换主题后保留",
+        "未覆盖的页面正确跟随新主题"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P1",
+      "tags": [
+        "theme",
+        "page",
+        "data-loss"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：RefreshStructureForTheme 逐页 MergeStructureBindings，页面 override 保留。"
+    },
+    {
+      "id": "VIS-004",
+      "title": "block stale 传播器未注入时静默不传播，全局块改动不标记引用页",
+      "severity": "high",
+      "type": "implementation-bug",
+      "confidence": "confirmed",
+      "problem": "block service 的 stale 传播依赖装配期注入的回调。回调为 nil 时只打一条日志就返回，全局块的修改不会标记任何引用页面待重建。同一文件里的「块是否被引用」检查也是同样模式，未注入时视为未被引用，于是可以删掉仍在使用的块。",
+      "evidence": [
+        {
+          "file": "internal/module/block/service/block_service.go",
+          "lines": "75-77",
+          "snippet": "propagate == nil 时 Warn 并返回，不传播 stale",
+          "note": "静默降级窗口"
+        },
+        {
+          "file": "internal/module/block/service/block_service.go",
+          "lines": "55-57",
+          "snippet": "referenced == nil 时视为未被引用",
+          "note": "更危险：未注入时可删除仍被引用的块"
+        }
+      ],
+      "impact": "装配漏注入不会在启动时暴露，而是表现为「改了全局块但页面没更新」或「删了块导致页面构建失败」，排查时很难联想到装配问题。",
+      "rootCause": "可选依赖与必需依赖没有区分。这两个回调是必需依赖，却用了可选依赖的降级写法。",
+      "remediation": {
+        "approach": "改为 fail-fast：装配期未注入直接 panic（与 routes.go 里 masterdata、availability 等端口的处理方式一致）。",
+        "steps": [
+          "block service 构造函数改为必须接收这两个回调，nil 即 panic",
+          "或保留 setter 但在 routes.go 装配末尾加断言检查",
+          "全仓搜索同类模式，逐个判断是可选还是必需（见 CQ-020）"
+        ],
+        "effortDays": 0.5,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "故意不注入时启动即失败",
+        "注入后改块能正确标记引用页 stale"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P0",
+      "tags": [
+        "block",
+        "assembly",
+        "fail-fast"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：block RequireWiring fail-fast；referenced nil 宁拒勿删。"
+    },
+    {
+      "id": "VIS-005",
+      "title": "主题激活后的整站 reskin 失败不回滚，可能留下部分页面已刷新部分未刷新",
+      "severity": "medium",
+      "type": "implementation-bug",
+      "confidence": "confirmed",
+      "problem": "激活主题时依次做：全工程页面转挂主题、刷新 theme 快照、刷新 structure、标记 stale。代码注释明确写「每一步失败只记日志」，没有事务也没有补偿。",
+      "evidence": [
+        {
+          "file": "internal/module/dashboard/inbound/http/theme_handle.go",
+          "lines": "122,150-171",
+          "snippet": "每一步失败只记日志，继续往下走",
+          "note": "无事务、无回滚、无补偿"
+        }
+      ],
+      "impact": "换主题中途失败会留下混合状态：一部分页面用新主题令牌、一部分还是旧的，且没有任何地方记录这次换主题是否完整成功。运维无法判断要不要重试。",
+      "rootCause": "把「尽力而为」用在了一个用户预期是原子的操作上。",
+      "remediation": {
+        "approach": "四步包进同一事务（都是本库写操作，可行），或引入一个 reskin 任务记录状态以便重试。",
+        "steps": [
+          "把转挂、刷新快照、刷新 structure、标记 stale 放进一个 Transaction",
+          "失败整体回滚并向用户返回明确错误",
+          "如担心大工程事务过长，改为分批 + 记录进度的任务"
+        ],
+        "effortDays": 1,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "中途注入失败后数据库状态与激活前一致"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P1",
+      "tags": [
+        "theme",
+        "transaction"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：ReskinProjectForTheme 单事务换皮；激活后失败返回 500。"
+    },
+    {
+      "id": "VIS-006",
+      "title": "槽位变更标记整个工程的页面待重建，没有依赖声明支撑精确标记",
+      "severity": "low",
+      "type": "tech-debt",
+      "confidence": "confirmed",
+      "problem": "系统页面槽位（shop/cart/login 等）变更时，调用 MarkStaleForProject 把整个工程的页面全标记为待重建。代码注释自己承认无法精确标记。",
+      "evidence": [
+        {
+          "file": "internal/module/page/service/page_slot.go",
+          "lines": "116-119",
+          "snippet": "MarkStaleForProject，注释承认无法精确标记",
+          "note": "构建期把槽位路径烘进了链接，但没有记录哪些页面用了哪个槽位"
+        }
+      ],
+      "impact": "大工程改一个槽位就要重建全站。在 P0 把重建异步化之前，这会放大同步重建的阻塞时间。",
+      "rootCause": "构建期消费了 SitePages 但没有把「这个页面用了哪些槽位」记进依赖索引。",
+      "remediation": {
+        "approach": "构建期记录槽位依赖（与 i18n、block 依赖同一套 fanout 机制），槽位变更时按依赖精确标记。",
+        "steps": [
+          "在 RenderContext 消费 SitePages 时记录用到的槽位键",
+          "构建产物 Manifest 增加 siteSlots 依赖项",
+          "dependency fanout 增加 site_slot 类型",
+          "槽位变更改为按依赖查询标记"
+        ],
+        "effortDays": 1.5,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "改一个只被 A 页面使用的槽位，只有 A 被标记 stale"
+      ],
+      "dependsOn": [
+        "PERF-001"
+      ],
+      "blocks": [],
+      "phase": "P2",
+      "tags": [
+        "page",
+        "dependency",
+        "performance"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "VIS-007",
+      "title": "pages.theme_id 语义弱：激活主题时全工程页面被转挂同一主题",
+      "severity": "low",
+      "type": "design-flaw",
+      "confidence": "confirmed",
+      "problem": "pages 表有 theme_id 列，看起来支持「同一工程内不同页面用不同主题」。但激活主题时 ReattachProjectPagesToTheme 把全工程页面转挂到激活主题，这个列实际上永远等于工程当前激活主题。",
+      "evidence": [
+        {
+          "file": "internal/module/page/model/page_model.go",
+          "lines": "260-267",
+          "snippet": "ReattachProjectPagesToTheme 全工程转挂",
+          "note": "theme_id 退化为工程级冗余列"
+        },
+        {
+          "file": "internal/module/dashboard/inbound/http/theme_handle.go",
+          "lines": "153",
+          "snippet": "激活时调用转挂",
+          "note": ""
+        }
+      ],
+      "impact": "多主题「页面分组预览」这个能力名存实亡。更实际的问题是这个列会让人误以为支持页面级主题，从而写出错误的假设。",
+      "rootCause": "多主题能力设计时留了页面级维度，实现时选择了工程级单激活，两者没有对齐。",
+      "remediation": {
+        "approach": "二选一：要么明确它是工程级冗余列并在注释与文档里写清楚（成本最低），要么真正支持页面级主题（成本高，需要评估产品价值）。",
+        "steps": [
+          "先做低成本方案：在 model 与迁移里加注释说明该列是激活主题的冗余快照",
+          "在 AGENTS.md 模块表里说明多主题的实际语义是「工程级单激活 + 多套可切换」",
+          "如未来要做页面级主题，改为不再全量转挂"
+        ],
+        "effortDays": 0.25,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "文档与代码注释一致"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P6",
+      "tags": [
+        "theme",
+        "documentation"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：page model 注释明确 theme_id 为工程级冗余快照。"
+    },
+    {
+      "id": "VIS-008",
+      "title": "系统页面槽位是工程级、主题是页面级快照，换主题后槽位页面的排版仍是旧主题的结构",
+      "severity": "medium",
+      "type": "design-flaw",
+      "confidence": "confirmed",
+      "problem": "page_site_slots 只有 project_id，没有 theme_id。换主题时槽位绑定不变，页面的颜色字体与页眉页脚会随主题刷新，但页面 root AST 的布局结构（容器嵌套、间距、组件组合）不会变。",
+      "evidence": [
+        {
+          "file": "internal/module/page/service/page_slot.go",
+          "lines": "92-119",
+          "snippet": "page_site_slots(project_id, slot, page_id)，无 theme_id",
+          "note": "槽位是工程级事实"
+        }
+      ],
+      "impact": "「一键换肤」的用户预期落空：换了主题，购物车页与登录页的排版还是按上一个主题设计的。对主题商店场景这是硬伤 —— 主题作者无法提供配套的功能页。",
+      "rootCause": "槽位负责「去哪找」、页面负责「怎么排版」的职责切分本身正确，但缺少「主题可提供默认页面」这一层，导致换主题只能换皮不能换骨。",
+      "remediation": {
+        "approach": "不改槽位的工程级定位，而是给主题增加可选的 bundled pages 与槽位预设，安装/激活时询问是否应用。",
+        "steps": [
+          "定义主题包 manifest 的 pages 与 slots 两个可选段（见 OSS-012）",
+          "激活主题时若主题带 pages，提供「创建为新页面并绑定槽位」的可选操作",
+          "绝不自动覆盖已有页面，只提供创建 + 手动切换绑定"
+        ],
+        "effortDays": 3,
+        "risk": "medium",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "带 pages 的主题激活后可一键生成配套功能页",
+        "不选择应用时既有页面与绑定完全不变"
+      ],
+      "dependsOn": [
+        "OSS-012"
+      ],
+      "blocks": [],
+      "phase": "P7",
+      "tags": [
+        "theme",
+        "site-slot",
+        "marketplace"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "VIS-009",
+      "title": "三条并行的「站点骨架」路径：block kind=header/footer、theme.headerBlockId、core.nav 的菜单绑定",
+      "severity": "low",
+      "type": "design-flaw",
+      "confidence": "confirmed",
+      "problem": "决定「站点顶部长什么样」有三条路径：block 的 kind 分类、主题的 headerBlockId 绑定、core.nav 组件绑定 navigation 模块的 header/footer 菜单。三者语义相关但没有统一的心智模型。",
+      "evidence": [
+        {
+          "file": "internal/module/block/model/block_model.go",
+          "lines": "16-33",
+          "snippet": "KindHeader / KindFooter 在 16 种 kind 里",
+          "note": "kind 只是分类，不构成绑定"
+        },
+        {
+          "file": "internal/module/dashboard/inbound/http/theme_handle.go",
+          "lines": "521-525",
+          "snippet": "theme 的 headerBlockId 绑定",
+          "note": "真正的结构绑定"
+        }
+      ],
+      "impact": "新用户与新贡献者需要读代码才能搞清楚该在哪里配页头。文档负担与误配风险都在这里。",
+      "rootCause": "三个能力在不同时期加入，各自都合理，但没有做一次概念收口。",
+      "remediation": {
+        "approach": "不改实现，做一次概念收口：文档明确 kind 是分类维度、structure 是绑定维度、navigation 是数据源维度，三者正交。后台 UI 上把它们放在同一个「站点骨架」入口下。",
+        "steps": [
+          "docs/02-D 增加一节三者关系图",
+          "后台把主题的页眉页脚绑定与导航菜单入口放在同一页面",
+          "block 列表按 kind 筛选时提示「kind 只是分类，绑定在主题设置里」"
+        ],
+        "effortDays": 0.5,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "文档评审通过"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P6",
+      "tags": [
+        "documentation",
+        "ux"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：docs/02-D § 站点骨架 kind/structure/navigation 关系。"
+    },
+    {
+      "id": "VIS-010",
+      "title": "三种「模板」语义并存：Block template 模式、Blueprint、ContentTemplate",
+      "severity": "medium",
+      "type": "design-flaw",
+      "confidence": "confirmed",
+      "problem": "系统里有三个东西都叫模板或起模板作用：reuse_mode=template 的一次性复制块、用完即弃的 Blueprint、参与每次构建的 ContentTemplate。docs/02-D 做过辨析，但对用户与新贡献者仍是三个需要分别学习的概念。",
+      "evidence": [
+        {
+          "file": "internal/module/block/model/block_model.go",
+          "lines": "35-41",
+          "snippet": "ReuseTemplate = template（一次性复制）",
+          "note": ""
+        },
+        {
+          "file": "internal/module/blueprint/service/blueprint_service.go",
+          "lines": "1-30",
+          "snippet": "Blueprint 初始化 Page Document 后即脱钩",
+          "note": ""
+        }
+      ],
+      "impact": "概念负担直接影响上手速度与开源友好度。也是「不知道该用哪个」这类支持问题的来源。",
+      "rootCause": "三者服务的场景确实不同（片段复用 / 整页初始化 / 详情页结构），但对外暴露时没有分层。",
+      "remediation": {
+        "approach": "对用户只暴露一个「复用资产」菜单（承载 block 两种模式），Blueprint 收进「新建页面」流程里当选项，ContentTemplate 收进「详情页设置」里。三者不并列出现在导航上。",
+        "steps": [
+          "后台导航收敛：复用资产一级入口，Blueprint 作为新建页面的模板选择步骤",
+          "ContentTemplate 入口放在商品/文章的「详情页模板」下（已部分如此）",
+          "文档层面保留三者的技术辨析，产品层面不并列"
+        ],
+        "effortDays": 1,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "后台导航评审",
+        "新用户能在不读文档的情况下找到正确入口"
+      ],
+      "dependsOn": [
+        "EDT-001"
+      ],
+      "blocks": [],
+      "phase": "P3",
+      "tags": [
+        "ux",
+        "information-architecture"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "VIS-011",
+      "title": "block kind 只有 Go 侧约束，DDL 无 CHECK",
+      "severity": "low",
+      "type": "inconsistency",
+      "confidence": "confirmed",
+      "problem": "16 种 block kind 的白名单只在 service 层校验，blocks 表的 kind 列没有 CHECK 约束。绕过 API 直接写库可以写入任意 kind 值。",
+      "evidence": [
+        {
+          "file": "internal/module/block/service/block_service.go",
+          "lines": "316-323",
+          "snippet": "kind 白名单校验在 service",
+          "note": ""
+        },
+        {
+          "file": "public/migrations/021_blocks.sql",
+          "lines": "12",
+          "snippet": "kind 列无 CHECK 约束",
+          "note": ""
+        }
+      ],
+      "impact": "数据修复脚本、手工 SQL、未来的导入功能都可能写入非法 kind，表现为后台列表筛选异常或渲染报错。",
+      "rootCause": "枚举白名单只做了一份真源（Go 侧）。",
+      "remediation": {
+        "approach": "补 DDL CHECK。与 DB-011 一并处理（order status、warehouse status 同类问题）。",
+        "steps": [
+          "写迁移增加 CHECK 约束，先清理可能存在的非法值",
+          "在 AGENTS.md 的枚举双真源清单里登记这一处"
+        ],
+        "effortDays": 0.25,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": true
+      },
+      "verification": [
+        "直接 INSERT 非法 kind 被数据库拒绝"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P1",
+      "tags": [
+        "schema",
+        "constraint",
+        "block"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：迁移 166 blocks.kind CHECK 与服务层白名单对齐。"
+    },
+    {
+      "id": "VIS-012",
+      "title": "structure 只有 header/footer 两个槽，16 种 block kind 里的 announcement/sidebar/drawer 等无主题级绑定位",
+      "severity": "low",
+      "type": "missing-feature",
+      "confidence": "confirmed",
+      "problem": "block 定义了 announcement、sidebar、breadcrumb、drawer 等 kind，但 StructureBindings 只有 HeaderBlockID 与 FooterBlockID 两个字段。其余 kind 的块只能靠作者在每个页面手动插 globalref。",
+      "evidence": [
+        {
+          "file": "internal/builder/settings.go",
+          "lines": "44-52",
+          "snippet": "type StructureBindings struct { HeaderBlockID string; FooterBlockID string }",
+          "note": "只有两个槽"
+        }
+      ],
+      "impact": "公告条这类「全站统一出现」的元素需要在每个页面重复插入，新建页面容易漏。",
+      "rootCause": "结构槽位是按需增加的，没有做成可扩展的槽位表。",
+      "remediation": {
+        "approach": "把 StructureBindings 改为 map[slotName]blockID，槽位名走白名单（announcement/sidebar 等），与 Layout 层改造（VIS-001）一起做。",
+        "steps": [
+          "定义结构槽位白名单常量",
+          "StructureBindings 改为映射结构，保留 header/footer 的向后兼容读取",
+          "Layout 展开时按槽位顺序插入 AST"
+        ],
+        "effortDays": 1.5,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": true
+      },
+      "verification": [
+        "配置全站公告条后所有页面都出现，且只需配一次"
+      ],
+      "dependsOn": [
+        "VIS-001"
+      ],
+      "blocks": [],
+      "phase": "P2",
+      "tags": [
+        "theme",
+        "layout",
+        "block"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "VIS-013",
+      "title": "工作台的「引用 / 复制」插入 UI 未完全接线",
+      "severity": "low",
+      "type": "missing-feature",
+      "confidence": "likely",
+      "problem": "block 的两种 reuse_mode 在后端完备（globalref 引用展开、CloneAST 复制），但工作台前端插入复用资产时选择引用还是复制的 UI 按 docs/02-D 的实现状态标注仍是待做。",
+      "evidence": [
+        {
+          "file": "docs/02-D-reusable-assets.md",
+          "lines": "0",
+          "snippet": "实现状态标注 workbench 前端待做",
+          "note": "需实际核对当前 JS 是否已实现"
+        }
+      ],
+      "impact": "用户无法在编辑器里选择插入方式，只能通过 API 或默认行为，复用资产这个能力的价值发挥不出来。",
+      "rootCause": "后端先行，前端未跟进。",
+      "remediation": {
+        "approach": "在 palette 的复用资产分区增加两个插入动作（引用 / 复制一份），分别调对应接口。",
+        "steps": [
+          "先核对 palette.js 与 methods/ 下是否已有相关调用",
+          "补插入动作与提示文案（引用会跟随原块变化，复制后独立）",
+          "补 check-workbench.sh 断言"
+        ],
+        "effortDays": 1,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "编辑器里两种插入方式都可用且行为符合预期"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P3",
+      "tags": [
+        "workbench",
+        "block",
+        "frontend"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "VIS-014",
+      "title": "主题无导入导出包格式，第三方无法分发完整主题",
+      "severity": "medium",
+      "type": "missing-feature",
+      "confidence": "confirmed",
+      "problem": "主题就是 themes 表的一行 JSONB，没有任何打包、导出、导入格式。第三方无法交付「设计令牌 + 页眉页脚块 + 若干页面 + 槽位预设」的完整主题。",
+      "evidence": [
+        {
+          "file": "internal/module/project",
+          "lines": "0",
+          "snippet": "全库无 theme bundle / export / import 相关代码",
+          "note": "grep 无命中"
+        }
+      ],
+      "impact": "主题商店、站点模板市场、把一个做好的站点复制到另一个环境这三件事都做不到。对开源生态是关键缺口。",
+      "rootCause": "主题定位为「工程内的一组设置」而非「可分发的资产」。",
+      "remediation": {
+        "approach": "定义主题包格式（zip：manifest + tokens + blocks + 可选 pages + 可选 slots + 预览图），提供导出与导入 API。",
+        "steps": [
+          "定义 manifest schema 与版本号",
+          "导出：主题令牌 + 引用到的块文档 + 可选页面文档 + 媒体引用清单",
+          "导入：创建新主题 + 块（重新分配 id）+ 可选创建页面",
+          "媒体依赖策略：要么内嵌要么声明缺失，不能静默产生死链"
+        ],
+        "effortDays": 4,
+        "risk": "medium",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "导出的主题包在干净环境导入后视觉一致",
+        "媒体缺失时给出明确清单而非死链"
+      ],
+      "dependsOn": [
+        "VIS-002"
+      ],
+      "blocks": [
+        "VIS-008"
+      ],
+      "phase": "P7",
+      "tags": [
+        "theme",
+        "marketplace",
+        "opensource"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "VIS-015",
+      "title": "第三方主题无法携带新组件（组件编译进二进制）",
+      "severity": "medium",
+      "type": "design-flaw",
+      "confidence": "confirmed",
+      "problem": "core 组件通过各组件包的 init() 注册，在 builder.go 里用空导入串起来，编译进二进制。主题若需要一个新组件，只能走 Go 插件（轻轨 zip 只能提供模板 + 样式）或改内核重新编译。",
+      "evidence": [
+        {
+          "file": "internal/builder/builder.go",
+          "lines": "0",
+          "snippet": "各组件包的空导入完成注册",
+          "note": "编译期注册机制"
+        }
+      ],
+      "impact": "主题作者的表达能力被限制在既有 41 个组件 + 插件模板组件之内。这个限制本身是确定性构建与安全性的合理代价，但需要向生态参与者讲清楚。",
+      "rootCause": "确定性构建与「不执行第三方代码」的安全边界决定了组件不能运行时加载。这是有意的取舍。",
+      "remediation": {
+        "approach": "不改架构（运行时加载 Go 代码会破坏确定性构建与安全边界），而是强化轻轨插件的表达力：模板 + 样式声明引擎 + presets 已能覆盖多数展示需求，把这条路径的文档与示例做足。",
+        "steps": [
+          "在插件文档里明确「能做什么、不能做什么」",
+          "提供 2 至 3 个真实示例插件（不只是 scaffold 模板）",
+          "评估样式声明引擎的表达力缺口并补齐"
+        ],
+        "effortDays": 2,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "示例插件可在干净环境安装并渲染"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P7",
+      "tags": [
+        "plugin",
+        "theme",
+        "documentation"
+      ],
+      "status": "open"
+    }
+  ]
+}

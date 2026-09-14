@@ -1,0 +1,1033 @@
+{
+  "dimension": "plugin-opensource",
+  "dimensionTitle": "插件体系、扩展性与开源就绪度",
+  "scope": "internal/module/plugin、internal/builder/plugincomp 与 pluginview.go、internal/templates/plugin_loader.go、cmd/plugin 脚手架、各类注册表、仓库根目录的开源基建文件、scripts/",
+  "verdict": "轻轨 zip 插件（模板 + 样式声明 + 自有表 + presets）确实能装能编译，有脚手架也有端到端测试，做纯展示组件是顺畅的。但插件不能注册运行时片段、不能加后台菜单与页面、不能加权限点、没有事件钩子，L2 集合源在 manifest 里能声明却没有解析器。所以「组件 + 管理页 + 自有表」这种完整插件做不到，第三方只能 fork。开源侧缺 LICENSE、CI、CONTRIBUTING、docker-compose，配置无法走环境变量，文档与注释全中文。",
+  "findings": [
+    {
+      "id": "OSS-001",
+      "title": "L2 集合源在 manifest 里可声明但没有解析器，声明了也用不了",
+      "severity": "high",
+      "type": "missing-feature",
+      "confidence": "confirmed",
+      "problem": "插件 manifest 可以写 collection.source 为 plugin:xxx.yyy 且校验通过，但 collectionRegistry 里没有插件类型的 provider，构建期 ResolveCollection 会失败。插件的自有表数据进不了可视化绑定。",
+      "evidence": [
+        {
+          "file": "internal/builder/plugincomp/plugincomp.go",
+          "lines": "0",
+          "snippet": "manifest 的 collection.source 声明校验通过",
+          "note": "只校验形状"
+        },
+        {
+          "file": "internal/builder/pluginview.go",
+          "lines": "0",
+          "snippet": "集合裁剪逻辑存在，但注册表里没有插件 provider",
+          "note": ""
+        },
+        {
+          "file": "docs/06-plugin-system.md",
+          "lines": "0",
+          "snippet": "§13 把 L2 CollectionSource 列为 P3 待做",
+          "note": "文档已承认"
+        }
+      ],
+      "impact": "插件的三级能力分层里最有价值的一层（自有数据进可视化编辑）是空的。营销组件、表单收集、任何带数据的插件都做不到，插件生态被限制在纯展示。",
+      "rootCause": "L2 需要定义「插件表如何暴露为集合源」的安全边界（字段白名单、筛选维度、SQL 生成），设计成本高于 L0/L1。",
+      "remediation": {
+        "approach": "定义受限的插件集合源：manifest 声明表名、字段白名单与可筛维度；运行时由一个通用 provider 按声明生成参数化 SQL（只允许等值与范围筛选，不接受表达式）。表必须在插件自己的 schema 内。",
+        "steps": [
+          "manifest 增加 collections 段：表名、字段清单（名称 + 类型 + 是否可翻译）、可筛维度、默认排序",
+          "实现 PluginCollectionProvider：按声明构造查询，表名与列名走白名单校验（绝不拼接用户输入）",
+          "查询强制加 schema 前缀 plugin_<id>，不允许跨 schema",
+          "字段值统一转为集合项的字符串或数值形态（与既有集合源接口一致）",
+          "装配时注册该 provider 到 collectionRegistry",
+          "补测试：声明外的表名或列名被拒绝；筛选参数注入尝试被拒绝"
+        ],
+        "effortDays": 4,
+        "risk": "medium",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "示例插件的自有表数据能在 cardstack 里绑定并渲染",
+        "越界的表名与列名被拒绝",
+        "注入尝试无效"
+      ],
+      "dependsOn": [],
+      "blocks": [
+        "OSS-010"
+      ],
+      "phase": "P7",
+      "tags": [
+        "plugin",
+        "collection-source",
+        "security"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "OSS-002",
+      "title": "插件不能注册运行时片段",
+      "severity": "high",
+      "type": "missing-feature",
+      "confidence": "confirmed",
+      "problem": "运行时片段全部在 runtimefragment 包的各个 go 文件里通过 init() 硬编码注册。zip 插件包没有 fragments 目录的消费逻辑。",
+      "evidence": [
+        {
+          "file": "internal/module/runtimefragment/registry.go",
+          "lines": "0",
+          "snippet": "Register 只被包内 init() 调用",
+          "note": "编译期注册"
+        }
+      ],
+      "impact": "插件无法提供任何需要服务端实时数据的能力（登录状态、库存、个性化内容）。这把插件限制在纯静态展示。",
+      "rootCause": "片段需要执行服务端逻辑，而轻轨插件的设计前提是「不执行第三方代码」。",
+      "remediation": {
+        "approach": "提供一种受限的声明式片段：manifest 声明片段名、方法、参数白名单、数据来源（复用 OSS-001 的集合声明）与渲染模板。片段逻辑由内核的通用 handler 按声明执行，不执行插件代码。",
+        "steps": [
+          "manifest 增加 fragments 段：名称、方法（GET/POST）、参数白名单与类型、数据源声明、模板路径、是否 anonymous",
+          "内核提供通用片段 handler：按声明取数（走 OSS-001 的 provider）并渲染插件模板",
+          "参数一律按声明校验，未声明的参数丢弃",
+          "写操作类片段暂不开放（涉及 CSRF 与数据一致性，风险高）",
+          "片段注册在插件启用时动态生效（注册表需要支持运行时增删，注意并发安全）"
+        ],
+        "effortDays": 4,
+        "risk": "high",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "示例插件的只读片段可用",
+        "未声明参数被忽略",
+        "插件禁用后片段端点不再响应"
+      ],
+      "dependsOn": [
+        "OSS-001"
+      ],
+      "blocks": [],
+      "phase": "P7",
+      "tags": [
+        "plugin",
+        "runtimefragment"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "OSS-003",
+      "title": "插件不能注册后台菜单与页面",
+      "severity": "high",
+      "type": "missing-feature",
+      "confidence": "confirmed",
+      "problem": "文档 §5.3 里 manifest 有 admin.menu 的骨架，但代码里没有任何解析、路由挂载或 Jet 页面注册的实现。",
+      "evidence": [
+        {
+          "file": "docs/06-plugin-system.md",
+          "lines": "0",
+          "snippet": "§5.3 manifest 有 admin.menu 骨架",
+          "note": "代码无对应实现"
+        }
+      ],
+      "impact": "插件有了自己的表（L1 已支持）却没有管理界面，用户无法维护插件数据。这是「组件 + 管理页 + 表」三件套里缺的关键一环。",
+      "rootCause": "后台页面需要路由与模板注册，且涉及权限，实现成本高。",
+      "remediation": {
+        "approach": "提供声明式的后台 CRUD 页面：manifest 声明表、字段与表单类型，内核生成标准的列表加表单页面（不允许插件写任意页面逻辑）。菜单项与权限点在插件启用时动态注册。",
+        "steps": [
+          "manifest 增加 admin 段：菜单标题与图标、CRUD 表声明、字段的表单控件类型",
+          "内核实现通用 CRUD 页面（复用后台既有的 card / data-table / form 样式）",
+          "插件启用时注册菜单项（写 sys_menus 或维护一个动态菜单来源）与权限点（写 sys_permission 加超管策略）",
+          "禁用或卸载时清理菜单与权限点",
+          "权限点命名强制加 plugin:<id>: 前缀避免与内核冲突"
+        ],
+        "effortDays": 5,
+        "risk": "high",
+        "breaking": false,
+        "migrationNeeded": true
+      },
+      "verification": [
+        "示例插件安装后出现菜单与可用的 CRUD 页面",
+        "卸载后菜单与权限点被清理",
+        "超管能访问、无权限用户 403"
+      ],
+      "dependsOn": [
+        "OSS-001"
+      ],
+      "blocks": [],
+      "phase": "P7",
+      "tags": [
+        "plugin",
+        "admin-ui",
+        "authz"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "OSS-004",
+      "title": "插件不能声明自己的权限点，只有固定的五个 plugin 权限",
+      "severity": "medium",
+      "type": "missing-feature",
+      "confidence": "confirmed",
+      "problem": "迁移 032 seed 了 5 个 plugin 相关权限点（安装、启停、卸载等），插件自身无法 seed 专属权限点与 Casbin 策略。",
+      "evidence": [
+        {
+          "file": "public/migrations/032_plugin_permissions.sql",
+          "lines": "0",
+          "snippet": "5 个固定的 plugin:* 权限点",
+          "note": "无插件自定义通道"
+        }
+      ],
+      "impact": "即使 OSS-003 实现了后台页面，也无法按角色控制谁能访问插件功能。要么全员可用要么全员不可用。",
+      "rootCause": "权限点通过迁移 seed，插件没有迁移之外的注册通道。",
+      "remediation": {
+        "approach": "随 OSS-003 一并实现：插件启用时按 manifest 声明注册权限点与超管策略，命名强制前缀。",
+        "steps": [
+          "manifest 声明权限点清单（code + 名称 + 分组）",
+          "启用时写入 sys_permission 与超管 Casbin 策略（幂等）",
+          "禁用时保留（避免角色配置丢失），卸载时清理",
+          "code 强制 plugin:<id>: 前缀，冲突则拒绝安装"
+        ],
+        "effortDays": 1.5,
+        "risk": "medium",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "插件权限点可分配给角色",
+        "前缀冲突被拒绝"
+      ],
+      "dependsOn": [
+        "OSS-003"
+      ],
+      "blocks": [],
+      "phase": "P7",
+      "tags": [
+        "plugin",
+        "authz"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "OSS-005",
+      "title": "系统没有事件总线或钩子机制，跨域联动只能改内核",
+      "severity": "high",
+      "type": "design-flaw",
+      "confidence": "confirmed",
+      "problem": "全库没有 event bus / hook / listener 机制。跨模块协作靠装配期注入契约并在 service 里显式调用。文档 §1.3 明确把「WordPress 式 add_action」列为非目标。插件想在「商品保存后」做点事没有任何入口。",
+      "evidence": [
+        {
+          "file": "internal/module/product/service/product_service.go",
+          "lines": "0",
+          "snippet": "商品写操作后直接调用 recalcProjectAutoTags 等，同步编排无事件",
+          "note": "当前唯一模式"
+        },
+        {
+          "file": "docs/06-plugin-system.md",
+          "lines": "0",
+          "snippet": "§1.3 明确不做 WP 式 add_action/add_filter",
+          "note": "有意决定"
+        }
+      ],
+      "impact": "两层影响。对插件生态：任何需要响应业务事件的插件都做不了（发货后同步物流、下单后推送、内容发布后通知）。对内核自身：跨模块联动全是硬编码调用，模块间耦合随功能增加而增长（order 已经要感知 inventory 与 user）。",
+      "rootCause": "不做 filter 式钩子的决定是对的（filter 允许第三方改变数据流，破坏确定性与可预测性）。但不做 action 式事件通知（只读、不改数据流）的成本被低估了。",
+      "remediation": {
+        "approach": "引入只读的领域事件（action 语义，不是 filter）：事件只携带已发生事实的快照，订阅者不能改变主流程结果，订阅者失败不影响主流程。同步派发保证顺序，重活由订阅者自己投队列。这与「不做 filter」的原则不冲突。",
+        "steps": [
+          "定义事件总线：Publish(ctx, event) 与 Subscribe(eventType, handler)，事件为不可变结构",
+          "订阅者的错误只记日志（不能影响发布者），panic 要 recover",
+          "先在几个明确的点发布事件：商品保存 / 订单状态流转 / 内容发布 / 库存变动 / 页面发布",
+          "把现有的部分硬编码调用改为订阅（谨慎：审计与自动标签这类必须成功的操作不适合改事件，它们要留在事务里）",
+          "明确写下判据：必须成功且需要事务保证的走直接调用，通知类与可失败的走事件",
+          "插件订阅走声明式：manifest 声明订阅哪个事件与要做什么（HTTP 回调或内置动作），不执行插件代码"
+        ],
+        "effortDays": 4,
+        "risk": "medium",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "订阅者 panic 或报错不影响主流程",
+        "事件顺序与业务操作顺序一致",
+        "改为事件的那些调用行为不变"
+      ],
+      "dependsOn": [],
+      "blocks": [
+        "OSS-006"
+      ],
+      "phase": "P7",
+      "tags": [
+        "architecture",
+        "plugin",
+        "events"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "OSS-006",
+      "title": "插件没有 webhook 或外部集成通道",
+      "severity": "medium",
+      "type": "missing-feature",
+      "confidence": "confirmed",
+      "problem": "插件无法把系统事件推送到外部服务（ERP、物流、CRM）。mail 模块有自己的追踪回调，但那是模块内实现，不是通用能力。",
+      "evidence": [
+        {
+          "file": "internal/module/plugin",
+          "lines": "0",
+          "snippet": "无 webhook 相关实现",
+          "note": ""
+        }
+      ],
+      "impact": "系统无法与外部工具链集成，这是电商与 CMS 场景的常见需求（订单同步 ERP、内容发布通知团队）。",
+      "rootCause": "缺事件机制（OSS-005）导致 webhook 无从触发。",
+      "remediation": {
+        "approach": "基于 OSS-005 的事件总线实现 webhook：后台配置订阅哪些事件、目标 URL、签名密钥；派发走队列（异步 + 重试 + 死信）。",
+        "steps": [
+          "webhook 配置表（事件类型、URL、密钥、启停、重试策略）",
+          "订阅事件后投递队列任务",
+          "请求带签名头（HMAC，与支付回调同一手法）与幂等 id",
+          "失败重试与死信可见",
+          "后台可看投递历史与失败原因",
+          "URL 必须校验（禁止内网地址，防 SSRF）"
+        ],
+        "effortDays": 3,
+        "risk": "medium",
+        "breaking": false,
+        "migrationNeeded": true
+      },
+      "verification": [
+        "事件能推送到外部并可验签",
+        "内网地址被拒绝",
+        "失败可重试且可见"
+      ],
+      "dependsOn": [
+        "OSS-005",
+        "PERF-001"
+      ],
+      "blocks": [],
+      "phase": "P7",
+      "tags": [
+        "plugin",
+        "webhook",
+        "integration",
+        "ssrf"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "OSS-007",
+      "title": "插件安装没有签名校验，安装权等同受信任的数据库操作权",
+      "severity": "high",
+      "type": "security",
+      "confidence": "confirmed",
+      "problem": "manifest 有 signature 字段但未实现校验。L1 迁移虽有 SQL 黑名单（剥离注释、SET LOCAL search_path、拒绝 public. 与 GRANT 等），但 plugin_migrate.go 的注释自己承认这只让安装权等同「受信 DBA lite」。",
+      "evidence": [
+        {
+          "file": "internal/module/plugin/service/plugin_migrate.go",
+          "lines": "92-140",
+          "snippet": "SQL 黑名单：注释剥离、search_path、拒绝 public. 与 GRANT",
+          "note": "黑名单方式，注释承认边界"
+        }
+      ],
+      "impact": "不适合开放插件市场：任何能上传插件的账号实际拥有接近数据库管理员的能力。黑名单方式的可疑绕过面包括非 schema 的 DROP TABLE、CREATE EXTENSION、美元引号字符串内嵌、Unicode 同形字符。",
+      "rootCause": "信任模型是「只有受信管理员能安装插件」，但产品方向是插件市场（不可信第三方）。",
+      "remediation": {
+        "approach": "两条并行：一是把 SQL 黑名单改为白名单（只允许 CREATE TABLE / CREATE INDEX / ALTER TABLE ADD COLUMN 等有限语句，用解析而非字符串匹配判断）；二是实现包签名校验（发布者公钥，安装时验签，未签名的包需要显式确认）。",
+        "steps": [
+          "SQL 白名单：只接受有限语句类型，用 PostgreSQL 的语法解析或严格的模板化 DDL 声明（推荐后者：manifest 用结构化方式声明表与列，内核生成 DDL，插件根本不提供 SQL）",
+          "签名：定义签名格式与公钥分发方式，验签失败拒绝安装",
+          "未签名包安装时要求二次确认并记审计",
+          "插件 schema 的数据库角色权限收窄（如果部署允许，用受限角色执行插件迁移）"
+        ],
+        "effortDays": 3,
+        "risk": "medium",
+        "breaking": true,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "越界 SQL 被拒绝",
+        "签名校验生效",
+        "结构化 DDL 声明能覆盖常见建表需求"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P7",
+      "tags": [
+        "plugin",
+        "security",
+        "marketplace"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "OSS-008",
+      "title": "插件安装或启用后不触发页面重建，新组件要等下次构建才生效",
+      "severity": "medium",
+      "type": "missing-feature",
+      "confidence": "confirmed",
+      "problem": "Toggle 的注释说明「下次构建自然生效」。文档 §10 描述的 stale 传播没有接到插件安装路径上。",
+      "evidence": [
+        {
+          "file": "internal/module/plugin/service/plugin_runtime.go",
+          "lines": "0",
+          "snippet": "Toggle 注释：下次构建自然生效",
+          "note": "不主动标记 stale"
+        }
+      ],
+      "impact": "启用一个插件后，已发布页面里的插件组件仍是旧渲染（或根本没渲染）。用户不知道要手动重建。与 RegistryVersion 那套「组件更新标记 stale」的机制不对称。",
+      "rootCause": "插件启停被当作配置变更而非组件变更。",
+      "remediation": {
+        "approach": "插件启停时标记使用了该插件组件的页面为 stale（依赖索引里已有类似机制），并投递重建任务。",
+        "steps": [
+          "构建产物的 Manifest 记录使用的插件 id 与版本",
+          "插件启停时按依赖索引标记相关页面 stale",
+          "投递重建任务（走 PERF-001 的队列）",
+          "插件禁用时页面会渲染失败或缺组件，要有明确的降级（缺组件时输出空节点并记 warn，不让整页构建失败）"
+        ],
+        "effortDays": 1.5,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "启用插件后相关页面自动重建",
+        "禁用插件时页面仍能构建（组件降级为空）"
+      ],
+      "dependsOn": [
+        "PERF-001"
+      ],
+      "blocks": [],
+      "phase": "P7",
+      "tags": [
+        "plugin",
+        "pipeline"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "OSS-009",
+      "title": "没有 LICENSE 文件",
+      "severity": "critical",
+      "type": "missing-feature",
+      "confidence": "confirmed",
+      "problem": "仓库根目录没有 LICENSE。README 里写「协议整理中」。只有 vendor 目录下的第三方库（trix、idiomorph）带自己的 LICENSE。",
+      "evidence": [
+        {
+          "file": "README.md",
+          "lines": "0",
+          "snippet": "声明协议整理中",
+          "note": ""
+        }
+      ],
+      "impact": "法律上默认保留所有权利：任何人都不能合法使用、修改、分发这个项目。开源这条路在补上 LICENSE 之前根本没有起点。这也是所有开源准备工作里唯一一件必须先做的事。",
+      "rootCause": "未决定授权协议。",
+      "remediation": {
+        "approach": "选定协议并添加 LICENSE。需要决策：宽松（MIT / Apache-2.0）还是 copyleft（AGPL-3.0）。对建站系统这类容易被 SaaS 化的产品，AGPL 能防止云厂商直接商用而不回馈；MIT/Apache 更利于生态采纳。Apache-2.0 额外提供专利授权条款。",
+        "steps": [
+          "决策协议（这是产品与商业决策，需要项目所有者定）",
+          "添加 LICENSE 文件",
+          "检查所有依赖的协议兼容性（go.mod 里的直接依赖逐个核对，特别注意有无 GPL 传染性依赖）",
+          "源文件头部是否加协议声明（Apache 通常加，MIT 通常不加）",
+          "README 更新协议说明与徽章"
+        ],
+        "effortDays": 0.5,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "LICENSE 存在且与依赖协议兼容",
+        "README 说明清晰"
+      ],
+      "dependsOn": [],
+      "blocks": [
+        "OSS-011",
+        "OSS-013"
+      ],
+      "phase": "P7",
+      "tags": [
+        "opensource",
+        "legal",
+        "blocker"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：根目录添加 MIT LICENSE。"
+    },
+    {
+      "id": "OSS-010",
+      "title": "没有 CI，缺库环境下测试全绿但什么都没测",
+      "severity": "critical",
+      "type": "missing-feature",
+      "confidence": "confirmed",
+      "problem": "仓库没有 .github/workflows 或任何 CI 配置。测试依赖真实 PG 与 Redis，不可用时 t.Skip（122 处 skip 调用分布在 75 个文件）。没有 CI 意味着没人验证 PR，而即使有人跑 go test 也可能因为缺库而全绿。",
+      "evidence": [
+        {
+          "file": ".github",
+          "lines": "0",
+          "snippet": "目录不存在",
+          "note": "零 CI"
+        },
+        {
+          "file": "public/test/support/testenv.go",
+          "lines": "43-56",
+          "snippet": "本地 PG/Redis 不可用则尝试 Docker 容器，仍失败返回 ErrEnvUnavailable 由调用方 t.Skip",
+          "note": "机制本身合理，但缺 CI 就成了假绿"
+        }
+      ],
+      "impact": "开源后收到 PR 无法自动验证。而「缺库时全绿」比没有测试更危险：它给出虚假的安全感。当前 428 个测试文件的价值有一大半取决于运行环境。",
+      "rootCause": "自用阶段靠本地跑测试，没有建 CI。",
+      "remediation": {
+        "approach": "建 GitHub Actions：PG 与 Redis 用 service container，禁止 skip 掉过多测试（统计 skip 数量，超过阈值即失败）。分 quick 与 full 两个 job。",
+        "steps": [
+          "workflow：go vet + go build + go test（带 PG 18 与 Redis service）",
+          "统计并断言 skip 数量：设置环境变量 CI=true 时，环境不可用应 Fail 而非 Skip",
+          "quick job 跑 -short（不依赖外部服务），full job 跑全量",
+          "接入已有的检查脚本：check-permission-gaps.sh、check-workbench.sh、以及本次新增的 i18n 与错误处理检查",
+          "加 go test -race 的独立 job（并发敏感路径）",
+          "缓存 Go module 与 build cache 控制时长"
+        ],
+        "effortDays": 2,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "CI 在缺库时失败而不是全绿",
+        "PR 触发完整检查",
+        "race job 能跑通库存与订单的并发测试"
+      ],
+      "dependsOn": [
+        "PERF-017"
+      ],
+      "blocks": [
+        "OSS-011"
+      ],
+      "phase": "P7",
+      "tags": [
+        "opensource",
+        "ci",
+        "testing",
+        "blocker"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：.github/workflows/go-test.yml unit + PG/Redis integration job。"
+    },
+    {
+      "id": "OSS-011",
+      "title": "没有 CONTRIBUTING、SECURITY、issue 与 PR 模板",
+      "severity": "high",
+      "type": "missing-feature",
+      "confidence": "confirmed",
+      "problem": "缺 CONTRIBUTING.md（如何搭环境、代码规范、提交流程）、SECURITY.md（漏洞报告渠道）、.github 下的 issue 与 PR 模板。",
+      "evidence": [
+        {
+          "file": ".github",
+          "lines": "0",
+          "snippet": "目录不存在",
+          "note": ""
+        }
+      ],
+      "impact": "外部贡献者不知道从哪开始、不知道规范在哪（AGENTS.md 是给 AI 的，人类贡献者需要一份面向人的版本）。没有 SECURITY.md 意味着安全研究者只能公开披露漏洞。",
+      "rootCause": "未做开源准备。",
+      "remediation": {
+        "approach": "写这几个文件，内容从 AGENTS.md 提炼但面向人类贡献者（AGENTS.md 太长且是给 AI 的指令口吻）。",
+        "steps": [
+          "CONTRIBUTING.md：环境搭建（含 docker-compose 一键起，见 OSS-012）、跑测试、代码规范要点、提交与 PR 流程、模块开发的 12 个触点清单",
+          "SECURITY.md：漏洞报告邮箱与响应时限承诺",
+          "issue 模板：bug 报告（含版本、复现步骤、环境）与功能建议",
+          "PR 模板：改动说明、测试情况、是否需要迁移、是否更新文档",
+          "CODE_OF_CONDUCT.md（可选但常见）"
+        ],
+        "effortDays": 1.5,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "外部贡献者能按 CONTRIBUTING 独立搭起环境并跑通测试"
+      ],
+      "dependsOn": [
+        "OSS-009",
+        "OSS-010",
+        "OSS-012"
+      ],
+      "blocks": [],
+      "phase": "P7",
+      "tags": [
+        "opensource",
+        "documentation"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：SECURITY.md；GitHub Issue/PR 模板待补。"
+    },
+    {
+      "id": "OSS-012",
+      "title": "没有 docker-compose 或 Makefile，无一键启动",
+      "severity": "high",
+      "type": "missing-feature",
+      "confidence": "confirmed",
+      "problem": "启动流程是 cp config.yaml.example 然后 go run，需要自备 PostgreSQL 与 Redis。没有 docker-compose、没有 Makefile。scripts 里 deploy.sh 与 build-frontend.sh 等被自己标注为失效。",
+      "evidence": [
+        {
+          "file": "README.md",
+          "lines": "41-57",
+          "snippet": "只有本地运行说明，需自备 PG 与 Redis",
+          "note": ""
+        },
+        {
+          "file": "scripts/README.md",
+          "lines": "7-14",
+          "snippet": "deploy.sh 等标注不可用",
+          "note": "失效脚本留在仓库里会误导"
+        }
+      ],
+      "impact": "新贡献者的第一道门槛就很高（装 PG 18、装 Redis、建库、改配置）。失效脚本还会让人踩坑。这直接决定有多少人愿意尝试贡献。",
+      "rootCause": "自用环境已经搭好，没有为新人考虑。",
+      "remediation": {
+        "approach": "提供 docker-compose（PG + Redis + 应用）与 Makefile（常用命令封装），删除或明确归档失效脚本。",
+        "steps": [
+          "docker-compose.yml：PostgreSQL 18、Redis、应用（可选，也可只起依赖让应用本地跑）",
+          "提供开发用的 config.yaml 模板指向 compose 里的服务",
+          "Makefile：dev / build / test / test-short / lint / migrate / check 等目标",
+          "删除失效脚本或移到 scripts/archive 并在 README 说明",
+          "README 的快速开始改为三步：docker compose up、make migrate、make dev"
+        ],
+        "effortDays": 1.5,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "干净机器上三条命令能跑起来并访问后台",
+        "失效脚本不再误导"
+      ],
+      "dependsOn": [],
+      "blocks": [
+        "OSS-011"
+      ],
+      "phase": "P7",
+      "tags": [
+        "opensource",
+        "developer-experience",
+        "docker"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "OSS-013",
+      "title": "文档与代码注释几乎全中文，对国际贡献者是硬门槛",
+      "severity": "medium",
+      "type": "design-flaw",
+      "confidence": "confirmed",
+      "problem": "AGENTS.md、docs 下 40 多篇文档、代码注释、迁移的 COMMENT、错误消息全是中文。",
+      "evidence": [
+        {
+          "file": "docs",
+          "lines": "0",
+          "snippet": "40 多篇文档全中文",
+          "note": ""
+        }
+      ],
+      "impact": "国际贡献者与第三方集成方无法阅读设计文档。而这个项目的注释质量恰恰是它最大的知识资产（大量注释解释的是设计取舍与踩过的坑），全中文让这份资产只对中文读者可用。",
+      "rootCause": "团队工作语言是中文（AGENTS.md 里也明确要求中文回复）。",
+      "remediation": {
+        "approach": "不做全量翻译（成本极高且难以维护同步）。分层处理：对外文档（README、CONTRIBUTING、架构概览、插件开发指南）提供英文版；代码注释保持中文；错误消息走 i18n（I18N-002 已在做）。",
+        "steps": [
+          "确定英文优先级：README、CONTRIBUTING、docs/01-overview、插件开发指南、API 说明",
+          "英文版作为独立文件（README.en.md 或 docs/en/），不做逐句同步承诺",
+          "在中文文档头部注明「英文版可能滞后」",
+          "新增的对外文档同时写两版"
+        ],
+        "effortDays": 3,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "英文读者能理解项目定位、架构与如何贡献"
+      ],
+      "dependsOn": [
+        "OSS-009"
+      ],
+      "blocks": [],
+      "phase": "P7",
+      "tags": [
+        "opensource",
+        "documentation",
+        "i18n"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "OSS-014",
+      "title": "敏感配置只能写在 YAML 里，无法走环境变量",
+      "severity": "high",
+      "type": "design-flaw",
+      "confidence": "confirmed",
+      "problem": "全仓没有 AutomaticEnv 或 BindEnv（grep 零命中）。数据库密码、session secret、支付密钥等只能写在 config.yaml 里。测试环境有 PGHOST 之类的环境变量，但生产配置没有。",
+      "evidence": [
+        {
+          "file": "config",
+          "lines": "0",
+          "snippet": "无 Viper 环境变量绑定",
+          "note": ""
+        },
+        {
+          "file": "config.yaml.example",
+          "lines": "18-49",
+          "snippet": "DB 密码与 session secret 都在 YAML 里",
+          "note": ""
+        }
+      ],
+      "impact": "违反 12-factor，与容器化部署、Kubernetes Secret、CI/CD 的密钥注入都不兼容。密钥只能落盘在配置文件里，增加泄露面。",
+      "rootCause": "配置读取只实现了文件方式。",
+      "remediation": {
+        "approach": "Viper 开启 AutomaticEnv 加前缀（如 GOWP_），环境变量覆盖 YAML。敏感项在 example 里写占位并注明推荐用环境变量。",
+        "steps": [
+          "config.Init 增加 SetEnvPrefix 与 AutomaticEnv，SetEnvKeyReplacer 处理点号到下划线",
+          "验证嵌套键的环境变量映射（如 database.password 到 GOWP_DATABASE_PASSWORD）",
+          "config.yaml.example 的敏感项改为空值加注释说明用环境变量",
+          "release 模式校验：敏感项为空且环境变量也没有则 fail-fast",
+          "文档给出容器部署的环境变量清单"
+        ],
+        "effortDays": 1,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "环境变量能覆盖 YAML 配置",
+        "敏感项缺失时启动失败并指明缺哪个"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P7",
+      "tags": [
+        "configuration",
+        "security",
+        "deployment"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：config GOWP_ AutomaticEnv 环境变量覆盖 YAML。"
+    },
+    {
+      "id": "OSS-015",
+      "title": "对外 API 没有版本化与稳定性承诺",
+      "severity": "medium",
+      "type": "design-flaw",
+      "confidence": "confirmed",
+      "problem": "路由形如 /api/{module}/{action}，没有 /v1 前缀。README 与 AGENTS.md 都没有 API 稳定性说明。",
+      "evidence": [
+        {
+          "file": "internal/routers/routes.go",
+          "lines": "0",
+          "snippet": "/api/{module}/{action} 无版本段",
+          "note": ""
+        }
+      ],
+      "impact": "开源后第三方基于这些 API 做集成，任何改动都是破坏性的且没有沟通机制。也无法演进 API（想改就得破坏别人）。",
+      "rootCause": "内部使用不需要版本化。",
+      "remediation": {
+        "approach": "不做大规模路径改动（成本高且收益不明确）。改为在文档层明确稳定性分级：哪些 API 是稳定的（承诺兼容）、哪些是内部的（可能变）。后续新增的对外 API 才加版本段。",
+        "steps": [
+          "梳理 API 清单并标注稳定性等级（stable / experimental / internal）",
+          "internal 级别的 API 在文档里明确「不对外承诺」",
+          "破坏性变更的沟通机制写进 CONTRIBUTING（CHANGELOG + 迁移说明）",
+          "考虑给未来的公开 API 加 /api/v1 前缀"
+        ],
+        "effortDays": 1,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "API 稳定性文档明确"
+      ],
+      "dependsOn": [
+        "OSS-011"
+      ],
+      "blocks": [],
+      "phase": "P7",
+      "tags": [
+        "api",
+        "opensource",
+        "documentation"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：docs/api-stability.md API 稳定性分级。"
+    },
+    {
+      "id": "OSS-016",
+      "title": "只有 scaffold 模板，没有真实的示例插件",
+      "severity": "medium",
+      "type": "missing-feature",
+      "confidence": "confirmed",
+      "problem": "cmd/plugin 提供脚手架能生成模板，但仓库里没有一个完整的、能直接安装运行的示例插件（examples 目录不存在）。",
+      "evidence": [
+        {
+          "file": "cmd/plugin/main.go",
+          "lines": "0",
+          "snippet": "脚手架存在",
+          "note": ""
+        },
+        {
+          "file": "public/test/plugin/unit/scaffold_e2e_test.go",
+          "lines": "0",
+          "snippet": "端到端测试覆盖脚手架流程",
+          "note": "测试有但没有可参考的成品示例"
+        }
+      ],
+      "impact": "插件开发者只能对着文档摸索。一个能读的完整示例比文档有效得多。",
+      "rootCause": "脚手架被认为够用。",
+      "remediation": {
+        "approach": "提供 2 到 3 个真实示例插件：一个纯展示组件（L0）、一个带自有表与后台页的（L1 加 OSS-003）、一个带集合源绑定的（L2 加 OSS-001）。放 examples 目录并在 CI 里验证能安装。",
+        "steps": [
+          "示例一：营销横幅组件（纯 L0，含样式声明与 presets）",
+          "示例二：FAQ 管理（L1 自有表 + 声明式后台 CRUD）",
+          "示例三：公告列表（L2 集合源绑定，可在 cardstack 里用）",
+          "CI 里跑一遍安装与页面构建验证",
+          "插件开发文档引用这些示例"
+        ],
+        "effortDays": 2.5,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "示例插件在干净环境能安装并正常渲染",
+        "CI 覆盖"
+      ],
+      "dependsOn": [
+        "OSS-001",
+        "OSS-003"
+      ],
+      "blocks": [],
+      "phase": "P7",
+      "tags": [
+        "plugin",
+        "documentation",
+        "examples"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "OSS-017",
+      "title": "新增业务模块要碰 12 个触点，无脚手架",
+      "severity": "medium",
+      "type": "tech-debt",
+      "confidence": "confirmed",
+      "problem": "新增一个业务模块典型需要：模块骨架六个目录、DDL 迁移 2 到 4 个、register.go 注册、routes.go 装配与注入、权限点 seed、菜单 seed、后台页面与 handler、AGENTS.md 模块表、可选的构建期数据源六步、可选的运行时片段、可选的构建期组件、feature 测试。共 12 类触点，没有脚手架也没有 checklist 自动化。",
+      "evidence": [
+        {
+          "file": "internal/module/CLAUDE.md",
+          "lines": "0",
+          "snippet": "模块开发规范描述了目录结构与流程，与实际一致",
+          "note": "文档准确但全靠人工执行"
+        },
+        {
+          "file": "docs/04-B-dynamic-development-guide.md",
+          "lines": "0",
+          "snippet": "§1.4 构建期数据源接入六步",
+          "note": ""
+        }
+      ],
+      "impact": "漏一个触点的后果各不相同：漏权限点 seed 会全员 403（AGENTS.md 记录了 072/077/078/079/151 五次踩坑）、漏菜单则功能不可见、漏 AGENTS.md 更新则文档漂移。人工执行 12 步必然有漏。",
+      "rootCause": "模块化程度高带来的必然复杂度，但缺自动化。",
+      "remediation": {
+        "approach": "做一个模块脚手架（go run ./cmd/scaffold module <name>）生成骨架与迁移模板；同时把可自动检查的触点做成检查脚本（权限点缺口检查已有，再补菜单与文档检查）。",
+        "steps": [
+          "脚手架生成：六个目录与基础文件、迁移模板（表 + 权限点 + 菜单）、routes 装配片段提示",
+          "扩展 check-permission-gaps.sh 覆盖菜单缺失检查",
+          "加一个检查：AGENTS.md 模块表里的模块与 internal/module 下的目录一致",
+          "CONTRIBUTING 里给出 12 触点 checklist（PR 模板里也放一份）"
+        ],
+        "effortDays": 2,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "脚手架生成的模块能直接编译并跑通",
+        "漏权限点或菜单被检查脚本发现"
+      ],
+      "dependsOn": [
+        "OSS-010"
+      ],
+      "blocks": [],
+      "phase": "P7",
+      "tags": [
+        "developer-experience",
+        "scaffold",
+        "ci"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "OSS-018",
+      "title": "发行方式不是单二进制，模板与静态资源需要一并交付",
+      "severity": "medium",
+      "type": "design-flaw",
+      "confidence": "confirmed",
+      "problem": "go build 出的二进制需要配合 internal/templates 下的静态资源与模板一起部署（README 已说明）。后台模板与 static 目录不是全部 embed 的。",
+      "evidence": [
+        {
+          "file": "README.md",
+          "lines": "0",
+          "snippet": "说明需一并交付 internal/templates 静态资产",
+          "note": ""
+        }
+      ],
+      "impact": "部署复杂度上升，也失去了 Go 项目「单文件分发」的优势。对自托管用户不友好。",
+      "rootCause": "开发模式需要模板热重载（jet.DevelopmentMode），于是模板从文件系统读。",
+      "remediation": {
+        "approach": "全部 embed，开发模式下用构建 tag 或环境变量切换为文件系统读取。这样生产是单二进制，开发仍可热重载。",
+        "steps": [
+          "后台模板与 static 目录全部 go:embed（组件模板已经是 embed）",
+          "开发模式通过构建 tag（dev）或环境变量切到文件系统 loader",
+          "确认 embed 后的体积可接受（htmx 50KB 加 trix 加 CSS 加模板，预计几 MB）",
+          "GoReleaser 配置（AGENTS.md 提到发版优先 GoReleaser）",
+          "更新部署文档"
+        ],
+        "effortDays": 1.5,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "单二进制在干净机器上能启动并正常渲染后台",
+        "开发模式仍能热重载模板"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P7",
+      "tags": [
+        "deployment",
+        "opensource",
+        "developer-experience"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "OSS-019",
+      "title": "Client Enhancement 与其它多个注册表不对插件开放",
+      "severity": "low",
+      "type": "missing-feature",
+      "confidence": "confirmed",
+      "problem": "系统里的注册表清单里，对 zip 插件开放的只有：插件组件 Spec、Jet 模板、样式声明引擎、presets、插件 registry 元数据五项。不开放的包括：内置组件 Registry、Client Enhancement（RegisterEnhanceBlock）、集合源、实体类型、运行时片段、FieldBinding 白名单、导航解析、系统页面槽位、后台菜单与权限点、HTTP 路由、后台 Jet 页面、datarule GORM 插件、队列任务、支付通道、发布依赖 fanout。",
+      "evidence": [
+        {
+          "file": "internal/builder/core",
+          "lines": "0",
+          "snippet": "RegisterEnhanceBlock 只在组件包 init() 里调用",
+          "note": ""
+        }
+      ],
+      "impact": "插件的交互能力受限（不能提供自己的渐进增强脚本）。不过这与「不执行第三方代码」的安全边界一致，属于有意取舍，只需明确沟通。",
+      "rootCause": "安全与确定性边界。",
+      "remediation": {
+        "approach": "文档明确扩展点开放矩阵（哪些开放、哪些不开放、不开放的原因）。对 Client Enhancement 可以考虑受限开放：插件提供的脚本经过白名单 API 约束（只能操作自己组件的 DOM 子树），但这个成本高且难以真正约束，优先级低。",
+        "steps": [
+          "在插件文档里给出完整的扩展点开放矩阵",
+          "对每个不开放的项说明原因（确定性构建 / 安全 / 未实现）",
+          "Client Enhancement 的受限开放记入 backlog"
+        ],
+        "effortDays": 0.5,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "文档矩阵完整准确"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P7",
+      "tags": [
+        "plugin",
+        "documentation"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "OSS-020",
+      "title": "docs/09-session-handoff.md 含开发者本机绝对路径",
+      "severity": "low",
+      "type": "tech-debt",
+      "confidence": "confirmed",
+      "problem": "该文档包含 /home/sky/project/go/wp 这类本机路径。属于开发笔记，不是密钥泄露，但在开源仓库里不合适。",
+      "evidence": [
+        {
+          "file": "docs/09-session-handoff.md",
+          "lines": "0",
+          "snippet": "含 /home/sky/project/go/wp 绝对路径",
+          "note": "开发笔记"
+        }
+      ],
+      "impact": "轻微：暴露开发环境信息，也让文档对其他人无参考价值。",
+      "rootCause": "会话交接笔记被提交进仓库。",
+      "remediation": {
+        "approach": "把这类会话笔记移出仓库或改为相对路径。若确实需要保留交接记录，改为不含环境细节的形式。",
+        "steps": [
+          "评估该文档是否仍需要",
+          "保留则改相对路径并去掉环境细节",
+          "或移到 .gitignore 的本地笔记目录"
+        ],
+        "effortDays": 0.25,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "仓库内无本机绝对路径"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P7",
+      "tags": [
+        "opensource",
+        "documentation"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：docs/09-session-handoff.md 去绝对路径。"
+    },
+    {
+      "id": "OSS-021",
+      "title": "AGENTS.md 记录的数据库连接与实际不符",
+      "severity": "low",
+      "type": "inconsistency",
+      "confidence": "confirmed",
+      "problem": "AGENTS.md 写「默认连接 WSL_PostgreSQL@16.14（127.0.0.1:5432），默认库 base」。实际 DBX 里的连接是 sy-debian-postgresql@18，库名 wp，PostgreSQL 18.6。",
+      "evidence": [
+        {
+          "file": "AGENTS.md",
+          "lines": "0",
+          "snippet": "数据库章节写 WSL_PostgreSQL@16.14 与库 base",
+          "note": "实际为 sy-debian-postgresql@18 / wp / PG 18.6（本次审计实测）"
+        }
+      ],
+      "impact": "按文档连库会失败。也说明文档里的环境信息会过时，不适合写具体的连接名。",
+      "rootCause": "开发环境升级后文档未更新。",
+      "remediation": {
+        "approach": "更新为当前实际值，并改为描述性写法（不写死连接名，说明「本地 PostgreSQL，库名见 config.yaml」）。",
+        "steps": [
+          "更新 AGENTS.md 数据库章节",
+          "改为不依赖具体连接名的描述",
+          "PG 版本要求写最低版本而非具体版本"
+        ],
+        "effortDays": 0.25,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "文档与实际环境一致"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P6",
+      "tags": [
+        "documentation",
+        "drift"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：AGENTS.md 数据库连接说明去硬编码。"
+    }
+  ]
+}

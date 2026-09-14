@@ -1,0 +1,1428 @@
+{
+  "dimension": "code-quality",
+  "dimensionTitle": "体系整合、模块边界与代码质量",
+  "scope": "internal/module 全部 23 个模块的边界与分层、internal/routers/routes.go 装配、pkg 复用、错误处理与日志一致性、测试分布",
+  "verdict": "分层结构清晰（contract/service/model/dto/enums），多数 service 文件顶部有解释设计意图的长注释，装配注释质量高。问题在于有几处自己违反自己写下的约定：plugin 契约反向 import builder/core 违反不变量 7、dashboard 里大量 c.String 直出内部错误是 AGENTS.md 明文禁止的、product service 直接 import inventory 的 service 与 model。另有四类工具函数各写了三四份、6 张表零代码消费、18 个模块模块内零测试。",
+  "findings": [
+    {
+      "id": "CQ-001",
+      "title": "plugin 契约包反向 import builder/core，违反架构不变量 7",
+      "severity": "high",
+      "type": "design-flaw",
+      "confidence": "confirmed",
+      "problem": "AGENTS.md 不变量 7 明确规定契约包不得反向 import builder/core（一旦反向即成环，core 就无法持有业务契约）。plugin/contract/plugin_service.go 同时 import 了 builder/core 与 plugincomp，Assembly.Specs 用的是 *core.PluginComponentSpec。",
+      "evidence": [
+        {
+          "file": "internal/module/plugin/contract/plugin_service.go",
+          "lines": "7-8",
+          "snippet": "import internal/builder/core 与 internal/builder/plugincomp",
+          "note": "违反不变量 7"
+        },
+        {
+          "file": "internal/module/product/contract/data_source.go",
+          "lines": "3",
+          "snippet": "只 import internal/builder/source（零依赖共享形状包）",
+          "note": "正确做法的范例"
+        }
+      ],
+      "impact": "插件契约被钉死在 builder 内核上。当前没成环是因为 core 还没有反向持有 plugin 契约，但这个约束一旦需要（比如 core 要按契约查询插件能力）就会立刻成环。这是架构层的定时炸弹。",
+      "rootCause": "共享形状（PluginComponentSpec）放在了 core 里而不是零依赖的共享包里。",
+      "remediation": {
+        "approach": "把插件相关的共享形状迁到 internal/builder/plugincomp（该包应设计为零依赖，与 builder/source 同性质）或独立的 plugin/spec 包；contract 只引用这些零依赖类型。",
+        "steps": [
+          "确认 plugincomp 当前是否依赖 core（若依赖则先解耦）",
+          "把 PluginComponentSpec 等共享类型迁到 plugincomp 或新建 internal/builder/pluginspec",
+          "plugin/contract 只 import 该共享包",
+          "core 侧改为引用同一份共享类型",
+          "加一个架构测试：断言 internal/module/*/contract 不 import internal/builder/core（用 go list 或 AST 扫描）"
+        ],
+        "effortDays": 1.5,
+        "risk": "medium",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "契约包不再 import core",
+        "架构测试防止再次违反",
+        "插件编译与渲染行为不变"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P6",
+      "tags": [
+        "architecture",
+        "plugin",
+        "invariant"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "CQ-002",
+      "title": "product service 直接 import inventory 的 service 与 model，与同文件的边界声明自相矛盾",
+      "severity": "medium",
+      "type": "inconsistency",
+      "confidence": "confirmed",
+      "problem": "product_service.go 文件头声明「不反向依赖其他模块」「跨模块只走 contract」，但同文件 import 了 inventory 的 model 与 service，并持有 *inventoryservice.Service 通过 SetInventoryService 注入。inventory 虽然文档说已并入 product，但目录上仍是独立子模块。",
+      "evidence": [
+        {
+          "file": "internal/module/product/service/product_service.go",
+          "lines": "3-4",
+          "snippet": "文件头声明不反向依赖其他模块、跨模块只走 contract",
+          "note": ""
+        },
+        {
+          "file": "internal/module/product/service/product_service.go",
+          "lines": "26-27",
+          "snippet": "import product/inventory/model 与 product/inventory/service",
+          "note": "与上面声明矛盾"
+        },
+        {
+          "file": "internal/module/product/service/product_service.go",
+          "lines": "52-55,86-88",
+          "snippet": "持有 *inventoryservice.Service 并经 SetInventoryService 注入",
+          "note": "编译期强耦合"
+        }
+      ],
+      "impact": "边界规则的可信度受损（有明文规则但代码里有例外且没有豁免声明）。实际影响是 product 的单测必须带 inventory 实现。",
+      "rootCause": "issue #32 把 inventory 并入 product 时选择了同包直调的便利，但目录结构与文件注释都没有跟着调整。",
+      "remediation": {
+        "approach": "二选一并明确写下来：要么把 inventory 物理合并进 product/service 同包（与 admin 六领域合并的先例一致），要么保持子模块但经 productcontract 的窄端口调用。推荐前者（既然已经决定合并，就合并到底）。",
+        "steps": [
+          "确认 inventory 是否还有独立的对外契约消费方（order 用 StockOperator，cart 用 availability 端口）",
+          "若对外只经契约，则内部实现可以合并同包",
+          "合并后更新文件头注释与 AGENTS.md 模块表",
+          "或者：保持目录不变，但在 AGENTS.md 里增加明文豁免（对照 admin 豁免条款的写法）"
+        ],
+        "effortDays": 1.5,
+        "risk": "medium",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "注释与实现一致",
+        "对外契约不变"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P6",
+      "tags": [
+        "architecture",
+        "product",
+        "inventory"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "CQ-003",
+      "title": "cart 与 order 之间跨模块 import dto，结构变更会联动",
+      "severity": "medium",
+      "type": "tech-debt",
+      "confidence": "confirmed",
+      "problem": "cart 的结算、归因、支付回调三个文件都 import order/dto。约定允许不可变 DTO 跨模块传递，但这让 cart 直接依赖 order 的请求结构形状。",
+      "evidence": [
+        {
+          "file": "internal/module/cart/service/cart_checkout.go",
+          "lines": "28",
+          "snippet": "import order/dto",
+          "note": ""
+        },
+        {
+          "file": "internal/module/cart/service/cart_attribution.go",
+          "lines": "23",
+          "snippet": "import order/dto",
+          "note": ""
+        },
+        {
+          "file": "internal/module/cart/service/cart_callback.go",
+          "lines": "22",
+          "snippet": "import order/dto",
+          "note": ""
+        }
+      ],
+      "impact": "order 改建单入参会直接编译错 cart。这是可接受的耦合（结算本来就要调建单），但入参形状应该由契约定义而不是由被调方的 dto 包定义。",
+      "rootCause": "契约只定义了方法签名，入参类型借用了实现方的 dto。",
+      "remediation": {
+        "approach": "把建单入参类型移到 order/contract（或在契约包里定义等价的入参结构），dto 包只服务 HTTP 层的绑定。",
+        "steps": [
+          "order/contract 定义 CreateOrderInput 等类型",
+          "order 的 service 方法签名改用契约类型，dto 到契约的转换在 inbound/http 完成",
+          "cart 改 import 契约包",
+          "同样处理 order → inventory/dto 与 order → user/dto（见 CQ-004）"
+        ],
+        "effortDays": 1.5,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "cart 不再 import order/dto",
+        "结算链路测试全绿"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P6",
+      "tags": [
+        "architecture",
+        "cart",
+        "order"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "CQ-004",
+      "title": "order service 直接构造 inventory 与 user 的 dto，绕过契约层",
+      "severity": "medium",
+      "type": "tech-debt",
+      "confidence": "confirmed",
+      "problem": "order 的建单与状态流转 import inventory/dto 与 user/dto，直接拼 ChangeStockReq 这类结构。而 order 明明已经定义了 StockOperator 契约。",
+      "evidence": [
+        {
+          "file": "internal/module/order/service/order_create.go",
+          "lines": "30-31",
+          "snippet": "import inventory/dto 与 user/dto",
+          "note": ""
+        },
+        {
+          "file": "internal/module/order/service/order_status.go",
+          "lines": "20",
+          "snippet": "import inventory/dto 构造 ChangeStockReq",
+          "note": "绕过契约直接拼被调方 dto"
+        }
+      ],
+      "impact": "order 感知了 inventory 的请求结构细节。库存模块改 dto 会编译错订单模块，且订单模块的测试要构造库存 dto。",
+      "rootCause": "StockOperator 契约的方法签名用了 inventory 的 dto 类型。",
+      "remediation": {
+        "approach": "StockOperator 契约自带入参类型（在 order 侧定义或在一个共享的库存契约包里定义），order 不 import inventory/dto。",
+        "steps": [
+          "StockOperator 的方法签名改用契约自有类型",
+          "inventory 侧实现该契约时做类型转换",
+          "user/dto 同样处理（访客开号的入参走 usercontract）"
+        ],
+        "effortDays": 1,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "order 不再 import 其它模块的 dto",
+        "库存扣减与归还行为不变"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P6",
+      "tags": [
+        "architecture",
+        "order",
+        "inventory"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "CQ-005",
+      "title": "page 与 media / navigation 之间跨模块 import dto",
+      "severity": "low",
+      "type": "tech-debt",
+      "confidence": "confirmed",
+      "problem": "page_delete.go import media/dto 处理媒体引用同步，page_navigation.go import navigation/dto 获取构建期菜单。",
+      "evidence": [
+        {
+          "file": "internal/module/page/service/page_delete.go",
+          "lines": "9,63-67",
+          "snippet": "import media/dto 构造 refs 同步入参",
+          "note": ""
+        },
+        {
+          "file": "internal/module/page/service/page_navigation.go",
+          "lines": "15",
+          "snippet": "import navigation/dto",
+          "note": ""
+        }
+      ],
+      "impact": "同 CQ-003 与 CQ-004，属同一类问题的其余实例。",
+      "rootCause": "同上。",
+      "remediation": {
+        "approach": "随 CQ-003 与 CQ-004 一并处理：契约包自带入参与返回类型。",
+        "steps": [
+          "mediacontract 定义 SyncReferences 的入参类型",
+          "navigationcontract 定义构建期菜单的返回类型",
+          "page 改 import 契约包"
+        ],
+        "effortDays": 0.75,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "page 不再 import 其它模块的 dto"
+      ],
+      "dependsOn": [
+        "CQ-003"
+      ],
+      "blocks": [],
+      "phase": "P6",
+      "tags": [
+        "architecture",
+        "page"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "CQ-006",
+      "title": "user service 直接 import mail/dto 构造发信请求",
+      "severity": "low",
+      "type": "tech-debt",
+      "confidence": "confirmed",
+      "problem": "注册、密码重置、访客开号三个文件 import mail/dto，尽管已有 MailSender 契约。",
+      "evidence": [
+        {
+          "file": "internal/module/user/service/user_register.go",
+          "lines": "27",
+          "snippet": "import mail/dto",
+          "note": ""
+        },
+        {
+          "file": "internal/module/user/service/user_password_reset.go",
+          "lines": "26",
+          "snippet": "import mail/dto",
+          "note": ""
+        },
+        {
+          "file": "internal/module/user/service/user_guest_account.go",
+          "lines": "21",
+          "snippet": "import mail/dto",
+          "note": ""
+        }
+      ],
+      "impact": "同上。",
+      "rootCause": "同上。",
+      "remediation": {
+        "approach": "MailSender 契约自带 SendTemplateInput 类型。",
+        "steps": [
+          "契约定义入参类型",
+          "mail 侧实现时转换",
+          "user 改 import 契约"
+        ],
+        "effortDays": 0.5,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "user 不再 import mail/dto",
+        "发信链路测试全绿"
+      ],
+      "dependsOn": [
+        "CQ-003"
+      ],
+      "blocks": [],
+      "phase": "P6",
+      "tags": [
+        "architecture",
+        "user",
+        "mail"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "CQ-007",
+      "title": "dashboard 膨胀为 1.8 万行的上帝模块，多个 handle 超过 700 行",
+      "severity": "high",
+      "type": "tech-debt",
+      "confidence": "confirmed",
+      "problem": "dashboard 模块 17994 行，是最大的模块。内含 customer_handle(771)、admin_handle(715)、order_handle(708)、return_handle(699)、coupon_handle(650)、product_translation_handle(592)、page_translations_handle(573)、dashboard_handle(564)、theme_handle(554) 等多个大文件，混合了 SSR 页面渲染、HTMX 片段、权限判断与多个模块的契约调用。",
+      "evidence": [
+        {
+          "file": "internal/module/dashboard",
+          "lines": "0",
+          "snippet": "模块总计 17994 行 Go 代码",
+          "note": "全仓最大模块"
+        },
+        {
+          "file": "internal/module/dashboard/inbound/http/dashboard_router.go",
+          "lines": "33-413",
+          "snippet": "SetupDashboardRoutes 单函数 381 行",
+          "note": ""
+        }
+      ],
+      "impact": "新贡献者最容易迷路的区域。任何后台页面改动都要在这个大目录里定位，代码审查范围难以收窄。也让「后台页面」这个横切关注点变成了一个事实上的巨型模块。",
+      "rootCause": "所有后台页面按「后台」这个技术维度聚在一起，而不是按业务域拆分。",
+      "remediation": {
+        "approach": "按业务域拆分 dashboard 的子包（不是拆成新模块，而是在 dashboard 内分域），路由注册也按域拆成多个函数。这是纯机械重构，风险低但收益明显。",
+        "steps": [
+          "在 dashboard/inbound/http 下按域建子目录：commerce（商品/订单/优惠券/退货/客户）、content（文章/页面/块/主题）、infra（管理员/菜单/权限/插件/邮件）、workbench（编辑器相关）",
+          "SetupDashboardRoutes 拆成每域一个注册函数，主函数只做调用",
+          "共享的辅助函数（withI18n、错误处理、分页解析）提到 dashboard/inbound/http 根",
+          "一次一域迁移，每域迁完跑一遍相关 feature 测试"
+        ],
+        "effortDays": 3,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "所有后台页面路由不变、行为不变",
+        "单个文件行数下降到 400 以内"
+      ],
+      "dependsOn": [],
+      "blocks": [
+        "CQ-009"
+      ],
+      "phase": "P6",
+      "tags": [
+        "dashboard",
+        "refactor",
+        "maintainability"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "CQ-008",
+      "title": "SetupRoutes 单函数 437 行，装配逻辑集中在一个巨型函数里",
+      "severity": "medium",
+      "type": "tech-debt",
+      "confidence": "confirmed",
+      "problem": "internal/routers/routes.go 共 528 行，SetupRoutes 占 71 到 507 行。里面混合了组件装配、依赖注入、端口检查、路由分组、中间件挂载。注释质量很高（依赖顺序写得很清楚），但函数太长。",
+      "evidence": [
+        {
+          "file": "internal/routers/routes.go",
+          "lines": "71-507",
+          "snippet": "SetupRoutes 单函数 437 行",
+          "note": ""
+        }
+      ],
+      "impact": "改一处装配要在 400 多行里定位；合并冲突概率高；也难以为装配写针对性的测试。",
+      "rootCause": "装配天然是线性的，随模块增加而线性增长，没有及时拆分。",
+      "remediation": {
+        "approach": "按四段拆分：基础组件装配、业务服务装配（含端口注入与 fail-fast 检查）、访问面路由、控制面路由。每段一个函数，主函数只做顺序调用与依赖传递。",
+        "steps": [
+          "定义一个 assembly 结构体承载所有已构造的服务，避免拆分后参数爆炸",
+          "拆出 buildServices（构造 + 注入 + fail-fast 检查）",
+          "拆出 mountPublicRoutes 与 mountAdminRoutes",
+          "保留现有注释（它们是这个文件最有价值的部分）",
+          "加一个装配测试：构造完整 assembly 并断言所有必需端口非 nil（把散落的 panic 检查集中成一个可测的断言）"
+        ],
+        "effortDays": 2,
+        "risk": "medium",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "所有路由与中间件挂载不变（用路由清单快照测试对比）",
+        "装配测试覆盖必需端口"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P6",
+      "tags": [
+        "assembly",
+        "refactor"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "CQ-009",
+      "title": "dashboard 里大量 c.String 直出内部错误，违反 AGENTS.md 明文规定",
+      "severity": "high",
+      "type": "security",
+      "confidence": "confirmed",
+      "problem": "AGENTS.md 明文规定 dashboard 页面 handler 禁止 c.String(500, err.Error()) 直出内部错误，必须走 pkg/response 加 enums。但 product_handle.go 有至少 5 处 c.String(500, err.Error())，还有大量 c.Redirect 把 err.Error() 拼进 URL 查询参数。product_bundle_handle、product_detail_template_handle、admin_handle 同样。该模块统计约 29 处 c.String 与 c.Redirect 混用。",
+      "evidence": [
+        {
+          "file": "internal/module/dashboard/inbound/http/product_handle.go",
+          "lines": "67,79,84,91,97",
+          "snippet": "c.String(http.StatusInternalServerError, err.Error())",
+          "note": "内部错误直出浏览器"
+        },
+        {
+          "file": "internal/module/dashboard/inbound/http/product_handle.go",
+          "lines": "285,307,328",
+          "snippet": "redirect URL 带 err.Error()",
+          "note": "错误细节进 URL"
+        },
+        {
+          "file": "internal/module/dashboard/inbound/http/product_bundle_handle.go",
+          "lines": "29,40,56,112",
+          "snippet": "同类问题",
+          "note": ""
+        },
+        {
+          "file": "internal/module/dashboard/inbound/http/product_detail_template_handle.go",
+          "lines": "78,102,109",
+          "snippet": "同类问题",
+          "note": ""
+        },
+        {
+          "file": "internal/module/dashboard/inbound/http/admin_handle.go",
+          "lines": "63",
+          "snippet": "c.String(http.StatusBadRequest, err.Error())",
+          "note": ""
+        }
+      ],
+      "impact": "两重问题。一是安全：数据库错误消息、内部路径、SQL 片段可能直接呈现给浏览器（信息泄露），拼进 URL 还会进浏览器历史与访问日志、可能被 Referer 带到第三方。二是体验：用户看到的是裸的技术错误而不是可理解的提示。",
+      "rootCause": "有规则但没有强制手段，写代码时图快。",
+      "remediation": {
+        "approach": "提供一个统一的页面错误出口函数并把全部违规点改过来，同时加一个检查脚本或测试防止再犯。",
+        "steps": [
+          "在 dashboard/inbound/http 提供 pageError(c, err, fallbackURL) 与 pageErrorRedirect(c, err, url)：内部错误记日志、对外给 enums 里的通用提示，只有明确的业务错误（enums 里的）才展示具体消息",
+          "逐个替换 29 处违规点",
+          "错误提示通过 flash 机制传递（session 或短 TTL 的一次性 key），不进 URL",
+          "加检查脚本：grep dashboard 目录下的 c.String 与 err.Error() 组合，有命中即失败",
+          "CI 接入该检查"
+        ],
+        "effortDays": 2,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "触发内部错误时页面显示通用提示，详情只在日志里",
+        "URL 里不再出现错误消息",
+        "检查脚本在 CI 里生效"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P6",
+      "tags": [
+        "dashboard",
+        "security",
+        "error-handling",
+        "information-disclosure"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "CQ-010",
+      "title": "多个模块的 API 直接把 err.Error() 当作对外消息",
+      "severity": "medium",
+      "type": "security",
+      "confidence": "confirmed",
+      "problem": "presentation、inventory、plugin 的 handler 大量用 response.ErrorWithMessage(c, ..., err.Error()) 或类似写法，把内部错误原文返回给客户端。",
+      "evidence": [
+        {
+          "file": "internal/module/presentation/inbound/http/presentation_handle.go",
+          "lines": "32,47,62",
+          "snippet": "response.ErrorWithMessage(c, ..., err.Error())",
+          "note": ""
+        },
+        {
+          "file": "internal/module/product/inventory/inbound/http/inventory_handle.go",
+          "lines": "0",
+          "snippet": "大量 err.Error() 作为 message",
+          "note": ""
+        },
+        {
+          "file": "internal/module/plugin/inbound/http/plugin_handle.go",
+          "lines": "42,52,68,82",
+          "snippet": "500/400 直出 err",
+          "note": ""
+        }
+      ],
+      "impact": "同 CQ-009 的信息泄露风险，只是发生在 JSON API 上。这些接口在三层认证链后面，风险等级低于公开面，但仍会把数据库结构线索泄露给已登录的低权限用户。",
+      "rootCause": "错误分层（业务错误 vs 内部错误）没有落实到每个 handler。",
+      "remediation": {
+        "approach": "统一错误处理：service 返回的错误区分「业务错误（可展示）」与「内部错误（不可展示）」，response 层按类型决定是否透出原文。",
+        "steps": [
+          "定义业务错误类型（可以是一个 wrapper 或 sentinel error 集合）",
+          "response 层增加 ErrorAuto(c, err)：业务错误透出消息，其它错误记日志并返回通用提示",
+          "逐模块替换（presentation / inventory / plugin 优先）",
+          "enums 里的错误常量天然属于业务错误"
+        ],
+        "effortDays": 2,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "数据库错误不再出现在 API 响应里",
+        "业务错误消息仍正常展示"
+      ],
+      "dependsOn": [
+        "CQ-009"
+      ],
+      "blocks": [],
+      "phase": "P6",
+      "tags": [
+        "error-handling",
+        "security",
+        "api"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "CQ-011",
+      "title": "LIKE 通配符转义有四份实现",
+      "severity": "medium",
+      "type": "tech-debt",
+      "confidence": "confirmed",
+      "problem": "admin、content、product、media 各写了一份 LIKE 通配符转义（EscapeLike / escapeLikePattern / escapeLikeKeyword / 内联实现）。",
+      "evidence": [
+        {
+          "file": "internal/module/admin/model/admin_model.go",
+          "lines": "158-160",
+          "snippet": "EscapeLike",
+          "note": ""
+        },
+        {
+          "file": "internal/module/content/model/content_model.go",
+          "lines": "132-136",
+          "snippet": "escapeLikePattern",
+          "note": ""
+        },
+        {
+          "file": "internal/module/product/model/product_search_model.go",
+          "lines": "57-60",
+          "snippet": "escapeLikeKeyword",
+          "note": ""
+        },
+        {
+          "file": "internal/module/media/model/media_model.go",
+          "lines": "177-179",
+          "snippet": "内联转义",
+          "note": ""
+        }
+      ],
+      "impact": "四份实现是否完全一致需要逐个核对（转义字符集、ESCAPE 子句用法）。任何一份有疏漏就是一个搜索行为异常或注入面。修一处漏三处。",
+      "rootCause": "各模块独立实现了同一个小工具。",
+      "remediation": {
+        "approach": "收敛到 pkg（建议 pkg/database/like.go），四处改为调用，并补一个覆盖各种通配符组合的测试。",
+        "steps": [
+          "先逐个对比四份实现，确认转义字符集是否一致（如果不一致，说明已经有 bug）",
+          "在 pkg/database 提供 EscapeLike，配套说明 ESCAPE 子句的用法",
+          "四处替换",
+          "补测试：百分号、下划线、反斜杠、组合、空串"
+        ],
+        "effortDays": 0.75,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "搜索行为不变",
+        "特殊字符搜索正确",
+        "只有一份实现"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P6",
+      "tags": [
+        "refactor",
+        "duplication",
+        "security"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：pkg/database/like.go EscapeLikePattern 统一四处 LIKE 转义。"
+    },
+    {
+      "id": "CQ-012",
+      "title": "路径归一化有六处实现",
+      "severity": "medium",
+      "type": "tech-debt",
+      "confidence": "confirmed",
+      "problem": "pipeline.NormalizeURL、publication 的 normalizePath、analytics 的 normalizePath、dashboard 的导航菜单归一化、nav 组件的归一化、page_draft 的 normalizePagePath 共六处。",
+      "evidence": [
+        {
+          "file": "internal/pipeline/url.go",
+          "lines": "39",
+          "snippet": "NormalizeURL",
+          "note": "应作为对外 URL 的唯一口径"
+        },
+        {
+          "file": "internal/module/publication/service/publication_control.go",
+          "lines": "489-511",
+          "snippet": "normalizePath",
+          "note": ""
+        },
+        {
+          "file": "internal/module/analytics/service/analytics_collect.go",
+          "lines": "81-86",
+          "snippet": "normalizePath",
+          "note": "语义不同（打点路径截断），可保留但应改名"
+        },
+        {
+          "file": "internal/module/dashboard/inbound/http/nav_menu.go",
+          "lines": "173-174",
+          "snippet": "内联归一化",
+          "note": ""
+        },
+        {
+          "file": "internal/builder/components/nav/jet.go",
+          "lines": "91-92",
+          "snippet": "内联归一化",
+          "note": ""
+        },
+        {
+          "file": "internal/module/page/service/page_draft.go",
+          "lines": "296",
+          "snippet": "normalizePagePath",
+          "note": ""
+        }
+      ],
+      "impact": "路径归一化不一致会直接导致路由占用判断错误、重复内容、链接失效。这是六份实现里风险最高的一类重复（URL 是访问面的身份）。",
+      "rootCause": "每个需要处理路径的地方都自己实现了一遍。",
+      "remediation": {
+        "approach": "pipeline.NormalizeURL 作为对外 URL 的唯一口径，其余五处改为调用。analytics 的那个语义不同（打点路径清洗与截断），保留但改名为 sanitizeTrackPath 以免混淆。",
+        "steps": [
+          "先逐个对比六份实现的行为差异（尾斜杠、大小写、多重斜杠、查询串、锚点）",
+          "差异清单本身就是缺陷清单（说明当前不同路径下的归一化结果不同）",
+          "统一到 NormalizeURL，必要时给它加参数覆盖各处的细微需求",
+          "analytics 那份改名并注明语义差异",
+          "补测试：各种畸形路径的归一化结果"
+        ],
+        "effortDays": 1.5,
+        "risk": "medium",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "路由占用判断、菜单链接、页面路径校验行为一致",
+        "既有路径数据不受影响"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P6",
+      "tags": [
+        "refactor",
+        "duplication",
+        "url"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "CQ-013",
+      "title": "金额格式化有四份实现",
+      "severity": "medium",
+      "type": "tech-debt",
+      "confidence": "confirmed",
+      "problem": "masterdata 契约的 FormatPrice、product entity_source 的 formatPrice、runtimefragment live_price 的 centsToYuanText、dashboard 里多处直接 strconv.FormatFloat。",
+      "evidence": [
+        {
+          "file": "internal/module/masterdata/contract/masterdata_service.go",
+          "lines": "87-97",
+          "snippet": "FormatPrice",
+          "note": "审计快照口径"
+        },
+        {
+          "file": "internal/module/product/service/entity_source.go",
+          "lines": "785-787",
+          "snippet": "formatPrice",
+          "note": "构建期展示口径"
+        },
+        {
+          "file": "internal/module/runtimefragment/live_price.go",
+          "lines": "221-226",
+          "snippet": "centsToYuanText",
+          "note": "片段展示口径"
+        }
+      ],
+      "impact": "同一个价格在不同地方可能显示为 99、99.0、99.00。更严重的是 masterdata 的审计快照口径若与业务口径不一致，会产生「值没变但审计记了一条」的假记录（AGENTS.md 自己提到过这个风险）。",
+      "rootCause": "金额格式化需求出现在多个层次（审计、构建期、片段、后台），各自实现。",
+      "remediation": {
+        "approach": "建立 pkg/money：提供分与元的换算、展示格式化（可指定小数位）、审计快照格式化三个明确的函数。所有地方调用它。",
+        "steps": [
+          "定义 pkg/money 的 API：CentsToYuanString、YuanToCents（带舍入策略）、FormatForAudit",
+          "逐处替换，特别注意 masterdata 与业务侧必须用同一个格式化函数",
+          "补测试：0、负数、大额、精度边界",
+          "顺带核查 float64 参与金额运算的地方（见事务一致性维度）"
+        ],
+        "effortDays": 1,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "同一金额在各处显示一致",
+        "审计不再产生同值假记录"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P6",
+      "tags": [
+        "refactor",
+        "duplication",
+        "money"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "CQ-014",
+      "title": "分页参数解析与归一化有四份实现",
+      "severity": "low",
+      "type": "tech-debt",
+      "confidence": "confirmed",
+      "problem": "product、inventory、masterdata、user 各自实现了页码与页大小的归一化（默认值、上限、offset 计算）。",
+      "evidence": [
+        {
+          "file": "internal/module/product/service/product_service.go",
+          "lines": "34-35,494-504",
+          "snippet": "分页归一化",
+          "note": ""
+        },
+        {
+          "file": "internal/module/product/inventory/service/inventory_service.go",
+          "lines": "31-33,108-118",
+          "snippet": "分页归一化",
+          "note": ""
+        },
+        {
+          "file": "internal/module/masterdata/service/masterdata_service.go",
+          "lines": "30-32,127-139",
+          "snippet": "分页归一化",
+          "note": ""
+        },
+        {
+          "file": "internal/module/user/service/user_account.go",
+          "lines": "30,201",
+          "snippet": "分页归一化",
+          "note": ""
+        }
+      ],
+      "impact": "各模块的分页上限与默认值可能不同（用户会发现有的列表最多 100 条有的 50 条）。也是重复代码。",
+      "rootCause": "小工具各自实现。",
+      "remediation": {
+        "approach": "pkg/utils 提供 Paging.Normalize(page, size, defaultSize, maxSize)，四处替换。",
+        "steps": [
+          "定义统一 API 与默认值策略",
+          "四处替换",
+          "文档说明各列表的上限策略"
+        ],
+        "effortDays": 0.5,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "各列表分页行为一致"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P6",
+      "tags": [
+        "refactor",
+        "duplication"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：pkg/utils/paging Normalize 四处复用。"
+    },
+    {
+      "id": "CQ-015",
+      "title": "六张表已建但零代码消费",
+      "severity": "medium",
+      "type": "tech-debt",
+      "confidence": "confirmed",
+      "problem": "user_app_passwords、user_meta、user_oauth_bindings（AGENTS.md 已承认）、build_jobs、publication_events、presentation_artifact_objects 六张表在迁移里创建但代码里完全没有引用。其中后三张在 init_builder_schema.sql 里，而迁移 069 的注释称它们已废弃却仍保留 CREATE。",
+      "evidence": [
+        {
+          "file": "public/migrations/123_user.sql",
+          "lines": "136-192",
+          "snippet": "user_app_passwords / user_meta / user_oauth_bindings 三张表",
+          "note": "AGENTS.md 已注明无消费方"
+        },
+        {
+          "file": "public/migrations/init_builder_schema.sql",
+          "lines": "285,308,327",
+          "snippet": "presentation_artifact_objects / publication_events / build_jobs",
+          "note": ""
+        },
+        {
+          "file": "public/migrations/069_drop_obsolete_design_tables.sql",
+          "lines": "13",
+          "snippet": "注释称 build_jobs 等 obsolete，但 init 仍 CREATE",
+          "note": "自相矛盾"
+        }
+      ],
+      "impact": "schema 与代码认知不一致：新贡献者看到 build_jobs 会以为有构建队列（实际没有，见 PERF-001），看到 user_oauth_bindings 会以为支持第三方登录。文档可信度受损。",
+      "rootCause": "预留表与已废弃表混在一起，都没有清理也没有标注。",
+      "remediation": {
+        "approach": "逐张判断：确定不做的删 DDL；确定要做的（build_jobs 与 PERF-001 的队列相关）保留但在迁移里加 COMMENT 说明状态与计划；user 那三张若近期不做也删（需要时重建成本很低）。",
+        "steps": [
+          "build_jobs：PERF-001 的队列改造会用到（或明确用 asynq 不用这张表，那就删）",
+          "publication_events / presentation_artifact_objects：确认废弃后写迁移 DROP",
+          "user 三张表：确认 OAuth 与应用专用密码是否在路线图内，不在就 DROP",
+          "保留的表加 COMMENT 说明「预留，消费方见 issue #x」",
+          "更新 AGENTS.md 的说明"
+        ],
+        "effortDays": 1,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": true
+      },
+      "verification": [
+        "库里的表与代码认知一致",
+        "保留的预留表有明确注释"
+      ],
+      "dependsOn": [
+        "PERF-001"
+      ],
+      "blocks": [],
+      "phase": "P6",
+      "tags": [
+        "schema",
+        "dead-code",
+        "documentation"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "CQ-016",
+      "title": "取消订单后库存归还失败时对调用方仍返回成功",
+      "severity": "high",
+      "type": "correctness",
+      "confidence": "confirmed",
+      "problem": "取消订单时若 ChangeStock 归还库存失败，代码写一条备注日志然后 return nil，不把错误返回给调用方。而且写备注这一步的错误也被 _ = 忽略。",
+      "evidence": [
+        {
+          "file": "internal/module/order/service/order_status.go",
+          "lines": "198-220",
+          "snippet": "库存归还失败时写备注并 return nil（不返回 rerr）；写备注的错误用 _ = 忽略",
+          "note": ""
+        }
+      ],
+      "impact": "订单变成已取消但库存没加回来，调用方与操作人都不知道。库存数据静默失准，只能靠盘点发现。这类问题在电商里直接导致超卖或少卖。",
+      "rootCause": "「订单状态已经改了，不能因为库存失败而回滚」这个判断是对的，但由此得出「返回成功」是错的。",
+      "remediation": {
+        "approach": "返回带警告的结果（订单已取消 + 库存归还失败需人工处理），并把这类情况写入一个可查询的待处理清单，同时触发告警。",
+        "steps": [
+          "返回结构增加 Warnings 字段，前端显式展示",
+          "库存归还失败写入待人工处理记录（可复用 order_status_logs 但要加可筛选的标记，或新建一张待处理表）",
+          "写备注失败的错误至少要记日志，不能 _ = 掉",
+          "后台增加「库存待人工处理」清单入口",
+          "接入告警（见 OPS 维度）"
+        ],
+        "effortDays": 1.5,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": true
+      },
+      "verification": [
+        "模拟库存归还失败时接口返回警告",
+        "待处理清单里能看到这一条"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P0",
+      "tags": [
+        "order",
+        "inventory",
+        "error-handling",
+        "correctness"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：CancelOrder 库存归还失败返回 Warnings + 流转留痕，不再静默 nil。"
+    },
+    {
+      "id": "CQ-017",
+      "title": "user 登出与踢设备时 revoke 失败被完全忽略",
+      "severity": "medium",
+      "type": "security",
+      "confidence": "confirmed",
+      "problem": "user_session.go 里两处 _, _ = s.sm.RevokeByTokenHash，撤销会话失败时静默忽略。",
+      "evidence": [
+        {
+          "file": "internal/module/user/service/user_session.go",
+          "lines": "231,261",
+          "snippet": "_, _ = s.sm.RevokeByTokenHash(...)",
+          "note": "撤销失败静默"
+        }
+      ],
+      "impact": "用户点了退出或踢出设备，界面显示成功，但会话实际仍有效。这是安全相关的静默失败：用户以为自己登出了。",
+      "rootCause": "把撤销当成尽力而为的清理操作。",
+      "remediation": {
+        "approach": "撤销失败必须返回错误（用户需要知道退出没成功以便重试）。Redis 侧的删除与台账的 revoke 至少要有一个成功，且要明确哪个是权威。",
+        "steps": [
+          "明确权威：Redis 会话删除是生效的关键（台账只是记录）",
+          "Redis 删除失败必须返回错误",
+          "台账 revoke 失败记日志但可不阻塞（会话已失效）",
+          "补测试：模拟 Redis 失败时登出返回错误"
+        ],
+        "effortDays": 0.75,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "Redis 不可用时登出返回明确错误",
+        "会话确实失效"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P0",
+      "tags": [
+        "user",
+        "security",
+        "session",
+        "error-handling"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：RevokeByTokenHash 失败记 Error 日志，不再 _, _ 忽略。"
+    },
+    {
+      "id": "CQ-018",
+      "title": "page 删除时媒体引用清理失败只 Warn，可能导致附件删除保护误判",
+      "severity": "medium",
+      "type": "correctness",
+      "confidence": "confirmed",
+      "problem": "删除页面时同步媒体引用失败只记 Warn 继续走。媒体模块靠引用计数拦截「删除仍被引用的附件」，引用没清理干净会让已删除页面的引用永久残留。",
+      "evidence": [
+        {
+          "file": "internal/module/page/service/page_delete.go",
+          "lines": "67-68",
+          "snippet": "媒体 refs 清理失败只 Warn",
+          "note": ""
+        }
+      ],
+      "impact": "附件永远删不掉（系统认为还被引用），媒体库越积越多且用户无法清理。表现为「明明没在用却提示被引用」，排查困难。",
+      "rootCause": "引用同步被当成非关键操作。",
+      "remediation": {
+        "approach": "引用清理与页面删除放进同一事务（都是本库写操作），或提供一个引用对账任务定期修正。推荐前者，后者作为兜底。",
+        "steps": [
+          "媒体引用同步改为接受外部事务句柄",
+          "页面删除与引用清理在同一事务",
+          "另外提供一个对账命令：扫 media_refs 里指向已删除页面的记录并清理",
+          "对账结果在后台可见"
+        ],
+        "effortDays": 1,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "删页面后媒体引用同步清理",
+        "对账能修正历史残留"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P1",
+      "tags": [
+        "page",
+        "media",
+        "transaction"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：删页 SyncReferences 失败中断删除，避免引用残留。"
+    },
+    {
+      "id": "CQ-019",
+      "title": "10 处静默降级窗口：端口未注入时功能静默失效而非启动失败",
+      "severity": "high",
+      "type": "design-flaw",
+      "confidence": "confirmed",
+      "problem": "系统里有两类依赖注入处理方式并存：routes.go 里对 masterdata、availability、bundle、搜索等端口是 fail-fast panic（正确），但另有约 10 处是「未注入则静默降级」。这些降级里有一部分是有意的（cart 的库存端口可缺、搜索端口未接入时给提示），另一部分是缺陷（block stale 传播、block 引用检查、product 库存投影与建库存行）。",
+      "evidence": [
+        {
+          "file": "internal/module/block/service/block_service.go",
+          "lines": "55-57,75-77",
+          "snippet": "referenced/propagate 为 nil 时静默降级",
+          "note": "见 VIS-004，是缺陷"
+        },
+        {
+          "file": "internal/module/product/service/product_service.go",
+          "lines": "46-47,54-55",
+          "snippet": "inv 未注入则库存投影为 0；invSvc 未注入则不建库存行",
+          "note": "误装配会卖无库存 SKU"
+        },
+        {
+          "file": "internal/module/product/service/product_changes.go",
+          "lines": "89-91",
+          "snippet": "masterdata 未注入则跳过审计",
+          "note": "生产已 panic 注入，但 setter 仍允许 nil"
+        },
+        {
+          "file": "internal/module/page/service/page_delete.go",
+          "lines": "75-78",
+          "snippet": "publication 为 nil 则跳过 deactivate",
+          "note": "访问面可能残留"
+        },
+        {
+          "file": "internal/routers/routes.go",
+          "lines": "440-441,453-454",
+          "snippet": "默认主题补齐与 registry 比对失败只记日志",
+          "note": "启动不失败"
+        },
+        {
+          "file": "internal/module/runtimefragment/search_results.go",
+          "lines": "113-115",
+          "snippet": "检索端口皆 nil 时提示「搜索功能暂未接入」",
+          "note": "这个是有意的合理降级"
+        }
+      ],
+      "impact": "装配漏注入不在启动时暴露，而在运行时表现为功能静默失效（改块不更新页面、商品可超卖、审计丢记录、访问面残留旧路由）。排查时几乎不会想到装配问题。区分「有意降级」与「缺陷降级」需要读注释，新人容易照抄错的那种。",
+      "rootCause": "可选依赖与必需依赖用了同一种注入写法（setter + nil 检查），没有类型层面的区分。",
+      "remediation": {
+        "approach": "把必需依赖改为构造函数参数（nil 即 panic），可选依赖保留 setter 但在类型或命名上标明可选（如 SetOptionalXxx），并集中做一次装配完整性断言。",
+        "steps": [
+          "逐条判定 10 处哪些是必需、哪些是可选（block 两处、product 两处、page delete 一处判为必需）",
+          "必需依赖改为构造参数或在装配末尾统一断言非 nil",
+          "可选依赖的 setter 改名加 Optional 前缀并在注释写明降级行为",
+          "写一个装配测试：构造完整 assembly 后断言所有必需端口非 nil（配合 CQ-008 的拆分）",
+          "routes.go 里的「只记日志」两处评估是否该改 fail-fast（默认主题缺失确实不该阻止启动，registry 比对失败可以只记日志但要显眼）"
+        ],
+        "effortDays": 2,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "故意漏注入任一必需端口时启动即失败并指明缺哪个",
+        "可选端口缺失时按文档降级"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P6",
+      "tags": [
+        "assembly",
+        "fail-fast",
+        "reliability"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "CQ-020",
+      "title": "18 个模块模块内零测试，测试几乎全在 public/test",
+      "severity": "medium",
+      "type": "tech-debt",
+      "confidence": "confirmed",
+      "problem": "238 个测试文件在 public/test，模块内只有 analytics(1)、cart(1)、dashboard(9)、mail(1)、plugin(3)、product(1)、runtimefragment(8)、user(1)。admin、artifact、block、blueprint、common、content、contenttemplate、masterdata、media、navigation、order、page、presentation、project、publication 等 18 个模块模块内零测试。common 在 public/test 里也是 0，blueprint 与 contenttemplate 各只有 1 个单测。",
+      "evidence": [
+        {
+          "file": "public/test",
+          "lines": "0",
+          "snippet": "238 个测试文件集中在此",
+          "note": ""
+        },
+        {
+          "file": "internal/module",
+          "lines": "0",
+          "snippet": "18 个模块内无 _test.go",
+          "note": ""
+        }
+      ],
+      "impact": "模块内部的纯逻辑（状态机判定、金额计算、校验规则）没有就近的快速测试，改动要跑集成测试才知道对不对。blueprint 与 contenttemplate 这两个关键模块几乎裸奔，而 contenttemplate 正是 EDT-001 要大改的地方。",
+      "rootCause": "测试策略选择了以 feature 链路测试为主，单元测试作为补充，但补充部分没有做够。",
+      "remediation": {
+        "approach": "不追求覆盖率数字，只针对「纯逻辑且易错」的部分补就近单测：状态机流转表、金额计算、校验规则、AST 操作、路径归一化。优先给即将改动的模块补（contenttemplate、presentation、page 的装配）。",
+        "steps": [
+          "先给 P2 与 P3 要改的模块补测试（改之前补，作为重构的安全网）",
+          "order 的状态机流转表补表驱动测试",
+          "金额计算补边界测试（配合 CQ-013）",
+          "blueprint 与 contenttemplate 的 AST 操作补测试",
+          "不要求所有模块都补，明确写下哪些模块靠 feature 测试覆盖"
+        ],
+        "effortDays": 3,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "重构 contenttemplate 与 presentation 时有测试兜底"
+      ],
+      "dependsOn": [],
+      "blocks": [
+        "EDT-001",
+        "EDT-003"
+      ],
+      "phase": "P2",
+      "tags": [
+        "testing",
+        "maintainability"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "CQ-021",
+      "title": "五个超大 service 文件（700 到 840 行）承担过多职责",
+      "severity": "medium",
+      "type": "tech-debt",
+      "confidence": "confirmed",
+      "problem": "entity_source.go(838)、presentation_service.go(838)、product_service.go(753)、page_publish.go(728)、publication_control.go(668) 是最大的五个 service 文件，内部混合了多个关注点（如 presentation_service 同时管实例 CRUD、渲染、发布、重建、模板解析）。",
+      "evidence": [
+        {
+          "file": "internal/module/presentation/service/presentation_service.go",
+          "lines": "0",
+          "snippet": "838 行，含实例管理、渲染、发布、重建、语言解析",
+          "note": ""
+        },
+        {
+          "file": "internal/module/product/service/entity_source.go",
+          "lines": "0",
+          "snippet": "838 行，实体字段解析与翻译",
+          "note": ""
+        }
+      ],
+      "impact": "阅读与修改成本高，合并冲突概率大。presentation_service 尤其关键，因为 EDT-003 与 I18N-013 都要改它。",
+      "rootCause": "按模块聚合而非按关注点拆分文件。",
+      "remediation": {
+        "approach": "按关注点拆文件（同包内拆，不改 API）。presentation 优先，因为后续改动集中在它上面。",
+        "steps": [
+          "presentation_service.go 拆为 instance_crud / render / publish / rebuild / template_resolve 五个文件",
+          "entity_source.go 拆为字段解析与翻译两部分",
+          "page_publish.go 拆出多语言循环与产物状态管理",
+          "纯移动代码，不改逻辑，每步跑测试"
+        ],
+        "effortDays": 2,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "拆分后测试全绿、行为不变",
+        "单文件行数下降"
+      ],
+      "dependsOn": [],
+      "blocks": [
+        "EDT-003"
+      ],
+      "phase": "P2",
+      "tags": [
+        "refactor",
+        "maintainability"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "CQ-022",
+      "title": "register.go 的 init 函数 1328 行，迁移注册全靠手工维护",
+      "severity": "medium",
+      "type": "tech-debt",
+      "confidence": "confirmed",
+      "problem": "public/migrations/register.go 的 init 函数从 393 行到 1720 行，共 1328 行，逐个 embed 并注册 128 个迁移文件。新增迁移要手工加一段。",
+      "evidence": [
+        {
+          "file": "public/migrations/register.go",
+          "lines": "393-1720",
+          "snippet": "init 函数 1328 行，逐个注册迁移",
+          "note": ""
+        }
+      ],
+      "impact": "新增迁移容易漏注册（漏了不报错，只是不执行，问题在部署时才暴露）。文件本身也难以审查。",
+      "rootCause": "为了显式控制每个迁移的 ConditionSQL，选择了手工注册。",
+      "remediation": {
+        "approach": "改为 embed.FS 目录级嵌入 + 按文件名排序自动注册，ConditionSQL 从 SQL 文件头部的特殊注释里解析（保留显式控制能力）。",
+        "steps": [
+          "定义 SQL 文件头注释格式（如 -- condition: SELECT ...）",
+          "改为 //go:embed *.sql 目录嵌入",
+          "启动时按版本号排序注册，解析头注释取 ConditionSQL",
+          "版本号排序要处理字符串排序问题（见 DB 维度：099 vs 100 vs 1000）",
+          "加测试：断言所有 sql 文件都被注册（数量匹配）",
+          "迁移过程本身要谨慎：先让两种注册方式并行跑，对比注册结果一致后再切换"
+        ],
+        "effortDays": 2,
+        "risk": "medium",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "所有迁移仍按正确顺序执行",
+        "新增 sql 文件无需改 Go 代码",
+        "数量断言测试通过"
+      ],
+      "dependsOn": [
+        "DB-002"
+      ],
+      "blocks": [],
+      "phase": "P6",
+      "tags": [
+        "migrations",
+        "maintainability",
+        "developer-experience"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "CQ-023",
+      "title": "CreateOrder 单函数 278 行，是全仓最长的业务函数",
+      "severity": "medium",
+      "type": "tech-debt",
+      "confidence": "confirmed",
+      "problem": "order_create.go 的 CreateOrder 从 45 行到 322 行共 278 行，内含幂等检查、商品快照、金额计算、优惠码试算与限次检查、归因解析、事务写入、库存扣减、失败补偿。",
+      "evidence": [
+        {
+          "file": "internal/module/order/service/order_create.go",
+          "lines": "45-322",
+          "snippet": "CreateOrder 278 行",
+          "note": ""
+        }
+      ],
+      "impact": "这是资损风险最高的函数（本次审计在它里面发现了折扣信任与每人限次两个资损缺陷），却也是最难读的。函数越长越难发现这类问题。",
+      "rootCause": "建单流程本身步骤多，没有拆分。",
+      "remediation": {
+        "approach": "按步骤拆成私有方法（幂等检查、构建订单项快照、计算金额、校验并试算优惠码、解析归因、事务写入、扣库存与补偿），主函数只做编排。拆分后每步可单独测试。",
+        "steps": [
+          "先补建单的单测（作为重构安全网）",
+          "逐步抽方法，每抽一步跑测试",
+          "金额计算与优惠码试算抽出来后要能单独测（这两处有缺陷，拆完更容易修）",
+          "与 ORD-001（折扣信任）和 ORD-002（每人限次）的修复一起做"
+        ],
+        "effortDays": 1.5,
+        "risk": "medium",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "建单行为不变、测试全绿",
+        "金额计算与优惠码逻辑可单独测试"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P0",
+      "tags": [
+        "order",
+        "refactor",
+        "money"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：CreateOrder 拆为 order_create.go（编排+校验+幂等）/ order_create_draft.go（快照·金额·券·归因·访客开号）/ order_create_persist.go（事务写入·扣库存·补偿）；新增 order_create_draft_test.go 覆盖入参校验、折扣计算、券判定、分摊边界。"
+    },
+    {
+      "id": "CQ-024",
+      "title": "多处注释与文档描述已过时，与代码实际状态不符",
+      "severity": "medium",
+      "type": "inconsistency",
+      "confidence": "confirmed",
+      "problem": "已确认的过时注释包括：product_service.go 声明不反向依赖但实际依赖 inventory；product.go 称商品集合源未注册（已注册）；product_detail_template_handle.go 称编辑在工作台侧（无此路由）；081/099/102 迁移注释仍描述已被 121 删除的库存缓存体系；inventory_enums.go 仍有 CacheSync 枚举但表已删；site_settings_handle.go 称其余站点能力未落地（GA4 与槽位已有）；069 迁移称 build_jobs 废弃但 init 仍创建。",
+      "evidence": [
+        {
+          "file": "internal/module/product/service/product_service.go",
+          "lines": "3-4",
+          "snippet": "声明不反向依赖其他模块",
+          "note": "与 26-27 行矛盾"
+        },
+        {
+          "file": "internal/builder/components/product/product.go",
+          "lines": "12-14",
+          "snippet": "称商品集合源尚未注册",
+          "note": "routes.go:356-362 已注册"
+        },
+        {
+          "file": "public/migrations/102_inventory_movements.sql",
+          "lines": "7-14,96-119",
+          "snippet": "描述已被迁移 121 删除的缓存同步台账",
+          "note": ""
+        },
+        {
+          "file": "internal/module/product/inventory/enums/inventory_enums.go",
+          "lines": "149-152",
+          "snippet": "CacheSync 枚举，对应表已删",
+          "note": ""
+        }
+      ],
+      "impact": "注释是这个项目最有价值的资产之一（多数注释解释的是设计意图而非代码行为），过时注释会直接误导。已经出现「按注释判断某能力不存在，实际存在」的情况。",
+      "rootCause": "改代码时没有同步检查相关注释，尤其是删除能力时（删表容易忘删注释）。",
+      "remediation": {
+        "approach": "逐条修正已发现的过时注释；并建立一个轻量约定：删除能力时必须 grep 该能力的名称并清理所有提及。",
+        "steps": [
+          "逐条修正本条列出的 7 处",
+          "删除 CacheSync 相关的枚举与死代码",
+          "在 AGENTS.md 的 Git 规范里加一条：删除能力时 grep 清理相关注释与文档",
+          "考虑加一个检查：迁移里提到的表名必须在当前 schema 里存在（能抓出 102 这类问题）"
+        ],
+        "effortDays": 1,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "注释与代码一致",
+        "无提及已删除表的注释"
+      ],
+      "dependsOn": [
+        "CQ-002"
+      ],
+      "blocks": [],
+      "phase": "P6",
+      "tags": [
+        "documentation",
+        "drift"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：清理 product/inventory/dashboard 过时注释。"
+    },
+    {
+      "id": "CQ-025",
+      "title": "admin 模块 22 处 service 层直查 DB（豁免范围内，但需守住边界）",
+      "severity": "low",
+      "type": "tech-debt",
+      "confidence": "confirmed",
+      "problem": "AGENTS.md 给 admin 模块明文豁免了 service 层 DB(ctx) 直查。实际有 22 处，集中在 admin_crud.go(13)、admin_login.go(3)、perm_crud.go(3)、datarule_provider.go(2)、datarule_crud.go(1)。非 admin 模块零违规（规则执行得很好）。",
+      "evidence": [
+        {
+          "file": "internal/module/admin/service/admin_crud.go",
+          "lines": "29,94,99,122,133,148,182,189,203,216,284,326,334",
+          "snippet": "service 层 DB(ctx) 直查",
+          "note": "豁免范围内"
+        }
+      ],
+      "impact": "本身在豁免内。风险是它作为「坏榜样」被新模块照抄，以及豁免边界（仅本模块表、跨表事务仍走 Transaction）可能被逐渐突破。",
+      "rootCause": "admin 是管理面 CRUD 大模块，走 model 方法的收益低于成本，这个豁免是合理的工程判断。",
+      "remediation": {
+        "approach": "不改现状，但加一个检查脚本守住边界：非 admin 模块的 service 出现 DB(ctx) 即失败；admin 内的直查不允许 join 其它模块的表。",
+        "steps": [
+          "写检查脚本（grep service 目录下的 DB(ctx) 与 RevisionDB(ctx)，排除 admin）",
+          "CI 接入",
+          "脚本里同时检查 admin 的直查是否涉及非本模块表（按表名前缀判断，sys_ 开头为本模块）"
+        ],
+        "effortDays": 0.5,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "非 admin 模块新增直查会被 CI 拦住"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P6",
+      "tags": [
+        "architecture",
+        "admin",
+        "ci"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "CQ-026",
+      "title": "定价工具的主数据审计写在价格事务之外，失败会丢审计记录",
+      "severity": "medium",
+      "type": "correctness",
+      "confidence": "confirmed",
+      "problem": "ApplyPricing 落库价格后在事务外调 recordChanges 写主数据审计。审计写失败则这批改价没有审计记录，而价格已经改了。",
+      "evidence": [
+        {
+          "file": "internal/module/product/service/product_pricing.go",
+          "lines": "193-195",
+          "snippet": "recordChanges 在价格事务之外",
+          "note": ""
+        }
+      ],
+      "impact": "审计表的可信度受损：「没有记录」不等于「没有改动」。而审计表的全部价值就建立在完整性上（AGENTS.md 自己强调过审计表的噪声会吃掉可信度，缺失同理）。",
+      "rootCause": "跨模块调用（product 到 masterdata）不方便共用事务，于是放到事务外。",
+      "remediation": {
+        "approach": "审计写入接受外部事务句柄（masterdata 与 product 同一个库，技术上可行），与价格改动同事务。若坚持模块隔离，则改为「先写审计（pending）再改价再标记 committed」的两段式，或用可靠的本地消息表。",
+        "steps": [
+          "masterdata 的 RecordChanges 契约增加接受事务句柄的变体",
+          "定价、商品增删改、入库成本回写、货源变更四类写入都改为同事务",
+          "或者：审计写失败时把这批变更落到一个重试队列",
+          "补测试：模拟审计失败时价格改动一并回滚"
+        ],
+        "effortDays": 1.5,
+        "risk": "medium",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "审计失败时价格不变",
+        "审计记录与价格改动一一对应"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P1",
+      "tags": [
+        "masterdata",
+        "product",
+        "transaction",
+        "audit"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：ApplyPricing 主数据审计改 RecordChangesTx 与改价同事务。"
+    }
+  ]
+}

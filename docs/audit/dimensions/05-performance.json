@@ -1,0 +1,1051 @@
+{
+  "dimension": "performance",
+  "dimensionTitle": "性能与内存",
+  "scope": "internal/builder 与 internal/pipeline（构建期）、各模块 model 层查询、internal/module/runtimefragment、pkg/cache 与 pkg/queue、pkg/database、访问面静态服务",
+  "verdict": "构建期的基础功课做得不错（CSSBuckets 有 seen 去重、主路径用 strings.Builder、组件 Jet Set 是进程单例、块解析在编译内缓存、商品集合源批量查询防 N+1）。真正的问题只有一个是生产级的：内容保存在同一 HTTP 请求内同步触发整站重建。其余是中等与优化项，集中在运行时片段无缓存、列表查询拉大字段、以及访问面缺缓存头。",
+  "findings": [
+    {
+      "id": "PERF-001",
+      "title": "内容保存在同一 HTTP 请求内同步触发最多 20 页乘语言数的完整 Build 加 Publish",
+      "severity": "critical",
+      "type": "performance",
+      "confidence": "confirmed",
+      "problem": "内容变更经 Fanout.InvalidateKeys 直接调 RebuildStale，没有独立队列、没有超时（只看 ctx.Err()）、没有构建并发限流。Page 侧单次最多 20 页，且对每个启用语言依次 Build 再 Publish。Presentation 侧同样上限 20、顺序重建加发布。",
+      "evidence": [
+        {
+          "file": "internal/pipeline/dependency.go",
+          "lines": "186-196",
+          "snippet": "for st, ids := range affected { r := rebuilders[st]; if err := r.RebuildStale(ctx, ids); err != nil { logger... } }",
+          "note": "在写请求的调用栈里同步执行"
+        },
+        {
+          "file": "internal/module/page/service/page_dependency.go",
+          "lines": "30-90",
+          "snippet": "maxAutoRebuildPages = 20；对每个 id 的每个启用语言依次 Build 与 Publish",
+          "note": "20 页 × N 语言次完整编译发布"
+        },
+        {
+          "file": "internal/module/presentation/service/presentation_service.go",
+          "lines": "53-176",
+          "snippet": "同样上限 20、顺序重建发布",
+          "note": ""
+        },
+        {
+          "file": "docs/03-pipeline.md",
+          "lines": "13",
+          "snippet": "文档写明 PIPE-2 构建队列消费端未落地",
+          "note": "已知缺口"
+        }
+      ],
+      "impact": "改一个商品或一篇文章可能触发数十次完整编译加发布，全部计入保存 API 的响应时间。站点规模一大，保存必然超时；超时后请求被中断，重建停在中途（部分页面已重建、部分仍 stale），且用户不知道发生了什么。这是当前唯一会直接导致生产不可用的性能问题。",
+      "rootCause": "依赖失效重建被实现为同步调用，构建队列（pipeline 文档的 §8.3）一直没落地。",
+      "remediation": {
+        "approach": "重建脱离写请求：InvalidateKeys 只标记 stale 并投递任务，实际重建由队列 worker 执行，带并发限流与单任务超时。写请求立即返回。",
+        "steps": [
+          "定义重建任务（source_type + ids + lang），投递到 pkg/queue（asynq）",
+          "InvalidateKeys 改为只标记 stale + 投递任务，不再直接调 RebuildStale",
+          "worker 侧限流：同一工程串行、全局并发上限可配",
+          "单页构建加超时（构建是 CPU 密集且确定性的，超时说明有异常）",
+          "失败重试与死信：重试 3 次后留在 stale 状态并记录失败原因，后台可见",
+          "队列未启用时的降级策略要明确：宁可只标记 stale 不重建（让运维手动触发），也不要退回同步重建",
+          "后台增加待重建页面数与重建失败清单的可见入口"
+        ],
+        "effortDays": 3,
+        "risk": "medium",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "改一个被 100 个页面引用的内容，保存 API 在 200ms 内返回",
+        "重建在后台完成且可观测",
+        "worker 崩溃重启后未完成的重建能继续（任务不丢）",
+        "队列未启用时保存不阻塞、页面正确标记 stale"
+      ],
+      "dependsOn": [],
+      "blocks": [
+        "VIS-006",
+        "SEO-022",
+        "OPS-007"
+      ],
+      "phase": "P0",
+      "tags": [
+        "pipeline",
+        "performance",
+        "availability",
+        "queue"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：InvalidateKeys 改 go RebuildStale 异步；SetSyncRebuild 供测试。"
+    },
+    {
+      "id": "PERF-002",
+      "title": "productList 运行时片段每次请求走完整编译路径，无任何缓存",
+      "severity": "high",
+      "type": "performance",
+      "confidence": "confirmed",
+      "problem": "片段每次请求都 RenderNodeHTML（内含 nodeViewOf 的 CSS 编译、集合解析、Jet 渲染），集合源一次请求至少查商品列表、变体批量、属性、分类品牌标签、翻译。没有片段级缓存。",
+      "evidence": [
+        {
+          "file": "internal/module/runtimefragment/product_list.go",
+          "lines": "143-159",
+          "snippet": "每次请求新建 RenderContext 与 CSSBuckets 并调 RenderNodeHTML",
+          "note": ""
+        },
+        {
+          "file": "internal/module/product/service/collection_resolver.go",
+          "lines": "55-104",
+          "snippet": "集合解析的多表批量查询",
+          "note": "批量已优化，但每次请求都要做"
+        }
+      ],
+      "impact": "商品列表页的每一次筛选、排序、翻页都是一次小型编译加多次 SQL。高流量列表页会成为 CPU 与数据库的集中压力点。",
+      "rootCause": "片段设计为「每次现读真源」，这对库存与价格是必要的，但对商品列表这种低频变化的数据是过度的。",
+      "remediation": {
+        "approach": "按参数哈希做短 TTL 的片段 HTML 缓存（Redis），TTL 取秒级到分钟级可配；商品写操作时按工程失效。注意不要缓存包含实时库存或价格的片段。",
+        "steps": [
+          "缓存键 = 工程 + 节点配置哈希 + 语义参数（筛选/排序/分页）+ 语言",
+          "TTL 可配（默认 60 秒），商品或分类品牌标签写操作时按工程前缀失效",
+          "明确不缓存的片段清单：variantAvailability、livePrice、cartView、账号中心（这些必须现读）",
+          "先做 EDT-016（跳过白算的 CSS 编译），再加缓存，两者叠加收益明显",
+          "缓存未命中或 Redis 不可用时正常降级为实时渲染"
+        ],
+        "effortDays": 2,
+        "risk": "medium",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "相同参数的第二次请求命中缓存且耗时显著下降",
+        "商品改名后缓存失效，列表显示新名称",
+        "库存与价格类片段确认未被缓存"
+      ],
+      "dependsOn": [
+        "EDT-016"
+      ],
+      "blocks": [],
+      "phase": "P1",
+      "tags": [
+        "runtimefragment",
+        "performance",
+        "cache"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：productList/searchResults GET 片段 Redis 短 TTL 缓存 + 商品写后版本失效。"
+    },
+    {
+      "id": "PERF-003",
+      "title": "订单列表查询未做列投影，每行都拉归因 JSONB",
+      "severity": "medium",
+      "type": "performance",
+      "confidence": "confirmed",
+      "problem": "订单 List 用 Find 拉全行，包含 attribution 这个 JSONB 列（存流量来源、UTM 家族、广告点击 id、会话事实、浏览轨迹）。列表页并不需要这些。同一请求还有 CountByStatus 做第二次聚合扫描。",
+      "evidence": [
+        {
+          "file": "internal/module/order/model/order_model.go",
+          "lines": "221-250",
+          "snippet": "q.Count(&total) 后 q.Order(\"id DESC\").Offset().Limit().Find(&list)，无 Select 投影",
+          "note": ""
+        },
+        {
+          "file": "internal/module/order/model/order_model.go",
+          "lines": "91-93",
+          "snippet": "Attribution 为 jsonb 列",
+          "note": "含浏览轨迹，体积可观"
+        }
+      ],
+      "impact": "订单量与归因字段体积一起放大列表页的网络传输、反序列化开销与内存占用。归因里的浏览轨迹是数组，单条订单可能几 KB。",
+      "rootCause": "列表与详情共用同一个实体结构与查询方法。",
+      "remediation": {
+        "approach": "列表查询增加列投影（不含 attribution 与其它详情专用列），或定义列表专用的轻量结构。",
+        "steps": [
+          "定义 OrderListRow 结构只含列表需要的列",
+          "List 方法改为 Select 明确列清单",
+          "详情查询保持全列",
+          "同时评估 CountByStatus 能否与 List 合并为一次查询（用窗口函数或单独按需请求）"
+        ],
+        "effortDays": 1,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "列表接口响应体积下降",
+        "详情仍能取到归因数据"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P1",
+      "tags": [
+        "order",
+        "performance",
+        "query"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：订单 List Omit attribution 列。"
+    },
+    {
+      "id": "PERF-004",
+      "title": "商品集合源 Preload 全量评分明细，并对每行执行 min_price 相关子查询",
+      "severity": "medium",
+      "type": "performance",
+      "confidence": "confirmed",
+      "problem": "ListForCollection 用 Preload(\"Ratings\") 拉回这批商品的所有评分明细行（只为算均值与条数），同时 Select 里带一个每行执行的 min_price 相关子查询。",
+      "evidence": [
+        {
+          "file": "internal/module/product/model/product_model.go",
+          "lines": "242-251",
+          "snippet": "Select 含 (SELECT MIN(v.price) FROM product_variants v WHERE v.product_id = products.id AND v.enabled) AS min_price；随后 q.Preload(\"Ratings\")",
+          "note": "相关子查询 + 全量明细 Preload"
+        }
+      ],
+      "impact": "100 个商品若每个有 50 条评分，就是 5000 行明细进内存只为算两个数。min_price 相关子查询对每行执行一次。构建期与片段期都会走这条路径。",
+      "rootCause": "评分从冗余列改为独立表（#30）时，投影用了最直接的 Preload 而没有改成聚合查询。",
+      "remediation": {
+        "approach": "评分改为 SQL 聚合子查询（AVG 与 COUNT）随主查询一次取回，不拉明细。min_price 改为 LATERAL JOIN 或与评分聚合合并成一个 LEFT JOIN 子查询。",
+        "steps": [
+          "把 Ratings Preload 换成 LEFT JOIN (SELECT product_id, AVG(score), COUNT(*) FROM product_ratings WHERE product_id = ANY(...) GROUP BY product_id)",
+          "min_price 改为 LEFT JOIN LATERAL 或合并进同一个聚合子查询",
+          "确认 NULL 与 0 分的区分语义不变（无评分不参与排序与筛选）",
+          "跑既有集合源测试确认结果一致",
+          "配合 DB 维度的 idx_product_variants_price_enabled 部分索引"
+        ],
+        "effortDays": 1.5,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "集合查询的 SQL 次数与返回行数下降",
+        "评分均值与条数结果不变",
+        "无评分商品的排序行为不变"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P1",
+      "tags": [
+        "product",
+        "performance",
+        "query"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：ListForCollection 评分改 SQL 聚合子查询，移除 Ratings Preload。（2026-09-14 补：投影列 RatingAvg / RatingCount 必须带 gorm `->` 只读标记 —— 漏标会让 GORM 把它们写进 INSERT，而 products 表上并没有这两列，表现为每次建商品都报 column \"rating_avg\" does not exist。）"
+    },
+    {
+      "id": "PERF-005",
+      "title": "每个已认证的后台请求都写一次 Redis 在线心跳",
+      "severity": "medium",
+      "type": "performance",
+      "confidence": "confirmed",
+      "problem": "认证中间件在 c.Next() 之后调 RefreshOnline，每个请求都对 Redis 做一次 Set（5 分钟 TTL）。后台大量使用 HTMX 局部刷新，请求频率高。",
+      "evidence": [
+        {
+          "file": "internal/middleware/builtin/auth.go",
+          "lines": "84-93",
+          "snippet": "c.Next() 后 auth.RefreshOnline(...)",
+          "note": "每请求一次写"
+        },
+        {
+          "file": "pkg/auth/session.go",
+          "lines": "179-189",
+          "snippet": "client.Set(ctx, onlineKey(userID), \"1\", ttl)",
+          "note": "TTL 存在，不是无过期键"
+        }
+      ],
+      "impact": "Redis 写 QPS 约等于后台 API QPS。单实例小团队无感，但这是无必要的写放大，且 Redis 是 Critical 组件，多余的写会占用它的容量预算。",
+      "rootCause": "心跳刷新做在了每次请求上，而它的语义只需要「最近 N 分钟内活跃过」。",
+      "remediation": {
+        "approach": "节流：只在距上次刷新超过一定间隔（比如 TTL 的三分之一）时才写。间隔判断可以放在进程内存（每实例各自节流，误差可接受）。",
+        "steps": [
+          "进程内维护 userID 到上次刷新时间的映射（带上限的 LRU，避免无界增长）",
+          "超过节流间隔才写 Redis",
+          "映射要有容量上限（比如 1 万条）防止内存无界",
+          "多实例下各自节流，最坏情况写频率是实例数倍的节流频率，仍远低于当前"
+        ],
+        "effortDays": 0.5,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "Redis 写次数显著下降",
+        "在线状态判定仍准确（误差不超过节流间隔）"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P1",
+      "tags": [
+        "auth",
+        "redis",
+        "performance"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：RefreshOnline TTL/3 节流。"
+    },
+    {
+      "id": "PERF-006",
+      "title": "启用插件时每次页面编译都重查数据库、读磁盘并新建 Jet Set",
+      "severity": "medium",
+      "type": "performance",
+      "confidence": "confirmed",
+      "problem": "enabledAssembly 每次编译调 EnabledAssembly，后者 ListEnabled 查库并对每个插件 os.Stat 检查目录、读 manifest 与 CSS。有插件时 NewCompositeSet 每次构建任务都新建一个 Jet Set（注释明确说明每次调用产生独立 Set），意味着插件模板每次重新解析。内置组件的 Jet Set 是进程单例，插件路径没有。",
+      "evidence": [
+        {
+          "file": "internal/module/page/service/page_assemble.go",
+          "lines": "347-355",
+          "snippet": "每次编译调 s.plugins.EnabledAssembly(ctx)",
+          "note": ""
+        },
+        {
+          "file": "internal/module/plugin/service/plugin_runtime.go",
+          "lines": "24-38",
+          "snippet": "ListEnabled 查库 + 逐个 os.Stat 与读文件",
+          "note": "DB + 磁盘 IO"
+        },
+        {
+          "file": "internal/templates/plugin_loader.go",
+          "lines": "99-113",
+          "snippet": "注释：每次构建任务调用产生独立 Set；内部 jet.NewSet",
+          "note": "模板重复解析"
+        }
+      ],
+      "impact": "启用插件的站点，每次 Build 与 Preview 都多一轮 DB 查询、磁盘 IO 与 Jet 模板编译。整站重建时这个成本乘以页面数。",
+      "rootCause": "插件集是可变的（可随时启停），为了正确性选择了每次重读，但没有做基于版本的缓存。",
+      "remediation": {
+        "approach": "按「启用插件集版本」缓存 Assembly 与 CompositeSet：版本由启用插件的 id 与 updated_at 派生，版本不变就复用。插件启停时版本自然变化。",
+        "steps": [
+          "计算启用集版本指纹（id + updated_at 排序后哈希）",
+          "进程内缓存 版本 到 Assembly 与 Jet Set 的映射（只保留最新一两个版本）",
+          "编译时先算版本（一次轻量查询，只取 id 与 updated_at）再决定是否复用",
+          "确认 Jet Set 并发安全（内置 Set 已是单例共享，说明可并发使用）"
+        ],
+        "effortDays": 1.5,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "连续编译多个页面只解析插件模板一次",
+        "插件启停后立即生效"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P1",
+      "tags": [
+        "plugin",
+        "builder",
+        "performance",
+        "cache"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "PERF-007",
+      "title": "访问面 /site 只有 gzip，没有 Cache-Control 与 ETag 策略",
+      "severity": "medium",
+      "type": "performance",
+      "confidence": "confirmed",
+      "problem": "/site 挂了 SiteRedirectMiddleware 与 StaticGzipMiddleware，但没有缓存头中间件。后台静态资源 /static 有 StaticCacheMiddleware（no-cache, must-revalidate），访问面没有。产物文件名也不带内容哈希，无法做长缓存。",
+      "evidence": [
+        {
+          "file": "internal/routers/routes.go",
+          "lines": "522-527",
+          "snippet": "router.Group(\"/site\", builtin.SiteRedirectMiddleware(), builtin.StaticGzipMiddleware()).StaticFS(...)",
+          "note": "无缓存头中间件"
+        },
+        {
+          "file": "internal/routers/routes.go",
+          "lines": "85-87",
+          "snippet": "/static 有 StaticCacheMiddleware",
+          "note": "对照"
+        }
+      ],
+      "impact": "访问面完全依赖 http.FileServer 的默认 Last-Modified 协商，每次访问都要发条件请求。放在 CDN 后面时 CDN 也缺明确的缓存指令，回源率偏高。这是静态发布引擎最该优化的地方，因为访问面是产品的核心卖点。",
+      "rootCause": "访问面的缓存策略没有设计（产物是不可变的，本该能做长缓存）。",
+      "remediation": {
+        "approach": "HTML 用短缓存加 must-revalidate（内容会随发布变化），内联的 CSS/JS 已在 HTML 里所以不需单独处理；媒体与静态资源走 /storage 与 /static 各自的策略。同时给 HTML 加 ETag（产物哈希已有，直接用）。",
+        "steps": [
+          "新增访问面缓存中间件：HTML 设 Cache-Control: public, max-age=0, must-revalidate 加 ETag（取产物哈希）",
+          "非 HTML 的产物资源（若有）设长缓存",
+          "ETag 命中时返回 304",
+          "文档说明 CDN 侧的推荐配置（按 ETag 回源验证）",
+          "评估是否预生成 brotli（gzip 已有中间件，brotli 压缩率更高但需要预压缩以避免实时压缩开销）"
+        ],
+        "effortDays": 1.5,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "重复访问返回 304",
+        "发布新版本后 ETag 变化、访客拿到新内容"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P1",
+      "tags": [
+        "static",
+        "cache",
+        "performance",
+        "cdn"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：SiteCacheMiddleware 为 /site 下发 must-revalidate。"
+    },
+    {
+      "id": "PERF-008",
+      "title": "内容集合源先取 100 条大 JSONB 再在内存过滤",
+      "severity": "medium",
+      "type": "performance",
+      "confidence": "confirmed",
+      "problem": "content 的集合解析先 List(entityType, 100, 0) 取回 100 行，再在 Go 里 matchFilter 过滤。而 content_model.List 没有列投影，data 这个 JSONB 里含文章正文全文。",
+      "evidence": [
+        {
+          "file": "internal/module/content/service/collection_resolver.go",
+          "lines": "29-48",
+          "snippet": "rows, err := s.m.List(ctx, entityType, 100, 0)；随后 for 循环 matchFilter 内存过滤",
+          "note": "过滤在内存"
+        },
+        {
+          "file": "internal/module/content/model/content_model.go",
+          "lines": "68-76",
+          "snippet": "List 无 Select 投影，Find 拉全行含 data JSONB",
+          "note": "含正文"
+        }
+      ],
+      "impact": "带筛选条件时可能取 100 篇文章的全文进内存然后丢弃大部分。cardstack 绑文章集合的页面构建时内存与 IO 都偏高。商品侧已经把筛选下推到 SQL，文章侧没有。",
+      "rootCause": "content 的集合源实现早于商品侧的筛选下推，没有回头对齐。",
+      "remediation": {
+        "approach": "筛选条件下推到 SQL（用 JSONB 操作符），并做列投影：集合项需要的字段（title / excerpt / featuredImage / slug）单独取，不拉 body。",
+        "steps": [
+          "content_model 增加集合专用查询方法，Select 明确列并支持筛选条件",
+          "筛选条件按 data 里的字段用 JSONB 操作符下推（注意与 GIN 索引配对，见 DB 维度）",
+          "集合项不需要 body，投影里排除",
+          "保留内存过滤作为 SQL 无法表达的条件的兜底（但要明确记录哪些条件走内存）"
+        ],
+        "effortDays": 1.5,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": true
+      },
+      "verification": [
+        "文章集合查询不再返回正文",
+        "筛选结果与改造前一致"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P1",
+      "tags": [
+        "content",
+        "performance",
+        "query"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "PERF-009",
+      "title": "商品集合源在循环内逐个商品调翻译查询",
+      "severity": "medium",
+      "type": "performance",
+      "confidence": "confirmed",
+      "problem": "collection_resolver 在遍历商品时对每个商品调 translateFields，每次都是一轮 sys_translation 查询。100 个商品就是最多 100 次查询。",
+      "evidence": [
+        {
+          "file": "internal/module/product/service/collection_resolver.go",
+          "lines": "0",
+          "snippet": "循环内逐商品调用 translateFields",
+          "note": "虽然每次是批量查询，但循环 100 次"
+        }
+      ],
+      "impact": "多语言站点的商品列表构建与片段渲染会有最多 100 次额外查询。这是典型的 N+1，只是每个 N 内部是批量的。",
+      "rootCause": "翻译取词按实体粒度封装，没有按集合粒度提供批量入口。",
+      "remediation": {
+        "approach": "先收集全部商品的全部可翻译字段的 hash 集合，一次批量查询取回译文映射，再逐个商品套用。",
+        "steps": [
+          "把 translateFields 拆成「收集候选 hash」与「套用译文」两步",
+          "集合解析先做一轮收集，一次查询，再套用",
+          "与页面构建期的 ContentTranslator 批量取词模式对齐（那边已经是先收集后批量）"
+        ],
+        "effortDays": 1,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "商品集合的翻译查询次数降为 1",
+        "译文结果不变"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P1",
+      "tags": [
+        "product",
+        "i18n",
+        "performance",
+        "n-plus-one"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：collection_resolver translateFieldsBatch 批量查译文。"
+    },
+    {
+      "id": "PERF-010",
+      "title": "后台菜单树每次构建权限路由都全表拉菜单",
+      "severity": "low",
+      "type": "performance",
+      "confidence": "confirmed",
+      "problem": "BuildAuthorizedTree 调 mm.ListAll 全表读菜单（带软删除过滤与排序），每次构建权限上下文都执行。",
+      "evidence": [
+        {
+          "file": "internal/module/admin/service/menu_authz.go",
+          "lines": "56-61",
+          "snippet": "all, err := s.mm.ListAll(ctx)",
+          "note": ""
+        },
+        {
+          "file": "internal/module/admin/model/menu_model.go",
+          "lines": "100-104",
+          "snippet": "WHERE deleted_time IS NULL ORDER BY sort_order, id",
+          "note": "全表"
+        }
+      ],
+      "impact": "菜单量在上百级别时可接受。若菜单继续增长（每个新模块都加菜单），且这个查询在登录与权限刷新时频繁执行，会成为固定开销。",
+      "rootCause": "菜单是低频变化的数据但没有缓存。",
+      "remediation": {
+        "approach": "进程内缓存菜单全表，按菜单表的最大 updated 时间或一个版本号失效。菜单变更走后台管理接口，可以主动清缓存。",
+        "steps": [
+          "菜单查询结果进程内缓存",
+          "菜单增删改时清缓存（单实例直接清；多实例可用 Redis 版本号或短 TTL）",
+          "权限树构建仍按用户权限码过滤（不缓存过滤结果，只缓存原始菜单）"
+        ],
+        "effortDays": 0.75,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "连续请求不重复查菜单表",
+        "改菜单后立即生效"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P1",
+      "tags": [
+        "admin",
+        "cache",
+        "performance"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：menu_cache 30s TTL；BuildAuthorizedTree 走 listAllMenusCached。"
+    },
+    {
+      "id": "PERF-011",
+      "title": "产物读取整份进内存",
+      "severity": "low",
+      "type": "performance",
+      "confidence": "confirmed",
+      "problem": "读产物时用 os.ReadFile 把 manifest.json 与 index.html 整份读进 []byte。",
+      "evidence": [
+        {
+          "file": "internal/pipeline/store.go",
+          "lines": "129-136",
+          "snippet": "os.ReadFile(filepath.Join(dir, \"manifest.json\"))；os.ReadFile(filepath.Join(dir, \"index.html\"))",
+          "note": ""
+        }
+      ],
+      "impact": "重建、校验、哈希比对时整页 HTML 进内存。单页通常几十到几百 KB，可接受；但整站重建时并发多个会叠加内存峰值。访客路径不走这里（静态服务用 FileServer 流式发送），所以影响有限。",
+      "rootCause": "哈希比对与校验需要全量内容，流式处理会让代码复杂度上升。",
+      "remediation": {
+        "approach": "低优先级。若整站重建时内存成问题，哈希计算改为流式（io.Copy 到 hash.Hash），manifest 保持全量读（很小）。",
+        "steps": [
+          "哈希比对改流式",
+          "重建的并发上限（PERF-001 已包含）本身也会限制内存峰值"
+        ],
+        "effortDays": 0.5,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "整站重建时内存峰值可控"
+      ],
+      "dependsOn": [
+        "PERF-001"
+      ],
+      "blocks": [],
+      "phase": "P7",
+      "tags": [
+        "pipeline",
+        "memory"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "PERF-012",
+      "title": "artifact 内容对象逐条 Create，未用批量插入",
+      "severity": "low",
+      "type": "performance",
+      "confidence": "confirmed",
+      "problem": "ReplaceArtifactContent 在循环里逐个 Create 内容对象。",
+      "evidence": [
+        {
+          "file": "internal/module/artifact/model/artifact_model.go",
+          "lines": "119-152",
+          "snippet": "循环内逐条 Create 闭包对象",
+          "note": ""
+        }
+      ],
+      "impact": "一个产物的内容对象数量通常不大（几个到几十个），影响有限。但整站重建时次数会放大。",
+      "rootCause": "实现直白。",
+      "remediation": {
+        "approach": "改用 CreateInBatches，保留 ON CONFLICT DO NOTHING 的幂等语义。",
+        "steps": [
+          "改批量插入并确认冲突处理语义不变",
+          "跑既有产物测试"
+        ],
+        "effortDays": 0.25,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "产物内容对象写入结果不变、SQL 次数下降"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P1",
+      "tags": [
+        "artifact",
+        "performance"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：artifact ReplaceArtifactContent CreateInBatches。"
+    },
+    {
+      "id": "PERF-013",
+      "title": "ListVariantIDs 按 project_id 查询，但 product_variants 表没有这一列，且该方法无调用方",
+      "severity": "medium",
+      "type": "implementation-bug",
+      "confidence": "likely",
+      "problem": "product_model 里的 ListVariantIDs 用 WHERE project_id = ? 查 product_variants，但该表没有 project_id 列。同时全仓找不到调用方。",
+      "evidence": [
+        {
+          "file": "internal/module/product/model/product_model.go",
+          "lines": "0",
+          "snippet": "ListVariantIDs 使用 WHERE project_id = ?，product_variants 无该列",
+          "note": "需确认表结构；若确实无该列则调用即报错"
+        }
+      ],
+      "impact": "死代码，但一旦有人调用会直接 SQL 报错（列不存在）。属于埋着的地雷。",
+      "rootCause": "变体表的工程归属通过商品间接确定，方法实现时误以为有直接列；因为没有调用方所以没暴露。",
+      "remediation": {
+        "approach": "确认表结构后删除该方法；若确实需要按工程列变体，改为 JOIN products 或子查询。",
+        "steps": [
+          "核对 product_variants 的实际列",
+          "确认无调用方后删除",
+          "若未来需要，实现为 JOIN products WHERE products.project_id = ?"
+        ],
+        "effortDays": 0.25,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "删除后编译与测试通过"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P6",
+      "tags": [
+        "product",
+        "dead-code",
+        "bug"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "PERF-014",
+      "title": "collectHTMLFeatures 对整页 HTML 做 tokenize 以决定注入哪些脚本",
+      "severity": "low",
+      "type": "performance",
+      "confidence": "confirmed",
+      "problem": "RenderDocument 之后对整页 HTML 跑一遍 tokenizer 收集特征（是否有 hx- 属性等），据此决定注入哪些脚本。",
+      "evidence": [
+        {
+          "file": "internal/builder/ui_script.go",
+          "lines": "49-72",
+          "snippet": "collectHTMLFeatures 对整页 HTML tokenize",
+          "note": "在 builder.go:760 被调用"
+        }
+      ],
+      "impact": "构建期热点之一，但换来的是「一个 hx- 都没有就零字节注入」这个很有价值的特性。整站重建时会累积。",
+      "rootCause": "特征只能在渲染完成后从最终 HTML 判断（组件不上报自己用了什么）。",
+      "remediation": {
+        "approach": "改为渲染期上报：组件在 BuildView 时向 RenderContext 登记自己需要的运行时特征（hx / enhance 脚本等），渲染完直接读登记结果，不再扫 HTML。",
+        "steps": [
+          "RenderContext 增加 Features 集合",
+          "输出 hx- 属性或需要增强脚本的组件在 BuildView 里登记",
+          "ui_script 改为读登记结果",
+          "保留 tokenize 版本作为测试期的交叉验证（断言两种方式结果一致），确认无遗漏后再移除"
+        ],
+        "effortDays": 1.5,
+        "risk": "medium",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "注入结果与 tokenize 版本完全一致",
+        "构建耗时下降"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P7",
+      "tags": [
+        "builder",
+        "performance"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "PERF-015",
+      "title": "内联 htmx 约 50KB，所有含 hx- 属性的页面都带上",
+      "severity": "low",
+      "type": "performance",
+      "confidence": "confirmed",
+      "problem": "htmx.min.js 实测 50917 字节，按需内联（页面无 hx- 属性则零字节，这个设计是对的）。但只要页面有一个 hx- 属性就内联全量 50KB。",
+      "evidence": [
+        {
+          "file": "internal/builder/ui_script.go",
+          "lines": "26-30",
+          "snippet": "按需注入判定",
+          "note": "机制正确"
+        }
+      ],
+      "impact": "带购物车图标或商品列表的页面首屏多 50KB（gzip 后约 18KB）。对 LCP 有影响但不严重。",
+      "rootCause": "内联避免了额外请求，但失去了跨页面缓存。",
+      "remediation": {
+        "approach": "评估改为外链带长缓存的独立文件（内容哈希文件名），首次访问多一个请求但后续页面复用缓存。需要权衡：内联省一次往返，外链省重复传输。多页面浏览的站点外链更优。",
+        "steps": [
+          "产物写出 htmx-<hash>.js 到激活目录",
+          "页面引用外链并设长缓存（配合 PERF-007）",
+          "保留内联作为可配置选项（单页站点可能更适合内联）",
+          "实测两种方案的 LCP 差异后定默认值"
+        ],
+        "effortDays": 1.5,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "第二个页面不重复下载 htmx",
+        "无 hx- 属性的页面仍零注入"
+      ],
+      "dependsOn": [
+        "PERF-007"
+      ],
+      "blocks": [],
+      "phase": "P7",
+      "tags": [
+        "builder",
+        "performance",
+        "frontend"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "PERF-016",
+      "title": "CSS 体积随同类型组件实例数线性增长（每实例一份 scoped 规则）",
+      "severity": "low",
+      "type": "design-flaw",
+      "confidence": "confirmed",
+      "problem": "组件 CSS 规则以 .sky-c-{nodeId} 为作用域前缀，同一页面里 N 个同类型组件产出 N 份规则（选择器不同所以 seen 去重不生效）。",
+      "evidence": [
+        {
+          "file": "internal/builder/core/css.go",
+          "lines": "408",
+          "snippet": "作用域前缀 .sky-c-{nodeId}",
+          "note": ""
+        },
+        {
+          "file": "internal/builder/core/css.go",
+          "lines": "181-187",
+          "snippet": "CSSBuckets.Add 按 breakpoint + rule 去重",
+          "note": "同规则不同选择器无法去重"
+        }
+      ],
+      "impact": "商品列表这类包含大量同类卡片的页面，CSS 体积可观。这是节点级作用域换来的隔离性代价。",
+      "rootCause": "每实例独立作用域保证了组件间样式不互相影响，也让相同配置的实例无法共享规则。",
+      "remediation": {
+        "approach": "对配置完全相同的同类型实例，用同一个哈希类名（按组件类型加规范化 Props 算哈希），节点 id 类名仅用于确实需要区分的情况。这会让同配置实例共享一份规则。",
+        "steps": [
+          "组件 CompileCSS 时用配置哈希作为类名（而非 node id）",
+          "渲染时给元素同时加配置哈希类名",
+          "确定性构建要求哈希稳定（Props 序列化要规范化：键排序、空值处理一致）",
+          "跑 determinism 测试与 CSS 校验测试",
+          "先在一两个高实例数组件（productcard / cardstack）上验证收益再推广"
+        ],
+        "effortDays": 3,
+        "risk": "high",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "相同配置的 10 个商品卡只产出一份 CSS 规则",
+        "不同配置的实例样式仍互不影响",
+        "determinism 测试全绿（哈希稳定）"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P7",
+      "tags": [
+        "builder",
+        "css",
+        "performance"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "PERF-017",
+      "title": "全量测试约 48 秒且 30 秒超时会失败，缺库时大量 skip",
+      "severity": "medium",
+      "type": "tech-debt",
+      "confidence": "confirmed",
+      "problem": "428 个测试文件，go test ./... 实测 48 秒以上，用 30 秒超时会 FAIL。末尾的 user feature 单包约 21 秒。慢因素包括连真实 PG/Redis、少量 time.Sleep、fuzz seed 执行。",
+      "evidence": [
+        {
+          "file": "public/test",
+          "lines": "0",
+          "snippet": "238 个测试文件在 public/test，另有模块内测试",
+          "note": "实测 go test ./... -timeout 30s 超时失败"
+        }
+      ],
+      "impact": "本地迭代反馈慢，也让 CI 的超时配置需要留足余量。更严重的是缺库时大量 skip 导致「全绿但没测」（见 OPS 维度）。",
+      "rootCause": "feature 测试依赖真实数据库，单测与集成测试混在同一次 go test ./... 里。",
+      "remediation": {
+        "approach": "分层：go test -short 只跑不依赖外部服务的单测（快速反馈），完整 CI 跑全部。同时找出并优化最慢的几个包。",
+        "steps": [
+          "依赖 PG/Redis 的测试加 testing.Short() 判断并 skip",
+          "CI 分两个 job：quick（-short）与 full（带服务容器）",
+          "定位 user feature 包 21 秒的原因（可能是重复建 schema 或 sleep）",
+          "把 time.Sleep 改为条件轮询"
+        ],
+        "effortDays": 1.5,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "-short 模式在 10 秒内完成",
+        "完整测试在 CI 里稳定通过"
+      ],
+      "dependsOn": [],
+      "blocks": [
+        "OPS-001"
+      ],
+      "phase": "P7",
+      "tags": [
+        "testing",
+        "developer-experience"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "PERF-018",
+      "title": "数据库连接池与超时配置偏默认，未设 statement_timeout",
+      "severity": "medium",
+      "type": "tech-debt",
+      "confidence": "confirmed",
+      "problem": "MaxOpen 100 / MaxIdle 10、ConnMaxLifetime 固定一小时、无 ConnMaxIdleTime、全库未配置 statement_timeout。慢查询日志阈值 200ms（合理）但 release 只记 Warn。",
+      "evidence": [
+        {
+          "file": "pkg/database/database.go",
+          "lines": "0",
+          "snippet": "MaxOpen 100 / MaxIdle 10 / ConnMaxLifetime 1h，无 ConnMaxIdleTime",
+          "note": ""
+        },
+        {
+          "file": "pkg/database/gorm_logger.go",
+          "lines": "0",
+          "snippet": "慢查询阈值 200ms",
+          "note": ""
+        }
+      ],
+      "impact": "没有 statement_timeout 意味着一个慢查询可以长时间占用连接，多个慢查询能耗尽连接池导致全站不可用。这是自托管部署里很常见的故障模式。",
+      "rootCause": "连接参数用了默认值，超时保护没有配置。",
+      "remediation": {
+        "approach": "设置 statement_timeout（后台查询与构建期可以宽松些，访问面片段要严格），补 ConnMaxIdleTime，连接池参数改为可配。",
+        "steps": [
+          "连接串或 session 级设置 statement_timeout（建议默认 30 秒，可配）",
+          "对片段与公开端点用更短的超时（通过 context 超时而非连接级，避免影响后台）",
+          "补 ConnMaxIdleTime（建议 5 到 10 分钟）",
+          "MaxOpen/MaxIdle 改为配置项并在文档给出按部署规模的建议值",
+          "慢查询日志在 release 保留 Warn，但加上 SQL 摘要便于定位"
+        ],
+        "effortDays": 1,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "超长查询被数据库中止而不是占满连接池",
+        "配置项生效"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P1",
+      "tags": [
+        "database",
+        "reliability",
+        "configuration"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：database statement_timeout + conn_max_idle_time 可配。"
+    },
+    {
+      "id": "PERF-019",
+      "title": "组件级分页在集合源 100 条上限内做内存切片，翻页能力受限",
+      "severity": "low",
+      "type": "design-flaw",
+      "confidence": "confirmed",
+      "problem": "集合源 SQL LIMIT 100，组件分页在这 100 条内用 Go 切片实现（先截到本页末再取本页）。超过 100 条的数据翻不到。",
+      "evidence": [
+        {
+          "file": "internal/builder/components/productlist/jet.go",
+          "lines": "174-192",
+          "snippet": "取满上限后在 Go 里切片分页",
+          "note": "设计如此"
+        },
+        {
+          "file": "internal/module/product/model/product_model.go",
+          "lines": "335-337",
+          "snippet": "集合源 SQL Limit(100)",
+          "note": "硬上限"
+        }
+      ],
+      "impact": "商品超过 100 个的列表页无法完整浏览。对真实电商站这是硬限制。",
+      "rootCause": "集合源的 100 条上限是为构建确定性与性能设的保护，分页作为「数据驱动页面能力」被推迟。",
+      "remediation": {
+        "approach": "运行时片段路径下把分页真正下推到 SQL（片段每次请求只取当页），静态产物仍只输出第一屏。片段已经是运行时渲染，不受构建确定性约束。",
+        "steps": [
+          "集合源接口增加 offset 参数（构建期固定 0，片段期按页码传入）",
+          "片段渲染时用 SQL 分页而非内存切片",
+          "总条数需要一次 count 查询才能算总页数（或用「还有更多」的游标式提示避免 count）",
+          "静态产物行为不变（第一屏 + hx-get 容器）",
+          "深分页要注意 offset 性能（见 DB 维度的 keyset 分页建议）"
+        ],
+        "effortDays": 2,
+        "risk": "medium",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "商品数超过 100 时能翻到最后一页",
+        "静态产物首屏字节不变"
+      ],
+      "dependsOn": [
+        "PERF-002"
+      ],
+      "blocks": [],
+      "phase": "P7",
+      "tags": [
+        "productlist",
+        "pagination",
+        "runtimefragment"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "PERF-020",
+      "title": "presentation 实例重建用进程内 Mutex 串行，多实例部署下失效",
+      "severity": "medium",
+      "type": "design-flaw",
+      "confidence": "confirmed",
+      "problem": "presentation 用 sync.Mutex 串行同一实例的重建，pipeline publisher 也是进程内互斥（注释说明多实例部署由 build 模块负责，而那个模块未落地）。",
+      "evidence": [
+        {
+          "file": "internal/module/presentation/service/presentation_service.go",
+          "lines": "88-92",
+          "snippet": "进程内 sync.Mutex 串行",
+          "note": ""
+        },
+        {
+          "file": "internal/pipeline/publisher.go",
+          "lines": "161-164",
+          "snippet": "注释：单进程内互斥；多实例部署由 Phase 0-A1 build 模块负责",
+          "note": "该模块未落地"
+        }
+      ],
+      "impact": "多实例部署下两个进程可以同时重建同一页面或实例，产物替换与路由激活可能交错。这是水平扩容的阻碍之一。",
+      "rootCause": "分布式协调被推迟到未落地的 build 模块。",
+      "remediation": {
+        "approach": "用 PostgreSQL advisory lock 做跨进程串行（按 page_id 或 instance_id 取锁），成本低且不需要新组件。随 PERF-001 的队列改造一并做（队列本身也能通过任务去重提供部分保障）。",
+        "steps": [
+          "构建与发布前取 pg_advisory_xact_lock（按实体 id 哈希）",
+          "取不到锁时排队等待或直接跳过（重建任务可重试）",
+          "迁移执行也要加 advisory lock（见 OPS 维度）",
+          "文档说明多实例部署的前置条件"
+        ],
+        "effortDays": 1.5,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "两个进程同时重建同一页面时只有一个执行",
+        "产物不出现交错替换"
+      ],
+      "dependsOn": [
+        "PERF-001"
+      ],
+      "blocks": [
+        "OPS-012"
+      ],
+      "phase": "P7",
+      "tags": [
+        "pipeline",
+        "concurrency",
+        "scalability"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "PERF-021",
+      "title": "RegistryVersion 每次调用重算组件指纹（有意设计，仅记录）",
+      "severity": "low",
+      "type": "tech-debt",
+      "confidence": "confirmed",
+      "problem": "RegistryVersion 有意不做 sync.Once 缓存（因为组件通过 init 注册，缓存过早会拿到不完整的注册表）。每次调用重算 sha256。启动时会被调用两三次。",
+      "evidence": [
+        {
+          "file": "internal/builder/registry_version.go",
+          "lines": "35-50",
+          "snippet": "注释明确说明有意不做 sync.Once 缓存",
+          "note": "buildFingerprint 内部有 sync.Once"
+        }
+      ],
+      "impact": "微秒级，非问题。记录在案是为了避免有人误以为是缺陷而加缓存（加错了会引入「注册表不完整时被缓存」的 bug）。",
+      "rootCause": "init 注册顺序的不确定性使得缓存需要谨慎。",
+      "remediation": {
+        "approach": "不改。若确实要缓存，应在明确的「注册完成」时点之后（比如 routes 装配完成后）才允许缓存，且要有断言防止提前调用。",
+        "steps": [
+          "保持现状",
+          "在注释里补充「若要加缓存需要先有明确的注册完成时点」"
+        ],
+        "effortDays": 0,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "无需验证"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P8",
+      "tags": [
+        "builder",
+        "documentation"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：registry_version.go 注释说明双指纹设计。"
+    }
+  ]
+}

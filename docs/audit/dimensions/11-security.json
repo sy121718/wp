@@ -1,0 +1,879 @@
+{
+  "dimension": "security",
+  "dimensionTitle": "安全：认证会话、越权、CSRF、注入、上传、支付、敏感数据、拒绝服务",
+  "scope": "pkg/auth 与 internal/middleware/builtin、Casbin 挂载矩阵与权限点 seed、各模块的按 id 查询、runtimefragment 的 CSRF 豁免、SanitizeRichHTML 与 seo_head 的转义、pkg/upload 与插件 zip 安装、cart 的支付回调与签名 cookie、config.yaml.example 与 release fail-fast",
+  "verdict": "整体安全设计比预期扎实：双会话域隔离（cookie 名、Redis 前缀、CSRF token store 三条都独立）、CSRF 常量时间比较、登录后轮换会话与 token、购物车签名 cookie 用 hmac.Equal、支付回调先验签后解析且无密钥即拒绝、富文本白名单有 fuzz 测试、访客订单在 SQL 层用 user_id 收口、上传有扩展名与 MIME 与魔数三层校验、插件 zip 有 zip slip 防护。已确认可被利用的只有一处：后台建单在无优惠码时直接采信客户端传入的折扣金额。中等风险主要是多工程部署下的水平越权（按 id 查询不校验 project_id 归属）与公开端点缺专项限流。",
+  "findings": [
+    {
+      "id": "SEC-001",
+      "title": "后台建单在无优惠码时直接采信客户端传入的 discountTotal，可创建全额折扣订单",
+      "severity": "critical",
+      "type": "security",
+      "confidence": "confirmed",
+      "problem": "CreateOrder 的注释写明「有优惠码时忽略调用方传入的 DiscountTotal」，但实现里 discount 的初值直接取 req.DiscountTotal，只有带 couponCode 时才被服务端试算值覆盖。无优惠码时这个值只被 clamp 到 [0, subtotal] 区间，也就是最大可以减到 0 元。",
+      "evidence": [
+        {
+          "file": "internal/module/order/service/order_create.go",
+          "lines": "138-165",
+          "snippet": "discount := req.DiscountTotal；只有 code 非空时才用服务端试算覆盖；随后仅 clamp 到 [0, subtotal]",
+          "note": "注释与实现不符"
+        },
+        {
+          "file": "internal/module/order/inbound/http/order_handle.go",
+          "lines": "51-68",
+          "snippet": "建单接口绑定请求体，discountTotal 来自客户端",
+          "note": ""
+        },
+        {
+          "file": "internal/module/cart/service/cart_checkout.go",
+          "lines": "74-96",
+          "snippet": "访客结算路径不传 DiscountTotal",
+          "note": "外部访客无法直接利用这条路径"
+        }
+      ],
+      "impact": "持有 order:create 权限的账号（或被窃取的会话）可以构造请求把任意订单的折扣设成小计全额，订单总额变 0 元，然后走正常的支付与库存链路。直接资损。访客侧目前不传这个字段所以外部访客不能直接利用，但这只是当前实现的巧合，不是设计保障。",
+      "rootCause": "折扣金额没有服务端唯一真源：有券时算，无券时信客户端。而「无券也可以有折扣」这个场景（后台代客下单给优惠）没有被建模为需要审批与留痕的独立能力。",
+      "remediation": {
+        "approach": "折扣一律由服务端计算。后台代客下单如需人工折扣，做成独立字段（manual_discount）并要求单独的权限点加审计留痕，不复用 discountTotal。",
+        "steps": [
+          "无券时 discount 强制为 0（忽略入参）",
+          "如确需后台人工折扣：新增 manualDiscount 字段 + 独立权限点 + 写入 masterdata 审计 + 订单上记录操作人与原因",
+          "人工折扣设上限（比如不超过小计的某个比例，可配）",
+          "补回归测试：构造 discountTotal 等于 subtotal 的请求，断言最终订单折扣为 0",
+          "顺带核查其它金额字段（shipping、tax）是否也直接采信客户端"
+        ],
+        "effortDays": 1,
+        "risk": "low",
+        "breaking": true,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "传入任意 discountTotal 都不影响订单金额",
+        "人工折扣（若实现）需要独立权限且有审计记录",
+        "既有的带券建单行为不变"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P0",
+      "tags": [
+        "order",
+        "money",
+        "authz",
+        "exploitable"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：无券时 discount 强制 0，忽略客户端 discountTotal。"
+    },
+    {
+      "id": "SEC-002",
+      "title": "多工程部署下的水平越权：按 id 查询不校验 project_id 归属",
+      "severity": "high",
+      "type": "security",
+      "confidence": "confirmed",
+      "problem": "Casbin 只校验 user_id 加 path 加 method，datarule 数据权限插件只注册了 sys_admin 表，不覆盖 page 与 order 与 product。而这些模块的按 id 查询直接用请求里的 id 查库，条件里没有 project_id。page 的列表接口 ListAll 更是完全没有工程过滤。",
+      "evidence": [
+        {
+          "file": "internal/module/page/service/page_draft.go",
+          "lines": "114-125",
+          "snippet": "仅用 req.ID 调 GetByID，无 projectId 校验",
+          "note": "知道 uuid 就能读任意工程的页面草稿"
+        },
+        {
+          "file": "internal/module/page/service/page_list.go",
+          "lines": "11-20",
+          "snippet": "ListAll 无工程过滤",
+          "note": "有 page:list 权限即见全站页面"
+        },
+        {
+          "file": "internal/module/order/service/order_query.go",
+          "lines": "20-31",
+          "snippet": "仅用 orderId 查询",
+          "note": ""
+        },
+        {
+          "file": "internal/module/product/service/product_service.go",
+          "lines": "357-365",
+          "snippet": "仅用 req.ID 查询",
+          "note": ""
+        },
+        {
+          "file": "internal/module/order/service/order_query.go",
+          "lines": "127-133",
+          "snippet": "访客侧 ListVisitorOrders 与 GetVisitorOrder 强制 user_id，做得对",
+          "note": "对照：访客侧的收口是正确范例"
+        },
+        {
+          "file": "internal/module/admin/inbound/http/admin_router.go",
+          "lines": "165-176",
+          "snippet": "datarule 只注册 sys_admin 表",
+          "note": "业务表无数据权限覆盖"
+        }
+      ],
+      "impact": "多工程部署时，被授予业务读权限的普通管理员可以通过枚举或泄露的 uuid 访问其他工程的页面草稿、订单、商品数据。单工程部署无影响。如果产品要走多租户 SaaS，这是必须先解决的问题。",
+      "rootCause": "工程隔离只在列表与创建路径上考虑了（那些地方有 project_id 参数），按 id 的详情与修改路径依赖「知道 id 就是有权限」这个隐含假设。",
+      "remediation": {
+        "approach": "所有按 id 的读写强制带 project_id 条件（从会话或请求的当前工程上下文取，不从请求体取）。列表默认带工程 scope。这是一次系统性排查。",
+        "steps": [
+          "确定当前工程上下文的来源（会话里的当前工程？请求参数？需要先明确这个机制）",
+          "所有 service 的按 id 方法签名增加 projectID 参数",
+          "model 的查询条件加 project_id",
+          "列表方法一律带 project_id",
+          "写一个检查脚本或测试：遍历 model 方法，凡是按 id 查询业务表的必须带 project_id（可用 AST 分析或人工清单）",
+          "补越权测试：用工程 A 的会话请求工程 B 的资源 id，断言 404 而非 200",
+          "长远考虑 RLS 做数据库层兜底（DB-009）"
+        ],
+        "effortDays": 3,
+        "risk": "medium",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "跨工程访问返回 404（与不存在同一响应，不泄露存在性）",
+        "越权测试覆盖 page / order / product / media / mail / masterdata",
+        "单工程部署行为不变"
+      ],
+      "dependsOn": [],
+      "blocks": [
+        "DB-009"
+      ],
+      "phase": "P0",
+      "tags": [
+        "authz",
+        "idor",
+        "multi-tenant"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：page/order/product/block/media 按 id 查询强制 projectId 过滤。"
+    },
+    {
+      "id": "SEC-003",
+      "title": "公开端点缺专项速率限制（注册、密码重置、打点、片段、搜索）",
+      "severity": "medium",
+      "type": "security",
+      "confidence": "confirmed",
+      "problem": "登录与验证码有 10 次每分钟的专项限流，做得对。但访客面的注册、激活重发、密码重置、analytics 打点、全部运行时片段、站内搜索都只受全局限流（默认 120 次每分钟每 IP）保护。且全局限流基于 RemoteAddr，代码注释已说明多实例需要外置限流。",
+      "evidence": [
+        {
+          "file": "internal/module/user/inbound/http/user_router.go",
+          "lines": "54-67",
+          "snippet": "注册与登录与重置路由无模块级限流",
+          "note": ""
+        },
+        {
+          "file": "internal/module/analytics/inbound/http/analytics_handle.go",
+          "lines": "49-73",
+          "snippet": "仅 64KiB 体积限制",
+          "note": "写库路径"
+        },
+        {
+          "file": "internal/module/runtimefragment/router.go",
+          "lines": "33-38",
+          "snippet": "片段路由无专项限流",
+          "note": "片段渲染是 CPU 与 DB 密集的"
+        },
+        {
+          "file": "internal/middleware/middleware.go",
+          "lines": "61-63,92-102",
+          "snippet": "全局限流默认 120 次每分钟每 IP，可关闭",
+          "note": ""
+        },
+        {
+          "file": "internal/module/admin/inbound/http/admin_router.go",
+          "lines": "19-46",
+          "snippet": "登录与验证码有 10 次每分钟专项限流（正面范例）",
+          "note": ""
+        }
+      ],
+      "impact": "三类攻击面。一是资源耗尽：analytics/collect 是唯一的访客写库路径，120 次每分钟每 IP 乘以多 IP 可以持续写库；片段渲染（尤其 productList 每次要跑一轮编译加多次 SQL）可以打满 CPU 与数据库。二是枚举与骚扰：注册与密码重置可用于邮箱枚举与向他人邮箱发骚扰邮件。三是搜索的关键词有长度限制与结果上限（做得对），但 QPS 无限制。",
+      "rootCause": "限流按需加在了最明显的登录路径上，其它公开端点没有系统排查。",
+      "remediation": {
+        "approach": "按端点性质分级限流：写库类（注册、重置、打点）严格；计算密集类（片段、搜索）中等；只读轻量类宽松。密码重置与注册额外按邮箱维度限流（防止针对单个邮箱的骚扰）。",
+        "steps": [
+          "注册与激活重发与密码重置：按 IP 与按邮箱双维度限流（比如同邮箱每小时 3 次）",
+          "analytics/collect：按 IP 限流（比如每分钟 60 次，正常访客不会超）",
+          "运行时片段：按 IP 限流，写路径（cart 的 add/setQty）更严格",
+          "搜索：按 IP 限流",
+          "限流状态存 Redis 而非进程内（多实例一致，且 Redis 已是 Critical 组件）",
+          "限流触发时返回 429 而非静默丢弃",
+          "文档说明生产环境仍应在反向代理或 CDN 层做第一道限流"
+        ],
+        "effortDays": 2,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "超限返回 429",
+        "同邮箱的重置请求被按邮箱维度限制",
+        "正常访客的浏览与加购不受影响"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P0",
+      "tags": [
+        "dos",
+        "rate-limit",
+        "public-endpoint"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：访客注册/登录/重置、analytics/collect、/_fragments 专项限流。"
+    },
+    {
+      "id": "SEC-004",
+      "title": "debug 模式的三处特有风险：一键登录、CORS 反射任意 Origin、信任所有代理",
+      "severity": "medium",
+      "type": "security",
+      "confidence": "confirmed",
+      "problem": "debug 模式下有一键登录路由（有 RemoteAddr 环回校验，release 不注册）、CORS 反射任意 Origin 且带 credentials、TrustedProxies 信任所有代理（导致 ClientIP 可被 XFF 伪造，进而绕过基于 IP 的限流与污染审计日志）。三者在 release 模式下都有正确处理。",
+      "evidence": [
+        {
+          "file": "internal/routers/routes.go",
+          "lines": "158-159",
+          "snippet": "dev_login 仅 debug 注册",
+          "note": "release 路由不存在"
+        },
+        {
+          "file": "internal/module/dashboard/inbound/http/dev_login.go",
+          "lines": "41-47",
+          "snippet": "RemoteAddr 环回校验",
+          "note": "有防护"
+        },
+        {
+          "file": "internal/middleware/builtin/cors.go",
+          "lines": "58-63,96-104",
+          "snippet": "release 无白名单则拒绝跨域（fail-closed，正确）；debug 反射任意 Origin 且带 credentials",
+          "note": ""
+        },
+        {
+          "file": "cmd/main.go",
+          "lines": "157-175",
+          "snippet": "release TrustedProxies 为 nil（不信任 XFF）；debug 信任所有",
+          "note": ""
+        }
+      ],
+      "impact": "如果有人把 debug 配置带到生产（或在公网可达的环境跑 debug），这三条合起来是完整的入侵路径：一键登录拿后台权限、CORS 反射配合 credentials 可从任意站点发起带凭据的请求、XFF 伪造绕过限流并让审计日志失去价值。环回校验能挡住直接访问，但如果前面有反代且传了 XFF，ClientIP 会取到伪造值（debug 信任所有代理），环回校验可能被绕过。",
+      "rootCause": "debug 模式为开发便利做了很多放宽，这本身合理，但缺少「防止 debug 配置泄漏到生产」的机制。",
+      "remediation": {
+        "approach": "保留 debug 的便利，但增加多重护栏：启动时若 debug 模式且监听地址不是 localhost，打出醒目警告（或要求显式的 allow_public_debug 配置项）；dev_login 的环回校验改用 RemoteAddr 而不是 ClientIP（后者可被 XFF 影响）。",
+        "steps": [
+          "确认 dev_login 的环回校验用的是 c.Request.RemoteAddr 而非 c.ClientIP()（前者不受 XFF 影响）",
+          "debug 模式且绑定非 localhost 时启动打醒目警告并要求确认配置项",
+          "文档在部署章节明确列出生产必须 release 的检查清单",
+          "考虑在 debug 模式的所有响应加一个显眼的响应头（便于发现误配）"
+        ],
+        "effortDays": 0.75,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "dev_login 无法通过伪造 XFF 绕过",
+        "debug 绑定公网地址时有明确警告"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P0",
+      "tags": [
+        "configuration",
+        "debug",
+        "cors"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：debug/test 监听地址默认收紧到 127.0.0.1（server.debug_allow_public 显式放开并告警）；所有非 release 响应带 X-GOWP-Debug 标记头；README 补生产部署检查清单。dev_login 的环回校验本就取 RemoteAddr（不受 XFF 影响）。"
+    },
+    {
+      "id": "SEC-005",
+      "title": "插件迁移的 SQL 黑名单存在可疑绕过面，且无包签名校验",
+      "severity": "high",
+      "type": "security",
+      "confidence": "likely",
+      "problem": "plugin_migrate 的防护是：剥离注释、SET LOCAL search_path 限定到插件 schema、拒绝含 public. 与 GRANT 与 COPY 等关键字。代码注释自己承认这只让安装权等同受信 DBA lite。可疑绕过面包括：非 schema 限定的 DROP TABLE（search_path 内的表）、CREATE EXTENSION、美元引号字符串内嵌语句、大小写与 Unicode 同形字符、多语句拼接。manifest 有 signature 字段但未实现校验。",
+      "evidence": [
+        {
+          "file": "internal/module/plugin/service/plugin_migrate.go",
+          "lines": "92-140",
+          "snippet": "注释剥离 + SET LOCAL search_path + 拒绝 public. 与 GRANT 等关键字",
+          "note": "黑名单方式，注释承认边界"
+        }
+      ],
+      "impact": "黑名单方式对抗构造过的输入本质上不可靠。当前的信任模型是「只有受信管理员能安装插件」，与产品方向（插件市场）冲突。一旦开放第三方插件，安装权就接近数据库管理员权限。",
+      "rootCause": "允许插件提供任意 SQL 是根本问题，黑名单只是缓解。",
+      "remediation": {
+        "approach": "改为结构化 DDL 声明：manifest 用结构化方式声明表与列与索引，内核生成 DDL，插件根本不提供 SQL。这样安全边界从「过滤恶意 SQL」变成「只能表达合法结构」，本质更强。同时实现包签名。",
+        "steps": [
+          "manifest 增加 tables 声明段（表名、列名与类型、索引、约束），类型限定在白名单内",
+          "内核按声明生成 CREATE TABLE 与 CREATE INDEX，表名强制加 plugin schema 前缀",
+          "变更走声明 diff（新增列可以，删列与改类型需要显式确认）",
+          "保留 SQL 通道作为高级选项但需要额外的显式权限与审计（或干脆不保留）",
+          "实现签名校验（发布者公钥，未签名包需二次确认并记审计）",
+          "评估数据库角色收窄（插件迁移用受限角色执行）"
+        ],
+        "effortDays": 3,
+        "risk": "medium",
+        "breaking": true,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "插件无法执行声明之外的 DDL",
+        "结构化声明能覆盖常见建表需求",
+        "签名校验生效"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P7",
+      "tags": [
+        "plugin",
+        "sql-injection",
+        "marketplace"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "SEC-006",
+      "title": "本地上传缺少写入前的根目录 containment 断言",
+      "severity": "medium",
+      "type": "security",
+      "confidence": "likely",
+      "problem": "本地上传 provider 有 sanitizeObjectKey 去除 .. 并用 O_NOFOLLOW 防符号链接（有单测覆盖）。但写入前没有显式断言目标路径确实在根目录内（filepath.Rel 加 .. 检查）。当前 ObjectKey 由服务端生成，风险较低。",
+      "evidence": [
+        {
+          "file": "pkg/upload/provider/local.go",
+          "lines": "102-103",
+          "snippet": "Clean 后直接写入，无 HasPrefix 或 Rel 断言",
+          "note": ""
+        },
+        {
+          "file": "pkg/upload/provider/local_test.go",
+          "lines": "47-69",
+          "snippet": "sanitizeObjectKey 有单测覆盖 .. 场景",
+          "note": "一层防护有"
+        }
+      ],
+      "impact": "当前 ObjectKey 服务端生成，所以不可直接利用。但这是纵深防御的缺口：如果将来有路径来自用户输入的场景（比如插件资产、导入功能），单层防护不够。",
+      "rootCause": "依赖输入清洗而没有做输出断言。",
+      "remediation": {
+        "approach": "写入前加断言：filepath.Rel(rootDir, targetPath) 的结果不能以 .. 开头。这是一行代码的成本。",
+        "steps": [
+          "写入前加 Rel 断言，失败直接返回错误",
+          "补测试：构造越界路径断言被拒绝",
+          "同样检查其它写文件的地方（产物写入、插件解包）是否有同类断言"
+        ],
+        "effortDays": 0.5,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "越界路径写入被拒绝",
+        "正常上传不受影响"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P0",
+      "tags": [
+        "upload",
+        "path-traversal",
+        "defense-in-depth"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：本地上传 filepath.Rel 根目录 containment 断言。"
+    },
+    {
+      "id": "SEC-007",
+      "title": "购物车片段 CSRF 豁免的三条理由成立，但残留两个条件性风险",
+      "severity": "medium",
+      "type": "security",
+      "confidence": "confirmed",
+      "problem": "购物车写路径声明 anonymous 并豁免 CSRF，AGENTS.md 给的三条理由核实后都成立：签名 cookie 使购物车无法伪造（HMAC-SHA256 加 hmac.Equal 常量时间比较）、SameSite=Lax 让跨站 POST 不带 cookie、结算只读 cookie 里的车不认表单里的商品。残留风险有两个：同站 XSS 可以发起同站 POST（Lax 不防同站）；cookie 的 Secure 属性依赖 X-Forwarded-Proto 判断，反代配置错误时可能在 HTTP 下发 cookie。",
+      "evidence": [
+        {
+          "file": "internal/module/cart/service/cart_cookie.go",
+          "lines": "75-106",
+          "snippet": "HMAC-SHA256 签名，hmac.Equal 常量时间比较",
+          "note": "实现正确"
+        },
+        {
+          "file": "internal/module/cart/service/cart.go",
+          "lines": "311-317",
+          "snippet": "SameSite=Lax",
+          "note": ""
+        },
+        {
+          "file": "internal/module/cart/service/cart_checkout.go",
+          "lines": "60-71",
+          "snippet": "结算只读 cookie 里的购物车",
+          "note": "第三条理由成立"
+        },
+        {
+          "file": "internal/module/runtimefragment/endpoint.go",
+          "lines": "168-172",
+          "snippet": "Secure 属性依据 X-Forwarded-Proto 判断",
+          "note": "依赖反代正确设置"
+        }
+      ],
+      "impact": "跨站 CSRF 确实防住了。同站 XSS 的风险是所有 CSRF 方案的共同前提（有 XSS 时 token 也能被读取），不算这个设计的特有缺陷。Secure 属性的问题在于：如果反代没设 X-Forwarded-Proto，HTTPS 站点的购物车 cookie 会不带 Secure，可能在降级攻击中被窃取（虽然购物车内容不算高价值数据）。",
+      "rootCause": "Secure 属性的判断依赖上游正确传递协议信息，这是自托管部署的常见配置陷阱。",
+      "remediation": {
+        "approach": "增加配置项显式声明站点是否 HTTPS（不依赖请求头推断），release 模式下默认按 HTTPS 处理。同时文档明确反代必须设置的请求头清单。",
+        "steps": [
+          "配置项 server.site_https（或从 site_url 的 scheme 推断）",
+          "cookie 的 Secure 按配置而非请求头判断",
+          "release 模式下若配置缺失则默认 true（宁可在 HTTP 下 cookie 不生效，也不要在 HTTPS 下缺 Secure）",
+          "部署文档列出反代必须设置的头（X-Forwarded-Proto、X-Forwarded-For、Host）",
+          "购物车 cookie 加过期时间绑定（当前 30 天，见 SEC-010）"
+        ],
+        "effortDays": 0.75,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "HTTPS 站点的 cookie 始终带 Secure",
+        "配置缺失时按安全默认处理"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P0",
+      "tags": [
+        "cart",
+        "csrf",
+        "cookie",
+        "configuration"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：新增 pkg/sitehttps 作为「站点是否 HTTPS」的单一判定（server.site_https 显式 > server.mode 推导 > 未初始化 fail-closed）；auth / response / runtimefragment 三处 Secure 统一走它，不再采信 X-Forwarded-Proto。"
+    },
+    {
+      "id": "SEC-008",
+      "title": "弱 session secret 检查只覆盖 3 个固定值，自定义短密钥在 debug 只告警",
+      "severity": "medium",
+      "type": "security",
+      "confidence": "confirmed",
+      "problem": "release 模式会拒绝弱 session secret，但弱值集合只有 3 个固定字符串（包括 example 里的占位值）。自定义的短密钥或常见密钥（比如 12345678、password）在 debug 只告警、在 release 能通过。",
+      "evidence": [
+        {
+          "file": "pkg/auth/cookie_session.go",
+          "lines": "65-77,108-111",
+          "snippet": "弱密钥集合 3 个固定值；release 拒绝",
+          "note": "机制对，覆盖面窄"
+        },
+        {
+          "file": "config.yaml.example",
+          "lines": "49",
+          "snippet": "your-session-secret-key-change-this",
+          "note": "在弱值集合里，会被拒绝，这点做得对"
+        }
+      ],
+      "impact": "session secret 同时用于会话签名、购物车 cookie 签名、CSRF token、analytics 的 IP 哈希盐。一个弱密钥可以推导出所有这些。检查只挡住了占位值，挡不住用户自己设的弱密钥。",
+      "rootCause": "弱密钥检查用了黑名单方式。",
+      "remediation": {
+        "approach": "改为强度检查：最小长度（建议 32 字节）、字符多样性、不在常见密码列表里。release 模式不满足则拒绝启动。同时提供生成命令。",
+        "steps": [
+          "长度检查（release 强制至少 32 字节）",
+          "熵检查（简单版：不同字符数量、不是重复模式）",
+          "保留固定弱值黑名单作为补充",
+          "提供 make gen-secret 或启动时的生成提示",
+          "考虑不同用途用不同密钥（会话、购物车、CSRF、哈希盐各自派生，用 HKDF 从主密钥派生即可，避免密钥复用）"
+        ],
+        "effortDays": 1,
+        "risk": "low",
+        "breaking": true,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "弱密钥在 release 被拒绝并给出生成建议",
+        "派生后各用途密钥独立"
+      ],
+      "dependsOn": [
+        "OSS-014"
+      ],
+      "blocks": [],
+      "phase": "P0",
+      "tags": [
+        "configuration",
+        "crypto",
+        "session"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：release 模式 session_secret 最短 32 字符 fail-fast。"
+    },
+    {
+      "id": "SEC-009",
+      "title": "只有客户 DTO 有凭据字段的反射断言，其它模块无同等保障",
+      "severity": "medium",
+      "type": "security",
+      "confidence": "confirmed",
+      "problem": "客户管理的响应 DTO 有反射断言测试，确保不含 password 与 activation_key 等凭据字段。这个做法很好，但只有这一处。其它模块（admin 管理员、mail 发信账号含 SMTP 密码、plugin、user 的其它接口）没有同类保障。",
+      "evidence": [
+        {
+          "file": "public/test/user/feature/user_customer_admin_test.go",
+          "lines": "327-349",
+          "snippet": "反射断言 DTO 不含凭据字段",
+          "note": "正面范例，应推广"
+        }
+      ],
+      "impact": "mail 的发信账号含 SMTP 密码，admin 含密码哈希，这两处如果 DTO 直接搬运实体字段就会泄露。需要逐个核实。即使当前没问题，也缺少防止将来引入的机制。",
+      "rootCause": "反射断言是针对客户管理这一个能力写的，没有做成通用守卫。",
+      "remediation": {
+        "approach": "把反射断言做成通用测试工具：给定一个 DTO 类型，断言其字段名不匹配敏感词清单（password、secret、token、key、hash、salt 等）。对所有对外响应 DTO 跑一遍。",
+        "steps": [
+          "抽出通用断言函数（敏感词清单可配）",
+          "枚举所有对外响应 DTO 类型（可以用一个注册表或按包扫描）",
+          "逐个跑断言，发现的问题逐个修",
+          "重点核查 mail 的账号 DTO 与 admin 的管理员 DTO",
+          "嵌套结构要递归检查"
+        ],
+        "effortDays": 1,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "全部响应 DTO 通过断言",
+        "新增含敏感字段的 DTO 会被测试拦住"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P0",
+      "tags": [
+        "information-disclosure",
+        "testing",
+        "dto"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：public/test/support/dto_exposure.go —— AST 扫描全部 dto 包 + 反射断言（共用敏感词与允许清单，允许项须写理由）；public/test/security/unit 覆盖 mail/admin/user 关键响应类型；客户管理原有断言收敛到该实现。"
+    },
+    {
+      "id": "SEC-010",
+      "title": "购物车签名 cookie 有效期 30 天且不绑用户，期内可重放",
+      "severity": "low",
+      "type": "security",
+      "confidence": "confirmed",
+      "problem": "购物车 cookie 的 MaxAge 是 30 天，签名只保证完整性不绑定用户或会话。30 天内同一份 cookie 可以重放（在不同浏览器里贴上同一个 cookie 就得到同一个购物车）。",
+      "evidence": [
+        {
+          "file": "internal/module/cart/contract/cart_service.go",
+          "lines": "0",
+          "snippet": "CartCookieMaxAgeSeconds = 30*24*3600",
+          "note": ""
+        }
+      ],
+      "impact": "低。购物车内容不是凭据，重放的后果只是「别人也有同样的购物车」。结算时仍会服务端验价与验库存。但如果将来在 cookie 里放更多状态（比如优惠码），风险会上升。",
+      "rootCause": "购物车设计为纯客户端状态，不绑定身份是为了让未登录访客也能加购。",
+      "remediation": {
+        "approach": "保持不绑用户（那是设计前提），但在签名载荷里加签发时间并校验有效期（防止极长期的重放）。若将来往 cookie 里放敏感状态，再考虑绑定会话。",
+        "steps": [
+          "签名载荷加签发时间戳",
+          "校验时检查是否超过有效期（与 MaxAge 一致）",
+          "文档说明购物车 cookie 的安全模型（保证完整性、不保证唯一性）"
+        ],
+        "effortDays": 0.5,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "过期 cookie 被拒绝",
+        "正常购物流程不受影响"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P7",
+      "tags": [
+        "cart",
+        "cookie",
+        "replay"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：购物车 cookie v2 含签发时间校验。"
+    },
+    {
+      "id": "SEC-011",
+      "title": "权限点缺口只能靠脚本运行时检测，无法静态保证",
+      "severity": "medium",
+      "type": "design-flaw",
+      "confidence": "confirmed",
+      "problem": "authorizedAPI 组统一挂 Casbin 中间件，按实际请求路径 enforce。权限点在迁移里 seed。如果新增接口漏 seed 权限点，没有任何策略能匹配，含超管在内全员 403。AGENTS.md 记录了 072、077、078、079、151 五次踩坑。检测靠 check-permission-gaps.sh，它需要连库运行时对比路由与 sys_permission。",
+      "evidence": [
+        {
+          "file": "scripts/check-permission-gaps.sh",
+          "lines": "0",
+          "snippet": "运行时装配路由与 sys_permission 对比，豁免 4 条",
+          "note": "机制存在但需连库运行"
+        }
+      ],
+      "impact": "漏 seed 的表现是功能完全不可用（403），会被立刻发现，所以不算安全漏洞而是可用性问题。但反复踩坑五次说明流程有缺陷。没有 CI 就意味着这个脚本可能没人跑。",
+      "rootCause": "权限点是运行时数据（数据库里的 seed），路由是编译期定义，两者的一致性无法静态检查。",
+      "remediation": {
+        "approach": "接入 CI（有数据库的环境里跑这个脚本），同时考虑把权限点声明移到代码里（路由注册时声明所需权限点，启动时自动 seed），从根上消除漏 seed 的可能。",
+        "steps": [
+          "短期：CI 里跑 check-permission-gaps.sh（依赖 OSS-010 的 CI）",
+          "长期：路由注册时声明权限点（比如 authorizedAPI.POST(path, perm, handler)），启动时自动 upsert 到 sys_permission 与超管策略",
+          "自动 seed 要幂等且不覆盖人工的角色分配",
+          "这样权限点与路由天然一致，脚本变成兜底而非唯一手段"
+        ],
+        "effortDays": 2,
+        "risk": "medium",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "新增接口无需手动 seed 权限点",
+        "CI 能发现遗漏"
+      ],
+      "dependsOn": [
+        "OSS-010"
+      ],
+      "blocks": [],
+      "phase": "P6",
+      "tags": [
+        "authz",
+        "casbin",
+        "ci",
+        "developer-experience"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "SEC-012",
+      "title": "HTTP 日志可能记录含敏感参数的完整 query，无脱敏层",
+      "severity": "medium",
+      "type": "security",
+      "confidence": "confirmed",
+      "problem": "请求日志记录 method 与 path 与 status 与 client_ip 与 latency。开启 HTTP 捕获时可能带完整 query string。全库没有统一的敏感信息脱敏层。登录日志记 username（可接受）但要确认不记密码。",
+      "evidence": [
+        {
+          "file": "internal/middleware/builtin/request_log.go",
+          "lines": "47-56",
+          "snippet": "记录 method / path / status / client_ip / latency_ms",
+          "note": "需确认是否含 query"
+        },
+        {
+          "file": "internal/middleware/builtin/request_log.go",
+          "lines": "74-76",
+          "snippet": "开启 HTTP 捕获时每个 4xx 一条 Warn",
+          "note": "默认 log.capture.http 为 false"
+        }
+      ],
+      "impact": "query 里可能有邮件追踪 token、密码重置 token、退订 token（这些都在 URL 里）。日志被收集到集中平台后，这些 token 就散落在日志里。密码重置 token 泄露可以直接接管账号。",
+      "rootCause": "日志中间件记录原始请求信息，没有脱敏。",
+      "remediation": {
+        "approach": "加脱敏层：query 里的敏感参数名（token、key、code、password、secret）的值替换为占位符。同时评估把这些 token 从 URL 移到 POST body（更彻底，但邮件链接必须用 GET）。",
+        "steps": [
+          "定义敏感参数名清单",
+          "日志记录前脱敏 query",
+          "确认登录与重置的 handler 不打印请求体",
+          "邮件里的 token 链接无法避免走 URL，但可以做成一次性且短有效期（当前重置 token 30 分钟，做得对）",
+          "考虑 token 落地后立刻换成会话（点击链接后重定向到不带 token 的页面）"
+        ],
+        "effortDays": 1,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "日志里的 token 参数被脱敏",
+        "排障所需信息仍完整"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P0",
+      "tags": [
+        "logging",
+        "information-disclosure"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：HTTP 日志 query 敏感参数 redact。"
+    },
+    {
+      "id": "SEC-013",
+      "title": "analytics 的 IP 哈希盐直接取会话密钥，存在密钥复用",
+      "severity": "low",
+      "type": "security",
+      "confidence": "confirmed",
+      "problem": "打点的 IP 与会话与访客标识哈希用的盐是会话密钥（auth.session_secret）。同一个密钥同时用于会话签名、CSRF token、购物车 cookie 签名、打点哈希盐。",
+      "evidence": [
+        {
+          "file": "internal/routers/routes.go",
+          "lines": "347-349",
+          "snippet": "analytics 的 pepper 取会话密钥",
+          "note": ""
+        },
+        {
+          "file": "internal/module/analytics/service/analytics_service.go",
+          "lines": "54",
+          "snippet": "带 pepper 的 SHA256",
+          "note": "不存 IP 明文，这点做得对"
+        }
+      ],
+      "impact": "密钥复用违反最小权限原则：如果打点哈希的盐通过某种方式泄露（比如日志、错误信息、或分析数据导出），会话密钥也就泄露了，进而可以伪造会话与 CSRF token。风险路径较长但成本可以很低地消除。",
+      "rootCause": "需要一个稳定的盐，直接复用了现成的密钥。",
+      "remediation": {
+        "approach": "用 HKDF 从主密钥派生各用途的子密钥（会话、CSRF、购物车、打点盐各一个），子密钥泄露不影响主密钥与其它用途。",
+        "steps": [
+          "实现 HKDF 派生（标准库 golang.org/x/crypto/hkdf）",
+          "各用途用不同的 info 标签派生",
+          "注意：改派生方式会让现有的会话与购物车 cookie 失效（需要在版本说明里提示，或做一次兼容过渡）",
+          "打点盐的变更会让历史哈希无法与新哈希关联（UV 统计会在切换点断开，可接受）"
+        ],
+        "effortDays": 1,
+        "risk": "medium",
+        "breaking": true,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "各用途密钥独立",
+        "切换后功能正常"
+      ],
+      "dependsOn": [
+        "SEC-008"
+      ],
+      "blocks": [],
+      "phase": "P7",
+      "tags": [
+        "crypto",
+        "key-management",
+        "analytics"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "SEC-014",
+      "title": "上传的 SVG 处理需确认，SVG 可携带脚本",
+      "severity": "medium",
+      "type": "security",
+      "confidence": "needs-verification",
+      "problem": "上传有扩展名与 MIME 与魔数三层校验，并明确拒绝 HTML 与 SVG（代码显示魔数检测会拒 HTML 与 SVG）。需要确认：是否所有上传路径都走这个校验、SVG 是否真的被完全拒绝（如果业务需要 SVG 图标，可能有例外路径）。",
+      "evidence": [
+        {
+          "file": "pkg/upload/upload.go",
+          "lines": "274-302",
+          "snippet": "扩展名与 MIME 白名单 + 魔数拒绝 HTML 与 SVG + 流式大小限制",
+          "note": "防护看起来完整，需确认无例外路径"
+        }
+      ],
+      "impact": "如果 SVG 能被上传并从 /storage 直接访问，SVG 里的 script 会在站点域下执行（存储型 XSS）。而 /storage 是同域的静态服务。",
+      "rootCause": "SVG 既是图片也是可执行文档，这是它的固有风险。",
+      "remediation": {
+        "approach": "确认 SVG 确实被拒绝。如果业务需要 SVG（图标场景常见），走两条路之一：上传时用严格的 SVG 清洗（移除 script 与事件属性与外部引用），或把 /storage 的响应加 Content-Disposition 与 CSP 头防止脚本执行。",
+        "steps": [
+          "核实所有上传入口都经过同一校验（媒体库、插件资产、邮件附件如有）",
+          "若确认 SVG 被拒绝，在文档里明确说明（避免有人为了图标需求加白名单）",
+          "若需要支持 SVG，实现清洗并加测试（对照 SanitizeRichHTML 的做法）",
+          "/storage 响应加 X-Content-Type-Options: nosniff 与合适的 CSP",
+          "考虑把用户上传的文件放到独立域名（彻底隔离，但增加部署复杂度）"
+        ],
+        "effortDays": 1,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "带脚本的 SVG 无法上传或上传后无法执行脚本",
+        "所有上传入口统一校验"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P0",
+      "tags": [
+        "upload",
+        "xss",
+        "svg"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：upload 拒绝 SVG + /storage nosniff。"
+    },
+    {
+      "id": "SEC-015",
+      "title": "webhook 若实现需防 SSRF（前瞻项）",
+      "severity": "low",
+      "type": "security",
+      "confidence": "confirmed",
+      "problem": "当前没有 webhook 能力。OSS-006 提议实现时，用户可配置的目标 URL 会引入 SSRF 风险（指向内网地址探测或攻击内部服务）。",
+      "evidence": [
+        {
+          "file": "internal/module/plugin",
+          "lines": "0",
+          "snippet": "当前无 webhook 实现",
+          "note": "前瞻记录"
+        }
+      ],
+      "impact": "未来风险。记录在案以便实现时不遗漏。",
+      "rootCause": "N/A（前瞻）。",
+      "remediation": {
+        "approach": "实现 webhook 时校验目标 URL：拒绝私有地址段（10/8、172.16/12、192.168/16、127/8、169.254/16、::1 等）、拒绝非 http 与 https 协议、DNS 解析后再次校验（防 DNS rebinding）、限制重定向跟随。",
+        "steps": [
+          "URL 校验函数（协议、主机名、解析后的 IP）",
+          "自定义 http.Client 的 DialContext 里做二次校验（防 rebinding）",
+          "不跟随重定向或只跟随到同样通过校验的地址",
+          "超时与响应体大小限制",
+          "同样的校验用于任何「用户可配置的外部请求」场景（比如将来的图片抓取、导入）"
+        ],
+        "effortDays": 1,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "指向内网的 webhook 被拒绝",
+        "DNS rebinding 无效"
+      ],
+      "dependsOn": [
+        "OSS-006"
+      ],
+      "blocks": [],
+      "phase": "P7",
+      "tags": [
+        "ssrf",
+        "webhook",
+        "forward-looking"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "SEC-016",
+      "title": "没有 SECURITY.md，安全研究者无处报告漏洞",
+      "severity": "medium",
+      "type": "missing-feature",
+      "confidence": "confirmed",
+      "problem": "仓库没有 SECURITY.md，没有说明漏洞报告渠道与响应承诺。",
+      "evidence": [
+        {
+          "file": ".github",
+          "lines": "0",
+          "snippet": "目录不存在",
+          "note": "同 OSS-011"
+        }
+      ],
+      "impact": "开源后安全研究者发现漏洞只能公开披露（提 issue），这对所有用户都是风险。",
+      "rootCause": "未做开源准备。",
+      "remediation": {
+        "approach": "随 OSS-011 一并写 SECURITY.md：报告渠道（专用邮箱）、响应时限承诺、支持的版本、披露流程。",
+        "steps": [
+          "SECURITY.md 含报告邮箱与 PGP 公钥（可选）",
+          "承诺响应时限（比如 48 小时确认、90 天披露）",
+          "说明哪些版本在支持范围",
+          "GitHub 的 private vulnerability reporting 功能可以开启"
+        ],
+        "effortDays": 0.25,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "SECURITY.md 存在且渠道可用"
+      ],
+      "dependsOn": [
+        "OSS-011"
+      ],
+      "blocks": [],
+      "phase": "P7",
+      "tags": [
+        "opensource",
+        "security-policy"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：添加 SECURITY.md 私下报告渠道说明。"
+    }
+  ]
+}

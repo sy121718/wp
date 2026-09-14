@@ -1,0 +1,1252 @@
+{
+  "dimension": "ui-multidevice",
+  "dimensionTitle": "UI 多端适配、无障碍与编辑器体验",
+  "scope": "internal/templates/admin 的 48 个页面与 partials、internal/templates/static/css 六个 CSS 文件、41 个构建期组件的 CSS 与模板、31 个运行时片段模板、internal/templates/static/js/workbench（约 6300 行）",
+  "verdict": "项目自己在 AGENTS.md 里定了很硬的多端规则（宽度写 min(100%, 设计宽度)、绝对值用 min/clamp 按视口封顶、AddHover 必须配 AddHoverNone 触屏等价形态），但实际有 11 个组件裸写 :hover、8 个组件有 hover 桶却没有触屏等价形态。最严重的两处是 core.nav 的桌面子菜单纯靠 hover 显示（触屏上打不开）与 core.cartIcon 的 hover 形态在触屏上无法原地展开购物车。后台全局布局根本没有移动端断点，375px 下侧栏吃掉 312px。工作台的媒体弹窗写了 clamp(800px, 86vw, 1280px)，手机上必然横向溢出。无障碍有自动化测试兜底（a11y_audit_test 与 CDP 键盘测试），但 slider 无键盘路径、tabs 的 label 带 aria-hidden。",
+  "findings": [
+    {
+      "id": "UI-001",
+      "title": "后台全局布局没有任何移动端断点，375px 下侧栏占掉 312px",
+      "severity": "high",
+      "type": "implementation-bug",
+      "confidence": "confirmed",
+      "problem": "后台布局是 .rail（88px 图标栏）加 .subnav（224px 二级导航）固定并排。theme.css 里 .rail、.subnav、.admin-layout 三个选择器没有任何 @media 规则。部分业务页有 720px 的表格堆叠断点，但全局布局没有。",
+      "evidence": [
+        {
+          "file": "internal/templates/static/css/theme.css",
+          "lines": "124-156",
+          "snippet": ".admin-layout 与 .rail 与 .subnav 固定并排布局",
+          "note": "无媒体查询"
+        },
+        {
+          "file": "internal/templates/static/css/theme.css",
+          "lines": "541-586",
+          "snippet": "侧栏样式段，同样无媒体查询",
+          "note": ""
+        },
+        {
+          "file": "internal/templates/static/css/theme.css",
+          "lines": "239,278,317,380,416,725",
+          "snippet": "部分业务页有 max-width 720px 的表格堆叠",
+          "note": "局部有、全局无"
+        }
+      ],
+      "impact": "375px 视口下导航占 312px，内容区只剩几十像素，后台在手机上不可用。工作台有 900px 的覆盖抽屉断点（说明这个做法是可行的），但常规后台页面没有。运营在手机上处理订单、看库存这类需求完全落空。",
+      "rootCause": "后台按桌面优先设计，移动端没有被列为需求。",
+      "remediation": {
+        "approach": "参照工作台已有的覆盖抽屉做法：窄视口下 rail 收成底部标签栏或顶部汉堡菜单，subnav 改为覆盖式抽屉，内容区占满。",
+        "steps": [
+          "定义断点（建议 1024px 平板、640px 手机）",
+          "1024px 以下 subnav 改覆盖抽屉（复用 drawer 基座）",
+          "640px 以下 rail 改顶部汉堡或底部标签栏",
+          "内容区宽度改为流式，表格在窄屏堆叠（部分页面已有，统一到基座）",
+          "触屏上的导航展开要用点击而非 hover（见 UI-004）",
+          "三种视口各验一遍，窄视口下断言 document.documentElement.scrollWidth 等于 clientWidth"
+        ],
+        "effortDays": 2.5,
+        "risk": "medium",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "375px 与 768px 下后台可正常使用",
+        "无横向溢出",
+        "触屏能打开与关闭导航"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P8",
+      "tags": [
+        "admin-ui",
+        "responsive",
+        "hard-rule"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "UI-002",
+      "title": "core.nav 的桌面子菜单纯靠 :hover 显示，触屏上打不开",
+      "severity": "high",
+      "type": "implementation-bug",
+      "confidence": "confirmed",
+      "problem": "导航子菜单的显示规则写在桌面桶里且用裸 :hover，没有包在 @media (hover: hover) 里，也没有触屏等价形态。只有开启 mobileCollapse 选项时才在 767px 以下改为内联子菜单。桌面尺寸的触屏设备（平板、触屏笔记本）打不开子菜单。",
+      "evidence": [
+        {
+          "file": "internal/builder/components/nav/nav.css",
+          "lines": "67-70",
+          "snippet": "子菜单靠 :hover 显示，未包 @media (hover: hover)",
+          "note": "触屏无等价形态"
+        },
+        {
+          "file": "internal/builder/components/nav/nav.css",
+          "lines": "36-38,80-82",
+          "snippet": "其余 hover 效果同样在桌面桶",
+          "note": ""
+        },
+        {
+          "file": "internal/builder/components/nav/nav.css",
+          "lines": "85-146",
+          "snippet": "移动端 checkbox 汉堡实现（sr-only + focus-visible），这部分做得对",
+          "note": "但只在 mobileCollapse 且窄屏时生效"
+        }
+      ],
+      "impact": "站点导航是每个页面都有的元素，二级菜单在平板上点不开等于那部分内容访问不到。AGENTS.md 明确写了「AddHover 的规则包在 @media (hover: hover) 里，触屏上根本不输出，依赖 :hover 的任何形态都必须用 AddHoverNone 给出触屏等价形态，否则手机端该功能等于不存在」，这里正是被点名的那种情况。",
+      "rootCause": "导航组件的 hover 展开是最早实现的交互之一，早于多端硬规则确立。",
+      "remediation": {
+        "approach": "子菜单改为「hover 展开（仅 hover 设备）加点击展开（所有设备）」双路径。用 details/summary 或 checkbox 技巧实现无 JS 的点击展开，hover 设备额外享受悬停展开。",
+        "steps": [
+          "子菜单容器改用 details 或 checkbox 模式（无 JS 可点击展开，键盘可达）",
+          "hover 展开规则移入 @media (hover: hover) 桶",
+          "AddHoverNone 里给出触屏形态（点击展开的视觉提示，比如箭头图标）",
+          "确认键盘路径：Tab 到父项、Enter 展开、方向键在子项间移动",
+          "aria-expanded 要跟随展开状态（用 CSS 无法改 aria，需要 details 的原生语义或极少量 JS）",
+          "三种视口 + 四种输入各验一遍"
+        ],
+        "effortDays": 2,
+        "risk": "medium",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "平板触屏能点开子菜单",
+        "鼠标悬停仍能展开",
+        "键盘可完整操作",
+        "无 JS 时仍可展开"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P8",
+      "tags": [
+        "components",
+        "hard-rule",
+        "touch",
+        "a11y",
+        "navigation"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "UI-003",
+      "title": "core.cartIcon 的 hover 形态在触屏上无法原地展开购物车",
+      "severity": "high",
+      "type": "design-flaw",
+      "confidence": "confirmed",
+      "problem": "购物车图标有四种形态，其中 hover 浮层形态的面板只在 :hover 时显示。触屏上退化为直接跳转链接（代码注释已承认）。访客在手机上无法原地查看购物车内容。",
+      "evidence": [
+        {
+          "file": "internal/builder/components/carticon/carticon.go",
+          "lines": "161-163",
+          "snippet": "hover 形态：面板仅 hover 显示",
+          "note": ""
+        },
+        {
+          "file": "internal/templates/components/cart_icon.jet",
+          "lines": "8",
+          "snippet": "触屏退化为 a href 跳转",
+          "note": "注释承认"
+        },
+        {
+          "file": "internal/builder/components/carticon/carticon.css",
+          "lines": "168-179",
+          "snippet": "注释说明触屏无法原地展开",
+          "note": ""
+        }
+      ],
+      "impact": "移动端是电商流量主体，购物车预览是转化路径上的关键交互。选了 hover 形态的站点在手机上失去这个能力，而站点作者在桌面浏览器里预览时看不出问题。",
+      "rootCause": "hover 形态本质上依赖悬停这个触屏不存在的交互。其余三种形态（下拉、抽屉、弹窗）用 details 实现，本来就没有这个问题。",
+      "remediation": {
+        "approach": "hover 形态在触屏上降级为下拉形态（用 details），而不是降级为跳转。即同一份 HTML 结构，hover 设备额外获得悬停展开能力。",
+        "steps": [
+          "hover 形态的 HTML 改用 details 结构（与下拉形态一致）",
+          "hover 展开规则包进 @media (hover: hover)，通过 CSS 让 details 在悬停时自动展开",
+          "AddHoverNone 里保证点击展开可用",
+          "或者更简单：在组件文档与编辑器里标注 hover 形态仅适合桌面为主的站点，默认推荐下拉形态",
+          "四种输入方式各验一遍"
+        ],
+        "effortDays": 1.5,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "手机上点击购物车图标能原地展开",
+        "鼠标悬停仍自动展开"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P8",
+      "tags": [
+        "components",
+        "hard-rule",
+        "touch",
+        "cart",
+        "conversion"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "UI-004",
+      "title": "core.button 与 core.socialbuttons 裸写 :hover，触屏上会粘滞",
+      "severity": "high",
+      "type": "implementation-bug",
+      "confidence": "confirmed",
+      "problem": "button 的 hoverState 与 iconShiftOn 规则写在桌面桶里用裸 :hover。socialbuttons 的 hover 规则更是有注释明确写「故意不包 hover 媒体查询」，与 AGENTS.md 的硬规则直接冲突。",
+      "evidence": [
+        {
+          "file": "internal/builder/components/button/button.css",
+          "lines": "79-85,94-96",
+          "snippet": "hoverState 与 iconShiftOn 用裸 :hover",
+          "note": ""
+        },
+        {
+          "file": "internal/builder/components/socialbuttons/socialbuttons.css",
+          "lines": "25-27",
+          "snippet": "注释写明故意不包 hover 媒体查询",
+          "note": "与硬规则冲突"
+        }
+      ],
+      "impact": "触屏上点一下按钮，hover 样式会一直保留到点别处（粘滞 hover）。按钮是最高频的组件，这个问题在移动端随处可见。",
+      "rootCause": "button 早于硬规则实现；socialbuttons 是有意选择但那个选择与后来确立的规则冲突了。",
+      "remediation": {
+        "approach": "hover 规则移入 @media (hover: hover) 桶，触屏用 AddActive 提供按压反馈（不带媒体查询，所有设备都有）。",
+        "steps": [
+          "button 的 hoverState 与 iconShiftOn 改用 AddHover",
+          "补 AddActive 提供按压反馈",
+          "socialbuttons 同样处理，并去掉那条与规则冲突的注释",
+          "跑组件 CSS 字节断言测试（会变化，需要更新预期）",
+          "触屏实测确认无粘滞"
+        ],
+        "effortDays": 1,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "触屏点击后 hover 样式不残留",
+        "按压有反馈",
+        "鼠标悬停行为不变"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P8",
+      "tags": [
+        "components",
+        "hard-rule",
+        "touch"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：button/socialbuttons hover 改 @hover 桶；触屏不输出裸 :hover。"
+    },
+    {
+      "id": "UI-005",
+      "title": "另有 9 个组件裸写 :hover（gallery / infobox / list / tabs / form / languages / marquee / cardstack 箭头等）",
+      "severity": "medium",
+      "type": "implementation-bug",
+      "confidence": "confirmed",
+      "problem": "除 nav 与 button 与 socialbuttons 外，还有一批组件的 hover 规则没有包在 hover 媒体查询里。多数是装饰性效果（影响较小），但 tabs 的 label hover 与 form 的提交按钮 hover 关系到交互反馈。",
+      "evidence": [
+        {
+          "file": "internal/builder/components/gallery/gallery.css",
+          "lines": "109,131,155",
+          "snippet": "缩略图与灯箱 hover 效果无触屏桶",
+          "note": ""
+        },
+        {
+          "file": "internal/builder/components/infobox/infobox.css",
+          "lines": "22,96,124",
+          "snippet": "容器与按钮 hover",
+          "note": ""
+        },
+        {
+          "file": "internal/builder/components/list/list.css",
+          "lines": "53,85,106",
+          "snippet": "链接与 marker hover",
+          "note": ""
+        },
+        {
+          "file": "internal/builder/components/tabs/tabs.css",
+          "lines": "78",
+          "snippet": "label:hover 在桌面桶，触屏无等价视觉反馈",
+          "note": ""
+        },
+        {
+          "file": "internal/builder/components/form/form.css",
+          "lines": "98",
+          "snippet": ".sky-form-submit:hover 未进 hover 桶",
+          "note": ""
+        },
+        {
+          "file": "internal/builder/components/languages/languages.css",
+          "lines": "49",
+          "snippet": "链接 hover 色",
+          "note": ""
+        },
+        {
+          "file": "internal/builder/components/marquee/marquee.css",
+          "lines": "35-37",
+          "snippet": "pauseOnHover 用裸 :hover（注释称触屏不暂停可接受）",
+          "note": "这条理由成立"
+        },
+        {
+          "file": "internal/builder/components/cardstack/cardstack.css",
+          "lines": "226-228",
+          "snippet": "箭头 :hover 未用 hover 桶前缀",
+          "note": ""
+        }
+      ],
+      "impact": "触屏粘滞 hover 的视觉噪声。form 的提交按钮与 tabs 的标签少了按压反馈，交互确认感弱。",
+      "rootCause": "硬规则确立后没有做一次全组件的排查与整改。",
+      "remediation": {
+        "approach": "统一整改：hover 规则进 hover 桶，交互性元素补 AddActive。marquee 的 pauseOnHover 保留（触屏不暂停确实合理）但补注释说明。",
+        "steps": [
+          "逐组件把 hover 规则改用 AddHover",
+          "交互性元素（tabs label、form submit、gallery 缩略图、cardstack 箭头）补 AddActive",
+          "装饰性的补或不补由是否影响可用性判断",
+          "更新各组件的 CSS 字节断言测试",
+          "写一个检查脚本：组件 CSS 里出现 :hover 但不在 hover 桶内即告警（允许显式豁免清单）",
+          "CI 接入该检查，防止再犯"
+        ],
+        "effortDays": 2,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "全部组件触屏无粘滞 hover",
+        "检查脚本在 CI 生效"
+      ],
+      "dependsOn": [
+        "UI-004"
+      ],
+      "blocks": [],
+      "phase": "P8",
+      "tags": [
+        "components",
+        "hard-rule",
+        "touch",
+        "ci"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "UI-006",
+      "title": "8 个组件用了 hover 桶但没有配对的 AddHoverNone 触屏等价形态",
+      "severity": "medium",
+      "type": "implementation-bug",
+      "confidence": "confirmed",
+      "problem": "AGENTS.md 硬规则第三条要求依赖 hover 的形态必须用 AddHoverNone 给出触屏等价形态。全库只有 productcard 与 cardstack 的展开卡做到了。productlist、cardstack 的 more-link、accordion、table、container、image、product、addToCart 都只有 hover 桶没有触屏等价。",
+      "evidence": [
+        {
+          "file": "internal/builder/components/productlist/productlist.css",
+          "lines": "309-311",
+          "snippet": "列表项 hover 阴影，只有 @active 取消阴影，触屏无常驻可点提示",
+          "note": "productcard 的做法可参照"
+        },
+        {
+          "file": "internal/builder/components/cardstack/cardstack.css",
+          "lines": "769-771",
+          "snippet": "more-link 边框 hover，无 hovernone",
+          "note": ""
+        },
+        {
+          "file": "internal/builder/components/accordion/accordion.css",
+          "lines": "51-53",
+          "snippet": "标题 hover 底色（注释称不构成功能缺口）",
+          "note": ""
+        },
+        {
+          "file": "internal/builder/components/table/table.css",
+          "lines": "47-49",
+          "snippet": "行 hover 高亮",
+          "note": ""
+        },
+        {
+          "file": "internal/builder/components/container/container.css",
+          "lines": "227",
+          "snippet": "容器 hover 背景",
+          "note": ""
+        },
+        {
+          "file": "internal/builder/components/image/image.css",
+          "lines": "53",
+          "snippet": "图片 hover 动效",
+          "note": ""
+        },
+        {
+          "file": "internal/builder/components/product/product.css",
+          "lines": "184",
+          "snippet": "规格值 hover 样式",
+          "note": ""
+        },
+        {
+          "file": "internal/builder/components/productcard/productcard.css",
+          "lines": "45",
+          "snippet": "合规范例：min(100%, 100%) 加 @hover 加 @hovernone 加 @active",
+          "note": "参照这个模式整改"
+        }
+      ],
+      "impact": "触屏上「哪些元素可点」的视觉线索缺失。productlist 尤其明显：桌面上悬停有阴影提示可点，触屏上完全没有提示。",
+      "rootCause": "AddHoverNone 是较晚加入的能力，只有新写的两个组件用上了。",
+      "remediation": {
+        "approach": "逐组件补 AddHoverNone：把 hover 时的可点提示在触屏上改为常驻（较弱的形态），参照 productcard 的现成模式。",
+        "steps": [
+          "以 productcard 为模板整理一份「可点元素的三态写法」（hover / hovernone / active）",
+          "逐组件按模板补",
+          "纯装饰性的 hover（container 背景、image 动效）可以不补，但要在注释里写明判断",
+          "扩展 UI-005 的检查脚本：有 hover 桶但无 hovernone 时告警（允许显式豁免）"
+        ],
+        "effortDays": 2,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "触屏上可点元素有视觉提示",
+        "检查脚本覆盖"
+      ],
+      "dependsOn": [
+        "UI-005"
+      ],
+      "blocks": [],
+      "phase": "P8",
+      "tags": [
+        "components",
+        "hard-rule",
+        "touch"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "UI-007",
+      "title": "工作台媒体选择弹窗写 clamp(800px, 86vw, 1280px)，375px 视口必然横向溢出",
+      "severity": "high",
+      "type": "implementation-bug",
+      "confidence": "confirmed",
+      "problem": "媒体选择弹窗宽度用 clamp 的下界是 800px。在 375px 视口下，clamp 会取下界 800px，弹窗宽度是视口的两倍多，必然横向溢出。",
+      "evidence": [
+        {
+          "file": "internal/templates/static/css/workbench.css",
+          "lines": "179-180",
+          "snippet": "clamp(800px, 86vw, 1280px)",
+          "note": "下界 800px 大于窄视口宽度"
+        }
+      ],
+      "impact": "工作台在手机与小平板上打开媒体库时弹窗超出屏幕，无法正常选图。这正是 AGENTS.md 硬规则第一条要防的情况（宽度不写死，写 min(100%, 设计宽度)）。",
+      "rootCause": "clamp 的下界被当成了「最小设计宽度」，但 clamp 的下界在窄视口下会成为实际值。正确写法是 min(100%, 期望宽度)。",
+      "remediation": {
+        "approach": "改为 min(100%, 1280px) 或 min(calc(100vw - 2rem), 1280px)，让窄视口下宽度跟随视口。",
+        "steps": [
+          "宽度改为 min(calc(100vw - 32px), 1280px)",
+          "内部布局在窄屏改为单列（媒体网格的列数按容器查询调整）",
+          "窄视口下确认 scrollWidth 等于 clientWidth",
+          "扫一遍 workbench.css 与其它 CSS 里所有 clamp 用法，检查下界是否都小于最窄视口"
+        ],
+        "effortDays": 0.75,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "375px 下弹窗不溢出且可用",
+        "无其它 clamp 下界越界"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P8",
+      "tags": [
+        "workbench",
+        "hard-rule",
+        "responsive"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：wb-media-panel 宽 min(calc(100vw-32px),1280px)，窄屏不溢出。"
+    },
+    {
+      "id": "UI-008",
+      "title": "core.slider 无键盘路径也无 focus-visible 样式",
+      "severity": "medium",
+      "type": "implementation-bug",
+      "confidence": "confirmed",
+      "problem": "轮播的增强脚本只处理点击与滚动，没有键盘方向键支持。箭头有 aria-label 但没有 focus-visible 样式。对比 cardstack 做得很好（容器 tabindex 加方向键加 focus-visible）。",
+      "evidence": [
+        {
+          "file": "internal/builder/components/slider/enhance.js",
+          "lines": "1-60",
+          "snippet": "只有 click 与 scroll 处理，无 keydown",
+          "note": ""
+        },
+        {
+          "file": "internal/builder/components/cardstack/enhance-drag.js",
+          "lines": "45-46",
+          "snippet": "cardstack 的键盘实现可参照",
+          "note": "容器 tabindex 加方向键"
+        },
+        {
+          "file": "internal/builder/components/cardstack/cardstack.css",
+          "lines": "793-797",
+          "snippet": "cardstack 有 focus-visible 样式",
+          "note": ""
+        }
+      ],
+      "impact": "键盘用户与读屏用户无法操作轮播。轮播常用于首屏主视觉，里面的内容与链接因此不可达。",
+      "rootCause": "slider 早于 cardstack 实现，键盘支持没有跟上后来确立的标准。",
+      "remediation": {
+        "approach": "照 cardstack 的模式补：容器可聚焦、方向键切换、focus-visible 轮廓。同时确认箭头按钮本身可 Tab 到。",
+        "steps": [
+          "容器加 tabindex=0 与 aria-roledescription",
+          "增强脚本加 keydown 处理（左右方向键、Home 与 End）",
+          "补 focus-visible 样式（复用主题的焦点轮廓令牌）",
+          "确认无 JS 时箭头仍是可聚焦的原生元素",
+          "用 CDP 实测：先聚焦容器再按方向键，断言 transform 或 scrollLeft 确实变化（AGENTS.md 强调只读属性名不算验证）"
+        ],
+        "effortDays": 1,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "键盘可切换轮播且值确实变化",
+        "焦点可见"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P8",
+      "tags": [
+        "components",
+        "a11y",
+        "keyboard"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "UI-009",
+      "title": "core.tabs 的 label 带 aria-hidden，读屏可能读不到标签文本",
+      "severity": "medium",
+      "type": "implementation-bug",
+      "confidence": "likely",
+      "problem": "tabs 用 sr-only radio 加 label 的无 JS 实现，focus-visible 在 label 上。但模板里 label 带 aria-hidden=true，这会让读屏软件跳过标签文本。",
+      "evidence": [
+        {
+          "file": "internal/templates/components/tabs.jet",
+          "lines": "1",
+          "snippet": "label 带 aria-hidden=true",
+          "note": "需确认可访问名是否由其它方式提供"
+        },
+        {
+          "file": "internal/builder/components/tabs/tabs.css",
+          "lines": "13-28",
+          "snippet": "sr-only radio 加 label 的 focus-visible 实现",
+          "note": "键盘可达性本身没问题"
+        }
+      ],
+      "impact": "如果 radio 的可访问名不是由 label 关联提供的，读屏用户听到的是「单选按钮」而没有标签内容，标签页导航不可用。需要用读屏软件或 accessibility tree 实测确认。",
+      "rootCause": "aria-hidden 可能是为了避免重复朗读（radio 与 label 都被读一次）而加的，但方式不对（正确做法是让 label 关联 radio，由 radio 承载可访问名）。",
+      "remediation": {
+        "approach": "先用 CDP 取 accessibility tree 确认实际可访问名，再决定：若 radio 已有正确可访问名则 aria-hidden 可保留，否则去掉并改用 label for 关联。",
+        "steps": [
+          "用 CDP 的 Accessibility.getFullAXTree 检查 tabs 的实际可访问名",
+          "按结果修正（去掉 aria-hidden 或改关联方式）",
+          "扩展 a11y_audit_test 覆盖这一项（断言每个 tab 有非空可访问名）"
+        ],
+        "effortDays": 0.75,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "accessibility tree 里每个 tab 有正确的可访问名",
+        "无重复朗读"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P8",
+      "tags": [
+        "components",
+        "a11y",
+        "aria"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "UI-010",
+      "title": "后台 10 处仍用原生 confirm 对话框，与 UI kit 的 dialog 并存",
+      "severity": "medium",
+      "type": "inconsistency",
+      "confidence": "confirmed",
+      "problem": "19 处已迁移到基座的 data-confirm（原生 dialog 实现），但仍有 10 处用 onsubmit return confirm 或 onclick confirm。",
+      "evidence": [
+        {
+          "file": "internal/templates/admin/products.html",
+          "lines": "81",
+          "snippet": "onsubmit return confirm",
+          "note": ""
+        },
+        {
+          "file": "internal/templates/admin/articles.html",
+          "lines": "73",
+          "snippet": "同类",
+          "note": ""
+        },
+        {
+          "file": "internal/templates/admin/product_categories.html",
+          "lines": "99",
+          "snippet": "同类",
+          "note": ""
+        },
+        {
+          "file": "internal/templates/admin/product_brands.html",
+          "lines": "83",
+          "snippet": "同类",
+          "note": ""
+        },
+        {
+          "file": "internal/templates/admin/product_tags.html",
+          "lines": "149",
+          "snippet": "同类",
+          "note": ""
+        },
+        {
+          "file": "internal/templates/admin/product_attributes.html",
+          "lines": "99",
+          "snippet": "同类",
+          "note": ""
+        },
+        {
+          "file": "internal/templates/admin/inventory.html",
+          "lines": "106",
+          "snippet": "同类",
+          "note": ""
+        },
+        {
+          "file": "internal/templates/admin/inventory_sources.html",
+          "lines": "196",
+          "snippet": "同类",
+          "note": ""
+        },
+        {
+          "file": "internal/templates/admin/mail_automation.html",
+          "lines": "49",
+          "snippet": "同类",
+          "note": ""
+        },
+        {
+          "file": "internal/templates/admin/product_pricing.html",
+          "lines": "103",
+          "snippet": "onclick confirm",
+          "note": ""
+        }
+      ],
+      "impact": "同一个后台里删除确认有两种外观（浏览器原生弹窗与自绘 dialog）。原生 confirm 还无法自定义文案样式、在某些浏览器里可以被用户勾选「不再显示」。",
+      "rootCause": "迁移未走完。",
+      "remediation": {
+        "approach": "10 处改用 data-confirm。纯机械改动。",
+        "steps": [
+          "逐处替换为 data-confirm 与 data-confirm-title 等属性",
+          "确认删除类操作的确认文案包含被删对象名称（原生 confirm 的文案要迁移过去）",
+          "加检查脚本：admin 模板里不允许出现 confirm(",
+          "CI 接入"
+        ],
+        "effortDays": 0.75,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "全部确认框外观一致",
+        "检查脚本生效"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P8",
+      "tags": [
+        "admin-ui",
+        "consistency",
+        "ui-kit"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：admin 模板 confirm() 改 data-confirm（10 处）。"
+    },
+    {
+      "id": "UI-011",
+      "title": "后台 HTMX 请求没有统一的 loading 态与错误处理",
+      "severity": "medium",
+      "type": "missing-feature",
+      "confidence": "confirmed",
+      "problem": "全后台没有任何 hx-indicator 或 htmx-indicator 类的使用，HTMX 请求期间没有视觉反馈。也没有 htmx:responseError 的全局处理，错误反馈依赖各页面自己弹 toast 或整页刷新。",
+      "evidence": [
+        {
+          "file": "internal/templates/admin",
+          "lines": "0",
+          "snippet": "全目录无 hx-indicator 与 htmx-indicator",
+          "note": "grep 无命中"
+        },
+        {
+          "file": "internal/templates/static/js/admin.js",
+          "lines": "0",
+          "snippet": "无 htmx:responseError 全局监听",
+          "note": ""
+        }
+      ],
+      "impact": "点了按钮没反应（请求在飞但没提示），用户会重复点击。请求失败时可能什么都不发生（HTMX 默认不替换错误响应的目标节点），用户以为操作成功了。后者是更严重的问题：保存失败但界面无变化，用户会认为已保存。",
+      "rootCause": "HTMX 的这两个横切能力需要统一配置，但一直靠各页面自己处理。",
+      "remediation": {
+        "approach": "在 ui 基座里加两个全局能力：默认 loading 指示（按钮忙碌态复用已有的 is-busy 类）与全局错误处理（监听 htmx:responseError 弹 toast）。",
+        "steps": [
+          "全局监听 htmx:beforeRequest 与 htmx:afterRequest，给触发元素加与去 is-busy",
+          "全局监听 htmx:responseError 与 htmx:sendError，弹 toast 显示错误（错误文案来自服务端响应，配合 CQ-009 的统一错误出口）",
+          "长请求（构建、发布）额外给显式的进度提示",
+          "确认 4xx 与 5xx 都被覆盖（HTMX 默认只有 2xx 会 swap）",
+          "补一个测试或手工核对清单：故意让请求失败，断言用户能看到提示"
+        ],
+        "effortDays": 1.5,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "HTMX 请求期间有 loading 反馈",
+        "请求失败时用户能看到明确错误"
+      ],
+      "dependsOn": [
+        "CQ-009"
+      ],
+      "blocks": [],
+      "phase": "P8",
+      "tags": [
+        "admin-ui",
+        "htmx",
+        "error-handling",
+        "ux"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "UI-012",
+      "title": "仪表盘页面 12 处内联样式且是 mock 数据",
+      "severity": "medium",
+      "type": "tech-debt",
+      "confidence": "confirmed",
+      "problem": "dashboard.html 有 12 处内联 style（硬编码字号与颜色），且用的是 pages-card 旧体系，内容是 mock 数据。全后台内联样式共 32 处分布在 9 个文件，这一页占了最多。",
+      "evidence": [
+        {
+          "file": "internal/templates/admin/dashboard.html",
+          "lines": "7,21,22,28,35,42,43,50,79,91,103,115",
+          "snippet": "12 处内联 style 硬编码字号与颜色",
+          "note": "且用 pages-card 旧体系与 mock 数据"
+        }
+      ],
+      "impact": "仪表盘是登录后的第一个页面，用 mock 数据加不一致的样式，给人的第一印象很差。内联样式也不响应主题切换（暗色模式下硬编码颜色会出问题）。",
+      "rootCause": "仪表盘是早期占位页面，一直没有实现真实内容。",
+      "remediation": {
+        "approach": "仪表盘重做：用基座的 card 体系，数据接真实来源（analytics 的 PV、订单数、待处理事项、待重建页面数、库存告警）。这也是 PERF-001 与 SEO-019 的结果展示位。",
+        "steps": [
+          "确定要展示的真实指标（订单今日数与金额、待发货数、库存告警、待重建页面数、SEO 体检问题数、近 7 日 PV）",
+          "每个指标一个只读契约方法（不要在页面里拼查询）",
+          "用基座 card 与 data-table 重排版，去掉全部内联样式",
+          "空数据态要明确（新站点没有订单时显示引导而不是 0）",
+          "响应式：窄屏单列"
+        ],
+        "effortDays": 2,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "仪表盘显示真实数据",
+        "无内联样式",
+        "暗色模式正常",
+        "窄屏可用"
+      ],
+      "dependsOn": [
+        "SEO-019",
+        "PERF-001"
+      ],
+      "blocks": [],
+      "phase": "P8",
+      "tags": [
+        "admin-ui",
+        "dashboard",
+        "ux"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "UI-013",
+      "title": "工作台节点操作按钮只在 hover 时显示，触屏难以触发",
+      "severity": "medium",
+      "type": "implementation-bug",
+      "confidence": "confirmed",
+      "problem": "工作台画布里节点的操作按钮（删除、复制、上移下移等）只在鼠标悬停节点时显示。触屏设备上没有 hover，按钮很难出现。",
+      "evidence": [
+        {
+          "file": "internal/templates/static/css/workbench.css",
+          "lines": "131-132,164-169",
+          "snippet": "节点操作按钮靠 hover 显示",
+          "note": ""
+        }
+      ],
+      "impact": "工作台在平板上基本不能编辑（选中节点后看不到操作按钮）。而平板是可视化编辑的一个合理使用场景。",
+      "rootCause": "画布交互按鼠标设计。",
+      "remediation": {
+        "approach": "操作按钮的显示条件改为「hover 或选中」。选中是所有输入方式都能做到的状态。",
+        "steps": [
+          "CSS 增加 .is-selected 状态下显示操作按钮",
+          "hover 显示规则包进 hover 媒体查询",
+          "触屏上点击节点即选中并显示按钮",
+          "按钮尺寸在触屏上要够大（至少 44px 触控目标）",
+          "平板实测一遍编辑流程"
+        ],
+        "effortDays": 1,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "触屏选中节点后能看到并点到操作按钮",
+        "鼠标 hover 行为不变"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P8",
+      "tags": [
+        "workbench",
+        "touch",
+        "hard-rule"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：节点操作栏 is-selected/focus-within 常显；hover 仅 @media (hover:hover)。"
+    },
+    {
+      "id": "UI-014",
+      "title": "后台表单表格弹窗筛选栏等高频模式无 partial 复用，靠复制粘贴",
+      "severity": "medium",
+      "type": "tech-debt",
+      "confidence": "confirmed",
+      "problem": "分页已有 partials/pagination.html 复用（9 个页面共用，含 aria-label），侧栏与属性值行也有 partial。但表单、表格、抽屉、筛选栏这些更高频的模式没有 partial，各页面手写 card 加 data-table 加 form-stack 的组合，结构相似但各写一遍。",
+      "evidence": [
+        {
+          "file": "internal/templates/admin/partials/pagination.html",
+          "lines": "0",
+          "snippet": "分页 partial 被 9 个页面复用",
+          "note": "正面范例"
+        },
+        {
+          "file": "internal/templates/admin",
+          "lines": "0",
+          "snippet": "表单与表格与筛选栏无 partial，各页面手写相似结构",
+          "note": ""
+        }
+      ],
+      "impact": "改一个模式（比如给所有列表加导出按钮）要改 30 多个文件。样式与交互的一致性完全靠人工。",
+      "rootCause": "Jet 的 partial 机制可用（分页已证明），但复杂模式的参数化需要设计。",
+      "remediation": {
+        "approach": "抽三个核心 partial：列表页骨架（筛选栏 + 表格 + 分页）、表单卡片、抽屉。参数通过 Jet 的 block 与变量传入。",
+        "steps": [
+          "先抽列表页骨架（收益最大，30 多个页面在用同一结构）",
+          "筛选栏参数化（字段清单 + 当前值）",
+          "表格用 block 让各页面填自己的列定义",
+          "表单卡片 partial（标题 + 字段区 + 操作区 + csrf_token 自动带上）",
+          "csrf_token 由 partial 统一注入能顺带消除漏加的风险",
+          "一次迁 3 到 5 个页面验证抽象是否够用，再推广"
+        ],
+        "effortDays": 3,
+        "risk": "medium",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "迁移后的页面外观与行为不变",
+        "改 partial 能同时影响全部使用方"
+      ],
+      "dependsOn": [
+        "UIK-009"
+      ],
+      "blocks": [],
+      "phase": "P8",
+      "tags": [
+        "admin-ui",
+        "refactor",
+        "maintainability"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "UI-015",
+      "title": "css_verify 只校验动画名有对应 keyframes，不校验多端硬规则",
+      "severity": "medium",
+      "type": "missing-feature",
+      "confidence": "confirmed",
+      "problem": "产物级 CSS 校验只做一件事：所有 sky-* 的 animation 名必须有对应 @keyframes。不校验体积、不校验重复规则、不校验 hover 治理、不校验写死宽度。",
+      "evidence": [
+        {
+          "file": "internal/builder/css_verify.go",
+          "lines": "31-61",
+          "snippet": "只校验 sky-* 动画名有对应 keyframes",
+          "note": "校验框架存在，只是覆盖面窄"
+        }
+      ],
+      "impact": "多端硬规则全靠人工遵守与人工验收，本次审计发现的 19 个组件违规就是证据。有校验框架但没用它守规则。",
+      "rootCause": "css_verify 为解决具体问题（动画名漂移）而建，没有扩展成规则守卫。",
+      "remediation": {
+        "approach": "扩展 css_verify 为多端硬规则守卫：检测裸 :hover（不在 hover 媒体查询内）、检测写死的 px 宽度（超过阈值且不在 min 或 clamp 内）、检测有 hover 桶无 hovernone、检测 clamp 下界超过最窄视口。",
+        "steps": [
+          "逐条实现检查（都是 CSS 文本分析，不需要完整 CSS 解析器）",
+          "先以 warn 形式跑一遍拿到全量违规清单（应与本次审计的 19 个组件吻合）",
+          "整改完成后改为 error（构建失败）",
+          "允许显式豁免（在组件 Go 代码里声明并写理由，豁免清单进测试断言）",
+          "接入 CI"
+        ],
+        "effortDays": 2,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "新写的违规 CSS 在构建期被拦住",
+        "豁免需要显式声明理由"
+      ],
+      "dependsOn": [
+        "UI-005",
+        "UI-006"
+      ],
+      "blocks": [],
+      "phase": "P8",
+      "tags": [
+        "builder",
+        "ci",
+        "hard-rule",
+        "css"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "UI-016",
+      "title": "片段样式用全局类名，靠 sky- 前缀约定隔离而非真隔离",
+      "severity": "low",
+      "type": "design-flaw",
+      "confidence": "confirmed",
+      "problem": "片段 HTML 插入不同页面上下文时，它的类名（.sky-cart-*、.sky-orders-*、.sky-user-*）是全局的。与页面上其它样式的隔离只靠 sky- 前缀这个命名约定，没有技术保障。",
+      "evidence": [
+        {
+          "file": "internal/builder/components/carticon/cartfrag.go",
+          "lines": "26",
+          "snippet": ".sky-cart-* 全局类",
+          "note": "无 node 作用域"
+        },
+        {
+          "file": "internal/templates/fragments",
+          "lines": "0",
+          "snippet": "31 个片段模板都用全局类",
+          "note": ""
+        }
+      ],
+      "impact": "如果站点主题或作者的自定义 CSS 定义了冲突的选择器，片段样式会被覆盖，且这类问题只在特定站点出现，难以复现。",
+      "rootCause": "片段是运行时渲染的，构建期不知道会插到哪个页面，无法生成节点作用域类名。",
+      "remediation": {
+        "approach": "接受全局类（技术上难以避免），但加强隔离：片段容器加一层作用域类，所有片段规则都限定在这层内；文档明确 sky- 前缀是保留命名空间，主题与自定义 CSS 不得使用。",
+        "steps": [
+          "片段最外层容器统一加 .sky-frag 类",
+          "所有片段 CSS 规则限定在 .sky-frag 内（提高特异性并明确边界）",
+          "文档声明 sky- 前缀为保留命名空间",
+          "考虑用 @layer 降低片段样式被意外覆盖的概率（或反之，确保主题能有意覆盖）"
+        ],
+        "effortDays": 1,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "片段样式在有自定义 CSS 的页面上仍正确",
+        "主题仍能有意覆盖片段样式"
+      ],
+      "dependsOn": [
+        "UIK-005"
+      ],
+      "blocks": [],
+      "phase": "P8",
+      "tags": [
+        "runtimefragment",
+        "css",
+        "isolation"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "UI-017",
+      "title": "部分片段与组件的小控件宽度写死 px",
+      "severity": "low",
+      "type": "implementation-bug",
+      "confidence": "confirmed",
+      "problem": "购物车片段的数量输入框写死 width 72px，订单片段写死 96px。小控件在窄屏通常不撑破页面，但违反了「宽度不写死」的硬规则。",
+      "evidence": [
+        {
+          "file": "internal/builder/components/carticon/cartfrag.go",
+          "lines": "51",
+          "snippet": ".sky-cart-qty-input { width: 72px }",
+          "note": ""
+        },
+        {
+          "file": "internal/builder/components/orderlist/orderfrag.go",
+          "lines": "171",
+          "snippet": "width: 96px",
+          "note": ""
+        }
+      ],
+      "impact": "轻微。但在极窄视口加上多个并排控件时可能溢出。",
+      "rootCause": "小控件被认为不需要遵守宽度规则。",
+      "remediation": {
+        "approach": "改为 min(100%, 72px) 保持一致性。这类改动零风险。",
+        "steps": [
+          "两处改为 min 写法",
+          "顺带扫一遍其它写死 px 宽度的地方（cardstack 的 40vw fallback 已有外层封顶，可保留但补注释）"
+        ],
+        "effortDays": 0.25,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "极窄视口无溢出"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P8",
+      "tags": [
+        "components",
+        "hard-rule"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：carticon/orderlist 宽度 min(100%, Npx)。"
+    },
+    {
+      "id": "UI-018",
+      "title": "前台部分状态指示只靠颜色传达",
+      "severity": "low",
+      "type": "implementation-bug",
+      "confidence": "likely",
+      "problem": "后台的库存流水用了符号加颜色双通道（注释有说明，做得对）。前台的 badge 与状态点部分只靠颜色区分状态。",
+      "evidence": [
+        {
+          "file": "internal/templates/static/css/theme.css",
+          "lines": "188",
+          "snippet": "后台库存流水用符号加颜色双通道（正面范例）",
+          "note": ""
+        },
+        {
+          "file": "internal/builder/components/badge",
+          "lines": "0",
+          "snippet": "前台 badge 状态区分需核实是否有非颜色通道",
+          "note": "需逐个核对"
+        }
+      ],
+      "impact": "色盲用户无法区分状态。影响范围取决于站点用 badge 表达什么（订单状态、库存状态影响较大）。",
+      "rootCause": "颜色是最直接的表达方式，非颜色通道需要额外设计。",
+      "remediation": {
+        "approach": "状态类元素补非颜色通道：图标、文字标签或形状。装饰性的颜色不受影响。",
+        "steps": [
+          "梳理前台哪些地方用颜色表达状态（badge、库存提示、订单状态、价格涨跌）",
+          "逐个补图标或文字",
+          "扩展 a11y_audit_test：检测只有颜色差异的状态类元素（较难自动化，可先做人工清单）"
+        ],
+        "effortDays": 1,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "灰度模式下仍能区分状态"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P8",
+      "tags": [
+        "a11y",
+        "components",
+        "color"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：badge/订单状态 role=status + aria-label。"
+    },
+    {
+      "id": "UI-019",
+      "title": "四个邮件相关页面仍用 pages-form 旧体系",
+      "severity": "low",
+      "type": "tech-debt",
+      "confidence": "confirmed",
+      "problem": "mail.html、mail_marketing.html、mail_automation 相关页面、mail_campaign.html 共 4 个页面仍用 pages-form 容器（走 ui.css 的桥接层），未迁移到显式基座类。",
+      "evidence": [
+        {
+          "file": "internal/templates/admin/mail.html",
+          "lines": "48-59",
+          "snippet": "pages-form 体系与表格内内联 style",
+          "note": ""
+        }
+      ],
+      "impact": "这四个页面是消灭桥接层（UIK-010）的最后障碍。",
+      "rootCause": "迁移未走完。",
+      "remediation": {
+        "approach": "迁到显式基座类，与 UIK-009 一并处理。",
+        "steps": [
+          "逐页替换类名",
+          "去掉内联样式",
+          "视觉核对"
+        ],
+        "effortDays": 0.75,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "四个页面外观与其它页面一致",
+        "桥接层可安全删除"
+      ],
+      "dependsOn": [
+        "UIK-009"
+      ],
+      "blocks": [
+        "UIK-010"
+      ],
+      "phase": "P8",
+      "tags": [
+        "admin-ui",
+        "css",
+        "mail"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "UI-020",
+      "title": "6 个页面仍用旧的 pages-table 与 pages-badge 与 pages-actions",
+      "severity": "low",
+      "type": "tech-debt",
+      "confidence": "confirmed",
+      "problem": "37 个页面（77%）用了新的 data-table 体系，但仍有 6 个页面（13%）用旧的 pages-table 加 pages-badge 加 pages-actions。",
+      "evidence": [
+        {
+          "file": "internal/templates/static/css/theme.css",
+          "lines": "176-182",
+          "snippet": ".pages-table 仍保留完整表格视觉",
+          "note": "旧体系尚未删除"
+        }
+      ],
+      "impact": "表格外观两套并存。也让 theme.css 里的旧表格样式无法删除。",
+      "rootCause": "迁移未走完。",
+      "remediation": {
+        "approach": "6 个页面迁到 data-table 与 badge 基座类，然后删除 theme.css 里的旧表格样式。",
+        "steps": [
+          "逐页迁移",
+          "删除 theme.css 旧样式",
+          "视觉核对"
+        ],
+        "effortDays": 1,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "全部表格外观一致",
+        "theme.css 旧表格样式已删"
+      ],
+      "dependsOn": [],
+      "blocks": [
+        "UIK-010"
+      ],
+      "phase": "P8",
+      "tags": [
+        "admin-ui",
+        "css"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "UI-021",
+      "title": "工作台信息密度高且无简化模式",
+      "severity": "low",
+      "type": "missing-feature",
+      "confidence": "confirmed",
+      "problem": "检查器字段多，面板切换靠 rail 图标，没有为新手提供的简化模式。对复杂组件（productList 有几十个 Props）尤其明显。",
+      "evidence": [
+        {
+          "file": "internal/templates/static/js/workbench",
+          "lines": "0",
+          "snippet": "检查器按 schema 全量渲染字段，无分级",
+          "note": "主观评价，但对 productList 这类组件确实是问题"
+        }
+      ],
+      "impact": "新手面对几十个字段不知从哪开始。这会影响产品的上手体验。",
+      "rootCause": "检查器按 schema 全量生成，没有重要性分级。",
+      "remediation": {
+        "approach": "Props 的 ct 标签增加重要性等级（basic / advanced），检查器默认只显示 basic，advanced 折叠。palette 的 DEFAULT_CONTENT 已经体现了「最小可用集」的思路，可以复用同一判断。",
+        "steps": [
+          "ct 标签增加 level 元数据",
+          "按组件梳理哪些是常用字段（可参照 palette 默认值里出现的字段）",
+          "检查器默认折叠 advanced 分组",
+          "记住用户的展开偏好（localStorage）"
+        ],
+        "effortDays": 1.5,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "新手看到的字段数量可控",
+        "高级字段仍可访问"
+      ],
+      "dependsOn": [
+        "EDT-007"
+      ],
+      "blocks": [],
+      "phase": "P8",
+      "tags": [
+        "workbench",
+        "ux"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "UI-022",
+      "title": "登录页在 admin-layout 之外，样式与响应式需单独核对",
+      "severity": "low",
+      "type": "tech-debt",
+      "confidence": "confirmed",
+      "problem": "login.html 不在 admin-layout 布局内，是独立页面。它在「既无 form-input 也无 pages-form」的 10 个页面清单里。",
+      "evidence": [
+        {
+          "file": "internal/templates/admin/login.html",
+          "lines": "0",
+          "snippet": "独立布局，输入框类名需核对",
+          "note": ""
+        }
+      ],
+      "impact": "登录页是所有用户的第一个界面。它的样式如果与后台不一致，第一印象就是不专业。",
+      "rootCause": "独立布局导致它不在批量迁移的范围内。",
+      "remediation": {
+        "approach": "登录页单独核对：输入框用基座类、响应式（手机上要能正常登录）、验证码图片的布局。",
+        "steps": [
+          "补基座类名",
+          "窄视口核对",
+          "验证码刷新交互核对",
+          "暗色模式核对"
+        ],
+        "effortDays": 0.5,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "登录页在手机上可正常使用",
+        "样式与后台一致"
+      ],
+      "dependsOn": [
+        "UIK-009"
+      ],
+      "blocks": [],
+      "phase": "P8",
+      "tags": [
+        "admin-ui",
+        "responsive"
+      ],
+      "status": "open"
+    }
+  ]
+}

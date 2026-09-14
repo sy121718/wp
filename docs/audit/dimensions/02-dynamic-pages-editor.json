@@ -1,0 +1,915 @@
+{
+  "dimension": "dynamic-pages-editor",
+  "dimensionTitle": "动态页面（商品 / 文章）与可视化编辑器的关系",
+  "scope": "internal/templates/static/js/workbench（约 5600 行）、internal/module/dashboard 的 workbench 与模板页、internal/module/page、internal/module/contenttemplate、internal/module/presentation、internal/builder/editor_contract.go、internal/builder/field_binding.go",
+  "verdict": "手工页面有完整的可视化编辑闭环，动态详情页没有。ContentTemplate 全仓没有任何可视化编辑入口，商品详情页排版只能提交整份 JSON，文章详情页连默认模板种子都没有。这是产品定位级缺口，不是待办事项。第二层问题是 page 与 presentation 两条编译装配路径不对齐，导致每加一个构建期能力都要写两遍且必然漏一边。",
+  "findings": [
+    {
+      "id": "EDT-001",
+      "title": "ContentTemplate 没有任何可视化编辑入口，商品详情页排版只能提交整份 JSON",
+      "severity": "critical",
+      "type": "missing-feature",
+      "confidence": "confirmed",
+      "problem": "workbench 只接受 page 与 block 两种编辑目标。ContentTemplate 只有 JSON API（create / update / get / list），没有对应的后台编辑页面。后台 /admin/products/template 能做的只有列模板、新建（复制已有模板的 JSON）、预览、发布、切换模板，改排版没有 UI。",
+      "evidence": [
+        {
+          "file": "internal/module/dashboard/inbound/http/dashboard_handle.go",
+          "lines": "254-258",
+          "snippet": "workbench 只接受 page 或 block 两种模式",
+          "note": "无 template 模式"
+        },
+        {
+          "file": "internal/module/contenttemplate/inbound/http/contenttemplate_router.go",
+          "lines": "24-28",
+          "snippet": "只有 create / update / get / list 四个 JSON API",
+          "note": "无后台页面"
+        },
+        {
+          "file": "internal/module/dashboard/inbound/http/product_detail_template_handle.go",
+          "lines": "164-165",
+          "snippet": "注释写「编辑仍在模板/工作台侧」",
+          "note": "但工作台侧并未实现，注释与现实不符"
+        },
+        {
+          "file": "public/migrations/085_product_detail_template.sql",
+          "lines": "0",
+          "snippet": "默认商品详情模板由迁移种子提供：一个 core.container + 一个 core.product，字段写死 product.name 等",
+          "note": "用户拿到的就是这一份，改不了"
+        }
+      ],
+      "impact": "系统自称 Visual Website Builder，但商品详情页与文章详情页这两类最重要的页面不能可视化编辑。用户要改商品详情页布局，实际路径是手写 JSON 调 API 或直接改库。这个缺口决定了产品在电商场景下不可用于交付。",
+      "rootCause": "ContentTemplate 与 Page 用的是同构的 Document AST，技术上完全可以共用 workbench，但编辑器的加载与保存链路只按 page/block 两种目标实现，没有抽出「可编辑文档」这一层。",
+      "remediation": {
+        "approach": "把 workbench 的编辑目标从二元（page/block）扩展为三元（page/block/contentTemplate），复用同一套画布与检查器；针对模板增加「实体字段绑定」模式，让作者可以把组件属性绑到 product.name 这类字段而不是填死值。",
+        "steps": [
+          "抽出 EditTarget 抽象：加载文档、保存文档、预览、校验四个动作按目标类型分派",
+          "workbench 支持 ?template=<id>，加载 ContentTemplate 的 DraftDocument",
+          "保存走 contenttemplate.Update（保留其严格校验，见 EDT-013）",
+          "预览走 presentation.PreviewInstance，需要选一个样例实体（商品/文章）作为预览数据源",
+          "检查器针对绑定型属性显示字段选择下拉（依赖 EDT-005）",
+          "后台 /admin/products/template 增加「可视化编辑」按钮跳转"
+        ],
+        "effortDays": 6,
+        "risk": "medium",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "在编辑器里拖拽修改商品详情模板后，发布的商品详情页产物随之变化",
+        "预览看到的字节与发布产出的字节一致",
+        "模板保存仍走严格校验，非法字段绑定被拒绝"
+      ],
+      "dependsOn": [
+        "PIPE-001"
+      ],
+      "blocks": [
+        "EDT-002",
+        "VIS-010"
+      ],
+      "phase": "P3",
+      "tags": [
+        "workbench",
+        "contenttemplate",
+        "product",
+        "product-gap"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：/workbench?template= MVP + /admin/content-templates 列表与编辑入口。"
+    },
+    {
+      "id": "EDT-002",
+      "title": "文章详情页既无默认模板种子也无建模板入口，发布文章直接被拦",
+      "severity": "critical",
+      "type": "missing-feature",
+      "confidence": "confirmed",
+      "problem": "商品有迁移 085 提供的默认详情模板，文章没有对应种子。发布文章时代码直接返回一段说明「模板的建立与内容编辑链路目前没有后台入口」。",
+      "evidence": [
+        {
+          "file": "internal/module/dashboard/inbound/http/article_publish.go",
+          "lines": "37-39",
+          "snippet": "articleNoTemplateHint = \"这个站还没有「文章详情模板」（entityType=article 的内容模板），所以现在没有东西可以渲染这篇文章。模板的建立与内容编辑链路目前没有后台入口，需要先建一套 article 类型的内容模板，再回来发布。\"",
+          "note": "代码自己承认能力缺失"
+        }
+      ],
+      "impact": "文章这条内容线是断的：能在 /admin/articles 写文章（Trix 富文本 + SEO 字段 + 评分侧栏都有），但发布不出去。CMS 的核心能力不可用。",
+      "rootCause": "商品域先行落地并配了种子迁移，文章域的详情页模板一直没补。",
+      "remediation": {
+        "approach": "补 article 默认详情模板种子迁移（对称 085 的做法），再让 EDT-001 的可视化编辑覆盖 article 类型。",
+        "steps": [
+          "写迁移种子：container + heading(绑 article.title) + image(绑 article.featuredImage) + richtext(绑 article.body) 的基础布局",
+          "种子要幂等（ConditionSQL 判断该 entityType 是否已有模板）",
+          "文章发布区块去掉 hint，改为正常发布流程",
+          "/admin/articles 增加「详情页模板」入口，与商品侧对称"
+        ],
+        "effortDays": 2,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": true
+      },
+      "verification": [
+        "干净环境跑完迁移后可直接发布一篇文章并访问到详情页",
+        "文章 SEO 头正确注入"
+      ],
+      "dependsOn": [
+        "EDT-001"
+      ],
+      "blocks": [],
+      "phase": "P3",
+      "tags": [
+        "content",
+        "contenttemplate",
+        "product-gap"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：迁移 159 默认 article 详情模板种子（heading/image/text）。"
+    },
+    {
+      "id": "EDT-003",
+      "title": "page 与 presentation 两条编译装配路径不对齐，presentation 缺六项构建期能力",
+      "severity": "critical",
+      "type": "design-flaw",
+      "confidence": "confirmed",
+      "problem": "手工页面走 page_assemble.compileDocument，自动发布实例走 presentation.renderHTML。前者注入了导航解析、系统页面槽位、当前路径与多语言 alternates、作者文案翻译、响应式图片探测、页眉页脚装配；后者一项都没有，只多了实体字段解析。",
+      "evidence": [
+        {
+          "file": "internal/module/presentation/service/presentation_service.go",
+          "lines": "688-714",
+          "snippet": "renderHTML 只有 WithContentResolver，无 WithNavigationResolver / WithSitePages / WithCurrentPath / WithAlternates / WithLocaleLinks / WithContentTranslator / WithAssetProbe",
+          "note": "与 compileDocument 对比缺失六类能力"
+        },
+        {
+          "file": "internal/module/page/service/page_assemble.go",
+          "lines": "150-192",
+          "snippet": "compileDocument 注入完整构建上下文并装配页眉页脚",
+          "note": "基准实现"
+        }
+      ],
+      "impact": "不是「功能有差异」，而是同一个引擎长出了两个装配层。每加一个构建期能力都要写两遍，而且历史证明必然漏一边：hreflang 漏了、多语言彻底漏了（见 I18N-013）、系统页面槽位链接在详情页上不可用、详情页的图片没有响应式 srcset。后续所有构建期工作的成本都是双倍。",
+      "rootCause": "presentation 模块落地时复制了 Compile 的调用方式而没有复用 page 的装配器，之后两边各自演进。",
+      "remediation": {
+        "approach": "抽出一个与模块无关的构建上下文装配器（放在 internal/builder 或 internal/pipeline），page 与 presentation 都通过它构造 CompileOption 集合。差异项（实体解析器、预览时无 URL）作为显式参数传入。",
+        "steps": [
+          "定义 BuildContextAssembler：输入 projectID + lang + logicalPath + 可选实体解析器，输出 []CompileOption",
+          "把 compileDocument 里的六类注入逐个搬进 assembler，page 侧改为调用它，跑一遍 determinism 与既有 feature 测试确认字节不变",
+          "presentation.renderHTML 改为调用同一 assembler，只额外传实体解析器",
+          "页眉页脚装配随 VIS-001 的 Layout 改造统一到 AST 内，assembler 不再关心",
+          "补一个契约测试：断言两条路径构造出的 CompileOption 集合除显式差异项外完全一致"
+        ],
+        "effortDays": 5,
+        "risk": "medium",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "改造前后手工页面产物逐字节一致",
+        "商品详情页产物新增 hreflang、槽位链接、srcset",
+        "契约测试防止两条路径再次漂移"
+      ],
+      "dependsOn": [],
+      "blocks": [
+        "EDT-001",
+        "I18N-013",
+        "SEO-008",
+        "PIPE-001"
+      ],
+      "phase": "P2",
+      "tags": [
+        "builder",
+        "presentation",
+        "architecture",
+        "root-cause"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：pipeline SiteCompile/Locale/Analytics/Plugins/ThemeMerge；presentation 对齐插件+页眉页脚+六类站点注入；contenttemplate 保存合主题。"
+    },
+    {
+      "id": "EDT-004",
+      "title": "列表类动态页面没有自动发布路径，只能靠手工页面拖组件",
+      "severity": "medium",
+      "type": "missing-feature",
+      "confidence": "confirmed",
+      "problem": "Presentation 只负责实体详情页。商品列表页、文章列表页、分类页要靠作者在手工 Page 里拖 core.productList 或 core.cardstack 并手工配筛选条件。新增一个商品分类不会自动产生对应的列表页。",
+      "evidence": [
+        {
+          "file": "internal/module/presentation/service/presentation_service.go",
+          "lines": "0",
+          "snippet": "实例按实体创建，无列表页概念",
+          "note": ""
+        },
+        {
+          "file": "internal/builder/components/productlist/productlist.go",
+          "lines": "176-280",
+          "snippet": "筛选条件是组件 Props，构建期下推",
+          "note": "配置在页面上，不随分类自动生成"
+        }
+      ],
+      "impact": "有 50 个商品分类就要手工建 50 个列表页并逐个配 categoryId（还是手填 UUID，见 EDT-005）。规模化站点不可运营。",
+      "rootCause": "自动发布只建模了「实体 → 详情页」，没有建模「实体 → 归档页」。",
+      "remediation": {
+        "approach": "扩展 presentation 支持归档型实例：实体类型 + 归档模板 → 每个分类/标签/品牌一个列表页。归档模板里的集合组件从实例上下文取筛选值，而不是写死在 Props 里。",
+        "steps": [
+          "定义归档型 ContentTemplate（entityType + templateRole=archive）",
+          "集合组件支持从 BuildContext 取当前实体作为筛选值（新增一种绑定形态）",
+          "presentation 增加归档实例的创建 / 重建 / URL 规则",
+          "分类增删改触发对应归档实例的创建 / 重建 / 下线"
+        ],
+        "effortDays": 6,
+        "risk": "medium",
+        "breaking": false,
+        "migrationNeeded": true
+      },
+      "verification": [
+        "新建一个分类后自动产生对应列表页",
+        "列表页正确筛选出该分类商品"
+      ],
+      "dependsOn": [
+        "EDT-003",
+        "EDT-001"
+      ],
+      "blocks": [],
+      "phase": "P3",
+      "tags": [
+        "presentation",
+        "product",
+        "scalability"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "EDT-005",
+      "title": "集合筛选维度在编辑器里只能手填 UUID，没有实体选择器",
+      "severity": "high",
+      "type": "missing-feature",
+      "confidence": "confirmed",
+      "problem": "core.productList 的 filterCategoryId、filterBrandId、filterTagId 等 Props 的控件类型是 text，编辑器里就是一个文本框，作者需要自己去别处复制 UUID 粘进来。",
+      "evidence": [
+        {
+          "file": "internal/builder/components/productlist/productlist.go",
+          "lines": "186-188",
+          "snippet": "filterCategoryId 等使用 ct:\"text\"，编辑器渲染为文本输入框",
+          "note": "无实体选择器"
+        }
+      ],
+      "impact": "配一个「只显示某分类商品」的列表要跨页面复制 UUID，极易出错且错了不报错（筛不到任何行看起来像「这个分类没商品」）。这是可视化编辑器最不该出现的体验。",
+      "rootCause": "组件 Props 的控件类型只有基础类型，没有「引用某个实体」这种语义类型。集合源侧已有 CollectionFilterOptionsProvider 能提供可选值（筛选栏在用），但编辑器侧没有消费它。",
+      "remediation": {
+        "approach": "新增 entityref 控件类型：声明引用的实体类型（product_category / product_brand / product_tag），编辑器从既有的 CollectionFilterOptionsProvider 拉可选项渲染下拉（带层级的分类显示树形）。",
+        "steps": [
+          "core 增加 ct:\"entityref\" 与实体类型元数据",
+          "新增后台 API 返回某实体类型的可选项（复用 CollectionFilterOptionsProvider，避免第二份实现）",
+          "workbench 的 controls 增加 entityref 控件（树形 / 平铺两种形态）",
+          "productList 与其它带 id 筛选的组件改用该控件",
+          "保存期仍校验 id 形状与归属"
+        ],
+        "effortDays": 3,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "编辑器里选分类不再需要手填 UUID",
+        "选中的分类在预览与产物中正确生效"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P3",
+      "tags": [
+        "workbench",
+        "product",
+        "ux"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：entityref 控件 + 检查器分类/品牌/标签下拉（CollectionFilterOptions）。"
+    },
+    {
+      "id": "EDT-006",
+      "title": "商品域组件的字段槽位仍是自由文本，未接入已注册的集合元数据下拉",
+      "severity": "medium",
+      "type": "inconsistency",
+      "confidence": "confirmed",
+      "problem": "编辑器已有 bindingfield 与 collectionfield 两种控件（从 /api/content/collections 拉字段白名单渲染下拉），heading/text/image/cardstack 都在用。但 product、productCard、productList 的字段槽位用的是 ct:\"string\"，只能手写 product.name 或 item.priceRange。",
+      "evidence": [
+        {
+          "file": "internal/builder/components/product/product.go",
+          "lines": "12-14",
+          "snippet": "注释称「商品集合源尚未注册，bindingfield 取不到 product 字段」",
+          "note": "注释已过时"
+        },
+        {
+          "file": "internal/routers/routes.go",
+          "lines": "356-362",
+          "snippet": "content:product 集合源已注册",
+          "note": "与上面注释矛盾"
+        },
+        {
+          "file": "internal/builder/components/productcard/productcard.go",
+          "lines": "16-18",
+          "snippet": "注释说明因同时服务 item.* 与 product.* 两种前缀，刻意保留自由文本",
+          "note": "这个理由部分成立，但可以用两段式控件解决"
+        }
+      ],
+      "impact": "作者需要记住字段名与前缀规则（集合卡用 item.、绑当前实体用 product.），写错只有保存时才报错。可视化编辑器的价值在这里打了折扣。",
+      "rootCause": "product 组件早于集合源注册落地，注释与实现都停在那个时间点；productCard 的双前缀问题让改造需要额外设计。",
+      "remediation": {
+        "approach": "bindingfield 控件支持声明可接受的前缀集合，渲染时按当前上下文（是否在集合组件内）过滤可选项，选中后自动补全前缀。",
+        "steps": [
+          "更新 product.go 的过时注释",
+          "bindingfield 控件增加 prefixes 元数据（item / product / article 等）",
+          "编辑器按节点是否位于集合组件内决定显示哪一组前缀",
+          "product / productCard / productList 的字段槽位改用 bindingfield",
+          "保留手动输入作为高级选项（覆盖白名单外的将来字段）"
+        ],
+        "effortDays": 2,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "商品组件的字段槽位显示下拉且选项正确",
+        "既有手写值仍可正常读取与保存"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P3",
+      "tags": [
+        "workbench",
+        "product",
+        "field-binding"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "EDT-007",
+      "title": "productList 的复杂配置项用逗号分隔字符串表达，无结构化 UI",
+      "severity": "medium",
+      "type": "missing-feature",
+      "confidence": "confirmed",
+      "problem": "productList 的筛选维度、价格档位、工具条选项、多标签等配置在 Props 里是逗号分隔的字符串（如 tagIds、priceRanges），检查器按 ct 标签自动生成的是单行文本框。",
+      "evidence": [
+        {
+          "file": "internal/builder/components/productlist/productlist.go",
+          "lines": "176-280",
+          "snippet": "collection 分组下大量配置项，复杂项为逗号分隔字符串",
+          "note": "自动生成的控件是文本框"
+        },
+        {
+          "file": "internal/templates/static/js/workbench/palette.js",
+          "lines": "57-58",
+          "snippet": "palette 默认只给最小集：collectionLimit 8、filterStatus published 与若干 item.* 字段",
+          "note": "高级项要作者自己在检查器里填"
+        }
+      ],
+      "impact": "商品列表是电商站最重要的组件，它的配置体验决定了整个产品的可用性。现在配一个「按分类筛 + 价格档位 + 显示排序工具条」需要理解字符串格式，出错无提示。",
+      "rootCause": "检查器 schema 只有标量与简单重复项两类控件，没有「多选实体」「区间列表」这类复合控件。",
+      "remediation": {
+        "approach": "增加 multientityref（多选实体）与 rangelist（区间列表）两种控件类型，productList 的对应 Props 改用它们。",
+        "steps": [
+          "定义两种控件的 schema 与 JSON 编码（保持与现有逗号分隔格式的读写兼容）",
+          "workbench controls 实现两个控件",
+          "productList 的 tagIds 改 multientityref、priceRanges 改 rangelist",
+          "palette 默认值保持不变（最小集）"
+        ],
+        "effortDays": 2.5,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "既有逗号分隔配置在新控件里正确显示与保存",
+        "新配置的产物与手写字符串一致"
+      ],
+      "dependsOn": [
+        "EDT-005"
+      ],
+      "blocks": [],
+      "phase": "P3",
+      "tags": [
+        "workbench",
+        "productlist",
+        "ux"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "EDT-008",
+      "title": "palette 的组件清单与 ComponentSchemas 是两份独立数据，可能漂移",
+      "severity": "low",
+      "type": "inconsistency",
+      "confidence": "confirmed",
+      "problem": "编辑器的可插入组件清单在 palette.js 里手写（含 DEFAULT_CONTENT 默认值），而组件的可编辑属性来自 Go 侧 ComponentSchemas。新增组件要同时改两处，漏改 palette 则组件在编辑器里不可见。",
+      "evidence": [
+        {
+          "file": "internal/templates/static/js/workbench/palette.js",
+          "lines": "19-74",
+          "snippet": "paletteItems 手写清单",
+          "note": "与 Go 侧注册表分离"
+        },
+        {
+          "file": "internal/builder/builder.go",
+          "lines": "518-557",
+          "snippet": "ComponentSchemas 遍历 core.Types() 自动生成",
+          "note": "自动"
+        }
+      ],
+      "impact": "新增组件容易漏掉 palette，表现为「代码里有这个组件但编辑器里找不到」。defaults_contract_test.go 能挡住默认值不可编译，但挡不住漏登记。",
+      "rootCause": "palette 需要人工维护的信息（分类、图标、默认内容、显示名）与 schema 自动信息混在一起，导致整体只能手写。",
+      "remediation": {
+        "approach": "Go 侧的组件 Spec 增加 palette 元数据（分类、显示名、默认 Props），前端 palette 改为从注入的 schema 生成，人工只维护排序与图标。",
+        "steps": [
+          "core.AtomSpec 增加 PaletteCategory / DisplayName / DefaultProps 字段",
+          "ComponentSchemas 输出这些元数据",
+          "palette.js 改为消费注入数据，保留本地的图标映射与排序表",
+          "加测试：断言每个注册组件都出现在 palette 输出里"
+        ],
+        "effortDays": 1.5,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "新增一个组件后无需改 JS 即出现在编辑器组件库",
+        "断言测试覆盖全部注册组件"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P6",
+      "tags": [
+        "workbench",
+        "builder",
+        "consistency"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "EDT-009",
+      "title": "检查器控件双轨：部分服务端 HTMX 渲染、部分客户端 JS 渲染",
+      "severity": "low",
+      "type": "tech-debt",
+      "confidence": "confirmed",
+      "problem": "简单字段的检查器面板由服务端 inspector_handle.go 渲染 HTMX 片段，bindingfield / collectionfield / 容器布局等由客户端 methods/controls/*.js 渲染（约 2200 行）。同一个面板里两种渲染来源。",
+      "evidence": [
+        {
+          "file": "internal/module/dashboard/inbound/http/inspector_handle.go",
+          "lines": "0",
+          "snippet": "服务端渲染检查器片段",
+          "note": ""
+        },
+        {
+          "file": "internal/templates/static/js/workbench/methods/controls",
+          "lines": "0",
+          "snippet": "controls/*.js 共约 2241 行客户端控件实现",
+          "note": ""
+        }
+      ],
+      "impact": "新增一种控件要判断该往哪边加，样式与交互一致性靠人工保证。维护成本随控件数量增长。",
+      "rootCause": "服务端渲染先行，需要动态联动的控件不得不放到客户端，之后没有统一。",
+      "remediation": {
+        "approach": "不做大重构（收益不明显），而是明确分工规则并文档化：需要跨字段联动或异步取数的控件在客户端，纯静态字段在服务端。同时抽公共样式类保证外观一致。",
+        "steps": [
+          "在 docs/03-A-workbench.md 写明分工规则",
+          "抽公共控件样式类（field-row / field-label / field-hint 等）",
+          "新增控件时按规则选边"
+        ],
+        "effortDays": 0.5,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "文档规则明确",
+        "两侧控件外观一致"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P6",
+      "tags": [
+        "workbench",
+        "documentation"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "EDT-010",
+      "title": "editor_contract.go 只覆盖 tabs/accordion 对齐重复项，名字容易误解为完整编辑器契约",
+      "severity": "low",
+      "type": "inconsistency",
+      "confidence": "confirmed",
+      "problem": "文件名与包内注释容易让人以为它生成编辑器的完整组件契约，实际只生成 tabs 与 accordion 的对齐重复项契约（EditorContractsJS）。完整的组件 schema 是另一条线（ComponentSchemas）。",
+      "evidence": [
+        {
+          "file": "internal/builder/editor_contract.go",
+          "lines": "12-26",
+          "snippet": "EditorContractsJS 从 core.AlignedRepeaterFor 生成",
+          "note": "只覆盖对齐重复项"
+        },
+        {
+          "file": "internal/builder/editor_contract_test.go",
+          "lines": "10-21",
+          "snippet": "逐字节比对生成结果防漂移",
+          "note": "机制本身很好"
+        }
+      ],
+      "impact": "阅读成本。新贡献者找「编辑器契约」会先看到这个文件并得出错误结论。",
+      "rootCause": "命名过于宽泛。",
+      "remediation": {
+        "approach": "改名为 aligned_repeater_contract.go 并在文件头注明与 ComponentSchemas 的分工。",
+        "steps": [
+          "改文件名与生成命令说明",
+          "在 builder 包 doc 注释里列出两条契约线的分工"
+        ],
+        "effortDays": 0.25,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "生成结果不变，测试全绿"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P6",
+      "tags": [
+        "naming",
+        "documentation"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：editor_contract.go 注释澄清命名与 ComponentSchemas 分工。"
+    },
+    {
+      "id": "EDT-011",
+      "title": "docs/03-A-workbench.md 声称四区 UI 与撤销拖拽「明确不做」，实际 JS 已实现",
+      "severity": "low",
+      "type": "inconsistency",
+      "confidence": "confirmed",
+      "problem": "workbench 文档把画布、拖拽、撤销重做等归到 03-B 并标注明确不做，但 methods/state.js 已有 100 深度的撤销栈、canvas.js 与 tree.js 已有拖拽实现。文档落后于代码。",
+      "evidence": [
+        {
+          "file": "internal/templates/static/js/workbench/methods/state.js",
+          "lines": "73-91",
+          "snippet": "撤销重做栈深 100，Ctrl+Z / Ctrl+Y",
+          "note": "已实现"
+        },
+        {
+          "file": "internal/templates/static/js/workbench/methods/canvas.js",
+          "lines": "95-209",
+          "snippet": "拖拽与 pointerdown 处理",
+          "note": "已实现"
+        }
+      ],
+      "impact": "文档反向误导：读文档的人会以为要从零实现这些能力，可能重复造。",
+      "rootCause": "前端实现推进快于文档回填。",
+      "remediation": {
+        "approach": "回填文档实现状态，把已落地的能力从「不做」移到「已实现」，并补当前的真实缺口清单。",
+        "steps": [
+          "逐条核对 03-A/03-B 的实现状态标注",
+          "更新为当前事实",
+          "在文档头部加一行「实现状态以代码为准，本文最后核对日期」"
+        ],
+        "effortDays": 0.5,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "文档与代码一致"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P6",
+      "tags": [
+        "documentation",
+        "drift"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：docs/03-A-workbench.md 与实现对齐。"
+    },
+    {
+      "id": "EDT-012",
+      "title": "productList palette 默认 linkPrefix 写死 /products/，与站点 URL 规则可能不一致",
+      "severity": "medium",
+      "type": "implementation-bug",
+      "confidence": "confirmed",
+      "problem": "palette 插入 productList 时默认 linkPrefix 是 /products/，而商品详情页的实际路径由 internal/siteurl 的 URL 模式决定，且 presentation 支持改 URL。两者不一定一致。",
+      "evidence": [
+        {
+          "file": "internal/templates/static/js/workbench/palette.js",
+          "lines": "56",
+          "snippet": "linkPrefix: '/products/'",
+          "note": "硬编码默认值"
+        },
+        {
+          "file": "internal/siteurl/siteurl.go",
+          "lines": "42-85",
+          "snippet": "实体详情 URL 模式派生，默认 /products/{slug} 但可配",
+          "note": "真源在这里"
+        }
+      ],
+      "impact": "改过 URL 模式的站点，商品列表里的链接会指向 404。而且是静默的：产物构建成功、页面正常显示、点进去才 404。",
+      "rootCause": "链接前缀在组件 Props 上手工配置，没有从构建期的真实路径解析获得。",
+      "remediation": {
+        "approach": "productList 的链接不再依赖 linkPrefix 手工值，而是构建期通过实体路径解析器取真实路径（与 presentation 的 PublishedEntityLocator 同一口径）；linkPrefix 保留为覆盖项但默认为空。",
+        "steps": [
+          "集合项增加 url 字段，由集合源在构建期填入实际已发布路径",
+          "productList 渲染优先用集合项的 url，linkPrefix 仅在 url 缺失时兜底",
+          "无路径（未发布）的商品不输出链接（与 searchResults 片段同一原则）",
+          "palette 默认值改为空"
+        ],
+        "effortDays": 2,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "改 URL 模式后列表链接自动跟随",
+        "未发布商品在列表里不产生死链"
+      ],
+      "dependsOn": [
+        "EDT-003"
+      ],
+      "blocks": [],
+      "phase": "P2",
+      "tags": [
+        "productlist",
+        "url",
+        "dead-link"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：集合项 url 由 PublishedEntityPaths 填入；palette 默认 linkField=item.url。"
+    },
+    {
+      "id": "EDT-013",
+      "title": "草稿校验口径不一致：page 用 tolerant、ContentTemplate 用严格",
+      "severity": "low",
+      "type": "inconsistency",
+      "confidence": "confirmed",
+      "problem": "页面草稿保存用 ValidatePageTolerant（允许中间态），ContentTemplate 保存用严格 ValidatePage。如果 EDT-001 让 workbench 编辑模板，同一个编辑器里保存两种目标会有不同的容忍度。",
+      "evidence": [
+        {
+          "file": "internal/module/page/service/page_draft.go",
+          "lines": "285",
+          "snippet": "ValidatePageTolerant",
+          "note": "允许中间态草稿"
+        },
+        {
+          "file": "internal/module/contenttemplate/service/contenttemplate_service.go",
+          "lines": "266",
+          "snippet": "严格 ValidatePage",
+          "note": "不允许中间态"
+        }
+      ],
+      "impact": "接入可视化编辑后，编辑模板时会出现「拖进来还没配完就存不了」的体验断层。",
+      "rootCause": "两个模块各自决定了校验严格度，没有区分「草稿保存」与「发布前校验」两个时机。",
+      "remediation": {
+        "approach": "按时机而非按目标类型决定严格度：草稿保存一律 tolerant，构建/发布前一律严格。",
+        "steps": [
+          "ContentTemplate 增加草稿态与发布态的区分（若已有版本快照机制则复用）",
+          "草稿保存改 tolerant，版本快照生成时走严格校验",
+          "字段绑定白名单校验保留在两个时机都执行（这条是安全边界，不能放宽）"
+        ],
+        "effortDays": 1,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "编辑器里保存半成品模板不报错",
+        "发布时非法模板被拒绝"
+      ],
+      "dependsOn": [
+        "EDT-001"
+      ],
+      "blocks": [],
+      "phase": "P3",
+      "tags": [
+        "validation",
+        "contenttemplate"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "EDT-014",
+      "title": "实体类型默认模板按 updated_at 取最新一条，与「命名默认模板」的用户认知不符",
+      "severity": "medium",
+      "type": "design-flaw",
+      "confidence": "confirmed",
+      "problem": "ResolveTemplate 在未显式指定 templateId 时，取该实体类型下 updated_at 最新的模板作为默认。用户建了多套命名模板后，「默认用哪套」取决于最后改过哪套。",
+      "evidence": [
+        {
+          "file": "internal/module/contenttemplate/service/contenttemplate_service.go",
+          "lines": "170",
+          "snippet": "默认模板 = updated_at 最新一条",
+          "note": "隐式默认"
+        }
+      ],
+      "impact": "改了一套备用模板，新发布的商品就悄悄换成了那套。这类问题很难被联想到根因。",
+      "rootCause": "多套命名模板能力（#14）加上来时，默认模板的选择规则沿用了单模板时代的「取最新」。",
+      "remediation": {
+        "approach": "增加显式的 is_default 标记（每个 entityType 至多一个），未标记时才回落到最新一条并记一条 warn。",
+        "steps": [
+          "迁移增加 is_default 列 + 部分唯一索引（entityType 内唯一）",
+          "把每个 entityType 现有最新一条标为默认（数据迁移）",
+          "ResolveTemplate 优先读 is_default",
+          "后台模板列表增加「设为默认」操作"
+        ],
+        "effortDays": 1.5,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": true
+      },
+      "verification": [
+        "改非默认模板不影响新实例的发布结果",
+        "后台能明确看到哪套是默认"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P3",
+      "tags": [
+        "contenttemplate",
+        "product"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：迁移 164 is_default；ResolveTemplate 优先默认模板。"
+    },
+    {
+      "id": "EDT-015",
+      "title": "presentation 预览与 page 预览是两套渲染入口，一致性只靠人工保证",
+      "severity": "medium",
+      "type": "design-flaw",
+      "confidence": "confirmed",
+      "problem": "page 的预览与正式构建同源（都走 compileDocument，有注释背书）；presentation 的预览与发布同源（都走 renderHTML）。但 page 预览与 presentation 预览之间不同源，两者对同一份 AST 的渲染结果可能不同。",
+      "evidence": [
+        {
+          "file": "internal/module/page/service/page_preview.go",
+          "lines": "5,19",
+          "snippet": "注释说明预览与正式构建同源",
+          "note": "page 侧内部一致"
+        },
+        {
+          "file": "internal/module/presentation/service/presentation_service.go",
+          "lines": "308-309",
+          "snippet": "预览 urlPath 为空则不注入 canonical",
+          "note": "presentation 侧内部一致，但与 page 侧不同源"
+        }
+      ],
+      "impact": "接入可视化编辑模板后，在编辑器里预览模板（走 presentation 预览）与预览手工页面（走 page 预览）会有不一致的表现，用户无法判断哪个是真的。",
+      "rootCause": "同 EDT-003，装配层分裂的连带后果。",
+      "remediation": {
+        "approach": "随 EDT-003 一并解决：两条预览路径都通过统一装配器构造上下文，只在 URL 相关项上有显式差异。",
+        "steps": [
+          "EDT-003 完成后补一个对比测试：同一份 AST 经两条预览路径产出的 HTML 除 canonical 外一致"
+        ],
+        "effortDays": 0.5,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "对比测试通过"
+      ],
+      "dependsOn": [
+        "EDT-003"
+      ],
+      "blocks": [],
+      "phase": "P2",
+      "tags": [
+        "preview",
+        "consistency"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：共用 pipeline 装配层 + compile_parity_test；preview 与 publish 仍各走 renderHTML/compileDocument 但选项同源。"
+    },
+    {
+      "id": "EDT-016",
+      "title": "productList 运行时片段调 RenderNodeHTML，但白算了一整轮 CSS 编译",
+      "severity": "medium",
+      "type": "performance",
+      "confidence": "confirmed",
+      "problem": "片段渲染只需要 HTML（样式已在静态产物里内联），但 RenderNodeHTML 内部走 nodeViewOf，仍会执行 CompileCSS 把规则写进一个临时 CSSBuckets，然后丢弃。",
+      "evidence": [
+        {
+          "file": "internal/builder/builder.go",
+          "lines": "735-750",
+          "snippet": "RenderNodeHTML 只返回 HTML，但 nodeViewOf 内部仍编译 CSS",
+          "note": "编译结果被丢弃"
+        }
+      ],
+      "impact": "每一次筛选、排序、翻页的 HTMX 请求都白做一轮 CSS 编译。商品列表是高频页面，这部分 CPU 完全浪费。",
+      "rootCause": "nodeViewOf 把 HTML 与 CSS 编译耦合在一起，没有「只要 HTML」的路径。",
+      "remediation": {
+        "approach": "给 RenderContext 增加 skipCSS 标记，CSSBuckets 为 nil 时组件跳过 CompileCSS；或提供一个 no-op CSSBuckets 实现。",
+        "steps": [
+          "CSSBuckets 增加 Discard 实现（Add 直接返回）",
+          "RenderNodeHTML 使用 Discard bucket",
+          "确认所有组件的 CompileCSS 都通过 bucket 接口写入（不直接拼字符串）",
+          "基准测试对比片段渲染耗时"
+        ],
+        "effortDays": 1,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "片段渲染耗时下降",
+        "片段 HTML 输出逐字节不变"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P1",
+      "tags": [
+        "performance",
+        "runtimefragment",
+        "builder"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：RenderNodeHTML 使用 DiscardCSS，片段路径跳过 CSS 编译。"
+    },
+    {
+      "id": "EDT-017",
+      "title": "workbench 只有一个巨型编辑目标概念，未来接入更多可编辑文档类型会重复改多处",
+      "severity": "low",
+      "type": "tech-debt",
+      "confidence": "confirmed",
+      "problem": "编辑目标由 meta.saveBase 字符串（page / block）分派，保存接口、预览接口、校验规则、历史记录都各自 if 判断。接入 ContentTemplate 会再加一处分支，接入归档模板再加一处。",
+      "evidence": [
+        {
+          "file": "internal/templates/static/js/workbench/methods/api.js",
+          "lines": "14-86",
+          "snippet": "按 saveBase 分派保存接口",
+          "note": "字符串分派"
+        }
+      ],
+      "impact": "每接入一种可编辑文档就要在前后端各改若干处，容易漏（比如漏了历史记录或漏了预览）。",
+      "rootCause": "编辑目标没有抽象成一等概念。",
+      "remediation": {
+        "approach": "定义 EditTarget 描述符（加载 / 保存 / 预览 / 校验 / 历史五个端点 + 能力开关），前端按描述符驱动，后端按类型注册。",
+        "steps": [
+          "后端提供 GET /workbench/target?type=&id= 返回描述符",
+          "前端所有分派改为读描述符",
+          "page / block 先迁移，ContentTemplate 作为第三种目标接入验证抽象是否够用"
+        ],
+        "effortDays": 2,
+        "risk": "medium",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "page 与 block 编辑行为不变",
+        "新增目标类型只需注册不需改分派"
+      ],
+      "dependsOn": [],
+      "blocks": [
+        "EDT-001"
+      ],
+      "phase": "P3",
+      "tags": [
+        "workbench",
+        "architecture"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "EDT-018",
+      "title": "商品与文章的后台管理页与可视化编辑器之间没有跳转，是两套独立 UI",
+      "severity": "low",
+      "type": "missing-feature",
+      "confidence": "confirmed",
+      "problem": "/admin/products 与 /admin/articles 是表单式管理界面，workbench 是可视化编辑器，两者之间没有互相跳转的入口。用户改完商品内容想看详情页长什么样，要自己找到模板页再预览。",
+      "evidence": [
+        {
+          "file": "internal/module/dashboard/inbound/http/product_detail_template_handle.go",
+          "lines": "0",
+          "snippet": "模板页有预览，但商品列表行内无「看详情页」入口",
+          "note": ""
+        }
+      ],
+      "impact": "编辑内容与查看效果之间的路径过长，日常运营效率受影响。",
+      "rootCause": "两条 UI 线各自演进。",
+      "remediation": {
+        "approach": "商品/文章列表与编辑页增加「预览详情页」与「编辑详情页模板」两个入口，编辑器里增加「回到内容编辑」的返回路径。",
+        "steps": [
+          "商品列表行内加预览按钮（走 presentation.PreviewInstance）",
+          "文章编辑页加同样入口",
+          "编辑模板时顶栏显示当前预览用的实体并可切换"
+        ],
+        "effortDays": 1,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "从商品列表可一键看到详情页效果"
+      ],
+      "dependsOn": [
+        "EDT-001"
+      ],
+      "blocks": [],
+      "phase": "P3",
+      "tags": [
+        "ux",
+        "dashboard"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：商品列表预览详情页 + 文章编辑页链到详情模板。"
+    }
+  ]
+}

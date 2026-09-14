@@ -1,0 +1,893 @@
+{
+  "dimension": "transaction-correctness",
+  "dimensionTitle": "事务边界、并发安全、幂等性与金额正确性",
+  "scope": "internal/module/order（建单/状态机/取消/退款/退货/优惠码）、internal/module/product/inventory（ChangeStock/DeductStock/BOM/采购入库）、internal/module/cart（结算/支付回调）、internal/pipeline 与 publication（发布两段式回执与 symlink 激活）、金额精度与时区口径",
+  "verdict": "库存模块与 AGENTS.md 的描述高度一致，做得相当扎实：锁序按 (variant_id, warehouse_id) 升序全局统一、三段式幂等建行加按序加锁加按序应用、BOM 展开到叶子后仍排序、可用量判定真在行锁内、扣减不足整批回滚。发布的两段式回执与 symlink 的 tmp 加 rename 原子激活也正确。问题集中在订单域的跨事务编排与几处并发窗口：建单与扣库存不在同一事务且待付款订单占用的库存没有释放机制、优惠码每人限次在事务外判定可被并发绕过、退货可退数量无锁可超退、退款额未分摊订单级优惠会多退钱、三处声明幂等的地方在并发下会返回错误而不是原结果。",
+  "findings": [
+    {
+      "id": "TX-001",
+      "title": "建单与扣库存不在同一事务，且待付款订单占用的库存没有释放机制",
+      "severity": "critical",
+      "type": "correctness",
+      "confidence": "confirmed",
+      "problem": "CreateOrder 先在一个事务里写订单头与订单项与流水与券核销，提交之后再调 DeductStock 扣库存。扣库存失败时调 markAutoCancelled 标记订单为已取消。库存扣了但订单永不付款也不取消时，那份库存被永久占用（没有待付款订单的超时释放机制）。",
+      "evidence": [
+        {
+          "file": "internal/module/order/service/order_create.go",
+          "lines": "257-315",
+          "snippet": "先 s.orders.Transaction 写订单（含 CreateTx 与 redeemCouponTx），提交后再 s.stock.DeductStock，失败则 markAutoCancelled",
+          "note": "库存扣减在订单事务之外"
+        }
+      ],
+      "impact": "三个场景。一是库存被待付款订单永久占用：客户下单不付款也不取消，库存就一直扣着，可售数量持续减少直到无法销售（这是最常见也最容易发生的）。二是补偿失败：扣库存失败且 markAutoCancelled 也失败时，订单停在 pending 且库存状态不确定，需要人工对账。三是无幂等键的重复提交（用户双击结算且未带 request_id）会产生两笔订单两次扣库存。",
+      "rootCause": "跨模块（order 与 inventory）不方便共用事务，选择了先写单后扣库存。这个顺序本身是权衡后的选择（AGENTS.md 说明了「建单后支付失败不回滚订单，单号照样给访客，否则客户手里什么都不剩而库存已经扣了」），但缺少配套的库存释放机制。",
+      "remediation": {
+        "approach": "补待付款订单的库存释放：pending 状态超过 N 分钟未支付的订单自动取消并归还库存。这是电商标配（订单超时关闭）。同时给结算路径强制生成幂等键。",
+        "steps": [
+          "订单增加超时时间字段（或按 create_time 加可配的超时时长判定）",
+          "定时任务扫描超时的 pending 订单，走既有的 CancelOrder 流程（会归还库存）",
+          "取消前再确认一次未支付（防止与支付回调竞态：用订单头行锁）",
+          "结算路径强制生成 request_id（服务端生成并返回给前端，或前端必须传）",
+          "补偿失败的情况写入待人工处理清单（见 CQ-016）",
+          "超时时长可配（默认 30 分钟），并在结算页告知客户",
+          "更长远的方案是预占库存（单独的占用记录，与实际扣减分开），但成本高，超时释放能解决绝大部分问题"
+        ],
+        "effortDays": 2.5,
+        "risk": "medium",
+        "breaking": false,
+        "migrationNeeded": true
+      },
+      "verification": [
+        "超时未付的订单自动取消且库存归还",
+        "支付与超时取消并发时只有一个生效",
+        "重复提交只产生一笔订单"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P0",
+      "tags": [
+        "order",
+        "inventory",
+        "transaction",
+        "money"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：order_expire 30min 超时取消 + 释库存/券；结算幂等 request_id 重放。"
+    },
+    {
+      "id": "TX-002",
+      "title": "优惠码每人限次在事务外判定，并发可超发",
+      "severity": "critical",
+      "type": "correctness",
+      "confidence": "confirmed",
+      "problem": "每人限次的检查在事务开始前：CountRedemptions 查该用户已核销次数，与限次比较。而事务内的 redeemCouponTx 只有总次数守卫（UPDATE 加 WHERE used_count < max_uses），没有 per_user_limit 守卫。同一用户的两笔并发建单都会在事务前读到 used=0，都通过检查，都进入事务成功核销。",
+      "evidence": [
+        {
+          "file": "internal/module/order/service/order_create.go",
+          "lines": "196-206",
+          "snippet": "事务外 CountRedemptions 后与 PerUserLimit 比较",
+          "note": "读与写之间有窗口"
+        },
+        {
+          "file": "internal/module/order/service/coupon_redeem.go",
+          "lines": "27-58",
+          "snippet": "redeemCouponTx 只有 InsertRedemptionTx 与 IncrementUsedTx（总次数守卫），无 per_user 守卫",
+          "note": "事务内缺少该维度的保护"
+        },
+        {
+          "file": "internal/module/order/model/coupon_model.go",
+          "lines": "245-257",
+          "snippet": "UPDATE ... WHERE used_count < max_uses 的总次数守卫写法正确",
+          "note": "总次数这一维是安全的"
+        }
+      ],
+      "impact": "每人限一张的优惠券，用户开两个标签页同时提交就能用两次。直接资损，且这类操作在促销活动中会被大量尝试（用户之间会互相传播这种方法）。",
+      "rootCause": "总次数用了正确的原子守卫写法，每人限次却用了先读后写。两个维度的保护强度不一致。",
+      "remediation": {
+        "approach": "每人限次的判定移入事务，并用数据库约束兜底。限次为 1 时可以直接用 (coupon_id, user_id) 部分唯一索引（最强保障）；限次大于 1 时在事务内用 SELECT COUNT FOR UPDATE 或对券行加锁后计数。",
+        "steps": [
+          "限次等于 1 的情况：加 (coupon_id, user_id) 唯一索引 WHERE user_id IS NOT NULL，插入冲突即拒绝（最简单最可靠）",
+          "限次大于 1 的情况：事务内先锁券行（SELECT ... FOR UPDATE），再 CountRedemptions，再插入",
+          "锁券行会让同一张券的核销串行化，这是可接受的（券核销不是高并发热点）",
+          "补并发测试：同一用户 10 个并发请求用同一张限次 1 的券，断言只成功 1 次",
+          "顺带核查其它「先读后写」的业务规则判定（比如库存的可用量判定已经在锁内，是正确的）"
+        ],
+        "effortDays": 1.5,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": true
+      },
+      "verification": [
+        "同一用户并发用券只成功限次内的次数",
+        "总次数守卫行为不变",
+        "试算（ValidateCoupon）仍是纯读不占次数"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P0",
+      "tags": [
+        "order",
+        "coupon",
+        "concurrency",
+        "money"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：每人限次移入 redeemCouponTx（LockByIDTx + CountRedemptionsTx）。"
+    },
+    {
+      "id": "TX-003",
+      "title": "退货申请的可退数量校验无锁，并发可超退",
+      "severity": "critical",
+      "type": "correctness",
+      "confidence": "confirmed",
+      "problem": "returnableByItem 计算可退数量：查该订单的活跃退货单 id，再聚合这些单的已申请数量。代码注释说「真正落库那一刻的并发竞争由申请单落在同一张表、聚合随时可重算兜住」，但两笔并发申请都会在聚合前看到同样的可退数量，各自通过校验后都落库，累计就超了。",
+      "evidence": [
+        {
+          "file": "internal/module/order/service/return_request.go",
+          "lines": "259-265",
+          "snippet": "returnableByItem 先 IDsByOrder 再 SumQuantityByOrderItems，注释称并发由聚合可重算兜住",
+          "note": "但校验与插入之间没有锁"
+        },
+        {
+          "file": "internal/module/order/model/return_model.go",
+          "lines": "43-45",
+          "snippet": "ReturnActiveStatuses 含 requested / approved / received / completed",
+          "note": "聚合口径正确"
+        }
+      ],
+      "impact": "订单项数量 2，两笔并发申请各申请 2，都通过校验，累计申请 4。后续管理员审核时看到的是超额的申请，如果都批准就会入库 4 件（实际只卖了 2 件）并按 4 件退款。资损加库存虚增。",
+      "rootCause": "并发保护依赖「聚合可重算」这个性质，但重算发生在下一次校验时，对已经通过校验的并发请求无效。",
+      "remediation": {
+        "approach": "申请落库放进事务并锁订单头（LockByIDTx 已有），事务内重算可退数量再插入。锁订单头会让同一订单的退货申请串行化，这是合理的。",
+        "steps": [
+          "RequestReturn 包进事务",
+          "事务内先 LockByIDTx 锁订单头",
+          "锁内重算 returnableByItem",
+          "校验通过后插入申请单与明细",
+          "补并发测试：同一订单项的多个并发申请，断言累计不超过可退数量",
+          "审核环节也要在锁内重算（防止审核时数据已变）"
+        ],
+        "effortDays": 1.5,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "并发申请的累计数量不超过可退数量",
+        "正常单笔申请行为不变"
+      ],
+      "dependsOn": [],
+      "blocks": [
+        "TX-004"
+      ],
+      "phase": "P0",
+      "tags": [
+        "order",
+        "return",
+        "concurrency",
+        "money"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：RequestReturn 事务 + LockByIDTx + returnableByItemTx 锁内重算。"
+    },
+    {
+      "id": "TX-004",
+      "title": "退货退款额按订单项原价计算，未分摊订单级优惠，会多退钱",
+      "severity": "critical",
+      "type": "correctness",
+      "confidence": "confirmed",
+      "problem": "退款金额算法是 unit_price 乘 quantity 累加。而订单总额是小计减折扣加运费加税。订单级的折扣（优惠码减免）没有按行分摊到退款额里。",
+      "evidence": [
+        {
+          "file": "internal/module/order/service/return_request.go",
+          "lines": "150-151",
+          "snippet": "amount := it.UnitPrice * int64(line.Quantity)；total += amount",
+          "note": "未分摊订单级折扣"
+        },
+        {
+          "file": "internal/module/order/service/order_create.go",
+          "lines": "159-170",
+          "snippet": "total := subtotal - discount + shipping",
+          "note": "折扣在订单级，不在行级"
+        }
+      ],
+      "impact": "订单小计 100 元、券减 20 元、实付 80 元。退掉那件 100 元的商品会算出退款 100 元，比客户实付的还多 20 元。当前退款金额只是记录（模拟支付通道），但一旦接真支付网关按这个金额打款就是真实资损。全额退货走 RefundOrder 时订单状态变 refunded，但金额口径已经错了，财务对不上账。",
+      "rootCause": "订单金额模型是「行小计加订单级调整」，退款计算只用了行小计这一半。",
+      "remediation": {
+        "approach": "订单项落库时就存分摊后的行实付额（line_total），退款按 line_total 算。或者退款时按比例分摊订单级折扣。推荐前者（快照更符合订单域的设计原则，且避免每次退款都重算分摊）。",
+        "steps": [
+          "订单项增加 line_total 字段（分摊订单级折扣后的行实付额）",
+          "建单时计算分摊（按行小计占总小计的比例分摊折扣，最后一行吸收舍入差以保证总和精确等于订单折扣）",
+          "退款按 line_total 乘退货数量除以订单项数量计算",
+          "运费与税的退还规则要明确（通常运费不退或部分退，需要产品决策）",
+          "存量订单的 line_total 回填（按现有折扣比例分摊）",
+          "补测试：带券订单的部分退货金额正确，多次部分退货的累计不超过实付额"
+        ],
+        "effortDays": 2,
+        "risk": "medium",
+        "breaking": false,
+        "migrationNeeded": true
+      },
+      "verification": [
+        "带券订单的退款额不超过客户实付",
+        "多次部分退货的累计等于全额退货的金额",
+        "舍入差不产生累计误差"
+      ],
+      "dependsOn": [
+        "TX-003"
+      ],
+      "blocks": [],
+      "phase": "P0",
+      "tags": [
+        "order",
+        "return",
+        "money",
+        "accounting"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：order_money 行级分摊 + lineRefundAmount；单测覆盖。"
+    },
+    {
+      "id": "TX-005",
+      "title": "三处幂等键在并发下撞唯一索引会返回错误而不是原结果",
+      "severity": "high",
+      "type": "correctness",
+      "confidence": "confirmed",
+      "problem": "订单的 request_id、入库单的 request_id、退货的 request_id 都是「先查是否存在，不存在则创建」的模式。并发的两个同 request_id 请求都查不到，都去创建，一个成功一个撞唯一索引报错。而优惠券创建已经有 isUniqueViolation 的正确处理（可参照）。",
+      "evidence": [
+        {
+          "file": "internal/module/order/service/order_create.go",
+          "lines": "67-78",
+          "snippet": "GetByRequestID 查到则返回 Duplicated，查不到则继续创建",
+          "note": "读写之间有窗口"
+        },
+        {
+          "file": "internal/module/order/model/order_model.go",
+          "lines": "144-146",
+          "snippet": "CreateTx 直接 Create，未处理唯一冲突",
+          "note": ""
+        },
+        {
+          "file": "public/migrations/135_order.sql",
+          "lines": "98",
+          "snippet": "uk_orders_request_id 部分唯一索引（request_id 非空时生效）",
+          "note": "索引存在，是最后防线"
+        },
+        {
+          "file": "internal/module/product/inventory/service/inventory_receipt.go",
+          "lines": "54-60",
+          "snippet": "idempotentReceipt 同样模式",
+          "note": ""
+        },
+        {
+          "file": "internal/module/order/service/coupon_crud.go",
+          "lines": "327-337",
+          "snippet": "isUniqueViolation 的正确处理（正面范例）",
+          "note": "建单未使用"
+        }
+      ],
+      "impact": "幂等的语义是「重复请求返回同一结果」，现在并发时返回的是数据库错误。客户端收到 500 会认为失败并重试，如果重试时换了 request_id 就真的产生第二笔订单与第二次扣库存。入库单更危险：第二次可能在第一次的 ChangeStock 还没完成时进来，行为更难预测。",
+      "rootCause": "幂等实现只做了「查到就返回」这一半，没有处理「并发插入冲突」这一半。",
+      "remediation": {
+        "approach": "捕获唯一约束冲突（PostgreSQL 错误码 23505），重新按 request_id 查出既有记录并返回幂等响应。参照优惠券创建已有的 isUniqueViolation 处理。",
+        "steps": [
+          "把 isUniqueViolation 提取为共享工具（pkg/database）",
+          "订单创建捕获 23505 后重查并返回 Duplicated 结果",
+          "入库单同样处理（重查后走 receiptResp 的 idempotent 分支）",
+          "退货同样处理",
+          "补并发测试：同 request_id 的 10 个并发请求，断言只创建 1 条且全部返回同一结果"
+        ],
+        "effortDays": 1,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "并发同 request_id 请求全部返回同一结果",
+        "只创建一条记录"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P0",
+      "tags": [
+        "order",
+        "inventory",
+        "idempotency",
+        "concurrency"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：IsUniqueViolation 抽到 pkg/database；建单/退货/入库幂等重放。"
+    },
+    {
+      "id": "TX-006",
+      "title": "已取消的订单收到支付成功回调时直接报错，钱已经扣了",
+      "severity": "critical",
+      "type": "correctness",
+      "confidence": "confirmed",
+      "problem": "PayOrder 的状态机对 cancelled 与 refunded 状态直接返回流转错误。但支付通道可能在订单被取消之后才回调成功（客户在支付页停留很久，或超时取消与支付回调竞态）。这时钱已经从客户账户扣了，系统却拒绝记账。",
+      "evidence": [
+        {
+          "file": "internal/module/order/service/order_pay.go",
+          "lines": "63-66",
+          "snippet": "case OrderStatusCancelled, OrderStatusRefunded: return transitionError",
+          "note": "拒绝流转"
+        },
+        {
+          "file": "internal/module/cart/service/cart_callback.go",
+          "lines": "34-75",
+          "snippet": "支付回调验签后调 PayOrder",
+          "note": "PayOrder 报错时回调返回失败"
+        }
+      ],
+      "impact": "真实资损加客户投诉：客户付了钱，订单显示已取消，系统里没有这笔支付记录。发现只能靠客户投诉或对账。TX-001 引入超时取消之后这个场景会变得更常见（超时取消与延迟回调的竞态）。",
+      "rootCause": "状态机把「不能流转」等同于「拒绝处理」，但支付回调是外部已发生的事实，不能拒绝，只能记录。",
+      "remediation": {
+        "approach": "支付回调对已取消订单不报错，而是记录一笔待人工核对的支付（金额、流水号、时间），并告警。订单状态不变（仍是已取消），由人工决定退款还是恢复订单。",
+        "steps": [
+          "新增待核对支付记录表（或复用一个通用的人工待处理表）",
+          "PayOrder 遇到 cancelled 时写入待核对记录并返回一个特殊结果（不是错误）",
+          "支付回调收到该结果时返回成功（告知通道已收到，避免通道重复回调）",
+          "告警通知运营",
+          "后台提供待核对支付的处理界面（发起退款或恢复订单）",
+          "顺带处理：超时取消前先检查是否有进行中的支付（用订单头行锁，见 TX-001）"
+        ],
+        "effortDays": 2,
+        "risk": "medium",
+        "breaking": false,
+        "migrationNeeded": true
+      },
+      "verification": [
+        "已取消订单的支付回调被记录而非报错",
+        "运营能在后台看到并处理",
+        "支付通道不会因为报错而重复回调"
+      ],
+      "dependsOn": [
+        "TX-001"
+      ],
+      "blocks": [],
+      "phase": "P0",
+      "tags": [
+        "order",
+        "payment",
+        "money",
+        "state-machine"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：已取消/已退款支付回调记流水 NeedsManualReview，不报错。"
+    },
+    {
+      "id": "TX-007",
+      "title": "采购入库的库存已变动但单据状态更新失败时留下 pending 记录",
+      "severity": "high",
+      "type": "correctness",
+      "confidence": "confirmed",
+      "problem": "RegisterReceipt 的流程是：事务内记账（原子递增已入库数量、写入库单与行、重算采购单状态）→ 提交 → 调 ChangeStock 加库存 → SetReceiptMovement 把入库单标记为 posted。如果 ChangeStock 成功但 SetReceiptMovement 失败（或进程在中间崩溃），库存已经加了，入库单还是 pending。",
+      "evidence": [
+        {
+          "file": "internal/module/product/inventory/service/inventory_receipt.go",
+          "lines": "196-212",
+          "snippet": "ChangeStock 成功后再 SetReceiptMovement 标记 posted",
+          "note": "两步之间有窗口"
+        },
+        {
+          "file": "public/migrations/108_inventory_purchase.sql",
+          "lines": "97-100",
+          "snippet": "receipts status CHECK ('pending','posted')",
+          "note": ""
+        }
+      ],
+      "impact": "台账与真源不一致：入库单显示 pending（看起来没入库），库存已经加了。如果运维看到 pending 就重新提交，且用了不同的 request_id，会第二次加库存（幂等键只在 request_id 层，库存的 ChangeStock 本身没有幂等键）。库存虚增。",
+      "rootCause": "跨模块调用（inventory 内部但跨聚合）不在同一事务，补偿只做了「库存失败则退回记账」的方向，没做「记账失败但库存已动」的方向。",
+      "remediation": {
+        "approach": "让库存变动可追溯到入库单：ChangeStock 的 source_ref 已经带了单据号，重放时先查库存流水里是否已有该入库单的记录，有则跳过库存变动只补状态。这样即使状态更新失败，重试也是安全的。",
+        "steps": [
+          "ChangeStock 的 source_type 加 source_ref 已经记录了来源，确认入库时传的是入库单 id（不只是采购单号）",
+          "重放路径先查流水：按 source_type 与 source_ref 查是否已有变动记录",
+          "已有则跳过 ChangeStock，只重试 SetReceiptMovement",
+          "补测试：模拟 SetReceiptMovement 失败后重试，断言库存只加一次",
+          "同样处理生产入库路径"
+        ],
+        "effortDays": 1.5,
+        "risk": "medium",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "状态更新失败后重试不会重复加库存",
+        "pending 的入库单可安全重试"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P0",
+      "tags": [
+        "inventory",
+        "purchase",
+        "idempotency",
+        "correctness"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：采购入库 ChangeStock 前查 ExistsMovementBySource 防重复加库存。"
+    },
+    {
+      "id": "TX-008",
+      "title": "退货收货时明细的已收数量写入失败被完全忽略",
+      "severity": "high",
+      "type": "correctness",
+      "confidence": "confirmed",
+      "problem": "收货入库后更新每条明细的 received_quantity 用了 _ = s.returns.Transaction(...)，外层忽略错误。代码注释说「货已经在库里了，少一列记录远轻于…」。",
+      "evidence": [
+        {
+          "file": "internal/module/order/service/return_review.go",
+          "lines": "346-355",
+          "snippet": "_ = s.returns.Transaction(...) 内部 UpdateItemReceivedTx，外层忽略错误",
+          "note": "注释承认这是权衡"
+        }
+      ],
+      "impact": "received_quantity 与真实入库不一致，而「已退多少」是由明细聚合算出来的（这个设计本身是对的）。聚合值错了会导致后续的可退数量计算错误（客户可能能再退一次同样的货）。注释的权衡判断值得质疑：少一列记录不是「轻」，它直接影响可退额度这个业务判断。",
+      "rootCause": "把明细更新当成了记录性操作，实际它参与业务判断。",
+      "remediation": {
+        "approach": "明细更新与状态门闩放进同一事务（都是 order 模块内的表，可行）。库存入库在事务外（跨模块）但有 TX-007 的重放保护。",
+        "steps": [
+          "admitReceive 的门闩与明细更新合并到同一事务",
+          "库存入库在事务提交后执行（失败则记录待处理，见 CQ-016）",
+          "或者反过来：先入库存（有重放保护）再在事务里同时更新状态与明细",
+          "补测试：明细更新失败时状态不变（可重试整个流程）"
+        ],
+        "effortDays": 1,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "明细的已收数量与实际入库一致",
+        "失败时可安全重试"
+      ],
+      "dependsOn": [
+        "TX-007"
+      ],
+      "blocks": [],
+      "phase": "P0",
+      "tags": [
+        "order",
+        "return",
+        "transaction"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：退货入库后 UpdateItemReceivedTx 失败向上返回可重试。"
+    },
+    {
+      "id": "TX-009",
+      "title": "页面发布先切访问面文件系统再提交数据库状态",
+      "severity": "medium",
+      "type": "correctness",
+      "confidence": "confirmed",
+      "problem": "Publish 的顺序是先调 publisher.Publish 切 symlink（访问面立刻生效），再 MarkPublishedLang 更新数据库状态。中间失败时错误消息是「发布已生效但数据库状态同步失败」。",
+      "evidence": [
+        {
+          "file": "internal/module/page/service/page_publish.go",
+          "lines": "173-200",
+          "snippet": "先 publisher.Publish（切 symlink）再 MarkPublishedLang，失败返回「发布已生效但数据库状态同步失败」",
+          "note": "顺序与错误消息都说明了这个权衡"
+        },
+        {
+          "file": "internal/module/publication/service/publication_control.go",
+          "lines": "127-167",
+          "snippet": "publication 侧的两段式回执（pending 独立事务，然后路由 UPSERT 加 markReceipt committed）",
+          "note": "这部分设计正确，崩溃可恢复"
+        },
+        {
+          "file": "internal/module/publication/service/publication_control.go",
+          "lines": "456-462",
+          "snippet": "启动时 RollbackReceipts 清理 pending 回执",
+          "note": "有恢复机制"
+        }
+      ],
+      "impact": "崩溃在中间时线上已是新产物但数据库指针还是旧的。重试可以收敛（幂等），但在收敛之前后台显示的状态与线上不一致。多实例并发发布时可能出现短暂的双版本。publication 的两段式回执机制是对的，问题在 page 侧的这两步之间。",
+      "rootCause": "文件系统操作无法参与数据库事务，只能选一个顺序。选先切文件是为了让访问面尽快生效。",
+      "remediation": {
+        "approach": "改为先写数据库的 pending 状态、再切文件、再标记 committed（三段式，与 publication 的回执机制对齐）。这样崩溃在任何一步都能从数据库状态推断出应该做什么。",
+        "steps": [
+          "MarkPublishing（pending）→ symlink 切换 → MarkPublishedLang（committed）",
+          "启动时扫 pending 状态的发布：检查 symlink 实际指向，据此决定是补 committed 还是回滚",
+          "与 publication 的 RollbackReceipts 机制合并（同一套恢复逻辑）",
+          "多实例场景配合 advisory lock 串行化（PERF-020）"
+        ],
+        "effortDays": 1.5,
+        "risk": "medium",
+        "breaking": false,
+        "migrationNeeded": true
+      },
+      "verification": [
+        "中间崩溃后启动能自动收敛",
+        "后台状态与线上一致"
+      ],
+      "dependsOn": [
+        "PERF-020"
+      ],
+      "blocks": [],
+      "phase": "P1",
+      "tags": [
+        "pipeline",
+        "publication",
+        "transaction"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "TX-010",
+      "title": "退款的全额判定聚合不在锁内，与超退叠加时可能错误触发整单退款",
+      "severity": "medium",
+      "type": "correctness",
+      "confidence": "confirmed",
+      "problem": "refundReturn 判断是否全额退货（决定要不要把订单推进到 refunded 状态）时做聚合查询，这个聚合不在锁内。与 TX-003 的超退问题叠加时，可能出现「累计退货数量超过订单数量」从而错误判定为全额退货。",
+      "evidence": [
+        {
+          "file": "internal/module/order/service/return_review.go",
+          "lines": "397-415",
+          "snippet": "refundReturn 内的全额判定聚合，不在订单头锁内",
+          "note": ""
+        },
+        {
+          "file": "internal/module/order/service/return_review.go",
+          "lines": "284-318",
+          "snippet": "admitReceive 的 approved 到 received 门闩实现正确（重复调用只入库一次）",
+          "note": "这部分做得对"
+        }
+      ],
+      "impact": "订单被错误标记为已退款（而实际还有货没退），财务对不上账。依赖 TX-003 修复后风险大幅降低，但聚合本身也该在锁内。",
+      "rootCause": "门闩保护了入库这一步，但金额与状态判定没有同等保护。",
+      "remediation": {
+        "approach": "全额判定移入订单头锁内（与状态流转同一个锁）。",
+        "steps": [
+          "refundReturn 的聚合与订单状态流转放进同一事务并锁订单头",
+          "TX-003 修复后再验证一次",
+          "补测试：多次部分退货直到全额，断言只在最后一次推进到 refunded"
+        ],
+        "effortDays": 0.75,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "全额判定准确",
+        "不会提前标记 refunded"
+      ],
+      "dependsOn": [
+        "TX-003"
+      ],
+      "blocks": [],
+      "phase": "P0",
+      "tags": [
+        "order",
+        "return",
+        "concurrency"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：refundReturn 全额判定在 LockByIDTx 事务内完成。"
+    },
+    {
+      "id": "TX-011",
+      "title": "时间口径不一致：优惠券时间窗用本地时区，库存流水用 UTC",
+      "severity": "high",
+      "type": "correctness",
+      "confidence": "confirmed",
+      "problem": "orders 与 coupons 的时间列是 TIMESTAMP(3) 无时区，优惠券的时间窗判断用 time.Local。库存流水的时间列是 timestamptz，判断用 UTC。同一个业务流程（下单时校验券的有效期、同时扣库存写流水）里存在两套时间口径。",
+      "evidence": [
+        {
+          "file": "public/migrations/135_order.sql",
+          "lines": "93",
+          "snippet": "TIMESTAMP(3) 无时区",
+          "note": ""
+        },
+        {
+          "file": "internal/module/order/service/coupon_rule.go",
+          "lines": "53",
+          "snippet": "券时间窗用 time.Local",
+          "note": ""
+        },
+        {
+          "file": "internal/module/product/inventory/service/inventory_change.go",
+          "lines": "260",
+          "snippet": "库存用 UTC",
+          "note": "两套口径"
+        }
+      ],
+      "impact": "优惠券的生效与失效时间会随服务器时区变化：同一张券在不同时区的服务器上生效时间不同。跨时区部署或服务器时区变更（比如迁移机房）会导致券提前生效或提前失效。账号锁定到期时间同理。这类问题的表现是「时间对不上」，排查时很难想到时区。",
+      "rootCause": "两批表在不同时期建立，类型与口径都不同（见 DB-018）。",
+      "remediation": {
+        "approach": "随 DB-018 的类型统一一并解决：所有时间列改 timestamptz，Go 侧统一用 UTC 计算与比较，展示层再转本地时区。",
+        "steps": [
+          "DB-018 的类型迁移（含正确的时区解释）",
+          "Go 侧所有时间比较改用 UTC",
+          "展示层（后台页面与邮件）转本地时区（时区可配）",
+          "优惠券的时间窗设置界面要明确显示时区",
+          "补测试：改服务器时区后券的生效时间不变"
+        ],
+        "effortDays": 1.5,
+        "risk": "medium",
+        "breaking": false,
+        "migrationNeeded": true
+      },
+      "verification": [
+        "服务器时区变更不影响业务时间判定",
+        "券的生效时间与设置一致"
+      ],
+      "dependsOn": [
+        "DB-018"
+      ],
+      "blocks": [],
+      "phase": "P1",
+      "tags": [
+        "timezone",
+        "coupon",
+        "correctness"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "TX-012",
+      "title": "删除商品变体会级联清空库存记录，需确认删除路径的守卫",
+      "severity": "medium",
+      "type": "correctness",
+      "confidence": "likely",
+      "problem": "迁移 099 的 inventory_stocks 外键是 ON DELETE CASCADE 指向 product_variants。删除变体会连带删除它的库存记录。商品没有软删除（用 status 表达上下架）。需要确认删除变体的路径是否有守卫（比如有未完成订单或有非零库存时拒绝删除）。",
+      "evidence": [
+        {
+          "file": "public/migrations/099_inventory_tables.sql",
+          "lines": "49",
+          "snippet": "inventory_stocks 外键 ON DELETE CASCADE 指向 product_variants",
+          "note": ""
+        },
+        {
+          "file": "public/migrations/081_product_tables.sql",
+          "lines": "87",
+          "snippet": "products.status 表达上下架，无软删除",
+          "note": ""
+        }
+      ],
+      "impact": "如果删除变体没有守卫，会静默丢失库存数据（且库存流水里的记录会指向不存在的变体）。订单项是快照所以历史订单不受影响，但库存账目会有缺口。",
+      "rootCause": "级联删除是为了避免孤儿记录，但没有配套的业务守卫。",
+      "remediation": {
+        "approach": "删除变体前检查：非零库存、未完成订单、采购单引用、捆绑品引用，任一存在则拒绝删除（建议改为停用）。",
+        "steps": [
+          "核实当前删除变体的路径是否有守卫",
+          "补守卫：非零库存拒绝、有未完成订单拒绝、被捆绑品引用拒绝",
+          "提示用户改为停用（enabled=false）",
+          "库存流水的变体引用要保留（历史记录），确认流水表的外键是 RESTRICT 或无外键",
+          "补测试：有库存的变体无法删除"
+        ],
+        "effortDays": 1,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "有库存或有引用的变体无法删除",
+        "库存流水的历史记录不丢失"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P1",
+      "tags": [
+        "product",
+        "inventory",
+        "cascade",
+        "data-loss"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：DeleteVariant 非零库存拒绝（ErrVariantHasStock）再 CASCADE。"
+    },
+    {
+      "id": "TX-013",
+      "title": "float64 参与定价与成本计算，需确认舍入策略一致",
+      "severity": "medium",
+      "type": "correctness",
+      "confidence": "confirmed",
+      "problem": "订单链路主体是整数分（正确）。float64 集中在商品域的定价工具（成本乘倍数、除以一减毛利率）与捆绑品成本合计与展示格式化。换算点是 yuanToCents 用 math.Round（优于截断）。定价工具的结果经 applyPricingRounding 转为整数分再写库。",
+      "evidence": [
+        {
+          "file": "internal/module/product/service/product_variant_snapshot.go",
+          "lines": "87-88",
+          "snippet": "math.Round(yuan * 100) 转订单分",
+          "note": "用 Round 而非截断，做得对"
+        },
+        {
+          "file": "internal/module/product/service/product_pricing_rule.go",
+          "lines": "80-142",
+          "snippet": "成本乘倍数、除以 (1 - margin) 等 float64 运算",
+          "note": "经 applyPricingRounding 转整数"
+        },
+        {
+          "file": "internal/module/product/service/product_pricing_rule.go",
+          "lines": "290",
+          "snippet": "math.Round(amount * 100)",
+          "note": "尾数不舍入规则"
+        },
+        {
+          "file": "internal/module/product/service/product_bundle_validate.go",
+          "lines": "133",
+          "snippet": "TotalCost += *CostPrice * float64(qty)",
+          "note": "仅后台展示，不进订单"
+        }
+      ],
+      "impact": "当前设计是合理的（float 只在定价计算的中间过程，落库前转整数）。风险点是：目标毛利率公式（售价等于成本除以一减 margin）在 margin 接近 1 时会放大浮点误差；捆绑品成本合计的累加误差随子项数量增长。预览与应用共用同一份算价逻辑（这点做得对，保证了预览与实际一致）。",
+      "rootCause": "定价规则涉及乘除，用整数分表达会很别扭，float 中间过程是合理选择。",
+      "remediation": {
+        "approach": "不改架构（float 中间过程加整数落库是正确的），但加防护：margin 的取值范围校验（不能太接近 1）、累加类计算改为先累加整数分再展示、补边界测试。",
+        "steps": [
+          "margin 参数校验上限（比如不超过 0.95）",
+          "捆绑品成本合计改为整数分累加",
+          "补测试：极端参数（margin 0.9、成本 0.01 元、大数量）下的结果符合预期",
+          "配合 CQ-013 的 pkg/money 统一格式化与换算"
+        ],
+        "effortDays": 1,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "极端参数下定价结果正确",
+        "累加无浮点误差累积"
+      ],
+      "dependsOn": [
+        "CQ-013"
+      ],
+      "blocks": [],
+      "phase": "P1",
+      "tags": [
+        "money",
+        "product",
+        "pricing",
+        "precision"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：定价 margin 上限 0.95。"
+    },
+    {
+      "id": "TX-014",
+      "title": "产物记录并发写入同版本时返回不匹配错误而非重试",
+      "severity": "low",
+      "type": "correctness",
+      "confidence": "confirmed",
+      "problem": "产物记录的唯一键是 (page_id, version, lang)。并发写入同一版本时，后者撞唯一键，代码返回 ErrArtifactMismatch。",
+      "evidence": [
+        {
+          "file": "internal/module/artifact/model/artifact_record.go",
+          "lines": "129-131",
+          "snippet": "撞唯一键时返回 ErrArtifactMismatch",
+          "note": ""
+        }
+      ],
+      "impact": "并发构建同一页面同一版本时一方失败。确定性构建保证了两次构建的产物字节相同，所以失败方本可以直接复用成功方的结果。当前会报错，需要重试。",
+      "rootCause": "唯一键冲突被当作数据不一致而非并发正常现象。",
+      "remediation": {
+        "approach": "撞唯一键时重读既有记录，比对 hash：相同则视为成功（确定性构建保证了这一点），不同才是真的不一致。或改用 ON CONFLICT。",
+        "steps": [
+          "捕获唯一冲突后重读并比对 artifact_hash",
+          "hash 相同则返回既有记录（幂等成功）",
+          "hash 不同才返回 ErrArtifactMismatch（这才是真的异常，说明确定性构建被破坏了，值得告警）",
+          "配合 PERF-020 的 advisory lock 后这种并发会减少，但幂等处理仍值得做"
+        ],
+        "effortDays": 0.75,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "并发构建同版本不报错",
+        "hash 真的不同时仍报错并告警"
+      ],
+      "dependsOn": [
+        "PERF-020"
+      ],
+      "blocks": [],
+      "phase": "P1",
+      "tags": [
+        "artifact",
+        "concurrency",
+        "idempotency"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：content_objects INSERT ON CONFLICT DO NOTHING 消并发 TOCTOU。"
+    },
+    {
+      "id": "TX-015",
+      "title": "迁移 134 的外键不覆盖订单项（有意设计，记录以免误改）",
+      "severity": "low",
+      "type": "design-flaw",
+      "confidence": "confirmed",
+      "problem": "迁移 134 补了库存记录与流水与采购行与定价明细指向商品与变体的外键。订单项刻意没有外键（订单项是快照，商品删除后历史订单必须仍可查）。",
+      "evidence": [
+        {
+          "file": "public/migrations/134_inventory_reference_fks.sql",
+          "lines": "0",
+          "snippet": "覆盖 inventory_stocks / movements / 采购行 / 定价明细，不含 order_items",
+          "note": "有意排除"
+        }
+      ],
+      "impact": "无负面影响，这是正确设计。记录在案是为了防止将来有人「补全外键」时把订单项也加上（那会导致商品无法删除，或删除商品时级联破坏历史订单）。",
+      "rootCause": "订单快照原则。",
+      "remediation": {
+        "approach": "不改。在迁移 134 的注释里明确说明为什么排除 order_items（如果注释里还没写）。",
+        "steps": [
+          "确认 134 的注释说明了排除理由",
+          "AGENTS.md 的订单模块行已有快照说明，可交叉引用"
+        ],
+        "effortDays": 0.25,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "注释说明清晰"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P6",
+      "tags": [
+        "order",
+        "schema",
+        "documentation",
+        "decision"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：迁移 134 注释说明 order_items 外键有意排除。"
+    },
+    {
+      "id": "TX-016",
+      "title": "缺少订单状态机与并发发货的 race 测试",
+      "severity": "medium",
+      "type": "missing-feature",
+      "confidence": "confirmed",
+      "problem": "库存扣减有 40 并发的无超卖测试、采购收货有并发测试、发布激活有并发测试、Casbin 有明确要求 -race 的测试。但订单状态机没有并发测试（并发两次发货、并发支付回调、并发取消与支付）。",
+      "evidence": [
+        {
+          "file": "public/test/inventory/feature/inventory_change_test.go",
+          "lines": "155-209",
+          "snippet": "40 并发扣减，断言成功 20 次、真源为 0、流水 21 条",
+          "note": "强测试范例"
+        },
+        {
+          "file": "public/test/order/feature/order_flow_test.go",
+          "lines": "226-245",
+          "snippet": "幂等测试有，但无并发状态流转测试",
+          "note": ""
+        }
+      ],
+      "impact": "订单状态流转在行锁内判定（实现看起来是对的），但没有测试证明。本次审计发现的多个并发问题（TX-002、TX-003、TX-010）都在订单域，说明这个域的并发路径缺少测试覆盖。",
+      "rootCause": "库存域的并发风险被识别并测试了，订单域没有。",
+      "remediation": {
+        "approach": "给订单域补并发测试，覆盖本次发现的每个并发问题（作为修复的验收标准）。",
+        "steps": [
+          "并发两次发货，断言只成功一次",
+          "并发支付回调，断言只落账一次",
+          "并发取消与支付，断言最终状态一致且无资损",
+          "并发退货申请（TX-003 的验收）",
+          "同用户并发用券（TX-002 的验收）",
+          "全部用 -race 跑",
+          "CI 里加 race job（OSS-010）"
+        ],
+        "effortDays": 1.5,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "全部并发测试通过且用 -race 无报告"
+      ],
+      "dependsOn": [
+        "TX-002",
+        "TX-003"
+      ],
+      "blocks": [],
+      "phase": "P0",
+      "tags": [
+        "order",
+        "testing",
+        "concurrency"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：public/test/order/feature/order_concurrency_test.go —— 并发发货/并发支付/取消与支付并发/并发退货/同用户并发用券五条，全部 -race 通过（验收 TX-002、TX-003、TX-006 的修复）。"
+    }
+  ]
+}

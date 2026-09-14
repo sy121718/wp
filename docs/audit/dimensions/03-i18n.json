@@ -1,0 +1,1225 @@
+{
+  "dimension": "i18n",
+  "dimensionTitle": "全局多语言体系",
+  "scope": "pkg/i18n（sys_i18n 程序文案 + sys_translation 内容寻址双轨）、internal/builder/content_i18n.go、internal/pipeline/lang.go、internal/module/page/service/page_lang.go、各模块 enums、internal/templates/admin、internal/templates/fragments、internal/builder/components",
+  "verdict": "机制层相当完整：双表分工清晰、内容 hash 失效可靠、每语言产物与路由、project_locales、hreflang、语言切换器、页面与商品的翻译工作台都已落地。问题全在覆盖面：运行时片段整层没有语言维度、文章与自动发布实例没有多语言、组件与后台大量中文硬编码（组件那部分会烘进静态产物，发布后改不了）。",
+  "findings": [
+    {
+      "id": "I18N-001",
+      "title": "后台 48 个模板里只有 6 个用了 t()，正文文案基本全硬编码中文",
+      "severity": "high",
+      "type": "missing-feature",
+      "confidence": "confirmed",
+      "problem": "翻译注入机制已就位（withI18n 统一注入 lang / t / langs），布局与登录等壳层页面已 key 化，但业务页面的正文文案几乎全是硬编码中文。实测含中文字符的行约 2174 行，t() 调用仅 31 次。",
+      "evidence": [
+        {
+          "file": "internal/module/dashboard/inbound/http/i18n.go",
+          "lines": "17-44",
+          "snippet": "withI18n 注入 lang / t / langs / title 翻译",
+          "note": "机制已就位"
+        },
+        {
+          "file": "internal/templates/admin/layout.html",
+          "lines": "15-66",
+          "snippet": "壳层已 key 化",
+          "note": "只有壳层"
+        }
+      ],
+      "impact": "后台切换语言只有导航与登录页会变，业务页面仍是中文。对国际团队与开源贡献者不可用。",
+      "rootCause": "机制先行、页面未跟进；且没有 lint 或测试阻止新页面继续硬编码。",
+      "remediation": {
+        "approach": "分批抽 key（按模块优先级：登录与仪表盘 → 商品与订单 → 库存与邮件 → 其余），配套一个检查脚本禁止新增硬编码。",
+        "steps": [
+          "写一个脚本扫 admin 模板里的中文字面量，输出未 key 化清单（可放 scripts/check-i18n-coverage.sh）",
+          "按模块批量抽 key，key 命名走 admin.<模块>.<语义> 约定",
+          "同批 seed sys_i18n 的 zh-CN 与 en-US 词条",
+          "CI 加检查：新增中文字面量超过阈值即失败"
+        ],
+        "effortDays": 4,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": true
+      },
+      "verification": [
+        "切换后台语言后业务页面文案随之变化",
+        "检查脚本覆盖率达标"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P4",
+      "tags": [
+        "admin-ui",
+        "i18n"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "I18N-002",
+      "title": "order / user / mail / cart / masterdata 五个模块的 enums 仍是中文常量，不是 i18n key",
+      "severity": "high",
+      "type": "inconsistency",
+      "confidence": "confirmed",
+      "problem": "多数模块的 enums 已经把 Err*/Msg* 当作 sys_i18n 的 key（response 层会翻译），但这五个模块仍是中文字面量：order 61 处、user 40 处、mail 30 处、cart 21 处、masterdata 7 处。",
+      "evidence": [
+        {
+          "file": "internal/module/order/enums/order_enums.go",
+          "lines": "7-14",
+          "snippet": "MsgCreateSuccess = \"订单已创建\"",
+          "note": "中文字面量而非 key"
+        },
+        {
+          "file": "internal/module/content/enums/content_enums.go",
+          "lines": "5-18",
+          "snippet": "已是 key 但注释写「未接 i18n 前」",
+          "note": "注释过时"
+        }
+      ],
+      "impact": "这五个模块的 API 错误消息与成功提示无法翻译。order 与 cart 还会影响访客侧（结算失败提示直接是中文）。",
+      "rootCause": "模块落地时间不同，早期模块用中文常量、后期改为 key，没有回头统一。",
+      "remediation": {
+        "approach": "五个模块的 enums 逐个改为 key，同批 seed 词条。改动是机械的但要小心：有些常量可能被字符串比较使用。",
+        "steps": [
+          "逐模块把中文常量改为 key（命名 <模块>.err.<语义> / <模块>.msg.<语义>）",
+          "grep 确认没有代码对这些常量做字符串比较（若有，先改为常量比较）",
+          "同批迁移 seed zh-CN 与 en-US",
+          "跑 feature 测试确认断言文案的测试同步更新"
+        ],
+        "effortDays": 2,
+        "risk": "medium",
+        "breaking": false,
+        "migrationNeeded": true
+      },
+      "verification": [
+        "切换语言后这五个模块的 API 消息随之变化",
+        "既有断言消息的测试全绿"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P4",
+      "tags": [
+        "enums",
+        "i18n",
+        "api"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "I18N-003",
+      "title": "sys_i18n 没有后台管理界面，改一句文案要写迁移",
+      "severity": "medium",
+      "type": "missing-feature",
+      "confidence": "confirmed",
+      "problem": "程序文案词条只能通过迁移 seed 维护，没有 CRUD 界面。运营想改一句提示文案需要开发写迁移并重新部署。",
+      "evidence": [
+        {
+          "file": "public/migrations",
+          "lines": "0",
+          "snippet": "058/059/060/065 等迁移 seed sys_i18n 词条",
+          "note": "唯一维护方式"
+        }
+      ],
+      "impact": "文案迭代成本高，也让翻译工作无法交给非开发人员。",
+      "rootCause": "词条被当作代码资产而非内容资产。",
+      "remediation": {
+        "approach": "增加后台词条管理页（列表 + 按 key/语言筛选 + 编辑 + 新增），保留迁移 seed 作为默认值来源（迁移用 ON CONFLICT DO NOTHING 不覆盖人工修改）。",
+        "steps": [
+          "新增 /admin/i18n 页面与 CRUD API（权限点同批 seed）",
+          "确认 seed 迁移都是 DO NOTHING 语义，人工改动不被覆盖",
+          "改词条后清缓存（已有 LoadCache 与 Revision 机制，触发刷新即可）",
+          "词条变更要推进 Revision 以便标记页面待重建"
+        ],
+        "effortDays": 2,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": true
+      },
+      "verification": [
+        "后台改词条后前台与后台文案立即生效",
+        "重跑迁移不覆盖人工修改"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P4",
+      "tags": [
+        "i18n",
+        "admin-ui",
+        "operations"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "I18N-004",
+      "title": "后台界面语言选项硬编码 zh-CN 与 en-US，与 project_locales 脱节",
+      "severity": "low",
+      "type": "inconsistency",
+      "confidence": "confirmed",
+      "problem": "后台顶栏的语言切换选项写死两种，而站点支持的语言清单在 project_locales 表里由运营维护。两者没有关联。",
+      "evidence": [
+        {
+          "file": "internal/templates/i18n.go",
+          "lines": "45-48",
+          "snippet": "后台语言选项硬编码 zh-CN / en-US",
+          "note": ""
+        },
+        {
+          "file": "public/migrations/064_project_locales.sql",
+          "lines": "12-21",
+          "snippet": "站点语言清单表",
+          "note": "两者是不同维度但选项来源应可配"
+        }
+      ],
+      "impact": "增加后台界面语言需要改代码。这是两个不同维度（后台界面语言 vs 站点内容语言），但后台语言选项也应该可配。",
+      "rootCause": "后台语言是最早实现的部分，当时还没有 project_locales。",
+      "remediation": {
+        "approach": "后台可用界面语言改为从 sys_i18n 里实际存在词条的语言集合派生（有词条即可选），不再硬编码。",
+        "steps": [
+          "增加查询：SELECT DISTINCT lang FROM sys_i18n",
+          "结果缓存（随 Revision 失效）",
+          "顶栏选项从该集合渲染"
+        ],
+        "effortDays": 0.5,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "seed 一种新语言词条后后台自动出现该选项"
+      ],
+      "dependsOn": [
+        "I18N-003"
+      ],
+      "blocks": [],
+      "phase": "P4",
+      "tags": [
+        "i18n",
+        "admin-ui"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：LanguageOptions 取自 i18n.AvailableLangs()，随词条 seed 扩展。"
+    },
+    {
+      "id": "I18N-005",
+      "title": "大量后台页面 title 用字面量 fallback，未抽 key",
+      "severity": "low",
+      "type": "missing-feature",
+      "confidence": "confirmed",
+      "problem": "handler 传给模板的 title 有的是 enums key（会被翻译），有的直接是中文字面量。同一批页面两种做法混用。",
+      "evidence": [
+        {
+          "file": "internal/module/dashboard/inbound/http",
+          "lines": "0",
+          "snippet": "部分 handler 传 MsgXxxTitle key，部分传中文字面量",
+          "note": "需逐个核对"
+        }
+      ],
+      "impact": "浏览器标签页与页面标题的语言不一致。",
+      "rootCause": "无统一约定。",
+      "remediation": {
+        "approach": "随 I18N-001 一并处理：所有页面 title 统一走 key。",
+        "steps": [
+          "扫出传字面量的 handler",
+          "统一改为 key 并 seed 词条"
+        ],
+        "effortDays": 0.5,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": true
+      },
+      "verification": [
+        "所有后台页面标题随语言变化"
+      ],
+      "dependsOn": [
+        "I18N-001"
+      ],
+      "blocks": [],
+      "phase": "P4",
+      "tags": [
+        "admin-ui",
+        "i18n"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：dashboard enums 标题 key + withI18n 翻译；迁移 163 seed。"
+    },
+    {
+      "id": "I18N-006",
+      "title": "文章 / CMS 内容完全没接 sys_translation，构建期不取译文",
+      "severity": "high",
+      "type": "missing-feature",
+      "confidence": "confirmed",
+      "problem": "商品域已完整接入内容翻译（五类实体 + 构建期 TranslateValues + 翻译工作台 + 改译文标记 stale）。文章的 entityResolver 只读 contents.data 原文，没有 TranslateValues，也没有翻译工作台。",
+      "evidence": [
+        {
+          "file": "internal/module/content/service/content_resolver.go",
+          "lines": "55-71",
+          "snippet": "entityResolver 只读 contents.data，无翻译",
+          "note": ""
+        },
+        {
+          "file": "internal/module/product/service/entity_source.go",
+          "lines": "230",
+          "snippet": "商品侧 i18n.TranslateValues 的做法可对称照搬",
+          "note": "有现成范本"
+        }
+      ],
+      "impact": "多语言站点的文章内容只有一种语言。CMS 的多语言能力事实上不存在。",
+      "rootCause": "商品域先做，文章域没跟上。",
+      "remediation": {
+        "approach": "完全对称商品域的做法：字段白名单标注可翻译、构建期 TranslateValues、后台翻译工作台、改译文触发 stale。",
+        "steps": [
+          "content 的字段白名单标注可翻译项（title / body / excerpt / seoTitle / seoDescription，featuredImage 的 alt 另议）",
+          "entityResolver 增加 TranslateValues 调用（context 命名 article.<字段>）",
+          "新增 /admin/articles/translations 页面（对称商品的 /admin/products/translations）",
+          "译文变更标记受影响的自动发布实例待重建",
+          "body 是富文本，翻译工作台需要富文本编辑器且译文也要过 SanitizeRichHTML"
+        ],
+        "effortDays": 3,
+        "risk": "medium",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "文章译文在对应语言产物中生效",
+        "改原文后旧译文按 hash 失效并回退原文",
+        "译文正文经过白名单清洗"
+      ],
+      "dependsOn": [
+        "I18N-013"
+      ],
+      "blocks": [],
+      "phase": "P4",
+      "tags": [
+        "content",
+        "i18n",
+        "sys_translation"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "I18N-007",
+      "title": "导航菜单标签没有翻译层",
+      "severity": "high",
+      "type": "missing-feature",
+      "confidence": "confirmed",
+      "problem": "菜单 URL 会经 localizeMenuURL 按语言本地化，但菜单项的显示文本直接来自数据库，没有 sys_translation 支持。",
+      "evidence": [
+        {
+          "file": "internal/module/page/service/page_navigation.go",
+          "lines": "58",
+          "snippet": "localizeMenuURL 只处理 URL",
+          "note": "标签文本未处理"
+        }
+      ],
+      "impact": "英文站的导航菜单显示中文。导航是每个页面都出现的元素，这个缺口非常显眼。",
+      "rootCause": "导航模块落地早于内容翻译机制。",
+      "remediation": {
+        "approach": "菜单标签接入 sys_translation（context 命名 navigation.label），构建期批量取译文；后台导航管理页增加译文编辑。",
+        "steps": [
+          "构建期在 navigation resolver 里对 label 调 TranslateContent",
+          "后台导航节点编辑增加译文字段（按站点启用语言逐个）",
+          "译文变更标记该工程页面待重建",
+          "顺带解决 core.nav 组件的 label 白名单与 Menu=header/footer 数据源的冲突（见 I18N-018）"
+        ],
+        "effortDays": 2,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "英文站导航显示英文标签",
+        "无译文时回退原文不留空"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P4",
+      "tags": [
+        "navigation",
+        "i18n"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "I18N-008",
+      "title": "媒体 alt 文本没有多语言",
+      "severity": "medium",
+      "type": "missing-feature",
+      "confidence": "confirmed",
+      "problem": "媒体库的 alt 文本是单语言的。商品图的 alt 走商品域翻译（images_alt 在可翻译字段里），但媒体库里的通用图片 alt 没有翻译维度。",
+      "evidence": [
+        {
+          "file": "internal/module/media",
+          "lines": "0",
+          "snippet": "媒体实体无译文关联",
+          "note": ""
+        }
+      ],
+      "impact": "多语言站点的图片 alt 只有一种语言，影响无障碍与图片 SEO。",
+      "rootCause": "媒体库定位为文件管理，没有内容属性的翻译维度。",
+      "remediation": {
+        "approach": "媒体 alt 接入 sys_translation（context 命名 media.alt），或在组件层允许作者按语言覆盖 alt（后者成本更低但重复劳动多）。推荐前者。",
+        "steps": [
+          "媒体编辑增加译文字段",
+          "构建期图片组件解析 alt 时取译文",
+          "空译文回退原文"
+        ],
+        "effortDays": 1.5,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "英文站图片 alt 显示英文"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P4",
+      "tags": [
+        "media",
+        "i18n",
+        "a11y"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "I18N-009",
+      "title": "sys_translation 没有 project_id，多站点场景无法隔离译文",
+      "severity": "low",
+      "type": "design-flaw",
+      "confidence": "confirmed",
+      "problem": "译文表的主键是 (source_hash, context, lang)，不含 project_id。两个工程有相同原文时会共用同一条译文。",
+      "evidence": [
+        {
+          "file": "public/migrations/066_sys_translation.sql",
+          "lines": "15-27",
+          "snippet": "主键 (source_hash, context, lang)，无 project_id",
+          "note": "内容寻址设计的必然结果"
+        }
+      ],
+      "impact": "单站点无感知。多站点部署时，A 站把某个词翻成一种说法，B 站会跟着变。对某些场景是特性（复用译文），对某些场景是缺陷（品牌用词不同）。",
+      "rootCause": "内容寻址（按原文 hash 定位）的设计取舍：换来了自动复用与 hash 失效，代价是无法隔离。",
+      "remediation": {
+        "approach": "不改主键（会失去内容寻址的好处），而是增加可选的工程级覆盖表：先查工程覆盖，未命中回落全局译文。",
+        "steps": [
+          "新增 sys_translation_override(project_id, source_hash, context, lang, target_text)",
+          "ContentTranslator 先查覆盖表再查全局表（一次批量查询各一次）",
+          "翻译工作台增加「仅本站点」选项"
+        ],
+        "effortDays": 2,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": true
+      },
+      "verification": [
+        "工程覆盖生效且不影响其它工程",
+        "无覆盖时正确回落全局译文"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P7",
+      "tags": [
+        "sys_translation",
+        "multi-tenant"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "I18N-010",
+      "title": "组件模板与 Go 侧的中文字面量会烘进静态产物，发布后无法修改",
+      "severity": "high",
+      "type": "missing-feature",
+      "confidence": "confirmed",
+      "problem": "productlist、cardstack、orderlist 等组件的 UI 壳层文案是模板字面量或 Go 常量，不经 I18nAware 也不在 Translatable 白名单里。这些字符串会直接编译进静态 HTML。",
+      "evidence": [
+        {
+          "file": "internal/builder/components/productlist/product_list.jet",
+          "lines": "11-44",
+          "snippet": "筛选、排序、上一页、应用价格等模板字面量",
+          "note": "直接进产物"
+        },
+        {
+          "file": "internal/builder/components/productlist/controls.go",
+          "lines": "67",
+          "snippet": "分类、品牌、标签由 Go 生成",
+          "note": "同样进产物"
+        },
+        {
+          "file": "internal/builder/components/productlist/productlist.go",
+          "lines": "169",
+          "snippet": "defaultEmptyText = \"暂无商品\"",
+          "note": ""
+        },
+        {
+          "file": "internal/builder/components/cardstack/cardstack.go",
+          "lines": "122-123,394",
+          "snippet": "查看详情、更多文章、全部商品等缺省常量",
+          "note": ""
+        },
+        {
+          "file": "internal/builder/seo_head.go",
+          "lines": "215",
+          "snippet": "JSON-LD 面包屑首项硬编码 Home",
+          "note": "英文硬编码，中文站也是 Home"
+        }
+      ],
+      "impact": "英文站的商品列表上会出现中文按钮。而且这些字节已经在产物里，改代码后必须重新发布所有页面才生效。这是所有 i18n 缺口里最难挽回的一类。",
+      "rootCause": "P4 的 I18nAware 机制只覆盖了约 10 处组件库固定文案，电商与列表类组件的文案是后来加的，没有跟上机制。",
+      "remediation": {
+        "approach": "逐组件把固定文案抽成 sys_i18n key（site.component.<组件>.<语义>），组件实现 I18nAware.ApplyI18n 在构建期按语言取词。",
+        "steps": [
+          "整理全部组件固定文案清单（模板字面量 + Go 常量）",
+          "统一 key 命名并 seed zh-CN / en-US 词条",
+          "逐组件实现 I18nAware（productlist / cardstack / orderlist / seo_head 面包屑优先）",
+          "模板里的字面量改为从 view 取预翻译值（模板不做取词，保持构建确定性）",
+          "加测试：断言每个组件在 en-US 构建下不输出中文字符（正则扫 CJK）"
+        ],
+        "effortDays": 3,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": true
+      },
+      "verification": [
+        "en-US 语言构建的产物里不含 CJK 字符（作者填的内容除外）",
+        "既有 zh-CN 产物字节不变"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P4",
+      "tags": [
+        "builder",
+        "components",
+        "i18n",
+        "artifact"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "I18N-011",
+      "title": "运行时片段整层没有语言维度，Request 结构里就没有 Lang 字段",
+      "severity": "high",
+      "type": "design-flaw",
+      "confidence": "confirmed",
+      "problem": "runtimefragment 的 Request 结构没有 Lang 字段，endpoint 不解析 ?lang 也不设 Vary: Accept-Language。所有片段渲染都在无语言上下文的情况下进行。",
+      "evidence": [
+        {
+          "file": "internal/module/runtimefragment/registry.go",
+          "lines": "47-111",
+          "snippet": "Request 结构无 Lang 字段",
+          "note": "整层缺失"
+        },
+        {
+          "file": "internal/module/runtimefragment/endpoint.go",
+          "lines": "108-123",
+          "snippet": "未解析 lang 参数、未设 Vary 头",
+          "note": ""
+        }
+      ],
+      "impact": "购物车、结算、账号中心、订单列表、搜索结果、库存结论、价格提示这些运行时渲染的内容全部只有中文，且因为是运行时渲染，连「重新发布」都救不了。多语言电商站在这里完全不可用。",
+      "rootCause": "片段体系设计时（P5 阶段）语言维度被列为后续项，一直没补。",
+      "remediation": {
+        "approach": "Request 增加 Lang，endpoint 从 URL 参数解析（构建期由组件把当前构建语言拼进 hx-get），设 Vary 头以便 CDN 正确缓存；片段内所有文案走 sys_i18n。",
+        "steps": [
+          "Request 增加 Lang 字段，endpoint 解析 ?lang 并按 project_locales 校验（非法值回落默认语言）",
+          "响应头设 Vary: Accept-Language（即使不读该头，也要声明按语言变化）",
+          "所有输出片段的组件在构建期把 lang 拼进 hx-get URL",
+          "SitePagesOf 的 lang 参数接上请求语言（当前传空/默认）",
+          "片段模板与 Go 结论字符串抽 key（见 I18N-012）"
+        ],
+        "effortDays": 3,
+        "risk": "medium",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "英文页面上的购物车片段显示英文",
+        "非法 lang 参数回落默认语言而不报错",
+        "槽位链接指向对应语言的路径"
+      ],
+      "dependsOn": [],
+      "blocks": [
+        "I18N-012"
+      ],
+      "phase": "P4",
+      "tags": [
+        "runtimefragment",
+        "i18n",
+        "architecture"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：Request.Lang/T、endpoint ?lang 解析与 Vary、compile_site 槽位按语言；156–158 seed。"
+    },
+    {
+      "id": "I18N-012",
+      "title": "全部片段模板与 Go 侧结论字符串硬编码中文",
+      "severity": "high",
+      "type": "missing-feature",
+      "confidence": "confirmed",
+      "problem": "fragments 目录下的 jet 模板与片段 Go 代码里的结论文案全是中文字面量。",
+      "evidence": [
+        {
+          "file": "internal/module/runtimefragment/variant_availability.go",
+          "lines": "118-131",
+          "snippet": "库存充足、暂时缺货、以结算时库存为准",
+          "note": ""
+        },
+        {
+          "file": "internal/module/runtimefragment/live_price.go",
+          "lines": "0",
+          "snippet": "价格已更新为、该规格已下架",
+          "note": ""
+        },
+        {
+          "file": "internal/templates/fragments/cart_view.jet",
+          "lines": "14-38",
+          "snippet": "购物车是空的、去结算、更新",
+          "note": ""
+        },
+        {
+          "file": "internal/templates/fragments",
+          "lines": "0",
+          "snippet": "user_*.jet 共 9 个账号中心片段模板全中文",
+          "note": ""
+        }
+      ],
+      "impact": "同 I18N-011 的具体表现。访客在英文站看到中文的库存提示与购物车。",
+      "rootCause": "片段层没有语言上下文，文案自然没法翻译，于是直接写中文。",
+      "remediation": {
+        "approach": "在 I18N-011 打通语言维度后，片段文案统一走 sys_i18n（key 命名 site.fragment.<能力>.<语义>），模板里从 view 取预翻译值。",
+        "steps": [
+          "整理片段文案清单（模板 + Go 结论字符串）",
+          "seed 词条",
+          "片段渲染时按 Request.Lang 取 Snapshot 并注入 view",
+          "加测试：en-US 请求的片段响应不含 CJK"
+        ],
+        "effortDays": 2,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": true
+      },
+      "verification": [
+        "en-US 片段响应全英文",
+        "zh-CN 响应字节不变"
+      ],
+      "dependsOn": [
+        "I18N-011"
+      ],
+      "blocks": [],
+      "phase": "P4",
+      "tags": [
+        "runtimefragment",
+        "i18n"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：片段 Go/jet 全量 site.fragment.* + 迁移 156–158；cart/checkout/搜索/库存/价/捆绑/账号/订单。"
+    },
+    {
+      "id": "I18N-013",
+      "title": "presentation 自动发布只构建默认语言，商品与文章详情页没有多语言产物",
+      "severity": "critical",
+      "type": "missing-feature",
+      "confidence": "confirmed",
+      "problem": "presentation 的 resolveLang 只取默认语言，构建循环不按 project_locales 逐语言构建（手工页面是逐语言的）。也没有 ContentTranslator 注入。",
+      "evidence": [
+        {
+          "file": "internal/module/presentation/service/presentation_service.go",
+          "lines": "752-767",
+          "snippet": "resolveLang 只取默认语言，注释写明多语言属后续",
+          "note": ""
+        },
+        {
+          "file": "internal/module/presentation/service/presentation_service.go",
+          "lines": "669-672",
+          "snippet": "无 WithContentTranslator",
+          "note": "模板里的作者文案也不翻译"
+        },
+        {
+          "file": "internal/module/page/service/page_publish.go",
+          "lines": "0",
+          "snippet": "手工页面按 project_locales 逐语言 Build/Publish",
+          "note": "对照实现"
+        }
+      ],
+      "impact": "多语言电商站或多语言博客的核心页面（商品详情、文章详情）根本不存在其它语言版本。这条与 I18N-011 一起，让多语言能力在最重要的两处失效。",
+      "rootCause": "presentation 的装配层与 page 分裂（EDT-003），逐语言构建这个能力只在 page 侧实现。",
+      "remediation": {
+        "approach": "先做 EDT-003 统一装配器，然后 presentation 的构建循环按 project_locales 逐语言执行，产物按语言路径激活。",
+        "steps": [
+          "EDT-003 完成后，presentation 的 buildArtifact 增加 lang 参数",
+          "发布流程按启用语言循环 Build + Activate（对照 page_publish 的做法）",
+          "实例路由按语言登记 page_routes（每语言一行）",
+          "实体字段翻译经 TranslateValues（商品已有，文章依赖 I18N-006）",
+          "模板内作者文案经 ContentTranslator",
+          "hreflang 随统一装配器自动获得（SEO-008）"
+        ],
+        "effortDays": 3,
+        "risk": "medium",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "一个商品发布后在每种启用语言下都有可访问路径",
+        "各语言版本的字段与 SEO 头正确翻译",
+        "语言切换器在详情页上能正确跳转"
+      ],
+      "dependsOn": [
+        "EDT-003"
+      ],
+      "blocks": [
+        "SEO-008"
+      ],
+      "phase": "P2",
+      "tags": [
+        "presentation",
+        "i18n",
+        "product-gap"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：publishAllLangs + 155 迁移；compile_locale/site 统一装配；presentation_i18n + 双语测试。"
+    },
+    {
+      "id": "I18N-014",
+      "title": "页面 SEO 字段没有 per-language 维度",
+      "severity": "medium",
+      "type": "missing-feature",
+      "confidence": "confirmed",
+      "problem": "页面 settings.seo 的 title / description 是单值。多语言产物会重复使用同一份 SEO 文案，除非作者为每种语言分别建页面。",
+      "evidence": [
+        {
+          "file": "internal/builder/settings.go",
+          "lines": "27-52",
+          "snippet": "SEO 结构无语言维度",
+          "note": ""
+        }
+      ],
+      "impact": "英文站的 title 与 description 是中文，直接影响搜索表现（这是 SEO 里权重最高的两个字段）。",
+      "rootCause": "SEO 字段设计早于多语言产物机制。",
+      "remediation": {
+        "approach": "SEO 的 title / description / ogTitle 等文本字段进 Translatable 白名单，构建期经 ContentTranslator 取译文（与页面内文案同一机制，无需新表）。",
+        "steps": [
+          "SEO 结构的文本字段声明可翻译（context 命名 page.seo.<字段>）",
+          "compileDocument 收集 SEO 候选进翻译批量查询",
+          "页面翻译工作台增加 SEO 分组",
+          "presentation 的实体 SEO 字段已走商品域翻译，确认口径一致"
+        ],
+        "effortDays": 1.5,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "英文产物的 title 与 description 是英文",
+        "无译文时回退原文"
+      ],
+      "dependsOn": [
+        "I18N-013"
+      ],
+      "blocks": [],
+      "phase": "P4",
+      "tags": [
+        "seo",
+        "i18n",
+        "page"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "I18N-015",
+      "title": "站内链接（非导航项）未统一走 LangURLRule",
+      "severity": "medium",
+      "type": "implementation-bug",
+      "confidence": "likely",
+      "problem": "导航菜单 URL 经 localizeMenuURL 本地化，但作者在按钮、文本、卡片里手填的站内链接不经过语言规则处理，在非默认语言页面上会指向默认语言路径。",
+      "evidence": [
+        {
+          "file": "internal/pipeline/lang.go",
+          "lines": "3-22",
+          "snippet": "LangURLRule 是唯一的语言路径映射点",
+          "note": "但只有导航在用"
+        },
+        {
+          "file": "docs/06-D-site-i18n.md",
+          "lines": "0",
+          "snippet": "§15.5 第 5 条列为遗留项",
+          "note": "文档自己记录了这个缺口"
+        }
+      ],
+      "impact": "英文页面上的按钮点过去会跳到中文页面，语言上下文丢失。",
+      "rootCause": "链接本地化只在导航这一条路径上实现。",
+      "remediation": {
+        "approach": "构建期对所有站内相对链接统一应用 LangURLRule。需要一个集中的链接处理点（组件渲染时的 href 处理钩子）。",
+        "steps": [
+          "在 core 增加 ResolveSiteLink(path, lang) 辅助函数，内部调 LangURLRule",
+          "所有输出 href 的组件改用它（button / text 内链 / card / image 链接 / list 等）",
+          "外链与锚点不处理（判断 scheme 与前缀）",
+          "加测试：非默认语言产物里的站内链接都带语言前缀"
+        ],
+        "effortDays": 2,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "英文页面上的站内按钮跳到英文页面",
+        "外链与锚点不受影响"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P4",
+      "tags": [
+        "i18n",
+        "url",
+        "components"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "I18N-016",
+      "title": "site_lang_url_mode 设为 off 时多语言映射到同一路径，语言切换器不渲染",
+      "severity": "medium",
+      "type": "design-flaw",
+      "confidence": "confirmed",
+      "problem": "URL 方案有三种（default_plain / all_prefix / off）。设为 off 时各语言没有独立路径，语言切换器因为算不出目标 URL 而不渲染，站点看起来像单语言。这是配置误用但没有任何警告。",
+      "evidence": [
+        {
+          "file": "internal/pipeline/lang.go",
+          "lines": "3-22",
+          "snippet": "三种 URL 模式",
+          "note": ""
+        },
+        {
+          "file": "internal/builder/components/languages/jet.go",
+          "lines": "60-63",
+          "snippet": "无独立路径的语言不输出链接（S2 隐藏策略）",
+          "note": "策略本身正确，但配置误用时无提示"
+        }
+      ],
+      "impact": "运营配错就得到一个「多语言启用了但没效果」的站点，且没有任何地方提示原因。",
+      "rootCause": "配置项的组合有效性没有校验。",
+      "remediation": {
+        "approach": "启动时校验：启用了多个语言且 url_mode=off 时记一条明确的 warn（说明后果）；后台语言设置页也给出提示。",
+        "steps": [
+          "config 或 i18n Init 时做组合校验并 warn",
+          "后台设置页在这个组合下显示提示条",
+          "文档说明 off 模式的适用场景（单语言站或自行处理路由）"
+        ],
+        "effortDays": 0.5,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "误配组合下有明确日志与界面提示"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P4",
+      "tags": [
+        "i18n",
+        "configuration",
+        "ux"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：站点设置 LangURLOffWarning + MsgSiteLangURLOffWarning 提示。"
+    },
+    {
+      "id": "I18N-017",
+      "title": "禁用语言后已激活的路由不自动清理",
+      "severity": "medium",
+      "type": "implementation-bug",
+      "confidence": "confirmed",
+      "problem": "从 project_locales 里禁用一种语言后，该语言已激活的页面路由与产物 symlink 仍在，访客仍能访问，但后续内容更新不会再构建这种语言。设置页只给提示，不做清理。",
+      "evidence": [
+        {
+          "file": "internal/module/dashboard/inbound/http",
+          "lines": "0",
+          "snippet": "语言设置页仅提示，不清理已激活路由",
+          "note": ""
+        }
+      ],
+      "impact": "线上留下一批永不更新的旧语言页面，内容会随时间与主语言版本越差越远，且它们仍被搜索引擎索引。",
+      "rootCause": "禁用语言的下游影响没有被建模。",
+      "remediation": {
+        "approach": "禁用语言时提供两个明确选项：下线该语言的全部路由（推荐，可选保留 301 到默认语言），或保留但标记为不再更新。默认走下线。",
+        "steps": [
+          "禁用语言时列出受影响的已激活路径数量并要求确认",
+          "确认后批量取消激活（可选写 301 到对应默认语言路径）",
+          "清理该语言的 page_publications / page_stagings 记录",
+          "产物本身保留给 GC 处理"
+        ],
+        "effortDays": 1.5,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "禁用语言后该语言路径按选择下线或 301",
+        "不残留孤立 symlink"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P4",
+      "tags": [
+        "i18n",
+        "publication",
+        "seo"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "I18N-018",
+      "title": "core.nav 的 label 可翻译白名单与 Menu=header/footer 数据源冲突未决",
+      "severity": "medium",
+      "type": "inconsistency",
+      "confidence": "confirmed",
+      "problem": "core.nav 组件的 Translatable 白名单包含 label，意味着作者手填的菜单项文本可翻译。但当组件设置为从 navigation 模块取 header/footer 菜单时，label 来自数据库而不是 Props，白名单不起作用。两种数据来源的翻译路径不同。",
+      "evidence": [
+        {
+          "file": "internal/builder/components/nav",
+          "lines": "0",
+          "snippet": "Translatable 含 label，但 Menu 模式下 label 来自 navigation 模块",
+          "note": "docs 06-D §15.11/15.12 记为遗留"
+        }
+      ],
+      "impact": "同一个组件的同一个字段，翻译方式取决于配置，作者难以预期。也导致 I18N-007 的修复需要考虑两条路径。",
+      "rootCause": "组件支持两种数据来源，但翻译机制只按 Props 白名单设计。",
+      "remediation": {
+        "approach": "与 I18N-007 一并解决：navigation 模块提供已翻译的 label（构建期在 resolver 内完成翻译），组件不区分来源。Props 模式仍走 Translatable 白名单。",
+        "steps": [
+          "navigation resolver 返回值增加已翻译的 label",
+          "core.nav 在 Menu 模式下直接使用 resolver 给的值",
+          "文档说明两种模式的译文维护位置不同（一个在导航管理、一个在页面翻译工作台）"
+        ],
+        "effortDays": 0.5,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "两种模式下菜单文本都能正确翻译"
+      ],
+      "dependsOn": [
+        "I18N-007"
+      ],
+      "blocks": [],
+      "phase": "P4",
+      "tags": [
+        "navigation",
+        "components",
+        "i18n"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "I18N-019",
+      "title": "部分组件只声明了 Translatable 没有 I18nAware（或反之），两套机制覆盖不齐",
+      "severity": "medium",
+      "type": "inconsistency",
+      "confidence": "confirmed",
+      "problem": "组件有两套翻译机制：I18nAware 处理开发者写死的固定文案（走 sys_i18n），Translatable 白名单处理作者填的文本（走 sys_translation）。约 18 个组件声明了 Translatable，只有约 10 处有 I18nAware，两个集合不重合也不互补。",
+      "evidence": [
+        {
+          "file": "internal/builder/core/translatable.go",
+          "lines": "32-68",
+          "snippet": "Translatable 白名单注册与校验",
+          "note": ""
+        },
+        {
+          "file": "internal/builder/core/i18n.go",
+          "lines": "9-18",
+          "snippet": "I18nAware 契约",
+          "note": ""
+        }
+      ],
+      "impact": "一个组件可能作者填的文本能翻译、按钮上的默认文字不能翻译（或反过来）。表现为「翻译做了一半」。",
+      "rootCause": "两套机制分别演进，没有一个统一的检查确保每个组件两方面都覆盖。",
+      "remediation": {
+        "approach": "加一个契约测试：遍历所有注册组件，断言凡是输出固定文案的组件都实现 I18nAware，凡是有文本型 Props 的都在 Translatable 白名单里（允许显式豁免并注明原因）。",
+        "steps": [
+          "写测试扫描组件的 BuildView 输出与 Props 结构",
+          "维护一份显式豁免清单（如纯图形组件）",
+          "按测试结果补齐缺失的声明"
+        ],
+        "effortDays": 1.5,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "契约测试全绿",
+        "新增组件漏声明时测试失败"
+      ],
+      "dependsOn": [
+        "I18N-010"
+      ],
+      "blocks": [],
+      "phase": "P4",
+      "tags": [
+        "components",
+        "i18n",
+        "testing"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "I18N-020",
+      "title": "SitePagesOf 的 lang 参数在片段层未与请求语言挂钩",
+      "severity": "medium",
+      "type": "implementation-bug",
+      "confidence": "confirmed",
+      "problem": "槽位解析函数已预留 lang 参数，但片段层调用时传的是空值或默认语言，因为片段层根本没有请求语言（I18N-011）。",
+      "evidence": [
+        {
+          "file": "internal/module/runtimefragment/endpoint.go",
+          "lines": "108-123",
+          "snippet": "SitePagesOf 调用未传请求语言",
+          "note": ""
+        }
+      ],
+      "impact": "英文页面上的购物车片段里，「去结算」链接指向中文结算页。语言上下文在片段边界丢失。",
+      "rootCause": "同 I18N-011。",
+      "remediation": {
+        "approach": "随 I18N-011 一并修复：Request.Lang 打通后传给 SitePagesOf。",
+        "steps": [
+          "I18N-011 完成后接上参数",
+          "加测试断言不同语言的片段输出不同槽位路径"
+        ],
+        "effortDays": 0.25,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "英文片段的槽位链接指向英文路径"
+      ],
+      "dependsOn": [
+        "I18N-011"
+      ],
+      "blocks": [],
+      "phase": "P4",
+      "tags": [
+        "runtimefragment",
+        "site-slot",
+        "i18n"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：endpoint SitePagesOf 使用 Request.Lang。"
+    },
+    {
+      "id": "I18N-021",
+      "title": "已登记但未发布的语言仍可能出现在语言切换器里，点击 404",
+      "severity": "low",
+      "type": "design-flaw",
+      "confidence": "confirmed",
+      "problem": "语言切换器按 siteRouteEntries 输出各语言路径。如果某个语言在 project_locales 里启用但该页面还没构建发布这种语言，切换过去会 404。S2 隐藏策略只隐藏「无独立路径」的语言，不检查「路径存在但产物未发布」。",
+      "evidence": [
+        {
+          "file": "internal/builder/components/languages/jet.go",
+          "lines": "60-63",
+          "snippet": "S2 隐藏策略只判断有无独立路径",
+          "note": ""
+        }
+      ],
+      "impact": "多语言站点在内容逐步翻译的过程中会有一段时间存在死链。",
+      "rootCause": "构建确定性的取舍：构建期查询「其它语言是否已发布」会引入非确定性（发布顺序影响产物字节）。",
+      "remediation": {
+        "approach": "两种方案：一是发布时保证所有启用语言同批发布（当前 page 侧已是逐语言循环，接近这个语义），二是切换器指向语言首页而不是当前页的对应语言版本（降级但不死链）。推荐第一种加一个发布前检查。",
+        "steps": [
+          "发布流程确保启用语言全部构建成功后才激活（部分失败则整批不激活）",
+          "或提供「缺失语言回落到语言首页」的组件选项",
+          "文档说明取舍"
+        ],
+        "effortDays": 1,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "语言切换器不产生 404"
+      ],
+      "dependsOn": [
+        "I18N-013"
+      ],
+      "blocks": [],
+      "phase": "P4",
+      "tags": [
+        "i18n",
+        "dead-link",
+        "publication"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "I18N-022",
+      "title": "默认语言首页 /index 与手填 / 的菜单项存在路径歧义",
+      "severity": "low",
+      "type": "design-flaw",
+      "confidence": "confirmed",
+      "problem": "语言根用 /index（默认语言）与 /en/index（非默认），规避 symlink 父子污染。但作者在菜单里手填 / 时，与 /index 是否等价、canonical 用哪个，需要额外处理。",
+      "evidence": [
+        {
+          "file": "internal/pipeline/lang.go",
+          "lines": "0",
+          "snippet": "语言根为 /index 与 /en/index",
+          "note": "docs 06-D §15.2 说明理由"
+        }
+      ],
+      "impact": "首页可能同时有 / 与 /index 两个可访问路径，对 SEO 是重复内容。",
+      "rootCause": "文件系统 symlink 的限制（目录与文件不能同名）导致的实现约束外溢到 URL 层。",
+      "remediation": {
+        "approach": "确认 / 与 /index 的规范形式（canonical 统一指向其中一个），另一个做 301。菜单手填 / 时归一化。",
+        "steps": [
+          "确认当前静态服务对 / 的处理（FileServer 的 index.html 行为）",
+          "canonical 统一为 /（更符合习惯）",
+          "/index 做 301 到 /",
+          "菜单与链接归一化时把 /index 转为 /"
+        ],
+        "effortDays": 1,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "首页只有一个规范路径，另一个 301"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P5",
+      "tags": [
+        "i18n",
+        "url",
+        "seo"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：语言根 /index；CanonicalPublicPath + SiteRedirect 301 到 /。"
+    },
+    {
+      "id": "I18N-023",
+      "title": "docs/06-D-site-i18n.md 文首仍写「设计提案、尚未实现」，实际大部分已落地",
+      "severity": "low",
+      "type": "inconsistency",
+      "confidence": "confirmed",
+      "problem": "文档开头标注为未实现的设计提案，但 §15 记录的 P2 到 P5d 大部分已经在代码里落地。读者按文首判断会以为整个 i18n 体系不存在。",
+      "evidence": [
+        {
+          "file": "docs/06-D-site-i18n.md",
+          "lines": "1",
+          "snippet": "文首标注设计提案、尚未实现",
+          "note": "与 §15 及代码矛盾"
+        }
+      ],
+      "impact": "文档自相矛盾，新贡献者可能重复实现已有能力。",
+      "rootCause": "文档头部状态标注没有随实现推进更新。",
+      "remediation": {
+        "approach": "更新文首状态为「大部分已实现，逐项状态见 §15」，并在 §15 表格里补当前真实状态。",
+        "steps": [
+          "核对 §15 每一项的实现状态",
+          "更新文首",
+          "加最后核对日期"
+        ],
+        "effortDays": 0.5,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "文档状态与代码一致"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P6",
+      "tags": [
+        "documentation",
+        "drift"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：docs/06-D-site-i18n.md 更新实现状态。"
+    },
+    {
+      "id": "I18N-024",
+      "title": "sys_translation 孤儿行永久保留，无清理机制",
+      "severity": "low",
+      "type": "tech-debt",
+      "confidence": "confirmed",
+      "problem": "改原文后 hash 变化，旧译文行不再被查询命中但永久留在表里。没有任何清理逻辑（设计如此，D14 决定永久保留）。",
+      "evidence": [
+        {
+          "file": "pkg/i18n/content_write.go",
+          "lines": "0",
+          "snippet": "只有 upsert，无 delete 路径",
+          "note": ""
+        },
+        {
+          "file": "public/migrations/066_sys_translation.sql",
+          "lines": "15-27",
+          "snippet": "无 TTL、无清理",
+          "note": ""
+        }
+      ],
+      "impact": "长期运营的多语言站点，译文表只增不减。相比 page_views 增长慢，但同样没有上限。",
+      "rootCause": "永久保留是有意决定（改回原文可复用旧译文），但缺少「确实不再需要」时的清理手段。",
+      "remediation": {
+        "approach": "提供一个可选的清理工具：找出所有当前不被任何文档引用的 hash（需要全量扫文档收集候选 hash），列出后由运维确认删除。不做自动清理。",
+        "steps": [
+          "写一个盘点任务：扫全部 pages / blocks / 商品字段收集当前候选 hash 集合",
+          "对比 sys_translation 找孤儿行，输出报告",
+          "提供确认后删除的接口（默认 dry run）"
+        ],
+        "effortDays": 1.5,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "盘点报告准确",
+        "删除后现有译文全部仍可命中"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P7",
+      "tags": [
+        "sys_translation",
+        "lifecycle"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "I18N-025",
+      "title": "mail 模板的多语言机制与站点构建期 i18n 完全独立，两套心智模型",
+      "severity": "low",
+      "type": "inconsistency",
+      "confidence": "confirmed",
+      "problem": "邮件模板按 template_key + locale 版本化存储，是自己一套多语言机制，与 sys_i18n / sys_translation 双轨都不相干。",
+      "evidence": [
+        {
+          "file": "internal/module/mail/model/mail_template.go",
+          "lines": "129",
+          "snippet": "mail_templates 按 template_key + locale",
+          "note": "第三套机制"
+        }
+      ],
+      "impact": "维护者需要理解三套多语言机制。邮件模板这套本身是合理的（模板是完整文档而非词条），但缺少文档说明为什么不同。",
+      "rootCause": "邮件模板的粒度（整封信）与词条翻译的粒度不同，用同一机制反而别扭。",
+      "remediation": {
+        "approach": "不改实现，补文档：说明三套机制各自的适用粒度（词条 / 内容字段 / 整份文档），以及为什么不统一。",
+        "steps": [
+          "docs/06-D 增加一节三套机制对照",
+          "AGENTS.md 的 mail 模块行补一句说明"
+        ],
+        "effortDays": 0.25,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "文档说明清晰"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P6",
+      "tags": [
+        "mail",
+        "documentation"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：docs/06-D §12.1 区分 mail 与站点 i18n。"
+    }
+  ]
+}

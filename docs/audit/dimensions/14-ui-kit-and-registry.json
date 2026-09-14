@@ -1,0 +1,1104 @@
+{
+  "dimension": "ui-kit-and-registry",
+  "dimensionTitle": "UI 控件库基座、基础动画体系与组件注册机制",
+  "scope": "internal/templates/static/css/ui.css 与 theme.css、internal/templates/static/js/ui/、internal/builder/ui_script.go、internal/builder/core/css.go 与 effects.go 与 groups.go、internal/builder/core/keyframes/、internal/builder/theme_settings.go、internal/builder/css_verify.go、internal/builder/builder.go 与 jetview.go 的注册链路、internal/builder/plugincomp 与 internal/builder/style",
+  "verdict": "两个问题的答案都不是「风格不统一」这么轻。UI 基座层面：产物侧的注入白名单只登记了 3 个块（htmx / select / modal），后台常驻 11 个，drawer 与 toast 与 confirm 在前台是写了也不生效的死能力；判定依据是 data-ui-* 属性而非 class，所以在组件里写 .form-input 拿不到任何样式。按钮的弹窗动作写的是 data-modal-target，基座监听的是 data-modal-open，协议对不上，访客点了也不会开窗。加上组件 scoped 类、片段全局类、theme.css 存量 pages-* 一共四套并行。动画方面前台已成体系（63 条共享词汇表 + 产物校验），后台只有 3 个反馈动画，两端零共享，且 prefers-reduced-motion 有三处策略不一致、前台那处还默认关闭。组件注册层面：真正的问题不是缺 json 声明式，而是有两份 import 清单且没有测试守住，漏登记会编译通过、构建时才报错。CompileCSS 里有真实的编译期几何计算，声明式引擎表达不了，所以全量 json 化是错误方向。插件已经走 manifest.json，那条路该继续给展示型组件用，不该拿来替换内核组件。",
+  "findings": [
+    {
+      "id": "UIK-001",
+      "title": "产物侧 UI 基座注入白名单只有 3 个块，drawer 与 toast 与 confirm 在前台是写了也不生效的死能力",
+      "severity": "high",
+      "type": "implementation-bug",
+      "confidence": "confirmed",
+      "problem": "uiBlocks 只登记了三项：htmx.min.js（按 hx- 前缀命中）、select.js（按 data-ui-select）、modal.js（按 data-modal 系列）。而后台的 partials/ui_scripts.html 常驻加载 11 个脚本，drawer.js、toast.js、confirm.js、busy.js、colorfield.js、iconfield.js、themetoggle.js 都有 JS 源码与配套 CSS，但没有登记进 uiBlocks，因此在静态产物里永远不会被注入。",
+      "evidence": [
+        {
+          "file": "internal/builder/ui_script.go",
+          "lines": "25-33",
+          "snippet": "var uiBlocks = []uiBlock{\n\t{file: \"htmx.min.js\", prefixes: []string{\"hx-\"}, noStyle: true},\n\t{file: \"select.js\", attrs: []string{\"data-ui-select\"}},\n\t{file: \"modal.js\", attrs: []string{\"data-modal\", \"data-modal-open\", \"data-modal-close\"}},\n}",
+          "note": "只有三项"
+        },
+        {
+          "file": "internal/templates/admin/partials/ui_scripts.html",
+          "lines": "5-16",
+          "snippet": "后台常驻加载 11 个脚本",
+          "note": "两端能力集不对等"
+        },
+        {
+          "file": "docs/02-F-ui-kit.md",
+          "lines": "0",
+          "snippet": "§2 文档列出 10 多个控件",
+          "note": "文档描述的能力集远大于产物侧实际登记"
+        }
+      ],
+      "impact": "这是最典型的静默失效：组件作者按文档在组件模板里写 data-drawer-open，构建成功、页面正常渲染、点击毫无反应，控制台也没有报错（脚本压根没注入）。排查路径极长，因为没有任何一处提示「这个控件在产物里不可用」。文档列了 10 多个控件而产物只支持 2 个，进一步放大了这个陷阱。",
+      "rootCause": "uiBlocks 是手工维护的白名单，新增控件时只加了 JS 与 CSS 没有登记，而且没有任何测试或检查断言「有 JS 的控件必须登记或显式标注仅后台可用」。",
+      "remediation": {
+        "approach": "把 uiBlocks 从手工白名单改为有守卫的清单：每个 ui/ 下的控件脚本必须在 uiBlocks 里登记（含触发特征），或在一份显式的「仅后台」清单里注明。加测试断言两份清单覆盖 ui/ 目录下的全部文件。",
+        "steps": [
+          "逐个补齐 drawer / toast / confirm / busy 的登记（触发特征取各自的 data-* 属性）",
+          "colorfield / iconfield / themetoggle 判断是否有前台场景，无则加入仅后台清单并注明原因",
+          "写测试：遍历 internal/templates/static/js/ui/ 下的 js 文件，断言每个都在 uiBlocks 或 backendOnlyBlocks 里",
+          "文档 02-F-ui-kit.md 的控件表增加一列「产物侧是否可用」",
+          "考虑在构建期加一条 warn：产物 HTML 里出现了未登记控件的 data-* 属性时提示"
+        ],
+        "effortDays": 1.5,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "在组件里使用 data-drawer-open 后产物正确注入 drawer.js 与对应 CSS",
+        "遗漏登记的新控件会导致测试失败",
+        "未使用任何控件的页面仍零注入"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P8",
+      "tags": [
+        "ui-kit",
+        "builder",
+        "silent-failure"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：uiBlocks 补 drawer/confirm/colorfield/iconfield/themetoggle；toast/busy 仅后台 API。"
+    },
+    {
+      "id": "UIK-002",
+      "title": "产物侧的基座注入按 data-ui-* 属性判定，写 class 不触发，导致「用了控件类却没样式」",
+      "severity": "high",
+      "type": "design-flaw",
+      "confidence": "confirmed",
+      "problem": "collectHTMLFeatures 扫的是属性前缀与 data-* 属性，不扫 class。所以在组件模板里写 .btn 或 .form-input 这类基座类名，既不会触发 ui.css 注入，也不会有任何样式。",
+      "evidence": [
+        {
+          "file": "internal/builder/ui_script.go",
+          "lines": "92-137",
+          "snippet": "按 prefixes 与 attrs 判定命中，命中任一非 htmx 块则注入整份 ui.css",
+          "note": "判定维度是属性，不是 class"
+        },
+        {
+          "file": "docs/02-F-ui-kit.md",
+          "lines": "0",
+          "snippet": "§12.2 已记录这个限制",
+          "note": "文档承认但不解决"
+        }
+      ],
+      "impact": "组件作者最自然的用法（复用基座类名）恰好是无效的那种。而且失败方式是「样式完全不生效」而不是报错。这也是「感觉不成体系」的直接来源：基座在后台是类驱动的，在前台是属性驱动的，同一套 CSS 两种消费方式。",
+      "rootCause": "注入判定基于属性是为了精确（属性一定意味着需要行为脚本），但基座的样式部分本该按 class 判定。样式与行为被绑在同一个判定条件上。",
+      "remediation": {
+        "approach": "把样式注入与行为注入解耦：CSS 部分按 class 命中判定（扫 HTML 里出现的基座类名），JS 部分保持按属性判定。这样写 class 得样式、写属性得行为，两者独立。",
+        "steps": [
+          "定义基座类名清单（从 ui.css 里提取，或维护一份显式清单）",
+          "collectHTMLFeatures 增加 class 扫描",
+          "命中基座类名时注入 ui.css（可考虑按用到的类切分 CSS 以减少体积，但先做整份注入保持简单）",
+          "JS 注入逻辑不变",
+          "补测试：只用 class 的页面注入 CSS 不注入 JS；只用属性的页面两者都注入"
+        ],
+        "effortDays": 2,
+        "risk": "medium",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "组件里写 .btn 能拿到按钮样式",
+        "不用基座的页面仍零注入",
+        "既有产物字节不变（未使用基座的页面）"
+      ],
+      "dependsOn": [
+        "UIK-001"
+      ],
+      "blocks": [
+        "UIK-003"
+      ],
+      "phase": "P8",
+      "tags": [
+        "ui-kit",
+        "builder",
+        "css"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "UIK-003",
+      "title": "四套视觉体系并行：ui 基座、组件 scoped 类、片段全局类、theme.css 存量",
+      "severity": "high",
+      "type": "design-flaw",
+      "confidence": "confirmed",
+      "problem": "同一个产品里有四套并行的样式组织方式：ui.css 的全局控件类（后台为主）、构建期组件的 .sky-c-{nodeId} 节点作用域类、运行时片段的 .sky-cart-* 与 .sky-orders-* 与 .sky-user-* 全局类、theme.css 里的 .pages-* 存量体系。四套的作用域策略、令牌来源、注入方式都不同。",
+      "evidence": [
+        {
+          "file": "internal/builder/core/css.go",
+          "lines": "408-410",
+          "snippet": "NodeClass 生成 .sky-c-{nodeId} 作用域前缀",
+          "note": "第一套：节点级作用域"
+        },
+        {
+          "file": "internal/builder/components/carticon/cartfrag.go",
+          "lines": "21-76",
+          "snippet": "AddCartFragmentCSS 注入 .sky-cart-* 全局类",
+          "note": "第二套：片段专用全局类"
+        },
+        {
+          "file": "internal/templates/static/css/ui.css",
+          "lines": "244-291",
+          "snippet": ".btn 系列等全局控件类",
+          "note": "第三套：基座全局类"
+        },
+        {
+          "file": "internal/templates/static/css/theme.css",
+          "lines": "158-207",
+          "snippet": ".pages-* 页面私有体系",
+          "note": "第四套：存量"
+        }
+      ],
+      "impact": "改一处样式要判断影响哪一套；新增 UI 元素要先决定归属哪一套（而判据不明确）；跨套复用几乎不可能。这是「不成体系」最本质的表现。",
+      "rootCause": "四套各有其合理动因：节点作用域保证组件隔离、片段全局类因为片段作者看不到样式、基座服务后台长驻页面、pages-* 是历史。但四者之间没有分层关系，是平行并存。",
+      "remediation": {
+        "approach": "建立明确的三层分层（不是把四套合并成一套，那不现实）：第一层设计令牌（统一 --sky-* 命名，两端共用）、第二层基座控件类（全局，前后台共用，前台按需注入）、第三层组件私有样式（节点作用域，只处理该组件的几何与布局）。片段类归入第二层（它们本质是基座的一部分），pages-* 逐步消灭。",
+        "steps": [
+          "第一步：令牌层统一（见 UIK-004），这是后面两层的基础",
+          "第二步：把片段的 .sky-cart-* 等归入基座（迁进 ui.css 或一个新的 fragment 基座文件），由基座统一注入而不是由组件注入",
+          "第三步：明确判据并写进规范：可复用的控件外观归基座、组件独有的几何与布局归组件私有",
+          "第四步：pages-* 存量按页面迁移（见 UI 维度的后台迁移条目）",
+          "过程中保持产物字节可验证：每一步跑 determinism 与 css_verify"
+        ],
+        "effortDays": 5,
+        "risk": "high",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "新增 UI 元素时能按判据明确归属",
+        "片段样式与基座样式不再重复定义",
+        "产物 CSS 体积不增加（理想情况下减少）"
+      ],
+      "dependsOn": [
+        "UIK-004"
+      ],
+      "blocks": [],
+      "phase": "P8",
+      "tags": [
+        "ui-kit",
+        "architecture",
+        "css"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "UIK-004",
+      "title": "两套设计令牌命名（--sky-* 与 --c-* / --ui-*），靠 fallback 桥接而非统一",
+      "severity": "medium",
+      "type": "design-flaw",
+      "confidence": "confirmed",
+      "problem": "前台令牌是 --sky-c-* 等（由 ThemeVarsCSS 从 ThemeSettings 生成），后台是 --c-* 色板与 --ui-* 尺寸动效（写在 theme.css 与 ui.css 里）。ui.css 通过 var(--sky-c-primary, var(--c-primary, 硬编码兜底)) 三级 fallback 桥接。命名有对应关系但不是同一份真源。",
+      "evidence": [
+        {
+          "file": "internal/builder/theme_settings.go",
+          "lines": "212-300",
+          "snippet": "ThemeVarsCSS 输出 --sky-c-* 等",
+          "note": "前台真源是 ThemeSettings（数据库里的主题配置）"
+        },
+        {
+          "file": "internal/templates/static/css/theme.css",
+          "lines": "7-102",
+          "snippet": "--c-* 色板与 --sp-* / --r-* / --tr-*",
+          "note": "后台真源是 CSS 文件里的字面量"
+        },
+        {
+          "file": "internal/templates/static/css/ui.css",
+          "lines": "217-238",
+          "snippet": "--ui-* 桥接层，用三级 fallback 消费 --sky-* 与 --c-*",
+          "note": "桥接已存在，说明设计上想统一"
+        }
+      ],
+      "impact": "后台的视觉不随站点主题变化（后台用自己的色板），这本身可以是有意的（后台不该跟着站点主题变）。但问题是两套令牌的语义清单不对齐：前台有 density 与 motion 分级，后台没有；后台有 shadow 分级，前台在组件里各自硬编码。想做「一套基座两端共用」时，缺失的令牌就成了拦路项。",
+      "rootCause": "前台令牌是运行时数据（主题可配），后台令牌是编译期常量（CSS 字面量），两者的生成方式不同导致清单各自演进。",
+      "remediation": {
+        "approach": "统一令牌清单（不统一取值）：定义一份完整的令牌清单作为唯一真源，前台从 ThemeSettings 生成、后台从一份默认值生成，两者的变量名与语义完全一致。后台仍可以有自己的取值。",
+        "steps": [
+          "把令牌清单定义为 Go 侧的单一真源（结构体 + 默认值）",
+          "前台继续由 ThemeVarsCSS 生成",
+          "后台的 theme.css 令牌段改为由同一份清单生成（go:generate 产出 CSS 或运行时注入 :root）",
+          "补齐缺失的令牌（后台补 density 与 motion 分级，前台补 shadow 分级）",
+          "ui.css 的三级 fallback 简化为单级（因为两端变量名统一后不需要兜底链）",
+          "加测试：断言两端输出的令牌名集合完全一致"
+        ],
+        "effortDays": 2.5,
+        "risk": "medium",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "两端令牌名一致（测试断言）",
+        "后台视觉不变",
+        "前台产物字节不变"
+      ],
+      "dependsOn": [],
+      "blocks": [
+        "UIK-003",
+        "UIK-008"
+      ],
+      "phase": "P8",
+      "tags": [
+        "ui-kit",
+        "design-tokens",
+        "architecture"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "UIK-005",
+      "title": "片段样式由组件在构建期注入，是错位的职责",
+      "severity": "medium",
+      "type": "design-flaw",
+      "confidence": "confirmed",
+      "problem": "运行时片段的样式（.sky-cart-* 与 .sky-orders-*）由 core.cartIcon、core.addToCart、core.orderList 这些组件在构建期调 AddCartFragmentCSS 注入。也就是说片段能不能有样式，取决于页面上有没有放对应的组件。",
+      "evidence": [
+        {
+          "file": "internal/builder/components/carticon/cartfrag.go",
+          "lines": "21-76",
+          "snippet": "AddCartFragmentCSS 由组件调用，幂等",
+          "note": "职责错位：片段的样式由组件负责"
+        },
+        {
+          "file": "internal/builder/components/orderlist/orderfrag.go",
+          "lines": "21",
+          "snippet": "同样模式",
+          "note": ""
+        }
+      ],
+      "impact": "如果页面上只有一个自定义的加购按钮而没有用 core.addToCart 组件，购物车片段刷新出来就是没样式的裸 HTML。反过来，页面放了购物车图标但访客从不打开，这份 CSS 也白带。样式与消费方的耦合关系是隐式的。",
+      "rootCause": "片段 HTML 是运行时渲染的，作者看不到也难调样式，所以选择了「由相关组件注入」这个折中。但注入方与消费方不是同一个东西。",
+      "remediation": {
+        "approach": "片段样式归入基座层（UIK-003 的第二层），由「页面上是否存在指向片段的 hx-get」这个特征触发注入，而不是由特定组件触发。这样任何方式引用片段都能拿到样式。",
+        "steps": [
+          "片段样式从组件里迁到基座（一个 fragments 基座 CSS 文件）",
+          "注入判定改为按 hx-get 指向 /_fragments/ 的特征命中",
+          "按片段能力细分（只用购物车片段的页面不注入订单片段样式），避免体积膨胀",
+          "组件里的 AddCartFragmentCSS 调用移除",
+          "补测试：自定义方式引用片段也能拿到样式"
+        ],
+        "effortDays": 2,
+        "risk": "medium",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "不使用官方组件而直接写 hx-get 的页面，片段样式正常",
+        "只用购物车的页面不带订单片段样式"
+      ],
+      "dependsOn": [
+        "UIK-003"
+      ],
+      "blocks": [],
+      "phase": "P8",
+      "tags": [
+        "ui-kit",
+        "runtimefragment",
+        "css"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "UIK-006",
+      "title": "前台的 prefers-reduced-motion 支持默认关闭，需要主题显式开启",
+      "severity": "high",
+      "type": "design-flaw",
+      "confidence": "confirmed",
+      "problem": "ReducedMotionCSS 只在 ThemeSettings.Motion.ReducedMotion 为 true 时才输出。而该字段默认 false。也就是说默认发布的站点，即使访客在系统里开了「减弱动态效果」，产物里也没有对应的媒体查询，动画照样播。",
+      "evidence": [
+        {
+          "file": "internal/builder/theme_settings.go",
+          "lines": "59-78",
+          "snippet": "ReducedMotionCSS 输出全局 0.01ms !important，但受 ReducedMotion 开关控制，该开关默认 false",
+          "note": "无障碍能力默认关闭"
+        },
+        {
+          "file": "internal/templates/static/css/ui.css",
+          "lines": "197-200,288-291",
+          "snippet": "后台直接跟随系统 prefers-reduced-motion，无需开关",
+          "note": "两端策略不一致"
+        },
+        {
+          "file": "internal/templates/static/css/workbench-a11y.css",
+          "lines": "90-104",
+          "snippet": "第三份策略：全局压时长 + 点名特定元素",
+          "note": ""
+        }
+      ],
+      "impact": "无障碍相关的能力默认关闭，等于对有前庭功能障碍的访客默认不友好。这类用户开了系统偏好就是明确表达了需求，产品不应该再要求站点管理员额外打开一个开关。三处策略不一致还会让同一个用户在前台、后台、编辑器里得到三种不同体验。",
+      "rootCause": "把 reduced motion 当成了「站点主题的一个可选特性」，而它实质是对系统偏好的必须响应。",
+      "remediation": {
+        "approach": "前台的 reduced motion 改为默认开启且不可关闭（尊重系统偏好是基线，不是特性）；主题开关保留但语义改为「额外增强」（比如彻底禁用而非仅缩短时长）。三处策略统一到同一份定义。",
+        "steps": [
+          "ReducedMotionCSS 改为无条件输出（媒体查询本身只在系统偏好开启时才生效，无条件输出不影响其他用户）",
+          "确认输出后既有产物字节变化在可接受范围（会给每个页面加一段媒体查询，体积很小）",
+          "把三处策略统一成同一份 CSS 定义（前台由 Go 生成、后台由 ui.css 引用同一份内容，可用 go:generate 保持同步）",
+          "主题的 ReducedMotion 开关改为「强化」语义并更新文档",
+          "补测试：断言产物无条件包含 reduced motion 媒体查询"
+        ],
+        "effortDays": 1,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "开启系统减弱动效后，默认主题的站点动画被抑制",
+        "前后台与编辑器的抑制策略一致",
+        "未开启系统偏好的用户体验不变"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P8",
+      "tags": [
+        "a11y",
+        "animation",
+        "theme"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：ReducedMotionCSS 无条件输出 prefers-reduced-motion 块。"
+    },
+    {
+      "id": "UIK-007",
+      "title": "后台几乎没有动画体系，只有 3 个反馈级动画，与前台 63 条词汇表零共享",
+      "severity": "medium",
+      "type": "missing-feature",
+      "confidence": "confirmed",
+      "problem": "前台有完整的动效体系：63 条共享 keyframes（builtin.css 30 条 + animate.css 33 条）、白名单校验、CompileInteraction 编译、产物级 css_verify 校验动画名有对应 keyframes。后台只有 ui.css 里的 wb-ui-enter 与 wb-busy-spin 两个动画加一个 spin。没有统一的页面转场、抽屉与弹窗进出、HTMX 局部刷新过渡、toast 进出体系，各页面各写或干脆没有。",
+      "evidence": [
+        {
+          "file": "internal/builder/core/keyframes",
+          "lines": "0",
+          "snippet": "builtin.css 30 条 + animate.css 33 条共享词汇",
+          "note": "前台成体系"
+        },
+        {
+          "file": "internal/builder/css_verify.go",
+          "lines": "31-60",
+          "snippet": "校验所有 sky-* animation 必须有对应 @keyframes",
+          "note": "前台有产物级守卫"
+        },
+        {
+          "file": "internal/templates/static/css/ui.css",
+          "lines": "141,196",
+          "snippet": "wb-ui-enter 与 wb-busy-spin",
+          "note": "后台全部动画"
+        },
+        {
+          "file": "internal/templates/admin/layout.html",
+          "lines": "27-28",
+          "snippet": "注释明确后台不常驻加载 63 条营销动效",
+          "note": "有意分离，但没有给后台自己的体系"
+        }
+      ],
+      "impact": "后台交互缺少过渡反馈，HTMX 局部刷新是硬切换（内容突然变化，用户不容易注意到哪里更新了）。这是后台体验与前台观感差距的主要来源之一。不共享定义本身是合理的（营销动效不适合后台），但后台缺自己那一套。",
+      "rootCause": "前台动效因为是产品卖点而做得完整，后台动效没有需求驱动。",
+      "remediation": {
+        "approach": "给后台一套小而完整的功能性动效（不是营销动效）：进出场、局部刷新高亮、加载态、toast、抽屉与弹窗。定义在基座层，与前台共享令牌（时长与缓动曲线来自统一令牌）但不共享 keyframes 清单。",
+        "steps": [
+          "定义后台动效清单：fade-in / slide-in / highlight-flash（HTMX 刷新后短暂高亮）/ spin / progress",
+          "时长与缓动从统一令牌取（依赖 UIK-004）",
+          "HTMX 局部刷新加过渡：htmx 的 settling 阶段配合 CSS 类做高亮",
+          "抽屉与弹窗进出统一（当前 modal 有、drawer 靠 JS）",
+          "全部包在 prefers-reduced-motion 判断里（依赖 UIK-006 的统一策略）",
+          "考虑 View Transitions API（theme_settings 已有 ViewTransitionsCSS 但仅产物侧使用）"
+        ],
+        "effortDays": 2.5,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "HTMX 局部刷新后用户能看到哪块更新了",
+        "抽屉与弹窗进出一致",
+        "开启减弱动效后全部抑制"
+      ],
+      "dependsOn": [
+        "UIK-004",
+        "UIK-006"
+      ],
+      "blocks": [],
+      "phase": "P8",
+      "tags": [
+        "ui-kit",
+        "animation",
+        "admin-ui"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "UIK-008",
+      "title": "组件动画有 16 处私有 @keyframes，未走共享词汇表",
+      "severity": "low",
+      "type": "tech-debt",
+      "confidence": "confirmed",
+      "problem": "前台有 63 条共享 keyframes 词汇表，但仍有 16 处组件私有 @keyframes（cardstack 的逐卡动画、loader、marquee 等）。私有的部分不受词汇表白名单管理。",
+      "evidence": [
+        {
+          "file": "internal/builder/components",
+          "lines": "0",
+          "snippet": "16 处组件私有 @keyframes 定义",
+          "note": "cardstack 逐卡、loader、marquee 等"
+        },
+        {
+          "file": "internal/builder/core/keyframes_source.go",
+          "lines": "1-15",
+          "snippet": "embed 共享 keyframes CSS，Go 侧保留白名单与校验",
+          "note": "共享部分有管理"
+        }
+      ],
+      "impact": "私有 keyframes 有一部分是必要的（cardstack 的逐卡动画需要按卡片数量生成，无法预定义），一部分可能是重复实现（loader 的 spin 与 marquee 的滚动可能与共享词汇表重叠）。缺乏盘点导致无法判断。",
+      "rootCause": "共享词汇表建立后没有回头收敛既有的私有实现。",
+      "remediation": {
+        "approach": "盘点 16 处私有 keyframes，能并入共享词汇表的并入，确实需要动态生成的（cardstack 逐卡）保留并在注释里说明原因。",
+        "steps": [
+          "列出 16 处的名称与用途",
+          "与共享词汇表比对找重复",
+          "可并入的迁到 builtin.css",
+          "必须私有的加注释说明（按实例参数动态生成，无法预定义）",
+          "css_verify 已经能校验 sky-* 动画名有定义，确认私有的也在校验范围内"
+        ],
+        "effortDays": 1,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "无重复的 keyframes 定义",
+        "私有的都有说明",
+        "产物字节不变或减少"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P8",
+      "tags": [
+        "animation",
+        "components",
+        "duplication"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "UIK-009",
+      "title": "后台 21% 的页面表单输入框裸写，不进基座也不进桥接",
+      "severity": "medium",
+      "type": "tech-debt",
+      "confidence": "confirmed",
+      "problem": "48 个后台页面里，38 个（79%）用了 form-input 系列显式类，4 个仍用 pages-form 容器（走桥接），但有 10 个页面（21%）既没有 form-input 也没有 pages-form —— 输入框是裸 input，走浏览器默认样式。涉及 articles、blocks、login、mail_automation_run、mail_campaign、media、navigations、pages、plugins、settings、theme 等页面。",
+      "evidence": [
+        {
+          "file": "internal/templates/admin/pages.html",
+          "lines": "8-27",
+          "snippet": "用了 form-inline 布局但无 form-input，也不在 pages-form 容器内",
+          "note": "输入框走浏览器默认"
+        },
+        {
+          "file": "internal/templates/static/css/ui.css",
+          "lines": "417-432",
+          "snippet": "桥接选择器覆盖 .pages-form input 等容器",
+          "note": "裸 input 不在桥接覆盖范围"
+        }
+      ],
+      "impact": "同一个后台里输入框有三种外观：基座样式、桥接样式、浏览器默认。视觉不一致最直观的来源。按钮（98% 覆盖）与表格（77%）迁移得好，表单是短板。",
+      "rootCause": "迁移按页面推进，这批页面漏了或部分漏了。",
+      "remediation": {
+        "approach": "给这 10 个页面的输入框补 form-input 系列类。纯机械改动。同时考虑加一个兜底：ui.css 给 .admin-content input 这类容器加基础样式，防止将来再漏（但要小心特异性冲突）。",
+        "steps": [
+          "逐页补类名（articles / blocks / login / media / navigations / pages / plugins / settings / theme 等）",
+          "login 页要单独看（它不在 admin-layout 内）",
+          "补一个检查脚本：admin 模板里的 input / select / textarea 必须带基座类或在桥接容器内",
+          "CI 接入该检查",
+          "4 个 pages-form 页面一并迁到显式类（消灭桥接层，见 UIK-010）"
+        ],
+        "effortDays": 1.5,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "48 个页面的输入框外观一致",
+        "检查脚本能发现新增的裸 input"
+      ],
+      "dependsOn": [],
+      "blocks": [
+        "UIK-010"
+      ],
+      "phase": "P8",
+      "tags": [
+        "admin-ui",
+        "css",
+        "consistency"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "UIK-010",
+      "title": "桥接选择器压制了 theme.css 里的旧规则，产生一批死代码",
+      "severity": "medium",
+      "type": "tech-debt",
+      "confidence": "confirmed",
+      "problem": "ui.css 的桥接选择器（.pages-form input 等，特异性 0,4,1）压住了 theme.css 里针对同类元素的旧视觉规则。那些旧规则仍在文件里但永不生效，是死代码。文档 02-F-ui-kit.md §11.1 已承认这个状况。",
+      "evidence": [
+        {
+          "file": "internal/templates/static/css/ui.css",
+          "lines": "417-432",
+          "snippet": "桥接选择器，特异性高于 theme.css 旧规则",
+          "note": ""
+        },
+        {
+          "file": "internal/templates/static/css/theme.css",
+          "lines": "174",
+          "snippet": ".attr-form-head input 等旧视觉规则（被压制）",
+          "note": "死代码"
+        },
+        {
+          "file": "internal/templates/static/css/theme.css",
+          "lines": "182",
+          "snippet": ".pages-table-wrap:focus-visible 仍写死 #2563eb，与 --c-primary 不一致",
+          "note": "颜色分叉的具体实例"
+        }
+      ],
+      "impact": "读 theme.css 时无法判断哪些规则真的生效，改了不生效会浪费排查时间。硬编码颜色（#2563eb）与令牌色板不一致也是这类残留的表现。",
+      "rootCause": "桥接层是迁移期的过渡方案，但迁移没走完，过渡层与旧规则长期并存。",
+      "remediation": {
+        "approach": "先完成 UIK-009 的页面迁移（消灭 pages-form 容器的使用），然后删除桥接层与被压制的旧规则。硬编码颜色改为令牌。",
+        "steps": [
+          "UIK-009 完成后，确认没有页面依赖桥接",
+          "删除 ui.css 的桥接段",
+          "删除 theme.css 里被压制的旧视觉规则",
+          "硬编码颜色改为 var(--c-*)",
+          "视觉回归：逐页截图对比（或至少人工核对 48 个页面）"
+        ],
+        "effortDays": 1.5,
+        "risk": "medium",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "theme.css 里没有永不生效的规则",
+        "无硬编码颜色",
+        "48 个页面视觉无回退"
+      ],
+      "dependsOn": [
+        "UIK-009"
+      ],
+      "blocks": [],
+      "phase": "P8",
+      "tags": [
+        "admin-ui",
+        "css",
+        "dead-code"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "UIK-011",
+      "title": "ui.css 缺 tabs 与 drawer 的样式块，抽屉样式散在 theme.css 的工作台段",
+      "severity": "low",
+      "type": "tech-debt",
+      "confidence": "confirmed",
+      "problem": "ui.css 有自绘下拉、确认框、模态、toast、按钮、卡片、表格、表单、徽章、分页等控件块，但没有独立的 tabs 与 drawer 样式块。抽屉的行为在 drawer.js 里，样式分散在 theme.css 的工作台区域。",
+      "evidence": [
+        {
+          "file": "internal/templates/static/js/ui/drawer.js",
+          "lines": "0",
+          "snippet": "行为实现存在（data-drawer-open / data-drawer-title）",
+          "note": "但样式不在 ui.css"
+        },
+        {
+          "file": "internal/templates/static/css/ui.css",
+          "lines": "0",
+          "snippet": "无 .drawer 与 .tabs 样式块",
+          "note": ""
+        }
+      ],
+      "impact": "抽屉在工作台之外的页面用起来样式不完整。也让基座的控件清单看起来不完整（有行为没样式）。",
+      "rootCause": "抽屉先在工作台实现，样式留在工作台样式文件里，没有提升到基座。",
+      "remediation": {
+        "approach": "把抽屉样式从 theme.css 的工作台段提到 ui.css 作为基座控件；补 tabs 基座样式（后台的标签页当前各页面各写）。",
+        "steps": [
+          "抽屉样式迁到 ui.css 并去掉工作台专属的部分（工作台可在自己的 CSS 里覆盖）",
+          "补 tabs 基座样式（按后台现有标签页用法归纳）",
+          "确认工作台视觉不变",
+          "随 UIK-001 一起登记进 uiBlocks 让前台也能用"
+        ],
+        "effortDays": 1,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "抽屉在任意后台页面可用且外观一致",
+        "工作台视觉不变"
+      ],
+      "dependsOn": [
+        "UIK-001"
+      ],
+      "blocks": [],
+      "phase": "P8",
+      "tags": [
+        "ui-kit",
+        "css"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "UIK-012",
+      "title": "theme.css 的全局 reset 影响 dialog 居中，靠 ui.css 打补丁",
+      "severity": "low",
+      "type": "implementation-bug",
+      "confidence": "confirmed",
+      "problem": "theme.css 的全局 reset 里有 * { margin: 0 }，这会破坏原生 dialog 元素的默认居中（dialog 靠 margin auto 居中）。ui.css 在 57 到 61 行加注释并打补丁修正。",
+      "evidence": [
+        {
+          "file": "internal/templates/static/css/theme.css",
+          "lines": "104-119",
+          "snippet": "全局 reset 含 * { margin: 0 }",
+          "note": ""
+        },
+        {
+          "file": "internal/templates/static/css/ui.css",
+          "lines": "57-61",
+          "snippet": "注释说明 dialog 居中问题并打补丁",
+          "note": "补丁而非根治"
+        }
+      ],
+      "impact": "轻微，已有补丁。但这是「全局 reset 过于激进导致到处打补丁」的典型，将来用其它依赖默认 margin 的原生元素还会再遇到。",
+      "rootCause": "通配符 reset 是老做法，现代做法是按元素类型精确 reset。",
+      "remediation": {
+        "approach": "把通配符 reset 收窄为精确的元素清单（排除 dialog 与其它依赖默认样式的元素）。",
+        "steps": [
+          "reset 改为显式列出需要归零的元素（h1-h6 / p / ul / ol / figure 等）",
+          "排除 dialog",
+          "删除 ui.css 的补丁",
+          "视觉回归核对"
+        ],
+        "effortDays": 0.5,
+        "risk": "medium",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "dialog 无补丁也能正确居中",
+        "48 个页面视觉无回退"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P8",
+      "tags": [
+        "css",
+        "reset"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：theme.css reset 收窄，排除 dialog 居中。"
+    },
+    {
+      "id": "REG-001",
+      "title": "组件注册有两份 import 清单（builder.go 34 行空导入 + jetview.go 41 个 import），7 个组件只在后者",
+      "severity": "high",
+      "type": "design-flaw",
+      "confidence": "confirmed",
+      "problem": "组件通过 init() 调 core.Register 注册，注册要被触发就必须有包被 import。当前有两处触发点：builder.go 里 34 行空导入，jetview.go 里 41 个常规 import（因为需要调各组件的 CompileCSS 与 BuildView）。addtocart、carticon、orderlist、productcard、productlist、productselector、userforms 这 7 个组件不在 builder.go 的空导入里，只靠 jetview.go 的 import 触发。",
+      "evidence": [
+        {
+          "file": "internal/builder/builder.go",
+          "lines": "26-93",
+          "snippet": "34 行 _ \"go_wp/internal/builder/components/...\" 空导入，每行带注释说明组件类型",
+          "note": "第一份清单"
+        },
+        {
+          "file": "internal/builder/jetview.go",
+          "lines": "20-60",
+          "snippet": "41 个组件包常规 import（用于调 CompileCSS / BuildView）",
+          "note": "第二份清单，实际覆盖全部组件"
+        }
+      ],
+      "impact": "两份清单意味着新增组件要判断该加哪份（或都加），而且两份都没有守卫。这是「组件注册很麻烦」这个感受的真实来源 —— 不是因为用了 Go 而不是 json，是因为要手工维护两份清单。",
+      "rootCause": "builder.go 的空导入是为了显式声明注册意图，jetview.go 的 import 是功能需要，两者职责重叠但没有合并。",
+      "remediation": {
+        "approach": "消灭双清单：jetview.go 的 import 本来就覆盖全部组件（它必须 import 才能调 CompileCSS），所以 builder.go 的 34 行空导入是冗余的，可以直接删除。或者反过来，用 go:generate 从目录扫描生成单一的 registry_imports.go，jetview 的 dispatch 也一并生成。",
+        "steps": [
+          "方案一（低成本）：删除 builder.go 的 34 行空导入，jetview.go 作为唯一 import hub，并在文件头注明这一点",
+          "方案二（彻底）：go:generate 扫 components 目录生成 registry_imports.go 与 dispatch 表，两份都自动生成，CI 校验无 drift",
+          "无论哪个方案，都要加 REG-002 的数量断言测试",
+          "推荐先做方案一（半天），验证没问题后评估方案二的必要性"
+        ],
+        "effortDays": 1,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "删除空导入后全部 41 个组件仍能注册与渲染（数量断言测试）",
+        "只有一处需要维护"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P6",
+      "tags": [
+        "builder",
+        "registry",
+        "developer-experience"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：删除 builder.go 双清单空导入，jetview.go 为唯一 hub。"
+    },
+    {
+      "id": "REG-002",
+      "title": "漏登记组件会编译通过但构建期报错，没有测试守住",
+      "severity": "high",
+      "type": "missing-feature",
+      "confidence": "confirmed",
+      "problem": "如果一个组件包既没在 builder.go 空导入也没在 jetview.go import，init() 不会执行，core.Lookup 找不到该类型，Validate 与 Compile 会报「不支持的组件类型」。整个过程编译通过，只在构建页面时才失败。components_manifest_test.go 检查的是 jet 模板与 RegisterTemplate 的配对、enhance.js 与增强块注册的配对，不检查 import 清单完整性。",
+      "evidence": [
+        {
+          "file": "internal/builder/components_manifest_test.go",
+          "lines": "23-78",
+          "snippet": "检查 .jet 与 RegisterTemplate 配对、enhance.js 与增强块注册配对",
+          "note": "不检查 blank import 完整性"
+        },
+        {
+          "file": "internal/builder/components_manifest_test.go",
+          "lines": "139",
+          "snippet": "TestComponentManifest 里组件目录数为 41",
+          "note": "已经知道目录数，只是没用来断言注册数"
+        }
+      ],
+      "impact": "漏登记的失败点离原因很远：改的是 builder.go，报错在构建某个页面时。而且如果那个组件暂时没被任何页面使用，问题会潜伏很久。",
+      "rootCause": "注册完整性依赖人工，没有自动校验。而校验所需的信息（目录数）测试里已经有了。",
+      "remediation": {
+        "approach": "加一行断言：core.Types() 的数量等于 components 目录下的组件目录数。这是成本最低、收益最直接的守卫。",
+        "steps": [
+          "在 components_manifest_test.go 里增加断言：len(core.Types()) 等于组件目录数（排除非组件目录如 plugincomp）",
+          "断言失败时的错误消息要指出差集（哪个目录没注册、或注册了哪个没有目录）",
+          "顺带断言 jetview 的 dispatch 覆盖全部注册类型（防止注册了但渲染时没有分支）"
+        ],
+        "effortDays": 0.5,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "故意注释掉一个 import 后测试失败并指出缺哪个组件"
+      ],
+      "dependsOn": [],
+      "blocks": [
+        "REG-001"
+      ],
+      "phase": "P6",
+      "tags": [
+        "builder",
+        "registry",
+        "testing"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：TestComponentRegistryComplete 断言 len(core.Types())。"
+    },
+    {
+      "id": "REG-003",
+      "title": "组件注册不应改为 json/yaml 声明式：CompileCSS 与 BuildView 是真实逻辑，不是元数据",
+      "severity": "low",
+      "type": "design-flaw",
+      "confidence": "confirmed",
+      "problem": "这条记录的是一个设计判断而非缺陷。项目所有者提出「组件注册每个都要在 go 文件里引用，能不能放 json/yaml」。核查后的结论是不应该全量声明式化，理由如下。",
+      "evidence": [
+        {
+          "file": "internal/builder/components/cardstack/cardstack.go",
+          "lines": "627-674",
+          "snippet": "CompileCSS 里用三角函数按卡片数与形状算出半径与位移，生成逐卡 :nth-child 规则列表，并登记 NeedKeyframes",
+          "note": "这是编译期计算，不是静态声明"
+        },
+        {
+          "file": "internal/builder/components/button/jet.go",
+          "lines": "50",
+          "snippet": "BuildView 判断输出 <a> 还是 <button>、拼 href 与 rel、渲染内置图标 SVG",
+          "note": "有条件逻辑与内容生成"
+        },
+        {
+          "file": "internal/builder/style/compile.go",
+          "lines": "22-71",
+          "snippet": "插件的样式声明引擎：受控 selector、pseudo、when 条件、静态 decls、prop 绑定、断点覆盖",
+          "note": "能力上限"
+        },
+        {
+          "file": "internal/builder/core/css.go",
+          "lines": "83-88",
+          "snippet": "@container 三桶分层，AddHover 与 AddHoverNone 触屏治理",
+          "note": "声明引擎不支持"
+        }
+      ],
+      "impact": "如果按 json 化的方向改造，会遇到三类表达不了的东西：编译期几何计算（cardstack 的三角函数、按 Props 算出的 clamp 与 min 封顶值）、条件性 HTML 结构生成（button 的 a 与 button 二选一、图标 SVG 内联）、CSS 分桶治理（三端断点、hover 与 hovernone 触屏等价形态、container query 分层）。实测插件的样式声明引擎大约只能表达内置组件 CSS 的两到三成。强行 json 化的结果是要么引擎复杂度追上一门语言，要么组件表达力大幅退化。",
+      "rootCause": "组件不是配置项，而是「带编译期计算的渲染单元」。Props schema 那部分确实是元数据，而它已经是声明式的了 —— 只是声明位置在 Go struct 的 ct 标签上，而不是独立的 json 文件。struct 标签这个位置其实更优：类型安全、与 Validate 同文件、单一真源、RegistryVersion 能直接算指纹。",
+      "remediation": {
+        "approach": "不做全量 json 化。真正该解决的是所有者感受到的痛点本身，即手工维护清单，而这靠 REG-001 与 REG-002 解决（消灭双清单 + 加数量断言），成本一天半。另外可以做一件锦上添花的事：把 palette 元数据（分类、显示名、默认 Props）从前端 JS 挪到组件 Spec 上，让新增组件真正只改一个目录（见 EDT-008）。",
+        "steps": [
+          "REG-001：消灭双 import 清单",
+          "REG-002：加组件数量断言测试",
+          "EDT-008：palette 元数据上移到 Go 侧 Spec，前端从注入数据生成",
+          "结果：新增组件只需在 components 下建一个目录 + 一处 import，其余自动",
+          "文档：在 docs/02-C0 或 BUILDER_ARCHITECTURE.md 里写明为什么组件是代码而不是配置，以及插件的声明式路线覆盖哪些场景（避免这个问题反复被提出）"
+        ],
+        "effortDays": 0.5,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "新增组件的步骤减少到建目录加一处 import",
+        "文档说明了设计理由"
+      ],
+      "dependsOn": [
+        "REG-001",
+        "REG-002"
+      ],
+      "blocks": [],
+      "phase": "P6",
+      "tags": [
+        "builder",
+        "registry",
+        "architecture",
+        "decision"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：docs/02-C0 明确内置组件不走 json/yaml 注册。"
+    },
+    {
+      "id": "REG-004",
+      "title": "内置组件与插件组件的能力差距未文档化，插件作者会踩到表达力天花板",
+      "severity": "medium",
+      "type": "missing-feature",
+      "confidence": "confirmed",
+      "problem": "插件走声明式路线（manifest 的 props 七种 kind + styles 声明引擎 + jet 模板），内置组件走 Go 代码路线。两者的能力差距实测很大：声明引擎不支持编译期几何、@each 列表展开、@property 流动边框、@container 三桶分层、AddHover 与 AddHoverNone 治理、动态 keyframes 名、scroll-driven 时间线、组件 CSS 模板的 @if 语法。但这个差距没有在插件文档里写清楚。",
+      "evidence": [
+        {
+          "file": "internal/builder/plugincomp/plugincomp.go",
+          "lines": "36-89",
+          "snippet": "manifest 支持 props 七种 kind、styles 声明、collection、jet 模板",
+          "note": "插件能力上限"
+        },
+        {
+          "file": "internal/builder/core/component_css.go",
+          "lines": "0",
+          "snippet": "内置组件的 CSS 模板语法支持 @if / @hover / 列表展开",
+          "note": "插件没有"
+        }
+      ],
+      "impact": "插件作者按文档以为能做出与内置组件同等的东西，实际做到一半发现某个效果表达不了，只能放弃或 fork 内核。这会直接打击插件生态的参与意愿。",
+      "rootCause": "两条路线各自演进，能力对比没有被系统整理过。",
+      "remediation": {
+        "approach": "写一份能力对照表放进插件文档：声明引擎支持什么、不支持什么、不支持的有无替代方案。同时评估把几个高频缺失项补进引擎（断点覆盖已有，hover 与 hovernone 治理值得补，因为它关系到多端硬规则）。",
+        "steps": [
+          "整理对照表（支持 / 不支持 / 替代方案三列）",
+          "优先补 AddHover 与 AddHoverNone 的声明式支持（多端硬规则要求，插件也该遵守）",
+          "评估 @each 列表展开的必要性（很多列表类组件需要）",
+          "明确不补的项与理由（编译期几何计算需要图灵完备，不适合声明式）",
+          "插件文档增加「什么场景该用轻轨、什么场景需要重轨」的判断指引"
+        ],
+        "effortDays": 2,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "对照表覆盖实际差距",
+        "插件能用声明式做出符合多端硬规则的 hover 形态"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P7",
+      "tags": [
+        "plugin",
+        "documentation",
+        "style-engine"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "REG-005",
+      "title": "Props schema 已经从 struct 标签自动生成，但 palette 元数据仍手工维护在前端",
+      "severity": "medium",
+      "type": "inconsistency",
+      "confidence": "confirmed",
+      "problem": "组件的可编辑属性 schema 由 ComponentSchemas 从 Go struct 的 ct 标签自动生成（这部分做得对，是单一真源）。但组件在编辑器里的呈现元数据（分类、显示名、图标、插入时的默认 Props）手工写在前端 palette.js 里，与 Go 侧分离。",
+      "evidence": [
+        {
+          "file": "internal/builder/builder.go",
+          "lines": "518-558",
+          "snippet": "ComponentSchemas 遍历 core.Types() 自动生成 schema",
+          "note": "这部分是正确的自动化"
+        },
+        {
+          "file": "internal/templates/static/js/workbench/palette.js",
+          "lines": "19-74",
+          "snippet": "paletteItems 与 DEFAULT_CONTENT 手写",
+          "note": "与 Go 侧分离，需同步维护"
+        }
+      ],
+      "impact": "新增组件要改两个地方（Go 目录 + palette.js），漏改 palette 则组件在编辑器里不可见。这与 REG-001 的双清单是同一类问题的不同表现。",
+      "rootCause": "palette 里混了两类信息：可自动生成的（类型名、默认 Props）与需要人工的（图标、排序）。因为混在一起所以整体只能手写。",
+      "remediation": {
+        "approach": "把可自动生成的部分上移到 Go 侧 Spec，palette.js 只保留图标映射与排序表。与 EDT-008 是同一件事。",
+        "steps": [
+          "core.AtomSpec 增加 PaletteCategory / DisplayName / DefaultProps",
+          "ComponentSchemas 输出这些元数据",
+          "palette.js 改为消费注入数据",
+          "加断言：每个注册组件都出现在 palette 输出里"
+        ],
+        "effortDays": 1.5,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "新增组件无需改 JS 即出现在组件库",
+        "断言覆盖全部组件"
+      ],
+      "dependsOn": [
+        "REG-002"
+      ],
+      "blocks": [],
+      "phase": "P6",
+      "tags": [
+        "builder",
+        "workbench",
+        "registry"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "UIK-013",
+      "title": "统一基座的根本障碍：两端的投递模型与作用域策略不同",
+      "severity": "medium",
+      "type": "design-flaw",
+      "confidence": "confirmed",
+      "problem": "这条记录的是「一套基座两端共用」这个目标的技术约束，供决策参考。后台是长驻页面，可以外链完整的 ui.css 与 11 个脚本，全局类无成本。产物是静态发布，要求确定性字节、按需最小化、CSS 内联，而且组件样式必须节点作用域以保证隔离。引入全局基座类会让每页 CSS 膨胀（当前命中特征就注入整份 677 行 ui.css），并与「一组件一作用域」的原则冲突。",
+      "evidence": [
+        {
+          "file": "internal/pipeline/compile_assets.go",
+          "lines": "84-90",
+          "snippet": "WithUIStyle 传入整份 ui.css 源码",
+          "note": "注入粒度是整份"
+        },
+        {
+          "file": "internal/builder/ui_script.go",
+          "lines": "112-137",
+          "snippet": "命中任一非 htmx 块则注入整份 ui.css",
+          "note": "全有或全无"
+        },
+        {
+          "file": "internal/builder/core/css.go",
+          "lines": "408-410",
+          "snippet": "组件 CSS 必须 scoped 到 .sky-c-{nodeId}",
+          "note": "隔离原则"
+        }
+      ],
+      "impact": "决定了统一基座能做到什么程度：令牌层可以完全统一（UIK-004），控件类层可以按需共用但要解决注入粒度（当前全有或全无），组件的几何与布局样式无法搬进基座（会破坏确定性与隔离）。清楚这个边界能避免设定不可达的目标。",
+      "rootCause": "静态发布与长驻应用对 CSS 的要求本质不同。",
+      "remediation": {
+        "approach": "接受分层而非统一：令牌层统一、控件类层按需共用（把整份注入改为按用到的控件切分）、组件私有层保持作用域。这个分层就是 UIK-003 的三层方案。",
+        "steps": [
+          "把 ui.css 按控件切分成可独立注入的片段（每个控件一段）",
+          "注入时只带用到的控件（依赖 UIK-002 的 class 扫描能力）",
+          "令牌层统一（UIK-004）",
+          "在 BUILDER_ARCHITECTURE.md 或 02-F-ui-kit.md 里写明这个三层边界与理由，避免将来反复讨论"
+        ],
+        "effortDays": 2.5,
+        "risk": "medium",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "只用按钮的页面不注入表格与分页的 CSS",
+        "产物 CSS 体积下降",
+        "确定性构建测试全绿"
+      ],
+      "dependsOn": [
+        "UIK-002",
+        "UIK-004"
+      ],
+      "blocks": [],
+      "phase": "P8",
+      "tags": [
+        "ui-kit",
+        "architecture",
+        "css",
+        "decision"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "UIK-014",
+      "title": "core.button 的弹窗动作写 data-modal-target，基座监听 data-modal-open，协议对不上",
+      "severity": "high",
+      "type": "implementation-bug",
+      "confidence": "confirmed",
+      "problem": "按钮组件 ActionModal 编译出的属性是 data-modal-target=\"<id>\"。基座 modal.js 的点击委托只认 [data-modal-open]，uiBlocks 的注入特征也只登记 data-modal / data-modal-open / data-modal-close。组件规范 docs/02-C8 与单元测试都把 data-modal-target 当成契约钉死了，所以这不是笔误，是两套协议从未对齐。",
+      "evidence": [
+        {
+          "file": "internal/builder/components/button/jet.go",
+          "lines": "109-111",
+          "snippet": "case ActionModal:\n\ttag = \"button\"\n\tattrs = ` type=\"button\" data-modal-target=\"` + html.EscapeString(p.Value) + `\"`",
+          "note": "组件写出的属性名"
+        },
+        {
+          "file": "internal/templates/static/js/ui/modal.js",
+          "lines": "128-132",
+          "snippet": "var opener = e.target.closest('[data-modal-open]');\nif (opener) {\n    e.preventDefault();\n    open(opener.getAttribute('data-modal-open'), opener);",
+          "note": "基座只认 data-modal-open"
+        },
+        {
+          "file": "internal/builder/ui_script.go",
+          "lines": "32",
+          "snippet": "{file: \"modal.js\", attrs: []string{\"data-modal\", \"data-modal-open\", \"data-modal-close\"}}",
+          "note": "注入白名单也不含 data-modal-target"
+        },
+        {
+          "file": "public/test/builder/unit/button_test.go",
+          "lines": "47-55",
+          "snippet": "TestButtonModal 断言产物含 data-modal-target=\"contact-modal\"",
+          "note": "测试钉住了错误协议"
+        },
+        {
+          "file": "docs/02-C8-button-cta.md",
+          "lines": "10",
+          "snippet": "modal → <button type=\"button\" data-modal-target=\"...\">",
+          "note": "规范与实现一致，但与基座不一致"
+        }
+      ],
+      "impact": "页面作者在工作台把按钮动作设成「打开弹窗」，构建成功、产物里也有按钮，点击没有任何反应。更糟的是：若页面上没有带 data-modal 的 <dialog>，连 modal.js 都不会注入；即便作者另写了一个 dialog 让脚本进了产物，按钮仍因属性名不对而打不开。这是「控件库给组件用」这个目标最直接的反例：组件与基座各写了一套约定。",
+      "rootCause": "按钮组件的弹窗协议先于基座落地，基座后来选了 data-modal-open（后台媒体库用这套），两边没有收口成一份契约。测试只断言组件自己写出的属性，不断言基座能不能接住。",
+      "remediation": {
+        "approach": "统一到基座已有的 data-modal-open。组件改属性名，测试与 02-C8 一起改；注入白名单保持现有三项即可。不要同时认两个名字，那会把契约分裂再拖一轮。",
+        "steps": [
+          "button BuildView 把 data-modal-target 改为 data-modal-open",
+          "改 button_test.go 与 02-C8",
+          "加一条产物级测试：页面同时含按钮 ActionModal 与 <dialog data-modal> 时，点击路径能打开（至少断言注入了 modal.js 且属性名一致）",
+          "检查 infobox / socialbuttons 等其它可能写弹窗属性的组件，一并收口"
+        ],
+        "effortDays": 0.5,
+        "risk": "low",
+        "breaking": true,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "已发布页面重建后，弹窗按钮的属性是 data-modal-open",
+        "有 dialog 的页面注入 modal.js",
+        "后台媒体库原有 data-modal-open 用法不受影响"
+      ],
+      "dependsOn": [
+        "UIK-001"
+      ],
+      "blocks": [],
+      "phase": "P8",
+      "tags": [
+        "ui-kit",
+        "button",
+        "silent-failure",
+        "protocol"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：button 改 data-modal-open，与 modal.js 一致。"
+    }
+  ]
+}

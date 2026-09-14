@@ -1,0 +1,1185 @@
+{
+  "dimension": "seo",
+  "dimensionTitle": "SEO 体系：评分算法、构建期注入、站点基建、监控",
+  "scope": "internal/seo/scoring（8 维 24 项）、internal/seo/extract.go 与 article.go、internal/seo/sitemap.go、internal/builder/seo_head.go、internal/builder/ga4.go、internal/module/presentation/service/presentation_seo.go、internal/siteurl、internal/module/analytics、docs/02-E 与 docs/12",
+  "verdict": "编辑期评分引擎与双入口（文章侧栏 + workbench 面板）落地质量不错，构建期基础 meta 与 sitemap/robots/301 也齐。缺口集中在两头：构建期缺电商富摘要（商品评分数据都有了却没写进 JSON-LD）与详情页 hreflang；监控层是彻底的零，docs/12 描述的 SEO 控制台一行代码都没有。另有一个隐蔽 bug：评分器把 Locale 写死成 zh，英文站的评分结果是错的。",
+  "findings": [
+    {
+      "id": "SEO-001",
+      "title": "ScoreDocument 把 Locale 写死为 zh，英文页面按中文规则评分",
+      "severity": "high",
+      "type": "implementation-bug",
+      "confidence": "confirmed",
+      "problem": "页面评分的提取层固定传 Locale: \"zh\"，导致评分器走 CJK 分支：字数按 rune 计、句长按 40 字判、段长按 200 字判、关键词密度按 rune 数算。英文内容用这套规则得出的分数没有意义。",
+      "evidence": [
+        {
+          "file": "internal/seo/extract.go",
+          "lines": "30",
+          "snippet": "Locale 固定 \"zh\"",
+          "note": "无论页面实际语言"
+        },
+        {
+          "file": "internal/seo/scoring/scoring.go",
+          "lines": "183-186",
+          "snippet": "locale 为空或 zh 前缀走 isCJK 分支",
+          "note": "分支判断本身正确"
+        },
+        {
+          "file": "internal/seo/article.go",
+          "lines": "59",
+          "snippet": "中文用 rune 数当字数",
+          "note": "英文也走同一路径"
+        }
+      ],
+      "impact": "多语言站点的英文页面评分不可信：字数被高估（rune 数远大于词数）、关键词密度算错、句长段长阈值错。运营按这个分数优化会做出错误决策。",
+      "rootCause": "评分入口没有把页面的实际构建语言传进来。",
+      "remediation": {
+        "approach": "评分入口接收 lang 参数（workbench 面板从当前编辑语言取、文章从内容语言取），透传给 scoring.Input.Locale；同时补英文的词数统计与句长段长基准。",
+        "steps": [
+          "ScoreDocument 与 ScoreArticle 增加 lang 参数",
+          "调用方（settings_handle / seo_score_handle / article_handle）传入实际语言",
+          "英文分支的 WordCount 改为按空白分词计数",
+          "英文句长段长基准按英文写作习惯设定（句 20 词、段 150 词量级，具体值查 rubric 文档）",
+          "补测试：同一段英文内容在 en 与 zh 两种 locale 下评分结果不同且英文结果合理"
+        ],
+        "effortDays": 1.5,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "英文内容的字数统计等于词数",
+        "英文评分不再因 rune 计数虚高"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P5",
+      "tags": [
+        "seo",
+        "scoring",
+        "i18n",
+        "bug"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：seo/locale.go CJK/英文分词计数；ScoreDocument/ScoreArticle(lang)；dashboard 传入构建语言。"
+    },
+    {
+      "id": "SEO-002",
+      "title": "中文没有分词，关键词密度与位置靠子串匹配，可能误命中",
+      "severity": "medium",
+      "type": "design-flaw",
+      "confidence": "confirmed",
+      "problem": "关键词匹配用 strings.Contains 大小写不敏感匹配，中文没有分词。密度计算是「命中次数 × 关键词 rune 数 ÷ 正文 rune 数」。文档 02-E1 §7 规划的 jieba 类分词未实现。",
+      "evidence": [
+        {
+          "file": "internal/seo/scoring/scoring.go",
+          "lines": "188-218",
+          "snippet": "strings.Contains 匹配 + rune 数密度计算",
+          "note": "无分词"
+        }
+      ],
+      "impact": "短关键词容易在无关词里误命中（比如关键词「大」会命中「大约」「大概」），导致密度虚高、被判关键词堆砌。反过来长关键词的变体形式（换语序、插入修饰）匹配不到。",
+      "rootCause": "引入分词库是明确的成本（依赖体积、词典维护），当时选择了先用子串匹配。",
+      "remediation": {
+        "approach": "不引入重型分词库，改用两个低成本改进：一是密度计算改为按「非重叠匹配」计数（避免重复计），二是给出「疑似误命中」提示（当关键词长度小于 2 个汉字时提示密度可能不准）。若后续确实需要精确分词，再评估 gojieba。",
+        "steps": [
+          "匹配改为非重叠计数",
+          "关键词长度过短时降低该项权重并给出提示",
+          "文档说明当前算法的精度边界（避免用户过度依赖密度数值）",
+          "评估 gojieba 的体积与许可，作为可选增强记入 backlog"
+        ],
+        "effortDays": 1,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "重叠匹配不再重复计数",
+        "短关键词有提示"
+      ],
+      "dependsOn": [
+        "SEO-001"
+      ],
+      "blocks": [],
+      "phase": "P5",
+      "tags": [
+        "seo",
+        "scoring",
+        "chinese"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：keywordDensity 按 locale CJK 字符/英文词数；短词 CJK 提示。"
+    },
+    {
+      "id": "SEO-003",
+      "title": "图片体积评分项在缺少 SizeKB 时判 0 分，实际提取路径通常不传体积",
+      "severity": "medium",
+      "type": "implementation-bug",
+      "confidence": "confirmed",
+      "problem": "图片体积检查在 SizeKB 小于等于 0 时判 0 分并给出「体积未知」的结论。而 extract 与 article 两条提取路径通常不填这个字段，于是这一项几乎恒为 0 分。",
+      "evidence": [
+        {
+          "file": "internal/seo/scoring/checks_impl.go",
+          "lines": "407-408",
+          "snippet": "SizeKB <= 0 时判 0 分「体积未知」",
+          "note": ""
+        }
+      ],
+      "impact": "images 维度权重 0.10，其中体积项恒 0 会让总分系统性偏低，并且这个扣分无论怎么优化都消不掉。用户会认为评分器不准而不再信任它。",
+      "rootCause": "评分项设计时假设能拿到图片体积，但提取层没有实现（需要查媒体库或读文件）。",
+      "remediation": {
+        "approach": "两步：一是提取层从媒体库补齐体积（媒体表有 file_size 列，按 URL 或 id 查即可）；二是确实拿不到时该项不参与计分（从分母里剔除）而不是判 0。",
+        "steps": [
+          "提取层增加媒体体积查询（批量，按 URL 或 media id）",
+          "scoring 支持「不适用」状态：该项不计入加权分母",
+          "缺数据时结论文案改为「未纳入评分」而非扣分",
+          "补测试：无体积数据时总分不被拉低"
+        ],
+        "effortDays": 1.5,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "有体积数据时正确评分",
+        "无体积数据时不扣分且结论明确"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P5",
+      "tags": [
+        "seo",
+        "scoring",
+        "media"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：缺 SizeKB 时体积项 -1 不纳入评分，不再恒 0 分。"
+    },
+    {
+      "id": "SEO-004",
+      "title": "HasSchema 判据不反映真实结构化数据丰富度",
+      "severity": "low",
+      "type": "implementation-bug",
+      "confidence": "confirmed",
+      "problem": "技术维度的 schema 标记检查，页面侧的判据是「有标题就算有 schema」，文章侧恒为真。都不检查实际输出的 JSON-LD 内容。",
+      "evidence": [
+        {
+          "file": "internal/seo/extract.go",
+          "lines": "52-53",
+          "snippet": "HasSchema = len(Headings) > 0",
+          "note": "判据与语义无关"
+        },
+        {
+          "file": "internal/seo/article.go",
+          "lines": "66-67",
+          "snippet": "HasSchema 恒真",
+          "note": ""
+        }
+      ],
+      "impact": "这一项永远满分，无法引导用户补齐结构化数据。评分器对 SEO-005 那类真实缺口视而不见。",
+      "rootCause": "评分在 AST 层做，不容易预判构建期会输出什么 JSON-LD。",
+      "remediation": {
+        "approach": "让评分复用 BuildSEOLD 的判定逻辑：给定页面类型与已填字段，算出会输出哪些 schema 类型与关键属性，据此评分（比如商品页缺 price 或 availability 就扣分）。",
+        "steps": [
+          "把 buildJSONLD 的类型与属性判定抽成可被 scoring 调用的纯函数",
+          "评分项改为检查预期输出的 schema 完整度",
+          "对商品页额外检查 Offer 与 AggregateRating 是否会输出（依赖 SEO-005）"
+        ],
+        "effortDays": 1,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "缺结构化数据的页面在该项被扣分并给出具体建议"
+      ],
+      "dependsOn": [
+        "SEO-005"
+      ],
+      "blocks": [],
+      "phase": "P5",
+      "tags": [
+        "seo",
+        "scoring",
+        "json-ld"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：EvaluateSchemaPresence 对齐 buildJSONLD；文章侧 schemaType=article。"
+    },
+    {
+      "id": "SEO-005",
+      "title": "商品 JSON-LD 缺 Offer / price / sku / availability / AggregateRating，电商富摘要等于没有",
+      "severity": "critical",
+      "type": "missing-feature",
+      "confidence": "confirmed",
+      "problem": "商品详情页只输出 @type: Product 加 name / description / url / image，没有 offers（价格、货币、库存状态）、没有 sku / gtin、没有 aggregateRating。而评分数据在 product_ratings 表里已经有了，价格在变体上也有。",
+      "evidence": [
+        {
+          "file": "internal/builder/seo_head.go",
+          "lines": "156-193",
+          "snippet": "buildJSONLD 只输出 name / description / url / image",
+          "note": "无 offers / rating"
+        },
+        {
+          "file": "public/test/builder/unit/presentation_seo_test.go",
+          "lines": "361-362",
+          "snippet": "测试只断言 @type 是 Product",
+          "note": "没有断言富摘要属性"
+        }
+      ],
+      "impact": "Google 商品富摘要（价格、库存、评分星级出现在搜索结果里）完全拿不到。这是电商 SEO 最直接的收益项，也是与竞品对比时最显眼的差距。数据都有，只是没写出去。",
+      "rootCause": "SEO 头注入是通用实现，没有为商品这个特定实体类型补领域属性。",
+      "remediation": {
+        "approach": "presentation_seo 在注入 SEO 上下文时，对商品类型额外提供结构化数据字段（价格区间、货币、库存状态、sku、评分均值与条数），BuildSEOHead 按 schemaType 输出对应属性。",
+        "steps": [
+          "SEO 上下文结构增加 Product 专属字段（offers 数组或 aggregateOffer、sku、brand、aggregateRating）",
+          "presentation_seo 从商品实体与变体填充这些字段（价格取最低启用变体价，库存状态按有无启用变体且可用量判定——注意不能把实时库存烘进产物，用 InStock/OutOfStock 的保守判定或 PreOrder）",
+          "buildJSONLD 按类型输出 offers 与 aggregateRating",
+          "评分为 NULL 时不输出 aggregateRating（不能输出 0 星）",
+          "补测试断言各属性存在且格式符合 schema.org",
+          "用 Google 富媒体测试工具验证一次真实产物"
+        ],
+        "effortDays": 2.5,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "商品详情页产物包含 offers 与 aggregateRating",
+        "无评分的商品不输出 aggregateRating",
+        "Google 富媒体测试工具无报错"
+      ],
+      "dependsOn": [],
+      "blocks": [
+        "SEO-004"
+      ],
+      "phase": "P5",
+      "tags": [
+        "seo",
+        "json-ld",
+        "product",
+        "high-value"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：ProductOfferLD + buildJSONLD offers/rating；presentation_seo 注入。"
+    },
+    {
+      "id": "SEO-006",
+      "title": "FAQPage 只输出类型壳，没有 mainEntity 问答结构",
+      "severity": "medium",
+      "type": "missing-feature",
+      "confidence": "confirmed",
+      "problem": "schemaTypeMap 支持 faq 到 FAQPage 的映射，但 buildJSONLD 不输出 mainEntity（问答对数组）。只有类型没有内容的 FAQPage 不会产生富摘要。",
+      "evidence": [
+        {
+          "file": "internal/builder/seo_head.go",
+          "lines": "152-193",
+          "snippet": "schemaTypeMap 有 faq，但 buildJSONLD 无 mainEntity 输出",
+          "note": ""
+        }
+      ],
+      "impact": "FAQ 富摘要拿不到。而系统里已经有 core.faq 组件，数据是现成的。",
+      "rootCause": "结构化数据输出没有从页面 AST 里提取组件级数据的机制。",
+      "remediation": {
+        "approach": "构建期从 AST 收集 core.faq 组件的问答对，注入 SEO 上下文，buildJSONLD 输出 mainEntity。",
+        "steps": [
+          "编译期遍历 AST 收集 faq 组件数据（与 SEO 候选收集同一次遍历）",
+          "SEO 上下文增加 FAQItems 字段",
+          "buildJSONLD 在类型为 FAQPage 时输出 mainEntity 数组",
+          "问答文本要经 HTML 转义（JSON-LD 里是纯文本）"
+        ],
+        "effortDays": 1.5,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "含 faq 组件的页面输出完整 mainEntity",
+        "富媒体测试工具识别为 FAQ"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P5",
+      "tags": [
+        "seo",
+        "json-ld",
+        "faq"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "SEO-007",
+      "title": "没有 Organization 与带 SearchAction 的 WebSite 结构化数据",
+      "severity": "medium",
+      "type": "missing-feature",
+      "confidence": "confirmed",
+      "problem": "首页与全站没有输出 Organization（品牌信息、logo、社交账号）与 WebSite（含 potentialAction: SearchAction，让 Google 在搜索结果里显示站内搜索框）。",
+      "evidence": [
+        {
+          "file": "internal/builder/seo_head.go",
+          "lines": "152-154",
+          "snippet": "schemaTypeMap 有 website 到 WebSite，但不输出 SearchAction",
+          "note": ""
+        }
+      ],
+      "impact": "品牌知识面板与站内搜索框这两个展示增强拿不到。",
+      "rootCause": "站点级结构化数据没有建模（当前 SEO 数据都是页面级）。",
+      "remediation": {
+        "approach": "站点设置增加品牌信息字段（名称、logo、社交链接），首页构建时输出 Organization + WebSite（SearchAction 指向 searchResults 片段对应的搜索页）。",
+        "steps": [
+          "SiteSettings 增加品牌与社交字段",
+          "首页（kind=home 或槽位判定）构建时输出这两个 schema",
+          "SearchAction 的 target 需要一个真实的搜索页 URL——依赖站点有搜索页（可用系统页面槽位扩展一个 search 槽位）",
+          "后台站点设置页增加对应表单"
+        ],
+        "effortDays": 2,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": true
+      },
+      "verification": [
+        "首页输出 Organization 与 WebSite",
+        "SearchAction 的 target 是真实可用的搜索路径"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P5",
+      "tags": [
+        "seo",
+        "json-ld",
+        "site-settings"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "SEO-008",
+      "title": "自动发布详情页不输出 hreflang",
+      "severity": "high",
+      "type": "missing-feature",
+      "confidence": "confirmed",
+      "problem": "手工页面通过 localeViewOf 注入 alternates，多语言时输出 hreflang 与 x-default。presentation 编译路径不调 WithAlternates，商品与文章详情页没有 hreflang。",
+      "evidence": [
+        {
+          "file": "internal/module/page/service/page_assemble.go",
+          "lines": "150-156",
+          "snippet": "page 侧经 localeViewOf 注入 alternates",
+          "note": "对照实现"
+        },
+        {
+          "file": "internal/module/presentation/service/presentation_service.go",
+          "lines": "688-714",
+          "snippet": "presentation 侧无 WithAlternates",
+          "note": ""
+        }
+      ],
+      "impact": "多语言站点的详情页之间没有语言关联声明，搜索引擎可能判为重复内容或只索引一种语言。这是多语言 SEO 的基础项。",
+      "rootCause": "同 EDT-003：装配层分裂。且当前 presentation 只有默认语言产物（I18N-013），没有 alternates 可指。",
+      "remediation": {
+        "approach": "随 EDT-003 统一装配器 + I18N-013 多语言产物一并解决，hreflang 自动获得。",
+        "steps": [
+          "EDT-003 与 I18N-013 完成后确认详情页输出 hreflang",
+          "补测试：多语言商品详情页的 hreflang 互指正确且含 x-default"
+        ],
+        "effortDays": 0.5,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "多语言详情页 hreflang 互指正确"
+      ],
+      "dependsOn": [
+        "EDT-003",
+        "I18N-013"
+      ],
+      "blocks": [],
+      "phase": "P2",
+      "tags": [
+        "seo",
+        "hreflang",
+        "presentation"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：compile_site LocaleView WithAlternates；presentation 多语言 hreflang。"
+    },
+    {
+      "id": "SEO-009",
+      "title": "没有 Google Search Console 站点验证的注入位",
+      "severity": "medium",
+      "type": "missing-feature",
+      "confidence": "confirmed",
+      "problem": "BuildSEOHead 不输出 google-site-verification meta，也没有提供上传验证文件的机制。站点无法在 Search Console 里完成验证。",
+      "evidence": [
+        {
+          "file": "internal/builder/seo_head.go",
+          "lines": "62-110",
+          "snippet": "输出清单里无站点验证 meta",
+          "note": ""
+        }
+      ],
+      "impact": "Search Console 是 SEO 工作的基础设施，验证不了就拿不到索引状态、搜索词、覆盖率报告。也堵住了 SEO 监控层（SEO-020）的数据来源。",
+      "rootCause": "站点级 SEO 配置项没有这一项。",
+      "remediation": {
+        "approach": "站点设置增加验证码字段（支持 Google / Bing 等多家），构建期注入对应 meta；同时支持在产物根目录放验证文件（走 sitemap/robots 同一套 RefreshSiteFiles 机制）。",
+        "steps": [
+          "SiteSettings 增加 searchConsoleVerification 等字段（形状校验）",
+          "BuildSEOHead 注入 meta（空值零字节，与 GA4 同一原则）",
+          "RefreshSiteFiles 支持写入验证文件",
+          "后台站点设置页增加表单与说明"
+        ],
+        "effortDays": 1,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": true
+      },
+      "verification": [
+        "配置后产物含验证 meta",
+        "空值不注入任何字节"
+      ],
+      "dependsOn": [],
+      "blocks": [
+        "SEO-020"
+      ],
+      "phase": "P5",
+      "tags": [
+        "seo",
+        "search-console",
+        "site-settings"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "SEO-010",
+      "title": "JSON-LD 面包屑首项硬编码英文 Home",
+      "severity": "low",
+      "type": "implementation-bug",
+      "confidence": "confirmed",
+      "problem": "breadcrumbList 生成时首项名称写死为 Home，中文站也是 Home。",
+      "evidence": [
+        {
+          "file": "internal/builder/seo_head.go",
+          "lines": "215",
+          "snippet": "面包屑首项硬编码 Home",
+          "note": ""
+        }
+      ],
+      "impact": "结构化数据里的面包屑首项语言与站点不符，影响搜索结果里面包屑的展示。",
+      "rootCause": "遗漏的硬编码文案。",
+      "remediation": {
+        "approach": "抽成 sys_i18n key（site.breadcrumb.home），按构建语言取词。随 I18N-010 一并处理。",
+        "steps": [
+          "抽 key 并 seed 词条",
+          "BuildSEOHead 从翻译器取值"
+        ],
+        "effortDays": 0.25,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": true
+      },
+      "verification": [
+        "中文站面包屑首项显示首页"
+      ],
+      "dependsOn": [
+        "I18N-010"
+      ],
+      "blocks": [],
+      "phase": "P4",
+      "tags": [
+        "seo",
+        "i18n",
+        "breadcrumb"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：面包屑首项 site.breadcrumb.home 构建期 i18n（非写死 Home）。"
+    },
+    {
+      "id": "SEO-011",
+      "title": "没有 sitemap 索引，大站单文件 sitemap 会超限",
+      "severity": "medium",
+      "type": "missing-feature",
+      "confidence": "confirmed",
+      "problem": "只生成单个 /sitemap.xml。sitemap 协议单文件上限 5 万条 URL 或 50MB，超过需要 sitemap 索引文件分片。",
+      "evidence": [
+        {
+          "file": "internal/seo/sitemap.go",
+          "lines": "71-111",
+          "snippet": "生成单个 sitemap.xml",
+          "note": "无分片与索引"
+        }
+      ],
+      "impact": "商品数量大的站点（多语言会成倍放大 URL 数）会超限，超限后整个 sitemap 被搜索引擎忽略。",
+      "rootCause": "首版只考虑了小站规模。",
+      "remediation": {
+        "approach": "URL 数超过阈值（建议 1 万，留余量）时自动分片为 sitemap-1.xml、sitemap-2.xml 并生成 sitemap.xml 作为索引；robots.txt 指向索引。",
+        "steps": [
+          "sitemap 生成改为分片写出",
+          "超过一片时生成索引文件，只有一片时保持现状（避免小站多一层跳转）",
+          "robots.txt 的 Sitemap 行指向索引或单文件",
+          "补测试：模拟 2 万 URL 断言分片正确"
+        ],
+        "effortDays": 1.5,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "大量 URL 时正确分片且索引可用",
+        "小站行为不变"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P5",
+      "tags": [
+        "seo",
+        "sitemap",
+        "scalability"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "SEO-012",
+      "title": "没有 RSS / Atom feed",
+      "severity": "medium",
+      "type": "missing-feature",
+      "confidence": "confirmed",
+      "problem": "全库没有 feed 生成代码。博客型站点没有订阅源。",
+      "evidence": [
+        {
+          "file": "internal/seo",
+          "lines": "0",
+          "snippet": "无 feed 相关代码",
+          "note": "grep 无命中"
+        }
+      ],
+      "impact": "内容型站点失去订阅渠道，也失去被聚合器与 AI 爬虫发现的一条路径。",
+      "rootCause": "未实现。",
+      "remediation": {
+        "approach": "随 sitemap 同一套 RefreshSiteFiles 机制生成 /feed.xml（RSS 2.0）与可选的 /atom.xml，内容取最近 N 篇已发布文章。",
+        "steps": [
+          "定义 feed 生成器（复用 content 的已发布查询与 presentation 的路径解析）",
+          "发布成功后随 sitemap 一起刷新",
+          "多语言站点按语言生成各自的 feed",
+          "在页面 head 里加 alternate link 指向 feed"
+        ],
+        "effortDays": 1.5,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "feed 通过 W3C feed 校验",
+        "只包含有真实线上路径的文章"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P5",
+      "tags": [
+        "seo",
+        "feed",
+        "content"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "SEO-013",
+      "title": "没有自定义 404 页",
+      "severity": "medium",
+      "type": "missing-feature",
+      "confidence": "confirmed",
+      "problem": "/site 用 http.FileServer 直出，404 是 Go 默认的纯文本页面。系统页面槽位里也没有 notFound 槽（pages 表的 kind 白名单里有 notFound，但没有槽位绑定与静态服务的接线）。",
+      "evidence": [
+        {
+          "file": "internal/routers/routes.go",
+          "lines": "522-527",
+          "snippet": "/site 用 StaticFS，无自定义 404 处理",
+          "note": ""
+        }
+      ],
+      "impact": "访客碰到死链看到的是裸的 404 not found 文本，没有导航也没有搜索入口，直接流失。对 SEO 也不友好（软 404 与硬 404 的处理）。",
+      "rootCause": "静态服务用了最简实现。",
+      "remediation": {
+        "approach": "增加 notFound 系统页面槽位，构建时把该页面产物写到激活目录的固定位置；静态服务包一层：文件不存在时返回该产物并保持 404 状态码。",
+        "steps": [
+          "page_site_slots 白名单增加 notFound（同时改 DDL CHECK 与 Go enums 与 builder 那三份真源）",
+          "发布时把 notFound 页面产物额外写到 active/404.html",
+          "静态服务改为自定义 handler：文件不存在时读 404.html 并以 404 状态返回",
+          "槽位未绑定时保持现状（不强制）",
+          "多语言：按语言前缀选对应的 404 页"
+        ],
+        "effortDays": 2,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": true
+      },
+      "verification": [
+        "访问不存在的路径返回自定义页面且状态码是 404",
+        "未配置槽位时行为不变"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P5",
+      "tags": [
+        "seo",
+        "404",
+        "site-slot"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "SEO-014",
+      "title": "没有可见的面包屑组件（只有 JSON-LD 面包屑）",
+      "severity": "low",
+      "type": "missing-feature",
+      "confidence": "confirmed",
+      "problem": "结构化数据里有 BreadcrumbList，但页面上没有可见的面包屑导航组件。block 的 kind 里有 breadcrumb 分类，但没有对应组件。",
+      "evidence": [
+        {
+          "file": "internal/builder/components",
+          "lines": "0",
+          "snippet": "41 个组件里无 breadcrumb",
+          "note": ""
+        }
+      ],
+      "impact": "用户导航体验缺一环，且可见面包屑与结构化数据一致时对 SEO 更有利。",
+      "rootCause": "未实现。",
+      "remediation": {
+        "approach": "新增 core.breadcrumb 组件，数据来源与 JSON-LD 面包屑同一份（按 URL 层级或按实体的分类层级）。",
+        "steps": [
+          "把 breadcrumbList 的层级推导抽成共享函数",
+          "新增组件消费同一份数据",
+          "商品页可选按主分类层级而非 URL 层级",
+          "多端与无障碍按硬规则做（nav + aria-label + 当前项 aria-current）"
+        ],
+        "effortDays": 1.5,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "可见面包屑与 JSON-LD 内容一致",
+        "无障碍检查通过"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P5",
+      "tags": [
+        "seo",
+        "components",
+        "navigation"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "SEO-015",
+      "title": "没有内链建议引擎（评分只数内链数量）",
+      "severity": "medium",
+      "type": "missing-feature",
+      "confidence": "confirmed",
+      "problem": "评分器统计内链数量并按篇幅给出建议区间，但不告诉作者「应该链到哪篇文章」。Yoast 式的内链推荐没有。",
+      "evidence": [
+        {
+          "file": "internal/seo/scoring/checks_impl.go",
+          "lines": "0",
+          "snippet": "内链检查只计数",
+          "note": ""
+        }
+      ],
+      "impact": "内链是站内 SEO 里性价比最高的手段之一，但作者不知道往哪链。这个能力也是 SEO 工具的核心卖点之一。",
+      "rootCause": "需要内容相似度计算与索引，成本高于其它评分项。",
+      "remediation": {
+        "approach": "低成本版本：按关键词与分类/标签重叠度推荐候选文章（不做语义相似度）。数据都在库里，一次查询即可。",
+        "steps": [
+          "编辑期按当前文章的 focusKeyword 与分类/标签查同工程已发布内容",
+          "排除已链接过的与自身",
+          "评分侧栏增加内链建议区，点击插入链接",
+          "只推荐有真实线上路径的内容（不产生死链）"
+        ],
+        "effortDays": 2,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "建议的都是已发布且有路径的内容",
+        "点击可插入到正文"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P5",
+      "tags": [
+        "seo",
+        "content",
+        "editor"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "SEO-016",
+      "title": "商品 / 分类 / 品牌没有 SEO 评分入口，评分器的 ProductProfile 写好了但没接线",
+      "severity": "medium",
+      "type": "missing-feature",
+      "confidence": "confirmed",
+      "problem": "评分引擎已经定义了 ProductProfile / LandingProfile / GuideProfile 三套页型权重，但生产入口都不传 Profile，只有单测在用。商品、分类、品牌页面完全没有评分入口，也没有 focusKeyword 字段。",
+      "evidence": [
+        {
+          "file": "internal/seo/scoring/scoring.go",
+          "lines": "153-179",
+          "snippet": "Profile 页型调权已定义",
+          "note": "生产未传入"
+        },
+        {
+          "file": "public/test/seo/unit/scoring_test.go",
+          "lines": "175",
+          "snippet": "只有单测使用 Profile",
+          "note": ""
+        }
+      ],
+      "impact": "电商站最需要优化的商品页没有 SEO 反馈。评分器有一半能力闲置。",
+      "rootCause": "评分入口按内容类型逐个接，商品那条没接。",
+      "remediation": {
+        "approach": "新增 ScoreProduct 提取器（商品字段到 scoring.Input），商品编辑页加评分侧栏，传 ProductProfile；分类与品牌同理（用 LandingProfile）。商品增加 focusKeyword 字段。",
+        "steps": [
+          "商品表增加 focus_keyword 列（只喂评分器，不进产物，与文章同一口径）",
+          "写 ScoreProduct 提取器（名称/副标题/描述/图片 alt/SEO 字段/变体数）",
+          "商品编辑页增加评分侧栏（复用文章侧栏的 HTMX 模式）",
+          "分类与品牌页面同样接入",
+          "生产调用传入对应 Profile"
+        ],
+        "effortDays": 2.5,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": true
+      },
+      "verification": [
+        "商品编辑页显示 SEO 评分与建议",
+        "页型权重生效（商品页的内容长度要求低于指南页）"
+      ],
+      "dependsOn": [
+        "SEO-001"
+      ],
+      "blocks": [],
+      "phase": "P5",
+      "tags": [
+        "seo",
+        "product",
+        "scoring"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "SEO-017",
+      "title": "标题长度按字符数判定，未按像素宽度",
+      "severity": "low",
+      "type": "design-flaw",
+      "confidence": "confirmed",
+      "problem": "标题检查按 50 到 60 字符判定。中文 50 到 60 字在 SERP 上会被截断（中文字符宽度约为英文两倍）。文档 SEO-7 计划改像素宽度但未做。",
+      "evidence": [
+        {
+          "file": "internal/seo/scoring/benchmarks.go",
+          "lines": "0",
+          "snippet": "标题长度基准按字符数",
+          "note": ""
+        }
+      ],
+      "impact": "按评分器建议写的中文标题在搜索结果里会被截断，评分器的建议反而有害。",
+      "rootCause": "长度判定没有区分字符宽度。",
+      "remediation": {
+        "approach": "改为按估算像素宽度判定（中文与全角按 2 单位、英文与数字按 1 单位，上限约 580px 对应的单位数），不需要真实字体测量。",
+        "steps": [
+          "实现宽度估算函数（按 Unicode 区间判宽）",
+          "标题与描述的长度检查改用宽度",
+          "SERP 预览组件也按同一估算截断显示",
+          "更新 rubric 文档说明判据变更"
+        ],
+        "effortDays": 1,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "中文标题的建议长度合理",
+        "SERP 预览的截断位置与判定一致"
+      ],
+      "dependsOn": [
+        "SEO-001"
+      ],
+      "blocks": [],
+      "phase": "P5",
+      "tags": [
+        "seo",
+        "scoring",
+        "chinese"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：chkTitleLength 按 CJK 双宽展示单位 40–60 满分（scoring_test）。"
+    },
+    {
+      "id": "SEO-018",
+      "title": "没有全站 title 唯一性检查",
+      "severity": "medium",
+      "type": "missing-feature",
+      "confidence": "confirmed",
+      "problem": "评分是单页的，不知道其它页面用了什么 title。重复 title 是常见且影响明显的 SEO 问题，检测不到。",
+      "evidence": [
+        {
+          "file": "internal/seo/scoring/checks.go",
+          "lines": "28-93",
+          "snippet": "24 项检查里无 title_unique",
+          "note": "文档规划了但未实现"
+        }
+      ],
+      "impact": "批量生成的页面（商品详情页尤其）容易 title 重复，搜索引擎会合并或忽略部分页面。",
+      "rootCause": "单页评分模型不含跨页信息。",
+      "remediation": {
+        "approach": "作为发布后体检的一项（SEO-019）而不是编辑期评分项：扫已发布产物的 title 找重复。编辑期可以做一个轻量版（查同工程已发布页面的 title 是否已存在）。",
+        "steps": [
+          "发布后体检增加 title 与 description 重复检测",
+          "编辑期评分增加轻量检查（一次索引查询）",
+          "重复时给出冲突页面清单"
+        ],
+        "effortDays": 1,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "重复 title 被检出并列出冲突页面"
+      ],
+      "dependsOn": [
+        "SEO-019"
+      ],
+      "blocks": [],
+      "phase": "P5",
+      "tags": [
+        "seo",
+        "audit"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "SEO-019",
+      "title": "没有发布后的产物 SEO 体检，监控层完全空白",
+      "severity": "high",
+      "type": "missing-feature",
+      "confidence": "confirmed",
+      "problem": "发布之后没有任何机制检查产物的 SEO 质量。/api/page/publication/audit 只检查激活 symlink 是否可达，不检查 HTML 内容。没有重复 title 检测、没有缺 description 检测、没有产物内死链检测。",
+      "evidence": [
+        {
+          "file": "internal/pipeline/publication.go",
+          "lines": "239-286",
+          "snippet": "AuditActiveLinks 只遍历 symlink 可达性",
+          "note": "名字容易被误解为 SEO 审计"
+        }
+      ],
+      "impact": "站点 SEO 质量随时间劣化而无人知晓：改 URL 留下的内部死链、批量生成页面的重复 title、缺 meta 的页面，全都要等搜索排名掉了才发现。",
+      "rootCause": "SEO 工作被定位在编辑期，发布后没有闭环。",
+      "remediation": {
+        "approach": "新增产物体检任务：遍历激活产物解析 HTML，检查 title/description 存在性与重复、canonical 正确性、图片 alt 覆盖、内链目标是否在激活路由里存在、hreflang 互指完整性。结果落库，后台展示。",
+        "steps": [
+          "定义体检项与结果表（page_seo_audits：路径 + 项 + 级别 + 说明 + 检查时间）",
+          "实现遍历激活目录 + HTML 解析（用标准库 html tokenizer，避免引入重型依赖）",
+          "内链检查对照 page_routes 判断目标是否存在（这一步能抓出改 URL 留下的死链）",
+          "提供手动触发接口与可选定时任务",
+          "后台页展示按级别分组的问题清单，可直接跳到对应页面编辑",
+          "权限点与菜单同批 seed"
+        ],
+        "effortDays": 3,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": true
+      },
+      "verification": [
+        "故意造一个内链死链能被检出",
+        "重复 title 能被检出",
+        "体检不影响访问面性能（只读产物文件）"
+      ],
+      "dependsOn": [],
+      "blocks": [
+        "SEO-018"
+      ],
+      "phase": "P5",
+      "tags": [
+        "seo",
+        "audit",
+        "monitoring",
+        "high-value"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "SEO-020",
+      "title": "docs/12-seo-console.md 描述的 SEO 控制台零落地",
+      "severity": "medium",
+      "type": "missing-feature",
+      "confidence": "confirmed",
+      "problem": "文档规划了 internal/module/seo 模块、/admin/seo 七个子页、10 多张表、四个权限点、GSC 与 GA4 逐日指标看板、PSI 体检、CLI 报告消费、upload Bearer 协议。代码里这些一个都没有（模块目录不存在，无相关路由与迁移）。",
+      "evidence": [
+        {
+          "file": "docs/12-seo-console.md",
+          "lines": "3-4",
+          "snippet": "文档开篇写明「本文只做分析与分解，不实现」",
+          "note": "文档自己声明了，但整篇内容会让人以为快要有了"
+        },
+        {
+          "file": "internal/module",
+          "lines": "0",
+          "snippet": "无 seo 模块目录",
+          "note": ""
+        }
+      ],
+      "impact": "SEO 监控这一整块能力不存在。对一个以 SEO 为卖点的建站系统，这是竞争力缺口。同时文档与实现的巨大落差会误导贡献者。",
+      "rootCause": "控制台需要外部数据源集成（GSC / PSI），依赖与成本都比站内能力高，一直没排上。",
+      "remediation": {
+        "approach": "不按文档全量实现（6 人日规划偏乐观且依赖外部 API 配额）。分两步：第一步做站内能力（SEO-019 的产物体检 + analytics 已有的流量数据组成一个最小控制台）；第二步再评估 GSC 集成。",
+        "steps": [
+          "第一步：/admin/seo 页面聚合 SEO-019 的体检结果 + analytics 的热门路径与来源域 + sitemap 状态",
+          "第二步（可选）：GSC OAuth 接入与逐日指标拉取（需要考虑配额与凭据管理）",
+          "PSI 体检可作为发布后的可选任务（有 API 配额限制，按需触发而非全站定时）",
+          "更新 docs/12 的状态标注与范围收窄说明"
+        ],
+        "effortDays": 3,
+        "risk": "medium",
+        "breaking": false,
+        "migrationNeeded": true
+      },
+      "verification": [
+        "最小控制台能回答「站点当前有哪些 SEO 问题、哪些页面流量最高」"
+      ],
+      "dependsOn": [
+        "SEO-019",
+        "SEO-009"
+      ],
+      "blocks": [],
+      "phase": "P5",
+      "tags": [
+        "seo",
+        "monitoring",
+        "documentation"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "SEO-021",
+      "title": "GA4 只注入 gtag，没有数据回流",
+      "severity": "medium",
+      "type": "missing-feature",
+      "confidence": "confirmed",
+      "problem": "构建期注入 GA4 测量 ID 与 gtag 脚本，数据进 Google，但 go_wp 后台看不到任何 GA4 数据。自有的 analytics 模块与 GA4 是两套独立数据。",
+      "evidence": [
+        {
+          "file": "internal/builder/ga4.go",
+          "lines": "50-73",
+          "snippet": "只注入 gtag",
+          "note": "无 Data API 集成"
+        }
+      ],
+      "impact": "运营要在两个地方看数据。也无法在后台做「哪个页面 SEO 差但流量高」这类结合分析。",
+      "rootCause": "只做了埋点注入这一半。",
+      "remediation": {
+        "approach": "优先级低于站内能力。若要做，走 GA4 Data API 拉取关键指标存本地（需要 service account 凭据管理）。建议先用自有 analytics 的数据满足基础需求。",
+        "steps": [
+          "先确认自有 analytics 能覆盖哪些需求（PV / UV / 热门路径 / 来源域已有）",
+          "缺口明确后再评估 GA4 Data API 接入",
+          "凭据走环境变量或密钥管理，不落库明文"
+        ],
+        "effortDays": 2,
+        "risk": "medium",
+        "breaking": false,
+        "migrationNeeded": true
+      },
+      "verification": [
+        "若实施：后台能看到 GA4 关键指标"
+      ],
+      "dependsOn": [
+        "SEO-020"
+      ],
+      "blocks": [],
+      "phase": "P7",
+      "tags": [
+        "seo",
+        "analytics",
+        "ga4"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "SEO-022",
+      "title": "没有 IndexNow / sitemap ping，新内容依赖搜索引擎自然发现",
+      "severity": "low",
+      "type": "missing-feature",
+      "confidence": "confirmed",
+      "problem": "发布新页面后不主动通知搜索引擎（IndexNow 协议或 sitemap ping）。",
+      "evidence": [
+        {
+          "file": "internal/module/page/service/page_publish.go",
+          "lines": "230-235",
+          "snippet": "发布后只刷新 sitemap 文件，不 ping",
+          "note": ""
+        }
+      ],
+      "impact": "新内容的收录延迟。IndexNow 实现成本很低（一个 HTTP 请求）。",
+      "rootCause": "未实现。",
+      "remediation": {
+        "approach": "发布成功后异步 ping IndexNow（Bing / Yandex 等支持）。必须异步且失败不影响发布。",
+        "steps": [
+          "站点设置增加 IndexNow key 配置",
+          "发布成功后投递一个异步任务做 ping（用 pkg/queue）",
+          "失败只记日志",
+          "配置为空时不做任何事"
+        ],
+        "effortDays": 0.5,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": true
+      },
+      "verification": [
+        "配置后发布触发 ping",
+        "ping 失败不影响发布结果"
+      ],
+      "dependsOn": [
+        "PERF-001"
+      ],
+      "blocks": [],
+      "phase": "P5",
+      "tags": [
+        "seo",
+        "indexnow"
+      ],
+      "status": "resolved",
+      "resolutionNote": "2026-09-13：page/presentation 发布 notifyIndexNow；settings.indexNowKey 配置。"
+    },
+    {
+      "id": "SEO-023",
+      "title": "评分规则权重硬编码，无法按站点类型配置",
+      "severity": "low",
+      "type": "missing-feature",
+      "confidence": "confirmed",
+      "problem": "8 维权重写在 defaultWeights() 里，基准值写在 benchmarks.go 常量表里。Profile 机制能覆盖权重但没有 UI 传入。改规则要改 Go 代码重新编译。",
+      "evidence": [
+        {
+          "file": "internal/seo/scoring/scoring.go",
+          "lines": "145-150",
+          "snippet": "defaultWeights 硬编码 8 维权重",
+          "note": ""
+        }
+      ],
+      "impact": "不同类型站点（电商 / 博客 / 企业官网）的 SEO 侧重不同，统一权重的指导价值有限。",
+      "rootCause": "首版按单一 rubric 实现。",
+      "remediation": {
+        "approach": "先把 Profile 接线（SEO-016 已包含），按页型自动选权重。站点级自定义权重优先级更低，可后续再做。",
+        "steps": [
+          "SEO-016 接线 Profile",
+          "文档说明各 Profile 的权重差异",
+          "站点级自定义权重记入 backlog"
+        ],
+        "effortDays": 0.25,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "不同页型的评分权重不同且符合文档"
+      ],
+      "dependsOn": [
+        "SEO-016"
+      ],
+      "blocks": [],
+      "phase": "P5",
+      "tags": [
+        "seo",
+        "scoring",
+        "configuration"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "SEO-024",
+      "title": "没有死链检测（评分与体检都不检查链接有效性）",
+      "severity": "medium",
+      "type": "missing-feature",
+      "confidence": "confirmed",
+      "problem": "评分器统计内外链数量但不验证链接是否有效。改 URL、删页面、下线商品都可能留下站内死链。",
+      "evidence": [
+        {
+          "file": "internal/seo/scoring/checks_impl.go",
+          "lines": "0",
+          "snippet": "链接检查只计数不验证",
+          "note": ""
+        }
+      ],
+      "impact": "站内死链累积，用户体验与 SEO 双重损失。且这类问题很难人工发现。",
+      "rootCause": "未实现。",
+      "remediation": {
+        "approach": "站内链接对照 page_routes 与 presentation 实例路径做存在性检查（纯 DB 查询，成本低），作为 SEO-019 体检的一项。外链检查需要发 HTTP 请求，成本与风险都高，暂不做或作为可选的低频任务。",
+        "steps": [
+          "体检时提取产物 HTML 里的站内链接",
+          "对照激活路由判断存在性",
+          "输出死链清单（含所在页面与链接文本，便于定位）",
+          "外链检查记入 backlog"
+        ],
+        "effortDays": 1,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "改一个页面 URL 后旧链接被检出为死链"
+      ],
+      "dependsOn": [
+        "SEO-019"
+      ],
+      "blocks": [],
+      "phase": "P5",
+      "tags": [
+        "seo",
+        "dead-link",
+        "audit"
+      ],
+      "status": "open"
+    },
+    {
+      "id": "SEO-025",
+      "title": "重定向没有管理界面，改 URL 留下的 301 无法查看与清理",
+      "severity": "low",
+      "type": "missing-feature",
+      "confidence": "confirmed",
+      "problem": "改 URL 时可选保留旧路径 301，写进产物的 redirect.json 并由 SiteRedirectMiddleware 生效。但没有地方查看当前有哪些重定向、也无法手动增删。",
+      "evidence": [
+        {
+          "file": "internal/middleware/builtin/site_redirect.go",
+          "lines": "30-70",
+          "snippet": "读产物目录里的 redirect.json 生效",
+          "note": "无管理界面"
+        }
+      ],
+      "impact": "重定向链越积越长（A 到 B 到 C），无人清理。运营也无法手动加重定向（比如从营销活动短链跳转）。",
+      "rootCause": "重定向是改 URL 的副产品，没有当作独立能力建模。",
+      "remediation": {
+        "approach": "增加重定向管理页：列出当前所有重定向（从 page_routes 的 301 类型路由读）、支持手动增删、检测重定向链并提示合并。",
+        "steps": [
+          "后台页列出 301 路由",
+          "支持手动新增（校验目标路径存在、校验不成环）",
+          "检测多跳链并提供一键合并",
+          "权限点与菜单同批 seed"
+        ],
+        "effortDays": 1.5,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": true
+      },
+      "verification": [
+        "能看到并管理全部重定向",
+        "成环的重定向被拒绝"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P5",
+      "tags": [
+        "seo",
+        "redirect",
+        "admin-ui"
+      ],
+      "status": "open"
+    }
+  ]
+}
