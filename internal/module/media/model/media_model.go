@@ -6,8 +6,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
-	"strings"
 	"time"
+
+	"go_wp/pkg/database"
 
 	"gorm.io/gorm"
 )
@@ -175,8 +176,7 @@ func (m *AttachmentModel) List(ctx context.Context, fileType string, categoryID 
 	}
 	if search != "" {
 		// LIKE 通配符转义：_ / % 按字面匹配（ESCAPE '\'）。
-		escaped := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(search)
-		q = q.Where("file_name LIKE ? ESCAPE '\\'", "%"+escaped+"%")
+		q = q.Where("file_name LIKE ? ESCAPE '\\'", "%"+database.EscapeLikePattern(search)+"%")
 	}
 
 	var total int64

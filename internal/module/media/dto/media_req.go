@@ -29,12 +29,14 @@ func (r *ListReq) GetOffset() int {
 
 // DetailReq 附件详情。
 type DetailReq struct {
-	ID uint64 `form:"id" json:"id" binding:"required"`
+	ProjectID string `form:"projectId" json:"projectId" binding:"required"`
+	ID        uint64 `form:"id" json:"id" binding:"required"`
 }
 
 // DeleteReq 删除附件。
 type DeleteReq struct {
-	ID uint64 `json:"id" binding:"required"`
+	ProjectID string `form:"projectId" json:"projectId" binding:"required"`
+	ID        uint64 `json:"id" binding:"required"`
 }
 
 // VariantsGenerateReq 重新生成图片变体（POST /api/media/variants/generate）。

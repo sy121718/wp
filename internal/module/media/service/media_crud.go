@@ -184,7 +184,13 @@ func (s *Service) List(ctx context.Context, req *mediato.ListReq) (*mediato.List
 }
 
 // Detail 查询单个附件详情。
+//
+// sys_attachment 无 project_id 列（媒体库站点级共享），此处强制带 projectId 是为
+// 与多工程后台 API 口径一致；附件本身不按工程隔离。
 func (s *Service) Detail(ctx context.Context, req *mediato.DetailReq) (*mediato.AttachmentResp, error) {
+	if req == nil || req.ID == 0 || strings.TrimSpace(req.ProjectID) == "" {
+		return nil, errors.New(mediaenums.MsgBadRequest)
+	}
 	e, err := s.am.GetByID(ctx, req.ID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -205,6 +211,9 @@ func (s *Service) Detail(ctx context.Context, req *mediato.DetailReq) (*mediato.
 // 命中即拒绝并给出「被 N 个页面引用」提示——避免删掉线上页面正在用的图。
 // 引用缓存为空（未被任何构建产物引用）时才允许软删。
 func (s *Service) Delete(ctx context.Context, req *mediato.DeleteReq) error {
+	if req == nil || req.ID == 0 || strings.TrimSpace(req.ProjectID) == "" {
+		return errors.New(mediaenums.MsgBadRequest)
+	}
 	_, err := s.am.GetByID(ctx, req.ID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
