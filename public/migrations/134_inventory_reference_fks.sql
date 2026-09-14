@@ -1,5 +1,10 @@
 -- 134 · 库存与采购引用完整性。
 -- 服务层之外的写入也必须无法产生悬空 product_id / variant_id。
+--
+-- 有意排除 order_items：订单项是下单时刻的快照（商品名 / SKU / 价格等），
+-- 历史订单必须能在商品或变体删除后仍可查。若在此加指向 products / product_variants
+-- 的外键，删除商品会被 RESTRICT 拦住，或 CASCADE 破坏历史订单 —— 两种都不接受。
+-- 订单快照原则见 AGENTS.md「order 模块」与迁移 135 order_items 注释。
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_inventory_stocks_product') THEN
