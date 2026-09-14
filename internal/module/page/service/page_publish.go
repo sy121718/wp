@@ -233,6 +233,7 @@ func (s *Service) Publish(ctx context.Context, req *pagedto.PublishReq) (res *pa
 		s.enabledLangsOf(ctx, page.ProjectID), s.defaultLocaleOf(ctx, page.ProjectID)); err != nil {
 		logger.Scene("publication").With("pageId", page.ID).Error(err, "sitemap/robots 刷新失败")
 	}
+	s.notifyIndexNow(ctx, page.ProjectID, path)
 	return &pagedto.PublishResp{
 		PageID: page.ID, Status: pipeline.StatePublished, ActiveHash: hash,
 		DraftPath: page.DraftPath, PublishedAt: now.Format(time.RFC3339),

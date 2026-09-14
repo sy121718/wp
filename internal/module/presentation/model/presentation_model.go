@@ -72,24 +72,26 @@ func (SnapshotEntity) TableName() string { return tableNameDocumentSnapshots }
 
 // ArtifactEntity presentation_artifacts 表实体（自动发布实例的产物元数据）。
 type ArtifactEntity struct {
-	ID                     string          `gorm:"column:id;type:uuid;primaryKey"`
-	PresentationInstanceID string          `gorm:"column:presentation_instance_id;type:uuid;not null"`
-	SnapshotID             string          `gorm:"column:snapshot_id;type:uuid;not null"`
-	Version                int64           `gorm:"column:version;not null"`
-	SourceHash             string          `gorm:"column:source_hash;not null"`
-	BuildInputManifest     json.RawMessage `gorm:"column:build_input_manifest;type:jsonb;not null"`
-	BuildInputHash         string          `gorm:"column:build_input_hash;not null"`
-	ArtifactProvider       string          `gorm:"column:artifact_provider;not null"`
-	ArtifactKey            string          `gorm:"column:artifact_key;not null"`
-	ArtifactHash           string          `gorm:"column:artifact_hash;not null"`
-	CompilerVersion        string          `gorm:"column:compiler_version;not null"`
-	RegistryVersion        string          `gorm:"column:registry_version;not null"`
-	Manifest               json.RawMessage `gorm:"column:manifest;type:jsonb;not null"`
-	PayloadState           string          `gorm:"column:payload_state;not null"`
-	PayloadDeletedAt       *time.Time      `gorm:"column:payload_deleted_at"`
-	Note                   string          `gorm:"column:note;not null"`
-	CreatedBy              string          `gorm:"column:created_by;type:uuid;not null"`
-	CreatedAt              time.Time       `gorm:"column:created_at;not null"`
+	ID                     string `gorm:"column:id;type:uuid;primaryKey"`
+	PresentationInstanceID string `gorm:"column:presentation_instance_id;type:uuid;not null;uniqueIndex:uk_presentation_artifacts_instance_version_lang,priority:1"`
+	SnapshotID             string `gorm:"column:snapshot_id;type:uuid;not null"`
+	Version                int64  `gorm:"column:version;not null;uniqueIndex:uk_presentation_artifacts_instance_version_lang,priority:2"`
+	// Lang 构建语言（I18N-013）：同版本多语言各占一行。
+	Lang               string          `gorm:"column:lang;type:text;not null;uniqueIndex:uk_presentation_artifacts_instance_version_lang,priority:3"`
+	SourceHash         string          `gorm:"column:source_hash;not null"`
+	BuildInputManifest json.RawMessage `gorm:"column:build_input_manifest;type:jsonb;not null"`
+	BuildInputHash     string          `gorm:"column:build_input_hash;not null"`
+	ArtifactProvider   string          `gorm:"column:artifact_provider;not null"`
+	ArtifactKey        string          `gorm:"column:artifact_key;not null"`
+	ArtifactHash       string          `gorm:"column:artifact_hash;not null"`
+	CompilerVersion    string          `gorm:"column:compiler_version;not null"`
+	RegistryVersion    string          `gorm:"column:registry_version;not null"`
+	Manifest           json.RawMessage `gorm:"column:manifest;type:jsonb;not null"`
+	PayloadState       string          `gorm:"column:payload_state;not null"`
+	PayloadDeletedAt   *time.Time      `gorm:"column:payload_deleted_at"`
+	Note               string          `gorm:"column:note;not null"`
+	CreatedBy          string          `gorm:"column:created_by;type:uuid;not null"`
+	CreatedAt          time.Time       `gorm:"column:created_at;not null"`
 }
 
 // TableName 表名。

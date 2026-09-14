@@ -12,6 +12,7 @@ import (
 
 	"go_wp/internal/builder"
 	pagedto "go_wp/internal/module/page/dto"
+	pageenums "go_wp/internal/module/page/enums"
 	pagemodel "go_wp/internal/module/page/model"
 	pubcontract "go_wp/internal/module/publication/contract"
 	pubenums "go_wp/internal/module/publication/enums"
@@ -110,12 +111,15 @@ func (s *Service) reservePath(ctx context.Context, projectID, path, pageID strin
 }
 
 // Detail 查询当前 Page Draft。
-// nil/空 ID 属于请求不合法（ErrInvalidParam）；合法 ID 无页面才返回 ErrPageNotFound。
+// nil/空 ID 或空 projectID 属于请求不合法（ErrInvalidParam）；合法 ID 无页面才返回 ErrPageNotFound。
 func (s *Service) Detail(ctx context.Context, req *pagedto.DetailReq) (res *pagedto.PageResp, err error) {
-	if req == nil || strings.TrimSpace(req.ID) == "" {
+	if req == nil || strings.TrimSpace(req.ID) == "" || strings.TrimSpace(req.ProjectID) == "" {
 		return nil, ErrInvalidParam
 	}
-	page, err := s.model.GetByID(ctx, req.ID)
+	if err = s.requireProject(ctx, req.ProjectID); err != nil {
+		return nil, err
+	}
+	page, err := s.model.GetByID(ctx, req.ID, req.ProjectID)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, ErrPageNotFound
 	}
@@ -162,7 +166,7 @@ func (s *Service) SaveDraft(ctx context.Context, req *pagedto.SaveDraftReq) (res
 	if err != nil {
 		return nil, err
 	}
-	page, err := s.model.GetByID(ctx, req.ID)
+	page, err := s.model.GetByID(ctx, req.ID, "")
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, ErrPageNotFound
 	}
@@ -216,7 +220,7 @@ func (s *Service) ListRevisions(ctx context.Context, req *pagedto.RevisionReq) (
 	if req == nil || strings.TrimSpace(req.PageID) == "" {
 		return nil, ErrInvalidParam
 	}
-	if _, err = s.model.GetByID(ctx, req.PageID); errors.Is(err, gorm.ErrRecordNotFound) {
+	if _, err = s.model.GetByID(ctx, req.PageID, ""); errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, ErrPageNotFound
 	} else if err != nil {
 		return nil, err
@@ -252,20 +256,8 @@ func (s *Service) requireProject(ctx context.Context, projectID string) error {
 
 // validateKind 执行 pages 表同等领域约束，防止无效 Kind/ContentTarget 入库。
 func validateKind(kind, targetType string, targetID *string) error {
-	if targetID != nil && strings.TrimSpace(*targetID) == "" {
-		return ErrInvalidKind
-	}
-	noTarget := func() bool { return targetType == "none" && targetID == nil }
-	target := func(expected string) bool { return targetType == expected && targetID != nil }
-	switch kind {
-	case "home", "archive", "search", "notFound":
-		if noTarget() {
-			return nil
-		}
-	case "page", "article", "product", "category", "tag":
-		if target(kind) {
-			return nil
-		}
+	if pageenums.ValidatePageContentContract(kind, targetType, targetID) {
+		return nil
 	}
 	return ErrInvalidKind
 }

@@ -61,7 +61,7 @@ func (s *Service) RebuildStale(ctx context.Context, ids []string) error {
 	}
 	rebuilt, published := 0, 0
 	for _, id := range ids {
-		page, err := s.model.GetByID(ctx, id)
+		page, err := s.model.GetByID(ctx, id, "")
 		if err != nil {
 			logger.Scene("dependency").With("page_id", id).Warn("自动重建跳过：页面不存在或已删除")
 			continue
@@ -207,7 +207,7 @@ func (s *Service) pageDependencyKeys(ctx context.Context, page *pagemodel.PageEn
 // 集合源声明在插件组件规格里（spec.Collection.Source），文档节点只带组件类型，
 // 因此必须经插件装配素材反查；未启用插件时返回空（内置组件无集合绑定）。
 func (s *Service) collectionSourcesOf(ctx context.Context, roots []*core.Node) []string {
-	asm := s.enabledAssembly(ctx)
+	asm := pipeline.LoadPluginAssembly(ctx, s.plugins)
 	if asm == nil || len(asm.Specs) == 0 {
 		return nil
 	}

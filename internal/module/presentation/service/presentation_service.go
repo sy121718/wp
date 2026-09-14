@@ -26,17 +26,19 @@ import (
 
 	blockcontract "go_wp/internal/module/block/contract"
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
+	navigationcontract "go_wp/internal/module/navigation/contract"
+	pagecontract "go_wp/internal/module/page/contract"
 	presentationcontract "go_wp/internal/module/presentation/contract"
 	presentationdto "go_wp/internal/module/presentation/dto"
 	presentationenums "go_wp/internal/module/presentation/enums"
 	presentationmodel "go_wp/internal/module/presentation/model"
+	plugincontract "go_wp/internal/module/plugin/contract"
 	projectcontract "go_wp/internal/module/project/contract"
 	pubcontract "go_wp/internal/module/publication/contract"
 
 	"go_wp/internal/builder"
 	"go_wp/internal/builder/core"
 	"go_wp/internal/pipeline"
-	"go_wp/internal/templates"
 	"go_wp/pkg/i18n"
 
 	"github.com/google/uuid"
@@ -71,9 +73,19 @@ type Service struct {
 	// 未注入时集合绑定节点构建期显式报错（不静默产出空列表）。
 	collection core.CollectionResolver
 	// productDS 商品构建期数据源（issue #35）：模板里的商品组件直连受限接口。
-	productDS   productcontract.ProductDataSource
-	store       *pipeline.LocalStore
-	publication *pipeline.LocalPublicationStore
+	productDS productcontract.ProductDataSource
+	// navigation 公开站点菜单（EDT-003）：core.nav 构建期解析。
+	navigation navigationcontract.NavigationService
+	// sitePages 系统页面槽位（EDT-003）：购物车/登录等链接烘进详情页产物。
+	sitePages pagecontract.SitePageResolver
+	// mediaProbe 响应式图片变体探测（EDT-003）；nil 时不输出 srcset。
+	mediaProbe func(ctx context.Context, url string) []int
+	// plugins 启用插件装配（EDT-003）：CompositeSet + PluginResolver + ExtraCSS。
+	plugins plugincontract.PluginService
+	// contentStore 内容译文读取端口（P5b）：nil 时用 pkg/i18n 默认存储。
+	contentStore i18n.ContentStore
+	store        *pipeline.LocalStore
+	publication  *pipeline.LocalPublicationStore
 	// routes URL 占用登记契约（publication 模块）。
 	//
 	// 详情页实例的路径此前只切换访问面符号链接、从不登记 page_routes：页面侧
@@ -119,6 +131,19 @@ func NewService(m *presentationmodel.Model,
 // SetCollectionResolver 注入集合源解析器（装配期调用，与其它可选依赖同模式：
 // 不进构造参数）。传入 nil 表示模板不支持集合绑定。
 func (s *Service) SetCollectionResolver(r core.CollectionResolver) { s.collection = r }
+
+// SetContentTranslationStore 注入内容译文读取端口（测试用；生产走默认存储）。
+func (s *Service) SetContentTranslationStore(store i18n.ContentStore) {
+	s.contentStore = store
+}
+
+// newContentTranslator 构造本次编译的内容译文取词器（与 page 路径同源）。
+func (s *Service) newContentTranslator(ctx context.Context, lang string, hashes []string) *i18n.ContentTranslator {
+	if s != nil && s.contentStore != nil {
+		return i18n.NewContentTranslatorWith(ctx, s.contentStore, lang, hashes)
+	}
+	return i18n.NewContentTranslator(ctx, lang, hashes)
+}
 
 // 编译期契约断言。
 var _ presentationcontract.PresentationService = (*Service)(nil)
@@ -211,47 +236,26 @@ func (s *Service) CreateInstance(ctx context.Context, req *presentationdto.Creat
 	// 路径先归一化：产物 canonical、访问面符号链接与 page_routes 登记必须落在
 	// 同一个字符串上（FS 侧本来就归一化），否则 /shop/x/ 与 /shop/x 会被当成
 	// 两个路径，路由行指向的位置与实际内容不符。
-	urlPath, err := pipeline.NormalizeURL(strings.TrimSpace(req.URLPath))
+	logicalPath, err := s.normalizeLogicalPath(ctx, projectID, req.URLPath)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", presentationenums.ErrInvalidPath, err)
 	}
-	// 占用预检必须在任何写操作之前：FS 激活一旦先跑并覆盖了别人的线上产物，
-	// 就没有回滚入口（产物内容寻址，旧链接指向的是别人的产物）。
-	if err = s.ensurePathFree(ctx, projectID, urlPath, ""); err != nil {
+	// 占用预检：逻辑路径下全部语言访问路径 + 逻辑路径本身。
+	if err = s.ensureLogicalPathFree(ctx, projectID, logicalPath, ""); err != nil {
 		return nil, err
 	}
-	// 顺序：构建（产物落盘幂等，不触碰线上）→ 实例落库 → 快照/产物行/指针 → 激活。
-	// 落库失败时线上保持原样、可直接重试；反之「先激活后落库」会让线上渲染出
-	// 错误实体内容且没有任何恢复入口。
-	built, err := s.buildArtifact(ctx, req.EntityType, req.EntityID, urlPath, projectID, tpl)
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", presentationenums.ErrBuildFailed, err)
-	}
-	// 记实例（project_id / template_id 为 NOT NULL 外键，必须落库）。
+	// 记实例（url_path 存逻辑路径；各语言访问路径在 publication 表）。
 	now := time.Now().UTC()
 	inst := &presentationmodel.InstanceEntity{
 		ID: uuid.NewString(), ProjectID: projectID, EntityType: req.EntityType,
-		EntityID: req.EntityID, URLPath: urlPath, TemplateID: tpl.TemplateID,
+		EntityID: req.EntityID, URLPath: logicalPath, TemplateID: tpl.TemplateID,
 		Stale: true, CreatedAt: now, UpdatedAt: now,
 	}
 	if err = s.m.CreateInstance(ctx, inst); err != nil {
 		return nil, err
 	}
-	artifactID, err := s.persistBuild(ctx, inst, tpl, built, now, "")
-	if err != nil {
-		return nil, err
-	}
-	// 落库全部成功后才上线。激活失败时实例与指针已存在（线上仍是旧内容），
-	// 可经 Rebuild 自愈，不产生「线上有内容、DB 无记录」的分裂。
-	if err = s.activate(urlPath, built); err != nil {
+	if _, err = s.publishAllLangs(ctx, inst, tpl, logicalPath); err != nil {
 		return nil, fmt.Errorf("%s: %w", presentationenums.ErrBuildFailed, err)
-	}
-	// 路由登记放在激活之后（占用已预检，同归属者重复登记幂等）：登记失败只记
-	// 日志 —— 线上已激活是不可逆事实，把失败抛给调用方只会让它重发同一内容；
-	// 缺的登记由下一次重建补上（Rebuild 也会登记）。
-	if rerr := s.registerRoute(ctx, inst, urlPath, artifactID); rerr != nil {
-		logger.Scene("build").With("instanceId", inst.ID).With("url", urlPath).
-			Warn("详情页路由登记失败（线上已激活，下次重建自动补登）: " + rerr.Error())
 	}
 	return s.toResp(ctx, inst)
 }
@@ -305,9 +309,17 @@ func (s *Service) PreviewInstance(ctx context.Context, req *presentationdto.Prev
 	if err != nil {
 		return nil, err
 	}
+	if len(req.DraftDocument) > 0 {
+		if !json.Valid(req.DraftDocument) {
+			return nil, errors.New(presentationenums.ErrInvalidParam)
+		}
+		override := *tpl
+		override.Document = req.DraftDocument
+		tpl = &override
+	}
 	// urlPath 传空：预览不激活 URL，canonical 由模板 settings.seo 决定（通常为空）。
 	// 这是预览与发布在字节上的唯一有意差异（见 presentation_seo.go 取舍 2）。
-	html, err := s.renderHTML(ctx, req.EntityType, req.EntityID, "", projectID, tpl)
+	html, err := s.renderHTML(ctx, req.EntityType, req.EntityID, "", projectID, "", tpl)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", presentationenums.ErrBuildFailed, err)
 	}
@@ -369,22 +381,8 @@ func (s *Service) rebuildInstance(ctx context.Context, inst *presentationmodel.I
 	lock.Lock()
 	defer lock.Unlock()
 
-	built, err := s.buildArtifact(ctx, inst.EntityType, inst.EntityID, inst.URLPath, inst.ProjectID, tpl)
-	if err != nil {
+	if _, err = s.publishAllLangs(ctx, inst, tpl, inst.URLPath); err != nil {
 		return nil, fmt.Errorf("%s: %w", presentationenums.ErrBuildFailed, err)
-	}
-	artifactID, err := s.persistBuild(ctx, inst, tpl, built, time.Now().UTC(), "")
-	if err != nil {
-		return nil, err
-	}
-	if err = s.activate(inst.URLPath, built); err != nil {
-		return nil, fmt.Errorf("%s: %w", presentationenums.ErrBuildFailed, err)
-	}
-	// 重建时重新登记路由：本次之前创建的实例从未登记过，重建是它们自愈的
-	// 唯一时机（幂等，已登记的同归属者行原地升级不会报冲突）。
-	if rerr := s.registerRoute(ctx, inst, inst.URLPath, artifactID); rerr != nil {
-		logger.Scene("build").With("instanceId", inst.ID).With("url", inst.URLPath).
-			Warn("详情页路由登记失败（线上已激活）: " + rerr.Error())
 	}
 	return s.toResp(ctx, inst)
 }
@@ -436,7 +434,12 @@ func (s *Service) persistBuild(ctx context.Context, inst *presentationmodel.Inst
 			}
 			inst.URLPath = urlPath
 		}
-		aid, aerr := s.recordArtifactTx(ctx, tx, inst, snapID, built, now)
+		version, verr := s.m.NextArtifactVersionTx(tx, inst.ID)
+		if verr != nil {
+			return verr
+		}
+		defaultLang := pipeline.DefaultLocale(ctx, s.project, inst.ProjectID)
+		aid, aerr := s.recordArtifactTx(ctx, tx, inst, snapID, built, defaultLang, version, now)
 		if aerr != nil {
 			return aerr
 		}
@@ -458,7 +461,7 @@ func (s *Service) persistBuild(ctx context.Context, inst *presentationmodel.Inst
 
 // recordArtifactTx 事务内写产物行（同 hash 幂等复用，避免重建时产物行膨胀）。
 func (s *Service) recordArtifactTx(ctx context.Context, tx *gorm.DB, inst *presentationmodel.InstanceEntity,
-	snapID string, built builtArtifact, now time.Time) (artifactID string, err error) {
+	snapID string, built builtArtifact, lang string, version int64, now time.Time) (artifactID string, err error) {
 	if existing, gerr := s.m.GetArtifactByHashTx(tx, inst.ID, built.Hash); gerr == nil {
 		return existing.ID, nil
 	} else if !errors.Is(gerr, gorm.ErrRecordNotFound) {
@@ -468,13 +471,9 @@ func (s *Service) recordArtifactTx(ctx context.Context, tx *gorm.DB, inst *prese
 	if err != nil {
 		return "", err
 	}
-	version, err := s.m.NextArtifactVersionTx(tx, inst.ID)
-	if err != nil {
-		return "", err
-	}
 	e := &presentationmodel.ArtifactEntity{
 		ID: uuid.NewString(), PresentationInstanceID: inst.ID, SnapshotID: snapID,
-		Version: version, SourceHash: built.Manifest.SourceHash,
+		Version: version, Lang: strings.TrimSpace(lang), SourceHash: built.Manifest.SourceHash,
 		BuildInputManifest: manifestJSON, BuildInputHash: built.Manifest.BuildInputHash,
 		ArtifactProvider: "local", ArtifactKey: built.Loc.Key, ArtifactHash: built.Hash,
 		CompilerVersion: built.Manifest.CompilerVersion,
@@ -599,28 +598,46 @@ func (s *Service) Delete(ctx context.Context, req *presentationdto.DeleteReq) (e
 // 查询失败时退化为当前 url_path：清理不完整优于因查询失败而删不掉实例 ——
 // 前者是可发现、可重试的残留，后者是卡死的资源。
 func (s *Service) instanceActivePaths(ctx context.Context, inst *presentationmodel.InstanceEntity) []string {
-	paths := []string{inst.URLPath}
+	var paths []string
+	if pubs, perr := s.m.ListActivePathsForInstance(ctx, inst.ID); perr == nil && len(pubs) > 0 {
+		paths = append(paths, pubs...)
+	} else if inst.URLPath != "" {
+		paths = append(paths, inst.URLPath)
+	}
 	if s.routes == nil {
-		return paths
+		return dedupePaths(paths)
 	}
 	extra, err := s.routes.ListActivePathsByPresentation(ctx, &pubcontract.ListActivePathsByPresentationReq{
 		ProjectID: inst.ProjectID, PresentationID: inst.ID,
 	})
 	if err != nil {
 		logger.Scene("build").With("instanceId", inst.ID).
-			Warn("读取实例已激活路径失败，仅清理当前路径: " + err.Error())
-		return paths
+			Warn("读取实例已激活路径失败，仅清理已登记路径: " + err.Error())
+		return dedupePaths(paths)
 	}
-	return append(paths, extra...)
+	return dedupePaths(append(paths, extra...))
+}
+
+func dedupePaths(in []string) []string {
+	seen := map[string]bool{}
+	out := make([]string, 0, len(in))
+	for _, p := range in {
+		if p == "" || seen[p] {
+			continue
+		}
+		seen[p] = true
+		out = append(out, p)
+	}
+	return out
 }
 
 // buildArtifact 编译模板 AST（经 entity resolver）→ 产物落盘（**不激活**）。
 //
 // 激活由调用方在实例落库成功后单独执行（见 activate）：先激活后落库时，
 // 一旦落库失败，线上已渲染出新实体内容却没有任何恢复入口。
-func (s *Service) buildArtifact(ctx context.Context, entityType, entityID, urlPath, projectID string,
+func (s *Service) buildArtifact(ctx context.Context, entityType, entityID, urlPath, projectID, lang string,
 	tpl *contenttemplatecontract.ResolvedTemplate) (built builtArtifact, err error) {
-	html, err := s.renderHTML(ctx, entityType, entityID, urlPath, projectID, tpl)
+	html, err := s.renderHTML(ctx, entityType, entityID, urlPath, projectID, lang, tpl)
 	if err != nil {
 		return built, err
 	}
@@ -633,6 +650,7 @@ func (s *Service) buildArtifact(ctx context.Context, entityType, entityID, urlPa
 		CanonicalPath:             urlPath,
 		SourceHash:                sourceHash,
 		BuildInputHash:            sourceHash,
+		Lang:                      strings.TrimSpace(lang),
 		Dependencies:              presentationDependencies(entityType, entityID, tpl.TemplateID),
 	})
 	if err != nil {
@@ -652,7 +670,8 @@ func (s *Service) buildArtifact(ctx context.Context, entityType, entityID, urlPa
 //
 // urlPath 是该实例的线上路径（预览传空）：它是 SEO 头 canonical 的来源，
 // 见 presentation_seo.go —— 唯一注入点的第二半（渲染函数本身不认识 SEO）。
-func (s *Service) renderHTML(ctx context.Context, entityType, entityID, urlPath, projectID string,
+// lang 为空时取站点默认语言；非默认语言时接入模板内作者文案翻译（ContentTranslator）。
+func (s *Service) renderHTML(ctx context.Context, entityType, entityID, urlPath, projectID, lang string,
 	tpl *contenttemplatecontract.ResolvedTemplate) (html []byte, err error) {
 	page, err := builder.ParsePage(tpl.Document)
 	if err != nil {
@@ -666,10 +685,16 @@ func (s *Service) renderHTML(ctx context.Context, entityType, entityID, urlPath,
 	if err = builder.ValidateFieldRefs(page, entityType, s.registry); err != nil {
 		return nil, err
 	}
-	// 构建语言（工程默认语言）：实体字段的可翻译文本按它取译文（语境 实体.字段名）。
-	// 语言进构建上下文，解析器据此取译文——语言不进 AST，产物仍由「模板 + 数据」唯一确定。
-	lang := s.resolveLang(ctx, projectID)
+	// 构建语言：实体字段与模板内文案按它取译文（语境 实体.字段名 / 组件 Translatable）。
+	if strings.TrimSpace(lang) == "" {
+		lang = s.resolveLang(ctx, projectID)
+	}
 	buildCtx := core.WithBuildLang(ctx, lang)
+	logicalPath := pipeline.LogicalPathOf(ctx, s.project, projectID, urlPath)
+	highlightPath := pipeline.HighlightPath(ctx, s.project, projectID, lang, logicalPath)
+	if urlPath == "" {
+		highlightPath = ""
+	}
 	resolver, err := s.registry.ResolverFor(buildCtx, entityType, entityID)
 	if err != nil {
 		return nil, err
@@ -681,23 +706,38 @@ func (s *Service) renderHTML(ctx context.Context, entityType, entityID, urlPath,
 	if err = applyEntitySEO(page, entityType, urlPath, s.registry.FieldWhitelist(entityType), resolver); err != nil {
 		return nil, err
 	}
-	set, err := templates.NewEmbeddedComponentSet()
+	asm := pipeline.LoadPluginAssembly(ctx, s.plugins)
+	set, pluginOpts, err := pipeline.ComponentSetWithPlugins(asm)
 	if err != nil {
 		return nil, err
 	}
+	blockAdapter := newBlockResolverAdapter(s.blocks, buildCtx)
 	compileOpts := []builder.CompileOption{
 		builder.WithContext(buildCtx),
 		builder.WithComponentSet(set),
 		builder.WithContentResolver(resolver),
-		// 工程上下文：集合源（商品等分工程的数据）按它取数，不跨站点串数据。
-		builder.WithProjectID(projectID),
-		// 全局块内联展开（core.globalref）：内容模板可引用页眉/页脚/信任徽章等区块，
-		// 与手工 Page 路径同一机制；未注入 block 契约时引用即报错（不静默出占位）。
-		builder.WithBlockResolver(newBlockResolverAdapter(s.blocks, buildCtx)),
-		// 组件固定文案取词：构建开始时刻的词条快照（确定性构建不变量）。
-		builder.WithLanguage(lang), builder.WithTranslator(i18n.Snapshot(lang)),
+		builder.WithBlockResolver(blockAdapter),
+	}
+	compileOpts = append(compileOpts, pluginOpts...)
+	compileOpts = append(compileOpts, pipeline.LocaleCompileOptions(lang)...)
+	siteOpts, serr := pipeline.SiteCompileOptions(pipeline.SiteCompilePorts{
+		Project: s.project, Navigation: s.navigation, SitePages: s.sitePages, MediaProbe: s.mediaProbe,
+	}, pipeline.SiteCompileParams{
+		Ctx: ctx, ProjectID: projectID, Lang: lang,
+		LogicalPath: logicalPath, CurrentPath: highlightPath,
+	})
+	if serr != nil {
+		return nil, serr
+	}
+	compileOpts = append(compileOpts, siteOpts...)
+	if page.Settings.Theme != nil {
+		compileOpts = append(compileOpts, builder.WithThemeSettings(page.Settings.Theme))
 	}
 	compileOpts = append(compileOpts, pipeline.ClientAssetOptions()...)
+	var contentTranslator *i18n.ContentTranslator
+	var contentCandidates int
+	compileOpts, contentTranslator, contentCandidates = pipeline.AppendContentTranslation(
+		compileOpts, ctx, s.project, projectID, lang, page, blockAdapter.ResolveBlockRoot, s.newContentTranslator)
 	// 集合源注入（issue #9）：模板里的集合类组件按白名单展开商品等集合数据。
 	if s.collection != nil {
 		compileOpts = append(compileOpts, builder.WithCollectionResolver(s.collection))
@@ -706,14 +746,17 @@ func (s *Service) renderHTML(ctx context.Context, entityType, entityID, urlPath,
 	if s.productDS != nil {
 		compileOpts = append(compileOpts, builder.WithProductDataSource(s.productDS))
 	}
-	// 站点统计代码（BIZ-8）：GA4 测量 ID 来自 SiteSettings 快照（空值 = 零字节注入）。
-	// 与手工 Page 路径同一来源、同一判据（形状校验在 builder 侧单点）。
-	if ga4 := s.siteGA4MeasurementID(ctx, projectID); ga4 != "" {
-		compileOpts = append(compileOpts, builder.WithGA4MeasurementID(ga4))
-	}
+	compileOpts = append(compileOpts, pipeline.AnalyticsCompileOptions(ctx, s.project, projectID)...)
 	compiled, err := builder.Compile(page, compileOpts...)
 	if err != nil {
 		return nil, err
+	}
+	headerHTML, headerCSS := s.compileBlockFragment(buildCtx, page.Settings.Structure.HeaderBlockID, lang, contentTranslator)
+	footerHTML, footerCSS := s.compileBlockFragment(buildCtx, page.Settings.Structure.FooterBlockID, lang, contentTranslator)
+	compiled.HTML = headerHTML + compiled.HTML + footerHTML
+	compiled.CSS = headerCSS + compiled.CSS + footerCSS
+	if contentTranslator != nil {
+		pipeline.LogContentTranslationMisses(lang, contentCandidates, contentTranslator.Misses())
 	}
 	doc, err := builder.RenderDocument(compiled)
 	if err != nil {
@@ -749,11 +792,8 @@ func presentationDependencies(entityType, entityID, templateID string) []pipelin
 	return out
 }
 
-// resolveLang 本次构建的目标语言 = 工程默认语言（语言清单 is_default，
-// 缺失回退 i18n.default_lang）。
-//
-// 取不到时返回空串（不翻译，产物即原文）。多语言「每语言一份产物」的实例维度
-// 属商品多语言票（issue #12）范围：那时只需在此处改为按实例语言解析。
+// resolveLang 预览或未显式传 lang 时的回退：工程默认语言（语言清单 is_default）。
+// 正式发布经 publishAllLangs 逐语言传入 lang，不依赖本函数。
 func (s *Service) resolveLang(ctx context.Context, projectID string) string {
 	if s.project == nil || strings.TrimSpace(projectID) == "" {
 		return ""
@@ -836,3 +876,17 @@ func (s *Service) toResp(ctx context.Context, e *presentationmodel.InstanceEntit
 
 // SetProductDataSource 注入商品构建期数据源（issue #35，装配期调用）。
 func (s *Service) SetProductDataSource(ds productcontract.ProductDataSource) { s.productDS = ds }
+
+// SetNavigationService 注入公开站点导航（EDT-003，装配期调用）。
+func (s *Service) SetNavigationService(nav navigationcontract.NavigationService) { s.navigation = nav }
+
+// SetSitePageResolver 注入系统页面槽位解析（EDT-003，装配期调用）。
+func (s *Service) SetSitePageResolver(r pagecontract.SitePageResolver) { s.sitePages = r }
+
+// SetMediaProbe 注入响应式图片变体探测（EDT-003，装配期调用）。
+func (s *Service) SetMediaProbe(probe func(ctx context.Context, url string) []int) {
+	s.mediaProbe = probe
+}
+
+// SetPluginService 注入插件装配（EDT-003，装配期调用）。
+func (s *Service) SetPluginService(plugins plugincontract.PluginService) { s.plugins = plugins }

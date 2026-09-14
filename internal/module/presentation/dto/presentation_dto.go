@@ -54,6 +54,9 @@ type PreviewInstanceReq struct {
 	TemplateID string `json:"templateId" form:"templateId"`
 	// ProjectID 构建上下文所属工程（集合源按工程取数）；可空时经 project 契约解析。
 	ProjectID string `json:"projectId" form:"projectId"`
+	// DraftDocument 工作台未保存草稿（EDT-001）：非空且合法 JSON 时覆盖模板当前
+	// draft_document，使画布预览与即将保存的排版一致；不写库。
+	DraftDocument json.RawMessage `json:"draftDocument" form:"draftDocument"`
 }
 
 // PreviewInstanceResp 预览响应：渲染结果 + 实际使用的模板与版本。

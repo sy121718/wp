@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -24,7 +25,9 @@ const (
 type PageEntity struct {
 	ID                string          `gorm:"column:id;type:uuid;primaryKey"`
 	ProjectID         string          `gorm:"column:project_id;type:uuid;not null"`
-	ThemeID           *string         `gorm:"column:theme_id;type:uuid"`
+	// ThemeID 工程当前激活主题的快照；激活主题时 ReattachProjectPagesToTheme 会全工程转挂，
+	// 不支持页面级异主题 —— 勿当作「每页可选主题」维度。
+	ThemeID *string `gorm:"column:theme_id;type:uuid"`
 	Kind              string          `gorm:"column:kind;type:text;not null"`
 	ContentTargetType string          `gorm:"column:content_target_type;type:text;not null"`
 	ContentTargetID   *string         `gorm:"column:content_target_id;type:uuid"`
@@ -79,12 +82,12 @@ func (m *Model) Transaction(ctx context.Context, fn func(tx *gorm.DB) error) err
 	return m.db.WithContext(ctx).Transaction(fn)
 }
 
-// ListAll 列出未删除页面（排除大字段 draft_document，供列表页使用）。
-// themeID 为空时列全部；非空时列「挂在该主题下」与「尚未挂主题」的页面 ——
+// ListAll 列出工程内未删除页面（排除大字段 draft_document，供列表页使用）。
+// projectID 必填；themeID 为空时列该工程全部；非空时列「挂在该主题下」与「尚未挂主题」的页面 ——
 // 主题是页面的归属（020_themes.sql：主题下面才是页面），但没归属的历史页面
 // 不能因为按主题过滤而不可见（建站已自带默认主题，NULL 分支是它们的唯一可见路径）。
-func (m *Model) ListAll(ctx context.Context, themeID string) (list []PageEntity, err error) {
-	q := m.DB(ctx).Omit("draft_document").Where("deleted_at IS NULL")
+func (m *Model) ListAll(ctx context.Context, projectID, themeID string) (list []PageEntity, err error) {
+	q := m.DB(ctx).Omit("draft_document").Where("deleted_at IS NULL AND project_id = ?", projectID)
 	if themeID != "" {
 		// 未挂主题的页面一并列出：列表按「激活主题」浏览，但主题创建前建的页面
 		// （或绑定丢失的页面）不能因此从列表里消失 —— 那会变成「建了却找不到」。
@@ -147,12 +150,36 @@ func (m *Model) UpdateThemeSnapshot(ctx context.Context, pageID string, themeJSO
 	return err
 }
 
-// RefreshStructureForTheme 把主题的页眉/页脚块绑定批量合入挂在该主题下
-// 全部页面的 settings.structure（主题换绑全局块后调用，页面需重新构建生效）。
-func (m *Model) RefreshStructureForTheme(ctx context.Context, themeID string, structureJSON []byte) (err error) {
+// ThemePageStructureSnapshot 主题刷新 structure 时逐页合成所需的页面级绑定。
+type ThemePageStructureSnapshot struct {
+	ID        string
+	Structure json.RawMessage
+}
+
+// ListThemePageStructureSnapshots 取该主题下全部页面的 settings.structure。
+func (m *Model) ListThemePageStructureSnapshots(ctx context.Context, themeID string) (rows []ThemePageStructureSnapshot, err error) {
+	type row struct {
+		ID        string
+		Structure json.RawMessage `gorm:"column:page_structure"`
+	}
+	var raw []row
+	if err = m.DB(ctx).
+		Select("id", "draft_document #> '{settings,structure}' AS page_structure").
+		Where("theme_id = ? AND deleted_at IS NULL", themeID).
+		Find(&raw).Error; err != nil {
+		return nil, err
+	}
+	for _, r := range raw {
+		rows = append(rows, ThemePageStructureSnapshot{ID: r.ID, Structure: r.Structure})
+	}
+	return rows, nil
+}
+
+// UpdateStructureSnapshot 写单页 settings.structure（不动内容与版本）。
+func (m *Model) UpdateStructureSnapshot(ctx context.Context, pageID string, structureJSON []byte) (err error) {
 	err = m.DB(ctx).Exec(
-		"UPDATE pages SET draft_document = jsonb_set(draft_document, '{settings,structure}', ?, true), updated_at = ? WHERE theme_id = ? AND deleted_at IS NULL",
-		structureJSON, time.Now().UTC(), themeID,
+		"UPDATE pages SET draft_document = jsonb_set(draft_document, '{settings,structure}', ?, true), updated_at = ? WHERE id = ? AND deleted_at IS NULL",
+		structureJSON, time.Now().UTC(), pageID,
 	).Error
 	return err
 }
@@ -268,10 +295,14 @@ func (m *Model) ReattachProjectPagesToTheme(ctx context.Context, projectID, them
 	return err
 }
 
-// GetByID 按 ID 查询未删除的 Page。
-func (m *Model) GetByID(ctx context.Context, id string) (e *PageEntity, err error) {
+// GetByID 按 ID 查询未删除的 Page。projectID 非空时追加工程归属条件（防跨工程 IDOR）。
+func (m *Model) GetByID(ctx context.Context, id, projectID string) (e *PageEntity, err error) {
 	e = &PageEntity{}
-	if err = m.DB(ctx).Where("id = ? AND deleted_at IS NULL", id).First(e).Error; err != nil {
+	q := m.DB(ctx).Where("id = ? AND deleted_at IS NULL", id)
+	if strings.TrimSpace(projectID) != "" {
+		q = q.Where("project_id = ?", projectID)
+	}
+	if err = q.First(e).Error; err != nil {
 		return nil, err
 	}
 	return e, nil

@@ -8,7 +8,6 @@ package pageservice
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -16,10 +15,7 @@ import (
 	"go_wp/internal/builder"
 	"go_wp/internal/builder/core"
 	blockcontract "go_wp/internal/module/block/contract"
-	plugincontract "go_wp/internal/module/plugin/contract"
 	"go_wp/internal/pipeline"
-	"go_wp/internal/seo"
-	"go_wp/internal/templates"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
 )
@@ -83,18 +79,11 @@ func (s *Service) syncMediaRefs(ctx context.Context, pageID, pagePath string, ht
 // lang 为本次构建语言（空 = 站点默认语言）：驱动组件文案取词（构建期冻结快照）
 // 与导航项 URL 前缀，是「同一文档每个语言一份独立产物」的语言维度。
 func (s *Service) compileDocument(ctx context.Context, page *builder.Page, projectID, currentPath, lang string) ([]byte, error) {
-	// 组件模板 Set：无插件走 embed 单例；有插件走 CompositeSet
-	//（内置 embed + 插件命名空间合并，docs/06 §7）。
-	asm := s.enabledAssembly(ctx)
-	set, err := templates.NewEmbeddedComponentSet()
+	// 组件模板 Set + 插件装配（EDT-003 共用 pipeline.ComponentSetWithPlugins）。
+	asm := pipeline.LoadPluginAssembly(ctx, s.plugins)
+	set, pluginOpts, err := pipeline.ComponentSetWithPlugins(asm)
 	if err != nil {
 		return nil, err
-	}
-	if asm != nil && len(asm.PluginFS) > 0 {
-		set, err = templates.NewCompositeSet(asm.PluginFS)
-		if err != nil {
-			return nil, err
-		}
 	}
 	resolver := newBlockResolverAdapter(s, ctx)
 	// 构建语言与取词函数：WithLanguage 决定 RenderContext.Lang；
@@ -102,16 +91,10 @@ func (s *Service) compileDocument(ctx context.Context, page *builder.Page, proje
 	// 不影响本次产物字节（确定性构建不变量，docs/06-D §2.3/§12）。
 	opts := []builder.CompileOption{
 		builder.WithContext(ctx), builder.WithBlockResolver(resolver), builder.WithComponentSet(set),
-		builder.WithLanguage(lang), builder.WithTranslator(i18n.Snapshot(lang)),
 	}
+	opts = append(opts, pluginOpts...)
+	opts = append(opts, pipeline.LocaleCompileOptions(lang)...)
 	opts = append(opts, pipeline.ClientAssetOptions()...)
-	if asm != nil {
-		opts = append(opts, builder.WithPluginResolver(plugincontract.AssemblyResolver(asm)))
-		// 插件静态样式（assets/*.css）：构建期注入主 CSS 之后（docs/06 §5.1）。
-		if len(asm.ExtraCSS) > 0 {
-			opts = append(opts, builder.WithExtraCSS(strings.Join(asm.ExtraCSS, "\n\n")))
-		}
-	}
 	if s.content != nil {
 		opts = append(opts, builder.WithCollectionResolver(s.content))
 	}
@@ -119,44 +102,24 @@ func (s *Service) compileDocument(ctx context.Context, page *builder.Page, proje
 	if s.productDS != nil {
 		opts = append(opts, builder.WithProductDataSource(s.productDS))
 	}
-	// 导航注入：core.nav 绑定菜单位置（header/footer）时构建期解析为静态菜单项。
-	// 缓存按「工程 + 位置」单次编译内复用（同一页面多个导航节点只查一次库）。
-	if s.navigation != nil {
-		opts = append(opts, builder.WithNavigationResolver(navigationResolverAdapter{
-			svc: s.navigation, s: s, ctx: ctx, lang: lang, cache: map[string][]core.NavigationItem{},
-		}))
-	}
-	// 响应式图片：媒体变体存在时输出 srcset/sizes（构建期探测，访客零查询）。
+	// 站点级装配（EDT-003）：导航 / 槽位 / 高亮 / hreflang / srcset —— 与 presentation 共用 pipeline.SiteCompileOptions。
+	var mediaProbe func(context.Context, string) []int
 	if s.media != nil {
-		opts = append(opts, builder.WithAssetProbe(func(url string) []int {
-			return s.media.ProbeImageVariants(ctx, url)
-		}))
+		mediaProbe = s.media.ProbeImageVariants
 	}
-	// 工程 ID：页面文档不携带，由调用方按页面记录注入（导航等站点级资源取数上下文）。
-	// 当前项高亮用「实际访问路径」（多语言开启前缀时与导航项 URL 同带前缀）。
-	opts = append(opts, builder.WithProjectID(projectID), builder.WithCurrentPath(s.highlightPath(ctx, projectID, lang, currentPath)))
-	// 系统页面槽位（BIZ-1）：产物里的「去结算 / 我的订单 / 登录」等链接按这份解析烘进去。
-	// 只含已绑且已发布的槽位；没配就是空表，组件不输出链接（不是构建失败）。
-	// 按本语言解析：构建是按语言跑的，路径已经带好语言前缀。
-	if sitePages, serr := s.ResolveSitePages(ctx, projectID, lang); serr != nil {
+	siteOpts, serr := pipeline.SiteCompileOptions(pipeline.SiteCompilePorts{
+		Project: s.project, Navigation: s.navigation, SitePages: s, MediaProbe: mediaProbe,
+	}, pipeline.SiteCompileParams{
+		Ctx: ctx, ProjectID: projectID, Lang: lang, LogicalPath: currentPath,
+		CurrentPath: pipeline.HighlightPath(ctx, s.project, projectID, lang, currentPath),
+	})
+	if serr != nil {
 		return nil, fmt.Errorf("%w: %v", errCompileFailed, serr)
-	} else if len(sitePages) > 0 {
-		opts = append(opts, builder.WithSitePages(sitePages))
 	}
+	opts = append(opts, siteOpts...)
 	// 主题快照注入：settings.theme（保存时合入的 ThemeSettings 快照）→ 编译进产物。
 	if page.Settings.Theme != nil {
 		opts = append(opts, builder.WithThemeSettings(page.Settings.Theme))
-	}
-	// 语言视图（多语言 P3）：站点启用 ≥2 语言且开启前缀时，一次计算同时供
-	//   ① 产物 head 的 hreflang 互指（SEO 语言标注）；
-	//   ② core.languages 语言切换器的各语言静态链接（访问面零 JS）。
-	// 两者同源（同一份 siteRouteEntries），避免「head 说有的语言，页面上点不到」。
-	alts, links := s.localeViewOf(ctx, projectID, currentPath, lang)
-	if len(alts) > 1 {
-		opts = append(opts, builder.WithAlternates(alts))
-	}
-	if len(links) > 1 {
-		opts = append(opts, builder.WithLocaleLinks(links))
 	}
 	// 内容翻译（多语言 P5b，docs/06-D §7.7）：作者在编辑器里填写的文本（按钮文字/
 	// 标题/alt/图注/富文本）按组件 Translatable 白名单替换。每页每语言**构造一次**
@@ -164,20 +127,10 @@ func (s *Service) compileDocument(ctx context.Context, page *builder.Page, proje
 	// collectContentCandidates）→ ShouldTranslateContent 过滤 → **一次**批量 SQL 取回
 	// 译文，组件渲染期零查库（§7.7「零查库」）。默认语言与单语言站点跳过（产物即原文）。
 	var contentTranslator *i18n.ContentTranslator
-	contentCandidates := 0
-	if s.contentTranslationEnabled(ctx, projectID, lang) {
-		if cands := s.collectContentCandidates(page, resolver); len(cands) > 0 {
-			contentCandidates = len(cands)
-			contentTranslator = s.newContentTranslator(ctx, lang, builder.ContentHashes(cands))
-			opts = append(opts, builder.WithContentTranslator(contentTranslator))
-		}
-	}
-	// 站点统计代码（BIZ-8）：GA4 测量 ID 来自 SiteSettings 快照（空值 = 零字节注入）。
-	// 与页面设置里的 SEO 头同一位置注入 —— 都在产物 <head>，都由构建期决定，
-	// 访问面因此不需要任何运行时脚本注入或后端参与。
-	if ga4 := s.siteGA4MeasurementID(ctx, projectID); ga4 != "" {
-		opts = append(opts, builder.WithGA4MeasurementID(ga4))
-	}
+	var contentCandidates int
+	opts, contentTranslator, contentCandidates = pipeline.AppendContentTranslation(
+		opts, ctx, s.project, projectID, lang, page, resolver.ResolveBlockRoot, s.newContentTranslator)
+	opts = append(opts, pipeline.AnalyticsCompileOptions(ctx, s.project, projectID)...)
 	compiled, err := builder.Compile(page, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", errCompileFailed, err)
@@ -194,83 +147,13 @@ func (s *Service) compileDocument(ctx context.Context, page *builder.Page, proje
 	// **不阻断构建**（缺译文已在取词器内回退原文，产物照常产出）。
 	// 位置在块内联之后：页眉/页脚与 globalref 内联块的缺失同样计入（取词器为同一实例）。
 	if contentTranslator != nil {
-		reportContentMisses(lang, contentCandidates, contentTranslator.Misses())
+		pipeline.LogContentTranslationMisses(lang, contentCandidates, contentTranslator.Misses())
 	}
 	doc, err := builder.RenderDocument(compiled)
 	if err != nil {
 		return nil, err
 	}
 	return []byte(doc), nil
-}
-
-// collectContentCandidates 收集「本页产物」的全部可翻译候选（多语言 P5b + 块内文本补齐）。
-//
-// 组成（与渲染期实际取词范围一致）：
-//  1. 本页文档 root（builder.CollectContentCandidatesDeep 内部先扫本页 AST）；
-//  2. settings.structure 绑定的页眉/页脚块（extraBlockIDs，构建期由
-//     compileBlockFragment 编译，不在本页 AST 里）；
-//  3. 本页 AST 与上述块内 core.globalref 引用的块（递归展开，渲染期内联）。
-//
-// 三者共用一个 blockResolverAdapter：块解析走同一份单次编译缓存，
-// 因此「候选收集」不会为渲染再查一次库（每页每语言一次批量查库的约束保持）。
-func (s *Service) collectContentCandidates(page *builder.Page, resolver *blockResolverAdapter) []builder.ContentCandidate {
-	if page == nil {
-		return nil
-	}
-	extra := make([]string, 0, 2)
-	if id := page.Settings.Structure.HeaderBlockID; id != "" {
-		extra = append(extra, id)
-	}
-	if id := page.Settings.Structure.FooterBlockID; id != "" {
-		extra = append(extra, id)
-	}
-	return builder.CollectContentCandidatesDeep(page, extra, resolver.ResolveBlockRoot)
-}
-
-// localeViewOf 计算本页的语言视图：hreflang 互指条目 + 语言切换器链接（多语言 P3）。
-//
-// 仅在「站点语言前缀开启 + 本页启用语言 ≥2」时返回（单语言站点返回 nil，
-// 产物字节与 P3 之前一致）。hreflang 的 Href 在配置了 WP_SITE_BASE_URL 时为绝对
-// URL，否则为站点内路径（同样被搜索引擎接受，且不引入环境耦合）；切换器链接
-// 一律用站点内路径（页内跳转与部署环境无关）。
-//
-// 缺语言回退策略（docs/06-D §9）：采用 S2「隐藏」。判据必须是构建输入的一部分
-// 才能守住确定性不变量（同一文档两次构建字节一致）——本函数只使用「启用语言清单
-// + 本页逻辑路径」这两项构建输入；siteRouteEntries 已按路径去重，因此「目标语言
-// 在本页没有独立可寻址路径」（如未开前缀、语言清单缺该语言）的语言不会进入清单。
-// 发布/激活状态属运行时事实，一旦进产物会让同输入产出不同字节，故不参与判据。
-func (s *Service) localeViewOf(ctx context.Context, projectID, logicalPath, lang string) (alts []builder.Alternate, links []core.LocaleLink) {
-	if !i18n.SiteLangURLsSeparated() || strings.TrimSpace(projectID) == "" || strings.TrimSpace(logicalPath) == "" {
-		return nil, nil
-	}
-	entries, err := s.siteRouteEntries(ctx, projectID, logicalPath)
-	if err != nil || len(entries) < 2 {
-		return nil, nil
-	}
-	defaultLang := s.defaultLocaleOf(ctx, projectID)
-	alts = make([]builder.Alternate, 0, len(entries))
-	links = make([]core.LocaleLink, 0, len(entries))
-	for _, e := range entries {
-		alts = append(alts, builder.Alternate{
-			Lang: e.Lang, Href: seo.JoinURL(siteBaseURL(), e.Path), Default: e.Lang == defaultLang,
-		})
-		links = append(links, core.LocaleLink{Lang: e.Lang, Href: e.Path, Current: e.Lang == lang})
-	}
-	return alts, links
-}
-
-// parseStructureBindings 从页面文档读取全局块绑定快照（无该键时返回零值）。
-// 供主题合并（mergeActiveTheme）读取页面级页眉/页脚覆盖使用。
-func parseStructureBindings(docJSON []byte) (b builder.StructureBindings, err error) {
-	var page struct {
-		Settings struct {
-			Structure builder.StructureBindings `json:"structure"`
-		} `json:"settings"`
-	}
-	if err = json.Unmarshal(docJSON, &page); err != nil {
-		return b, err
-	}
-	return page.Settings.Structure, nil
 }
 
 // blockResolverAdapter 适配 block 契约为 builder 的 BlockResolver
@@ -342,15 +225,3 @@ func (a *blockResolverAdapter) blockPage(blockID string) (*builder.Page, error) 
 	return page, nil
 }
 
-// enabledAssembly 启用插件的编译装配素材（无插件契约或查询失败返回 nil）。
-// 构建路径为后台任务（无请求 ctx），此处用 context.Background。
-func (s *Service) enabledAssembly(ctx context.Context) *plugincontract.Assembly {
-	if s.plugins == nil {
-		return nil
-	}
-	asm, err := s.plugins.EnabledAssembly(ctx)
-	if err != nil {
-		return nil
-	}
-	return asm
-}

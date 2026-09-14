@@ -13,6 +13,7 @@ import (
 type (
 	CreateReq     = pagedto.CreateReq
 	SaveDraftReq  = pagedto.SaveDraftReq
+	ListReq       = pagedto.ListReq
 	DetailReq     = pagedto.DetailReq
 	RevisionReq   = pagedto.RevisionReq
 	RevisionResp  = pagedto.RevisionResp
@@ -59,8 +60,8 @@ type PageService interface {
 	SitePageResolver
 
 	Create(ctx context.Context, req *pagedto.CreateReq) (res *pagedto.PageResp, err error)
-	// List 列出页面摘要（themeID 为空时列全部；非空时只列挂在该主题下的页面）。
-	List(ctx context.Context, themeID string) (res []pagedto.PageResp, err error)
+	// List 列出页面摘要（必须带 projectID；themeID 可选过滤主题）。
+	List(ctx context.Context, req *pagedto.ListReq) (res []pagedto.PageResp, err error)
 	Detail(ctx context.Context, req *pagedto.DetailReq) (res *pagedto.PageResp, err error)
 	// ListDrafts 列出全部未删除页面的草稿文档（多语言 P5c 翻译工作台的全站扫描：
 	// 跨页面复用提示与全站完成度分母需要 (source_hash, context) 的全站视图）。
@@ -142,4 +143,6 @@ type PageService interface {
 	// 用于切换激活主题后的「整站换皮」：使后续 RefreshThemeForTheme/RefreshStructureForTheme/
 	// MarkStaleForTheme 以该主题为键命中全部页面。
 	ReattachProjectPagesToTheme(ctx context.Context, projectID, themeID string) error
+	// ReskinProjectForTheme 激活主题后的整站换皮（转挂 + 刷新快照 + 标记 stale，同一事务）。
+	ReskinProjectForTheme(ctx context.Context, projectID, themeID string, theme, structure json.RawMessage) error
 }

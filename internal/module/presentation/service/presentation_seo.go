@@ -33,14 +33,20 @@ package presentationservice
 import (
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
 	"go_wp/internal/builder"
 	"go_wp/internal/builder/core"
 	productcontract "go_wp/internal/module/product/contract"
+	seoutil "go_wp/internal/seo"
 	"go_wp/pkg/logger"
 )
+
+func seoCanonicalPath(path string) string {
+	return seoutil.CanonicalPublicPath(path)
+}
 
 // builder 页面设置校验的字段上限（internal/builder/settings.go 的 validateSettings）：
 // title ≤ 200 字节、description ≤ 500 字节，超限直接让 Compile 失败。
@@ -117,11 +123,54 @@ func applyEntitySEO(page *builder.Page, entityType, urlPath string,
 	if st := schemaTypeOf(entityType); st != "" {
 		page.Settings.SEO.SchemaType = st
 	}
+	if entityType == entityTypeProduct {
+		if offer := productOfferLD(entityType, writable, resolver); offer != nil {
+			page.Settings.SEO.ProductOffer = offer
+		}
+	}
 	// 线上路径覆盖模板 canonical（取舍 2）；预览（urlPath 空）不动模板原值。
 	if path := strings.TrimSpace(urlPath); path != "" {
-		page.Settings.SEO.Canonical = path
+		page.Settings.SEO.Canonical = seoCanonicalPath(path)
 	}
 	return nil
+}
+
+// productOfferLD 商品 JSON-LD 扩展：构建期静态 Offer/评分（不含实时库存，SEO-005）。
+func productOfferLD(entityType string, writable []string, resolver core.ContentResolver) *builder.ProductOfferLD {
+	read := func(field string) string {
+		if !fieldWritable(writable, field) {
+			return ""
+		}
+		v, err := resolver.ResolveString(entityType + "." + field)
+		if err != nil {
+			return ""
+		}
+		return strings.TrimSpace(v)
+	}
+	price := read("price")
+	if price == "" {
+		return nil
+	}
+	offer := &builder.ProductOfferLD{
+		SKU:           read("sku"),
+		Price:         price,
+		PriceCurrency: "CNY",
+		Availability:  "InStock",
+	}
+	if variants := read("variants"); variants == "" || variants == "[]" {
+		offer.Availability = "OutOfStock"
+	}
+	if rc := read("ratingCount"); rc != "" {
+		if n, err := strconv.Atoi(rc); err == nil && n > 0 {
+			offer.RatingCount = n
+			if rv := read("rating"); rv != "" {
+				if f, err := strconv.ParseFloat(rv, 64); err == nil && f > 0 {
+					offer.RatingValue = f
+				}
+			}
+		}
+	}
+	return offer
 }
 
 // clampSEOField 按字节上限截断，并回退到完整 UTF-8 边界（不切碎多字节字符）。

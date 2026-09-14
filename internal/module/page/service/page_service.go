@@ -107,7 +107,7 @@ func (s *Service) newContentTranslator(ctx context.Context, lang string, hashes 
 
 // getExistingPage 查询未删除页面，统一映射未找到错误。
 func (s *Service) getExistingPage(ctx context.Context, id string) (page *pagemodel.PageEntity, err error) {
-	page, err = s.model.GetByID(ctx, id)
+	page, err = s.model.GetByID(ctx, id, "")
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, ErrPageNotFound
 	}

@@ -20,11 +20,12 @@ const maxLocatorEntityIDs = 50
 //
 // 只返回有路径的行：调用方（搜索片段）按「没有这个实体」处理 —— 未发布 / 已删除的
 // 实体不输出链接，宁可不给链接，也不给死链。
-func (m *Model) ListActiveURLPaths(ctx context.Context, projectID, entityType string, entityIDs []string) (out map[string]string, err error) {
+func (m *Model) ListActiveURLPaths(ctx context.Context, projectID, entityType, lang string, entityIDs []string) (out map[string]string, err error) {
 	out = map[string]string{}
 	projectID = strings.TrimSpace(projectID)
 	entityType = strings.TrimSpace(entityType)
-	if projectID == "" || entityType == "" || len(entityIDs) == 0 {
+	lang = strings.TrimSpace(lang)
+	if projectID == "" || entityType == "" || lang == "" || len(entityIDs) == 0 {
 		return out, nil
 	}
 	ids := make([]string, 0, len(entityIDs))
@@ -43,24 +44,28 @@ func (m *Model) ListActiveURLPaths(ctx context.Context, projectID, entityType st
 	if len(ids) == 0 {
 		return out, nil
 	}
+	// 按请求语言取已激活访问路径（I18N-013）；无 publication 行时回退 url_path。
 	var rows []struct {
-		EntityID string `gorm:"column:entity_id"`
-		URLPath  string `gorm:"column:url_path"`
+		EntityID   string `gorm:"column:entity_id"`
+		ActivePath string `gorm:"column:active_path"`
 	}
 	err = m.db.WithContext(ctx).
-		Model(&InstanceEntity{}).
-		Select("entity_id, url_path").
-		Where("project_id = ? AND entity_type = ? AND active_artifact_id IS NOT NULL AND entity_id IN ?",
+		Table(tableNamePresentationInstances+" AS i").
+		Select(`i.entity_id,
+			COALESCE(pp.active_path, i.url_path) AS active_path`).
+		Joins(`LEFT JOIN `+tableNamePresentationPublications+` AS pp
+			ON pp.presentation_id = i.id AND pp.lang = ?`, lang).
+		Where("i.project_id = ? AND i.entity_type = ? AND i.active_artifact_id IS NOT NULL AND i.entity_id IN ?",
 			projectID, entityType, ids).
 		Find(&rows).Error
 	if err != nil {
 		return nil, err
 	}
 	for _, row := range rows {
-		if strings.TrimSpace(row.EntityID) == "" || strings.TrimSpace(row.URLPath) == "" {
+		if strings.TrimSpace(row.EntityID) == "" || strings.TrimSpace(row.ActivePath) == "" {
 			continue
 		}
-		out[row.EntityID] = row.URLPath
+		out[row.EntityID] = row.ActivePath
 	}
 	return out, nil
 }

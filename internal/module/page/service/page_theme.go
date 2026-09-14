@@ -10,13 +10,16 @@ package pageservice
 import (
 	"context"
 	"encoding/json"
-	"fmt"
+	"time"
 
 	"go_wp/internal/builder"
 	blockcontract "go_wp/internal/module/block/contract"
+	"go_wp/internal/pipeline"
 	"go_wp/internal/templates"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
+
+	"gorm.io/gorm"
 )
 
 // mergeActiveTheme 把工程激活主题的设置合入页面文档：
@@ -25,106 +28,7 @@ import (
 // 页面设置里显式选了某页眉/页脚），空字段回退主题默认（headerBlockId/
 // footerBlockId 为空 = 用主题）。无激活主题时保留页面现有绑定。
 func (s *Service) mergeActiveTheme(ctx context.Context, projectID string, doc json.RawMessage) (json.RawMessage, error) {
-	// 页面现有 structure（页面级覆盖优先）。
-	pageStructure, perr := parseStructureBindings(doc)
-	if perr != nil {
-		pageStructure = builder.StructureBindings{}
-	}
-
-	theme, err := s.project.GetActiveTheme(ctx, projectID)
-	if err != nil || theme == nil {
-		// 无主题：保留页面现有 structure（页面级选择），theme 写空快照保持键存在。
-		if doc, err = mergeSettingsKey(doc, "theme", json.RawMessage(`{}`)); err != nil {
-			return nil, err
-		}
-		structureJSON, _ := json.Marshal(map[string]any{
-			"headerBlockId": pageStructure.HeaderBlockID,
-			"footerBlockId": pageStructure.FooterBlockID,
-		})
-		return mergeSettingsKey(doc, "structure", structureJSON)
-	}
-	var themeStructure struct {
-		Header string `json:"headerBlockId"`
-		Footer string `json:"footerBlockId"`
-	}
-	if len(theme.Settings) > 0 {
-		if err := json.Unmarshal(theme.Settings, &themeStructure); err != nil {
-			logger.Scene("page").With("err", err).Warn("主题设置解析失败")
-			// 非法主题设置：保留页面现有 structure，theme 写空快照。
-			if doc, err = mergeSettingsKey(doc, "theme", json.RawMessage(`{}`)); err != nil {
-				return nil, err
-			}
-			structureJSON, _ := json.Marshal(map[string]any{
-				"headerBlockId": pageStructure.HeaderBlockID,
-				"footerBlockId": pageStructure.FooterBlockID,
-			})
-			return mergeSettingsKey(doc, "structure", structureJSON)
-		}
-	}
-	// settings.theme 快照 = 「站点主题 + 页面级覆盖」的合并结果。
-	// 三层继承：站点主题（最弱）→ settings.themeOverride → 组件 props（最强），
-	// 每层的空值表示继承上一层 —— 页面只改主色时，其余令牌继续跟随主题；
-	// 主题日后改字体，页面没显式覆盖过的字体项要跟着变（这正是快照必须合成、
-	// 而不能让页面覆盖与快照共用同一个键的原因）。
-	// 主题设置非法按空处理、页面覆盖非法按无覆盖处理，都不阻塞保存。
-	themeSnapshot := json.RawMessage(`{}`)
-	if merged := builder.MergeThemeRawJSON(theme.Settings, themeOverrideOf(doc)); len(merged) > 0 {
-		themeSnapshot = merged
-	}
-	if doc, err = mergeSettingsKey(doc, "theme", themeSnapshot); err != nil {
-		return nil, err
-	}
-	// settings.structure 合并：页面非空优先（覆盖），空字段回退主题默认。
-	header := pageStructure.HeaderBlockID
-	if header == "" {
-		header = themeStructure.Header
-	}
-	footer := pageStructure.FooterBlockID
-	if footer == "" {
-		footer = themeStructure.Footer
-	}
-	structureJSON, _ := json.Marshal(map[string]any{
-		"headerBlockId": header,
-		"footerBlockId": footer,
-	})
-	return mergeSettingsKey(doc, "structure", structureJSON)
-}
-
-// themeOverrideOf 取页面文档 settings.themeOverride 的原始 JSON（无则 nil）。
-func themeOverrideOf(doc json.RawMessage) json.RawMessage {
-	var page struct {
-		Settings struct {
-			ThemeOverride json.RawMessage `json:"themeOverride"`
-		} `json:"settings"`
-	}
-	if err := json.Unmarshal(doc, &page); err != nil {
-		return nil
-	}
-	return page.Settings.ThemeOverride
-}
-
-// mergeSettingsKey 深覆盖页面文档 settings 的单个键（theme/structure），其余键不动。
-func mergeSettingsKey(doc json.RawMessage, key string, value json.RawMessage) (json.RawMessage, error) {
-	var page struct {
-		Settings map[string]json.RawMessage `json:"settings"`
-		Root     json.RawMessage            `json:"root"`
-	}
-	if err := json.Unmarshal(doc, &page); err != nil {
-		return nil, fmt.Errorf("页面文档解析失败: %w", err)
-	}
-	if page.Settings == nil {
-		page.Settings = map[string]json.RawMessage{}
-	}
-	page.Settings[key] = value
-	settingsBytes, err := json.Marshal(page.Settings)
-	if err != nil {
-		return nil, err
-	}
-	out := map[string]json.RawMessage{
-		"settings": settingsBytes,
-		"root":     page.Root,
-	}
-	return json.Marshal(out)
+	return pipeline.MergeActiveThemeIntoDocument(ctx, s.project, projectID, doc)
 }
 
 // ActiveThemeID 取工程当前激活主题 ID；无主题或查询失败返回空串（不阻塞页面创建）。
@@ -158,10 +62,36 @@ func (s *Service) RefreshThemeForTheme(ctx context.Context, themeID string, them
 	return nil
 }
 
-// RefreshStructureForTheme 把主题的页眉/页脚块绑定批量合入挂在该主题下全部页面。
-// 主题换绑全局块后调用；页面已发布产物需重新构建才会带新结构。
+// RefreshStructureForTheme 把主题的页眉/页脚块绑定合入挂在该主题下全部页面。
+// 页面已显式绑定的 header/footer 不被覆盖（与 mergeActiveTheme 同口径）。
 func (s *Service) RefreshStructureForTheme(ctx context.Context, themeID string, structure json.RawMessage) error {
-	return s.model.RefreshStructureForTheme(ctx, themeID, structure)
+	var themeBindings builder.StructureBindings
+	if len(structure) > 0 {
+		if err := json.Unmarshal(structure, &themeBindings); err != nil {
+			return err
+		}
+	}
+	rows, err := s.model.ListThemePageStructureSnapshots(ctx, themeID)
+	if err != nil {
+		return err
+	}
+	for _, row := range rows {
+		pageBindings := builder.StructureBindings{}
+		if len(row.Structure) > 0 {
+			if err := json.Unmarshal(row.Structure, &pageBindings); err != nil {
+				return err
+			}
+		}
+		merged := pipeline.MergeStructureBindings(pageBindings, themeBindings)
+		structureJSON, err := json.Marshal(merged)
+		if err != nil {
+			return err
+		}
+		if err := s.model.UpdateStructureSnapshot(ctx, row.ID, structureJSON); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // MarkStaleForTheme 把挂在该主题下全部页面标记为待重建（页眉/页脚块内容变更后调用）。
@@ -190,6 +120,56 @@ func (s *Service) AttachThemeToUnassigned(ctx context.Context, projectID, themeI
 // 切换激活主题时调用：使整站页面以新激活主题为键，后续批量刷新快照/标重建可命中全部页面。
 func (s *Service) ReattachProjectPagesToTheme(ctx context.Context, projectID, themeID string) error {
 	return s.model.ReattachProjectPagesToTheme(ctx, projectID, themeID)
+}
+
+// ReskinProjectForTheme 激活主题后的整站换皮（四步同一事务，失败整体回滚）。
+func (s *Service) ReskinProjectForTheme(ctx context.Context, projectID, themeID string, theme, structure json.RawMessage) error {
+	var themeBindings builder.StructureBindings
+	if len(structure) > 0 {
+		if err := json.Unmarshal(structure, &themeBindings); err != nil {
+			return err
+		}
+	}
+	return s.model.Transaction(ctx, func(tx *gorm.DB) error {
+		if err := s.model.ReattachProjectPagesToThemeTx(ctx, tx, projectID, themeID); err != nil {
+			return err
+		}
+		rows, err := s.model.ListThemePageSnapshotsTx(ctx, tx, themeID)
+		if err != nil {
+			return err
+		}
+		now := time.Now().UTC()
+		for _, row := range rows {
+			snapshot := json.RawMessage(`{}`)
+			if merged := builder.MergeThemeRawJSON(theme, row.Override); len(merged) > 0 {
+				snapshot = merged
+			}
+			if err := s.model.UpdateThemeSnapshotTx(ctx, tx, row.ID, snapshot, now); err != nil {
+				return err
+			}
+		}
+		structRows, err := s.model.ListThemePageStructureSnapshotsTx(ctx, tx, themeID)
+		if err != nil {
+			return err
+		}
+		for _, row := range structRows {
+			pageBindings := builder.StructureBindings{}
+			if len(row.Structure) > 0 {
+				if err := json.Unmarshal(row.Structure, &pageBindings); err != nil {
+					return err
+				}
+			}
+			merged := pipeline.MergeStructureBindings(pageBindings, themeBindings)
+			structureJSON, err := json.Marshal(merged)
+			if err != nil {
+				return err
+			}
+			if err := s.model.UpdateStructureSnapshotTx(ctx, tx, row.ID, structureJSON, now); err != nil {
+				return err
+			}
+		}
+		return s.model.MarkStaleForThemeTx(ctx, tx, themeID, now)
+	})
 }
 
 // compileBlockFragment 编译单个全局块为片段（HTML/CSS）；块缺失或非法时降级为空片段。

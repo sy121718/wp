@@ -39,12 +39,7 @@ func buildLang(requested string) string {
 // 默认语言取自站点清单（project_locales.is_default，缺失回退 i18n.default_lang）——
 // 「默认语言无前缀」必须按站点判定，不能只看全局 i18n.default_lang。
 func (s *Service) langURLRuleOf(ctx context.Context, projectID string) pipeline.LangURLRule {
-	return pipeline.NewLangURLRule(
-		i18n.SiteLangURLsSeparated(),
-		i18n.SiteLangURLPrefixDefault(),
-		s.defaultLocaleOf(ctx, projectID),
-		i18n.URLCodeOverrides(),
-	)
+	return pipeline.LangURLRuleForProject(ctx, s.project, projectID)
 }
 
 // sitePath 逻辑访问路径 → 实际访问路径（本模块唯一入口；实现在 pipeline.LangURLRule.Path）。
@@ -81,30 +76,13 @@ type siteRouteEntry struct {
 // siteRouteEntries 按启用语言（project_locales）计算逻辑路径的各语言站点路径，
 // 默认语言在前；关闭前缀时多语言映射到同一路径，按路径去重。
 func (s *Service) siteRouteEntries(ctx context.Context, projectID, logical string) ([]siteRouteEntry, error) {
-	langs := []string{i18n.GetDefaultLang()}
-	if s.project != nil && strings.TrimSpace(projectID) != "" {
-		if l, err := s.project.EnabledLangs(ctx, projectID); err == nil && len(l) > 0 {
-			langs = l
-		}
-	}
-	rule := s.langURLRuleOf(ctx, projectID)
-	// 短码冲突（两种语言映射到同一 URL 段）会让 page_routes 唯一键撞车或静默覆盖：
-	// 构建期即失败并提示显式配置 i18n.lang_url_codes。
-	if err := rule.Validate(langs); err != nil {
+	entries, err := pipeline.SiteRouteEntries(ctx, s.project, projectID, logical)
+	if err != nil {
 		return nil, err
 	}
-	seen := map[string]bool{}
-	out := make([]siteRouteEntry, 0, len(langs))
-	for _, lang := range langs {
-		p, err := sitePath(rule, lang, logical)
-		if err != nil {
-			return nil, err
-		}
-		if seen[p] {
-			continue
-		}
-		seen[p] = true
-		out = append(out, siteRouteEntry{Lang: lang, Path: p})
+	out := make([]siteRouteEntry, len(entries))
+	for i, e := range entries {
+		out[i] = siteRouteEntry{Lang: e.Lang, Path: e.Path}
 	}
 	return out, nil
 }
@@ -166,42 +144,12 @@ func (s *Service) renameReservedAllLangs(ctx context.Context, projectID, pageID,
 
 // enabledLangsOf 站点启用语言（默认语言在前；清单不可读时回退默认语言一种）。
 func (s *Service) enabledLangsOf(ctx context.Context, projectID string) []string {
-	if s.project != nil && strings.TrimSpace(projectID) != "" {
-		langs, err := s.project.EnabledLangs(ctx, projectID)
-		if err == nil && len(langs) > 0 {
-			return langs
-		}
-		if err != nil {
-			// 降级成单语言意味着多语言站点的构建产物只剩默认语言那一套，
-			// 表现为「其他语言突然消失」——必须留痕，否则毫无线索可查。
-			logger.Scene("page").With("projectId", projectID).
-				Error(err, "启用语言清单读取失败，已降级为默认语言单语言构建")
-		}
-	}
-	return []string{i18n.GetDefaultLang()}
+	return pipeline.EnabledLangs(ctx, s.project, projectID)
 }
 
 // defaultLocaleOf 站点默认语言（清单 is_default，缺失回退 i18n.default_lang）。
 func (s *Service) defaultLocaleOf(ctx context.Context, projectID string) string {
-	if s.project != nil && strings.TrimSpace(projectID) != "" {
-		if d, err := s.project.DefaultLocale(ctx, projectID); err == nil && d != "" {
-			return d
-		}
-	}
-	return i18n.GetDefaultLang()
-}
-
-// highlightPath 导航「当前项」高亮用的访问路径：与导航项 URL 同源（同一规则）。
-// 路径非法或空时返回空串（不标记当前项，绝不让高亮逻辑影响构建主链）。
-func (s *Service) highlightPath(ctx context.Context, projectID, lang, logical string) string {
-	if strings.TrimSpace(logical) == "" {
-		return ""
-	}
-	p, err := sitePath(s.langURLRuleOf(ctx, projectID), lang, logical)
-	if err != nil {
-		return ""
-	}
-	return p
+	return pipeline.DefaultLocale(ctx, s.project, projectID)
 }
 
 // localizeMenuURL 导航项 URL 本地化：站内绝对路径（以 / 开头）按本语言方案映射，
@@ -213,19 +161,7 @@ func (s *Service) highlightPath(ctx context.Context, projectID, lang, logical st
 // 幂等：导航来源可能存的是某语言的访问路径（如页面 active_path 已带 /en 前缀），
 // 先用同一规则反查为逻辑路径再加本语言前缀，避免 /en/en/about。
 func (s *Service) localizeMenuURL(ctx context.Context, projectID, lang, raw string) string {
-	u := strings.TrimSpace(raw)
-	if u == "" || !strings.HasPrefix(u, "/") || strings.HasPrefix(u, "//") {
-		return raw
-	}
-	rule := s.langURLRuleOf(ctx, projectID)
-	if _, logical, ok := rule.Locate(u, s.enabledLangsOf(ctx, projectID)); ok {
-		u = logical
-	}
-	p, err := sitePath(rule, lang, u)
-	if err != nil {
-		return raw
-	}
-	return p
+	return pipeline.LocalizeMenuURL(ctx, s.project, projectID, lang, raw)
 }
 
 // MarkStaleByRegistryVersion 把「产物由旧组件产出」的页面标记为待重建。
@@ -294,7 +230,7 @@ func (s *Service) buildDependencies(ctx context.Context, in pipeline.BuildInput)
 	if s.pageUsesContentTranslation(ctx, in) {
 		deps = append(deps, pipeline.I18NContentDependency(i18n.ContentRevision()))
 	}
-	if page, err := s.model.GetByID(ctx, in.PageID); err == nil {
+	if page, err := s.model.GetByID(ctx, in.PageID, ""); err == nil {
 		deps = append(deps, s.pageDependencyKeys(ctx, page)...)
 	} else {
 		logger.Scene("dependency").With("page_id", in.PageID).
@@ -352,11 +288,7 @@ func pageMayUseContentTranslation(page *builder.Page) bool {
 // contentTranslationEnabled 判定本次编译是否接入内容翻译（与 pageUsesContentTranslation
 // 的语言维度同源；文档已在装配层解析，故此处只看语言）。
 func (s *Service) contentTranslationEnabled(ctx context.Context, projectID, lang string) bool {
-	l := strings.TrimSpace(lang)
-	if l == "" {
-		return false
-	}
-	return l != s.defaultLocaleOf(ctx, projectID)
+	return pipeline.ContentTranslationEnabled(ctx, s.project, projectID, lang)
 }
 
 // reportContentMisses 记录构建期内容译文缺失（L3 埋点，决策 F14 第三层）。

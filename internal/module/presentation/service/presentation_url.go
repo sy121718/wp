@@ -22,7 +22,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"time"
 
 	"gorm.io/gorm"
 
@@ -43,7 +42,7 @@ func (s *Service) UpdateURL(ctx context.Context, req *presentationdto.UpdateURLR
 	if err != nil {
 		return nil, err
 	}
-	newPath, err := pipeline.NormalizeURL(strings.TrimSpace(req.NewPath))
+	newLogical, err := s.normalizeLogicalPath(ctx, inst.ProjectID, req.NewPath)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", presentationenums.ErrInvalidPath, err)
 	}
@@ -58,13 +57,13 @@ func (s *Service) UpdateURL(ctx context.Context, req *presentationdto.UpdateURLR
 	if err != nil {
 		return nil, errors.New(presentationenums.ErrNotFound)
 	}
-	oldPath := inst.URLPath
-	if newPath == oldPath {
+	oldLogical := s.instanceLogicalPath(ctx, inst)
+	if newLogical == oldLogical {
 		return nil, errors.New(presentationenums.ErrSamePath)
 	}
-	// 预检必须在任何写操作之前：FS 激活一旦先跑并覆盖了他人的线上产物，
-	// 就没有回滚入口（产物内容寻址，旧链接指向的是别人的产物）。
-	if err = s.ensurePathFree(ctx, inst.ProjectID, newPath, inst.ID); err != nil {
+	oldPubs, _ := s.m.ListPublications(ctx, inst.ID)
+	// 预检：新逻辑路径下全部语言访问路径均空闲。
+	if err = s.ensureLogicalPathFree(ctx, inst.ProjectID, newLogical, inst.ID); err != nil {
 		return nil, err
 	}
 	// 模板沿用实例当前绑定（改 URL 不是换模板）：resolveBoundTemplate 传空
@@ -73,31 +72,21 @@ func (s *Service) UpdateURL(ctx context.Context, req *presentationdto.UpdateURLR
 	if err != nil {
 		return nil, err
 	}
-	built, err := s.buildArtifact(ctx, inst.EntityType, inst.EntityID, newPath, inst.ProjectID, tpl)
+	primaryArtifactID, err := s.publishAllLangs(ctx, inst, tpl, newLogical)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", presentationenums.ErrBuildFailed, err)
 	}
-	artifactID, err := s.persistBuild(ctx, inst, tpl, built, time.Now().UTC(), newPath)
-	if err != nil {
-		return nil, err
-	}
-	// 新路径上线：此后新 URL 可用（含 FS 符号链接）。
-	if err = s.activate(newPath, built); err != nil {
-		return nil, fmt.Errorf("%s: %w", presentationenums.ErrBuildFailed, err)
-	}
-	if rerr := s.registerRoute(ctx, inst, newPath, artifactID); rerr != nil {
-		logger.Scene("build").With("instanceId", inst.ID).With("url", newPath).
-			Warn("改 URL 后路由登记失败（新路径已激活）: " + rerr.Error())
-	}
-	// 旧路径处置固定在新路径生效之后：处置失败不撤销新 URL —— 新路径上线是
-	// 不可逆事实，为回滚旧路径而回滚新路径只会让两边都不对（与 page 侧同一取舍）。
-	if oldPath != "" && oldPath != newPath {
-		if derr := s.disposeOldPath(ctx, inst, oldPath, newPath, artifactID, req.WithRedirect); derr != nil {
-			logger.Scene("build").With("instanceId", inst.ID).With("oldPath", oldPath).
+	// 旧路径处置：逐语言取消激活或 301。
+	for _, pub := range oldPubs {
+		if pub.ActivePath == "" {
+			continue
+		}
+		if derr := s.disposeOldPath(ctx, inst, pub.ActivePath, newLogical, primaryArtifactID, req.WithRedirect); derr != nil {
+			logger.Scene("build").With("instanceId", inst.ID).With("oldPath", pub.ActivePath).
 				Warn("改 URL 后旧路径处置失败（新路径已生效）: " + derr.Error())
 		}
 	}
-	logger.Scene("build").With("instanceId", inst.ID).With("oldPath", oldPath).With("newPath", newPath).
+	logger.Scene("build").With("instanceId", inst.ID).With("oldPath", oldLogical).With("newPath", newLogical).
 		Info("详情页 URL 修改完成")
 	return s.toResp(ctx, inst)
 }
@@ -155,6 +144,12 @@ func (s *Service) ensurePathFree(ctx context.Context, projectID, path, excludeIn
 	}
 	if _, err := s.m.FindInstanceByPath(ctx, projectID, path, excludeInstanceID); err == nil {
 		logger.Scene("build").With("url", path).Warn("详情页路径预检被拒绝：已被其他展示实例占用")
+		return errors.New(presentationenums.ErrPathOccupied)
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return err
+	}
+	if _, err := s.m.FindInstanceByActivePath(ctx, projectID, path, excludeInstanceID); err == nil {
+		logger.Scene("build").With("url", path).Warn("详情页路径预检被拒绝：已被其他展示实例的多语言路径占用")
 		return errors.New(presentationenums.ErrPathOccupied)
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return err

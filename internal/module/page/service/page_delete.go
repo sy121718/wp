@@ -9,7 +9,6 @@ import (
 	mediadto "go_wp/internal/module/media/dto"
 	pagedto "go_wp/internal/module/page/dto"
 	pubcontract "go_wp/internal/module/publication/contract"
-	"go_wp/pkg/logger"
 )
 
 // Delete 软删页面：deleted_at 置时间（审计留痕，行保留），并释放该页面
@@ -29,7 +28,7 @@ func (s *Service) Delete(ctx context.Context, req *pagedto.DeleteReq) (err error
 		return ErrInvalidParam
 	}
 	// 先查页面拿 projectID（路由清理需要 project 维度）。
-	page, err := s.model.GetByID(ctx, req.ID)
+	page, err := s.model.GetByID(ctx, req.ID, "")
 	if err != nil {
 		return mapPersistenceError(err)
 	}
@@ -50,23 +49,18 @@ func (s *Service) Delete(ctx context.Context, req *pagedto.DeleteReq) (err error
 			return rerr
 		}
 	}
-	if err = s.model.SoftDelete(ctx, req.ID, time.Now().UTC()); err != nil {
-		return mapPersistenceError(err)
-	}
-	// 清空该页面在媒体引用缓存里的残留（refs 全量同步为空集 = 该引用方不再引用任何附件）。
-	//
-	// 为什么必须清：refs 的唯一写入点是构建期，页面删除后该 ID 永不再构建 ——
-	// kind=page,id=<已删页> 会永久留在附件的 extra_info.refs 里，删除保护据此一直报
-	// 「被 N 个页面引用」，附件实际删不掉且无法自愈。
-	// 与构建期策略一致：失败只记日志、不阻断删除（引用缓存是保护性元数据，不是删除的输入）。
+	// 先清媒体引用再软删：引用缓存失败则整单删除中断，避免留下「页面已删、引用仍在」的残留。
 	if s.media != nil {
 		if _, rerr := s.media.SyncReferences(ctx, &mediadto.SyncRefsReq{
 			RefKind:  "page",
 			RefID:    req.ID,
 			RefTitle: page.DraftPath,
 		}); rerr != nil {
-			logger.Scene("page").With("page_id", req.ID).Warn("清空媒体引用缓存失败（已降级）")
+			return rerr
 		}
+	}
+	if err = s.model.SoftDelete(ctx, req.ID, time.Now().UTC()); err != nil {
+		return mapPersistenceError(err)
 	}
 	return nil
 }

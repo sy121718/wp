@@ -2,14 +2,21 @@ package pageservice
 
 import (
 	"context"
+	"strings"
 
 	pagedto "go_wp/internal/module/page/dto"
 )
 
 // List 列出页面摘要（不含草稿文档；DraftDocument 为空）。
-// themeID 为空时列全部；非空时只列挂在该主题下的页面。
-func (s *Service) List(ctx context.Context, themeID string) (res []pagedto.PageResp, err error) {
-	entities, err := s.model.ListAll(ctx, themeID)
+// 必须带 projectID；themeID 为空时列该工程全部，非空时只列挂在该主题下的页面。
+func (s *Service) List(ctx context.Context, req *pagedto.ListReq) (res []pagedto.PageResp, err error) {
+	if req == nil || strings.TrimSpace(req.ProjectID) == "" {
+		return nil, ErrInvalidParam
+	}
+	if err = s.requireProject(ctx, req.ProjectID); err != nil {
+		return nil, err
+	}
+	entities, err := s.model.ListAll(ctx, req.ProjectID, req.ThemeID)
 	if err != nil {
 		return nil, err
 	}

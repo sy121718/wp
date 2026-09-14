@@ -95,7 +95,7 @@ func (s *Service) BindSiteSlot(ctx context.Context, req *pagedto.SiteSlotBindReq
 	if err != nil {
 		return err
 	}
-	page, err := s.model.GetByID(ctx, pageID)
+	page, err := s.model.GetByID(ctx, pageID, "")
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return errors.New(pageenums.ErrSlotPageMiss)

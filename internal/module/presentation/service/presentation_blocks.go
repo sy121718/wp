@@ -19,6 +19,9 @@ import (
 	"go_wp/internal/builder"
 	"go_wp/internal/builder/core"
 	blockcontract "go_wp/internal/module/block/contract"
+	"go_wp/internal/templates"
+	"go_wp/pkg/i18n"
+	"go_wp/pkg/logger"
 )
 
 // blockResolverAdapter 把 block 契约适配为 builder 的 core.BlockResolver。
@@ -78,3 +81,39 @@ func (a *blockResolverAdapter) blockPage(blockID string) (*builder.Page, error) 
 
 // 编译期断言：适配器实现 core.BlockResolver。
 var _ core.BlockResolver = (*blockResolverAdapter)(nil)
+
+// compileBlockFragment 编译 settings.structure 绑定的页眉/页脚块（与 page 路径同口径）。
+// lang / translator 复用本次模板编译已构造的取词器，块内不再单独查库。
+func (s *Service) compileBlockFragment(ctx context.Context, blockID, lang string, translator *i18n.ContentTranslator) (html, css string) {
+	if blockID == "" || s.blocks == nil {
+		return "", ""
+	}
+	block, err := s.blocks.Detail(ctx, &blockcontract.DetailReq{ID: blockID})
+	if err != nil || block == nil || len(block.Document) == 0 {
+		logger.Scene("build").With("block", blockID).Error(err, "页眉/页脚块不可用")
+		return "", ""
+	}
+	page, err := builder.ParsePage(block.Document)
+	if err != nil {
+		logger.Scene("build").With("block", blockID).Error(err, "块文档解析失败")
+		return "", ""
+	}
+	set, serr := templates.NewEmbeddedComponentSet()
+	if serr != nil {
+		logger.Scene("build").With("block", blockID).Error(serr, "组件模板 Set 加载失败")
+		return "", ""
+	}
+	opts := []builder.CompileOption{
+		builder.WithContext(ctx), builder.WithComponentSet(set),
+		builder.WithLanguage(lang), builder.WithTranslator(i18n.Snapshot(lang)),
+	}
+	if translator != nil {
+		opts = append(opts, builder.WithContentTranslator(translator))
+	}
+	compiled, err := builder.Compile(page, opts...)
+	if err != nil {
+		logger.Scene("build").With("block", blockID).Error(err, "块编译失败")
+		return "", ""
+	}
+	return compiled.HTML, compiled.CSS
+}

@@ -1,6 +1,8 @@
 // Package pageenums 管理 page 模块业务消息。
 package pageenums
 
+import "strings"
+
 const (
 	// ErrInvalidParam 请求本身不合法（nil 请求、空/空白 ID 等），与资源存在性无关。
 	ErrInvalidParam         = "ErrInvalidParam"         // 请求参数无效
@@ -96,3 +98,47 @@ func SiteSlotName(key string) string {
 
 // MsgInternalError handler 内部错误统一兜底提示（禁止直出 err.Error() 泄露内部细节）。
 const MsgInternalError = "MsgInternalError" // 系统内部错误，请稍后重试
+
+// Page kind 白名单与 migration 080 pages_content_contract_check 对齐。
+// product / category 已移除：商品页走 PresentationInstance 自动发布，不走手工 Page。
+const (
+	PageKindHome     = "home"
+	PageKindPage     = "page"
+	PageKindArticle  = "article"
+	PageKindTag      = "tag"
+	PageKindArchive  = "archive"
+	PageKindSearch   = "search"
+	PageKindNotFound = "notFound"
+)
+
+// PageKinds 返回全部合法 Page kind（字典序，确定性输出）。
+func PageKinds() []string {
+	return []string{
+		PageKindArchive,
+		PageKindArticle,
+		PageKindHome,
+		PageKindNotFound,
+		PageKindPage,
+		PageKindSearch,
+		PageKindTag,
+	}
+}
+
+// ValidatePageContentContract 校验 kind 与 content_target 组合是否符合 pages 表 CHECK。
+func ValidatePageContentContract(kind, targetType string, targetID *string) bool {
+	if targetID != nil && strings.TrimSpace(*targetID) == "" {
+		return false
+	}
+	noTarget := targetType == "none" && targetID == nil
+	hasTarget := func(expected string) bool {
+		return targetType == expected && targetID != nil && strings.TrimSpace(*targetID) != ""
+	}
+	switch kind {
+	case PageKindHome, PageKindArchive, PageKindSearch, PageKindNotFound:
+		return noTarget
+	case PageKindPage, PageKindArticle, PageKindTag:
+		return hasTarget(kind)
+	default:
+		return false
+	}
+}
