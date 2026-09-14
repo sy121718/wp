@@ -40,6 +40,8 @@ func SetupOrderRoutes(
 		guest,
 	)
 	h := NewHandle(svc)
+	// 待付款超时自动取消（TX-001）：进程内定时扫描，失败不阻断启动。
+	orderservice.StartPendingOrderExpiryScheduler(svc)
 
 	g := rg.Group("/order")
 	// 查询
