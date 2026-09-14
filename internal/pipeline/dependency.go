@@ -96,9 +96,10 @@ type StaleRebuilder interface {
 //
 // 线程安全：注册在装配期完成，失效调用可并发（内容 API 多请求并发）。
 type Fanout struct {
-	mu         sync.RWMutex
-	targets    []targetEntry
-	rebuilders map[string]StaleRebuilder
+	mu          sync.RWMutex
+	targets     []targetEntry
+	rebuilders  map[string]StaleRebuilder
+	syncRebuild bool // 测试专用：内联重建，避免 go func 与断言竞态
 }
 
 // NewFanout 构造空扇出编排。
@@ -114,6 +115,16 @@ func (f *Fanout) Register(sourceType string, t DependencyTarget) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.targets = append(f.targets, targetEntry{sourceType: sourceType, target: t})
+}
+
+// SetSyncRebuild 测试专用：为 true 时 RebuildStale 在当前 goroutine 执行（默认异步）。
+func (f *Fanout) SetSyncRebuild(v bool) {
+	if f == nil {
+		return
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.syncRebuild = v
 }
 
 // SetRebuilder 为某来源类型绑定自动重建实现（未绑定时只标记不重建）。
@@ -152,6 +163,7 @@ func (f *Fanout) InvalidateKeys(ctx context.Context, keys ...DepKey) map[string]
 	for k, v := range f.rebuilders {
 		rebuilders[k] = v
 	}
+	syncRebuild := f.syncRebuild
 	f.mu.RUnlock()
 
 	seen := map[string]map[string]bool{}
@@ -189,9 +201,21 @@ func (f *Fanout) InvalidateKeys(ctx context.Context, keys ...DepKey) map[string]
 		if r == nil {
 			continue
 		}
-		if err := r.RebuildStale(ctx, ids); err != nil {
-			logger.Scene("dependency").With("source", st).With("count", len(ids)).
-				Error(err, "依赖失效后的自动重建失败（已标记 stale，等待人工/下次触发）")
+		rebuildIDs := append([]string(nil), ids...)
+		rebuilder := r
+		sourceType := st
+		runRebuild := func() {
+			bg := context.Background()
+			if err := rebuilder.RebuildStale(bg, rebuildIDs); err != nil {
+				logger.Scene("dependency").With("source", sourceType).With("count", len(rebuildIDs)).
+					Error(err, "依赖失效后的自动重建失败（已标记 stale，等待人工/下次触发）")
+			}
+		}
+		if syncRebuild {
+			runRebuild()
+		} else {
+			// 异步重建：内容写入不应被整站 Build+Publish 拖住 HTTP 请求。
+			go runRebuild()
 		}
 	}
 	return affected
