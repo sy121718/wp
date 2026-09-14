@@ -5,8 +5,9 @@ package blueprintmodel
 import (
 	"context"
 	"encoding/json"
-	"sort"
 	"time"
+
+	pageenums "go_wp/internal/module/page/enums"
 
 	"gorm.io/gorm"
 )
@@ -16,31 +17,18 @@ const (
 	tableNameBlueprintVersions = "blueprint_versions"
 )
 
-// pageKinds Page 类型白名单（Blueprint 初始化的目标 Page 类型，docs/02-domain.md §1.2）。
-var pageKinds = map[string]bool{
-	"home":     true,
-	"page":     true,
-	"article":  true,
-	"product":  true,
-	"category": true,
-	"tag":      true,
-	"archive":  true,
-	"search":   true,
-	"notFound": true,
+// IsValidKind Kind 是否在 Page 类型白名单内（与 migration 080 一致）。
+func IsValidKind(kind string) bool {
+	for _, k := range pageenums.PageKinds() {
+		if k == kind {
+			return true
+		}
+	}
+	return false
 }
-
-// IsValidKind Kind 是否在 Page 类型白名单内。
-func IsValidKind(kind string) bool { return pageKinds[kind] }
 
 // PageKinds 返回全部 Page 类型（字典序，确定性输出）。
-func PageKinds() []string {
-	out := make([]string, 0, len(pageKinds))
-	for k := range pageKinds {
-		out = append(out, k)
-	}
-	sort.Strings(out)
-	return out
-}
+func PageKinds() []string { return pageenums.PageKinds() }
 
 // BlueprintEntity blueprints 表实体（可编辑草稿）。
 type BlueprintEntity struct {

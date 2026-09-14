@@ -5,7 +5,6 @@ import (
 	"database/sql/driver"
 	"encoding/json"
 	"errors"
-	"strings"
 	"time"
 
 	adminenums "go_wp/internal/module/admin/enums"
@@ -153,12 +152,6 @@ func (m *AdminModel) ResetLoginFailure(ctx context.Context, id uint64) error {
 // TableName 指定表名。
 func (AdminEntity) TableName() string {
 	return tableNameSysAdmin
-}
-
-// EscapeLike 转义 LIKE 通配符（% / _ / \），使关键字按字面匹配。
-// 与 ESCAPE '\' 配套使用（参照 media 模块 AttachmentModel.List 的示范）。
-func EscapeLike(s string) string {
-	return strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(s)
 }
 
 // CanLogin 是否可以登录。

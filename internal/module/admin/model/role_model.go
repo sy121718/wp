@@ -5,6 +5,8 @@ import (
 	"context"
 	"time"
 
+	"go_wp/pkg/database"
+
 	"gorm.io/gorm"
 )
 
@@ -98,7 +100,7 @@ func (m *RoleModel) GetByCode(ctx context.Context, code string) (*RoleEntity, er
 func (m *RoleModel) ListAll(ctx context.Context, page, limit int, keyword string) (int64, []RoleEntity, error) {
 	query := m.DB(ctx)
 	if keyword != "" {
-		escaped := "%" + EscapeLike(keyword) + "%"
+		escaped := "%" + database.EscapeLikePattern(keyword) + "%"
 		query = query.Where("role_code LIKE ? ESCAPE '\\' OR role_name LIKE ? ESCAPE '\\'", escaped, escaped)
 	}
 

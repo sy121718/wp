@@ -136,15 +136,17 @@ func (m *Model) ReplaceArtifactContent(ctx context.Context, id string, entity *P
 		if err = tx.Where("artifact_id = ?", id).Delete(&PageArtifactObjectEntity{}).Error; err != nil {
 			return err
 		}
-		for i := range objects {
-			objects[i].ArtifactID = id
-			if err = tx.Create(&objects[i]).Error; err != nil {
+		if len(objects) > 0 {
+			for i := range objects {
+				objects[i].ArtifactID = id
+			}
+			if err = tx.CreateInBatches(objects, 100).Error; err != nil {
 				return err
 			}
 		}
 		// 共享内容对象：事务内 ON CONFLICT DO NOTHING 幂等写入（first-writer-wins）。
-		for i := range contentObjects {
-			if err = tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&contentObjects[i]).Error; err != nil {
+		if len(contentObjects) > 0 {
+			if err = tx.Clauses(clause.OnConflict{DoNothing: true}).CreateInBatches(contentObjects, 100).Error; err != nil {
 				return err
 			}
 		}

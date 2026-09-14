@@ -31,9 +31,11 @@ type TemplateEntity struct {
 	DraftDocument json.RawMessage `gorm:"column:draft_document;type:jsonb;not null"`
 	DraftVersion  int64           `gorm:"column:draft_version;not null"`
 	// CurrentVersionID 当前版本指针（content_template_versions.id）。
-	CurrentVersionID *string   `gorm:"column:current_version_id;type:uuid"`
-	CreatedAt        time.Time `gorm:"column:created_at;not null"`
-	UpdatedAt        time.Time `gorm:"column:updated_at;not null"`
+	CurrentVersionID *string `gorm:"column:current_version_id;type:uuid"`
+	// IsDefault 该实体类型的显式默认模板（EDT-014；每个 entity_type 至多一个）。
+	IsDefault bool      `gorm:"column:is_default;not null"`
+	CreatedAt time.Time `gorm:"column:created_at;not null"`
+	UpdatedAt time.Time `gorm:"column:updated_at;not null"`
 }
 
 // TableName 表名。
@@ -91,9 +93,9 @@ func (m *Model) Get(ctx context.Context, id string) (e *TemplateEntity, err erro
 	return &row, nil
 }
 
-// List 按 entity_type 列表（更新时间倒序；entity_type 为空时返回全部）。
+// List 按 entity_type 列表（默认模板优先，其次更新时间倒序；entity_type 为空时返回全部）。
 func (m *Model) List(ctx context.Context, entityType string) (list []*TemplateEntity, err error) {
-	q := m.db.WithContext(ctx).Order("updated_at DESC, id DESC")
+	q := m.db.WithContext(ctx).Order("is_default DESC, updated_at DESC, id DESC")
 	if entityType != "" {
 		q = q.Where("entity_type = ?", entityType)
 	}

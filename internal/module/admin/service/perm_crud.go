@@ -8,6 +8,7 @@ import (
 	admindto "go_wp/internal/module/admin/dto"
 	adminenums "go_wp/internal/module/admin/enums"
 	adminmodel "go_wp/internal/module/admin/model"
+	"go_wp/pkg/database"
 	"go_wp/pkg/casbin"
 
 	"gorm.io/gorm"
@@ -21,10 +22,10 @@ func (s *Service) PermList(ctx context.Context, req *admindto.PermListReq) (res 
 		query = query.Where("module = ?", req.Module)
 	}
 	if req.Code != "" {
-		query = query.Where("permission_code LIKE ? ESCAPE '\\'", "%"+adminmodel.EscapeLike(req.Code)+"%")
+		query = query.Where("permission_code LIKE ? ESCAPE '\\'", "%"+database.EscapeLikePattern(req.Code)+"%")
 	}
 	if req.APIPath != "" {
-		query = query.Where("api_path LIKE ? ESCAPE '\\'", "%"+adminmodel.EscapeLike(req.APIPath)+"%")
+		query = query.Where("api_path LIKE ? ESCAPE '\\'", "%"+database.EscapeLikePattern(req.APIPath)+"%")
 	}
 	if req.Status != nil {
 		query = query.Where("status = ?", *req.Status)

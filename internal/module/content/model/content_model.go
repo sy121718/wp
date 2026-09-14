@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"go_wp/pkg/database"
+
 	"gorm.io/gorm"
 )
 
@@ -119,7 +121,7 @@ func (m *Model) SearchArticles(ctx context.Context, entityType, keyword string, 
 	if limit <= 0 || limit > maxSearchLimit {
 		limit = maxSearchLimit
 	}
-	pattern := "%" + escapeLikePattern(keyword) + "%"
+	pattern := "%" + database.EscapeLikePattern(keyword) + "%"
 	err = m.db.WithContext(ctx).
 		Where("entity_type = ?", entityType).
 		Where("(data->>'title' ILIKE ? ESCAPE '\\' OR data->>'excerpt' ILIKE ? ESCAPE '\\')", pattern, pattern).
@@ -129,10 +131,3 @@ func (m *Model) SearchArticles(ctx context.Context, entityType, keyword string, 
 	return list, err
 }
 
-// escapeLikePattern 转义 LIKE 通配符（\ % _ 全部按字面量匹配，配合 ESCAPE '\'）。
-//
-// 顺序不能反：先转义反斜杠本身，否则后两步插入的反斜杠会被自己再转义一遍
-// （"a\%" 会变成 "a\\\%" 这种多了一层的结果）。
-func escapeLikePattern(s string) string {
-	return strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(s)
-}

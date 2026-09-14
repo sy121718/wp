@@ -29,10 +29,10 @@ func (s *Service) AdminList(ctx context.Context, req *admindto.AdminListReq) (re
 	query := s.am.DB(ctx).Where("is_admin != ?", 1)
 
 	if email := strings.TrimSpace(req.Email); email != "" {
-		query = query.Where("email LIKE ? ESCAPE '\\'", "%"+adminmodel.EscapeLike(email)+"%")
+		query = query.Where("email LIKE ? ESCAPE '\\'", "%"+database.EscapeLikePattern(email)+"%")
 	}
 	if name := strings.TrimSpace(req.Name); name != "" {
-		query = query.Where("name LIKE ? ESCAPE '\\'", "%"+adminmodel.EscapeLike(name)+"%")
+		query = query.Where("name LIKE ? ESCAPE '\\'", "%"+database.EscapeLikePattern(name)+"%")
 	}
 	if req.Status != nil {
 		query = query.Where("status = ?", *req.Status)
