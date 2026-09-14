@@ -91,15 +91,29 @@ func (s *Service) ResolveCollection(ctx context.Context, source string, filter m
 	if ierr != nil {
 		return nil, ierr
 	}
+	valueBatches := make([]map[string]string, 0, len(rows))
 	for _, r := range rows {
 		// 与实体绑定同源：同一份派生值 + 同一份译文替换（语境 实体类型.<字段名>）。
 		loc, lerr := s.localizeRelatedFrom(ctx, lang, r, categoryIndex, brandIndex, tagIndex, attrs)
 		if lerr != nil {
 			return nil, lerr
 		}
-		values := productFieldValues(r, byProduct[r.ID], attrs, loc)
-		s.translateFields(ctx, lang, productcontract.EntityTypeProduct, values)
-		items = append(items, collectionItem(r, values))
+		valueBatches = append(valueBatches, productFieldValues(r, byProduct[r.ID], attrs, loc))
+	}
+	s.translateFieldsBatch(ctx, lang, productcontract.EntityTypeProduct, valueBatches)
+	var publishedPaths map[string]string
+	if s.publishedLocator != nil && f.ProjectID != "" && len(ids) > 0 {
+		publishedPaths, err = s.publishedLocator.PublishedEntityPaths(ctx, f.ProjectID, productcontract.EntityTypeProduct, lang, ids)
+		if err != nil {
+			return nil, err
+		}
+	}
+	for i, r := range rows {
+		item := collectionItem(r, valueBatches[i])
+		if p := publishedPaths[r.ID]; p != "" {
+			item["url"] = p
+		}
+		items = append(items, item)
 	}
 	return items, nil
 }

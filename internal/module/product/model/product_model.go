@@ -48,12 +48,17 @@ type ProductEntity struct {
 	// 不变量：主分类必然同时出现在 category_ids 里（由 service 维护）。
 	PrimaryCategoryID *string         `gorm:"column:primary_category_id;type:uuid"`
 	TagIDs            json.RawMessage `gorm:"column:tag_ids;type:jsonb;not null"`
-	// Ratings 评分明细（issue #30）：与商品是 hasMany 关联，查询用 Preload 一次批量拉回。
+	// Ratings 评分明细（issue #30）：与商品是 hasMany 关联，详情页等路径仍可用 Preload。
 	//
-	// 商品表上**没有**评分列 —— 平均分与条数由这些明细算出（投影，不落库）：
-	// 评分是明细数据的聚合结果，存成商品列就意味着每加一条评分都要回写商品行，
-	// 并且丢掉明细本身（将来评论域无从接手）。
+	// 商品表上**没有**评分列 —— 平均分与条数由明细算出（投影，不落库）；
+	// ListForCollection 用子查询投影到 RatingAvg / RatingCount，避免 Preload 全量明细（PERF-004）。
 	Ratings []ProductRatingEntity `gorm:"foreignKey:ProductID;references:ID"`
+	// RatingAvg / RatingCount 仅查询投影列（非表字段）—— 必须带 `->` 只读标记：
+	// 少了它 GORM 会把这两列写进 INSERT / UPDATE，而 products 表上根本没有这两列
+	//（评分由 product_ratings 明细算出），于是每一次建商品都会以
+	// `column "rating_avg" does not exist` 失败。
+	RatingAvg   *float64 `gorm:"column:rating_avg;->"`
+	RatingCount *int     `gorm:"column:rating_count;->"`
 
 	// MinPrice 最低启用变体价（issue #28 的投影别名 min_price）。
 	//
@@ -136,10 +141,14 @@ func (m *Model) CreateWithVariants(ctx context.Context, e *ProductEntity, varian
 	})
 }
 
-// Get 按 ID 查商品。
-func (m *Model) Get(ctx context.Context, id string) (e *ProductEntity, err error) {
+// Get 按 ID 查商品。projectID 非空时追加工程归属条件（防跨工程 IDOR）。
+func (m *Model) Get(ctx context.Context, id, projectID string) (e *ProductEntity, err error) {
 	e = &ProductEntity{}
-	err = m.DB(ctx).Where("id = ?", id).First(e).Error
+	q := m.DB(ctx).Where("id = ?", id)
+	if strings.TrimSpace(projectID) != "" {
+		q = q.Where("project_id = ?", projectID)
+	}
+	err = q.First(e).Error
 	return e, err
 }
 
@@ -245,10 +254,10 @@ func (m *Model) ListForCollection(ctx context.Context, f CollectionFilter, limit
 			"default_image, created_at, updated_at, " +
 			// 最低启用变体价（issue #28）：价格排序与价格区间展示都要数值，
 			// 光有 priceRange 字符串没法排序。没有启用变体的商品该列为 NULL。
-			"(SELECT MIN(v.price) FROM product_variants v WHERE v.product_id = products.id AND v.enabled) AS min_price")
-	// 评分明细（issue #30）：hasMany 关联一次批量拉回（GORM 会把它变成第二条 IN 查询，
-	// 不是逐条商品查一次）。投影值由明细在 Go 侧算出。
-	q = q.Preload("Ratings")
+			"(SELECT MIN(v.price) FROM product_variants v WHERE v.product_id = products.id AND v.enabled) AS min_price, " +
+			// 评分聚合（issue #30 / PERF-004）：一次子查询取均值与条数，不 Preload 全量明细。
+			"(SELECT AVG(r.score) FROM product_ratings r WHERE r.product_id = products.id) AS rating_avg, " +
+			"(SELECT COUNT(*)::int FROM product_ratings r WHERE r.product_id = products.id) AS rating_count")
 	if f.ProjectID != "" {
 		q = q.Where("project_id = ?", f.ProjectID)
 	}

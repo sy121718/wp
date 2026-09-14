@@ -51,6 +51,9 @@ func (p *ProductEntity) RatingSummaryOf() (avg float64, count int, ok bool) {
 	if p == nil {
 		return 0, 0, false
 	}
+	if p.RatingCount != nil && *p.RatingCount > 0 && p.RatingAvg != nil {
+		return *p.RatingAvg, *p.RatingCount, true
+	}
 	return RatingSummary(p.Ratings)
 }
 
