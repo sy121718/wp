@@ -13,9 +13,30 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
+
+	cartcontract "go_wp/internal/module/cart/contract"
 )
 
 const testSecret = "cart-cookie-test-secret"
+
+// TestCartCookieRejectsExpiredPayload 超过 MaxAge 的签发时间必须判废。
+func TestCartCookieRejectsExpiredPayload(t *testing.T) {
+	c := newTestCodec()
+	expired := cartPayload{
+		V: cartCookieVersion,
+		T: time.Now().Unix() - int64(cartcontract.CartCookieMaxAgeSeconds) - 1,
+		I: []cartPayloadLine{{VariantID: "11111111-1111-1111-1111-111111111111", Quantity: 1}},
+	}
+	raw, err := c.encode(expired)
+	if err != nil {
+		t.Fatalf("编码失败: %v", err)
+	}
+	if _, ok := c.decode(raw); ok {
+		t.Fatal("超过有效期的 cookie 必须判废")
+	}
+}
+
 
 func newTestCodec() cookieCodec { return cookieCodec{secret: []byte(testSecret)} }
 

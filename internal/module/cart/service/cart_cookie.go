@@ -23,6 +23,9 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"strings"
+	"time"
+
+	cartcontract "go_wp/internal/module/cart/contract"
 )
 
 // cookie 的名字与寿命定义在契约包（cartcontract.CartCookieName / CartCookieMaxAgeSeconds）：
@@ -30,7 +33,8 @@ import (
 const (
 	// cartCookieVersion 载荷版本。格式变了就升版本，老 cookie 直接判废 ——
 	// 比写兼容代码便宜，也比「解析出半个购物车」安全。
-	cartCookieVersion = 1
+	// v2 起载荷带签发时间 t，decode 时与 CartCookieMaxAgeSeconds 对齐校验。
+	cartCookieVersion = 2
 	// maxCartLines 购物车最多几行。cookie 有 4KB 上限，且每行都要在结算时
 	// 逐个锁库存行；无上限的输入能让一次请求锁住任意多的行。
 	maxCartLines = 20
@@ -44,6 +48,7 @@ const (
 // cartPayload 购物车 cookie 载荷。
 type cartPayload struct {
 	V int               `json:"v"`
+	T int64             `json:"t"` // 签发时间（Unix 秒）；decode 时校验不超过 MaxAge。
 	I []cartPayloadLine `json:"i"`
 }
 
@@ -64,6 +69,12 @@ type cookieCodec struct {
 
 // encode 载荷 → 带签名的 cookie 值（base64url(JSON) + "." + hmac 前 16 字节）。
 func (c cookieCodec) encode(p cartPayload) (string, error) {
+	if p.V == 0 {
+		p.V = cartCookieVersion
+	}
+	if p.T == 0 {
+		p.T = time.Now().Unix()
+	}
 	b, err := json.Marshal(p)
 	if err != nil {
 		return "", err
@@ -114,6 +125,13 @@ func (c cookieCodec) decode(raw string) (p cartPayload, ok bool) {
 		return empty, false
 	}
 	if decoded.V != cartCookieVersion {
+		return empty, false
+	}
+	if decoded.T <= 0 {
+		return empty, false
+	}
+	now := time.Now().Unix()
+	if now < decoded.T || now-decoded.T > int64(cartcontract.CartCookieMaxAgeSeconds) {
 		return empty, false
 	}
 	lines := normalizeLines(decoded.I)
@@ -180,7 +198,7 @@ func (p cartPayload) withLine(variantID string, quantity int) cartPayload {
 	if !replaced && quantity > 0 {
 		out = append(out, cartPayloadLine{VariantID: variantID, Quantity: quantity})
 	}
-	return cartPayload{V: cartCookieVersion, I: out}
+	return cartPayload{V: cartCookieVersion, T: p.T, I: out}
 }
 
 // lineOf 取某变体的当前数量（不在车里为 0）。
