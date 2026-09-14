@@ -6,8 +6,8 @@
 --
 -- 三条不可动摇的语义：
 --   1. 库存真源在这里，不在 products / product_variants ——
---      product_variants.stock_total 只是后台列表展示用的冗余缓存（spec §库存）；
 --      一切影响可用量的判断只读本表并加行锁（行锁与增减能力见 issue #16）。
+--      （121 之前曾在商品侧存 stock_total 冗余缓存，已删除；见 121_drop_stock_cache.sql。）
 --   2. 「必须有一个默认仓」由部分唯一索引 uq_inventory_warehouses_project_default 兜住：
 --      每工程至多一行 is_default —— 并发下也不可能出现两个默认仓。
 --   3. 一个 SKU 可以在多个仓各有一行（UNIQUE (variant_id, warehouse_id)），

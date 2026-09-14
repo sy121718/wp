@@ -10,7 +10,8 @@
 --     （见 049_block_reuse_mode.sql 与 docs/02-domain.md §4.2/§4.3）。
 --
 -- 明确保留（本迁移不触碰）：
---   build_jobs、page_component_pins、content_template_component_pins、publication_events。
+--   build_jobs（表在 init 中创建，队列引擎尚未接入 Go，非废弃）、
+--   page_component_pins、content_template_component_pins、publication_events。
 --
 -- 外键依赖处理（前置条件，必须先解绑）：
 --   page_component_pins / content_template_component_pins 两张保留表原有 4 个外键指向

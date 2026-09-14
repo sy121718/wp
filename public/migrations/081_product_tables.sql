@@ -7,7 +7,8 @@
 --   · 属性组与属性值合一张表，值以 JSON 承载；标签与规则合一张表，规则参数以 JSON 承载。
 -- 代价（已在 spec 中记录并接受）：无数据库级引用完整性、反查依赖 GIN 索引。
 --
--- 库存真源在仓库模块（后续票），本表的 stock_total 只是列表展示用的冗余缓存。
+-- 库存真源在 inventory 模块（099+）；本迁移曾含 product_variants.stock_total 展示缓存列，
+-- 已在迁移 121 删除（#32 合并模块后直接读 inventory_stocks 投影，见 121 注释）。
 -- 注册：public/migrations/register.go（Migration 081-product-tables）。
 
 -- 1) 分类（树形自引用）
@@ -136,7 +137,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_product_variants_product_options
     WHERE option_values <> '{}'::jsonb;
 
 COMMENT ON TABLE products IS '商品主体（issue #5；价格与库存在变体上）';
-COMMENT ON TABLE product_variants IS '商品变体 / SKU（一行一个；stock_total 为仓库真源的冗余缓存）';
+COMMENT ON TABLE product_variants IS '商品变体 / SKU（一行一个；可用量只读 inventory_stocks 真源，121 起无 stock_total 列）';
 COMMENT ON TABLE product_attributes IS '商品属性（组 + 值合一，值走 JSON；is_variation 决定是否参与变体生成）';
 COMMENT ON TABLE product_categories IS '商品分类（树形）';
 COMMENT ON TABLE product_brands IS '商品品牌';

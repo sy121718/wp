@@ -1,18 +1,18 @@
--- 102 · 库存流水 / 变动原因字典 / 物料清单 / 缓存同步台账（issue #16）。
+-- 102 · 库存流水 / 变动原因字典 / 物料清单（issue #16）。
 --
--- 本迁移落地 #16 的四张新表，全部围绕「库存真源 inventory_stocks」展开：
+-- 本迁移落地 #16 的三张持久表（第四张缓存台账见下方历史说明），围绕「库存真源 inventory_stocks」：
 --   inventory_change_reasons    变动原因字典（出 / 入 / 调整三类；内置 + 自定义，引用而非自由文本）；
 --   inventory_stock_movements   库存流水（每次真源变动一行：方向 / 数量 / 变动前后 / 原因 / 来源引用）；
---   inventory_bom_items         物料清单（父 SKU → 子项 SKU × 用量，扣减时按它展开）；
---   inventory_stock_cache_syncs 商品侧缓存同步台账（真源汇总值 / 已写入值 / 时间戳 / 失败原因）。
+--   inventory_bom_items         物料清单（父 SKU → 子项 SKU × 用量，扣减时按它展开）。
 --
--- 三条不可动摇的语义：
---   1. 可用量的判定只读 inventory_stocks 并加行锁（issue #16 的锁在既有表上，不改它的结构）；
---      这里的流水是**事后记账**，不是判定依据；
---   2. 变动原因必须是字典里的条目（reason_id + reason_code），不接受自由文本 ——
---      自由文本会让「按原因统计出库」永远做不干净；
---   3. 商品侧缓存（product_variants.stock_total / stock_synced_at，081 已建）只是展示值：
---      同步是**提交之后**的独立步骤，失败不回滚真源，由对账兜底 —— 台账记录这次同步的结果。
+-- 历史说明：本文件仍 CREATE inventory_stock_cache_syncs（#16 时期的商品侧缓存同步台账）。
+-- 迁移 121 已 DROP 该表并删除 product_variants 上的 stock_total / stock_synced_at ——
+-- #32 合并商品与库存模块后，展示值直接读真源投影，**勿再维护缓存同步逻辑**。
+--
+-- 三条不可动摇的语义（121 之后仍成立）：
+--   1. 可用量的判定只读 inventory_stocks 并加行锁；流水是**事后记账**，不是判定依据；
+--   2. 变动原因必须是字典里的条目（reason_id + reason_code），不接受自由文本；
+--   3. 商品查询期的库存展示走 inventory 真源投影，不参与扣减（见 AGENTS.md product/inventory 行）。
 --
 -- 外键选择：warehouse_id / variant_id 随仓、随变体级联删除（与 099 同口径：
 -- 库存行与流水都是仓库与变体的派生物）；reason_id 用 ON DELETE SET NULL ——
@@ -93,6 +93,7 @@ CREATE TABLE IF NOT EXISTS inventory_bom_items (
 CREATE INDEX IF NOT EXISTS idx_inventory_bom_component ON inventory_bom_items(component_variant_id);
 CREATE INDEX IF NOT EXISTS idx_inventory_bom_project ON inventory_bom_items(project_id);
 
+-- 以下表已在迁移 121 删除；保留 CREATE 仅为「已跑过 102、尚未跑 121」的中间态幂等。
 CREATE TABLE IF NOT EXISTS inventory_stock_cache_syncs (
     id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     project_id   uuid NOT NULL REFERENCES projects(id),
@@ -114,6 +115,6 @@ CREATE INDEX IF NOT EXISTS idx_inventory_cache_syncs_project ON inventory_stock_
 COMMENT ON TABLE inventory_change_reasons IS '库存变动原因字典（issue #16；内置 project_id IS NULL + 自定义，引用而非自由文本）';
 COMMENT ON TABLE inventory_stock_movements IS '库存流水（issue #16；每次真源变动一行：方向/数量/前后值/原因/来源引用）';
 COMMENT ON TABLE inventory_bom_items IS '物料清单（issue #16；父 SKU → 子项 SKU × 用量，扣减时展开）';
-COMMENT ON TABLE inventory_stock_cache_syncs IS '商品侧库存缓存同步台账（issue #16；真源汇总 vs 已写入值 + 时间戳 + 失败原因）';
+COMMENT ON TABLE inventory_stock_cache_syncs IS '【121 已删】商品侧库存缓存同步台账（历史 issue #16）';
 COMMENT ON COLUMN inventory_stock_movements.reason_code IS '变动原因 code 快照（reason_id 被删后历史仍可读）';
-COMMENT ON COLUMN inventory_stock_cache_syncs.synced_at IS '最近一次缓存同步时间戳（商品侧 stock_synced_at 与之同源）';
+COMMENT ON COLUMN inventory_stock_cache_syncs.synced_at IS '【121 已删】历史列：曾与 product_variants.stock_synced_at 同源';

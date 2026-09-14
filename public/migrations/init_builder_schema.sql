@@ -1,7 +1,12 @@
 -- ========================================
--- go_wp — 可视化构建器 DDL（24 张表）
+-- go_wp — 可视化构建器 DDL（24 张表）【历史初始快照，非当前 schema 权威描述】
+--
+-- ⚠️ 本文件定义的是「空库第一次 bootstrap」时的基线；后续编号迁移会超越此处多处
+-- CHECK / 列 / 约束（例如 071 扩展 dependency_kind、020 加 pages.theme_id、080 DROP
+-- content_templates.entity_type CHECK）。单独阅读本文件会误解当前结构。
+-- 当前 schema 见 docs/schema-snapshot.md（查库 / pg_dump --schema-only / dbx）。
+--
 -- 来源：docs/02-domain.md §7（领域层 14 张）+ docs/03-pipeline.md §9（流水线层 10 张）
--- 与本地 PostgreSQL / wp 库对齐
 -- 按依赖顺序排列（文档原序中 page_routes 前向引用 presentation_instances，此处已重排）；
 -- ALTER 复合外键在全部基表就绪后统一执行
 -- ========================================
@@ -323,7 +328,7 @@ CREATE TABLE IF NOT EXISTS publication_events (
     )
 );
 
--- 18. 构建队列
+-- 18. 构建队列（DDL 保留；Go 侧消费引擎未实现，见 docs/03-pipeline.md §8.3 / PERF-001）
 CREATE TABLE IF NOT EXISTS build_jobs (
     id                uuid PRIMARY KEY,
     source_type       text NOT NULL CHECK (source_type IN ('page', 'presentation')),
