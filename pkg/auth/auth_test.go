@@ -21,9 +21,12 @@ func TestWeakSessionSecret(t *testing.T) {
 		{"a-strong-random-secret-9f3b2c1d", false},
 	}
 	for _, c := range cases {
-		if got := weakSessionSecret(c.secret); got != c.want {
-			t.Fatalf("weakSessionSecret(%q) = %v, want %v", c.secret, got, c.want)
+		if got := weakSessionSecret(c.secret, false); got != c.want {
+			t.Fatalf("weakSessionSecret(%q, false) = %v, want %v", c.secret, got, c.want)
 		}
+	}
+	if !weakSessionSecret("short", true) {
+		t.Fatal("release 模式下短密钥应判弱")
 	}
 }
 
