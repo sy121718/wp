@@ -42,7 +42,7 @@ func (s *Service) CreateVariant(ctx context.Context, req *productdto.CreateVaria
 	if req == nil || req.ProductID == "" {
 		return nil, errors.New(productenums.ErrInvalidParam)
 	}
-	p, err := s.m.Get(ctx, req.ProductID)
+	p, err := s.m.Get(ctx, req.ProductID, "")
 	if err != nil {
 		return nil, mapNotFound(err)
 	}
@@ -162,6 +162,13 @@ func (s *Service) DeleteVariant(ctx context.Context, req *productdto.DeleteVaria
 	projectID, perr := s.variantProjectID(ctx, v)
 	if perr != nil {
 		return perr
+	}
+	if s.inv != nil {
+		if n, cerr := s.inv.CountNonZeroStocksByVariant(ctx, req.ID); cerr != nil {
+			return cerr
+		} else if n > 0 {
+			return errors.New(productenums.ErrVariantHasStock)
+		}
 	}
 	before := variantChangeSnapshot(v, nil)
 	if err = s.m.DeleteVariant(ctx, req.ID); err != nil {

@@ -16,7 +16,8 @@ const (
 	ErrInvalidField = "ErrInvalidField" // 字段不在商品字段白名单内
 	ErrNotFound     = "ErrNotFound"     // 商品或变体不存在
 	ErrSlugTaken    = "ErrSlugTaken"    // 同工程下 slug 已占用
-	ErrSkuTaken     = "ErrSkuTaken"     // 同商品下 SKU 编码已占用
+	ErrSkuTaken            = "ErrSkuTaken"            // 同商品下 SKU 编码已占用
+	ErrVariantHasStock     = "ErrVariantHasStock"     // 变体仍有库存，不能删除（请改为停用）
 	ErrNameRequired = "ErrNameRequired" // 商品名称必填
 
 	// —— 属性组（issue #7）——
