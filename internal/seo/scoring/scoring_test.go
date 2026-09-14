@@ -73,19 +73,27 @@ func TestScoreEmpty(t *testing.T) {
 	}
 }
 
-// TestTitleLengthBoundaries 标题长度边界（50-60 满分，>65 归零）。
+// TestTitleLengthBoundaries 标题展示宽度边界（40-60 满分，>65 归零，SEO-017）。
 func TestTitleLengthBoundaries(t *testing.T) {
 	cases := []struct {
-		n    int
-		want int
+		title string
+		want  int
 	}{
-		{0, 0}, {19, 2}, {30, 2}, {55, 5}, {60, 5}, {62, 3}, {70, 0},
+		{"", 0},
+		{strings.Repeat("a", 19), 2},
+		{strings.Repeat("a", 30), 2},
+		{strings.Repeat("a", 55), 5},
+		{strings.Repeat("a", 60), 5},
+		{strings.Repeat("a", 62), 3},
+		{strings.Repeat("a", 70), 0},
+		// 中文按 2 宽度单位：30 字 = 60 单位，应满分；35 字 = 70 单位，应归零。
+		{strings.Repeat("测", 30), 5},
+		{strings.Repeat("测", 35), 0},
 	}
 	for _, c := range cases {
-		in := &Input{Title: strings.Repeat("a", c.n)}
-		got, _ := chkTitleLength(in)
+		got, _ := chkTitleLength(&Input{Title: c.title})
 		if got != c.want {
-			t.Errorf("标题 %d 字符: 期望 %d 分，实际 %d", c.n, c.want, got)
+			t.Errorf("标题 %q: 期望 %d 分，实际 %d", c.title, c.want, got)
 		}
 	}
 }

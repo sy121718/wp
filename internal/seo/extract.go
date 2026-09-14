@@ -21,13 +21,16 @@ func str(v any) string {
 }
 
 // ScoreDocument 从页面草稿 JSON 提取输入并计算评分（只读分析，不写产物）。
-// pageURL 用于 URL 相关检查（可传草稿路径）。
-func ScoreDocument(doc json.RawMessage, pageURL string) (*scoring.Result, error) {
+// pageURL 用于 URL 相关检查（可传草稿路径）；lang 决定字数/句长统计口径（SEO-001）。
+func ScoreDocument(doc json.RawMessage, pageURL, lang string) (*scoring.Result, error) {
 	var root map[string]any
 	if err := json.Unmarshal(doc, &root); err != nil {
 		return nil, err
 	}
-	in := &scoring.Input{URL: pageURL, Locale: "zh", IsHTTPS: true}
+	if strings.TrimSpace(lang) == "" {
+		lang = "zh-CN"
+	}
+	in := &scoring.Input{URL: pageURL, Locale: lang, IsHTTPS: true}
 	if settings, ok := root["settings"].(map[string]any); ok {
 		if seoMap, ok := settings["seo"].(map[string]any); ok {
 			in.Title = str(seoMap["title"])
@@ -48,9 +51,14 @@ func ScoreDocument(doc json.RawMessage, pageURL string) (*scoring.Result, error)
 	var body strings.Builder
 	walk(nodes, in, &body)
 	in.BodyText = body.String()
-	in.WordCount = len([]rune(in.BodyText))
-	// 结构化数据：有标题结构的内容页视为可输出 JSON-LD（构建期注入）。
-	in.HasSchema = len(in.Headings) > 0
+	in.WordCount = wordCount(in.BodyText, lang)
+	schemaType := ""
+	if settings, ok := root["settings"].(map[string]any); ok {
+		if seoMap, ok := settings["seo"].(map[string]any); ok {
+			schemaType = str(seoMap["schemaType"])
+		}
+	}
+	in.HasSchema = EvaluateSchemaPresence(in.Title, in.MetaDescription, schemaType)
 	return scoring.Score(in, nil), nil
 }
 

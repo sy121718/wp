@@ -30,7 +30,7 @@ func allSections() []Section {
 			{Key: "title_present", Label: "标题存在", Max: 5, Score: chkTitlePresent,
 				Benchmark: "非空且长度 ≥ 20 字符", Hint: "为页面填写 SEO 标题"},
 			{Key: "title_length", Label: "标题长度", Max: 5, Score: chkTitleLength,
-				Benchmark: "50-60 字符", Hint: "删掉冗余词，品牌名放末尾，关键词前置"},
+				Benchmark: "40-60 宽度单位", Hint: "删掉冗余词，品牌名放末尾，关键词前置（中文按约 30 字）"},
 			{Key: "title_keyword_first_half", Label: "关键词位置", Max: 5, Score: chkTitleKeywordFirstHalf,
 				Benchmark: "主关键词出现在标题前半段", Hint: "把主关键词挪到标题前 30 个字符内"},
 		}},

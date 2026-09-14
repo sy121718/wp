@@ -45,18 +45,21 @@ var (
 //
 // data 为 contents.data 解出的字段表，articleURL 为该文章详情页的线上路径
 // （拿不到就传空串 —— URL 相关检查会按「未知」判，不影响其余项）。
-func ScoreArticle(data map[string]any, articleURL string) *scoring.Result {
+func ScoreArticle(data map[string]any, articleURL, lang string) *scoring.Result {
 	body := articleField(data, "body")
+	if strings.TrimSpace(lang) == "" {
+		lang = "zh-CN"
+	}
 	in := &scoring.Input{
 		URL:             articleURL,
-		Locale:          "zh",
+		Locale:          lang,
 		IsHTTPS:         true,
 		Title:           firstNonEmpty(articleField(data, "seoTitle"), articleField(data, "title")),
 		MetaDescription: firstNonEmpty(articleField(data, "seoDescription"), articleField(data, "excerpt")),
 		FocusKeyword:    articleField(data, "focusKeyword"),
 	}
 	in.BodyText = articlePlainText(body)
-	in.WordCount = len([]rune(in.BodyText))
+	in.WordCount = wordCount(in.BodyText, lang)
 	in.Headings = articleHeadings(body)
 	in.Images = articleImages(body, articleField(data, "featuredImage"))
 	in.InternalLinks, in.ExternalLinks, in.AnchorTexts = articleLinks(body)
@@ -64,7 +67,7 @@ func ScoreArticle(data map[string]any, articleURL string) *scoring.Result {
 	// 发布出来的详情页一定带这两样，所以判真 —— 评分侧栏只该显示"编辑者能改的东西"，
 	// 把系统保证项挂在上面只会教人忽略它。
 	in.HasCanonical = true
-	in.HasSchema = true
+	in.HasSchema = EvaluateSchemaPresence(in.Title, in.MetaDescription, "article")
 	return scoring.Score(in, nil)
 }
 

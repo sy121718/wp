@@ -88,7 +88,7 @@ func TestScoreArticleSEOTitleWins(t *testing.T) {
 		"seoTitle":       "一个长度合适、且把关键词放在前半段的 SEO 标题文本",
 		"seoDescription": "一段长度合适、带行动号召的描述文本，用于结果页点击率。",
 	}
-	res := ScoreArticle(base, "/blog/x")
+	res := ScoreArticle(base, "/blog/x", "zh-CN")
 	if res == nil {
 		t.Fatal("评分结果为空")
 	}
@@ -102,14 +102,14 @@ func TestScoreArticleSEOTitleWins(t *testing.T) {
 func TestScoreArticleBodyTagsDoNotInflateWordCount(t *testing.T) {
 	body := "<p>" + strings.Repeat("字", 1200) + "</p>"
 	withTags := map[string]any{"title": "标题", "body": body}
-	res := ScoreArticle(withTags, "/blog/x")
+	res := ScoreArticle(withTags, "/blog/x", "zh-CN")
 	if res == nil {
 		t.Fatal("评分结果为空")
 	}
 	// 内容长度项在 1200 字时应达标；若标签被算进字数会虚高但仍然是满分，
 	// 所以这里反过来钉：把标签撑得极大，字数项不应因此被判「过长」。
 	padded := map[string]any{"title": "标题", "body": strings.Repeat("<div>", 400) + body}
-	res2 := ScoreArticle(padded, "/blog/x")
+	res2 := ScoreArticle(padded, "/blog/x", "zh-CN")
 	if res2.Total != res.Total {
 		t.Errorf("标签影响了评分：%d → %d（标签不应参与字数与内容判断）", res.Total, res2.Total)
 	}
@@ -118,7 +118,7 @@ func TestScoreArticleBodyTagsDoNotInflateWordCount(t *testing.T) {
 // TestScoreArticleEmptyData 空数据不 panic、给出可解释的低分。
 func TestScoreArticleEmptyData(t *testing.T) {
 	for name, data := range map[string]map[string]any{"nil": nil, "empty": {}} {
-		res := ScoreArticle(data, "")
+		res := ScoreArticle(data, "", "zh-CN")
 		if res == nil {
 			t.Fatalf("%s：评分结果为空", name)
 		}
@@ -133,7 +133,7 @@ func TestScoreArticleKeywordLift(t *testing.T) {
 	body := "<h2>长尾词布局</h2><p>" + strings.Repeat("长尾词布局是内容运营的基本功 ", 60) + "</p>"
 	without := map[string]any{"title": "长尾词布局", "body": body, "excerpt": "摘要"}
 	with := map[string]any{"title": "长尾词布局", "body": body, "excerpt": "摘要", "focusKeyword": "长尾词布局"}
-	a, b := ScoreArticle(without, "/blog/x"), ScoreArticle(with, "/blog/x")
+	a, b := ScoreArticle(without, "/blog/x", "zh-CN"), ScoreArticle(with, "/blog/x", "zh-CN")
 	if b.Total <= a.Total {
 		t.Errorf("设置主关键词后分数应上升：无关键词 %d，有关键词 %d", a.Total, b.Total)
 	}

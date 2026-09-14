@@ -7,6 +7,7 @@ package scoring
 import (
 	"fmt"
 	"strings"
+	"unicode"
 )
 
 // Heading 标题结构项。
@@ -50,6 +51,7 @@ type CheckResult struct {
 	Label     string
 	Score     int
 	Max       int
+	Skipped   bool   // true = 不适用，不计入维度分母
 	Actual    string // 实测值描述
 	Benchmark string
 	Hint      string
@@ -111,11 +113,17 @@ func Score(in *Input, profile *Profile) *Result {
 		sr := SectionResult{Key: sec.Key, Label: sec.Label, Weight: w}
 		for _, ck := range sec.Checks {
 			score, actual := ck.Score(in)
+			skipped := score < 0
+			if skipped {
+				sr.Checks = append(sr.Checks, CheckResult{
+					Key: ck.Key, Label: ck.Label, Score: 0, Max: ck.Max, Skipped: true,
+					Actual: actual, Benchmark: ck.Benchmark, Hint: ck.Hint,
+					Target: TargetOf(ck.Key),
+				})
+				continue
+			}
 			if score > ck.Max {
 				score = ck.Max
-			}
-			if score < 0 {
-				score = 0
 			}
 			sr.Score += score
 			sr.Max += ck.Max
@@ -185,12 +193,24 @@ func isCJK(locale string) bool {
 	return locale == "" || strings.HasPrefix(strings.ToLower(locale), "zh")
 }
 
-// countKeyword 统计关键词出现次数（大小写不敏感）。
+// countKeyword 统计关键词非重叠出现次数（大小写不敏感）。
 func countKeyword(text, kw string) int {
 	if kw == "" || text == "" {
 		return 0
 	}
-	return strings.Count(strings.ToLower(text), strings.ToLower(kw))
+	textLower := strings.ToLower(text)
+	kwLower := strings.ToLower(kw)
+	count := 0
+	start := 0
+	for {
+		i := strings.Index(textLower[start:], kwLower)
+		if i < 0 {
+			break
+		}
+		count++
+		start += i + len(kwLower)
+	}
+	return count
 }
 
 // keywordDensity 关键词密度（百分比）。CJK 以字符数、英文以词数近似统计总量。
@@ -220,3 +240,25 @@ func keywordDensity(in *Input) float64 {
 
 // fmtPct 百分比格式化（一位小数）。
 func fmtPct(v float64) string { return fmt.Sprintf("%.1f%%", v) }
+
+// displayWidth 估算 SERP 展示宽度（与 seo.DisplayWidth 同口径，避免 scoring→seo 循环依赖）。
+func displayWidth(s string) int {
+	w := 0
+	for _, r := range s {
+		if r <= 0x007F {
+			w++
+			continue
+		}
+		if unicode.In(r, unicode.Han, unicode.Hiragana, unicode.Katakana, unicode.Hangul) {
+			w += 2
+			continue
+		}
+		// 其它非 ASCII 按宽字符估算（与 seo.DisplayWidth 近似）。
+		if r > 0x00FF {
+			w += 2
+			continue
+		}
+		w++
+	}
+	return w
+}

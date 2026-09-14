@@ -21,18 +21,18 @@ func chkTitlePresent(in *Input) (int, string) {
 }
 
 func chkTitleLength(in *Input) (int, string) {
-	n := len([]rune(strings.TrimSpace(in.Title)))
+	w := displayWidth(strings.TrimSpace(in.Title))
 	switch {
-	case n == 0:
+	case w == 0:
 		return 0, "未填写"
-	case n >= titleLenIdealMin && n <= titleLenIdealMax:
-		return 5, fmtInt(n, "字符（理想区间）")
-	case n > titleLenIdealMax && n <= titleLenHardMax:
-		return 3, fmtInt(n, "字符（略长）")
-	case n < titleLenIdealMin:
-		return 2, fmtInt(n, "字符（偏短）")
+	case w >= titleWidthIdealMin && w <= titleWidthIdealMax:
+		return 5, fmtInt(w, "宽度单位（理想区间）")
+	case w > titleWidthIdealMax && w <= titleWidthHardMax:
+		return 3, fmtInt(w, "宽度单位（略长）")
+	case w < titleWidthIdealMin:
+		return 2, fmtInt(w, "宽度单位（偏短）")
 	default:
-		return 0, fmtInt(n, "字符（会被 SERP 截断）")
+		return 0, fmtInt(w, "宽度单位（会被 SERP 截断）")
 	}
 }
 
@@ -224,6 +224,16 @@ func chkKeywordDensity(in *Input) (int, string) {
 		return 0, "未设置主关键词"
 	}
 	d := keywordDensity(in)
+	if isCJK(in.Locale) && len([]rune(in.FocusKeyword)) < 2 {
+		switch {
+		case d == 0:
+			return 0, "关键词未出现（短词密度可能不准）"
+		case d <= densityWarnMax:
+			return 6, fmtPct(d) + "（短关键词，密度仅供参考）"
+		default:
+			return 0, fmtPct(d) + "（短关键词，堆砌风险）"
+		}
+	}
 	switch {
 	case d == 0:
 		return 0, "关键词未出现"
@@ -405,7 +415,7 @@ func chkImageWeight(in *Input) (int, string) {
 	// 一张图都没有体积数据时不判满分：原来直接落到「体积达标」，等于给所有页面
 	// 无条件送一个满分项（该项永远不构成区分度）。
 	if measured == 0 {
-		return 0, "体积未知（缺少图片体积数据）"
+		return -1, "未纳入评分（缺少图片体积数据）"
 	}
 	if over == 0 {
 		return 3, "体积达标"

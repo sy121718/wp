@@ -38,13 +38,13 @@ const (
 	densityMinAllowed = 0.5
 )
 
-// 标题 / 元描述长度（字符）。
+// 标题展示宽度（SEO-017：CJK/全角按 2 单位，ASCII 按 1；约等于 SERP ~580px）。
 const (
-	titleLenIdealMin = 50
-	titleLenIdealMax = 60
-	titleLenHardMax  = 65
-	metaLenIdealMin  = 150
-	metaLenIdealMax  = 160
+	titleWidthIdealMin = 40
+	titleWidthIdealMax = 60
+	titleWidthHardMax  = 65
+	metaLenIdealMin    = 150
+	metaLenIdealMax    = 160
 )
 
 // internalLinkBench 内链基准（按篇幅）。
