@@ -34,8 +34,9 @@ const (
 	pricingMarkupMax = 1e9
 	// pricingMarginMin/Max 目标毛利率：必须严格在 (0,1) 之间
 	// （0 = 售价等于成本，1 = 售价无穷大，两端都要挡）。
+	// 上限 0.95：margin 接近 1 时 cost/(1-margin) 浮点放大，审计 TX-013。
 	pricingMarginMin = 0.0001
-	pricingMarginMax = 0.9999
+	pricingMarginMax = 0.95
 	// pricingAmountMax 金额上限：product_variants.price 是 numeric(12,2)。
 	pricingAmountMax = 9999999999.99
 )
@@ -119,7 +120,7 @@ var pricingRules = []*pricingRule{
 	{
 		Type:         productenums.PricingRuleTargetMargin,
 		Name:         "目标毛利率",
-		Params:       "margin：必填，0~1 之间的小数（售价 = 成本 ÷ (1 - margin)，如 0.3 表示毛利率 30%）",
+		Params:       "margin：必填，0.0001~0.95 的小数（售价 = 成本 ÷ (1 - margin)，如 0.3 表示毛利率 30%）",
 		RequiresCost: true,
 		Normalize: func(params json.RawMessage) (json.RawMessage, error) {
 			return normalizeSinglePricingParam(params, "margin", pricingMarginMin, pricingMarginMax)
@@ -136,8 +137,8 @@ var pricingRules = []*pricingRule{
 			if !ok {
 				return 0, pricingParamsErr("margin 缺失或不是数字")
 			}
-			if v <= 0 || v >= 1 {
-				return 0, pricingParamsErr("margin 必须在 0~1 之间")
+			if v <= 0 || v > pricingMarginMax {
+				return 0, pricingParamsErr("margin 必须在 0.0001~0.95 之间")
 			}
 			return cost / (1 - v), nil
 		},
