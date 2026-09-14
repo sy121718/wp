@@ -10,6 +10,7 @@ import (
 	artifactdto "go_wp/internal/module/artifact/dto"
 	artifactenums "go_wp/internal/module/artifact/enums"
 	artifactmodel "go_wp/internal/module/artifact/model"
+	"go_wp/pkg/database"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
 
@@ -96,8 +97,12 @@ func (s *Service) Record(ctx context.Context, req *artifactdto.RecordReq) (res *
 		CreatedAt:                 now,
 	}
 
+	lang := normalizeLang(req.Lang)
 	err = s.model.Transaction(ctx, func(tx *gorm.DB) error {
 		if err := tx.Create(entity).Error; err != nil {
+			if database.IsUniqueViolation(err) {
+				return errArtifactVersionConflict
+			}
 			return err
 		}
 		// 内容对象闭包：manifest.files 的每个文件哈希都是一条共享内容对象。
@@ -127,10 +132,20 @@ func (s *Service) Record(ctx context.Context, req *artifactdto.RecordReq) (res *
 		return nil
 	})
 	if err != nil {
+		if errors.Is(err, errArtifactVersionConflict) {
+			if existing, gerr := s.model.GetByPageVersion(ctx, req.PageID, req.Version, lang); gerr == nil {
+				if existing.ArtifactHash == req.ArtifactHash {
+					return toResp(existing), nil
+				}
+				return nil, errors.New(artifactenums.ErrArtifactMismatch)
+			}
+		}
 		return nil, mapPersistenceError(err)
 	}
 	return toResp(entity), nil
 }
+
+var errArtifactVersionConflict = errors.New("artifact version conflict")
 
 // Detail 按 (pageId, hash) 查询产物元数据。
 // nil/空参数属于请求不合法（ErrInvalidParam），与产物是否存在无关；
