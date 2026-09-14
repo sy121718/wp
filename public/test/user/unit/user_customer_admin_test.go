@@ -13,7 +13,6 @@ package unit
 import (
 	"context"
 	"reflect"
-	"strings"
 	"testing"
 	"time"
 
@@ -329,48 +328,18 @@ func TestGetCustomerNotFound(t *testing.T) {
 // 用反射遍历字段名与 json tag 而不是人工 review：这类泄露是**加法**造成的
 // （某次顺手把 UserEntity 整个塞进响应），人工 review 只能发现当时看到的那一次。
 func TestCustomerDTOExposesNoCredentialFields(t *testing.T) {
-	banned := []string{"password", "activation", "token", "secret", "salt"}
-	types := []reflect.Type{
+	// 判定逻辑在 public/test/support/dto_exposure.go（与全仓 dto 的 AST 扫描共用
+	// 同一张敏感词清单与允许清单）。这里仍然显式列出类型，是为了让「这几个类型被
+	// 改名或删掉」在编译期就报错，而不是静默地少测一块。
+	support.AssertNoCredentialFields(t,
 		reflect.TypeOf(userdto.CustomerResp{}),
 		reflect.TypeOf(userdto.CustomerListResp{}),
 		reflect.TypeOf(userdto.CustomerCounters{}),
 		reflect.TypeOf(userdto.CustomerStatusResp{}),
 		reflect.TypeOf(userdto.CustomerUnlockResp{}),
-	}
-	for _, typ := range types {
-		for _, name := range dtoFieldNames(typ) {
-			lower := strings.ToLower(name)
-			for _, bad := range banned {
-				if strings.Contains(lower, bad) {
-					t.Errorf("%s 上出现了疑似凭据字段 %q", typ.Name(), name)
-				}
-			}
-		}
-	}
+	)
 }
 
-// dtoFieldNames 递归收集结构体（含嵌套与切片元素）的字段名与 json tag。
-func dtoFieldNames(t reflect.Type, out ...[]string) []string {
-	var acc []string
-	if len(out) > 0 {
-		acc = out[0]
-	}
-	for t.Kind() == reflect.Ptr || t.Kind() == reflect.Slice || t.Kind() == reflect.Array {
-		t = t.Elem()
-	}
-	if t.Kind() != reflect.Struct {
-		return acc
-	}
-	for i := 0; i < t.NumField(); i++ {
-		f := t.Field(i)
-		acc = append(acc, f.Name, f.Tag.Get("json"))
-		switch f.Type.Kind() {
-		case reflect.Struct, reflect.Ptr, reflect.Slice, reflect.Array:
-			acc = dtoFieldNames(f.Type, acc)
-		}
-	}
-	return acc
-}
 
 // TestCustomerAdminPermissionSeed 后台客户管理的权限点必须与**超管策略同批**落地。
 //
