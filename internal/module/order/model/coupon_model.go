@@ -224,6 +224,16 @@ func (m *CouponModel) CountRedemptions(ctx context.Context, couponID uint64, use
 	return n, err
 }
 
+// CountRedemptionsTx 事务内统计核销条数（核销路径用，与 LockByIDTx 配合）。
+func (m *CouponModel) CountRedemptionsTx(ctx context.Context, tx *gorm.DB, couponID uint64, userID *uint64) (n int64, err error) {
+	q := tx.WithContext(ctx).Model(&CouponRedemptionEntity{}).Where("coupon_id = ?", couponID)
+	if userID != nil {
+		q = q.Where("user_id = ?", *userID)
+	}
+	err = q.Count(&n).Error
+	return n, err
+}
+
 // InsertRedemptionTx 事务内插一条核销明细，返回是否为**本次新插入**。
 //
 // ON CONFLICT DO NOTHING 命中唯一键 (coupon_id, order_id) 时 RowsAffected 为 0 ——
@@ -240,6 +250,46 @@ func (m *CouponModel) InsertRedemptionTx(ctx context.Context, tx *gorm.DB, e *Co
 		return false, res.Error
 	}
 	return res.RowsAffected > 0, nil
+}
+
+// GetRedemptionByOrderTx 事务内按订单取核销记录（至多一条，唯一键保证）。
+func (m *CouponModel) GetRedemptionByOrderTx(ctx context.Context, tx *gorm.DB, orderID uint64) (e *CouponRedemptionEntity, err error) {
+	if orderID == 0 {
+		return nil, nil
+	}
+	e = &CouponRedemptionEntity{}
+	if err = tx.WithContext(ctx).Model(&CouponRedemptionEntity{}).
+		Where("order_id = ?", orderID).First(e).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return e, nil
+}
+
+// ReleaseRedemptionByOrderTx 取消订单时释放券：删核销明细并把 used_count 减一。
+//
+// 幂等：没有核销记录或已删过则 (false, nil)。
+func (m *CouponModel) ReleaseRedemptionByOrderTx(ctx context.Context, tx *gorm.DB, orderID uint64) (released bool, err error) {
+	red, err := m.GetRedemptionByOrderTx(ctx, tx, orderID)
+	if err != nil || red == nil {
+		return false, err
+	}
+	res := tx.WithContext(ctx).Where("id = ?", red.ID).Delete(&CouponRedemptionEntity{})
+	if res.Error != nil {
+		return false, res.Error
+	}
+	if res.RowsAffected == 0 {
+		return false, nil
+	}
+	dec := tx.WithContext(ctx).Model(&CouponEntity{}).
+		Where("id = ? AND used_count > 0", red.CouponID).
+		UpdateColumns(map[string]any{"used_count": gorm.Expr("used_count - 1"), "update_time": time.Now()})
+	if dec.Error != nil {
+		return false, dec.Error
+	}
+	return true, nil
 }
 
 // IncrementUsedTx 事务内把已用次数加一，返回是否**真的加上了**。

@@ -16,6 +16,7 @@ import (
 	orderdto "go_wp/internal/module/order/dto"
 	orderenums "go_wp/internal/module/order/enums"
 	ordermodel "go_wp/internal/module/order/model"
+	"go_wp/pkg/database"
 )
 
 // CreateCoupon 新建优惠码。
@@ -63,7 +64,7 @@ func (s *Service) CreateCoupon(ctx context.Context, req *orderdto.CouponSaveReq)
 	if cerr := s.coupons.Create(ctx, e); cerr != nil {
 		// 并发下两个请求同时通过上面的存在性检查时，唯一索引会挡住第二个 ——
 		// 对外文案与显式检查一致，不把数据库错误原文抛给运营。
-		if isUniqueViolation(cerr) {
+		if database.IsUniqueViolation(cerr) {
 			return nil, errors.New(orderenums.ErrCouponCodeTaken)
 		}
 		return nil, cerr
@@ -322,16 +323,4 @@ func toCouponResp(e *ordermodel.CouponEntity, now time.Time) *orderdto.CouponRes
 		CreateTime:       e.CreateTime,
 		UpdateTime:       e.UpdateTime,
 	}
-}
-
-// isUniqueViolation 判断是否为唯一约束冲突（PG 的 23505）。
-//
-// 不 import 驱动特有的错误类型：这里只需要一个布尔结论，
-// 用错误文本匹配可控且不引入新依赖。
-func isUniqueViolation(err error) bool {
-	if err == nil {
-		return false
-	}
-	msg := strings.ToLower(err.Error())
-	return strings.Contains(msg, "sqlstate 23505") || strings.Contains(msg, "duplicate key") || strings.Contains(msg, "unique constraint")
 }

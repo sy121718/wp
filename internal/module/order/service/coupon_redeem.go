@@ -28,6 +28,23 @@ func (s *Service) redeemCouponTx(ctx context.Context, tx *gorm.DB, e *ordermodel
 	if e == nil {
 		return nil
 	}
+	locked, lerr := s.coupons.LockByIDTx(ctx, tx, e.ID)
+	if lerr != nil {
+		return lerr
+	}
+	if locked == nil {
+		return errors.New(orderenums.ErrCouponNotFound)
+	}
+	e = locked
+	if e.PerUserLimit > 0 && userID != nil {
+		used, cerr := s.coupons.CountRedemptionsTx(ctx, tx, e.ID, userID)
+		if cerr != nil {
+			return cerr
+		}
+		if used >= int64(e.PerUserLimit) {
+			return errors.New(orderenums.ErrCouponUserLimit)
+		}
+	}
 	inserted, ierr := s.coupons.InsertRedemptionTx(ctx, tx, &ordermodel.CouponRedemptionEntity{
 		CouponID:       e.ID,
 		ProjectID:      e.ProjectID,
