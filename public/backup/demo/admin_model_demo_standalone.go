@@ -36,7 +36,7 @@ type AdminEntityDemo struct {
 	CreateTime        *time.Time `gorm:"column:create_time;type:datetime(3)"`
 	UpdateBy          uint64     `gorm:"column:update_by;type:bigint unsigned"`
 	UpdateTime        *time.Time `gorm:"column:update_time;type:datetime(3)"`
-	DeletedTime       *time.Time `gorm:"column:deleted_time;type:datetime(3)"`
+	DeletedAt       *time.Time `gorm:"column:deleted_at;type:datetime(3)"`
 }
 
 // TableName 指定这个结构体映射到哪张表。
@@ -68,9 +68,9 @@ func NewAdminModelDemoFromComponent() (*AdminModelDemo, error) {
 // baseQuery 统一返回基础查询对象：
 // 1. 绑定 context（方便超时/链路追踪）
 // 2. 指定查询模型是 AdminEntityDemo（对应 sys_admin）
-// 3. 默认过滤软删除数据（deleted_time IS NULL）
+// 3. 默认过滤软删除数据（deleted_at IS NULL）
 func (m *AdminModelDemo) baseQuery(ctx context.Context) *gorm.DB {
-	return m.db.WithContext(ctx).Model(&AdminEntityDemo{}).Where("deleted_time IS NULL")
+	return m.db.WithContext(ctx).Model(&AdminEntityDemo{}).Where("deleted_at IS NULL")
 }
 
 // GetByID 按 ID 查询管理员。
