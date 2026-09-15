@@ -100,7 +100,7 @@ CREATE TABLE ai_session (
   kind           TEXT NOT NULL,          -- 用途分流，见 §6
   title          TEXT,
   last_active_at TIMESTAMPTZ,
-  created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+  create_time     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 -- append-only 事件日志：唯一真源；消息历史由它派生

@@ -688,8 +688,8 @@ CREATE TABLE projects (
     id          uuid PRIMARY KEY,
     name        text NOT NULL,
     settings    jsonb NOT NULL,
-    created_at  timestamptz NOT NULL,
-    updated_at  timestamptz NOT NULL
+    create_time  timestamptz NOT NULL,
+    update_time  timestamptz NOT NULL
 );
 
 CREATE TABLE blueprints (
@@ -699,8 +699,8 @@ CREATE TABLE blueprints (
     kind            text NOT NULL,
     draft_document  jsonb NOT NULL,
     draft_version   bigint NOT NULL DEFAULT 1,
-    created_at      timestamptz NOT NULL,
-    updated_at      timestamptz NOT NULL
+    create_time      timestamptz NOT NULL,
+    update_time      timestamptz NOT NULL
 );
 
 CREATE TABLE blueprint_versions (
@@ -710,7 +710,7 @@ CREATE TABLE blueprint_versions (
     document        jsonb NOT NULL,
     source_hash     text NOT NULL,
     created_by      uuid NOT NULL,
-    created_at      timestamptz NOT NULL,
+    create_time      timestamptz NOT NULL,
     UNIQUE (blueprint_id, version)
 );
 
@@ -722,8 +722,8 @@ CREATE TABLE global_components (
     name            text NOT NULL,
     draft_document  jsonb NOT NULL,
     draft_version   bigint NOT NULL DEFAULT 1,
-    created_at      timestamptz NOT NULL,
-    updated_at      timestamptz NOT NULL
+    create_time      timestamptz NOT NULL,
+    update_time      timestamptz NOT NULL
 );
 
 -- ⚠️ 已废弃：语义由 block.reuse_mode 承担（版本语义由 block 的全局块 + stale 传播替代）。
@@ -735,7 +735,7 @@ CREATE TABLE global_component_versions (
     document             jsonb NOT NULL,
     source_hash          text NOT NULL,
     created_by           uuid NOT NULL,
-    created_at           timestamptz NOT NULL,
+    create_time           timestamptz NOT NULL,
     UNIQUE (global_component_id, version),
     UNIQUE (id, global_component_id)
 );
@@ -756,8 +756,8 @@ CREATE TABLE pages (
     stale                 boolean NOT NULL DEFAULT true,
     deleted_at            timestamptz NULL,
     published_at          timestamptz NULL,
-    created_at            timestamptz NOT NULL,
-    updated_at            timestamptz NOT NULL,
+    create_time            timestamptz NOT NULL,
+    update_time            timestamptz NOT NULL,
     UNIQUE (id, project_id),
     CONSTRAINT pages_content_contract_check CHECK (
         (kind IN ('home', 'archive', 'search', 'notFound')
@@ -788,7 +788,7 @@ CREATE TABLE page_routes (
     presentation_id uuid NULL REFERENCES presentation_instances(id),
     route_kind   text NOT NULL CHECK (route_kind IN ('reserved', 'active', 'redirect')),
     artifact_id  uuid NULL,                    -- active 或 redirect 的 Artifact；由 PublicationStore.activate 原子更新
-    updated_at   timestamptz NOT NULL,
+    update_time   timestamptz NOT NULL,
     PRIMARY KEY (project_id, path),
     CHECK (
         (page_id IS NOT NULL AND presentation_id IS NULL)
@@ -804,8 +804,8 @@ CREATE TABLE content_templates (
     draft_document      jsonb NOT NULL,             -- 当前可编辑草稿
     draft_version       bigint NOT NULL DEFAULT 1,
     current_version_id  uuid NULL,                  -- 已发布的最新 blueprint_version id
-    created_at          timestamptz NOT NULL,
-    updated_at          timestamptz NOT NULL
+    create_time          timestamptz NOT NULL,
+    update_time          timestamptz NOT NULL
 );
 
 CREATE TABLE content_template_versions (
@@ -815,7 +815,7 @@ CREATE TABLE content_template_versions (
     document             jsonb NOT NULL,
     source_hash          text NOT NULL,
     created_by           uuid NOT NULL,
-    created_at           timestamptz NOT NULL,
+    create_time           timestamptz NOT NULL,
     UNIQUE (template_id, version),
     UNIQUE (id, template_id)
 );
@@ -834,8 +834,8 @@ CREATE TABLE presentation_instances (
     stale                 boolean NOT NULL DEFAULT true,
     deleted_at            timestamptz NULL,
     published_at          timestamptz NULL,
-    created_at            timestamptz NOT NULL,
-    updated_at            timestamptz NOT NULL,
+    create_time            timestamptz NOT NULL,
+    update_time            timestamptz NOT NULL,
     UNIQUE (entity_type, entity_id),
     UNIQUE (project_id, url_path)
 );
@@ -846,7 +846,7 @@ CREATE TABLE document_snapshots (
     source_template_version_id    uuid NOT NULL REFERENCES content_template_versions(id),
     source_entity_revision_id     uuid NOT NULL,
     document                      jsonb NOT NULL,
-    created_at                    timestamptz NOT NULL,
+    create_time                    timestamptz NOT NULL,
     UNIQUE (id, presentation_instance_id)
 );
 
@@ -880,7 +880,7 @@ CREATE TABLE content_template_component_pins (
 );
 ```
 
-> **注**：原稿中 `content_templates` 末尾有重复的 `updated_at` 行和多余 `);`，搬运时已修正为单一表定义。
+> **注**：原稿中 `content_templates` 末尾有重复的 `update_time` 行和多余 `);`，搬运时已修正为单一表定义。
 
 ### 7.1 跨表一致性约束
 

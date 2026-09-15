@@ -237,6 +237,10 @@ Cookie 属性：`HttpOnly`、`Secure`（release 自动启用）、`SameSite=Lax`
   **含超管在内全员 403**（072/077/078/079 各踩过一次，151 又补了 page:delete 与 block:clone）。
   改完跑 `bash scripts/check-permission-gaps.sh` 审计「有路由、无权限点」的接口
 - datarule 插件字段引用按方言（PG 双引号 / MySQL 反引号）；部门范围整段精确匹配
+- **时间列命名统一为 `create_time` / `update_time`**（审计 DB-019，迁移 205 收口）：全库已无 `created_at` / `updated_at`，新表新列一律用 `*_time`，不要再引入 `*_at`
+- **软删除列名统一为 `deleted_at`**（审计 DB-020，迁移 208 收口）：`sys_menus` 原本的 `deleted_time` 已改名。`sys_attachment` 用 `status` 表达删除属**存量例外**，新表不要照抄
+- 改列名时注意两类**不会自动跟随**的对象：**触发器 / plpgsql 函数体**（函数体是字符串，RENAME 后仍按旧名解析，迁移 206 修的就是它）与 **seed SQL**（seed 可重复执行，必须同步改；历史迁移 SQL 保持原样）。索引表达式、视图、约束由 PG 自动重写
+- 迁移的 `CheckSQL` 里 `?` 由迁移器传入的是**表名**；判定要用的其它值（权限点代码等）必须写进 SQL 字面量，否则判定恒为 0、迁移每次启动都重跑（178 踩过）
 
 ### model 层定位（重要，评审与开发共同遵守）
 

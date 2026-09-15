@@ -513,7 +513,7 @@ CREATE TABLE page_artifacts (
     payload_deleted_at           timestamptz NULL,
     note                         text NOT NULL DEFAULT '',
     created_by                   uuid NOT NULL,
-    created_at                   timestamptz NOT NULL,
+    create_time                   timestamptz NOT NULL,
     UNIQUE (page_id, version),
     UNIQUE (id, page_id),
     CHECK (payload_state IN ('available', 'gc_pending', 'deleted'))
@@ -524,7 +524,7 @@ CREATE TABLE content_objects (
     provider       text NOT NULL,
     object_key     text NOT NULL,
     byte_size      bigint NOT NULL CHECK (byte_size >= 0),
-    created_at     timestamptz NOT NULL,
+    create_time     timestamptz NOT NULL,
     deleted_at     timestamptz NULL,
     UNIQUE (provider, object_key)
 );
@@ -577,7 +577,7 @@ CREATE TABLE presentation_artifacts (
     payload_deleted_at           timestamptz NULL,
     note                         text NOT NULL DEFAULT '',
     created_by                   uuid NOT NULL,
-    created_at                   timestamptz NOT NULL,
+    create_time                   timestamptz NOT NULL,
     UNIQUE (presentation_instance_id, version),
     UNIQUE (id, presentation_instance_id),
     FOREIGN KEY (snapshot_id, presentation_instance_id)
@@ -626,7 +626,7 @@ CREATE TABLE publication_events (
     to_artifact_id       uuid NULL,
     receipt              jsonb NOT NULL,
     created_by           uuid NOT NULL,
-    created_at           timestamptz NOT NULL,
+    create_time           timestamptz NOT NULL,
     CHECK (
         (source_type = 'page' AND page_id IS NOT NULL AND presentation_id IS NULL)
         OR (source_type = 'presentation' AND page_id IS NULL AND presentation_id IS NOT NULL)
@@ -643,7 +643,7 @@ CREATE TABLE build_jobs (
     status            text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'running', 'superseded', 'failed', 'succeeded')),
     artifact_id       uuid NULL,
     error_message     text NULL,
-    created_at        timestamptz NOT NULL DEFAULT now(),
+    create_time        timestamptz NOT NULL DEFAULT now(),
     started_at        timestamptz NULL,
     completed_at      timestamptz NULL
 );
@@ -659,7 +659,7 @@ CREATE TABLE publication_receipts (
     to_artifact_id    uuid NULL,
     receipt_state     text NOT NULL CHECK (receipt_state IN ('pending', 'committed', 'rolled_back')),
     receipt_data      jsonb NOT NULL,
-    created_at        timestamptz NOT NULL DEFAULT now(),
+    create_time        timestamptz NOT NULL DEFAULT now(),
     completed_at      timestamptz NULL
 );
 ```

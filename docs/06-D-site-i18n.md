@@ -280,8 +280,8 @@ CREATE TABLE IF NOT EXISTS content_translations (
     data         jsonb NOT NULL DEFAULT '{}'::jsonb,  -- 仅语言相关字段子集
     slug         text NULL,                  -- 可选：本地化 slug（见 D4）
     revision     bigint NOT NULL DEFAULT 1,  -- 翻译自身 revision
-    created_at   timestamptz NOT NULL DEFAULT now(),
-    updated_at   timestamptz NOT NULL DEFAULT now(),
+    create_time   timestamptz NOT NULL DEFAULT now(),
+    update_time   timestamptz NOT NULL DEFAULT now(),
     UNIQUE (entity_id, lang)
 );
 CREATE UNIQUE INDEX IF NOT EXISTS uq_content_tr_type_lang_slug
@@ -334,7 +334,7 @@ ALTER TABLE presentation_instances ADD COLUMN lang text NOT NULL DEFAULT 'zh-CN'
 | F1 | 原文不动 | Page Document 保持默认语言原文（字符串形态），翻译是**附加层**，不修改 AST、**老数据零迁移** |
 | F2 | 存储 | 翻译单独存表 `sys_translation`，**内容寻址** |
 | F3 | 主键 | `(source_hash, context, lang)` |
-| F4 | 字段 | `source_text`（冗余原文，供工作台对照）、`target_text`、`engine`（manual/ai/po）、`updated_at` |
+| F4 | 字段 | `source_text`（冗余原文，供工作台对照）、`target_text`、`engine`（manual/ai/po）、`update_time` |
 | F5 | `context` | `组件类型.字段名`，如 `core.button.text`；同文本不同语境可分别翻译 |
 | F6 | 可翻译范围 | 组件定义里声明白名单 `Translatable: []string{"text","title","alt"}`；**未声明字段永不翻译** |
 | F7 | 跳过规则 | 字段值整体是纯数字或纯符号（`2024`、`→`、`--`）不进翻译表；含数字的句子（`共 42 件`）照常翻译 |
@@ -377,7 +377,7 @@ CREATE TABLE IF NOT EXISTS sys_translation (
     source_text  text        NOT NULL,                  -- 冗余原文：供工作台对照、校验 hash
     target_text  text        NOT NULL,                  -- 译文
     engine       text        NOT NULL DEFAULT 'manual', -- manual | ai | po
-    updated_at   timestamptz NOT NULL DEFAULT now(),
+    update_time   timestamptz NOT NULL DEFAULT now(),
     PRIMARY KEY (source_hash, context, lang),
     CONSTRAINT ck_sys_translation_hash   CHECK (source_hash ~ '^[0-9a-f]{64}$'),
     CONSTRAINT ck_sys_translation_engine CHECK (engine IN ('manual', 'ai', 'po')),
@@ -1040,8 +1040,8 @@ P3 目标：解掉 `pages.active_path` 单值，让「一页多语言同时在�
 
 | # | 改动 | 位置 | 验证 |
 |---|---|---|---|
-| 1 | 迁移 062 `page_publications(page_id, lang, active_path, artifact_id, artifact_hash, published_at, updated_at)`：每语言激活状态真源；存量 `pages.active_path` 回填默认语言一行 | `public/migrations/062_page_publications.sql` + `register.go` | `TestPagePublicationsLanguageScopedLifecycle`、`TestMigrationsRunTwiceIsIdempotent` |
-| 2 | 迁移 063 `page_stagings(page_id, lang, artifact_id, artifact_hash, draft_version, updated_at)`：每语言暂存指针（解「先构建两语言再逐个发布」失败） | `public/migrations/063_page_stagings.sql` + `register.go` | `TestPageStagingsPerLanguageIndependent` |
+| 1 | 迁移 062 `page_publications(page_id, lang, active_path, artifact_id, artifact_hash, published_at, update_time)`：每语言激活状态真源；存量 `pages.active_path` 回填默认语言一行 | `public/migrations/062_page_publications.sql` + `register.go` | `TestPagePublicationsLanguageScopedLifecycle`、`TestMigrationsRunTwiceIsIdempotent` |
+| 2 | 迁移 063 `page_stagings(page_id, lang, artifact_id, artifact_hash, draft_version, update_time)`：每语言暂存指针（解「先构建两语言再逐个发布」失败） | `public/migrations/063_page_stagings.sql` + `register.go` | `TestPageStagingsPerLanguageIndependent` |
 | 3 | 迁移 064 `project_locales(project_id, lang, sort_order, is_default, enabled)` + 部分唯一索引 `uq_project_locales_default` | `public/migrations/064_project_locales.sql` + `register.go` | `TestProjectLocalesSaveAndList` / `TestProjectLocalesValidation` |
 | 4 | page model：`PublicationEntity`/`StagingEntity`、`MarkPublishedLang`（upsert + pages 单值镜像同事务）、`MovePublicationPath`、`MarkStagedLang`、软删同清两表 | `internal/module/page/model/page_publication_model.go`、`page_model.go` | `TestPagePublications*` 全组 |
 | 5 | Publish / Rollback / UpdateURL 按语言作用域：旧路径取 `page_publications` 本语言行（`publishedPathOf`），暂存产物取 `page_stagings` 本语言行（`stagedArtifactOf`，跨语言暂存不互认） | `internal/module/page/service/page_publish.go` | `TestPagePublicationsLanguageScopedLifecycle`、`TestPageStagingsPerLanguageIndependent` |
@@ -1250,7 +1250,7 @@ CollectContentCandidates(AST)  ← 按组件白名单遍历 props（嵌套字段
 - 默认语言与单语言站点（`lang` 为空或等于站点默认语言）**跳过**：产物即原文，与接入前逐字节一致。
 
 **依赖登记（§9 关键约束）**：新增 `pipeline.I18NContentDependency`（`kind=i18n`、
-`key=i18n:content`、`revision=pkg/i18n.ContentRevision()` = `sys_translation` 的 `max(updated_at)`）。
+`key=i18n:content`、`revision=pkg/i18n.ContentRevision()` = `sys_translation` 的 `max(update_time)`）。
 判据与接入条件同源：**非默认语言 + 本页存在可翻译候选**才登记——缺译文回退原文后，
 补齐译文推进 revision → 依赖比对不等 → 触发重建，避免站点长期停留在回退内容。
 
@@ -1288,7 +1288,7 @@ go test ./public/test/pkg/i18n/ -run TestContentRevisionTracksWrites -count=1 -v
   块编译下传语言与同一个取词器。
 - **`nav` 菜单标签**：`core.nav` 的 `items[].label` 在白名单内，但 `Menu=header/footer` 时
   标签来自 navigation 模块数据（构建期覆盖），其多语言归属（导航数据本地化）尚未定论。
-- **revision 粒度**：`i18n:content` 用全局 `max(updated_at)`，任一条译文变更都会让所有含候选的
+- **revision 粒度**：`i18n:content` 用全局 `max(update_time)`，任一条译文变更都会让所有含候选的
   非默认语言产物依赖失效（保守正确，代价是全站重建；表级 revision 计数器可作为后续优化）。
 - **端到端译文验证依赖全局数据库**：装配层取词器走默认存储（`database.GetDB()`），
   `public/test/page/unit` 用独立 schema 不接全局，故该层验证「依赖登记 + 回退原文」；
@@ -1552,7 +1552,7 @@ go test ./public/test/dashboard/feature/ -run "TestPageTranslationsListsBlockTex
 - **块级工作台未做**：块内文本按「引用该块的每个页面」重复出现在页面工作台；独立入口
   `/admin/block/translations`（按块聚合、与页面列表解耦）属后续一轮。
 - **`core.nav` 菜单标签的多语言归属**仍未定（导航数据本地化，与 §15.11 同款）。
-- **`i18n:content` revision 仍是全局 `max(updated_at)`**：任一条译文变更使所有含候选的非默认语言
+- **`i18n:content` revision 仍是全局 `max(update_time)`**：任一条译文变更使所有含候选的非默认语言
   产物依赖失效（保守正确，代价是全站重建）。
 - **块内文本的「来源」按外层入口标注**：块内再引用块时，嵌套块文本沿用外层标签（不细分到嵌套块）。
 

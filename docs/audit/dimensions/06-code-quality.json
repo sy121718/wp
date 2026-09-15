@@ -870,8 +870,8 @@
         "dead-code",
         "documentation"
       ],
-      "status": "open",
-      "progressNote": "2026-09-15 复核：`user_app_passwords` / `user_meta` / `user_oauth_bindings` 三张已随迁移 203 删除（零消费方、无排期：应用密码没有对应的 API 认证面、插件体系没有用户侧扩展点、OAuth 连 provider 与 pkg/oauth 都不存在）；`build_jobs` 不是死表 —— 已接入构建队列引擎（internal/module/build 的 model/service 与队列 feature 测试）。仍待处理 2 张：`publication_events`（发布事件审计表，暂无消费方）与 `presentation_artifact_objects`（presentation 侧内容对象闭包，等该侧归档落地才有读写成对，当前 GC 的孤儿判定只查 page 侧闭包）。范围由 6 张收敛到 2 张，故保持 open。"
+      "status": "resolved",
+      "progressNote": "2026-09-15 收口，状态改为 resolved：迁移 207 删除最后两张零消费方表 —— `presentation_artifact_objects`（presentation 侧闭包，page 侧的孪生表有完整读写成对，它两样都没有；GC 的孤儿判定只查 page 侧）与 `publication_events`（发布事实的真源是 publication_receipts）。决策为「删不留」：留着会被读成「已经在跑」，等该侧落地时按 peer 形态重建的成本远低于长期维护一张无人读写的表。连带修 204 的注册判定 —— 它用 `'presentation_artifact_objects'::regclass`，表删掉后下次启动求值会直接报错（启动失败），改成 to_regclass；artifact 侧的 ExternalContentRefs 机制保留，注释同步更新。全量重放实测：102 → 100 张基表，二次重放无报错。"
     },
     {
       "id": "CQ-016",
