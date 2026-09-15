@@ -28,6 +28,10 @@ public/runtime/
 *:Zone.Identifier
 .DS_Store
 
+# Python 编译产物（scripts/ 下有辅助脚本）
+__pycache__/
+*.pyc
+
 # 临时文件
 *.log
 *.tmp
