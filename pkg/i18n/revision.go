@@ -40,7 +40,7 @@ func Revision() string {
 
 // ContentRevision 返回内容译文资源版本号（多语言 P5b，docs/06-D §7.3/§9）。
 //
-// 数据源：sys_translation 的 max(updated_at)。该表刻意没有独立的 revision 表
+// 数据源：sys_translation 的 max(update_time)。该表刻意没有独立的 revision 表
 // （决策 F2/F3：行即答案，主键 (source_hash, context, lang)），任何写入
 // （人工补译、AI 译文、PO 导入）都会推进该值 → 依赖条目变化 → 触发重建。
 //
@@ -52,7 +52,7 @@ func ContentRevision() string {
 		return ""
 	}
 	var latest *time.Time
-	if err = db.Table("sys_translation").Select("max(updated_at) AS latest").Scan(&latest).Error; err != nil || latest == nil {
+	if err = db.Table("sys_translation").Select("max(update_time) AS latest").Scan(&latest).Error; err != nil || latest == nil {
 		return ""
 	}
 	return "trans-max-" + latest.UTC().Format(time.RFC3339Nano)

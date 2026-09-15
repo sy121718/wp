@@ -52,12 +52,12 @@ WHERE NOT EXISTS (SELECT 1 FROM sys_permission x WHERE x.permission_code = v.cod
 -- 本 seed 按实际表结构写入，不含 title_key。
 INSERT INTO sys_menus (title, parent_id, type, path, component, external_url, icon, status, is_hidden, is_public, is_system, sort_order, create_by, create_time, update_by, update_time)
 SELECT '站点工程', 0, 1, '/project', '', '', 'i-ep:set-up', 1, 0, 0, 1, 1, 0, NOW(), 0, NOW()
-WHERE NOT EXISTS (SELECT 1 FROM sys_menus WHERE title = '站点工程' AND type = 1 AND deleted_time IS NULL);
+WHERE NOT EXISTS (SELECT 1 FROM sys_menus WHERE title = '站点工程' AND type = 1 AND deleted_at IS NULL);
 
 -- 3. 菜单（type=2，绑定模块列表权限，component 对齐 soybean view.xxx 约定）
 INSERT INTO sys_menus (title, parent_id, type, path, component, permission_code, is_system, sort_order, create_by, create_time, update_by, update_time)
 SELECT v.title,
-       (SELECT id FROM sys_menus WHERE title = '站点工程' AND type = 1 AND deleted_time IS NULL),
+       (SELECT id FROM sys_menus WHERE title = '站点工程' AND type = 1 AND deleted_at IS NULL),
        v.type, v.path, v.component, v.code, 1, v.sort, 0, NOW(), 0, NOW()
 FROM (VALUES
     ('项目管理',   2, '/project',      'view.project',      'project:list',             1),
@@ -67,12 +67,12 @@ FROM (VALUES
     ('构建产物',   2, '/artifact',     'view.artifact',     'artifact:detail',          5),
     ('发布管理',   2, '/publication',  'view.publication',  'publication:receipts_pending', 6)
 ) AS v(title, type, path, component, code, sort)
-WHERE NOT EXISTS (SELECT 1 FROM sys_menus x WHERE x.title = v.title AND x.type = v.type AND x.deleted_time IS NULL);
+WHERE NOT EXISTS (SELECT 1 FROM sys_menus x WHERE x.title = v.title AND x.type = v.type AND x.deleted_at IS NULL);
 
 -- 4. 按钮（type=3，绑定写/读权限，parent 指向所属菜单）
 INSERT INTO sys_menus (title, parent_id, type, path, component, permission_code, is_system, sort_order, create_by, create_time, update_by, update_time)
 SELECT v.title,
-       (SELECT id FROM sys_menus WHERE title = v.parent_title AND type = 2 AND deleted_time IS NULL),
+       (SELECT id FROM sys_menus WHERE title = v.parent_title AND type = 2 AND deleted_at IS NULL),
        v.type, '', '', v.code, 1, v.sort, 0, NOW(), 0, NOW()
 FROM (VALUES
     ('新建项目',     '项目管理', 3, 'project:create',          10),
@@ -99,4 +99,4 @@ FROM (VALUES
     ('更新分类',     '媒体管理', 3, 'media:category_update',   16),
     ('删除分类',     '媒体管理', 3, 'media:category_delete',   17)
 ) AS v(title, parent_title, type, code, sort)
-WHERE NOT EXISTS (SELECT 1 FROM sys_menus x WHERE x.permission_code = v.code AND x.deleted_time IS NULL);
+WHERE NOT EXISTS (SELECT 1 FROM sys_menus x WHERE x.permission_code = v.code AND x.deleted_at IS NULL);

@@ -40,8 +40,8 @@ type PageEntity struct {
 	Stale             bool            `gorm:"column:stale;not null"`
 	DeletedAt         *time.Time      `gorm:"column:deleted_at"`
 	PublishedAt       *time.Time      `gorm:"column:published_at"`
-	CreatedAt         time.Time       `gorm:"column:created_at;not null"`
-	UpdatedAt         time.Time       `gorm:"column:updated_at;not null"`
+	CreatedAt         time.Time       `gorm:"column:create_time;not null"`
+	UpdatedAt         time.Time       `gorm:"column:update_time;not null"`
 }
 
 func (PageEntity) TableName() string { return tableNamePages }
@@ -54,7 +54,7 @@ type RevisionEntity struct {
 	DraftPath     string          `gorm:"column:draft_path;type:text;not null"`
 	DraftDocument json.RawMessage `gorm:"column:draft_document;type:jsonb;not null"`
 	SourceHash    string          `gorm:"column:source_hash;type:text;not null"`
-	CreatedAt     time.Time       `gorm:"column:created_at;not null"`
+	CreatedAt     time.Time       `gorm:"column:create_time;not null"`
 }
 
 func (RevisionEntity) TableName() string { return tableNamePageRevisions }
@@ -94,20 +94,20 @@ func (m *Model) ListAll(ctx context.Context, projectID, themeID string) (list []
 		// 建站已有默认主题后，这条 NULL 分支是历史数据唯一的可见路径。
 		q = q.Where("theme_id = ? OR theme_id IS NULL", themeID)
 	}
-	err = q.Order("updated_at DESC, id DESC").Find(&list).Error
+	err = q.Order("update_time DESC, id DESC").Find(&list).Error
 	return list, err
 }
 
 // ListDraftDocuments 列出全部未删除页面的草稿文档（多语言 P5c 翻译工作台的全站扫描用）。
 //
 // 与 ListAll 的区别：带 draft_document 大字段（工作台要按组件白名单收集候选，
-// 无法在 SQL 侧完成——白名单在 Go 里）；按 updated_at 倒序，便于诊断。
+// 无法在 SQL 侧完成——白名单在 Go 里）；按 update_time 倒序，便于诊断。
 // 代价：一次查询返回全站草稿 JSONB，调用方必须自带缓存与页数上限（见 dashboard 工作台）。
 func (m *Model) ListDraftDocuments(ctx context.Context) (list []PageEntity, err error) {
 	err = m.DB(ctx).
-		Select("id", "project_id", "draft_path", "draft_document", "updated_at").
+		Select("id", "project_id", "draft_path", "draft_document", "update_time").
 		Where("deleted_at IS NULL").
-		Order("updated_at DESC, id DESC").
+		Order("update_time DESC, id DESC").
 		Find(&list).Error
 	return list, err
 }
@@ -144,7 +144,7 @@ func (m *Model) ListThemePageSnapshots(ctx context.Context, themeID string) (row
 // UpdateThemeSnapshot 写单页的 settings.theme 快照（不动内容与版本，主题是展示层）。
 func (m *Model) UpdateThemeSnapshot(ctx context.Context, pageID string, themeJSON []byte) (err error) {
 	err = m.DB(ctx).Exec(
-		"UPDATE pages SET draft_document = jsonb_set(draft_document, '{settings,theme}', ?, true), updated_at = ? WHERE id = ? AND deleted_at IS NULL",
+		"UPDATE pages SET draft_document = jsonb_set(draft_document, '{settings,theme}', ?, true), update_time = ? WHERE id = ? AND deleted_at IS NULL",
 		themeJSON, time.Now().UTC(), pageID,
 	).Error
 	return err
@@ -178,7 +178,7 @@ func (m *Model) ListThemePageStructureSnapshots(ctx context.Context, themeID str
 // UpdateStructureSnapshot 写单页 settings.structure（不动内容与版本）。
 func (m *Model) UpdateStructureSnapshot(ctx context.Context, pageID string, structureJSON []byte) (err error) {
 	err = m.DB(ctx).Exec(
-		"UPDATE pages SET draft_document = jsonb_set(draft_document, '{settings,structure}', ?, true), updated_at = ? WHERE id = ? AND deleted_at IS NULL",
+		"UPDATE pages SET draft_document = jsonb_set(draft_document, '{settings,structure}', ?, true), update_time = ? WHERE id = ? AND deleted_at IS NULL",
 		structureJSON, time.Now().UTC(), pageID,
 	).Error
 	return err
@@ -187,7 +187,7 @@ func (m *Model) UpdateStructureSnapshot(ctx context.Context, pageID string, stru
 // MarkStaleForTheme 把挂在该主题下全部页面标记为待重建（页眉/页脚块内容变更后调用）。
 func (m *Model) MarkStaleForTheme(ctx context.Context, themeID string) (err error) {
 	err = m.DB(ctx).Exec(
-		"UPDATE pages SET stale = true, updated_at = ? WHERE theme_id = ? AND deleted_at IS NULL",
+		"UPDATE pages SET stale = true, update_time = ? WHERE theme_id = ? AND deleted_at IS NULL",
 		time.Now().UTC(), themeID,
 	).Error
 	return err
@@ -201,7 +201,7 @@ func (m *Model) MarkStaleForTheme(ctx context.Context, themeID string) (err erro
 // 全表更新，与 MarkStaleForTheme 同一模式（stale=true 幂等）。
 func (m *Model) MarkStaleForI18n(ctx context.Context) (err error) {
 	err = m.DB(ctx).Exec(
-		"UPDATE pages SET stale = true, updated_at = ? WHERE deleted_at IS NULL",
+		"UPDATE pages SET stale = true, update_time = ? WHERE deleted_at IS NULL",
 		time.Now().UTC(),
 	).Error
 	return err
@@ -265,7 +265,7 @@ func (m *Model) CountBlockReference(ctx context.Context, blockID string) (count 
 // 与 MarkStaleForTheme 可能重叠命中同一页面，stale=true 幂等，无妨。
 func (m *Model) MarkStaleForBlock(ctx context.Context, blockID string) (err error) {
 	err = m.DB(ctx).Exec(
-		"UPDATE pages SET stale = true, updated_at = ? WHERE deleted_at IS NULL AND ("+
+		"UPDATE pages SET stale = true, update_time = ? WHERE deleted_at IS NULL AND ("+
 			blockRefMatchCond+
 			" OR draft_document->'settings'->'structure'->>'headerBlockId' = ?"+
 			" OR draft_document->'settings'->'structure'->>'footerBlockId' = ?)",
@@ -278,7 +278,7 @@ func (m *Model) MarkStaleForBlock(ctx context.Context, blockID string) (err erro
 // 工程首个主题创建时回填历史页面（迁移 020 的运行时兜底）。
 func (m *Model) AttachThemeToUnassigned(ctx context.Context, projectID, themeID string) (err error) {
 	err = m.DB(ctx).Exec(
-		"UPDATE pages SET theme_id = ?, updated_at = ? WHERE project_id = ? AND theme_id IS NULL AND deleted_at IS NULL",
+		"UPDATE pages SET theme_id = ?, update_time = ? WHERE project_id = ? AND theme_id IS NULL AND deleted_at IS NULL",
 		themeID, time.Now().UTC(), projectID,
 	).Error
 	return err
@@ -289,7 +289,7 @@ func (m *Model) AttachThemeToUnassigned(ctx context.Context, projectID, themeID 
 // 才能以该主题为键命中整站页面。不改 draft_document 内容，也不 bump 版本。
 func (m *Model) ReattachProjectPagesToTheme(ctx context.Context, projectID, themeID string) (err error) {
 	err = m.DB(ctx).Exec(
-		"UPDATE pages SET theme_id = ?, updated_at = ? WHERE project_id = ? AND deleted_at IS NULL",
+		"UPDATE pages SET theme_id = ?, update_time = ? WHERE project_id = ? AND deleted_at IS NULL",
 		themeID, time.Now().UTC(), projectID,
 	).Error
 	return err
@@ -351,9 +351,9 @@ func (m *Model) DeleteStaleRevisions(ctx context.Context, keep int, cutoff time.
 	// ctid 定位：PostgreSQL 的 DELETE 不支持 LIMIT，用子查询挑出本批目标。
 	const q = `DELETE FROM page_revisions WHERE ctid IN (
 		SELECT ctid FROM (
-			SELECT ctid, row_number() OVER (PARTITION BY page_id ORDER BY version DESC) AS rn, created_at
+			SELECT ctid, row_number() OVER (PARTITION BY page_id ORDER BY version DESC) AS rn, create_time
 			FROM page_revisions
-		) t WHERE t.rn > ? AND t.created_at < ? LIMIT ?
+		) t WHERE t.rn > ? AND t.create_time < ? LIMIT ?
 	)`
 	res := m.DB(ctx).Exec(q, keep, cutoff, limit)
 	return res.RowsAffected, res.Error
@@ -392,7 +392,7 @@ func (m *Model) SaveDraftWithRevision(
 				"draft_document": document,
 				"draft_version":  nextVersion,
 				"stale":          true,
-				"updated_at":     updatedAt,
+				"update_time":     updatedAt,
 			})
 		if result.Error != nil {
 			return result.Error
@@ -412,7 +412,7 @@ func (m *Model) MarkPublished(ctx context.Context, pageID, path, artifactID stri
 			"active_path":        path,
 			"published_at":       at,
 			"stale":              false,
-			"updated_at":         at,
+			"update_time":         at,
 		}).Error
 }
 
@@ -421,7 +421,7 @@ func (m *Model) MarkPublished(ctx context.Context, pageID, path, artifactID stri
 // 由 MovePublicationPath 单独同步（多语言 P3，docs/06-D §15.5 第 2 条）。
 func (m *Model) MoveDraftPath(ctx context.Context, pageID, newPath string, at time.Time) (err error) {
 	return m.DB(ctx).Where("id = ? AND deleted_at IS NULL", pageID).
-		Updates(map[string]any{"draft_path": newPath, "updated_at": at}).Error
+		Updates(map[string]any{"draft_path": newPath, "update_time": at}).Error
 }
 
 // SoftDelete 软删 Page（deleted_at 置时间，审计留痕）；页面不存在或已软删

@@ -30,6 +30,6 @@ WHERE a.is_admin = 1
 -- 菜单按钮（与其它自动化按钮同列）。
 INSERT INTO sys_menus (title, parent_id, type, path, component, permission_code, is_system, sort_order, create_by, create_time, update_by, update_time)
 SELECT '邮箱管理',
-       COALESCE((SELECT id FROM sys_menus WHERE title = '邮箱管理' AND type = 2 AND deleted_time IS NULL), 0),
+       COALESCE((SELECT id FROM sys_menus WHERE title = '邮箱管理' AND type = 2 AND deleted_at IS NULL), 0),
        3, '', '', 'mail:automation_layout', 1, 85, 0, NOW(), 0, NOW()
-WHERE NOT EXISTS (SELECT 1 FROM sys_menus WHERE title = '邮箱管理' AND type = 3 AND permission_code = 'mail:automation_layout' AND deleted_time IS NULL);
+WHERE NOT EXISTS (SELECT 1 FROM sys_menus WHERE title = '邮箱管理' AND type = 3 AND permission_code = 'mail:automation_layout' AND deleted_at IS NULL);

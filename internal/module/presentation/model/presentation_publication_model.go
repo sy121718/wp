@@ -21,7 +21,7 @@ type PublicationEntity struct {
 	ArtifactID     *string   `gorm:"column:artifact_id;type:uuid"`
 	ArtifactHash   string    `gorm:"column:artifact_hash;type:text;not null"`
 	PublishedAt    time.Time `gorm:"column:published_at;not null"`
-	UpdatedAt      time.Time `gorm:"column:updated_at;not null"`
+	UpdatedAt      time.Time `gorm:"column:update_time;not null"`
 }
 
 func (PublicationEntity) TableName() string { return tableNamePresentationPublications }
@@ -72,7 +72,7 @@ func (m *Model) MarkPublishedLang(ctx context.Context, rec PublicationRecord) er
 	return m.db.WithContext(ctx).Clauses(clause.OnConflict{
 		Columns: []clause.Column{{Name: "presentation_id"}, {Name: "lang"}},
 		DoUpdates: clause.AssignmentColumns([]string{
-			"active_path", "artifact_id", "artifact_hash", "published_at", "updated_at",
+			"active_path", "artifact_id", "artifact_hash", "published_at", "update_time",
 		}),
 	}).Create(row).Error
 }
@@ -93,7 +93,7 @@ func (m *Model) MarkPublishedLangTx(tx *gorm.DB, rec PublicationRecord) error {
 	return tx.Clauses(clause.OnConflict{
 		Columns: []clause.Column{{Name: "presentation_id"}, {Name: "lang"}},
 		DoUpdates: clause.AssignmentColumns([]string{
-			"active_path", "artifact_id", "artifact_hash", "published_at", "updated_at",
+			"active_path", "artifact_id", "artifact_hash", "published_at", "update_time",
 		}),
 	}).Create(row).Error
 }

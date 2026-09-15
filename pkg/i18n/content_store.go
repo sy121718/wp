@@ -47,7 +47,7 @@ var ErrContentStoreUnavailable = errors.New("内容译文存储不可用")
 const contentTranslationQuery = `SELECT DISTINCT ON (source_hash, context) source_hash, context, target_text
 FROM sys_translation
 WHERE source_hash = ANY($1) AND lang = $2
-ORDER BY source_hash, context, (project_id IS NULL) DESC, updated_at DESC`
+ORDER BY source_hash, context, (project_id IS NULL) DESC, update_time DESC`
 
 // contentTranslationProjectQuery 工程级查询形态（审计 I18N-009）。
 //
@@ -61,7 +61,7 @@ ORDER BY source_hash, context, (project_id IS NULL) DESC, updated_at DESC`
 const contentTranslationProjectQuery = `SELECT DISTINCT ON (source_hash, context) source_hash, context, target_text
 FROM sys_translation
 WHERE source_hash = ANY($1) AND lang = $2 AND (project_id IS NULL OR project_id = $3::uuid)
-ORDER BY source_hash, context, (project_id IS NOT NULL) DESC, updated_at DESC`
+ORDER BY source_hash, context, (project_id IS NOT NULL) DESC, update_time DESC`
 
 // contentTranslationRow sys_translation 的读取投影。
 type contentTranslationRow struct {

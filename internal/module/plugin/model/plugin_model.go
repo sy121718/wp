@@ -18,7 +18,7 @@ type Entity struct {
 	Manifest      []byte    `gorm:"column:manifest;type:jsonb"`
 	StoragePath   string    `gorm:"column:storage_path"`
 	InstalledAt   time.Time `gorm:"column:installed_at"`
-	UpdatedAt     time.Time `gorm:"column:updated_at"`
+	UpdatedAt     time.Time `gorm:"column:update_time"`
 }
 
 // TableName 表名。
@@ -61,19 +61,19 @@ func (m *Model) ListEnabled(ctx context.Context) (list []*Entity, err error) {
 
 // EnabledFingerprintRow 启用插件集的指纹行（审计 PERF-006）。
 //
-// 只取「装配素材是否变化」相关的列：换插件、换版本、重装（updated_at 变）都会改指纹。
+// 只取「装配素材是否变化」相关的列：换插件、换版本、重装（update_time 变）都会改指纹。
 // Manifest 与其它大字段不在其中 —— 命中缓存时连它们都不必从数据库取回。
 type EnabledFingerprintRow struct {
 	PluginID    string    `gorm:"column:plugin_id"`
 	Version     string    `gorm:"column:version"`
 	StoragePath string    `gorm:"column:storage_path"`
-	UpdatedAt   time.Time `gorm:"column:updated_at"`
+	UpdatedAt   time.Time `gorm:"column:update_time"`
 }
 
 // ListEnabledFingerprint 启用插件集的轻量指纹查询（列投影，不含 manifest 字节）。
 func (m *Model) ListEnabledFingerprint(ctx context.Context) (list []EnabledFingerprintRow, err error) {
 	err = m.db.WithContext(ctx).Model(&Entity{}).
-		Select("plugin_id, version, storage_path, updated_at").
+		Select("plugin_id, version, storage_path, update_time").
 		Where("enabled = ?", true).
 		Order("plugin_id ASC").
 		Find(&list).Error

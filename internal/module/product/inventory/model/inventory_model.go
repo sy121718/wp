@@ -35,8 +35,8 @@ type WarehouseEntity struct {
 	IsDefault bool            `gorm:"column:is_default;not null"`
 	Sort      int             `gorm:"column:sort;not null"`
 	Metadata  json.RawMessage `gorm:"column:metadata;type:jsonb;not null"`
-	CreatedAt time.Time       `gorm:"column:created_at;not null"`
-	UpdatedAt time.Time       `gorm:"column:updated_at;not null"`
+	CreatedAt time.Time       `gorm:"column:create_time;not null"`
+	UpdatedAt time.Time       `gorm:"column:update_time;not null"`
 }
 
 // TableName 实现 gorm 表名。
@@ -56,8 +56,8 @@ type StockEntity struct {
 	SKUCode     string          `gorm:"column:sku_code;type:text;not null"`
 	Quantity    int             `gorm:"column:quantity;not null"`
 	Metadata    json.RawMessage `gorm:"column:metadata;type:jsonb;not null"`
-	CreatedAt   time.Time       `gorm:"column:created_at;not null"`
-	UpdatedAt   time.Time       `gorm:"column:updated_at;not null"`
+	CreatedAt   time.Time       `gorm:"column:create_time;not null"`
+	UpdatedAt   time.Time       `gorm:"column:update_time;not null"`
 }
 
 // TableName 实现 gorm 表名。
@@ -76,8 +76,8 @@ type StockRow struct {
 	VariantID     string    `gorm:"column:variant_id"`
 	SKUCode       string    `gorm:"column:sku_code"`
 	Quantity      int       `gorm:"column:quantity"`
-	CreatedAt     time.Time `gorm:"column:created_at"`
-	UpdatedAt     time.Time `gorm:"column:updated_at"`
+	CreatedAt     time.Time `gorm:"column:create_time"`
+	UpdatedAt     time.Time `gorm:"column:update_time"`
 }
 
 // StockFilter 库存记录查询条件（条件以参数传入，方法内不写死业务判断）。
@@ -239,7 +239,7 @@ func (m *Model) CountNonZeroStocksByVariant(ctx context.Context, variantID strin
 func (m *Model) stockRows(ctx context.Context) *gorm.DB {
 	return m.db.WithContext(ctx).Table("inventory_stocks AS s").
 		Select("s.id, s.project_id, s.warehouse_id, s.product_id, s.variant_id, s.sku_code, " +
-			"s.quantity, s.created_at, s.updated_at, " +
+			"s.quantity, s.create_time, s.update_time, " +
 			"w.code AS warehouse_code, w.name AS warehouse_name").
 		Joins("JOIN inventory_warehouses AS w ON w.id = s.warehouse_id")
 }

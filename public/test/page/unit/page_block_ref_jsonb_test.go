@@ -108,7 +108,7 @@ func setupBlockRefPages(t *testing.T, target, other string) (*gorm.DB, pagemodel
 
 	// 2 万行无关页面：draft_document 结构同真实文档，blockId 为无关值。
 	if err := db.Exec(`INSERT INTO pages
-		(id, project_id, kind, content_target_type, draft_path, draft_document, draft_version, stale, created_at, updated_at)
+		(id, project_id, kind, content_target_type, draft_path, draft_document, draft_version, stale, create_time, update_time)
 		SELECT gen_random_uuid(), $1::uuid, 'home', 'none', '/p/' || i,
 		       jsonb_build_object('settings', '{}'::jsonb, 'root', jsonb_build_array(
 		           jsonb_build_object('id','n'||i,'type','core.section','props','{}'::jsonb,'children', jsonb_build_array(
@@ -124,7 +124,7 @@ func setupBlockRefPages(t *testing.T, target, other string) (*gorm.DB, pagemodel
 			deleted = "now()"
 		}
 		stmt := fmt.Sprintf(`INSERT INTO pages
-			(id, project_id, kind, content_target_type, draft_path, draft_document, draft_version, stale, deleted_at, created_at, updated_at)
+			(id, project_id, kind, content_target_type, draft_path, draft_document, draft_version, stale, deleted_at, create_time, update_time)
 			VALUES (gen_random_uuid(), $3::uuid, 'home', 'none', $1::text, $2::jsonb, 1, false, %s, now(), now())`, deleted)
 		if err := db.Exec(stmt, "/case/"+c.name, c.doc, blockRefProjectID).Error; err != nil {
 			t.Fatalf("插入样本页面(%s)失败: %v", c.name, err)

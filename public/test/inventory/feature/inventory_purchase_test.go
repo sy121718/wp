@@ -194,7 +194,7 @@ func latestMovement(t *testing.T, f *invFixture, variantID string) purchaseMovem
 	row := purchaseMovement{}
 	if err := f.db.Raw("SELECT direction, reason_code, source_type, source_ref, batch_id, "+
 		"quantity, delta, quantity_before, quantity_after "+
-		"FROM inventory_stock_movements WHERE variant_id = ? ORDER BY created_at DESC, id DESC LIMIT 1",
+		"FROM inventory_stock_movements WHERE variant_id = ? ORDER BY create_time DESC, id DESC LIMIT 1",
 		variantID).Scan(&row).Error; err != nil {
 		t.Fatalf("读库存流水失败: %v", err)
 	}

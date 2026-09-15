@@ -54,7 +54,7 @@ func registerOrderAndSiteSlots() {
 	registerSeed(Seed{
 		Version:      "140-page-site-slot-menu",
 		TableName:    "sys_menus",
-		ConditionSQL: "SELECT COUNT(*) FROM sys_menus WHERE title = '系统页面' AND type = 2 AND deleted_time IS NULL",
+		ConditionSQL: "SELECT COUNT(*) FROM sys_menus WHERE title = '系统页面' AND type = 2 AND deleted_at IS NULL",
 		SQL:          mustSQL("140_page_site_slot_menu.sql"),
 	})
 
@@ -91,7 +91,7 @@ func registerOrderAndSiteSlots() {
 	registerSeed(Seed{
 		Version:      "143-order-menu",
 		TableName:    "sys_menus",
-		ConditionSQL: "SELECT CASE WHEN COUNT(*) = 2 THEN 1 ELSE 0 END FROM sys_menus WHERE type = 2 AND deleted_time IS NULL AND title IN ('订单管理', '优惠码')",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) = 2 THEN 1 ELSE 0 END FROM sys_menus WHERE type = 2 AND deleted_at IS NULL AND title IN ('订单管理', '优惠码')",
 		SQL:          mustSQL("143_order_menu.sql"),
 	})
 

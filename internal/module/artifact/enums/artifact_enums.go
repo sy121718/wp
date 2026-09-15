@@ -10,6 +10,10 @@ const (
 	// ErrContentRefQueryFailed 内容对象的外部引用来源查询失败。
 	// 属于「问不到就不能删」的失败：引用关系不明时宁可少回收一轮，也不能删共享对象。
 	ErrContentRefQueryFailed = "ErrContentRefQueryFailed" // 内容对象引用关系查询失败
+	// ErrContentObjectDeleteNotApplied 内容对象删除未生效：DELETE 没报错、行也没消失，
+	// 删后复查确认它仍然存在且仍然无引用。与「被并发归档重新引用」是两回事 ——
+	// 后者是正常赛跑，前者说明删除语句没能落地（约束/触发器/权限），必须可见。
+	ErrContentObjectDeleteNotApplied = "ErrContentObjectDeleteNotApplied" // 内容对象删除未生效
 )
 
 const (

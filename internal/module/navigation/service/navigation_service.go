@@ -137,7 +137,7 @@ func (s *Service) Update(ctx context.Context, req *navigationdto.UpdateReq) (res
 		return nil, err
 	}
 
-	updates := map[string]any{"updated_at": time.Now().UTC()}
+	updates := map[string]any{"update_time": time.Now().UTC()}
 	title, path, kind := e.Title, e.Path, e.Kind
 
 	if req.Title != nil {

@@ -24,8 +24,8 @@ type ProductBrandEntity struct {
 	SEODescription string          `gorm:"column:seo_description;type:text;not null"`
 	Sort           int             `gorm:"column:sort;not null"`
 	Metadata       json.RawMessage `gorm:"column:metadata;type:jsonb;not null"`
-	CreatedAt      time.Time       `gorm:"column:created_at;not null"`
-	UpdatedAt      time.Time       `gorm:"column:updated_at;not null"`
+	CreatedAt      time.Time       `gorm:"column:create_time;not null"`
+	UpdatedAt      time.Time       `gorm:"column:update_time;not null"`
 }
 
 // TableName 实现 gorm 表名。
@@ -65,7 +65,7 @@ func (m *Model) ListBrands(ctx context.Context, projectID, keyword string) (list
 	if keyword != "" {
 		q = q.Where("name ILIKE ?", "%"+keyword+"%")
 	}
-	err = q.Order("sort ASC, created_at ASC, id ASC").Find(&list).Error
+	err = q.Order("sort ASC, create_time ASC, id ASC").Find(&list).Error
 	return list, err
 }
 
@@ -98,6 +98,6 @@ func (m *Model) DeleteBrand(ctx context.Context, id string) (err error) {
 func (m *Model) ProductUsingBrand(ctx context.Context, brandID string) (e *ProductEntity, err error) {
 	e = &ProductEntity{}
 	err = m.DB(ctx).Where("brand_id = ?", brandID).
-		Order("sort ASC, created_at ASC").Limit(1).Take(e).Error
+		Order("sort ASC, create_time ASC").Limit(1).Take(e).Error
 	return e, err
 }

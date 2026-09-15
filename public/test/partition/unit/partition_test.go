@@ -256,6 +256,10 @@ func TestMigrationMigratesLegacyData(t *testing.T) {
 		}
 	}
 
+	// 173 写于 205（DB-019 时间列改名）**之前**，它的分区改造语句引用 created_at；
+	// 本用例的库由全量迁移建出（列名已是 create_time），所以要重放这份历史 SQL 得先做
+	// 一次等价替换。生产里 173 在迁移序列中总是早于 205，不存在这层替换。
+	sqlText = strings.ReplaceAll(sqlText, "created_at", "create_time")
 	if err := db.Exec(sqlText).Error; err != nil {
 		t.Fatalf("执行迁移 173 失败: %v", err)
 	}

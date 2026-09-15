@@ -69,7 +69,7 @@ func TestPresentationBlockContentTranslation(t *testing.T) {
 	t.Cleanup(func() { i18n.SetSiteLangURLMode(i18n.SiteLangURLModeDefaultPlain) })
 
 	if err := f.db.Exec(
-		"INSERT INTO project_locales (project_id, lang, sort_order, is_default, enabled, created_at, updated_at) VALUES (?, ?, 0, true, true, now(), now()), (?, ?, 1, false, true, now(), now())",
+		"INSERT INTO project_locales (project_id, lang, sort_order, is_default, enabled, create_time, update_time) VALUES (?, ?, 0, true, true, now(), now()), (?, ?, 1, false, true, now(), now())",
 		f.projectID, "zh-CN", f.projectID, "en-US").Error; err != nil {
 		t.Fatalf("写入语言清单失败: %v", err)
 	}

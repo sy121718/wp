@@ -80,7 +80,7 @@ func (s *Service) UpdateEndpoint(ctx context.Context, id uint64, fields map[stri
 		delete(fields, "secret")
 		fields["secret_cipher"] = cipher
 	}
-	fields["updated_at"] = time.Now().Unix()
+	fields["update_time"] = time.Now().Unix()
 	return s.m.UpdateEndpoint(ctx, id, fields)
 }
 
@@ -154,7 +154,7 @@ func (s *Service) DeliverDelivery(ctx context.Context, deliveryID uint64) (err e
 			"status":     webhookenums.DeliveryStatusFailed,
 			"attempts":   d.Attempts + 1,
 			"last_error": "端点不存在或已删除",
-			"updated_at": time.Now().Unix(),
+			"update_time": time.Now().Unix(),
 		})
 		return nil
 	}
@@ -166,7 +166,7 @@ func (s *Service) DeliverDelivery(ctx context.Context, deliveryID uint64) (err e
 			"status":     webhookenums.DeliveryStatusFailed,
 			"attempts":   d.Attempts + 1,
 			"last_error": derr.Error(),
-			"updated_at": time.Now().Unix(),
+			"update_time": time.Now().Unix(),
 		})
 		return nil
 	}
@@ -177,7 +177,7 @@ func (s *Service) DeliverDelivery(ctx context.Context, deliveryID uint64) (err e
 			"status":          webhookenums.DeliveryStatusDelivered,
 			"attempts":        d.Attempts + 1,
 			"response_status": status,
-			"updated_at":      time.Now().Unix(),
+			"update_time":      time.Now().Unix(),
 		})
 	}
 
@@ -197,7 +197,7 @@ func (s *Service) DeliverDelivery(ctx context.Context, deliveryID uint64) (err e
 			"attempts":        d.Attempts + 1,
 			"response_status": status,
 			"last_error":      lastErr,
-			"updated_at":      time.Now().Unix(),
+			"update_time":      time.Now().Unix(),
 		}),
 		fmt.Errorf("webhook 投递未成功: %s", lastErr),
 	)

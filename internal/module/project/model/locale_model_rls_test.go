@@ -94,8 +94,8 @@ func rlsFixture(t *testing.T) (*Model, string, string) {
 		sort_order int NOT NULL,
 		is_default boolean NOT NULL,
 		enabled boolean NOT NULL,
-		created_at timestamptz NOT NULL DEFAULT now(),
-		updated_at timestamptz NOT NULL DEFAULT now(),
+		create_time timestamptz NOT NULL DEFAULT now(),
+		update_time timestamptz NOT NULL DEFAULT now(),
 		PRIMARY KEY (project_id, lang)
 	)`).Error; err != nil {
 		t.Fatalf("建表失败: %v", err)

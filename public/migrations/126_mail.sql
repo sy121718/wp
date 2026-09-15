@@ -25,14 +25,14 @@ WHERE NOT EXISTS (SELECT 1 FROM sys_permission WHERE permission_code = v.code);
 INSERT INTO sys_menus (title, parent_id, type, path, component, permission_code, is_system, sort_order, create_by, create_time, update_by, update_time)
 SELECT '邮箱管理',
        -- 找不到父目录时落到顶级（0）：测试 schema 与精简部署都可能没有「系统设置」目录。
-       COALESCE((SELECT id FROM sys_menus WHERE title = '系统设置' AND type = 1 AND deleted_time IS NULL), 0),
+       COALESCE((SELECT id FROM sys_menus WHERE title = '系统设置' AND type = 1 AND deleted_at IS NULL), 0),
        2, '/mail', 'view.mail', 'mail:account_list', 1, 20, 0, NOW(), 0, NOW()
-WHERE NOT EXISTS (SELECT 1 FROM sys_menus WHERE title = '邮箱管理' AND type = 2 AND deleted_time IS NULL);
+WHERE NOT EXISTS (SELECT 1 FROM sys_menus WHERE title = '邮箱管理' AND type = 2 AND deleted_at IS NULL);
 
 -- 3. 菜单下的按钮权限
 INSERT INTO sys_menus (title, parent_id, type, path, component, permission_code, is_system, sort_order, create_by, create_time, update_by, update_time)
 SELECT v.title,
-       COALESCE((SELECT id FROM sys_menus WHERE title = v.parent AND type = 2 AND deleted_time IS NULL), 0),
+       COALESCE((SELECT id FROM sys_menus WHERE title = v.parent AND type = 2 AND deleted_at IS NULL), 0),
        v.type, '', '', v.code, 1, v.sort, 0, NOW(), 0, NOW()
 FROM (VALUES
     ('邮箱管理', '新建 / 编辑账号', 3, 'mail:account_save', 60),
@@ -44,4 +44,4 @@ FROM (VALUES
     ('邮箱管理', '导入联系人',     3, 'mail:contact_import', 66),
     ('邮箱管理', '修改联系人状态', 3, 'mail:contact_status', 67)
 ) AS v(parent, title, type, code, sort)
-WHERE NOT EXISTS (SELECT 1 FROM sys_menus WHERE title = v.title AND type = 3 AND permission_code = v.code AND deleted_time IS NULL);
+WHERE NOT EXISTS (SELECT 1 FROM sys_menus WHERE title = v.title AND type = 3 AND permission_code = v.code AND deleted_at IS NULL);

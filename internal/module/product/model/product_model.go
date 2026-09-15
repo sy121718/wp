@@ -26,7 +26,7 @@ type ProductEntity struct {
 	Slug        string          `gorm:"column:slug;type:text;not null"`
 	Status      string          `gorm:"column:status;type:text;not null"`
 	// PublishedAt 上架时间（issue #11）：最近一次进入 published 的时刻，由 service 在
-	// 状态转 published 时写入；自动标签的「新品」规则以它为判定基准（不用 created_at，
+	// 状态转 published 时写入；自动标签的「新品」规则以它为判定基准（不用 create_time，
 	// 否则「建了草稿很久才上架」的商品会被误判成新品）。
 	PublishedAt    *time.Time      `gorm:"column:published_at"`
 	Sort           int             `gorm:"column:sort;not null"`
@@ -73,8 +73,8 @@ type ProductEntity struct {
 	DefaultCostPrice    *float64        `gorm:"column:default_cost_price;type:numeric(12,2)"`
 	DefaultImage        string          `gorm:"column:default_image;type:text;not null"`
 	Metadata            json.RawMessage `gorm:"column:metadata;type:jsonb;not null"`
-	CreatedAt           time.Time       `gorm:"column:created_at;not null"`
-	UpdatedAt           time.Time       `gorm:"column:updated_at;not null"`
+	CreatedAt           time.Time       `gorm:"column:create_time;not null"`
+	UpdatedAt           time.Time       `gorm:"column:update_time;not null"`
 }
 
 // TableName 实现 gorm 表名。
@@ -98,8 +98,8 @@ type VariantEntity struct {
 	Enabled      bool            `gorm:"column:enabled;not null"`
 	Sort         int             `gorm:"column:sort;not null"`
 	Metadata     json.RawMessage `gorm:"column:metadata;type:jsonb;not null"`
-	CreatedAt    time.Time       `gorm:"column:created_at;not null"`
-	UpdatedAt    time.Time       `gorm:"column:updated_at;not null"`
+	CreatedAt    time.Time       `gorm:"column:create_time;not null"`
+	UpdatedAt    time.Time       `gorm:"column:update_time;not null"`
 }
 
 // TableName 实现 gorm 表名。
@@ -178,7 +178,7 @@ func (m *Model) SlugExists(ctx context.Context, projectID, slug, excludeID strin
 
 // List 商品列表。只取列表需要的列：metadata 与 description 不参与列表查询（spec：默认不取）。
 func (m *Model) List(ctx context.Context, projectID, keyword, status string, limit, offset int) (list []*ProductEntity, err error) {
-	q := m.DB(ctx).Select("id, project_id, name, slug, status, images, sort, default_image, created_at, updated_at")
+	q := m.DB(ctx).Select("id, project_id, name, slug, status, images, sort, default_image, create_time, update_time")
 	if projectID != "" {
 		q = q.Where("project_id = ?", projectID)
 	}
@@ -188,7 +188,7 @@ func (m *Model) List(ctx context.Context, projectID, keyword, status string, lim
 	if status != "" {
 		q = q.Where("status = ?", status)
 	}
-	err = q.Order("sort ASC, created_at DESC").Limit(limit).Offset(offset).Find(&list).Error
+	err = q.Order("sort ASC, create_time DESC").Limit(limit).Offset(offset).Find(&list).Error
 	return list, err
 }
 
@@ -237,7 +237,7 @@ func sortedOptionKeys(options map[string]string) []string {
 
 // ListForCollection 集合源取数（issue #9）：一次取回集合项所需的全部白名单字段列。
 //
-// 与 List 的差异是刻意的：List 是后台列表（只要标题/图/状态那几列、按 updated_at 语义），
+// 与 List 的差异是刻意的：List 是后台列表（只要标题/图/状态那几列、按 update_time 语义），
 // 集合源要的是「详情可绑定字段」的投影（副标题/描述/单位/属性引用等），且必须同一份
 // 确定性排序 —— 同一批数据每次构建输出同样字节（不变量 5）。
 //
@@ -251,7 +251,7 @@ func (m *Model) ListForCollection(ctx context.Context, f CollectionFilter, limit
 	q := m.DB(ctx).Select(
 		"id, project_id, name, subtitle, description, slug, status, sort, unit, " +
 			"images, images_alt, attribute_ids, category_ids, tag_ids, brand_id, related_ids, " +
-			"default_image, created_at, updated_at, " +
+			"default_image, create_time, update_time, " +
 			// 最低启用变体价（issue #28）：价格排序与价格区间展示都要数值，
 			// 光有 priceRange 字符串没法排序。没有启用变体的商品该列为 NULL。
 			"(SELECT MIN(v.price) FROM product_variants v WHERE v.product_id = products.id AND v.enabled) AS min_price, " +
@@ -340,7 +340,7 @@ func (m *Model) ListForCollection(ctx context.Context, f CollectionFilter, limit
 				" AND v.enabled AND v.option_values @> jsonb_build_object(?::text, ?::text))",
 			key, f.Options[key])
 	}
-	q = q.Order("sort ASC, created_at ASC, id ASC")
+	q = q.Order("sort ASC, create_time ASC, id ASC")
 	if limit > 0 {
 		q = q.Limit(limit).Offset(offset)
 	}
@@ -376,7 +376,7 @@ func (m *Model) Delete(ctx context.Context, id string) (err error) {
 
 // ListVariants 某商品全部变体。
 func (m *Model) ListVariants(ctx context.Context, productID string) (list []*VariantEntity, err error) {
-	err = m.VariantDB(ctx).Where("product_id = ?", productID).Order("sort ASC, created_at ASC").Find(&list).Error
+	err = m.VariantDB(ctx).Where("product_id = ?", productID).Order("sort ASC, create_time ASC").Find(&list).Error
 	return list, err
 }
 
@@ -478,7 +478,7 @@ func (m *Model) DeleteVariant(ctx context.Context, id string) (err error) {
 // 售价、划线价、库存缓存一律不碰：成本口径与售价口径是两条独立的账。
 func (m *Model) UpdateVariantCost(ctx context.Context, variantID string, cost float64, at time.Time) (err error) {
 	res := m.VariantDB(ctx).Where("id = ?", variantID).
-		Updates(map[string]any{"cost_price": cost, "updated_at": at})
+		Updates(map[string]any{"cost_price": cost, "update_time": at})
 	if res.Error != nil {
 		return res.Error
 	}

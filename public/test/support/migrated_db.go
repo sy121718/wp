@@ -12,7 +12,7 @@ import (
 //
 // 业务链路测试一律从这里拿库，不要再手抄 CREATE TABLE：手抄的表结构与生产 schema
 // 会静默分叉。实测过两次代价：publication 用例手抄的 publication_receipts 停在
-// uuid + created_at，而生产迁移已改成 bigint + create_time，DB-019/020 批次推进时
+// uuid + create_time，而生产迁移已改成 bigint + create_time，DB-019/020 批次推进时
 // 该包 4 个用例整片变红，失败信息还被读成「迁移把库改坏了」。
 //
 // 迁移建的是完整 106 张表，测试只需再补真实父行（见 SeedProjectRow）。
@@ -40,7 +40,7 @@ func SeedProjectRow(t *testing.T, db *gorm.DB, id, name string) {
 		name = "测试站点"
 	}
 	if err := db.Exec(
-		"INSERT INTO projects (id, name, settings, created_at, updated_at) VALUES (?, ?, '{}'::jsonb, NOW(), NOW())",
+		"INSERT INTO projects (id, name, settings, create_time, update_time) VALUES (?, ?, '{}'::jsonb, NOW(), NOW())",
 		id, name,
 	).Error; err != nil {
 		t.Fatalf("准备工程行失败：%v", err)

@@ -25,8 +25,8 @@ type NavigationEntity struct {
 	Target    string    `gorm:"column:target;not null;default:self"`
 	ParentID  *string   `gorm:"column:parent_id;type:uuid"`
 	SortOrder int       `gorm:"column:sort_order;not null"`
-	CreatedAt time.Time `gorm:"column:created_at;not null"`
-	UpdatedAt time.Time `gorm:"column:updated_at;not null"`
+	CreatedAt time.Time `gorm:"column:create_time;not null"`
+	UpdatedAt time.Time `gorm:"column:update_time;not null"`
 }
 
 // TableName 表名。

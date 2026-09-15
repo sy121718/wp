@@ -207,7 +207,7 @@ func registerCoreSchemaAndAccess() {
 	registerSeed(Seed{
 		Version:      "052-menu-icons",
 		TableName:    "sys_menus",
-		ConditionSQL: "SELECT COUNT(*) FROM sys_menus WHERE deleted_time IS NULL AND (icon IS NULL OR icon = '' OR icon LIKE 'i-ep:%')",
+		ConditionSQL: "SELECT COUNT(*) FROM sys_menus WHERE deleted_at IS NULL AND (icon IS NULL OR icon = '' OR icon LIKE 'i-ep:%')",
 		SQL:          mustSQL("052_menu_icons.sql"),
 	})
 

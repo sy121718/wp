@@ -9,7 +9,7 @@
 //
 // 另覆盖两条容易踩的边界：
 //
-//	· 「新品」以 products.published_at 判定，不是 created_at（建了草稿很久才上架的商品不算新品）；
+//	· 「新品」以 products.published_at 判定，不是 create_time（建了草稿很久才上架的商品不算新品）；
 //	· 变体维度的规则（价格区间 / 促销）在变体表上没有工程列，命中集合必须按工程兜底过滤。
 package feature
 
@@ -300,7 +300,7 @@ func TestTagAutoRecalcMembership(t *testing.T) {
 		t.Fatalf("自动标签应同时挂在商品上，实际 %v", got.TagIDs)
 	}
 
-	// ③ 「新品」以 published_at 判定，不是 created_at：把上架时间改成 40 天前后再重算，应脱钩。
+	// ③ 「新品」以 published_at 判定，不是 create_time：把上架时间改成 40 天前后再重算，应脱钩。
 	old := time.Now().UTC().AddDate(0, 0, -40)
 	if err = f.db.Exec("UPDATE products SET published_at = ? WHERE id = ?", old, p.ID).Error; err != nil {
 		t.Fatalf("回填上架时间失败: %v", err)
@@ -446,7 +446,7 @@ func TestTagPermissionsAndMenusSeeded(t *testing.T) {
 		t.Fatalf("迁移 092 应 seed 8 个标签权限点，实际 %d", n)
 	}
 	if err := f.db.Raw(`SELECT COUNT(*) FROM sys_menus
-		WHERE type = 2 AND title = '商品标签' AND deleted_time IS NULL`).Scan(&n).Error; err != nil {
+		WHERE type = 2 AND title = '商品标签' AND deleted_at IS NULL`).Scan(&n).Error; err != nil {
 		t.Fatalf("查询菜单失败: %v", err)
 	}
 	if n != 1 {

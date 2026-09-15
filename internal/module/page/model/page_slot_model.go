@@ -26,7 +26,7 @@ type SiteSlotEntity struct {
 	Slot       string    `gorm:"column:slot;type:text;not null"`
 	PageID     string    `gorm:"column:page_id;type:uuid;not null"`
 	CreateTime time.Time `gorm:"column:create_time;not null"`
-	UpdatedAt  time.Time `gorm:"column:updated_at;not null"`
+	UpdatedAt  time.Time `gorm:"column:update_time;not null"`
 }
 
 func (SiteSlotEntity) TableName() string { return tableNamePageSiteSlots }
@@ -57,7 +57,7 @@ func (m *Model) UpsertSiteSlot(ctx context.Context, e *SiteSlotEntity) (err erro
 	case err == nil:
 		return m.SiteSlotDB(ctx).Where("id = ?", existing.ID).Updates(map[string]any{
 			"page_id":    e.PageID,
-			"updated_at": e.UpdatedAt,
+			"update_time": e.UpdatedAt,
 		}).Error
 	case errors.Is(err, gorm.ErrRecordNotFound):
 		return m.SiteSlotDB(ctx).Create(e).Error
@@ -106,5 +106,5 @@ func (m *Model) MarkStaleForProject(ctx context.Context, projectID string, at ti
 		return nil
 	}
 	return m.DB(ctx).Where("project_id = ? AND deleted_at IS NULL AND stale = ?", projectID, false).
-		Updates(map[string]any{"stale": true, "updated_at": at}).Error
+		Updates(map[string]any{"stale": true, "update_time": at}).Error
 }

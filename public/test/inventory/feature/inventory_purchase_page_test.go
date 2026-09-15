@@ -311,7 +311,7 @@ func TestPurchasePermissionsAndMenuSeeded(t *testing.T) {
 	}
 	// 后台菜单 + 按钮。
 	var menus int64
-	if err := f.db.Raw("SELECT COUNT(*) FROM sys_menus WHERE type = 2 AND title = '采购入库' AND deleted_time IS NULL").
+	if err := f.db.Raw("SELECT COUNT(*) FROM sys_menus WHERE type = 2 AND title = '采购入库' AND deleted_at IS NULL").
 		Scan(&menus).Error; err != nil {
 		t.Fatalf("查询菜单失败: %v", err)
 	}
@@ -320,7 +320,7 @@ func TestPurchasePermissionsAndMenuSeeded(t *testing.T) {
 	}
 	for _, code := range []string{"inventory:purchase_create", "inventory:purchase_receipt", "inventory:purchase_production"} {
 		var hit int64
-		if err := f.db.Raw("SELECT COUNT(*) FROM sys_menus WHERE type = 3 AND permission_code = ? AND deleted_time IS NULL", code).
+		if err := f.db.Raw("SELECT COUNT(*) FROM sys_menus WHERE type = 3 AND permission_code = ? AND deleted_at IS NULL", code).
 			Scan(&hit).Error; err != nil {
 			t.Fatalf("查询菜单按钮 %s 失败: %v", code, err)
 		}

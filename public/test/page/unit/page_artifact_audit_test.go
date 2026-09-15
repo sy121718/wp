@@ -39,7 +39,7 @@ func TestAuditPublicationReportsOrphanArtifacts(t *testing.T) {
 	if err = db.Exec(`INSERT INTO page_artifacts (
 		id, page_id, version, source_document, page_document_schema_version, source_hash,
 		build_input_manifest, build_input_hash, artifact_provider, artifact_key, artifact_hash,
-		compiler_version, registry_version, manifest, payload_state, note, created_by, created_at, lang
+		compiler_version, registry_version, manifest, payload_state, note, created_by, create_time, lang
 	) VALUES (gen_random_uuid(), ?, 1, '{}'::jsonb, 1, 'src', '{}'::jsonb, 'bih', 'local', 'key-1', ?,
 		'v1', 'r1', '{}'::jsonb, 'available', '', gen_random_uuid(), now(), 'zh-CN')`, page.ID, ownedHash).Error; err != nil {
 		t.Fatalf("插入产物行失败: %v", err)

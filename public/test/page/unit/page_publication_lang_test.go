@@ -34,7 +34,7 @@ func TestDeletePublicationsByLangKeepsOtherLanguages(t *testing.T) {
 	pageID := "11111111-1111-1111-1111-111111111111"
 	for _, lang := range []string{"zh-CN", "en-US"} {
 		if err := db.Exec(`INSERT INTO page_publications
-			(page_id, lang, active_path, artifact_hash, published_at, updated_at)
+			(page_id, lang, active_path, artifact_hash, published_at, update_time)
 			VALUES (?, ?, ?, ?, ?, ?)`,
 			pageID, lang, "/"+lang, "hash-"+lang, now, now).Error; err != nil {
 			t.Fatalf("插入 %s 发布指针失败: %v", lang, err)

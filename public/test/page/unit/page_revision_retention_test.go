@@ -115,7 +115,7 @@ func TestPurgeRetentionDeletesExpiredRevisions(t *testing.T) {
 	}
 	// 把全部快照推到保留期之外，模拟「久未编辑、库存了一堆老版本」的页面。
 	if err := db.Exec(
-		"UPDATE page_revisions SET created_at = NOW() - INTERVAL '200 days' WHERE page_id = ?", created.ID,
+		"UPDATE page_revisions SET create_time = NOW() - INTERVAL '200 days' WHERE page_id = ?", created.ID,
 	).Error; err != nil {
 		t.Fatalf("回拨修订时间失败: %v", err)
 	}

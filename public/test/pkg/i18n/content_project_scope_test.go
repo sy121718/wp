@@ -63,7 +63,7 @@ func applyMigrationFile(t *testing.T, db *gorm.DB, name string) {
 // insertTestProject 插入一个工程（sys_translation 的工程外键需要真实工程行）。
 func insertTestProject(t *testing.T, db *gorm.DB, id, name string) {
 	t.Helper()
-	if err := db.Exec("INSERT INTO projects (id, name, settings, created_at, updated_at) VALUES (?, ?, '{}'::jsonb, now(), now())", id, name).Error; err != nil {
+	if err := db.Exec("INSERT INTO projects (id, name, settings, create_time, update_time) VALUES (?, ?, '{}'::jsonb, now(), now())", id, name).Error; err != nil {
 		t.Fatalf("插入工程失败: %v", err)
 	}
 }

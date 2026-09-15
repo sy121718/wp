@@ -39,7 +39,7 @@ type PriceAdjustmentEntity struct {
 	Note         string `gorm:"column:note;type:text;not null"`
 	// OperatorID 操作人 id（取自会话；脚本 / 测试路径为空串）。
 	OperatorID string    `gorm:"column:operator_id;type:text;not null"`
-	CreatedAt  time.Time `gorm:"column:created_at;not null"`
+	CreatedAt  time.Time `gorm:"column:create_time;not null"`
 }
 
 // TableName 实现 gorm 表名。
@@ -57,7 +57,7 @@ type PriceAdjustmentItemEntity struct {
 	SKUCode      string    `gorm:"column:sku_code;type:text;not null"`
 	OldPrice     float64   `gorm:"column:old_price;type:numeric(12,2);not null"`
 	NewPrice     float64   `gorm:"column:new_price;type:numeric(12,2);not null"`
-	CreatedAt    time.Time `gorm:"column:created_at;not null"`
+	CreatedAt    time.Time `gorm:"column:create_time;not null"`
 }
 
 // TableName 实现 gorm 表名。
@@ -109,7 +109,7 @@ func (m *Model) ListAdjustments(ctx context.Context, projectID string, limit int
 	if projectID != "" {
 		q = q.Where("project_id = ?", projectID)
 	}
-	q = q.Order("created_at DESC, id DESC")
+	q = q.Order("create_time DESC, id DESC")
 	if limit > 0 {
 		q = q.Limit(limit)
 	}
@@ -120,7 +120,7 @@ func (m *Model) ListAdjustments(ctx context.Context, projectID string, limit int
 // ListAdjustmentItems 某批次的逐变体明细（按写入顺序，稳定可读）。
 func (m *Model) ListAdjustmentItems(ctx context.Context, adjustmentID string, limit int) (list []*PriceAdjustmentItemEntity, err error) {
 	q := m.AdjustmentItemDB(ctx).Where("adjustment_id = ?", adjustmentID).
-		Order("created_at ASC, sku_code ASC, id ASC")
+		Order("create_time ASC, sku_code ASC, id ASC")
 	if limit > 0 {
 		q = q.Limit(limit)
 	}
@@ -133,7 +133,7 @@ func (m *Model) ListAdjustmentItems(ctx context.Context, adjustmentID string, li
 // 只取筛选与展示需要的列；关键词只匹配商品名（与后台列表口径一致）。
 // 分类 / 标签是 JSONB 数组，用包含谓词命中 GIN 索引（与 ListProductsByTag 同一手法）。
 func (m *Model) ListProductsForPricing(ctx context.Context, f PricingFilter) (list []*ProductEntity, err error) {
-	q := m.DB(ctx).Select("id, project_id, name, slug, status, sort, category_ids, brand_id, tag_ids, created_at")
+	q := m.DB(ctx).Select("id, project_id, name, slug, status, sort, category_ids, brand_id, tag_ids, create_time")
 	if f.ProjectID != "" {
 		q = q.Where("project_id = ?", f.ProjectID)
 	}
@@ -160,6 +160,6 @@ func (m *Model) ListProductsForPricing(ctx context.Context, f PricingFilter) (li
 	if f.BrandID != "" {
 		q = q.Where("brand_id = ?", f.BrandID)
 	}
-	err = q.Order("sort ASC, created_at ASC, id ASC").Find(&list).Error
+	err = q.Order("sort ASC, create_time ASC, id ASC").Find(&list).Error
 	return list, err
 }

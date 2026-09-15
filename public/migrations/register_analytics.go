@@ -17,7 +17,7 @@ func registerAnalyticsSeoAndPermissions() {
 	registerSeed(Seed{
 		Version:      "149-analytics-menu",
 		TableName:    "sys_menus",
-		ConditionSQL: "SELECT COUNT(*) FROM sys_menus WHERE type = 2 AND deleted_time IS NULL AND title = '访问统计'",
+		ConditionSQL: "SELECT COUNT(*) FROM sys_menus WHERE type = 2 AND deleted_at IS NULL AND title = '访问统计'",
 		SQL:          mustSQL("149_analytics_menu.sql"),
 	})
 
@@ -26,7 +26,7 @@ func registerAnalyticsSeoAndPermissions() {
 	registerSeed(Seed{
 		Version:      "150-article-menu",
 		TableName:    "sys_menus",
-		ConditionSQL: "SELECT COUNT(*) FROM sys_menus WHERE type = 2 AND deleted_time IS NULL AND title = '文章'",
+		ConditionSQL: "SELECT COUNT(*) FROM sys_menus WHERE type = 2 AND deleted_at IS NULL AND title = '文章'",
 		SQL:          mustSQL("150_article_menu.sql"),
 	})
 
@@ -66,7 +66,7 @@ func registerAnalyticsSeoAndPermissions() {
 	registerSeed(Seed{
 		Version:      "153-customer-admin-menu",
 		TableName:    "sys_menus",
-		ConditionSQL: "SELECT COUNT(*) FROM sys_menus WHERE type = 2 AND deleted_time IS NULL AND title = '客户管理'",
+		ConditionSQL: "SELECT COUNT(*) FROM sys_menus WHERE type = 2 AND deleted_at IS NULL AND title = '客户管理'",
 		SQL:          mustSQL("153_customer_admin_menu.sql"),
 	})
 
@@ -305,14 +305,81 @@ func registerAnalyticsSeoAndPermissions() {
 
 	// 204：内容对象闭包外键补 ON DELETE CASCADE（否则内容对象 GC 被外键挡下、静默泄漏）。
 	// 判定按约束定义，并用 MATERIALIZED CTE 先锁定 OID 再 deparse（理由同 071）。
+	//
+	// presentation 侧那一半用 to_regclass 而不是 'xxx'::regclass：迁移 207（CQ-015）
+	// 会把那张表删掉，而 '缺表名'::regclass 在下次启动求值判定时会直接报错（启动失败）。
+	// to_regclass 缺表返回 NULL，比较自然落空 —— 此时「表已不存在」本身就算这一半完成。
 	register(Migration{
 		Version:   "204-artifact-closure-fk-cascade",
 		TableName: "page_artifact_objects",
-		CheckSQL: "WITH target AS MATERIALIZED (SELECT oid FROM pg_constraint " +
-			"WHERE conname IN ('page_artifact_objects_content_hash_fkey', 'presentation_artifact_objects_content_hash_fkey') " +
-			"AND conrelid IN (?::regclass, 'presentation_artifact_objects'::regclass)) " +
-			"SELECT CASE WHEN (SELECT COUNT(*) FROM pg_constraint pc JOIN target t ON t.oid = pc.oid " +
-			"WHERE pg_get_constraintdef(pc.oid) LIKE '%ON DELETE CASCADE%') = 2 THEN 1 ELSE 0 END",
+		CheckSQL: "SELECT CASE WHEN " +
+			"(SELECT COUNT(*) FROM pg_constraint pc WHERE pc.conrelid = ?::regclass " +
+			"AND pc.conname = 'page_artifact_objects_content_hash_fkey' " +
+			"AND pg_get_constraintdef(pc.oid) LIKE '%ON DELETE CASCADE%') = 1 " +
+			"AND (to_regclass('presentation_artifact_objects') IS NULL " +
+			"OR (SELECT COUNT(*) FROM pg_constraint pc2 WHERE pc2.conrelid = to_regclass('presentation_artifact_objects') " +
+			"AND pc2.conname = 'presentation_artifact_objects_content_hash_fkey' " +
+			"AND pg_get_constraintdef(pc2.oid) LIKE '%ON DELETE CASCADE%') = 1) " +
+			"THEN 1 ELSE 0 END",
 		SQL: mustSQL("204_artifact_closure_fk_cascade.sql"),
+	})
+
+	// 205：DB-019 全量收口 —— 剩余 46 张表的 created_at 与 33 张表的 updated_at
+	// 统一改名（201 只做了 5 张叶子表的 created_at，且漏了它们的 updated_at）。
+	// 判定按「全库不再存在 created_at / updated_at 列」而不是「表存在」：
+	// 用默认判定会让整段 SQL 永不执行（同 201 踩过的坑）。
+	// 判定里的旧列名**不能**跟着 Go 侧改名一起替换 —— 它检查的正是「旧名是否已消失」。
+	//
+	// TableName 取一个**哨兵名**而不是真实表：迁移器只给 CheckSQL 传一个参数（表名），
+	// 而这条判定管的是全库、不针对单表 —— 护栏又要求每个自定义判定都接收那个参数。
+	// 于是用 table_name <> ? 表达「除哨兵外全部」，哨兵不可能存在，条件等价于全库。
+	// 若改成排除某张真实表（如 pages），那张表万一漏改，判定就会误报完成、迁移从此跳过。
+	register(Migration{
+		Version:   "205-db019-time-columns-full",
+		TableName: "__db019_all_tables__",
+		CheckSQL: "SELECT CASE WHEN (SELECT COUNT(*) FROM information_schema.columns " +
+			"WHERE table_schema = current_schema() " +
+			"AND column_name IN ('created_at', 'updated_at') AND table_name <> ?) = 0 " +
+			"THEN 1 ELSE 0 END",
+		SQL: mustSQL("205_db019_time_columns_full.sql"),
+	})
+
+	// 206：DB-019 连带修复 —— 触发器函数体里的旧列名。
+	// RENAME COLUMN 只重写索引 / 视图 / 约束这类可解析对象，plpgsql 函数体是字符串，
+	// 改名后仍按旧名解析（实测：采购收货链路整片失败）。
+	// 判定按「函数定义里已无 updated_at」，而不是「函数是否存在」。
+	// 判定里的 ? 接表名（护栏 TestCustomMigrationChecksAcceptTableParameter 要求每个自定义
+	// 判定都接收它）：这里取该触发器真正操作的单头表，语义是「表在 且 函数已修好」——
+	// 表都没了就不该算完成（那说明库被人手改过，启动时应当停下来而不是静默跳过）。
+	register(Migration{
+		Version:   "206-inventory-status-sync-fn-time-column",
+		TableName: "inventory_purchase_orders",
+		CheckSQL: "SELECT CASE WHEN to_regclass(?) IS NOT NULL AND (SELECT COUNT(*) FROM pg_proc p " +
+			"JOIN pg_namespace n ON n.oid = p.pronamespace " +
+			"WHERE n.nspname = current_schema() AND p.proname = 'fn_inventory_purchase_order_status_sync' " +
+			"AND pg_get_functiondef(p.oid) LIKE '%update_time%') = 1 THEN 1 ELSE 0 END",
+		SQL: mustSQL("206_inventory_status_sync_fn_time_column.sql"),
+	})
+
+	// 207：CQ-015 —— 删除两张零消费方表（presentation_artifact_objects / publication_events）。
+	// 判定表达「两张都不存在才算完成」：apply() 是 count > 0 即跳过，故取反。
+	// 用 to_regclass 而不是 to_regclass(?) 单表判定 —— 这条迁移管的是两张表。
+	register(Migration{
+		Version:   "207-cq015-drop-unused-tables",
+		TableName: "presentation_artifact_objects",
+		CheckSQL: "SELECT CASE WHEN to_regclass(?) IS NULL AND to_regclass('publication_events') IS NULL " +
+			"THEN 1 ELSE 0 END",
+		SQL: mustSQL("207_cq015_drop_unused_tables.sql"),
+	})
+
+	// 208：DB-020 软删除列名统一 —— sys_menus.deleted_time → deleted_at。
+	// 判定按「旧列已消失」（不是「表存在」）：这条迁移做的就是改名，默认判定会误跳过。
+	// 判定里的 'deleted_time' 字面量同样不能跟着 Go 侧 rename 一起替换。
+	register(Migration{
+		Version:   "208-db020-soft-delete-column",
+		TableName: "sys_menus",
+		CheckSQL: "SELECT CASE WHEN COUNT(*) = 0 THEN 1 ELSE 0 END FROM information_schema.columns " +
+			"WHERE table_schema = current_schema() AND table_name = ? AND column_name = 'deleted_time'",
+		SQL: mustSQL("208_db020_soft_delete_column.sql"),
 	})
 }

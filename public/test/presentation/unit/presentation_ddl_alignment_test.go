@@ -122,12 +122,12 @@ func TestCreateInstancePersistsRealColumns(t *testing.T) {
 	}
 }
 
-// instanceUpdatedAt 读取实例行的 updated_at。
+// instanceUpdatedAt 读取实例行的 update_time。
 func instanceUpdatedAt(t *testing.T, f *presFixture, id string) time.Time {
 	t.Helper()
 	var at time.Time
-	if err := f.db.Raw("SELECT updated_at FROM presentation_instances WHERE id = ?", id).Scan(&at).Error; err != nil {
-		t.Fatalf("读取实例 updated_at 失败: %v", err)
+	if err := f.db.Raw("SELECT update_time FROM presentation_instances WHERE id = ?", id).Scan(&at).Error; err != nil {
+		t.Fatalf("读取实例 update_time 失败: %v", err)
 	}
 	return at
 }
@@ -215,7 +215,7 @@ func TestContentChangeAutoRebuildAndPublish(t *testing.T) {
 
 	// 3) 受影响实例被重建并重新发布。
 	if now := instanceUpdatedAt(t, f, instA.ID); !now.After(beforeA) {
-		t.Fatalf("受影响实例未重建：updated_at 未前进（%v → %v）", beforeA, now)
+		t.Fatalf("受影响实例未重建：update_time 未前进（%v → %v）", beforeA, now)
 	}
 	if html := activeHTML(t, "/auto/a"); !strings.Contains(html, "自动发布 A v2") {
 		t.Fatalf("自动重建后访问面应更新为新内容，实际: %s", html)
@@ -234,7 +234,7 @@ func TestContentChangeAutoRebuildAndPublish(t *testing.T) {
 	}
 	// 4) 无关实例完全不受影响。
 	if now := instanceUpdatedAt(t, f, instB.ID); !now.Equal(beforeB) {
-		t.Fatalf("无关实例 B 被误重建（updated_at %v → %v）", beforeB, now)
+		t.Fatalf("无关实例 B 被误重建（update_time %v → %v）", beforeB, now)
 	}
 	if n := countInstanceArtifacts(t, f, instB.ID); n != artifactsBBefore {
 		t.Fatalf("无关实例 B 产物行数变化（%d → %d）", artifactsBBefore, n)

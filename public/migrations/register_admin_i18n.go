@@ -41,11 +41,19 @@ func registerAdminI18nSeedsAndLatest() {
 	// 178：文案词条管理的权限点与后台菜单（审计 I18N-003）。
 	// 一个写权限点覆盖保存与删除：两者是同一件事的两种动作，
 	// 拆开只会让「给了保存、忘了删除」有机会发生。
+	//
+	// 判定必须把权限点代码写进 SQL 字面量：CheckSQL 里的 ? 由迁移器传的是**表名**
+	// （sys_permission），写成 permission_code = ? 等于永远查不到行 —— 这条迁移会每次启动
+	// 都重跑。以前被 SQL 里 WHERE NOT EXISTS 的幂等性掩盖，直到 208 把 sys_menus.deleted_time
+	// 改名（本迁移 SQL 引用旧列名）才暴露成启动失败。
+	// ? 仍保留在「表存在」这一项上（护栏要求自定义判定接收表名参数），语义也更严：
+	// 表都没了就不该算完成，启动时应当停下来而不是静默跳过。
 	register(Migration{
 		Version:   "178-i18n-manage-permission",
 		TableName: "sys_permission",
-		CheckSQL:  "SELECT COUNT(*) FROM sys_permission WHERE permission_code = ?",
-		SQL:       mustSQL("178_i18n_manage_permission.sql"),
+		CheckSQL: "SELECT CASE WHEN to_regclass(?) IS NOT NULL AND (SELECT COUNT(*) FROM sys_permission " +
+			"WHERE permission_code = 'i18n:manage') = 1 THEN 1 ELSE 0 END",
+		SQL: mustSQL("178_i18n_manage_permission.sql"),
 	})
 
 	// 179：购物车模块文案词条（审计 I18N-002）。

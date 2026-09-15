@@ -15,12 +15,12 @@ BEGIN
     IF EXISTS (SELECT 1 FROM content_templates WHERE entity_type = 'article') THEN
         RETURN;
     END IF;
-    SELECT id INTO v_project FROM projects ORDER BY created_at LIMIT 1;
+    SELECT id INTO v_project FROM projects ORDER BY create_time LIMIT 1;
     IF v_project IS NULL THEN
         RETURN;
     END IF;
-    INSERT INTO content_templates (id, project_id, name, entity_type, draft_document, draft_version, current_version_id, created_at, updated_at)
+    INSERT INTO content_templates (id, project_id, name, entity_type, draft_document, draft_version, current_version_id, create_time, update_time)
     VALUES (v_tpl, v_project, '文章详情页', 'article', v_doc, 1, v_ver, now(), now());
-    INSERT INTO content_template_versions (id, template_id, version, document, source_hash, created_by, created_at)
+    INSERT INTO content_template_versions (id, template_id, version, document, source_hash, created_by, create_time)
     VALUES (v_ver, v_tpl, 1, v_doc, encode(sha256(v_doc::text::bytea), 'hex'), '00000000-0000-0000-0000-000000000000'::uuid, now());
 END $$;

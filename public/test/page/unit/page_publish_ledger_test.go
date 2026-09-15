@@ -118,7 +118,7 @@ func insertArtifactRow(t *testing.T, db *gorm.DB, pageID, hash string) string {
 	statement := "INSERT INTO page_artifacts (" +
 		"id, page_id, version, source_document, page_document_schema_version, source_hash, " +
 		"build_input_manifest, build_input_hash, artifact_provider, artifact_key, artifact_hash, " +
-		"compiler_version, registry_version, manifest, payload_state, note, created_by, created_at, lang" +
+		"compiler_version, registry_version, manifest, payload_state, note, created_by, create_time, lang" +
 		") VALUES (gen_random_uuid(), ?, 1, '{}'::jsonb, 1, 'src', '{}'::jsonb, 'bih', 'local', 'key-x', ?, " +
 		"'v1', 'r1', '{}'::jsonb, 'available', '', gen_random_uuid(), now(), 'zh-CN') RETURNING id"
 	if err := db.Raw(statement, pageID, hash).Scan(&id).Error; err != nil {

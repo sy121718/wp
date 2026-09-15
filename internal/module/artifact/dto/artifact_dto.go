@@ -99,12 +99,19 @@ type OrphanContentObjectResp struct {
 
 // ContentObjectGCResp 内容对象回收报告。
 type ContentObjectGCResp struct {
-	RetentionDays int                       `json:"retentionDays"`
-	DryRun        bool                      `json:"dryRun"`
-	Orphans       int64                     `json:"orphans"`
-	Scanned       int                       `json:"scanned"`
-	Deleted       int64                     `json:"deleted"`
-	SkippedExtern int                       `json:"skippedExternal"`
-	Failed        int                       `json:"failed"`
-	Items         []OrphanContentObjectResp `json:"items"`
+	RetentionDays int   `json:"retentionDays"`
+	DryRun        bool  `json:"dryRun"`
+	Orphans       int64 `json:"orphans"`
+	Scanned       int   `json:"scanned"`
+	Deleted       int64 `json:"deleted"`
+	SkippedExtern int   `json:"skippedExternal"`
+	Failed        int   `json:"failed"`
+	// FailedRate 失败率（Failed ÷ Scanned）。
+	//
+	// 显式放进响应而不是让监控自己算：GC 的失败口径一向是「记进统计 + 打日志」，
+	// 调用方拿不到 error，外键挡删那条因此长期静默（内容对象表只增不减）。
+	// 有这个比率，外部按 FailedRate > 0 轮询告警即可 —— 正常一轮应为 0，
+	// 非零一定是异常（要么整批删除报错，要么单条删除没生效）。
+	FailedRate float64                   `json:"failedRate"`
+	Items      []OrphanContentObjectResp `json:"items"`
 }

@@ -37,12 +37,12 @@ func newPublicationService(t *testing.T) *pubservice.Service {
 		return nil
 	}
 	// 走生产迁移建表，不手抄 DDL：手抄版本会在迁移改名/换类型后静默失配
-	// （DB-019/DB-020 把 id 换成 bigint identity、created_at 换成 create_time）。
+	// （DB-019/DB-020 把 id 换成 bigint identity、create_time 换成 create_time）。
 	if err := migrations.Run(db); err != nil {
 		t.Fatalf("执行生产迁移失败: %v", err)
 	}
 	// page_routes.project_id 有 FK → projects(id)，必须先落一条工程行。
-	if err := db.Exec("INSERT INTO projects (id, name, settings, created_at, updated_at) VALUES (?, '站点', '{}', NOW(), NOW())", projectID).Error; err != nil {
+	if err := db.Exec("INSERT INTO projects (id, name, settings, create_time, update_time) VALUES (?, '站点', '{}', NOW(), NOW())", projectID).Error; err != nil {
 		t.Fatalf("准备工程失败: %v", err)
 	}
 	return pubservice.NewService(pubmodel.NewPublicationModel(db))

@@ -75,7 +75,7 @@ func I18NDependency(revision string) Dependency {
 const I18NContentDependencyKey = "i18n:content"
 
 // I18NContentDependency 构造内容译文依赖条目（revision 取自 sys_translation 的
-// max(updated_at)，见 pkg/i18n.ContentRevision）。
+// max(update_time)，见 pkg/i18n.ContentRevision）。
 //
 // 为什么必须记（docs/06-D §9 关键约束）：缺译文时构建期**回退原文**，补齐译文后
 // 若依赖里没有这条记录，revision 未变 → 不触发重建 → 站点长期停留在回退内容。

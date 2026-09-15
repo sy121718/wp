@@ -140,10 +140,10 @@ func (r OrphanPurgeResult) OrphanPurgeText() string {
 
 // orphanScanQuery 扫描某工程的工程级译文行（全局行不在清理范围，见文件头）。
 // $1 = uuid（工程），$2 = text（语言，空串 = 全部语言），$3 = int（上限 + 1，用于探测截断）。
-const orphanScanQuery = `SELECT source_hash, context, lang, source_text, target_text, engine, updated_at
+const orphanScanQuery = `SELECT source_hash, context, lang, source_text, target_text, engine, update_time
 FROM sys_translation
 WHERE project_id = $1::uuid AND ($2 = '' OR lang = $2)
-ORDER BY updated_at DESC
+ORDER BY update_time DESC
 LIMIT $3`
 
 // orphanScanRow 扫描投影。
@@ -154,7 +154,7 @@ type orphanScanRow struct {
 	SourceText string    `gorm:"column:source_text"`
 	TargetText string    `gorm:"column:target_text"`
 	Engine     string    `gorm:"column:engine"`
-	UpdatedAt  time.Time `gorm:"column:updated_at"`
+	UpdatedAt  time.Time `gorm:"column:update_time"`
 }
 
 // ScanOrphans 检出工程级孤儿译文（只读，不删除）。

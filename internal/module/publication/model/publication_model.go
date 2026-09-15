@@ -37,7 +37,7 @@ type RouteEntity struct {
 	PresentationID *string   `gorm:"column:presentation_id;type:uuid"`
 	RouteKind      string    `gorm:"column:route_kind;type:text;not null"`
 	ArtifactID     *string   `gorm:"column:artifact_id;type:uuid"`
-	UpdatedAt      time.Time `gorm:"column:updated_at;not null"`
+	UpdatedAt      time.Time `gorm:"column:update_time;not null"`
 }
 
 func (RouteEntity) TableName() string { return tableNamePageRoutes }

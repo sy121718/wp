@@ -175,7 +175,7 @@ func (s *Service) GetCategory(ctx context.Context, req *productdto.GetCategoryRe
 
 // ListCategories 分类列表 —— 返回**树**（顶级在数组里，子级挂在 Children）。
 //
-// 排序在 SQL 层已定（sort ASC, created_at ASC, id ASC），这里只做父子挂接，
+// 排序在 SQL 层已定（sort ASC, create_time ASC, id ASC），这里只做父子挂接，
 // 因此同一份数据每次输出同样的顺序（构建期确定性同一条理由）。
 // 父级不在结果集里（被删/跨工程/环数据）的节点按顶级处理，保证节点不丢。
 func (s *Service) ListCategories(ctx context.Context, req *productdto.ListCategoryReq) (list []*productdto.CategoryResp, err error) {

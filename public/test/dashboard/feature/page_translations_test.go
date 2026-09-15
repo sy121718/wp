@@ -89,7 +89,7 @@ func newTranslationEnv(t *testing.T) (*gin.Engine, *dashboardhttp.Handle, *gorm.
 // insertTranslationPage 直接插入一条页面行（含草稿文档），绕开路由/主题依赖。
 func insertTranslationPage(t *testing.T, db *gorm.DB, id, projectID, path, doc string) {
 	t.Helper()
-	if err := db.Exec("INSERT INTO pages (id, project_id, kind, content_target_type, draft_path, draft_document, draft_version, stale, created_at, updated_at) "+
+	if err := db.Exec("INSERT INTO pages (id, project_id, kind, content_target_type, draft_path, draft_document, draft_version, stale, create_time, update_time) "+
 		"VALUES (?, ?, 'home', 'none', ?, ?::jsonb, 1, false, now(), now())",
 		id, projectID, path, doc).Error; err != nil {
 		t.Fatalf("插入页面失败: %v", err)
@@ -285,8 +285,8 @@ func TestSavePageTranslationsIdempotent(t *testing.T) {
 		t.Fatalf("首次保存应 303，实际 %d：%s", saved.Code, saved.Body.String())
 	}
 	var firstUpdated time.Time
-	if err := db.Raw("SELECT updated_at FROM sys_translation").Scan(&firstUpdated).Error; err != nil {
-		t.Fatalf("读取 updated_at 失败: %v", err)
+	if err := db.Raw("SELECT update_time FROM sys_translation").Scan(&firstUpdated).Error; err != nil {
+		t.Fatalf("读取 update_time 失败: %v", err)
 	}
 	if err := db.Exec("UPDATE pages SET stale = false WHERE id = ?", pageID).Error; err != nil {
 		t.Fatalf("复位 stale 失败: %v", err)
@@ -301,8 +301,8 @@ func TestSavePageTranslationsIdempotent(t *testing.T) {
 		t.Fatalf("幂等保存应写入 0 条，实际回跳 %q", loc)
 	}
 	var secondUpdated time.Time
-	if err := db.Raw("SELECT updated_at FROM sys_translation").Scan(&secondUpdated).Error; err != nil {
-		t.Fatalf("读取 updated_at 失败: %v", err)
+	if err := db.Raw("SELECT update_time FROM sys_translation").Scan(&secondUpdated).Error; err != nil {
+		t.Fatalf("读取 update_time 失败: %v", err)
 	}
 	if !secondUpdated.Equal(firstUpdated) {
 		t.Fatalf("幂等保存不应改写译文行：before=%s after=%s", firstUpdated, secondUpdated)

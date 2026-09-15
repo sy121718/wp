@@ -46,7 +46,7 @@ type MenuEntity struct {
 	CreateTime  *time.Time `gorm:"column:create_time;type:datetime(3)"`
 	UpdateBy    uint64     `gorm:"column:update_by;type:bigint unsigned"`
 	UpdateTime  *time.Time `gorm:"column:update_time;type:datetime(3)"`
-	DeletedTime *time.Time `gorm:"column:deleted_time;type:datetime(3)"`
+	DeletedAt *time.Time `gorm:"column:deleted_at;type:datetime(3)"`
 }
 
 // TableName 返回 sys_menus 表名。
@@ -87,7 +87,7 @@ func (e *MenuEntity) BeforeUpdate(tx *gorm.DB) error {
 // GetByID 根据 ID 查询菜单，不存在返回 nil。
 func (m *MenuModel) GetByID(ctx context.Context, id uint64) (*MenuEntity, error) {
 	var entity MenuEntity
-	err := m.DB(ctx).Where("id = ? AND deleted_time IS NULL", id).First(&entity).Error
+	err := m.DB(ctx).Where("id = ? AND deleted_at IS NULL", id).First(&entity).Error
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, nil
@@ -100,7 +100,7 @@ func (m *MenuModel) GetByID(ctx context.Context, id uint64) (*MenuEntity, error)
 // ListAll 查询全部未删除菜单，按 sort_order、id 排序。
 func (m *MenuModel) ListAll(ctx context.Context) ([]MenuEntity, error) {
 	var list []MenuEntity
-	err := m.DB(ctx).Where("deleted_time IS NULL").Order("sort_order ASC, id ASC").Find(&list).Error
+	err := m.DB(ctx).Where("deleted_at IS NULL").Order("sort_order ASC, id ASC").Find(&list).Error
 	return list, err
 }
 
@@ -110,7 +110,7 @@ func (m *MenuModel) ListByIDs(ctx context.Context, ids []uint64) ([]MenuEntity, 
 		return nil, nil
 	}
 	var list []MenuEntity
-	err := m.DB(ctx).Where("id IN ? AND deleted_time IS NULL", ids).Order("sort_order ASC, id ASC").Find(&list).Error
+	err := m.DB(ctx).Where("id IN ? AND deleted_at IS NULL", ids).Order("sort_order ASC, id ASC").Find(&list).Error
 	return list, err
 }
 
@@ -120,7 +120,7 @@ func (m *MenuModel) CountByPermissionCodes(ctx context.Context, codes []string) 
 		return 0, nil
 	}
 	err = m.DB(ctx).
-		Where("permission_code IN ? AND deleted_time IS NULL", codes).
+		Where("permission_code IN ? AND deleted_at IS NULL", codes).
 		Count(&count).Error
 	return count, err
 }
@@ -154,17 +154,17 @@ func (m *MenuModel) Update(ctx context.Context, e *MenuEntity) error {
 		Updates(e).Error
 }
 
-// SoftDelete 软删除（设置 deleted_time）。
+// SoftDelete 软删除（设置 deleted_at）。
 func (m *MenuModel) SoftDelete(ctx context.Context, ids []uint64) (int64, error) {
 	now := time.Now()
-	result := m.DB(ctx).Where("id IN ? AND deleted_time IS NULL", ids).Update("deleted_time", now)
+	result := m.DB(ctx).Where("id IN ? AND deleted_at IS NULL", ids).Update("deleted_at", now)
 	return result.RowsAffected, result.Error
 }
 
 // CountByParentID 统计子菜单数量。
 func (m *MenuModel) CountByParentID(ctx context.Context, parentID uint64) (int64, error) {
 	var count int64
-	err := m.DB(ctx).Where("parent_id = ? AND deleted_time IS NULL", parentID).Count(&count).Error
+	err := m.DB(ctx).Where("parent_id = ? AND deleted_at IS NULL", parentID).Count(&count).Error
 	return count, err
 }
 
@@ -174,6 +174,6 @@ func (m *MenuModel) ListByPermissionCodes(ctx context.Context, codes []string) (
 		return nil, nil
 	}
 	var list []MenuEntity
-	err := m.DB(ctx).Where("permission_code IN ? AND deleted_time IS NULL", codes).Find(&list).Error
+	err := m.DB(ctx).Where("permission_code IN ? AND deleted_at IS NULL", codes).Find(&list).Error
 	return list, err
 }

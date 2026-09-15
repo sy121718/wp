@@ -37,7 +37,7 @@ func TestActivateThemeModelRollsBackOnMissingTarget(t *testing.T) {
 		missed    = "33333333-3333-3333-3333-333333333333"
 	)
 	support.SeedProjectRow(t, db, projectID, "站点")
-	if err := db.Exec("INSERT INTO themes (id, project_id, name, settings, is_active, created_at, updated_at) VALUES (?, ?, '主题A', '{}', true, NOW(), NOW())", themeA, projectID).Error; err != nil {
+	if err := db.Exec("INSERT INTO themes (id, project_id, name, settings, is_active, create_time, update_time) VALUES (?, ?, '主题A', '{}', true, NOW(), NOW())", themeA, projectID).Error; err != nil {
 		t.Fatalf("插入主题失败: %v", err)
 	}
 

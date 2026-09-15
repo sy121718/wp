@@ -54,7 +54,7 @@ type BlockEntity struct {
 	ReuseMode  string          `gorm:"column:reuse_mode;type:text;not null;default:global"`
 	Document   json.RawMessage `gorm:"column:document;type:jsonb;not null"`
 	CreateTime time.Time       `gorm:"column:create_time;not null"`
-	UpdatedAt  time.Time       `gorm:"column:updated_at;not null"`
+	UpdatedAt  time.Time       `gorm:"column:update_time;not null"`
 }
 
 func (BlockEntity) TableName() string { return tableNameBlocks }
@@ -120,7 +120,7 @@ func (m *Model) GetByID(ctx context.Context, id int64, projectID string) (e *Blo
 // UpdateDocument 更新块名称、类型、分类、复用方式与文档（覆盖式，编辑器整树保存）。
 func (m *Model) UpdateDocument(ctx context.Context, id int64, name, kind, category, reuseMode string, document json.RawMessage, updatedAt time.Time) (err error) {
 	return m.DB(ctx).Where("id = ?", id).Updates(map[string]any{
-		"name": name, "kind": kind, "category": category, "reuse_mode": reuseMode, "document": document, "updated_at": updatedAt,
+		"name": name, "kind": kind, "category": category, "reuse_mode": reuseMode, "document": document, "update_time": updatedAt,
 	}).Error
 }
 

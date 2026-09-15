@@ -19,8 +19,8 @@ type ThemeEntity struct {
 	Name      string          `gorm:"column:name;type:text;not null"`
 	Settings  json.RawMessage `gorm:"column:settings;type:jsonb;not null"`
 	IsActive  bool            `gorm:"column:is_active;not null"`
-	CreatedAt time.Time       `gorm:"column:created_at;not null"`
-	UpdatedAt time.Time       `gorm:"column:updated_at;not null"`
+	CreatedAt time.Time       `gorm:"column:create_time;not null"`
+	UpdatedAt time.Time       `gorm:"column:update_time;not null"`
 }
 
 func (ThemeEntity) TableName() string { return tableNameThemes }
@@ -33,7 +33,7 @@ func (m *Model) CreateTheme(ctx context.Context, e *ThemeEntity) (err error) {
 // ListThemes 列出工程全部主题(激活在前)。
 func (m *Model) ListThemes(ctx context.Context, projectID string) (list []ThemeEntity, err error) {
 	err = m.ThemeDB(ctx).Where("project_id = ?", projectID).
-		Order("is_active DESC, created_at ASC").Find(&list).Error
+		Order("is_active DESC, create_time ASC").Find(&list).Error
 	return list, err
 }
 
@@ -46,7 +46,7 @@ func (m *Model) ListThemesByBlockID(ctx context.Context, blockID string) (list [
 		Where("settings->>'headerBlockId' = ? OR settings->>'footerBlockId' = ?"+
 			" OR EXISTS (SELECT 1 FROM jsonb_each_text(COALESCE(settings->'slots', '{}'::jsonb)) AS e(k, v) WHERE e.v = ?)",
 			blockID, blockID, blockID).
-		Order("created_at ASC").Find(&list).Error
+		Order("create_time ASC").Find(&list).Error
 	return list, err
 }
 
@@ -64,7 +64,7 @@ func (m *Model) GetActiveTheme(ctx context.Context, projectID string) (e *ThemeE
 	e = &ThemeEntity{}
 	if err = m.ThemeDB(ctx).
 		Where("project_id = ?", projectID).
-		Order("is_active DESC, created_at ASC").First(e).Error; err != nil {
+		Order("is_active DESC, create_time ASC").First(e).Error; err != nil {
 		return nil, err
 	}
 	return e, nil
@@ -73,7 +73,7 @@ func (m *Model) GetActiveTheme(ctx context.Context, projectID string) (e *ThemeE
 // UpdateTheme 更新主题设置与名称。
 func (m *Model) UpdateTheme(ctx context.Context, id, name string, settings json.RawMessage, updatedAt time.Time) (err error) {
 	return m.ThemeDB(ctx).Where("id = ?", id).Updates(map[string]any{
-		"name": name, "settings": settings, "updated_at": updatedAt,
+		"name": name, "settings": settings, "update_time": updatedAt,
 	}).Error
 }
 
@@ -89,7 +89,7 @@ func (m *Model) ActivateTheme(ctx context.Context, projectID, themeID string, up
 			return err
 		}
 		res := tx.Model(&ThemeEntity{}).Where("id = ? AND project_id = ?", themeID, projectID).
-			Updates(map[string]any{"is_active": true, "updated_at": updatedAt})
+			Updates(map[string]any{"is_active": true, "update_time": updatedAt})
 		if res.Error != nil {
 			return res.Error
 		}

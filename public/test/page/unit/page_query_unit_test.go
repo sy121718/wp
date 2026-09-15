@@ -87,13 +87,13 @@ func TestPageListEmpty(t *testing.T) {
 	}
 }
 
-// TestPageListAll 多条页面按 updated_at 倒序返回。
+// TestPageListAll 多条页面按 update_time 倒序返回。
 func TestPageListAll(t *testing.T) {
 	db, svc, _, projectID := newPageService(t)
 	ctx := context.Background()
 	_ = createPage(t, svc, projectID, "/first", pageDocument)
 	second := createPage(t, svc, projectID, "/second", pageDocument)
-	// 触碰 second 的 updated_at 使其最新。
+	// 触碰 second 的 update_time 使其最新。
 	if _, err := svc.SaveDraft(ctx, &pagedto.SaveDraftReq{
 		ID: second.ID, ExpectedVersion: second.DraftVersion,
 		DraftPath: "/second", DraftDocument: json.RawMessage(pageDocument),

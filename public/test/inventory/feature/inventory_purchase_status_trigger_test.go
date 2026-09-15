@@ -20,6 +20,7 @@ package feature
 
 import (
 	"os"
+	"strings"
 	"testing"
 
 	inventorydto "go_wp/internal/module/product/inventory/dto"
@@ -38,7 +39,13 @@ func execStatusSyncMigration(t *testing.T, f *invFixture) {
 	if err != nil {
 		t.Fatalf("读取迁移文件失败: %v", err)
 	}
-	stmts := migrations.SplitStatements(string(raw))
+	// 196 写于 205（DB-019 时间列改名）**之前**，它的两处回填 UPDATE 与 sync 函数体
+	// 都写的是 updated_at。本包的表由生产迁移建出，列名已是 update_time ——
+	// 所以要重放这份历史 SQL，得先按当前列名做一次等价替换。
+	// 生产里不存在这层替换：196 在迁移序列中总是早于 205 执行。
+	// 用原始文本跑的话，第一条回填就会报 column "updated_at" does not exist。
+	sqlText := strings.ReplaceAll(string(raw), "updated_at", "update_time")
+	stmts := migrations.SplitStatements(sqlText)
 	if len(stmts) == 0 {
 		t.Fatalf("迁移文件解析出 0 条语句，路径或分割逻辑有问题")
 	}
@@ -99,7 +106,7 @@ func TestPurchaseStatusTriggerFollowsLineWrites(t *testing.T) {
 	extraVariant := f.firstVariant(t, extraProduct.ID)
 	if err := f.db.Exec(
 		"INSERT INTO inventory_purchase_order_lines "+
-			"(id, order_id, project_id, product_id, variant_id, sku_code, quantity, received_quantity, unit_price, sort, remark, metadata, created_at, updated_at) "+
+			"(id, order_id, project_id, product_id, variant_id, sku_code, quantity, received_quantity, unit_price, sort, remark, metadata, create_time, update_time) "+
 			"VALUES (gen_random_uuid(), ?, ?, ?, ?, 'TRG-EXTRA', 1, 0, 1, 9, '', '{}'::jsonb, now(), now())",
 		order.ID, f.projectID, extraProduct.ID, extraVariant.ID).Error; err != nil {
 		t.Fatalf("直接插入明细行失败: %v", err)
@@ -179,15 +186,15 @@ func TestPurchaseStatusMigrationBackfillsAndIsIdempotent(t *testing.T) {
 		t.Errorf("回填后收满明细的单应为 received，实得 %s", got)
 	}
 
-	// 幂等：第三遍执行不报错，也不改变已经正确的状态（含 updated_at 不被反复推动）。
+	// 幂等：第三遍执行不报错，也不改变已经正确的状态（含 update_time 不被反复推动）。
 	var before string
-	if err := f.db.Raw("SELECT status || '|' || updated_at::text FROM inventory_purchase_orders WHERE id = ?",
+	if err := f.db.Raw("SELECT status || '|' || update_time::text FROM inventory_purchase_orders WHERE id = ?",
 		receivedOrder.ID).Scan(&before).Error; err != nil {
 		t.Fatalf("读取回填后状态失败: %v", err)
 	}
 	execStatusSyncMigration(t, f)
 	var after string
-	if err := f.db.Raw("SELECT status || '|' || updated_at::text FROM inventory_purchase_orders WHERE id = ?",
+	if err := f.db.Raw("SELECT status || '|' || update_time::text FROM inventory_purchase_orders WHERE id = ?",
 		receivedOrder.ID).Scan(&after).Error; err != nil {
 		t.Fatalf("读取二次回填后状态失败: %v", err)
 	}

@@ -29,7 +29,7 @@ import (
 // FieldSnapshot 一次写操作的字段快照：字段名 → 已格式化的取值。
 //
 // 「已格式化」是刻意的：价格 99.5 与 99.50 是同一次变更（值相等即不写记录），
-// 版本元数据（updated_at 之类）不在快照里，就不会产生噪声记录。
+// 版本元数据（update_time 之类）不在快照里，就不会产生噪声记录。
 // 字段名由各模块自己定义（product / product_variant / inventory_source 各有白名单），
 // 展示文案由本模块 enums 统一登记。
 type FieldSnapshot map[string]string

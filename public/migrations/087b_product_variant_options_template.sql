@@ -27,6 +27,6 @@ BEGIN
       AND v.document = v_old;
 
     UPDATE content_templates
-    SET draft_document = v_new, updated_at = now()
+    SET draft_document = v_new, update_time = now()
     WHERE entity_type = 'product' AND draft_document = v_old;
 END $$;

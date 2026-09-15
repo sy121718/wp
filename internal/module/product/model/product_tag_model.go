@@ -33,8 +33,8 @@ type ProductTagEntity struct {
 	RecalcAt  *time.Time      `gorm:"column:recalc_at"`
 	Sort      int             `gorm:"column:sort;not null"`
 	Metadata  json.RawMessage `gorm:"column:metadata;type:jsonb;not null"`
-	CreatedAt time.Time       `gorm:"column:created_at;not null"`
-	UpdatedAt time.Time       `gorm:"column:updated_at;not null"`
+	CreatedAt time.Time       `gorm:"column:create_time;not null"`
+	UpdatedAt time.Time       `gorm:"column:update_time;not null"`
 }
 
 // TableName 实现 gorm 表名。
@@ -83,7 +83,7 @@ func (m *Model) ListTags(ctx context.Context, projectID, kind, keyword string) (
 	if keyword != "" {
 		q = q.Where("name ILIKE ?", "%"+keyword+"%")
 	}
-	err = q.Order("sort ASC, created_at ASC, id ASC").Find(&list).Error
+	err = q.Order("sort ASC, create_time ASC, id ASC").Find(&list).Error
 	return list, err
 }
 
@@ -120,7 +120,7 @@ func (m *Model) ListProductsByTag(ctx context.Context, tagID string, limit int) 
 		return nil, merr
 	}
 	q := m.DB(ctx).Where("tag_ids @> ?::jsonb", string(probe)).
-		Order("sort ASC, created_at ASC, id ASC")
+		Order("sort ASC, create_time ASC, id ASC")
 	if limit > 0 {
 		q = q.Limit(limit)
 	}
@@ -150,7 +150,7 @@ func (m *Model) ReplaceTagProductsTx(tx *gorm.DB, tagID, projectID string, produ
 	}
 	// 摘：本工程下带这个 tag id 的行全部去掉它。
 	if err = tx.Exec(
-		"UPDATE products SET tag_ids = tag_ids - ?::text, updated_at = ? WHERE project_id = ? AND tag_ids @> ?::jsonb",
+		"UPDATE products SET tag_ids = tag_ids - ?::text, update_time = ? WHERE project_id = ? AND tag_ids @> ?::jsonb",
 		tagID, now, projectID, string(probe)).Error; err != nil {
 		return err
 	}
@@ -163,7 +163,7 @@ func (m *Model) ReplaceTagProductsTx(tx *gorm.DB, tagID, projectID string, produ
 		return merr
 	}
 	return tx.Exec(
-		"UPDATE products SET tag_ids = tag_ids || ?::jsonb, updated_at = ? "+
+		"UPDATE products SET tag_ids = tag_ids || ?::jsonb, update_time = ? "+
 			"WHERE project_id = ? AND id IN (SELECT (jsonb_array_elements_text(?::jsonb))::uuid)",
 		string(probe), now, projectID, string(ids)).Error
 }
@@ -174,7 +174,7 @@ func (m *Model) RemoveTagFromProductsTx(tx *gorm.DB, tagID, projectID string, no
 	if merr != nil {
 		return merr
 	}
-	q := "UPDATE products SET tag_ids = tag_ids - ?::text, updated_at = ? WHERE tag_ids @> ?::jsonb"
+	q := "UPDATE products SET tag_ids = tag_ids - ?::text, update_time = ? WHERE tag_ids @> ?::jsonb"
 	args := []any{tagID, now, string(probe)}
 	if projectID != "" {
 		q += " AND project_id = ?"

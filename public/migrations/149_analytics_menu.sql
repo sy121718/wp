@@ -4,6 +4,6 @@
 
 INSERT INTO sys_menus (title, parent_id, type, path, component, permission_code, is_system, sort_order, create_by, create_time, update_by, update_time)
 SELECT '访问统计',
-       COALESCE((SELECT id FROM sys_menus WHERE title = '站点工程' AND type = 1 AND deleted_time IS NULL), 0),
+       COALESCE((SELECT id FROM sys_menus WHERE title = '站点工程' AND type = 1 AND deleted_at IS NULL), 0),
        2, '/analytics', 'view.analytics', 'analytics:view', 1, 15, 0, NOW(), 0, NOW()
-WHERE NOT EXISTS (SELECT 1 FROM sys_menus WHERE title = '访问统计' AND type = 2 AND deleted_time IS NULL);
+WHERE NOT EXISTS (SELECT 1 FROM sys_menus WHERE title = '访问统计' AND type = 2 AND deleted_at IS NULL);

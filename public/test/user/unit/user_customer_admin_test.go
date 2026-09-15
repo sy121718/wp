@@ -410,7 +410,7 @@ func TestCustomerAdminPermissionSeed(t *testing.T) {
 	// 菜单 seed（只服务「菜单管理」页；侧栏真源是 nav_menu.go）。
 	var menus int64
 	if err := db.WithContext(ctx).Table("sys_menus").
-		Where("title = ? AND type = 2 AND deleted_time IS NULL", "客户管理").
+		Where("title = ? AND type = 2 AND deleted_at IS NULL", "客户管理").
 		Count(&menus).Error; err != nil {
 		t.Fatalf("查询菜单失败: %v", err)
 	}

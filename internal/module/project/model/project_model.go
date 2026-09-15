@@ -16,8 +16,8 @@ type ProjectEntity struct {
 	ID        string          `gorm:"column:id;type:uuid;primaryKey"`
 	Name      string          `gorm:"column:name;type:text;not null"`
 	Settings  json.RawMessage `gorm:"column:settings;type:jsonb;not null"`
-	CreatedAt time.Time       `gorm:"column:created_at;not null"`
-	UpdatedAt time.Time       `gorm:"column:updated_at;not null"`
+	CreatedAt time.Time       `gorm:"column:create_time;not null"`
+	UpdatedAt time.Time       `gorm:"column:update_time;not null"`
 }
 
 func (ProjectEntity) TableName() string { return tableNameProjects }
@@ -51,7 +51,7 @@ func (m *Model) Create(ctx context.Context, e *ProjectEntity) (err error) {
 
 // ListAll 按创建时间列出全部项目。
 func (m *Model) ListAll(ctx context.Context) (list []ProjectEntity, err error) {
-	err = m.DB(ctx).Order("created_at ASC").Find(&list).Error
+	err = m.DB(ctx).Order("create_time ASC").Find(&list).Error
 	return list, err
 }
 
@@ -67,6 +67,6 @@ func (m *Model) GetByID(ctx context.Context, id string) (e *ProjectEntity, err e
 // Update 按 ID 更新工程名称与设置。
 func (m *Model) Update(ctx context.Context, id, name string, settings json.RawMessage, updatedAt time.Time) (err error) {
 	return m.DB(ctx).Where("id = ?", id).Updates(map[string]any{
-		"name": name, "settings": settings, "updated_at": updatedAt,
+		"name": name, "settings": settings, "update_time": updatedAt,
 	}).Error
 }

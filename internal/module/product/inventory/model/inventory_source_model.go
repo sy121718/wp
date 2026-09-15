@@ -38,8 +38,8 @@ type SourceEntity struct {
 	Config       json.RawMessage `gorm:"column:config;type:jsonb;not null"`
 	Sort         int             `gorm:"column:sort;not null"`
 	Metadata     json.RawMessage `gorm:"column:metadata;type:jsonb;not null"`
-	CreatedAt    time.Time       `gorm:"column:created_at;not null"`
-	UpdatedAt    time.Time       `gorm:"column:updated_at;not null"`
+	CreatedAt    time.Time       `gorm:"column:create_time;not null"`
+	UpdatedAt    time.Time       `gorm:"column:update_time;not null"`
 }
 
 // TableName 实现 gorm 表名。

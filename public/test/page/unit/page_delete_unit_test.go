@@ -104,7 +104,7 @@ func TestPageDeleteReleasedActiveAndRedirectRoutes(t *testing.T) {
 	redirectPath := "/del-old-301"
 	if err := db.Table("page_routes").Create(map[string]any{
 		"project_id": projectID, "path": redirectPath,
-		"page_id": created.ID, "route_kind": pubmodel.RouteRedirect, "updated_at": time.Now().UTC(),
+		"page_id": created.ID, "route_kind": pubmodel.RouteRedirect, "update_time": time.Now().UTC(),
 	}).Error; err != nil {
 		t.Fatalf("模拟 301 注册失败: %v", err)
 	}

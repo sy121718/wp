@@ -178,7 +178,7 @@ func (s *Service) List(ctx context.Context, req *contenttemplatedto.ListReq) (li
 
 // ResolveTemplate 取 entityType 的当前激活模板版本（presentation 派生
 // DocumentSnapshot 的唯一入口）。逻辑：
-//  1. 优先取 is_default=true 的模板；无默认时回落 updated_at 最新一条并记 warn（EDT-014）；
+//  1. 优先取 is_default=true 的模板；无默认时回落 update_time 最新一条并记 warn（EDT-014）；
 //  2. 取该模板最新版本（LatestVersion）的 document；
 //  3. 组装 ResolvedTemplate{TemplateID, VersionID, Version, EntityType, Document}。
 func (s *Service) ResolveTemplate(ctx context.Context, entityType string) (res *contenttemplatecontract.ResolvedTemplate, err error) {

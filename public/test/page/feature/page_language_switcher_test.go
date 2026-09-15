@@ -50,7 +50,7 @@ func TestPageArtifactLanguageSwitcher(t *testing.T) {
 	withDefaultPlainFeature(t)
 
 	if err := db.Exec(
-		"INSERT INTO project_locales (project_id, lang, sort_order, is_default, enabled, created_at, updated_at) VALUES (?, ?, 0, true, true, now(), now()), (?, ?, 1, false, true, now(), now())",
+		"INSERT INTO project_locales (project_id, lang, sort_order, is_default, enabled, create_time, update_time) VALUES (?, ?, 0, true, true, now(), now()), (?, ?, 1, false, true, now(), now())",
 		projectID, "zh-CN", projectID, "en-US").Error; err != nil {
 		t.Fatalf("写入语言清单失败: %v", err)
 	}
@@ -173,7 +173,7 @@ func TestPagePreviewLocaleLinksDefaultPlain(t *testing.T) {
 	withDefaultPlainFeature(t)
 
 	if err := db.Exec(
-		"INSERT INTO project_locales (project_id, lang, sort_order, is_default, enabled, created_at, updated_at) VALUES (?, ?, 0, true, true, now(), now()), (?, ?, 1, false, true, now(), now())",
+		"INSERT INTO project_locales (project_id, lang, sort_order, is_default, enabled, create_time, update_time) VALUES (?, ?, 0, true, true, now(), now()), (?, ?, 1, false, true, now(), now())",
 		projectID, "zh-CN", projectID, "en-US").Error; err != nil {
 		t.Fatalf("写入语言清单失败: %v", err)
 	}
@@ -202,7 +202,7 @@ func TestPageArtifactLanguageSwitcherHiddenWithoutPrefix(t *testing.T) {
 	ctx := context.Background()
 
 	if err := db.Exec(
-		"INSERT INTO project_locales (project_id, lang, sort_order, is_default, enabled, created_at, updated_at) VALUES (?, ?, 0, true, true, now(), now()), (?, ?, 1, false, true, now(), now())",
+		"INSERT INTO project_locales (project_id, lang, sort_order, is_default, enabled, create_time, update_time) VALUES (?, ?, 0, true, true, now(), now()), (?, ?, 1, false, true, now(), now())",
 		projectID, "zh-CN", projectID, "en-US").Error; err != nil {
 		t.Fatalf("写入语言清单失败: %v", err)
 	}

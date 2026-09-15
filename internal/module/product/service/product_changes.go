@@ -29,7 +29,7 @@ import (
 // productChangeSnapshot 商品主数据的字段白名单快照。
 //
 // 只收「主数据」：名称 / URL 段 / 上下架状态 / 商品级默认售价 / 品牌。
-// 版本元数据（updated_at、sort）与派生值（价格区间）一律不进快照 ——
+// 版本元数据（update_time、sort）与派生值（价格区间）一律不进快照 ——
 // 进了就会每次写操作都产生一串没有信息量的记录。
 func productChangeSnapshot(e *productmodel.ProductEntity) masterdatacontract.FieldSnapshot {
 	if e == nil {

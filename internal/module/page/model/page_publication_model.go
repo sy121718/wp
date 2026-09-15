@@ -29,7 +29,7 @@ type PublicationEntity struct {
 	ArtifactID   *string   `gorm:"column:artifact_id;type:uuid"`
 	ArtifactHash string    `gorm:"column:artifact_hash;type:text;not null"`
 	PublishedAt  time.Time `gorm:"column:published_at;not null"`
-	UpdatedAt    time.Time `gorm:"column:updated_at;not null"`
+	UpdatedAt    time.Time `gorm:"column:update_time;not null"`
 }
 
 func (PublicationEntity) TableName() string { return tableNamePagePublications }
@@ -100,7 +100,7 @@ func (m *Model) MarkPublishedLang(ctx context.Context, rec PublicationRecord) (e
 		if cerr := tx.Clauses(clause.OnConflict{
 			Columns: []clause.Column{{Name: "page_id"}, {Name: "lang"}},
 			DoUpdates: clause.AssignmentColumns([]string{
-				"active_path", "artifact_id", "artifact_hash", "published_at", "updated_at",
+				"active_path", "artifact_id", "artifact_hash", "published_at", "update_time",
 			}),
 		}).Create(row).Error; cerr != nil {
 			return cerr
@@ -111,7 +111,7 @@ func (m *Model) MarkPublishedLang(ctx context.Context, rec PublicationRecord) (e
 				"active_path":        rec.ActivePath,
 				"published_at":       rec.PublishedAt,
 				"stale":              false,
-				"updated_at":         rec.PublishedAt,
+				"update_time":         rec.PublishedAt,
 			}).Error
 	})
 }
@@ -125,11 +125,11 @@ func (m *Model) MovePublicationPath(ctx context.Context, pageID, lang, activePat
 	return m.Transaction(ctx, func(tx *gorm.DB) error {
 		if uerr := tx.Model(&PublicationEntity{}).
 			Where("page_id = ? AND lang = ?", pageID, lang).
-			Updates(map[string]any{"active_path": activePath, "updated_at": at}).Error; uerr != nil {
+			Updates(map[string]any{"active_path": activePath, "update_time": at}).Error; uerr != nil {
 			return uerr
 		}
 		return tx.Model(&PageEntity{}).Where("id = ? AND deleted_at IS NULL", pageID).
-			Updates(map[string]any{"active_path": activePath, "updated_at": at}).Error
+			Updates(map[string]any{"active_path": activePath, "update_time": at}).Error
 	})
 }
 
@@ -147,7 +147,7 @@ type StagingEntity struct {
 	ArtifactID   string    `gorm:"column:artifact_id;type:uuid;not null"`
 	ArtifactHash string    `gorm:"column:artifact_hash;type:text;not null"`
 	DraftVersion int64     `gorm:"column:draft_version;not null"`
-	UpdatedAt    time.Time `gorm:"column:updated_at;not null"`
+	UpdatedAt    time.Time `gorm:"column:update_time;not null"`
 }
 
 func (StagingEntity) TableName() string { return tableNamePageStagings }
@@ -177,13 +177,13 @@ func (m *Model) MarkStagedLang(ctx context.Context, pageID, lang, artifactID, ar
 		if cerr := tx.Clauses(clause.OnConflict{
 			Columns: []clause.Column{{Name: "page_id"}, {Name: "lang"}},
 			DoUpdates: clause.AssignmentColumns([]string{
-				"artifact_id", "artifact_hash", "draft_version", "updated_at",
+				"artifact_id", "artifact_hash", "draft_version", "update_time",
 			}),
 		}).Create(row).Error; cerr != nil {
 			return cerr
 		}
 		return tx.Model(&PageEntity{}).Where("id = ? AND deleted_at IS NULL", pageID).
-			Updates(map[string]any{"staged_artifact_id": artifactID, "stale": false, "updated_at": at}).Error
+			Updates(map[string]any{"staged_artifact_id": artifactID, "stale": false, "update_time": at}).Error
 	})
 }
 

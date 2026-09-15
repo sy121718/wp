@@ -11,7 +11,7 @@ package feature
 // 覆盖：
 //  1. 清单内容变化（增语言）→ 未删除页面 stale 被置位，软删页面不受影响；
 //  2. 默认语言切换（构建可见内容变化的一种）→ 触发；
-//  3. 清单内容未变（原样再保存一次）→ 不触发（stale 与 updated_at 均不变）；
+//  3. 清单内容未变（原样再保存一次）→ 不触发（stale 与 update_time 均不变）；
 //  4. 校验失败 → 不落库也不触发。
 
 import (
@@ -72,7 +72,7 @@ func insertStalePage(t *testing.T, db *gorm.DB, projectID, id string, deleted bo
 	}
 	now := time.Now().UTC()
 	if err := db.Exec(
-		`INSERT INTO pages (id, project_id, kind, content_target_type, draft_path, draft_document, draft_version, stale, deleted_at, created_at, updated_at)
+		`INSERT INTO pages (id, project_id, kind, content_target_type, draft_path, draft_document, draft_version, stale, deleted_at, create_time, update_time)
 		 VALUES (?, ?, 'home', 'none', ?, '{}'::jsonb, 1, false, ?, ?, ?)`,
 		id, projectID, "pages/"+id+"/draft.json", deletedAt, now, now,
 	).Error; err != nil {
@@ -80,7 +80,7 @@ func insertStalePage(t *testing.T, db *gorm.DB, projectID, id string, deleted bo
 	}
 }
 
-// pageStaleRow 页面可观测状态：stale 与 updated_at（用于断言是否被标记）。
+// pageStaleRow 页面可观测状态：stale 与 update_time（用于断言是否被标记）。
 type pageStaleRow struct {
 	Stale     bool
 	UpdatedAt time.Time
@@ -89,7 +89,7 @@ type pageStaleRow struct {
 func pageStaleOf(t *testing.T, db *gorm.DB, id string) pageStaleRow {
 	t.Helper()
 	var row pageStaleRow
-	if err := db.Raw("SELECT stale, updated_at FROM pages WHERE id = ?", id).Scan(&row).Error; err != nil {
+	if err := db.Raw("SELECT stale, update_time FROM pages WHERE id = ?", id).Scan(&row).Error; err != nil {
 		t.Fatalf("读取页面 stale 失败: %v", err)
 	}
 	return row
@@ -172,7 +172,7 @@ func TestSaveSiteLocalesSkipsStaleWhenUnchanged(t *testing.T) {
 		t.Fatalf("清单未变不应触发全站重建，实际 %+v", after)
 	}
 	if !after.UpdatedAt.Equal(before.UpdatedAt) {
-		t.Fatalf("清单未变不应写 pages.updated_at：before=%s after=%s", before.UpdatedAt, after.UpdatedAt)
+		t.Fatalf("清单未变不应写 pages.update_time：before=%s after=%s", before.UpdatedAt, after.UpdatedAt)
 	}
 }
 

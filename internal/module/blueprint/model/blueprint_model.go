@@ -37,8 +37,8 @@ type BlueprintEntity struct {
 	Kind          string          `gorm:"column:kind;not null"`
 	DraftDocument json.RawMessage `gorm:"column:draft_document;type:jsonb;not null"`
 	DraftVersion  int64           `gorm:"column:draft_version;not null"`
-	CreatedAt     time.Time       `gorm:"column:created_at;not null"`
-	UpdatedAt     time.Time       `gorm:"column:updated_at;not null"`
+	CreatedAt     time.Time       `gorm:"column:create_time;not null"`
+	UpdatedAt     time.Time       `gorm:"column:update_time;not null"`
 }
 
 // TableName 表名。
@@ -50,7 +50,7 @@ type VersionEntity struct {
 	BlueprintID string          `gorm:"column:blueprint_id;type:uuid;not null"`
 	Version     int64           `gorm:"column:version;not null"`
 	Document    json.RawMessage `gorm:"column:document;type:jsonb;not null"`
-	CreatedAt   time.Time       `gorm:"column:created_at;not null"`
+	CreatedAt   time.Time       `gorm:"column:create_time;not null"`
 }
 
 // TableName 表名。
@@ -108,7 +108,7 @@ func (m *Model) Get(ctx context.Context, id string) (e *BlueprintEntity, err err
 
 // List 按 kind 列表（更新时间倒序；kind 为空时返回全部）。
 func (m *Model) List(ctx context.Context, kind string) (list []*BlueprintEntity, err error) {
-	q := m.db.WithContext(ctx).Order("updated_at DESC, id DESC")
+	q := m.db.WithContext(ctx).Order("update_time DESC, id DESC")
 	if kind != "" {
 		q = q.Where("kind = ?", kind)
 	}
@@ -116,14 +116,14 @@ func (m *Model) List(ctx context.Context, kind string) (list []*BlueprintEntity,
 	return list, err
 }
 
-// Save 更新草稿（draft_document + draft_version + updated_at）。
+// Save 更新草稿（draft_document + draft_version + update_time）。
 // 用 DB(ctx)（已绑定 Model）+ 显式 Where + Updates（避免 GORM Save
 // 在已绑定 Model 下报 WHERE conditions required）。
 func (m *Model) Save(ctx context.Context, e *BlueprintEntity) error {
 	return m.DB(ctx).Where("id = ?", e.ID).Updates(map[string]any{
 		"draft_document": e.DraftDocument,
 		"draft_version":  e.DraftVersion,
-		"updated_at":     e.UpdatedAt,
+		"update_time":     e.UpdatedAt,
 	}).Error
 }
 
@@ -141,7 +141,7 @@ func (m *Model) SaveWithVersion(ctx context.Context, e *BlueprintEntity, v *Vers
 		if err := tx.Model(&BlueprintEntity{}).Where("id = ?", e.ID).Updates(map[string]any{
 			"draft_document": e.DraftDocument,
 			"draft_version":  e.DraftVersion,
-			"updated_at":     e.UpdatedAt,
+			"update_time":     e.UpdatedAt,
 		}).Error; err != nil {
 			return err
 		}

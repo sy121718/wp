@@ -37,7 +37,7 @@ type ReasonEntity struct {
 	Status     string    `gorm:"column:status;type:text;not null"`
 	Sort       int       `gorm:"column:sort;not null"`
 	CreateTime time.Time `gorm:"column:create_time;not null"`
-	UpdatedAt  time.Time `gorm:"column:updated_at;not null"`
+	UpdatedAt  time.Time `gorm:"column:update_time;not null"`
 }
 
 // TableName 实现 gorm 表名。
@@ -67,7 +67,7 @@ type MovementEntity struct {
 	Remark          string    `gorm:"column:remark;type:text;not null"`
 	OperatorID      string    `gorm:"column:operator_id;type:text;not null"`
 	BatchID         string    `gorm:"column:batch_id;type:uuid;not null"`
-	CreatedAt       time.Time `gorm:"column:created_at;not null"`
+	CreatedAt       time.Time `gorm:"column:create_time;not null"`
 }
 
 // TableName 实现 gorm 表名。
@@ -97,7 +97,7 @@ type MovementRow struct {
 	Remark          string    `gorm:"column:remark"`
 	OperatorID      string    `gorm:"column:operator_id"`
 	BatchID         string    `gorm:"column:batch_id"`
-	CreatedAt       time.Time `gorm:"column:created_at"`
+	CreatedAt       time.Time `gorm:"column:create_time"`
 }
 
 // MovementFilter 流水查询条件（条件以参数传入，方法内不写死业务判断）。
@@ -132,8 +132,8 @@ type BOMItemEntity struct {
 	ComponentVariantID string    `gorm:"column:component_variant_id;type:uuid;not null"`
 	ComponentSKUCode   string    `gorm:"column:component_sku_code;type:text;not null"`
 	Quantity           int       `gorm:"column:quantity;not null"`
-	CreatedAt          time.Time `gorm:"column:created_at;not null"`
-	UpdatedAt          time.Time `gorm:"column:updated_at;not null"`
+	CreatedAt          time.Time `gorm:"column:create_time;not null"`
+	UpdatedAt          time.Time `gorm:"column:update_time;not null"`
 }
 
 // TableName 实现 gorm 表名。
@@ -150,7 +150,7 @@ type CacheSyncEntity struct {
 	Status      string    `gorm:"column:status;type:text;not null"`
 	Error       string    `gorm:"column:error;type:text;not null"`
 	SyncedAt    time.Time `gorm:"column:synced_at;not null"`
-	UpdatedAt   time.Time `gorm:"column:updated_at;not null"`
+	UpdatedAt   time.Time `gorm:"column:update_time;not null"`
 }
 
 // TableName 实现 gorm 表名。
@@ -211,7 +211,7 @@ func (m *Model) LockStockRowTx(ctx context.Context, tx *gorm.DB, variantID, ware
 // UpdateStockQuantityTx 在给定事务内写回某库存行的数量。
 func (m *Model) UpdateStockQuantityTx(ctx context.Context, tx *gorm.DB, id string, quantity int, at time.Time) (err error) {
 	return tx.WithContext(ctx).Model(&StockEntity{}).Where("id = ?", id).
-		Updates(map[string]any{"quantity": quantity, "updated_at": at}).Error
+		Updates(map[string]any{"quantity": quantity, "update_time": at}).Error
 }
 
 // CreateMovementsTx 在给定事务内批量写流水（与数量写回同一事务：有变动必有流水）。
@@ -248,7 +248,7 @@ func (m *Model) movementRows(ctx context.Context) *gorm.DB {
 		Select("mv.id, mv.project_id, mv.warehouse_id, mv.product_id, mv.variant_id, mv.sku_code, " +
 			"mv.direction, mv.quantity, mv.delta, mv.quantity_before, mv.quantity_after, " +
 			"mv.reason_id, mv.reason_code, mv.parent_variant_id, mv.source_type, mv.source_ref, " +
-			"mv.remark, mv.operator_id, mv.batch_id, mv.created_at, " +
+			"mv.remark, mv.operator_id, mv.batch_id, mv.create_time, " +
 			"w.code AS warehouse_code, w.name AS warehouse_name, " +
 			"COALESCE(r.name, '') AS reason_name").
 		Joins("JOIN inventory_warehouses AS w ON w.id = mv.warehouse_id").
@@ -302,7 +302,7 @@ func (m *Model) ListMovementRows(ctx context.Context, f MovementFilter, limit, o
 	if f.BatchID != "" {
 		q = q.Where("mv.batch_id = ?", f.BatchID)
 	}
-	q = q.Order("mv.created_at DESC, mv.id DESC")
+	q = q.Order("mv.create_time DESC, mv.id DESC")
 	if limit > 0 {
 		q = q.Limit(limit).Offset(offset)
 	}
@@ -472,7 +472,7 @@ func (m *Model) UpsertCacheSync(ctx context.Context, e *CacheSyncEntity) (err er
 	return m.cacheSyncDB(ctx).Clauses(clause.OnConflict{
 		Columns: []clause.Column{{Name: "variant_id"}},
 		DoUpdates: clause.AssignmentColumns([]string{
-			"project_id", "sku_code", "true_total", "cached_total", "status", "error", "synced_at", "updated_at",
+			"project_id", "sku_code", "true_total", "cached_total", "status", "error", "synced_at", "update_time",
 		}),
 	}).Create(e).Error
 }

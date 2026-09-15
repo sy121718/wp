@@ -766,7 +766,7 @@ func TestSourcePermissionsAndMenuSeeded(t *testing.T) {
 	if n != 32 {
 		t.Fatalf("inventory 模块应有 32 个权限点，实际 %d", n)
 	}
-	if err := f.db.Raw("SELECT COUNT(*) FROM sys_menus WHERE type = 2 AND title = '货源管理' AND deleted_time IS NULL").Scan(&n).Error; err != nil {
+	if err := f.db.Raw("SELECT COUNT(*) FROM sys_menus WHERE type = 2 AND title = '货源管理' AND deleted_at IS NULL").Scan(&n).Error; err != nil {
 		t.Fatalf("查询菜单失败: %v", err)
 	}
 	if n != 1 {
@@ -774,7 +774,7 @@ func TestSourcePermissionsAndMenuSeeded(t *testing.T) {
 	}
 	for _, code := range []string{"inventory:source_create", "inventory:source_update", "inventory:source_delete"} {
 		var hit int64
-		if err := f.db.Raw("SELECT COUNT(*) FROM sys_menus WHERE type = 3 AND permission_code = ? AND deleted_time IS NULL", code).Scan(&hit).Error; err != nil {
+		if err := f.db.Raw("SELECT COUNT(*) FROM sys_menus WHERE type = 3 AND permission_code = ? AND deleted_at IS NULL", code).Scan(&hit).Error; err != nil {
 			t.Fatalf("查询菜单按钮 %s 失败: %v", code, err)
 		}
 		if hit != 1 {

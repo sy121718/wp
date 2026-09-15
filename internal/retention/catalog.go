@@ -89,21 +89,21 @@ var declarations = []Declaration{
 		Note:     "逐封发送留档；排障窗口远小于保留期",
 	},
 	{
-		Table: "master_data_changes", TimeColumn: "created_at",
+		Table: "master_data_changes", TimeColumn: "create_time",
 		Retain:   0,
 		Executor: "（未接入）",
 		Kind:     CleanupNone,
 		Note:     "**已按月分区**（迁移 173，append-only 触发器建在父表上并自动下沉到分区）；字段级审计（迁移 111 的触发器在库层禁止 UPDATE/DELETE）；属于合规留档，保留期需业务确认",
 	},
 	{
-		Table: "page_revisions", TimeColumn: "created_at",
+		Table: "page_revisions", TimeColumn: "create_time",
 		Retain:   RetainPageRevisionDays * 24 * time.Hour,
 		Executor: "page 保存草稿时即时收敛 + 每日任务兜底",
 		Kind:     CleanupDelete,
 		Note:     "两个条件同时满足才删（超出每页 20 份 **且** 早于 90 天）：只按条数删会把刚存的版本删掉，编辑者最不能接受这一种",
 	},
 	{
-		Table: "page_artifacts", TimeColumn: "created_at",
+		Table: "page_artifacts", TimeColumn: "create_time",
 		Retain:   RetainArtifactDays * 24 * time.Hour,
 		Executor: "page 每日任务（PurgeRetention → GarbageCollectArtifacts）",
 		Kind:     CleanupDelete,
@@ -142,7 +142,7 @@ var declarations = []Declaration{
 		Note:     "自动化流程逐节点一行（启用后增长最快）；定位是排障视图而非常年留档",
 	},
 	{
-		Table: "product_ratings", TimeColumn: "created_at",
+		Table: "product_ratings", TimeColumn: "create_time",
 		Retain:   0,
 		Executor: "（不清理）",
 		Kind:     CleanupNone,

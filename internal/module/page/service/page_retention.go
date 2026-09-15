@@ -55,7 +55,7 @@ func (s *Service) PurgeRetention(ctx context.Context) (deletedRevisions int64, e
 	}
 	now := time.Now().UTC()
 	revisions := retention.Task{
-		Name: "page_revisions", Table: "page_revisions", TimeColumn: "created_at",
+		Name: "page_revisions", Table: "page_revisions", TimeColumn: "create_time",
 		Retain: pageRevisionRetainDays * 24 * time.Hour, BatchSize: pageRetentionBatch,
 		Note: "每页保留最近若干版本；只有既超出条数、又早于保留期的才删（回退需要近期版本）",
 		Sweep: func(ctx context.Context, cutoff time.Time, limit int) (int64, error) {

@@ -32,11 +32,14 @@ const (
 // ExternalContentRefs 由其他模块注入：指出入参 hash 中哪些仍被它引用。
 //
 // 存在的理由是「引用来源不止一处」：page_artifact_objects 是当前唯一的闭包投影，
-// 但 content_objects 是共享表，其它模块的产物（DDL 里的 presentation_artifact_objects）
-// 将来同样会引用它。孤儿判定必须能问遍所有来源，而不是把「我不知道的引用」当成「没有引用」。
+// 但 content_objects 是共享表，其它模块的产物将来同样会引用它。孤儿判定必须能问遍
+// 所有来源，而不是把「我不知道的引用」当成「没有引用」。
 //
-// 未注入 = 确认没有任何外部引用来源（当前即此状态：presentation 侧不写 content_objects，
-// 见审计 CQ-015）。注入后查询失败一律放弃本轮回收。
+// 未注入 = 确认没有任何外部引用来源。当前即此状态：presentation 侧原本的孪生表
+// presentation_artifact_objects 零写入方，已按 CQ-015 删除（迁移 207）—— 那张表
+// 「有 DDL、无消费方」，留着只会让人读成「presentation 的闭包已经在跑」。
+// 等该侧归档真正落地时，按 page 侧的 peer 形态重建并在这里注入，判定无需再改。
+// 注入后查询失败一律放弃本轮回收。
 type ExternalContentRefs func(ctx context.Context, hashes []string) (referenced []string, err error)
 
 // SetExternalContentRefs 注入外部引用来源；装配期调用一次。
@@ -146,8 +149,20 @@ func (s *Service) GarbageCollectContentObjects(ctx context.Context, req *artifac
 			}
 			res.Items = append(res.Items, item)
 		}
-		logger.Scene("artifact").With("failed", res.Failed).Error(derr, "孤儿内容对象回收失败")
+		res.FailedRate = failedRate(res.Failed, res.Scanned)
+		logger.Scene("artifact").With("failed", res.Failed).With("failedRate", res.FailedRate).
+			Error(derr, "孤儿内容对象回收失败")
 		return res, nil
+	}
+
+	// 删后复查：没进 RETURNING 的候选有两种成因 —— 「被并发归档重新引用」（正常赛跑）与
+	// 「删除语句没生效」（异常：行还在、且仍无引用）。只看差集分不出来，两者都落进去；
+	// 而默认按前者解释，异常就永远静默（外键挡删那次正是这样只增不减的）。
+	stillOrphan, rerr := s.stillOrphanAfterDelete(ctx, deletable, deletedSet, before)
+	if rerr != nil {
+		// 复查失败只影响归因精度：本轮删除已经执行完毕，不改变结果，也不能反过来报失败。
+		logger.Scene("artifact").With("undecided", len(deletable)-len(deletedSet)).
+			Error(rerr, "删除后复查失败：本轮无法区分并发认领与删除未生效")
 	}
 
 	for _, row := range rows {
@@ -159,6 +174,10 @@ func (s *Service) GarbageCollectContentObjects(ctx context.Context, req *artifac
 		case deletedSet[row.ContentHash]:
 			item.Action = objectActionDeleted
 			res.Deleted++
+		case stillOrphan[row.ContentHash]:
+			// 删除没生效：行仍在，且复查确认它仍无任何引用。这不是赛跑，是异常。
+			item.Action, item.Reason = objectActionDeleteFailed, "删除未生效：复查确认该行仍存在且仍无引用"
+			res.Failed++
 		default:
 			// 候选与删除之间被并发归档重新引用：这是正常赛跑结果（语句内复查拦住了误删），
 			// 不计失败也不计跳过 —— 下一轮它若仍是孤儿自会再被选中。
@@ -166,12 +185,56 @@ func (s *Service) GarbageCollectContentObjects(ctx context.Context, req *artifac
 		}
 		res.Items = append(res.Items, item)
 	}
-	if res.Deleted > 0 {
+	res.FailedRate = failedRate(res.Failed, res.Scanned)
+	if res.Failed > 0 {
+		// 失败率告警：失败口径是「记统计 + 打日志」，调用方拿不到 error，
+		// 所以日志必须是 Error 级并带比率 —— 正常一轮 Failed 恒为 0，非零必是异常。
+		logger.Scene("artifact").With("orphans", res.Orphans).With("scanned", res.Scanned).
+			With("deleted", res.Deleted).With("skippedExternal", res.SkippedExtern).
+			With("failed", res.Failed).With("failedRate", res.FailedRate).
+			Error(fmt.Errorf("%s: %d/%d", artifactenums.ErrContentObjectDeleteNotApplied, res.Failed, res.Scanned),
+				"内容对象回收存在失败（失败率告警）")
+	} else if res.Deleted > 0 {
 		logger.Scene("artifact").With("orphans", res.Orphans).With("scanned", res.Scanned).
 			With("deleted", res.Deleted).With("skippedExternal", res.SkippedExtern).
 			Info("孤儿内容对象回收完成")
 	}
 	return res, nil
+}
+
+// stillOrphanAfterDelete 复查「候选里没被删掉的」哪些仍然是孤儿。
+//
+// 返回空集且 err 为 nil，表示每个没删掉的候选都已被重新引用 —— 这才是正常赛跑。
+func (s *Service) stillOrphanAfterDelete(ctx context.Context, deletable []string, deleted map[string]bool, before time.Time) (set map[string]bool, err error) {
+	set = map[string]bool{}
+	if len(deleted) >= len(deletable) {
+		return set, nil
+	}
+	remaining := make([]string, 0, len(deletable)-len(deleted))
+	for _, h := range deletable {
+		if !deleted[h] {
+			remaining = append(remaining, h)
+		}
+	}
+	if len(remaining) == 0 {
+		return set, nil
+	}
+	still, serr := s.model.ListStillOrphanHashes(ctx, remaining, before)
+	if serr != nil {
+		return set, serr
+	}
+	for _, h := range still {
+		set[h] = true
+	}
+	return set, nil
+}
+
+// failedRate 失败率（Scanned 为 0 时返回 0，避免除零）。
+func failedRate(failed, scanned int) float64 {
+	if scanned <= 0 {
+		return 0
+	}
+	return float64(failed) / float64(scanned)
 }
 
 // externalKept 询问外部引用来源，返回「必须保留」的 hash 集合。

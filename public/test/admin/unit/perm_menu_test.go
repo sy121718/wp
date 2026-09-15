@@ -550,7 +550,7 @@ func TestMenuSoftDelete(t *testing.T) {
 	wantErr(t, err, "")
 
 	var count int64
-	if err := e.db.Model(&adminmodel.MenuEntity{}).Where("id = ? AND deleted_time IS NULL", menu.ID).Count(&count).Error; err != nil {
+	if err := e.db.Model(&adminmodel.MenuEntity{}).Where("id = ? AND deleted_at IS NULL", menu.ID).Count(&count).Error; err != nil {
 		t.Fatalf("查询失败: %v", err)
 	}
 	if count != 0 {

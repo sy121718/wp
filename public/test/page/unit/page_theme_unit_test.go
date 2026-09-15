@@ -146,7 +146,7 @@ func TestPageCreateThemeBrokenSettings(t *testing.T) {
 	db, svc, _, projectID := newPageService(t)
 	ctx := context.Background()
 	themeID := "8f2c9d0e-1a2b-3c4d-8e9f-0a1b2c3d4e5f"
-	if err := db.Exec(`INSERT INTO themes (id, project_id, name, settings, is_active, created_at, updated_at)
+	if err := db.Exec(`INSERT INTO themes (id, project_id, name, settings, is_active, create_time, update_time)
 		VALUES (?, ?, '坏主题', '[1,2,3]', true, now(), now())`, themeID, projectID).Error; err != nil {
 		t.Fatalf("插入非法主题失败: %v", err)
 	}

@@ -219,7 +219,7 @@ func trWorkbenchGet(t *testing.T, engine *gin.Engine, projectID, productID, lang
 // trInsertPage 直接插入一条页面行（用于观察「译文变更 → 页面待重建」标记）。
 func trInsertPage(t *testing.T, db *gorm.DB, id, projectID, path string) {
 	t.Helper()
-	if err := db.Exec("INSERT INTO pages (id, project_id, kind, content_target_type, draft_path, draft_document, draft_version, stale, created_at, updated_at) "+
+	if err := db.Exec("INSERT INTO pages (id, project_id, kind, content_target_type, draft_path, draft_document, draft_version, stale, create_time, update_time) "+
 		"VALUES (?, ?, 'home', 'none', ?, '{}'::jsonb, 1, false, now(), now())",
 		id, projectID, path).Error; err != nil {
 		t.Fatalf("插入页面失败: %v", err)

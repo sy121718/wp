@@ -40,11 +40,11 @@ func (m *Model) SearchPublished(ctx context.Context, projectID, keyword string, 
 	}
 	pattern := "%" + database.EscapeLikePattern(keyword) + "%"
 	err = m.db.WithContext(ctx).
-		Select("id, project_id, name, subtitle, slug, status, default_image, updated_at").
+		Select("id, project_id, name, subtitle, slug, status, default_image, update_time").
 		Where("project_id = ?", projectID).
 		Where("status = ?", productStatusPublished).
 		Where("(name ILIKE ? ESCAPE '\\' OR subtitle ILIKE ? ESCAPE '\\')", pattern, pattern).
-		Order("updated_at DESC, id DESC").
+		Order("update_time DESC, id DESC").
 		Limit(limit).
 		Find(&list).Error
 	return list, err

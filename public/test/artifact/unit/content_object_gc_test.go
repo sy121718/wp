@@ -29,7 +29,7 @@ func ageContentObjects(t *testing.T, svc *artifactservice.Service, days int) {
 	t.Helper()
 	cut := time.Now().UTC().AddDate(0, 0, -days)
 	if err := svc.Model().DB(context.Background()).Table("content_objects").
-		Where("1 = 1").Update("created_at", cut).Error; err != nil {
+		Where("1 = 1").Update("create_time", cut).Error; err != nil {
 		t.Fatalf("调整内容对象创建时间失败: %v", err)
 	}
 }
@@ -39,7 +39,7 @@ func setArtifactState(t *testing.T, svc *artifactservice.Service, id, state stri
 	t.Helper()
 	cut := time.Now().UTC().AddDate(0, 0, -days)
 	if err := svc.Model().DB(context.Background()).Where("id = ?", id).
-		Updates(map[string]any{"payload_state": state, "created_at": cut}).Error; err != nil {
+		Updates(map[string]any{"payload_state": state, "create_time": cut}).Error; err != nil {
 		t.Fatalf("更新产物负载状态失败: %v", err)
 	}
 }
@@ -124,7 +124,9 @@ func TestContentObjectGCKeepsAvailableReferences(t *testing.T) {
 }
 
 // TestContentObjectGCKeepsExternalReferences 覆盖「引用来源不止一处」：
-// 外部模块（自动发布实例的 presentation_artifact_objects）声明的引用必须被尊重。
+// 外部模块（presentation 侧归档落地后会注入的那一路）声明的引用必须被尊重。
+// 用 mock 注入而不是插真实行：presentation_artifact_objects 已按 CQ-015 删除（迁移 207），
+// 这里要钉住的是**机制**（问不到就少删一轮），与来源是哪张表无关。
 func TestContentObjectGCKeepsExternalReferences(t *testing.T) {
 	svc := newService(t)
 	ctx := context.Background()

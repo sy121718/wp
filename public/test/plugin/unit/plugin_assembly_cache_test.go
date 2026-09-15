@@ -17,7 +17,7 @@ import (
 func insertRegistryRow(t *testing.T, db *gorm.DB, id, version, dir, manifest string, enabled bool) {
 	t.Helper()
 	if err := db.Exec(
-		`INSERT INTO plugin_registry (plugin_id, name, version, schema_version, enabled, manifest, storage_path, installed_at, updated_at)
+		`INSERT INTO plugin_registry (plugin_id, name, version, schema_version, enabled, manifest, storage_path, installed_at, update_time)
 		 VALUES (?, ?, ?, 1, ?, ?::jsonb, ?, now(), now())`,
 		id, id, version, enabled, manifest, dir).Error; err != nil {
 		t.Fatalf("插入插件注册行失败: %v", err)

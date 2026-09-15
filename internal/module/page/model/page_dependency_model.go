@@ -70,7 +70,7 @@ func (m *Model) ListDependencies(ctx context.Context, artifactID string) (list [
 // 语义与旧的全站标记（MarkStaleFor*）严格区分：无关页面不会被触碰，
 // 这是 PIPE-3「精确 fan-out」的核心——调用方可用返回的 ID 集合直接断言影响面。
 //
-// 幂等：已经 stale 的页面重复标记只更新 updated_at，返回值仍是完整受影响集合
+// 幂等：已经 stale 的页面重复标记只更新 update_time，返回值仍是完整受影响集合
 // （自动重建需要「谁受影响」而不是「谁刚变成 stale」）。
 func (m *Model) MarkStaleByDependency(ctx context.Context, kind, key string, at time.Time) (ids []string, err error) {
 	if kind == "" || key == "" {
@@ -86,7 +86,7 @@ func (m *Model) MarkStaleByDependency(ctx context.Context, kind, key string, at 
 			  AND p.deleted_at IS NULL
 			  AND d.artifact_id IN (p.active_artifact_id, p.staged_artifact_id)
 		)
-		UPDATE pages SET stale = true, updated_at = ?
+		UPDATE pages SET stale = true, update_time = ?
 		WHERE deleted_at IS NULL AND id IN (SELECT page_id FROM affected)
 		RETURNING id`, kind, key, at).Scan(&ids).Error
 	if err != nil {

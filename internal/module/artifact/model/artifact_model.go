@@ -45,7 +45,7 @@ type PageArtifactEntity struct {
 	PayloadDeletedAt          *time.Time      `gorm:"column:payload_deleted_at"`
 	Note                      string          `gorm:"column:note;type:text;not null"`
 	CreatedBy                 string          `gorm:"column:created_by;type:uuid;not null"`
-	CreatedAt                 time.Time       `gorm:"column:created_at;not null"`
+	CreatedAt                 time.Time       `gorm:"column:create_time;not null"`
 }
 
 func (PageArtifactEntity) TableName() string { return tableNamePageArtifacts }
@@ -56,7 +56,7 @@ type ContentObjectEntity struct {
 	Provider    string     `gorm:"column:provider;type:text;not null"`
 	ObjectKey   string     `gorm:"column:object_key;type:text;not null"`
 	ByteSize    int64      `gorm:"column:byte_size;not null"`
-	CreatedAt   time.Time  `gorm:"column:created_at;not null"`
+	CreatedAt   time.Time  `gorm:"column:create_time;not null"`
 	DeletedAt   *time.Time `gorm:"column:deleted_at"`
 }
 
@@ -203,7 +203,7 @@ func (m *Model) ListByPage(ctx context.Context, pageID string) (list []PageArtif
 
 // ListGCCandidates 列出可回收候选：
 //   - payload_state = available（已标记回收的不重复处理）
-//   - created_at 早于 before（保留窗口之外）
+//   - create_time 早于 before（保留窗口之外）
 //   - 不在 excludeIDs 内（调用方传入的保护集合：页面指针 / 每语言激活暂存 / 路由指向）
 //
 // excludeIDs 为空表示调用方无法确定保护集合 —— 此时返回空列表（宁可不回收也不误删）。
@@ -211,9 +211,9 @@ func (m *Model) ListGCCandidates(ctx context.Context, before time.Time, excludeI
 	if len(excludeIDs) == 0 {
 		return nil, nil
 	}
-	q := m.DB(ctx).Where("payload_state = ? AND created_at < ?", PayloadStateAvailable, before)
+	q := m.DB(ctx).Where("payload_state = ? AND create_time < ?", PayloadStateAvailable, before)
 	q = q.Where("id NOT IN ?", excludeIDs)
-	err = q.Order("created_at ASC").Find(&list).Error
+	err = q.Order("create_time ASC").Find(&list).Error
 	return list, err
 }
 
@@ -245,12 +245,12 @@ const orphanContentObjectFilter = `NOT EXISTS (
 	)`
 
 // orphanContentObjectScope 构造孤儿内容对象的查询范围：
-//   - created_at 早于 before（保留窗口之外，避免清理刚落盘、闭包尚未提交的对象）
+//   - create_time 早于 before（保留窗口之外，避免清理刚落盘、闭包尚未提交的对象）
 //   - 不被任何现存产物行引用（见 orphanContentObjectFilter）
 //   - hashes 非空时收窄到指定集合（删除时用，避免删掉查完之后才出现的候选）
 func (m *Model) orphanContentObjectScope(ctx context.Context, before time.Time, hashes []string) *gorm.DB {
 	q := m.db.WithContext(ctx).Table(tableNameContentObjects).
-		Where("content_objects.created_at < ?", before).
+		Where("content_objects.create_time < ?", before).
 		Where(orphanContentObjectFilter, PayloadStateDeleted)
 	if len(hashes) > 0 {
 		q = q.Where("content_objects.content_hash IN ?", hashes)
@@ -264,15 +264,47 @@ func (m *Model) CountOrphanContentObjects(ctx context.Context, before time.Time)
 	return n, err
 }
 
-// ListOrphanContentObjects 列出孤儿内容对象（按 created_at 升序，至多 limit 条）。
+// ListOrphanContentObjects 列出孤儿内容对象（按 create_time 升序，至多 limit 条）。
 // limit <= 0 时不加限制 —— 调用方负责给一个有限批次。
 func (m *Model) ListOrphanContentObjects(ctx context.Context, before time.Time, limit int) (list []ContentObjectEntity, err error) {
-	q := m.orphanContentObjectScope(ctx, before, nil).Select("content_objects.*").Order("content_objects.created_at ASC")
+	q := m.orphanContentObjectScope(ctx, before, nil).Select("content_objects.*").Order("content_objects.create_time ASC")
 	if limit > 0 {
 		q = q.Limit(limit)
 	}
 	err = q.Find(&list).Error
 	return list, err
+}
+
+// ListStillOrphanHashes 返回给定 hash 中**此刻仍然是孤儿**的子集。
+//
+// 用途是 GC 删除后的复查：没出现在 DELETE ... RETURNING 里的候选有两种完全不同的成因 ——
+//
+//	· 被并发归档重新引用（正常赛跑：下一轮它自然不再是候选）；
+//	· 删除语句没生效（异常：行还在、且复查时仍无任何引用）。
+//
+// 只看 RETURNING 的差集分不出这两者，它们都落在差集里；一旦按前者解释，异常就永远静默 ——
+// 外键挡删那次就是这样在生产上只增不减的（迁移 204 修的就是它）。
+//
+// 复用 orphanContentObjectScope：复查与选候选、真删除用的是同一条孤儿判定，
+// 三处规则若各写一份，会出现「候选 10、实删 3、复查说还剩 7」这种自相矛盾的报告。
+func (m *Model) ListStillOrphanHashes(ctx context.Context, hashes []string, before time.Time) (list []string, err error) {
+	if len(hashes) == 0 {
+		return nil, nil
+	}
+	type hashRow struct {
+		ContentHash string
+	}
+	var rows []hashRow
+	err = m.orphanContentObjectScope(ctx, before, hashes).
+		Select("content_objects.content_hash").Find(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	list = make([]string, 0, len(rows))
+	for _, r := range rows {
+		list = append(list, r.ContentHash)
+	}
+	return list, nil
 }
 
 // deleteOrphanContentObjectsSQL 硬删除孤儿内容对象。
@@ -282,7 +314,7 @@ func (m *Model) ListOrphanContentObjects(ctx context.Context, before time.Time, 
 // 这些行"，标记清除也就白做了。这里要的是真删。
 const deleteOrphanContentObjectsSQL = `DELETE FROM content_objects
 	WHERE content_hash IN ?
-	  AND created_at < ?
+	  AND create_time < ?
 	  AND ` + orphanContentObjectFilter + `
 	RETURNING content_hash`
 

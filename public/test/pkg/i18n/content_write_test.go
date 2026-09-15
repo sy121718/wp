@@ -4,9 +4,9 @@ package i18n_test
 // PostgreSQL 上的链路验证。
 //
 // 覆盖：
-//  1. 写入 + 读回（LoadTargets 复用 P5a 读路径；LoadDetails 额外取 engine/updated_at）；
+//  1. 写入 + 读回（LoadTargets 复用 P5a 读路径；LoadDetails 额外取 engine/update_time）；
 //  2. hash 一致性：sha256(source_text) != source_hash → 拒绝且不落库（066 只校验格式）；
-//  3. 幂等：同一条重复写入 → 仍一行（ON CONFLICT 更新），updated_at 推进；
+//  3. 幂等：同一条重复写入 → 仍一行（ON CONFLICT 更新），update_time 推进；
 //  4. 非法输入：空译文 / 非法 engine / 空语言 / 空语境 → 拒绝；
 //  5. 批量原子性：一批中任一条非法 → 整体不写（工作台不出现「部分成功」）。
 //
@@ -111,7 +111,7 @@ func TestContentWriterRejectsHashMismatch(t *testing.T) {
 	}
 }
 
-// TestContentWriterIdempotentUpsert 同一条重复写入 → 仍一行，内容更新，updated_at 推进。
+// TestContentWriterIdempotentUpsert 同一条重复写入 → 仍一行，内容更新，update_time 推进。
 func TestContentWriterIdempotentUpsert(t *testing.T) {
 	db := newContentWriteDB(t)
 	writer := i18n.NewContentWriter(db)
@@ -125,8 +125,8 @@ func TestContentWriterIdempotentUpsert(t *testing.T) {
 		t.Fatalf("首次写入失败: %v", err)
 	}
 	var firstUpdated time.Time
-	if err := db.Raw("SELECT updated_at FROM sys_translation").Scan(&firstUpdated).Error; err != nil {
-		t.Fatalf("读取 updated_at 失败: %v", err)
+	if err := db.Raw("SELECT update_time FROM sys_translation").Scan(&firstUpdated).Error; err != nil {
+		t.Fatalf("读取 update_time 失败: %v", err)
 	}
 	time.Sleep(10 * time.Millisecond)
 
@@ -139,14 +139,14 @@ func TestContentWriterIdempotentUpsert(t *testing.T) {
 	}
 	var secondUpdated time.Time
 	var target string
-	if err := db.Raw("SELECT updated_at, target_text FROM sys_translation").Row().Scan(&secondUpdated, &target); err != nil {
+	if err := db.Raw("SELECT update_time, target_text FROM sys_translation").Row().Scan(&secondUpdated, &target); err != nil {
 		t.Fatalf("读取二次写入结果失败: %v", err)
 	}
 	if target != "Find out more" {
 		t.Fatalf("ON CONFLICT 应覆盖译文，实际 %q", target)
 	}
 	if !secondUpdated.After(firstUpdated) {
-		t.Fatalf("重复写入应推进 updated_at（ContentRevision 依赖）: first=%s second=%s", firstUpdated, secondUpdated)
+		t.Fatalf("重复写入应推进 update_time（ContentRevision 依赖）: first=%s second=%s", firstUpdated, secondUpdated)
 	}
 }
 

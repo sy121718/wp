@@ -57,7 +57,7 @@ func registerCatalogAndInventory() {
 	registerSeed(Seed{
 		Version:      "090-product-taxonomy-menu",
 		TableName:    "sys_menus",
-		ConditionSQL: "SELECT CASE WHEN COUNT(*) = 2 THEN 1 ELSE 0 END FROM sys_menus WHERE title IN ('商品分类', '商品品牌') AND type = 2 AND deleted_time IS NULL",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) = 2 THEN 1 ELSE 0 END FROM sys_menus WHERE title IN ('商品分类', '商品品牌') AND type = 2 AND deleted_at IS NULL",
 		SQL:          mustSQL("090_product_taxonomy_menu.sql"),
 	})
 
@@ -90,7 +90,7 @@ func registerCatalogAndInventory() {
 	registerSeed(Seed{
 		Version:      "093-product-tag-menu",
 		TableName:    "sys_menus",
-		ConditionSQL: "SELECT CASE WHEN COUNT(*) = 1 THEN 1 ELSE 0 END FROM sys_menus WHERE title = '商品标签' AND type = 2 AND deleted_time IS NULL",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) = 1 THEN 1 ELSE 0 END FROM sys_menus WHERE title = '商品标签' AND type = 2 AND deleted_at IS NULL",
 		SQL:          mustSQL("093_product_tag_menu.sql"),
 	})
 
@@ -119,7 +119,7 @@ func registerCatalogAndInventory() {
 	registerSeed(Seed{
 		Version:      "097-product-pricing-menu",
 		TableName:    "sys_menus",
-		ConditionSQL: "SELECT CASE WHEN COUNT(*) = 1 THEN 1 ELSE 0 END FROM sys_menus WHERE title = '定价工具' AND type = 2 AND deleted_time IS NULL",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) = 1 THEN 1 ELSE 0 END FROM sys_menus WHERE title = '定价工具' AND type = 2 AND deleted_at IS NULL",
 		SQL:          mustSQL("097_product_pricing_menu.sql"),
 	})
 
@@ -262,7 +262,7 @@ func registerCatalogAndInventory() {
 	registerSeed(Seed{
 		Version:      "101-inventory-menu",
 		TableName:    "sys_menus",
-		ConditionSQL: "SELECT CASE WHEN COUNT(*) = 1 THEN 1 ELSE 0 END FROM sys_menus WHERE title = '库存管理' AND type = 2 AND deleted_time IS NULL",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) = 1 THEN 1 ELSE 0 END FROM sys_menus WHERE title = '库存管理' AND type = 2 AND deleted_at IS NULL",
 		SQL:          mustSQL("101_inventory_menu.sql"),
 	})
 
@@ -324,7 +324,7 @@ func registerCatalogAndInventory() {
 	registerSeed(Seed{
 		Version:      "107-inventory-source-menu",
 		TableName:    "sys_menus",
-		ConditionSQL: "SELECT CASE WHEN COUNT(*) = 1 THEN 1 ELSE 0 END FROM sys_menus WHERE title = '货源管理' AND type = 2 AND deleted_time IS NULL",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) = 1 THEN 1 ELSE 0 END FROM sys_menus WHERE title = '货源管理' AND type = 2 AND deleted_at IS NULL",
 		SQL:          mustSQL("107_inventory_source_menu.sql"),
 	})
 
@@ -355,7 +355,7 @@ func registerCatalogAndInventory() {
 	registerSeed(Seed{
 		Version:      "110-inventory-purchase-menu",
 		TableName:    "sys_menus",
-		ConditionSQL: "SELECT CASE WHEN COUNT(*) = 1 THEN 1 ELSE 0 END FROM sys_menus WHERE title = '采购入库' AND type = 2 AND deleted_time IS NULL",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) = 1 THEN 1 ELSE 0 END FROM sys_menus WHERE title = '采购入库' AND type = 2 AND deleted_at IS NULL",
 		SQL:          mustSQL("110_inventory_purchase_menu.sql"),
 	})
 
@@ -397,7 +397,7 @@ func registerCatalogAndInventory() {
 	registerSeed(Seed{
 		Version:      "113-master-data-menu",
 		TableName:    "sys_menus",
-		ConditionSQL: "SELECT CASE WHEN COUNT(*) = 1 THEN 1 ELSE 0 END FROM sys_menus WHERE title = '变更记录' AND type = 2 AND deleted_time IS NULL",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) = 1 THEN 1 ELSE 0 END FROM sys_menus WHERE title = '变更记录' AND type = 2 AND deleted_at IS NULL",
 		SQL:          mustSQL("113_master_data_menu.sql"),
 	})
 
@@ -431,7 +431,7 @@ func registerCatalogAndInventory() {
 	registerSeed(Seed{
 		Version:      "116-product-bundle-menu",
 		TableName:    "sys_menus",
-		ConditionSQL: "SELECT CASE WHEN COUNT(*) = 1 THEN 1 ELSE 0 END FROM sys_menus WHERE title = '捆绑配置' AND type = 2 AND deleted_time IS NULL",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) = 1 THEN 1 ELSE 0 END FROM sys_menus WHERE title = '捆绑配置' AND type = 2 AND deleted_at IS NULL",
 		SQL:          mustSQL("116_product_bundle_menu.sql"),
 	})
 

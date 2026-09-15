@@ -806,7 +806,7 @@ func TestPricingPermissionsAndMenusSeeded(t *testing.T) {
 	if n != 6 {
 		t.Fatalf("迁移 096 应 seed 6 个定价权限点，实际 %d", n)
 	}
-	menuSQL := "SELECT COUNT(*) FROM sys_menus WHERE type = 2 AND title = '定价工具' AND deleted_time IS NULL"
+	menuSQL := "SELECT COUNT(*) FROM sys_menus WHERE type = 2 AND title = '定价工具' AND deleted_at IS NULL"
 	if err := f.db.Raw(menuSQL).Scan(&n).Error; err != nil {
 		t.Fatalf("查询菜单失败: %v", err)
 	}

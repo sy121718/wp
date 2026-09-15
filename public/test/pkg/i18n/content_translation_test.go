@@ -58,7 +58,7 @@ func (l *countingLogger) count() int {
 // insertTranslation 写入一行译文（source_text 与 hash 必须一致，与工作台写入口径相同）。
 func insertTranslation(t *testing.T, db *gorm.DB, sourceText, contextName, lang, targetText, engine string) {
 	t.Helper()
-	err := db.Exec("INSERT INTO sys_translation (source_hash, context, lang, source_text, target_text, engine, updated_at) VALUES (?, ?, ?, ?, ?, ?, now())",
+	err := db.Exec("INSERT INTO sys_translation (source_hash, context, lang, source_text, target_text, engine, update_time) VALUES (?, ?, ?, ?, ?, ?, now())",
 		i18n.ContentHash(sourceText), contextName, lang, sourceText, targetText, engine).Error
 	if err != nil {
 		t.Fatalf("写入译文 (%q,%q,%q) 失败: %v", sourceText, contextName, lang, err)
@@ -84,7 +84,7 @@ func TestSysTranslationMigrationIdempotency(t *testing.T) {
 	if err := db.Raw("SELECT column_name FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'sys_translation'").Scan(&cols).Error; err != nil {
 		t.Fatalf("查询列失败: %v", err)
 	}
-	want := []string{"source_hash", "context", "lang", "source_text", "target_text", "engine", "updated_at"}
+	want := []string{"source_hash", "context", "lang", "source_text", "target_text", "engine", "update_time"}
 	for _, c := range want {
 		found := false
 		for _, got := range cols {
@@ -396,7 +396,7 @@ func TestContentDefaultStoreAgainstGlobalDB(t *testing.T) {
 }
 
 // TestContentRevisionTracksWrites 内容译文资源版本号（多语言 P5b，docs/06-D §9）：
-// sys_translation 的 max(updated_at) 随写入推进 —— 依赖条目（i18n:content）据此
+// sys_translation 的 max(update_time) 随写入推进 —— 依赖条目（i18n:content）据此
 // 触发重建，补齐译文后站点不会长期停留在回退内容。
 func TestContentRevisionTracksWrites(t *testing.T) {
 	dbName := "go_test_content_rev_" + randomSuffix()
@@ -440,8 +440,8 @@ func TestContentRevisionTracksWrites(t *testing.T) {
 	}
 
 	// 再写入一条（时间推进）→ revision 变化（依赖比对不等 → 触发重建）。
-	if err := db.Exec("UPDATE sys_translation SET updated_at = now() + interval '1 second'").Error; err != nil {
-		t.Fatalf("推进 updated_at 失败: %v", err)
+	if err := db.Exec("UPDATE sys_translation SET update_time = now() + interval '1 second'").Error; err != nil {
+		t.Fatalf("推进 update_time 失败: %v", err)
 	}
 	insertTranslation(t, db, "联系我们", "core.button.text", "en-US", "Contact us", "ai")
 	second := i18n.ContentRevision()

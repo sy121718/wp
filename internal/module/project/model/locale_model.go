@@ -43,8 +43,8 @@ type LocaleEntity struct {
 	SortOrder int       `gorm:"column:sort_order;not null"`
 	IsDefault bool      `gorm:"column:is_default;not null"`
 	Enabled   bool      `gorm:"column:enabled;not null"`
-	CreatedAt time.Time `gorm:"column:created_at;not null"`
-	UpdatedAt time.Time `gorm:"column:updated_at;not null"`
+	CreatedAt time.Time `gorm:"column:create_time;not null"`
+	UpdatedAt time.Time `gorm:"column:update_time;not null"`
 }
 
 func (LocaleEntity) TableName() string { return tableNameProjectLocales }

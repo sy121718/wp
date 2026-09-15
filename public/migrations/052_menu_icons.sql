@@ -50,5 +50,5 @@ FROM (VALUES
     ('删除分类',   'trash-2')
 ) AS v(title, icon)
 WHERE m.title = v.title
-  AND m.deleted_time IS NULL
+  AND m.deleted_at IS NULL
   AND (m.icon IS NULL OR m.icon = '' OR m.icon LIKE 'i-ep:%');

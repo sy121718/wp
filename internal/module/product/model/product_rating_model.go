@@ -24,8 +24,8 @@ type ProductRatingEntity struct {
 	ProductID string    `gorm:"column:product_id;type:uuid;not null"`
 	Score     float64   `gorm:"column:score;type:numeric(3,2);not null"`
 	Source    string    `gorm:"column:source;type:text;not null"`
-	CreatedAt time.Time `gorm:"column:created_at;not null"`
-	UpdatedAt time.Time `gorm:"column:updated_at;not null"`
+	CreatedAt time.Time `gorm:"column:create_time;not null"`
+	UpdatedAt time.Time `gorm:"column:update_time;not null"`
 }
 
 // TableName 实现 gorm 表名。
@@ -59,7 +59,7 @@ func (p *ProductEntity) RatingSummaryOf() (avg float64, count int, ok bool) {
 
 // ListRatings 取某商品的评分明细（按时间倒序：最近的在前）。
 func (m *Model) ListRatings(ctx context.Context, productID string) (list []*ProductRatingEntity, err error) {
-	err = m.RatingDB(ctx).Where("product_id = ?", productID).Order("created_at DESC, id DESC").Find(&list).Error
+	err = m.RatingDB(ctx).Where("product_id = ?", productID).Order("create_time DESC, id DESC").Find(&list).Error
 	return list, err
 }
 

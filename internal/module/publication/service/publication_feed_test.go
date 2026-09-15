@@ -92,7 +92,7 @@ func TestFeedItemsCollectsArticleInstancesOnly(t *testing.T) {
 		t.Fatalf("标题/摘要应取自产物 <head>，实际 %+v", items[0])
 	}
 	if !items[0].PubDate.Equal(fresh) {
-		t.Fatalf("pubDate 应取路由行的 updated_at，实际 %v", items[0].PubDate)
+		t.Fatalf("pubDate 应取路由行的 update_time，实际 %v", items[0].PubDate)
 	}
 }
 

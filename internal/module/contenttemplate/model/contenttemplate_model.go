@@ -51,8 +51,8 @@ type TemplateEntity struct {
 	CurrentVersionID *string `gorm:"column:current_version_id;type:uuid"`
 	// IsDefault 该实体类型的显式默认模板（EDT-014；每个 entity_type 至多一个）。
 	IsDefault bool      `gorm:"column:is_default;not null"`
-	CreatedAt time.Time `gorm:"column:created_at;not null"`
-	UpdatedAt time.Time `gorm:"column:updated_at;not null"`
+	CreatedAt time.Time `gorm:"column:create_time;not null"`
+	UpdatedAt time.Time `gorm:"column:update_time;not null"`
 }
 
 // TableName 表名。
@@ -67,7 +67,7 @@ type VersionEntity struct {
 	// SourceHash 版本文档的内容哈希（NOT NULL）。
 	SourceHash string    `gorm:"column:source_hash;not null"`
 	CreatedBy  string    `gorm:"column:created_by;type:uuid;not null"`
-	CreatedAt  time.Time `gorm:"column:created_at;not null"`
+	CreatedAt  time.Time `gorm:"column:create_time;not null"`
 }
 
 // TableName 表名。
@@ -112,7 +112,7 @@ func (m *Model) Get(ctx context.Context, id string) (e *TemplateEntity, err erro
 
 // List 按 entity_type 列表（默认模板优先，其次更新时间倒序；entity_type 为空时返回全部）。
 func (m *Model) List(ctx context.Context, entityType string) (list []*TemplateEntity, err error) {
-	q := m.db.WithContext(ctx).Order("is_default DESC, updated_at DESC, id DESC")
+	q := m.db.WithContext(ctx).Order("is_default DESC, update_time DESC, id DESC")
 	if entityType != "" {
 		q = q.Where("entity_type = ?", entityType)
 	}
@@ -130,7 +130,7 @@ func (m *Model) ListByRole(ctx context.Context, entityType, role string) (list [
 		role = TemplateRoleDetail
 	}
 	q := m.db.WithContext(ctx).Where("template_role = ?", role).
-		Order("is_default DESC, updated_at DESC, id DESC")
+		Order("is_default DESC, update_time DESC, id DESC")
 	if entityType != "" {
 		q = q.Where("entity_type = ?", entityType)
 	}
@@ -138,7 +138,7 @@ func (m *Model) ListByRole(ctx context.Context, entityType, role string) (list [
 	return list, err
 }
 
-// Save 更新草稿（draft_document + draft_version + current_version_id + updated_at）。
+// Save 更新草稿（draft_document + draft_version + current_version_id + update_time）。
 // 用 DB(ctx)（已绑定 Model）+ 显式 Where + Updates（避免 GORM Save
 // 在已绑定 Model 下报 WHERE conditions required）。
 func (m *Model) Save(ctx context.Context, e *TemplateEntity) error {
@@ -146,7 +146,7 @@ func (m *Model) Save(ctx context.Context, e *TemplateEntity) error {
 		"draft_document":     e.DraftDocument,
 		"draft_version":      e.DraftVersion,
 		"current_version_id": e.CurrentVersionID,
-		"updated_at":         e.UpdatedAt,
+		"update_time":         e.UpdatedAt,
 	}).Error
 }
 
@@ -154,7 +154,7 @@ func (m *Model) Save(ctx context.Context, e *TemplateEntity) error {
 func (m *Model) SetCurrentVersion(ctx context.Context, templateID, versionID string, at time.Time) error {
 	return m.DB(ctx).Where("id = ?", templateID).Updates(map[string]any{
 		"current_version_id": versionID,
-		"updated_at":         at,
+		"update_time":         at,
 	}).Error
 }
 
@@ -179,7 +179,7 @@ func (m *Model) CreateWithVersion(ctx context.Context, e *TemplateEntity, v *Ver
 		return tx.Model(&TemplateEntity{}).Where("id = ?", e.ID).
 			Updates(map[string]any{
 				"current_version_id": v.ID,
-				"updated_at":         e.UpdatedAt,
+				"update_time":         e.UpdatedAt,
 			}).Error
 	})
 }
@@ -197,7 +197,7 @@ func (m *Model) SaveWithVersion(ctx context.Context, v *VersionEntity, e *Templa
 			"draft_document":     e.DraftDocument,
 			"draft_version":      e.DraftVersion,
 			"current_version_id": e.CurrentVersionID,
-			"updated_at":         e.UpdatedAt,
+			"update_time":         e.UpdatedAt,
 		}).Error
 	})
 }

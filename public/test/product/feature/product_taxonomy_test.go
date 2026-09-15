@@ -354,7 +354,7 @@ func TestTaxonomyPermissionsAndMenusSeeded(t *testing.T) {
 		t.Fatalf("迁移 089 应 seed 10 个分类/品牌权限点，实际 %d", n)
 	}
 	if err := f.db.Raw(`SELECT COUNT(*) FROM sys_menus
-		WHERE type = 2 AND title IN ('商品分类', '商品品牌') AND deleted_time IS NULL`).Scan(&n).Error; err != nil {
+		WHERE type = 2 AND title IN ('商品分类', '商品品牌') AND deleted_at IS NULL`).Scan(&n).Error; err != nil {
 		t.Fatalf("查询菜单失败: %v", err)
 	}
 	if n != 2 {

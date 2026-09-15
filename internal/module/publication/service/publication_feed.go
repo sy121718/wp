@@ -18,7 +18,7 @@ package pubservice
 // pipeline.LangURLRule —— 与 sitemap 的分组用的是同一份规则（sitemapEntries 里
 // 那句 NewLangURLRule 现在抽成了 siteLangRule，两处共用）。
 //
-// 时间：条目的 pubDate 取路由行的 updated_at（该路径最近一次激活时刻）。产物字节里
+// 时间：条目的 pubDate 取路由行的 update_time（该路径最近一次激活时刻）。产物字节里
 // 没有时间（构建期不注入时间戳是有意的确定性约束），因此「最近发布」只能来自路由。
 //
 // 条目数上限与总开关：见 internal/seo/feed.go 的 FeedEnabled / FeedLimit。

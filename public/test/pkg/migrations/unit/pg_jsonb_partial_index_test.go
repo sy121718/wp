@@ -78,8 +78,10 @@ func TestPgJSONBPartialIndexMigrationBuildsPartialIndexes(t *testing.T) {
 	if !strings.Contains(idx["idx_pages_structure_footer"].IndexDef, "footerBlockId") {
 		t.Fatalf("idx_pages_structure_footer 定义不符: %s", idx["idx_pages_structure_footer"].IndexDef)
 	}
+	// 排序列在 068 建索引时叫 updated_at，205（DB-019）把它改名为 update_time ——
+	// RENAME COLUMN 会同步重写索引定义，所以这里断言的是**改名后**的列名。
 	themeDef := idx["idx_pages_theme_alive"].IndexDef
-	if !strings.Contains(themeDef, "theme_id") || !strings.Contains(themeDef, "updated_at DESC") {
+	if !strings.Contains(themeDef, "theme_id") || !strings.Contains(themeDef, "update_time DESC") {
 		t.Fatalf("idx_pages_theme_alive 定义不符: %s", themeDef)
 	}
 }

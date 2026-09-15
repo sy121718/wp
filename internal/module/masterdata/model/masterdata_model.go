@@ -48,7 +48,7 @@ type ChangeEntity struct {
 	// OperatorID 操作人（会话里的登录名；缺失时为空串）。历史记录允许为空，
 	// 但绝不允许事后补写 —— 本表 append-only。
 	OperatorID string    `gorm:"column:operator_id;type:text;not null"`
-	CreatedAt  time.Time `gorm:"column:created_at;not null"`
+	CreatedAt  time.Time `gorm:"column:create_time;not null"`
 }
 
 // TableName 实现 gorm 表名。
@@ -137,17 +137,17 @@ func applyChangeFilter(q *gorm.DB, f ChangeFilter) *gorm.DB {
 		q = q.Where("entity_label ILIKE ?", like)
 	}
 	if f.Since != nil {
-		q = q.Where("created_at >= ?", *f.Since)
+		q = q.Where("create_time >= ?", *f.Since)
 	}
 	if f.Until != nil {
-		q = q.Where("created_at < ?", *f.Until)
+		q = q.Where("create_time < ?", *f.Until)
 	}
 	return q
 }
 
 // List 变更记录列表（固定按「时间倒序 → id」返回，同一时刻的记录顺序也确定）。
 func (m *Model) List(ctx context.Context, f ChangeFilter, limit, offset int) (list []*ChangeEntity, err error) {
-	q := applyChangeFilter(m.DB(ctx), f).Order("created_at DESC, id ASC")
+	q := applyChangeFilter(m.DB(ctx), f).Order("create_time DESC, id ASC")
 	if limit > 0 {
 		q = q.Limit(limit).Offset(offset)
 	}
@@ -168,12 +168,12 @@ func (m *Model) Count(ctx context.Context, f ChangeFilter) (n int64, err error) 
 func (m *Model) ListEntityHistories(ctx context.Context, f ChangeFilter, limit, offset int) (list []*EntityHistoryRow, err error) {
 	q := applyChangeFilter(m.DB(ctx), f).
 		Select("entity_type, entity_id, " +
-			"(array_agg(entity_label ORDER BY created_at DESC, id ASC))[1] AS entity_label, " +
+			"(array_agg(entity_label ORDER BY create_time DESC, id ASC))[1] AS entity_label, " +
 			"COUNT(*) AS change_count, " +
-			"(array_agg(action ORDER BY created_at DESC, id ASC))[1] AS last_action, " +
-			"(array_agg(field ORDER BY created_at DESC, id ASC))[1] AS last_field, " +
-			"(array_agg(operator_id ORDER BY created_at DESC, id ASC))[1] AS last_operator_id, " +
-			"MAX(created_at) AS last_at").
+			"(array_agg(action ORDER BY create_time DESC, id ASC))[1] AS last_action, " +
+			"(array_agg(field ORDER BY create_time DESC, id ASC))[1] AS last_field, " +
+			"(array_agg(operator_id ORDER BY create_time DESC, id ASC))[1] AS last_operator_id, " +
+			"MAX(create_time) AS last_at").
 		Group("entity_type, entity_id").
 		Order("last_at DESC, entity_type ASC, entity_id ASC")
 	if limit > 0 {

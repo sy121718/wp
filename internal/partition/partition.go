@@ -34,8 +34,8 @@ type Table struct {
 // Tables 需要维护的三张表（与迁移 173 一致）。
 var Tables = []Table{
 	{Name: "page_views", TimeColumn: "viewed_at"},
-	{Name: "inventory_stock_movements", TimeColumn: "created_at"},
-	{Name: "master_data_changes", TimeColumn: "created_at"},
+	{Name: "inventory_stock_movements", TimeColumn: "create_time"},
+	{Name: "master_data_changes", TimeColumn: "create_time"},
 }
 
 // AheadMonths 默认提前建分区的时间跨度。

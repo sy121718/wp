@@ -259,7 +259,7 @@ func (s *Service) buildDependencies(ctx context.Context, in pipeline.BuildInput)
 // 这类页面的本页 AST 可能一个候选都没有，但块内文本会进产物——漏登记会让补齐译文后
 // 不触发重建（§9 关键约束）。此处按**保守超集**判定：只要引用了块就登记，不为此额外
 // 解析块文档（精确集合由 compileDocument 在编译期算出；多登记一条依赖只在 sys_translation
-// revision 变化时才会失效，而该 revision 是全局 max(updated_at)，故不增加重建噪音）。
+// revision 变化时才会失效，而该 revision 是全局 max(update_time)，故不增加重建噪音）。
 func (s *Service) pageUsesContentTranslation(ctx context.Context, in pipeline.BuildInput) bool {
 	lang := strings.TrimSpace(in.Lang)
 	if lang == "" {

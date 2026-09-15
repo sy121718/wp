@@ -63,8 +63,8 @@ type InstanceEntity struct {
 	// DeletedAt 保留列（本轮不启用软删语义，删除走聚合内级联硬删）。
 	DeletedAt   *time.Time `gorm:"column:deleted_at"`
 	PublishedAt *time.Time `gorm:"column:published_at"`
-	CreatedAt   time.Time  `gorm:"column:created_at;not null"`
-	UpdatedAt   time.Time  `gorm:"column:updated_at;not null"`
+	CreatedAt   time.Time  `gorm:"column:create_time;not null"`
+	UpdatedAt   time.Time  `gorm:"column:update_time;not null"`
 }
 
 // TableName 表名。
@@ -80,7 +80,7 @@ type SnapshotEntity struct {
 	SourceTemplateVersionID string          `gorm:"column:source_template_version_id;type:uuid;not null"`
 	SourceEntityRevisionID  string          `gorm:"column:source_entity_revision_id;type:uuid;not null"`
 	Document                json.RawMessage `gorm:"column:document;type:jsonb;not null"`
-	CreatedAt               time.Time       `gorm:"column:created_at;not null"`
+	CreatedAt               time.Time       `gorm:"column:create_time;not null"`
 }
 
 // TableName 表名。
@@ -107,7 +107,7 @@ type ArtifactEntity struct {
 	PayloadDeletedAt   *time.Time      `gorm:"column:payload_deleted_at"`
 	Note               string          `gorm:"column:note;not null"`
 	CreatedBy          string          `gorm:"column:created_by;type:uuid;not null"`
-	CreatedAt          time.Time       `gorm:"column:created_at;not null"`
+	CreatedAt          time.Time       `gorm:"column:create_time;not null"`
 }
 
 // TableName 表名。
@@ -198,7 +198,7 @@ func (m *Model) GetInstanceByEntityRole(ctx context.Context, entityType, entityI
 
 // ListInstances 按类型列表。
 func (m *Model) ListInstances(ctx context.Context, entityType string) (list []*InstanceEntity, err error) {
-	q := m.db.WithContext(ctx).Order("updated_at DESC, id DESC")
+	q := m.db.WithContext(ctx).Order("update_time DESC, id DESC")
 	if entityType != "" {
 		q = q.Where("entity_type = ?", entityType)
 	}
@@ -218,7 +218,7 @@ func (m *Model) UpdateInstancePointers(ctx context.Context, e *InstanceEntity) e
 		"active_artifact_id":  e.ActiveArtifactID,
 		"stale":               e.Stale,
 		"published_at":        e.PublishedAt,
-		"updated_at":          e.UpdatedAt,
+		"update_time":          e.UpdatedAt,
 	}).Error
 }
 
@@ -228,7 +228,7 @@ func (m *Model) MarkStale(ctx context.Context, ids []string, at time.Time) (n in
 		return 0, nil
 	}
 	res := m.InstanceDB(ctx).Where("id IN ?", ids).Updates(map[string]any{
-		"stale": true, "updated_at": at,
+		"stale": true, "update_time": at,
 	})
 	return res.RowsAffected, res.Error
 }
@@ -381,7 +381,7 @@ func (m *Model) UpdateInstancePointersTx(tx *gorm.DB, e *InstanceEntity) error {
 		"active_artifact_id":  e.ActiveArtifactID,
 		"stale":               e.Stale,
 		"published_at":        e.PublishedAt,
-		"updated_at":          e.UpdatedAt,
+		"update_time":          e.UpdatedAt,
 	}).Error
 }
 
@@ -393,7 +393,7 @@ func (m *Model) UpdateInstancePointersTx(tx *gorm.DB, e *InstanceEntity) error {
 func (m *Model) UpdateInstanceTemplateTx(tx *gorm.DB, id, templateID string, at time.Time) error {
 	return tx.Model(&InstanceEntity{}).Where("id = ?", id).Updates(map[string]any{
 		"template_id": templateID,
-		"updated_at":  at,
+		"update_time":  at,
 	}).Error
 }
 
@@ -410,7 +410,7 @@ func (m *Model) UpdateInstanceTemplateTx(tx *gorm.DB, id, templateID string, at 
 func (m *Model) UpdateInstanceURLTx(tx *gorm.DB, id, urlPath string, at time.Time) error {
 	return tx.Model(&InstanceEntity{}).Where("id = ?", id).Updates(map[string]any{
 		"url_path":   urlPath,
-		"updated_at": at,
+		"update_time": at,
 	}).Error
 }
 
@@ -470,7 +470,7 @@ func (m *Model) MarkStaleByDependency(ctx context.Context, kind, key string, at 
 			  AND p.deleted_at IS NULL
 			  AND d.artifact_id IN (p.active_artifact_id, p.staged_artifact_id)
 		)
-		UPDATE presentation_instances SET stale = true, updated_at = ?
+		UPDATE presentation_instances SET stale = true, update_time = ?
 		WHERE deleted_at IS NULL AND id IN (SELECT presentation_id FROM affected)
 		RETURNING id`, kind, key, at).Scan(&ids).Error
 	if err != nil {

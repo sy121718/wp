@@ -22,8 +22,8 @@ type Entity struct {
 	Slug       string          `gorm:"column:slug;not null"`
 	Revision   int64           `gorm:"column:revision;not null"`
 	Data       json.RawMessage `gorm:"column:data;type:jsonb;not null"`
-	CreatedAt  time.Time       `gorm:"column:created_at;not null"`
-	UpdatedAt  time.Time       `gorm:"column:updated_at;not null"`
+	CreatedAt  time.Time       `gorm:"column:create_time;not null"`
+	UpdatedAt  time.Time       `gorm:"column:update_time;not null"`
 }
 
 // TableName 表名。
@@ -69,7 +69,7 @@ func (m *Model) GetBySlug(ctx context.Context, entityType, slug string) (e *Enti
 
 // List 按类型分页列表（更新时间倒序）。
 func (m *Model) List(ctx context.Context, entityType string, limit, offset int) (list []*Entity, err error) {
-	q := m.db.WithContext(ctx).Order("updated_at DESC, id DESC")
+	q := m.db.WithContext(ctx).Order("update_time DESC, id DESC")
 	if entityType != "" {
 		q = q.Where("entity_type = ?", entityType)
 	}
@@ -87,7 +87,7 @@ func (m *Model) Save(ctx context.Context, e *Entity) error {
 	return m.DB(ctx).Where("id = ?", e.ID).Updates(map[string]any{
 		"revision":   e.Revision,
 		"data":       e.Data,
-		"updated_at": e.UpdatedAt,
+		"update_time": e.UpdatedAt,
 	}).Error
 }
 
@@ -131,7 +131,7 @@ func (m *Model) SearchArticles(ctx context.Context, entityType, keyword string, 
 	err = m.db.WithContext(ctx).
 		Where("entity_type = ?", entityType).
 		Where("(title ILIKE ? ESCAPE '\\' OR data->>'excerpt' ILIKE ? ESCAPE '\\')", pattern, pattern).
-		Order("updated_at DESC, id DESC").
+		Order("update_time DESC, id DESC").
 		Limit(limit).
 		Find(&list).Error
 	return list, err
@@ -150,7 +150,7 @@ type CollectionItem struct {
 	ID        string          `gorm:"column:id"`
 	Slug      string          `gorm:"column:slug"`
 	Revision  int64           `gorm:"column:revision"`
-	UpdatedAt time.Time       `gorm:"column:updated_at"`
+	UpdatedAt time.Time       `gorm:"column:update_time"`
 	Fields    json.RawMessage `gorm:"column:fields"`
 }
 
@@ -176,7 +176,7 @@ func (m *Model) ListForCollection(ctx context.Context, entityType string, fields
 		parts = append(parts, "?::text, data->?::text")
 		args = append(args, f, f)
 	}
-	projection := "id, slug, revision, updated_at, jsonb_strip_nulls(jsonb_build_object(" +
+	projection := "id, slug, revision, update_time, jsonb_strip_nulls(jsonb_build_object(" +
 		strings.Join(parts, ", ") + ")) AS fields"
 	q := m.db.WithContext(ctx).Table(tableNameContents).Select(projection, args...)
 	if entityType != "" {
@@ -193,6 +193,6 @@ func (m *Model) ListForCollection(ctx context.Context, entityType string, fields
 		// 同样显式转型：->> 的右操作数必须是 text，比较值也一样。
 		q = q.Where("(data ->> ?::text) = ?::text", k, filter[k])
 	}
-	err = q.Order("updated_at DESC, id DESC").Limit(limit).Find(&list).Error
+	err = q.Order("update_time DESC, id DESC").Limit(limit).Find(&list).Error
 	return list, err
 }

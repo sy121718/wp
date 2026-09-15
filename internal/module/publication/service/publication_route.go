@@ -68,7 +68,7 @@ func (s *Service) RenameReserved(ctx context.Context, req *pubdto.RenameReserved
 		}
 		result := tx.Model(&pubmodel.RouteEntity{}).
 			Where("project_id = ? AND path = ? AND page_id = ?", req.ProjectID, oldPath, req.PageID).
-			Updates(map[string]any{"path": newPath, "updated_at": now})
+			Updates(map[string]any{"path": newPath, "update_time": now})
 		if result.Error != nil {
 			// 新路径被他人占用时 UPDATE 撞 (project_id, path) 唯一约束——
 			// 归一为 ErrRouteOccupied（语义：改名目标路径已被其他页面占用）。
@@ -148,7 +148,7 @@ func (s *Service) Activate(ctx context.Context, req *pubdto.ActivateReq) (res *p
 			// 否则「实例行 page_id 为 NULL」这一半永远匹配不上）。他人时
 			// WHERE 不成立 → 0 行 → occupied。
 			Where:     clause.Where{Exprs: []clause.Expression{owner.ownershipExpr()}},
-			DoUpdates: clause.AssignmentColumns([]string{"route_kind", "artifact_id", "updated_at"}),
+			DoUpdates: clause.AssignmentColumns([]string{"route_kind", "artifact_id", "update_time"}),
 		}).Create(&pubmodel.RouteEntity{
 			ProjectID: req.ProjectID, Path: path,
 			PageID: owner.pageIDPtr(), PresentationID: owner.presentationIDPtr(),
@@ -397,7 +397,7 @@ func (s *Service) Redirect(ctx context.Context, req *pubdto.RedirectReq) (res *p
 			Where(matchSQL, matchArgs...)
 		result := q.Updates(map[string]any{
 			"route_kind": pubmodel.RouteRedirect,
-			"updated_at": now,
+			"update_time": now,
 		})
 		if result.Error != nil {
 			return result.Error

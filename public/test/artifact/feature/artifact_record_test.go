@@ -28,7 +28,7 @@ func newArtifactService(t *testing.T) *artifactservice.Service {
 	// 归档前必须补出真实父行。
 	support.SeedProjectRow(t, db, artifactTestProjectID, "产物测试站点")
 	if err := db.Exec(
-		`INSERT INTO pages (id, project_id, kind, content_target_type, draft_path, draft_document, draft_version, stale, created_at, updated_at)
+		`INSERT INTO pages (id, project_id, kind, content_target_type, draft_path, draft_document, draft_version, stale, create_time, update_time)
 		 VALUES (?, ?, 'home', 'none', ?, '{}'::jsonb, 1, false, NOW(), NOW())`,
 		artifactTestPageID, artifactTestProjectID, "pages/"+artifactTestPageID+"/draft.json",
 	).Error; err != nil {

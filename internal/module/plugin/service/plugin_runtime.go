@@ -178,7 +178,7 @@ func pluginExtraCSS(pluginID, storagePath string) string {
 //
 // 参与计算的每一项都是「变了就必须重建」的：
 //   - plugin_id / version：换了插件或换了版本；
-//   - updated_at：启停与升级都会更新该行；
+//   - update_time：启停与升级都会更新该行；
 //   - storage_path：注册路径被改过；
 //   - 存储目录 mtime：**同版本重装**（覆盖目录内容）时注册行未必变化，
 //     目录 mtime 是这里唯一能观察到它的信号。

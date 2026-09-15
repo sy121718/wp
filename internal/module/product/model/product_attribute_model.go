@@ -26,8 +26,8 @@ type ProductAttributeEntity struct {
 	Sort        int             `gorm:"column:sort;not null"`
 	Values      json.RawMessage `gorm:"column:values;type:jsonb;not null"`
 	Metadata    json.RawMessage `gorm:"column:metadata;type:jsonb;not null"`
-	CreatedAt   time.Time       `gorm:"column:created_at;not null"`
-	UpdatedAt   time.Time       `gorm:"column:updated_at;not null"`
+	CreatedAt   time.Time       `gorm:"column:create_time;not null"`
+	UpdatedAt   time.Time       `gorm:"column:update_time;not null"`
 }
 
 // TableName 实现 gorm 表名。
@@ -70,7 +70,7 @@ func (m *Model) ListAttributes(ctx context.Context, projectID, keyword string, v
 	if variation != nil {
 		q = q.Where("is_variation = ?", *variation)
 	}
-	err = q.Order("sort ASC, created_at ASC").Limit(limit).Offset(offset).Find(&list).Error
+	err = q.Order("sort ASC, create_time ASC").Limit(limit).Offset(offset).Find(&list).Error
 	return list, err
 }
 
@@ -102,7 +102,7 @@ func (m *Model) ListAttributesByIDs(ctx context.Context, ids []string) (list []*
 // ListAttributesByProject 某工程全部属性组（按排序）。
 func (m *Model) ListAttributesByProject(ctx context.Context, projectID string) (list []*ProductAttributeEntity, err error) {
 	err = m.AttributeDB(ctx).Where("project_id = ?", projectID).
-		Order("sort ASC, created_at ASC").Find(&list).Error
+		Order("sort ASC, create_time ASC").Find(&list).Error
 	return list, err
 }
 
@@ -147,6 +147,6 @@ func (m *Model) ProductUsingAttribute(ctx context.Context, attributeID string) (
 	e = &ProductEntity{}
 	err = m.DB(ctx).
 		Where("attribute_ids @> ?::jsonb", string(probe)).
-		Order("sort ASC, created_at ASC").Limit(1).Take(e).Error
+		Order("sort ASC, create_time ASC").Limit(1).Take(e).Error
 	return e, err
 }

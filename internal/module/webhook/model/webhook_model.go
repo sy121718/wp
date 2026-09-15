@@ -22,8 +22,8 @@ type WebhookEndpointEntity struct {
 	SecretCipher string `gorm:"column:secret_cipher;size:512;not null"`
 	Description  string `gorm:"column:description;size:512"`
 	Status       int    `gorm:"column:status;not null;default:1;index"`
-	CreatedAt    int64  `gorm:"column:created_at;not null"`
-	UpdatedAt    int64  `gorm:"column:updated_at;not null"`
+	CreatedAt    int64  `gorm:"column:create_time;not null"`
+	UpdatedAt    int64  `gorm:"column:update_time;not null"`
 }
 
 // TableName 表名。
@@ -39,8 +39,8 @@ type WebhookDeliveryEntity struct {
 	Attempts       int    `gorm:"column:attempts;not null;default:0"`
 	ResponseStatus int    `gorm:"column:response_status"`
 	LastError      string `gorm:"column:last_error;size:1024"`
-	CreatedAt      int64  `gorm:"column:created_at;not null"`
-	UpdatedAt      int64  `gorm:"column:updated_at;not null"`
+	CreatedAt      int64  `gorm:"column:create_time;not null"`
+	UpdatedAt      int64  `gorm:"column:update_time;not null"`
 }
 
 // TableName 表名。

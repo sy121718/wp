@@ -39,8 +39,8 @@ type PurchaseOrderEntity struct {
 	Remark      string          `gorm:"column:remark;type:text;not null"`
 	OperatorID  string          `gorm:"column:operator_id;type:text;not null"`
 	Metadata    json.RawMessage `gorm:"column:metadata;type:jsonb;not null"`
-	CreatedAt   time.Time       `gorm:"column:created_at;not null"`
-	UpdatedAt   time.Time       `gorm:"column:updated_at;not null"`
+	CreatedAt   time.Time       `gorm:"column:create_time;not null"`
+	UpdatedAt   time.Time       `gorm:"column:update_time;not null"`
 }
 
 // TableName 实现 gorm 表名。
@@ -60,8 +60,8 @@ type PurchaseLineEntity struct {
 	Sort             int             `gorm:"column:sort;not null"`
 	Remark           string          `gorm:"column:remark;type:text;not null"`
 	Metadata         json.RawMessage `gorm:"column:metadata;type:jsonb;not null"`
-	CreatedAt        time.Time       `gorm:"column:created_at;not null"`
-	UpdatedAt        time.Time       `gorm:"column:updated_at;not null"`
+	CreatedAt        time.Time       `gorm:"column:create_time;not null"`
+	UpdatedAt        time.Time       `gorm:"column:update_time;not null"`
 }
 
 // TableName 实现 gorm 表名。
@@ -83,7 +83,7 @@ type ReceiptEntity struct {
 	OperatorID      string          `gorm:"column:operator_id;type:text;not null"`
 	ReceivedAt      time.Time       `gorm:"column:received_at;not null"`
 	Metadata        json.RawMessage `gorm:"column:metadata;type:jsonb;not null"`
-	CreatedAt       time.Time       `gorm:"column:created_at;not null"`
+	CreatedAt       time.Time       `gorm:"column:create_time;not null"`
 }
 
 // TableName 实现 gorm 表名。
@@ -102,7 +102,7 @@ type ReceiptItemEntity struct {
 	UnitPrice   float64   `gorm:"column:unit_price;type:numeric(12,2);not null"`
 	CostUpdated bool      `gorm:"column:cost_updated;not null"`
 	CostError   string    `gorm:"column:cost_error;type:text;not null"`
-	CreatedAt   time.Time `gorm:"column:created_at;not null"`
+	CreatedAt   time.Time `gorm:"column:create_time;not null"`
 }
 
 // TableName 实现 gorm 表名。
@@ -133,8 +133,8 @@ type PurchaseOrderRow struct {
 	OperatorID       string     `gorm:"column:operator_id"`
 	TotalQuantity    int        `gorm:"column:total_quantity"`
 	ReceivedQuantity int        `gorm:"column:received_quantity"`
-	CreatedAt        time.Time  `gorm:"column:created_at"`
-	UpdatedAt        time.Time  `gorm:"column:updated_at"`
+	CreatedAt        time.Time  `gorm:"column:create_time"`
+	UpdatedAt        time.Time  `gorm:"column:update_time"`
 }
 
 // HistoryFilter 进货历史查询条件（维度是 SKU，可按货源 / 采购单收窄）。
@@ -227,7 +227,7 @@ func (m *Model) UpdatePurchaseOrderTx(ctx context.Context, tx *gorm.DB, e *Purch
 // UpdatePurchaseOrderStatusTx 在给定事务内写回推导出的状态（只动状态与时间戳两列）。
 func (m *Model) UpdatePurchaseOrderStatusTx(ctx context.Context, tx *gorm.DB, id, status string, at time.Time) (err error) {
 	return tx.WithContext(ctx).Model(&PurchaseOrderEntity{}).Where("id = ?", id).
-		Updates(map[string]any{"status": status, "updated_at": at}).Error
+		Updates(map[string]any{"status": status, "update_time": at}).Error
 }
 
 // applyPurchaseOrderFilter 把查询条件施加到采购单查询上（条件以参数传入）。
@@ -252,7 +252,7 @@ func applyPurchaseOrderFilter(q *gorm.DB, f PurchaseOrderFilter) *gorm.DB {
 func (m *Model) purchaseOrderRows(ctx context.Context) *gorm.DB {
 	return m.db.WithContext(ctx).Table("inventory_purchase_orders AS o").
 		Select("o.id, o.project_id, o.code, o.source_id, o.warehouse_id, o.status, " +
-			"o.ordered_at, o.expected_at, o.remark, o.operator_id, o.created_at, o.updated_at, " +
+			"o.ordered_at, o.expected_at, o.remark, o.operator_id, o.create_time, o.update_time, " +
 			"s.name AS source_name, s.type AS source_type, w.name AS warehouse_name, " +
 			"COALESCE(agg.total_quantity, 0) AS total_quantity, " +
 			"COALESCE(agg.received_quantity, 0) AS received_quantity").
@@ -292,14 +292,14 @@ func (m *Model) purchaseLineDB(ctx context.Context) *gorm.DB {
 // ListPurchaseLines 某采购单的全部采购行（按排序号 → 创建时间：显示顺序确定）。
 func (m *Model) ListPurchaseLines(ctx context.Context, orderID string) (list []*PurchaseLineEntity, err error) {
 	err = m.purchaseLineDB(ctx).Where("order_id = ?", orderID).
-		Order("sort ASC, created_at ASC").Find(&list).Error
+		Order("sort ASC, create_time ASC").Find(&list).Error
 	return list, err
 }
 
 // ListPurchaseLinesTx 事务内取某采购单的行（登记入库时在锁内读，读到的是最新已入库数量）。
 func (m *Model) ListPurchaseLinesTx(ctx context.Context, tx *gorm.DB, orderID string) (list []*PurchaseLineEntity, err error) {
 	err = tx.WithContext(ctx).Model(&PurchaseLineEntity{}).Where("order_id = ?", orderID).
-		Order("sort ASC, created_at ASC").Find(&list).Error
+		Order("sort ASC, create_time ASC").Find(&list).Error
 	return list, err
 }
 
@@ -309,7 +309,7 @@ func (m *Model) ListPurchaseLinesByOrders(ctx context.Context, orderIDs []string
 		return nil, nil
 	}
 	err = m.purchaseLineDB(ctx).Where("order_id IN ?", orderIDs).
-		Order("order_id ASC, sort ASC, created_at ASC").Find(&list).Error
+		Order("order_id ASC, sort ASC, create_time ASC").Find(&list).Error
 	return list, err
 }
 
@@ -341,7 +341,7 @@ func (m *Model) IncrPurchaseLineReceivedTx(ctx context.Context, tx *gorm.DB, lin
 		Where("id = ? AND received_quantity + ? <= quantity", lineID, delta).
 		Updates(map[string]any{
 			"received_quantity": gorm.Expr("received_quantity + ?", delta),
-			"updated_at":        at,
+			"update_time":        at,
 		})
 	return res.RowsAffected, res.Error
 }
@@ -352,7 +352,7 @@ func (m *Model) DecrPurchaseLineReceivedTx(ctx context.Context, tx *gorm.DB, lin
 		Where("id = ? AND received_quantity >= ?", lineID, delta).
 		Updates(map[string]any{
 			"received_quantity": gorm.Expr("received_quantity - ?", delta),
-			"updated_at":        at,
+			"update_time":        at,
 		})
 	return res.RowsAffected, res.Error
 }
@@ -418,7 +418,7 @@ func (m *Model) FindReceiptByRequestID(ctx context.Context, projectID, requestID
 // ListReceiptItems 某入库单的全部入库行（按创建时间：顺序确定）。
 func (m *Model) ListReceiptItems(ctx context.Context, receiptID string) (list []*ReceiptItemEntity, err error) {
 	err = m.db.WithContext(ctx).Model(&ReceiptItemEntity{}).Where("receipt_id = ?", receiptID).
-		Order("created_at ASC, id ASC").Find(&list).Error
+		Order("create_time ASC, id ASC").Find(&list).Error
 	return list, err
 }
 
@@ -459,7 +459,7 @@ func applyHistoryFilter(q *gorm.DB, f HistoryFilter) *gorm.DB {
 
 // ListHistoryRows 进货历史列表（按 SKU / 货源 / 采购单过滤 + 分页）。
 func (m *Model) ListHistoryRows(ctx context.Context, f HistoryFilter, limit, offset int) (list []*PurchaseHistoryRow, err error) {
-	q := applyHistoryFilter(m.historyRows(ctx), f).Order("r.received_at DESC, i.created_at DESC, i.id DESC")
+	q := applyHistoryFilter(m.historyRows(ctx), f).Order("r.received_at DESC, i.create_time DESC, i.id DESC")
 	if limit > 0 {
 		q = q.Limit(limit).Offset(offset)
 	}

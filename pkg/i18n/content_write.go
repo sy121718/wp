@@ -16,7 +16,7 @@ package i18n
 //
 // 幂等：唯一键 (project_id, source_hash, context, lang)（迁移 195 取代 066 的主键，
 // NULLS NOT DISTINCT），写入用 ON CONFLICT DO UPDATE，同一条重复保存只更新不新增
-//（updated_at 推进，ContentRevision 随之变化）。
+//（update_time 推进，ContentRevision 随之变化）。
 //
 // 工程作用域（审计 I18N-009）：ContentWriteItem.ProjectID 为空 = 全局共享行
 //（project_id IS NULL，066 既有行的语义）；非空 = 仅该工程使用。
@@ -115,27 +115,27 @@ type contentTranslationEntity struct {
 	SourceText string    `gorm:"column:source_text"`
 	TargetText string    `gorm:"column:target_text"`
 	Engine     string    `gorm:"column:engine"`
-	UpdatedAt  time.Time `gorm:"column:updated_at"`
+	UpdatedAt  time.Time `gorm:"column:update_time"`
 }
 
 // TableName 绑定 sys_translation（066 迁移）。
 func (contentTranslationEntity) TableName() string { return "sys_translation" }
 
 // contentTranslationDetailQuery 工作台读取形态（无工程上下文）：在 (source_hash, lang)
-// 索引上多取 engine 与 updated_at 两列，作用域规则与构建期一致（全局行优先；
+// 索引上多取 engine 与 update_time 两列，作用域规则与构建期一致（全局行优先；
 // 同一 (hash, context) 只回一行，理由见 content_store.go 的同名说明）。
-const contentTranslationDetailQuery = `SELECT DISTINCT ON (source_hash, context) source_hash, context, target_text, engine, updated_at
+const contentTranslationDetailQuery = `SELECT DISTINCT ON (source_hash, context) source_hash, context, target_text, engine, update_time
 FROM sys_translation
 WHERE source_hash = ANY($1) AND lang = $2
-ORDER BY source_hash, context, (project_id IS NULL) DESC, updated_at DESC`
+ORDER BY source_hash, context, (project_id IS NULL) DESC, update_time DESC`
 
 // contentTranslationDetailProjectQuery 工作台读取形态（工程作用域，审计 I18N-009）：
 // 与构建期同一条作用域规则（工程行优先、回落全局行），只是投影多两列。
 // $3 = uuid（当前工程）。
-const contentTranslationDetailProjectQuery = `SELECT DISTINCT ON (source_hash, context) source_hash, context, target_text, engine, updated_at
+const contentTranslationDetailProjectQuery = `SELECT DISTINCT ON (source_hash, context) source_hash, context, target_text, engine, update_time
 FROM sys_translation
 WHERE source_hash = ANY($1) AND lang = $2 AND (project_id IS NULL OR project_id = $3::uuid)
-ORDER BY source_hash, context, (project_id IS NOT NULL) DESC, updated_at DESC`
+ORDER BY source_hash, context, (project_id IS NOT NULL) DESC, update_time DESC`
 
 // contentTranslationDetailRow 明细查询投影。
 type contentTranslationDetailRow struct {
@@ -143,7 +143,7 @@ type contentTranslationDetailRow struct {
 	Context    string    `gorm:"column:context"`
 	TargetText string    `gorm:"column:target_text"`
 	Engine     string    `gorm:"column:engine"`
-	UpdatedAt  time.Time `gorm:"column:updated_at"`
+	UpdatedAt  time.Time `gorm:"column:update_time"`
 }
 
 // ContentWriter sys_translation 写入器（工作台与未来的 AI 译文共用同一写入路径）。
@@ -179,7 +179,7 @@ func (w *ContentWriter) LoadTargetsForProject(ctx context.Context, projectID, la
 	return loadContentTargets(ctx, w.db, projectID, lang, hashes)
 }
 
-// LoadDetails 按 (hashes, lang) 批量取译文明细（含 engine / updated_at）。
+// LoadDetails 按 (hashes, lang) 批量取译文明细（含 engine / update_time）。
 //
 // 与 LoadTargets 的差别只有投影多两列，查询条件与索引完全相同；
 // 供工作台渲染来源徽章、以及「保存是否真的改变了产物」的判定。
@@ -246,7 +246,7 @@ func (w *ContentWriter) Upsert(ctx context.Context, items []ContentWriteItem) (w
 	}
 	if err = w.db.WithContext(ctx).Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "project_id"}, {Name: "source_hash"}, {Name: "context"}, {Name: "lang"}},
-		DoUpdates: clause.AssignmentColumns([]string{"source_text", "target_text", "engine", "updated_at"}),
+		DoUpdates: clause.AssignmentColumns([]string{"source_text", "target_text", "engine", "update_time"}),
 	}).Create(&rows).Error; err != nil {
 		return 0, err
 	}

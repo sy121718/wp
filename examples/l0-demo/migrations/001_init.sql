@@ -4,5 +4,5 @@ CREATE SCHEMA IF NOT EXISTS plugin_l0demo;
 CREATE TABLE IF NOT EXISTS plugin_l0demo.demo_records (
     id   bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     name text NOT NULL,
-    created_at timestamptz NOT NULL DEFAULT now()
+    create_time timestamptz NOT NULL DEFAULT now()
 );

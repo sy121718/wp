@@ -655,7 +655,7 @@ func TestInventoryPermissionsAndMenusSeeded(t *testing.T) {
 			t.Fatalf("权限点 %s 应已 seed，实际 %d 条", code, hit)
 		}
 	}
-	if err := f.db.Raw("SELECT COUNT(*) FROM sys_menus WHERE type = 2 AND title = '库存管理' AND deleted_time IS NULL").Scan(&n).Error; err != nil {
+	if err := f.db.Raw("SELECT COUNT(*) FROM sys_menus WHERE type = 2 AND title = '库存管理' AND deleted_at IS NULL").Scan(&n).Error; err != nil {
 		t.Fatalf("查询菜单失败: %v", err)
 	}
 	if n != 1 {

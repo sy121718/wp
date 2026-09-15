@@ -6,7 +6,7 @@ package contentservice
 //   · 可翻译字段在 contract 里**单处声明**（IsTranslatableField），不在这里再列一份；
 //   · 构建期按 lang **一次预载**译文再回填 —— 逐个字段查会按字段数放大成 N 次 SQL，
 //     而内容详情页构建时每个绑定字段都会走这条路；
-//   · 改译文触发 stale：sys_translation 的 updated_at 推进 ContentRevision，
+//   · 改译文触发 stale：sys_translation 的 update_time 推进 ContentRevision，
 //     构建期的依赖比对随之失效（依赖追踪与商品域同一套，无需另接）。
 //
 // 只处理**字符串字段**：contents.data 是 JSONB，值可能是数组 / 对象 / 数字。
