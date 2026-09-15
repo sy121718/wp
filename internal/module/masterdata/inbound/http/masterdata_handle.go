@@ -35,7 +35,7 @@ func (h *Handle) ListChanges(c *gin.Context) {
 	}
 	list, err := h.svc.ListChanges(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "masterdata", err)
 		return
 	}
 	response.SuccessWithMessage(c, masterdataenums.MsgListSuccess, list)
@@ -50,7 +50,7 @@ func (h *Handle) CountChanges(c *gin.Context) {
 	}
 	total, err := h.svc.CountChanges(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "masterdata", err)
 		return
 	}
 	response.SuccessWithMessage(c, masterdataenums.MsgListSuccess, gin.H{"total": total})
@@ -65,7 +65,7 @@ func (h *Handle) ListEntities(c *gin.Context) {
 	}
 	list, err := h.svc.ListEntities(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "masterdata", err)
 		return
 	}
 	response.SuccessWithMessage(c, masterdataenums.MsgListSuccess, list)
@@ -80,7 +80,7 @@ func (h *Handle) EntityTimeline(c *gin.Context) {
 	}
 	res, err := h.svc.EntityTimeline(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "masterdata", err)
 		return
 	}
 	response.SuccessWithMessage(c, masterdataenums.MsgListSuccess, res)

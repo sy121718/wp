@@ -24,7 +24,7 @@
 	width: 100%;
 	min-height: 44px;
 	padding: 8px 12px;
-	border: 1px solid #d1d5db;
+	border: 1px solid var(--sky-c-border, #d1d5db);
 	border-radius: 8px;
 	font: inherit;
 }
@@ -34,7 +34,7 @@
 	padding: 8px 16px;
 	border: 0;
 	border-radius: 8px;
-	background: #111827;
+	background: var(--sky-c-primary, #111827);
 	color: #fff;
 	font: inherit;
 	cursor: pointer;
@@ -46,7 +46,7 @@
 
 & .sky-search-notice {
 	margin: 0;
-	color: #6b7280;
+	color: var(--sky-c-muted, #6b7280);
 }
 
 & .sky-search-sr {
@@ -61,8 +61,9 @@
 	border: 0;
 }
 
-@media (hover: hover) {
-	& .sky-search-submit:hover {
-		background: #374151;
-	}
+/* 悬停形态必须走 @hover 指令而不是字面 @media (hover: hover)：
+   样式源解析器只认 max-width 断点（桌面优先），字面媒体查询会直接构建期报错；
+   而 @hover 由构建期统一包 hover 媒体查询，触屏上不输出粘滞悬停态。 */
+@hover & .sky-search-submit:hover {
+	background: var(--sky-c-primary-strong, #374151);
 }

@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"go_wp/internal/builder/core"
+	"go_wp/internal/builder/source"
 	"go_wp/internal/builder/style"
 )
 
@@ -300,7 +301,7 @@ func BuildSpecs(m *Manifest) map[string]*core.PluginComponentSpec {
 		}
 		if comp.Styles != nil && len(comp.Styles.Rules) > 0 {
 			styles := comp.Styles
-			spec.CompileStyles = func(nodeID string, props map[string]any, b *core.CSSBuckets) error {
+			spec.CompileStyles = func(nodeID string, props map[string]any, b source.StyleSink) error {
 				return style.Compile(nodeID, props, styles, b)
 			}
 		}

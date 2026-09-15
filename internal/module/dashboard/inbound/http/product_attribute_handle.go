@@ -29,7 +29,7 @@ func (h *productPageHandle) ProductAttributesPage(c *gin.Context) {
 	ctx := c.Request.Context()
 	projects, err := h.projects.List(ctx)
 	if err != nil {
-		c.String(http.StatusInternalServerError, err.Error())
+		pageError(c, "product_attribute", err)
 		return
 	}
 	selected := strings.TrimSpace(c.Query("project"))
@@ -40,7 +40,7 @@ func (h *productPageHandle) ProductAttributesPage(c *gin.Context) {
 	if selected != "" {
 		list, lerr := h.products.ListAttributes(ctx, &productdto.ListAttributeReq{ProjectID: selected, Size: 200})
 		if lerr != nil {
-			c.String(http.StatusInternalServerError, lerr.Error())
+			pageError(c, "product_attribute", lerr)
 			return
 		}
 		for _, a := range list {

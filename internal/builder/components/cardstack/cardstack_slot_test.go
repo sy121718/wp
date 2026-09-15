@@ -43,7 +43,8 @@ func articleProps() *Props {
 // TestCollectionListPageLinkFollowsSiteSlot 文章集合按 blog 槽位取路径。
 func TestCollectionListPageLinkFollowsSiteSlot(t *testing.T) {
 	p := articleProps()
-	ctx := &core.RenderContext{Collection: fakeCollection{}, SitePages: map[string]string{siteSlotBlog: "/blog/"}}
+	ctx := &core.RenderContext{Collection: fakeCollection{}}
+	ctx.SetSitePages(map[string]string{siteSlotBlog: "/blog/"})
 	view, err := BuildView(nodeOf(nil, 0), p, ctx)
 	if err != nil {
 		t.Fatalf("BuildView: %v", err)
@@ -60,7 +61,8 @@ func TestCollectionListPageLinkFollowsSiteSlot(t *testing.T) {
 func TestCollectionListPageLinkAuthorText(t *testing.T) {
 	p := articleProps()
 	p.ListPageLink = "看全部文章"
-	ctx := &core.RenderContext{Collection: fakeCollection{}, SitePages: map[string]string{siteSlotBlog: "/blog/"}}
+	ctx := &core.RenderContext{Collection: fakeCollection{}}
+	ctx.SetSitePages(map[string]string{siteSlotBlog: "/blog/"})
 	view, err := BuildView(nodeOf(nil, 0), p, ctx)
 	if err != nil {
 		t.Fatalf("BuildView: %v", err)
@@ -76,9 +78,9 @@ func TestCollectionListPageLinkAuthorText(t *testing.T) {
 // TestCollectionListPageLinkDegrades 槽位缺失 / 未发布 / 集合源无对应系统页面 → 不输出链接。
 func TestCollectionListPageLinkDegrades(t *testing.T) {
 	cases := []struct {
-		name   string
-		p      *Props
-		pages  map[string]string
+		name  string
+		p     *Props
+		pages map[string]string
 	}{
 		{"槽位未绑定或未发布", articleProps(), map[string]string{}},
 		{"只有别的槽位", articleProps(), map[string]string{siteSlotShop: "/shop/"}},
@@ -86,7 +88,8 @@ func TestCollectionListPageLinkDegrades(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			ctx := &core.RenderContext{Collection: fakeCollection{}, SitePages: tc.pages}
+			ctx := &core.RenderContext{Collection: fakeCollection{}}
+			ctx.SetSitePages(tc.pages)
 			view, err := BuildView(nodeOf(nil, 0), tc.p, ctx)
 			if err != nil {
 				t.Fatalf("BuildView: %v", err)
@@ -100,7 +103,8 @@ func TestCollectionListPageLinkDegrades(t *testing.T) {
 
 	// 商品集合在商品槽位缺失时同理。
 	pp := &Props{CollectionSource: collectionSourceProduct, CollectionLimit: 1}
-	ctx := &core.RenderContext{Collection: fakeProductCollection{}, SitePages: map[string]string{}}
+	ctx := &core.RenderContext{Collection: fakeProductCollection{}}
+	ctx.SetSitePages(map[string]string{})
 	view, err := BuildView(nodeOf(nil, 0), pp, ctx)
 	if err != nil {
 		t.Fatalf("BuildView(product): %v", err)
@@ -113,7 +117,8 @@ func TestCollectionListPageLinkDegrades(t *testing.T) {
 // TestCollectionListPageLinkProductSlot 商品集合按 shop 槽位取路径，缺省文案「全部商品」。
 func TestCollectionListPageLinkProductSlot(t *testing.T) {
 	p := &Props{CollectionSource: collectionSourceProduct, CollectionLimit: 1}
-	ctx := &core.RenderContext{Collection: fakeProductCollection{}, SitePages: map[string]string{siteSlotShop: "/products/"}}
+	ctx := &core.RenderContext{Collection: fakeProductCollection{}}
+	ctx.SetSitePages(map[string]string{siteSlotShop: "/products/"})
 	view, err := BuildView(nodeOf(nil, 0), p, ctx)
 	if err != nil {
 		t.Fatalf("BuildView: %v", err)
@@ -129,7 +134,8 @@ func TestCollectionListPageLinkProductSlot(t *testing.T) {
 // TestCollectionListPageLinkNonCollection 静态卡片（非集合）不输出列表页入口：
 // 它不是「列表」，给列表页入口没有语义。
 func TestCollectionListPageLinkNonCollection(t *testing.T) {
-	ctx := &core.RenderContext{Collection: fakeCollection{}, SitePages: map[string]string{siteSlotBlog: "/blog/"}}
+	ctx := &core.RenderContext{Collection: fakeCollection{}}
+	ctx.SetSitePages(map[string]string{siteSlotBlog: "/blog/"})
 	view, err := BuildView(nodeOf(nil, 3), &Props{}, ctx)
 	if err != nil {
 		t.Fatalf("BuildView: %v", err)

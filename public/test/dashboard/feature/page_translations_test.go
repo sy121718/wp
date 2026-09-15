@@ -32,6 +32,7 @@ import (
 	projectservice "go_wp/internal/module/project/service"
 	"go_wp/internal/templates"
 	"go_wp/pkg/i18n"
+	"go_wp/pkg/response"
 	"go_wp/public/migrations"
 	"go_wp/public/test/support"
 
@@ -73,7 +74,7 @@ func newTranslationEnv(t *testing.T) (*gin.Engine, *dashboardhttp.Handle, *gorm.
 	pageID := "aaaaaaaa-0000-0000-0000-000000000001"
 	insertTranslationPage(t, db, pageID, project.ID, "/about", p5cPageDoc)
 
-	pages := pageservice.NewService(pagemodel.NewPageModel(db), nil, nil, nil, nil, nil, nil, nil, nil)
+	pages := pageservice.NewService(pagemodel.NewPageModel(db), nil, nil, projects, nil, nil, nil, nil, nil)
 	handle := dashboardhttp.NewHandle(pages, projects, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	handle.SetContentTranslationStore(i18n.NewContentWriter(db))
 
@@ -133,7 +134,16 @@ func pageStale(t *testing.T, db *gorm.DB, id string) bool {
 func getTranslationPage(t *testing.T, router *gin.Engine, pageID, lang string) string {
 	t.Helper()
 	recorder := httptest.NewRecorder()
-	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/admin/page/translations?pageId="+pageID+"&lang="+lang, nil))
+	req := httptest.NewRequest(http.MethodGet, "/admin/page/translations?pageId="+pageID+"&lang="+lang, nil)
+	// 界面语言显式钉成中文（Cookie 优先级最高，协商顺序见 pkg/response.requestLanguage）。
+	// 背景：本会话把后台模板全面 t() 化（admin.* 词条，迁移 192/195）之后，界面语言改按请求协商，
+	// 而本 URL 上的 lang=en-US 是**翻译目标语言**，会被协商一并当成界面语言 —— 词条缓存已加载时
+	// （整包跑，前面的测试初始化过 i18n）工作台整页渲染成英文，「本页完成度 0 / 3」这类中文断言即失败；
+	// 单独跑该测试时缓存未加载、t 退回模板内中文，断言反而是绿的。
+	// 钉住 Cookie 之后断言与词条缓存状态、测试执行顺序都无关；中文词条值（迁移 192）与模板 fallback
+	// 逐字一致（含「本页完成度 」的尾空格），断言文本因此无需改动。
+	req.AddCookie(&http.Cookie{Name: response.LangCookieName, Value: "zh-CN"})
+	router.ServeHTTP(recorder, req)
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("GET 工作台 -> %d：%s", recorder.Code, recorder.Body.String())
 	}

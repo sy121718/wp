@@ -32,7 +32,13 @@ func TestHighlightPath(t *testing.T) {
 // TestAppendContentTranslationDefaultLangSkips 默认语言不注入 ContentTranslator。
 func TestAppendContentTranslationDefaultLangSkips(t *testing.T) {
 	page := &builder.Page{Root: []*core.Node{{ID: "t", Type: "core.text", Props: json.RawMessage(`{"text":"hello"}`)}}}
-	opts, tr, n := AppendContentTranslation(nil, context.Background(), nil, "p1", "zh-CN", page, nil, i18n.NewContentTranslator)
+	// 工厂现在是 4 参（ctx, projectID, lang, hashes）—— 加 projectID 是为了让取词按工程隔离
+	// （审计 I18N-009：本工程行优先、未命中回落全局行）。这里用 NewContentTranslatorScoped
+	// 把工程作用域接上，而不是传旧的 3 参函数：后者编译不过，且传 nil 的形态会掩盖作用域参数。
+	factory := func(ctx context.Context, projectID, lang string, hashes []string) *i18n.ContentTranslator {
+		return i18n.NewContentTranslatorScoped(ctx, projectID, nil, lang, hashes)
+	}
+	opts, tr, n := AppendContentTranslation(nil, context.Background(), nil, "p1", "zh-CN", page, nil, factory)
 	if tr != nil || n != 0 || len(opts) != 0 {
 		t.Fatalf("default lang should skip translation: tr=%v n=%d opts=%d", tr, n, len(opts))
 	}

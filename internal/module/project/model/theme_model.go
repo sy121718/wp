@@ -37,11 +37,15 @@ func (m *Model) ListThemes(ctx context.Context, projectID string) (list []ThemeE
 	return list, err
 }
 
-// ListThemesByBlockID 列出页眉/页脚槽位绑定了指定全局块的全部主题。
+// ListThemesByBlockID 列出**任意结构槽位**绑定了指定全局块的全部主题。
 // 用于全局块内容变更后的 stale 传播（调用方逐主题标记页面待重建）。
 func (m *Model) ListThemesByBlockID(ctx context.Context, blockID string) (list []ThemeEntity, err error) {
 	err = m.ThemeDB(ctx).
-		Where("settings->>'headerBlockId' = ? OR settings->>'footerBlockId' = ?", blockID, blockID).
+		// 覆盖两个历史字段与 slots 里的任意槽位：漏掉 slots 的表现是「改了公告条引用的块，
+		// 页面不会被标记待重建」，站点上一直显示旧公告 —— 而且没有任何报错。
+		Where("settings->>'headerBlockId' = ? OR settings->>'footerBlockId' = ?"+
+			" OR EXISTS (SELECT 1 FROM jsonb_each_text(COALESCE(settings->'slots', '{}'::jsonb)) AS e(k, v) WHERE e.v = ?)",
+			blockID, blockID, blockID).
 		Order("created_at ASC").Find(&list).Error
 	return list, err
 }

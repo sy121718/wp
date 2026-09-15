@@ -38,7 +38,7 @@ type View struct {
 }
 
 // BuildView 生成列表渲染视图：repeater items + 前缀（图标/序号/圆点）预计算。
-func BuildView(p *Props) View {
+func BuildView(p *Props, siteLink func(string) string) View {
 	style := p.Style
 	if style == "" {
 		style = StyleIcon
@@ -60,7 +60,8 @@ func BuildView(p *Props) View {
 		}
 		if strings.TrimSpace(item.Link) != "" {
 			iv.IsLink = true
-			iv.LinkHref = item.Link
+			// 站内链接本地化（审计 I18N-015）。
+			iv.LinkHref = core.SiteLinkOrSame(siteLink, item.Link)
 		}
 		items = append(items, iv)
 	}

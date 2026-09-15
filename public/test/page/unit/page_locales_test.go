@@ -66,11 +66,12 @@ func TestPageRoutesRegisteredPerLocale(t *testing.T) {
 	}
 
 	// 两语言各自构建 + 发布：各自 active 行。
-	zh, err := svc.Build(ctx, &pagedto.BuildReq{ID: page.ID})
+	// 构建返回值不必留存：激活的产物以 page_artifacts 为准（见下方断言）。
+	_, err := svc.Build(ctx, &pagedto.BuildReq{ID: page.ID})
 	if err != nil {
 		t.Fatalf("zh 构建失败: %v", err)
 	}
-	en, err := svc.Build(ctx, &pagedto.BuildReq{ID: page.ID, Lang: "en-US"})
+	_, err = svc.Build(ctx, &pagedto.BuildReq{ID: page.ID, Lang: "en-US"})
 	if err != nil {
 		t.Fatalf("en 构建失败: %v", err)
 	}
@@ -86,11 +87,22 @@ func TestPageRoutesRegisteredPerLocale(t *testing.T) {
 	if kind := routeKind(t, db, projectID, "/en/about-us"); kind != pubmodel.RouteActive {
 		t.Fatalf("/en/about-us 应 active，实际 %q", kind)
 	}
-	if hash := activeRouteArtifactHash(t, db, projectID, "/about-us"); hash != zh.StagedHash {
-		t.Fatalf("zh 路由产物错误: %s", hash)
+	// 期望值取产物表：多语言逐个发布时，后发布语言会让先前构建的产物「落后于
+	// 站点级状态」，发布时会按当前草稿重新构建并落新行 —— 路由指向的是最新那份。
+	var arts []struct{ Lang, ArtifactHash string }
+	if err := db.Raw("SELECT lang, artifact_hash FROM page_artifacts WHERE page_id = ? ORDER BY lang", page.ID).
+		Scan(&arts).Error; err != nil {
+		t.Fatalf("查询产物行失败: %v", err)
 	}
-	if hash := activeRouteArtifactHash(t, db, projectID, "/en/about-us"); hash != en.StagedHash {
-		t.Fatalf("en 路由产物错误: %s", hash)
+	latest := map[string]string{}
+	for _, a := range arts {
+		latest[a.Lang] = a.ArtifactHash
+	}
+	if hash := activeRouteArtifactHash(t, db, projectID, "/about-us"); hash != latest["zh-CN"] {
+		t.Fatalf("zh 路由产物错误: %s（期望 %s）", hash, latest["zh-CN"])
+	}
+	if hash := activeRouteArtifactHash(t, db, projectID, "/en/about-us"); hash != latest["en-US"] {
+		t.Fatalf("en 路由产物错误: %s（期望 %s）", hash, latest["en-US"])
 	}
 
 	// 删除页面：全部语言占用释放。

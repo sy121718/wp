@@ -61,7 +61,7 @@ export function schemaField(ctx, ctl) {
     // 集合字段下拉（内置组件的集合绑定）：选项来自后端字段白名单。
     if (ctl.kind === 'collectionfield') { collectionFieldControl(ctx, label, path); return; }
     // 内容字段绑定（heading/text/image 的 binding.field）：item.* 取当前卡片项，<type>.* 取页面内容。
-    if (ctl.kind === 'bindingfield') { bindingFieldControl(ctx, label, path); return; }
+    if (ctl.kind === 'bindingfield') { bindingFieldControl(ctx, label, path, ctl); return; }
     if (ctl.kind === 'select') {
         // 选项归一为 [value, label]：ct tag 已声明中文标签时优先。
         var opts = (ctl.options || []).map(function (o) {
@@ -183,7 +183,7 @@ function collectionFieldControl(ctx, label, path) {
  *   <类型>.<字段> 页面内容（contenttemplate/presentation 路径）
  * 前缀写错会绕过白名单，所以这里不给输入框。
  */
-function bindingFieldControl(ctx, label, path) {
+function bindingFieldControl(ctx, label, path, ctl) {
     var wrap = document.createElement('div'); wrap.className = 'wb-field';
     var cap = document.createElement('label'); cap.textContent = label; wrap.appendChild(cap);
     ctx.panel.appendChild(wrap);
@@ -192,18 +192,30 @@ function bindingFieldControl(ctx, label, path) {
     holder.textContent = '字段载入中…';
     wrap.appendChild(holder);
 
+    // prefixes 来自组件 ct tag（审计 EDT-006）：详情页组件只列 product.*，
+    // 卡片 / 列表列 item.* 与 product.*。两类前缀混在一张下拉里时，
+    // 作者得自己记住哪个槽位能用哪一类 —— 记错的后果要等保存或构建才暴露。
+    var prefixes = (ctl && ctl.prefixes && ctl.prefixes.length) ? ctl.prefixes : null;
+    var accepts = function (prefix) { return !prefixes || prefixes.indexOf(prefix) >= 0; };
+
     loadCollections(function (list) {
         var options = [['', '（不使用）']];
         (list || []).forEach(function (c) {
             var type = String(c.Source || '').replace('content:', '');
             var fields = (c.Fields || []).slice();
             if (fields.indexOf('slug') < 0) fields.push('slug');
-            fields.forEach(function (f) {
-                options.push(['item.' + f, '当前卡片项 · ' + f]);
-            });
-            fields.forEach(function (f) {
-                options.push([type + '.' + f, (c.Label || type) + ' · ' + f]);
-            });
+            if (accepts('item')) {
+                fields.forEach(function (f) {
+                    options.push(['item.' + f, '当前卡片项 · ' + f]);
+                });
+            }
+            // 按**本次渲染到的类型**判定，而不是按前缀名硬编码：
+            // 数据源类型是注册出来的（product / article / category…），写死一份迟早漂移。
+            if (accepts(type)) {
+                fields.forEach(function (f) {
+                    options.push([type + '.' + f, (c.Label || type) + ' · ' + f]);
+                });
+            }
         });
         holder.textContent = '';
         holder.className = '';
@@ -211,6 +223,16 @@ function bindingFieldControl(ctx, label, path) {
             key: path, label: label,
             onChange: function (v) { commit(ctx, path, v); }
         }).root);
+        // 手动输入兜底：数据源未注册或接口不可用时下拉是空的，没有兜底就等于
+        // 「组件配不出来」；而字段白名单由服务端 ValidateFieldRefs 与构建期解析器
+        // 两道校验守住，下拉只是让常见情况不必记字段名。
+        var manual = document.createElement('input');
+        manual.type = 'text';
+        manual.className = 'wb-input';
+        manual.placeholder = '或手动输入字段路径';
+        manual.value = get(ctx, path) || '';
+        manual.addEventListener('change', function () { commit(ctx, path, manual.value.trim()); });
+        wrap.appendChild(manual);
     });
 }
 

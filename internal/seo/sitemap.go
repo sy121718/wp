@@ -2,8 +2,11 @@ package seo
 
 import (
 	"encoding/xml"
+	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -56,6 +59,35 @@ type linkNode struct {
 // xhtmlNamespace sitemap 语言互指所需命名空间。
 const xhtmlNamespace = "http://www.w3.org/1999/xhtml"
 
+// sitemapNamespace sitemap 协议命名空间（urlset 与 sitemapindex 共用）。
+const sitemapNamespace = "http://www.sitemaps.org/schemas/sitemap/0.9"
+
+// SitemapFileName 站点 sitemap 的主文件名：小站是 sitemap 本体，大站是分片索引。
+const SitemapFileName = "sitemap.xml"
+
+// SitemapShardLimit 单个 sitemap 文件的 URL 上限（审计 SEO-011）。
+//
+// sitemap 协议上限是 5 万条 URL / 50MB，这里取 1 万留余量：多语言站点单条 URL
+// 还要带 xhtml:link 互指，条目文本比单语言长几倍 —— 贴着 5 万写会先撞 50MB
+// 而不是 5 万条，而超限的后果是整份 sitemap 被搜索引擎丢弃。
+const SitemapShardLimit = 10000
+
+// SitemapShardName 分片文件名（i 从 1 开始）：sitemap-1.xml、sitemap-2.xml……
+func SitemapShardName(i int) string {
+	return fmt.Sprintf("sitemap-%d.xml", i)
+}
+
+// sitemapIndexDoc / sitemapIndexNode sitemap 索引的 XML 结构。
+type sitemapIndexDoc struct {
+	XMLName  xml.Name           `xml:"sitemapindex"`
+	Xmlns    string             `xml:"xmlns,attr"`
+	Sitemaps []sitemapIndexNode `xml:"sitemap"`
+}
+
+type sitemapIndexNode struct {
+	Loc string `xml:"loc"`
+}
+
 // JoinURL 拼接站点基础 URL 与路径（path 以 / 开头）。
 func JoinURL(baseURL, path string) string {
 	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
@@ -70,22 +102,8 @@ func JoinURL(baseURL, path string) string {
 
 // BuildSitemap 生成 sitemap.xml 内容（条目按 Loc 升序，确定性输出）。
 func BuildSitemap(entries []SitemapEntry) (string, error) {
-	sorted := make([]SitemapEntry, 0, len(entries))
-	seen := map[string]bool{}
-	for _, e := range entries {
-		if strings.TrimSpace(e.Loc) == "" || seen[e.Loc] {
-			continue
-		}
-		seen[e.Loc] = true
-		sorted = append(sorted, e)
-	}
-	// 简单插入排序：URL 数量级（站点页面数）下足够，且避免引入 sort 依赖差异。
-	for i := 1; i < len(sorted); i++ {
-		for j := i; j > 0 && sorted[j].Loc < sorted[j-1].Loc; j-- {
-			sorted[j], sorted[j-1] = sorted[j-1], sorted[j]
-		}
-	}
-	set := urlSet{Xmlns: "http://www.sitemaps.org/schemas/sitemap/0.9"}
+	sorted := normalizeEntries(entries)
+	set := urlSet{Xmlns: sitemapNamespace}
 	for _, e := range sorted {
 		node := urlNode{
 			Loc: e.Loc, LastMod: e.LastMod, ChangeFreq: e.ChangeFreq, Priority: e.Priority,
@@ -130,6 +148,11 @@ func BuildRobots(baseURL, sitemapPath string) string {
 }
 
 // WriteSiteFiles 把 sitemap.xml 与 robots.txt 写入 dir（覆盖写，原子性由调用方保证）。
+//
+// 分片（审计 SEO-011）：条目数 ≤ SitemapShardLimit 时行为与分片之前逐字节一致
+// （单个 sitemap.xml，robots.txt 指过去）；超过上限时 sitemap.xml 变成 sitemap 索引，
+// 各片写进 sitemap-1.xml、sitemap-2.xml……。索引与单文件占同一个路径，
+// 因此 robots.txt 与调用方（publication）都不必知道站点是大站还是小站。
 func WriteSiteFiles(dir, baseURL string, entries []SitemapEntry) error {
 	if dir == "" {
 		return nil
@@ -137,15 +160,130 @@ func WriteSiteFiles(dir, baseURL string, entries []SitemapEntry) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	sm, err := BuildSitemap(entries)
+	shards := ShardEntries(entries)
+	written := map[string]bool{}
+	if len(shards) > 1 {
+		locs := make([]string, 0, len(shards))
+		for i, shard := range shards {
+			content, err := BuildSitemap(shard)
+			if err != nil {
+				return err
+			}
+			name := SitemapShardName(i + 1)
+			if err := writeFileAtomic(filepath.Join(dir, name), []byte(content)); err != nil {
+				return err
+			}
+			written[name] = true
+			locs = append(locs, JoinURL(baseURL, "/"+name))
+		}
+		index, err := BuildSitemapIndex(locs)
+		if err != nil {
+			return err
+		}
+		if err := writeFileAtomic(filepath.Join(dir, SitemapFileName), []byte(index)); err != nil {
+			return err
+		}
+	} else {
+		sm, err := BuildSitemap(entries)
+		if err != nil {
+			return err
+		}
+		if err := writeFileAtomic(filepath.Join(dir, SitemapFileName), []byte(sm)); err != nil {
+			return err
+		}
+	}
+	// 清掉上一次留下的分片：URL 数从 2 万降到 100 后，sitemap-2.xml 里还留着已下线的
+	// 地址，索引却不再引用它 —— 爬虫按旧索引继续抓的后果比"文件不存在"更糟。
+	if err := pruneSitemapShards(dir, written); err != nil {
+		return err
+	}
+	rb := BuildRobots(baseURL, "/"+SitemapFileName)
+	return writeFileAtomic(filepath.Join(dir, "robots.txt"), []byte(rb))
+}
+
+// normalizeEntries sitemap 条目的规范形态：去重（同 Loc 只留第一条）+ 按 Loc 升序。
+//
+// 排序用 sort.SliceStable 而不是插入排序：SEO-011 的分片场景本就是大站，
+// 上万条 URL 走 O(n²) 会让每次发布多花几十秒。去重后 Loc 唯一，
+// 稳定排序与插入排序的产物逐字节相同（单文件 sitemap 的字节不变量不受影响）。
+func normalizeEntries(entries []SitemapEntry) []SitemapEntry {
+	out := make([]SitemapEntry, 0, len(entries))
+	seen := map[string]bool{}
+	for _, e := range entries {
+		if strings.TrimSpace(e.Loc) == "" || seen[e.Loc] {
+			continue
+		}
+		seen[e.Loc] = true
+		out = append(out, e)
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].Loc < out[j].Loc })
+	return out
+}
+
+// ShardEntries 把条目切成若干片（每片 ≤ SitemapShardLimit 条）。
+//
+// 先按单文件输出的同一口径（去重 + 按 Loc 升序）归一，因此**分片结果与输入顺序无关**：
+// 「同一批激活路由产出相同字节」这条 sitemap 不变量在分片站点上依然成立。
+// 返回 nil 表示没有任何有效条目（与空输入产出空 urlset 的单文件路径区分开，
+// 调用方据 len 判断是否分片）。
+func ShardEntries(entries []SitemapEntry) [][]SitemapEntry {
+	normalized := normalizeEntries(entries)
+	if len(normalized) == 0 {
+		return nil
+	}
+	shards := make([][]SitemapEntry, 0, (len(normalized)+SitemapShardLimit-1)/SitemapShardLimit)
+	for start := 0; start < len(normalized); start += SitemapShardLimit {
+		end := start + SitemapShardLimit
+		if end > len(normalized) {
+			end = len(normalized)
+		}
+		shards = append(shards, normalized[start:end])
+	}
+	return shards
+}
+
+// BuildSitemapIndex 生成 sitemap 索引（locs 为各分片的绝对 URL，按传入顺序输出）。
+func BuildSitemapIndex(locs []string) (string, error) {
+	doc := sitemapIndexDoc{Xmlns: sitemapNamespace}
+	for _, l := range locs {
+		if strings.TrimSpace(l) == "" {
+			continue
+		}
+		doc.Sitemaps = append(doc.Sitemaps, sitemapIndexNode{Loc: l})
+	}
+	body, err := xml.MarshalIndent(doc, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	return xml.Header + string(body) + "\n", nil
+}
+
+// pruneSitemapShards 删除本次没写出的分片文件（只认 sitemap-<数字>.xml 这一种名字）。
+func pruneSitemapShards(dir string, keep map[string]bool) error {
+	names, err := filepath.Glob(filepath.Join(dir, "sitemap-*.xml"))
 	if err != nil {
 		return err
 	}
-	if err := writeFileAtomic(filepath.Join(dir, "sitemap.xml"), []byte(sm)); err != nil {
-		return err
+	for _, path := range names {
+		name := filepath.Base(path)
+		if keep[name] || !isSitemapShardName(name) {
+			continue
+		}
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return err
+		}
 	}
-	rb := BuildRobots(baseURL, "/sitemap.xml")
-	return writeFileAtomic(filepath.Join(dir, "robots.txt"), []byte(rb))
+	return nil
+}
+
+// isSitemapShardName 是否为分片文件名（sitemap-<正整数>.xml）。
+func isSitemapShardName(name string) bool {
+	num := strings.TrimSuffix(strings.TrimPrefix(name, "sitemap-"), ".xml")
+	if num == name || num == "" {
+		return false
+	}
+	n, err := strconv.Atoi(num)
+	return err == nil && n > 0
 }
 
 // writeFileAtomic 先写同目录临时文件再 rename 落位。

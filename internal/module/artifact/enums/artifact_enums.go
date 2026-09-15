@@ -7,6 +7,9 @@ const (
 	ErrInvalidArtifact  = "ErrInvalidArtifact"  // 构建产物不完整
 	// ErrInvalidParam 请求本身不合法（nil 请求、缺少必要字段等），与产物存在性无关。
 	ErrInvalidParam = "ErrInvalidParam" // 请求参数无效
+	// ErrContentRefQueryFailed 内容对象的外部引用来源查询失败。
+	// 属于「问不到就不能删」的失败：引用关系不明时宁可少回收一轮，也不能删共享对象。
+	ErrContentRefQueryFailed = "ErrContentRefQueryFailed" // 内容对象引用关系查询失败
 )
 
 const (

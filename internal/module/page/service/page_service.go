@@ -6,6 +6,7 @@ import (
 
 	"go_wp/internal/builder/core"
 	blockcontract "go_wp/internal/module/block/contract"
+	blueprintcontract "go_wp/internal/module/blueprint/contract"
 	mediacontract "go_wp/internal/module/media/contract"
 	navigationcontract "go_wp/internal/module/navigation/contract"
 	pagecontract "go_wp/internal/module/page/contract"
@@ -35,10 +36,16 @@ type Service struct {
 	model     *pagemodel.Model
 	project   projectcontract.ProjectService
 	artifacts artifactcontract.ArtifactService
-	routes    pubcontract.PublicationService
-	blocks    blockcontract.BlockService
-	plugins   plugincontract.PluginService
-	content   core.CollectionResolver
+	// buildQueue 构建队列端口（审计 DB-007）：超出单次上限的自动重建交给它。
+	// 未注入 = 没有队列，超出部分保持 stale 并记告警（既有行为）。
+	buildQueue pagecontract.BuildQueueEnqueuer
+	routes     pubcontract.PublicationService
+	blocks     blockcontract.BlockService
+	// blueprints 蓝图契约（审计 VIS-010）：新建页面时把蓝图 AST 复制成初始文档。
+	// 用完即弃 —— 页面创建之后与蓝图再无关系（改蓝图不传播、不参与构建期）。
+	blueprints blueprintcontract.BlueprintService
+	plugins    plugincontract.PluginService
+	content    core.CollectionResolver
 	// productDS 商品构建期数据源（issue #35）：页面里的商品列表组件直连它（受限接口），
 	// 未注入时组件回退按名路由。可选依赖不进构造参数，与其它端口同模式。
 	productDS productcontract.ProductDataSource
@@ -56,6 +63,10 @@ type Service struct {
 	// publication 访问面激活存储（active 目录符号链接）：页面删除时必须按路径
 	// 解除激活，否则「DB 路由已清、符号链接还在」会让已删内容继续可访问。
 	publication *pipeline.LocalPublicationStore
+	// externalArtifactOwners 其它模块的产物 hash 清单（IDX-015 反向对账用）。
+	// 自动发布实例的产物与本模块共用一个 artifacts 根：不注入就只能把它们误报成孤儿。
+	// 用 setter 注入而不是构造参数 —— page 不能反向依赖 presentation（那是依赖成环）。
+	externalArtifactOwners func(ctx context.Context) ([]string, error)
 }
 
 // NewService 创建 Page 服务；同时初始化本地产物根（GO_WP_ARTIFACT_ROOT 可覆盖，
@@ -98,11 +109,13 @@ func (s *Service) SetContentTranslationStore(store i18n.ContentStore) {
 //
 // 注入端口优先（测试），否则用 pkg/i18n 默认存储（sys_translation）。
 // 取词语义与缓存行为完全由 pkg/i18n 决定，本层不做二次缓存（docs/06-D §7.7）。
-func (s *Service) newContentTranslator(ctx context.Context, lang string, hashes []string) *i18n.ContentTranslator {
+//
+// projectID 为本次编译所属工程（审计 I18N-009）：译文按工程隔离，未覆盖时回落全局行。
+func (s *Service) newContentTranslator(ctx context.Context, projectID, lang string, hashes []string) *i18n.ContentTranslator {
 	if s != nil && s.contentStore != nil {
-		return i18n.NewContentTranslatorWith(ctx, s.contentStore, lang, hashes)
+		return i18n.NewContentTranslatorScoped(ctx, projectID, s.contentStore, lang, hashes)
 	}
-	return i18n.NewContentTranslator(ctx, lang, hashes)
+	return i18n.NewContentTranslatorScoped(ctx, projectID, nil, lang, hashes)
 }
 
 // getExistingPage 查询未删除页面，统一映射未找到错误。
@@ -119,3 +132,9 @@ func (s *Service) getExistingPage(ctx context.Context, id string) (page *pagemod
 
 // SetProductDataSource 注入商品构建期数据源（issue #35，装配期调用）。
 func (s *Service) SetProductDataSource(ds productcontract.ProductDataSource) { s.productDS = ds }
+
+// SetBlueprints 注入蓝图契约（装配期调用，审计 VIS-010）。
+//
+// 未注入时「从蓝图建页」会明确报错而不是静默建空页：空页在后台看起来像新建成功，
+// 要等编辑者打开画布才发现什么都没有。
+func (s *Service) SetBlueprints(bp blueprintcontract.BlueprintService) { s.blueprints = bp }

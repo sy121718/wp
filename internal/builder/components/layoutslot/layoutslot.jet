@@ -1,0 +1,1 @@
+{{ if .V.IsPlaceholder }}<div class="sky-layoutslot {{ .Classes }}" data-sky-id="{{ .V.NodeID }}"><!-- 结构槽位 --></div>{{ else }}{{ range _, child := .Children }}{{ include child.Template child }}{{ end }}{{ end }}

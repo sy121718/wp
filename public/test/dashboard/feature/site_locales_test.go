@@ -35,19 +35,7 @@ import (
 func newSiteLocalesEnv(t *testing.T) (*gin.Engine, *projectservice.Service, string, *gorm.DB) {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
-	db, err := support.NewPGTestDB(t)
-	if err != nil {
-		t.Skipf("本地 PostgreSQL 不可用，跳过测试：%v", err)
-		return nil, nil, "", nil
-	}
-	for _, statement := range []string{
-		`CREATE TABLE projects (id UUID PRIMARY KEY, name TEXT NOT NULL, settings JSONB NOT NULL, created_at TIMESTAMPTZ NOT NULL, updated_at TIMESTAMPTZ NOT NULL)`,
-		`CREATE TABLE project_locales (project_id UUID NOT NULL, lang TEXT NOT NULL, sort_order INTEGER NOT NULL DEFAULT 0, is_default BOOLEAN NOT NULL DEFAULT false, enabled BOOLEAN NOT NULL DEFAULT true, created_at TIMESTAMPTZ NOT NULL, updated_at TIMESTAMPTZ NOT NULL, PRIMARY KEY(project_id, lang))`,
-	} {
-		if err = db.Exec(statement).Error; err != nil {
-			t.Fatalf("创建测试表失败: %v", err)
-		}
-	}
+	db := support.NewMigratedPGTestDB(t)
 	projects := projectservice.NewService(projectmodel.NewProjectModel(db))
 	project, err := projects.Create(context.Background(), &projectdto.CreateReq{Name: "语言测试站点"})
 	if err != nil {

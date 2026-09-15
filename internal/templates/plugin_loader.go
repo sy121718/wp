@@ -13,6 +13,7 @@ import (
 	"io/fs"
 	"path"
 	"strings"
+	"sync"
 
 	"github.com/CloudyKit/jet/v6"
 )
@@ -96,10 +97,71 @@ func (l *compositeLoader) Open(templatePath string) (io.ReadCloser, error) {
 	return l.base.Open(templatePath)
 }
 
+// compositeCacheLimit 缓存的 CompositeSet 份数上限。
+//
+// 留 2 份而不是 1 份：启用集切换（装插件 / 启停）前后各一份，切回来时还能命中，
+// 避免「来回切换 = 每次重新解析全部插件模板」。再多就没有意义了 ——
+// 一份 Set 持有全部插件模板的解析结果，属于该省内存的地方。
+const compositeCacheLimit = 2
+
+var (
+	compositeMu    sync.Mutex
+	compositeCache = make(map[string]*jet.Set)
+	compositeFIFO  []string
+)
+
+// NewCompositeSetCached 按指纹复用 CompositeSet（审计 PERF-006）。
+//
+// 指纹为空时退化为 NewCompositeSet：空串不是合法版本，把它当 key 会让所有
+// 「没提供指纹」的调用方共享同一个 Set —— 那是错的（不同插件集共用一份模板）。
+//
+// 并发安全：构建（jet.Set 解析模板）在锁外进行，只在登记缓存时取锁；
+// 两个 goroutine 同时构建同一指纹时，先到者胜，后到者丢弃自己那份并复用已登记的
+// （保证同一指纹始终对应同一指针，调用方可以据此判断「是否需要重建」）。
+func NewCompositeSetCached(fingerprint string, plugins []PluginFS) (*jet.Set, error) {
+	if fingerprint == "" {
+		return NewCompositeSet(plugins)
+	}
+	compositeMu.Lock()
+	if set, ok := compositeCache[fingerprint]; ok {
+		compositeMu.Unlock()
+		return set, nil
+	}
+	compositeMu.Unlock()
+
+	set, err := NewCompositeSet(plugins)
+	if err != nil {
+		return nil, err
+	}
+
+	compositeMu.Lock()
+	defer compositeMu.Unlock()
+	if existing, ok := compositeCache[fingerprint]; ok {
+		return existing, nil
+	}
+	compositeCache[fingerprint] = set
+	compositeFIFO = append(compositeFIFO, fingerprint)
+	for len(compositeFIFO) > compositeCacheLimit {
+		oldest := compositeFIFO[0]
+		compositeFIFO = compositeFIFO[1:]
+		delete(compositeCache, oldest)
+	}
+	return set, nil
+}
+
+// ResetCompositeSetCache 清空 CompositeSet 缓存（测试用）。
+func ResetCompositeSetCache() {
+	compositeMu.Lock()
+	defer compositeMu.Unlock()
+	compositeCache = make(map[string]*jet.Set)
+	compositeFIFO = nil
+}
+
 // NewCompositeSet 构建含插件模板的组件模板 Set（内置 embed + 启用插件）。
 //
-// plugins 为当前启用的插件集（装配层按 registry 构建）；每次构建任务调用
-// 产生独立 Set（插件模板按任务快照，确定性：同一插件版本集 → 同一模板内容）。
+// plugins 为当前启用的插件集（装配层按 registry 构建）；直接调用时每次产生独立 Set
+// （插件模板按任务快照，确定性：同一插件版本集 → 同一模板内容）。
+// 构建路径请优先用 NewCompositeSetCached —— 重复解析插件模板是纯浪费（PERF-006）。
 func NewCompositeSet(plugins []PluginFS) (*jet.Set, error) {
 	base, err := newEmbeddedComponentLoader()
 	if err != nil {

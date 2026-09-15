@@ -3,6 +3,7 @@ package sitehttps
 import (
 	"testing"
 
+	"github.com/gin-gonic/gin"
 	"github.com/spf13/viper"
 )
 
@@ -16,7 +17,29 @@ func newViper(t *testing.T, settings map[string]any) *viper.Viper {
 	return v
 }
 
-// TestEnabled 覆盖判定优先级的四条分支。
+// TestEnabledWithoutConfigFallsBackToGinMode 配置未注入时按 gin 模式兜底。
+//
+// 回归背景：这个分支曾经「一律返回 true」，结果测试进程里所有会话 cookie 都带 Secure，
+// 而 httptest 的客户端在 http:// 下不会回传 Secure cookie —— 十几个包同时表现为
+// 「登录成功、下一个请求 401」的假故障。release 模式仍须为 true（fail-closed）。
+func TestEnabledWithoutConfigFallsBackToGinMode(t *testing.T) {
+	previous := gin.Mode()
+	t.Cleanup(func() { gin.SetMode(previous) })
+	t.Cleanup(ResetForTest)
+
+	ResetForTest()
+	gin.SetMode(gin.TestMode)
+	if Enabled() {
+		t.Fatal("测试模式下配置未注入，不应下发带 Secure 的 cookie")
+	}
+
+	gin.SetMode(gin.ReleaseMode)
+	if !Enabled() {
+		t.Fatal("release 模式下配置未注入，应带 Secure（fail-closed）")
+	}
+}
+
+// TestEnabled 覆盖判定优先级的各条分支。
 func TestEnabled(t *testing.T) {
 	t.Cleanup(ResetForTest)
 
@@ -27,9 +50,11 @@ func TestEnabled(t *testing.T) {
 		want     bool
 	}{
 		{
-			name:   "未初始化时 fail-closed（宁可在 HTTP 下 cookie 不生效）",
+			// 配置未注入时退回 gin 模式：测试进程（gin.TestMode）不带 Secure，
+			// 否则 httptest 客户端不回传 Secure cookie，整片包会表现为「登录态丢失」。
+			name:   "配置未注入时退回 gin 模式",
 			nilCfg: true,
-			want:   true,
+			want:   gin.Mode() == gin.ReleaseMode,
 		},
 		{
 			name:     "release 且未显式配置 → true",

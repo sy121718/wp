@@ -7,6 +7,8 @@ type ListReq struct {
 	FileType   string  `form:"file_type" json:"file_type"`
 	CategoryID *uint64 `form:"category_id" json:"category_id"`
 	Search     string  `form:"search" json:"search"`
+	// Cursor 是上一页最后一条记录的不透明游标；传入后优先于 Page。
+	Cursor string `form:"cursor" json:"cursor"`
 }
 
 func (r *ListReq) GetPage() int {

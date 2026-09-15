@@ -200,37 +200,25 @@ func (s *Service) RegisterReceipt(ctx context.Context, req *inventorydto.Registe
 	}
 
 	// ③ 库存变动：与 #16 完全同一套契约（真源行锁 + 流水 + 原因字典 + 来源引用）。
-	// 重试保护：ChangeStock 成功后 SetReceiptMovement 失败时，下次重试先查流水是否已存在。
-	var batchID string
-	exists, merr := s.m.ExistsMovementBySource(ctx, projectID, inventoryenums.MovementSourcePurchaseOrder, order.Code)
-	if merr != nil {
+	//
+	// 这里**不做**「按采购单号查流水是否已存在」的判重：一张采购单可以分多次收货
+	// （部分到货是常态），第二批会命中第一批的流水而被误判成「已经入过库」，结果是
+	// 库存不加、单据状态却推进 —— 账实不符，且没有任何报错。
+	// 真正的重试保护在入口：同一 request_id 命中既有入库单直接原样返回
+	//（idempotentReceipt），连 ChangeStock 都不会走到。
+	change, cerr := s.ChangeStock(ctx, &inventorydto.ChangeStockReq{
+		ProjectID: projectID, Direction: inventoryenums.DirectionIn,
+		ReasonCode: reasonCodePurchaseIn,
+		SourceType: inventoryenums.MovementSourcePurchaseOrder, SourceRef: order.Code,
+		Remark: strings.TrimSpace(req.Remark), OperatorID: strings.TrimSpace(req.OperatorID),
+		Lines: stockLines,
+	})
+	if cerr != nil {
+		// ④ 库存没动成功：退回已入库数量并删除入库单（不留「记了账没动库存」）。
 		_ = s.compensateReceipt(ctx, receipt.ID, order.ID, items)
-		return nil, merr
+		return nil, cerr
 	}
-	if exists {
-		rows, lerr := s.m.ListMovementRows(ctx, inventorymodel.MovementFilter{
-			ProjectID: projectID, SourceType: inventoryenums.MovementSourcePurchaseOrder, SourceRef: order.Code,
-		}, 1, 0)
-		if lerr != nil || len(rows) == 0 {
-			_ = s.compensateReceipt(ctx, receipt.ID, order.ID, items)
-			return nil, lerr
-		}
-		batchID = rows[0].BatchID
-	} else {
-		change, cerr := s.ChangeStock(ctx, &inventorydto.ChangeStockReq{
-			ProjectID: projectID, Direction: inventoryenums.DirectionIn,
-			ReasonCode: reasonCodePurchaseIn,
-			SourceType: inventoryenums.MovementSourcePurchaseOrder, SourceRef: order.Code,
-			Remark: strings.TrimSpace(req.Remark), OperatorID: strings.TrimSpace(req.OperatorID),
-			Lines: stockLines,
-		})
-		if cerr != nil {
-			// ④ 库存没动成功：退回已入库数量并删除入库单（不留「记了账没动库存」）。
-			_ = s.compensateReceipt(ctx, receipt.ID, order.ID, items)
-			return nil, cerr
-		}
-		batchID = change.BatchID
-	}
+	batchID := change.BatchID
 	// ⑤ 提交之后：记批次号 + 置 posted + 回写成本价。
 	if serr := s.m.SetReceiptMovement(ctx, receipt.ID, batchID, inventoryenums.ReceiptStatusPosted); serr == nil {
 		receipt.MovementBatchID = batchID

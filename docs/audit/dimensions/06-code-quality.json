@@ -54,7 +54,8 @@
         "plugin",
         "invariant"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：plugin 契约包不再反向 import builder/core（子代理实现，父代理核实）。① **关键设计**：CompileStyles 闭包的第三参数原本是 *core.CSSBuckets —— 那是契约包「必须」import core 的唯一硬理由。把它换成 source 里只有 Add 一个方法的 StyleSink 最小接口后，core.CSSBuckets 天然满足它；core 侧再用**类型别名**承接（type PluginResolver = source.PluginResolver 等），于是 core 内部、37 个内置组件、builder、pipeline、page、plugin service 的 core.Xxx 写法一行未改，且与契约指向同一份定义 —— 不存在两份形状同步问题。这正是照着 product/content 已做对的形状改的，没有发明新写法。② 共享形状下沉到 internal/builder/source/plugin.go：PluginPropControl / CollectionBinding / PluginComponentSpec / PluginResolver + StyleSink。③ 架构守卫 internal/builder/arch_contract_deps_test.go 的 TestModuleContractPackagesDoNotImportBuilderCore：AST 扫 internal/module/**/contract 的 import，白名单只有 source，plugincomp 为显式豁免，并带「已知契约包必须被扫到」的防空转断言（否则扫不到任何包也会绿）。另有 pluginShapesStayInSync() 的编译期双向赋值断言，钉死两边是同一份形状。④ **负向验证（证明测试真会拦）**：把 import \"go_wp/internal/builder/core\" 植入 plugin 契约 → 测试 FAIL 并打印 ../module/plugin/contract/plugin_service.go → go_wp/internal/builder/core；撤销后复绿。在 product 契约做同样植入时 Go 编译器直接报 import cycle not allowed（core/render.go 正持有 product 契约）—— 实证了不变量 7 的环机制。⑤ 编译期断言的确认方式：go build ./... 通过即全仓 var _ xxxcontract.XxxService = (*Service)(nil) 断言成立；更强的一条是 AssemblyResolver 现返回 source.PluginResolver 而 pipeline 与 page（page_dependency.go:261）两个调用点**零改动**仍编译通过 —— 这本身就是 core.PluginResolver ≡ source.PluginResolver 的机械证明。⑥ **如实报告的遗留（不要当成全绿）**：直接 import 已消除，但契约仍有两条**指向 core 的传递路径** —— contract → plugincomp → core 与 contract → templates → core（internal/templates/embed_loader.go import core）。Go 的环是包级的，core 真要持有 plugin 契约时这两条同样触发 import cycle。彻底解决需把 Manifest 形状（ManifestAlias，全仓无消费者，目前是死代码）下沉到零依赖包并解掉 templates→core，二者都在本条目范围之外，已在架构测试里把 plugincomp 记为显式豁免并注明「解耦后应删除」。⑦ 父代理核实：go test -p 1 ./... 合并后 TEST_EXIT=0。"
     },
     {
       "id": "CQ-002",
@@ -110,7 +111,8 @@
         "product",
         "inventory"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：CQ-002 经核对**前提不成立，未改代码**（子代理核查，父代理裁决）。① **定性**：审计 remediation 要求的文档豁免**已存在**（AGENTS.md:140 与 internal/module/CLAUDE.md:22 均明文记载 #32 起库存真源与仓库实体并入 product/inventory/、商品用例直接持有库存 model/service），且 `product/inventory` 属**同模块内子包**、不构成跨模块依赖 —— **不是「已完成跨模块收敛」**（这样写会让人以为曾经真的有过越界依赖）。② **失效模式是本会话第 9 次「前提与现状不符」，且是唯一一次「引用截断上下文」而非「现状演进」**：审计引 `product_service.go:3-4` 说「文件头声明跨模块只走 contract」，但第 3 行原文是「边界：本模块只管商品与变体。**库存已并入 product/inventory/（同模块直调）**；」，第 4 行的「其他模块」在上下文中**恰好排除了 inventory**。审计只引了第 4 行后半句 —— 行号对、原文对，**错的只是引用的边界**。前 8 次都是实测才发现的，这一次**必须读它引的那段全文**才看得见。③ **机械核对**：`go list -f '{{.ImportPath}} {{join .Imports \" \"}}' ./internal/module/product/...` 过滤出跨模块依赖后，以 `/service` 或 `/model` 结尾的**为空** —— product 对外只有 masterdata/order/presentation/project 的 contract 与少量 enums，无一条指向别的模块的 service/model。④ 未按 remediation 做物理合并（把仓库/库存流水/BOM/采购单/货源整体搬进 service 目录），属高风险大重构且与「只改指定范围」冲突。⑤ 顺带核对出审计 CQ-005 的第二条 evidence 也与代码不符：`page_navigation.go:15 import navigation/dto` 实际不存在，该文件是「页面构建上下文」，page 对 navigation 全程走 `navigation/contract`。"
     },
     {
       "id": "CQ-003",
@@ -166,7 +168,8 @@
         "cart",
         "order"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：跨模块 import 收敛（CQ-003/004/005/006，子代理实现，**契约粒度设计是本条的主要交付物**）。① **每条契约暴露的语义与粒度（父代理要求的第 1 点）**：CQ-006（user↔mail）——契约语义是「按模板 key + 语言，给某个地址发**一封事务邮件**，并知道它有没有真的投出去」。入参 `mailcontract.SendInput` 只有 4 个字段（TemplateKey/Locale/To/Vars）；**刻意剔除** AccountID（事务默认账号是 mail 的内部决定）、CampaignID/ContactID/OperatorID（群发链路专属，事务调用方没有任何场景该填）、以及 dto 上的 binding/json 标签。返回 `SendOutcome` 只有 Queued/Suppressed，**刻意剔除 LogID** —— 「它是 mail 内部的排障标识，调用方凭它做不了任何决定，**暴露只会诱使它被当业务引用存下来**（日志轮转后即失效）」。适配位置放在 **mail 侧**：user/service 有明文约束「邮件模块不认识用户模块」，所以只能由 mail 提供收窄端口（`SendTransactional` 做形状转换后**委派**给既有 `SendTemplate`，不复制发信逻辑 —— 抑制名单/模板语言回退/账号选择/日志/入队全在同一条链路上）；装配期改为断言取收窄端口，**漏接在启动时 panic**，而不是等有人注册时才发现发不出信。CQ-004（order→inventory/user）——**方向字段从契约删除**：原 dto 的 `direction` 字符串让调用方可以传任意方向；契约把「加回货」写进**类型名**（`StockAdjustment` 恒为 in），出库只能走 `DeductStock`（那条带可用量守卫）——**把参数约束变成类型约束**。WarehouseID 保留可选（订单不知道货在哪个仓，那是库存域事实；唯一例外是退货入库）。返回 `*StockChangeResp` 收窄为只有 `error`（订单侧原本就在丢弃返回值）。适配器放**库存侧** `outbound/orderstock`（实现方依赖调用方契约）。用户侧 `GuestAccountInput`/`GuestAccountResult` 只暴露调用方要判定的两件事（Created / PasswordMailed → 决定是否提示「去邮箱收密码」）。CQ-005（page→media/publication）——两种手法理由不同：media 用**契约自有形状** `SyncRefsInput{RefKind,RefID,RefTitle,URLs}`，语义是「这个引用方现在引用哪些媒体 URL」，**空 URLs 即「不再引用任何媒体」**、不需要额外开关字段（页面删除走的正是这条）；publication **跟随该契约包已有的「形状重导出」模式**（type 块里本来就有 11 条别名，注释明写「跨模块调用方只依赖 contract」），把**漏在列表外**的 `BeginPublishReceiptReq`/`PendingReceiptResp` 补进去 —— 判据是 page/service 的其余 8 个文件全部用 `pubcontract.XxxReq`，只有 page_publish_ledger.go 因这两个类型没被重导出而破例，**属遗漏而非设计**。**取舍披露**：重导出只消除 import 路径耦合，**不消除形状耦合**；彻底隔离需把 publication 那 11 个类型一起改成契约自有形状（跨 11 类型、影响全部消费方的单独重构）。② **CQ-003 未按 remediation 做，论证是决定性的**：order 契约 30+ 方法**全部**直接写 `orderdto.X`，order 模块**自身**的 feature 测试有 20+ 处按 dto 形状调 `f.orders.CreateOrder(ctx, req)` ——契约形状在 order 这里与 dto 是**同一件事**，不是「绑定层泄漏」。归因快照含 7 个嵌套类型（Attribution/UTMInfo/AdInfo/SessionInfo/DeviceInfo/FirstTouch/TrailPage）且字段名与 **JSONB 落库形状**绑定（对照 WC `_wc_order_attribution_*`）。另造一套契约形状 = 两份必须逐字段保持等价的定义，于是**把「一处改、调用方编译错」换成「一处改、另一处静默分叉」—— 而出错方向恰好是审计自己点名的「从外部看完全正常」**。改用形状重导出（14 个类型 + ErrOrderNotFound 常量转发），cart 对 order 只剩 `order/contract`（dto 与 enums 都清零）。**局限如实标注**：重导出不解决「order 改建单入参编译错 cart」，彻底隔离需另立条目做 order 对外契约形状重写。③ **架构测试与负向验证**：新建 `internal/architecture/module_boundary_test.go` —— `TestNoCrossModuleDTOImport`（6 个子用例逐条对应本次修好的 6 条边）+ `TestNoCrossModuleServiceModelImport`（通用规则）。**为什么逐条列而不是「一律禁跨模块 dto」**：仓库里还有范围外的既有跨模块 dto（product → presentation/dto、navigation → content/dto），**一刀切会让红线从第一天就是红的**（一条永远失败的守卫等于没有守卫）。负向验证：在 cart_checkout.go 注入 `_ \"go_wp/internal/module/order/dto\"` → `FAIL: TestNoCrossModuleDTOImport/cart->order/dto` 并打印精确路径；撤销后复绿。④ **测试检出一处范围外的新违规**：`presentation/service/presentation_archive.go:18` 裸 import `contenttemplate/model` —— AGENTS.md:158 明文禁止的跨模块 model 依赖。已按「已知偏差表」（带位置与依据、只增不减）登记在测试里，**未擅自修改**。⑤ 验证：`go build`/`go vet`/`gofmt -l` 无输出；`./internal/...` 全 ok；`public/test` 相关 12 个包全 ok（cart 140s / order 329s / user 214s / mail 250s / inventory 267s / product 426s / page / media / dashboard）。27 个文件改动（契约 6 / 服务 12 / 新增 2 / 装配 1 / 测试同步 5）。⑥ 并发现象：`page/service/page_publish_ledger.go` 在 git 中未跟踪（TX-009 的工作），代理改了其中两行配合重导出别名，需注意合并。"
     },
     {
       "id": "CQ-004",
@@ -215,7 +218,8 @@
         "order",
         "inventory"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：跨模块 import 收敛（CQ-003/004/005/006，子代理实现，**契约粒度设计是本条的主要交付物**）。① **每条契约暴露的语义与粒度（父代理要求的第 1 点）**：CQ-006（user↔mail）——契约语义是「按模板 key + 语言，给某个地址发**一封事务邮件**，并知道它有没有真的投出去」。入参 `mailcontract.SendInput` 只有 4 个字段（TemplateKey/Locale/To/Vars）；**刻意剔除** AccountID（事务默认账号是 mail 的内部决定）、CampaignID/ContactID/OperatorID（群发链路专属，事务调用方没有任何场景该填）、以及 dto 上的 binding/json 标签。返回 `SendOutcome` 只有 Queued/Suppressed，**刻意剔除 LogID** —— 「它是 mail 内部的排障标识，调用方凭它做不了任何决定，**暴露只会诱使它被当业务引用存下来**（日志轮转后即失效）」。适配位置放在 **mail 侧**：user/service 有明文约束「邮件模块不认识用户模块」，所以只能由 mail 提供收窄端口（`SendTransactional` 做形状转换后**委派**给既有 `SendTemplate`，不复制发信逻辑 —— 抑制名单/模板语言回退/账号选择/日志/入队全在同一条链路上）；装配期改为断言取收窄端口，**漏接在启动时 panic**，而不是等有人注册时才发现发不出信。CQ-004（order→inventory/user）——**方向字段从契约删除**：原 dto 的 `direction` 字符串让调用方可以传任意方向；契约把「加回货」写进**类型名**（`StockAdjustment` 恒为 in），出库只能走 `DeductStock`（那条带可用量守卫）——**把参数约束变成类型约束**。WarehouseID 保留可选（订单不知道货在哪个仓，那是库存域事实；唯一例外是退货入库）。返回 `*StockChangeResp` 收窄为只有 `error`（订单侧原本就在丢弃返回值）。适配器放**库存侧** `outbound/orderstock`（实现方依赖调用方契约）。用户侧 `GuestAccountInput`/`GuestAccountResult` 只暴露调用方要判定的两件事（Created / PasswordMailed → 决定是否提示「去邮箱收密码」）。CQ-005（page→media/publication）——两种手法理由不同：media 用**契约自有形状** `SyncRefsInput{RefKind,RefID,RefTitle,URLs}`，语义是「这个引用方现在引用哪些媒体 URL」，**空 URLs 即「不再引用任何媒体」**、不需要额外开关字段（页面删除走的正是这条）；publication **跟随该契约包已有的「形状重导出」模式**（type 块里本来就有 11 条别名，注释明写「跨模块调用方只依赖 contract」），把**漏在列表外**的 `BeginPublishReceiptReq`/`PendingReceiptResp` 补进去 —— 判据是 page/service 的其余 8 个文件全部用 `pubcontract.XxxReq`，只有 page_publish_ledger.go 因这两个类型没被重导出而破例，**属遗漏而非设计**。**取舍披露**：重导出只消除 import 路径耦合，**不消除形状耦合**；彻底隔离需把 publication 那 11 个类型一起改成契约自有形状（跨 11 类型、影响全部消费方的单独重构）。② **CQ-003 未按 remediation 做，论证是决定性的**：order 契约 30+ 方法**全部**直接写 `orderdto.X`，order 模块**自身**的 feature 测试有 20+ 处按 dto 形状调 `f.orders.CreateOrder(ctx, req)` ——契约形状在 order 这里与 dto 是**同一件事**，不是「绑定层泄漏」。归因快照含 7 个嵌套类型（Attribution/UTMInfo/AdInfo/SessionInfo/DeviceInfo/FirstTouch/TrailPage）且字段名与 **JSONB 落库形状**绑定（对照 WC `_wc_order_attribution_*`）。另造一套契约形状 = 两份必须逐字段保持等价的定义，于是**把「一处改、调用方编译错」换成「一处改、另一处静默分叉」—— 而出错方向恰好是审计自己点名的「从外部看完全正常」**。改用形状重导出（14 个类型 + ErrOrderNotFound 常量转发），cart 对 order 只剩 `order/contract`（dto 与 enums 都清零）。**局限如实标注**：重导出不解决「order 改建单入参编译错 cart」，彻底隔离需另立条目做 order 对外契约形状重写。③ **架构测试与负向验证**：新建 `internal/architecture/module_boundary_test.go` —— `TestNoCrossModuleDTOImport`（6 个子用例逐条对应本次修好的 6 条边）+ `TestNoCrossModuleServiceModelImport`（通用规则）。**为什么逐条列而不是「一律禁跨模块 dto」**：仓库里还有范围外的既有跨模块 dto（product → presentation/dto、navigation → content/dto），**一刀切会让红线从第一天就是红的**（一条永远失败的守卫等于没有守卫）。负向验证：在 cart_checkout.go 注入 `_ \"go_wp/internal/module/order/dto\"` → `FAIL: TestNoCrossModuleDTOImport/cart->order/dto` 并打印精确路径；撤销后复绿。④ **测试检出一处范围外的新违规**：`presentation/service/presentation_archive.go:18` 裸 import `contenttemplate/model` —— AGENTS.md:158 明文禁止的跨模块 model 依赖。已按「已知偏差表」（带位置与依据、只增不减）登记在测试里，**未擅自修改**。⑤ 验证：`go build`/`go vet`/`gofmt -l` 无输出；`./internal/...` 全 ok；`public/test` 相关 12 个包全 ok（cart 140s / order 329s / user 214s / mail 250s / inventory 267s / product 426s / page / media / dashboard）。27 个文件改动（契约 6 / 服务 12 / 新增 2 / 装配 1 / 测试同步 5）。⑥ 并发现象：`page/service/page_publish_ledger.go` 在 git 中未跟踪（TX-009 的工作），代理改了其中两行配合重导出别名，需注意合并。"
     },
     {
       "id": "CQ-005",
@@ -264,7 +268,8 @@
         "architecture",
         "page"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：跨模块 import 收敛（CQ-003/004/005/006，子代理实现，**契约粒度设计是本条的主要交付物**）。① **每条契约暴露的语义与粒度（父代理要求的第 1 点）**：CQ-006（user↔mail）——契约语义是「按模板 key + 语言，给某个地址发**一封事务邮件**，并知道它有没有真的投出去」。入参 `mailcontract.SendInput` 只有 4 个字段（TemplateKey/Locale/To/Vars）；**刻意剔除** AccountID（事务默认账号是 mail 的内部决定）、CampaignID/ContactID/OperatorID（群发链路专属，事务调用方没有任何场景该填）、以及 dto 上的 binding/json 标签。返回 `SendOutcome` 只有 Queued/Suppressed，**刻意剔除 LogID** —— 「它是 mail 内部的排障标识，调用方凭它做不了任何决定，**暴露只会诱使它被当业务引用存下来**（日志轮转后即失效）」。适配位置放在 **mail 侧**：user/service 有明文约束「邮件模块不认识用户模块」，所以只能由 mail 提供收窄端口（`SendTransactional` 做形状转换后**委派**给既有 `SendTemplate`，不复制发信逻辑 —— 抑制名单/模板语言回退/账号选择/日志/入队全在同一条链路上）；装配期改为断言取收窄端口，**漏接在启动时 panic**，而不是等有人注册时才发现发不出信。CQ-004（order→inventory/user）——**方向字段从契约删除**：原 dto 的 `direction` 字符串让调用方可以传任意方向；契约把「加回货」写进**类型名**（`StockAdjustment` 恒为 in），出库只能走 `DeductStock`（那条带可用量守卫）——**把参数约束变成类型约束**。WarehouseID 保留可选（订单不知道货在哪个仓，那是库存域事实；唯一例外是退货入库）。返回 `*StockChangeResp` 收窄为只有 `error`（订单侧原本就在丢弃返回值）。适配器放**库存侧** `outbound/orderstock`（实现方依赖调用方契约）。用户侧 `GuestAccountInput`/`GuestAccountResult` 只暴露调用方要判定的两件事（Created / PasswordMailed → 决定是否提示「去邮箱收密码」）。CQ-005（page→media/publication）——两种手法理由不同：media 用**契约自有形状** `SyncRefsInput{RefKind,RefID,RefTitle,URLs}`，语义是「这个引用方现在引用哪些媒体 URL」，**空 URLs 即「不再引用任何媒体」**、不需要额外开关字段（页面删除走的正是这条）；publication **跟随该契约包已有的「形状重导出」模式**（type 块里本来就有 11 条别名，注释明写「跨模块调用方只依赖 contract」），把**漏在列表外**的 `BeginPublishReceiptReq`/`PendingReceiptResp` 补进去 —— 判据是 page/service 的其余 8 个文件全部用 `pubcontract.XxxReq`，只有 page_publish_ledger.go 因这两个类型没被重导出而破例，**属遗漏而非设计**。**取舍披露**：重导出只消除 import 路径耦合，**不消除形状耦合**；彻底隔离需把 publication 那 11 个类型一起改成契约自有形状（跨 11 类型、影响全部消费方的单独重构）。② **CQ-003 未按 remediation 做，论证是决定性的**：order 契约 30+ 方法**全部**直接写 `orderdto.X`，order 模块**自身**的 feature 测试有 20+ 处按 dto 形状调 `f.orders.CreateOrder(ctx, req)` ——契约形状在 order 这里与 dto 是**同一件事**，不是「绑定层泄漏」。归因快照含 7 个嵌套类型（Attribution/UTMInfo/AdInfo/SessionInfo/DeviceInfo/FirstTouch/TrailPage）且字段名与 **JSONB 落库形状**绑定（对照 WC `_wc_order_attribution_*`）。另造一套契约形状 = 两份必须逐字段保持等价的定义，于是**把「一处改、调用方编译错」换成「一处改、另一处静默分叉」—— 而出错方向恰好是审计自己点名的「从外部看完全正常」**。改用形状重导出（14 个类型 + ErrOrderNotFound 常量转发），cart 对 order 只剩 `order/contract`（dto 与 enums 都清零）。**局限如实标注**：重导出不解决「order 改建单入参编译错 cart」，彻底隔离需另立条目做 order 对外契约形状重写。③ **架构测试与负向验证**：新建 `internal/architecture/module_boundary_test.go` —— `TestNoCrossModuleDTOImport`（6 个子用例逐条对应本次修好的 6 条边）+ `TestNoCrossModuleServiceModelImport`（通用规则）。**为什么逐条列而不是「一律禁跨模块 dto」**：仓库里还有范围外的既有跨模块 dto（product → presentation/dto、navigation → content/dto），**一刀切会让红线从第一天就是红的**（一条永远失败的守卫等于没有守卫）。负向验证：在 cart_checkout.go 注入 `_ \"go_wp/internal/module/order/dto\"` → `FAIL: TestNoCrossModuleDTOImport/cart->order/dto` 并打印精确路径；撤销后复绿。④ **测试检出一处范围外的新违规**：`presentation/service/presentation_archive.go:18` 裸 import `contenttemplate/model` —— AGENTS.md:158 明文禁止的跨模块 model 依赖。已按「已知偏差表」（带位置与依据、只增不减）登记在测试里，**未擅自修改**。⑤ 验证：`go build`/`go vet`/`gofmt -l` 无输出；`./internal/...` 全 ok；`public/test` 相关 12 个包全 ok（cart 140s / order 329s / user 214s / mail 250s / inventory 267s / product 426s / page / media / dashboard）。27 个文件改动（契约 6 / 服务 12 / 新增 2 / 装配 1 / 测试同步 5）。⑥ 并发现象：`page/service/page_publish_ledger.go` 在 git 中未跟踪（TX-009 的工作），代理改了其中两行配合重导出别名，需注意合并。"
     },
     {
       "id": "CQ-006",
@@ -321,7 +326,8 @@
         "user",
         "mail"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：跨模块 import 收敛（CQ-003/004/005/006，子代理实现，**契约粒度设计是本条的主要交付物**）。① **每条契约暴露的语义与粒度（父代理要求的第 1 点）**：CQ-006（user↔mail）——契约语义是「按模板 key + 语言，给某个地址发**一封事务邮件**，并知道它有没有真的投出去」。入参 `mailcontract.SendInput` 只有 4 个字段（TemplateKey/Locale/To/Vars）；**刻意剔除** AccountID（事务默认账号是 mail 的内部决定）、CampaignID/ContactID/OperatorID（群发链路专属，事务调用方没有任何场景该填）、以及 dto 上的 binding/json 标签。返回 `SendOutcome` 只有 Queued/Suppressed，**刻意剔除 LogID** —— 「它是 mail 内部的排障标识，调用方凭它做不了任何决定，**暴露只会诱使它被当业务引用存下来**（日志轮转后即失效）」。适配位置放在 **mail 侧**：user/service 有明文约束「邮件模块不认识用户模块」，所以只能由 mail 提供收窄端口（`SendTransactional` 做形状转换后**委派**给既有 `SendTemplate`，不复制发信逻辑 —— 抑制名单/模板语言回退/账号选择/日志/入队全在同一条链路上）；装配期改为断言取收窄端口，**漏接在启动时 panic**，而不是等有人注册时才发现发不出信。CQ-004（order→inventory/user）——**方向字段从契约删除**：原 dto 的 `direction` 字符串让调用方可以传任意方向；契约把「加回货」写进**类型名**（`StockAdjustment` 恒为 in），出库只能走 `DeductStock`（那条带可用量守卫）——**把参数约束变成类型约束**。WarehouseID 保留可选（订单不知道货在哪个仓，那是库存域事实；唯一例外是退货入库）。返回 `*StockChangeResp` 收窄为只有 `error`（订单侧原本就在丢弃返回值）。适配器放**库存侧** `outbound/orderstock`（实现方依赖调用方契约）。用户侧 `GuestAccountInput`/`GuestAccountResult` 只暴露调用方要判定的两件事（Created / PasswordMailed → 决定是否提示「去邮箱收密码」）。CQ-005（page→media/publication）——两种手法理由不同：media 用**契约自有形状** `SyncRefsInput{RefKind,RefID,RefTitle,URLs}`，语义是「这个引用方现在引用哪些媒体 URL」，**空 URLs 即「不再引用任何媒体」**、不需要额外开关字段（页面删除走的正是这条）；publication **跟随该契约包已有的「形状重导出」模式**（type 块里本来就有 11 条别名，注释明写「跨模块调用方只依赖 contract」），把**漏在列表外**的 `BeginPublishReceiptReq`/`PendingReceiptResp` 补进去 —— 判据是 page/service 的其余 8 个文件全部用 `pubcontract.XxxReq`，只有 page_publish_ledger.go 因这两个类型没被重导出而破例，**属遗漏而非设计**。**取舍披露**：重导出只消除 import 路径耦合，**不消除形状耦合**；彻底隔离需把 publication 那 11 个类型一起改成契约自有形状（跨 11 类型、影响全部消费方的单独重构）。② **CQ-003 未按 remediation 做，论证是决定性的**：order 契约 30+ 方法**全部**直接写 `orderdto.X`，order 模块**自身**的 feature 测试有 20+ 处按 dto 形状调 `f.orders.CreateOrder(ctx, req)` ——契约形状在 order 这里与 dto 是**同一件事**，不是「绑定层泄漏」。归因快照含 7 个嵌套类型（Attribution/UTMInfo/AdInfo/SessionInfo/DeviceInfo/FirstTouch/TrailPage）且字段名与 **JSONB 落库形状**绑定（对照 WC `_wc_order_attribution_*`）。另造一套契约形状 = 两份必须逐字段保持等价的定义，于是**把「一处改、调用方编译错」换成「一处改、另一处静默分叉」—— 而出错方向恰好是审计自己点名的「从外部看完全正常」**。改用形状重导出（14 个类型 + ErrOrderNotFound 常量转发），cart 对 order 只剩 `order/contract`（dto 与 enums 都清零）。**局限如实标注**：重导出不解决「order 改建单入参编译错 cart」，彻底隔离需另立条目做 order 对外契约形状重写。③ **架构测试与负向验证**：新建 `internal/architecture/module_boundary_test.go` —— `TestNoCrossModuleDTOImport`（6 个子用例逐条对应本次修好的 6 条边）+ `TestNoCrossModuleServiceModelImport`（通用规则）。**为什么逐条列而不是「一律禁跨模块 dto」**：仓库里还有范围外的既有跨模块 dto（product → presentation/dto、navigation → content/dto），**一刀切会让红线从第一天就是红的**（一条永远失败的守卫等于没有守卫）。负向验证：在 cart_checkout.go 注入 `_ \"go_wp/internal/module/order/dto\"` → `FAIL: TestNoCrossModuleDTOImport/cart->order/dto` 并打印精确路径；撤销后复绿。④ **测试检出一处范围外的新违规**：`presentation/service/presentation_archive.go:18` 裸 import `contenttemplate/model` —— AGENTS.md:158 明文禁止的跨模块 model 依赖。已按「已知偏差表」（带位置与依据、只增不减）登记在测试里，**未擅自修改**。⑤ 验证：`go build`/`go vet`/`gofmt -l` 无输出；`./internal/...` 全 ok；`public/test` 相关 12 个包全 ok（cart 140s / order 329s / user 214s / mail 250s / inventory 267s / product 426s / page / media / dashboard）。27 个文件改动（契约 6 / 服务 12 / 新增 2 / 装配 1 / 测试同步 5）。⑥ 并发现象：`page/service/page_publish_ledger.go` 在 git 中未跟踪（TX-009 的工作），代理改了其中两行配合重导出别名，需注意合并。"
     },
     {
       "id": "CQ-007",
@@ -488,7 +494,8 @@
         "error-handling",
         "information-disclosure"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：后台页面不再直出内部错误（审计 CQ-009）。① 统一出口 internal/module/dashboard/inbound/http/page_error.go 提供 pageError(c, scene, err) 与 pageErrorBadRequest(c, scene, err)：详情带请求路径进日志，对外只给 dashboardenums.MsgInternalError。**不做「是不是业务错误」的猜测** —— 猜错的代价是「有时泄露有时不泄露」，而那种不规律恰恰最难被发现；业务错误由 service 经 enums 返回，由调用方显式选择展示方式。② 替换了 38 处调用点（c.String(500, err.Error()) 及其变体）。带前缀的形态（\"预览失败：\" + err.Error()、\"编译失败：\" + err.Error()）改成「对外固定文案 + 详情进日志」：422 这类状态码保留（编译失败对作者是业务信息），但编译器错误里带节点路径与模板片段，铺在页面上等于公开内部结构。③ 门禁脚本 scripts/check-no-internal-error-leak.sh：判据是「输出调用的实参里带 .Error()」，命中即失败并打印替换指引。负向验证：新增一处 c.String(500, err.Error()) 立即被拦下并给出 pageError 用法。脚本会跳过注释行（注释里的示例代码不是调用点，这一条是它自己误报后补的）。④ CI 接入：.github/workflows/go-test.yml 的 unit job 加了一步 Static checks，跑 check-no-internal-error-leak.sh 与 check-i18n-coverage.sh。两者都是纯文件扫描、不需要数据库、秒级完成，放在 Build 之后、单测之前 —— 它们拦的是「评审时看不出来」的回归。⑤ verification 三条逐条对照：（a）内部错误显示通用提示、详情只在日志里 —— pageError 的语义；（b）URL 里不再出现错误消息 —— 后台的 ?err= / ?ok= 回显一律过白名单（customer_handle.go 的 customerRedirect 与 customer_page_render_test.go 的用例钉住了这点：查询参数是用户可编辑的，不能拿它当业务提示原样显示），所以 URL 里只可能出现白名单文案，不会出现表名 / SQL / 路径；（c）检查脚本在 CI 里生效 —— 已接入。⑥ 未按 steps 做的部分如实记录：审计建议的「错误提示改走 flash（session 或短 TTL 一次性 key）而不进 URL」没有实施 —— 现有的 ?err= 回显机制已配白名单（见 ⑤b），改 flash 是另一处重构，且白名单已经给出了「URL 里不出现内部消息」这个验收要求的结果。"
     },
     {
       "id": "CQ-010",
@@ -546,7 +553,8 @@
         "security",
         "api"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：API 不再把 err.Error() 当作对外消息（审计 CQ-010）。① **收敛出口**：pkg/response 新增 ErrorAuto(c, code, scene, err) 与 IsBusinessError(err)。业务错误透出消息（并按语言翻译），内部错误只记日志、对外统一通用文案。② **判据用消息形态而非错误类型**：businessErrKey 匹配 `模块.类别.语义`（如 cart.err.outOfStock），可选 `|param` 参数化后缀。为什么不按类型判：项目的业务错误由各模块 enums 常量构造，那些常量本身就是 i18n key，而内部错误（fmt.Errorf 包装、驱动返回的 SQL 错误、os 路径错误）天然长不成这个形状；类型判定的前提是 service 层处处用同一个包装类型，那是几百处改动且漏一处就静默失效，而形态判定零成本。③ **内部错误一律返回 500，不沿用调用方给的 code**：调用点通常写 400/404（按「预期内的业务失败」选的），既然实际是内部错误，状态码就该如实地是 500 —— 否则客户端与监控都会把内部故障当成参数问题。④ **替换 170 处**（presentation 8 / inventory 23 / plugin 4 三个优先模块 + 其余 17 个文件 135 处），全部单行精确替换，每批替换后 build 一次。收敛后全仓无 `ErrorWithMessage(c, <status>, err.Error())` 残留。⑤ 5 个测试，核心是两条负向断言：TestIsBusinessErrorRejectsInternalErrors（8 个用例：pg 唯一约束、文件路径、连接串、fmt.Errorf 包装链、nil、无点串、纯中文、只有两段的 key 都须被判为内部错误）与 TestErrorAutoHidesInternalError（断言响应体不含 SQLSTATE / 表名 / duplicate key / constraint，且状态码为 500）。⑥ **负向验证（证明测试不是空转）**：把 businessErrKey 临时改成 `^[\\s\\S]*$`（等价于不做判定、一律当业务错误）后复跑，TestIsBusinessErrorRejectsInternalErrors 的 7 条断言全部如期变红并逐条打印出被判错的串；还原后复绿。⑦ **一处与项目约定的张力，刻意保留并记录**：pkg/CLAUDE.md 写明「pkg/response 不做 i18n 翻译、不维护字符串错误码、不在 pkg 内扩散业务语义中转」，而本条 remediation 原文即要求 response.ErrorAuto(c, err) 这个形状。权衡是不收敛的话泄漏面等于全部 handler 的自觉程度（几百处），而漏一处不会让测试变红；收敛的代价是 pkg/response 知道了业务错误的形态（不是具体错误码，也不引入 enums 依赖）。取舍已写进 response.go 的注释，并注明「若要恢复约定，删掉 ErrorAuto/IsBusinessError、调用点改回 ErrorInternal 即可，不会有隐藏耦合」。"
     },
     {
       "id": "CQ-011",
@@ -685,7 +693,8 @@
         "duplication",
         "url"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：路径归一化六处收敛到 pkg/pathkit（子代理实现，先对照后收敛）。① **方法**：37 个输入喂给每一处真实实现做对照，先拿证据再动手。② **找到两个真 bug（不是措辞差异）**：`publication.normalizePath` 接受 `/a//b`（pipeline 拒绝）—— 同一路径两种写法可各占一行路由，占用判断失真；`/index`、`/index.html` 不归一为根路径（pipeline 归一为 `/`）—— 与首页路由并存时线上内容与路由记录分裂。反向也有一个缺口：pipeline 允许 `?` 与 `#` 通过，路由表里会留下永远匹配不到的死路由，而 publication 与 docs 都拒绝。取并集时采纳更严的一侧。③ **以 pipeline 为准的依据**：`docs/03-pipeline.md §5.1` 是文档化的唯一口径，且 publication 的 `maxRoutePathLen` 注释本身就写着「与 pipeline 的 500 对齐」。④ **第六处无需改动**：`page.normalizePagePath` 早就是 `pipeline.NormalizeURL` 的薄包装，已加断言钉住这个事实（而不是为凑「六处」而改动它）。⑤ **正确识别出不合并的一处**：`analytics.normalizePath` 语义确实不同（访客可控自由文本、丢弃 query 与锚点、按 512 截断、从不拒绝），按审计建议**保留并改名** `sanitizeTrackPath`，未合并 —— 强行统一会把「拒绝畸形输入」的语义带进一个本该宽容的地方。⑥ 唯一实现落在 `pkg/pathkit`（NormalizeRoutePath / MatchKey / MaxRoutePathLen）；调用点：pipeline/url.go 改薄包装（保留 reservedPrefixes 业务策略）、publication/service 委托并删除重复的 maxRoutePathLen 常量、dashboard 的 nav_menu/nav_path_alias 删除本地实现改用 MatchKey。⑦ **未处理并如实报告**：`internal/builder/components/nav/jet.go` 那处（差异只在空/全斜杠）当时属别的代理范围；且 `MarkCurrent` 依赖「空→/」语义（首页菜单项靠它高亮），直接换 MatchKey 会让首页高亮失效，收敛必须同时改早退判断 —— 可执行证据留在 `tmp/navnorm/main.go`。⑧ **风险提示**：publication 的路径口径收紧后，若库中已有畸形输入写成的历史路由行（`/index`、`/a//b`），再次提交同类输入会得到归一后路径，可能与既有行撞路由唯一约束并返回 ErrRouteOccupied。方向是修复（同一文件不该有两条路由），但需在集成环境确认历史数据无冲突。"
     },
     {
       "id": "CQ-013",
@@ -741,7 +750,8 @@
         "duplication",
         "money"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：金额格式化收敛（子代理实现，先对照后收敛）。① **19 个输入对照后发现真重复只有一组**：`product.formatPrice` 与 `dashboard.formatAmount` 逐字节完全相同（`'f',-1`），已合并。② **正确识别出两处语义不同、不能并成一个函数**：`masterdata.FormatPrice` 用**固定两位**，这是**审计口径** —— 它逐字段记 old/new，无定长文本就会把 `99` 与 `99.00` 判成一次变更（假记录）；而展示侧补零会让同一个价在页面上「看起来变了」（live_price.go 的原注释已写明这点）。处理方式是收敛到 `pkg/money` 的**两个显式命名函数**：`FormatAudit`（固定两位）与 `FormatYuan`（最短表示），而不是并成一个带参数的函数 —— 命名让调用点在阅读时就能看出用的是哪种口径。`centsToYuanText` 是分→元换算 + 展示口径，同样收敛。③ **发现实际不止四份（审计快照偏差，如实报告）**：`runtimefragment/bundle_configurator.go:206`（固定两位，用于前台套餐配置器展示）、`dashboard/product_handle.go:391`、`inventory_purchase_handle.go` 3 处、`inventory_source_handle.go`、`inspector_handle.go`、`product/product_pricing_rule.go:444`、`product_tag_rule.go:321` 都是同类直用。其中 `bundle_configurator` 用两位而商品展示用最短表示，**正是审计担心的 `99.00 vs 99`**，建议单开一条。本批按范围只改了点名四份 + 同包 live_price。④ 唯一实现落在 `pkg/money`（FormatAudit / FormatYuan / CentsToYuanText）。"
     },
     {
       "id": "CQ-014",
@@ -860,7 +870,8 @@
         "dead-code",
         "documentation"
       ],
-      "status": "open"
+      "status": "open",
+      "progressNote": "2026-09-15 复核：`user_app_passwords` / `user_meta` / `user_oauth_bindings` 三张已随迁移 203 删除（零消费方、无排期：应用密码没有对应的 API 认证面、插件体系没有用户侧扩展点、OAuth 连 provider 与 pkg/oauth 都不存在）；`build_jobs` 不是死表 —— 已接入构建队列引擎（internal/module/build 的 model/service 与队列 feature 测试）。仍待处理 2 张：`publication_events`（发布事件审计表，暂无消费方）与 `presentation_artifact_objects`（presentation 侧内容对象闭包，等该侧归档落地才有读写成对，当前 GC 的孤儿判定只查 page 侧闭包）。范围由 6 张收敛到 2 张，故保持 open。"
     },
     {
       "id": "CQ-016",
@@ -1073,7 +1084,8 @@
         "fail-fast",
         "reliability"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：装配期静默降级窗口的盘点与分类（子代理实现，父代理核实）。① **前提成立且比原文更严重**：审计说的是「端口未注入时静默降级」，实际发现 **2 个端口从来没有任何调用方**（恒为 nil）：product.SetInventory（后台商品库存列 StockTotal 恒 0；「变体仍有非零库存则拒绝删除」守卫恒被跳过）与 runtimefragment.SetVisitorReturnProvider（退货申请片段恒显示「退货功能暂不可用」）。两者已由 routes.go 补上注入。② 分类判据写成可复算的三类，并写进 wiring.go 文件头：required-contract（提供方必须实现收窄契约，未实现=装配缺陷）11 条；required-port（实现在本进程内恒定可得，未注入后果是功能性静默缺失或错误数据）20 条；optional-degraded（未注入有可见表现，或行为与接入前逐字一致）10 条。**反向判据**：能说清「未注入 → 用户看到什么」的才算 optional；说不清（只能说「功能没了」）的就是 required-port。共 41 条端口，完整表在 wiringManifest（含「未注入后果」一栏）。③ 5 处静默窗口改为 fail-fast：product.SetPublishedEntityLocator / SetArchiveInstanceEnsurer / SetFragmentCacheBumper、project.SetLocaleRetirePort（原为 if ok 无 else —— 禁用语言成功但语言站点仍在线）、pipeline.Fanout.SetRebuilder（对 nil 静默 no-op，症状是「内容变更只标记不重建」）。刻意**不做** fail-fast 的两处（默认主题补齐、组件注册表版本比对）在 wiring.go 写明理由 —— 把所有端口都改成 fail-fast 会把合理降级也变成启动失败。④ 9 个 Set* 文件仅补注释（分类理由 + 未注入时用户看到什么），未改任何业务行为。⑤ 9 个纯函数测试（wiring_test.go），含 TestMustAllPortsWiredPanicsWithPortName / TestCheckWiringReportsMissingRequiredPort。⑥ **负向验证（原始输出）**：故意摘掉 portProjectLocaleRetire 标记后复现 `panic: 装配自检失败：端口接线不完整 / 必需端口未接入：- project.SetLocaleRetirePort（page → project）：禁用语言只记日志不下路由，该语言的站点仍在线上可访问`，还原后复验 ok。开发中这套自检还当场抓到实现者自己的一个漏标记。⑦ 副作用提示（写进交付说明）：routes.go 末端新增的自检会在删除任一端口注入行时 panic，新增端口必须在 wiringManifest 登记否则报「清单漂移」。⑧ 父代理核实：go test -p 1 ./... 在合并全部改动后 TEST_EXIT=0。"
     },
     {
       "id": "CQ-020",
@@ -1125,7 +1137,8 @@
         "testing",
         "maintainability"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：按「纯逻辑且易错」补就近单测，并在 internal/module/CLAUDE.md 写明两层测试策略与判定标准（判断错了会不会静默出错）。新增：order 状态机表驱动测试（穷举 6×6 组合而不是只验证文档写的边 —— 只验证已知边的话，多出来的一条边不会有任何测试失败，而多余的一条就是一条不该存在的业务路径；另断言终态显式出现在表里、自环拒绝、状态集合与表条目数一致）；page 发布路径纯函数（线上态判定、激活 hash、内核错误映射含 %w 包裹）；presentation 模板解析的错误分类（跨类型先判类型不报文档校验细节、同类型透出原始错误、模板不存在不误判为类型不符）—— 这组用例正是重建丢失逻辑时用来验证依据的固化；blueprint 文档校验（合法性、非法输入、规范化字节的确定性）；contenttemplate 文档校验与 hashDocument（sha256 稳定性与内容敏感性）。原本已有的模块内测试（order 金额、page 枚举、analytics、cart、mail 自动化图、runtimefragment、dashboard/user 局部）保持不变。feature 测试继续覆盖需要数据库/事务/HTTP 的部分（admin/artifact/block/content/masterdata/media/navigation/plugin/product/project/publication 与三条发布链）。"
     },
     {
       "id": "CQ-021",
@@ -1176,7 +1189,8 @@
         "refactor",
         "maintainability"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：五个超大 service 文件按关注点拆分（纯移动，逻辑未改）。presentation_service.go 931 行 → 5 个文件（主 160：Service/构造/setter/断言；instance 235：实例 CRUD 与响应组装；render 298：渲染与模板解析；persist 205：落库与产物登记；stale 100：失效与预览）；page_publish.go 746 → 4 个（主 299：Build/Publish/Rollback；url 256：改 URL 与占用预检；artifact 131：产物行读写；kernel 108：内核版本与还原）；entity_source.go 868 → 3 个（resolve 144 / translate 335 / fields 390）；product_service.go 778 → 4 个（主 145 / crud 343 / resp 238 / helper 90）；publication_control.go 668 → 4 个（route 452 / receipt 48 / sitefiles 86 / helper 121），拆空的主文件直接删除。拆分脚本按「接收者.方法名」做键 —— 按裸函数名会在同名方法上互相覆盖（Service.ResolverFor 与 entityFieldSource.ResolverFor），被覆盖的那个会被静默丢弃。**过程事故（如实记录）**：脚本曾用 git show HEAD:<file> 覆盖工作区版本，抹掉了 presentation_service.go（39 行）与 page_publish.go（17 行）的未提交改动。presentation 侧已按测试证据重建（两个 product 测试从失败转为通过，见 CQ-020 条目里的模板解析用例）；page_publish.go 的 17 行（全部位于 Publish 函数内，行号比对定位）未能恢复 —— 该文件其余 18 个函数行号与 HEAD 完全对齐，且拆分后全量测试全绿，但内容未经确认。"
     },
     {
       "id": "CQ-022",
@@ -1225,7 +1239,8 @@
         "maintainability",
         "developer-experience"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：register.go 的 init() 结构化重构（子代理实现，**证据链最完整的一份**）。① **前提不符（本会话第 7 次）**：审计说 init() 1328 行，实测 L513–L2712 = 2199 行、整个文件 2712 行。按父代理指示**不做字面目标**，没有为凑 1328 删任何代码；拆分标准是「可读 + 减少手工维护点」，行数由结构决定。② **结构**：2712 行的单文件 → register.go（60 行：包注释 + `//go:embed *.sql` + mustSQL + init 调用 8 组）+ 8 个按主题拆的 register_*.go（核心 schema/媒体/i18n 数据层/商品库存/身份邮件/订单槽位/统计 SEO/后台词条，各带版本区间注释）+ 注册表测试。**embed 指令 168 条 → 1 条**、包级 SQL 变量 **168 个 → 0 个**（改由 `mustSQL(\"文件名\")` 取），新增一条迁移从「改 3 处」降到「改 2 处」（新增 .sql + 加一条 register 调用），不必再同步维护变量声明。形状选择的理由写进包注释：巨 init 定位难、手工 embed 声明是另一半维护成本、未注册的 SQL 从此不再静默失效。③ **「行为逐字不变」的三重硬证据**：(a) 重构前 dump 全部 170 个注册项的 (Version, TableName, CheckSQL/ConditionSQL, SQL 的 sha256) + 注册顺序，重构后重跑同一 dump —— **前后 sha256 完全相同**（5917bddc…），既证明 `//go:embed var` 改 `embed.FS + mustSQL` 后取到的字节相同，也证明 M[i]/S[i] 的注册顺序一致；(b) **内容守恒**：重构后函数体非空行 2039 = 重构前 init 体非空 2039，差异行 340 **全部是 SQL 引用行**（170 对老行/新行），**非 SQL 引用行的差异为 0**；(c) 切割前 8 段拼接与原文 init 体 `cmp` **逐字节一致**（2198 行，SPLICE-OK）—— 第三重排除了「搬移时丢一行」这种重构最常见的失败，而那种失败通常不会让测试变红。④ **删掉的前提校验答案**：register 与 registerSeed 的**交错顺序不被依赖**（allMigrations/allSeeds 是两个独立切片；All()/AllSeeds() 各自按 compareVersion 排序；ValidateRegistry 拒绝重复版本号）。⑤ **顺手处理的真实隐患，且选择理由准确**：`sort.Slice` **不稳定**而 `AllSeeds` **无重复版本校验**，两者叠起来意味着「同版本号的两个 seed 执行顺序会依赖注册顺序」—— 而注册顺序在重构中会被打散。选了 `sort.SliceStable` 而**不是**加重复校验，理由是：加校验会把「种子版本重复」变成**新的启动期失败路径**，超出「纯结构重构、行为逐字不变」的边界；稳定排序只消除不确定性、不改变任何既有成功/失败路径。同时补 `TestSeedVersionsUnique` 让该问题在测试里**可见**。⑥ **一一对应测试做双向**：`TestEmbeddedSQLFilesAllRegistered` 两个方向都查（磁盘→台账抓「新增 SQL 忘了注册」，台账→磁盘抓「登记了但文件被删」），并断言嵌入列表非空（防 `//go:embed *.sql` 模式失效后退化成空集通过）。**反向验证**：真实注入一个未注册 SQL → FAIL 并打印「迁移 SQL zzz_probe_unregistered.sql 未被任何 register/registerSeed 引用（新增了 SQL 但忘了注册，该迁移永远不会执行）」+「磁盘 SQL 数 169 != 注册台账数 168」；删除探针后复绿。⑦ **psql 真实执行做到了运行时契约层面**（不只跑样本）：判据从运行期注册项导出（换 `?` 为字面量）覆盖 Migration 默认检查 / 自定义 CheckSQL / 跨两表一个 `?` / Seed 两类；再用 PREPARE/EXECUTE 验证参数绑定，并**故意传 2 个参数触发 PG 报错**（`Expected 1 parameters but got 2`）证明「CheckSQL 恰好一个 `?`」这个运行时契约成立 —— migrator.apply 只绑定一个 TableName。附带全量统计：**63 条非空 CheckSQL 全部恰好含 1 个 `?`**，23 条走默认表存在检查，无一条 2 个 `?`（否则运行时必报 expected/got 不匹配）。⑧ **父代理的指令冲突由它发现**：通用约束写了「不要改 register.go（另有代理在处理它的结构重构）」，而该任务本体就是重构它 —— 它按任务卡执行并要求裁决，父代理确认那条例外是笔误并授权；它同时报告「+885 行未提交改动、167–197 全是 untracked，看起来是另一代理」实为父代理本会话前几批的工作，非中间态。⑨ 只改 public/migrations/ 下：register.go（重写）、migrator.go（2 处 SliceStable + 注释）、8 个 register_*.go（新增）、register_registry_test.go（新增）；未新增迁移、未改任何 .sql。临时探针已删，证据留在 /tmp/mig_before.txt、/tmp/mig_after.txt、/tmp/register.go.orig.bak。"
     },
     {
       "id": "CQ-023",

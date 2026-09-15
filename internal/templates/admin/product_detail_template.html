@@ -6,13 +6,13 @@
 {{selectedProject := .SelectedProject}}
 <div class="stack">
     <section class="card card-body">
-        <h2>商品详情页模板</h2>
+        <h2>{{ .["t"]("admin.product_detail_template.title", "商品详情页模板") }}</h2>
         {{if .Err != ""}}
-        <p class="badge badge-warning">上一次操作未完成：{{.Err}}</p>
+        <p class="badge badge-warning">{{ .["t"]("admin.product_detail_template.lastError", "上一次操作未完成：") }}{{.Err}}</p>
         {{end}}
         {{if !.Ready}}
-        <p class="hint">详情页模板能力未装配（缺少内容模板或自动发布契约），本页暂不可用。</p>
-        <p class="hint"><a href="/admin/products?project={{selectedProject}}">返回商品列表</a></p>
+        <p class="hint">{{ .["t"]("admin.product_detail_template.notReady", "详情页模板能力未装配（缺少内容模板或自动发布契约），本页暂不可用。") }}</p>
+        <p class="hint"><a href="/admin/products?project={{selectedProject}}">{{ .["t"]("admin.product_detail_template.backToList", "返回商品列表") }}</a></p>
         {{else}}
         <form method="get" action="/admin/products/template" class="form-inline">
             <input type="hidden" name="product" value="{{.Product.ID}}">
@@ -23,46 +23,44 @@
             </select>
         </form>
         <p class="hint">
-            同一商品类型下可建多套命名模板，每套各自版本化（版本号每次修改自增）。
-            商品发布时可选一套；没有显式选择的实例按该类型的默认模板发布。
-            <a href="/admin/products?project={{selectedProject}}">← 返回商品列表</a>
+            {{ .["t"]("admin.product_detail_template.intro", "同一商品类型下可建多套命名模板，每套各自版本化（版本号每次修改自增）。商品发布时可选一套；没有显式选择的实例按该类型的默认模板发布。") }}
+            <a href="/admin/products?project={{selectedProject}}">{{ .["t"]("admin.product_detail_template.backToListArrow", "← 返回商品列表") }}</a>
         </p>
         {{end}}
     </section>
 
     {{if .Ready}}
     <section class="card card-body">
-        <h2>{{.Product.Name}} · 详情页</h2>
+        <h2>{{.Product.Name}}{{ .["t"]("admin.product_detail_template.detailSuffix", " · 详情页") }}</h2>
         <p>
             <strong>{{.Product.Name}}</strong>
             <code>{{.Product.URLPath}}</code>
             {{if .InstanceExists}}
             <span class="badge">{{.InstanceStatus}}</span>
-            <span>已发布</span>
+            <span>{{ .["t"]("admin.product_detail_template.published", "已发布") }}</span>
             {{else}}
-            <span class="badge badge-mute">未发布</span>
+            <span class="badge badge-mute">{{ .["t"]("admin.product_detail_template.notPublished", "未发布") }}</span>
             {{end}}
         </p>
         {{boundID := .BoundTemplateID}}
         <p class="hint">
-            当前模板：
-            {{if .InstanceExists}}随实例绑定{{else}}未指定时按类型取默认{{end}}
-            （默认模板 id <code>{{.DefaultTemplateID}}</code>）。
-            预览在浏览器新标签页里打开渲染结果 —— 看到的就是发布会产出的字节。
+            {{ .["t"]("admin.product_detail_template.currentTemplateLead", "当前模板：") }}
+            {{if .InstanceExists}}{{ .["t"]("admin.product_detail_template.boundToInstance", "随实例绑定") }}{{else}}{{ .["t"]("admin.product_detail_template.typeDefault", "未指定时按类型取默认") }}{{end}}
+            {{ .["t"]("admin.product_detail_template.defaultIdLead", "（默认模板 id ") }}<code>{{.DefaultTemplateID}}</code>{{ .["t"]("admin.product_detail_template.afterDefaultId", "）。预览在浏览器新标签页里打开渲染结果 —— 看到的就是发布会产出的字节。") }}
         </p>
 
         <form method="post" action="/admin/products/template/preview" target="_blank" class="form-inline">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <input type="hidden" name="productId" value="{{.Product.ID}}">
-            <label>预览模板
+            <label>{{ .["t"]("admin.product_detail_template.label.previewTemplate", "预览模板") }}
                 <select class="form-select" name="templateId">
                     {{range _, t := .Templates}}
-                    <option value="{{t.ID}}" {{if t.ID == boundID}}selected{{end}}>{{t.Name}}（v{{t.DraftVersion}}）{{if t.IsDefault}} · 类型默认{{end}}</option>
+                    <option value="{{t.ID}}" {{if t.ID == boundID}}selected{{end}}>{{t.Name}}{{ .["t"]("admin.product_detail_template.versionLead", "（v") }}{{t.DraftVersion}}{{ .["t"]("admin.product_detail_template.versionTail", "）") }}{{if t.IsDefault}}{{ .["t"]("admin.product_detail_template.typeDefaultSuffix", " · 类型默认") }}{{end}}</option>
                     {{end}}
                 </select>
             </label>
-            <button type="submit" class="btn">预览渲染效果</button>
+            <button type="submit" class="btn">{{ .["t"]("admin.product_detail_template.previewSubmit", "预览渲染效果") }}</button>
         </form>
 
         {{if .InstanceExists}}
@@ -70,52 +68,52 @@
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <input type="hidden" name="productId" value="{{.Product.ID}}">
-            <label>使用模板
+            <label>{{ .["t"]("admin.product_detail_template.label.useTemplate", "使用模板") }}
                 <select class="form-select" name="templateId">
                     {{range _, t := .Templates}}
-                    <option value="{{t.ID}}" {{if t.ID == boundID}}selected{{end}}>{{t.Name}}（v{{t.DraftVersion}}）{{if t.IsDefault}} · 类型默认{{end}}</option>
+                    <option value="{{t.ID}}" {{if t.ID == boundID}}selected{{end}}>{{t.Name}}{{ .["t"]("admin.product_detail_template.versionLead", "（v") }}{{t.DraftVersion}}{{ .["t"]("admin.product_detail_template.versionTail", "）") }}{{if t.IsDefault}}{{ .["t"]("admin.product_detail_template.typeDefaultSuffix", " · 类型默认") }}{{end}}</option>
                     {{end}}
                 </select>
             </label>
-            <button type="submit" class="btn btn-primary">切换模板并重新发布</button>
+            <button type="submit" class="btn btn-primary">{{ .["t"]("admin.product_detail_template.applySubmit", "切换模板并重新发布") }}</button>
         </form>
 
         <form method="post" action="/admin/products/template/url" class="form-inline">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <input type="hidden" name="productId" value="{{.Product.ID}}">
-            <label>改 URL
+            <label>{{ .["t"]("admin.product_detail_template.label.changeURL", "改 URL") }}
                 <input type="text" class="form-input" name="newPath" value="{{.InstanceURL}}" required>
             </label>
-            <label class="checkbox"><input type="checkbox" name="withRedirect" value="1" checked> 旧链接 301</label>
-            <button type="submit" class="btn">改 URL</button>
+            <label class="checkbox"><input type="checkbox" name="withRedirect" value="1" checked> {{ .["t"]("admin.product_detail_template.keepRedirect", "旧链接 301") }}</label>
+            <button type="submit" class="btn">{{ .["t"]("admin.product_detail_template.changeURLSubmit", "改 URL") }}</button>
         </form>
-        <p class="hint">改 URL 不动商品数据与模板绑定：只重建产物到新路径并处置旧链接。</p>
+        <p class="hint">{{ .["t"]("admin.product_detail_template.changeURLHint", "改 URL 不动商品数据与模板绑定：只重建产物到新路径并处置旧链接。") }}</p>
         {{else}}
         <form method="post" action="/admin/products/template/publish" class="form-inline">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <input type="hidden" name="productId" value="{{.Product.ID}}">
-            <label>使用模板
+            <label>{{ .["t"]("admin.product_detail_template.label.useTemplate", "使用模板") }}
                 <select class="form-select" name="templateId">
                     {{range _, t := .Templates}}
-                    <option value="{{t.ID}}" {{if t.ID == boundID}}selected{{end}}>{{t.Name}}（v{{t.DraftVersion}}）{{if t.IsDefault}} · 类型默认{{end}}</option>
+                    <option value="{{t.ID}}" {{if t.ID == boundID}}selected{{end}}>{{t.Name}}{{ .["t"]("admin.product_detail_template.versionLead", "（v") }}{{t.DraftVersion}}{{ .["t"]("admin.product_detail_template.versionTail", "）") }}{{if t.IsDefault}}{{ .["t"]("admin.product_detail_template.typeDefaultSuffix", " · 类型默认") }}{{end}}</option>
                     {{end}}
                 </select>
             </label>
-            <input type="text" class="form-input" name="urlPath" placeholder="发布 URL（留空按商品 slug 生成 {{.Product.URLPath}}）">
-            <button type="submit" class="btn btn-primary">发布详情页</button>
+            <input type="text" class="form-input" name="urlPath" placeholder="{{ .["t"]("admin.product_detail_template.ph.publishURLLead", "发布 URL（留空按商品 slug 生成 ") }}{{.Product.URLPath}}{{ .["t"]("admin.product_detail_template.ph.publishURLTail", "）") }}">
+            <button type="submit" class="btn btn-primary">{{ .["t"]("admin.product_detail_template.publishSubmit", "发布详情页") }}</button>
         </form>
         {{end}}
     </section>
 
     <section class="card card-body">
-        <h2>命名模板（{{.TemplateCount}} 套）</h2>
+        <h2>{{ .["t"]("admin.product_detail_template.named.titleLead", "命名模板（") }}{{.TemplateCount}}{{ .["t"]("admin.product_detail_template.named.titleTail", " 套）") }}</h2>
         {{if len(.Templates) == 0}}
-        <p class="hint">这个商品类型还没有任何模板。</p>
+        <p class="hint">{{ .["t"]("admin.product_detail_template.named.empty", "这个商品类型还没有任何模板。") }}</p>
         {{else}}
-        <div class="table-wrap" tabindex="0" role="region" aria-label="商品详情模板列表"><table class="data-table data-table-wide">
-            <thead><tr><th>模板名</th><th>当前版本</th><th>更新时间</th><th>状态</th><th>模板 id</th></tr></thead>
+        <div class="table-wrap" tabindex="0" role="region" aria-label="{{ .["t"]("admin.product_detail_template.named.tableAria", "商品详情模板列表") }}"><table class="data-table data-table-wide">
+            <thead><tr><th>{{ .["t"]("admin.product_detail_template.named.col.name", "模板名") }}</th><th>{{ .["t"]("admin.product_detail_template.named.col.version", "当前版本") }}</th><th>{{ .["t"]("admin.product_detail_template.named.col.updatedAt", "更新时间") }}</th><th>{{ .["t"]("admin.product_detail_template.named.col.state", "状态") }}</th><th>{{ .["t"]("admin.product_detail_template.named.col.templateId", "模板 id") }}</th></tr></thead>
             <tbody>
             {{range _, t := .Templates}}
             <tr>
@@ -123,12 +121,12 @@
                 <td>v{{t.DraftVersion}}</td>
                 <td>{{t.UpdatedAt}}</td>
                 <td>
-                    {{if t.IsBound}}<span class="badge">当前使用</span>{{end}}
-                    {{if t.IsDefault}}<span class="badge badge-info">类型默认</span>{{end}}
+                    {{if t.IsBound}}<span class="badge">{{ .["t"]("admin.product_detail_template.named.bound", "当前使用") }}</span>{{end}}
+                    {{if t.IsDefault}}<span class="badge badge-info">{{ .["t"]("admin.product_detail_template.named.typeDefaultLabel", "类型默认") }}</span>{{end}}
                 </td>
                 <td>
                     <code>{{t.ID}}</code>
-                    <a class="btn btn-sm" href="/workbench?template={{t.ID}}&entityType=product&entityId={{.Product.ID}}&projectId={{selectedProject}}">可视化编辑</a>
+                    <a class="btn btn-sm" href="/workbench?template={{t.ID}}&entityType=product&entityId={{.Product.ID}}&projectId={{selectedProject}}">{{ .["t"]("admin.product_detail_template.named.visualEdit", "可视化编辑") }}</a>
                 </td>
             </tr>
             {{end}}
@@ -140,15 +138,15 @@
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <input type="hidden" name="productId" value="{{.Product.ID}}">
-            <input type="text" class="form-input" name="name" placeholder="新模板名（例如：夏季活动详情页）" required>
-            <label>复制自
+            <input type="text" class="form-input" name="name" placeholder="{{ .["t"]("admin.product_detail_template.named.ph.name", "新模板名（例如：夏季活动详情页）") }}" required>
+            <label>{{ .["t"]("admin.product_detail_template.named.label.copyFrom", "复制自") }}
                 <select class="form-select" name="copyFrom">
                     {{range _, t := .Templates}}
-                    <option value="{{t.ID}}" {{if t.IsDefault}}selected{{end}}>{{t.Name}}（v{{t.DraftVersion}}）</option>
+                    <option value="{{t.ID}}" {{if t.IsDefault}}selected{{end}}>{{t.Name}}{{ .["t"]("admin.product_detail_template.versionLead", "（v") }}{{t.DraftVersion}}{{ .["t"]("admin.product_detail_template.versionTail", "）") }}</option>
                     {{end}}
                 </select>
             </label>
-            <button type="submit" class="btn">新建命名模板</button>
+            <button type="submit" class="btn">{{ .["t"]("admin.product_detail_template.named.create", "新建命名模板") }}</button>
         </form>
     </section>
     {{end}}

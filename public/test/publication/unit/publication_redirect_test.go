@@ -86,7 +86,7 @@ func TestPublicationRedirectNoArtifact(t *testing.T) {
 	// 回执已提交且 ToArtifact 为 NULL（不写空串 uuid）。
 	var receipt pubmodel.ReceiptEntity
 	if err := svc.Model().ReceiptDB(context.Background()).
-		Where("action = ?", "redirect").Order("created_at DESC").Limit(1).
+		Where("action = ?", "redirect").Order("create_time DESC").Limit(1).
 		First(&receipt).Error; err != nil {
 		t.Fatalf("查询回执失败: %v", err)
 	}

@@ -17,7 +17,6 @@ import (
 
 	orderdto "go_wp/internal/module/order/dto"
 	orderenums "go_wp/internal/module/order/enums"
-	ordermodel "go_wp/internal/module/order/model"
 )
 
 // CustomerOrderSummaryOf 按「工程 + 客户」取订单聚合（数量 / 累计消费 / 最近一单）。
@@ -28,37 +27,34 @@ func (s *Service) CustomerOrderSummaryOf(ctx context.Context, req *orderdto.Cust
 	if req == nil || strings.TrimSpace(req.ProjectID) == "" || req.UserID == 0 {
 		return nil, errors.New(orderenums.ErrInvalidParam)
 	}
-	agg, err := s.orders.AggregateByUser(ctx, req.ProjectID, req.UserID)
+	// 聚合三值与最近一单在**同一条 SQL** 里取回（model.SummaryByUser 的窗口函数查询）。
+	// 拆成三条（聚合 / 列表里的分页计数 / 列表取一单）时，三条之间落的新单会让摘要
+	// 自相矛盾；其中分页计数那条在摘要场景里连结果都用不上，白扫一遍全量行。
+	row, err := s.orders.SummaryByUser(ctx, req.ProjectID, req.UserID)
 	if err != nil {
 		return nil, err
 	}
 	res = &orderdto.CustomerOrderSummaryResp{
 		UserID:           req.UserID,
 		ProjectID:        req.ProjectID,
-		OrderCount:       agg.OrderCount,
-		PaidOrderCount:   agg.PaidOrderCount,
-		TotalAmount:      agg.TotalAmount,
-		TotalAmountLabel: centsToYuanLabel(agg.TotalAmount),
+		OrderCount:       row.OrderCount,
+		PaidOrderCount:   row.PaidOrderCount,
+		TotalAmount:      row.TotalAmount,
+		TotalAmountLabel: centsToYuanLabel(row.TotalAmount),
 	}
-	// 最近一单：复用列表查询（排序恒为 id DESC，取一条即最新）。
-	// 不为它单独加一个 model 方法 —— 那就是把同一条查询抄第二遍。
-	uid := req.UserID
-	latest, _, lerr := s.orders.List(ctx, ordermodel.OrderFilter{
-		ProjectID: req.ProjectID,
-		UserID:    &uid,
-		Limit:     1,
-	})
-	if lerr != nil {
-		return nil, lerr
-	}
-	if len(latest) > 0 {
-		head := latest[0]
+	// 最近一单为空 ⇔ 这个客户在该工程下一单都没有（查询挂单行哨兵，恒返回一行）。
+	// HasOrders 由它推出，而不是从聚合数字猜：0 单 + 0 元与「查不到」在数字上无法区分。
+	if row.LastOrderID != nil && row.LastOrderTime != nil {
 		res.HasOrders = true
-		res.LastOrderID = head.ID
-		res.LastOrderNo = head.OrderNo
-		res.LastOrderStatus = head.Status
-		res.LastOrderTime = &head.CreateTime
-		res.LastOrderTimeText = head.CreateTime.Local().Format("2006-01-02 15:04")
+		res.LastOrderID = *row.LastOrderID
+		res.LastOrderTime = row.LastOrderTime
+		res.LastOrderTimeText = row.LastOrderTime.Local().Format("2006-01-02 15:04")
+		if row.LastOrderNo != nil {
+			res.LastOrderNo = *row.LastOrderNo
+		}
+		if row.LastOrderStatus != nil {
+			res.LastOrderStatus = *row.LastOrderStatus
+		}
 	}
 	return res, nil
 }

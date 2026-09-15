@@ -9,8 +9,16 @@
 // builder.ValidateFieldRefs 按实体类型注册表校验，构建期解析器再拒一次越界字段；
 // 白名单的唯一来源是 product 模块的 contract（不在组件里另写一份）。
 //
-// 槽位用自由文本而不是 bindingfield 下拉：bindingfield 的下拉依赖集合元数据注册，
-// 部分场景仍不如自由文本灵活；白名单由 ValidateFieldRefs 与构建期解析器两道校验兜住。
+// 槽位用 bindingfield 下拉（审计 EDT-006）：选项来自 content:product 集合源的字段白名单,
+// 与保存期 ValidateFieldRefs、构建期解析器读的是**同一份**来源 —— 手写 "prodct.name"
+// 这种拼写以前要等到保存或构建才报错，现在根本选不出来。
+//
+// prefixes=product 限定只列 product 前缀：详情页组件的槽位绑的是当前实体，
+// item.<字段> 是集合项作用域（集合里那一行），在详情页里没有含义；两者混在一张下拉里，
+// 作者得自己记住哪个能用。
+//
+// 下拉只是输入的辅助，**不是安全边界**：请求可以绕过编辑器直接提交，白名单仍由
+// ValidateFieldRefs 与构建期解析器两道校验兜住。
 // 商品集合源 content:product 已在装配层注册（routes.go）。
 package product
 
@@ -41,31 +49,31 @@ type Props struct {
 	// Source 数据源实体类型（当前只有 product；跨数据源绑定会被校验拒绝）。
 	Source string `json:"source,omitempty" ct:"select,product=商品,default=product,sec=content,label=数据源"`
 	// MediaField 主图字段（如 product.defaultImage）。
-	MediaField string `json:"mediaField,omitempty" ct:"string,maxlen=60,sec=content,label=主图字段"`
+	MediaField string `json:"mediaField,omitempty" ct:"bindingfield,prefixes=product,maxlen=60,sec=content,label=主图字段"`
 	// GalleryField 图集字段（JSON 数组，如 product.images）。
-	GalleryField string `json:"galleryField,omitempty" ct:"string,maxlen=60,sec=content,label=图集字段"`
+	GalleryField string `json:"galleryField,omitempty" ct:"bindingfield,prefixes=product,maxlen=60,sec=content,label=图集字段"`
 	// TitleField 标题字段（如 product.name）。
-	TitleField string `json:"titleField,omitempty" ct:"string,maxlen=60,sec=content,label=标题字段"`
+	TitleField string `json:"titleField,omitempty" ct:"bindingfield,prefixes=product,maxlen=60,sec=content,label=标题字段"`
 	// SubtitleField 副标题字段（如 product.subtitle）。
-	SubtitleField string `json:"subtitleField,omitempty" ct:"string,maxlen=60,sec=content,label=副标题字段"`
+	SubtitleField string `json:"subtitleField,omitempty" ct:"bindingfield,prefixes=product,maxlen=60,sec=content,label=副标题字段"`
 	// PriceField 价格字段（如 product.priceRange）。
-	PriceField string `json:"priceField,omitempty" ct:"string,maxlen=60,sec=content,label=价格字段"`
+	PriceField string `json:"priceField,omitempty" ct:"bindingfield,prefixes=product,maxlen=60,sec=content,label=价格字段"`
 	// ComparePriceField 划线价字段（如 product.comparePrice）。
-	ComparePriceField string `json:"comparePriceField,omitempty" ct:"string,maxlen=60,sec=content,label=划线价字段"`
+	ComparePriceField string `json:"comparePriceField,omitempty" ct:"bindingfield,prefixes=product,maxlen=60,sec=content,label=划线价字段"`
 	// DescriptionField 描述字段（富文本清洗后输出，如 product.description）。
-	DescriptionField string `json:"descriptionField,omitempty" ct:"string,maxlen=60,sec=content,label=描述字段"`
+	DescriptionField string `json:"descriptionField,omitempty" ct:"bindingfield,prefixes=product,maxlen=60,sec=content,label=描述字段"`
 	// MediaAltField 主图 alt 文本字段（如 product.imageAlt）：作者填写的图片替代文本，
 	// 参与内容翻译（issue #12）；留空由商品名兜底。
-	MediaAltField string `json:"mediaAltField,omitempty" ct:"string,maxlen=60,sec=content,label=主图 alt 字段"`
+	MediaAltField string `json:"mediaAltField,omitempty" ct:"bindingfield,prefixes=product,maxlen=60,sec=content,label=主图 alt 字段"`
 	// GalleryAltField 图集 alt 数组字段（JSON 数组，如 product.imageAlts）：与图集逐位对应，
 	// 元素可为空串；逐元素按构建语言取译文（issue #12）。
-	GalleryAltField string `json:"galleryAltField,omitempty" ct:"string,maxlen=60,sec=content,label=图集 alt 字段"`
+	GalleryAltField string `json:"galleryAltField,omitempty" ct:"bindingfield,prefixes=product,maxlen=60,sec=content,label=图集 alt 字段"`
 	// OptionsField 规格维度字段（JSON 数组，如 product.options）：由商品的属性组派生，
 	// 声明后才可能输出规格选择器（issue #8）。
-	OptionsField string `json:"optionsField,omitempty" ct:"string,maxlen=60,sec=content,label=规格维度字段"`
+	OptionsField string `json:"optionsField,omitempty" ct:"bindingfield,prefixes=product,maxlen=60,sec=content,label=规格维度字段"`
 	// VariantsField 变体组合字段（JSON 数组，如 product.variants）：由商品的变体派生，
 	// 规格组合不足两个时不输出选择器（单变体商品不显示规格选择器）。
-	VariantsField string `json:"variantsField,omitempty" ct:"string,maxlen=60,sec=content,label=变体组合字段"`
+	VariantsField string `json:"variantsField,omitempty" ct:"bindingfield,prefixes=product,maxlen=60,sec=content,label=变体组合字段"`
 	// Currency 货币符号（价格槽位前缀；留空用默认符号）。
 	Currency string `json:"currency,omitempty" ct:"text,maxlen=8,sec=content,label=货币符号"`
 	// TitleTag 标题标签层级（h1~h3，默认 h2；h1 由页面标题承担时选 h2）。

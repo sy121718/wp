@@ -30,9 +30,10 @@
 }
 
 @if pauseOnHover
-/* 悬停暂停：触屏没有悬停，这条规则在手机上自然不生效（不构成功能缺口 ——
-   触屏用户可以直接滑动页面，跑马灯不是需要停下的东西）。 */
-&:hover .sky-marquee-track {
+/* 悬停暂停：进 hover 桶（构建期包 @media (hover: hover)），触屏上整段不输出。
+   这条**不补触屏等价形态**（属 UI-006 的显式豁免）：触屏用户可以直接滑动页面，
+   跑马灯不是需要停下的东西 —— 缺的不是交互，只是桌面端的一点阅读便利。 */
+@hover &:hover .sky-marquee-track {
   animation-play-state: paused;
 }
 @endif

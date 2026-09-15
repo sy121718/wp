@@ -40,10 +40,16 @@ import (
 	"go_wp/internal/templates"
 )
 
-// cartService 购物车依赖（装配期注入；nil = 未接入，能力给出明确提示而不是空壳）。
+// cartService 购物车依赖（装配期注入）。
+//
+// 装配自检（审计 CQ-019）：判为 required-port —— 实现由 routes.go 在同一个函数里
+// 构造（cartservice.NewService）后立即注入，本进程内恒定可得，不存在「合法地不接」的
+// 部署形态；为空只可能是有人删掉了注入行。
+// nil 分支保留给单测，其表现是购物车六个能力一律渲染「暂不可用」文案 ——
+// 那是把装配缺陷伪装成服务故障，不能当生产降级路径。
 var cartService cartcontract.CartService
 
-// SetCartProvider 注入购物车能力（装配期调用；传 nil 表示未接入）。
+// SetCartProvider 注入购物车能力（装配期调用；**必须注入**，理由见字段注释）。
 func SetCartProvider(svc cartcontract.CartService) { cartService = svc }
 
 func init() {

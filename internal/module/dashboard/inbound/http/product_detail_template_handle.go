@@ -76,7 +76,7 @@ func (h *productPageHandle) ProductDetailTemplatePage(c *gin.Context) {
 	ctx := c.Request.Context()
 	projects, err := h.projects.List(ctx)
 	if err != nil {
-		c.String(http.StatusInternalServerError, err.Error())
+		pageError(c, "product_detail_template", err)
 		return
 	}
 	selected := strings.TrimSpace(c.Query("project"))
@@ -107,7 +107,7 @@ func (h *productPageHandle) ProductDetailTemplatePage(c *gin.Context) {
 	// 实例未显式绑定模板时商品就发布在它上面。
 	rows, err := h.templates.List(ctx, &contenttemplatedto.ListReq{EntityType: productEntityType})
 	if err != nil {
-		c.String(http.StatusInternalServerError, err.Error())
+		pageError(c, "product_detail_template", err)
 		return
 	}
 	defaultID := ""
@@ -300,7 +300,8 @@ func (h *productPageHandle) ProductDetailTemplatePreview(c *gin.Context) {
 		EntityID: c.PostForm("productId"), TemplateID: strings.TrimSpace(c.PostForm("templateId")),
 	})
 	if err != nil {
-		c.String(http.StatusBadRequest, "预览失败：%s", err.Error())
+		// 「预览失败」对作者是可用信息，原因（模板不存在 / 文档非法 / 渲染出错）只进日志。
+		pageErrorBadRequest(c, "product_detail_template", err)
 		return
 	}
 	if res.TemplateName != "" {

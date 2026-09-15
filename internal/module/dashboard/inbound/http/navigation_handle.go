@@ -169,7 +169,7 @@ func (h *Handle) NavigationCreate(c *gin.Context) {
 	}
 	if _, err := h.navigations.Create(c.Request.Context(), req); err != nil {
 		logger.Scene("page").With("path", path).Error(err, "新增导航项失败")
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		pageErrorBadRequest(c, "navigation", err)
 		return
 	}
 	c.Redirect(http.StatusSeeOther, navListURL(projectID, kind))
@@ -250,7 +250,7 @@ func (h *Handle) NavigationUpdate(c *gin.Context) {
 	}
 	if _, err := h.navigations.Update(c.Request.Context(), req); err != nil {
 		logger.Scene("page").With("id", id).Error(err, "更新导航项失败")
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		pageErrorBadRequest(c, "navigation", err)
 		return
 	}
 	c.Redirect(http.StatusSeeOther, navListURL(projectID, kind))
@@ -267,7 +267,7 @@ func (h *Handle) NavigationDelete(c *gin.Context) {
 	}
 	if err := h.navigations.Delete(c.Request.Context(), &navigationdto.DeleteReq{ID: id}); err != nil {
 		logger.Scene("page").With("id", id).Error(err, "删除导航项失败")
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		pageErrorBadRequest(c, "navigation", err)
 		return
 	}
 	c.Redirect(http.StatusSeeOther, navListURL(projectID, kind))
@@ -286,7 +286,7 @@ func (h *Handle) NavigationMove(c *gin.Context) {
 	}
 	item, err := h.navigations.Get(ctx, &navigationdto.GetReq{ID: id})
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		pageErrorBadRequest(c, "navigation", err)
 		return
 	}
 	nodes, err := h.navigations.Tree(ctx, item.ProjectID, item.Kind)

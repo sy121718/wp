@@ -23,7 +23,7 @@ func (h *Handle) CreatePurchaseOrder(c *gin.Context) {
 	}
 	res, err := h.svc.CreatePurchaseOrder(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
 		return
 	}
 	response.SuccessWithMessage(c, inventoryenums.MsgCreateSuccess, res)
@@ -38,7 +38,7 @@ func (h *Handle) UpdatePurchaseOrder(c *gin.Context) {
 	}
 	res, err := h.svc.UpdatePurchaseOrder(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
 		return
 	}
 	response.SuccessWithMessage(c, inventoryenums.MsgUpdateSuccess, res)
@@ -53,7 +53,7 @@ func (h *Handle) GetPurchaseOrder(c *gin.Context) {
 	}
 	res, err := h.svc.GetPurchaseOrder(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusNotFound, err.Error())
+		response.ErrorAuto(c, http.StatusNotFound, "product", err)
 		return
 	}
 	response.SuccessWithMessage(c, inventoryenums.MsgDetailSuccess, res)
@@ -68,7 +68,7 @@ func (h *Handle) ListPurchaseOrders(c *gin.Context) {
 	}
 	list, err := h.svc.ListPurchaseOrders(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
 		return
 	}
 	response.SuccessWithMessage(c, inventoryenums.MsgListSuccess, list)
@@ -83,7 +83,7 @@ func (h *Handle) RegisterReceipt(c *gin.Context) {
 	}
 	res, err := h.svc.RegisterReceipt(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
 		return
 	}
 	response.SuccessWithMessage(c, inventoryenums.MsgReceiptSuccess, res)
@@ -98,7 +98,7 @@ func (h *Handle) RegisterProductionInbound(c *gin.Context) {
 	}
 	res, err := h.svc.RegisterProductionInbound(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
 		return
 	}
 	response.SuccessWithMessage(c, inventoryenums.MsgReceiptSuccess, res)
@@ -113,7 +113,7 @@ func (h *Handle) ListPurchaseHistory(c *gin.Context) {
 	}
 	list, err := h.svc.ListPurchaseHistory(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
 		return
 	}
 	response.SuccessWithMessage(c, inventoryenums.MsgListSuccess, list)

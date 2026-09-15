@@ -40,6 +40,13 @@ func (s *Service) ResolverFor(ctx context.Context, entityType, entityID string) 
 	if err = json.Unmarshal(e.Data, &data); err != nil {
 		return nil, fmt.Errorf("%s: %w", contentenums.ErrDataInvalid, err)
 	}
+	// 多语言（审计 I18N-006）：字段值按当前构建语言取译文。
+	//
+	// 语言从 ctx 取（core.BuildLang）—— 与商品域的实体解析同一约定：
+	// 签名里再传一个 lang 就有「两处可能不一致」的空间，而它只在英文站点上才暴露。
+	// 没有译文时逐字节回退原文（TranslateContent 的语义），英文站点缺译文是常态。
+	lang := core.BuildLang(ctx)
+	data = s.translateData(ctx, lang, entityType, data)
 	return &entityResolver{entityType: entityType, data: data}, nil
 }
 

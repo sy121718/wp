@@ -1,44 +1,46 @@
 {* admin/datarule_edit.html — 数据规则编辑：detail 回显 + config JSON + 保存/返回 *}
 {{extends "layout.html"}}
 {{block body()}}
+{* range 内取词要先取 t 函数（Jet 不在 range 内做 := 赋值，且 range 内 . 指向当前元素）。 *}
+{{tr := .["t"]}}
 <div class="stack">
     <section class="card">
-        <div class="card-header"><span class="card-title">编辑数据规则 #{{.Detail.ID}}</span></div>
+        <div class="card-header"><span class="card-title">{{ .["t"]("admin.datarules.edit_page_title", "编辑数据规则 #") }}{{.Detail.ID}}</span></div>
         <div class="card-body">
             <form method="post" action="/admin/datarules/update" class="form-inline">
                 <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
                 <input type="hidden" name="id" value="{{.Detail.ID}}">
                 <div class="form-row">
                     <div class="form-group">
-                        <label class="form-label req">规则名称</label>
+                        <label class="form-label req">{{ .["t"]("admin.datarules.field.name", "规则名称") }}</label>
                         <input type="text" name="rule_name" class="form-input" required maxlength="100" value="{{.Detail.RuleName}}">
                     </div>
                     <div class="form-group">
-                        <label class="form-label req">数据域</label>
+                        <label class="form-label req">{{ .["t"]("admin.datarules.field.domain", "数据域") }}</label>
                         <select name="domain" class="form-select">
                             {{range _, dm := .Domains}}
-                            <option value="{{dm.Domain}}"{{if .Detail.Domain == dm.Domain}} selected{{end}}>{{dm.DomainLabel}}（{{dm.Domain}}）</option>
+                            <option value="{{dm.Domain}}"{{if .Detail.Domain == dm.Domain}} selected{{end}}>{{dm.DomainLabel}}{{tr("admin.datarules.paren_open", "（")}}{{dm.Domain}}{{tr("admin.datarules.paren_close", "）")}}</option>
                             {{end}}
                         </select>
                     </div>
                     <div class="form-group">
-                        <label class="form-label">状态</label>
+                        <label class="form-label">{{ .["t"]("admin.datarules.field.status", "状态") }}</label>
                         <select name="status" class="form-select">
-                            <option value="1"{{if .Detail.Status == 1}} selected{{end}}>启用</option>
-                            <option value="0"{{if .Detail.Status == 0}} selected{{end}}>禁用</option>
+                            <option value="1"{{if .Detail.Status == 1}} selected{{end}}>{{ .["t"]("admin.datarules.status.enabled", "启用") }}</option>
+                            <option value="0"{{if .Detail.Status == 0}} selected{{end}}>{{ .["t"]("admin.datarules.status.disabled", "禁用") }}</option>
                         </select>
                     </div>
                     <div class="form-group">
-                        <label class="form-label">备注</label>
+                        <label class="form-label">{{ .["t"]("admin.datarules.field.remark", "备注") }}</label>
                         <input type="text" name="remark" class="form-input" maxlength="200" value="{{if .Detail.Remark}}{{.Detail.Remark}}{{end}}">
                     </div>
                 </div>
                 <div class="form-group">
-                    <label class="form-label">配置（RuleConfig JSON）</label>
+                    <label class="form-label">{{ .["t"]("admin.datarules.field.config_plain", "配置（RuleConfig JSON）") }}</label>
                     <textarea name="config" class="form-textarea" rows="10">{{.Config}}</textarea>
                 </div>
-                <button type="submit" class="btn btn-primary">保存</button>
-                <a class="btn" href="/admin/datarules">返回列表</a>
+                <button type="submit" class="btn btn-primary">{{ .["t"]("admin.datarules.action.save_plain", "保存") }}</button>
+                <a class="btn" href="/admin/datarules">{{ .["t"]("admin.datarules.action.back", "返回列表") }}</a>
             </form>
         </div>
     </section>

@@ -384,7 +384,7 @@ func (b *CSSBuckets) ContainerQueryCSS() string {
 		{"sky-local", b.containersLocal},
 	} {
 		if len(g.rules) > 0 {
-			parts = append(parts, "@layer "+g.layer+" {\n"+strings.Join(g.rules, "\n")+"\n}")
+			parts = append(parts, "@layer "+g.layer+" {\n"+strings.Join(mergeScopeSiblings(g.rules), "\n")+"\n}")
 		}
 	}
 	return strings.Join(parts, "\n\n")
@@ -431,20 +431,21 @@ func (b *CSSBuckets) String() string {
 	for _, name := range b.customOrder {
 		parts = append(parts, b.customKeyframes[name])
 	}
-	parts = append(parts, b.desktop...)
+	// 同族实例（只差作用域类名、声明相同）且相邻的规则并列成一条（PERF-016）。
+	parts = append(parts, mergeScopeSiblings(b.desktop)...)
 	if len(b.tablet) > 0 {
-		parts = append(parts, fmt.Sprintf("%s {\n%s\n}", breakpointMedia[BreakpointTablet], strings.Join(b.tablet, "\n")))
+		parts = append(parts, fmt.Sprintf("%s {\n%s\n}", breakpointMedia[BreakpointTablet], strings.Join(mergeScopeSiblings(b.tablet), "\n")))
 	}
 	if len(b.mobile) > 0 {
-		parts = append(parts, fmt.Sprintf("%s {\n%s\n}", breakpointMedia[BreakpointMobile], strings.Join(b.mobile, "\n")))
+		parts = append(parts, fmt.Sprintf("%s {\n%s\n}", breakpointMedia[BreakpointMobile], strings.Join(mergeScopeSiblings(b.mobile), "\n")))
 	}
 	// 悬浮块：触屏治理（@media hover:hover 包裹），置于最末（覆盖语义与源序一致）。
 	if len(b.hover) > 0 {
-		parts = append(parts, strings.Join(b.hover, "\n"))
+		parts = append(parts, strings.Join(mergeScopeSiblings(b.hover), "\n"))
 	}
 	// 按压块：置于 hover 之后（同时「悬停且按住」时按压态胜出，符合直觉）。不包 hover:hover。
 	if len(b.active) > 0 {
-		parts = append(parts, strings.Join(b.active, "\n"))
+		parts = append(parts, strings.Join(mergeScopeSiblings(b.active), "\n"))
 	}
 
 	return strings.Join(parts, "\n\n")

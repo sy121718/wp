@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 	"errors"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -549,7 +550,7 @@ func toMovementResp(r *inventorymodel.MovementRow) *inventorydto.MovementResp {
 		CreatedAt: r.CreatedAt.Format(time.RFC3339),
 	}
 	if r.ReasonID != nil {
-		resp.ReasonID = *r.ReasonID
+		resp.ReasonID = strconv.FormatInt(*r.ReasonID, 10)
 	}
 	if r.ParentVariantID != nil {
 		resp.ParentVariantID = *r.ParentVariantID
@@ -569,7 +570,7 @@ func toMovementRespFromEntity(m *inventorymodel.MovementEntity) *inventorydto.Mo
 		CreatedAt: m.CreatedAt.Format(time.RFC3339),
 	}
 	if m.ReasonID != nil {
-		resp.ReasonID = *m.ReasonID
+		resp.ReasonID = strconv.FormatInt(*m.ReasonID, 10)
 	}
 	if m.ParentVariantID != nil {
 		resp.ParentVariantID = *m.ParentVariantID

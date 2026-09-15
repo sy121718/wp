@@ -9,8 +9,8 @@ import (
 
 	"go_wp/internal/builder"
 	"go_wp/internal/builder/core"
-	"go_wp/internal/seo"
 	projectcontract "go_wp/internal/module/project/contract"
+	"go_wp/internal/seo"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
 )
@@ -104,7 +104,17 @@ func SiteRouteEntries(ctx context.Context, project projectcontract.ProjectServic
 }
 
 // LocaleView 计算 hreflang 互指与语言切换器链接（与 page.localeViewOf 同源）。
-func LocaleView(ctx context.Context, project projectcontract.ProjectService, projectID, logicalPath, lang string) (alts []builder.Alternate, links []core.LocaleLink) {
+//
+// published 报告某个访问路径是否真的已发布（审计 I18N-021）。为 nil 时按「全部已发布」
+// 处理，行为与接入前逐字一致 —— 未接入校验不该改变产物。
+//
+// 为什么必须有这道校验：SiteRouteEntries 只是从**启用语言**推导路径，它不知道某个语言
+// 的页面到底有没有构建成功。于是一个「已登记但未发布」的语言会出现在切换器里，
+// 用户点过去看到的不是「还没翻译」而是站内 404 —— 站点看起来是坏的，
+// 而不是「这个语言还没做」。
+//
+// 只跳过**非当前语言**：当前语言那一项必须保留，否则切换器里没有「你正在看的这一版」。
+func LocaleView(ctx context.Context, project projectcontract.ProjectService, projectID, logicalPath, lang string, published func(accessPath string) bool) (alts []builder.Alternate, links []core.LocaleLink) {
 	if !i18n.SiteLangURLsSeparated() || strings.TrimSpace(projectID) == "" || strings.TrimSpace(logicalPath) == "" {
 		return nil, nil
 	}
@@ -116,6 +126,10 @@ func LocaleView(ctx context.Context, project projectcontract.ProjectService, pro
 	base := strings.TrimSpace(os.Getenv("WP_SITE_BASE_URL"))
 	alts = make([]builder.Alternate, 0, len(entries))
 	links = make([]core.LocaleLink, 0, len(entries))
+	entries = filterPublishedLocales(entries, lang, published)
+	if len(entries) < 2 {
+		return nil, nil
+	}
 	for _, e := range entries {
 		pubPath := seo.CanonicalPublicPath(e.Path)
 		alts = append(alts, builder.Alternate{
@@ -124,6 +138,30 @@ func LocaleView(ctx context.Context, project projectcontract.ProjectService, pro
 		links = append(links, core.LocaleLink{Lang: e.Lang, Href: pubPath, Current: e.Lang == lang})
 	}
 	return alts, links
+}
+
+// filterPublishedLocales 丢掉「没真的发布」的语言（审计 I18N-021）。
+//
+// 两条规则，都来自同一条判断：**切换器里不该出现点了 404 的链接**。
+//
+//  1. published 为 nil（未接入校验）→ 原样返回：产物行为与接入前逐字一致；
+//  2. 当前语言的条目**一定保留**，哪怕它自己未发布 —— 切换器里必须有
+//     「你正在看的这一版」，否则用户会以为站点只有另一种语言。
+//
+// 抽成纯函数是为了可测：LocaleView 本身要 project 服务（大接口），
+// 而这段判断恰恰是最容易写错、也最该被钉住的一处。
+func filterPublishedLocales(entries []SiteRouteEntry, currentLang string, published func(accessPath string) bool) []SiteRouteEntry {
+	if published == nil {
+		return entries
+	}
+	out := make([]SiteRouteEntry, 0, len(entries))
+	for _, e := range entries {
+		if e.Lang != currentLang && !published(e.Path) {
+			continue
+		}
+		out = append(out, e)
+	}
+	return out
 }
 
 // LogicalPathOf 从已发布的访问路径反查逻辑路径（多语言前缀剥离）。

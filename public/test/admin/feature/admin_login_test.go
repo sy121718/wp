@@ -1,4 +1,4 @@
-// Package feature admin 登录链路 feature 测试：
+// Package feature admin 登录链路 feature 测试（表结构由 support.NewMigratedPGTestDB 跑生产迁移建立）：
 //   - H1：连续失败 ≥5 次只写 locked_until_time（30 分钟自动过期），绝不修改 status
 //   - H2：登录成功响应 data 返回 csrf_token，配合 CSRFMiddleware 后续 POST 不再 403
 //
@@ -27,44 +27,6 @@ import (
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
-
-// ensureAdminTable 按 PG 方言创建 sys_admin 隔离表。
-// AdminEntity 的 gorm tag 为 MySQL 方言类型（tinyint(4)/smallint unsigned 等），
-// Postgres 下 AutoMigrate 无法建表，feature 测试直接用等价 DDL（列名与实体一一对应）。
-func ensureAdminTable(t *testing.T, db *gorm.DB) {
-	t.Helper()
-
-	ddl := `CREATE TABLE IF NOT EXISTS sys_admin (
-		id                   bigserial PRIMARY KEY,
-		dept_id              bigint DEFAULT 0,
-		username             varchar(50) UNIQUE,
-		password             varchar(100),
-		name                 varchar(50),
-		avatar               varchar(255),
-		email                varchar(100),
-		phone                varchar(20),
-		status               smallint DEFAULT 1,
-		is_admin             smallint DEFAULT 0,
-		login_failure_count  integer DEFAULT 0,
-		locked_until_time    timestamp,
-		metadata             jsonb,
-		last_failure_time    timestamp,
-		register_ip          varchar(50),
-		register_location    varchar(100),
-		last_login_ip        varchar(50),
-		last_login_location  varchar(100),
-		last_login_isp       varchar(50),
-		last_login_time      timestamp,
-		create_by            bigint,
-		create_time          timestamp,
-		update_by            bigint,
-		update_time          timestamp,
-		remark               varchar(255)
-	)`
-	if err := db.Exec(ddl).Error; err != nil {
-		t.Fatalf("创建 sys_admin 测试表失败: %v", err)
-	}
-}
 
 // newLoginEngine 组装最小登录链路（login 路由无认证中间件，与 admin_router 绑定方式一致）。
 func newLoginEngine(t *testing.T, db *gorm.DB) (*gin.Engine, *adminmodel.AdminModel) {
@@ -130,11 +92,8 @@ func requireLoginFailure(t *testing.T, step string, std *support.StandardRespons
 // 连续 5 次失败后只写 locked_until_time（约 30 分钟），status 保持启用；
 // 锁定到期后 IsLocked 自动为 false、IsActive 为 true，账号可重新登录。
 func TestAdminLoginFiveFailuresLocksTemporarilyNotBan(t *testing.T) {
-	db, err := support.NewPGTestDB(t)
-	if err != nil {
-		t.Skipf("跳过（本地 PostgreSQL 不可用）: %v", err)
-	}
-	ensureAdminTable(t, db)
+	// 表结构走生产迁移（sys_admin 是真实 DDL），不再手抄建表。
+	db := support.NewMigratedPGTestDB(t)
 	if err := auth.Init(viper.New()); err != nil {
 		t.Fatalf("初始化会话存储失败: %v", err)
 	}
@@ -203,11 +162,8 @@ func TestAdminLoginFiveFailuresLocksTemporarilyNotBan(t *testing.T) {
 // 登录成功响应 data 携带 csrf_token；该 token 与会话绑定，
 // 后续 POST 缺失 token 被 CSRF 中间件 403，携带 token 放行。
 func TestAdminLoginSuccessReturnsCSRFToken(t *testing.T) {
-	db, err := support.NewPGTestDB(t)
-	if err != nil {
-		t.Skipf("跳过（本地 PostgreSQL 不可用）: %v", err)
-	}
-	ensureAdminTable(t, db)
+	// 表结构走生产迁移（sys_admin 是真实 DDL），不再手抄建表。
+	db := support.NewMigratedPGTestDB(t)
 
 	cfg := viper.New()
 	cfg.Set("auth.session_secret", "test-secret-admin-login-feature")

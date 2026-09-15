@@ -1,15 +1,39 @@
 {{extends "layout.html"}}
 {* dashboard.jet — 组件演示页面，展示所有 UI 组件的视觉效果 *}
 {{block body()}}
+{* 本页样式（审计 UI-012）：原先 12 处散在标签上的内联 style 收敛到这里，用语义类复用；
+   颜色一律走主题令牌，暗色模式下自动跟随（内联硬编码色值是审计点名的主题失效原因）。 *}
+<style>
+.dash-title { font-size: 22px; font-weight: 300; letter-spacing: -0.22px; }
+.dash-h2 { font-size: 18px; font-weight: 300; }
+.dash-stat { font-size: 32px; font-weight: 300; letter-spacing: -0.64px; margin-top: 4px; }
+.dash-tone-success { color: var(--c-success, #3f6b4f); margin-top: 4px; }
+.dash-tone-warning { color: var(--c-warning, #8a6d3b); margin-top: 4px; }
+.dash-tone-danger, .dash-tone-danger:hover { color: var(--c-danger, #b34a4a); }
+</style>
+
+{* 数据口径标注（审计 UI-012）：本页目前是静态演示页 —— 统计数字、列表与表单都是示例值，
+   没有任何后端数据源（Dashboard handler 只注入 title/menu）。在接入真实指标前必须显式标注，
+   否则运营会把这些数字当成真实统计。真实数据在下面这些页面里。 *}
+<p class="hint" role="note">
+    {{ .["t"]("admin.dashboard.placeholder.lead", "演示占位：本页数值、列表与表单均为示例数据，不代表真实统计。") }}
+    {{ .["t"]("admin.dashboard.placeholder.links", "真实数据见：") }}
+    <a href="/admin/analytics">{{ .["t"]("admin.dashboard.placeholder.analytics", "访问统计") }}</a>
+    ·
+    <a href="/admin/orders">{{ .["t"]("admin.dashboard.placeholder.orders", "订单") }}</a>
+    ·
+    <a href="/admin/inventory">{{ .["t"]("admin.dashboard.placeholder.inventory", "库存") }}</a>
+</p>
+
 {* ===== 页面操作栏 ===== *}
 <div class="flex items-center justify-between mb-lg">
     <div>
-        <h1 style="font-size:22px;font-weight:300;letter-spacing:-0.22px;">仪表盘</h1>
-        <p class="text-mute text-sm mt-xs">系统概览与组件演示</p>
+        <h1 class="dash-title">{{ .["t"]("admin.dashboard.title", "仪表盘") }}</h1>
+        <p class="text-mute text-sm mt-xs">{{ .["t"]("admin.dashboard.subtitle", "系统概览与组件演示") }}</p>
     </div>
     <div class="flex items-center gap-sm">
-        <button class="btn btn-secondary">导出</button>
-        <button class="btn btn-primary">+ 新增管理员</button>
+        <button class="btn btn-secondary">{{ .["t"]("admin.dashboard.action.export", "导出") }}</button>
+        <button class="btn btn-primary">+ {{ .["t"]("admin.dashboard.action.new_admin", "新增管理员") }}</button>
     </div>
 </div>
 
@@ -17,37 +41,37 @@
 <div class="form-row mb-xl">
     <div class="card">
         <div class="card-body">
-            <div class="text-mute text-sm">管理员总数</div>
-            <div style="font-size:32px;font-weight:300;letter-spacing:-0.64px;margin-top:4px;">128</div>
-            <div class="text-sm" style="color:var(--c-success);margin-top:4px;">+12 本月</div>
+            <div class="text-mute text-sm">{{ .["t"]("admin.dashboard.stat.admins", "管理员总数") }}</div>
+            <div class="dash-stat">128</div>
+            <div class="text-sm dash-tone-success">{{ .["t"]("admin.dashboard.stat.admins_delta", "+12 本月") }}</div>
         </div>
     </div>
     <div class="card">
         <div class="card-body">
-            <div class="text-mute text-sm">在线用户</div>
-            <div style="font-size:32px;font-weight:300;letter-spacing:-0.64px;margin-top:4px;">34</div>
-            <div class="text-sm text-mute mt-xs">实时</div>
+            <div class="text-mute text-sm">{{ .["t"]("admin.dashboard.stat.online", "在线用户") }}</div>
+            <div class="dash-stat">34</div>
+            <div class="text-sm text-mute mt-xs">{{ .["t"]("admin.dashboard.stat.online_note", "实时") }}</div>
         </div>
     </div>
     <div class="card">
         <div class="card-body">
-            <div class="text-mute text-sm">已发布页面</div>
-            <div style="font-size:32px;font-weight:300;letter-spacing:-0.64px;margin-top:4px;">56</div>
-            <div class="text-sm text-mute mt-xs">静态 Artifact</div>
+            <div class="text-mute text-sm">{{ .["t"]("admin.dashboard.stat.published", "已发布页面") }}</div>
+            <div class="dash-stat">56</div>
+            <div class="text-sm text-mute mt-xs">{{ .["t"]("admin.dashboard.stat.published_note", "静态 Artifact") }}</div>
         </div>
     </div>
     <div class="card">
         <div class="card-body">
-            <div class="text-mute text-sm">待审核内容</div>
-            <div style="font-size:32px;font-weight:300;letter-spacing:-0.64px;margin-top:4px;">7</div>
-            <div class="text-sm" style="color:var(--c-warning);margin-top:4px;">需要处理</div>
+            <div class="text-mute text-sm">{{ .["t"]("admin.dashboard.stat.pending", "待审核内容") }}</div>
+            <div class="dash-stat">7</div>
+            <div class="text-sm dash-tone-warning">{{ .["t"]("admin.dashboard.stat.pending_note", "需要处理") }}</div>
         </div>
     </div>
 </div>
 
 {* ===== 表格 ===== *}
 <div class="flex items-center justify-between mb-md">
-    <h2 style="font-size:18px;font-weight:300;">管理员列表</h2>
+    <h2 class="dash-h2">{{ .["t"]("admin.dashboard.list.title", "管理员列表") }}</h2>
     {* 此处原有一个 hx-get="/admin/administrators/search" 搜索框：该路由从未注册，
        每次输入都产生一次 404；且本页表格是静态占位数据，本来也没有可搜索的数据源。
        带筛选的真实管理员列表在 /admin/administrators，故移除该输入框。 *}
@@ -57,76 +81,76 @@
     <table class="data-table">
         <thead>
             <tr>
-                <th>用户名</th>
-                <th>姓名</th>
-                <th>角色</th>
-                <th>部门</th>
-                <th>状态</th>
-                <th>最后登录</th>
-                <th class="col-actions">操作</th>
+                <th>{{ .["t"]("admin.dashboard.col.username", "用户名") }}</th>
+                <th>{{ .["t"]("admin.dashboard.col.name", "姓名") }}</th>
+                <th>{{ .["t"]("admin.dashboard.col.role", "角色") }}</th>
+                <th>{{ .["t"]("admin.dashboard.col.dept", "部门") }}</th>
+                <th>{{ .["t"]("admin.dashboard.col.status", "状态") }}</th>
+                <th>{{ .["t"]("admin.dashboard.col.last_login", "最后登录") }}</th>
+                <th class="col-actions">{{ .["t"]("admin.dashboard.col.actions", "操作") }}</th>
             </tr>
         </thead>
         <tbody id="table-body">
             <tr>
                 <td><strong>admin</strong></td>
-                <td>超级管理员</td>
-                <td><span class="badge badge-mute">超级管理员</span></td>
-                <td>技术部</td>
-                <td><span class="dot dot-success"></span>启用</td>
+                <td>{{ .["t"]("admin.dashboard.role.super_admin", "超级管理员") }}</td>
+                <td><span class="badge badge-mute">{{ .["t"]("admin.dashboard.role.super_admin", "超级管理员") }}</span></td>
+                <td>{{ .["t"]("admin.dashboard.dept.tech", "技术部") }}</td>
+                <td><span class="dot dot-success"></span>{{ .["t"]("admin.dashboard.status.enabled", "启用") }}</td>
                 <td class="text-mute text-sm">2026-07-29 10:23</td>
                 <td class="col-actions">
-                    <button class="btn btn-ghost btn-sm">编辑</button>
-                    <button class="btn btn-ghost btn-sm" style="color:var(--c-danger);">删除</button>
+                    <button class="btn btn-ghost btn-sm">{{ .["t"]("admin.dashboard.action.edit", "编辑") }}</button>
+                    <button class="btn btn-ghost btn-sm dash-tone-danger">{{ .["t"]("admin.dashboard.action.delete", "删除") }}</button>
                 </td>
             </tr>
             <tr>
                 <td><strong>editor01</strong></td>
-                <td>张三</td>
-                <td><span class="badge badge-mute">编辑</span></td>
-                <td>内容部</td>
-                <td><span class="dot dot-success"></span>启用</td>
+                <td>{{ .["t"]("admin.dashboard.row.name_zhang", "张三") }}</td>
+                <td><span class="badge badge-mute">{{ .["t"]("admin.dashboard.role.editor", "编辑") }}</span></td>
+                <td>{{ .["t"]("admin.dashboard.dept.content", "内容部") }}</td>
+                <td><span class="dot dot-success"></span>{{ .["t"]("admin.dashboard.status.enabled", "启用") }}</td>
                 <td class="text-mute text-sm">2026-07-28 16:45</td>
                 <td class="col-actions">
-                    <button class="btn btn-ghost btn-sm">编辑</button>
-                    <button class="btn btn-ghost btn-sm" style="color:var(--c-danger);">删除</button>
+                    <button class="btn btn-ghost btn-sm">{{ .["t"]("admin.dashboard.action.edit", "编辑") }}</button>
+                    <button class="btn btn-ghost btn-sm dash-tone-danger">{{ .["t"]("admin.dashboard.action.delete", "删除") }}</button>
                 </td>
             </tr>
             <tr>
                 <td><strong>viewer02</strong></td>
-                <td>李四</td>
-                <td><span class="badge badge-mute">访客</span></td>
-                <td>市场部</td>
-                <td><span class="dot dot-warning"></span>待激活</td>
-                <td class="text-mute text-sm">从未登录</td>
+                <td>{{ .["t"]("admin.dashboard.row.name_li", "李四") }}</td>
+                <td><span class="badge badge-mute">{{ .["t"]("admin.dashboard.role.viewer", "访客") }}</span></td>
+                <td>{{ .["t"]("admin.dashboard.dept.market", "市场部") }}</td>
+                <td><span class="dot dot-warning"></span>{{ .["t"]("admin.dashboard.status.pending", "待激活") }}</td>
+                <td class="text-mute text-sm">{{ .["t"]("admin.dashboard.row.never_login", "从未登录") }}</td>
                 <td class="col-actions">
-                    <button class="btn btn-ghost btn-sm">编辑</button>
-                    <button class="btn btn-ghost btn-sm" style="color:var(--c-danger);">删除</button>
+                    <button class="btn btn-ghost btn-sm">{{ .["t"]("admin.dashboard.action.edit", "编辑") }}</button>
+                    <button class="btn btn-ghost btn-sm dash-tone-danger">{{ .["t"]("admin.dashboard.action.delete", "删除") }}</button>
                 </td>
             </tr>
             <tr>
                 <td><strong>dev03</strong></td>
-                <td>王五</td>
-                <td><span class="badge badge-mute">开发者</span></td>
-                <td>技术部</td>
-                <td><span class="dot dot-danger"></span>已禁用</td>
+                <td>{{ .["t"]("admin.dashboard.row.name_wang", "王五") }}</td>
+                <td><span class="badge badge-mute">{{ .["t"]("admin.dashboard.role.developer", "开发者") }}</span></td>
+                <td>{{ .["t"]("admin.dashboard.dept.tech", "技术部") }}</td>
+                <td><span class="dot dot-danger"></span>{{ .["t"]("admin.dashboard.status.disabled_row", "已禁用") }}</td>
                 <td class="text-mute text-sm">2026-06-15 09:12</td>
                 <td class="col-actions">
-                    <button class="btn btn-ghost btn-sm">编辑</button>
-                    <button class="btn btn-ghost btn-sm" style="color:var(--c-danger);">删除</button>
+                    <button class="btn btn-ghost btn-sm">{{ .["t"]("admin.dashboard.action.edit", "编辑") }}</button>
+                    <button class="btn btn-ghost btn-sm dash-tone-danger">{{ .["t"]("admin.dashboard.action.delete", "删除") }}</button>
                 </td>
             </tr>
         </tbody>
     </table>
     <div class="pagination">
-        <div class="pagination-info">共 128 条，第 1-4 条</div>
+        <div class="pagination-info">{{ .["t"]("admin.dashboard.pager.summary", "共 128 条，第 1-4 条") }}</div>
         <div class="pagination-pages">
-            <a href="#">上一页</a>
+            <a href="#">{{ .["t"]("admin.dashboard.pager.prev", "上一页") }}</a>
             <a href="#" class="active">1</a>
             <a href="#">2</a>
             <a href="#">3</a>
             <a href="#">...</a>
             <a href="#">32</a>
-            <a href="#">下一页</a>
+            <a href="#">{{ .["t"]("admin.dashboard.pager.next", "下一页") }}</a>
         </div>
     </div>
 </div>
@@ -134,68 +158,68 @@
 {* ===== 表单组件 ===== *}
 <div class="card mt-xl">
     <div class="card-header">
-        <div class="card-title">新增管理员</div>
+        <div class="card-title">{{ .["t"]("admin.dashboard.action.new_admin", "新增管理员") }}</div>
     </div>
     <div class="card-body">
         <div class="form-row">
             <div class="form-group">
-                <label class="form-label">用户名 <span class="req">*</span></label>
-                <input type="text" class="form-input" placeholder="输入用户名">
-                <div class="form-hint">3-20 个字符，仅字母数字下划线</div>
+                <label class="form-label">{{ .["t"]("admin.dashboard.field.username", "用户名") }} <span class="req">*</span></label>
+                <input type="text" class="form-input" placeholder="{{ .["t"]("admin.dashboard.ph.username", "输入用户名") }}">
+                <div class="form-hint">{{ .["t"]("admin.dashboard.hint.username", "3-20 个字符，仅字母数字下划线") }}</div>
             </div>
             <div class="form-group">
-                <label class="form-label">姓名 <span class="req">*</span></label>
-                <input type="text" class="form-input" placeholder="输入姓名">
+                <label class="form-label">{{ .["t"]("admin.dashboard.field.name", "姓名") }} <span class="req">*</span></label>
+                <input type="text" class="form-input" placeholder="{{ .["t"]("admin.dashboard.ph.name", "输入姓名") }}">
             </div>
             <div class="form-group">
-                <label class="form-label">邮箱</label>
+                <label class="form-label">{{ .["t"]("admin.dashboard.field.email", "邮箱") }}</label>
                 <input type="email" class="form-input" placeholder="user@example.com">
             </div>
         </div>
         <div class="form-row">
             <div class="form-group">
-                <label class="form-label">角色 <span class="req">*</span></label>
+                <label class="form-label">{{ .["t"]("admin.dashboard.field.role", "角色") }} <span class="req">*</span></label>
                 <select class="form-select">
-                    <option>请选择角色</option>
-                    <option>超级管理员</option>
-                    <option>编辑</option>
-                    <option>访客</option>
-                    <option>开发者</option>
+                    <option>{{ .["t"]("admin.dashboard.option.role_placeholder", "请选择角色") }}</option>
+                    <option>{{ .["t"]("admin.dashboard.role.super_admin", "超级管理员") }}</option>
+                    <option>{{ .["t"]("admin.dashboard.role.editor", "编辑") }}</option>
+                    <option>{{ .["t"]("admin.dashboard.role.viewer", "访客") }}</option>
+                    <option>{{ .["t"]("admin.dashboard.role.developer", "开发者") }}</option>
                 </select>
             </div>
             <div class="form-group">
-                <label class="form-label">部门</label>
+                <label class="form-label">{{ .["t"]("admin.dashboard.field.dept", "部门") }}</label>
                 <select class="form-select">
-                    <option>请选择部门</option>
-                    <option>技术部</option>
-                    <option>内容部</option>
-                    <option>市场部</option>
+                    <option>{{ .["t"]("admin.dashboard.option.dept_placeholder", "请选择部门") }}</option>
+                    <option>{{ .["t"]("admin.dashboard.dept.tech", "技术部") }}</option>
+                    <option>{{ .["t"]("admin.dashboard.dept.content", "内容部") }}</option>
+                    <option>{{ .["t"]("admin.dashboard.dept.market", "市场部") }}</option>
                 </select>
             </div>
             <div class="form-group">
-                <label class="form-label">状态</label>
+                <label class="form-label">{{ .["t"]("admin.dashboard.field.status", "状态") }}</label>
                 <select class="form-select">
-                    <option>启用</option>
-                    <option>待激活</option>
-                    <option>禁用</option>
+                    <option>{{ .["t"]("admin.dashboard.status.enabled", "启用") }}</option>
+                    <option>{{ .["t"]("admin.dashboard.status.pending", "待激活") }}</option>
+                    <option>{{ .["t"]("admin.dashboard.status.disabled", "禁用") }}</option>
                 </select>
             </div>
         </div>
         <div class="form-group">
-            <label class="form-label">备注</label>
-            <textarea class="form-textarea" placeholder="可选备注信息"></textarea>
+            <label class="form-label">{{ .["t"]("admin.dashboard.field.remark", "备注") }}</label>
+            <textarea class="form-textarea" placeholder="{{ .["t"]("admin.dashboard.ph.remark", "可选备注信息") }}"></textarea>
         </div>
         <div class="form-group">
             <label class="checkbox">
-                <input type="checkbox" checked> 发送欢迎邮件
+                <input type="checkbox" checked> {{ .["t"]("admin.dashboard.checkbox.welcome_mail", "发送欢迎邮件") }}
             </label>
         </div>
     </div>
     <div class="card-footer flex items-center justify-between">
-        <span class="text-mute text-sm">所有标记 * 的字段为必填</span>
+        <span class="text-mute text-sm">{{ .["t"]("admin.dashboard.form.required_hint", "所有标记 * 的字段为必填") }}</span>
         <div class="flex gap-sm">
-            <button class="btn btn-secondary">取消</button>
-            <button class="btn btn-primary">保存</button>
+            <button class="btn btn-secondary">{{ .["t"]("admin.dashboard.action.cancel", "取消") }}</button>
+            <button class="btn btn-primary">{{ .["t"]("admin.dashboard.action.save", "保存") }}</button>
         </div>
     </div>
 </div>
@@ -203,20 +227,20 @@
 {* ===== 徽章组件演示 ===== *}
 <div class="card mt-xl">
     <div class="card-header">
-        <div class="card-title">徽章与状态</div>
+        <div class="card-title">{{ .["t"]("admin.dashboard.badges.title", "徽章与状态") }}</div>
     </div>
     <div class="card-body">
         <div class="flex gap-md mb-md">
-            <span class="badge badge-success">已发布</span>
-            <span class="badge badge-warning">待审核</span>
-            <span class="badge badge-danger">已拒绝</span>
-            <span class="badge badge-mute">草稿</span>
+            <span class="badge badge-success">{{ .["t"]("admin.dashboard.badge.published", "已发布") }}</span>
+            <span class="badge badge-warning">{{ .["t"]("admin.dashboard.badge.pending_review", "待审核") }}</span>
+            <span class="badge badge-danger">{{ .["t"]("admin.dashboard.badge.rejected", "已拒绝") }}</span>
+            <span class="badge badge-mute">{{ .["t"]("admin.dashboard.badge.draft", "草稿") }}</span>
         </div>
         <div class="flex gap-md">
-            <span><span class="dot dot-success"></span>正常运行</span>
-            <span><span class="dot dot-warning"></span>部分降级</span>
-            <span><span class="dot dot-danger"></span>服务中断</span>
-            <span><span class="dot dot-mute"></span>未知</span>
+            <span><span class="dot dot-success"></span>{{ .["t"]("admin.dashboard.health.ok", "正常运行") }}</span>
+            <span><span class="dot dot-warning"></span>{{ .["t"]("admin.dashboard.health.degraded", "部分降级") }}</span>
+            <span><span class="dot dot-danger"></span>{{ .["t"]("admin.dashboard.health.down", "服务中断") }}</span>
+            <span><span class="dot dot-mute"></span>{{ .["t"]("admin.dashboard.health.unknown", "未知") }}</span>
         </div>
     </div>
 </div>
@@ -224,7 +248,7 @@
 {* ===== 按钮组件演示 ===== *}
 <div class="card mt-xl">
     <div class="card-header">
-        <div class="card-title">按钮</div>
+        <div class="card-title">{{ .["t"]("admin.dashboard.buttons.title", "按钮") }}</div>
     </div>
     <div class="card-body">
         <div class="flex gap-sm mb-md">
@@ -234,10 +258,10 @@
             <button class="btn btn-danger">Danger</button>
         </div>
         <div class="flex gap-sm">
-            <button class="btn btn-primary btn-sm">小按钮</button>
-            <button class="btn btn-secondary btn-sm">小按钮</button>
-            <button class="btn btn-ghost btn-sm">小按钮</button>
-            <button class="btn btn-primary" disabled>禁用</button>
+            <button class="btn btn-primary btn-sm">{{ .["t"]("admin.dashboard.buttons.small", "小按钮") }}</button>
+            <button class="btn btn-secondary btn-sm">{{ .["t"]("admin.dashboard.buttons.small", "小按钮") }}</button>
+            <button class="btn btn-ghost btn-sm">{{ .["t"]("admin.dashboard.buttons.small", "小按钮") }}</button>
+            <button class="btn btn-primary" disabled>{{ .["t"]("admin.dashboard.status.disabled", "禁用") }}</button>
         </div>
     </div>
 </div>

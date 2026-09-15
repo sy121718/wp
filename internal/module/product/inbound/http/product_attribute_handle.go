@@ -23,7 +23,7 @@ func (h *Handle) CreateAttribute(c *gin.Context) {
 	}
 	res, err := h.svc.CreateAttribute(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
 		return
 	}
 	response.SuccessWithMessage(c, productenums.MsgCreateSuccess, res)
@@ -38,7 +38,7 @@ func (h *Handle) UpdateAttribute(c *gin.Context) {
 	}
 	res, err := h.svc.UpdateAttribute(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
 		return
 	}
 	response.SuccessWithMessage(c, productenums.MsgUpdateSuccess, res)
@@ -53,7 +53,7 @@ func (h *Handle) SetAttributeValues(c *gin.Context) {
 	}
 	res, err := h.svc.SetAttributeValues(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
 		return
 	}
 	response.SuccessWithMessage(c, productenums.MsgUpdateSuccess, res)
@@ -68,7 +68,7 @@ func (h *Handle) GetAttribute(c *gin.Context) {
 	}
 	res, err := h.svc.GetAttribute(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusNotFound, err.Error())
+		response.ErrorAuto(c, http.StatusNotFound, "product", err)
 		return
 	}
 	response.SuccessWithMessage(c, productenums.MsgDetailSuccess, res)
@@ -83,7 +83,7 @@ func (h *Handle) ListAttributes(c *gin.Context) {
 	}
 	list, err := h.svc.ListAttributes(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
 		return
 	}
 	response.SuccessWithMessage(c, productenums.MsgListSuccess, list)
@@ -97,7 +97,7 @@ func (h *Handle) DeleteAttribute(c *gin.Context) {
 		return
 	}
 	if err := h.svc.DeleteAttribute(c.Request.Context(), req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
 		return
 	}
 	response.SuccessWithMessage(c, productenums.MsgDeleteSuccess, nil)

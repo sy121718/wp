@@ -26,7 +26,7 @@ func (h *productPageHandle) ProductBundlePage(c *gin.Context) {
 	ctx := c.Request.Context()
 	projects, err := h.projects.List(ctx)
 	if err != nil {
-		c.String(http.StatusInternalServerError, err.Error())
+		pageError(c, "product_bundle", err)
 		return
 	}
 	selectedProject := strings.TrimSpace(c.Query("project"))
@@ -37,7 +37,7 @@ func (h *productPageHandle) ProductBundlePage(c *gin.Context) {
 	if selectedProject != "" {
 		list, err = h.products.List(ctx, &productdto.ListReq{ProjectID: selectedProject, Size: 100})
 		if err != nil {
-			c.String(http.StatusInternalServerError, err.Error())
+			pageError(c, "product_bundle", err)
 			return
 		}
 	}
@@ -53,7 +53,7 @@ func (h *productPageHandle) ProductBundlePage(c *gin.Context) {
 	}
 	skus, serr := h.products.ListBundleSKUs(ctx, &productdto.ListBundleSKUReq{ProjectID: selectedProject})
 	if serr != nil {
-		c.String(http.StatusInternalServerError, serr.Error())
+		pageError(c, "product_bundle", serr)
 		return
 	}
 	c.HTML(http.StatusOK, "admin/product_bundle.html", withCSRF(c, gin.H{

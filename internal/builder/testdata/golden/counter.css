@@ -78,3 +78,11 @@ div.sky-c-c2-label.sky-counter-label, .sky-counter-label {
   initial-value: 0
   inherits: false
 }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

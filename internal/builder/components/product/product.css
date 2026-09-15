@@ -180,7 +180,10 @@
   outline-offset: 2px;
 }
 
-/* 鼠标 / 触摸板悬停: @hover 会按构建期决定包不包 @media (hover: hover), 触屏上不输出. */
+/* 鼠标 / 触摸板悬停: @hover 会按构建期决定包不包 @media (hover: hover), 触屏上不输出.
+   UI-006 判定：规格值**不补触屏等价形态** —— 它是 label + 原生 radio 的选择项，
+   基础态已有描边按钮外形与 cursor:pointer，选中态(:checked)与按压态(@active)
+   在触屏上都可见；悬停那一下的边框变色只是鼠标下的额外提示. */
 @hover & .sky-product-option-value {
   border-color: var(--sky-c-primary, #2563eb);
 }

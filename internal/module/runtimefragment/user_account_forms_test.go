@@ -159,8 +159,8 @@ func TestAccountPreferenceRendersOwnPreference(t *testing.T) {
 // TestAccountSessionsMarksCurrentDevice 登录设备：当前设备不给「踢出」，且判定用令牌原值。
 func TestAccountSessionsMarksCurrentDevice(t *testing.T) {
 	port := &fakeVisitorAccount{sessions: []*userdto.SessionItem{
-		{ID: 1, UserAgent: "当前这台浏览器", Current: true, CreatedText: "2026-01-01 10:00:00"},
-		{ID: 2, UserAgent: "别的浏览器", LastActiveText: "刚刚", CreatedText: "2026-01-02 10:00:00"},
+		{ID: "hash-current", UserAgent: "当前这台浏览器", Current: true, CreatedText: "2026-01-01 10:00:00"},
+		{ID: "hash-other", UserAgent: "别的浏览器", LastActiveText: "刚刚", CreatedText: "2026-01-02 10:00:00"},
 	}}
 	withAccountPort(t, port)
 
@@ -168,10 +168,10 @@ func TestAccountSessionsMarksCurrentDevice(t *testing.T) {
 	if !strings.Contains(body, "当前设备") {
 		t.Fatalf("应标出当前设备；实际：%s", body)
 	}
-	if !strings.Contains(body, `value="2"`) {
+	if !strings.Contains(body, `value="hash-other"`) {
 		t.Fatalf("非当前设备应有踢出按钮；实际：%s", body)
 	}
-	if strings.Contains(body, `value="1"`) {
+	if strings.Contains(body, `value="hash-current"`) {
 		t.Fatalf("当前设备不该有踢出按钮（那个操作叫退出登录）；实际：%s", body)
 	}
 	if !strings.Contains(body, `action="/user/account/sessions/revoke-others"`) {

@@ -30,6 +30,14 @@ var clientSupportedKinds = map[string]bool{
 	// richtext：服务端输出 slot，客户端 richTextField（Trix）填充；
 	// core.text 的 mode=plaintext 由 isPlainTextMode 回退多行输入。
 	"richtext": true,
+	// entityref：实体引用下拉（分类 / 品牌 / 标签），选项由服务端 CollectionFilterOptions
+	// 提供、客户端渲染成 <select>（EDT-005）。它是「选了就一定存在」的选择器，
+	// 所以宁可列在这里被审计，也不退化成自由文本输入。
+	"entityref": true,
+	// multientityref / rangelist：结构化配置控件（EDT-007）—— 值仍是既有的逗号分隔串，
+	// 换掉的只是编辑方式（勾选面板 / 逐行档位）。服务端直出 HTML，客户端按 kind 拼值。
+	"multientityref": true,
+	"rangelist":      true,
 }
 
 // TestSchemaKindsCovered 每个组件的每个 ct 控件 kind 都必须被渲染分支覆盖。

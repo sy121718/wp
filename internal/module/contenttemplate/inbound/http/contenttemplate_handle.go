@@ -31,7 +31,7 @@ func (h *Handle) Create(c *gin.Context) {
 	}
 	res, err := h.svc.Create(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "contenttemplate", err)
 		return
 	}
 	response.SuccessWithMessage(c, contenttemplateenums.MsgCreateSuccess, res)
@@ -46,7 +46,7 @@ func (h *Handle) Update(c *gin.Context) {
 	}
 	res, err := h.svc.Update(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "contenttemplate", err)
 		return
 	}
 	response.SuccessWithMessage(c, contenttemplateenums.MsgUpdateSuccess, res)
@@ -61,7 +61,7 @@ func (h *Handle) Get(c *gin.Context) {
 	}
 	res, err := h.svc.Get(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusNotFound, err.Error())
+		response.ErrorAuto(c, http.StatusNotFound, "contenttemplate", err)
 		return
 	}
 	response.SuccessWithMessage(c, contenttemplateenums.MsgDetailSuccess, res)
@@ -76,7 +76,7 @@ func (h *Handle) List(c *gin.Context) {
 	}
 	list, err := h.svc.List(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "contenttemplate", err)
 		return
 	}
 	response.SuccessWithMessage(c, contenttemplateenums.MsgListSuccess, list)

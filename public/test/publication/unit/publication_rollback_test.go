@@ -13,7 +13,7 @@ func TestPublicationRollbackReceiptsPending(t *testing.T) {
 	svc := newUnitService(t)
 	ctx := context.Background()
 	if err := svc.Model().ReceiptDB(ctx).Create(&pubmodel.ReceiptEntity{
-		ID: "aaaaaaaa-0000-0000-0000-000000000001", SourceType: "page", SourceID: pageID,
+		SourceType: "page", SourceID: pageID,
 		Action: "activate", Path: "/p1", ToArtifact: strPtr(artifactUUID),
 		ReceiptState: pubmodel.ReceiptPending, ReceiptData: []byte(`{}`),
 	}).Error; err != nil {
@@ -51,10 +51,9 @@ func TestPublicationRollbackReceiptsNone(t *testing.T) {
 func TestPublicationRollbackReceiptsMixed(t *testing.T) {
 	svc := newUnitService(t)
 	ctx := context.Background()
-	for i, state := range []string{pubmodel.ReceiptPending, pubmodel.ReceiptCommitted, pubmodel.ReceiptRolledBack} {
-		id := "bbbbbbbb-0000-0000-0000-00000000000" + string(rune('1'+i))
+	for _, state := range []string{pubmodel.ReceiptPending, pubmodel.ReceiptCommitted, pubmodel.ReceiptRolledBack} {
 		if err := svc.Model().ReceiptDB(ctx).Create(&pubmodel.ReceiptEntity{
-			ID: id, SourceType: "page", SourceID: pageID,
+			SourceType: "page", SourceID: pageID,
 			Action: "activate", Path: "/mix", ToArtifact: strPtr(artifactUUID),
 			ReceiptState: state, ReceiptData: []byte(`{}`),
 		}).Error; err != nil {

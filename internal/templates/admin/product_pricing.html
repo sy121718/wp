@@ -13,17 +13,15 @@
 {{roundings := .Roundings}}
 <div class="stack pricing-page">
     <section class="card card-body">
-        <h2>定价工具</h2>
+        <h2>{{ .["t"]("admin.product_pricing.title", "定价工具") }}</h2>
         {{if .Err != ""}}
-        <p class="badge badge-warning">上一次操作未完成：{{.Err}}</p>
+        <p class="badge badge-warning">{{ .["t"]("admin.product_pricing.lastError", "上一次操作未完成：") }}{{.Err}}</p>
         {{end}}
         {{if .Applied != ""}}
-        <p class="badge badge-info">已应用调价：本次改动 {{.Applied}} 个变体，明细见下方留痕台账。</p>
+        <p class="badge badge-info">{{ .["t"]("admin.product_pricing.applied.lead", "已应用调价：本次改动 ") }}{{.Applied}}{{ .["t"]("admin.product_pricing.applied.tail", " 个变体，明细见下方留痕台账。") }}</p>
         {{end}}
         <p class="hint">
-            按规则批量生成售价：成本乘倍数 / 成本加价 / 目标毛利率 / 统一售价，含尾数处理；
-            可对单个 SKU、单个商品的全部变体、或筛选出的商品集应用。
-            算完的售价直接写库（不是运行时计算），应用前先预览，每次应用都留下台账。
+            {{ .["t"]("admin.product_pricing.intro", "按规则批量生成售价：成本乘倍数 / 成本加价 / 目标毛利率 / 统一售价，含尾数处理；可对单个 SKU、单个商品的全部变体、或筛选出的商品集应用。算完的售价直接写库（不是运行时计算），应用前先预览，每次应用都留下台账。") }}
         </p>
         <form method="get" action="/admin/product-pricing" class="form-inline">
             <select class="form-select" name="project" onchange="this.form.submit()">
@@ -35,95 +33,90 @@
     </section>
 
     <section class="card card-body">
-        <h2>内置定价规则</h2>
-        <div class="table-wrap" tabindex="0" role="region" aria-label="内置定价规则"><table class="data-table data-table-wide pricing-page-table pricing-rule-table">
-            <thead><tr><th>类型</th><th>说明</th><th>参数</th></tr></thead>
+        <h2>{{ .["t"]("admin.product_pricing.rules.title", "内置定价规则") }}</h2>
+        <div class="table-wrap" tabindex="0" role="region" aria-label="{{ .["t"]("admin.product_pricing.rules.aria", "内置定价规则") }}"><table class="data-table data-table-wide pricing-page-table pricing-rule-table">
+            <thead><tr><th>{{ .["t"]("admin.product_pricing.col.type", "类型") }}</th><th>{{ .["t"]("admin.product_pricing.col.desc", "说明") }}</th><th>{{ .["t"]("admin.product_pricing.col.params", "参数") }}</th></tr></thead>
             <tbody>
             {{range _, r := rules}}
             <tr>
                 <td><code>{{r.Type}}</code></td>
-                <td>{{r.Name}}{{if r.RequiresCost}}（需要成本价）{{end}}</td>
+                <td>{{r.Name}}{{if r.RequiresCost}}{{ .["t"]("admin.product_pricing.rules.requiresCost", "（需要成本价）") }}{{end}}</td>
                 <td>{{r.Params}}</td>
             </tr>
             {{end}}
             </tbody>
         </table></div>
         <p class="hint">
-            规则与参数只有服务端一份定义：未知类型、未知参数键、类型不符与取值越界一律拒绝，
-            不接受自由表达式（没有 SQL / 脚本入口）。
+            {{ .["t"]("admin.product_pricing.rules.hint", "规则与参数只有服务端一份定义：未知类型、未知参数键、类型不符与取值越界一律拒绝，不接受自由表达式（没有 SQL / 脚本入口）。") }}
         </p>
-        <p class="hint">尾数处理一律「向上取」：只抬不降，保证按规则算出的售价不会被凑尾数压低。</p>
+        <p class="hint">{{ .["t"]("admin.product_pricing.rounding.hint", "尾数处理一律「向上取」：只抬不降，保证按规则算出的售价不会被凑尾数压低。") }}</p>
     </section>
 
     <section class="card card-body">
-        <h2>按规则改价</h2>
+        <h2>{{ .["t"]("admin.product_pricing.apply.title", "按规则改价") }}</h2>
         <form method="post" action="/admin/product-pricing/preview" class="form-stack">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <div class="form-inline">
-                <span class="hint">规则</span>
-                <select class="form-select" name="ruleType" aria-label="定价规则类型">
+                <span class="hint">{{ .["t"]("admin.product_pricing.apply.labelRule", "规则") }}</span>
+                <select class="form-select" name="ruleType" aria-label="{{ .["t"]("admin.product_pricing.apply.ruleTypeAria", "定价规则类型") }}">
                     {{range _, r := rules}}
                     <option value="{{r.Type}}" {{if r.Type == form.RuleType}}selected{{end}}>{{r.Name}}</option>
                     {{end}}
                 </select>
-                <input type="text" class="form-input" name="multiplier" value="{{form.Multiplier}}" placeholder="multiplier（成本乘倍数）" inputmode="decimal" autocomplete="off">
-                <input type="text" class="form-input" name="amount" value="{{form.Amount}}" placeholder="amount（成本加价 / 统一售价）" inputmode="decimal" autocomplete="off">
-                <input type="text" class="form-input" name="margin" value="{{form.Margin}}" placeholder="margin（目标毛利率，0.3 = 30%）" inputmode="decimal" autocomplete="off">
+                <input type="text" class="form-input" name="multiplier" value="{{form.Multiplier}}" placeholder="{{ .["t"]("admin.product_pricing.apply.phMultiplier", "multiplier（成本乘倍数）") }}" inputmode="decimal" autocomplete="off">
+                <input type="text" class="form-input" name="amount" value="{{form.Amount}}" placeholder="{{ .["t"]("admin.product_pricing.apply.phAmount", "amount（成本加价 / 统一售价）") }}" inputmode="decimal" autocomplete="off">
+                <input type="text" class="form-input" name="margin" value="{{form.Margin}}" placeholder="{{ .["t"]("admin.product_pricing.apply.phMargin", "margin（目标毛利率，0.3 = 30%）") }}" inputmode="decimal" autocomplete="off">
             </div>
             <div class="form-inline">
-                <span class="hint">尾数</span>
-                <select class="form-select" name="rounding" aria-label="尾数处理">
+                <span class="hint">{{ .["t"]("admin.product_pricing.apply.labelRounding", "尾数") }}</span>
+                <select class="form-select" name="rounding" aria-label="{{ .["t"]("admin.product_pricing.apply.roundingAria", "尾数处理") }}">
                     {{range _, r := roundings}}
                     <option value="{{r.Value}}" {{if r.Value == form.Rounding}}selected{{end}}>{{r.Name}}</option>
                     {{end}}
                 </select>
-                <span class="hint">范围</span>
-                <select class="form-select" name="scope" aria-label="作用范围">
-                    <option value="sku" {{if form.Scope == "sku"}}selected{{end}}>单个 SKU（变体 id）</option>
-                    <option value="product" {{if form.Scope == "product"}}selected{{end}}>单个商品的全部变体</option>
-                    <option value="filter" {{if form.Scope == "filter"}}selected{{end}}>筛选出的商品集</option>
+                <span class="hint">{{ .["t"]("admin.product_pricing.apply.labelScope", "范围") }}</span>
+                <select class="form-select" name="scope" aria-label="{{ .["t"]("admin.product_pricing.apply.scopeAria", "作用范围") }}">
+                    <option value="sku" {{if form.Scope == "sku"}}selected{{end}}>{{ .["t"]("admin.product_pricing.apply.scopeSku", "单个 SKU（变体 id）") }}</option>
+                    <option value="product" {{if form.Scope == "product"}}selected{{end}}>{{ .["t"]("admin.product_pricing.apply.scopeProduct", "单个商品的全部变体") }}</option>
+                    <option value="filter" {{if form.Scope == "filter"}}selected{{end}}>{{ .["t"]("admin.product_pricing.apply.scopeFilter", "筛选出的商品集") }}</option>
                 </select>
-                <input type="text" class="form-input" name="targetId" value="{{form.TargetID}}" placeholder="目标 id（SKU 范围填变体 id，商品范围填商品 id）" autocomplete="off">
+                <input type="text" class="form-input" name="targetId" value="{{form.TargetID}}" placeholder="{{ .["t"]("admin.product_pricing.apply.phTargetId", "目标 id（SKU 范围填变体 id，商品范围填商品 id）") }}" autocomplete="off">
             </div>
             <div class="form-inline">
-                <span class="hint">筛选集</span>
-                <input type="text" class="form-input" name="status" value="{{form.Status}}" placeholder="status（draft / published / archived）" autocomplete="off">
-                <input type="text" class="form-input" name="keyword" value="{{form.Keyword}}" placeholder="关键词（商品名）" autocomplete="off">
-                <input type="text" class="form-input" name="categoryId" value="{{form.CategoryID}}" placeholder="分类 id" autocomplete="off">
-                <input type="text" class="form-input" name="brandId" value="{{form.BrandID}}" placeholder="品牌 id" autocomplete="off">
-                <input type="text" class="form-input" name="tagId" value="{{form.TagID}}" placeholder="标签 id" autocomplete="off">
+                <span class="hint">{{ .["t"]("admin.product_pricing.apply.labelFilter", "筛选集") }}</span>
+                <input type="text" class="form-input" name="status" value="{{form.Status}}" placeholder="{{ .["t"]("admin.product_pricing.apply.phStatus", "status（draft / published / archived）") }}" autocomplete="off">
+                <input type="text" class="form-input" name="keyword" value="{{form.Keyword}}" placeholder="{{ .["t"]("admin.product_pricing.apply.phKeyword", "关键词（商品名）") }}" autocomplete="off">
+                <input type="text" class="form-input" name="categoryId" value="{{form.CategoryID}}" placeholder="{{ .["t"]("admin.product_pricing.apply.phCategoryId", "分类 id") }}" autocomplete="off">
+                <input type="text" class="form-input" name="brandId" value="{{form.BrandID}}" placeholder="{{ .["t"]("admin.product_pricing.apply.phBrandId", "品牌 id") }}" autocomplete="off">
+                <input type="text" class="form-input" name="tagId" value="{{form.TagID}}" placeholder="{{ .["t"]("admin.product_pricing.apply.phTagId", "标签 id") }}" autocomplete="off">
             </div>
             <div class="form-inline">
-                <input type="text" class="form-input" name="note" value="{{form.Note}}" placeholder="备注（写进留痕台账，如「国庆前提价」）" autocomplete="off">
+                <input type="text" class="form-input" name="note" value="{{form.Note}}" placeholder="{{ .["t"]("admin.product_pricing.apply.phNote", "备注（写进留痕台账，如「国庆前提价」）") }}" autocomplete="off">
             </div>
             <div class="action-row">
-                <button type="submit" class="btn btn-primary">预览试算（不落库）</button>
+                <button type="submit" class="btn btn-primary">{{ .["t"]("admin.product_pricing.apply.preview", "预览试算（不落库）") }}</button>
                 <button type="submit" class="btn" formaction="/admin/product-pricing/apply"
-                        data-confirm="按当前规则应用调价？售价会立刻写库，并留下调价台账。">应用调价（落库）</button>
+                        data-confirm="{{ .["t"]("admin.product_pricing.apply.confirm", "按当前规则应用调价？售价会立刻写库，并留下调价台账。") }}">{{ .["t"]("admin.product_pricing.apply.submit", "应用调价（落库）") }}</button>
             </div>
             <p class="hint">
-                规则参数只取当前规则类型用得上的那一格：成本乘倍数填 multiplier，成本加价与统一售价填 amount，
-                目标毛利率填 margin（0.3 表示 30%）。筛选集范围必须指定工程（页面顶部切换），
-                空筛选不会全表改价；单批命中商品数有上限，超过请收紧条件。
-                未填成本价的变体按成本类规则会被跳过（预览里标出原因），其余变体照常处理。
+                {{ .["t"]("admin.product_pricing.apply.hint", "规则参数只取当前规则类型用得上的那一格：成本乘倍数填 multiplier，成本加价与统一售价填 amount，目标毛利率填 margin（0.3 表示 30%）。筛选集范围必须指定工程（页面顶部切换），空筛选不会全表改价；单批命中商品数有上限，超过请收紧条件。未填成本价的变体按成本类规则会被跳过（预览里标出原因），其余变体照常处理。") }}
             </p>
         </form>
     </section>
 
     {{if .HasPreview}}
     <section class="card card-body">
-        <h2>试算预览（未落库）</h2>
+        <h2>{{ .["t"]("admin.product_pricing.preview.title", "试算预览（未落库）") }}</h2>
         <p class="hint">
-            规则：{{.PreviewSummary.RuleLabel}} · 尾数：{{.PreviewSummary.RoundingLabel}} · 范围：{{.PreviewSummary.ScopeLabel}} ·
-            参与 {{.PreviewSummary.TargetCount}} 个变体（改价 {{.PreviewSummary.ChangedCount}} / 价格不变 {{.PreviewSummary.UnchangedCount}} / 跳过 {{.PreviewSummary.SkippedCount}}）
+            {{ .["t"]("admin.product_pricing.preview.summaryRule", "规则：") }}{{.PreviewSummary.RuleLabel}}{{ .["t"]("admin.product_pricing.preview.summaryRounding", " · 尾数：") }}{{.PreviewSummary.RoundingLabel}}{{ .["t"]("admin.product_pricing.preview.summaryScope", " · 范围：") }}{{.PreviewSummary.ScopeLabel}}{{ .["t"]("admin.product_pricing.preview.summaryTargets", " · 参与 ") }}{{.PreviewSummary.TargetCount}}{{ .["t"]("admin.product_pricing.preview.summaryChanged", " 个变体（改价 ") }}{{.PreviewSummary.ChangedCount}}{{ .["t"]("admin.product_pricing.preview.summaryUnchanged", " / 价格不变 ") }}{{.PreviewSummary.UnchangedCount}}{{ .["t"]("admin.product_pricing.preview.summarySkipped", " / 跳过 ") }}{{.PreviewSummary.SkippedCount}}{{ .["t"]("admin.product_pricing.preview.summaryClose", "）") }}
         </p>
         {{if len(.PreviewRows) == 0}}
-        <p class="hint">这个范围下没有变体。</p>
+        <p class="hint">{{ .["t"]("admin.product_pricing.preview.empty", "这个范围下没有变体。") }}</p>
         {{else}}
-        <div class="pricing-table-wrap" tabindex="0" role="region" aria-label="试算明细（可横向滚动查看）">
+        <div class="pricing-table-wrap" tabindex="0" role="region" aria-label="{{ .["t"]("admin.product_pricing.preview.tableAria", "试算明细（可横向滚动查看）") }}">
             <table class="data-table data-table-wide pricing-page-table">
-                <thead><tr><th>商品</th><th>SKU</th><th>成本价</th><th>原价</th><th>新价</th><th>差值</th><th>结果</th></tr></thead>
+                <thead><tr><th>{{ .["t"]("admin.product_pricing.col.product", "商品") }}</th><th>SKU</th><th>{{ .["t"]("admin.product_pricing.col.costPrice", "成本价") }}</th><th>{{ .["t"]("admin.product_pricing.col.oldPrice", "原价") }}</th><th>{{ .["t"]("admin.product_pricing.col.newPrice", "新价") }}</th><th>{{ .["t"]("admin.product_pricing.col.diff", "差值") }}</th><th>{{ .["t"]("admin.product_pricing.col.result", "结果") }}</th></tr></thead>
                 <tbody>
                 {{range _, l := .PreviewRows}}
                 <tr>
@@ -142,15 +135,15 @@
                 </tbody>
             </table>
         </div>
-        <p class="hint">确认无误后回到上面的表单点「应用调价」：写库的是刚刚预览过的同一份参数。</p>
+        <p class="hint">{{ .["t"]("admin.product_pricing.preview.confirmHint", "确认无误后回到上面的表单点「应用调价」：写库的是刚刚预览过的同一份参数。") }}</p>
         {{end}}
     </section>
     {{end}}
 
     <section class="card card-body">
-        <h2>调价留痕</h2>
+        <h2>{{ .["t"]("admin.product_pricing.history.title", "调价留痕") }}</h2>
         {{if len(.History) == 0}}
-        <p class="hint">这个工程还没有调价记录。应用一次调价后，这里会逐批记录规则、范围、改动数量与逐变体「原价 → 新价」。</p>
+        <p class="hint">{{ .["t"]("admin.product_pricing.history.empty", "这个工程还没有调价记录。应用一次调价后，这里会逐批记录规则、范围、改动数量与逐变体「原价 → 新价」。") }}</p>
         {{else}}
         {{range _, a := .History}}
         <details class="disclosure">
@@ -158,16 +151,16 @@
                 <strong>{{a.RuleLabel}}</strong>
                 <span class="badge badge-mute">{{a.ScopeLabel}}</span>
                 <span class="badge badge-mute">{{a.RoundingLabel}}</span>
-                <span class="hint">改动 {{a.ChangedCount}}/{{a.VariantCount}} 个变体 · {{a.CreatedAtText}}{{if a.OperatorID != ""}} · 操作人 {{a.OperatorID}}{{end}}</span>
+                <span class="hint">{{ .["t"]("admin.product_pricing.history.changedLead", "改动 ") }}{{a.ChangedCount}}/{{a.VariantCount}}{{ .["t"]("admin.product_pricing.history.changedTail", " 个变体 · ") }}{{a.CreatedAtText}}{{if a.OperatorID != ""}}{{ .["t"]("admin.product_pricing.history.operatorLead", " · 操作人 ") }}{{a.OperatorID}}{{end}}</span>
             </summary>
-            {{if a.FilterLabel != ""}}<p class="hint">筛选条件：{{a.FilterLabel}}</p>{{end}}
-            {{if a.Note != ""}}<p class="hint">备注：{{a.Note}}</p>{{end}}
+            {{if a.FilterLabel != ""}}<p class="hint">{{ .["t"]("admin.product_pricing.history.filterLead", "筛选条件：") }}{{a.FilterLabel}}</p>{{end}}
+            {{if a.Note != ""}}<p class="hint">{{ .["t"]("admin.product_pricing.history.noteLead", "备注：") }}{{a.Note}}</p>{{end}}
             {{if len(a.Items) == 0}}
-            <p class="hint">这一批没有逐变体明细。</p>
+            <p class="hint">{{ .["t"]("admin.product_pricing.history.noItems", "这一批没有逐变体明细。") }}</p>
             {{else}}
-            <div class="pricing-table-wrap" tabindex="0" role="region" aria-label="调价明细（可横向滚动查看）">
+            <div class="pricing-table-wrap" tabindex="0" role="region" aria-label="{{ .["t"]("admin.product_pricing.history.tableAria", "调价明细（可横向滚动查看）") }}">
                 <table class="data-table data-table-wide pricing-page-table">
-                    <thead><tr><th>商品</th><th>SKU</th><th>原价</th><th>新价</th><th>差值</th></tr></thead>
+                    <thead><tr><th>{{ .["t"]("admin.product_pricing.col.product", "商品") }}</th><th>SKU</th><th>{{ .["t"]("admin.product_pricing.col.oldPrice", "原价") }}</th><th>{{ .["t"]("admin.product_pricing.col.newPrice", "新价") }}</th><th>{{ .["t"]("admin.product_pricing.col.diff", "差值") }}</th></tr></thead>
                     <tbody>
                     {{range _, it := a.Items}}
                     <tr>

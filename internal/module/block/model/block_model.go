@@ -46,15 +46,15 @@ const DefaultCategory = "general"
 
 // BlockEntity 对应 blocks 表：全局块（组件树文档与页面 root 同构）。
 type BlockEntity struct {
-	ID        string          `gorm:"column:id;type:uuid;primaryKey"`
-	ProjectID string          `gorm:"column:project_id;type:uuid;not null"`
-	Name      string          `gorm:"column:name;type:text;not null"`
-	Kind      string          `gorm:"column:kind;type:text;not null"`
-	Category  string          `gorm:"column:category;type:text;not null;default:general"`
-	ReuseMode string          `gorm:"column:reuse_mode;type:text;not null;default:global"`
-	Document  json.RawMessage `gorm:"column:document;type:jsonb;not null"`
-	CreatedAt time.Time       `gorm:"column:created_at;not null"`
-	UpdatedAt time.Time       `gorm:"column:updated_at;not null"`
+	ID         int64           `gorm:"column:id;type:bigint;primaryKey"`
+	ProjectID  string          `gorm:"column:project_id;type:uuid;not null"`
+	Name       string          `gorm:"column:name;type:text;not null"`
+	Kind       string          `gorm:"column:kind;type:text;not null"`
+	Category   string          `gorm:"column:category;type:text;not null;default:general"`
+	ReuseMode  string          `gorm:"column:reuse_mode;type:text;not null;default:global"`
+	Document   json.RawMessage `gorm:"column:document;type:jsonb;not null"`
+	CreateTime time.Time       `gorm:"column:create_time;not null"`
+	UpdatedAt  time.Time       `gorm:"column:updated_at;not null"`
 }
 
 func (BlockEntity) TableName() string { return tableNameBlocks }
@@ -89,7 +89,7 @@ func (m *Model) ListByProject(ctx context.Context, projectID, kind, category, re
 	if reuseMode != "" {
 		q = q.Where("reuse_mode = ?", reuseMode)
 	}
-	err = q.Order("kind ASC, created_at ASC").Find(&list).Error
+	err = q.Order("kind ASC, create_time ASC").Find(&list).Error
 	return list, err
 }
 
@@ -105,7 +105,7 @@ func (m *Model) ExistsByName(ctx context.Context, projectID, name string) (exist
 }
 
 // GetByID 按 ID 查询块。projectID 非空时追加工程归属条件（防跨工程 IDOR）。
-func (m *Model) GetByID(ctx context.Context, id, projectID string) (e *BlockEntity, err error) {
+func (m *Model) GetByID(ctx context.Context, id int64, projectID string) (e *BlockEntity, err error) {
 	e = &BlockEntity{}
 	q := m.DB(ctx).Where("id = ?", id)
 	if strings.TrimSpace(projectID) != "" {
@@ -118,13 +118,13 @@ func (m *Model) GetByID(ctx context.Context, id, projectID string) (e *BlockEnti
 }
 
 // UpdateDocument 更新块名称、类型、分类、复用方式与文档（覆盖式，编辑器整树保存）。
-func (m *Model) UpdateDocument(ctx context.Context, id, name, kind, category, reuseMode string, document json.RawMessage, updatedAt time.Time) (err error) {
+func (m *Model) UpdateDocument(ctx context.Context, id int64, name, kind, category, reuseMode string, document json.RawMessage, updatedAt time.Time) (err error) {
 	return m.DB(ctx).Where("id = ?", id).Updates(map[string]any{
 		"name": name, "kind": kind, "category": category, "reuse_mode": reuseMode, "document": document, "updated_at": updatedAt,
 	}).Error
 }
 
 // Delete 删除块。
-func (m *Model) Delete(ctx context.Context, id string) (err error) {
+func (m *Model) Delete(ctx context.Context, id int64) (err error) {
 	return m.DB(ctx).Where("id = ?", id).Delete(&BlockEntity{}).Error
 }

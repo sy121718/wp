@@ -28,16 +28,16 @@ import (
 // ProjectID 为 nil 表示**内置原因**（迁移 103 seed，全工程可见，不可修改）；
 // 非 nil 表示工程自定义原因（工程内 code 唯一，可改名 / 停用）。
 type ReasonEntity struct {
-	ID        string    `gorm:"column:id;type:uuid;primaryKey"`
-	ProjectID *string   `gorm:"column:project_id;type:uuid"`
-	Code      string    `gorm:"column:code;type:text;not null"`
-	Name      string    `gorm:"column:name;type:text;not null"`
-	Direction string    `gorm:"column:direction;type:text;not null"`
-	IsBuiltin bool      `gorm:"column:is_builtin;not null"`
-	Status    string    `gorm:"column:status;type:text;not null"`
-	Sort      int       `gorm:"column:sort;not null"`
-	CreatedAt time.Time `gorm:"column:created_at;not null"`
-	UpdatedAt time.Time `gorm:"column:updated_at;not null"`
+	ID         int64     `gorm:"column:id;type:bigint;primaryKey"`
+	ProjectID  *string   `gorm:"column:project_id;type:uuid"`
+	Code       string    `gorm:"column:code;type:text;not null"`
+	Name       string    `gorm:"column:name;type:text;not null"`
+	Direction  string    `gorm:"column:direction;type:text;not null"`
+	IsBuiltin  bool      `gorm:"column:is_builtin;not null"`
+	Status     string    `gorm:"column:status;type:text;not null"`
+	Sort       int       `gorm:"column:sort;not null"`
+	CreateTime time.Time `gorm:"column:create_time;not null"`
+	UpdatedAt  time.Time `gorm:"column:updated_at;not null"`
 }
 
 // TableName 实现 gorm 表名。
@@ -59,7 +59,7 @@ type MovementEntity struct {
 	Delta           int       `gorm:"column:delta;not null"`
 	QuantityBefore  int       `gorm:"column:quantity_before;not null"`
 	QuantityAfter   int       `gorm:"column:quantity_after;not null"`
-	ReasonID        *string   `gorm:"column:reason_id;type:uuid"`
+	ReasonID        *int64    `gorm:"column:reason_id;type:bigint"`
 	ReasonCode      string    `gorm:"column:reason_code;type:text;not null"`
 	ParentVariantID *string   `gorm:"column:parent_variant_id;type:uuid"`
 	SourceType      string    `gorm:"column:source_type;type:text;not null"`
@@ -88,7 +88,7 @@ type MovementRow struct {
 	Delta           int       `gorm:"column:delta"`
 	QuantityBefore  int       `gorm:"column:quantity_before"`
 	QuantityAfter   int       `gorm:"column:quantity_after"`
-	ReasonID        *string   `gorm:"column:reason_id"`
+	ReasonID        *int64    `gorm:"column:reason_id"`
 	ReasonCode      string    `gorm:"column:reason_code"`
 	ReasonName      string    `gorm:"column:reason_name"`
 	ParentVariantID *string   `gorm:"column:parent_variant_id"`
@@ -367,7 +367,7 @@ func (m *Model) ListReasons(ctx context.Context, f ReasonFilter) (list []*Reason
 }
 
 // GetReason 按 ID 查原因。
-func (m *Model) GetReason(ctx context.Context, id string) (e *ReasonEntity, err error) {
+func (m *Model) GetReason(ctx context.Context, id int64) (e *ReasonEntity, err error) {
 	e = &ReasonEntity{}
 	err = m.reasonDB(ctx).Where("id = ?", id).First(e).Error
 	return e, err
@@ -389,14 +389,14 @@ func (m *Model) FindReasonByCode(ctx context.Context, projectID, code string) (e
 }
 
 // ReasonCodeExists 同工程（含内置）下 code 是否已被占用（excludeID 为空表示新建场景）。
-func (m *Model) ReasonCodeExists(ctx context.Context, projectID, code, excludeID string) (exists bool, err error) {
+func (m *Model) ReasonCodeExists(ctx context.Context, projectID, code string, excludeID int64) (exists bool, err error) {
 	q := m.reasonDB(ctx).Where("lower(code) = lower(?)", code)
 	if projectID != "" {
 		q = q.Where("project_id = ? OR project_id IS NULL", projectID)
 	} else {
 		q = q.Where("project_id IS NULL")
 	}
-	if excludeID != "" {
+	if excludeID != 0 {
 		q = q.Where("id <> ?", excludeID)
 	}
 	var n int64

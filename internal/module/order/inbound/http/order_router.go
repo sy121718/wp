@@ -63,6 +63,8 @@ func SetupOrderRoutes(
 	cg.GET("/get", h.GetCoupon)
 	cg.GET("/validate", h.ValidateCoupon)
 	cg.GET("/redemption/list", h.ListCouponRedemptions)
+	// 券计数对账（DB-021）：只读巡检，used_count 是投影、核销明细是真源。
+	cg.GET("/count-audit", h.AuditCouponCounts)
 	cg.POST("/create", h.CreateCoupon)
 	cg.POST("/update", h.UpdateCoupon)
 	cg.POST("/delete", h.DeleteCoupon)

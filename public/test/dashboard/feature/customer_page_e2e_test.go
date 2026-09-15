@@ -73,8 +73,8 @@ func newCustomerE2EEnv(t *testing.T) *customerE2EEnv {
 		t.Fatalf("创建测试工程失败: %v", err)
 	}
 
-	// 访客账号这条链路不碰会话与资料表，构造时传 nil（与服务装配的「可选依赖」口径一致）。
-	users := userservice.NewService(usermodel.NewUserModel(db), nil, nil, nil, nil, "测试站")
+	// 访客账号这条链路不碰资料与偏好表，构造时传 nil（与服务装配的「可选依赖」口径一致）。
+	users := userservice.NewService(usermodel.NewUserModel(db), nil, nil, nil, "测试站")
 	// 订单侧只需要订单模块自己的 model：客户页的订单摘要是纯聚合，不碰商品与库存。
 	orders := orderservice.NewService(
 		ordermodel.NewOrderModel(db),

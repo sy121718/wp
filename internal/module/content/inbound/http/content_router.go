@@ -8,6 +8,7 @@ import (
 	contentcontract "go_wp/internal/module/content/contract"
 	contentmodel "go_wp/internal/module/content/model"
 	contentservice "go_wp/internal/module/content/service"
+	"go_wp/pkg/i18n"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -20,6 +21,10 @@ import (
 // 后续步骤才填充完成，这里只持有指针，请求到来时已是全量。
 func SetupContentRoutes(rg *gin.RouterGroup, db *gorm.DB, collections core.CollectionSchemaProvider) contentcontract.ContentService {
 	svc := contentservice.NewService(contentmodel.NewModel(db))
+	// 内容译文存储（审计 I18N-006）：构建期按语言取字段译文。
+	// 与商品域同一注入方式、同一张表（sys_translation）—— 两个模块取词口径一致，
+	// 运营也在同一个翻译工作台里维护，不必区分「这条是商品的还是文章的」。
+	svc.SetContentStore(i18n.NewDBContentStore(db))
 	handle := NewHandle(svc)
 	handle.SetCollectionSchemas(collections)
 

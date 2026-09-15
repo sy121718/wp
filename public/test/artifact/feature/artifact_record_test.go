@@ -13,22 +13,26 @@ import (
 	"go_wp/public/test/support"
 )
 
+// 产物测试的父行 ID（生产外键要求 projects / pages 行真实存在）。
+const (
+	artifactTestProjectID = "aaaaaaaa-0000-0000-0000-0000000000ff"
+	artifactTestPageID    = "bbbbbbbb-0000-0000-0000-000000000001"
+)
+
 const recordManifest = `{"files":{"index.html":"hash-html","manifest.json":"hash-manifest"}}`
 
 func newArtifactService(t *testing.T) *artifactservice.Service {
 	t.Helper()
-	db, err := support.NewPGTestDB(t)
-	if err != nil {
-		t.Skipf("本地 PostgreSQL 不可用，跳过产物链路测试：%v", err)
-	}
-	for _, statement := range []string{
-		`CREATE TABLE page_artifacts (id TEXT PRIMARY KEY, page_id TEXT NOT NULL, version INTEGER NOT NULL, source_document JSON NOT NULL, page_document_schema_version INTEGER NOT NULL, source_hash TEXT NOT NULL, build_input_manifest JSON NOT NULL, build_input_hash TEXT NOT NULL, artifact_provider TEXT NOT NULL, artifact_key TEXT NOT NULL, artifact_hash TEXT NOT NULL, compiler_version TEXT NOT NULL, registry_version TEXT NOT NULL, manifest JSON NOT NULL, payload_state TEXT NOT NULL, payload_deleted_at TIMESTAMPTZ, note TEXT NOT NULL, created_by TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL, lang TEXT NOT NULL DEFAULT 'zh-CN', UNIQUE(page_id, version, lang), UNIQUE(id, page_id))`,
-		`CREATE TABLE content_objects (content_hash TEXT PRIMARY KEY, provider TEXT NOT NULL, object_key TEXT NOT NULL, byte_size INTEGER NOT NULL, created_at TIMESTAMPTZ NOT NULL, deleted_at TIMESTAMPTZ)`,
-		`CREATE TABLE page_artifact_objects (artifact_id TEXT NOT NULL, content_hash TEXT NOT NULL, PRIMARY KEY(artifact_id, content_hash))`,
-	} {
-		if err := db.Exec(statement).Error; err != nil {
-			t.Fatalf("创建测试表失败: %v", err)
-		}
+	db := support.NewMigratedPGTestDB(t)
+	// page_artifacts.page_id → pages(id)、pages.project_id → projects(id) 都是真实外键，
+	// 归档前必须补出真实父行。
+	support.SeedProjectRow(t, db, artifactTestProjectID, "产物测试站点")
+	if err := db.Exec(
+		`INSERT INTO pages (id, project_id, kind, content_target_type, draft_path, draft_document, draft_version, stale, created_at, updated_at)
+		 VALUES (?, ?, 'home', 'none', ?, '{}'::jsonb, 1, false, NOW(), NOW())`,
+		artifactTestPageID, artifactTestProjectID, "pages/"+artifactTestPageID+"/draft.json",
+	).Error; err != nil {
+		t.Fatalf("准备页面行失败：%v", err)
 	}
 	return artifactservice.NewService(artifactmodel.NewArtifactModel(db))
 }
@@ -36,7 +40,7 @@ func newArtifactService(t *testing.T) *artifactservice.Service {
 func validRecordReq() *artifactdto.RecordReq {
 	return &artifactdto.RecordReq{
 		ArtifactID:       "aaaaaaaa-0000-0000-0000-000000000001",
-		PageID:           "bbbbbbbb-0000-0000-0000-000000000001",
+		PageID:           artifactTestPageID,
 		Version:          1,
 		SourceDocument:   json.RawMessage(`{"settings":{},"root":[]}`),
 		SchemaVersion:    1,
@@ -103,7 +107,9 @@ func TestArtifactRecordClosures(t *testing.T) {
 
 func TestArtifactNotFoundMessage(t *testing.T) {
 	svc := newArtifactService(t)
-	_, err := svc.Detail(context.Background(), &artifactdto.DetailReq{PageID: "missing", Hash: "missing"})
+	// 生产 page_artifacts.page_id 是 uuid 类型：用合法但不存在于库中的 uuid 表达
+	//「缺失产物」（非法字符串会先在类型转换处报错，测不到本意）。
+	_, err := svc.Detail(context.Background(), &artifactdto.DetailReq{PageID: "cccccccc-0000-0000-0000-0000000000ff", Hash: "missing"})
 	if err == nil || err.Error() != artifactenums.ErrArtifactNotFound {
 		t.Fatalf("缺失产物应返回明确错误: %v", err)
 	}

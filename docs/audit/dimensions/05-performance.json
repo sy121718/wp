@@ -336,7 +336,8 @@
         "performance",
         "cache"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：编译装配按「启用集指纹」缓存。plugin.EnabledAssembly 改为先做轻量指纹查询（只取 plugin_id/version/storage_path/updated_at 四列 + 存储目录 mtime，不读 manifest 与 assets），命中即复用同一份 Assembly（进程内单份缓存，启停/升级/重装都会改指纹，无需人工失效）。templates 新增 NewCompositeSetCached —— Jet Set 按指纹复用（留 2 份：启用集来回切换也能命中），空指纹显式退化为每次新建（空串不是合法版本，当 key 会让不同插件集共享同一份模板）。pipeline.ComponentSetWithPlugins 改用缓存版。两条用例钉住：同启用集返回同一装配对象、Toggle 后指纹变化且重建；同指纹 Set 复用、空指纹不共享槽位。"
     },
     {
       "id": "PERF-007",
@@ -439,7 +440,8 @@
         "performance",
         "query"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：集合源改「列投影 + 筛选下推」。新增 contentmodel.ListForCollection：SELECT 只取 id/slug/revision/updated_at，字段值由 jsonb_build_object(**显式 ::text 转型**才可参数化，否则 PG 报 42P18) 就地拼成 JSON，正文从不进应用进程；用 jsonb_strip_nulls 保留「键缺失」与「键为 null」的原有区分；filter 下推成 (data ->> ?::text) = ?::text，键名也走占位符。新增 contentcontract.CollectionFieldWhitelist（= 数据源白名单减去 body / focusKeyword），**下拉 / 构建期字段校验 / SQL 投影三处共用同一份定义**，避免「下拉选得到、构建出来是空」；ResolveCollection 保留下推后的内存复查作为防御（结果不受下推表达差异影响）。三条用例钉住：集合项无 body 与 focusKeyword、白名单是子集且为拷贝、下推结果与内存语义一致（含 AND 收紧与空结果不报错）。"
     },
     {
       "id": "PERF-009",
@@ -576,7 +578,8 @@
         "pipeline",
         "memory"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：产物读取「整份进内存」——**量化后判定不构成问题，未改行为，仅补决策注释**（子代理实现）。① **实测数据**：`public/runtime/artifacts` 单份 index.html 最大 17,379 B，manifest.json 655 B，redirect.json 46 B，产物共 2 个，整根 84 KB。② **整份读只发生在 `LocalStore.GetArtifact`**，调用方全是构建/发布路径（publisher.Publish/publishLocked 只读 CanonicalPath，page.ensureArtifactRow 只读 Manifest）；**访客面由 http.FileServer 流式直出，不经过这里**。而且 `GetArtifact` 返回的 `Entries[\"index.html\"]` 全仓**没有任何读取方**。③ 结论：17KB 量级下整份读无内存问题；真做流式必须连带动调用方或改 `Entries` 语义（跨出 store.go 范围），收益为零。按父代理指令**没有为改而改** —— `internal/pipeline/store.go` 只加了 13 行决策注释（实测数据 + 改造触发条件 + 流式化的真正难点在 Entries 而非算哈希），`git diff` 可验零行为变化。④ **附带更正审计的一处事实错误**：PERF-011 的 remediation 称「并发上限由 PERF-001 提供」与现状不符 —— PERF-001 落地为 `go RebuildStale` 异步，**并未加限流**。⑤ 标记依据因此不是代码改动，而是「实测数据表明当前量级不构成问题」+「决策注释已落地，触发条件与真正难点已记录」。"
     },
     {
       "id": "PERF-012",
@@ -748,7 +751,8 @@
         "performance",
         "frontend"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：内联 htmx 的体积 —— **量化后判定范围内不可优化，未改代码**（子代理实现）。① **实测数字**：htmx.min.js = **50917 字节**（htmx 2.0.4，已是压缩单 IIFE，无注释头、无冗余段；gzip 16435）。极简页（2 个 button）产物：无 hx- = 1552 字节；**仅多一条 hx- 属性** = 52629 字节 —— 增量 51077 字节占该页 97.1%，其中 htmx 占 99.7%。同页 gzip：771 → 17271（增量 16500）。已验证无重复内联（htmx 在同一份产物中出现恰好 1 次）。审计说的「约 50KB」「所有含 hx- 属性的页面都带上」**均与实测一致**（本会话少见的适用条目）。② **三条可行路径的取舍（都不在允许范围内）**：外置文件 —— **改变部署假设**，产物是内容寻址单文件（artifacts/<hash>/index.html + manifest.json，Hash=SHA256(manifestJSON+\\n+indexHTML)），**没有共享资源位**，站点级共享需要动 pipeline/存储/静态路由；裁剪 htmx —— 需引入构建步骤或 fork（官方无 subset 发行版）；服务器层 gzip —— **已经生效**。③ **最有价值的一条发现**：`internal/routers/routes.go` 的 `setupStaticFace` **已挂 `builtin.StaticGzipMiddleware()`**，其 `text/*` 白名单含 `text/html` —— 所以**实际网络传输增量是 16.5KB 而非 51KB，账面数字被高估约 68%**。这条把「要不要为 51KB 付出架构代价」变成了「16.5KB 值不值得」的问题，是量化该有的输出。④ 新增 `internal/builder/perf_asset_bytes_quant_test.go` 把量化口径固化成测试（TestPerfQuantHtmxInlineBytes / TestPerfQuantScopedCSSGrowth / TestPerfQuantNoResidualMergeableRules / TestPerfQuantMultiComponentScenarios），使将来若有人改动内联策略，体积变化会立刻可见。⑤ 标记依据不是代码改动，而是「实测数据表明在该范围内无可行的优化路径」+「量化口径已固化成测试」。"
     },
     {
       "id": "PERF-016",
@@ -800,7 +804,8 @@
         "css",
         "performance"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：同类型实例的 scoped CSS 合并（子代理实现，**等价性证据做得最扎实的一份**）。① 前提核对：scope = `.sky-c-<nodeID>`，每实例一份。**关键判断**：把 8 个同配置 button 的 8 条规则归一化（`.sky-c-<id>` → `.sky-c-#`）后**唯一分组 = 1**，即内容 100% 相同 —— 所以这是「可提取的重复」而不是隔离机制的必要代价（审计前提成立）。② 修复前实测（N=1/2/4/8/16 → CSS 字节）：827 / 1327 / 2327 / 4327 / 8327，每实例约 +500、严格线性。修复后：827 / 841 / 869 / 925 / 1037（16 实例仅比单实例多 210 字节，修复前多 7500）。场景对照：8×同配置 button 4327 → 925（**-78.6%**）、6×card 8072 → 6717（-16.8%）、混合页 1644 → 1534（-6.7%）、8×**不同配色** button 5473 → 5326（-2.7%，实例配置不同时声明不同，这部分是隔离机制的必要代价，**不做合并**）。③ 实现：新增 `internal/builder/core/scope_merge.go`，把「相邻 + 外壳相同 + 归一化选择器相同 + 声明相同」的规则并列成一条选择器列表。**四条安全边界**：声明相同；外壳相同（@media/@container 条件一致，不跨越）；成员**在输出序列里相邻**（中间夹规则时不合并 —— 那是唯一会改变覆盖关系的形状）；只处理真正的样式规则（**@keyframes/@property 并列会变成无效 CSS**，跳过）。刻意用逗号并列而非 `:is()` —— 产物不依赖更新的选择器语法，且特异性按匹配它的那条选择器独立计算，与合并前一致。接入 6 个桶（desktop/tablet/mobile/active/hover/容器查询三层）。④ **等价性证据（这条最关键）**：6 个变动 golden 做 **(外层上下文, 单条选择器, 声明) 多重集对比 → 0 条不一致**（一次性验证脚本跑完删除）；花括号配平检查全部 golden 通过；core 单测钉住各边界（相邻/同壳/声明相同/互不串组/多 scope 选择器/@keyframes 不合并/非同类不合并/映射不变）。这比「改完测试都过」强得多 —— 它证明的是**语义多重集不变**，而不是「已知的几个用例没坏」。⑤ **一处测试口径变更（不是删断言）**：`reveal_test.go` 的 `TestScrollRevealLayered` 原先数 CSS 里 `animation-timeline: view()` 的**文本出现次数**（期望 2），合并后容器与顶层组件的 reveal 规则并成一条并列选择器、文本次数变 1，而语义未变（覆盖的实例仍是 2 个）。已改为断言「**覆盖到的实例作用域集合 == {.sky-c-sec, .sky-c-out}**」—— **断言强度不降反升**：数文本次数本来就只是\"覆盖了两个实例\"的间接代理，直接断言作用域集合才是它真正想表达的。⑥ golden 只同步实际变动的 6 个（accordion/card/infobox/list/socialbuttons/tabs 的 css），逐个 diff 核对为纯选择器并列。⑦ **副作用提示**：产物字节变化 → Artifact hash 变化（Hash=SHA256(manifestJSON+\\n+indexHTML)），已发布站点需重建才能带到新字节；历史产物仍可按旧 hash 回滚。"
     },
     {
       "id": "PERF-017",
@@ -1004,7 +1009,8 @@
         "concurrency",
         "scalability"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "presentation 重建从进程内 Mutex 改为 build_jobs 队列。BuildQueueEnqueuer 端口 + EnqueuePresentationBuild（build_input_hash 空串复用部分唯一索引去重）。RebuildStale 队列注入时只入队、未注入回退同步。instanceLocks 保留同机兜底。多实例互斥靠 SKIP LOCKED。-race 通过。装配注入 SetBuildQueue + RegisterExecutor。"
     },
     {
       "id": "PERF-021",

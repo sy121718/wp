@@ -27,10 +27,7 @@ func TestPageAssembleInlinesHeaderBlock(t *testing.T) {
 	db, svc, projectID := newPageService(t)
 	ctx := context.Background()
 
-	// 夹具补建 blocks 表（newPageService 只建页面链路表）。
-	if err := db.Exec(`CREATE TABLE blocks (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, name TEXT NOT NULL, kind TEXT NOT NULL, document JSON NOT NULL, category TEXT NOT NULL DEFAULT 'general', reuse_mode TEXT NOT NULL DEFAULT 'global', created_at TIMESTAMPTZ NOT NULL, updated_at TIMESTAMPTZ NOT NULL)`).Error; err != nil {
-		t.Fatalf("创建 blocks 表失败: %v", err)
-	}
+	// blocks 表由生产迁移建，无需夹具补建（newPageService 已跑 migrations.Run）。
 	projects := projectservice.NewService(projectmodel.NewProjectModel(db))
 	blocks := blockservice.NewService(blockmodel.NewBlockModel(db), projects)
 
@@ -91,6 +88,13 @@ func TestPageAssembleInlinesHeaderBlock(t *testing.T) {
 	if !containsBytes(html, []byte("GLOBAL-HEADER-MARK")) {
 		t.Fatalf("产物应内联页眉块内容: %s", string(html[:min(len(html), 400)]))
 	}
+	// 产物字节可 dump 到指定目录，用于「装配方式改动前后逐字节对比」：
+	// 同一份文档 + 同一份块绑定，两种装配实现的产物必须完全一致（审计 VIS-001 的验收）。
+	if dir := os.Getenv("GO_WP_DUMP_ARTIFACT"); dir != "" {
+		if werr := os.WriteFile(filepath.Join(dir, "assembled.html"), html, 0o644); werr != nil {
+			t.Fatalf("dump 产物失败: %v", werr)
+		}
+	}
 
 	// stale 传播：标记后页面应变为待重建。
 	if err = svc.MarkStaleForTheme(ctx, theme.ID); err != nil {
@@ -134,9 +138,7 @@ func min(a, b int) int {
 func TestGlobalRefNodeInlinesBlockContent(t *testing.T) {
 	db, svc, projectID := newPageService(t)
 	ctx := context.Background()
-	if err := db.Exec(`CREATE TABLE blocks (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, name TEXT NOT NULL, kind TEXT NOT NULL, document JSON NOT NULL, category TEXT NOT NULL DEFAULT 'general', reuse_mode TEXT NOT NULL DEFAULT 'global', created_at TIMESTAMPTZ NOT NULL, updated_at TIMESTAMPTZ NOT NULL)`).Error; err != nil {
-		t.Fatalf("创建 blocks 表失败: %v", err)
-	}
+	// blocks 表由生产迁移建。
 	blocks := blockservice.NewService(blockmodel.NewBlockModel(db), projectservice.NewService(projectmodel.NewProjectModel(db)))
 	block, err := blocks.Create(ctx, &blockdto.CreateReq{
 		ProjectID: projectID, Name: "促销横幅", Kind: "block",

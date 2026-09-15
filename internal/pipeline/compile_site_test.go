@@ -13,8 +13,10 @@ func TestSiteCompileOptions_Minimal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(opts) != 1 {
-		t.Fatalf("expected 1 option, got %d", len(opts))
+	// Lang 非空时除工程 ID 外还会注入站内链接本地化器（审计 I18N-015）：
+	// 作者手填的 /shop 在非默认语言站点上要变成 /en/shop。
+	if len(opts) != 2 {
+		t.Fatalf("expected 2 options (project + site link), got %d", len(opts))
 	}
 }
 

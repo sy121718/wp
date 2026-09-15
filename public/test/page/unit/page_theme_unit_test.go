@@ -215,7 +215,9 @@ func TestPageRefreshStructureForTheme(t *testing.T) {
 	assertStructureSnapshot(t, detail.DraftDocument, "new-header", "")
 
 	// 页面已显式绑定 footer 时不应被主题刷新覆盖（VIS-003）。
-	footerDoc := mergePageStructure(t, []byte(pageDocument), "keep-footer", "")
+	// 参数顺序是 (header, footer)：这里要让**页脚**已显式绑定、页眉留空，
+	// 才能验证「主题刷新只补未绑定的槽、不动页面自己的绑定」（VIS-003）。
+	footerDoc := mergePageStructure(t, []byte(pageDocument), "", "keep-footer")
 	_, err = svc.SaveDraft(ctx, &pagedto.SaveDraftReq{
 		ID: page.ID, ExpectedVersion: detail.DraftVersion,
 		DraftPath: "/struct", DraftDocument: footerDoc,

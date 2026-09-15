@@ -14,10 +14,10 @@ import (
 
 	"gorm.io/gorm"
 
+	ordercontract "go_wp/internal/module/order/contract"
 	orderdto "go_wp/internal/module/order/dto"
 	orderenums "go_wp/internal/module/order/enums"
 	ordermodel "go_wp/internal/module/order/model"
-	inventorydto "go_wp/internal/module/product/inventory/dto"
 	"go_wp/pkg/logger"
 )
 
@@ -190,18 +190,17 @@ func (s *Service) CancelOrder(ctx context.Context, req *orderdto.CancelOrderReq)
 	if len(items) == 0 {
 		return nil, errors.New(orderenums.ErrOrderHasNoItems)
 	}
-	lines := make([]inventorydto.StockChangeLineReq, 0, len(items))
+	lines := make([]ordercontract.StockLine, 0, len(items))
 	for _, it := range items {
-		lines = append(lines, inventorydto.StockChangeLineReq{
+		lines = append(lines, ordercontract.StockLine{
 			ProductID: it.ProductID,
 			VariantID: it.VariantID,
 			SKUCode:   it.SKU,
 			Quantity:  it.Quantity,
 		})
 	}
-	if _, rerr := s.stock.ChangeStock(ctx, &inventorydto.ChangeStockReq{
+	if rerr := s.stock.ChangeStock(ctx, &ordercontract.StockAdjustment{
 		ProjectID:  projectID,
-		Direction:  "in",
 		ReasonCode: "return_in",
 		SourceType: "order",
 		SourceRef:  orderNo,

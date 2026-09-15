@@ -69,14 +69,11 @@ func setContentStore(t *testing.T, svc pagecontract.PageService, store i18n.Cont
 	setter.SetContentTranslationStore(store)
 }
 
-// newBlockI18nEnv 建测试环境：blocks 表 + 页眉块 + 页脚块 + globalref 块 + 含三种文本的页面。
+// newBlockI18nEnv 建测试环境：生产 blocks 表（迁移建）+ 页眉块 + 页脚块 + globalref 块 + 含三种文本的页面。
 func newBlockI18nEnv(t *testing.T) (pagecontract.PageService, string, string) {
 	t.Helper()
 	db, svc, projects, projectID := newPageService(t)
 	ctx := context.Background()
-	if err := db.Exec(`CREATE TABLE blocks (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, name TEXT NOT NULL, kind TEXT NOT NULL, document JSON NOT NULL, category TEXT NOT NULL DEFAULT 'general', reuse_mode TEXT NOT NULL DEFAULT 'global', created_at TIMESTAMPTZ NOT NULL, updated_at TIMESTAMPTZ NOT NULL)`).Error; err != nil {
-		t.Fatalf("创建 blocks 表失败: %v", err)
-	}
 	blocks := blockservice.NewService(blockmodel.NewBlockModel(db), projects)
 
 	header, err := blocks.Create(ctx, &blockdto.CreateReq{
@@ -193,9 +190,6 @@ func around(html, needle string) string {
 func TestPageBlockOnlyContentTranslation(t *testing.T) {
 	db, svc, projects, projectID := newPageService(t)
 	ctx := context.Background()
-	if err := db.Exec(`CREATE TABLE blocks (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, name TEXT NOT NULL, kind TEXT NOT NULL, document JSON NOT NULL, category TEXT NOT NULL DEFAULT 'general', reuse_mode TEXT NOT NULL DEFAULT 'global', created_at TIMESTAMPTZ NOT NULL, updated_at TIMESTAMPTZ NOT NULL)`).Error; err != nil {
-		t.Fatalf("创建 blocks 表失败: %v", err)
-	}
 	blocks := blockservice.NewService(blockmodel.NewBlockModel(db), projects)
 	header, err := blocks.Create(ctx, &blockdto.CreateReq{
 		ProjectID: projectID, Name: "站点页眉", Kind: "header",
@@ -253,9 +247,6 @@ func TestPageBlockOnlyContentTranslationDependency(t *testing.T) {
 	db, svc, projects, projectID := newPageService(t)
 	ctx := context.Background()
 	withLangPrefix(t)
-	if err := db.Exec(`CREATE TABLE blocks (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, name TEXT NOT NULL, kind TEXT NOT NULL, document JSON NOT NULL, category TEXT NOT NULL DEFAULT 'general', reuse_mode TEXT NOT NULL DEFAULT 'global', created_at TIMESTAMPTZ NOT NULL, updated_at TIMESTAMPTZ NOT NULL)`).Error; err != nil {
-		t.Fatalf("创建 blocks 表失败: %v", err)
-	}
 	blocks := blockservice.NewService(blockmodel.NewBlockModel(db), projects)
 	header, err := blocks.Create(ctx, &blockdto.CreateReq{
 		ProjectID: projectID, Name: "站点页眉", Kind: "header",

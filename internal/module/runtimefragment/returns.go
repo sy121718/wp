@@ -26,13 +26,17 @@ import (
 	"go_wp/internal/templates"
 )
 
-// visitorReturns 访客退货能力（装配期注入；nil = 未接入）。
+// visitorReturns 访客退货能力（装配期注入）。
 //
 // 类型是**收窄过的** VisitorReturnPort：片段层拿不到「后台审核 / 入库 / 退款」那几条 ——
 // 越权防护靠接口形状，而不是靠调用方自觉。
+//
+// 装配自检（审计 CQ-019）：判为 required-port。本端口此前**从未被任何地方注入**，
+// 退货申请片段因此恒返回「退货功能暂不可用」，且不报错（已由 routes.go 补上注入）。
+// nil 分支保留给单测，不作为生产降级路径。
 var visitorReturns ordercontract.VisitorReturnPort
 
-// SetVisitorReturnProvider 注入访客退货能力（装配期调用；传 nil 表示未接入）。
+// SetVisitorReturnProvider 注入访客退货能力（装配期调用；**必须注入**，见字段注释）。
 func SetVisitorReturnProvider(p ordercontract.VisitorReturnPort) { visitorReturns = p }
 
 func init() {

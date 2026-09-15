@@ -3,6 +3,7 @@ package response
 import (
 	"fmt"
 	"net/http"
+	"regexp"
 	"strings"
 
 	"go_wp/pkg/enums"
@@ -67,6 +68,84 @@ func ErrorInternal(c *gin.Context, scene string, err error) {
 		}
 		logger.Scene(scene).Error(err, "handler 内部错误")
 	}
+	ErrorWithMessage(c, http.StatusInternalServerError, msgInternalError)
+}
+
+// businessErrKey 匹配「业务错误」的消息形态：`模块.类别.语义`，例如 cart.err.outOfStock。
+//
+// 为什么用**形态**而不是错误类型来判定：项目的业务错误由 enums 常量构造，
+// 那些常量本身就是 i18n key（见各模块 enums 包），而 Go 的内部错误（`fmt.Errorf`、
+// 驱动返回的 SQL 错误、os 的路径错误）天然长不成这个形状。
+// 类型判定的前提是 service 层处处用同一个包装类型 —— 那是几百处改动、且漏一处就静默失效；
+// 形态判定是零成本的，且漏判的后果是「内部错误被当成业务错误展示」，
+// 而那种 string 恰好长得像 key 的概率极低。
+// **这一处与 pkg/CLAUDE.md 的约定存在张力，是刻意的取舍，记录在此**：
+// 该约定写明「pkg/response 不做 i18n 翻译、不维护字符串错误码、不在 pkg 内扩散业务语义中转」。
+// 本函数是审计条目 CQ-010 的 remediation 明确要求的形状（原文即 response.ErrorAuto(c, err)），
+// 它把「错误是否可对外展示」这个判断从每个 handler 的自觉收敛到一处。
+// 权衡：不收敛的话，泄漏面等于全部 handler 的自觉程度（几百处），而漏一处不会让测试变红；
+// 收敛的代价是 pkg/response 知道了业务错误的**形态**（不是具体错误码，也不引入 enums 依赖）。
+// 两害相权取收敛 —— 但如果你要恢复约定，删掉 ErrorAuto/IsBusinessError 即可，
+// 调用点改回 ErrorInternal 或明写 ErrorWithMessage，不会有隐藏耦合。
+var businessErrKey = regexp.MustCompile(`^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*\.[a-zA-Z0-9_]+(\|.*)?$`)
+
+// businessErrConstant 未迁形态的 enums 常量名形态：ErrAttachmentNotFound / MsgListSuccess。
+//
+// 为什么需要这一层：CQ-010 把 170 处 handler 换成 ErrorAuto 时，只有 cart / mail / order / user
+// 四个模块的 enums 迁到了 key 形态（`模块.err.语义`），其余模块仍是「常量名即消息」——
+// media 的 `ErrAttachmentNotFound = "ErrAttachmentNotFound"`、inventory 的
+// `ErrSourceFilterInvalid = "ErrSourceFilterInvalid"`。判据只认 key 形态时，这些模块的**全部**
+// 业务错误都会被判成内部错误 → 一律 500 + 通用文案，与 CQ-010 自己声明的「业务错误透出消息」
+// 恰好相反。这一层把常量名形态补上（全仓 429 个此类常量），形态判定零成本且不需要改动 170 处调用。
+var businessErrConstant = regexp.MustCompile(`^(Err|Msg)[A-Z][A-Za-z0-9]*$`)
+
+// IsBusinessError 判断一个错误的消息是否是业务错误（可对外展示）。
+//
+// 判据只有两层，两者都是**形态确定**的（不依赖字符串特征的启发式）：
+//  1. key 形态 `模块.类别.语义`（已迁模块，如 cart.err.outOfStock）；参数化协议（key|param）
+//     也算业务错误 —— 翻译层会把 | 后面的部分当参数填进模板；
+//  2. enums 常量名形态 `ErrXxx` / `MsgXxx`（仍是「常量名即消息」的模块，如 ErrSourceFilterInvalid）。
+//
+// **第 3 层（「纯中文短文案」）已删除**，原因留在这里：它用「含汉字 + 不含一份内部错误特征清单」
+// 去猜语义，而那份清单永远不全 —— 每加一条特征，都是在用一个字符串的巧合区分两种语义。
+// 删层的代价已由 masterdata 的常量迁移承担（值从 `"参数不合法"` 改成 `masterdata.err.invalidParam`，
+// 词条见迁移 198）；迁完之后全仓 enums 的 Err* / Msg* 常量都落在这两层里，判据不再有猜的成分。
+// 回归判据见 TestIsBusinessErrorCoversAllModuleEnums：它逐个校验各模块 enums 的常量值是否命中
+// 这两层，新增一个「值既不是 key 也不是常量名」的常量会直接变红，而不是静默变成 500。
+//
+// 为什么用形态而不是错误类型：类型判定的前提是 service 层处处用同一个包装类型，那是几百处改动、
+// 且漏一处即静默失效。形态判定的漏判方向是**安全的**：形状不认识就按内部错误处理
+// （500 + 通用文案 + 记日志），而不是把内部细节透出去。
+func IsBusinessError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return businessErrKey.MatchString(msg) || businessErrConstant.MatchString(msg)
+}
+
+// ErrorAuto 按错误性质决定对外文案：业务错误透出消息，内部错误只记日志并返回通用提示。
+//
+// 这是 handler 的默认选择 —— 直接写 ErrorWithMessage(c, 400, err.Error()) 看起来无害，
+// 但只要 service 里有一处把 SQL 错误或文件路径原样返回，它就会出现在客户端响应里，
+// 而那种泄漏不会让测试变红。判据集中在 IsBusinessError 一处，
+// 新增业务错误只要按 enums 的 key 形态写就自动被认作可展示。
+//
+// scene 用于日志定位（如 "presentation"），业务错误路径不记日志（它是预期内的分支）。
+func ErrorAuto(c *gin.Context, code int, scene string, err error) {
+	if IsBusinessError(err) {
+		ErrorWithMessage(c, code, err.Error())
+		return
+	}
+	if err != nil {
+		if scene == "" {
+			scene = "http"
+		}
+		logger.Scene(scene).Error(err, "handler 内部错误")
+	}
+	// 内部错误一律 500 而不是沿用调用方给的 code —— 调用方通常写的是 400/404，
+	// 那是按「预期内的业务失败」选的；既然实际是内部错误，状态码就该如实地是 500，
+	// 否则客户端与监控都会把内部故障当成参数问题。
 	ErrorWithMessage(c, http.StatusInternalServerError, msgInternalError)
 }
 

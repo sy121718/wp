@@ -8,6 +8,25 @@ import (
 	mediadto "go_wp/internal/module/media/dto"
 )
 
+// SyncRefsInput 引用同步的入参 —— 契约自有形状，不是 dto 的别名。
+//
+// 四个字段就是这件事的全部语义：谁引用（RefKind + RefID）、引用方标题（RefTitle）、
+// 引用了哪些媒体 URL（URLs）。dto 那侧带 JSON 名与绑定标签，形状随 HTTP 接口变；
+// 契约形状只随语义变。
+//
+// URLs 为空即「该引用方不再引用任何媒体」—— 页面删除走的就是这条（清空引用再软删），
+// 不需要额外开关字段。
+type SyncRefsInput struct {
+	// RefKind 引用方类型（如 page）。
+	RefKind string
+	// RefID 引用方标识。
+	RefID string
+	// RefTitle 引用方标题（展示用，可为空）。
+	RefTitle string
+	// URLs 该引用方产物中出现的媒体 URL 全集；空集表示解除全部引用。
+	URLs []string
+}
+
 // MediaService 定义媒体模块对外暴露的业务能力。
 type MediaService interface {
 	// Upload 上传文件并记录附件元数据。
@@ -24,7 +43,7 @@ type MediaService interface {
 	// References 查询附件的引用来源（构建期写入 extra_info.refs 的缓存）。
 	References(ctx context.Context, id uint64) ([]mediadto.AttachmentRefResp, error)
 	// SyncReferences 全量同步某引用方对媒体库的引用（refs 写入侧，构建期调用，幂等）。
-	SyncReferences(ctx context.Context, req *mediadto.SyncRefsReq) (int, error)
+	SyncReferences(ctx context.Context, req *SyncRefsInput) (int, error)
 	// SyncReferencesFromHTML 从产物 HTML 收集媒体引用并全量同步（构建期便捷入口）。
 	SyncReferencesFromHTML(ctx context.Context, refKind, refID, refTitle, html string) (int, error)
 	// CreateCategory 新建分类（无限级，同父级下重名拒绝）。

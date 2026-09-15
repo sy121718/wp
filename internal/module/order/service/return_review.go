@@ -23,10 +23,10 @@ import (
 
 	"gorm.io/gorm"
 
+	ordercontract "go_wp/internal/module/order/contract"
 	orderdto "go_wp/internal/module/order/dto"
 	orderenums "go_wp/internal/module/order/enums"
 	ordermodel "go_wp/internal/module/order/model"
-	inventorydto "go_wp/internal/module/product/inventory/dto"
 )
 
 // ReturnableOfOrder 该订单各订单项的当前可退数量（访客侧）。
@@ -321,9 +321,9 @@ func (s *Service) admitReceive(ctx context.Context, returnID uint64, remark stri
 // stockInReturn 退货入库（走库存变动契约，原因字典 return_in）。
 func (s *Service) stockInReturn(ctx context.Context, rt *ordermodel.ReturnEntity, items []*ordermodel.ReturnItemEntity, warehouseID string) error {
 	wh := strings.TrimSpace(warehouseID)
-	lines := make([]inventorydto.StockChangeLineReq, 0, len(items))
+	lines := make([]ordercontract.StockLine, 0, len(items))
 	for _, it := range items {
-		lines = append(lines, inventorydto.StockChangeLineReq{
+		lines = append(lines, ordercontract.StockLine{
 			ProductID:   it.ProductID,
 			VariantID:   it.VariantID,
 			SKUCode:     it.SKU,
@@ -331,9 +331,8 @@ func (s *Service) stockInReturn(ctx context.Context, rt *ordermodel.ReturnEntity
 			WarehouseID: wh,
 		})
 	}
-	if _, err := s.stock.ChangeStock(ctx, &inventorydto.ChangeStockReq{
+	if err := s.stock.ChangeStock(ctx, &ordercontract.StockAdjustment{
 		ProjectID:  rt.ProjectID,
-		Direction:  "in",
 		ReasonCode: "return_in",
 		SourceType: "order_return",
 		SourceRef:  rt.ReturnNo,

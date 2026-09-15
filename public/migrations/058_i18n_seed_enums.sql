@@ -5,6 +5,10 @@
 --      其余仅 zh-CN（en-US 缺失不伪造，待后续翻译）。
 --   2) 新 key 化常量（原中文直值 → 值=常量名）：仅 zh-CN。
 -- category 推导：Err* → error；msg_* → msg；其余 → ui。
+-- 语义（审计 I18N-003）：ON CONFLICT DO NOTHING —— seed 是**默认值来源**，不是真相来源。
+--   后台改过的词条不会被下一次迁移覆盖（DO UPDATE 的旧写法会让运营的修改在下次部署时
+--   静默回滚，而「我明明改过」这种问题极难定位）。要改默认值请改这里的 item_value 并删除
+--   对应行后重跑，或在后台直接修改。
 -- 幂等：ON CONFLICT (item_key, lang) DO UPDATE（可重复执行）。
 -- 注意：register.go 的 ConditionSQL 以 zh-CN 行数 195 为门槛；
 --       新增词条时同步调大该阈值，seed 会重跑并补齐新 key。
@@ -284,10 +288,4 @@ VALUES
 ('msg_save_success', 'zh-CN', '保存成功', 200, 'msg', 'pkg/enums/messages.go', 1, now(), now()),
 ('msg_update_success', 'en-US', 'Updated successfully', 200, 'msg', 'pkg/enums/messages.go', 1, now(), now()),
 ('msg_update_success', 'zh-CN', '更新成功', 200, 'msg', 'pkg/enums/messages.go', 1, now(), now())
-ON CONFLICT (item_key, lang) DO UPDATE SET
-    item_value  = EXCLUDED.item_value,
-    http_code   = EXCLUDED.http_code,
-    category    = EXCLUDED.category,
-    remark      = EXCLUDED.remark,
-    status      = EXCLUDED.status,
-    update_time = now();
+ON CONFLICT (item_key, lang) DO NOTHING;

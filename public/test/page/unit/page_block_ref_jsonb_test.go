@@ -10,8 +10,9 @@
 //	   守住「page_model.go 的表达式与 068 的索引表达式一致」这条约束 ——
 //	   任一侧改动而另一侧未同步时本测试失败（索引静默失效的护栏）。
 //
-// 表结构按生产 DDL（public/migrations/init_builder_schema.sql 的 pages）建，
-// 索引按迁移 068 建；PG 不可用时 t.Skip。
+// 表结构与 068 索引都由**生产迁移**建立（support.NewMigratedPGTestDB），不再手抄 DDL：
+// 迁移改了索引表达式，这里立刻能发现，而不是守着与生产无关的本地副本。
+// PG 不可用时 t.Skip。
 package unit
 
 import (
@@ -26,33 +27,6 @@ import (
 	"go_wp/public/test/support"
 	"gorm.io/gorm"
 )
-
-const blockRefPagesDDL = `CREATE TABLE pages (
-	id UUID PRIMARY KEY,
-	project_id UUID NOT NULL,
-	theme_id UUID,
-	kind TEXT NOT NULL,
-	content_target_type TEXT NOT NULL,
-	content_target_id UUID,
-	draft_path TEXT NOT NULL,
-	active_path TEXT,
-	draft_document JSONB NOT NULL,
-	draft_version INTEGER NOT NULL,
-	staged_artifact_id UUID,
-	active_artifact_id UUID,
-	stale BOOLEAN NOT NULL,
-	deleted_at TIMESTAMPTZ,
-	published_at TIMESTAMPTZ,
-	created_at TIMESTAMPTZ NOT NULL,
-	updated_at TIMESTAMPTZ NOT NULL
-)`
-
-// 与 public/migrations/068_pg_jsonb_partial_index.sql 保持一致。
-var blockRefIndexDDLs = []string{
-	`CREATE INDEX idx_pages_blockref ON pages USING GIN ((jsonb_path_query_array(draft_document, '$.**.blockId'))) WHERE deleted_at IS NULL`,
-	`CREATE INDEX idx_pages_structure_header ON pages ((draft_document->'settings'->'structure'->>'headerBlockId')) WHERE deleted_at IS NULL`,
-	`CREATE INDEX idx_pages_structure_footer ON pages ((draft_document->'settings'->'structure'->>'footerBlockId')) WHERE deleted_at IS NULL`,
-}
 
 // oldBlockRefCond 旧写法（改前实现），仅用于等价性对照，不参与生产代码。
 const oldBlockRefCond = `draft_document::text LIKE '%"blockId": "' || ?::text || '"%'`
@@ -122,33 +96,25 @@ func blockRefDocCases(target, other string) []blockRefDocCase {
 	}
 }
 
-// setupBlockRefPages 建表 + 068 索引 + 造数据：blockRefDocCases 样本
-// 与 2 万行无关页面（让 planner 在真实规模下选索引）。
+// setupBlockRefPages 造数据：blockRefDocCases 样本与 2 万行无关页面
+// （让 planner 在真实规模下选索引）。pages 表与迁移 068 的三个索引都来自生产迁移，
+// 索引表达式与查询表达式漂移时 TestPageBlockReferenceIndexUsed 直接失败。
 func setupBlockRefPages(t *testing.T, target, other string) (*gorm.DB, pagemodel.Model) {
 	t.Helper()
-	db, err := support.NewPGTestDB(t)
-	if err != nil {
-		t.Skipf("本地 PostgreSQL 不可用，跳过测试：%v", err)
-		return nil, pagemodel.Model{}
-	}
-	if err := db.Exec(blockRefPagesDDL).Error; err != nil {
-		t.Fatalf("建 pages 表失败: %v", err)
-	}
-	for _, ddl := range blockRefIndexDDLs {
-		if err := db.Exec(ddl).Error; err != nil {
-			t.Fatalf("建索引失败: %v", err)
-		}
-	}
+	db := support.NewMigratedPGTestDB(t)
+	// pages.project_id 有外键 → projects(id)：先补一条真实工程行，样本页面共用。
+	const blockRefProjectID = "9f2c1d40-0000-4000-8000-000000000068"
+	support.SeedProjectRow(t, db, blockRefProjectID, "块引用回归站点")
 
 	// 2 万行无关页面：draft_document 结构同真实文档，blockId 为无关值。
 	if err := db.Exec(`INSERT INTO pages
 		(id, project_id, kind, content_target_type, draft_path, draft_document, draft_version, stale, created_at, updated_at)
-		SELECT gen_random_uuid(), gen_random_uuid(), 'home', 'none', '/p/' || i,
+		SELECT gen_random_uuid(), $1::uuid, 'home', 'none', '/p/' || i,
 		       jsonb_build_object('settings', '{}'::jsonb, 'root', jsonb_build_array(
 		           jsonb_build_object('id','n'||i,'type','core.section','props','{}'::jsonb,'children', jsonb_build_array(
 		               jsonb_build_object('id','n'||i||'b','type','core.globalref','props', jsonb_build_object('blockId','blk-'||(i%97))))))),
 		       1, false, now(), now()
-		  FROM generate_series(1, 20000) AS i`).Error; err != nil {
+		  FROM generate_series(1, 20000) AS i`, blockRefProjectID).Error; err != nil {
 		t.Fatalf("造无关页面失败: %v", err)
 	}
 
@@ -159,8 +125,8 @@ func setupBlockRefPages(t *testing.T, target, other string) (*gorm.DB, pagemodel
 		}
 		stmt := fmt.Sprintf(`INSERT INTO pages
 			(id, project_id, kind, content_target_type, draft_path, draft_document, draft_version, stale, deleted_at, created_at, updated_at)
-			VALUES (gen_random_uuid(), gen_random_uuid(), 'home', 'none', $1::text, $2::jsonb, 1, false, %s, now(), now())`, deleted)
-		if err := db.Exec(stmt, "/case/"+c.name, c.doc).Error; err != nil {
+			VALUES (gen_random_uuid(), $3::uuid, 'home', 'none', $1::text, $2::jsonb, 1, false, %s, now(), now())`, deleted)
+		if err := db.Exec(stmt, "/case/"+c.name, c.doc, blockRefProjectID).Error; err != nil {
 			t.Fatalf("插入样本页面(%s)失败: %v", c.name, err)
 		}
 	}

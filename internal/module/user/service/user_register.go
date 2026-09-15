@@ -24,7 +24,7 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 
-	maildto "go_wp/internal/module/mail/dto"
+	mailcontract "go_wp/internal/module/mail/contract"
 	userdto "go_wp/internal/module/user/dto"
 	userenums "go_wp/internal/module/user/enums"
 	usermodel "go_wp/internal/module/user/model"
@@ -182,7 +182,7 @@ func (s *Service) sendVerifyMail(ctx context.Context, email, username, nickname,
 	if s.mail == nil {
 		return false
 	}
-	_, err := s.mail.SendTemplate(ctx, &maildto.SendTemplateReq{
+	_, err := s.mail.SendTransactional(ctx, &mailcontract.SendInput{
 		TemplateKey: registerVerifyTemplate,
 		Locale:      locale,
 		To:          email,
@@ -200,7 +200,7 @@ func (s *Service) sendWelcomeMail(ctx context.Context, email, name, locale strin
 	if s.mail == nil {
 		return
 	}
-	_, _ = s.mail.SendTemplate(ctx, &maildto.SendTemplateReq{
+	_, _ = s.mail.SendTransactional(ctx, &mailcontract.SendInput{
 		TemplateKey: welcomeTemplate,
 		Locale:      locale,
 		To:          email,

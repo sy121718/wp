@@ -20,6 +20,8 @@ import (
 	"strings"
 	"time"
 
+	"go_wp/pkg/sitetz"
+
 	"github.com/gin-gonic/gin"
 
 	usercontract "go_wp/internal/module/user/contract"
@@ -80,7 +82,7 @@ func (h *CustomerHandle) ListCustomers(c *gin.Context) {
 
 	res, err := h.svc.ListCustomers(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "user", err)
 		return
 	}
 	response.Success(c, res)
@@ -95,7 +97,7 @@ func (h *CustomerHandle) GetCustomer(c *gin.Context) {
 	}
 	res, err := h.svc.GetCustomer(c.Request.Context(), id)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "user", err)
 		return
 	}
 	response.Success(c, res)
@@ -110,7 +112,7 @@ func (h *CustomerHandle) SetCustomerStatus(c *gin.Context) {
 	}
 	res, err := h.svc.SetCustomerStatus(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "user", err)
 		return
 	}
 	// 回执文案按目标状态给：调用方拿到「账号已启用」比拿到一个数字更不容易用错。
@@ -130,7 +132,7 @@ func (h *CustomerHandle) UnlockCustomer(c *gin.Context) {
 	}
 	res, err := h.svc.UnlockCustomer(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "user", err)
 		return
 	}
 	// 三种结果各说各的：解除了锁定 / 清了残留计数 / 本来就没事。
@@ -193,7 +195,9 @@ func customerDayStart(raw string) (*time.Time, error) {
 	if v == "" {
 		return nil, nil
 	}
-	day, err := time.ParseInLocation(customerDayLayout, v, time.Local)
+	// 日期筛选按**站点时区**解释（pkg/sitetz）：运营说的「9 月 14 日」是站点所在地的那一天。
+	// 用 time.Local 会让同一次筛选随部署机器给出不同的结果集（审计 TX-011）。
+	day, err := time.ParseInLocation(customerDayLayout, v, sitetz.Location())
 	if err != nil {
 		return nil, err
 	}

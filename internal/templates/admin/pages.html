@@ -1,19 +1,21 @@
 {* admin/pages.html — 页面管理列表：站点工程/页面新建与工作台入口 *}
 {* Jet 方言：range 用 range 关键字；方法调用圆括号；extends 相对本目录 *}
+{* 文案走 t(key, 中文兜底)：range 内不能写赋值语句，先把 t 存成变量 tr 再取词。 *}
 {{extends "layout.html"}}
 {{block body()}}
+{{tr := .["t"]}}
 <div class="stack">
     <section class="card card-body">
-        <h2>新建站点工程</h2>
+        <h2>{{ .["t"]("admin.pages.create_project_heading", "新建站点工程") }}</h2>
         <form method="post" action="/admin/projects/create" class="form-inline">
             <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
-            <input type="text" name="name" placeholder="站点工程名称，如：官网" required>
-            <button type="submit" class="btn btn-primary">创建工程</button>
+            <input type="text" name="name" placeholder="{{ .["t"]("admin.pages.project_name_placeholder", "站点工程名称，如：官网") }}" required>
+            <button type="submit" class="btn btn-primary">{{ .["t"]("admin.pages.create_project_submit", "创建工程") }}</button>
         </form>
     </section>
 
     <section class="card card-body">
-        <h2>新建页面</h2>
+        <h2>{{ .["t"]("admin.pages.create_page_heading", "新建页面") }}</h2>
         {{if len(.Projects) > 0}}
         <form method="post" action="/admin/pages/create" class="form-inline">
             <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
@@ -22,22 +24,36 @@
                 <option value="{{p.ID}}">{{p.Name}}</option>
                 {{end}}
             </select>
-            <input type="text" name="draftPath" placeholder="页面路径，如 /about" required>
-            <button type="submit" class="btn btn-primary">创建页面</button>
+            <input type="text" name="draftPath" placeholder="{{ .["t"]("admin.pages.path_placeholder", "页面路径，如 /about") }}" required>
+            {* 从蓝图开始（审计 VIS-010）：蓝图是「用完即弃」的初始化输入 —— 创建时复制
+               完整 AST 并重生成节点 ID，之后页面与蓝图互不影响。没有蓝图时该下拉不渲染，
+               建页流程与以前完全一致。 *}
+            {* 用 isset 而不是 if .Blueprints：可选键在不带它的数据里（如直接渲染模板的单测）
+               求值成 nil，而 Jet 的 if 要求 bool —— 类型不符会让整个模板渲染中断，
+               表现是「页面状态码 200、后半部分内容整块消失」，很难从现象定位到模板。 *}
+            {{if isset(.Blueprints)}}
+            <select name="blueprintId" title="{{ .["t"]("admin.pages.blueprint_title", "从蓝图初始化页面结构") }}">
+                <option value="">{{ .["t"]("admin.pages.blank_page", "空白页面") }}</option>
+                {{range _, b := .Blueprints}}
+                <option value="{{b.ID}}">{{b.Name}}</option>
+                {{end}}
+            </select>
+            {{end}}
+            <button type="submit" class="btn btn-primary">{{ .["t"]("admin.pages.create_page_submit", "创建页面") }}</button>
         </form>
         {{else}}
-        <p class="text-mute text-sm">先创建一个站点工程，再新建页面。</p>
+        <p class="text-mute text-sm">{{ .["t"]("admin.pages.no_project", "先创建一个站点工程，再新建页面。") }}</p>
         {{end}}
     </section>
 
     <section class="card card-body">
-        <h2>页面列表</h2>
+        <h2>{{ .["t"]("admin.pages.list_heading", "页面列表") }}</h2>
         {{if len(.Pages) == 0}}
-        <p class="text-mute text-sm">还没有页面，先用上方表单创建一个。</p>
+        <p class="text-mute text-sm">{{ .["t"]("admin.pages.empty", "还没有页面，先用上方表单创建一个。") }}</p>
         {{else}}
-        <div class="table-wrap" tabindex="0" role="region" aria-label="页面列表"><table class="data-table">
+        <div class="table-wrap" tabindex="0" role="region" aria-label="{{ .["t"]("admin.pages.table_aria", "页面列表") }}"><table class="data-table">
             <thead>
-            <tr><th>路径</th><th>类型</th><th>状态</th><th>草稿版本</th><th>更新时间</th><th>操作</th></tr>
+            <tr><th>{{ .["t"]("admin.pages.col.path", "路径") }}</th><th>{{ .["t"]("admin.pages.col.kind", "类型") }}</th><th>{{ .["t"]("admin.pages.col.status", "状态") }}</th><th>{{ .["t"]("admin.pages.col.version", "草稿版本") }}</th><th>{{ .["t"]("admin.pages.col.updated_at", "更新时间") }}</th><th>{{ .["t"]("admin.pages.col.actions", "操作") }}</th></tr>
             </thead>
             <tbody>
             {{range _, p := .Pages}}
@@ -46,20 +62,20 @@
                 <td>{{p.Kind}}</td>
                 <td>
                     {{if p.Active}}
-                    <span class="badge badge-success">已发布</span>
-                    {{if p.Stale}}<span class="badge badge-warning">有更新未发布</span>{{end}}
-                    {{else if p.Staged}}<span class="badge badge-info">已暂存待发布</span>
-                    {{else}}<span class="badge badge-mute">草稿</span>{{end}}
+                    <span class="badge badge-success">{{tr("admin.pages.status.published", "已发布")}}</span>
+                    {{if p.Stale}}<span class="badge badge-warning">{{tr("admin.pages.status.stale", "有更新未发布")}}</span>{{end}}
+                    {{else if p.Staged}}<span class="badge badge-info">{{tr("admin.pages.status.staged", "已暂存待发布")}}</span>
+                    {{else}}<span class="badge badge-mute">{{tr("admin.pages.status.draft", "草稿")}}</span>{{end}}
                 </td>
                 <td>v{{p.Version}}</td>
                 <td>{{p.UpdatedAt}}</td>
                 <td class="action-row">
-                    <a class="btn" href="/workbench?id={{p.ID}}">编辑</a>
-                    <a class="btn" href="/workbench/preview?id={{p.ID}}" target="_blank">预览</a>
+                    <a class="btn" href="/workbench?id={{p.ID}}">{{tr("admin.pages.action.edit", "编辑")}}</a>
+                    <a class="btn" href="/workbench/preview?id={{p.ID}}" target="_blank">{{tr("admin.pages.action.preview", "预览")}}</a>
                     {* 多语言工作台入口（决策 F10：行内按钮，不做独立菜单） *}
-                    <a class="btn" href="/admin/page/translations?pageId={{p.ID}}">多语言</a>
+                    <a class="btn" href="/admin/page/translations?pageId={{p.ID}}">{{tr("admin.pages.action.translations", "多语言")}}</a>
                     {{if p.Active}}
-                    <a class="btn" href="/site{{p.DraftPath}}/" target="_blank">线上</a>
+                    <a class="btn" href="/site{{p.DraftPath}}/" target="_blank">{{tr("admin.pages.action.live", "线上")}}</a>
                     {{end}}
                 </td>
             </tr>

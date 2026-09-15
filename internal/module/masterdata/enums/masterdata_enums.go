@@ -68,25 +68,33 @@ const (
 )
 
 // 错误消息（handle / service 不硬编码文案，统一取这里）。
+//
+// 值是 i18n key（形态 `模块.类别.语义`），文案落在 sys_i18n（迁移 198）：响应层的
+// pkg/response.translate 按请求语言查表，未命中时**原样返回 key**（可见的降级，不是空白）。
+//
+// 为什么必须是 key 形态：错误出口已统一到 response.ErrorAuto，而它的判据 IsBusinessError
+// 只认两种**形态确定**的模式 —— key 形态与 enums 常量名形态（`ErrXxx`）。本模块的值曾经是
+// 中文原文（`"参数不合法"`），两种都不匹配，于是全部业务错误被判成内部错误、对外统一 500
+// （审计 CQ-010 的收尾缺口：既不是 key 也不是常量名，判据无法用形态区分它与内部 sentinel）。
 const (
 	// ErrInvalidParam 参数不合法。
-	ErrInvalidParam = "参数不合法"
+	ErrInvalidParam = "masterdata.err.invalidParam"
 	// ErrEntityTypeInvalid 实体类型不在变更记录的白名单内。
-	ErrEntityTypeInvalid = "实体类型不在变更记录的白名单内"
+	ErrEntityTypeInvalid = "masterdata.err.entityTypeInvalid"
 	// ErrActionInvalid 变更动作不合法。
-	ErrActionInvalid = "变更动作不合法"
+	ErrActionInvalid = "masterdata.err.actionInvalid"
 	// ErrEntityIDRequired 实体 id 必填。
-	ErrEntityIDRequired = "实体 id 必填"
+	ErrEntityIDRequired = "masterdata.err.entityIDRequired"
 	// ErrProjectRequired 未指定工程且无法解析出唯一工程。
-	ErrProjectRequired = "未指定工程"
+	ErrProjectRequired = "masterdata.err.projectRequired"
 	// ErrTimeRangeInvalid 时间范围不合法（起始晚于结束）。
-	ErrTimeRangeInvalid = "时间范围不合法"
+	ErrTimeRangeInvalid = "masterdata.err.timeRangeInvalid"
 )
 
-// 成功消息。
+// 成功消息（同样是 i18n key，词条见迁移 198）。
 const (
 	// MsgListSuccess 查询成功。
-	MsgListSuccess = "查询成功"
+	MsgListSuccess = "masterdata.msg.listSuccess"
 )
 
 // EntityTypeLabel 实体类型 → 展示名（未知类型原样回显，不吞掉数据）。

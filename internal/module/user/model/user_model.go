@@ -191,10 +191,11 @@ func (m *UserModel) List(ctx context.Context, f UserFilter) (list []*UserEntity,
 		q = q.Unscoped()
 	}
 	if kw := strings.TrimSpace(f.Keyword); kw != "" {
-		// ILIKE 的等价写法：位置参数化，不做字符串拼接。
-		like := "%" + kw + "%"
-		q = q.Where("username ILIKE ? OR email ILIKE ? OR nickname ILIKE ? OR display_name ILIKE ?",
-			like, like, like, like)
+		// 四列各建一个 GIN 索引意味着每次写入要维护四个索引，查询仍要 OR 四路；
+		// 因此迁移 167 加了一个生成列 search_text（username/email/nickname/display_name
+		// 拼接并小写），这里对它做一次匹配：语义仍是「四列中任一包含关键词」，
+		// 但只走一个索引。大小写不敏感由生成列的 lower() 承担，参数同样小写。
+		q = q.Where("search_text LIKE ?", "%"+strings.ToLower(kw)+"%")
 	}
 	if f.Status >= 0 {
 		q = q.Where("status = ?", f.Status)

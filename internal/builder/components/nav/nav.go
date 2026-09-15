@@ -28,7 +28,21 @@ type Component struct{}
 // Type 实现组件接口。
 func (c *Component) Type() string { return Type }
 
-// Translatable 实现 core.TranslatableProvider：可翻译字段白名单（多语言 P5b，
+// Translatable 实现 core.TranslatableProvider：可翻译字段白名单（多语言 P5b）。
+//
+// **只对「自定义菜单」模式有效**：那种模式下 label 写在页面文档的 Props 里，
+// 作者在页面翻译工作台里逐条填译文。
+//
+// Menu 模式（header/footer）的 label 来自 navigation 模块的节点，**不在 Props 里** ——
+// 页面翻译工作台既看不到它，这个白名单对它也无效（审计 I18N-018 的冲突就在这：
+// 两种模式的 label 长得一样，维护位置却完全不同）。它的译文由构建期的导航解析器补：
+// pipeline.NavigationAdapter 用 sys_translation 的 navigation.label 语境回填，
+// 维护入口在导航管理页。
+//
+// 位置不同是刻意的：菜单的归属决定它归谁维护 —— 全局页眉导航改一处就该全站生效，
+// 绑进某一页的翻译里反而会出现「改了这页、那页没变」。
+//
+// 原注释：
 // docs/06-D §7.5 决策 F6）。只有这里列出的字段参与内容翻译，未声明字段永不翻译。
 func (c *Component) Translatable() []string { return []string{"label"} }
 

@@ -27,7 +27,7 @@ func NewHandle(svc mailcontract.MailService) *Handle { return &Handle{svc: svc} 
 func (h *Handle) AccountList(c *gin.Context) {
 	list, err := h.svc.ListAccounts(c.Request.Context(), c.Query("purpose"))
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "mail", err)
 		return
 	}
 	response.Success(c, list)
@@ -50,7 +50,7 @@ func (h *Handle) AccountSave(c *gin.Context) {
 		item, err = h.svc.CreateAccount(c.Request.Context(), &req)
 	}
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "mail", err)
 		return
 	}
 	response.SuccessWithMessage(c, mailenums.MsgSaveSuccess, item)
@@ -64,7 +64,7 @@ func (h *Handle) AccountDelete(c *gin.Context) {
 		return
 	}
 	if err := h.svc.DeleteAccount(c.Request.Context(), id); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "mail", err)
 		return
 	}
 	response.SuccessWithMessage(c, mailenums.MsgDeleteSuccess, nil)
@@ -78,7 +78,7 @@ func (h *Handle) AccountSetDefault(c *gin.Context) {
 		return
 	}
 	if err := h.svc.SetDefaultAccount(c.Request.Context(), id); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "mail", err)
 		return
 	}
 	response.SuccessWithMessage(c, mailenums.MsgSaveSuccess, nil)
@@ -93,7 +93,7 @@ func (h *Handle) AccountTestSend(c *gin.Context) {
 	}
 	res, err := h.svc.TestSend(c.Request.Context(), &req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "mail", err)
 		return
 	}
 	response.SuccessWithMessage(c, mailenums.MsgTestSent, res)
@@ -103,7 +103,7 @@ func (h *Handle) AccountTestSend(c *gin.Context) {
 func (h *Handle) TemplateList(c *gin.Context) {
 	list, err := h.svc.ListTemplates(c.Request.Context(), c.Query("templateKey"))
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "mail", err)
 		return
 	}
 	response.Success(c, list)
@@ -118,7 +118,7 @@ func (h *Handle) TemplateSave(c *gin.Context) {
 	}
 	item, err := h.svc.UpsertTemplate(c.Request.Context(), &req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "mail", err)
 		return
 	}
 	response.SuccessWithMessage(c, mailenums.MsgSaveSuccess, item)
@@ -127,7 +127,7 @@ func (h *Handle) TemplateSave(c *gin.Context) {
 // TemplateDelete 删除模板。
 func (h *Handle) TemplateDelete(c *gin.Context) {
 	if err := h.svc.DeleteTemplate(c.Request.Context(), c.Query("templateKey"), c.Query("locale")); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "mail", err)
 		return
 	}
 	response.SuccessWithMessage(c, mailenums.MsgDeleteSuccess, nil)
@@ -146,7 +146,7 @@ func (h *Handle) ContactList(c *gin.Context) {
 	}
 	res, err := h.svc.ListContacts(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "mail", err)
 		return
 	}
 	response.Success(c, res)
@@ -172,7 +172,7 @@ func (h *Handle) ContactImport(c *gin.Context) {
 	}
 	res, err := h.svc.ImportContacts(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "mail", err)
 		return
 	}
 	response.SuccessWithMessage(c, mailenums.MsgImportSuccess, res)
@@ -186,7 +186,7 @@ func (h *Handle) ContactStatus(c *gin.Context) {
 		return
 	}
 	if err := h.svc.UpdateContactStatus(c.Request.Context(), &req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "mail", err)
 		return
 	}
 	response.SuccessWithMessage(c, mailenums.MsgSaveSuccess, nil)
@@ -200,7 +200,7 @@ func (h *Handle) CampaignList(c *gin.Context) {
 		PageSize: parseInt(c.Query("pageSize"), 20),
 	})
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "mail", err)
 		return
 	}
 	response.Success(c, res)
@@ -210,7 +210,7 @@ func (h *Handle) CampaignList(c *gin.Context) {
 func (h *Handle) CampaignGet(c *gin.Context) {
 	res, err := h.svc.GetCampaign(c.Request.Context(), parseID(c.Query("id")))
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "mail", err)
 		return
 	}
 	response.Success(c, res)
@@ -225,7 +225,7 @@ func (h *Handle) CampaignSave(c *gin.Context) {
 	}
 	res, err := h.svc.SaveCampaign(c.Request.Context(), &req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "mail", err)
 		return
 	}
 	response.SuccessWithMessage(c, mailenums.MsgSaveSuccess, res)
@@ -234,7 +234,7 @@ func (h *Handle) CampaignSave(c *gin.Context) {
 // CampaignDelete 删除活动。
 func (h *Handle) CampaignDelete(c *gin.Context) {
 	if err := h.svc.DeleteCampaign(c.Request.Context(), parseID(c.Query("id"))); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "mail", err)
 		return
 	}
 	response.SuccessWithMessage(c, mailenums.MsgDeleteSuccess, nil)
@@ -249,7 +249,7 @@ func (h *Handle) CampaignStart(c *gin.Context) {
 	}
 	res, err := h.svc.StartCampaign(c.Request.Context(), &req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "mail", err)
 		return
 	}
 	response.SuccessWithMessage(c, mailenums.MsgCampaignStarted, res)

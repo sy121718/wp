@@ -735,7 +735,8 @@
         "key-management",
         "analytics"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：打点 IP 哈希的盐与会话密钥解耦（子代理实现，**问题表述比审计更准确**）。① **审计说「IP 哈希盐直接取会话密钥，存在密钥复用」，代理把它表述得更准确**：真正的问题不是「带盐哈希不安全」，而是 `pepper` 直接取 `auth.SessionSecret()` 锁死了两件事 —— 盐一旦泄露会波及会话签名/CSRF/购物车签名；反过来，**为了不让历史 IP 哈希断档，运维不敢轮换会话密钥**。所以修法的目标是**解耦**，不是换算法。② 实现：`ResolveAnonSalt(independent, sessionSecret)` / `deriveAnonSalt`（标准库 crypto/hkdf，info=go_wp/analytics/anon-hash/v1，32B→64hex）/ `WeakAnonSalt`（显式盐 <32 字符判弱）；装配层读 `analytics.pepper`（config.GetViper，与 mail_router 同款模式），独立盐优先，未配置则 HKDF 派生 + Warn，盐过短再 Warn。**没有写死常量盐** —— 那等于把「密钥复用」换成「密钥公开」。③ 签名只把第 4 参数名 pepper→sessionSecret，类型不变，routes.go 调用点零改动。④ **一个让它从「要不要承担断档风险」变成「没有风险」的关键事实**：全仓 `ip_hash` **只写不读**（唯一消费是保留期按时间清理），所以轮换盐的代价为零。注释里钉住：将来若引入「按 ip_hash 去重」，必须同时实现多代盐候选匹配，那时才需要 pepper_previous 一类旧盐列表，否则跨轮换的同一个人会被算成两个人。⑤ 5 个测试，核心是 TestAnonSaltRotationWithIndependentSaltKeepsIPHash（轮换会话密钥后 IP 哈希不变，且不等于旧「会话密钥当盐」的值）。⑥ 父代理补上了它无权修改的 `config.yaml.example` 的 `analytics.pepper` 段（含 GOWP_ANALYTICS_PEPPER 环境变量与轮换语义说明）。"
     },
     {
       "id": "SEC-014",
@@ -828,7 +829,8 @@
         "webhook",
         "forward-looking"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "webhook SSRF 防护已随 OSS-006 一并落地。validateWebhookURL 强制 DNS 解析后逐 IP 检查、不跟随重定向、出站前重校验。4 组 SSRF 测试全 PASS。"
     },
     {
       "id": "SEC-016",

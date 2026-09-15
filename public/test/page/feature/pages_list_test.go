@@ -23,7 +23,10 @@ func TestPagesListTemplate(t *testing.T) {
 		c.HTML(http.StatusOK, "admin/pages", map[string]any{
 			// 键名与生产 templateMap() 对齐：title/menu 小写(layout 取值)，
 			// Pages/Projects 大写(模板 range 取值)。
-			"title": "页面管理", "menu": "pages",
+			// t：模板已全面改走 t(key, 中文兜底) 取词（审计 I18N-001），生产入口由
+			// withCSRF→withI18n 注入；这里缺了它，渲染会在第一个 t() 调用处中断 ——
+			// 表现是 HTTP 200 但后半段整块消失，所以直接渲染模板的测试必须自己注入。
+			"title": "页面管理", "menu": "pages", "t": templates.TranslateFunc("en-US"),
 			"Projects": []map[string]any{{"ID": "p1", "Name": "站点A"}},
 			"Pages": []map[string]any{
 				{"ID": "pg1", "ProjectID": "p1", "Kind": "home", "DraftPath": "/demo", "Active": true, "Staged": true, "Stale": true, "Version": int64(3), "UpdatedAt": now},

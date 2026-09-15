@@ -26,7 +26,11 @@ func (c *Component) Type() string { return Type }
 
 // Translatable 实现 core.TranslatableProvider：可翻译字段白名单（多语言 P5b，
 // docs/06-D §7.5 决策 F6）。只有这里列出的字段参与内容翻译，未声明字段永不翻译。
-func (c *Component) Translatable() []string { return []string{"title", "text"} }
+//
+// mediaAlt 的遗漏（审计 I18N-008）教训：白名单是**手工维护**的，新加一个带文本的
+// Prop 时没人会记得回来补一行，而症状是「英文站的图片 alt 还是中文」——
+// 只在非默认语言站点上可见，默认语言站点完全看不出来。
+func (c *Component) Translatable() []string { return []string{"title", "text", "mediaAlt"} }
 
 // PropsSpec 实现 SpecProvider：暴露 Props 生成检查器 schema（样式字段声明式）。
 func (c *Component) PropsSpec() any { return &Props{} }

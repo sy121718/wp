@@ -30,6 +30,18 @@ func main() {
 		fmt.Printf("插件模板已生成：%s/\n", name)
 		fmt.Printf("改内容后打包：zip -r %s.zip %s/\n", name, name)
 		fmt.Println("到后台「插件管理」上传并启用。")
+	case "module":
+		if len(os.Args) < 3 {
+			fmt.Fprintln(os.Stderr, "用法：plugin module <name>（小写字母开头，如 member）")
+			os.Exit(1)
+		}
+		name := os.Args[2]
+		if err := scaffold.WriteModule(name); err != nil {
+			fmt.Fprintln(os.Stderr, "生成失败:", err)
+			os.Exit(1)
+		}
+		fmt.Printf("业务模块骨架已生成：%s/（拷进 internal/module/ 后 go build 验证）\n", name)
+		fmt.Println("装配触点见模块 README.md —— 路由挂载 / 迁移注册 / 权限点与菜单需人工接入。")
 	default:
 		usage()
 		os.Exit(1)
@@ -37,6 +49,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Println("插件脚手架（docs/06-plugin-system.md）")
-	fmt.Println("  go run ./cmd/plugin init <name>   生成插件模板工程")
+	fmt.Println("脚手架（docs/06-plugin-system.md）")
+	fmt.Println("  go run ./cmd/plugin init <name>     生成插件模板工程（zip 上传安装）")
+	fmt.Println("  go run ./cmd/plugin module <name>   生成新业务模块目录骨架（internal/module 分层）")
 }

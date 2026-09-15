@@ -10,28 +10,24 @@
     <section class="card card-body">
         <div class="action-row">
             <h2>{{.title}}</h2>
-            <a class="btn" href="{{listURL}}">← 返回列表</a>
+            <a class="btn" href="{{listURL}}">{{ .["t"]("admin.article.edit.backToList", "← 返回列表") }}</a>
             {{if .["Published"]}}
-            <a class="btn" href="{{.PublicURL}}" target="_blank" rel="noopener">查看线上</a>
+            <a class="btn" href="{{.PublicURL}}" target="_blank" rel="noopener">{{ .["t"]("admin.article.edit.viewOnline", "查看线上") }}</a>
             {{end}}
             {{if .TemplateEditURL != ""}}
-            <a class="btn" href="{{.TemplateEditURL}}">编辑详情页模板</a>
+            <a class="btn" href="{{.TemplateEditURL}}">{{ .["t"]("admin.article.edit.editTemplate", "编辑详情页模板") }}</a>
             {{end}}
         </div>
         {{if .Err != ""}}
-        <p class="badge badge-warning">上一次操作未完成：{{.Err}}</p>
+        <p class="badge badge-warning">{{ .["t"]("admin.article.edit.lastError", "上一次操作未完成：") }}{{.Err}}</p>
         {{end}}
         {{if .Ok != ""}}
         <p class="badge badge-success">{{.Ok}}</p>
         {{end}}
         {{if .IsNew}}
-        <p class="hint">直接打开这个地址时没有带文章 id —— 这里是新建表单，填完保存即可。</p>
+        <p class="hint">{{ .["t"]("admin.article.edit.newHint", "直接打开这个地址时没有带文章 id —— 这里是新建表单，填完保存即可。") }}</p>
         {{else}}
-        <p class="hint">
-            版本 v{{form.Revision}}，最近更新 {{form.UpdatedAt}}。
-            保存后，引用这篇文章的页面与已发布的详情页会被<strong>标记待重建</strong> ——
-            访问面的静态产物不会自己变，重新构建那些页面才会带上新内容。
-        </p>
+        <p class="hint">{{ .["t"]("admin.article.edit.versionPrefix", "版本 v") }}{{form.Revision}}{{ .["t"]("admin.article.edit.versionMiddle", "，最近更新 ") }}{{form.UpdatedAt}}{{ .["t"]("admin.article.edit.rebuildLead", "。保存后，引用这篇文章的页面与已发布的详情页会被") }}<strong>{{ .["t"]("admin.article.edit.rebuildMark", "标记待重建") }}</strong>{{ .["t"]("admin.article.edit.rebuildTail", " —— 访问面的静态产物不会自己变，重新构建那些页面才会带上新内容。") }}</p>
         {{end}}
     </section>
 
@@ -43,153 +39,131 @@
             {{if !.IsNew}}<input type="hidden" name="id" value="{{form.ID}}">{{end}}
 
             <section class="card card-body">
-                <h2>正文</h2>
-                <label class="form-label" for="article-title">标题</label>
+                <h2>{{ .["t"]("admin.article.edit.bodyHeading", "正文") }}</h2>
+                <label class="form-label" for="article-title">{{ .["t"]("admin.article.edit.titleLabel", "标题") }}</label>
                 <input class="form-input" id="article-title" type="text" name="title"
-                       value="{{form.Title}}" placeholder="文章标题" required>
+                       value="{{form.Title}}" placeholder="{{ .["t"]("admin.article.edit.titlePlaceholder", "文章标题") }}" required>
 
-                <label class="form-label" for="article-slug">路径（slug）</label>
+                <label class="form-label" for="article-slug">{{ .["t"]("admin.article.edit.slugLabel", "路径（slug）") }}</label>
                 {{if .IsNew}}
                 <input class="form-input" id="article-slug" type="text" name="slug"
                        value="{{form.Slug}}" placeholder="hello-world" required>
-                <p class="hint">路径片段，创建后<strong>不可修改</strong>（它是文章的稳定身份）。</p>
+                <p class="hint">{{ .["t"]("admin.article.edit.slugNewHint", "路径片段，创建后") }}<strong>{{ .["t"]("admin.article.edit.slugImmutable", "不可修改") }}</strong>{{ .["t"]("admin.article.edit.slugNewHintTail", "（它是文章的稳定身份）。") }}</p>
                 {{else}}
                 <input class="form-input" id="article-slug" type="text" value="{{form.Slug}}" readonly>
-                <p class="hint">路径创建后不可修改：已发出去的链接、集合里的条目都指着它。</p>
+                <p class="hint">{{ .["t"]("admin.article.edit.slugReadonlyHint", "路径创建后不可修改：已发出去的链接、集合里的条目都指着它。") }}</p>
                 {{end}}
 
-                <label class="form-label" for="article-excerpt">摘要</label>
+                <label class="form-label" for="article-excerpt">{{ .["t"]("admin.article.edit.excerptLabel", "摘要") }}</label>
                 <textarea class="form-input" id="article-excerpt" name="excerpt" rows="2"
-                          placeholder="列表卡片上显示的一句话">{{form.Excerpt}}</textarea>
+                          placeholder="{{ .["t"]("admin.article.edit.excerptPlaceholder", "列表卡片上显示的一句话") }}">{{form.Excerpt}}</textarea>
 
-                <label class="form-label" for="article-body">内容</label>
+                <label class="form-label" for="article-body">{{ .["t"]("admin.article.edit.contentLabel", "内容") }}</label>
                 {* Trix：本地 vendor，零 CDN。编辑器把富文本写回隐藏 input（name=body），
                    服务端落库前过 core.SanitizeRichHTML 白名单清洗。 *}
                 <input id="article-body" type="hidden" name="body" value="{{form.Body}}">
                 <trix-editor input="article-body" class="trix-content article-trix"></trix-editor>
-                <p class="hint">
-                    正文支持标题、列表、引用、代码块、链接与图片（受白名单限制，脚本类标签会被清洗掉）。
-                    正文里写的 h2/h3 会进入 SEO 的标题结构评测。
-                </p>
+                <p class="hint">{{ .["t"]("admin.article.edit.bodyHint", "正文支持标题、列表、引用、代码块、链接与图片（受白名单限制，脚本类标签会被清洗掉）。正文里写的 h2/h3 会进入 SEO 的标题结构评测。") }}</p>
 
-                <label class="form-label" for="article-cover">封面图</label>
+                <label class="form-label" for="article-cover">{{ .["t"]("admin.article.edit.coverLabel", "封面图") }}</label>
                 <input class="form-input" id="article-cover" type="text" name="featuredImage"
-                       value="{{form.FeaturedImage}}" placeholder="/storage/image/... 或完整地址">
-                <p class="hint">封面用于列表卡片（组件的图片字段绑 <code>featuredImage</code>）与详情页头图。</p>
+                       value="{{form.FeaturedImage}}" placeholder="{{ .["t"]("admin.article.edit.coverPlaceholder", "/storage/image/... 或完整地址") }}">
+                <p class="hint">{{ .["t"]("admin.article.edit.coverHint", "封面用于列表卡片（组件的图片字段绑 ") }}<code>featuredImage</code>{{ .["t"]("admin.article.edit.coverHintTail", "）与详情页头图。") }}</p>
             </section>
 
             <section class="card card-body">
-                <h2>SEO 字段</h2>
-                <label class="form-label" for="article-focus">主关键词</label>
+                <h2>{{ .["t"]("admin.article.edit.seoHeading", "SEO 字段") }}</h2>
+                <label class="form-label" for="article-focus">{{ .["t"]("admin.article.edit.focusKeywordLabel", "主关键词") }}</label>
                 <input class="form-input" id="article-focus" type="text" name="focusKeyword"
-                       value="{{form.FocusKeyword}}" placeholder="这篇文章主打的那一个词">
-                <p class="hint">
-                    评测里的<strong>关键词密度、关键词位置、H1/H2 是否含关键词</strong>都以它为准。
-                    留空时这几项一律判「未设置主关键词」——它们是这套评测里权重最高的几项，
-                    所以别跳过这一栏。
-                </p>
+                       value="{{form.FocusKeyword}}" placeholder="{{ .["t"]("admin.article.edit.focusKeywordPlaceholder", "这篇文章主打的那一个词") }}">
+                <p class="hint">{{ .["t"]("admin.article.edit.focusKeywordHint", "评测里的") }}<strong>{{ .["t"]("admin.article.edit.focusKeywordHintStrong", "关键词密度、关键词位置、H1/H2 是否含关键词") }}</strong>{{ .["t"]("admin.article.edit.focusKeywordHintTail", "都以它为准。留空时这几项一律判「未设置主关键词」——它们是这套评测里权重最高的几项，所以别跳过这一栏。") }}</p>
 
-                <label class="form-label" for="article-seo-title">SEO 标题</label>
+                <label class="form-label" for="article-seo-title">{{ .["t"]("admin.article.edit.seoTitleLabel", "SEO 标题") }}</label>
                 <input class="form-input" id="article-seo-title" type="text" name="seoTitle"
-                       value="{{form.SEOTitle}}" placeholder="留空则按标题评测">
-                <p class="hint">留空时评测与 SERP 预览用文章标题；搜索引擎结果页看的是这一条。</p>
+                       value="{{form.SEOTitle}}" placeholder="{{ .["t"]("admin.article.edit.seoTitlePlaceholder", "留空则按标题评测") }}">
+                <p class="hint">{{ .["t"]("admin.article.edit.seoTitleHint", "留空时评测与 SERP 预览用文章标题；搜索引擎结果页看的是这一条。") }}</p>
 
-                <label class="form-label" for="article-seo-desc">SEO 描述</label>
+                <label class="form-label" for="article-seo-desc">{{ .["t"]("admin.article.edit.seoDescLabel", "SEO 描述") }}</label>
                 <textarea class="form-input" id="article-seo-desc" name="seoDescription" rows="2"
-                          placeholder="留空则按摘要评测">{{form.SEODescription}}</textarea>
+                          placeholder="{{ .["t"]("admin.article.edit.seoDescPlaceholder", "留空则按摘要评测") }}">{{form.SEODescription}}</textarea>
             </section>
 
             <section class="card card-body">
                 <div class="action-row">
-                    <button type="submit" class="btn btn-primary">保存</button>
+                    <button type="submit" class="btn btn-primary">{{ .["t"]("admin.article.edit.save", "保存") }}</button>
                     {{if !.IsNew}}
                     <button type="button" class="btn"
                             hx-post="/admin/articles/score" hx-include="#article-form"
-                            hx-target="#article-seo-score" hx-swap="innerHTML">重新评分</button>
+                            hx-target="#article-seo-score" hx-swap="innerHTML">{{ .["t"]("admin.article.edit.rescore", "重新评分") }}</button>
                     {{end}}
                 </div>
-                <p class="hint">
-                    「重新评分」只算分，不保存 —— 先看分数再决定要不要改，改完再保存。
-                    评分是提示性的，<strong>不会拦住保存</strong>：草稿先存下来是常态。
-                </p>
+                <p class="hint">{{ .["t"]("admin.article.edit.rescoreHint", "「重新评分」只算分，不保存 —— 先看分数再决定要不要改，改完再保存。评分是提示性的，") }}<strong>{{ .["t"]("admin.article.edit.rescoreHintStrong", "不会拦住保存") }}</strong>{{ .["t"]("admin.article.edit.rescoreHintTail", "：草稿先存下来是常态。") }}</p>
             </section>
         </form>
 
         <aside class="article-edit-side">
             <section class="card card-body">
-                <h2>SEO 评测</h2>
+                <h2>{{ .["t"]("admin.article.edit.seoScoreHeading", "SEO 评测") }}</h2>
                 <div id="article-seo-score">{{include "../fragments/seo_score.html"}}</div>
-                <p class="hint">
-                    评测覆盖四个维度：<strong>基础</strong>（标题/描述/URL）、<strong>内容</strong>
-                    （字数/段落/句长可读性）、<strong>关键词</strong>（密度/出现位置）、
-                    <strong>链接与图片</strong>（内链数/锚文本/图片 alt）。
+                <p class="hint">{{ .["t"]("admin.article.edit.seoScoreLead", "评测覆盖四个维度：") }}<strong>{{ .["t"]("admin.article.edit.seoScoreBasic", "基础") }}</strong>{{ .["t"]("admin.article.edit.seoScoreBasicTail", "（标题/描述/URL）、") }}<strong>{{ .["t"]("admin.article.edit.seoScoreContent", "内容") }}</strong>
+                    {{ .["t"]("admin.article.edit.seoScoreContentTail", "（字数/段落/句长可读性）、") }}<strong>{{ .["t"]("admin.article.edit.seoScoreKeywords", "关键词") }}</strong>{{ .["t"]("admin.article.edit.seoScoreKeywordsTail", "（密度/出现位置）、") }}
+                    <strong>{{ .["t"]("admin.article.edit.seoScoreLinks", "链接与图片") }}</strong>{{ .["t"]("admin.article.edit.seoScoreLinksTail", "（内链数/锚文本/图片 alt）。") }}
                 </p>
-                <p class="hint">
-                    <strong>canonical 与结构化数据不由你填</strong>：发布文章详情页时，
-                    系统会按实例的线上路径写 canonical，并按文章类型输出 JSON-LD。
-                    评测里的这两项因此恒为达标 —— 它们标出来只是说明"这页产物有这些"，
-                    不是待办。
-                </p>
+                <p class="hint"><strong>{{ .["t"]("admin.article.edit.canonicalStrong", "canonical 与结构化数据不由你填") }}</strong>{{ .["t"]("admin.article.edit.canonicalTail", "：发布文章详情页时，系统会按实例的线上路径写 canonical，并按文章类型输出 JSON-LD。评测里的这两项因此恒为达标 —— 它们标出来只是说明「这页产物有这些」，不是待办。") }}</p>
             </section>
 
             <section class="card card-body">
-                <h2>发布</h2>
+                <h2>{{ .["t"]("admin.article.edit.publishHeading", "发布") }}</h2>
                 {{if .["Published"]}}
                 <p>
-                    线上路径：<a href="{{.PublicURL}}" target="_blank" rel="noopener" class="text-mono">{{.URLPath}}</a>
+                    {{ .["t"]("admin.article.edit.publicPathLabel", "线上路径：") }}<a href="{{.PublicURL}}" target="_blank" rel="noopener" class="text-mono">{{.URLPath}}</a>
                 </p>
                 {{if .["Stale"]}}
-                <p class="badge badge-warning">内容有更新，产物待重建</p>
-                <p class="hint">
-                    文章改完保存后不会自动变更线上文件 —— 要么等依赖扇出触发的重建，
-                    要么在这里手动重新发布一次。
-                </p>
+                <p class="badge badge-warning">{{ .["t"]("admin.article.edit.stale", "内容有更新，产物待重建") }}</p>
+                <p class="hint">{{ .["t"]("admin.article.edit.staleHint", "文章改完保存后不会自动变更线上文件 —— 要么等依赖扇出触发的重建，要么在这里手动重新发布一次。") }}</p>
                 {{else}}
-                <p class="badge badge-success">已是最新</p>
+                <p class="badge badge-success">{{ .["t"]("admin.article.edit.upToDate", "已是最新") }}</p>
                 {{end}}
                 <form method="post" action="/admin/articles/rebuild">
                     <input type="hidden" name="csrf_token" value="{{csrf}}">
                     <input type="hidden" name="id" value="{{form.ID}}">
-                    <button type="submit" class="btn">重新发布</button>
+                    <button type="submit" class="btn">{{ .["t"]("admin.article.edit.republish", "重新发布") }}</button>
                 </form>
                 <form method="post" action="/admin/articles/url" class="stack-sm">
                     <input type="hidden" name="csrf_token" value="{{csrf}}">
                     <input type="hidden" name="id" value="{{form.ID}}">
-                    <label class="form-label" for="article-url-path">修改访问路径</label>
+                    <label class="form-label" for="article-url-path">{{ .["t"]("admin.article.edit.changePathLabel", "修改访问路径") }}</label>
                     <input class="form-input" id="article-url-path" type="text" name="newPath"
                            value="{{.URLPath}}" required>
                     <label class="checkbox">
                         <input type="checkbox" name="withRedirect" value="1" checked>
-                        旧链接保留 301 跳转（不勾则旧链接直接失效）
+                        {{ .["t"]("admin.article.edit.keepRedirect", "旧链接保留 301 跳转（不勾则旧链接直接失效）") }}
                     </label>
-                    <button type="submit" class="btn">改 URL</button>
-                    <p class="hint">
-                        改 URL 不动文章内容：正文、SEO 字段、模板绑定都保持原样，
-                        只是把产物重建到新路径，并按上面的选择处置旧链接。
-                    </p>
+                    <button type="submit" class="btn">{{ .["t"]("admin.article.edit.changePathSubmit", "改 URL") }}</button>
+                    <p class="hint">{{ .["t"]("admin.article.edit.changePathHint", "改 URL 不动文章内容：正文、SEO 字段、模板绑定都保持原样，只是把产物重建到新路径，并按上面的选择处置旧链接。") }}</p>
                 </form>
                 {{else if .["PublishConfigured"]}}
                 {{if .["HasTemplates"]}}
-                <p class="hint">这篇文章还没有线上详情页。选一套模板与站点工程，发布后即可访问。</p>
+                <p class="hint">{{ .["t"]("admin.article.edit.publishIntro", "这篇文章还没有线上详情页。选一套模板与站点工程，发布后即可访问。") }}</p>
                 <form method="post" action="/admin/articles/publish" class="stack-sm">
                     <input type="hidden" name="csrf_token" value="{{csrf}}">
                     <input type="hidden" name="id" value="{{form.ID}}">
-                    <label class="form-label" for="article-publish-project">站点工程</label>
+                    <label class="form-label" for="article-publish-project">{{ .["t"]("admin.article.edit.projectLabel", "站点工程") }}</label>
                     <select class="form-select" id="article-publish-project" name="projectId" required>
                         {{range _, p := .Projects}}
                         <option value="{{p.ID}}">{{p.Name}}</option>
                         {{end}}
                     </select>
-                    <label class="form-label" for="article-publish-url">访问路径</label>
+                    <label class="form-label" for="article-publish-url">{{ .["t"]("admin.article.edit.urlPathLabel", "访问路径") }}</label>
                     <input class="form-input" id="article-publish-url" type="text" name="urlPath"
                            value="{{.DefaultURLPath}}" required>
-                    <label class="form-label" for="article-publish-template">详情模板</label>
+                    <label class="form-label" for="article-publish-template">{{ .["t"]("admin.article.edit.templateLabel", "详情模板") }}</label>
                     <select class="form-select" id="article-publish-template" name="templateId">
                         {{range _, t := .Templates}}
                         <option value="{{t.ID}}">{{t.Name}}（v{{t.Version}}）</option>
                         {{end}}
                     </select>
-                    <button type="submit" class="btn btn-primary">发布</button>
+                    <button type="submit" class="btn btn-primary">{{ .["t"]("admin.article.edit.publishSubmit", "发布") }}</button>
                 </form>
                 {{else}}
                 <p class="hint">{{.NoTemplateHint}}</p>
@@ -200,47 +174,35 @@
             </section>
 
             <section class="card card-body">
-                <h2>导入到画布</h2>
+                <h2>{{ .["t"]("admin.article.edit.importHeading", "导入到画布") }}</h2>
                 {{if .["ImportAvailable"]}}
-                <p class="hint">
-                    把正文转换成<strong>组件树</strong>，新建一个页面草稿并在工作台里打开它。
-                    这是一次<strong>复制</strong>而不是绑定：之后改文章不会改页面，改页面也不会改文章
-                    —— 两边各有各的真源，互不影响。
-                </p>
-                <p class="hint">
-                    预览读的是<strong>已保存</strong>的正文（预览与创建必须基于同一份内容，
-                    否则"预览没问题的"和"创建出来的"会不一样）：改完正文先保存，再预览。
-                </p>
-                <p class="hint">
-                    <strong>只有存得进正文的元素才能被导入。</strong>正文保存时会过一遍富文本白名单
-                    （段落、标题、列表、引用、代码块、链接、图片），
-                    <strong>分隔线与表格不在白名单里</strong> —— 它们在保存那一刻就被剥掉了，
-                    导入自然也看不到。需要分隔线或表格，请到画布里添加对应组件。
-                </p>
+                <p class="hint">{{ .["t"]("admin.article.edit.importIntro", "把正文转换成") }}<strong>{{ .["t"]("admin.article.edit.importIntroStrong", "组件树") }}</strong>{{ .["t"]("admin.article.edit.importIntroTail", "，新建一个页面草稿并在工作台里打开它。这是一次") }}<strong>{{ .["t"]("admin.article.edit.importCopyStrong", "复制") }}</strong>{{ .["t"]("admin.article.edit.importCopyTail", "而不是绑定：之后改文章不会改页面，改页面也不会改文章 —— 两边各有各的真源，互不影响。") }}</p>
+                <p class="hint">{{ .["t"]("admin.article.edit.importPreviewLead", "预览读的是") }}<strong>{{ .["t"]("admin.article.edit.importPreviewStrong", "已保存") }}</strong>{{ .["t"]("admin.article.edit.importPreviewTail", "的正文（预览与创建必须基于同一份内容，否则「预览没问题的」和「创建出来的」会不一样）：改完正文先保存，再预览。") }}</p>
+                <p class="hint"><strong>{{ .["t"]("admin.article.edit.importWhitelistLead", "只有存得进正文的元素才能被导入。") }}</strong>{{ .["t"]("admin.article.edit.importWhitelistMid", "正文保存时会过一遍富文本白名单（段落、标题、列表、引用、代码块、链接、图片），") }}<strong>{{ .["t"]("admin.article.edit.importWhitelistStrong", "分隔线与表格不在白名单里") }}</strong>{{ .["t"]("admin.article.edit.importWhitelistTail", " —— 它们在保存那一刻就被剥掉了，导入自然也看不到。需要分隔线或表格，请到画布里添加对应组件。") }}</p>
                 {{if !.ImportHasPublished}}
-                <p class="badge badge-warning">正文还是空的 —— 导入会得到零个组件，先去上面写点内容。</p>
+                <p class="badge badge-warning">{{ .["t"]("admin.article.edit.importEmptyBody", "正文还是空的 —— 导入会得到零个组件，先去上面写点内容。") }}</p>
                 {{end}}
                 <form method="post" action="/admin/articles/import-page" id="article-import-form" class="stack-sm">
                     <input type="hidden" name="csrf_token" value="{{csrf}}">
                     <input type="hidden" name="id" value="{{form.ID}}">
-                    <label class="form-label" for="article-import-project">目标工程</label>
+                    <label class="form-label" for="article-import-project">{{ .["t"]("admin.article.edit.importProjectLabel", "目标工程") }}</label>
                     <select class="form-select" id="article-import-project" name="projectId" required>
                         {{range _, p := .ImportProjects}}
                         <option value="{{p.ID}}">{{p.Name}}</option>
                         {{end}}
                     </select>
-                    <label class="form-label" for="article-import-path">新页面路径</label>
+                    <label class="form-label" for="article-import-path">{{ .["t"]("admin.article.edit.importPathLabel", "新页面路径") }}</label>
                     <input class="form-input" id="article-import-path" type="text" name="draftPath"
                            value="{{.ImportDefaultPath}}" required>
                     <div class="action-row">
                         <button type="button" class="btn"
                                 hx-post="/admin/articles/import-preview" hx-include="#article-import-form"
-                                hx-target="#article-import-result" hx-swap="innerHTML">预览转换结果</button>
-                        <button type="submit" class="btn btn-primary">创建页面并打开画布</button>
+                                hx-target="#article-import-result" hx-swap="innerHTML">{{ .["t"]("admin.article.edit.importPreview", "预览转换结果") }}</button>
+                        <button type="submit" class="btn btn-primary">{{ .["t"]("admin.article.edit.importCreate", "创建页面并打开画布") }}</button>
                     </div>
                 </form>
                 <div id="article-import-result">
-                    <p class="hint">还没有预览。点「预览转换结果」看看正文会变成多少个组件、有没有损失。</p>
+                    <p class="hint">{{ .["t"]("admin.article.edit.importPreviewEmpty", "还没有预览。点「预览转换结果」看看正文会变成多少个组件、有没有损失。") }}</p>
                 </div>
                 {{else}}
                 <p class="hint">{{.ImportHint}}</p>

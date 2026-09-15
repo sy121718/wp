@@ -2,6 +2,8 @@ package core
 
 import (
 	"context"
+	"strings"
+
 	"go_wp/internal/builder/source"
 
 	// issue #35：core 直接持有业务侧声明的受限数据源接口。
@@ -64,7 +66,23 @@ type RenderContext struct {
 	//
 	// 路径已是最终访问路径（含语言前缀），组件不要自己再拼语言前缀：
 	// 那是 pipeline.LangURLRule 的唯一职责，各处手拼是既有明文禁令。
-	SitePages map[string]string
+	// 私有 + 只经 SitePage(slot) 读取：直接读 map 会漏记「本页用了这个槽位」，
+	// 而漏记的后果是槽位换绑后该页不被标记待重建 —— 产物里的链接仍指向旧路径，
+	// 页面上看不出任何异常（详见 VIS-006）。
+	sitePages map[string]string
+	// usage 渲染期依赖线索记录器（可选）：取值时记录消费过的槽位。
+	usage UsageRecorder
+	// archiveEntityType / archiveEntityID 当前归档实例的实体（审计 EDT-004）。
+	//
+	// 归档型实例（分类页 / 标签页 / 品牌页）渲染列表时，筛选值应当来自**实例本身**：
+	// 否则「每个分类一个列表页」只能靠复制页面并手改筛选条件，新增分类必然漏配，
+	// 而漏配的表现是「页面打得开、但列的是全站商品」——很难被当成故障报上来。
+	// 为空 = 不在归档上下文（手工页面 / 详情页），组件回退到 Props 里的静态筛选。
+	archiveEntityType string
+	archiveEntityID   string
+	// siteLinkResolver 站内链接本地化器（审计 I18N-015，可空）：作者手填的站内链接
+	// 需要按当前语言加前缀，否则非默认语言站点上的按钮 / 图片链接会跳回默认语言。
+	siteLinkResolver func(logicalPath string) string
 	// CurrentPath 本次编译的页面访问路径（如 /about），用于导航「当前项」高亮。
 	// 为空表示未知（预览块/独立编译），此时不标记当前项。
 	CurrentPath string
@@ -184,6 +202,113 @@ type NavigationResolver interface {
 
 // 系统页面槽位键（BIZ-1）。
 //
+// UsageRecorder 记录渲染期**真实消费**的依赖线索（审计 VIS-006）。
+//
+// 由 pipeline 侧的收集器实现；core 只声明接口，不认识具体实现（避免反向 import）。
+type UsageRecorder interface {
+	UseSiteSlot(slot string)
+}
+
+// SetArchiveEntity 注入当前归档实例的实体（构建期由装配层传入）。
+func (c *RenderContext) SetArchiveEntity(entityType, entityID string) {
+	if c == nil {
+		return
+	}
+	c.archiveEntityType = strings.TrimSpace(entityType)
+	c.archiveEntityID = strings.TrimSpace(entityID)
+}
+
+// ArchiveEntity 取当前归档实体（空表示不在归档上下文）。
+func (c *RenderContext) ArchiveEntity() (entityType, entityID string) {
+	if c == nil {
+		return "", ""
+	}
+	return c.archiveEntityType, c.archiveEntityID
+}
+
+// SetSiteLinkResolver 注入站内链接本地化器（审计 I18N-015）。
+//
+// 为什么是注入而不是直接调 pipeline 的 LangURLRule：pipeline 依赖 core，
+// 反向依赖即成环；而且组件层只需要「给我站内逻辑路径、还我当前语言的访问路径」
+// 这一条语义，不该认识站点语言规则的实现细节。
+//
+// 调用约定：只对**作者填的静态链接**调用（它们一定是站内逻辑路径）。
+// CMS 绑定值不经过这里 —— 内容里的 URL 可能已经是完整访问路径，再前缀一次会指到不存在的地址；
+// 那个语义由内容作者掌握，组件层不该替他决定。
+func (c *RenderContext) SetSiteLinkResolver(fn func(logicalPath string) string) {
+	if c == nil {
+		return
+	}
+	c.siteLinkResolver = fn
+}
+
+// ResolveSiteLink 把作者填的站内链接本地化为当前语言的访问路径（审计 I18N-015）。
+//
+// 只处理**站内相对路径**；以下一律原样返回：
+//   - 外链（含 :// 或 mailto: 之类的 scheme）；
+//   - 协议相对地址（//cdn.example.com/x）—— 加前缀会变成站内路径；
+//   - 锚点（#section）与空值；
+//   - 未注入解析器时（装配缺失）也原样返回：链接缺少语言前缀是可见降级，
+//     而抛错会让整页构建失败（与非默认语言站点整站不可用相比，前者明显更可接受）。
+func (c *RenderContext) ResolveSiteLink(path string) string {
+	if c == nil || c.siteLinkResolver == nil {
+		return path
+	}
+	trimmed := strings.TrimSpace(path)
+	if trimmed == "" || strings.HasPrefix(trimmed, "#") || strings.HasPrefix(trimmed, "//") {
+		return path
+	}
+	// 带 scheme 的一律按外链处理（http: / https: / mailto: / tel: …）。
+	if i := strings.Index(trimmed, ":"); i > 0 && !strings.Contains(trimmed[:i], "/") {
+		return path
+	}
+	if !strings.HasPrefix(trimmed, "/") {
+		return path // 相对路径（a/b）不做前缀处理：它的基准是当前页，语义不同
+	}
+	return c.siteLinkResolver(trimmed)
+}
+
+// SiteLinkOrSame 站内链接本地化的空安全包装（审计 I18N-015）。
+//
+// 组件既可能拿到装配期注入的本地化器，也可能在单测里拿到 nil ——
+// 每个组件各写一遍 nil 判断迟早会漏一个，漏掉的那个在测试里 panic。
+func SiteLinkOrSame(siteLink func(string) string, href string) string {
+	if siteLink == nil {
+		return href
+	}
+	return siteLink(href)
+}
+
+// SetSitePages 注入槽位 → 当前语言线上路径映射（由 builder 装配期调用）。
+func (c *RenderContext) SetSitePages(pages map[string]string) {
+	if c == nil {
+		return
+	}
+	c.sitePages = pages
+}
+
+// SetUsageRecorder 注入依赖线索记录器（未注入时渲染路径只取值、不记录）。
+func (c *RenderContext) SetUsageRecorder(r UsageRecorder) {
+	if c == nil {
+		return
+	}
+	c.usage = r
+}
+
+// SitePage 取槽位当前语言的线上路径，**并记录本次渲染消费了该槽位**。
+//
+// 记录放在取值这一步而不是调用方：漏记的表现是「改了槽位绑定，引用它的页面不被标记
+// 待重建」，站点上旧链接继续生效且无人报错。取值即记录之后，新增消费点自动被覆盖。
+func (c *RenderContext) SitePage(slot string) string {
+	if c == nil {
+		return ""
+	}
+	if c.usage != nil && slot != "" {
+		c.usage.UseSiteSlot(slot)
+	}
+	return c.sitePages[slot]
+}
+
 // 权威定义在 page 模块的 enums（SiteSlotDefs，带展示名与用途），但 builder **不依赖任何
 // module**（依赖方向是 module → builder），拿不到那一份。所以这里存一份键名，
 // 并由测试钉住两边一致（builder 侧键集合必须与 page 侧白名单完全相同）。

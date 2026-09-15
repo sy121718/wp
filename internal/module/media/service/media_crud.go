@@ -3,6 +3,7 @@ package mediaservice
 import (
 	"context"
 	"crypto/md5"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -163,7 +164,19 @@ func fileMD5(file *multipart.FileHeader) (string, error) {
 
 // List 分页查询附件列表。
 func (s *Service) List(ctx context.Context, req *mediato.ListReq) (*mediato.ListResp, error) {
-	list, total, err := s.am.List(ctx, req.FileType, req.CategoryID, req.Search, req.GetOffset(), req.GetLimit())
+	limit := req.GetLimit()
+	var list []mediamodel.AttachmentEntity
+	var total int64
+	var err error
+	if req.Cursor == "" {
+		list, total, err = s.am.List(ctx, req.FileType, req.CategoryID, req.Search, req.GetOffset(), limit)
+	} else {
+		after, afterID, decodeErr := decodeMediaCursor(req.Cursor)
+		if decodeErr != nil {
+			return nil, decodeErr
+		}
+		list, total, err = s.am.ListAfter(ctx, req.FileType, req.CategoryID, req.Search, after, afterID, limit)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -175,20 +188,47 @@ func (s *Service) List(ctx context.Context, req *mediato.ListReq) (*mediato.List
 	// 变体状态批量填充（一次 IN 查询，避免 N+1；失败不影响列表主数据）。
 	s.fillVariants(ctx, resps)
 
-	return &mediato.ListResp{
-		Total: total,
-		Page:  req.GetPage(),
-		Limit: req.GetLimit(),
-		List:  resps,
-	}, nil
+	res := &mediato.ListResp{Total: total, Page: req.GetPage(), Limit: limit, List: resps}
+	if len(resps) == limit && len(resps) > 0 {
+		last := list[len(list)-1]
+		res.NextCursor = encodeMediaCursor(last.CreateTime, last.ID)
+	}
+	return res, nil
+}
+
+func encodeMediaCursor(created time.Time, id uint64) string {
+	return base64.RawURLEncoding.EncodeToString([]byte(fmt.Sprintf("%s|%d", created.UTC().Format(time.RFC3339Nano), id)))
+}
+
+func decodeMediaCursor(cursor string) (time.Time, uint64, error) {
+	raw, err := base64.RawURLEncoding.DecodeString(cursor)
+	if err != nil {
+		return time.Time{}, 0, errors.New("媒体列表游标无效")
+	}
+	parts := strings.Split(string(raw), "|")
+	if len(parts) != 2 {
+		return time.Time{}, 0, errors.New("媒体列表游标无效")
+	}
+	created, err := time.Parse(time.RFC3339Nano, parts[0])
+	if err != nil {
+		return time.Time{}, 0, errors.New("媒体列表游标无效")
+	}
+	var id uint64
+	if _, err = fmt.Sscan(parts[1], &id); err != nil || id == 0 {
+		return time.Time{}, 0, errors.New("媒体列表游标无效")
+	}
+	return created, id, nil
 }
 
 // Detail 查询单个附件详情。
 //
-// sys_attachment 无 project_id 列（媒体库站点级共享），此处强制带 projectId 是为
-// 与多工程后台 API 口径一致；附件本身不按工程隔离。
+// sys_attachment 无 project_id 列（媒体库站点级共享），因此**不校验** projectId：
+// 曾经把它当必填（「与多工程后台 API 口径一致」），但它既不参与查询也不参与过滤，
+// 唯一效果是让没带这个参数的调用方（包括后台自己的页面）拿到一个 400 ——
+// 看起来像「附件不存在 / 参数错了」，实际是要求了一个用不上的参数。
+// dto 里保留该字段是为了将来真要做工程级隔离时不必改契约。
 func (s *Service) Detail(ctx context.Context, req *mediato.DetailReq) (*mediato.AttachmentResp, error) {
-	if req == nil || req.ID == 0 || strings.TrimSpace(req.ProjectID) == "" {
+	if req == nil || req.ID == 0 {
 		return nil, errors.New(mediaenums.MsgBadRequest)
 	}
 	e, err := s.am.GetByID(ctx, req.ID)
@@ -211,7 +251,8 @@ func (s *Service) Detail(ctx context.Context, req *mediato.DetailReq) (*mediato.
 // 命中即拒绝并给出「被 N 个页面引用」提示——避免删掉线上页面正在用的图。
 // 引用缓存为空（未被任何构建产物引用）时才允许软删。
 func (s *Service) Delete(ctx context.Context, req *mediato.DeleteReq) error {
-	if req == nil || req.ID == 0 || strings.TrimSpace(req.ProjectID) == "" {
+	// projectId 同 Detail：媒体库不按工程隔离，故不校验（见上）。
+	if req == nil || req.ID == 0 {
 		return errors.New(mediaenums.MsgBadRequest)
 	}
 	_, err := s.am.GetByID(ctx, req.ID)

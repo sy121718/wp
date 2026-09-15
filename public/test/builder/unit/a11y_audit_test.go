@@ -163,6 +163,15 @@ func auditHTML(htmlText string) []string {
 				if bad := innerInteractive(n); bad != "" {
 					problems = append(problems, "<label> 内出现交互式内容 <"+bad+">")
 				}
+				// label[for] 是关联控件的**可访问名来源**（tabs 的 sr-only radio 就靠它取名）：
+				// 带文本的 label 加 aria-hidden=true 会让读屏拿不到控件名，只剩「单选按钮」
+				// 而没有标签文本（UI-009 的成因）。防重复朗读的正确做法是不加 aria-hidden
+				// —— 关联 label 的文本本就作为控件名被引用，不会被读两遍。
+				// 空 label（如 cardstack 的 zoom-layer 覆盖层）不在此列：它没有文本，
+				// 名字由控件的 aria-label 提供，隐藏它反而避免了空名节点。
+				if attr(n, "for") != "" && attr(n, "aria-hidden") == "true" && strings.TrimSpace(textOf(n)) != "" {
+					problems = append(problems, "label[for] 带 aria-hidden=true（隐藏了控件的可访问名来源）")
+				}
 			case "input":
 				switch strings.ToLower(attr(n, "type")) {
 				case "checkbox", "radio", "hidden", "submit", "button", "file", "range", "color":

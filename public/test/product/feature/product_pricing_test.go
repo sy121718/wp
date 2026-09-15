@@ -120,7 +120,7 @@ func pfAddVariant(t *testing.T, f *pricingFixture, productID, sku string, price,
 // pfGetProduct 商品详情（含变体）。
 func pfGetProduct(t *testing.T, f *pricingFixture, productID string) *productdto.ProductResp {
 	t.Helper()
-	detail, err := f.svc.Get(context.Background(), &productdto.GetReq{ID: productID})
+	detail, err := f.svc.Get(context.Background(), &productdto.GetReq{ProjectID: f.projectID, ID: productID})
 	if err != nil {
 		t.Fatalf("读商品失败: %v", err)
 	}
@@ -542,7 +542,13 @@ func TestPricingFilterScope(t *testing.T) {
 	}); res.ChangedCount != 1 {
 		t.Fatalf("筛选集应只命中本工程商品，实际 %+v", res)
 	}
-	if got := pfGetProduct(t, f, otherProduct.ID).Variants[0].Price; got != 0 {
+	// 用**它自己的工程**读：Get 强制工程 scope，拿本工程 id 去查会被正确拒绝
+	//（ErrNotFound）—— 那本身也是一条越权防护的证据，但不是这里要断言的东西。
+	otherDetail, err := f.svc.Get(ctx, &productdto.GetReq{ProjectID: other.ID, ID: otherProduct.ID})
+	if err != nil {
+		t.Fatalf("读他工程商品失败: %v", err)
+	}
+	if got := otherDetail.Variants[0].Price; got != 0 {
 		t.Fatalf("跨工程商品不该被改动，实际 %v", got)
 	}
 }

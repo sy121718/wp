@@ -1,14 +1,16 @@
 {* admin/navigations.html — 前台导航菜单：结构树 + 排序 + 打开方式（零 JS，原生 details 展开编辑） *}
+{* 文案走 t(key, 中文兜底)：range 内不能写赋值语句，先把 t 存成变量 tr 再取词。 *}
 {{extends "layout.html"}}
 {{block body()}}
+{{tr := .["t"]}}
 <div class="stack">
     {{if len(.Projects) == 0}}
     <section class="card card-body">
-        <p class="hint">请先在「页面」里创建一个站点工程，再管理前台导航菜单。</p>
+        <p class="hint">{{ .["t"]("admin.navigations.no_project", "请先在「页面」里创建一个站点工程，再管理前台导航菜单。") }}</p>
     </section>
     {{else}}
     <section class="card card-body">
-        <h2>导航菜单</h2>
+        <h2>{{ .["t"]("admin.navigations.heading", "导航菜单") }}</h2>
         <form method="get" action="/admin/navigations" class="form-inline">
             <select name="project" onchange="this.form.submit()">
                 {{range _, p := .Projects}}
@@ -16,39 +18,39 @@
                 {{end}}
             </select>
             <select name="kind" onchange="this.form.submit()">
-                <option value="header" {{if .Kind == "header"}}selected{{end}}>页眉导航</option>
-                <option value="footer" {{if .Kind == "footer"}}selected{{end}}>页脚导航</option>
+                <option value="header" {{if .Kind == "header"}}selected{{end}}>{{ .["t"]("admin.navigations.kind.header", "页眉导航") }}</option>
+                <option value="footer" {{if .Kind == "footer"}}selected{{end}}>{{ .["t"]("admin.navigations.kind.footer", "页脚导航") }}</option>
             </select>
         </form>
-        <p class="hint">在工作台拖入「导航菜单」组件，把它的「导航位置」设为页眉或页脚；构建时这里的菜单项会编译进静态产物（访客请求不查库）。</p>
+        <p class="hint">{{ .["t"]("admin.navigations.intro", "在工作台拖入「导航菜单」组件，把它的「导航位置」设为页眉或页脚；构建时这里的菜单项会编译进静态产物（访客请求不查库）。") }}</p>
     </section>
 
     <section class="card card-body">
-        <h2>添加菜单项</h2>
+        <h2>{{ .["t"]("admin.navigations.add_heading", "添加菜单项") }}</h2>
         <form method="post" action="/admin/navigations/create" class="form-inline">
             <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
             <input type="hidden" name="projectId" value="{{.SelectedProject}}">
             <input type="hidden" name="kind" value="{{.Kind}}">
-            <input type="text" name="title" placeholder="菜单文字，如：关于我们" required>
-            <input type="text" name="path" placeholder="链接，如 /about" required>
+            <input type="text" name="title" placeholder="{{ .["t"]("admin.navigations.title_placeholder", "菜单文字，如：关于我们") }}" required>
+            <input type="text" name="path" placeholder="{{ .["t"]("admin.navigations.path_placeholder", "链接，如 /about") }}" required>
             <select name="target">
-                <option value="self">当前窗口</option>
-                <option value="blank">新标签页</option>
+                <option value="self">{{ .["t"]("admin.navigations.target.self", "当前窗口") }}</option>
+                <option value="blank">{{ .["t"]("admin.navigations.target.blank", "新标签页") }}</option>
             </select>
             <select name="parentId">
-                <option value="">作为顶级项</option>
+                <option value="">{{ .["t"]("admin.navigations.parent.none", "作为顶级项") }}</option>
                 {{range _, r := .ParentOptions}}
-                <option value="{{r.ID}}">放到「{{r.Title}}」下</option>
+                <option value="{{r.ID}}">{{tr("admin.navigations.parent.prefix", "放到「")}}{{r.Title}}{{tr("admin.navigations.parent.suffix", "」下")}}</option>
                 {{end}}
             </select>
-            <button type="submit" class="btn btn-primary">添加</button>
+            <button type="submit" class="btn btn-primary">{{ .["t"]("admin.navigations.add", "添加") }}</button>
         </form>
     </section>
 
     {{if .SourceGroups}}
     <section class="card card-body">
-        <h2>从已有内容添加</h2>
-        <p class="hint">勾选后加入菜单：标题与链接取自来源实体（页面用 SEO 标题与访问路径，文章/产品/分类用标题与已发布路径），来源变更后重新构建即同步。</p>
+        <h2>{{ .["t"]("admin.navigations.source_heading", "从已有内容添加") }}</h2>
+        <p class="hint">{{ .["t"]("admin.navigations.source_hint", "勾选后加入菜单：标题与链接取自来源实体（页面用 SEO 标题与访问路径，文章/产品/分类用标题与已发布路径），来源变更后重新构建即同步。") }}</p>
         {{range _, g := .SourceGroups}}
         <details class="nav-source-group">
             <summary class="btn">{{g.Title}}（{{len(g.Items)}}）</summary>
@@ -61,10 +63,10 @@
                 <label class="nav-source-item">
                     <input type="checkbox" name="sourceIds" value="{{it.ID}}" {{if it.URL == ""}}disabled{{end}}>
                     {{it.Label}}
-                    {{if it.URL == ""}}<em>（暂无公开路径，先发布后再添加）</em>{{else}}<code>{{it.URL}}</code>{{end}}
+                    {{if it.URL == ""}}<em>{{tr("admin.navigations.no_public_path", "（暂无公开路径，先发布后再添加）")}}</em>{{else}}<code>{{it.URL}}</code>{{end}}
                 </label>
                 {{end}}
-                <button type="submit" class="btn btn-primary">加入菜单</button>
+                <button type="submit" class="btn btn-primary">{{tr("admin.navigations.add_to_menu", "加入菜单")}}</button>
             </form>
         </details>
         {{end}}
@@ -72,13 +74,13 @@
     {{end}}
 
     <section class="card card-body">
-        <h2>菜单结构</h2>
+        <h2>{{ .["t"]("admin.navigations.structure_heading", "菜单结构") }}</h2>
         {{if len(.Rows) == 0}}
-        <p class="hint">这个位置还没有菜单项：用上面的表单添加，或在页面里给导航组件绑定这个位置。</p>
+        <p class="hint">{{ .["t"]("admin.navigations.empty", "这个位置还没有菜单项：用上面的表单添加，或在页面里给导航组件绑定这个位置。") }}</p>
         {{else}}
         <table class="data-table data-table-wide">
             <thead>
-            <tr><th>菜单项</th><th>链接</th><th>打开方式</th><th>排序</th><th>操作</th></tr>
+            <tr><th>{{ .["t"]("admin.navigations.col.item", "菜单项") }}</th><th>{{ .["t"]("admin.navigations.col.link", "链接") }}</th><th>{{ .["t"]("admin.navigations.col.target", "打开方式") }}</th><th>{{ .["t"]("admin.navigations.col.sort", "排序") }}</th><th>{{ .["t"]("admin.navigations.col.actions", "操作") }}</th></tr>
             </thead>
             <tbody>
             {{range _, r := .Rows}}
@@ -93,7 +95,7 @@
                         <input type="hidden" name="kind" value="{{.Kind}}">
                         <input type="hidden" name="id" value="{{r.ID}}">
                         <input type="hidden" name="dir" value="up">
-                        <button type="submit" class="btn" {{if r.First}}disabled{{end}} title="上移">↑</button>
+                        <button type="submit" class="btn" {{if r.First}}disabled{{end}} title="{{tr("admin.navigations.title_up", "上移")}}">↑</button>
                     </form>
                     <form method="post" action="/admin/navigations/move" class="form-inline" style="display:inline">
                         <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
@@ -101,33 +103,33 @@
                         <input type="hidden" name="kind" value="{{.Kind}}">
                         <input type="hidden" name="id" value="{{r.ID}}">
                         <input type="hidden" name="dir" value="down">
-                        <button type="submit" class="btn" {{if r.Last}}disabled{{end}} title="下移">↓</button>
+                        <button type="submit" class="btn" {{if r.Last}}disabled{{end}} title="{{tr("admin.navigations.title_down", "下移")}}">↓</button>
                     </form>
                 </td>
                 <td class="action-row">
                     <details style="display:inline-block">
-                        <summary class="btn">编辑</summary>
+                        <summary class="btn">{{tr("admin.navigations.action.edit", "编辑")}}</summary>
                         <form method="post" action="/admin/navigations/update" class="form-inline">
                             <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
                             <input type="hidden" name="projectId" value="{{.SelectedProject}}">
                             <input type="hidden" name="kind" value="{{.Kind}}">
                             <input type="hidden" name="id" value="{{r.ID}}">
-                            <input type="text" name="title" value="{{r.Title}}" placeholder="菜单文字" required>
-                            <input type="text" name="path" value="{{r.Path}}" placeholder="链接" required>
+                            <input type="text" name="title" value="{{r.Title}}" placeholder="{{tr("admin.navigations.edit_title_placeholder", "菜单文字")}}" required>
+                            <input type="text" name="path" value="{{r.Path}}" placeholder="{{tr("admin.navigations.edit_path_placeholder", "链接")}}" required>
                             <select name="target">
-                                <option value="self" {{if r.Target == "self"}}selected{{end}}>当前窗口</option>
-                                <option value="blank" {{if r.Target == "blank"}}selected{{end}}>新标签页</option>
+                                <option value="self" {{if r.Target == "self"}}selected{{end}}>{{tr("admin.navigations.target.self", "当前窗口")}}</option>
+                                <option value="blank" {{if r.Target == "blank"}}selected{{end}}>{{tr("admin.navigations.target.blank", "新标签页")}}</option>
                             </select>
-                            <button type="submit" class="btn btn-primary">保存</button>
+                            <button type="submit" class="btn btn-primary">{{tr("admin.navigations.save", "保存")}}</button>
                         </form>
                     </details>
                     <form method="post" action="/admin/navigations/delete" class="form-inline" style="display:inline"
-                          data-confirm="确定删除「{{r.Title|safeJs}}」？它的子菜单项会一并删除。">
+                          data-confirm="{{tr("admin.navigations.confirm_delete_prefix", "确定删除「")}}{{r.Title|safeJs}}{{tr("admin.navigations.confirm_delete_suffix", "」？它的子菜单项会一并删除。")}}">
                         <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
                         <input type="hidden" name="projectId" value="{{.SelectedProject}}">
                         <input type="hidden" name="kind" value="{{.Kind}}">
                         <input type="hidden" name="id" value="{{r.ID}}">
-                        <button type="submit" class="btn">删除</button>
+                        <button type="submit" class="btn">{{tr("admin.navigations.action.delete", "删除")}}</button>
                     </form>
                 </td>
             </tr>

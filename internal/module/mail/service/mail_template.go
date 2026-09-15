@@ -10,6 +10,7 @@ import (
 	"text/template"
 	"time"
 
+	mailcontract "go_wp/internal/module/mail/contract"
 	maildto "go_wp/internal/module/mail/dto"
 	mailenums "go_wp/internal/module/mail/enums"
 	mailmodel "go_wp/internal/module/mail/model"
@@ -168,6 +169,29 @@ func (s *Service) SendTemplate(ctx context.Context, req *maildto.SendTemplateReq
 		}
 	}
 	return &maildto.SendResult{LogID: logID, To: to, Queued: true}, nil
+}
+
+// SendTransactional 实现 mailcontract.TransactionalSender（事务链路的收窄端口）。
+//
+// 与 SendTemplate 的关系：本方法是**契约形状到实现形状的转换层**，不是第二份发信逻辑 ——
+// 转换完立刻委派给 SendTemplate，落模板解析、抑制名单、账号选择、日志与入队全在同一条链路上。
+// 两个形状分开的理由：契约形状随语义走（事务邮件只有「模板 / 语言 / 收件人 / 变量」四件事），
+// dto 形状随 HTTP 绑定走（还要承载群发活动、联系人、操作人）。合成一个的代价是
+// 调用方必须认识绑定层字段，改一次绑定就牵动全部调用方。
+func (s *Service) SendTransactional(ctx context.Context, in *mailcontract.SendInput) (res *mailcontract.SendOutcome, err error) {
+	if in == nil {
+		return nil, errors.New(mailenums.ErrInvalidParam)
+	}
+	sent, serr := s.SendTemplate(ctx, &maildto.SendTemplateReq{
+		TemplateKey: in.TemplateKey,
+		Locale:      in.Locale,
+		To:          in.To,
+		Vars:        in.Vars,
+	})
+	if serr != nil {
+		return nil, serr
+	}
+	return &mailcontract.SendOutcome{Queued: sent.Queued, Suppressed: sent.Suppressed}, nil
 }
 
 // writeLog 写一条发送日志，返回日志 id。

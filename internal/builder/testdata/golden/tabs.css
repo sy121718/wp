@@ -89,10 +89,6 @@ body {
   user-select: none;
 }
 
-.sky-c-tb1 .sky-tabs-nav label:hover {
-  background: rgba(0,0,0,.05);
-}
-
 .sky-c-tb1 .sky-tab-panel {
   display: none;
   padding: 18px 4px;
@@ -157,10 +153,6 @@ body {
   user-select: none;
 }
 
-.sky-c-tb2 .sky-tabs-nav label:hover {
-  background: rgba(0,0,0,.05);
-}
-
 .sky-c-tb2 .sky-tab-panel {
   display: none;
   padding: 18px 4px;
@@ -189,4 +181,24 @@ body {
   flex: 1;
   padding: 0 18px;
 }
+
+@media (hover: hover) {
+  .sky-c-tb1 .sky-tabs-nav label:hover, .sky-c-tb2 .sky-tabs-nav label:hover {
+  background: rgba(0,0,0,.05);
+
+}
+}
+
+.sky-c-tb1 .sky-tabs-nav label:active, .sky-c-tb2 .sky-tabs-nav label:active {
+  background: rgba(0,0,0,.05);
+
+}
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

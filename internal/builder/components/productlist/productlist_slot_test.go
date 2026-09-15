@@ -18,7 +18,8 @@ func listViewWithPages(t *testing.T, pages map[string]string, extra map[string]a
 	t.Helper()
 	props := withFields(extra)
 	p := decodePropsOf(t, props)
-	ctx := &core.RenderContext{Collection: &fakeCollection{}, SitePages: pages}
+	ctx := &core.RenderContext{Collection: &fakeCollection{}}
+	ctx.SetSitePages(pages)
 	view, err := BuildView(nodeOf(t, props), &p, ctx)
 	if err != nil {
 		t.Fatalf("BuildView: %v", err)

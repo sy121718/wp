@@ -12,6 +12,7 @@ package pagemodel
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -187,6 +188,20 @@ func (m *Model) MarkStagedLang(ctx context.Context, pageID, lang, artifactID, ar
 }
 
 // DeleteStagings 清理页面全部语言的暂存指针（软删页面时调用，幂等）。
+// DeletePublicationsByLang 删除某页面某语言的发布指针（审计 I18N-017）。
+//
+// 与 DeletePublications 的区别是**只删一个语言**：禁用语言时其它语言的指针必须留着 ——
+// 无 lang 的整页删除会把仍在服务的语言一起清掉，那些语言的页面会立刻失去「已发布」状态，
+// 而访问面上产物还在（路径没被下线），于是后台与访问面开始各说各话。
+func (m *Model) DeletePublicationsByLang(ctx context.Context, pageID, lang string) (err error) {
+	return m.PublicationDB(ctx).Where("page_id = ? AND lang = ?", pageID, lang).Delete(&PublicationEntity{}).Error
+}
+
+// DeleteStagingsByLang 删除某页面某语言的暂存指针（同上，只删一个语言）。
+func (m *Model) DeleteStagingsByLang(ctx context.Context, pageID, lang string) (err error) {
+	return m.db.WithContext(ctx).Model(&StagingEntity{}).Where("page_id = ? AND lang = ?", pageID, lang).
+		Delete(&StagingEntity{}).Error
+}
 func (m *Model) DeleteStagings(ctx context.Context, pageID string) (err error) {
 	return m.db.WithContext(ctx).Model(&StagingEntity{}).Where("page_id = ?", pageID).
 		Delete(&StagingEntity{}).Error
@@ -201,6 +216,33 @@ func (m *Model) DeleteStagings(ctx context.Context, pageID string) (err error) {
 //
 // 供产物 GC 使用：这些产物一旦丢了文件，线上立即 404 或下次发布直接失败。
 // 三张表都属本模块，单条 SQL UNION 完成，不跨模块。
+// ListArtifactHashes 列出本模块认领的全部产物 hash（IDX-015 反向对账的属主清单）。
+//
+// 不过滤 payload_state：只要元数据行还在就说明「这个 hash 有名有姓」，删不删由 GC
+// 按引用与保留期决定 —— 对账只回答「有没有人认领」。
+func (m *Model) ListArtifactHashes(ctx context.Context) (hashes []string, err error) {
+	hashes = []string{}
+	err = m.db.WithContext(ctx).Raw(
+		"SELECT DISTINCT artifact_hash FROM page_artifacts WHERE artifact_hash <> ''",
+	).Scan(&hashes).Error
+	return hashes, err
+}
+
+// ArtifactHashByID 按产物行 id 取 hash（发布回执恢复用：回执只记 id，判定要拿 hash）。
+func (m *Model) ArtifactHashByID(ctx context.Context, id string) (hash string, err error) {
+	if strings.TrimSpace(id) == "" {
+		return "", nil
+	}
+	var row struct{ ArtifactHash string }
+	err = m.db.WithContext(ctx).Raw(
+		"SELECT artifact_hash FROM page_artifacts WHERE id = ?", id,
+	).Scan(&row).Error
+	if err != nil {
+		return "", err
+	}
+	return row.ArtifactHash, nil
+}
+
 func (m *Model) ListProtectedArtifactIDs(ctx context.Context) (ids []string, err error) {
 	ids = []string{}
 	err = m.db.WithContext(ctx).Raw(`

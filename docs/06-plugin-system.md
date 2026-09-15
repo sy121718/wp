@@ -278,6 +278,39 @@ Query DSL）：
 与现有 page 发布流水线完全同构，只是编译输入多了一维「插件集」。
 运行时动态能力（登录态、表单提交）走 0-D `runtimefragment`，不在本管线。
 
+## 11A. 内置组件与插件组件的能力边界（REG-004）
+
+> 结论先行：**渲染同管线、样式同白名单、模板同约束**；差距只在「Go 能力面」——
+> 插件是编译期数据输入，凡需要 Go 逻辑、运行时行为或超出声明白名单的能力，
+> 插件组件一律没有。示例见 `examples/l0-demo/`（与 `plugin init` 产物一致）。
+
+### 插件组件能用的能力（全部已实现）
+
+| 能力 | 说明 |
+|---|---|
+| Jet 模板渲染 | 与内置组件同一 CompositeLoader（§7）与受限全局函数集，Jet 默认转义；`{{ .V.字段 }}` 走检查器 props |
+| 样式声明（§6） | 与内置组件同一 style 引擎：属性绑定 / 变体 / 伪类 / 响应式断点 / 子元素 target，编译进 `core.CSSBuckets`，同一确定性约束 |
+| props 控件白名单 | 7 种：text / textarea / number / select / color / media / unit（`plugincomp.propKindWhitelist`） |
+| 区块预设 presets | 与内置组件同库注册，预设 AST 可引用 `core.*` 内置组件 |
+| L1 迁移 | 安装/升级时执行 `CREATE SCHEMA plugin_<id>` + 版本化 SQL，级联卸载 |
+| 静态资产 | assets/ 打包进产物 |
+| 生命周期 | 上传 / 版本 / 启停 / 卸载（plugin registry 记账），与内置组件同为编译期输入 |
+
+### 插件组件没有的能力（与内置组件的差距）
+
+| 差距 | 原因 |
+|---|---|
+| 任意 Go 逻辑 / 运行时代码 | §1.2 一票定调：插件 = 编译期输入；运行时行为等 0-D runtimefragment 能力对插件开放（当前未开放） |
+| 新增检查器控件类型 | 控件类型白名单封闭（越权类型在 manifest 校验期拒绝），扩展需先扩检查器原语 |
+| 任意 CSS / 外联资源 | §6.2 三重约束对插件与内置同样生效：属性白名单约 90 个、值白名单封 url() 外联、选择器 1~3 段白名单 |
+| 覆盖内置模板/组件 | CompositeLoader 命名空间隔离（plugin/{pid}/），路径层面不存在覆盖 |
+| 直连数据库 / 跨表查询 | 只能经 §8 迁移建自有 schema 表；Page Document 数据只走 CollectionSource 白名单（§9） |
+| 后台菜单/管理页 | manifest `admin` 字段未实现（**能力缺口**，依赖后台菜单注册链路对插件开放） |
+| L2 内容源 | `collections.json` 未实现（**能力缺口**，硬依赖 0-A2 落地节奏，见 §13 P3） |
+
+> 两个能力缺口（admin 页 / collections）在 `examples/l0-demo/README.md` 同步标注；
+> L1/L2 声明式片段在缺口闭合前不得在示例或脚手架中伪造。
+
 ## 11. 安全边界汇总
 
 | 面 | 防线 |

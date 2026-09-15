@@ -5,8 +5,8 @@
 <div class="{{ .Classes }}"{{ if .CustomID }} id="{{ .CustomID }}"{{ end }} data-sky-search>
 {{ if .V.Notice }}<p class="sky-search-notice">{{ .V.Notice }}</p>{{ else }}
 <form class="sky-search-form" method="get" action="" hx-get="{{ .V.BaseFragmentURL }}" hx-target=".sky-search-mount" hx-swap="innerHTML" hx-include="[name='q']" role="search">
-<label class="sky-search-label"><span class="sky-search-sr">搜索</span><input class="sky-search-input" type="search" name="q" placeholder="{{ .V.Placeholder }}" autocomplete="off" enterkeyhint="search"></label>
-<button class="sky-search-submit" type="submit">搜索</button>
+<label class="sky-search-label"><span class="sky-search-sr">{{ .V.LabelSR }}</span><input class="sky-search-input" type="search" name="q" placeholder="{{ .V.Placeholder }}" autocomplete="off" enterkeyhint="search"></label>
+<button class="sky-search-submit" type="submit">{{ .V.SubmitText }}</button>
 </form>
 <div class="sky-search-mount" aria-live="polite"
      hx-get="{{ .V.BaseFragmentURL }}"

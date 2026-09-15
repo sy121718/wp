@@ -8,6 +8,7 @@ import (
 	"time"
 
 	analyticsdto "go_wp/internal/module/analytics/dto"
+	analyticsmodel "go_wp/internal/module/analytics/model"
 )
 
 const (
@@ -40,22 +41,66 @@ func (s *Service) Summary(ctx context.Context, req *analyticsdto.SummaryReq) (re
 	if rerr != nil {
 		return nil, rerr
 	}
-	views, visitors, err := s.m.CountRange(ctx, projectID, from, to)
-	if err != nil {
-		return nil, err
-	}
-	dayRows, err := s.m.CountByDay(ctx, projectID, from, to)
-	if err != nil {
-		return nil, err
-	}
-	pathTotal, err := s.m.CountPathTotal(ctx, projectID, from, to)
-	if err != nil {
-		return nil, err
-	}
 	page, limit := normalizePathPaging(req.PathPage, req.PathLimit)
-	pathRows, err := s.m.CountByPath(ctx, projectID, from, to, (page-1)*limit, limit)
-	if err != nil {
-		return nil, err
+
+	// 取数来源（审计 DB-005 / IDX-010）：窗口完全落在今天之前 → 读按天预聚合表；
+	// 窗口含今天 → 读明细表。
+	//
+	// 为什么含今天就整体走明细：预聚合里的「今天」是最近一次汇总任务的快照（最多一小时前），
+	// 而运营打开统计页最想确认的恰恰是刚发布的文章有没有人看 —— 那种滞后造成的
+	// 「数字没动」会被当成故障。今天的数据量本身也远小于历史窗口，走明细不吃亏。
+	var (
+		views, visitors int64
+		dayRows         []analyticsmodel.DayRow
+		pathTotal       int64
+		pathRows        []analyticsmodel.PathRow
+		source          string
+	)
+	// 走汇总的条件有两个，缺一不可：
+	//   - 窗口完全落在今天之前（今天的汇总行只是快照，见上方说明）；
+	//   - 窗口内**每一天都已汇总**（补齐是按批次推进的，长历史可能还没追完）。
+	//
+	// 第二个条件是正确性底线：少几天就是少几次访问，而这种偏差从页面上根本看不出来。
+	// 宁可退回明细慢一点，也不能给出一个少了几天数据的数字。
+	windowDays := int(to.Sub(from) / (24 * time.Hour))
+	rolledDays, cerr := s.m.CountRolledDays(ctx, projectID, from, to)
+	if cerr != nil {
+		return nil, cerr
+	}
+	if !to.After(dayStart(s.now())) && windowDays > 0 && int64(windowDays) == rolledDays {
+		source = analyticsdto.SourceSummary
+		if views, visitors, err = s.m.RollupTotals(ctx, projectID, from, to); err != nil {
+			return nil, err
+		}
+		if dayRows, err = s.m.RollupByDay(ctx, projectID, from, to); err != nil {
+			return nil, err
+		}
+		if pathTotal, err = s.m.RollupPathTotal(ctx, projectID, from, to); err != nil {
+			return nil, err
+		}
+		// 路径排行：有游标走 keyset（成本与页码无关），否则按页码 offset。
+		if after := strings.TrimSpace(req.PathAfter); after != "" {
+			pathRows, err = s.m.RollupByPathKeyset(ctx, projectID, from, to, req.PathAfterViews, after, limit)
+		} else {
+			pathRows, err = s.m.RollupByPath(ctx, projectID, from, to, (page-1)*limit, limit)
+		}
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		source = analyticsdto.SourceDetail
+		if views, visitors, err = s.m.CountRange(ctx, projectID, from, to); err != nil {
+			return nil, err
+		}
+		if dayRows, err = s.m.CountByDay(ctx, projectID, from, to); err != nil {
+			return nil, err
+		}
+		if pathTotal, err = s.m.CountPathTotal(ctx, projectID, from, to); err != nil {
+			return nil, err
+		}
+		if pathRows, err = s.m.CountByPath(ctx, projectID, from, to, (page-1)*limit, limit); err != nil {
+			return nil, err
+		}
 	}
 
 	daily := make([]analyticsdto.DailyCount, 0, len(dayRows))
@@ -70,6 +115,12 @@ func (s *Service) Summary(ctx context.Context, req *analyticsdto.SummaryReq) (re
 	for _, row := range pathRows {
 		paths = append(paths, analyticsdto.PathCount{Path: row.Path, Views: row.Views, Visitors: row.Visitors})
 	}
+	// 下一页游标取本页最后一行；空结果时留空（客户端据此收起翻页按钮）。
+	var nextViews int64
+	var nextPath string
+	if n := len(paths); n > 0 {
+		nextViews, nextPath = paths[n-1].Views, paths[n-1].Path
+	}
 	return &analyticsdto.SummaryResp{
 		ProjectID: projectID,
 		From:      from.Format(dateLayout),
@@ -82,6 +133,10 @@ func (s *Service) Summary(ctx context.Context, req *analyticsdto.SummaryReq) (re
 		PathTotal: pathTotal,
 		PathPage:  page,
 		PathLimit: limit,
+
+		Source:             source,
+		PathNextAfterViews: nextViews,
+		PathNextAfter:      nextPath,
 	}, nil
 }
 

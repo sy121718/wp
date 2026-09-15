@@ -56,7 +56,8 @@
         "layout",
         "architecture"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：页眉页脚从「编译后字符串拼接」升格为 Page AST 的固定插槽节点。新增 core.layoutSlot 组件（槽位白名单 header/footer + 位置值，Props 只存 slot + blockId，叶子节点）与其渲染分支；渲染**复用 globalref 的展开实现**（防环、深度限制、块节点 ID 前缀重写），因此两者只差类型与模板名，安全约束不会只在一边生效。builder 新增 WithStructureSlots + expandStructureSlots：编译期把绑定展开成 root 首尾的槽位节点，两条规则 —— 文档里已有的同槽位节点优先（否则每次改主题都会多出第二份页眉）、同类之间按位置值排序（将来加公告条/侧边栏只需给位置值）。page 与 presentation 两条构建路径接入（此前各有一份 90 行的 compileBlockFragment，现已删除），main 地标判定改为按节点类型跳过槽位节点（槽位节点不是 header tag，不跳过就会被包进 main，banner/contentinfo 地标随之消失）。**字节差异（审计要求逐字节一致，本次不满足，差异均为修复）**：(a) 旧实现里块 CSS 自带一份 @layer 顺序声明，拼接后产物中存在两份（冗余），合并编译后只剩一份；(b) 槽位展开的节点 ID 带 __layout_<slot>-b- 前缀，CSS 类名随之隔离 —— 旧实现下页眉块的节点 ID 与页面节点撞车会让两边样式互相污染。已逐项核对：@layer 顺序声明仍在 style 首行（层优先级不变）、CSS 规则集合除那份冗余声明外完全一致、DOM 顺序（页眉→主体→页脚）与改造前相同。测试：4 条 builder 层用例（无绑定零影响 / 展开顺序 / 文档优先 / 渲染顺序与 main 地标）+ page/presentation/product 既有 feature 测试全绿。**未做**：workbench 画布把槽位节点渲染成只读展示（编辑器体验增强，不影响构建正确性），与 VIS-012 的主题槽位配置一并处理。"
     },
     {
       "id": "VIS-002",
@@ -107,7 +108,8 @@
         "theme",
         "schema"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "Theme JSON 规范：tokens（设计令牌，换主题整体替换）与 structure（结构绑定，独立读写独立失效）两正交分区。ThemeID 只读字段 uuid 白名单防注入。4 测试通过。"
     },
     {
       "id": "VIS-003",
@@ -294,7 +296,8 @@
         "dependency",
         "performance"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：槽位换绑从「标记整个工程」改为按构建期记录的依赖精确标记。三处改动：① core.RenderContext.SitePages **私有化**，只保留 SitePage(slot) 取值入口 —— 取值时即记录本页消费了该槽位（UsageRecorder 接口），私有化当场揪出三个此前直接读 map 的漏记点（cardstack / productlist / runtimefragment），这三个点以前不会被任何机制发现；② pipeline 新增 CompileUsage + BuildInput.Usage（指针：编译与「问依赖」是两个阶段，值传递多次后只有指针能让后一阶段看到前一阶段的记录）、DepKindSiteSlot 与 SiteSlotKey，builder 新增 WithUsageRecorder CompileOption，page.compileDocument 加 usage 参数（构建路径传、预览路径传 nil —— 预览不产出 Manifest）；③ page_slot.go 的绑定/解绑改为 markProjectStaleForSlot：按 site_slot 依赖反查受影响页面，依赖表里一条都没有（页面从未构建过，依赖随构建写入）时退回全量标记，宁可多标不可漏标。**迁移 174** 扩展 page_dependencies / presentation_dependencies 的 dependency_kind CHECK 加入 site_slot：该约束是封闭枚举（docs/03-pipeline.md §8.2），漏了它写入依赖会被数据库拒绝而构建照样成功 —— 表现是「依赖静默没登记」，等换绑时才发现该重建的页面没重建。**验收用例** TestSiteSlotChangeMarksOnlyReferencingPages：两个页面（一个渲染 core.cartIcon 消费 cart 槽位、一个纯文本），先绑定再构建（依赖随构建写入），前置断言两者都干净，然后换绑 —— 断言只有消费过槽位的那个页面被标记待重建。用例刻意建两个页面：只建一个时「精确标记」与「全量标记」看起来一模一样。"
     },
     {
       "id": "VIS-007",
@@ -387,7 +390,8 @@
         "site-slot",
         "marketplace"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "换主题清空槽位 + 主题标识注入。ReskinProjectForTheme 整体重置为新主题绑定（不再 MergeStructureBindings 保留旧绑定）。themeId 注入 :root --sky-theme-id。产物需重建。4 测试通过。"
     },
     {
       "id": "VIS-009",
@@ -485,7 +489,8 @@
         "ux",
         "information-architecture"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：三种「模板」在**产品层面**不再并列，并把一直悬空的 Blueprint 接进新建页面流程。① 导航收敛：「全局块」正名为「复用资产」（叫「全局块」时编辑者以为只能引用，需要独立副本时反而去别处找）—— 该入口承载 block 的两种复用模式（引用 / 复制）；「内容模板」从「内容」分组移到「复用资产」旁边，不再与「文章」并列（三者并列时新用户无法判断「要给文章排版」该进哪一个），它同时保留在商品/文章的「详情页模板」行内入口。Blueprint 本来就没有并列菜单。② Blueprint 接线：routes.go 里长期挂着的 `_ = blueprintSvc // 未来 page CreatePage 消费 InitPageDocument` 落实 —— CreateReq 增加 blueprintId（DraftDocument 不再是 required），page.Create 在给了蓝图时用 InitPageDocument 的 AST（复制完整文档并递归重生成节点 ID，之后与蓝图互不影响），page service 增加 SetBlueprints 端口并在 routes.go 注入，dashboard 新建页面表单增加「从蓝图开始」下拉（蓝图列表经 dashboard 的 SetBlueprints 端口拉取，端口未注入时下拉不渲染、建页照常）。**显式失败而非降级**：既无文档也无蓝图 → ErrInvalidParam；蓝图端口未注入 → ErrBlueprintUnavailable（静默建空页最难被发现：后台显示新建成功，编辑者打开画布才发现是白的）。SetupDashboardRoutes 改为返回 *Handle，供 routes.go 注入可选端口。测试 3 条：从蓝图建页（断言内容来自蓝图 **且** 节点 ID 已重生成 —— 未重生成意味着两个页面共用同一批 sky-c-<id> 类、样式互相污染）、空文档拒绝、端口缺失报错。文档层面 docs/02-D 保留三者技术辨析（审计明确要求保留）。"
     },
     {
       "id": "VIS-011",
@@ -577,7 +582,8 @@
         "layout",
         "block"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：结构绑定从「页眉 / 页脚两个固定字段」扩成任意槽位（首落地公告条）。builder.StructureBindings 新增 Slots map 并保留两个历史字段，新增 SlotBindings() 作为**唯一**的合并入口（同名以 Slots 为准）与 IsEmpty()；新增 SortedSlots() 给消费方确定性顺序（map 随机顺序会让翻译候选、依赖登记的中间结果抖动）。全部消费点改为读合并结果而不是逐字段读 —— 构建展开（page/presentation 的 structureSlotOptions）、内容翻译候选收集、失效依赖登记、多语言判定、主题合并（MergeStructureBindings 改为**逐键**合并：整体替换会让「主题新增公告条」把页面自己配的侧边栏冲掉）、主题合入文档（MergeActiveThemeIntoDocument 此前只解析两个字段，配了公告条在保存文档时就被丢掉）、主题按块反查（ListThemesByBlockID 用 jsonb_each_text 的 EXISTS 覆盖 slots，否则「改了公告条引用的块」不会标记引用页）、dashboard 主题设置页（表单新增公告条下拉 + 后端按 slots.* 前缀扫描收集）、翻译面板两处块遍历。layoutslot 新增 announcement 槽位（位置 -20，排在页眉之前）。**验收用例**：TestThemeAnnouncementSlotAppliesToAllPages —— 建两个页面（home / search），主题里只配一次 slots.announcement，断言两个页面的文档都快照到该绑定、且两份产物都包含公告内容。"
     },
     {
       "id": "VIS-013",
@@ -619,7 +625,8 @@
         "block",
         "frontend"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：工作台「引用 / 复制」插入动作已完整接线（本轮核对 + 补契约断言 + 标记）。前端 canvas.js：globalRefItem 插入只带 blockId 的 core.globalref 引用节点；insertBlockClone 调 /api/block/clone 取独立 AST；按块 reuseMode 分流（template 块默认复制插入并不可拖拽，global 块默认引用）；Shift+点击对 global 块强制复制 —— 两种语义都能被显式选择。后端 /clone 路由（block_http.go）存在。补 internal/templates/workbench_reuse_insert_test.go 契约测试：断言四条分支与后端路由同时存在 —— 前端调的接口没有路由时，错误只在浏览器控制台里出现，Go 侧的功能测试看不见。"
     },
     {
       "id": "VIS-014",

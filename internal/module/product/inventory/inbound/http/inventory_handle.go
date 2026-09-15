@@ -63,7 +63,7 @@ func (h *Handle) CreateSource(c *gin.Context) {
 	req.OperatorID = operatorFromContext(c)
 	res, err := h.svc.CreateSource(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "inventory", err)
 		return
 	}
 	response.SuccessWithMessage(c, inventoryenums.MsgCreateSuccess, res)
@@ -80,7 +80,7 @@ func (h *Handle) UpdateSource(c *gin.Context) {
 	req.OperatorID = operatorFromContext(c)
 	res, err := h.svc.UpdateSource(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "inventory", err)
 		return
 	}
 	response.SuccessWithMessage(c, inventoryenums.MsgUpdateSuccess, res)
@@ -95,7 +95,7 @@ func (h *Handle) GetSource(c *gin.Context) {
 	}
 	res, err := h.svc.GetSource(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusNotFound, err.Error())
+		response.ErrorAuto(c, http.StatusNotFound, "inventory", err)
 		return
 	}
 	response.SuccessWithMessage(c, inventoryenums.MsgDetailSuccess, res)
@@ -110,7 +110,7 @@ func (h *Handle) ListSources(c *gin.Context) {
 	}
 	list, err := h.svc.ListSources(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "inventory", err)
 		return
 	}
 	response.SuccessWithMessage(c, inventoryenums.MsgListSuccess, list)
@@ -126,7 +126,7 @@ func (h *Handle) DeleteSource(c *gin.Context) {
 	// issue #19：变更记录的操作人从会话取（客户端传入被忽略）。
 	req.OperatorID = operatorFromContext(c)
 	if err := h.svc.DeleteSource(c.Request.Context(), req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "inventory", err)
 		return
 	}
 	response.SuccessWithMessage(c, inventoryenums.MsgDeleteSuccess, nil)
@@ -141,7 +141,7 @@ func (h *Handle) SourceSummary(c *gin.Context) {
 	}
 	res, err := h.svc.SourceSummary(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "inventory", err)
 		return
 	}
 	response.SuccessWithMessage(c, inventoryenums.MsgListSuccess, res)
@@ -156,7 +156,7 @@ func (h *Handle) CreateWarehouse(c *gin.Context) {
 	}
 	res, err := h.svc.CreateWarehouse(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "inventory", err)
 		return
 	}
 	response.SuccessWithMessage(c, inventoryenums.MsgCreateSuccess, res)
@@ -171,7 +171,7 @@ func (h *Handle) UpdateWarehouse(c *gin.Context) {
 	}
 	res, err := h.svc.UpdateWarehouse(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "inventory", err)
 		return
 	}
 	response.SuccessWithMessage(c, inventoryenums.MsgUpdateSuccess, res)
@@ -186,7 +186,7 @@ func (h *Handle) GetWarehouse(c *gin.Context) {
 	}
 	res, err := h.svc.GetWarehouse(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusNotFound, err.Error())
+		response.ErrorAuto(c, http.StatusNotFound, "inventory", err)
 		return
 	}
 	response.SuccessWithMessage(c, inventoryenums.MsgDetailSuccess, res)
@@ -201,7 +201,7 @@ func (h *Handle) ListWarehouses(c *gin.Context) {
 	}
 	list, err := h.svc.ListWarehouses(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "inventory", err)
 		return
 	}
 	response.SuccessWithMessage(c, inventoryenums.MsgListSuccess, list)
@@ -215,7 +215,7 @@ func (h *Handle) DeleteWarehouse(c *gin.Context) {
 		return
 	}
 	if err := h.svc.DeleteWarehouse(c.Request.Context(), req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "inventory", err)
 		return
 	}
 	response.SuccessWithMessage(c, inventoryenums.MsgDeleteSuccess, nil)
@@ -230,7 +230,7 @@ func (h *Handle) EnsureStock(c *gin.Context) {
 	}
 	res, err := h.svc.EnsureStock(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "inventory", err)
 		return
 	}
 	response.SuccessWithMessage(c, inventoryenums.MsgCreateSuccess, res)
@@ -245,7 +245,7 @@ func (h *Handle) GetStock(c *gin.Context) {
 	}
 	res, err := h.svc.GetStock(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusNotFound, err.Error())
+		response.ErrorAuto(c, http.StatusNotFound, "inventory", err)
 		return
 	}
 	response.SuccessWithMessage(c, inventoryenums.MsgDetailSuccess, res)
@@ -260,7 +260,7 @@ func (h *Handle) ListStocksBySKU(c *gin.Context) {
 	}
 	list, err := h.svc.ListStocksBySKU(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "inventory", err)
 		return
 	}
 	response.SuccessWithMessage(c, inventoryenums.MsgListSuccess, list)
@@ -275,7 +275,7 @@ func (h *Handle) ListStocks(c *gin.Context) {
 	}
 	list, err := h.svc.ListStocks(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "inventory", err)
 		return
 	}
 	response.SuccessWithMessage(c, inventoryenums.MsgListSuccess, list)
@@ -292,7 +292,7 @@ func (h *Handle) ChangeStock(c *gin.Context) {
 	}
 	res, err := h.svc.ChangeStock(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "inventory", err)
 		return
 	}
 	response.SuccessWithMessage(c, inventoryenums.MsgChangeSuccess, res)
@@ -307,7 +307,7 @@ func (h *Handle) DeductStock(c *gin.Context) {
 	}
 	res, err := h.svc.DeductStock(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "inventory", err)
 		return
 	}
 	response.SuccessWithMessage(c, inventoryenums.MsgDeductSuccess, res)
@@ -322,7 +322,7 @@ func (h *Handle) ListMovements(c *gin.Context) {
 	}
 	list, err := h.svc.ListMovements(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "inventory", err)
 		return
 	}
 	response.SuccessWithMessage(c, inventoryenums.MsgListSuccess, list)
@@ -337,7 +337,7 @@ func (h *Handle) ListReasons(c *gin.Context) {
 	}
 	list, err := h.svc.ListReasons(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "inventory", err)
 		return
 	}
 	response.SuccessWithMessage(c, inventoryenums.MsgListSuccess, list)
@@ -352,7 +352,7 @@ func (h *Handle) CreateReason(c *gin.Context) {
 	}
 	res, err := h.svc.CreateReason(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "inventory", err)
 		return
 	}
 	response.SuccessWithMessage(c, inventoryenums.MsgCreateSuccess, res)
@@ -367,7 +367,7 @@ func (h *Handle) UpdateReason(c *gin.Context) {
 	}
 	res, err := h.svc.UpdateReason(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "inventory", err)
 		return
 	}
 	response.SuccessWithMessage(c, inventoryenums.MsgUpdateSuccess, res)
@@ -382,7 +382,7 @@ func (h *Handle) SetBOM(c *gin.Context) {
 	}
 	res, err := h.svc.SetBOM(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "inventory", err)
 		return
 	}
 	response.SuccessWithMessage(c, inventoryenums.MsgUpdateSuccess, res)
@@ -397,7 +397,7 @@ func (h *Handle) GetBOM(c *gin.Context) {
 	}
 	res, err := h.svc.GetBOM(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "inventory", err)
 		return
 	}
 	response.SuccessWithMessage(c, inventoryenums.MsgDetailSuccess, res)

@@ -32,6 +32,10 @@ type ThemeSettings struct {
 	Motion ThemeMotion `json:"motion,omitempty"`
 	// Images 图片全局默认（懒加载策略 + 骨架屏），组件未显式设置时继承。
 	Images ThemeImages `json:"images,omitempty"`
+	// ThemeID 主题只读标识（VIS-002）：由存储层写 settings.theme 快照时注入，
+	// 随构建进产物 :root 的 --sky-theme-id 变量（导航栏等组件据此与当前主题一致）。
+	// 接口入参出现的 themeId 一律忽略，不接受调用方伪造；不参与令牌合并语义。
+	ThemeID string `json:"themeId,omitempty"`
 }
 
 // ThemeImages 图片全局默认（主题「图片管理」）。
@@ -292,10 +296,39 @@ func themeVars(t *ThemeSettings) []string {
 // 空主题返回空串（不输出空块）。所有值已在字段层经 IsSafeCSSValue 约束。
 func ThemeVarsCSS(t *ThemeSettings) string {
 	vars := themeVars(t)
+	// 主题标识（VIS-008）：只读元数据不进 themeVars（那里只收设计令牌），
+	// 单独白名单后追加；为空时零输出，既有产物字节不变。
+	if id := themeIDSafe(t.GetThemeID()); id != "" {
+		vars = append(vars, "--sky-theme-id: "+id)
+	}
 	if len(vars) == 0 {
 		return ""
 	}
 	return ":root{\n  " + strings.Join(vars, ";\n  ") + ";\n}"
+}
+
+// GetThemeID 空安全读取主题标识。
+func (t *ThemeSettings) GetThemeID() string {
+	if t == nil {
+		return ""
+	}
+	return t.ThemeID
+}
+
+// themeIDSafe 主题标识 CSS 白名单：只放行 uuid/短横线形态字符，其余整段丢弃
+// （主题标识来自存储层注入而非用户输入，白名单是纵深防御，不是信任边界）。
+func themeIDSafe(id string) string {
+	if id == "" {
+		return ""
+	}
+	for _, r := range id {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '-', r == '_':
+		default:
+			return ""
+		}
+	}
+	return `"` + id + `"`
 }
 
 // ValidateThemeSettings 校验主题设置全部值（IsSafeCSSValue 白名单）。

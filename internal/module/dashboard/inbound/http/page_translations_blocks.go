@@ -41,7 +41,10 @@ type blockCandidateInfo struct {
 //
 // 块不可用（已删除/模板块/解析失败）时跳过：与构建期一致降级，不阻断工作台渲染。
 // 同一块只解析一次（visited 兼作引用环保护）。
-func (h *Handle) collectBlockCandidates(ctx context.Context, page *builder.Page) blockCandidateInfo {
+// projectID 必须一起传：block.Detail 把工程归属当作必填的越权防护 scope，
+// 只给块 ID 会拿到「参数缺失」—— 而这一层是「读不到就跳过」的降级路径，
+// 症状不是报错，而是工作台里**块内文本一条都不列**（完成度还会误报 100%）。
+func (h *Handle) collectBlockCandidates(ctx context.Context, projectID string, page *builder.Page) blockCandidateInfo {
 	info := blockCandidateInfo{origin: map[string]string{}}
 	if h == nil || h.blocks == nil || page == nil {
 		return info
@@ -57,7 +60,7 @@ func (h *Handle) collectBlockCandidates(ctx context.Context, page *builder.Page)
 			return
 		}
 		visited[blockID] = true
-		blockPage := h.blockPageOf(ctx, blockID, cache)
+		blockPage := h.blockPageOf(ctx, projectID, blockID, cache)
 		if blockPage == nil {
 			return
 		}
@@ -78,8 +81,18 @@ func (h *Handle) collectBlockCandidates(ctx context.Context, page *builder.Page)
 			walk(nested, origin)
 		}
 	}
-	walk(page.Settings.Structure.HeaderBlockID, translationOriginHeader)
-	walk(page.Settings.Structure.FooterBlockID, translationOriginFooter)
+	// 槽位绑定逐个 walk，来源标签按槽位区分：编辑者要能看出某段文字来自页眉还是公告条。
+	slotBindings := page.Settings.Structure.SlotBindings()
+	for _, slot := range builder.SortedSlots(slotBindings) {
+		origin := translationOriginBlock
+		switch slot {
+		case builder.SlotHeader:
+			origin = translationOriginHeader
+		case builder.SlotFooter:
+			origin = translationOriginFooter
+		}
+		walk(slotBindings[slot], origin)
+	}
 	for _, ref := range builder.ReferencedBlockIDs(page.Root) {
 		walk(ref, translationOriginBlock)
 	}
@@ -87,13 +100,13 @@ func (h *Handle) collectBlockCandidates(ctx context.Context, page *builder.Page)
 }
 
 // blockPageOf 解析块文档为 builder.Page（cache 为单次调用内缓存；不可用返回 nil）。
-func (h *Handle) blockPageOf(ctx context.Context, blockID string, cache map[string]*builder.Page) *builder.Page {
+func (h *Handle) blockPageOf(ctx context.Context, projectID, blockID string, cache map[string]*builder.Page) *builder.Page {
 	if cache != nil {
 		if p, ok := cache[blockID]; ok {
 			return p
 		}
 	}
-	block, err := h.blocks.Detail(ctx, &blockcontract.DetailReq{ID: blockID})
+	block, err := h.blocks.Detail(ctx, &blockcontract.DetailReq{ProjectID: projectID, ID: blockID})
 	if err != nil || block == nil || len(block.Document) == 0 {
 		logger.Scene("page").With("block", blockID).Warn("工作台读取块文档失败，已跳过该块的文本")
 		if cache != nil {

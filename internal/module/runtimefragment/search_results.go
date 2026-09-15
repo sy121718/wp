@@ -30,16 +30,20 @@ import (
 	"strings"
 
 	contentcontract "go_wp/internal/module/content/contract"
-	productcontract "go_wp/internal/module/product/contract"
 	presentationcontract "go_wp/internal/module/presentation/contract"
+	productcontract "go_wp/internal/module/product/contract"
 	"go_wp/internal/templates"
 	"go_wp/pkg/logger"
 )
 
 // 检索来源端口（装配期注入；未注入 = 该类来源不可用，走降级文案而不是报错）。
+//
+// 装配自检（审计 CQ-019）：三条都判为 required-contract —— 提供方必须是内容 / 商品
+// 模块里实现了 SearchPort 的那个实现，routes.go 断言失败即 panic。
+// （片段层的降级文案保留给单测：未注入时访客看到「搜索功能暂未接入，请稍后再试」。）
 var (
-	contentSearchProvider contentcontract.SearchPort
-	productSearchProvider productcontract.SearchPort
+	contentSearchProvider  contentcontract.SearchPort
+	productSearchProvider  productcontract.SearchPort
 	publishedEntityLocator presentationcontract.PublishedEntityLocator
 )
 

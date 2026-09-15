@@ -1,6 +1,9 @@
 package pagehttp
 
 import (
+	"context"
+	"time"
+
 	"go_wp/internal/middleware/builtin"
 
 	blockcontract "go_wp/internal/module/block/contract"
@@ -55,5 +58,16 @@ func SetupPageRoutes(rg *gin.RouterGroup, db *gorm.DB,
 	g.GET("/publication/audit", handle.AuditPublication)
 	// 产物回收：默认 dryRun（只列候选），需显式传 dryRun=false 才实际删除。
 	g.POST("/artifact/gc", handle.GarbageCollectArtifacts)
+	// 保留期任务（IDX-004 / IDX-005）：历史快照收敛 + 产物 GC 定时化。
+	// 此前产物 GC 只能人工调接口、修订快照完全不清理 —— 没有定时任务等于没有保留期。
+	pageservice.StartPageRetentionScheduler(svc)
+	// 发布回执恢复（TX-009）：上次进程若崩在「已切换访问面、未写数据库」之间，
+	// 这里按符号链接的实际指向补齐数据库状态（或结案为未生效）。
+	// 异步执行：恢复要读文件系统，不该拖住路由装配。
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		defer cancel()
+		_, _, _ = svc.RecoverPendingPublications(ctx)
+	}()
 	return svc
 }

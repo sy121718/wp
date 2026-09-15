@@ -29,6 +29,11 @@ var ParseSiteSettings = projectdto.ParseSiteSettings
 
 // ProjectService 站点工程与 SiteSettings 业务能力。
 type ProjectService interface {
+	// SetLocaleRetirePort 注入语言下线端口（装配期调用）。
+	//
+	// 放在接口里而不是 concrete 方法：装配层拿到的是 ProjectService 接口，
+	// 而端口必须由产物侧实现后注入 —— 与本项目其它消费者侧端口同一形状。
+	SetLocaleRetirePort(port LocaleRetirePort)
 	Create(ctx context.Context, req *projectdto.CreateReq) (res *projectdto.ProjectResp, err error)
 	// List 列出全部站点工程。
 	List(ctx context.Context) (res []projectdto.ProjectResp, err error)
@@ -68,4 +73,22 @@ type ProjectService interface {
 	DefaultLocale(ctx context.Context, projectID string) (lang string, err error)
 	// SaveLocales 全量保存站点语言清单（至少一种语言、至多一个默认且默认必须启用）。
 	SaveLocales(ctx context.Context, req *projectdto.LocalesSaveReq) (res []projectdto.LocaleResp, err error)
+}
+
+// LocaleRetirePort 禁用语言后的路由下线端口（审计 I18N-017）。
+//
+// 为什么由 project 声明、由产物侧实现：语言清单在 project 手里，而「这个语言有哪些
+// 已激活路径」只有 page / presentation 知道 —— 反向依赖（project → page）会成环
+// （page 依赖 project）。端口留在消费者侧，是本项目的既有形状。
+//
+// 未注入时的行为见 SaveLocales：不禁用、只记日志，不制造孤立路由。
+type LocaleRetirePort interface {
+	// LocaleRetireImpact 返回该语言当前的已激活路径数（确认前给运营看代价）。
+	LocaleRetireImpact(ctx context.Context, projectID, lang string) (affected int, err error)
+	// RetireLocale 下线该语言的全部已激活路由并清理其发布记录，返回实际处理数。
+	//
+	// 没有「写 301 到默认语言」这个开关：那需要为目标路径生成一份重定向产物
+	//（publication.Redirect 只接受 ArtifactID / PageID），是另一个量级的工作；
+	// 审计里这条本就是可选项。留一个永远被忽略的参数比不留更坏 —— 调用方会以为它生效了。
+	RetireLocale(ctx context.Context, projectID, lang string) (retired int, err error)
 }

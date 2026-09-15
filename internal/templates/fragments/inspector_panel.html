@@ -23,6 +23,34 @@
             {{range _, o := f.Options}}<option value="{{o.Value}}"{{if o.Selected}} selected{{end}}>{{o.Label}}</option>{{end}}
         </select>
     </div>
+    {{else if f.UI == "multientityref"}}
+    {* 多选实体（标签 id 列表等，EDT-007）：容器持有 data-wb-path/kind，复选框只带
+       data-wb-ref —— 值由客户端把勾选项拼成逗号分隔串，与手写格式完全一致（读写兼容）。
+       复选框本身不能带 data-wb-path，否则事件委托会命中它、提交出 "on"。 *}
+    <div class="wb-field" data-wb-path="{{f.Key}}" data-wb-kind="multientityref">
+        <label>{{f.Label}}</label>
+        <div class="wb-checkgrid">
+            {{range _, o := f.Options}}
+            <label class="wb-check-cell"><input type="checkbox" data-wb-ref="{{o.Value}}"{{if o.Selected}} checked{{end}}> {{o.Label}}</label>
+            {{end}}
+        </div>
+    </div>
+    {{else if f.UI == "rangelist"}}
+    {* 区间列表（预设价格档位，EDT-007）：逐行编辑，上限留空表示「以上」；
+       提交时拼回 `0-199,799+` —— 存储格式不变，构建期解析一行不动。 *}
+    <div class="wb-field" data-wb-path="{{f.Key}}" data-wb-kind="rangelist">
+        <label>{{f.Label}}</label>
+        <div class="wb-range-rows">
+            {{range _, r := f.Rows}}
+            <div class="wb-range-row">
+                <input type="text" data-wb-range="min" value="{{r.Min}}" placeholder="起">
+                <span class="wb-range-sep">—</span>
+                <input type="text" data-wb-range="max" value="{{r.Max}}" placeholder="止（留空 = 以上）">
+            </div>
+            {{end}}
+        </div>
+        <p class="wb-hint">每行一个档位；上限留空表示「以上」（如 799+）</p>
+    </div>
     {{else if f.UI == "textarea"}}
     <div class="wb-field"><label>{{f.Label}}</label><textarea rows="4" data-wb-path="{{f.Key}}" data-wb-kind="text">{{f.Value}}</textarea></div>
     {{else if f.UI == "cssdecls"}}

@@ -299,19 +299,19 @@ func (s *Service) Tree(ctx context.Context, projectID, kind string) (nodes []*na
 		return nil, err
 	}
 	nodes = buildTree(rows)
-	s.resolveSourceTitles(ctx, nodes)
+	s.resolveSourceTitles(ctx, projectID, nodes)
 	return nodes, nil
 }
 
 // resolveSourceTitles 递归把来源实体的标题/URL 写回菜单树。
 // 解析失败保留记录自身值（构建期不因单个来源实体缺失而整页失败）。
-func (s *Service) resolveSourceTitles(ctx context.Context, nodes []*navigationdto.NavigationNode) {
+func (s *Service) resolveSourceTitles(ctx context.Context, projectID string, nodes []*navigationdto.NavigationNode) {
 	if s.sources == nil {
 		return
 	}
 	for _, n := range nodes {
 		if n.SourceType != sourceCustom && n.SourceID != nil && *n.SourceID != "" {
-			title, url, err := s.sources.ResolveSource(ctx, n.SourceType, *n.SourceID)
+			title, url, err := s.sources.ResolveSource(ctx, projectID, n.SourceType, *n.SourceID)
 			if err != nil {
 				logger.Scene("navigation").
 					With("sourceType", n.SourceType).With("sourceId", *n.SourceID).
@@ -325,7 +325,7 @@ func (s *Service) resolveSourceTitles(ctx context.Context, nodes []*navigationdt
 				}
 			}
 		}
-		s.resolveSourceTitles(ctx, n.Children)
+		s.resolveSourceTitles(ctx, projectID, n.Children)
 	}
 }
 

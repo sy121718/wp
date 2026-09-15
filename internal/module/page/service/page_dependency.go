@@ -18,6 +18,8 @@ import (
 	"strings"
 	"time"
 
+	pagecontract "go_wp/internal/module/page/contract"
+
 	"go_wp/internal/builder"
 	"go_wp/internal/builder/core"
 	pagedto "go_wp/internal/module/page/dto"
@@ -55,9 +57,11 @@ func (s *Service) RebuildStale(ctx context.Context, ids []string) error {
 		return nil
 	}
 	if len(ids) > maxAutoRebuildPages {
-		logger.Scene("dependency").With("affected", len(ids)).With("limit", maxAutoRebuildPages).
-			Warn("自动重建超出单次上限，剩余页面保持 stale 等待后续触发")
+		// 超限部分交给构建队列（审计 DB-007）：此前只能丢弃并靠「下次触发」兜底，
+		// 而「下次触发」未必会来 —— 内容改完站点却一直不更新，是这条路径最容易留下的现象。
+		overflow := append([]string(nil), ids[maxAutoRebuildPages:]...)
 		ids = ids[:maxAutoRebuildPages]
+		s.enqueueOverflowBuildJobs(ctx, overflow)
 	}
 	rebuilt, published := 0, 0
 	for _, id := range ids {
@@ -94,6 +98,48 @@ func (s *Service) RebuildStale(ctx context.Context, ids []string) error {
 			Info("依赖失效后的自动重建完成")
 	}
 	return nil
+}
+
+// SetBuildQueue 注入构建队列端口（装配期调用）。
+//
+// 未注入时 enqueueOverflowBuildJobs 会退回「记告警、保持 stale」的既有行为 ——
+// 不静默丢弃，也不假装已经排上了。
+func (s *Service) SetBuildQueue(q pagecontract.BuildQueueEnqueuer) {
+	if s == nil {
+		return
+	}
+	s.buildQueue = q
+}
+
+// enqueueOverflowBuildJobs 把超出单次同步重建上限的页面交给构建队列。
+//
+// 单个页面入队失败只记日志：这是一条尽力而为的旁路（同步那部分已经重建完了），
+// 抛错会让调用方误以为整批失败。
+func (s *Service) enqueueOverflowBuildJobs(ctx context.Context, ids []string) {
+	if len(ids) == 0 {
+		return
+	}
+	if s.buildQueue == nil {
+		logger.Scene("dependency").With("affected", len(ids)).
+			Warn("自动重建超出单次上限且构建队列未接入，剩余页面保持 stale 等待后续触发")
+		return
+	}
+	queued := 0
+	for _, id := range ids {
+		page, err := s.model.GetByID(ctx, id, "")
+		if err != nil {
+			continue
+		}
+		// build_input_hash 传空串是刻意的：队列的部分唯一索引按 (来源, 目标, hash) 去重，
+		// 空串让「同一页面同时只有一条待办」成立 —— 一批扇出反复标记同一页时不会堆出多份任务。
+		if qerr := s.buildQueue.EnqueuePageBuild(ctx, id, page.DraftVersion, ""); qerr != nil {
+			logger.Scene("dependency").With("page_id", id).Error(qerr, "超限重建任务入队失败")
+			continue
+		}
+		queued++
+	}
+	logger.Scene("dependency").With("queued", queued).With("affected", len(ids)).
+		Info("超限的自动重建已交给构建队列")
 }
 
 // persistDependencies 把本次产物的依赖集合写入 page_dependencies。
@@ -184,11 +230,12 @@ func (s *Service) pageDependencyKeys(ctx context.Context, page *pagemodel.PageEn
 			for _, id := range builder.ReferencedBlockIDs(parsed.Root) {
 				add(pipeline.BlockKey(id))
 			}
-			if id := strings.TrimSpace(parsed.Settings.Structure.HeaderBlockID); id != "" {
-				add(pipeline.BlockKey(id))
-			}
-			if id := strings.TrimSpace(parsed.Settings.Structure.FooterBlockID); id != "" {
-				add(pipeline.BlockKey(id))
+			// 槽位绑定（页眉 / 页脚 / 公告条…）：所有被绑定的块都要登记为依赖，
+			// 否则「改了公告条引用的块」不会让引用页失效 —— 站点上一直显示旧内容。
+			if bindings := parsed.Settings.Structure.SlotBindings(); len(bindings) > 0 {
+				for _, slot := range builder.SortedSlots(bindings) {
+					add(pipeline.BlockKey(bindings[slot]))
+				}
 			}
 			for _, src := range s.collectionSourcesOf(ctx, parsed.Root) {
 				add(pipeline.DepKey{Kind: pipeline.DepKindContentCollection, Key: "collection:" + src})

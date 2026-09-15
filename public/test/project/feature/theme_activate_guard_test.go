@@ -19,22 +19,11 @@ import (
 	"gorm.io/gorm"
 )
 
-// newProjectThemeModel 建隔离 PG schema + projects/themes 两表，返回裸 model。
+// newProjectThemeModel 建隔离 PG schema 并跑生产迁移建表（projects/themes 是真实 DDL），返回裸 model。
+// 手抄 DDL 已删除：手抄版把主键写成 TEXT、settings 写成 JSON，与生产的 uuid/jsonb 静默分叉。
 func newProjectThemeModel(t *testing.T) (*gorm.DB, *projectmodel.Model) {
 	t.Helper()
-	db, err := support.NewPGTestDB(t)
-	if err != nil {
-		t.Skipf("本地 PostgreSQL 不可用，跳过测试：%v", err)
-		return nil, nil
-	}
-	for _, statement := range []string{
-		"CREATE TABLE projects (id TEXT PRIMARY KEY, name TEXT NOT NULL, settings JSON NOT NULL, created_at TIMESTAMPTZ NOT NULL, updated_at TIMESTAMPTZ NOT NULL)",
-		"CREATE TABLE themes (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, name TEXT NOT NULL, settings JSON NOT NULL, is_active BOOLEAN NOT NULL, created_at TIMESTAMPTZ NOT NULL, updated_at TIMESTAMPTZ NOT NULL)",
-	} {
-		if err := db.Exec(statement).Error; err != nil {
-			t.Fatalf("创建测试表失败: %v", err)
-		}
-	}
+	db := support.NewMigratedPGTestDB(t)
 	return db, projectmodel.NewProjectModel(db)
 }
 
@@ -47,9 +36,7 @@ func TestActivateThemeModelRollsBackOnMissingTarget(t *testing.T) {
 		themeA    = "22222222-2222-2222-2222-222222222222"
 		missed    = "33333333-3333-3333-3333-333333333333"
 	)
-	if err := db.Exec("INSERT INTO projects (id, name, settings, created_at, updated_at) VALUES (?, '站点', '{}', NOW(), NOW())", projectID).Error; err != nil {
-		t.Fatalf("插入工程失败: %v", err)
-	}
+	support.SeedProjectRow(t, db, projectID, "站点")
 	if err := db.Exec("INSERT INTO themes (id, project_id, name, settings, is_active, created_at, updated_at) VALUES (?, ?, '主题A', '{}', true, NOW(), NOW())", themeA, projectID).Error; err != nil {
 		t.Fatalf("插入主题失败: %v", err)
 	}

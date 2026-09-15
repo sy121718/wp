@@ -91,7 +91,7 @@ func TestTagManualAttachAndGuards(t *testing.T) {
 	if _, err = f.svc.Update(ctx, &productdto.UpdateReq{ID: p.ID, TagIDs: []string{}}); err != nil {
 		t.Fatalf("解绑标签失败: %v", err)
 	}
-	got, err := f.svc.Get(ctx, &productdto.GetReq{ID: p.ID})
+	got, err := f.svc.Get(ctx, &productdto.GetReq{ProjectID: f.projectID, ID: p.ID})
 	if err != nil || len(got.TagIDs) != 0 {
 		t.Fatalf("解绑后不应带标签，实际 %v", got.TagIDs)
 	}
@@ -282,7 +282,7 @@ func TestTagAutoRecalcMembership(t *testing.T) {
 	if _, err = f.svc.Update(ctx, &productdto.UpdateReq{ID: p.ID, Status: &published}); err != nil {
 		t.Fatalf("上架失败: %v", err)
 	}
-	got, err := f.svc.Get(ctx, &productdto.GetReq{ID: p.ID})
+	got, err := f.svc.Get(ctx, &productdto.GetReq{ProjectID: f.projectID, ID: p.ID})
 	if err != nil {
 		t.Fatalf("读商品失败: %v", err)
 	}
@@ -325,7 +325,7 @@ func TestTagAutoRecalcMembership(t *testing.T) {
 	}
 	// 改回价格区间外 → 价格区间标签脱钩（变体写操作触发的重算）。
 	out := 999.0
-	variants, err := f.svc.Get(ctx, &productdto.GetReq{ID: p.ID})
+	variants, err := f.svc.Get(ctx, &productdto.GetReq{ProjectID: f.projectID, ID: p.ID})
 	if err != nil || len(variants.Variants) == 0 {
 		t.Fatalf("读变体失败: %v", err)
 	}
@@ -414,7 +414,7 @@ func TestTagDeleteUnbindsProducts(t *testing.T) {
 	if err = f.svc.DeleteTag(ctx, &productdto.DeleteTagReq{ID: tag.ID}); err != nil {
 		t.Fatalf("删除标签失败: %v", err)
 	}
-	got, err := f.svc.Get(ctx, &productdto.GetReq{ID: p.ID})
+	got, err := f.svc.Get(ctx, &productdto.GetReq{ProjectID: f.projectID, ID: p.ID})
 	if err != nil {
 		t.Fatalf("读商品失败: %v", err)
 	}

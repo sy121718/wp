@@ -1,0 +1,21 @@
+{* admin/partials/toolbar_create.html — 列表页筛选栏右侧的「新建」入口（审计 UI-014）。
+   抽出来之前，这两行在 6 个列表页里各抄一遍（administrators / roles / permissions /
+   datarules / departments / menus），给按钮换一次类名或加一个 property 要改 6 个文件。
+
+   参数用 Jet 内置 map() 构造的单个 context 传入（include 传了 context 之后，被包含模板
+   的 . 就是它本身，读不到外层键，需要的值必须显式传进来）：
+
+     allowed  是否渲染（调用点写 .PermSet["<权限码>"]，判据与原逐页手写完全一致；
+              类型是 bool，map 里一定有这个键，所以 if 不会碰到缺失键）
+     tpl      抽屉 <template> 的 id 选择器
+     title    data-drawer-title 的文案
+     label    按钮可见文案（与 title 分开传：menus 页两者取自不同词条 key，
+              datarules 页「新建数据规则」与「新建规则」本来就是两句）
+
+   取词由**调用点**完成（tr("key","兜底")），不要在 partial 里取词：admin_group_f_i18n_test.go
+   按「本批 11 个模板文本里出现的取词调用」做正反双向判据，词条调用移进 partial 会让那些
+   key 在该判据里变成孤儿词条。调用点保留 tr(...) 调用，判据与词条同步关系都不变。
+
+   结构与属性顺序与原逐页手写的完全一致（行为不变）。 *}
+<div class="toolbar-spacer"></div>
+{{if .["allowed"]}}<button type="button" class="btn btn-primary" data-drawer-open="{{ .["tpl"] }}" data-drawer-title="{{ .["title"] }}">＋ {{ .["label"] }}</button>{{end}}

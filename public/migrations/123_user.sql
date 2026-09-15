@@ -6,20 +6,24 @@
 -- 全塞进 wp_usermeta 的 key-value —— 无 schema、无类型、无法索引，连角色都是
 -- a:1:{s:13:"administrator";b:1;} 这样的 PHP 序列化串。
 --
--- 这里的原则：**能用列表达的就不许进 key-value**。user_meta 只留给插件扩展，
--- 核心功能一旦依赖它就会长出第二张 usermeta。
+-- 这里的原则：**能用列表达的就不进 key-value**，也不建「预留给将来」的空表 ——
+-- 开发阶段用不上的表就是负债（迁移 203 删掉的那几张：会话台账、应用密码、
+-- 插件 KV、OAuth 绑定）。真正需要时再加一条迁移，成本与当初一样。
 --
 -- 结构范式照本仓既有的 sys_admin：登录安全计数 / 锁定时间 / 来源 IP 与归属地 /
 -- 最后登录信息都是结构化列，扩展位用 JSONB。
+--
+-- 本迁移只建三张表：users（身份与认证）、user_profiles（资料）、user_preferences（前台偏好）。
+-- 访客会话与登录设备台账**不落库**，全部在 Redis（见 internal/module/user/service/user_session_store.go）。
 
 -- 1. users —— 身份与认证
 CREATE TABLE IF NOT EXISTS users (
     id                    BIGSERIAL    PRIMARY KEY,
     username              VARCHAR(60)  NOT NULL,
-    -- 第三方登录注册的账号**没有密码**：空串表示「只能走第三方登录」，
-    -- 登录逻辑据此拒绝密码登录（而不是让空串能匹配上任何哈希）。
+    -- 空串表示「这个账号没有本站密码」（外部导入 / 后台代开的账号）：
+    -- 登录逻辑据此拒绝密码登录，而不是让空串能匹配上任何哈希。
     password              VARCHAR(100) NOT NULL DEFAULT '',
-    -- 邮箱可空：微信 / QQ 默认**不返回邮箱**（需额外申请权限），第三方注册的账号可能没有。
+    -- 邮箱可空：外部导入的账号可能没有邮箱。
     -- 空串（而非 NULL）表示「未提供」，配合下面的部分唯一索引：空串可重复，真实邮箱仍唯一。
     email                 VARCHAR(100) NOT NULL DEFAULT '',
     email_verified_at     TIMESTAMP(3),
@@ -44,7 +48,7 @@ CREATE TABLE IF NOT EXISTS users (
     registered_at         TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     last_login_time       TIMESTAMP(3),
     last_active_at        TIMESTAMP(3),
-    -- 扩展位：真非结构化的东西进 JSONB，不进 user_meta（那是留给插件的）
+    -- 扩展位：真非结构化的东西进 JSONB，不再另开一张 key-value 表
     metadata              JSONB,
     create_by             BIGINT       NOT NULL DEFAULT 0,
     create_time           TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -114,79 +118,7 @@ CREATE TABLE IF NOT EXISTS user_preferences (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_user_preferences_user_id ON user_preferences (user_id);
 
--- 4. user_sessions —— 登录设备台账（WP 的 session_tokens 用途）
---
--- 会话状态仍在 Redis（与 admin 共用基础设施）；本表负责让用户**看见并踢掉**自己的其它设备，
--- 以及回答「这个账号最近在哪登录过」。
-CREATE TABLE IF NOT EXISTS user_sessions (
-    id             BIGSERIAL   PRIMARY KEY,
-    user_id        BIGINT      NOT NULL,
-    -- 只存会话令牌的哈希，不存明文（同密码的处理原则）
-    token_hash     VARCHAR(64) NOT NULL,
-    user_agent     VARCHAR(255),
-    ip             VARCHAR(50),
-    location       VARCHAR(100),
-    last_active_at TIMESTAMP(3),
-    created_at     TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    revoked_at     TIMESTAMP(3)
-);
-CREATE INDEX IF NOT EXISTS idx_user_sessions_user_id ON user_sessions (user_id);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_user_sessions_token_hash ON user_sessions (token_hash);
 
--- 5. user_app_passwords —— 应用密码（WP 的 _application_passwords，给 API 访问）
-CREATE TABLE IF NOT EXISTS user_app_passwords (
-    id             BIGSERIAL    PRIMARY KEY,
-    user_id        BIGINT       NOT NULL,
-    name           VARCHAR(64)  NOT NULL,
-    password_hash  VARCHAR(100) NOT NULL,
-    last_used_at   TIMESTAMP(3),
-    last_used_ip   VARCHAR(50),
-    revoked_at     TIMESTAMP(3),
-    create_time    TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-CREATE INDEX IF NOT EXISTS idx_user_app_passwords_user_id ON user_app_passwords (user_id);
 
--- 6. user_meta —— **只给插件**的 key-value（学 WP 的灵活性，但划死边界）
---
--- 死线：核心功能禁止依赖本表。能用列表达的就必须建列 ——
--- 否则这里会长成第二张 wp_usermeta，而那正是本模块要避开的写法。
-CREATE TABLE IF NOT EXISTS user_meta (
-    id         BIGSERIAL   PRIMARY KEY,
-    user_id    BIGINT      NOT NULL,
-    meta_key   VARCHAR(191) NOT NULL,
-    meta_value JSONB,
-    create_time TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    update_time TIMESTAMP(3)
-);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_user_meta_key ON user_meta (user_id, meta_key);
 
--- 7. user_oauth_bindings —— 第三方登录绑定（**预留给后续扩展**：Google / QQ / 微信 / GitHub…）
---
--- 现在就建表的理由：这类「身份绑定」的落点一旦定错，后补要动 users 表与登录逻辑；
--- 表放在这里不影响任何现有代码，接 provider 时直接用。
---
--- 设计要点：
---   · 唯一键是 (provider, open_id)：同一平台的同一账号只能绑一个用户；
---   · 微信特殊：openid 是「应用内」标识、unionid 是「同一开放平台下跨应用」标识，
---     两个都要存 —— 只存 openid 会导致同一用户在不同应用里被认成两个人；
---   · nickname / avatar 是**第三方返回的快照**，随时可能变，只作展示与回填参考，
---     不作为账号的权威字段（权威字段始终在 users 上）；
---   · raw 存原始返回，排障与将来适配用。
---
--- 归属：本表只管**访客账号**的绑定。后台管理员的第三方登录走 admin 模块自己的绑定表 ——
--- 不共用一张表（AGENTS.md 表隔离约定）；共用的只有 pkg/oauth 里的协议实现。
-CREATE TABLE IF NOT EXISTS user_oauth_bindings (
-    id            BIGSERIAL    PRIMARY KEY,
-    user_id       BIGINT       NOT NULL,
-    provider      VARCHAR(32)  NOT NULL,
-    open_id       VARCHAR(191) NOT NULL,
-    union_id      VARCHAR(191),
-    nickname      VARCHAR(191),
-    avatar        VARCHAR(500),
-    raw           JSONB,
-    bound_at      TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    last_login_at TIMESTAMP(3)
-);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_user_oauth_provider_openid ON user_oauth_bindings (provider, open_id);
-CREATE INDEX IF NOT EXISTS idx_user_oauth_user_id ON user_oauth_bindings (user_id);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_user_oauth_unionid ON user_oauth_bindings (provider, union_id) WHERE union_id IS NOT NULL;
+

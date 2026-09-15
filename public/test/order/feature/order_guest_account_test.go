@@ -6,23 +6,23 @@ import (
 	"context"
 	"testing"
 
-	maildto "go_wp/internal/module/mail/dto"
+	mailcontract "go_wp/internal/module/mail/contract"
 	orderdto "go_wp/internal/module/order/dto"
 	userdto "go_wp/internal/module/user/dto"
 )
 
 // fakeMail 记录被调用的邮件请求（只为断言「发了哪封信」）。
 type fakeMail struct {
-	calls []*maildto.SendTemplateReq
+	calls []*mailcontract.SendInput
 }
 
-func (f *fakeMail) SendTemplate(_ context.Context, req *maildto.SendTemplateReq) (*maildto.SendResult, error) {
-	f.calls = append(f.calls, req)
-	return &maildto.SendResult{Queued: true, To: req.To}, nil
+func (f *fakeMail) SendTransactional(_ context.Context, in *mailcontract.SendInput) (*mailcontract.SendOutcome, error) {
+	f.calls = append(f.calls, in)
+	return &mailcontract.SendOutcome{Queued: true}, nil
 }
 
 // findTemplate 找某 key 的邮件。
-func (f *fakeMail) findTemplate(key string) *maildto.SendTemplateReq {
+func (f *fakeMail) findTemplate(key string) *mailcontract.SendInput {
 	for _, c := range f.calls {
 		if c.TemplateKey == key {
 			return c

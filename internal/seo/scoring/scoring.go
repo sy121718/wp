@@ -72,8 +72,14 @@ type SectionResult struct {
 
 // Result 评分结果。
 type Result struct {
-	Total    int
-	Grade    string
+	Total int
+	Grade string
+	// Profile 本次评分使用的页型权重档案（nil = 默认权重）。
+	//
+	// 回显是文档的硬要求（docs/02-E1 §5「调权必须在结果里回显本页型权重及理由」）：
+	// 只算分不回显的话，编辑者看到同一份内容在商品页比文章页高几分时无从解释，
+	// 只能怀疑评分器不稳 —— 而理由（Reason）本来就在 Profile 上，不传出去等于白写。
+	Profile  *Profile
 	Sections []SectionResult
 }
 
@@ -102,7 +108,7 @@ func Score(in *Input, profile *Profile) *Result {
 		weightSum = 1
 	}
 
-	res := &Result{}
+	res := &Result{Profile: profile}
 	total := 0.0
 	for _, sec := range allSections() {
 		w, ok := weights[sec.Key]
@@ -172,11 +178,15 @@ func ProductProfile() *Profile {
 	}, Reason: "商品页：图片与技术权重上调，长文深度权重下调"}
 }
 
-// LandingProfile 落地页：提技术/标题。
+// LandingProfile 落地页：提技术/标题/元描述。
+//
+// 文档的落地页调权是「提高 tech / title / **meta**，降低 content 深度」
+// （docs/02-E1 §5）。meta 这一项此前漏了：落地页的点击来自 SERP 摘要，
+// 元描述该拿的权重比文章页高，不是简单沿用 5% 的默认值。
 func LandingProfile() *Profile {
 	return &Profile{Type: "landing", Weights: map[string]float64{
-		"tech": 0.15, "title": 0.20, "content": 0.15,
-	}, Reason: "落地页：技术与标题权重上调，内容深度下调"}
+		"tech": 0.15, "title": 0.20, "meta": 0.10, "content": 0.15,
+	}, Reason: "落地页：技术与标题/元描述权重上调，内容深度下调"}
 }
 
 // GuideProfile 长文指南：提内容/关键词/链接。

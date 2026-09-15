@@ -1,6 +1,7 @@
 package button
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -32,12 +33,44 @@ func TestBuildAttrsActionLinkProtocol(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			p := &Props{Action: ActionLink, Binding: &Binding{Field: "post.permalink"}}
 			res := mockResolver{vals: map[string]string{"post.permalink": c.value}}
-			_, attrs, err := buildAttrs(p, res)
+			_, attrs, err := buildAttrs(p, res, nil)
 			if err != nil {
 				t.Fatalf("buildAttrs 意外报错: %v", err)
 			}
 			if attrs != c.want {
 				t.Errorf("attrs = %q, 期望 %q", attrs, c.want)
+			}
+		})
+	}
+}
+
+// TestBuildAttrsLocalizesSiteLink 作者填的站内链接按语言加前缀（审计 I18N-015）。
+//
+// 只测**静态**分支：CMS 绑定值不本地化（内容里的 URL 是作者掌握的完整地址，
+// 再前缀一次会指到不存在的路径），所以那条分支必须保持原样。
+func TestBuildAttrsLocalizesSiteLink(t *testing.T) {
+	// 模拟真实的本地化器：只对站内路径加前缀（外链由 core.ResolveSiteLink 放行）。
+	link := func(p string) string {
+		if strings.HasPrefix(p, "/") {
+			return "/en" + p
+		}
+		return p
+	}
+	for _, tc := range []struct {
+		name  string
+		value string
+		want  string
+	}{
+		{"站内路径加前缀", "/shop", ` href="/en/shop"`},
+		{"外链不动", "https://example.com/x", ` href="https://example.com/x"`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, attrs, err := buildAttrs(&Props{Action: ActionInternal, Value: tc.value}, nil, link)
+			if err != nil {
+				t.Fatalf("buildAttrs 意外报错: %v", err)
+			}
+			if attrs != tc.want {
+				t.Errorf("attrs = %q, 期望 %q", attrs, tc.want)
 			}
 		})
 	}

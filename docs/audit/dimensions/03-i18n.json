@@ -51,7 +51,8 @@
         "admin-ui",
         "i18n"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：后台模板文案全面 key 化（4 个子代理并行，父代理统一追加迁移注册）。① **成果**：门禁 `scripts/check-i18n-coverage.sh` 从 1712 降到 **18**，基线已下调至 18。52 个后台模板全部改为 `{{ .[\"t\"](\"key\", \"中文兜底\") }}` 取词，四个批次共新增 1987 条中英词条：组C（营销/订单/客户/邮件 12 页）765 条 = 迁移 190；组D（商品/库存 12 页）582 条 = 迁移 191；组E（站点结构 9 页）298 条 = 迁移 192；组F（系统管理 11 页）342 条 = 迁移 193。另 187（settings/plugins/media 101 条）与 188（article/content 149 条）是本条的前两批。② **剩余 18 行是故意保留的**，逐类记录：JS 的 `//` 注释（门禁脚本只剔 Jet `{* *}` 与 HTML 注释，不剔 JS 注释）、JS「服务端属性缺失时回退中文」的兜底字面量（5 处，改它会退化成本地空串）、`data-label=\"槽位/用途/当前绑定/操作\"` 这类 data 属性值、以及语言自称（简体中文 / 繁體中文 / 日本語 —— 不随界面语言变化，与 internal/templates/i18n.go 的 LanguageOption.Label 注释口径一致）。③ **含内联标签的长句一律按标签边界拆成成对 key**（如 xLead/xStrong/xTail），标签留在模板里，词条保持纯文本、**不用 `|raw`** —— 那会把后台可编辑的 sys_i18n 变成后台页面的 HTML 注入通道。④ **英文词条里约 207 个值刻意带首尾空格**（组C 报告）：模板是 `{{lead}}<strong>{{strong}}</strong>` 紧贴写法，中文不需要词间空格而英文需要；谁要批量 trim 词条值，英文页面会出现 \"A coupon hasa discount basis\" 这类粘连。组C 做了机器校验（渲染 en 版后检测字母数字紧贴标签/插值），0 处残留。⑤ **两条被实测推翻的既有认知**：(a) `article_translations.html` 注释称「range 内 `.` 指向元素、取不到根数据的 t 函数」——组D 用探针实证 `{{range _, x := .Y}}` 形式下 `.` 仍指向根数据（输出 `[m=\"\" r=m1 t=T(兜底)]`），故 range 体内直接 `.[\"t\"](...)` 可用；该文件的 `tr :=` 写法本身正确，只是注释理由不成立。(b) Jet 不支持 `{{x := .[\"t\"](\"k\",\"f\")}}` 赋值形式，range 内取词必须先 `{{tr := .[\"t\"]}}`。⑥ **一条会静默失效的坑（组E 踩到并修好）**：模板全面 t() 化后，**任何直接渲染模板的测试都必须在 data 里注入 `\"t\"`**，否则渲染在第一处取词处中断 —— HTTP 200 但 body 从那行起整块消失。`public/test/page/feature/pages_list_test.go` 就是因此报「列表页缺少 已发布」。组E 逐个核对了生产路径无此问题（9 个页面 handler 全部经 withCSRF→withI18n 注入 t）。⑦ 顺带修掉一个长期存在的静默缺陷：`content_templates.html` 首行原是 `{{* ... *}}`（双大括号包注释），Jet 解析报 unexpected token，该页**一直是 HTTP 200 + body 长度 0** 的白屏，全 admin 模板仅此一例。⑧ **注册块由父代理统一追加**（4 个代理并行改 register.go 必然互相覆盖）。追加过程中父代理自己引入并修复了四个缺陷，其中末组 key 的尾随逗号让判据 SQL 变成 `IN (..., 'k2', )`、迁移语法错误并导致 product/inventory 测试全线失败 —— 由组C 与组D **独立发现**，组D 还用隔离 PostgreSQL 三向取证（带逗号报语法错误 / 去掉返回 1 / 再删一个 key 返回 0）。最终 77 个 ConditionSQL 块零尾随逗号，并用 psql 真实执行验证判据可用。"
     },
     {
       "id": "I18N-002",
@@ -101,7 +102,8 @@
         "i18n",
         "api"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：四个模块的 enums 常量改为 i18n key（审计 I18N-002）。① **先核对了 finding 的字面前提**：masterdata 的 enums 里**没有中文文案** —— 它是实体类型白名单（EntityProduct / EntityProductVariant 那类），不是响应消息。所以实际范围是 4 个模块（order 62 / user 41 / mail 32 / cart 22 = 157 个常量），审计写的五个里有一个不在范围内。② **机制早已存在**：pkg/response.translate(c, message) 支持三种形态（纯 key / key|param / key: detail），且注释明确写着「均未命中时原样返回，保证改造窗口期（库缺资源）不出现异常输出」—— 本条要做的只是把常量值换成 key。用户面向的白名单 UserFacingMessages 列的是**常量名**而不是字面量，所以 key 化后自动同步，零改动。③ **审计明确要求的风险排查**：grep 五个模块里「常量值被当字符串比较」的地方，结论是**无**（唯一命中 s == \"{}\" 与 enums 无关）。④ 改动：157 个常量值改为 <模块>.msg.<语义> / <模块>.err.<语义>（照常量名派生，首字母小写），四个 seed 迁移（179 cart / 180 order / 181 user / 182 mail，共 314 行词条，zh-CN + en-US 双语）。user 的 ErrAccountLocked 含 %s，正好走 translate 的 key|param 形态。mail 的 TestMailText 在源码里是带 \\n 的转义序列，seed 里落成真换行（SQL 字符串允许换行）。⑤ 每条 seed 的 ConditionSQL 都**按本批自己的 key** 计数，不用 site.component.% 这类总量 —— 060 踩过「总量被后来批次满足、本批在干净库上被静默跳过」的坑。⑥ **新增机制测试**（public/test/enums/unit）：把 enums 里出现的全部 key 与同模块 seed SQL 里的 key 求差集。这条 finding 的改造是机械的，风险全在漏配 —— 加一个 ErrXxx 忘了 seed，响应层查不到就原样吐出 key，用户看到 cart.err.someNewCase；而这类漏配不会让任何编译或测试失败。测试纯文件级核对（读 enums 源码 + 读 seed SQL），不依赖数据库与 i18n 缓存，几毫秒跑完，并对四个模块做「一条都没扫到就失败」的自检。⑦ 负向验证：把 order.err.couponInUse 改成 seed 里没有的 key，测试立即失败并精确报出「这些 key 在 enums 里但 seed 里没有词条（用户会直接看到 key）：order.err.couponInUseTypo」，恢复后通过。⑧ 零测试破坏：grep 确认没有测试断言这些中文文案，迁移注册测试与全量通过。"
     },
     {
       "id": "I18N-003",
@@ -145,7 +147,8 @@
         "admin-ui",
         "operations"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：文案词条的后台管理页（审计 I18N-003）。此前词条只能靠迁移 seed 修改 —— 改一句错别字要写迁移文件、重跑迁移、重新部署，所以实际能改文案的人只有写代码的人。① 页面 /admin/i18n：列表（key 升序，同 key 内按语言，避免同一词条的各语言版本散落在不同页）+ 按关键词（同时匹配 key 与内容 —— 运营多半只记得「那句话大概是什么」）/ 语言 / 分类筛选 + 编辑 + 新增 + 删除；保存与删除用表单 POST + 302 回列表（这一页的操作只有「改一条字」一种，表单能把「保存成功了吗」直接反馈在页面上，不需要前端状态机），且回跳 URL 的筛选参数只从黑白名单读取，不做开放重定向。② 读写端口放在 pkg/i18n/admin.go（ListEntries / SaveEntry / DeleteEntry / Categories）：dashboard 依赖 pkg 单向，不新增模块间依赖。**保存后立刻 LoadCache()** —— 否则要等下一次定时刷新才生效，运营会以为「保存失败」然后反复保存，而每次保存都推进 revision、标记全站页面待重建，代价并不小；缓存重载失败不当作保存失败（词条已落库，晚几十秒生效是可接受的降级）。③ **seed 语义改为 ON CONFLICT DO NOTHING**（058/059/060/163/176/177 六个词条 seed）：seed 是**默认值来源**，后台是**真相来源**。旧的 DO UPDATE 会让运营的修改在下一次部署时静默回滚 —— 而「我明明改过」这种问题极难定位。每个文件的头部注释里都写清了这个分工与改默认值的正确做法。④ revision 不需要人工推进：i18n.Revision() 的兜底数据源是 max(sys_i18n.update_time)，任何词条写入都会推进它，构建期的依赖比对随之失效并触发重建。⑤ 权限：读页面不挂 Casbin（与其它只读页一致），写操作挂新权限点 i18n:manage（迁移 178，含超管策略与「站点工程」目录下的菜单）—— 保存与删除共用一个权限点，拆开只会让「给了保存、忘了删除」有机会发生，而它的表现是「删除按钮点了没反应」。页面组本身只有 Session + CSRF，漏挂权限点等于任何登录管理员都能改全站文案。⑥ 测试：词条页渲染测试断言的是**表格尾部**（分页提示与保存表单）而不只是标题 —— Jet 的 if 遇到缺失的键会中断渲染但状态码仍是 200，现象是「表格后半截没了」，从页面上看像数据少了；另跑一次空列表 / 空分类，确认保存表单仍在（否则运营无法新增第一条）。"
     },
     {
       "id": "I18N-004",
@@ -292,7 +295,8 @@
         "i18n",
         "sys_translation"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：文章内容翻译工作台（审计 I18N-006，与上一批的构建期取词合起来闭环）。① 页面 /admin/articles/translations（对称商品的 /admin/products/translations）：按文章分组的列表，每行显示「原文 + 译文输入」；正文（body）给多行 textarea，其余字段单行输入；整表提交（rowContext / rowHash / rowTarget 三组并行数组按位置对齐），只写真正变化的行 —— 重复保存零写入、不推进 revision。保存复用「保存内容」权限点（/api/content/update）：译文是文章内容的一部分，另立权限点只会让「能改文章但不能改它的译文」这种半吊子配置出现。② 三条验收对应的落点：文章译文在对应语言产物中生效（构建期经 content 实体解析器取词，见 content_translate.go）；改原文后旧译文按 hash 失效并回退原文（译文按 (原文内容哈希, 语境) 寻址，这一条是机制的天然结果而不是额外代码）；译文正文经过白名单清洗（构建期 core.SanitizeRichHTML，且只对有译文的行做 —— 回退原文时原文已洗过一遍）。③ 保存期的两道校验与构建期同源：语境必须是 contentcontract 声明的可翻译字段；富文本字段要求译文与原文**形态一致**（原文含 HTML 标签则译文也必须含）—— 保存期挡「整段丢了标签」这类明显错误，构建期的标签白名单挡恶意内容，两道各管一段。④ 页面数据是批量预载的（LoadTargets 一次查询再回填），按行逐条查会随文章数放大成 N 次 SQL，而工作台一屏要列出 50 篇的全部可翻译字段。⑤ 测试：service 层 5 条（字段选择：只翻作者文本、图片地址与 focusKeyword 刻意不翻 —— 前者翻了会 404 且只在非默认语言站点出现；富文本译文被清洗；纯文本字段不被转义，标题里的「A < B」是合法内容）+ 页面渲染 1 条（断言表单尾部与三组同序字段 —— 保存端按位置对齐，模板少输出一个隐藏域就会整体错位，而错位的表现是「译文写到了别的字段上」，页面看起来完全正常）。⑥ 未做（如实记录）：后台菜单项（入口目前直达 URL）—— 审计的 steps 只要求页面本身，菜单属后台导航的批量整理。"
     },
     {
       "id": "I18N-007",
@@ -335,7 +339,8 @@
         "navigation",
         "i18n"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：导航标签的译文维护入口（审计 I18N-007，与 I18N-018 的构建期那一半合起来闭环）。① 新增 /admin/navigations/translations：按位置（页眉 / 页脚）分组列出全部菜单文字，逐条给译文输入框，整表提交、只写真正变化的行（重复保存零写入、不推进 revision）。保存复用「修改导航」权限点（译文是导航项内容的一部分）。② 语境恒为 navigation.label，与构建期 pipeline.NavigationAdapter 用的语境**逐字一致**（同一个函数生成）—— 这是本条的关键：写入口与读入口的语境一旦分叉，译文会安静地存进去、永远读不出来。因此保存时的第一道校验就是「语境必须等于该值」，不接受任何其它语境。③ 按原文哈希**去重**：同一位置出现多次的相同文字只列一行 —— 译文按 (原文哈希, 语境) 寻址，列出多行会让人不知道「改哪一行才算数」（改哪行其实都一样，但页面上看不出来）。④ 保存成功后标记**全站页面**待重建（菜单文字出现在每个页面上，所以这里没有「精确到某页」的选项，与页面翻译工作台同一链路）；标记失败只记日志，不让运营以为保存失败（译文此时已经落库）。⑤ revision 不需要人工推进：i18n.ContentRevision() 的数据源是 sys_translation 的 max(updated_at)，任何译文写入都会推进它，构建期的依赖比对随之失效并触发重建。⑥ 测试：页面渲染 1 条 —— 断言三组同序字段（rowContext / rowHash / rowTarget，保存端按位置对齐，模板少输出一个隐藏域就会整体错位，而错位表现是「译文写到了别的菜单项上」）、空位置分支（没有菜单项时不该整页消失）、以及输出中不得残留模板语法字面量。⑦ 与 I18N-018 的分工：那条定的是「Menu 模式的 label 归 navigation 维护、自定义菜单模式归页面翻译工作台」并落地了构建期回填（pipeline.NavigationAdapter）；本条补的是前者的**后台入口**。"
     },
     {
       "id": "I18N-008",
@@ -377,7 +382,8 @@
         "i18n",
         "a11y"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：媒体 alt 的多语言（审计 I18N-008）。① **先核对了这条 finding 的字面前提**：sys_files（AttachmentEntity）**没有 alt 列** —— 媒体文件在这里只有文件名 / 路径 / 尺寸 / mime / md5 等结构化字段，没有编辑期可填的替代文本。所以「媒体 alt」在本代码库的落地形态是**组件里作者填的 alt**（image.alt / gallery 的每项 alt / infobox.mediaAlt），而不是媒体库的元数据字段；审计的「媒体编辑增加译文字段」按字面没有位置可加。这个核对结论比改动本身更重要 —— 照着字面去给媒体库加一个 alt 列，会造出一个没人知道的空字段。② 用**机器核对**（而不是人眼过一遍）扫全部组件：凡 Props 的 json 名以 alt 结尾的 string 字段，都必须在 Translatable 白名单里。结果：gallery ✓、image ✓、infobox ✗（它声明了 title / text，漏了 mediaAlt）。③ 修 infobox 的 Translatable 加上 mediaAlt。④ 新增机制测试 components_alt_i18n_test.go：反射遍历 core.Types() → PropsSpec() → 白名单，自动核对上述规则。判据刻意宽松，只看 json 名以 alt 结尾的 string 字段 —— 宁可漏判结构字段，也不要把样式字段误报成文案，因为误报会让这条测试被当成噪音关掉，而关掉之后所有漏声明都再也拦不住。测试自带 checked == 0 的自检：一条都没扫到就显式失败，避免判据失效后退化成永远通过的空壳。⑤ 做了负向验证：临时移除 infobox 的 mediaAlt 声明 → 测试立即失败并精确报出「core.infobox 的 Props.MediaAlt（json=mediaAlt）是文本字段却没声明可翻译」，恢复后通过。⑥ 这类缺陷的特征是**只在非默认语言站点可见**（默认语言站点完全看不出问题），人工评审几乎必然漏，所以这条 finding 的长期价值在于机制测试而不是那一行修补。"
     },
     {
       "id": "I18N-009",
@@ -419,7 +425,8 @@
         "sys_translation",
         "multi-tenant"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：sys_translation 的工程作用域（子代理实现，**前提成立但方案与审计不同**）。① **现状核对**：`psql \\d sys_translation` 确认无 project_id、主键为 (source_hash, context, lang) —— 审计前提成立（本会话罕见的适用条目）。② **与审计原文的唯一分歧**：审计建议另建 `sys_translation_override` 覆盖表，代理改为**在当前表加列**。理由写进迁移注释：覆盖表要两次批量查询 + 应用层 merge，且**产生两处写入口**（译文可能同时存在于两张表，谁赢取决于代码路径而不是数据）；单表 + 作用域唯一键用一条 SQL 就能拿到「工程行优先、回落全局」，而内容寻址语义（按 sha256 定位、改原文自动失效）逐字保留。审计担心的「改主键会失去内容寻址」在本方案里不成立 —— 只是把隐式的全局作用域变成显式的 (project_id, hash, context, lang)。③ **既有行填 NULL = 全局共享，不回填默认工程**：回填到某个工程会让其它工程立刻读不到这些译文，而**迁移期无从判断「这条译文当初是为哪个站点翻的」**；副产品是迁移不依赖 projects 表内容，空库也能跑。NULL 表示全局在本项目已有先例（inventory 变动原因字典）。明确排除 NOT NULL 无默认值（会让有数据的库直接失败）。④ **唯一键用 NULLS NOT DISTINCT（PG15+）**：权衡三种写法 —— 普通唯一索引让 NULL 互不相等（全局行可重复）、哨兵 UUID 会**丢掉 projects 外键级联**、NULLS NOT DISTINCT 正解。已在 PG 18 实测六种情形（全局行 upsert 命中同一行、三作用域同 key 并存、工程行压过全局行、未覆盖回落全局、删工程级联清译文、整份迁移重跑幂等）。因主键列不允许 NULL，旧主键被 DROP，唯一性由 uq_sys_translation_scope_key 承担。⑤ 无工程上下文时走「全局行优先」的确定性查询（DISTINCT ON），避免同键多行按物理行序互相覆盖。商品/内容域取词用项目既有的 `core.BuildProjectID(ctx)` 约定（与 BuildLang 同源），页面/模板/导航三条路径显式透传。"
     },
     {
       "id": "I18N-010",
@@ -489,7 +496,8 @@
         "i18n",
         "artifact"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：组件固定文案全部抽 key 并落词条。多语言有两套机制（Translatable 管作者填的文案、I18nAware 管组件自带文案），本条做的是后者。① 8 个组件的文案抽成 site.component.* key 并在构建期取词：productList（模板 12+ 处）、cardstack（aria-label 8 处）、orderList（无 JS 引导 3 句 + 错误提示）、product（库存兜底 1 句）、searchResults（可访问标签与按钮各 1 个 key）、userForms（降级文案 2 句 + **Go 侧 9 个默认表单标题**）。模式统一：文案集中在 Labels 结构体（散成十几个 View 字段就看不出「哪些还没接多语言」）+ 中文兜底常量（未接入 i18n 时产物**逐字一致**，既有测试如 product_test.go 的文案断言就是天然回归）+ 模板只取值。② 几处刻意的取舍：product 的库存兜底是片段未接入时访客唯一能看到的库存说明；searchResults 用两个 key 而不是一个（sr-only 标签给读屏器、按钮文字给人看，中英恰好同形但别的语言不一定）；orderList 的 Notice 只在「缺站点工程」这条错误路径有值，空值时**不填**（否则正常容器凭空多一行提示）；userForms 两句都带 %s 占位符（「打开 X 页」在别的语言未必「打开」在前）；cardstack 的逐卡 aria 必须在 ApplyI18n 里**重算**（卡片在 BuildView 构造、翻译在其后 —— 只在 BuildView 生成会出现「容器翻译了、卡还是中文」）。③ 顺带揪出的两类问题：(a) userForms 的九个默认表单标题在 Go 侧 formSpecs 里，契约测试只扫 .jet 所以从来没发现它 —— 英文站点上九个表单标题全是中文，已抽 key 且**作者填过的不覆盖**（判据是「当前值恰好等于中文默认」）；(b) productcard / productselector 是我最初用「含注释的 grep」误判的**假条目** —— 给契约测试加了「登记了但扫描不到文案」的检查后自动报出来（与上轮的「登记了但已实现」检查互补，两张表都不会再有僵尸）。④ 词条：176（productList 16 key）+ 177（其余组件 26 key），中英各 42 行，占位符一律 %s，判定按**本批 key 集合**而不是总数门槛（060 就是因为总数门槛被后续批次顶掉，导致新库静默缺 13 条词条，见 register.go 里的记录）。⑤ 测试：i18n seed 行数断言（471/355/56）+ productlist 的 3 条 i18n 单测 + 组件文案契约测试（待办归零）。**未覆盖（盲区，已写进测试注释）**：契约测试只看 .jet 模板，Go 侧还有没有硬编码文案只能靠人工排查 —— 没有自动手段能区分「Go 里的取词兜底常量」（本就该是中文）与「Go 里漏抽的硬编码文案」。"
     },
     {
       "id": "I18N-011",
@@ -718,7 +726,8 @@
         "i18n",
         "page"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：页面 SEO 字段的多语言（审计 I18N-014）。① 可翻译的是 Title 与 Description，语境按审计指定的 page.seo.title / page.seo.description，定义成**常量**（SEOTitleContext / SEODescriptionContext）：写入口（翻译工作台）与读入口（构建期）各写一份字面量迟早分叉，而症状是「译文填了但不生效」且页面上完全看不出区别。刻意不翻的字段各有理由：Canonical / OGImage 是 URL（翻了会指向不存在的文件）；FocusKeyword / SecondaryKeywords 是**评分器输入、不进构建产物**（与 content 模块的 focusKeyword 同一判断，测试里钉住了「它不进候选」）。② 新增 builder.AppendSEOCandidates，同时用于两处：构建期的 CollectContentCandidatesForDocument，以及**页面翻译工作台**的候选收集。后者是这条 finding 里最容易漏的一半 —— 工作台原先用 CollectContentCandidates（只扫 AST），构建期用文档级版本，两侧候选本来就不对称；只在构建期补 SEO 的话功能是半截的：译文取得到，但作者在工作台里根本看不到这两个字段可填。③ 构建期取译文两处：BuildSEOHead 的 title/description 入参，以及 CompiledPage.Title / MetaDescription（后者供 sitemap 与 OG 用）。无译文时逐字节回退原文。④ 测试（builder 侧，纯逻辑不碰库）：SEO 两条进候选集合、空 SEO 字段不产生候选（空串的 hash 无意义，写进候选只会让 Misses 虚增）、focusKeyword 即使填了也不进候选。⑤ 口径说明：商品域的实体 SEO 字段早已走商品域内容翻译（语境形如 product_category.seoTitle，见 entity_source_translate.go），页面 SEO 按审计指定用 page.seo.<字段> —— 命名不同但机制同源（同一张 sys_translation、同一条内容寻址），差异只在语境前缀，这正是审计指定的形状。"
     },
     {
       "id": "I18N-015",
@@ -768,7 +777,8 @@
         "url",
         "components"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：站内链接统一走语言前缀规则（审计 I18N-015）。① core 新增 ResolveSiteLink：只处理**站内相对路径**；外链（含 scheme）、协议相对地址（//cdn/x）、锚点、相对路径（a/b）一律原样返回。**未注入解析器时也原样返回** —— 链接缺语言前缀是可见降级，抛错会让整页构建失败，两者相比前者明显可接受。另加 SiteLinkOrSame 做 nil 安全包装：组件既可能拿到装配期注入的解析器也可能在单测里拿到 nil，每个组件各写一遍判断迟早漏一个，漏掉的那个在测试里 panic。② builder 加 WithSiteLinkResolver 选项；pipeline.SiteCompileOptions 里用 LangURLRuleForProject → SitePath 接线 —— 规则与页面路径**同源**（不另立一套），否则迟早出现「页面在 /en/shop、按钮指向 /en/shop/」这类只差一个斜杠的坏链。③ 落地到四个有**作者可填链接**的组件：button（ActionInternal 静态链接）、image（link）、card（buttonLink）、list（item.link）。card / list 经闭包适配 atomViewOf / leafViewOf（它们只接受 func(*Props) View，不能直接改签名）。④ **边界（我改了主意并回退）**：CMS 绑定值（button 的 ActionLink → post.permalink）**不**本地化。那个值的语义由内容作者掌握，可能已经是完整访问路径（/en/x），再前缀一次会指到不存在的地址；而且组件层无法判断「/en/x 的 /en 是语言前缀还是路径本身」。第一版我把它也接进去了，随即回退并在注释里写清这个分工。⑤ 其余输出 href 的组件逐个核对过，都不需要改：video / text / progress / marquee / spacer / faq / countdown / accordion / infobox / quote / socialbuttons 没有作者可填的站内链接；nav 走 LocalizeMenuURL、languages 是语言切换、productlist/productcard/cardstack 走 LinkPrefix、gallery/searchresults/carticon/orderlist/userforms 输出的是片段地址或已有本地化路径。⑥ 测试：core 侧放行规则 + card 用例（加前缀 / 未注入时原样）+ button 用例（站内加前缀、外链不动、CMS 值不本地化）。⑦ 顺带修正：TestSiteCompileOptions_Minimal 原先断言「无可选端口时只有 1 个 option」，Lang 非空时现在会多注入一个站内链接解析器，断言改为 2 并在注释里说明多出来的是哪一个。"
     },
     {
       "id": "I18N-016",
@@ -861,7 +871,8 @@
         "publication",
         "seo"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：禁用语言后已激活路由的清理（审计 I18N-017）。① 端到端链路：project 声明消费者侧端口 LocaleRetirePort（影响面预览 + 下线），page 实现（page_locale_retire.go），装配期 projectService.SetLocaleRetirePort(retire) 注入（setter 放在 ProjectService 接口里，因为装配层只拿到接口）。方向是 project → 端口 → page，反向会成环（page 本来就依赖 project）。② 语言**直接查库**（page_publications.lang），不从路径前缀反推：路径前缀是展示规则、语言是事实，改过前缀配置的站点上按前缀反推要么删不到、要么删到别的语言（/en 改成 /eng 之后）。实现用 ListAll + ListPublicationsByPages(ids, lang) 拿该语言的全部已激活路径，不遍历单页路由。③ 清理顺序：DB 路由占用 → 访问面符号链接 → 发布/暂存指针。访问面必须在指针之前清 —— 指针没了会有人在后台看到「这个页面未发布」而访问面上产物还在服务；反过来（先清指针）留下的窗口里符号链接是唯一线索。④ SaveLocales 的语义：未确认时**整体拒绝**（清单也不能变，否则运营会以为「没生效」而反复尝试，测试断言了这一点），错误信息里直接报出受影响路径数 —— 错误本身就是预览，省掉一个独立接口；确认后**清单先落库再下线路由**，倒过来会出现「路由已下掉但语言仍在清单里」的中间态，那种状态后台看起来一切正常、只有访问面是坏的。⑤ **去掉了 redirectToDefault 参数**：publication.Redirect 只接受 ArtifactID / PageID，没有「301 到任意路径」的形态，实现它需要为默认语言的同名路径生成一份重定向产物，是另一个量级的工作；审计里这条本就是可选项。留一个永远被忽略的参数比不留更坏 —— 调用方会以为它生效了。⑥ 测试三条（真库）：未确认拒绝且清单不变且**没有真下线**（把不可逆操作变成默认可行是最坏的失败模式）；确认后交给下线端口、影响面为 0 时不打扰运营；DeletePublicationsByLang **只删一个语言** —— 这条最关键，原有的 DeletePublications(pageID) 没有语言维度，禁用一种语言时会把仍在服务的另一种语言的指针一起清掉，那个语言会立刻失去「已发布」状态而访问面还在服务，后台与访问面从此各说各话且无从定位。⑦ 负向验证：去掉「未确认则拒绝」的判断后测试立即失败并报出「禁用 en-US 会让 3 条已激活路径失去归属」，恢复后通过。⑧ 过程中踩到并记录的坑：m.DB(ctx) 绑定的是 pages 表（误用它删除发布行会得到 `column \"page_id\" does not exist`，看起来像模型写错了），发布/暂存表各有自己的 accessor；测试的 AutoMigrate 必须带上 PageEntity（发布表的 page_id 带外键，缺它时报 `relation \"pages\" does not exist`，同样容易被误读成模型写错）。⑨ 未覆盖：RetireLocale 实现本身的端到端行为（需要完整的 page 装配：artifact + publication + project 三条契约），目前由「model 层按语言删除 + SaveLocales 调用契约」两段测试夹住，中间那段的下线顺序与幂等性尚无测试。"
     },
     {
       "id": "I18N-018",
@@ -905,7 +916,8 @@
         "components",
         "i18n"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：core.nav 的 label 翻译归属定案（审计 I18N-018）。冲突是：core.nav 声明了 label 在 Translatable 白名单里，但当数据源是 Menu=header/footer 时 label 来自 navigation 模块的节点、**根本不在页面文档的 Props 里** —— 页面翻译工作台看不到它，白名单对它也无效，作者在页面翻译工作台里改「导航文字」永远不会生效。① 定案：两种模式各自归属不变，但差异写进代码与注释 —— Menu 模式下 label 由构建期的导航解析器补译文，自定义菜单模式走 Translatable + 页面翻译工作台。理由：菜单的归属决定它归谁维护，全局页眉导航改一处就该全站生效，绑进某一页的翻译里会出现「改了这页、那页没变」。② 落地：pipeline.NavigationAdapter 在交出菜单树之前用 sys_translation 回填 label（语境 navigation.label，与审计指定的命名一致）；批量做法是先收集全部原文算 ContentHash、一次 NewContentTranslator 预载、再回填 —— 逐个查会按菜单项数放大成 N 次 SQL，而构建期每个页面都会走这条路。③ 可测性：适配器增加可注入的 ContentStore 字段（空则用 pkg/i18n 默认存储），否则这条链只能靠起库的集成测试覆盖，容易在重构里被静默抹平（改成不翻译照样编译通过）。④ 测试 4 条：命中译文替换（含子节点 —— 菜单是树，漏子树等于只翻一半）、未命中回退原文（英文站点缺译文是常态，菜单项没文字等于少一个入口）、未指定目标语言时不查库不动标签、纯数字标签不进译文表。"
     },
     {
       "id": "I18N-019",
@@ -956,7 +968,8 @@
         "i18n",
         "testing"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：组件文案与多语言声明的一致性契约测试。多语言有两套机制、管的是不同的东西 —— Translatable 白名单管「作者填的文案」（经 sys_translation 取译文），I18nAware 管「组件自带的固定文案」（构建期取词）；缺任一都不会报错：缺 Translatable 是「作者填的文案翻不了」，缺 I18nAware 是「按钮永远是中文」—— 都只在非默认语言的产物里才看得出来，而不看非默认语言的站点太多了。① 新增 internal/builder/components_i18n_test.go：遍历全部组件目录，扫 *.jet 里的**用户可见硬编码中文**（排除 Jet 注释 `{* *}` 与 HTML 注释 `<!-- -->`），要求该组件要么实现 I18nAware（同目录 Go 文件里存在 `func (… ) ApplyI18n(`），要么在豁免表或待办表里明确登记。**只看模板不看 Go**：Go 里的中文常常正是 I18nAware 的兜底常量（text 为 nil 时用），把它算成硬编码会得到一堆假阳性；模板里的中文没有这层歧义，它就是会烘进产物、访客会读到的那串字。② 三向一致 + 僵尸检测：扫描结果必须等于 已实现 ∪ 豁免 ∪ 待办，且两张表里的条目若已实现 I18nAware 会**报错**（缺口消失比缺口存在更难发现 —— 补齐后没人删表，登记就变成「这里还有活」的误导）。③ 扫描结果：8 个组件模板含硬编码文案（cardstack / orderlist / product / productcard / productlist / productselector / searchresults / userforms），全部登记为待办并注明归 I18N-010；0 个豁免 —— 唯一疑似需要豁免的两例（globalref / layoutslot 里的 `<!-- 全局块引用 -->`）在扫描阶段就被 HTML 注释过滤器排除了，注释不是访客可见文案，进不了候选集就不需要豁免（豁免机制保留，理由写清：下一类豁免 —— 纯图形组件 —— 随时会出现）。④ **反向验证**：临时移除 cardstack 的登记后测试失败并点名该组件、恢复后通过 —— 证明这条测试真的会抓缺口，不是永远绿的装饰。⑤ 审计提到的第二半「有文本型 Props 的都在 Translatable 白名单里」由既有 ValidateTranslatable 覆盖（组件注册时校验白名单字段真实存在于 Props 的 JSON 字段集合，component.go），未重复造。**未做**（归属明确）：8 个组件的 I18nAware 实现 —— 审计把「逐组件实现」列在 I18N-010 的 steps 里，本条只负责契约与登记（缺口现在可见且不可新增）。"
     },
     {
       "id": "I18N-020",
@@ -1044,7 +1057,8 @@
         "dead-link",
         "publication"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：语言切换器不再产生 404（审计 I18N-021）。① 根因比条目描述更具体：SiteRouteEntries **只从「启用语言」推导路径**，它不知道某个语言的页面到底有没有构建成功 —— 于是「已登记但未发布」的语言出现在切换器里，用户点过去看到的不是「还没翻译」而是站内 404（站点看起来是坏的，而不是「这个语言还没做」）。② 判据取**访问面本身**：active 目录下的符号链接就是「这个路径发布了没有」的真相，与访客看到的完全一致。不查数据库路由表 —— 那张表只会回答「已登记」，而「已登记 = 可见」正是这条 finding 的成因。实现走 pipeline.PublicationStore 已有的 Inspect（Kind 为 page/redirect/none，redirect 也算已发布），每页每语言一次 lstat，成本可忽略。③ 审计给了两条路径，我选了第二条并说明理由：第一条「发布前整批校验」需要新的批量发布入口（现有 Publish 每次只处理一个语言 + 一个路径，没有批量语义），成本远高于该条目 1 天的估计；第二条「切换器降级」直接消除 404 且不改变发布模型。④ 过滤规则两条：published 为 nil（未接入校验）→ 原样返回，产物行为与接入前逐字一致；**当前语言的条目一定保留**，哪怕它自己未发布 —— 少了这条，用户在看 /en/about 时切换器里没有 en-US，会以为站点只有中文。⑤ 抽成纯函数 filterPublishedLocales 是为了可测：LocaleView 需要 projectcontract.ProjectService（大接口），桩代价高，而这段判断恰恰最容易写错、也最该被钉住。⑥ 端口 SiteCompilePorts.RoutePublished 可空，装配在 page_assemble.go 与 presentation_render.go 两处，都用各自 service 已有的 LocalPublicationStore。⑦ 测试 4 条子用例：未接入时原样返回、未发布的语言被跳过、当前语言不参与过滤、全部未发布时只剩当前语言。**如实记录**：我自己在这条上被测试绊了两次 —— 第一次用例把 /about 误判为未发布，第二次两个子测试语义重叠导致「当前语言保留」根本没被测到。两次都说明这段逻辑确实反直觉，测试的价值正在于此。"
     },
     {
       "id": "I18N-022",
@@ -1178,7 +1192,8 @@
         "sys_translation",
         "lifecycle"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：sys_translation 孤儿行清理（子代理实现，**定义与触发方式都刻意保守**）。① **孤儿定义（写在 content_orphan.go 文件头）**：工程级译文行里，(A) `source_hash ≠ sha256hex(trim(source_text))` —— 这类行永远不可能被内容寻址命中；或 (B) 该 (hash, context) 不在该工程当前源文档的候选取值集合里。② **判据 A 的裁决在 Go 侧用 `ContentHash` 复核，不在 SQL 里重写 trim/hash 规则** —— 避免 PostgreSQL 的 `btrim` 与 Go 的 `TrimSpace` 在 **Unicode 空白**上漂移；两处实现一旦漂移，「这条译文是不是孤儿」的答案就取决于你问谁。③ **全局行永不参与清理**：单工程扫描无法判断它是否还被别的工程使用。④ **不自动清理**：源数据暂时缺失时译文看起来就是孤儿，**自动删丢掉的是人工翻译** —— 这个代价不对称（误删人工翻译不可逆，留一条孤儿行只是占几行存储）。⑤ 显式入口是运维命令 `cmd/i18n-orphan`（默认 dry run，-apply 才删），输出固定含「检出 N 行、清理 M 行」。⑥ 自查项：retention/catalog.go 里 sys_translation 的声明原写「孤儿清理未接入」，新增 CleanupOrphan 类型并同步该条声明与 catalog_test.go 的断言（按引用清理的条目 Retain 必须为 0、执行者必填），否则声明会与新机制自相矛盾 —— 超出任务字面范围，但属「避免文档与现实打架」的最小必要改动。"
     },
     {
       "id": "I18N-025",

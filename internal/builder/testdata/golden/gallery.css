@@ -51,10 +51,6 @@ body {
   transition: transform 300ms ease, box-shadow 300ms ease, filter 300ms ease;
 }
 
-.sky-c-ga2 .gi:hover {
-  transform: scale(1.05);
-}
-
 .sky-c-ga2 .gi {
   position: relative;
 }
@@ -65,10 +61,6 @@ body {
   inset: 0;
   background: transparent;
   transition: background 300ms ease;
-}
-
-.sky-c-ga2 .gi:hover::after {
-  background: rgba(0,0,0,0.35);
 }
 
 .sky-c-ga2 figcaption {
@@ -86,10 +78,6 @@ body {
 .sky-c-ga2 figure {
   position: relative;
   overflow: hidden;
-}
-
-.sky-c-ga2 figure:hover figcaption {
-  opacity: 1;
 }
 
 @media (max-width: 1024px) {
@@ -111,6 +99,36 @@ body {
   flex: 0 0 100.000%;
 }
 }
+
+@media (hover: hover) {
+  .sky-c-ga2 .gi:hover {
+  transform: scale(1.05);
+
+}
+}
+@media (hover: hover) {
+  .sky-c-ga2 .gi:hover::after {
+  background: rgba(0,0,0,0.35);
+
+}
+}
+@media (hover: hover) {
+  .sky-c-ga2 figure:hover figcaption {
+  opacity: 1;
+
+}
+}
+@media (hover: none) {
+  .sky-c-ga2 figcaption {
+  opacity: 1;
+
+}
+}
+
+.sky-c-ga2 .gi:active::after {
+  background: rgba(0,0,0,0.35);
+
+}
 }
 
 @layer sky-auto {
@@ -120,4 +138,12 @@ body {
 
 }
 }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

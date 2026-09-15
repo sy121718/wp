@@ -154,11 +154,16 @@ type CouponResp struct {
 	PerUserLimit     int        `json:"perUserLimit"`
 	StartsAt         *time.Time `json:"startsAt"`
 	EndsAt           *time.Time `json:"endsAt"`
-	Status           int        `json:"status"`
-	StatusLabel      string     `json:"statusLabel"`
-	Remark           string     `json:"remark"`
-	CreateTime       time.Time  `json:"createTime"`
-	UpdateTime       time.Time  `json:"updateTime"`
+	// TimeZone 时间窗的解释口径（审计 TX-011）。
+	//
+	// 与 startsAt / endsAt 一起返回，后台表单据此提示「填的是哪个时区的时间」——
+	// 少了它，界面上只有一个裸时间，运营只能靠猜；而猜错的后果是券提前生效或永远不生效。
+	TimeZone    string    `json:"timeZone"`
+	Status      int       `json:"status"`
+	StatusLabel string    `json:"statusLabel"`
+	Remark      string    `json:"remark"`
+	CreateTime  time.Time `json:"createTime"`
+	UpdateTime  time.Time `json:"updateTime"`
 }
 
 // CouponListResp 列表结果。

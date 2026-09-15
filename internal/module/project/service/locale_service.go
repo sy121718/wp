@@ -5,6 +5,7 @@ package projectservice
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -12,10 +13,15 @@ import (
 	projectmodel "go_wp/internal/module/project/model"
 
 	"go_wp/pkg/i18n"
+	"go_wp/pkg/logger"
 )
 
 // errLocaleInvalid 语言清单非法（空清单、重复语言、默认语言未启用、语言码非法）。
 var errLocaleInvalid = errors.New("语言清单不合法")
+
+// errLocaleRetireNeeded 禁用语言需要显式确认（审计 I18N-017）：该语言还有已激活路径，
+// 直接保存会在访问面留下无人认领的 /en/… 路由。
+var errLocaleRetireNeeded = errors.New("禁用语言需要确认")
 
 // ListLocales 列出站点语言清单（默认语言在前；无记录时返回空切片）。
 func (s *Service) ListLocales(ctx context.Context, projectID string) (res []projectdto.LocaleResp, err error) {
@@ -122,10 +128,78 @@ func (s *Service) SaveLocales(ctx context.Context, req *projectdto.LocalesSaveRe
 		}
 	}
 	rows[defaultIdx].IsDefault = true
+
+	// 禁用语言会留下一批**失去归属**的已激活路由（审计 I18N-017）：
+	// 访问面还服务着 /en/…，而语言清单里已经没有 en —— 后台再没有任何入口能改它或
+	// 下掉它，只能人工登机器删符号链接。所以这是一次需要显式确认的不可逆变更。
+	before := s.enabledLangsOf(ctx, req.ProjectID)
+	after := map[string]bool{}
+	for i := range rows {
+		if rows[i].Enabled {
+			after[rows[i].Lang] = true
+		}
+	}
+	removed := make([]string, 0, len(before))
+	for _, lang := range before {
+		if !after[lang] {
+			removed = append(removed, lang)
+		}
+	}
+	if len(removed) > 0 && s.retire != nil {
+		total, impacted := s.localeRetireImpact(ctx, req.ProjectID, removed)
+		if total > 0 && !req.ConfirmRetire {
+			return nil, fmt.Errorf("%w：禁用 %s 会让 %d 条已激活路径失去归属，确认后重试",
+				errLocaleRetireNeeded, strings.Join(impacted, "、"), total)
+		}
+	}
 	if err = s.model.ReplaceLocales(ctx, req.ProjectID, rows); err != nil {
 		return nil, err
 	}
+	// 清单先落库再下线路由：倒过来会出现「路由已下掉但语言仍在清单里」的中间态，
+	// 而那种状态在后台看起来一切正常，只有访问面是坏的。
+	if len(removed) > 0 {
+		if s.retire == nil {
+			logger.Scene("project").With("project", req.ProjectID).
+				Warn("语言下线端口未接入，被禁用语言的路由不会被清理")
+		} else {
+			for _, lang := range removed {
+				if _, rerr := s.retire.RetireLocale(ctx, req.ProjectID, lang); rerr != nil {
+					return nil, fmt.Errorf("语言 %s 的路由下线失败: %w", lang, rerr)
+				}
+			}
+		}
+	}
 	return s.ListLocales(ctx, req.ProjectID)
+}
+
+// enabledLangsOf 当前启用语言（读取失败返回 nil：调用方按「无变化」处理，不阻断保存）。
+func (s *Service) enabledLangsOf(ctx context.Context, projectID string) []string {
+	list, err := s.ListLocales(ctx, projectID)
+	if err != nil {
+		return nil
+	}
+	out := make([]string, 0, len(list))
+	for _, item := range list {
+		if item.Enabled {
+			out = append(out, item.Lang)
+		}
+	}
+	return out
+}
+
+// localeRetireImpact 统计这批语言各有几条已激活路径（总数为 0 时不必打扰运营）。
+func (s *Service) localeRetireImpact(ctx context.Context, projectID string, langs []string) (total int, impacted []string) {
+	for _, lang := range langs {
+		n, err := s.retire.LocaleRetireImpact(ctx, projectID, lang)
+		if err != nil {
+			continue
+		}
+		if n > 0 {
+			total += n
+			impacted = append(impacted, lang)
+		}
+	}
+	return total, impacted
 }
 
 // normalizeLangCode 语言码白名单校验（与 pipeline.NormalizeLang 同规则：

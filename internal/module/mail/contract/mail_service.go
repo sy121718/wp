@@ -70,6 +70,51 @@ type MailService interface {
 	UnsubscribeByToken(ctx context.Context, token, ip, ua string) (string, error)
 }
 
+// TransactionalSender 事务邮件发送端口 —— 按模板 key + 语言发**一封**事务邮件。
+//
+// 单独一个接口而不是并进 MailService：事务链路的调用方（注册验证 / 密码重置 / 访客开号）
+// 一条发信账号、模板管理、群发、报表能力都用不上，拿到整个 MailService 只会扩大误用面。
+// 与 TrackingService 同一手法 —— 越权防护靠**接口形状**，不靠调用方自觉。
+//
+// 入参用本契约自有类型（SendInput / SendOutcome）而**不借用 dto**：
+// dto 服务 HTTP 层绑定，形状随绑定需求变；对外契约的形状只随语义变。
+// 事务语义写死在类型里 —— 恒用事务用途的默认账号，不带群发活动 / 联系人 / 操作人，
+// 那三个字段属于后台群发链路，事务调用方没有任何场景该填。
+type TransactionalSender interface {
+	// SendTransactional 按模板 key + 语言渲染并投递一封事务邮件。
+	//
+	// 模板不存在 / 变量缺失 / 收件人为空一律返回 error；
+	// 收件人在抑制名单内不算失败 —— 返回 SendOutcome{Suppressed: true} 且 err 为 nil。
+	SendTransactional(ctx context.Context, in *SendInput) (*SendOutcome, error)
+}
+
+// SendInput 事务邮件的发送请求（契约自有形状，非 dto 别名）。
+//
+// 刻意只有四个字段：事务链路需要的语义就是「哪套模板、什么语言、发给谁、变量是什么」。
+// AccountID / CampaignID / ContactID / OperatorID 一律不暴露 ——
+// 前者的缺省（事务默认账号）是模块内部决定，后三者属群发链路。
+type SendInput struct {
+	// TemplateKey 模板键。
+	TemplateKey string
+	// Locale 收件语言；为空时按模块既有的语言回退口径处理。
+	Locale string
+	// To 收件地址。
+	To string
+	// Vars 模板变量。
+	Vars map[string]any
+}
+
+// SendOutcome 事务邮件的投递结论 —— 只暴露调用方能判定的两件事。
+//
+// 不发日志主键：那是 mail 模块内部的排障标识，调用方凭它做不了任何决定，
+// 暴露出去只会诱使调用方把它当业务引用存下来（日志轮转后就失效了）。
+type SendOutcome struct {
+	// Queued 已受理入队。
+	Queued bool
+	// Suppressed 因退订 / 抑制名单未实际投递。
+	Suppressed bool
+}
+
 // TrackingService 追踪端点需要的最小能力。
 //
 // 单独一个接口而不并进 MailService：公开路由不该拿到账号 / 模板 / 群发这些后台能力，

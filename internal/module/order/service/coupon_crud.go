@@ -305,8 +305,10 @@ func toCouponResp(e *ordermodel.CouponEntity, now time.Time) *orderdto.CouponRes
 	if e == nil {
 		return nil
 	}
+	// 时间窗的解释口径随券一起返回（审计 TX-011）：界面上必须能看出「填的是哪个时区」。
 	return &orderdto.CouponResp{
-		ID: e.ID, ProjectID: e.ProjectID,
+		TimeZone: couponWindowLocation.String(),
+		ID:       e.ID, ProjectID: e.ProjectID,
 		Code: e.Code, Name: e.Name,
 		DiscountType: e.DiscountType, DiscountValue: e.DiscountValue,
 		DiscountLabel:    couponDiscountLabel(e),

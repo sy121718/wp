@@ -69,11 +69,60 @@ func TestScrollRevealLayered(t *testing.T) {
 			t.Errorf("CSS 缺少 %q\n%s", want, compiled.CSS)
 		}
 	}
-	// 注入断言：容器自身与顶层组件各一份（共 2 次）；容器 off 仅豁免其子树。
+	// 注入断言：容器自身与顶层组件各一份（共 2 个实例）；容器 off 仅豁免其子树。
 	// （容器交互已统一走 core.CompileInteraction，自身同样支持滚动触发。）
-	if got := strings.Count(compiled.CSS, "animation-timeline: view()"); got != 2 {
-		t.Errorf("滚动显现注入数量不符（期望 2：容器自身 + 顶层组件），实际 %d\n%s", got, compiled.CSS)
+	//
+	// 断言口径是「覆盖到的实例作用域」，不是声明文本的出现次数：两个实例的 reveal 规则
+	// 只差作用域类名、声明完全相同且相邻，会被并列合并成一条规则（PERF-016），
+	// 文本次数随之从 2 变 1 —— 数次数会把等价产物误判成回归。
+	scopes := revealInjectedScopes(compiled.CSS)
+	for _, want := range []string{".sky-c-sec", ".sky-c-out"} {
+		if got := countScope(scopes, want); got != 1 {
+			t.Errorf("滚动显现未覆盖 %s（期望 1 个实例规则），实际覆盖=%v\n%s", want, scopes, compiled.CSS)
+		}
 	}
+	if len(scopes) != 2 {
+		t.Errorf("滚动显现覆盖的实例数不符（期望 2：容器自身 + 顶层组件），实际 %d：%v", len(scopes), scopes)
+	}
+}
+
+// revealInjectedScopes 收集所有「带滚动触发声明」的规则覆盖到的实例作用域选择器。
+func revealInjectedScopes(css string) []string {
+	var scopes []string
+	lines := strings.Split(css, "\n")
+	for i := 0; i < len(lines); i++ {
+		line := strings.TrimSpace(lines[i])
+		if !strings.HasSuffix(line, "{") || strings.HasPrefix(line, "@") {
+			continue
+		}
+		sel := strings.TrimSpace(strings.TrimSuffix(line, "{"))
+		hasView := false
+		j := i + 1
+		for j < len(lines) && strings.TrimSpace(lines[j]) != "}" {
+			if strings.Contains(lines[j], "animation-timeline: view()") {
+				hasView = true
+			}
+			j++
+		}
+		if hasView {
+			for _, s := range strings.Split(sel, ",") {
+				scopes = append(scopes, strings.TrimSpace(s))
+			}
+		}
+		i = j
+	}
+	return scopes
+}
+
+// countScope 统计选择器在切片里的出现次数。
+func countScope(scopes []string, want string) int {
+	n := 0
+	for _, s := range scopes {
+		if s == want {
+			n++
+		}
+	}
+	return n
 }
 
 // TestScrollRevealOffByDefault 默认关闭：主题未开启时零注入，产物字节不变。

@@ -34,7 +34,7 @@ func normalizeCouponCode(code string) string {
 
 // couponTimeLayouts 后台表单与接口可能送来的时间写法。
 //
-// 只接受不带时区的本地时间：优惠活动按站点运营的本地时间理解。
+// 只接受不带时区的写法（见 couponWindowLocation 对「按哪个时区解释」的说明）：
 // 接受带时区的 RFC3339 会引出一个「按谁的时区算」的问题，
 // 而这个问题在跨境场景下没有正确答案。
 var couponTimeLayouts = []string{
@@ -43,6 +43,20 @@ var couponTimeLayouts = []string{
 	"2006-01-02",
 }
 
+// couponWindowLocation 券时间窗的解释时区（审计 TX-011）。
+//
+// 刻意**不是 time.Local**：用服务器时区解释表单输入意味着「同一张券的生效时间
+// 取决于部署机器」，改一次服务器时区（或换一台机器）就会让所有券的生效时刻整体平移，
+// 而界面上看到的文本一个字都没变 —— 这种偏差没有任何地方会报错。
+//
+// 固定为 UTC：输入 10:00 就是 UTC 10:00，与部署环境无关。展示层按同一口径呈现
+// （响应里带 timeZone 字段），因此「设置的时间」与「实际生效的时间」始终是同一个。
+//
+// 若将来要支持「按站点运营时区」，改这里不够：站点时区必须来自**配置**
+// （projects.settings）而不是服务器环境，并且解析与展示要同时改 —— 只改一处会让
+// 界面与实际生效时间对不上。
+var couponWindowLocation = time.UTC
+
 // parseCouponTime 解析时间窗文本；空串 = 不限（nil）。
 func parseCouponTime(raw string) (*time.Time, error) {
 	s := strings.TrimSpace(raw)
@@ -50,8 +64,11 @@ func parseCouponTime(raw string) (*time.Time, error) {
 		return nil, nil
 	}
 	for _, layout := range couponTimeLayouts {
-		if t, err := time.ParseInLocation(layout, s, time.Local); err == nil {
-			return &t, nil
+		if t, err := time.ParseInLocation(layout, s, couponWindowLocation); err == nil {
+			// 统一转 UTC 存储与比较：列已是 timestamptz（迁移 172），
+			// 时刻不变，但代码里从此只有一种时间口径。
+			u := t.UTC()
+			return &u, nil
 		}
 	}
 	return nil, errors.New(orderenums.ErrCouponWindowInvalid)

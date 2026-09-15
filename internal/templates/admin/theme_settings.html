@@ -3,12 +3,13 @@
 {* 提交键名严格对齐 backend SaveThemeSettings 的点分约定：
     colors.* / typography.{heading,body,link}.* / button.* / surface.* / motion.*
     + 顶层 headerBlockId / footerBlockId。全部值经 IsSafeCSSValue 白名单校验。 *}
+{* 文案走 t(key, 中文兜底)：字段标签与分组标题来自服务端字段表（数据驱动），模板只抽固定文案。 *}
 {{extends "layout.html"}}
 {{block body()}}
 <div class="stack">
     <section class="card card-body">
-        <h2>主题设置：{{.ThemeName}}
-            <a class="btn" href="/admin/themes?project={{.ProjectID}}" style="float:right">返回列表</a>
+        <h2>{{ .["t"]("admin.theme_settings.heading", "主题设置：") }}{{.ThemeName}}
+            <a class="btn" href="/admin/themes?project={{.ProjectID}}" style="float:right">{{ .["t"]("admin.theme_settings.back", "返回列表") }}</a>
         </h2>
         {* 完整 ThemeSettings JSON 供前端按点分键回显（11 色 + typography + button + surface + motion）。
            用了 unsafe 输出真实 JSON 到 application/json 脚本块；服务端已由 ParseThemeSettings 校验过值安全。 *}
@@ -40,7 +41,7 @@
                 </label>
                 {{else if f.Kind == "color"}}
                 <label>{{f.Label}}
-                    <input type="text" name="{{f.Name}}" class="form-input" data-color-field value="{{f.Value}}" placeholder="如 #3d444f；留空 = 内置默认" spellcheck="false">
+                    <input type="text" name="{{f.Name}}" class="form-input" data-color-field value="{{f.Value}}" placeholder="{{ .["t"]("admin.theme_settings.color_placeholder", "如 #3d444f；留空 = 内置默认") }}" spellcheck="false">
                 </label>
                 {{else}}
                 <label>{{f.Label}}<input type="text" name="{{f.Name}}" class="form-input" value="{{f.Value}}"></label>
@@ -49,38 +50,43 @@
             </div>
             {{end}}
 
-            <h3>全局页眉 / 页脚块</h3>
+            <h3>{{ .["t"]("admin.theme_settings.global_blocks", "全局页眉 / 页脚块") }}</h3>
             <div class="theme-color-grid">
-                <label>页眉块
+                <label>{{ .["t"]("admin.theme_settings.header_block", "页眉块") }}
                     <select name="headerBlockId" class="form-select">
                         {{range _, b := .HeaderBlocks}}
                         <option value="{{b.ID}}" {{if b.ID == .HeaderBlock}}selected{{end}}>{{b.Name}}</option>
                         {{end}}
                     </select>
                 </label>
-                <label>页脚块
+                <label>{{ .["t"]("admin.theme_settings.footer_block", "页脚块") }}
                     <select name="footerBlockId" class="form-select">
                         {{range _, b := .FooterBlocks}}
                         <option value="{{b.ID}}" {{if b.ID == .FooterBlock}}selected{{end}}>{{b.Name}}</option>
                         {{end}}
                     </select>
                 </label>
+                {* 公告条（审计 VIS-012）：与页眉页脚同一条链路 —— 主题配一次，全站页面生效；
+                   提交键走点分约定 slots.<槽位名>，后端按前缀扫描收，将来加槽位只需在这里多一个 select。
+                   回显由服务端 selected 完成（前端回填脚本只处理 input 与页眉页脚两个 select，不碰它）。 *}
+                <label>{{ .["t"]("admin.theme_settings.announcement_block", "公告条块") }}
+                    <select name="slots.announcement" class="form-select">
+                        {{range _, b := .AnnouncementBlocks}}
+                        <option value="{{b.ID}}" {{if b.ID == .AnnouncementBlock}}selected{{end}}>{{b.Name}}</option>
+                        {{end}}
+                    </select>
+                </label>
             </div>
 
             <div class="form-inline theme-actions">
-                <button type="submit" class="btn btn-primary">保存并应用到该主题页面</button>
+                <button type="submit" class="btn btn-primary">{{ .["t"]("admin.theme_settings.save", "保存并应用到该主题页面") }}</button>
             </div>
         </form>
     </section>
     <section class="card card-body">
-        <h2>说明</h2>
+        <h2>{{ .["t"]("admin.theme_settings.notes_heading", "说明") }}</h2>
         <p class="text-mute text-sm">
-            所有设计令牌保存后合入该主题下全部页面的文档（settings.theme），构建产物注入 :root CSS 变量
-            （--sky-c-* 色板、--sky-heading-* / --sky-body-* / --sky-link-* 排版、--sky-btn-* 按钮、
-            --sky-radius / --sky-border-* / --sky-shadow 表面、--sky-tr-duration / --sky-easing 动效）——
-            组件中 var(--sky-*) 全局生效；已发布页面需重新构建才会带新主题。
-            页眉/页脚块在构建页面时编译期内联进产物（访问面保持纯静态），保存后该主题下页面将标记为待重建。
-            没有候选块？先到「全局块」新建页眉/页脚块。
+            {{ .["t"]("admin.theme_settings.notes", "所有设计令牌保存后合入该主题下全部页面的文档（settings.theme），构建产物注入 :root CSS 变量（--sky-c-* 色板、--sky-heading-* / --sky-body-* / --sky-link-* 排版、--sky-btn-* 按钮、--sky-radius / --sky-border-* / --sky-shadow 表面、--sky-tr-duration / --sky-easing 动效）——组件中 var(--sky-*) 全局生效；已发布页面需重新构建才会带新主题。页眉/页脚块在构建页面时编译期内联进产物（访问面保持纯静态），保存后该主题下页面将标记为待重建。没有候选块？先到「全局块」新建页眉/页脚块。") }}
         </p>
     </section>
 </div>

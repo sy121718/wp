@@ -169,9 +169,10 @@ func TestConcurrentPayOrderLandsOnce(t *testing.T) {
 //
 // 这是最像真实事故的一条：客户在页面上点「取消」，同一时刻网关的支付成功通知到了。
 // 要守住三件事：
-//   ① 最终状态唯一（要么 cancelled 要么 paid，不能既取消又收款还看不出所以然）；
-//   ② 库存只归还一次（并发取消各还一次 = 商家凭空多出库存）；
-//   ③ 支付回调撞上终态时**不报错**（钱已扣，对网关报错等于让它无限重试）。
+//
+//	① 最终状态唯一（要么 cancelled 要么 paid，不能既取消又收款还看不出所以然）；
+//	② 库存只归还一次（并发取消各还一次 = 商家凭空多出库存）；
+//	③ 支付回调撞上终态时**不报错**（钱已扣，对网关报错等于让它无限重试）。
 func TestConcurrentCancelAndPayKeepSingleOutcome(t *testing.T) {
 	f := newOrderFixture(t)
 	if f == nil {
@@ -191,7 +192,7 @@ func TestConcurrentCancelAndPayKeepSingleOutcome(t *testing.T) {
 	// 两类调用的失败语义不同，必须分开看：
 	//   · 支付回调**不许报错** —— 网关会重发，报错等于让它无限重试（钱已经扣了）；
 	//   · 重复取消**允许报错**（「订单已取消，不能再操作」）—— 这不是回调，
-		// 用户第二次点取消得到一个明确结论比拿到一个静默的成功更正确。
+	// 用户第二次点取消得到一个明确结论比拿到一个静默的成功更正确。
 	var mu sync.Mutex
 	var cancelSuccess int32
 	var payErrors []error

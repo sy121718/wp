@@ -37,7 +37,23 @@ type SummaryReq struct {
 	PathPage int `form:"pathPage" json:"pathPage"`
 	// PathLimit 按路径聚合的每页条数（默认 20，上限 200）。
 	PathLimit int `form:"pathLimit" json:"pathLimit"`
+	// PathAfterViews / PathAfter 路径排行的游标（keyset 分页，审计 IDX-010）：
+	// 传上一页最后一行的 (views, path)，返回它之后的一页。
+	//
+	// 与 PathPage 的关系：给了游标就走游标（成本与页码无关，深分页不再随页码变慢）；
+	// 没给则按 PathPage 用 offset —— 第一页 offset=0 本身就是最优路径，
+	// 后台页面因此可以只翻「下一页」时改用游标，无需整体改造。
+	PathAfterViews int64  `form:"pathAfterViews" json:"pathAfterViews"`
+	PathAfter      string `form:"pathAfter" json:"pathAfter"`
 }
+
+// 统计取数来源（响应回显，便于确认「这次数字是明细还是预聚合给的」）。
+const (
+	// SourceDetail 明细表 page_views（窗口含今天时的唯一选择）。
+	SourceDetail = "detail"
+	// SourceSummary 按天预聚合表 analytics_daily_stats（窗口完全在过去时）。
+	SourceSummary = "summary"
+)
 
 // DailyCount 某一天的浏览数与独立访客数（独立访客按匿名 visitor hash 去重）。
 type DailyCount struct {
@@ -75,4 +91,11 @@ type SummaryResp struct {
 	// PathPage / PathLimit 本次分页参数（回显用）。
 	PathPage  int `json:"pathPage"`
 	PathLimit int `json:"pathLimit"`
+	// Source 本次统计的取数来源（detail / summary），见上方常量。
+	Source string `json:"source"`
+	// PathNextAfterViews / PathNextAfter 下一页游标（本页最后一行）；
+	// Paths 为空时为空 —— 「没有下一页」与「下一页刚好从空开始」是两回事，
+	// 用空值统一表示前者，客户端据此收起翻页按钮。
+	PathNextAfterViews int64  `json:"pathNextAfterViews"`
+	PathNextAfter      string `json:"pathNextAfter"`
 }

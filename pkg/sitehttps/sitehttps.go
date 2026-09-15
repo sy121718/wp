@@ -14,13 +14,13 @@
 // 判定优先级：
 //  1. 显式配置 server.site_https（true/false）—— 部署方声明的事实，最高优先；
 //  2. 未显式配置时按 server.mode 推导：release → true，其余 → false；
-//  3. 配置不可读（未初始化）→ true —— fail-closed：宁可在 HTTP 下让 cookie
-//     不生效，也不要在 HTTPS 下少一个 Secure。
+//  3. 配置未注入时退回 gin 的运行模式（见 Enabled 的注释：这里不能用「一律 true」兜底）。
 package sitehttps
 
 import (
 	"strings"
 
+	"github.com/gin-gonic/gin"
 	"github.com/spf13/viper"
 )
 
@@ -44,9 +44,14 @@ func Init(v *viper.Viper) {
 // Enabled 报告当前部署是否应按「HTTPS 站点」处理（即 cookie 是否带 Secure）。
 func Enabled() bool {
 	if cfg == nil {
-		// 未初始化：fail-closed。真实运行中 config.Init 一定先于任何 cookie 写入，
-		// 走到这里说明是测试或异常装配，安全侧默认更可取。
-		return true
+		// 配置未注入（测试夹具或异常装配）：退回 gin 的运行模式。
+		//
+		// 这里**不能**一律返回 true 兜底。曾经这么写过，代价是测试进程里所有会话 cookie
+		// 都带上 Secure —— 而 httptest 的客户端在 http:// 下不会回传 Secure cookie，
+		// 表现是整片「登录态莫名其妙丢失」的假故障（登录成功、下一个请求就是 401），
+		// 排查方向会被完全带偏。release 模式仍带 Secure：fail-closed 的诉求针对的是
+		// 生产部署，而生产部署一定先调用 config.Init，走的是下面那条分支。
+		return gin.Mode() == gin.ReleaseMode
 	}
 	if cfg.IsSet(siteHTTPSKey) {
 		return cfg.GetBool(siteHTTPSKey)

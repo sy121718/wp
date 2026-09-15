@@ -28,6 +28,7 @@
 .wb-main { display: flex; flex: 1; min-height: 0; position: relative; }
 .wb-main.is-immersive .wb-inspector,
 .wb-main.is-immersive .wb-navigator { display: none; }
+.wb-main.is-immersive .wb-canvas-wrap { padding: 20px; }
 
 /* 左检查器 */
 .wb-inspector {
@@ -1053,6 +1054,18 @@ button.wb-color-swatch:hover { border-color: var(--c-primary, #3d444f); }
     accent-color: var(--c-primary, #5e5cfc); cursor: pointer;
 }
 .wb-range-row input[type="number"] { flex: 0 0 76px; width: 76px; }
+
+/* 多选实体（标签 id 列表等，审计 EDT-007）：勾选面板替代「手写一串 id」——
+   id 既难记也难核对，勾选状态直接来自当前值，打开就知道选了什么。
+   max-height + overflow 是为了标签多的站点不把面板撑爆。 */
+.wb-checkgrid { display: flex; flex-wrap: wrap; gap: 6px 14px; max-height: 180px; overflow: auto; }
+.wb-check-cell { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; }
+
+/* 区间列表（预设价格档位等）：每行「起 — 止」，上限留空表示「以上」。
+   行的容器复用 .wb-range-row（与滑块控件同一约定），这里只把文本输入撑开。 */
+.wb-range-rows { display: flex; flex-direction: column; gap: 6px; }
+.wb-range-row input[type="text"] { flex: 1 1 auto; min-width: 0; }
+.wb-range-sep { flex: 0 0 auto; opacity: .5; }
 
 /* 字段提示（如「先选内容集合」）：次要色小字，不抢控件视觉。 */
 .wb-hint { font-size: 11px; line-height: 1.5; color: var(--c-text-dim, #8a93a3); }

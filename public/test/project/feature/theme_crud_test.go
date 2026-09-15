@@ -18,19 +18,9 @@ import (
 
 func newProjectThemeService(t *testing.T) *projectservice.Service {
 	t.Helper()
-	db, err := support.NewPGTestDB(t)
-	if err != nil {
-		t.Skipf("本地 PostgreSQL 不可用，跳过测试：%v", err)
-		return nil
-	}
-	for _, statement := range []string{
-		`CREATE TABLE projects (id TEXT PRIMARY KEY, name TEXT NOT NULL, settings JSON NOT NULL, created_at TIMESTAMPTZ NOT NULL, updated_at TIMESTAMPTZ NOT NULL)`,
-		`CREATE TABLE themes (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, name TEXT NOT NULL, settings JSON NOT NULL, is_active BOOLEAN NOT NULL, created_at TIMESTAMPTZ NOT NULL, updated_at TIMESTAMPTZ NOT NULL)`,
-	} {
-		if err := db.Exec(statement).Error; err != nil {
-			t.Fatalf("创建测试表失败: %v", err)
-		}
-	}
+	// 表结构走生产迁移（projects / themes 都是真实 DDL），不再手抄：手抄版本
+	// 用 TEXT 主键，与生产的 uuid 脱节，改列类型时会静默失配。
+	db := support.NewMigratedPGTestDB(t)
 	return projectservice.NewService(projectmodel.NewProjectModel(db))
 }
 

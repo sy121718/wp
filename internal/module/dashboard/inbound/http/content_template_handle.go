@@ -66,7 +66,7 @@ func (h *contentTemplatePageHandle) ContentTemplatesPage(c *gin.Context) {
 	}
 	list, err := h.templates.List(ctx, &contenttemplatedto.ListReq{EntityType: entityType})
 	if err != nil {
-		c.String(http.StatusInternalServerError, err.Error())
+		pageError(c, "content_template", err)
 		return
 	}
 	rows := make([]gin.H, 0, len(list))

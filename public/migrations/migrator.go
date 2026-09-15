@@ -111,16 +111,22 @@ func parseVersionPrefix(version string) (major int, suffix string, err error) {
 }
 
 // All 返回按版本号排序的全部迁移。
+//
+// 用稳定排序：sort.Slice 在版本号重复时的相对顺序属实现细节，稳定排序固定为
+// 注册顺序，使同一组注册在任何构建上都排出同一序列。ValidateRegistry 已拒绝
+// 重复版本号，这里是第二道保险 —— 只消除不确定性，不新增启动期失败路径。
 func All() []Migration {
-	sort.Slice(allMigrations, func(i, j int) bool {
+	sort.SliceStable(allMigrations, func(i, j int) bool {
 		return compareVersion(allMigrations[i].Version, allMigrations[j].Version)
 	})
 	return allMigrations
 }
 
-// AllSeeds 返回按版本号排序的全部种子数据。
+// AllSeeds 返回按版本号排序的全部种子数据。稳定排序的理由同 All：
+// 种子版本号此前没有重复校验（见 TestSeedVersionsUnique），稳定排序保证
+// 「万一重复」时顺序仍由注册顺序确定，而不是随构建漂移。
 func AllSeeds() []Seed {
-	sort.Slice(allSeeds, func(i, j int) bool {
+	sort.SliceStable(allSeeds, func(i, j int) bool {
 		return compareVersion(allSeeds[i].Version, allSeeds[j].Version)
 	})
 	return allSeeds

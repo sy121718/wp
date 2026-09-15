@@ -119,6 +119,19 @@ func (s *LocalStore) PutArtifact(a *Artifact) (Locator, error) {
 }
 
 // GetArtifact 实现 Store 接口：读取并重算哈希校验。
+//
+// 内存量级（PERF-011，2026-09 实测后维持整份读）：index.html 与 manifest.json
+// 都整份进 []byte。实测产物根（public/runtime/artifacts）共 84 KB、单份 index.html
+// 最大 17 KB、manifest 655 B；本函数只在构建/发布路径被调用（访客面由
+// http.FileServer 流式直出，不进这里），所以当前尺寸下整份读不构成内存问题 ——
+// 不为「看起来更省内存」把调用方一起改掉。
+//
+// 改造触发条件（届时再动手）：出现 MB 级单页产物，或重建并发被放开到几十路以上。
+// 难点不在算哈希：artifactPayloadHash 的输入是 manifestJSON 加换行再加 html，
+// 可以边写 hash 边 io.Copy 文件，不必拼出整页。难点在 Entries 要不要保留 html 字节 ——
+// 本函数返回的 Entries["index.html"] 当前没有任何读取方（唯一读 Entries 的地方是
+// PutArtifact 写盘，而它的输入来自 NewArtifact），所以流式化必须同时确认调用方
+// 只读 Manifest / CanonicalPath，否则会把「读到的产物」静默变成空对象。
 func (s *LocalStore) GetArtifact(loc Locator) (*Artifact, error) {
 	hash := locatorHash(loc)
 	if hash == "" {

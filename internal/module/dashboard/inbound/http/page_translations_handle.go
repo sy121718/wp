@@ -46,9 +46,14 @@ import (
 //
 // 生产实现 = pkg/i18n.ContentWriter（sys_translation 表 + 默认数据库）；
 // 测试经 SetContentTranslationStore 注入隔离 schema 的写入器。
+//
+// 工程作用域（审计 I18N-009）：工作台是**按站点**看译文的地方，读写都必须带工程 id ——
+// 否则 A 站点保存的译法会盖掉 B 站点的（写入侧），或者看不到本工程自己的覆盖（读取侧）。
 type contentTranslationPort interface {
 	LoadDetails(ctx context.Context, lang string, hashes []string) (map[string]i18n.ContentTargetInfo, error)
+	LoadDetailsForProject(ctx context.Context, projectID, lang string, hashes []string) (map[string]i18n.ContentTargetInfo, error)
 	LoadTargets(ctx context.Context, lang string, hashes []string) (map[string]string, error)
+	LoadTargetsForProject(ctx context.Context, projectID, lang string, hashes []string) (map[string]string, error)
 	Upsert(ctx context.Context, items []i18n.ContentWriteItem) (written int, err error)
 }
 
@@ -218,7 +223,7 @@ func (h *Handle) SavePageTranslations(c *gin.Context) {
 	}
 	lang := strings.TrimSpace(c.PostForm("lang"))
 
-	page, err := h.pages.Detail(ctx, &pagecontract.DetailReq{ID: pageID})
+	page, err := h.pageOf(c, pageID)
 	if err != nil {
 		logger.Scene("page").With("pageId", pageID).Error(err, "读取页面失败")
 		c.Redirect(http.StatusSeeOther, "/admin/pages")
@@ -269,6 +274,8 @@ func (h *Handle) SavePageTranslations(c *gin.Context) {
 			continue
 		}
 		items = append(items, i18n.ContentWriteItem{
+			// 工程作用域（审计 I18N-009）：写入本工程自己的译文行，不污染其它站点。
+			ProjectID:  page.ProjectID,
 			SourceHash: i18n.ContentHash(source), Context: contextName, Lang: lang,
 			SourceText: source, TargetText: target, Engine: i18n.ContentEngineManual,
 		})
@@ -292,7 +299,9 @@ func (h *Handle) SavePageTranslations(c *gin.Context) {
 
 	// 第二步：变更判定。只有译文文本确实变化才写库并触发全站重建：
 	// 原样再保存一次不产生任何写入（幂等），也不触发无意义的全站重建（§15.10 同一取舍）。
-	before, berr := port.LoadDetails(ctx, lang, candidateHashes(items))
+	// 变更判定按**本工程**读现有译文（工程行优先、回落全局行），否则别的站点的译法
+	// 会被当成「已经是这个值」而跳过写入。
+	before, berr := port.LoadDetailsForProject(ctx, page.ProjectID, lang, candidateHashes(items))
 	if berr != nil {
 		logger.Scene("page").With("pageId", pageID).Error(berr, "读取现有译文失败，按全部变更处理")
 		before = map[string]i18n.ContentTargetInfo{}
@@ -349,7 +358,13 @@ func (h *Handle) renderTranslationError(c *gin.Context, pageID, lang string, err
 // 步骤：页面草稿 → builder.CollectContentCandidates（与构建期同源）→
 // 现有译文（含 engine）→ 全站索引（复用提示 + 全站完成度）→ 按组件分组 + 筛选。
 func (h *Handle) buildPageTranslationsData(ctx context.Context, pageID, wantLang, filter string) (*pageTranslationsData, error) {
-	page, err := h.pages.Detail(ctx, &pagecontract.DetailReq{ID: pageID})
+	// 这里没有 gin.Context（纯数据组装），因此就地解析一次工程 scope —— 与
+	// Handle.pageOf 同一口径：Detail 的 projectID 是必填的越权防护 scope。
+	projectID, err := h.pages.ProjectOfPage(ctx, pageID)
+	if err != nil {
+		return nil, err
+	}
+	page, err := h.pages.Detail(ctx, &pagecontract.DetailReq{ProjectID: projectID, ID: pageID})
 	if err != nil {
 		return nil, err
 	}
@@ -379,7 +394,7 @@ func (h *Handle) buildPageTranslationsData(ctx context.Context, pageID, wantLang
 	// 块内文本同样是本页产物的一部分（构建期装配内联），因此必须列在工作台里，
 	// 否则它无法被翻译、完成度也会误报 100%（见 page_translations_blocks.go 文件头）。
 	pageCandidates := builder.CollectContentCandidates(parsed)
-	blockInfo := h.collectBlockCandidates(ctx, parsed)
+	blockInfo := h.collectBlockCandidates(ctx, page.ProjectID, parsed)
 	candidates := mergeContentCandidates(pageCandidates, blockInfo.candidates)
 	pageKeys := make(map[string]bool, len(pageCandidates))
 	for _, cand := range pageCandidates {
@@ -393,7 +408,7 @@ func (h *Handle) buildPageTranslationsData(ctx context.Context, pageID, wantLang
 	// 现有译文（P5a 读路径 + engine 投影）：读失败按「全部缺失」处理，页面照常可用。
 	details := map[string]i18n.ContentTargetInfo{}
 	if port, cerr := h.contentPort(); cerr == nil {
-		if got, lerr := port.LoadDetails(ctx, lang, builder.ContentHashes(candidates)); lerr == nil {
+		if got, lerr := port.LoadDetailsForProject(ctx, page.ProjectID, lang, builder.ContentHashes(candidates)); lerr == nil {
 			details = got
 		} else {
 			logger.Scene("page").With("pageId", pageID).Error(lerr, "读取现有译文失败")
@@ -413,7 +428,7 @@ func (h *Handle) buildPageTranslationsData(ctx context.Context, pageID, wantLang
 	}
 	if site != nil {
 		data.SiteTotal = site.total()
-		data.SiteDone = h.countTranslated(ctx, lang, site)
+		data.SiteDone = h.countTranslated(ctx, page.ProjectID, lang, site)
 	}
 
 	groups := make([]translationGroup, 0, 8)
@@ -464,7 +479,10 @@ func (h *Handle) buildPageTranslationsData(ctx context.Context, pageID, wantLang
 }
 
 // countTranslated 统计全站已翻译条数（完成度分子）：只统计索引里确实用到的键。
-func (h *Handle) countTranslated(ctx context.Context, lang string, site *siteContentIndex) int {
+//
+// 按工程统计（审计 I18N-009）：本工程自己有译文的算已翻译，未覆盖时看到的是全局译文，
+// 因此完成度反映的是「这个站点实际会渲染成什么」，而不是全库有没有这条译文。
+func (h *Handle) countTranslated(ctx context.Context, projectID, lang string, site *siteContentIndex) int {
 	if site == nil || len(site.hashes) == 0 {
 		return 0
 	}
@@ -472,7 +490,7 @@ func (h *Handle) countTranslated(ctx context.Context, lang string, site *siteCon
 	if err != nil {
 		return 0
 	}
-	targets, err := port.LoadTargets(ctx, lang, site.hashes)
+	targets, err := port.LoadTargetsForProject(ctx, projectID, lang, site.hashes)
 	if err != nil {
 		logger.Scene("page").Error(err, "统计全站翻译完成度失败")
 		return 0

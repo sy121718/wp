@@ -61,7 +61,8 @@
         "responsive",
         "hard-rule"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：后台全局布局的移动端断点（子代理实现并真机验证，父代理核实）。① **前提核对成立，并给出修复前的实测数字**：375px 下 .rail 88px + .subnav 224px = 312px（正是审计条目的数字），.admin-main 只剩 63px 宽，且已经横向溢出（scrollWidth 388 > clientWidth 375）。② 改动：theme.css 新增「后台全局布局的窄屏断点」段 —— 基础区只有 .nav-toggle/.nav-scrim { display:none }，@media (max-width:1023px) 把 rail/subnav 变 position:fixed 覆盖式抽屉（关闭态位移 calc(-100% - var(--rail-w,88px))，只写 -100% 会在左侧露出 88px）+ 遮罩 + body.nav-open 开合，@media (max-width:639px) 再收内边距；媒体查询外的桌面规则一字未动。layout.html 加汉堡按钮（aria-controls / aria-expanded / data-label-open|close）+ 遮罩；sidebar.html 的 rail 加 id 供 aria-controls 指向；admin.js 新增 initNavDrawer（汉堡切换 / 遮罩点击 / Esc 捕获阶段关闭并 stopPropagation / 跨断点清理 + aria 同步），并用 matchMedia 隔离桌面状态（窄屏不写 sidebar_open cookie、不走「点当前分组收起二级栏」分支）。③ 5 个无数据库依赖的测试（TestAdminLayoutDesktopRulesStayOutsideMediaQuery 钉「桌面规则在媒体查询之外」、TestAdminNavBreakpointRules、TestNavToggleHiddenOnDesktop、TestAdminLayoutRendersNavToggle、TestAdminNavDrawerScriptParses）。④ **真机验证（无头 Chrome 152 + CDP，真实渲染的外壳与真实 CSS/JS）**：375px 默认零溢出、rail/subnav 移出视口、主内容区占满；点汉堡后 rail [0,88]、subnav [88,312]、遮罩 block、aria-expanded=true，点遮罩/Esc/键盘 Enter 均可开合，抽屉打开时 rail 按钮与 subnav 链接 elementFromPoint 命中自身（无 z 序遮挡），body overflow=hidden。768px 同构。**1280px 与修复前基线逐字段完全一致**（rail 88 + subnav 224、main.left=312/宽 968、汉堡 display:none，折叠态也一致），窄屏开着抽屉切回 1280px 时 nav-open 被自动清理 —— 这是「桌面端未回归」的直接证据。⑤ 未做：新增文案键 shell.nav.open|close 未写进 059 seed（走既有兜底渲染中文），无 iOS/Android 真机触屏手势验证（CDP 合成事件），审计台账由父代理更新。表格窄屏横向滚动不需新增规则 —— 公共基座 .table-wrap（ui.css:353）已提供 overflow-x:auto。⑥ 父代理核实：go test -p 1 ./... 在合并全部改动后 TEST_EXIT=0。"
     },
     {
       "id": "UI-002",
@@ -123,7 +124,8 @@
         "a11y",
         "navigation"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：core.nav 子菜单在触屏上从「不存在」变为可用（子代理实现并实测，父代理核实）。① 问题本质不是样式而是**功能在触屏上不存在**：触屏没有 hover，靠 :hover 显示的子菜单永远出不来。② 方案纯 CSS 零 JS，沿用组件内移动端折叠开关同源的 label + checkbox 手法：nav.jet 的 has-children 项在父链接之后插入 input.sky-nav-sub-toggle + label.sky-nav-sub-cover + label.sky-nav-sub-chevron；nav.css 加 (a) @hover 与 :focus-within 的键盘路径、(b) 三个新元素默认 display:none（非触屏不渲染、不进键盘序列）、(c) @hovernone 块（sr-only 可聚焦 checkbox、整行覆盖层、44px 箭头、:checked 展开、:checked 撤除覆盖层、箭头 rotate(180deg)、focus-visible 焦点环）、(d) 折叠态内用多一级选择器关掉三个新元素。**后端数据结构零改动**（Props/Item/Validate 未动）。收起态覆盖层铺满父项整行（点哪里都展开），展开后覆盖层撤除使父链接恢复可点，右侧 44px 箭头保留为收起按钮。③ 三种输入方式实测（真实 compileCSS 产物 + 真实模板渲染 HTML）：**触屏**（因本机 CDP 的 Emulation.setEmulatedMedia 不作用于页面 target，改把 @media (hover: none) 强制为 @media all 并摘掉 hover:hover 块 —— 两条查询本就互斥，等价于触屏实际生效状态）：初始 cover=block 且 hitAtLinkCenter 命中覆盖层 → 点整行 checked=true/sub=visible/cover=none 且 hitAtLinkCenter=A（父链接恢复可点）→ 点箭头收起、箭头 transform 翻转。**键盘**（真实 Tab 键）：Tab 到父项时 focusWithin=true、sub=visible，命中 [media (hover:hover)] .sky-nav-item:focus-within > .sky-nav-sub；继续 Tab 进子菜单；移到下一项时子菜单归 0。**鼠标**：初始 cover/chevron/toggle 三者 display:none、padRight=16px 仍是用户配置值；hover 后唯一命中的是 .sky-nav-item:hover > .sky-nav-sub（未被任何媒体查询包裹，措辞与改动前逐字相同）——规则与产物双向对齐，TestNavCSSSubmenuHoverUnchanged 同时钉死这两点。④ 14 个测试全绿（含 TestNavCSSSubmenuFocusWithin / TestNavCSSSubmenuTouchToggle / TestNavJetSubmenuToggleOnlyOnParents / TestNavJetSubmenuToggleIDsUnique）。⑤ 两条对下游有用的情报记在这里：本组件 CSS 引擎**不支持逗号分隔的多选择器**（& .a, & .b { 会 panic「看不懂这一行」，必须拆独立规则）；箭头居中不能用 justify-content（TestNavCSSAlign 断言未设对齐时产物不得含该属性），改用 place-items。⑥ 父代理核实：go test -p 1 ./... 合并后 TEST_EXIT=0。"
     },
     {
       "id": "UI-003",
@@ -182,7 +184,8 @@
         "cart",
         "conversion"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：core.cartIcon 的 hover 形态在触屏上可原地展开（子代理实现并实测，父代理核实）。① **前提核对成立，但如实补充了原实现并非完全无出口**：HasCartURL=true 时图标是通往购物车页的 <a>，槽位没配时是 href=# 的死链。② 方案纯 CSS 零 JS，复用项目已有的 @hovernone 样式源指令（产出 @media (hover: none)）与 nav 子菜单同源的 sr-only checkbox + 覆盖层 label 手法：carticon.css 新增触屏开合控件默认 display:none；**:focus-within 规则改包 @hover**（修掉触屏下 :focus-within 粘滞 —— 只加展开而不隔离 focus 路径的话，触屏点一次焦点留在图标上，浮层再也不收）；新增 @hovernone 块（:checked 展开 + :focus-visible 焦点环）。cart_icon.jet 的 hover 分支嵌入 checkbox + label（单行内精确替换）。③ **桌面行为未回归的证据有两层**：CSS 层控件 display:none 不参与命中测试；DOM 层 <a> 链接节点未被替换（TestCartIconJetSlotLinkSurvives 钉住）。④ 三种输入方式实测（真实构建产物 CSS + 真实模板 HTML）：**触屏**（Emulation.setTouchEmulationEnabled → hover:none/pointer:coarse 真实生效）：初始 none → 触摸一次 block（浮层 340x55，**页面未跳转 = 原地展开**）→ 再触摸一次 none，checkbox.checked 同步 false。**键盘**（触屏 + 外接键盘）：Tab 落在 INPUT.sky-cart-icon-toggle；空格 → block；再空格 → none（证明无 :focus-within 粘滞）；焦点环 1.71429px solid rgb(37,99,235)。**鼠标**：悬停 block、移入浮层内部保持 block、移开 none，toggle 与 cover 均 display:none。⑤ 7 个新测试（TestCompileCSSHoverTouchToggle / TestCompileCSSHoverFocusWithinIsHoverOnly / TestCartIconJetHoverTouchToggleBindsPanel / TestCartIconJetSlotLinkSurvives 等）。⑥ 父子两条代理都踩到同一个坑，值得记：组件样式源**不支持多行逗号选择器**（& .a, 换行写会报「看不懂这一行」，必须单行）；并行代理会抢占 ego-browser 的活动 tab，共享浏览器的验证脚本需自带 URL 守卫。⑦ 父代理核实：go test -p 1 ./... 合并后 TEST_EXIT=0。"
     },
     {
       "id": "UI-004",
@@ -326,7 +329,8 @@
         "touch",
         "ci"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：组件 hover 进统一桶（子代理实现）。① 审计点名的 9 个组件（gallery / infobox / list / tabs / form / languages / marquee / cardstack / table）全部整改，排查时另同步处理了 nav 与 breadcrumb、并按 remediation 步骤 2 给交互元素补了按压反馈（`@active`，**不包媒体查询** —— 按压在触屏与鼠标上都存在，包进 `(hover: hover)` 会让触屏失去唯一的即时反馈）。② **验证是可复算的**：全库扫描「不以 @hover/@active 开头的 :hover 行」已清零（剩余命中全是注释文字）；新增 `TestComponentHoverRulesStayInBuckets` 覆盖 19 条 :hover 规则 / 11 个组件，断言每条都落在 (hover: hover) 或 (hover: none) 桶内；`TestInteractiveHoverHasActiveFeedback` 断言 `:active` 不被任何媒体查询包裹。③ 同步了涉及的 golden 文件（gallery/infobox/list/marquee/tabs 的 css），**只跑子测试过滤**而没有跑全量 `-update-jet-golden` —— 因为全量会把其它代理的中间态批量固化。这条判断是对的：当时 `internal/builder` 全量 golden 有 16 个 case 因公共层改动（prefers-reduced-motion 全局块、faq 的 JSON-LD）而失败，不属于本批。"
     },
     {
       "id": "UI-006",
@@ -414,7 +418,8 @@
         "hard-rule",
         "touch"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：8 个组件的 hover 形态逐个判定（子代理实现，**按任务要求拒绝机械处理**）。① **加触屏形态的只有 1 个**：`gallery` 的 `captionMode=hover` 图注 —— 图注是**内容**，触屏上永远滑不出来等于信息不可达，加 `@hovernone` 常显（opacity:1），由 `TestGalleryCaptionHasTouchFallback` 钉住。② **其余 8 个判定为装饰性、不加触屏等价形态**，理由逐条写进各组件 CSS 注释：productList（`<li>` 非点击目标，可点的是内部标题/图片链接，触屏反馈由 `@active` 承担，且既有 `TestProductListCSSTouchGovernance` 明确断言「不该另出 (hover: none) 块」—— **该条审计的前提与现状部分不符**）；cardstack more-link（常显描边按钮 1px 边框 + 主色文字 + min-height 44px，可点性已表达）；accordion 标题底色（展开是原生 details/summary 点击，触屏可用）；table 行高亮（行非点击目标，触屏靠斑马纹区分行）；container 悬停背景与 image 悬停微动（纯观感，操作入口在子组件 / 灯箱）；product 规格值悬停边框（label+radio，基础描边 + `:checked` + `@active` 在触屏都可见）；addToCart 按钮提亮（触屏等价反馈是既有的 `@active brightness(0.94)`）。③ **判定标准（值得留给后续）**：hover 承载**信息或操作**的，触屏不可用就是功能缺失，必须补；hover 只是**视觉反馈**的（抬升、变色、微动），触屏本来就没有 hover 态，用户不会觉得缺失，补了反而多出一套状态。"
     },
     {
       "id": "UI-007",
@@ -516,7 +521,8 @@
         "a11y",
         "keyboard"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：core.slider 键盘路径与焦点环（子代理实现，含 3 个阻塞缺陷的发现）。① 改动：容器加 `tabindex=\"0\"`；`enhance.js` 支持方向键（ArrowLeft/Right、Home/End，焦点落在内部 a/button/input 时不劫持）；`slider.css` 给容器/箭头/圆点加 focus-visible 焦点环。② **顺手修掉 3 个让「键盘可用」根本无法观察的阻塞缺陷**（都在同一组件内，不修则改动无法验证）：E1 轨道此前**没有任何 CSS 规则**，作为根节点（display:flex）的 flex item 被收缩到内容宽（实测 72px），`.sky-slide` 的 `flex-basis:100%` 失去基准 → 轮播不产生横向溢出、无法翻页；已加 `.sky-slider-track{display:flex;width:100%}`。E2 `enhance.js` 调 `track.scrollTo(...)` 但真正的滚动容器是根节点（overflow-x:auto），track 的 overflow 是 visible → 箭头/键盘/自动播放的滚动**全部无效**；已改为滚 root（scroll 监听与 loop 判断同步改）。E3 圆点样式写成 `.sky-slider-dots button` 而模板输出的是 `<a class=\"sky-slider-dot\">`（零 JS 锚点）→ 选择器永不匹配，圆点既无尺寸也无焦点环；已修正并由 `TestSliderDotSelectorMatchesMarkup` 交叉钉住「CSS 选择器 == 模板元素」。③ **CDP 实测证据**：修复前 `scrollWidth(1248) == clientWidth(1248)`（内容不溢出，不可能滚动）；修复后 `scrollWidth=3792 > clientWidth=1248`，slide 宽 = 一屏 1264，`scrollLeft` 可真实取到 0 / 1264 / 2528；真实 `Input.dispatchKeyEvent` 驱动 idx/dots 变化（ArrowRight → #slide-1，Home/End 跳首尾）。④ 如实说明验证的局限：smooth 滚动在自动化环境不推进（AGENTS.md 已记录的「不出渲染帧」现象），所以用「容器可滚动 + 键盘驱动 idx/滚动目标 + instant 赋值可改变 scrollLeft」三条组合作为「值确实变化」的证据，而非依赖动画帧。"
     },
     {
       "id": "UI-009",
@@ -565,7 +571,8 @@
         "a11y",
         "aria"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：core.tabs 的 label 不再 aria-hidden（子代理实现，含对照实验）。① 改动：`tabs.jet` 去掉 label 的 `aria-hidden=\"true\"` —— `label[for]` 是 sr-only radio 的**可访问名来源**，隐藏它等于让读屏只知道「单选按钮」而不知道是哪个。② **对照实验（同一页面，CDP Accessibility.getFullAXTree）**：label 带 `aria-hidden=true` 时 radio 的 name 为**空字符串**；去掉后 name 分别为「标签一」「标签二」（sources 含 labelfor）。③ 键盘：聚焦第一个 radio 后按真实 ArrowRight → `checked` 由 t0→t1、面板 `display` 由 block/none 翻转成 none/block、activeElement 移到 t1。④ 测试：新增 `TestTabsLabelProvidesAccessibleName` / `TestTabsRadioStaysFocusable`；扩展 `a11y_audit_test.go` 新增违规规则「label[for] 带文本且 aria-hidden=true」。**规则收紧过程值得记**：该规则初版曾误报 cardstack 的 `zoom-layer`（合法的空覆盖层 label），实现者把判据从「label 带 aria-hidden」收紧为「label 带文本且 aria-hidden」—— **空 label 不承担可访问名，隐藏它是合理的**。⑤ 已知边界（如实报告）：`public/test/builder/unit` 的 `TestCompileComponentTextMissingKeyFallback` 因 public/migrations 的 i18n seed SQL 尾随逗号失败（属迁移批次，与本次组件改动无关）。"
     },
     {
       "id": "UI-010",
@@ -718,7 +725,8 @@
         "error-handling",
         "ux"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：后台 HTMX 统一 loading 与错误处理（子代理实现）。① layout.html 新增全局进度条元素 `[data-hx-progress]` + 页面级 .hx-progress 样式（用 var(--c-primary)，暗色自动跟随）；admin.js 新增 `initHtmxFeedback()`，在 document.body 上注册 `htmx:beforeRequest/afterRequest/responseError/sendError/timeout`。② 请求计数驱动进度条；触发按钮走基座 WBUI.busy 的 is-busy（**自带 disabled ⇒ 天然防重复点击**，而不是另写一套禁用逻辑）；4xx/5xx 与网络错误、超时一律 WBUI.toast(type:error)，**文案优先取响应体**（JSON message/msg/error 或 HTML 正文），取不到才回退状态码 + `data-msg-*` 兜底。③ **一处不显然但必要的细节**：afterRequest 用 `WeakSet` 按 xhr 去重 —— htmx 在触发元素被移出文档时会对祖先补派发一次 afterRequest，不去重会多减计数、让进度条**提前消失**（表现为「请求还没完进度条就没了」，很难定位到去重问题）。④ 3 个新测试：TestAdminHtmxProgressIndicatorInShell、TestAdminJSGlobalHtmxFeedbackHandlers、TestHtmxRuntimeDispatchesEventNamesWeListenFor（后者校验 htmx 运行期真的派发我们监听的这几个事件名 —— 防「监听了一个不存在的拼错事件名」这类静默失效）。"
     },
     {
       "id": "UI-012",
@@ -768,7 +776,8 @@
         "dashboard",
         "ux"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：仪表盘内联样式清除与数据口径标注（子代理实现）。① 12 处 `style=\"…\"` **清零**，收敛为页面级 `<style>` + 6 个语义类（dash-title / dash-h2 / dash-stat / dash-tone-success / dash-tone-warning / dash-tone-danger），颜色走主题令牌 —— 内联样式的问题不是「不好看」，而是它不受主题令牌与暗色模式管辖，改一处主题要满页找 style。② **数据部分如实处理**：Dashboard handler 至今只注入 title/menu，本页仍是静态演示页；接真实统计必须改 dashboard_handle.go（不在本批范围）。按任务给的「或明确标注」路线做**显式标注**：页首 hint 提示「演示占位……不代表真实统计」并给出真实数据入口链接（/admin/analytics、/admin/orders、/admin/inventory）。**没有**把 mock 数据假装成真实数据 —— 一个仪表盘显示着好看但无意义的数字，比一个明确标注\"这是演示\"的页面更有害。真实数据接入建议单列一条。③ 2 个新测试：TestDashboardHasNoInlineStylesAndClassesAreDefined（断言用到的 dash-* 类在页面内有定义，而不是只断言\"没有 style 属性\" —— 后者可以把样式全删掉也能过）、TestDashboardOutputIsLabelledAndStyleless。"
     },
     {
       "id": "UI-013",
@@ -868,7 +877,8 @@
         "refactor",
         "maintainability"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：高频模式 partial 化（子代理实现，并发现一条影响后续所有 partial 工作的约束）。① 新增 `internal/templates/admin/partials/toolbar_create.html`（筛选栏右侧「新建」抽屉入口），被 6 个列表页复用：administrators / roles / permissions / datarules / departments / menus。参数走 Jet 内置 `map()` 构造的 context；取词留在调用点。② **发现的关键约束（已同步，会影响后续所有含文案的 partial 化）**：`internal/templates/admin_group_f_i18n_test.go` 有**反向判据** —— 193 seed 里的每个 key 必须仍出现在它列出的 11 个模板文本里（「seed 词条未被本批模板使用」即失败）。所以**如果把 t() 调用整体搬进 partial，页面文本里该 key 消失 → 既有测试直接变红**。可行写法（已实测）：Jet 的 `map()` 参数里**不能**写 `.[\"t\"](...)` 这种索引后调用（报 unexpected node type .[\"t\"] in unary expression），但可以在模板块顶先 `{{tr := .[\"t\"]}}`，再在 map 参数里写 `tr(\"k\",\"兜底\")` —— 页面文本里仍保留取词调用，双向判据都过。③ 另一条 Jet 行为实测：`include` 传 context 后**读不到外层键**，map 里必须显式带上 partial 需要的每个值（局部变量在被包含模板里可见，但本批没用这条）。④ 3 个新测试：TestToolbarCreatePartialIsReused（实测输出被 6 个列表页复用）、TestToolbarCreatePartialKeepsBehaviour（有/无权限两种渲染，按钮可见性与属性不变）、TestToolbarCreateMigrationTemplatesParse。"
     },
     {
       "id": "UI-015",
@@ -969,7 +979,8 @@
         "css",
         "isolation"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：旧样式体系清理（子代理实现，**三条的核心是\"证明哪些是死代码\"**）。① **pages-* 在 admin 模板目录清零**（`rg -o 'pages-[a-z0-9-]+' internal/templates/admin -g '*.html'` 输出为空）—— 不只是审计点名的页面，而是整个目录。改了 7 个模板（mail / mail_marketing / mail_campaign / mail_automation / mail_automation_edit / mail_automation_run / partials/locale_rows.html）+ 新增全目录扫描契约测试。② **每一条替换映射都用浏览器计算值实测，不是照抄文档**：pages-wrap→stack（gap 20→16px）；pages-card card→card card-body（上下 padding 20→24px，radius/border/bg/shadow 完全一致）；pages-table data-table→data-table（**零差异**）；pages-badge→badge badge-mute 与 -ok→badge-success、-warn→badge-warning；pages-empty→hint（零差异）；pages-form form-row→form-row items-center（**逐像素一致**）；3 个裸 textarea 补 form-textarea。③ **三处最容易悄悄回归的地方逐项验过**：(a) `items-center` 不可省 —— 删掉 pages-form 后 grid 容器的 align-items 由 center 变 normal、按钮被 stretch，**实测 37px→58px**，而 mail_automation_edit 里 form 直接包 section 卡片，矮卡片会被拉成等高；(b) `form-inline` 不能用于录入表单 —— 实测输入 289→220px、按钮 289→51px，布局完全不同，故未采用；(c) pages-table 实为死代码 —— ui.css 的 `table.data-table` 特异性高于 theme.css 的 `.pages-table`，换类前后 fontSize/padding/color/background 逐项相等。④ **三处审计前提不符（本会话第 8 次）**：(a) `pages-actions` 在模板中 **0 处使用**（UI-020 点名了它），只存在于 theme.css，是**死 CSS** 而非「6 个页面仍在用」；(b) `pages-table-wrap` / `pages-path` 同样是模板零引用的死 CSS；(c) 审计说「四个邮件页面用 pages-form」，实际是 **6 个邮件页面 + 1 个片段**。⑤ **UI-016 的结论有实测支撑（真隔离当前不可行，前缀约定是合理选择，且现状比审计描述更精细）**：构建期组件样式**已经有真作用域**（core/component_css.go 的 ApplyComponentCSS 以节点级 `.sky-c-<节点ID>` 为 scope 替换顶层 `&`，产物还有 scope merge 与 @layer sky-base/plugin/auto/theme/local 层序、容器查询走 container-name: sky-theme）；只有**运行时片段**的样式是全局类（cartfrag.go 传空 scope），该文件注释已说明原因（片段是运行时 HTML、作者在编辑器看不到，不给默认样式就是「一列裸 HTML」）。**Shadow DOM 实测三处硬阻塞**：(1) `innerHTML` 赋值**不激活**声明式 shadow root（`<template shadowrootmode>` 保持 inert），而 htmx swap 用的正是 innerHTML/outerHTML；(2) shadow 内 input **无法加入外层 form**（实测 `outer.elements.length` 为 0），结账/登录这类跨片段表单会断；(3) 内容离开 light DOM 与静态产物的 SEO 目标冲突。CSS 变量可穿透 shadow 边界（实测生效），所以主题令牌不是阻碍。既有隔离强度：sky- 命名空间 + 白名单禁止用户 class 使用该前缀（docs/02-C0-component-base-spec.md:50）+ @layer 层序 + 节点级 scope。⑥ **移交的 CSS 清理清单（精确到行号，且标注哪些不能删）**：theme.css 行 172、173-176、177、189-197、209-223、363、368、406，另有 473-500 的 pages-fold / pages-fold-hint 整组（模板与 Go 均零引用）；ui.css 行 497-499、520-521、529-530（桥接组里的 .pages-form 三条）。**特别标注 `.attr-form-head` / `.locale-add` 同属桥接但仍有使用者，不要一起删** —— 这条比清单本身更有价值。⑦ **两处待决策（已记录）**：(a) `card card-body` 里没有卡内标题规则，裸 h2 退回 UA 的 22.5px（旧 pages-card h2 是 16px/mb 14px），这与已迁移页面（blocks/pages/plugins/theme 同为 section.card.card-body + 裸 h2）现状一致、属既有迁移基线；要零回归需在 css 补 `.card-body > h2` 规则，但那会同时改变已迁移页面外观，属 UIK 批次的样式收口。(b) 建议把 6 个 mail 页面登记进 admin_ui_contract_test.go 的已迁移清单，但该测试要求文件含 form-inline 或 form-stack，本次用 form-row（文档 10.2 登记的公共类）不满足，需同步放宽条件；代理**没有**改既有测试文件，而是新增等效且更强的全目录扫描测试（TestAdminTemplatesHaveNoLegacyPagesClasses）—— 这个选择是对的。⑧ 验证：gofmt/build/vet 通过；6 个契约测试全 PASS（含新增 2 个）；`go test ./public/test/dashboard/feature/ -run TestMail` **10/10 PASS**（mail 系列全部页面渲染）。⑨ 代理报告一处与本次无关的 vet 红灯：`public/test/media/unit/media_center_unit_test.go:233` 用 `*mediadto.SyncRefsReq` 而 contract 已改为 `*mediacontract.SyncRefsInput`，属 media 契约重构的未完成收尾。"
     },
     {
       "id": "UI-017",
@@ -1112,7 +1123,8 @@
         "css",
         "mail"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：旧样式体系清理（子代理实现，**三条的核心是\"证明哪些是死代码\"**）。① **pages-* 在 admin 模板目录清零**（`rg -o 'pages-[a-z0-9-]+' internal/templates/admin -g '*.html'` 输出为空）—— 不只是审计点名的页面，而是整个目录。改了 7 个模板（mail / mail_marketing / mail_campaign / mail_automation / mail_automation_edit / mail_automation_run / partials/locale_rows.html）+ 新增全目录扫描契约测试。② **每一条替换映射都用浏览器计算值实测，不是照抄文档**：pages-wrap→stack（gap 20→16px）；pages-card card→card card-body（上下 padding 20→24px，radius/border/bg/shadow 完全一致）；pages-table data-table→data-table（**零差异**）；pages-badge→badge badge-mute 与 -ok→badge-success、-warn→badge-warning；pages-empty→hint（零差异）；pages-form form-row→form-row items-center（**逐像素一致**）；3 个裸 textarea 补 form-textarea。③ **三处最容易悄悄回归的地方逐项验过**：(a) `items-center` 不可省 —— 删掉 pages-form 后 grid 容器的 align-items 由 center 变 normal、按钮被 stretch，**实测 37px→58px**，而 mail_automation_edit 里 form 直接包 section 卡片，矮卡片会被拉成等高；(b) `form-inline` 不能用于录入表单 —— 实测输入 289→220px、按钮 289→51px，布局完全不同，故未采用；(c) pages-table 实为死代码 —— ui.css 的 `table.data-table` 特异性高于 theme.css 的 `.pages-table`，换类前后 fontSize/padding/color/background 逐项相等。④ **三处审计前提不符（本会话第 8 次）**：(a) `pages-actions` 在模板中 **0 处使用**（UI-020 点名了它），只存在于 theme.css，是**死 CSS** 而非「6 个页面仍在用」；(b) `pages-table-wrap` / `pages-path` 同样是模板零引用的死 CSS；(c) 审计说「四个邮件页面用 pages-form」，实际是 **6 个邮件页面 + 1 个片段**。⑤ **UI-016 的结论有实测支撑（真隔离当前不可行，前缀约定是合理选择，且现状比审计描述更精细）**：构建期组件样式**已经有真作用域**（core/component_css.go 的 ApplyComponentCSS 以节点级 `.sky-c-<节点ID>` 为 scope 替换顶层 `&`，产物还有 scope merge 与 @layer sky-base/plugin/auto/theme/local 层序、容器查询走 container-name: sky-theme）；只有**运行时片段**的样式是全局类（cartfrag.go 传空 scope），该文件注释已说明原因（片段是运行时 HTML、作者在编辑器看不到，不给默认样式就是「一列裸 HTML」）。**Shadow DOM 实测三处硬阻塞**：(1) `innerHTML` 赋值**不激活**声明式 shadow root（`<template shadowrootmode>` 保持 inert），而 htmx swap 用的正是 innerHTML/outerHTML；(2) shadow 内 input **无法加入外层 form**（实测 `outer.elements.length` 为 0），结账/登录这类跨片段表单会断；(3) 内容离开 light DOM 与静态产物的 SEO 目标冲突。CSS 变量可穿透 shadow 边界（实测生效），所以主题令牌不是阻碍。既有隔离强度：sky- 命名空间 + 白名单禁止用户 class 使用该前缀（docs/02-C0-component-base-spec.md:50）+ @layer 层序 + 节点级 scope。⑥ **移交的 CSS 清理清单（精确到行号，且标注哪些不能删）**：theme.css 行 172、173-176、177、189-197、209-223、363、368、406，另有 473-500 的 pages-fold / pages-fold-hint 整组（模板与 Go 均零引用）；ui.css 行 497-499、520-521、529-530（桥接组里的 .pages-form 三条）。**特别标注 `.attr-form-head` / `.locale-add` 同属桥接但仍有使用者，不要一起删** —— 这条比清单本身更有价值。⑦ **两处待决策（已记录）**：(a) `card card-body` 里没有卡内标题规则，裸 h2 退回 UA 的 22.5px（旧 pages-card h2 是 16px/mb 14px），这与已迁移页面（blocks/pages/plugins/theme 同为 section.card.card-body + 裸 h2）现状一致、属既有迁移基线；要零回归需在 css 补 `.card-body > h2` 规则，但那会同时改变已迁移页面外观，属 UIK 批次的样式收口。(b) 建议把 6 个 mail 页面登记进 admin_ui_contract_test.go 的已迁移清单，但该测试要求文件含 form-inline 或 form-stack，本次用 form-row（文档 10.2 登记的公共类）不满足，需同步放宽条件；代理**没有**改既有测试文件，而是新增等效且更强的全目录扫描测试（TestAdminTemplatesHaveNoLegacyPagesClasses）—— 这个选择是对的。⑧ 验证：gofmt/build/vet 通过；6 个契约测试全 PASS（含新增 2 个）；`go test ./public/test/dashboard/feature/ -run TestMail` **10/10 PASS**（mail 系列全部页面渲染）。⑨ 代理报告一处与本次无关的 vet 红灯：`public/test/media/unit/media_center_unit_test.go:233` 用 `*mediadto.SyncRefsReq` 而 contract 已改为 `*mediacontract.SyncRefsInput`，属 media 契约重构的未完成收尾。"
     },
     {
       "id": "UI-020",
@@ -1156,7 +1168,8 @@
         "admin-ui",
         "css"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：旧样式体系清理（子代理实现，**三条的核心是\"证明哪些是死代码\"**）。① **pages-* 在 admin 模板目录清零**（`rg -o 'pages-[a-z0-9-]+' internal/templates/admin -g '*.html'` 输出为空）—— 不只是审计点名的页面，而是整个目录。改了 7 个模板（mail / mail_marketing / mail_campaign / mail_automation / mail_automation_edit / mail_automation_run / partials/locale_rows.html）+ 新增全目录扫描契约测试。② **每一条替换映射都用浏览器计算值实测，不是照抄文档**：pages-wrap→stack（gap 20→16px）；pages-card card→card card-body（上下 padding 20→24px，radius/border/bg/shadow 完全一致）；pages-table data-table→data-table（**零差异**）；pages-badge→badge badge-mute 与 -ok→badge-success、-warn→badge-warning；pages-empty→hint（零差异）；pages-form form-row→form-row items-center（**逐像素一致**）；3 个裸 textarea 补 form-textarea。③ **三处最容易悄悄回归的地方逐项验过**：(a) `items-center` 不可省 —— 删掉 pages-form 后 grid 容器的 align-items 由 center 变 normal、按钮被 stretch，**实测 37px→58px**，而 mail_automation_edit 里 form 直接包 section 卡片，矮卡片会被拉成等高；(b) `form-inline` 不能用于录入表单 —— 实测输入 289→220px、按钮 289→51px，布局完全不同，故未采用；(c) pages-table 实为死代码 —— ui.css 的 `table.data-table` 特异性高于 theme.css 的 `.pages-table`，换类前后 fontSize/padding/color/background 逐项相等。④ **三处审计前提不符（本会话第 8 次）**：(a) `pages-actions` 在模板中 **0 处使用**（UI-020 点名了它），只存在于 theme.css，是**死 CSS** 而非「6 个页面仍在用」；(b) `pages-table-wrap` / `pages-path` 同样是模板零引用的死 CSS；(c) 审计说「四个邮件页面用 pages-form」，实际是 **6 个邮件页面 + 1 个片段**。⑤ **UI-016 的结论有实测支撑（真隔离当前不可行，前缀约定是合理选择，且现状比审计描述更精细）**：构建期组件样式**已经有真作用域**（core/component_css.go 的 ApplyComponentCSS 以节点级 `.sky-c-<节点ID>` 为 scope 替换顶层 `&`，产物还有 scope merge 与 @layer sky-base/plugin/auto/theme/local 层序、容器查询走 container-name: sky-theme）；只有**运行时片段**的样式是全局类（cartfrag.go 传空 scope），该文件注释已说明原因（片段是运行时 HTML、作者在编辑器看不到，不给默认样式就是「一列裸 HTML」）。**Shadow DOM 实测三处硬阻塞**：(1) `innerHTML` 赋值**不激活**声明式 shadow root（`<template shadowrootmode>` 保持 inert），而 htmx swap 用的正是 innerHTML/outerHTML；(2) shadow 内 input **无法加入外层 form**（实测 `outer.elements.length` 为 0），结账/登录这类跨片段表单会断；(3) 内容离开 light DOM 与静态产物的 SEO 目标冲突。CSS 变量可穿透 shadow 边界（实测生效），所以主题令牌不是阻碍。既有隔离强度：sky- 命名空间 + 白名单禁止用户 class 使用该前缀（docs/02-C0-component-base-spec.md:50）+ @layer 层序 + 节点级 scope。⑥ **移交的 CSS 清理清单（精确到行号，且标注哪些不能删）**：theme.css 行 172、173-176、177、189-197、209-223、363、368、406，另有 473-500 的 pages-fold / pages-fold-hint 整组（模板与 Go 均零引用）；ui.css 行 497-499、520-521、529-530（桥接组里的 .pages-form 三条）。**特别标注 `.attr-form-head` / `.locale-add` 同属桥接但仍有使用者，不要一起删** —— 这条比清单本身更有价值。⑦ **两处待决策（已记录）**：(a) `card card-body` 里没有卡内标题规则，裸 h2 退回 UA 的 22.5px（旧 pages-card h2 是 16px/mb 14px），这与已迁移页面（blocks/pages/plugins/theme 同为 section.card.card-body + 裸 h2）现状一致、属既有迁移基线；要零回归需在 css 补 `.card-body > h2` 规则，但那会同时改变已迁移页面外观，属 UIK 批次的样式收口。(b) 建议把 6 个 mail 页面登记进 admin_ui_contract_test.go 的已迁移清单，但该测试要求文件含 form-inline 或 form-stack，本次用 form-row（文档 10.2 登记的公共类）不满足，需同步放宽条件；代理**没有**改既有测试文件，而是新增等效且更强的全目录扫描测试（TestAdminTemplatesHaveNoLegacyPagesClasses）—— 这个选择是对的。⑧ 验证：gofmt/build/vet 通过；6 个契约测试全 PASS（含新增 2 个）；`go test ./public/test/dashboard/feature/ -run TestMail` **10/10 PASS**（mail 系列全部页面渲染）。⑨ 代理报告一处与本次无关的 vet 红灯：`public/test/media/unit/media_center_unit_test.go:233` 用 `*mediadto.SyncRefsReq` 而 contract 已改为 `*mediacontract.SyncRefsInput`，属 media 契约重构的未完成收尾。"
     },
     {
       "id": "UI-021",
@@ -1201,7 +1214,8 @@
         "workbench",
         "ux"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：工作台新增可复核的聚焦模式。复用既有沉浸入口与 Ctrl+P，按钮和快捷键统一调用 toggleImmersive，并同步 aria-pressed；聚焦时只隐藏检查器/大纲、扩大画布留白，编辑 iframe、状态、保存与发布 DOM 不变。新增真实 Jet 渲染契约测试，验证工作台结构与状态切换；相关测试通过。"
     },
     {
       "id": "UI-022",
@@ -1246,7 +1260,8 @@
         "admin-ui",
         "responsive"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：登录页响应式与可访问性修复。admin/login.html 增加全局 border-box、width:min(100%,416px)、卡片高度约束与内部滚动、验证码 max-width；错误区增加 role=alert/aria-live/tabindex，异步失败自动聚焦，输入焦点提供 2px 主题轮廓。新增契约测试，验证窄屏布局、错误提示和键盘焦点规则；go build 与 go vet 通过。"
     }
   ]
 }

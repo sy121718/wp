@@ -309,7 +309,8 @@
         "integration",
         "ssrf"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "webhook + SSRF：DNS 解析后逐 IP 检查、不跟随重定向、超时 Dial5s/TLS5s/整体15s、MaxRetry3、64KiB 双侧、HMAC-SHA256 签名、密钥加密存库、请求头固定集合。复用 pkg/queue asynq worker 幂等。11 测试全 PASS。迁移 199。"
     },
     {
       "id": "OSS-007",
@@ -608,7 +609,8 @@
         "developer-experience",
         "docker"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：一键启动（审计 OSS-012）。① 新增 docker-compose.yml：只起**依赖**（PostgreSQL 18-alpine + Redis 7-alpine），应用本身留在宿主机跑。把应用塞进容器会把「改一行代码看效果」变成两次构建，而开发期最需要的就是反馈速度；容器化整个应用是部署话题，不是开发话题。凭据与 config.yaml 的默认值逐字对齐（root/root、Redis 无密码），所以 clone 下来不必先改配置。两个服务都带 healthcheck，用 pg_isready 而不是 psql —— 健康检查不该依赖业务账号。② 新增 Makefile：help / up / down / clean-data / dev / build / run / test / test-short / lint / check / migrate 共 12 个目标，`make` 不带参数就列出全部（.DEFAULT_GOAL := help）。此前项目里散着 scripts/*.sh 与 *.ps1 两套脚本，新人要读一遍才知道「跑起来」需要哪几条。③ **migrate 目标如实处理**：项目没有 migrate 子命令 —— 迁移与 seed 随进程启动自动执行（cmd/main.go → routers → migrations.RunSeeds）。所以目标不做假动作，它的语义是「把依赖起到位并等待就绪，让下一次启动自己把库迁好」，并对未就绪给出明确等待与超时提示，而不是让 `go run` 抛一个连接错误。④ 修正了两个我自己先写错的目标：`run` 原本是 `go run .`，但入口在 `./cmd`（`cmd/main.go`），`go run .` 会直接失败；`migrate` 原本假设存在子命令。**这两处都是先写、再核对、再改**——Makefile 的好处是命令可发现，代价是写错了没人会立刻发现，所以每加一条都要真跑一次。⑤ README 增加「快速开始」三段：`make up` → `make migrate` → `make dev`，以及环境变量覆盖说明与 `clean-data` 的危险提示。⑥ 历史脚本**没有移动**（steps 建议归档到 scripts/archive）：`check-*.sh` 刚接进 CI，移动会打断它们；改为在 README 里分类说明「当前入口」与「历史脚本」，并在后者上写明「新流程不要依赖」。删除失效脚本的价值是「不再误导」，而分类说明同样达到这个效果且零破坏。"
     },
     {
       "id": "OSS-013",
@@ -653,7 +655,8 @@
         "documentation",
         "i18n"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：为国际贡献者补充英文入口。README 标题下链接 docs/README.en.md；新增 getting-started.en.md、architecture.en.md、plugin-development.en.md、contributing.en.md 与英文索引，均链接回中文权威细节文档。公开插件 contract 的 Godoc 增加英文入口链接。未机械翻译审计记录、领域细节和普通内部注释；git diff --check、相关插件包测试、go build ./...、go vet ./... 均通过。"
     },
     {
       "id": "OSS-014",
@@ -805,7 +808,8 @@
         "documentation",
         "examples"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：示例插件、模块脚手架与能力边界文档（子代理实现，上一轮误判阻塞后由父代理澄清重启）。① OSS-016（L0 示例插件）：examples/l0-demo/（manifest.json + Jet 组件 + 迁移 + 资产说明），由 scaffold.Files(\"l0demo\") 程序化生成——示例与 scaffold 产物逐字节一致，由 TestExamplePluginParity 钉住。真实安装链路验证：示例 zip 走 Install → EnabledAssembly，断言 plugin.l0demo.l0demo_card 规格就位（TestExamplePluginInstallable，真实 PG 测试）。README 标注 L1 后台页 / L2 collections 为能力缺口——manifest 的 admin/collections 字段在 plugincomp 解析器中确实不存在（已核实），未伪造。② OSS-017（模块脚手架）：新增 cmd/plugin module <name> 子命令，生成 contract/dto/model/enums/service/inbound/http 六层 + README，遵循 internal/module 规范（编译期断言 var _ xxxcontract.XxxService、命名返回值、响应走 pkg/response、消息取 enums）。端到端验证：编译 CLI → 生成 demo 骨架 → go build ./demo/... + go vet 通过。README 列出 4 个仍需人工装配的触点（路由挂载/迁移注册/权限点菜单/CollectionSource）——如实标注而不是声称全自动。③ REG-004（能力边界文档）：docs/06-plugin-system.md 新增 §11A，两个表格：「能用的能力」（同 CompositeLoader/同 style 引擎/7 种 props 控件白名单/presets 可引 core.*/L1 迁移/资产）与「差距」（无任意 Go 逻辑/控件类型不可扩展/任意 CSS 封闭/不可覆盖内置模板/不可直连库/admin 页与 collections 标注为缺口）。④ 首次启动时曾误判 plugin 核心文件有未提交改动为进行中中间态而停下——实际是父代理早前批次已完成并验证的稳定基线（Fingerprint/source 解耦/ErrorAuto）。父代理澄清后重启成功。这个教训：工作树的未提交改动不等于中间态，要区分已完成但未提交与正在编辑。⑤ gofmt/build/vet 通过；scaffold 测试与真实 PG 安装链路测试通过。"
     },
     {
       "id": "OSS-017",
@@ -857,7 +861,8 @@
         "scaffold",
         "ci"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：示例插件、模块脚手架与能力边界文档（子代理实现，上一轮误判阻塞后由父代理澄清重启）。① OSS-016（L0 示例插件）：examples/l0-demo/（manifest.json + Jet 组件 + 迁移 + 资产说明），由 scaffold.Files(\"l0demo\") 程序化生成——示例与 scaffold 产物逐字节一致，由 TestExamplePluginParity 钉住。真实安装链路验证：示例 zip 走 Install → EnabledAssembly，断言 plugin.l0demo.l0demo_card 规格就位（TestExamplePluginInstallable，真实 PG 测试）。README 标注 L1 后台页 / L2 collections 为能力缺口——manifest 的 admin/collections 字段在 plugincomp 解析器中确实不存在（已核实），未伪造。② OSS-017（模块脚手架）：新增 cmd/plugin module <name> 子命令，生成 contract/dto/model/enums/service/inbound/http 六层 + README，遵循 internal/module 规范（编译期断言 var _ xxxcontract.XxxService、命名返回值、响应走 pkg/response、消息取 enums）。端到端验证：编译 CLI → 生成 demo 骨架 → go build ./demo/... + go vet 通过。README 列出 4 个仍需人工装配的触点（路由挂载/迁移注册/权限点菜单/CollectionSource）——如实标注而不是声称全自动。③ REG-004（能力边界文档）：docs/06-plugin-system.md 新增 §11A，两个表格：「能用的能力」（同 CompositeLoader/同 style 引擎/7 种 props 控件白名单/presets 可引 core.*/L1 迁移/资产）与「差距」（无任意 Go 逻辑/控件类型不可扩展/任意 CSS 封闭/不可覆盖内置模板/不可直连库/admin 页与 collections 标注为缺口）。④ 首次启动时曾误判 plugin 核心文件有未提交改动为进行中中间态而停下——实际是父代理早前批次已完成并验证的稳定基线（Fingerprint/source 解耦/ErrorAuto）。父代理澄清后重启成功。这个教训：工作树的未提交改动不等于中间态，要区分已完成但未提交与正在编辑。⑤ gofmt/build/vet 通过；scaffold 测试与真实 PG 安装链路测试通过。"
     },
     {
       "id": "OSS-018",

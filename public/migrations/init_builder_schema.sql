@@ -161,7 +161,8 @@ CREATE TABLE IF NOT EXISTS document_snapshots (
 CREATE TABLE IF NOT EXISTS page_routes (
     project_id   uuid NOT NULL REFERENCES projects(id),
     path         text NOT NULL,
-    page_id      uuid NULL REFERENCES pages(id),
+    -- page_id 是「路径 → 实体」的逻辑引用：预留路由时实体尚未创建，故不设外键（见迁移 053）。
+    page_id      uuid NULL,
     presentation_id uuid NULL REFERENCES presentation_instances(id),
     route_kind   text NOT NULL CHECK (route_kind IN ('reserved', 'active', 'redirect')),
     artifact_id  uuid NULL,
@@ -240,7 +241,8 @@ CREATE TABLE IF NOT EXISTS content_objects (
 
 CREATE TABLE IF NOT EXISTS page_artifact_objects (
     artifact_id   uuid NOT NULL REFERENCES page_artifacts(id),
-    content_hash  text NOT NULL REFERENCES content_objects(content_hash),
+    -- 内容对象回收时闭包行随之消失（见迁移 204：没有级联会让 GC 被外键挡下，静默泄漏）。
+    content_hash  text NOT NULL REFERENCES content_objects(content_hash) ON DELETE CASCADE,
     PRIMARY KEY (artifact_id, content_hash)
 );
 
@@ -289,7 +291,8 @@ CREATE TABLE IF NOT EXISTS presentation_artifacts (
 
 CREATE TABLE IF NOT EXISTS presentation_artifact_objects (
     artifact_id   uuid NOT NULL REFERENCES presentation_artifacts(id),
-    content_hash  text NOT NULL REFERENCES content_objects(content_hash),
+    -- 内容对象回收时闭包行随之消失（见迁移 204：没有级联会让 GC 被外键挡下，静默泄漏）。
+    content_hash  text NOT NULL REFERENCES content_objects(content_hash) ON DELETE CASCADE,
     PRIMARY KEY (artifact_id, content_hash)
 );
 

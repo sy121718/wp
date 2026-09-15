@@ -8,7 +8,6 @@ package userhttp
 
 import (
 	"net/http"
-	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -189,12 +188,13 @@ func (h *Handle) DoRevokeSession(c *gin.Context) {
 		c.Redirect(http.StatusFound, "/user/login")
 		return
 	}
-	rowID, perr := strconv.ParseUint(formValue(c, "id"), 10, 64)
-	if perr != nil || rowID == 0 {
+	// 设备标识是会话令牌的 sha256（Redis 索引成员），不是数据库行 id —— 会话不落库。
+	sessionHash := strings.TrimSpace(formValue(c, "id"))
+	if sessionHash == "" {
 		h.renderAccount(c, http.StatusBadRequest, userenums.ErrSessionNotFound)
 		return
 	}
-	if err := h.svc.RevokeSession(c.Request.Context(), sess.UserID, rowID); err != nil {
+	if err := h.svc.RevokeSession(c.Request.Context(), sess.UserID, sessionHash); err != nil {
 		h.renderAccount(c, http.StatusBadRequest, userMessage(err))
 		return
 	}

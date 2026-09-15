@@ -26,6 +26,19 @@ const (
 	tableNamePresentationDependencies = "presentation_dependencies"
 )
 
+// 实例角色（审计 EDT-004）：同一个实体可以同时有这两张页面。
+const (
+	// InstanceRoleDetail 实体详情页（既有语义，默认值）。
+	InstanceRoleDetail = "detail"
+	// InstanceRoleArchive 归档列表页（如「某分类下的商品列表」）。
+	InstanceRoleArchive = "archive"
+)
+
+// IsValidInstanceRole 角色是否合法。
+func IsValidInstanceRole(role string) bool {
+	return role == InstanceRoleDetail || role == InstanceRoleArchive
+}
+
 // InstanceEntity presentation_instances 表实体。
 //
 // 语义（对齐 DDL，非旧 model 的 status/artifact_hash）：
@@ -33,10 +46,13 @@ const (
 //   - stale 表示「依赖已变更、待重建」；
 //   - project_id / template_id 为 NOT NULL 外键，装配时必须落库。
 type InstanceEntity struct {
-	ID                string  `gorm:"column:id;type:uuid;primaryKey"`
-	ProjectID         string  `gorm:"column:project_id;type:uuid;not null"`
-	EntityType        string  `gorm:"column:entity_type;not null"`
-	EntityID          string  `gorm:"column:entity_id;type:uuid;not null"`
+	ID         string `gorm:"column:id;type:uuid;primaryKey"`
+	ProjectID  string `gorm:"column:project_id;type:uuid;not null"`
+	EntityType string `gorm:"column:entity_type;not null"`
+	EntityID   string `gorm:"column:entity_id;type:uuid;not null"`
+	// InstanceRole 实例角色（审计 EDT-004）：detail = 实体详情页，archive = 归档列表页。
+	// 同一个分类可以同时有这两张页面，所以唯一键是（实体 + 角色）而不是实体。
+	InstanceRole      string  `gorm:"column:instance_role;not null;default:detail"`
 	URLPath           string  `gorm:"column:url_path;not null"`
 	TemplateID        string  `gorm:"column:template_id;type:uuid;not null"`
 	CurrentSnapshotID *string `gorm:"column:current_snapshot_id;type:uuid"`
@@ -159,9 +175,21 @@ func (m *Model) GetInstance(ctx context.Context, id string) (e *InstanceEntity, 
 
 // GetInstanceByEntity 按内容实体查询。
 func (m *Model) GetInstanceByEntity(ctx context.Context, entityType, entityID string) (e *InstanceEntity, err error) {
+	return m.GetInstanceByEntityRole(ctx, entityType, entityID, "detail")
+}
+
+// GetInstanceByEntityRole 按实体与**角色**查实例（审计 EDT-004）。
+//
+// 同一个分类既有详情页实例、也可能有归档页实例。只按实体查会把先建的当成
+// 「已存在」直接返回 —— 于是「给分类建归档页」这个动作静默变成「拿到详情页实例」，
+// 而调用方以为建成了。
+func (m *Model) GetInstanceByEntityRole(ctx context.Context, entityType, entityID, role string) (e *InstanceEntity, err error) {
+	if role == "" {
+		role = "detail"
+	}
 	var row InstanceEntity
 	if err = m.db.WithContext(ctx).
-		Where("entity_type = ? AND entity_id = ?", entityType, entityID).
+		Where("entity_type = ? AND entity_id = ? AND instance_role = ?", entityType, entityID, role).
 		First(&row).Error; err != nil {
 		return nil, err
 	}
@@ -257,6 +285,16 @@ func (m *Model) NextArtifactVersion(ctx context.Context, instanceID string) (v i
 }
 
 // CreateArtifact 写产物行。
+// ListArtifactHashes 列出本模块认领的全部产物 hash（IDX-015 反向对账）。
+// 不过滤状态：元数据行在即视为有人认领，能否回收由 GC 决定。
+func (m *Model) ListArtifactHashes(ctx context.Context) (hashes []string, err error) {
+	hashes = []string{}
+	err = m.db.WithContext(ctx).Raw(
+		"SELECT DISTINCT artifact_hash FROM presentation_artifacts WHERE artifact_hash <> ''",
+	).Scan(&hashes).Error
+	return hashes, err
+}
+
 func (m *Model) CreateArtifact(ctx context.Context, e *ArtifactEntity) error {
 	return m.ArtifactDB(ctx).Create(e).Error
 }

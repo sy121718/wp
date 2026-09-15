@@ -171,7 +171,7 @@ func (h *mailPageHandle) MailCampaignReportJSON(c *gin.Context) {
 	}
 	report, err := h.mail.CampaignReport(c.Request.Context(), parseUint64(c.Query("id")), page, mailMarketingPageSize)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		pageErrorBadRequest(c, "mail_marketing", err)
 		return
 
 	}

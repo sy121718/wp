@@ -98,10 +98,21 @@ func themePathString(obj map[string]any, path string) string {
 
 // scoreView SEO 评分视图（服务端渲染，客户端只处理「点击建议跳转」）。
 type scoreView struct {
-	OK        bool
-	Total     int
-	Grade     string
-	Sections  []scoreSectionView
+	OK       bool
+	Total    int
+	Grade    string
+	Sections []scoreSectionView
+	// ProfileType / ProfileReason 本次评分所用的页型与调权理由（审计 SEO-016）。
+	// 文档要求调权在结果里回显（docs/02-E1 §5）：不显示的话，编辑者看到同一份内容
+	// 在商品页比文章页高几分时无从解释。空 = 用默认权重（页面草稿与文章）。
+	ProfileType   string
+	ProfileReason string
+	// Duplicates 与本页标题重复的其它页面（审计 SEO-018 编辑期轻量版）。
+	// **列出冲突页面本身**而不是只报数量：只报「有重复」运营不知道该去改哪一页。
+	Duplicates    []string
+	DuplicateNote string
+	// Empty 空态文案（读不到实体时给一句可读的话，而不是让面板整体不可用）。
+	Empty     string
 	SerpTitle string
 	SerpURL   string
 	SerpDesc  string

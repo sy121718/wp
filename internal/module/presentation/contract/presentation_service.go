@@ -39,10 +39,38 @@ type PresentationService interface {
 	List(ctx context.Context, req *presentationdto.ListReq) (list []*presentationdto.InstanceResp, err error)
 	// Delete 删除实例（级联删快照 + 反激活 URL）。
 	Delete(ctx context.Context, req *presentationdto.DeleteReq) (err error)
+	// EnsureArchiveInstance 确保某实体的归档页存在（审计 EDT-004）：实体侧
+	// （分类 / 标签 / 品牌）增删改时调用。未配置归档模板时返回 Skipped 而不是错误 ——
+	// 「这个站点不要归档页」是正常状态，不该让新建分类变成一个会失败的操作。
+	EnsureArchiveInstance(ctx context.Context, req *presentationdto.EnsureArchiveReq) (res *presentationdto.EnsureArchiveResp, err error)
 	// MarkStaleByDependency 按依赖源 (kind,key) 精确标记受影响实例待重建，返回命中实例 id。
 	//
 	// 依赖失效端口（与 page 契约同名方法同义，实现 pipeline.DependencyTarget）：
 	// 编排层在依赖源变化时把失效范围落到具体实例上，而不是全量重建。
 	// 键的构造用 pipeline.DirectContentKey / ContentCollectionKey（与构建期登记逐字一致）。
 	MarkStaleByDependency(ctx context.Context, kind, key string) (ids []string, err error)
+	// ListArtifactHashes 列出本模块认领的全部产物 hash（IDX-015 反向对账的属主清单）。
+	// 只读且不含内容：对账只需要回答「这些磁盘目录是不是我们产出的」。
+	ListArtifactHashes(ctx context.Context) (hashes []string, err error)
+}
+
+// ArchiveInstanceEnsurer 归档页的按需创建（审计 EDT-004）。
+//
+// 消费者（实体模块：分类 / 标签 / 品牌）只拿得到这一条方法：归档页该不该建、
+// 路径怎么定、用哪套模板，全在 presentation 内部决定 —— 否则归档规则会散落到
+// 每个实体模块里各写一份，改一次规则要改好几处。
+type ArchiveInstanceEnsurer interface {
+	EnsureArchiveInstance(ctx context.Context, req *presentationdto.EnsureArchiveReq) (res *presentationdto.EnsureArchiveResp, err error)
+}
+
+// BuildQueueEnqueuer 自动重建任务的入队端口（PERF-020）。
+//
+// 由 build 模块实现、装配期注入（方向 presentation ← build，与 page 契约里的
+// 同名端口同模式）。自动重建改为入队而不是在触发进程里同步重建：进程内互斥锁
+// 在多实例部署下拦不住两个实例同时重建同一实例，队列消费侧的 SKIP LOCKED claim
+// 才是跨实例互斥的落点。
+type BuildQueueEnqueuer interface {
+	// EnqueuePresentationBuild 入队一条实例重建任务；同一实例同时只有一条待办
+	// （队列侧部分唯一索引去重，重复入队是幂等的）。
+	EnqueuePresentationBuild(ctx context.Context, presentationID string) error
 }

@@ -26,6 +26,7 @@ import (
 	productdto "go_wp/internal/module/product/dto"
 	inventorydto "go_wp/internal/module/product/inventory/dto"
 	inventorymodel "go_wp/internal/module/product/inventory/model"
+	orderstock "go_wp/internal/module/product/inventory/outbound/orderstock"
 	inventoryservice "go_wp/internal/module/product/inventory/service"
 	productmodel "go_wp/internal/module/product/model"
 	productservice "go_wp/internal/module/product/service"
@@ -85,7 +86,6 @@ func newOrderFixture(t *testing.T) *orderFixture {
 	mail := &fakeMail{}
 	users := userservice.NewService(
 		usermodel.NewUserModel(db),
-		usermodel.NewUserSessionModel(db),
 		usermodel.NewUserProfileModel(db),
 		usermodel.NewUserPreferenceModel(db),
 		mail, "测试站",
@@ -97,7 +97,7 @@ func newOrderFixture(t *testing.T) *orderFixture {
 		ordermodel.NewCouponModel(db),
 		ordermodel.NewReturnModel(db),
 		products,
-		inv,
+		orderstock.New(inv),
 		users,
 	)
 	return &orderFixture{

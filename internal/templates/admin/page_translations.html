@@ -2,15 +2,17 @@
    入口：页面列表行内「多语言」按钮（不做独立菜单）；本页不做独立 JS，交互全部为
    服务端渲染 + 原生表单（语言切换 onchange 提交、保存整表 POST + PRG 回跳）。
    可翻译行由 handler 用 builder.CollectContentCandidates 生成，与构建期同源。 *}
+{* 文案走 t(key, 中文兜底)：range 内不能写赋值语句，先把 t 存成变量 tr 再取词。 *}
 {{extends "layout.html"}}
 {{block body()}}
+{{tr := .["t"]}}
 <div class="stack">
     <section class="card card-body">
-        <h2>多语言 · {{.PagePath}}</h2>
+        <h2>{{ .["t"]("admin.page_translations.heading", "多语言 · ") }}{{.PagePath}}</h2>
 
         {{if .Errors}}
         <div class="tr-alert" role="alert">
-            <strong>未保存：请先修正以下问题</strong>
+            <strong>{{ .["t"]("admin.page_translations.unsaved", "未保存：请先修正以下问题") }}</strong>
             <ul class="list-reset">
                 {{range _, e := .Errors}}
                 <li>{{e}}</li>
@@ -21,43 +23,43 @@
 
         {{if .Saved}}
         <p class="hint" role="status">
-            已保存 {{.SavedCount}} 条译文。{{if .SavedCount}}译文变更已标记全站待重建（下次构建生效）。{{end}}
+            {{ .["t"]("admin.page_translations.saved_lead", "已保存 ") }}{{.SavedCount}}{{ .["t"]("admin.page_translations.saved_mid", " 条译文。") }}{{if .SavedCount}}{{ .["t"]("admin.page_translations.saved_tail", "译文变更已标记全站待重建（下次构建生效）。") }}{{end}}
         </p>
         {{end}}
 
         {* 语言切换 + 完成度 + 一键 AI（灰置，待接入；决策 F13） *}
         <form method="get" action="/admin/page/translations" class="form-inline tr-toolbar">
             <input type="hidden" name="pageId" value="{{.PageID}}">
-            <label>语言
+            <label>{{ .["t"]("admin.page_translations.lang_label", "语言") }}
                 <select class="form-select" name="lang" onchange="this.form.submit()">
                     {{range _, l := .Langs}}
                     <option value="{{l.Code}}"{{if l.Active}} selected{{end}}>{{l.Label}}</option>
                     {{end}}
                 </select>
             </label>
-            <noscript><button type="submit" class="btn btn-sm">切换语言</button></noscript>
-            <span class="hint">本页完成度 {{.PageDone}} / {{.PageTotal}}</span>
+            <noscript><button type="submit" class="btn btn-sm">{{ .["t"]("admin.page_translations.switch_lang", "切换语言") }}</button></noscript>
+            <span class="hint">{{ .["t"]("admin.page_translations.page_progress", "本页完成度 ") }}{{.PageDone}} / {{.PageTotal}}</span>
             {{if .SiteNote}}
             <span class="hint">{{.SiteNote}}</span>
             {{else}}
-            <span class="hint">全站完成度 {{.Lang}}：{{.SiteDone}} / {{.SiteTotal}} 条</span>
+            <span class="hint">{{ .["t"]("admin.page_translations.site_progress_lead", "全站完成度 ") }}{{.Lang}}{{ .["t"]("admin.page_translations.site_progress_mid", "：") }}{{.SiteDone}} / {{.SiteTotal}}{{ .["t"]("admin.page_translations.site_progress_tail", " 条") }}</span>
             {{end}}
-            <button type="button" class="btn btn-secondary" disabled aria-disabled="true" title="待接入">一键 AI 翻译</button>
+            <button type="button" class="btn btn-secondary" disabled aria-disabled="true" title="{{ .["t"]("admin.page_translations.ai_title", "待接入") }}">{{ .["t"]("admin.page_translations.ai_button", "一键 AI 翻译") }}</button>
         </form>
 
         {{if .IsDefaultLang}}
         <p class="hint">
-            当前语言是站点默认语言：构建期不使用内容译文（产物即原文）。译文可先填好，切换语言后即可生效。
+            {{ .["t"]("admin.page_translations.default_lang_hint", "当前语言是站点默认语言：构建期不使用内容译文（产物即原文）。译文可先填好，切换语言后即可生效。") }}
         </p>
         {{end}}
 
         <p class="hint">
-            筛选：
-            <a href="/admin/page/translations?pageId={{.PageID}}&amp;lang={{.Lang}}&amp;filter=all">全部</a> ·
-            <a href="/admin/page/translations?pageId={{.PageID}}&amp;lang={{.Lang}}&amp;filter=missing">只看缺失</a> ·
-            <a href="/admin/page/translations?pageId={{.PageID}}&amp;lang={{.Lang}}&amp;filter=manual">只看人工</a> ·
-            <a href="/admin/page/translations?pageId={{.PageID}}&amp;lang={{.Lang}}&amp;filter=ai">只看 AI 翻译</a>
-            <span>（当前显示 {{.RowCount}} 行）</span>
+            {{ .["t"]("admin.page_translations.filter_label", "筛选：") }}
+            <a href="/admin/page/translations?pageId={{.PageID}}&amp;lang={{.Lang}}&amp;filter=all">{{ .["t"]("admin.page_translations.filter.all", "全部") }}</a> ·
+            <a href="/admin/page/translations?pageId={{.PageID}}&amp;lang={{.Lang}}&amp;filter=missing">{{ .["t"]("admin.page_translations.filter.missing", "只看缺失") }}</a> ·
+            <a href="/admin/page/translations?pageId={{.PageID}}&amp;lang={{.Lang}}&amp;filter=manual">{{ .["t"]("admin.page_translations.filter.manual", "只看人工") }}</a> ·
+            <a href="/admin/page/translations?pageId={{.PageID}}&amp;lang={{.Lang}}&amp;filter=ai">{{ .["t"]("admin.page_translations.filter.ai", "只看 AI 翻译") }}</a>
+            <span>{{ .["t"]("admin.page_translations.filter.count_prefix", "（当前显示 ") }}{{.RowCount}}{{ .["t"]("admin.page_translations.filter.count_suffix", " 行）") }}</span>
         </p>
     </section>
 
@@ -65,9 +67,9 @@
     <section class="card card-body mt-md">
         <p class="hint">
             {{if .PageTotal == 0}}
-            本页没有可翻译文本（只有组件白名单字段参与翻译；纯数字/纯符号与链接、色值等字段不翻译）。
+            {{ .["t"]("admin.page_translations.empty_no_text", "本页没有可翻译文本（只有组件白名单字段参与翻译；纯数字/纯符号与链接、色值等字段不翻译）。") }}
             {{else}}
-            当前筛选条件下没有行。
+            {{ .["t"]("admin.page_translations.empty_filtered", "当前筛选条件下没有行。") }}
             {{end}}
         </p>
     </section>
@@ -79,28 +81,28 @@
 
         {{range _, g := .Groups}}
         <section class="card card-body mt-md">
-            <h2>{{g.Component}} <span class="hint">（{{len(g.Rows)}} 条）</span></h2>
+            <h2>{{g.Component}} <span class="hint">{{tr("admin.page_translations.group_count_prefix", "（")}}{{len(g.Rows)}}{{tr("admin.page_translations.group_count_suffix", " 条）")}}</span></h2>
             <table class="data-table data-table-wide tr-table">
                 <thead>
-                <tr><th>字段</th><th>原文</th><th>译文</th><th>状态</th><th>来源</th></tr>
+                <tr><th>{{ .["t"]("admin.page_translations.col.field", "字段") }}</th><th>{{ .["t"]("admin.page_translations.col.source", "原文") }}</th><th>{{ .["t"]("admin.page_translations.col.target", "译文") }}</th><th>{{ .["t"]("admin.page_translations.col.status", "状态") }}</th><th>{{ .["t"]("admin.page_translations.col.origin", "来源") }}</th></tr>
                 </thead>
                 <tbody>
                 {{range _, r := g.Rows}}
                 <tr>
-                    <td class="tr-field">{{r.Field}}{{if r.Rich}}<br><span class="badge badge-mute">富文本</span>{{end}}{{if r.Origin}}<br><span class="badge badge-info" title="全站共享文本：改动后所有使用该块的页面同步生效">{{r.Origin}}</span>{{end}}</td>
+                    <td class="tr-field">{{r.Field}}{{if r.Rich}}<br><span class="badge badge-mute">{{tr("admin.page_translations.rich", "富文本")}}</span>{{end}}{{if r.Origin}}<br><span class="badge badge-info" title="{{tr("admin.page_translations.origin_title", "全站共享文本：改动后所有使用该块的页面同步生效")}}">{{r.Origin}}</span>{{end}}</td>
                     <td class="tr-source">{{r.Source}}</td>
                     <td class="tr-target">
-                        <textarea class="form-textarea" name="rowTarget" rows="{{if r.Rich}}4{{else}}2{{end}}" maxlength="{{r.Limit}}" placeholder="填写译文（留空则不写入）">{{r.Target}}</textarea>
+                        <textarea class="form-textarea" name="rowTarget" rows="{{if r.Rich}}4{{else}}2{{end}}" maxlength="{{r.Limit}}" placeholder="{{tr("admin.page_translations.target_placeholder", "填写译文（留空则不写入）")}}">{{r.Target}}</textarea>
                         <input type="hidden" name="rowContext" value="{{r.Context}}">
                         <input type="hidden" name="rowSource" value="{{r.Source}}">
                         <input type="hidden" name="rowHash" value="{{r.SourceHash}}">
-                        <div class="hint">上限 {{r.Limit}} 字节{{if r.Rich}}；富文本译文需保留 HTML 标签（形态与原文一致）{{end}}</div>
+                        <div class="hint">{{tr("admin.page_translations.limit_lead", "上限 ")}}{{r.Limit}}{{tr("admin.page_translations.limit_unit", " 字节")}}{{if r.Rich}}{{tr("admin.page_translations.limit_rich", "；富文本译文需保留 HTML 标签（形态与原文一致）")}}{{end}}</div>
                     </td>
                     <td>
                         {{if r.Translated}}
-                        <span class="badge badge-success">已翻译</span>
+                        <span class="badge badge-success">{{tr("admin.page_translations.status.translated", "已翻译")}}</span>
                         {{else}}
-                        <span class="badge badge-warning">缺失</span>
+                        <span class="badge badge-warning">{{tr("admin.page_translations.status.missing", "缺失")}}</span>
                         {{end}}
                     </td>
                     <td>
@@ -116,10 +118,10 @@
                     <td></td>
                     <td colspan="4">
                         <details>
-                            <summary>↳ 还用在另外 {{r.ReusePages}} 个页面（修改后全站同步生效）</summary>
+                            <summary>↳ {{tr("admin.page_translations.reuse_lead", "还用在另外 ")}}{{r.ReusePages}}{{tr("admin.page_translations.reuse_tail", " 个页面（修改后全站同步生效）")}}</summary>
                             <div class="hint">
-                                该文本在 {{r.ReuseTotal}} 个页面出现：{{r.ReuseHint}}<br>
-                                共 1 个译文（context = {{r.Context}}，lang = {{.Lang}}）
+                                {{tr("admin.page_translations.reuse_occurrences_lead", "该文本在 ")}}{{r.ReuseTotal}}{{tr("admin.page_translations.reuse_occurrences_tail", " 个页面出现：")}}{{r.ReuseHint}}<br>
+                                {{tr("admin.page_translations.reuse_shared_lead", "共 1 个译文（context = ")}}{{r.Context}}{{tr("admin.page_translations.reuse_shared_mid", "，lang = ")}}{{.Lang}}{{tr("admin.page_translations.reuse_shared_tail", "）")}}
                             </div>
                         </details>
                     </td>
@@ -132,9 +134,9 @@
         {{end}}
 
         <section class="card card-body mt-md">
-            <button type="submit" class="btn btn-primary">保存全部</button>
+            <button type="submit" class="btn btn-primary">{{ .["t"]("admin.page_translations.save_all", "保存全部") }}</button>
             <span class="hint">
-                保存写入 sys_translation（来源 manual）；清空输入框表示「本行不写入」，不会删除已有译文。
+                {{ .["t"]("admin.page_translations.save_hint", "保存写入 sys_translation（来源 manual）；清空输入框表示「本行不写入」，不会删除已有译文。") }}
             </span>
         </section>
     </form>

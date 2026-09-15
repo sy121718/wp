@@ -123,9 +123,13 @@ func TestBlockCategoryUpdate(t *testing.T) {
 		if res.Category != "product" {
 			t.Fatalf("分类未更新: %q", res.Category)
 		}
-		got, err := e.svc.Detail(ctx, &blockdto.DetailReq{ID: created.ID})
-		if err != nil || got.Category != "product" {
-			t.Fatalf("分类更新未持久化: %#v err=%v", got, err)
+		// Detail 的 ProjectID 是必填（跨工程越权防护），漏传会得到「参数缺失」而不是「块不存在」。
+		got, err := e.svc.Detail(ctx, &blockdto.DetailReq{ProjectID: e.projectID, ID: created.ID})
+		if err != nil {
+			t.Fatalf("读块详情失败: %v", err)
+		}
+		if got.Category != "product" {
+			t.Fatalf("分类更新未持久化: %#v", got)
 		}
 	})
 
@@ -142,7 +146,10 @@ func TestBlockCategoryUpdate(t *testing.T) {
 	t.Run("InvalidCategoryRejected", func(t *testing.T) {
 		_, err := e.svc.Update(ctx, &blockdto.UpdateReq{ID: created.ID, Category: "商品区块"})
 		errContains(t, err, blockenums.ErrBlockInvalidCategory)
-		got, _ := e.svc.Detail(ctx, &blockdto.DetailReq{ID: created.ID})
+		got, derr := e.svc.Detail(ctx, &blockdto.DetailReq{ProjectID: e.projectID, ID: created.ID})
+		if derr != nil {
+			t.Fatalf("读块详情失败: %v", derr)
+		}
 		if got.Category != "product" {
 			t.Fatalf("非法分类更新失败后分类不应变化: %q", got.Category)
 		}

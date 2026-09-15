@@ -34,7 +34,8 @@ func (s *Service) CompilePreview(ctx context.Context, docJSON []byte, projectID,
 		logger.Scene("build").With("err", err).Warn("预览文档解析失败")
 		return nil, fmt.Errorf("%w: %v", pagecontract.ErrPreviewInvalidDocument, err)
 	}
-	html, err = s.compileDocument(ctx, page, projectID, currentPath, buildLang(lang))
+	// 预览不产出 Manifest，因此不记录依赖线索（usage 传 nil）。
+	html, err = s.compileDocument(ctx, page, projectID, currentPath, buildLang(lang), nil, false)
 	if err != nil {
 		if errors.Is(err, errCompileFailed) {
 			logger.Scene("build").Error(err, "预览编译失败")

@@ -37,14 +37,14 @@ func New(pages pagecontract.PageService, contents contentcontract.ContentService
 var _ navigationcontract.SourceResolver = (*Resolver)(nil)
 
 // ResolveSource 按来源类型 + 实体 ID 解析标题与 URL（解析不到返回空串，由调用方回退）。
-func (r *Resolver) ResolveSource(ctx context.Context, sourceType, sourceID string) (title, url string, err error) {
+func (r *Resolver) ResolveSource(ctx context.Context, projectID, sourceType, sourceID string) (title, url string, err error) {
 	switch strings.TrimSpace(sourceType) {
 	case "page":
-		return r.resolvePage(ctx, sourceID)
+		return r.resolvePage(ctx, projectID, sourceID)
 	case "article", "product", "category":
 		return r.resolveContent(ctx, sourceType, sourceID)
 	case "block":
-		return r.resolveBlock(ctx, sourceID)
+		return r.resolveBlock(ctx, projectID, sourceID)
 	}
 	return "", "", nil
 }
@@ -128,11 +128,11 @@ func (r *Resolver) contentCandidates(ctx context.Context, entityType, title stri
 }
 
 // resolvePage 页面来源：URL 取激活路径（未发布则草稿路径），标题取文档 settings.seo.title。
-func (r *Resolver) resolvePage(ctx context.Context, id string) (title, url string, err error) {
+func (r *Resolver) resolvePage(ctx context.Context, projectID, id string) (title, url string, err error) {
 	if r.pages == nil {
 		return "", "", nil
 	}
-	page, err := r.pages.Detail(ctx, &pagecontract.DetailReq{ID: id})
+	page, err := r.pages.Detail(ctx, &pagecontract.DetailReq{ProjectID: projectID, ID: id})
 	if err != nil || page == nil {
 		return "", "", nil // 页面已删除/不可读：回退记录自身值
 	}
@@ -204,11 +204,11 @@ func (r *Resolver) contentURL(ctx context.Context, entityType, id string) string
 }
 
 // resolveBlock 块来源：块是内容片段、没有公开 URL，只解析标题（链接沿用记录自身 path）。
-func (r *Resolver) resolveBlock(ctx context.Context, id string) (title, url string, err error) {
+func (r *Resolver) resolveBlock(ctx context.Context, projectID, id string) (title, url string, err error) {
 	if r.blocks == nil {
 		return "", "", nil
 	}
-	block, err := r.blocks.Detail(ctx, &blockcontract.DetailReq{ID: id})
+	block, err := r.blocks.Detail(ctx, &blockcontract.DetailReq{ProjectID: projectID, ID: id})
 	if err != nil || block == nil {
 		return "", "", nil
 	}

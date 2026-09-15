@@ -5,10 +5,12 @@ package dashboardhttp
 // Jet 片段，否则完整页面/重定向。
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strings"
 
+	blueprintdto "go_wp/internal/module/blueprint/dto"
 	dashboardenums "go_wp/internal/module/dashboard/enums"
 	pagecontract "go_wp/internal/module/page/contract"
 	projectcontract "go_wp/internal/module/project/contract"
@@ -26,15 +28,43 @@ type pagesPageData struct {
 	Menu     string
 	Projects []projectcontract.ProjectResp
 	Pages    []pageRow
+	// Blueprints 蓝图候选（审计 VIS-010）：「从蓝图开始」是新建页面流程里的一个选项，
+	// 不是另一个需要先去的页面。
+	Blueprints []blueprintOption
+}
+
+// blueprintOption 新建页面表单里的蓝图选项。
+type blueprintOption struct {
+	ID   string
+	Name string
+}
+
+// blueprintOptions 拉取蓝图候选；蓝图端口未注入或查询失败时返回空列表
+// （表单不显示蓝图选项，建页照常走空白草稿）。
+func (h *Handle) blueprintOptions(ctx context.Context) []blueprintOption {
+	if h.blueprints == nil {
+		return nil
+	}
+	list, err := h.blueprints.List(ctx, &blueprintdto.ListReq{})
+	if err != nil {
+		logger.Scene("page").With("err", err).Warn("蓝图列表读取失败，新建页面表单不显示蓝图选项")
+		return nil
+	}
+	out := make([]blueprintOption, 0, len(list))
+	for _, b := range list {
+		out = append(out, blueprintOption{ID: b.ID, Name: b.Name})
+	}
+	return out
 }
 
 // templateMap 转为模板所需的小写键 map。
 func (d *pagesPageData) templateMap() gin.H {
 	return gin.H{
-		"title":    d.Title,
-		"menu":     d.Menu,
-		"Projects": d.Projects,
-		"Pages":    d.Pages,
+		"title":      d.Title,
+		"menu":       d.Menu,
+		"Projects":   d.Projects,
+		"Pages":      d.Pages,
+		"Blueprints": d.Blueprints,
 	}
 }
 
@@ -99,6 +129,9 @@ func (h *Handle) buildPagesData(c *gin.Context) (*pagesPageData, error) {
 	return &pagesPageData{
 		Title: dashboardenums.MsgPagesTitle, Menu: "pages",
 		Projects: projects, Pages: rows,
+		// 蓝图候选（审计 VIS-010）：把「从蓝图开始」放进新建页面流程，
+		// 而不是要求编辑者先去另一个页面建好蓝图再回来。
+		Blueprints: h.blueprintOptions(ctx),
 	}, nil
 }
 
@@ -131,12 +164,15 @@ func (h *Handle) CreatePage(c *gin.Context) {
 		path = "/" + path
 	}
 	// 默认空白草稿：layout.mode 为编译端必填校验项（full/boxed）。
+	// 选了蓝图则以蓝图为准（审计 VIS-010）：page.Create 会用 InitPageDocument 复制
+	// 蓝图 AST 并重生成节点 ID，这里传的空白文档只是「没选蓝图」时的兜底。
 	if _, err := h.pages.Create(c.Request.Context(), &pagecontract.CreateReq{
 		ProjectID:         projectID,
 		Kind:              "home",
 		ContentTargetType: "none",
 		DraftPath:         path,
 		DraftDocument:     json.RawMessage(`{"settings":{"layout":{"mode":"full"}},"root":[]}`),
+		BlueprintID:       strings.TrimSpace(c.PostForm("blueprintId")),
 	}); err != nil {
 		logger.Scene("page").With("projectId", projectID).With("path", path).Error(err, "创建页面失败")
 		response.ErrorWithMessage(c, http.StatusInternalServerError, dashboardenums.MsgInternalError)

@@ -34,6 +34,11 @@ const (
 	DepKindMedia = "media"
 	// DepKindBlock 全局块内容变化（页眉/页脚内联进产物）。
 	DepKindBlock = "block"
+	// DepKindSiteSlot 系统页面槽位（BIZ-1）换绑：产物里的链接路径烘在字节里。
+	//
+	// 与 DepKindBlock 的区别在于「依赖的是站点结构」而不是内容：页面文档里没有
+	// 「我用了购物车槽位」这种声明，因此这条依赖只能由构建期记录（VIS-006）。
+	DepKindSiteSlot = "site_slot"
 	// DepKindSiteSetting 站点/工程设置变化。
 	DepKindSiteSetting = "site_setting"
 	// DepKindI18N 界面词条或内容译文变化（构建期取词进产物字节）。
@@ -62,6 +67,11 @@ func ContentCollectionKey(entityType string) DepKey {
 }
 
 // BlockKey 全局块依赖键，如 block:{blockID}。
+// SiteSlotKey 系统页面槽位的依赖键（槽位名，如 cart / checkout）。
+func SiteSlotKey(slot string) DepKey {
+	return DepKey{Kind: DepKindSiteSlot, Key: slot}
+}
+
 func BlockKey(blockID string) DepKey {
 	return DepKey{Kind: DepKindBlock, Key: "block:" + blockID}
 }
@@ -128,6 +138,10 @@ func (f *Fanout) SetSyncRebuild(v bool) {
 }
 
 // SetRebuilder 为某来源类型绑定自动重建实现（未绑定时只标记不重建）。
+//
+// 注意 r 为 nil 时**静默返回**（审计 CQ-019 点名的静默降级窗口）：调用方以为接上了，
+// 实际表现是「内容变更照常标记 stale，但永远不自动重建」—— 线上内容停在旧版本
+// 且没有任何报错。装配方（routes.go）因此先断言提供方实现了 StaleRebuilder 再调用。
 func (f *Fanout) SetRebuilder(sourceType string, r StaleRebuilder) {
 	if f == nil || sourceType == "" || r == nil {
 		return

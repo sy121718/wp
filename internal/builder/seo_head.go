@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"html"
 	"net/url"
+	"os"
 	"strings"
 )
 
@@ -190,9 +191,120 @@ func alternateLinks(alternates []Alternate) string {
 	return sb.String()
 }
 
+// schemaOrgContext 结构化数据的统一 @context（页面级与站点级共用）。
+//
+// 写成常量而不是到处重复字面量：同一个字符串拼错一处，那一份 JSON-LD 就整份失效，
+// 而且失败是静默的（页面看着正常）。
+const schemaOrgContext = "https://schema.org"
+
+// siteBaseURLEnv 站点公开根地址的环境变量名。
+//
+// 与 sitemap / robots.txt（internal/module/page/service/page_publish_url.go）、
+// 语言切换链接（internal/pipeline/site_lang.go）读的是同一个变量：结构化数据里的
+// 站点 url 必须与 sitemap 的 <loc> 指向同一域名，否则站点对外宣称了两个实体。
+// 变量可带路径前缀（开发环境就是 http://127.0.0.1:8080/site），这里保留前缀。
+const siteBaseURLEnv = "WP_SITE_BASE_URL"
+
+// siteSearchQueryParam 站内搜索的关键词参数名。
+//
+// 与 core.searchResults 组件的搜索表单同源（search_widget.jet 的 <input name="q">，
+// 表单 GET 提交到所在页面）：SearchAction 的 urlTemplate 必须用同一个参数名，
+// 否则 Google 搜索结果里的站内搜索框点开是个参数被忽略的页面。
+const siteSearchQueryParam = "q"
+
+// siteRoot 站点根 URL（无尾斜杠）；无法确定时返回空串。
+//
+// 两级来源：部署环境变量优先（与 sitemap 同源、含路径前缀）；否则从页面的绝对
+// canonical 里取 origin —— 只配了站内相对路径的站点推不出域名，此时不输出站点级
+// 结构化数据（宁可不输出，也不要宣称一个错的站点地址）。
+func siteRoot(canonical string) string {
+	if base := strings.TrimSpace(os.Getenv(siteBaseURLEnv)); base != "" {
+		if u, err := url.Parse(base); err == nil && u.Scheme != "" && u.Host != "" {
+			return strings.TrimRight(u.Scheme+"://"+u.Host+u.Path, "/")
+		}
+	}
+	u, err := url.Parse(strings.TrimSpace(canonical))
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return ""
+	}
+	return u.Scheme + "://" + u.Host
+}
+
+// isHomeCanonical 判断 canonical 是否站点首页（路径为空或 "/"）。
+func isHomeCanonical(canonical string) bool {
+	c := strings.TrimSpace(canonical)
+	if c == "" {
+		return false
+	}
+	if strings.HasPrefix(c, "/") {
+		return c == "/"
+	}
+	u, err := url.Parse(c)
+	if err != nil || u.Opaque != "" {
+		return false
+	}
+	return u.Path == "" || u.Path == "/"
+}
+
+// homeSiteRoot 首页的站点根（含尾斜杠）；非首页、站点名缺失或站点根未知时返回空串。
+//
+// 站点名是 Organization 的必需属性，站点根是 WebSite 的必需属性 —— 任一缺失都不输出，
+// 因为「不完整的结构化数据」在 Search Console 里是报错，而不是降级。
+func homeSiteRoot(canonical, name string) string {
+	if strings.TrimSpace(name) == "" || !isHomeCanonical(canonical) {
+		return ""
+	}
+	root := siteRoot(canonical)
+	if root == "" {
+		return ""
+	}
+	return root + "/"
+}
+
+// organizationNode 品牌实体（Organization）：Google 知识面板的输入。
+func organizationNode(home, name, logo string) map[string]any {
+	node := map[string]any{
+		"@type": "Organization",
+		"@id":   home + "#organization",
+		"name":  name,
+		"url":   home,
+	}
+	if logo != "" {
+		node["logo"] = logo
+	}
+	return node
+}
+
+// websiteNode 站点实体（WebSite + 站内搜索动作）。
+//
+// potentialAction 是 Google 在搜索结果里展示站内搜索框的依据；target 用
+// EntryPoint/urlTemplate 形态，关键词占位符必须与站内搜索组件的参数名一致。
+func websiteNode(home, name string) map[string]any {
+	return map[string]any{
+		"@type": "WebSite",
+		"@id":   home + "#website",
+		"name":  name,
+		"url":   home,
+		"potentialAction": map[string]any{
+			"@type": "SearchAction",
+			"target": map[string]any{
+				"@type":       "EntryPoint",
+				"urlTemplate": home + "?" + siteSearchQueryParam + "={search_term_string}",
+			},
+			"query-input": "required name=search_term_string",
+		},
+	}
+}
+
 // schemaTypeMap 结构化数据类型映射（空 = WebPage）。
+//
+// 刻意没有 "faq" → FAQPage 这一项：FAQPage 的产出责任在 core.faq 组件
+// （internal/builder/components/faq/jsonld.go 输出带 mainEntity 的那份，与可见问答同源）。
+// 页面设置里选了 faq 时这里再输出一次，页面上就会有两个 FAQPage 节点 —— 其中一个是没内容的
+// 空壳，属于 Search Console 里的「无效结构化数据」，对整站数据质量是负收益（审计 SEO-006）。
+// 因此 schemaType=faq 的页面仍按默认的 WebPage 输出页面级主实体。
 var schemaTypeMap = map[string]string{
-	"website": "WebSite", "article": "Article", "product": "Product", "faq": "FAQPage",
+	"website": "WebSite", "article": "Article", "product": "Product",
 }
 
 // buildJSONLD 生成结构化数据（JSON-LD）：按页面类型输出主实体 + 面包屑。
@@ -205,7 +317,7 @@ func buildJSONLD(url, title, description, image, schemaType string, offer *Produ
 		typeName = v
 	}
 	doc := map[string]any{
-		"@context": "https://schema.org",
+		"@context": schemaOrgContext,
 		"@type":    typeName,
 	}
 	if title != "" {
@@ -247,6 +359,27 @@ func buildJSONLD(url, title, description, image, schemaType string, offer *Produ
 			"@type":           "BreadcrumbList",
 			"itemListElement": crumbs,
 		}
+	}
+	// 站点级结构化数据（审计 SEO-007）：首页追加 Organization 与 WebSite（含站内搜索）。
+	//
+	// 只在首页输出：品牌与站内搜索入口是站点级事实，每页重复只是噪声。
+	// 站点级节点与页面级主实体放进同一个 @graph、而不是另起一个 <script>：
+	// 页面上多份 JSON-LD 各自是独立断言，同类型节点重复时搜索引擎只能猜哪份是真的。
+	// 站点根或站点名缺失时不输出：Organization 缺 name 属无效结构化数据。
+	if home := homeSiteRoot(url, title); home != "" {
+		graph := make([]any, 0, 3)
+		graph = append(graph, organizationNode(home, title, image))
+		if typeName == "WebSite" {
+			// 页面主实体本身就是 WebSite（首页显式设了 schemaType=website）：
+			// 站点级字段合并进它，而不是再追加一个同类型节点（两份互相竞争的站点断言）。
+			for k, v := range websiteNode(home, title) {
+				doc[k] = v
+			}
+		} else {
+			graph = append(graph, websiteNode(home, title))
+		}
+		graph = append(graph, doc)
+		doc = map[string]any{"@context": schemaOrgContext, "@graph": graph}
 	}
 	b, err := json.Marshal(doc)
 	if err != nil {

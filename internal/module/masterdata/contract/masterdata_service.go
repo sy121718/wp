@@ -21,6 +21,7 @@ import (
 	"strings"
 
 	masterdatadto "go_wp/internal/module/masterdata/dto"
+	"go_wp/pkg/money"
 
 	"gorm.io/gorm"
 )
@@ -89,8 +90,14 @@ type MasterDataService interface {
 // 双方用同一套格式，diff 才不会因为 99 与 99.00 这种表示差异产生假记录。
 
 // FormatPrice 金额（numeric(12,2)）→ 固定两位小数的字符串。
+//
+// 「固定两位」是**审计口径**而不是展示口径：本表逐字段记 old/new，"99" 与 "99.00"
+// 会被判成一次变更，留下「值没变但审计多了一条」的假记录。
+//
+// 实现收敛到 pkg/money.FormatAudit（审计 CQ-013：此前 masterdata / product /
+// runtimefragment / dashboard 各有一份金额格式化，其中两份逐字节相同、两份口径不同）。
 func FormatPrice(v float64) string {
-	return strconv.FormatFloat(v, 'f', 2, 64)
+	return money.FormatAudit(v)
 }
 
 // FormatPricePtr 可空金额 → 字符串（nil / 空指针 → 空串，空串参与 diff 表示「无值」）。

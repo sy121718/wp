@@ -92,6 +92,15 @@ func (s *Service) AuditPublication(ctx context.Context) (res *pagedto.Publicatio
 	for _, it := range issues {
 		res.Issues = append(res.Issues, pagedto.PublicationIssue{URLPath: it.URLPath, Link: it.Link, Reason: it.Reason})
 	}
+	// 反向对账（IDX-015）：磁盘上的产物目录是否都有人认领。
+	// 失败不影响正向结论 —— 正向异常是「线上已经 404」，必须先给出来。
+	orphans, orphanChecked, oerr := s.auditOrphanArtifacts(ctx)
+	if oerr != nil {
+		logger.Scene("page").Error(oerr, "产物反向对账失败")
+	} else {
+		res.Orphans = orphans
+		res.OrphanChecked = orphanChecked
+	}
 	if len(issues) > 0 {
 		logger.Scene("page").With("count", len(issues)).Warn("激活面巡检发现异常链接")
 	}
@@ -126,6 +135,29 @@ func (s *Service) GarbageCollectArtifacts(ctx context.Context, req *pagedto.GCAr
 	}
 	before := time.Now().UTC().AddDate(0, 0, -retention)
 	res = &pagedto.GCArtifactsResp{RetentionDays: retention, DryRun: dryRun}
+
+	// 共享内容对象（content_objects）的孤儿回收（IDX-016）挂在 defer 上，而不是写在函数末尾：
+	// 产物 GC 有多处提前返回（保护集合为空、候选查询失败），写在末尾会被那些路径整段跳过 ——
+	// 而内容对象回收自有一套完整的引用判定（闭包投影 + 产物负载状态），不依赖产物的保护集合，
+	// 没有理由跟着一起不跑。defer 覆盖全部退出路径，且仍发生在产物删除之后。
+	defer func() {
+		if res == nil {
+			return
+		}
+		objRes, oerr := s.collectOrphanContentObjects(ctx, retention, dryRun)
+		if oerr != nil {
+			// 失败不影响产物侧结论：文件已经删了，回收内容对象失败只是表里多留一轮垃圾。
+			logger.Scene("artifact").Error(oerr, "回收孤儿内容对象失败")
+			return
+		}
+		if objRes == nil {
+			return
+		}
+		res.OrphanObjects = objRes.Orphans
+		res.ObjectsDeleted = objRes.Deleted
+		res.ObjectsSkippedExternal = objRes.SkippedExtern
+		res.ObjectsFailed = objRes.Failed
+	}()
 
 	protected, err := s.model.ListProtectedArtifactIDs(ctx)
 	if err != nil {
@@ -191,4 +223,17 @@ func (s *Service) GarbageCollectArtifacts(ctx context.Context, req *pagedto.GCAr
 	logger.Scene("artifact").With("scanned", res.Scanned).With("deleted", res.Deleted).
 		With("skippedShared", res.SkippedShared).With("dryRun", dryRun).Info("产物回收完成")
 	return res, nil
+}
+
+// collectOrphanContentObjects 调用 artifact 模块做内容对象孤儿回收。
+//
+// 保留窗口与 dryRun 都与产物 GC 同值：两个 GC 的语义必须一致，否则会出现
+// 「产物 dryRun 预演、内容对象真删」这种把风险藏起来的组合。
+func (s *Service) collectOrphanContentObjects(ctx context.Context, retention int, dryRun bool) (res *artifactcontract.ContentObjectGCResp, err error) {
+	if s.artifacts == nil {
+		return nil, nil
+	}
+	return s.artifacts.GarbageCollectContentObjects(ctx, &artifactcontract.ContentObjectGCReq{
+		RetentionDays: retention, DryRun: &dryRun,
+	})
 }

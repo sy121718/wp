@@ -156,7 +156,7 @@ func TestBlockDocumentValidationOnUpdate(t *testing.T) {
 				ID: created.ID, Name: "不应生效-" + tc.name, Document: json.RawMessage(tc.doc),
 			})
 			errContains(t, err, blockenums.ErrBlockInvalidDoc)
-			got, err := e.svc.Detail(ctx, &blockdto.DetailReq{ID: created.ID})
+			got, err := e.svc.Detail(ctx, &blockdto.DetailReq{ProjectID: e.projectID, ID: created.ID})
 			if err != nil {
 				t.Fatalf("回查失败: %v", err)
 			}

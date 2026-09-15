@@ -51,21 +51,25 @@ const (
 type formSpec struct {
 	fragment string
 	page     string
-	title    string
+	// title 中文默认标题（也是缺词条时的回退值）。
+	title string
+	// titleKey sys_i18n 词条 key（审计 I18N-010）：默认标题也属于访客可见文案，
+	// 只是它由 Go 生成而不是写在模板里 —— 只扫模板的检查看不见这一批。
+	titleKey string
 }
 
 var formSpecs = map[string]formSpec{
-	ModeLogin:    {fragment: "loginForm", page: "/user/login", title: "登录"},
-	ModeRegister: {fragment: "registerForm", page: "/user/register", title: "注册"},
-	ModeForgot:   {fragment: "forgotForm", page: "/user/forgot", title: "找回密码"},
-	ModeReset:    {fragment: "resetForm", page: "/user/reset", title: "重置密码"},
-	ModeAccount:  {fragment: "accountPanel", page: "/user/account", title: "我的账号"},
+	ModeLogin:    {fragment: "loginForm", page: "/user/login", title: "登录", titleKey: TextKeyTitleLogin},
+	ModeRegister: {fragment: "registerForm", page: "/user/register", title: "注册", titleKey: TextKeyTitleRegister},
+	ModeForgot:   {fragment: "forgotForm", page: "/user/forgot", title: "找回密码", titleKey: TextKeyTitleForgot},
+	ModeReset:    {fragment: "resetForm", page: "/user/reset", title: "重置密码", titleKey: TextKeyTitleReset},
+	ModeAccount:  {fragment: "accountPanel", page: "/user/account", title: "我的账号", titleKey: TextKeyTitleAccount},
 	// 账号中心四块：降级目标都是内置账号页 —— 片段只是把这一页的四块
 	// 拆到作者自己排的页面上，不为它们单独造四个路由。
-	ModeProfile:    {fragment: "accountProfileForm", page: "/user/account", title: "账号资料"},
-	ModePreference: {fragment: "accountPreferenceForm", page: "/user/account", title: "账号偏好"},
-	ModePassword:   {fragment: "accountPasswordForm", page: "/user/account", title: "修改密码"},
-	ModeSessions:   {fragment: "accountSessionsPanel", page: "/user/account", title: "登录设备"},
+	ModeProfile:    {fragment: "accountProfileForm", page: "/user/account", title: "账号资料", titleKey: TextKeyTitleProfile},
+	ModePreference: {fragment: "accountPreferenceForm", page: "/user/account", title: "账号偏好", titleKey: TextKeyTitlePreference},
+	ModePassword:   {fragment: "accountPasswordForm", page: "/user/account", title: "修改密码", titleKey: TextKeyTitlePassword},
+	ModeSessions:   {fragment: "accountSessionsPanel", page: "/user/account", title: "登录设备", titleKey: TextKeyTitleSessions},
 }
 
 // Props 访客账号表单属性。
@@ -151,4 +155,13 @@ func buildFragmentURL(mode, projectID, lang, next string) (fragmentURL, fallback
 		q.Set("lang", l)
 	}
 	return "/_fragments/" + spec.fragment + "?" + q.Encode(), spec.page
+}
+
+// titleKeyOf 形态 → 默认标题 key 与中文兜底（空 key 表示该形态没有默认标题）。
+func titleKeyOf(mode string) (key, fallback string) {
+	spec, ok := formSpecs[mode]
+	if !ok {
+		return "", ""
+	}
+	return spec.titleKey, spec.title
 }

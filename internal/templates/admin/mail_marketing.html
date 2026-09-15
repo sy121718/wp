@@ -2,57 +2,55 @@
 {{extends "layout.html"}}
 {{block body()}}
 {{csrf := .["csrf_token"]}}
-<div class="pages-wrap">
-  <section class="pages-card card">
-    <h2>邮件营销</h2>
-    <p class="pages-empty">相关：<a href="/admin/mail">邮箱设置</a> · <a href="/admin/mail/automation">自动化流程</a></p>
+{{tr := .["t"]}}
+<div class="stack">
+  <section class="card card-body">
+    <h2>{{ .["t"]("admin.mail.marketing.heading", "邮件营销") }}</h2>
+    <p class="hint">{{ .["t"]("admin.mail.marketing.related", "相关：") }}<a href="/admin/mail">{{ .["t"]("admin.mail.marketing.related.mail", "邮箱设置") }}</a> · <a href="/admin/mail/automation">{{ .["t"]("admin.mail.marketing.related.automation", "自动化流程") }}</a></p>
     {{if .Err != ""}}
-    <p class="pages-badge pages-badge-warn">上一次操作未完成：{{.Err}}</p>
+    <p class="badge badge-warning">{{ .["t"]("admin.mail.marketing.err_prefix", "上一次操作未完成：") }}{{.Err}}</p>
     {{end}}
     {{if .Ok != ""}}
-    <p class="pages-badge pages-badge-ok">{{.Ok}}</p>
+    <p class="badge badge-success">{{.Ok}}</p>
     {{end}}
-    <p class="pages-empty">
-      群发<strong>只发给「已订阅」的人</strong>。未确认同意的联系人（待确认）不会被发送 ——
-      未经同意就群发，收件方会标记垃圾邮件，发信域名的声誉会被打烂，之后连注册验证邮件都进垃圾箱。
-      所以导入时问的「这批人是否已同意」不是走形式，而是<strong>留痕</strong>：谁在什么时候声明过什么。
+    <p class="hint">
+      {{ .["t"]("admin.mail.marketing.hint.consent.lead", "群发") }}<strong>{{ .["t"]("admin.mail.marketing.hint.consent.strong", "只发给「已订阅」的人") }}</strong>{{ .["t"]("admin.mail.marketing.hint.consent.mid", "。未确认同意的联系人（待确认）不会被发送 —— 未经同意就群发，收件方会标记垃圾邮件，发信域名的声誉会被打烂，之后连注册验证邮件都进垃圾箱。所以导入时问的「这批人是否已同意」不是走形式，而是") }}<strong>{{ .["t"]("admin.mail.marketing.hint.consent.strong_trace", "留痕") }}</strong>{{ .["t"]("admin.mail.marketing.hint.consent.tail", "：谁在什么时候声明过什么。") }}
     </p>
-    <p class="pages-empty">
-      失败的投递按错误分类处理：临时故障交给队列退避重试；<strong>硬退信</strong>会标记失败并把地址
-      加入抑制名单（再发只会继续伤域名声誉）；配置类错误（密码 / 端口）直接标失败不重试。
+    <p class="hint">
+      {{ .["t"]("admin.mail.marketing.hint.bounce.lead", "失败的投递按错误分类处理：临时故障交给队列退避重试；") }}<strong>{{ .["t"]("admin.mail.marketing.hint.bounce.strong", "硬退信") }}</strong>{{ .["t"]("admin.mail.marketing.hint.bounce.tail", "会标记失败并把地址加入抑制名单（再发只会继续伤域名声誉）；配置类错误（密码 / 端口）直接标失败不重试。") }}
     </p>
   </section>
 
-  <section class="pages-card card">
-    <h2>联系人（共 {{.ContactTotal}} 人）</h2>
-    <form method="get" action="/admin/mail/marketing" class="pages-form form-row">
-      <input class="form-input" type="text" name="keyword" value="{{.Keyword}}" placeholder="邮箱或姓名">
+  <section class="card card-body">
+    <h2>{{ .["t"]("admin.mail.marketing.contacts.heading", "联系人") }}{{ .["t"]("admin.mail.marketing.contacts.total_lead", "（共 ") }}{{.ContactTotal}}{{ .["t"]("admin.mail.marketing.contacts.total_tail", " 人）") }}</h2>
+    <form method="get" action="/admin/mail/marketing" class="form-row items-center">
+      <input class="form-input" type="text" name="keyword" value="{{.Keyword}}" placeholder="{{ .["t"]("admin.mail.marketing.ph.keyword", "邮箱或姓名") }}">
       <select class="form-select" name="status">
-        <option value="">全部状态</option>
-        <option value="pending">待确认</option>
-        <option value="subscribed">已订阅</option>
-        <option value="unsubscribed">已退订</option>
-        <option value="bounced">硬退信</option>
-        <option value="complained">投诉</option>
+        <option value="">{{ .["t"]("admin.mail.marketing.status.all", "全部状态") }}</option>
+        <option value="pending">{{ .["t"]("admin.mail.marketing.status.pending", "待确认") }}</option>
+        <option value="subscribed">{{ .["t"]("admin.mail.marketing.status.subscribed", "已订阅") }}</option>
+        <option value="unsubscribed">{{ .["t"]("admin.mail.marketing.status.unsubscribed", "已退订") }}</option>
+        <option value="bounced">{{ .["t"]("admin.mail.marketing.status.bounced", "硬退信") }}</option>
+        <option value="complained">{{ .["t"]("admin.mail.marketing.status.complained", "投诉") }}</option>
       </select>
-      <button type="submit" class="btn btn-sm">筛选</button>
+      <button type="submit" class="btn btn-sm">{{ .["t"]("admin.mail.marketing.action.filter", "筛选") }}</button>
     </form>
 
     {{if len(.Contacts) == 0}}
-    <p class="pages-empty">没有匹配的联系人。</p>
+    <p class="hint">{{ .["t"]("admin.mail.marketing.contacts.empty", "没有匹配的联系人。") }}</p>
     {{else}}
     <div class="table-wrap" tabindex="0">
-      <table class="pages-table data-table">
-      <thead><tr><th>邮箱</th><th>姓名</th><th>状态</th><th>标签</th><th>来源</th><th>同意来源</th><th>操作</th></tr></thead>
+      <table class="data-table">
+      <thead><tr><th>{{ .["t"]("admin.mail.marketing.contacts.col.email", "邮箱") }}</th><th>{{ .["t"]("admin.mail.marketing.contacts.col.name", "姓名") }}</th><th>{{ .["t"]("admin.mail.marketing.contacts.col.status", "状态") }}</th><th>{{ .["t"]("admin.mail.marketing.contacts.col.tags", "标签") }}</th><th>{{ .["t"]("admin.mail.marketing.contacts.col.source", "来源") }}</th><th>{{ .["t"]("admin.mail.marketing.contacts.col.consent_source", "同意来源") }}</th><th>{{ .["t"]("admin.mail.marketing.contacts.col.actions", "操作") }}</th></tr></thead>
       <tbody>
       {{range _, c := .Contacts}}
       <tr>
         <td>{{c.Email}}</td>
         <td>{{if c.Name == ""}}—{{else}}{{c.Name}}{{end}}</td>
         <td>
-          {{if c.Status == "subscribed"}}<span class="pages-badge pages-badge-ok">已订阅</span>
-          {{else if c.Status == "pending"}}<span class="pages-badge">待确认</span>
-          {{else}}<span class="pages-badge pages-badge-warn">{{c.Status}}</span>{{end}}
+          {{if c.Status == "subscribed"}}<span class="badge badge-success">{{tr("admin.mail.marketing.status.subscribed", "已订阅")}}</span>
+          {{else if c.Status == "pending"}}<span class="badge badge-mute">{{tr("admin.mail.marketing.status.pending", "待确认")}}</span>
+          {{else}}<span class="badge badge-warning">{{c.Status}}</span>{{end}}
         </td>
         <td>{{if len(c.Tags) == 0}}—{{else}}{{range _, t := c.Tags}}{{t}} {{end}}{{end}}</td>
         <td>{{c.Source}}</td>
@@ -62,101 +60,98 @@
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="id" value="{{c.ID}}">
             <select class="form-select" name="status">
-              <option value="subscribed">订阅</option>
-              <option value="pending">待确认</option>
-              <option value="unsubscribed">退订</option>
+              <option value="subscribed">{{tr("admin.mail.marketing.contact_status.subscribe", "订阅")}}</option>
+              <option value="pending">{{tr("admin.mail.marketing.status.pending", "待确认")}}</option>
+              <option value="unsubscribed">{{tr("admin.mail.marketing.contact_status.unsubscribe", "退订")}}</option>
             </select>
-            <input class="form-input" type="text" name="note" placeholder="来源备注">
-            <button type="submit" class="btn btn-sm">更新</button>
+            <input class="form-input" type="text" name="note" placeholder="{{tr("admin.mail.marketing.ph.note", "来源备注")}}">
+            <button type="submit" class="btn btn-sm">{{tr("admin.mail.marketing.action.update", "更新")}}</button>
           </form>
         </td>
       </tr>
       {{end}}
       </tbody>
     </table>
-    <p class="pages-empty">
-      退订 / 投诉 / 硬退信会<strong>同时写入抑制名单</strong> —— 后台点了退订却还能被发出去，比不点退订更糟。
+    <p class="hint">
+      {{ .["t"]("admin.mail.marketing.suppression.lead", "退订 / 投诉 / 硬退信会") }}<strong>{{ .["t"]("admin.mail.marketing.suppression.strong", "同时写入抑制名单") }}</strong>{{ .["t"]("admin.mail.marketing.suppression.tail", " —— 后台点了退订却还能被发出去，比不点退订更糟。") }}
     </p>
     {{end}}
 
-    <h3>导入联系人</h3>
-    <p class="pages-empty">
-      支持纯文本（每行一个邮箱）或 CSV（表头识别 email / name / tags 三列）。
-      退订过的地址会被自动跳过（导进来也发不出去）；格式非法的行会逐行报出，不影响其余行。
+    <h3>{{ .["t"]("admin.mail.marketing.import.heading", "导入联系人") }}</h3>
+    <p class="hint">
+      {{ .["t"]("admin.mail.marketing.import.hint", "支持纯文本（每行一个邮箱）或 CSV（表头识别 email / name / tags 三列）。退订过的地址会被自动跳过（导进来也发不出去）；格式非法的行会逐行报出，不影响其余行。") }}
     </p>
-    <form method="post" action="/admin/mail/contact/import" class="pages-form form-row">
+    <form method="post" action="/admin/mail/contact/import" class="form-row items-center">
       <input type="hidden" name="csrf_token" value="{{csrf}}">
-      <label>批量标签（逗号分隔） <input class="form-input" type="text" name="tags" placeholder="vip,华南"></label>
-      <label><input type="checkbox" name="consent_declared"> 这批人<strong>已同意</strong>接收营销邮件（勾选后置为「已订阅」并记录来源）</label>
-      <label>同意来源 <input class="form-input" type="text" name="consent_source" placeholder="例如：2026-09 线下展会收集，已获口头同意"></label>
-      <label><input type="checkbox" name="update_existing"> 已存在的联系人更新标签（<strong>不会</strong>改动他们的同意状态）</label>
-      <label>内容 <textarea name="content" rows="10" placeholder="a@example.com&#10;b@example.com&#10;或 CSV：email,name,tags"></textarea></label>
-      <button type="submit" class="btn btn-primary">导入</button>
+      <label>{{ .["t"]("admin.mail.marketing.import.tags", "批量标签（逗号分隔）") }} <input class="form-input" type="text" name="tags" placeholder="vip,华南"></label>
+      <label><input type="checkbox" name="consent_declared"> {{ .["t"]("admin.mail.marketing.import.consent.lead", "这批人") }}<strong>{{ .["t"]("admin.mail.marketing.import.consent.strong", "已同意") }}</strong>{{ .["t"]("admin.mail.marketing.import.consent.tail", "接收营销邮件（勾选后置为「已订阅」并记录来源）") }}</label>
+      <label>{{ .["t"]("admin.mail.marketing.import.consent_source", "同意来源") }} <input class="form-input" type="text" name="consent_source" placeholder="{{ .["t"]("admin.mail.marketing.import.ph.consent_source", "例如：2026-09 线下展会收集，已获口头同意") }}"></label>
+      <label><input type="checkbox" name="update_existing"> {{ .["t"]("admin.mail.marketing.import.update_existing.lead", "已存在的联系人更新标签（") }}<strong>{{ .["t"]("admin.mail.marketing.import.update_existing.strong", "不会") }}</strong>{{ .["t"]("admin.mail.marketing.import.update_existing.tail", "改动他们的同意状态）") }}</label>
+      <label>{{ .["t"]("admin.mail.marketing.import.content", "内容") }} <textarea class="form-textarea" name="content" rows="10" placeholder="a@example.com&#10;b@example.com&#10;或 CSV：email,name,tags"></textarea></label>
+      <button type="submit" class="btn btn-primary">{{ .["t"]("admin.mail.marketing.import.submit", "导入") }}</button>
     </form>
   </section>
 
-  <section class="pages-card card">
-    <h2>群发活动</h2>
+  <section class="card card-body">
+    <h2>{{ .["t"]("admin.mail.marketing.campaigns.heading", "群发活动") }}</h2>
     {{if len(.Campaigns) == 0}}
-    <p class="pages-empty">还没有活动。新建后点「启动群发」开始发送。</p>
+    <p class="hint">{{ .["t"]("admin.mail.marketing.campaigns.empty", "还没有活动。新建后点「启动群发」开始发送。") }}</p>
     {{else}}
     <div class="table-wrap" tabindex="0">
-      <table class="pages-table data-table">
-      <thead><tr><th>名称</th><th>状态</th><th>目标标签</th><th>进度</th><th>操作</th></tr></thead>
+      <table class="data-table">
+      <thead><tr><th>{{ .["t"]("admin.mail.marketing.campaigns.col.name", "名称") }}</th><th>{{ .["t"]("admin.mail.marketing.campaigns.col.status", "状态") }}</th><th>{{ .["t"]("admin.mail.marketing.campaigns.col.target_tags", "目标标签") }}</th><th>{{ .["t"]("admin.mail.marketing.campaigns.col.progress", "进度") }}</th><th>{{ .["t"]("admin.mail.marketing.campaigns.col.actions", "操作") }}</th></tr></thead>
       <tbody>
       {{range _, cp := .Campaigns}}
       <tr>
         <td>{{cp.Name}}</td>
         <td>
-          {{if cp.Status == "sending"}}<span class="pages-badge">发送中</span>
-          {{else if cp.Status == "sent"}}<span class="pages-badge pages-badge-ok">已完成</span>
-          {{else if cp.Status == "failed"}}<span class="pages-badge pages-badge-warn">失败</span>
+          {{if cp.Status == "sending"}}<span class="badge badge-mute">{{tr("admin.mail.marketing.campaign_status.sending", "发送中")}}</span>
+          {{else if cp.Status == "sent"}}<span class="badge badge-success">{{tr("admin.mail.marketing.campaign_status.sent", "已完成")}}</span>
+          {{else if cp.Status == "failed"}}<span class="badge badge-warning">{{tr("admin.mail.marketing.campaign_status.failed", "失败")}}</span>
           {{else}}{{cp.Status}}{{end}}
         </td>
-        <td>{{if len(cp.TargetTags) == 0}}全部已订阅{{else}}{{range _, t := cp.TargetTags}}{{t}} {{end}}{{end}}</td>
-        <td>成功 {{cp.SentCount}} / 失败 {{cp.FailedCount}} / 目标 {{cp.TotalCount}}</td>
+        <td>{{if len(cp.TargetTags) == 0}}{{tr("admin.mail.marketing.campaigns.all_subscribed", "全部已订阅")}}{{else}}{{range _, t := cp.TargetTags}}{{t}} {{end}}{{end}}</td>
+        <td>{{tr("admin.mail.marketing.progress.sent", "成功 ")}}{{cp.SentCount}}{{tr("admin.mail.marketing.progress.failed", " / 失败 ")}}{{cp.FailedCount}}{{tr("admin.mail.marketing.progress.target", " / 目标 ")}}{{cp.TotalCount}}</td>
         <td>
-          <a href="/admin/mail/campaign?id={{cp.ID}}">报表</a>
+          <a href="/admin/mail/campaign?id={{cp.ID}}">{{tr("admin.mail.marketing.campaigns.report", "报表")}}</a>
           <form method="post" action="/admin/mail/campaign/start" style="display:inline">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="id" value="{{cp.ID}}">
-            <button type="submit" class="btn btn-sm">启动群发</button>
+            <button type="submit" class="btn btn-sm">{{tr("admin.mail.marketing.campaigns.start", "启动群发")}}</button>
           </form>
           <form method="post" action="/admin/mail/campaign/delete" style="display:inline">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="id" value="{{cp.ID}}">
-            <button type="submit" class="btn btn-sm">删除</button>
+            <button type="submit" class="btn btn-sm">{{tr("admin.mail.action.delete", "删除")}}</button>
           </form>
         </td>
       </tr>
       {{end}}
       </tbody>
     </table>
-    <p class="pages-empty">
-      「启动」是<strong>受理</strong>而不是同步发完：目标人数上万时，一次入队几万个任务会让请求挂住、
-      内存膨胀，中途失败还会留下「一半已入队」的残缺状态。所以启动只统计人数、改状态、入队一个展开任务，
-      收件人在后台按主键游标分批展开。启动后刷新本页即可看到进度。
+    <p class="hint">
+      {{ .["t"]("admin.mail.marketing.start_hint.lead", "「启动」是") }}<strong>{{ .["t"]("admin.mail.marketing.start_hint.strong", "受理") }}</strong>{{ .["t"]("admin.mail.marketing.start_hint.tail", "而不是同步发完：目标人数上万时，一次入队几万个任务会让请求挂住、内存膨胀，中途失败还会留下「一半已入队」的残缺状态。所以启动只统计人数、改状态、入队一个展开任务，收件人在后台按主键游标分批展开。启动后刷新本页即可看到进度。") }}
     </p>
     {{end}}
 
-    <h3>新建活动</h3>
-    <form method="post" action="/admin/mail/campaign/save" class="pages-form form-row">
+    <h3>{{ .["t"]("admin.mail.marketing.new_campaign.heading", "新建活动") }}</h3>
+    <form method="post" action="/admin/mail/campaign/save" class="form-row items-center">
       <input type="hidden" name="csrf_token" value="{{csrf}}">
       <input type="hidden" name="id" value="0">
-      <label>名称 <input class="form-input" type="text" name="name" required></label>
-      <label>发信账号
+      <label>{{ .["t"]("admin.mail.marketing.campaign_form.name", "名称") }} <input class="form-input" type="text" name="name" required></label>
+      <label>{{ .["t"]("admin.mail.marketing.campaign_form.account", "发信账号") }}
         <select class="form-select" name="account_id" required>
           {{range _, a := .Accounts}}<option value="{{a.ID}}">{{a.Name}}（{{a.FromEmail}}）</option>{{end}}
         </select>
       </label>
-      <label>邮件模板
+      <label>{{ .["t"]("admin.mail.marketing.campaign_form.template", "邮件模板") }}
         <select class="form-select" name="template_id" required>
           {{range _, t := .Templates}}<option value="{{t.ID}}">{{t.TemplateKey}} · {{t.Name}}（id={{t.ID}}）</option>{{end}}
         </select>
       </label>
-      <label>目标标签（逗号分隔，留空 = 全部已订阅） <input class="form-input" type="text" name="target_tags" placeholder="vip"></label>
-      <label>邮件主题 <input class="form-input" type="text" name="subject" required></label>
-      <button type="submit" class="btn btn-primary">保存活动</button>
+      <label>{{ .["t"]("admin.mail.marketing.campaign_form.target_tags", "目标标签（逗号分隔，留空 = 全部已订阅）") }} <input class="form-input" type="text" name="target_tags" placeholder="vip"></label>
+      <label>{{ .["t"]("admin.mail.marketing.campaign_form.subject", "邮件主题") }} <input class="form-input" type="text" name="subject" required></label>
+      <button type="submit" class="btn btn-primary">{{ .["t"]("admin.mail.marketing.campaign_form.save", "保存活动") }}</button>
     </form>
   </section>
 </div>

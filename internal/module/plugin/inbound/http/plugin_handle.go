@@ -39,7 +39,7 @@ func (h *Handle) Install(c *gin.Context) {
 	}
 	res, err := h.svc.Install(c.Request.Context(), data)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "plugin", err)
 		return
 	}
 	response.SuccessWithMessage(c, pluginenums.MsgInstallSuccess, res)
@@ -49,7 +49,7 @@ func (h *Handle) Install(c *gin.Context) {
 func (h *Handle) List(c *gin.Context) {
 	list, err := h.svc.List(c.Request.Context())
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusInternalServerError, err.Error())
+		response.ErrorAuto(c, http.StatusInternalServerError, "plugin", err)
 		return
 	}
 	response.SuccessWithMessage(c, pluginenums.MsgListSuccess, list)
@@ -65,7 +65,7 @@ func (h *Handle) Toggle(c *gin.Context) {
 	if err := h.svc.Toggle(c.Request.Context(), req); err != nil {
 		// 错误消息统一来自模块 enums（含"插件不存在"等业务语义），
 		// 业务失败按 400 返回，其余系统错误 500。
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "plugin", err)
 		return
 	}
 	response.SuccessWithMessage(c, pluginenums.MsgToggleSuccess, nil)
@@ -79,7 +79,7 @@ func (h *Handle) Uninstall(c *gin.Context) {
 		return
 	}
 	if err := h.svc.Uninstall(c.Request.Context(), req); err != nil {
-		response.ErrorWithMessage(c, http.StatusInternalServerError, err.Error())
+		response.ErrorAuto(c, http.StatusInternalServerError, "plugin", err)
 		return
 	}
 	response.SuccessWithMessage(c, pluginenums.MsgUninstallSuccess, nil)

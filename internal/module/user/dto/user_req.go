@@ -71,7 +71,9 @@ type LoginResp struct {
 
 // SessionItem 登录设备（账号中心的「我的设备」一行）。
 type SessionItem struct {
-	ID           uint64
+	// ID 是会话令牌的 sha256（Redis 索引里的成员，也是撤销设备时的入参）。
+	// 它不能反推出令牌，所以可以出现在页面里；会话状态本身只在 Redis，没有数据库行 id。
+	ID           string
 	UserAgent    string
 	IP           string
 	Location     string

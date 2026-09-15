@@ -81,7 +81,10 @@ func deepCandidates(t *testing.T, doc string, extra []string, docs map[string]st
 		t.Fatalf("ParsePage: %v", err)
 	}
 	resolve, _ := fakeBlockResolver(docs)
-	return CollectContentCandidatesDeep(p, extra, resolve)
+	// 用**构建期口径**取候选（CollectContentCandidatesForDocument 会并入 SEO 等
+	// Settings 来源的文本）。只扫 AST 会让这里少两条候选，而编译期照样去找它们的
+	// 译文 —— 测试于是永远报 misses=2，看起来像功能坏了，其实是口径不一致。
+	return AppendSEOCandidates(p, CollectContentCandidatesDeep(p, extra, resolve))
 }
 
 // TestCollectContentCandidatesDeepIncludesBlocks 候选收集覆盖块内文本（缺口修复的机器证据）。
@@ -162,6 +165,11 @@ func TestContentTranslationBlockTextTranslated(t *testing.T) {
 		"core.button.text|块按钮-页眉":  "Block button",
 		"core.text.text|块正文-促销":    "Block body",
 		"core.button.text|块按钮-内层":  "Inner button",
+		// SEO 也进候选集合（AppendSEOCandidates）：页面 title/description 是 Settings
+		// 来源的文本，组件侧 Translatable 白名单管不到，必须在这里给出译文，
+		// 否则「全部候选均有译文」的前提从一开始就不成立。
+		"page.seo.title|p5b-blocks":       "p5b-blocks en",
+		"page.seo.description|p5b-blocks": "p5b-blocks en",
 	}
 	for _, c := range cands {
 		if target, ok := translations[c.Context+"|"+c.Source]; ok {

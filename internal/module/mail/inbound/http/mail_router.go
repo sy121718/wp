@@ -31,6 +31,10 @@ func SetupMailRoutes(rg *gin.RouterGroup, db *gorm.DB) mailcontract.MailService 
 	// 自动化实例推进（P3）：事件触发立即投递，等待节点按 next_run_at 延时投递。
 	mailservice.RegisterMailAutomationTaskHandler(db, secret)
 
+	// 保留期任务（IDX-012）：先固化活动事件汇总，再清理超期的事件明细与发送日志。
+	// 没有定时任务时这两张表只增不减 —— 一次大群发就能把事件表撑到不可维护。
+	mailservice.StartMailRetentionScheduler(svc)
+
 	handle := NewHandle(svc)
 	g := rg.Group("/mail")
 	g.GET("/account/list", handle.AccountList)

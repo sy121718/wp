@@ -461,7 +461,7 @@ func TestTaxonomyAdminPages(t *testing.T) {
 	if rec.Code != http.StatusFound {
 		t.Fatalf("POST 商品分类品牌应 302，实际 %d", rec.Code)
 	}
-	got, err := f.svc.Get(t.Context(), &productdto.GetReq{ID: p.ID})
+	got, err := f.svc.Get(t.Context(), &productdto.GetReq{ProjectID: f.projectID, ID: p.ID})
 	if err != nil {
 		t.Fatalf("读商品失败: %v", err)
 	}

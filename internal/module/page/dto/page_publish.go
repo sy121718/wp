@@ -79,6 +79,19 @@ type PublicationAuditResp struct {
 	Checked int                `json:"checked"`
 	Issues  []PublicationIssue `json:"issues"`
 	Healthy bool               `json:"healthy"`
+	// Orphans 磁盘上存在、但没有任何属主认领的产物目录（IDX-015 的反向对账）。
+	// 与 Issues 分开：Issues 是「线上立刻 404」的故障，孤儿只是占磁盘，处置优先级不同。
+	Orphans []OrphanArtifact `json:"orphans"`
+	// OrphanChecked 参与反向对账的磁盘产物目录数（与 Checked 区分：后者是链接数）。
+	OrphanChecked int `json:"orphanChecked"`
+}
+
+// OrphanArtifact 磁盘有、数据库无主的产物目录。
+type OrphanArtifact struct {
+	Hash  string `json:"hash"`
+	Path  string `json:"path"`
+	Bytes int64  `json:"bytes"`
+	Files int    `json:"files"`
 }
 
 // GCArtifactsReq 产物回收请求。
@@ -109,4 +122,12 @@ type GCArtifactsResp struct {
 	SkippedShared int                   `json:"skippedShared"`
 	Failed        int                   `json:"failed"`
 	Items         []GCRecoveredArtifact `json:"items"`
+
+	// 内容对象（content_objects）孤儿回收：产物行回收后，它引用的共享内容对象可能
+	// 已无人引用 —— 同一趟里做标记清除（审计 IDX-016）。四个字段与上面的产物计数
+	// 并列而非混在一起：两者一个是文件、一个是内容对象的 Locator 投影，混count会读不清。
+	OrphanObjects          int64 `json:"orphanObjects"`
+	ObjectsDeleted         int64 `json:"objectsDeleted"`
+	ObjectsSkippedExternal int   `json:"objectsSkippedExternal"`
+	ObjectsFailed          int   `json:"objectsFailed"`
 }

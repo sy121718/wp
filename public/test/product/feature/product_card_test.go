@@ -55,7 +55,7 @@ func TestProductCardRendersInCollection(t *testing.T) {
 	tag := colTag(t, f, "新品", "new-arrival")
 	colAttach(t, f, shirtID, nil, nil, []string{tag.ID})
 	// createProduct 只设售价（第二个变体拉出价格区间），划线价要单独设。
-	detail, derr := f.products.Get(context.Background(), &productdto.GetReq{ID: shirtID})
+	detail, derr := f.products.Get(context.Background(), &productdto.GetReq{ProjectID: f.projectID, ID: shirtID})
 	if derr != nil {
 		t.Fatalf("读商品失败: %v", derr)
 	}

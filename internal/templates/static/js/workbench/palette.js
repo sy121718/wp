@@ -24,6 +24,10 @@ export const paletteItems = [
     { type: 'core.image', label: '图片', hint: '外部图片', props: { src: 'https://placehold.co/1200x800/png', alt: '图片占位符', objectFit: 'cover', width: '100%' } },
     { type: 'core.gallery', label: '图集', hint: '图片网格 / 轮播', props: { mode: 'grid', items: [{ url: 'https://placehold.co/1200x800/png', alt: '图集占位图' }], grid: { columns: { desktop: 3 } }, aspectRatio: '16:9', objectFit: 'cover', radius: '8px' } },
     { type: 'core.divider', label: '分隔线', hint: '内容分隔', props: { style: 'solid', weight: '1px' } },
+    // 形状分隔线（EDT-008）：区块过渡装饰，多层景深 + 三端高度 + CSS-only 漂移。
+    // 已实现并注册但对前端不可达，故在此补齐条目 —— 清单与 schema 的一致性由
+    // internal/builder/palette_schema_contract_test.go 双向钉住。
+    { type: 'core.shapedivider', label: '形状分隔线', hint: '区块过渡装饰（波浪/弧线/斜坡）', props: { shape: 'wave' } },
     { type: 'core.spacer', label: '间隔', hint: '留白空间', props: { height: { desktop: '32px' } } },
     { type: 'core.slider', label: '轮播', hint: '多屏滑动（可嵌套）', props: { perView: { desktop: 1 }, autoplay: 0, showArrows: true, showDots: true, gap: '16px' } },
     { type: 'core.list', label: '列表', hint: '图标/序号/圆点列表', props: { style: 'icon', items: [{ icon: 'check', text: '列表项内容' }] } },
@@ -44,7 +48,12 @@ export const paletteItems = [
     { type: 'core.countdown', label: '倒计时', hint: '营销倒计时', props: { targetDate: '2030-01-01 00:00:00', showDays: true } },
     { type: 'core.icon', label: '图标', hint: '通用 SVG 图标', props: { iconName: 'star', size: '24px' } },
     { type: 'core.badge', label: '徽章', hint: '文本徽章', props: { text: '新品', variant: 'solid' } },
+    // 面包屑（审计 SEO-014）：props 留空即按构建期 CurrentPath 自动派生层级，
+    // 作者不需要手填每一项 —— 手填反而容易与实际路径脱节。
+    { type: 'core.breadcrumb', label: '面包屑', hint: '当前页层级（自动按路径派生）', props: {} },
     { type: 'core.progress', label: '进度条', hint: '数据进度', props: { value: 60, max: 100, label: '完成度' } },
+    // 加载指示（EDT-008）：分类效果库「加载」的落地形态，九种纯 CSS 形态、零 JS。
+    { type: 'core.loader', label: '加载指示', hint: '纯 CSS 加载动画（九种形态）', props: { variant: 'spinner', size: '32px' } },
     { type: 'core.rating', label: '评分', hint: '星形评分', props: { value: 4.5, max: 5 } },
     { type: 'core.form', label: '表单', hint: '联系/订阅表单', props: { fields: [{ type: 'text', label: '姓名', name: 'name', required: true }, { type: 'email', label: '邮箱', name: 'email', required: true }], submitLabel: '提交' } },
     // 商品详情（issue #6）：命名槽位声明需要的商品字段，构建期由商品解析器静态填入。
@@ -70,13 +79,16 @@ export const paletteItems = [
     // 三种浮层用原生 <details> 承载（无 JS 也能展开、键盘可达），只有「点外部关闭」走一小段 enhance。
     { type: 'core.cartIcon', label: '购物车图标', hint: '页头购物车入口（下拉 / 抽屉 / 弹窗 / 悬停）', props: { mode: 'dropdown', align: 'right', drawerSide: 'right', icon: 'shopping-cart', label: '购物车', showLabel: false, showCount: true } },
     { type: 'core.orderList', label: '我的订单', hint: '访客订单列表（登录后可见，片段现拉）', props: { title: '我的订单', showTitle: true, pageSize: 10 } },
+    // 站内搜索（EDT-008）：产物只输出搜索框 + 结果挂载点，命中列表由片段现拉
+    // （与 cartIcon / orderList 同口径，构建期把 projectId / lang / limit 烘进片段 URL）。
+    { type: 'core.searchResults', label: '站内搜索', hint: '搜索框 + 结果列表（片段现拉）', props: { placeholder: '搜索站内内容', limit: 8 } },
     { type: 'core.userForms', label: '账号表单', hint: '登录 / 注册 / 找回密码 / 账号面板（片段现拉）', props: { mode: 'login', title: '登录', showTitle: true, next: '' } }
 ];
 
 /** 组件库分组：基础组件大分类平铺（细分类留给进阶组件，当前无进阶内容）；
  *  「区块」概念归全局块（页眉/页脚/区块）。 */
 export const paletteGroups = [
-    { key: 'basic', title: '基础组件', types: ['core.container', 'core.heading', 'core.text', 'core.button', 'core.image', 'core.gallery', 'core.divider', 'core.spacer', 'core.slider', 'core.list', 'core.infobox', 'core.social_buttons', 'core.video', 'core.nav', 'core.languages', 'core.tabs', 'core.accordion', 'core.marquee', 'core.counter', 'core.table', 'core.card', 'core.cardstack', 'core.faq', 'core.quote', 'core.countdown', 'core.icon', 'core.badge', 'core.progress', 'core.rating', 'core.form', 'core.product', 'core.productCard', 'core.productList', 'core.productSelector', 'core.addToCart', 'core.cartIcon', 'core.orderList', 'core.userForms'] }
+    { key: 'basic', title: '基础组件', types: ['core.container', 'core.heading', 'core.text', 'core.button', 'core.image', 'core.gallery', 'core.divider', 'core.shapedivider', 'core.spacer', 'core.slider', 'core.list', 'core.infobox', 'core.social_buttons', 'core.video', 'core.nav', 'core.languages', 'core.tabs', 'core.accordion', 'core.marquee', 'core.counter', 'core.table', 'core.card', 'core.cardstack', 'core.faq', 'core.quote', 'core.countdown', 'core.icon', 'core.badge', 'core.breadcrumb', 'core.progress', 'core.loader', 'core.rating', 'core.form', 'core.product', 'core.productCard', 'core.productList', 'core.productSelector', 'core.addToCart', 'core.cartIcon', 'core.orderList', 'core.searchResults', 'core.userForms'] }
 ];
 
 /**

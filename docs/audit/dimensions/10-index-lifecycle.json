@@ -117,7 +117,8 @@
         "performance",
         "pagination"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：迁移 167 建 orders 三列 trgm 索引 + (project_id, status, create_time DESC) 复合索引；列表分页改 keyset 作为后续独立项（当前 offset 分页在索引到位后仍可用）。"
     },
     {
       "id": "IDX-003",
@@ -245,7 +246,8 @@
         "index",
         "disk"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：迁移 167 建 GC / registry / (page_id, artifact_hash) 三条索引；page.PurgeRetention 每日执行（dryRun=false），保留期 30 天常量在 page_retention.go 单处定义。"
     },
     {
       "id": "IDX-005",
@@ -298,7 +300,8 @@
         "page",
         "disk"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：每页保留最近 20 个快照（SaveDraft 后即时收敛）+ 每日清理「超出条数且早于 90 天」的历史版本；两条件同时满足才删，保留期内一律不动。"
     },
     {
       "id": "IDX-006",
@@ -356,7 +359,8 @@
         "index",
         "performance"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：迁移 167 建 products.name trgm 索引与 (project_id, status, sort, created_at, id) 复合索引。"
     },
     {
       "id": "IDX-007",
@@ -450,7 +454,8 @@
         "inventory",
         "index"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：删仓守卫查询的部分索引（子代理实现，含索引诊断的实测）。① 现状核对：inventory_model.go 的 CountNonZeroStocks = `WHERE warehouse_id = ? AND quantity <> 0`，而现有 idx_inventory_stocks_warehouse 是单列全量索引（warehouse_id）。② 新增部分索引 `idx_inventory_stocks_warehouse_nonzero ON inventory_stocks (warehouse_id) WHERE quantity <> 0`，**未删** 099 的单列索引 —— 按仓库的其它统计仍要用它。这是「加一个精准索引」而不是「换掉一个索引」，两者对写放大的影响完全不同。③ 迁移 194，判据按本批自己的索引名枚举计数（跨两张表故表名条件写 IN (?, page_routes)，TestCustomMigrationChecksAcceptTableParameter 强制 CheckSQL 含 ?）。CheckSQL 双向实测：索引不存在返回 0、齐备返回 2。④ 测试 TestP7IndexAuditMigrationCreatesExpectedIndexes 会重跑 194 全部语句，顺带验掉 IF NOT EXISTS 的幂等性。"
     },
     {
       "id": "IDX-009",
@@ -502,7 +507,8 @@
         "index",
         "performance"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：迁移 167 加生成列 users.search_text（四列拼接小写）+ 单条 trgm 索引；查询改为对 search_text 匹配（一个索引替代四个 GIN）。"
     },
     {
       "id": "IDX-010",
@@ -546,7 +552,8 @@
         "index",
         "pagination"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：路径排行改查 page_views_daily（与 DB-005 同一张表），并加 keyset 游标分页（model.RollupByPathKeyset：ORDER BY views DESC, path ASC 上按「上一页最后一行的 (views,path)」定位，成本不随页码增长；新建 idx_page_views_daily_rank 支撑）。请求侧新增 pathAfterViews / pathAfter 游标参数，响应回显 pathNextAfter* 供客户端翻页；未给游标时仍走 offset（第一页 offset=0 本身就是最优路径，后台页面无需整体改造）。另修一处会静默出错的写法：路径总数原用 COUNT(*) + GROUP BY path 再 Scan 到标量，恒等于 1，改 COUNT(DISTINCT path)。用例覆盖：汇总与明细口径逐项一致（PV/UV/按天/按路径）、幂等不产生重复行、含今天窗口不读汇总（塞了 999 的假汇总行仍只报明细）、游标分页与一次性取数结果完全一致（含并列 views 的路径）。"
     },
     {
       "id": "IDX-011",
@@ -596,7 +603,8 @@
         "index",
         "lifecycle"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：迁移 167 加部分索引 (user_id, last_active_at DESC) WHERE revoked_at IS NULL；user.PurgeRetention 每日清理撤销行与长期不活跃行（90 天）。**2026-09-15 复核：这张表已随迁移 203 删除** —— 访客会话与设备台账全部在 Redis（会话 key = token 的 sha256，设备视图靠索引 ZSET `gwp:userauth:user:<userID>:sess`），「撤销行永久留存」这个前提不再存在，167 里为它加的那条部分索引一并移除，每日清理任务与保留期声明也随表删掉。"
     },
     {
       "id": "IDX-012",
@@ -646,7 +654,8 @@
         "index",
         "lifecycle"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：迁移 167 加 (campaign_id, create_time DESC)；迁移 168 加 open_count/click_count 固化列；清理前先固化「全部事件已过期」活动的汇总，再按 180 天保留期清事件明细与发送日志。"
     },
     {
       "id": "IDX-013",
@@ -698,7 +707,8 @@
         "index",
         "redundancy"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：迁移 167 删除 idx_att_md5_type（与唯一索引同列同谓词）、idx_att_category_id / idx_att_status / idx_att_file_type（被复合索引前缀覆盖）；本地库实测 15 → 12 个索引。"
     },
     {
       "id": "IDX-014",
@@ -748,7 +758,8 @@
         "performance",
         "index"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：媒体附件列表数据页增加可选 keyset 游标分页。保留旧 page/limit API 与精确 Total；新增 ListAfter，按 (create_time,id) 复合键稳定执行 create_time DESC,id DESC，游标路径移除深分页 OFFSET，NextCursor 使用 Base64 编码时间与 ID。无游标仍走兼容旧路径。新增游标往返与非法游标测试；未凭空声称 EXPLAIN 性能收益，报告明确说明当前没有稳定的大表基准。"
     },
     {
       "id": "IDX-015",
@@ -797,7 +808,8 @@
         "audit",
         "disk"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：正向沿既有 AuditActiveLinks（含链接目标可达性）；反向新增 pipeline.AuditOrphanArtifacts + page.AuditPublication 返回孤儿目录（hash / 体积 / 文件数）。属主清单由各模块自报（page_artifacts + presentation_artifacts），装配层注入、未接即 fail-fast —— 漏接会把实例产物误报成孤儿。孤儿只报告不删除。对账结果落库与后台展示页未做（展示层增强）。"
     },
     {
       "id": "IDX-016",
@@ -849,7 +861,8 @@
         "lifecycle",
         "gc"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：共享内容对象改标记清除 —— artifact.Service.GarbageCollectContentObjects 以「是否仍被现存（payload_state <> 'deleted'）产物行经 page_artifact_objects 引用」为唯一判据，删除语句自带 NOT EXISTS 复查（查与删同句，并发认领报 kept_reclaimed）。已回收产物行不算引用（其物理目录与 object_key 目标都已删除，继续算引用等于永不回收）。引用来源不止一处：外部来源经 SetExternalContentRefs 注入（page 侧当前不写 content_objects，见 CQ-015），注入后查询失败即整轮放弃。安全默认与产物 GC 同口径（dryRun 默认 true、保留期 30 天、同一趟执行，defer 覆盖产物 GC 的全部提前返回路径）。验收：产物闭包已回收 + 仍在用对象不被误删 + 外部引用被尊重 + 引用查询失败时零删除 + 保留窗口保护 + 清理后回滚 v1 仍成功（1 个 page 集成 + 1 个 feature 回滚用例 + 6 个 artifact 单测）。"
     },
     {
       "id": "IDX-017",
@@ -899,7 +912,8 @@
         "product",
         "mail"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：审计 IDX-017 经核对**前提不成立**，按「现状已满足」标记 resolved（依据是实测的现有索引与查询计划，不是本批的 DDL 改动）。① 审计称 order_status_logs / product_ratings / mail_automation_node_logs「缺索引」，实测三张表都已有索引且主查询都走索引：order_status_logs → idx_order_status_logs_order (order_id, id)（135 迁移）；product_ratings → idx_product_ratings_product_id (product_id)（120 迁移）；mail_automation_node_logs → idx_mail_automation_node_logs_run (run_id, id)（131 迁移）。EXPLAIN 实测幂等查询走 Index Scan using idx_mail_automation_node_logs_run。② 生命周期一侧也已落地：internal/retention/catalog.go 对三张表各有声明（节点日志 180 天清理，另两张「不清理 + 理由」），即 **IDX-019 已覆盖本条的 remediation** —— 同一个问题被两条 finding 从不同角度描述，其中一条已经做过了。③ 另两处「疑似缺口」核实为无需改动，其中一处值得记：DeleteNodeLogsBefore 的 `WHERE create_time < ? ORDER BY id LIMIT ?` 按 id 排序时主键顺序扫取满 LIMIT 即停，换 create_time 索引反而要把全部过期行取出再排序，**是负优化**；要改好必须同时改 SQL 写法，不属于索引事项（按约束停下报告）。④ 未产生任何 DDL —— 这一条的价值在于**证伪**，避免照 finding 加两个冗余索引。"
     },
     {
       "id": "IDX-018",
@@ -1005,7 +1019,8 @@
         "monitoring",
         "summary"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：把「每张增长型表都要有生命周期声明」变成代码里的可查清单。新增 internal/retention/catalog.go：增长型表（page_views / inventory_stock_movements / mail_campaign_events / mail_logs / master_data_changes / page_revisions / page_artifacts / artifacts 磁盘目录 / order_status_logs / sys_translation / mail_automation_node_logs / product_ratings）逐条声明时间列 / 保留期 / 执行者 / 清理方式 / 理由（2026-09-15 复核：清单原含 `user_sessions`，该表已随迁移 203 删除 —— 会话全在 Redis、随 TTL 自然过期，不需要保留期声明，清单收敛为 12 张）；纯声明不执行（表访问权仍留在各模块 model），与执行侧的一致性由 catalog_test.go 三条不变量钉住：审计列出的表一张不漏、声明之间不自相矛盾（delete 必须有保留期与执行者、none 必须无保留期）、每条都写明理由。**不清理同样是声明**：inventory_stock_movements 与 master_data_changes 属合规留档（改保留期需业务确认，工程侧不应单方面决定删除）、order_status_logs 随订单存续、product_ratings 是业务数据（参与前台排序与筛选）、sys_translation 孤儿需按引用做标记清除（留 I18N-024）、page_views_daily 是历史报表读数来源。本轮另补 mail_automation_node_logs 的实际清理（180 天，与邮件其它日志同口径）。"
     },
     {
       "id": "IDX-020",
@@ -1050,7 +1065,8 @@
         "publication",
         "index"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：page_routes 的 route_kind 筛选索引（子代理实现）。① 现状：publication_model.go 的 ListActivePaths / ListActiveRoutes 都是 `WHERE project_id = ? AND route_kind = ? ORDER BY path ASC`，而表上只有主键 (project_id, path)。② 新增 idx_page_routes_project_kind_path ON page_routes (project_id, route_kind, path)。**比审计原文多带第三列 path** —— 两个查询都 ORDER BY path，把 path 编进索引后既免排序，又让 Pluck(\"path\") 的 ListActivePaths 走 Index Only Scan。这是「顺着真实查询写索引」而非「照着 finding 的列清单抄」。③ 该索引是本轮激活路径查询的热路径（发布与体检都走它）。"
     }
   ]
 }

@@ -24,8 +24,8 @@ import (
 	inventorydto "go_wp/internal/module/product/inventory/dto"
 	inventoryenums "go_wp/internal/module/product/inventory/enums"
 	inventorymodel "go_wp/internal/module/product/inventory/model"
-	"go_wp/pkg/utils"
 	projectcontract "go_wp/internal/module/project/contract"
+	"go_wp/pkg/utils"
 )
 
 const (
@@ -66,17 +66,21 @@ func NewService(m *inventorymodel.Model, project projectcontract.ProjectService)
 // 注入时机在商品模块装配之后（缓存端口的实现属商品模块），
 // 与 product.SetVariantStock 同一模式：可选依赖不进构造参数。
 
-// SetVariantCost 注入商品侧成本价写回端口（issue #18，装配期调用）。
+// SetVariantCost 注入商品侧成本价写回端口（issue #18，装配期调用；**必须注入**）。
 //
+// 装配自检（审计 CQ-019）：判为 required-port —— 为空时采购收货 / 生产入库的单价
+// 不回写 cost_price，入库单行只记一条 cost_error，库存真源照常变动（不报错）。
 // 与 SetStockCache 同一模式：端口实现属商品模块，故在商品模块装配之后注入。
 func (s *Service) SetVariantCost(port productcontract.VariantCostPort) {
 	s.variantCost = port
 }
 
-// SetMasterDataChanges 注入主数据变更记录端口（issue #19，装配期调用）。
+// SetMasterDataChanges 注入主数据变更记录端口（issue #19，装配期调用；**必须注入**）。
 //
-// 与 SetStockCache / SetVariantCost 同一模式：可选依赖不进构造参数。
-// 依赖方向 inventory → masterdata（本模块只把货源资料的前后快照递过去）。
+// 装配自检（审计 CQ-019）：判为 required-port —— 为空时货源资料的字段级变更
+// 静默跳过留痕（recordChanges 直接 return nil），审计缺记录且不报错。
+// 依赖方向 inventory → masterdata（本模块只把货源资料的前后快照递过去）；
+// 装配方 routes.go 对 product / inventory 两处 setter 同一轮断言 + 注入。
 func (s *Service) SetMasterDataChanges(port masterdatacontract.MasterDataService) {
 	s.changes = port
 }

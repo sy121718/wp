@@ -18,6 +18,7 @@ import (
 
 	userenums "go_wp/internal/module/user/enums"
 	userservice "go_wp/internal/module/user/service"
+	"go_wp/pkg/crypto"
 	"go_wp/pkg/response"
 )
 
@@ -34,23 +35,25 @@ const touchThrottleInterval = 60 * time.Second
 
 var (
 	touchMu   sync.Mutex
-	touchSeen = map[uint64]time.Time{}
+	// key 是会话令牌哈希（= 设备列表里的 id）：一台设备一次登录一个键，
+	// 与原本按台账行 id 节流等价，而会话不再落库。
+	touchSeen = map[string]time.Time{}
 )
 
 // shouldTouch 判断这台设备是否到了该更新活跃时间的时候。
-func shouldTouch(rowID uint64) bool {
-	if rowID == 0 {
+func shouldTouch(sessionHash string) bool {
+	if strings.TrimSpace(sessionHash) == "" {
 		return false
 	}
 	now := time.Now()
 	touchMu.Lock()
 	defer touchMu.Unlock()
-	if last, ok := touchSeen[rowID]; ok && now.Sub(last) < touchThrottleInterval {
+	if last, ok := touchSeen[sessionHash]; ok && now.Sub(last) < touchThrottleInterval {
 		return false
 	}
-	touchSeen[rowID] = now
+	touchSeen[sessionHash] = now
 	// 顺手清理过期条目：这张表按「活跃会话行」增长，
-	// 不清理的话长时间运行会攒下大量再也不会出现的 rowID。
+	// 不清理的话长时间运行会攒下大量再也不会出现的会话哈希。
 	if len(touchSeen) > 4096 {
 		for id, t := range touchSeen {
 			if now.Sub(t) > 10*touchThrottleInterval {
@@ -78,7 +81,7 @@ func attachUserSession(svc *userservice.Service) gin.HandlerFunc {
 			// 令牌也要挂到 context：登出与「退出其它设备」都要用它，
 			// 而从 cookie 再读一次会让「cookie 已被清掉」这类边界出现分歧。
 			c.Set(userSessionTokenKey, token)
-			if shouldTouch(sess.RowID) {
+			if shouldTouch(crypto.Sha256(token)) {
 				svc.TouchSession(c.Request.Context(), sess)
 			}
 		}

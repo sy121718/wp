@@ -31,6 +31,7 @@ import (
 
 	productcontract "go_wp/internal/module/product/contract"
 	"go_wp/internal/templates"
+	"go_wp/pkg/money"
 
 	"github.com/google/uuid"
 )
@@ -223,9 +224,11 @@ func declaredPriceAt(prices []int64, i int) (cents int64, ok bool) {
 }
 
 // centsToYuanText 分 → 元展示文本，与商品字段解析器 formatPrice **同一口径**
-// （strconv.FormatFloat(v,'f',-1,64)：99.50 元 → "99.5"）。
+// （99.50 元 → "99.5"）。
 //
 // 刻意不自己补两位小数：产物里那段价就是这个格式，两处格式不同会让「同一个价看起来变了」。
+// 实现收敛到 pkg/money.CentsToYuanText（审计 CQ-013：四处金额格式化里的「分 → 元」
+// 那一路，与展示口径共用同一个底层格式化）。
 func centsToYuanText(cents int64) string {
-	return strconv.FormatFloat(float64(cents)/100, 'f', -1, 64)
+	return money.CentsToYuanText(cents)
 }

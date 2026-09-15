@@ -24,8 +24,8 @@ func newTestService() *Service {
 	return s
 }
 
-// TestNormalizePath 路径归一化：只留 pathname、超长截断、非绝对路径丢弃。
-func TestNormalizePath(t *testing.T) {
+// TestSanitizeTrackPath 打点路径清洗：只留 pathname、超长截断、非绝对路径丢弃。
+func TestSanitizeTrackPath(t *testing.T) {
 	cases := []struct{ in, want string }{
 		{"/about", "/about"},
 		{"  /about  ", "/about"},
@@ -37,12 +37,12 @@ func TestNormalizePath(t *testing.T) {
 		{"//evil.example.com/x", "//evil.example.com/x"},
 	}
 	for _, c := range cases {
-		if got := normalizePath(c.in); got != c.want {
-			t.Errorf("normalizePath(%q) = %q，期望 %q", c.in, got, c.want)
+		if got := sanitizeTrackPath(c.in); got != c.want {
+			t.Errorf("sanitizeTrackPath(%q) = %q，期望 %q", c.in, got, c.want)
 		}
 	}
 	long := "/" + string(make([]byte, maxPathLen+50))
-	if got := normalizePath(long); len(got) != maxPathLen {
+	if got := sanitizeTrackPath(long); len(got) != maxPathLen {
 		t.Errorf("超长路径应截断到 %d，实际 %d", maxPathLen, len(got))
 	}
 }

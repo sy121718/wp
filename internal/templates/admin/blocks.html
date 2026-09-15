@@ -1,15 +1,17 @@
 {* admin/blocks.html — 全局块管理：页眉/页脚/区块（编辑进工作台） *}
 {* Jet 方言：range 用 range 关键字；方法调用圆括号；extends 相对本目录 *}
+{* 文案走 t(key, 中文兜底)：range 内不能写赋值语句，先把 t 存成变量 tr 再取词。 *}
 {{extends "layout.html"}}
 {{block body()}}
+{{tr := .["t"]}}
 <div class="stack">
     {{if len(.Projects) == 0}}
     <section class="card card-body">
-        <p class="text-mute text-sm">请先在「页面」里创建一个站点工程，再管理全局块。</p>
+        <p class="text-mute text-sm">{{ .["t"]("admin.blocks.no_project", "请先在「页面」里创建一个站点工程，再管理全局块。") }}</p>
     </section>
     {{else}}
     <section class="card card-body">
-        <h2>全局块</h2>
+        <h2>{{ .["t"]("admin.blocks.heading", "全局块") }}</h2>
         {* 工程切换 *}
         <form method="get" action="/admin/blocks" class="form-inline">
             <select name="project" onchange="this.form.submit()">
@@ -22,53 +24,53 @@
         <form method="post" action="/admin/blocks/create" class="form-inline mt-md">
             <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
             <input type="hidden" name="projectId" value="{{.SelectedProject}}">
-            <input type="text" name="name" placeholder="块名称，如：站点页眉" required>
+            <input type="text" name="name" placeholder="{{ .["t"]("admin.blocks.name_placeholder", "块名称，如：站点页眉") }}" required>
             <select name="kind">
-                <option value="block">区块</option>
-                <option value="header">页眉</option>
-                <option value="footer">页脚</option>
-                <option value="announcement">公告栏</option>
-                <option value="sidebar">侧边栏</option>
-                <option value="breadcrumb">面包屑</option>
-                <option value="drawer">抽屉导航</option>
-                <option value="search">搜索框</option>
-                <option value="cta">CTA 段</option>
-                <option value="trust">信任徽章</option>
-                <option value="brands">品牌墙</option>
-                <option value="contact">联系方式</option>
-                <option value="about">关于我们</option>
-                <option value="banner">横幅</option>
-                <option value="grid">多栏布局</option>
-                <option value="snippet">片段模板</option>
+                <option value="block">{{ .["t"]("admin.blocks.kind.block", "区块") }}</option>
+                <option value="header">{{ .["t"]("admin.blocks.kind.header", "页眉") }}</option>
+                <option value="footer">{{ .["t"]("admin.blocks.kind.footer", "页脚") }}</option>
+                <option value="announcement">{{ .["t"]("admin.blocks.kind.announcement", "公告栏") }}</option>
+                <option value="sidebar">{{ .["t"]("admin.blocks.kind.sidebar", "侧边栏") }}</option>
+                <option value="breadcrumb">{{ .["t"]("admin.blocks.kind.breadcrumb", "面包屑") }}</option>
+                <option value="drawer">{{ .["t"]("admin.blocks.kind.drawer", "抽屉导航") }}</option>
+                <option value="search">{{ .["t"]("admin.blocks.kind.search", "搜索框") }}</option>
+                <option value="cta">{{ .["t"]("admin.blocks.kind.cta", "CTA 段") }}</option>
+                <option value="trust">{{ .["t"]("admin.blocks.kind.trust", "信任徽章") }}</option>
+                <option value="brands">{{ .["t"]("admin.blocks.kind.brands", "品牌墙") }}</option>
+                <option value="contact">{{ .["t"]("admin.blocks.kind.contact", "联系方式") }}</option>
+                <option value="about">{{ .["t"]("admin.blocks.kind.about", "关于我们") }}</option>
+                <option value="banner">{{ .["t"]("admin.blocks.kind.banner", "横幅") }}</option>
+                <option value="grid">{{ .["t"]("admin.blocks.kind.grid", "多栏布局") }}</option>
+                <option value="snippet">{{ .["t"]("admin.blocks.kind.snippet", "片段模板") }}</option>
             </select>
             <select name="reuseMode">
-                <option value="global">全局引用（改一处，引用页一起更新）</option>
-                <option value="template">一次性复制（插入即独立，互不影响）</option>
+                <option value="global">{{ .["t"]("admin.blocks.reuse.global", "全局引用（改一处，引用页一起更新）") }}</option>
+                <option value="template">{{ .["t"]("admin.blocks.reuse.template", "一次性复制（插入即独立，互不影响）") }}</option>
             </select>
-            <button type="submit" class="btn btn-primary">新建并编辑</button>
+            <button type="submit" class="btn btn-primary">{{ .["t"]("admin.blocks.create", "新建并编辑") }}</button>
         </form>
     </section>
 
     <section class="card card-body">
-        <h2>页眉</h2>
+        <h2>{{ .["t"]("admin.blocks.headers_heading", "页眉") }}</h2>
         {{if len(.Headers) == 0}}
-        <p class="text-mute text-sm">还没有页眉块。在「主题管理 → 设置」里把页眉块绑定到主题后，整站页面构建时自动内联。</p>
+        <p class="text-mute text-sm">{{ .["t"]("admin.blocks.headers_empty", "还没有页眉块。在「主题管理 → 设置」里把页眉块绑定到主题后，整站页面构建时自动内联。") }}</p>
         {{else}}
-        <div class="table-wrap" tabindex="0" role="region" aria-label="页眉块"><table class="data-table">
-            <thead><tr><th>名称</th><th>更新时间</th><th>操作</th></tr></thead>
+        <div class="table-wrap" tabindex="0" role="region" aria-label="{{ .["t"]("admin.blocks.headers_aria", "页眉块") }}"><table class="data-table">
+            <thead><tr><th>{{ .["t"]("admin.blocks.col.name", "名称") }}</th><th>{{ .["t"]("admin.blocks.col.updated_at", "更新时间") }}</th><th>{{ .["t"]("admin.blocks.col.actions", "操作") }}</th></tr></thead>
             <tbody>
             {{range _, b := .Headers}}
             <tr>
                 <td>{{b.Name}}</td>
                 <td>{{b.UpdatedAt}}</td>
                 <td class="action-row">
-                    <a class="btn" href="/workbench?block={{b.ID}}">编辑</a>
+                    <a class="btn" href="/workbench?block={{b.ID}}">{{tr("admin.blocks.action.edit", "编辑")}}</a>
                     <form method="post" action="/admin/blocks/delete" class="inline-form"
-                          data-confirm="确定删除块「{{b.Name|safeJs}}」？绑定了它的主题下页面将重新构建。">
+                          data-confirm="{{tr("admin.blocks.confirm_delete_prefix", "确定删除块「")}}{{b.Name|safeJs}}{{tr("admin.blocks.confirm_delete_suffix_bound", "」？绑定了它的主题下页面将重新构建。")}}">
                         <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
                         <input type="hidden" name="id" value="{{b.ID}}">
                         <input type="hidden" name="projectId" value="{{.SelectedProject}}">
-                        <button type="submit" class="btn">删除</button>
+                        <button type="submit" class="btn">{{tr("admin.blocks.action.delete", "删除")}}</button>
                     </form>
                 </td>
             </tr>
@@ -79,25 +81,25 @@
     </section>
 
     <section class="card card-body">
-        <h2>页脚</h2>
+        <h2>{{ .["t"]("admin.blocks.footers_heading", "页脚") }}</h2>
         {{if len(.Footers) == 0}}
-        <p class="text-mute text-sm">还没有页脚块。</p>
+        <p class="text-mute text-sm">{{ .["t"]("admin.blocks.footers_empty", "还没有页脚块。") }}</p>
         {{else}}
-        <div class="table-wrap" tabindex="0" role="region" aria-label="页脚块"><table class="data-table">
-            <thead><tr><th>名称</th><th>更新时间</th><th>操作</th></tr></thead>
+        <div class="table-wrap" tabindex="0" role="region" aria-label="{{ .["t"]("admin.blocks.footers_aria", "页脚块") }}"><table class="data-table">
+            <thead><tr><th>{{ .["t"]("admin.blocks.col.name", "名称") }}</th><th>{{ .["t"]("admin.blocks.col.updated_at", "更新时间") }}</th><th>{{ .["t"]("admin.blocks.col.actions", "操作") }}</th></tr></thead>
             <tbody>
             {{range _, b := .Footers}}
             <tr>
                 <td>{{b.Name}}</td>
                 <td>{{b.UpdatedAt}}</td>
                 <td class="action-row">
-                    <a class="btn" href="/workbench?block={{b.ID}}">编辑</a>
+                    <a class="btn" href="/workbench?block={{b.ID}}">{{tr("admin.blocks.action.edit", "编辑")}}</a>
                     <form method="post" action="/admin/blocks/delete" class="inline-form"
-                          data-confirm="确定删除块「{{b.Name|safeJs}}」？绑定了它的主题下页面将重新构建。">
+                          data-confirm="{{tr("admin.blocks.confirm_delete_prefix", "确定删除块「")}}{{b.Name|safeJs}}{{tr("admin.blocks.confirm_delete_suffix_bound", "」？绑定了它的主题下页面将重新构建。")}}">
                         <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
                         <input type="hidden" name="id" value="{{b.ID}}">
                         <input type="hidden" name="projectId" value="{{.SelectedProject}}">
-                        <button type="submit" class="btn">删除</button>
+                        <button type="submit" class="btn">{{tr("admin.blocks.action.delete", "删除")}}</button>
                     </form>
                 </td>
             </tr>
@@ -108,12 +110,12 @@
     </section>
 
     <section class="card card-body">
-        <h2>区块 / 复用资产</h2>
+        <h2>{{ .["t"]("admin.blocks.blocks_heading", "区块 / 复用资产") }}</h2>
         {{if len(.Blocks) == 0}}
-        <p class="text-mute text-sm">还没有区块。区块用于跨页面复用的结构片段（对应 WP 的同步块），工作台「全局块」页签可一键引用。</p>
+        <p class="text-mute text-sm">{{ .["t"]("admin.blocks.blocks_empty", "还没有区块。区块用于跨页面复用的结构片段（对应 WP 的同步块），工作台「全局块」页签可一键引用。") }}</p>
         {{else}}
-        <div class="table-wrap" tabindex="0" role="region" aria-label="复用区块"><table class="data-table">
-            <thead><tr><th>名称</th><th>类型</th><th>复用方式</th><th>更新时间</th><th>操作</th></tr></thead>
+        <div class="table-wrap" tabindex="0" role="region" aria-label="{{ .["t"]("admin.blocks.blocks_aria", "复用区块") }}"><table class="data-table">
+            <thead><tr><th>{{ .["t"]("admin.blocks.col.name", "名称") }}</th><th>{{ .["t"]("admin.blocks.col.kind", "类型") }}</th><th>{{ .["t"]("admin.blocks.col.reuse", "复用方式") }}</th><th>{{ .["t"]("admin.blocks.col.updated_at", "更新时间") }}</th><th>{{ .["t"]("admin.blocks.col.actions", "操作") }}</th></tr></thead>
             <tbody>
             {{range _, b := .Blocks}}
             <tr>
@@ -122,13 +124,13 @@
                 <td>{{b.ReuseModeLabel}}</td>
                 <td>{{b.UpdatedAt}}</td>
                 <td class="action-row">
-                    <a class="btn" href="/workbench?block={{b.ID}}">编辑</a>
+                    <a class="btn" href="/workbench?block={{b.ID}}">{{tr("admin.blocks.action.edit", "编辑")}}</a>
                     <form method="post" action="/admin/blocks/delete" class="inline-form"
-                          data-confirm="确定删除块「{{b.Name|safeJs}}」？">
+                          data-confirm="{{tr("admin.blocks.confirm_delete_prefix", "确定删除块「")}}{{b.Name|safeJs}}{{tr("admin.blocks.confirm_delete_suffix", "」？")}}">
                         <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
                         <input type="hidden" name="id" value="{{b.ID}}">
                         <input type="hidden" name="projectId" value="{{.SelectedProject}}">
-                        <button type="submit" class="btn">删除</button>
+                        <button type="submit" class="btn">{{tr("admin.blocks.action.delete", "删除")}}</button>
                     </form>
                 </td>
             </tr>
@@ -139,14 +141,10 @@
     </section>
 
     <section class="card card-body">
-        <h2>说明</h2>
+        <h2>{{ .["t"]("admin.blocks.notes_heading", "说明") }}</h2>
         <p class="text-mute text-sm">
-            全局块 = 跨页面复用的结构片段（对应 WP 的 HTML 块 / template part）。页眉/页脚块在
-            「主题管理 → 设置」里绑定到主题，构建页面时编译期内联进产物——访问面保持纯静态；
-            块内容变更后，绑定了它的主题下页面自动标为待重建。<br>
-            复用方式（docs/02-D）：<b>全局引用</b>＝页面存引用，改一处所有引用页一起更新（页眉/公告栏/信任徽章）；
-            <b>一次性复制</b>＝插入时复制完整结构，此后与源块互不影响（商品卡/表单/弹窗）。
-            被引用的全局块删除前须先解除引用。
+            {{ .["t"]("admin.blocks.notes", "全局块 = 跨页面复用的结构片段（对应 WP 的 HTML 块 / template part）。页眉/页脚块在「主题管理 → 设置」里绑定到主题，构建页面时编译期内联进产物——访问面保持纯静态；块内容变更后，绑定了它的主题下页面自动标为待重建。") }}<br>
+            {{ .["t"]("admin.blocks.notes_reuse_lead", "复用方式（docs/02-D）：") }}<b>{{ .["t"]("admin.blocks.notes_reuse_global", "全局引用") }}</b>{{ .["t"]("admin.blocks.notes_reuse_global_tail", "＝页面存引用，改一处所有引用页一起更新（页眉/公告栏/信任徽章）；") }}<b>{{ .["t"]("admin.blocks.notes_reuse_template", "一次性复制") }}</b>{{ .["t"]("admin.blocks.notes_reuse_template_tail", "＝插入时复制完整结构，此后与源块互不影响（商品卡/表单/弹窗）。被引用的全局块删除前须先解除引用。") }}
         </p>
     </section>
     {{end}}

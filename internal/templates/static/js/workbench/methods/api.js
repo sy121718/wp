@@ -30,65 +30,68 @@ export const apiMethods = {
                   })
                   .catch(function () { self.busy = false; self.saveState = 'error'; self.renderUI(); });
             },
+            // saveDraft 保存草稿（审计 EDT-017）。
+            //
+            // 保存端点与请求体键名全部来自 meta.target —— 后端注册表下发的编辑目标描述符。
+            // 此前这里是 page / block / template 三段 if：接入一种新文档类型要在保存、预览、
+            // 校验、历史四处各加一条分支，而分派散在 JS 里，漏改一处不会编译失败，
+            // 只会在用户点保存时表现为「什么都没发生」（最难查的一类问题）。
+            //
+            // 注意 body 的键名由描述符给（page 用 draftDocument + expectedVersion + draftPath、
+            // block 用 document 且额外带 name、template 用 draftDocument 无版本），
+            // 前端不认识任何一种目标。
             saveDraft() {
                 var self = this;
-                // 内容模板：保存走 contenttemplate API（严格校验，产生新版本）。
-                if (meta.saveBase === 'template') {
-                    self.busy = true; self.renderUI();
-                    fetch('/api/contenttemplate/update', {
-                        method: 'POST',
-                        headers: csrfHeaders({ 'Content-Type': 'application/json' }),
-                        body: JSON.stringify({ id: meta.pageId, draftDocument: this.doc })
-                    }).then(function (r) { return r.json(); })
-                      .then(function (j) {
-                          self.busy = false;
-                          if (j.code && j.code >= 400) {
-                              self.saveState = 'error'; self.renderUI();
-                              alert(j.message || '保存失败');
-                              return;
-                          }
-                          var data = j.data || {};
-                          self.draftVersion = data.draftVersion || (self.draftVersion + 1);
-                          self.saveState = 'saved';
-                          self.clearBackup();
-                          self.flushCanvas();
-                      })
-                      .catch(function () { self.busy = false; self.saveState = 'error'; self.renderUI(); });
+                var target = meta.target || null;
+                if (!target || !target.save || !target.save.path) {
+                    // 描述符缺失（旧缓存页面或后端未注册该类型）：退回手工页面保存，
+                    // 而不是静默什么都不做。
+                    this.api('draft/save', {
+                        id: meta.pageId,
+                        expectedVersion: this.draftVersion,
+                        draftPath: meta.draftPath,
+                        draftDocument: this.doc
+                    }, function (data) {
+                        self.draftVersion = data.draftVersion || (self.draftVersion + 1);
+                        self.saveState = 'saved';
+                        self.clearBackup();
+                        self.flushCanvas();
+                    });
                     return;
                 }
-                // 全局块编辑：保存到 dashboard 编排端点（保存后自动传播 stale）。
-                if (meta.saveBase === 'block') {
-                    self.busy = true; self.renderUI();
-                    fetch('/admin/blocks/save-content', {
-                        method: 'POST',
-                        headers: csrfHeaders({ 'Content-Type': 'application/json' }),
-                        body: JSON.stringify({ id: meta.pageId, name: meta.blockName, document: this.doc })
-                    }).then(function (r) { return r.json(); })
-                      .then(function (j) {
-                          self.busy = false;
-                          if (j.code && j.code >= 400) {
-                              self.saveState = 'error'; self.renderUI();
-                              alert(j.message || '保存失败');
-                              return;
-                          }
-                          self.saveState = 'saved';
-                          self.clearBackup();
-                          self.flushCanvas();
-                      })
-                      .catch(function () { self.busy = false; self.saveState = 'error'; self.renderUI(); });
-                    return;
+                var spec = target.saveBody || {};
+                var body = {};
+                body[spec.idKey || 'id'] = meta.pageId;
+                body[spec.documentKey || 'draftDocument'] = this.doc;
+                if (spec.versionKey) { body[spec.versionKey] = this.draftVersion; }
+                if (spec.pathKey && meta.draftPath !== undefined) { body[spec.pathKey] = meta.draftPath; }
+                if (spec.extras) {
+                    for (var key in spec.extras) {
+                        if (!Object.prototype.hasOwnProperty.call(spec.extras, key)) { continue; }
+                        var from = spec.extras[key];
+                        if (meta[from] !== undefined) { body[key] = meta[from]; }
+                    }
                 }
-                this.api('draft/save', {
-                    id: meta.pageId,
-                    expectedVersion: this.draftVersion,
-                    draftPath: meta.draftPath,
-                    draftDocument: this.doc
-                }, function (data) {
-                    self.draftVersion = data.draftVersion || (self.draftVersion + 1);
-                    self.saveState = 'saved';
-                    self.clearBackup();
-                    self.flushCanvas();
-                });
+                self.busy = true; self.renderUI();
+                fetch(target.save.path, {
+                    method: 'POST',
+                    headers: csrfHeaders({ 'Content-Type': 'application/json' }),
+                    body: JSON.stringify(body)
+                }).then(function (r) { return r.json(); })
+                  .then(function (j) {
+                      self.busy = false;
+                      if (j.code && j.code >= 400) {
+                          self.saveState = 'error'; self.renderUI();
+                          alert(j.message || '保存失败');
+                          return;
+                      }
+                      var data = j.data || {};
+                      self.draftVersion = data.draftVersion || (self.draftVersion + 1);
+                      self.saveState = 'saved';
+                      self.clearBackup();
+                      self.flushCanvas();
+                  })
+                  .catch(function () { self.busy = false; self.saveState = 'error'; self.renderUI(); });
             },
             publishFlow() {
                 var self = this;

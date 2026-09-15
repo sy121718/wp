@@ -14,6 +14,31 @@ type CreateInstanceReq struct {
 	// TemplateID 显式指定使用哪套模板（issue #14：同一实体类型下可有多套命名模板）。
 	// 可空：缺省时按实体类型取默认模板（既有行为不变）。
 	TemplateID string `json:"templateId"`
+	// InstanceRole 要建哪一类实例（审计 EDT-004）：空 = detail（实体详情页，既有行为）。
+	// archive = 归档列表页（如「某分类下的商品列表」），与详情页共存于同一实体。
+	InstanceRole string `json:"instanceRole"`
+}
+
+// EnsureArchiveReq 确保某实体的归档页存在（审计 EDT-004）。
+//
+// 由实体侧（分类 / 标签 / 品牌）在增删改时调用：新建实体 → 补建归档页，
+// 改名 → 更新路径，删除 → 下线。
+type EnsureArchiveReq struct {
+	ProjectID string `json:"projectId"`
+	// EntityType 归档主体的实体类型（category / tag / brand）。
+	EntityType string `json:"entityType" required:"true"`
+	EntityID   string `json:"entityId" required:"true"`
+	// Slug 用于按规则生成访问路径（/{entityType}/{slug}）。
+	Slug string `json:"slug"`
+}
+
+// EnsureArchiveResp 归档页同步结果。
+type EnsureArchiveResp struct {
+	// Skipped 非空表示本次没有动作及原因（如工程未配置归档模板、实体无 slug）。
+	// **这是正常状态而不是错误**：没有配归档模板的站点不该因为「新建了分类」而报错。
+	Skipped    string `json:"skipped,omitempty"`
+	InstanceID string `json:"instanceId,omitempty"`
+	Created    bool   `json:"created"`
 }
 
 // RebuildReq 实体数据更新后重建。
@@ -89,10 +114,13 @@ type ListReq struct {
 //
 // Status 由 active_artifact_id 指针推导（active / draft），不是表列。
 type InstanceResp struct {
-	ID           string          `json:"id"`
-	ProjectID    string          `json:"projectId"`
-	EntityType   string          `json:"entityType"`
-	EntityID     string          `json:"entityId"`
+	ID         string `json:"id"`
+	ProjectID  string `json:"projectId"`
+	EntityType string `json:"entityType"`
+	EntityID   string `json:"entityId"`
+	// InstanceRole 实例角色（审计 EDT-004）：detail = 实体详情页，archive = 归档列表页。
+	// 同一个分类可以同时有这两张页面；空值按 detail 处理（既有行为不变）。
+	InstanceRole string          `json:"instanceRole,omitempty"`
 	URLPath      string          `json:"urlPath"`
 	TemplateID   string          `json:"templateId"`
 	Status       string          `json:"status"`

@@ -47,7 +47,7 @@ func (h *Handle) Upload(c *gin.Context) {
 
 	att, err := h.svc.Upload(c.Request.Context(), file, categoryID)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusInternalServerError, err.Error())
+		response.ErrorAuto(c, http.StatusInternalServerError, "media", err)
 		return
 	}
 	response.SuccessWithMessage(c, mediaenums.MsgSuccess, att)
@@ -63,7 +63,7 @@ func (h *Handle) List(c *gin.Context) {
 
 	resp, err := h.svc.List(c.Request.Context(), &req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusInternalServerError, err.Error())
+		response.ErrorAuto(c, http.StatusInternalServerError, "media", err)
 		return
 	}
 	response.Success(c, resp)
@@ -79,7 +79,7 @@ func (h *Handle) Detail(c *gin.Context) {
 
 	att, err := h.svc.Detail(c.Request.Context(), &req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusNotFound, err.Error())
+		response.ErrorAuto(c, http.StatusNotFound, "media", err)
 		return
 	}
 	response.Success(c, att)
@@ -94,7 +94,7 @@ func (h *Handle) Delete(c *gin.Context) {
 	}
 
 	if err := h.svc.Delete(c.Request.Context(), &req); err != nil {
-		response.ErrorWithMessage(c, http.StatusNotFound, err.Error())
+		response.ErrorAuto(c, http.StatusNotFound, "media", err)
 		return
 	}
 	response.SuccessWithMessage(c, mediaenums.MsgSuccess, nil)
@@ -115,7 +115,7 @@ func (h *Handle) Replace(c *gin.Context) {
 	}
 	att, err := h.svc.Replace(c.Request.Context(), id, file)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "media", err)
 		return
 	}
 	response.SuccessWithMessage(c, mediaenums.MsgSuccess, att)
@@ -130,7 +130,7 @@ func (h *Handle) References(c *gin.Context) {
 	}
 	refs, err := h.svc.References(c.Request.Context(), id)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusNotFound, err.Error())
+		response.ErrorAuto(c, http.StatusNotFound, "media", err)
 		return
 	}
 	response.Success(c, refs)
@@ -140,7 +140,7 @@ func (h *Handle) References(c *gin.Context) {
 func (h *Handle) CategoryTree(c *gin.Context) {
 	tree, err := h.svc.CategoryTree(c.Request.Context())
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusInternalServerError, err.Error())
+		response.ErrorAuto(c, http.StatusInternalServerError, "media", err)
 		return
 	}
 	response.Success(c, tree)
@@ -155,7 +155,7 @@ func (h *Handle) CategoryCreate(c *gin.Context) {
 	}
 	res, err := h.svc.CreateCategory(c.Request.Context(), &req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "media", err)
 		return
 	}
 	response.Success(c, res)
@@ -169,7 +169,7 @@ func (h *Handle) CategoryUpdate(c *gin.Context) {
 		return
 	}
 	if err := h.svc.UpdateCategory(c.Request.Context(), &req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "media", err)
 		return
 	}
 	response.Success(c, nil)
@@ -183,7 +183,7 @@ func (h *Handle) CategoryDelete(c *gin.Context) {
 		return
 	}
 	if err := h.svc.DeleteCategory(c.Request.Context(), &req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "media", err)
 		return
 	}
 	response.Success(c, nil)
@@ -197,7 +197,7 @@ func (h *Handle) UpdateAttachment(c *gin.Context) {
 		return
 	}
 	if err := h.svc.UpdateAttachment(c.Request.Context(), &req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "media", err)
 		return
 	}
 	response.Success(c, nil)
@@ -213,7 +213,7 @@ func (h *Handle) GenerateVariants(c *gin.Context) {
 	}
 	variants, err := h.svc.GenerateVariants(c.Request.Context(), req.ID)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "media", err)
 		return
 	}
 	response.SuccessWithMessage(c, mediaenums.MsgSuccess, variants)
@@ -229,7 +229,7 @@ func (h *Handle) Download(c *gin.Context) {
 	}
 	plan, err := h.svc.BuildDownloadPlan(c.Request.Context(), id)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "media", err)
 		return
 	}
 	writeZipResponse(c, plan)
@@ -245,7 +245,7 @@ func (h *Handle) DownloadBatch(c *gin.Context) {
 	}
 	plan, err := h.svc.BuildBatchDownloadPlan(c.Request.Context(), ids)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "media", err)
 		return
 	}
 	writeZipResponse(c, plan)

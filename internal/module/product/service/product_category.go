@@ -21,9 +21,11 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
+	presentationdto "go_wp/internal/module/presentation/dto"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
 	productmodel "go_wp/internal/module/product/model"
+	"go_wp/pkg/logger"
 )
 
 // maxCategoryDepth 分类层级兜底上限：正常数据不会到这个深度，
@@ -67,7 +69,33 @@ func (s *Service) CreateCategory(ctx context.Context, req *productdto.CreateCate
 	if err = s.m.CreateCategory(ctx, e); err != nil {
 		return nil, err
 	}
+	// 归档页同步（审计 EDT-004）：新建分类 → 补建它的归档页。
+	s.syncCategoryArchive(ctx, e.ProjectID, e.ID, e.Slug)
 	return toCategoryResp(e), nil
+}
+
+// syncCategoryArchive 让归档页跟上分类变化（审计 EDT-004）。
+//
+// 失败只记日志，**不阻断分类保存**：归档页是派生视图，不是分类的一部分。
+// 反过来（因为归档页建不出来而不让保存分类）会让一个次要问题挡住主流程，
+// 而且分类已经写进库里了，此时返回错误反而让调用方以为没保存成功。
+//
+// 未配置归档模板时 presentation 返回 Skipped —— 这里是正常路径，不打错误日志。
+func (s *Service) syncCategoryArchive(ctx context.Context, projectID, categoryID, slug string) {
+	if s.archiveEnsurer == nil {
+		return
+	}
+	resp, err := s.archiveEnsurer.EnsureArchiveInstance(ctx, &presentationdto.EnsureArchiveReq{
+		ProjectID: projectID, EntityType: "category", EntityID: categoryID, Slug: slug,
+	})
+	if err != nil {
+		logger.Scene("product").With("categoryId", categoryID).Error(err, "归档页同步失败（分类已保存，可稍后重试）")
+		return
+	}
+	if resp != nil && resp.Skipped != "" {
+		logger.Scene("product").With("categoryId", categoryID).With("reason", resp.Skipped).
+			Debug("归档页跳过")
+	}
 }
 
 // UpdateCategory 修改分类（含改名 / 换父级 / 排序 / SEO 字段）。
@@ -127,6 +155,9 @@ func (s *Service) UpdateCategory(ctx context.Context, req *productdto.UpdateCate
 	if err = s.m.UpdateCategory(ctx, e); err != nil {
 		return nil, err
 	}
+	// 改名 / 换 slug 后归档页路径要跟着走（审计 EDT-004）：同步入口内部会比对路径，
+	// 不同则按新路径重建并给旧路径留 301。
+	s.syncCategoryArchive(ctx, e.ProjectID, e.ID, e.Slug)
 	return toCategoryResp(e), nil
 }
 

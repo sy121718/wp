@@ -29,6 +29,8 @@ import (
 	"strings"
 	"time"
 
+	"go_wp/pkg/sitetz"
+
 	"github.com/gin-gonic/gin"
 
 	dashboardenums "go_wp/internal/module/dashboard/enums"
@@ -754,7 +756,8 @@ func customerDayStart(raw string) *time.Time {
 	if v == "" {
 		return nil
 	}
-	day, err := time.ParseInLocation("2006-01-02", v, time.Local)
+	// 与 API 侧同一口径（pkg/sitetz）：日期筛选按站点时区解释，不跟随服务器时区。
+	day, err := time.ParseInLocation("2006-01-02", v, sitetz.Location())
 	if err != nil {
 		return nil
 	}

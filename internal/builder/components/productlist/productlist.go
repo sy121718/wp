@@ -182,12 +182,19 @@ type Props struct {
 	CollectionLimit int `json:"collectionLimit,omitempty" ct:"slider,min=1,max=100,step=1,sec=collection,label=取几条"`
 
 	// —— 筛选（构建期下推到集合源，issue #21 的四个维度）——
-	FilterStatus     string `json:"filterStatus,omitempty" ct:"select,=全部,draft=草稿,published=已发布,archived=已归档,default=,sec=collection,label=状态"`
-	FilterCategoryID string `json:"filterCategoryId,omitempty" ct:"entityref,category,label=分类"`
-	FilterBrandID    string `json:"filterBrandId,omitempty" ct:"entityref,brand,label=品牌"`
-	FilterTagID      string `json:"filterTagId,omitempty" ct:"entityref,tag,label=标签"`
+	FilterStatus string `json:"filterStatus,omitempty" ct:"select,=全部,draft=草稿,published=已发布,archived=已归档,default=,sec=collection,label=状态"`
+	// FilterFromArchive 筛选来源（审计 EDT-004）：开启后列表用**当前归档实例的实体**
+	// 作为筛选值（分类页 → 该分类、标签页 → 该标签、品牌页 → 该品牌），上面几个
+	// 静态筛选字段被忽略。空 = 关闭（手工页面与详情页的既有行为一个字节不变）。
+	//
+	// 为什么需要它：没有这个开关时「每个分类一个列表页」只能靠复制页面 + 手改筛选，
+	// 新增分类必然漏配 —— 而漏配的表现是「页面打得开、列的是全站商品」。
+	FilterFromArchive string `json:"filterFromArchive,omitempty" ct:"select,=关闭,on=按归档上下文,default=,sec=collection,label=筛选来源"`
+	FilterCategoryID  string `json:"filterCategoryId,omitempty" ct:"entityref,category,label=分类"`
+	FilterBrandID     string `json:"filterBrandId,omitempty" ct:"entityref,brand,label=品牌"`
+	FilterTagID       string `json:"filterTagId,omitempty" ct:"entityref,tag,label=标签"`
 	// FilterTagIDs 多标签筛选（issue #27）：逗号分隔的标签 id 列表（「热卖」「新品」这类用标签表达）。
-	FilterTagIDs string `json:"filterTagIds,omitempty" ct:"text,maxlen=500,sec=collection,label=标签 id 列表"`
+	FilterTagIDs string `json:"filterTagIds,omitempty" ct:"multientityref,tag,maxlen=500,sec=collection,label=标签 id 列表"`
 	// FilterTagMode 多标签语义：any（默认，具备任一）/ all（同时具备全部）。
 	FilterTagMode string `json:"filterTagMode,omitempty" ct:"select,=具备任一,any=具备任一,all=同时具备全部,default=,sec=collection,label=多标签语义"`
 	// OnlyOnSale 只看在售（存在启用变体有划线价且高于售价，与 on_sale 自动标签同源）。
@@ -212,7 +219,7 @@ type Props struct {
 	Filters string `json:"filters,omitempty" ct:"text,maxlen=120,sec=collection,label=筛选栏维度"`
 	// PriceRanges 预设价格档位（issue #28）：`0-199,200-399,799+` 逗号分隔。
 	// 空 = 不渲染价格块。每档渲染成一条筛选链接（与其它筛选同构：无 JS 可点、URL 干净）。
-	PriceRanges string `json:"priceRanges,omitempty" ct:"text,maxlen=200,sec=collection,label=预设价格档位"`
+	PriceRanges string `json:"priceRanges,omitempty" ct:"rangelist,maxlen=200,sec=collection,label=预设价格档位"`
 	// PriceSlider 可拖动价格滑块：`off` = 不渲染；空 = 渲染（双端点 range）。
 	//
 	// 滑块是**渐进增强**：没有 JS 时它是原生 range + 表单提交（整页跳转到 `?minPrice=..&maxPrice=..`，
@@ -259,13 +266,13 @@ type Props struct {
 	EmptyText string `json:"emptyText,omitempty" ct:"text,maxlen=50,sec=content,label=空态文案"`
 
 	// —— 卡片字段（与 core.productCard 同一套槽位口径）——
-	ImageField        string `json:"imageField,omitempty" ct:"string,maxlen=60,sec=content,label=主图字段"`
-	ImageAltField     string `json:"imageAltField,omitempty" ct:"string,maxlen=60,sec=content,label=主图 alt 字段"`
-	TitleField        string `json:"titleField,omitempty" ct:"string,maxlen=60,sec=content,label=标题字段"`
-	PriceField        string `json:"priceField,omitempty" ct:"string,maxlen=60,sec=content,label=价格字段"`
-	ComparePriceField string `json:"comparePriceField,omitempty" ct:"string,maxlen=60,sec=content,label=划线价字段"`
-	TagsField         string `json:"tagsField,omitempty" ct:"string,maxlen=60,sec=content,label=标签字段"`
-	LinkField         string `json:"linkField,omitempty" ct:"string,maxlen=60,sec=content,label=链接字段"`
+	ImageField        string `json:"imageField,omitempty" ct:"bindingfield,prefixes=item|product,maxlen=60,sec=content,label=主图字段"`
+	ImageAltField     string `json:"imageAltField,omitempty" ct:"bindingfield,prefixes=item|product,maxlen=60,sec=content,label=主图 alt 字段"`
+	TitleField        string `json:"titleField,omitempty" ct:"bindingfield,prefixes=item|product,maxlen=60,sec=content,label=标题字段"`
+	PriceField        string `json:"priceField,omitempty" ct:"bindingfield,prefixes=item|product,maxlen=60,sec=content,label=价格字段"`
+	ComparePriceField string `json:"comparePriceField,omitempty" ct:"bindingfield,prefixes=item|product,maxlen=60,sec=content,label=划线价字段"`
+	TagsField         string `json:"tagsField,omitempty" ct:"bindingfield,prefixes=item|product,maxlen=60,sec=content,label=标签字段"`
+	LinkField         string `json:"linkField,omitempty" ct:"bindingfield,prefixes=item|product,maxlen=60,sec=content,label=链接字段"`
 	LinkPrefix        string `json:"linkPrefix,omitempty" ct:"text,maxlen=200,sec=content,label=链接前缀"`
 	// ListPageLink 列表页链接文案（留空用「全部商品」）。
 	//
@@ -274,7 +281,7 @@ type Props struct {
 	// 作者在这里只能改文案，改不了目标：让作者手填路径就是允许产物里长出死链。
 	ListPageLink string `json:"listPageLink,omitempty" ct:"text,maxlen=30,sec=content,label=列表页链接文案"`
 	Currency     string `json:"currency,omitempty" ct:"text,maxlen=8,sec=content,label=货币符号"`
-	TitleTag          string `json:"titleTag,omitempty" ct:"select,h2=二级标题,h3=三级标题,h4=四级标题,default=h3,sec=content,label=标题层级"`
+	TitleTag     string `json:"titleTag,omitempty" ct:"select,h2=二级标题,h3=三级标题,h4=四级标题,default=h3,sec=content,label=标题层级"`
 
 	// Advanced 通用高级属性（docs/02-C0）。
 	Advanced core.AdvancedProps `json:"advanced" ct:"group"`

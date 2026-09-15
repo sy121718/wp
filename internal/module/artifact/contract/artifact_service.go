@@ -16,6 +16,9 @@ type (
 	ArtifactResp  = artifactdto.ArtifactResp
 
 	GCCandidateResp = artifactdto.GCCandidateResp
+
+	ContentObjectGCReq  = artifactdto.ContentObjectGCReq
+	ContentObjectGCResp = artifactdto.ContentObjectGCResp
 )
 
 // 产物负载状态（跨模块传值用；与 page_artifacts 的 CHECK 约束逐字对应）。
@@ -53,4 +56,9 @@ type ArtifactService interface {
 	CountOtherAvailableByHash(ctx context.Context, hash, excludeID string) (n int64, err error)
 	// MarkPayloadState 批量更新负载状态（gc_pending / deleted），返回受影响行数。
 	MarkPayloadState(ctx context.Context, ids []string, state string) (n int64, err error)
+	// GarbageCollectContentObjects 回收不再被任何现存产物行引用的共享内容对象
+	// （content_objects 的标记清除 GC，审计 IDX-016）。
+	// DryRun 默认 true，真删必须显式传 false；外部引用来源未接时按「没有外部引用」处理，
+	// 接上后查询失败即整轮放弃（宁可不回收也不误删）。
+	GarbageCollectContentObjects(ctx context.Context, req *artifactdto.ContentObjectGCReq) (res *artifactdto.ContentObjectGCResp, err error)
 }

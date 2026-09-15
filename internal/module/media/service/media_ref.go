@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"strings"
 
+	mediacontract "go_wp/internal/module/media/contract"
 	mediato "go_wp/internal/module/media/dto"
 	mediaenums "go_wp/internal/module/media/enums"
 	mediamodel "go_wp/internal/module/media/model"
@@ -49,7 +50,7 @@ func (s *Service) References(ctx context.Context, id uint64) (res []mediato.Atta
 // SyncReferences 构建期全量同步：把某引用方（页面/块）产物中的媒体 URL 集合
 // 写进对应附件的 extra_info.refs，并解除该引用方不再引用的附件。
 // 返回本次该引用方实际命中的附件数。差集增删，重复构建零写入（幂等）。
-func (s *Service) SyncReferences(ctx context.Context, req *mediato.SyncRefsReq) (n int, err error) {
+func (s *Service) SyncReferences(ctx context.Context, req *mediacontract.SyncRefsInput) (n int, err error) {
 	if req == nil {
 		return 0, errors.New(mediaenums.MsgBadRequest)
 	}
@@ -167,7 +168,7 @@ func (s *Service) SyncReferencesFromHTML(ctx context.Context, refKind, refID, re
 		return 0, nil
 	}
 	urls := collectStorageURLs(html)
-	n, err := s.SyncReferences(ctx, &mediato.SyncRefsReq{
+	n, err := s.SyncReferences(ctx, &mediacontract.SyncRefsInput{
 		RefKind: refKind, RefID: refID, RefTitle: refTitle, URLs: urls,
 	})
 	if err != nil {

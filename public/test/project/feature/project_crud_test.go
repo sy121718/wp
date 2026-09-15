@@ -3,6 +3,7 @@ package feature
 import (
 	"context"
 	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -16,14 +17,8 @@ import (
 
 func newProjectService(t *testing.T) *projectservice.Service {
 	t.Helper()
-	db, err := support.NewPGTestDB(t)
-	if err != nil {
-		t.Skipf("本地 PostgreSQL 不可用，跳过测试：%v", err)
-		return nil
-	}
-	if err := db.Exec(`CREATE TABLE projects (id TEXT PRIMARY KEY, name TEXT NOT NULL, settings JSON NOT NULL, created_at TIMESTAMPTZ NOT NULL, updated_at TIMESTAMPTZ NOT NULL)`).Error; err != nil {
-		t.Fatalf("创建 projects 表失败: %v", err)
-	}
+	// 表结构走生产迁移（projects 为真实 uuid/jsonb DDL），不再手抄。
+	db := support.NewMigratedPGTestDB(t)
 	return projectservice.NewService(projectmodel.NewProjectModel(db))
 }
 
@@ -34,7 +29,8 @@ func TestProjectCreateUpdateAndExists(t *testing.T) {
 	if err != nil {
 		t.Fatalf("创建工程失败: %v", err)
 	}
-	if created.Name != "官网工程" || string(created.Settings) != `{"locale":"zh-CN"}` {
+	// 生产的 projects.settings 是 jsonb：读写会规范化键序与空白，断言按 JSON 语义比较。
+	if created.Name != "官网工程" || !jsonEqual(t, created.Settings, `{"locale":"zh-CN"}`) {
 		t.Fatalf("工程字段未规范化: %+v", created)
 	}
 	exists, err := svc.Exists(ctx, created.ID)
@@ -45,9 +41,22 @@ func TestProjectCreateUpdateAndExists(t *testing.T) {
 	if err != nil {
 		t.Fatalf("更新工程失败: %v", err)
 	}
-	if updated.Name != "新官网" || string(updated.Settings) != `{"theme":"dark"}` {
+	if updated.Name != "新官网" || !jsonEqual(t, updated.Settings, `{"theme":"dark"}`) {
 		t.Fatalf("工程更新结果错误: %+v", updated)
 	}
+}
+
+// jsonEqual 按 JSON 语义比较（jsonb 列存取会规范化空白与键序，字节比较会误报）。
+func jsonEqual(t *testing.T, got []byte, want string) bool {
+	t.Helper()
+	var g, w any
+	if err := json.Unmarshal(got, &g); err != nil {
+		return false
+	}
+	if err := json.Unmarshal([]byte(want), &w); err != nil {
+		t.Fatalf("期望值不是合法 JSON: %s", want)
+	}
+	return reflect.DeepEqual(g, w)
 }
 
 func TestProjectRejectsInvalidSettings(t *testing.T) {

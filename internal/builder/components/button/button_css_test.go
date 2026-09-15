@@ -126,13 +126,16 @@ func TestButtonCSSHoverBranches(t *testing.T) {
 	}
 
 	exp := buttonCSSFor(&Props{HoverBg: "#f00"})
-	if !strings.Contains(exp, "@media (hover: hover) {\n  .sky-c-t:hover {") {
-		t.Errorf("显式悬停色应进 (hover: hover) 桶:\n%s", exp)
+	// 悬停规则同时覆盖 :hover 与 :focus（键盘用户没有 hover），且只在支持真悬浮的设备上生效。
+	// 曾经这里期望一条独立的 `.sky-c-t:hover` 规则：那条与下面的 hoverState 规则重复输出
+	// 同一属性（CSS 里出现两遍 background），已删除。
+	if !strings.Contains(exp, "@media (hover: hover) {\n  .sky-c-t:hover, .sky-c-t:focus {") {
+		t.Errorf("显式悬停色应进 (hover: hover) 桶并覆盖 :focus:\n%s", exp)
 	}
 	if !strings.Contains(exp, ".sky-c-t {\n  transition: all 0.2s ease;\n}") {
 		t.Errorf("悬停声明应有配套过渡:\n%s", exp)
 	}
-	if !strings.Contains(exp, ".sky-c-t:hover, .sky-c-t:focus {\n  background: #f00;\n}") {
+	if !strings.Contains(exp, ".sky-c-t:hover, .sky-c-t:focus {\n  background: #f00;") {
 		t.Errorf("悬停 / 聚焦态规则缺失:\n%s", exp)
 	}
 
@@ -154,7 +157,7 @@ func TestButtonCSSHoverBranches(t *testing.T) {
 
 	// 轮廓按钮的悬停背景回退到文字色（无显式悬停色时）。
 	o := buttonCSSFor(&Props{Variant: "outline", TextColor: "#123"})
-	if !strings.Contains(o, ":hover, .sky-c-t:focus {\n  background: #123;\n}") {
+	if !strings.Contains(o, ":hover, .sky-c-t:focus {\n  background: #123;") {
 		t.Errorf("轮廓变体的悬停背景应回退文字色:\n%s", o)
 	}
 }
@@ -176,7 +179,7 @@ func TestButtonCSSIconShift(t *testing.T) {
 	if !strings.Contains(shift, ".sky-c-t .bt-icon-shift {\n  transition: transform 0.2s ease;\n}") {
 		t.Errorf("图标位移的过渡规则缺失:\n%s", shift)
 	}
-	if !strings.Contains(shift, ".sky-c-t:hover .bt-icon-shift {\n  transform: translateX(4px);\n}") {
+	if !strings.Contains(shift, ".sky-c-t:hover .bt-icon-shift {\n  transform: translateX(4px);") {
 		t.Errorf("图标位移规则缺失:\n%s", shift)
 	}
 

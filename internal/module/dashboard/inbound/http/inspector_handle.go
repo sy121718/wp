@@ -58,6 +58,36 @@ type inspectorSubInput struct {
 	Placeholder string
 }
 
+// inspectorRangeRow 区间列表控件的一行：上限为空表示「以上」（799+）。
+type inspectorRangeRow struct {
+	Min string
+	Max string
+}
+
+// parseRangeRows 把 `0-199,200-399,799+` 解析成行。
+//
+// 认不出的片段原样放进 Min 而不是丢弃：面板不是校验入口，把作者写的原文显示出来
+// 让他自己改，比在这一层静默吞掉更好（构建期仍按既有规则拒绝并给出明确报错）。
+func parseRangeRows(raw string) []inspectorRangeRow {
+	var rows []inspectorRangeRow
+	for _, part := range strings.Split(raw, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		if min, ok := strings.CutSuffix(part, "+"); ok {
+			rows = append(rows, inspectorRangeRow{Min: min})
+			continue
+		}
+		if lo, hi, ok := strings.Cut(part, "-"); ok {
+			rows = append(rows, inspectorRangeRow{Min: lo, Max: hi})
+			continue
+		}
+		rows = append(rows, inspectorRangeRow{Min: part})
+	}
+	return rows
+}
+
 // inspectorField 单个字段（模板渲染用）。
 type inspectorField struct {
 	Key   string
@@ -72,6 +102,8 @@ type inspectorField struct {
 	Step        int
 	Placeholder string
 	Inputs      []inspectorSubInput
+	// Rows 区间列表控件的行（rangelist）：把 `0-199,799+` 这类值拆成可编辑的行。
+	Rows []inspectorRangeRow
 	// Slot 非空表示该字段由客户端增强控件渲染（取色器/联动锁/媒体选择等）：
 	// 服务端只输出定位占位 div，客户端用既有控件函数填充（避免两套控件实现）。
 	Slot string
@@ -272,6 +304,34 @@ func inspectorFieldOf(ctx context.Context, h *Handle, ctl inspectorSchemaItem, p
 			refKind = ctl.Options[0].Value
 		}
 		f.Options = entityRefInspectorOptions(ctx, h, projectID, refKind, value)
+	case "multientityref":
+		// 多选实体（标签 id 列表等，审计 EDT-007）：值仍是逗号分隔串（读写兼容），
+		// 但勾选状态由当前值直接渲染 —— 打开面板就知道已经选了哪几个，
+		// 不用去数一串 id。选项按 ct tag 声明的实体类型逐个取。
+		f.UI = "multientityref"
+		f.Value = value
+		selected := map[string]bool{}
+		for _, id := range strings.Split(value, ",") {
+			if id = strings.TrimSpace(id); id != "" {
+				selected[id] = true
+			}
+		}
+		for _, kindOpt := range ctl.Options {
+			for _, o := range entityRefInspectorOptions(ctx, h, projectID, kindOpt.Value, "") {
+				if o.Value == "" {
+					continue // 「（不限）」在单选的语义里有用，在多选里是噪声
+				}
+				f.Options = append(f.Options, inspectorOption{
+					Value: o.Value, Label: o.Label, Selected: selected[o.Value],
+				})
+			}
+		}
+	case "rangelist":
+		// 区间列表（预设价格档位等，审计 EDT-007）：既有格式 `0-199,799+` 保持不变，
+		// 只是把「手写整串」换成逐行编辑。
+		f.UI = "rangelist"
+		f.Value = value
+		f.Rows = parseRangeRows(value)
 	case "bool":
 		f.UI = "bool"
 		f.Bool = value == "true"

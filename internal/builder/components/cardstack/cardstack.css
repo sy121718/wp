@@ -223,7 +223,14 @@
   right: 4px;
 }
 
-& .sky-cardstack-arrow:hover {
+/* 悬停底色进 hover 桶（构建期包 @media (hover: hover)）：触屏上不输出，
+   避免点一下把箭头底色粘住。 */
+@hover & .sky-cardstack-arrow:hover {
+  background: var(--sky-c-surface, #ffffff);
+}
+
+/* 触屏等价形态：箭头是切卡入口，触屏没有悬停 —— 给按压反馈（@active 不包媒体查询）。 */
+@active & .sky-cardstack-arrow:active {
   background: var(--sky-c-surface, #ffffff);
 }
 @endif
@@ -766,6 +773,9 @@
   text-decoration: none;
 }
 
+/* UI-006 判定：more-link 的悬停边框色**不补触屏等价形态** —— 它是一个常显的
+   描边按钮（基础态已有 1px 边框 + 主色文字 + min-height 44px），触屏上「可点」
+   已经表达清楚，悬停只是把边框加深一档；按压反馈另有 @active。 */
 @hover & .sky-cardstack-more-link {
   border-color: var(--sky-c-primary, #5e5cfc);
 }

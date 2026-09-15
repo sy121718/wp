@@ -149,6 +149,10 @@ func (h *Handle) buildSiteContentIndex(ctx context.Context) (*siteContentIndex, 
 	}
 	// 块引用：块 ID → 引用该块的页面路径（块内文本的「出现在哪些页面」由此得出）。
 	blockPaths := map[string][]string{}
+	// blockProject 块 id → 所属工程：块查询要求工程 scope（越权防护的必填项），
+	// 而这里遍历的是**全站**草稿（可能跨工程），所以按引用它的页面把工程记下来。
+	// 块属于工程、id 全局唯一，同一个块不会出现在两个工程里。
+	blockProject := map[string]string{}
 	blockPathSeen := map[string]map[string]bool{}
 	for i := range drafts {
 		doc := drafts[i].DraftDocument
@@ -164,15 +168,17 @@ func (h *Handle) buildSiteContentIndex(ctx context.Context) (*siteContentIndex, 
 		if path == "" {
 			path = drafts[i].ID
 		}
-		for _, cand := range builder.CollectContentCandidates(page) {
+		// SEO 文本字段不在 AST 里（组件侧白名单管不到），但构建期会取它们的译文 ——
+		// 工作台必须看到同一份候选，否则作者根本找不到这两个字段可填（审计 I18N-014）。
+		for _, cand := range builder.AppendSEOCandidates(page, builder.CollectContentCandidates(page)) {
 			add(cand, path)
 		}
 		refs := builder.ReferencedBlockIDs(page.Root)
-		if id := page.Settings.Structure.HeaderBlockID; id != "" {
-			refs = append(refs, id)
-		}
-		if id := page.Settings.Structure.FooterBlockID; id != "" {
-			refs = append(refs, id)
+		// 槽位绑定统一从 SlotBindings 取：漏掉新槽位的表现是「公告条里的文案在翻译页面上找不到」，
+		// 运营只能手工去找是哪个块。
+		bindings := page.Settings.Structure.SlotBindings()
+		for _, slot := range builder.SortedSlots(bindings) {
+			refs = append(refs, bindings[slot])
 		}
 		for _, blockID := range refs {
 			if blockPathSeen[blockID] == nil {
@@ -183,6 +189,9 @@ func (h *Handle) buildSiteContentIndex(ctx context.Context) (*siteContentIndex, 
 			}
 			blockPathSeen[blockID][path] = true
 			blockPaths[blockID] = append(blockPaths[blockID], path)
+			if _, ok := blockProject[blockID]; !ok {
+				blockProject[blockID] = drafts[i].ProjectID
+			}
 		}
 	}
 	// 块内文本同样进全站索引（分母/复用提示与工作台行保持一致）：
@@ -203,7 +212,7 @@ func (h *Handle) buildSiteContentIndex(ctx context.Context) (*siteContentIndex, 
 			}
 			visited[blockID] = true
 			paths := blockPaths[blockID]
-			blockPage := h.blockPageOf(ctx, blockID, cache)
+			blockPage := h.blockPageOf(ctx, blockProject[blockID], blockID, cache)
 			if blockPage == nil {
 				continue
 			}

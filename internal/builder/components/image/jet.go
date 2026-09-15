@@ -64,7 +64,7 @@ type View struct {
 
 // BuildView 生成图片渲染视图：URL 直出 + 点击动作分支判定 + 图注（与 render 输出结构一致）。
 // class 为已合并的节点 class（nodeView 层计算），customID 为 Advanced 自定义 Element ID。
-func BuildView(node *core.Node, p *Props, class, customID string, content core.ContentResolver, defaults core.ImageDefaults, probe func(string) []int) (View, error) {
+func BuildView(node *core.Node, p *Props, class, customID string, content core.ContentResolver, defaults core.ImageDefaults, probe func(string) []int, siteLink func(string) string) (View, error) {
 	// 图片地址：CMS 绑定优先，否则手填 Src（媒体库/外链统一 URL）。
 	src := p.Src
 	if p.Binding != nil && p.Binding.Field != "" {
@@ -131,7 +131,8 @@ func BuildView(node *core.Node, p *Props, class, customID string, content core.C
 		v.IsLightbox = true
 	case p.Link != "" || p.ClickAction == "link":
 		v.IsLink = true
-		v.Link = p.Link
+		// 站内链接本地化（审计 I18N-015）。
+		v.Link = core.SiteLinkOrSame(siteLink, p.Link)
 		v.TargetBlank = p.LinkTarget == "blank"
 		v.RelNofollow = p.LinkRel == "nofollow"
 		v.LinkID = customID

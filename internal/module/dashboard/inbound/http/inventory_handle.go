@@ -55,7 +55,7 @@ func (h *inventoryPageHandle) InventoryPage(c *gin.Context) {
 	ctx := c.Request.Context()
 	projects, err := h.projects.List(ctx)
 	if err != nil {
-		c.String(http.StatusInternalServerError, err.Error())
+		pageError(c, "inventory", err)
 		return
 	}
 	selected := strings.TrimSpace(c.Query("project"))
@@ -65,12 +65,12 @@ func (h *inventoryPageHandle) InventoryPage(c *gin.Context) {
 
 	warehouses, err := h.listWarehouses(ctx, selected)
 	if err != nil {
-		c.String(http.StatusInternalServerError, err.Error())
+		pageError(c, "inventory", err)
 		return
 	}
 	options, err := h.variantOptions(ctx, selected)
 	if err != nil {
-		c.String(http.StatusInternalServerError, err.Error())
+		pageError(c, "inventory", err)
 		return
 	}
 
@@ -88,7 +88,7 @@ func (h *inventoryPageHandle) InventoryPage(c *gin.Context) {
 			ProjectID: selected, SKUCode: sku,
 		})
 		if serr != nil {
-			c.String(http.StatusInternalServerError, serr.Error())
+			pageError(c, "inventory", serr)
 			return
 		}
 		for _, r := range rows {
@@ -102,12 +102,12 @@ func (h *inventoryPageHandle) InventoryPage(c *gin.Context) {
 
 	reasons, err := h.listReasons(ctx, selected)
 	if err != nil {
-		c.String(http.StatusInternalServerError, err.Error())
+		pageError(c, "inventory", err)
 		return
 	}
 	movements, err := h.listMovements(ctx, selected, sku)
 	if err != nil {
-		c.String(http.StatusInternalServerError, err.Error())
+		pageError(c, "inventory", err)
 		return
 	}
 

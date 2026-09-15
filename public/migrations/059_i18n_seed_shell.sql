@@ -6,6 +6,10 @@
 -- 命名：shell.<区域>.<名称>，与既有 route.* 命名空间并列；category 统一 ui。
 -- 占位符：仅 %s（与 pkg/i18n.HasStringPlaceholdersOnly 约定一致，数字在 Go/JS 侧先转字符串）。
 -- 兜底：模板层缺词条时回退模板内中文原文（templates.TranslateFunc），不报错。
+-- 语义（审计 I18N-003）：ON CONFLICT DO NOTHING —— seed 是**默认值来源**，不是真相来源。
+--   后台改过的词条不会被下一次迁移覆盖（DO UPDATE 的旧写法会让运营的修改在下次部署时
+--   静默回滚，而「我明明改过」这种问题极难定位）。要改默认值请改这里的 item_value 并删除
+--   对应行后重跑，或在后台直接修改。
 -- 幂等：ON CONFLICT (item_key, lang) DO UPDATE（可重复执行）；
 --       注册见 register.go，ConditionSQL 以 shell.* 的 zh-CN 行数 25 为门槛。
 INSERT INTO sys_i18n (item_key, lang, item_value, http_code, category, remark, status, create_time, update_time)
@@ -60,10 +64,4 @@ VALUES
 ('shell.login.title', 'zh-CN', '登录', 200, 'ui', 'internal/templates/admin/login.html', 1, now(), now()),
 ('shell.login.username', 'en-US', 'Username', 200, 'ui', 'internal/templates/admin/login.html', 1, now(), now()),
 ('shell.login.username', 'zh-CN', '用户名', 200, 'ui', 'internal/templates/admin/login.html', 1, now(), now())
-ON CONFLICT (item_key, lang) DO UPDATE SET
-    item_value  = EXCLUDED.item_value,
-    http_code   = EXCLUDED.http_code,
-    category    = EXCLUDED.category,
-    remark      = EXCLUDED.remark,
-    status      = EXCLUDED.status,
-    update_time = now();
+ON CONFLICT (item_key, lang) DO NOTHING;

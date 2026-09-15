@@ -46,7 +46,7 @@ var defaultCredentialPatterns = []string{
 var defaultDTOExposureAllow = map[string]string{
 	// 键是「类型名.字段名」而不是「包名.类型名.字段名」：AST 扫描与反射断言两条
 	// 路径都要用同一张表，而反射拿不到 AST 里的包别名。表很短，重名歧义在实践中不存在。
-	"AccountItem.HasPassword":        "布尔开关：只回答「有没有设过密码」，不回显任何凭据值",
+	"AccountItem.HasPassword":         "布尔开关：只回答「有没有设过密码」，不回显任何凭据值",
 	"GuestAccountResp.PasswordMailed": "布尔开关：只回答「初始密码有没有寄出去」，字段里没有密码本身",
 }
 

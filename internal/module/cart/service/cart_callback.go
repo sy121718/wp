@@ -19,8 +19,7 @@ import (
 
 	cartdto "go_wp/internal/module/cart/dto"
 	cartenums "go_wp/internal/module/cart/enums"
-	orderdto "go_wp/internal/module/order/dto"
-	orderenums "go_wp/internal/module/order/enums"
+	ordercontract "go_wp/internal/module/order/contract"
 )
 
 // HandlePaymentCallback 处理支付通道的异步回调。
@@ -37,12 +36,12 @@ func (s *Service) HandlePaymentCallback(ctx context.Context, req *cartdto.Paymen
 	}
 
 	// ② 按商户单号找单（通道不认识我们的自增 id）。
-	order, oerr := s.orders.GetOrderByNo(ctx, &orderdto.GetOrderByNoReq{
+	order, oerr := s.orders.GetOrderByNo(ctx, &ordercontract.GetOrderByNoReq{
 		ProjectID: req.ProjectID,
 		OrderNo:   cb.OrderNo,
 	})
 	if oerr != nil {
-		if strings.Contains(oerr.Error(), orderenums.ErrOrderNotFound) {
+		if strings.Contains(oerr.Error(), ordercontract.ErrOrderNotFound) {
 			return nil, errors.New(cartenums.ErrCallbackOrderMissing)
 		}
 		return nil, oerr
@@ -66,7 +65,7 @@ func (s *Service) HandlePaymentCallback(ctx context.Context, req *cartdto.Paymen
 	}
 
 	// ④ 幂等落账：已付款的单再做一次不会改任何列，只会如实回报「此前已付」。
-	paid, perr := s.orders.PayOrder(ctx, &orderdto.PayOrderReq{
+	paid, perr := s.orders.PayOrder(ctx, &ordercontract.PayOrderReq{
 		OrderID:            order.ID,
 		PaymentMethod:      cb.Method,
 		PaymentMethodTitle: cb.MethodTitle,

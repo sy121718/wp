@@ -7,6 +7,7 @@
 {{ end }}{{ if .MetaDescription }}<meta name="description" content="{{ .MetaDescription }}">
 {{ end }}{{ if .SEOHead }}{{ .SEOHead | unsafe }}
 {{ end }}{{ if .GA4Head }}{{ .GA4Head | unsafe }}
+{{ end }}{{ if .SearchConsoleHead }}{{ .SearchConsoleHead | unsafe }}
 {{ end }}<style>
 {{ if .ThemeVarsCSS }}{{ .ThemeVarsCSS | unsafe }}
 {{ end }}{{ .CSS | unsafe }}

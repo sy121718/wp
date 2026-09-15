@@ -9,10 +9,32 @@ import (
 	"context"
 	"time"
 
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
 const tableNameProjectLocales = "project_locales"
+
+// withProjectScope 在事务内设置 RLS 会话变量 app.project_id 后执行 fn。
+//
+// project_locales 已启用行级安全（迁移 199）：策略谓词读取 app.project_id，
+// 未设置或非法时行不可见（fail closed）。变量必须用 set_config(..., is_local => true)
+// 在事务内设置：事务结束自动还原，GORM 连接池复用连接时不会把本工程的隔离
+// 上下文泄漏给下一个请求。
+//
+// projectID 先做 uuid 语法校验：策略谓词里有 ::uuid 强转，非法值会把 PG 报错
+// （invalid input syntax）暴露给调用方，提前校验让错误归属明确。
+func (m *Model) withProjectScope(ctx context.Context, projectID string, fn func(tx *gorm.DB) error) error {
+	if _, err := uuid.Parse(projectID); err != nil {
+		return err
+	}
+	return m.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Exec("SELECT set_config('app.project_id', ?, true)", projectID).Error; err != nil {
+			return err
+		}
+		return fn(tx)
+	})
+}
 
 // LocaleEntity 对应 project_locales 表。
 type LocaleEntity struct {
@@ -33,16 +55,23 @@ func (m *Model) LocaleDB(ctx context.Context) *gorm.DB {
 }
 
 // ListLocales 列出工程语言清单：默认语言在前，其余按 sort_order、语言升序（输出稳定）。
+// RLS（迁移 199）按 app.project_id 过滤，读取必须包在 withProjectScope 的事务里。
 func (m *Model) ListLocales(ctx context.Context, projectID string) (list []LocaleEntity, err error) {
-	err = m.LocaleDB(ctx).Where("project_id = ?", projectID).
-		Order("is_default DESC, sort_order ASC, lang ASC").Find(&list).Error
+	err = m.withProjectScope(ctx, projectID, func(tx *gorm.DB) error {
+		return tx.Model(&LocaleEntity{}).
+			Where("project_id = ?", projectID).
+			Order("is_default DESC, sort_order ASC, lang ASC").Find(&list).Error
+	})
 	return list, err
 }
 
 // ReplaceLocales 全量替换工程语言清单（同一事务删除后写入，聚合内原子组合）。
 // 调用方负责校验（至少一种语言、至多一个默认且默认必须启用）。
+// ReplaceLocales 全量替换工程语言清单（同一事务删除后写入，聚合内原子组合）。
+// 调用方负责校验（至少一种语言、至多一个默认且默认必须启用）。
+// RLS 的 WITH CHECK 按 app.project_id 校验写入行，必须包在 withProjectScope 的事务里。
 func (m *Model) ReplaceLocales(ctx context.Context, projectID string, rows []LocaleEntity) (err error) {
-	return m.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	return m.withProjectScope(ctx, projectID, func(tx *gorm.DB) error {
 		if derr := tx.Where("project_id = ?", projectID).Delete(&LocaleEntity{}).Error; derr != nil {
 			return derr
 		}

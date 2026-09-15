@@ -30,7 +30,8 @@ const (
 	ModeDrawer = "drawer"
 	// ModeModal 居中弹窗：整屏遮罩 + 居中面板。
 	ModeModal = "modal"
-	// ModeHover 悬停浮层：鼠标移上即出（桌面专用；触屏上退化为「点图标去购物车页」）。
+	// ModeHover 悬停浮层：鼠标移上即出。触屏没有悬停，同一形态改由「点击展开」接管
+	//（sr-only checkbox + 覆盖层 label，见 carticon.css 的 @hovernone 块）。
 	ModeHover = "hover"
 )
 
@@ -158,6 +159,8 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	// 悬停展开浮层：只有 hover 形态需要，且必须包在 @media (hover: hover) 里
 	//（触屏上「点一下卡住悬停态」是移动端最常见的粘滞 bug）。
 	// 注意这两个 API 只负责包媒体查询与进桶，**不替你加伪类** —— 选择器要自带 :hover。
+	// 触屏那半边在样式源里：carticon.css 的 @hovernone 块产出 @media (hover: none)，
+	// 由 checkbox 的 :checked 驱动展开（两个媒体查询互斥，各管一种输入方式）。
 	if mode == ModeHover {
 		b.AddHover(sel+" .sky-cart-icon-hoverwrap:hover .sky-cart-icon-panel", []string{"display: block"})
 	}

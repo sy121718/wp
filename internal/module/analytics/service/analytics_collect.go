@@ -57,7 +57,7 @@ func (s *Service) buildEntity(req *analyticsdto.CollectReq) (e *analyticsmodel.P
 		//（PostgreSQL 的 uuid 解析失败是 22P02，会把「脏数据」变成「写入异常」）。
 		return nil, false
 	}
-	path := normalizePath(req.Path)
+	path := sanitizeTrackPath(req.Path)
 	if path == "" {
 		return nil, false
 	}
@@ -78,12 +78,21 @@ func (s *Service) buildEntity(req *analyticsdto.CollectReq) (e *analyticsmodel.P
 	}, true
 }
 
-// normalizePath 归一化页面路径：只保留 pathname 部分并截断到上限。
+// sanitizeTrackPath 清洗访客上报的打点路径：只保留 pathname 部分并截断到上限。
+//
+// 语义与 pkg/pathkit.NormalizeRoutePath **不同，刻意不合并**（审计 CQ-012）：
+// 这里处理的是访客可控的自由文本 —— 服务端宁可丢弃也不能拒绝（拒绝等于把
+// 「哪些路径被记录」变成一个可探测的信号），所以它不返回错误，也不做「同一路径
+// 只允许一种写法」的归一：协议相对 URL（"//evil.example.com/x"）原样入库，
+// 作为脏数据被看见，而不是被悄悄改写成另一条站内路径。
 //
 // 查询串与锚点一律丢掉：它们会把 /product?id=1 与 /product?id=2 拆成两条统计，
 // 也会把访客带进来的任意内容（含潜在的个人信息）写进数据库。
 // 非 "/" 开头、空路径返回空串（调用方据此丢弃）。
-func normalizePath(raw string) string {
+//
+// 名字里的 sanitize 而不是 normalize：路由路径的归一化只有 pkg/pathkit 一处，
+// 两者混名会让「为什么这里不拒绝畸形路径」看起来像缺陷。
+func sanitizeTrackPath(raw string) string {
 	path := strings.TrimSpace(raw)
 	if path == "" {
 		return ""

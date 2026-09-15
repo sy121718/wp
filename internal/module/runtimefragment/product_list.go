@@ -44,7 +44,10 @@ var (
 	productListSetOnce sync.Once
 )
 
-// productDataSource 商品构建期数据源（issue #35）；未注入（nil）时组件回退按名路由。
+// productDataSource 商品构建期数据源（issue #35）。
+//
+// 装配自检（审计 CQ-019）：判为 required-port —— 实现（productSvc）在 routes.go 里
+// 恒定可得。nil 分支仅服务单测，表现为组件回退按名路由（取数口径与集合源不一致）。
 var productDataSource productcontract.ProductDataSource
 
 // SetProductDataSource 注入商品构建期数据源（issue #35，装配期调用）。
@@ -152,7 +155,7 @@ func renderProductList(ctx context.Context, r *Request) (string, error) {
 	// 系统页面槽位（BIZ-2）：列表里的「全部商品」链接按站点槽位取路径，构建期与片段期
 	// 必须是同一份解析（各解一次迟早分叉：静态页上的链接能点、片段刷新后变 404）。
 	if r.SitePagesOf != nil {
-		rctx.SitePages = r.SitePagesOf(projectID, r.Lang)
+		rctx.SetSitePages(r.SitePagesOf(projectID, r.Lang))
 	}
 	return builder.RenderNodeHTML(set, &core.Node{ID: nodeID, Type: productlist.Type, Props: propsJSON}, rctx)
 }

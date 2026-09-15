@@ -16,7 +16,11 @@ import (
 type SourceResolver interface {
 	// ResolveSource 按来源类型（page/article/product/category/block）+ 实体 ID
 	// 返回菜单项标题与 URL。返回空串表示解析不到，调用方回退记录自身的 title/path。
-	ResolveSource(ctx context.Context, sourceType, sourceID string) (title, url string, err error)
+	//
+	// projectID 必须一起传：目标模块的「按 id 查询」把工程归属当作必填的越权防护
+	// scope（page / block 的 Detail 都是），漏传只会拿到「参数缺失」。这一层是
+	// **回退不报错**的，所以症状不是报错，而是菜单项永远显示记录里的占位标题与占位链接。
+	ResolveSource(ctx context.Context, projectID, sourceType, sourceID string) (title, url string, err error)
 	// Candidates 列出该工程可加入菜单的来源实体（按来源分组，空组已剔除）。
 	// 管理页「按来源添加」消费；依赖模块不可用时对应分组为空，不报错。
 	Candidates(ctx context.Context, projectID string) (groups []SourceGroup, err error)

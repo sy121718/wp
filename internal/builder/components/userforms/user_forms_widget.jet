@@ -7,6 +7,6 @@
    无 JS 时它就是访客看到的东西，所以不能是空的 —— 空容器在无 JS 下等于这个组件不存在。 *}
 <div class="{{ .Classes }}"{{ if .CustomID }} id="{{ .CustomID }}"{{ end }} data-user-form="{{ .V.Mode }}">
 {{ if .V.Notice }}<p class="sky-user-notice">{{ .V.Notice }}</p>{{ else }}{{ title := .V.Title }}{{ showTitle := .V.ShowTitle }}{{ formURL := .V.FragmentURL }}{{ fallback := .V.FallbackURL }}{{ fallbackText := .V.FallbackText }}{{ if showTitle }}<h2 class="sky-user-title">{{ title }}</h2>{{ end }}<div class="sky-user-mount" hx-get="{{ formURL }}" hx-trigger="load" hx-swap="innerHTML">
-<p class="sky-user-alt">{{ fallbackText }}表单需要脚本加载；也可以<a href="{{ fallback }}">打开{{ fallbackText }}页</a>。</p>
+<p class="sky-user-alt">{{ .V.ScriptHint }}<a href="{{ fallback }}">{{ .V.OpenFallbackText }}</a>。</p>
 </div>{{ end }}
 </div>

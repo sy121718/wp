@@ -18,14 +18,15 @@ func TestWorkbenchPageShell(t *testing.T) {
 	router.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
 	router.GET("/workbench", func(c *gin.Context) {
 		c.HTML(http.StatusOK, "workbench/layout", gin.H{
-			"title":     "测试页",
-			"pageId":    "p-1",
-			"isBlock":   false,
-			"draftPath": "/about",
-			"version":   3,
-			"document":  `{"settings":{},"root":[]}`,
-			"meta":      `{"pageId":"p-1","draftPath":"/about","version":3}`,
-			"schemas":   `{"core.heading":[{"key":"text","kind":"text","section":"content"}]}`,
+			"title":      "测试页",
+			"pageId":     "p-1",
+			"isBlock":    false,
+			"isTemplate": false,
+			"draftPath":  "/about",
+			"version":    3,
+			"document":   `{"settings":{},"root":[]}`,
+			"meta":       `{"pageId":"p-1","draftPath":"/about","version":3}`,
+			"schemas":    `{"core.heading":[{"key":"text","kind":"text","section":"content"}]}`,
 			// jsVer 由真实 handler 注入（dashboard_handle.go）；模板 head/body 均引用它，
 			// 缺失会让 Jet 在第一个 jsVer 表达式处运行时报错并截断输出。
 			"jsVer": "test-1",
@@ -39,7 +40,11 @@ func TestWorkbenchPageShell(t *testing.T) {
 	}
 	body := recorder.Body.String()
 	for _, fragment := range []string{
-		"wb-topbar", "wb-inspector", "wb-palette", "组件", "wb-canvas", "wb-canvas-frame", "wb-navigator", "wb-bottombar",
+		// 外壳骨架（2026-09 重构后）：左侧图标条 wb-rail-* + 抽屉面板 wb-panel-*，
+		// 检查器为 inspector-panel，状态条为 wb-status；旧的 topbar / inspector /
+		// bottombar 三块已并入该布局。
+		"wb-rail-library", "wb-rail-navigator", "wb-palette", "组件", "wb-canvas", "wb-canvas-frame",
+		"wb-navigator", "inspector-panel", "wb-status",
 		"wb-save-draft", "wb-publish", "wb-device-desktop",
 		`id="wb-bootstrap"`, `{"settings":{},"root":[]}`,
 		`id="wb-meta"`, `{"pageId":"p-1","draftPath":"/about","version":3}`,

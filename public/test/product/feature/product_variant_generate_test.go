@@ -116,7 +116,7 @@ func TestGenerateVariantsCartesianProduct(t *testing.T) {
 	}
 
 	// 商品详情回读：变体数与价格区间随之更新（价格区间是变体派生值）。
-	got, err := f.svc.Get(ctx, &productdto.GetReq{ID: p.ID})
+	got, err := f.svc.Get(ctx, &productdto.GetReq{ProjectID: f.projectID, ID: p.ID})
 	if err != nil {
 		t.Fatalf("读商品失败: %v", err)
 	}
@@ -166,7 +166,7 @@ func TestGenerateVariantsIdempotentAndPartial(t *testing.T) {
 		t.Fatalf("重复勾选应只算一个值、且组合已存在：total=%d skipped=%d created=%d",
 			res.Total, res.Skipped, res.Created)
 	}
-	if got, _ := f.svc.Get(ctx, &productdto.GetReq{ID: p.ID}); got.VariantCount != 4 {
+	if got, _ := f.svc.Get(ctx, &productdto.GetReq{ProjectID: f.projectID, ID: p.ID}); got.VariantCount != 4 {
 		t.Fatalf("变体数不应变化，实际 %d", got.VariantCount)
 	}
 
@@ -218,7 +218,7 @@ func TestGenerateVariantsLimits(t *testing.T) {
 		if !strings.Contains(err.Error(), "4") {
 			t.Fatalf("错误应写明上限数值: %v", err)
 		}
-		got, _ := f.svc.Get(ctx, &productdto.GetReq{ID: p.ID})
+		got, _ := f.svc.Get(ctx, &productdto.GetReq{ProjectID: f.projectID, ID: p.ID})
 		if got.VariantCount != 1 {
 			t.Fatalf("被拒绝时不应写入任何变体，实际 %d 个", got.VariantCount)
 		}
@@ -238,7 +238,7 @@ func TestGenerateVariantsLimits(t *testing.T) {
 		if !strings.Contains(err.Error(), productenums.ErrVariationCountLimit) {
 			t.Fatalf("错误应指向数量上限: %v", err)
 		}
-		got, _ := f.svc.Get(ctx, &productdto.GetReq{ID: p.ID})
+		got, _ := f.svc.Get(ctx, &productdto.GetReq{ProjectID: f.projectID, ID: p.ID})
 		if got.VariantCount != 1 {
 			t.Fatalf("被拒绝时不应写入任何变体，实际 %d 个", got.VariantCount)
 		}
@@ -316,7 +316,7 @@ func TestProductDefaultsEditDoesNotTouchVariants(t *testing.T) {
 	if _, err := f.svc.Update(ctx, &productdto.UpdateReq{ID: p.ID, DefaultPrice: &next}); err != nil {
 		t.Fatalf("改商品默认值失败: %v", err)
 	}
-	got, err := f.svc.Get(ctx, &productdto.GetReq{ID: p.ID})
+	got, err := f.svc.Get(ctx, &productdto.GetReq{ProjectID: f.projectID, ID: p.ID})
 	if err != nil {
 		t.Fatalf("读商品失败: %v", err)
 	}

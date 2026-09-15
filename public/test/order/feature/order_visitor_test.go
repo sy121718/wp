@@ -107,7 +107,6 @@ func TestGetOrderCrossProject(t *testing.T) {
 	}
 }
 
-//
 // 少传一次归属条件就等于把全站订单列表发给某个访客 ——
 // 所以 UserID 是必填的，不能有「缺省 = 全部」这种便利。
 func TestVisitorOrdersRequireUserID(t *testing.T) {

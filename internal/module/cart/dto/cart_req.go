@@ -7,7 +7,7 @@ package cartdto
 // 由 inbound 取出来交给本模块，由本模块负责解码、验签、重新签名后交回 inbound 写回响应。
 // 这样「cookie 的格式与真伪」只有一处实现，HTTP 层只做搬运。
 
-import orderdto "go_wp/internal/module/order/dto"
+import ordercontract "go_wp/internal/module/order/contract"
 
 // TrackCookies 访客追踪 cookie 的原始值（流量来源 / 首触 / 会话 / 浏览轨迹）。
 //
@@ -71,8 +71,8 @@ type CartCheckoutReq struct {
 	Name  string
 	Phone string
 	// Shipping 收货地址（复用订单域的不可变 DTO，避免两处字段名悄悄分叉）。
-	Shipping orderdto.OrderAddress
-	Billing  orderdto.OrderAddress
+	Shipping ordercontract.OrderAddress
+	Billing  ordercontract.OrderAddress
 	// Remark 客户备注（与后台备注 adminNote 分开）。
 	Remark string
 	// RequestID 幂等键：结算页渲染时生成，重复提交只落一单。

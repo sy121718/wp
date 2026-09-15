@@ -90,7 +90,11 @@ func TestPageLangHomeIndexPath(t *testing.T) {
 	)
 	page := createPage(t, svc, projectID, "/", headingDocument)
 	got := reservedPaths(t, db, projectID, page.ID)
-	want := []string{"/en/index", "/index"}
+	// 首页登记的是 "/"（而不是 "/index"）：路径归一化收敛到 pkg/pathkit 之后
+	// （审计 CQ-012），`/index` 与 `/index.html` 都归一为根路径 —— 否则同一个首页会
+	// 以两种写法各占一行路由，占用判断与线上内容会分裂。
+	// 默认语言的首页是 "/"，非默认语言仍是带前缀的 /en/index。
+	want := []string{"/", "/en/index"}
 	if len(got) != 2 || got[0] != want[0] || got[1] != want[1] {
 		t.Fatalf("首页应登记 %v，实际 %v", want, got)
 	}

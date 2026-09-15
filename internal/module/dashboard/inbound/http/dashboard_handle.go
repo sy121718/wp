@@ -20,13 +20,14 @@ import (
 
 	admincontract "go_wp/internal/module/admin/contract"
 	blockcontract "go_wp/internal/module/block/contract"
+	blueprintcontract "go_wp/internal/module/blueprint/contract"
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
 	contenttemplatedto "go_wp/internal/module/contenttemplate/dto"
 	dashboardenums "go_wp/internal/module/dashboard/enums"
 	navigationcontract "go_wp/internal/module/navigation/contract"
-	presentationdto "go_wp/internal/module/presentation/dto"
 	pagecontract "go_wp/internal/module/page/contract"
 	plugincontract "go_wp/internal/module/plugin/contract"
+	presentationdto "go_wp/internal/module/presentation/dto"
 	productcontract "go_wp/internal/module/product/contract"
 	projectcontract "go_wp/internal/module/project/contract"
 
@@ -73,6 +74,33 @@ type Handle struct {
 	// 加载模板草稿，保存走 contenttemplate.Update，预览走 presentation.PreviewInstance。
 	templates       contenttemplatecontract.ContentTemplateService
 	templatePreview TemplatePreviewPort
+
+	// blueprints 蓝图候选（新建页面时的空白草稿模板）。
+	// 可空：端口未注入时表单不显示蓝图选项，建页照常（blueprintOptions 返回空切片）。
+	blueprints blueprintcontract.BlueprintService
+}
+
+// SetBlueprints 注入蓝图契约（装配期调用；可空）。
+func (h *Handle) SetBlueprints(b blueprintcontract.BlueprintService) { h.blueprints = b }
+
+// pageOf 按 id 读取页面（草稿保存与页面翻译页共用）。
+//
+// 抽成一个方法是因为三处调用需要同一份「页面不存在怎么回」的语义：
+// 它们各自决定跳转目标（列表页 / 404 / 回本页），但取数口径必须一致 ——
+// 曾经这里有一处直接调 Detail 而忘了判空，页面被删后成了 500。
+func (h *Handle) pageOf(c *gin.Context, pageID string) (*pagecontract.PageResp, error) {
+	if h.pages == nil {
+		return nil, errors.New("页面服务未装配")
+	}
+	// Detail 把 projectID 当**必填的越权防护 scope**（少它只会得到「参数缺失」，
+	// 看起来像「页面不存在」）。画布 / 历史 / 译文这些路由手上只有 pageId，
+	// 所以先用只读的 ProjectOfPage 问「这个页面属于谁」，再按 scope 取详情。
+	ctx := c.Request.Context()
+	projectID, err := h.pages.ProjectOfPage(ctx, pageID)
+	if err != nil {
+		return nil, err
+	}
+	return h.pages.Detail(ctx, &pagecontract.DetailReq{ProjectID: projectID, ID: pageID})
 }
 
 // TemplatePreviewPort 模板工作台预览所需的最窄 presentation 能力。
@@ -297,7 +325,10 @@ func (h *Handle) Workbench(c *gin.Context) {
 		c.String(http.StatusBadRequest, "缺少页面 id")
 		return
 	}
-	page, err := h.pages.Detail(c.Request.Context(), &pagecontract.DetailReq{ID: pageID})
+	// 走统一出口 pageOf：Detail 的 projectID 是必填的越权防护 scope，只传 ID 会被
+	// 契约层判为「参数缺失」，而这里把它显示成「页面不存在」—— 一个真实的 404 与
+	// 一个漏传 scope 的调用，在页面上长得一模一样。
+	page, err := h.pageOf(c, pageID)
 	if err != nil {
 		c.String(http.StatusNotFound, "页面不存在")
 		return
@@ -320,6 +351,9 @@ func (h *Handle) Workbench(c *gin.Context) {
 		pluginPresets = []plugincontract.PresetSummary{}
 	}
 	metaJSON, err := json.Marshal(gin.H{
+		// target 编辑目标描述符（EDT-017）：前端按它决定保存端点与请求体键名，
+		// 不认识任何一种目标类型 —— 新增目标时前端零改动。
+		"target":    workbenchTargetOf(EditTargetPage),
 		"pageId":    page.ID,
 		"projectId": page.ProjectID,
 		"draftPath": page.DraftPath,
@@ -408,6 +442,8 @@ func (h *Handle) workbenchBlock(c *gin.Context, blockID string) {
 		return
 	}
 	metaJSON, err := json.Marshal(gin.H{
+		// target 编辑目标描述符（EDT-017）。
+		"target":    workbenchTargetOf(EditTargetBlock),
 		"pageId":    block.ID, // 复用键名：前端保存逻辑按 saveBase 切换接口
 		"projectId": block.ProjectID,
 		"saveBase":  "block",
@@ -469,6 +505,8 @@ func (h *Handle) workbenchTemplate(c *gin.Context, templateID string) {
 		return
 	}
 	metaJSON, err := json.Marshal(gin.H{
+		// target 编辑目标描述符（EDT-017）。
+		"target":       workbenchTargetOf(EditTargetTemplate),
 		"pageId":       tpl.ID,
 		"saveBase":     "template",
 		"templateName": tpl.Name,
@@ -556,7 +594,12 @@ func (h *Handle) renderTemplatePreview(c *gin.Context, templateID, entityType, e
 		ProjectID: projectID, DraftDocument: draftDocument,
 	})
 	if err != nil {
-		c.String(http.StatusUnprocessableEntity, dashboardenums.MsgCompileFailed+"："+err.Error())
+		// 422 保留（编译失败对作者是业务信息），但错误原文只进日志：
+		// 编译器的错误里带节点路径与模板片段，直接铺在页面上等于把内部结构公开。
+		if err != nil {
+			logger.Scene("content_template").With("path", c.Request.URL.Path).Error(err, "模板编译失败")
+		}
+		c.String(http.StatusUnprocessableEntity, dashboardenums.MsgCompileFailed)
 		return
 	}
 	html := res.HTML
@@ -608,7 +651,7 @@ func (h *Handle) Preview(c *gin.Context) {
 		c.String(http.StatusBadRequest, "缺少页面 id")
 		return
 	}
-	page, err := h.pages.Detail(c.Request.Context(), &pagecontract.DetailReq{ID: pageID})
+	page, err := h.pageOf(c, pageID)
 	if err != nil {
 		c.String(http.StatusNotFound, "页面不存在")
 		return
@@ -640,7 +683,7 @@ func (h *Handle) PreviewDraft(c *gin.Context) {
 		c.String(http.StatusBadRequest, "草稿文档解析失败")
 		return
 	}
-	page, err := h.pages.Detail(c.Request.Context(), &pagecontract.DetailReq{ID: pageID})
+	page, err := h.pageOf(c, pageID)
 	if err != nil {
 		c.String(http.StatusNotFound, "页面不存在")
 		return

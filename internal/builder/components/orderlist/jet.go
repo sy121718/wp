@@ -31,6 +31,11 @@ type View struct {
 	HasOrderPage bool
 	// Notice 无法渲染时的提示（缺站点工程 id）。空表示正常。
 	Notice string
+	// LoginHint / LoginText / PagesText 无 JS 时的引导文案（审计 I18N-010）。
+	// 容器默认内容就是这三句 —— 空容器在无 JS 下等于这个组件不存在。
+	LoginHint string
+	LoginText string
+	PagesText string
 }
 
 // CompileCSS 导出样式编译。
@@ -43,18 +48,23 @@ func CompileCSS(id string, p *Props, b *core.CSSBuckets) {
 // projectID 来自构建上下文（片段地址要带它），lang 决定要不要带语言参数，
 // loginURL / orderPageURL 来自系统页面槽位（无 JS 与未登录时的兜底落点）。
 func BuildView(p *Props, projectID, lang, loginURL, orderPageURL string) View {
+	// 文案先落中文兜底：ApplyI18n 在 BuildView 之后按语言覆盖；
+	// 未接入 i18n 时它们就是最终值（产物与抽 key 前逐字一致）。
 	view := View{
 		Title:        effectiveTitle(p),
 		ShowTitle:    p.ShowTitle,
 		LoginURL:     strings.TrimSpace(loginURL),
 		OrderPageURL: strings.TrimSpace(orderPageURL),
+		LoginHint:    fallbackLoginHint,
+		LoginText:    fallbackLoginText,
+		PagesText:    fallbackPagesText,
 	}
 	view.HasLoginURL = view.LoginURL != ""
 	view.HasOrderPage = view.OrderPageURL != ""
 	if strings.TrimSpace(projectID) == "" {
 		// 片段端点按工程定位，没有工程 id 就等于什么都取不到。
 		// 这里给一句可见提示，而不是渲染一个永远空着的容器。
-		view.Notice = "订单列表暂不可用（未取到站点工程）"
+		view.Notice = fallbackNotice
 		return view
 	}
 	q := url.Values{}

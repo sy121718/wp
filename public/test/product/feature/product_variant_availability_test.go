@@ -38,7 +38,7 @@ func TestVariantAvailabilitiesLookup(t *testing.T) {
 	}
 	ctx := context.Background()
 	pid := f.createProduct(t, "夏季衬衫", "summer-shirt", "", 99, 199)
-	detail, derr := f.products.Get(ctx, &productdto.GetReq{ID: pid})
+	detail, derr := f.products.Get(ctx, &productdto.GetReq{ProjectID: f.projectID, ID: pid})
 	if derr != nil {
 		t.Fatalf("读商品失败: %v", derr)
 	}

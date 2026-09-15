@@ -34,12 +34,13 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"go_wp/internal/builder/core"
-	dashboardenums "go_wp/internal/module/dashboard/enums"
 	contentcontract "go_wp/internal/module/content/contract"
 	contentdto "go_wp/internal/module/content/dto"
 	contentenums "go_wp/internal/module/content/enums"
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
+	dashboardenums "go_wp/internal/module/dashboard/enums"
 	pagecontract "go_wp/internal/module/page/contract"
+	presentationcontract "go_wp/internal/module/presentation/contract"
 	presentationdto "go_wp/internal/module/presentation/dto"
 	projectcontract "go_wp/internal/module/project/contract"
 )
@@ -122,6 +123,8 @@ type articlePageHandle struct {
 	// pages 页面能力（导入到画布用）：只调 Create 新建一页草稿，不碰发布/删除。
 	// 为空时导入区块明确提示"能力未装配"，而不是给一个点了会 500 的按钮。
 	pages pagecontract.PageService
+	// linkLocator 已上线路径解析端口（SEO-015 内链建议；为空时建议端点降级为空列表）。
+	linkLocator presentationcontract.PublishedEntityLocator
 }
 
 // NewArticlePageHandle 构造。
@@ -364,6 +367,9 @@ func articleEditPageData(ctx context.Context, h *articlePageHandle, item *conten
 		"Err":     pageErr,
 		"Ok":      pageOk,
 		"ListURL": "/admin/articles",
+		// TemplateEditURL 必须在**任何装配状态下**都存在：模板里是 {{if .TemplateEditURL}}，
+		// 而 Jet 对缺失的键报错并截断整页（下面是装配成功时才会覆盖它）。
+		"TemplateEditURL": "",
 		// 初始评分：已保存的正文直接算一遍，编辑者打开页面就能看到当前水平
 		// （改动后按「重新评分」走 HTMX 片段，见 ArticleScorePanel）。
 		"Score": articleScoreViewOf(data, articlePreviewURL(articleSlugOf(item)), lang),
@@ -397,22 +403,13 @@ func articleEditPageData(ctx context.Context, h *articlePageHandle, item *conten
 func articleImportBlockView(h *articlePageHandle, item *contentdto.ContentResp, id string,
 	projectOptions []gin.H) gin.H {
 	if id == "" {
-		return gin.H{
-			"ImportAvailable": false,
-			"ImportHint":      "先保存这篇文章，再回来把它导入画布。",
-		}
+		return articleImportUnavailable("先保存这篇文章，再回来把它导入画布。")
 	}
 	if h == nil || h.pages == nil {
-		return gin.H{
-			"ImportAvailable": false,
-			"ImportHint":      articleImportDepsText,
-		}
+		return articleImportUnavailable(articleImportDepsText)
 	}
 	if len(projectOptions) == 0 {
-		return gin.H{
-			"ImportAvailable": false,
-			"ImportHint":      "还没有站点工程：先在「页面」里建一个工程，导入需要知道页面挂到哪个站。",
-		}
+		return articleImportUnavailable("还没有站点工程：先在「页面」里建一个工程，导入需要知道页面挂到哪个站。")
 	}
 	// 默认路径 /article-<slug>：这里**刻意不走**站点 URL 规则（siteurl）——
 	// 导入生成的是一个**手工页面**，页面路径本身就是它的身份（没有 slug 可依），
@@ -423,12 +420,26 @@ func articleImportBlockView(h *articlePageHandle, item *contentdto.ContentResp, 
 	if slug != "" {
 		defaultPath = articleImportPathPrefix + slug
 	}
+	out := articleImportUnavailable("")
+	out["ImportAvailable"] = true
+	out["ImportProjects"] = projectOptions
+	out["ImportDefaultPath"] = defaultPath
+	out["ImportHasPublished"] = articleStr(itemData(item), "body") != ""
+	out["ImportPreviewTarget"] = "#article-import-result"
+	return out
+}
+
+// articleImportUnavailable 导入区块的不可用形态：**键集与可用形态完全一致**。
+//
+// 理由同 articlePublishUnavailable：模板用点号取值，缺键会让 Jet 报错并截断整页。
+func articleImportUnavailable(hint string) gin.H {
 	return gin.H{
-		"ImportAvailable":     true,
-		"ImportProjects":      projectOptions,
-		"ImportDefaultPath":   defaultPath,
-		"ImportHasPublished":  articleStr(itemData(item), "body") != "",
-		"ImportPreviewTarget": "#article-import-result",
+		"ImportAvailable":     false,
+		"ImportHint":          hint,
+		"ImportProjects":      []gin.H{},
+		"ImportDefaultPath":   "",
+		"ImportHasPublished":  false,
+		"ImportPreviewTarget": "",
 	}
 }
 

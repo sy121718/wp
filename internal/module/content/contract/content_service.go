@@ -19,6 +19,56 @@ var fieldWhitelist = map[string][]string{
 	"article": {"title", "body", "excerpt", "featuredImage", "seoTitle", "seoDescription", "focusKeyword"},
 }
 
+// translatableFields 各内容类型参与内容翻译（sys_translation）的字段（审计 I18N-006）。
+//
+// 与商品域同形：只有**作者填写的文本**进译文表。两类字段刻意不列：
+//
+//   - featuredImage：图片地址。翻了会指向不存在的文件 —— 产物里它要用来发请求。
+//   - focusKeyword：编辑期 SEO 评分器的输入，不进构建产物（见上方白名单注释）。
+//     它虽然也是作者填的文本，但翻译一个不输出的值没有意义，
+//     反而会让「这个词在英文版里评分为何不对」变得难以解释。
+//
+// 语境命名与商品域一致（docs/06-D §7.5）：article.title / article.body …。
+var translatableFields = map[string]map[string]bool{
+	"article": {
+		"title":          true,
+		"body":           true,
+		"excerpt":        true,
+		"seoTitle":       true,
+		"seoDescription": true,
+	},
+}
+
+// richTextFields 富文本字段（译文与原文一样要过 HTML 白名单清洗）。
+//
+// 只有 body 是富文本：其余可翻译字段都是纯文本，过了清洗反而会把 < > 这类
+// 正常字符转义掉（标题里写「A < B」是合法的）。
+var richTextFields = map[string]bool{"body": true}
+
+// IsRichTextField 字段是否为富文本（决定译文是否需要 HTML 清洗）。
+func IsRichTextField(_, field string) bool {
+	return richTextFields[field]
+}
+
+// IsTranslatableField 字段是否参与内容翻译。
+func IsTranslatableField(entityType, field string) bool {
+	return translatableFields[entityType][field]
+}
+
+// TranslatableFields 返回某类型的可翻译字段（字典序，只读拷贝）。
+func TranslatableFields(entityType string) []string {
+	set := translatableFields[entityType]
+	if len(set) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(set))
+	for f := range set {
+		out = append(out, f)
+	}
+	sort.Strings(out)
+	return out
+}
+
 // EntityTypes 全部支持的内容类型（字典序）。
 func EntityTypes() []string {
 	out := make([]string, 0, len(fieldWhitelist))
@@ -51,6 +101,46 @@ func FieldWhitelist(entityType string) []string {
 	out := make([]string, len(fields))
 	copy(out, fields)
 	return out
+}
+
+// collectionExcludedFields 不进集合查询投影的字段（审计 PERF-008）。
+//
+// 集合项渲染的是卡片：标题、摘要、封面、SEO 文案。两类字段不该跟着走这一趟：
+//
+//   - body：正文全文。集合查询若把每篇文章的正文都拉回来再丢掉，读的是最大的一列
+//     （contents.data 里 body 占绝对多数），而集合渲染一个字节都不用。
+//   - focusKeyword：编辑期 SEO 评分器的输入，本就不进构建产物（见上方 fieldWhitelist 注释），
+//     它连单实体渲染都不该出现，更不必出现在集合项里。
+//
+// 排除清单放在白名单旁边而不是散在查询里：集合项下拉、构建期字段校验、SQL 投影
+// 三处必须用同一份定义，否则模板能选到字段、构建时却是空的（静默为空的典型成因）。
+var collectionExcludedFields = map[string]bool{
+	"body":         true,
+	"focusKeyword": true,
+}
+
+// CollectionFieldWhitelist 集合项可用字段 = 数据源白名单减去不进集合投影的字段。
+//
+// 与 FieldWhitelist 的关系是「子集」：单实体绑定仍可用 body（详情页要渲染正文），
+// 集合项绑定不能。两者的差集由 collectionExcludedFields 单处定义。
+func CollectionFieldWhitelist(entityType string) []string {
+	fields := fieldWhitelist[entityType]
+	out := make([]string, 0, len(fields))
+	for _, f := range fields {
+		if collectionExcludedFields[f] {
+			continue
+		}
+		out = append(out, f)
+	}
+	return out
+}
+
+// IsCollectionField 字段是否可用于集合项绑定。
+func IsCollectionField(entityType, field string) bool {
+	if !IsValidField(entityType, field) {
+		return false
+	}
+	return !collectionExcludedFields[field]
 }
 
 // ContentService CMS 内容管理契约 + 构建期内容解析器工厂。

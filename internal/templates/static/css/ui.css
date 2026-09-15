@@ -27,8 +27,8 @@
 .wbs-menu[hidden] { display: none; }
 .wbs-option[hidden] { display: none; }
 .wbs-trigger:hover { border-color: var(--sky-c-border-strong, var(--c-border-strong, #d1d5db)); }
-.wbs-trigger:focus-visible { outline: 2px solid var(--sky-c-primary, #3d444f); outline-offset: 1px; }
-.wbs.is-open .wbs-trigger { border-color: var(--sky-c-primary, #3d444f); }
+.wbs-trigger:focus-visible { outline: 2px solid var(--sky-c-primary, var(--c-primary, #3d444f)); outline-offset: 1px; }
+.wbs.is-open .wbs-trigger { border-color: var(--sky-c-primary, var(--c-primary, #3d444f)); }
 .wbs-value { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wbs-caret {
     flex: 0 0 auto; width: 7px; height: 7px; margin-right: 3px;
@@ -99,7 +99,13 @@
     font-size: 18px; line-height: 1; padding: 4px 6px; border-radius: var(--ui-r-md, 8px); opacity: .7;
 }
 .wb-modal-x:hover { opacity: 1; background: var(--sky-c-primary-bg, var(--c-primary-bg, #eceef1)); }
-.wb-modal-x:focus-visible { outline: 2px solid var(--sky-c-primary, #3d444f); outline-offset: 1px; }
+.wb-modal-x:focus-visible { outline: 2px solid var(--sky-c-primary, var(--c-primary, #3d444f)); outline-offset: 1px; }
+
+/* 进场：确认框与弹窗都是 <dialog>，showModal() 让元素从 display:none 变为可见 ——
+   动画随之重新开始，不需要 JS 加类，关闭时也不会留下残留类。
+   它们此前是硬切：同一份文件里 toast 与 wb-panel 都有进场，模态反而没有，
+   而模态是打断式交互，最需要「按下去有反应」这一下。 */
+.wb-confirm[open], .wb-modal[open] { animation: wb-ui-enter var(--ui-motion-base); }
 
 /* ===== 轻提示（js/ui/toast.js）=====
    非模态操作反馈：底部居中、自动消失、不打断用户。与确认框/弹窗（模态）分工见 toast.js 头部。
@@ -135,6 +141,46 @@
 .wb-toast-x:hover { opacity: 1; }
 @keyframes wb-ui-enter { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 
+/* ===== 抽屉（js/ui/drawer.js）=====
+   右侧滑入的表单容器：页面提供 <template>，脚本搬到 .drawer-body 后开合。
+   这套外观原先只写在 theme.css 的后台段（审计 UIK-011）—— 行为在基座（uiBlocks 已登记
+   drawer.js），外观却只服务后台，于是工作台之外的页面拿到的抽屉是残缺的。这里提为基座控件，
+   并去掉两处裸时长（原来是 opacity 200ms ease / transform 220ms var(--ease-out, ease)），
+   改取统一的 --ui-motion-*：后台动效的时长与曲线只有一个来源。
+   .drawer-body 里嵌的表单布局（.form-group / .form-actions 间距）留在 theme.css —— 那是
+   表单的布局细节，不是抽屉本体外观。 */
+.drawer-mask {
+    position: fixed; inset: 0; z-index: 80;
+    background: rgba(16, 20, 26, .4);
+    opacity: 0; transition: opacity var(--ui-motion-base);
+}
+.drawer {
+    position: fixed; top: 0; right: 0; bottom: 0; z-index: 90;
+    width: min(560px, 92vw); box-sizing: border-box;
+    display: flex; flex-direction: column;
+    background: var(--sky-c-surface, var(--c-bg, #fff));
+    border-left: 1px solid var(--sky-c-border, var(--c-border, #e5e7eb));
+    box-shadow: -16px 0 40px rgba(16, 20, 26, .14);
+    transform: translateX(100%);
+    transition: transform var(--ui-motion-base);
+}
+body.drawer-open .drawer { transform: translateX(0); }
+body.drawer-open .drawer-mask { opacity: 1; }
+body.drawer-open { overflow: hidden; }
+.drawer-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: var(--ui-sp-lg, 16px) var(--ui-sp-xl, 24px);
+    border-bottom: 1px solid var(--sky-c-border, var(--c-border, #e5e7eb));
+}
+.drawer-head .drawer-title { font-size: 15px; font-weight: 600; color: var(--sky-c-text, var(--c-text, #1f2937)); }
+.drawer-close {
+    width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center;
+    background: transparent; border: 0; border-radius: var(--ui-r-sm, 6px); cursor: pointer;
+    color: var(--sky-c-text-mute, var(--c-text-mute, #6b7280)); font-size: 18px; line-height: 1;
+}
+.drawer-close:hover { background: var(--c-bg-hover, #f3f4f6); color: var(--sky-c-text, var(--c-text, #1f2937)); }
+.drawer-body { flex: 1; overflow-y: auto; padding: var(--ui-sp-xl, 24px); }
+
 /* ===== 颜色字段（js/ui/colorfield.js）=====
    文本框是唯一真值来源（可留空 / 可写 rgba() / var(--token)），色块只是取色入口。
    色块的棋盘格是 background-image —— JS 只改 backgroundColor，两者叠加才能同时
@@ -167,7 +213,7 @@
     background-position: 0 0, 5px 5px;
 }
 .wbc-swatch:hover { border-color: var(--sky-c-border-strong, var(--c-border-strong, #d1d5db)); }
-.wbc-swatch:focus-visible { outline: 2px solid var(--sky-c-primary, #3d444f); outline-offset: 1px; }
+.wbc-swatch:focus-visible { outline: 2px solid var(--sky-c-primary, var(--c-primary, #3d444f)); outline-offset: 1px; }
 /* 未设置：棋盘格 + 一道斜线，与「白色」区分得开 */
 .wbc.is-empty .wbc-swatch::after {
     content: ''; position: absolute; inset: 0; border-radius: inherit;
@@ -191,7 +237,9 @@
 @keyframes wb-busy-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) {
     .is-busy::after { animation: none; }
-    .wb-toast, .wb-panel { animation: none !important; }
+    .wb-toast, .wb-panel, .wb-confirm, .wb-modal { animation: none !important; }
+    /* 抽屉的位移不必在这里单独抑制：它的 transition 取 --ui-motion-base，
+       而「时长归零」段（本文件下方）在减弱动效下把 --ui-duration-* 置 0ms。 */
 }
 
 
@@ -200,12 +248,15 @@
 /* ==========================================================================
    原始控件（与 js/ui/*.js 配套）—— 后台、工作台、前台产物共用一份
    ==========================================================================
-   变量取法：var(--sky-* 站点主题, var(--c-* 后台配色, 兜底值))
-     · --sky-* 由 ThemeVarsCSS 注入（前台产物 / 站点主题）；
-     · --c-*   是后台主题变量（theme.css）；
-     · 都取不到时用兜底值，所以本文件不依赖任何其它样式表 —— 工作台与前台产物
-       直接引也能得到一致的控件外观。
-   语义变量（间距/圆角/过渡/阴影）同理带兜底，避免"引了 ui.css 却因为没引 theme.css 而走形"。
+   令牌取法固定成三段桥：var(--sky-* 站点主题, var(--c-* 后台配色, 兜底值))。
+   桥的两端是两个**投递模型**（不是两代命名），所以不统一前缀：
+     · --sky-c-*  产物令牌：builder.ThemeVarsCSS 按主题生成，集合随主题设置变化；
+     · --c-*      后台令牌：theme.css 的 [data-theme] 块，含产物侧没有的派生色。
+   两集合不重合，改名只会让另一侧整条声明失效（理由见 docs/02-G-component-library.md §P6）。
+   约束：var(--sky-c-X, 兜底) 的兜底位必须是 var(--c-*, 兜底) —— 缺中间层时，后台
+   深色主题下会退化成写死的亮色值（断点在 ui_css_delivery_boundary_test.go）。
+   语义量 --ui-sp-* / --ui-r-* / --ui-shadow-* 同理带兜底；--ui-r-lg / --ui-r-pill
+   的兜底与后台值故意不同（前台更紧凑），不是待修的偏差。
    ========================================================================== */
 
 /* ===== 尺寸与动效的基础量（theme.css 缺失时的兜底）===== */
@@ -362,7 +413,7 @@
     -webkit-overflow-scrolling: touch;
 }
 /* 键盘用户 Tab 进容器后用方向键横向滚动（overflow 容器可聚焦）。 */
-.table-wrap:focus-visible { outline: 2px solid var(--c-primary, #2563eb); outline-offset: 2px; }
+.table-wrap:focus-visible { outline: 2px solid var(--sky-c-primary, var(--c-primary, #3d444f)); outline-offset: 2px; }
 table.data-table { width: 100%; border-collapse: collapse; font-size: 14px; }
 .data-table-wide { min-width: 480px; }
 .data-table thead th {
@@ -399,6 +450,31 @@ table.data-table { width: 100%; border-collapse: collapse; font-size: 14px; }
     color: var(--c-text-secondary, #c2c8cf);
 }
 .form-label .req { color: var(--c-danger, #cf8080); }
+
+/* ===== 后台裸控件的兜底外观（审计 UIK-009）=====
+   后台仍有页面把输入框裸写：既没有 form-input 系列类，也不在任何桥接容器里，
+   于是走浏览器默认外观 —— 同一个后台里同样是输入框却有三种长相（基座 / 桥接 / 默认）。
+   这里补一层兜底，作用域与优先级都收得很紧：
+     · 只覆盖 .admin-layout —— 这个类只出现在 admin/layout.html，前台产物与工作台都没有它，
+       基座注入不会把后台外观带进产出页面；
+     · 只补外观不补宽度 —— 裸控件所在容器（工具栏 / 行内表单）自己决定宽度，
+       这里写 width: 100% 会把 .form-inline 里的小输入框撑满整行；
+     · .admin-layout :where(...) 的特异性是 (0,1,0)，且写在基座控件之前 ——
+       .form-input 等同特异性规则、桥接容器规则都在它之后定义，
+       谁都不会被它改写；它只对「没有任何类规则命中」的裸控件生效。
+   已知边界：login.html 不在 .admin-layout 内，且只引 theme.css 不引 ui.css，
+   那 3 个输入框走不到这里（待办清单里单独记）。 */
+.admin-layout :where(input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]):not([type="file"]):not([type="color"]):not([type="range"]):not([type="submit"]):not([type="button"]):not([type="reset"]):not(.wbs-native), select, textarea) {
+    padding: var(--ui-sp-sm) var(--ui-sp-md);
+    font-family: inherit;
+    font-size: 13px;
+    line-height: 1.4;
+    color: var(--sky-c-text, var(--c-text, #1a1d21));
+    background: var(--sky-c-surface, var(--c-bg, #fff));
+    border: 1px solid var(--sky-c-border, var(--c-border-input, #c6ccd4));
+    border-radius: var(--ui-r-sm);
+}
+
 /* 原始控件：输入 / 下拉 / 多行文本。
  *
  * 这一层是**唯一视觉来源**。以前 theme.css 里逐页又写了一版（.pages-form input、
@@ -409,8 +485,11 @@ table.data-table { width: 100%; border-collapse: collapse; font-size: 14px; }
  *   · 新页面直接用 class="form-input" / "form-select"，不要依赖容器选择器 ——
  *     依赖容器的写法正是「换个地方用就掉样式」的根源。
  */
-/* 存量桥接：老页面靠**容器类**上样式（.pages-form input / .attr-form-head input …）。
- * 把容器选择器也列进同一组规则，视觉仍然只有这一处定义，存量页面不会掉样式。
+/* 存量桥接（审计 UIK-010 的收尾）：.pages-form / .attr-form-head 的容器选择器已从这里删除 ——
+ * 依赖它们的存量页面在本轮之前已全部迁到公共类（admin 模板里不再出现 pages-*，
+ * pages_class_migration_test.go 钉住这一点），选择器零匹配，留着只会让「哪些容器还受支持」
+ * 变得含糊。仍然保留 .locale-add input：settings.html 的语言新增行还在用它，
+ * 它的视觉与其它输入框共用下面这组规则（唯一来源没有分叉）。
  *
  * 新页面请直接用 class="form-input" / "form-select" —— 桥接只为存量，不再扩大使用面。
  * 逐页迁移的进度与规则见 docs/02-F-ui-kit.md §10。
@@ -418,12 +497,6 @@ table.data-table { width: 100%; border-collapse: collapse; font-size: 14px; }
 .form-input,
 .form-select,
 .form-textarea,
-.pages-form input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]):not([type="submit"]):not([type="button"]),
-.pages-form select,
-.pages-form textarea,
-.attr-form-head input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),
-.attr-form-head select,
-.attr-form-head textarea,
 .locale-add input {
     width: 100%; min-width: 0; box-sizing: border-box;
     font-family: inherit; line-height: 1.4;
@@ -440,20 +513,13 @@ table.data-table { width: 100%; border-collapse: collapse; font-size: 14px; }
 /* 键盘可见焦点：鼠标点击不显得脏，Tab 进来必须看得见（无障碍硬要求）。 */
 .form-input:focus-visible,
 .form-select:focus-visible,
-.form-textarea:focus-visible,
-.pages-form input:focus-visible,
-.pages-form select:focus-visible,
-.attr-form-head input:focus-visible {
+.form-textarea:focus-visible {
     outline: 2px solid var(--c-primary, #aeb6c0);
     outline-offset: 1px;
 }
 .form-input:focus,
 .form-select:focus,
-.form-textarea:focus,
-.pages-form input:focus,
-.pages-form select:focus,
-.attr-form-head input:focus,
-.attr-form-head select:focus {
+.form-textarea:focus {
     border-color: var(--c-primary, #aeb6c0);
     box-shadow: 0 0 0 3px var(--c-primary-bg, #2a3038);
 }

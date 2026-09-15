@@ -50,7 +50,7 @@ type View struct {
 }
 
 // BuildView 生成卡片渲染视图：图片/按钮可选分支，文本字段直通。
-func BuildView(p *Props) View {
+func BuildView(p *Props, siteLink func(string) string) View {
 	// 标题标签白名单：只允许 h2~h5（h1 由页面标题承担，一个页面只有一个 h1）。
 	titleTag := p.TitleTag
 	switch titleTag {
@@ -59,14 +59,15 @@ func BuildView(p *Props) View {
 		titleTag = "h3"
 	}
 	return View{
-		TitleTag:      titleTag,
-		HasImage:      p.ImageSrc != "",
-		ImageSrc:      p.ImageSrc,
-		Title:         p.Title,
-		Text:          core.RichTextHTML(p.Text),
-		HasButton:     p.ButtonText != "" && p.ButtonLink != "",
-		ButtonText:    p.ButtonText,
-		ButtonLink:    p.ButtonLink,
+		TitleTag:   titleTag,
+		HasImage:   p.ImageSrc != "",
+		ImageSrc:   p.ImageSrc,
+		Title:      p.Title,
+		Text:       core.RichTextHTML(p.Text),
+		HasButton:  p.ButtonText != "" && p.ButtonLink != "",
+		ButtonText: p.ButtonText,
+		// 站内链接本地化（审计 I18N-015）：作者填的 /about 在英文站点上要变成 /en/about。
+		ButtonLink:    core.SiteLinkOrSame(siteLink, p.ButtonLink),
 		Loading:       p.Loading,
 		FetchPriority: p.FetchPriority,
 	}

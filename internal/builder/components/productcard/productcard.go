@@ -13,9 +13,13 @@
 // 由 builder.ValidateFieldRefs 按实体类型注册表校验、构建期再由商品解析器拒绝一次越界字段
 // （不变量 4）—— 组件里不另写一份白名单，也就不会出现两份白名单漂移。
 //
-// 槽位用自由文本（string 控件）而不是 bindingfield 下拉：与 core.product（#6）同一取舍 ——
-// 下拉的可选项取决于工作台当下拿到的数据源元数据，而本组件要同时服务「集合项作用域」与
-// 「当前实体」两个场景，自由文本 + 两道服务端白名单校验更稳，也不会因为下拉取不到值而配不出来。
+// 槽位用 bindingfield 下拉（审计 EDT-006），prefixes=item|product 正是本组件的两种用法：
+// 卡片在集合里展开时绑 item.<字段>（那一行的数据），在详情页当推荐位时绑 product.<字段>
+// （当前实体）。两种前缀都列出来，是因为同一个组件确实两种情况都用 —— 这不是「没想清楚」，
+// 而是这一条组件同时服务两个作用域。
+//
+// 下拉取不到元数据（数据源未注册 / 接口不可用）时编辑器仍可手动输入：白名单由
+// ValidateFieldRefs 与构建期解析器两道校验守住，下拉只是让常见情况不用记字段名。
 //
 // 确定性：样式全部由编译期算好写进静态 CSS，模板只做拼装；同 props 同字节。
 package productcard
@@ -50,19 +54,19 @@ var fieldPathRe = regexp.MustCompile(`^(item|product)\.[a-z][a-zA-Z0-9_]*$`)
 // Props core.productCard 属性：命名槽位声明本卡片要显示的商品字段。
 type Props struct {
 	// ImageField 主图字段（如 item.images / product.defaultImage）。
-	ImageField string `json:"imageField,omitempty" ct:"string,maxlen=60,sec=content,label=主图字段"`
+	ImageField string `json:"imageField,omitempty" ct:"bindingfield,prefixes=item|product,maxlen=60,sec=content,label=主图字段"`
 	// ImageAltField 主图 alt 字段（如 item.imageAlt）；留空用标题兜底。
-	ImageAltField string `json:"imageAltField,omitempty" ct:"string,maxlen=60,sec=content,label=主图 alt 字段"`
+	ImageAltField string `json:"imageAltField,omitempty" ct:"bindingfield,prefixes=item|product,maxlen=60,sec=content,label=主图 alt 字段"`
 	// TitleField 标题字段（如 item.name）。
-	TitleField string `json:"titleField,omitempty" ct:"string,maxlen=60,sec=content,label=标题字段"`
+	TitleField string `json:"titleField,omitempty" ct:"bindingfield,prefixes=item|product,maxlen=60,sec=content,label=标题字段"`
 	// PriceField 价格字段（如 item.priceRange / item.price）。
-	PriceField string `json:"priceField,omitempty" ct:"string,maxlen=60,sec=content,label=价格字段"`
+	PriceField string `json:"priceField,omitempty" ct:"bindingfield,prefixes=item|product,maxlen=60,sec=content,label=价格字段"`
 	// ComparePriceField 划线价字段（如 item.comparePrice）。
-	ComparePriceField string `json:"comparePriceField,omitempty" ct:"string,maxlen=60,sec=content,label=划线价字段"`
+	ComparePriceField string `json:"comparePriceField,omitempty" ct:"bindingfield,prefixes=item|product,maxlen=60,sec=content,label=划线价字段"`
 	// TagsField 标签字段（如 item.tags，JSON 名称数组）。
-	TagsField string `json:"tagsField,omitempty" ct:"string,maxlen=60,sec=content,label=标签字段"`
+	TagsField string `json:"tagsField,omitempty" ct:"bindingfield,prefixes=item|product,maxlen=60,sec=content,label=标签字段"`
 	// LinkField 链接字段（如 item.slug）：与 LinkPrefix 拼成卡片链接。
-	LinkField string `json:"linkField,omitempty" ct:"string,maxlen=60,sec=content,label=链接字段"`
+	LinkField string `json:"linkField,omitempty" ct:"bindingfield,prefixes=item|product,maxlen=60,sec=content,label=链接字段"`
 	// LinkPrefix 链接前缀（如 /products/）；留空表示 LinkField 已是完整地址。
 	LinkPrefix string `json:"linkPrefix,omitempty" ct:"text,maxlen=200,sec=content,label=链接前缀"`
 	// Currency 货币符号（价格槽位前缀；留空用默认符号）。

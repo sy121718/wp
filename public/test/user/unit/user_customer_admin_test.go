@@ -35,9 +35,9 @@ func newCustomerFixture(t *testing.T) (*usermodel.UserModel, *userservice.Servic
 		t.Fatalf("执行生产迁移建表失败: %v", err)
 	}
 	m := usermodel.NewUserModel(db)
-	// Session / Profile / Preference / mail 传 nil：客户管理这条链路一条都不碰它们
+	// Profile / Preference / mail 传 nil：客户管理这条链路一条都不碰它们
 	//（不建行、不发信），构造替身只会把测试意图淹掉。
-	svc := userservice.NewService(m, nil, nil, nil, nil, "测试站点")
+	svc := userservice.NewService(m, nil, nil, nil, "测试站点")
 	return m, svc
 }
 
@@ -339,7 +339,6 @@ func TestCustomerDTOExposesNoCredentialFields(t *testing.T) {
 		reflect.TypeOf(userdto.CustomerUnlockResp{}),
 	)
 }
-
 
 // TestCustomerAdminPermissionSeed 后台客户管理的权限点必须与**超管策略同批**落地。
 //

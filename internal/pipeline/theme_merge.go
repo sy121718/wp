@@ -28,12 +28,16 @@ func MergeActiveThemeIntoDocument(ctx context.Context, project projectcontract.P
 	if err != nil || theme == nil {
 		return mergeThemeAbsent(doc, pageStructure)
 	}
-	var themeStructure struct {
-		Header string `json:"headerBlockId"`
-		Footer string `json:"footerBlockId"`
+	// 结构绑定从主题设置里取：既有字段 + slots（公告条 / 侧边栏等）。
+	// 只读 header/footer 会让「主题里配了公告条」在保存文档时被丢掉 ——
+	// 主题设置页显示已配置，页面上却什么都没有。
+	var themeSettings struct {
+		Header string            `json:"headerBlockId"`
+		Footer string            `json:"footerBlockId"`
+		Slots  map[string]string `json:"slots"`
 	}
 	if len(theme.Settings) > 0 {
-		if err := json.Unmarshal(theme.Settings, &themeStructure); err != nil {
+		if err := json.Unmarshal(theme.Settings, &themeSettings); err != nil {
 			logger.Scene("build").With("err", err).Warn("主题设置解析失败")
 			return mergeThemeAbsent(doc, pageStructure)
 		}
@@ -45,18 +49,19 @@ func MergeActiveThemeIntoDocument(ctx context.Context, project projectcontract.P
 	if doc, err = mergeSettingsKey(doc, "theme", themeSnapshot); err != nil {
 		return nil, err
 	}
-	header := pageStructure.HeaderBlockID
-	if header == "" {
-		header = themeStructure.Header
-	}
-	footer := pageStructure.FooterBlockID
-	if footer == "" {
-		footer = themeStructure.Footer
-	}
-	structureJSON, _ := json.Marshal(map[string]any{
-		"headerBlockId": header,
-		"footerBlockId": footer,
+	merged := MergeStructureBindings(pageStructure, builder.StructureBindings{
+		HeaderBlockID: themeSettings.Header,
+		FooterBlockID: themeSettings.Footer,
+		Slots:         themeSettings.Slots,
 	})
+	fields := map[string]any{
+		"headerBlockId": merged.HeaderBlockID,
+		"footerBlockId": merged.FooterBlockID,
+	}
+	if len(merged.Slots) > 0 {
+		fields["slots"] = merged.Slots
+	}
+	structureJSON, _ := json.Marshal(fields)
 	return mergeSettingsKey(doc, "structure", structureJSON)
 }
 
@@ -72,6 +77,22 @@ func MergeStructureBindings(page, theme builder.StructureBindings) builder.Struc
 	if out.FooterBlockID == "" {
 		out.FooterBlockID = theme.FooterBlockID
 	}
+	// Slots 逐键合并（页面写了某个槽位就用页面的，其余取主题）：整体替换会让
+	// 「主题新增一个公告条」把页面自己配的侧边栏冲掉，而页面那头完全没有报错。
+	merged := map[string]string{}
+	for slot, id := range theme.Slots {
+		if id != "" {
+			merged[slot] = id
+		}
+	}
+	for slot, id := range page.Slots {
+		if id != "" {
+			merged[slot] = id
+		}
+	}
+	if len(merged) > 0 {
+		out.Slots = merged
+	}
 	return out
 }
 
@@ -80,10 +101,16 @@ func mergeThemeAbsent(doc json.RawMessage, pageStructure builder.StructureBindin
 	if doc, err = mergeSettingsKey(doc, "theme", json.RawMessage(`{}`)); err != nil {
 		return nil, err
 	}
-	structureJSON, _ := json.Marshal(map[string]any{
+	fields := map[string]any{
 		"headerBlockId": pageStructure.HeaderBlockID,
 		"footerBlockId": pageStructure.FooterBlockID,
-	})
+	}
+	// 空 slots 不写进文档：留一个 "slots":null 只会让每份文档多一份噪音，
+	// 而读取侧本来就按「空即无绑定」处理。
+	if len(pageStructure.Slots) > 0 {
+		fields["slots"] = pageStructure.Slots
+	}
+	structureJSON, _ := json.Marshal(fields)
 	return mergeSettingsKey(doc, "structure", structureJSON)
 }
 

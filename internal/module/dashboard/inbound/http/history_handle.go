@@ -76,7 +76,7 @@ func (h *Handle) HistoryRestore(c *gin.Context) {
 		response.ErrorWithMessage(c, http.StatusNotFound, "修订版本不存在")
 		return
 	}
-	page, err := h.pages.Detail(ctx, &pagecontract.DetailReq{ID: pageID})
+	page, err := h.pageOf(c, pageID)
 	if err != nil {
 		response.ErrorWithMessage(c, http.StatusNotFound, "页面不存在")
 		return

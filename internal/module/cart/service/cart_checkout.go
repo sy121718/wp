@@ -25,7 +25,7 @@ import (
 	cartcontract "go_wp/internal/module/cart/contract"
 	cartdto "go_wp/internal/module/cart/dto"
 	cartenums "go_wp/internal/module/cart/enums"
-	orderdto "go_wp/internal/module/order/dto"
+	ordercontract "go_wp/internal/module/order/contract"
 )
 
 // Checkout 访客结算。
@@ -65,13 +65,13 @@ func (s *Service) Checkout(ctx context.Context, req *cartdto.CartCheckoutReq) (r
 
 	// 订单项只给「变体 + 数量」：价格由订单域从商品域现读后落快照，
 	// 请求里没有价格字段可填（购物车 cookie 里的价格也不作数 —— 它可能已经过期）。
-	items := make([]orderdto.OrderItemReq, 0, len(lines))
+	items := make([]ordercontract.OrderItemReq, 0, len(lines))
 	for _, l := range lines {
-		items = append(items, orderdto.OrderItemReq{VariantID: l.VariantID, Quantity: l.Quantity})
+		items = append(items, ordercontract.OrderItemReq{VariantID: l.VariantID, Quantity: l.Quantity})
 	}
 
 	now := time.Now()
-	created, err := s.orders.CreateOrder(ctx, &orderdto.CreateOrderReq{
+	created, err := s.orders.CreateOrder(ctx, &ordercontract.CreateOrderReq{
 		ProjectID:     projectID,
 		CustomerEmail: email,
 		CustomerName:  name,
@@ -124,7 +124,7 @@ func (s *Service) Checkout(ctx context.Context, req *cartdto.CartCheckoutReq) (r
 	}
 
 	// ② 落账。幂等：重复调用返回同一结论，不会把已付的单再写一遍。
-	paid, perr := s.orders.PayOrder(ctx, &orderdto.PayOrderReq{
+	paid, perr := s.orders.PayOrder(ctx, &ordercontract.PayOrderReq{
 		OrderID:            created.ID,
 		PaymentMethod:      s.pay.Method(),
 		PaymentMethodTitle: s.pay.Title(),
@@ -146,7 +146,7 @@ func (s *Service) Checkout(ctx context.Context, req *cartdto.CartCheckoutReq) (r
 //
 // 绝大多数下单里两者一致；让访客为了「我要开发票」再填一遍地址，
 // 是把系统的字段完整性要求转嫁给了用户。
-func billingOrShipping(billing, shipping orderdto.OrderAddress) orderdto.OrderAddress {
+func billingOrShipping(billing, shipping ordercontract.OrderAddress) ordercontract.OrderAddress {
 	if strings.TrimSpace(billing.Name) == "" && strings.TrimSpace(billing.Address) == "" {
 		return shipping
 	}

@@ -35,6 +35,8 @@ type Image struct {
 type View struct {
 	// TitleTag 标题标签名（h1~h3）。
 	TitleTag string
+	// StockNote 无脚本 / 片段未接入时的库存兜底文案（审计 I18N-010）。
+	StockNote string
 	// Currency 货币符号（价格前缀）。
 	Currency string
 	// HasMedia 是否有主图。
@@ -155,7 +157,9 @@ func BuildView(p *Props, content core.ContentResolver) (View, error) {
 		return View{}, fmt.Errorf("编译上下文缺少内容解析器，无法解析商品字段（数据源 %s）", source)
 	}
 
-	view := View{TitleTag: effectiveTitleTag(p), Currency: effectiveCurrency(p)}
+	// StockNote 先落中文兜底：ApplyI18n 会在 BuildView 之后按语言覆盖；
+	// 未接入 i18n 时它就是最终值（产物与抽 key 前逐字一致）。
+	view := View{TitleTag: effectiveTitleTag(p), Currency: effectiveCurrency(p), StockNote: textFallbackStockNote}
 	// 规格数据与 alt 先收原值，槽位循环结束后再统一解析（图集 alt 要按「第 i 张」
 	// 对应，而 alt 槽位可能声明在图集槽位之前；组合行要按维度取标签）。
 	var rawOptions, rawVariants, rawMediaAlt, rawGalleryAlt string

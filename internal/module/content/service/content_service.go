@@ -13,6 +13,7 @@ import (
 	contentenums "go_wp/internal/module/content/enums"
 	contentmodel "go_wp/internal/module/content/model"
 	"go_wp/internal/pipeline"
+	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
 
 	"github.com/google/uuid"
@@ -25,6 +26,9 @@ type Service struct {
 	// invalidator 依赖失效扇出端口（PIPE-3，编排层注入，可空）。
 	// 为空时内容写入行为与本轮之前完全一致（不触发任何失效）。
 	invalidator contentcontract.DependencyInvalidator
+	// contentStore 内容译文存储（审计 I18N-006，装配期注入，可空）：
+	// 构建期按 lang 批量取译文；为空即不做翻译（产物与接入前逐字一致）。
+	contentStore i18n.ContentStore
 }
 
 // SetDependencyInvalidator 注入依赖失效扇出端口（编排层装配；可空）。

@@ -17,10 +17,12 @@ import (
 	ordercontract "go_wp/internal/module/order/contract"
 	pagecontract "go_wp/internal/module/page/contract"
 	plugincontract "go_wp/internal/module/plugin/contract"
+	presentationcontract "go_wp/internal/module/presentation/contract"
 	productcontract "go_wp/internal/module/product/contract"
 	inventorycontract "go_wp/internal/module/product/inventory/contract"
 	projectcontract "go_wp/internal/module/project/contract"
 	usercontract "go_wp/internal/module/user/contract"
+	"go_wp/pkg/i18n"
 
 	"github.com/gin-gonic/gin"
 )
@@ -59,9 +61,9 @@ func SetupDashboardRoutes(router *gin.Engine,
 	// customerAdmin 用户模块的**后台面**（收窄到四条方法，见 usercontract.CustomerAdminPort）：
 	// 客户管理页此前完全不存在 —— users 表有全套字段，但后台没有任何地方读它。
 	// 与访客面（/user/*）共用同一个实现，两个面各拿各的接口。
-	customerAdmin usercontract.CustomerAdminPort) {
+	customerAdmin usercontract.CustomerAdminPort) *Handle {
 	if router == nil {
-		return
+		return nil
 	}
 
 	handle := NewHandle(pages, projects, blocks, plugins, collection, admins, roles, perms, menus, depts, rules, authz, navigations)
@@ -129,6 +131,18 @@ func SetupDashboardRoutes(router *gin.Engine,
 	adminPages.POST("/navigations/add-source", builtin.CasbinMiddlewareForPath("/api/navigation/create"), handle.NavigationAddSource)
 	adminPages.POST("/navigations/update", builtin.CasbinMiddlewareForPath("/api/navigation/update"), handle.NavigationUpdate)
 	adminPages.POST("/navigations/delete", builtin.CasbinMiddlewareForPath("/api/navigation/delete"), handle.NavigationDelete)
+	// 导航译文工作台（审计 I18N-007）：菜单标签不在页面文档里，页面翻译工作台看不到它，
+	// 构建期靠 navigation.label 语境回填 —— 本页是那个语境的唯一维护入口。
+	// 保存复用「修改导航」权限点：译文是导航项内容的一部分。
+	navigationTranslations := NewNavigationTranslationHandle(navigations, projects)
+	if writer, werr := i18n.NewContentWriterDefault(); werr == nil {
+		navigationTranslations.SetContentWriter(writer)
+	}
+	if marker, ok := pages.(navTranslationPageMarker); ok {
+		navigationTranslations.SetPageMarker(marker)
+	}
+	adminPages.GET("/navigations/translations", navigationTranslations.NavigationTranslations)
+	adminPages.POST("/navigations/translations/save", builtin.CasbinMiddlewareForPath("/api/navigation/update"), navigationTranslations.SaveNavigationTranslations)
 	adminPages.POST("/navigations/move", builtin.CasbinMiddlewareForPath("/api/navigation/update"), handle.NavigationMove)
 	adminPages.GET("/blocks", handle.BlocksList)
 	adminPages.POST("/blocks/create", builtin.CasbinMiddlewareForPath("/api/block/create"), handle.CreateBlock)
@@ -165,6 +179,9 @@ func SetupDashboardRoutes(router *gin.Engine,
 	productPages.SetDetailTemplateDeps(templates, presentations)
 	// 归属仓下拉（issue #15）：建商品与新增变体时可选仓库（不选即默认仓）。
 	productPages.SetInventoryDeps(inventories)
+	// 编辑期 title 唯一性检查的全站数据源（审计 SEO-018）：页面草稿与文章标题
+	// 必须和商品域在同一份索引里，否则跨内容的重复标题检不出来。两份契约都可空。
+	productPages.SetSeoTitleSources(pages, contents)
 	adminPages.GET("/products", productPages.ProductsPage)
 	adminPages.POST("/products/create", builtin.CasbinMiddlewareForPath("/api/product/create"), productPages.ProductsCreate)
 	adminPages.POST("/products/variant/create", builtin.CasbinMiddlewareForPath("/api/product/variant/create"), productPages.ProductsVariantCreate)
@@ -178,6 +195,12 @@ func SetupDashboardRoutes(router *gin.Engine,
 	// 评分属商品维护，不另立权限点与菜单。
 	adminPages.POST("/products/rating/add", builtin.CasbinMiddlewareForPath("/api/product/update"), productPages.ProductsRatingAdd)
 	adminPages.POST("/products/rating/delete", builtin.CasbinMiddlewareForPath("/api/product/update"), productPages.ProductsRatingDelete)
+	// SEO 评分（审计 SEO-016）：商品 / 分类 / 品牌页的编辑期评分，按页型自动选权重档案。
+	// **只读计算**（不写库、不写产物、不激活 URL），因此与文章编辑页的评分侧栏一样
+	// 不叠加 Casbin 权限点 —— 页面组已有 Session + CSRF；评分是提示性的，不拦保存。
+	adminPages.POST("/products/seo-score", productPages.ProductScorePanel)
+	adminPages.POST("/product-categories/seo-score", productPages.ProductCategoryScorePanel)
+	adminPages.POST("/product-brands/seo-score", productPages.ProductBrandScorePanel)
 
 	// 商品详情页模板可选与预览（issue #14）：一个商品类型下可建多套命名模板，
 	// 商品发布时可选一套、发布前可预览（预览只读渲染，不落库不激活）。
@@ -271,11 +294,25 @@ func SetupDashboardRoutes(router *gin.Engine,
 	masterDataPages := NewMasterDataChangePageHandle(masterdata, projects)
 	adminPages.GET("/masterdata/changes", masterDataPages.MasterDataChangesPage)
 
+	// 文案词条页（审计 I18N-003）：列表 / 筛选 / 编辑 / 新增 / 删除。
+	// 此前词条只能靠迁移改 —— 能改文案的人只有写代码的人，运营遇到错别字只能等发版。
+	// 读页面不挂 Casbin（与其它只读页一致），写操作挂 i18n:manage ——
+	// 页面组本身只有 Session + CSRF，漏挂权限点等于任何登录管理员都能改全站文案。
+	i18nPages := NewI18nEntryPageHandle()
+	adminPages.GET("/i18n", i18nPages.I18nEntriesPage)
+	adminPages.POST("/i18n/save", builtin.CasbinMiddlewareForPath("/api/i18n/save"), i18nPages.I18nEntrySave)
+	adminPages.POST("/i18n/delete", builtin.CasbinMiddlewareForPath("/api/i18n/save"), i18nPages.I18nEntryDelete)
+
 	// 访问统计（BIZ-8）：只读报表页（按天 / 按路径聚合 + 时间范围筛选 + 分页）。
 	// 页面组已有 Session + CSRF；这里没有写操作，因此不挂 CasbinMiddlewareForPath ——
 	// 权限点 analytics:view 用在菜单过滤与只读 API 的 Casbin 策略上。
 	analyticsPages := NewAnalyticsPageHandle(analytics, projects)
 	adminPages.GET("/analytics", analyticsPages.AnalyticsPage)
+
+	// SEO 控制台（SEO-020）：复用 analytics 热门路径与 publication 已有体检端点。
+	// 来源排行、sitemap/feed 状态尚无只读契约，页面明确显示不可用，不读取模块内部实现。
+	seoPages := NewSEOPageHandle(analytics, projects)
+	adminPages.GET("/seo", seoPages.SEOPage)
 
 	// 订单管理页（BIZ-1）：列表 + 状态计数 + 详情（同一页面靠 orderId 展开）+ 流转 / 取消 / 退款。
 	// 页面 GET 走 /admin 组认证（Session+CSRF，无 Casbin）；写动作复用订单 API 权限点做 Casbin 鉴权。
@@ -303,6 +340,11 @@ func SetupDashboardRoutes(router *gin.Engine,
 	// 本次不新增权限点；发布复用商品详情模板页那两条 presentation 权限点（同一行为，只是实体类型不同）。
 	// 侧栏入口见 nav_menu.go 的 content 组。
 	articlePages := NewArticlePageHandle(contents, projects, templates, presentations, pages)
+	// 内链建议端口（SEO-015）：从同一个 presentation 服务上断言出收窄只读接口。
+	// 断言失败（实现方变更）不阻塞启动 —— 建议端点降级为空列表，评分侧栏照常。
+	if loc, ok := any(presentations).(presentationcontract.PublishedEntityLocator); ok {
+		articlePages.SetArticleLinkLocator(loc)
+	}
 	adminPages.GET("/articles", articlePages.ArticlesPage)
 	adminPages.GET("/articles/edit", articlePages.ArticleEditPage)
 	// 内容模板（EDT-001）：列表 + 编辑入口（302 到工作台）。
@@ -311,9 +353,26 @@ func SetupDashboardRoutes(router *gin.Engine,
 	adminPages.POST("/articles/create", builtin.CasbinMiddlewareForPath("/api/content/create"), articlePages.ArticleCreate)
 	adminPages.POST("/articles/update", builtin.CasbinMiddlewareForPath("/api/content/update"), articlePages.ArticleUpdate)
 	adminPages.POST("/articles/delete", builtin.CasbinMiddlewareForPath("/api/content/delete"), articlePages.ArticleDelete)
+
+	// 文章翻译工作台（审计 I18N-006）：对称商品的 /admin/products/translations。
+	// 保存复用「保存内容」权限点（与文章编辑同源）—— 译文是文章内容的一部分，
+	// 另立权限点只会让「能改文章但不能改它的译文」这种半吊子配置出现。
+	articleTranslations := NewArticleTranslationHandle(contents)
+	// 写入端口用默认构造（从全局库句柄取）：本函数的参数里没有 db，
+	// 而工作台的写入通道与用户的读取通道必须指向同一个库 —— 显式传参会引出一个
+	// 「传错库也能编译通过」的口子，默认构造反而更稳。构造失败时不注入，
+	// 工作台仍可看原文（只是保存会提示存储不可用）。
+	if writer, werr := i18n.NewContentWriterDefault(); werr == nil {
+		articleTranslations.SetContentWriter(writer)
+	}
+	adminPages.GET("/articles/translations", articleTranslations.ArticleTranslations)
+	adminPages.POST("/articles/translations/save", builtin.CasbinMiddlewareForPath("/api/content/update"), articleTranslations.SaveArticleTranslations)
 	// 评分是纯计算（不写库、不写产物），只走组级 Session+CSRF，不再叠权限点：
 	// 能打开编辑页的人就能算分，分数本身不构成新的信息公开面。
 	adminPages.POST("/articles/score", articlePages.ArticleScorePanel)
+	// 内链建议（SEO-015）：同为只读计算（候选来自已上线路径解析端口），
+	// 权限策略与评分侧栏一致 —— Session + CSRF，不叠权限点。
+	adminPages.POST("/articles/link-suggestions", articlePages.ArticleLinkSuggestions)
 	// 文章 → 画布（06-B 决策 5 的第一个真实用途）：预览是纯计算不叠权限点，
 	// 创建页面复用页面创建权限点（写的是 Page 草稿，与 /admin/pages 新建同一件事）。
 	adminPages.POST("/articles/import-preview", articlePages.ArticleImportPreview)
@@ -419,4 +478,7 @@ func SetupDashboardRoutes(router *gin.Engine,
 	adminPages.POST("/mail/automation/status", builtin.CasbinMiddlewareForPath("/api/mail/automation/status"), mailPage.MailAutomationStatus)
 	adminPages.POST("/mail/automation/delete", builtin.CasbinMiddlewareForPath("/api/mail/automation/delete"), mailPage.MailAutomationDelete)
 	adminPages.POST("/mail/automation/tick", builtin.CasbinMiddlewareForPath("/api/mail/automation/tick"), mailPage.MailAutomationTick)
+
+	// 返回 handle：上层装配（routes.go）用它注入可选端口（如蓝图契约）。
+	return handle
 }

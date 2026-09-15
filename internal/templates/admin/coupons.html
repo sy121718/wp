@@ -6,6 +6,7 @@
 {{extends "layout.html"}}
 {{block body()}}
 {{csrf := .["csrf_token"]}}
+{{tr := .["t"]}}
 {{selectedProject := .SelectedProject}}
 {{rows := .Rows}}
 {{detail := .Detail}}
@@ -17,23 +18,18 @@
 {{filterKeyword := .FilterKeyword}}
 <div class="stack coupons-page">
     <section class="card card-body">
-        <h2>优惠码管理</h2>
+        <h2>{{ .["t"]("admin.coupons.heading", "优惠码管理") }}</h2>
         {{if .Err != ""}}
-        <p class="badge badge-warning">上一次操作未完成：{{.Err}}</p>
+        <p class="badge badge-warning">{{ .["t"]("admin.coupons.err_prefix", "上一次操作未完成：") }}{{.Err}}</p>
         {{end}}
         {{if .Ok != ""}}
         <p class="badge badge-success">{{.Ok}}</p>
         {{end}}
         <p class="hint">
-            一张券有<strong>折扣口径</strong>（按比例 / 固定金额）、<strong>使用门槛</strong>、
-            <strong>总次数上限</strong>与<strong>每人限次</strong>、<strong>生效时间窗</strong>与启停状态。
-            金额一律以<strong>分</strong>存储，折扣力度按<strong>百分比 1..100</strong> 存，
-            页面上看到的金额与状态文本都是服务端算好的，页面不做换算。
+            {{ .["t"]("admin.coupons.hint.anatomy.lead", "一张券有") }}<strong>{{ .["t"]("admin.coupons.hint.anatomy.strong_discount", "折扣口径") }}</strong>{{ .["t"]("admin.coupons.hint.anatomy.mid", "（按比例 / 固定金额）、") }}<strong>{{ .["t"]("admin.coupons.hint.anatomy.strong_min", "使用门槛") }}</strong>{{ .["t"]("admin.coupons.hint.anatomy.mid2", "、") }}<strong>{{ .["t"]("admin.coupons.hint.anatomy.strong_max_uses", "总次数上限") }}</strong>{{ .["t"]("admin.coupons.hint.anatomy.mid3", "与") }}<strong>{{ .["t"]("admin.coupons.hint.anatomy.strong_per_user", "每人限次") }}</strong>{{ .["t"]("admin.coupons.hint.anatomy.mid4", "、") }}<strong>{{ .["t"]("admin.coupons.hint.anatomy.strong_window", "生效时间窗") }}</strong>{{ .["t"]("admin.coupons.hint.anatomy.mid5", "与启停状态。金额一律以") }}<strong>{{ .["t"]("admin.coupons.unit.cent", "分") }}</strong>{{ .["t"]("admin.coupons.hint.anatomy.mid6", "存储，折扣力度按") }}<strong>{{ .["t"]("admin.coupons.hint.anatomy.strong_percent", "百分比 1..100") }}</strong>{{ .["t"]("admin.coupons.hint.anatomy.tail", "存，页面上看到的金额与状态文本都是服务端算好的，页面不做换算。") }}
         </p>
         <p class="hint">
-            <strong>核销发生在建单事务内部</strong>：用券与写单同生共死，所以后台
-            <strong>没有、也不应该有「核销」按钮</strong> —— 一个「先核销、后建单」的入口
-            一定会被用出「券没了但没下单」。这里只有核销结果，没有手工核销的入口。
+            <strong>{{ .["t"]("admin.coupons.hint.redeem.strong_in_txn", "核销发生在建单事务内部") }}</strong>{{ .["t"]("admin.coupons.hint.redeem.mid", "：用券与写单同生共死，所以后台") }}<strong>{{ .["t"]("admin.coupons.hint.redeem.strong_no_button", "没有、也不应该有「核销」按钮") }}</strong>{{ .["t"]("admin.coupons.hint.redeem.tail", " —— 一个「先核销、后建单」的入口一定会被用出「券没了但没下单」。这里只有核销结果，没有手工核销的入口。") }}
         </p>
         <form method="get" action="/admin/coupons" class="form-inline">
             <select class="form-select" name="project" onchange="this.form.submit()">
@@ -43,25 +39,24 @@
             </select>
         </form>
         {{if len(.Projects) == 0}}
-        <p class="hint">还没有站点工程 —— 先去<a href="/admin/pages">页面管理</a>建一个工程，优惠码是挂在工程下的。</p>
+        <p class="hint">{{ .["t"]("admin.coupons.no_project.lead", "还没有站点工程 —— 先去") }}<a href="/admin/pages">{{ .["t"]("admin.coupons.no_project.link", "页面管理") }}</a>{{ .["t"]("admin.coupons.no_project.tail", "建一个工程，优惠码是挂在工程下的。") }}</p>
         {{end}}
     </section>
 
     {{if selectedProject}}
     <section class="card card-body">
-        <h2>新建优惠码</h2>
+        <h2>{{ .["t"]("admin.coupons.create.heading", "新建优惠码") }}</h2>
         <p class="hint">
-            券码提交后统一转成<strong>大写</strong>并<strong>不可再改</strong>（改码等于换一张券，
-            历史核销记录里的码会指向一个查不到的值）—— 需要新码就新建一张，把旧的<strong>停用</strong>。
+            {{ .["t"]("admin.coupons.create.hint.lead", "券码提交后统一转成") }}<strong>{{ .["t"]("admin.coupons.create.hint.strong_upper", "大写") }}</strong>{{ .["t"]("admin.coupons.create.hint.mid", "并") }}<strong>{{ .["t"]("admin.coupons.create.hint.strong_immutable", "不可再改") }}</strong>{{ .["t"]("admin.coupons.create.hint.mid2", "（改码等于换一张券，历史核销记录里的码会指向一个查不到的值）—— 需要新码就新建一张，把旧的") }}<strong>{{ .["t"]("admin.coupons.status.disabled", "停用") }}</strong>{{ .["t"]("admin.coupons.create.hint.tail", "。") }}
         </p>
         <form method="post" action="/admin/coupons/create" class="form-stack">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="returnQuery" value="{{.CreateBack}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <div class="form-inline">
-                <input type="text" class="form-input" name="code" placeholder="券码（工程内唯一，如 SAVE20）"
+                <input type="text" class="form-input" name="code" placeholder="{{ .["t"]("admin.coupons.create.ph.code", "券码（工程内唯一，如 SAVE20）") }}"
                        required autocomplete="off" maxlength="64">
-                <input type="text" class="form-input" name="name" placeholder="名称（如 双十一全场券）"
+                <input type="text" class="form-input" name="name" placeholder="{{ .["t"]("admin.coupons.create.ph.name", "名称（如 双十一全场券）") }}"
                        autocomplete="off" maxlength="120">
             </div>
             <div class="form-inline">
@@ -70,21 +65,18 @@
                     <option value="{{t.Value}}">{{t.Label}}</option>
                     {{end}}
                 </select>
-                <input type="number" class="form-input" name="discountValue" placeholder="折扣值（必填，单位见下）"
+                <input type="number" class="form-input" name="discountValue" placeholder="{{ .["t"]("admin.coupons.create.ph.discount_value", "折扣值（必填，单位见下）") }}"
                        inputmode="numeric" step="1" min="1" required>
-                <input type="number" class="form-input" name="minSubtotal" placeholder="使用门槛（分，0 = 无门槛）"
+                <input type="number" class="form-input" name="minSubtotal" placeholder="{{ .["t"]("admin.coupons.create.ph.min_subtotal", "使用门槛（分，0 = 无门槛）") }}"
                        inputmode="numeric" step="1" min="0" value="0">
             </div>
             <p class="hint">
-                折扣值的<strong>单位随折扣类型而变</strong>，两种口径的语义完全不同：
-                <strong>按比例</strong>填 1..100，表示<strong>折扣力度</strong> —— 20 表示「减 20%」（注意不是打 2 折）；
-                <strong>固定金额</strong>填<strong>分</strong> —— 2000 表示「减 20.00 元」。
-                门槛同样是<strong>分</strong>：9900 表示「满 99.00 元可用」。
+                {{ .["t"]("admin.coupons.create.unit_hint.lead", "折扣值的") }}<strong>{{ .["t"]("admin.coupons.create.unit_hint.strong", "单位随折扣类型而变") }}</strong>{{ .["t"]("admin.coupons.create.unit_hint.mid", "，两种口径的语义完全不同：") }}<strong>{{ .["t"]("admin.coupons.unit.percent", "按比例") }}</strong>{{ .["t"]("admin.coupons.create.unit_hint.mid2", "填 1..100，表示") }}<strong>{{ .["t"]("admin.coupons.create.unit_hint.strong_strength", "折扣力度") }}</strong>{{ .["t"]("admin.coupons.create.unit_hint.mid3", " —— 20 表示「减 20%」（注意不是打 2 折）；") }}<strong>{{ .["t"]("admin.coupons.unit.fixed", "固定金额") }}</strong>{{ .["t"]("admin.coupons.create.unit_hint.mid4", "填") }}<strong>{{ .["t"]("admin.coupons.unit.cent", "分") }}</strong>{{ .["t"]("admin.coupons.create.unit_hint.mid5", " —— 2000 表示「减 20.00 元」。门槛同样是") }}<strong>{{ .["t"]("admin.coupons.unit.cent", "分") }}</strong>{{ .["t"]("admin.coupons.create.unit_hint.tail", "：9900 表示「满 99.00 元可用」。") }}
             </p>
             <div class="form-inline">
-                <input type="number" class="form-input" name="maxUses" placeholder="总次数上限（0 = 不限）"
+                <input type="number" class="form-input" name="maxUses" placeholder="{{ .["t"]("admin.coupons.ph.max_uses", "总次数上限（0 = 不限）") }}"
                        inputmode="numeric" step="1" min="0" value="0">
-                <input type="number" class="form-input" name="perUserLimit" placeholder="每人限次（0 = 不限）"
+                <input type="number" class="form-input" name="perUserLimit" placeholder="{{ .["t"]("admin.coupons.ph.per_user_limit", "每人限次（0 = 不限）") }}"
                        inputmode="numeric" step="1" min="0" value="0">
                 <select class="form-select" name="status">
                     {{range _, s := enableOptions}}
@@ -94,76 +86,74 @@
             </div>
             <div class="form-inline">
                 <input type="text" class="form-input" name="startsAt"
-                       placeholder="开始时间（留空 = 不限），如 2026-01-01 或 2026-01-01 09:00" autocomplete="off">
+                       placeholder="{{ .["t"]("admin.coupons.ph.starts_at", "开始时间（留空 = 不限），如 2026-01-01 或 2026-01-01 09:00") }}" autocomplete="off">
                 <input type="text" class="form-input" name="endsAt"
-                       placeholder="结束时间（留空 = 不限），如 2026-01-31 23:59" autocomplete="off">
+                       placeholder="{{ .["t"]("admin.coupons.ph.ends_at", "结束时间（留空 = 不限），如 2026-01-31 23:59") }}" autocomplete="off">
             </div>
             <p class="hint">
-                时间窗用<strong>文本</strong>填写，两种写法都接受：<code>2006-01-02</code> 或
-                <code>2006-01-02 15:04</code>，按站点本地时间理解（带时区的写法会被拒绝）。
-                结束时间必须晚于开始时间，否则这张券永远不会生效 —— 服务端会直接拒绝。
+                {{ .["t"]("admin.coupons.create.time_hint.lead", "时间窗用") }}<strong>{{ .["t"]("admin.coupons.create.time_hint.strong", "文本") }}</strong>{{ .["t"]("admin.coupons.create.time_hint.mid", "填写，两种写法都接受：") }}<code>2006-01-02</code>{{ .["t"]("admin.coupons.create.time_hint.mid2", " 或 ") }}<code>2006-01-02 15:04</code>{{ .["t"]("admin.coupons.create.time_hint.tail", "，按站点本地时间理解（带时区的写法会被拒绝）。结束时间必须晚于开始时间，否则这张券永远不会生效 —— 服务端会直接拒绝。") }}
             </p>
-            <input type="text" class="form-input" name="remark" placeholder="备注（活动说明 / 内部口径）"
+            <input type="text" class="form-input" name="remark" placeholder="{{ .["t"]("admin.coupons.ph.remark", "备注（活动说明 / 内部口径）") }}"
                    autocomplete="off" maxlength="255">
             <div class="action-row">
-                <button type="submit" class="btn btn-primary">新建优惠码</button>
+                <button type="submit" class="btn btn-primary">{{ .["t"]("admin.coupons.create.submit", "新建优惠码") }}</button>
             </div>
         </form>
     </section>
     {{end}}
 
     <section class="card card-body">
-        <h2>优惠码（共 {{.Total}} 张）</h2>
+        <h2>{{ .["t"]("admin.coupons.list.heading", "优惠码") }}{{ .["t"]("admin.coupons.list.total_lead", "（共 ") }}{{.Total}}{{ .["t"]("admin.coupons.list.total_tail", " 张）") }}</h2>
         {{if selectedProject}}
         <form method="get" action="/admin/coupons" class="form-stack">
             <input type="hidden" name="project" value="{{selectedProject}}">
             <div class="form-inline">
                 <select class="form-select" name="status">
-                    <option value="">（状态：全部）</option>
+                    <option value="">{{ .["t"]("admin.coupons.status.all_option", "（状态：全部）") }}</option>
                     {{range _, o := filterOptions}}
                     <option value="{{o.Value}}" {{if o.Value == filterStatus}}selected{{end}}>{{o.Label}}</option>
                     {{end}}
                 </select>
                 <input type="text" class="form-input" name="keyword" value="{{filterKeyword}}"
-                       placeholder="关键词：券码 / 名称" autocomplete="off">
-                <button type="submit" class="btn btn-sm">筛选</button>
-                <a class="btn btn-sm btn-ghost" href="/admin/coupons?project={{selectedProject}}">重置</a>
+                       placeholder="{{ .["t"]("admin.coupons.ph.keyword", "关键词：券码 / 名称") }}" autocomplete="off">
+                <button type="submit" class="btn btn-sm">{{ .["t"]("admin.coupons.filter.submit", "筛选") }}</button>
+                <a class="btn btn-sm btn-ghost" href="/admin/coupons?project={{selectedProject}}">{{ .["t"]("admin.coupons.filter.reset", "重置") }}</a>
             </div>
         </form>
         {{end}}
 
         {{if len(rows) == 0}}
         <p class="hint">
-            {{if !selectedProject}}还没有站点工程{{else if filterKeyword}}没有匹配「{{filterKeyword}}」的优惠码{{else if filterStatus}}这个状态下没有优惠码{{else}}这个工程还没有优惠码{{end}} ——
-            用上面的「新建优惠码」建一张；{{if selectedProject}}若已经建过券，检查一下筛选条件是不是过窄了（<a href="/admin/coupons?project={{selectedProject}}">清掉筛选</a>）。{{end}}
+            {{if !selectedProject}}{{ .["t"]("admin.coupons.list.empty_no_project", "还没有站点工程") }}{{else if filterKeyword}}{{ .["t"]("admin.coupons.list.empty_no_match_lead", "没有匹配「") }}{{filterKeyword}}{{ .["t"]("admin.coupons.list.empty_no_match_tail", "」的优惠码") }}{{else if filterStatus}}{{ .["t"]("admin.coupons.list.empty_by_status", "这个状态下没有优惠码") }}{{else}}{{ .["t"]("admin.coupons.list.empty_project", "这个工程还没有优惠码") }}{{end}}{{ .["t"]("admin.coupons.list.empty_dash", " ——") }}
+            {{ .["t"]("admin.coupons.list.empty_build_lead", "用上面的") }}{{ .["t"]("admin.coupons.create.submit", "新建优惠码") }}{{ .["t"]("admin.coupons.list.empty_build_tail", "建一张；") }}{{if selectedProject}}{{ .["t"]("admin.coupons.list.empty_filter_lead", "若已经建过券，检查一下筛选条件是不是过窄了（") }}<a href="/admin/coupons?project={{selectedProject}}">{{ .["t"]("admin.coupons.filter.clear", "清掉筛选") }}</a>{{ .["t"]("admin.coupons.list.empty_filter_tail", "）。") }}{{end}}
         </p>
         {{else}}
         <div class="table-wrap" tabindex="0">
         <table class="data-table data-table-wide coupons-page-table">
             <thead>
             <tr>
-                <th>券码</th><th>名称</th><th>折扣</th><th>门槛</th><th>已用 / 上限</th>
-                <th>每人限次</th><th>时间窗</th><th>状态</th><th>备注</th><th>操作</th>
+                <th>{{ .["t"]("admin.coupons.col.code", "券码") }}</th><th>{{ .["t"]("admin.coupons.col.name", "名称") }}</th><th>{{ .["t"]("admin.coupons.col.discount", "折扣") }}</th><th>{{ .["t"]("admin.coupons.col.min_subtotal", "门槛") }}</th><th>{{ .["t"]("admin.coupons.col.usage", "已用 / 上限") }}</th>
+                <th>{{ .["t"]("admin.coupons.col.per_user", "每人限次") }}</th><th>{{ .["t"]("admin.coupons.col.window", "时间窗") }}</th><th>{{ .["t"]("admin.coupons.col.status", "状态") }}</th><th>{{ .["t"]("admin.coupons.col.remark", "备注") }}</th><th>{{ .["t"]("admin.coupons.col.actions", "操作") }}</th>
             </tr>
             </thead>
             <tbody>
             {{range _, r := rows}}
             <tr>
-                <td data-label="券码"><code>{{r.Code}}</code></td>
-                <td data-label="名称">{{r.Name}}</td>
-                <td data-label="折扣">{{r.DiscountLabel}}</td>
-                <td data-label="门槛">{{r.MinSubtotalLabel}}</td>
-                <td data-label="已用 / 上限">{{r.UsageLabel}}</td>
-                <td data-label="每人限次">{{r.PerUserLabel}}</td>
-                <td data-label="时间窗">{{r.WindowLabel}}</td>
-                <td data-label="状态"><span class="badge {{r.Badge}}">{{r.StatusLabel}}</span></td>
-                <td data-label="备注">{{r.Remark}}</td>
-                <td data-label="操作">
+                <td data-label="{{tr("admin.coupons.col.code", "券码")}}"><code>{{r.Code}}</code></td>
+                <td data-label="{{tr("admin.coupons.col.name", "名称")}}">{{r.Name}}</td>
+                <td data-label="{{tr("admin.coupons.col.discount", "折扣")}}">{{r.DiscountLabel}}</td>
+                <td data-label="{{tr("admin.coupons.col.min_subtotal", "门槛")}}">{{r.MinSubtotalLabel}}</td>
+                <td data-label="{{tr("admin.coupons.col.usage", "已用 / 上限")}}">{{r.UsageLabel}}</td>
+                <td data-label="{{tr("admin.coupons.col.per_user", "每人限次")}}">{{r.PerUserLabel}}</td>
+                <td data-label="{{tr("admin.coupons.col.window", "时间窗")}}">{{r.WindowLabel}}</td>
+                <td data-label="{{tr("admin.coupons.col.status", "状态")}}"><span class="badge {{r.Badge}}">{{r.StatusLabel}}</span></td>
+                <td data-label="{{tr("admin.coupons.col.remark", "备注")}}">{{r.Remark}}</td>
+                <td data-label="{{tr("admin.coupons.col.actions", "操作")}}">
                     <div class="action-row">
                         {{if r.Expanded}}
-                        <a class="btn btn-sm" href="{{r.CollapseURL}}">收起</a>
+                        <a class="btn btn-sm" href="{{r.CollapseURL}}">{{tr("admin.coupons.action.collapse", "收起")}}</a>
                         {{else}}
-                        <a class="btn btn-sm" href="{{r.EditURL}}">修改</a>
+                        <a class="btn btn-sm" href="{{r.EditURL}}">{{tr("admin.coupons.action.edit", "修改")}}</a>
                         {{end}}
                         {* 停用 / 启用走同一个更新接口：表单把券的全部可改字段回送一遍 ——
                            服务端是整体更新，漏送的字段会被写成零值（把门槛悄悄清零）。 *}
@@ -188,7 +178,7 @@
                             <input type="hidden" name="csrf_token" value="{{csrf}}">
                             <input type="hidden" name="returnQuery" value="{{r.Back}}">
                             <input type="hidden" name="id" value="{{r.Form.ID}}">
-                            <button type="submit" class="btn btn-sm btn-danger">删除</button>
+                            <button type="submit" class="btn btn-sm btn-danger">{{tr("admin.coupons.action.delete", "删除")}}</button>
                         </form>
                     </div>
                 </td>
@@ -198,10 +188,7 @@
         </table>
         </div>
         <p class="hint">
-            「已用 / 上限」里的<strong>不限</strong>表示这张券没有总次数限制（上限填 0）；
-            删除只允许在没有核销记录时进行 —— <strong>有核销记录的券请改用停用</strong>，
-            删了记录就指向一张查不到的券，对账时分不清是数据坏了还是券被删了。
-            点某一行的「修改」会在下方展开这张券的编辑表单与<strong>核销记录</strong>（同一页靠 couponId 参数展开，不跳走）。
+            {{ .["t"]("admin.coupons.list.footer.lead", "「已用 / 上限」里的") }}<strong>{{ .["t"]("admin.coupons.list.footer.strong_unlimited", "不限") }}</strong>{{ .["t"]("admin.coupons.list.footer.mid", "表示这张券没有总次数限制（上限填 0）；删除只允许在没有核销记录时进行 —— ") }}<strong>{{ .["t"]("admin.coupons.list.footer.strong_disable", "有核销记录的券请改用停用") }}</strong>{{ .["t"]("admin.coupons.list.footer.mid2", "，删了记录就指向一张查不到的券，对账时分不清是数据坏了还是券被删了。点某一行的「修改」会在下方展开这张券的编辑表单与") }}<strong>{{ .["t"]("admin.coupons.redemptions.heading", "核销记录") }}</strong>{{ .["t"]("admin.coupons.list.footer.tail", "（同一页靠 couponId 参数展开，不跳走）。") }}
         </p>
         {{include "partials/pagination.html"}}
         {{end}}
@@ -209,15 +196,14 @@
 
     {{if .HasDetail}}
     <section class="card card-body">
-        <h2>修改优惠码 <code>{{detail.Code}}</code></h2>
+        <h2>{{ .["t"]("admin.coupons.detail.heading", "修改优惠码") }} <code>{{detail.Code}}</code></h2>
         <p class="hint">
             <span class="badge {{detail.Badge}}">{{detail.StatusLabel}}</span>
-            当前口径 {{detail.DiscountLabel}} · 门槛 {{detail.MinSubtotalLabel}}
-            · 已用 {{detail.UsageLabel}} · 每人限次 {{detail.PerUserLabel}} · 时间窗 {{detail.WindowLabel}}
+            {{ .["t"]("admin.coupons.detail.meta.current", "当前口径 ") }}{{detail.DiscountLabel}}{{ .["t"]("admin.coupons.detail.meta.min", " · 门槛 ") }}{{detail.MinSubtotalLabel}}
+            {{ .["t"]("admin.coupons.detail.meta.used", " · 已用 ") }}{{detail.UsageLabel}}{{ .["t"]("admin.coupons.detail.meta.per_user", " · 每人限次 ") }}{{detail.PerUserLabel}}{{ .["t"]("admin.coupons.detail.meta.window", " · 时间窗 ") }}{{detail.WindowLabel}}
         </p>
         <p class="hint">
-            <strong>券码不可改</strong>：改码等于换一张券，历史核销记录里的码会指向一个查不到的值。
-            要停止使用请把状态选成「停用」（<strong>停用不删</strong>，历史核销记录还要读它）。
+            <strong>{{ .["t"]("admin.coupons.detail.immutable.strong", "券码不可改") }}</strong>{{ .["t"]("admin.coupons.detail.immutable.mid", "：改码等于换一张券，历史核销记录里的码会指向一个查不到的值。要停止使用请把状态选成「停用」（") }}<strong>{{ .["t"]("admin.coupons.detail.immutable.strong_keep", "停用不删") }}</strong>{{ .["t"]("admin.coupons.detail.immutable.tail", "，历史核销记录还要读它）。") }}
         </p>
         <form method="post" action="/admin/coupons/update" class="form-stack">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
@@ -225,9 +211,9 @@
             <input type="hidden" name="id" value="{{detail.ID}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <div class="form-inline">
-                <input type="text" class="form-input" value="{{detail.Code}}" readonly aria-label="券码（不可修改）">
+                <input type="text" class="form-input" value="{{detail.Code}}" readonly aria-label="{{ .["t"]("admin.coupons.detail.code_aria", "券码（不可修改）") }}">
                 <input type="text" class="form-input" name="name" value="{{detail.Name}}"
-                       placeholder="名称" autocomplete="off" maxlength="120">
+                       placeholder="{{ .["t"]("admin.coupons.detail.ph.name", "名称") }}" autocomplete="off" maxlength="120">
             </div>
             <div class="form-inline">
                 <select class="form-select" name="discountType" required>
@@ -238,17 +224,16 @@
                 <input type="number" class="form-input" name="discountValue" value="{{detail.DiscountValue}}"
                        inputmode="numeric" step="1" min="1" required>
                 <input type="number" class="form-input" name="minSubtotal" value="{{detail.MinSubtotal}}"
-                       placeholder="使用门槛（分）" inputmode="numeric" step="1" min="0">
+                       placeholder="{{ .["t"]("admin.coupons.detail.ph.min_subtotal", "使用门槛（分）") }}" inputmode="numeric" step="1" min="0">
             </div>
             <p class="hint">
-                <strong>按比例</strong>填 1..100（折扣力度，20 = 减 20%）；<strong>固定金额</strong>填分（2000 = 减 20.00 元）；
-                门槛填分（9900 = 满 99.00 元可用）。改完保存时服务端会按整张券重新校验一遍。
+                <strong>{{ .["t"]("admin.coupons.unit.percent", "按比例") }}</strong>{{ .["t"]("admin.coupons.detail.unit_hint.mid", "填 1..100（折扣力度，20 = 减 20%）；") }}<strong>{{ .["t"]("admin.coupons.unit.fixed", "固定金额") }}</strong>{{ .["t"]("admin.coupons.detail.unit_hint.tail", "填分（2000 = 减 20.00 元）；门槛填分（9900 = 满 99.00 元可用）。改完保存时服务端会按整张券重新校验一遍。") }}
             </p>
             <div class="form-inline">
                 <input type="number" class="form-input" name="maxUses" value="{{detail.MaxUses}}"
-                       placeholder="总次数上限（0 = 不限）" inputmode="numeric" step="1" min="0">
+                       placeholder="{{ .["t"]("admin.coupons.ph.max_uses", "总次数上限（0 = 不限）") }}" inputmode="numeric" step="1" min="0">
                 <input type="number" class="form-input" name="perUserLimit" value="{{detail.PerUserLimit}}"
-                       placeholder="每人限次（0 = 不限）" inputmode="numeric" step="1" min="0">
+                       placeholder="{{ .["t"]("admin.coupons.ph.per_user_limit", "每人限次（0 = 不限）") }}" inputmode="numeric" step="1" min="0">
                 <select class="form-select" name="status">
                     {{range _, s := enableOptions}}
                     <option value="{{s.Value}}" {{if s.Value == detail.StatusValue}}selected{{end}}>{{s.Label}}</option>
@@ -257,45 +242,43 @@
             </div>
             <div class="form-inline">
                 <input type="text" class="form-input" name="startsAt" value="{{detail.StartsAt}}"
-                       placeholder="开始时间（留空 = 不限），如 2026-01-01 09:00" autocomplete="off">
+                       placeholder="{{ .["t"]("admin.coupons.detail.ph.starts_at", "开始时间（留空 = 不限），如 2026-01-01 09:00") }}" autocomplete="off">
                 <input type="text" class="form-input" name="endsAt" value="{{detail.EndsAt}}"
-                       placeholder="结束时间（留空 = 不限），如 2026-01-31 23:59" autocomplete="off">
+                       placeholder="{{ .["t"]("admin.coupons.detail.ph.ends_at", "结束时间（留空 = 不限），如 2026-01-31 23:59") }}" autocomplete="off">
             </div>
             <p class="hint">
-                时间窗按站点本地时间理解，接受 <code>2006-01-02</code> 与 <code>2006-01-02 15:04</code> 两种写法；
-                结束时间必须晚于开始时间。
+                {{ .["t"]("admin.coupons.detail.time_hint.lead", "时间窗按站点本地时间理解，接受") }} <code>2006-01-02</code> {{ .["t"]("admin.coupons.detail.time_hint.mid", "与") }} <code>2006-01-02 15:04</code> {{ .["t"]("admin.coupons.detail.time_hint.tail", "两种写法；结束时间必须晚于开始时间。") }}
             </p>
             <input type="text" class="form-input" name="remark" value="{{detail.Remark}}"
-                   placeholder="备注（活动说明 / 内部口径）" autocomplete="off" maxlength="255">
+                   placeholder="{{ .["t"]("admin.coupons.ph.remark", "备注（活动说明 / 内部口径）") }}" autocomplete="off" maxlength="255">
             <div class="action-row">
-                <button type="submit" class="btn btn-primary">保存修改</button>
-                <a class="btn btn-ghost" href="{{.DetailCollapseURL}}">收起</a>
+                <button type="submit" class="btn btn-primary">{{ .["t"]("admin.coupons.detail.submit", "保存修改") }}</button>
+                <a class="btn btn-ghost" href="{{.DetailCollapseURL}}">{{ .["t"]("admin.coupons.action.collapse", "收起") }}</a>
             </div>
         </form>
     </section>
 
     <section class="card card-body">
-        <h2>核销记录 <code>{{detail.Code}}</code></h2>
+        <h2>{{ .["t"]("admin.coupons.redemptions.heading", "核销记录") }} <code>{{detail.Code}}</code></h2>
         <p class="hint">
-            <strong>核销发生在建单事务内</strong>：用券与写单同生共死，所以这里只有结果、
-            <strong>没有手工核销入口</strong>。记录是券的凭据 —— 有核销记录的券不允许删除。
+            <strong>{{ .["t"]("admin.coupons.redemptions.strong_in_txn", "核销发生在建单事务内") }}</strong>{{ .["t"]("admin.coupons.redemptions.mid", "：用券与写单同生共死，所以这里只有结果、") }}<strong>{{ .["t"]("admin.coupons.redemptions.strong_no_manual", "没有手工核销入口") }}</strong>{{ .["t"]("admin.coupons.redemptions.tail", "。记录是券的凭据 —— 有核销记录的券不允许删除。") }}
         </p>
         {{if len(redemptions) == 0}}
-        <p class="hint">这张券还没有被核销过。</p>
+        <p class="hint">{{ .["t"]("admin.coupons.redemptions.empty", "这张券还没有被核销过。") }}</p>
         {{else}}
-        <p class="hint">共 {{.RedemptionTotal}} 条，下面列出最近 {{.RedemptionLimit}} 条。</p>
+        <p class="hint">{{ .["t"]("admin.coupons.redemptions.total_lead", "共 ") }}{{.RedemptionTotal}}{{ .["t"]("admin.coupons.redemptions.total_mid", " 条，下面列出最近 ") }}{{.RedemptionLimit}}{{ .["t"]("admin.coupons.redemptions.total_tail", " 条。") }}</p>
         <div class="table-wrap" tabindex="0">
         <table class="data-table data-table-wide coupons-page-table">
             <thead>
-            <tr><th>核销时间</th><th>订单号</th><th>核销人 userId</th><th>抵扣金额</th></tr>
+            <tr><th>{{ .["t"]("admin.coupons.redemptions.col.time", "核销时间") }}</th><th>{{ .["t"]("admin.coupons.redemptions.col.order_no", "订单号") }}</th><th>{{ .["t"]("admin.coupons.redemptions.col.user", "核销人 userId") }}</th><th>{{ .["t"]("admin.coupons.redemptions.col.discount", "抵扣金额") }}</th></tr>
             </thead>
             <tbody>
             {{range _, rd := redemptions}}
             <tr>
-                <td data-label="核销时间">{{rd.Time}}</td>
-                <td data-label="订单号"><code>{{rd.OrderNo}}</code></td>
-                <td data-label="核销人 userId">{{rd.UserID}}</td>
-                <td data-label="抵扣金额">{{rd.DiscountLabel}}</td>
+                <td data-label="{{tr("admin.coupons.redemptions.col.time", "核销时间")}}">{{rd.Time}}</td>
+                <td data-label="{{tr("admin.coupons.redemptions.col.order_no", "订单号")}}"><code>{{rd.OrderNo}}</code></td>
+                <td data-label="{{tr("admin.coupons.redemptions.col.user", "核销人 userId")}}">{{rd.UserID}}</td>
+                <td data-label="{{tr("admin.coupons.redemptions.col.discount", "抵扣金额")}}">{{rd.DiscountLabel}}</td>
             </tr>
             {{end}}
             </tbody>

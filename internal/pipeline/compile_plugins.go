@@ -37,7 +37,10 @@ func ComponentSetWithPlugins(asm *plugincontract.Assembly) (set *jet.Set, opts [
 		return nil, nil, err
 	}
 	if asm != nil && len(asm.PluginFS) > 0 {
-		set, err = templates.NewCompositeSet(asm.PluginFS)
+		// 按启用集指纹复用 Jet Set（审计 PERF-006）：插件模板的解析结果与
+		// 「哪一批插件被启用」一一对应，启用集不变就没有理由重新解析一遍。
+		// 指纹为空时 NewCompositeSetCached 自动退化为每次新建。
+		set, err = templates.NewCompositeSetCached(asm.Fingerprint, asm.PluginFS)
 		if err != nil {
 			return nil, nil, err
 		}

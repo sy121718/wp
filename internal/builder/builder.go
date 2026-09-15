@@ -96,6 +96,9 @@ type CompiledPage struct {
 	TrackConfig string
 	// GA4Head 站点统计代码片段（来自 WithGA4MeasurementID；空 = 零字节注入）。
 	GA4Head string
+	// SearchConsoleHead Google Search Console 站点验证 meta（审计 SEO-009）。
+	// 来自 WithSearchConsoleVerification；空 = 零字节注入。
+	SearchConsoleHead string
 }
 
 // CompileOption 编译选项。
@@ -116,10 +119,18 @@ type compileConfig struct {
 	projectID     string
 	currentPath   string
 	// sitePages 系统页面槽位 → 当前语言线上路径（BIZ-1，装配层解析后传入）。
-	sitePages  map[string]string
-	assetProbe func(string) []int
-	theme      *ThemeSettings
-	ctx        context.Context
+	sitePages map[string]string
+	// usage 依赖线索记录器（可选，审计 VIS-006）：编译期记录消费过的系统页面槽位。
+	usage core.UsageRecorder
+	// archiveEntityType / archiveEntityID 当前归档实例的实体（审计 EDT-004）：
+	// 归档页里的集合组件据此取筛选值，而不是把筛选条件写死在 Props 里。
+	archiveEntityType string
+	archiveEntityID   string
+	// siteLinkResolver 站内链接本地化器（审计 I18N-015，可空）。
+	siteLinkResolver func(string) string
+	assetProbe       func(string) []int
+	theme            *ThemeSettings
+	ctx              context.Context
 	// alternates 同页其他语言版本（hreflang 互指，多语言 P3）。
 	alternates []Alternate
 	// locales 站点语言切换器条目（多语言 P3）：与 alternates 同源（装配层一次算出）。
@@ -138,9 +149,14 @@ type compileConfig struct {
 	// 与 enhanceSource 分开：组件增强与原始控件是两层关注点（见 ui_script.go）。
 	uiSources map[string]string
 	uiStyle   string
+	// structureSlots 结构槽位绑定（审计 VIS-001）：编译期展开为 root 首尾的 core.layoutSlot 节点。
 	// ga4MeasurementID 站点 GA4 测量 ID（SiteSettings 快照，空 = 不注入统计代码）。
 	// 站点级设置在这里进构建上下文：它属于本次构建的输入，不是进程级全局状态。
 	ga4MeasurementID string
+	// searchConsoleVerification 站点 GSC 验证 token（SiteSettings 快照，空 = 不注入验证 meta）。
+	// 与 ga4MeasurementID 同源、同一条链路（审计 SEO-009）。
+	searchConsoleVerification string
+	structureSlots            []StructureSlot
 	// enhanceSource 客户端增强脚本源码（构建期按产物特征裁剪后内联进产物）。
 	//
 	// 由调用方注入而不是 builder 自己 embed：前端资产统一放在 internal/templates/static/，
@@ -162,6 +178,34 @@ func WithContentResolver(r core.ContentResolver) CompileOption {
 }
 
 // WithBlockResolver 注入全局块解析器（构建期内联展开 core.globalref 引用，方案 C）。
+// WithSiteLinkResolver 注入站内链接本地化器（审计 I18N-015）。
+//
+// 实现由装配层提供（pipeline 的 LangURLRule），必须幂等 —— 见 core.SetSiteLinkResolver。
+// 不注入时链接原样输出（缺前缀是可见降级，抛错会让整页构建失败）。
+func WithSiteLinkResolver(fn func(logicalPath string) string) CompileOption {
+	return func(c *compileConfig) {
+		c.siteLinkResolver = fn
+	}
+}
+
+// WithArchiveEntity 注入当前归档实例的实体（审计 EDT-004）。
+//
+// 值为空表示不在归档上下文：手工页面与详情页照旧用组件 Props 里的静态筛选。
+func WithArchiveEntity(entityType, entityID string) CompileOption {
+	return func(c *compileConfig) {
+		c.archiveEntityType = entityType
+		c.archiveEntityID = entityID
+	}
+}
+
+// WithUsageRecorder 注入编译期依赖线索记录器（审计 VIS-006）。
+//
+// 未注入时渲染路径只取值、不记录：预览与片段这类「产物不进 Manifest」的场景
+// 不需要记录，行为与改造前完全一致。
+func WithUsageRecorder(r core.UsageRecorder) CompileOption {
+	return func(c *compileConfig) { c.usage = r }
+}
+
 func WithBlockResolver(r core.BlockResolver) CompileOption {
 	return func(c *compileConfig) { c.block = r }
 }
@@ -531,8 +575,7 @@ func Compile(p *Page, opts ...CompileOption) (res *CompiledPage, err error) {
 		Plugin: cfg.plugin, Collection: cfg.collection,
 		Product: cfg.product, ContentSource: cfg.contentSource,
 		Navigation: cfg.navigation, ProjectID: cfg.projectID, CurrentPath: cfg.currentPath,
-		SitePages: cfg.sitePages,
-		Lang:      lang, Translate: translate, Locales: cfg.locales,
+		Lang: lang, Translate: translate, Locales: cfg.locales,
 		ContentTranslate: contentTranslateFunc(cfg.contentTranslator),
 		ImageDefaults: core.ImageDefaults{
 			LazyLoad: cfg.theme.LazyLoadEnabled(),
@@ -542,14 +585,25 @@ func Compile(p *Page, opts ...CompileOption) (res *CompiledPage, err error) {
 		RevealDefaultEntrance: cfg.theme.RevealDefaultEntranceOf(),
 		AssetProbe:            cfg.assetProbe,
 	}
+	// 槽位映射与依赖线索记录器走 setter：sitePages 是私有的（取值即记录，见 core.SitePage）。
+	ctx.SetSitePages(cfg.sitePages)
+	ctx.SetUsageRecorder(cfg.usage)
+	ctx.SetArchiveEntity(cfg.archiveEntityType, cfg.archiveEntityID)
+	ctx.SetSiteLinkResolver(cfg.siteLinkResolver)
 	// 顶层节点先建 view 树（含 CSS 编译），再统一渲染：main 地标要先知道每个顶层节点的
 	// 语义标签，才能决定包裹区间（渲染顺序与逐节点渲染完全一致）。
 	type rootView struct {
 		view *nodeView
 		tag  string
+		// isSlot 是否为结构槽位节点：main 地标判定跳过它们（页眉页脚本来就在 main 之外，
+		// 被包进 main 会让 banner / contentinfo 地标退化成普通元素）。
+		isSlot bool
 	}
-	roots := make([]rootView, 0, len(p.Root))
-	for _, n := range p.Root {
+	// 结构槽位展开（审计 VIS-001）：绑定变成 root 首尾的 core.layoutSlot 节点，
+	// 页眉页脚因此进入 AST，与页面里的节点走同一条渲染与 CSS 收集路径。
+	rootNodes := expandStructureSlots(p.Root, cfg.structureSlots)
+	roots := make([]rootView, 0, len(rootNodes))
+	for _, n := range rootNodes {
 		if skippedIDs[n.ID] {
 			continue // 配置不完整，已在校验阶段跳过（日志已记录原因）
 		}
@@ -558,7 +612,10 @@ func Compile(p *Page, opts ...CompileOption) (res *CompiledPage, err error) {
 		if verr != nil {
 			return nil, verr
 		}
-		roots = append(roots, rootView{view: v, tag: strings.ToLower(strings.TrimSpace(v.Tag))})
+		roots = append(roots, rootView{
+			view: v, tag: strings.ToLower(strings.TrimSpace(v.Tag)),
+			isSlot: isLayoutSlotNode(n),
+		})
 	}
 
 	// main 地标（页面设置开关，默认关）：正文包进唯一的 <main>，屏幕阅读器可直接跳到内容。
@@ -567,10 +624,10 @@ func Compile(p *Page, opts ...CompileOption) (res *CompiledPage, err error) {
 	mainStart, mainEnd := -1, -1
 	if p.Settings.Layout.MainLandmark && len(roots) > 0 {
 		mainStart, mainEnd = 0, len(roots)
-		for mainStart < mainEnd && (roots[mainStart].tag == "header" || roots[mainStart].tag == "footer") {
+		for mainStart < mainEnd && (roots[mainStart].isSlot || roots[mainStart].tag == "header" || roots[mainStart].tag == "footer") {
 			mainStart++
 		}
-		for mainEnd > mainStart && (roots[mainEnd-1].tag == "footer" || roots[mainEnd-1].tag == "header") {
+		for mainEnd > mainStart && (roots[mainEnd-1].isSlot || roots[mainEnd-1].tag == "footer" || roots[mainEnd-1].tag == "header") {
 			mainEnd--
 		}
 	}
@@ -602,7 +659,20 @@ func Compile(p *Page, opts ...CompileOption) (res *CompiledPage, err error) {
 	if cfg.translate != nil {
 		breadcrumbHome = cfg.translate("site.breadcrumb.home", "首页")
 	}
-	seoHead := BuildSEOHead(p.Settings.SEO, p.Settings.SEO.Canonical, p.Settings.SEO.Title, p.Settings.SEO.Description, breadcrumbHome, cfg.alternates)
+	// SEO 的文本字段按语言取译文（审计 I18N-014）：它们烘在产物头部（<title> / og:title /
+	// meta description）—— 英文站点如果标题还是中文，从搜索结果点进来的人会以为走错了站。
+	//
+	// 与候选收集侧共用语境常量（写读两侧各写一份字面量，迟早分叉而看不出）。
+	// contentTranslateFunc 对 nil 取词器返回 nil 函数（见它的注释），这里必须先兜底：
+	// 未接入内容翻译的站点（默认语言、单语言、或装配没注入取词器）走的就是这条路，
+	// 直接调用会 nil panic 掉整个构建 —— 而「没配译文」恰恰是最常见的情况。
+	seoTrans := contentTranslateFunc(cfg.contentTranslator)
+	if seoTrans == nil {
+		seoTrans = func(sourceText, _ string) string { return sourceText }
+	}
+	seoTitle := seoTrans(p.Settings.SEO.Title, SEOTitleContext)
+	seoDescription := seoTrans(p.Settings.SEO.Description, SEODescriptionContext)
+	seoHead := BuildSEOHead(p.Settings.SEO, p.Settings.SEO.Canonical, seoTitle, seoDescription, breadcrumbHome, cfg.alternates)
 
 	// 产物 CSS = 内核编译样式 + 插件静态样式，用 @layer 显式分层：
 	//   sky-base（内核基础）< sky-plugin（插件）< sky-auto（容器宽度自动适配）<
@@ -641,20 +711,21 @@ func Compile(p *Page, opts ...CompileOption) (res *CompiledPage, err error) {
 	}
 
 	return &CompiledPage{
-		Lang:            lang,
-		Title:           p.Settings.SEO.Title,
-		MetaDescription: p.Settings.SEO.Description,
-		SEOHead:         seoHead,
-		GA4Head:         buildGA4Head(cfg.ga4MeasurementID),
-		TrackConfig:     buildTrackConfig(cfg.projectID, lang),
-		BodyClasses:     classes,
-		HTML:            htmlBuf.String(),
-		CSS:             css,
-		ThemeVarsCSS:    ThemeVarsCSS(cfg.theme),
-		EnhanceSource:   cfg.enhanceSource,
-		TrackSource:     cfg.trackSource,
-		UISources:       cfg.uiSources,
-		UIStyle:         cfg.uiStyle,
+		Lang:              lang,
+		Title:             seoTitle,
+		MetaDescription:   seoDescription,
+		SEOHead:           seoHead,
+		GA4Head:           buildGA4Head(cfg.ga4MeasurementID),
+		SearchConsoleHead: buildSearchConsoleHead(cfg.searchConsoleVerification),
+		TrackConfig:       buildTrackConfig(cfg.projectID, lang),
+		BodyClasses:       classes,
+		HTML:              htmlBuf.String(),
+		CSS:               css,
+		ThemeVarsCSS:      ThemeVarsCSS(cfg.theme),
+		EnhanceSource:     cfg.enhanceSource,
+		TrackSource:       cfg.trackSource,
+		UISources:         cfg.uiSources,
+		UIStyle:           cfg.uiStyle,
 	}, nil
 }
 
@@ -708,15 +779,16 @@ func RenderDocument(c *CompiledPage) (string, error) {
 		lang = i18n.GetDefaultLang()
 	}
 	v := documentView{
-		Lang:            lang,
-		Title:           c.Title,
-		MetaDescription: c.MetaDescription,
-		SEOHead:         c.SEOHead,
-		GA4Head:         c.GA4Head,
-		BodyClass:       strings.Join(c.BodyClasses, " "),
-		HTML:            c.HTML,
-		CSS:             c.CSS + uiCSS,
-		ThemeVarsCSS:    c.ThemeVarsCSS,
+		Lang:              lang,
+		Title:             c.Title,
+		MetaDescription:   c.MetaDescription,
+		SEOHead:           c.SEOHead,
+		GA4Head:           c.GA4Head,
+		SearchConsoleHead: c.SearchConsoleHead,
+		BodyClass:         strings.Join(c.BodyClasses, " "),
+		HTML:              c.HTML,
+		CSS:               c.CSS + uiCSS,
+		ThemeVarsCSS:      c.ThemeVarsCSS,
 		// 采集脚本无条件排在最前：一是每页都要有（不像增强按特征挑块），
 		// 二是它要尽早写 cookie —— 排在交互脚本后面的话，前一个脚本抛错会连坐，
 		// 而归因丢数据是静默的，没人会发现少了什么。
@@ -735,16 +807,17 @@ func RenderDocument(c *CompiledPage) (string, error) {
 
 // documentView 文档骨架渲染数据（CompiledPage 拍平 + 增强脚本进模板）。
 type documentView struct {
-	Lang            string // <html lang>（目标语言，空回退默认语言）
-	Title           string
-	MetaDescription string
-	SEOHead         string // canonical / OG / Twitter / JSON-LD（已转义，模板 unsafe 输出）
-	GA4Head         string // 站点统计代码（服务端拼装、ID 过白名单；模板 unsafe 输出）
-	BodyClass       string // strings.Join(c.BodyClasses, " ")，模板 unsafe 原样输出
-	HTML            string
-	CSS             string
-	ThemeVarsCSS    string
-	EnhanceScript   string
+	Lang              string // <html lang>（目标语言，空回退默认语言）
+	Title             string
+	MetaDescription   string
+	SEOHead           string // canonical / OG / Twitter / JSON-LD（已转义，模板 unsafe 输出）
+	GA4Head           string // 站点统计代码（服务端拼装、ID 过白名单；模板 unsafe 输出）
+	SearchConsoleHead string // GSC 站点验证 meta（服务端拼装、token 过白名单；模板 unsafe 输出）
+	BodyClass         string // strings.Join(c.BodyClasses, " ")，模板 unsafe 原样输出
+	HTML              string
+	CSS               string
+	ThemeVarsCSS      string
+	EnhanceScript     string
 }
 
 // documentTpl* document.jet 的进程级单例（embed 静态模板编译一次全局复用）。

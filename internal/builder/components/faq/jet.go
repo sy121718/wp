@@ -29,6 +29,9 @@ type FaqItemView struct {
 type View struct {
 	// Items 常见问题条目（顺序一致）。
 	Items []FaqItemView
+	// FAQJSONLD FAQPage 结构化数据片段（审计 SEO-006），含 <script> 外壳；
+	// 模板侧 unsafe 原样输出（内容由 encoding/json 序列化，不是用户拼的 HTML）。
+	FAQJSONLD string
 }
 
 // BuildView 生成常见问题渲染视图：问题/答案/展开态预计算。
@@ -37,5 +40,5 @@ func BuildView(p *Props) View {
 	for _, it := range p.Items {
 		items = append(items, FaqItemView{Question: it.Question, Answer: core.RichTextHTML(it.Answer), Open: it.Open})
 	}
-	return View{Items: items}
+	return View{Items: items, FAQJSONLD: FAQPageJSONLD(p)}
 }

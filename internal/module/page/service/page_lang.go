@@ -230,6 +230,15 @@ func (s *Service) buildDependencies(ctx context.Context, in pipeline.BuildInput)
 	if s.pageUsesContentTranslation(ctx, in) {
 		deps = append(deps, pipeline.I18NContentDependency(i18n.ContentRevision()))
 	}
+	// 系统页面槽位（审计 VIS-006）：只登记**本页真实消费过**的槽位，来源是编译期记录。
+	//
+	// 与下面从文档静态推导的依赖不同：文档里没有「我用了购物车槽位」这种声明，
+	// 那是组件渲染时才取的。静态扫节点类型要维护一张「组件 → 槽位」映射表，
+	// 而那张表与渲染代码迟早漂移 —— 漂移的表现是槽位换绑后该页不重建，
+	// 站点上旧链接继续生效且无人报错。
+	for _, slot := range in.Usage.SiteSlotList() {
+		deps = append(deps, pipeline.Dependency{Kind: pipeline.DepKindSiteSlot, Key: slot})
+	}
 	if page, err := s.model.GetByID(ctx, in.PageID, ""); err == nil {
 		deps = append(deps, s.pageDependencyKeys(ctx, page)...)
 	} else {
@@ -279,7 +288,8 @@ func pageMayUseContentTranslation(page *builder.Page) bool {
 	if len(builder.CollectContentCandidates(page)) > 0 {
 		return true
 	}
-	if page.Settings.Structure.HeaderBlockID != "" || page.Settings.Structure.FooterBlockID != "" {
+	// 任何槽位绑定都可能带可翻译文本（页眉 / 页脚 / 公告条…），不逐字段判。
+	if !page.Settings.Structure.IsEmpty() {
 		return true
 	}
 	return len(builder.ReferencedBlockIDs(page.Root)) > 0

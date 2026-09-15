@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	mediadto "go_wp/internal/module/media/dto"
+	mediacontract "go_wp/internal/module/media/contract"
 	pagedto "go_wp/internal/module/page/dto"
 	pubcontract "go_wp/internal/module/publication/contract"
 )
@@ -51,7 +51,7 @@ func (s *Service) Delete(ctx context.Context, req *pagedto.DeleteReq) (err error
 	}
 	// 先清媒体引用再软删：引用缓存失败则整单删除中断，避免留下「页面已删、引用仍在」的残留。
 	if s.media != nil {
-		if _, rerr := s.media.SyncReferences(ctx, &mediadto.SyncRefsReq{
+		if _, rerr := s.media.SyncReferences(ctx, &mediacontract.SyncRefsInput{
 			RefKind:  "page",
 			RefID:    req.ID,
 			RefTitle: page.DraftPath,

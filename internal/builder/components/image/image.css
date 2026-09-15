@@ -49,7 +49,10 @@
   @endif
 }
 
-/* 悬浮形态：进 hover 桶（构建期包 @media (hover: hover)，触屏不输出）。 */
+/* 悬浮形态：进 hover 桶（构建期包 @media (hover: hover)，触屏不输出）。
+
+   UI-006 判定：**装饰性，不补触屏等价形态**。缩放 / 滤镜只是鼠标下的动效，
+   图片的交互入口是灯箱链接（:target 驱动，触屏照常可用）。 */
 @hover &:hover {
   transform: {{hover_scale}};
   filter: {{hover_filter}};

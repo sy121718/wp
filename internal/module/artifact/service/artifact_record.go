@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"sort"
 	"strings"
 	"time"
 
@@ -111,15 +112,16 @@ func (s *Service) Record(ctx context.Context, req *artifactdto.RecordReq) (res *
 		// 第二条 (artifact_id, content_hash) 直接撞主键，导致整个归档事务失败
 		//（表现为「首次归档含同内容文件必失败」）。
 		seenHashes := make(map[string]struct{}, len(parsedManifest.Files))
-		for _, fileHash := range parsedManifest.Files {
-			if strings.TrimSpace(fileHash) == "" {
+		for _, fileName := range sortedManifestFiles(parsedManifest.Files) {
+			fileHash := strings.TrimSpace(parsedManifest.Files[fileName])
+			if fileHash == "" {
 				continue
 			}
 			if _, dup := seenHashes[fileHash]; dup {
 				continue
 			}
 			seenHashes[fileHash] = struct{}{}
-			if err := ensureContentObject(tx, fileHash, req.ArtifactProvider, req.ArtifactKey, now); err != nil {
+			if err := ensureContentObject(tx, fileHash, req.ArtifactProvider, artifactObjectKey(req.ArtifactKey, fileName), now); err != nil {
 				return err
 			}
 			if err := tx.Create(&artifactmodel.PageArtifactObjectEntity{
@@ -253,11 +255,12 @@ func (s *Service) EnsureRecord(ctx context.Context, req *artifactdto.RecordReq) 
 		objects := make([]artifactmodel.PageArtifactObjectEntity, 0, len(parsedManifest.Files))
 		contentObjects := make([]artifactmodel.ContentObjectEntity, 0, len(parsedManifest.Files))
 		seen := make(map[string]struct{}, len(parsedManifest.Files))
-		// 遍历 VALUE（内容哈希）而非 map KEY（文件名）：内容寻址语义。
-		// seen 去重：多个文件名共享同一内容哈希时只归档一条闭包 + 一条内容对象，
-		// 避免 (artifact_id, content_hash) 主键冲突。
-		for _, fileHash := range parsedManifest.Files {
-			if strings.TrimSpace(fileHash) == "" {
+		// 闭包记按内容哈希去重（多个文件名共享同一内容时只归档一条），
+		// 但 object_key 必须精确到**文件**（见 artifactObjectKey）：
+		// 文件名按字典序遍历，保证「首个引用该 hash 的文件」是确定的。
+		for _, fileName := range sortedManifestFiles(parsedManifest.Files) {
+			fileHash := strings.TrimSpace(parsedManifest.Files[fileName])
+			if fileHash == "" {
 				continue
 			}
 			if _, dup := seen[fileHash]; dup {
@@ -270,7 +273,7 @@ func (s *Service) EnsureRecord(ctx context.Context, req *artifactdto.RecordReq) 
 			contentObjects = append(contentObjects, artifactmodel.ContentObjectEntity{
 				ContentHash: fileHash,
 				Provider:    req.ArtifactProvider,
-				ObjectKey:   req.ArtifactKey,
+				ObjectKey:   artifactObjectKey(req.ArtifactKey, fileName),
 				ByteSize:    0,
 				CreatedAt:   now,
 			})
@@ -284,6 +287,35 @@ func (s *Service) EnsureRecord(ctx context.Context, req *artifactdto.RecordReq) 
 	}
 	// 全新记录。
 	return s.Record(ctx, req)
+}
+
+// sortedManifestFiles 按文件名（manifest.files 的 key）字典序返回文件名列表。
+//
+// map 的遍历顺序在 Go 里是随机的，而内容对象的 object_key 取「首个引用该 hash 的文件名」
+// （同一份内容出现在多个文件名下时），因此必须有序遍历才是确定性行为。
+func sortedManifestFiles(files map[string]string) []string {
+	names := make([]string, 0, len(files))
+	for name := range files {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+// artifactObjectKey 内容对象在存储里的位置 = 产物目录 + 文件名。
+//
+// **必须精确到文件**：content_objects 有 UNIQUE (provider, object_key)，而已发布的产物
+// 是「一个目录装多个文件」（artifacts/<hash>/index.html、…/manifest.json）。
+// 若沿用产物级 key（artifacts/<hash>）登记每条内容对象，第二条就撞唯一约束；
+// 配上 ON CONFLICT DO NOTHING 会静默吞掉它，紧接着闭包表的外键找不到 content_hash
+// 而整单回滚 —— 报出来的是外键违例，看起来像「库坏了」而不是「key 选错了」。
+func artifactObjectKey(artifactKey, fileName string) string {
+	base := strings.TrimSuffix(strings.TrimSpace(artifactKey), "/")
+	name := strings.TrimPrefix(strings.TrimSpace(fileName), "/")
+	if name == "" {
+		return base
+	}
+	return base + "/" + name
 }
 
 // ensureContentObject 幂等写入共享内容对象（content_objects，content_hash 为主键）。
@@ -305,7 +337,10 @@ func ensureContentObject(tx *gorm.DB, contentHash, provider, objectKey string, n
 	// Count→Create 读-改-写：并发 EnsureRecord 同一 hash 时，原实现双双 Count=0、
 	// 一方 Create 撞 content_hash 主键，被 mapPersistenceError 误报为
 	// ErrArtifactMismatch；ON CONFLICT 在语句内原子消化唯一冲突，无 TOCTOU。
-	return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&artifactmodel.ContentObjectEntity{
+	// 冲突 target 必须收窄到 content_hash（主键）：无 target 的 DO NOTHING 会把**任何**唯一冲突
+	// 都静默吞掉 —— 包括「同一产物的两个文件共用一个 object_key」这种真错，
+	// 表现为「内容对象行没写进去」，随后闭包插入报外键违例，排查方向直接被带偏。
+	return tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "content_hash"}}, DoNothing: true}).Create(&artifactmodel.ContentObjectEntity{
 		ContentHash: contentHash,
 		Provider:    provider,
 		ObjectKey:   objectKey,

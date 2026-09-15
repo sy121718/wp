@@ -19,23 +19,23 @@ import (
 	"go_wp/internal/builder"
 	"go_wp/internal/builder/core"
 	blockcontract "go_wp/internal/module/block/contract"
-	"go_wp/internal/templates"
-	"go_wp/pkg/i18n"
-	"go_wp/pkg/logger"
 )
 
 // blockResolverAdapter 把 block 契约适配为 builder 的 core.BlockResolver。
 type blockResolverAdapter struct {
 	blocks blockcontract.BlockService
 	ctx    context.Context
-	cache  map[string]*builder.Page
-	errs   map[string]error
+	// projectID 是块查询的必填 scope（block.Detail 用它做跨工程越权防护）：
+	// 漏传只会得到「参数缺失」，而这里是降级路径 —— 构建照常完成、产物少一截。
+	projectID string
+	cache     map[string]*builder.Page
+	errs      map[string]error
 }
 
 // newBlockResolverAdapter 构造单次编译的块解析适配器（缓存随编译实例存活）。
-func newBlockResolverAdapter(blocks blockcontract.BlockService, ctx context.Context) *blockResolverAdapter {
+func newBlockResolverAdapter(blocks blockcontract.BlockService, ctx context.Context, projectID string) *blockResolverAdapter {
 	return &blockResolverAdapter{
-		blocks: blocks, ctx: ctx,
+		blocks: blocks, ctx: ctx, projectID: projectID,
 		cache: map[string]*builder.Page{}, errs: map[string]error{},
 	}
 }
@@ -64,7 +64,7 @@ func (a *blockResolverAdapter) blockPage(blockID string) (*builder.Page, error) 
 	if a.blocks == nil {
 		return fail(fmt.Errorf("全局块 %s 不可用（block 契约未装配）", blockID))
 	}
-	block, err := a.blocks.Detail(a.ctx, &blockcontract.DetailReq{ID: blockID})
+	block, err := a.blocks.Detail(a.ctx, &blockcontract.DetailReq{ProjectID: a.projectID, ID: blockID})
 	if err != nil || block == nil {
 		return fail(fmt.Errorf("全局块 %s 不可用", blockID))
 	}
@@ -82,38 +82,17 @@ func (a *blockResolverAdapter) blockPage(blockID string) (*builder.Page, error) 
 // 编译期断言：适配器实现 core.BlockResolver。
 var _ core.BlockResolver = (*blockResolverAdapter)(nil)
 
-// compileBlockFragment 编译 settings.structure 绑定的页眉/页脚块（与 page 路径同口径）。
-// lang / translator 复用本次模板编译已构造的取词器，块内不再单独查库。
-func (s *Service) compileBlockFragment(ctx context.Context, blockID, lang string, translator *i18n.ContentTranslator) (html, css string) {
-	if blockID == "" || s.blocks == nil {
-		return "", ""
+// structureSlotOptions 把 settings.structure 快照转成编译期的结构槽位绑定（审计 VIS-001）。
+//
+// 与 page 模块同名函数同义：空绑定不产生 opt，产物与改造前逐字节一致。
+func structureSlotOptions(s builder.StructureBindings) []builder.CompileOption {
+	bindings := s.SlotBindings()
+	if len(bindings) == 0 {
+		return nil
 	}
-	block, err := s.blocks.Detail(ctx, &blockcontract.DetailReq{ID: blockID})
-	if err != nil || block == nil || len(block.Document) == 0 {
-		logger.Scene("build").With("block", blockID).Error(err, "页眉/页脚块不可用")
-		return "", ""
+	slots := make([]builder.StructureSlot, 0, len(bindings))
+	for _, slot := range builder.SortedSlots(bindings) {
+		slots = append(slots, builder.StructureSlot{Slot: slot, BlockID: bindings[slot]})
 	}
-	page, err := builder.ParsePage(block.Document)
-	if err != nil {
-		logger.Scene("build").With("block", blockID).Error(err, "块文档解析失败")
-		return "", ""
-	}
-	set, serr := templates.NewEmbeddedComponentSet()
-	if serr != nil {
-		logger.Scene("build").With("block", blockID).Error(serr, "组件模板 Set 加载失败")
-		return "", ""
-	}
-	opts := []builder.CompileOption{
-		builder.WithContext(ctx), builder.WithComponentSet(set),
-		builder.WithLanguage(lang), builder.WithTranslator(i18n.Snapshot(lang)),
-	}
-	if translator != nil {
-		opts = append(opts, builder.WithContentTranslator(translator))
-	}
-	compiled, err := builder.Compile(page, opts...)
-	if err != nil {
-		logger.Scene("build").With("block", blockID).Error(err, "块编译失败")
-		return "", ""
-	}
-	return compiled.HTML, compiled.CSS
+	return []builder.CompileOption{builder.WithStructureSlots(slots...)}
 }

@@ -1,0 +1,4 @@
+<article class="{{ .Classes }}">
+  <h3>{{ .V.title }}</h3>
+  <p>{{ .V.desc }}</p>
+</article>

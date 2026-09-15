@@ -9,22 +9,18 @@
 {{reasons := .Reasons}}
 <div class="stack">
     <section class="card card-body">
-        <h2>库存管理</h2>
+        <h2>{{ .["t"]("admin.inventory.title", "库存管理") }}</h2>
         {{if .Err != ""}}
-        <p class="badge badge-warning">上一次操作未完成：{{.Err}}</p>
+        <p class="badge badge-warning">{{ .["t"]("admin.inventory.lastError", "上一次操作未完成：") }}{{.Err}}</p>
         {{end}}
         {{if .Ok != ""}}
-        <p class="badge badge-success">上一次操作已完成。</p>
+        <p class="badge badge-success">{{ .["t"]("admin.inventory.lastOk", "上一次操作已完成。") }}</p>
         {{end}}
         <p class="hint">
-            仓库是实体：有短码、名称与状态，<strong>必须有一个默认仓</strong>作为「未指定仓库」时的兜底。
-            新建变体时选中的仓库即为该 SKU 的归属仓，系统会在那里生成一条库存记录（初始 0）；
-            SKU 编码以归属仓短码开头（如 <code>SZ_TEE_001</code>）—— 前缀表达的是默认发货仓，
-            不是「这个 SKU 只属于这个仓」，同一个 SKU 可以在多个仓各有一行库存。
+            {{ .["t"]("admin.inventory.warehouse.lead", "仓库是实体：有短码、名称与状态，") }}<strong>{{ .["t"]("admin.inventory.warehouse.bold", "必须有一个默认仓") }}</strong>{{ .["t"]("admin.inventory.warehouse.mid", "作为「未指定仓库」时的兜底。新建变体时选中的仓库即为该 SKU 的归属仓，系统会在那里生成一条库存记录（初始 0）；SKU 编码以归属仓短码开头（如 ") }}<code>SZ_TEE_001</code>{{ .["t"]("admin.inventory.warehouse.mid2", "）—— 前缀表达的是默认发货仓，不是「这个 SKU 只属于这个仓」，同一个 SKU 可以在多个仓各有一行库存。") }}
         </p>
         <p class="hint">
-            库存以「SKU × 仓库」为维度，这里显示的是<strong>库存真源</strong>；
-            商品页里的「库存缓存」列只是列表展示用的冗余字段，不参与任何可用量判断。
+            {{ .["t"]("admin.inventory.source.lead", "库存以「SKU × 仓库」为维度，这里显示的是") }}<strong>{{ .["t"]("admin.inventory.source.bold", "库存真源") }}</strong>{{ .["t"]("admin.inventory.source.tail", "；商品页里的「库存缓存」列只是列表展示用的冗余字段，不参与任何可用量判断。") }}
         </p>
         <form method="get" action="/admin/inventory" class="form-inline">
             <select class="form-select" name="project" onchange="this.form.submit()">
@@ -34,35 +30,35 @@
             </select>
         </form>
         <p class="hint">
-            进货来源（外部供应商 / 集团内关联公司 / 自家工厂）在
-            <a href="/admin/inventory/sources?project={{selectedProject}}">货源管理</a> 里维护。
+            {{ .["t"]("admin.inventory.sourcesHint.lead", "进货来源（外部供应商 / 集团内关联公司 / 自家工厂）在") }}
+            <a href="/admin/inventory/sources?project={{selectedProject}}">{{ .["t"]("admin.inventory.sourcesHint.link", "货源管理") }}</a>{{ .["t"]("admin.inventory.sourcesHint.tail", " 里维护。") }}
         </p>
     </section>
 
     <section class="card card-body">
-        <h2>新建仓库</h2>
+        <h2>{{ .["t"]("admin.inventory.create.title", "新建仓库") }}</h2>
         <form method="post" action="/admin/inventory/warehouse/create" class="form-stack">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <div class="form-inline">
-                <input type="text" class="form-input" name="code" placeholder="仓库短码（如 SZ，大写字母数字）" required autocomplete="off">
-                <input type="text" class="form-input" name="name" placeholder="仓库名称（如 苏州仓）" required>
-                <input type="number" class="form-input" name="sort" value="0" placeholder="排序" inputmode="numeric" step="1">
+                <input type="text" class="form-input" name="code" placeholder="{{ .["t"]("admin.inventory.ph.code", "仓库短码（如 SZ，大写字母数字）") }}" required autocomplete="off">
+                <input type="text" class="form-input" name="name" placeholder="{{ .["t"]("admin.inventory.ph.name", "仓库名称（如 苏州仓）") }}" required>
+                <input type="number" class="form-input" name="sort" value="0" placeholder="{{ .["t"]("admin.inventory.ph.sort", "排序") }}" inputmode="numeric" step="1">
                 <label class="var-value">
-                    <input type="checkbox" name="isDefault" value="1"> 设为默认仓
+                    <input type="checkbox" name="isDefault" value="1"> {{ .["t"]("admin.inventory.setDefault", "设为默认仓") }}
                 </label>
             </div>
             <div class="action-row">
-                <button type="submit" class="btn btn-primary">新建仓库</button>
+                <button type="submit" class="btn btn-primary">{{ .["t"]("admin.inventory.create.submit", "新建仓库") }}</button>
             </div>
         </form>
-        <p class="hint">这个工程还没有仓库时，第一个建成的仓库会自动成为默认仓。</p>
+        <p class="hint">{{ .["t"]("admin.inventory.create.hint", "这个工程还没有仓库时，第一个建成的仓库会自动成为默认仓。") }}</p>
     </section>
 
     <section class="card card-body">
-        <h2>仓库列表（{{len(.Warehouses)}}）</h2>
+        <h2>{{ .["t"]("admin.inventory.list.titleLead", "仓库列表（") }}{{len(.Warehouses)}}{{ .["t"]("admin.inventory.list.titleTail", "）") }}</h2>
         {{if len(.Warehouses) == 0}}
-        <p class="hint">这个工程还没有仓库。用上面的表单建一个 —— 建商品与变体时的归属仓就来自这里。</p>
+        <p class="hint">{{ .["t"]("admin.inventory.list.empty", "这个工程还没有仓库。用上面的表单建一个 —— 建商品与变体时的归属仓就来自这里。") }}</p>
         {{else}}
         {{range _, w := .Warehouses}}
         <details class="disclosure">
@@ -70,11 +66,11 @@
                 <strong>{{w.Name}}</strong>
                 <code>{{w.Code}}</code>
                 {{if w.IsDefault}}
-                <span class="badge badge-info">默认仓</span>
+                <span class="badge badge-info">{{ .["t"]("admin.inventory.defaultWarehouse", "默认仓") }}</span>
                 {{else}}
                 <span class="badge badge-mute">{{w.StatusLabel}}</span>
                 {{end}}
-                <span class="hint">排序 {{w.Sort}}</span>
+                <span class="hint">{{ .["t"]("admin.inventory.list.sortLead", "排序 ") }}{{w.Sort}}</span>
             </summary>
 
             <form method="post" action="/admin/inventory/warehouse/update" class="form-stack">
@@ -82,14 +78,14 @@
                 <input type="hidden" name="projectId" value="{{selectedProject}}">
                 <input type="hidden" name="id" value="{{w.ID}}">
                 <div class="form-inline">
-                    <input type="text" class="form-input" name="name" value="{{w.Name}}" placeholder="仓库名称" required>
-                    <input type="text" class="form-input" name="code" value="{{w.Code}}" placeholder="仓库短码" required autocomplete="off">
-                    <input type="number" class="form-input" name="sort" value="{{w.Sort}}" placeholder="排序" inputmode="numeric" step="1">
+                    <input type="text" class="form-input" name="name" value="{{w.Name}}" placeholder="{{ .["t"]("admin.inventory.label.name", "仓库名称") }}" required>
+                    <input type="text" class="form-input" name="code" value="{{w.Code}}" placeholder="{{ .["t"]("admin.inventory.label.code", "仓库短码") }}" required autocomplete="off">
+                    <input type="number" class="form-input" name="sort" value="{{w.Sort}}" placeholder="{{ .["t"]("admin.inventory.ph.sort", "排序") }}" inputmode="numeric" step="1">
                     <select class="form-select" name="status">
-                        <option value="active" {{if w.Status == "active"}}selected{{end}}>启用中</option>
-                        <option value="disabled" {{if w.Status == "disabled"}}selected{{end}}>已停用</option>
+                        <option value="active" {{if w.Status == "active"}}selected{{end}}>{{ .["t"]("admin.inventory.status.active", "启用中") }}</option>
+                        <option value="disabled" {{if w.Status == "disabled"}}selected{{end}}>{{ .["t"]("admin.inventory.status.disabled", "已停用") }}</option>
                     </select>
-                    <button type="submit" class="btn btn-sm">保存仓库</button>
+                    <button type="submit" class="btn btn-sm">{{ .["t"]("admin.inventory.list.save", "保存仓库") }}</button>
                 </div>
             </form>
 
@@ -98,16 +94,16 @@
                 <input type="hidden" name="csrf_token" value="{{csrf}}">
                 <input type="hidden" name="projectId" value="{{selectedProject}}">
                 <input type="hidden" name="id" value="{{w.ID}}">
-                <button type="submit" class="btn btn-sm">设为默认仓</button>
+                <button type="submit" class="btn btn-sm">{{ .["t"]("admin.inventory.setDefault", "设为默认仓") }}</button>
             </form>
             {{end}}
 
             <form method="post" action="/admin/inventory/warehouse/delete"
-                  data-confirm="删除该仓库？默认仓或仓内仍有非零库存时会被拒绝。" data-confirm-danger>
+                  data-confirm="{{ .["t"]("admin.inventory.list.deleteConfirm", "删除该仓库？默认仓或仓内仍有非零库存时会被拒绝。") }}" data-confirm-danger>
                 <input type="hidden" name="csrf_token" value="{{csrf}}">
                 <input type="hidden" name="projectId" value="{{selectedProject}}">
                 <input type="hidden" name="id" value="{{w.ID}}">
-                <button type="submit" class="btn btn-danger btn-sm">删除仓库</button>
+                <button type="submit" class="btn btn-danger btn-sm">{{ .["t"]("admin.inventory.list.delete", "删除仓库") }}</button>
             </form>
         </details>
         {{end}}
@@ -115,29 +111,29 @@
     </section>
 
     <section class="card card-body">
-        <h2>某 SKU 的各仓库存</h2>
+        <h2>{{ .["t"]("admin.inventory.sku.title", "某 SKU 的各仓库存") }}</h2>
         <form method="get" action="/admin/inventory" class="form-inline">
             <input type="hidden" name="project" value="{{selectedProject}}">
             {{if len(.VariantOptions) > 0}}
             <select class="form-select" name="variantId">
-                <option value="">（从商品变体里选一个 SKU）</option>
+                <option value="">{{ .["t"]("admin.inventory.sku.optionPick", "（从商品变体里选一个 SKU）") }}</option>
                 {{range _, o := .VariantOptions}}
                 <option value="{{o.VariantID}}" {{if o.VariantID == selectedVariant}}selected{{end}}>{{o.Label}}</option>
                 {{end}}
             </select>
             {{end}}
-            <input type="text" class="form-input" name="sku" value="{{selectedSKU}}" placeholder="或直接填 SKU 编码" autocomplete="off">
-            <button type="submit" class="btn">查看各仓库存</button>
+            <input type="text" class="form-input" name="sku" value="{{selectedSKU}}" placeholder="{{ .["t"]("admin.inventory.ph.sku", "或直接填 SKU 编码") }}" autocomplete="off">
+            <button type="submit" class="btn">{{ .["t"]("admin.inventory.sku.submit", "查看各仓库存") }}</button>
         </form>
 
         {{if selectedSKU == ""}}
-        <p class="hint">选一个 SKU 后，这里列出它在各仓的库存记录（库存以「SKU × 仓库」为维度）。</p>
+        <p class="hint">{{ .["t"]("admin.inventory.sku.empty", "选一个 SKU 后，这里列出它在各仓的库存记录（库存以「SKU × 仓库」为维度）。") }}</p>
         {{else if len(.StockRows) == 0}}
-        <p class="hint">没有找到 SKU <code>{{selectedSKU}}</code> 的库存记录 —— 该编码不存在，或不在本工程。</p>
+        <p class="hint">{{ .["t"]("admin.inventory.sku.notFoundLead", "没有找到 SKU ") }}<code>{{selectedSKU}}</code>{{ .["t"]("admin.inventory.sku.notFoundTail", " 的库存记录 —— 该编码不存在，或不在本工程。") }}</p>
         {{else}}
         <div class="table-wrap" tabindex="0">
         <table class="data-table data-table-wide">
-            <thead><tr><th>仓库</th><th>短码</th><th>SKU</th><th>数量</th><th>更新时间</th></tr></thead>
+            <thead><tr><th>{{ .["t"]("admin.inventory.sku.col.warehouse", "仓库") }}</th><th>{{ .["t"]("admin.inventory.sku.col.code", "短码") }}</th><th>SKU</th><th>{{ .["t"]("admin.inventory.sku.col.qty", "数量") }}</th><th>{{ .["t"]("admin.inventory.sku.col.updatedAt", "更新时间") }}</th></tr></thead>
             <tbody>
             {{range _, r := .StockRows}}
             <tr>
@@ -155,26 +151,24 @@
     </section>
 
     <section class="card card-body">
-        <h2>库存变动（入库 / 出库 / 调整）</h2>
+        <h2>{{ .["t"]("admin.inventory.change.title", "库存变动（入库 / 出库 / 调整）") }}</h2>
         <p class="hint">
-            变动一律在<strong>真源</strong>上带行锁执行，并逐条写流水（方向 / 数量 / 原因 / 来源引用）。
-            原因只能从下面的<strong>变动原因字典</strong>里选 —— 不接受自由文本，否则「按原因统计出入库」永远做不干净。
-            调整方向填的是<strong>目标绝对量</strong>（盘点口径），入库 / 出库填的是本次增减量。
+            {{ .["t"]("admin.inventory.change.lead", "变动一律在") }}<strong>{{ .["t"]("admin.inventory.change.boldSource", "真源") }}</strong>{{ .["t"]("admin.inventory.change.mid", "上带行锁执行，并逐条写流水（方向 / 数量 / 原因 / 来源引用）。原因只能从下面的") }}<strong>{{ .["t"]("admin.inventory.change.boldDict", "变动原因字典") }}</strong>{{ .["t"]("admin.inventory.change.mid2", "里选 —— 不接受自由文本，否则「按原因统计出入库」永远做不干净。调整方向填的是") }}<strong>{{ .["t"]("admin.inventory.change.boldTarget", "目标绝对量") }}</strong>{{ .["t"]("admin.inventory.change.tail", "（盘点口径），入库 / 出库填的是本次增减量。") }}
         </p>
         <form method="post" action="/admin/inventory/stock/change" class="form-stack">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <div class="form-inline">
                 <select class="form-select" name="variantId" required>
-                    <option value="">（选择要变动的 SKU）</option>
+                    <option value="">{{ .["t"]("admin.inventory.change.optionPick", "（选择要变动的 SKU）") }}</option>
                     {{range _, o := .VariantOptions}}
                     <option value="{{o.VariantID}}" {{if o.VariantID == selectedVariant}}selected{{end}}>{{o.Label}}</option>
                     {{end}}
                 </select>
                 <select class="form-select" name="warehouseId">
-                    <option value="">（仓库：默认仓）</option>
+                    <option value="">{{ .["t"]("admin.inventory.change.optionWarehouse", "（仓库：默认仓）") }}</option>
                     {{range _, w := .Warehouses}}
-                    <option value="{{w.ID}}">{{w.Name}}（{{w.Code}}）{{if w.IsDefault}}· 默认仓{{end}}</option>
+                    <option value="{{w.ID}}">{{w.Name}}{{ .["t"]("admin.inventory.change.warehouseSuffixLead", "（") }}{{w.Code}}{{ .["t"]("admin.inventory.change.warehouseSuffixTail", "）") }}{{if w.IsDefault}}{{ .["t"]("admin.inventory.change.warehouseDefaultSuffix", "· 默认仓") }}{{end}}</option>
                     {{end}}
                 </select>
                 <select class="form-select" name="direction" required>
@@ -182,58 +176,56 @@
                     <option value="{{d.Value}}">{{d.Label}}</option>
                     {{end}}
                 </select>
-                <input type="number" class="form-input" name="quantity" placeholder="数量（调整填目标量）" inputmode="numeric" step="1" min="0" required>
+                <input type="number" class="form-input" name="quantity" placeholder="{{ .["t"]("admin.inventory.change.phQty", "数量（调整填目标量）") }}" inputmode="numeric" step="1" min="0" required>
                 <select class="form-select" name="reasonCode" required>
-                    <option value="">（变动原因）</option>
+                    <option value="">{{ .["t"]("admin.inventory.change.optionReason", "（变动原因）") }}</option>
                     {{range _, r := reasons}}
                     <option value="{{r.Code}}">[{{r.DirectionLabel}}] {{r.Name}}（{{r.Code}}）</option>
                     {{end}}
                 </select>
-                <input type="text" class="form-input" name="sourceType" placeholder="来源类型（如 purchase / order）" autocomplete="off">
-                <input type="text" class="form-input" name="sourceRef" placeholder="来源引用（如单据号）" autocomplete="off">
-                <input type="text" class="form-input" name="remark" placeholder="备注" autocomplete="off">
+                <input type="text" class="form-input" name="sourceType" placeholder="{{ .["t"]("admin.inventory.change.phSourceType", "来源类型（如 purchase / order）") }}" autocomplete="off">
+                <input type="text" class="form-input" name="sourceRef" placeholder="{{ .["t"]("admin.inventory.change.phSourceRef", "来源引用（如单据号）") }}" autocomplete="off">
+                <input type="text" class="form-input" name="remark" placeholder="{{ .["t"]("admin.inventory.change.phRemark", "备注") }}" autocomplete="off">
             </div>
             <div class="action-row">
-                <button type="submit" class="btn btn-primary">提交变动</button>
+                <button type="submit" class="btn btn-primary">{{ .["t"]("admin.inventory.change.submit", "提交变动") }}</button>
             </div>
         </form>
     </section>
 
     <section class="card card-body">
-        <h2>变动原因字典（{{len(.Reasons)}}）</h2>
+        <h2>{{ .["t"]("admin.inventory.reasons.titleLead", "变动原因字典（") }}{{len(.Reasons)}}{{ .["t"]("admin.inventory.reasons.titleTail", "）") }}</h2>
         <p class="hint">
-            内置原因（采购入库 / 销售出库 / 盘点调整……）全工程可见、不可修改；
-            自定义原因在工程内建立，<code>code</code> 只允许小写字母、数字与下划线。
-            原因方向必须与变动方向一致，停用后不再能被新变动引用（历史流水保留 code 快照）。
+            {{ .["t"]("admin.inventory.reasons.hintLead", "内置原因（采购入库 / 销售出库 / 盘点调整……）全工程可见、不可修改；自定义原因在工程内建立，") }}<code>code</code>{{ .["t"]("admin.inventory.reasons.hintTail", "只允许小写字母、数字与下划线。原因方向必须与变动方向一致，停用后不再能被新变动引用（历史流水保留 code 快照）。") }}
         </p>
         <form method="post" action="/admin/inventory/reason/create" class="form-stack">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <div class="form-inline">
-                <input type="text" class="form-input" name="code" placeholder="原因 code（如 vip_gift_out）" required autocomplete="off">
-                <input type="text" class="form-input" name="name" placeholder="原因名称（如 会员赠品出库）" required>
+                <input type="text" class="form-input" name="code" placeholder="{{ .["t"]("admin.inventory.reasons.phCode", "原因 code（如 vip_gift_out）") }}" required autocomplete="off">
+                <input type="text" class="form-input" name="name" placeholder="{{ .["t"]("admin.inventory.reasons.phName", "原因名称（如 会员赠品出库）") }}" required>
                 <select class="form-select" name="direction" required>
                     {{range _, d := .Directions}}
                     <option value="{{d.Value}}">{{d.Label}}</option>
                     {{end}}
                 </select>
-                <input type="number" class="form-input" name="sort" value="0" placeholder="排序" inputmode="numeric" step="1">
-                <button type="submit" class="btn btn-sm">新建自定义原因</button>
+                <input type="number" class="form-input" name="sort" value="0" placeholder="{{ .["t"]("admin.inventory.ph.sort", "排序") }}" inputmode="numeric" step="1">
+                <button type="submit" class="btn btn-sm">{{ .["t"]("admin.inventory.reasons.create", "新建自定义原因") }}</button>
             </div>
         </form>
         {{if len(.Reasons) == 0}}
-        <p class="hint">这个工程还没有任何变动原因。</p>
+        <p class="hint">{{ .["t"]("admin.inventory.reasons.empty", "这个工程还没有任何变动原因。") }}</p>
         {{else}}
         <div class="table-wrap" tabindex="0">
         <table class="data-table data-table-wide">
-            <thead><tr><th>方向</th><th>名称</th><th>code</th><th>来源</th><th>状态</th></tr></thead>
+            <thead><tr><th>{{ .["t"]("admin.inventory.reasons.col.direction", "方向") }}</th><th>{{ .["t"]("admin.inventory.reasons.col.name", "名称") }}</th><th>code</th><th>{{ .["t"]("admin.inventory.reasons.col.origin", "来源") }}</th><th>{{ .["t"]("admin.inventory.reasons.col.state", "状态") }}</th></tr></thead>
             <tbody>
             {{range _, r := .Reasons}}
             <tr>
                 <td>{{r.DirectionLabel}}</td>
                 <td>{{r.Name}}</td>
                 <td><code>{{r.Code}}</code></td>
-                <td>{{if r.IsBuiltin}}内置{{else}}自定义{{end}}</td>
+                <td>{{if r.IsBuiltin}}{{ .["t"]("admin.inventory.reasons.builtin", "内置") }}{{else}}{{ .["t"]("admin.inventory.reasons.custom", "自定义") }}{{end}}</td>
                 <td>{{r.StatusLabel}}</td>
             </tr>
             {{end}}
@@ -244,17 +236,16 @@
     </section>
 
     <section class="card card-body">
-        <h2>库存流水（最近 {{len(.Movements)}} 条）</h2>
+        <h2>{{ .["t"]("admin.inventory.moves.titleLead", "库存流水（最近 ") }}{{len(.Movements)}}{{ .["t"]("admin.inventory.moves.titleTail", " 条）") }}</h2>
         <p class="hint">
-            每一次真源变动都留痕：方向、数量、变动前后值、原因、来源引用与批次号。
-            按「物料清单展开扣减」产生的子项流水会标出它由哪个父 SKU 引出。
+            {{ .["t"]("admin.inventory.moves.hint", "每一次真源变动都留痕：方向、数量、变动前后值、原因、来源引用与批次号。按「物料清单展开扣减」产生的子项流水会标出它由哪个父 SKU 引出。") }}
         </p>
         {{if len(.Movements) == 0}}
-        <p class="hint">还没有库存流水 —— 先用上面的表单做一次入库。</p>
+        <p class="hint">{{ .["t"]("admin.inventory.moves.empty", "还没有库存流水 —— 先用上面的表单做一次入库。") }}</p>
         {{else}}
         <div class="table-wrap" tabindex="0">
         <table class="data-table data-table-wide">
-            <thead><tr><th>时间</th><th>SKU</th><th>仓库</th><th>方向</th><th>变动</th><th>数量变化</th><th>原因</th><th>来源引用</th><th>操作人</th></tr></thead>
+            <thead><tr><th>{{ .["t"]("admin.inventory.moves.col.time", "时间") }}</th><th>SKU</th><th>{{ .["t"]("admin.inventory.moves.col.warehouse", "仓库") }}</th><th>{{ .["t"]("admin.inventory.moves.col.direction", "方向") }}</th><th>{{ .["t"]("admin.inventory.moves.col.delta", "变动") }}</th><th>{{ .["t"]("admin.inventory.moves.col.qtyChange", "数量变化") }}</th><th>{{ .["t"]("admin.inventory.moves.col.reason", "原因") }}</th><th>{{ .["t"]("admin.inventory.moves.col.sourceRef", "来源引用") }}</th><th>{{ .["t"]("admin.inventory.moves.col.operator", "操作人") }}</th></tr></thead>
             <tbody>
             {{range _, m := .Movements}}
             <tr>

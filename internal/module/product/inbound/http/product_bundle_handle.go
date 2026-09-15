@@ -24,7 +24,7 @@ func (h *Handle) GetBundleConfig(c *gin.Context) {
 	}
 	res, err := h.svc.GetBundleConfig(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
 		return
 	}
 	response.SuccessWithMessage(c, productenums.MsgDetailSuccess, res)
@@ -41,7 +41,7 @@ func (h *Handle) SetBundleConfig(c *gin.Context) {
 	req.OperatorID = operatorFromContext(c)
 	res, err := h.svc.SetBundleConfig(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
 		return
 	}
 	response.SuccessWithMessage(c, productenums.MsgBundleSaveSuccess, res)
@@ -56,7 +56,7 @@ func (h *Handle) ValidateBundleSelection(c *gin.Context) {
 	}
 	res, err := h.svc.ValidateBundleSelection(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
 		return
 	}
 	response.SuccessWithMessage(c, productenums.MsgBundleValidateSuccess, res)
@@ -71,7 +71,7 @@ func (h *Handle) ListBundleSKUs(c *gin.Context) {
 	}
 	list, err := h.svc.ListBundleSKUs(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
 		return
 	}
 	response.SuccessWithMessage(c, productenums.MsgListSuccess, list)

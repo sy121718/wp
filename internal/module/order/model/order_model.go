@@ -299,35 +299,58 @@ func (m *OrderModel) CountByStatus(ctx context.Context, projectID string) (count
 // 两边各写一份的话，它们会在某次「顺手加个状态」之后悄悄分叉。
 var paidStatuses = []string{OrderStatusPaid, OrderStatusShipped, OrderStatusCompleted}
 
-// CustomerOrderAggregate 按客户聚合的订单事实。
-type CustomerOrderAggregate struct {
-	OrderCount     int64
-	PaidOrderCount int64
-	TotalAmount    int64
+// CustomerOrderSummaryRow 「客户订单摘要」一次查询取回的全部事实：
+// 聚合三值 + 最近一单的四列（一单都没有时，最近一单四列全为 NULL）。
+type CustomerOrderSummaryRow struct {
+	OrderCount      int64      `gorm:"column:order_count"`
+	PaidOrderCount  int64      `gorm:"column:paid_order_count"`
+	TotalAmount     int64      `gorm:"column:total_amount"`
+	LastOrderID     *uint64    `gorm:"column:last_order_id"`
+	LastOrderNo     *string    `gorm:"column:last_order_no"`
+	LastOrderStatus *string    `gorm:"column:last_order_status"`
+	LastOrderTime   *time.Time `gorm:"column:last_order_time"`
 }
 
-// AggregateByUser 按「工程 + 客户」聚合订单数量与累计消费（分）。
+// customerOrderSummarySQL 客户订单摘要的单条查询（窗口函数，见 SummaryByUser 的说明）。
 //
-// 单数与金额在**同一条 SQL** 里算出来：分两次查时，第二次之前刚好落了一单，
-// 就会得到「3 单 200 元」这种自相矛盾的数字 —— 对不上账的汇总比没有汇总更糟。
-func (m *OrderModel) AggregateByUser(ctx context.Context, projectID string, userID uint64) (agg CustomerOrderAggregate, err error) {
-	var row struct {
-		OrderCount     int64 `gorm:"column:order_count"`
-		PaidOrderCount int64 `gorm:"column:paid_order_count"`
-		TotalAmount    int64 `gorm:"column:total_amount"`
-	}
-	if err = m.DB(ctx).
-		Select("COUNT(*) AS order_count, "+
-			"COALESCE(SUM(CASE WHEN status IN ? THEN 1 ELSE 0 END), 0) AS paid_order_count, "+
-			"COALESCE(SUM(CASE WHEN status IN ? THEN total ELSE 0 END), 0) AS total_amount",
-			paidStatuses, paidStatuses).
-		Where("project_id = ? AND user_id = ?", projectID, userID).
-		Scan(&row).Error; err != nil {
-		return agg, err
-	}
-	return CustomerOrderAggregate{
-		OrderCount:     row.OrderCount,
-		PaidOrderCount: row.PaidOrderCount,
-		TotalAmount:    row.TotalAmount,
-	}, nil
+// 两处 ? 都是计入消费的状态名单（由 paidStatuses 拼出，名单仍只声明一次）；
+// 参数顺序：paid_order_count 名单、total_amount 名单、project_id、user_id。
+const customerOrderSummarySQL = `SELECT COALESCE(w.order_count, 0)      AS order_count,
+       COALESCE(w.paid_order_count, 0) AS paid_order_count,
+       COALESCE(w.total_amount, 0)     AS total_amount,
+       w.id          AS last_order_id,
+       w.order_no    AS last_order_no,
+       w.status      AS last_order_status,
+       w.create_time AS last_order_time
+  FROM (SELECT 1) AS anchor
+  LEFT JOIN (
+        SELECT id, order_no, status, create_time,
+               COUNT(*) OVER () AS order_count,
+               COUNT(*) FILTER (WHERE status = ANY(string_to_array(?, ',')::text[])) OVER () AS paid_order_count,
+               COALESCE(SUM(total) FILTER (WHERE status = ANY(string_to_array(?, ',')::text[])) OVER (), 0) AS total_amount
+          FROM orders
+         WHERE project_id = ? AND user_id = ?
+         ORDER BY id DESC
+         LIMIT 1
+  ) AS w ON TRUE`
+
+// SummaryByUser 按「工程 + 客户」一次取回订单摘要（聚合三值 + 最近一单）。
+//
+// 为什么收敛成一条 SQL：这条摘要要同时回答四个互相牵连的问题 —— 下过几单、
+// 几单计入消费、累计消费多少、最后一单是哪张。拆成三条（聚合 / List 里的分页计数 /
+// List 取一单）时，三条之间落的新单会让「3 单 200 元」这种自相矛盾的数字漏出去；
+// 其中分页计数那条在摘要场景里连结果都不用（页面不要 total），白扫一遍全量行。
+//
+// 窗口函数的分工：ORDER BY … LIMIT 1 决定「返回哪一行」（最近一单，与 List 的
+// 排序口径一致，主键倒序即最新），带 OVER () 的三个聚合则是**整个过滤结果集**的
+// 事实，与被取回的是哪一行无关。外层 LEFT JOIN 到单行哨兵 (SELECT 1) 是必需的：
+// 零订单的客户在窗口聚合下不产生任何行，没有哨兵就分不清「一单没下」与
+// 「查不到这个客户」—— 而页面正是靠 HasOrders 分支的。
+func (m *OrderModel) SummaryByUser(ctx context.Context, projectID string, userID uint64) (row CustomerOrderSummaryRow, err error) {
+	err = m.db.WithContext(ctx).
+		Raw(customerOrderSummarySQL,
+			strings.Join(paidStatuses, ","), strings.Join(paidStatuses, ","),
+			projectID, userID).
+		Scan(&row).Error
+	return row, err
 }

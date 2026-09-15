@@ -23,7 +23,10 @@ import (
 	analyticshttp "go_wp/internal/module/analytics/inbound/http"
 	artifacthttp "go_wp/internal/module/artifact/inbound/http"
 	blockhttp "go_wp/internal/module/block/inbound/http"
+	blueprintcontract "go_wp/internal/module/blueprint/contract"
 	blueprinthttp "go_wp/internal/module/blueprint/inbound/http"
+	buildcontract "go_wp/internal/module/build/contract"
+	buildhttp "go_wp/internal/module/build/inbound/http"
 	carthttp "go_wp/internal/module/cart/inbound/http"
 	mockpaypal "go_wp/internal/module/cart/outbound/mockpaypal"
 	cartservice "go_wp/internal/module/cart/service"
@@ -32,6 +35,7 @@ import (
 	contenthttp "go_wp/internal/module/content/inbound/http"
 	contenttemplatehttp "go_wp/internal/module/contenttemplate/inbound/http"
 	dashboardhttp "go_wp/internal/module/dashboard/inbound/http"
+	mailcontract "go_wp/internal/module/mail/contract"
 	mailhttp "go_wp/internal/module/mail/inbound/http"
 	masterdatacontract "go_wp/internal/module/masterdata/contract"
 	masterdatahttp "go_wp/internal/module/masterdata/inbound/http"
@@ -41,6 +45,7 @@ import (
 	navsource "go_wp/internal/module/navigation/outbound/source"
 	orderhttp "go_wp/internal/module/order/inbound/http"
 	pagecontract "go_wp/internal/module/page/contract"
+	pagedto "go_wp/internal/module/page/dto"
 	pagehttp "go_wp/internal/module/page/inbound/http"
 	plugincontract "go_wp/internal/module/plugin/contract"
 	pluginhttp "go_wp/internal/module/plugin/inbound/http"
@@ -49,12 +54,16 @@ import (
 	productcontract "go_wp/internal/module/product/contract"
 	producthttp "go_wp/internal/module/product/inbound/http"
 	inventoryhttp "go_wp/internal/module/product/inventory/inbound/http"
+	inventorymodel "go_wp/internal/module/product/inventory/model"
+	orderstock "go_wp/internal/module/product/inventory/outbound/orderstock"
 	inventoryservice "go_wp/internal/module/product/inventory/service"
+	projectcontract "go_wp/internal/module/project/contract"
 	projecthttp "go_wp/internal/module/project/inbound/http"
 	pubhttp "go_wp/internal/module/publication/inbound/http"
 	runtimefragment "go_wp/internal/module/runtimefragment"
 	usercontract "go_wp/internal/module/user/contract"
 	userhttp "go_wp/internal/module/user/inbound/http"
+	"go_wp/internal/partition"
 	"go_wp/internal/pipeline"
 	"go_wp/internal/templates"
 	"go_wp/pkg/auth"
@@ -75,6 +84,10 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 	if router == nil {
 		return
 	}
+
+	// 装配期端口标记（审计 CQ-019）：每完成一次端口注入就在下面标记一次，
+	// 末尾由 mustAllPortsWired 统一自检必需端口是否齐全（清单见 wiring.go）。
+	marks := newWiringMarks()
 
 	// Jet 模板渲染器（根目录 internal/templates）。
 	// 开发模式由 Gin 运行模式驱动：release 关缓存（AGENTS.md 约定「生产模式必须关闭」），
@@ -173,21 +186,28 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 	blockSvc := blockhttp.SetupBlockRoutes(authorizedAPI, db, projectService)
 	artifactSvc := artifacthttp.SetupArtifactRoutes(authorizedAPI, db)
 	publicationSvc := pubhttp.SetupPublicationRoutes(authorizedAPI, db)
+	// 构建任务队列（审计 DB-007）：自装配只注册路由与队列能力，worker 在 page 装配后启动 ——
+	// 那时才有执行器，早启动会让这中间进来的任务被判成「没有执行器」而失败。
+	buildSvc := buildhttp.SetupBuildRoutes(authorizedAPI, db)
 	// Page 初始化工具 Blueprint（0-B，InitPageDocument 未来接 page CreatePage）。
 	blueprintSvc := blueprinthttp.SetupBlueprintRoutes(authorizedAPI, db)
 	// 公开站点导航（0-C，与后台 menu 严格隔离）。
 	navigationSvc := navigationhttp.SetupNavigationRoutes(authorizedAPI, db)
-	_ = blueprintSvc // 未来 page CreatePage 消费 InitPageDocument
+	// 蓝图契约在下面接线给 page（SetBlueprints）：新建页面可从蓝图初始化文档。
 	// 集合源注册表（装配期注册，构建期只读，issue #9）：各领域模块注册自己的集合源
 	// （内容集合 / 商品集合），集合类组件与集合源元数据接口只认注册表 —— 构建层
 	// 不认识具体领域模块，新增领域（库存/分类…）只需在装配期多注册一次。
 	collectionRegistry := core.NewCollectionRegistry()
 	// CMS 内容（0-A2）。集合源元数据接口经注册表返回全量集合源（含商品等其它领域）。
 	contentSvc := contenthttp.SetupContentRoutes(authorizedAPI, db, collectionRegistry)
+	// 内容译文存储由 SetupContentRoutes 内部用同一个 db 注入（可选端口：未接入即回退原文）。
+	marks.mark(portContentContentStore)
 	if provider, ok := contentSvc.(core.CollectionSourceProvider); !ok {
 		panic("内容模块未实现集合源契约（CollectionResolver + CollectionSchemaProvider）")
 	} else if err := collectionRegistry.Register(provider); err != nil {
 		panic("内容集合源注册失败: " + err.Error())
+	} else {
+		marks.mark(portContentCollectionSource)
 	}
 	// 实体类型注册表：各领域模块在装配期注册自己的实体类型；
 	// 内容模板 / 发布实例据此校验类型与取字段解析器，不再直接依赖内容模块。
@@ -210,13 +230,23 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 	inventorySvc := inventoryhttp.SetupInventoryRoutes(authorizedAPI, db, projectService)
 	// 商品域（issue #5）：商品与变体管理。商品是独立领域模块，不再寄居内容表。
 	productSvc := producthttp.SetupProductRoutes(authorizedAPI, db, projectService)
+	// 商品译文存储由 SetupProductRoutes 内部用同一个 db 注入（可选端口：未接入即回退原文）。
+	marks.mark(portProductContentStore)
 	// 邮箱模块（issue #37）：加密密钥在 SetupMailRoutes 内从 config.yaml 的 app.secret 注入。
 	mailSvc := mailhttp.SetupMailRoutes(authorizedAPI, db)
+	// 敏感配置加密密钥由 SetupMailRoutes 内部从 config 读取后注入。
+	marks.mark(portMailCipherSecret)
 	// 用户模块（issue #36）：访客账号（注册 / 验证 / 登录 / 账号中心）。
-	// 依赖 mail 只取 SendTemplate 一条能力（usercontract.MailSender），不是整个 mail 契约。
+	// 依赖 mail 只取 SendTransactional 一条能力（usercontract.MailSender），不是整个 mail 契约；
+	// 这里断言取那份**收窄**端口，与下面 CustomerAdminPort 同一手法 ——
+	// 装配缺陷（mail 侧改了事务发送形状）要在启动时炸掉，而不是等到有人注册时才发现发不出信。
+	mailSender, mailSenderOK := mailSvc.(mailcontract.TransactionalSender)
+	if !mailSenderOK {
+		panic("邮箱模块未实现 TransactionalSender（事务发送契约），装配缺陷")
+	}
 	// 路由挂在 public 面（不带 Casbin）：访客账号没有权限点，理由见 userhttp 包注释。
 	// userSvc 的消费方：order（访客下单自动开号）与访问面片段端点（访客身份解析中间件）。
-	userSvc := userhttp.SetupUserRoutes(router, db, mailSvc, "go_wp")
+	userSvc := userhttp.SetupUserRoutes(router, db, mailSender, "go_wp")
 	// 后台客户管理（/api/customer/*，权限点见迁移 152）：同一个 service 的**管理面**。
 	// 与访客面共用一份实现，但刻意是两条契约 —— 拿得到 CustomerAdminPort 的地方
 	// 才能列出全部客户、停用别人的账号，而片段层拿到的那份接口里没有这些能力。
@@ -236,15 +266,19 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 	// orderSvc 的消费方有三个：cart（结算建单 + 支付落账）、dashboard（订单管理页）、
 	// runtimefragment（访客订单片段）。契约里同时含访客查询与优惠码两组能力，
 	// 各消费方拿到的都是同一个实现 —— 不加壳、不复制。
-	orderSvc := orderhttp.SetupOrderRoutes(authorizedAPI, db, productSvc, inventorySvc, userSvc)
-	// 库存 model 注入商品用例（issue #32）：商品与库存合并为同一模块后，商品查询直接读
-	// 库存真源做**查询期投影**（不再有商品侧缓存列、同步台账与对账）。同模块内直调 model。
-	// 商品与库存同属一个模块（issue #32）：库存用例直接交给商品用例，
-	// 归属仓解析 / 库存记录生成 / 库存展示值投影都走它，不再经跨模块端口。
+	//
+	// 库存能力**经适配器**注入（orderstock）：订单契约的入参是订单自己的语义类型
+	//（出哪几个 SKU、各多少件、什么原因），库存用例吃的是它自己的 dto。
+	// 适配层放在库存侧，依赖方向是「实现方依赖调用方契约」，订单模块不认识库存任何包（审计 CQ-004）。
 	invConcrete, ok := inventorySvc.(*inventoryservice.Service)
 	if !ok {
 		panic("库存模块装配返回的不是具体 service（无法注入商品用例）")
 	}
+	orderSvc := orderhttp.SetupOrderRoutes(authorizedAPI, db, productSvc, orderstock.New(invConcrete), userSvc)
+	// 库存 model 注入商品用例（issue #32）：商品与库存合并为同一模块后，商品查询直接读
+	// 库存真源做**查询期投影**（不再有商品侧缓存列、同步台账与对账）。同模块内直调 model。
+	// 商品与库存同属一个模块（issue #32）：库存用例直接交给商品用例，
+	// 归属仓解析 / 库存记录生成 / 库存展示值投影都走它，不再经跨模块端口。
 	if setter, ok := productSvc.(interface {
 		SetInventoryService(*inventoryservice.Service)
 	}); ok {
@@ -252,6 +286,18 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 	} else {
 		panic("商品模块未提供库存 service 注入点（SetInventoryService）")
 	}
+	marks.mark(portProductInventoryService)
+	// 库存 model 注入（issue #32，审计 CQ-019）：商品侧的**库存投影**（后台库存列）
+	// 与「变体仍有非零库存则拒绝删除」守卫都读它。此前只有 setter、没有任何调用方 ——
+	// 投影恒为 0、守卫恒被跳过，两者都不报错。这里显式接线：与库存 service 同一个 db。
+	if setter, ok := productSvc.(interface {
+		SetInventory(*inventorymodel.Model)
+	}); ok {
+		setter.SetInventory(inventorymodel.NewModel(db))
+	} else {
+		panic("商品模块未提供库存 model 注入点（SetInventory）")
+	}
+	marks.mark(portProductInventoryModel)
 	// 商品侧库存缓存端口（issue #16）已删除（issue #32）：商品与库存合并为同一模块后，
 	// 商品查询直接读库存真源做查询期投影，不再需要缓存副本、同步台账与对账。
 	// 成本价写回端口（issue #18）：与 VariantStockCachePort 同向（product 实现、inventory 调用）——
@@ -268,6 +314,7 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 		panic("库存模块未提供成本价端口注入点（SetVariantCost）")
 	}
 	variantCostSetter.SetVariantCost(variantCostPort)
+	marks.mark(portInventoryVariantCost)
 	// 主数据变更记录注入（issue #19）：两个模块的端口是同一套方法（SetMasterDataChanges），
 	// 同一手法断言 + 注入；任一未实现即 fail-fast（装配缺陷不该拖到运行时才暴露 ——
 	// 变更记录漏接的表现是「审计静默缺失」，比报错隐蔽得多）。
@@ -286,6 +333,8 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 		}
 		setter.SetMasterDataChanges(masterdataSvc)
 	}
+	marks.mark(portProductMasterDataChanges)
+	marks.mark(portInventoryMasterDataChanges)
 	// 库存真源可用量端口（issue #20）：捆绑品的单项上限与整单下限都受可用量约束，
 	// 且只读 inventory_stocks 真源 —— 读 product_variants.stock_total 缓存会直接变成超卖。
 	// 方向与 VariantStockPort 相同（inventory 实现、product 调用）：断言 + 注入，
@@ -301,6 +350,7 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 		panic("商品模块未提供可用量端口注入点（SetAvailabilityPort）")
 	}
 	availabilitySetter.SetAvailabilityPort(availabilityPort)
+	marks.mark(portProductAvailability)
 	// 捆绑配置器片段（issue #20）：前台配置器走访问面的 /_fragments 端点，
 	// 经商品模块的窄契约（BundleConfiguratorPort）读配置与整单校验 ——
 	// 访问面不经过后台鉴权链，也不认识商品表。装配期注入，未注入即 fail-closed。
@@ -309,6 +359,7 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 		panic("商品模块未实现捆绑配置器端口（BundleConfiguratorPort）")
 	}
 	runtimefragment.SetBundleProvider(bundlePort)
+	marks.mark(portRuntimeFragBundle)
 	// 商品变体可用量片段（issue #24）：商品详情规格选择器旁的「实时库存」走访问面片段端点。
 	// 同一份注入模式：product 模块实现 VariantAvailabilityLookupPort（内部再调 inventory 的
 	// VariantAvailabilityPort 读真源），片段层只管渲染结论。与库存端口一样 fail-fast ——
@@ -318,6 +369,7 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 		panic("商品模块未实现变体可用量查询端口（VariantAvailabilityLookupPort）")
 	}
 	runtimefragment.SetVariantAvailabilityProvider(availabilityLookup)
+	marks.mark(portRuntimeFragVariantAvailability)
 	// 商品实时价格核对片段（BIZ-2）：定价工具改价只落库、不进构建管线，所以产物里的价
 	// 与库里的当前价在时间窗内可能不一致；片段读**当前事实**并在不一致时给访客一句交代。
 	// 端口直接复用订单域的 VariantSnapshotPort（按变体 id 读当前价 / 启用态，收窄只读），
@@ -327,6 +379,7 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 		panic("商品模块未实现变体快照端口（VariantSnapshotPort）")
 	}
 	runtimefragment.SetVariantSnapshotProvider(variantSnapshots)
+	marks.mark(portRuntimeFragVariantSnapshot)
 
 	// 购物车与访客结算（BIZ-1 访问面）：
 	//   · 购物车状态在**客户端签名 cookie** 里（访客未登录也要能加购），服务端不持久化；
@@ -344,6 +397,7 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 	// HMAC-SHA256(secret, 原始报文)，换成真通道时只改这一行。
 	cartSvc := cartservice.NewService(orderSvc, productSvc, availabilityLookup, mockpaypal.New(secret), secret)
 	runtimefragment.SetCartProvider(cartSvc)
+	marks.mark(portRuntimeFragCart)
 	// 支付回调（BIZ-1）：公开路由，靠签名验签 —— 通道不可能持有后台会话与 CSRF token，
 	// 所以它不进 /api 的三层链，也不走片段端点（片段有参数与上下文两条协议约束，
 	// 而回调带的是原始报文）。
@@ -368,6 +422,8 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 		panic("商品模块未实现集合源契约（CollectionResolver + CollectionSchemaProvider）")
 	} else if err := collectionRegistry.Register(provider); err != nil {
 		panic("商品集合源注册失败: " + err.Error())
+	} else {
+		marks.mark(portProductCollectionSource)
 	}
 	// 自动发布实例（内容实体驱动，复用编译/存储/激活管线；实例行需 project_id 外键）。
 	// blockSvc 注入用于内容模板内部的全局块引用展开（页眉/页脚等，构建期内联）。
@@ -376,6 +432,8 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 	// 插件模块（page 构建路径依赖其装配素材，须先于 page 装配）。
 	// plugin 是外部插件宿主：注入 admin 权限上下文契约，供插件运行时读取当前用户权限。
 	pluginSvc := pluginhttp.SetupPluginRoutes(authorizedAPI, db, adminAuthzSvc)
+	// 插件宿主的权限上下文契约由 SetupPluginRoutes 内部注入（可选端口）。
+	marks.mark(portPluginAdminAuthz)
 	// 集合解析注入：注册表即 core.CollectionResolver（按源分发到内容 / 商品解析器，
 	// 同时实现 CollectionSchemaProvider 供组件按白名单严格校验）。
 	collectionResolver := core.CollectionResolver(collectionRegistry)
@@ -383,9 +441,11 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 	// 片段渲染调 builder.RenderNodeHTML 复用构建期组件，取数自然也要走同一个注册表，
 	// 否则「点筛选得到的」与「静态产物里的」会是两批数据。
 	runtimefragment.SetCollectionResolver(collectionResolver)
+	marks.mark(portRuntimeFragCollectionResolver)
 	// 商品构建期数据源（issue #35）：组件直连受限接口，不再只靠按名路由。
 	// ProductService 嵌入了 ProductDataSource，装配处拿到的契约天然能传。
 	runtimefragment.SetProductDataSource(productSvc)
+	marks.mark(portRuntimeFragProductDataSource)
 	// 站内搜索片段（BIZ-2）：两条检索端口 + 一条「实体 → 已上线路径」解析端口。
 	//
 	// 检索端口是「按消费方收窄」的又一例：访问面片段只需要「按关键词取一批」这一条
@@ -398,44 +458,159 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 		panic("内容模块未实现检索端口（SearchPort）")
 	}
 	runtimefragment.SetContentSearchProvider(contentSearch)
+	marks.mark(portRuntimeFragContentSearch)
 	productSearch, ok := productSvc.(productcontract.SearchPort)
 	if !ok {
 		panic("商品模块未实现检索端口（SearchPort）")
 	}
 	runtimefragment.SetProductSearchProvider(productSearch)
+	marks.mark(portRuntimeFragProductSearch)
 	publishedLocator, ok := presentationSvc.(presentationcontract.PublishedEntityLocator)
 	if !ok {
 		panic("自动发布模块未实现已上线路径解析端口（PublishedEntityLocator）")
 	}
 	runtimefragment.SetPublishedEntityLocator(publishedLocator)
+	marks.mark(portRuntimeFragPublishedLocator)
+	// 商品侧同一端口（集合项 url 字段）：原写法是「命中即注入、未命中静默跳过」，
+	// 跳过的表现是「商品集合项的 url 全空、列表页商品没有链接」—— 静默降级（审计 CQ-019）。
+	// 改为断言：装配缺陷在启动时炸掉。
 	if setter, ok := productSvc.(interface {
 		SetPublishedEntityLocator(presentationcontract.PublishedEntityLocator)
 	}); ok {
 		setter.SetPublishedEntityLocator(publishedLocator)
+	} else {
+		panic("商品模块未提供已上线路径解析注入点（SetPublishedEntityLocator）")
 	}
+	marks.mark(portProductPublishedLocator)
+	// 归档页按需创建（审计 EDT-004）：分类新建 / 改名时让对应归档页跟上。
+	// 与上面的已上线定位端口同一方向（product 拿收窄接口），注入点在 presentation
+	// 装配之后 —— 端口本身就是 presentation 的服务。
+	// 同一手法（审计 CQ-019）：静默跳过时「分类改名后归档页不跟上」，线上仍是旧路径，
+	// 且没有任何日志或报错 —— 只可能是装配缺陷，故断言而非跳过。
+	if setter, ok := productSvc.(interface {
+		SetArchiveInstanceEnsurer(presentationcontract.ArchiveInstanceEnsurer)
+	}); ok {
+		setter.SetArchiveInstanceEnsurer(presentationSvc)
+	} else {
+		panic("商品模块未提供归档页创建注入点（SetArchiveInstanceEnsurer）")
+	}
+	marks.mark(portProductArchiveEnsurer)
+	// 片段缓存失效回调（PERF-002，审计 CQ-019）：静默跳过时改价后前台继续显示过期价，
+	// 且缓存里那份 HTML 看不出任何异常。注入源是包级函数，恒可得，故断言。
 	if setter, ok := productSvc.(interface {
 		SetFragmentCacheBumper(func(context.Context, string))
 	}); ok {
 		setter.SetFragmentCacheBumper(runtimefragment.BumpFragmentCacheVersion)
+	} else {
+		panic("商品模块未提供片段缓存失效注入点（SetFragmentCacheBumper）")
 	}
+	marks.mark(portProductFragmentCacheBumper)
 	// navigationSvc 注入 page 装配：core.nav 绑定菜单位置时构建期解析菜单项。
 	pageService := pagehttp.SetupPageRoutes(authorizedAPI, db, artifactSvc, publicationSvc, projectService, blockSvc, pluginSvc, collectionResolver, navigationSvc, mediaSvc)
+
+	// 语言下线端口（审计 I18N-017）：禁用语言时 project 需要把该语言的路由下掉，
+	// 而「这个语言有哪些已激活路径」只有 page 知道 —— 方向 project → 端口 → page。
+	// 反向（project 直接 import page）会成环：page 本来就依赖 project。
+	// 原写法是「命中即注入、未命中静默跳过」（审计 CQ-019）：跳过的表现是
+	// **禁用语言成功但该语言站点仍在线上** —— 运营以为下掉了，其实没有。
+	// page.Service 有编译期断言保证实现该契约，故断言成本为零。
+	retire, ok := pageService.(projectcontract.LocaleRetirePort)
+	if !ok {
+		panic("页面模块未实现语言下线端口（LocaleRetirePort）")
+	}
+	projectService.SetLocaleRetirePort(retire)
+	marks.mark(portProjectLocaleRetire)
+	// 产物磁盘对账的属主清单（IDX-015）：自动发布实例与手工页面共用同一个 artifacts 根，
+	// 反向对账必须同时问两个模块「这些磁盘目录是不是你产出的」。漏接的后果不是报错而是
+	// **误报**：实例产物全被列成孤儿，一份看不出真假的对账结果比没有对账更糟。
+	artifactOwnerSetter, ok := pageService.(interface {
+		SetExternalArtifactOwners(func(ctx context.Context) ([]string, error))
+	})
+	if !ok {
+		panic("页面模块未提供产物属主注入点（SetExternalArtifactOwners）")
+	}
+	artifactOwnerSetter.SetExternalArtifactOwners(presentationSvc.ListArtifactHashes)
+	marks.mark(portPageExternalArtifactOwners)
+	// 蓝图契约接线（审计 VIS-010）：「从蓝图新建页面」此前只有能力没有调用方 ——
+	// routes.go 在这里长期挂着一行 `_ = blueprintSvc`，新建页面流程始终传的是空文档。
+	// 蓝图是「用完即弃」的初始化输入：NewPage 那一刻复制 AST 并重生成节点 ID，
+	// 之后改蓝图不会影响已建页面，也不参与构建期。
+	if bpSetter, ok := pageService.(interface {
+		SetBlueprints(blueprintcontract.BlueprintService)
+	}); ok {
+		bpSetter.SetBlueprints(blueprintSvc)
+	} else {
+		panic("页面模块未提供蓝图注入点（SetBlueprints）")
+	}
+	marks.mark(portPageBlueprints)
+	// 构建队列接线（审计 DB-007）：
+	//   - page 把超出单次上限的自动重建交给队列（端口定义在 page 契约里，方向是 page ← build）；
+	//   - 执行器在这里注册（build 模块不认识任何业务来源，它只知道「有个函数能做这个 type」）。
+	if queueSetter, ok := pageService.(interface {
+		SetBuildQueue(pagecontract.BuildQueueEnqueuer)
+	}); ok {
+		queueSetter.SetBuildQueue(buildSvc)
+	} else {
+		panic("页面模块未提供构建队列注入点（SetBuildQueue）")
+	}
+	marks.mark(portPageBuildQueue)
+	buildSvc.RegisterExecutor("page", func(ctx context.Context, job *buildcontract.Job) error {
+		_, err := pageService.Build(ctx, &pagedto.BuildReq{ID: job.SourceID})
+		return err
+	})
+	// presentation 的自动重建接线（PERF-020）：失效扇出不再在触发进程里持实例锁
+	// 同步重建（进程内锁在多实例部署下拦不住两个实例同时重建同一实例），改为入队，
+	// 由队列消费侧的 SKIP LOCKED claim 保证同一实例同一时刻只被一个 worker 重建。
+	if pqSetter, ok := presentationSvc.(interface {
+		SetBuildQueue(presentationcontract.BuildQueueEnqueuer)
+	}); ok {
+		pqSetter.SetBuildQueue(buildSvc)
+	} else {
+		panic("自动发布实例模块未提供构建队列注入点（SetBuildQueue）")
+	}
+	marks.mark(portPresentationBuildQueue)
+	buildSvc.RegisterExecutor("presentation", func(ctx context.Context, job *buildcontract.Job) error {
+		rebuilder, ok := presentationSvc.(interface {
+			RebuildInstance(ctx context.Context, instanceID string) error
+		})
+		if !ok {
+			panic("自动发布实例模块未提供实例重建执行体（RebuildInstance）")
+		}
+		return rebuilder.RebuildInstance(ctx, job.SourceID)
+	})
+	// worker 数固定 2：单页构建是 CPU + IO 混合，把并发调高只是在同一台机器上互相抢资源。
+	// 多实例部署下每个实例各起 2 个是安全的 —— 取任务走 SKIP LOCKED，同一条任务只被一个 worker 拿到。
+	buildSvc.StartWorkers(context.Background(), 2)
+	// 分区维护（审计 DB-004）：三张只增表（page_views / inventory_stock_movements /
+	// master_data_changes）按月分区，启动时补齐未来分区、之后每日一次。
+	// 不启动它不会立刻出错（数据落 DEFAULT 分区），但分区裁剪与整块归档的收益就没了。
+	partition.StartScheduler(context.Background(), db)
 	// 系统页面槽位解析器接给片段层（BIZ-1）：购物车片段的「去结算」、结算结果的
 	// 「查看订单」都要按槽位取路径。传的是 pageService —— 它嵌入了只读的
 	// SitePageResolver，发布 / 删除 / 改 URL 那部分能力传不进片段层。
 	runtimefragment.SetSitePageResolver(pageService)
+	marks.mark(portRuntimeFragSitePageResolver)
 	runtimefragment.SetFragmentProject(projectService)
+	marks.mark(portRuntimeFragProject)
 	// 访客订单片段（BIZ-1）：片段端点按访客会话取自己的订单。传的是 orderSvc ——
 	// 它嵌入了只读的 VisitorOrderReader，写路径（建单 / 状态流转 / 优惠码管理）
 	// 那部分能力传不进片段层。归属校验在 order 模块的 SQL 条件里，不在这层。
 	runtimefragment.SetVisitorOrderReader(orderSvc)
+	marks.mark(portRuntimeFragVisitorOrderReader)
+	// 访客退货片段（RMA）：orderSvc 嵌入了收窄的 VisitorReturnPort（只读申请面，
+	// 拿不到「后台审核 / 入库 / 退款」）。此端口此前**从未被任何地方注入** ——
+	// 退货申请片段因此恒返回「退货功能暂不可用」（审计 CQ-019：静默降级窗口）。
+	runtimefragment.SetVisitorReturnProvider(orderSvc)
+	marks.mark(portRuntimeFragVisitorReturn)
 	// 访客身份解析中间件：片段端点需要知道「这个请求是谁」。
 	// 它与后台的 SessionAuthMiddleware 是两套身份（不同 cookie、不同存储），
 	// 挂在片段组上只做「尽力解析」，未登录不阻断 —— 必须登录的能力自己渲染引导文案。
 	runtimefragment.SetVisitorIdentityMiddleware(userhttp.VisitorIdentityMiddleware(userSvc))
+	marks.mark(portRuntimeFragVisitorIdentity)
 	// 账号中心片段（资料 / 偏好 / 改密码 / 登录设备）：只注入**收窄后的**只读端口 ——
 	// 片段层拿不到注册、改密码、踢出设备这些写能力，越权防护靠接口形状。
 	runtimefragment.SetVisitorAccountPort(userSvc)
+	marks.mark(portRuntimeFragVisitorAccount)
 	// 页面 / 自动发布两条构建路径同样接上（issue #35）：装配处拿到的 ProductService
 	// 嵌入了 ProductDataSource，直接传即可（受限接口，写方法传不出去）。
 	if setter, ok := pageService.(interface {
@@ -445,6 +620,7 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 	} else {
 		panic("页面模块未提供商品数据源注入点（SetProductDataSource）")
 	}
+	marks.mark(portPageProductDataSource)
 	if setter, ok := presentationSvc.(interface {
 		SetProductDataSource(productcontract.ProductDataSource)
 	}); ok {
@@ -452,6 +628,7 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 	} else {
 		panic("发布实例模块未提供商品数据源注入点（SetProductDataSource）")
 	}
+	marks.mark(portPresentationProductDataSource)
 	// 自动发布详情页与手工页面共用站点级装配（EDT-003）：导航 / 槽位 / 响应式图片。
 	if setter, ok := presentationSvc.(interface {
 		SetNavigationService(navigationcontract.NavigationService)
@@ -466,6 +643,7 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 	} else {
 		panic("发布实例模块未提供站点装配注入点（SetNavigationService / SetSitePageResolver / SetMediaProbe / SetPluginService）")
 	}
+	marks.mark(portPresentationSiteAssembly)
 
 	// 默认主题补齐（启动时一次，幂等）：本能力上线前建的工程没有任何主题，
 	// 页面因此一直没有主题可继承 —— 继承链「主题 → 页面 → 组件」的起点缺失。
@@ -496,12 +674,22 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 	// 再由内容服务持有扇出端口；presentation 侧待其 DB 持久化对齐后接入同一 Fanout。
 	fanout := pipeline.NewFanout()
 	fanout.Register(pipeline.SourceTypePage, pageService)
-	fanout.SetRebuilder(pipeline.SourceTypePage, pageService)
+	// SetRebuilder 对 nil 是**静默 no-op**（"未绑定时只标记不重建"）—— 若 pageService
+	// 没实现 StaleRebuilder，内容保存会照常成功、stale 也照常标记，只是永远不重建：
+	// 线上内容停在旧版本，没有任何报错（审计 CQ-019）。故先断言再注入。
+	pageRebuilder, ok := pageService.(pipeline.StaleRebuilder)
+	if !ok {
+		panic("页面模块未实现依赖失效重建接口（pipeline.StaleRebuilder）")
+	}
+	fanout.SetRebuilder(pipeline.SourceTypePage, pageRebuilder)
+	marks.mark(portPipelinePageRebuilder)
 	contentSvc.SetDependencyInvalidator(fanout)
+	marks.mark(portContentDependencyInvalidator)
 
 	// 导航来源实体解析（page/article/product/category/block → 标题 + URL）：
 	// 依赖 page/content/presentation/block 契约，故在它们全部装配完成后注入。
 	navigationSvc.SetSourceResolver(navsource.New(pageService, contentSvc, presentationSvc, blockSvc))
+	marks.mark(portNavigationSourceResolver)
 
 	// 页面路由（编辑器外壳依赖 page/block/plugin 契约，置于 API 装配之后）。
 	// admin 六领域 CRUD 契约：SetAdminRoutes 返回的 AuthzContextService 动态类型即合并后的
@@ -515,7 +703,7 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 		admincontract.DeptService
 		admincontract.RuleService
 	})
-	dashboardhttp.SetupDashboardRoutes(router, pageService, projectService, blockSvc, pluginSvc, collectionResolver,
+	dashHandle := dashboardhttp.SetupDashboardRoutes(router, pageService, projectService, blockSvc, pluginSvc, collectionResolver,
 		adminCRUD, adminCRUD, adminCRUD, adminCRUD, adminCRUD, adminCRUD, adminAuthzSvc, navigationSvc, productSvc, presentationSvc, contentTemplateSvc,
 		// 文章管理页（INF-1）：content 契约在注入片段端口时已拿到，这里复用同一个实例。
 		contentSvc,
@@ -529,14 +717,24 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 		// 它同时也是「访客面 /user/*」那套 service 的同一个实例 —— 两个面共用实现，
 		// 但页面拿到的接口里只有「读客户 + 停用启用 + 解除锁定」。
 		userAdminSvc)
+	// 蓝图（审计 VIS-010）：新建页面表单的「从蓝图开始」下拉需要蓝图列表。
+	// 未注入时页面表单不显示该下拉（建页照常走空白草稿），因此这里是可选端口。
+	if dashHandle != nil {
+		dashHandle.SetBlueprints(blueprintSvc)
+		marks.mark(portDashboardBlueprints)
+	}
+
+	// 装配自检（审计 CQ-019）：必需端口逐个核对，缺失即 fail-fast 并**报出端口名与后果**
+	//（一次报出全部缺失项，清单见 wiring.go 的 wiringManifest）；可选端口未接入写进启动日志
+	//—— 降级必须可见，而不是只在代码注释里写一句「未注入时降级」。
+	mustAllPortsWired(marks)
+	logDegradedOptional(marks)
 
 	// 运行时片段端点（0-D，公开路由：capability 白名单 + 认证策略在 handler 内）。
 	runtimefragment.SetupFragmentRoutes(router)
 
-	// 未匹配路由返回 404
-	router.NoRoute(func(c *gin.Context) {
-		response.NotFound(c, "请求的资源不存在")
-	})
+	// 未匹配路由返回 404；访问面（/site）优先返回站点自定义 404 页，见 notFoundHandler。
+	router.NoRoute(notFoundHandler())
 }
 
 // setupStaticFace 挂载静态访问面（docs/03-pipeline.md §5）。
@@ -556,6 +754,50 @@ func setupStaticFace(router *gin.Engine) {
 	// SiteRedirectMiddleware 在前：改 URL 后的旧路径是「指向 redirect.json 的激活链接」，
 	// http.FileServer 只读文件、不认识它 —— 少了这一层，勾了「保留旧链接」的旧路径
 	// 表现是 404（承诺未兑现）。重定向判定不查库，访问面零查库不变量不变。
-	router.Group("/site", builtin.SiteRedirectMiddleware(), builtin.SiteCacheMiddleware(), builtin.StaticGzipMiddleware()).
+	router.Group(siteFacePath, builtin.SiteRedirectMiddleware(), builtin.SiteCacheMiddleware(), builtin.StaticGzipMiddleware()).
 		StaticFS("/", gin.Dir(pipeline.ActiveRoot(), false))
+}
+
+// siteFacePath 静态访问面挂载前缀（与内置中间件的 siteFacePrefix 同值，
+// 分属两包：那边是 middleware 的私有常量）。
+//
+// 它同时是「这个请求属不属于访问面」的判据 —— 404 响应要按前缀分流：
+// 访问面给访客，控制面（/api、/admin）保持既有的统一 JSON 错误。
+const siteFacePath = "/site"
+
+// notFoundHandler 未匹配路由的响应：访问面（/site）优先返回站点自定义 404 页。
+//
+// 为什么访问面的 404 会走到这里：gin 的静态文件 handler 在 fs.Open 失败时
+// 把 handler 链整体换成 NoRoute（v1.12 createStaticHandler），所以 /site 下
+// 未知路径的响应体由本函数决定。少了这一层，访客拿到的是后台 API 形态的 JSON
+// 「请求的资源不存在」—— 没有站名、没有导航，死链等于直接流失（审计 SEO-013）。
+//
+// 状态码恒为 404：自定义页只换响应体与 Content-Type，语义不动。绝不能返 200 ——
+// 那是软 404，搜索引擎会把死链当有效页面收进索引，正是要避免的另一半问题。
+// 未配置自定义页时行为与既有一致（response.NotFound）。
+func notFoundHandler() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if serveSiteNotFoundPage(c) {
+			return
+		}
+		response.NotFound(c, "请求的资源不存在")
+	}
+}
+
+// serveSiteNotFoundPage 访问面未知路径命中站点自定义 404 页时写出响应并返回 true。
+//
+// 判定只看请求前缀与激活目录根的那一个文件，不查库、不读路由表 ——
+// 访问面「零查库零模板」不变量不变（与 SiteRedirectMiddleware 同一口径）。
+// 前缀按「等于 /site 或以 /site/ 开头」判，避免把 /siteadmin 这类路径误当访问面。
+func serveSiteNotFoundPage(c *gin.Context) bool {
+	p := c.Request.URL.Path
+	if p != siteFacePath && !strings.HasPrefix(p, siteFacePath+"/") {
+		return false
+	}
+	body, ok := pipeline.ReadNotFoundPage(pipeline.ActiveRoot())
+	if !ok {
+		return false
+	}
+	c.Data(http.StatusNotFound, "text/html; charset=utf-8", body)
+	return true
 }

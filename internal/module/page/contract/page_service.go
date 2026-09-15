@@ -54,6 +54,17 @@ var (
 	ErrPreviewCompileFailed = errors.New("预览编译失败")
 )
 
+// BuildQueueEnqueuer 构建队列的入队端口（审计 DB-007）。
+//
+// 由 build 模块实现、装配期注入。接口定义在**本模块**（而不是反向 import build 的契约）：
+// page 只需要「有人能把超限的重建任务接走」，不必知道队列是谁、存在哪里。
+// 依赖方向因此是 build → page（build 用 page 的构建能力做执行器），不会成环。
+//
+// 未注入时保持既有行为：超出单次上限的页面保持 stale 并记一条告警（不静默丢弃）。
+type BuildQueueEnqueuer interface {
+	EnqueuePageBuild(ctx context.Context, pageID string, draftVersion int64, buildInputHash string) error
+}
+
 // PageService 手工 Page 草稿、修订与发布管理能力。
 type PageService interface {
 	// SitePageResolver 槽位解析（构建期与片段层经这个只读面取「结算页在哪」）。
@@ -63,6 +74,13 @@ type PageService interface {
 	// List 列出页面摘要（必须带 projectID；themeID 可选过滤主题）。
 	List(ctx context.Context, req *pagedto.ListReq) (res []pagedto.PageResp, err error)
 	Detail(ctx context.Context, req *pagedto.DetailReq) (res *pagedto.PageResp, err error)
+	// ProjectOfPage 按页面 id 返回所属工程 id。
+	//
+	// 后台入口需要它：画布 / 历史 / 译文这些路由手上只有 pageId，而 Detail /
+	// SaveDraft 等把 projectID 当作**必填的越权防护 scope**（少它只会得到
+	// 「参数缺失」，看起来像「页面不存在」）。这是只读收窄方法 —— 只回答
+	// 「这个页面属于谁」，不返回页面内容、也没有任何写能力。
+	ProjectOfPage(ctx context.Context, pageID string) (projectID string, err error)
 	// ListDrafts 列出全部未删除页面的草稿文档（多语言 P5c 翻译工作台的全站扫描：
 	// 跨页面复用提示与全站完成度分母需要 (source_hash, context) 的全站视图）。
 	ListDrafts(ctx context.Context) (res []pagedto.PageDraftResp, err error)
@@ -102,6 +120,10 @@ type PageService interface {
 	// 保护集合 = 页面活跃/暂存指针 + 每语言激活暂存 + 路由指向；同 hash 被其他行
 	// 引用时只标记 gc_pending 不删文件。默认 dryRun=true（必须显式传 false 才真删）。
 	GarbageCollectArtifacts(ctx context.Context, req *pagedto.GCArtifactsReq) (res *pagedto.GCArtifactsResp, err error)
+	// PurgeRetention 执行一次保留期清理：历史快照收敛（分批删）+ 超期产物回收。
+	// 返回删除的历史快照行数（产物回收量在 GC 的响应里）。定时任务与后台手动触发共用
+	// 这一个入口 —— 保留期只在一处定义、在一处执行（IDX-004 / IDX-005 / IDX-019）。
+	PurgeRetention(ctx context.Context) (deletedRevisions int64, err error)
 	// AuditPublication 巡检激活面：返回全部悬空/异常链接。
 	// /site 直接服务文件系统，产物被误删时 DB 侧毫无察觉，本方法是唯一发现手段。
 	AuditPublication(ctx context.Context) (res *pagedto.PublicationAuditResp, err error)

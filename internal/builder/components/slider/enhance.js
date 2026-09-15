@@ -12,7 +12,9 @@
             function slideWidth() { return slides[0] ? slides[0].offsetWidth : 0; }
             function go(i) {
                 idx = Math.max(0, Math.min(i, total - 1));
-                track.scrollTo({ left: slideWidth() * idx, behavior: 'smooth' });
+                // 滚动容器是根节点（.sky-slider 有 overflow-x:auto），不是轨道：
+                // 轨道的 overflow 是 visible，对它调 scrollTo 不会产生任何位移。
+                root.scrollTo({ left: slideWidth() * idx, behavior: 'smooth' });
                 updateDots();
             }
             function next() { go(idx + 1); }
@@ -29,20 +31,31 @@
             var nextBtn = root.querySelector('[data-next]');
             if (prevBtn) prevBtn.addEventListener('click', prev);
             if (nextBtn) nextBtn.addEventListener('click', next);
-            // 滑动同步索引（含触摸/原生滚动）。
+            // 键盘等价入口：容器 tabindex=0（模板输出），左右方向键翻页、Home/End 跳首尾。
+            // 与 cardstack 的方向键实现同源 —— 键盘用户不依赖鼠标也能切换轮播。
+            // 焦点落在内部交互元素（链接 / 按钮 / 表单控件）上时不劫持方向键，页面照常滚动。
+            root.addEventListener('keydown', function (e) {
+                var t = e.target;
+                if (t && t.closest && t.closest('a,button,input,textarea,select,[contenteditable]')) return;
+                if (e.key === 'ArrowLeft') { prev(); e.preventDefault(); }
+                else if (e.key === 'ArrowRight') { next(); e.preventDefault(); }
+                else if (e.key === 'Home') { go(0); e.preventDefault(); }
+                else if (e.key === 'End') { go(total - 1); e.preventDefault(); }
+            });
+            // 滑动同步索引（含触摸/原生滚动）—— 监听的是滚动容器（根节点）。
             var scrollTimer = null;
-            track.addEventListener('scroll', function () {
+            root.addEventListener('scroll', function () {
                 clearTimeout(scrollTimer);
                 scrollTimer = setTimeout(function () {
                     var w = slideWidth();
-                    if (w > 0) { idx = Math.round(track.scrollLeft / w); updateDots(); }
+                    if (w > 0) { idx = Math.round(root.scrollLeft / w); updateDots(); }
                 }, 80);
             });
             // 循环：滑到末尾回到开头。
             if (root.dataset.loop) {
-                track.addEventListener('scroll', function () {
-                    if (track.scrollLeft >= track.scrollWidth - track.clientWidth - 2) {
-                        track.scrollTo({ left: 0, behavior: 'smooth' });
+                root.addEventListener('scroll', function () {
+                    if (root.scrollLeft >= root.scrollWidth - root.clientWidth - 2) {
+                        root.scrollTo({ left: 0, behavior: 'smooth' });
                     }
                 });
             }

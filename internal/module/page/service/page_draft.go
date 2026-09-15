@@ -35,7 +35,22 @@ func (s *Service) Create(ctx context.Context, req *pagedto.CreateReq) (res *page
 	if err = validateKind(req.Kind, req.ContentTargetType, req.ContentTargetID); err != nil {
 		return nil, err
 	}
-	path, doc, err := validateDraft(req.DraftPath, req.DraftDocument)
+	// 初始文档：给了蓝图就以蓝图为准（审计 VIS-010）。蓝图是「用完即弃」的初始化输入 ——
+	// InitPageDocument 复制完整 AST 并递归生成新节点 ID，之后页面与蓝图再无关系。
+	initial := req.DraftDocument
+	if blueprintID := strings.TrimSpace(req.BlueprintID); blueprintID != "" {
+		built, berr := s.initFromBlueprint(ctx, blueprintID)
+		if berr != nil {
+			return nil, berr
+		}
+		initial = built
+	}
+	if len(initial) == 0 {
+		// 既没有文档也没有蓝图：明确拒绝。静默建空页最难被发现 ——
+		// 后台显示新建成功，编辑者打开画布才发现是白的。
+		return nil, ErrInvalidParam
+	}
+	path, doc, err := validateDraft(req.DraftPath, initial)
 	if err != nil {
 		return nil, err
 	}
@@ -73,6 +88,24 @@ func (s *Service) Create(ctx context.Context, req *pagedto.CreateReq) (res *page
 		return nil, mapPersistenceError(err)
 	}
 	return pageResp(page), nil
+}
+
+// initFromBlueprint 从蓝图初始化页面文档（审计 VIS-010）。
+//
+// 蓝图未注入时报 ErrBlueprintUnavailable 而不是降级建空页：装配缺失是配置错误，
+// 应该在创建那一刻就暴露，而不是让编辑者对着空白画布猜。
+func (s *Service) initFromBlueprint(ctx context.Context, blueprintID string) (json.RawMessage, error) {
+	if s.blueprints == nil {
+		return nil, errors.New(pageenums.ErrBlueprintUnavailable)
+	}
+	doc, err := s.blueprints.InitPageDocument(ctx, blueprintID)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", pageenums.ErrBlueprintInvalid, err)
+	}
+	if len(doc) == 0 {
+		return nil, errors.New(pageenums.ErrBlueprintInvalid)
+	}
+	return doc, nil
 }
 
 // reservePath 经 publication contract 预留草稿路径（页面创建前置）。
@@ -133,6 +166,28 @@ func (s *Service) Detail(ctx context.Context, req *pagedto.DetailReq) (res *page
 		return nil, err
 	}
 	return res, nil
+}
+
+// ProjectOfPage 按页面 id 返回所属工程 id。
+//
+// 后台入口（画布预览 / 历史恢复 / 译文保存）手上只有 pageId，而 Detail 把 projectID
+// 当作必填的越权防护 scope —— 少它只会得到 ErrInvalidParam，在页面上表现为 404
+// 「页面不存在」，很难联想到是「少传了一个 scope 参数」。让调用方先问一次「这页属于
+// 谁」再带 scope 去查，比给 Detail 开一个「不带工程过滤」的后门更安全：
+// 越权防护的判据仍然只有一处（model.GetByID 的 projectID 参数）。
+func (s *Service) ProjectOfPage(ctx context.Context, pageID string) (projectID string, err error) {
+	id := strings.TrimSpace(pageID)
+	if id == "" {
+		return "", ErrInvalidParam
+	}
+	page, err := s.model.GetByID(ctx, id, "")
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return "", ErrPageNotFound
+	}
+	if err != nil {
+		return "", err
+	}
+	return page.ProjectID, nil
 }
 
 // publicationsOf 读取页面每语言激活状态投影（无记录时返回 nil）。
@@ -211,6 +266,9 @@ func (s *Service) SaveDraft(ctx context.Context, req *pagedto.SaveDraftReq) (res
 	page.DraftVersion = nextVersion
 	page.Stale = true
 	page.UpdatedAt = now
+	// 保存后顺手收敛该页历史快照（IDX-005）：一次保存就是一份完整文档快照，
+	// 等每日任务来清会让高频编辑的页面在一天内堆出大量副本。失败不影响保存结果。
+	s.pruneRevisions(ctx, page.ID)
 	return pageResp(page), nil
 }
 
@@ -243,6 +301,11 @@ func (s *Service) requireProject(ctx context.Context, projectID string) error {
 	// 空/空白工程 ID 属于参数错误（ErrInvalidParam）；合法 ID 无工程才返回 ErrProjectNotFound。
 	if strings.TrimSpace(projectID) == "" {
 		return ErrInvalidParam
+	}
+	// 装配缺失时给明确错误而不是 nil 解引用 panic：panic 会把「工程服务没接上」
+	// 伪装成一次崩溃，而真正的信息（哪个方法调用、缺哪个依赖）反而丢了。
+	if s.project == nil {
+		return ErrProjectNotFound
 	}
 	exists, err := s.project.Exists(ctx, projectID)
 	if err != nil {

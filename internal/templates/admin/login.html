@@ -19,9 +19,11 @@
     </script>
     <link rel="stylesheet" href="/static/css/theme.css">
     <style>
+        *, *::before, *::after { box-sizing: border-box; }
         body {
             margin: 0;
             min-height: 100vh;
+            padding: 16px;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -30,8 +32,10 @@
             font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
         }
         .login-card {
-            width: 360px;
+            width: min(100%, 416px);
             padding: 32px 28px;
+            max-height: calc(100vh - 32px);
+            overflow-y: auto;
             background: var(--c-bg, #fff);
             border: 1px solid var(--c-border, #e5e7eb);
             border-radius: 12px;
@@ -53,10 +57,16 @@
             border-radius: 8px;
             outline: none;
         }
-        .login-field input:focus { border-color: var(--c-primary-soft, #5b6572); }
+        .login-field input:focus {
+            border-color: var(--c-primary-soft, #5b6572);
+            outline: 2px solid var(--c-primary, #3d444f);
+            outline-offset: 2px;
+        }
         .captcha-row { display: flex; gap: 8px; align-items: stretch; }
         .captcha-row input { flex: 1; min-width: 0; }
         .captcha-img {
+            width: auto;
+            max-width: 42%;
             height: 40px;
             border: 1px solid var(--c-border, #e5e7eb);
             border-radius: 8px;
@@ -74,7 +84,7 @@
             cursor: pointer;
         }
         .login-btn:hover { background: var(--c-primary-deep, #2f353d); }
-        .login-msg { min-height: 18px; margin-top: 12px; font-size: 13px; color: var(--c-danger, #b42318); text-align: center; }
+        .login-msg { min-height: 18px; margin-top: 12px; font-size: 13px; color: var(--c-danger, #b42318); text-align: center; overflow-wrap: anywhere; }
     </style>
 </head>
 <body>
@@ -126,7 +136,7 @@
                链式索引写法对 map 缺 key 安全（JS 侧仍会在刷新时覆盖）。 *}
             <input type="hidden" name="captcha_id" id="captcha-id" value="{{ .["captcha_id"] }}">
             <button class="login-btn" type="submit">{{ .["t"]("shell.login.submit", "登 录") }}</button>
-            <div class="login-msg" id="login-msg"></div>
+            <div class="login-msg" id="login-msg" role="alert" aria-live="polite" tabindex="-1"></div>
         </form>
 
         {* 开发阶段一键登录（仅 debug 模式注入 DevLogin；release 下不显示，因为路由不存在）。
@@ -135,8 +145,8 @@
            与 layout 里 {{ .["csrf_token"] }} 同一原因。 *}
         {{if .["DevLogin"]}}
         <p class="text-sm text-mute" style="margin-top:14px;text-align:center;line-height:1.7">
-          <a href="/admin/dev-login?to=/admin">开发环境一键登录</a><br>
-          <span class="text-xs">免密码，仅本机可访问；release 模式不提供</span>
+          <a href="/admin/dev-login?to=/admin">{{ .["t"]("shell.login.dev_login", "开发环境一键登录") }}</a><br>
+          <span class="text-xs">{{ .["t"]("shell.login.dev_login_hint", "免密码，仅本机可访问；release 模式不提供") }}</span>
         </p>
         {{end}}
     </div>
@@ -160,6 +170,7 @@
                 .then(function (resp) {
                     if (resp.status === 429) {
                         msgEl.textContent = msgOf(captchaImg, 'msgBusy', '验证码刷新过于频繁，请稍后再试');
+                        msgEl.focus();
                         return null;
                     }
                     return resp.json();
@@ -174,7 +185,7 @@
                         captchaImg.title = ttlTpl.replace('%s', data.expire_seconds);
                     }
                 })
-                .catch(function () { msgEl.textContent = msgOf(captchaImg, 'msgFailed', '验证码加载失败，请重试'); })
+                .catch(function () { msgEl.textContent = msgOf(captchaImg, 'msgFailed', '验证码加载失败，请重试'); msgEl.focus(); })
                 .finally(function () { refreshing = false; });
         }
 
@@ -198,6 +209,7 @@
               .then(function (result) {
                   if (!result.ok) {
                       msgEl.textContent = (result.body && result.body.message) || msgOf(formEl, 'msgFailed', '登录失败');
+                      msgEl.focus();
                       document.getElementById('captcha').value = '';
                       refreshCaptcha();
                       return;

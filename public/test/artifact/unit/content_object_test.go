@@ -35,7 +35,9 @@ func locatorOf(t *testing.T, svc *artifactservice.Service, hash string) (provide
 // 同一 hash 代表同一内容字节，位置应唯一（见 artifact_record.go ensureContentObject 注释）。
 // 同时验证：page_artifacts 产物行各自保留自己的 provider/key，不受共享对象影响。
 func TestArtifactContentObjectFirstWriterWins(t *testing.T) {
-	svc := newService(t)
+	// 用带生产约束的版本：object_key 的文件粒度正是为了满足
+	// UNIQUE (provider, object_key)，跑在无约束的表上验证不到这条语义。
+	svc := newServiceWithProdConstraint(t)
 	ctx := context.Background()
 
 	// 首条记录：provider=local，files 含 hash-html / hash-manifest。
@@ -58,17 +60,17 @@ func TestArtifactContentObjectFirstWriterWins(t *testing.T) {
 	if !ok {
 		t.Fatalf("hash-html 内容对象应存在")
 	}
-	if provider != "local" || key != "artifacts/artifact-hash-a" {
-		t.Fatalf("first-writer-wins 被破坏：hash-html 应为首条 (local, artifacts/artifact-hash-a)，实际 (%s, %s)", provider, key)
+	if provider != "local" || key != "artifacts/artifact-hash-a/index.html" {
+		t.Fatalf("first-writer-wins 被破坏：hash-html 应为首条 (local, artifacts/artifact-hash-a/index.html)，实际 (%s, %s)", provider, key)
 	}
 
 	// 首条独占 hash-manifest 保持原样。
-	if provider, key, ok = locatorOf(t, svc, "hash-manifest"); !ok || provider != "local" || key != "artifacts/artifact-hash-a" {
+	if provider, key, ok = locatorOf(t, svc, "hash-manifest"); !ok || provider != "local" || key != "artifacts/artifact-hash-a/manifest.json" {
 		t.Fatalf("hash-manifest 应保持首条定位，实际 (%s, %s) ok=%v", provider, key, ok)
 	}
 
 	// 新 hash 以第二条的 provider 写入。
-	if provider, key, ok = locatorOf(t, svc, "hash-s3-only"); !ok || provider != "s3" || key != "bucket/artifacts/artifact-hash-b" {
+	if provider, key, ok = locatorOf(t, svc, "hash-s3-only"); !ok || provider != "s3" || key != "bucket/artifacts/artifact-hash-b/extra.js" {
 		t.Fatalf("新 hash 应以当前引用写入，实际 (%s, %s) ok=%v", provider, key, ok)
 	}
 
@@ -93,7 +95,7 @@ func TestArtifactContentObjectFirstWriterWins(t *testing.T) {
 // EnsureRecord 同版本替换（不同 hash/provider）时，与新闭包共享的旧 hash
 // 仍保持首条定位，不被替换请求的 provider 覆盖。
 func TestArtifactContentObjectFirstWriterWinsOnReplace(t *testing.T) {
-	svc := newService(t)
+	svc := newServiceWithProdConstraint(t)
 	ctx := context.Background()
 
 	mustRecord(t, svc, validReq()) // v1: hash=artifact-hash-a, files: hash-html/hash-manifest, provider=local
@@ -114,7 +116,7 @@ func TestArtifactContentObjectFirstWriterWinsOnReplace(t *testing.T) {
 	if !ok {
 		t.Fatalf("hash-html 内容对象应存在")
 	}
-	if provider != "local" || key != "artifacts/artifact-hash-a" {
-		t.Fatalf("替换路径下 first-writer-wins 被破坏：hash-html 应为 (local, artifacts/artifact-hash-a)，实际 (%s, %s)", provider, key)
+	if provider != "local" || key != "artifacts/artifact-hash-a/index.html" {
+		t.Fatalf("替换路径下 first-writer-wins 被破坏：hash-html 应为 (local, artifacts/artifact-hash-a/index.html)，实际 (%s, %s)", provider, key)
 	}
 }

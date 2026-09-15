@@ -148,19 +148,14 @@ func (h *articlePageHandle) ArticleUpdateURL(c *gin.Context) {
 // id 为空（新建中）时不查任何东西：还没有实体，发布无从谈起。
 func articlePublishView(ctx context.Context, h *articlePageHandle, id, slug string, projectOptions []gin.H) gin.H {
 	if strings.TrimSpace(id) == "" {
-		return gin.H{
-			"PublishConfigured": false,
-			"PublishHint":       "先保存这篇文章，再回来看发布状态。",
-		}
+		return articlePublishUnavailable("先保存这篇文章，再回来看发布状态。")
 	}
 	if h.instances == nil {
-		return gin.H{
-			"PublishConfigured": false,
-			"PublishHint":       "发布能力未装配（装配缺陷），本页只显示文章内容。",
-		}
+		return articlePublishUnavailable("发布能力未装配（装配缺陷），本页只显示文章内容。")
 	}
 
-	out := gin.H{"PublishConfigured": true}
+	out := articlePublishUnavailable("")
+	out["PublishConfigured"] = true
 	inst, err := h.instances.GetByEntity(ctx, &presentationdto.GetByEntityReq{
 		EntityType: articleEntityType, EntityID: id,
 	})
@@ -177,10 +172,34 @@ func articlePublishView(ctx context.Context, h *articlePageHandle, id, slug stri
 	// 派生只是预填 —— 派生不出来时回落到一个不会撞车的占位，让用户自己写。
 	out["DefaultURLPath"] = articleDetailDefaultPath(ctx, h, projectOptions, slug, id)
 	out["Projects"] = projectOptions
-	out["Templates"] = articleTemplateOptions(ctx, h)
-	out["HasTemplates"] = len(out["Templates"].([]gin.H)) > 0
+	templates := articleTemplateOptions(ctx, h)
+	out["Templates"] = templates
+	out["HasTemplates"] = len(templates) > 0
 	out["NoTemplateHint"] = articleNoTemplateHint
 	return out
+}
+
+// articlePublishUnavailable 发布区块的不可用形态：**键集与可用形态完全一致**。
+//
+// 模板对这些可选区块用点号取值（{{.URLPath}} / {{.PublicURL}} / {{.HasTemplates}}），
+// 而 Jet 遇到缺失的键不是渲染成空，而是报错并**截断整页输出** —— 编辑页会只剩
+// 上半截、状态码仍是 200，看起来像「样式坏了」，极难联想到是少了一个键。
+// 因此键齐全由数据侧保证，模板不再为「键可能不存在」写分支。
+func articlePublishUnavailable(hint string) gin.H {
+	return gin.H{
+		"PublishConfigured": false,
+		"PublishHint":       hint,
+		"Published":         false,
+		"URLPath":           "",
+		"PublicURL":         "",
+		"Stale":             false,
+		"Status":            "",
+		"DefaultURLPath":    "",
+		"Projects":          []gin.H{},
+		"Templates":         []gin.H{},
+		"HasTemplates":      false,
+		"NoTemplateHint":    "",
+	}
 }
 
 // articleDetailDefaultPath 文章详情页的默认发布路径：按 URL 规则派生，派生不出来时兜底。

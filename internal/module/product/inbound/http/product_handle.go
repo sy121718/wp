@@ -33,7 +33,7 @@ func (h *Handle) Create(c *gin.Context) {
 	req.OperatorID = operatorFromContext(c)
 	res, err := h.svc.Create(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
 		return
 	}
 	response.SuccessWithMessage(c, productenums.MsgCreateSuccess, res)
@@ -50,7 +50,7 @@ func (h *Handle) Update(c *gin.Context) {
 	req.OperatorID = operatorFromContext(c)
 	res, err := h.svc.Update(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
 		return
 	}
 	response.SuccessWithMessage(c, productenums.MsgUpdateSuccess, res)
@@ -65,7 +65,7 @@ func (h *Handle) Get(c *gin.Context) {
 	}
 	res, err := h.svc.Get(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusNotFound, err.Error())
+		response.ErrorAuto(c, http.StatusNotFound, "product", err)
 		return
 	}
 	response.SuccessWithMessage(c, productenums.MsgDetailSuccess, res)
@@ -80,7 +80,7 @@ func (h *Handle) List(c *gin.Context) {
 	}
 	list, err := h.svc.List(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
 		return
 	}
 	response.SuccessWithMessage(c, productenums.MsgListSuccess, list)
@@ -96,7 +96,7 @@ func (h *Handle) Delete(c *gin.Context) {
 	// issue #19：变更记录的操作人从会话取（客户端传入被忽略）。
 	req.OperatorID = operatorFromContext(c)
 	if err := h.svc.Delete(c.Request.Context(), req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
 		return
 	}
 	response.SuccessWithMessage(c, productenums.MsgDeleteSuccess, nil)
@@ -113,7 +113,7 @@ func (h *Handle) CreateVariant(c *gin.Context) {
 	req.OperatorID = operatorFromContext(c)
 	res, err := h.svc.CreateVariant(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
 		return
 	}
 	response.SuccessWithMessage(c, productenums.MsgCreateSuccess, res)
@@ -130,7 +130,7 @@ func (h *Handle) UpdateVariant(c *gin.Context) {
 	req.OperatorID = operatorFromContext(c)
 	res, err := h.svc.UpdateVariant(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
 		return
 	}
 	response.SuccessWithMessage(c, productenums.MsgUpdateSuccess, res)
@@ -146,7 +146,7 @@ func (h *Handle) DeleteVariant(c *gin.Context) {
 	// issue #19：变更记录的操作人从会话取（客户端传入被忽略）。
 	req.OperatorID = operatorFromContext(c)
 	if err := h.svc.DeleteVariant(c.Request.Context(), req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
 		return
 	}
 	response.SuccessWithMessage(c, productenums.MsgDeleteSuccess, nil)
@@ -166,7 +166,7 @@ func (h *Handle) GenerateVariants(c *gin.Context) {
 	req.OperatorID = operatorFromContext(c)
 	res, err := h.svc.GenerateVariants(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
 		return
 	}
 	response.SuccessWithMessage(c, productenums.MsgVariantGenerateSuccess, res)

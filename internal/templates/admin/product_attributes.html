@@ -6,14 +6,13 @@
 {{csrf := .["csrf_token"]}}
 {{selectedProject := .SelectedProject}}
 {{if .Err != ""}}
-<p class="badge badge-warning">上一次操作未完成：{{.Err}}</p>
+<p class="badge badge-warning">{{ .["t"]("admin.product_attributes.lastError", "上一次操作未完成：") }}{{.Err}}</p>
 {{end}}
 <div class="stack">
     <section class="card card-body">
-        <h2>商品属性</h2>
+        <h2>{{ .["t"]("admin.product_attributes.title", "商品属性") }}</h2>
         <p class="hint">
-            属性组（颜色 / 尺寸 / 口味）在工程内定义一次，可被多个商品引用；
-            「参与变体」的组会参与变体规格组合的生成。
+            {{ .["t"]("admin.product_attributes.intro", "属性组（颜色 / 尺寸 / 口味）在工程内定义一次，可被多个商品引用；「参与变体」的组会参与变体规格组合的生成。") }}
         </p>
         <form method="get" action="/admin/product-attributes" class="form-inline">
             <select class="form-select" name="project" onchange="this.form.submit()">
@@ -25,33 +24,33 @@
     </section>
 
     <section class="card card-body">
-        <h2>新建属性组</h2>
+        <h2>{{ .["t"]("admin.product_attributes.create.title", "新建属性组") }}</h2>
         <form method="post" action="/admin/product-attributes/create" class="form-stack">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <input type="hidden" name="groupId" value="new">
             <div class="form-inline">
-                <input type="text" class="form-input" name="name" placeholder="属性组名称（如 颜色）" required>
-                <input type="text" class="form-input" name="key" placeholder="标识（留空自动生成，如 color）" autocomplete="off">
-                <input type="number" class="form-input" name="sort" value="0" placeholder="排序" inputmode="numeric" step="1">
+                <input type="text" class="form-input" name="name" placeholder="{{ .["t"]("admin.product_attributes.ph.groupNameExample", "属性组名称（如 颜色）") }}" required>
+                <input type="text" class="form-input" name="key" placeholder="{{ .["t"]("admin.product_attributes.ph.keyExample", "标识（留空自动生成，如 color）") }}" autocomplete="off">
+                <input type="number" class="form-input" name="sort" value="0" placeholder="{{ .["t"]("admin.product_attributes.ph.sort", "排序") }}" inputmode="numeric" step="1">
                 <label class="attr-switch">
                     <input type="hidden" name="isVariation" value="0">
-                    <input type="checkbox" name="isVariation" value="1" checked> 参与变体
+                    <input type="checkbox" name="isVariation" value="1" checked> {{ .["t"]("admin.product_attributes.isVariation", "参与变体") }}
                 </label>
             </div>
             <div class="attr-values" id="attr-values-new">
                 {{include "partials/product_attribute_rows.html" .NewRowsCtx}}
             </div>
             <div class="action-row">
-                <button type="submit" class="btn btn-primary">新建属性组</button>
+                <button type="submit" class="btn btn-primary">{{ .["t"]("admin.product_attributes.create.submit", "新建属性组") }}</button>
             </div>
         </form>
     </section>
 
     <section class="card card-body">
-        <h2>属性组列表</h2>
+        <h2>{{ .["t"]("admin.product_attributes.list.title", "属性组列表") }}</h2>
         {{if len(.Attributes) == 0}}
-        <p class="hint">这个工程还没有属性组。用上面的表单建一个，之后任意商品都可以引用它。</p>
+        <p class="hint">{{ .["t"]("admin.product_attributes.list.empty", "这个工程还没有属性组。用上面的表单建一个，之后任意商品都可以引用它。") }}</p>
         {{else}}
         {{range _, a := .Attributes}}
         <details class="disclosure attr-fold" {{if a.IsVariation}}open{{end}}>
@@ -59,11 +58,11 @@
                 <strong>{{a.Name}}</strong>
                 <code>{{a.Key}}</code>
                 {{if a.IsVariation}}
-                <span class="badge badge-info">参与变体</span>
+                <span class="badge badge-info">{{ .["t"]("admin.product_attributes.isVariation", "参与变体") }}</span>
                 {{else}}
-                <span class="badge badge-mute">不参与变体</span>
+                <span class="badge badge-mute">{{ .["t"]("admin.product_attributes.notVariation", "不参与变体") }}</span>
                 {{end}}
-                <span class="hint">{{a.ValueCount}} 个属性值</span>
+                <span class="hint">{{a.ValueCount}}{{ .["t"]("admin.product_attributes.list.valueCountTail", " 个属性值") }}</span>
             </summary>
 
             <form method="post" action="/admin/product-attributes/update" class="form-stack">
@@ -71,14 +70,14 @@
                 <input type="hidden" name="projectId" value="{{selectedProject}}">
                 <input type="hidden" name="id" value="{{a.ID}}">
                 <div class="form-inline">
-                    <input type="text" class="form-input" name="name" value="{{a.Name}}" placeholder="属性组名称" required>
-                    <input type="text" class="form-input" name="key" value="{{a.Key}}" placeholder="标识" autocomplete="off">
-                    <input type="number" class="form-input" name="sort" value="{{a.Sort}}" placeholder="排序" inputmode="numeric" step="1">
+                    <input type="text" class="form-input" name="name" value="{{a.Name}}" placeholder="{{ .["t"]("admin.product_attributes.ph.groupName", "属性组名称") }}" required>
+                    <input type="text" class="form-input" name="key" value="{{a.Key}}" placeholder="{{ .["t"]("admin.product_attributes.ph.key", "标识") }}" autocomplete="off">
+                    <input type="number" class="form-input" name="sort" value="{{a.Sort}}" placeholder="{{ .["t"]("admin.product_attributes.ph.sort", "排序") }}" inputmode="numeric" step="1">
                     <label class="attr-switch">
                         <input type="hidden" name="isVariation" value="0">
-                        <input type="checkbox" name="isVariation" value="1" {{if a.IsVariation}}checked{{end}}> 参与变体
+                        <input type="checkbox" name="isVariation" value="1" {{if a.IsVariation}}checked{{end}}> {{ .["t"]("admin.product_attributes.isVariation", "参与变体") }}
                     </label>
-                    <button type="submit" class="btn btn-sm">保存属性组</button>
+                    <button type="submit" class="btn btn-sm">{{ .["t"]("admin.product_attributes.list.save", "保存属性组") }}</button>
                 </div>
             </form>
 
@@ -91,16 +90,16 @@
                     {{include "partials/product_attribute_rows.html" a.RowsCtx}}
                 </div>
                 <div class="action-row">
-                    <button type="submit" class="btn">保存属性值</button>
+                    <button type="submit" class="btn">{{ .["t"]("admin.product_attributes.list.saveValues", "保存属性值") }}</button>
                 </div>
             </form>
 
             <form method="post" action="/admin/product-attributes/delete"
-                  data-confirm="删除该属性组及其全部属性值？被商品引用时会拒绝删除。" data-confirm-danger>
+                  data-confirm="{{ .["t"]("admin.product_attributes.list.deleteConfirm", "删除该属性组及其全部属性值？被商品引用时会拒绝删除。") }}" data-confirm-danger>
                 <input type="hidden" name="csrf_token" value="{{csrf}}">
                 <input type="hidden" name="projectId" value="{{selectedProject}}">
                 <input type="hidden" name="id" value="{{a.ID}}">
-                <button type="submit" class="btn btn-danger btn-sm">删除属性组</button>
+                <button type="submit" class="btn btn-danger btn-sm">{{ .["t"]("admin.product_attributes.list.delete", "删除属性组") }}</button>
             </form>
         </details>
         {{end}}

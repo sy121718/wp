@@ -7,13 +7,13 @@
     "branch": "main",
     "language": "zh-CN",
     "status": "remediation-in-progress",
-    "scopeNote": "2026-09-14 起按 P0→P7 分批落地；115 条已 resolved，153 条仍 open。P0 已全部收口（SEC-004 / SEC-007 / SEC-009 / TX-016 / CQ-023）。分维明细在 dimensions/。",
+    "scopeNote": "2026-09-13 出审查结论，2026-09-14 起按 P0→P7 分批落地。当前进度以 docs/audit/README.md 为准（2026-09-15：268 条中 234 条 resolved、34 条 open；high 8 / medium 16 / low 10，集中在 OSS-001/002/003/005/007、SEC-005、CQ-007、UIK-003 等）。P0 已全部收口（SEC-004 / SEC-007 / SEC-009 / TX-016 / CQ-023）。本条 summary 的 resolved/open 已同步为实测值，分维明细在 dimensions/（分批推进中的条目看其 progressNote）。",
     "readMe": "docs/audit/README.md"
   },
   "summary": {
     "findingsTotal": 268,
-    "resolved": 115,
-    "open": 153,
+    "resolved": 234,
+    "open": 34,
     "bySeverity": {
       "critical": 16,
       "high": 58,

@@ -21,12 +21,12 @@ const tableNamePageSiteSlots = "page_site_slots"
 
 // SiteSlotEntity 对应 page_site_slots 表：一个工程里「某个角色由哪个页面担任」。
 type SiteSlotEntity struct {
-	ID        string    `gorm:"column:id;type:uuid;primaryKey"`
-	ProjectID string    `gorm:"column:project_id;type:uuid;not null"`
-	Slot      string    `gorm:"column:slot;type:text;not null"`
-	PageID    string    `gorm:"column:page_id;type:uuid;not null"`
-	CreatedAt time.Time `gorm:"column:created_at;not null"`
-	UpdatedAt time.Time `gorm:"column:updated_at;not null"`
+	ID         int64     `gorm:"column:id;type:bigint;primaryKey"`
+	ProjectID  string    `gorm:"column:project_id;type:uuid;not null"`
+	Slot       string    `gorm:"column:slot;type:text;not null"`
+	PageID     string    `gorm:"column:page_id;type:uuid;not null"`
+	CreateTime time.Time `gorm:"column:create_time;not null"`
+	UpdatedAt  time.Time `gorm:"column:updated_at;not null"`
 }
 
 func (SiteSlotEntity) TableName() string { return tableNamePageSiteSlots }
@@ -48,7 +48,7 @@ func (m *Model) ListSiteSlots(ctx context.Context, projectID string) (list []Sit
 // UpsertSiteSlot 绑定槽位（同工程同槽位已有绑定时原地换页）。
 //
 // 写成「查后写」而不是数据库 upsert：唯一索引是 (project_id, slot)，冲突时既要改 page_id
-// 又要保留 created_at，ON CONFLICT DO UPDATE 只省一次往返；而这个入口的调用频率是
+// 又要保留 create_time，ON CONFLICT DO UPDATE 只省一次往返；而这个入口的调用频率是
 // 「人工点保存」，不是热路径 —— 可读性更值钱。
 func (m *Model) UpsertSiteSlot(ctx context.Context, e *SiteSlotEntity) (err error) {
 	var existing SiteSlotEntity

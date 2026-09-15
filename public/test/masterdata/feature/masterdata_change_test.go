@@ -612,14 +612,25 @@ func TestMasterDataChangeAPIChain(t *testing.T) {
 	}
 	// 实体 id 不是 uuid：明确 400，而不是静默返回空集或 500。
 	rec = httptestGet(engine, "/api/masterdata/change/list?projectId="+f.projectID+"&entityId=not-a-uuid")
-	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), masterdataenums.ErrInvalidParam) {
+	if rec.Code != http.StatusBadRequest || !mentionsMasterDataError(rec.Body.String(), masterdataenums.ErrInvalidParam, "参数不合法") {
 		t.Fatalf("非法实体 id 应 400 + %s，实际 %d：%s", masterdataenums.ErrInvalidParam, rec.Code, rec.Body.String())
 	}
 	// 实体类型不在白名单：明确 400。
 	rec = httptestGet(engine, "/api/masterdata/change/list?projectId="+f.projectID+"&entityType=order")
-	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), masterdataenums.ErrEntityTypeInvalid) {
+	if rec.Code != http.StatusBadRequest || !mentionsMasterDataError(rec.Body.String(), masterdataenums.ErrEntityTypeInvalid, "实体类型不在变更记录的白名单内") {
 		t.Fatalf("白名单外实体类型应 400，实际 %d：%s", rec.Code, rec.Body.String())
 	}
+}
+
+// mentionsMasterDataError 判断响应里透出的业务错误文案是不是「key 或它的译文」之一。
+//
+// 迁移 198 之后 masterdataenums 的 Err* 值是 i18n key（如 masterdata.err.invalidParam）：
+// 响应层 pkg/response.translate 在词条可用时返回中文译文、词条未加载时**原样返回 key** ——
+// 两种都算正确透出。断言因此两个都接受：只认 key 会在整包跑时变红（前面的测试已加载 i18n 缓存，
+// 响应里是译文），只认译文会在单跑时变红。真正要钉住的是「透出的不是通用内部错误文案」——
+// 那意味着业务错误被 response.ErrorAuto 判成了内部错误（走到了 500 分支）。
+func mentionsMasterDataError(body, errKey, zhText string) bool {
+	return strings.Contains(body, errKey) || strings.Contains(body, zhText)
 }
 
 // newMasterDataAPIEngine 只挂变更记录 JSON 接口的测试引擎（真实 handler + pkg/response）。

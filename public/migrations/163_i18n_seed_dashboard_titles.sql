@@ -1,5 +1,9 @@
 -- 163 · i18n 词条 seed（后台页面标题 + 面包屑 + url_mode 提示，I18N-005 / SEO-010 / I18N-016）
 --
+-- 语义（审计 I18N-003）：ON CONFLICT DO NOTHING —— seed 是**默认值来源**，不是真相来源。
+--   后台改过的词条不会被下一次迁移覆盖（DO UPDATE 的旧写法会让运营的修改在下次部署时
+--   静默回滚，而「我明明改过」这种问题极难定位）。要改默认值请改这里的 item_value 并删除
+--   对应行后重跑，或在后台直接修改。
 -- 幂等：ON CONFLICT (item_key, lang) DO UPDATE。
 
 INSERT INTO sys_i18n (item_key, lang, item_value, http_code, category, remark, status, create_time, update_time)
@@ -14,7 +18,4 @@ VALUES
 ('site.breadcrumb.home', 'en-US', 'Home', 200, 'ui', 'internal/builder/seo_head.go', 1, now(), now()),
 ('MsgSiteLangURLOffWarning', 'zh-CN', '当前语言 URL 方案为 off：各语言映射到同一路径，语言切换器不会渲染；如需多语言独立 URL，请将 i18n.site_lang_url_mode 设为 default_plain 或 all_prefix', 200, 'ui', 'internal/templates/admin/settings.html', 1, now(), now()),
 ('MsgSiteLangURLOffWarning', 'en-US', 'Language URL mode is off: all locales share the same path, so the language switcher will not render. Set i18n.site_lang_url_mode to default_plain or all_prefix for separate locale URLs.', 200, 'ui', 'internal/templates/admin/settings.html', 1, now(), now())
-ON CONFLICT (item_key, lang) DO UPDATE SET
-  item_value = EXCLUDED.item_value,
-  remark = EXCLUDED.remark,
-  update_time = now();
+ON CONFLICT (item_key, lang) DO NOTHING;

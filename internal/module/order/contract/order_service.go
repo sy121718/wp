@@ -5,8 +5,43 @@ import (
 	"context"
 
 	orderdto "go_wp/internal/module/order/dto"
-	inventorydto "go_wp/internal/module/product/inventory/dto"
+	orderenums "go_wp/internal/module/order/enums"
 )
+
+// 跨模块调用方使用的**形状重导出**（与 publication 契约同一手法）：调用方只依赖 contract，
+// 不直接 import order/dto 或 order/enums。
+//
+// 为什么是重导出而不是另造一组「契约自有入参类型」：本模块的 dto 与对外契约形状是同一件事
+// （建单入参 / 支付入参 / 订单视图就是它对外的语义），dto 上的 json/form 标签只影响 HTTP 绑定，
+// 不改变语义。另造一组形状意味着两份必须逐字段保持等价的定义 —— 那是把「一处改、调用方编译错」
+// 换成「一处改、另一处静默分叉」：耦合没有减少，出错面反而变大。
+//
+// 边界：本模块内部（service / model / inbound）继续用 orderdto 作为实现形状；
+// 重导出只服务于跨模块调用方。
+type (
+	// 建单（cart 结算链路）。
+	CreateOrderReq  = orderdto.CreateOrderReq
+	CreateOrderResp = orderdto.CreateOrderResp
+	OrderItemReq    = orderdto.OrderItemReq
+	OrderAddress    = orderdto.OrderAddress
+	// 支付落账（cart 结算与支付回调链路）。
+	PayOrderReq  = orderdto.PayOrderReq
+	PayOrderResp = orderdto.PayOrderResp
+	// 按商户单号取单（支付回调链路）。
+	GetOrderByNoReq = orderdto.GetOrderByNoReq
+	OrderResp       = orderdto.OrderResp
+	// 归因与轨迹快照（cart 在下单那一刻从追踪 cookie 定格后交进来）。
+	Attribution = orderdto.Attribution
+	FirstTouch  = orderdto.FirstTouch
+	UTMInfo     = orderdto.UTMInfo
+	AdInfo      = orderdto.AdInfo
+	SessionInfo = orderdto.SessionInfo
+	DeviceInfo  = orderdto.DeviceInfo
+	TrailPage   = orderdto.TrailPage
+)
+
+// ErrOrderNotFound 订单不存在（错误文案取自 enums，供调用方做错误判定而不 import enums）。
+const ErrOrderNotFound = orderenums.ErrOrderNotFound
 
 // OrderService 订单模块对外能力。
 type OrderService interface {
@@ -105,12 +140,64 @@ type ReturnService interface {
 // 订单一条都用不上。收窄的理由同 user 模块的 MailSender：依赖面越大，越容易在
 // 不经意间用上不该用的能力；测试造替身时，二十个方法的空实现也会淹没测试意图。
 //
-// inventory 的 Service 天然满足这个接口（它有这两个方法），装配时直接传即可。
+// 入参用本契约自有类型（StockDeduction / StockAdjustment + StockLine），
+// **不借用 inventory 的 dto**：订单要表达的是「这单出哪几个 SKU、各多少件、什么原因」，
+// 而 inventory 的 dto 里还带着它自己的绑定细节（skuCode 冗余列、expandBom 开关、
+// operatorId、direction 字符串）。借用那套形状等于让订单认识库存模块的绑定层 ——
+// 库存改一次请求字段，订单跟着编译错（审计 CQ-004）。
+//
+// 由库存模块提供适配实现（见 product/inventory/outbound/orderstock）：
+// 实现方依赖调用方契约，方向不会反过来。
 type StockOperator interface {
-	// DeductStock 按 SKU 扣减库存：任一行不足即整体拒绝（不会扣一半）。
-	DeductStock(ctx context.Context, req *inventorydto.DeductStockReq) (res *inventorydto.StockChangeResp, err error)
-	// ChangeStock 按 SKU 增减库存：取消订单时用来归还。
-	ChangeStock(ctx context.Context, req *inventorydto.ChangeStockReq) (res *inventorydto.StockChangeResp, err error)
+	// DeductStock 建单出库：任一行可用量不足即整体拒绝（不会扣一半）。
+	//
+	// 不返回批次号等内部标识 —— 订单侧从不使用它（原来就在丢弃），
+	// 暴露一个没人看的返回值只会诱使调用方把它当业务引用存下来。
+	DeductStock(ctx context.Context, in *StockDeduction) (err error)
+	// ChangeStock 把货加回库存（取消订单归还 / 退货入库）。
+	//
+	// 方向写死在类型里（恒为入库）：订单域没有任何「把货减掉」的场景 ——
+	// 出库走 DeductStock。让调用方能传任意方向，等于允许它绕过扣减的可用量守卫。
+	ChangeStock(ctx context.Context, in *StockAdjustment) (err error)
+}
+
+// StockLine 一次库存变动里的一行：动哪个 SKU、动多少件。
+//
+// 字段就是订单侧真正掌握的事实。**不含仓库**是最常见的情形 ——
+// 订单不知道货在哪个仓，也不该知道（那是库存域的事实）；
+// 唯一的例外是退货入库，货该回哪个仓由客户或运营指定，故留 WarehouseID 可选口。
+type StockLine struct {
+	// ProductID 商品标识（库存流水按它归类）。
+	ProductID string
+	// VariantID 变体标识（库存真源的维度是 SKU × 仓库）。
+	VariantID string
+	// SKUCode SKU 编码（流水留痕用；为空时由库存域按变体补齐）。
+	SKUCode string
+	// Quantity 件数（正整数）。
+	Quantity int
+	// WarehouseID 指定仓库；为空表示按该 SKU 的归属仓由库存域解析。
+	WarehouseID string
+}
+
+// StockDeduction 建单出库的入参。
+type StockDeduction struct {
+	ProjectID  string
+	ReasonCode string
+	// SourceType / SourceRef 来源引用（订单号），供库存流水回溯到这张单。
+	SourceType string
+	SourceRef  string
+	Remark     string
+	Lines      []StockLine
+}
+
+// StockAdjustment 把货加回库存的入参（方向恒为入库）。
+type StockAdjustment struct {
+	ProjectID  string
+	ReasonCode string
+	SourceType string
+	SourceRef  string
+	Remark     string
+	Lines      []StockLine
 }
 
 // CustomerOrderSummaryReader 按客户取订单聚合事实（只读，一条方法）。
@@ -156,4 +243,10 @@ type CouponService interface {
 	DeleteCoupon(ctx context.Context, couponID uint64) (err error)
 	ValidateCoupon(ctx context.Context, req *orderdto.CouponValidateReq) (res *orderdto.CouponValidateResp, err error)
 	ListCouponRedemptions(ctx context.Context, req *orderdto.CouponRedemptionListReq) (res *orderdto.CouponRedemptionListResp, err error)
+	// AuditCouponCounts 对账 coupons.used_count 与核销明细行数（DB-021）。
+	//
+	// 只读、不修正：used_count 是并发守卫（`WHERE used_count < max_uses`）依赖的投影，
+	// 明细才是真源，偏差该往哪边修取决于原因（手工改库 / 早期逻辑缺口 / 守卫未命中），
+	// 自动修可能把真源也改错。
+	AuditCouponCounts(ctx context.Context, req *orderdto.CouponCountAuditReq) (res *orderdto.CouponCountAuditResp, err error)
 }

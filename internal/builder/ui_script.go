@@ -23,11 +23,37 @@ type uiBlock struct {
 }
 
 // uiBaseClasses 基座样式类名：只写 class 也应注入 ui.css（UIK-002：样式与行为解耦）。
+//
+// 口径＝「作者会手写的控件外观类」，唯一来源是 ui.css 里成段的控件外观
+// （docs/02-F-ui-kit.md §10.2「类名清单（唯一来源：static/css/ui.css）」）。
+// 三类类名**故意不收**，收了就是给产物白送字节：
+//   - 工具类（w-full / flex / gap-* / text-sm / mt-* / mb-* …）：几乎每页都有，
+//     命中即注入整份 ui.css，等于让所有产物一起膨胀；
+//   - 脚本生成的内部结构类（wbs-trigger / wb-modal-* / wb-confirm-* / wbc-* …）：
+//     由属性触发脚本后生成，作者不会手写，写了也没有对应的 DOM 结构；
+//   - 状态类与后台页面结构类（is-* / sr-only / pages-form / action-row …）：
+//     单独出现不表达「用了控件」，命中只会制造假阳性。
+//
+// 清单与 ui.css 的一致性由 TestUIBaseClassListMatchesUICSS 钉住（漏项＝静默无样式）。
 var uiBaseClasses = []string{
+	// 按钮
 	"btn", "btn-primary", "btn-secondary", "btn-ghost", "btn-danger", "btn-sm", "btn-icon",
+	// 工作台密度规格的同族按钮
 	"wb-btn", "wb-btn-primary", "wb-btn-secondary", "wb-btn-ghost", "wb-icon-btn",
+	// 表单字段
 	"form-input", "form-select", "form-textarea", "form-label", "form-hint", "form-error",
-	"wbs", "form-inline", "form-row",
+	"form-group", "checkbox",
+	// 自绘下拉容器（select.js 把原生 select 换成这一层结构）
+	"wbs",
+	// 成组排布
+	"form-inline", "form-row",
+	// 卡片
+	"card", "card-header", "card-title", "card-body", "card-footer",
+	// 表格（table-wrap 是窄屏横向滚动的外观容器，与 data-table 同段）
+	"table-wrap", "data-table", "data-table-wide",
+	// 徽标与状态点
+	"badge", "badge-success", "badge-warning", "badge-danger", "badge-info", "badge-mute",
+	"dot", "dot-success", "dot-warning", "dot-danger", "dot-mute",
 }
 
 var uiBlocks = []uiBlock{

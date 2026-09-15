@@ -168,7 +168,7 @@ func TestProductLivePriceFragment(t *testing.T) {
 	}
 	ctx := context.Background()
 	productID := f.createProduct(t, "帆布鞋", "canvas-live", "轻便透气", 129, 199)
-	detail, err := f.products.Get(ctx, &productdto.GetReq{ID: productID})
+	detail, err := f.products.Get(ctx, &productdto.GetReq{ProjectID: f.projectID, ID: productID})
 	if err != nil || len(detail.Variants) == 0 {
 		t.Fatalf("读商品变体失败: %v", err)
 	}

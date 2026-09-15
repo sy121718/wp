@@ -94,7 +94,7 @@ func TestProductsVariantGeneratePageFlow(t *testing.T) {
 	if loc := rec.Header().Get("Location"); !strings.Contains(loc, productenums.ErrVariationSelectionEmpty) {
 		t.Fatalf("未勾选应提示 %s，实际 Location=%q", productenums.ErrVariationSelectionEmpty, loc)
 	}
-	if got, _ := f.svc.Get(t.Context(), &productdto.GetReq{ID: product.ID}); got.VariantCount != 1 {
+	if got, _ := f.svc.Get(t.Context(), &productdto.GetReq{ProjectID: f.projectID, ID: product.ID}); got.VariantCount != 1 {
 		t.Fatalf("拒绝时不应写入变体，实际 %d 个", got.VariantCount)
 	}
 
@@ -106,7 +106,7 @@ func TestProductsVariantGeneratePageFlow(t *testing.T) {
 	if rec.Code != http.StatusFound {
 		t.Fatalf("勾选生成应 302 回列表，实际 %d：%s", rec.Code, rec.Body.String())
 	}
-	detail, err := f.svc.Get(t.Context(), &productdto.GetReq{ID: product.ID})
+	detail, err := f.svc.Get(t.Context(), &productdto.GetReq{ProjectID: f.projectID, ID: product.ID})
 	if err != nil {
 		t.Fatalf("读商品失败: %v", err)
 	}
@@ -136,7 +136,7 @@ func TestProductsVariantGenerateAllMode(t *testing.T) {
 	if rec.Code != http.StatusFound {
 		t.Fatalf("全部生成应 302 回列表，实际 %d：%s", rec.Code, rec.Body.String())
 	}
-	got, err := f.svc.Get(t.Context(), &productdto.GetReq{ID: product.ID})
+	got, err := f.svc.Get(t.Context(), &productdto.GetReq{ProjectID: f.projectID, ID: product.ID})
 	if err != nil {
 		t.Fatalf("读商品失败: %v", err)
 	}

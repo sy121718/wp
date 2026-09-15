@@ -18,7 +18,7 @@ import (
 	orderenums "go_wp/internal/module/order/enums"
 	ordermodel "go_wp/internal/module/order/model"
 	productcontract "go_wp/internal/module/product/contract"
-	userdto "go_wp/internal/module/user/dto"
+	usercontract "go_wp/internal/module/user/contract"
 )
 
 // orderDraft 建单的中间结果：订单头、订单项、命中的优惠码、访客开号结果。
@@ -237,7 +237,7 @@ func (s *Service) ensureGuestAccount(ctx context.Context, req *orderdto.CreateOr
 	if req.UserID != nil || s.guest == nil {
 		return req.UserID, false
 	}
-	gres, gerr := s.guest.EnsureGuestAccount(ctx, &userdto.GuestAccountReq{
+	gres, gerr := s.guest.EnsureGuestAccount(ctx, &usercontract.GuestAccountInput{
 		Email:      strings.TrimSpace(req.CustomerEmail),
 		Name:       strings.TrimSpace(req.CustomerName),
 		Locale:     req.Locale,

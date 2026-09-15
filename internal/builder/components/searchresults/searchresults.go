@@ -24,8 +24,8 @@ const (
 
 // Props 站内搜索属性。
 type Props struct {
-	Placeholder string `json:"placeholder,omitempty" ct:"text,maxlen=40,sec=content,label=占位提示"`
-	Limit       int    `json:"limit,omitempty" ct:"int,min=1,max=20,default=8,sec=content,label=每类结果条数"`
+	Placeholder string             `json:"placeholder,omitempty" ct:"text,maxlen=40,sec=content,label=占位提示"`
+	Limit       int                `json:"limit,omitempty" ct:"int,min=1,max=20,default=8,sec=content,label=每类结果条数"`
 	Advanced    core.AdvancedProps `json:"advanced" ct:"group"`
 }
 

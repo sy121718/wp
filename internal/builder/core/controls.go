@@ -43,6 +43,19 @@ const (
 	ControlCSSDecls  ControlKind = "cssdecls"  // 分号分隔的 CSS 声明（按端覆盖，白名单校验）
 	// ControlEntityRef 实体引用（分类 / 品牌 / 标签 id）：检查器渲染为下拉，值域由集合源可选能力提供。
 	ControlEntityRef ControlKind = "entityref"
+	// ControlBindingField 内容字段绑定（heading / text / image 的 Field 槽位）：
+	// 选项来自集合元数据接口的字段白名单，前缀白名单经 prefixes 参数限制。
+	ControlBindingField ControlKind = "bindingfield"
+	// ControlCollectionField 集合项字段（cardstack 卡片槽位）：选项限于 item.<字段>。
+	ControlCollectionField ControlKind = "collectionfield"
+	// ControlMultiEntityRef 多选实体（标签 / 分类 / 品牌 id 列表）。
+	//
+	// 值仍是逗号分隔的 id 串 —— 与既有手写配置**读写兼容**：换控件不改存储格式，
+	// 既存页面文档无需迁移，构建期解析逻辑一行不动（这是本控件敢换的前提）。
+	ControlMultiEntityRef ControlKind = "multientityref"
+	// ControlRangeList 数值区间列表（价格档位等），值形如 `0-199,200-399,799+`：
+	// 上限留空表示「以上」。同样是既有手写格式，控件只负责把它编辑得不容易写错。
+	ControlRangeList ControlKind = "rangelist"
 )
 
 // ctTag / ctRegexTag 字段标签：
@@ -72,8 +85,14 @@ type Control struct {
 	MaxLen  int             `json:"maxLen,omitempty"`
 	Unit    string          `json:"unit,omitempty"`    // dimension/margin 单位（如 px；缺省前端默认）
 	Options []ControlOption `json:"options,omitempty"` // select/segment 选项
-	Pattern string          `json:"pattern,omitempty"` // regex 模式
-	Hidden  bool            `json:"hidden,omitempty"`  // 检查器隐藏（如二选一字段的另一侧、内部实现字段）
+	// Prefixes bindingfield 允许的字段前缀白名单（如 product / item）。
+	//
+	// 空 = 不限制：控件把当前拿到的集合元数据全部列出来。
+	// 指定后只列该前缀下的字段 —— 集合项作用域（item.*）与当前实体（product.*）
+	// 是两种不同的绑定，混在一起时作者得自己记住哪个能用在哪儿。
+	Prefixes []string `json:"prefixes,omitempty"`
+	Pattern  string   `json:"pattern,omitempty"` // regex 模式
+	Hidden   bool     `json:"hidden,omitempty"`  // 检查器隐藏（如二选一字段的另一侧、内部实现字段）
 	// Section 面板分组：content / style / advanced（默认 content）。
 	Section string `json:"section,omitempty"`
 	// goName 反射字段名（Go 导出字段），ValidateSpec 按它定位字段值；
@@ -222,6 +241,13 @@ func parseControlTag(f reflect.StructField, tag string) (c Control, err error) {
 			c.Unit = strings.TrimPrefix(part, "unit=")
 		case strings.HasPrefix(part, "sec="):
 			c.Section = strings.TrimPrefix(part, "sec=")
+		case strings.HasPrefix(part, "prefixes="):
+			// 用 | 分隔而不是逗号：ct tag 本身以逗号分片（`prefixes=item|product`）。
+			for _, p := range strings.Split(strings.TrimPrefix(part, "prefixes="), "|") {
+				if p = strings.TrimSpace(p); p != "" {
+					c.Prefixes = append(c.Prefixes, p)
+				}
+			}
 		default:
 			// select/segment 选项：`值=中文` 声明显示标签，纯值则前端直接显示值。
 			if kv := strings.SplitN(part, "=", 2); len(kv) == 2 {
@@ -239,6 +265,14 @@ func parseControlTag(f reflect.StructField, tag string) (c Control, err error) {
 	}
 	if c.Kind == ControlEntityRef && len(c.Options) == 0 {
 		return c, fmt.Errorf("entityref 控件必须指定实体类型（如 category）")
+	}
+	if c.Kind == ControlMultiEntityRef && len(c.Options) == 0 {
+		return c, fmt.Errorf("multientityref 控件必须指定实体类型（如 tag）")
+	}
+	// prefixes 只对字段绑定类控件有意义：别的控件忽略它之后，作者会以为「配了但没生效」——
+	// 而「配置静默无效」正是 prefixes 要消除的那一类问题。
+	if len(c.Prefixes) > 0 && c.Kind != ControlBindingField && c.Kind != ControlCollectionField {
+		return c, fmt.Errorf("prefixes 只适用于 bindingfield / collectionfield 控件（当前 %s）", c.Kind)
 	}
 	return c, nil
 }

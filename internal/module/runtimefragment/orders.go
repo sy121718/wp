@@ -28,10 +28,14 @@ import (
 	"github.com/google/uuid"
 )
 
-// visitorOrders 访客订单查询能力（装配期注入；nil = 未接入）。
+// visitorOrders 访客订单查询能力（装配期注入）。
+//
+// 装配自检（审计 CQ-019）：判为 required-port —— 实现（orderSvc）在 routes.go 里
+// 恒定可得，为空只可能是装配被改坏。nil 分支仅服务单测，表现为订单列表 / 详情
+// 永远只显示「服务暂不可用」，与「今天订单服务挂了」在页面上无法区分。
 var visitorOrders ordercontract.VisitorOrderReader
 
-// SetVisitorOrderReader 注入访客订单查询能力（装配期调用；传 nil 表示未接入）。
+// SetVisitorOrderReader 注入访客订单查询能力（装配期调用；**必须注入**，见字段注释）。
 func SetVisitorOrderReader(r ordercontract.VisitorOrderReader) { visitorOrders = r }
 
 func init() {

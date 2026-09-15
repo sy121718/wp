@@ -100,6 +100,26 @@ func SetJSON(ctx context.Context, key string, value any, ttl time.Duration) erro
 	return nil
 }
 
+// SetJSONKeepTTL 覆盖写入 JSON 值，并**保留 key 原有的 TTL**（redis.KeepTTL）。
+//
+// 用于「只改内容、不改有效期」的读改写场景 —— 典型是刷新会话的最后活跃时间：
+// 用 SetJSON + 固定 TTL 重写会把「记住我」的长会话悄悄缩回默认时长，
+// 而先读 TTL 再按剩余时长写回会引入一次额外的往返与竞态窗口。
+func SetJSONKeepTTL(ctx context.Context, key string, value any) error {
+	client, err := GetRedis()
+	if err != nil {
+		return err
+	}
+	payload, err := json.Marshal(value)
+	if err != nil {
+		return fmt.Errorf("序列化缓存 JSON 失败: %w", err)
+	}
+	if err := client.Set(ctx, key, payload, redis.KeepTTL).Err(); err != nil {
+		return fmt.Errorf("刷新缓存失败: %w", err)
+	}
+	return nil
+}
+
 // TTL 返回 key 的剩余存活时间（语义与 Redis TTL 一致：-2 = key 不存在，-1 = 无过期时间）。
 //
 // 用途：需要「改写值但不改变有效期」的场景（例如回填会话内容时保留登录时设置的

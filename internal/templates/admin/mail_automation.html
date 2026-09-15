@@ -2,37 +2,37 @@
 {{extends "layout.html"}}
 {{block body()}}
 {{csrf := .["csrf_token"]}}
-<div class="pages-wrap">
-  <section class="pages-card card">
-    <h2>自动化流程</h2>
-    {{if .Err != ""}}<p class="pages-badge pages-badge-warn">{{.Err}}</p>{{end}}
-    {{if .Ok != ""}}<p class="pages-badge">{{.Ok}}</p>{{end}}
-    <p class="pages-empty">
-      自动化 = <strong>有人做了什么</strong>（触发）→ 按你定的步骤走（节点）→ 发信 / 等待 / 判断 / 打标签。
-      流程必须<strong>启用</strong>才会接受新的实例；暂停不影响已经在流程里的人（半路停掉会让人收到一半的流程）。
+{{tr := .["t"]}}
+<div class="stack">
+  <section class="card card-body">
+    <h2>{{ .["t"]("admin.mail.automation.heading", "自动化流程") }}</h2>
+    {{if .Err != ""}}<p class="badge badge-warning">{{.Err}}</p>{{end}}
+    {{if .Ok != ""}}<p class="badge badge-mute">{{.Ok}}</p>{{end}}
+    <p class="hint">
+      {{ .["t"]("admin.mail.automation.hint.lead", "自动化 =") }} <strong>{{ .["t"]("admin.mail.automation.hint.strong_trigger", "有人做了什么") }}</strong>{{ .["t"]("admin.mail.automation.hint.mid", "（触发）→ 按你定的步骤走（节点）→ 发信 / 等待 / 判断 / 打标签。流程必须") }}<strong>{{ .["t"]("admin.mail.automation.hint.strong_enable", "启用") }}</strong>{{ .["t"]("admin.mail.automation.hint.tail", "才会接受新的实例；暂停不影响已经在流程里的人（半路停掉会让人收到一半的流程）。") }}
     </p>
-    <p><a href="/admin/mail/automation/edit">＋ 新建流程</a> ·
-       <a href="/admin/mail/marketing">← 返回营销页</a></p>
+    <p><a href="/admin/mail/automation/edit">＋ {{ .["t"]("admin.mail.automation.new_link", "新建流程") }}</a> ·
+       <a href="/admin/mail/marketing">← {{ .["t"]("admin.mail.automation.back_marketing", "返回营销页") }}</a></p>
   </section>
 
-  <section class="pages-card card">
-    <h2>流程（共 {{.AutoTotal}} 条）</h2>
+  <section class="card card-body">
+    <h2>{{ .["t"]("admin.mail.automation.list_heading", "流程") }}{{ .["t"]("admin.mail.automation.list_total_lead", "（共 ") }}{{.AutoTotal}}{{ .["t"]("admin.mail.automation.list_total_tail", " 条）") }}</h2>
     {{if len(.Automations) == 0}}
-    <p class="pages-empty">还没有流程。先新建一条，比如「新订阅 → 等 1 天 → 发欢迎邮件 → 打上 welcomed 标签」。</p>
+    <p class="hint">{{ .["t"]("admin.mail.automation.empty", "还没有流程。先新建一条，比如「新订阅 → 等 1 天 → 发欢迎邮件 → 打上 welcomed 标签」。") }}</p>
     {{else}}
     <div class="table-wrap" tabindex="0">
-      <table class="pages-table data-table">
-      <thead><tr><th>名称</th><th>触发方式</th><th>状态</th><th>版本</th><th>操作</th></tr></thead>
+      <table class="data-table">
+      <thead><tr><th>{{ .["t"]("admin.mail.automation.col.name", "名称") }}</th><th>{{ .["t"]("admin.mail.automation.col.trigger", "触发方式") }}</th><th>{{ .["t"]("admin.mail.automation.col.status", "状态") }}</th><th>{{ .["t"]("admin.mail.automation.col.version", "版本") }}</th><th>{{ .["t"]("admin.mail.automation.col.actions", "操作") }}</th></tr></thead>
       <tbody>
       {{range _, a := .Automations}}
       <tr>
-        <td><a href="/admin/mail/automation/edit?id={{a.ID}}">{{a.Name}}</a> · <a href="/admin/mail/automation/canvas?id={{a.ID}}">画布</a>
-            {{if a.Description != ""}}<br><span class="pages-empty">{{a.Description}}</span>{{end}}</td>
+        <td><a href="/admin/mail/automation/edit?id={{a.ID}}">{{a.Name}}</a> · <a href="/admin/mail/automation/canvas?id={{a.ID}}">{{tr("admin.mail.automation.canvas_link", "画布")}}</a>
+            {{if a.Description != ""}}<br><span class="hint">{{a.Description}}</span>{{end}}</td>
         <td>{{a.TriggerType}}</td>
         <td>
-          {{if a.Status == "active"}}<strong>启用中</strong>
-          {{else if a.Status == "paused"}}已暂停
-          {{else}}草稿{{end}}
+          {{if a.Status == "active"}}<strong>{{tr("admin.mail.automation.status.active", "启用中")}}</strong>
+          {{else if a.Status == "paused"}}{{tr("admin.mail.automation.status.paused", "已暂停")}}
+          {{else}}{{tr("admin.mail.automation.status.draft", "草稿")}}{{end}}
         </td>
         <td>v{{a.Version}}</td>
         <td>
@@ -40,16 +40,16 @@
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="id" value="{{a.ID}}">
             {{if a.Status == "active"}}
-            <input type="hidden" name="status" value="paused"><button type="submit" class="btn btn-sm">暂停</button>
+            <input type="hidden" name="status" value="paused"><button type="submit" class="btn btn-sm">{{tr("admin.mail.automation.action.pause", "暂停")}}</button>
             {{else}}
-            <input type="hidden" name="status" value="active"><button type="submit" class="btn btn-sm">启用</button>
+            <input type="hidden" name="status" value="active"><button type="submit" class="btn btn-sm">{{tr("admin.mail.automation.action.enable", "启用")}}</button>
             {{end}}
           </form>
           <form method="post" action="/admin/mail/automation/delete" style="display:inline"
-                data-confirm="删除流程？进行中的实例会先停止。" data-confirm-danger>
+                data-confirm="{{tr("admin.mail.automation.confirm.delete", "删除流程？进行中的实例会先停止。")}}" data-confirm-danger>
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="id" value="{{a.ID}}">
-            <button type="submit" class="btn btn-sm">删除</button>
+            <button type="submit" class="btn btn-sm">{{tr("admin.mail.automation.action.delete", "删除")}}</button>
           </form>
         </td>
       </tr>
@@ -59,39 +59,37 @@
     {{end}}
   </section>
 
-  <section class="pages-card card">
-    <h2>运行实例（排障）</h2>
-    <p class="pages-empty">
-      「卡住了」在这里看：<strong>等待中</strong>是正常的（在等延时节点到点），
-      <strong>失败</strong>要点进去看原因。若怀疑队列延时丢了，用下面的「补投延时实例」立刻补一轮 ——
-      重复补投是安全的（同一步不会做两次）。
+  <section class="card card-body">
+    <h2>{{ .["t"]("admin.mail.automation.runs.heading", "运行实例（排障）") }}</h2>
+    <p class="hint">
+      {{ .["t"]("admin.mail.automation.runs.hint.lead", "「卡住了」在这里看：") }}<strong>{{ .["t"]("admin.mail.automation.runs.hint.strong_waiting", "等待中") }}</strong>{{ .["t"]("admin.mail.automation.runs.hint.mid", "是正常的（在等延时节点到点），") }}<strong>{{ .["t"]("admin.mail.automation.runs.hint.strong_failed", "失败") }}</strong>{{ .["t"]("admin.mail.automation.runs.hint.tail", "要点进去看原因。若怀疑队列延时丢了，用下面的「补投延时实例」立刻补一轮 —— 重复补投是安全的（同一步不会做两次）。") }}
     </p>
     <p>
-      运行中 {{.CountRunning}} · 等待中 {{.CountWaiting}} ·
-      已完成 {{.CountCompleted}} · 失败 {{.CountFailed}} · 已停止 {{.CountStopped}}
+      {{ .["t"]("admin.mail.automation.count.running", "运行中") }} {{.CountRunning}} · {{ .["t"]("admin.mail.automation.count.waiting", "等待中") }} {{.CountWaiting}} ·
+      {{ .["t"]("admin.mail.automation.count.completed", "已完成") }} {{.CountCompleted}} · {{ .["t"]("admin.mail.automation.count.failed", "失败") }} {{.CountFailed}} · {{ .["t"]("admin.mail.automation.count.stopped", "已停止") }} {{.CountStopped}}
     </p>
-    <form class="pages-form form-row" method="post" action="/admin/mail/automation/tick">
+    <form class="form-row items-center" method="post" action="/admin/mail/automation/tick">
       <input type="hidden" name="csrf_token" value="{{csrf}}">
-      <button type="submit" class="btn btn-sm">补投延时实例（扫一轮到点的）</button>
+      <button type="submit" class="btn btn-sm">{{ .["t"]("admin.mail.automation.action.tick", "补投延时实例（扫一轮到点的）") }}</button>
     </form>
-    <form class="pages-form form-row" method="get" action="/admin/mail/automation">
-      <label>按流程 id 筛：<input class="form-input" type="text" name="automationId" value="{{.FilterID}}" size="6"></label>
-      <label>按状态筛：
+    <form class="form-row items-center" method="get" action="/admin/mail/automation">
+      <label>{{ .["t"]("admin.mail.automation.filter.by_id", "按流程 id 筛：") }}<input class="form-input" type="text" name="automationId" value="{{.FilterID}}" size="6"></label>
+      <label>{{ .["t"]("admin.mail.automation.filter.by_status", "按状态筛：") }}
         <select class="form-select" name="runStatus">
-          <option value="">全部</option>
-          <option value="running">运行中</option>
-          <option value="waiting">等待中</option>
-          <option value="completed">已完成</option>
-          <option value="failed">失败</option>
-          <option value="stopped">已停止</option>
+          <option value="">{{ .["t"]("admin.mail.automation.filter.all", "全部") }}</option>
+          <option value="running">{{ .["t"]("admin.mail.automation.count.running", "运行中") }}</option>
+          <option value="waiting">{{ .["t"]("admin.mail.automation.count.waiting", "等待中") }}</option>
+          <option value="completed">{{ .["t"]("admin.mail.automation.count.completed", "已完成") }}</option>
+          <option value="failed">{{ .["t"]("admin.mail.automation.count.failed", "失败") }}</option>
+          <option value="stopped">{{ .["t"]("admin.mail.automation.count.stopped", "已停止") }}</option>
         </select>
       </label>
-      <button type="submit" class="btn btn-sm">筛选</button>
+      <button type="submit" class="btn btn-sm">{{ .["t"]("admin.mail.automation.action.filter", "筛选") }}</button>
     </form>
     {{if .Runs}}
     <div class="table-wrap" tabindex="0">
-      <table class="pages-table data-table">
-      <thead><tr><th>邮箱</th><th>状态</th><th>当前 / 下一节点</th><th>下次继续</th><th>触发</th><th>说明</th><th></th></tr></thead>
+      <table class="data-table">
+      <thead><tr><th>{{ .["t"]("admin.mail.automation.col.email", "邮箱") }}</th><th>{{ .["t"]("admin.mail.automation.col.status", "状态") }}</th><th>{{ .["t"]("admin.mail.automation.col.node", "当前 / 下一节点") }}</th><th>{{ .["t"]("admin.mail.automation.col.next_run", "下次继续") }}</th><th>{{ .["t"]("admin.mail.automation.col.trigger_event", "触发") }}</th><th>{{ .["t"]("admin.mail.automation.col.detail", "说明") }}</th><th></th></tr></thead>
       <tbody>
       {{range _, r := .Runs}}
       <tr>
@@ -101,14 +99,14 @@
         <td>{{if r.NextRunAt == ""}}—{{else}}{{r.NextRunAt}}{{end}}</td>
         <td>{{if r.TriggerEvent == ""}}—{{else}}{{r.TriggerEvent}}{{end}}</td>
         <td>{{if r.ErrorMessage == ""}}—{{else}}{{r.ErrorMessage}}{{end}}</td>
-        <td><a href="/admin/mail/automation/run?id={{r.ID}}">排障</a></td>
+        <td><a href="/admin/mail/automation/run?id={{r.ID}}">{{tr("admin.mail.automation.run_link", "排障")}}</a></td>
       </tr>
       {{end}}
       </tbody>
     </table>
-    <p class="pages-empty">共 {{.RunTotal}} 个实例。</p>
+    <p class="hint">{{ .["t"]("admin.mail.automation.runs.total_prefix", "共 ") }}{{.RunTotal}}{{ .["t"]("admin.mail.automation.runs.total_suffix", " 个实例。") }}</p>
     {{else}}
-    <p class="pages-empty">还没有实例。流程启用后，满足触发条件的人会自动进入。</p>
+    <p class="hint">{{ .["t"]("admin.mail.automation.runs.empty", "还没有实例。流程启用后，满足触发条件的人会自动进入。") }}</p>
     {{end}}
   </section>
 </div>

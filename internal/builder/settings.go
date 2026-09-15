@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"strings"
 
 	"go_wp/internal/builder/core"
 )
@@ -44,11 +45,48 @@ type PageSettings struct {
 }
 
 // StructureBindings 页面对全局块的槽位绑定快照。
+//
+// 两个通道并存是刻意的：headerBlockId / footerBlockId 是既有文档与主题设置里的写法，
+// 直接改成纯 map 会让所有已保存的文档在读取时**静默**丢掉页眉页脚绑定（表现为
+// 「主题里配着页眉，页面却不显示」）。Slots 承载其余槽位（公告条 / 侧边栏等，
+// 槽位白名单在 builder 的槽位声明里）。
+//
+// 消费方一律走 SlotBindings() 拿合并结果：逐字段读意味着每加一个槽位都要改一圈
+// 调用方，漏一处就是静默失效（文本不翻译、依赖不登记、构建不展开）。
 type StructureBindings struct {
 	// HeaderBlockID 页眉全局块 ID（空 = 无页眉）。
 	HeaderBlockID string `json:"headerBlockId,omitempty"`
 	// FooterBlockID 页脚全局块 ID（空 = 无页脚）。
 	FooterBlockID string `json:"footerBlockId,omitempty"`
+	// Slots 其余结构槽位的绑定（槽位名 → 全局块 ID）。
+	Slots map[string]string `json:"slots,omitempty"`
+}
+
+// SlotBindings 合并两个通道，返回「槽位名 → 块 ID」的完整绑定。
+//
+// 同名时以 Slots 里的值为准：显式写进 slots 的比历史字段更晚、也更明确。
+func (s StructureBindings) SlotBindings() map[string]string {
+	out := make(map[string]string, len(s.Slots)+2)
+	for slot, blockID := range s.Slots {
+		if id := strings.TrimSpace(blockID); id != "" {
+			out[slot] = id
+		}
+	}
+	if id := strings.TrimSpace(s.HeaderBlockID); id != "" && out[SlotHeader] == "" {
+		out[SlotHeader] = id
+	}
+	if id := strings.TrimSpace(s.FooterBlockID); id != "" && out[SlotFooter] == "" {
+		out[SlotFooter] = id
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// IsEmpty 是否没有任何槽位绑定。
+func (s StructureBindings) IsEmpty() bool {
+	return len(s.SlotBindings()) == 0
 }
 
 // PageLayout 页面版心控制。
@@ -80,12 +118,12 @@ type BaseStyle struct {
 
 // ProductOfferLD 商品结构化数据扩展（SEO-005：构建期静态 Offer/评分，不含实时库存）。
 type ProductOfferLD struct {
-	SKU            string  `json:"sku,omitempty"`
-	Price          string  `json:"price,omitempty"`
-	PriceCurrency  string  `json:"priceCurrency,omitempty"`
-	Availability   string  `json:"availability,omitempty"` // InStock / OutOfStock
-	RatingValue    float64 `json:"ratingValue,omitempty"`
-	RatingCount    int     `json:"ratingCount,omitempty"`
+	SKU           string  `json:"sku,omitempty"`
+	Price         string  `json:"price,omitempty"`
+	PriceCurrency string  `json:"priceCurrency,omitempty"`
+	Availability  string  `json:"availability,omitempty"` // InStock / OutOfStock
+	RatingValue   float64 `json:"ratingValue,omitempty"`
+	RatingCount   int     `json:"ratingCount,omitempty"`
 }
 
 // SEO SEO 与全局元信息。

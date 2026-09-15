@@ -7,6 +7,7 @@
 {{extends "layout.html"}}
 {{block body()}}
 {{csrf := .["csrf_token"]}}
+{{tr := .["t"]}}
 {{rows := .Rows}}
 {{counters := .Counters}}
 {{fKeyword := .FilterKeyword}}
@@ -18,50 +19,44 @@
 {{fLimit := .Limit}}
 <div class="stack customers-page">
     <section class="card card-body">
-        <h2>客户管理</h2>
+        <h2>{{ .["t"]("admin.customers.heading", "客户管理") }}</h2>
         {{if .Err != ""}}
-        <p class="badge badge-warning">上一次操作未完成：{{.Err}}</p>
+        <p class="badge badge-warning">{{ .["t"]("admin.customers.err_prefix", "上一次操作未完成：") }}{{.Err}}</p>
         {{end}}
         {{if .Ok != ""}}
         <p class="badge badge-success">{{.Ok}}</p>
         {{end}}
         <p class="hint">
-            这里的「客户」是<strong>站点访客账号</strong>：在前台注册、下单或订阅的人。
-            它与后台管理员账号是两套完全独立的东西（不同的表、不同的登录入口）——
-            在这里停用任何账号，都不会影响任何后台账号。
+            {{ .["t"]("admin.customers.hint.who.lead", "这里的「客户」是") }}<strong>{{ .["t"]("admin.customers.hint.who.strong", "站点访客账号") }}</strong>{{ .["t"]("admin.customers.hint.who.tail", "：在前台注册、下单或订阅的人。它与后台管理员账号是两套完全独立的东西（不同的表、不同的登录入口）—— 在这里停用任何账号，都不会影响任何后台账号。") }}
         </p>
         <p class="hint">
-            <strong>「停用」和「锁定」不是一回事</strong>：停用是管理动作，账号从此登不上去，
-            需要你在这里重新启用；锁定是连续输错密码触发的<strong>临时</strong>状态，到时间会自己解除。
-            客户只是多输错了几次密码时，点「解除锁定」就够了，不必停用他。
+            <strong>{{ .["t"]("admin.customers.hint.disable.strong", "「停用」和「锁定」不是一回事") }}</strong>{{ .["t"]("admin.customers.hint.disable.mid", "：停用是管理动作，账号从此登不上去，需要你在这里重新启用；锁定是连续输错密码触发的") }}<strong>{{ .["t"]("admin.customers.hint.disable.strong_temp", "临时") }}</strong>{{ .["t"]("admin.customers.hint.disable.tail", "状态，到时间会自己解除。客户只是多输错了几次密码时，点「解除锁定」就够了，不必停用他。") }}
         </p>
         <p class="hint">
-            邮箱<strong>未验证</strong>的账号本来就登不上去（客户还没点验证邮件里的链接）——
-            那属于正常流程，不是需要处理的问题。
+            {{ .["t"]("admin.customers.hint.unverified.lead", "邮箱") }}<strong>{{ .["t"]("admin.customers.hint.unverified.strong", "未验证") }}</strong>{{ .["t"]("admin.customers.hint.unverified.tail", "的账号本来就登不上去（客户还没点验证邮件里的链接）—— 那属于正常流程，不是需要处理的问题。") }}
         </p>
     </section>
 
     <section class="card card-body">
-        <h2>筛选</h2>
+        <h2>{{ .["t"]("admin.customers.filter.heading", "筛选") }}</h2>
         <p class="hint">
-            计数回答的是「一共有多少账号、各是什么状态」，<strong>不受下面的筛选影响</strong>；
-            列表则按筛选条件显示。
+            {{ .["t"]("admin.customers.filter.hint.lead", "计数回答的是「一共有多少账号、各是什么状态」，") }}<strong>{{ .["t"]("admin.customers.filter.hint.strong", "不受下面的筛选影响") }}</strong>{{ .["t"]("admin.customers.filter.hint.tail", "；列表则按筛选条件显示。") }}
         </p>
         <div class="action-row">
-            <span class="badge badge-mute">全部 {{counters.Total}}</span>
-            <span class="badge badge-success">正常 {{counters.Active}}</span>
-            <span class="badge badge-danger">已停用 {{counters.Disabled}}</span>
-            <span class="badge badge-warning">待激活 {{counters.Pending}}</span>
-            <span class="badge badge-info">已锁定 {{counters.Locked}}</span>
-            <span class="badge badge-mute">邮箱已验证 {{counters.Verified}}</span>
-            <span class="badge badge-mute">邮箱未验证 {{counters.Unverified}}</span>
+            <span class="badge badge-mute">{{ .["t"]("admin.customers.badge.all", "全部") }} {{counters.Total}}</span>
+            <span class="badge badge-success">{{ .["t"]("admin.customers.badge.active", "正常") }} {{counters.Active}}</span>
+            <span class="badge badge-danger">{{ .["t"]("admin.customers.badge.disabled", "已停用") }} {{counters.Disabled}}</span>
+            <span class="badge badge-warning">{{ .["t"]("admin.customers.badge.pending", "待激活") }} {{counters.Pending}}</span>
+            <span class="badge badge-info">{{ .["t"]("admin.customers.badge.locked", "已锁定") }} {{counters.Locked}}</span>
+            <span class="badge badge-mute">{{ .["t"]("admin.customers.badge.verified", "邮箱已验证") }} {{counters.Verified}}</span>
+            <span class="badge badge-mute">{{ .["t"]("admin.customers.badge.unverified", "邮箱未验证") }} {{counters.Unverified}}</span>
         </div>
         <form method="get" action="/admin/customers" class="form-stack">
             <div class="form-inline">
                 <input type="text" class="form-input" name="keyword" value="{{fKeyword}}"
-                       placeholder="关键词：邮箱 / 用户名 / 昵称 / 展示名" autocomplete="off">
+                       placeholder="{{ .["t"]("admin.customers.ph.keyword", "关键词：邮箱 / 用户名 / 昵称 / 展示名") }}" autocomplete="off">
                 <select class="form-select" name="status">
-                    <option value="">（状态：全部）</option>
+                    <option value="">{{ .["t"]("admin.customers.ph.status_all", "（状态：全部）") }}</option>
                     {{range _, s := .StatusOptions}}
                     {{if s.Value >= 0}}
                     <option value="{{s.Value}}" {{if s.Selected}}selected{{end}}>{{s.Label}}</option>
@@ -69,73 +64,71 @@
                     {{end}}
                 </select>
                 <select class="form-select" name="emailVerified">
-                    <option value="">（邮箱：全部）</option>
+                    <option value="">{{ .["t"]("admin.customers.ph.email_all", "（邮箱：全部）") }}</option>
                     {{range _, v := .VerifiedOptions}}
                     {{if v.Value > 0}}
                     <option value="{{v.Value}}" {{if v.Selected}}selected{{end}}>{{v.Label}}</option>
                     {{end}}
                     {{end}}
                 </select>
-                <label class="hint" for="registeredFrom">注册时间</label>
+                <label class="hint" for="registeredFrom">{{ .["t"]("admin.customers.field.registered_at", "注册时间") }}</label>
                 <input type="date" class="form-input" id="registeredFrom" name="registeredFrom" value="{{fFrom}}">
-                <span class="hint">至</span>
+                <span class="hint">{{ .["t"]("admin.customers.field.registered_to", "至") }}</span>
                 <input type="date" class="form-input" name="registeredTo" value="{{fTo}}">
-                <button type="submit" class="btn">筛选</button>
-                <a class="btn btn-ghost" href="/admin/customers">重置</a>
+                <button type="submit" class="btn">{{ .["t"]("admin.customers.filter.submit", "筛选") }}</button>
+                <a class="btn btn-ghost" href="/admin/customers">{{ .["t"]("admin.customers.filter.reset", "重置") }}</a>
             </div>
-            <p class="hint">注册时间的结束日期<strong>包含当天</strong>（填 9 月 30 日，当天注册的客户也在结果里）。</p>
+            <p class="hint">{{ .["t"]("admin.customers.filter.hint.inclusive.lead", "注册时间的结束日期") }}<strong>{{ .["t"]("admin.customers.filter.hint.inclusive.strong", "包含当天") }}</strong>{{ .["t"]("admin.customers.filter.hint.inclusive.tail", "（填 9 月 30 日，当天注册的客户也在结果里）。") }}</p>
         </form>
     </section>
 
     <section class="card card-body">
-        <h2>客户（共 {{.Total}} 个）</h2>
+        <h2>{{ .["t"]("admin.customers.list.heading", "客户") }}{{ .["t"]("admin.customers.list.total_lead", "（共 ") }}{{.Total}}{{ .["t"]("admin.customers.list.total_tail", " 个）") }}</h2>
         {{if .CapabilityMissing}}
         <p class="hint">
-            客户管理能力没有接进来（装配问题），下面只有页面框架。请联系开发确认用户模块的
-            后台契约是否已注入 —— 页面本身没有问题。
+            {{ .["t"]("admin.customers.capability_missing", "客户管理能力没有接进来（装配问题），下面只有页面框架。请联系开发确认用户模块的后台契约是否已注入 —— 页面本身没有问题。") }}
         </p>
         {{end}}
         {{if len(rows) == 0}}
         <p class="hint">
-            没有符合条件的客户。站点还没有访客注册，或者上面的筛选条件太窄了 ——
-            先点「重置」看一眼全部账号。
+            {{ .["t"]("admin.customers.empty", "没有符合条件的客户。站点还没有访客注册，或者上面的筛选条件太窄了 —— 先点「重置」看一眼全部账号。") }}
         </p>
         {{else}}
-        <div class="table-wrap" tabindex="0" role="region" aria-label="客户列表">
+        <div class="table-wrap" tabindex="0" role="region" aria-label="{{ .["t"]("admin.customers.list.aria", "客户列表") }}">
         <table class="data-table data-table-wide customers-page-table">
             <thead>
-            <tr><th>客户</th><th>邮箱</th><th>状态</th><th>最近登录</th><th>注册时间</th><th>操作</th></tr>
+            <tr><th>{{ .["t"]("admin.customers.col.customer", "客户") }}</th><th>{{ .["t"]("admin.customers.col.email", "邮箱") }}</th><th>{{ .["t"]("admin.customers.col.status", "状态") }}</th><th>{{ .["t"]("admin.customers.col.last_login", "最近登录") }}</th><th>{{ .["t"]("admin.customers.col.registered_at", "注册时间") }}</th><th>{{ .["t"]("admin.customers.col.actions", "操作") }}</th></tr>
             </thead>
             <tbody>
             {{range _, r := rows}}
             <tr>
-                <td data-label="客户">
+                <td data-label="{{tr("admin.customers.col.customer", "客户")}}">
                     <a href="{{r.DetailURL}}">{{r.DisplayLabel}}</a>
-                    <div class="hint">登录名 {{r.Username}}</div>
+                    <div class="hint">{{tr("admin.customers.field.username", "登录名")}} {{r.Username}}</div>
                 </td>
-                <td data-label="邮箱">
+                <td data-label="{{tr("admin.customers.col.email", "邮箱")}}">
                     {{r.Email}}
                     <div class="hint">
                         {{if r.EmailVerified}}<span class="badge badge-success">{{r.EmailVerifiedLabel}}</span>
                         {{else}}<span class="badge badge-warning">{{r.EmailVerifiedLabel}}</span>{{end}}
                     </div>
                 </td>
-                <td data-label="状态">
+                <td data-label="{{tr("admin.customers.col.status", "状态")}}">
                     <span class="badge {{r.StatusBadge}}">{{r.StatusLabel}}</span>
                     {{if r.Locked}}
-                    <div class="hint"><span class="badge badge-warning">已锁定</span> 至 {{r.LockedUntilText}}</div>
+                    <div class="hint"><span class="badge badge-warning">{{tr("admin.customers.status.locked", "已锁定")}}</span>{{tr("admin.customers.status.locked_until", " 至 ")}}{{r.LockedUntilText}}</div>
                     {{end}}
                 </td>
-                <td data-label="最近登录">
+                <td data-label="{{tr("admin.customers.col.last_login", "最近登录")}}">
                     {{r.LastLoginTimeText}}
                     <div class="hint">{{r.LastLoginIP}}{{if r.LastLoginLocation}} · {{r.LastLoginLocation}}{{end}}</div>
                 </td>
-                <td data-label="注册时间">
+                <td data-label="{{tr("admin.customers.col.registered_at", "注册时间")}}">
                     {{r.RegisteredAtText}}
                     <div class="hint">{{r.RegisterIP}}{{if r.RegisterLocation}} · {{r.RegisterLocation}}{{end}}</div>
                 </td>
-                <td data-label="操作" class="action-row">
-                    <a class="btn btn-sm" href="{{r.DetailURL}}">详情</a>
+                <td data-label="{{tr("admin.customers.col.actions", "操作")}}" class="action-row">
+                    <a class="btn btn-sm" href="{{r.DetailURL}}">{{tr("admin.customers.action.detail", "详情")}}</a>
                     {{if r.Actionable}}
                     <form method="post" action="/admin/customers/status" class="form-inline">
                         <input type="hidden" name="csrf_token" value="{{csrf}}">
@@ -161,7 +154,7 @@
                         <input type="hidden" name="registeredTo" value="{{fTo}}">
                         <input type="hidden" name="page" value="{{fPage}}">
                         <input type="hidden" name="limit" value="{{fLimit}}">
-                        <button type="submit" class="btn btn-sm">解除锁定</button>
+                        <button type="submit" class="btn btn-sm">{{tr("admin.customers.action.unlock", "解除锁定")}}</button>
                     </form>
                     {{end}}
                 </td>
@@ -178,8 +171,7 @@
         </div>
         {{include "partials/pagination.html"}}
         <p class="hint">
-            筛选条件在翻页时保留。停用 / 解除锁定按钮只对有权限的账号显示
-            （权限点：停用启用 <code>user:customer_status</code>、解除锁定 <code>user:customer_unlock</code>）。
+            {{ .["t"]("admin.customers.footer.lead", "筛选条件在翻页时保留。停用 / 解除锁定按钮只对有权限的账号显示（权限点：停用启用") }} <code>user:customer_status</code>{{ .["t"]("admin.customers.footer.mid", "、解除锁定") }} <code>user:customer_unlock</code>{{ .["t"]("admin.customers.footer.tail", "）。") }}
         </p>
         {{end}}
     </section>

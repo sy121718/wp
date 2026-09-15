@@ -13,11 +13,7 @@ import (
 	"time"
 
 	"go_wp/internal/builder"
-	blockcontract "go_wp/internal/module/block/contract"
 	"go_wp/internal/pipeline"
-	"go_wp/internal/templates"
-	"go_wp/pkg/i18n"
-	"go_wp/pkg/logger"
 
 	"gorm.io/gorm"
 )
@@ -55,6 +51,8 @@ func (s *Service) RefreshThemeForTheme(ctx context.Context, themeID string, them
 		if merged := builder.MergeThemeRawJSON(theme, row.Override); len(merged) > 0 {
 			snapshot = merged
 		}
+		// themeId 只读标识随快照落库：产物 :root 的 --sky-theme-id 与当前主题一致。
+		snapshot = builder.InjectThemeID(snapshot, themeID)
 		if err := s.model.UpdateThemeSnapshot(ctx, row.ID, snapshot); err != nil {
 			return err
 		}
@@ -144,6 +142,8 @@ func (s *Service) ReskinProjectForTheme(ctx context.Context, projectID, themeID 
 			if merged := builder.MergeThemeRawJSON(theme, row.Override); len(merged) > 0 {
 				snapshot = merged
 			}
+			// themeId 只读标识随快照落库（VIS-008 主题绑定）。
+			snapshot = builder.InjectThemeID(snapshot, themeID)
 			if err := s.model.UpdateThemeSnapshotTx(ctx, tx, row.ID, snapshot, now); err != nil {
 				return err
 			}
@@ -152,18 +152,18 @@ func (s *Service) ReskinProjectForTheme(ctx context.Context, projectID, themeID 
 		if err != nil {
 			return err
 		}
+		// VIS-008 换主题语义：清空槽位绑定，不保留旧主题的排版结构。
+		// 页面 settings.structure 整体重置为新主题的默认绑定（含空 = 全清），
+		// 旧主题烘焙进快照的 header/footer/slots 一律丢弃；页面如需自定义，
+		// 换主题后在页面设置里重新选择。令牌侧的 themeOverride 不受影响
+		//（VIS-002 分区：结构清空不波及令牌覆盖）。
+		// 注意：已发布产物是静态文件，本事务只标 stale（MarkStaleForThemeTx），
+		// 重新构建/发布后新主题才对访客可见。
+		structureJSON, err := json.Marshal(themeBindings)
+		if err != nil {
+			return err
+		}
 		for _, row := range structRows {
-			pageBindings := builder.StructureBindings{}
-			if len(row.Structure) > 0 {
-				if err := json.Unmarshal(row.Structure, &pageBindings); err != nil {
-					return err
-				}
-			}
-			merged := pipeline.MergeStructureBindings(pageBindings, themeBindings)
-			structureJSON, err := json.Marshal(merged)
-			if err != nil {
-				return err
-			}
 			if err := s.model.UpdateStructureSnapshotTx(ctx, tx, row.ID, structureJSON, now); err != nil {
 				return err
 			}
@@ -172,49 +172,17 @@ func (s *Service) ReskinProjectForTheme(ctx context.Context, projectID, themeID 
 	})
 }
 
-// compileBlockFragment 编译单个全局块为片段（HTML/CSS）；块缺失或非法时降级为空片段。
-// 绑定被删除的块不阻塞构建：页面产物退化为无页眉/页脚，保存主题绑定即可恢复。
+// structureSlotOptions 把 settings.structure 快照转成编译期的结构槽位绑定（审计 VIS-001）。
 //
-// lang / translator 与页面主体编译同源（多语言 P4/P5b 缺口补齐）：
-//   - lang 决定块内组件的构建期文案取词（RenderContext.Lang）；
-//   - translator 为**本次页面编译已构造的那一个**取词器（其 hash 集合已含块内候选，
-//     见 Service.collectContentCandidates）——块编译不再单独查库，每页每语言仍是一次。
-//
-// lang 为空（单语言站点）时行为与接入前一致：默认语言文案 + 不替换内容文本。
-func (s *Service) compileBlockFragment(ctx context.Context, blockID, lang string, translator *i18n.ContentTranslator) (html, css string) {
-	if blockID == "" {
-		return "", ""
+// 空绑定不产生任何 opt：没有页眉页脚时产物与改造前逐字节一致（无绑定即零影响）。
+func structureSlotOptions(s builder.StructureBindings) []builder.CompileOption {
+	bindings := s.SlotBindings()
+	if len(bindings) == 0 {
+		return nil
 	}
-	block, err := s.blocks.Detail(ctx, &blockcontract.DetailReq{ID: blockID})
-	if err != nil || block == nil || len(block.Document) == 0 {
-		logger.Scene("build").With("block", blockID).Error(err, "页眉/页脚块不可用")
-		return "", ""
+	slots := make([]builder.StructureSlot, 0, len(bindings))
+	for _, slot := range builder.SortedSlots(bindings) {
+		slots = append(slots, builder.StructureSlot{Slot: slot, BlockID: bindings[slot]})
 	}
-	page, err := builder.ParsePage(block.Document)
-	if err != nil {
-		logger.Scene("build").With("block", blockID).Error(err, "块文档解析失败")
-		return "", ""
-	}
-	set, serr := templates.NewEmbeddedComponentSet()
-	if serr != nil {
-		logger.Scene("build").With("block", blockID).Error(serr, "组件模板 Set 加载失败")
-		return "", ""
-	}
-	opts := []builder.CompileOption{
-		builder.WithContext(ctx), builder.WithComponentSet(set),
-		// 这里只取块 HTML/CSS；客户端资源在整页组装时按合并后的 HTML 统一注入。
-		// 语言与取词函数：与 compileDocument 的页面主体编译保持同一口径
-		//（构建期冻结快照，构建中途刷新 i18n 缓存不影响本次产物字节）。
-		builder.WithLanguage(lang), builder.WithTranslator(i18n.Snapshot(lang)),
-	}
-	if translator != nil {
-		opts = append(opts, builder.WithContentTranslator(translator))
-	}
-	compiled, err := builder.Compile(page, opts...)
-	if err != nil {
-		logger.Scene("build").With("block", blockID).Error(err, "块编译失败")
-		return "", ""
-	}
-	logger.Scene("build").With("block", blockID).Info("块编译成功")
-	return compiled.HTML, compiled.CSS
+	return []builder.CompileOption{builder.WithStructureSlots(slots...)}
 }

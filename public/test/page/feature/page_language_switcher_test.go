@@ -71,6 +71,24 @@ func TestPageArtifactLanguageSwitcher(t *testing.T) {
 	if err != nil {
 		t.Fatalf("en 构建失败: %v", err)
 	}
+	// 语言切换器只列**访问面上真的已发布**的语言（审计 I18N-021），所以这里必须先
+	// 把两种语言都发布出去；en 发布后 zh 的产物就落后了（它的切换器是在 en 尚未
+	// 发布时生成的），需要再重建一次才能互指 —— 这是静态站点的构建语义。
+	if _, err = svc.Publish(ctx, &pagedto.PublishReq{ID: page.ID}); err != nil {
+		t.Fatalf("zh 发布失败: %v", err)
+	}
+	if _, err = svc.Publish(ctx, &pagedto.PublishReq{ID: page.ID, Lang: "en-US"}); err != nil {
+		t.Fatalf("en 发布失败: %v", err)
+	}
+	zh, err = svc.Build(ctx, &pagedto.BuildReq{ID: page.ID})
+	if err != nil {
+		t.Fatalf("zh 重建失败: %v", err)
+	}
+	en, err = svc.Build(ctx, &pagedto.BuildReq{ID: page.ID, Lang: "en-US"})
+	if err != nil {
+		t.Fatalf("en 重建失败: %v", err)
+	}
+
 	root := artifactRootOf(t)
 	readArtifact := func(hash string) string {
 		t.Helper()

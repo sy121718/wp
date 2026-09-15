@@ -97,7 +97,7 @@ func (f *bundleFixture) mkProduct(t *testing.T, name, slug string, price *float6
 // firstVariant 取商品的首个变体。
 func (f *bundleFixture) firstVariant(t *testing.T, productID string) *productdto.VariantResp {
 	t.Helper()
-	detail, err := f.products.Get(context.Background(), &productdto.GetReq{ID: productID})
+	detail, err := f.products.Get(context.Background(), &productdto.GetReq{ProjectID: f.projectID, ID: productID})
 	if err != nil {
 		t.Fatalf("读商品失败: %v", err)
 	}

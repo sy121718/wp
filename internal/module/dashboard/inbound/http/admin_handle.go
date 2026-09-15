@@ -60,7 +60,7 @@ func adminWriteFailed(c *gin.Context, err error) {
 		return
 	}
 	logger.Scene("admin-page").With("path", c.Request.URL.Path).Error(err, "管理页写操作失败")
-	c.String(http.StatusBadRequest, err.Error())
+	pageErrorBadRequest(c, "admin", err)
 }
 
 // --- 管理员 administrators ---

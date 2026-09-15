@@ -52,6 +52,8 @@ type ListResp struct {
 	Page  int              `json:"page"`
 	Limit int              `json:"limit"`
 	List  []AttachmentResp `json:"list"`
+	// NextCursor 为空表示已经到达结果集末尾。
+	NextCursor string `json:"next_cursor,omitempty"`
 }
 
 // CategoryTreeNode 分类树节点。

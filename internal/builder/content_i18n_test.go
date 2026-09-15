@@ -75,9 +75,12 @@ const contentDocJSON = `{
   ]
 }`
 
+// 注意 SEO 用空串而不是占位符：AppendSEOCandidates 会把非空 SEO 并入候选
+// （审计 I18N-014），写 "x" 这种占位符等于给测试塞了两条无译文的候选，
+// 把 misses 计数从 0 顶到 2 —— 而这两条与被测行为毫无关系。
 // contentSkipDocJSON 只含跳过取值（纯数字/纯符号）。
 const contentSkipDocJSON = `{
-  "settings": {"layout": {"mode": "full"}, "seo": {"title": "x", "description": "x"}},
+  "settings": {"layout": {"mode": "full"}, "seo": {"title": "", "description": ""}},
   "root": [
     {"id": "n1", "type": "core.button", "props": {"text": "2024", "action": "internal", "value": "/a"}},
     {"id": "n2", "type": "core.button", "props": {"text": "→", "action": "internal", "value": "/b"}}
@@ -86,7 +89,7 @@ const contentSkipDocJSON = `{
 
 // contentDefaultSubmitDocJSON 未填写 submitLabel 的表单（走 P4 缺省文案）。
 const contentDefaultSubmitDocJSON = `{
-  "settings": {"layout": {"mode": "full"}, "seo": {"title": "x", "description": "x"}},
+  "settings": {"layout": {"mode": "full"}, "seo": {"title": "", "description": ""}},
   "root": [
     {"id": "frm2", "type": "core.form", "props": {"fields": [{"type": "text", "name": "q", "label": "问题"}]}}
   ]

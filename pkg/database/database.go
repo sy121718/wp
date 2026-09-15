@@ -16,17 +16,17 @@ import (
 )
 
 const (
-	defaultDatabaseDriver            = "postgres"
-	defaultDatabaseHost              = "127.0.0.1"
-	defaultDatabasePort              = 5432
-	defaultDatabaseUser              = "root"
-	defaultDatabasePassword          = ""
-	defaultDatabaseName              = ""
-	defaultDatabaseMaxIdleConns      = 10
-	defaultDatabaseMaxOpenConns      = 100
-	defaultDatabaseConnMaxLifetime   = time.Hour
-	defaultDatabaseConnMaxIdleTime   = 10 * time.Minute
-	defaultDatabaseStatementTimeout  = 30 * time.Second
+	defaultDatabaseDriver           = "postgres"
+	defaultDatabaseHost             = "127.0.0.1"
+	defaultDatabasePort             = 5432
+	defaultDatabaseUser             = "root"
+	defaultDatabasePassword         = ""
+	defaultDatabaseName             = ""
+	defaultDatabaseMaxIdleConns     = 10
+	defaultDatabaseMaxOpenConns     = 100
+	defaultDatabaseConnMaxLifetime  = time.Hour
+	defaultDatabaseConnMaxIdleTime  = 10 * time.Minute
+	defaultDatabaseStatementTimeout = 30 * time.Second
 )
 
 // Config 数据库配置。

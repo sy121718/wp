@@ -136,17 +136,23 @@ func (m *Model) ReplaceArtifactContent(ctx context.Context, id string, entity *P
 		if err = tx.Where("artifact_id = ?", id).Delete(&PageArtifactObjectEntity{}).Error; err != nil {
 			return err
 		}
+		// 共享内容对象必须**先落**：page_artifact_objects.content_hash 有外键指向
+		// content_objects(content_hash)，顺序反过来就是「先插引用、后插被引用行」，
+		// 直接外键违例（多语言第二次发布的归档路径踩过）。
+		// 事务内 ON CONFLICT DO NOTHING 幂等写入（first-writer-wins）。
+		// 冲突 target 收窄到 content_hash：只有「同一内容已登记」才跳过，
+		// 其它唯一冲突（例如 object_key 派生错了）必须显式报错而不是静默丢弃。
+		if len(contentObjects) > 0 {
+			if err = tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "content_hash"}}, DoNothing: true}).CreateInBatches(contentObjects, 100).Error; err != nil {
+				return err
+			}
+		}
+		// 闭包：内容对象就位之后再插引用。
 		if len(objects) > 0 {
 			for i := range objects {
 				objects[i].ArtifactID = id
 			}
 			if err = tx.CreateInBatches(objects, 100).Error; err != nil {
-				return err
-			}
-		}
-		// 共享内容对象：事务内 ON CONFLICT DO NOTHING 幂等写入（first-writer-wins）。
-		if len(contentObjects) > 0 {
-			if err = tx.Clauses(clause.OnConflict{DoNothing: true}).CreateInBatches(contentObjects, 100).Error; err != nil {
 				return err
 			}
 		}
@@ -220,6 +226,90 @@ func (m *Model) CountOtherAvailableByHash(ctx context.Context, hash, excludeID s
 		Where("artifact_hash = ? AND payload_state = ? AND id <> ?", hash, PayloadStateAvailable, excludeID).
 		Count(&n).Error
 	return n, err
+}
+
+// orphanContentObjectFilter 判定「无任何现存产物行引用」的 SQL 片段。
+//
+// 引用真源是 page_artifact_objects（产物 → 内容对象闭包投影，本模块表）：
+// 只有 payload_state='deleted' 之外的产物行才算有效引用 —— 已回收的产物行虽然
+// 元数据还在（source_document 保留、可 rebuild），但它指向的物理目录已被删除，
+// 其闭包对象里的 object_key 同样指向不存在的文件，再算作引用只会让内容对象永不回收。
+// rebuild 会走重新归档，届时按需重新写入 content_objects。
+//
+// 表名在片段里以 content_objects 全名书写：DELETE 与 SELECT 共用这一份判定，
+// 保证「看候选」与「真删除」用的是同一条规则（否则会出现预览数 10、实删 3）。
+const orphanContentObjectFilter = `NOT EXISTS (
+		SELECT 1 FROM page_artifact_objects o
+		JOIN page_artifacts a ON a.id = o.artifact_id
+		WHERE o.content_hash = content_objects.content_hash AND a.payload_state <> ?
+	)`
+
+// orphanContentObjectScope 构造孤儿内容对象的查询范围：
+//   - created_at 早于 before（保留窗口之外，避免清理刚落盘、闭包尚未提交的对象）
+//   - 不被任何现存产物行引用（见 orphanContentObjectFilter）
+//   - hashes 非空时收窄到指定集合（删除时用，避免删掉查完之后才出现的候选）
+func (m *Model) orphanContentObjectScope(ctx context.Context, before time.Time, hashes []string) *gorm.DB {
+	q := m.db.WithContext(ctx).Table(tableNameContentObjects).
+		Where("content_objects.created_at < ?", before).
+		Where(orphanContentObjectFilter, PayloadStateDeleted)
+	if len(hashes) > 0 {
+		q = q.Where("content_objects.content_hash IN ?", hashes)
+	}
+	return q
+}
+
+// CountOrphanContentObjects 统计孤儿内容对象数量（GC 的 dryRun 预演用）。
+func (m *Model) CountOrphanContentObjects(ctx context.Context, before time.Time) (n int64, err error) {
+	err = m.orphanContentObjectScope(ctx, before, nil).Count(&n).Error
+	return n, err
+}
+
+// ListOrphanContentObjects 列出孤儿内容对象（按 created_at 升序，至多 limit 条）。
+// limit <= 0 时不加限制 —— 调用方负责给一个有限批次。
+func (m *Model) ListOrphanContentObjects(ctx context.Context, before time.Time, limit int) (list []ContentObjectEntity, err error) {
+	q := m.orphanContentObjectScope(ctx, before, nil).Select("content_objects.*").Order("content_objects.created_at ASC")
+	if limit > 0 {
+		q = q.Limit(limit)
+	}
+	err = q.Find(&list).Error
+	return list, err
+}
+
+// deleteOrphanContentObjectsSQL 硬删除孤儿内容对象。
+//
+// 刻意写原生 DELETE 而不是走 GORM 的 Delete：ContentObjectEntity 有 DeletedAt 字段，
+// GORM 会把它当软删除列，Delete 会退化成 UPDATE deleted_at —— 那样"GC 之后仍能查到
+// 这些行"，标记清除也就白做了。这里要的是真删。
+const deleteOrphanContentObjectsSQL = `DELETE FROM content_objects
+	WHERE content_hash IN ?
+	  AND created_at < ?
+	  AND ` + orphanContentObjectFilter + `
+	RETURNING content_hash`
+
+// DeleteOrphanContentObjects 删除给定 hash 中**此刻仍是孤儿**的内容对象，
+// 返回真正删掉的 hash 列表（RETURNING）。
+//
+// 复查与删除在同一条语句里完成（而不是先查后删）：查与删之间若有并发归档复用同一
+// 内容对象，两者之间的窗口会让「先查后删」删掉刚被引用的行 —— 语句内 NOT EXISTS
+// 交给数据库做原子判定。返回集合而不是行数，是为了让调用方能逐条给出「删了 / 被认领了」
+// 的准确结论（只报行数时，差值既可能是并发认领也可能是别的意外）。
+func (m *Model) DeleteOrphanContentObjects(ctx context.Context, hashes []string, before time.Time) (deleted []string, err error) {
+	if len(hashes) == 0 {
+		return nil, nil
+	}
+	rows, err := m.db.WithContext(ctx).Raw(deleteOrphanContentObjectsSQL, hashes, before, PayloadStateDeleted).Rows()
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var h string
+		if serr := rows.Scan(&h); serr != nil {
+			return deleted, serr
+		}
+		deleted = append(deleted, h)
+	}
+	return deleted, rows.Err()
 }
 
 // MarkPayloadState 批量更新负载状态（gc_pending / deleted），返回受影响行数。

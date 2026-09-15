@@ -19,7 +19,8 @@
   transition: transform .18s, box-shadow .18s;
 }
 
-&.sky-infobox:hover {
+/* 悬停微抬进 hover 桶（构建期包 @media (hover: hover)）：触屏上不输出。 */
+@hover &.sky-infobox:hover {
   transform: translateY(-2px);
 }
 
@@ -93,7 +94,7 @@
 }
 @endif
 
-&.sky-infobox:hover {
+@hover &.sky-infobox:hover {
   background: {{hoverBg}};
 }
 
@@ -121,7 +122,12 @@
   transition: opacity .15s;
 }
 
-& .sky-infobox-btn:hover {
+@hover & .sky-infobox-btn:hover {
   opacity: .85;
+}
+
+/* 触屏等价反馈：触屏没有悬停，按钮按下时用按压反馈替代（@active 不包媒体查询）。 */
+@active & .sky-infobox-btn:active {
+  opacity: .9;
 }
 @endif

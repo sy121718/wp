@@ -17,12 +17,12 @@ import (
 	"go_wp/internal/builder"
 	"go_wp/internal/builder/core"
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
-	"go_wp/internal/pipeline"
-	"go_wp/pkg/logger"
 	contenttemplatedto "go_wp/internal/module/contenttemplate/dto"
 	contenttemplateenums "go_wp/internal/module/contenttemplate/enums"
 	contenttemplatemodel "go_wp/internal/module/contenttemplate/model"
 	projectcontract "go_wp/internal/module/project/contract"
+	"go_wp/internal/pipeline"
+	"go_wp/pkg/logger"
 )
 
 // systemCreator 版本行 created_by 的占位（NOT NULL uuid 列）。
@@ -78,8 +78,16 @@ func (s *Service) Create(ctx context.Context, req *contenttemplatedto.CreateReq)
 		return nil, err
 	}
 	now := time.Now().UTC()
+	role := strings.TrimSpace(req.TemplateRole)
+	if role == "" {
+		role = contenttemplatemodel.TemplateRoleDetail
+	}
+	if !contenttemplatemodel.IsValidTemplateRole(role) {
+		return nil, errors.New(contenttemplateenums.ErrInvalidParam)
+	}
 	e := &contenttemplatemodel.TemplateEntity{
 		ID: uuid.NewString(), ProjectID: projectID, Name: req.Name, EntityType: req.EntityType,
+		TemplateRole:  role,
 		DraftDocument: doc, DraftVersion: 1, CreatedAt: now, UpdatedAt: now,
 	}
 	// 模板行 + 首个不可变版本 + 当前版本指针回填，三者原子写入。
@@ -177,7 +185,23 @@ func (s *Service) ResolveTemplate(ctx context.Context, entityType string) (res *
 	if entityType == "" || !s.validEntityType(entityType) {
 		return nil, errors.New(contenttemplateenums.ErrInvalidType)
 	}
-	rows, err := s.m.List(ctx, entityType)
+	// 只取详情角色（审计 EDT-004）：归档模板与详情模板可以同类型共存，
+	// 不过滤就会把归档模板当成详情模板取用。
+	return s.ResolveTemplateByRole(ctx, entityType, contenttemplatemodel.TemplateRoleDetail)
+}
+
+// ResolveTemplateByRole 按实体类型与角色解析模板（审计 EDT-004）。
+//
+// 归档型实例（分类页 / 标签页 / 品牌页）走这个入口取归档模板；没有配置时返回
+// ErrNotFound，由调用方决定是「跳过」还是「报错」——不在这里替调用方做决定。
+func (s *Service) ResolveTemplateByRole(ctx context.Context, entityType, role string) (res *contenttemplatecontract.ResolvedTemplate, err error) {
+	if entityType == "" || !s.validEntityType(entityType) {
+		return nil, errors.New(contenttemplateenums.ErrInvalidType)
+	}
+	if role != "" && !contenttemplatemodel.IsValidTemplateRole(role) {
+		return nil, errors.New(contenttemplateenums.ErrInvalidParam)
+	}
+	rows, err := s.m.ListByRole(ctx, entityType, role)
 	if err != nil {
 		return nil, err
 	}

@@ -28,7 +28,7 @@ func artifactIndexHTML(t *testing.T, hash string) string {
 // TestPageArtifactHreflangPerLanguage 同一页两种语言的产物 head 各自输出
 // 互指链接（含 x-default 指向默认语言）。
 func TestPageArtifactHreflangPerLanguage(t *testing.T) {
-	_, svc, projects, projectID := newPageService(t)
+	db, svc, projects, projectID := newPageService(t)
 	ctx := context.Background()
 	withLangPrefix(t)
 
@@ -43,13 +43,38 @@ func TestPageArtifactHreflangPerLanguage(t *testing.T) {
 	}
 
 	page := createPage(t, svc, projectID, "/about", headingDocument)
-	zh, err := svc.Build(ctx, &pagedto.BuildReq{ID: page.ID})
+	// 构建返回值不必留存：断言以 page_artifacts（真源）为准。
+	_, err := svc.Build(ctx, &pagedto.BuildReq{ID: page.ID})
 	if err != nil {
 		t.Fatalf("zh 构建失败: %v", err)
 	}
-	en, err := svc.Build(ctx, &pagedto.BuildReq{ID: page.ID, Lang: "en-US"})
+	_, err = svc.Build(ctx, &pagedto.BuildReq{ID: page.ID, Lang: "en-US"})
 	if err != nil {
 		t.Fatalf("en 构建失败: %v", err)
+	}
+	// 互指 hreflang 要求两种语言都「在访问面上已发布」：只构建不发布时，
+	// 切换器与 hreflang 会把另一种语言当作尚不存在而省略（审计 I18N-021）。
+	// 发布顺序同样重要 —— 后发布的语言会让先前构建的产物落后，须重建一次。
+	if _, err = svc.Publish(ctx, &pagedto.PublishReq{ID: page.ID}); err != nil {
+		t.Fatalf("zh 发布失败: %v", err)
+	}
+	if _, err = svc.Publish(ctx, &pagedto.PublishReq{ID: page.ID, Lang: "en-US"}); err != nil {
+		t.Fatalf("en 发布失败: %v", err)
+	}
+	// en 发布之后 zh 的产物落后了（它的 hreflang 是在 en 尚未发布时生成的），
+	// 重建一次让它吸收 en 的存在 —— 静态站点的构建语义。
+	if _, err = svc.Build(ctx, &pagedto.BuildReq{ID: page.ID}); err != nil {
+		t.Fatalf("zh 重建失败: %v", err)
+	}
+
+	var arts []struct{ Lang, ArtifactHash string }
+	if err = db.Raw("SELECT lang, artifact_hash FROM page_artifacts WHERE page_id = ? ORDER BY lang", page.ID).
+		Scan(&arts).Error; err != nil {
+		t.Fatalf("查询产物行失败: %v", err)
+	}
+	latest := map[string]string{}
+	for _, a := range arts {
+		latest[a.Lang] = a.ArtifactHash
 	}
 
 	want := []string{
@@ -58,8 +83,8 @@ func TestPageArtifactHreflangPerLanguage(t *testing.T) {
 		"hreflang=\"x-default\" href=\"/about\"",
 	}
 	for _, c := range []struct{ name, hash string }{
-		{"zh-CN", zh.StagedHash},
-		{"en-US", en.StagedHash},
+		{"zh-CN", latest["zh-CN"]},
+		{"en-US", latest["en-US"]},
 	} {
 		html := artifactIndexHTML(t, c.hash)
 		for _, w := range want {

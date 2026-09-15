@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 
@@ -96,6 +97,45 @@ type BuildInput struct {
 	Path string
 	// DocJSON 冻结的 Page Document 字节。
 	DocJSON []byte
+	// Usage 编译期依赖线索收集器（可选）：编译器渲染时填充，依赖提供者读取。
+	//
+	// 指针而不是值：编译与「问依赖」是两个阶段（compileArtifact 先编译、再调 deps），
+	// 值传递多次之后只有指针能让后一阶段看到前一阶段的记录。
+	Usage *CompileUsage
+}
+
+// CompileUsage 收集编译期**真实消费**的产物依赖线索（审计 VIS-006）。
+//
+// 为什么必须构建期记录而不是静态推导：页面文档里没有「我用了系统页面槽位」这种声明，
+// 是否输出该链接取决于组件渲染时到底取了哪个槽位。静态扫节点类型要维护一张
+// 「组件 → 槽位」映射表，而那张表与渲染代码迟早漂移 —— 记录下来的是事实。
+type CompileUsage struct {
+	// SiteSlots 本次编译消费过的系统页面槽位集合。
+	SiteSlots map[string]bool
+}
+
+// UseSiteSlot 记录一次槽位消费（由 builder 的 RenderContext 在取值时调用）。
+func (u *CompileUsage) UseSiteSlot(slot string) {
+	if u == nil || slot == "" {
+		return
+	}
+	if u.SiteSlots == nil {
+		u.SiteSlots = map[string]bool{}
+	}
+	u.SiteSlots[slot] = true
+}
+
+// SiteSlotList 已消费槽位的确定性排序列表。
+func (u *CompileUsage) SiteSlotList() []string {
+	if u == nil || len(u.SiteSlots) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(u.SiteSlots))
+	for slot := range u.SiteSlots {
+		out = append(out, slot)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // CompileFn 冻结编译函数：构建输入 → 完整 HTML 文档字节。
@@ -272,7 +312,7 @@ func (p *Publisher) Build(ctx context.Context, pageID string, expectedVersion in
 	}
 	rec.Status = StateBuilding
 	docSnapshot := append([]byte(nil), rec.DocumentJSON...)
-	in := BuildInput{PageID: pageID, Lang: rec.Lang, Path: rec.Path, DocJSON: docSnapshot}
+	in := BuildInput{PageID: pageID, Lang: rec.Lang, Path: rec.Path, DocJSON: docSnapshot, Usage: &CompileUsage{}}
 	p.mu.Unlock()
 
 	// 锁外：确定性编译 + 产物落盘。
@@ -421,7 +461,7 @@ func (p *Publisher) UpdateURL(ctx context.Context, pageID string, newPath string
 		return oldPath, err
 	}
 	version := rec.Version
-	in := BuildInput{PageID: pageID, Lang: rec.Lang, Path: nPath, DocJSON: append([]byte(nil), rec.DocumentJSON...)}
+	in := BuildInput{PageID: pageID, Lang: rec.Lang, Path: nPath, DocJSON: append([]byte(nil), rec.DocumentJSON...), Usage: &CompileUsage{}}
 	p.mu.Unlock()
 
 	// 2. 锁外：基于新 URL 构建（慢操作不阻塞其他页面）。

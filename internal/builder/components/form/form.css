@@ -95,6 +95,13 @@
   cursor: pointer;
   transition: background .15s;
 }
-& .sky-form-submit:hover {
+/* 悬停提亮进 hover 桶（构建期包 @media (hover: hover)）：触屏上不输出。
+   提交是表单的唯一操作入口，触屏没有悬停 —— 等价反馈走下面的 @active 按压态。 */
+@hover & .sky-form-submit:hover {
+  background: var(--sky-btn-hover-bg, var(--sky-c-primary, #1d4ed8));
+}
+
+/* 触屏等价形态：按压反馈（@active 不包媒体查询，手指按下即触发）。 */
+@active & .sky-form-submit:active {
   background: var(--sky-btn-hover-bg, var(--sky-c-primary, #1d4ed8));
 }

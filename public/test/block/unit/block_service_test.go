@@ -44,6 +44,11 @@ func newEnv(t *testing.T) *env {
 	}
 	projects := projectservice.NewService(projectmodel.NewProjectModel(db))
 	svc := blockservice.NewService(blockmodel.NewBlockModel(db), projects)
+	// 引用检查器与 stale 传播器必须注入：未注入时 Delete / global→template 一律按
+	// 「仍被引用」拒绝（宁拒勿删），那是刻意的保守默认，不是测试想要的夹具状态。
+	// 这里注入一个「无引用」的检查器；引用检查本身的行为由专门的用例覆盖。
+	svc.SetReferenceChecker(func(context.Context, string) (bool, error) { return false, nil })
+	svc.SetStalePropagator(func(context.Context, string) error { return nil })
 	pid, err := projects.Create(context.Background(), &projectdto.CreateReq{Name: "测试工程"})
 	if err != nil {
 		t.Fatalf("创建测试工程失败: %v", err)
@@ -195,7 +200,7 @@ func TestBlockDetailSuccess(t *testing.T) {
 	ctx := context.Background()
 	created := e.createBlock(t, "页眉块", blockmodel.KindHeader)
 
-	res, err := e.svc.Detail(ctx, &blockdto.DetailReq{ID: created.ID})
+	res, err := e.svc.Detail(ctx, &blockdto.DetailReq{ProjectID: e.projectID, ID: created.ID})
 	if err != nil {
 		t.Fatalf("Detail 应无错误: %v", err)
 	}
@@ -218,11 +223,11 @@ func TestBlockDetailInvalidRequest(t *testing.T) {
 		errContains(t, err, blockenums.ErrBlockParamRequired)
 	})
 	t.Run("EmptyID", func(t *testing.T) {
-		_, err := e.svc.Detail(ctx, &blockdto.DetailReq{ID: ""})
+		_, err := e.svc.Detail(ctx, &blockdto.DetailReq{ProjectID: e.projectID, ID: ""})
 		errContains(t, err, blockenums.ErrBlockParamRequired)
 	})
 	t.Run("WhitespaceID", func(t *testing.T) {
-		_, err := e.svc.Detail(ctx, &blockdto.DetailReq{ID: "  "})
+		_, err := e.svc.Detail(ctx, &blockdto.DetailReq{ProjectID: e.projectID, ID: "  "})
 		errContains(t, err, blockenums.ErrBlockParamRequired)
 	})
 }
@@ -230,7 +235,7 @@ func TestBlockDetailInvalidRequest(t *testing.T) {
 func TestBlockDetailNotFound(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()
-	_, err := e.svc.Detail(ctx, &blockdto.DetailReq{ID: uuid.NewString()})
+	_, err := e.svc.Detail(ctx, &blockdto.DetailReq{ProjectID: e.projectID, ID: uuid.NewString()})
 	errContains(t, err, blockenums.ErrBlockNotFound)
 }
 
@@ -356,7 +361,7 @@ func TestBlockUpdateSuccess(t *testing.T) {
 			t.Fatalf("更新结果错误: %#v", res)
 		}
 		// 持久化验证：重新 Detail。
-		got, err := e.svc.Detail(ctx, &blockdto.DetailReq{ID: created.ID})
+		got, err := e.svc.Detail(ctx, &blockdto.DetailReq{ProjectID: e.projectID, ID: created.ID})
 		if err != nil || got.Name != "新名" || got.Kind != blockmodel.KindFooter {
 			t.Fatalf("更新未持久化: %#v err=%v", got, err)
 		}
@@ -414,7 +419,7 @@ func TestBlockUpdateSuccess(t *testing.T) {
 		})
 		errContains(t, err, blockenums.ErrBlockInvalidDoc)
 		// 失败后数据保持不变。
-		got, _ := e.svc.Detail(ctx, &blockdto.DetailReq{ID: created.ID})
+		got, _ := e.svc.Detail(ctx, &blockdto.DetailReq{ProjectID: e.projectID, ID: created.ID})
 		if got.Name != "版心块" || docLayoutMode(t, got.Document) != "full" {
 			t.Fatalf("非法文档更新失败后数据不应变化: %#v", got)
 		}
@@ -452,7 +457,7 @@ func TestBlockUpdateInvalidRequest(t *testing.T) {
 		created := e.createBlock(t, "改文档", "")
 		_, err := e.svc.Update(ctx, &blockdto.UpdateReq{ID: created.ID, Name: "不应生效", Document: json.RawMessage(`[]`)})
 		errContains(t, err, blockenums.ErrBlockInvalidDoc)
-		got, _ := e.svc.Detail(ctx, &blockdto.DetailReq{ID: created.ID})
+		got, _ := e.svc.Detail(ctx, &blockdto.DetailReq{ProjectID: e.projectID, ID: created.ID})
 		if got.Name != "改文档" {
 			t.Fatalf("非法文档更新失败后名称不应变化: %#v", got)
 		}
@@ -469,7 +474,7 @@ func TestBlockDeleteSuccess(t *testing.T) {
 	if err := e.svc.Delete(ctx, &blockdto.DeleteReq{ID: created.ID}); err != nil {
 		t.Fatalf("删除应无错误: %v", err)
 	}
-	_, err := e.svc.Detail(ctx, &blockdto.DetailReq{ID: created.ID})
+	_, err := e.svc.Detail(ctx, &blockdto.DetailReq{ProjectID: e.projectID, ID: created.ID})
 	errContains(t, err, blockenums.ErrBlockNotFound)
 
 	res, err := e.svc.List(ctx, &blockdto.ListReq{ProjectID: e.projectID})

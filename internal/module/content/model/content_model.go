@@ -4,6 +4,7 @@ package contentmodel
 import (
 	"context"
 	"encoding/json"
+	"sort"
 	"strings"
 	"time"
 
@@ -122,12 +123,76 @@ func (m *Model) SearchArticles(ctx context.Context, entityType, keyword string, 
 		limit = maxSearchLimit
 	}
 	pattern := "%" + database.EscapeLikePattern(keyword) + "%"
+	// title 用**生成列**（迁移 169，审计 DB-024）而不是 data->>'title'：
+	// JSONB 表达式没有索引，`data->>'title' ILIKE '%x%'` 只能全表扫；
+	// 生成列上有 trgm 索引，OR 的左边能走它。生成列由数据库从 data 自动维护，
+	// 写入路径因此一行都不用改，也不可能出现「title 与 data 不一致」。
+	// excerpt 仍在 JSONB 里（不进列表与集合投影，也没有索引需求）。
 	err = m.db.WithContext(ctx).
 		Where("entity_type = ?", entityType).
-		Where("(data->>'title' ILIKE ? ESCAPE '\\' OR data->>'excerpt' ILIKE ? ESCAPE '\\')", pattern, pattern).
+		Where("(title ILIKE ? ESCAPE '\\' OR data->>'excerpt' ILIKE ? ESCAPE '\\')", pattern, pattern).
 		Order("updated_at DESC, id DESC").
 		Limit(limit).
 		Find(&list).Error
 	return list, err
 }
 
+// collectionItemLimit 集合源单次取数上限（与该集合源改造前的 100 条口径一致：
+// 组件集合渲染不分页，超出的部分本就不输出）。
+const collectionItemLimit = 100
+
+// CollectionItem 集合项投影（审计 PERF-008）。
+//
+// 与 Entity 的差别是「取什么」：Entity 拉整行（含 data 里的正文全文），
+// CollectionItem 只取集合渲染要用的字段，且字段值由 SQL 就地拼成 JSON 对象 ——
+// 正文因此从不经过应用进程。
+type CollectionItem struct {
+	ID        string          `gorm:"column:id"`
+	Slug      string          `gorm:"column:slug"`
+	Revision  int64           `gorm:"column:revision"`
+	UpdatedAt time.Time       `gorm:"column:updated_at"`
+	Fields    json.RawMessage `gorm:"column:fields"`
+}
+
+// ListForCollection 集合源取数：列投影 + 筛选下推 + 确定性排序。
+//
+// fields 是集合项要暴露的字段（调用方从白名单取，见 contentcontract.CollectionFieldWhitelist）；
+// filter 是等值过滤，下推成 `(data ->> 'k') = 'v'`。键名与值一律以参数进入 SQL：
+// 键名虽来自白名单常量，仍然走占位符 —— 「拼 SQL」这件事一旦在一处开了口子，
+// 下一处就很难守住。
+//
+// 投影用 jsonb_strip_nulls 包住：jsonb_build_object 对缺失字段会写出 null，
+// 而改造前「键不存在」与「键存在但为 null」是两种状态，组件靠它区分「没有这个字段」
+// 与「字段是空的」（见 builder/source 的取值访问器语义），不能合并成一种。
+func (m *Model) ListForCollection(ctx context.Context, entityType string, fields []string, filter map[string]string, limit int) (list []*CollectionItem, err error) {
+	if limit <= 0 {
+		limit = collectionItemLimit
+	}
+	parts := make([]string, 0, len(fields))
+	args := make([]any, 0, len(fields)*2+2)
+	for _, f := range fields {
+		// 显式 ::text：jsonb_build_object 是 any 变参函数，不给类型时 PG 无法推断
+		// 参数类型（42P18 could not determine data type of parameter）。
+		parts = append(parts, "?::text, data->?::text")
+		args = append(args, f, f)
+	}
+	projection := "id, slug, revision, updated_at, jsonb_strip_nulls(jsonb_build_object(" +
+		strings.Join(parts, ", ") + ")) AS fields"
+	q := m.db.WithContext(ctx).Table(tableNameContents).Select(projection, args...)
+	if entityType != "" {
+		q = q.Where("entity_type = ?", entityType)
+	}
+	// 按键名排序后拼条件：map 迭代顺序不定，不排序会让同一次查询的参数顺序随机变化
+	// （结果一样，但 prepared statement 缓存会白白多出几个变体，慢查询日志也不好比对）。
+	keys := make([]string, 0, len(filter))
+	for k := range filter {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		// 同样显式转型：->> 的右操作数必须是 text，比较值也一样。
+		q = q.Where("(data ->> ?::text) = ?::text", k, filter[k])
+	}
+	err = q.Order("updated_at DESC, id DESC").Limit(limit).Find(&list).Error
+	return list, err
+}

@@ -45,8 +45,9 @@
   padding: {{item_padding}};
 }
 
-/* 悬停文字色（可选）。 */
-& .sky-lang-link:hover {
+/* 悬停文字色（可选）：进 hover 桶（构建期包 @media (hover: hover)），触屏上不输出 ——
+   语言切换链接的「可点」由下划线与位置表达，颜色不参与可达性。 */
+@hover & .sky-lang-link:hover {
   color: {{hover_color}};
 }
 

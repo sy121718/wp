@@ -476,6 +476,12 @@ func TestMenuTreeBuild(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
 
+	// 生产迁移会 seed 一批权限菜单（i18n seed 等）；本用例断言「树里恰好两个顶级」，
+	// 先清空库内菜单保持原意（种子菜单自身的正确性不属本用例范围）。
+	if err := e.db.Exec("DELETE FROM sys_menus").Error; err != nil {
+		t.Fatalf("清理种子菜单失败: %v", err)
+	}
+
 	code := "menu_tree:" + uniq("")
 	createPerm(t, e, code, "/api/tree")
 	// 顶级目录

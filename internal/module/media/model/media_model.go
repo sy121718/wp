@@ -179,13 +179,34 @@ func (m *AttachmentModel) List(ctx context.Context, fileType string, categoryID 
 		q = q.Where("file_name LIKE ? ESCAPE '\\'", "%"+database.EscapeLikePattern(search)+"%")
 	}
 
+	return m.listPage(q, offset, limit, nil, 0)
+}
+
+// ListAfter 按创建时间和 ID 的复合键取下一页，避免深分页扫描并丢弃大量行。
+func (m *AttachmentModel) ListAfter(ctx context.Context, fileType string, categoryID *uint64, search string, after time.Time, afterID uint64, limit int) ([]AttachmentEntity, int64, error) {
+	q := m.attrDB(ctx).Where("status = ?", AttachmentStatusEnabled)
+	if fileType != "" {
+		q = q.Where("file_type = ?", fileType)
+	}
+	if categoryID != nil && *categoryID > 0 {
+		q = q.Where("category_id = ?", *categoryID)
+	}
+	if search != "" {
+		q = q.Where("file_name LIKE ? ESCAPE '\\'", "%"+database.EscapeLikePattern(search)+"%")
+	}
+	return m.listPage(q, 0, limit, &after, afterID)
+}
+
+func (m *AttachmentModel) listPage(q *gorm.DB, offset, limit int, after *time.Time, afterID uint64) ([]AttachmentEntity, int64, error) {
 	var total int64
 	if err := q.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
-
+	if after != nil {
+		q = q.Where("(create_time, id) < (?, ?)", *after, afterID)
+	}
 	var list []AttachmentEntity
-	if err := q.Order("create_time DESC").Offset(offset).Limit(limit).Find(&list).Error; err != nil {
+	if err := q.Order("create_time DESC, id DESC").Offset(offset).Limit(limit).Find(&list).Error; err != nil {
 		return nil, 0, err
 	}
 	return list, total, nil

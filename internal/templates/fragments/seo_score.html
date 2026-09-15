@@ -1,11 +1,30 @@
 {* fragments/seo_score.html — SEO 评分区（HTMX 服务端渲染，docs/09 §3）
-   数据：Score（OK/Total/Grade/Sections/Serp*）；建议项带 data-wb-jump 由客户端委托跳转。 *}
+   数据：Score（OK/Total/Grade/ProfileType/ProfileReason/Sections/Duplicates/DuplicateNote/Empty/Serp*）
+   建议项带 data-wb-jump 由客户端委托跳转。
+
+   被三处复用：页面设置面板、文章编辑页、商品 / 分类 / 品牌页（审计 SEO-016）。
+   共用同一份模板是刻意的：同一份评分结果不该有三种呈现方式 ——
+   「哪些检查项算未达标」在三个地方各写一遍，很快会给出三种答案。 *}
 {{if .Score.OK}}
 <div class="wb-seo-head">
     <span class="wb-seo-total">{{.Score.Total}}</span>
     <span class="wb-seo-grade">{{.Score.Grade}}</span>
     <span class="wb-seo-tip">SEO 评分（0-100）</span>
 </div>
+{{if .Score.ProfileReason != ""}}
+<p class="wb-seo-tip">页型权重：{{.Score.ProfileType}} · {{.Score.ProfileReason}}</p>
+{{end}}
+{{if len(.Score.Duplicates) > 0}}
+<div class="wb-seo-dup">
+    <p class="badge badge-warning">标题重复：另有 {{len(.Score.Duplicates)}} 个页面用了同一个标题</p>
+    <p class="wb-seo-tip">{{.Score.DuplicateNote}}</p>
+    <ul class="wb-seo-issues">
+        {{range _, page := .Score.Duplicates}}
+        <li>{{page}}</li>
+        {{end}}
+    </ul>
+</div>
+{{end}}
 {{range _, sec := .Score.Sections}}
 <div class="wb-seo-sec">
     <span class="wb-seo-dot is-{{sec.Color}}"></span>
@@ -26,5 +45,5 @@
     <div class="wb-serp-desc">{{.Score.SerpDesc}}</div>
 </div>
 {{else}}
-<p class="wb-empty">评分不可用（草稿为空或评分失败）</p>
+<p class="wb-empty">{{if len(.Score.Empty) > 0}}{{.Score.Empty}}{{else}}评分不可用（草稿为空或评分失败）{{end}}</p>
 {{end}}

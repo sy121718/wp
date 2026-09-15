@@ -22,10 +22,6 @@ body {
   transition: transform .15s, opacity .15s;
 }
 
-.sky-c-sb1 .sky-social-btn:hover {
-  transform: translateY(-2px);
-}
-
 .sky-c-sb1 .sky-social-btn {
   border-radius: 999px;
 }
@@ -162,10 +158,6 @@ body {
   transition: transform .15s, opacity .15s;
 }
 
-.sky-c-sb2 .sky-social-btn:hover {
-  transform: translateY(-2px);
-}
-
 .sky-c-sb2 .sky-social-btn {
   border-radius: 999px;
 }
@@ -174,4 +166,25 @@ body {
   color: #123456;
   background: rgba(0,0,0,.06);
 }
+
+@media (hover: hover) {
+  .sky-c-sb1 .sky-social-btn:hover, .sky-c-sb2 .sky-social-btn:hover {
+  transform: translateY(-2px);
+
+}
+}
+
+.sky-c-sb1 .sky-social-btn:active, .sky-c-sb2 .sky-social-btn:active {
+  transform: translateY(0);
+  opacity: 0.88;
+
+}
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

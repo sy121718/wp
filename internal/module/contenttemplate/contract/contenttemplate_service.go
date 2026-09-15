@@ -27,6 +27,10 @@ type ContentTemplateService interface {
 	// 可有多套命名模板，发布与预览需按 ID 显式指定用哪一套；模板不存在时返回
 	// ErrNotFound，不静默回落到类型默认模板）。
 	ResolveTemplateByID(ctx context.Context, templateID string) (res *ResolvedTemplate, err error)
+	// ResolveTemplateByRole 按实体类型与角色解析模板（审计 EDT-004）：
+	// 归档型实例（分类页 / 标签页 / 品牌页）用 role=archive 取归档模板；
+	// 该角色没有配置时返回 ErrNotFound，由调用方决定跳过还是报错。
+	ResolveTemplateByRole(ctx context.Context, entityType, role string) (res *ResolvedTemplate, err error)
 }
 
 // ResolvedTemplate 已解析的模板版本（presentation 派生快照的输入）。

@@ -48,12 +48,12 @@ type View struct {
 }
 
 // BuildView 生成按钮渲染视图：标签选择 + 链接协议 + 图标（与 render 输出结构一致）。
-func BuildView(p *Props, content core.ContentResolver) (View, error) {
+func BuildView(p *Props, content core.ContentResolver, siteLink func(string) string) (View, error) {
 	fragment, err := buildIconFragment(p)
 	if err != nil {
 		return View{}, err
 	}
-	tag, attrs, err := buildAttrs(p, content)
+	tag, attrs, err := buildAttrs(p, content, siteLink)
 	if err != nil {
 		return View{}, err
 	}
@@ -103,7 +103,13 @@ func buildIconFragment(p *Props) (string, error) {
 }
 
 // buildAttrs 标签与属性选择（与 render 内联逻辑逐字一致，保持旧输出不变）。
-func buildAttrs(p *Props, content core.ContentResolver) (tag, attrs string, err error) {
+// link 站内链接本地化器（审计 I18N-015，可空）：作者手填的 /shop 这类站内路径要按当前
+// 语言加前缀，否则英文站点上的按钮会跳回默认语言版本 —— 页面看起来正常，只是点过去语言变了。
+// 外链 / 锚点 / 协议相对地址由 core.ResolveSiteLink 自行放行，这里不做判断。
+func buildAttrs(p *Props, content core.ContentResolver, siteLink func(string) string) (tag, attrs string, err error) {
+	if siteLink == nil {
+		siteLink = func(s string) string { return s }
+	}
 	tag = "a"
 	switch p.Action {
 	case ActionModal:
@@ -132,11 +138,11 @@ func buildAttrs(p *Props, content core.ContentResolver) (tag, attrs string, err 
 		if !core.IsSafeURL(v) {
 			return tag, "", nil
 		}
-		attrs = ` href="` + html.EscapeString(v) + `"`
+		attrs = ` href="` + html.EscapeString(v) + `"` // CMS 值不本地化：语义是内容作者掌握的完整地址
 	case ActionAnchor:
 		attrs = ` href="#` + html.EscapeString(p.Value) + `"`
 	case ActionNative, ActionInternal:
-		attrs = ` href="` + html.EscapeString(p.Value) + `"`
+		attrs = ` href="` + html.EscapeString(siteLink(p.Value)) + `"`
 	default: // external
 		attrs = ` href="` + html.EscapeString(p.Value) + `"`
 		relParts := []string{}

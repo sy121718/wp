@@ -60,19 +60,18 @@ func TestPublicationNormalizePathTrailingSlash(t *testing.T) {
 			t.Fatalf("不应残留尾斜杠路径: %d", n)
 		}
 	})
-	t.Run("多尾斜杠连续裁剪", func(t *testing.T) {
+	t.Run("重复分隔符被拒绝", func(t *testing.T) {
 		svc := newUnitService(t)
+		// 路径归一化收敛到 pkg/pathkit 之后（审计 CQ-012），含重复分隔符的路径一律**拒绝**
+		// 而不是「裁剪后接受」：`/a//b` 与 `/a/b` 若能各占一行路由，路由占用判断会失真
+		// （同一个逻辑地址有两种登记形态，谁先占谁赢）。这与 pipeline 的口径一致。
 		if _, err := svc.Activate(context.Background(), &pubdto.ActivateReq{
 			ProjectID: projectID, Path: "/a/b//", PageID: pageID, ArtifactID: artifactUUID,
-		}); err != nil {
-			t.Fatalf("激活 /a/b// 失败: %v", err)
+		}); err == nil {
+			t.Fatal("含重复分隔符的路径应被拒绝，实际成功")
 		}
-		// 修复语义：连续裁剪尾部斜杠，同一逻辑 URL 不产生不同路由行。
-		if routeMissing(t, svc, "/a/b") {
-			t.Fatalf("应规范化到 /a/b")
-		}
-		if n := countRoutes(t, svc, "path = ?", "/a/b//"); n != 0 {
-			t.Fatalf("不应残留双尾斜杠路径: %d", n)
+		if !routeMissing(t, svc, "/a/b") && !routeMissing(t, svc, "/a/b//") {
+			t.Fatal("被拒绝的路径不应留下任何路由行")
 		}
 	})
 	t.Run("根路径保持", func(t *testing.T) {

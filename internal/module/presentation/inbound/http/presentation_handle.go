@@ -29,7 +29,7 @@ func (h *Handle) CreateInstance(c *gin.Context) {
 	}
 	res, err := h.svc.CreateInstance(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "presentation", err)
 		return
 	}
 	response.SuccessWithMessage(c, presentationenums.MsgCreateSuccess, res)
@@ -44,7 +44,7 @@ func (h *Handle) Rebuild(c *gin.Context) {
 	}
 	res, err := h.svc.Rebuild(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "presentation", err)
 		return
 	}
 	response.SuccessWithMessage(c, presentationenums.MsgRebuildSuccess, res)
@@ -59,7 +59,7 @@ func (h *Handle) GetByEntity(c *gin.Context) {
 	}
 	res, err := h.svc.GetByEntity(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusNotFound, err.Error())
+		response.ErrorAuto(c, http.StatusNotFound, "presentation", err)
 		return
 	}
 	response.SuccessWithMessage(c, presentationenums.MsgDetailSuccess, res)
@@ -74,7 +74,7 @@ func (h *Handle) Preview(c *gin.Context) {
 	}
 	res, err := h.svc.PreviewInstance(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "presentation", err)
 		return
 	}
 	response.SuccessWithMessage(c, presentationenums.MsgPreviewSuccess, res)
@@ -93,7 +93,7 @@ func (h *Handle) UpdateURL(c *gin.Context) {
 	}
 	res, err := h.svc.UpdateURL(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "presentation", err)
 		return
 	}
 	response.SuccessWithMessage(c, presentationenums.MsgUpdateURLSuccess, res)
@@ -108,7 +108,7 @@ func (h *Handle) Get(c *gin.Context) {
 	}
 	res, err := h.svc.Get(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusNotFound, err.Error())
+		response.ErrorAuto(c, http.StatusNotFound, "presentation", err)
 		return
 	}
 	response.SuccessWithMessage(c, presentationenums.MsgDetailSuccess, res)
@@ -123,7 +123,7 @@ func (h *Handle) List(c *gin.Context) {
 	}
 	list, err := h.svc.List(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "presentation", err)
 		return
 	}
 	response.SuccessWithMessage(c, presentationenums.MsgListSuccess, list)
@@ -137,7 +137,7 @@ func (h *Handle) Delete(c *gin.Context) {
 		return
 	}
 	if err := h.svc.Delete(c.Request.Context(), req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "presentation", err)
 		return
 	}
 	response.SuccessWithMessage(c, presentationenums.MsgDeleteSuccess, nil)

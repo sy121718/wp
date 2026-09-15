@@ -37,6 +37,27 @@ func MergeThemeSettings(base, override *ThemeSettings) *ThemeSettings {
 	return out
 }
 
+// InjectThemeID 把主题只读标识注入主题快照 JSON（VIS-002/VIS-008）。
+//
+// 走 map 层覆盖而不是结构体序列化：快照要保真（见 MergeThemeRawJSON），
+// 不能为了写一个 themeId 把历史或未来的键丢掉；非法 JSON 原样返回。
+func InjectThemeID(themeJSON json.RawMessage, themeID string) json.RawMessage {
+	if strings.TrimSpace(themeID) == "" {
+		return themeJSON
+	}
+	m := rawToThemeMap(themeJSON)
+	if m == nil {
+		// 非法 JSON：保真优先，原样返回，不凭空捏造快照。
+		return themeJSON
+	}
+	m["themeId"] = themeID
+	out, err := json.Marshal(m)
+	if err != nil {
+		return themeJSON
+	}
+	return out
+}
+
 // MergeThemeRawJSON 以主题原始 JSON 为底、页面覆盖原始 JSON 为上层深合并，
 // **保留双方的每一个键**。两边都是空则返回空。
 //

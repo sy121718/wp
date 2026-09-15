@@ -37,6 +37,15 @@ type ContentCandidate struct {
 	Source  string
 }
 
+// SEO 文本字段的翻译语境（审计 I18N-014）。
+//
+// 定义成常量而不是两处字面量：写入口（工作台）与读入口（构建期）的语境一旦分叉，
+// 译文会安静地存进去、永远读不出来，而页面上完全看不出区别。
+const (
+	SEOTitleContext       = "page.seo.title"
+	SEODescriptionContext = "page.seo.description"
+)
+
 // CollectContentCandidates 遍历页面文档收集可翻译候选（去重，确定性顺序）。
 //
 // 供两处复用（同源，避免「收集」与「替换」两套白名单判断漂移）：
@@ -84,14 +93,36 @@ func CollectContentCandidatesForDocument(p *Page, resolve BlockRootFunc) []Conte
 	if p == nil {
 		return nil
 	}
-	extra := make([]string, 0, 2)
-	if id := p.Settings.Structure.HeaderBlockID; id != "" {
-		extra = append(extra, id)
+	// 槽位绑定统一从 SlotBindings 取（含 Slots 里的新槽位）：逐字段读会让
+	// 「公告条里的文本」进不了候选集合 —— 表现是那块文案永远不翻译，而构建照常成功。
+	bindings := p.Settings.Structure.SlotBindings()
+	extra := make([]string, 0, len(bindings))
+	for _, slot := range SortedSlots(bindings) {
+		extra = append(extra, bindings[slot])
 	}
-	if id := p.Settings.Structure.FooterBlockID; id != "" {
-		extra = append(extra, id)
+	return AppendSEOCandidates(p, CollectContentCandidatesDeep(p, extra, resolve))
+}
+
+// AppendSEOCandidates 把 SEO 文本字段并入候选集合（审计 I18N-014）。
+//
+// 两条候选的来源是 Settings 而不是 AST，组件侧的 Translatable 白名单管不到
+// （与菜单标签同一类盲区），必须在候选集合这一层补。
+//
+// **工作台与构建期必须看到同一份候选**：构建期走 CollectContentCandidatesForDocument，
+// 工作台走 CollectContentCandidates（只扫 AST）。不补这一步，作者在工作台里根本看不到
+// SEO 字段可填，而构建期又期待有译文 —— 表现是「功能像是没做」，而不是报错。
+func AppendSEOCandidates(p *Page, cands []ContentCandidate) []ContentCandidate {
+	if p == nil {
+		return cands
 	}
-	return CollectContentCandidatesDeep(p, extra, resolve)
+	out := make([]ContentCandidate, 0, 2+len(cands))
+	if t := strings.TrimSpace(p.Settings.SEO.Title); t != "" {
+		out = append(out, ContentCandidate{Context: SEOTitleContext, Source: t})
+	}
+	if d := strings.TrimSpace(p.Settings.SEO.Description); d != "" {
+		out = append(out, ContentCandidate{Context: SEODescriptionContext, Source: d})
+	}
+	return append(out, cands...)
 }
 
 // CollectContentCandidatesDeep 收集「页面文档 + 构建期内联块」的全部可翻译候选。

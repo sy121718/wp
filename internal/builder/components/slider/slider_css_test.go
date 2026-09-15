@@ -60,7 +60,9 @@ func TestSliderCSSSkeleton(t *testing.T) {
 		".sky-c-t .sky-slide {",
 		".sky-c-t .sky-slide > * {",
 		".sky-c-t .sky-slider-arrow {",
-		".sky-c-t .sky-slider-dots button.is-active {",
+		// 圆点在产物里是 <a class="sky-slider-dot">：选择器必须与模板一致（此前写成 button，
+		// 圆点的尺寸与焦点环全部落空），见 slider_a11y_test.go 的交叉断言。
+		".sky-c-t .sky-slider-dot.is-active {",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("产物缺少 %q\n%s", want, out)

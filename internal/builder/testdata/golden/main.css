@@ -31,10 +31,6 @@ body {
   transition: all 0.2s ease;
 }
 
-.sky-c-cta:hover, .sky-c-cta:focus {
-  background: #333333;
-}
-
 .sky-c-ghost {
   display: inline-flex;
   align-items: center;
@@ -51,10 +47,6 @@ body {
 
 .sky-c-ghost .bt-icon-shift {
   transition: transform 0.2s ease;
-}
-
-.sky-c-ghost:hover .bt-icon-shift {
-  transform: translateX(4px);
 }
 
 .sky-c-inner {
@@ -145,4 +137,30 @@ body {
   padding: 16px;
 }
 }
+
+@media (hover: hover) {
+  .sky-c-cta:hover, .sky-c-cta:focus {
+  background: #333333;
+
+}
+}
+@media (hover: hover) {
+  .sky-c-ghost:hover .bt-icon-shift {
+  transform: translateX(4px);
+
+}
+}
+
+.sky-c-cta:active {
+  opacity: 0.92;
+
+}
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

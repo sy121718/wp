@@ -106,7 +106,9 @@
   transition: transform {{duration}} ease, box-shadow {{duration}} ease, filter {{duration}} ease;
 }
 
-& .gi:hover {
+/* 悬停缩放 / 阴影加深进 hover 桶（构建期包 @media (hover: hover)）：
+   触屏上不输出，避免点一下卡住放大态。 */
+@hover & .gi:hover {
   transform: scale({{scale}});
   @if deepen
   box-shadow: 0 10px 28px rgba(0,0,0,0.16);
@@ -128,7 +130,13 @@
   transition: background {{duration}} ease;
 }
 
-& .gi:hover::after {
+@hover & .gi:hover::after {
+  background: {{overlayColor}};
+}
+
+/* 触屏等价反馈：缩略图可点进灯箱，触屏没有悬停 —— 按下时给遮罩反馈
+   （@active 不包媒体查询，手指按下即触发）。 */
+@active & .gi:active::after {
   background: {{overlayColor}};
 }
 @endif
@@ -152,7 +160,13 @@
   overflow: hidden;
 }
 
-& figure:hover figcaption {
+@hover & figure:hover figcaption {
+  opacity: 1;
+}
+
+/* 触屏等价形态：触屏没有悬停，图注永远滑不出来 —— 而图注是**内容**（不是装饰），
+   缺失等于信息不可达。所以 (hover: none) 下把图注常显。 */
+@hovernone & figcaption {
   opacity: 1;
 }
 @endif

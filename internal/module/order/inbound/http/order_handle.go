@@ -67,7 +67,7 @@ func (h *Handle) CreateOrder(c *gin.Context) {
 	}
 	res, err := h.svc.CreateOrder(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "order", err)
 		return
 	}
 	response.SuccessWithMessage(c, orderenums.MsgCreateSuccess, res)
@@ -82,7 +82,7 @@ func (h *Handle) GetOrder(c *gin.Context) {
 	}
 	res, err := h.svc.GetOrder(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "order", err)
 		return
 	}
 	response.Success(c, res)
@@ -97,7 +97,7 @@ func (h *Handle) ListOrders(c *gin.Context) {
 	}
 	res, err := h.svc.ListOrders(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "order", err)
 		return
 	}
 	response.Success(c, res)
@@ -113,7 +113,7 @@ func (h *Handle) ChangeStatus(c *gin.Context) {
 	req.OperatorID, req.OperatorName = operatorFromContext(c)
 	req.OperatorType = "admin"
 	if err := h.svc.ChangeStatus(c.Request.Context(), req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "order", err)
 		return
 	}
 	response.SuccessWithMessage(c, orderenums.MsgStatusChanged, nil)
@@ -130,7 +130,7 @@ func (h *Handle) CancelOrder(c *gin.Context) {
 	req.OperatorType = "admin"
 	resp, err := h.svc.CancelOrder(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "order", err)
 		return
 	}
 	msg := orderenums.MsgCancelled
@@ -150,7 +150,7 @@ func (h *Handle) RefundOrder(c *gin.Context) {
 	req.OperatorID, req.OperatorName = operatorFromContext(c)
 	req.OperatorType = "admin"
 	if err := h.svc.RefundOrder(c.Request.Context(), req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "order", err)
 		return
 	}
 	response.SuccessWithMessage(c, orderenums.MsgRefunded, nil)
@@ -165,7 +165,7 @@ func (h *Handle) ListItems(c *gin.Context) {
 	}
 	res, err := h.svc.GetOrder(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "order", err)
 		return
 	}
 	response.Success(c, res.Items)
@@ -180,7 +180,7 @@ func (h *Handle) ListLogs(c *gin.Context) {
 	}
 	res, err := h.svc.GetOrder(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "order", err)
 		return
 	}
 	response.Success(c, res.Logs)
@@ -202,7 +202,7 @@ func (h *Handle) ListCoupons(c *gin.Context) {
 	}
 	res, err := h.svc.ListCoupons(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "order", err)
 		return
 	}
 	response.Success(c, res)
@@ -217,7 +217,7 @@ func (h *Handle) GetCoupon(c *gin.Context) {
 	}
 	res, err := h.svc.GetCoupon(c.Request.Context(), id)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "order", err)
 		return
 	}
 	response.Success(c, res)
@@ -233,7 +233,7 @@ func (h *Handle) CreateCoupon(c *gin.Context) {
 	applyCouponOperator(c, req)
 	res, err := h.svc.CreateCoupon(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "order", err)
 		return
 	}
 	response.SuccessWithMessage(c, orderenums.MsgCouponCreated, res)
@@ -249,7 +249,7 @@ func (h *Handle) UpdateCoupon(c *gin.Context) {
 	applyCouponOperator(c, req)
 	res, err := h.svc.UpdateCoupon(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "order", err)
 		return
 	}
 	response.SuccessWithMessage(c, orderenums.MsgCouponUpdated, res)
@@ -263,7 +263,7 @@ func (h *Handle) DeleteCoupon(c *gin.Context) {
 		return
 	}
 	if err := h.svc.DeleteCoupon(c.Request.Context(), id); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "order", err)
 		return
 	}
 	response.SuccessWithMessage(c, orderenums.MsgCouponDeleted, nil)
@@ -278,7 +278,7 @@ func (h *Handle) ValidateCoupon(c *gin.Context) {
 	}
 	res, err := h.svc.ValidateCoupon(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "order", err)
 		return
 	}
 	response.Success(c, res)
@@ -293,7 +293,23 @@ func (h *Handle) ListCouponRedemptions(c *gin.Context) {
 	}
 	res, err := h.svc.ListCouponRedemptions(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "order", err)
+		return
+	}
+	response.Success(c, res)
+}
+
+// AuditCouponCounts 券计数对账（DB-021）：used_count（投影）对核销明细（真源）。
+// 只读入口，供运维巡检；发现偏差时照常返回结果，由人判断怎么处理。
+func (h *Handle) AuditCouponCounts(c *gin.Context) {
+	req := &orderdto.CouponCountAuditReq{}
+	if err := c.ShouldBindQuery(req); err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, orderenums.ErrInvalidParam)
+		return
+	}
+	res, err := h.svc.AuditCouponCounts(c.Request.Context(), req)
+	if err != nil {
+		response.ErrorAuto(c, http.StatusBadRequest, "order", err)
 		return
 	}
 	response.Success(c, res)
@@ -315,7 +331,7 @@ func (h *Handle) ListReturns(c *gin.Context) {
 	}
 	res, err := h.svc.ListReturns(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "order", err)
 		return
 	}
 	response.Success(c, res)
@@ -346,7 +362,7 @@ func (h *Handle) ApproveReturn(c *gin.Context) {
 	applyReturnOperator(c, req)
 	res, err := h.svc.ApproveReturn(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "order", err)
 		return
 	}
 	response.SuccessWithMessage(c, orderenums.MsgReturnApproved, res)
@@ -362,7 +378,7 @@ func (h *Handle) RejectReturn(c *gin.Context) {
 	applyReturnOperator(c, req)
 	res, err := h.svc.RejectReturn(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "order", err)
 		return
 	}
 	response.SuccessWithMessage(c, orderenums.MsgReturnRejected, res)
@@ -381,7 +397,7 @@ func (h *Handle) ReceiveReturn(c *gin.Context) {
 	req.OperatorName = name
 	res, err := h.svc.ReceiveReturn(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "order", err)
 		return
 	}
 	response.SuccessWithMessage(c, orderenums.MsgReturnReceived, res)
@@ -400,7 +416,7 @@ func (h *Handle) UpdateOrderNote(c *gin.Context) {
 	req.OperatorName = name
 	res, err := h.svc.UpdateOrderNote(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "order", err)
 		return
 	}
 	response.SuccessWithMessage(c, orderenums.MsgNoteUpdated, res)

@@ -3,41 +3,42 @@
    需要改规则配置走抽屉底部「编辑规则配置」链接到独立页 /admin/datarules/edit?id=。 *}
 {{extends "layout.html"}}
 {{block body()}}
+{* range 内取词要先取 t 函数（Jet 不在 range 内做 := 赋值，且 range 内 . 指向当前元素）。 *}
+{{tr := .["t"]}}
 <div class="stack">
     <section class="card">
         <div class="card-header">
-            <span class="card-title">数据权限规则（共 {{.Total}}）</span>
+            <span class="card-title">{{ .["t"]("admin.datarules.list.heading", "数据权限规则（共") }} {{.Total}}{{ .["t"]("admin.datarules.list.headingClose", "）") }}</span>
         </div>
                 {* 服务端筛选：GET 提交，条件进 SQL（与分页同源）。 *}
         <form class="list-toolbar" method="get" action="/admin/datarules">
             <div class="toolbar-search">
-                <input type="text" name="domain" value="{{.["FilterDomain"]}}" placeholder="数据域" class="form-input">
+                <input type="text" name="domain" value="{{.["FilterDomain"]}}" placeholder="{{ .["t"]("admin.datarules.ph.domain", "数据域") }}" class="form-input">
             </div>
-            <button type="submit" class="btn">筛选</button>
-            <a class="btn btn-ghost" href="/admin/datarules">重置</a>
-<div class="toolbar-spacer"></div>
-            {{if .PermSet["datarule:create"]}}<button type="button" class="btn btn-primary" data-drawer-open="#tpl-rule-create" data-drawer-title="新建数据规则">＋ 新建规则</button>{{end}}
+            <button type="submit" class="btn">{{ .["t"]("admin.datarules.action.filter", "筛选") }}</button>
+            <a class="btn btn-ghost" href="/admin/datarules">{{ .["t"]("admin.datarules.action.reset", "重置") }}</a>
+            {{include "partials/toolbar_create.html" map("allowed", .PermSet["datarule:create"], "tpl", "#tpl-rule-create", "title", tr("admin.datarules.action.create", "新建数据规则"), "label", tr("admin.datarules.action.create_short", "新建规则"))}}
         </form>
         <div class="card-body">
             {{if len(.Rows) == 0}}
-            <p class="hint">还没有数据规则，点右上「新建规则」创建一个。</p>
+            <p class="hint">{{ .["t"]("admin.datarules.empty", "还没有数据规则，点右上「新建规则」创建一个。") }}</p>
             {{else}}
             <div class="table-wrap">
             <table class="data-table">
                 <thead>
-                <tr><th>规则名称</th><th>数据域</th><th>状态</th><th>备注</th><th>更新时间</th><th class="col-actions">操作</th></tr>
+                <tr><th>{{ .["t"]("admin.datarules.col.name", "规则名称") }}</th><th>{{ .["t"]("admin.datarules.col.domain", "数据域") }}</th><th>{{ .["t"]("admin.datarules.col.status", "状态") }}</th><th>{{ .["t"]("admin.datarules.col.remark", "备注") }}</th><th>{{ .["t"]("admin.datarules.col.updated_at", "更新时间") }}</th><th class="col-actions">{{ .["t"]("admin.datarules.col.actions", "操作") }}</th></tr>
                 </thead>
                 <tbody>
                 {{range _, r := .Rows}}
                 <tr data-filter-text="{{r.RuleName}} {{r.Domain}} {{r.Remark}}">
                 <td>{{r.RuleName}}</td>
                 <td class="text-mute">{{r.Domain}}</td>
-                <td>{{if r.Status == 1}}<span class="badge badge-success">启用</span>{{else}}<span class="badge badge-mute">禁用</span>{{end}}</td>
+                <td>{{if r.Status == 1}}<span class="badge badge-success">{{tr("admin.datarules.status.enabled", "启用")}}</span>{{else}}<span class="badge badge-mute">{{tr("admin.datarules.status.disabled", "禁用")}}</span>{{end}}</td>
                 <td>{{if r.Remark}}{{r.Remark}}{{end}}</td>
                 <td class="text-mute">{{if r.UpdateTime}}{{r.UpdateTime}}{{else}}{{r.CreateTime}}{{end}}</td>
                 <td class="col-actions">
-                    {{if .PermSet["datarule:update"]}}<button type="button" class="btn btn-sm btn-ghost" data-drawer-open="#tpl-rule-edit-{{r.ID}}" data-drawer-title="编辑规则：{{r.RuleName}}">编辑</button>{{end}}
-                    {{if .PermSet["datarule:delete"]}}<button type="submit" form="rule-del-{{r.ID}}" class="btn btn-sm btn-danger" data-confirm="确认删除？" data-confirm-danger>删除</button>{{end}}
+                    {{if .PermSet["datarule:update"]}}<button type="button" class="btn btn-sm btn-ghost" data-drawer-open="#tpl-rule-edit-{{r.ID}}" data-drawer-title="{{tr("admin.datarules.edit.title", "编辑规则：")}}{{r.RuleName}}">{{tr("admin.datarules.action.edit", "编辑")}}</button>{{end}}
+                    {{if .PermSet["datarule:delete"]}}<button type="submit" form="rule-del-{{r.ID}}" class="btn btn-sm btn-danger" data-confirm="{{tr("admin.datarules.confirm.delete", "确认删除？")}}" data-confirm-danger>{{tr("admin.datarules.action.delete", "删除")}}</button>{{end}}
                     <form id="rule-del-{{r.ID}}" method="post" action="/admin/datarules/delete" class="hidden-form">
                         <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
                         <input type="hidden" name="id" value="{{r.ID}}">
@@ -59,35 +60,35 @@
     <form method="post" action="/admin/datarules/create">
         <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
         <div class="form-group">
-            <label class="form-label req">规则名称</label>
+            <label class="form-label req">{{ .["t"]("admin.datarules.field.name", "规则名称") }}</label>
             <input type="text" name="rule_name" class="form-input" required maxlength="100">
         </div>
         <div class="form-group">
-            <label class="form-label req">数据域</label>
+            <label class="form-label req">{{ .["t"]("admin.datarules.field.domain", "数据域") }}</label>
             <select name="domain" class="form-select">
                 {{range _, dm := .Domains}}
-                <option value="{{dm.Domain}}">{{dm.DomainLabel}}（{{dm.Domain}}）</option>
+                <option value="{{dm.Domain}}">{{dm.DomainLabel}}{{tr("admin.datarules.paren_open", "（")}}{{dm.Domain}}{{tr("admin.datarules.paren_close", "）")}}</option>
                 {{end}}
             </select>
         </div>
         <div class="form-group">
-            <label class="form-label">状态</label>
+            <label class="form-label">{{ .["t"]("admin.datarules.field.status", "状态") }}</label>
             <select name="status" class="form-select">
-                <option value="1">启用</option>
-                <option value="0">禁用</option>
+                <option value="1">{{ .["t"]("admin.datarules.status.enabled", "启用") }}</option>
+                <option value="0">{{ .["t"]("admin.datarules.status.disabled", "禁用") }}</option>
             </select>
         </div>
         <div class="form-group">
-            <label class="form-label">备注</label>
+            <label class="form-label">{{ .["t"]("admin.datarules.field.remark", "备注") }}</label>
             <input type="text" name="remark" class="form-input" maxlength="200">
         </div>
         <div class="form-group">
-            <label class="form-label">配置（可选，RuleConfig JSON）</label>
+            <label class="form-label">{{ .["t"]("admin.datarules.field.config", "配置（可选，RuleConfig JSON）") }}</label>
             <textarea name="config" class="form-textarea" rows="4" placeholder='{"omit_fields":[],"condition_groups":[]}'></textarea>
         </div>
         <div class="form-actions">
-            <button type="button" class="btn btn-ghost" data-drawer-close>取消</button>
-            <button type="submit" class="btn btn-primary">创建规则</button>
+            <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.datarules.action.cancel", "取消") }}</button>
+            <button type="submit" class="btn btn-primary">{{ .["t"]("admin.datarules.action.create_submit", "创建规则") }}</button>
         </div>
     </form>
 </template>
@@ -101,36 +102,36 @@
         <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
         <input type="hidden" name="id" value="{{r.ID}}">
         <div class="form-group">
-            <label class="form-label req">规则名称</label>
+            <label class="form-label req">{{ .["t"]("admin.datarules.field.name", "规则名称") }}</label>
             <input type="text" name="rule_name" class="form-input" required maxlength="100" value="{{r.RuleName}}">
         </div>
         <div class="form-group">
-            <label class="form-label req">数据域</label>
+            <label class="form-label req">{{ .["t"]("admin.datarules.field.domain", "数据域") }}</label>
             <select name="domain" class="form-select">
                 {{range _, dm := .Domains}}
-                <option value="{{dm.Domain}}"{{if dm.Domain == r.Domain}} selected{{end}}>{{dm.DomainLabel}}（{{dm.Domain}}）</option>
+                <option value="{{dm.Domain}}"{{if dm.Domain == r.Domain}} selected{{end}}>{{dm.DomainLabel}}{{tr("admin.datarules.paren_open", "（")}}{{dm.Domain}}{{tr("admin.datarules.paren_close", "）")}}</option>
                 {{end}}
             </select>
         </div>
         <div class="form-group">
-            <label class="form-label">状态</label>
+            <label class="form-label">{{ .["t"]("admin.datarules.field.status", "状态") }}</label>
             <select name="status" class="form-select">
-                <option value="1"{{if r.Status == 1}} selected{{end}}>启用</option>
-                <option value="0"{{if r.Status == 0}} selected{{end}}>禁用</option>
+                <option value="1"{{if r.Status == 1}} selected{{end}}>{{ .["t"]("admin.datarules.status.enabled", "启用") }}</option>
+                <option value="0"{{if r.Status == 0}} selected{{end}}>{{ .["t"]("admin.datarules.status.disabled", "禁用") }}</option>
             </select>
         </div>
         <div class="form-group">
-            <label class="form-label">备注</label>
+            <label class="form-label">{{ .["t"]("admin.datarules.field.remark", "备注") }}</label>
             <input type="text" name="remark" class="form-input" maxlength="200" value="{{if r.Remark}}{{r.Remark}}{{end}}">
         </div>
         <div class="form-group">
-            <label class="form-label">规则配置</label>
-            <p class="form-hint">配置 JSON 不在本抽屉编辑：保存基础字段不会改动原配置，需要调整配置请点下方「编辑规则配置」。</p>
+            <label class="form-label">{{ .["t"]("admin.datarules.field.rule_config", "规则配置") }}</label>
+            <p class="form-hint">{{ .["t"]("admin.datarules.hint.config", "配置 JSON 不在本抽屉编辑：保存基础字段不会改动原配置，需要调整配置请点下方「编辑规则配置」。") }}</p>
         </div>
         <div class="form-actions">
-            <a class="btn btn-ghost" href="/admin/datarules/edit?id={{r.ID}}">编辑规则配置</a>
-            <button type="button" class="btn btn-ghost" data-drawer-close>取消</button>
-            <button type="submit" class="btn btn-primary">保存修改</button>
+            <a class="btn btn-ghost" href="/admin/datarules/edit?id={{r.ID}}">{{ .["t"]("admin.datarules.action.edit_config", "编辑规则配置") }}</a>
+            <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.datarules.action.cancel", "取消") }}</button>
+            <button type="submit" class="btn btn-primary">{{ .["t"]("admin.datarules.action.save", "保存修改") }}</button>
         </div>
     </form>
 </template>

@@ -69,7 +69,8 @@
         "search",
         "performance"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：迁移 167 装 pg_trgm 并建 7 条 gin_trgm_ops 索引（orders 三列 / products.name / users.search_text / sys_attachment.file_name / master_data_changes.entity_label）；扩展装不上时迁移显式失败而非静默跳过。"
     },
     {
       "id": "DB-002",
@@ -240,7 +241,8 @@
         "lifecycle",
         "scalability"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：迁移 173 把三张只增表改为**按月 RANGE 分区**（page_views 按 viewed_at、inventory_stock_movements / master_data_changes 按 created_at）。主键按要求改为 (id, 时间列) —— 实测这三张表无任何外键指向，改主键不影响引用方；索引在父表上重建（batch_id 与 master_data_changes 的 field 索引补上分区键，否则跨分区回查只能逐分区扫）；append-only 触发器建在**父表**上（PG 自动下沉到分区，直接写分区同样被拦）。**DEFAULT 分区兜底**是刻意的：page_views 的写入方是访客打点（静默失败），缺分区时宁可落 DEFAULT 也不丢数据。迁移器逐语句执行且不包事务，因此每一步都写成可重跑（重命名条件化、建表 IF NOT EXISTS、搬数据 ON CONFLICT DO NOTHING、旧表 DROP IF EXISTS）。新增 internal/partition 负责日常：EnsureAhead（启动 + 每日补齐未来 3 个月分区）、ListPartitions、DetachBefore（**DETACH 不 DROP**：过期分区整块摘下后数据仍是普通表，供归档），由 routes 启动调度。7 条用例覆盖审计四条验收：分区自动创建（含幂等）、时间窗查询走分区裁剪（EXPLAIN 断言不扫窗口外分区）、过期分区可摘下且数据仍在、既有数据完整迁移（造改造前形状的表 + 3 行数据，跑迁移 SQL 后断言落点与行数）+ 触发器在分区上仍拦 UPDATE/DELETE + DEFAULT 兜底。保留期与分区的分工：page_views 仍是行级 DELETE（工程可配保留期比「月」更细），分区带来的是裁剪与整块归档能力。"
     },
     {
       "id": "DB-005",
@@ -288,7 +290,8 @@
         "analytics",
         "performance"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：迁移 170 **复用 161 建的 page_views_daily**（此前零消费），把它扩成 (project_id, day, scope, path) 四列主键 + scope（all/path 两级）+ rolled_at + 排行索引，不新造第二张同义表。all 行是工程级**精确** UV —— 路径级 UV 相加不等于工程级（同一访客访问两个路径会算两次），所以必须单独存。汇总任务每小时跑：先**补齐**历史水位（从最后已汇总日的次日或最早明细日逐日算到昨天，单次上限 400 天），再无条件重算今天与昨天（今天=当前快照、昨天=兜跨日边界）。写入是**全量重算 + ON CONFLICT 覆盖**而非增量累加（增量一旦漏算会永久留偏差且无法自查）；all 行连 0 访问的日子也写一行，让「这一天已汇总」成为可判定状态。查询侧只在「窗口完全在过去 **且** 窗口内每一天都已汇总」时读汇总，否则退回明细 —— 少几天数据比查得慢严重得多。"
     },
     {
       "id": "DB-006",
@@ -331,7 +334,8 @@
         "mail",
         "performance"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：联系人导入的更新路径批量化（子代理实现，**审计前提需校正，但确有真热区**）。① **前提校正**：审计说「逐批 Create、未用 COPY」。事实是**新增侧早已是批量** —— `BatchInsertContacts` 用 `CreateInBatches(list, 500)`（多值 INSERT），2000 行 = 4 条语句（实测）。代理没有硬凑 INSERT 的改动。② **真正的热区**是「已存在联系人的更新」= N 次 UPDATE（同一份名单反复导入是常态）。③ **COPY 为何不能用（三条硬理由）**：唯一索引是**表达式索引** `lower(email)`，`ON CONFLICT` 匹配不到（PG 42P10，代码注释里已有实测记录），而 COPY 没有 ON CONFLICT 语义；COPY 遇唯一冲突**整批失败**，破坏「N 成功 / M 跳过」；对外承诺是 Imported/Updated/Skipped/Suppressed/Total 精确计数 + 逐行 Errors，COPY 给不出逐行业务原因。④ 替代方案：集合式 UPDATE（`jsonb_array_elements` 展开整批 + `COALESCE` 实现空值不覆盖 + `RETURNING` 命中集做差集把「并发删除导致没写到」逐行报出），集合语句失败时回退逐条，保住逐行报告能力。⑤ **写 SQL 前用 psql 在临时 schema 验证时抓到并修掉一个真 bug**：单边 `lower(c.email) = v.email` 在混合大小写邮箱下不命中，已改双侧 lower，与唯一索引同口径。⑥ 实测（2000 行已存在联系人，同一测试内对照）：改动前 2000 条语句 699.160ms / 757.771ms；改动后 3 条语句 24.304ms / 25.652ms —— **端到端更新路径约 28 倍加速**。⑦ 语义不变：原有 4 条导入 feature 测试全绿；新增 TestImportUpdateKeepsConsentState 钉住「导入更新不得改写 status / subscribed_at / consent_source」（退订过的人不能被导入变回订阅）。另修正了文件头一处与实现不符的注释与一处指向不存在方法的陈旧注释。"
     },
     {
       "id": "DB-007",
@@ -387,7 +391,8 @@
         "pipeline",
         "scalability"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：**决策：用 PG 表而不是 asynq** —— 构建任务需要可见性（后台看队列深度与失败原因）与可纠错（重试、僵尸回收），这两件事在内存队列里都要另搭一套存储。新增 `internal/module/build` 模块承载队列引擎：入队走迁移 171 的部分唯一索引（source_type, source_id, build_input_hash WHERE status='pending'）实现「同一份工作不重复排队」；取任务用单条 `UPDATE ... WHERE id = (SELECT ... FOR UPDATE SKIP LOCKED LIMIT 1) RETURNING ...`（取与置位同句，多 worker 不重复消费）；状态机 pending/running/succeeded/failed/superseded 全在队列侧，执行器只回答成没成；ReclaimStale 把超时未结束的 running 退回队列（worker 崩了不会留下永久卡死的行）；后台可见性 GET /api/build/queue（深度 + 最近失败任务与原因）与 POST /api/build/retry。**真实接线**（不是又一个零消费表）：page 的自动重建超出单次上限时，超限部分入队由 worker 后台重建（此前只能丢弃并指望下次触发），执行器在 routes.go 装配（build 模块不认识任何业务来源）。未注册执行器的来源类型显式标失败并写 ErrExecutorMissing —— 静默跳过会让「队列深度正常但站点不更新」。用例覆盖审计三条验收：8 worker 并发取任务无重复消费、僵尸任务回收后可重新消费、队列状态与失败原因可见；另加幂等入队与非失败态不可重试。"
     },
     {
       "id": "DB-008",
@@ -436,7 +441,8 @@
         "inventory",
         "consistency"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：采购单 status 改由数据库兜底（子代理实现，**审计的生成列方案被证实不成立**）。① **前提修正（重要）**：status 不是「本行其它列的函数」，而是**明细行**的函数（空行→pending / 全部收满→received / 其余→partial），证据是 `derivePurchaseStatus(lines)` 读 `inventory_purchase_order_lines`（inventory_purchase.go:281），且 108_inventory_purchase.sql 的表注释本就把它钉成「推导值」。而 PostgreSQL 的 `GENERATED ALWAYS AS … STORED` **只能引用同一行的列、不许子查询/跨行** —— **审计建议的生成列方案在这个语义下是死的**。这正是父代理在任务里预先提示的陷阱（「若取决于明细行，生成列根本表达不了，如实报告」）。② 落地替代（非纸面，已在 public/migrations/196 实现）：两道触发器 —— 明细行 `AFTER INSERT/UPDATE/DELETE` 重算所属单头 status（只在 IS DISTINCT FROM 时写）；单头 `BEFORE UPDATE OF status` 把写歪的值换成推导值（堵「直接改单头」这条缝）。③ **一个体现真读懂执行模型的细节**：回填做了**两次**（对象建成前一次 + 建成后一次）—— 因为迁移器**不包事务、逐语句执行**，单次回填会漏掉窗口期数据。④ 应用侧零改动（service 仍自算写回，两侧同规则时结果相同）。残余边界写进 DDL 注释：守卫只在语句里写了 status 时触发（UPDATE OF status），且推导只认 quantity/received_quantity 两列。⑤ 4 个测试：TestPurchaseStatusTriggerFollowsLineWrites / MigrationBackfillsAndIsIdempotent / KeepsServicePathIntact / RegistryCondition（迁移前判据 0、迁移后 1）。既有 TestPurchaseReceipt*（含并发 TestPurchaseReceiptConcurrentNoDoubleReceive）与 TestPurchaseOrderCreateWithAtomicReceive 全部未改一行仍 PASS。"
     },
     {
       "id": "DB-009",
@@ -488,7 +494,8 @@
         "multi-tenant",
         "security"
       ],
-      "status": "open"
+      "status": "open",
+      "progressNote": "2026-09-15 第一批（最小可用集）已落地：迁移 199 给 project_locales 建 policy project_isolation（ENABLE + FORCE ROW LEVEL SECURITY，谓词 NULLIF(current_setting('app.project_id', true), '')::uuid，缺省即拒绝而不是放行），连接侧由 projectmodel.withProjectScope 以 set_config(..., is_local => true) 设置。全量重放实测：106 张基表中开启 RLS 的只有 1 张（project_locales）。其余带 project_id 的表未覆盖，隔离仍以应用层 WHERE + Casbin 为主，本条保持 open。"
     },
     {
       "id": "DB-010",
@@ -531,7 +538,8 @@
         "order",
         "performance"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：客户订单摘要收敛为单条窗口函数（子代理实现，**先测量再改**）。① **现状核对属实且比审计说的更差**：`CustomerOrderSummaryOf` 一次调用发 **3 条 SQL** —— AggregateByUser(1) + List 里的分页计数(1，摘要场景完全用不上 total) + List 取最近一单(1)。② 改动：model 新增 `SummaryByUser` —— 一条窗口函数 SQL（`COUNT(*) OVER ()` / `COUNT(*) FILTER (…) OVER ()`），外层 `LEFT JOIN (SELECT 1)` 单行哨兵**保证零订单客户仍返回一行**（HasOrders 分支靠它）；service 改调它。③ **EXPLAIN 实测（wp_test 独立 schema，orders 20 万行、目标客户 10002 行，探针脚本 schema 已清理）**：旧 1/3 聚合 8.543ms（Bitmap Heap Scan on idx_orders_user）；旧 2/3 计数 4.152ms（同一份全扫再做一遍）；旧 3/3 取一单 0.040ms（Index Scan Backward using orders_pkey）；新单条窗口函数 8.197ms。④ **结果一致性实测**：old-三条SQL 与 new-一条SQL 同为 (10002, 3335, 16967616, last_id=200000)；零订单客户同为 (0, NULL)。⑤ 3 个新测试：TestCustomerOrderSummarySingleQuery（断言只发 1 条 SQL + 与旧三条口径逐字段一致）、TestCustomerOrderSummaryNoOrdersKeepsOneRow、TestOrderListIssuesCountAndFind（量出 List 固定 2 条 → 旧路径共 3 条，把\"多次查询\"这个前提量化钉住）。"
     },
     {
       "id": "DB-011",
@@ -804,7 +812,7 @@
         "inventory"
       ],
       "status": "resolved",
-      "resolutionNote": "2026-09-13：迁移 165 orders.status CHECK 约束。"
+      "resolutionNote": "2026-09-15 复核并补齐：迁移 165 orders.status 的注册判定写反（SQL 是 DROP + ADD 约束，CheckSQL 却把「约束不存在」当成已完成），这条 CHECK 从未落地——本条一度被误标 resolved。已把判定改为按约束定义核对（pg_get_constraintdef 含 refunded）并实证约束在位；blocks.kind 由 166 覆盖（判定同步加 snippet 定义核对）；第三处 inventory_warehouses.status 由新增迁移 202 补齐。三处枚举列至此都有 DDL CHECK 兜底（含「非法值入库被拒」的实测）。"
     },
     {
       "id": "DB-016",
@@ -993,7 +1001,8 @@
         "consistency",
         "correctness"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：迁移 172 把全库 **93 列 timestamp without time zone 统一成 timestamptz**（36 张表）。用 DO 块遍历 information_schema 而不是逐列罗列 —— 手写清单漏一列不会有任何提示，而漏掉的那列会一直保持无时区，正是本条要消除的状态。历史数据的解释按**会话时区**（USING <列> AT TIME ZONE current_setting(TimeZone)）：实测现存时间值都是种子与迁移里 now()/CURRENT_TIMESTAMP 按会话时区求值后写入的墙钟；用 current_setting 而非写死 Asia/Shanghai，因为这里表达的正是「原值是按当时那个会话时区写下的」。dev 库实测：转换前后 sys_permission.update_time 均为 2026-09-14 11:12:12.126533+08（时刻未偏移），转换后全库无时区列数为 0。护栏：新增 public/test/pkg/migrations/unit/timestamp_columns_test.go 盯迁移后的全库终态（只要还有无时区时间列就红，对应审计第五步「新增时间列必须是 timestamptz」），另一条用探针表验证 172 的转换动作与历史值解释。列名统一（created_at vs create_time）是 DB-019，风险更高且不影响正确性，留 P6 单独一批。"
     },
     {
       "id": "DB-019",
@@ -1042,7 +1051,8 @@
         "naming",
         "documentation"
       ],
-      "status": "open"
+      "status": "open",
+      "progressNote": "2026-09-15 第一批（5 张零入度叶子表）已落地：迁移 199_db019_db020_batch1.sql（注册为 201-db019-db020-batch1）把 build_jobs / blocks / page_site_slots / publication_receipts / inventory_change_reasons 的 created_at 改名为 create_time。全量重放实测：created_at 仍有 47 列、create_time 38 列（106 张基表），只能按批推进，故保持 open。该批的注册判定必须按「目标列已存在」，不能用默认的「表存在即跳过」——build_jobs 由 init_builder_schema.sql 先建，用默认判定会让整段 SQL 永不执行（实测：去掉判定即报 column \"create_time\" of relation \"build_jobs\" does not exist）。"
     },
     {
       "id": "DB-020",
@@ -1105,7 +1115,8 @@
         "naming",
         "soft-delete"
       ],
-      "status": "open"
+      "status": "open",
+      "progressNote": "2026-09-15 第一批同上：这 5 张表的 id 由 uuid 改为 bigint GENERATED BY DEFAULT AS IDENTITY（连带 inventory_stock_movements.reason_id 改 bigint；该批表数据为空，USING NULL 直转）。全量重放实测：bigint 主键 47 张 / uuid 40 张 / smallint 1 张（106 张基表）。软删除列名（deleted_at / deleted_time / 以 status 表达删除）尚未进入本批范围，故保持 open。"
     },
     {
       "id": "DB-021",
@@ -1156,7 +1167,8 @@
         "coupon",
         "consistency"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：新增只读对账 get /api/order/coupon/count-audit —— LEFT JOIN 聚合比对 coupons.used_count（并发守卫依赖的投影）与 coupon_redemptions 行数（真源），返回 checked / mismatched / 逐券 diff；只报告不自动修正（修哪边取决于原因）；文档已写明投影与真源的关系；两条用例钉住「正常链路零差异」「偏差可发现且不被改动」。"
     },
     {
       "id": "DB-022",
@@ -1301,7 +1313,8 @@
         "content",
         "postgres"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：迁移 169 把 contents.data->>'title' 提成 **STORED 生成列** title + trgm 索引 + (entity_type, updated_at DESC, id DESC) 复合索引；用生成列而非普通列，写入路径（含手工 SQL 与种子）零改动，也不可能出现 title 与 data 不一致。content 模块的 SearchArticles 改查 title 列，实测 EXPLAIN 选中 Bitmap Index Scan on idx_contents_title_trgm（改造前是 JSONB 表达式，只能全表扫）。products.bundle_items 维持现状：当前无「按子项 SKU 反查套餐」的需求，加 GIN 是为假想查询付写入代价，需要时再补。"
     }
   ]
 }

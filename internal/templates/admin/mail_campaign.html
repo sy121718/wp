@@ -4,69 +4,67 @@
 {{csrf := .["csrf_token"]}}
 {{r := .R}}
 {{c := r.Campaign}}
-<div class="pages-wrap">
-  <section class="pages-card card">
+<div class="stack">
+  <section class="card card-body">
     <h2>{{c.Name}}</h2>
     {{if .Err != ""}}
-    <p class="pages-badge pages-badge-warn">{{.Err}}</p>
+    <p class="badge badge-warning">{{.Err}}</p>
     {{end}}
-    <p><a href="/admin/mail/marketing">← 返回营销页</a></p>
-    <p class="pages-empty">
-      状态：<strong>{{c.Status}}</strong> · 主题：{{c.Subject}}
+    <p><a href="/admin/mail/marketing">← {{ .["t"]("admin.mail.campaign.back", "返回营销页") }}</a></p>
+    <p class="hint">
+      {{ .["t"]("admin.mail.campaign.status_label", "状态：") }}<strong>{{c.Status}}</strong> · {{ .["t"]("admin.mail.campaign.subject_label", "主题：") }}{{c.Subject}}
     </p>
-    <p class="pages-empty">
-      <strong>打开率只是估算</strong>：多数邮件客户端默认不加载图片（漏报），
-      Apple Mail 的隐私保护还会代理预取所有图片（虚高）。要判断效果请看<strong>点击率、退信率、退订率</strong>，
-      这三个是准的。
+    <p class="hint">
+      <strong>{{ .["t"]("admin.mail.campaign.estimate.strong", "打开率只是估算") }}</strong>{{ .["t"]("admin.mail.campaign.estimate.tail", "：多数邮件客户端默认不加载图片（漏报），Apple Mail 的隐私保护还会代理预取所有图片（虚高）。要判断效果请看") }}<strong>{{ .["t"]("admin.mail.campaign.estimate.metrics", "点击率、退信率、退订率") }}</strong>{{ .["t"]("admin.mail.campaign.estimate.metrics_tail", "，这三个是准的。") }}
     </p>
   </section>
 
-  <section class="pages-card card">
-    <h2>投递与互动</h2>
+  <section class="card card-body">
+    <h2>{{ .["t"]("admin.mail.campaign.delivery_heading", "投递与互动") }}</h2>
     <div class="table-wrap" tabindex="0">
-      <table class="pages-table data-table">
-      <thead><tr><th>指标</th><th>数值</th><th>说明</th></tr></thead>
+      <table class="data-table">
+      <thead><tr><th>{{ .["t"]("admin.mail.campaign.col.metric", "指标") }}</th><th>{{ .["t"]("admin.mail.campaign.col.value", "数值") }}</th><th>{{ .["t"]("admin.mail.campaign.col.note", "说明") }}</th></tr></thead>
       <tbody>
-        <tr><td>目标人数</td><td>{{r.Target}}</td><td>启动时按标签统计的快照</td></tr>
-        <tr><td>已送达</td><td>{{r.Sent}}</td><td>SMTP 接受投递</td></tr>
-        <tr><td>失败</td><td>{{r.Failed}}</td><td>含硬退信（已自动进抑制名单）</td></tr>
-        <tr><td>打开人数</td><td>{{r.Opened}}</td><td>去重人数 · 打开率 {{r.OpenRate}}%（估算）</td></tr>
-        <tr><td>点击人数</td><td>{{r.Clicked}}</td><td>去重人数 · 点击率 {{r.ClickRate}}%</td></tr>
-        <tr><td>退订</td><td>{{r.Unsubscribed}}</td><td>已进抑制名单，不会再收到营销邮件</td></tr>
-        <tr><td>投诉</td><td>{{r.Complained}}</td><td>已进抑制名单</td></tr>
-        <tr><td>退信</td><td>{{r.Bounced}}</td><td>硬退信</td></tr>
-        <tr><td>打开次数</td><td>{{r.OpenEvents}}</td><td>含重复（同一人多开几次算几次）</td></tr>
-        <tr><td>点击次数</td><td>{{r.ClickEvents}}</td><td>含重复</td></tr>
+        <tr><td>{{ .["t"]("admin.mail.campaign.metric.target", "目标人数") }}</td><td>{{r.Target}}</td><td>{{ .["t"]("admin.mail.campaign.metric.target_note", "启动时按标签统计的快照") }}</td></tr>
+        <tr><td>{{ .["t"]("admin.mail.campaign.metric.sent", "已送达") }}</td><td>{{r.Sent}}</td><td>{{ .["t"]("admin.mail.campaign.metric.sent_note", "SMTP 接受投递") }}</td></tr>
+        <tr><td>{{ .["t"]("admin.mail.campaign.metric.failed", "失败") }}</td><td>{{r.Failed}}</td><td>{{ .["t"]("admin.mail.campaign.metric.failed_note", "含硬退信（已自动进抑制名单）") }}</td></tr>
+        <tr><td>{{ .["t"]("admin.mail.campaign.metric.opened", "打开人数") }}</td><td>{{r.Opened}}</td><td>{{ .["t"]("admin.mail.campaign.metric.opened_note", "去重人数 · 打开率") }} {{r.OpenRate}}{{ .["t"]("admin.mail.campaign.metric.opened_note_tail", "%（估算）") }}</td></tr>
+        <tr><td>{{ .["t"]("admin.mail.campaign.metric.clicked", "点击人数") }}</td><td>{{r.Clicked}}</td><td>{{ .["t"]("admin.mail.campaign.metric.clicked_note", "去重人数 · 点击率") }} {{r.ClickRate}}%</td></tr>
+        <tr><td>{{ .["t"]("admin.mail.campaign.metric.unsubscribed", "退订") }}</td><td>{{r.Unsubscribed}}</td><td>{{ .["t"]("admin.mail.campaign.metric.unsubscribed_note", "已进抑制名单，不会再收到营销邮件") }}</td></tr>
+        <tr><td>{{ .["t"]("admin.mail.campaign.metric.complained", "投诉") }}</td><td>{{r.Complained}}</td><td>{{ .["t"]("admin.mail.campaign.metric.complained_note", "已进抑制名单") }}</td></tr>
+        <tr><td>{{ .["t"]("admin.mail.campaign.metric.bounced", "退信") }}</td><td>{{r.Bounced}}</td><td>{{ .["t"]("admin.mail.campaign.metric.bounced_note", "硬退信") }}</td></tr>
+        <tr><td>{{ .["t"]("admin.mail.campaign.metric.open_events", "打开次数") }}</td><td>{{r.OpenEvents}}</td><td>{{ .["t"]("admin.mail.campaign.metric.open_events_note", "含重复（同一人多开几次算几次）") }}</td></tr>
+        <tr><td>{{ .["t"]("admin.mail.campaign.metric.click_events", "点击次数") }}</td><td>{{r.ClickEvents}}</td><td>{{ .["t"]("admin.mail.campaign.metric.click_events_note", "含重复") }}</td></tr>
       </tbody>
     </table>
   </section>
 
-  <section class="pages-card card">
-    <h2>链接点击排行</h2>
+  <section class="card card-body">
+    <h2>{{ .["t"]("admin.mail.campaign.links_heading", "链接点击排行") }}</h2>
     {{if len(r.Links) == 0}}
-    <p class="pages-empty">还没有点击数据。</p>
+    <p class="hint">{{ .["t"]("admin.mail.campaign.links_empty", "还没有点击数据。") }}</p>
     {{else}}
     <div class="table-wrap" tabindex="0">
-      <table class="pages-table data-table">
-      <thead><tr><th>链接</th><th>点击人数</th><th>点击次数</th></tr></thead>
+      <table class="data-table">
+      <thead><tr><th>{{ .["t"]("admin.mail.campaign.col.link", "链接") }}</th><th>{{ .["t"]("admin.mail.campaign.col.contacts", "点击人数") }}</th><th>{{ .["t"]("admin.mail.campaign.col.total_clicks", "点击次数") }}</th></tr></thead>
       <tbody>
       {{range _, l := r.Links}}
       <tr><td style="word-break:break-all">{{l.URL}}</td><td>{{l.Contacts}}</td><td>{{l.Total}}</td></tr>
       {{end}}
       </tbody>
     </table>
-    <p class="pages-empty">按<strong>点击人数</strong>排序：一个人把同一链接点十次，不该让这个链接排到第一。</p>
+    <p class="hint">{{ .["t"]("admin.mail.campaign.links_sort_note.lead", "按") }}<strong>{{ .["t"]("admin.mail.campaign.links_sort_note.strong", "点击人数") }}</strong>{{ .["t"]("admin.mail.campaign.links_sort_note.tail", "排序：一个人把同一链接点十次，不该让这个链接排到第一。") }}</p>
     {{end}}
   </section>
 
-  <section class="pages-card card">
-    <h2>收件人明细（共 {{r.Total}} 条）</h2>
+  <section class="card card-body">
+    <h2>{{ .["t"]("admin.mail.campaign.recipients_heading", "收件人明细") }}{{ .["t"]("admin.mail.campaign.recipients_total_lead", "（共 ") }}{{r.Total}}{{ .["t"]("admin.mail.campaign.recipients_total_tail", " 条）") }}</h2>
     {{if len(r.Recipients) == 0}}
-    <p class="pages-empty">还没有投递记录。</p>
+    <p class="hint">{{ .["t"]("admin.mail.campaign.recipients_empty", "还没有投递记录。") }}</p>
     {{else}}
     <div class="table-wrap" tabindex="0">
-      <table class="pages-table data-table">
-      <thead><tr><th>邮箱</th><th>姓名</th><th>状态</th><th>发送时间</th><th>打开</th><th>点击</th><th>错误</th></tr></thead>
+      <table class="data-table">
+      <thead><tr><th>{{ .["t"]("admin.mail.campaign.col.email", "邮箱") }}</th><th>{{ .["t"]("admin.mail.campaign.col.name", "姓名") }}</th><th>{{ .["t"]("admin.mail.campaign.col.status", "状态") }}</th><th>{{ .["t"]("admin.mail.campaign.col.sent_at", "发送时间") }}</th><th>{{ .["t"]("admin.mail.campaign.col.opened", "打开") }}</th><th>{{ .["t"]("admin.mail.campaign.col.clicked", "点击") }}</th><th>{{ .["t"]("admin.mail.campaign.col.error", "错误") }}</th></tr></thead>
       <tbody>
       {{range _, p := r.Recipients}}
       <tr>
@@ -81,8 +79,8 @@
       {{end}}
       </tbody>
     </table>
-    <p class="pages-empty">
-      {{if .Page}}第 {{.Page}} 页{{end}}
+    <p class="hint">
+      {{if .Page}}{{ .["t"]("admin.mail.campaign.page_prefix", "第 ") }}{{.Page}}{{ .["t"]("admin.mail.campaign.page_suffix", " 页") }}{{end}}
     </p>
     {{end}}
   </section>

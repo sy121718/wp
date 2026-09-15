@@ -13,9 +13,14 @@ const (
 	ErrInvalidPath          = "ErrInvalidPath"          // 页面访问路径不合法
 	ErrDraftVersionConflict = "ErrDraftVersionConflict" // 草稿版本已更新，请刷新后重试
 	ErrPathOccupied         = "ErrPathOccupied"         // 页面访问路径已被占用
-	ErrNoStagedArtifact     = "ErrNoStagedArtifact"     // 无暂存产物，请先构建
-	ErrRollbackTargetMiss   = "ErrRollbackTargetMiss"   // 回滚目标产物不存在
-	ErrRebuildRequired      = "ErrRebuildRequired"      // 草稿已变更，请重新构建后再发布
+	// ErrBlueprintUnavailable 蓝图能力未接入（装配缺失）：从蓝图建页时明确报错，
+	// 而不是静默建成空页 —— 空页在后台看起来像「新建成功但内容是白的」。
+	ErrBlueprintUnavailable = "ErrBlueprintUnavailable" // 蓝图能力未接入
+	// ErrBlueprintInvalid 蓝图不存在或没有可用版本。
+	ErrBlueprintInvalid   = "ErrBlueprintInvalid"   // 蓝图不可用
+	ErrNoStagedArtifact   = "ErrNoStagedArtifact"   // 无暂存产物，请先构建
+	ErrRollbackTargetMiss = "ErrRollbackTargetMiss" // 回滚目标产物不存在
+	ErrRebuildRequired    = "ErrRebuildRequired"    // 草稿已变更，请重新构建后再发布
 
 	// 系统页面槽位（BIZ-1）。
 	ErrInvalidSlot  = "ErrInvalidSlot"  // 槽位键不在白名单内

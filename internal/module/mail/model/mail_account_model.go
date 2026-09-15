@@ -269,6 +269,35 @@ func (m *MailModel) CreateLog(ctx context.Context, e *MailLogEntity) (err error)
 	return m.tx(ctx).Create(e).Error
 }
 
+// DeleteLogsBefore 分批删除早于分界的发送日志（IDX-012）。
+//
+// 与事件明细同一口径：留存价值在「最近一段时间的可追溯」，不是无限期的逐封留档。
+func (m *MailModel) DeleteLogsBefore(ctx context.Context, cutoff time.Time, limit int) (int64, error) {
+	if limit < 1 {
+		return 0, nil
+	}
+	const q = `DELETE FROM mail_logs WHERE id IN (
+		SELECT id FROM mail_logs WHERE create_time < ? ORDER BY id LIMIT ?
+	)`
+	res := m.tx(ctx).Exec(q, cutoff, limit)
+	return res.RowsAffected, res.Error
+}
+
+// DeleteNodeLogsBefore 分批删除早于分界的自动化节点执行日志（IDX-019）。
+//
+// 自动化流程每跑一步写一行，启用后增长很快；它的用途是「最近发生了什么」的排障视图，
+// 与发送日志同一口径（保留期内可追溯，不是无限期逐行留档）。
+func (m *MailModel) DeleteNodeLogsBefore(ctx context.Context, cutoff time.Time, limit int) (int64, error) {
+	if limit < 1 {
+		return 0, nil
+	}
+	const q = `DELETE FROM mail_automation_node_logs WHERE id IN (
+		SELECT id FROM mail_automation_node_logs WHERE create_time < ? ORDER BY id LIMIT ?
+	)`
+	res := m.tx(ctx).Exec(q, cutoff, limit)
+	return res.RowsAffected, res.Error
+}
+
 // CreateLogsInBatches 批量落日志（群发后一次写入，减少往返）。
 func (m *MailModel) CreateLogsInBatches(ctx context.Context, list []*MailLogEntity, batchSize int) (err error) {
 	if len(list) == 0 {

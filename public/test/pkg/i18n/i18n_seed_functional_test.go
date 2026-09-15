@@ -123,24 +123,33 @@ func TestI18nEnumsSeedSchemaAndIdempotency(t *testing.T) {
 	}
 
 	// 4) 词条行数（干净 schema，精确断言）
-	// 195/79 为 058 enums 词条；+25/+25 为 059 后台外壳 shell.* 词条；
+	// 起点：195/79 为 058 enums 词条；+25/+25 为 059 后台外壳 shell.* 词条；
 	// +13/+13 为 060 访客面组件 site.component.* 词条；+1/+1 为 065 语言切换器
-	// 容器无障碍标签 site.component.languages.label（四组中英均已人工编写）。
+	// 容器无障碍标签；+16/+16 为 176 商品列表组件词条、+26/+26 为 177 其余组件词条（含 userForms 的九个默认标题）（审计 I18N-010）。
+	// +157/+157 为 179-182 四个模块的 enums 文案词条（order 62 / user 41 / mail 32 / cart 22，
+	// 审计 I18N-002）——常量值改成 i18n key 之后，文案本身挪进了这张表。
+	// +259/+259 为前端后台模板的三批抽取词条（187 settings/plugins/media 101 条、
+	// 188 article/content 149 条、189 自定义 404 页 9 条，审计 I18N-001 与 SEO-013 的配套）。
+	// +7/+7 为 198 masterdata 模块文案 key 化（审计 CQ-010 收尾）：6 个 Err + 1 个 Msg 的值
+	// 从中文原文改成 i18n key 之后，文案本身挪进了这张表。
+	// 此后片段与站点词条（site.fragment.* 等）按批次继续追加，
+	// 数字随之增长 —— 更新这两个数时要顺带确认新批次**中英都已补齐**
+	//（下面的分组断言与「en 不许缺行」的检查就是为这件事兜底的）。
 	zhCount := countRows(t, db, "sys_i18n", "lang = ?", "zh-CN")
 	enCount := countRows(t, db, "sys_i18n", "lang = ?", "en-US")
-	if zhCount != 234 {
-		t.Fatalf("sys_i18n zh-CN 行数应为 234（195 enums + 25 shell + 13 site.component + 1 languages），实际 %d", zhCount)
+	if zhCount != 2889 {
+		t.Fatalf("sys_i18n zh-CN 行数应为 2889（含 site.fragment.* 片段词条、176 商品列表词条，以及 187/188/189/190/191/192/193/197 八批后台模板抽取：settings/plugins/media 101、article/content 149、自定义 404 页 9、营销订单类 765、商品库存类 582、站点结构类 298、系统管理类 342、HTMX/仪表盘 8 —— 审计 I18N-001 与 SEO-013 的落地；+7 为 198 masterdata 模块文案 key 化，审计 CQ-010 收尾），实际 %d", zhCount)
 	}
-	if enCount != 118 {
-		t.Fatalf("sys_i18n en-US 行数应为 118（79 enums + 25 shell + 13 site.component + 1 languages），实际 %d", enCount)
+	if enCount != 2773 {
+		t.Fatalf("sys_i18n en-US 行数应为 2773（同上），实际 %d", enCount)
 	}
 
 	// 4-B) 访客面组件词条（060）：13 个 key，zh-CN/en-US 各一行；中英必须都有（不许缺翻译）。
-	if got := countRows(t, db, "sys_i18n", "item_key LIKE 'site.component.%' AND lang = ?", "zh-CN"); got != 14 {
-		t.Fatalf("site.component.* zh-CN 应为 14 行（060 的 13 + 065 的 1），实际 %d", got)
+	if got := countRows(t, db, "sys_i18n", "item_key LIKE 'site.component.%' AND lang = ?", "zh-CN"); got != 56 {
+		t.Fatalf("site.component.* zh-CN 应为 56 行（060 的 13 + 065 的 1 + 176 的 16 + 177 的 26），实际 %d", got)
 	}
-	if got := countRows(t, db, "sys_i18n", "item_key LIKE 'site.component.%' AND lang = ?", "en-US"); got != 14 {
-		t.Fatalf("site.component.* en-US 应为 14 行（060 的 13 + 065 的 1），实际 %d", got)
+	if got := countRows(t, db, "sys_i18n", "item_key LIKE 'site.component.%' AND lang = ?", "en-US"); got != 56 {
+		t.Fatalf("site.component.* en-US 应为 56 行（060 的 13 + 065 的 1 + 176 的 16 + 177 的 26），实际 %d", got)
 	}
 	// 065 语言切换器容器标签：中英各一行且取值不同。
 	if got := countRows(t, db, "sys_i18n", "item_key = 'site.component.languages.label' AND lang = ?", "zh-CN"); got != 1 {
@@ -185,12 +194,14 @@ func TestI18nEnumsSeedSchemaAndIdempotency(t *testing.T) {
 		t.Fatalf("rating.label 词条不符：zh=%q en=%q", ratingZH, ratingEN)
 	}
 
-	// 4-A) 后台外壳词条（059）：25 个 key，zh-CN/en-US 各一行；分页文案占位符仅 %s。
-	if got := countRows(t, db, "sys_i18n", "item_key LIKE 'shell.%' AND lang = ?", "zh-CN"); got != 25 {
-		t.Fatalf("shell.* zh-CN 应为 25 行，实际 %d", got)
+	// 4-A) 后台外壳词条：059 的 25 个 key + UI-001 的 shell.nav.open/close（窄屏抽屉按钮的
+	// 无障碍标签）+ UI-011 的 shell.htmx.error/network/timeout（HTMX 失败的三种兜底文案）。
+	// zh-CN/en-US 各一行；分页文案占位符仅 %s。
+	if got := countRows(t, db, "sys_i18n", "item_key LIKE 'shell.%' AND lang = ?", "zh-CN"); got != 30 {
+		t.Fatalf("shell.* zh-CN 应为 30 行（059 的 25 + shell.nav.* 2 + shell.htmx.* 3），实际 %d", got)
 	}
-	if got := countRows(t, db, "sys_i18n", "item_key LIKE 'shell.%' AND lang = ?", "en-US"); got != 25 {
-		t.Fatalf("shell.* en-US 应为 25 行，实际 %d", got)
+	if got := countRows(t, db, "sys_i18n", "item_key LIKE 'shell.%' AND lang = ?", "en-US"); got != 30 {
+		t.Fatalf("shell.* en-US 应为 30 行（同 zh-CN），实际 %d", got)
 	}
 	var shellValue string
 	if err := db.Table("sys_i18n").Select("item_value").

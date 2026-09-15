@@ -3,7 +3,8 @@ package carticon
 // carticon_test.go — 购物车图标组件的视图测试。
 //
 // 钉住的是**不变量**：
-//   · 三种浮层用 <details>（无 JS 也能开合），只有 hover 形态不用 —— 它靠 CSS 悬停；
+//   · 三种浮层用 <details>（无 JS 也能开合），只有 hover 形态不用 —— 桌面靠 CSS 悬停，
+//     触屏靠 sr-only checkbox + 覆盖层 label 的「点击展开」（见 carticon.css 的 @hovernone）；
 //   · 片段地址必须带工程 id（不带就永远拉不到购物车），且语言只在非空时带上；
 //   · 槽位没配时图标退化为不可点（HasCartURL=false），模板据此不输出死链；
 //   · 缺工程 id 时给可见提示，而不是渲染一个点开永远空着的图标。
@@ -44,7 +45,7 @@ func TestBuildViewUsesDetailsExceptHover(t *testing.T) {
 		}
 	}
 	if v := BuildView(&Props{Mode: ModeHover}, "proj-1", "zh-CN", "/cart"); v.UseDetails {
-		t.Error("hover 形态不该用 details：它靠 CSS 悬停，触屏上退化为跳转链接")
+		t.Error("hover 形态不该用 details：桌面靠 CSS 悬停，触屏靠 checkbox 点击展开")
 	}
 }
 

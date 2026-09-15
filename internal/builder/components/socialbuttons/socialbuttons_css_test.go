@@ -88,15 +88,18 @@ func TestSocialCSSShapeAndSize(t *testing.T) {
 	}
 }
 
-// TestSocialCSSHoverIsDesktopBucket 悬停抬升走桌面桶（不包 hover 媒体查询）。
+// TestSocialCSSHoverInHoverBucket 悬停抬升进 (hover: hover) 桶。
 //
-// 这是迁移前就有的行为，与 productcard 相反；顺手钉住以免「顺手统一成 @hover」。
-func TestSocialCSSHoverIsDesktopBucket(t *testing.T) {
+// 迁移后与按钮同形态：只有支持真悬浮的指针设备才吃到 :hover，否则手机上点一下
+// 会卡在抬升态（粘滞 hover）。这条断言此前写的是「不包媒体查询」，那是迁移前的
+// 旧形态，已随 UI-004 收进 hover 桶。
+func TestSocialCSSHoverInHoverBucket(t *testing.T) {
 	out := socialCSSFor(&Props{})
-	if !strings.Contains(out, ".sky-c-t .sky-social-btn:hover {\n  transform: translateY(-2px);\n}") {
-		t.Errorf("悬停规则形态变了:\n%s", out)
+	if !strings.Contains(out, "@media (hover: hover) {\n  .sky-c-t .sky-social-btn:hover {\n  transform: translateY(-2px);") {
+		t.Errorf("悬停抬升应进 (hover: hover) 桶:\n%s", out)
 	}
-	if strings.Contains(out, "(hover: hover)") {
-		t.Errorf("悬停规则不该被包进 hover 媒体查询（会改变既有行为）:\n%s", out)
+	// 触屏等价形态必须有：按压回弹走 @active，不受 hover 媒体查询约束。
+	if !strings.Contains(out, ".sky-c-t .sky-social-btn:active {") {
+		t.Errorf("按压态缺失（触屏唯一的反馈通道）:\n%s", out)
 	}
 }

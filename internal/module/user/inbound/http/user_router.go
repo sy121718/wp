@@ -44,7 +44,6 @@ func SetupUserRoutes(
 
 	svc := userservice.NewService(
 		usermodel.NewUserModel(db),
-		usermodel.NewUserSessionModel(db),
 		usermodel.NewUserProfileModel(db),
 		usermodel.NewUserPreferenceModel(db),
 		mail,
@@ -85,5 +84,7 @@ func SetupUserRoutes(
 		private.POST("/account/sessions/revoke-others", h.DoRevokeOtherSessions)
 	}
 
+	// 会话没有保留期任务：状态与设备台账都在 Redis，随 TTL 自然消失
+	// （原先的 user_sessions 台账清理任务随那张表一起删除）。
 	return svc
 }

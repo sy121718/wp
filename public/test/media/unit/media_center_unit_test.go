@@ -19,6 +19,7 @@ import (
 	"strings"
 	"testing"
 
+	mediacontract "go_wp/internal/module/media/contract"
 	mediadto "go_wp/internal/module/media/dto"
 	mediaenums "go_wp/internal/module/media/enums"
 	"go_wp/pkg/upload"
@@ -230,7 +231,7 @@ func TestMediaCenterDeleteBlockedByReferences(t *testing.T) {
 	ctx := context.Background()
 
 	id := seedAttachment(t, db, nil, "used.png", "image", "")
-	if _, err := svc.SyncReferences(ctx, &mediadto.SyncRefsReq{
+	if _, err := svc.SyncReferences(ctx, &mediacontract.SyncRefsInput{
 		RefKind: "page", RefID: "p-1", RefTitle: "首页",
 		URLs: []string{"/storage/seed/used.png"},
 	}); err != nil {
@@ -255,7 +256,7 @@ func TestMediaCenterDeleteBlockedByReferences(t *testing.T) {
 	}
 
 	// 构建期不再引用 → 引用解除 → 允许删除。
-	if _, err := svc.SyncReferences(ctx, &mediadto.SyncRefsReq{RefKind: "page", RefID: "p-1"}); err != nil {
+	if _, err := svc.SyncReferences(ctx, &mediacontract.SyncRefsInput{RefKind: "page", RefID: "p-1"}); err != nil {
 		t.Fatalf("清空引用失败: %v", err)
 	}
 	refs, err = svc.References(ctx, id)
@@ -280,7 +281,7 @@ func TestMediaCenterSyncReferencesDiffAndJSONBQuery(t *testing.T) {
 	idC := seedAttachment(t, db, nil, "c.png", "image", "")
 
 	// 第一轮：页面 p-9 引用 A、B。
-	n, err := svc.SyncReferences(ctx, &mediadto.SyncRefsReq{
+	n, err := svc.SyncReferences(ctx, &mediacontract.SyncRefsInput{
 		RefKind: "page", RefID: "p-9", RefTitle: "关于我们",
 		URLs: []string{"/storage/seed/a.png", "/storage/seed/b.png", "/storage/not-exist.png"},
 	})
@@ -292,7 +293,7 @@ func TestMediaCenterSyncReferencesDiffAndJSONBQuery(t *testing.T) {
 	}
 
 	// 第二轮：改为引用 B、C → A 的引用被移除，C 新增（差集增删）。
-	n, err = svc.SyncReferences(ctx, &mediadto.SyncRefsReq{
+	n, err = svc.SyncReferences(ctx, &mediacontract.SyncRefsInput{
 		RefKind: "page", RefID: "p-9", RefTitle: "关于我们",
 		URLs: []string{"/storage/seed/b.png", "/storage/seed/c.png"},
 	})
@@ -396,7 +397,7 @@ func TestMediaCenterAddRefToleratesNonObjectExtraInfo(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			id := seedAttachment(t, db, nil, tc.name+".png", "image", tc.raw)
-			if _, err := svc.SyncReferences(ctx, &mediadto.SyncRefsReq{
+			if _, err := svc.SyncReferences(ctx, &mediacontract.SyncRefsInput{
 				RefKind: "page", RefID: tc.refID, RefTitle: "首页",
 				URLs: []string{"/storage/seed/" + tc.name + ".png"},
 			}); err != nil {

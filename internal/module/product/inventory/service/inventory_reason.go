@@ -12,10 +12,10 @@ package inventoryservice
 import (
 	"context"
 	"errors"
+	"strconv"
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
 	"gorm.io/gorm"
 
 	inventorydto "go_wp/internal/module/product/inventory/dto"
@@ -74,7 +74,7 @@ func (s *Service) CreateReason(ctx context.Context, req *inventorydto.CreateReas
 		return nil, err
 	}
 	// 内置原因占用同一命名空间：自定义 code 不能与内置撞名（否则解析结果不确定）。
-	if taken, cerr := s.m.ReasonCodeExists(ctx, projectID, code, ""); cerr != nil {
+	if taken, cerr := s.m.ReasonCodeExists(ctx, projectID, code, 0); cerr != nil {
 		return nil, cerr
 	} else if taken {
 		return nil, errors.New(inventoryenums.ErrReasonCodeTaken)
@@ -82,9 +82,9 @@ func (s *Service) CreateReason(ctx context.Context, req *inventorydto.CreateReas
 	now := time.Now().UTC()
 	pid := projectID
 	e := &inventorymodel.ReasonEntity{
-		ID: uuid.NewString(), ProjectID: &pid, Code: code, Name: name, Direction: direction,
+		ProjectID: &pid, Code: code, Name: name, Direction: direction,
 		IsBuiltin: false, Status: inventoryenums.StatusActive, Sort: req.Sort,
-		CreatedAt: now, UpdatedAt: now,
+		CreateTime: now, UpdatedAt: now,
 	}
 	if err = s.m.CreateReason(ctx, e); err != nil {
 		return nil, err
@@ -97,7 +97,11 @@ func (s *Service) UpdateReason(ctx context.Context, req *inventorydto.UpdateReas
 	if req == nil || strings.TrimSpace(req.ID) == "" {
 		return nil, errors.New(inventoryenums.ErrInvalidParam)
 	}
-	e, err := s.m.GetReason(ctx, req.ID)
+	rid, perr := strconv.ParseInt(strings.TrimSpace(req.ID), 10, 64)
+	if perr != nil {
+		return nil, errors.New(inventoryenums.ErrReasonNotFound)
+	}
+	e, err := s.m.GetReason(ctx, rid)
 	if err != nil {
 		return nil, mapReasonNotFound(err)
 	}
@@ -179,9 +183,9 @@ func toReasonResp(e *inventorymodel.ReasonEntity) *inventorydto.ReasonResp {
 		return nil
 	}
 	resp := &inventorydto.ReasonResp{
-		ID: e.ID, Code: e.Code, Name: e.Name, Direction: e.Direction,
+		ID: strconv.FormatInt(e.ID, 10), Code: e.Code, Name: e.Name, Direction: e.Direction,
 		IsBuiltin: e.IsBuiltin, Status: e.Status, Sort: e.Sort,
-		CreatedAt: e.CreatedAt.Format(time.RFC3339), UpdatedAt: e.UpdatedAt.Format(time.RFC3339),
+		CreatedAt: e.CreateTime.Format(time.RFC3339), UpdatedAt: e.UpdatedAt.Format(time.RFC3339),
 	}
 	if e.ProjectID != nil {
 		resp.ProjectID = *e.ProjectID

@@ -40,9 +40,14 @@ import (
 // productTranslationPort 商品翻译工作台使用的译文读写端口。
 //
 // 生产实现 = pkg/i18n.ContentWriter（sys_translation 表 + 默认数据库）。
+//
+// 工程作用域（审计 I18N-009）：商品译文与页面译文同一张表的同一套隔离规则，
+// 工作台按本工程读写 —— 工作台本来就是按工程选商品的（project 查询参数）。
 type productTranslationPort interface {
 	LoadDetails(ctx context.Context, lang string, hashes []string) (map[string]i18n.ContentTargetInfo, error)
+	LoadDetailsForProject(ctx context.Context, projectID, lang string, hashes []string) (map[string]i18n.ContentTargetInfo, error)
 	LoadTargets(ctx context.Context, lang string, hashes []string) (map[string]string, error)
+	LoadTargetsForProject(ctx context.Context, projectID, lang string, hashes []string) (map[string]string, error)
 	Upsert(ctx context.Context, items []i18n.ContentWriteItem) (written int, err error)
 }
 
@@ -243,6 +248,8 @@ func (h *productTranslationHandle) SaveProductTranslations(c *gin.Context) {
 			continue
 		}
 		items = append(items, i18n.ContentWriteItem{
+			// 工程作用域（审计 I18N-009）：写入本工程自己的译文行。
+			ProjectID:  projectID,
 			SourceHash: source.SourceHash, Context: contextName, Lang: lang,
 			SourceText: source.SourceText, TargetText: target, Engine: i18n.ContentEngineManual,
 		})
@@ -267,7 +274,8 @@ func (h *productTranslationHandle) SaveProductTranslations(c *gin.Context) {
 	}
 
 	// 第二步：变更判定。只有译文文本确实变化才写库并触发重建（幂等，重复保存零写入）。
-	before, berr := port.LoadDetails(ctx, lang, productWriteHashes(items))
+	// 变更判定按**本工程**读现有译文（工程行优先、回落全局行）。
+	before, berr := port.LoadDetailsForProject(ctx, projectID, lang, productWriteHashes(items))
 	if berr != nil {
 		logger.Scene("product").With("project", projectID).Error(berr, "读取现有译文失败，按全部变更处理")
 		before = map[string]i18n.ContentTargetInfo{}
@@ -468,7 +476,7 @@ func (h *productTranslationHandle) build(ctx context.Context, projectID, product
 	targets := map[string]i18n.ContentTargetInfo{}
 	if len(cands) > 0 {
 		if port, perr := h.port(); perr == nil {
-			if got, lerr := port.LoadDetails(ctx, data.Lang, candidateHashesOf(cands)); lerr == nil {
+			if got, lerr := port.LoadDetailsForProject(ctx, data.ProjectID, data.Lang, candidateHashesOf(cands)); lerr == nil {
 				targets = got
 			}
 		}

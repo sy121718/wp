@@ -9,7 +9,7 @@ package dashboardhttp
 // 多语言 P5c：翻译工作台 /admin/page/translations 属「页面」列表（/admin/pages）的子页面。
 // 多语言（issue #12）：商品翻译工作台 /admin/products/translations 属「商品」列表的子页面。
 
-import "strings"
+import "go_wp/pkg/pathkit"
 
 // navPathAlias 子页面路径 → 所属菜单项路径。
 var navPathAlias = map[string]string{
@@ -23,9 +23,13 @@ var navPathAlias = map[string]string{
 	"/admin/customers/detail": "/admin/customers",
 }
 
-// navPathFor 返回用于导航高亮的路径：先按既有规则归一（去尾斜杠），再映射别名。
+// navPathFor 返回用于导航高亮的路径：先归一成匹配键（去首尾空白与尾部斜杠），再映射别名。
+//
+// 匹配键的唯一实现是 pkg/pathkit.MatchKey（审计 CQ-012）：这里过去自己写了「去尾部
+// 斜杠」，与后台之外几处（pipeline / publication / 构建期 nav）各有一份，对空路径与
+// 根路径的处理互不相同。本处行为与改造前逐字等价（改造前 = TrimRight(TrimSpace(raw), "/")）。
 func navPathFor(raw string) string {
-	path := normalizePath(strings.TrimSpace(raw))
+	path := pathkit.MatchKey(raw)
 	if alias, ok := navPathAlias[path]; ok {
 		return alias
 	}

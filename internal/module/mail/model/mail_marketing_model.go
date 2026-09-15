@@ -3,13 +3,15 @@ package model
 // mail_marketing_model.go — 联系人 / 群发活动 / 事件（issue #37 营销域）。
 //
 // 并发友好的点（用户要求把 Go 的并发优势用上）：
-//   · BatchUpsertContacts —— 导入用批量 upsert（一条语句一批，而不是逐行 insert）；
+//   · BatchInsertContacts / BatchUpdateContactImportFields —— 导入的新增与更新各走集合式写入
+//     （一条语句一批，而不是逐行 insert / update）；
 //   · IncrCampaignCounts —— 计数用原子递增，多个投递 worker 同时回写不会互相覆盖；
 //   · ListSubscribedByTags —— 投递目标分批取（游标式），大名单不必一次读进内存。
 
 import (
 	"context"
 	"database/sql/driver"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -324,6 +326,62 @@ func (m *MailModel) BatchInsertContacts(ctx context.Context, list []*MailContact
 	return m.tx(ctx).CreateInBatches(list, batchSize).Error
 }
 
+// ContactImportUpdate 导入时对「已存在联系人」要写入的非同意字段。
+//
+// Name / Tags 为 nil 或空表示「本次没有提供该值」—— 对应列保持库中原样，
+// 与逐条路径里「只把非空字段放进 fields」的语义一致。
+type ContactImportUpdate struct {
+	Email string   `json:"email"`
+	Name  *string  `json:"name,omitempty"`
+	Tags  []string `json:"tags,omitempty"`
+}
+
+// BatchUpdateContactImportFields 一条语句更新导入命中的全部已存在联系人，返回实际命中的邮箱（小写）。
+//
+// 语义与逐条 UpdateContactFields 逐条对齐：
+//   - name / tags 仅在本行提供了非空值时覆盖（COALESCE），空值保留库中原样；
+//   - source 与 update_time 恒更新；
+//   - **不碰 status / subscribed_at / consent_source** —— 同意状态不能被一次导入改写，
+//     否则退订过的人会被导入悄悄变回订阅（等于自己造投诉）；
+//   - 命中集合经 RETURNING 返回，调用方据此逐行报告「未命中」（并发删除）而不是静默少算。
+//
+// 为什么不再逐条：一批已存在的联系人逐条 UPDATE 是 N 次往返（审计 DB-006），
+// 而「同一份名单反复导入」是常态，这部分比 INSERT 更贵。
+// 为什么不用 COPY：COPY 遇到唯一约束冲突会**整批失败**，而本导入对外的承诺是
+// 「逐行校验 + 逐行报错 + 新增/更新/跳过精确计数」（见 ImportContactsResp）；
+// 集合式 UPDATE 天然保留逐行可解释性，且不绕过任何校验。
+// 两侧 lower(email) 与唯一索引 lower(email) 同口径（大小写不敏感命中）。
+func (m *MailModel) BatchUpdateContactImportFields(ctx context.Context, rows []ContactImportUpdate, source string, at time.Time) (emails []string, err error) {
+	if len(rows) == 0 {
+		return nil, nil
+	}
+	payload, err := json.Marshal(rows)
+	if err != nil {
+		return nil, err
+	}
+	const q = `UPDATE mail_contacts AS c SET
+    name        = COALESCE(v.name, c.name),
+    tags        = COALESCE(v.tags, c.tags),
+    source      = v.source,
+    update_time = v.at
+FROM (
+    SELECT r->>'email' AS email,
+           NULLIF(r->>'name', '') AS name,
+           CASE WHEN jsonb_typeof(r->'tags') = 'array' AND jsonb_array_length(r->'tags') > 0
+                THEN ARRAY(SELECT jsonb_array_elements_text(r->'tags'))::text[]
+                ELSE NULL END AS tags,
+           ?::text AS source,
+           ?::timestamptz AS at
+    FROM jsonb_array_elements(?::jsonb) AS r
+) AS v
+WHERE lower(c.email) = lower(v.email)
+RETURNING lower(c.email)`
+	if err = m.tx(ctx).Raw(q, source, at, string(payload)).Scan(&emails).Error; err != nil {
+		return nil, err
+	}
+	return emails, nil
+}
+
 // UpdateContactsByEmails 按邮箱批量更新若干列（导入的已存在那一批）。
 //
 // **不碰 status / subscribed_at / consent_source**：同意状态不能被一次导入悄悄改写
@@ -486,6 +544,50 @@ func (m *MailModel) IncrCampaignCounts(ctx context.Context, id uint64, sent, fai
 // CreateEvent 写一条事件。
 func (m *MailModel) CreateEvent(ctx context.Context, e *MailCampaignEventEntity) (err error) {
 	return m.tx(ctx).Create(e).Error
+}
+
+// ListCampaignsWithExpiredEvents 列出「全部事件都已过期」的活动 id（IDX-012）。
+//
+// 「全部过期」是固化的触发条件：这些活动的明细马上要被删掉，此刻统计出来的是终值。
+// 只统计部分过期的活动会把「进行中」的数当成终值写死。
+func (m *MailModel) ListCampaignsWithExpiredEvents(ctx context.Context, cutoff time.Time, limit int) (ids []uint64, err error) {
+	if limit < 1 {
+		return nil, nil
+	}
+	const q = `SELECT campaign_id FROM mail_campaign_events
+		GROUP BY campaign_id HAVING MAX(create_time) < ? ORDER BY campaign_id LIMIT ?`
+	err = m.tx(ctx).Raw(q, cutoff, limit).Scan(&ids).Error
+	return ids, err
+}
+
+// SetCampaignEventTotalsIfUnset 固化活动的事件汇总（仅在尚未固化时写入）。
+//
+// 「已固化」用两列均为 0 判定：固化只发生在明细即将被清理时，此刻若已有非零值说明
+// 是上一轮写过的终值，不能被本轮的重新统计覆盖（明细删过一部分就统计不出原值了）。
+func (m *MailModel) SetCampaignEventTotalsIfUnset(ctx context.Context, campaignID uint64, openCount, clickCount int64) (int64, error) {
+	if campaignID == 0 {
+		return 0, nil
+	}
+	res := m.tx(ctx).Exec(
+		"UPDATE mail_campaigns SET open_count = ?, click_count = ? WHERE id = ? AND open_count = 0 AND click_count = 0",
+		openCount, clickCount, campaignID,
+	)
+	return res.RowsAffected, res.Error
+}
+
+// DeleteEventsBefore 分批删除早于分界的事件明细（IDX-012）。
+//
+// 事件行是一次打开/点击一行，大群发会立刻把表撑起来；报表需要的汇总数在活动结束后
+// 固化到 campaign 记录（见 service 侧 EnsureCampaignTotals），明细才是可清理的那部分。
+func (m *MailModel) DeleteEventsBefore(ctx context.Context, cutoff time.Time, limit int) (int64, error) {
+	if limit < 1 {
+		return 0, nil
+	}
+	const q = `DELETE FROM mail_campaign_events WHERE id IN (
+		SELECT id FROM mail_campaign_events WHERE create_time < ? ORDER BY id LIMIT ?
+	)`
+	res := m.tx(ctx).Exec(q, cutoff, limit)
+	return res.RowsAffected, res.Error
 }
 
 // BatchCreateEvents 批量写事件（追踪端点批量落事件用，减少往返）。

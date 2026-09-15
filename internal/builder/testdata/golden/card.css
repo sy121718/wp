@@ -123,15 +123,7 @@ body {
 
 @layer sky-theme {
 @container sky-theme style(--sky-density: compact) {
-  .sky-c-cd1 {
-  flex-direction: row;
-  align-items: center;
-  gap: var(--sky-density-gap, 16px);
-
-}
-}
-@container sky-theme style(--sky-density: compact) {
-  .sky-c-cd2 {
+  .sky-c-cd1, .sky-c-cd2 {
   flex-direction: row;
   align-items: center;
   gap: var(--sky-density-gap, 16px);
@@ -142,19 +134,19 @@ body {
 
 @layer sky-local {
 @container sky-theme style(--sky-card-layout: horizontal) {
-  .sky-c-cd1 {
+  .sky-c-cd1, .sky-c-cd2 {
   flex-direction: row;
   align-items: center;
   gap: 16px;
 
 }
 }
-@container sky-theme style(--sky-card-layout: horizontal) {
-  .sky-c-cd2 {
-  flex-direction: row;
-  align-items: center;
-  gap: 16px;
+}
 
-}
-}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

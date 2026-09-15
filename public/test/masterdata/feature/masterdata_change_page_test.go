@@ -101,7 +101,7 @@ func TestMasterDataChangePageByEntity(t *testing.T) {
 
 	// ④ 非法筛选值不把页面打挂（错误回显，仍 200）。
 	rec = httptestGet(engine, "/admin/masterdata/changes?project="+f.projectID+"&entityId=not-a-uuid")
-	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), masterdataenums.ErrInvalidParam) {
+	if rec.Code != http.StatusOK || !mentionsMasterDataError(rec.Body.String(), masterdataenums.ErrInvalidParam, "参数不合法") {
 		t.Fatalf("非法实体 id 应回显错误且仍 200，实际 %d", rec.Code)
 	}
 }

@@ -305,7 +305,11 @@
   text-decoration: none;
 }
 
-/* 悬停抬升只在支持 hover 的设备上输出 (触屏等价形态用按压反馈). */
+/* 悬停抬升只在支持 hover 的设备上输出 (触屏等价形态用按压反馈).
+   UI-006 判定：列表项**不补触屏等价形态** —— 列表项 <li> 自身不是点击目标
+   (可点的是它内部的标题/图片链接, 自身有形), 桌面上的抬升只是"整块可扫"的
+   阅读线索; 触屏没有悬停态本就不期待这层效果, 且现有测试
+   TestProductListCSSTouchGovernance 已把触屏等价反馈钉在 @active 上. */
 @hover & .sky-product-list-item {
   box-shadow: 0 6px 18px rgba(0,0,0,.08);
 }

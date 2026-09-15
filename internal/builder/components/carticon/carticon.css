@@ -4,8 +4,9 @@
      · 图标触发区 min-height 44px（触屏可点区域），不是 24px 的图标本身；
      · 浮层宽度一律 min(...)，窄视口不横向溢出；
      · 抽屉用 dvh 而不是 vh —— 移动端浏览器地址栏收放时 vh 会让面板底部跑到屏幕外；
-     · 悬停形态只输出给支持 hover 的设备（规则里用 @media (hover: hover) 包住），
-       触屏该形态退化为纯链接（CSS 改不了 DOM，这是必要的降级）。
+     · 悬停形态的桌面预览只输出给支持 hover 的设备（规则里用 @media (hover: hover) 包住）；
+       触屏没有悬停，同一形态改由 @media (hover: none) 下的「点击展开」接管
+       （sr-only checkbox + 覆盖层 label，零 JS），而不是把功能降级掉。
 
    变量：{{color}} 主色；dropdown / drawer / modal / hover 形态开关；
          drawerLeft 抽屉贴左侧；alignLeft 下拉贴左侧。 */
@@ -165,8 +166,9 @@
 }
 @endif
 
-/* 悬停浮层：桌面鼠标移上即出（容器含浮层，鼠标移进浮层也不会收起）；
-   触屏上这段根本不存在，图标就是一条通往购物车页的普通链接。 */
+/* 悬停浮层（桌面）：鼠标移上即出（容器含浮层，鼠标移进浮层也不会收起）。
+   触屏没有悬停，同一个图标改由「点击展开」驱动 —— 见下面的 @hovernone 块，
+   两套互斥，各管一种输入方式。 */
 @if hover
 & .sky-cart-icon-panel {
   position: absolute;
@@ -178,8 +180,58 @@
   z-index: 40;
 }
 
-& .sky-cart-icon-hoverwrap:focus-within .sky-cart-icon-panel {
+/* 触屏开合控件（sr-only checkbox + 覆盖层 label）。默认隐藏：鼠标设备上不需要它们，
+   桌面点击仍是原来的「点图标去购物车页」。
+   display:none 顺带把 checkbox 移出键盘序列 —— 桌面键盘用户 Tab 到的是图标链接本身。 */
+& .sky-cart-icon-toggle, & .sky-cart-icon-cover {
+  display: none;
+}
+
+/* 键盘：焦点落进容器（图标链接或浮层内的控件）就展开，不必依赖鼠标。
+   刻意包进 @hover 而不是裸选择器 —— 触屏上点 label 会让那个 checkbox 拿到焦点，
+   裸写的话「展开后再点收起」收不回去：焦点还在，:focus-within 一直按着它展开。
+   触屏那条路走下面的 @hovernone 块。 */
+@hover & .sky-cart-icon-hoverwrap:focus-within .sky-cart-icon-panel {
   display: block;
+}
+
+/* --- 触屏：没有悬停，浮层改由「点击展开 / 再点收起」驱动 ---
+   触屏上 :hover 永不触发，靠它展开的浮层等于不存在 —— 这不是样式差异，是功能缺失。
+   做法与导航子菜单同源（label + checkbox，零 JS）：checkbox 视觉隐藏但**可聚焦**
+   （所以用 sr-only 而不是 display:none —— 后者不进键盘序列，键盘用户就没法开合），
+   覆盖层铺满触发区接管手指点击。 */
+
+@hovernone & .sky-cart-icon-toggle {
+  display: block;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  clip-path: inset(50%);
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+/* 覆盖层铺满整个触发区：购物车图标就是这一块里唯一的可点目标，
+   手指点哪里都算展开 —— 让访客去瞄一个 44px 见方的小按钮太难点。 */
+@hovernone & .sky-cart-icon-cover {
+  display: block;
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  cursor: pointer;
+}
+
+@hovernone & .sky-cart-icon-toggle:checked ~ .sky-cart-icon-panel {
+  display: block;
+}
+
+/* 外接键盘（触屏设备也可能有）：checkbox 自身 sr-only 看不见，焦点环改画在图标上。 */
+@hovernone & .sky-cart-icon-toggle:focus-visible + .sky-cart-icon-trigger {
+  outline: 2px solid {{color}};
+  outline-offset: 2px;
 }
 
 /* 鼠标悬停展开的那条不在这里写：样式源只支持 max-width 断点，而 hover 的规则必须包在

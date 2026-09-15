@@ -75,6 +75,25 @@ func newMigratedDB(t *testing.T, withProdConstraint bool) *gorm.DB {
 		).Error; err != nil {
 			t.Fatalf("补建唯一键失败: %v", err)
 		}
+		// content_objects 的 UNIQUE (provider, object_key) 与两条外键都由生产 DDL 建立
+		// （init_builder_schema.sql），实体标签里没有，AutoMigrate 不会生成。
+		// 必须补：不补的话测试跑在一套**不存在约束**的表上，「同一产物的第二个内容对象
+		// 撞唯一键」这类真实缺陷会被静默放过（本次已实证：产物级 object_key 在生产 schema 下
+		// 必然撞 UNIQUE(provider, object_key)）。
+		for _, stmt := range []string{
+			`ALTER TABLE content_objects
+			   ADD CONSTRAINT uq_content_objects_provider_object_key UNIQUE (provider, object_key)`,
+			`ALTER TABLE page_artifact_objects
+			   ADD CONSTRAINT fk_page_artifact_objects_content_hash
+			   FOREIGN KEY (content_hash) REFERENCES content_objects(content_hash)`,
+			`ALTER TABLE page_artifact_objects
+			   ADD CONSTRAINT fk_page_artifact_objects_artifact_id
+			   FOREIGN KEY (artifact_id) REFERENCES page_artifacts(id)`,
+		} {
+			if err := db.Exec(stmt).Error; err != nil {
+				t.Fatalf("补建生产约束失败: %v", err)
+			}
+		}
 	}
 	return db
 }

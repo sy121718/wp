@@ -18,9 +18,8 @@ import (
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 
-	"go_wp/internal/module/mail/dto"
+	mailcontract "go_wp/internal/module/mail/contract"
 	usercontract "go_wp/internal/module/user/contract"
-	userdto "go_wp/internal/module/user/dto"
 	userenums "go_wp/internal/module/user/enums"
 	usermodel "go_wp/internal/module/user/model"
 )
@@ -41,11 +40,11 @@ const (
 var _ usercontract.GuestAccountProvisioner = (*Service)(nil)
 
 // EnsureGuestAccount 确保 email 对应账号存在；不存在才建号并发初始密码。
-func (s *Service) EnsureGuestAccount(ctx context.Context, req *userdto.GuestAccountReq) (res *userdto.GuestAccountResp, err error) {
-	if req == nil {
+func (s *Service) EnsureGuestAccount(ctx context.Context, in *usercontract.GuestAccountInput) (res *usercontract.GuestAccountResult, err error) {
+	if in == nil {
 		return nil, errors.New(userenums.ErrInvalidParam)
 	}
-	email := strings.TrimSpace(req.Email)
+	email := strings.TrimSpace(in.Email)
 	if email == "" {
 		return nil, errors.New(userenums.ErrEmailRequired)
 	}
@@ -61,7 +60,7 @@ func (s *Service) EnsureGuestAccount(ctx context.Context, req *userdto.GuestAcco
 		return nil, gerr
 	}
 	if gerr == nil && existing != nil && existing.ID != 0 {
-		return &userdto.GuestAccountResp{
+		return &usercontract.GuestAccountResult{
 			UserID: existing.ID, Username: existing.Username, Created: false,
 		}, nil
 	}
@@ -84,27 +83,27 @@ func (s *Service) EnsureGuestAccount(ctx context.Context, req *userdto.GuestAcco
 		Status:       usermodel.UserStatusActive,
 		RegisteredAt: &now,
 	}
-	if name := strings.TrimSpace(req.Name); name != "" {
+	if name := strings.TrimSpace(in.Name); name != "" {
 		e.Nickname = &name
 	}
-	if ip := strings.TrimSpace(req.RegisterIP); ip != "" {
+	if ip := strings.TrimSpace(in.RegisterIP); ip != "" {
 		e.RegisterIP = &ip
 	}
 	if err = s.m.Create(ctx, e); err != nil {
 		// 并发下单同一邮箱：唯一索引挡住后来者，此时重查返回既有账号而不是报错 ——
 		// 对调用方（下单）而言「账号已存在」本来就是成功的一种形态。
 		if again, aerr := s.m.GetByEmail(ctx, email); aerr == nil && again != nil && again.ID != 0 {
-			return &userdto.GuestAccountResp{
+			return &usercontract.GuestAccountResult{
 				UserID: again.ID, Username: again.Username, Created: false,
 			}, nil
 		}
 		return nil, err
 	}
 
-	res = &userdto.GuestAccountResp{
+	res = &usercontract.GuestAccountResult{
 		UserID: e.ID, Username: e.Username, Created: true,
 	}
-	res.PasswordMailed = s.sendGuestAccountMail(ctx, email, displayName(e), e.Username, password, req.Locale)
+	res.PasswordMailed = s.sendGuestAccountMail(ctx, email, displayName(e), e.Username, password, in.Locale)
 	return res, nil
 }
 
@@ -116,7 +115,7 @@ func (s *Service) sendGuestAccountMail(ctx context.Context, email, name, usernam
 	if s.mail == nil {
 		return false
 	}
-	_, err := s.mail.SendTemplate(ctx, &maildto.SendTemplateReq{
+	_, err := s.mail.SendTransactional(ctx, &mailcontract.SendInput{
 		TemplateKey: guestAccountTemplate,
 		Locale:      locale,
 		To:          email,

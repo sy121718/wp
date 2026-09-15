@@ -31,10 +31,6 @@ body {
   align-items: center;
 }
 
-.sky-c-mq1:hover .sky-marquee-track {
-  animation-play-state: paused;
-}
-
 .sky-c-mq1 {
   background: #111;
 }
@@ -43,4 +39,19 @@ body {
   padding-top: 12px;
   padding-bottom: 12px;
 }
+
+@media (hover: hover) {
+  .sky-c-mq1:hover .sky-marquee-track {
+  animation-play-state: paused;
+
+}
+}
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

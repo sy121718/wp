@@ -310,9 +310,11 @@ func TestGetRulesInvalidConfig(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
 
-	// 直接落库一条 config 非法的启用规则并分配给用户
+	// 直接落库一条 config 无法解析的启用规则并分配给用户。
+	// 生产的 sys_rule.config 是 jsonb（非法 JSON 根本写不进去），这里用「JSON 合法但形状
+	// 不匹配」的值：数组无法反序列化为 RuleConfig，同样走解析失败分支。
 	rule := &adminmodel.SysRuleEntity{
-		RuleName: "坏配置", Domain: "ORDER", Config: "{not-json", Status: adminmodel.RuleStatusEnabled,
+		RuleName: "坏配置", Domain: "ORDER", Config: "[]", Status: adminmodel.RuleStatusEnabled,
 	}
 	if err := e.db.Create(rule).Error; err != nil {
 		t.Fatalf("创建规则失败: %v", err)

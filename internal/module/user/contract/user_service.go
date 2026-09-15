@@ -4,7 +4,7 @@ package usercontract
 import (
 	"context"
 
-	maildto "go_wp/internal/module/mail/dto"
+	mailcontract "go_wp/internal/module/mail/contract"
 	userdto "go_wp/internal/module/user/dto"
 )
 
@@ -80,10 +80,41 @@ type GuestAccountProvisioner interface {
 	//
 	// 不存在才建号（随机初始密码，经邮件发给客户）；**已存在则只返回既有账号，
 	// 绝不触碰它的密码** —— 否则任何人拿别人邮箱下一单就能把对方密码换掉。
-	EnsureGuestAccount(ctx context.Context, req *userdto.GuestAccountReq) (res *userdto.GuestAccountResp, err error)
+	EnsureGuestAccount(ctx context.Context, in *GuestAccountInput) (res *GuestAccountResult, err error)
 }
 
-// MailSender 用户模块需要的邮件能力 —— **只有发送这一条**。
+// GuestAccountInput 为访客下单自动开号的入参 —— 契约自有形状，不是 dto 的别名。
+//
+// 只有四个字段，因为「替访客开号」这件事需要的信息就这四件：账号身份（邮箱）、
+// 展示名、模板语言、以及注册来源 IP（留痕用，由调用方从请求上下文取）。
+// 借 dto 的形状会让调用方（订单模块）认识用户模块的绑定层字段（审计 CQ-004）。
+type GuestAccountInput struct {
+	// Email 客户下单时填的邮箱（也是账号身份）。
+	Email string
+	// Name 客户名（用作昵称；为空时展示名退回用户名）。
+	Name string
+	// Locale 决定用哪套语言模板。
+	Locale string
+	// RegisterIP 由调用方从请求上下文取，客户端不可伪造。
+	RegisterIP string
+}
+
+// GuestAccountResult 开号结果。
+//
+// Created 与 PasswordMailed 是调用方**唯一**要判定的两件事：
+// 前者说明这次是不是真新建了账号，后者说明初始密码邮件有没有寄出去 ——
+// 两个都为真才该提示客户「去邮箱收密码」（已有账号时绝不发密码，
+// 那种情况下提示客户查收会让他在邮箱里白找一场）。
+type GuestAccountResult struct {
+	UserID   uint64
+	Username string
+	// Created 本次是否**新建**了账号；false 表示该邮箱已有账号，只做了关联。
+	Created bool
+	// PasswordMailed 初始密码邮件是否已受理（仅新建且发信成功时为真）。
+	PasswordMailed bool
+}
+
+// MailSender 用户模块需要的邮件能力 —— **只有发送事务邮件这一条**。
 //
 // 为什么不直接依赖 mailcontract.MailService：那个接口有二十来个方法（账号 / 模板 / 群发 / 报表），
 // 用户模块一条都用不上。接口隔离不只是美观问题：
@@ -91,7 +122,13 @@ type GuestAccountProvisioner interface {
 //	· 依赖面越大，越容易在不经意间用上不该用的能力；
 //	· 测试要造替身时，二十个方法的空实现会把测试意图淹掉。
 //
-// mail 的 Service 天然满足这个接口（它有 SendTemplate），装配时直接传即可。
+// 入参 / 返回类型取自 mailcontract 的**事务发送端口**（SendInput / SendOutcome），
+// 不是 mail 的 dto：dto 服务 HTTP 绑定，形状随绑定需求变；契约形状只随语义变。
+// 这里刻意保留本模块的具名接口（而不是直接写 mailcontract.TransactionalSender 别名）——
+// 用户模块要表达的是「我要发出一封事务邮件」这条**需求**，
+// 至于它由 mail 模块还是别的东西满足，是装配期的事。
+//
+// mail 的 Service 天然满足这个接口（它有 SendTransactional），装配时直接传即可。
 type MailSender interface {
-	SendTemplate(ctx context.Context, req *maildto.SendTemplateReq) (*maildto.SendResult, error)
+	SendTransactional(ctx context.Context, in *mailcontract.SendInput) (*mailcontract.SendOutcome, error)
 }

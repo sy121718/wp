@@ -7,47 +7,44 @@
 {{rows := .Rows}}
 <div class="stack articles-page">
     <section class="card card-body">
-        <h2>文章</h2>
+        <h2>{{ .["t"]("admin.article.list.heading", "文章") }}</h2>
         {{if .Err != ""}}
-        <p class="badge badge-warning">上一次操作未完成：{{.Err}}</p>
+        <p class="badge badge-warning">{{ .["t"]("admin.article.list.lastError", "上一次操作未完成：") }}{{.Err}}</p>
         {{end}}
         {{if .Ok != ""}}
         <p class="badge badge-success">{{.Ok}}</p>
         {{end}}
-        <p class="hint">
-            文章是站点的 CMS 内容：它的正文由「内容模板」渲染成访问面上的详情页，
-            也能被列表/卡片类组件当作集合（<code>content:article</code>）取用。
-            这里只管内容本身，发布状态在编辑页里看。
-        </p>
-        <p class="hint">
-            <strong>路径（slug）是文章的稳定身份</strong>：文章集合的链接、访问面的详情页路径
-            都由它派生，建完请不要再改（要改路径请改页面 URL 那种层面的东西，
-            不要靠改 slug —— 那会让已经发出去的链接指向别处）。
-        </p>
+        <p class="hint">{{ .["t"]("admin.article.list.intro", "文章是站点的 CMS 内容：它的正文由「内容模板」渲染成访问面上的详情页，也能被列表/卡片类组件当作集合（") }}<code>content:article</code>{{ .["t"]("admin.article.list.introTail", "）取用。这里只管内容本身，发布状态在编辑页里看。") }}</p>
+        <p class="hint"><strong>{{ .["t"]("admin.article.list.slugStable", "路径（slug）是文章的稳定身份") }}</strong>{{ .["t"]("admin.article.list.slugStableTail", "：文章集合的链接、访问面的详情页路径都由它派生，建完请不要再改（要改路径请改页面 URL 那种层面的东西，不要靠改 slug —— 那会让已经发出去的链接指向别处）。") }}</p>
     </section>
 
     <section class="card card-body">
-        <h2>新建文章</h2>
+        <h2>{{ .["t"]("admin.article.list.createHeading", "新建文章") }}</h2>
         <form method="post" action="/admin/articles/create" class="form-inline">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
-            <input type="text" name="title" placeholder="文章标题" required>
-            <input type="text" name="slug" placeholder="路径片段，如 hello-world" required>
-            <button type="submit" class="btn btn-primary">创建并开始编辑</button>
+            <input type="text" name="title" placeholder="{{ .["t"]("admin.article.list.titlePlaceholder", "文章标题") }}" required>
+            <input type="text" name="slug" placeholder="{{ .["t"]("admin.article.list.slugPlaceholder", "路径片段，如 hello-world") }}" required>
+            <button type="submit" class="btn btn-primary">{{ .["t"]("admin.article.list.createSubmit", "创建并开始编辑") }}</button>
         </form>
-        <p class="hint">
-            先建一个空壳，正文、摘要、封面与 SEO 字段都在编辑页里填。
-            新建后会自动跳进编辑页。
-        </p>
+        <p class="hint">{{ .["t"]("admin.article.list.createHint", "先建一个空壳，正文、摘要、封面与 SEO 字段都在编辑页里填。新建后会自动跳进编辑页。") }}</p>
     </section>
 
     <section class="card card-body">
-        <h2>全部文章（{{.Total}}）</h2>
+        <h2>{{ .["t"]("admin.article.list.allHeading", "全部文章（") }}{{.Total}}{{ .["t"]("admin.article.list.allHeadingClose", "）") }}</h2>
         {{if .Empty}}
-        <p class="hint">还没有文章 —— 用上面的表单建第一篇。</p>
+        <p class="hint">{{ .["t"]("admin.article.list.empty", "还没有文章 —— 用上面的表单建第一篇。") }}</p>
         {{else}}
-        <div class="table-wrap" tabindex="0" role="region" aria-label="文章列表"><table class="data-table">
+        <div class="table-wrap" tabindex="0" role="region" aria-label="{{ .["t"]("admin.article.list.tableAria", "文章列表") }}"><table class="data-table">
             <thead>
-            <tr><th>标题</th><th>路径</th><th>摘要</th><th>状态</th><th>版本</th><th>更新时间</th><th>操作</th></tr>
+            <tr>
+                <th>{{ .["t"]("admin.article.list.colTitle", "标题") }}</th>
+                <th>{{ .["t"]("admin.article.list.colSlug", "路径") }}</th>
+                <th>{{ .["t"]("admin.article.list.colExcerpt", "摘要") }}</th>
+                <th>{{ .["t"]("admin.article.list.colState", "状态") }}</th>
+                <th>{{ .["t"]("admin.article.list.colRevision", "版本") }}</th>
+                <th>{{ .["t"]("admin.article.list.colUpdatedAt", "更新时间") }}</th>
+                <th>{{ .["t"]("admin.article.list.colActions", "操作") }}</th>
+            </tr>
             </thead>
             <tbody>
             {{range _, r := rows}}
@@ -65,26 +62,22 @@
                 <td>v{{r.Revision}}</td>
                 <td>{{r.UpdatedAt}}</td>
                 <td class="action-row">
-                    <a class="btn" href="{{r.EditURL}}">编辑</a>
+                    <a class="btn" href="{{r.EditURL}}">{{ .["t"]("admin.article.list.edit", "编辑") }}</a>
                     {{if r.Published}}
-                    <a class="btn" href="{{r.PublicURL}}" target="_blank" rel="noopener">线上</a>
+                    <a class="btn" href="{{r.PublicURL}}" target="_blank" rel="noopener">{{ .["t"]("admin.article.list.online", "线上") }}</a>
                     {{end}}
                     <form method="post" action="/admin/articles/delete"
-                          data-confirm="删除这篇文章？引用它的页面会在下次构建时失去内容。" data-confirm-danger>
+                          data-confirm="{{ .["t"]("admin.article.list.deleteConfirm", "删除这篇文章？引用它的页面会在下次构建时失去内容。") }}" data-confirm-danger>
                         <input type="hidden" name="csrf_token" value="{{csrf}}">
                         <input type="hidden" name="id" value="{{r.ID}}">
-                        <button type="submit" class="btn btn-danger">删除</button>
+                        <button type="submit" class="btn btn-danger">{{ .["t"]("admin.article.list.delete", "删除") }}</button>
                     </form>
                 </td>
             </tr>
             {{end}}
             </tbody>
         </table></div>
-        <p class="hint">
-            按更新时间倒序排列，一次最多列出 50 篇（超过这个量级再谈分页）。
-            「未发布」表示这篇文章还没有线上详情页 —— 不一定是问题（草稿就该是未发布），
-            编辑页的「发布」区块里能看到它当前缺什么。
-        </p>
+        <p class="hint">{{ .["t"]("admin.article.list.footHint", "按更新时间倒序排列，一次最多列出 50 篇（超过这个量级再谈分页）。「未发布」表示这篇文章还没有线上详情页 —— 不一定是问题（草稿就该是未发布），编辑页的「发布」区块里能看到它当前缺什么。") }}</p>
         {{end}}
     </section>
 </div>

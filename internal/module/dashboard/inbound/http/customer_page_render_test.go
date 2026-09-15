@@ -27,6 +27,7 @@ import (
 	projectcontract "go_wp/internal/module/project/contract"
 	usercontract "go_wp/internal/module/user/contract"
 	userdto "go_wp/internal/module/user/dto"
+	userenums "go_wp/internal/module/user/enums"
 	"go_wp/internal/templates"
 )
 
@@ -361,6 +362,8 @@ func TestCustomerStatusSaveRejectsUnknownTarget(t *testing.T) {
 	}
 }
 
+// 断言用 enums 常量而不是字面量（审计 I18N-002）：回执 URL 里带的是 i18n key，
+// 翻译发生在页面渲染时。写死中文会让「改词条」这件事被测试当成回归。
 // TestCustomerUnlockDistinguishesOutcomes 三种解锁结果各有各的说法：
 // 「刚解锁」「没锁但清了失败计数」「本来就没事」—— 合成一句会让运营以为按钮坏了。
 func TestCustomerUnlockDistinguishesOutcomes(t *testing.T) {
@@ -369,9 +372,9 @@ func TestCustomerUnlockDistinguishesOutcomes(t *testing.T) {
 		res  *userdto.CustomerUnlockResp
 		want string
 	}{
-		{"真的解除了", &userdto.CustomerUnlockResp{CustomerID: 42, Unlocked: true}, "解除锁定"},
-		{"清了残留计数", &userdto.CustomerUnlockResp{CustomerID: 42, Cleared: true}, "失败计数已清零"},
-		{"本来就没事", &userdto.CustomerUnlockResp{CustomerID: 42}, "没有处于锁定状态"},
+		{"真的解除了", &userdto.CustomerUnlockResp{CustomerID: 42, Unlocked: true}, userenums.MsgCustomerUnlocked},
+		{"清了残留计数", &userdto.CustomerUnlockResp{CustomerID: 42, Cleared: true}, userenums.MsgCustomerFailuresCleared},
+		{"本来就没事", &userdto.CustomerUnlockResp{CustomerID: 42}, userenums.MsgCustomerNotLocked},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

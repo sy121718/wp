@@ -10,9 +10,8 @@ package feature
 // 且全部页面标记待重建（stale=true）。
 //
 // 由 dashboard 主题管理 handler 触发，走真实 PostgreSQL schema + 真实服务装配。
-// 自建的 themes/pages 表将 draft_document/settings 声明为 JSONB——
-// 唯有 JSONB 才支持 jsonb_set 快照刷新（feature 包共享的 newPageService 用 JSON，
-// 与生产 DDL 漂移，故本用例不复用该 helper，避免 jsonb_set 类型错误）。
+// 建库走生产迁移（support.NewMigratedPGTestDB）：themes/pages 的 settings、
+// draft_document 在生产即是 jsonb，jsonb_set 快照刷新天然可用。
 
 import (
 	"context"
@@ -44,38 +43,13 @@ import (
 	"gorm.io/gorm"
 )
 
-// makeJsonbPageService 自建 JSONB 测试 schema 并装配 page/project/block 服务，
+// makeJsonbPageService 用**生产迁移**建库并装配 page/project/block 服务，
 // 返回 db、pages 契约、projects 服务与工程 ID。
+// （名字保留：生产 schema 的 draft_document / settings 本即 jsonb，jsonb_set 快照刷新可用。）
 func makeJsonbPageService(t *testing.T) (*gorm.DB, pagecontract.PageService, *projectservice.Service, string) {
 	t.Helper()
 	t.Setenv("GO_WP_ARTIFACT_ROOT", t.TempDir())
-	db, err := support.NewPGTestDB(t)
-	if err != nil {
-		t.Skipf("本地 PostgreSQL 不可用，跳过测试：%v", err)
-		return nil, nil, nil, ""
-	}
-	// draft_document / settings / source_document 一律 JSONB（对齐生产迁移
-	// init_builder_schema.sql 与 020_themes.sql），保证 jsonb_set 可用。
-	for _, statement := range []string{
-		`CREATE TABLE projects (id UUID PRIMARY KEY, name TEXT NOT NULL, settings JSONB NOT NULL, created_at TIMESTAMPTZ NOT NULL, updated_at TIMESTAMPTZ NOT NULL)`,
-		`CREATE TABLE themes (id UUID PRIMARY KEY, project_id UUID NOT NULL, name TEXT NOT NULL, settings JSONB NOT NULL, is_active BOOLEAN NOT NULL, created_at TIMESTAMPTZ NOT NULL, updated_at TIMESTAMPTZ NOT NULL)`,
-		`CREATE TABLE pages (id UUID PRIMARY KEY, project_id UUID NOT NULL, theme_id UUID, kind TEXT NOT NULL, content_target_type TEXT NOT NULL, content_target_id UUID, draft_path TEXT NOT NULL, active_path TEXT, draft_document JSONB NOT NULL, draft_version INTEGER NOT NULL, staged_artifact_id UUID, active_artifact_id UUID, stale BOOLEAN NOT NULL, deleted_at TIMESTAMPTZ, published_at TIMESTAMPTZ, created_at TIMESTAMPTZ NOT NULL, updated_at TIMESTAMPTZ NOT NULL)`,
-		`CREATE TABLE page_revisions (id UUID PRIMARY KEY, page_id UUID NOT NULL, version INTEGER NOT NULL, draft_path TEXT NOT NULL, draft_document JSONB NOT NULL, source_hash TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL, UNIQUE(page_id, version))`,
-		`CREATE TABLE page_routes (project_id UUID NOT NULL, path TEXT NOT NULL, page_id UUID, presentation_id UUID, route_kind TEXT NOT NULL, artifact_id UUID, updated_at TIMESTAMPTZ NOT NULL, PRIMARY KEY(project_id, path))`,
-		`CREATE TABLE page_artifacts (id UUID PRIMARY KEY, page_id UUID NOT NULL, version INTEGER NOT NULL, source_document JSONB NOT NULL, page_document_schema_version INTEGER NOT NULL, source_hash TEXT NOT NULL, build_input_manifest JSONB NOT NULL, build_input_hash TEXT NOT NULL, artifact_provider TEXT NOT NULL, artifact_key TEXT NOT NULL, artifact_hash TEXT NOT NULL, compiler_version TEXT NOT NULL, registry_version TEXT NOT NULL, manifest JSONB NOT NULL, payload_state TEXT NOT NULL, payload_deleted_at TIMESTAMPTZ, note TEXT NOT NULL, created_by UUID NOT NULL, created_at TIMESTAMPTZ NOT NULL, lang TEXT NOT NULL DEFAULT 'zh-CN', UNIQUE(page_id, version, lang), UNIQUE(id, page_id))`,
-		`CREATE TABLE content_objects (content_hash TEXT PRIMARY KEY, provider TEXT NOT NULL, object_key TEXT NOT NULL, byte_size INTEGER NOT NULL, created_at TIMESTAMPTZ NOT NULL, deleted_at TIMESTAMPTZ)`,
-		`CREATE TABLE page_artifact_objects (artifact_id UUID NOT NULL, content_hash TEXT NOT NULL, PRIMARY KEY(artifact_id, content_hash))`,
-		`CREATE TABLE publication_receipts (id UUID PRIMARY KEY, source_type TEXT NOT NULL, source_id UUID NOT NULL, action TEXT NOT NULL, path TEXT NOT NULL, from_artifact_id UUID, to_artifact_id UUID, receipt_state TEXT NOT NULL, receipt_data JSONB NOT NULL, created_at TIMESTAMPTZ NOT NULL, completed_at TIMESTAMPTZ)`,
-		// 每语言激活状态（多语言 P3，迁移 062）。
-		`CREATE TABLE page_site_slots (id UUID PRIMARY KEY, project_id UUID NOT NULL, slot TEXT NOT NULL, page_id UUID NOT NULL, created_at TIMESTAMPTZ NOT NULL, updated_at TIMESTAMPTZ NOT NULL)`,
-		`CREATE TABLE page_publications (page_id UUID NOT NULL, lang TEXT NOT NULL, active_path TEXT NOT NULL, artifact_id UUID, artifact_hash TEXT NOT NULL DEFAULT '', published_at TIMESTAMPTZ NOT NULL, updated_at TIMESTAMPTZ NOT NULL, PRIMARY KEY(page_id, lang))`,
-		`CREATE TABLE page_stagings (page_id UUID NOT NULL, lang TEXT NOT NULL, artifact_id UUID NOT NULL, artifact_hash TEXT NOT NULL DEFAULT '', draft_version BIGINT NOT NULL DEFAULT 0, updated_at TIMESTAMPTZ NOT NULL, PRIMARY KEY(page_id, lang))`,
-		`CREATE TABLE project_locales (project_id UUID NOT NULL, lang TEXT NOT NULL, sort_order INTEGER NOT NULL DEFAULT 0, is_default BOOLEAN NOT NULL DEFAULT false, enabled BOOLEAN NOT NULL DEFAULT true, created_at TIMESTAMPTZ NOT NULL, updated_at TIMESTAMPTZ NOT NULL, PRIMARY KEY(project_id, lang))`,
-	} {
-		if err := db.Exec(statement).Error; err != nil {
-			t.Fatalf("创建测试表失败: %v", err)
-		}
-	}
+	db := support.NewMigratedPGTestDB(t)
 	projects := projectservice.NewService(projectmodel.NewProjectModel(db))
 	project, err := projects.Create(context.Background(), &projectdto.CreateReq{Name: "测试工程"})
 	if err != nil {

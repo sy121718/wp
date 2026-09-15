@@ -4,7 +4,8 @@
    交互在 static/js/admin.js：点菜单后收起（未固定时）、固定切换、三角展开子级。
    Jet 语法注意：无 eq 函数（比较用中缀）；map 用 ["key"] 索引访问（缺 key 返回 nil 不报错）；
    range 遇 nil 会报 "not rangeable"，故用 {{if}} 先判空。 *}
-<nav class="rail">
+{* id 供顶栏汉堡按钮的 aria-controls 指向（theme.css 断点段把 rail/subnav 变成覆盖式抽屉）。 *}
+<nav class="rail" id="adminRail">
     <div class="rail-brand">go_wp</div>
     {{if .["NavGroups"]}}
     {{range _, g := .["NavGroups"]}}

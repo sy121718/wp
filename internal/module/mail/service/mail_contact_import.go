@@ -8,7 +8,8 @@ package mailservice
 //	2. 批内去重（同一批里重复的邮箱只留一次，否则批量 upsert 会自相冲突）；
 //	3. **查抑制名单**（退订 / 硬退信的地址直接不进 —— 导进来也发不出去）；
 //	4. 同意状态按操作者的声明落库（没声明就是 pending，不可发营销）；
-//	5. 批量 upsert（一次语句几百行，不是逐行 insert）。
+//	5. 集合式写库：新增走 CreateInBatches（一次语句几百行），已存在的更新走单条语句批量写回，
+//	   失败才回退逐条（见 updateExistingContacts）。
 
 import (
 	"bytes"
@@ -121,9 +122,9 @@ func (s *Service) ImportContacts(ctx context.Context, req *maildto.ImportContact
 	}
 
 	toInsert := make([]*mailmodel.MailContactEntity, 0, len(list))
+	toUpdate := make([]mailmodel.ContactImportUpdate, 0, len(list))
 	for _, e := range list {
-		id, exists := existing[strings.ToLower(e.Email)]
-		if !exists {
+		if _, exists := existing[strings.ToLower(e.Email)]; !exists {
 			toInsert = append(toInsert, e)
 			continue
 		}
@@ -131,23 +132,16 @@ func (s *Service) ImportContacts(ctx context.Context, req *maildto.ImportContact
 			res.Skipped++
 			continue
 		}
-		// 已存在且要求更新：逐条更新，且**只动非同意字段** ——
+		// 已存在且要求更新：收集成一批，稍后由单条语句写回；**只动非同意字段** ——
 		// 同意状态（status / subscribed_at / consent_source）不能被一次导入悄悄改写，
 		// 否则「已退订的人」会被导入变回订阅，等于自己造投诉。
-		//
-		// 逐条而不批量：tags 因人而异，一条 SQL 覆盖不了不同人的标签。
-		fields := map[string]any{"source": e.Source, "update_time": now}
-		if e.Name != nil {
-			fields["name"] = *e.Name
+		toUpdate = append(toUpdate, mailmodel.ContactImportUpdate{Email: e.Email, Name: e.Name, Tags: e.Tags})
+	}
+
+	if len(toUpdate) > 0 {
+		if err = s.updateExistingContacts(ctx, toUpdate, existing, now, res); err != nil {
+			return nil, err
 		}
-		if len(e.Tags) > 0 {
-			fields["tags"] = e.Tags
-		}
-		if uerr := s.m.UpdateContactFields(ctx, id, fields); uerr != nil {
-			res.Errors = append(res.Errors, maildto.ImportRowError{Email: e.Email, Reason: "更新失败: " + uerr.Error()})
-			continue
-		}
-		res.Updated++
 	}
 
 	if err = s.m.BatchInsertContacts(ctx, toInsert, importBatchSize); err != nil {
@@ -155,6 +149,59 @@ func (s *Service) ImportContacts(ctx context.Context, req *maildto.ImportContact
 	}
 	res.Imported = len(toInsert)
 	return res, nil
+}
+
+// updateExistingContacts 写回导入命中的已存在联系人（审计 DB-006）。
+//
+// 快路径是**一条语句写完整批**（把 N 次往返压成 1 次）；批量失败时**回退逐条**，
+// 因为对外承诺的语义是「逐行报错 + Updated 精确计数」，批量只是同一语义的快路径，
+// 不能改变对外行为。批量为空的差集（前置查询判定存在、写回时已消失，即并发删除）
+// 同样逐行报告，不让它静默少算。
+func (s *Service) updateExistingContacts(ctx context.Context, rows []mailmodel.ContactImportUpdate, existing map[string]uint64, now time.Time, res *maildto.ImportContactsResp) (err error) {
+	hit, uerr := s.m.BatchUpdateContactImportFields(ctx, rows, mailmodel.ContactSourceImport, now)
+	if uerr != nil {
+		// 集合语句整体失败（罕见的约束/连接问题）：退回逐条，保住逐行报告能力。
+		return s.updateExistingContactsOneByOne(ctx, rows, existing, now, res)
+	}
+	written := make(map[string]struct{}, len(hit))
+	for _, e := range hit {
+		written[e] = struct{}{}
+	}
+	for _, r := range rows {
+		if _, ok := written[strings.ToLower(r.Email)]; ok {
+			res.Updated++
+			continue
+		}
+		res.Errors = append(res.Errors, maildto.ImportRowError{Email: r.Email, Reason: "更新失败: 联系人已不存在"})
+	}
+	return nil
+}
+
+// updateExistingContactsOneByOne 逐条写回（批量路径失败时的回退）。
+//
+// 字段口径与批量路径逐项一致：name / tags 仅在非空时覆盖，source 与 update_time 恒写；
+// tags 走 StringArray 的 driver.Valuer（裸 []string 会被 pgx 编成元组字面量报 22P02）。
+func (s *Service) updateExistingContactsOneByOne(ctx context.Context, rows []mailmodel.ContactImportUpdate, existing map[string]uint64, now time.Time, res *maildto.ImportContactsResp) (err error) {
+	for _, r := range rows {
+		id, ok := existing[strings.ToLower(r.Email)]
+		if !ok {
+			res.Errors = append(res.Errors, maildto.ImportRowError{Email: r.Email, Reason: "更新失败: 联系人已不存在"})
+			continue
+		}
+		fields := map[string]any{"source": mailmodel.ContactSourceImport, "update_time": now}
+		if r.Name != nil {
+			fields["name"] = *r.Name
+		}
+		if len(r.Tags) > 0 {
+			fields["tags"] = mailmodel.StringArray(r.Tags)
+		}
+		if uerr := s.m.UpdateContactFields(ctx, id, fields); uerr != nil {
+			res.Errors = append(res.Errors, maildto.ImportRowError{Email: r.Email, Reason: "更新失败: " + uerr.Error()})
+			continue
+		}
+		res.Updated++
+	}
+	return nil
 }
 
 // parseContactRows 解析导入内容（CSV 与纯文本自动识别）。

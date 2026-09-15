@@ -4,12 +4,17 @@ import "encoding/json"
 
 // CreateReq 创建手工 Page。
 type CreateReq struct {
-	ProjectID         string          `json:"projectId" binding:"required"`
-	Kind              string          `json:"kind" binding:"required"`
-	ContentTargetType string          `json:"contentTargetType"`
-	ContentTargetID   *string         `json:"contentTargetId"`
-	DraftPath         string          `json:"draftPath" binding:"required"`
-	DraftDocument     json.RawMessage `json:"draftDocument" binding:"required"`
+	ProjectID         string  `json:"projectId" binding:"required"`
+	Kind              string  `json:"kind" binding:"required"`
+	ContentTargetType string  `json:"contentTargetType"`
+	ContentTargetID   *string `json:"contentTargetId"`
+	DraftPath         string  `json:"draftPath" binding:"required"`
+	// DraftDocument 初始文档。与 BlueprintID 二选一：给了蓝图就以蓝图为准
+	//（蓝图是「用完即弃」的初始化输入，AST 会被完整复制并重生成节点 ID）。
+	// 因此这里不再是 required —— 从蓝图建页时前端不需要先造一份空文档。
+	DraftDocument json.RawMessage `json:"draftDocument"`
+	// BlueprintID 从哪份蓝图初始化（可选，审计 VIS-010）。
+	BlueprintID string `json:"blueprintId"`
 }
 
 // SaveDraftReq 保存 Page 草稿，使用 draftVersion 做乐观锁。

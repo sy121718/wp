@@ -305,7 +305,8 @@
         "json-ld",
         "faq"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：FAQPage 的 mainEntity 问答结构（子代理实现，父代理核实）。① 病灶比条目描述的更具体：core.faq 组件只产出了视觉形态，而 head 的 schemaTypeMap 里有个 \"faq\"→\"FAQPage\" 的映射，**输出的是一个没有 mainEntity 的空壳** —— 空壳本身就是 Search Console 认定的无效结构化数据，比没有更糟。② 解法是把 FAQPage 交给**组件**产出（数据源与可见问答同一份 Props.Items），同时**移除** head 侧那个空壳映射。jsonld.go 的 FAQPageJSONLD 生成带 mainEntity 的 JSON-LD，答案经与可见侧**同一条** RichTextHTML 白名单管线再纯文本化 —— 两处同源，不会出现「可见的与结构化的不一致」。③ 注入形态与 seo_head 的 JSON-LD 一致（同一 script 包裹 + encoding/json，尖括号转义为 \\u003c，截不断 script 元素），TestFAQPageJSONLDScriptTagCannotEscape 钉住注入安全。④ 4 个新测试：TestFAQPageJSONLDMatchesVisibleItems / VisibleAndStructuredAgree / ScriptTagCannotEscape / NoOutputWithoutItems；另有两个 head 侧测试钉「不再输出空壳」与「非首页仍走页面级」。⑤ 一处**必须同步的越界**（已批准）：internal/builder/testdata/golden/faq.html 是组件产物的**逐字节基准**，组件新增了 JSON-LD 而 golden 不同步，交付的分支测试必挂。由既有 -update-jet-golden 机制机械生成，diff 只含新增的 script。同一次命令还重写了 22 个 golden/*.css（内容是 prefers-reduced-motion / @media (hover: hover)，来自 UI-002/UI-003 与无障碍批次的组件 CSS 改动），如实保留未回退。"
     },
     {
       "id": "SEO-007",
@@ -349,7 +350,8 @@
         "json-ld",
         "site-settings"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：站点级 Organization 与 WebSite（含 SearchAction）结构化数据（子代理实现，父代理核实）。① seo_head.go 在首页（canonical 路径为 /）追加 Organization 与 WebSite，与页面级主实体**并入同一个 @graph**（不是第二个 script —— 同页两个 script 会让结构化数据互相竞争）。② **合并而非追加**：若页面主实体已经是 WebSite（schemaType=website 的首页），把 name/url/potentialAction 合并进它，避免出现两个 WebSite 节点。③ 非首页、站点根未知、无标题时**零输出** —— Organization 缺 name 属于无效结构化数据，宁缺毋错。④ 站点根真源是 WP_SITE_BASE_URL，与 sitemap/robots、pipeline/site_lang.go 同一个环境变量（含路径前缀如 http://host/site）；未配置时退化为从绝对 canonical 取 origin。SearchAction 的 target 是 <站点根>/?q={search_term_string}，参数名 q 与 core.searchResults 组件表单同源。⑤ 6 个新测试（含 TestSiteLevelJSONLDWebsiteSchemaKeepsSingleWebsite 钉「不出现两个 WebSite」、TestSiteLevelJSONLDSkippedWithoutBaseURL 钉宁缺毋错、TestSiteLevelJSONLDWithoutTitleSkipsOrganization）。⑥ 已知边界（如实记录）：只在部署设置了 WP_SITE_BASE_URL 时产出；若某站首页未挂搜索组件，Google 的站内搜索框不会生效（结构本身合法）。"
     },
     {
       "id": "SEO-008",
@@ -446,7 +448,8 @@
         "search-console",
         "site-settings"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：Google Search Console 站点验证 meta 注入（子代理实现，父代理核实）。① 真源 projects.settings.searchConsoleVerification，链路与 GA4 **逐字同构**：SiteSettings → pipeline.AnalyticsCompileOptions（与 GA4 同一行装配，于是 page_assemble.go 与 presentation_render.go 两个装配点零改动即端到端生效）→ builder.WithSearchConsoleVerification → CompiledPage.SearchConsoleHead → document.jet head（插在 GA4 之后、<style> 之前）。空值与非法值一律零字节注入。② **一处刻意偏离 GA4，且有测试钉住**：GSC token 是大小写敏感的 base64url，照抄 GA4 的 ToUpper 归一化会把合法 token 改坏（验证必然失败），所以 GSC 只 TrimSpace 不折叠大小写。TestSearchConsoleVerificationCasePreserved 专门断言「归一化不改变 token 字节」。字符集边界 [A-Za-z0-9_-]{8,128}；含引号/尖括号/空格的字符串与整段 meta 标签一律拒绝。③ 8 个 builder 测试（含 TestCompileSearchConsoleDeterminism 钉确定性、TestSearchConsoleHeadEmptyAddsNoBytes / TestCompileSearchConsoleAbsentZeroBytes 钉空值零字节、TestCompileSearchConsoleInvalidNotInjected 钉非法值不注入、TestSearchConsoleEndToEndRender 端到端）+ 1 个 dashboard 测试 TestMergeSiteSettingsSearchConsole。④ **两处任务书前提不成立，如实报告并越范围补齐**：后台保存校验不在 internal/module/project/** 而在 dashboard 的 site_settings_handle.go（GA4 的校验也在那里），不接它字段存不进库；head 的接入点在 internal/pipeline/compile_analytics.go。为把越界压到最小，把 GSC 注入合并进既有的 AnalyticsCompileOptions，改动面从 3 个文件降到 1 个。⑤ 父代理核实：go test ./internal/builder/ -run SearchConsole、./internal/pipeline/、./internal/module/dashboard/inbound/http/ 均 ok；document.jet 的注入点与大小写测试的源码均实地确认存在。"
     },
     {
       "id": "SEO-010",
@@ -534,7 +537,8 @@
         "sitemap",
         "scalability"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：sitemap 分片索引（子代理实现，父代理核实）。① WriteSiteFiles 内部按 SitemapShardLimit=10000 自动分片：条目 ≤ 上限时产物与改动前**逐字节一致**（单文件 sitemap.xml，robots 仍指 /sitemap.xml），超限时 sitemap.xml 变成 sitemapindex、分片写 sitemap-N.xml，并清理上一轮遗留的多余分片（只认 sitemap-<正整数>.xml）。**关键设计**：索引与单文件共用 /sitemap.xml 这个路径，所以 publication 侧调用点签名与行为都无需感知分片的存在 —— 这是「加能力不改调用方」的正确形状。② 分片前按单文件同口径去重+排序，故分片结果与输入顺序无关（TestShardEntriesOrderIndependent 钉住）。顺带把原来的 O(n²) 插入排序换成 sort.SliceStable —— 大站发布不再卡在这一步。③ 阈值取 10000（协议上限 5 万条/50MB 留足余量，多语言条目还带 xhtml:link 互指）。④ 7 个新测试：TestWriteSiteFilesShardsLargeSite / SmallSiteUnchanged / TestShardEntriesBoundary / OrderIndependent / PrunesStaleShards / IsSitemapShardName，既有 TestBuildSitemap / TestWriteSiteFiles / TestBuildSitemapAlternates 等同步复跑通过。⑤ 父代理核实：go build / go vet 干净，全仓 go test -p 1 ./... 为 TEST_EXIT=0。"
     },
     {
       "id": "SEO-012",
@@ -578,7 +582,8 @@
         "feed",
         "content"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：站点级 RSS 2.0 feed 随激活刷新写入激活目录（子代理实现，父代理核实）。① 沿用 RefreshSiteFiles 链路（签名未变）：ListActivePaths → seo.WriteSiteFiles 写 sitemap/robots → refreshFeed 写 <dir>/feed.xml（与 sitemap 同级、原子写）。新增 internal/seo/feed.go（RSS 生成器 + 开关/上限）与 publication 侧的 refreshFeed / 产物解析。② 条目来源 = 已激活路由中「presentation_id 非空（自动发布实例）」且「产物 HTML 带 JSON-LD @type=Article/BlogPosting/NewsArticle」的路径；手工页面与商品页不进 feed。pubDate 取路由行 updated_at —— 产物字节里没有时间戳，这是构建确定性的约束。③ 链接与 sitemap **逐字同源**：seo.JoinURL(baseURL, path) 原样用激活路径，不另立第二套路径规则；语言归属复用 pipeline.LangURLRule.Locate，多语言只收默认语言版本。抽出 siteLangRule 让 sitemap 与 feed 共用同一份规则构造。④ 开关 GO_WP_SEO_FEED（off/0/false/no 关闭，默认开）与 GO_WP_SEO_FEED_LIMIT（默认 20，非法值回退），与 pkg/sitetz 的 GO_WP_SITE_TIMEZONE 同形。**关闭时删除既有 feed.xml** —— 不删等于继续对外服务可能已 404 的旧条目。⑤ 确定性：条目按「发布时间降序 → 链接升序」，lastBuildDate 取条目最大时间而非 time.Now()，同输入同字节。⑥ 17 个新测试，verification 三条各有对应用例：TestFeedXMLParsesAndItemLinksResolve（标准库 XML 解析成功、channel 必需元素非空、每个条目 URL 在激活目录里确有产物文件）、TestRefreshFeedDisabledRemovesFeed（关闭后既有 feed 被删除且幂等）、TestFeedItemsMultiLangKeepsDefaultOnly。⑦ **未做的三处如实记录**：(a) 条目来源未走 content 契约 —— publication 拿不到该数据，注入端口要改 routes.go 与 page 发布链（改动范围外）；替代口径是「产物 HTML 是访问面唯一权威事实」，已知边界是「SEO 头注入落地前构建的旧文章产物没有 JSON-LD，要重新发布才进 feed」。(b) 未做后台开关 UI 与权限点/菜单，因此没有新建迁移 —— 后台入口在 dashboard，只 seed 权限点而无 handler 正是这个项目批评过的「假入口」。(c) presentation（文章/商品）发布链不调 RefreshSiteFiles，所以文章首发后 feed/sitemap 都不会更新，要等下一次 page 发布；补这个洞需改 page 或 presentation，建议单开一条。⑧ 父代理核实：go test ./internal/seo/... ./internal/module/publication/... 全绿；全仓 go vet 与 go test -p 1 ./... 在合并全部代理改动后为 TEST_EXIT=0。"
     },
     {
       "id": "SEO-013",
@@ -623,7 +628,8 @@
         "404",
         "site-slot"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：自定义 404 页（子代理实现，父代理裁决走最小档）。① **侦察质量是本条最有价值的部分**：代理实测了 gin v1.12.0 的 createStaticHandler —— 静态面 fs.Open 失败时会把 handler 链**整体替换成 NoRoute**，于是未知路径最终走 routes.go 的 router.NoRoute → response.NotFound → **统一 JSON**。审计条目写的「Go 默认纯文本页」已经过时，实际更糟：**一个公开站点对访客返回后台 API 形态的 JSON 错误体**，爬虫与用户看到的都不对。审计引用的行号（routes.go:522-527）也已漂移。② 实现：SiteSettings.NotFoundHTML（存 projects.settings JSON，无需 DDL 变更）→ 发布时经 RefreshSiteFiles 与 sitemap/robots/feed **同一条链**原子写入 <激活根>/404.html（**空配置即删除既有文件**，与 feed 关闭即删除同约定 —— 不删等于继续服务已下线的旧页）→ 访问面未知路径由 notFoundHandler 返回该页，**状态码恒为 404**，未配置时逐字保持既有 JSON。③ 位置约定**单源**在新增的 internal/pipeline/notfound.go：访问面读、控制面写都经它，避免两边各写一份路径导致「后台配了、线上不生效」。④ **关于改签名**：实测全仓 RefreshSiteFiles 只有 1 契约 + 1 实现 + 1 调用点、无 mock，加 1 参数连锁面 = 2 个 Go 文件 + 1 调用点。选加参数而非让调用点自己写文件，是为了保住「站点级文件单点写入」，且 publication 禁止跨模块读 projects.settings，内容只能由 page 装配层传入。⑤ 14 个用例：pipeline 7（写入/清空删文件/激活目录缺失幂等/空文件按未配置/白名单只认根层/审计白名单）、routers 4（未知路径返回自定义页且 404、未配置行为不变、控制面不被污染、已激活产物仍 200）、templates 3。verification 两条都有对应用例。⑥ **顺带修了我此前漏掉的缺陷**：AuditActiveLinks 把激活目录里任何非符号链接报成 issue，而 sitemap.xml / robots.txt / feed.xml 正是真实文件写在激活根 → **每次审计都在产生 3 条假 issue**，加 404.html 会变 4 条。已加白名单（只认根层，深层 docs/404.html 仍报异常）。这是我在 SEO-019 那批的疏漏：**只测了「能不能检出问题」，没测「会不会误报」**。⑦ **如实报告的未覆盖**：(a) /site/ 尾斜杠根不经 NoRoute（fs.Open(\"/\") 对目录成功 → 标准库 FileServer 在激活根找 index.html，而根条目是无扩展名的 index 符号链接 → 标准库默认 404）；修它要改「目录根 → index 条目」的映射语义，多语言语言根（/site/en/）同病，只修一处是半修，故未硬塞，建议单开。(b) 404 分支替换 handler 链后 group 的 SiteRedirect/SiteCache/StaticGzip 三个中间件都不执行，自定义 404 当前没有 gzip 与 Cache-Control；将来加策略必须写进 notFoundHandler。(c) 不做按语言选 404（全站一份）。(d) 配置改动需重新发布页面才生效，已在后台 hint 写明。"
     },
     {
       "id": "SEO-014",
@@ -667,7 +673,8 @@
         "components",
         "navigation"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：core.breadcrumb 可见面包屑组件（子代理实现 + 父代理补完最后一环）。① 前提成立：组件目录里确实没有 breadcrumb，只有 seo_head.go 的 JSON-LD 面包屑。② 新增 internal/builder/components/breadcrumb/：breadcrumb.go（Props/校验/样式编译/init 注册）、jet.go（BuildView、ApplyI18n、层级派生 deriveItems、同源 JSON-LD）、breadcrumb.jet（nav + ol/li + aria-label + 末项 aria-current + 分隔符 aria-hidden）、breadcrumb.css；jetview.go 只加三行（import + case breadcrumbPkg.Type + breadcrumbViewOf）。③ **层级派生**：未手填 items 时按构建期 RenderContext.CurrentPath 逐段派生（首页 + 各路径段，段名 PathUnescape、链接取累积路径），规则与 seo_head.breadcrumbList 一致，首页名同取 site.breadcrumb.home 词条；手填 items 时用作者层级，此时可开 jsonLd（**默认关** —— head 已输出一份，同页两条 BreadcrumbList 会让结构化数据打架；默认模式下可见项与 head JSON-LD 逐项一致由测试证明）。首页自身、无路径、隐藏首页后无剩余项时整块不渲染。④ 10 个测试：组件包 6 个（含 TestJSONLDMatchesVisibleItems，内有 </script> 注入转义断言）+ builder 契约 4 个（TestBreadcrumbVisibleDomMatchesHeadJSONLD 做可见 DOM + name 序列 + href/item 序列与 head JSON-LD 的逐项同源比对、aria-current 仅 1 次、分隔符 aria-hidden）。既有契约测试（TestComponentRegistryComplete / TestComponentAssetsConsistent / TestComponentI18nDeclarations / TestComponentManifest）自动覆盖新组件且全绿。⑤ **父代理补完的最后一环**：审计 verification 的「组件库可见可选」原未闭环 —— palette.js 的条目没加，作者在工作台里看不到它。已在 internal/templates/static/js/workbench/palette.js 补两处（条目 { type: core.breadcrumb, label: 面包屑, hint: 当前页层级（自动按路径派生）, props: {} } + paletteGroups 的 basic.types 数组加 core.breadcrumb），props 留空即自动派生，作者无需手填（手填反而容易与实际路径脱节）。internal/templates 的契约测试通过。⑥ 两处按范围未做、如实记录：(a) 审计 steps[0]「把 breadcrumbList 的层级推导抽成共享函数」未真正落地 —— seo_head.go 不在子代理范围，且组件包不能反向 import builder（会成环）；当前用契约测试钉住两处等价性。若要真共享，需抽到 core（如 core.BreadcrumbChain(rawURL, homeName) []Crumb）再让 seo_head.breadcrumbList 与组件同时调用。(b) 一处既有口径差异：未注入 WithTranslator 时 builder.go 的 breadcrumbHome 用 cfg.translate（nil 时硬编码 \"Home\"），而 RenderContext.Translate 已解析并回退 \"首页\"，该边缘路径下 head 首项与组件首项会不同；生产装配 pipeline.LocaleCompileOptions 恒注入 i18n.Snapshot(lang)，两处同取一条词条故一致，契约测试即按生产口径断言。⑦ 父代理核实：go test ./internal/templates/... 与 go test -p 1 ./... 均通过。"
     },
     {
       "id": "SEO-015",
@@ -711,7 +718,8 @@
         "content",
         "editor"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：内链建议引擎（子代理实现，先纯函数后接线）。① 纯函数 internal/seo/scoring/linksuggest.go：InternalLinkSuggestions(doc, candidates, limit)。过滤链：URL 为空（死链防线）→ SelfID → SelfURL → 已链接集合。排序：关键词命中 +3、标签每交集 +2、分类每交集 +1，并列按 Title 码位升序保证确定性。10 个测试覆盖空候选/全排除/并列/自身排除/limit 边界。② 入口接线只做装配：article_link_suggest_handle.go（POST /admin/articles/link-suggestions，Session+CSRF 与评分侧栏同策略）；contents.List(article) → PublishedEntityPaths 批量解析 → 只留有真实路径者 → 交纯函数。③ 候选来源声明（死链不可能出现的论证）：候选 = presentation 自动发布实例中 active 指针非空者；PublishedEntityPaths 只返回激活实例的最终访问路径，未发布/已删除不在结果里，改 URL 同步 url_path。④ 已知边界如实报告：文章域无 tags/分类字段（content 白名单如此），重叠度按 focusKeyword 计算；手工页面的已发布路径无 dashboard 可用的只读端口，候选域收敛到文章域——如需页面域要在 page 契约加收窄只读方法，未硬凑。⑤ gofmt/build/vet 与相关包测试全通过。"
     },
     {
       "id": "SEO-016",
@@ -764,7 +772,8 @@
         "product",
         "scoring"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：商品/分类/品牌的 SEO 评分入口（子代理实现）。① 接线点单源：internal/seo/scoring/entity_page.go 的 ProfileFor(kind) —— 商品→ProductProfile，分类/品牌→LandingProfile；ScoreEntityPage 是唯一入口。② scoring.go 的 Result 加 Profile 字段并回显（docs/02-E1 §5 的硬要求），另补了 LandingProfile 漏掉的 meta 0.10（文档要求提 meta）。③ EntityTitle/PreferredTitle 让「唯一性检查」与「评分」比对**同一个标题值**（SEO 字段优先、实体名回落），避免两者各取一套口径。④ dashboard 侧新增三个评分端点（商品/分类/品牌）+ seoTitleIndex（商品 published + 分类 + 品牌 + 页面草稿 + 文章，各一次查询）；handle 加两个可空契约字段，scoreView 加 ProfileType/ProfileReason/Duplicates/DuplicateNote/Empty。⑤ 7 个 scoring 测试（含 TestProfileForWiring、TestProductProfileWeightsMatchDoc、TestEntityPageContentLengthLowerThanArticle）+ 6 个 dashboard 测试（含端点级 TestProductScorePanelUsesProductProfile、TestBrandScorePanelUsesLandingProfile、TestCategoryScorePanelUsesLandingProfile）。⑥ **一处越界且必要**（已在报告说明）：三个 admin 模板（products/product_categories/product_brands）与 fragments/seo_score.html 是评分面板的挂载点，不改模板则 verification「商品/分类/品牌页出现评分」不成立；这四个文件不在其它代理的改动集合里。⑦ 边界：商品 focus_keyword 列属迁移未落地（评分如实提示「未设置主关键词」，未编造值）；评分面板挂在商品/分类/品牌三处，页面设置面板与文章评分面板未接唯一性检查（它们高频刷新需缓存，属另一改动面）。"
     },
     {
       "id": "SEO-017",
@@ -854,7 +863,8 @@
         "seo",
         "audit"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：title 唯一性检查（编辑期轻量版，子代理实现）。① 分工：**发布后体检**那一半此前已由 SEO-019 实现（seo_audit.go 的 AuditSite 会输出 AuditTitleDuplicate 并列出全部命中页面），本条补的是**编辑期轻量版** —— 一次查询拿到同工程已发布内容的 title 索引，在商品/分类/品牌评分面板里给出冲突清单。② **口径一致性是重点**：编辑期 DuplicateTitleMessage 与发布侧 AuditSite 的结论**逐字同句式**（「重复的 title（X）出现在 N 个页面：/a、/b」），由 TestDuplicateTitlesMatchesPublishSideWording 钉住；比较口径同为 TrimSpace 后精确比较、不忽略大小写 —— 忽略大小写会造成「草稿期报重复、发布后不报」这类两边不一致，比不检查更让人困惑。③ title 索引覆盖：已发布商品(status=published) + 分类 + 品牌 + 页面草稿(settings.seo.title) + 文章(seoTitle/title)。④ 4 个纯函数测试：TestDuplicateTitlesListsAllConflictingPages / NoFalsePositive / MatchesPublishSideWording / DedupesSamePage。⑤ 边界：页面设置面板与文章评分面板未接（它们由已存在的入口渲染、高频刷新需要缓存，属另一改动面）。"
     },
     {
       "id": "SEO-019",
@@ -904,7 +914,8 @@
         "monitoring",
         "high-value"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：发布后的产物 SEO 体检（审计 SEO-019）。① 与编辑期评分器的分工是本条的核心：评分器看**草稿文档**（写之前给建议），体检看**激活产物**（写之后看事实）。改 URL 留下的 301、模板改版导致的 title 重复、漏配 canonical，在草稿里全都看不出来，只有把真正服务出去的那份 HTML 读一遍才暴露。② 引擎（internal/module/publication/service/seo_audit.go）七项检查：title 缺失/重复、description 缺失、canonical 缺失、图片缺 alt、内链死链、hreflang 只声明一条。解析用 x/net/html 的 tokenizer（项目解析富文本已在用的依赖，不引入解析器级别的重型库）。③ **只扫本工程的激活路径**：active 目录是站点级的（不含工程维度），多工程部署时里面混着其它工程的产物；不过滤的话别的工程页面会带着自己的内链进来，而对照的是本工程的路由表 —— 结果是满屏误报的死链。④ 内链判定对照 page_routes 的激活路径集合（**不发请求、不跟随 301**）：这一步专门抓「改 URL 之后没人更新链接」留下的死链，而那类问题在草稿里完全看不见。归一化处理 query / fragment / 结尾斜杠 / 空路径即首页。⑤ 触发入口 POST /publication/seo-audit：**同步**执行而不是异步任务 —— 体检只读产物文件、不写库、不出网，几百份 HTML 的解析在毫秒级，引入任务队列只会让「点了按钮没反应」成为新的排查对象。权限点 seo:audit 单独给（迁移 183），与「改 URL」「发布」分开：能看体检报告的人未必有权改站点，把诊断与变更分成两个权限点，才可能让运营看到问题、由开发去改。⑥ 测试 4 条（就近单测，纯函数不碰库）：内链死链被检出**且链接存在时不报**（反例很关键 —— 会误报的检查最后都被当成噪音忽略掉）、重复 title 被检出且列出全部命中页面、缺 title/description/canonical 各有对应结论且不误报、只读产物（临时目录遍历、非 HTML 忽略、目录不存在返回空而不是错误）。⑦ **测试抓到的真实缺口**：重复 title 的结论原本只报「出现在 2 个页面」，运营知道有问题却不知道该去改哪一页 —— 改的是实现（把命中页面列进结论）而不是测试。⑧ 未做（如实记录）：page_seo_audits 结果表（当前 API 直接返回结论、不留历史）、后台展示页、定时任务、菜单项。verification 的三条（死链可检出 / 重复 title 可检出 / 不影响访问面性能）已满足，且现在有接口与权限点，运营够得着。"
     },
     {
       "id": "SEO-020",
@@ -956,7 +967,8 @@
         "monitoring",
         "documentation"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：最小 SEO 控制台（子代理实现）。① 新增 /admin/seo 页面（seo_handle.go + seo.html + dashboard_router 注册 + nav_menu 导航项），复用已有 seo:audit 权限点（未新增迁移）。② 能力边界如实标注：体检入口调用已有 POST /api/publication/seo-audit（fetch 展示 scanned/count/issues，对 Path/Level/Message 做 HTML 转义）；热门路径走已有 analyticscontract.AnalyticsService.Summary；来源排行、sitemap/feed 状态、外部搜索 API 均明确显示\"当前不可用\"——没有的数据不伪造。③ 5 个测试：模板渲染（有数据/缺数据两态）、权限过滤、路由注册、analytics 契约使用。④ 开发过程中踩到并修正的 Jet 陷阱：初版继承 admin/layout.html 且在 range 中读外层变量导致响应中途截断；已改为继承 layout.html 并预绑定 selectedProject/paths；空切片用显式 HasPaths 状态而非依赖缺失键。⑤ gofmt/build/vet 通过，相关包测试通过。"
     },
     {
       "id": "SEO-021",
@@ -1135,7 +1147,8 @@
         "dead-link",
         "audit"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：死链检测——核对后确认**已在 SEO-019 批次落地**（internal/module/publication/service/seo_audit.go，当时为未跟踪新文件，故本条一直未销）。核验证据（子代理复核）：① 用 golang.org/x/net/html 解析产物页面链接；② 区分站内绝对路径与外链；③ 对照当前工程激活路径集合；④ 去 query/fragment、处理尾斜杠与首页特例；⑤ 站内目标不存在时输出 error 级结论并附来源路径与目标路径，可复核。测试：TestAuditSiteDetectsBrokenInternalLink（目标不存在报 error、存在不误报）、TestCollectActiveDocumentsFollowsActiveSymlinks（真实激活符号链接形态，修掉 filepath.Walk 不穿目录链接的缺陷）。相关包测试通过。判定依据是「现状已满足 + 有测试钉住」，不是本批新改动。"
     },
     {
       "id": "SEO-025",

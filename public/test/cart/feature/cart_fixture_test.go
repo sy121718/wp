@@ -20,13 +20,14 @@ import (
 	cartdto "go_wp/internal/module/cart/dto"
 	mockpaypal "go_wp/internal/module/cart/outbound/mockpaypal"
 	cartservice "go_wp/internal/module/cart/service"
-	maildto "go_wp/internal/module/mail/dto"
+	mailcontract "go_wp/internal/module/mail/contract"
 	orderdto "go_wp/internal/module/order/dto"
 	ordermodel "go_wp/internal/module/order/model"
 	orderservice "go_wp/internal/module/order/service"
 	productdto "go_wp/internal/module/product/dto"
 	inventorydto "go_wp/internal/module/product/inventory/dto"
 	inventorymodel "go_wp/internal/module/product/inventory/model"
+	orderstock "go_wp/internal/module/product/inventory/outbound/orderstock"
 	inventoryservice "go_wp/internal/module/product/inventory/service"
 	productmodel "go_wp/internal/module/product/model"
 	productservice "go_wp/internal/module/product/service"
@@ -45,15 +46,15 @@ const cartTestSecret = "cart-feature-test-secret"
 
 // fakeMail 记录被调用的邮件请求（只为断言「发了哪封信」）。
 type fakeMail struct {
-	calls []*maildto.SendTemplateReq
+	calls []*mailcontract.SendInput
 }
 
-func (f *fakeMail) SendTemplate(_ context.Context, req *maildto.SendTemplateReq) (*maildto.SendResult, error) {
-	f.calls = append(f.calls, req)
-	return &maildto.SendResult{Queued: true, To: req.To}, nil
+func (f *fakeMail) SendTransactional(_ context.Context, in *mailcontract.SendInput) (*mailcontract.SendOutcome, error) {
+	f.calls = append(f.calls, in)
+	return &mailcontract.SendOutcome{Queued: true}, nil
 }
 
-func (f *fakeMail) findTemplate(key string) *maildto.SendTemplateReq {
+func (f *fakeMail) findTemplate(key string) *mailcontract.SendInput {
 	for _, c := range f.calls {
 		if c.TemplateKey == key {
 			return c
@@ -135,7 +136,6 @@ func newCartFixtureWithGateway(t *testing.T, gateway cartcontract.PaymentGateway
 	mail := &fakeMail{}
 	users := userservice.NewService(
 		usermodel.NewUserModel(db),
-		usermodel.NewUserSessionModel(db),
 		usermodel.NewUserProfileModel(db),
 		usermodel.NewUserPreferenceModel(db),
 		mail, "测试站",
@@ -147,7 +147,7 @@ func newCartFixtureWithGateway(t *testing.T, gateway cartcontract.PaymentGateway
 		ordermodel.NewCouponModel(db),
 		ordermodel.NewReturnModel(db),
 		products,
-		inv,
+		orderstock.New(inv),
 		users,
 	)
 	cart := cartservice.NewService(orders, products, products, gateway, cartTestSecret)

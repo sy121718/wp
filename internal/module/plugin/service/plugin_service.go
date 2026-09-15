@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	admincontract "go_wp/internal/module/admin/contract"
@@ -21,6 +22,12 @@ import (
 type Service struct {
 	m          *pluginmodel.Model
 	adminAuthz admincontract.AuthzContextService
+
+	// 启用集装配缓存（审计 PERF-006）：编译装配素材按启用集指纹缓存一份。
+	// 锁只保护这两个字段，不保护构建过程 —— 构建在锁外做，避免慢磁盘 IO 卡住读路径。
+	asmMu          sync.Mutex
+	asmFingerprint string
+	asmCache       *plugincontract.Assembly
 }
 
 // NewService 构造（model 注入，不持有 *gorm.DB）。

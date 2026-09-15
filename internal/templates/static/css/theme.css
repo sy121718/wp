@@ -168,33 +168,6 @@ button, input, select, textarea { font: inherit; color: inherit; }
     overflow-y: auto;
 }
 
-/* ===== 后台页面管理列表（admin/pages.html） ===== */
-.pages-wrap { display: flex; flex-direction: column; gap: 20px; }
-.pages-card {
-    background: var(--c-surface, #fff); border: 1px solid var(--c-border, #e5e7eb);
-    border-radius: 12px; padding: 20px 24px;
-}
-.pages-card h2 { margin: 0 0 14px; font-size: 16px; }
-/* 表单容器：**只负责布局**（flex 换行 + 间距），视觉一律交给 ui.css 的原始控件层。
- *
- * 这里曾经逐项写着 padding / border / radius / font-size，还有一条把主按钮写死成蓝色
- * （#2563eb）—— 而 --c-primary 是深灰 #3d444f，于是同一个主题下「表单里的主按钮」
- * 和「其它地方的主按钮」颜色不一样。控件视觉只该有一处定义。
- *
- * 保留 min-width 是因为它是**布局约束**（小输入框也要有个可用宽度），不是视觉。
- */
-.pages-form { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-.pages-form input:not([type="checkbox"]):not([type="radio"]),
-.pages-form select { min-width: 220px; }
-.pages-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-.pages-table th, .pages-table td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--c-border, #e5e7eb); }
-.pages-table th { color: var(--c-text-mute, #6b7280); font-weight: 500; font-size: 12px; }
-/* 表格横向滚动容器（多端硬规则）：窄屏表格自身滚动，绝不撑破卡片。
-   触摸屏用惯性滚动；键盘用户可用 Tab 进入容器后方向键滚动（overflow 容器可聚焦）。 */
-.pages-table-wrap { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
-.pages-table-wrap:focus-visible { outline: 2px solid var(--c-primary, #2563eb); outline-offset: 2px; }
-.pages-path { font-family: monospace; }
-
 /* ===== 库存变动 / 流水 / 原因字典（admin/inventory.html，issue #16） =====
    多端适配（硬规则）：
      · 输入宽度一律 min(100%, <设计宽度>)，容器 flex+wrap，窄屏折行不溢出；
@@ -205,21 +178,6 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .move-delta-out { color: #dc2626; }
 .move-delta-none { color: var(--c-text-mute, #6b7280); }
 .move-meta { color: var(--c-text-mute, #6b7280); font-size: 12px; }
-.pages-badge {
-    display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px;
-    background: rgba(107,114,128,.12); color: var(--c-text-mute, #6b7280); margin-right: 4px;
-}
-.pages-badge-ok { background: rgba(16,185,129,.14); color: #059669; }
-.pages-badge-warn { background: rgba(245,158,11,.16); color: #b45309; }
-.pages-badge-info { background: rgba(37,99,235,.12); color: var(--c-primary, #2563eb); }
-.pages-actions { display: flex; gap: 6px; }
-.pages-actions .btn {
-    padding: 4px 10px; font-size: 12px; border: 1px solid var(--c-border, #e5e7eb);
-    border-radius: 6px; text-decoration: none; color: inherit; background: var(--c-surface, #fff);
-}
-.pages-actions .btn:hover { border-color: var(--c-primary, #2563eb); color: var(--c-primary, #2563eb); }
-.pages-empty { color: var(--c-text-mute, #6b7280); font-size: 13px; }
-.pages-empty a { color: var(--c-primary, #2563eb); }
 
 /* ===== 货源管理（admin/inventory_sources.html，issue #17） =====
    多端适配（硬规则）：
@@ -352,22 +310,8 @@ button, input, select, textarea { font: inherit; color: inherit; }
      · 行用 flex + wrap，窄屏自动折行；表头行在窄屏隐藏（.attr-value-head）；
      · 触屏是独立环境：没有 :hover 依赖，按钮的按压反馈用 :active（不带媒体查询）；
      · 键盘：原生 input/button/checkbox，Tab 序即视觉序，无需自定义键位。 */
-.attr-form { display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; }
-.attr-form-head { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-.attr-form-head input[type="text"],
-.attr-form-head input[type="number"],
-/* 下拉与文本框同一盒模型（issue #10 的分类父级 / 主分类 / 品牌选择器）；
-   宽度按 min(100%, 220px) 收口，窄屏折行而不是撑破卡片。 */
-.attr-form-head select,
-.pages-form input.attr-id-input {
-    padding: 8px 10px; font-size: 13px; border: 1px solid var(--c-border, #e5e7eb);
-    border-radius: 8px; background: var(--c-surface, #fff); color: inherit;
-    width: min(100%, 220px); min-width: 0;
-}
-.pages-form input.attr-id-input { width: min(100%, 320px); }
 .attr-switch { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; }
-.attr-switch input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--c-primary, #2563eb); }
-.attr-form-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.attr-switch input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--c-primary, #3d444f); }
 .attr-fold { margin-top: 12px; }
 .attr-values { display: flex; flex-direction: column; gap: 8px; margin: 8px 0; }
 .attr-value-table { display: flex; flex-direction: column; gap: 8px; }
@@ -389,7 +333,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 }
 .attr-value-row .attr-value-op { display: flex; justify-content: flex-end; }
 /* 按压反馈用 :active（不带媒体查询）：触屏上 :hover 根本不触发，只有 :active 存在。 */
-.attr-value-op .btn:active, .attr-form-actions .btn:active { transform: translateY(1px); }
+.attr-value-op .btn:active { transform: translateY(1px); }
 @media (max-width: 720px) {
     .attr-value-head { display: none; }
     .attr-value-row {
@@ -402,7 +346,6 @@ button, input, select, textarea { font: inherit; color: inherit; }
     .attr-value-row .attr-value-idx { grid-column: 1 / -1; }
     .attr-value-row .attr-value-op { grid-column: 1 / -1; }
     .attr-value-op .btn { width: 100%; }
-    .pages-card { padding: 16px; }
 }
 /* ===== 变体组合生成（admin/products.html，issue #8） =====
    多端适配（硬规则）：
@@ -423,13 +366,11 @@ button, input, select, textarea { font: inherit; color: inherit; }
     background: var(--c-surface, #fff); color: inherit;
     font-size: 13px; cursor: pointer; user-select: none; word-break: break-word;
 }
-.var-value input[type="checkbox"] { width: 16px; height: 16px; margin: 0; accent-color: var(--c-primary, #2563eb); }
-.var-actions { display: flex; flex-wrap: wrap; gap: 8px; }
-.var-actions .btn:active, .var-value:active { transform: translateY(1px); }
+.var-value input[type="checkbox"] { width: 16px; height: 16px; margin: 0; accent-color: var(--c-primary, #3d444f); }
+.var-value:active { transform: translateY(1px); }
 @media (max-width: 720px) {
     /* 手机：按压目标抬到 44px 高，触屏可点性优先。 */
     .var-value { min-height: 44px; padding: 8px 14px; }
-    .var-actions .btn { width: 100%; }
 }
 /* ===== 翻译工作台（admin/page_translations.html，多语言 P5c） ===== */
 .tr-toolbar { align-items: center; gap: 12px; flex-wrap: wrap; }
@@ -452,83 +393,28 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .locale-row .locale-lang { padding: 6px 10px; font-size: 13px; border: 1px solid var(--c-border, #e5e7eb); border-radius: 8px; min-width: 160px; }
 .locale-flag { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; color: var(--c-text-mute, #6b7280); }
 .locale-add { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
-.locale-add input { padding: 6px 10px; font-size: 13px; border: 1px solid var(--c-border, #e5e7eb); border-radius: 8px; min-width: 220px; }
+/* .locale-add input 的视觉规则已删（审计 UIK-010）：它与 ui.css 桥接段里的同名选择器
+   特异性同为 0,1,1，而 ui.css 在 theme.css 之后加载 —— padding / font-size / border /
+   border-radius / min-width 五项全部被桥接覆盖，是一条永远不生效的规则。
+   注：桥接给的是 width: 100%（基座控件口径），这里原本想要的 220px 固定宽度没有生效过，
+   若要恢复那个布局意图，应在 ui.css 的桥接层声明（已记入待办）。 */
 
 
 /* ===== 主题设置页 ===== */
 .theme-color-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; margin-bottom: 16px; }
 .theme-color-grid label { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--c-text-mute, #6b7280); }
 .theme-color-grid input[type=color] { width: 100%; height: 40px; padding: 2px; border: 1px solid var(--c-border, #e5e7eb); border-radius: 8px; background: var(--c-surface, #fff); cursor: pointer; }
-.theme-color-val { font-family: monospace; font-size: 11px; }
 .theme-actions { margin-top: 16px; }
 .theme-form h3 { margin: 16px 0 10px; font-size: 14px; }
 
 
-/* ==========================================================================
-   手风琴卡片（pages-fold）：新建表单默认收起为一行，点击展开。
-   原生 details/summary 实现，零 JS。
-   ========================================================================== */
-details.pages-fold > summary.card-header {
-    cursor: pointer;
-    list-style: none;
-    user-select: none;
-}
-details.pages-fold > summary.card-header::-webkit-details-marker { display: none; }
-details.pages-fold > summary.card-header::before {
-    content: '';
-    flex: 0 0 auto;
-    width: 7px; height: 7px;
-    margin-right: 10px;
-    border-right: 2px solid var(--c-text-mute, #6b7280);
-    border-bottom: 2px solid var(--c-text-mute, #6b7280);
-    transform: rotate(-45deg);
-    transition: transform var(--tr-fast, 120ms ease);
-}
-details.pages-fold[open] > summary.card-header::before {
-    transform: rotate(45deg);
-}
-.pages-fold-hint {
-    margin-left: auto;
-    font-size: 12px;
-    color: var(--c-text-mute, #6b7280);
-}
-details.pages-fold > summary.card-header:hover .pages-fold-hint {
-    color: var(--c-primary, #3d444f);
-}
 
 /* ==========================================================================
    右侧抽屉（data-drawer）：新建/编辑表单容器，admin.js 驱动。
+   外观（遮罩 / 面板 / 头 / 关闭钮 / 进出场）已提到 ui.css 的基座控件段
+   （审计 UIK-011）：抽屉的行为本来就在基座里（uiBlocks 登记 drawer.js），
+   外观不该只服务后台。这里只留抽屉内嵌表单的布局间距 —— 它属于表单排版，不是抽屉本体外观。
    ========================================================================== */
-.drawer-mask {
-    position: fixed; inset: 0; z-index: 80;
-    background: rgba(16, 20, 26, .4);
-    opacity: 0; transition: opacity 200ms ease;
-}
-.drawer {
-    position: fixed; top: 0; right: 0; bottom: 0; z-index: 90;
-    width: min(560px, 92vw); box-sizing: border-box;
-    display: flex; flex-direction: column;
-    background: var(--c-bg, #fff);
-    border-left: 1px solid var(--c-border, #e5e7eb);
-    box-shadow: -16px 0 40px rgba(16, 20, 26, .14);
-    transform: translateX(100%);
-    transition: transform 220ms var(--ease-out, ease);
-}
-body.drawer-open .drawer { transform: translateX(0); }
-body.drawer-open .drawer-mask { opacity: 1; }
-body.drawer-open { overflow: hidden; }
-.drawer-head {
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 16px 24px; border-bottom: 1px solid var(--c-border, #e5e7eb);
-}
-.drawer-head .drawer-title { font-size: 15px; font-weight: 600; color: var(--c-text, #1f2937); }
-.drawer-close {
-    width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center;
-    background: transparent; border: 0; border-radius: 6px; cursor: pointer;
-    color: var(--c-text-mute, #6b7280); font-size: 18px; line-height: 1;
-}
-.drawer-close:hover { background: var(--c-bg-hover, #f3f4f6); color: var(--c-text, #1f2937); }
-.drawer-body { flex: 1; overflow-y: auto; padding: 24px; }
 .drawer-body .form-group { margin-bottom: 16px; }
 .drawer-body .form-actions { margin-top: 24px; display: flex; gap: 8px; justify-content: flex-end; }
 
@@ -716,7 +602,7 @@ a.pagination-btn:hover { background: var(--c-bg-hover); color: var(--c-text); }
 
 /* ===== 商品定价工具（admin/product_pricing.html，issue #13） =====
    多端适配（硬规则）：
-     · 表单行复用 .attr-form-head（flex + wrap，宽度 min(100%, 220px)），窄屏折行不撑破卡片；
+     · 表单行用 form-inline（flex + wrap，宽度 min(100%, 220px)），窄屏折行不撑破卡片；
      · 试算与留痕表放进 .pricing-table-wrap（overflow-x: auto + tabindex="0"）：
        窄屏下横向滚动而不是把整页撑宽，键盘可聚焦后用方向键滚动，触屏左右滑动；
      · 折叠行（summary）在窄屏折行（一行里放了规则 / 范围 / 尾数 / 改动数 + 时间）；
@@ -729,7 +615,7 @@ a.pagination-btn:hover { background: var(--c-bg-hover); color: var(--c-text); }
 .pricing-page .form-inline .wbs { width: min(100%, 220px); }
 .pricing-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 /* 容器自身不是控件，但横向可滚动区域要能被键盘聚焦（否则键盘用户滚不动）。 */
-.pricing-table-wrap:focus-visible { outline: 2px solid var(--c-primary, #2563eb); outline-offset: 2px; }
+.pricing-table-wrap:focus-visible { outline: 2px solid var(--c-primary, #3d444f); outline-offset: 2px; }
 .pricing-page-table th, .pricing-page-table td { word-break: break-word; overflow-wrap: anywhere; }
 .pricing-page-table th:first-child, .pricing-page-table td:first-child { min-width: 132px; }
 /* 规则参考表是「标识符 + 长说明」，窄屏三列挤在一起会把 cost_multiple 断成
@@ -761,3 +647,76 @@ a.pagination-btn:hover { background: var(--c-bg-hover); color: var(--c-text); }
 .menu-icon svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 1.7; }
 .menu-icon.is-empty::before { content: '—'; color: var(--c-text-faint); }
 .menu-icon.is-unknown::before { content: '?'; color: var(--c-text-faint); }
+
+/* ==========================================================================
+   后台全局布局的窄屏断点（审计 UI-001）
+   --------------------------------------------------------------------------
+   问题：.rail（88px 图标栏）+ .subnav（224px 二级栏）在 .admin-layout 里固定并排，
+   而这三个选择器此前没有任何 @media 规则 —— 375px 视口下导航吃掉 312px，内容区只剩几十像素。
+   做法：≥1024px 一律维持原桌面布局（本段所有规则都在 max-width 媒体查询内，桌面端零改动）；
+   1024px 以下 rail 与 subnav 脱离文档流、变成覆盖式抽屉，由顶栏汉堡按钮开合（body.nav-open），
+   .admin-main（flex: 1 + min-width: 0）随之占满整宽。
+   交互在 static/js/admin.js 的 initNavDrawer：汉堡切换、遮罩点击关闭、Esc 关闭、跨断点自动清理。
+   ========================================================================== */
+.nav-toggle, .nav-scrim { display: none; }
+
+@media (max-width: 1023px) {
+    /* 顶栏：汉堡按钮与标题成组靠左，动作区（语言 / 主题）继续贴右。
+       宽度不足时折行，避免 375px 下横向溢出。 */
+    .admin-topbar { justify-content: flex-start; gap: 8px; padding: 0 var(--sp-md); flex-wrap: wrap; }
+    .topbar-actions { margin-left: auto; }
+    .topbar-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .nav-toggle {
+        display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto;
+        width: 40px; height: 40px; padding: 0;
+        border: 1px solid var(--c-border); border-radius: var(--r-md);
+        background: var(--c-bg); color: var(--c-text); font-size: 17px; line-height: 1;
+        font-family: inherit; cursor: pointer;
+        transition: background var(--tr-fast), color var(--tr-fast);
+    }
+    /* 触屏是独立环境（AGENTS.md 多端硬规则）：hover 规则只在真有指针悬停时输出，
+       触屏改用 :active 给按压反馈，不依赖 :hover 才能看见状态变化。 */
+    .nav-toggle:active { background: var(--c-bg-active); }
+    @media (hover: hover) {
+        .nav-toggle:hover { background: var(--c-bg-hover); }
+    }
+    .nav-toggle:focus-visible { outline: 2px solid var(--c-primary); outline-offset: 2px; }
+
+    /* 一级图标栏：固定在最左，默认移出视口（-100% 即自身宽度 88px）。 */
+    .rail {
+        position: fixed; left: 0; top: 0; bottom: 0; z-index: 61;
+        width: var(--rail-w, 88px); overflow-y: auto;
+        transform: translateX(-100%);
+        transition: transform 220ms cubic-bezier(.4, 0, .2, 1);
+    }
+    /* 二级栏：起点接在图标栏右侧，关闭态要连自己宽度带图标栏宽度一起移出屏幕，
+       故位移量是 calc(-100% - 图标栏宽) —— 只写 -100% 会在左侧露出 88px。 */
+    .subnav {
+        position: fixed; left: var(--rail-w, 88px); top: 0; bottom: 0; z-index: 60;
+        width: min(var(--subnav-w, 224px), calc(100vw - var(--rail-w, 88px)));
+        max-width: calc(100vw - var(--rail-w, 88px));
+        transform: translateX(calc(-100% - var(--rail-w, 88px)));
+        transition: transform 220ms cubic-bezier(.4, 0, .2, 1);
+        box-shadow: var(--shadow-lg);
+    }
+    /* 服务端按 cookie 渲染的 sidebar-collapsed 只服务桌面「自动收起」；
+       窄屏抽屉的开合由 body.nav-open 独占，两条状态不能互相干扰
+       （否则从窄屏回到宽屏、或残留 cookie=0 时抽屉会自己塌掉）。 */
+    .subnav,
+    body.sidebar-collapsed .subnav {
+        flex-basis: auto; opacity: 1; border-right: 1px solid var(--c-border);
+    }
+    body.nav-open .rail, body.nav-open .subnav { transform: translateX(0); }
+    body.nav-open { overflow: hidden; }
+
+    .nav-scrim { position: fixed; inset: 0; z-index: 59; background: rgba(15, 23, 42, .45); }
+    body.nav-open .nav-scrim { display: block; }
+
+    .admin-content { padding: var(--sp-lg) var(--sp-md); }
+}
+
+/* 手机：内容区再收一档内边距，让卡片在 375px 上拿到最大可用宽度。
+   表格的窄屏表现已由 .table-wrap（ui.css）的横向滚动与页面级 720px 堆叠承担，这里不重复。 */
+@media (max-width: 639px) {
+    .admin-content { padding: var(--sp-md) 10px; }
+}

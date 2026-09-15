@@ -406,7 +406,7 @@
         "correctness"
       ],
       "status": "resolved",
-      "resolutionNote": "2026-09-13：采购入库 ChangeStock 前查 ExistsMovementBySource 防重复加库存。"
+      "resolutionNote": "2026-09-14 修正：改由入口的 request_id 幂等（RegisterReceipt 命中既有入库单直接重放）保证「不会重复加库存」。原先的「按采购单号查流水判重」已移除 —— 一张采购单分多次收货是常态（部分到货），按单号判重会把第二批误判成重复：库存不加、单据状态却推进，账实不符且没有任何报错。"
     },
     {
       "id": "TX-008",
@@ -511,7 +511,8 @@
         "publication",
         "transaction"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：访问面切换**之前**登记 pending 回执（publication_receipts，Action=switch_active），成功后结案；启动时 RecoverPendingPublications 按符号链接实际指向判定 —— 指向本次产物则补齐 page_publications 与路由行（幂等），否则只标 rolled_back、不碰文件与数据库。登记失败即不切访问面（宁可不发布也不制造无法判定的状态）。自动发布实例的恢复未纳入（活跃指针在别的表）。"
     },
     {
       "id": "TX-010",
@@ -622,7 +623,8 @@
         "coupon",
         "correctness"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：时间口径统一到「存储与比较用绝对时刻、面向人的输入输出用站点时区」。（1）券时间窗不再用 time.Local 解析 —— 改用 couponWindowLocation=UTC 并在响应里带 timeZone 字段：用服务器时区解释表单输入意味着同一张券的生效时间取决于部署机器，改一次服务器时区所有券整体平移而界面文本一字未变（这种偏差不会报错）。（2）新增 pkg/sitetz 作为面向人的时间口径单一声明点：默认跟随服务器时区（不改既有语义），可用 GO_WP_SITE_TIMEZONE 固定 IANA 名；后台客户页与 dashboard 客户页的日期筛选从 time.Local 改为 sitetz.Location()。（3）跨模块判定已是纯时刻比较（库存流水、订单、券），配合 DB-018 的列类型统一后不再有墙钟歧义。两条用例：券时间窗解析为 UTC 且落库时刻与进程时区无关（改造前 Asia/Shanghai 下会差 8 小时）、券状态判定与列表状态稳定。"
     },
     {
       "id": "TX-012",

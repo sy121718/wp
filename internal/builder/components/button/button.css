@@ -10,13 +10,6 @@
    变体三分支是「不同的声明组」而不是「同一属性的不同取值」，所以在同一个声明块内用条件段表达：
    命中的分支与基础声明合并成同一条规则，与迁移前「Go 里按条件拼一个声明切片、只 Add 一次」逐字节一致。 */
 
-/* 显式悬停色（HoverBg / HoverColor）：等价于 Go 的 AddHover —— 两个都没设时不产出规则，
-   触屏上没有粘滞 hover 态。 */
-@hover &:hover {
-  background: {{hoverBg}};
-  color: {{hoverColor}};
-}
-
 & {
   display: inline-flex;
   align-items: center;

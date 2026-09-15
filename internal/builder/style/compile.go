@@ -6,9 +6,10 @@ import (
 	"strings"
 
 	"go_wp/internal/builder/core"
+	"go_wp/internal/builder/source"
 )
 
-// Compile 把样式声明 + 当前 props 值确定性编译进 CSSBuckets。
+// Compile 把样式声明 + 当前 props 值确定性编译进样式桶。
 //
 //   - nodeID：组件节点 ID（选择器前缀 core.NodeClass(nodeID)，与内置组件一致，
 //     编辑器桥接依赖 sky-c-{id} 还原 data-sky-id）；
@@ -18,8 +19,12 @@ import (
 //     不安全值返回错误（构建失败优于静默丢样式——与草稿校验失败拒绝保存同立场）。
 //
 // 确定性：规则按声明序编译，声明/绑定按数组序输出，断点只追加不排序，
-// 全部走 core.CSSBuckets.Add（与内置组件同一确定性管线）。
-func Compile(nodeID string, props map[string]any, schema *Schema, b *core.CSSBuckets) (err error) {
+// 全部走样式桶的 Add（与内置组件同一确定性管线）。
+//
+// b 取 source.StyleSink 而不是 *core.CSSBuckets：插件组件规格的类型住在
+// internal/builder/source（审计 CQ-001），闭包的参数类型必须与它一致；
+// core.CSSBuckets 满足该接口，内核侧调用方式不变（本引擎只用 Add 一个方法）。
+func Compile(nodeID string, props map[string]any, schema *Schema, b source.StyleSink) (err error) {
 	if schema == nil {
 		return nil
 	}

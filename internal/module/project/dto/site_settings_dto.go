@@ -20,8 +20,24 @@ type SiteSettings struct {
 	// 构建期由 builder 注入产物 <head> 的 gtag 片段；空值 = 一个字节都不注入。
 	// 形状校验唯一出口是 builder.NormalizeGA4MeasurementID（保存与注入同一判据）。
 	GA4MeasurementID string `json:"ga4MeasurementId,omitempty"`
+	// SearchConsoleVerification Google Search Console 站点验证 token（SEO-009）。
+	//
+	// 构建期由 builder 注入产物 <head> 的 <meta name="google-site-verification">；
+	// 空值 = 一个字节都不注入。形状校验唯一出口是 builder.NormalizeSearchConsoleVerification
+	// （保存与注入同一判据）。token 是 base64url，**大小写敏感**：这里不做大小写归一化。
+	SearchConsoleVerification string `json:"searchConsoleVerification,omitempty"`
 	// IndexNowKey IndexNow 协议密钥（SEO-022）；空 = 不 ping。
 	IndexNowKey string `json:"indexNowKey,omitempty"`
+	// NotFoundHTML 站点自定义 404 页内容（SEO-013）。
+	//
+	// 发布时随站点级产物（sitemap / robots / feed）一起刷到激活目录根的 404.html，
+	// 访问面在请求未命中任何激活路径时以 **404 状态码**返回它（位置约定单源在
+	// pipeline.NotFoundFileName）；空 = 未配置，此时删除既有的 404.html。
+	//
+	// 存的是一份完整 HTML 文档（含 <html> / 样式），发布链原样落盘 ——
+	// 它不参与页面编译，因此不套用 Page Document 的构建管线。
+	// 长度上限的校验出口在后台保存入口（dashboard 站点设置页）。
+	NotFoundHTML string `json:"notFoundHtml,omitempty"`
 	// URLPatterns 各实体类型的详情页路径模式（WordPress 固定链接的等价物）。
 	//
 	// 键 = 实体类型（article / product / product_category / product_brand / product_tag），

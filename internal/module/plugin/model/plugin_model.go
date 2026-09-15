@@ -59,6 +59,27 @@ func (m *Model) ListEnabled(ctx context.Context) (list []*Entity, err error) {
 	return list, err
 }
 
+// EnabledFingerprintRow 启用插件集的指纹行（审计 PERF-006）。
+//
+// 只取「装配素材是否变化」相关的列：换插件、换版本、重装（updated_at 变）都会改指纹。
+// Manifest 与其它大字段不在其中 —— 命中缓存时连它们都不必从数据库取回。
+type EnabledFingerprintRow struct {
+	PluginID    string    `gorm:"column:plugin_id"`
+	Version     string    `gorm:"column:version"`
+	StoragePath string    `gorm:"column:storage_path"`
+	UpdatedAt   time.Time `gorm:"column:updated_at"`
+}
+
+// ListEnabledFingerprint 启用插件集的轻量指纹查询（列投影，不含 manifest 字节）。
+func (m *Model) ListEnabledFingerprint(ctx context.Context) (list []EnabledFingerprintRow, err error) {
+	err = m.db.WithContext(ctx).Model(&Entity{}).
+		Select("plugin_id, version, storage_path, updated_at").
+		Where("enabled = ?", true).
+		Order("plugin_id ASC").
+		Find(&list).Error
+	return list, err
+}
+
 // Create 插入注册行。
 func (m *Model) Create(ctx context.Context, e *Entity) error {
 	return m.db.WithContext(ctx).Create(e).Error

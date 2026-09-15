@@ -37,7 +37,6 @@ func TestCartCookieRejectsExpiredPayload(t *testing.T) {
 	}
 }
 
-
 func newTestCodec() cookieCodec { return cookieCodec{secret: []byte(testSecret)} }
 
 // TestCartCookieRoundTrip 编码后再解码应当得到同一辆购物车。

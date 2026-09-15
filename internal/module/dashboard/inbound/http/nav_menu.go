@@ -1,7 +1,5 @@
 package dashboardhttp
 
-import "strings"
-
 // 后台导航配置（唯一真源）。
 //
 // 为什么用代码配置而非直接读 sys_menus：
@@ -63,8 +61,9 @@ var navConfig = []navGroup{
 			// 文章（INF-1）：CMS 内容实体（contents，迁移 080 起只保留 article）。
 			// 权限点用 content:list（迁移 033），与写操作的 content:create/update/delete 同源。
 			{Title: "文章", Path: "/admin/articles", Perm: "content:list"},
-			// 内容模板（EDT-001）：可视化编辑走 /workbench?template=…，列表在此。
-			{Title: "内容模板", Path: "/admin/content-templates", Perm: "contenttemplate:list"},
+			// 内容模板**不在这里**：它与「文章」并列时，新用户无法判断「要给文章排版」
+			// 该进哪一个（审计 VIS-010 的三种「模板」：复用资产 / Blueprint / 内容模板）。
+			// 它是结构资产，入口在下面的「复用资产」旁边与各自的详情页里。
 		},
 	},
 	{
@@ -83,11 +82,18 @@ var navConfig = []navGroup{
 			{Title: "客户管理", Path: "/admin/customers", Perm: "user:customer_list"},
 			{Title: "优惠码", Path: "/admin/coupons", Perm: "order:coupon_list"},
 			{Title: "主题管理", Path: "/admin/themes", Perm: "project:theme_list"},
-			{Title: "全局块", Path: "/admin/blocks", Perm: "block:list"},
+			// 复用资产（VIS-010 正名）：这里承载全局块的两种复用模式 ——
+			// 「引用」（构建期展开，原块改动会传播）与「复制」（一次性副本，此后独立）。
+			// 叫「全局块」时编辑者以为只能引用，需要副本时反而去别处找。
+			{Title: "复用资产", Path: "/admin/blocks", Perm: "block:list"},
+			// 内容模板：与「复用资产」相邻而不是与「文章」相邻 —— 两者都是结构资产，
+			// 差别只在生命周期（复用资产跨页面复用，内容模板按实体类型参与每次构建）。
+			{Title: "内容模板", Path: "/admin/content-templates", Perm: "contenttemplate:list"},
 			{Title: "导航菜单", Path: "/admin/navigations", Perm: "navigation:list"},
 			{Title: "媒体库", Path: "/admin/media", Perm: "media:list"},
 			{Title: "插件", Path: "/admin/plugins", Perm: "plugin:list"},
 			{Title: "站点设置", Path: "/admin/settings", Perm: "project:detail"},
+			{Title: "SEO 控制台", Path: "/admin/seo", Perm: "seo:audit"},
 		},
 	},
 }
@@ -170,12 +176,4 @@ func containsActive(nodes []navNode) bool {
 		}
 	}
 	return false
-}
-
-// normalizePath 去掉尾部斜杠，供当前页匹配（/admin/pages/ 与 /admin/pages 视为同一页）。
-func normalizePath(p string) string {
-	if p == "" {
-		return p
-	}
-	return strings.TrimRight(p, "/")
 }

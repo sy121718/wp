@@ -23,7 +23,7 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 
-	maildto "go_wp/internal/module/mail/dto"
+	mailcontract "go_wp/internal/module/mail/contract"
 	userdto "go_wp/internal/module/user/dto"
 	userenums "go_wp/internal/module/user/enums"
 	usermodel "go_wp/internal/module/user/model"
@@ -64,7 +64,7 @@ func (s *Service) RequestPasswordReset(ctx context.Context, req *userdto.Passwor
 	if s.mail == nil {
 		return nil
 	}
-	_, sendErr := s.mail.SendTemplate(ctx, &maildto.SendTemplateReq{
+	_, sendErr := s.mail.SendTransactional(ctx, &mailcontract.SendInput{
 		TemplateKey: passwordResetTemplate,
 		Locale:      req.Locale,
 		To:          e.Email,

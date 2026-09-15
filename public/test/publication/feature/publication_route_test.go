@@ -10,11 +10,12 @@ import (
 	pubmodel "go_wp/internal/module/publication/model"
 	pubservice "go_wp/internal/module/publication/service"
 
+	"go_wp/public/migrations"
 	"go_wp/public/test/support"
 )
 
-// uuid 列与生产 DDL 对齐（init_builder_schema.sql：page_routes/publication_receipts），
-// 用例值一律使用合法 uuid。
+// 表结构来自生产迁移（page_routes / publication_receipts 由 init_builder_schema.sql 建立，
+// 再经 DB-019/DB-020 批量迁移改名换类型），用例值一律使用合法 uuid。
 const (
 	projectID = "cccccccc-0000-0000-0000-000000000001"
 	pageID    = "dddddddd-0000-0000-0000-000000000001"
@@ -35,13 +36,14 @@ func newPublicationService(t *testing.T) *pubservice.Service {
 		t.Skipf("本地 PostgreSQL 不可用，跳过测试：%v", err)
 		return nil
 	}
-	for _, statement := range []string{
-		`CREATE TABLE page_routes (project_id UUID NOT NULL, path TEXT NOT NULL, page_id UUID, presentation_id UUID, route_kind TEXT NOT NULL, artifact_id UUID, updated_at TIMESTAMPTZ NOT NULL, PRIMARY KEY(project_id, path))`,
-		`CREATE TABLE publication_receipts (id UUID PRIMARY KEY, source_type TEXT NOT NULL, source_id UUID NOT NULL, action TEXT NOT NULL, path TEXT NOT NULL, from_artifact_id UUID, to_artifact_id UUID, receipt_state TEXT NOT NULL, receipt_data JSON NOT NULL, created_at TIMESTAMPTZ NOT NULL, completed_at TIMESTAMPTZ)`,
-	} {
-		if err := db.Exec(statement).Error; err != nil {
-			t.Fatalf("创建测试表失败: %v", err)
-		}
+	// 走生产迁移建表，不手抄 DDL：手抄版本会在迁移改名/换类型后静默失配
+	// （DB-019/DB-020 把 id 换成 bigint identity、created_at 换成 create_time）。
+	if err := migrations.Run(db); err != nil {
+		t.Fatalf("执行生产迁移失败: %v", err)
+	}
+	// page_routes.project_id 有 FK → projects(id)，必须先落一条工程行。
+	if err := db.Exec("INSERT INTO projects (id, name, settings, created_at, updated_at) VALUES (?, '站点', '{}', NOW(), NOW())", projectID).Error; err != nil {
+		t.Fatalf("准备工程失败: %v", err)
 	}
 	return pubservice.NewService(pubmodel.NewPublicationModel(db))
 }
@@ -165,10 +167,10 @@ func TestPublicationPendingReceiptRollback(t *testing.T) {
 	seedReservedRoute(t, svc, "/pending", pageID)
 	// 制造 pending 回执：直接插入（模拟进程中断后遗留）。
 	if err := svc.Model().ReceiptDB(ctx).Create(&pubmodel.ReceiptEntity{
-		ID: "eeeeeeee-0000-0000-0000-000000000001", SourceType: "page", SourceID: pageID,
+		SourceType: "page", SourceID: pageID,
 		Action: "activate", Path: "/pending", ToArtifact: strPtr(pendingArtifactUUID),
 		ReceiptState: pubmodel.ReceiptPending,
-		ReceiptData:  []byte(`{}`), CreatedAt: timeNow(),
+		ReceiptData:  []byte(`{}`), CreateTime: timeNow(),
 	}).Error; err != nil {
 		t.Fatalf("制造 pending 回执失败: %v", err)
 	}

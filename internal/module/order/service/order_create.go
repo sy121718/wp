@@ -113,7 +113,7 @@ func validateCreateOrderReq(req *orderdto.CreateOrderReq) error {
 // orderByRequestID 幂等键命中则返回既有单的响应；无键或未命中返回 nil。
 //
 // 首次查（进入建单前）与唯一冲突后的回读共用它，保证两条路径返回**同一份形状**
-//（Duplicated=true 的响应），不会一条带 accountMailed、另一条不带。
+// （Duplicated=true 的响应），不会一条带 accountMailed、另一条不带。
 func (s *Service) orderByRequestID(ctx context.Context, projectID, requestID string) (*orderdto.CreateOrderResp, error) {
 	reqID := strings.TrimSpace(requestID)
 	if reqID == "" {

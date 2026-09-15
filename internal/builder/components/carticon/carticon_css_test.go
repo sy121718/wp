@@ -104,3 +104,147 @@ func TestCompileCSSScopedPerInstance(t *testing.T) {
 		t.Fatal("不同 node id 的样式应各自作用域化")
 	}
 }
+
+// cssRuleText 取产物里以 header 开头的那一段（含配对的大括号）。
+func cssRuleText(t *testing.T, css, header string) string {
+	t.Helper()
+	i := strings.Index(css, header)
+	if i < 0 {
+		t.Fatalf("产物里找不到 %q:\n%s", header, css)
+	}
+	depth := 0
+	for j := i; j < len(css); j++ {
+		switch css[j] {
+		case '{':
+			depth++
+		case '}':
+			depth--
+			if depth == 0 {
+				return css[i : j+1]
+			}
+		}
+	}
+	t.Fatalf("%q 的花括号没有闭合:\n%s", header, css)
+	return ""
+}
+
+// cssMediaBlocks 收集产物里**全部**以 header 开头的块并拼接。
+//
+// 同一条媒体查询会为每个选择器各出一个块（CSSBuckets 按规则进桶），
+// 只取第一块会漏掉后面几条 —— 触屏那条路正好由多条规则组成。
+func cssMediaBlocks(t *testing.T, css, header string) string {
+	t.Helper()
+	var sb strings.Builder
+	offset, found := 0, 0
+	for {
+		i := strings.Index(css[offset:], header)
+		if i < 0 {
+			break
+		}
+		start := offset + i
+		depth, end := 0, start
+		for j := start; j < len(css); j++ {
+			switch css[j] {
+			case '{':
+				depth++
+			case '}':
+				depth--
+			}
+			if depth == 0 && css[j] == '}' {
+				end = j
+				break
+			}
+		}
+		sb.WriteString(css[start : end+1])
+		sb.WriteString("\n")
+		found++
+		offset = end + 1
+	}
+	if found == 0 {
+		t.Fatalf("产物里找不到 %q:\n%s", header, css)
+	}
+	return sb.String()
+}
+
+// stripMediaBlocks 去掉产物里的全部 @media 块，只留裸规则。
+//
+// 用来断言某条规则**不在**媒体查询里 —— 触屏粘滞这类问题只体现在「规则落到哪一层」，
+// 单看子串是否存在是看不出来的。
+func stripMediaBlocks(css string) string {
+	var sb strings.Builder
+	for i := 0; i < len(css); {
+		if strings.HasPrefix(css[i:], "@media") {
+			depth := 0
+			j := i
+			for ; j < len(css); j++ {
+				switch css[j] {
+				case '{':
+					depth++
+				case '}':
+					depth--
+				}
+				if depth == 0 && css[j] == '}' {
+					break
+				}
+			}
+			i = j + 1
+			continue
+		}
+		sb.WriteByte(css[i])
+		i++
+	}
+	return sb.String()
+}
+
+// TestCompileCSSHoverTouchToggle 触屏等价形态：hover 形态在没有悬停的设备上
+// 必须给出「点击展开」那条路（@media (hover: none)），而不是让浮层功能整体消失。
+//
+// 与导航子菜单同一个坑：靠 :hover 展开的内容在触屏上不是样式差异，是功能不存在。
+func TestCompileCSSHoverTouchToggle(t *testing.T) {
+	css := cartIconCSSFor(t, &Props{Mode: ModeHover})
+	touch := cssMediaBlocks(t, css, "@media (hover: none)")
+
+	for _, want := range []string{
+		":checked ~ .sky-cart-icon-panel", // 点击展开的驱动点
+		"clip-path: inset(50%)",           // sr-only：视觉隐藏但**仍可聚焦**（键盘要能开合）
+		"inset: 0",                        // 覆盖层铺满触发区，手指点哪里都算
+	} {
+		if !strings.Contains(touch, want) {
+			t.Fatalf("触屏等价形态缺少 %q；实际样式：\n%s", want, css)
+		}
+	}
+	// display:none 的控件点不动 label、也不进键盘序列 —— 触屏上它是唯一的展开入口。
+	if strings.Contains(touch, "display: none") {
+		t.Fatalf("触屏开合控件被彻底隐藏了（应是 sr-only，不是 display:none）；实际样式：\n%s", css)
+	}
+	// 控件默认隐藏：桌面点击仍是原来的「点图标去购物车页」，不被这层覆盖接管。
+	if !strings.Contains(css, ".sky-cart-icon-toggle, .sky-c-t .sky-cart-icon-cover {") {
+		t.Fatalf("开合控件与覆盖层应默认隐藏；实际样式：\n%s", css)
+	}
+}
+
+// TestCompileCSSHoverFocusWithinIsHoverOnly 键盘那条展开路径必须只发给支持悬停的设备。
+//
+// 触屏上点 label 会让那个 checkbox 拿到焦点：:focus-within 若裸输出，
+// 「展开后再点收起」收不回去 —— 焦点还在，规则一直按着它展开。
+// 触屏的开合由 @hovernone 的 :checked 负责，两者互斥。
+func TestCompileCSSHoverFocusWithinIsHoverOnly(t *testing.T) {
+	css := cartIconCSSFor(t, &Props{Mode: ModeHover})
+	if hover := cssRuleText(t, css, "@media (hover: hover)"); !strings.Contains(hover, ":focus-within") {
+		t.Fatalf("键盘用户那条路（:focus-within）应包在 @media (hover: hover) 里；实际样式：\n%s", css)
+	}
+	if plain := stripMediaBlocks(css); strings.Contains(plain, ":focus-within") {
+		t.Fatalf(":focus-within 出现在裸规则里（触屏上展开后收不回去）；实际样式：\n%s", css)
+	}
+}
+
+// TestCompileCSSOtherModesKeepNoTouchToggle 其余三种形态走原生 details，
+// 不该被这层触屏覆盖沾上（两套开合机制并存只会互相打架）。
+func TestCompileCSSOtherModesKeepNoTouchToggle(t *testing.T) {
+	for _, mode := range []string{ModeDropdown, ModeDrawer, ModeModal} {
+		css := cartIconCSSFor(t, &Props{Mode: mode})
+		if strings.Contains(css, "sky-cart-icon-toggle") || strings.Contains(css, "sky-cart-icon-cover") {
+			t.Fatalf("形态 %s 不该出现触屏开合控件；实际样式：\n%s", mode, css)
+		}
+	}
+}

@@ -33,7 +33,9 @@
   padding: {{itemPadding}};
 }
 
-& .sky-nav-item > a:hover {
+/* 悬停色进 hover 桶（构建期包 @media (hover: hover)）：触屏上不输出，
+   避免点一下把悬停色粘在导航项上。 */
+@hover & .sky-nav-item > a:hover {
   color: {{hoverColor}};
 }
 
@@ -64,7 +66,18 @@
   min-width: {{submenuWidth}};
 }
 
-& .sky-nav-item:hover > .sky-nav-sub {
+/* 桌面悬停展开子菜单：进 hover 桶 —— 触屏上这条不该输出（触屏没有悬停，
+   裸写时点一下会把展开态粘住），触屏那条路走下面的 @hovernone 块。 */
+@hover & .sky-nav-item:hover > .sky-nav-sub {
+  opacity: 1;
+  visibility: visible;
+}
+
+/* 键盘：焦点落进该项（父链接或任一子链接）就展开，不必依赖鼠标。
+   刻意包进 @hover 而不是裸选择器 —— 触屏上点 label 会让那个 checkbox 拿到焦点，
+   裸写的话「展开后再点收起」收不回去：焦点还在，:focus-within 一直按着它展开。
+   触屏那条路走下面的 @hovernone 块，两套互斥，各管一种输入方式。 */
+@hover & .sky-nav-item:focus-within > .sky-nav-sub {
   opacity: 1;
   visibility: visible;
 }
@@ -77,7 +90,7 @@
   white-space: nowrap;
 }
 
-& .sky-nav-sub a:hover {
+@hover & .sky-nav-sub a:hover {
   color: {{hoverColor}};
 }
 
@@ -134,6 +147,21 @@
     width: 100%;
   }
 
+  /* 折叠态的子菜单已是常显内联，触屏展开开关在这里既多余又碍事：
+     那层覆盖会吃掉父项链接的点击。用多一级的选择器连根关掉 ——
+     单条基础规则压不住 @hovernone（它在 hover 桶里排最后，同优先级后者胜）。 */
+  & .sky-nav-item .sky-nav-sub-toggle {
+    display: none;
+  }
+
+  & .sky-nav-item .sky-nav-sub-cover {
+    display: none;
+  }
+
+  & .sky-nav-item .sky-nav-sub-chevron {
+    display: none;
+  }
+
   /* 移动端子菜单改为常显的内联列表（没有悬停可用）。 */
   & .sky-nav-sub {
     position: static;
@@ -145,3 +173,89 @@
   }
 }
 @endif
+
+/* --- 触屏：没有悬停，子菜单改由「点击展开」驱动 ---
+   触屏上 :hover 永不触发，子菜单等于不存在 —— 这不是样式差异，是功能缺失。
+   做法与折叠开关同源（label + checkbox，零 JS）：
+   收起时 label 铺满父项整行，点哪里都是展开；展开后覆盖层撤掉，
+   父链接恢复可点（否则触屏用户永远进不去父页面），右侧箭头保留为收起按钮。
+   这一段不放在 @if mobileCollapse 里：折叠开关没开时，小屏触屏同样需要它。 */
+& .sky-nav-sub-toggle {
+  display: none;
+}
+
+& .sky-nav-sub-cover {
+  display: none;
+}
+
+& .sky-nav-sub-chevron {
+  display: none;
+}
+
+/* 隐藏但可聚焦：display:none 的控件不响应 label 点击，而触屏上它是唯一的展开入口。
+   沿用手法同移动端折叠开关的 sr-only 写法。 */
+@hovernone & .sky-nav-sub-toggle {
+  display: block;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  clip-path: inset(50%);
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+/* 覆盖层：铺满整行，把父项变成一个大按钮 —— 触屏点小箭头太难点。 */
+@hovernone & .sky-nav-sub-cover {
+  display: block;
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  cursor: pointer;
+}
+
+/* 指示箭头：固定在右侧 44px（触控目标下限），展开后靠它收起。
+   居中走 place-items 而不是 justify-content —— 后者是本组件「整体对齐」档位的产物，
+   写进来会和未设对齐时的断言撞车。 */
+@hovernone & .sky-nav-sub-chevron {
+  display: grid;
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  z-index: 2;
+  width: 44px;
+  place-items: center;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  user-select: none;
+  transition: transform .15s ease;
+}
+
+/* 父项给箭头让位，否则文字压在箭头上。 */
+@hovernone & .sky-nav-item.has-children > a {
+  padding-right: 44px;
+}
+
+@hovernone & .sky-nav-sub-toggle:checked ~ .sky-nav-sub {
+  opacity: 1;
+  visibility: visible;
+}
+
+/* 展开后撤掉覆盖层：父链接必须点得到，否则触屏永远进不去父页面。 */
+@hovernone & .sky-nav-sub-toggle:checked ~ .sky-nav-sub-cover {
+  display: none;
+}
+
+@hovernone & .sky-nav-sub-toggle:checked ~ .sky-nav-sub-chevron {
+  transform: rotate(180deg);
+}
+
+/* 外接键盘：checkbox 自身 sr-only 看不见，焦点环改画在箭头上。 */
+@hovernone & .sky-nav-sub-toggle:focus-visible ~ .sky-nav-sub-chevron {
+  outline: 2px solid var(--sky-c-primary, #2563eb);
+  outline-offset: 2px;
+}

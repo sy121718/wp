@@ -68,6 +68,29 @@ export const inspectorMethods = {
                     if (el.type === 'checkbox') { value = el.checked; }
                     else if (kind === 'number') { value = el.value === '' ? '' : Number(el.value); }
                     else if (kind === 'mediaList') { value = el.value.split('\n').map(function (s) { return s.trim(); }).filter(Boolean); }
+                    else if (kind === 'multientityref') {
+                        // 勾选项拼成逗号分隔 id 串（EDT-007）：与手写格式一致，
+                        // 存储格式与构建期解析都不动，换的只是编辑方式。
+                        var picked = [];
+                        Array.prototype.slice.call(el.querySelectorAll('input[data-wb-ref]')).forEach(function (box) {
+                            if (box.checked) picked.push(box.getAttribute('data-wb-ref'));
+                        });
+                        value = picked.join(',');
+                    }
+                    else if (kind === 'rangelist') {
+                        // 逐行拼回 `a-b,c-d,N+`：上限留空即「以上」。
+                        // 起值为空的行直接跳过 —— 那是作者正在输入的中间态，不该被写成档位。
+                        var ranges = [];
+                        Array.prototype.slice.call(el.querySelectorAll('.wb-range-row')).forEach(function (row) {
+                            var lo = row.querySelector('[data-wb-range="min"]');
+                            var hi = row.querySelector('[data-wb-range="max"]');
+                            var min = lo ? lo.value.trim() : '';
+                            var max = hi ? hi.value.trim() : '';
+                            if (!min) return;
+                            ranges.push(max ? (min + '-' + max) : (min + '+'));
+                        });
+                        value = ranges.join(',');
+                    }
                     else { value = el.value; }
                     self.snapshot();
                     setPath(path, value);

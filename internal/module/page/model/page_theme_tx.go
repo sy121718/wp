@@ -17,8 +17,8 @@ func (m *Model) ReattachProjectPagesToThemeTx(ctx context.Context, tx *gorm.DB, 
 
 func (m *Model) ListThemePageSnapshotsTx(ctx context.Context, tx *gorm.DB, themeID string) ([]ThemePageSnapshot, error) {
 	type row struct {
-		ID           string
-		ThemeOverr   json.RawMessage `gorm:"column:theme_override"`
+		ID         string
+		ThemeOverr json.RawMessage `gorm:"column:theme_override"`
 	}
 	var raw []row
 	if err := tx.WithContext(ctx).

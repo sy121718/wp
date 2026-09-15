@@ -26,20 +26,52 @@
 {* 页面按需内联的动效关键帧：页面 handler 用 core.KeyframeCSS([]string{"sky-fade-up"}) 声明，
    未声明时为缺 key（链式索引安全）→ 不输出任何字节。后台不常驻加载那 63 条营销动效。 *}
 {{if .["KeyframesCSS"]}}<style>{{ .["KeyframesCSS"] | unsafe }}</style>{{end}}
+{* 全局 HTMX 请求指示（审计 UI-011）：后台所有 hx- 请求共用这一条，页面无需再逐个写
+   hx-indicator —— 显隐由 admin.js 的 initHtmxFeedback 在 beforeRequest / afterRequest
+   上统一控制（引用计数，并发请求只显示一条）。样式写在这里而不是 css/theme.css，
+   是因为它只服务后台外壳这一处，且用主题令牌取色（暗色模式自动跟随）。 *}
+<style>
+.hx-progress { position: fixed; top: 0; left: 0; right: 0; height: 2px; z-index: 60; pointer-events: none; overflow: hidden; }
+.hx-progress[hidden] { display: none; }
+.hx-progress > span { display: block; width: 40%; height: 100%; background: var(--c-primary, #3d444f); animation: hx-progress-slide 1s ease-in-out infinite; }
+@keyframes hx-progress-slide { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
+@media (prefers-reduced-motion: reduce) {
+    .hx-progress > span { width: 100%; animation: none; opacity: .5; }
+}
+</style>
 </head>
 {* hx-headers 全局注入 CSRF token（HTMX 2.0 属性继承，页面内所有 hx-post 自动携带 X-CSRF-Token）。
    渲染数据未传 csrf_token 时输出空串（chain 索引写法对 map 缺 key 安全，不会渲染报错），
    此时请求不带 token、由 CSRF 中间件按未授权处理；各页面 handler 应在渲染数据中
    传入 gin.H{"csrf_token": builtin.GetCSRFToken(c)} 的 token 值。 *}
 <body class="{{if !.["SidebarOpen"]}}sidebar-collapsed{{end}}" hx-headers='{"X-CSRF-Token":"{{ .["csrf_token"] }}"}'>
+    {* 全局 HTMX 进度条（审计 UI-011）。data-msg-* 是失败提示的三段文案，由 admin.js 读取；
+       属性缺失时 JS 回退中文原文，与侧栏 data-label-* 同一手法。 *}
+    <div class="hx-progress" data-hx-progress hidden aria-hidden="true"
+         data-msg-error="{{ .["t"]("shell.htmx.error", "请求失败，请重试") }}"
+         data-msg-network="{{ .["t"]("shell.htmx.network", "网络异常，请求未送达") }}"
+         data-msg-timeout="{{ .["t"]("shell.htmx.timeout", "请求超时，请重试") }}"><span></span></div>
     <div class="admin-layout">
         {* ===== 侧栏 ===== *}
         {* ===== 侧边栏：一级图标栏 + 二级递归树（数据驱动 + 权限过滤） ===== *}
         {{include "partials/sidebar.html"}}
 
+        {* 窄屏导航遮罩：显隐完全由 CSS 决定（<1024px 且 body.nav-open），见 theme.css 断点段；
+           不给 hidden 属性 —— 否则属性优先级与媒体查询里的 display 会互相打架。 *}
+        <div class="nav-scrim" data-nav-scrim></div>
+
         <div class="admin-main">
         {* ===== 顶栏 ===== *}
         <header class="admin-topbar">
+            {* 窄屏导航开关（审计 UI-001）：桌面端 display: none，只在 <1024px 出现 ——
+               断点样式在 theme.css 的「后台全局布局的窄屏断点」段，交互在 admin.js 的
+               initNavDrawer。aria-expanded / aria-label 由该脚本同步，无 JS 时按钮不可见也不可点，
+               桌面布局与无 JS 场景都不受影响。 *}
+            <button type="button" class="nav-toggle" id="navToggle"
+                    aria-controls="adminRail subnav" aria-expanded="false"
+                    data-label-open="{{ .["t"]("shell.nav.open", "打开导航") }}"
+                    data-label-close="{{ .["t"]("shell.nav.close", "关闭导航") }}"
+                    aria-label="{{ .["t"]("shell.nav.open", "打开导航") }}">☰</button>
             <div class="topbar-title">{{.title}}</div>
             <div class="topbar-actions">
                 {* ===== 语言切换：GET /admin/lang（写语言 Cookie + 302 回当前页）。

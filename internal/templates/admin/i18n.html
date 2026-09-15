@@ -1,0 +1,119 @@
+{* admin/i18n.html — 文案词条管理（审计 I18N-003）。 *}
+{* 读写都走 pkg/i18n 的端口；本页只管「选一条、改一句、存回去」。 *}
+{* 职责边界写在正文里：迁移 seed 是默认值来源（DO NOTHING），本页是真相来源。 *}
+{* Jet 方言：map 用 ["key"] 索引；range 内访问外层值先在块顶存变量；条件用 || 而不是 or。 *}
+{{extends "layout.html"}}
+{{block body()}}
+{{tr := .["t"]}}
+{{csrf := .["csrf_token"]}}
+{{entries := .Entries}}
+{{cats := .Categories}}
+{* range 内访问外层值必须先在块顶存变量：Jet 的 . 在 range 里指向当前元素。 *}
+{{catFilter := .CatFilter}}
+{{langFilter := .LangFilter}}
+<div class="stack">
+    <section class="card card-body">
+        <h2>{{ .["t"]("admin.i18n.title", "文案词条") }}</h2>
+        <p class="hint">
+            {{ .["t"]("admin.i18n.intro", "后台外壳、组件固定文案都从这张表取词。此前它们只能靠迁移 seed 修改 —— 改一句错别字要写迁移文件、重跑迁移、重新部署，所以实际能改文案的人只有写代码的人。") }}
+        </p>
+        <p class="hint">
+            <strong>{{ .["t"]("admin.i18n.roles.strong1", "与迁移的分工") }}</strong>{{ .["t"]("admin.i18n.roles.after1", "：迁移 seed 是") }}<strong>{{ .["t"]("admin.i18n.roles.strong2", "默认值来源") }}</strong>{{ .["t"]("admin.i18n.roles.after2", "（写入用 DO NOTHING，不覆盖你在这里的修改）；本页是") }}<strong>{{ .["t"]("admin.i18n.roles.strong3", "真相来源") }}</strong>{{ .["t"]("admin.i18n.roles.tail", "。删除一条词条不会让页面变成空白，构建期会回退到组件包内的中文兜底 —— 但英文站点会因此退回中文，删之前请确认。") }}
+        </p>
+        {{if .Saved != ""}}<p class="hint" role="status">{{ .["t"]("admin.i18n.saved", "已保存：") }}{{.Saved}}</p>{{end}}
+        {{if .Errored != ""}}<p class="hint" role="alert">{{ .["t"]("admin.i18n.unsaved", "未保存：") }}{{.Errored}}</p>{{end}}
+        <form method="get" action="/admin/i18n" class="row">
+            <input type="text" name="keyword" value="{{.Keyword}}" placeholder="{{ .["t"]("admin.i18n.ph.keyword", "key 或内容关键词") }}">
+            <select name="lang">
+                <option value="">{{ .["t"]("admin.i18n.option.all_langs", "全部语言") }}</option>
+                <option value="zh-CN"{{if langFilter == "zh-CN"}} selected{{end}}>zh-CN</option>
+                <option value="en-US"{{if langFilter == "en-US"}} selected{{end}}>en-US</option>
+            </select>
+            <select name="category">
+                <option value="">{{ .["t"]("admin.i18n.option.all_cats", "全部分类") }}</option>
+                {{range _, cat := cats}}
+                <option value="{{cat}}"{{if cat == catFilter}} selected{{end}}>{{cat}}</option>
+                {{end}}
+            </select>
+            <button type="submit" class="btn btn-secondary">{{ .["t"]("admin.i18n.action.filter", "筛选") }}</button>
+        </form>
+    </section>
+
+    <section class="card card-body">
+        <p class="hint">{{ .["t"]("admin.i18n.pager.total_pre", "共 ") }}{{.Total}}{{ .["t"]("admin.i18n.pager.total_post", " 条，第 ") }}{{.Page}} / {{.Pages}}{{ .["t"]("admin.i18n.pager.page_post", " 页（每页 50 条，按 key 升序）") }}</p>
+        <table class="table">
+            <thead>
+                <tr><th>key</th><th>{{ .["t"]("admin.i18n.label.lang", "语言") }}</th><th>{{ .["t"]("admin.i18n.label.value", "内容") }}</th><th>{{ .["t"]("admin.i18n.label.category", "分类") }}</th><th>{{ .["t"]("admin.i18n.label.updated_at", "更新时间") }}</th><th></th></tr>
+            </thead>
+            <tbody>
+                {{range _, e := entries}}
+                <tr>
+                    <td><code>{{e.Key}}</code></td>
+                    <td>{{e.Lang}}</td>
+                    <td>{{e.Value}}</td>
+                    <td>{{e.Category}}</td>
+                    <td>{{e.UpdateTime}}</td>
+                    <td>
+                        <button type="button" class="btn btn-ghost"
+                                data-i18n-edit
+                                data-key="{{e.Key}}" data-lang="{{e.Lang}}"
+                                data-value="{{e.Value}}" data-category="{{e.Category}}" data-remark="{{e.Remark}}">{{tr("admin.i18n.action.edit", "编辑")}}</button>
+                        <form method="post" action="/admin/i18n/delete" style="display:inline">
+                            <input type="hidden" name="csrf_token" value="{{csrf}}">
+                            <input type="hidden" name="key" value="{{e.Key}}">
+                            <input type="hidden" name="lang" value="{{e.Lang}}">
+                            <input type="hidden" name="_keyword" value="{{.Keyword}}">
+                            <input type="hidden" name="_lang" value="{{.LangFilter}}">
+                            <input type="hidden" name="_category" value="{{.CatFilter}}">
+                            <button type="submit" class="btn btn-ghost">{{tr("admin.i18n.action.delete", "删除")}}</button>
+                        </form>
+                    </td>
+                </tr>
+                {{end}}
+            </tbody>
+        </table>
+    </section>
+
+    <section class="card card-body">
+        <h2>{{ .["t"]("admin.i18n.form.title", "新增 / 编辑") }}</h2>
+        <p class="hint">{{ .["t"]("admin.i18n.form.hint", "点上方「编辑」会把该条填进来。同 key + 语言已存在时是更新，不存在时是新增。") }}</p>
+        <form method="post" action="/admin/i18n/save">
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <input type="hidden" name="_keyword" value="{{.Keyword}}">
+            <input type="hidden" name="_lang" value="{{.LangFilter}}">
+            <input type="hidden" name="_category" value="{{.CatFilter}}">
+            <label>key<input type="text" name="key" id="i18n-key" required placeholder="site.component.gallery.prev"></label>
+            <label>{{ .["t"]("admin.i18n.label.lang", "语言") }}
+                <select name="lang" id="i18n-lang">
+                    <option value="zh-CN">zh-CN</option>
+                    <option value="en-US">en-US</option>
+                </select>
+            </label>
+            <label>{{ .["t"]("admin.i18n.label.value", "内容") }}<textarea name="value" id="i18n-value" rows="3" required></textarea></label>
+            <label>{{ .["t"]("admin.i18n.label.category", "分类") }}<input type="text" name="category" id="i18n-category" placeholder="ui / shell / enums …"></label>
+            <label>{{ .["t"]("admin.i18n.label.remark", "备注") }}<input type="text" name="remark" id="i18n-remark" placeholder="{{ .["t"]("admin.i18n.ph.remark", "来源或修改原因") }}"></label>
+            <button type="submit" class="btn">{{ .["t"]("admin.i18n.action.save", "保存") }}</button>
+        </form>
+    </section>
+</div>
+<script>
+// 编辑按钮把该行填进表单 —— 页面只有这一处交互，不引入前端状态机。
+(function () {
+    document.addEventListener('click', function (ev) {
+        var btn = ev.target && ev.target.closest ? ev.target.closest('[data-i18n-edit]') : null;
+        if (!btn) { return; }
+        var pick = function (id, value) {
+            var el = document.getElementById(id);
+            if (el) { el.value = value || ''; }
+        };
+        pick('i18n-key', btn.getAttribute('data-key'));
+        pick('i18n-lang', btn.getAttribute('data-lang'));
+        pick('i18n-value', btn.getAttribute('data-value'));
+        pick('i18n-category', btn.getAttribute('data-category'));
+        pick('i18n-remark', btn.getAttribute('data-remark'));
+        var form = document.getElementById('i18n-value');
+        if (form) { form.focus(); }
+    });
+})();
+</script>
+{{end}}

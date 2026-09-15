@@ -233,7 +233,8 @@
         "product",
         "scalability"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：归档型页面（「每个分类一个列表页」）分三层落地。① 归档上下文筛选：core.RenderContext 增加 ArchiveEntity（SetArchiveEntity/ArchiveEntity）+ builder.WithArchiveEntity；core.productList 增加 filterFromArchive 开关，开启后按当前归档实例的实体类型落到对应筛选维度（category→filterCategoryId / brand→filterBrandId / tag→filterTagIds），**没有对应维度时不筛**而不是随便挑一个维度凑条件（后者会安静地筛出错误结果，页面上只表现为「商品少了几个」）；合并结果是局部副本，不改调用方 Props（同一次编译里组件可能被多处使用）。② 实例角色维度（迁移 175）：content_templates.template_role 与 presentation_instances.instance_role（NOT NULL DEFAULT detail），唯一键从「实体」放宽到「实体 + 角色」。此前同一分类的归档页实例会被当成「已存在」直接返回详情页实例，建归档页的动作静默失效。约束用 DROP CONSTRAINT IF EXISTS + CREATE UNIQUE INDEX 改（约束名由 PG 自动生成，不同环境可能不同，按名字删会静默失败）；GetInstanceByEntity 保留并委托给新的 GetInstanceByEntityRole（默认 detail），既有调用方逐字不变；非法角色明确拒绝而不是落回 detail。③ 模板角色与按需创建：ListByRole + ResolveTemplateByRole，且 ResolveTemplate **限定 detail**（归档模板与详情模板可同类型共存，不过滤会把归档模板当成详情模板取用，画出来的结构完全不对而构建不报错）；ArchivePathFor 规则 /{entityType}/{slug}（用实体类型做前缀而不是可配置前缀：两个类型配同一前缀时在访问面上无法区分，冲突要到 404 或串页才发现）；EnsureArchiveInstance 三个分支——未配置归档模板返回 Skipped（「这个站点不要归档页」是正常状态，报错会让新建分类变成可能失败的操作）、无 slug 返回 Skipped（编一个路径会在实体补上 slug 后成为永远 404 的死链）、已有实例但路径不同则 UpdateURL 留 301（改名后归档页要跟着走，不跟会变成没人链接的孤儿页）；实体内（分类）只拿一条方法的窄接口 ArchiveInstanceEnsurer，分类新建/改名调用它，**同步失败只记日志不阻断保存**（归档页是派生视图；且分类此时已落库，返回错误反而让调用方以为没保存成功）。证据链：6 条 withArchiveFilter 单测 + 4 条角色共存断言 + 5 条 EnsureArchiveInstance 断言 + 2 条分类联动断言（含「不阻断」）。**未覆盖**（如实记录）：标签 / 品牌的联动（与分类同一条路径，分类已打通，其余两个实体类型是同一处机械改动）；「产物里确实只有该分类商品」的跨模块端到端断言（分层测试覆盖了映射与创建，端到端需同时搭 product 与 presentation 两套 fixture）。"
     },
     {
       "id": "EDT-005",
@@ -336,7 +337,8 @@
         "product",
         "field-binding"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：商品域组件的字段槽位从自由文本换成集合元数据下拉。① core 侧：Control 增加 Prefixes，ct tag 支持 `prefixes=item|product`（用 | 分隔是因为 ct tag 本身以逗号分片），并**校验 prefixes 只能用在字段绑定类控件上** —— 静默忽略的后果是「配了但没生效」，正是本条目要消除的那类问题；同时补上 ControlBindingField / ControlCollectionField 两个常量（此前它们是前端类型、Go 侧无常量，只能硬编码字符串）。② 组件侧：core.product 的 11 个槽位 → `bindingfield,prefixes=product`（详情页绑当前实体，item.* 是集合项作用域、在此没有含义）；core.productCard 与 core.productList 共 14 个槽位 → `bindingfield,prefixes=item|product`（同一组件确实服务两个作用域：集合里展开时绑 item.*，详情页当推荐位时绑 product.*）。三处过时注释同步改掉（原注释以「下拉依赖集合元数据、部分场景不如自由文本灵活」为由选择自由文本，理由已不成立）。③ 前端：bindingFieldControl 读 ctl.prefixes 过滤选项，判定按**本次渲染到的数据源类型**而不是硬编码前缀名（数据源是注册出来的，写死一份迟早漂移），控件分发处把 ctl 传进去；**保留手动输入兜底** —— 数据源未注册或元数据接口不可用时下拉是空的，没有兜底就等于组件配不出来，而白名单本就由服务端 ValidateFieldRefs 与构建期解析器两道校验守住，下拉只是让常见情况不必记字段名。测试 4 条：product 只列 product 前缀、卡片与列表列两类、prefixes 用在非字段控件上报错（builder 层）；前端真的读 prefixes + 分发传 ctl + 手动兜底存在（templates 层）。verification 的另一半「既有手写值仍可正常读取与保存」由既有测试覆盖（public/test/product/feature/product_card_test.go 的保存期字段绑定校验 + 构建期解析器拒绝越界）。"
     },
     {
       "id": "EDT-007",
@@ -388,7 +390,8 @@
         "productlist",
         "ux"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：productList 的复杂配置项从「逗号分隔字符串」换成结构化控件。① 新增两种控件类型 multientityref（多选实体）与 rangelist（区间列表），并加校验 —— multientityref 必须声明实体类型（与 entityref 同规则），漏了会让控件渲染成空的。② productList 的 filterTagIds → multientityref,tag、priceRanges → rangelist；Go 字段类型仍是 string（测试用反射钉住）—— 这是本条目敢换控件的前提：存储格式不变、既存文档无需迁移、构建期那套解析一行不动。③ 检查器是服务端渲染（Go 造 inspectorField → Jet 片段 → 客户端按 data-wb-kind 取值回写），因此实现落在三处：inspectorField 增加 Rows 与 parseRangeRows（认不出的片段原样保留而不是丢弃 —— 面板不是校验入口，把作者写的原文显示出来让他改，比静默吞掉好；构建期仍按既有规则拒绝并报明确错误）；模板加两个分支（勾选面板 / 逐行档位）；inspector.js 加两个取值分支，分别拼回逗号分隔的 id 串与档位串。④ 一个容易踩的约定写在模板注释里：复选框与行输入不能带 data-wb-path —— 客户端提交是 onchange 委托加 closest([data-wb-path])，子元素带了这个属性就会命中子元素、提交出 checkbox 的 on 或单个输入框的值，值必须由容器级分支统一拼装。⑤ CSS：勾选面板（wb-checkgrid，带 max-height 防止标签多时撑爆）与档位行（复用既有 wb-range-row 约定）只补必要样式。测试 4 条：结构化控件加值型不变（builder，反射）、multientityref 缺实体类型报错（builder）、parseRangeRows 表驱动含非法片段保留（dashboard）、模板与 JS 双侧到位加拼串格式（templates）—— 双侧那条很关键：只有一侧到位时控件照样显示，改完却提交不上去。verification 的「新配置产物与手写字符串一致」由格式相同加既有 price_test.go 的构建断言共同覆盖。"
     },
     {
       "id": "EDT-008",
@@ -438,7 +441,8 @@
         "builder",
         "consistency"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：palette 与 Inspector schema 的一致性契约（子代理实现，**选择测试而非代码生成，并修掉真实漂移**）。① **为何不做代码生成**：项目确有跨语言生成机制（cmd/workbench-contracts → generated-contracts.js，-check 已进 scripts/check-workbench.sh），但它生成的是 `alignedRepeaters`（重复项契约）。而 paletteItems 里真正宝贵的是 label/hint/props（中文标签 + 「插入即合法」的默认内容），**schema 里根本没有这些字段，生成不出来**；schema 能生成的只有「组件类型集合」，用测试钉住集合更直接且零构建步骤。② **测试首跑即抓到真实漂移**：5 个组件有 Inspector schema 却不在组件库清单。定性后分两类：`core.globalref`（由画布块列表拖入创建，静态条目给不出 blockId）与 `core.layoutSlot`（编译期由主题页眉/页脚绑定展开，作者不应手动插入）写进 `paletteExemptTypes` 显式豁免并附理由；`core.shapedivider` / `core.loader` / `core.searchResults` 是**真漏**（已实现、有 schema、能编译，**但前端零入口**），已补上并通过「插入即 Validate + 插入即 Compile」逐条验证。③ 结果：组件库 42 个条目 / Inspector schema 44 个组件，双向一致。④ 豁免名单有「过期保护」断言（被豁免组件若消失即报错），避免豁免表随代码演进而悄悄失真。⑤ **这一条与 UI-014/UI-012 是同类现象**：能力实现了但没有入口/没有真实数据，测试不报错、用户也看不见，只会在某天有人问「为什么这个组件用不了」时浮现。"
     },
     {
       "id": "EDT-009",
@@ -684,7 +688,8 @@
         "validation",
         "contenttemplate"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：校验口径按**时机**而非按目标类型区分。实现（早前批次已落地，本轮核对 + 补测试 + 标记）：contenttemplate 的 validateDocumentMode(entityType, raw, tolerant) 统一两条路径 —— 草稿保存（Create/Update）走 ValidatePageTolerant，取用版本（resolvedTemplateFromVersion → ResolveTemplateByID/ResolveTemplate）走完整 ValidatePage；**字段绑定白名单两个模式都执行**（这条是安全边界，不因宽容而放宽）。语义说明：本仓库 ContentTemplate 保存时同时写入不可变版本快照（保存即出版本），因此严格校验落在**取用版本**而不是生成快照 —— 效果与审计预期一致（半成品永远进不了产物，也不会被挡在草稿阶段之外）。补测试：半成品（轮播未拖入 slide，唯一被 tolerant 显式放行的 core.ErrIncompleteNode 类别）草稿收下 + 取用拒绝，并配对反向断言 JSON 断裂与未知组件在草稿口径同样拒绝（只测「半成品能存」会把「什么都存得下」也判为通过）。"
     },
     {
       "id": "EDT-014",
@@ -865,7 +870,8 @@
         "workbench",
         "architecture"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-14：工作台编辑目标描述符（三条分派改为数据驱动）。① 后端新增 EditTarget 描述符 + workbenchTargets 注册表（type / save 端点 / saveBody 键名 / caps 能力开关），**新增编辑目标只需要在注册表里加一条**：描述符回答「这个目标有哪些端点、保存体长什么样、支持哪些动作」，前端因此不认识任何一种目标。三处 meta 注入描述符（page / block / template）；workbenchTargetOf 对未注册类型直接 panic 而不是发空描述符 —— 三个注入点写的都是常量类型，未注册只可能是「加了常量却忘了注册」，这类错误要在首次渲染就炸出来，发空描述符会让前端静默退回默认行为（对 block / template 就是错的端点）。② 前端 saveDraft 改为读描述符：端点与请求体键名（idKey / documentKey / versionKey / pathKey / extras）全部由后端给，此前是 saveBase 的三段 if。**保留一条兜底**：描述符缺失（旧缓存页面）时退回手工页面保存，而不是静默什么都不做 —— 「点保存没反应」是最难查的一类问题。③ caps 能力开关让「块没有发布链」这类事实变成数据：page 有发布/构建/回滚/历史/URL，block 与 template 全关，前端据此显示或隐藏按钮，避免「按钮照常显示、点了报错」或更糟的「点了静默失败」。测试 2 条：后端注册表（三种类型齐备 + 未注册返回 false + 差异点确实在数据里（page 有版本键与路径键、block 有 extras name、template 无版本键）+ 列表输出确定性）与前端契约（saveDraft 读 meta.target / 按 saveBody 构造 / **区间内不得再出现 saveBase**）。**未覆盖**（如实记录）：审计提到的 GET /workbench/target 独立端点（当前改为页面渲染时注入，前端省一次请求；端点形态在需要「不刷新页面切换编辑目标」时才有必要）；预览 / 校验 / 历史三条尚未纳入描述符 —— 保存这条已打样，其余三条的入口不再依赖 saveBase 字符串，但「新增目标类型只需注册」目前只在保存路径上成立。"
     },
     {
       "id": "EDT-018",

@@ -47,7 +47,10 @@
   transition: background .2s ease;
 }
 
-/* 触屏没有悬停，标题底色不变（不构成功能缺口：展开靠点击）。 */
+/* 触屏没有悬停，标题底色不变。
+   UI-006 判定：**装饰性，不补触屏等价形态** —— 展开是原生 <details>/<summary>
+   的点击行为（键盘 Enter/Space、触屏点击都可用），展开态由 [open] 与 ＋/× 指示，
+   底色只是鼠标下的定位辅助。 */
 @hover & .sky-accordion-head:hover {
   background: var(--sky-c-surface, #f3f4f6);
 }

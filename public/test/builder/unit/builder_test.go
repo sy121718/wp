@@ -185,7 +185,11 @@ func TestEntranceDefaultOff(t *testing.T) {
 	if err != nil {
 		t.Fatalf("编译失败: %v", err)
 	}
-	if strings.Contains(c.CSS, "animation") || strings.Contains(c.CSS, "@keyframes") {
+	// 只看**动画规则本身**（animation: … / @keyframes …）：产物尾部无条件带一段
+	// prefers-reduced-motion 块，里面有 animation-duration / animation-iteration-count，
+	// 那是「降级到几乎不动」的兜底声明，不是入场动效。宽泛地匹配 "animation" 会把
+	// 它误判成「默认输出了动效」。
+	if strings.Contains(c.CSS, "animation: ") || strings.Contains(c.CSS, "@keyframes") {
 		t.Errorf("未配置入场动效却输出了动画:\n%s", c.CSS)
 	}
 }

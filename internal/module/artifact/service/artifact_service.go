@@ -10,6 +10,9 @@ var _ artifactcontract.ArtifactService = (*Service)(nil)
 // Service 构建产物归档业务服务。
 type Service struct {
 	model *artifactmodel.Model
+	// externalRefs 其它模块对共享内容对象的引用来源（见 artifact_content_gc.go）。
+	// nil = 确认没有外部引用来源，不是「没接上」。
+	externalRefs ExternalContentRefs
 }
 
 // NewService 创建 Artifact 服务。

@@ -108,6 +108,10 @@ type View struct {
 	NextPage int
 	// HasPager 是否渲染分页控件（pageSize > 0 且真的分了页）。
 	HasPager bool
+	// Labels 固定文案（审计 I18N-010）：构建期由 ApplyI18n 按语言回填。
+	Labels ListLabels
+	// PageText 「第 N 页」的成品文案（含计数，由 ApplyI18n 一次算好）。
+	PageText string
 	// PrevLink / NextLink 上下页控件（含降级链接 / 片段请求 / 推送 URL）。
 	PrevLink ControlOption
 	NextLink ControlOption
@@ -156,6 +160,32 @@ func IsCollection(_ *Props) bool { return true }
 //
 // 顺序是刻意的：先排序再截断。反过来会出现「取最新 12 条」先按默认序截断、
 // 结果拿到的是最早那 12 条（典型的静默错序）。
+// withArchiveFilter 按归档上下文生成筛选副本（审计 EDT-004）。
+//
+// 不在归档上下文、未开启开关、或归档实体类型在这个组件里没有对应维度时返回 nil，
+// 调用方保持原 Props。**不静默换维度**：拿不准就不筛，而不是拿别的字段凑一个条件。
+func (p *Props) withArchiveFilter(ctx *core.RenderContext) *Props {
+	if p == nil || ctx == nil || strings.TrimSpace(p.FilterFromArchive) != "on" {
+		return nil
+	}
+	entityType, entityID := ctx.ArchiveEntity()
+	if entityID == "" {
+		return nil
+	}
+	clone := *p
+	switch entityType {
+	case "category":
+		clone.FilterCategoryID = entityID
+	case "brand":
+		clone.FilterBrandID = entityID
+	case "tag":
+		clone.FilterTagIDs = entityID
+	default:
+		return nil
+	}
+	return &clone
+}
+
 func BuildView(node *core.Node, p *Props, ctx *core.RenderContext) (View, error) {
 	source := effectiveSource(p)
 	if source == "" {
@@ -165,6 +195,11 @@ func BuildView(node *core.Node, p *Props, ctx *core.RenderContext) (View, error)
 	}
 	if ctx == nil || ctx.Collection == nil {
 		return View{}, fmt.Errorf("节点 %s: 编译上下文缺少集合解析器（无法解析商品集合 %s）", node.ID, source)
+	}
+	// 归档上下文（审计 EDT-004）：归档页里的列表用实例自己的筛选值。
+	// 合并成局部副本而不是改调用方的 Props —— 同一组件可能在一次编译里被多处使用。
+	if merged := p.withArchiveFilter(ctx); merged != nil {
+		p = merged
 	}
 	items, err := resolveProducts(ctx, source, collectionFilter(p))
 	if err != nil {
@@ -204,6 +239,8 @@ func BuildView(node *core.Node, p *Props, ctx *core.RenderContext) (View, error)
 		Page:         page,
 		PageSize:     pageSize,
 		FetchedTotal: fetched,
+		// 先落中文兜底：ApplyI18n 会在 BuildView 之后按语言覆盖（未接入 i18n 时就是这个值）。
+		Labels: defaultListLabels(),
 	}
 	// 翻页可达性按**已取回条数**判断：不够就说明这一页之后没有更多了（不猜未取回的部分）。
 	if pageSize > 0 {
@@ -227,7 +264,7 @@ func BuildView(node *core.Node, p *Props, ctx *core.RenderContext) (View, error)
 	view.PushQuery = lc.pushQuery
 	// 槽位解析是零成本的 map 读：没有条目就是「这个站还没指定商品列表页」，
 	// 与「槽位绑了但那页没发布」同一条路（page 侧只返回已发布的绑定）。
-	if href := strings.TrimSpace(ctx.SitePages[core.SiteSlotShop]); href != "" {
+	if href := strings.TrimSpace(ctx.SitePage(core.SiteSlotShop)); href != "" {
 		view.HasListPageLink, view.ListPageLinkHref = true, href
 		view.ListPageLinkText = effectiveListPageLinkText(p)
 	}

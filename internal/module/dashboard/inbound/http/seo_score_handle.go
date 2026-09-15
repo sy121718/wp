@@ -21,7 +21,7 @@ func (h *Handle) SEOScore(c *gin.Context) {
 	}
 	res, err := seoscore.ScoreDocument(document, c.PostForm("url"), requestScoreLang(c))
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, "SEO 评分失败: "+err.Error())
+		pageErrorBadRequest(c, "seo_score", err)
 		return
 	}
 	response.Success(c, res)

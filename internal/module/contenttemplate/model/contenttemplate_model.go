@@ -22,12 +22,29 @@ const (
 	tableNameContentTemplateVersions = "content_template_versions"
 )
 
+// 模板角色（审计 EDT-004）。
+const (
+	// TemplateRoleDetail 实体详情页模板（既有语义，默认值）。
+	TemplateRoleDetail = "detail"
+	// TemplateRoleArchive 归档列表页模板（如「分类页」：列该分类下的内容）。
+	TemplateRoleArchive = "archive"
+)
+
+// IsValidTemplateRole 角色是否合法。
+func IsValidTemplateRole(role string) bool {
+	return role == TemplateRoleDetail || role == TemplateRoleArchive
+}
+
 // TemplateEntity content_templates 表实体（模板草稿，可继续编辑）。
 type TemplateEntity struct {
-	ID            string          `gorm:"column:id;type:uuid;primaryKey"`
-	ProjectID     string          `gorm:"column:project_id;type:uuid;not null"`
-	Name          string          `gorm:"column:name;not null"`
-	EntityType    string          `gorm:"column:entity_type;not null"`
+	ID         string `gorm:"column:id;type:uuid;primaryKey"`
+	ProjectID  string `gorm:"column:project_id;type:uuid;not null"`
+	Name       string `gorm:"column:name;not null"`
+	EntityType string `gorm:"column:entity_type;not null"`
+	// TemplateRole 模板角色（审计 EDT-004）：detail = 实体详情页，archive = 归档列表页。
+	// 同一个实体类型下两者可以各有一套；解析时必须按角色过滤，否则归档模板会被
+	// 当成详情模板被取用（画出来的页面结构完全不对）。
+	TemplateRole  string          `gorm:"column:template_role;not null;default:detail"`
 	DraftDocument json.RawMessage `gorm:"column:draft_document;type:jsonb;not null"`
 	DraftVersion  int64           `gorm:"column:draft_version;not null"`
 	// CurrentVersionID 当前版本指针（content_template_versions.id）。
@@ -96,6 +113,24 @@ func (m *Model) Get(ctx context.Context, id string) (e *TemplateEntity, err erro
 // List 按 entity_type 列表（默认模板优先，其次更新时间倒序；entity_type 为空时返回全部）。
 func (m *Model) List(ctx context.Context, entityType string) (list []*TemplateEntity, err error) {
 	q := m.db.WithContext(ctx).Order("is_default DESC, updated_at DESC, id DESC")
+	if entityType != "" {
+		q = q.Where("entity_type = ?", entityType)
+	}
+	err = q.Find(&list).Error
+	return list, err
+}
+
+// ListByRole 按实体类型与**角色**列模板（审计 EDT-004）。
+//
+// 归档模板与详情模板可以同类型共存，解析时必须按角色过滤：混在一起时
+// 归档模板会被当成详情模板取用，画出来的页面结构完全不对 —— 而构建不会报错。
+// role 为空按 detail 处理（既有调用方的语义）。
+func (m *Model) ListByRole(ctx context.Context, entityType, role string) (list []*TemplateEntity, err error) {
+	if role == "" {
+		role = TemplateRoleDetail
+	}
+	q := m.db.WithContext(ctx).Where("template_role = ?", role).
+		Order("is_default DESC, updated_at DESC, id DESC")
 	if entityType != "" {
 		q = q.Where("entity_type = ?", entityType)
 	}

@@ -22,7 +22,7 @@ func (h *productPageHandle) ProductCategoriesPage(c *gin.Context) {
 	ctx := c.Request.Context()
 	projects, err := h.projects.List(ctx)
 	if err != nil {
-		c.String(http.StatusInternalServerError, err.Error())
+		pageError(c, "product_taxonomy", err)
 		return
 	}
 	selected := strings.TrimSpace(c.Query("project"))
@@ -31,7 +31,7 @@ func (h *productPageHandle) ProductCategoriesPage(c *gin.Context) {
 	}
 	flat, err := h.flatCategories(ctx, selected)
 	if err != nil {
-		c.String(http.StatusInternalServerError, err.Error())
+		pageError(c, "product_taxonomy", err)
 		return
 	}
 	rows := make([]gin.H, 0, len(flat))
@@ -115,7 +115,7 @@ func (h *productPageHandle) ProductBrandsPage(c *gin.Context) {
 	ctx := c.Request.Context()
 	projects, err := h.projects.List(ctx)
 	if err != nil {
-		c.String(http.StatusInternalServerError, err.Error())
+		pageError(c, "product_taxonomy", err)
 		return
 	}
 	selected := strings.TrimSpace(c.Query("project"))
@@ -124,7 +124,7 @@ func (h *productPageHandle) ProductBrandsPage(c *gin.Context) {
 	}
 	brands, err := h.listBrands(ctx, selected)
 	if err != nil {
-		c.String(http.StatusInternalServerError, err.Error())
+		pageError(c, "product_taxonomy", err)
 		return
 	}
 	c.HTML(http.StatusOK, "admin/product_brands.html", withCSRF(c, gin.H{

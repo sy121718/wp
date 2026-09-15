@@ -5,8 +5,8 @@ import (
 	"os"
 	"strings"
 
-	projectcontract "go_wp/internal/module/project/contract"
 	presentationmodel "go_wp/internal/module/presentation/model"
+	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/internal/seo"
 )
 

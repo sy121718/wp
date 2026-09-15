@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"github.com/CloudyKit/jet/v6"
+
+	"go_wp/pkg/i18n"
 )
 
 // i18n_jet_test.go — Jet 模板层取翻译路径的实测依据（多语言 P1 第二步）。
@@ -358,5 +360,178 @@ func TestShellSidebarPartialsRender(t *testing.T) {
 	}
 	if strings.Contains(out, "已固定") || strings.Contains(out, "展开 / 收起子菜单") {
 		t.Fatal("注入英文翻译后不应再出现中文原文")
+	}
+}
+
+// TestI18nEntriesPageRenders 词条页完整渲染（审计 I18N-003）。
+//
+// 渲染测试在这类页面上不是形式主义：Jet 的 if 遇到缺失的键会**中断渲染但状态码仍是 200**，
+// 现象是「表格后半截没了」—— 从页面上看像数据少了，实际是模板中间断掉。
+// 因此这里断言的是**表格尾部**（分页提示与保存表单）确实出现在输出里，
+// 并额外跑一次空分类，确认「下拉为空」不会把模板带断。
+type translationLangOption struct {
+	Code   string
+	Label  string
+	Active bool
+}
+
+type articleTranslationRow struct {
+	Context    string
+	Field      string
+	FieldLabel string
+	Source     string
+	SourceHash string
+	Target     string
+	Engine     string
+	Translated bool
+	Rich       bool
+}
+
+type articleTranslationGroup struct {
+	Key        string
+	EntityType string
+	EntityID   string
+	Title      string
+	Subtitle   string
+	Rows       []articleTranslationRow
+}
+
+func TestI18nEntriesPageRenders(t *testing.T) {
+	loader := jet.NewOSFileSystemLoader(".")
+	set := jet.NewSet(loader, jet.WithTemplateNameExtensions([]string{"", ".html"}))
+	base := map[string]any{
+		"lang": "zh-CN", "langs": LanguageOptions("zh-CN"), "title": "文案词条",
+		"t": TranslateFunc("zh-CN"), "csrf_token": "tok",
+		"Total": 1, "Page": 1, "Pages": 1,
+		"Keyword": "", "LangFilter": "", "CatFilter": "",
+		"Saved": "site.component.gallery.prev · en-US", "Errored": "",
+		"Entries": []i18n.Entry{{
+			Key: "site.component.gallery.prev", Lang: "en-US", Value: "Previous",
+			Category: "ui", UpdateTime: "2026-09-14 10:00",
+		}},
+		"Categories": []string{"ui", "shell"},
+	}
+	out, err := render(t, set, "admin/i18n", base)
+	if err != nil {
+		t.Fatalf("词条页渲染失败: %v", err)
+	}
+	for _, want := range []string{
+		"文案词条", "site.component.gallery.prev", "Previous",
+		"共 1 条，第 1 / 1 页",
+		"新增 / 编辑", "/admin/i18n/save", "/admin/i18n/delete",
+		"csrf_token",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("词条页缺少 %q（模板可能中途中断）", want)
+		}
+	}
+
+	// 空分类 / 空列表：模板仍应完整渲染（不依赖任何可选键存在）。
+	empty := map[string]any{}
+	for k, v := range base {
+		empty[k] = v
+	}
+	empty["Entries"] = []i18n.Entry{}
+	empty["Categories"] = []string{}
+	empty["Total"] = 0
+	empty["Pages"] = 0
+	empty["Saved"] = ""
+	out, err = render(t, set, "admin/i18n", empty)
+	if err != nil {
+		t.Fatalf("空列表渲染失败: %v", err)
+	}
+	if !strings.Contains(out, "新增 / 编辑") {
+		t.Fatalf("空列表时保存表单仍应渲染（否则运营无法新增第一条）")
+	}
+}
+
+// TestArticleTranslationsPageRenders 文章翻译工作台完整渲染（审计 I18N-006）。
+//
+// 断言的是**表单尾部**（保存按钮）与三组同序字段（rowContext / rowHash / rowTarget）：
+// 保存端用 PostFormArray 按位置对齐三组值，模板少输出一个隐藏域就会整体错位 ——
+// 而错位的表现是「译文写到了别的字段上」，页面看起来完全正常。
+type navigationTranslationRow struct {
+	Context    string
+	NodeID     string
+	Kind       string
+	Path       string
+	Source     string
+	SourceHash string
+	Target     string
+	Translated bool
+}
+
+type navigationTranslationGroup struct {
+	Kind  string
+	Title string
+	Rows  []navigationTranslationRow
+}
+
+func TestArticleTranslationsPageRenders(t *testing.T) {
+	loader := jet.NewOSFileSystemLoader(".")
+	set := jet.NewSet(loader, jet.WithTemplateNameExtensions([]string{"", ".html"}))
+	data := map[string]any{
+		"lang": "en-US", "Langs": []translationLangOption{{Code: "en-US", Label: "en-US", Active: true}},
+		"title": "文章翻译", "menu": "article-translations", "t": TranslateFunc("en-US"),
+		"csrf_token": "tok", "Lang": "en-US", "Saved": true, "SavedNote": "已保存 1 条译文（下次构建生效）。",
+		"Errors": []string{}, "RowCount": 2, "Done": 1, "Total": 1,
+		"Groups": []articleTranslationGroup{{
+			Key: "a-1", EntityType: "article", EntityID: "a-1", Title: "标题", Subtitle: "slug",
+			Rows: []articleTranslationRow{
+				{Context: "article.title", Field: "title", FieldLabel: "标题", Source: "中文标题", SourceHash: "h1", Target: "English", Translated: true},
+				{Context: "article.body", Field: "body", FieldLabel: "正文", Source: "<p>正文</p>", SourceHash: "h2", Rich: true},
+			},
+		}},
+	}
+	out, err := render(t, set, "admin/article_translations", data)
+	if err != nil {
+		t.Fatalf("文章翻译页渲染失败: %v", err)
+	}
+	for _, want := range []string{"保存译文", "rowContext", "rowHash", "rowTarget", "<textarea", "已保存 1 条译文"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("文章翻译页缺少 %q（模板可能中途中断或语法写错）", want)
+		}
+	}
+	if strings.Contains(out, "{{/") {
+		t.Fatal("输出里残留模板语法字面量（Jet 的 if 结束是 end 而不是 /if）")
+	}
+}
+
+// TestNavigationTranslationsPageRenders 导航译文工作台完整渲染（审计 I18N-007）。
+//
+// 与文章工作台同一类断言：保存端用 PostFormArray 按位置对齐 rowContext / rowHash / rowTarget，
+// 模板少输出一个隐藏域就会整体错位 —— 而错位的表现是「译文写到了别的菜单项上」，
+// 页面看起来完全正常。另外断言空位置分支（没有菜单项时不该整页消失）。
+func TestNavigationTranslationsPageRenders(t *testing.T) {
+	loader := jet.NewOSFileSystemLoader(".")
+	set := jet.NewSet(loader, jet.WithTemplateNameExtensions([]string{"", ".html"}))
+	data := map[string]any{
+		"title": "导航译文", "menu": "navigation-translations", "t": TranslateFunc("en-US"),
+		"csrf_token": "tok", "Lang": "en-US", "ProjectID": "p-1",
+		"Langs": []translationLangOption{{Code: "en-US", Label: "en-US", Active: true}},
+		"Saved": true, "SavedNote": "已保存 1 条译文；已标记受影响页面待重建（下次构建生效）。",
+		"Errors": []string{}, "RowCount": 1, "Done": 0,
+		"Groups": []navigationTranslationGroup{
+			{Kind: "header", Title: "页眉导航", Rows: []navigationTranslationRow{
+				{Context: "navigation.label", NodeID: "n-1", Kind: "header", Path: "/shop",
+					Source: "商品", SourceHash: "h1"},
+			}},
+			{Kind: "footer", Title: "页脚导航", Rows: []navigationTranslationRow{}},
+		},
+	}
+	out, err := render(t, set, "admin/navigation_translations", data)
+	if err != nil {
+		t.Fatalf("导航译文页渲染失败: %v", err)
+	}
+	for _, want := range []string{
+		"保存译文", "rowContext", "rowHash", "rowTarget",
+		"商品", "/shop", "该位置还没有菜单项",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("导航译文页缺少 %q（模板可能中途中断）", want)
+		}
+	}
+	if strings.Contains(out, "{{/") {
+		t.Fatal("输出里残留模板语法字面量")
 	}
 }

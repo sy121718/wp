@@ -127,3 +127,13 @@ upload:
   max_size: 10MB
   allowed_extensions: [".jpg", ".jpeg", ".png", ".gif", ".pdf", ".txt"]
   allowed_mime_types: ["image/jpeg", "image/png", "image/gif", "application/pdf", "text/plain"]
+
+# 打点配置
+analytics:
+  # 打点匿名化（IP 哈希）用的独立盐。
+  # 留空：用会话密钥经 HKDF 派生。功能可用，但轮换会话密钥会让历史 IP 哈希断档
+  # （当前 ip_hash 只写不读，代价为零；将来若要做「按 IP 去重」，轮换前需保留旧盐），
+  # 且盐与会话密钥同源 —— 盐泄露会波及会话签名 / CSRF / 购物车签名。
+  # 建议生产环境显式配置：openssl rand -hex 32
+  # 也可用 GOWP_ANALYTICS_PEPPER 环境变量注入。
+  pepper: ""

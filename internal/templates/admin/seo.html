@@ -1,0 +1,131 @@
+{{extends "layout.html"}}
+{{block body()}}
+{{selectedProject := .SelectedProject}}
+{{paths := .Paths}}
+<div class="admin-content admin-page">
+    <header class="page-header">
+        <div>
+            <p class="eyebrow">站点可见性</p>
+            <h1>SEO 控制台</h1>
+            <p class="text-muted">查看当前站点的产物体检入口、热门路径与能力接入状态。</p>
+        </div>
+        <form class="toolbar" method="get" action="/admin/seo">
+            <label for="seo-project">站点</label>
+            <select id="seo-project" name="project" class="form-select" onchange="this.form.submit()">
+                {{range _, project := .Projects}}
+                <option value="{{project.ID}}"{{if project.ID == selectedProject}} selected{{end}}>{{project.Name}}</option>
+                {{end}}
+            </select>
+            <noscript><button class="btn btn-secondary" type="submit">查看</button></noscript>
+        </form>
+    </header>
+
+    {{if isset(.ProjectError)}}
+    <div class="alert alert-error" role="alert">站点列表暂时读取失败。</div>
+    {{end}}
+
+    <section class="card stack-gap" aria-labelledby="seo-audit-title">
+        <div class="section-header">
+            <div>
+                <p class="eyebrow">当前问题</p>
+                <h2 id="seo-audit-title">产物 SEO 体检</h2>
+            </div>
+        </div>
+        <p>体检读取已激活的 HTML 产物，检查标题、描述、canonical、图片替代文本、内部链接与 hreflang。</p>
+        {{if .PermSet["seo:audit"]}}
+        <form method="post" action="/api/publication/seo-audit" data-seo-audit-action>
+            <input type="hidden" name="csrf_token" value="{{.["csrf_token"]}}">
+            <input type="hidden" name="project" value="{{.SelectedProject}}">
+            <button class="btn btn-primary" type="submit"{{if .SelectedProject == ""}} disabled{{end}}>运行当前站点体检</button>
+        </form>
+        <div class="stack" data-seo-audit-result aria-live="polite">
+            <p class="text-muted">运行体检后，此处显示当前产物中的 SEO 问题。</p>
+        </div>
+        {{else}}
+        <p class="text-muted">需要 SEO 体检权限才能运行检查。</p>
+        {{end}}
+    </section>
+
+    <div class="content-grid content-grid-2">
+        <section class="card" aria-labelledby="seo-paths-title">
+            <div class="section-header">
+                <div>
+                    <p class="eyebrow">近 30 天</p>
+                    <h2 id="seo-paths-title">热门路径</h2>
+                </div>
+            </div>
+            {{if .AnalyticsError}}
+            <p class="text-muted">热门路径暂时读取失败。</p>
+            {{else if .HasPaths}}
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>路径</th><th>浏览</th><th>访客</th></tr></thead>
+                    <tbody>
+                    {{range _, item := paths}}
+                    <tr><td><code>{{item.Path}}</code></td><td>{{item.Views}}</td><td>{{item.Visitors}}</td></tr>
+                    {{end}}
+                    </tbody>
+                </table>
+            </div>
+            {{else}}
+            <p class="text-muted">当前站点还没有可展示的访问数据。</p>
+            {{end}}
+        </section>
+
+        <section class="card" aria-labelledby="seo-sources-title">
+            <p class="eyebrow">流量发现</p>
+            <h2 id="seo-sources-title">热门来源</h2>
+            <p class="text-muted">来源统计当前不可用：analytics 已采集来源域，但只读聚合契约尚未提供来源排行。</p>
+        </section>
+    </div>
+
+    <div class="content-grid content-grid-2">
+        <section class="card" aria-labelledby="seo-site-files-title">
+            <p class="eyebrow">站点文件</p>
+            <h2 id="seo-site-files-title">Sitemap / Feed 状态</h2>
+            <p class="text-muted">sitemap / feed 实时状态当前不可用：publication 尚未提供只读状态契约。</p>
+        </section>
+
+        <section class="card" aria-labelledby="seo-external-title">
+            <p class="eyebrow">搜索平台</p>
+            <h2 id="seo-external-title">外部搜索数据</h2>
+            <p class="text-muted">外部搜索平台数据当前不可用：未配置 Search Console、Bing Webmaster Tools 等外部 API。</p>
+        </section>
+    </div>
+</div>
+<script>
+(function () {
+    var form = document.querySelector('[data-seo-audit-action]');
+    var result = document.querySelector('[data-seo-audit-result]');
+    if (!form || !result || !window.fetch) return;
+    function escapeHTML(value) {
+        return String(value == null ? '' : value).replace(/[&<>"']/g, function (ch) {
+            return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch];
+        });
+    }
+    form.addEventListener('submit', function (event) {
+        event.preventDefault();
+        var button = form.querySelector('button[type="submit"]');
+        button.disabled = true;
+        result.innerHTML = '<p class="text-muted">正在读取当前已激活产物…</p>';
+        fetch(form.action, {method: 'POST', body: new FormData(form), credentials: 'same-origin'})
+            .then(function (response) { return response.json().then(function (body) { return {ok: response.ok, body: body}; }); })
+            .then(function (response) {
+                if (!response.ok || !response.body || !response.body.data) throw new Error(response.body && response.body.message || '体检请求失败');
+                var data = response.body.data;
+                var issues = Array.isArray(data.issues) ? data.issues : [];
+                if (issues.length === 0) {
+                    result.innerHTML = '<p class="badge badge-success">已扫描 ' + escapeHTML(data.scanned) + ' 个产物，未发现 SEO 问题。</p>';
+                    return;
+                }
+                var rows = issues.map(function (issue) {
+                    return '<tr><td><span class="badge">' + escapeHTML(issue.Level) + '</span></td><td><code>' + escapeHTML(issue.Path) + '</code></td><td>' + escapeHTML(issue.Message) + '</td></tr>';
+                }).join('');
+                result.innerHTML = '<p>已扫描 ' + escapeHTML(data.scanned) + ' 个产物，发现 ' + escapeHTML(data.count) + ' 个问题。</p><div class="table-wrap"><table><thead><tr><th>级别</th><th>路径</th><th>问题</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
+            })
+            .catch(function (err) { result.innerHTML = '<p class="alert alert-error" role="alert">' + escapeHTML(err.message) + '</p>'; })
+            .finally(function () { button.disabled = false; });
+    });
+})();
+</script>
+{{end}}

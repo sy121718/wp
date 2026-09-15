@@ -23,6 +23,7 @@ import (
 	accordionPkg "go_wp/internal/builder/components/accordion"
 	addtocartPkg "go_wp/internal/builder/components/addtocart"
 	badgePkg "go_wp/internal/builder/components/badge"
+	breadcrumbPkg "go_wp/internal/builder/components/breadcrumb"
 	buttonPkg "go_wp/internal/builder/components/button"
 	cardPkg "go_wp/internal/builder/components/card"
 	cardstackPkg "go_wp/internal/builder/components/cardstack"
@@ -40,6 +41,7 @@ import (
 	imagePkg "go_wp/internal/builder/components/image"
 	infoboxPkg "go_wp/internal/builder/components/infobox"
 	languagesPkg "go_wp/internal/builder/components/languages"
+	layoutslotPkg "go_wp/internal/builder/components/layoutslot"
 	listPkg "go_wp/internal/builder/components/list"
 	loaderPkg "go_wp/internal/builder/components/loader"
 	marqueePkg "go_wp/internal/builder/components/marquee"
@@ -146,6 +148,8 @@ func nodeViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeV
 		return accordionViewOf(node, topLevel, ctx)
 	case marqueePkg.Type:
 		return marqueeViewOf(node, topLevel, ctx)
+	case layoutslotPkg.Type:
+		return layoutSlotViewOf(node, topLevel, ctx)
 	case globalrefPkg.Type:
 		return globalrefViewOf(node, topLevel, ctx)
 	case tablePkg.Type:
@@ -164,6 +168,8 @@ func nodeViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeV
 		return iconViewOf(node, topLevel, ctx)
 	case badgePkg.Type:
 		return badgeViewOf(node, topLevel, ctx)
+	case breadcrumbPkg.Type:
+		return breadcrumbViewOf(node, topLevel, ctx)
 	case progressPkg.Type:
 		return progressViewOf(node, topLevel, ctx)
 	case productPkg.Type:
@@ -374,7 +380,9 @@ func buttonViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nod
 	buttonPkg.CompileCSS(node.ID, &p, ctx.CSS)
 
 	// 渲染视图数据（标签 + 属性 + 图标）。
-	view, err := buttonPkg.BuildView(&p, ctx.Content)
+	// 站内链接本地化（审计 I18N-015）：作者填的 /shop 要按当前语言加前缀，
+	// 否则英文站点上的按钮点击后跳回默认语言版本。
+	view, err := buttonPkg.BuildView(&p, ctx.Content, ctx.ResolveSiteLink)
 	if err != nil {
 		return nil, fmt.Errorf("节点 %s: %w", node.ID, err)
 	}
@@ -512,7 +520,8 @@ func imageViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*node
 
 	imagePkg.CompileCSS(node.ID, &p, ctx.CSS)
 
-	view, err := imagePkg.BuildView(node, &p, classStr, customID, ctx.Content, ctx.ImageDefaults, ctx.AssetProbe)
+	// 站内链接本地化（审计 I18N-015）：图片上作者填的链接。
+	view, err := imagePkg.BuildView(node, &p, classStr, customID, ctx.Content, ctx.ImageDefaults, ctx.AssetProbe, ctx.ResolveSiteLink)
 	if err != nil {
 		return nil, fmt.Errorf("节点 %s: %w", node.ID, err)
 	}
@@ -565,7 +574,10 @@ func tableViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*node
 }
 
 func cardViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeView, error) {
-	return atomViewOf(node, topLevel, ctx, cardPkg.Type, "card", cardPkg.CompileCSS, cardPkg.BuildView)
+	// 闭包适配：站内链接本地化要传 ctx，而 atomViewOf 只接受 func(*Props) View（审计 I18N-015）。
+	return atomViewOf(node, topLevel, ctx, cardPkg.Type, "card", cardPkg.CompileCSS, func(p *cardPkg.Props) cardPkg.View {
+		return cardPkg.BuildView(p, ctx.ResolveSiteLink)
+	})
 }
 
 // cardstackViewOf 转换卡片堆叠节点：结构型组件 —— 子节点即卡片内容（没有则退回数字卡），
@@ -673,7 +685,7 @@ func cartIconViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*n
 	}
 	classes, customID := advancedClasses(node, &p, ctx)
 	carticonPkg.CompileCSS(node.ID, &p, ctx.CSS)
-	view := carticonPkg.BuildView(&p, ctx.ProjectID, ctx.Lang, ctx.SitePages[core.SiteSlotCart])
+	view := carticonPkg.BuildView(&p, ctx.ProjectID, ctx.Lang, ctx.SitePage(core.SiteSlotCart))
 	applyI18n(&view, ctx)
 	return &nodeView{
 		Type:     carticonPkg.Type,
@@ -724,7 +736,7 @@ func orderListViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*
 	classes, customID := advancedClasses(node, &p, ctx)
 	orderlistPkg.CompileCSS(node.ID, &p, ctx.CSS)
 	view := orderlistPkg.BuildView(&p, ctx.ProjectID, ctx.Lang,
-		ctx.SitePages[core.SiteSlotLogin], ctx.SitePages[core.SiteSlotOrders])
+		ctx.SitePage(core.SiteSlotLogin), ctx.SitePage(core.SiteSlotOrders))
 	return &nodeView{
 		Type:     orderlistPkg.Type,
 		Template: "orders_widget",
@@ -839,6 +851,17 @@ func badgeViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*node
 	return atomViewOf(node, topLevel, ctx, badgePkg.Type, "badge", badgePkg.CompileCSS, badgePkg.BuildView)
 }
 
+// breadcrumbViewOf 转换面包屑节点（内容型，无 children）。
+//
+// 走 leafViewOf 而不是 atomViewOf：BuildView 除了 props 还要构建上下文
+// （未手填 items 时层级按 RenderContext.CurrentPath 派生），故用闭包适配
+// （同 list / card 的写法）。
+func breadcrumbViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeView, error) {
+	return leafViewOf(node, topLevel, ctx, breadcrumbPkg.Type, "breadcrumb", breadcrumbPkg.CompileCSS, func(p *breadcrumbPkg.Props) breadcrumbPkg.View {
+		return breadcrumbPkg.BuildView(p, ctx)
+	})
+}
+
 func progressViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeView, error) {
 	return atomViewOf(node, topLevel, ctx, progressPkg.Type, "progress", progressPkg.CompileCSS, progressPkg.BuildView)
 }
@@ -853,7 +876,10 @@ func formViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeV
 
 // listViewOf 转换 list 节点（对应 Component.Render 流程，无 Advanced 层）。
 func listViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeView, error) {
-	return leafViewOf(node, topLevel, ctx, listPkg.Type, "list", listPkg.CompileCSS, listPkg.BuildView)
+	// 闭包适配：同 card（审计 I18N-015）。
+	return leafViewOf(node, topLevel, ctx, listPkg.Type, "list", listPkg.CompileCSS, func(p *listPkg.Props) listPkg.View {
+		return listPkg.BuildView(p, ctx.ResolveSiteLink)
+	})
 }
 
 // infoboxViewOf 转换 infobox 节点（对应 Component.Render 流程，无 Advanced 层）。
@@ -1158,13 +1184,30 @@ func marqueeViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*no
 // 超限或循环引用立即报错——否则无限展开会指数级耗尽内存（OOM，而非栈溢出）。
 const maxBlockExpandDepth = 32
 
-// globalrefViewOf 转换 globalref 节点（对应 Component.Render 流程：占位或展开）。
-// 含循环引用与深度防护：同一块 ID 不允许嵌套展开（a→b→a），栈深超限报错。
+// globalrefViewOf 转换 core.globalref 节点（占位或展开）。
 func globalrefViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeView, error) {
 	blockID, err := globalrefPkg.BlockIDOf(node)
 	if err != nil {
 		return nil, fmt.Errorf("节点 %s: %w", node.ID, err)
 	}
+	return blockRefViewOf(node, topLevel, ctx, globalrefPkg.Type, "globalref", blockID)
+}
+
+// layoutSlotViewOf 转换 core.layoutSlot 节点：结构槽位的展开规则与 globalref 完全一致，
+// 只有类型与模板名不同 —— 防环、深度限制、ID 前缀重写都走同一份实现，
+// 免得这类安全约束只在一个入口生效。
+func layoutSlotViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeView, error) {
+	blockID, err := layoutslotPkg.BlockIDOf(node)
+	if err != nil {
+		return nil, fmt.Errorf("节点 %s: %w", node.ID, err)
+	}
+	return blockRefViewOf(node, topLevel, ctx, layoutslotPkg.Type, "layoutslot", blockID)
+}
+
+// blockRefViewOf 转换「引用全局块的节点」：占位渲染或展开块内容。
+//
+// 含循环引用与深度防护：同一块 ID 不允许嵌套展开（a→b→a），栈深超限报错。
+func blockRefViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext, refType, template, blockID string) (*nodeView, error) {
 	for _, id := range ctx.BlockStack {
 		if id == blockID {
 			return nil, fmt.Errorf("节点 %s: 全局块循环引用（%s → %s）", node.ID, strings.Join(ctx.BlockStack, " → "), blockID)
@@ -1181,12 +1224,8 @@ func globalrefViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*
 
 	if view.IsPlaceholder {
 		return &nodeView{
-			Type:     globalrefPkg.Type,
-			Template: "globalref",
-			NodeID:   node.ID,
-			Classes:  core.NodeClass(node.ID),
-			TopLevel: topLevel,
-			V:        view,
+			Type: refType, Template: template, NodeID: node.ID,
+			Classes: core.NodeClass(node.ID), TopLevel: topLevel, V: view,
 		}, nil
 	}
 
@@ -1195,28 +1234,22 @@ func globalrefViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*
 	ctx.BlockStack = append(ctx.BlockStack, blockID)
 	children := make([]*nodeView, 0, len(roots))
 	for _, r := range roots {
-		cv, err := nodeViewOf(r, false, ctx)
-		if err != nil {
+		cv, cerr := nodeViewOf(r, false, ctx)
+		if cerr != nil {
 			ctx.BlockStack = ctx.BlockStack[:len(ctx.BlockStack)-1]
-			return nil, err
+			return nil, cerr
 		}
 		children = append(children, cv)
 	}
 	ctx.BlockStack = ctx.BlockStack[:len(ctx.BlockStack)-1]
 
 	return &nodeView{
-		Type:     globalrefPkg.Type,
-		Template: "globalref",
-		NodeID:   node.ID,
-		Classes:  core.NodeClass(node.ID),
-		TopLevel: topLevel,
-		Children: children,
-		V:        view,
+		Type: refType, Template: template, NodeID: node.ID,
+		Classes: core.NodeClass(node.ID), TopLevel: topLevel,
+		Children: children, V: view,
 	}, nil
 }
 
-// renderView 用 Jet 渲染单个 nodeView 树到 w（递归由 container.jet 的 include 驱动）。
-// Go 侧只渲染根 view：子节点由 Jet 模板内的 include 递归展开，等价旧 render 的递归。
 func renderView(set *jet.Set, root *nodeView, w io.Writer) error {
 	tpl, err := set.GetTemplate(root.Template)
 	if err != nil {

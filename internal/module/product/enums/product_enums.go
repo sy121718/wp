@@ -11,14 +11,14 @@ const (
 	// MsgVariantGenerateSuccess 变体组合生成成功（issue #8）。
 	MsgVariantGenerateSuccess = "MsgVariantGenerateSuccess"
 
-	ErrInvalidParam = "ErrInvalidParam" // 参数错误
-	ErrInvalidType  = "ErrInvalidType"  // 实体类型不合法（构建期字段解析）
-	ErrInvalidField = "ErrInvalidField" // 字段不在商品字段白名单内
-	ErrNotFound     = "ErrNotFound"     // 商品或变体不存在
-	ErrSlugTaken    = "ErrSlugTaken"    // 同工程下 slug 已占用
-	ErrSkuTaken            = "ErrSkuTaken"            // 同商品下 SKU 编码已占用
-	ErrVariantHasStock     = "ErrVariantHasStock"     // 变体仍有库存，不能删除（请改为停用）
-	ErrNameRequired = "ErrNameRequired" // 商品名称必填
+	ErrInvalidParam    = "ErrInvalidParam"    // 参数错误
+	ErrInvalidType     = "ErrInvalidType"     // 实体类型不合法（构建期字段解析）
+	ErrInvalidField    = "ErrInvalidField"    // 字段不在商品字段白名单内
+	ErrNotFound        = "ErrNotFound"        // 商品或变体不存在
+	ErrSlugTaken       = "ErrSlugTaken"       // 同工程下 slug 已占用
+	ErrSkuTaken        = "ErrSkuTaken"        // 同商品下 SKU 编码已占用
+	ErrVariantHasStock = "ErrVariantHasStock" // 变体仍有库存，不能删除（请改为停用）
+	ErrNameRequired    = "ErrNameRequired"    // 商品名称必填
 
 	// —— 属性组（issue #7）——
 	ErrAttrNameRequired      = "ErrAttrNameRequired"      // 属性组名称必填

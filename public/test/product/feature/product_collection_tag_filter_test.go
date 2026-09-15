@@ -64,7 +64,7 @@ func TestProductCollectionMultiTagAndOnSale(t *testing.T) {
 	}
 
 	// 在售：给「只要热卖」的变体设划线价（高于售价）→ 只有它命中。
-	detail, derr := f.products.Get(ctx, &productdto.GetReq{ID: onlyHotID})
+	detail, derr := f.products.Get(ctx, &productdto.GetReq{ProjectID: f.projectID, ID: onlyHotID})
 	if derr != nil {
 		t.Fatalf("读商品失败: %v", derr)
 	}

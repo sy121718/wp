@@ -14,7 +14,7 @@ import (
 
 	"gorm.io/gorm"
 
-	maildto "go_wp/internal/module/mail/dto"
+	mailcontract "go_wp/internal/module/mail/contract"
 	userdto "go_wp/internal/module/user/dto"
 	usermodel "go_wp/internal/module/user/model"
 	userservice "go_wp/internal/module/user/service"
@@ -24,16 +24,16 @@ import (
 
 // fakeMail 记录被调用的邮件请求。
 type fakeMail struct {
-	calls []*maildto.SendTemplateReq
+	calls []*mailcontract.SendInput
 	fail  bool
 }
 
-func (f *fakeMail) SendTemplate(_ context.Context, req *maildto.SendTemplateReq) (*maildto.SendResult, error) {
+func (f *fakeMail) SendTransactional(_ context.Context, in *mailcontract.SendInput) (*mailcontract.SendOutcome, error) {
 	if f.fail {
 		return nil, errMailDown
 	}
-	f.calls = append(f.calls, req)
-	return &maildto.SendResult{Queued: true, To: req.To}, nil
+	f.calls = append(f.calls, in)
+	return &mailcontract.SendOutcome{Queued: true}, nil
 }
 
 var errMailDown = &mailUnavailable{}
@@ -45,7 +45,6 @@ func (m *mailUnavailable) Error() string { return "邮件服务不可用（测�
 type userFixture struct {
 	svc   *userservice.Service
 	m     *usermodel.UserModel
-	sm    *usermodel.UserSessionModel
 	pm    *usermodel.UserProfileModel
 	prefm *usermodel.UserPreferenceModel
 	mail  *fakeMail
@@ -62,14 +61,12 @@ func newUserFixture(t *testing.T) *userFixture {
 		t.Fatalf("执行生产迁移建表失败: %v", err)
 	}
 	m := usermodel.NewUserModel(db)
-	sm := usermodel.NewUserSessionModel(db)
 	pm := usermodel.NewUserProfileModel(db)
 	prefm := usermodel.NewUserPreferenceModel(db)
 	fm := &fakeMail{}
 	return &userFixture{
-		svc:   userservice.NewService(m, sm, pm, prefm, fm, "测试站"),
+		svc:   userservice.NewService(m, pm, prefm, fm, "测试站"),
 		m:     m,
-		sm:    sm,
 		pm:    pm,
 		prefm: prefm,
 		mail:  fm,

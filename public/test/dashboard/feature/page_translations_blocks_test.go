@@ -86,7 +86,7 @@ func newBlockTranslationEnv(t *testing.T) (*gin.Engine, *gorm.DB, string, string
 		header.ID, promo.ID)
 	insertTranslationPage(t, db, pageID, project.ID, "/block-tr", doc)
 
-	pages := pageservice.NewService(pagemodel.NewPageModel(db), nil, nil, nil, nil, nil, nil, nil, nil)
+	pages := pageservice.NewService(pagemodel.NewPageModel(db), nil, nil, projects, nil, nil, nil, nil, nil)
 	handle := dashboardhttp.NewHandle(pages, projects, blocks, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	handle.SetContentTranslationStore(i18n.NewContentWriter(db))
 

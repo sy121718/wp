@@ -40,7 +40,7 @@ func (h *Handle) AutomationSave(c *gin.Context) {
 	req.OperatorID = operatorID(c)
 	item, err := h.svc.SaveAutomation(c.Request.Context(), &req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "mail", err)
 		return
 	}
 	response.Success(c, item)
@@ -56,7 +56,7 @@ func (h *Handle) AutomationLayout(c *gin.Context) {
 		return
 	}
 	if err := h.svc.SaveAutomationLayout(c.Request.Context(), &req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "mail", err)
 		return
 	}
 	response.SuccessWithMessage(c, mailenums.MsgSaveSuccess, nil)
@@ -70,7 +70,7 @@ func (h *Handle) AutomationList(c *gin.Context) {
 		PageSize: parseInt(c.Query("pageSize"), 20),
 	})
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "mail", err)
 		return
 	}
 	response.Success(c, res)
@@ -80,7 +80,7 @@ func (h *Handle) AutomationList(c *gin.Context) {
 func (h *Handle) AutomationGet(c *gin.Context) {
 	item, err := h.svc.GetAutomation(c.Request.Context(), parseID(c.Query("id")))
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "mail", err)
 		return
 	}
 	response.Success(c, item)
@@ -95,7 +95,7 @@ func (h *Handle) AutomationStatus(c *gin.Context) {
 	}
 	req.OperatorID = operatorID(c)
 	if err := h.svc.SetAutomationStatus(c.Request.Context(), &req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "mail", err)
 		return
 	}
 	response.SuccessWithMessage(c, mailenums.MsgSaveSuccess, nil)
@@ -104,7 +104,7 @@ func (h *Handle) AutomationStatus(c *gin.Context) {
 // AutomationDelete 删除流程（进行中的实例会先被停止）。
 func (h *Handle) AutomationDelete(c *gin.Context) {
 	if err := h.svc.DeleteAutomation(c.Request.Context(), parseID(c.Query("id"))); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "mail", err)
 		return
 	}
 	response.SuccessWithMessage(c, mailenums.MsgDeleteSuccess, nil)
@@ -123,7 +123,7 @@ func (h *Handle) AutomationStartRun(c *gin.Context) {
 	req.OperatorID = operatorID(c)
 	started, err := h.svc.StartRun(c.Request.Context(), req.AutomationID, req.ContactID, "manual")
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "mail", err)
 		return
 	}
 	if !started {
@@ -142,7 +142,7 @@ func (h *Handle) AutomationRunList(c *gin.Context) {
 		PageSize:     parseInt(c.Query("pageSize"), 20),
 	})
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "mail", err)
 		return
 	}
 	response.Success(c, res)
@@ -152,7 +152,7 @@ func (h *Handle) AutomationRunList(c *gin.Context) {
 func (h *Handle) AutomationRunDetail(c *gin.Context) {
 	res, err := h.svc.AutomationRunDetail(c.Request.Context(), parseID(c.Query("id")))
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "mail", err)
 		return
 	}
 	response.Success(c, res)
@@ -162,7 +162,7 @@ func (h *Handle) AutomationRunDetail(c *gin.Context) {
 func (h *Handle) AutomationTick(c *gin.Context) {
 	n, err := h.svc.EnqueueDueRuns(c.Request.Context(), parseInt(c.Query("limit"), 200))
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "mail", err)
 		return
 	}
 	response.Success(c, gin.H{"queued": n})

@@ -269,7 +269,7 @@ func TestAttributeGroupReusedByMultipleProducts(t *testing.T) {
 		t.Fatalf("更新属性值失败: %v", err)
 	}
 	for _, id := range []string{p1.ID, p2.ID} {
-		got, gerr := f.svc.Get(ctx, &productdto.GetReq{ID: id})
+		got, gerr := f.svc.Get(ctx, &productdto.GetReq{ProjectID: f.projectID, ID: id})
 		if gerr != nil {
 			t.Fatalf("读商品失败: %v", gerr)
 		}

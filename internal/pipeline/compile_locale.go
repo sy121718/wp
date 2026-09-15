@@ -20,7 +20,10 @@ func LocaleCompileOptions(lang string) []builder.CompileOption {
 }
 
 // ContentTranslatorFactory 构造内容译文取词器（page 可注入存储，presentation 走默认存储）。
-type ContentTranslatorFactory func(ctx context.Context, lang string, hashes []string) *i18n.ContentTranslator
+//
+// projectID 为本次构建的站点工程（审计 I18N-009）：取词按「本工程行优先、未命中回落
+// 全局行」；空值表示调用方没有工程上下文（等价于接入工程作用域之前的行为）。
+type ContentTranslatorFactory func(ctx context.Context, projectID, lang string, hashes []string) *i18n.ContentTranslator
 
 // AppendContentTranslation 非默认语言时收集候选并追加 WithContentTranslator（P5b）。
 //
@@ -43,7 +46,7 @@ func AppendContentTranslation(
 		return out, nil, 0
 	}
 	candidates = len(cands)
-	translator = makeTranslator(ctx, lang, builder.ContentHashes(cands))
+	translator = makeTranslator(ctx, projectID, lang, builder.ContentHashes(cands))
 	return append(out, builder.WithContentTranslator(translator)), translator, candidates
 }
 

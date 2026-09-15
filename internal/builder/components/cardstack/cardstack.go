@@ -416,7 +416,7 @@ func collectionListPageLink(source string, p *Props, ctx *core.RenderContext) (h
 	default:
 		return false, "", ""
 	}
-	href = strings.TrimSpace(ctx.SitePages[slot])
+	href = strings.TrimSpace(ctx.SitePage(slot))
 	if href == "" {
 		return false, "", ""
 	}

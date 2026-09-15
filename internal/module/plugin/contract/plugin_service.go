@@ -4,8 +4,8 @@ package plugincontract
 import (
 	"context"
 
-	"go_wp/internal/builder/core"
 	"go_wp/internal/builder/plugincomp"
+	"go_wp/internal/builder/source"
 	admincontract "go_wp/internal/module/admin/contract"
 	plugindto "go_wp/internal/module/plugin/dto"
 	"go_wp/internal/templates"
@@ -22,6 +22,7 @@ type (
 )
 
 // PluginService 插件管理契约：安装/列表/启停/卸载 + 编译装配查询。
+// 英文入口：docs/plugin-development.en.md。
 //
 // 编译装配（EnabledAssembly）供 dashboard 预览与 page 构建路径注入：
 // 返回启用插件的模板文件系统 + 组件规格 + 检查器 schema 的合并素材。
@@ -45,11 +46,23 @@ type PluginService interface {
 }
 
 // Assembly 编译装配素材（按启用插件集构建，确定性：同插件版本集恒定）。
+// 英文入口：docs/plugin-development.en.md。
 type Assembly struct {
+	// Fingerprint 启用插件集指纹（由 plugin service 计算，审计 PERF-006）。
+	//
+	// 用途是让下游按「同一启用集」复用重型派生物（Jet Set = 模板解析结果）。
+	// 空串表示调用方没有提供指纹 —— 下游必须退化为「每次都重建」，
+	// 不能把空串当成一个合法版本（否则所有实例会共享同一个缓存槽）。
+	Fingerprint string
 	// PluginFS 插件模板文件系统（templates.NewCompositeSet 的输入）。
 	PluginFS []templates.PluginFS
 	// Specs 组件规格（构建 resolver 的素材，键 = 完整类型标识）。
-	Specs map[string]*core.PluginComponentSpec
+	//
+	// 类型取 source.PluginComponentSpec（零依赖共享形状包）而不是 core 里的同名类型：
+	// 契约包不得反向 import builder/core（AGENTS.md 不变量 7，一旦反向即成环，
+	// core 就再也无法持有业务契约）。core 侧的同名类型是它的别名，
+	// 装配层写 core.Xxx 与这里指的是**同一份定义**，不需要任何转换。
+	Specs map[string]*source.PluginComponentSpec
 	// InspectorSchemas 检查器 schema（与内置 ComponentSchemas 合并进 wb-schemas）。
 	InspectorSchemas map[string][]byte
 	// Components 工作台组件库摘要（palette 注入）。
@@ -62,23 +75,29 @@ type Assembly struct {
 }
 
 // ManifestAlias manifest 类型的模块间传递形态（详情接口暴露）。
+// 英文入口：docs/plugin-development.en.md。
 type ManifestAlias = plugincomp.Manifest
 
-// pluginSpecResolver 实现 core.PluginResolver：按类型标识查组件规格。
-type pluginSpecResolver map[string]*core.PluginComponentSpec
+// pluginSpecResolver 实现 source.PluginResolver：按类型标识查组件规格。
+type pluginSpecResolver map[string]*source.PluginComponentSpec
 
-// LookupPluginComponent 见 core.PluginResolver。
-func (m pluginSpecResolver) LookupPluginComponent(typeName string) (*core.PluginComponentSpec, bool) {
+// LookupPluginComponent 见 source.PluginResolver。
+func (m pluginSpecResolver) LookupPluginComponent(typeName string) (*source.PluginComponentSpec, bool) {
 	spec, ok := m[typeName]
 	return spec, ok
 }
 
-// AssemblyResolver 构建 core.PluginResolver（nil 安全：无插件时返回空 resolver）。
+// AssemblyResolver 构建 source.PluginResolver（nil 安全：无插件时返回空 resolver）。
+// 英文入口：docs/plugin-development.en.md。
+//
+// 返回值可直接喂 builder.WithPluginResolver：core.PluginResolver 是
+// source.PluginResolver 的别名（共享形状在 source，见 AGENTS.md 不变量 7），
+// 两边是同一个接口类型，装配处不需要适配层。
 //
 // 放在 contract 包而非 service 包：page / dashboard 构建路径需要把 Assembly
 // 注入 builder，若直接依赖 plugin/service 的工厂函数，将违反「跨模块只依赖
 // contract」约束。Assembly 类型本就在 contract 包，工厂贴近定义处更合理。
-func AssemblyResolver(a *Assembly) core.PluginResolver {
+func AssemblyResolver(a *Assembly) source.PluginResolver {
 	if a == nil || len(a.Specs) == 0 {
 		return pluginSpecResolver{}
 	}

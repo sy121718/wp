@@ -260,7 +260,13 @@ func (s *LocalPublicationStore) AuditActiveLinks() (issues []ActiveLinkIssue, ch
 		if d.IsDir() {
 			return nil
 		}
-		// active 目录里的一切映射都应是指向 artifacts/ 的符号链接。
+		// 站点级真实文件（sitemap.xml / robots.txt / feed.xml / 404.html）不是异常：
+		// 它们由发布链写在激活目录根，没有对应的站点路径可挂，只能以真实文件落地
+		// （白名单与理由见 notfound.go）。只认根层，深层同名条目照旧受检。
+		if rel, rerr := filepath.Rel(s.ActiveRoot, path); rerr == nil && IsSiteRootFile(rel) {
+			return nil
+		}
+		// 其余一切映射都应是指向 artifacts/ 的符号链接。
 		if d.Type()&os.ModeSymlink == 0 {
 			issues = append(issues, ActiveLinkIssue{
 				URLPath: activeRelToURL(s.ActiveRoot, path),

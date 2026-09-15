@@ -18,8 +18,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
 	"gorm.io/gorm"
+
+	"go_wp/internal/pipeline"
 
 	pagedto "go_wp/internal/module/page/dto"
 	pageenums "go_wp/internal/module/page/enums"
@@ -108,14 +109,33 @@ func (s *Service) BindSiteSlot(ctx context.Context, req *pagedto.SiteSlotBindReq
 	}
 	now := time.Now().UTC()
 	if err = s.model.UpsertSiteSlot(ctx, &pagemodel.SiteSlotEntity{
-		ID: uuid.NewString(), ProjectID: projectID, Slot: slot, PageID: pageID,
-		CreatedAt: now, UpdatedAt: now,
+		ProjectID: projectID, Slot: slot, PageID: pageID,
+		CreateTime: now, UpdatedAt: now,
 	}); err != nil {
 		return err
 	}
-	// 槽位变了 → 把槽位路径烘进链接的产物全部过期。
-	// 精确影响集合只有构建期才知道（页面文档里没有「我用了哪些槽位」的声明），
-	// 所以按工程全量标记；这个入口的频率是「人工点保存」，不是热路径。
+	// 槽位换了 → 把该槽位路径烘进链接的产物过期。
+	//
+	// 影响集合来自构建期记录的 site_slot 依赖（审计 VIS-006）：只有真的引用了这个槽位的
+	// 页面才需要重建。此前是整个工程全量标记 —— 大站点上「改一次结算页绑定」等于全站重建。
+	// 依赖表里一条都没有（页面从未构建过）时退回全量标记：宁可多标，不可漏标。
+	return s.markProjectStaleForSlot(ctx, projectID, slot, now)
+}
+
+// markProjectStaleForSlot 标记「引用了该槽位」的页面待重建（审计 VIS-006）。
+//
+// 依赖记录里的 site_slot 条目是构建期写入的（页面真的渲染过该槽位的链接），
+// 因此「只标记受影响的页面」与「不漏标」是同一件事：查得到就精确标，查不到就退回全量。
+func (s *Service) markProjectStaleForSlot(ctx context.Context, projectID, slot string, now time.Time) error {
+	ids, err := s.MarkStaleByDependency(ctx, pipeline.DepKindSiteSlot, slot)
+	if err != nil {
+		return err
+	}
+	if len(ids) > 0 {
+		return nil
+	}
+	// 没有任何页面登记过这个槽位依赖：可能确实没人用，也可能页面还没构建过
+	// （依赖随构建写入）。这两种情况无法从依赖表区分，因此按工程兜底标记。
 	return s.model.MarkStaleForProject(ctx, projectID, now)
 }
 
@@ -135,7 +155,8 @@ func (s *Service) UnbindSiteSlot(ctx context.Context, req *pagedto.SiteSlotUnbin
 	if _, err = s.model.DeleteSiteSlot(ctx, projectID, slot); err != nil {
 		return err
 	}
-	return s.model.MarkStaleForProject(ctx, projectID, time.Now().UTC())
+	// 解绑同样是「该槽位的链接失效」：按依赖精确标记（见 markProjectStaleForSlot）。
+	return s.markProjectStaleForSlot(ctx, projectID, slot, time.Now().UTC())
 }
 
 // ResolveSitePages 解析「槽位 → 当前语言线上路径」，只含已发布的绑定。

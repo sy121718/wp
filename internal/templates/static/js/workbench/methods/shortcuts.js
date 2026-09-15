@@ -31,7 +31,7 @@ export const shortcutsMethods = {
                 }
                 switch (e.key.toLowerCase()) {
                     case 's': this.saveDraft(); e.preventDefault(); break;                 // 存草稿
-                    case 'p': this.immersive = !this.immersive; e.preventDefault(); break;  // 沉浸折叠
+                    case 'p': this.toggleImmersive(); e.preventDefault(); break;  // 聚焦模式
                     case 'z': e.shiftKey ? this.redo() : this.undo(); e.preventDefault(); break;
                     case 'y': this.redo(); e.preventDefault(); break;
                     case 'd': this.duplicate(); e.preventDefault(); break;
@@ -236,11 +236,7 @@ export const shortcutsMethods = {
                     },
                     'wb-undo': function () { self.undo(); self.renderUI(); },
                     'wb-redo': function () { self.redo(); self.renderUI(); },
-                    'wb-immersive': function () {
-                        self.immersive = !self.immersive;
-                        document.getElementById('wb-main').classList.toggle('is-immersive', self.immersive);
-                        this.textContent = self.immersive ? '退出沉浸模式' : '沉浸模式 (Ctrl+P)';
-                    }
+                    'wb-immersive': function () { self.toggleImmersive(); }
                 };
                 Object.keys(controls).forEach(function (id) {
                     var button = document.getElementById(id);
@@ -252,5 +248,15 @@ export const shortcutsMethods = {
                     self.bindCanvasDrop();
                     self.markTreeSelection();
                 });
+            },
+            toggleImmersive() {
+                this.immersive = !this.immersive;
+                var main = document.getElementById('wb-main');
+                var button = document.getElementById('wb-immersive');
+                if (main) main.classList.toggle('is-immersive', this.immersive);
+                if (button) {
+                    button.setAttribute('aria-pressed', this.immersive ? 'true' : 'false');
+                    button.textContent = this.immersive ? '退出聚焦模式' : '聚焦模式 (Ctrl+P)';
+                }
             }
 };

@@ -16,6 +16,16 @@
   margin: 0 calc(-{{gap}} / 2);
 }
 
+/* 轨道：必须自身是 flex 容器，下面 .sky-slide 的 flex-basis 才有意义。
+   此前这里没有任何规则 —— 轨道作为根节点（display:flex）的 flex item 被收缩到
+   内容宽度（浏览器实测 72px），slide 的 flex-basis:100% 失去基准，整个轮播不产生
+   横向溢出（root 的 scrollWidth == clientWidth，翻页与方向键都看不出效果）。
+   width:100% 让它撑满根节点的内容宽，slide 才是「一屏一张」。 */
+& .sky-slider-track {
+  display: flex;
+  width: 100%;
+}
+
 & .sky-slide {
   flex: 0 0 {{slideDesktop}};
   scroll-snap-align: start;
@@ -81,7 +91,12 @@
   z-index: 2;
 }
 
-& .sky-slider-dots button {
+/* 圆点：模板输出的是 <a class="sky-slider-dot" href="#sky-slide-…"> 锚点（零 JS 也能跳转），
+   这里原先写成 button 选择器，与产物对不上 —— 圆点既没有尺寸也没有焦点环，
+   浏览器按原生链接画成带下划线的文字。选择器改成与实际元素一致。
+   尺寸仍按原设计 8px（不改视觉），命中区由外层 .sky-slider-dots 的 gap 承担。 */
+& .sky-slider-dot {
+  display: block;
   width: 8px;
   height: 8px;
   border-radius: 999px;
@@ -91,6 +106,20 @@
   padding: 0;
 }
 
-& .sky-slider-dots button.is-active {
+& .sky-slider-dot.is-active {
   background: currentColor;
+}
+
+/* 键盘可见焦点：容器与箭头、圆点各画一处焦点环（与组件库其余组件同一套令牌）。
+   容器可聚焦是键盘路径的入口（模板 tabindex="0"），方向键切换见 enhance.js。 */
+&:focus-visible {
+  @focus-ring;
+}
+
+& .sky-slider-arrow:focus-visible {
+  @focus-ring;
+}
+
+& .sky-slider-dot:focus-visible {
+  @focus-ring;
 }

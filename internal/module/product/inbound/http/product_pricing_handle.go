@@ -36,7 +36,7 @@ func (h *Handle) PreviewPricing(c *gin.Context) {
 	}
 	res, err := h.svc.PreviewPricing(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
 		return
 	}
 	response.SuccessWithMessage(c, productenums.MsgPricingPreviewSuccess, res)
@@ -53,7 +53,7 @@ func (h *Handle) ApplyPricing(c *gin.Context) {
 	req.OperatorID = operatorFromContext(c)
 	res, err := h.svc.ApplyPricing(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
 		return
 	}
 	response.SuccessWithMessage(c, productenums.MsgPricingApplySuccess, res)
@@ -68,7 +68,7 @@ func (h *Handle) ListPriceAdjustments(c *gin.Context) {
 	}
 	list, err := h.svc.ListPriceAdjustments(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
 		return
 	}
 	response.SuccessWithMessage(c, productenums.MsgListSuccess, list)
@@ -83,7 +83,7 @@ func (h *Handle) GetPriceAdjustment(c *gin.Context) {
 	}
 	res, err := h.svc.GetPriceAdjustment(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusNotFound, err.Error())
+		response.ErrorAuto(c, http.StatusNotFound, "product", err)
 		return
 	}
 	response.SuccessWithMessage(c, productenums.MsgDetailSuccess, res)

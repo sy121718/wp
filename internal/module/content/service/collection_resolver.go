@@ -26,25 +26,30 @@ func (s *Service) ResolveCollection(ctx context.Context, source string, filter m
 	if !ok || !contentcontract.IsValidType(entityType) {
 		return nil, fmt.Errorf("%s: %q（期望 content:{product|article|category}）", contentenums.ErrInvalidType, source)
 	}
-	rows, err := s.m.List(ctx, entityType, 100, 0)
+	// 列投影 + 筛选下推（审计 PERF-008）：此前先 List 取回 100 行**整行**（data 里含正文
+	// 全文）再在 Go 里过滤，等于为了渲染几张卡片把正文都读了一遍。
+	// 投影字段取集合白名单（自动排除 body / focusKeyword），筛选条件下沉成 SQL。
+	fields := contentcontract.CollectionFieldWhitelist(entityType)
+	rows, err := s.m.ListForCollection(ctx, entityType, fields, filter, 0)
 	if err != nil {
 		return nil, err
 	}
 	items = make([]map[string]any, 0, len(rows))
 	for _, r := range rows {
-		data := map[string]any{}
-		if uerr := json.Unmarshal(r.Data, &data); uerr != nil {
-			return nil, fmt.Errorf("%s: %w", contentenums.ErrDataInvalid, uerr)
+		out := map[string]any{}
+		if len(r.Fields) > 0 {
+			if uerr := json.Unmarshal(r.Fields, &out); uerr != nil {
+				return nil, fmt.Errorf("%s: %w", contentenums.ErrDataInvalid, uerr)
+			}
 		}
-		// 过滤（等值匹配；键已由组件声明白名单约束）。
-		if !matchFilter(data, filter) {
+		// 复查（防御，不是主路径）：筛选已下推到 SQL，这里再比一次是为了让
+		// 「SQL 表达得对不对」永远不改变最终结果 —— 一旦下推的条件与内存语义有偏差，
+		// 表现是少渲染几张卡片（复查会拦下），而不是渲染出不该出现的条目。
+		if !matchFilter(out, filter) {
 			continue
 		}
 		// 注入系统字段（id/slug/revision 供模板展示）。
-		out := map[string]any{"id": r.ID, "slug": r.Slug, "revision": r.Revision}
-		for k, v := range data {
-			out[k] = v
-		}
+		out["id"], out["slug"], out["revision"] = r.ID, r.Slug, r.Revision
 		items = append(items, out)
 	}
 	return items, nil
@@ -70,7 +75,10 @@ func (s *Service) CollectionSchemas(_ context.Context) ([]core.CollectionSchema,
 		out = append(out, core.CollectionSchema{
 			Source: collectionSourcePrefix + t,
 			Label:  entityTypeLabel(t),
-			Fields: contentcontract.FieldWhitelist(t),
+			// 集合项字段用**集合白名单**：下拉里不该出现正文与主关键词，
+			// 它们既不在查询投影里、也不会被渲染。三处（下拉 / 构建期校验 / SQL 投影）
+			// 共用这一个定义，才不会出现「选得到、构建出来是空」的静默失败。
+			Fields: contentcontract.CollectionFieldWhitelist(t),
 		})
 	}
 	return out, nil

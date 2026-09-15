@@ -14,9 +14,9 @@ import (
 
 	"gorm.io/gorm"
 
+	ordercontract "go_wp/internal/module/order/contract"
 	orderenums "go_wp/internal/module/order/enums"
 	ordermodel "go_wp/internal/module/order/model"
-	inventorydto "go_wp/internal/module/product/inventory/dto"
 )
 
 // persistOrder ①：订单头 + 订单项 + 流转流水 + 券核销，一个事务。
@@ -58,16 +58,16 @@ func (s *Service) persistOrder(ctx context.Context, d *orderDraft) error {
 // 调用方已经要拿到「库存不足 / 服务不可用」这个结论了，再叠一个补偿错误
 // 只会让原因看不出主次。
 func (s *Service) deductStockOrCompensate(ctx context.Context, d *orderDraft) error {
-	lines := make([]inventorydto.StockChangeLineReq, 0, len(d.items))
+	lines := make([]ordercontract.StockLine, 0, len(d.items))
 	for _, it := range d.items {
-		lines = append(lines, inventorydto.StockChangeLineReq{
+		lines = append(lines, ordercontract.StockLine{
 			ProductID: it.ProductID,
 			VariantID: it.VariantID,
 			SKUCode:   it.SKU,
 			Quantity:  it.Quantity,
 		})
 	}
-	_, dErr := s.stock.DeductStock(ctx, &inventorydto.DeductStockReq{
+	dErr := s.stock.DeductStock(ctx, &ordercontract.StockDeduction{
 		ProjectID:  d.projectID,
 		ReasonCode: "sale_out",
 		SourceType: "order",

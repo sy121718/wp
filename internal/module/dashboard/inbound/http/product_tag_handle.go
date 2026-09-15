@@ -43,7 +43,7 @@ func (h *productPageHandle) ProductTagsPage(c *gin.Context) {
 	ctx := c.Request.Context()
 	projects, err := h.projects.List(ctx)
 	if err != nil {
-		c.String(http.StatusInternalServerError, err.Error())
+		pageError(c, "product_tag", err)
 		return
 	}
 	selected := strings.TrimSpace(c.Query("project"))
@@ -52,7 +52,7 @@ func (h *productPageHandle) ProductTagsPage(c *gin.Context) {
 	}
 	tags, terr := h.listTags(ctx, selected)
 	if terr != nil {
-		c.String(http.StatusInternalServerError, terr.Error())
+		pageError(c, "product_tag", terr)
 		return
 	}
 	// 每个标签再取一次详情拿命中商品（验收 4）：列表接口为了保持轻量只给数量，

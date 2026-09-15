@@ -23,11 +23,11 @@ const (
 
 // PageEntity 对应 pages 表的手工 Page 字段。
 type PageEntity struct {
-	ID                string          `gorm:"column:id;type:uuid;primaryKey"`
-	ProjectID         string          `gorm:"column:project_id;type:uuid;not null"`
+	ID        string `gorm:"column:id;type:uuid;primaryKey"`
+	ProjectID string `gorm:"column:project_id;type:uuid;not null"`
 	// ThemeID 工程当前激活主题的快照；激活主题时 ReattachProjectPagesToTheme 会全工程转挂，
 	// 不支持页面级异主题 —— 勿当作「每页可选主题」维度。
-	ThemeID *string `gorm:"column:theme_id;type:uuid"`
+	ThemeID           *string         `gorm:"column:theme_id;type:uuid"`
 	Kind              string          `gorm:"column:kind;type:text;not null"`
 	ContentTargetType string          `gorm:"column:content_target_type;type:text;not null"`
 	ContentTargetID   *string         `gorm:"column:content_target_id;type:uuid"`
@@ -312,6 +312,51 @@ func (m *Model) GetByID(ctx context.Context, id, projectID string) (e *PageEntit
 func (m *Model) ListRevisions(ctx context.Context, pageID string) (list []RevisionEntity, err error) {
 	err = m.RevisionDB(ctx).Where("page_id = ?", pageID).Order("version DESC").Find(&list).Error
 	return list, err
+}
+
+// PruneRevisions 把单页的历史快照收敛到「最近 keep 个」，返回删除行数。
+//
+// 保存草稿后顺手调用（IDX-005）：改一次存一份完整 draft_document，高频编辑的页面
+// 会把表撑起来，而保留条数之外的历史版本本来就是给回退用的、不需要无限留着。
+// 只按条数收敛、不看时间：编辑者刚存的那几个版本必须都在。
+func (m *Model) PruneRevisions(ctx context.Context, pageID string, keep int) (int64, error) {
+	if strings.TrimSpace(pageID) == "" || keep < 1 {
+		return 0, nil
+	}
+	var threshold int
+	err := m.RevisionDB(ctx).Where("page_id = ?", pageID).
+		Order("version DESC").Offset(keep-1).Limit(1).
+		Pluck("version", &threshold).Error
+	if err != nil || threshold <= 1 {
+		// 没有第 keep 个版本（说明总数还不够）→ 无可收敛。
+		return 0, err
+	}
+	res := m.RevisionDB(ctx).Where("page_id = ? AND version < ?", pageID, threshold).Delete(&RevisionEntity{})
+	_ = threshold
+	return res.RowsAffected, res.Error
+}
+
+// DeleteStaleRevisions 全库分批清理「超出保留条数**且**早于保留期」的历史快照。
+//
+// 两个条件同时满足才删，是刻意的保守取舍：
+//   - 只看条数：刚发布后密集保存的版本会被立刻删掉，而这正是编辑者要回退的东西；
+//   - 只看时间：长期不编辑的页面反而留不住上限（老版本永远删不掉）。
+//
+// 已发布版本不在这里单独排除：page_revisions 没有「哪个版本已发布」的标记（发布状态在
+// publication / artifacts 侧），因此以保留期兜底 —— 保留期内的版本一律不动。
+func (m *Model) DeleteStaleRevisions(ctx context.Context, keep int, cutoff time.Time, limit int) (int64, error) {
+	if keep < 1 || limit < 1 {
+		return 0, nil
+	}
+	// ctid 定位：PostgreSQL 的 DELETE 不支持 LIMIT，用子查询挑出本批目标。
+	const q = `DELETE FROM page_revisions WHERE ctid IN (
+		SELECT ctid FROM (
+			SELECT ctid, row_number() OVER (PARTITION BY page_id ORDER BY version DESC) AS rn, created_at
+			FROM page_revisions
+		) t WHERE t.rn > ? AND t.created_at < ? LIMIT ?
+	)`
+	res := m.DB(ctx).Exec(q, keep, cutoff, limit)
+	return res.RowsAffected, res.Error
 }
 
 // CreateWithRevision 原子创建 Page 与初始 Revision。

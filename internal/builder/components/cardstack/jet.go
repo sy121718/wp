@@ -76,6 +76,8 @@ type View struct {
 	// ListSemantics 是否输出列表语义（track = role="list"、卡片 = role="listitem"）。
 	// deck 模式带翻页按钮与主卡切换，语义是轮播而非并列列表，故排除。
 	ListSemantics bool
+	// Labels 无障碍与控件文案（审计 I18N-010）：构建期由 ApplyI18n 按语言回填。
+	Labels CardstackLabels
 
 	// —— 列表页入口（系统页面槽位 blog / shop）——
 	//
@@ -118,7 +120,7 @@ func BuildView(node *core.Node, p *Props, ctx *core.RenderContext) (View, error)
 			Empty: len(cards) == 0, EmptyText: emptyText(p), HideEmpty: p.CollectionEmpty == "hide",
 			LinkText: linkText(p), Slide: slide, PageTotal: len(cards),
 			DeckVertical: deckVertical, DeckArrows: p.DeckArrows, DeckClickNext: p.DeckClick == deckClickNext,
-			ZoomGroup: zoomGroup(node.ID), ListSemantics: !deck,
+			ZoomGroup: zoomGroup(node.ID), ListSemantics: !deck, Labels: defaultCardstackLabels(),
 			HasListPageLink: hasListLink, ListPageLinkHref: listHref, ListPageLinkText: listText,
 		}, nil
 	}
@@ -134,7 +136,7 @@ func BuildView(node *core.Node, p *Props, ctx *core.RenderContext) (View, error)
 		Drag: drag, Deck: deck, DeckIndex: len(cards) / 2, DeckLoop: p.DeckLoop,
 		Slide: slide, PageTotal: len(cards),
 		DeckVertical: deckVertical, DeckArrows: p.DeckArrows, DeckClickNext: p.DeckClick == deckClickNext,
-		ZoomGroup: zoomGroup(node.ID), ListSemantics: !deck,
+		ZoomGroup: zoomGroup(node.ID), ListSemantics: !deck, Labels: defaultCardstackLabels(),
 	}, nil
 }
 

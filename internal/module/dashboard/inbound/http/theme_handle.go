@@ -221,10 +221,15 @@ func themeSnapshots(settings json.RawMessage) (themeJSON, structureJSON json.Raw
 			return nil, nil, err
 		}
 	}
-	structureJSON, err = json.Marshal(map[string]any{
+	fields := map[string]any{
 		"headerBlockId": s.HeaderBlockID,
 		"footerBlockId": s.FooterBlockID,
-	})
+	}
+	// 空 slots 不写：留一个 "slots":null 只是噪音，读取侧本来就按「空即无绑定」处理。
+	if len(s.Slots) > 0 {
+		fields["slots"] = s.Slots
+	}
+	structureJSON, err = json.Marshal(fields)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -296,6 +301,9 @@ type themeSettingsData struct {
 	// HeaderBlocks/FooterBlocks 该工程页眉/页脚候选块列表。
 	HeaderBlocks []blockOption
 	FooterBlocks []blockOption
+	// AnnouncementBlocks 公告条候选块；AnnouncementBlockID 当前绑定（审计 VIS-012）。
+	AnnouncementBlocks  []blockOption
+	AnnouncementBlockID string
 }
 
 // blockOption 页眉/页脚绑定候选下拉项。
@@ -308,23 +316,25 @@ type blockOption struct {
 // templateMap 转 Jet 模板键 map。
 func (d *themeSettingsData) templateMap() gin.H {
 	return gin.H{
-		"title":         d.Title,
-		"menu":          d.Menu,
-		"ThemeID":       d.ThemeID,
-		"ThemeName":     d.ThemeName,
-		"ProjectID":     d.ProjectID,
-		"PColor":        d.PColor,
-		"TColor":        d.TColor,
-		"BgColor":       d.BgColor,
-		"SColor":        d.SColor,
-		"BdColor":       d.BdColor,
-		"FontFamily":    d.FontFamily,
-		"ThemeSettings": d.ThemeSettingsJSON,
-		"Groups":        d.Groups,
-		"HeaderBlock":   d.HeaderBlockID,
-		"FooterBlock":   d.FooterBlockID,
-		"HeaderBlocks":  d.HeaderBlocks,
-		"FooterBlocks":  d.FooterBlocks,
+		"title":              d.Title,
+		"menu":               d.Menu,
+		"ThemeID":            d.ThemeID,
+		"ThemeName":          d.ThemeName,
+		"ProjectID":          d.ProjectID,
+		"PColor":             d.PColor,
+		"TColor":             d.TColor,
+		"BgColor":            d.BgColor,
+		"SColor":             d.SColor,
+		"BdColor":            d.BdColor,
+		"FontFamily":         d.FontFamily,
+		"ThemeSettings":      d.ThemeSettingsJSON,
+		"Groups":             d.Groups,
+		"HeaderBlock":        d.HeaderBlockID,
+		"FooterBlock":        d.FooterBlockID,
+		"HeaderBlocks":       d.HeaderBlocks,
+		"FooterBlocks":       d.FooterBlocks,
+		"AnnouncementBlocks": d.AnnouncementBlocks,
+		"AnnouncementBlock":  d.AnnouncementBlockID,
 	}
 }
 
@@ -340,6 +350,8 @@ type themeSettingsJSON struct {
 	builder.ThemeSettings
 	HeaderBlockID string `json:"headerBlockId,omitempty"`
 	FooterBlockID string `json:"footerBlockId,omitempty"`
+	// Slots 其余结构槽位的绑定（公告条 / 侧边栏等）：主题设置保存时与两个历史字段一起落库。
+	Slots map[string]string `json:"slots,omitempty"`
 }
 
 // ThemeSettings 单主题设置页。
@@ -394,6 +406,8 @@ func (h *Handle) loadThemeSettings(c *gin.Context, themeID string) *themeSetting
 	}
 	data.HeaderBlockID = s.HeaderBlockID
 	data.FooterBlockID = s.FooterBlockID
+	// 其余槽位（目前是公告条）从 slots 映射里取：加新槽位时这里与模板各加一行。
+	data.AnnouncementBlockID = s.Slots["announcement"]
 	// 字段分组：以原始 JSON 为准（保真，不经过结构体丢掉历史/未来的键）。
 	var rawSettings map[string]any
 	if len(theme.Settings) > 0 {
@@ -404,6 +418,7 @@ func (h *Handle) loadThemeSettings(c *gin.Context, themeID string) *themeSetting
 	if blocks, err := h.blocks.List(ctx, &blockcontract.ListReq{ProjectID: theme.ProjectID}); err == nil {
 		data.HeaderBlocks = []blockOption{{ID: "", Name: "（未设置）"}}
 		data.FooterBlocks = []blockOption{{ID: "", Name: "（未设置）"}}
+		data.AnnouncementBlocks = []blockOption{{ID: "", Name: "（未设置）"}}
 		for _, b := range blocks {
 			opt := blockOption{ID: b.ID, Name: b.Name, Kind: b.Kind}
 			switch b.Kind {
@@ -411,6 +426,8 @@ func (h *Handle) loadThemeSettings(c *gin.Context, themeID string) *themeSetting
 				data.HeaderBlocks = append(data.HeaderBlocks, opt)
 			case "footer":
 				data.FooterBlocks = append(data.FooterBlocks, opt)
+			case "announcement":
+				data.AnnouncementBlocks = append(data.AnnouncementBlocks, opt)
 			}
 		}
 	}
@@ -524,6 +541,7 @@ func (h *Handle) SaveThemeSettings(c *gin.Context) {
 		ThemeSettings: *ts,
 		HeaderBlockID: strings.TrimSpace(c.PostForm("headerBlockId")),
 		FooterBlockID: strings.TrimSpace(c.PostForm("footerBlockId")),
+		Slots:         themeSlotFormValues(c),
 	})
 	if err != nil {
 		response.ErrorWithMessage(c, http.StatusInternalServerError, dashboardenums.MsgInternalError)
@@ -548,6 +566,29 @@ func (h *Handle) SaveThemeSettings(c *gin.Context) {
 		return
 	}
 	c.Redirect(http.StatusSeeOther, "/admin/themes/settings?id="+themeID)
+}
+
+// themeSlotFormValues 收集表单里的结构槽位绑定（点分键 slots.<槽位名>）。
+//
+// 用前缀扫描而不是逐个 c.PostForm("slots.announcement")：主题设置页加一个槽位只需
+// 多一个 select，这里不必改 —— 而漏改一处就是「配了不生效」，且页面上看不出任何异常。
+func themeSlotFormValues(c *gin.Context) map[string]string {
+	const prefix = "slots."
+	_ = c.Request.ParseForm()
+	out := map[string]string{}
+	for key, values := range c.Request.PostForm {
+		if !strings.HasPrefix(key, prefix) || len(values) == 0 {
+			continue
+		}
+		slot := strings.TrimSpace(strings.TrimPrefix(key, prefix))
+		if id := strings.TrimSpace(values[0]); slot != "" && id != "" {
+			out[slot] = id
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 // ThemeRedirect 旧入口 /admin/theme 301 到新主题管理页。

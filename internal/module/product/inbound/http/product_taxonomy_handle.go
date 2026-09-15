@@ -23,7 +23,7 @@ func (h *Handle) CreateCategory(c *gin.Context) {
 	}
 	res, err := h.svc.CreateCategory(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
 		return
 	}
 	response.SuccessWithMessage(c, productenums.MsgCreateSuccess, res)
@@ -38,7 +38,7 @@ func (h *Handle) UpdateCategory(c *gin.Context) {
 	}
 	res, err := h.svc.UpdateCategory(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
 		return
 	}
 	response.SuccessWithMessage(c, productenums.MsgUpdateSuccess, res)
@@ -53,7 +53,7 @@ func (h *Handle) GetCategory(c *gin.Context) {
 	}
 	res, err := h.svc.GetCategory(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusNotFound, err.Error())
+		response.ErrorAuto(c, http.StatusNotFound, "product", err)
 		return
 	}
 	response.SuccessWithMessage(c, productenums.MsgDetailSuccess, res)
@@ -68,7 +68,7 @@ func (h *Handle) ListCategories(c *gin.Context) {
 	}
 	list, err := h.svc.ListCategories(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
 		return
 	}
 	response.SuccessWithMessage(c, productenums.MsgListSuccess, list)
@@ -82,7 +82,7 @@ func (h *Handle) DeleteCategory(c *gin.Context) {
 		return
 	}
 	if err := h.svc.DeleteCategory(c.Request.Context(), req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
 		return
 	}
 	response.SuccessWithMessage(c, productenums.MsgDeleteSuccess, nil)
@@ -97,7 +97,7 @@ func (h *Handle) CreateBrand(c *gin.Context) {
 	}
 	res, err := h.svc.CreateBrand(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
 		return
 	}
 	response.SuccessWithMessage(c, productenums.MsgCreateSuccess, res)
@@ -112,7 +112,7 @@ func (h *Handle) UpdateBrand(c *gin.Context) {
 	}
 	res, err := h.svc.UpdateBrand(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
 		return
 	}
 	response.SuccessWithMessage(c, productenums.MsgUpdateSuccess, res)
@@ -127,7 +127,7 @@ func (h *Handle) GetBrand(c *gin.Context) {
 	}
 	res, err := h.svc.GetBrand(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusNotFound, err.Error())
+		response.ErrorAuto(c, http.StatusNotFound, "product", err)
 		return
 	}
 	response.SuccessWithMessage(c, productenums.MsgDetailSuccess, res)
@@ -142,7 +142,7 @@ func (h *Handle) ListBrands(c *gin.Context) {
 	}
 	list, err := h.svc.ListBrands(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
 		return
 	}
 	response.SuccessWithMessage(c, productenums.MsgListSuccess, list)
@@ -156,7 +156,7 @@ func (h *Handle) DeleteBrand(c *gin.Context) {
 		return
 	}
 	if err := h.svc.DeleteBrand(c.Request.Context(), req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
 		return
 	}
 	response.SuccessWithMessage(c, productenums.MsgDeleteSuccess, nil)

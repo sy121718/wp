@@ -87,9 +87,12 @@ func ContentIndexKey(sourceHash, contextName string) string {
 // 生命周期：构建开始时用候选 hash 集合构造一次（一次 SQL），构建期间只读内存；
 // 组件渲染期不再查库（§7.7「零查库」）。构建中途改表不影响已构造的取词器（防线 4）。
 type ContentTranslator struct {
-	lang   string
-	index  map[string]string
-	misses atomic.Int64
+	lang string
+	// projectID 本次构建的工程作用域（审计 I18N-009）：非空时按「工程行优先、
+	// 回落全局行」取词；空表示调用方没有工程上下文（与 P5a 行为一致）。
+	projectID string
+	index     map[string]string
+	misses    atomic.Int64
 }
 
 // NewContentTranslator 用默认存储（sys_translation 表）批量预载译文。
@@ -104,7 +107,25 @@ func NewContentTranslator(ctx context.Context, lang string, hashes []string) *Co
 //
 // store 为 nil / 返回错误 → 空索引（全部回退原文），绝不 panic、绝不报错。
 func NewContentTranslatorWith(ctx context.Context, store ContentStore, lang string, hashes []string) *ContentTranslator {
-	t := &ContentTranslator{lang: strings.TrimSpace(lang), index: map[string]string{}}
+	return NewContentTranslatorScoped(ctx, "", store, lang, hashes)
+}
+
+// NewContentTranslatorScoped 用指定工程作用域预载译文（审计 I18N-009）。
+//
+// projectID 非空时取词按「本工程行优先、未命中回落全局行」；为空则与
+// NewContentTranslatorWith 完全等价。
+//
+// store 为 nil（生产默认路径）时用默认库并绑定工程；store 非 nil（测试或自定义来源）
+// 时经 ContentStoreForProject 派生工程视图 —— 注入实现不实现 ProjectScopedStore 就
+// 原样使用，避免「注入替身悄悄换掉作用域语义」。
+func NewContentTranslatorScoped(ctx context.Context, projectID string, store ContentStore, lang string, hashes []string) *ContentTranslator {
+	projectID = strings.TrimSpace(projectID)
+	if store == nil {
+		store = defaultProjectContentStore(projectID)
+	} else {
+		store = ContentStoreForProject(store, projectID)
+	}
+	t := &ContentTranslator{lang: strings.TrimSpace(lang), projectID: projectID, index: map[string]string{}}
 	if store == nil {
 		return t
 	}
@@ -162,6 +183,14 @@ func (t *ContentTranslator) Lang() string {
 		return ""
 	}
 	return t.lang
+}
+
+// ProjectID 返回本取词器绑定的工程作用域（空=无工程上下文）。
+func (t *ContentTranslator) ProjectID() string {
+	if t == nil {
+		return ""
+	}
+	return t.projectID
 }
 
 // Size 返回预载命中的译文条数（索引大小，L3 诊断用）。

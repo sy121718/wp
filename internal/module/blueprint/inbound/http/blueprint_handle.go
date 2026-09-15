@@ -31,7 +31,7 @@ func (h *Handle) Create(c *gin.Context) {
 	}
 	res, err := h.svc.Create(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "blueprint", err)
 		return
 	}
 	response.SuccessWithMessage(c, blueprintenums.MsgCreateSuccess, res)
@@ -46,7 +46,7 @@ func (h *Handle) Update(c *gin.Context) {
 	}
 	res, err := h.svc.Update(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "blueprint", err)
 		return
 	}
 	response.SuccessWithMessage(c, blueprintenums.MsgUpdateSuccess, res)
@@ -61,7 +61,7 @@ func (h *Handle) Publish(c *gin.Context) {
 	}
 	res, err := h.svc.Publish(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "blueprint", err)
 		return
 	}
 	response.SuccessWithMessage(c, blueprintenums.MsgPublishSuccess, res)
@@ -76,7 +76,7 @@ func (h *Handle) Get(c *gin.Context) {
 	}
 	res, err := h.svc.Get(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusNotFound, err.Error())
+		response.ErrorAuto(c, http.StatusNotFound, "blueprint", err)
 		return
 	}
 	response.SuccessWithMessage(c, blueprintenums.MsgDetailSuccess, res)
@@ -91,7 +91,7 @@ func (h *Handle) List(c *gin.Context) {
 	}
 	list, err := h.svc.List(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "blueprint", err)
 		return
 	}
 	response.SuccessWithMessage(c, blueprintenums.MsgListSuccess, list)
@@ -105,7 +105,7 @@ func (h *Handle) Delete(c *gin.Context) {
 		return
 	}
 	if err := h.svc.Delete(c.Request.Context(), req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "blueprint", err)
 		return
 	}
 	response.SuccessWithMessage(c, blueprintenums.MsgDeleteSuccess, nil)
@@ -120,7 +120,7 @@ func (h *Handle) Init(c *gin.Context) {
 	}
 	doc, err := h.svc.InitPageDocument(c.Request.Context(), req.ID)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, err.Error())
+		response.ErrorAuto(c, http.StatusBadRequest, "blueprint", err)
 		return
 	}
 	response.Success(c, doc)

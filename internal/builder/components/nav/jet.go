@@ -31,6 +31,12 @@ type View struct {
 	ToggleLabel    string
 	// Label 导航容器 aria-label（构建期按当前语言填充，多语言 P4）。
 	Label string
+	// SubmenuToggleLabel 触屏子菜单展开控件的无障碍名后缀。
+	//
+	// 触屏没有悬停，子菜单改由 label + checkbox 的「点击展开」驱动（见 nav.css 的
+	// @hovernone 块）；那个 checkbox 是视觉隐藏的 sr-only 控件，读屏与键盘用户只能
+	// 靠可访问名识别它，所以文案不能为空。模板里与菜单项文字拼成「父项名 子菜单」。
+	SubmenuToggleLabel string
 }
 
 // 访客面组件文案 key：site.component.{type}.{prop}（docs/06-D §10.3）。
@@ -66,6 +72,9 @@ func BuildView(node *core.Node, p *Props) View {
 		ToggleID:       "sky-nav-toggle-" + node.ID,
 		MobileCollapse: p.MobileCollapse,
 		ToggleLabel:    label,
+		// 不做逐语言取词：它是无障碍名后缀，随菜单项文字一起播报，
+		// 缺译文时退回中文原文即可（与 ToggleLabel 的兜底同一套思路）。
+		SubmenuToggleLabel: "子菜单",
 	}
 }
 

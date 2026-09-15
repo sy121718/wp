@@ -27,6 +27,10 @@ type View struct {
 	FallbackText string
 	// Notice 无法渲染时的提示（缺站点工程 id）。空表示正常。
 	Notice string
+	// ScriptHint / OpenFallbackText 无 JS 时的降级文案（审计 I18N-010）：
+	// 两句都已把表单名（FallbackText）填进占位符，模板直接输出。
+	ScriptHint       string
+	OpenFallbackText string
 }
 
 // CompileCSS 导出样式编译。

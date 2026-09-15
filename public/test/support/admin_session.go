@@ -98,50 +98,23 @@ func teardownRedisTest(t *testing.T) {
 
 // seedAdminPGDDL PostgreSQL 兼容的 sys_admin 建表语句。
 //
-// AdminEntity 的 gorm tag 写死 MySQL 类型（tinyint(4)/datetime(3)/bigint unsigned），
-// AutoMigrate 在 PostgreSQL 上会生成非法 DDL，这里按实体字段手工建 PG 兼容表
-// （列名与 adminmodel.AdminEntity 的 column tag 一一对应）。
-const seedAdminPGDDL = `
-CREATE TABLE IF NOT EXISTS sys_admin (
-    id                   bigserial PRIMARY KEY,
-    dept_id              bigint DEFAULT 0,
-    username             varchar(50),
-    password             varchar(100),
-    name                 varchar(50),
-    avatar               varchar(255),
-    email                varchar(100),
-    phone                varchar(20),
-    status               smallint DEFAULT 1,
-    is_admin             smallint DEFAULT 0,
-    login_failure_count  smallint DEFAULT 0,
-    locked_until_time    timestamptz,
-    metadata             jsonb,
-    last_failure_time    timestamptz,
-    register_ip          varchar(50),
-    register_location    varchar(100),
-    last_login_ip        varchar(50),
-    last_login_location  varchar(100),
-    last_login_isp       varchar(50),
-    last_login_time      timestamptz,
-    create_by            bigint,
-    create_time          timestamptz,
-    update_by            bigint,
-    update_time          timestamptz,
-    remark               varchar(255)
-)`
 
-// SeedTestAdmin 在测试库中准备 sys_admin 表并写入一个启用状态的测试管理员。
-// 密码使用 bcrypt 加密，与生产登录链路一致。
-// PostgreSQL 走手工 DDL（见 seedAdminPGDDL），其他方言回退 AutoMigrate。
+// SeedTestAdmin 在测试库中写入一个启用状态的测试管理员（bcrypt 加密，与生产登录链路一致）。
+//
+// 前置：目标库必须已跑过生产迁移（migrations.Run，或直接用 support.NewMigratedPGTestDB）。
+// 这里不再手抄 sys_admin 的 DDL：手抄版本与生产 DDL 分叉后会静默失配（audit 已记录这类缺陷），
+// 而 sys_admin 的真实结构由 public/migrations/init_schema.sql 定义。
 func SeedTestAdmin(t *testing.T, db *gorm.DB, username, password string) error {
 	t.Helper()
 
-	if db.Dialector.Name() == "postgres" {
-		if err := db.Exec(seedAdminPGDDL).Error; err != nil {
-			return fmt.Errorf("建 sys_admin 表失败: %w", err)
-		}
-	} else if err := db.AutoMigrate(&adminmodel.AdminEntity{}); err != nil {
-		return fmt.Errorf("迁移 sys_admin 失败: %w", err)
+	// 前置检查给出可定位的错误：迁移没跑时这里会明确说「表不存在」，
+	// 而不是让后面的 INSERT 报一堆列不存在。
+	var regclass *string
+	if err := db.Raw("SELECT to_regclass('sys_admin')::text").Scan(&regclass).Error; err != nil {
+		return fmt.Errorf("检查 sys_admin 是否存在失败: %w", err)
+	}
+	if regclass == nil || *regclass == "" {
+		return fmt.Errorf("sys_admin 不存在：请先对测试库跑生产迁移（support.NewMigratedPGTestDB 或 migrations.Run）")
 	}
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.MinCost)

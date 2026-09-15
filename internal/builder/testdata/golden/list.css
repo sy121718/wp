@@ -44,10 +44,6 @@ body {
   color: inherit;
 }
 
-.sky-c-l1 a.sky-list-text:hover {
-  text-decoration: underline;
-}
-
 .sky-c-l1 .sky-list-dot {
   width: 8px;
   height: 8px;
@@ -94,10 +90,6 @@ body {
 .sky-c-l2 a.sky-list-text {
   text-decoration: none;
   color: inherit;
-}
-
-.sky-c-l2 a.sky-list-text:hover {
-  text-decoration: underline;
 }
 
 .sky-c-l2 .sky-list-dot {
@@ -148,10 +140,6 @@ body {
   color: inherit;
 }
 
-.sky-c-l3 a.sky-list-text:hover {
-  text-decoration: underline;
-}
-
 .sky-c-l3 .sky-list-dot {
   width: 8px;
   height: 8px;
@@ -160,4 +148,19 @@ body {
   display: block;
   margin-top: 6px;
 }
+
+@media (hover: hover) {
+  .sky-c-l1 a.sky-list-text:hover, .sky-c-l2 a.sky-list-text:hover, .sky-c-l3 a.sky-list-text:hover {
+  text-decoration: underline;
+
+}
+}
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

@@ -1,22 +1,19 @@
 package pubservice
 
+// publication_route.go — 路由占用与激活（占用预检、激活/取消激活、重定向、按页面或实例删除路由）。
+
 import (
 	"context"
 	"encoding/json"
 	"errors"
-	"go_wp/internal/seo"
 	"strings"
 	"time"
-
-	"go_wp/pkg/i18n"
 
 	pubdto "go_wp/internal/module/publication/dto"
 	pubenums "go_wp/internal/module/publication/enums"
 	pubmodel "go_wp/internal/module/publication/model"
-	"go_wp/internal/pipeline"
 	"go_wp/pkg/logger"
 
-	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -118,10 +115,10 @@ func (s *Service) Activate(ctx context.Context, req *pubdto.ActivateReq) (res *p
 		receiptData = json.RawMessage(`{}`)
 	}
 	receipt := &pubmodel.ReceiptEntity{
-		ID: uuid.NewString(), SourceType: owner.sourceType(), SourceID: owner.sourceID(),
+		SourceType: owner.sourceType(), SourceID: owner.sourceID(),
 		Action: receiptAction(req.Action, "activate"), Path: path,
 		ToArtifact: strPtr(req.ArtifactID), ReceiptState: pubmodel.ReceiptPending,
-		ReceiptData: receiptData, CreatedAt: now,
+		ReceiptData: receiptData, CreateTime: now,
 	}
 
 	// 第一段：pending 回执独立事务提交（故障恢复依据，H1）。
@@ -378,10 +375,10 @@ func (s *Service) Redirect(ctx context.Context, req *pubdto.RedirectReq) (res *p
 		receiptData = json.RawMessage(`{}`)
 	}
 	receipt := &pubmodel.ReceiptEntity{
-		ID: uuid.NewString(), SourceType: owner.sourceType(), SourceID: owner.sourceID(),
+		SourceType: owner.sourceType(), SourceID: owner.sourceID(),
 		Action: "redirect", Path: oldPath,
 		ToArtifact: toArtifact, ReceiptState: pubmodel.ReceiptPending,
-		ReceiptData: receiptData, CreatedAt: now,
+		ReceiptData: receiptData, CreateTime: now,
 	}
 
 	// 第一段：pending 回执独立事务提交（故障恢复依据，对齐 Activate）。
@@ -452,217 +449,3 @@ func (s *Service) Redirect(ctx context.Context, req *pubdto.RedirectReq) (res *p
 	}
 	return routeResp(route), nil
 }
-
-// RollbackReceipts 启动恢复：全部 pending 回执标记 rolled_back，返回处理数量。
-func (s *Service) RollbackReceipts(ctx context.Context) (count int64, err error) {
-	now := time.Now().UTC()
-	result := s.model.ReceiptDB(ctx).
-		Where("receipt_state = ?", pubmodel.ReceiptPending).
-		Updates(map[string]any{"receipt_state": pubmodel.ReceiptRolledBack, "completed_at": now})
-	return result.RowsAffected, result.Error
-}
-
-func receiptAction(action, fallback string) string {
-	if strings.TrimSpace(action) == "" {
-		return fallback
-	}
-	return action
-}
-
-// errRouteOccupied 事务内占位冲突哨兵，外层映射为 pubenums.ErrRouteOccupied。
-var errRouteOccupied = errors.New(pubenums.ErrRouteOccupied)
-
-// receiptPayload 回执数据结构化序列化（替代手工拼接 JSON，避免特殊字符生成非法 jsonb）。
-type receiptPayload struct {
-	To string `json:"to,omitempty"`
-}
-
-func markReceipt(tx *gorm.DB, id, state string, now time.Time) error {
-	return tx.Model(&pubmodel.ReceiptEntity{}).
-		Where("id = ?", id).
-		Updates(map[string]any{"receipt_state": state, "completed_at": now}).Error
-}
-
-// maxRoutePathLen 路由路径长度上限（超长路径会导致 FS 激活 ENAMETOOLONG 与 DB 行膨胀）。
-const maxRoutePathLen = 500
-
-// normalizePath 规范化路径：连续去除结尾斜杠（根路径除外），
-// 并拒绝长度超限、含空格/URL 分隔符/引号/控制字符、路径穿越的输入。
-// 非法输入属于参数格式错误，统一返回 ErrInvalidParam（与资源占用语义区分）。
-func normalizePath(raw string) (string, error) {
-	if raw == "" || !strings.HasPrefix(raw, "/") {
-		return "", errors.New(pubenums.ErrInvalidParam)
-	}
-	for len(raw) > 1 && strings.HasSuffix(raw, "/") {
-		raw = strings.TrimSuffix(raw, "/")
-	}
-	if len(raw) > maxRoutePathLen {
-		return "", errors.New(pubenums.ErrInvalidParam)
-	}
-	for _, r := range raw {
-		if r == ' ' || r == '?' || r == '#' || r == '"' || r == '\'' || r == '\\' || r < 0x20 || r == 0x7f {
-			return "", errors.New(pubenums.ErrInvalidParam)
-		}
-	}
-	if strings.Contains(raw, "/../") || strings.Contains(raw, "/./") ||
-		strings.HasSuffix(raw, "/..") || strings.HasSuffix(raw, "/.") {
-		return "", errors.New(pubenums.ErrInvalidParam)
-	}
-	return raw, nil
-}
-
-func strPtr(s string) *string { return &s }
-
-func routeResp(e *pubmodel.RouteEntity) *pubdto.RouteResp {
-	return &pubdto.RouteResp{
-		ProjectID: e.ProjectID, Path: e.Path, PageID: e.PageID,
-		PresentationID: e.PresentationID,
-		RouteKind:      e.RouteKind, ArtifactID: e.ArtifactID, UpdatedAt: e.UpdatedAt,
-	}
-}
-
-// routeOwner 路由行归属者：page_routes 的 CHECK 约束要求 page_id 与
-// presentation_id 恰好一个非空（见 init_builder_schema.sql），所以归属者
-// 用「二选一」表达，而不是两个可空参数——后者会让「两个都传」变成一行
-// 违反 CHECK 的写入，报错点落在数据库而不是参数校验。
-type routeOwner struct {
-	pageID         string
-	presentationID string
-}
-
-// parseRouteOwner 解析归属者并校验恰好一个非空。
-func parseRouteOwner(pageID, presentationID string) (routeOwner, error) {
-	o := routeOwner{
-		pageID:         strings.TrimSpace(pageID),
-		presentationID: strings.TrimSpace(presentationID),
-	}
-	if (o.pageID == "") == (o.presentationID == "") {
-		return routeOwner{}, errors.New(pubenums.ErrInvalidParam)
-	}
-	return o, nil
-}
-
-// sourceType 回执来源类型（publication_receipts.source_type）。
-func (o routeOwner) sourceType() string {
-	if o.presentationID != "" {
-		return "presentation"
-	}
-	return "page"
-}
-
-// sourceID 回执来源 id（source_id 是 uuid NOT NULL 列，必须写归属者本身）。
-func (o routeOwner) sourceID() string {
-	if o.presentationID != "" {
-		return o.presentationID
-	}
-	return o.pageID
-}
-
-// pageIDPtr 页面侧归属列：展示实例归属时必须留 NULL，否则违反 CHECK。
-func (o routeOwner) pageIDPtr() *string {
-	if o.pageID == "" {
-		return nil
-	}
-	return strPtr(o.pageID)
-}
-
-// presentationIDPtr 展示实例侧归属列（页面归属时留 NULL）。
-func (o routeOwner) presentationIDPtr() *string {
-	if o.presentationID == "" {
-		return nil
-	}
-	return strPtr(o.presentationID)
-}
-
-// match 归属者匹配条件（UPDATE / DELETE 精确定位本归属者的行）。
-func (o routeOwner) match() (string, []any) {
-	if o.presentationID != "" {
-		return "presentation_id = ?", []any{o.presentationID}
-	}
-	return "page_id = ?", []any{o.pageID}
-}
-
-// ownershipExpr ON CONFLICT DO UPDATE 的归属者一致性判定。
-//
-// 用 IS NOT DISTINCT FROM 而不是 = ：展示实例的行 page_id 为 NULL，而
-// NULL = NULL 在 SQL 里求值为 NULL（不成立），按 page_id 比会让实例连
-// 「重复激活自己」都失败（第二次发布会误判成 ErrRouteOccupied）。
-// IS NOT DISTINCT FROM 把 NULL 当作可比较值，两类归属者都能正确判等。
-func (o routeOwner) ownershipExpr() clause.Expression {
-	return clause.Expr{SQL: "page_routes.page_id IS NOT DISTINCT FROM EXCLUDED.page_id" +
-		" AND page_routes.presentation_id IS NOT DISTINCT FROM EXCLUDED.presentation_id"}
-}
-
-// RefreshSiteFiles 生成/刷新站点级 SEO 产物（sitemap.xml + robots.txt）。
-//
-// langs 为站点启用语言（默认语言在前），defaultLang 用于 x-default（多语言 P3）。
-// 语言清单由调用方（page 装配层，持有 project 契约）传入——publication 不跨模块查语言。
-func (s *Service) RefreshSiteFiles(ctx context.Context, projectID, baseURL, dir string, langs []string, defaultLang string) (err error) {
-	if projectID == "" || dir == "" {
-		return nil
-	}
-	paths, err := s.model.ListActivePaths(ctx, projectID)
-	if err != nil {
-		return err
-	}
-	return seo.WriteSiteFiles(dir, baseURL, sitemapEntries(baseURL, paths, langs, defaultLang))
-}
-
-// sitemapEntries 已激活路径 → sitemap 条目。
-//
-// 多语言（开启前缀且 ≥2 语言）时按「逻辑路径」分组：同一逻辑路径的各语言版本
-// 互相输出 xhtml:link 互指（含 x-default）。单语言或未开启前缀时输出与 P3 之前一致。
-func sitemapEntries(baseURL string, paths, langs []string, defaultLang string) []seo.SitemapEntry {
-	if !i18n.SiteLangURLsSeparated() || len(langs) < 2 {
-		return seo.EntriesFromPaths(baseURL, paths)
-	}
-	// 语言归属用与构建期完全相同的规则（唯一映射点 pipeline.LangURLRule）：
-	// default_plain 下 /about 归属默认语言、/en/about 归属 en-US，两者互为一组。
-	rule := pipeline.NewLangURLRule(true, i18n.SiteLangURLPrefixDefault(), defaultLang, i18n.URLCodeOverrides())
-	byLogical := map[string]map[string]string{}
-	logicalOf := map[string]string{}
-	for _, p := range paths {
-		lang, logical, ok := rule.Locate(p, langs)
-		if !ok {
-			continue
-		}
-		if byLogical[logical] == nil {
-			byLogical[logical] = map[string]string{}
-		}
-		byLogical[logical][lang] = p
-		logicalOf[p] = logical
-	}
-	out := make([]seo.SitemapEntry, 0, len(paths))
-	for _, p := range paths {
-		entry := seo.EntryForPath(baseURL, p)
-		logical, ok := logicalOf[p]
-		if !ok {
-			out = append(out, entry)
-			continue
-		}
-		group := byLogical[logical]
-		if len(group) < 2 {
-			out = append(out, entry)
-			continue
-		}
-		for _, l := range langs {
-			alt, exists := group[l]
-			if !exists {
-				continue
-			}
-			entry.Alternates = append(entry.Alternates, seo.SitemapAlternate{
-				Lang: l, Href: seo.JoinURL(baseURL, alt),
-			})
-		}
-		if alt, exists := group[defaultLang]; exists {
-			entry.Alternates = append(entry.Alternates, seo.SitemapAlternate{
-				Lang: "x-default", Href: seo.JoinURL(baseURL, alt),
-			})
-		}
-		out = append(out, entry)
-	}
-	return out
-}
-
-// 语言归属判定已下沉到 pipeline.LangURLRule.Locate（构建期与 sitemap 同一份规则），
-// 见 sitemapEntries：默认语言无前缀方案下，未带任何已知短码前缀的路径归属默认语言。

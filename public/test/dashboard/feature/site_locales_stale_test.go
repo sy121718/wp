@@ -35,29 +35,16 @@ import (
 )
 
 // newLocaleStaleEnv 装配「语言清单保存 → 全站待重建」测试环境：
-// 真实 PG（隔离 schema）+ project 契约 + page 契约（仅 model 参与，其余依赖传 nil）。
+// 真实 PG（隔离 schema，跑生产迁移建表）+ project 契约 + page 契约
+// （仅 model 参与，其余依赖传 nil）。
 //
-// pages 表只建 MarkStaleForI18n 命中的列（stale / deleted_at / updated_at）：
-// 本用例验证的是「保存成功后编排是否发生」，不涉及页面其余字段与构建链路。
+// pages 行只补 MarkStaleForI18n 与页面外键所需的真实列：本用例验证的是
+// 「保存成功后编排是否发生」，不涉及页面其余业务字段与构建链路。
 func newLocaleStaleEnv(t *testing.T) (*gin.Engine, *projectservice.Service, *gorm.DB, string) {
 	t.Helper()
 	t.Setenv("GO_WP_ARTIFACT_ROOT", t.TempDir())
 	gin.SetMode(gin.TestMode)
-	db, err := support.NewPGTestDB(t)
-	if err != nil {
-		t.Skipf("本地 PostgreSQL 不可用，跳过测试：%v", err)
-		return nil, nil, nil, ""
-	}
-	for _, statement := range []string{
-		"CREATE TABLE projects (id UUID PRIMARY KEY, name TEXT NOT NULL, settings JSONB NOT NULL, created_at TIMESTAMPTZ NOT NULL, updated_at TIMESTAMPTZ NOT NULL)",
-		"CREATE TABLE project_locales (project_id UUID NOT NULL, lang TEXT NOT NULL, sort_order INTEGER NOT NULL DEFAULT 0, is_default BOOLEAN NOT NULL DEFAULT false, enabled BOOLEAN NOT NULL DEFAULT true, created_at TIMESTAMPTZ NOT NULL, updated_at TIMESTAMPTZ NOT NULL, PRIMARY KEY(project_id, lang))",
-		"CREATE TABLE page_site_slots (id UUID PRIMARY KEY, project_id UUID NOT NULL, slot TEXT NOT NULL, page_id UUID NOT NULL, created_at TIMESTAMPTZ NOT NULL, updated_at TIMESTAMPTZ NOT NULL)",
-		"CREATE TABLE pages (id UUID PRIMARY KEY, stale BOOLEAN NOT NULL DEFAULT false, deleted_at TIMESTAMPTZ, updated_at TIMESTAMPTZ NOT NULL)",
-	} {
-		if err = db.Exec(statement).Error; err != nil {
-			t.Fatalf("创建测试表失败: %v", err)
-		}
-	}
+	db := support.NewMigratedPGTestDB(t)
 	projects := projectservice.NewService(projectmodel.NewProjectModel(db))
 	project, err := projects.Create(t.Context(), &projectdto.CreateReq{Name: "语言清单待重建站点"})
 	if err != nil {
@@ -73,15 +60,21 @@ func newLocaleStaleEnv(t *testing.T) (*gin.Engine, *projectservice.Service, *gor
 }
 
 // insertStalePage 插入一条页面行（stale 初始为 false；deleted 为 true 时置软删时间）。
-func insertStalePage(t *testing.T, db *gorm.DB, id string, deleted bool) {
+//
+// 真实 pages 表要求 project_id 外键、kind/content_target_type 满足
+// pages_content_contract_check（home + none）、draft_path/draft_document/draft_version
+// 非空，故按生产列结构补全。
+func insertStalePage(t *testing.T, db *gorm.DB, projectID, id string, deleted bool) {
 	t.Helper()
 	var deletedAt any
 	if deleted {
 		deletedAt = time.Now().UTC()
 	}
+	now := time.Now().UTC()
 	if err := db.Exec(
-		"INSERT INTO pages (id, stale, deleted_at, updated_at) VALUES (?, false, ?, ?)",
-		id, deletedAt, time.Now().UTC(),
+		`INSERT INTO pages (id, project_id, kind, content_target_type, draft_path, draft_document, draft_version, stale, deleted_at, created_at, updated_at)
+		 VALUES (?, ?, 'home', 'none', ?, '{}'::jsonb, 1, false, ?, ?, ?)`,
+		id, projectID, "pages/"+id+"/draft.json", deletedAt, now, now,
 	).Error; err != nil {
 		t.Fatalf("插入页面失败: %v", err)
 	}
@@ -117,8 +110,8 @@ func seedLocales(t *testing.T, svc *projectservice.Service, projectID string) {
 func TestSaveSiteLocalesMarksStaleOnChange(t *testing.T) {
 	router, projects, db, projectID := newLocaleStaleEnv(t)
 	seedLocales(t, projects, projectID)
-	insertStalePage(t, db, "11111111-1111-1111-1111-111111111111", false)
-	insertStalePage(t, db, "22222222-2222-2222-2222-222222222222", true)
+	insertStalePage(t, db, projectID, "11111111-1111-1111-1111-111111111111", false)
+	insertStalePage(t, db, projectID, "22222222-2222-2222-2222-222222222222", true)
 
 	saved := postForm(t, router, "/admin/settings/locales/save", url.Values{
 		"projectId":    {projectID},
@@ -142,7 +135,7 @@ func TestSaveSiteLocalesMarksStaleOnChange(t *testing.T) {
 func TestSaveSiteLocalesMarksStaleOnDefaultChange(t *testing.T) {
 	router, projects, db, projectID := newLocaleStaleEnv(t)
 	seedLocales(t, projects, projectID)
-	insertStalePage(t, db, "33333333-3333-3333-3333-333333333333", false)
+	insertStalePage(t, db, projectID, "33333333-3333-3333-3333-333333333333", false)
 
 	saved := postForm(t, router, "/admin/settings/locales/save", url.Values{
 		"projectId":    {projectID},
@@ -162,7 +155,7 @@ func TestSaveSiteLocalesMarksStaleOnDefaultChange(t *testing.T) {
 func TestSaveSiteLocalesSkipsStaleWhenUnchanged(t *testing.T) {
 	router, projects, db, projectID := newLocaleStaleEnv(t)
 	seedLocales(t, projects, projectID)
-	insertStalePage(t, db, "44444444-4444-4444-4444-444444444444", false)
+	insertStalePage(t, db, projectID, "44444444-4444-4444-4444-444444444444", false)
 	before := pageStaleOf(t, db, "44444444-4444-4444-4444-444444444444")
 
 	saved := postForm(t, router, "/admin/settings/locales/save", url.Values{
@@ -187,7 +180,7 @@ func TestSaveSiteLocalesSkipsStaleWhenUnchanged(t *testing.T) {
 func TestSaveSiteLocalesInvalidSkipsStale(t *testing.T) {
 	router, projects, db, projectID := newLocaleStaleEnv(t)
 	seedLocales(t, projects, projectID)
-	insertStalePage(t, db, "55555555-5555-5555-5555-555555555555", false)
+	insertStalePage(t, db, projectID, "55555555-5555-5555-5555-555555555555", false)
 
 	recorder := postForm(t, router, "/admin/settings/locales/save", url.Values{
 		"projectId":    {projectID},

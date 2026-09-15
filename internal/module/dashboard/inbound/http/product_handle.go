@@ -18,14 +18,17 @@ import (
 
 	"go_wp/internal/middleware/builtin"
 
-	dashboardenums "go_wp/internal/module/dashboard/enums"
+	contentcontract "go_wp/internal/module/content/contract"
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
+	dashboardenums "go_wp/internal/module/dashboard/enums"
+	pagecontract "go_wp/internal/module/page/contract"
 	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
 	inventorycontract "go_wp/internal/module/product/inventory/contract"
 	inventorydto "go_wp/internal/module/product/inventory/dto"
 	projectcontract "go_wp/internal/module/project/contract"
+	"go_wp/pkg/money"
 )
 
 // variantSelectionPrefix 组合生成表单里「属性组 → 勾选值」的字段名前缀。
@@ -47,6 +50,11 @@ type productPageHandle struct {
 	// 「不选」即兜底该工程的默认仓。经 SetInventoryDeps 注入 —— 未注入时
 	// 表单不带仓库下拉（商品页其余功能一字不变，既有测试构造签名也不受影响）。
 	inventories inventorycontract.InventoryService
+	// seoPages / seoContents 编辑期 title 唯一性检查的另外两个数据源（审计 SEO-018）：
+	// 页面草稿的 SEO 标题与文章标题都算「同站点已存在的内容」，只比商品域会漏掉
+	// 跨内容的重复。经 SetSeoTitleSources 注入 —— 可空，未注入时索引退化为商品域。
+	seoPages    pagecontract.PageService
+	seoContents contentcontract.ContentService
 }
 
 // NewProductPageHandle 构造。
@@ -65,7 +73,7 @@ func (h *productPageHandle) ProductsPage(c *gin.Context) {
 	ctx := c.Request.Context()
 	projects, err := h.projects.List(ctx)
 	if err != nil {
-		c.String(http.StatusInternalServerError, err.Error())
+		pageError(c, "product", err)
 		return
 	}
 	selected := strings.TrimSpace(c.Query("project"))
@@ -77,25 +85,25 @@ func (h *productPageHandle) ProductsPage(c *gin.Context) {
 	// 放在循环里取会变成 2×N 次查询。
 	flat, ferr := h.flatCategories(ctx, selected)
 	if ferr != nil {
-		c.String(http.StatusInternalServerError, ferr.Error())
+		pageError(c, "product", ferr)
 		return
 	}
 	brands, berr := h.listBrands(ctx, selected)
 	if berr != nil {
-		c.String(http.StatusInternalServerError, berr.Error())
+		pageError(c, "product", berr)
 		return
 	}
 	// 标签一次取好（issue #11）：每个商品行要渲染「挂哪些手工标签 / 命中了哪些自动标签」，
 	// 放在循环里取会变成 N 次查询。
 	tags, terr := h.listTags(ctx, selected)
 	if terr != nil {
-		c.String(http.StatusInternalServerError, terr.Error())
+		pageError(c, "product", terr)
 		return
 	}
 	if selected != "" {
 		list, lerr := h.products.List(ctx, &productdto.ListReq{ProjectID: selected, Size: 100})
 		if lerr != nil {
-			c.String(http.StatusInternalServerError, lerr.Error())
+			pageError(c, "product", lerr)
 			return
 		}
 		for _, p := range list {
@@ -154,7 +162,7 @@ func (h *productPageHandle) ProductsPage(c *gin.Context) {
 	// 归属仓下拉（issue #15）：变体的归属仓在这里选（不选 = 默认仓）。
 	warehouseOptions, werr := h.warehouseOptions(ctx, selected)
 	if werr != nil {
-		c.String(http.StatusInternalServerError, werr.Error())
+		pageError(c, "product", werr)
 		return
 	}
 	// withCSRF：注入 csrf_token（POST 表单隐藏域）+ 导航树 + 权限码 + 多语言，
@@ -237,7 +245,10 @@ func specLabel(raw json.RawMessage, attrs []*productdto.AttributeResp) string {
 }
 
 // formatAmount 数值 → 后台展示文本（整数不带小数尾巴）。
-func formatAmount(v float64) string { return strconv.FormatFloat(v, 'f', -1, 64) }
+//
+// 唯一实现在 pkg/money.FormatYuan（审计 CQ-013：此前与商品构建期的 formatPrice
+// 逐字节重复）。保留本名字是因为同包多个后台页面文件共用它。
+func formatAmount(v float64) string { return money.FormatYuan(v) }
 
 // formatNullableAmount 可空数值 → 展示文本（空显示为 —）。
 func formatNullableAmount(v *float64) string {

@@ -20,11 +20,11 @@ import (
 	"time"
 
 	cartdto "go_wp/internal/module/cart/dto"
-	orderdto "go_wp/internal/module/order/dto"
+	ordercontract "go_wp/internal/module/order/contract"
 )
 
 // buildAttribution 组装归因快照（auth：全部为空时返回 nil）。
-func buildAttribution(c cartdto.TrackCookies, userAgent string, now time.Time) *orderdto.Attribution {
+func buildAttribution(c cartdto.TrackCookies, userAgent string, now time.Time) *ordercontract.Attribution {
 	cur := parseTrackKV(c.Current)
 	fst := parseTrackKV(c.First)
 	sess := parseTrackKV(c.Session)
@@ -34,32 +34,32 @@ func buildAttribution(c cartdto.TrackCookies, userAgent string, now time.Time) *
 		return nil
 	}
 
-	attr := &orderdto.Attribution{
+	attr := &ordercontract.Attribution{
 		SourceType: kv(cur, "t"),
 		Referrer:   kv(cur, "r"),
 		UTM:        utmOf(cur),
-		Ad: orderdto.AdInfo{
+		Ad: ordercontract.AdInfo{
 			GCLID:   kv(cur, "id_gclid"),
 			FBCLID:  kv(cur, "id_fbclid"),
 			TTCLID:  kv(cur, "id_ttclid"),
 			MSCLKID: kv(cur, "id_msclkid"),
 			ClickID: kv(cur, "cid"),
 		},
-		Session: orderdto.SessionInfo{
+		Session: ordercontract.SessionInfo{
 			Entry:           kv(sess, "e"),
 			Pages:           atoiSafe(kv(sess, "p")),
 			Count:           atoiSafe(kv(vis, "n")),
 			StartTime:       unixRFC3339(kv(sess, "st")),
 			DurationSeconds: durationFrom(kv(sess, "st"), now),
 		},
-		Device: orderdto.DeviceInfo{
+		Device: ordercontract.DeviceInfo{
 			// UA 由服务端从请求头取（客户端自报的 UA 可以随手改，而服务端拿到的是
 			// 这次请求真正带过来的那个）；设备类型与屏幕由采集脚本给（只有浏览器知道）。
 			Type:      kv(sess, "d"),
 			UserAgent: strings.TrimSpace(userAgent),
 			Screen:    kv(sess, "sc"),
 		},
-		First: orderdto.FirstTouch{
+		First: ordercontract.FirstTouch{
 			SourceType: kv(fst, "t"),
 			Referrer:   kv(fst, "r"),
 			UTM:        utmOf(fst),
@@ -75,8 +75,8 @@ func buildAttribution(c cartdto.TrackCookies, userAgent string, now time.Time) *
 }
 
 // utmOf 从 kv 取 UTM 家族。
-func utmOf(m map[string]string) orderdto.UTMInfo {
-	return orderdto.UTMInfo{
+func utmOf(m map[string]string) ordercontract.UTMInfo {
+	return ordercontract.UTMInfo{
 		Source:   kv(m, "s"),
 		Medium:   kv(m, "m"),
 		Campaign: kv(m, "c"),
@@ -124,7 +124,7 @@ func parseTrackKV(raw string) map[string]string {
 //
 // 停留秒数由**相邻两条的时间差**推出：最后一条用「下单时刻 - 进入时刻」——
 // 访客正好在下单页停留着，那一段停留恰恰是最有分析价值的一段。
-func parseTrail(raw string, now time.Time) []orderdto.TrailPage {
+func parseTrail(raw string, now time.Time) []ordercontract.TrailPage {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return nil
@@ -158,7 +158,7 @@ func parseTrail(raw string, now time.Time) []orderdto.TrailPage {
 	if len(entries) == 0 {
 		return nil
 	}
-	out := make([]orderdto.TrailPage, 0, len(entries))
+	out := make([]ordercontract.TrailPage, 0, len(entries))
 	for i, e := range entries {
 		var secs int
 		if i+1 < len(entries) {
@@ -169,7 +169,7 @@ func parseTrail(raw string, now time.Time) []orderdto.TrailPage {
 		if secs < 0 {
 			secs = 0
 		}
-		out = append(out, orderdto.TrailPage{
+		out = append(out, ordercontract.TrailPage{
 			URL:     e.path,
 			Title:   e.title,
 			At:      unixRFC3339(strconv.FormatInt(e.at, 10)),

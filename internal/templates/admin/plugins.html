@@ -3,12 +3,12 @@
 {{block body()}}
 <div class="stack">
     <section class="card card-body">
-        <h2>安装插件</h2>
-        <p class="hint">上传 zip 插件包（manifest.json + 组件模板 + 样式声明 + 资产）。安装后启用即出现在可视化工作台组件库。</p>
+        <h2>{{ .["t"]("admin.plugins.install.title", "安装插件") }}</h2>
+        <p class="hint">{{ .["t"]("admin.plugins.install.hint", "上传 zip 插件包（manifest.json + 组件模板 + 样式声明 + 资产）。安装后启用即出现在可视化工作台组件库。") }}</p>
         <form method="post" action="/admin/plugins/install" enctype="multipart/form-data" class="form-inline mt-md">
             <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
             <input type="file" name="file" accept=".zip" required>
-            <button type="submit" class="btn btn-primary">上传并安装</button>
+            <button type="submit" class="btn btn-primary">{{ .["t"]("admin.plugins.install.submit", "上传并安装") }}</button>
         </form>
         {{if .Error}}
         <p class="text-mute text-sm">{{.Error}}</p>
@@ -16,20 +16,20 @@
     </section>
 
     <section class="card card-body">
-        <h2>已安装插件</h2>
+        <h2>{{ .["t"]("admin.plugins.list.title", "已安装插件") }}</h2>
         {{if len(.Plugins) == 0}}
-        <p class="text-mute text-sm">还没有安装插件。上传 zip 包安装你的第一个插件。</p>
+        <p class="text-mute text-sm">{{ .["t"]("admin.plugins.list.empty", "还没有安装插件。上传 zip 包安装你的第一个插件。") }}</p>
         {{else}}
-        <div class="table-wrap" tabindex="0" role="region" aria-label="已安装插件"><table class="data-table">
+        <div class="table-wrap" tabindex="0" role="region" aria-label="{{ .["t"]("admin.plugins.list.title", "已安装插件") }}"><table class="data-table">
             <thead>
                 <tr>
-                    <th>名称</th>
+                    <th>{{ .["t"]("admin.plugins.col.name", "名称") }}</th>
                     <th>ID</th>
-                    <th>版本</th>
-                    <th>组件数</th>
-                    <th>状态</th>
-                    <th>安装时间</th>
-                    <th>操作</th>
+                    <th>{{ .["t"]("admin.plugins.col.version", "版本") }}</th>
+                    <th>{{ .["t"]("admin.plugins.col.component_count", "组件数") }}</th>
+                    <th>{{ .["t"]("admin.plugins.col.status", "状态") }}</th>
+                    <th>{{ .["t"]("admin.plugins.col.installed_at", "安装时间") }}</th>
+                    <th>{{ .["t"]("admin.plugins.col.actions", "操作") }}</th>
                 </tr>
             </thead>
             <tbody>
@@ -39,19 +39,19 @@
                     <td><code>{{p.ID}}</code></td>
                     <td>{{p.Version}}</td>
                     <td>{{p.ComponentCount}}</td>
-                    <td>{{if p.Enabled}}<span class="badge badge-ok">启用</span>{{else}}<span class="badge">停用</span>{{end}}</td>
+                    <td>{{if p.Enabled}}<span class="badge badge-ok">{{ .["t"]("admin.plugins.status.enabled", "启用") }}</span>{{else}}<span class="badge">{{ .["t"]("admin.plugins.status.disabled", "停用") }}</span>{{end}}</td>
                     <td>{{p.InstalledAt}}</td>
                     <td>
                         <form method="post" action="/admin/plugins/toggle" class="inline-form">
                             <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
                             <input type="hidden" name="id" value="{{p.ID}}">
                             <input type="hidden" name="enabled" value="{{if p.Enabled}}false{{else}}true{{end}}">
-                            <button type="submit" class="btn btn-secondary btn-sm">{{if p.Enabled}}停用{{else}}启用{{end}}</button>
+                            <button type="submit" class="btn btn-secondary btn-sm">{{if p.Enabled}}{{ .["t"]("admin.plugins.status.disabled", "停用") }}{{else}}{{ .["t"]("admin.plugins.status.enabled", "启用") }}{{end}}</button>
                         </form>
-                        <form method="post" action="/admin/plugins/uninstall" class="inline-form" data-confirm="卸载将删除插件文件，确认？">
+                        <form method="post" action="/admin/plugins/uninstall" class="inline-form" data-confirm="{{ .["t"]("admin.plugins.confirm.uninstall", "卸载将删除插件文件，确认？") }}">
                             <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
                             <input type="hidden" name="id" value="{{p.ID}}">
-                            <button type="submit" class="btn btn-danger btn-sm">卸载</button>
+                            <button type="submit" class="btn btn-danger btn-sm">{{ .["t"]("admin.plugins.action.uninstall", "卸载") }}</button>
                         </form>
                     </td>
                 </tr>

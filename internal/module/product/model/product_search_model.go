@@ -55,4 +55,3 @@ func (m *Model) SearchPublished(ctx context.Context, projectID, keyword string, 
 // 在 model 里写一份字面量而不是 import enums：model 层的查询常量与 DDL 值同源，
 // 引一层包只为拿一个字符串会让「状态值改了什么」这件事更难追。
 const productStatusPublished = "published"
-
