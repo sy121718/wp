@@ -2,10 +2,12 @@
 
 本目录为审查结论与整改进度追踪。主索引是 [audit-2026-09.json](./audit-2026-09.json)，分维明细在 [dimensions/](./dimensions/)。
 
-## 状态（2026-09-14 更新）
+## 状态（2026-09-15 更新）
 
 - **已 resolved**：234 条
 - **仍 open**：34 条（high 8 / medium 16 / low 10；按阶段 P4 0 / P5 2 / P6 10 / P7 18 / P8 4）。
+  · 其中 **9 条按决策延后**（插件生态，标 `deferredNote`）：`OSS-001/002/003/004/005/007/008/019`、`SEC-005`。
+  · 仍待推进的 high 只剩 2 条：`CQ-007`（dashboard 上帝模块）、`UIK-003`（四套视觉体系并行）。
 - 批量标记脚本：`scripts/audit-mark-resolved.py`（标记新 resolved）、`scripts/audit-fix-note.py`（覆盖已 resolved 条目的结论修订）
 
 ## 怎么读
@@ -23,6 +25,7 @@
 | `status` | `open` 或 `resolved` |
 | `resolutionNote` | 已修复项的落地说明（仅 resolved 时有） |
 | `progressNote` | 分批推进项的**当前进度**（仅 open 且已部分落地时有）：写清已落地哪一批、实测数据、以及下一步边界。与 `resolutionNote` 互斥——条目 fully 修完时改回 `resolutionNote` 并删掉它 |
+| `deferredNote` | **按决策延后**的说明（仅 open 时有）：写清是谁在什么时候决定延后、等什么条件再启动。与 `progressNote` 的区别——后者是「正在分批做、已落地一部分」，前者是「决定先不做」 |
 | `phase` | 建议排期（P0–P8） |
 
 ## 施工中顺带修复的既有缺陷（非审计条目）

@@ -326,7 +326,8 @@
         "sql-injection",
         "marketplace"
       ],
-      "status": "open"
+      "status": "open",
+      "deferredNote": "2026-09-15 决策：插件生态**延后**，等本体收口（内容 / 权限 / 可视化 / 发布管线）之后再启动 —— 见 docs/06-A-plugin-ecosystem-roadmap.md 的「决策记录」。本条不是待修缺陷，而是能力开放范围未定，故保持 open 并标注延后。"
     },
     {
       "id": "SEC-006",
