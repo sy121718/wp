@@ -48,6 +48,14 @@ func registerCoreSchemaAndAccess() {
 			"('page:list','project:list','block:list','media:list','artifact:detail','publication:receipts_pending')",
 		SQL: mustSQL("030_business_permissions.sql"),
 	})
+	// 默认超管账号（030a）：sys_admin 此前没有任何创建路径，全新部署的库是空的 ——
+	// 没人能登录、031 也没有授权对象。必须排在 031 之前（031 从 is_admin = 1 取授权对象）。
+	registerSeed(Seed{
+		Version:      "030a-default-admin",
+		TableName:    "sys_admin",
+		ConditionSQL: "SELECT COUNT(*) FROM sys_admin WHERE username = 'admin'",
+		SQL:          mustSQL("030a_default_admin.sql"),
+	})
 	registerSeed(Seed{
 		Version:      "031-business-permissions-superadmin",
 		TableName:    "sys_casbin_rule",
