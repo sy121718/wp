@@ -28,6 +28,7 @@ import (
 	inventorydto "go_wp/internal/module/product/inventory/dto"
 	inventoryenums "go_wp/internal/module/product/inventory/enums"
 	inventorymodel "go_wp/internal/module/product/inventory/model"
+	"go_wp/pkg/utils"
 )
 
 const (
@@ -402,7 +403,7 @@ func (s *Service) finishChange(ctx context.Context, projectID, direction string,
 // movementOf 构造一条流水（数量写回与流水同事务，故这里只拼装不落库）。
 func movementOf(it changeItem, e *inventorymodel.StockEntity, before, after, delta int, batchID string, now time.Time) *inventorymodel.MovementEntity {
 	m := &inventorymodel.MovementEntity{
-		ID: uuid.NewString(), ProjectID: e.ProjectID, WarehouseID: e.WarehouseID,
+		ID: utils.NewTimeOrderedID(), ProjectID: e.ProjectID, WarehouseID: e.WarehouseID,
 		ProductID: e.ProductID, VariantID: e.VariantID, SKUCode: e.SKUCode,
 		Direction: it.direction, Quantity: abs(delta), Delta: delta,
 		QuantityBefore: before, QuantityAfter: after,

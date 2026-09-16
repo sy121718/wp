@@ -218,6 +218,10 @@ func TestMasterDataChangeCreateCoversWarehouseAndSKU(t *testing.T) {
 		t.Fatalf("新增商品应写入变更记录")
 	}
 	for _, r := range productRows {
+		// 变更记录主键是 UUIDv7（时间有序，写入点集中）—— 换回 v4 这条会红
+		if len(r.ID) != 36 || r.ID[14] != '7' {
+			t.Fatalf("变更记录主键应为 UUIDv7，实际 id=%q", r.ID)
+		}
 		if r.Action != masterdataenums.ActionCreate {
 			t.Fatalf("新增商品的记录动作应是 create，实际 %s", r.Action)
 		}

@@ -21,6 +21,7 @@ import (
 	masterdatacontract "go_wp/internal/module/masterdata/contract"
 	masterdataenums "go_wp/internal/module/masterdata/enums"
 	masterdatamodel "go_wp/internal/module/masterdata/model"
+	"go_wp/pkg/utils"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -100,7 +101,7 @@ func buildChangeRows(in *masterdatacontract.ChangeInput, now time.Time) (rows []
 			continue
 		}
 		rows = append(rows, &masterdatamodel.ChangeEntity{
-			ID: uuid.NewString(), ProjectID: strings.TrimSpace(in.ProjectID),
+			ID: utils.NewTimeOrderedID(), ProjectID: strings.TrimSpace(in.ProjectID),
 			EntityType: entityType, EntityID: entityID,
 			EntityLabel: truncateValue(strings.TrimSpace(in.EntityLabel)),
 			Action:      action, Field: field,

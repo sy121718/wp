@@ -302,6 +302,10 @@ func TestInventoryMovementRecordsDirectionReasonSource(t *testing.T) {
 	if m.SourceType != "purchase" || m.SourceRef != "PO-1" {
 		t.Fatalf("流水应带上来源引用：%+v", m)
 	}
+	// 流水主键是 UUIDv7（时间有序，写入点集中）—— 换回 v4 这条会红
+	if len(m.ID) != 36 || m.ID[14] != '7' {
+		t.Fatalf("流水主键应为 UUIDv7，实际 id=%q", m.ID)
+	}
 	if m.BatchID == "" || m.VariantID != v.ID || m.SKUCode != v.SKUCode || m.WarehouseID != wh.ID {
 		t.Fatalf("流水应带上批次号与库存维度：%+v", m)
 	}
