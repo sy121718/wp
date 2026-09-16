@@ -102,7 +102,17 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 	// StaticGzipMiddleware：文本类资源（js/css/svg）gzip 传输压缩。
 	// StaticCacheMiddleware：静态资源统一协商缓存（no-cache + Last-Modified），
 	// 避免 ES modules 子模块因启发式缓存执行旧代码（docs/09 §3 拆分后修复）。
-	router.Group("/static", builtin.StaticGzipMiddleware(), builtin.StaticCacheMiddleware()).StaticFS("/", gin.Dir("internal/templates/static", false))
+	// 静态资源来源按模式分流（审计 OSS-018）：开发模式读磁盘（改 CSS/JS 立即生效），
+	// 生产模式走 embed —— 二进制自带静态资产，不再要求部署时附带源码树。
+	staticFS := gin.Dir("internal/templates/static", false)
+	if gin.Mode() == gin.ReleaseMode {
+		if embedded, err := templates.EmbeddedStaticFS(); err != nil {
+			logger.Scene("init").Error(err, "静态资源 embed 不可用，回退磁盘目录")
+		} else {
+			staticFS = embedded
+		}
+	}
+	router.Group("/static", builtin.StaticGzipMiddleware(), builtin.StaticCacheMiddleware()).StaticFS("/", staticFS)
 
 	// 媒体上传存储（pkg/upload local provider 默认 public/storage）。
 	// 同样禁目录列表（审计 Low：/storage 目录列表开启）。

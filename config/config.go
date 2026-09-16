@@ -51,6 +51,10 @@ type ServerConfig struct {
 // 部署时注入密码与密钥、CI 里把连接指向服务容器，都靠它们。其余配置是部署资产，
 // 留在配置文件里更清楚，也更不容易被一次 export 意外改掉。
 var envBindableKeys = []string{
+	// 运行模式：部署时用环境变量切 debug/release 是常规做法（CI 也靠它），
+	// 而 release 会改变静态资源与模板的来源 —— 悄悄不生效的代价不只是「模式没切」，
+	// 而是「按 release 部署却按 debug 跑」。
+	"server.mode",
 	// 数据库连接
 	"database.host",
 	"database.port",

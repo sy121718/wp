@@ -91,6 +91,11 @@ jobs:
         # config.yaml 里的 wp 库，因此该库必须先有完整结构。此前没有这一步，
         # 这些用例在 CI 上连的是空库，失败被 continue-on-error 吞掉了。
         run: go run ./cmd -migrate-only
+      - name: Permission point audit
+        # 有路由、没有对应权限点 = 含超管在内全员 403（072/077/078/079/151 各踩过一次）。
+        # 这条检查要连库比对「运行时装配出来的路由表」与 sys_permission，所以只能在有 PG 的
+        # 这一层跑，且必须排在 Migrate 之后（权限点由 seed 写入）。
+        run: bash scripts/check-permission-gaps.sh
       - name: Full suite (real PostgreSQL + Redis)
         # -p 4：runner 核数少，保守取值。本地 16 核实测 -p 16 约 65s。
         run: go test -p 4 ./... -count=1 -timeout 30m

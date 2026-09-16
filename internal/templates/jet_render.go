@@ -8,6 +8,8 @@ package templates
 import (
 	"net/http"
 
+	"go_wp/pkg/logger"
+
 	"github.com/CloudyKit/jet/v6"
 	ginrender "github.com/gin-gonic/gin/render"
 )
@@ -15,12 +17,27 @@ import (
 // NewJetHTMLRender 创建 Gin HTMLRender 封装，底层使用 Jet 模板引擎。
 //
 // 参数：
-//   - viewDir: 模板根目录的文件系统路径（相对于工作目录）
-//   - isDev:   开发模式标记，true 时禁用模板缓存
+//   - viewDir: 模板根目录的文件系统路径（相对于工作目录），**仅开发模式使用**
+//   - isDev:   开发模式标记，true 时读磁盘并禁用模板缓存
+//
+// 模板来源按模式分流（审计 OSS-018）：开发模式读磁盘（改模板即时生效，这是开发期
+// 最需要的反馈）；生产模式走 embed.FS —— 于是二进制自带后台模板，部署不再需要
+// 附带 internal/templates 目录。两条路径下模板名解析结果一致（embed 的子目录
+// 就是磁盘上的 admin/）。
 //
 // 模板文件扩展名为 .html（通过 WithTemplateNameExtensions 配置）。
 func NewJetHTMLRender(viewDir string, isDev bool) ginrender.HTMLRender {
-	loader := jet.NewOSFileSystemLoader(viewDir)
+	var loader jet.Loader
+	if isDev {
+		loader = jet.NewOSFileSystemLoader(viewDir)
+	} else if embedded, err := newAdminTemplateLoader(); err != nil {
+		// embed 清单在编译期固定，这里失败即构建缺陷。回退磁盘并留明确日志，
+		// 而不是让启动直接挂掉 —— 与其它资源缺失的处理口径一致。
+		logger.Scene("init").Error(err, "后台模板 embed loader 构建失败，回退磁盘目录")
+		loader = jet.NewOSFileSystemLoader(viewDir)
+	} else {
+		loader = embedded
+	}
 	set := jet.NewSet(
 		loader,
 		jet.DevelopmentMode(isDev),
