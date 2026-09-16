@@ -48,7 +48,7 @@ result, err := upload.Upload(ctx, upload.File{
 - local provider（`pkg/upload/provider/local.go:20-24`）：默认根目录 `public/storage`，URL 前缀 `/storage`；可用 `upload.local_dir`、`upload.base_url` 覆盖。
 - 存储路径规则（local.go:146-185 `buildObjectKey`）：默认 `{unixnano}_{6字节hex}{ext}` 随机名，无子目录；`O_EXCL+O_NOFOLLOW` 防覆盖/防软链（L113）。
 
-**/storage 静态面映射**（`internal/routers/routes.go:62-64`）：
+**/storage 静态面映射**（`internal/routers/assembly.go` 的 `buildFoundation`；装配段已按审计 CQ-008 从 routes.go 拆出）：
 ```go
 router.StaticFS("/storage", gin.Dir("public/storage", false))  // 禁目录列表
 ```
@@ -105,7 +105,7 @@ g.GET("/category/tree", handle.CategoryTree)
 g.POST("/category/create", ...); g.POST("/category/update", ...); g.POST("/category/delete", ...)
 ```
 
-**挂载点**：`internal/routers/routes.go:120` 建 `authorizedAPI := api.Group("", builtin.SessionAuthMiddleware(), builtin.CSRFMiddleware(), builtin.CasbinMiddleware())`；`routes.go:121` `mediahttp.SetupMediaRoutes(authorizedAPI, db)`（业务 API 依赖顺序 media 最先，routes.go:105 注释）。
+**挂载点**：`internal/routers/assembly.go`（装配段 `buildAPIAndCoreCRUD`）建 `authorizedAPI := api.Group("", builtin.SessionAuthMiddleware(), builtin.CSRFMiddleware(), builtin.CasbinMiddleware())`，紧接着 `mediahttp.SetupMediaRoutes(authorizedAPI, db)`（业务 API 依赖顺序 media 最先，该段注释有记录）。装配段已按审计 CQ-008 从 routes.go 拆出，故不再标行号——行号会随拆段漂移，段落名稳定。
 
 **页面路由**：`dashboard_router.go:61` `adminPages.GET("/media", handle.MediaPage)`（Session+CSRF 组，无 Casbin）。
 

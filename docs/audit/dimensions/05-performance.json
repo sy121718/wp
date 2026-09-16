@@ -706,7 +706,8 @@
         "builder",
         "performance"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-16 完成。改为渲染期登记：组件在 BuildView 时经 core.ViewFeatureDeclarer 声明自己的字段会让模板输出哪些 hx-*/data-*/控件 class，Compile 把声明收进 FeatureSet 并带出 CompiledPage.Features，RenderDocument 直接读登记结果。判定刻意挂在**组件视图**上而不是在渲染层重新解析 props —— 模板渲染读的就是视图字段，判定与模板同源，不存在第二份实现分叉。tokenize 版本按 remediation 第 4 步保留为回退路径（Features 为 nil 时启用，供手工构造 CompiledPage 的调用方与交叉验证使用）。交叉验证 ui_feature_crosscheck_test.go 三条断言：注入结果逐字节一致、登记集合是实际输出集合的子集、实际输出中影响判定的属性必须全登记；覆盖组件库全部条目加 22 个条件分支场景，结果完全一致。断言确有失败能力（反例实测：注释掉 slider 的上报 → 断言 C 报漏登记属性 data-slider；把 counter 的 CSSMode 条件写反 → 断言 B 报登记了产物里不存在的属性）。过程中抓出并修掉一处真实分叉：carticon 悬停形态的模板不含 data-cart-icon-panel（浮层纯 CSS 开合），原先两种形态共用登记会白送一份增强脚本。基准（584KB 真实产物）：tokenize 6.63ms / 1.38MB / 119226 allocs → 登记 5.45µs / 2.88KB / 17 allocs。修正两处审计描述：impact 称本条是构建期热点之一，实测不成立（6.6ms 对单页构建属毫秒级），真正的收益是把每页一遍 O(字节) 解析与 12 万次分配降为常数级读取；evidence 写的调用点在 RenderDocument 内的 collectHTMLScan，collectHTMLFeatures 只被测试使用，行号亦有偏移。遗留：plugin.* 组件的 V 是 props map，无法实现该接口 —— 插件组件输出 hx-* 时不上报（当前内置插件产物无此类属性，实测无影响），要覆盖需在插件规格里加声明输出特征的字段。"
     },
     {
       "id": "PERF-015",

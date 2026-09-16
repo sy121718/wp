@@ -1193,7 +1193,8 @@
         "redirect",
         "admin-ui"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-16 完成。新增重定向管理页：列出全部 301（DB 占用账与访问面 redirect.json 合并）、手动新增、删除、多跳链一键合并；接口 GET /api/page/redirect 与 POST /api/page/redirect/create|delete|merge，权限点 page:redirect_view/create/delete/merge（迁移 218 同批 seed 权限点 + 超管策略 + 菜单；迁移 219 是 60 个 key 乘 zh-CN/en-US，并在 register_admin_i18n.go 注册）。两个关键实现事实：page_routes 的 redirect 行**不存目标路径**，目标只在产物 redirect.json 里，所以列表必须合并两个来源，账上有而线上没有的条目显式显示未生效而不是假装成功；成环判定用 resolveRedirectTail 以 source 为起点做 visited 沿边前进（一次覆盖 A 到 A、A 到 B 到 A、A 到 B 到 C 到 B），hop 上限 32 只作脏数据护栏。新增校验顺序：源空闲 → 沿链解析到链尾（自动消除多跳）→ 链尾须命中 route_kind=active 行 → 先登记 DB 占用再落产物激活，激活失败回滚占用行。合并只重写 source 的 redirect.json 指向链尾、DB 行不动 —— 链只存在于产物里，所以不需要新表（migrationNeeded 由 218/219 满足）。验证：go build 与 go vet 通过，迁移首次与重复执行均 exit 0 且零 ERROR，page 的 unit 与 feature 测试 ok，check-permission-gaps 无缺口（277 路由 / 276 权限点 / 5 豁免），i18n 门禁 18 等于基线。顺带修掉一处真实缺陷：ensureRedirectRoute 此前用 NewRedirectArtifact(publishedPath, 301) 自行落一份重定向产物，而该函数第一个参数是 targetPath —— 传旧路径自身等于生成一条 A 到 A 的自环 301；它落在内容寻址 store 里从不被激活，所以线上行为一直是对的（生效的是内核 publisher.UpdateURL 那份），代价是每个工程每改一次 URL 就多一份永不使用的垃圾产物，且一旦有人把它的 Locator 拿去激活就是无限重定向。产物落盘与激活本就由内核负责，该处已改为只登记 DB 占用。遗留：页面挂在 /api 下且不继承 layout.html（page 模块拿不到 layout 的 NavGroups，而 sidebar partial 对 nil 会直接 range 中断渲染），因此没有侧栏入口，sys_menus 那条 seed 只在菜单管理页可见；要挂侧栏需在 dashboard 的 nav_menu.go 加一行。"
     }
   ]
 }

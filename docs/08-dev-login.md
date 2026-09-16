@@ -40,7 +40,7 @@ curl -s -b /tmp/c.txt 'http://127.0.0.1:8080/admin/mail/automation' | head
 
 | 锁 | 做法 | 为什么这样做 |
 |---|---|---|
-| 1. **release 下不存在** | `routers/routes.go` 里判断 `server.mode == debug` 才 `router.GET` | 不存在的路由无法被利用，比「注册了再在 handler 里判断」更可靠 |
+| 1. **release 下不存在** | `internal/routers/assembly.go`（装配段 `buildAPIAndCoreCRUD`）里判断 `server.mode == debug` 才 `router.GET` | 不存在的路由无法被利用，比「注册了再在 handler 里判断」更可靠 |
 | 2. **只认环回地址** | 用 `c.Request.RemoteAddr` 判断，**不是** `c.ClientIP()` | 后者受 `X-Forwarded-For` 影响；代理配置不当就能从外部伪造出「本机请求」 |
 | 3. **只登超管** | 查询固定带 `is_admin = 1` | 它是「本机开发便利」，不是「任意管理员后门」 |
 | 4. **走同一条会话路径** | `auth.NewSessionID` + `SaveUserSession` + `RefreshOnline` + `RotateCSRFToken` | 不做「直接塞 cookie 就放行」的旁路 —— 那样开发环境的会话行为与生产不一致，用它验出来的东西不算数 |

@@ -198,7 +198,7 @@ page/service → 调 pubcontract.PublicationService
 projectService := projecthttp.SetupProjectRoutes(authorizedAPI, db)
 blockSvc := blockhttp.SetupBlockRoutes(authorizedAPI, db, projectService)
 presentationSvc := presentationhttp.SetupPresentationRoutes(authorizedAPI, db, contentTemplateSvc, contentSvc)
-```（节选自 `internal/routers/routes.go`，与实际装配顺序一致）
+```（示意摘录；实际装配已按审计 CQ-008 分段：`internal/routers/routes.go` 只保留入口与顺序调用，各装配段落见 `assembly.go` 与 `assembly_publish.go`，与依赖顺序一致）
 
 ## 测试策略（审计 CQ-020）
 
