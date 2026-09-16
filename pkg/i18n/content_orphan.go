@@ -36,6 +36,10 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"gorm.io/gorm"
+
+	"go_wp/pkg/rls"
 )
 
 // 孤儿判据（报告与日志里的取值）。
@@ -178,7 +182,12 @@ func (w *ContentWriter) ScanOrphans(ctx context.Context, scope OrphanScope) (Orp
 	report.KeptKeys = keptKeys
 
 	var rows []orphanScanRow
-	if err := w.db.WithContext(ctx).Raw(orphanScanQuery, report.ProjectID, report.Lang, limit+1).Scan(&rows).Error; err != nil {
+	// sys_translation 在迁移 215 的 RLS 名单里，策略只额外放行 project_id IS NULL 的全局行，
+	// 而本判据针对的正是工程级行 —— 不设作用域时这条查询在非超级角色下恒 0 行，
+	// 运维会读到「检出 0 行、清理 0 行」并以为库里没有孤儿。
+	if err := rls.InProjectScope(ctx, w.db, report.ProjectID, func(tx *gorm.DB) error {
+		return tx.WithContext(ctx).Raw(orphanScanQuery, report.ProjectID, report.Lang, limit+1).Scan(&rows).Error
+	}); err != nil {
 		return report, err
 	}
 	if len(rows) > limit {
@@ -252,11 +261,19 @@ func (w *ContentWriter) deleteOrphanChunk(ctx context.Context, projectID string,
 	sql := "DELETE FROM sys_translation t USING (VALUES " + strings.Join(tuples, ", ") + ") AS o(source_hash, context, lang) " +
 		"WHERE t.source_hash = o.source_hash AND t.context = o.context AND t.lang = o.lang " +
 		"AND t.project_id = $" + strconv.Itoa(len(args)) + "::uuid"
-	res := w.db.WithContext(ctx).Exec(sql, args...)
-	if res.Error != nil {
-		return 0, res.Error
+	// 与 ScanOrphans 同理：不设作用域时 DELETE 影响 0 行且不报错，清理在日志里看起来是「成功」的。
+	var affected int64
+	if err := rls.InProjectScope(ctx, w.db, projectID, func(tx *gorm.DB) error {
+		res := tx.WithContext(ctx).Exec(sql, args...)
+		if res.Error != nil {
+			return res.Error
+		}
+		affected = res.RowsAffected
+		return nil
+	}); err != nil {
+		return 0, err
 	}
-	return res.RowsAffected, nil
+	return affected, nil
 }
 
 // orphanRowOf 扫描行 → 孤儿行（附判据）。
