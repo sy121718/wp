@@ -224,8 +224,17 @@ func (s *Service) GetTag(ctx context.Context, req *productdto.GetTagReq) (res *p
 // 每个标签带当前归属数量：列表页要能一眼看出自动规则命中了多少商品。
 func (s *Service) ListTags(ctx context.Context, req *productdto.ListTagReq) (list []*productdto.TagResp, err error) {
 	var projectID, kind, keyword string
+	rawProjectID := ""
 	if req != nil {
-		projectID, kind, keyword = req.ProjectID, strings.TrimSpace(req.Kind), strings.TrimSpace(req.Keyword)
+		rawProjectID, kind, keyword = req.ProjectID, strings.TrimSpace(req.Kind), strings.TrimSpace(req.Keyword)
+	}
+	// 工程作用域必填（DB-009）：下面的 CountProductsByTag 反查的是 products，
+	// 没有作用域时每个标签的命中数会静默变成 0（fail closed 不报错）。
+	// 这与 Products.List 同一口径：不显式指定工程时取唯一工程，多于一个工程即报错，
+	// 不再有「projectID 为空 = 不限工程」这条在策略下必然退化成空结果的旧语义。
+	projectID, err = s.resolveProjectID(ctx, rawProjectID)
+	if err != nil {
+		return nil, err
 	}
 	rows, err := s.m.ListTags(ctx, projectID, kind, keyword)
 	if err != nil {
@@ -234,7 +243,7 @@ func (s *Service) ListTags(ctx context.Context, req *productdto.ListTagReq) (lis
 	list = make([]*productdto.TagResp, 0, len(rows))
 	for _, r := range rows {
 		resp := toTagResp(r)
-		n, cerr := s.m.CountProductsByTag(ctx, r.ID)
+		n, cerr := s.m.CountProductsByTag(ctx, r.ID, projectID)
 		if cerr != nil {
 			return nil, cerr
 		}
@@ -263,7 +272,7 @@ func (s *Service) ListTagProducts(ctx context.Context, req *productdto.ListTagPr
 	if limit > maxTagProducts {
 		limit = maxTagProducts
 	}
-	rows, err := s.m.ListProductsByTag(ctx, req.TagID, limit)
+	rows, err := s.m.ListProductsByTag(ctx, req.TagID, projectID, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -487,7 +496,7 @@ func (s *Service) filterProjectProductIDs(ctx context.Context, projectID string,
 	if len(ids) == 0 {
 		return out, nil
 	}
-	rows, lerr := s.m.ListProductsByIDs(ctx, ids)
+	rows, lerr := s.m.ListProductsByIDs(ctx, ids, projectID)
 	if lerr != nil {
 		return nil, lerr
 	}
@@ -506,7 +515,9 @@ func (s *Service) filterProjectProductIDs(ctx context.Context, projectID string,
 
 // tagDetail 实体 → 详情响应（含命中商品列表）。
 func (s *Service) tagDetail(ctx context.Context, e *productmodel.ProductTagEntity) (res *productdto.TagResp, err error) {
-	rows, lerr := s.m.ListProductsByTag(ctx, e.ID, maxTagProducts)
+	// 工程作用域取标签自身的工程：tagDetail 的入参就是标签实体（ProjectID 非空列），
+	// 不必再由调用方多传一个参数。
+	rows, lerr := s.m.ListProductsByTag(ctx, e.ID, e.ProjectID, maxTagProducts)
 	if lerr != nil {
 		return nil, lerr
 	}

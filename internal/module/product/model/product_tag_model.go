@@ -147,27 +147,40 @@ func (m *Model) DeleteTagTx(tx *gorm.DB, id string) (err error) {
 // ListProductsByTag 反查挂了某标签的商品（后台「某标签命中哪些商品」）。
 //
 // tag_ids 是 JSONB 数组：用包含谓词命中 GIN 索引；limit <= 0 表示不限条数。
-func (m *Model) ListProductsByTag(ctx context.Context, tagID string, limit int) (list []*ProductEntity, err error) {
+//
+// projectID 由**调用方**给出：反查的是 products（迁移 215 名单），工程上下文只有调用方有。
+// 缺作用域时这里静默返回空列表（fail closed 不报错）—— 表现为「标签明明命中商品，
+// 列表却是空的」，比报错更难排查。
+func (m *Model) ListProductsByTag(ctx context.Context, tagID, projectID string, limit int) (list []*ProductEntity, err error) {
 	probe, merr := json.Marshal([]string{tagID})
 	if merr != nil {
 		return nil, merr
 	}
-	q := m.DB(ctx).Where("tag_ids @> ?::jsonb", string(probe)).
-		Order("sort ASC, create_time ASC, id ASC")
-	if limit > 0 {
-		q = q.Limit(limit)
-	}
-	err = q.Find(&list).Error
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		q := tx.WithContext(ctx).Model(&ProductEntity{}).
+			Where("tag_ids @> ?::jsonb", string(probe)).
+			Order("sort ASC, create_time ASC, id ASC")
+		if limit > 0 {
+			q = q.Limit(limit)
+		}
+		return q.Find(&list).Error
+	})
 	return list, err
 }
 
 // CountProductsByTag 某标签命中的商品数（列表页只数不取行）。
-func (m *Model) CountProductsByTag(ctx context.Context, tagID string) (n int64, err error) {
+//
+// projectID 由**调用方**给出：反查的是 products（迁移 215 名单）。缺作用域时恒为 0 ——
+// 列表页上每个标签的「命中商品数」会静默全变成 0，而不是报错。
+func (m *Model) CountProductsByTag(ctx context.Context, tagID, projectID string) (n int64, err error) {
 	probe, merr := json.Marshal([]string{tagID})
 	if merr != nil {
 		return 0, merr
 	}
-	err = m.DB(ctx).Where("tag_ids @> ?::jsonb", string(probe)).Count(&n).Error
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.WithContext(ctx).Model(&ProductEntity{}).
+			Where("tag_ids @> ?::jsonb", string(probe)).Count(&n).Error
+	})
 	return n, err
 }
 
@@ -223,20 +236,32 @@ func (m *Model) RemoveTagFromProductsTx(tx *gorm.DB, tagID, projectID string, no
 }
 
 // ListProductsByIDs 批量取商品行（引用校验、工程过滤用，避免 N+1）。
-func (m *Model) ListProductsByIDs(ctx context.Context, ids []string) (list []*ProductEntity, err error) {
+//
+// projectID 由**调用方**给出：products 在迁移 215 名单里，跨工程的行读不到（这是期望行为 ——
+// 本方法的两个用途「捆绑引用校验」「按工程过滤 id」都要求只看到本工程的行）。
+// 缺作用域时的表现是**返回空列表**：调用方按「请求了哪些 id、拿到了哪些」做差集时，
+// 会把本工程存在的商品也判成「已删除」。
+func (m *Model) ListProductsByIDs(ctx context.Context, ids []string, projectID string) (list []*ProductEntity, err error) {
 	if len(ids) == 0 {
 		return nil, nil
 	}
-	err = m.DB(ctx).Where("id IN ?", ids).Find(&list).Error
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.WithContext(ctx).Model(&ProductEntity{}).Where("id IN ?", ids).Find(&list).Error
+	})
 	return list, err
 }
 
 // ListProductIDsPublishedSince 取工程内「上架时间在 since 之后」的已发布商品 id
 // （新品规则的求值来源；单表查询，条件以参数传入）。
+//
+// projectID 这里既是过滤条件也是工程作用域：products 在迁移 215 名单里，缺作用域时
+// 命中 0 行 ⇒「新品」自动标签重算出来的归属会是空集（把已有归属整体清空），且不报错。
 func (m *Model) ListProductIDsPublishedSince(ctx context.Context, projectID, status string, since time.Time) (ids []string, err error) {
-	err = m.DB(ctx).
-		Where("project_id = ? AND status = ? AND published_at IS NOT NULL AND published_at >= ?", projectID, status, since).
-		Distinct().Pluck("id", &ids).Error
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.WithContext(ctx).Model(&ProductEntity{}).
+			Where("project_id = ? AND status = ? AND published_at IS NOT NULL AND published_at >= ?", projectID, status, since).
+			Distinct().Pluck("id", &ids).Error
+	})
 	return ids, err
 }
 

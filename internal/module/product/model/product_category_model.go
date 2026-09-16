@@ -142,14 +142,20 @@ func (m *Model) CountCategoryChildren(ctx context.Context, parentID string) (n i
 //
 // 两个引用面都查：附属分类走 category_ids 的 jsonb 包含谓词，主分类走真列。
 // 只取一行用于拦截提示，故 Limit(1)；命中多条时取排序最靠前的一条。
-func (m *Model) ProductUsingCategory(ctx context.Context, categoryID string) (e *ProductEntity, err error) {
+//
+// projectID 由**调用方**给出：反查的是 products（迁移 215 名单），工程上下文只有调用方有
+// （它的语义是「本次删除会撞到哪些商品」，作用域就是发起删除的那个工程）。
+// 缺作用域时这里命中 0 行 ⇒ 占用检查静默放行 ⇒ 删除留下悬空引用（DB-009）。
+func (m *Model) ProductUsingCategory(ctx context.Context, categoryID, projectID string) (e *ProductEntity, err error) {
 	probe, merr := json.Marshal([]string{categoryID})
 	if merr != nil {
 		return nil, gorm.ErrRecordNotFound
 	}
 	e = &ProductEntity{}
-	err = m.DB(ctx).
-		Where("category_ids @> ?::jsonb OR primary_category_id = ?", string(probe), categoryID).
-		Order("sort ASC, create_time ASC").Limit(1).Take(e).Error
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.WithContext(ctx).Model(&ProductEntity{}).
+			Where("category_ids @> ?::jsonb OR primary_category_id = ?", string(probe), categoryID).
+			Order("sort ASC, create_time ASC").Limit(1).Take(e).Error
+	})
 	return e, err
 }

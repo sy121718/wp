@@ -156,7 +156,7 @@ func (s *Service) DeleteBrand(ctx context.Context, req *productdto.DeleteBrandRe
 	if _, gerr := s.m.GetBrand(ctx, req.ID, projectID); gerr != nil {
 		return mapNotFound(gerr)
 	}
-	if _, uerr := s.m.ProductUsingBrand(ctx, req.ID); uerr == nil {
+	if _, uerr := s.m.ProductUsingBrand(ctx, req.ID, projectID); uerr == nil {
 		return errors.New(productenums.ErrBrandInUse)
 	} else if !errors.Is(uerr, gorm.ErrRecordNotFound) {
 		return uerr

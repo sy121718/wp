@@ -159,11 +159,21 @@ func (m *Model) DeleteAttribute(ctx context.Context, id string) (err error) {
 // ListProductAttributeIDs 某商品引用的属性组 id 数组（products.attribute_ids）。
 //
 // 用于「删除属性组前的引用检查」与「商品详情回显」：只读一列，不整行加载。
-func (m *Model) ListProductAttributeIDs(ctx context.Context, productID string) (raw json.RawMessage, err error) {
+//
+// productID 是**商品** id，projectID 才是工程作用域 —— 两者不可混用：products 在迁移 215
+// 名单里，缺作用域的读在非超级角色下静默返回 0 行（fail closed 不报错）。
+//
+// 当前**没有调用方**：商品详情回显直接读行上已有的 attribute_ids 列（product_resp.go），
+// 删除前引用检查走 ProductUsingAttribute 的 jsonb 反查。保留它是因为「按商品取引用」
+// 这个形状迟早要用；签名先按 DB-009 的口径带上作用域，免得将来有人顺手拿它做跨工程读。
+func (m *Model) ListProductAttributeIDs(ctx context.Context, productID, projectID string) (raw json.RawMessage, err error) {
 	var row struct {
 		AttributeIDs json.RawMessage `gorm:"column:attribute_ids"`
 	}
-	err = m.DB(ctx).Select("attribute_ids").Where("id = ?", productID).Take(&row).Error
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.WithContext(ctx).Model(&ProductEntity{}).
+			Select("attribute_ids").Where("id = ?", productID).Take(&row).Error
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -174,14 +184,20 @@ func (m *Model) ListProductAttributeIDs(ctx context.Context, productID string) (
 //
 // 以 jsonb 包含谓词查询：attribute_ids 是 id 数组，@> 命中即被引用；
 // 只取一行用于拦截提示，故 Limit(1)。命中多条时取排序最靠前的一条。
-func (m *Model) ProductUsingAttribute(ctx context.Context, attributeID string) (e *ProductEntity, err error) {
+//
+// projectID 由**调用方**给出：反查的是 products（迁移 215 名单），工程上下文只有调用方有
+// （它的语义是「本次删除会撞到哪些商品」，作用域就是发起删除的那个工程）。
+// 缺作用域时这里命中 0 行 ⇒ 占用检查静默放行 ⇒ 删除留下悬空引用（DB-009）。
+func (m *Model) ProductUsingAttribute(ctx context.Context, attributeID, projectID string) (e *ProductEntity, err error) {
 	probe, merr := json.Marshal([]string{attributeID})
 	if merr != nil {
 		return nil, gorm.ErrRecordNotFound
 	}
 	e = &ProductEntity{}
-	err = m.DB(ctx).
-		Where("attribute_ids @> ?::jsonb", string(probe)).
-		Order("sort ASC, create_time ASC").Limit(1).Take(e).Error
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.WithContext(ctx).Model(&ProductEntity{}).
+			Where("attribute_ids @> ?::jsonb", string(probe)).
+			Order("sort ASC, create_time ASC").Limit(1).Take(e).Error
+	})
 	return e, err
 }

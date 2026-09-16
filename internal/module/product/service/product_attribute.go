@@ -205,7 +205,7 @@ func (s *Service) DeleteAttribute(ctx context.Context, req *productdto.DeleteAtt
 	if _, gerr := s.m.GetAttribute(ctx, req.ID, projectID); gerr != nil {
 		return mapNotFound(gerr)
 	}
-	if _, uerr := s.m.ProductUsingAttribute(ctx, req.ID); uerr == nil {
+	if _, uerr := s.m.ProductUsingAttribute(ctx, req.ID, projectID); uerr == nil {
 		return errors.New(productenums.ErrAttrInUse)
 	} else if !errors.Is(uerr, gorm.ErrRecordNotFound) {
 		return uerr

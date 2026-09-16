@@ -269,7 +269,9 @@ func (s *Service) validateBundleConfig(ctx context.Context, product *productmode
 		for _, v := range variants {
 			productIDs = append(productIDs, v.ProductID)
 		}
-		owners, oerr := s.m.ListProductsByIDs(ctx, productIDs)
+		// 作用域取宿主商品的工程：跨工程的 SKU 这里本来就该「读不到」，
+		// projectOf 缺失即落到下面的 ProjectMismatch 分支（与旧语义一致，只是不再靠全表读）。
+		owners, oerr := s.m.ListProductsByIDs(ctx, productIDs, product.ProjectID)
 		if oerr != nil {
 			return out, oerr
 		}
@@ -344,7 +346,7 @@ func (s *Service) bundleConfigResp(ctx context.Context, e *productmodel.ProductE
 		byID[v.ID] = v
 		productIDs = append(productIDs, v.ProductID)
 	}
-	owners, oerr := s.m.ListProductsByIDs(ctx, productIDs)
+	owners, oerr := s.m.ListProductsByIDs(ctx, productIDs, e.ProjectID)
 	if oerr != nil {
 		return nil, oerr
 	}

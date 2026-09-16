@@ -219,7 +219,7 @@ func (s *Service) DeleteCategory(ctx context.Context, req *productdto.DeleteCate
 	} else if n > 0 {
 		return errors.New(productenums.ErrCategoryHasChildren)
 	}
-	if _, uerr := s.m.ProductUsingCategory(ctx, req.ID); uerr == nil {
+	if _, uerr := s.m.ProductUsingCategory(ctx, req.ID, projectID); uerr == nil {
 		return errors.New(productenums.ErrCategoryInUse)
 	} else if !errors.Is(uerr, gorm.ErrRecordNotFound) {
 		return uerr

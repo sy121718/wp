@@ -117,7 +117,7 @@ func (s *Service) ValidateBundleSelection(ctx context.Context, req *productdto.V
 	}
 
 	// 展开结果：订单侧将来必须快照这份结果（哪些 SKU、各多少），而不是引用商品当前的 BOM。
-	details, derr := s.bundleSelectedItems(ctx, ids, avail)
+	details, derr := s.bundleSelectedItems(ctx, projectID, ids, avail)
 	if derr != nil {
 		return nil, derr
 	}
@@ -142,7 +142,10 @@ func (s *Service) ValidateBundleSelection(ctx context.Context, req *productdto.V
 }
 
 // bundleSelectedItems 批量组装展开行的 SKU 快照（价格与成本取当前值）。
-func (s *Service) bundleSelectedItems(ctx context.Context, variantIDs []string, avail map[string]int) (out map[string]*productdto.BundleSelectedItem, err error) {
+//
+// projectID 由调用方给出（ValidateBundleSelection 已解析）：SKU 快照要回填商品名，
+// 读的是 products（迁移 215 名单），缺作用域时商品名整列为空。
+func (s *Service) bundleSelectedItems(ctx context.Context, projectID string, variantIDs []string, avail map[string]int) (out map[string]*productdto.BundleSelectedItem, err error) {
 	out = make(map[string]*productdto.BundleSelectedItem, len(variantIDs))
 	if len(variantIDs) == 0 {
 		return out, nil
@@ -155,7 +158,7 @@ func (s *Service) bundleSelectedItems(ctx context.Context, variantIDs []string, 
 	for _, v := range variants {
 		productIDs = append(productIDs, v.ProductID)
 	}
-	owners, oerr := s.m.ListProductsByIDs(ctx, productIDs)
+	owners, oerr := s.m.ListProductsByIDs(ctx, productIDs, projectID)
 	if oerr != nil {
 		return nil, oerr
 	}

@@ -278,7 +278,7 @@ func (s *Service) GetPriceAdjustment(ctx context.Context, req *productdto.GetPri
 	if err != nil {
 		return nil, err
 	}
-	names, err := s.adjustmentProductNames(ctx, details)
+	names, err := s.adjustmentProductNames(ctx, projectID, details)
 	if err != nil {
 		return nil, err
 	}
@@ -286,7 +286,10 @@ func (s *Service) GetPriceAdjustment(ctx context.Context, req *productdto.GetPri
 }
 
 // adjustmentProductNames 批量取明细涉及的当前商品名（失败不阻断留痕读取）。
-func (s *Service) adjustmentProductNames(ctx context.Context, details []*productmodel.PriceAdjustmentItemEntity) (names map[string]string, err error) {
+//
+// projectID 由调用方给出（读留痕时已经解析过）：读的是 products（迁移 215 名单），
+// 缺作用域时名字全取不到、返回空 map —— 留痕详情里的商品名会整列变空。
+func (s *Service) adjustmentProductNames(ctx context.Context, projectID string, details []*productmodel.PriceAdjustmentItemEntity) (names map[string]string, err error) {
 	names = map[string]string{}
 	ids := make([]string, 0, len(details))
 	seen := map[string]bool{}
@@ -300,7 +303,7 @@ func (s *Service) adjustmentProductNames(ctx context.Context, details []*product
 	if len(ids) == 0 {
 		return names, nil
 	}
-	rows, lerr := s.m.ListProductsByIDs(ctx, ids)
+	rows, lerr := s.m.ListProductsByIDs(ctx, ids, projectID)
 	if lerr != nil {
 		return nil, lerr
 	}
