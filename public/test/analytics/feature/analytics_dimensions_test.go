@@ -322,3 +322,59 @@ func TestAnalyticsDimensionIsolationAndLimits(t *testing.T) {
 		t.Fatal("未知维度应被拒绝，而不是拼进 SQL")
 	}
 }
+
+// TestAnalyticsDimensionEmptyProject 空表：三组榜是空切片而不是 nil。
+//
+// 空切片与 nil 在 JSON 里是 [] 与 null 两种信号 —— 前者是「这个工程还没有访问」，
+// 后者会被前端当成「字段缺失」（老版本接口 / 序列化 bug），处理方式不一样。
+func TestAnalyticsDimensionEmptyProject(t *testing.T) {
+	f := newAnalyticsFixture(t)
+	res, err := f.svc.Summary(context.Background(), &analyticsdto.SummaryReq{ProjectID: f.projectID})
+	if err != nil {
+		t.Fatalf("空工程查询失败: %v", err)
+	}
+	if res.Referrers == nil || res.UAClasses == nil || res.Langs == nil {
+		t.Fatalf("空工程的三组榜应是空切片（JSON 的 []）而不是 nil（null）: %+v", res)
+	}
+	if n := len(res.Referrers) + len(res.UAClasses) + len(res.Langs); n != 0 {
+		t.Fatalf("空工程不该有任何维度的行，实际 %d 条", n)
+	}
+	if res.BreakdownSource != analyticsdto.SourceDetail {
+		t.Errorf("空表下取数来源仍应回显 detail，实际 %q", res.BreakdownSource)
+	}
+}
+
+// TestAnalyticsDimensionLargeWindow 大窗口：跨 8 天分散的数据按窗口整体聚合。
+//
+// 与「窗口切换」用例互补 —— 那个用例钉的是取数分支，这个钉的是窗口跨度本身：
+// 维度聚合看的是整个窗口，而不是单日（单日聚合会漏掉窗口里其余天数的访问）。
+func TestAnalyticsDimensionLargeWindow(t *testing.T) {
+	f := newAnalyticsFixture(t)
+	today := utcDay(time.Now())
+	for d := 7; d >= 0; d-- {
+		day := today.AddDate(0, 0, -d)
+		referrer := "ref-even.example.com"
+		if d%2 == 1 {
+			referrer = "ref-odd.example.com"
+		}
+		seedDim(t, f, dimSeed{
+			path: "/a", visitor: fmt.Sprintf("v%d-a", d), referrer: referrer,
+			uaClass: "desktop", lang: "zh-CN", at: day.Add(time.Hour),
+		})
+		seedDim(t, f, dimSeed{
+			path: "/a", visitor: fmt.Sprintf("v%d-b", d), referrer: referrer,
+			uaClass: "mobile", lang: "en", at: day.Add(2 * time.Hour),
+		})
+	}
+	res := summaryRank(t, f, dayStr(today.AddDate(0, 0, -7)), dayStr(today), 0)
+	if res.Total != 16 {
+		t.Fatalf("窗口内应有 16 次访问，实际 %d", res.Total)
+	}
+	// 两个来源交替出现 4 天 × 2 次 = 各 8 次、各 8 个不同访客；并列时按取值升序。
+	assertRanks(t, "来源域（大窗口）", res.Referrers,
+		[]string{"ref-even.example.com", "ref-odd.example.com"}, []int64{8, 8}, []int64{8, 8})
+	assertRanks(t, "设备分类（大窗口）", res.UAClasses,
+		[]string{"desktop", "mobile"}, []int64{8, 8}, []int64{8, 8})
+	assertRanks(t, "语言（大窗口）", res.Langs,
+		[]string{"en", "zh-CN"}, []int64{8, 8}, []int64{8, 8})
+}
