@@ -241,6 +241,10 @@ Cookie 属性：`HttpOnly`、`Secure`（release 自动启用）、`SameSite=Lax`
 - **时间列命名统一为 `create_time` / `update_time`**（审计 DB-019，迁移 205 收口）：全库已无 `created_at` / `updated_at`，新表新列一律用 `*_time`，不要再引入 `*_at`
 - **时间列类型统一 `timestamptz`**（迁移 212 收口）：全库 191 个时间列现在都是 `timestamp with time zone`。最后 4 个是 webhook 两张表的 `create_time`/`update_time`（199 建表时用 BIGINT 存 `time.Now().Unix()`，205 只改了列名没改类型，于是它们成了仅有的例外），212 用 `USING to_timestamp(...)` 转换过来。**新表一律 `timestamptz` + Go 的 `time.Time`**，不要再引入 int64 时间戳：它丢掉亚秒精度（投递日志同秒内排序不稳定）、无法直接用 PG 的时间运算与区间索引（BRIN / `date_trunc` 分组要先转换）、与其它表的列比较必须显式转换
 - **软删除列名统一为 `deleted_at`**（审计 DB-020，迁移 208 收口）：`sys_menus` 原本的 `deleted_time` 已改名。`sys_attachment` 用 `status` 表达删除属**存量例外**，新表不要照抄
+- **工程隔离的 RLS 策略已铺，但在换连接角色之前不生效（DB-009）**：迁移 215 给 53 个带 `project_id` 的对象（40 张基表 + 分区子表）装了 `ROW LEVEL SECURITY` + `FORCE`，策略谓词读会话变量 `app.project_id`（未设置即行不可见，fail closed；`inventory_change_reasons` / `sys_translation` 额外放行 `project_id IS NULL` 的全局行）。**但 PostgreSQL 的超级用户总是绕过 RLS** —— `FORCE` 只约束到表属主，约束不了 superuser / `BYPASSRLS` 角色，而应用连接用的是超级用户 `root`，所以策略目前一行都挡不住。实测（`themes` 表 1 行数据）：root 未设变量读出 1 行，普通角色未设变量读出 0 行
+  · **要让 RLS 真正生效，顺序不能反**：先给各模块的读写路径包上 `pkg/rls.InProjectScope`，**再**把 `config.yaml` 的 `database.user` 换成非超级角色（`bash scripts/rls-role-setup.sh <角色> <密码>` 建角色并授权，含 `ALTER DEFAULT PRIVILEGES` 让将来新建的表也自动授权）。反过来的话，没包 scope 的路径会**静默返回 0 行**（fail closed 不报错），表现为「功能突然查不到数据」而没有任何错误日志
+  · 分区子表必须单独设：**PG 的 `ENABLE` / `FORCE` 不递归到分区**（实测父表 `relrowsecurity=t`、子表全为 `f`），新分区的策略由 `internal/partition.EnsureAhead` 建表后补
+  · 样板：`internal/module/project/model/locale_model.go`（`project_locales` 是 199 的试点，也是当前**唯一**接了 scope 的表）
 - 改列名时注意两类**不会自动跟随**的对象：**触发器 / plpgsql 函数体**（函数体是字符串，RENAME 后仍按旧名解析，迁移 206 修的就是它）与 **seed SQL**（seed 可重复执行，必须同步改；历史迁移 SQL 保持原样）。索引表达式、视图、约束由 PG 自动重写
 - 迁移的 `CheckSQL` 里 `?` 由迁移器传入的是**表名**；判定要用的其它值（权限点代码等）必须写进 SQL 字面量，否则判定恒为 0、迁移每次启动都重跑（178 踩过）
 - **主键选型按「这个 id 会不会出现在系统边界之外」判**（DB-020 复核结论）：对外实体（`projects` / `pages` / `products` / `blocks` / `themes` / `content_templates` 等有对外接口，或 id 进了 Page Document / 产物元数据 / 导出物的）用 **uuid**；纯内部流水与字典（`page_views`、`build_jobs`、`publication_receipts`、`page_site_slots`、`inventory_change_reasons`、`sys_*` 全系）用 **bigint identity**。**两套并存是设计，不是待消除的不一致** —— 缺判据才是问题；新表按此选型，别为了「统一」把对外实体改成自增（id 一旦可枚举就少一层纵深，与 DB-009 想要的隔离方向相反）。判据只约束**新表**，**存量按现状为准**：`master_data_changes` / `inventory_stock_movements` 是 uuid 存量（后者 id 已进对外列表投影 `MovementRow`），说明「流水必然内部」这个直觉不成立 —— 别拿判据去反推存量
@@ -268,14 +272,14 @@ Cookie 属性：`HttpOnly`、`Secure`（release 自动启用）、`SameSite=Lax`
 - 默认跑现有测试，不新增额外测试框架
 - 接口优先维护 feature 链路测试（`public/test/`，真实 PostgreSQL 环境），复杂逻辑补 unit
 - 测试基建已迁移到本地 PostgreSQL（sqlite 驱动已移除）；PG/Redis 不可用时相关用例 `t.Skip`
-- **全量测试可以并发：`make test` 走 `-p 8`**（实测 271s；串行 966s）。2026-09 之前只能 `-p 1`，
+- **全量测试可以并发：`make test` 走 `-p $(nproc)`**（本机 16 核实测 65s；串行 966s）。2026-09 之前只能 `-p 1`，
   两道拦路虎都已拆掉：
   · `pg_trgm` 是**库级唯一**的扩展，装在哪个 schema 只有 search_path 含它的连接才解析得到
     `gin_trgm_ops` —— 过去串行时靠「测试结束 DROP SCHEMA 把扩展一并删掉、下个 schema 重新装」
     侥幸通过，一并行就互相踩（后来者 `CREATE EXTENSION IF NOT EXISTS` 静默跳过，随后整条迁移
     报 operator class does not exist）。现在它固定装在有专用 schema **`ext_shared`**（迁移 210
     负责既有库搬迁），迁移器 `Run` 统一把该 schema 补进 search_path —— 任何调用方都不会再踩。
-  · **测试不再为每个用例重跑 209 条迁移**（见下面「模板库」那条），并发时的锁表压力随之消失。
+  · **测试不再为每个用例重跑全部迁移**（现 216 条，见下面「模板库」那条），并发时的锁表压力随之消失。
     这正是当初 `-p 8` 会随机几个包 `out of shared memory` 的原因（失败包每次都不同，别误读成
     「某个包坏了」）。要再往上提并发，先确认 `max_locks_per_transaction`（默认 64）够用。
 - **按对象名查 catalog 的 SQL 必须限定 `current_schema()`**：`pg_class` / `pg_indexes` 是**全库**的，
