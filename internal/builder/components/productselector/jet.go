@@ -74,3 +74,14 @@ func BuildView(p *Props, content core.ContentResolver) (View, error) {
 	}
 	return view, nil
 }
+
+// DeclareFeatures 实现 core.ViewFeatureDeclarer（审计 PERF-014）：每档规格按需挂实时库存位
+// （hx-get），并可选挂实时价格核对位。没有规格组合时模板整块不输出这些 span。
+func (v View) DeclareFeatures() (attrs, classes []string) {
+	for _, vo := range v.VariantOptions {
+		if v.ShowStock || vo.LivePriceGet != "" {
+			return []string{"hx-get", "hx-trigger", "hx-swap"}, nil
+		}
+	}
+	return nil, nil
+}

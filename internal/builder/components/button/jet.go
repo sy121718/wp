@@ -45,6 +45,12 @@ type View struct {
 	// FetchHigh / FetchLow 资源提示（ApplyImageLoading 后有效）。
 	FetchHigh bool
 	FetchLow  bool
+	// FeatureAttrs 本次渲染真实输出的**属性名**（审计 PERF-014）：模板原样输出 Attrs，
+	// 属性名在这里另记一份，产物组装层据此决定注入哪些脚本（弹窗按钮要注入 modal.js）。
+	//
+	// 不从 Attrs 字符串反查：作者填的 URL / 文案里出现 "data-modal-open" 字样会造成
+	// 假阳性，而 tokenize 那条路径不会把它当属性 —— 交叉验证会红。
+	FeatureAttrs []string
 }
 
 // BuildView 生成按钮渲染视图：标签选择 + 链接协议 + 图标（与 render 输出结构一致）。
@@ -58,6 +64,11 @@ func BuildView(p *Props, content core.ContentResolver, siteLink func(string) str
 		return View{}, err
 	}
 	v := View{Tag: tag, Attrs: attrs, Text: p.Text, Loading: p.Loading, FetchPriority: p.FetchPriority}
+	// 运行时特征（审计 PERF-014）：与 buildAttrs 的 ActionModal 分支同源。
+	// 两处判定漂移（这里说输出而模板没输出，或反过来）会被交叉验证测试抓住。
+	if p.Action == ActionModal {
+		v.FeatureAttrs = append(v.FeatureAttrs, "data-modal-open")
+	}
 	if p.Icon != nil {
 		// top 与 prefix 同用前缀位、bottom 与 suffix 同用后缀位，
 		// 上下排布由编译端 flex-direction: column 实现（见 CompileCSS）。
@@ -158,4 +169,10 @@ func buildAttrs(p *Props, content core.ContentResolver, siteLink func(string) st
 		}
 	}
 	return tag, attrs, nil
+}
+
+// DeclareFeatures 实现 core.ViewFeatureDeclarer（审计 PERF-014）：弹窗动作的按钮输出
+// data-modal-open，产物据此注入 modal.js（没有它的页面不该带这份脚本）。
+func (v View) DeclareFeatures() (attrs, classes []string) {
+	return v.FeatureAttrs, nil
 }

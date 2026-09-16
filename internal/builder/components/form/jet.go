@@ -95,3 +95,15 @@ func (v *View) ApplyI18n(text func(key, fallback string) string) {
 	}
 	v.SubmitLabel = text(TextKeySubmit, textFallbackSubmit)
 }
+
+// DeclareFeatures 实现 core.ViewFeatureDeclarer（审计 PERF-014）：表单里出现下拉字段时，
+// form.jet 输出 data-ui-select —— 产物据此内联「原始控件基座」的下拉替身（原生 select 的
+// 弹层在部分桌面环境行为异常）。没有下拉字段就一个字节都不该带。
+func (v View) DeclareFeatures() (attrs, classes []string) {
+	for _, f := range v.Fields {
+		if f.Type == "select" {
+			return []string{"data-ui-select"}, nil
+		}
+	}
+	return nil, nil
+}

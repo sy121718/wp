@@ -86,7 +86,12 @@ func TestPerfQuantHtmxInlineBytes(t *testing.T) {
 	base := renderOrFatal(t, res)
 
 	// B：把一行真实的 htmx 用法（等价 product.jet 的实时库存行）插进 HTML。
+	//
+	// Features 置 nil（审计 PERF-014）：这段 hx- 是**手工拼进 HTML** 的，编译期登记表里
+	// 当然没有它 —— 置 nil 让 RenderDocument 回退到扫描 HTML 那条路径，量化口径与实施
+	// 登记制之前完全一致（否则这里量的是「登记表里有没有」，不是「HTML 字节值多少」）。
 	withHx := *res
+	withHx.Features = nil
 	withHx.HTML = res.HTML + "<span class=\"sky-x-live\" hx-get=\"/_fragments/productVariantAvailability?variantIds=1\" hx-trigger=\"load, every 60s\" hx-swap=\"innerHTML\"></span>"
 	hy := renderOrFatal(t, &withHx)
 

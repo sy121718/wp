@@ -57,3 +57,13 @@ func BuildView(p *Props) View {
 		Label:        p.Label,
 	}
 }
+
+// DeclareFeatures 实现 core.ViewFeatureDeclarer（审计 PERF-014）：计数器只在**非 CSS 模式**
+// 输出增强属性（counter.jet 的 {{ if not .V.CSSMode }} 分支）—— CSS 模式用 @property + counter()
+// 生成数值，没有脚本参与，登记了反而会白白注入一份增强块。
+func (v View) DeclareFeatures() (attrs, classes []string) {
+	if v.CSSMode {
+		return nil, nil
+	}
+	return []string{"data-counter", "data-start", "data-end", "data-decimals", "data-duration"}, nil
+}

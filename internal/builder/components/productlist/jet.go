@@ -427,3 +427,10 @@ func resolveProducts(ctx *core.RenderContext, source string, filter map[string]s
 	}
 	return ctx.Collection.ResolveCollection(ctx.Context, source, filter)
 }
+
+// DeclareFeatures 实现 core.ViewFeatureDeclarer（审计 PERF-014）：商品列表的容器 div 恒带
+// 片段属性（product_list.jet 第一行）—— 包括空态：容器必须先渲染出来，HTMX 就位后才能按
+// URL 上的查询参数把结果 load 进来。这也是「列表页首屏零数据查询」得以成立的地方。
+func (v View) DeclareFeatures() (attrs, classes []string) {
+	return []string{"hx-get", "hx-vals", "hx-trigger", "hx-target", "hx-swap"}, nil
+}

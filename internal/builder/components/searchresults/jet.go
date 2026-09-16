@@ -40,3 +40,13 @@ func BuildView(p *Props, projectID, lang string) View {
 	view.BaseFragmentURL = searchResultsPath + "?" + q.Encode()
 	return view
 }
+
+// DeclareFeatures 实现 core.ViewFeatureDeclarer（审计 PERF-014）：搜索框与结果区都靠
+// hx-get 拉片段（无 HTMX 时表单退化为原生 GET 提交到当前页）。Notice 分支只有一句提示，
+// 模板不输出表单，这里也不能登记。
+func (v View) DeclareFeatures() (attrs, classes []string) {
+	if v.Notice != "" {
+		return nil, nil
+	}
+	return []string{"hx-get", "hx-target", "hx-swap", "hx-include", "hx-vals", "hx-trigger"}, nil
+}

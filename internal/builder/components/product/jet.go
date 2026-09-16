@@ -405,3 +405,13 @@ func parseImages(raw, alt string) (images []Image) {
 	}
 	return images
 }
+
+// DeclareFeatures 实现 core.ViewFeatureDeclarer（审计 PERF-014）：商品详情的规格组合行
+// 恒定挂「实时可用量」片段（库存是运行期真源，构建期只烘变体 id），并可选挂实时价格
+// 核对位。没有可展示的规格组合时模板不渲染这一段，属性也就不存在。
+func (v View) DeclareFeatures() (attrs, classes []string) {
+	if !v.HasOptions || len(v.VariantOptions) == 0 {
+		return nil, nil
+	}
+	return []string{"hx-get", "hx-trigger", "hx-swap"}, nil
+}

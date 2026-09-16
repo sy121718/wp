@@ -78,3 +78,13 @@ func BuildView(p *Props, projectID, lang, loginURL, orderPageURL string) View {
 	view.FragmentURL = ordersListPath + "?" + q.Encode()
 	return view
 }
+
+// DeclareFeatures 实现 core.ViewFeatureDeclarer（审计 PERF-014）：与账号表单同构 ——
+// 外壳根 div 恒输出，订单列表容器（hx-get）只在取到工程 id 时输出。
+func (v View) DeclareFeatures() (attrs, classes []string) {
+	attrs = append(attrs, "data-orders-widget")
+	if v.Notice != "" {
+		return attrs, nil
+	}
+	return append(attrs, "hx-get", "hx-trigger", "hx-swap"), nil
+}

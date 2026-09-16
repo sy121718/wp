@@ -302,3 +302,22 @@ func (v *View) fillDotLabels() {
 		v.DotItems[i].Label = strings.Replace(v.SlideLabel, "%s", strconv.Itoa(i+1), 1)
 	}
 }
+
+// DeclareFeatures 实现 core.ViewFeatureDeclarer（审计 PERF-014）：图集要么走轮播增强
+// （data-carousel，随 CarouselAttr 输出），要么每张图各自可点开灯箱（data-lightbox）。
+// Visible=false（空图集且无占位）时模板整块不输出，这里也必须什么都不登记。
+func (v View) DeclareFeatures() (attrs, classes []string) {
+	if !v.Visible {
+		return nil, nil
+	}
+	if v.CarouselAttr != "" {
+		attrs = append(attrs, "data-carousel")
+	}
+	for _, item := range v.Items {
+		if item.IsLightbox {
+			attrs = append(attrs, "data-lightbox")
+			break
+		}
+	}
+	return attrs, nil
+}

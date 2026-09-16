@@ -99,6 +99,14 @@ type CompiledPage struct {
 	// SearchConsoleHead Google Search Console 站点验证 meta（审计 SEO-009）。
 	// 来自 WithSearchConsoleVerification；空 = 零字节注入。
 	SearchConsoleHead string
+	// Features 渲染期登记的运行时特征（审计 PERF-014）：组件在 BuildView 阶段登记的
+	// 「本次真实输出了哪些 hx-* / data-* 属性、哪些控件外观 class」。RenderDocument
+	// 据此决定注入哪些脚本，不再对整页 HTML 跑 tokenizer。
+	//
+	// Compile 路径总会给它一个（可能为空的）集合 —— 空集合意味着「这页确实什么都没用」，
+	// 于是零字节注入，而不是「不知道，只能扫一遍」。nil 只出现在手工构造 CompiledPage
+	// 的调用方（单测、历史调用点），RenderDocument 对 nil 回退到 tokenize（见 ui_script.go）。
+	Features *core.FeatureSet
 }
 
 // CompileOption 编译选项。
@@ -557,6 +565,10 @@ func Compile(p *Page, opts ...CompileOption) (res *CompiledPage, err error) {
 	var b core.CSSBuckets
 	compileSettingsCSS(&p.Settings, &b)
 
+	// 运行时特征登记表（审计 PERF-014）：组件在渲染期把「本次真实输出了什么」写进来，
+	// 产物组装层读它决定注入哪些脚本（此前是渲染完再扫一遍整页 HTML）。
+	features := core.NewFeatureSet()
+
 	// 构建期语言与取词函数（多语言 P4）：未指定语言时取默认语言，
 	// 取词函数缺省读 i18n 内存缓存并带完整兜底链（见 resolveCompileI18n）。
 	lang, translate := resolveCompileI18n(cfg)
@@ -584,6 +596,7 @@ func Compile(p *Page, opts ...CompileOption) (res *CompiledPage, err error) {
 		RevealInherit:         cfg.theme.RevealInheritOf(),
 		RevealDefaultEntrance: cfg.theme.RevealDefaultEntranceOf(),
 		AssetProbe:            cfg.assetProbe,
+		Features:              features,
 	}
 	// 槽位映射与依赖线索记录器走 setter：sitePages 是私有的（取值即记录，见 core.SitePage）。
 	ctx.SetSitePages(cfg.sitePages)
@@ -726,6 +739,7 @@ func Compile(p *Page, opts ...CompileOption) (res *CompiledPage, err error) {
 		TrackSource:       cfg.trackSource,
 		UISources:         cfg.uiSources,
 		UIStyle:           cfg.uiStyle,
+		Features:          features,
 	}, nil
 }
 
@@ -749,6 +763,9 @@ func RenderNodeHTML(set *jet.Set, node *core.Node, ctx *core.RenderContext) (str
 	// 片段只要 HTML：样式已在静态产物内联，跳过 CSS 编译（EDT-016）。
 	fragCtx := *ctx
 	fragCtx.CSS = core.DiscardCSS()
+	// 片段也不收集运行时特征（审计 PERF-014）：片段不组装脚本，注入决策只发生在
+	// 静态产物那条链上。共享调用方的登记表会让多次片段渲染悄悄累积特征。
+	fragCtx.Features = nil
 	view, err := nodeViewOf(node, true, &fragCtx)
 	if err != nil {
 		return "", err
@@ -766,8 +783,12 @@ func RenderNodeHTML(set *jet.Set, node *core.Node, ctx *core.RenderContext) (str
 // 转义策略：Title/MetaDescription 走 Jet 默认 HTML 转义（等价 html.EscapeString）；
 // CSS/HTML/ThemeVarsCSS/增强脚本是编译产物，用 unsafe 原样输出，避免二次转义；
 // BodyClass 保持现状未转义（父代理单独处理转义问题），同样 unsafe 原样输出。
+// 能力集合来自**渲染期登记**（c.featureScan，审计 PERF-014）：组件在 BuildView 阶段
+// 登记自己真实输出的 hx-* / data-* 属性与控件外观 class，这里直接读结果，
+// 不再对整页 HTML 跑 tokenizer。原先的扫描实现保留在 ui_script.go（collectHTMLScan），
+// 供交叉验证测试与手工构造 CompiledPage 的调用方使用。
 func RenderDocument(c *CompiledPage) (string, error) {
-	scan := collectHTMLScan(c.HTML)
+	scan := c.featureScan()
 	uiCSS, uiScript, err := uiAssetsForScan(scan, c.UIStyle, c.UISources)
 	if err != nil {
 		return "", fmt.Errorf("组装文档控件资源失败: %w", err)

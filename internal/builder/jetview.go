@@ -203,6 +203,27 @@ func nodeViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeV
 	}
 }
 
+// declareViewFeatures 让组件视图声明本次渲染**真实输出**的运行时特征（审计 PERF-014）。
+//
+// 由各渲染分支在 BuildView 之后调用（视图是模板渲染的输入，判定与模板同源，
+// 不存在「判定条件与模板分叉」的第二份实现）。产物组装层（RenderDocument → ui_script）
+// 读登记结果决定注入哪些脚本，取代了此前「渲染完成后对整页 HTML 跑一遍 tokenizer」。
+//
+// 未实现 core.ViewFeatureDeclarer 的组件（纯内容型，产物里没有任何 hx-* / data-* /
+// 控件外观类）自动跳过 —— 「没用到就零字节注入」由此成立。
+func declareViewFeatures(view any, ctx *core.RenderContext) {
+	if ctx == nil || ctx.Features == nil {
+		return
+	}
+	declarer, ok := view.(core.ViewFeatureDeclarer)
+	if !ok {
+		return
+	}
+	attrs, classes := declarer.DeclareFeatures()
+	ctx.UseAttr(attrs...)
+	ctx.UseClass(classes...)
+}
+
 // ---- 公共收敛骨架 ----
 //
 // 28 个 xxxViewOf 的公共序列收敛为以下 helper（字节等价：仅抽取完全相同的公共子序列）：
@@ -276,6 +297,7 @@ func atomViewOf[P any, V any](
 	}
 	// 构建期文案回填（countdown 单元标签 / form 提交按钮 / rating 无障碍描述等）。
 	applyI18n(&view, ctx)
+	declareViewFeatures(&view, ctx)
 	return &nodeView{
 		Type:     typeName,
 		Template: template,
@@ -309,6 +331,7 @@ func contentAtomViewOf[P any, V any](
 		return nil, fmt.Errorf("节点 %s: %w", node.ID, err)
 	}
 	applyI18n(&view, ctx)
+	declareViewFeatures(&view, ctx)
 	return &nodeView{
 		Type:     typeName,
 		Template: template,
@@ -346,6 +369,7 @@ func leafViewOf[P any, V any](
 	}
 	// 构建期文案回填（video 的 iframe title 等）。
 	applyI18n(&view, ctx)
+	declareViewFeatures(&view, ctx)
 	return &nodeView{
 		Type:     typeName,
 		Template: template,
@@ -390,6 +414,7 @@ func buttonViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nod
 	if aware, ok := any(&view).(core.ImageLoadingAware); ok && aware.ApplyImageLoading(ctx.ImageDefaults) {
 		core.AddImageSkeletonCSS(ctx.CSS)
 	}
+	declareViewFeatures(&view, ctx)
 
 	return &nodeView{
 		Type:       buttonPkg.Type,
@@ -456,6 +481,7 @@ func containerViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*
 	containerPkg.CompileCSS(node.ID, &p, ctx.CSS)
 
 	view := containerPkg.BuildView(node, &p)
+	declareViewFeatures(&view, ctx)
 
 	return &nodeView{
 		Type:        containerPkg.Type,
@@ -649,6 +675,7 @@ func cardstackViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*
 
 	classes, customID := advancedClasses(node, &p, ctx)
 	cardstackPkg.CompileCSS(node, &p, len(base.Cards), ctx.CSS)
+	declareViewFeatures(&view, ctx)
 
 	return &nodeView{
 		Type:     cardstackPkg.Type,
@@ -687,6 +714,7 @@ func cartIconViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*n
 	carticonPkg.CompileCSS(node.ID, &p, ctx.CSS)
 	view := carticonPkg.BuildView(&p, ctx.ProjectID, ctx.Lang, ctx.SitePage(core.SiteSlotCart))
 	applyI18n(&view, ctx)
+	declareViewFeatures(&view, ctx)
 	return &nodeView{
 		Type:     carticonPkg.Type,
 		Template: "cart_icon",
@@ -710,6 +738,7 @@ func searchResultsViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext
 	classes, customID := advancedClasses(node, &p, ctx)
 	searchresultsPkg.CompileCSS(node.ID, &p, ctx.CSS)
 	view := searchresultsPkg.BuildView(&p, ctx.ProjectID, ctx.Lang)
+	declareViewFeatures(&view, ctx)
 	return &nodeView{
 		Type:     searchresultsPkg.Type,
 		Template: "search_widget",
@@ -737,6 +766,7 @@ func orderListViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*
 	orderlistPkg.CompileCSS(node.ID, &p, ctx.CSS)
 	view := orderlistPkg.BuildView(&p, ctx.ProjectID, ctx.Lang,
 		ctx.SitePage(core.SiteSlotLogin), ctx.SitePage(core.SiteSlotOrders))
+	declareViewFeatures(&view, ctx)
 	return &nodeView{
 		Type:     orderlistPkg.Type,
 		Template: "orders_widget",
@@ -763,6 +793,7 @@ func userFormsViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*
 	classes, customID := advancedClasses(node, &p, ctx)
 	userformsPkg.CompileCSS(node.ID, &p, ctx.CSS)
 	view := userformsPkg.BuildView(&p, ctx.ProjectID, ctx.Lang)
+	declareViewFeatures(&view, ctx)
 	return &nodeView{
 		Type:     userformsPkg.Type,
 		Template: "user_forms_widget",
@@ -794,6 +825,7 @@ func addToCartViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*
 		return nil, fmt.Errorf("节点 %s: %w", node.ID, err)
 	}
 	applyI18n(&view, ctx)
+	declareViewFeatures(&view, ctx)
 	return &nodeView{
 		Type:     addtocartPkg.Type,
 		Template: "add_to_cart",
@@ -819,6 +851,7 @@ func productListViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) 
 	}
 	classes, customID := advancedClasses(node, &p, ctx)
 	productlistPkg.CompileCSS(node.ID, &p, ctx.CSS)
+	declareViewFeatures(&view, ctx)
 	return &nodeView{
 		Type:     productlistPkg.Type,
 		Template: "product_list",
@@ -926,6 +959,7 @@ func galleryViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*no
 
 	// 构建期文案回填（轮播箭头 aria-label）。
 	applyI18n(&view, ctx)
+	declareViewFeatures(&view, ctx)
 
 	// 隐藏（空图集且无占位）时旧路径不编译组件样式；可见才编译。
 	if view.Visible {
@@ -978,6 +1012,7 @@ func sliderViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nod
 	sliderPkg.CompileCSS(node.ID, &p, ctx.CSS)
 	view := sliderPkg.BuildView(node, &p)
 	applyI18n(&view, ctx)
+	declareViewFeatures(&view, ctx)
 
 	return &nodeView{
 		Type:     sliderPkg.Type,

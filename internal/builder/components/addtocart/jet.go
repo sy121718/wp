@@ -143,3 +143,13 @@ func BuildView(p *Props, content core.ContentResolver, projectID string) (View, 
 	view.Rows = []Row{{VariantID: first.ID, Price: first.Price, ComparePrice: first.ComparePrice}}
 	return view, nil
 }
+
+// DeclareFeatures 实现 core.ViewFeatureDeclarer（审计 PERF-014）：加购表单按变体行渲染，
+// 每行一个 hx-post 表单（无 HTMX 时降级为原生 POST 到同一端点）。没有可购买变体时
+// View.Rows 为空、模板只出提示文案，此时不该登记任何 hx-* 属性。
+func (v View) DeclareFeatures() (attrs, classes []string) {
+	if len(v.Rows) == 0 {
+		return nil, nil
+	}
+	return []string{"hx-post", "hx-target", "hx-swap"}, nil
+}

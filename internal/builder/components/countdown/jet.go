@@ -101,3 +101,14 @@ func (v *View) ApplyI18n(text func(key, fallback string) string) {
 		u.Label = text(meta.Key, meta.Fallback)
 	}
 }
+
+// DeclareFeatures 实现 core.ViewFeatureDeclarer（审计 PERF-014）：倒计时的增强属性全部由
+// countdown.jet 的根 div 与时间单元输出（data-countdown / data-target / data-show-days 恒有，
+// data-unit 随每个单元）。剩余时间由客户端按 data-target 现算，这些属性漏了倒计时就是静止数字。
+func (v View) DeclareFeatures() (attrs, classes []string) {
+	attrs = append(attrs, "data-countdown", "data-target", "data-show-days")
+	if len(v.Units) > 0 {
+		attrs = append(attrs, "data-unit")
+	}
+	return attrs, nil
+}

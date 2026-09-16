@@ -360,3 +360,32 @@ func fieldText(item map[string]any, field string) string {
 		return fmt.Sprint(t)
 	}
 }
+
+// DeclareFeatures 实现 core.ViewFeatureDeclarer（审计 PERF-014）：卡片堆叠的三种交互形态
+// 各自输出一组 data-* 属性（cardstack.jet 的根 div / 轨道 / 翻页按钮），客户端增强按它们接管
+// 拖拽、堆叠轮播与全屏分页 —— 登记漏一个，对应的交互就整个失效且页面看不出异常。
+func (v View) DeclareFeatures() (attrs, classes []string) {
+	if v.Slide {
+		attrs = append(attrs, "data-cardstack-slide", "data-total")
+	}
+	if v.Drag {
+		attrs = append(attrs, "data-cardstack-drag")
+	}
+	if v.Deck {
+		attrs = append(attrs, "data-cardstack-deck")
+		if v.DeckClickNext {
+			attrs = append(attrs, "data-deck-click")
+		}
+		if v.DeckLoop {
+			attrs = append(attrs, "data-cardstack-loop")
+		}
+		if v.DeckVertical {
+			attrs = append(attrs, "data-cardstack-deck-axis")
+		}
+	}
+	attrs = append(attrs, "data-cardstack-track")
+	if v.DeckArrows {
+		attrs = append(attrs, "data-cardstack-prev", "data-cardstack-next")
+	}
+	return attrs, nil
+}

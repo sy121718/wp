@@ -122,6 +122,13 @@ type RenderContext struct {
 	// 由装配层按「本页逻辑路径 + 站点启用语言」逐语言算出（与产物 head 的 hreflang
 	// 同一份计算）；空或少于两条时切换器整块不渲染（单语言站点字节不变）。
 	Locales []LocaleLink
+	// Features 本次编译的运行时特征登记表（审计 PERF-014）：组件在渲染期登记自己
+	// **真实输出**的属性 / class（hx-* 属性、data-* 控件属性、控件外观类），
+	// 产物组装层据此决定注入哪些脚本，不再对整页 HTML 跑一遍 tokenizer。
+	//
+	// nil = 不收集（片段渲染 RenderNodeHTML、单测直连组件）：此时 UseAttr / UseClass
+	// 是空操作，组件不必自己判断 —— 见 core.FeatureReporter 的说明。
+	Features *FeatureSet
 }
 
 // LocaleLink 语言切换器条目（构建期数据，core.languages 消费）。

@@ -115,3 +115,25 @@ func BuildView(node *core.Node, p *Props) View {
 	}
 	return v
 }
+
+// DeclareFeatures 实现 core.ViewFeatureDeclarer（审计 PERF-014）：声明本次渲染**真实输出**
+// 的运行时特征属性。判定与 slider.jet 的分支同源 —— 根 div 的 data-slider / data-autoplay /
+// data-loop、轨道的 data-track、箭头的 data-prev / data-next。判定漂移（这里说输出、
+// 模板没输出，或反过来）由交叉验证测试抓住。
+func (v View) DeclareFeatures() (attrs, classes []string) {
+	if v.DataSlider != "" {
+		attrs = append(attrs, "data-slider")
+	}
+	if v.HasAutoplay {
+		attrs = append(attrs, "data-autoplay")
+	}
+	if v.Loop {
+		attrs = append(attrs, "data-loop")
+	}
+	// 轨道恒输出；左右箭头随 ShowArrows。
+	attrs = append(attrs, "data-track")
+	if v.ShowArrows {
+		attrs = append(attrs, "data-prev", "data-next")
+	}
+	return attrs, nil
+}

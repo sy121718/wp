@@ -104,3 +104,27 @@ const (
 	// textFallbackLabel 标签文字的中文兜底。
 	textFallbackLabel = defaultLabel
 )
+
+// DeclareFeatures 实现 core.ViewFeatureDeclarer（审计 PERF-014）：购物车图标本身是静态外壳，
+// 内容与件数都由 /_fragments/cartView 与 cartSummary 现拉（hx-get / hx-trigger / hx-swap），
+// 那是产物必须带上 htmx 的唯一理由。
+//
+// 两种形态的差别要照着模板分：<details> 形态（dropdown / drawer / modal）的浮层属性写在
+// details 元素上，也是增强块 initCartIconPanels（点外部关闭）的挂载点；悬停形态的浮层纯靠
+// CSS（checkbox + :hover / :checked）开合，模板根本不存在 data-cart-icon-panel ——
+// 这里多登记一个就会给悬停形态白送一份用不上的增强脚本（交叉验证断言 B 抓的就是这个）。
+func (v View) DeclareFeatures() (attrs, classes []string) {
+	attrs = append(attrs, "data-cart-icon")
+	if v.Notice != "" {
+		// 提示分支只有一句话，没有浮层，也就没有 hx-* 与面板属性。
+		return attrs, nil
+	}
+	attrs = append(attrs, "hx-get", "hx-trigger", "hx-swap")
+	if v.UseDetails {
+		attrs = append(attrs, "data-cart-icon-panel")
+		if v.ShowCount {
+			attrs = append(attrs, "data-cart-icon-count")
+		}
+	}
+	return attrs, nil
+}

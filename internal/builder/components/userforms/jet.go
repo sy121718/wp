@@ -56,3 +56,13 @@ func BuildView(p *Props, projectID, lang string) View {
 	view.FragmentURL, view.FallbackURL = buildFragmentURL(mode, projectID, lang, p.Next)
 	return view
 }
+
+// DeclareFeatures 实现 core.ViewFeatureDeclarer（审计 PERF-014）：外壳根 div 恒带形态属性，
+// 表单容器（hx-get）只在取到工程 id 时输出 —— 没有工程 id 就没有片段地址，容器只是一句提示。
+func (v View) DeclareFeatures() (attrs, classes []string) {
+	attrs = append(attrs, "data-user-form")
+	if v.Notice != "" {
+		return attrs, nil
+	}
+	return append(attrs, "hx-get", "hx-trigger", "hx-swap"), nil
+}

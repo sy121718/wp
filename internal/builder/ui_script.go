@@ -91,6 +91,25 @@ type htmlScan struct {
 	classes htmlFeatures
 }
 
+// featureScan 返回产物组装要用的能力集合（审计 PERF-014）。
+//
+// 首选**渲染期登记结果**：Compile 路径总会带上一个 Features（可能为空集），
+// 空集就是「这页确实什么都没用」—— 于是零字节注入，且不再对整页 HTML 跑 tokenizer。
+//
+// Features 为 nil 只出现在手工构造 CompiledPage 的调用方（单测、历史调用点），
+// 此时回退到扫描 HTML。这条回退**不是遗留兼容**：它是 tokenize 实现保留的理由 ——
+// 交叉验证测试（ui_feature_crosscheck_test.go）拿它和登记结果做双向比对，
+// 两边结果必须逐字节一致。两条路径并存期间，回退保证「没接登记的调用方」行为不变。
+func (c *CompiledPage) featureScan() htmlScan {
+	if c.Features != nil {
+		return htmlScan{
+			attrs:   htmlFeatures(c.Features.Attrs()),
+			classes: htmlFeatures(c.Features.Classes()),
+		}
+	}
+	return collectHTMLScan(c.HTML)
+}
+
 func collectHTMLFeatures(content string) htmlFeatures {
 	return collectHTMLScan(content).attrs
 }
@@ -126,6 +145,43 @@ func collectHTMLScan(content string) htmlScan {
 	return out
 }
 
+// relevantAttrs 从属性集合里挑出**会影响注入判定**的那些（审计 PERF-014 交叉验证用）。
+//
+// 判据与真正做决策的 usedUIFiles / enhanceScriptFor 同源：命中任一控件资源的精确属性名
+// 或前缀（hx- / data-ui-select / data-modal-open …），或命中任一增强块的触发特征
+// （data-counter / data-slider / data-cart-icon-panel …）。
+//
+// 纯标记型 data-*（data-sky-product-list 这类既不触发控件也不触发增强的属性）不算相关：
+// 它们不参与判定，要求组件登记它们只会让比对充满噪声、掩盖真正的漏报。
+func relevantAttrs(attrs htmlFeatures) htmlFeatures {
+	out := make(htmlFeatures)
+	for name := range attrs {
+		single := htmlFeatures{name: struct{}{}}
+		if relevantAttr(single) {
+			out[name] = struct{}{}
+		}
+	}
+	return out
+}
+
+// relevantAttr 单个属性是否影响注入判定（单元素集合上复用两条既有判据）。
+func relevantAttr(single htmlFeatures) bool {
+	for _, block := range uiBlocks {
+		if block.hit(single) {
+			return true
+		}
+	}
+	for _, block := range allEnhanceBlocks() {
+		for _, feat := range block.feats {
+			if _, ok := single[feat]; ok {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// hasUIBaseClass 判据：集合里是否含任一控件外观类。
 func hasUIBaseClass(classes htmlFeatures) bool {
 	for _, c := range uiBaseClasses {
 		if _, ok := classes[c]; ok {
