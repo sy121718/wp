@@ -135,21 +135,15 @@ func (m *CouponModel) Create(ctx context.Context, e *CouponEntity) (err error) {
 	})
 }
 
-// GetByID 按主键取；不存在返回 (nil, nil)，由 service 决定报什么错。
+// GetByID 按主键取本工程内的优惠码；不存在返回 (nil, nil)，由 service 决定报什么错。
 //
-// projectID 非空时在工程作用域内查（DB-009 第二批）：coupons 带 FORCE 策略，
-// 无作用域的按 id 直查在非超级角色下返回 (nil, nil) —— 表现为「优惠码不存在」，
-// 是功能回归。调用方拿到工程时要传下来。
+// projectID 必填（DB-009 第五批）：coupons 带 FORCE 策略。原先「为空 = 不限工程」的分支
+// 在第四批把调用点改成逐工程定位后已无调用者，留着它就是一条静默 fail-closed 路径
+// （表现为「优惠码不存在」）。
 func (m *CouponModel) GetByID(ctx context.Context, projectID string, id uint64) (e *CouponEntity, err error) {
 	e = &CouponEntity{}
 	if strings.TrimSpace(projectID) == "" {
-		if err = m.DB(ctx).Where("id = ?", id).First(e).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return nil, nil
-			}
-			return nil, err
-		}
-		return e, nil
+		return nil, ErrProjectRequired
 	}
 	if err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
 		return tx.Model(&CouponEntity{}).Where("id = ? AND project_id = ?", id, projectID).First(e).Error
@@ -245,10 +239,11 @@ func (m *CouponModel) listLocked(tx *gorm.DB, f CouponFilter, list *[]*CouponEnt
 }
 
 // UpdateFields 更新指定列（可改列由 service 决定，model 不写死业务规则）。
-// projectID 非空时在工程作用域内写（越界写被 WITH CHECK 拒绝，而不是静默改到别的工程）。
+// projectID 必填（DB-009 第五批）：越界写被 WITH CHECK 拒绝；「为空 = 不限工程」的分支
+// 已无调用者，且它在换角色后是**静默 0 行**（接口回报成功、券没改）。
 func (m *CouponModel) UpdateFields(ctx context.Context, projectID string, id uint64, fields map[string]any) (err error) {
 	if strings.TrimSpace(projectID) == "" {
-		return m.DB(ctx).Where("id = ?", id).Updates(fields).Error
+		return ErrProjectRequired
 	}
 	return rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
 		return tx.Model(&CouponEntity{}).Where("id = ? AND project_id = ?", id, projectID).Updates(fields).Error
@@ -256,33 +251,58 @@ func (m *CouponModel) UpdateFields(ctx context.Context, projectID string, id uin
 }
 
 // Delete 删除优惠码（是否允许删由 service 判断：有核销记录的不许删）。
+// projectID 必填（DB-009 第五批）：同 UpdateFields —— 缺作用域的删除在换角色后静默 0 行。
 func (m *CouponModel) Delete(ctx context.Context, projectID string, id uint64) (err error) {
 	if strings.TrimSpace(projectID) == "" {
-		return m.DB(ctx).Where("id = ?", id).Delete(&CouponEntity{}).Error
+		return ErrProjectRequired
 	}
 	return rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
 		return tx.Model(&CouponEntity{}).Where("id = ? AND project_id = ?", id, projectID).Delete(&CouponEntity{}).Error
 	})
 }
 
-// CountRedemptions 统计核销条数；userID 非 nil 时只数该用户的。
-func (m *CouponModel) CountRedemptions(ctx context.Context, couponID uint64, userID *uint64) (n int64, err error) {
-	q := m.db.WithContext(ctx).Model(&CouponRedemptionEntity{}).Where("coupon_id = ?", couponID)
-	if userID != nil {
-		q = q.Where("user_id = ?", *userID)
+// CountRedemptions 统计**本工程内**该券的核销条数；userID 非 nil 时只数该用户的。
+//
+// projectID 必填（DB-009 第五批）：coupon_redemptions 在迁移 215 名单里（带 FORCE 策略），
+// 而这里原先用的是绕开 DB(ctx) 的裸句柄 —— 换非超级角色后**恒返回 0**，两个判据同时失效：
+//
+//	· 删券拦截（used > 0 才拒绝删）→ 有核销记录的券被删掉，核销明细变成悬空引用；
+//	· 每人限领（used >= PerUserLimit）→ 同一用户重复领用不再被拦。
+func (m *CouponModel) CountRedemptions(ctx context.Context, projectID string, couponID uint64, userID *uint64) (n int64, err error) {
+	if strings.TrimSpace(projectID) == "" {
+		return 0, ErrProjectRequired
 	}
-	err = q.Count(&n).Error
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return countRedemptions(ctx, tx.Model(&CouponRedemptionEntity{}), projectID, couponID, userID, &n)
+	})
 	return n, err
 }
 
 // CountRedemptionsTx 事务内统计核销条数（核销路径用，与 LockByIDTx 配合）。
-func (m *CouponModel) CountRedemptionsTx(ctx context.Context, tx *gorm.DB, couponID uint64, userID *uint64) (n int64, err error) {
-	q := tx.WithContext(ctx).Model(&CouponRedemptionEntity{}).Where("coupon_id = ?", couponID)
+// projectID 必填（DB-009 第五批）：判据同 CountRedemptions（限领校验失效 ⇒ 可重复领用）。
+func (m *CouponModel) CountRedemptionsTx(ctx context.Context, tx *gorm.DB, projectID string, couponID uint64, userID *uint64) (n int64, err error) {
+	if strings.TrimSpace(projectID) == "" {
+		return 0, ErrProjectRequired
+	}
+	if serr := rls.ScopeTx(tx, projectID); serr != nil {
+		return 0, serr
+	}
+	if err = countRedemptions(ctx, tx.Model(&CouponRedemptionEntity{}), projectID, couponID, userID, &n); err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
+// countRedemptions 两个入口共用的条件拼装（工程 + 券 + 可选用户）。
+//
+// 显式带 project_id 而不是只靠策略：调用方事务里设的作用域与这里的事务各管一段，
+// 两边同时成立才不会留下「策略放行、条件漏写」的窗口。
+func countRedemptions(ctx context.Context, q *gorm.DB, projectID string, couponID uint64, userID *uint64, n *int64) error {
+	q = q.WithContext(ctx).Where("project_id = ? AND coupon_id = ?", projectID, couponID)
 	if userID != nil {
 		q = q.Where("user_id = ?", *userID)
 	}
-	err = q.Count(&n).Error
-	return n, err
+	return q.Count(n).Error
 }
 
 // InsertRedemptionTx 事务内插一条核销明细，返回是否为**本次新插入**。

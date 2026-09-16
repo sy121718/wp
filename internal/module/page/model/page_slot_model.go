@@ -12,6 +12,7 @@ package pagemodel
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -97,16 +98,25 @@ func (m *Model) ListSiteSlotsByPage(ctx context.Context, pageID string) (list []
 	return list, err
 }
 
-// FindPagesByIDs 按 id 批量取**未删除**的页面元数据（排除大字段草稿）。
+// FindPagesByIDs 按 id 批量取**本工程内**未删除的页面元数据（排除大字段草稿）。
 //
-// 返回结果里没有的 id = 页面不存在、已删或已软删 —— 调用方据此判「绑定悬空」，
-// 不能把「查不到」当成「页面没标题」这类软失败。
-func (m *Model) FindPagesByIDs(ctx context.Context, ids []string) (list []PageEntity, err error) {
+// 返回结果里没有的 id = 页面不存在、已删、已软删，或**不属于本工程** —— 调用方据此判
+// 「绑定悬空」，不能把「查不到」当成「页面没标题」这类软失败。
+//
+// projectID 必填（DB-009 第五批）：pages 带 FORCE 策略，不带作用域的批量查询在非超级
+// 角色下**静默返回空集** —— 调用方会把「所有已绑定页面」判成悬空（槽位列表、重定向
+// 目标标签全变缺失），而这种失效不会报任何错。
+func (m *Model) FindPagesByIDs(ctx context.Context, projectID string, ids []string) (list []PageEntity, err error) {
+	if strings.TrimSpace(projectID) == "" {
+		return nil, ErrProjectRequired
+	}
 	if len(ids) == 0 {
 		return nil, nil
 	}
-	err = m.DB(ctx).Omit("draft_document").
-		Where("id IN ? AND deleted_at IS NULL", ids).Find(&list).Error
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.Model(&PageEntity{}).Omit("draft_document").
+			Where("project_id = ? AND id IN ? AND deleted_at IS NULL", projectID, ids).Find(&list).Error
+	})
 	return list, err
 }
 

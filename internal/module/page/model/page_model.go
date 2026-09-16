@@ -413,17 +413,16 @@ func (m *Model) ReattachProjectPagesToTheme(ctx context.Context, projectID, them
 	return err
 }
 
-// GetByID 按 ID 查询未删除的 Page。projectID 非空时追加工程归属条件（防跨工程 IDOR）。
+// GetByID 按 ID 查询本工程内未删除的 Page（projectID 必填，防跨工程 IDOR）。
+//
+// projectID 必填（DB-009 第五批）：这里原先保留着「projectID 为空 = 不限工程」的历史
+// 分支。第四批把 page 侧所有按 id 的调用点都改成了逐工程定位，那个分支已经**没有任何
+// 调用者**；留着它就是留一条静默的 fail-closed 路径（换非超级角色后恒 ErrRecordNotFound，
+// 表现为「页面不存在」）。现在缺工程直接显式失败。
 func (m *Model) GetByID(ctx context.Context, id, projectID string) (e *PageEntity, err error) {
 	e = &PageEntity{}
-	// projectID 为空是「不限工程」的历史调用形态：不设 scope 时策略谓词为 NULL，
-	// 换非超级角色后该路径 fail closed（0 行 → ErrRecordNotFound）而不会读到别的工程；
-	// 要让它可用必须由调用方补 projectID（列入 DB-009 剩余清单）。
 	if strings.TrimSpace(projectID) == "" {
-		if err = m.DB(ctx).Where("id = ? AND deleted_at IS NULL", id).First(e).Error; err != nil {
-			return nil, err
-		}
-		return e, nil
+		return nil, ErrProjectRequired
 	}
 	if err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
 		return tx.Model(&PageEntity{}).
@@ -577,32 +576,11 @@ func (m *Model) SaveDraftWithRevision(
 	})
 }
 
-// MarkPublished 回写活跃产物指针与发布元数据（发布/回滚共用）。
-//
-// projectID 必填（DB-009 第四批）：裸 UPDATE pages，缺作用域时在非超级角色下匹配 0 行
-// 且不报错 —— 发布链「成功」了，活跃指针却一直留在原处。
-func (m *Model) MarkPublished(ctx context.Context, projectID, pageID, path, artifactID string, at time.Time) (err error) {
-	if strings.TrimSpace(projectID) == "" {
-		return ErrProjectRequired
-	}
-	return rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
-		return tx.Model(&PageEntity{}).
-			Where("id = ? AND project_id = ? AND deleted_at IS NULL", pageID, projectID).
-			Updates(map[string]any{
-				"active_artifact_id": artifactID,
-				"active_path":        path,
-				"published_at":       at,
-				"stale":              false,
-				"update_time":        at,
-			}).Error
-	})
-}
-
 // MoveDraftPath 发布改 URL 后同步草稿路径（逻辑路径，不含语言前缀）。
 // 激活路径不再在此处写：它按语言存放在 page_publications，
 // 由 MovePublicationPath 单独同步（多语言 P3，docs/06-D §15.5 第 2 条）。
-// projectID 必填（DB-009 第四批）：同 MarkPublished —— 缺作用域是静默 0 行，
-// 表现为「改了 URL 但草稿路径没变」，而接口回报成功。
+// projectID 必填（DB-009 第四批）：裸 UPDATE pages，缺作用域时在非超级角色下匹配 0 行
+// 且不报错 —— 表现为「改了 URL 但草稿路径没变」，而接口回报成功。
 func (m *Model) MoveDraftPath(ctx context.Context, projectID, pageID, newPath string, at time.Time) (err error) {
 	if strings.TrimSpace(projectID) == "" {
 		return ErrProjectRequired

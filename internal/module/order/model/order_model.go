@@ -158,20 +158,16 @@ func (m *OrderModel) CreateTx(ctx context.Context, tx *gorm.DB, e *OrderEntity) 
 	return tx.WithContext(ctx).Model(&OrderEntity{}).Create(e).Error
 }
 
-// GetByID 按主键取单；projectID 非空时追加工程归属条件（防跨工程 IDOR）。
+// GetByID 按主键取本工程内的订单（projectID 必填，防跨工程 IDOR）。
 // 不存在返回 (nil, nil)，由 service 决定报什么错。
+//
+// projectID 必填（DB-009 第五批）：原先保留着「为空 = 不限工程」的历史分支。第四批把
+// 所有按 id 的调用点改成逐工程定位后，那个分支已无调用者 —— 留着它就是一条静默
+// fail-closed 路径（换非超级角色后恒返回 (nil, nil) ⇒ 调用方报「订单不存在」）。
 func (m *OrderModel) GetByID(ctx context.Context, id uint64, projectID string) (e *OrderEntity, err error) {
 	e = &OrderEntity{}
-	// projectID 为空是「不限工程」的历史调用形态：不设 scope 时策略谓词为 NULL，
-	// 换非超级角色后该路径 fail closed（返回 nil）而不会读到别的工程。
 	if strings.TrimSpace(projectID) == "" {
-		if err = m.DB(ctx).Where("id = ?", id).First(e).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return nil, nil
-			}
-			return nil, err
-		}
-		return e, nil
+		return nil, ErrProjectRequired
 	}
 	if err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
 		return tx.Model(&OrderEntity{}).Where("id = ? AND project_id = ?", id, projectID).First(e).Error
@@ -192,16 +188,12 @@ func (m *OrderModel) GetByID(ctx context.Context, id uint64, projectID string) (
 // projectID 非空时在工程作用域内查（DB-009 第二批）：orders 带 FORCE 策略，
 // 不设 app.project_id 的读取在非超级角色下会「订单不存在」——访客查自己的订单
 // 是**功能回归**而不是安全问题，所以调用方拿到工程时要传下来。
+// projectID 必填（DB-009 第五批）：同 GetByID ——「为空 = 不限工程」的分支已无调用者，
+// 且它在换角色后是静默 (nil, nil)：访客会看到「订单不存在」而不是「缺少工程上下文」。
 func (m *OrderModel) GetByIDForUser(ctx context.Context, projectID string, id uint64, userID uint64) (e *OrderEntity, err error) {
 	e = &OrderEntity{}
 	if strings.TrimSpace(projectID) == "" {
-		if err = m.DB(ctx).Where("id = ? AND user_id = ?", id, userID).First(e).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return nil, nil
-			}
-			return nil, err
-		}
-		return e, nil
+		return nil, ErrProjectRequired
 	}
 	if err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
 		return tx.Model(&OrderEntity{}).
@@ -317,10 +309,12 @@ func (m *OrderModel) listLocked(tx *gorm.DB, f OrderFilter, list *[]*OrderEntity
 }
 
 // UpdateFields 更新指定字段（调用方只传该改的列）。
-// projectID 非空时在工程作用域内写：越界写会被 WITH CHECK 直接拒绝，而不是静默改到别的工程。
+// projectID 必填（DB-009 第五批）：越界写会被 WITH CHECK 直接拒绝，而不是静默改到别的
+// 工程；原先「为空 = 不限工程」的分支已无调用者，且它在换角色后是**静默 0 行**
+// （接口回报成功、数据没动）。
 func (m *OrderModel) UpdateFields(ctx context.Context, projectID string, id uint64, fields map[string]any) (err error) {
 	if strings.TrimSpace(projectID) == "" {
-		return m.DB(ctx).Where("id = ?", id).Updates(fields).Error
+		return ErrProjectRequired
 	}
 	return rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
 		return tx.Model(&OrderEntity{}).Where("id = ? AND project_id = ?", id, projectID).Updates(fields).Error

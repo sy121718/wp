@@ -264,9 +264,21 @@ func (s *Service) MarkStaleForI18n(ctx context.Context) error {
 // 依赖源变更时即可按 (kind,key) 反查受影响页面——不再退化为全站标记。
 // 页面查询失败只降级为「不登记这些依赖」，不阻断构建（i18n 两条仍登记）。
 func (s *Service) buildDependencies(ctx context.Context, in pipeline.BuildInput) []pipeline.Dependency {
+	// 逐工程定位一次（DB-009 第四批/第五批）：构建输入不带工程，而 pages 带 FORCE 策略。
+	// 定位结果同时供「内容译文 revision 的工程作用域」与「页面依赖源登记」使用 ——
+	// 两次都依赖它，且第二次原本就在做同一件事。
+	page, pageErr := s.locatePageInProjects(ctx, in.PageID)
+	projectID := ""
+	if page != nil {
+		projectID = page.ProjectID
+	}
 	deps := []pipeline.Dependency{pipeline.I18NDependency(i18n.Revision())}
 	if s.pageUsesContentTranslation(ctx, in) {
-		deps = append(deps, pipeline.I18NContentDependency(i18n.ContentRevision()))
+		// 内容译文的 revision 必须**带工程作用域**（DB-009 第五批）：sys_translation 的策略
+		// 放行「本工程行 + 全局行」，不带作用域时本工程译文的写入不会推进 revision，
+		// 于是补齐译文后依赖比对仍相等 → 不触发重建 → 站点长期停留在回退原文。
+		// 这条正是上面注释点名要防的失效，只是触发者是 RLS 而不是代码笔误。
+		deps = append(deps, pipeline.I18NContentDependency(i18n.ContentRevisionForProject(ctx, projectID)))
 	}
 	// 系统页面槽位（审计 VIS-006）：只登记**本页真实消费过**的槽位，来源是编译期记录。
 	//
@@ -277,9 +289,9 @@ func (s *Service) buildDependencies(ctx context.Context, in pipeline.BuildInput)
 	for _, slot := range in.Usage.SiteSlotList() {
 		deps = append(deps, pipeline.Dependency{Kind: pipeline.DepKindSiteSlot, Key: slot})
 	}
-	// 逐工程定位（DB-009 第四批）：构建输入不带工程，而 pages 带 FORCE 策略；
-	// 读取失败会退化成「不登记这些依赖」，也就是依赖失效时该页不再自动重建。
-	if page, err := s.locatePageInProjects(ctx, in.PageID); err == nil {
+	// 页面依赖源（PIPE-3）：用开头那次定位的结果；读不到页面时降级为不登记这些依赖
+	// （依赖失效时该页不再自动重建），但不阻断构建。
+	if pageErr == nil {
 		deps = append(deps, s.pageDependencyKeys(ctx, page)...)
 	} else {
 		logger.Scene("dependency").With("page_id", in.PageID).

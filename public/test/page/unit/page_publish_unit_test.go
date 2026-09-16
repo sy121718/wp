@@ -190,7 +190,7 @@ func TestPagePublishSuccess(t *testing.T) {
 // 预期 ErrRebuildRequired；实际发布成功且发布的是旧内容——
 // Publish 的二次构建校验用 stagedArt.SourceDocument（构建时冻结文档）重建内核，
 // DraftDocumentFor 优先返回冻结文档，恒与暂存 hash 一致，草稿变更永不触发
-// ErrRebuildRequired；MarkPublished 把 stale 置 false，界面呈现「已发布且最新」，
+// ErrRebuildRequired；发布回写把 stale 置 false，界面呈现「已发布且最新」，
 // 但线上内容停留在旧版本（数据一致性缺陷，见报告高严重度项）。
 func TestPagePublishRebuildRequired(t *testing.T) {
 	db, svc, _, projectID := newPageService(t)

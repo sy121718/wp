@@ -37,7 +37,7 @@ func (s *Service) redeemCouponTx(ctx context.Context, tx *gorm.DB, e *ordermodel
 	}
 	e = locked
 	if e.PerUserLimit > 0 && userID != nil {
-		used, cerr := s.coupons.CountRedemptionsTx(ctx, tx, e.ID, userID)
+		used, cerr := s.coupons.CountRedemptionsTx(ctx, tx, e.ProjectID, e.ID, userID)
 		if cerr != nil {
 			return cerr
 		}

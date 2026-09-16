@@ -47,7 +47,7 @@ func (s *Service) ReturnableOfOrder(ctx context.Context, req *orderdto.VisitorOr
 	if ierr != nil {
 		return nil, ierr
 	}
-	returnable, rerr := s.returnableByItem(ctx, order.ID, orderItems)
+	returnable, rerr := s.returnableByItem(ctx, order.ProjectID, order.ID, orderItems)
 	if rerr != nil {
 		return nil, rerr
 	}
@@ -129,7 +129,7 @@ func (s *Service) GetReturn(ctx context.Context, returnID uint64) (res *orderdto
 		if lerr != nil {
 			return nil, lerr
 		}
-		if returnable, lerr = s.returnableByItem(ctx, order.ID, orderItems); lerr != nil {
+		if returnable, lerr = s.returnableByItem(ctx, order.ProjectID, order.ID, orderItems); lerr != nil {
 			return nil, lerr
 		}
 	}
@@ -141,9 +141,19 @@ func (s *Service) ApproveReturn(ctx context.Context, req *orderdto.ReturnReviewR
 	if req == nil || req.ReturnID == 0 {
 		return nil, errors.New(orderenums.ErrInvalidParam)
 	}
+	// 定位跳（DB-009 第五批）：审核入口只给退货单 id。定位必须在事务**外** ——
+	// rls.InProjectScope 会另开事务、另取连接，放进已开的事务里既看不到未提交数据，
+	// 又可能自锁（见 pkg/rls.ScopeTx 的说明）。
+	projectID, perr := s.locateReturnProject(ctx, req.ReturnID)
+	if perr != nil {
+		return nil, perr
+	}
 	now := time.Now()
 	err = s.returns.Transaction(ctx, func(tx *gorm.DB) error {
-		e, lerr := s.returns.LockByIDTx(ctx, tx, "", req.ReturnID)
+		if serr := rls.ScopeTx(tx, projectID); serr != nil {
+			return serr
+		}
+		e, lerr := s.returns.LockByIDTx(ctx, tx, projectID, req.ReturnID)
 		if lerr != nil {
 			return lerr
 		}
@@ -191,9 +201,17 @@ func (s *Service) RejectReturn(ctx context.Context, req *orderdto.ReturnReviewRe
 		// 没有理由的拒绝，客户只会再申请一次 —— 那对双方都是浪费。
 		return nil, errors.New(orderenums.ErrReturnRejectReasonRequired)
 	}
+	// 定位跳（DB-009 第五批）：同 ApproveReturn —— 定位在事务外，作用域设在事务内。
+	projectID, perr := s.locateReturnProject(ctx, req.ReturnID)
+	if perr != nil {
+		return nil, perr
+	}
 	now := time.Now()
 	err = s.returns.Transaction(ctx, func(tx *gorm.DB) error {
-		e, lerr := s.returns.LockByIDTx(ctx, tx, "", req.ReturnID)
+		if serr := rls.ScopeTx(tx, projectID); serr != nil {
+			return serr
+		}
+		e, lerr := s.returns.LockByIDTx(ctx, tx, projectID, req.ReturnID)
 		if lerr != nil {
 			return lerr
 		}
@@ -418,7 +436,7 @@ func (s *Service) refundReturn(ctx context.Context, rt *ordermodel.ReturnEntity,
 		if ierr != nil {
 			return ierr
 		}
-		ids, derr := s.returns.IDsByOrder(ctx, rt.OrderID, ordermodel.ReturnActiveStatuses)
+		ids, derr := s.returns.IDsByOrder(ctx, rt.ProjectID, rt.OrderID, ordermodel.ReturnActiveStatuses)
 		if derr != nil {
 			return derr
 		}

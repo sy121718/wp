@@ -221,7 +221,7 @@ func (s *Service) DeleteCoupon(ctx context.Context, couponID uint64) (err error)
 	if e == nil {
 		return errors.New(orderenums.ErrCouponNotFound)
 	}
-	used, cerr := s.coupons.CountRedemptions(ctx, couponID, nil)
+	used, cerr := s.coupons.CountRedemptions(ctx, e.ProjectID, couponID, nil)
 	if cerr != nil {
 		return cerr
 	}
@@ -297,7 +297,7 @@ func (s *Service) ValidateCoupon(ctx context.Context, req *orderdto.CouponValida
 		return res, nil
 	}
 	if e.PerUserLimit > 0 && req.UserID != 0 {
-		used, cerr := s.coupons.CountRedemptions(ctx, e.ID, &req.UserID)
+		used, cerr := s.coupons.CountRedemptions(ctx, e.ProjectID, e.ID, &req.UserID)
 		if cerr != nil {
 			return nil, cerr
 		}

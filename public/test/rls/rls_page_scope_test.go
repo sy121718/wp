@@ -272,9 +272,7 @@ func TestRLS_PageWritePathsRejectMissingScope(t *testing.T) {
 	if err := m.MoveDraftPath(ctx, "", id, "/x", at); !errors.Is(err, pagemodel.ErrProjectRequired) {
 		t.Fatalf("MoveDraftPath 缺工程应 ErrProjectRequired，实际 %v", err)
 	}
-	if err := m.MarkPublished(ctx, "", id, "/x", uuid.NewString(), at); !errors.Is(err, pagemodel.ErrProjectRequired) {
-		t.Fatalf("MarkPublished 缺工程应 ErrProjectRequired，实际 %v", err)
-	}
+
 	if err := m.SaveDraftWithRevision(ctx, "", id, 1, "/x", []byte(`{}`), 2, at,
 		&pagemodel.RevisionEntity{ID: uuid.NewString(), PageID: id, Version: 2}); !errors.Is(err, pagemodel.ErrProjectRequired) {
 		t.Fatalf("SaveDraftWithRevision 缺工程应 ErrProjectRequired，实际 %v", err)
@@ -287,6 +285,9 @@ func TestRLS_PageWritePathsRejectMissingScope(t *testing.T) {
 	}
 	if _, err := m.DeleteStaleRevisions(ctx, "", 20, at, 10); !errors.Is(err, pagemodel.ErrProjectRequired) {
 		t.Fatalf("DeleteStaleRevisions 缺工程应 ErrProjectRequired，实际 %v", err)
+	}
+	if _, err := m.FindPagesByIDs(ctx, "", []string{id}); !errors.Is(err, pagemodel.ErrProjectRequired) {
+		t.Fatalf("FindPagesByIDs 缺工程应 ErrProjectRequired，实际 %v", err)
 	}
 }
 
@@ -382,6 +383,15 @@ func TestRLS_PageLocateByIdAcrossProjects(t *testing.T) {
 	}
 	if _, err := m.ListRevisions(ctx, pB, idB); err != nil {
 		t.Fatalf("拿 B 的作用域读本页修订应成功，实际: %v", err)
+	}
+
+	// 批量取页面（槽位列表 / 重定向目标标签用）同样必须带作用域：
+	// 不带作用域时非超级角色下静默返回空集，调用方会把「全部已绑定页面」判成悬空。
+	if list, err := m.FindPagesByIDs(ctx, pB, []string{idB}); err != nil || len(list) != 1 {
+		t.Fatalf("拿 B 的作用域应取到 1 个页面，实际 %d（err=%v）", len(list), err)
+	}
+	if list, err := m.FindPagesByIDs(ctx, pA, []string{idB}); err != nil || len(list) != 0 {
+		t.Fatalf("拿 A 的作用域不应取到 B 的页面，实际 %d 条（err=%v）", len(list), err)
 	}
 	if _, err := svc.ProjectOfPage(ctx, uuid.NewString()); !errors.Is(err, pageservice.ErrPageNotFound) {
 		t.Fatalf("不存在的页面应 ErrPageNotFound，实际: %v", err)

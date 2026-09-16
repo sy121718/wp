@@ -161,7 +161,7 @@ func (s *Service) RequestReturn(ctx context.Context, req *orderdto.ReturnRequest
 		if locked == nil {
 			return errors.New(orderenums.ErrOrderNotFound)
 		}
-		returnable, lerr = s.returnableByItemTx(ctx, tx, locked.ID, orderItems)
+		returnable, lerr = s.returnableByItemTx(ctx, tx, locked.ProjectID, locked.ID, orderItems)
 		if lerr != nil {
 			return lerr
 		}
@@ -290,8 +290,8 @@ func (s *Service) ListVisitorReturns(ctx context.Context, req *orderdto.VisitorR
 //
 // 算出来是**快照**：真正落库那一刻的并发竞争由「申请单落在同一张表、聚合随时可重算」兜住
 // （两笔并发申请最多各自通过一次校验，但累计值仍在可退范围内 —— 见 return_flow_test 的并发用例）。
-func (s *Service) returnableByItem(ctx context.Context, orderID uint64, items []*ordermodel.OrderItemEntity) (map[uint64]int, error) {
-	ids, err := s.returns.IDsByOrder(ctx, orderID, ordermodel.ReturnActiveStatuses)
+func (s *Service) returnableByItem(ctx context.Context, projectID string, orderID uint64, items []*ordermodel.OrderItemEntity) (map[uint64]int, error) {
+	ids, err := s.returns.IDsByOrder(ctx, projectID, orderID, ordermodel.ReturnActiveStatuses)
 	if err != nil {
 		return nil, err
 	}
@@ -307,8 +307,8 @@ func (s *Service) returnableByItem(ctx context.Context, orderID uint64, items []
 }
 
 // returnableByItemTx 事务内计算可退数量（与订单行锁配合）。
-func (s *Service) returnableByItemTx(ctx context.Context, tx *gorm.DB, orderID uint64, items []*ordermodel.OrderItemEntity) (map[uint64]int, error) {
-	ids, err := s.returns.IDsByOrderTx(ctx, tx, orderID, ordermodel.ReturnActiveStatuses)
+func (s *Service) returnableByItemTx(ctx context.Context, tx *gorm.DB, projectID string, orderID uint64, items []*ordermodel.OrderItemEntity) (map[uint64]int, error) {
+	ids, err := s.returns.IDsByOrderTx(ctx, tx, projectID, orderID, ordermodel.ReturnActiveStatuses)
 	if err != nil {
 		return nil, err
 	}

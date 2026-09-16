@@ -89,7 +89,7 @@ func (s *Service) ListRedirects(ctx context.Context, req *pagedto.RedirectListRe
 	if err != nil {
 		return nil, err
 	}
-	ownerLabels, err := s.redirectOwnerLabels(ctx, records)
+	ownerLabels, err := s.redirectOwnerLabels(ctx, projectID, records)
 	if err != nil {
 		return nil, err
 	}
@@ -327,7 +327,8 @@ func (s *Service) redirectRecords(ctx context.Context, projectID string) (recs m
 }
 
 // redirectOwnerLabels 把页面归属者映射成可读标识（页面没有标题列，用草稿路径辨识）。
-func (s *Service) redirectOwnerLabels(ctx context.Context, recs map[string]*redirectRecord) (labels map[string]string, err error) {
+// projectID 必填（DB-009 第五批）：页面读取要工程作用域（见 FindPagesByIDs）。
+func (s *Service) redirectOwnerLabels(ctx context.Context, projectID string, recs map[string]*redirectRecord) (labels map[string]string, err error) {
 	ids := make([]string, 0, len(recs))
 	for _, rec := range recs {
 		if rec.ownerKind == redirectOwnerPage && rec.ownerID != "" {
@@ -338,7 +339,7 @@ func (s *Service) redirectOwnerLabels(ctx context.Context, recs map[string]*redi
 	if len(ids) == 0 {
 		return labels, nil
 	}
-	pages, err := s.model.FindPagesByIDs(ctx, ids)
+	pages, err := s.model.FindPagesByIDs(ctx, projectID, ids)
 	if err != nil {
 		return nil, err
 	}

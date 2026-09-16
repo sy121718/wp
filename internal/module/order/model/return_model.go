@@ -142,19 +142,14 @@ func (m *ReturnModel) CreateItemsTx(ctx context.Context, tx *gorm.DB, items []*R
 	return tx.WithContext(ctx).Model(&ReturnItemEntity{}).Create(&items).Error
 }
 
-// GetByID 按主键取；不存在返回 (nil, nil)。
-// projectID 非空时在工程作用域内查（DB-009 第二批）：order_returns 带 FORCE 策略，
-// 无作用域的按 id 直查在非超级角色下返回 (nil, nil) —— 表现为「退货单不存在」。
+// GetByID 按主键取本工程内的退货单；不存在返回 (nil, nil)。
+//
+// projectID 必填（DB-009 第五批）：order_returns 带 FORCE 策略。原先「为空 = 不限工程」
+// 的分支在第四批改造后已无调用者，留着它就是静默 fail-closed（表现为「退货单不存在」）。
 func (m *ReturnModel) GetByID(ctx context.Context, projectID string, id uint64) (e *ReturnEntity, err error) {
 	e = &ReturnEntity{}
 	if strings.TrimSpace(projectID) == "" {
-		if err = m.DB(ctx).Where("id = ?", id).First(e).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return nil, nil
-			}
-			return nil, err
-		}
-		return e, nil
+		return nil, ErrProjectRequired
 	}
 	if err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
 		return tx.Model(&ReturnEntity{}).Where("id = ? AND project_id = ?", id, projectID).First(e).Error
@@ -305,22 +300,40 @@ func (m *ReturnModel) UpdateItemReceivedTx(ctx context.Context, tx *gorm.DB, ite
 //
 // 拆成「先取 id、再按 id 求和」两步而不是一次 join：本层不做多表关联，
 // 而「已拒绝 / 已撤销不算占用」是业务判断，不该写进查询层。
-func (m *ReturnModel) IDsByOrder(ctx context.Context, orderID uint64, statuses []string) (ids []uint64, err error) {
+//
+// projectID 必填（DB-009 第五批）：order_returns 带 FORCE 策略，不带作用域时这条查询在
+// 非超级角色下**静默返回空集** —— 「已占用额度」恒为 0 ⇒ 可退数量被高估 ⇒ 允许超退。
+// 这是本批里唯一的**业务数据风险**（不只是功能缺失），所以作用域 + 显式 project_id 双保险。
+func (m *ReturnModel) IDsByOrder(ctx context.Context, projectID string, orderID uint64, statuses []string) (ids []uint64, err error) {
+	if strings.TrimSpace(projectID) == "" {
+		return nil, ErrProjectRequired
+	}
 	if orderID == 0 || len(statuses) == 0 {
 		return nil, nil
 	}
-	err = m.DB(ctx).Where("order_id = ? AND status IN ?", orderID, statuses).
-		Order("id ASC").Pluck("id", &ids).Error
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.Model(&ReturnEntity{}).
+			Where("project_id = ? AND order_id = ? AND status IN ?", projectID, orderID, statuses).
+			Order("id ASC").Pluck("id", &ids).Error
+	})
 	return ids, err
 }
 
 // IDsByOrderTx 事务内取占用额度的申请 id。
-func (m *ReturnModel) IDsByOrderTx(ctx context.Context, tx *gorm.DB, orderID uint64, statuses []string) (ids []uint64, err error) {
+// projectID 必填（DB-009 第五批）：与 IDsByOrder 同一判据（漏作用域 ⇒ 可退数量高估 ⇒ 超退）。
+// 这里用 rls.ScopeTx 设在调用方的事务上（不另开事务），并在 SQL 里显式带 project_id。
+func (m *ReturnModel) IDsByOrderTx(ctx context.Context, tx *gorm.DB, projectID string, orderID uint64, statuses []string) (ids []uint64, err error) {
+	if strings.TrimSpace(projectID) == "" {
+		return nil, ErrProjectRequired
+	}
 	if orderID == 0 || len(statuses) == 0 {
 		return nil, nil
 	}
+	if serr := rls.ScopeTx(tx, projectID); serr != nil {
+		return nil, serr
+	}
 	err = tx.WithContext(ctx).Model(&ReturnEntity{}).
-		Where("order_id = ? AND status IN ?", orderID, statuses).
+		Where("project_id = ? AND order_id = ? AND status IN ?", projectID, orderID, statuses).
 		Order("id ASC").Pluck("id", &ids).Error
 	return ids, err
 }

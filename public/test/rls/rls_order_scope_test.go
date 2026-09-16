@@ -145,9 +145,10 @@ func TestRLS_OrderScope_LocateByIdAcrossProjects(t *testing.T) {
 	ctx := context.Background()
 	idB := seedOrder(t, db, pB, "LOC-B", ordermodel.OrderStatusPending, time.Hour)
 
-	// 改造前的形态：无作用域直查 —— 静默读不到。
-	if e, err := m.GetByID(ctx, idB, ""); err != nil || e != nil {
-		t.Fatalf("未设作用域时按 id 读应读不到（fail closed），实际 %v err=%v", e, err)
+	// 改造前的形态是「无作用域直查 ⇒ 静默读不到 (nil, nil)」；第五批把它改成**显式失败**：
+	// 缺工程不再伪装成「订单不存在」。
+	if e, err := m.GetByID(ctx, idB, ""); !errors.Is(err, ordermodel.ErrProjectRequired) || e != nil {
+		t.Fatalf("缺工程时应显式 ErrProjectRequired，实际 e=%v err=%v", e, err)
 	}
 	// 逐工程探测：拿 B 的作用域能读到，拿 A 的读不到。
 	e, err := m.GetByID(ctx, idB, pB)
@@ -156,6 +157,28 @@ func TestRLS_OrderScope_LocateByIdAcrossProjects(t *testing.T) {
 	}
 	if other, gerr := m.GetByID(ctx, idB, pA); gerr != nil || other != nil {
 		t.Fatalf("拿工程 A 的作用域不应读到 B 的订单，实际 %v err=%v", other, gerr)
+	}
+}
+
+// TestRLS_OrderScope_SubTableQueriesRequireProject 子表查询的工程门（DB-009 第五批）。
+//
+// order_returns / coupon_redemptions 都在迁移 215 名单里：不带作用域时它们在非超级角色下
+// 静默返回空集 —— 前者的失败形态是「已占用退货额度恒为 0 ⇒ 可退数量被高估 ⇒ 超退」，
+// 后者的失败形态是「核销数恒为 0 ⇒ 有核销记录的券可删、每人限领失效」。
+func TestRLS_OrderScope_SubTableQueriesRequireProject(t *testing.T) {
+	db, _, _, _ := orderFixture(t)
+	ctx := context.Background()
+	returns := ordermodel.NewReturnModel(db)
+	coupons := ordermodel.NewCouponModel(db)
+
+	if _, err := returns.IDsByOrder(ctx, "", 1, ordermodel.ReturnActiveStatuses); !errors.Is(err, ordermodel.ErrProjectRequired) {
+		t.Fatalf("IDsByOrder 缺工程应 ErrProjectRequired，实际 %v", err)
+	}
+	if _, err := coupons.CountRedemptions(ctx, "", 1, nil); !errors.Is(err, ordermodel.ErrProjectRequired) {
+		t.Fatalf("CountRedemptions 缺工程应 ErrProjectRequired，实际 %v", err)
+	}
+	if _, err := coupons.CountRedemptionsTx(ctx, db, "", 1, nil); !errors.Is(err, ordermodel.ErrProjectRequired) {
+		t.Fatalf("CountRedemptionsTx 缺工程应 ErrProjectRequired，实际 %v", err)
 	}
 }
 

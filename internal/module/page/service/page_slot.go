@@ -48,7 +48,7 @@ func (s *Service) ListSiteSlots(ctx context.Context, req *pagedto.SiteSlotListRe
 	for _, b := range bindings {
 		pageIDs = append(pageIDs, b.PageID)
 	}
-	pages, err := s.model.FindPagesByIDs(ctx, pageIDs)
+	pages, err := s.model.FindPagesByIDs(ctx, req.ProjectID, pageIDs)
 	if err != nil {
 		return nil, err
 	}
