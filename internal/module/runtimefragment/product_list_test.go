@@ -8,9 +8,11 @@ package runtimefragment
 
 import (
 	"context"
+	"strconv"
 	"strings"
 	"testing"
 
+	"go_wp/internal/builder/core"
 	productcontract "go_wp/internal/module/product/contract"
 	productenums "go_wp/internal/module/product/enums"
 )
@@ -149,5 +151,87 @@ func TestRenderProductListFragmentRequiresContext(t *testing.T) {
 	}
 	if _, err := renderProductList(context.Background(), &Request{Params: map[string]string{"nodeId": "n"}}); err == nil {
 		t.Fatalf("缺 projectId 应报错")
+	}
+}
+
+// stubPager 支持按页取数的集合源（审计 PERF-019）；记录下推的 offset / limit。
+type stubPager struct {
+	stubCollection
+	gotOffset int
+	gotLimit  int
+	called    bool
+	total     int
+}
+
+func (s *stubPager) ResolveCollectionPage(_ context.Context, _ string, q core.CollectionQuery) (core.CollectionPage, error) {
+	s.called = true
+	s.gotOffset, s.gotLimit = q.Offset, q.Limit
+	items := make([]map[string]any, 0, q.Limit)
+	for i := 0; i < q.Limit; i++ {
+		n := q.Offset + i
+		items = append(items, listItem("p"+strconv.Itoa(n), "商品 "+strconv.Itoa(n)))
+	}
+	return core.CollectionPage{Items: items, Total: s.total}, nil
+}
+
+// TestRenderProductListFragmentPushesPageToSource 片段必须把 page 下推给集合源（审计 PERF-019）。
+//
+// 这条链路原先断在片段端：分页控件的链接照常输出，但 productListProps 既不认 page 也不认
+// pageSize，组件于是永远按「不分页、第 1 页」渲染 —— 点下一页 URL 变了、列表一动不动，
+// SQL 侧的 offset 下推一次也走不到。
+func TestRenderProductListFragmentPushesPageToSource(t *testing.T) {
+	stub := &stubPager{total: 50}
+	SetCollectionResolver(stub)
+	defer SetCollectionResolver(nil)
+	out, err := renderProductList(context.Background(), &Request{
+		Params: map[string]string{
+			"nodeId": "list-1", "projectId": "proj-1",
+			"titleField": "item.name", "linkField": "item.slug", "linkPrefix": "/products/",
+			"pageSize": "4", "page": "2",
+			"categoryId": "11111111-1111-1111-1111-111111111111",
+		},
+	})
+	if err != nil {
+		t.Fatalf("渲染失败: %v", err)
+	}
+	if !stub.called {
+		t.Fatal("第 2 页应走按页取数（ResolveCollectionPage），实际走了整批取回")
+	}
+	if stub.gotOffset != 4 || stub.gotLimit != 4 {
+		t.Fatalf("应下推 offset=4 limit=4，实际 offset=%d limit=%d", stub.gotOffset, stub.gotLimit)
+	}
+	if !strings.Contains(out, "商品 4") {
+		t.Fatalf("本页应是第 5~8 条\n%s", out)
+	}
+	// 翻页链接要带上现有筛选（pushQuery）并把页码换成目标页。
+	if !strings.Contains(out, "page=3") {
+		t.Fatalf("下一页链接应指向 page=3\n%s", out)
+	}
+	if !strings.Contains(out, "categoryId=") {
+		t.Fatalf("翻页链接应保留当前筛选（pushQuery 没灌进去）\n%s", out)
+	}
+}
+
+// TestRenderProductListFragmentDropsBadPage 越界的 page / pageSize 丢弃（回第 1 页），不报错。
+//
+// 分页控件的产物只可能是合法值，手工改坏 URL 该回到第 1 页，而不是把整块列表打成 500。
+func TestRenderProductListFragmentDropsBadPage(t *testing.T) {
+	defer SetCollectionResolver(nil)
+	for _, kv := range []map[string]string{
+		{"page": "0"}, {"page": "-3"}, {"page": "abc"}, {"page": "999"},
+		{"pageSize": "9999"}, {"pageSize": "-1"}, {"pageSize": "x"},
+	} {
+		stub := &stubPager{total: 50}
+		SetCollectionResolver(stub)
+		params := map[string]string{
+			"nodeId": "list-1", "projectId": "proj-1", "titleField": "item.name",
+			"pageSize": "4", "page": "2",
+		}
+		for k, v := range kv {
+			params[k] = v
+		}
+		if _, err := renderProductList(context.Background(), &Request{Params: params}); err != nil {
+			t.Fatalf("越界参数 %v 不该报错: %v", kv, err)
+		}
 	}
 }

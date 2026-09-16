@@ -167,6 +167,12 @@ const (
 	defaultCurrency  = "¥"
 	defaultTitleTag  = "h3"
 	defaultEmptyText = "暂无商品"
+
+	// MaxPageSize / MaxPage 分页边界（审计 PERF-019）：**导出给片段端复用** ——
+	// 请求参数在片段层过滤，两处各写一份数字迟早分叉（一边放宽一边收紧，
+	// 症状是某个页在片段里永远渲染不出来）。
+	MaxPageSize = 60
+	MaxPage     = 100
 )
 
 // fieldPathRe 字段槽位形状（与 core.productCard 同口径：item./product. + 驼峰字段名）。
@@ -208,8 +214,9 @@ type Props struct {
 	FilterOptionValue string `json:"filterOptionValue,omitempty" ct:"text,maxlen=64,sec=collection,label=属性值 key"`
 	// PageSize 每页条数（issue #27）：0 = 不分页（整块按 collectionLimit 截断）。
 	//
-	// 分页在**集合源单次上限（100 条）以内**生效：片段每次按「第几页」取对应切片，
-	// 超过上限的部分需要集合源支持 offset（票里记为后续），当前口径在下方 BuildView 里写明。
+	// 分页**不再受集合源单次上限（100 条）约束**（审计 PERF-019）：第 2 页起把 offset
+	// 交给集合源（SQL 侧 LIMIT/OFFSET）；第 1 页仍走原来的整批取回 —— 构建期只渲染第 1 页，
+	// 换路径会改发布产物字节。详见 BuildView 与 resolveProductsPage。
 	PageSize int `json:"pageSize,omitempty" ct:"slider,min=0,max=60,step=1,sec=collection,label=每页条数"`
 	// Page 当前页（1 起；由片段参数或 URL 传入，构建期默认 1）。
 	Page int `json:"page,omitempty" ct:"number,min=1,max=100,sec=collection,label=页码"`
@@ -233,8 +240,13 @@ type Props struct {
 	// PushQuery 当前语义参数（片段层渲染前灌入，如 `categoryId=x&page=2`）。
 	//
 	// 为什么是渲染期输入：交互控件要「切下一页 / 换排序时带上现有筛选」，而构建期不知道
-	// 访客当前选了哪些维度 —— 只有片段层见过原始请求参数。故不作为可编辑字段。
-	PushQuery string `json:"-" ct:"-"`
+	// 访客当前选了哪些维度 —— 只有片段层见过原始请求参数。故不作为可编辑字段
+	// （ct:"-" 不进工作台面板；json 可序列化只是为了让片段层灌得进来 —— 它原先写着
+	// json:"-"，于是没有任何非测试代码能给它赋值，「切下一页时带上现有筛选」一直是空的）。
+	//
+	// **片段层必须按白名单重新合成，不得原样回传 URL 查询串**：组件的链接拼装会把它并进
+	// 片段请求参数并**覆盖实例配置**，原样回传等于让访客用 query 换掉自己请求的 nodeId / projectId。
+	PushQuery string `json:"pushQuery,omitempty" ct:"-"`
 
 	// FilterMinPrice / FilterMaxPrice 价格区间（issue #28）：下推给集合源。
 	// 各自由片段参数 `minPrice` / `maxPrice` 灌入（见 PushQuery 的说明）。
@@ -409,11 +421,11 @@ func validateExtra(p *Props, _ string) (err error) {
 	if keySet != valueSet {
 		return fmt.Errorf("属性筛选需要同时填写属性 key 与属性值 key（当前 key=%q value=%q）", p.FilterOptionKey, p.FilterOptionValue)
 	}
-	if p.PageSize < 0 || p.PageSize > 60 {
-		return fmt.Errorf("每页条数必须在 0~60 之间（0 = 不分页）")
+	if p.PageSize < 0 || p.PageSize > MaxPageSize {
+		return fmt.Errorf("每页条数必须在 0~%d 之间（0 = 不分页）", MaxPageSize)
 	}
-	if p.Page < 0 || p.Page > 100 {
-		return fmt.Errorf("页码必须在 0~100 之间（0 = 第 1 页）")
+	if p.Page < 0 || p.Page > MaxPage {
+		return fmt.Errorf("页码必须在 0~%d 之间（0 = 第 1 页）", MaxPage)
 	}
 	// 筛选栏与工具条：只接受列出的维度 / 项，写错即报错（静默忽略会让作者以为配上了）。
 	for _, name := range splitList(p.Filters) {

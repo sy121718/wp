@@ -135,7 +135,11 @@ func fragmentQuery(nodeID string, p *Props, ctx *core.RenderContext) string {
 		}
 	}
 	// 属性维度的键列出来：片段端据此知道要保留哪些 option.<key> 参数（否则筛选栏态会丢）。
-	q.Set("optionKeys", strings.Join(optionFilterKeys(p), ","))
+	//
+	// 空则不写：空值参数一样占用 GET 的参数名预算（maxParamCount），而实例配置本就有十几个键。
+	if keys := optionFilterKeys(p); len(keys) > 0 {
+		q.Set("optionKeys", strings.Join(keys, ","))
+	}
 	return q.Encode()
 }
 

@@ -21,6 +21,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -90,6 +91,14 @@ var productListFilterParams = map[string]string{
 	productcontract.CollectionFilterMinPrice: "filterMinPrice",
 	productcontract.CollectionFilterMaxPrice: "filterMaxPrice",
 }
+
+// 分页参数（issue #27 / 审计 PERF-019）。分工刻意不同：page 是**语义参数**
+// （进 URL、可分享、访客可控），pageSize 是**实例配置**
+// （构建期由 fragmentQuery 焙进产物，访客改不动）。
+const (
+	productListParamPage     = "page"
+	productListParamPageSize = "pageSize"
+)
 
 // productListDisplayParams 展示参数 → 组件 props（白名单：只有这里列出的能进 props）。
 var productListDisplayParams = map[string]string{
@@ -195,6 +204,23 @@ func productListProps(r *Request) (map[string]any, error) {
 		}
 		props["collectionLimit"] = n
 	}
+	// 分页（审计 PERF-019）：page 由 URL 传入（语义参数），pageSize 由产物焙入的
+	// 实例配置传入。这两个映射曾经缺失，而分页控件的链接照常输出 ——
+	// 表现是「点下一页 URL 变了、列表却一动不动」：组件拿不到 pageSize 就永远按
+	// 「不分页」渲染、拿不到 page 就永远停在第 1 页，于是分页下推的 SQL 路径一次也走不到。
+	//
+	// 边界复用组件导出的常量（两处各写一份数字迟早分叉）；越界**丢弃**而不是报错：
+	// 分页控件的产物只可能是合法值，手工改坏 URL 该回到第 1 页，不该把整块列表打成 500。
+	if raw := strings.TrimSpace(r.Params[productListParamPageSize]); raw != "" {
+		if n, err := strconv.Atoi(raw); err == nil && n >= 0 && n <= productlist.MaxPageSize {
+			props["pageSize"] = n
+		}
+	}
+	if raw := strings.TrimSpace(r.Params[productListParamPage]); raw != "" {
+		if n, err := strconv.Atoi(raw); err == nil && n >= 1 && n <= productlist.MaxPage {
+			props["page"] = n
+		}
+	}
 	// 筛选：等值维度直接映射；`option.<属性key>` 前缀维度收成组件认的 `key:value` 列表；
 	// 未知维度一律**丢弃**（不是报错）：片段会随页面上多余的 query 参数被请求，
 	// 那些参数不归本片段管，报错反而会让页面看起来坏了。
@@ -226,7 +252,64 @@ func productListProps(r *Request) (map[string]any, error) {
 	if len(options) > 0 {
 		props["filterOptions"] = strings.Join(options, ",")
 	}
+	// 当前语义参数（issue #27）：翻页要带上现有筛选、换筛选要回到第 1 页 ——
+	// 组件的链接拼装靠这个串。它一直没有被灌进去（PushQuery 原先是
+	// json:"-"，没有任何非测试代码能给它赋值），所以“点下一页筛选就没了”一直存在。
+	if q := productListSemanticQuery(r, options); q != "" {
+		props["pushQuery"] = q
+	}
 	return props, nil
+}
+
+// productListSemanticQuery 合成当前语义查询串（翻页 / 换筛选时由组件的链接拼装消费）。
+//
+// **键名取自 URL 而不是 props**：两者的键并不一一对应（URL 是 categoryId，
+// props 是 filterCategoryId；价格区间、属性维度同理），从 props 反推会拼出组件不认的参数。
+// 但也**不是原样回传**：逐键过语义白名单，实例配置（nodeId / projectId /
+// 字段槽位 / 布局 / 条数 / 每页条数）一律不进串 —— 组件会拿这个串拼片段请求并
+// **覆盖实例配置**，掺进去等于让访客用 query 换掉自己请求的工程与节点。
+//
+// 顺序由 url.Values.Encode 固定，保证同参数同 props —— 一致性用例逐字节比对。
+func productListSemanticQuery(r *Request, options []string) string {
+	q := url.Values{}
+	for param, value := range r.Params {
+		// 属性维度统一由下面的 options 还原（它们在 props 层已经收成了 key:value）。
+		if strings.HasPrefix(param, productcontract.CollectionFilterOptionPrefix) {
+			continue
+		}
+		if !productListSemanticParam(param) {
+			continue
+		}
+		if v := strings.TrimSpace(value); v != "" {
+			q.Set(param, v)
+		}
+	}
+	for _, pair := range options {
+		key, value, ok := strings.Cut(pair, ":")
+		if !ok {
+			continue
+		}
+		if key = strings.TrimSpace(key); key == "" {
+			continue
+		}
+		if value = strings.TrimSpace(value); value == "" {
+			continue
+		}
+		q.Set(productcontract.CollectionFilterOptionPrefix+key, value)
+	}
+	return q.Encode()
+}
+
+// productListSemanticParam 该 URL 参数是否属于语义参数（可进 pushQuery）。
+//
+// 白名单直接复用筛选参数表 + 分页 + onSale + option 前缀，而不另立一份：
+// 两份清单分叉的后果是“某个筛选维度能筛但一翻页就丢”，而那正是难查的一类。
+func productListSemanticParam(param string) bool {
+	if param == productListParamPage || param == productcontract.CollectionFilterOnSale {
+		return true
+	}
+	_, ok := productListFilterParams[param]
+	return ok
 }
 
 // productListComponentSet 组件模板集（进程内构建一次并复用；失败缓存错误，不反复重试）。
