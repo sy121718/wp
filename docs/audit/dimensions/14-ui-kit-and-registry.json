@@ -184,7 +184,8 @@
         "architecture",
         "css"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-16 完成（命名统一，取值各供）。**这是本次唯一需要「决定口径」的一条**：完全统一两端的令牌**取值**做不到，也不该做 —— 后台色板不随站点主题变（它是管理界面的固定配色），而产物侧的主题令牌必须随主题变。所以统一的是**命名**：两端只写 --sky-* 一个命名空间，产物侧由 ThemeVarsCSS 按站点主题生成，后台侧由 theme.css 的 [data-theme] 别名段把后台色板 --c-* 以同名 --sky-c-* 暴露。21 个槽统一为 --sky-c-X（border / border-input / border-strong / primary / primary-deep / primary-soft / primary-bg / bg / bg-soft / bg-hover / surface / text / text-secondary / text-mute / text-faint / success / success-bg / warning / warning-bg / danger / danger-bg），ui.css 的 119 处引用改为单级 var(--sky-c-X, 兜底)，**每处必须带兜底**（产物侧没有后台别名段，缺兜底就会取到空值）。三处「原名与中间层不同名」按更精确的语义收敛：surface ← --c-bg（7 处）、border ← --c-border-input（3 处）、text ← --c-text-secondary（2 处）；副作用只有一个 —— 后台暗色主题下那 7 处「面板底色」槽的取值随之为 --c-surface（亮色下同为 #fff，**产物侧视觉零变化**）。**未动 --ui-* 语义量**（间距 / 圆角 / 动效 / 缓动），它们是量纲不是配色，与主题无关。范围：ui.css 119 处引用 + theme.css 新增别名段；workbench.css / media-lib.css 仍是 --c-* 存量消费（它们不进产物，属 UIK-003 第四层的存量）。验证：ui_css_test.go 与 ui_css_delivery_boundary_test.go 改成新契约（基座只写一个命名空间 + 每处带兜底 + 后台别名与基座引用双向对表），ui.css 37400 → 36645 字节（改的是命名不是值）。"
     },
     {
       "id": "UIK-004",
@@ -300,7 +301,8 @@
         "runtimefragment",
         "css"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-16 完成，并且顺带修掉一处**长期存在的静默失效**。① 现状：片段样式由组件在构建期注入（carticon 的 AddCartFragmentCSS、orderlist 的 AddOrdersFragmentCSS，调用点在 carticon.go / orderlist.go / addtocart.go 三处）。② 新实现：新增 fragment_base.go 按族定义 cart / orders，注入判据从「页面里有没有放某个组件」改成「页面存在 hx-* 属性且其值指向 /_fragments/<能力>」—— 按能力映射到族（cart：cartSummary / cartView / cartAdd / cartSetQty / cartClear / checkout；orders：ordersList / orderDetail / returnRequest），组件里的三处调用与 cartfrag.go / orderfrag.go 一并删除。两个前置判据任一成立才付解析成本（登记表里有 hx-* 或 HTML 里出现 /_fragments/ 子串），因为作者手写或 HTML 节点注入的引用不一定进登记表。③ **顺带修的真缺陷**：原 cartfrag.go 的 17 条规则调用 b.Add 时传了空断点，而 CSSBuckets 只认 desktop / tablet / mobile 三个断点名 —— 也就是说购物车片段的基础样式**此前从未进过产物**（只在「组件 CSS 里恰好有同名规则」时才看起来正常）。改到基座后这批规则才真正进产物（约 +1.5KB，且只对引用购物车片段的页面）。④ 为什么用 Go 侧 fragment_base.go 而不是静态 .css：按能力裁剪在静态文件里做不到，硬做只能二选一（要么全量注入，要么引入双真源）。⑤ 对表闭环：runtimefragment/fragment_style_contract_test.go 断言「内置能力 / 有样式族 / 无样式清单」三表闭合，新增片段能力却没给样式会被测试拦下（当前 searchResults / productLivePrice / productVariantAvailability / loginPanel 四个能力已在无样式清单里登记）。验证：TestFragmentBaseStyle* 全 PASS —— 页面上没有任何官方组件、只有 hx-post 指向 /_fragments/cartAdd 的按钮也拿到了 .sky-cart-item 规则（产物级 RenderDocument 同样成立）；only-cart 页面不含 .sky-orders-item，反向成立；同页两个 orderList 组件只出一份片段样式。遗留：片段基座只覆盖 cart / orders 两族；loginPanel 等账号片段仍靠 userforms 的节点作用域，作者手写 hx-get 引用它们仍是裸 HTML。"
     },
     {
       "id": "UIK-006",
@@ -1034,7 +1036,8 @@
         "css",
         "decision"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-16 完成。**做法是源码切片而不是拆文件**：ui.css 仍是单文件、后台 <link> 路径不变，Go 侧 ui_css_split.go 按源码把 19 个控件段切出来（head / select / confirm / modal / toast / drawer / colorfield / busy / base-doc / tokens / buttons / cards / tables / forms / badges / pagination / utilities / themetoggle / langswitch），构造时只拼用到的段；**全部命中时拼回去与原文件逐字节相同**（有断言钉住，所以「切分」不会悄悄改变样式）。触发条件两条取并集：段内类名自动推导（往段里加类不用改任何表）+ 控件资源命中（select.js → select 段、modal.js → modal 段）。head / base-doc / tokens / utilities 是公共段，跟随已命中的段一起带 —— 于是「只用了工具类」的页面依然零注入（UIK-002 的口径不变）。实测收益：只用 .btn 的页面，ui.css **37020 字节 → 注入 9582 字节（26%）**。验证：ui_css_split_test.go 断言「拼回原文件逐字节相同」「只用按钮的页面不带表格与分页段」「工具类单独出现不触发注入」。遗留：tokens 与 utilities 段随任意控件段一起带（约 1.8KB），若后续要按密度令牌进一步裁剪，可再把 tokens 拆成色板与语义量两段。"
     },
     {
       "id": "UIK-014",

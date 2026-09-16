@@ -7,13 +7,13 @@
     "branch": "main",
     "language": "zh-CN",
     "status": "remediation-in-progress",
-    "scopeNote": "2026-09-13 出审查结论，2026-09-14 起按 P0→P7 分批落地。当前进度以 docs/audit/README.md 为准（2026-09-16：268 条中 249 条 resolved、19 条 open；high 7 / medium 9 / low 3。其中 9 条按决策延后（插件生态 + SEC-005）—— 2026-09-16 二次确认：插件生态整体延后，等本体收口后再考虑；未延后的 10 条集中在 DB-009、UIK-003/005/013、SEC-011、UI-015、IDX-018、SEO-021、PERF-019、VIS-015 —— 其中 UI-015 的检查器与门禁、IDX-018 的快照工具都已落地可复现，按「存量整改未完成」与「待生产库观察周期」的边界保持 open，理由见各自 progressNote）。P0 已全部收口（SEC-004 / SEC-007 / SEC-009 / TX-016 / CQ-023）。分维明细在 dimensions/（分批推进中的条目看其 progressNote，按决策延后的看 deferredNote）。",
+    "scopeNote": "2026-09-13 出审查结论，2026-09-14 起按 P0→P7 分批落地。当前进度以 docs/audit/README.md 为准（2026-09-16：268 条中 254 条 resolved、14 条 open；high 6 / medium 5 / low 3 —— 按阶段看 **P8 已全部收口**，余下 14 条全在 P7。其中 9 条按决策延后（插件生态 + SEC-005）—— 2026-09-16 二次确认：插件生态整体延后，等本体收口后再考虑；未延后的 5 条是 DB-009（RLS 换角色的硬前提：presentation 整模块与大批判 id 单查还没接线）、PERF-019（集合源分页下推，接口层已落地、实现侧待做）、VIS-015（轻轨插件表达力已补齐并带三档示例；UIK-003 第四层的 pages-* 与后台 --c-* 存量是它提到的下游）、IDX-018（工具已交付，等生产库一个业务周期的两次快照）、SEO-021（需 GA4 凭据，审计自己判为优先级低于站内能力）—— 其中后两条属外部条件，其余三条有明确下一步）。P0 已全部收口（SEC-004 / SEC-007 / SEC-009 / TX-016 / CQ-023）。分维明细在 dimensions/（分批推进中的条目看其 progressNote，按决策延后的看 deferredNote）。",
     "readMe": "docs/audit/README.md"
   },
   "summary": {
     "findingsTotal": 268,
-    "resolved": 249,
-    "open": 19,
+    "resolved": 254,
+    "open": 14,
     "bySeverity": {
       "critical": 16,
       "high": 58,
@@ -98,15 +98,15 @@
       }
     ],
     "openBySeverity": {
-      "high": 7,
-      "medium": 9,
+      "high": 6,
+      "medium": 5,
       "low": 3
     },
     "openByPhase": {
       "P5": 0,
-      "P6": 1,
+      "P6": 0,
       "P7": 14,
-      "P8": 4
+      "P8": 0
     }
   },
   "headline": "控制面与访问面分离、确定性构建、库存锁序这些骨架是对的。真正挡发布与开源的是：动态页编辑器断了、page/presentation 装配分裂、同步整站重建、几处资损窗口、以及「控件基座声称两端共用但产物侧几乎接不住」。",
