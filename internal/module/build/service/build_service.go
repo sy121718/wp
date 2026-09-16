@@ -13,6 +13,7 @@ import (
 	builddto "go_wp/internal/module/build/dto"
 	buildenums "go_wp/internal/module/build/enums"
 	buildmodel "go_wp/internal/module/build/model"
+	"go_wp/pkg/utils"
 )
 
 var _ buildcontract.BuildService = (*Service)(nil)
@@ -239,6 +240,6 @@ func toDto(e *buildmodel.Entity) *builddto.Job {
 		ID: strconv.FormatInt(e.ID, 10), SourceType: e.SourceType, SourceID: e.SourceID,
 		DraftVersion: e.DraftVersion, BuildInputHash: e.BuildInputHash, Status: e.Status,
 		ArtifactID: e.ArtifactID, ErrorMessage: msg,
-		CreatedAt: e.CreateTime, StartedAt: e.StartedAt, CompletedAt: e.CompletedAt,
+		CreatedAt: utils.NewJSONTime(e.CreateTime), StartedAt: utils.NewJSONTimePtr(e.StartedAt), CompletedAt: utils.NewJSONTimePtr(e.CompletedAt),
 	}
 }

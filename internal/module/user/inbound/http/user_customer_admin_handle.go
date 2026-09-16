@@ -15,19 +15,18 @@ package userhttp
 // handler 只做三件事：绑定参数、调 service、输出响应（业务判断一律在 service）。
 
 import (
-	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
-	"go_wp/pkg/sitetz"
-
 	"github.com/gin-gonic/gin"
-
 	usercontract "go_wp/internal/module/user/contract"
 	userdto "go_wp/internal/module/user/dto"
 	userenums "go_wp/internal/module/user/enums"
 	"go_wp/pkg/response"
+	"go_wp/pkg/sitetz"
+	"go_wp/pkg/utils"
+	"net/http"
 )
 
 // customerDayLayout 筛选用的日期格式（与后台页面的 date 输入一致）。
@@ -78,7 +77,7 @@ func (h *CustomerHandle) ListCustomers(c *gin.Context) {
 		response.ErrorWithMessage(c, http.StatusBadRequest, userenums.ErrInvalidParam)
 		return
 	}
-	req.RegisteredFrom, req.RegisteredTo = from, to
+	req.RegisteredFrom, req.RegisteredTo = utils.NewJSONTimePtr(from), utils.NewJSONTimePtr(to)
 
 	res, err := h.svc.ListCustomers(c.Request.Context(), req)
 	if err != nil {

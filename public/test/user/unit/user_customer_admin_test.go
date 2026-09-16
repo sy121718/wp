@@ -20,6 +20,7 @@ import (
 	userenums "go_wp/internal/module/user/enums"
 	usermodel "go_wp/internal/module/user/model"
 	userservice "go_wp/internal/module/user/service"
+	"go_wp/pkg/utils"
 	"go_wp/public/migrations"
 	"go_wp/public/test/support"
 )
@@ -119,7 +120,7 @@ func TestCustomerListFiltersEmailVerifiedAndRegisterRange(t *testing.T) {
 
 	from, to := day(2026, 9, 1), day(2026, 9, 30)
 	ranged, err := svc.ListCustomers(ctx, &userdto.CustomerListReq{
-		Status: userdto.CustomerStatusAll, RegisteredFrom: &from, RegisteredTo: &to})
+		Status: userdto.CustomerStatusAll, RegisteredFrom: utils.NewJSONTimePtr(&from), RegisteredTo: utils.NewJSONTimePtr(&to)})
 	if err != nil {
 		t.Fatalf("注册时间范围筛选失败: %v", err)
 	}
@@ -136,7 +137,7 @@ func TestCustomerListRejectsInvertedRegisterRange(t *testing.T) {
 	}
 	from, to := day(2026, 10, 1), day(2026, 9, 1)
 	_, err := svc.ListCustomers(context.Background(), &userdto.CustomerListReq{
-		Status: userdto.CustomerStatusAll, RegisteredFrom: &from, RegisteredTo: &to})
+		Status: userdto.CustomerStatusAll, RegisteredFrom: utils.NewJSONTimePtr(&from), RegisteredTo: utils.NewJSONTimePtr(&to)})
 	if err == nil || err.Error() != userenums.ErrInvalidParam {
 		t.Fatalf("起止颠倒应报 %q，实得 %v", userenums.ErrInvalidParam, err)
 	}

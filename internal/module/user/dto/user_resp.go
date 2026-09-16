@@ -2,7 +2,9 @@ package userdto
 
 // user_resp.go — 用户模块响应（issue #36）。
 
-import "time"
+import (
+	"go_wp/pkg/utils"
+)
 
 // RegisterResp 注册结果。
 //
@@ -28,16 +30,16 @@ type ActivateResp struct {
 // 聚成一个结构体而不是三个接口：账号中心一屏就要这些，
 // 拆成三个请求只会让页面出现「上半截已经显示、下半截还在转」的中间态。
 type AccountResp struct {
-	UserID        uint64     `json:"userId"`
-	Username      string     `json:"username"`
-	Email         string     `json:"email"`
-	EmailVerified bool       `json:"emailVerified"`
-	Nickname      string     `json:"nickname"`
-	DisplayName   string     `json:"displayName"`
-	Avatar        string     `json:"avatar"`
-	Status        int        `json:"status"`
-	RegisteredAt  *time.Time `json:"registeredAt"`
-	LastLoginTime *time.Time `json:"lastLoginTime"`
+	UserID        uint64          `json:"userId"`
+	Username      string          `json:"username"`
+	Email         string          `json:"email"`
+	EmailVerified bool            `json:"emailVerified"`
+	Nickname      string          `json:"nickname"`
+	DisplayName   string          `json:"displayName"`
+	Avatar        string          `json:"avatar"`
+	Status        int             `json:"status"`
+	RegisteredAt  *utils.JSONTime `json:"registeredAt"`
+	LastLoginTime *utils.JSONTime `json:"lastLoginTime"`
 	// RegisteredAtText / LastLoginTimeText 是给页面直接显示的时间文本（口径见 service.formatTime）。
 	RegisteredAtText  string `json:"registeredAtText"`
 	LastLoginTimeText string `json:"lastLoginTimeText"`

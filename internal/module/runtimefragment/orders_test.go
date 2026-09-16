@@ -11,16 +11,16 @@ package runtimefragment
 
 import (
 	"context"
-	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/gin-gonic/gin"
-
 	orderdto "go_wp/internal/module/order/dto"
 	usercontract "go_wp/internal/module/user/contract"
 	"go_wp/internal/templates"
+	"go_wp/pkg/utils"
+	"net/http/httptest"
 )
 
 // fakeVisitorOrders 记录收到的请求并返回固定结果。
@@ -91,7 +91,7 @@ func TestOrdersFragmentPassesVisitorIdentity(t *testing.T) {
 		Total: 1,
 		List: []*orderdto.OrderResp{{
 			ID: 42, OrderNo: "GWP2026010100000001", Status: "paid",
-			Total: 12345, CreateTime: time.Date(2026, 1, 1, 10, 30, 0, 0, time.UTC),
+			Total: 12345, CreateTime: utils.NewJSONTime(time.Date(2026, 1, 1, 10, 30, 0, 0, time.UTC)),
 		}},
 	}}
 	SetVisitorOrderReader(fake)
@@ -118,7 +118,7 @@ func TestOrdersFragmentPassesVisitorIdentity(t *testing.T) {
 // TestOrderDetailFragmentKeepsOwnershipArgs 详情片段：订单 id 与身份一起传下去。
 func TestOrderDetailFragmentKeepsOwnershipArgs(t *testing.T) {
 	fake := &fakeVisitorOrders{detail: &orderdto.OrderDetailResp{
-		Head: &orderdto.OrderResp{ID: 9, OrderNo: "NO-9", Status: "shipped", Total: 100, CreateTime: time.Now()},
+		Head: &orderdto.OrderResp{ID: 9, OrderNo: "NO-9", Status: "shipped", Total: 100, CreateTime: utils.NewJSONTime(time.Now())},
 		Items: []*orderdto.OrderItemResp{{
 			ProductName: "杯子", VariantLabel: "白色", SKU: "SKU-1",
 			UnitPrice: 100, Quantity: 1, LineTotal: 100,

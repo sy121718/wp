@@ -146,7 +146,7 @@ func (m *Model) Save(ctx context.Context, e *TemplateEntity) error {
 		"draft_document":     e.DraftDocument,
 		"draft_version":      e.DraftVersion,
 		"current_version_id": e.CurrentVersionID,
-		"update_time":         e.UpdatedAt,
+		"update_time":        e.UpdatedAt,
 	}).Error
 }
 
@@ -154,7 +154,7 @@ func (m *Model) Save(ctx context.Context, e *TemplateEntity) error {
 func (m *Model) SetCurrentVersion(ctx context.Context, templateID, versionID string, at time.Time) error {
 	return m.DB(ctx).Where("id = ?", templateID).Updates(map[string]any{
 		"current_version_id": versionID,
-		"update_time":         at,
+		"update_time":        at,
 	}).Error
 }
 
@@ -179,7 +179,7 @@ func (m *Model) CreateWithVersion(ctx context.Context, e *TemplateEntity, v *Ver
 		return tx.Model(&TemplateEntity{}).Where("id = ?", e.ID).
 			Updates(map[string]any{
 				"current_version_id": v.ID,
-				"update_time":         e.UpdatedAt,
+				"update_time":        e.UpdatedAt,
 			}).Error
 	})
 }
@@ -197,7 +197,7 @@ func (m *Model) SaveWithVersion(ctx context.Context, v *VersionEntity, e *Templa
 			"draft_document":     e.DraftDocument,
 			"draft_version":      e.DraftVersion,
 			"current_version_id": e.CurrentVersionID,
-			"update_time":         e.UpdatedAt,
+			"update_time":        e.UpdatedAt,
 		}).Error
 	})
 }

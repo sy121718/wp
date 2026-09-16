@@ -80,8 +80,8 @@ func (h *Handle) ThemeManage(c *gin.Context) {
 		for _, t := range themes {
 			data.Themes = append(data.Themes, themeRow{
 				ID: t.ID, ProjectID: t.ProjectID, Name: t.Name, IsActive: t.IsActive,
-				CreatedAt: t.CreatedAt.Format("2006-01-02 15:04"),
-				UpdatedAt: t.UpdatedAt.Format("2006-01-02 15:04"),
+				CreatedAt: t.CreatedAt.Time().Format("2006-01-02 15:04"),
+				UpdatedAt: t.UpdatedAt.Time().Format("2006-01-02 15:04"),
 			})
 		}
 	}

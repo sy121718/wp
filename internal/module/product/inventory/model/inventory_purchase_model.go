@@ -341,7 +341,7 @@ func (m *Model) IncrPurchaseLineReceivedTx(ctx context.Context, tx *gorm.DB, lin
 		Where("id = ? AND received_quantity + ? <= quantity", lineID, delta).
 		Updates(map[string]any{
 			"received_quantity": gorm.Expr("received_quantity + ?", delta),
-			"update_time":        at,
+			"update_time":       at,
 		})
 	return res.RowsAffected, res.Error
 }
@@ -352,7 +352,7 @@ func (m *Model) DecrPurchaseLineReceivedTx(ctx context.Context, tx *gorm.DB, lin
 		Where("id = ? AND received_quantity >= ?", lineID, delta).
 		Updates(map[string]any{
 			"received_quantity": gorm.Expr("received_quantity - ?", delta),
-			"update_time":        at,
+			"update_time":       at,
 		})
 	return res.RowsAffected, res.Error
 }

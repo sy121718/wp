@@ -34,7 +34,7 @@ const (
 const touchThrottleInterval = 60 * time.Second
 
 var (
-	touchMu   sync.Mutex
+	touchMu sync.Mutex
 	// key 是会话令牌哈希（= 设备列表里的 id）：一台设备一次登录一个键，
 	// 与原本按台账行 id 节流等价，而会话不再落库。
 	touchSeen = map[string]time.Time{}

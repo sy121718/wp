@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	pagedto "go_wp/internal/module/page/dto"
+	"go_wp/pkg/utils"
 )
 
 // List 列出页面摘要（不含草稿文档；DraftDocument 为空）。
@@ -42,7 +43,7 @@ func (s *Service) ListDrafts(ctx context.Context) (res []pagedto.PageDraftResp, 
 		res = append(res, pagedto.PageDraftResp{
 			ID: entities[i].ID, ProjectID: entities[i].ProjectID,
 			DraftPath: entities[i].DraftPath, DraftDocument: entities[i].DraftDocument,
-			UpdatedAt: entities[i].UpdatedAt,
+			UpdatedAt: utils.NewJSONTime(entities[i].UpdatedAt),
 		})
 	}
 	return res, nil

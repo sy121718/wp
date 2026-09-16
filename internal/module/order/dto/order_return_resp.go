@@ -5,7 +5,9 @@ package orderdto
 // 金额与展示文案都由服务端算好（分与元的换算只在一处发生）；
 // StatusLabel 也是服务端给的 —— 同一个状态在后台页、访客片段、邮件里必须是同一句话。
 
-import "time"
+import (
+	"go_wp/pkg/utils"
+)
 
 // ReturnItemResp 退货明细视图。
 type ReturnItemResp struct {
@@ -44,13 +46,13 @@ type ReturnResp struct {
 	CustomerName  string            `json:"customerName"`
 	AdminNote     string            `json:"adminNote"`
 	ReviewerName  string            `json:"reviewerName"`
-	ReviewedAt    *time.Time        `json:"reviewedAt"`
-	ReceivedAt    *time.Time        `json:"receivedAt"`
-	RefundedAt    *time.Time        `json:"refundedAt"`
+	ReviewedAt    *utils.JSONTime   `json:"reviewedAt"`
+	ReceivedAt    *utils.JSONTime   `json:"receivedAt"`
+	RefundedAt    *utils.JSONTime   `json:"refundedAt"`
 	TransactionID string            `json:"transactionId"`
 	Items         []*ReturnItemResp `json:"items"`
-	CreateTime    time.Time         `json:"createTime"`
-	UpdateTime    time.Time         `json:"updateTime"`
+	CreateTime    utils.JSONTime    `json:"createTime"`
+	UpdateTime    utils.JSONTime    `json:"updateTime"`
 }
 
 // ReturnDetailResp 退货单详情（含订单摘要：审核时不可能不看订单）。

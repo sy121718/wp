@@ -5,7 +5,9 @@ package userdto
 // 与访客侧的 user_req.go 分开：那一侧是「操作自己的账号」，这一侧是「管理别人的账号」，
 // 两者的越权面完全不同 —— 合成一个文件，读代码的人分不清哪条路径需要后台身份。
 
-import "time"
+import (
+	"go_wp/pkg/utils"
+)
 
 // 邮箱验证筛选的三态取值。
 //
@@ -26,8 +28,8 @@ type CustomerListReq struct {
 	// EmailVerified EmailVerifiedAll / Yes / No。
 	EmailVerified int
 	// RegisteredFrom / RegisteredTo 注册时间范围（闭区间，nil = 该端不限）。
-	RegisteredFrom *time.Time
-	RegisteredTo   *time.Time
+	RegisteredFrom *utils.JSONTime
+	RegisteredTo   *utils.JSONTime
 	Offset         int
 	Limit          int
 }

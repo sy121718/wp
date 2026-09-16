@@ -2,7 +2,9 @@ package userdto
 
 // user_req.go — 用户模块请求（issue #36：注册 / 验证 / 密码重置 / 登录 / 账号中心）。
 
-import "time"
+import (
+	"go_wp/pkg/utils"
+)
 
 // RegisterReq 注册。
 //
@@ -66,7 +68,7 @@ type LoginResp struct {
 	Nickname  string
 	Avatar    string
 	Email     string
-	ExpiresAt time.Time
+	ExpiresAt utils.JSONTime
 }
 
 // SessionItem 登录设备（账号中心的「我的设备」一行）。
@@ -77,11 +79,11 @@ type SessionItem struct {
 	UserAgent    string
 	IP           string
 	Location     string
-	LastActiveAt *time.Time
-	CreatedAt    *time.Time
+	LastActiveAt *utils.JSONTime
+	CreatedAt    *utils.JSONTime
 	// LastActiveText / CreatedText 是给页面直接显示的时间文本。
 	//
-	// 模板里对 *time.Time 调 Format 要先判空指针，判空与格式化会散落在每个模板里；
+	// 模板里对 *utils.JSONTime 调 Format 要先判空指针，判空与格式化会散落在每个模板里；
 	// 集中在这一层做，口径（格式、空值显示成什么）就只有一处。
 	LastActiveText string
 	CreatedText    string

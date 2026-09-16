@@ -30,12 +30,12 @@ func TestCouponWindowParsedInUTC(t *testing.T) {
 	// 输入「2026-12-01 10:00」就应当是 UTC 的这一刻。改造前按 time.Local 解析，
 	// 在 Asia/Shanghai 下会得到 10:00+08（= 02:00Z），与期望差 8 小时。
 	wantStart := time.Date(2026, 12, 1, 10, 0, 0, 0, time.UTC)
-	if !res.StartsAt.UTC().Equal(wantStart) {
-		t.Fatalf("生效时间应解释为 UTC: 期望 %s，实际 %s", wantStart.Format(time.RFC3339), res.StartsAt.UTC().Format(time.RFC3339))
+	if !res.StartsAt.Time().UTC().Equal(wantStart) {
+		t.Fatalf("生效时间应解释为 UTC: 期望 %s，实际 %s", wantStart.Format(time.RFC3339), res.StartsAt.Time().UTC().Format(time.RFC3339))
 	}
 	wantEnd := time.Date(2026, 12, 31, 23, 59, 0, 0, time.UTC)
-	if !res.EndsAt.UTC().Equal(wantEnd) {
-		t.Fatalf("结束时间应解释为 UTC: 期望 %s，实际 %s", wantEnd.Format(time.RFC3339), res.EndsAt.UTC().Format(time.RFC3339))
+	if !res.EndsAt.Time().UTC().Equal(wantEnd) {
+		t.Fatalf("结束时间应解释为 UTC: 期望 %s，实际 %s", wantEnd.Format(time.RFC3339), res.EndsAt.Time().UTC().Format(time.RFC3339))
 	}
 
 	// 口径随券一起返回：后台表单据此提示「填的是哪个时区的时间」。

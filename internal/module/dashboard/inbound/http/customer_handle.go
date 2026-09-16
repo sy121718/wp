@@ -23,16 +23,11 @@
 package dashboardhttp
 
 import (
-	"net/http"
-	"net/url"
 	"strconv"
 	"strings"
 	"time"
 
-	"go_wp/pkg/sitetz"
-
 	"github.com/gin-gonic/gin"
-
 	dashboardenums "go_wp/internal/module/dashboard/enums"
 	ordercontract "go_wp/internal/module/order/contract"
 	orderdto "go_wp/internal/module/order/dto"
@@ -40,6 +35,10 @@ import (
 	usercontract "go_wp/internal/module/user/contract"
 	userdto "go_wp/internal/module/user/dto"
 	userenums "go_wp/internal/module/user/enums"
+	"go_wp/pkg/sitetz"
+	"go_wp/pkg/utils"
+	"net/http"
+	"net/url"
 )
 
 const (
@@ -160,8 +159,8 @@ func (h *customerPageHandle) CustomersPage(c *gin.Context) {
 			Keyword:        filter.Keyword,
 			Status:         filter.Status,
 			EmailVerified:  filter.EmailVerified,
-			RegisteredFrom: customerDayStart(filter.RegisteredFrom),
-			RegisteredTo:   customerDayEnd(filter.RegisteredTo),
+			RegisteredFrom: utils.NewJSONTimePtr(customerDayStart(filter.RegisteredFrom)),
+			RegisteredTo:   utils.NewJSONTimePtr(customerDayEnd(filter.RegisteredTo)),
 			Offset:         (page - 1) * limit,
 			Limit:          limit,
 		})

@@ -392,7 +392,7 @@ func (m *Model) SaveDraftWithRevision(
 				"draft_document": document,
 				"draft_version":  nextVersion,
 				"stale":          true,
-				"update_time":     updatedAt,
+				"update_time":    updatedAt,
 			})
 		if result.Error != nil {
 			return result.Error
@@ -412,7 +412,7 @@ func (m *Model) MarkPublished(ctx context.Context, pageID, path, artifactID stri
 			"active_path":        path,
 			"published_at":       at,
 			"stale":              false,
-			"update_time":         at,
+			"update_time":        at,
 		}).Error
 }
 

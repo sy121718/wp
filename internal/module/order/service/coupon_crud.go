@@ -17,6 +17,7 @@ import (
 	orderenums "go_wp/internal/module/order/enums"
 	ordermodel "go_wp/internal/module/order/model"
 	"go_wp/pkg/database"
+	"go_wp/pkg/utils"
 )
 
 // CreateCoupon 新建优惠码。
@@ -240,7 +241,7 @@ func (s *Service) ListCouponRedemptions(ctx context.Context, req *orderdto.Coupo
 			DiscountAmount: e.DiscountAmount,
 			DiscountLabel:  fmt.Sprintf("%s 元", centsToYuanLabel(e.DiscountAmount)),
 			UserID:         e.UserID,
-			CreateTime:     e.CreateTime,
+			CreateTime:     utils.NewJSONTime(e.CreateTime),
 		})
 	}
 	return res, nil
@@ -317,12 +318,12 @@ func toCouponResp(e *ordermodel.CouponEntity, now time.Time) *orderdto.CouponRes
 		MaxUses:          e.MaxUses,
 		UsedCount:        e.UsedCount,
 		PerUserLimit:     e.PerUserLimit,
-		StartsAt:         e.StartsAt,
-		EndsAt:           e.EndsAt,
+		StartsAt:         utils.NewJSONTimePtr(e.StartsAt),
+		EndsAt:           utils.NewJSONTimePtr(e.EndsAt),
 		Status:           e.Status,
 		StatusLabel:      couponStatusLabel(e, now),
 		Remark:           e.Remark,
-		CreateTime:       e.CreateTime,
-		UpdateTime:       e.UpdateTime,
+		CreateTime:       utils.NewJSONTime(e.CreateTime),
+		UpdateTime:       utils.NewJSONTime(e.UpdateTime),
 	}
 }

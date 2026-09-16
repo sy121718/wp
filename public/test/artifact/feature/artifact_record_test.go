@@ -72,7 +72,7 @@ func TestArtifactRecordAndDetail(t *testing.T) {
 	if err != nil {
 		t.Fatalf("重复归档应幂等: %v", err)
 	}
-	if repeated.ID != first.ID || !repeated.CreatedAt.Truncate(time.Microsecond).Equal(first.CreatedAt.Truncate(time.Microsecond)) {
+	if repeated.ID != first.ID || !repeated.CreatedAt.Time().Truncate(time.Microsecond).Equal(first.CreatedAt.Time().Truncate(time.Microsecond)) {
 		t.Fatalf("重复归档返回了不同记录: %+v vs %+v", repeated, first)
 	}
 

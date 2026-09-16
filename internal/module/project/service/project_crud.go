@@ -2,20 +2,19 @@ package projectservice
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"strings"
 	"time"
-	"unicode/utf8"
 
-	"go_wp/pkg/logger"
-
+	"encoding/json"
+	"github.com/google/uuid"
 	projectdto "go_wp/internal/module/project/dto"
 	projectenums "go_wp/internal/module/project/enums"
 	projectmodel "go_wp/internal/module/project/model"
-
-	"github.com/google/uuid"
+	"go_wp/pkg/logger"
+	"go_wp/pkg/utils"
 	"gorm.io/gorm"
+	"unicode/utf8"
 )
 
 // project 业务错误哨兵（errors.Is 判型；文案统一取 projectenums，不硬编码）。
@@ -131,6 +130,6 @@ func normalizeSettings(raw json.RawMessage) (json.RawMessage, error) {
 
 func toResp(e *projectmodel.ProjectEntity) *projectdto.ProjectResp {
 	return &projectdto.ProjectResp{
-		ID: e.ID, Name: e.Name, Settings: e.Settings, CreatedAt: e.CreatedAt, UpdatedAt: e.UpdatedAt,
+		ID: e.ID, Name: e.Name, Settings: e.Settings, CreatedAt: utils.NewJSONTime(e.CreatedAt), UpdatedAt: utils.NewJSONTime(e.UpdatedAt),
 	}
 }

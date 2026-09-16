@@ -10,7 +10,7 @@ import (
 	pubenums "go_wp/internal/module/publication/enums"
 	pubmodel "go_wp/internal/module/publication/model"
 	"go_wp/pkg/pathkit"
-
+	"go_wp/pkg/utils"
 	"gorm.io/gorm/clause"
 )
 
@@ -38,7 +38,7 @@ func routeResp(e *pubmodel.RouteEntity) *pubdto.RouteResp {
 	return &pubdto.RouteResp{
 		ProjectID: e.ProjectID, Path: e.Path, PageID: e.PageID,
 		PresentationID: e.PresentationID,
-		RouteKind:      e.RouteKind, ArtifactID: e.ArtifactID, UpdatedAt: e.UpdatedAt,
+		RouteKind:      e.RouteKind, ArtifactID: e.ArtifactID, UpdatedAt: utils.NewJSONTime(e.UpdatedAt),
 	}
 }
 

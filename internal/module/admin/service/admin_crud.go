@@ -13,7 +13,7 @@ import (
 	"go_wp/pkg/casbin"
 	"go_wp/pkg/database"
 	"go_wp/pkg/logger"
-
+	"go_wp/pkg/utils"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
@@ -77,7 +77,7 @@ func (s *Service) AdminList(ctx context.Context, req *admindto.AdminListReq) (re
 			Email:      entity.Email,
 			Phone:      entity.Phone,
 			Status:     entity.Status,
-			CreateTime: entity.CreateTime,
+			CreateTime: utils.NewJSONTimePtr(entity.CreateTime),
 		}
 	}
 

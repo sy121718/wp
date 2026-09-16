@@ -333,7 +333,7 @@ func orderListRow(o *orderdto.OrderResp, filter orderFilter, projectID string, p
 		"CustomerEmail": orderTextOrEmpty(o.CustomerEmail),
 		"TotalLabel":    orderMoneyLabel(o.Total, o.Currency),
 		"PaymentLabel":  orderPaymentLabel(o.PaymentMethod, o.PaymentMethodTitle),
-		"CreatedAt":     orderTimeLabel(o.CreateTime),
+		"CreatedAt":     orderTimeLabel(o.CreateTime.Time()),
 		"DetailURL":     filterBaseURL("/admin/orders", vals),
 		"Expanded":      filter.OrderID == o.ID,
 	}
@@ -370,7 +370,7 @@ func orderDetailView(d *orderdto.OrderDetailResp, filter orderFilter, projectID 
 			continue
 		}
 		logs = append(logs, gin.H{
-			"Time":              orderTimeLabel(lg.CreateTime),
+			"Time":              orderTimeLabel(lg.CreateTime.Time()),
 			"FromLabel":         orderStatusLabel(lg.FromStatus),
 			"ToLabel":           orderStatusLabel(lg.ToStatus),
 			"OperatorTypeLabel": orderOperatorTypeLabel(lg.OperatorType),
@@ -413,9 +413,9 @@ func orderDetailView(d *orderdto.OrderDetailResp, filter orderFilter, projectID 
 			"TotalLabel":      orderMoneyLabel(head.Total, head.Currency),
 			"PaymentLabel":    orderPaymentLabel(head.PaymentMethod, head.PaymentMethodTitle),
 			"TransactionID":   orderTextOrEmpty(head.TransactionID),
-			"PaidAt":          orderTimeLabelPtr(head.PaidAt),
-			"CompletedAt":     orderTimeLabelPtr(head.CompletedAt),
-			"CreatedAt":       orderTimeLabel(head.CreateTime),
+			"PaidAt":          orderTimeLabelPtr(head.PaidAt.TimePtr()),
+			"CompletedAt":     orderTimeLabelPtr(head.CompletedAt.TimePtr()),
+			"CreatedAt":       orderTimeLabel(head.CreateTime.Time()),
 			"CreatedViaLabel": orderCreatedViaLabel(head.CreatedVia),
 			"IPAddress":       orderTextOrEmpty(head.IPAddress),
 			"UserAgent":       orderTextOrEmpty(head.UserAgent),

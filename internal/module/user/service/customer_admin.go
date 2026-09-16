@@ -41,7 +41,7 @@ func (s *Service) ListCustomers(ctx context.Context, req *userdto.CustomerListRe
 	if req == nil {
 		return nil, errors.New(userenums.ErrInvalidParam)
 	}
-	if req.RegisteredFrom != nil && req.RegisteredTo != nil && req.RegisteredFrom.After(*req.RegisteredTo) {
+	if req.RegisteredFrom != nil && req.RegisteredTo != nil && req.RegisteredFrom.Time().After(req.RegisteredTo.Time()) {
 		// 起止颠倒不静默交换：那会让「我明明是这么筛的」变成一个说不清的问题，
 		// 而且交换后的结果与运营预期的往往相反（他以为筛的是 9 月，实际给了 10 月）。
 		return nil, errors.New(userenums.ErrInvalidParam)
@@ -53,8 +53,8 @@ func (s *Service) ListCustomers(ctx context.Context, req *userdto.CustomerListRe
 		Keyword:        req.Keyword,
 		Status:         req.Status,
 		EmailVerified:  customerEmailVerifiedFilter(req.EmailVerified),
-		RegisteredFrom: req.RegisteredFrom,
-		RegisteredTo:   req.RegisteredTo,
+		RegisteredFrom: req.RegisteredFrom.TimePtr(),
+		RegisteredTo:   req.RegisteredTo.TimePtr(),
 		Offset:         offset,
 		Limit:          limit,
 	})
@@ -204,11 +204,11 @@ func toCustomerResp(e *usermodel.UserEntity, now time.Time) *userdto.CustomerRes
 		Status:            e.Status,
 		StatusLabel:       customerStatusLabel(e.Status),
 		EmailVerified:     e.EmailVerifiedAt != nil,
-		RegisteredAt:      e.RegisteredAt,
+		RegisteredAt:      utils.NewJSONTimePtr(e.RegisteredAt),
 		RegisteredAtText:  formatTime(e.RegisteredAt),
 		RegisterIP:        deref(e.RegisterIP),
 		RegisterLocation:  deref(e.RegisterLocation),
-		LastLoginTime:     e.LastLoginTime,
+		LastLoginTime:     utils.NewJSONTimePtr(e.LastLoginTime),
 		LastLoginTimeText: formatTime(e.LastLoginTime),
 		LastLoginIP:       deref(e.LastLoginIP),
 		LastLoginLocation: deref(e.LastLoginLocation),
@@ -216,7 +216,7 @@ func toCustomerResp(e *usermodel.UserEntity, now time.Time) *userdto.CustomerRes
 	}
 	if e.LockedUntilTime != nil && e.LockedUntilTime.After(now) {
 		r.Locked = true
-		r.LockedUntilTime = e.LockedUntilTime
+		r.LockedUntilTime = utils.NewJSONTimePtr(e.LockedUntilTime)
 		r.LockedUntilText = formatTime(e.LockedUntilTime)
 	}
 	return r

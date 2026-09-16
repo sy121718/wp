@@ -164,7 +164,7 @@ func TestCustomerOrderSummarySingleQuery(t *testing.T) {
 			res.LastOrderID, res.LastOrderNo, res.LastOrderStatus,
 			want.LastOrderID, want.LastOrderNo, want.LastOrderStatus)
 	}
-	if res.LastOrderTime == nil || !res.LastOrderTime.Equal(want.LastOrderTime) {
+	if res.LastOrderTime == nil || !res.LastOrderTime.Time().Equal(want.LastOrderTime) {
 		t.Errorf("最近一单时间不一致：新 %v / 旧 %v", res.LastOrderTime, want.LastOrderTime)
 	}
 	if !res.HasOrders {

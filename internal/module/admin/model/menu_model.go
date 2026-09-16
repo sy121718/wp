@@ -36,17 +36,17 @@ type MenuEntity struct {
 	ExternalURL    string  `gorm:"column:external_url;type:varchar(300)"`
 	Icon           string  `gorm:"column:icon;type:varchar(50)"`
 	// Status 不带 gorm default tag：避免 gorm 把显式 0（禁用）改写为 1（见 SysRuleEntity.Status 注释）。
-	Status      int        `gorm:"column:status"`
-	IsHidden    int        `gorm:"column:is_hidden;default:0"`
-	IsPublic    int        `gorm:"column:is_public;default:0"`
-	IsSystem    int        `gorm:"column:is_system;default:0"`
-	SortOrder   int        `gorm:"column:sort_order;default:0"`
-	Remark      *string    `gorm:"column:remark;type:varchar(200)"`
-	CreateBy    uint64     `gorm:"column:create_by;type:bigint unsigned"`
-	CreateTime  *time.Time `gorm:"column:create_time;type:datetime(3)"`
-	UpdateBy    uint64     `gorm:"column:update_by;type:bigint unsigned"`
-	UpdateTime  *time.Time `gorm:"column:update_time;type:datetime(3)"`
-	DeletedAt *time.Time `gorm:"column:deleted_at;type:datetime(3)"`
+	Status     int        `gorm:"column:status"`
+	IsHidden   int        `gorm:"column:is_hidden;default:0"`
+	IsPublic   int        `gorm:"column:is_public;default:0"`
+	IsSystem   int        `gorm:"column:is_system;default:0"`
+	SortOrder  int        `gorm:"column:sort_order;default:0"`
+	Remark     *string    `gorm:"column:remark;type:varchar(200)"`
+	CreateBy   uint64     `gorm:"column:create_by;type:bigint unsigned"`
+	CreateTime *time.Time `gorm:"column:create_time;type:datetime(3)"`
+	UpdateBy   uint64     `gorm:"column:update_by;type:bigint unsigned"`
+	UpdateTime *time.Time `gorm:"column:update_time;type:datetime(3)"`
+	DeletedAt  *time.Time `gorm:"column:deleted_at;type:datetime(3)"`
 }
 
 // TableName 返回 sys_menus 表名。

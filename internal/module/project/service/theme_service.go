@@ -4,20 +4,19 @@ package projectservice
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"strings"
 	"time"
 
+	"encoding/json"
 	"github.com/google/uuid"
-	"gorm.io/gorm"
-
 	"go_wp/internal/builder"
-	"go_wp/pkg/logger"
-
 	projectdto "go_wp/internal/module/project/dto"
 	projectenums "go_wp/internal/module/project/enums"
 	projectmodel "go_wp/internal/module/project/model"
+	"go_wp/pkg/logger"
+	"go_wp/pkg/utils"
+	"gorm.io/gorm"
 )
 
 // theme 业务错误哨兵（errors.Is 判型；文案统一取 projectenums，不硬编码）。
@@ -269,7 +268,7 @@ func (s *Service) GetActiveTheme(ctx context.Context, projectID string) (res *pr
 func toThemeResp(e *projectmodel.ThemeEntity) projectdto.ThemeResp {
 	return projectdto.ThemeResp{
 		ID: e.ID, ProjectID: e.ProjectID, Name: e.Name, Settings: e.Settings,
-		IsActive: e.IsActive, CreatedAt: e.CreatedAt, UpdatedAt: e.UpdatedAt,
+		IsActive: e.IsActive, CreatedAt: utils.NewJSONTime(e.CreatedAt), UpdatedAt: utils.NewJSONTime(e.UpdatedAt),
 	}
 }
 

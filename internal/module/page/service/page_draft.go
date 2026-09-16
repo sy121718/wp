@@ -2,14 +2,15 @@ package pageservice
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
 	"time"
 
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"github.com/google/uuid"
 	"go_wp/internal/builder"
 	pagedto "go_wp/internal/module/page/dto"
 	pageenums "go_wp/internal/module/page/enums"
@@ -18,8 +19,7 @@ import (
 	pubenums "go_wp/internal/module/publication/enums"
 	"go_wp/internal/pipeline"
 	"go_wp/pkg/logger"
-
-	"github.com/google/uuid"
+	"go_wp/pkg/utils"
 	"gorm.io/gorm"
 )
 
@@ -204,7 +204,7 @@ func (s *Service) publicationsOf(ctx context.Context, pageID string) (out []page
 		at := r.PublishedAt
 		out = append(out, pagedto.PagePublicationResp{
 			Lang: r.Lang, ActivePath: r.ActivePath, ArtifactID: r.ArtifactID,
-			ArtifactHash: r.ArtifactHash, PublishedAt: &at,
+			ArtifactHash: r.ArtifactHash, PublishedAt: utils.NewJSONTimePtr(&at),
 		})
 	}
 	return out, nil
@@ -291,7 +291,7 @@ func (s *Service) ListRevisions(ctx context.Context, req *pagedto.RevisionReq) (
 	for _, r := range list {
 		res = append(res, pagedto.RevisionResp{
 			ID: r.ID, PageID: r.PageID, Version: r.Version, DraftPath: r.DraftPath,
-			DraftDocument: r.DraftDocument, SourceHash: r.SourceHash, CreatedAt: r.CreatedAt,
+			DraftDocument: r.DraftDocument, SourceHash: r.SourceHash, CreatedAt: utils.NewJSONTime(r.CreatedAt),
 		})
 	}
 	return res, nil
@@ -383,7 +383,7 @@ func pageResp(page *pagemodel.PageEntity) *pagedto.PageResp {
 		ContentTargetID: page.ContentTargetID, DraftPath: page.DraftPath, ActivePath: page.ActivePath,
 		StagedArtifactID: page.StagedArtifactID, ActiveArtifactID: page.ActiveArtifactID,
 		DraftDocument: page.DraftDocument, DraftVersion: page.DraftVersion, Stale: page.Stale,
-		CreatedAt: page.CreatedAt, UpdatedAt: page.UpdatedAt,
+		CreatedAt: utils.NewJSONTime(page.CreatedAt), UpdatedAt: utils.NewJSONTime(page.UpdatedAt),
 	}
 }
 

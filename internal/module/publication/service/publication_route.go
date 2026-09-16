@@ -396,7 +396,7 @@ func (s *Service) Redirect(ctx context.Context, req *pubdto.RedirectReq) (res *p
 			Where("project_id = ? AND path = ?", req.ProjectID, oldPath).
 			Where(matchSQL, matchArgs...)
 		result := q.Updates(map[string]any{
-			"route_kind": pubmodel.RouteRedirect,
+			"route_kind":  pubmodel.RouteRedirect,
 			"update_time": now,
 		})
 		if result.Error != nil {

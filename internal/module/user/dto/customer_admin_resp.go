@@ -6,7 +6,9 @@ package userdto
 // activation_key / activation_expires_at 一律不进来。少写一个字段，
 // 比事后审计「哪个响应带上了密码」可靠得多 —— 后者永远漏一次。
 
-import "time"
+import (
+	"go_wp/pkg/utils"
+)
 
 // CustomerResp 客户一览（列表行与详情页共用同一份事实）。
 type CustomerResp struct {
@@ -20,22 +22,22 @@ type CustomerResp struct {
 	// StatusLabel 状态的中文文案：状态值与文案必须同源，展示层不自己映射一遍。
 	StatusLabel string `json:"statusLabel"`
 	// EmailVerified 邮箱是否已验证（账号能不能自己登录，主要看这一条）。
-	EmailVerified     bool       `json:"emailVerified"`
-	RegisteredAt      *time.Time `json:"registeredAt"`
-	RegisteredAtText  string     `json:"registeredAtText"`
-	RegisterIP        string     `json:"registerIp"`
-	RegisterLocation  string     `json:"registerLocation"`
-	LastLoginTime     *time.Time `json:"lastLoginTime"`
-	LastLoginTimeText string     `json:"lastLoginTimeText"`
-	LastLoginIP       string     `json:"lastLoginIp"`
-	LastLoginLocation string     `json:"lastLoginLocation"`
+	EmailVerified     bool            `json:"emailVerified"`
+	RegisteredAt      *utils.JSONTime `json:"registeredAt"`
+	RegisteredAtText  string          `json:"registeredAtText"`
+	RegisterIP        string          `json:"registerIp"`
+	RegisterLocation  string          `json:"registerLocation"`
+	LastLoginTime     *utils.JSONTime `json:"lastLoginTime"`
+	LastLoginTimeText string          `json:"lastLoginTimeText"`
+	LastLoginIP       string          `json:"lastLoginIp"`
+	LastLoginLocation string          `json:"lastLoginLocation"`
 	// Locked 为真表示**此刻**处于登录锁定（locked_until_time 在未来）。
 	// 它由 service 按当前时间判定：locked_until_time 非空不等于锁定 ——
 	// 那个时间点过了之后值还在列里，拿「非空」当锁定会让页面永远显示「已锁定」。
-	Locked            bool       `json:"locked"`
-	LockedUntilTime   *time.Time `json:"lockedUntilTime"`
-	LockedUntilText   string     `json:"lockedUntilText"`
-	LoginFailureCount int        `json:"loginFailureCount"`
+	Locked            bool            `json:"locked"`
+	LockedUntilTime   *utils.JSONTime `json:"lockedUntilTime"`
+	LockedUntilText   string          `json:"lockedUntilText"`
+	LoginFailureCount int             `json:"loginFailureCount"`
 }
 
 // CustomerListResp 客户列表结果。

@@ -56,7 +56,7 @@ func (m *Model) UpsertSiteSlot(ctx context.Context, e *SiteSlotEntity) (err erro
 	switch {
 	case err == nil:
 		return m.SiteSlotDB(ctx).Where("id = ?", existing.ID).Updates(map[string]any{
-			"page_id":    e.PageID,
+			"page_id":     e.PageID,
 			"update_time": e.UpdatedAt,
 		}).Error
 	case errors.Is(err, gorm.ErrRecordNotFound):

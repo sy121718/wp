@@ -85,8 +85,8 @@ func (m *Model) List(ctx context.Context, entityType string, limit, offset int) 
 // 在已绑定 Model 下报 WHERE conditions required）。
 func (m *Model) Save(ctx context.Context, e *Entity) error {
 	return m.DB(ctx).Where("id = ?", e.ID).Updates(map[string]any{
-		"revision":   e.Revision,
-		"data":       e.Data,
+		"revision":    e.Revision,
+		"data":        e.Data,
 		"update_time": e.UpdatedAt,
 	}).Error
 }

@@ -3,7 +3,7 @@ package inventorydto
 
 import (
 	"encoding/json"
-	"time"
+	"go_wp/pkg/utils"
 )
 
 // PurchaseLineReq 一条采购行（SKU × 采购数量 × 采购单价）。
@@ -29,7 +29,7 @@ type CreatePurchaseOrderReq struct {
 	Code        string            `json:"code"`
 	SourceID    string            `json:"sourceId"`
 	WarehouseID string            `json:"warehouseId"`
-	ExpectedAt  *time.Time        `json:"expectedAt"`
+	ExpectedAt  *utils.JSONTime   `json:"expectedAt"`
 	Remark      string            `json:"remark"`
 	OperatorID  string            `json:"operatorId"`
 	Metadata    json.RawMessage   `json:"metadata"`
@@ -45,7 +45,7 @@ type UpdatePurchaseOrderReq struct {
 	ID              string            `json:"id" binding:"required"`
 	SourceID        *string           `json:"sourceId"`
 	WarehouseID     *string           `json:"warehouseId"`
-	ExpectedAt      *time.Time        `json:"expectedAt"`
+	ExpectedAt      *utils.JSONTime   `json:"expectedAt"`
 	ClearExpectedAt bool              `json:"clearExpectedAt"`
 	Remark          *string           `json:"remark"`
 	OperatorID      *string           `json:"operatorId"`
@@ -90,7 +90,7 @@ type RegisterReceiptReq struct {
 	RequestID   string           `json:"requestId"`
 	Remark      string           `json:"remark"`
 	OperatorID  string           `json:"operatorId"`
-	ReceivedAt  *time.Time       `json:"receivedAt"`
+	ReceivedAt  *utils.JSONTime  `json:"receivedAt"`
 	Lines       []ReceiptLineReq `json:"lines" binding:"required"`
 }
 
@@ -107,11 +107,11 @@ type ProductionInboundReq struct {
 	SKUCode     string `json:"skuCode"`
 	Quantity    int    `json:"quantity"`
 	// UnitCost 是手工填写的成本价（生产入库没有采购单价可引用）。
-	UnitCost   *float64   `json:"unitCost"`
-	RequestID  string     `json:"requestId"`
-	Remark     string     `json:"remark"`
-	OperatorID string     `json:"operatorId"`
-	ReceivedAt *time.Time `json:"receivedAt"`
+	UnitCost   *float64        `json:"unitCost"`
+	RequestID  string          `json:"requestId"`
+	Remark     string          `json:"remark"`
+	OperatorID string          `json:"operatorId"`
+	ReceivedAt *utils.JSONTime `json:"receivedAt"`
 }
 
 // ListPurchaseHistoryReq 某 SKU 的进货历史（验收 6）。

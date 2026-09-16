@@ -111,7 +111,7 @@ func (m *Model) MarkPublishedLang(ctx context.Context, rec PublicationRecord) (e
 				"active_path":        rec.ActivePath,
 				"published_at":       rec.PublishedAt,
 				"stale":              false,
-				"update_time":         rec.PublishedAt,
+				"update_time":        rec.PublishedAt,
 			}).Error
 	})
 }

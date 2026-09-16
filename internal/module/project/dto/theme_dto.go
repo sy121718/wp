@@ -2,7 +2,7 @@ package projectdto
 
 import (
 	"encoding/json"
-	"time"
+	"go_wp/pkg/utils"
 )
 
 // ThemeCreateReq 新建主题请求。
@@ -31,6 +31,6 @@ type ThemeResp struct {
 	Name      string          `json:"name"`
 	Settings  json.RawMessage `json:"settings"`
 	IsActive  bool            `json:"isActive"`
-	CreatedAt time.Time       `json:"createdAt"`
-	UpdatedAt time.Time       `json:"updatedAt"`
+	CreatedAt utils.JSONTime  `json:"createdAt"`
+	UpdatedAt utils.JSONTime  `json:"updatedAt"`
 }

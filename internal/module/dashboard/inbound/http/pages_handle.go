@@ -123,7 +123,7 @@ func (h *Handle) buildPagesData(c *gin.Context) (*pagesPageData, error) {
 			ID: p.ID, ProjectID: p.ProjectID, Kind: p.Kind,
 			DraftPath: p.DraftPath, Active: p.ActiveArtifactID != nil,
 			Staged: p.StagedArtifactID != nil, Stale: p.Stale,
-			Version: p.DraftVersion, UpdatedAt: p.UpdatedAt.Format("2006-01-02 15:04"),
+			Version: p.DraftVersion, UpdatedAt: p.UpdatedAt.Time().Format("2006-01-02 15:04"),
 		})
 	}
 	return &pagesPageData{

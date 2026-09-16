@@ -36,7 +36,7 @@ type AdminEntityDemo struct {
 	CreateTime        *time.Time `gorm:"column:create_time;type:datetime(3)"`
 	UpdateBy          uint64     `gorm:"column:update_by;type:bigint unsigned"`
 	UpdateTime        *time.Time `gorm:"column:update_time;type:datetime(3)"`
-	DeletedAt       *time.Time `gorm:"column:deleted_at;type:datetime(3)"`
+	DeletedAt         *time.Time `gorm:"column:deleted_at;type:datetime(3)"`
 }
 
 // TableName 指定这个结构体映射到哪张表。

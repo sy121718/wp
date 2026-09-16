@@ -15,7 +15,7 @@ import (
 	userdto "go_wp/internal/module/user/dto"
 	userenums "go_wp/internal/module/user/enums"
 	usermodel "go_wp/internal/module/user/model"
-
+	"go_wp/pkg/utils"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
@@ -69,8 +69,8 @@ func (s *Service) GetAccount(ctx context.Context, userID uint64) (res *userdto.A
 		DisplayName:       displayName(u),
 		Avatar:            deref(u.Avatar),
 		Status:            u.Status,
-		RegisteredAt:      u.RegisteredAt,
-		LastLoginTime:     u.LastLoginTime,
+		RegisteredAt:      utils.NewJSONTimePtr(u.RegisteredAt),
+		LastLoginTime:     utils.NewJSONTimePtr(u.LastLoginTime),
 		RegisteredAtText:  formatTime(u.RegisteredAt),
 		LastLoginTimeText: formatTime(u.LastLoginTime),
 		LastLoginIP:       deref(u.LastLoginIP),

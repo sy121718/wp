@@ -2,7 +2,9 @@ package orderdto
 
 // order_customer_resp.go — 后台「按客户看订单」的只读响应（客户管理页用）。
 
-import "time"
+import (
+	"go_wp/pkg/utils"
+)
 
 // CustomerOrderSummaryResp 一个客户在某个工程下的订单聚合。
 //
@@ -27,11 +29,11 @@ type CustomerOrderSummaryResp struct {
 	// LastOrderID 是给后台页面做「点进去看那一单」的链接用的：客户页只有摘要，
 	// 具体单据在订单管理页，而订单页按 id 展开详情 —— 没有这个 id，
 	// 运营就得拿着单号去订单列表里搜一遍。
-	LastOrderID       uint64     `json:"lastOrderId"`
-	LastOrderNo       string     `json:"lastOrderNo"`
-	LastOrderStatus   string     `json:"lastOrderStatus"`
-	LastOrderTime     *time.Time `json:"lastOrderTime"`
-	LastOrderTimeText string     `json:"lastOrderTimeText"`
+	LastOrderID       uint64          `json:"lastOrderId"`
+	LastOrderNo       string          `json:"lastOrderNo"`
+	LastOrderStatus   string          `json:"lastOrderStatus"`
+	LastOrderTime     *utils.JSONTime `json:"lastOrderTime"`
+	LastOrderTimeText string          `json:"lastOrderTimeText"`
 	// HasOrders 显式布尔：页面据此决定「显示聚合数字」还是「显示这个客户还没下过单」，
 	// 不靠零值猜（0 单 + 0 元与「查不到」在数字上无法区分）。
 	HasOrders bool `json:"hasOrders"`

@@ -23,12 +23,12 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"gorm.io/gorm"
-
 	inventorydto "go_wp/internal/module/product/inventory/dto"
 	inventoryenums "go_wp/internal/module/product/inventory/enums"
 	inventorymodel "go_wp/internal/module/product/inventory/model"
 	"go_wp/pkg/database"
+	"go_wp/pkg/utils"
+	"gorm.io/gorm"
 )
 
 const (
@@ -68,7 +68,7 @@ func (s *Service) RegisterReceipt(ctx context.Context, req *inventorydto.Registe
 	}
 	receivedAt, now := time.Now().UTC(), time.Now().UTC()
 	if req.ReceivedAt != nil {
-		receivedAt = req.ReceivedAt.UTC()
+		receivedAt = req.ReceivedAt.Time().UTC()
 	}
 
 	var (
@@ -276,7 +276,7 @@ func (s *Service) RegisterProductionInbound(ctx context.Context, req *inventoryd
 	}
 	receivedAt, now := time.Now().UTC(), time.Now().UTC()
 	if req.ReceivedAt != nil {
-		receivedAt = req.ReceivedAt.UTC()
+		receivedAt = req.ReceivedAt.Time().UTC()
 	}
 	receiptID := uuid.NewString()
 	code := productionReceiptCode(receiptID)
@@ -364,7 +364,7 @@ func (s *Service) ListPurchaseHistory(ctx context.Context, req *inventorydto.Lis
 			VariantID: r.VariantID, SKUCode: r.SKUCode,
 			Quantity: r.Quantity, UnitPrice: r.UnitPrice, CostUpdated: r.CostUpdated,
 			MovementBatchID: r.MovementBatchID, Remark: r.Remark,
-			OperatorID: r.OperatorID, ReceivedAt: r.ReceivedAt,
+			OperatorID: r.OperatorID, ReceivedAt: utils.NewJSONTime(r.ReceivedAt),
 		})
 	}
 	return list, nil
@@ -448,7 +448,7 @@ func (s *Service) receiptResp(ctx context.Context, e *inventorymodel.ReceiptEnti
 	resp := &inventorydto.ReceiptResp{
 		ID: e.ID, Code: e.Code, Kind: e.Kind, SourceID: e.SourceID,
 		WarehouseID: e.WarehouseID, Status: e.Status, MovementBatchID: e.MovementBatchID,
-		Remark: e.Remark, OperatorID: e.OperatorID, ReceivedAt: e.ReceivedAt,
+		Remark: e.Remark, OperatorID: e.OperatorID, ReceivedAt: utils.NewJSONTime(e.ReceivedAt),
 		Idempotent: idempotent, CostUpdated: true,
 		Items: make([]*inventorydto.ReceiptItemResp, 0, len(items)),
 	}

@@ -12,16 +12,11 @@ package dashboardhttp
 
 import (
 	"context"
-	"net/http"
-	"net/http/httptest"
-	"net/url"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/gin-gonic/gin"
-
 	ordercontract "go_wp/internal/module/order/contract"
 	orderdto "go_wp/internal/module/order/dto"
 	projectcontract "go_wp/internal/module/project/contract"
@@ -29,6 +24,11 @@ import (
 	userdto "go_wp/internal/module/user/dto"
 	userenums "go_wp/internal/module/user/enums"
 	"go_wp/internal/templates"
+	"go_wp/pkg/utils"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"path/filepath"
 )
 
 // —— 替身：后台客户契约（四条方法）与订单聚合（一条方法）——
@@ -110,9 +110,9 @@ func customerSample() *userdto.CustomerResp {
 		ID: 42, Username: "alice", Email: "alice@example.com",
 		Nickname: "小艾", DisplayName: "艾丽丝",
 		Status: 1, StatusLabel: "正常", EmailVerified: true,
-		RegisteredAt: &registered, RegisteredAtText: "2026-09-01 10:30",
+		RegisteredAt: utils.NewJSONTimePtr(&registered), RegisteredAtText: "2026-09-01 10:30",
 		RegisterIP: "203.0.113.7", RegisterLocation: "中国 上海",
-		LastLoginTime: &lastLogin, LastLoginTimeText: "2026-09-20 08:05",
+		LastLoginTime: utils.NewJSONTimePtr(&lastLogin), LastLoginTimeText: "2026-09-20 08:05",
 		LastLoginIP: "203.0.113.9", LastLoginLocation: "中国 北京",
 	}
 }
@@ -186,7 +186,7 @@ func TestCustomersListTemplateRendersUnlockForLocked(t *testing.T) {
 	item.Locked = true
 	item.LoginFailureCount = 5
 	until := time.Date(2026, 9, 20, 9, 0, 0, 0, time.Local)
-	item.LockedUntilTime = &until
+	item.LockedUntilTime = utils.NewJSONTimePtr(&until)
 	item.LockedUntilText = "2026-09-20 09:00"
 	list := &userdto.CustomerListResp{List: []*userdto.CustomerResp{item}, Total: 1,
 		Counters: userdto.CustomerCounters{Total: 1, Active: 1, Locked: 1}}
@@ -286,7 +286,7 @@ func TestCustomersPageHandlerFiltersAreParsed(t *testing.T) {
 	if fake.lastListRe.RegisteredFrom == nil || fake.lastListRe.RegisteredTo == nil {
 		t.Fatal("注册时间范围没有被解析")
 	}
-	if last := fake.lastListRe.RegisteredTo.Hour(); last != 23 {
+	if last := fake.lastListRe.RegisteredTo.Time().Hour(); last != 23 {
 		t.Errorf("结束日期应扩到当天最后一刻，实际 %02d 时", last)
 	}
 }

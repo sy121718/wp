@@ -2,7 +2,7 @@ package blockdto
 
 import (
 	"encoding/json"
-	"time"
+	"go_wp/pkg/utils"
 )
 
 // CreateReq 新建全局块请求。
@@ -65,6 +65,6 @@ type BlockResp struct {
 	Category  string          `json:"category"`
 	ReuseMode string          `json:"reuseMode"`
 	Document  json.RawMessage `json:"document"`
-	CreatedAt time.Time       `json:"createdAt"`
-	UpdatedAt time.Time       `json:"updatedAt"`
+	CreatedAt utils.JSONTime  `json:"createdAt"`
+	UpdatedAt utils.JSONTime  `json:"updatedAt"`
 }

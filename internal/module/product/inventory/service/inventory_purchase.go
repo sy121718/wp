@@ -18,11 +18,11 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"gorm.io/gorm"
-
 	inventorydto "go_wp/internal/module/product/inventory/dto"
 	inventoryenums "go_wp/internal/module/product/inventory/enums"
 	inventorymodel "go_wp/internal/module/product/inventory/model"
+	"go_wp/pkg/utils"
+	"gorm.io/gorm"
 )
 
 const (
@@ -78,7 +78,7 @@ func (s *Service) CreatePurchaseOrder(ctx context.Context, req *inventorydto.Cre
 		ID: orderID, ProjectID: projectID, Code: code,
 		SourceID: source.ID, WarehouseID: wh.ID,
 		Status:    derivePurchaseStatus(lines),
-		OrderedAt: now, ExpectedAt: normalizeTime(req.ExpectedAt),
+		OrderedAt: now, ExpectedAt: normalizeTime(req.ExpectedAt.TimePtr()),
 		Remark: strings.TrimSpace(req.Remark), OperatorID: strings.TrimSpace(req.OperatorID),
 		Metadata: orJSON(req.Metadata, "{}"), CreatedAt: now, UpdatedAt: now,
 	}
@@ -116,7 +116,7 @@ func (s *Service) UpdatePurchaseOrder(ctx context.Context, req *inventorydto.Upd
 		order.WarehouseID = wh.ID
 	}
 	if req.ExpectedAt != nil {
-		order.ExpectedAt = normalizeTime(req.ExpectedAt)
+		order.ExpectedAt = normalizeTime(req.ExpectedAt.TimePtr())
 	}
 	if req.ClearExpectedAt {
 		order.ExpectedAt = nil
@@ -340,9 +340,9 @@ func (s *Service) purchaseOrderResp(ctx context.Context, e *inventorymodel.Purch
 	resp := &inventorydto.PurchaseOrderResp{
 		ID: e.ID, ProjectID: e.ProjectID, Code: e.Code,
 		SourceID: e.SourceID, WarehouseID: e.WarehouseID,
-		Status: e.Status, OrderedAt: e.OrderedAt, ExpectedAt: e.ExpectedAt,
+		Status: e.Status, OrderedAt: utils.NewJSONTime(e.OrderedAt), ExpectedAt: utils.NewJSONTimePtr(e.ExpectedAt),
 		Remark: e.Remark, OperatorID: e.OperatorID,
-		Lines: toPurchaseLineResps(lines), CreatedAt: e.CreatedAt, UpdatedAt: e.UpdatedAt,
+		Lines: toPurchaseLineResps(lines), CreatedAt: utils.NewJSONTime(e.CreatedAt), UpdatedAt: utils.NewJSONTime(e.UpdatedAt),
 	}
 	if source != nil {
 		resp.SourceName, resp.SourceType = source.Name, source.Type
@@ -361,10 +361,10 @@ func purchaseOrderRespFromRow(row *inventorymodel.PurchaseOrderRow) *inventorydt
 		ID: row.ID, ProjectID: row.ProjectID, Code: row.Code,
 		SourceID: row.SourceID, SourceName: row.SourceName, SourceType: row.SourceType,
 		WarehouseID: row.WarehouseID, WarehouseName: row.WarehouseName,
-		Status: row.Status, OrderedAt: row.OrderedAt, ExpectedAt: row.ExpectedAt,
+		Status: row.Status, OrderedAt: utils.NewJSONTime(row.OrderedAt), ExpectedAt: utils.NewJSONTimePtr(row.ExpectedAt),
 		Remark: row.Remark, OperatorID: row.OperatorID,
 		TotalQuantity: row.TotalQuantity, ReceivedQuantity: row.ReceivedQuantity,
-		CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
+		CreatedAt: utils.NewJSONTime(row.CreatedAt), UpdatedAt: utils.NewJSONTime(row.UpdatedAt),
 	}
 	return resp
 }

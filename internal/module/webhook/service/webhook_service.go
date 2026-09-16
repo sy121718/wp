@@ -4,20 +4,20 @@ package webhookservice
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"net/http"
 	"strings"
 	"time"
 
-	"gorm.io/gorm"
-
+	"encoding/json"
 	webhookcontract "go_wp/internal/module/webhook/contract"
 	webhookdto "go_wp/internal/module/webhook/dto"
 	webhookenums "go_wp/internal/module/webhook/enums"
 	webhookmodel "go_wp/internal/module/webhook/model"
 	"go_wp/pkg/crypto"
+	"go_wp/pkg/utils"
+	"gorm.io/gorm"
+	"net/http"
 )
 
 // Service webhook 域服务：只持本模块 model。
@@ -239,8 +239,8 @@ func toEndpointItem(e *webhookmodel.WebhookEndpointEntity) *webhookdto.EndpointI
 		Description: e.Description,
 		Status:      e.Status,
 		HasSecret:   e.SecretCipher != "",
-		CreateTime:  e.CreatedAt,
-		UpdateTime:  e.UpdatedAt,
+		CreateTime:  utils.NewJSONTime(e.CreatedAt),
+		UpdateTime:  utils.NewJSONTime(e.UpdatedAt),
 	}
 }
 
@@ -256,8 +256,8 @@ func toDeliveryItem(d *webhookmodel.WebhookDeliveryEntity) *webhookdto.DeliveryI
 		Attempts:       d.Attempts,
 		ResponseStatus: d.ResponseStatus,
 		LastError:      d.LastError,
-		CreateTime:     d.CreatedAt,
-		UpdateTime:     d.UpdatedAt,
+		CreateTime:     utils.NewJSONTime(d.CreatedAt),
+		UpdateTime:     utils.NewJSONTime(d.UpdatedAt),
 	}
 }
 

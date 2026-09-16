@@ -2,19 +2,19 @@ package artifactservice
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"sort"
 	"strings"
 	"time"
 
+	"encoding/json"
 	artifactdto "go_wp/internal/module/artifact/dto"
 	artifactenums "go_wp/internal/module/artifact/enums"
 	artifactmodel "go_wp/internal/module/artifact/model"
 	"go_wp/pkg/database"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
-
+	"go_wp/pkg/utils"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -387,7 +387,7 @@ func toResp(e *artifactmodel.PageArtifactEntity) *artifactdto.ArtifactResp {
 		Manifest:         e.Manifest,
 		PayloadState:     e.PayloadState,
 		CreatedBy:        e.CreatedBy,
-		CreatedAt:        e.CreatedAt,
+		CreatedAt:        utils.NewJSONTime(e.CreatedAt),
 	}
 }
 
@@ -401,7 +401,7 @@ func (s *Service) ListGCCandidates(ctx context.Context, before time.Time, exclud
 	for _, r := range rows {
 		list = append(list, artifactdto.GCCandidateResp{
 			ID: r.ID, PageID: r.PageID, Version: r.Version, Lang: r.Lang,
-			ArtifactHash: r.ArtifactHash, ArtifactKey: r.ArtifactKey, CreatedAt: r.CreatedAt,
+			ArtifactHash: r.ArtifactHash, ArtifactKey: r.ArtifactKey, CreatedAt: utils.NewJSONTime(r.CreatedAt),
 		})
 	}
 	return list, nil

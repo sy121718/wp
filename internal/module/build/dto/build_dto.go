@@ -1,21 +1,23 @@
 // Package builddto build 模块请求/响应结构（构建任务队列，审计 DB-007）。
 package builddto
 
-import "time"
+import (
+	"go_wp/pkg/utils"
+)
 
 // Job 构建任务投影。
 type Job struct {
-	ID             string     `gorm:"column:id" json:"id"`
-	SourceType     string     `gorm:"column:source_type" json:"sourceType"`
-	SourceID       string     `gorm:"column:source_id" json:"sourceId"`
-	DraftVersion   int64      `gorm:"column:draft_version" json:"draftVersion"`
-	BuildInputHash string     `gorm:"column:build_input_hash" json:"buildInputHash"`
-	Status         string     `gorm:"column:status" json:"status"`
-	ArtifactID     *string    `gorm:"column:artifact_id" json:"artifactId,omitempty"`
-	ErrorMessage   string     `gorm:"column:error_message" json:"errorMessage,omitempty"`
-	CreatedAt      time.Time  `gorm:"column:create_time" json:"createdAt"`
-	StartedAt      *time.Time `gorm:"column:started_at" json:"startedAt,omitempty"`
-	CompletedAt    *time.Time `gorm:"column:completed_at" json:"completedAt,omitempty"`
+	ID             string          `gorm:"column:id" json:"id"`
+	SourceType     string          `gorm:"column:source_type" json:"sourceType"`
+	SourceID       string          `gorm:"column:source_id" json:"sourceId"`
+	DraftVersion   int64           `gorm:"column:draft_version" json:"draftVersion"`
+	BuildInputHash string          `gorm:"column:build_input_hash" json:"buildInputHash"`
+	Status         string          `gorm:"column:status" json:"status"`
+	ArtifactID     *string         `gorm:"column:artifact_id" json:"artifactId,omitempty"`
+	ErrorMessage   string          `gorm:"column:error_message" json:"errorMessage,omitempty"`
+	CreatedAt      utils.JSONTime  `gorm:"column:create_time" json:"createdAt"`
+	StartedAt      *utils.JSONTime `gorm:"column:started_at" json:"startedAt,omitempty"`
+	CompletedAt    *utils.JSONTime `gorm:"column:completed_at" json:"completedAt,omitempty"`
 }
 
 // EnqueueReq 入队请求。

@@ -4,6 +4,7 @@ import (
 	"context"
 
 	projectdto "go_wp/internal/module/project/dto"
+	"go_wp/pkg/utils"
 )
 
 // List 列出全部站点工程。
@@ -16,7 +17,7 @@ func (s *Service) List(ctx context.Context) (res []projectdto.ProjectResp, err e
 	for i := range entities {
 		res = append(res, projectdto.ProjectResp{
 			ID: entities[i].ID, Name: entities[i].Name, Settings: entities[i].Settings,
-			CreatedAt: entities[i].CreatedAt, UpdatedAt: entities[i].UpdatedAt,
+			CreatedAt: utils.NewJSONTime(entities[i].CreatedAt), UpdatedAt: utils.NewJSONTime(entities[i].UpdatedAt),
 		})
 	}
 	return res, nil

@@ -218,7 +218,7 @@ func (m *Model) UpdateInstancePointers(ctx context.Context, e *InstanceEntity) e
 		"active_artifact_id":  e.ActiveArtifactID,
 		"stale":               e.Stale,
 		"published_at":        e.PublishedAt,
-		"update_time":          e.UpdatedAt,
+		"update_time":         e.UpdatedAt,
 	}).Error
 }
 
@@ -381,7 +381,7 @@ func (m *Model) UpdateInstancePointersTx(tx *gorm.DB, e *InstanceEntity) error {
 		"active_artifact_id":  e.ActiveArtifactID,
 		"stale":               e.Stale,
 		"published_at":        e.PublishedAt,
-		"update_time":          e.UpdatedAt,
+		"update_time":         e.UpdatedAt,
 	}).Error
 }
 
@@ -393,7 +393,7 @@ func (m *Model) UpdateInstancePointersTx(tx *gorm.DB, e *InstanceEntity) error {
 func (m *Model) UpdateInstanceTemplateTx(tx *gorm.DB, id, templateID string, at time.Time) error {
 	return tx.Model(&InstanceEntity{}).Where("id = ?", id).Updates(map[string]any{
 		"template_id": templateID,
-		"update_time":  at,
+		"update_time": at,
 	}).Error
 }
 
@@ -409,7 +409,7 @@ func (m *Model) UpdateInstanceTemplateTx(tx *gorm.DB, id, templateID string, at 
 // template_id）不动 —— 改 URL 不是换实体。
 func (m *Model) UpdateInstanceURLTx(tx *gorm.DB, id, urlPath string, at time.Time) error {
 	return tx.Model(&InstanceEntity{}).Where("id = ?", id).Updates(map[string]any{
-		"url_path":   urlPath,
+		"url_path":    urlPath,
 		"update_time": at,
 	}).Error
 }

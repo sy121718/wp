@@ -1,7 +1,9 @@
 // inventory_purchase_resp.go — 采购单与入库出参（issue #18）。
 package inventorydto
 
-import "time"
+import (
+	"go_wp/pkg/utils"
+)
 
 // PurchaseLineResp 一条采购行（含「已入库 / 未入库」两个推导量）。
 //
@@ -32,15 +34,15 @@ type PurchaseOrderResp struct {
 	WarehouseName string `json:"warehouseName"`
 	// Status 是推导值：pending / partial / received（见 enums 的推导口径）。
 	Status           string              `json:"status"`
-	OrderedAt        time.Time           `json:"orderedAt"`
-	ExpectedAt       *time.Time          `json:"expectedAt"`
+	OrderedAt        utils.JSONTime      `json:"orderedAt"`
+	ExpectedAt       *utils.JSONTime     `json:"expectedAt"`
 	Remark           string              `json:"remark"`
 	OperatorID       string              `json:"operatorId"`
 	TotalQuantity    int                 `json:"totalQuantity"`
 	ReceivedQuantity int                 `json:"receivedQuantity"`
 	Lines            []*PurchaseLineResp `json:"lines"`
-	CreatedAt        time.Time           `json:"createdAt"`
-	UpdatedAt        time.Time           `json:"updatedAt"`
+	CreatedAt        utils.JSONTime      `json:"createdAt"`
+	UpdatedAt        utils.JSONTime      `json:"updatedAt"`
 }
 
 // ReceiptItemResp 一条入库行（数量 + 单价快照 + 成本价回写结果）。
@@ -59,20 +61,20 @@ type ReceiptItemResp struct {
 //
 // Idempotent 为真表示本次提交命中了幂等键（返回的是既有入库单，没有第二次动库存）。
 type ReceiptResp struct {
-	ID              string    `json:"id"`
-	Code            string    `json:"code"`
-	Kind            string    `json:"kind"`
-	OrderID         string    `json:"orderId"`
-	OrderCode       string    `json:"orderCode"`
-	SourceID        string    `json:"sourceId"`
-	SourceName      string    `json:"sourceName"`
-	WarehouseID     string    `json:"warehouseId"`
-	WarehouseName   string    `json:"warehouseName"`
-	Status          string    `json:"status"`
-	MovementBatchID string    `json:"movementBatchId"`
-	Remark          string    `json:"remark"`
-	OperatorID      string    `json:"operatorId"`
-	ReceivedAt      time.Time `json:"receivedAt"`
+	ID              string         `json:"id"`
+	Code            string         `json:"code"`
+	Kind            string         `json:"kind"`
+	OrderID         string         `json:"orderId"`
+	OrderCode       string         `json:"orderCode"`
+	SourceID        string         `json:"sourceId"`
+	SourceName      string         `json:"sourceName"`
+	WarehouseID     string         `json:"warehouseId"`
+	WarehouseName   string         `json:"warehouseName"`
+	Status          string         `json:"status"`
+	MovementBatchID string         `json:"movementBatchId"`
+	Remark          string         `json:"remark"`
+	OperatorID      string         `json:"operatorId"`
+	ReceivedAt      utils.JSONTime `json:"receivedAt"`
 	// CostUpdated 为真表示本单全部行的 SKU 成本价都已按单价写回。
 	CostUpdated bool               `json:"costUpdated"`
 	Idempotent  bool               `json:"idempotent"`
@@ -81,23 +83,23 @@ type ReceiptResp struct {
 
 // PurchaseHistoryResp 一条进货历史（某 SKU 的历次入库）。
 type PurchaseHistoryResp struct {
-	ReceiptID       string    `json:"receiptId"`
-	ReceiptCode     string    `json:"receiptCode"`
-	Kind            string    `json:"kind"`
-	OrderID         string    `json:"orderId"`
-	OrderCode       string    `json:"orderCode"`
-	SourceID        string    `json:"sourceId"`
-	SourceName      string    `json:"sourceName"`
-	SourceType      string    `json:"sourceType"`
-	WarehouseID     string    `json:"warehouseId"`
-	WarehouseName   string    `json:"warehouseName"`
-	VariantID       string    `json:"variantId"`
-	SKUCode         string    `json:"skuCode"`
-	Quantity        int       `json:"quantity"`
-	UnitPrice       float64   `json:"unitPrice"`
-	CostUpdated     bool      `json:"costUpdated"`
-	MovementBatchID string    `json:"movementBatchId"`
-	Remark          string    `json:"remark"`
-	OperatorID      string    `json:"operatorId"`
-	ReceivedAt      time.Time `json:"receivedAt"`
+	ReceiptID       string         `json:"receiptId"`
+	ReceiptCode     string         `json:"receiptCode"`
+	Kind            string         `json:"kind"`
+	OrderID         string         `json:"orderId"`
+	OrderCode       string         `json:"orderCode"`
+	SourceID        string         `json:"sourceId"`
+	SourceName      string         `json:"sourceName"`
+	SourceType      string         `json:"sourceType"`
+	WarehouseID     string         `json:"warehouseId"`
+	WarehouseName   string         `json:"warehouseName"`
+	VariantID       string         `json:"variantId"`
+	SKUCode         string         `json:"skuCode"`
+	Quantity        int            `json:"quantity"`
+	UnitPrice       float64        `json:"unitPrice"`
+	CostUpdated     bool           `json:"costUpdated"`
+	MovementBatchID string         `json:"movementBatchId"`
+	Remark          string         `json:"remark"`
+	OperatorID      string         `json:"operatorId"`
+	ReceivedAt      utils.JSONTime `json:"receivedAt"`
 }

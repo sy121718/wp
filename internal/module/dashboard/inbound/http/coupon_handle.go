@@ -336,7 +336,7 @@ func couponRowView(cp *orderdto.CouponResp, filter couponFilter, projectID strin
 		"MinSubtotalLabel": cp.MinSubtotalLabel,
 		"UsageLabel":       couponUsageLabel(cp.UsedCount, cp.MaxUses),
 		"PerUserLabel":     couponNumberLabel(cp.PerUserLimit),
-		"WindowLabel":      couponWindowLabel(cp.StartsAt, cp.EndsAt),
+		"WindowLabel":      couponWindowLabel(cp.StartsAt.TimePtr(), cp.EndsAt.TimePtr()),
 		"StatusLabel":      cp.StatusLabel,
 		"Badge":            couponStatusBadge(cp.StatusLabel),
 		"Remark":           orderTextOrEmpty(cp.Remark),
@@ -354,8 +354,8 @@ func couponRowView(cp *orderdto.CouponResp, filter couponFilter, projectID strin
 			"MinSubtotal":   cp.MinSubtotal,
 			"MaxUses":       cp.MaxUses,
 			"PerUserLimit":  cp.PerUserLimit,
-			"StartsAt":      couponFormTime(cp.StartsAt),
-			"EndsAt":        couponFormTime(cp.EndsAt),
+			"StartsAt":      couponFormTime(cp.StartsAt.TimePtr()),
+			"EndsAt":        couponFormTime(cp.EndsAt.TimePtr()),
 			"Remark":        cp.Remark,
 		},
 		"Back": couponBackQuery(projectID, filter, page, limit, filter.CouponID),
@@ -376,8 +376,8 @@ func couponEditView(cp *orderdto.CouponResp, filter couponFilter, projectID stri
 		"MinSubtotal":      cp.MinSubtotal,
 		"MaxUses":          cp.MaxUses,
 		"PerUserLimit":     cp.PerUserLimit,
-		"StartsAt":         couponFormTime(cp.StartsAt),
-		"EndsAt":           couponFormTime(cp.EndsAt),
+		"StartsAt":         couponFormTime(cp.StartsAt.TimePtr()),
+		"EndsAt":           couponFormTime(cp.EndsAt.TimePtr()),
 		"StatusValue":      strconv.Itoa(cp.Status),
 		"StatusLabel":      cp.StatusLabel,
 		"Badge":            couponStatusBadge(cp.StatusLabel),
@@ -385,7 +385,7 @@ func couponEditView(cp *orderdto.CouponResp, filter couponFilter, projectID stri
 		"MinSubtotalLabel": cp.MinSubtotalLabel,
 		"UsageLabel":       couponUsageLabel(cp.UsedCount, cp.MaxUses),
 		"PerUserLabel":     couponNumberLabel(cp.PerUserLimit),
-		"WindowLabel":      couponWindowLabel(cp.StartsAt, cp.EndsAt),
+		"WindowLabel":      couponWindowLabel(cp.StartsAt.TimePtr(), cp.EndsAt.TimePtr()),
 		"Remark":           cp.Remark,
 		"Back":             couponBackQuery(projectID, filter, page, limit, filter.CouponID),
 	}
@@ -403,7 +403,7 @@ func couponRedemptionRow(rd *orderdto.CouponRedemptionResp) gin.H {
 		user = strconv.FormatUint(*rd.UserID, 10)
 	}
 	return gin.H{
-		"Time":          orderTimeLabel(rd.CreateTime),
+		"Time":          orderTimeLabel(rd.CreateTime.Time()),
 		"OrderNo":       orderTextOrEmpty(rd.OrderNo),
 		"UserID":        user,
 		"DiscountLabel": rd.DiscountLabel,

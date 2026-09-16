@@ -42,7 +42,7 @@ func (h *Handle) HistoryPanel(c *gin.Context) {
 			for _, r := range revs {
 				views = append(views, historyRowView{
 					Version: r.Version, Path: r.DraftPath,
-					CreatedAt: r.CreatedAt.Local().Format("2006-01-02 15:04"),
+					CreatedAt: r.CreatedAt.Time().Local().Format("2006-01-02 15:04"),
 				})
 			}
 			data["Revisions"] = views

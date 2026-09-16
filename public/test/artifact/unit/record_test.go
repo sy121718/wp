@@ -42,7 +42,7 @@ func TestArtifactRecordSuccess(t *testing.T) {
 	if res.ArtifactHash != artifactHashV1 {
 		t.Fatalf("ArtifactHash 不一致: %s", res.ArtifactHash)
 	}
-	assertRecent(t, res.CreatedAt)
+	assertRecent(t, res.CreatedAt.Time())
 }
 
 func TestArtifactRecordCreatedByPreserved(t *testing.T) {
@@ -69,7 +69,7 @@ func TestArtifactRecordDedupByIdempotent(t *testing.T) {
 	if repeated.ID != first.ID {
 		t.Fatalf("重复归档返回了不同记录: %s vs %s", repeated.ID, first.ID)
 	}
-	if !repeated.CreatedAt.Truncate(time.Microsecond).Equal(first.CreatedAt.Truncate(time.Microsecond)) {
+	if !repeated.CreatedAt.Time().Truncate(time.Microsecond).Equal(first.CreatedAt.Time().Truncate(time.Microsecond)) {
 		t.Fatalf("重复归档 CreatedAt 不一致: %v vs %v", repeated.CreatedAt, first.CreatedAt)
 	}
 	// 数据库中只有一行。

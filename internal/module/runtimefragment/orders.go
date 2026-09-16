@@ -216,7 +216,7 @@ func renderOrdersList(ctx context.Context, r *Request) (string, error) {
 				Status:      o.Status,
 				StatusLabel: orderStatusLabelOf(r, o.Status),
 				TotalLabel:  formatCentsLabel(r, o.Total),
-				TimeLabel:   o.CreateTime.Format("2006-01-02 15:04"),
+				TimeLabel:   o.CreateTime.Time().Format("2006-01-02 15:04"),
 				ItemURL:     orderDetailURL(r, projectID, o.ID),
 			})
 		}
@@ -294,10 +294,10 @@ func renderOrderDetailWith(ctx context.Context, r *Request, noticeOK string) (st
 	data.TotalLabel = formatCentsLabel(r, head.Total)
 	data.DiscountLabel = formatCentsLabel(r, head.DiscountTotal)
 	data.ShippingLabel = formatCentsLabel(r, head.ShippingTotal)
-	data.TimeLabel = head.CreateTime.Format("2006-01-02 15:04")
+	data.TimeLabel = head.CreateTime.Time().Format("2006-01-02 15:04")
 	data.PayMethod = head.PaymentMethodTitle
 	if head.PaidAt != nil {
-		data.PaidAtLabel = head.PaidAt.Format("2006-01-02 15:04")
+		data.PaidAtLabel = head.PaidAt.Time().Format("2006-01-02 15:04")
 	}
 	data.Address = orderAddressOf(head)
 	data.Remark = head.Remark
@@ -339,7 +339,7 @@ func renderOrderDetailWith(ctx context.Context, r *Request, noticeOK string) (st
 					StatusLabel: rt.StatusLabel,
 					Reason:      rt.Reason,
 					RefundLabel: rt.RefundLabel,
-					TimeLabel:   rt.CreateTime.Format("2006-01-02 15:04"),
+					TimeLabel:   rt.CreateTime.Time().Format("2006-01-02 15:04"),
 				})
 			}
 		}
@@ -354,7 +354,7 @@ func renderOrderDetailWith(ctx context.Context, r *Request, noticeOK string) (st
 			ToLabel:      orderStatusLabelOf(r, lg.ToStatus),
 			OperatorName: lg.OperatorName,
 			Remark:       lg.Remark,
-			TimeLabel:    lg.CreateTime.Format("2006-01-02 15:04"),
+			TimeLabel:    lg.CreateTime.Time().Format("2006-01-02 15:04"),
 		})
 	}
 	return templates.RenderFragment("order_detail", data)

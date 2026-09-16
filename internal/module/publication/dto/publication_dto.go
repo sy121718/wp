@@ -1,6 +1,8 @@
 package pubdto
 
-import "time"
+import (
+	"go_wp/pkg/utils"
+)
 
 // ActivateReq 激活请求：把 reserved 占用升级为 active 并绑定产物。
 //
@@ -62,10 +64,10 @@ type RouteResp struct {
 	Path      string  `json:"path"`
 	PageID    *string `json:"pageId,omitempty"`
 	// PresentationID 展示实例归属（页面占用的行此字段为空）。
-	PresentationID *string   `json:"presentationId,omitempty"`
-	RouteKind      string    `json:"routeKind"`
-	ArtifactID     *string   `json:"artifactId,omitempty"`
-	UpdatedAt      time.Time `json:"updatedAt"`
+	PresentationID *string        `json:"presentationId,omitempty"`
+	RouteKind      string         `json:"routeKind"`
+	ArtifactID     *string        `json:"artifactId,omitempty"`
+	UpdatedAt      utils.JSONTime `json:"updatedAt"`
 }
 
 // ReserveReq 创建草稿路径 reserved 占用（页面创建时预留）。

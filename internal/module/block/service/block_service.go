@@ -3,21 +3,21 @@ package blockservice
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"regexp"
 	"strings"
 	"time"
 
+	"encoding/json"
 	"github.com/google/uuid"
-	"gorm.io/gorm"
-
 	"go_wp/internal/builder"
 	blockcontract "go_wp/internal/module/block/contract"
 	blockdto "go_wp/internal/module/block/dto"
 	blockmodel "go_wp/internal/module/block/model"
 	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/pkg/logger"
+	"go_wp/pkg/utils"
+	"gorm.io/gorm"
 )
 
 var _ blockcontract.BlockService = (*Service)(nil)
@@ -393,7 +393,7 @@ func validateDocument(raw json.RawMessage) (json.RawMessage, error) {
 func blockResp(e *blockmodel.BlockEntity) blockdto.BlockResp {
 	return blockdto.BlockResp{
 		ID: e.ID, ProjectID: e.ProjectID, Name: e.Name, Kind: e.Kind, Category: e.Category,
-		ReuseMode: e.ReuseMode, Document: e.Document, CreatedAt: e.CreateTime, UpdatedAt: e.UpdatedAt,
+		ReuseMode: e.ReuseMode, Document: e.Document, CreatedAt: utils.NewJSONTime(e.CreateTime), UpdatedAt: utils.NewJSONTime(e.UpdatedAt),
 	}
 }
 

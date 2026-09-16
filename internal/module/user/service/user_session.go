@@ -30,19 +30,19 @@ package userservice
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"errors"
 	"strings"
 	"time"
 
+	"crypto/rand"
+	"encoding/hex"
 	userdto "go_wp/internal/module/user/dto"
 	userenums "go_wp/internal/module/user/enums"
 	usermodel "go_wp/internal/module/user/model"
 	"go_wp/pkg/cache"
 	"go_wp/pkg/crypto"
 	"go_wp/pkg/logger"
-
+	"go_wp/pkg/utils"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -247,7 +247,7 @@ func (s *Service) Login(ctx context.Context, req *userdto.LoginReq, meta Session
 		Nickname:  displayName(user),
 		Avatar:    deref(user.Avatar),
 		Email:     user.Email,
-		ExpiresAt: now.Add(ttl),
+		ExpiresAt: utils.NewJSONTime(now.Add(ttl)),
 	}, nil
 }
 
@@ -360,8 +360,8 @@ func (s *Service) ListSessions(ctx context.Context, userID uint64, currentToken 
 			UserAgent:      strings.TrimSpace(sess.UserAgent),
 			IP:             strings.TrimSpace(sess.IP),
 			Location:       strings.TrimSpace(sess.Location),
-			LastActiveAt:   &active,
-			CreatedAt:      &issued,
+			LastActiveAt:   utils.NewJSONTimePtr(&active),
+			CreatedAt:      utils.NewJSONTimePtr(&issued),
 			LastActiveText: formatTime(&active),
 			CreatedText:    formatTime(&issued),
 			Current:        cur != "" && hash == cur,

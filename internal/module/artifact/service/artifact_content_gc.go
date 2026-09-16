@@ -19,6 +19,7 @@ import (
 	artifactenums "go_wp/internal/module/artifact/enums"
 	artifactmodel "go_wp/internal/module/artifact/model"
 	"go_wp/pkg/logger"
+	"go_wp/pkg/utils"
 )
 
 const (
@@ -274,6 +275,6 @@ func (s *Service) deleteOrphans(ctx context.Context, hashes []string, before tim
 func orphanItem(row artifactmodel.ContentObjectEntity) artifactdto.OrphanContentObjectResp {
 	return artifactdto.OrphanContentObjectResp{
 		ContentHash: row.ContentHash, Provider: row.Provider, ObjectKey: row.ObjectKey,
-		ByteSize: row.ByteSize, CreatedAt: row.CreatedAt,
+		ByteSize: row.ByteSize, CreatedAt: utils.NewJSONTime(row.CreatedAt),
 	}
 }

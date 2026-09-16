@@ -6,7 +6,9 @@ package webhookdto
 // 投递日志只给负载预览。签名密钥是出站请求的可信凭证，读得回来就等于
 // 「任何拿到后台读权限的人都能伪造我们的请求」。
 
-import "time"
+import (
+	"go_wp/pkg/utils"
+)
 
 // EndpointItem 端点条目（无密钥字段）。
 type EndpointItem struct {
@@ -22,8 +24,8 @@ type EndpointItem struct {
 	// HasSecret 是否已配置签名密钥（空密钥的端点发不出可验签的请求）。
 	HasSecret bool `json:"hasSecret"`
 	// CreateTime / UpdateTime 时间列（与全库口径一致，timestamptz）。
-	CreateTime time.Time `json:"createTime"`
-	UpdateTime time.Time `json:"updateTime"`
+	CreateTime utils.JSONTime `json:"createTime"`
+	UpdateTime utils.JSONTime `json:"updateTime"`
 }
 
 // DeliveryItem 一次投递的排障条目。
@@ -35,13 +37,13 @@ type DeliveryItem struct {
 	// 不整段返回：单个事件上限 64KiB，一页 20 条就是兆级响应。
 	PayloadPreview string `json:"payloadPreview"`
 	// PayloadBytes 负载原始字节数（判断是否被截断）。
-	PayloadBytes   int       `json:"payloadBytes"`
-	Status         string    `json:"status"`
-	Attempts       int       `json:"attempts"`
-	ResponseStatus int       `json:"responseStatus"`
-	LastError      string    `json:"lastError"`
-	CreateTime     time.Time `json:"createTime"`
-	UpdateTime     time.Time `json:"updateTime"`
+	PayloadBytes   int            `json:"payloadBytes"`
+	Status         string         `json:"status"`
+	Attempts       int            `json:"attempts"`
+	ResponseStatus int            `json:"responseStatus"`
+	LastError      string         `json:"lastError"`
+	CreateTime     utils.JSONTime `json:"createTime"`
+	UpdateTime     utils.JSONTime `json:"updateTime"`
 }
 
 // PayloadPreviewBytes 负载预览的截断长度。

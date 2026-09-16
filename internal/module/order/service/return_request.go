@@ -8,19 +8,18 @@ package orderservice
 
 import (
 	"context"
-	"crypto/rand"
 	"errors"
 	"fmt"
 	"strings"
 	"time"
 
-	"gorm.io/gorm"
-
-	"go_wp/pkg/database"
-
+	"crypto/rand"
 	orderdto "go_wp/internal/module/order/dto"
 	orderenums "go_wp/internal/module/order/enums"
 	ordermodel "go_wp/internal/module/order/model"
+	"go_wp/pkg/database"
+	"go_wp/pkg/utils"
+	"gorm.io/gorm"
 )
 
 const (
@@ -383,12 +382,12 @@ func toReturnResp(e *ordermodel.ReturnEntity, items []*ordermodel.ReturnItemEnti
 		CustomerName:  e.CustomerName,
 		AdminNote:     e.AdminNote,
 		ReviewerName:  e.ReviewerName,
-		ReviewedAt:    e.ReviewedAt,
-		ReceivedAt:    e.ReceivedAt,
-		RefundedAt:    e.RefundedAt,
+		ReviewedAt:    utils.NewJSONTimePtr(e.ReviewedAt),
+		ReceivedAt:    utils.NewJSONTimePtr(e.ReceivedAt),
+		RefundedAt:    utils.NewJSONTimePtr(e.RefundedAt),
 		TransactionID: e.TransactionID,
-		CreateTime:    e.CreateTime,
-		UpdateTime:    e.UpdateTime,
+		CreateTime:    utils.NewJSONTime(e.CreateTime),
+		UpdateTime:    utils.NewJSONTime(e.UpdateTime),
 		Items:         make([]*orderdto.ReturnItemResp, 0, len(items)),
 	}
 	for _, it := range items {

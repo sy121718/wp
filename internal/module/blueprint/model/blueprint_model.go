@@ -123,7 +123,7 @@ func (m *Model) Save(ctx context.Context, e *BlueprintEntity) error {
 	return m.DB(ctx).Where("id = ?", e.ID).Updates(map[string]any{
 		"draft_document": e.DraftDocument,
 		"draft_version":  e.DraftVersion,
-		"update_time":     e.UpdatedAt,
+		"update_time":    e.UpdatedAt,
 	}).Error
 }
 
@@ -141,7 +141,7 @@ func (m *Model) SaveWithVersion(ctx context.Context, e *BlueprintEntity, v *Vers
 		if err := tx.Model(&BlueprintEntity{}).Where("id = ?", e.ID).Updates(map[string]any{
 			"draft_document": e.DraftDocument,
 			"draft_version":  e.DraftVersion,
-			"update_time":     e.UpdatedAt,
+			"update_time":    e.UpdatedAt,
 		}).Error; err != nil {
 			return err
 		}

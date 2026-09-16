@@ -4,13 +4,14 @@ package orderservice
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"strings"
 
+	"encoding/json"
 	orderdto "go_wp/internal/module/order/dto"
 	orderenums "go_wp/internal/module/order/enums"
 	ordermodel "go_wp/internal/module/order/model"
+	"go_wp/pkg/utils"
 )
 
 // GetOrder 订单详情：头 + 订单项 + 状态流转链。
@@ -60,7 +61,7 @@ func (s *Service) detailOf(ctx context.Context, head *ordermodel.OrderEntity) (r
 		res.Logs = append(res.Logs, &orderdto.StatusLogResp{
 			FromStatus: lg.FromStatus, ToStatus: lg.ToStatus,
 			OperatorType: lg.OperatorType, OperatorName: lg.OperatorName,
-			Remark: lg.Remark, CreateTime: lg.CreateTime,
+			Remark: lg.Remark, CreateTime: utils.NewJSONTime(lg.CreateTime),
 		})
 	}
 	return res, nil
@@ -189,10 +190,10 @@ func toOrderResp(e *ordermodel.OrderEntity) *orderdto.OrderResp {
 		BillName: e.BillName, BillPhone: e.BillPhone, BillProvince: e.BillProvince,
 		BillCity: e.BillCity, BillDistrict: e.BillDistrict, BillAddress: e.BillAddress, BillZip: e.BillZip,
 		PaymentMethod: e.PaymentMethod, PaymentMethodTitle: e.PaymentMethodTitle,
-		TransactionID: e.TransactionID, PaidAt: e.PaidAt, CompletedAt: e.CompletedAt,
+		TransactionID: e.TransactionID, PaidAt: utils.NewJSONTimePtr(e.PaidAt), CompletedAt: utils.NewJSONTimePtr(e.CompletedAt),
 		CreatedVia: e.CreatedVia, IPAddress: e.IPAddress, UserAgent: e.UserAgent,
 		AdminNote: e.AdminNote, Remark: e.Remark, CancelReason: e.CancelReason,
-		CreateTime: e.CreateTime, UpdateTime: e.UpdateTime,
+		CreateTime: utils.NewJSONTime(e.CreateTime), UpdateTime: utils.NewJSONTime(e.UpdateTime),
 	}
 	if len(e.Attribution) > 0 {
 		var a orderdto.Attribution

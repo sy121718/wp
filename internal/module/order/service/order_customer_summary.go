@@ -17,6 +17,7 @@ import (
 
 	orderdto "go_wp/internal/module/order/dto"
 	orderenums "go_wp/internal/module/order/enums"
+	"go_wp/pkg/utils"
 )
 
 // CustomerOrderSummaryOf 按「工程 + 客户」取订单聚合（数量 / 累计消费 / 最近一单）。
@@ -47,7 +48,7 @@ func (s *Service) CustomerOrderSummaryOf(ctx context.Context, req *orderdto.Cust
 	if row.LastOrderID != nil && row.LastOrderTime != nil {
 		res.HasOrders = true
 		res.LastOrderID = *row.LastOrderID
-		res.LastOrderTime = row.LastOrderTime
+		res.LastOrderTime = utils.NewJSONTimePtr(row.LastOrderTime)
 		res.LastOrderTimeText = row.LastOrderTime.Local().Format("2006-01-02 15:04")
 		if row.LastOrderNo != nil {
 			res.LastOrderNo = *row.LastOrderNo

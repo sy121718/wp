@@ -2,7 +2,7 @@ package artifactdto
 
 import (
 	"encoding/json"
-	"time"
+	"go_wp/pkg/utils"
 )
 
 // RecordReq 归档一条已落盘产物的元数据；闭包对象由服务端从 manifest 提取。
@@ -57,18 +57,18 @@ type ArtifactResp struct {
 	Manifest         json.RawMessage `json:"manifest,omitempty"`
 	PayloadState     string          `json:"payloadState"`
 	CreatedBy        string          `json:"createdBy"`
-	CreatedAt        time.Time       `json:"createdAt"`
+	CreatedAt        utils.JSONTime  `json:"createdAt"`
 }
 
 // GCCandidateResp 单条可回收产物候选（产物 GC 用）。
 type GCCandidateResp struct {
-	ID           string    `json:"id"`
-	PageID       string    `json:"pageId"`
-	Version      int64     `json:"version"`
-	Lang         string    `json:"lang"`
-	ArtifactHash string    `json:"artifactHash"`
-	ArtifactKey  string    `json:"artifactKey"`
-	CreatedAt    time.Time `json:"createdAt"`
+	ID           string         `json:"id"`
+	PageID       string         `json:"pageId"`
+	Version      int64          `json:"version"`
+	Lang         string         `json:"lang"`
+	ArtifactHash string         `json:"artifactHash"`
+	ArtifactKey  string         `json:"artifactKey"`
+	CreatedAt    utils.JSONTime `json:"createdAt"`
 }
 
 // ContentObjectGCReq 共享内容对象（content_objects）孤儿回收请求。
@@ -87,11 +87,11 @@ type ContentObjectGCReq struct {
 
 // OrphanContentObjectResp 单条孤儿内容对象。
 type OrphanContentObjectResp struct {
-	ContentHash string    `json:"contentHash"`
-	Provider    string    `json:"provider"`
-	ObjectKey   string    `json:"objectKey"`
-	ByteSize    int64     `json:"byteSize"`
-	CreatedAt   time.Time `json:"createdAt"`
+	ContentHash string         `json:"contentHash"`
+	Provider    string         `json:"provider"`
+	ObjectKey   string         `json:"objectKey"`
+	ByteSize    int64          `json:"byteSize"`
+	CreatedAt   utils.JSONTime `json:"createdAt"`
 	// Action: would_delete / deleted / kept_external / kept_reclaimed / delete_failed
 	Action string `json:"action"`
 	Reason string `json:"reason"`

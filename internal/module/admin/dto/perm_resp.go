@@ -1,18 +1,20 @@
 package admindto
 
-import "time"
+import (
+	"go_wp/pkg/utils"
+)
 
 // PermItem 权限点列表项。
 type PermItem struct {
-	ID             uint64     `json:"id"`
-	PermissionCode string     `json:"permission_code"`
-	PermissionName string     `json:"permission_name"`
-	Module         string     `json:"module"`
-	APIPath        string     `json:"api_path"`
-	APIMethod      string     `json:"api_method"`
-	Status         int        `json:"status"`
-	Remark         string     `json:"remark"`
-	CreateTime     *time.Time `json:"create_time"`
+	ID             uint64          `json:"id"`
+	PermissionCode string          `json:"permission_code"`
+	PermissionName string          `json:"permission_name"`
+	Module         string          `json:"module"`
+	APIPath        string          `json:"api_path"`
+	APIMethod      string          `json:"api_method"`
+	Status         int             `json:"status"`
+	Remark         string          `json:"remark"`
+	CreateTime     *utils.JSONTime `json:"create_time"`
 }
 
 // PermListResp 列表查询响应。
@@ -23,16 +25,16 @@ type PermListResp struct {
 
 // PermDetailResp 权限点详情。
 type PermDetailResp struct {
-	ID             uint64     `json:"id"`
-	PermissionCode string     `json:"permission_code"`
-	PermissionName string     `json:"permission_name"`
-	Module         string     `json:"module"`
-	APIPath        string     `json:"api_path"`
-	APIMethod      string     `json:"api_method"`
-	Status         int        `json:"status"`
-	Remark         string     `json:"remark"`
-	CreateTime     *time.Time `json:"create_time"`
-	UpdateTime     *time.Time `json:"update_time"`
+	ID             uint64          `json:"id"`
+	PermissionCode string          `json:"permission_code"`
+	PermissionName string          `json:"permission_name"`
+	Module         string          `json:"module"`
+	APIPath        string          `json:"api_path"`
+	APIMethod      string          `json:"api_method"`
+	Status         int             `json:"status"`
+	Remark         string          `json:"remark"`
+	CreateTime     *utils.JSONTime `json:"create_time"`
+	UpdateTime     *utils.JSONTime `json:"update_time"`
 }
 
 // PermOptionItem 权限选项（供菜单表单使用）。

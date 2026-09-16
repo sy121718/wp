@@ -106,7 +106,7 @@ func toBlockRow(b blockcontract.BlockResp) blockRow {
 	return blockRow{
 		ID: b.ID, Name: b.Name, Kind: b.Kind, KindLabel: kindLabel(b.Kind),
 		ReuseMode: b.ReuseMode, ReuseModeLabel: reuseModeLabel(b.ReuseMode),
-		UpdatedAt: b.UpdatedAt.Format("2006-01-02 15:04"),
+		UpdatedAt: b.UpdatedAt.Time().Format("2006-01-02 15:04"),
 	}
 }
 

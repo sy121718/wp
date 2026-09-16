@@ -4,55 +4,57 @@ package orderdto
 //
 // 金额一律以**分**为单位输出（字段名不带分/元后缀，单位由 totalLabel 类的展示字段承担）。
 
-import "time"
+import (
+	"go_wp/pkg/utils"
+)
 
 // 说明：金额与折扣一律带一份 Label 字段。分与元的换算只在 service 里发生一次，
 // 后台页面与片段模板都不做算术 —— 两处换算迟早会分叉。
 
 // OrderResp 订单头视图。
 type OrderResp struct {
-	ID                 uint64       `json:"id"`
-	ProjectID          string       `json:"projectId"`
-	OrderNo            string       `json:"orderNo"`
-	Status             string       `json:"status"`
-	UserID             *uint64      `json:"userId"`
-	CustomerEmail      string       `json:"customerEmail"`
-	CustomerName       string       `json:"customerName"`
-	CustomerPhone      string       `json:"customerPhone"`
-	Currency           string       `json:"currency"`
-	Subtotal           int64        `json:"subtotal"`
-	DiscountTotal      int64        `json:"discountTotal"`
-	ShippingTotal      int64        `json:"shippingTotal"`
-	TaxTotal           int64        `json:"taxTotal"`
-	Total              int64        `json:"total"`
-	ShipName           string       `json:"shipName"`
-	ShipPhone          string       `json:"shipPhone"`
-	ShipProvince       string       `json:"shipProvince"`
-	ShipCity           string       `json:"shipCity"`
-	ShipDistrict       string       `json:"shipDistrict"`
-	ShipAddress        string       `json:"shipAddress"`
-	ShipZip            string       `json:"shipZip"`
-	BillName           string       `json:"billName"`
-	BillPhone          string       `json:"billPhone"`
-	BillProvince       string       `json:"billProvince"`
-	BillCity           string       `json:"billCity"`
-	BillDistrict       string       `json:"billDistrict"`
-	BillAddress        string       `json:"billAddress"`
-	BillZip            string       `json:"billZip"`
-	PaymentMethod      string       `json:"paymentMethod"`
-	PaymentMethodTitle string       `json:"paymentMethodTitle"`
-	TransactionID      string       `json:"transactionId"`
-	PaidAt             *time.Time   `json:"paidAt"`
-	CompletedAt        *time.Time   `json:"completedAt"`
-	CreatedVia         string       `json:"createdVia"`
-	IPAddress          string       `json:"ipAddress"`
-	UserAgent          string       `json:"userAgent"`
-	AdminNote          string       `json:"adminNote"`
-	Attribution        *Attribution `json:"attribution,omitempty"`
-	Remark             string       `json:"remark"`
-	CancelReason       string       `json:"cancelReason"`
-	CreateTime         time.Time    `json:"createTime"`
-	UpdateTime         time.Time    `json:"updateTime"`
+	ID                 uint64          `json:"id"`
+	ProjectID          string          `json:"projectId"`
+	OrderNo            string          `json:"orderNo"`
+	Status             string          `json:"status"`
+	UserID             *uint64         `json:"userId"`
+	CustomerEmail      string          `json:"customerEmail"`
+	CustomerName       string          `json:"customerName"`
+	CustomerPhone      string          `json:"customerPhone"`
+	Currency           string          `json:"currency"`
+	Subtotal           int64           `json:"subtotal"`
+	DiscountTotal      int64           `json:"discountTotal"`
+	ShippingTotal      int64           `json:"shippingTotal"`
+	TaxTotal           int64           `json:"taxTotal"`
+	Total              int64           `json:"total"`
+	ShipName           string          `json:"shipName"`
+	ShipPhone          string          `json:"shipPhone"`
+	ShipProvince       string          `json:"shipProvince"`
+	ShipCity           string          `json:"shipCity"`
+	ShipDistrict       string          `json:"shipDistrict"`
+	ShipAddress        string          `json:"shipAddress"`
+	ShipZip            string          `json:"shipZip"`
+	BillName           string          `json:"billName"`
+	BillPhone          string          `json:"billPhone"`
+	BillProvince       string          `json:"billProvince"`
+	BillCity           string          `json:"billCity"`
+	BillDistrict       string          `json:"billDistrict"`
+	BillAddress        string          `json:"billAddress"`
+	BillZip            string          `json:"billZip"`
+	PaymentMethod      string          `json:"paymentMethod"`
+	PaymentMethodTitle string          `json:"paymentMethodTitle"`
+	TransactionID      string          `json:"transactionId"`
+	PaidAt             *utils.JSONTime `json:"paidAt"`
+	CompletedAt        *utils.JSONTime `json:"completedAt"`
+	CreatedVia         string          `json:"createdVia"`
+	IPAddress          string          `json:"ipAddress"`
+	UserAgent          string          `json:"userAgent"`
+	AdminNote          string          `json:"adminNote"`
+	Attribution        *Attribution    `json:"attribution,omitempty"`
+	Remark             string          `json:"remark"`
+	CancelReason       string          `json:"cancelReason"`
+	CreateTime         utils.JSONTime  `json:"createTime"`
+	UpdateTime         utils.JSONTime  `json:"updateTime"`
 }
 
 // OrderItemResp 订单项视图（快照值）。
@@ -79,12 +81,12 @@ type CancelOrderResp struct {
 
 // StatusLogResp 状态流转记录。
 type StatusLogResp struct {
-	FromStatus   string    `json:"fromStatus"`
-	ToStatus     string    `json:"toStatus"`
-	OperatorType string    `json:"operatorType"`
-	OperatorName string    `json:"operatorName"`
-	Remark       string    `json:"remark"`
-	CreateTime   time.Time `json:"createTime"`
+	FromStatus   string         `json:"fromStatus"`
+	ToStatus     string         `json:"toStatus"`
+	OperatorType string         `json:"operatorType"`
+	OperatorName string         `json:"operatorName"`
+	Remark       string         `json:"remark"`
+	CreateTime   utils.JSONTime `json:"createTime"`
 }
 
 // CreateOrderResp 建单结果。
@@ -140,30 +142,30 @@ type VisitorOrderListResp struct {
 
 // CouponResp 优惠码视图。
 type CouponResp struct {
-	ID               uint64     `json:"id"`
-	ProjectID        string     `json:"projectId"`
-	Code             string     `json:"code"`
-	Name             string     `json:"name"`
-	DiscountType     string     `json:"discountType"`
-	DiscountValue    int64      `json:"discountValue"`
-	DiscountLabel    string     `json:"discountLabel"`
-	MinSubtotal      int64      `json:"minSubtotal"`
-	MinSubtotalLabel string     `json:"minSubtotalLabel"`
-	MaxUses          int        `json:"maxUses"`
-	UsedCount        int        `json:"usedCount"`
-	PerUserLimit     int        `json:"perUserLimit"`
-	StartsAt         *time.Time `json:"startsAt"`
-	EndsAt           *time.Time `json:"endsAt"`
+	ID               uint64          `json:"id"`
+	ProjectID        string          `json:"projectId"`
+	Code             string          `json:"code"`
+	Name             string          `json:"name"`
+	DiscountType     string          `json:"discountType"`
+	DiscountValue    int64           `json:"discountValue"`
+	DiscountLabel    string          `json:"discountLabel"`
+	MinSubtotal      int64           `json:"minSubtotal"`
+	MinSubtotalLabel string          `json:"minSubtotalLabel"`
+	MaxUses          int             `json:"maxUses"`
+	UsedCount        int             `json:"usedCount"`
+	PerUserLimit     int             `json:"perUserLimit"`
+	StartsAt         *utils.JSONTime `json:"startsAt"`
+	EndsAt           *utils.JSONTime `json:"endsAt"`
 	// TimeZone 时间窗的解释口径（审计 TX-011）。
 	//
 	// 与 startsAt / endsAt 一起返回，后台表单据此提示「填的是哪个时区的时间」——
 	// 少了它，界面上只有一个裸时间，运营只能靠猜；而猜错的后果是券提前生效或永远不生效。
-	TimeZone    string    `json:"timeZone"`
-	Status      int       `json:"status"`
-	StatusLabel string    `json:"statusLabel"`
-	Remark      string    `json:"remark"`
-	CreateTime  time.Time `json:"createTime"`
-	UpdateTime  time.Time `json:"updateTime"`
+	TimeZone    string         `json:"timeZone"`
+	Status      int            `json:"status"`
+	StatusLabel string         `json:"statusLabel"`
+	Remark      string         `json:"remark"`
+	CreateTime  utils.JSONTime `json:"createTime"`
+	UpdateTime  utils.JSONTime `json:"updateTime"`
 }
 
 // CouponListResp 列表结果。
@@ -192,15 +194,15 @@ type CouponValidateResp struct {
 
 // CouponRedemptionResp 核销记录（一行 = 一次核销）。
 type CouponRedemptionResp struct {
-	ID             uint64    `json:"id"`
-	CouponID       uint64    `json:"couponId"`
-	Code           string    `json:"code"`
-	OrderID        uint64    `json:"orderId"`
-	OrderNo        string    `json:"orderNo"`
-	DiscountAmount int64     `json:"discountAmount"`
-	DiscountLabel  string    `json:"discountLabel"`
-	UserID         *uint64   `json:"userId"`
-	CreateTime     time.Time `json:"createTime"`
+	ID             uint64         `json:"id"`
+	CouponID       uint64         `json:"couponId"`
+	Code           string         `json:"code"`
+	OrderID        uint64         `json:"orderId"`
+	OrderNo        string         `json:"orderNo"`
+	DiscountAmount int64          `json:"discountAmount"`
+	DiscountLabel  string         `json:"discountLabel"`
+	UserID         *uint64        `json:"userId"`
+	CreateTime     utils.JSONTime `json:"createTime"`
 }
 
 // CouponRedemptionListResp 核销记录列表。
