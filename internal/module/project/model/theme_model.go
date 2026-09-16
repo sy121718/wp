@@ -44,23 +44,46 @@ func (m *Model) ListThemes(ctx context.Context, projectID string) (list []ThemeE
 	return list, err
 }
 
-// ListThemesByBlockID 列出**任意结构槽位**绑定了指定全局块的全部主题。
+// ListThemesByBlockID 列出**本工程内**绑定了指定全局块的全部主题。
 // 用于全局块内容变更后的 stale 传播（调用方逐主题标记页面待重建）。
-func (m *Model) ListThemesByBlockID(ctx context.Context, blockID string) (list []ThemeEntity, err error) {
-	err = m.ThemeDB(ctx).
+//
+// projectID 非空时在工程作用域内查；为空沿用「不限工程」形态（换非超级角色后
+// fail closed 返回空集 —— 表现为「改了块但页面不被标记」，列入 DB-009 剩余清单）。
+func (m *Model) ListThemesByBlockID(ctx context.Context, projectID, blockID string) (list []ThemeEntity, err error) {
+	apply := func(q *gorm.DB) *gorm.DB {
 		// 覆盖两个历史字段与 slots 里的任意槽位：漏掉 slots 的表现是「改了公告条引用的块，
 		// 页面不会被标记待重建」，站点上一直显示旧公告 —— 而且没有任何报错。
-		Where("settings->>'headerBlockId' = ? OR settings->>'footerBlockId' = ?"+
+		return q.Where("settings->>'headerBlockId' = ? OR settings->>'footerBlockId' = ?"+
 			" OR EXISTS (SELECT 1 FROM jsonb_each_text(COALESCE(settings->'slots', '{}'::jsonb)) AS e(k, v) WHERE e.v = ?)",
-			blockID, blockID, blockID).
-		Order("create_time ASC").Find(&list).Error
+			blockID, blockID, blockID).Order("create_time ASC")
+	}
+	if strings.TrimSpace(projectID) == "" {
+		err = apply(m.ThemeDB(ctx)).Find(&list).Error
+		return list, err
+	}
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return apply(tx.Model(&ThemeEntity{}).Where("project_id = ?", projectID)).Find(&list).Error
+	})
 	return list, err
 }
 
 // GetTheme 按 ID 查询主题。
-func (m *Model) GetTheme(ctx context.Context, id string) (e *ThemeEntity, err error) {
+//
+// projectID 非空时在工程作用域内查；为空沿用「不限工程」形态 —— 不设 scope 的读取
+// 在换非超级角色后 fail closed（0 行 → ErrRecordNotFound），方向是安全的；
+// 要让它可用必须由调用方补 projectID（DB-009 剩余清单）。
+func (m *Model) GetTheme(ctx context.Context, projectID, id string) (e *ThemeEntity, err error) {
 	e = &ThemeEntity{}
-	if err = m.ThemeDB(ctx).Where("id = ?", id).First(e).Error; err != nil {
+	if strings.TrimSpace(projectID) == "" {
+		if err = m.ThemeDB(ctx).Where("id = ?", id).First(e).Error; err != nil {
+			return nil, err
+		}
+		return e, nil
+	}
+	if err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.Model(&ThemeEntity{}).
+			Where("id = ? AND project_id = ?", id, projectID).First(e).Error
+	}); err != nil {
 		return nil, err
 	}
 	return e, nil
@@ -80,10 +103,18 @@ func (m *Model) GetActiveTheme(ctx context.Context, projectID string) (e *ThemeE
 }
 
 // UpdateTheme 更新主题设置与名称。
-func (m *Model) UpdateTheme(ctx context.Context, id, name string, settings json.RawMessage, updatedAt time.Time) (err error) {
-	return m.ThemeDB(ctx).Where("id = ?", id).Updates(map[string]any{
-		"name": name, "settings": settings, "update_time": updatedAt,
-	}).Error
+// projectID 非空时在工程作用域内写（越界写会被 WITH CHECK 直接拒绝，而不是静默改到别的工程）。
+func (m *Model) UpdateTheme(ctx context.Context, projectID, id, name string, settings json.RawMessage, updatedAt time.Time) (err error) {
+	if strings.TrimSpace(projectID) == "" {
+		return m.ThemeDB(ctx).Where("id = ?", id).Updates(map[string]any{
+			"name": name, "settings": settings, "update_time": updatedAt,
+		}).Error
+	}
+	return rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.Model(&ThemeEntity{}).Where("id = ? AND project_id = ?", id, projectID).Updates(map[string]any{
+			"name": name, "settings": settings, "update_time": updatedAt,
+		}).Error
+	})
 }
 
 // ActivateTheme 激活主题:同工程其余取消激活(事务保证单套激活)。
@@ -113,9 +144,18 @@ func (m *Model) ActivateTheme(ctx context.Context, projectID, themeID string, up
 
 // DeleteTheme 删除主题（原子守卫：仅当仍为非激活态时删除，规避 GetTheme 后并发激活的 TOCTOU）。
 // 返回受影响行数：rows=0 表示目标不存在或已变为激活态，由 service 判型。
-func (m *Model) DeleteTheme(ctx context.Context, id string) (rows int64, err error) {
-	res := m.ThemeDB(ctx).Where("id = ? AND is_active = false", id).Delete(&ThemeEntity{})
-	return res.RowsAffected, res.Error
+func (m *Model) DeleteTheme(ctx context.Context, projectID, id string) (rows int64, err error) {
+	if strings.TrimSpace(projectID) == "" {
+		res := m.ThemeDB(ctx).Where("id = ? AND is_active = false", id).Delete(&ThemeEntity{})
+		return res.RowsAffected, res.Error
+	}
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		res := tx.Model(&ThemeEntity{}).
+			Where("id = ? AND project_id = ? AND is_active = false", id, projectID).Delete(&ThemeEntity{})
+		rows = res.RowsAffected
+		return res.Error
+	})
+	return rows, err
 }
 
 // ExistsByName 判断工程下是否已存在同名主题（大小写不敏感）。

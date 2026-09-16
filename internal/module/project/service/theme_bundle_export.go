@@ -71,7 +71,7 @@ func (s *Service) ExportThemeBundle(ctx context.Context, req *projectdto.ThemeBu
 	default:
 		return nil, ErrInvalidParam
 	}
-	entity, gerr := s.model.GetTheme(ctx, req.ThemeID)
+	entity, gerr := s.findThemeForLocate(ctx, req.ThemeID)
 	if gerr != nil {
 		if errors.Is(gerr, gorm.ErrRecordNotFound) {
 			return nil, ErrThemeNotFound

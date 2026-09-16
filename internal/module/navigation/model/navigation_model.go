@@ -4,6 +4,7 @@ package navigationmodel
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -56,9 +57,23 @@ func (m *Model) Create(ctx context.Context, e *NavigationEntity) error {
 }
 
 // Get 按 ID 查询导航项。
-func (m *Model) Get(ctx context.Context, id string) (e *NavigationEntity, err error) {
+//
+// projectID 非空时在工程作用域内查（RLS 变量 + 显式 project_id 条件）；为空沿用
+// 「不限工程」的历史调用形态 —— 不设 scope 时换非超级角色后该路径 fail closed
+// （0 行 → ErrRecordNotFound），不会读到别的工程，方向是安全的；要让它可用
+// 必须由调用方补 projectID（DB-009 剩余清单）。
+func (m *Model) Get(ctx context.Context, projectID, id string) (e *NavigationEntity, err error) {
 	var row NavigationEntity
-	if err = m.db.WithContext(ctx).Where("id = ?", id).First(&row).Error; err != nil {
+	if strings.TrimSpace(projectID) == "" {
+		if err = m.db.WithContext(ctx).Where("id = ?", id).First(&row).Error; err != nil {
+			return nil, err
+		}
+		return &row, nil
+	}
+	if err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.Model(&NavigationEntity{}).
+			Where("id = ? AND project_id = ?", id, projectID).First(&row).Error
+	}); err != nil {
 		return nil, err
 	}
 	return &row, nil
@@ -92,21 +107,41 @@ func (m *Model) MaxSortOrder(ctx context.Context, projectID, kind string, parent
 }
 
 // Save 按 ID 部分更新（Where("id = ?").Updates(map)）。
-func (m *Model) Save(ctx context.Context, id string, updates map[string]any) error {
-	return m.DB(ctx).Where("id = ?", id).Updates(updates).Error
+// projectID 非空时在工程作用域内写（越界写会被 WITH CHECK 直接拒绝而不是静默改到别的工程）。
+func (m *Model) Save(ctx context.Context, projectID, id string, updates map[string]any) error {
+	if strings.TrimSpace(projectID) == "" {
+		return m.DB(ctx).Where("id = ?", id).Updates(updates).Error
+	}
+	return rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.Model(&NavigationEntity{}).
+			Where("id = ? AND project_id = ?", id, projectID).Updates(updates).Error
+	})
 }
 
 // Delete 按 ID 删除导航项。
-func (m *Model) Delete(ctx context.Context, id string) error {
-	return m.DB(ctx).Where("id = ?", id).Delete(&NavigationEntity{}).Error
+// projectID 非空时在工程作用域内删（越界删在换角色后会被策略拒绝，而不是删掉别的工程）。
+func (m *Model) Delete(ctx context.Context, projectID, id string) error {
+	if strings.TrimSpace(projectID) == "" {
+		return m.DB(ctx).Where("id = ?", id).Delete(&NavigationEntity{}).Error
+	}
+	return rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.Model(&NavigationEntity{}).
+			Where("id = ? AND project_id = ?", id, projectID).Delete(&NavigationEntity{}).Error
+	})
 }
 
 // DeleteMany 批量删除导航项（同一聚合内：删菜单项及其全部子孙）。
-func (m *Model) DeleteMany(ctx context.Context, ids []string) error {
+func (m *Model) DeleteMany(ctx context.Context, projectID string, ids []string) error {
 	if len(ids) == 0 {
 		return nil
 	}
-	return m.DB(ctx).Where("id IN ?", ids).Delete(&NavigationEntity{}).Error
+	if strings.TrimSpace(projectID) == "" {
+		return m.DB(ctx).Where("id IN ?", ids).Delete(&NavigationEntity{}).Error
+	}
+	return rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.Model(&NavigationEntity{}).
+			Where("project_id = ? AND id IN ?", projectID, ids).Delete(&NavigationEntity{}).Error
+	})
 }
 
 // ExistsPath 判断同工程同 kind 下 path 是否已被（其他）导航项占用。

@@ -29,6 +29,34 @@ var (
 	ErrInvalidThemeSettings = errors.New(projectenums.ErrInvalidThemeSettings)
 )
 
+// soleProjectID 取「可用于定位主题的工程作用域」：工程表恰好一个工程时返回它，
+// 否则返回空串（表示没有唯一工程可依）。
+//
+// 为什么是「唯一工程」而不是「遍历全部」：themes 带 FORCE 策略，作用域必须是一个
+// 具体 uuid；而 project service 的 theme 契约方法（GetTheme/UpdateTheme/DeleteTheme）
+// 签名里没有工程参数（后台页面直接依赖），所以这一层只能自己找作用域来源。
+// 生产单工程部署下这就是正解；多工程部署时这些入口需要显式工程（列为 DB-009 剩余项）。
+func (s *Service) soleProjectID(ctx context.Context) string {
+	projects, err := s.model.ListAll(ctx)
+	if err != nil || len(projects) != 1 {
+		return ""
+	}
+	return projects[0].ID
+}
+
+// findThemeForLocate 按 id 定位主题：有唯一工程时在工程作用域内查，
+// 没有唯一工程可依时回退到「不限工程」的历史形态。
+//
+// 回退不是偷懒：不设作用域时策略谓词为 NULL，换非超级角色后这条路径会**静默 0 行**
+// （fail closed）——方向是安全的（不会读到别的工程），只是功能会退化，
+// 因此它必须留在 DB-009 的剩余清单里，而不是被当成已覆盖。
+func (s *Service) findThemeForLocate(ctx context.Context, id string) (*projectmodel.ThemeEntity, error) {
+	if pid := s.soleProjectID(ctx); pid != "" {
+		return s.model.GetTheme(ctx, pid, id)
+	}
+	return s.model.GetTheme(ctx, "", id)
+}
+
 // ListThemes 列出工程全部主题。
 func (s *Service) ListThemes(ctx context.Context, projectID string) (res []projectdto.ThemeResp, err error) {
 	entities, err := s.model.ListThemes(ctx, projectID)
@@ -44,9 +72,30 @@ func (s *Service) ListThemes(ctx context.Context, projectID string) (res []proje
 
 // ListThemesByBlockID 列出页眉/页脚槽位绑定了指定全局块的全部主题。
 func (s *Service) ListThemesByBlockID(ctx context.Context, blockID string) (res []projectdto.ThemeResp, err error) {
-	entities, err := s.model.ListThemesByBlockID(ctx, blockID)
+	// 块变更的扇出只有块 id，没有工程；themes 带 FORCE 策略，不分工程设作用域
+	// 就会静默命中 0 行（表现为「改了页眉块但页面不被标记待重建」）。
+	// 逐工程查询后合并：工程数量级很小，而漏标记的代价是站点一直显示旧内容。
+	// 工程表为空（直接用空库的单测）时回退到「不限工程」形态，行为与改造前一致。
+	projects, err := s.model.ListAll(ctx)
 	if err != nil {
 		return nil, err
+	}
+	var entities []projectmodel.ThemeEntity
+	if len(projects) == 0 {
+		entities, err = s.model.ListThemesByBlockID(ctx, "", blockID)
+		if err != nil {
+			return nil, err
+		}
+	}
+	for _, p := range projects {
+		if ctx.Err() != nil {
+			break
+		}
+		hit, herr := s.model.ListThemesByBlockID(ctx, p.ID, blockID)
+		if herr != nil {
+			return nil, herr
+		}
+		entities = append(entities, hit...)
 	}
 	res = make([]projectdto.ThemeResp, 0, len(entities))
 	for i := range entities {
@@ -57,7 +106,7 @@ func (s *Service) ListThemesByBlockID(ctx context.Context, blockID string) (res 
 
 // GetTheme 按 ID 取单个主题。
 func (s *Service) GetTheme(ctx context.Context, id string) (res *projectdto.ThemeResp, err error) {
-	entity, err := s.model.GetTheme(ctx, id)
+	entity, err := s.findThemeForLocate(ctx, id)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, ErrThemeNotFound
 	}
@@ -165,7 +214,7 @@ func (s *Service) UpdateTheme(ctx context.Context, req *projectdto.ThemeUpdateRe
 	if req == nil || strings.TrimSpace(req.ID) == "" {
 		return nil, ErrThemeNotFound
 	}
-	entity, err := s.model.GetTheme(ctx, req.ID)
+	entity, err := s.findThemeForLocate(ctx, req.ID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrThemeNotFound
@@ -194,7 +243,7 @@ func (s *Service) UpdateTheme(ctx context.Context, req *projectdto.ThemeUpdateRe
 		}
 		settings = normalized
 	}
-	if err = s.model.UpdateTheme(ctx, entity.ID, name, settings, time.Now().UTC()); err != nil {
+	if err = s.model.UpdateTheme(ctx, entity.ProjectID, entity.ID, name, settings, time.Now().UTC()); err != nil {
 		return nil, err
 	}
 	entity.Name = name
@@ -207,7 +256,7 @@ func (s *Service) ActivateTheme(ctx context.Context, req *projectdto.ThemeActiva
 	if req == nil || strings.TrimSpace(req.ID) == "" {
 		return ErrThemeNotFound
 	}
-	entity, err := s.model.GetTheme(ctx, req.ID)
+	entity, err := s.findThemeForLocate(ctx, req.ID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return ErrThemeNotFound
@@ -230,7 +279,7 @@ func (s *Service) DeleteTheme(ctx context.Context, id string) (err error) {
 	if strings.TrimSpace(id) == "" {
 		return ErrThemeNotFound
 	}
-	entity, err := s.model.GetTheme(ctx, id)
+	entity, err := s.findThemeForLocate(ctx, id)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return ErrThemeNotFound
@@ -241,7 +290,7 @@ func (s *Service) DeleteTheme(ctx context.Context, id string) (err error) {
 		return ErrThemeIsActive
 	}
 	// 原子删除：仅当仍为非激活态时删除（WHERE is_active=false），规避 GetTheme 后并发激活的 TOCTOU。
-	rows, err := s.model.DeleteTheme(ctx, id)
+	rows, err := s.model.DeleteTheme(ctx, entity.ProjectID, id)
 	if err != nil {
 		return err
 	}

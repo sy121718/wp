@@ -129,7 +129,10 @@ func (s *Service) Update(ctx context.Context, req *navigationdto.UpdateReq) (res
 	if req == nil || strings.TrimSpace(req.ID) == "" {
 		return nil, errors.New(navigationenums.ErrInvalidParam)
 	}
-	e, err := s.m.Get(ctx, strings.TrimSpace(req.ID))
+	// 定位这一跳没有工程可用（请求只给 id）：拿到实体后**全程带工程作用域**，
+	// 写入与回读都受 RLS 约束（DB-009 第二批）。定位本身在换非超级角色后
+	// 会 fail closed（0 行 → ErrNotFound），列入剩余清单。
+	e, err := s.m.Get(ctx, "", strings.TrimSpace(req.ID))
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, errors.New(navigationenums.ErrNotFound)
 	}
@@ -199,10 +202,10 @@ func (s *Service) Update(ctx context.Context, req *navigationdto.UpdateReq) (res
 		}
 	}
 
-	if err = s.m.Save(ctx, e.ID, updates); err != nil {
+	if err = s.m.Save(ctx, e.ProjectID, e.ID, updates); err != nil {
 		return nil, err
 	}
-	updated, err := s.m.Get(ctx, e.ID)
+	updated, err := s.m.Get(ctx, e.ProjectID, e.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -214,7 +217,10 @@ func (s *Service) Get(ctx context.Context, req *navigationdto.GetReq) (res *navi
 	if req == nil || strings.TrimSpace(req.ID) == "" {
 		return nil, errors.New(navigationenums.ErrInvalidParam)
 	}
-	e, err := s.m.Get(ctx, strings.TrimSpace(req.ID))
+	// 导航项详情只有 id 可依（请求不带工程）：按「不限工程」形态定位。
+	// 换非超级角色后这条路径会 fail closed（0 行 → ErrNotFound），列入剩余清单 ——
+	// 修复它需要调用方带工程（后台导航页已持有选中工程，属 dashboard，本批不动）。
+	e, err := s.m.Get(ctx, "", strings.TrimSpace(req.ID))
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, errors.New(navigationenums.ErrNotFound)
 	}
@@ -250,7 +256,9 @@ func (s *Service) Delete(ctx context.Context, req *navigationdto.DeleteReq) (err
 		return errors.New(navigationenums.ErrInvalidParam)
 	}
 	id := strings.TrimSpace(req.ID)
-	e, err := s.m.Get(ctx, id)
+	// 定位这一跳没有工程可用（请求只给 id）；拿到实体后的磁盘动作全部带工程作用域：
+	// 列表与批量删除都在本工程内，删到别的工程的行在换角色后会被策略拒绝（DB-009 第二批）。
+	e, err := s.m.Get(ctx, "", id)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return errors.New(navigationenums.ErrNotFound)
 	}
@@ -261,7 +269,7 @@ func (s *Service) Delete(ctx context.Context, req *navigationdto.DeleteReq) (err
 	if err != nil {
 		return err
 	}
-	return s.m.DeleteMany(ctx, navDescendantIDs(rows, id))
+	return s.m.DeleteMany(ctx, e.ProjectID, navDescendantIDs(rows, id))
 }
 
 // navDescendantIDs 返回自身 + 全部子孙 ID（深度优先）。
@@ -431,7 +439,8 @@ func (s *Service) validateParent(ctx context.Context, projectID, kind, selfID st
 		return errors.New(navigationenums.ErrInvalidParent)
 	}
 	for depth := 0; depth < maxParentDepth; depth++ {
-		parent, err := s.m.Get(ctx, cur)
+		// 父链上溯带工程作用域：跨工程父引用本来就要拒绝，作用域让它同时受策略约束。
+		parent, err := s.m.Get(ctx, projectID, cur)
 		if err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return errors.New(navigationenums.ErrInvalidParent)
