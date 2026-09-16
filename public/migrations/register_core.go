@@ -33,11 +33,20 @@ func registerCoreSchemaAndAccess() {
 
 	// 业务权限 seed（权限点 + 菜单 + 超管全量策略）。
 	// 执行入口：internal/routers/routes.go 路由装配时调用 RunSeeds（幂等）。
+	// 判定必须是「030 要插的这批权限点是否已经存在」，而不是「这六个模块下有没有任何权限点」。
+	// 用后者会漏：后续迁移（077/079/151/183…）会先给同一批模块补点，RunSeeds 在**所有结构
+	// 迁移之后**才跑，于是全新库上这个宽条件已经为真，030 被整体跳过 —— 29 条基础权限点
+	// 从未插入。表现是全新部署时 page / project / block / media 的基础接口连超管都 403，
+	// 而渐进演进的老库因为 030 跑在那些迁移之前一直正常（2026-09-16 由 CI 的全新库抓到，
+	// check-permission-gaps.sh 报出 29 条缺口，本地老库全绿 —— 这正是它接进 CI 的价值）。
+	// 取每个模块的第一条作代表：030 是原子插入，代表齐全即整批在；万一判定偏严也只是
+	// 多执行一次，SQL 自带 NOT EXISTS 守卫，不会重复插入。
 	registerSeed(Seed{
-		Version:      "030-business-permissions",
-		TableName:    "sys_permission",
-		ConditionSQL: "SELECT COUNT(*) FROM sys_permission WHERE module IN ('page','project','block','media','artifact','publication')",
-		SQL:          mustSQL("030_business_permissions.sql"),
+		Version:   "030-business-permissions",
+		TableName: "sys_permission",
+		ConditionSQL: "SELECT COUNT(*) FROM sys_permission WHERE permission_code IN " +
+			"('page:list','project:list','block:list','media:list','artifact:detail','publication:receipts_pending')",
+		SQL: mustSQL("030_business_permissions.sql"),
 	})
 	registerSeed(Seed{
 		Version:      "031-business-permissions-superadmin",
