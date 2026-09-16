@@ -90,16 +90,39 @@ func TestSEOPageTemplateRequiresAuditPermissionForAction(t *testing.T) {
 	}
 }
 
+// readDashboardRouterSources 拼接包内全部路由注册源码（dashboard_router.go 与 router_*.go）。
+func readDashboardRouterSources(dir string) (string, error) {
+	files, err := filepath.Glob(filepath.Join(dir, "*.go"))
+	if err != nil {
+		return "", err
+	}
+	var sb strings.Builder
+	for _, f := range files {
+		base := filepath.Base(f)
+		if strings.HasSuffix(base, "_test.go") ||
+			(base != "dashboard_router.go" && !strings.HasPrefix(base, "router_")) {
+			continue
+		}
+		chunk, rerr := os.ReadFile(f)
+		if rerr != nil {
+			return "", rerr
+		}
+		sb.Write(chunk)
+		sb.WriteString("\n")
+	}
+	return sb.String(), nil
+}
+
 func TestSEORouteIsRegisteredOnAuthenticatedAdminGroup(t *testing.T) {
-	source, err := os.ReadFile("dashboard_router.go")
+	// 路由注册按域拆到 router_*.go 之后，这里拼接整个包的路由源码（断言不变）。
+	body, err := readDashboardRouterSources(".")
 	if err != nil {
 		t.Fatalf("读取 dashboard 路由失败：%v", err)
 	}
-	body := string(source)
 	if !strings.Contains(body, `adminPages.GET("/seo", seoPages.SEOPage)`) {
 		t.Fatal("SEO 页面必须注册在已认证的 adminPages 路由组")
 	}
-	if !strings.Contains(body, `NewSEOPageHandle(analytics, projects)`) {
+	if !strings.Contains(body, `NewSEOPageHandle(d.analytics, d.projects)`) {
 		t.Fatal("SEO 页面必须复用 analytics 与 project 契约")
 	}
 }

@@ -59,14 +59,14 @@ var dashboardRouteGapBaseline = map[string]bool{
 
 // TestDashboardRoutesHaveRenderTests 后台 GET 路由必须出现在测试里，缺口只减不增。
 func TestDashboardRoutesHaveRenderTests(t *testing.T) {
-	const routerFile = "../../../../internal/module/dashboard/inbound/http/dashboard_router.go"
+	const routerDir = "../../../../internal/module/dashboard/inbound/http"
 	const testRoot = "../../../.."
 
-	raw, err := os.ReadFile(routerFile)
+	raw, err := readRouterSources(routerDir)
 	if err != nil {
 		t.Fatalf("读取路由文件失败: %v", err)
 	}
-	routes := scanDashboardGetRoutes(string(raw))
+	routes := scanDashboardGetRoutes(raw)
 	if len(routes) == 0 {
 		t.Fatal("没有扫到任何后台 GET 路由，解析逻辑失效（测试会变成空转）")
 	}
@@ -95,6 +95,32 @@ func TestDashboardRoutesHaveRenderTests(t *testing.T) {
 			t.Errorf("基线里的 %s 已经有测试覆盖（或路由已删除），请从 dashboardRouteGapBaseline 删掉", route)
 		}
 	}
+}
+
+// readRouterSources 拼接 dashboard 包内全部路由注册源码。
+//
+// 审计 CQ-007 之后，路由注册按域拆到了 router_*.go（每个 setupXxxRoutes 一个文件），
+// 所以账本要读整个路由源码集合，而不是单个 dashboard_router.go —— 解析逻辑与断言不变。
+func readRouterSources(dir string) (string, error) {
+	files, err := filepath.Glob(filepath.Join(dir, "*.go"))
+	if err != nil {
+		return "", err
+	}
+	var sb strings.Builder
+	for _, f := range files {
+		base := filepath.Base(f)
+		if strings.HasSuffix(base, "_test.go") ||
+			(base != "dashboard_router.go" && !strings.HasPrefix(base, "router_")) {
+			continue
+		}
+		chunk, rerr := os.ReadFile(f)
+		if rerr != nil {
+			return "", rerr
+		}
+		sb.Write(chunk)
+		sb.WriteString("\n")
+	}
+	return sb.String(), nil
 }
 
 // scanDashboardGetRoutes 从路由注册源码里取出后台 GET 路由的完整路径。

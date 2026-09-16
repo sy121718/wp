@@ -6,7 +6,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	dashboardenums "go_wp/internal/module/dashboard/enums"
 	orderenums "go_wp/internal/module/order/enums"
 
 	"go_wp/internal/middleware/builtin"
@@ -56,7 +55,7 @@ func orderFacingError(c *gin.Context, err error) string {
 	if msg := orderFacingText(err.Error()); msg != "" {
 		return msg
 	}
-	return orderInternalText(c)
+	return pageInternalText(c)
 }
 
 // orderFacingText 白名单校验：命中返回原文，未命中返回空串。
@@ -71,22 +70,4 @@ func orderFacingText(raw string) string {
 		}
 	}
 	return ""
-}
-
-// orderQueryText 查询参数回显（?err= / ?ok=）：同样过白名单，
-// 未命中时用 fallback（错误提示落统一文案，成功提示落空串）——
-// 免得任何人手拼一个 URL 就能往页面上塞任意「提示」。
-func orderQueryText(c *gin.Context, raw, fallback string) string {
-	if strings.TrimSpace(raw) == "" {
-		return ""
-	}
-	if msg := orderFacingText(raw); msg != "" {
-		return msg
-	}
-	return fallback
-}
-
-// orderInternalText 统一内部错误文案（走当前语言的译文，缺词条回退中文原文）。
-func orderInternalText(c *gin.Context) string {
-	return translateFor(c)(dashboardenums.MsgInternalError, "系统内部错误，请稍后重试")
 }

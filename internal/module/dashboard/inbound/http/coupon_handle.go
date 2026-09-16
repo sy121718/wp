@@ -183,8 +183,8 @@ func (h *couponPageHandle) CouponsPage(c *gin.Context) {
 
 	// 回显文案：?err= / ?ok= 都过白名单，查不到的一律收口
 	//（查询参数是用户可编辑的，不能拿它当「业务提示」直接显示）。
-	pageErr := couponQueryText(c, c.Query("err"), orderInternalText(c))
-	pageOk := couponQueryText(c, c.Query("ok"), "")
+	pageErr := facingQueryText(c.Query("err"), pageInternalText(c), couponFacingText)
+	pageOk := facingQueryText(c.Query("ok"), "", couponFacingText)
 
 	rows := []gin.H{}
 	redemptions := []gin.H{}

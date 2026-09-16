@@ -107,7 +107,7 @@ func couponFacingError(c *gin.Context, err error) string {
 	if msg := couponFacingText(err.Error()); msg != "" {
 		return msg
 	}
-	return orderInternalText(c)
+	return pageInternalText(c)
 }
 
 // couponFacingText 白名单校验：命中返回原文，未命中返回空串。
@@ -125,17 +125,4 @@ func couponFacingText(raw string) string {
 		}
 	}
 	return ""
-}
-
-// couponQueryText 查询参数回显（?err= / ?ok=）：同样过白名单，
-// 未命中时用 fallback（错误提示落统一文案，成功提示落空串）——
-// 免得任何人手拼一个 URL 就能往页面上塞任意「提示」。
-func couponQueryText(c *gin.Context, raw, fallback string) string {
-	if strings.TrimSpace(raw) == "" {
-		return ""
-	}
-	if msg := couponFacingText(raw); msg != "" {
-		return msg
-	}
-	return fallback
 }

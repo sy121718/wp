@@ -165,8 +165,8 @@ func (h *orderPageHandle) OrdersPage(c *gin.Context) {
 
 	// 回显文案：?err= / ?ok= 都过订单模块的白名单，查不到的一律收口
 	// （查询参数是用户可编辑的，不能拿它当「业务提示」直接显示）。
-	pageErr := orderQueryText(c, c.Query("err"), orderInternalText(c))
-	pageOk := orderQueryText(c, c.Query("ok"), "")
+	pageErr := facingQueryText(c.Query("err"), pageInternalText(c), orderFacingText)
+	pageOk := facingQueryText(c.Query("ok"), "", orderFacingText)
 
 	rows := []gin.H{}
 	counters := orderStatusCounters(nil, filter, selected)

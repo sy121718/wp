@@ -164,8 +164,8 @@ func (h *customerPageHandle) CustomersPage(c *gin.Context) {
 		RegisteredTo:   strings.TrimSpace(c.Query("registeredTo")),
 	}
 
-	pageErr := customerQueryText(c, c.Query("err"), customerInternalText(c))
-	pageOk := customerQueryText(c, c.Query("ok"), "")
+	pageErr := facingQueryText(c.Query("err"), pageInternalText(c), customerFacingText)
+	pageOk := facingQueryText(c.Query("ok"), "", customerFacingText)
 
 	var list *userdto.CustomerListResp
 	switch {
@@ -207,8 +207,8 @@ func (h *customerPageHandle) CustomerDetailPage(c *gin.Context) {
 		customerRedirect(c, "", customerInvalidIDText)
 		return
 	}
-	pageErr := customerQueryText(c, c.Query("err"), customerInternalText(c))
-	pageOk := customerQueryText(c, c.Query("ok"), "")
+	pageErr := facingQueryText(c.Query("err"), pageInternalText(c), customerFacingText)
+	pageOk := facingQueryText(c.Query("ok"), "", customerFacingText)
 
 	if h.users == nil {
 		c.HTML(http.StatusOK, "admin/customer_detail.html", withCSRF(c, customerDetailPageData(
@@ -236,7 +236,7 @@ func (h *customerPageHandle) CustomerDetailPage(c *gin.Context) {
 	if h.projects != nil {
 		list, perr := h.projects.List(ctx)
 		if perr != nil {
-			projectsErr = customerInternalText(c)
+			projectsErr = pageInternalText(c)
 		} else {
 			projects = list
 		}

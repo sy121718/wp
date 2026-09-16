@@ -10,6 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	admincontract "go_wp/internal/module/admin/contract"
+	dashboardenums "go_wp/internal/module/dashboard/enums"
 
 	"go_wp/internal/middleware/builtin"
 )
@@ -207,4 +208,23 @@ func pageParams(c *gin.Context) (page, limit int) {
 		limit = 100
 	}
 	return page, limit
+}
+
+// pageInternalText 统一内部错误文案（走当前语言的译文，缺词条回退中文原文）。
+// 订单 / 客户 / 退货 / 优惠码四域此前各存一份同体实现，现统一到这里。
+func pageInternalText(c *gin.Context) string {
+	return translateFor(c)(dashboardenums.MsgInternalError, "系统内部错误，请稍后重试")
+}
+
+// facingQueryText 是列表页 ?err= / ?ok= 回显参数的共用骨架：raw 先过本域白名单 allow，
+// 未命中时用 fallback（错误提示落统一文案、成功提示落空串）——
+// 免得任何人手拼一个 URL 就能往页面上塞任意「提示」。
+func facingQueryText(raw, fallback string, allow func(string) string) string {
+	if strings.TrimSpace(raw) == "" {
+		return ""
+	}
+	if msg := allow(raw); msg != "" {
+		return msg
+	}
+	return fallback
 }

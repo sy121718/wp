@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	dashboardenums "go_wp/internal/module/dashboard/enums"
 	userdto "go_wp/internal/module/user/dto"
 	userenums "go_wp/internal/module/user/enums"
 	"go_wp/pkg/sitetz"
@@ -62,7 +61,7 @@ func customerFacingError(c *gin.Context, err error) string {
 	if msg := customerFacingText(err.Error()); msg != "" {
 		return msg
 	}
-	return customerInternalText(c)
+	return pageInternalText(c)
 }
 
 // customerFacingText 白名单校验：命中返回原文，未命中返回空串。
@@ -80,24 +79,6 @@ func customerFacingText(raw string) string {
 		return msg
 	}
 	return ""
-}
-
-// customerQueryText 查询参数回显（?err= / ?ok=）：同样过白名单，
-// 未命中时用 fallback（错误提示落统一文案，成功提示落空串）——
-// 免得任何人手拼一个 URL 就能往页面上塞任意「提示」。
-func customerQueryText(c *gin.Context, raw, fallback string) string {
-	if strings.TrimSpace(raw) == "" {
-		return ""
-	}
-	if msg := customerFacingText(raw); msg != "" {
-		return msg
-	}
-	return fallback
-}
-
-// customerInternalText 统一内部错误文案（走当前语言的译文，缺词条回退中文原文）。
-func customerInternalText(c *gin.Context) string {
-	return translateFor(c)(dashboardenums.MsgInternalError, "系统内部错误，请稍后重试")
 }
 
 // customerQueryID 解析 id / customerId（非法即 0）。

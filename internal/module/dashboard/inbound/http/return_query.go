@@ -22,7 +22,7 @@ func returnFacingError(c *gin.Context, err error) string {
 	if msg := returnFacingText(err.Error()); msg != "" {
 		return msg
 	}
-	return orderInternalText(c)
+	return pageInternalText(c)
 }
 
 // returnFacingText 白名单校验：命中返回原文，未命中返回空串。
