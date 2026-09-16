@@ -36,6 +36,10 @@ type CollectionSourceProvider interface {
 type CollectionRegistry interface {
 	CollectionResolver
 	CollectionSchemaProvider
+	// ResolveCollectionPage 按页取数（审计 PERF-019）。注册表**无条件**实现它：
+	// 注册的解析器支持分页就转发，不支持就退化成「取一批再截断」并返回 Total = -1。
+	// 因此调用方不需要对注册表本身做能力探测 —— 可选性在 provider 那一层。
+	ResolveCollectionPage(ctx context.Context, source string, q CollectionQuery) (CollectionPage, error)
 	// Register 注册一个集合源提供方；nil / 无集合源 / 源标识重复返回错误。
 	Register(p CollectionSourceProvider) error
 	// Sources 已注册的集合源标识（字典序，确定性）。
@@ -94,6 +98,36 @@ func (r *collectionRegistry) ResolveCollection(ctx context.Context, source strin
 		return nil, err
 	}
 	return p.ResolveCollection(ctx, source, filter)
+}
+
+// ResolveCollectionPage 实现可选能力 CollectionPager：按页取数（审计 PERF-019）。
+//
+// 注册的解析器没实现分页时**不报错**，而是退化成「取一批再自行截断」，并返回
+// Total = -1 告诉调用方「拿不到总量」—— 调用方据此退到游标式提示。
+// 这里的取舍是：能力缺失只该让翻页退化，不该让整块列表渲染不出来。
+func (r *collectionRegistry) ResolveCollectionPage(ctx context.Context, source string, q CollectionQuery) (CollectionPage, error) {
+	p, err := r.providerFor(ctx, source)
+	if err != nil {
+		return CollectionPage{}, err
+	}
+	if pager, ok := p.(CollectionPager); ok {
+		return pager.ResolveCollectionPage(ctx, source, q)
+	}
+	items, rerr := p.ResolveCollection(ctx, source, q.Filter)
+	if rerr != nil {
+		return CollectionPage{}, rerr
+	}
+	if q.Offset > 0 {
+		if q.Offset >= len(items) {
+			items = nil
+		} else {
+			items = items[q.Offset:]
+		}
+	}
+	if q.Limit > 0 && len(items) > q.Limit {
+		items = items[:q.Limit]
+	}
+	return CollectionPage{Items: items, Total: -1}, nil
 }
 
 // CollectionSchemas 实现 core.CollectionSchemaProvider：聚合全部集合源元数据。

@@ -57,6 +57,39 @@ type CollectionSchemaProvider interface {
 	CollectionSchemas(ctx context.Context) ([]CollectionSchema, error)
 }
 
+// CollectionQuery 集合源的分页取数参数（审计 PERF-019）。
+type CollectionQuery struct {
+	// Filter 白名单过滤（键值等值匹配），与 ResolveCollection 的 filter 同义。
+	Filter map[string]string
+	// Offset 起始偏移（0 起）。构建期固定 0（只取第一屏），片段期按页码算。
+	Offset int
+	// Limit 本次最多取多少条；<= 0 表示由实现方取默认上限。
+	Limit int
+}
+
+// CollectionPage 一页集合项与该过滤条件下的总量。
+type CollectionPage struct {
+	Items []map[string]any
+	// Total 满足过滤条件的总条数，用于算总页数。
+	// 实现方无法便宜得出时返回 -1 —— 调用方据此退化成「还有更多」的游标式提示，
+	// 而不是把 -1 当 0 页（那会让列表看起来是空的）。
+	Total int
+}
+
+// CollectionPager 可选能力：集合源支持**按页取数**（SQL 侧 offset/limit + 总量）。
+//
+// 为什么是可选能力接口，而不是给 CollectionResolver 加参数：
+// 构建期只取第一屏（offset 恒为 0），根本不需要分页；给必选签名加参数会让全部实现
+// 与所有测试 fake 都付代价，收益为零。片段期是运行时渲染（每次请求只取当页），
+// 用能力探测即可 —— 与本仓既有的「按消费方收窄 / 能力探测」同一手法
+// （见 CollectionSchemaProvider 的注释）。
+//
+// 背景（审计 PERF-019）：组件的分页原先只能在这条能力缺失时退化 —— 集合源一次最多
+// 取 100 条，翻页是在这 100 条里切内存，超过上限的数据永远翻不到。
+type CollectionPager interface {
+	ResolveCollectionPage(ctx context.Context, source string, q CollectionQuery) (CollectionPage, error)
+}
+
 // CollectionFilter 集合过滤维度白名单。
 type CollectionFilter struct {
 	Key  string   `json:"key"`

@@ -26,6 +26,13 @@ type CollectionSchema = source.CollectionSchema
 // 此处保留别名：既有引用（组件、构建管线、工作台）不必跟着改。
 type CollectionSchemaProvider = source.CollectionSchemaProvider
 
+// CollectionQuery / CollectionPage / CollectionPager — 同上口径（审计 PERF-019）：
+// 形状定义在 internal/builder/source，此处保留别名。分页是**可选能力**，
+// 调用方（片段渲染）按能力探测使用，没有它的集合源照旧走「取一批再截断」的退化路径。
+type CollectionQuery = source.CollectionQuery
+type CollectionPage = source.CollectionPage
+type CollectionPager = source.CollectionPager
+
 // ItemFieldPrefix 集合项字段前缀：绑定写成 item.title 表示「当前集合项的字段」，
 // 由集合组件在展开每张卡时注入作用域（见 ItemScope）。
 const ItemFieldPrefix = "item."
