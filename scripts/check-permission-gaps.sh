@@ -39,11 +39,15 @@ yaml_db() {
     ' config.yaml
 }
 
-DB_HOST="${DB_HOST:-$(yaml_db host)}"
-DB_PORT="${DB_PORT:-$(yaml_db port)}"
-DB_USER="${DB_USER:-$(yaml_db user)}"
-DB_PASS="${DB_PASSWORD:-$(yaml_db password)}"
-DB_NAME="${DB_NAME:-$(yaml_db dbname)}"
+# 优先级：显式 DB_* 覆盖 → 应用的环境变量（config.envBindableKeys）→ config.yaml。
+# 中间那一层是必须的：CI 用 GOWP_DATABASE_PASSWORD 给**应用**注入口令，而 config.yaml 在
+# CI 里是从 config.yaml.example 复制来的 —— 只读 yaml 会拿到 example 的默认口令，与实际
+# 服务容器的 POSTGRES_PASSWORD 不符，表现为 psql 认证失败（2026-09-16 踩过这次）。
+DB_HOST="${DB_HOST:-${GOWP_DATABASE_HOST:-$(yaml_db host)}}"
+DB_PORT="${DB_PORT:-${GOWP_DATABASE_PORT:-$(yaml_db port)}}"
+DB_USER="${DB_USER:-${GOWP_DATABASE_USER:-$(yaml_db user)}}"
+DB_PASS="${DB_PASSWORD:-${GOWP_DATABASE_PASSWORD:-$(yaml_db password)}}"
+DB_NAME="${DB_NAME:-${GOWP_DATABASE_DBNAME:-$(yaml_db dbname)}}"
 
 tmp_routes=$(mktemp); tmp_perms=$(mktemp); tmp_exempt=$(mktemp); tmp_gap=$(mktemp)
 trap 'rm -f "$tmp_routes" "$tmp_perms" "$tmp_exempt" "$tmp_gap"' EXIT
