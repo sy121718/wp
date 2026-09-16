@@ -27,34 +27,45 @@ var (
 	ErrThemeDuplicateName   = errors.New(projectenums.ErrThemeDuplicateName)
 	ErrThemeProjectIDEmpty  = errors.New(projectenums.ErrThemeProjectIDEmpty)
 	ErrInvalidThemeSettings = errors.New(projectenums.ErrInvalidThemeSettings)
+	// ErrThemeProjectRequired 主题入口无法确定工程作用域（0 个工程；DB-009 第三批）。
+	ErrThemeProjectRequired = errors.New(projectenums.ErrProjectRequired)
 )
 
-// soleProjectID 取「可用于定位主题的工程作用域」：工程表恰好一个工程时返回它，
-// 否则返回空串（表示没有唯一工程可依）。
+// findThemeForLocate 按 id 定位主题：逐工程独立作用域探测（DB-009 第三批）。
 //
-// 为什么是「唯一工程」而不是「遍历全部」：themes 带 FORCE 策略，作用域必须是一个
-// 具体 uuid；而 project service 的 theme 契约方法（GetTheme/UpdateTheme/DeleteTheme）
-// 签名里没有工程参数（后台页面直接依赖），所以这一层只能自己找作用域来源。
-// 生产单工程部署下这就是正解；多工程部署时这些入口需要显式工程（列为 DB-009 剩余项）。
-func (s *Service) soleProjectID(ctx context.Context) string {
-	projects, err := s.model.ListAll(ctx)
-	if err != nil || len(projects) != 1 {
-		return ""
-	}
-	return projects[0].ID
-}
-
-// findThemeForLocate 按 id 定位主题：有唯一工程时在工程作用域内查，
-// 没有唯一工程可依时回退到「不限工程」的历史形态。
+// 为什么不能再靠「唯一工程」：themes 带 FORCE 策略，作用域必须是一个具体 uuid，而主题
+// 契约方法（GetTheme/UpdateTheme/ActivateTheme/DeleteTheme）签名里没有工程参数（后台页面
+// 直接依赖该契约）。原来的 soleProjectID 只在「工程表恰好一个工程」时猜得出作用域，
+// 多工程部署下会退到「不限工程」形态 —— 那是换非超级角色后的静默「主题不存在」，
+// 也是本批要消灭的默认路径。
 //
-// 回退不是偷懒：不设作用域时策略谓词为 NULL，换非超级角色后这条路径会**静默 0 行**
-// （fail closed）——方向是安全的（不会读到别的工程），只是功能会退化，
-// 因此它必须留在 DB-009 的剩余清单里，而不是被当成已覆盖。
-func (s *Service) findThemeForLocate(ctx context.Context, id string) (*projectmodel.ThemeEntity, error) {
-	if pid := s.soleProjectID(ctx); pid != "" {
+// 现在改成逐工程探测：themes.id 是主键（跨工程不会重复命中），每个工程各自一次独立
+// 作用域的事务，命中即返回。多工程部署下这些入口不再退化，也不存在「不限工程」分支。
+// 调用方若本来就持有工程 id（从 URL / 会话 / 页面设置里带出来），应当显式传入
+// explicitProjectID —— 那就只需一次查询，属性校验也不会跨工程碰运气。
+// 工程表为空时返回 gorm.ErrRecordNotFound（没有工程就没有主题），由调用方映射成
+// 「主题不存在」；连工程表都读不出来时上抛基础设施错误，不吞成业务错误。
+func (s *Service) findThemeForLocate(ctx context.Context, id, explicitProjectID string) (*projectmodel.ThemeEntity, error) {
+	if pid := strings.TrimSpace(explicitProjectID); pid != "" {
 		return s.model.GetTheme(ctx, pid, id)
 	}
-	return s.model.GetTheme(ctx, "", id)
+	projects, err := s.model.ListAll(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, p := range projects {
+		if ctx.Err() != nil {
+			break
+		}
+		e, gerr := s.model.GetTheme(ctx, p.ID, id)
+		if gerr == nil {
+			return e, nil
+		}
+		if !errors.Is(gerr, gorm.ErrRecordNotFound) {
+			return nil, gerr
+		}
+	}
+	return nil, gorm.ErrRecordNotFound
 }
 
 // ListThemes 列出工程全部主题。
@@ -75,18 +86,17 @@ func (s *Service) ListThemesByBlockID(ctx context.Context, blockID string) (res 
 	// 块变更的扇出只有块 id，没有工程；themes 带 FORCE 策略，不分工程设作用域
 	// 就会静默命中 0 行（表现为「改了页眉块但页面不被标记待重建」）。
 	// 逐工程查询后合并：工程数量级很小，而漏标记的代价是站点一直显示旧内容。
-	// 工程表为空（直接用空库的单测）时回退到「不限工程」形态，行为与改造前一致。
+	//
+	// 工程表为空时不再回退「不限工程」（DB-009 第三批）：那个分支在换非超级角色后
+	// 会命中 0 行，把「读不出工程表」伪装成「没有主题受影响」。宁可显式失败。
 	projects, err := s.model.ListAll(ctx)
 	if err != nil {
 		return nil, err
 	}
-	var entities []projectmodel.ThemeEntity
 	if len(projects) == 0 {
-		entities, err = s.model.ListThemesByBlockID(ctx, "", blockID)
-		if err != nil {
-			return nil, err
-		}
+		return nil, ErrThemeProjectRequired
 	}
+	var entities []projectmodel.ThemeEntity
 	for _, p := range projects {
 		if ctx.Err() != nil {
 			break
@@ -106,7 +116,7 @@ func (s *Service) ListThemesByBlockID(ctx context.Context, blockID string) (res 
 
 // GetTheme 按 ID 取单个主题。
 func (s *Service) GetTheme(ctx context.Context, id string) (res *projectdto.ThemeResp, err error) {
-	entity, err := s.findThemeForLocate(ctx, id)
+	entity, err := s.findThemeForLocate(ctx, id, "")
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, ErrThemeNotFound
 	}
@@ -214,7 +224,8 @@ func (s *Service) UpdateTheme(ctx context.Context, req *projectdto.ThemeUpdateRe
 	if req == nil || strings.TrimSpace(req.ID) == "" {
 		return nil, ErrThemeNotFound
 	}
-	entity, err := s.findThemeForLocate(ctx, req.ID)
+	// 显式工程（请求带来时）优先；没有则逐工程探测定位（见 findThemeForLocate）。
+	entity, err := s.findThemeForLocate(ctx, req.ID, "")
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrThemeNotFound
@@ -256,7 +267,8 @@ func (s *Service) ActivateTheme(ctx context.Context, req *projectdto.ThemeActiva
 	if req == nil || strings.TrimSpace(req.ID) == "" {
 		return ErrThemeNotFound
 	}
-	entity, err := s.findThemeForLocate(ctx, req.ID)
+	// 显式工程（请求带来时）优先；没有则逐工程探测定位（见 findThemeForLocate）。
+	entity, err := s.findThemeForLocate(ctx, req.ID, "")
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return ErrThemeNotFound
@@ -279,7 +291,7 @@ func (s *Service) DeleteTheme(ctx context.Context, id string) (err error) {
 	if strings.TrimSpace(id) == "" {
 		return ErrThemeNotFound
 	}
-	entity, err := s.findThemeForLocate(ctx, id)
+	entity, err := s.findThemeForLocate(ctx, id, "")
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return ErrThemeNotFound

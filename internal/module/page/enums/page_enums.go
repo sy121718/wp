@@ -5,9 +5,16 @@ import "strings"
 
 const (
 	// ErrInvalidParam 请求本身不合法（nil 请求、空/空白 ID 等），与资源存在性无关。
-	ErrInvalidParam         = "ErrInvalidParam"         // 请求参数无效
-	ErrPageNotFound         = "ErrPageNotFound"         // 页面不存在
-	ErrProjectNotFound      = "ErrProjectNotFound"      // 站点工程不存在
+	ErrInvalidParam    = "ErrInvalidParam"    // 请求参数无效
+	ErrPageNotFound    = "ErrPageNotFound"    // 页面不存在
+	ErrProjectNotFound = "ErrProjectNotFound" // 站点工程不存在
+	// ErrProjectRequired 未指定工程且无法解析出唯一工程（0 个或多个工程）。
+	//
+	// DB-009 第三批：page 有一批入口的签名里没有工程参数（跨工程扇出类：整站标记待重建、
+	// 按主题/块标记、全站草稿扫描）。它们的正确做法是**逐工程独立作用域**执行 —— 枚举
+	// 工程表逐个设 app.project_id，绝不退回「不限工程」形态（换非超级角色后那是静默 0 行，
+	// 表现为「改了块但页面不被标记」且没有任何日志）。工程表读不到或为空时在这里显式失败。
+	ErrProjectRequired      = "ErrProjectRequired"      // 需要显式工程作用域
 	ErrInvalidKind          = "ErrInvalidKind"          // 页面类型与内容目标不匹配
 	ErrInvalidDocument      = "ErrInvalidDocument"      // 页面草稿文档不合法
 	ErrInvalidPath          = "ErrInvalidPath"          // 页面访问路径不合法

@@ -21,9 +21,13 @@ import (
 // 待 pipeline 后续 sentinel 化后统一 %w 收敛。
 var (
 	// ErrInvalidParam 请求本身不合法（nil 请求、空/空白 ID 等），与资源存在性无关。
-	ErrInvalidParam         = errors.New(pageenums.ErrInvalidParam)
-	ErrPageNotFound         = errors.New(pageenums.ErrPageNotFound)
-	ErrProjectNotFound      = errors.New(pageenums.ErrProjectNotFound)
+	ErrInvalidParam    = errors.New(pageenums.ErrInvalidParam)
+	ErrPageNotFound    = errors.New(pageenums.ErrPageNotFound)
+	ErrProjectNotFound = errors.New(pageenums.ErrProjectNotFound)
+	// ErrProjectRequired 跨工程扇出入口无法确定工程作用域（DB-009 第三批）。
+	// 只用于「工程表读不到 / 一个工程都没有」这类真实异常：正常多工程部署下这些入口
+	// 会逐工程设作用域执行，不会走到这里。
+	ErrProjectRequired      = errors.New(pageenums.ErrProjectRequired)
 	ErrInvalidKind          = errors.New(pageenums.ErrInvalidKind)
 	ErrInvalidDocument      = errors.New(pageenums.ErrInvalidDocument)
 	ErrInvalidPath          = errors.New(pageenums.ErrInvalidPath)

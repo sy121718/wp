@@ -41,20 +41,32 @@ func (s *Service) ActiveThemeID(ctx context.Context, projectID string) string {
 //
 // 逐页合成而不是一条 SQL 批量写：快照 = 主题 + 页面级覆盖，每页覆盖不同；
 // 且页面没覆盖过的项必须跟着新主题走、覆盖过的项保持不变。
+//
+// 逐工程扇出（DB-009 第三批）：入口只带 themeID，没有工程；pages 带 FORCE 策略，
+// 不逐工程设作用域的话整段刷新在换非超级角色后变成空转（保存成功但快照一个都没写）。
 func (s *Service) RefreshThemeForTheme(ctx context.Context, themeID string, theme json.RawMessage) error {
-	rows, err := s.model.ListThemePageSnapshots(ctx, themeID)
+	projectIDs, err := s.fanoutProjectIDs(ctx)
 	if err != nil {
 		return err
 	}
-	for _, row := range rows {
-		snapshot := json.RawMessage(`{}`)
-		if merged := builder.MergeThemeRawJSON(theme, row.Override); len(merged) > 0 {
-			snapshot = merged
+	for _, projectID := range projectIDs {
+		if ctx.Err() != nil {
+			break
 		}
-		// themeId 只读标识随快照落库：产物 :root 的 --sky-theme-id 与当前主题一致。
-		snapshot = builder.InjectThemeID(snapshot, themeID)
-		if err := s.model.UpdateThemeSnapshot(ctx, row.ID, snapshot); err != nil {
+		rows, err := s.model.ListThemePageSnapshots(ctx, projectID, themeID)
+		if err != nil {
 			return err
+		}
+		for _, row := range rows {
+			snapshot := json.RawMessage(`{}`)
+			if merged := builder.MergeThemeRawJSON(theme, row.Override); len(merged) > 0 {
+				snapshot = merged
+			}
+			// themeId 只读标识随快照落库：产物 :root 的 --sky-theme-id 与当前主题一致。
+			snapshot = builder.InjectThemeID(snapshot, themeID)
+			if err := s.model.UpdateThemeSnapshot(ctx, projectID, row.ID, snapshot); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -62,6 +74,9 @@ func (s *Service) RefreshThemeForTheme(ctx context.Context, themeID string, them
 
 // RefreshStructureForTheme 把主题的页眉/页脚块绑定合入挂在该主题下全部页面。
 // 页面已显式绑定的 header/footer 不被覆盖（与 mergeActiveTheme 同口径）。
+//
+// 逐工程扇出（DB-009 第三批）：同 RefreshThemeForTheme —— 入口没有工程，而 pages
+// 带 FORCE 策略，漏作用域时这条刷新在换非超级角色后静默空转。
 func (s *Service) RefreshStructureForTheme(ctx context.Context, themeID string, structure json.RawMessage) error {
 	var themeBindings builder.StructureBindings
 	if len(structure) > 0 {
@@ -69,44 +84,102 @@ func (s *Service) RefreshStructureForTheme(ctx context.Context, themeID string, 
 			return err
 		}
 	}
-	rows, err := s.model.ListThemePageStructureSnapshots(ctx, themeID)
+	projectIDs, err := s.fanoutProjectIDs(ctx)
 	if err != nil {
 		return err
 	}
-	for _, row := range rows {
-		pageBindings := builder.StructureBindings{}
-		if len(row.Structure) > 0 {
-			if err := json.Unmarshal(row.Structure, &pageBindings); err != nil {
-				return err
-			}
+	for _, projectID := range projectIDs {
+		if ctx.Err() != nil {
+			break
 		}
-		merged := pipeline.MergeStructureBindings(pageBindings, themeBindings)
-		structureJSON, err := json.Marshal(merged)
+		rows, err := s.model.ListThemePageStructureSnapshots(ctx, projectID, themeID)
 		if err != nil {
 			return err
 		}
-		if err := s.model.UpdateStructureSnapshot(ctx, row.ID, structureJSON); err != nil {
-			return err
+		for _, row := range rows {
+			pageBindings := builder.StructureBindings{}
+			if len(row.Structure) > 0 {
+				if err := json.Unmarshal(row.Structure, &pageBindings); err != nil {
+					return err
+				}
+			}
+			merged := pipeline.MergeStructureBindings(pageBindings, themeBindings)
+			structureJSON, err := json.Marshal(merged)
+			if err != nil {
+				return err
+			}
+			if err := s.model.UpdateStructureSnapshot(ctx, projectID, row.ID, structureJSON); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
 }
 
 // MarkStaleForTheme 把挂在该主题下全部页面标记为待重建（页眉/页脚块内容变更后调用）。
+//
+// 逐工程扇出（DB-009 第三批）：入口只有 themeID，说不出工程；pages 带 FORCE 策略，
+// 不逐工程设作用域时这条 UPDATE 在换非超级角色后静默匹配 0 行 —— 现象是「换了主题
+// 或改了页眉块，页面却一直不被标记待重建」，站点上继续跑旧产物。
 func (s *Service) MarkStaleForTheme(ctx context.Context, themeID string) error {
-	return s.model.MarkStaleForTheme(ctx, themeID)
+	projectIDs, err := s.fanoutProjectIDs(ctx)
+	if err != nil {
+		return err
+	}
+	for _, projectID := range projectIDs {
+		if ctx.Err() != nil {
+			break
+		}
+		if err := s.model.MarkStaleForTheme(ctx, projectID, themeID); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // MarkStaleForBlock 把文档中经 core.globalref 引用或 settings.structure 页眉/页脚
 // 自选绑定该块的页面标记为待重建（块内容变更后调用，与 MarkStaleForTheme 互补）。
+//
+// 逐工程扇出（DB-009 第三批）：块 id 是跨工程语义（调用方只给 id），而作用域只能是
+// 某一个具体工程 —— 逐个工程各设一次，命中集合是各工程之和，不做「不限工程」的默认。
 func (s *Service) MarkStaleForBlock(ctx context.Context, blockID string) error {
-	return s.model.MarkStaleForBlock(ctx, blockID)
+	projectIDs, err := s.fanoutProjectIDs(ctx)
+	if err != nil {
+		return err
+	}
+	for _, projectID := range projectIDs {
+		if ctx.Err() != nil {
+			break
+		}
+		if err := s.model.MarkStaleForBlock(ctx, projectID, blockID); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // CountBlockReference 统计引用该块的未删除页面数（globalref / structure 自选绑定），
 // 供 block 模块删除或切换 global→template 前的引用拦截（docs/02-D §9）。
+//
+// 逐工程扇出后求和（DB-009 第三批）：这是 block 删除前那道拦截的判据，漏作用域时
+// 它会静默返回 0 —— 于是「有页面在引用」的块被安静删掉，线上页面开始缺块。
 func (s *Service) CountBlockReference(ctx context.Context, blockID string) (int64, error) {
-	return s.model.CountBlockReference(ctx, blockID)
+	projectIDs, err := s.fanoutProjectIDs(ctx)
+	if err != nil {
+		return 0, err
+	}
+	var total int64
+	for _, projectID := range projectIDs {
+		if ctx.Err() != nil {
+			break
+		}
+		n, cerr := s.model.CountBlockReference(ctx, projectID, blockID)
+		if cerr != nil {
+			return 0, cerr
+		}
+		total += n
+	}
+	return total, nil
 }
 
 // AttachThemeToUnassigned 把工程内未挂主题的页面挂到指定主题（工程首个主题创建后回填历史页面）。

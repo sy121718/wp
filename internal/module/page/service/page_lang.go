@@ -191,9 +191,31 @@ func (s *Service) MarkStaleByRegistryVersion(ctx context.Context, current string
 	if len(ids) == 0 {
 		return nil, nil
 	}
-	marked, merr := s.model.MarkStaleByIDs(ctx, ids, time.Now().UTC())
-	if merr != nil {
-		return nil, merr
+	// 逐工程扇出（DB-009 第三批）：待标记的页面 id 来自产物元数据，可能横跨多个工程，
+	// 而 pages 带 FORCE 策略。每个工程各自一次独立作用域的事务，本工程之外的行由
+	// project_id 条件与策略双重拦下 —— 不把多工程的 id 并进同一次作用域查询。
+	projectIDs, err := s.fanoutProjectIDs(ctx)
+	if err != nil {
+		return nil, err
+	}
+	at := time.Now().UTC()
+	seen := make(map[string]bool, len(ids))
+	marked := make([]string, 0, len(ids))
+	for _, projectID := range projectIDs {
+		if ctx.Err() != nil {
+			break
+		}
+		hit, merr := s.model.MarkStaleByIDs(ctx, projectID, ids, at)
+		if merr != nil {
+			return nil, merr
+		}
+		for _, id := range hit {
+			if seen[id] {
+				continue
+			}
+			seen[id] = true
+			marked = append(marked, id)
+		}
 	}
 	logger.Scene("page").With("count", len(marked)).With("registryVersion", current).
 		Info("组件注册表版本变化：相关页面已标记待重建")
@@ -204,9 +226,25 @@ func (s *Service) MarkStaleByRegistryVersion(ctx context.Context, current string
 //
 // 与 Manifest 的 i18n 依赖条目（DependencyKind=i18n）配套：
 // 依赖条目负责「产物字节与词条 revision 的对应关系」，本方法负责「变更后重新排队」。
-// 调用方：后台 i18n CRUD（docs/06-D §14 D7，尚未实现）或运维脚本。
+// 调用方：后台 i18n CRUD（docs/06-D §14 D7）或运维脚本 —— 它们都没有工程上下文。
+//
+// 逐工程扇出（DB-009 第三批）：这是本模块最典型的「跨工程扇出」入口。pages 带 FORCE
+// 策略时，「整站标记」只能由每个工程各自一次作用域内的 UPDATE 拼出来；不设作用域的
+// 全表 UPDATE 在换非超级角色后匹配 0 行且不报错 —— 文案改了，站点却一直是旧的。
 func (s *Service) MarkStaleForI18n(ctx context.Context) error {
-	return s.model.MarkStaleForI18n(ctx)
+	projectIDs, err := s.fanoutProjectIDs(ctx)
+	if err != nil {
+		return err
+	}
+	for _, projectID := range projectIDs {
+		if ctx.Err() != nil {
+			break
+		}
+		if err := s.model.MarkStaleForI18n(ctx, projectID); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // buildDependencies 构建期依赖（pipeline.DependencyProvider 实现）。

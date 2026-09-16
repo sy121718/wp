@@ -16,6 +16,14 @@ import (
 var (
 	// ErrDraftVersionConflict 表示乐观锁更新未命中当前草稿版本。
 	ErrDraftVersionConflict = errors.New("page 草稿版本冲突")
+
+	// ErrProjectRequired 调用方没有给出工程作用域（DB-009 第三批）。
+	//
+	// pages 在迁移 215 里带 FORCE 策略，谓词读会话变量 app.project_id：不设变量的路径
+	// 在换非超级角色后**静默返回 0 行**（fail closed 不报错）。所以本 model 中所有跨工程
+	// 形态的入口（整站标记、按主题/块标记、全站草稿扫描）一律要求显式工程，由 service
+	// 层枚举工程表后逐工程独立作用域调用 —— 「不限工程」这条默认路径在这里被彻底删掉。
+	ErrProjectRequired = errors.New("page: 需要显式工程作用域")
 )
 
 const (
@@ -102,17 +110,26 @@ func (m *Model) ListAll(ctx context.Context, projectID, themeID string) (list []
 	return list, err
 }
 
-// ListDraftDocuments 列出全部未删除页面的草稿文档（多语言 P5c 翻译工作台的全站扫描用）。
+// ListDraftDocuments 列出**本工程**未删除页面的草稿文档（多语言 P5c 翻译工作台的全站扫描用）。
 //
 // 与 ListAll 的区别：带 draft_document 大字段（工作台要按组件白名单收集候选，
 // 无法在 SQL 侧完成——白名单在 Go 里）；按 update_time 倒序，便于诊断。
-// 代价：一次查询返回全站草稿 JSONB，调用方必须自带缓存与页数上限（见 dashboard 工作台）。
-func (m *Model) ListDraftDocuments(ctx context.Context) (list []PageEntity, err error) {
-	err = m.DB(ctx).
-		Select("id", "project_id", "draft_path", "draft_document", "update_time").
-		Where("deleted_at IS NULL").
-		Order("update_time DESC, id DESC").
-		Find(&list).Error
+// 代价：一次查询返回本工程全部草稿 JSONB，调用方必须自带缓存与页数上限（见 dashboard 工作台）。
+//
+// projectID 必填（DB-009 第三批）：本方法原是「全站扫描」，而 pages 带 FORCE 策略——
+// 「全站」在多工程部署下只能由 service 层逐工程调用拼出来（model 层不许出现「不限工程」，
+// 那在换非超级角色后是静默 0 行：工作台会显示「全站 0 条草稿」而不报任何错）。
+func (m *Model) ListDraftDocuments(ctx context.Context, projectID string) (list []PageEntity, err error) {
+	if strings.TrimSpace(projectID) == "" {
+		return nil, ErrProjectRequired
+	}
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.Model(&PageEntity{}).
+			Select("id", "project_id", "draft_path", "draft_document", "update_time").
+			Where("project_id = ? AND deleted_at IS NULL", projectID).
+			Order("update_time DESC, id DESC").
+			Find(&list).Error
+	})
 	return list, err
 }
 
@@ -122,21 +139,30 @@ type ThemePageSnapshot struct {
 	Override json.RawMessage
 }
 
-// ListThemePageSnapshots 取该主题下全部未删除页面的 ID 与 settings.themeOverride。
+// ListThemePageSnapshots 取**本工程内**该主题下全部未删除页面的 ID 与 settings.themeOverride。
 //
 // 为什么刷新快照不能再一条 SQL 批量写：快照 = 站点主题 + 页面覆盖（每页覆盖不同），
 // 而 PostgreSQL 的 jsonb || 是浅合并（嵌套对象整块替换），做不了键级深合并 ——
 // 一条 SQL 写下去会把页面的覆盖项连同它没覆盖的项一起冲掉。
-func (m *Model) ListThemePageSnapshots(ctx context.Context, themeID string) (rows []ThemePageSnapshot, err error) {
+//
+// projectID 必填（DB-009 第三批）：pages 带 FORCE 策略，「挂在某主题下的页面」在多工程
+// 部署下只能逐工程取（service 层枚举工程后逐个调用）。不设作用域的读取在换非超级角色后
+// 是静默空集 —— 表现为「主题设置保存成功但所有页面快照一个都没更新」。
+func (m *Model) ListThemePageSnapshots(ctx context.Context, projectID, themeID string) (rows []ThemePageSnapshot, err error) {
+	if strings.TrimSpace(projectID) == "" {
+		return nil, ErrProjectRequired
+	}
 	type row struct {
 		ID         string
 		ThemeOverr json.RawMessage `gorm:"column:theme_override"`
 	}
 	var raw []row
-	if err = m.DB(ctx).
-		Select("id", "draft_document #> '{settings,themeOverride}' AS theme_override").
-		Where("theme_id = ? AND deleted_at IS NULL", themeID).
-		Find(&raw).Error; err != nil {
+	if err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.Model(&PageEntity{}).
+			Select("id", "draft_document #> '{settings,themeOverride}' AS theme_override").
+			Where("project_id = ? AND theme_id = ? AND deleted_at IS NULL", projectID, themeID).
+			Find(&raw).Error
+	}); err != nil {
 		return nil, err
 	}
 	for _, r := range raw {
@@ -146,12 +172,20 @@ func (m *Model) ListThemePageSnapshots(ctx context.Context, themeID string) (row
 }
 
 // UpdateThemeSnapshot 写单页的 settings.theme 快照（不动内容与版本，主题是展示层）。
-func (m *Model) UpdateThemeSnapshot(ctx context.Context, pageID string, themeJSON []byte) (err error) {
-	err = m.DB(ctx).Exec(
-		"UPDATE pages SET draft_document = jsonb_set(draft_document, '{settings,theme}', ?, true), update_time = ? WHERE id = ? AND deleted_at IS NULL",
-		themeJSON, time.Now().UTC(), pageID,
-	).Error
-	return err
+//
+// projectID 必填（DB-009 第三批）：这是一条裸 SQL 的 UPDATE，作用域只能由调用方给出。
+// 漏了作用域时它在非超级角色下匹配 0 行且**不报错**（快照看似刷新成功、实际没写）。
+func (m *Model) UpdateThemeSnapshot(ctx context.Context, projectID, pageID string, themeJSON []byte) (err error) {
+	if strings.TrimSpace(projectID) == "" {
+		return ErrProjectRequired
+	}
+	return rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.Exec(
+			"UPDATE pages SET draft_document = jsonb_set(draft_document, '{settings,theme}', ?, true), update_time = ? "+
+				"WHERE id = ? AND project_id = ? AND deleted_at IS NULL",
+			themeJSON, time.Now().UTC(), pageID, projectID,
+		).Error
+	})
 }
 
 // ThemePageStructureSnapshot 主题刷新 structure 时逐页合成所需的页面级绑定。
@@ -160,17 +194,25 @@ type ThemePageStructureSnapshot struct {
 	Structure json.RawMessage
 }
 
-// ListThemePageStructureSnapshots 取该主题下全部页面的 settings.structure。
-func (m *Model) ListThemePageStructureSnapshots(ctx context.Context, themeID string) (rows []ThemePageStructureSnapshot, err error) {
+// ListThemePageStructureSnapshots 取**本工程内**该主题下全部页面的 settings.structure。
+//
+// projectID 必填（DB-009 第三批）：理由同 ListThemePageSnapshots —— 漏作用域时它在
+// 非超级角色下静默返回空集，页眉/页脚绑定刷新会「成功但什么都没改」。
+func (m *Model) ListThemePageStructureSnapshots(ctx context.Context, projectID, themeID string) (rows []ThemePageStructureSnapshot, err error) {
+	if strings.TrimSpace(projectID) == "" {
+		return nil, ErrProjectRequired
+	}
 	type row struct {
 		ID        string
 		Structure json.RawMessage `gorm:"column:page_structure"`
 	}
 	var raw []row
-	if err = m.DB(ctx).
-		Select("id", "draft_document #> '{settings,structure}' AS page_structure").
-		Where("theme_id = ? AND deleted_at IS NULL", themeID).
-		Find(&raw).Error; err != nil {
+	if err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.Model(&PageEntity{}).
+			Select("id", "draft_document #> '{settings,structure}' AS page_structure").
+			Where("project_id = ? AND theme_id = ? AND deleted_at IS NULL", projectID, themeID).
+			Find(&raw).Error
+	}); err != nil {
 		return nil, err
 	}
 	for _, r := range raw {
@@ -180,48 +222,83 @@ func (m *Model) ListThemePageStructureSnapshots(ctx context.Context, themeID str
 }
 
 // UpdateStructureSnapshot 写单页 settings.structure（不动内容与版本）。
-func (m *Model) UpdateStructureSnapshot(ctx context.Context, pageID string, structureJSON []byte) (err error) {
-	err = m.DB(ctx).Exec(
-		"UPDATE pages SET draft_document = jsonb_set(draft_document, '{settings,structure}', ?, true), update_time = ? WHERE id = ? AND deleted_at IS NULL",
-		structureJSON, time.Now().UTC(), pageID,
-	).Error
-	return err
+//
+// projectID 必填（DB-009 第三批）：裸 SQL UPDATE，作用域只能由调用方给（见 UpdateThemeSnapshot）。
+func (m *Model) UpdateStructureSnapshot(ctx context.Context, projectID, pageID string, structureJSON []byte) (err error) {
+	if strings.TrimSpace(projectID) == "" {
+		return ErrProjectRequired
+	}
+	return rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.Exec(
+			"UPDATE pages SET draft_document = jsonb_set(draft_document, '{settings,structure}', ?, true), update_time = ? "+
+				"WHERE id = ? AND project_id = ? AND deleted_at IS NULL",
+			structureJSON, time.Now().UTC(), pageID, projectID,
+		).Error
+	})
 }
 
-// MarkStaleForTheme 把挂在该主题下全部页面标记为待重建（页眉/页脚块内容变更后调用）。
-func (m *Model) MarkStaleForTheme(ctx context.Context, themeID string) (err error) {
-	err = m.DB(ctx).Exec(
-		"UPDATE pages SET stale = true, update_time = ? WHERE theme_id = ? AND deleted_at IS NULL",
-		time.Now().UTC(), themeID,
-	).Error
-	return err
+// MarkStaleForTheme 把**本工程内**挂在该主题下全部页面标记为待重建（页眉/页脚块内容变更后调用）。
+//
+// projectID 必填（DB-009 第三批）：themeID 只说明「哪套主题」，说不出「哪个工程」；
+// pages 带 FORCE 策略，漏作用域时这条 UPDATE 在非超级角色下匹配 0 行且不报错 ——
+// 现象是「换了主题设置但页面不被标记待重建」，站点上一直跑旧产物。
+func (m *Model) MarkStaleForTheme(ctx context.Context, projectID, themeID string) (err error) {
+	if strings.TrimSpace(projectID) == "" {
+		return ErrProjectRequired
+	}
+	return rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.Exec(
+			"UPDATE pages SET stale = true, update_time = ? "+
+				"WHERE project_id = ? AND theme_id = ? AND deleted_at IS NULL",
+			time.Now().UTC(), projectID, themeID,
+		).Error
+	})
 }
 
-// MarkStaleForI18n 把全部未删除页面标记为待重建（界面文案词条变更后调用）。
+// MarkStaleForI18n 把**本工程内**全部未删除页面标记为待重建（界面文案词条变更后调用）。
 //
 // 文案词条（sys_i18n）参与构建：组件固定文案由构建期取词注入 HTML 字节
 // （docs/06-D §10）。词条改动后所有页面产物都可能过期，故整站标记 stale；
 // 触发源为后台 i18n CRUD（决策 D7，尚未实现）或运维脚本，内核只提供能力。
-// 全表更新，与 MarkStaleForTheme 同一模式（stale=true 幂等）。
-func (m *Model) MarkStaleForI18n(ctx context.Context) (err error) {
-	err = m.DB(ctx).Exec(
-		"UPDATE pages SET stale = true, update_time = ? WHERE deleted_at IS NULL",
-		time.Now().UTC(),
-	).Error
-	return err
+// 与 MarkStaleForTheme 同一模式（stale=true 幂等）。
+//
+// projectID 必填（DB-009 第三批）：本方法原是「全表更新」，即模型层唯一一处隐含的
+// 「不限工程」。词条变更的调用方（后台翻译页）没有工程上下文，所以「全站」由 service
+// 层逐工程拼出来 —— 这里的 project_id 条件与策略是双保险，缺作用域直接显式失败。
+func (m *Model) MarkStaleForI18n(ctx context.Context, projectID string) (err error) {
+	if strings.TrimSpace(projectID) == "" {
+		return ErrProjectRequired
+	}
+	return rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.Exec(
+			"UPDATE pages SET stale = true, update_time = ? WHERE project_id = ? AND deleted_at IS NULL",
+			time.Now().UTC(), projectID,
+		).Error
+	})
 }
 
-// MarkStaleByIDs 按页面 ID 列表标记待重建，返回实际被标记的 ID。
+// MarkStaleByIDs 在**指定工程作用域内**按页面 ID 列表标记待重建，返回被标记的 ID。
 //
-// 与 MarkStaleForI18n 的全表更新区分：调用方已经算出了精确的影响集合
+// 与 MarkStaleForI18n 的整站标记区分：调用方已经算出了精确的影响集合
 // （如「产物由旧组件产出」的页面），不做无谓的全站标记。
-func (m *Model) MarkStaleByIDs(ctx context.Context, ids []string, at time.Time) (marked []string, err error) {
+//
+// projectID 必填（DB-009 第三批）。调用方（组件版本变更）手里的 ids 来自 artifact 元数据，
+// 可能横跨多个工程 —— 这也是为什么这里的 WHERE 同时带上 project_id：每个工程各自一次
+// 独立作用域的事务（service 层逐工程调用），本工程之外的行由 project_id 条件与策略双重拦下，
+// 不存在「把多个工程的 id 并进一次查询」的依赖。漏作用域时这条 UPDATE 会静默 0 行。
+// at 参数保留给未来的 update_time 写入，当前实现与原行为一致（不动 update_time）。
+func (m *Model) MarkStaleByIDs(ctx context.Context, projectID string, ids []string, at time.Time) (marked []string, err error) {
+	if strings.TrimSpace(projectID) == "" {
+		return nil, ErrProjectRequired
+	}
 	if len(ids) == 0 {
 		return nil, nil
 	}
-	err = m.DB(ctx).
-		Where("deleted_at IS NULL AND id IN ?", ids).
-		Update("stale", true).Error
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.Model(&PageEntity{}).
+			Where("project_id = ? AND deleted_at IS NULL AND id IN ?", projectID, ids).
+			Update("stale", true).Error
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -249,33 +326,50 @@ func (m *Model) MarkStaleByIDs(ctx context.Context, ids []string, at time.Time) 
 // （public/test/page/unit 有等价性与 EXPLAIN 断言守住）。
 const blockRefMatchCond = `jsonb_path_query_array(draft_document, '$.**.blockId') @> jsonb_build_array(?::text)`
 
-// CountBlockReference 统计引用该块的未删除页面数（与 MarkStaleForBlock 同一匹配条件）：
+// CountBlockReference 统计**本工程内**引用该块的未删除页面数（与 MarkStaleForBlock 同一匹配条件）：
 // core.globalref 节点（blockId）或 settings.structure 页眉/页脚自选绑定。
 // 供 block 模块删除/切换 global→template 前的引用拦截（docs/02-D §9）。
-func (m *Model) CountBlockReference(ctx context.Context, blockID string) (count int64, err error) {
-	err = m.DB(ctx).
-		Where("deleted_at IS NULL AND ("+
-			blockRefMatchCond+
-			" OR draft_document->'settings'->'structure'->>'headerBlockId' = ?"+
-			" OR draft_document->'settings'->'structure'->>'footerBlockId' = ?)",
-			blockID, blockID, blockID,
-		).Count(&count).Error
+//
+// projectID 必填（DB-009 第三批）：块 id 本身说不出工程，而 pages 带 FORCE 策略。
+// 「全站引用数」由调用方（service）逐工程调用后求和 —— 这正是 block 模块删块前那道
+// 拦截的判据：漏作用域时它静默返回 0，于是「有页面在引用」的块被安静地删掉。
+func (m *Model) CountBlockReference(ctx context.Context, projectID, blockID string) (count int64, err error) {
+	if strings.TrimSpace(projectID) == "" {
+		return 0, ErrProjectRequired
+	}
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.Model(&PageEntity{}).
+			Where("project_id = ? AND deleted_at IS NULL AND ("+
+				blockRefMatchCond+
+				" OR draft_document->'settings'->'structure'->>'headerBlockId' = ?"+
+				" OR draft_document->'settings'->'structure'->>'footerBlockId' = ?)",
+				projectID, blockID, blockID, blockID,
+			).Count(&count).Error
+	})
 	return count, err
 }
 
-// MarkStaleForBlock 把文档中经 core.globalref 引用（draft_document 树内
+// MarkStaleForBlock 把**本工程内**文档中经 core.globalref 引用（draft_document 树内
 // "blockId": "<blockID>" 节点）或 settings.structure 页眉/页脚自选绑定
 // （headerBlockId/footerBlockId，页面级覆盖，非主题默认）该块的页面标记为待重建。
 // 与 MarkStaleForTheme 可能重叠命中同一页面，stale=true 幂等，无妨。
-func (m *Model) MarkStaleForBlock(ctx context.Context, blockID string) (err error) {
-	err = m.DB(ctx).Exec(
-		"UPDATE pages SET stale = true, update_time = ? WHERE deleted_at IS NULL AND ("+
-			blockRefMatchCond+
-			" OR draft_document->'settings'->'structure'->>'headerBlockId' = ?"+
-			" OR draft_document->'settings'->'structure'->>'footerBlockId' = ?)",
-		time.Now().UTC(), blockID, blockID, blockID,
-	).Error
-	return err
+//
+// projectID 必填（DB-009 第三批）：块 id 说不出工程，而这条 UPDATE 的可见范围由策略决定。
+// 「全站标记」由 service 层逐工程调用拼出来；漏作用域时它静默匹配 0 行 ——
+// 现象是「改了全局块，引用它的页面不被标记」，站点上一直显示旧块内容。
+func (m *Model) MarkStaleForBlock(ctx context.Context, projectID, blockID string) (err error) {
+	if strings.TrimSpace(projectID) == "" {
+		return ErrProjectRequired
+	}
+	return rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.Exec(
+			"UPDATE pages SET stale = true, update_time = ? WHERE project_id = ? AND deleted_at IS NULL AND ("+
+				blockRefMatchCond+
+				" OR draft_document->'settings'->'structure'->>'headerBlockId' = ?"+
+				" OR draft_document->'settings'->'structure'->>'footerBlockId' = ?)",
+			time.Now().UTC(), projectID, blockID, blockID, blockID,
+		).Error
+	})
 }
 
 // AttachThemeToUnassigned 把工程内尚未挂主题的页面挂到指定主题。

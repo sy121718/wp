@@ -19,6 +19,7 @@ import (
 	orderenums "go_wp/internal/module/order/enums"
 	ordermodel "go_wp/internal/module/order/model"
 	"go_wp/pkg/logger"
+	"go_wp/pkg/rls"
 )
 
 // allowedTransitions 合法流转边。终态（cancelled / refunded）无出边。
@@ -145,7 +146,15 @@ func (s *Service) CancelOrder(ctx context.Context, req *orderdto.CancelOrderReq)
 	now := time.Now()
 	var orderNo, projectID string
 	err = s.orders.Transaction(ctx, func(tx *gorm.DB) error {
-		e, lerr := s.orders.LockByIDTx(ctx, tx, "", req.OrderID)
+		// 工程作用域（DB-009 第三批）：orders 带 FORCE 策略，加锁读、状态更新、状态日志
+		// 三步都在这个事务里 —— 缺少 app.project_id 时它们会**静默**匹配 0 行 / 写不进去。
+		// 调用方明确知道工程时（超时取消扫描逐工程调用）必须传下来。
+		if pid := strings.TrimSpace(req.ProjectID); pid != "" {
+			if serr := rls.ScopeTx(tx, pid); serr != nil {
+				return serr
+			}
+		}
+		e, lerr := s.orders.LockByIDTx(ctx, tx, strings.TrimSpace(req.ProjectID), req.OrderID)
 		if lerr != nil {
 			return lerr
 		}

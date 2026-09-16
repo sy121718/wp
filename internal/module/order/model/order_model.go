@@ -341,13 +341,46 @@ func (m *OrderModel) UpdateFieldsTx(ctx context.Context, tx *gorm.DB, projectID 
 	return q.Updates(fields).Error
 }
 
-// ListPendingCreatedBefore 列出创建时间早于 cutoff 的待付款订单（超时取消扫描用）。
-func (m *OrderModel) ListPendingCreatedBefore(ctx context.Context, cutoff time.Time, limit int) (list []*OrderEntity, err error) {
+// ErrProjectRequired 缺少工程作用域（DB-009 第三批）。
+//
+// orders 在迁移 215 里带 FORCE 策略：不设 app.project_id 的查询在非超级角色下
+// **静默返回空集**。超时取消扫描（后台定时任务）天然没有工程参数，因此它改为
+// 自己取工程清单后**逐工程**设作用域执行；取不到工程时显式失败，
+// 绝不退回「不限工程」—— 那在换角色后就是「待付款单永不超时取消」且无任何日志。
+var ErrProjectRequired = errors.New("order: 需要显式工程作用域")
+
+// ListAllProjectIDs 列出全部站点工程 id（超时取消扫描的扇出清单）。
+//
+// 这是订单模块唯一一处读 projects 表，理由要写清楚：
+//   - orders 带 FORCE 策略，扫描必须逐工程设作用域；
+//   - 工程清单只能来自 projects 表，而订单模块的装配点（routers 的 SetupOrderRoutes）
+//     拿不到 project 契约（且属于并行批次的禁用区，不能改签名注入）；
+//   - projects 是隔离的**主体**：它没有 project_id 列、不在迁移 215 的 53 个对象里，
+//     读它不涉及任何被隔离数据。analytics model 读同一张表有先例
+//     （internal/module/analytics/model/analytics_model.go 的保留期结算）。
+func (m *OrderModel) ListAllProjectIDs(ctx context.Context) (ids []string, err error) {
+	err = m.db.WithContext(ctx).
+		Raw("SELECT id::text FROM projects ORDER BY create_time ASC, id ASC").Scan(&ids).Error
+	return ids, err
+}
+
+// ListPendingCreatedBefore 列出**指定工程内**创建时间早于 cutoff 的待付款订单（超时取消扫描用）。
+//
+// projectID 必填（DB-009 第三批）：本方法原是「全表扫描」，而 orders 带 FORCE 策略 ——
+// 不设作用域时它在非超级角色下静默返回空集：定时任务跑得好好的，一单都不会被取消，
+// 库存被一直占住而日志里没有任何异常。工程清单由 service 逐工程展开调用。
+func (m *OrderModel) ListPendingCreatedBefore(ctx context.Context, projectID string, cutoff time.Time, limit int) (list []*OrderEntity, err error) {
+	if strings.TrimSpace(projectID) == "" {
+		return nil, ErrProjectRequired
+	}
 	if limit <= 0 || limit > 500 {
 		limit = 100
 	}
-	err = m.DB(ctx).Where("status = ? AND create_time < ?", OrderStatusPending, cutoff).
-		Order("create_time ASC").Limit(limit).Find(&list).Error
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.Model(&OrderEntity{}).
+			Where("project_id = ? AND status = ? AND create_time < ?", projectID, OrderStatusPending, cutoff).
+			Order("create_time ASC").Limit(limit).Find(&list).Error
+	})
 	return list, err
 }
 

@@ -28,6 +28,12 @@ import (
 	"gorm.io/gorm"
 )
 
+// blockRefProjectID 样本页面的归属工程（pages.project_id 有外键 → 先补真实工程行）。
+//
+// 提到包级是因为 DB-009 第三批起 page model 的跨工程入口（CountBlockReference /
+// MarkStaleForBlock）要求显式工程作用域 —— 调用方要把它传下去，不能再靠「不限工程」。
+const blockRefProjectID = "9f2c1d40-0000-4000-8000-000000000068"
+
 // oldBlockRefCond 旧写法（改前实现），仅用于等价性对照，不参与生产代码。
 const oldBlockRefCond = `draft_document::text LIKE '%"blockId": "' || ?::text || '"%'`
 
@@ -103,7 +109,6 @@ func setupBlockRefPages(t *testing.T, target, other string) (*gorm.DB, pagemodel
 	t.Helper()
 	db := support.NewMigratedPGTestDB(t)
 	// pages.project_id 有外键 → projects(id)：先补一条真实工程行，样本页面共用。
-	const blockRefProjectID = "9f2c1d40-0000-4000-8000-000000000068"
 	support.SeedProjectRow(t, db, blockRefProjectID, "块引用回归站点")
 
 	// 2 万行无关页面：draft_document 结构同真实文档，blockId 为无关值。
@@ -161,7 +166,7 @@ func TestPageBlockReferenceJSONBEquivalence(t *testing.T) {
 			if strings.Join(oldIDs, ",") != strings.Join(newIDs, ",") {
 				t.Fatalf("结果集不一致 | 旧(LIKE)=%v | 新(JSONB)=%v", oldIDs, newIDs)
 			}
-			count, err := m.CountBlockReference(ctx, blockID)
+			count, err := m.CountBlockReference(ctx, blockRefProjectID, blockID)
 			if err != nil {
 				t.Fatalf("CountBlockReference 失败: %v", err)
 			}
@@ -185,7 +190,7 @@ func TestPageMarkStaleForBlockJSONBEquivalence(t *testing.T) {
 			if err := db.Exec("UPDATE pages SET stale = false").Error; err != nil {
 				t.Fatalf("重置 stale 失败: %v", err)
 			}
-			if err := m.MarkStaleForBlock(ctx, blockID); err != nil {
+			if err := m.MarkStaleForBlock(ctx, blockRefProjectID, blockID); err != nil {
 				t.Fatalf("MarkStaleForBlock 失败: %v", err)
 			}
 			var got []string

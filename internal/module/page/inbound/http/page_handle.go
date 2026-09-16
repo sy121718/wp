@@ -232,7 +232,10 @@ func pageErrorStatus(err error) int {
 	case errors.Is(err, pageservice.ErrInvalidParam),
 		errors.Is(err, pageservice.ErrInvalidKind),
 		errors.Is(err, pageservice.ErrInvalidDocument),
-		errors.Is(err, pageservice.ErrInvalidPath):
+		errors.Is(err, pageservice.ErrInvalidPath),
+		// DB-009 第三批：跨工程扇出入口在「工程表读不到 / 一个工程都没有」时显式失败，
+		// 这是调用环境的问题（400）而不是内部故障（500）—— 它不该被兜底文案吞掉。
+		errors.Is(err, pageservice.ErrProjectRequired):
 		return http.StatusBadRequest
 	default:
 		return http.StatusInternalServerError

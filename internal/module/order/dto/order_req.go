@@ -97,6 +97,11 @@ type ChangeStatusReq struct {
 type CancelOrderReq struct {
 	OrderID uint64 `json:"orderId"`
 	Reason  string `json:"reason"`
+	// ProjectID 订单所属工程（DB-009 第三批）：orders 带 FORCE 策略，取消是一次
+	// 「加锁读 + 更新 + 写状态日志」的事务，不给作用域时三步全部静默落空。
+	// 超时取消扫描已逐工程传入；后台手工取消的调用点（dashboard）目前不带 ——
+	// 那需要它把页面上的工程一起传下来（见 DB-009 剩余清单）。
+	ProjectID string `json:"-"`
 
 	OperatorType string `json:"-"`
 	OperatorID   uint64 `json:"-"`

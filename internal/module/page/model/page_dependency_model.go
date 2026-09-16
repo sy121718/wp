@@ -13,9 +13,12 @@ package pagemodel
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
+
+	"go_wp/pkg/rls"
 )
 
 // tableNamePageDependencies page_dependencies 表名。
@@ -63,8 +66,8 @@ func (m *Model) ListDependencies(ctx context.Context, artifactID string) (list [
 	return list, err
 }
 
-// MarkStaleByDependency 按依赖源 (kind,key) 精确标记受影响页面待重建，
-// 返回受影响的页面 ID（去重、升序）。
+// MarkStaleByDependency 在**指定工程作用域内**按依赖源 (kind,key) 精确标记受影响页面
+// 待重建，返回受影响的页面 ID。
 //
 // 命中条件：该页面的**活跃或暂存**产物在依赖表里声明了这条依赖。
 // 语义与旧的全站标记（MarkStaleFor*）严格区分：无关页面不会被触碰，
@@ -72,23 +75,34 @@ func (m *Model) ListDependencies(ctx context.Context, artifactID string) (list [
 //
 // 幂等：已经 stale 的页面重复标记只更新 update_time，返回值仍是完整受影响集合
 // （自动重建需要「谁受影响」而不是「谁刚变成 stale」）。
-func (m *Model) MarkStaleByDependency(ctx context.Context, kind, key string, at time.Time) (ids []string, err error) {
+//
+// projectID 必填（DB-009 第三批）：页面的可见性由会话变量决定（pages 带 FORCE 策略），
+// 而依赖源 key 是跨工程的实体 id（如 article:<uuid>）。调用方（pipeline.Fanout）只带
+// (kind,key)，所以「跨工程」这件事由 service 层逐工程各设一次作用域完成；
+// 下面的 RETURNING 只回本工程命中的行，两个方向都不会越界。
+func (m *Model) MarkStaleByDependency(ctx context.Context, projectID, kind, key string, at time.Time) (ids []string, err error) {
+	if strings.TrimSpace(projectID) == "" {
+		return nil, ErrProjectRequired
+	}
 	if kind == "" || key == "" {
 		return nil, nil
 	}
-	err = m.db.WithContext(ctx).Raw(`
-		WITH affected AS (
-			SELECT DISTINCT d.page_id AS page_id
-			FROM page_dependencies d
-			JOIN pages p ON p.id = d.page_id
-			WHERE d.dependency_kind = ?
-			  AND d.dependency_key = ?
-			  AND p.deleted_at IS NULL
-			  AND d.artifact_id IN (p.active_artifact_id, p.staged_artifact_id)
-		)
-		UPDATE pages SET stale = true, update_time = ?
-		WHERE deleted_at IS NULL AND id IN (SELECT page_id FROM affected)
-		RETURNING id`, kind, key, at).Scan(&ids).Error
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.Raw(`
+			WITH affected AS (
+				SELECT DISTINCT d.page_id AS page_id
+				FROM page_dependencies d
+				JOIN pages p ON p.id = d.page_id
+				WHERE d.dependency_kind = ?
+				  AND d.dependency_key = ?
+				  AND p.project_id = ?
+				  AND p.deleted_at IS NULL
+				  AND d.artifact_id IN (p.active_artifact_id, p.staged_artifact_id)
+			)
+			UPDATE pages SET stale = true, update_time = ?
+			WHERE project_id = ? AND deleted_at IS NULL AND id IN (SELECT page_id FROM affected)
+			RETURNING id`, kind, key, projectID, at, projectID).Scan(&ids).Error
+	})
 	if err != nil {
 		return nil, err
 	}

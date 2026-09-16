@@ -40,8 +40,39 @@ const maxAutoRebuildPages = 20
 func (s *Service) SourceType() string { return pipeline.SourceTypePage }
 
 // MarkStaleByDependency 实现 pipeline.DependencyTarget：按依赖源精确标记。
+//
+// 逐工程扇出（DB-009 第三批）：契约来自 pipeline.DependencyTarget，签名只能是
+// (kind,key) —— 引擎不知道也不需要知道工程；而 pages 带 FORCE 策略，UPDATE 必须落在
+// 某个具体工程的作用域里。逐个工程各设一次作用域后合并去重（presentation 侧同形）。
+// 漏作用域时它在换非超级角色后静默 0 行：内容改了，引用它的页面不再自动重建。
 func (s *Service) MarkStaleByDependency(ctx context.Context, kind, key string) ([]string, error) {
-	return s.model.MarkStaleByDependency(ctx, kind, key, time.Now().UTC())
+	if strings.TrimSpace(kind) == "" || strings.TrimSpace(key) == "" {
+		return nil, nil
+	}
+	projectIDs, err := s.fanoutProjectIDs(ctx)
+	if err != nil {
+		return nil, err
+	}
+	at := time.Now().UTC()
+	seen := make(map[string]bool)
+	ids := make([]string, 0, 8)
+	for _, projectID := range projectIDs {
+		if ctx.Err() != nil {
+			break
+		}
+		hit, herr := s.model.MarkStaleByDependency(ctx, projectID, kind, key, at)
+		if herr != nil {
+			return nil, herr
+		}
+		for _, id := range hit {
+			if seen[id] {
+				continue
+			}
+			seen[id] = true
+			ids = append(ids, id)
+		}
+	}
+	return ids, nil
 }
 
 // RebuildStale 实现 pipeline.StaleRebuilder：重建受影响的页面。
@@ -65,7 +96,10 @@ func (s *Service) RebuildStale(ctx context.Context, ids []string) error {
 	}
 	rebuilt, published := 0, 0
 	for _, id := range ids {
-		page, err := s.model.GetByID(ctx, id, "")
+		// 逐工程定位（DB-009 第三批）：ids 来自依赖扇出（可能跨工程），而 pages 带 FORCE
+		// 策略 —— 不设作用域的 GetByID 在换非超级角色后一律 ErrRecordNotFound，
+		// 整条「内容变更 → 自动重建」会全部落进下面的「跳过」分支且没有任何报错。
+		page, err := s.locatePageInProjects(ctx, id)
 		if err != nil {
 			logger.Scene("dependency").With("page_id", id).Warn("自动重建跳过：页面不存在或已删除")
 			continue
@@ -126,7 +160,8 @@ func (s *Service) enqueueOverflowBuildJobs(ctx context.Context, ids []string) {
 	}
 	queued := 0
 	for _, id := range ids {
-		page, err := s.model.GetByID(ctx, id, "")
+		// 同 RebuildStale：入队前也要按工程作用域读一次页面（漏作用域时整批任务静默不再入队）。
+		page, err := s.locatePageInProjects(ctx, id)
 		if err != nil {
 			continue
 		}

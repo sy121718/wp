@@ -8,13 +8,30 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 
 	projectdto "go_wp/internal/module/project/dto"
 	projectenums "go_wp/internal/module/project/enums"
 	projectservice "go_wp/internal/module/project/service"
+	"go_wp/public/test/support"
 )
 
-func newProjectID() string { return uuid.NewString() }
+// themeTestDB 记录当前用例的库句柄，供 newProjectID 补真实工程行。
+//
+// 为什么必须补（DB-009 第三批）：themes.project_id 没有外键约束，历史测试直接拿随机
+// uuid 当工程 id —— 而主题入口的工程作用域现在来自**工程表里真实存在的工程**
+// （逐工程探测定位）。测试数据要与生产语义一致：主题的归属工程必须真的在 projects 里，
+// 否则那些入口在新实现下会找不到主题（生产里不存在「主题属于一个不存在的工程」）。
+var themeTestDB *gorm.DB
+
+func newProjectID(t *testing.T) string {
+	t.Helper()
+	id := uuid.NewString()
+	if themeTestDB != nil {
+		support.SeedProjectRow(t, themeTestDB, id, "主题测试工程")
+	}
+	return id
+}
 
 func mustCreateTheme(t *testing.T, svc *projectservice.Service, projectID, name string, settings json.RawMessage) *projectdto.ThemeResp {
 	t.Helper()
@@ -29,7 +46,7 @@ func mustCreateTheme(t *testing.T, svc *projectservice.Service, projectID, name 
 func TestThemeCreateEdge(t *testing.T) {
 	svc := newProjectService(t)
 	ctx := context.Background()
-	pid := newProjectID()
+	pid := newProjectID(t)
 
 	t.Run("Nil请求", func(t *testing.T) {
 		_, err := svc.CreateTheme(ctx, nil)
@@ -67,7 +84,7 @@ func TestThemeCreateEdge(t *testing.T) {
 
 	t.Run("首个自动激活", func(t *testing.T) {
 		// 使用新工程，首个主题自动激活。
-		pid2 := newProjectID()
+		pid2 := newProjectID(t)
 		first := mustCreateTheme(t, svc, pid2, "T1", nil)
 		if !first.IsActive {
 			t.Fatalf("工程首个主题应自动激活: %+v", first)
@@ -80,7 +97,7 @@ func TestThemeCreateEdge(t *testing.T) {
 
 	t.Run("Settings空兜底", func(t *testing.T) {
 		for _, raw := range []json.RawMessage{nil, json.RawMessage("")} {
-			res := mustCreateTheme(t, svc, newProjectID(), "兜底主题", raw)
+			res := mustCreateTheme(t, svc, newProjectID(t), "兜底主题", raw)
 			if string(res.Settings) != "{}" {
 				t.Fatalf("空 settings 应兜底 {}，实际: %s", string(res.Settings))
 			}
@@ -89,7 +106,7 @@ func TestThemeCreateEdge(t *testing.T) {
 
 	t.Run("Settings为null字面量拒绝", func(t *testing.T) {
 		// 修复语义：settings 必须是 JSON 对象，"null" 字面量被拒绝，不再绕过兜底入库。
-		_, err := svc.CreateTheme(ctx, &projectdto.ThemeCreateReq{ProjectID: newProjectID(), Name: "null设置", Settings: json.RawMessage("null")})
+		_, err := svc.CreateTheme(ctx, &projectdto.ThemeCreateReq{ProjectID: newProjectID(t), Name: "null设置", Settings: json.RawMessage("null")})
 		if err == nil || !strings.Contains(err.Error(), projectenums.ErrInvalidThemeSettings) {
 			t.Fatalf("「null」设置应被拒绝为「无效的主题设置」，实际: %v", err)
 		}
@@ -97,7 +114,7 @@ func TestThemeCreateEdge(t *testing.T) {
 
 	t.Run("Settings非法JSON拒绝", func(t *testing.T) {
 		// 修复语义：service 层校验 settings 为合法 JSON 对象，返回业务错误而非 PG 原始错误。
-		_, err := svc.CreateTheme(ctx, &projectdto.ThemeCreateReq{ProjectID: newProjectID(), Name: "坏设置", Settings: json.RawMessage(`{bad`)})
+		_, err := svc.CreateTheme(ctx, &projectdto.ThemeCreateReq{ProjectID: newProjectID(t), Name: "坏设置", Settings: json.RawMessage(`{bad`)})
 		if err == nil || !strings.Contains(err.Error(), projectenums.ErrInvalidThemeSettings) {
 			t.Fatalf("非法 JSON 应返回「无效的主题设置」，实际: %v", err)
 		}
@@ -108,7 +125,7 @@ func TestThemeCreateEdge(t *testing.T) {
 func TestThemeUpdateEdge(t *testing.T) {
 	svc := newProjectService(t)
 	ctx := context.Background()
-	pid := newProjectID()
+	pid := newProjectID(t)
 	th := mustCreateTheme(t, svc, pid, "原始主题", json.RawMessage(`{"color":"red"}`))
 
 	t.Run("Nil请求", func(t *testing.T) {
@@ -200,7 +217,7 @@ func TestThemeActivateEdge(t *testing.T) {
 	})
 
 	t.Run("多主题轮换", func(t *testing.T) {
-		pid := newProjectID()
+		pid := newProjectID(t)
 		t1 := mustCreateTheme(t, svc, pid, "T1", nil)
 		t2 := mustCreateTheme(t, svc, pid, "T2", nil)
 		t3 := mustCreateTheme(t, svc, pid, "T3", nil)
@@ -265,7 +282,7 @@ func TestThemeDeleteEdge(t *testing.T) {
 	})
 
 	t.Run("激活态拒绝", func(t *testing.T) {
-		pid := newProjectID()
+		pid := newProjectID(t)
 		first := mustCreateTheme(t, svc, pid, "激活主题", nil) // 首个自动激活
 		err := svc.DeleteTheme(ctx, first.ID)
 		if !errors.Is(err, projectservice.ErrThemeIsActive) {
@@ -274,7 +291,7 @@ func TestThemeDeleteEdge(t *testing.T) {
 	})
 
 	t.Run("非激活可删", func(t *testing.T) {
-		pid := newProjectID()
+		pid := newProjectID(t)
 		active := mustCreateTheme(t, svc, pid, "A", nil)
 		dead := mustCreateTheme(t, svc, pid, "B", nil)
 		if err := svc.DeleteTheme(ctx, dead.ID); err != nil {
@@ -295,7 +312,7 @@ func TestThemeDeleteEdge(t *testing.T) {
 func TestThemeGetEdge(t *testing.T) {
 	svc := newProjectService(t)
 	ctx := context.Background()
-	pid := newProjectID()
+	pid := newProjectID(t)
 	th := mustCreateTheme(t, svc, pid, "主题A", json.RawMessage(`{"font":"sans"}`))
 
 	t.Run("存在", func(t *testing.T) {
@@ -325,14 +342,14 @@ func TestThemeGetActiveThemeEdge(t *testing.T) {
 	t.Run("无主题返回空", func(t *testing.T) {
 		// 修复语义：工程尚无主题是合法状态，返回 (nil, nil) 由调用方判断，
 		// 不再泄漏 gorm.ErrRecordNotFound。
-		got, err := svc.GetActiveTheme(ctx, newProjectID())
+		got, err := svc.GetActiveTheme(ctx, newProjectID(t))
 		if err != nil || got != nil {
 			t.Fatalf("无主题应返回 (nil, nil)，实际: got=%v err=%v", got, err)
 		}
 	})
 
 	t.Run("单主题返回激活主题", func(t *testing.T) {
-		pid := newProjectID()
+		pid := newProjectID(t)
 		th := mustCreateTheme(t, svc, pid, "唯一", nil)
 		got, err := svc.GetActiveTheme(ctx, pid)
 		if err != nil {
@@ -344,7 +361,7 @@ func TestThemeGetActiveThemeEdge(t *testing.T) {
 	})
 
 	t.Run("轮换后返回新激活主题", func(t *testing.T) {
-		pid := newProjectID()
+		pid := newProjectID(t)
 		t1 := mustCreateTheme(t, svc, pid, "T1", nil)
 		t2 := mustCreateTheme(t, svc, pid, "T2", nil)
 		if err := svc.ActivateTheme(ctx, &projectdto.ThemeActivateReq{ID: t2.ID}); err != nil {
@@ -365,7 +382,7 @@ func TestThemeGetActiveThemeEdge(t *testing.T) {
 func TestThemeListEdge(t *testing.T) {
 	svc := newProjectService(t)
 	ctx := context.Background()
-	pid := newProjectID()
+	pid := newProjectID(t)
 	t1 := mustCreateTheme(t, svc, pid, "T1", nil)
 	t2 := mustCreateTheme(t, svc, pid, "T2", nil)
 	t3 := mustCreateTheme(t, svc, pid, "T3", nil)
@@ -403,7 +420,7 @@ func TestThemeListEdge(t *testing.T) {
 	})
 
 	t.Run("空工程返回空列表", func(t *testing.T) {
-		themes, err := svc.ListThemes(ctx, newProjectID())
+		themes, err := svc.ListThemes(ctx, newProjectID(t))
 		if err != nil {
 			t.Fatalf("ListThemes 失败: %v", err)
 		}
@@ -417,7 +434,7 @@ func TestThemeListEdge(t *testing.T) {
 func TestThemeListByBlockIDEdge(t *testing.T) {
 	svc := newProjectService(t)
 	ctx := context.Background()
-	pid := newProjectID()
+	pid := newProjectID(t)
 	mustCreateTheme(t, svc, pid, "页眉主题", json.RawMessage(`{"headerBlockId":"blk-header"}`))
 	mustCreateTheme(t, svc, pid, "页脚主题", json.RawMessage(`{"footerBlockId":"blk-footer"}`))
 	mustCreateTheme(t, svc, pid, "无绑定", json.RawMessage(`{"color":"red"}`))

@@ -9,6 +9,13 @@ const (
 	ErrInvalidParam = "ErrInvalidParam" // 请求参数无效
 	// ErrProjectInternal 工程服务内部错误（基础设施故障兜底，不向客户端泄漏内部细节）。
 	ErrProjectInternal = "ErrProjectInternal" // 工程服务内部错误
+	// ErrProjectRequired 未指定工程且解析不出工程作用域（0 个工程，或入口本身没有工程参数）。
+	//
+	// DB-009 第三批：主题入口（GetTheme/UpdateTheme/ActivateTheme/DeleteTheme）的签名里
+	// 没有工程参数（后台页面直接依赖该契约），此前靠「工程表恰好一个工程」猜作用域，
+	// 多工程部署下退化为「不限工程」—— 换非超级角色后那是静默「主题不存在」。
+	// 现在改为逐工程扇出定位；只有连工程表都读不出内容时才用这个错误显式失败。
+	ErrProjectRequired = "ErrProjectRequired" // 需要显式工程作用域
 )
 
 const (

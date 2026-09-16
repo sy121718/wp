@@ -26,6 +26,10 @@ func newProjectService(t *testing.T) *projectservice.Service {
 	if err := db.AutoMigrate(&projectmodel.ProjectEntity{}, &projectmodel.ThemeEntity{}); err != nil {
 		t.Fatalf("AutoMigrate projects/themes 失败: %v", err)
 	}
+	// 主题用例的工程 id 由 newProjectID 生成并补真实工程行（见 theme_service_test.go）：
+	// 工程作用域要靠工程表枚举，主题的归属工程必须真的在 projects 里。
+	themeTestDB = db
+	t.Cleanup(func() { themeTestDB = nil })
 	return projectservice.NewService(projectmodel.NewProjectModel(db))
 }
 

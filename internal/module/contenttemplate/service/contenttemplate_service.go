@@ -54,6 +54,59 @@ func (s *Service) validEntityType(entityType string) bool {
 // 编译期契约断言。
 var _ contenttemplatecontract.ContentTemplateService = (*Service)(nil)
 
+// fanoutProjectIDs 逐工程扇出用的工程清单（DB-009 第三批）。
+//
+// content_templates 带 FORCE 策略，作用域必须是一个具体 uuid；而一批契约入口的签名里
+// 没有工程参数（dashboard 编译期依赖该接口）。「全站」或「按 id 找归属」只能由本层
+// 枚举工程表后逐工程各设一次作用域完成 —— 绝不退回「不限工程」（换非超级角色后那是
+// 静默 0 行，表现为「模板不存在」）。
+func (s *Service) fanoutProjectIDs(ctx context.Context) ([]string, error) {
+	if s == nil || s.project == nil {
+		return nil, errors.New(contenttemplateenums.ErrProjectRequired)
+	}
+	list, err := s.project.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]string, 0, len(list))
+	for i := range list {
+		if id := strings.TrimSpace(list[i].ID); id != "" {
+			ids = append(ids, id)
+		}
+	}
+	if len(ids) == 0 {
+		return nil, errors.New(contenttemplateenums.ErrProjectRequired)
+	}
+	return ids, nil
+}
+
+// locateTemplate 按模板 id 定位模板（跨工程）：逐工程独立作用域探测，命中即返回。
+//
+// 为什么可以逐工程探测：content_templates.id 是主键，跨工程不会重复命中，所以结果确定。
+// 为什么必须探测而不能直查：不设 app.project_id 的按 id 查询在非超级角色下静默
+// ErrRecordNotFound —— 模板还在，接口却说它不存在。全部未命中返回 gorm.ErrRecordNotFound。
+func (s *Service) locateTemplate(ctx context.Context, id string) (*contenttemplatemodel.TemplateEntity, error) {
+	ids, err := s.fanoutProjectIDs(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var lastErr error = gorm.ErrRecordNotFound
+	for _, projectID := range ids {
+		if ctx.Err() != nil {
+			break
+		}
+		e, gerr := s.m.Get(ctx, projectID, id)
+		if gerr == nil {
+			return e, nil
+		}
+		lastErr = gerr
+		if !errors.Is(gerr, gorm.ErrRecordNotFound) {
+			return nil, gerr
+		}
+	}
+	return nil, lastErr
+}
+
 // Create 创建模板（初始 draft_version=1 并写入 version=1 快照）。
 func (s *Service) Create(ctx context.Context, req *contenttemplatedto.CreateReq) (res *contenttemplatedto.TemplateResp, err error) {
 	if req == nil || !s.validEntityType(req.EntityType) || req.Name == "" {
@@ -108,13 +161,10 @@ func (s *Service) Update(ctx context.Context, req *contenttemplatedto.UpdateReq)
 	if req == nil || req.ID == "" {
 		return nil, errors.New(contenttemplateenums.ErrInvalidParam)
 	}
-	// 工程作用域（DB-009 第二批）：content_templates 带 FORCE 策略，
-	// 按 id 取模板也必须带上工程，否则换非超级角色后静默「模板不存在」。
-	projectID, err := s.resolveProjectID(ctx, "")
-	if err != nil {
-		return nil, err
-	}
-	e, err := s.m.Get(ctx, projectID, req.ID)
+	// 工程作用域（DB-009 第二批起）：content_templates 带 FORCE 策略，按 id 取模板必须
+	// 带上工程。第三批把这里的「取唯一工程」换成逐工程定位 —— 多工程部署下不再是
+	// 「需要显式指定工程」，也不会退化成「不限工程」（那在换非超级角色后是静默不存在）。
+	e, err := s.locateTemplate(ctx, req.ID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, errors.New(contenttemplateenums.ErrNotFound)
@@ -149,15 +199,21 @@ func (s *Service) Update(ctx context.Context, req *contenttemplatedto.UpdateReq)
 }
 
 // Get 按 ID 查询。
+//
+// 逐工程定位（DB-009 第三批）：入口只带 id，而 content_templates 带 FORCE 策略。
+// 已经持有工程 id 的调用方走 GetScoped —— 少一次跨工程探测，语义也更直白。
 func (s *Service) Get(ctx context.Context, req *contenttemplatedto.GetReq) (res *contenttemplatedto.TemplateResp, err error) {
 	if req == nil || req.ID == "" {
 		return nil, errors.New(contenttemplateenums.ErrInvalidParam)
 	}
-	projectID, err := s.resolveProjectID(ctx, "")
+	e, err := s.locateTemplate(ctx, req.ID)
 	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, errors.New(contenttemplateenums.ErrNotFound)
+		}
 		return nil, err
 	}
-	return s.GetScoped(ctx, projectID, req.ID)
+	return toResp(e), nil
 }
 
 // GetScoped 在**显式工程作用域**内按 id 取模板（DB-009 第二批）。
@@ -177,6 +233,12 @@ func (s *Service) GetScoped(ctx context.Context, projectID, id string) (res *con
 }
 
 // List 按类型列表。
+//
+// 多工程部署下必须由调用方给出工程（DB-009 第三批）：这里**不**逐工程扇出合并 ——
+// 「列出模板」的结果是给后台管理页看的，把多个工程的模板并在一个列表里等于取消隔离
+// （而且 updatedAt 排序会在工程之间交错，用户无法分辨哪些是自己的）。
+// 现有调用方若撞上 ErrProjectRequired，补参数的落点是：本方法的 req 加 ProjectID
+// （或改调 ResolveTemplateByRoleScoped 那组显式作用域入口）。
 func (s *Service) List(ctx context.Context, req *contenttemplatedto.ListReq) (list []*contenttemplatedto.TemplateResp, err error) {
 	if req == nil {
 		req = &contenttemplatedto.ListReq{}
@@ -204,6 +266,10 @@ func (s *Service) List(ctx context.Context, req *contenttemplatedto.ListReq) (li
 //  1. 优先取 is_default=true 的模板；无默认时回落 update_time 最新一条并记 warn（EDT-014）；
 //  2. 取该模板最新版本（LatestVersion）的 document；
 //  3. 组装 ResolvedTemplate{TemplateID, VersionID, Version, EntityType, Document}。
+//
+// 多工程部署下必须由调用方给出工程（DB-009 第三批）：**不**逐工程扇出 ——
+// 「该类型的当前模板」只可能属于一个工程，扇出会得到多份互不一致的结果，
+// 而调用方（构建链）没法从中挑一份。已有工程 id 的调用方走 ResolveTemplateScoped。
 func (s *Service) ResolveTemplate(ctx context.Context, entityType string) (res *contenttemplatecontract.ResolvedTemplate, err error) {
 	projectID, err := s.resolveProjectID(ctx, "")
 	if err != nil {
@@ -230,6 +296,10 @@ func (s *Service) ResolveTemplateScoped(ctx context.Context, projectID, entityTy
 //
 // 归档型实例（分类页 / 标签页 / 品牌页）走这个入口取归档模板；没有配置时返回
 // ErrNotFound，由调用方决定是「跳过」还是「报错」——不在这里替调用方做决定。
+//
+// 多工程部署下必须由调用方给出工程（DB-009 第三批）：同 ResolveTemplate，
+// 扇出会得到多份结果而无法挑一份，所以这里保持显式失败，不做「不限工程」的兜底；
+// 已持有工程 id 的调用方走 ResolveTemplateByRoleScoped。
 func (s *Service) ResolveTemplateByRole(ctx context.Context, entityType, role string) (res *contenttemplatecontract.ResolvedTemplate, err error) {
 	projectID, err := s.resolveProjectID(ctx, "")
 	if err != nil {
@@ -275,11 +345,26 @@ func (s *Service) ResolveTemplateByRoleScoped(ctx context.Context, projectID, en
 // 「模板」与「模板版本」是两层——换一套模板是换 TemplateID，
 // 同一套模板改版式则产生新版本，两条路径都不需要调用方区分。
 func (s *Service) ResolveTemplateByID(ctx context.Context, templateID string) (res *contenttemplatecontract.ResolvedTemplate, err error) {
-	projectID, err := s.resolveProjectID(ctx, "")
+	if strings.TrimSpace(templateID) == "" {
+		return nil, errors.New(contenttemplateenums.ErrInvalidParam)
+	}
+	// 逐工程定位（DB-009 第三批）：模板 id 是主键，逐工程探测的结果唯一；
+	// 已持有工程 id 的调用方（presentation 构建链）应走 ResolveTemplateByIDScoped。
+	tpl, err := s.locateTemplate(ctx, templateID)
 	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, errors.New(contenttemplateenums.ErrNotFound)
+		}
 		return nil, err
 	}
-	return s.ResolveTemplateByIDScoped(ctx, projectID, templateID)
+	ver, err := s.m.LatestVersion(ctx, tpl.ID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, errors.New(contenttemplateenums.ErrNotFound)
+		}
+		return nil, err
+	}
+	return s.resolvedTemplateFromVersion(tpl, ver)
 }
 
 // ResolveTemplateByIDScoped 在显式工程作用域内按模板 ID 解析其当前版本。
@@ -322,6 +407,12 @@ func (s *Service) resolvedTemplateFromVersion(tpl *contenttemplatemodel.Template
 
 // resolveProjectID 解析模板所属工程：显式传入优先（校验存在），
 // 否则经 project 契约取唯一工程；无工程或多工程时要求显式指定。
+//
+// DB-009 第三批的边界：只用于**必须落在单一工程**的入口（Create 的落库工程、
+// List / ResolveTemplate / ResolveTemplateByRole 的「哪个工程的模板」）——
+// 这些入口扇出会得到互相冲突的多份结果，所以多工程下显式报 ErrProjectRequired，
+// 而不是退到「不限工程」。按 id 定位的入口（Get / Update / ResolveTemplateByID）
+// 已改为逐工程探测（locateTemplate），不再依赖「工程唯一」这个前提。
 func (s *Service) resolveProjectID(ctx context.Context, explicit string) (string, error) {
 	if id := strings.TrimSpace(explicit); id != "" {
 		if s.project != nil {
