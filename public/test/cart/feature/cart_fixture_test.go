@@ -145,6 +145,7 @@ func newCartFixtureWithGateway(t *testing.T, gateway cartcontract.PaymentGateway
 		products,
 		orderstock.New(inv),
 		users,
+		nil, // webhooks：本用例不接线外部集成通道
 	)
 	cart := cartservice.NewService(orders, products, products, gateway, cartTestSecret)
 	return &cartFixture{

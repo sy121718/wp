@@ -41,7 +41,7 @@ func newSummaryFixture(t *testing.T) (*ordermodel.OrderModel, *orderservice.Serv
 		ordermodel.NewOrderStatusLogModel(db),
 		ordermodel.NewCouponModel(db),
 		ordermodel.NewReturnModel(db),
-		nil, nil, nil,
+		nil, nil, nil, nil,
 	)
 	return m, svc
 }

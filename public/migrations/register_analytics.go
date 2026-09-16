@@ -414,7 +414,7 @@ func registerAnalyticsSeoAndPermissions() {
 		// 把强转塞进子查询同理。TableName 仍传 ext_shared，但 CheckSQL 里没有 ? 占位符。
 		CheckSQL: "SELECT CASE WHEN EXISTS (SELECT 1 FROM pg_extension e " +
 			"JOIN pg_namespace n ON n.oid = e.extnamespace " +
-			"WHERE e.extname = 'pg_trgm' AND n.nspname = 'ext_shared') THEN 1 ELSE 0 END",
+			"WHERE e.extname = 'pg_trgm' AND n.nspname = ?) THEN 1 ELSE 0 END",
 		SQL: mustSQL("210_pg_trgm_shared_schema.sql"),
 	})
 
@@ -434,8 +434,9 @@ func registerAnalyticsSeoAndPermissions() {
 	register(Migration{
 		Version:   "212-webhook-time-columns",
 		TableName: "webhook_endpoints",
+		// 两张表各两列都要已是 timestamptz（表名参数是 webhook_endpoints，另一张写死）。
 		CheckSQL: "SELECT CASE WHEN COUNT(*) = 4 THEN 1 ELSE 0 END FROM information_schema.columns " +
-			"WHERE table_schema = current_schema() AND table_name IN ('webhook_endpoints', 'webhook_deliveries') " +
+			"WHERE table_schema = current_schema() AND table_name IN (?, 'webhook_deliveries') " +
 			"AND column_name IN ('create_time', 'update_time') AND data_type = 'timestamp with time zone'",
 		SQL: mustSQL("212_webhook_time_columns.sql"),
 	})
@@ -457,5 +458,17 @@ func registerAnalyticsSeoAndPermissions() {
 		TableName:    "sys_permission",
 		ConditionSQL: "SELECT CASE WHEN COUNT(*) = 5 THEN 1 ELSE 0 END FROM sys_permission WHERE permission_code IN ('build:jobs', 'build:queue', 'build:retry', 'publication:seo_audit', 'order:coupon_count_audit')",
 		SQL:          mustSQL("214_missing_permission_points_2.sql"),
+	})
+
+	// 215：全库工程隔离 RLS（DB-009 主体，54 对象含分区子表）。
+	// 判定按哨兵表 orders 上的 policy 存在 —— 整个 DO 块是一条语句，要么全做要么整体回滚；
+	// 写死 'orders' 字面量而不带 ? 占位符：这里要判的是**另一张**表的状态，
+	// 传 TableName 会把参数塞进一个没有占位符的 SQL 而报错。
+	register(Migration{
+		Version:   "215-project-isolation-rls",
+		TableName: "orders",
+		CheckSQL: "SELECT CASE WHEN COUNT(*) > 0 THEN 1 ELSE 0 END FROM pg_policies " +
+			"WHERE schemaname = current_schema() AND tablename = ? AND policyname = 'project_isolation'",
+		SQL: mustSQL("215_project_isolation_rls.sql"),
 	})
 }

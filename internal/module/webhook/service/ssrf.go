@@ -14,6 +14,8 @@ import (
 	"net"
 	"net/url"
 	"strings"
+
+	webhookenums "go_wp/internal/module/webhook/enums"
 )
 
 // lookupIP DNS 解析入口（测试可替换）。
@@ -22,12 +24,19 @@ var lookupIP = (*net.Resolver).LookupIPAddr
 // validateURL 投递路径调用的校验入口（测试可替换；生产恒为 validateWebhookURL）。
 var validateURL = validateWebhookURL
 
-// SSRF 防护错误（enums 层不放技术细节文案，这里导出供 service 映射）。
+// SSRF 防护错误。
+//
+// 错误值取自 enums 的 **i18n key**（不是中文文案）：这几个错误会经 service 直接
+// 返回给 HTTP 层，而 pkg/response.ErrorAuto 按「值是不是 key 形态」区分业务错误 ——
+// 用中文原文会让「你填了个内网地址」变成「服务器内部错误，请稍后重试」（500），
+// 用户看不出该改哪里。文案在迁移 216 的词条里。
+//
+// 导出这些变量而不是让调用方比较 key 字符串：调用方（含测试）比较的是变量本身。
 var (
-	ErrWebhookURLScheme = errors.New("webhook URL 仅支持 http/https")
-	ErrWebhookURLHost   = errors.New("webhook URL 缺少主机名")
-	ErrWebhookURLNoIP   = errors.New("webhook 主机无法解析出 IP 地址")
-	ErrWebhookURLDenied = errors.New("webhook 目标解析到内网或保留地址，已拒绝")
+	ErrWebhookURLScheme = errors.New(webhookenums.ErrURLSchemeUnsupported)
+	ErrWebhookURLHost   = errors.New(webhookenums.ErrURLHostMissing)
+	ErrWebhookURLNoIP   = errors.New(webhookenums.ErrURLUnresolvable)
+	ErrWebhookURLDenied = errors.New(webhookenums.ErrURLDenied)
 )
 
 // isForbiddenIP 判断 IP 是否落在禁止网段：
@@ -46,7 +55,9 @@ func isForbiddenIP(ip net.IP) bool {
 func validateWebhookURL(raw string) (err error) {
 	u, perr := url.Parse(raw)
 	if perr != nil {
-		return errors.New("webhook URL 格式非法: " + perr.Error())
+		// 丢掉 url.Parse 的技术细节：用户要的是「这个地址填得不对」，
+		// 而不是 Go 标准库的错误串（后者会一起被渲染到界面上）。
+		return errors.New(webhookenums.ErrURLMalformed)
 	}
 	if u.Scheme != "http" && u.Scheme != "https" {
 		return ErrWebhookURLScheme

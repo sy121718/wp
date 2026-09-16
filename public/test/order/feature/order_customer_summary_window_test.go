@@ -81,7 +81,7 @@ func newCountedSummaryFixture(t *testing.T) (*gorm.DB, *ordermodel.OrderModel, *
 		ordermodel.NewOrderStatusLogModel(counted),
 		ordermodel.NewCouponModel(counted),
 		ordermodel.NewReturnModel(counted),
-		nil, nil, nil,
+		nil, nil, nil, nil,
 	)
 	return db, m, svc, cl
 }

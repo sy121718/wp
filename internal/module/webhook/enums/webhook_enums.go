@@ -24,18 +24,35 @@ const (
 )
 
 // 响应消息（handle 与 service 不硬编码文案，一律取这里）。
+//
+// 取值是 **i18n key** 而不是中文原文（与 mail / product 等模块一致）：
+//
+//	· pkg/response.translate 按请求语言查 sys_i18n，未命中原样返回 key（可见的降级）；
+//	· 更重要的是 pkg/response 的 ErrorAuto：它按「值是 key 形态」判定业务错误 ——
+//	  中文原文会被判成内部错误而返回 500 + 通用文案（error_auto_test 逐个校验全仓 enums）。
+//
+// 词条见迁移 216。新增常量时同步补词条，否则前端看到的是 key。
 const (
-	MsgSaveSuccess   = "保存成功"
-	MsgDeleteSuccess = "删除成功"
-	MsgStatusSuccess = "状态已更新"
-	MsgRetryQueued   = "已重新入队"
+	MsgSaveSuccess   = "webhook.msg.saveSuccess"
+	MsgDeleteSuccess = "webhook.msg.deleteSuccess"
+	MsgStatusSuccess = "webhook.msg.statusSuccess"
+	MsgRetryQueued   = "webhook.msg.retryQueued"
 
-	ErrInvalidParam       = "参数错误"
-	ErrEndpointNotFound   = "端点不存在"
-	ErrEventTypeRequired  = "事件类型不能为空"
-	ErrTargetURLRequired  = "目标地址不能为空"
-	ErrSecretRequired     = "签名密钥不能为空"
-	ErrDeliveryNotFound   = "投递记录不存在"
-	ErrDeliveryNotFailed  = "只有失败的投递才能重投"
-	ErrDeliveryNotPending = "投递已在进行中或已完成"
+	ErrInvalidParam      = "webhook.err.invalidParam"
+	ErrEndpointNotFound  = "webhook.err.endpointNotFound"
+	ErrEventTypeRequired = "webhook.err.eventTypeRequired"
+	ErrTargetURLRequired = "webhook.err.targetUrlRequired"
+	ErrSecretRequired    = "webhook.err.secretRequired"
+	// 出站目标（SSRF 防护，SEC-015）：校验失败是**用户可纠正的输入问题**，
+	// 必须是业务错误（key 形态）—— 用中文文案会被 ErrorAuto 判成内部错误，
+	// 用户填了个内网地址却看到「服务器内部错误」。
+	ErrURLMalformed         = "webhook.err.urlMalformed"
+	ErrURLSchemeUnsupported = "webhook.err.urlSchemeUnsupported"
+	ErrURLHostMissing       = "webhook.err.urlHostMissing"
+	ErrURLUnresolvable      = "webhook.err.urlUnresolvable"
+	ErrURLDenied            = "webhook.err.urlDenied"
+
+	ErrDeliveryNotFound   = "webhook.err.deliveryNotFound"
+	ErrDeliveryNotFailed  = "webhook.err.deliveryNotFailed"
+	ErrDeliveryNotPending = "webhook.err.deliveryNotPending"
 )

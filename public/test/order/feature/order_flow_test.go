@@ -95,6 +95,7 @@ func newOrderFixture(t *testing.T) *orderFixture {
 		products,
 		orderstock.New(inv),
 		users,
+		nil, // webhooks：本用例不接线外部集成通道
 	)
 	return &orderFixture{
 		orders: orders, products: products, inventory: inv, users: users, mail: mail,

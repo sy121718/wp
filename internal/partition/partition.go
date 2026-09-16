@@ -21,6 +21,7 @@ import (
 	"gorm.io/gorm"
 
 	"go_wp/pkg/logger"
+	"go_wp/pkg/rls"
 )
 
 // Table 一张分区表的声明。
@@ -83,6 +84,12 @@ func EnsureAhead(ctx context.Context, db *gorm.DB, aheadMonths int) (created []s
 					Error(cerr, "创建月分区失败")
 				continue
 			}
+			// 新建的分区要自己补上父表同款的工程隔离策略（见 ensurePartitionRLS）。
+			// 失败只记日志：分区本身的创建已经成功，不该因为加固动作失败而把它算作失败。
+			if rerr := ensurePartitionRLS(ctx, db, name); rerr != nil {
+				logger.Scene("partition").With("table", t.Name).With("partition", name).
+					Error(rerr, "为新分区补 RLS 策略失败")
+			}
 			created = append(created, name)
 		}
 		// DEFAULT 分区兜底（迁移里已建，这里再保一次：被手工删掉时下次任务补回来）。
@@ -92,6 +99,44 @@ func EnsureAhead(ctx context.Context, db *gorm.DB, aheadMonths int) (created []s
 		}
 	}
 	return created, nil
+}
+
+// ensurePartitionRLS 给新建的月分区补上父表同款的工程隔离策略（DB-009）。
+//
+// 为什么必须补：PostgreSQL 的 ENABLE / FORCE ROW LEVEL SECURITY **不递归到分区**，
+// policy 也不继承 —— 实测对父表执行 ENABLE/FORCE 之后，父表 relrowsecurity = t
+// 而所有子表仍为 f。应用查询走父表时由父表的策略约束（分区裁剪会一并应用），
+// 所以这不是当下的漏洞；但「按分区名直接查」这条路（排障、归档、报表、手工 SQL）
+// 会绕过全部隔离。迁移 215 覆盖的是当时已存在的分区，之后新建的只能在这里补。
+//
+// 只有带 project_id 的分区表才需要隔离（Tables 里的三张都有）。列不存在时跳过而不是
+// 报错：partition 包被设计成通用维护工具，测试里也用它给自建的最小表建分区。
+func ensurePartitionRLS(ctx context.Context, db *gorm.DB, name string) error {
+	var hasProjectID int64
+	if err := db.WithContext(ctx).Raw(`SELECT COUNT(*) FROM information_schema.columns
+		WHERE table_schema = current_schema() AND table_name = ? AND column_name = 'project_id'`,
+		name).Scan(&hasProjectID).Error; err != nil {
+		return err
+	}
+	if hasProjectID == 0 {
+		return nil
+	}
+
+	// DROP + CREATE 而不是 CREATE IF NOT EXISTS：PG 的 CREATE POLICY 没有 IF NOT EXISTS，
+	// 而重放（同一分区名被重复处理）必须安全。
+	stmts := []string{
+		fmt.Sprintf("ALTER TABLE %s ENABLE ROW LEVEL SECURITY", name),
+		fmt.Sprintf("ALTER TABLE %s FORCE ROW LEVEL SECURITY", name),
+		fmt.Sprintf("DROP POLICY IF EXISTS project_isolation ON %s", name),
+		fmt.Sprintf("CREATE POLICY project_isolation ON %s USING %s WITH CHECK %s",
+			name, rls.ScopedPredicate, rls.ScopedPredicate),
+	}
+	for _, s := range stmts {
+		if err := db.WithContext(ctx).Exec(s).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Partition 一个月分区。

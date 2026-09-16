@@ -9,31 +9,24 @@ import (
 	"context"
 	"time"
 
-	"github.com/google/uuid"
 	"gorm.io/gorm"
+
+	"go_wp/pkg/rls"
 )
 
 const tableNameProjectLocales = "project_locales"
 
 // withProjectScope 在事务内设置 RLS 会话变量 app.project_id 后执行 fn。
 //
-// project_locales 已启用行级安全（迁移 199）：策略谓词读取 app.project_id，
-// 未设置或非法时行不可见（fail closed）。变量必须用 set_config(..., is_local => true)
-// 在事务内设置：事务结束自动还原，GORM 连接池复用连接时不会把本工程的隔离
-// 上下文泄漏给下一个请求。
+// 实现已上提到 **pkg/rls.InProjectScope**（DB-009 全量覆盖时）：Migration 215 给
+// 53 个带 project_id 的对象都铺了同样的策略，「在事务里设变量」这件事不该在
+// 每个模块的 model 里各抄一份。这里保留方法名与签名，调用方（ListLocales /
+// ReplaceLocales）不变。
 //
-// projectID 先做 uuid 语法校验：策略谓词里有 ::uuid 强转，非法值会把 PG 报错
-// （invalid input syntax）暴露给调用方，提前校验让错误归属明确。
+// RLS 生效的前提见 pkg/rls 与 AGENTS.md「数据库」段：连接用户必须**不是**超级用户
+// （超级用户总是绕过 RLS，FORCE 也约束不了它）。
 func (m *Model) withProjectScope(ctx context.Context, projectID string, fn func(tx *gorm.DB) error) error {
-	if _, err := uuid.Parse(projectID); err != nil {
-		return err
-	}
-	return m.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Exec("SELECT set_config('app.project_id', ?, true)", projectID).Error; err != nil {
-			return err
-		}
-		return fn(tx)
-	})
+	return rls.InProjectScope(ctx, m.db, projectID, fn)
 }
 
 // LocaleEntity 对应 project_locales 表。

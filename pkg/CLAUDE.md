@@ -18,6 +18,7 @@ pkg/
 ├── logger/        # 结构化日志
 ├── queue/         # asynq 任务队列
 ├── response/      # 统一响应结构
+├── rls/           # 工程隔离的行级安全原语（DB-009：事务内 set_config app.project_id）
 ├── upload/        # 上传（local/qiniu，Windows 保留名与 O_NOFOLLOW 已加固）
 ├── utils/         # 工具
 └── validate/      # 校验

@@ -78,7 +78,7 @@ func newCustomerE2EEnv(t *testing.T) *customerE2EEnv {
 		ordermodel.NewOrderStatusLogModel(db),
 		ordermodel.NewCouponModel(db),
 		ordermodel.NewReturnModel(db),
-		nil, nil, nil,
+		nil, nil, nil, nil,
 	)
 
 	gin.SetMode(gin.TestMode)
@@ -242,7 +242,7 @@ func TestCustomerPageE2EListDetailAndWrites(t *testing.T) {
 		// 页面上的数字必须来自契约，而不是页面自己算的 —— 这里直接调契约核对一次。
 		orders := orderservice.NewService(
 			env.orders, ordermodel.NewOrderItemModel(env.db), ordermodel.NewOrderStatusLogModel(env.db),
-			ordermodel.NewCouponModel(env.db), ordermodel.NewReturnModel(env.db), nil, nil, nil)
+			ordermodel.NewCouponModel(env.db), ordermodel.NewReturnModel(env.db), nil, nil, nil, nil)
 		res, err := orders.CustomerOrderSummaryOf(context.Background(), &orderdto.CustomerOrderSummaryReq{
 			ProjectID: env.project, UserID: customer.ID,
 		})
