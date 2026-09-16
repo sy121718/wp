@@ -7,10 +7,10 @@ package buildhttp
 // 没有跨工程的越权面（队列行只带来源模块的 id，不含业务数据）。
 
 import (
-	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
 	"go_wp/internal/middleware/builtin"
+	"go_wp/internal/permission"
 
 	buildcontract "go_wp/internal/module/build/contract"
 	buildmodel "go_wp/internal/module/build/model"
@@ -22,13 +22,13 @@ import (
 // worker 不在这里启动：执行器要由来源模块（page / presentation）在装配后注册，
 // 先启动 worker 会有一小段「任务没有执行器」的窗口，那段时间进来的任务会被判失败。
 // 启动时机由顶层装配决定（见 routers.SetupRoutes）。
-func SetupBuildRoutes(rg *gin.RouterGroup, db *gorm.DB) buildcontract.BuildService {
+func SetupBuildRoutes(rg *permission.RouteGroup, db *gorm.DB) buildcontract.BuildService {
 	svc := buildservice.NewService(buildmodel.NewModel(db))
 	handle := NewHandle(svc)
 
 	g := rg.Group("/build", builtin.SessionAuthMiddleware())
-	g.GET("/queue", handle.Queue)
-	g.GET("/jobs", handle.List)
-	g.POST("/retry", handle.Retry)
+	g.GET("/queue", permission.BuildQueue, handle.Queue)
+	g.GET("/jobs", permission.BuildJobs, handle.List)
+	g.POST("/retry", permission.BuildRetry, handle.Retry)
 	return svc
 }

@@ -2,13 +2,13 @@
 package mailhttp
 
 import (
-	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
 	"go_wp/config"
 	mailcontract "go_wp/internal/module/mail/contract"
 	mailmodel "go_wp/internal/module/mail/model"
 	mailservice "go_wp/internal/module/mail/service"
+	"go_wp/internal/permission"
 )
 
 // SetupMailRoutes 装配邮箱模块路由，返回模块契约。
@@ -16,7 +16,7 @@ import (
 // 加密密钥（config.yaml 的 app.secret）在这里从配置读入并注入 service，
 // 同时交给队列 handler —— worker 要解密账号密码才能发信。
 // service 自己不读 config（模块不直接碰配置读取，装配层负责注入）。
-func SetupMailRoutes(rg *gin.RouterGroup, db *gorm.DB) mailcontract.MailService {
+func SetupMailRoutes(rg *permission.RouteGroup, db *gorm.DB) mailcontract.MailService {
 	secret := ""
 	if v, err := config.GetViper(); err == nil && v != nil {
 		secret = v.GetString("app.secret")
@@ -37,38 +37,38 @@ func SetupMailRoutes(rg *gin.RouterGroup, db *gorm.DB) mailcontract.MailService 
 
 	handle := NewHandle(svc)
 	g := rg.Group("/mail")
-	g.GET("/account/list", handle.AccountList)
-	g.POST("/account/save", handle.AccountSave)
-	g.POST("/account/delete", handle.AccountDelete)
-	g.POST("/account/default", handle.AccountSetDefault)
-	g.POST("/account/test", handle.AccountTestSend)
-	g.GET("/template/list", handle.TemplateList)
-	g.POST("/template/save", handle.TemplateSave)
-	g.POST("/template/delete", handle.TemplateDelete)
-	g.GET("/contact/list", handle.ContactList)
-	g.POST("/contact/import", handle.ContactImport)
-	g.POST("/contact/status", handle.ContactStatus)
+	g.GET("/account/list", permission.MailAccountList, handle.AccountList)
+	g.POST("/account/save", permission.MailAccountSave, handle.AccountSave)
+	g.POST("/account/delete", permission.MailAccountDelete, handle.AccountDelete)
+	g.POST("/account/default", permission.MailAccountDefault, handle.AccountSetDefault)
+	g.POST("/account/test", permission.MailAccountTest, handle.AccountTestSend)
+	g.GET("/template/list", permission.MailTemplateList, handle.TemplateList)
+	g.POST("/template/save", permission.MailTemplateSave, handle.TemplateSave)
+	g.POST("/template/delete", permission.MailTemplateDelete, handle.TemplateDelete)
+	g.GET("/contact/list", permission.MailContactList, handle.ContactList)
+	g.POST("/contact/import", permission.MailContactImport, handle.ContactImport)
+	g.POST("/contact/status", permission.MailContactStatus, handle.ContactStatus)
 	// 群发活动：启动只受理（统计人数 + 改状态 + 入队展开任务），收件人展开在后台分批完成。
-	g.GET("/campaign/list", handle.CampaignList)
-	g.GET("/campaign/get", handle.CampaignGet)
-	g.POST("/campaign/save", handle.CampaignSave)
-	g.POST("/campaign/delete", handle.CampaignDelete)
-	g.POST("/campaign/start", handle.CampaignStart)
+	g.GET("/campaign/list", permission.MailCampaignList, handle.CampaignList)
+	g.GET("/campaign/get", permission.MailCampaignGet, handle.CampaignGet)
+	g.POST("/campaign/save", permission.MailCampaignSave, handle.CampaignSave)
+	g.POST("/campaign/delete", permission.MailCampaignDelete, handle.CampaignDelete)
+	g.POST("/campaign/start", permission.MailCampaignStart, handle.CampaignStart)
 
 	// 自动化（#38 P3）：流程定义 CRUD + 实例排障。
 	// 保存与启用都会校验图（无环 / 可达 / 形状）—— 这是引擎正确性的第一道关。
-	g.GET("/automation/list", handle.AutomationList)
-	g.GET("/automation/get", handle.AutomationGet)
-	g.POST("/automation/save", handle.AutomationSave)
-	g.POST("/automation/status", handle.AutomationStatus)
+	g.GET("/automation/list", permission.MailAutomationList, handle.AutomationList)
+	g.GET("/automation/get", permission.MailAutomationGet, handle.AutomationGet)
+	g.POST("/automation/save", permission.MailAutomationSave, handle.AutomationSave)
+	g.POST("/automation/status", permission.MailAutomationStatus, handle.AutomationStatus)
 	// 画布位置（P4）：与 save 分开，位置不推进版本号。权限点沿用 save。
-	g.POST("/automation/layout", handle.AutomationLayout)
-	g.POST("/automation/delete", handle.AutomationDelete)
-	g.POST("/automation/start", handle.AutomationStartRun)
-	g.GET("/automation/run/list", handle.AutomationRunList)
-	g.GET("/automation/run/detail", handle.AutomationRunDetail)
+	g.POST("/automation/layout", permission.MailAutomationLayout, handle.AutomationLayout)
+	g.POST("/automation/delete", permission.MailAutomationDelete, handle.AutomationDelete)
+	g.POST("/automation/start", permission.MailAutomationStart, handle.AutomationStartRun)
+	g.GET("/automation/run/list", permission.MailAutomationRunList, handle.AutomationRunList)
+	g.GET("/automation/run/detail", permission.MailAutomationRunDetail, handle.AutomationRunDetail)
 	// 延时兜底的手工触发：队列延时任务失效时，运维可立刻补投一轮。
-	g.POST("/automation/tick", handle.AutomationTick)
+	g.POST("/automation/tick", permission.MailAutomationTick, handle.AutomationTick)
 
 	return svc
 }

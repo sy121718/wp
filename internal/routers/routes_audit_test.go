@@ -16,6 +16,8 @@ import (
 	"fmt"
 	"os"
 	"testing"
+
+	"go_wp/internal/permission"
 )
 
 func TestDumpRoutesForAudit(t *testing.T) {
@@ -24,5 +26,13 @@ func TestDumpRoutesForAudit(t *testing.T) {
 	}
 	for _, l := range bootstrapRouter(t) {
 		fmt.Println(l)
+	}
+	// 声明式权限点清单（审计 SEC-011）：脚本用它做「库中有、代码未声明」的反向比对。
+	// 前缀刻意与路由行（"METHOD /path"）区分，避免污染脚本对路由表的解析。
+	for _, spec := range permission.Snapshot() {
+		fmt.Printf("DECLARED %s %s %s\n", spec.Method, spec.Path, spec.Perm)
+	}
+	for _, e := range permission.Exempts() {
+		fmt.Printf("EXEMPT %s\n", e)
 	}
 }

@@ -23,6 +23,7 @@ import (
 	usercontract "go_wp/internal/module/user/contract"
 	userdto "go_wp/internal/module/user/dto"
 	userenums "go_wp/internal/module/user/enums"
+	"go_wp/internal/permission"
 	"go_wp/pkg/response"
 	"go_wp/pkg/sitetz"
 	"go_wp/pkg/utils"
@@ -46,16 +47,16 @@ func NewCustomerHandle(svc usercontract.CustomerAdminPort) *CustomerHandle {
 //
 // svc 为 nil 时直接不注册：装配缺陷应该由调用方（routes.go 的断言）炸掉，
 // 而不是在这里注册一批「一调就 500」的接口。
-func SetupCustomerAdminRoutes(rg *gin.RouterGroup, svc usercontract.CustomerAdminPort) {
+func SetupCustomerAdminRoutes(rg *permission.RouteGroup, svc usercontract.CustomerAdminPort) {
 	if rg == nil || svc == nil {
 		return
 	}
 	h := NewCustomerHandle(svc)
 	g := rg.Group("/customer")
-	g.GET("/list", h.ListCustomers)
-	g.GET("/get", h.GetCustomer)
-	g.POST("/status", h.SetCustomerStatus)
-	g.POST("/unlock", h.UnlockCustomer)
+	g.GET("/list", permission.UserCustomerList, h.ListCustomers)
+	g.GET("/get", permission.UserCustomerDetail, h.GetCustomer)
+	g.POST("/status", permission.UserCustomerStatus, h.SetCustomerStatus)
+	g.POST("/unlock", permission.UserCustomerUnlock, h.UnlockCustomer)
 }
 
 // ListCustomers 客户列表（GET /api/customer/list）。

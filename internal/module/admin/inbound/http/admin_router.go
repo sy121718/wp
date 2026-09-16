@@ -6,10 +6,10 @@ import (
 	"go_wp/internal/middleware/builtin"
 	admincontract "go_wp/internal/module/admin/contract"
 	adminservice "go_wp/internal/module/admin/service"
+	"go_wp/internal/permission"
 	datarulepkg "go_wp/pkg/datarule"
 	"go_wp/pkg/logger"
 
-	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
 
@@ -25,7 +25,7 @@ const (
 // 合并后模块内部同包直调，无跨模块契约，不对外暴露接口。
 // 返回 AuthzContextService：对外只读权限上下文查询能力，供外部模块/插件消费
 // （管理面写操作仍由 handle 层经 AdminService 等走 Casbin 鉴权，不在此返回）。
-func SetupAdminRoutes(rg *gin.RouterGroup, db *gorm.DB) admincontract.AuthzContextService {
+func SetupAdminRoutes(rg *permission.RouteGroup, db *gorm.DB) admincontract.AuthzContextService {
 	if rg == nil {
 		return nil
 	}
@@ -42,7 +42,7 @@ func SetupAdminRoutes(rg *gin.RouterGroup, db *gorm.DB) admincontract.AuthzConte
 	// --- 管理员 ---
 	admin := rg.Group("/admin")
 	// 登录接口匿名可达，无条件挂按 IP 限流（不依赖全局 rate_limit 开关）。
-	admin.POST("/login",
+	admin.POST("/login", permission.Exempt,
 		builtin.RequestRateLimitMiddleware(loginRateLimit, loginRateWindow),
 		handle.AdminLogin)
 
@@ -52,9 +52,9 @@ func SetupAdminRoutes(rg *gin.RouterGroup, db *gorm.DB) admincontract.AuthzConte
 		builtin.DataRuleContextMiddleware(),
 	)
 	{
-		auth.POST("/logout", handle.AdminLogout)
-		auth.GET("/profile", handle.AdminProfile)
-		auth.GET("/routes", handle.AdminRoutes)
+		auth.POST("/logout", permission.Exempt, handle.AdminLogout)
+		auth.GET("/profile", permission.Exempt, handle.AdminProfile)
+		auth.GET("/routes", permission.Exempt, handle.AdminRoutes)
 	}
 
 	authorized := admin.Group("").Use(
@@ -64,15 +64,15 @@ func SetupAdminRoutes(rg *gin.RouterGroup, db *gorm.DB) admincontract.AuthzConte
 		builtin.DataRuleContextMiddleware(),
 	)
 	{
-		authorized.GET("/list", handle.AdminList)
-		authorized.GET("/detail", handle.AdminDetail)
-		authorized.POST("/create", handle.AdminCreate)
-		authorized.POST("/edit", handle.AdminEdit)
-		authorized.POST("/delete", handle.AdminDelete)
-		authorized.GET("/role/list", handle.AdminRoleList)
-		authorized.POST("/role/save", handle.AdminRoleSave)
-		authorized.GET("/menu/list", handle.AdminMenuList)
-		authorized.POST("/menu/save", handle.AdminMenuSave)
+		authorized.GET("/list", permission.AdminList, handle.AdminList)
+		authorized.GET("/detail", permission.AdminDetail, handle.AdminDetail)
+		authorized.POST("/create", permission.AdminCreate, handle.AdminCreate)
+		authorized.POST("/edit", permission.AdminEdit, handle.AdminEdit)
+		authorized.POST("/delete", permission.AdminDelete, handle.AdminDelete)
+		authorized.GET("/role/list", permission.AdminRoleList, handle.AdminRoleList)
+		authorized.POST("/role/save", permission.AdminRoleSave, handle.AdminRoleSave)
+		authorized.GET("/menu/list", permission.AdminMenuList, handle.AdminMenuList)
+		authorized.POST("/menu/save", permission.AdminMenuSave, handle.AdminMenuSave)
 	}
 
 	// --- 角色 ---
@@ -82,15 +82,15 @@ func SetupAdminRoutes(rg *gin.RouterGroup, db *gorm.DB) admincontract.AuthzConte
 		builtin.CasbinMiddleware(),
 	)
 	{
-		role.GET("/list", handle.RoleList)
-		role.GET("/detail", handle.RoleDetail)
-		role.POST("/create", handle.RoleCreate)
-		role.POST("/update", handle.RoleUpdate)
-		role.POST("/delete", handle.RoleDelete)
-		role.GET("/menu/list", handle.RoleMenuList)
-		role.POST("/menu/save", handle.RoleMenuSave)
-		role.GET("/user/list", handle.RoleUserList)
-		role.POST("/user/save", handle.RoleUserSave)
+		role.GET("/list", permission.RoleList, handle.RoleList)
+		role.GET("/detail", permission.RoleDetail, handle.RoleDetail)
+		role.POST("/create", permission.RoleCreate, handle.RoleCreate)
+		role.POST("/update", permission.RoleUpdate, handle.RoleUpdate)
+		role.POST("/delete", permission.RoleDelete, handle.RoleDelete)
+		role.GET("/menu/list", permission.RoleMenuList, handle.RoleMenuList)
+		role.POST("/menu/save", permission.RoleMenuSave, handle.RoleMenuSave)
+		role.GET("/user/list", permission.RoleUserList, handle.RoleUserList)
+		role.POST("/user/save", permission.RoleUserSave, handle.RoleUserSave)
 	}
 
 	// --- 权限点 ---
@@ -100,12 +100,12 @@ func SetupAdminRoutes(rg *gin.RouterGroup, db *gorm.DB) admincontract.AuthzConte
 		builtin.CasbinMiddleware(),
 	)
 	{
-		perm.GET("/list", handle.PermList)
-		perm.GET("/detail", handle.PermDetail)
-		perm.GET("/options", handle.PermOptions)
-		perm.POST("/create", handle.PermCreate)
-		perm.POST("/update", handle.PermUpdate)
-		perm.POST("/delete", handle.PermDelete)
+		perm.GET("/list", permission.PermissionList, handle.PermList)
+		perm.GET("/detail", permission.PermissionDetail, handle.PermDetail)
+		perm.GET("/options", permission.PermissionOptions, handle.PermOptions)
+		perm.POST("/create", permission.PermissionCreate, handle.PermCreate)
+		perm.POST("/update", permission.PermissionUpdate, handle.PermUpdate)
+		perm.POST("/delete", permission.PermissionDelete, handle.PermDelete)
 	}
 
 	// --- 菜单 ---
@@ -115,11 +115,11 @@ func SetupAdminRoutes(rg *gin.RouterGroup, db *gorm.DB) admincontract.AuthzConte
 		builtin.CasbinMiddleware(),
 	)
 	{
-		menu.GET("/tree", handle.MenuTree)
-		menu.GET("/detail", handle.MenuDetail)
-		menu.POST("/create", handle.MenuCreate)
-		menu.POST("/update", handle.MenuUpdate)
-		menu.POST("/delete", handle.MenuDelete)
+		menu.GET("/tree", permission.MenuList, handle.MenuTree)
+		menu.GET("/detail", permission.MenuDetail, handle.MenuDetail)
+		menu.POST("/create", permission.MenuCreate, handle.MenuCreate)
+		menu.POST("/update", permission.MenuUpdate, handle.MenuUpdate)
+		menu.POST("/delete", permission.MenuDelete, handle.MenuDelete)
 	}
 
 	// --- 部门 ---
@@ -129,13 +129,13 @@ func SetupAdminRoutes(rg *gin.RouterGroup, db *gorm.DB) admincontract.AuthzConte
 		builtin.CasbinMiddleware(),
 	)
 	{
-		dept.GET("/tree", handle.DeptTree)
-		dept.GET("/detail", handle.DeptDetail)
-		dept.POST("/create", handle.DeptCreate)
-		dept.POST("/update", handle.DeptUpdate)
-		dept.POST("/delete", handle.DeptDelete)
-		dept.GET("/user/list", handle.DeptUserList)
-		dept.POST("/user/save", handle.DeptUserSave)
+		dept.GET("/tree", permission.DeptList, handle.DeptTree)
+		dept.GET("/detail", permission.DeptDetail, handle.DeptDetail)
+		dept.POST("/create", permission.DeptCreate, handle.DeptCreate)
+		dept.POST("/update", permission.DeptUpdate, handle.DeptUpdate)
+		dept.POST("/delete", permission.DeptDelete, handle.DeptDelete)
+		dept.GET("/user/list", permission.DeptUserList, handle.DeptUserList)
+		dept.POST("/user/save", permission.DeptUserSave, handle.DeptUserSave)
 	}
 
 	// --- 数据权限规则 ---
@@ -146,15 +146,15 @@ func SetupAdminRoutes(rg *gin.RouterGroup, db *gorm.DB) admincontract.AuthzConte
 		builtin.CasbinMiddleware(),
 	)
 	{
-		datarule.GET("/list", handle.RuleList)
-		datarule.GET("/detail", handle.RuleDetail)
-		datarule.POST("/create", handle.RuleCreate)
-		datarule.POST("/update", handle.RuleUpdate)
-		datarule.POST("/delete", handle.RuleDelete)
-		datarule.GET("/schema/list", handle.RuleSchemaList)
-		datarule.GET("/schema/detail", handle.RuleSchemaDetail)
-		datarule.GET("/assignment/list", handle.RuleAssignmentList)
-		datarule.POST("/assignment/save", handle.RuleAssignmentSave)
+		datarule.GET("/list", permission.DataruleList, handle.RuleList)
+		datarule.GET("/detail", permission.DataruleDetail, handle.RuleDetail)
+		datarule.POST("/create", permission.DataruleCreate, handle.RuleCreate)
+		datarule.POST("/update", permission.DataruleUpdate, handle.RuleUpdate)
+		datarule.POST("/delete", permission.DataruleDelete, handle.RuleDelete)
+		datarule.GET("/schema/list", permission.DataruleSchemaList, handle.RuleSchemaList)
+		datarule.GET("/schema/detail", permission.DataruleSchemaDetail, handle.RuleSchemaDetail)
+		datarule.GET("/assignment/list", permission.DataruleAssignmentList, handle.RuleAssignmentList)
+		datarule.POST("/assignment/save", permission.DataruleAssignmentSave, handle.RuleAssignmentSave)
 	}
 
 	return svc

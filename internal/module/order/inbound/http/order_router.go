@@ -5,7 +5,6 @@
 package orderhttp
 
 import (
-	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
 	ordercontract "go_wp/internal/module/order/contract"
@@ -14,14 +13,14 @@ import (
 	productcontract "go_wp/internal/module/product/contract"
 	usercontract "go_wp/internal/module/user/contract"
 	webhookcontract "go_wp/internal/module/webhook/contract"
+	"go_wp/internal/permission"
 )
 
 // SetupOrderRoutes 装配订单模块路由，返回模块契约。
 //
 // product 提供下单快照（只读），stock 提供扣减与归还两条库存能力 ——
 // 两者都是收窄过的接口，不是各自模块的完整 Service。
-func SetupOrderRoutes(
-	rg *gin.RouterGroup,
+func SetupOrderRoutes(rg *permission.RouteGroup,
 	db *gorm.DB,
 	product productcontract.VariantSnapshotPort,
 	stock ordercontract.StockOperator,
@@ -50,38 +49,38 @@ func SetupOrderRoutes(
 
 	g := rg.Group("/order")
 	// 查询
-	g.GET("/list", h.ListOrders)
-	g.GET("/get", h.GetOrder)
-	g.GET("/item/list", h.ListItems)
-	g.GET("/log/list", h.ListLogs)
+	g.GET("/list", permission.OrderList, h.ListOrders)
+	g.GET("/get", permission.OrderGet, h.GetOrder)
+	g.GET("/item/list", permission.OrderItemList, h.ListItems)
+	g.GET("/log/list", permission.OrderLogList, h.ListLogs)
 	// 写入
-	g.POST("/create", h.CreateOrder)
-	g.POST("/status", h.ChangeStatus)
-	g.POST("/cancel", h.CancelOrder)
-	g.POST("/refund", h.RefundOrder)
+	g.POST("/create", permission.OrderCreate, h.CreateOrder)
+	g.POST("/status", permission.OrderStatus, h.ChangeStatus)
+	g.POST("/cancel", permission.OrderCancel, h.CancelOrder)
+	g.POST("/refund", permission.OrderRefund, h.RefundOrder)
 	// 后台备注：只改一列，不写状态流转（备注不是状态变化）。
-	g.POST("/note", h.UpdateOrderNote)
+	g.POST("/note", permission.OrderNote, h.UpdateOrderNote)
 
 	// 优惠码（BIZ-1）：管理 + 试算。核销不在这里 —— 它在建单事务内完成。
 	cg := rg.Group("/order/coupon")
-	cg.GET("/list", h.ListCoupons)
-	cg.GET("/get", h.GetCoupon)
-	cg.GET("/validate", h.ValidateCoupon)
-	cg.GET("/redemption/list", h.ListCouponRedemptions)
+	cg.GET("/list", permission.OrderCouponList, h.ListCoupons)
+	cg.GET("/get", permission.OrderCouponGet, h.GetCoupon)
+	cg.GET("/validate", permission.OrderCouponValidate, h.ValidateCoupon)
+	cg.GET("/redemption/list", permission.OrderCouponRedemption, h.ListCouponRedemptions)
 	// 券计数对账（DB-021）：只读巡检，used_count 是投影、核销明细是真源。
-	cg.GET("/count-audit", h.AuditCouponCounts)
-	cg.POST("/create", h.CreateCoupon)
-	cg.POST("/update", h.UpdateCoupon)
-	cg.POST("/delete", h.DeleteCoupon)
+	cg.GET("/count-audit", permission.OrderCouponCountAudit, h.AuditCouponCounts)
+	cg.POST("/create", permission.OrderCouponCreate, h.CreateCoupon)
+	cg.POST("/update", permission.OrderCouponUpdate, h.UpdateCoupon)
+	cg.POST("/delete", permission.OrderCouponDelete, h.DeleteCoupon)
 
 	// 退货入库（RMA）：客户在访问面提交申请，后台在这里审核与收货。
 	// **先入库、后退款**的强顺序由 service 保证（见 return_review.go）。
 	rgp := rg.Group("/order/return")
-	rgp.GET("/list", h.ListReturns)
-	rgp.GET("/get", h.GetReturn)
-	rgp.POST("/approve", h.ApproveReturn)
-	rgp.POST("/reject", h.RejectReturn)
-	rgp.POST("/receive", h.ReceiveReturn)
+	rgp.GET("/list", permission.OrderReturnList, h.ListReturns)
+	rgp.GET("/get", permission.OrderReturnGet, h.GetReturn)
+	rgp.POST("/approve", permission.OrderReturnApprove, h.ApproveReturn)
+	rgp.POST("/reject", permission.OrderReturnReject, h.RejectReturn)
+	rgp.POST("/receive", permission.OrderReturnReceive, h.ReceiveReturn)
 
 	return svc
 }

@@ -14,6 +14,7 @@ import (
 
 	"go_wp/config"
 	"go_wp/internal/middleware/builtin"
+	"go_wp/internal/permission"
 	"go_wp/pkg/logger"
 
 	analyticscontract "go_wp/internal/module/analytics/contract"
@@ -32,7 +33,7 @@ const (
 // analytics.pepper（独立盐），未配置时由会话密钥经 HKDF 派生（SEC-013）——
 // 不再把会话密钥直接当盐用。IP 与访客标识只以带盐哈希落库。
 // rg 为已挂 Session + CSRF + Casbin 的业务 API 组；router 为引擎（公开路由挂它）。
-func SetupAnalyticsRoutes(rg *gin.RouterGroup, router *gin.Engine, db *gorm.DB,
+func SetupAnalyticsRoutes(rg *permission.RouteGroup, router *gin.Engine, db *gorm.DB,
 	sessionSecret string) analyticscontract.AnalyticsService {
 	svc := analyticsservice.NewService(analyticsmodel.NewModel(db), resolveAnonSalt(sessionSecret))
 	analyticsservice.StartAnalyticsRetentionScheduler(svc)
@@ -50,7 +51,7 @@ func SetupAnalyticsRoutes(rg *gin.RouterGroup, router *gin.Engine, db *gorm.DB,
 	// 后台只读聚合（后台统计页与只读 API 共用同一份实现）。
 	if rg != nil {
 		g := rg.Group("/analytics")
-		g.GET("/summary", handle.Summary)
+		g.GET("/summary", permission.AnalyticsView, handle.Summary)
 	}
 	return svc
 }

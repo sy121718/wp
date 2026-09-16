@@ -28,6 +28,7 @@ import (
 	projectdto "go_wp/internal/module/project/dto"
 	projectmodel "go_wp/internal/module/project/model"
 	projectservice "go_wp/internal/module/project/service"
+	"go_wp/internal/permission"
 	"go_wp/public/migrations"
 	"go_wp/public/test/support"
 )
@@ -67,7 +68,8 @@ func newAnalyticsFixture(t *testing.T) *analyticsFixture {
 	}
 	engine := gin.New()
 	// 测试里不挂三层链（鉴权链路由 auth feature 覆盖），只验证参数绑定、service 与 SQL。
-	svc := analyticshttp.SetupAnalyticsRoutes(engine.Group("/api"), engine, db, testPepper)
+	// 声明式权限路由组（与 routes.go 同款包装）；本测试不挂三层链，声明只作登记、不写库。
+	svc := analyticshttp.SetupAnalyticsRoutes(permission.NewRouteGroup(engine.Group("/api")), engine, db, testPepper)
 	return &analyticsFixture{engine: engine, svc: svc, db: db, projectID: project.ID}
 }
 

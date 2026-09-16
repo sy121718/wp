@@ -417,6 +417,9 @@ func (a *assembly) mountAdminPages() {
 // 可选端口未接入写进启动日志 —— 降级必须可见，而不是只在代码注释里写一句「未注入时降级」。
 func (a *assembly) runSelfCheck() {
 	mustAllPortsWired(a.marks)
+	// 权限点声明同步（审计 SEC-011）：路由装配完成后，把声明表幂等 upsert 进库
+	// （只补缺失的权限点与超管策略，不动人工的角色 / 用户授权，见 internal/permission/sync.go）。
+	syncDeclaredPermissions(a.db)
 	logDegradedOptional(a.marks)
 }
 

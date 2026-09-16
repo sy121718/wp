@@ -49,12 +49,17 @@ DB_USER="${DB_USER:-${GOWP_DATABASE_USER:-$(yaml_db user)}}"
 DB_PASS="${DB_PASSWORD:-${GOWP_DATABASE_PASSWORD:-$(yaml_db password)}}"
 DB_NAME="${DB_NAME:-${GOWP_DATABASE_DBNAME:-$(yaml_db dbname)}}"
 
-tmp_routes=$(mktemp); tmp_perms=$(mktemp); tmp_exempt=$(mktemp); tmp_gap=$(mktemp)
-trap 'rm -f "$tmp_routes" "$tmp_perms" "$tmp_exempt" "$tmp_gap"' EXIT
+tmp_routes=$(mktemp); tmp_raw=$(mktemp); tmp_perms=$(mktemp); tmp_exempt=$(mktemp); tmp_gap=$(mktemp)
+tmp_declared=$(mktemp); tmp_codes=$(mktemp); tmp_perm_codes=$(mktemp); tmp_undeclared=$(mktemp)
+trap 'rm -f "$tmp_routes" "$tmp_raw" "$tmp_perms" "$tmp_exempt" "$tmp_gap" "$tmp_declared" "$tmp_codes" "$tmp_perm_codes" "$tmp_undeclared"' EXIT
 
 echo "→ 装配路由表（会初始化一次组件，需要数据库 ${DB_HOST}:${DB_PORT}/${DB_NAME}）…"
-WP_DUMP_ROUTES=1 go test ./internal/routers/ -run TestDumpRoutesForAudit -count=1 -v 2>/dev/null \
-    | grep -E "^[A-Z]+ /api" | sort -u > "$tmp_routes"
+# 装配输出一次拿全：路由行（"METHOD /path"）与声明行（"DECLARED METHOD /path code" /
+# "EXEMPT METHOD /path"）都在这里，后者由内部/permission 的声明注册表在注册时采集。
+WP_DUMP_ROUTES=1 go test ./internal/routers/ -run TestDumpRoutesForAudit -count=1 -v 2>/dev/null > "$tmp_raw"
+grep -E "^[A-Z]+ /api" "$tmp_raw" | sort -u > "$tmp_routes"
+grep -E "^DECLARED " "$tmp_raw" | awk '{print $2" "$3}' | sort -u > "$tmp_declared"
+grep -E "^DECLARED " "$tmp_raw" | awk '{print $4}' | sort -u > "$tmp_codes"
 if [ ! -s "$tmp_routes" ]; then
     echo "路由表为空 —— 组件装配失败（先确认数据库可连、config.yaml 正确）。" >&2
     exit 1
@@ -65,6 +70,18 @@ PGPASSWORD="$DB_PASS" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAM
     | sed "s/^[[:space:]]*//;s/[[:space:]]*$//" | grep -v "^$" | sort -u > "$tmp_perms"
 
 printf '%s\n' "${EXEMPT[@]}" | sort -u > "$tmp_exempt"
+
+# 兜底 A（审计 SEC-011）：声明式注册采集出来的路由，必须与运行时路由表逐条对上。
+# 这一条理论上不可能失败（声明是注册动作的产物），留在这里是为了让「机制悄悄失效」
+# （例如有人绕过 RouteGroup 直接往授权组上挂 gin 的 GET/POST）当场暴露。
+if [ -s "$tmp_declared" ]; then
+    comm -23 "$tmp_declared" "$tmp_routes" > "$tmp_undeclared" || true
+    if [ -s "$tmp_undeclared" ]; then
+        echo "✗ 声明了权限点、但运行时路由表里不存在的接口（声明式注册被绕过或被改写）：" >&2
+        sed "s/^/    /" "$tmp_undeclared" >&2
+        exit 1
+    fi
+fi
 comm -23 "$tmp_routes" "$tmp_perms" | comm -23 - "$tmp_exempt" > "$tmp_gap" || true
 
 echo "  路由 $(wc -l < "$tmp_routes") 条 / 权限点 $(wc -l < "$tmp_perms") 条 / 已豁免 $(wc -l < "$tmp_exempt") 条"
@@ -80,3 +97,29 @@ if [ -s "$tmp_gap" ]; then
 fi
 
 echo "✓ 没有缺口"
+
+# —— 兜底 B：库里有、代码没声明的权限点（信息级，不影响退出码）——
+# 声明式注册接管的是「路由 → 权限点」这一侧；库里多出来的条目要么是历史 seed 的残留，
+# 要么是页面路由 / CasbinMiddlewareForPath 按指定路径 enforce 时用的权限点 —— 保留不动，
+# 但把清单摆出来，双轨期的漂移（代码里删了权限点、库里还在）才看得见。
+if [ -s "$tmp_codes" ]; then
+    PGPASSWORD="$DB_PASS" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -tAc \
+        "SELECT permission_code FROM sys_permission WHERE status = 1 AND api_path <> '';" \
+        | sed "s/^[[:space:]]*//;s/[[:space:]]*$//" | grep -v "^$" | sort -u > "$tmp_perm_codes"
+    echo
+    echo "· 声明式注册覆盖 $(wc -l < "$tmp_codes") 条权限点"
+    # 运行时豁免（挂在 Casbin 组下但显式不声明权限点）与脚本上面的 EXEMPT 名单是**两份**：
+    # 这里的几条是代码里显式写 permission.Exempt 的路由；EXEMPT 里还多出几条根本不经过
+    # 声明式注册的公开路由（如 /api/captcha，它挂在没有 Casbin 的组上）。两份都摆出来便于核对。
+    if grep -qE "^EXEMPT " "$tmp_raw"; then
+        echo "· 代码中显式豁免的路由（permission.Exempt）："
+        grep -E "^EXEMPT " "$tmp_raw" | awk '{print "    "$2" "$3}' | sort -u
+    fi
+    comm -23 "$tmp_perm_codes" "$tmp_codes" > "$tmp_undeclared" || true
+    if [ -s "$tmp_undeclared" ]; then
+        echo "· 库中存在但代码未声明的权限点（历史 seed 或页面路由入口，保留不动）："
+        sed "s/^/    /" "$tmp_undeclared"
+    fi
+else
+    echo "· 未采集到声明清单（装配输出里没有 DECLARED 行）—— 声明式注册可能未生效，请检查 internal/permission 的接入"
+fi

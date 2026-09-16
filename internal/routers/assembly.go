@@ -14,6 +14,7 @@ package routers
 // 路由表，要求逐字节一致（504 条）。装配自检另见 wiring.go 的 mustAllPortsWired。
 
 import (
+	"context"
 	"net/http"
 	"strings"
 
@@ -70,6 +71,7 @@ import (
 	userhttp "go_wp/internal/module/user/inbound/http"
 	webhookcontract "go_wp/internal/module/webhook/contract"
 	webhookhttp "go_wp/internal/module/webhook/inbound/http"
+	"go_wp/internal/permission"
 	"go_wp/internal/templates"
 	"go_wp/pkg/auth"
 	"go_wp/pkg/casbin"
@@ -81,6 +83,44 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
+
+// syncDeclaredPermissions 把装配期声明的权限点幂等同步进库并重载 Casbin 策略（审计 SEC-011）。
+//
+// 为什么必须在**路由装配之后**调用：声明表是注册动作的产物（RouteGroup.GET/POST 采集），
+// 早于路由注册执行就等于没有声明可同步。
+//
+// 失败处理与迁移 seed 同口径（记 Error 日志、不阻断启动）：启动失败会让整站不可用，
+// 而这里失败的表现是「新接口缺权限点 → 403」，故障面小、且日志里写明了后果与排查方向。
+func syncDeclaredPermissions(db *gorm.DB) {
+	if db == nil {
+		return
+	}
+	res, err := permission.SyncToDB(context.Background(), db)
+	if err != nil {
+		logger.Scene("init").Error(err,
+			"权限点声明同步失败：新接口可能仍因库中缺权限点（含超管策略）而 403，请检查数据库可写与 sys_permission 表结构")
+		return
+	}
+	// 策略在启动时载入内存，同步完必须重载；少了这一步会表现为「策略已写库、接口仍 403」。
+	if err := casbin.ReloadPolicy(); err != nil {
+		logger.Scene("init").With("err", err).Warn("权限点声明同步后策略重载失败（Casbin 未初始化时忽略）")
+	}
+	logger.Scene("init").
+		With("declared", res.Declared).With("inserted", res.Inserted).
+		With("pathFixed", res.PathFixed).With("superPolicies", res.SuperPolicies).
+		Info("权限点声明同步完成：" + res.String())
+	// 显式豁免必须可见：豁免是「挂在 Casbin 组下但不要权限点」的自觉选择，
+	// 一旦有人把本该要权限的路由写成豁免，启动日志是唯一的痕迹。
+	// 双轨期的漂移可见性：库里有、代码没声明的权限点摆出来（不清理，只报告）。
+	if len(res.Unmanaged) > 0 {
+		logger.Scene("init").With("count", len(res.Unmanaged)).
+			Info("库中存在代码未声明的权限点（历史 seed 或页面路由入口，保留不动）：" + strings.Join(res.Unmanaged, "; "))
+	}
+	if ex := permission.Exempts(); len(ex) > 0 {
+		logger.Scene("init").With("count", len(ex)).
+			Info("以下路由显式豁免权限点（check-permission-gaps.sh 的 EXEMPT 名单应对应）：" + strings.Join(ex, "; "))
+	}
+}
 
 // assembly 承载一次装配过程中构造出的全部服务与共享状态。
 //
@@ -95,8 +135,11 @@ type assembly struct {
 	// db 在 buildFoundation 里取得；取不到时装配整体跳过（原行为：log + return）。
 	db *gorm.DB
 
-	api           *gin.RouterGroup
-	authorizedAPI *gin.RouterGroup
+	api *gin.RouterGroup
+	// authorizedAPI 是**声明式权限路由组**（审计 SEC-011）：挂在它下面的每条路由
+	// 注册时必须给出权限点（permission.Perm），路径由注册动作自身算出，
+	// 装配末尾统一幂等 upsert 进 sys_permission 与超管策略。
+	authorizedAPI *permission.RouteGroup
 
 	adminAuthzSvc admincontract.AuthzContextService
 
@@ -249,7 +292,9 @@ func (a *assembly) buildAPIAndCoreCRUD() {
 	api := router.Group("/api")
 	captcharouter.SetupCaptchaRoutes(api)
 	// admin 对外权限上下文查询契约（供外部模块/插件消费，见 AuthzContextService）。
-	adminAuthzSvc := adminhttp.SetupAdminRoutes(api, db)
+	// admin 模块自建六领域的中间件链（含各自的分组级 CasbinMiddleware），因此这里传的是
+	// 带声明能力的包装组而非 authorizedAPI：路径前缀仍是 /api，权限点声明照常生效。
+	adminAuthzSvc := adminhttp.SetupAdminRoutes(permission.NewRouteGroup(api), db)
 	a.adminAuthzSvc = adminAuthzSvc
 	// 开发阶段一键登录（浏览器直接访问 /admin/dev-login?to=/admin/xxx）：
 	// **只在 debug 模式下注册** —— release 环境这个路由根本不存在，比运行时判断更可靠。
@@ -258,7 +303,9 @@ func (a *assembly) buildAPIAndCoreCRUD() {
 		router.GET("/admin/dev-login", adminhttp.DevLoginHandler(db))
 	}
 
-	authorizedAPI := api.Group("", builtin.SessionAuthMiddleware(), builtin.CSRFMiddleware(), builtin.CasbinMiddleware())
+	// 三层链（SessionAuth + CSRF + Casbin）外面再包一层声明式路由组：注册即声明权限点。
+	authorizedAPI := permission.NewRouteGroup(
+		api.Group("", builtin.SessionAuthMiddleware(), builtin.CSRFMiddleware(), builtin.CasbinMiddleware()))
 	a.api = api
 	a.authorizedAPI = authorizedAPI
 

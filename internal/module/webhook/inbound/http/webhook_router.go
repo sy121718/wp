@@ -5,13 +5,13 @@
 package webhookhttp
 
 import (
-	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
 	"go_wp/config"
 	webhookcontract "go_wp/internal/module/webhook/contract"
 	webhookmodel "go_wp/internal/module/webhook/model"
 	webhookservice "go_wp/internal/module/webhook/service"
+	"go_wp/internal/permission"
 )
 
 // SetupWebhookRoutes 装配 webhook 模块路由，返回模块契约。
@@ -19,7 +19,7 @@ import (
 // 加密密钥（config.yaml 的 app.secret）在这里从配置读入并注入 service，
 // 同时交给队列 handler —— worker 要解密端点密钥才能对出站请求签名。
 // service 自己不读 config（模块不直接碰配置读取，装配层负责注入）。
-func SetupWebhookRoutes(rg *gin.RouterGroup, db *gorm.DB) webhookcontract.EndpointService {
+func SetupWebhookRoutes(rg *permission.RouteGroup, db *gorm.DB) webhookcontract.EndpointService {
 	secret := ""
 	if v, err := config.GetViper(); err == nil && v != nil {
 		secret = v.GetString("app.secret")
@@ -33,13 +33,13 @@ func SetupWebhookRoutes(rg *gin.RouterGroup, db *gorm.DB) webhookcontract.Endpoi
 	h := NewHandle(svc)
 	g := rg.Group("/webhook")
 	// 端点（白名单）管理。
-	g.GET("/endpoint/list", h.EndpointList)
-	g.POST("/endpoint/save", h.EndpointSave)
-	g.POST("/endpoint/delete", h.EndpointDelete)
-	g.POST("/endpoint/status", h.EndpointStatus)
+	g.GET("/endpoint/list", permission.WebhookEndpointList, h.EndpointList)
+	g.POST("/endpoint/save", permission.WebhookEndpointSave, h.EndpointSave)
+	g.POST("/endpoint/delete", permission.WebhookEndpointDelete, h.EndpointDelete)
+	g.POST("/endpoint/status", permission.WebhookEndpointStatus, h.EndpointStatus)
 	// 投递日志与重投（排障）。
-	g.GET("/delivery/list", h.DeliveryList)
-	g.POST("/delivery/retry", h.DeliveryRetry)
+	g.GET("/delivery/list", permission.WebhookDeliveryList, h.DeliveryList)
+	g.POST("/delivery/retry", permission.WebhookDeliveryRetry, h.DeliveryRetry)
 
 	return svc
 }

@@ -11,6 +11,7 @@ import (
 	projectenums "go_wp/internal/module/project/enums"
 	projectmodel "go_wp/internal/module/project/model"
 	service "go_wp/internal/module/project/service"
+	"go_wp/internal/permission"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
 
@@ -24,23 +25,23 @@ type ThemeHandle struct {
 }
 
 // SetupThemeRoutes 注册主题路由（挂 /api 前缀之下——与 035 seed 权限点 /api/theme/* 一致，内部再分 /theme 组）。
-func SetupThemeRoutes(rg *gin.RouterGroup, db *gorm.DB) {
+func SetupThemeRoutes(rg *permission.RouteGroup, db *gorm.DB) {
 	model := projectmodel.NewProjectModel(db)
 	svc := service.NewService(model)
 	h := &ThemeHandle{svc: svc}
 
 	g := rg.Group("/theme", builtin.SessionAuthMiddleware())
-	g.GET("/list", h.List)
-	g.POST("/create", h.Create)
-	g.POST("/update", h.Update)
-	g.POST("/activate", h.Activate)
-	g.POST("/delete", h.Delete)
-	g.GET("/active", h.Active)
+	g.GET("/list", permission.ProjectThemeList, h.List)
+	g.POST("/create", permission.ProjectThemeCreate, h.Create)
+	g.POST("/update", permission.ProjectThemeUpdate, h.Update)
+	g.POST("/activate", permission.ProjectThemeActivate, h.Activate)
+	g.POST("/delete", permission.ProjectThemeDelete, h.Delete)
+	g.GET("/active", permission.ProjectThemeActive, h.Active)
 	// 主题包（审计 VIS-014）：导出 zip / 导入 zip。
 	// 权限点 project:theme_export / project:theme_import 见迁移 220 —— 与路由同批 seed，
 	// 漏了会连超管一起 403（authorizedAPI 组按实际路径 enforce）。
-	g.GET("/export", h.ExportBundle)
-	g.POST("/import", h.ImportBundle)
+	g.GET("/export", permission.ProjectThemeExport, h.ExportBundle)
+	g.POST("/import", permission.ProjectThemeImport, h.ImportBundle)
 }
 
 // themeError 将主题业务错误映射为响应状态码与文案：

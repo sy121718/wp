@@ -5,14 +5,14 @@ import (
 	mediacontract "go_wp/internal/module/media/contract"
 	mediamodel "go_wp/internal/module/media/model"
 	mediaservice "go_wp/internal/module/media/service"
+	"go_wp/internal/permission"
 
-	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
 
 // SetupMediaRoutes 注册媒体模块路由，返回契约接口供其他模块引用。
 // 同时把图片变体生成的 asynq handler 注册进现有队列 worker（见 service.RegisterVariantTaskHandler）。
-func SetupMediaRoutes(rg *gin.RouterGroup, db *gorm.DB) mediacontract.MediaService {
+func SetupMediaRoutes(rg *permission.RouteGroup, db *gorm.DB) mediacontract.MediaService {
 	am := mediamodel.NewAttachmentModel(db)
 	cm := mediamodel.NewFileCategoryModel(db)
 	vm := mediamodel.NewMediaVariantModel(db)
@@ -24,23 +24,23 @@ func SetupMediaRoutes(rg *gin.RouterGroup, db *gorm.DB) mediacontract.MediaServi
 
 	g := rg.Group("/media", builtin.SessionAuthMiddleware())
 	{
-		g.POST("/upload", handle.Upload)
-		g.GET("/list", handle.List)
-		g.GET("/detail", handle.Detail)
-		g.POST("/delete", handle.Delete)
-		g.POST("/update", handle.UpdateAttachment)
+		g.POST("/upload", permission.MediaUpload, handle.Upload)
+		g.GET("/list", permission.MediaList, handle.List)
+		g.GET("/detail", permission.MediaDetail, handle.Detail)
+		g.POST("/delete", permission.MediaDelete, handle.Delete)
+		g.POST("/update", permission.MediaUpdate, handle.UpdateAttachment)
 		// 媒体中心（02-B，迁移 067）：换图（URL 不变 + generation+1）与引用查询。
 		// refs 写入侧不暴露 HTTP：只由构建期经 contract.SyncReferencesFromHTML 调用。
-		g.POST("/replace", handle.Replace)
-		g.GET("/references", handle.References)
-		g.GET("/category/tree", handle.CategoryTree)
-		g.POST("/category/create", handle.CategoryCreate)
-		g.POST("/category/update", handle.CategoryUpdate)
-		g.POST("/category/delete", handle.CategoryDelete)
+		g.POST("/replace", permission.MediaReplace, handle.Replace)
+		g.GET("/references", permission.MediaReferences, handle.References)
+		g.GET("/category/tree", permission.MediaCategoryTree, handle.CategoryTree)
+		g.POST("/category/create", permission.MediaCategoryCreate, handle.CategoryCreate)
+		g.POST("/category/update", permission.MediaCategoryUpdate, handle.CategoryUpdate)
+		g.POST("/category/delete", permission.MediaCategoryDelete, handle.CategoryDelete)
 		// 图片变体与打包下载（048 改造；权限点 seed 见 048_media_variant.sql）。
-		g.GET("/download", handle.Download)
-		g.GET("/download/batch", handle.DownloadBatch)
-		g.POST("/variants/generate", handle.GenerateVariants)
+		g.GET("/download", permission.MediaDownload, handle.Download)
+		g.GET("/download/batch", permission.MediaDownloadBatch, handle.DownloadBatch)
+		g.POST("/variants/generate", permission.MediaVariantsGenerate, handle.GenerateVariants)
 	}
 	return svc
 }

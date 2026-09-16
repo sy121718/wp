@@ -12,6 +12,7 @@ import (
 	blockmodel "go_wp/internal/module/block/model"
 	blockservice "go_wp/internal/module/block/service"
 	projectcontract "go_wp/internal/module/project/contract"
+	"go_wp/internal/permission"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
 
@@ -27,17 +28,17 @@ type Handle struct {
 }
 
 // SetupBlockRoutes 注册全局块路由，返回块契约（供 page 构建装配与 dashboard 使用）。
-func SetupBlockRoutes(rg *gin.RouterGroup, db *gorm.DB, projects projectcontract.ProjectService) blockcontract.BlockService {
+func SetupBlockRoutes(rg *permission.RouteGroup, db *gorm.DB, projects projectcontract.ProjectService) blockcontract.BlockService {
 	svc := blockservice.NewService(blockmodel.NewBlockModel(db), projects)
 	h := &Handle{svc: svc}
 
 	g := rg.Group("/block", builtin.SessionAuthMiddleware())
-	g.GET("/list", h.List)
-	g.GET("/detail", h.Detail)
-	g.POST("/create", h.Create)
-	g.POST("/update", h.Update)
-	g.POST("/delete", h.Delete)
-	g.POST("/clone", h.CloneAST)
+	g.GET("/list", permission.BlockList, h.List)
+	g.GET("/detail", permission.BlockDetail, h.Detail)
+	g.POST("/create", permission.BlockCreate, h.Create)
+	g.POST("/update", permission.BlockUpdate, h.Update)
+	g.POST("/delete", permission.BlockDelete, h.Delete)
+	g.POST("/clone", permission.BlockClone, h.CloneAST)
 	return svc
 }
 

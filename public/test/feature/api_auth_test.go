@@ -21,6 +21,7 @@ import (
 	adminhttp "go_wp/internal/module/admin/inbound/http"
 	captcharouter "go_wp/internal/module/common/captcha/router"
 	projecthttp "go_wp/internal/module/project/inbound/http"
+	"go_wp/internal/permission"
 	"go_wp/pkg/captcha"
 	pkgcasbin "go_wp/pkg/casbin"
 	"go_wp/pkg/response"
@@ -108,16 +109,20 @@ func newAuthFeatureEngine(t *testing.T) (*gin.Engine, *support.AdminSession) {
 
 			api := engine.Group("/api")
 			captcharouter.SetupCaptchaRoutes(api)
-			adminhttp.SetupAdminRoutes(api, db)
+			adminhttp.SetupAdminRoutes(permission.NewRouteGroup(api), db)
 
-			authorizedAPI := api.Group("", builtin.SessionAuthMiddleware(), builtin.CSRFMiddleware(), builtin.CasbinMiddleware())
+			// 与 routes.go 同款：三层链外面包一层声明式权限路由组（路由注册时声明权限点）。
+			authorizedGroup := api.Group("", builtin.SessionAuthMiddleware(), builtin.CSRFMiddleware(), builtin.CasbinMiddleware())
+			authorizedAPI := permission.NewRouteGroup(authorizedGroup)
 			// 真实业务模块装配（与 routes.go 相同的中间件链），验证 seed 策略在真实业务链路上生效
 			projecthttp.SetupProjectRoutes(authorizedAPI, db)
-			authorizedAPI.GET("/ping", func(c *gin.Context) {
+			// /ping 是测试专用探针（策略在上面显式写入 sys_casbin_rule），不参与权限点声明：
+			// 直接挂底层组，避免为一条测试路径造一条权限点。
+			authorizedGroup.GET("/ping", func(c *gin.Context) {
 				response.Success(c, gin.H{"pong": true})
 			})
 			// 业务写接口样例：POST 需通过 CSRF 校验（与 /api/page/draft/save 等同一中间件链）。
-			authorizedAPI.POST("/ping", func(c *gin.Context) {
+			authorizedGroup.POST("/ping", func(c *gin.Context) {
 				response.Success(c, gin.H{"pong": true})
 			})
 		},

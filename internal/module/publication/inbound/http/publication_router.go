@@ -7,6 +7,7 @@ import (
 	pubcontract "go_wp/internal/module/publication/contract"
 	pubmodel "go_wp/internal/module/publication/model"
 	pubservice "go_wp/internal/module/publication/service"
+	"go_wp/internal/permission"
 
 	"go_wp/internal/middleware/builtin"
 	"go_wp/pkg/response"
@@ -16,12 +17,12 @@ import (
 )
 
 // SetupPublicationRoutes 自装配 publication 模块（路由占用由 page 模块经契约调用）。
-func SetupPublicationRoutes(rg *gin.RouterGroup, db *gorm.DB) pubcontract.PublicationService {
+func SetupPublicationRoutes(rg *permission.RouteGroup, db *gorm.DB) pubcontract.PublicationService {
 	svc := pubservice.NewService(pubmodel.NewPublicationModel(db))
 	g := rg.Group("/publication", builtin.SessionAuthMiddleware())
 	// 占位路由：前端可能探测该端点，但接口尚未实现。
 	// 明确返回 501 而非 200 空体，避免调用方误判成功（审计 Low：假 handler）。
-	g.GET("/receipts/pending", func(c *gin.Context) {
+	g.GET("/receipts/pending", permission.PublicationReceiptsPending, func(c *gin.Context) {
 		response.ErrorWithMessage(c, http.StatusNotImplemented, "接口未实现：待处理回执查询暂未提供")
 	})
 
@@ -30,7 +31,7 @@ func SetupPublicationRoutes(rg *gin.RouterGroup, db *gorm.DB) pubcontract.Public
 	// 同步而不是异步任务：体检只读产物文件、不写库、不出网，一个中型站点几百份 HTML
 	// 的解析在毫秒级 —— 引入任务队列只会让「点了按钮没反应」成为新的排查对象。
 	// 权限点单独给（seo:audit），与「改 URL」「发布」分开：体检查出问题的人未必有权改。
-	g.POST("/seo-audit", builtin.CasbinMiddlewareForPath("/api/seo/audit"), func(c *gin.Context) {
+	g.POST("/seo-audit", permission.PublicationSEOAudit, builtin.CasbinMiddlewareForPath("/api/seo/audit"), func(c *gin.Context) {
 		projectID := strings.TrimSpace(c.PostForm("project"))
 		if projectID == "" {
 			projectID = strings.TrimSpace(c.Query("project"))

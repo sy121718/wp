@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"go_wp/internal/middleware/builtin"
+	"go_wp/internal/permission"
 	"go_wp/internal/pipeline"
 	"go_wp/pkg/response"
 
@@ -34,6 +35,10 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 	if router == nil {
 		return
 	}
+
+	// 每次装配重新采集权限点声明（审计 SEC-011）：声明表描述的是「本次装配的路由 → 权限点」，
+	// 同一进程内多次装配（测试里多个用例各装配一次）时累积会导致「重复声明」误报。
+	permission.Reset()
 
 	// 装配期端口标记（审计 CQ-019）：每完成一次端口注入就在对应段落里标记一次，
 	// 末尾由 mustAllPortsWired 统一自检必需端口是否齐全（清单见 wiring.go）。

@@ -7,8 +7,8 @@ import (
 	masterdatamodel "go_wp/internal/module/masterdata/model"
 	masterdataservice "go_wp/internal/module/masterdata/service"
 	projectcontract "go_wp/internal/module/project/contract"
+	"go_wp/internal/permission"
 
-	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
 
@@ -18,16 +18,16 @@ import (
 //
 // 返回的契约在装配期注入 product / inventory 两个模块：它们在写关键主数据时
 // 把「改前 / 改后」的字段快照递进来（依赖方向 product / inventory → masterdata）。
-func SetupMasterDataRoutes(rg *gin.RouterGroup, db *gorm.DB,
+func SetupMasterDataRoutes(rg *permission.RouteGroup, db *gorm.DB,
 	project projectcontract.ProjectService) masterdatacontract.MasterDataService {
 	svc := masterdataservice.NewService(masterdatamodel.NewModel(db), project)
 	handle := NewHandle(svc)
 
 	g := rg.Group("/masterdata")
 	// 只读接口：变更记录由业务模块在写操作里追加，对外没有写入口。
-	g.GET("/change/list", handle.ListChanges)
-	g.GET("/change/count", handle.CountChanges)
-	g.GET("/change/entities", handle.ListEntities)
-	g.GET("/change/entity", handle.EntityTimeline)
+	g.GET("/change/list", permission.MasterdataChangeList, handle.ListChanges)
+	g.GET("/change/count", permission.MasterdataChangeCount, handle.CountChanges)
+	g.GET("/change/entities", permission.MasterdataChangeEntities, handle.ListEntities)
+	g.GET("/change/entity", permission.MasterdataChangeEntity, handle.EntityTimeline)
 	return svc
 }

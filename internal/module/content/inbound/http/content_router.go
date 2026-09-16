@@ -8,9 +8,9 @@ import (
 	contentcontract "go_wp/internal/module/content/contract"
 	contentmodel "go_wp/internal/module/content/model"
 	contentservice "go_wp/internal/module/content/service"
+	"go_wp/internal/permission"
 	"go_wp/pkg/i18n"
 
-	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
 
@@ -19,7 +19,7 @@ import (
 // collections 为集合源元数据聚合端口（装配期的集合源注册表）：集合源已跨模块
 // （商品同样是集合源，issue #9），元数据接口必须返回全量 —— 注册表在装配期
 // 后续步骤才填充完成，这里只持有指针，请求到来时已是全量。
-func SetupContentRoutes(rg *gin.RouterGroup, db *gorm.DB, collections core.CollectionSchemaProvider) contentcontract.ContentService {
+func SetupContentRoutes(rg *permission.RouteGroup, db *gorm.DB, collections core.CollectionSchemaProvider) contentcontract.ContentService {
 	svc := contentservice.NewService(contentmodel.NewModel(db))
 	// 内容译文存储（审计 I18N-006）：构建期按语言取字段译文。
 	// 与商品域同一注入方式、同一张表（sys_translation）—— 两个模块取词口径一致，
@@ -29,12 +29,12 @@ func SetupContentRoutes(rg *gin.RouterGroup, db *gorm.DB, collections core.Colle
 	handle.SetCollectionSchemas(collections)
 
 	g := rg.Group("/content")
-	g.POST("/create", handle.Create)
-	g.POST("/update", handle.Update)
-	g.GET("/get", handle.Get)
-	g.GET("/list", handle.List)
+	g.POST("/create", permission.ContentCreate, handle.Create)
+	g.POST("/update", permission.ContentUpdate, handle.Update)
+	g.GET("/get", permission.ContentGet, handle.Get)
+	g.GET("/list", permission.ContentList, handle.List)
 	// 集合源元数据：内置组件集合字段白名单 + 工作台字段下拉。
-	g.GET("/collections", handle.Collections)
-	g.POST("/delete", handle.Delete)
+	g.GET("/collections", permission.ContentCollections, handle.Collections)
+	g.POST("/delete", permission.ContentDelete, handle.Delete)
 	return svc
 }
