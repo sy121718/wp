@@ -1,0 +1,231 @@
+{
+  "dimension": "arch-review-2",
+  "dimensionTitle": "架构复审（2026-09 第二轮）",
+  "scope": "全仓：internal/**、public/**、docs/**、scripts/** 的一致性与架构判断",
+  "verdict": "核心控制面/访问面分离、确定性编译和受限契约仍是架构的主要价值；本轮确认的脆弱点集中在发布编排的接线完整性：自动发布实例未进入内容失效扇出，Page 回执协议只实现了恢复端而未接入发布端，Presentation 多语言激活又把数据库与文件系统拆成了不可补偿的多步。结果是内容更新可静默不传播，发布失败可留下部分语言上线或路由账本不完整。",
+  "findings": [
+    {
+      "id": "AR2-001",
+      "title": "内容失效 Fanout 未注册 Presentation 目标，自动详情页不会随内容更新重建",
+      "severity": "high",
+      "type": "correctness",
+      "confidence": "confirmed",
+      "problem": "presentation Service 实现了 MarkStaleByDependency 与 RebuildStale，但启动装配只向 Fanout 注册 SourceTypePage；内容服务触发的失效键没有 Presentation 目标可接收。",
+      "evidence": [
+        {
+          "file": "internal/routers/assembly_publish.go",
+          "lines": "352-369",
+          "snippet": "fanout := pipeline.NewFanout(); fanout.Register(pipeline.SourceTypePage, pageService); contentSvc.SetDependencyInvalidator(fanout)",
+          "note": "Fanout 只注册 page，没有 presentation 注册或对应 SetRebuilder。"
+        },
+        {
+          "file": "internal/module/presentation/service/presentation_stale.go",
+          "lines": "22-58",
+          "snippet": "func (s *Service) MarkStaleByDependency(...); ... s.m.MarkStaleByDependency(...)",
+          "note": "Presentation 已具备目标实现，但没有进入顶层 Fanout。"
+        }
+      ],
+      "impact": "修改文章/商品后，引用该内容的 PresentationInstance 产物继续提供旧字节；数据库内容 revision 已变化而访问面不变，直到手动 rebuild 或其它事件碰巧触发。",
+      "rootCause": "装配代码把 Presentation 依赖扇出留在“待接入”注释中，能力实现与注册清单没有同一份必需端口自检。",
+      "remediation": {
+        "approach": "在同一 Fanout 注册 presentation 目标并绑定其 StaleRebuilder，装配自检把两个来源都列为必需。",
+        "steps": [
+          "fanout.Register(pipeline.SourceTypePresentation, presentationSvc)",
+          "对 presentationSvc 做 pipeline.StaleRebuilder 断言并 SetRebuilder",
+          "增加内容更新到 presentation stale/队列任务的真实链路测试",
+          "启动自检缺失任一来源时 fail-fast"
+        ],
+        "effortDays": 1,
+        "risk": "low",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "更新一个已有 PresentationInstance 的内容实体，断言 presentation_instances.stale=true",
+        "断言 build_jobs 出现 presentation 任务且 worker 完成后访问面 hash 改变",
+        "临时移除注册行，装配测试必须失败"
+      ],
+      "dependsOn": [],
+      "blocks": [
+        "AR2-003"
+      ],
+      "phase": "P0",
+      "tags": [
+        "fanout",
+        "presentation",
+        "static-publishing"
+      ],
+      "status": "open",
+      "existingCoverage": "新增"
+    },
+    {
+      "id": "AR2-002",
+      "title": "Page 发布回执只实现了恢复端，发布主链没有登记 pending 回执",
+      "severity": "high",
+      "type": "correctness",
+      "confidence": "confirmed",
+      "problem": "page_publish_ledger.go 定义了 begin/complete/abort 回执操作，但 Page.Publish 的执行路径没有调用 beginPublishReceipt、completePublishReceipt 或 abortPublishReceipt；启动恢复因此没有本次发布的 pending 记录可处理。",
+      "evidence": [
+        {
+          "file": "internal/module/page/service/page_publish_ledger.go",
+          "lines": "24-60",
+          "snippet": "func (s *Service) beginPublishReceipt(...); func (s *Service) completePublishReceipt(...); func (s *Service) abortPublishReceipt(...)",
+          "note": "回执 API 仅在该文件内部由恢复逻辑间接使用，登记函数没有发布主链调用方。"
+        },
+        {
+          "file": "internal/module/page/service/page_publish.go",
+          "lines": "169-214",
+          "snippet": "hash, err := s.publisher.Publish(page.ID) ... MarkPublishedLang(...) ... routes.Activate(...)",
+          "note": "发布主链直接切换 publisher、写 DB、激活路由，没有 begin/complete/abort 调用。"
+        },
+        {
+          "file": "internal/module/page/inbound/http/page_router.go",
+          "lines": "75-78",
+          "snippet": "_, _, _ = svc.RecoverPendingPublications(ctx)",
+          "note": "启动只读取 pending 回执；没有登记就无法恢复崩溃窗口。"
+        }
+      ],
+      "impact": "FS 激活成功后进程在 DB 更新前崩溃时，publication_receipts 没有 pending 记录，重启不会补齐或判定；线上内容与控制面指针可长期分裂，回滚/GC/审计看到错误状态。",
+      "rootCause": "两段式回执被作为独立恢复工具实现，未嵌入实际 publish 状态机；测试覆盖了回执模型而非 Publish→回执→恢复的端到端接线。",
+      "remediation": {
+        "approach": "把 pending 登记放在 FS 激活前，把 committed 放在 DB 与路由写入完成后，任一中途错误都显式 rolled_back 或保留 pending。",
+        "steps": [
+          "在 publisher.Publish/访问面激活前调用 beginPublishReceipt，并将空 id 视为硬失败",
+          "FS 激活成功后完成 page_publications、路由与指针写入，再 completePublishReceipt",
+          "为 DB 写入失败保留 pending，启动恢复按 Inspect 补偿",
+          "增加故障注入测试：激活后在 DB 写入前终止并重启恢复"
+        ],
+        "effortDays": 2,
+        "risk": "high",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "静态 grep 证明 Publish 主链同时调用 begin、complete/abort",
+        "故障注入后 pending 数量可恢复为 committed 或 rolled_back",
+        "恢复重复执行幂等且不改错页面"
+      ],
+      "dependsOn": [],
+      "blocks": [
+        "AR2-003"
+      ],
+      "phase": "P0",
+      "tags": [
+        "publication",
+        "receipt",
+        "recovery"
+      ],
+      "status": "open",
+      "existingCoverage": "更正 TX-009"
+    },
+    {
+      "id": "AR2-003",
+      "title": "Presentation 多语言发布先提交全部 active 指针再逐语言激活文件，失败会留下部分上线",
+      "severity": "high",
+      "type": "correctness",
+      "confidence": "confirmed",
+      "problem": "publishAllLangs 先在事务中写入每种语言的 publication 记录和实例 active 指针，事务提交后才循环调用 activate；任一语言激活失败不会回滚已提交的数据库状态或已激活语言。",
+      "evidence": [
+        {
+          "file": "internal/module/presentation/service/presentation_i18n.go",
+          "lines": "75-106",
+          "snippet": "primaryArtifactID, err = s.persistMultiLangBuild(...); for ... { if err = s.activate(...); err != nil { return ... } }",
+          "note": "数据库持久化先于文件系统激活，且失败直接返回。"
+        },
+        {
+          "file": "internal/module/presentation/service/presentation_i18n.go",
+          "lines": "120-177",
+          "snippet": "MarkPublishedLangTx(...); UpdateInstancePointersTx(...); persistDependenciesTx(...)",
+          "note": "所有语言的 active 记录与实例指针在同一事务内先提交。"
+        }
+      ],
+      "impact": "例如三种语言中第二种激活失败，数据库显示三种语言都已发布，第一种文件已上线、第二和第三种文件未上线；后台与 sitemap/语言切换器可能报告不可访问 URL。",
+      "rootCause": "多语言发布把数据库事务和文件系统激活拆成“先全量记账、后逐项副作用”，没有 per-language pending 回执或批次补偿状态。",
+      "remediation": {
+        "approach": "采用语言级发布回执和可恢复状态机：每种语言先登记 pending，激活成功才提交该语言 active；批次失败保留可重试状态。",
+        "steps": [
+          "为 presentation publication 增加 pending/committed 状态或复用带 source_type 的 receipt",
+          "每语言执行“登记→激活→路由登记→结案”，失败时只补偿已完成语言",
+          "实例 active 指针只在默认语言及其批次全部成功后更新",
+          "后台显示 partial/stale，并由 worker 重试失败语言"
+        ],
+        "effortDays": 3,
+        "risk": "high",
+        "breaking": true,
+        "migrationNeeded": true
+      },
+      "verification": [
+        "模拟第二语言 activate 返回错误，断言数据库没有未上线语言的 committed 记录",
+        "重启恢复后批次最终收敛到全成功或明确 partial，不出现 DB active 且 FS 缺失",
+        "三语言并发重建不产生混合版本"
+      ],
+      "dependsOn": [
+        "AR2-002"
+      ],
+      "blocks": [],
+      "phase": "P0",
+      "tags": [
+        "i18n",
+        "publication",
+        "filesystem",
+        "transaction"
+      ],
+      "status": "open",
+      "existingCoverage": "新增"
+    },
+    {
+      "id": "AR2-004",
+      "title": "Presentation 路由登记失败被 Warn 吞掉，成功返回会掩盖访问面与路由账本分裂",
+      "severity": "medium",
+      "type": "correctness",
+      "confidence": "confirmed",
+      "problem": "多语言文件激活和数据库持久化完成后，registerRoute 失败只写 Warn，publishAllLangs 继续返回成功；没有撤销已激活文件或把实例标为待恢复。",
+      "evidence": [
+        {
+          "file": "internal/module/presentation/service/presentation_i18n.go",
+          "lines": "93-106",
+          "snippet": "if rerr := s.registerRoute(...); rerr != nil { logger...Warn(...) }; ... return primaryArtifactID, nil",
+          "note": "路由登记错误不影响成功返回。"
+        },
+        {
+          "file": "internal/module/presentation/service/presentation_stale.go",
+          "lines": "74-83",
+          "snippet": "RebuildInstance ... rebuildInstance ...",
+          "note": "自动重建把该成功返回视为已完成，无法感知路由账本缺失。"
+        }
+      ],
+      "impact": "URL 文件已可访问但 page_routes 缺行或旧占用未更新；后续占用预检、回滚、删除和 GC 依据路由表得出错误结果，可能留下无法管理的线上路径。",
+      "rootCause": "路由登记被当作发布后的 best-effort side effect，而路由表实际上是控制面占用、回滚和引用保护的必要账本。",
+      "remediation": {
+        "approach": "把 route registration 纳入发布事务的成功条件，失败则保留 pending 并由恢复任务补登记或撤销文件。",
+        "steps": [
+          "registerRoute 失败向上返回，不再只 Warn",
+          "用 receipt 记录访问面已激活但路由未登记状态",
+          "恢复任务按 artifact/path 幂等补齐 route 或撤销对应激活",
+          "增加唯一冲突与 DB 暂时不可用的故障注入测试"
+        ],
+        "effortDays": 1.5,
+        "risk": "medium",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "让 route model 返回唯一冲突，Publish 必须失败且实例标记可恢复",
+        "重启恢复后 route 与 active 文件一一对应",
+        "publication audit 不再发现“文件有、路由无”的条目"
+      ],
+      "dependsOn": [
+        "AR2-003"
+      ],
+      "blocks": [],
+      "phase": "P1",
+      "tags": [
+        "publication",
+        "routes",
+        "recovery"
+      ],
+      "status": "open",
+      "existingCoverage": "新增"
+    }
+  ]
+}

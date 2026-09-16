@@ -11,13 +11,13 @@
     "readMe": "docs/audit/README.md"
   },
   "summary": {
-    "findingsTotal": 268,
+    "findingsTotal": 272,
     "resolved": 256,
-    "open": 12,
+    "open": 16,
     "bySeverity": {
       "critical": 16,
-      "high": 58,
-      "medium": 123,
+      "high": 61,
+      "medium": 124,
       "low": 71
     },
     "byType": {
@@ -28,7 +28,7 @@
       "implementation-bug": 26,
       "performance": 23,
       "security": 18,
-      "correctness": 17
+      "correctness": 21
     },
     "byDimension": [
       {
@@ -95,18 +95,25 @@
         "id": "ui-kit-and-registry",
         "file": "dimensions/14-ui-kit-and-registry.json",
         "count": 19
+      },
+      {
+        "id": "arch-review-2",
+        "file": "dimensions/15-arch-review-2.json",
+        "count": 4
       }
     ],
     "openBySeverity": {
-      "high": 6,
-      "medium": 4,
+      "high": 9,
+      "medium": 5,
       "low": 2
     },
     "openByPhase": {
       "P5": 0,
       "P6": 0,
       "P7": 12,
-      "P8": 0
+      "P8": 0,
+      "P0": 3,
+      "P1": 1
     }
   },
   "headline": "控制面与访问面分离、确定性构建、库存锁序这些骨架是对的。真正挡发布与开源的是：动态页编辑器断了、page/presentation 装配分裂、同步整站重建、几处资损窗口、以及「控件基座声称两端共用但产物侧几乎接不住」。",
