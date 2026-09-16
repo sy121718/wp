@@ -777,4 +777,32 @@ func registerAdminI18nSeedsAndLatest() {
 			"WHERE lang = 'zh-CN' AND item_key IN ('admin.redirect.title', 'admin.redirect.back', 'admin.redirect.intro.lead', 'admin.redirect.intro.q1', 'admin.redirect.intro.conn1', 'admin.redirect.intro.q2', 'admin.redirect.intro.conn2', 'admin.redirect.intro.q3', 'admin.redirect.intro.tail', 'admin.redirect.intro2.lead', 'admin.redirect.intro2.strong', 'admin.redirect.intro2.tail', 'admin.redirect.label.project', 'admin.redirect.no_project', 'admin.redirect.overview.title', 'admin.redirect.stat.total', 'admin.redirect.stat.effective', 'admin.redirect.stat.multihop', 'admin.redirect.stat.loop', 'admin.redirect.chain.notice', 'admin.redirect.loop.notice', 'admin.redirect.create.title', 'admin.redirect.create.hint.lead', 'admin.redirect.create.hint.strong', 'admin.redirect.create.hint.tail', 'admin.redirect.create.source', 'admin.redirect.create.arrow', 'admin.redirect.create.target', 'admin.redirect.create.submit', 'admin.redirect.list.title', 'admin.redirect.list.aria', 'admin.redirect.empty', 'admin.redirect.col.source', 'admin.redirect.col.target', 'admin.redirect.col.status', 'admin.redirect.col.owner', 'admin.redirect.col.updated', 'admin.redirect.col.actions', 'admin.redirect.badge.multihop', 'admin.redirect.target.none', 'admin.redirect.badge.loop', 'admin.redirect.badge.effective', 'admin.redirect.badge.inactive', 'admin.redirect.owner.page', 'admin.redirect.owner.presentation', 'admin.redirect.owner.unknown', 'admin.redirect.action.merge', 'admin.redirect.action.delete', 'admin.redirect.pick_project', 'admin.redirect.msg.delete_confirm', 'admin.redirect.err.occupied', 'admin.redirect.err.target_missing', 'admin.redirect.err.loop', 'admin.redirect.err.not_found', 'admin.redirect.err.unavailable', 'admin.redirect.err.invalid', 'admin.redirect.err.internal', 'admin.redirect.ok.created', 'admin.redirect.ok.deleted', 'admin.redirect.ok.merged')",
 		SQL: mustSQL("219_i18n_seed_admin_redirects.sql"),
 	})
+
+	// 220：主题包（Theme Bundle）导入导出权限点与超管策略（审计 VIS-014）。
+	// 判定把两个权限点代码写进 SQL 字面量：Seed 的 ConditionSQL 不接收参数，
+	// 而用 LIKE 'project:theme_%' 会被 035 已有的 6 个主题权限点满足 ——
+	// 那样这条 seed 在干净库上会被静默跳过，新增的两个接口连超管都 403。
+	registerSeed(Seed{
+		Version:   "220-theme-bundle-permissions",
+		TableName: "sys_permission",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 2 THEN 1 ELSE 0 END FROM sys_permission " +
+			"WHERE permission_code IN ('project:theme_export', 'project:theme_import')",
+		SQL: mustSQL("220_theme_bundle_permissions.sql"),
+	})
+
+	// 221：主题包业务文案词条（15 个 enums key × 2 语言）。
+	// 判据按本批自己的 key 全集合枚举计数：前缀 LIKE 会被将来同前缀的词条满足，
+	// 本批就被静默跳过了（060 踩过这个坑）。
+	registerSeed(Seed{
+		Version:   "221-i18n-seed-theme-bundle",
+		TableName: "sys_i18n",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 15 THEN 1 ELSE 0 END FROM sys_i18n " +
+			"WHERE lang = 'zh-CN' AND item_key IN ('ErrThemeBundleFileRequired', " +
+			"'ErrThemeBundleFormatUnknown', 'ErrThemeBundleMissingManifest', 'ErrThemeBundleManifestInvalid', " +
+			"'ErrThemeBundleVersionTooNew', 'ErrThemeBundleVersionInvalid', 'ErrThemeBundleUnsafeEntry', " +
+			"'ErrThemeBundleTooLarge', 'ErrThemeBundleTokensInvalid', 'ErrThemeBundleBlockMissing', " +
+			"'ErrThemeBundleBlockCycle', 'ErrThemeBundleAssetMissing', 'ErrThemeBundlePortUnavailable', " +
+			"'MsgThemeBundleImported', 'MsgThemeBundleImportedPartial')",
+		SQL: mustSQL("221_i18n_seed_theme_bundle.sql"),
+	})
 }

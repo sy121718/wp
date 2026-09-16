@@ -24,6 +24,28 @@ const (
 )
 
 const (
+	// ---- 主题包（Theme Bundle）导入导出业务错误文案，project 模块下 theme 能力 ----
+	// 值一律等于常量名：文案真源在 sys_i18n（迁移 058 的既有口径），此处只做键。
+	ErrThemeBundleFileRequired    = "ErrThemeBundleFileRequired"    // 未提供主题包文件
+	ErrThemeBundleFormatUnknown   = "ErrThemeBundleFormatUnknown"   // 不是有效的主题包（format 标识不符）
+	ErrThemeBundleMissingManifest = "ErrThemeBundleMissingManifest" // 主题包缺少 manifest.json
+	ErrThemeBundleManifestInvalid = "ErrThemeBundleManifestInvalid" // 主题包 manifest 结构非法
+	ErrThemeBundleVersionTooNew   = "ErrThemeBundleVersionTooNew"   // 主题包版本号高于当前支持的最高版本
+	ErrThemeBundleVersionInvalid  = "ErrThemeBundleVersionInvalid"  // 主题包版本号非法（非正整数）
+	ErrThemeBundleUnsafeEntry     = "ErrThemeBundleUnsafeEntry"     // 主题包含不安全条目（路径穿越 / 未知扩展名）
+	ErrThemeBundleTooLarge        = "ErrThemeBundleTooLarge"        // 主题包超过大小或条目数上限
+	ErrThemeBundleTokensInvalid   = "ErrThemeBundleTokensInvalid"   // 主题令牌非法（非对象或含非法 CSS 值）
+	ErrThemeBundleBlockMissing    = "ErrThemeBundleBlockMissing"    // 主题包声明引用的块不在包内
+	ErrThemeBundleBlockCycle      = "ErrThemeBundleBlockCycle"      // 主题包内块引用成环（导入顺序未定义）
+	ErrThemeBundleAssetMissing    = "ErrThemeBundleAssetMissing"    // 主题包引用的资产不存在
+	ErrThemeBundlePortUnavailable = "ErrThemeBundlePortUnavailable" // 主题包资产端口未装配（装配期注入缺失）
+)
+
+const (
 	MsgProjectCreated = "MsgProjectCreated" // 站点工程创建成功
 	MsgProjectUpdated = "MsgProjectUpdated" // 站点工程更新成功
+	// MsgThemeBundleImported 主题包导入成功（媒体依赖全部满足）。
+	MsgThemeBundleImported = "MsgThemeBundleImported"
+	// MsgThemeBundleImportedPartial 主题包导入成功，但存在缺失媒体（清单随响应返回）。
+	MsgThemeBundleImportedPartial = "MsgThemeBundleImportedPartial"
 )
