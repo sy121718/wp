@@ -22,4 +22,8 @@ const (
 	ErrInvalidTarget = "ErrInvalidTarget" // 非法的打开方式，仅支持 self 或 blank
 	// ErrInvalidParent 非法的父引用（自引用 / 成环 / 跨工程 / 跨类型 / 父项不存在）。
 	ErrInvalidParent = "ErrInvalidParent" // 非法的父引用：父项必须存在、同工程、同类型，且不得形成环
+	// ErrProjectRequired 缺可作用域的工程（DB-009）：只带 id 的入口要逐工程定位归属，
+	// 而工程清单为空或读不到。显式失败而不是静默返回「找不到」——后者会把
+	// 「读不到工程表」伪装成「导航项不存在」。
+	ErrProjectRequired = "ErrProjectRequired" // 缺少可作用域的工程，无法定位导航项的工程归属
 )

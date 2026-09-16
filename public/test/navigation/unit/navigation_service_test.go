@@ -39,7 +39,7 @@ func newNavigationService(t *testing.T) (*navigationservice.Service, *projectser
 	if err != nil {
 		t.Fatalf("创建测试工程失败: %v", err)
 	}
-	return navigationservice.NewService(navigationmodel.NewModel(db)), projects, project.ID, db
+	return navigationservice.NewService(navigationmodel.NewModel(db), projects), projects, project.ID, db
 }
 
 // createNav 创建一条导航项并返回响应（测试失败即中止）。

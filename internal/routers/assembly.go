@@ -319,8 +319,9 @@ func (a *assembly) buildAPIAndCoreCRUD() {
 	buildSvc := buildhttp.SetupBuildRoutes(authorizedAPI, db)
 	// Page 初始化工具 Blueprint（0-B，InitPageDocument 未来接 page CreatePage）。
 	blueprintSvc := blueprinthttp.SetupBlueprintRoutes(authorizedAPI, db)
-	// 公开站点导航（0-C，与后台 menu 严格隔离）。
-	navigationSvc := navigationhttp.SetupNavigationRoutes(authorizedAPI, db)
+	// 公开站点导航（0-C，与后台 menu 严格隔离）。工程契约用于只带 id 的入口逐工程定位
+	// 工程归属（DB-009：navigations 带 FORCE 策略，作用域只能落到具体工程）。
+	navigationSvc := navigationhttp.SetupNavigationRoutes(authorizedAPI, db, projectService)
 	// 蓝图契约在下面接线给 page（SetBlueprints）：新建页面可从蓝图初始化文档。
 	// 集合源注册表（装配期注册，构建期只读，issue #9）：各领域模块注册自己的集合源
 	// （内容集合 / 商品集合），集合类组件与集合源元数据接口只认注册表 —— 构建层

@@ -285,25 +285,23 @@ func (s *Service) CloneAST(ctx context.Context, req *blockdto.CloneReq) (res *bl
 	return &blockdto.CloneResp{Document: out}, nil
 }
 
+// getExistingBlock 按块 id 定位块（请求只带 id 的入口：更新 / 删除 / 复制 AST）。
+//
+// blocks 带 FORCE 策略（迁移 215），作用域只能落到具体工程，所以这里**逐工程探测出归属**
+// 再返回（见 block_scope.go）：原先的「不限工程」直查在换非超级角色后是静默的
+// ErrRecordNotFound —— 表现为「块明明在，却报不存在」，且没有任何错误日志。
 func (s *Service) getExistingBlock(ctx context.Context, id string) (e *blockmodel.BlockEntity, err error) {
 	// 非法形状的 id 直接判「不存在」，别让它落到 PG 上：blocks.id 是 uuid 列
 	// （迁移 209 把 201 的 bigint 改回来了 —— 它对外有接口、且 blockId 写进页面文档，
 	// 按主键选型判据属于「对外实体」），非法输入会让 PG 报 22P02 并冒成 500。
 	//
-	// 判「不存在」而不是「参数错误」：这四个调用方（详情 / 更新 / 删除 / 克隆）
-	// 对这两种情况的处理本来就一样，多一个 400 分支只会逼每条调用路径判断两种错。
+	// 判「不存在」而不是「参数错误」：这三个调用方对这两种情况的处理本来就一样，
+	// 多一个 400 分支只会逼每条调用路径判断两种错。
 	trimmed := strings.TrimSpace(id)
 	if _, perr := uuid.Parse(trimmed); perr != nil {
 		return nil, ErrNotFound
 	}
-	e, err = s.model.GetByID(ctx, trimmed, "")
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, ErrNotFound
-	}
-	if err != nil {
-		return nil, err
-	}
-	return e, nil
+	return s.locateBlockEntity(ctx, trimmed)
 }
 
 func (s *Service) requireProject(ctx context.Context, projectID string) error {

@@ -17,6 +17,8 @@ var (
 	ErrNotFound = blockcontract.ErrNotFound
 	// ErrProjectNotFound 工程不存在。
 	ErrProjectNotFound = blockcontract.ErrProjectNotFound
+	// ErrProjectRequired 缺可作用域的工程（DB-009）：只带 id 的入口逐工程定位时工程清单为空。
+	ErrProjectRequired = blockcontract.ErrProjectRequired
 	// ErrNameRequired 块名称缺失。
 	ErrNameRequired = blockcontract.ErrNameRequired
 	// ErrInvalidDoc 块文档不合法（与页面文档同构校验失败）。

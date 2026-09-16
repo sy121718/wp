@@ -50,7 +50,7 @@ func newNavigationEnv(t *testing.T) (*gorm.DB, pagecontract.PageService, navigat
 	if err != nil {
 		t.Fatalf("创建测试工程失败: %v", err)
 	}
-	navSvc := navigationservice.NewService(navigationmodel.NewModel(db))
+	navSvc := navigationservice.NewService(navigationmodel.NewModel(db), projects)
 	pageModel := pagemodel.NewPageModel(db)
 	artifacts := artifactservice.NewService(artifactmodel.NewArtifactModel(db))
 	routes := pubservice.NewService(pubmodel.NewPublicationModel(db))

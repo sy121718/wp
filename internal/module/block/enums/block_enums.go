@@ -4,9 +4,13 @@ package blockenums
 const (
 	MsgBlockTitle = "MsgBlockTitle" // 全局块
 
-	ErrBlockParamRequired   = "ErrBlockParamRequired"   // 块参数不能为空
-	ErrBlockNotFound        = "ErrBlockNotFound"        // 全局块不存在
-	ErrProjectNotFound      = "ErrProjectNotFound"      // 工程不存在
+	ErrBlockParamRequired = "ErrBlockParamRequired" // 块参数不能为空
+	ErrBlockNotFound      = "ErrBlockNotFound"      // 全局块不存在
+	ErrProjectNotFound    = "ErrProjectNotFound"    // 工程不存在
+	// ErrBlockProjectRequired 缺可作用域的工程（DB-009）：只带 id 的入口要逐工程定位归属，
+	// 而工程清单为空或读不到。显式失败而不是静默返回「块不存在」——后者会把
+	// 「读不到工程表」伪装成「块不存在」。
+	ErrBlockProjectRequired = "ErrBlockProjectRequired" // 缺少可作用域的工程，无法定位块的工程归属
 	ErrBlockNameRequired    = "ErrBlockNameRequired"    // 块名称不能为空
 	ErrBlockInvalidDoc      = "ErrBlockInvalidDoc"      // 块文档不合法
 	ErrBlockInvalidKind     = "ErrBlockInvalidKind"     // 块类型不合法

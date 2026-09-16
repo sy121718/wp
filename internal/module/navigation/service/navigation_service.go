@@ -18,6 +18,7 @@ import (
 	navigationdto "go_wp/internal/module/navigation/dto"
 	navigationenums "go_wp/internal/module/navigation/enums"
 	navigationmodel "go_wp/internal/module/navigation/model"
+	projectcontract "go_wp/internal/module/project/contract"
 )
 
 // 导航类型白名单（与迁移 046 的 CHECK 约束对齐）。
@@ -45,12 +46,20 @@ const (
 // Service navigation 模块业务实现。
 type Service struct {
 	m *navigationmodel.Model
+	// projects 站点工程契约（装配层注入）：只带 id 的入口要逐工程探测工程归属（DB-009）。
+	// 注入的是契约而不是别的模块的 model：本模块只借「列出工程 id」这一个只读能力。
+	projects projectcontract.ProjectService
 	// sources 来源实体解析器（装配层注入；未注入时来源项退化为记录自身 title/path）。
 	sources navigationcontract.SourceResolver
 }
 
-// NewService 构造（model 注入，不持有 *gorm.DB）。
-func NewService(m *navigationmodel.Model) *Service { return &Service{m: m} }
+// NewService 构造（model 与工程契约注入，不持有 *gorm.DB）。
+//
+// projects 允许为 nil：漏接装配时逐工程定位回退到 NavigationModel.ListAllProjectIDs
+// 的只读清单（见 navigation_scope.go 的 projectIDs），并记 warning。
+func NewService(m *navigationmodel.Model, projects projectcontract.ProjectService) *Service {
+	return &Service{m: m, projects: projects}
+}
 
 // SetSourceResolver 注入来源实体解析器（启动期装配调用一次，之后只读）。
 func (s *Service) SetSourceResolver(r navigationcontract.SourceResolver) { s.sources = r }
@@ -129,10 +138,11 @@ func (s *Service) Update(ctx context.Context, req *navigationdto.UpdateReq) (res
 	if req == nil || strings.TrimSpace(req.ID) == "" {
 		return nil, errors.New(navigationenums.ErrInvalidParam)
 	}
-	// 定位这一跳没有工程可用（请求只给 id）：拿到实体后**全程带工程作用域**，
-	// 写入与回读都受 RLS 约束（DB-009 第二批）。定位本身在换非超级角色后
-	// 会 fail closed（0 行 → ErrNotFound），列入剩余清单。
-	e, err := s.m.Get(ctx, "", strings.TrimSpace(req.ID))
+	// 定位这一跳逐工程探测归属（请求只给 id）。拿到实体后**全程带工程作用域**：
+	// 唯一性校验（ExistsPath）、写入（Save）与回读（Get）都用 e.ProjectID，
+	// 一律受 navigations 的 FORCE 策略约束（DB-009）。原先的「不限工程」定位在换
+	// 非超级角色后是静默的 ErrNotFound —— 表现为「导航项明明在却报不存在」。
+	e, err := s.locateNavigation(ctx, strings.TrimSpace(req.ID))
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, errors.New(navigationenums.ErrNotFound)
 	}
@@ -217,10 +227,9 @@ func (s *Service) Get(ctx context.Context, req *navigationdto.GetReq) (res *navi
 	if req == nil || strings.TrimSpace(req.ID) == "" {
 		return nil, errors.New(navigationenums.ErrInvalidParam)
 	}
-	// 导航项详情只有 id 可依（请求不带工程）：按「不限工程」形态定位。
-	// 换非超级角色后这条路径会 fail closed（0 行 → ErrNotFound），列入剩余清单 ——
-	// 修复它需要调用方带工程（后台导航页已持有选中工程，属 dashboard，本批不动）。
-	e, err := s.m.Get(ctx, "", strings.TrimSpace(req.ID))
+	// 导航项详情只有 id 可依（请求不带工程）：逐工程探测出归属，再在本工程作用域内读。
+	// 原先的「不限工程」形态在换非超级角色后是静默的 ErrNotFound，且没有任何错误日志。
+	e, err := s.locateNavigation(ctx, strings.TrimSpace(req.ID))
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, errors.New(navigationenums.ErrNotFound)
 	}
@@ -256,9 +265,9 @@ func (s *Service) Delete(ctx context.Context, req *navigationdto.DeleteReq) (err
 		return errors.New(navigationenums.ErrInvalidParam)
 	}
 	id := strings.TrimSpace(req.ID)
-	// 定位这一跳没有工程可用（请求只给 id）；拿到实体后的磁盘动作全部带工程作用域：
-	// 列表与批量删除都在本工程内，删到别的工程的行在换角色后会被策略拒绝（DB-009 第二批）。
-	e, err := s.m.Get(ctx, "", id)
+	// 定位这一跳逐工程探测归属（请求只给 id）；拿到实体后的磁盘动作全部带工程作用域：
+	// 列表与批量删除都在本工程内，删到别的工程的行在换角色后会被策略拒绝（DB-009）。
+	e, err := s.locateNavigation(ctx, id)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return errors.New(navigationenums.ErrNotFound)
 	}

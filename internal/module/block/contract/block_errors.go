@@ -20,6 +20,8 @@ var (
 	ErrNotFound = errors.New(blockenums.ErrBlockNotFound)
 	// ErrProjectNotFound 工程不存在。
 	ErrProjectNotFound = errors.New(blockenums.ErrProjectNotFound)
+	// ErrProjectRequired 缺可作用域的工程（DB-009）：只带 id 的入口逐工程定位时工程清单为空。
+	ErrProjectRequired = errors.New(blockenums.ErrBlockProjectRequired)
 	// ErrNameRequired 块名称缺失。
 	ErrNameRequired = errors.New(blockenums.ErrBlockNameRequired)
 	// ErrInvalidDoc 块文档不合法（与页面文档同构校验失败）。
