@@ -64,7 +64,7 @@
         "security"
       ],
       "status": "open",
-      "deferredNote": "2026-09-15 决策：插件生态**延后**，等本体收口（内容 / 权限 / 可视化 / 发布管线）之后再启动 —— 见 docs/06-A-plugin-ecosystem-roadmap.md 的「决策记录」。本条不是待修缺陷，而是能力开放范围未定，故保持 open 并标注延后。"
+      "deferredNote": "2026-09-16 决策确认（第二轮）：**插件生态整体延后，等本体收口之后再考虑** —— 内容 / 权限 / 可视化编辑 / 发布管线这些本体能力优先，插件体系（能力开放范围、manifest 扩展、签名与后台页）排在它们之后。本条不是待修缺陷，而是能力开放范围未定，故保持 open。启动条件：本体侧的待推进条目收敛到可接受范围，且 docs/06-A-plugin-ecosystem-roadmap.md 的决策记录被重新评审。在此之前不投入实现，也不把它算进「还差什么没做」的实际待办。"
     },
     {
       "id": "OSS-002",
@@ -112,7 +112,7 @@
         "runtimefragment"
       ],
       "status": "open",
-      "deferredNote": "2026-09-15 决策：插件生态**延后**，等本体收口（内容 / 权限 / 可视化 / 发布管线）之后再启动 —— 见 docs/06-A-plugin-ecosystem-roadmap.md 的「决策记录」。本条不是待修缺陷，而是能力开放范围未定，故保持 open 并标注延后。"
+      "deferredNote": "2026-09-16 决策确认（第二轮）：**插件生态整体延后，等本体收口之后再考虑** —— 内容 / 权限 / 可视化编辑 / 发布管线这些本体能力优先，插件体系（能力开放范围、manifest 扩展、签名与后台页）排在它们之后。本条不是待修缺陷，而是能力开放范围未定，故保持 open。启动条件：本体侧的待推进条目收敛到可接受范围，且 docs/06-A-plugin-ecosystem-roadmap.md 的决策记录被重新评审。在此之前不投入实现，也不把它算进「还差什么没做」的实际待办。"
     },
     {
       "id": "OSS-003",
@@ -161,7 +161,7 @@
         "authz"
       ],
       "status": "open",
-      "deferredNote": "2026-09-15 决策：插件生态**延后**，等本体收口（内容 / 权限 / 可视化 / 发布管线）之后再启动 —— 见 docs/06-A-plugin-ecosystem-roadmap.md 的「决策记录」。本条不是待修缺陷，而是能力开放范围未定，故保持 open 并标注延后。"
+      "deferredNote": "2026-09-16 决策确认（第二轮）：**插件生态整体延后，等本体收口之后再考虑** —— 内容 / 权限 / 可视化编辑 / 发布管线这些本体能力优先，插件体系（能力开放范围、manifest 扩展、签名与后台页）排在它们之后。本条不是待修缺陷，而是能力开放范围未定，故保持 open。启动条件：本体侧的待推进条目收敛到可接受范围，且 docs/06-A-plugin-ecosystem-roadmap.md 的决策记录被重新评审。在此之前不投入实现，也不把它算进「还差什么没做」的实际待办。"
     },
     {
       "id": "OSS-004",
@@ -207,7 +207,7 @@
         "authz"
       ],
       "status": "open",
-      "deferredNote": "2026-09-15 决策：插件生态**延后**，等本体收口（内容 / 权限 / 可视化 / 发布管线）之后再启动 —— 见 docs/06-A-plugin-ecosystem-roadmap.md 的「决策记录」。本条不是待修缺陷，而是能力开放范围未定，故保持 open 并标注延后。"
+      "deferredNote": "2026-09-16 决策确认（第二轮）：**插件生态整体延后，等本体收口之后再考虑** —— 内容 / 权限 / 可视化编辑 / 发布管线这些本体能力优先，插件体系（能力开放范围、manifest 扩展、签名与后台页）排在它们之后。本条不是待修缺陷，而是能力开放范围未定，故保持 open。启动条件：本体侧的待推进条目收敛到可接受范围，且 docs/06-A-plugin-ecosystem-roadmap.md 的决策记录被重新评审。在此之前不投入实现，也不把它算进「还差什么没做」的实际待办。"
     },
     {
       "id": "OSS-005",
@@ -263,7 +263,7 @@
         "events"
       ],
       "status": "open",
-      "deferredNote": "2026-09-15 决策：插件生态**延后**，等本体收口（内容 / 权限 / 可视化 / 发布管线）之后再启动 —— 见 docs/06-A-plugin-ecosystem-roadmap.md 的「决策记录」。本条不是待修缺陷，而是能力开放范围未定，故保持 open 并标注延后。"
+      "deferredNote": "2026-09-16 决策确认（第二轮）：**插件生态整体延后，等本体收口之后再考虑** —— 内容 / 权限 / 可视化编辑 / 发布管线这些本体能力优先，插件体系（能力开放范围、manifest 扩展、签名与后台页）排在它们之后。本条不是待修缺陷，而是能力开放范围未定，故保持 open。启动条件：本体侧的待推进条目收敛到可接受范围，且 docs/06-A-plugin-ecosystem-roadmap.md 的决策记录被重新评审。在此之前不投入实现，也不把它算进「还差什么没做」的实际待办。"
     },
     {
       "id": "OSS-006",
@@ -362,7 +362,7 @@
         "marketplace"
       ],
       "status": "open",
-      "deferredNote": "2026-09-15 决策：插件生态**延后**，等本体收口（内容 / 权限 / 可视化 / 发布管线）之后再启动 —— 见 docs/06-A-plugin-ecosystem-roadmap.md 的「决策记录」。本条不是待修缺陷，而是能力开放范围未定，故保持 open 并标注延后。"
+      "deferredNote": "2026-09-16 决策确认（第二轮）：**插件生态整体延后，等本体收口之后再考虑** —— 内容 / 权限 / 可视化编辑 / 发布管线这些本体能力优先，插件体系（能力开放范围、manifest 扩展、签名与后台页）排在它们之后。本条不是待修缺陷，而是能力开放范围未定，故保持 open。启动条件：本体侧的待推进条目收敛到可接受范围，且 docs/06-A-plugin-ecosystem-roadmap.md 的决策记录被重新评审。在此之前不投入实现，也不把它算进「还差什么没做」的实际待办。"
     },
     {
       "id": "OSS-008",
@@ -408,7 +408,7 @@
         "pipeline"
       ],
       "status": "open",
-      "deferredNote": "2026-09-15 决策：插件生态**延后**，等本体收口（内容 / 权限 / 可视化 / 发布管线）之后再启动 —— 见 docs/06-A-plugin-ecosystem-roadmap.md 的「决策记录」。本条不是待修缺陷，而是能力开放范围未定，故保持 open 并标注延后。"
+      "deferredNote": "2026-09-16 决策确认（第二轮）：**插件生态整体延后，等本体收口之后再考虑** —— 内容 / 权限 / 可视化编辑 / 发布管线这些本体能力优先，插件体系（能力开放范围、manifest 扩展、签名与后台页）排在它们之后。本条不是待修缺陷，而是能力开放范围未定，故保持 open。启动条件：本体侧的待推进条目收敛到可接受范围，且 docs/06-A-plugin-ecosystem-roadmap.md 的决策记录被重新评审。在此之前不投入实现，也不把它算进「还差什么没做」的实际待办。"
     },
     {
       "id": "OSS-009",
@@ -915,7 +915,8 @@
         "opensource",
         "developer-experience"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-16：模板与静态资源全部 embed，生产二进制不再需要附带源码树。① 新增 internal/templates/admin_embed.go：go:embed all:admin（59 个后台模板）与 all:static（58 个文件约 2.8M）。② NewJetHTMLRender 按模式分流：debug/test 仍读磁盘（改模板即时生效是开发期最需要的反馈），release 走 embed.FS；routes.go 的 /static 同理。组件模板与片段模板此前已是 embed，这是最后两块。③ 两处关键细节都是实测撞出来的：(a) embed loader **不做 fs.Sub** —— 根必须与磁盘 loader 一致，模板名才是 admin/login.html；一度 Sub 到 admin/ 之下，模板名变成 login.html，生产模式下找不到模板，失败形态是**页面空体 + 状态码 200**；(b) embed 指令用 **all: 前缀** —— go:embed 默认忽略以 _ 与 . 开头的文件，而 static/js/ui/_util.js 正是下划线开头，漏掉它不报错、只在生产模式多一个 404。④ 顺带把 server.mode 加进 config.envBindableKeys：验证时发现GOWP_SERVER_MODE=release 被静默忽略（不在白名单里），而 release 会改变模板与静态的来源 ——代价不是「模式没切」，而是「按 release 部署却按 debug 跑」。⑤ 验收（硬证据）：把 internal/templates 整个移走，以 release 模式运行二进制 —— /admin/login 返回 200 / 10221B 且标题为「登录 — go_wp 管理后台」；/static/css/ui.css、/static/js/ui/_util.js、/static/js/ui/htmx.min.js 全部 200；二进制 70MB。⑥ 回归测试 internal/templates/embed_assets_test.go 三条：模板名与磁盘布局一致（含「根不许被抬高」的反向断言）、embed 静态文件系统可取到资产（含 _util.js）、目录列表仍被禁用（gin.Dir(dir,false) 的原语义不能因换来源而丢）。"
     },
     {
       "id": "OSS-019",
@@ -957,7 +958,7 @@
         "documentation"
       ],
       "status": "open",
-      "deferredNote": "2026-09-15 决策：插件生态**延后**，等本体收口（内容 / 权限 / 可视化 / 发布管线）之后再启动 —— 见 docs/06-A-plugin-ecosystem-roadmap.md 的「决策记录」。本条不是待修缺陷，而是能力开放范围未定，故保持 open 并标注延后。"
+      "deferredNote": "2026-09-16 决策确认（第二轮）：**插件生态整体延后，等本体收口之后再考虑** —— 内容 / 权限 / 可视化编辑 / 发布管线这些本体能力优先，插件体系（能力开放范围、manifest 扩展、签名与后台页）排在它们之后。本条不是待修缺陷，而是能力开放范围未定，故保持 open。启动条件：本体侧的待推进条目收敛到可接受范围，且 docs/06-A-plugin-ecosystem-roadmap.md 的决策记录被重新评审。在此之前不投入实现，也不把它算进「还差什么没做」的实际待办。"
     },
     {
       "id": "OSS-020",

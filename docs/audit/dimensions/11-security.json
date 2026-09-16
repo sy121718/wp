@@ -327,7 +327,7 @@
         "marketplace"
       ],
       "status": "open",
-      "deferredNote": "2026-09-15 决策：插件生态**延后**，等本体收口（内容 / 权限 / 可视化 / 发布管线）之后再启动 —— 见 docs/06-A-plugin-ecosystem-roadmap.md 的「决策记录」。本条不是待修缺陷，而是能力开放范围未定，故保持 open 并标注延后。"
+      "deferredNote": "2026-09-16 决策确认（第二轮）：**插件生态整体延后，等本体收口之后再考虑** —— 内容 / 权限 / 可视化编辑 / 发布管线这些本体能力优先，插件体系（能力开放范围、manifest 扩展、签名与后台页）排在它们之后。本条不是待修缺陷，而是能力开放范围未定，故保持 open。启动条件：本体侧的待推进条目收敛到可接受范围，且 docs/06-A-plugin-ecosystem-roadmap.md 的决策记录被重新评审。在此之前不投入实现，也不把它算进「还差什么没做」的实际待办。"
     },
     {
       "id": "SEC-006",
@@ -633,7 +633,8 @@
         "ci",
         "developer-experience"
       ],
-      "status": "open"
+      "status": "open",
+      "progressNote": "2026-09-16 第一批（审计的短期项）：check-permission-gaps.sh 接入 CI。它要连库比对「运行时装配出来的路由表」与 sys_permission，因此放在 integration job、排在迁移之后（权限点由 seed 写入）。本地与 CI 各跑一次均无缺口（273 路由 / 272 权限点 / 5 条豁免）。**未做（审计给的长期方案）**：把权限点声明移到代码里 —— 路由注册时声明所需权限点、启动时幂等 upsert 到 sys_permission 与超管策略。那能从根上消除「漏 seed」，但要让 authorizedAPI 的每个注册点带上权限点参数（数十处），并处理自动 seed 与人工角色分配的关系。本批只做短期项，故本条保持 open。"
     },
     {
       "id": "SEC-012",
