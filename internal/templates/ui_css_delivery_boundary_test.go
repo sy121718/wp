@@ -103,6 +103,7 @@ var derivedOnlyTokens = map[string]string{
 	"--sky-c-primary-bg":     "产物侧的浅色主色底由组件级配色决定（按钮/徽标各自的底色），不生成全站令牌",
 	"--sky-c-primary-soft":   "产物侧没有中间档主色（主题只有 primary / secondary / accent）",
 	"--sky-c-bg-hover":       "产物侧不用 hover 底色表达状态（悬停形态由组件自己声明）",
+	"--sky-c-bg-active":      "产物侧不用按压底色表达状态；后台侧原本就有 --c-bg-active，只是此前没有别名，UIK-003 第四层收口时补上（消费方是 theme.css 的 .nav-toggle:active）",
 	"--sky-c-bg-soft":        "产物侧对应的是 --sky-c-surface（主题的 Surface 字段）",
 	"--sky-c-text-secondary": "产物侧次要文本色没有独立令牌（正文/标题两档）",
 	"--sky-c-text-mute":      "产物侧对应的是 --sky-c-accent（点缀色）",

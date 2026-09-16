@@ -12,7 +12,7 @@
 
 /* ==========================================================================
    1. 键盘焦点统一轮廓（:focus-visible）
-   2px solid var(--c-primary, #3d444f) + outline-offset 2px
+   2px solid var(--sky-c-primary, #3d444f) + outline-offset 2px
    ========================================================================== */
 button:focus-visible,
 input:focus-visible,
@@ -29,7 +29,7 @@ a[href]:focus-visible,
 .wb-color-swatch:focus-visible,
 .wb-node-action:focus-visible,
 .wb-caret:focus-visible {
-    outline: 2px solid var(--c-primary, #3d444f);
+    outline: 2px solid var(--sky-c-primary, #3d444f);
     outline-offset: 2px;
 }
 
@@ -45,14 +45,14 @@ a[href]:focus-visible,
 .wb-dims-input:focus-visible,
 .wb-icon-search:focus-visible,
 .wb-search:focus-visible {
-    outline: 2px solid var(--c-primary, #3d444f);
+    outline: 2px solid var(--sky-c-primary, #3d444f);
     outline-offset: 2px;
 }
 
 /* 1.2 结构树 / 大纲树的选中态自带 1px outline（.wb-node.is-selected）。
    键盘焦点落在选中节点上时，用 2px 焦点轮廓顶替，避免两层轮廓叠在一起。 */
 .wb-node.is-selected:focus-visible {
-    outline: 2px solid var(--c-primary, #3d444f);
+    outline: 2px solid var(--sky-c-primary, #3d444f);
     outline-offset: 2px;
 }
 
@@ -60,7 +60,7 @@ a[href]:focus-visible,
    这里统一成主色环；不改变 is-open / is-active 的底色反馈。 */
 .wb-acc-head:focus-visible,
 .wb-subtab:focus-visible {
-    outline: 2px solid var(--c-primary, #3d444f);
+    outline: 2px solid var(--sky-c-primary, #3d444f);
     outline-offset: 2px;
 }
 
@@ -79,7 +79,7 @@ a[href]:focus-visible,
     .wb-color-swatch:focus,
     .wb-node-action:focus,
     .wb-caret:focus {
-        outline: 2px solid var(--c-primary, #3d444f);
+        outline: 2px solid var(--sky-c-primary, #3d444f);
         outline-offset: 2px;
     }
 }

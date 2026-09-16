@@ -14,8 +14,11 @@ package templates
 //	   变化 —— 没配主色就根本没有 --sky-c-primary；后台侧的别名段也可能漏一条），
 //	   var() 无兜底且变量未定义时整条声明被丢弃，表现是「控件丢了颜色 / 边框」，
 //	   不报任何错；
-//	③ 后台别名段与 ui.css 的实际引用**一一对应**（两个方向都查）：漏一条 = 后台深色
-//	   主题下那条声明退化成写死的亮色值；多一条 = 死别名，说明有人改完 ui.css 没清清单。
+//	③ 后台别名段与实际引用**一一对应**（两个方向都查）：漏一条 = 后台深色
+//	   主题下那条声明退化成写死的亮色值；多一条 = 死别名，说明有人改完引用没清清单。
+//	   UIK-003 第四层之后，「实际引用」不再只有 ui.css：后台静态样式（theme.css /
+//	   workbench.css / media-lib.css / workbench-a11y.css）同样只写 --sky-c-*，
+//	   对表的覆盖范围随之扩展到它们（见 backend_css_naming_contract_test.go）。
 //
 // 为什么 ① 是有意义的约束而不是表面整齐：改名之前，同一条声明在两端可能取到**不同语义**
 // 的令牌（.form-input 的边框在产物侧取 --sky-c-border、在后台侧取 --c-border-input），
@@ -113,8 +116,14 @@ func TestUICssSkyTokensHaveBackendAlias(t *testing.T) {
 			used[m[1]] = true
 		}
 	}
-	if len(used) < 15 {
-		t.Fatalf("ui.css 只引用了 %d 个 --sky-c-* 槽（预期 ≥15）：解析口径可能已失效", len(used))
+	uiOnly := len(used)
+	// UIK-003 第四层：后台静态样式也消费同一批别名，纳入对表覆盖范围。不需要别名供给的
+	// 两类已在 backendStaticAliasConsumers 里剔除（本文件自有定义、已登记的无供给槽）。
+	for name := range backendStaticAliasConsumers(t) {
+		used[name] = true
+	}
+	if uiOnly < 15 {
+		t.Fatalf("ui.css 只引用了 %d 个 --sky-c-* 槽（预期 ≥15）：解析口径可能已失效", uiOnly)
 	}
 	aliases := backendAliases(t)
 	if len(aliases) < 15 {
@@ -135,11 +144,11 @@ func TestUICssSkyTokensHaveBackendAlias(t *testing.T) {
 	sort.Strings(missing)
 	sort.Strings(unused)
 	if len(missing) > 0 {
-		t.Errorf("这些令牌在 ui.css 里被引用，后台别名段却没有供给 %v：\n"+
+		t.Errorf("这些令牌被 ui.css 或后台静态样式引用，后台别名段却没有供给 %v：\n"+
 			"后台深色主题下，引用它们的声明会退化成写死的亮色值（例如主色落到 #3d444f、面板落到 #fff）", missing)
 	}
 	if len(unused) > 0 {
-		t.Errorf("后台别名段有 ui.css 不再引用的槽 %v：死别名会让「哪些槽还受支持」变得含糊，请一并删掉", unused)
+		t.Errorf("后台别名段有无人引用的槽 %v：死别名会让「哪些槽还受支持」变得含糊，请一并删掉", unused)
 	}
 }
 

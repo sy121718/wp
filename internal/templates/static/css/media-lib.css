@@ -9,8 +9,8 @@
 /* --- 左侧分类树 --- */
 .media-tree-panel {
     flex: 0 0 240px;
-    background: var(--c-surface, #fff);
-    border: 1px solid var(--c-border, #e5e7eb);
+    background: var(--sky-c-surface, #fff);
+    border: 1px solid var(--sky-c-border, #e5e7eb);
     border-radius: 12px;
     padding: 12px;
     display: flex;
@@ -23,8 +23,8 @@
 .media-tree-head strong { font-size: 14px; }
 .media-tree-search, .media-search, .media-select {
     padding: 7px 10px; font-size: 13px;
-    border: 1px solid var(--c-border, #e5e7eb); border-radius: 8px;
-    background: var(--c-surface, #fff); color: inherit; width: 100%; box-sizing: border-box;
+    border: 1px solid var(--sky-c-border, #e5e7eb); border-radius: 8px;
+    background: var(--sky-c-surface, #fff); color: inherit; width: 100%; box-sizing: border-box;
 }
 .media-tree { font-size: 13px; }
 .media-tree-children { list-style: none; margin: 0; padding: 0 0 0 14px; }
@@ -33,40 +33,40 @@
     padding: 6px 8px; border-radius: 6px; cursor: pointer;
 }
 @media (hover: hover) {
-.media-tree-node:hover { background: var(--c-bg-hover, #f3f4f6); }
+.media-tree-node:hover { background: var(--sky-c-bg-hover, #f3f4f6); }
 }
-.media-tree-node.is-selected { background: var(--c-primary-bg, #eff6ff); color: var(--c-primary, #2563eb); font-weight: 500; }
-.media-tree-node.is-root { margin-bottom: 6px; border-bottom: 1px solid var(--c-border, #e5e7eb); border-radius: 0; padding-bottom: 8px; }
+.media-tree-node.is-selected { background: var(--sky-c-primary-bg, #eff6ff); color: var(--sky-c-primary, #2563eb); font-weight: 500; }
+.media-tree-node.is-root { margin-bottom: 6px; border-bottom: 1px solid var(--sky-c-border, #e5e7eb); border-radius: 0; padding-bottom: 8px; }
 .media-tree-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.media-tree-count { font-size: 11px; color: var(--c-text-mute, #9ca3af); }
+.media-tree-count { font-size: 11px; color: var(--sky-c-text-mute, #9ca3af); }
 .media-tree-actions { display: none; gap: 2px; }
 @media (hover: hover) {
 .media-tree-node:hover .media-tree-actions { display: inline-flex; }
 }
 .media-tree-actions button {
     border: none; background: transparent; cursor: pointer;
-    color: var(--c-text-mute, #6b7280); font-size: 12px; padding: 2px 4px; border-radius: 4px;
+    color: var(--sky-c-text-mute, #6b7280); font-size: 12px; padding: 2px 4px; border-radius: 4px;
 }
 @media (hover: hover) {
-.media-tree-actions button:hover { background: var(--c-bg-hover, #e5e7eb); color: var(--c-primary, #2563eb); }
+.media-tree-actions button:hover { background: var(--sky-c-bg-hover, #e5e7eb); color: var(--sky-c-primary, #2563eb); }
 }
 
 /* --- 右侧主区 --- */
 .media-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 12px; }
 .media-toolbar {
     display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-    background: var(--c-surface, #fff);
-    border: 1px solid var(--c-border, #e5e7eb);
+    background: var(--sky-c-surface, #fff);
+    border: 1px solid var(--sky-c-border, #e5e7eb);
     border-radius: 12px; padding: 10px 12px;
 }
 .media-toolbar .media-select { width: auto; }
 .media-toolbar .media-search { width: min(100%, 220px); }
 .media-flex-spacer { flex: 1 1 auto; }
-.media-view-toggle { display: inline-flex; border: 1px solid var(--c-border, #e5e7eb); border-radius: 8px; overflow: hidden; }
+.media-view-toggle { display: inline-flex; border: 1px solid var(--sky-c-border, #e5e7eb); border-radius: 8px; overflow: hidden; }
 .media-view-toggle button {
-    border: none; background: var(--c-surface, #fff); padding: 6px 10px; cursor: pointer; font-size: 14px;
+    border: none; background: var(--sky-c-surface, #fff); padding: 6px 10px; cursor: pointer; font-size: 14px;
 }
-.media-view-toggle button.is-active { background: var(--c-primary-bg, #eff6ff); color: var(--c-primary, #2563eb); }
+.media-view-toggle button.is-active { background: var(--sky-c-primary-bg, #eff6ff); color: var(--sky-c-primary, #2563eb); }
 
 /* 网格 */
 .media-grid {
@@ -75,49 +75,49 @@
     gap: 12px;
 }
 .media-card {
-    background: var(--c-surface, #fff);
-    border: 1px solid var(--c-border, #e5e7eb);
+    background: var(--sky-c-surface, #fff);
+    border: 1px solid var(--sky-c-border, #e5e7eb);
     border-radius: 10px;
     overflow: hidden;
     cursor: pointer;
     transition: border-color .15s, box-shadow .15s;
 }
 @media (hover: hover) {
-.media-card:hover { border-color: var(--c-primary, #2563eb); box-shadow: 0 4px 14px rgba(0,0,0,.08); }
+.media-card:hover { border-color: var(--sky-c-primary, #2563eb); box-shadow: 0 4px 14px rgba(0,0,0,.08); }
 }
-.media-card-thumb { height: 120px; background: var(--c-bg, #f9fafb); display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.media-card-thumb { height: 120px; background: var(--sky-c-bg, #f9fafb); display: flex; align-items: center; justify-content: center; overflow: hidden; }
 .media-card-thumb img { width: 100%; height: 100%; object-fit: cover; }
-.media-card-type { font-size: 12px; color: var(--c-text-mute, #6b7280); }
+.media-card-type { font-size: 12px; color: var(--sky-c-text-mute, #6b7280); }
 .media-card-name {
     padding: 8px 10px; font-size: 12px;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-    border-top: 1px solid var(--c-border, #e5e7eb);
+    border-top: 1px solid var(--sky-c-border, #e5e7eb);
 }
-.media-empty { color: var(--c-text-mute, #6b7280); font-size: 13px; text-align: center; padding: 40px 0; }
+.media-empty { color: var(--sky-c-text-mute, #6b7280); font-size: 13px; text-align: center; padding: 40px 0; }
 /* 分页条样式已归基座（ui.css 的 .pagination / .pagination-btn）——
    媒体库与后台其它列表页共用一份，这里不再维护第二份。 */
 
 /* --- 详情侧栏 --- */
 .media-detail {
     flex: 0 0 320px;
-    background: var(--c-surface, #fff);
-    border: 1px solid var(--c-border, #e5e7eb);
+    background: var(--sky-c-surface, #fff);
+    border: 1px solid var(--sky-c-border, #e5e7eb);
     border-radius: 12px;
     display: flex; flex-direction: column;
     max-height: calc(100vh - 160px);
 }
-.media-detail-head { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; border-bottom: 1px solid var(--c-border, #e5e7eb); }
+.media-detail-head { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; border-bottom: 1px solid var(--sky-c-border, #e5e7eb); }
 .media-detail-body { padding: 14px; overflow-y: auto; }
 .media-detail-img { width: 100%; border-radius: 8px; margin-bottom: 12px; }
 .media-detail-field { margin-bottom: 10px; }
-.media-detail-field label { display: block; font-size: 12px; color: var(--c-text-mute, #6b7280); margin-bottom: 4px; }
+.media-detail-field label { display: block; font-size: 12px; color: var(--sky-c-text-mute, #6b7280); margin-bottom: 4px; }
 .media-detail-field input, .media-detail-field select, .media-detail-field textarea {
     width: 100%; box-sizing: border-box;
     padding: 7px 10px; font-size: 13px;
-    border: 1px solid var(--c-border, #e5e7eb); border-radius: 8px;
-    background: var(--c-surface, #fff); color: inherit;
+    border: 1px solid var(--sky-c-border, #e5e7eb); border-radius: 8px;
+    background: var(--sky-c-surface, #fff); color: inherit;
 }
-.media-detail-meta { font-size: 12px; color: var(--c-text-mute, #6b7280); margin: 12px 0; display: flex; flex-direction: column; gap: 4px; }
+.media-detail-meta { font-size: 12px; color: var(--sky-c-text-mute, #6b7280); margin: 12px 0; display: flex; flex-direction: column; gap: 4px; }
 .media-detail-url { display: flex; gap: 6px; margin-bottom: 12px; }
 .media-detail-url input { flex: 1; font-size: 11px; }
 .media-detail-actions { display: flex; gap: 8px; }
@@ -127,20 +127,20 @@
    开合/焦点/Esc/遮罩归基座（ui.css 的 .wb-modal*，行为在 js/ui/modal.js）；
    这里只留媒体库特有的部分：分类弹窗窄一档、表单标签、拖拽区。 */
 .wb-modal.media-cat-modal { width: min(360px, 92vw); }
-.media-cat-modal label { display: block; font-size: 12px; color: var(--c-text-mute, #6b7280); margin: 8px 0 4px; }
+.media-cat-modal label { display: block; font-size: 12px; color: var(--sky-c-text-mute, #6b7280); margin: 8px 0 4px; }
 .wb-media-drop {
-    border: 2px dashed var(--c-border, #d1d5db);
+    border: 2px dashed var(--sky-c-border, #d1d5db);
     border-radius: 10px;
     padding: 30px;
     text-align: center;
-    color: var(--c-text-mute, #6b7280);
+    color: var(--sky-c-text-mute, #6b7280);
     cursor: pointer;
     margin-bottom: 10px;
 }
 @media (hover: hover) {
-.wb-media-drop:hover { border-color: var(--c-primary, #2563eb); color: var(--c-primary, #2563eb); }
+.wb-media-drop:hover { border-color: var(--sky-c-primary, #2563eb); color: var(--sky-c-primary, #2563eb); }
 }
-.media-upload-list { font-size: 13px; color: var(--c-text-mute, #6b7280); }
+.media-upload-list { font-size: 13px; color: var(--sky-c-text-mute, #6b7280); }
 .media-upload-actions { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
 .media-upload-actions .media-select { width: auto; flex: 1; }
 .media-cat-modal { width: min(360px, 92vw); }
@@ -152,7 +152,7 @@
 .media-tree-caret {
     display: inline-flex; align-items: center; justify-content: center;
     width: 18px; height: 18px; border: none; background: transparent;
-    cursor: pointer; color: var(--c-text-mute, #9ca3af);
+    cursor: pointer; color: var(--sky-c-text-mute, #9ca3af);
     font-size: 10px; flex: none; padding: 0;
 }
 .media-tree-caret::before { content: '▾'; }
@@ -168,7 +168,7 @@
     width: 16px;
     height: 16px;
     cursor: pointer;
-    accent-color: var(--c-primary, #2563eb);
+    accent-color: var(--sky-c-primary, #2563eb);
 }
 .media-card { position: relative; }
 .media-variant-badges { display: flex; flex-wrap: wrap; gap: 4px; }
