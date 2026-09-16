@@ -146,6 +146,7 @@ Artifact          ≠ 可编辑源码
 | `order` | 订单（销售侧） | 购物车与结算页；真支付网关对接；库存真源 |
 | `cart` | 购物车与访客结算 | 订单持久化与状态机；商品与库存真源 |
 | `analytics` | 站点访问统计 | 页面渲染与业务逻辑；实时行为分析；保留期归档 |
+| `webhook` | 外部集成通道：端点白名单（事件类型 × 目标 URL）+ 投递日志 + 异步签名投递 | 业务事件的产生与内容；重试上限之外的人工补偿 |
 
 > `build` 无独立模块目录：编译内核在 `internal/builder`，发布内核在 `internal/pipeline`。
 > `permission/role/menu/dept/datarule` 已并入 `admin` 大模块，不再独立。
@@ -238,6 +239,7 @@ Cookie 属性：`HttpOnly`、`Secure`（release 自动启用）、`SameSite=Lax`
   改完跑 `bash scripts/check-permission-gaps.sh` 审计「有路由、无权限点」的接口
 - datarule 插件字段引用按方言（PG 双引号 / MySQL 反引号）；部门范围整段精确匹配
 - **时间列命名统一为 `create_time` / `update_time`**（审计 DB-019，迁移 205 收口）：全库已无 `created_at` / `updated_at`，新表新列一律用 `*_time`，不要再引入 `*_at`
+- **时间列类型统一 `timestamptz`**（迁移 212 收口）：全库 191 个时间列现在都是 `timestamp with time zone`。最后 4 个是 webhook 两张表的 `create_time`/`update_time`（199 建表时用 BIGINT 存 `time.Now().Unix()`，205 只改了列名没改类型，于是它们成了仅有的例外），212 用 `USING to_timestamp(...)` 转换过来。**新表一律 `timestamptz` + Go 的 `time.Time`**，不要再引入 int64 时间戳：它丢掉亚秒精度（投递日志同秒内排序不稳定）、无法直接用 PG 的时间运算与区间索引（BRIN / `date_trunc` 分组要先转换）、与其它表的列比较必须显式转换
 - **软删除列名统一为 `deleted_at`**（审计 DB-020，迁移 208 收口）：`sys_menus` 原本的 `deleted_time` 已改名。`sys_attachment` 用 `status` 表达删除属**存量例外**，新表不要照抄
 - 改列名时注意两类**不会自动跟随**的对象：**触发器 / plpgsql 函数体**（函数体是字符串，RENAME 后仍按旧名解析，迁移 206 修的就是它）与 **seed SQL**（seed 可重复执行，必须同步改；历史迁移 SQL 保持原样）。索引表达式、视图、约束由 PG 自动重写
 - 迁移的 `CheckSQL` 里 `?` 由迁移器传入的是**表名**；判定要用的其它值（权限点代码等）必须写进 SQL 字面量，否则判定恒为 0、迁移每次启动都重跑（178 踩过）

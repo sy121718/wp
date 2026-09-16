@@ -315,7 +315,8 @@
         "ssrf"
       ],
       "status": "resolved",
-      "resolutionNote": "webhook + SSRF：DNS 解析后逐 IP 检查、不跟随重定向、超时 Dial5s/TLS5s/整体15s、MaxRetry3、64KiB 双侧、HMAC-SHA256 签名、密钥加密存库、请求头固定集合。复用 pkg/queue asynq worker 幂等。11 测试全 PASS。迁移 199。"
+      "resolutionNote": "webhook + SSRF：DNS 解析后逐 IP 检查、不跟随重定向、超时 Dial5s/TLS5s/整体15s、MaxRetry3、64KiB 双侧、HMAC-SHA256 签名、密钥加密存库、请求头固定集合。复用 pkg/queue asynq worker 幂等。11 测试全 PASS。迁移 199。",
+      "progressNote": "2026-09-16 接线补齐（上面那条记的是「实现完整」，这条记的是「接上电」）。此前的真实状态是**没有调用方的死代码**：internal/module/webhook/ 有 model / service / task / ssrf / sign 与它们自己的单测，却没有 contract、没有 dto、没有 inbound、没有权限点，routes.go 里零引用，AGENTS.md 与模块清单里也没有这个模块 —— 全仓库 grep 'webhook' 在 internal/routers、config、docs 三处都是零命中。与 CQ-019（商品侧注入点「有 setter、无调用方」，投影恒 0 且不报错）同一类缺陷。本轮补七件事：① contract/webhook_service.go —— EndpointService（管理面）与 Dispatcher（派发口）分开，后者只留一条 DispatchEvent，越权防护靠接口形状而不是调用方自觉（与 mail 的 TransactionalSender / TrackingService 同一手法）；② dto/ 与 inbound/http/ —— 6 条接口（endpoint 的 list/save/delete/status、delivery 的 list/retry），全部 GET/POST + query 参数，无 RESTful 路径参数；③ service 由返回 model 实体改为返回 dto（跨模块不得暴露 model），签名密钥只以 HasSecret 布尔出响应，投递负载只给 200 字符按 rune 截断的预览；④ routes.go 在订单模块**之前**装配，派发口按收窄契约断言后注入订单（断言失败即 panic —— 装配缺陷要在启动时炸掉，而不是等支付成功后发现通知发不出去）；⑤ 迁移 213 补 6 个权限点 + 超管策略（挂 authorizedAPI 的死线，缺权限点含超管全员 403）；⑥ **首个真实派发点**接在 order.PayOrder 落账之后，且只在 pending → paid 真正跃迁时派发 —— 幂等分支（网关重发 / 用户双击 / 上层重试）不派发，重复通知会让对端重复发货与重复记账；⑦ 装配自检表 wiring.go 新增两条端口，order.SetWebhookDispatcher 定为 required-port（未注入的后果是「订阅端点在支付后收不到投递、投递日志恒空且无告警」，属静默缺失）。仍未做：dashboard 页面与菜单（当前只有 API 与权限点，配置要直接调接口）；插件侧事件总线（OSS-005 延后）—— 事件名目前是模块间的直接约定（webhookcontract.EventOrderPaid），不是可订阅总线。"
     },
     {
       "id": "OSS-007",
