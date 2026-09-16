@@ -39,21 +39,23 @@ func (s *Service) CreateInstance(ctx context.Context, req *presentationdto.Creat
 	if !presentationmodel.IsValidInstanceRole(role) {
 		return nil, errors.New(presentationenums.ErrInvalidParam)
 	}
-	// 同实体**同角色**已存在实例 → 视为幂等（返回已有；无需再解析工程）。
-	// 必须带角色：同一个分类既有详情页也可能有归档页，只按实体查会把先建的当成
-	// 「已存在」返回 —— 于是「给分类建归档页」静默变成「拿到详情页实例」。
-	if existing, gerr := s.m.GetInstanceByEntityRole(ctx, req.EntityType, req.EntityID, role); gerr == nil {
-		return s.toResp(ctx, existing)
-	} else if !errors.Is(gerr, gorm.ErrRecordNotFound) {
-		return nil, gerr
-	}
+	// 工程作用域先解析（DB-009 第二批）：presentation_instances 带 FORCE 策略，
+	// 幂等查询也在工程内进行 —— 跨工程按实体查会把别人的实例当成自己的返回。
 	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
 	if err != nil {
 		return nil, err
 	}
+	// 同实体**同角色**已存在实例 → 视为幂等（返回已有）。
+	// 必须带角色：同一个分类既有详情页也可能有归档页，只按实体查会把先建的当成
+	// 「已存在」返回 —— 于是「给分类建归档页」静默变成「拿到详情页实例」。
+	if existing, gerr := s.m.GetInstanceByEntityRole(ctx, projectID, req.EntityType, req.EntityID, role); gerr == nil {
+		return s.toResp(ctx, existing)
+	} else if !errors.Is(gerr, gorm.ErrRecordNotFound) {
+		return nil, gerr
+	}
 	// 解析模板版本 + 实体解析器。req.TemplateID 非空 = 发布时显式指定用哪套命名模板
 	// （issue #14 验收 2）；为空 = 按实体类型取默认模板（既有行为逐字不变）。
-	tpl, err := s.resolveTemplate(ctx, req.EntityType, req.TemplateID)
+	tpl, err := s.resolveTemplate(ctx, projectID, req.EntityType, req.TemplateID)
 	if err != nil {
 		return nil, err
 	}
@@ -89,7 +91,13 @@ func (s *Service) GetByEntity(ctx context.Context, req *presentationdto.GetByEnt
 	if req == nil || req.EntityType == "" || req.EntityID == "" {
 		return nil, errors.New(presentationenums.ErrInvalidParam)
 	}
-	inst, err := s.m.GetInstanceByEntity(ctx, req.EntityType, req.EntityID)
+	// 工程作用域（DB-009 第二批）：实例表的读必须带 app.project_id，
+	// 否则换非超级角色后静默 0 行 —— 表现为「详情页模板显示未绑定」。
+	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	inst, err := s.m.GetInstanceByEntity(ctx, projectID, req.EntityType, req.EntityID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, errors.New(presentationenums.ErrNotFound)
@@ -104,7 +112,11 @@ func (s *Service) Get(ctx context.Context, req *presentationdto.GetReq) (res *pr
 	if req == nil || req.ID == "" {
 		return nil, errors.New(presentationenums.ErrInvalidParam)
 	}
-	inst, err := s.m.GetInstance(ctx, req.ID)
+	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	inst, err := s.m.GetInstance(ctx, projectID, req.ID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, errors.New(presentationenums.ErrNotFound)
@@ -119,7 +131,11 @@ func (s *Service) List(ctx context.Context, req *presentationdto.ListReq) (list 
 	if req == nil {
 		req = &presentationdto.ListReq{}
 	}
-	rows, err := s.m.ListInstances(ctx, req.EntityType)
+	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := s.m.ListInstances(ctx, projectID, req.EntityType)
 	if err != nil {
 		return nil, err
 	}
@@ -139,7 +155,11 @@ func (s *Service) Delete(ctx context.Context, req *presentationdto.DeleteReq) (e
 	if req == nil || req.ID == "" {
 		return errors.New(presentationenums.ErrInvalidParam)
 	}
-	inst, err := s.m.GetInstance(ctx, req.ID)
+	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
+	if err != nil {
+		return err
+	}
+	inst, err := s.m.GetInstance(ctx, projectID, req.ID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return errors.New(presentationenums.ErrNotFound)
@@ -165,7 +185,7 @@ func (s *Service) Delete(ctx context.Context, req *presentationdto.DeleteReq) (e
 			return fmt.Errorf("删除实例前释放路由占用失败: %w", rerr)
 		}
 	}
-	return s.m.DeleteInstance(ctx, req.ID)
+	return s.m.DeleteInstance(ctx, projectID, req.ID)
 }
 
 // instanceActivePaths 实例在访问面上已激活的全部路径（当前路径 + 历史 301 路径）。
@@ -206,9 +226,9 @@ func dedupePaths(in []string) []string {
 	return out
 }
 
-// findByEntityID 按内容实体 ID 反查实例。
-func (s *Service) findByEntityID(ctx context.Context, entityID string) (*presentationmodel.InstanceEntity, error) {
-	rows, err := s.m.ListInstances(ctx, "")
+// findByEntityID 在**本工程内**按内容实体 ID 反查实例。
+func (s *Service) findByEntityID(ctx context.Context, projectID, entityID string) (*presentationmodel.InstanceEntity, error) {
+	rows, err := s.m.ListInstances(ctx, projectID, "")
 	if err != nil {
 		return nil, err
 	}

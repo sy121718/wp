@@ -7,18 +7,55 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	presentationcontract "go_wp/internal/module/presentation/contract"
 	presentationdto "go_wp/internal/module/presentation/dto"
 	presentationenums "go_wp/internal/module/presentation/enums"
+	presentationmodel "go_wp/internal/module/presentation/model"
+
+	"gorm.io/gorm"
 
 	"go_wp/pkg/logger"
 )
 
 // MarkStaleByDependency 实现 pipeline.DependencyTarget：按依赖源精确标记。
-func (s *Service) MarkStaleByDependency(ctx context.Context, kind, key string) ([]string, error) {
-	return s.m.MarkStaleByDependency(ctx, kind, key, time.Now().UTC())
+//
+// 为什么逐个工程遍历（DB-009 第二批）：扇出触发的调用方（pipeline.Fanout）只带
+// (kind,key)，不带工程；而 presentation_instances 带 FORCE 策略，不设 app.project_id
+// 的 UPDATE 会静默匹配 0 行 —— 表现是「内容改了但详情页不再自动重建」，日志里没有异常。
+// 工程数量级很小（站点工程），逐个设作用域比在 data 层引入 BYPASSRLS 连接便宜得多。
+func (s *Service) MarkStaleByDependency(ctx context.Context, kind, key string) (ids []string, err error) {
+	if strings.TrimSpace(kind) == "" || strings.TrimSpace(key) == "" {
+		return nil, nil
+	}
+	if s.project == nil {
+		return nil, errors.New(presentationenums.ErrProjectRequired)
+	}
+	projects, err := s.project.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	at := time.Now().UTC()
+	seen := make(map[string]bool)
+	for _, p := range projects {
+		if ctx.Err() != nil {
+			break
+		}
+		hit, herr := s.m.MarkStaleByDependency(ctx, p.ID, kind, key, at)
+		if herr != nil {
+			return nil, herr
+		}
+		for _, id := range hit {
+			if seen[id] {
+				continue
+			}
+			seen[id] = true
+			ids = append(ids, id)
+		}
+	}
+	return ids, nil
 }
 
 // SetBuildQueue 注入自动重建入队端口（装配期调用；PERF-020）。
@@ -101,7 +138,7 @@ func (s *Service) enqueueStaleRebuilds(ctx context.Context, ids []string) error 
 // 用实例**绑定**的模板重建（issue #14）：依赖失效是内容变更触发的自动重建，
 // 不应改变「这个商品用哪套详情模板」——按类型重解析会把切换过的模板悄悄换回去。
 func (s *Service) RebuildInstance(ctx context.Context, instanceID string) error {
-	inst, err := s.m.GetInstance(ctx, instanceID)
+	inst, err := s.findOneInstanceAnyProject(ctx, instanceID)
 	if err != nil {
 		return fmt.Errorf("%s: %w", presentationenums.ErrNotFound, err)
 	}
@@ -113,6 +150,39 @@ func (s *Service) RebuildInstance(ctx context.Context, instanceID string) error 
 	return err
 }
 
+// findOneInstanceAnyProject 在各工程作用域内逐个按实例 id 定位（DB-009 第二批）。
+//
+// 为什么需要它：构建队列的消费侧只拿得到实例 id（契约是 EnqueuePresentationBuild
+// 一个 id），而 presentation_instances 带 FORCE 策略 —— 没有 app.project_id 的
+// 「按 id 直查」在非超级角色下会 0 行，自动重建再也跑不起来。
+// 工程数量级很小（站点工程），逐个设作用域查询比给队列协议加工程字段便宜，
+// 也比在数据层专门养一条 BYPASSRLS 连接安全（后者等于把隔离关掉）。
+func (s *Service) findOneInstanceAnyProject(ctx context.Context, instanceID string) (*presentationmodel.InstanceEntity, error) {
+	if ids := strings.TrimSpace(instanceID); ids == "" {
+		return nil, errors.New(presentationenums.ErrInvalidParam)
+	}
+	if s.project == nil {
+		return nil, errors.New(presentationenums.ErrProjectRequired)
+	}
+	projects, err := s.project.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, p := range projects {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		inst, gerr := s.m.GetInstance(ctx, p.ID, instanceID)
+		if gerr == nil {
+			return inst, nil
+		}
+		if !errors.Is(gerr, gorm.ErrRecordNotFound) {
+			return nil, gerr
+		}
+	}
+	return nil, gorm.ErrRecordNotFound
+}
+
 func (s *Service) PreviewInstance(ctx context.Context, req *presentationdto.PreviewInstanceReq) (res *presentationdto.PreviewInstanceResp, err error) {
 	if req == nil || req.EntityType == "" || req.EntityID == "" {
 		return nil, errors.New(presentationenums.ErrInvalidParam)
@@ -121,7 +191,7 @@ func (s *Service) PreviewInstance(ctx context.Context, req *presentationdto.Prev
 	if err != nil {
 		return nil, err
 	}
-	tpl, err := s.resolveTemplate(ctx, req.EntityType, req.TemplateID)
+	tpl, err := s.resolveTemplate(ctx, projectID, req.EntityType, req.TemplateID)
 	if err != nil {
 		return nil, err
 	}

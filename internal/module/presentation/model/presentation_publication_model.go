@@ -9,6 +9,8 @@ import (
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+
+	"go_wp/pkg/rls"
 )
 
 const tableNamePresentationPublications = "presentation_publications"
@@ -100,14 +102,17 @@ func (m *Model) MarkPublishedLangTx(tx *gorm.DB, rec PublicationRecord) error {
 
 // FindInstanceByActivePath 按某语言的已激活访问路径查占用实例（占用预检）。
 func (m *Model) FindInstanceByActivePath(ctx context.Context, projectID, path, excludeInstanceID string) (e *InstanceEntity, err error) {
-	q := m.InstanceDB(ctx).
-		Joins("JOIN "+tableNamePresentationPublications+" AS pp ON pp.presentation_id = presentation_instances.id").
-		Where("presentation_instances.project_id = ? AND pp.active_path = ?", projectID, path)
-	if excludeInstanceID != "" {
-		q = q.Where("presentation_instances.id <> ?", excludeInstanceID)
-	}
 	var row InstanceEntity
-	if err = q.First(&row).Error; err != nil {
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		q := tx.Model(&InstanceEntity{}).
+			Joins("JOIN "+tableNamePresentationPublications+" AS pp ON pp.presentation_id = presentation_instances.id").
+			Where("presentation_instances.project_id = ? AND pp.active_path = ?", projectID, path)
+		if excludeInstanceID != "" {
+			q = q.Where("presentation_instances.id <> ?", excludeInstanceID)
+		}
+		return q.First(&row).Error
+	})
+	if err != nil {
 		return nil, err
 	}
 	return &row, nil

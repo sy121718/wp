@@ -44,6 +44,9 @@ type EnsureArchiveResp struct {
 // RebuildReq 实体数据更新后重建。
 type RebuildReq struct {
 	EntityID string `json:"entityId" binding:"required"`
+	// ProjectID 实例所属工程（DB-009 第二批：签名里没有工程 id 的读写路径要补工程作用域）。
+	// 可空：缺省时经 project 契约解析（工程唯一时取该工程），多工程时必须显式指定。
+	ProjectID string `json:"projectId" form:"projectId"`
 	// TemplateID 切换实例绑定的模板后重建（issue #14）；可空 = 沿用实例当前绑定。
 	TemplateID string `json:"templateId"`
 }
@@ -56,6 +59,9 @@ type UpdateURLReq struct {
 	ID         string `json:"id" form:"id"`
 	EntityType string `json:"entityType" form:"entityType"`
 	EntityID   string `json:"entityId" form:"entityId"`
+	// ProjectID 实例所属工程（DB-009 第二批）：定位实例与占用预检都在工程作用域内，
+	// 缺省时经 project 契约解析（工程唯一时取该工程）。
+	ProjectID string `json:"projectId" form:"projectId"`
 	// NewPath 新的线上路径（站内绝对路径，如 /shop/phone-x）。
 	NewPath string `json:"newPath" form:"newPath"`
 	// WithRedirect 旧路径登记 301 永久重定向；false = 直接取消旧路径激活。
@@ -67,6 +73,8 @@ type UpdateURLReq struct {
 type GetByEntityReq struct {
 	EntityType string `form:"entityType" binding:"required"`
 	EntityID   string `form:"entityId" binding:"required"`
+	// ProjectID 工程作用域（DB-009 第二批）；可空，缺省时取唯一工程。
+	ProjectID string `form:"projectId" json:"projectId"`
 }
 
 // PreviewInstanceReq 发布前预览模板渲染效果（issue #14）。
@@ -98,16 +106,23 @@ type PreviewInstanceResp struct {
 // GetReq 按 ID 查询。
 type GetReq struct {
 	ID string `form:"id" binding:"required"`
+	// ProjectID 工程作用域（DB-009 第二批）；可空，缺省时取唯一工程。
+	ProjectID string `form:"projectId" json:"projectId"`
 }
 
 // DeleteReq 删除实例。
 type DeleteReq struct {
 	ID string `form:"id" binding:"required"`
+	// ProjectID 工程作用域（DB-009 第二批）；可空，缺省时取唯一工程。
+	ProjectID string `form:"projectId" json:"projectId"`
 }
 
 // ListReq 按类型列表。
 type ListReq struct {
 	EntityType string `form:"entityType"`
+	// ProjectID 工程作用域（DB-009 第二批）：列表只返回本工程的实例，
+	// 可空时取唯一工程；多工程时必须显式指定。
+	ProjectID string `form:"projectId" json:"projectId"`
 }
 
 // InstanceResp 实例响应。

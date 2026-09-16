@@ -27,8 +27,13 @@ func (s *Service) Rebuild(ctx context.Context, req *presentationdto.RebuildReq) 
 	if req == nil || req.EntityID == "" {
 		return nil, errors.New(presentationenums.ErrInvalidParam)
 	}
+	// 工程作用域（DB-009 第二批）：反查实例在本工程内进行。
+	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
+	if err != nil {
+		return nil, err
+	}
 	// 反查实例（entity_id 匹配）。
-	inst, err := s.findByEntityID(ctx, req.EntityID)
+	inst, err := s.findByEntityID(ctx, projectID, req.EntityID)
 	if err != nil {
 		return nil, errors.New(presentationenums.ErrNotFound)
 	}
@@ -101,7 +106,7 @@ func (s *Service) persistBuild(ctx context.Context, inst *presentationmodel.Inst
 		// 模板切换（issue #14）与快照/产物/指针同事务：产物来自哪套模板，
 		// 实例就必须记着哪套，否则下次重建会退回旧模板。
 		if inst.TemplateID != tpl.TemplateID {
-			if uerr := s.m.UpdateInstanceTemplateTx(tx, inst.ID, tpl.TemplateID, now); uerr != nil {
+			if uerr := s.m.UpdateInstanceTemplateTx(tx, inst.ProjectID, inst.ID, tpl.TemplateID, now); uerr != nil {
 				return uerr
 			}
 			inst.TemplateID = tpl.TemplateID
@@ -109,7 +114,7 @@ func (s *Service) persistBuild(ctx context.Context, inst *presentationmodel.Inst
 		// 改 URL 与快照/产物/指针同事务：产物烘的是新路径的 canonical，实例
 		// 必须同步指向新路径，否则下次重建会拿旧路径重编，线上内容与路由脱节。
 		if urlPath != "" && inst.URLPath != urlPath {
-			if uerr := s.m.UpdateInstanceURLTx(tx, inst.ID, urlPath, now); uerr != nil {
+			if uerr := s.m.UpdateInstanceURLTx(tx, inst.ProjectID, inst.ID, urlPath, now); uerr != nil {
 				return uerr
 			}
 			inst.URLPath = urlPath
@@ -131,7 +136,7 @@ func (s *Service) persistBuild(ctx context.Context, inst *presentationmodel.Inst
 		inst.Stale = false
 		inst.PublishedAt = &now
 		inst.UpdatedAt = now
-		if uerr := s.m.UpdateInstancePointersTx(tx, inst); uerr != nil {
+		if uerr := s.m.UpdateInstancePointersTx(tx, inst.ProjectID, inst); uerr != nil {
 			return uerr
 		}
 		return s.persistDependenciesTx(tx, inst.ID, aid, built.Manifest.Dependencies, now)

@@ -122,13 +122,13 @@ func (s *Service) persistMultiLangBuild(ctx context.Context, inst *presentationm
 			return cerr
 		}
 		if inst.TemplateID != tpl.TemplateID {
-			if uerr := s.m.UpdateInstanceTemplateTx(tx, inst.ID, tpl.TemplateID, now); uerr != nil {
+			if uerr := s.m.UpdateInstanceTemplateTx(tx, inst.ProjectID, inst.ID, tpl.TemplateID, now); uerr != nil {
 				return uerr
 			}
 			inst.TemplateID = tpl.TemplateID
 		}
 		if logicalPath != "" && inst.URLPath != logicalPath {
-			if uerr := s.m.UpdateInstanceURLTx(tx, inst.ID, logicalPath, now); uerr != nil {
+			if uerr := s.m.UpdateInstanceURLTx(tx, inst.ProjectID, inst.ID, logicalPath, now); uerr != nil {
 				return uerr
 			}
 			inst.URLPath = logicalPath
@@ -165,7 +165,7 @@ func (s *Service) persistMultiLangBuild(ctx context.Context, inst *presentationm
 		inst.Stale = false
 		inst.PublishedAt = &now
 		inst.UpdatedAt = now
-		if uerr := s.m.UpdateInstancePointersTx(tx, inst); uerr != nil {
+		if uerr := s.m.UpdateInstancePointersTx(tx, inst.ProjectID, inst); uerr != nil {
 			return uerr
 		}
 		// 依赖记录挂在默认语言产物上（各语言依赖集合相同）。

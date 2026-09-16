@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
-	contenttemplatedto "go_wp/internal/module/contenttemplate/dto"
 	presentationenums "go_wp/internal/module/presentation/enums"
 	presentationmodel "go_wp/internal/module/presentation/model"
 
@@ -25,17 +24,19 @@ import (
 //
 // templateID 非空 = 显式指定某套命名模板，并校验实体类型一致（不允许拿商品模板
 // 去渲染文章）；为空 = 按实体类型取默认模板（既有行为）。
-func (s *Service) resolveTemplate(ctx context.Context, entityType, templateID string) (tpl *contenttemplatecontract.ResolvedTemplate, err error) {
+func (s *Service) resolveTemplate(ctx context.Context, projectID, entityType, templateID string) (tpl *contenttemplatecontract.ResolvedTemplate, err error) {
 	if id := strings.TrimSpace(templateID); id != "" {
 		// 类型判定必须**先于**文档解析。
 		//
 		// ResolveTemplateByID 会顺带按模板自己的类型校验文档：一份 article 模板里的
 		// product 字段绑定在 article 数据源下必然越界，于是「类型抄错了」会被报成
 		// 「字段绑定越界」，把人引向改模板内容而不是换模板 —— 而文档内容本身没错。
-		if s.templateTypeMismatch(ctx, id, entityType) {
+		if s.templateTypeMismatch(ctx, projectID, id, entityType) {
 			return nil, errors.New(presentationenums.ErrTemplateTypeMismatch)
 		}
-		tpl, err = s.templates.ResolveTemplateByID(ctx, id)
+		// 带工程作用域的解析：content_templates 带 FORCE 策略，
+		// 不设 app.project_id 的读取在非超级角色下会「模板不存在」。
+		tpl, err = s.templates.ResolveTemplateByIDScoped(ctx, projectID, id)
 		if err != nil {
 			// 原样透出：类型已确认相符，此时失败只剩「模板没了」或「文档校验没过」，
 			// 后者的原文（哪个字段、越界在哪）正是排查需要的。
@@ -43,7 +44,7 @@ func (s *Service) resolveTemplate(ctx context.Context, entityType, templateID st
 		}
 		return tpl, nil
 	}
-	tpl, err = s.templates.ResolveTemplate(ctx, entityType)
+	tpl, err = s.templates.ResolveTemplateScoped(ctx, projectID, entityType)
 	if err != nil {
 		// 默认模板同样透出原因：该类型下确实没有模板与「模板存在但文档越界」
 		// 是两件事，压成一句会让运营拿着「没有可用模板」去建一个新模板，
@@ -59,11 +60,11 @@ func (s *Service) resolveTemplate(ctx context.Context, entityType, templateID st
 // 校验，而跨类型场景下文档几乎必然校验失败（字段绑定按另一种数据源解释），
 // 于是判定结果为「文档有问题」而不是「模板不对」。模板不存在时返回 false：
 // 那是另一种失败，交给后续的解析去报。
-func (s *Service) templateTypeMismatch(ctx context.Context, templateID, entityType string) bool {
+func (s *Service) templateTypeMismatch(ctx context.Context, projectID, templateID, entityType string) bool {
 	if s.templates == nil {
 		return false
 	}
-	tpl, err := s.templates.Get(ctx, &contenttemplatedto.GetReq{ID: templateID})
+	tpl, err := s.templates.GetScoped(ctx, projectID, templateID)
 	if err != nil || tpl == nil {
 		return false
 	}
@@ -78,17 +79,17 @@ func (s *Service) templateTypeMismatch(ctx context.Context, templateID, entityTy
 func (s *Service) resolveBoundTemplate(ctx context.Context, inst *presentationmodel.InstanceEntity,
 	explicitID string) (*contenttemplatecontract.ResolvedTemplate, error) {
 	if strings.TrimSpace(explicitID) != "" {
-		return s.resolveTemplate(ctx, inst.EntityType, explicitID)
+		return s.resolveTemplate(ctx, inst.ProjectID, inst.EntityType, explicitID)
 	}
 	if id := strings.TrimSpace(inst.TemplateID); id != "" {
-		tpl, err := s.templates.ResolveTemplateByID(ctx, id)
+		tpl, err := s.templates.ResolveTemplateByIDScoped(ctx, inst.ProjectID, id)
 		if err == nil && tpl.EntityType == inst.EntityType {
 			return tpl, nil
 		}
 		logger.Scene("build").With("presentation_id", inst.ID).With("template_id", id).
 			Warn("实例绑定的模板不可用，本次重建回落到该类型的默认模板")
 	}
-	return s.resolveTemplate(ctx, inst.EntityType, "")
+	return s.resolveTemplate(ctx, inst.ProjectID, inst.EntityType, "")
 }
 
 // buildArtifact 编译模板 AST（经 entity resolver）→ 产物落盘（**不激活**）。

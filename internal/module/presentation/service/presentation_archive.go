@@ -46,7 +46,11 @@ func (s *Service) EnsureArchiveInstance(ctx context.Context, req *presentationdt
 	if s.templates == nil {
 		return &presentationdto.EnsureArchiveResp{Skipped: "模板契约未装配"}, nil
 	}
-	tpl, terr := s.templates.ResolveTemplateByRole(ctx, req.EntityType, contenttemplatecontract.TemplateRoleArchive)
+	projectID, perr := s.resolveProjectID(ctx, req.ProjectID)
+	if perr != nil {
+		return nil, perr
+	}
+	tpl, terr := s.templates.ResolveTemplateByRoleScoped(ctx, projectID, req.EntityType, contenttemplatecontract.TemplateRoleArchive)
 	if terr != nil {
 		// 没有归档模板是最常见的情况，按「跳过」处理；其它错误照常上报。
 		if strings.Contains(terr.Error(), "not found") || strings.Contains(terr.Error(), "ErrNotFound") {
@@ -57,7 +61,7 @@ func (s *Service) EnsureArchiveInstance(ctx context.Context, req *presentationdt
 
 	wantPath := ArchivePathFor(req.EntityType, slug)
 	inst, cerr := s.CreateInstance(ctx, &presentationdto.CreateInstanceReq{
-		ProjectID: req.ProjectID, EntityType: req.EntityType, EntityID: req.EntityID,
+		ProjectID: projectID, EntityType: req.EntityType, EntityID: req.EntityID,
 		URLPath: wantPath, TemplateID: tpl.TemplateID,
 		InstanceRole: "archive",
 	})
@@ -69,7 +73,7 @@ func (s *Service) EnsureArchiveInstance(ctx context.Context, req *presentationdt
 	// 从后台看「归档页正常发布着」，从访问面看它已经是个孤儿。
 	if inst.URLPath != wantPath {
 		updated, uerr := s.UpdateURL(ctx, &presentationdto.UpdateURLReq{
-			ID: inst.ID, NewPath: wantPath, WithRedirect: true,
+			ID: inst.ID, ProjectID: inst.ProjectID, NewPath: wantPath, WithRedirect: true,
 		})
 		if uerr != nil {
 			return nil, uerr

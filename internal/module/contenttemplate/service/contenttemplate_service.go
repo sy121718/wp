@@ -108,7 +108,13 @@ func (s *Service) Update(ctx context.Context, req *contenttemplatedto.UpdateReq)
 	if req == nil || req.ID == "" {
 		return nil, errors.New(contenttemplateenums.ErrInvalidParam)
 	}
-	e, err := s.m.Get(ctx, req.ID)
+	// 工程作用域（DB-009 第二批）：content_templates 带 FORCE 策略，
+	// 按 id 取模板也必须带上工程，否则换非超级角色后静默「模板不存在」。
+	projectID, err := s.resolveProjectID(ctx, "")
+	if err != nil {
+		return nil, err
+	}
+	e, err := s.m.Get(ctx, projectID, req.ID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, errors.New(contenttemplateenums.ErrNotFound)
@@ -133,7 +139,7 @@ func (s *Service) Update(ctx context.Context, req *contenttemplatedto.UpdateReq)
 	e.CurrentVersionID = &verID
 	// 新版本行与草稿/指针更新必须原子：分步写时若 Save 失败，指针停在旧版本，
 	// 新版本成为不可达孤儿，且 draft_version 已自增导致重试版本号错位。
-	if err = s.m.SaveWithVersion(ctx, &contenttemplatemodel.VersionEntity{
+	if err = s.m.SaveWithVersion(ctx, e.ProjectID, &contenttemplatemodel.VersionEntity{
 		ID: verID, TemplateID: e.ID, Version: e.DraftVersion, Document: doc,
 		SourceHash: hashDocument(doc), CreatedBy: systemCreator, CreatedAt: e.UpdatedAt,
 	}, e); err != nil {
@@ -147,7 +153,20 @@ func (s *Service) Get(ctx context.Context, req *contenttemplatedto.GetReq) (res 
 	if req == nil || req.ID == "" {
 		return nil, errors.New(contenttemplateenums.ErrInvalidParam)
 	}
-	e, err := s.m.Get(ctx, req.ID)
+	projectID, err := s.resolveProjectID(ctx, "")
+	if err != nil {
+		return nil, err
+	}
+	return s.GetScoped(ctx, projectID, req.ID)
+}
+
+// GetScoped 在**显式工程作用域**内按 id 取模板（DB-009 第二批）。
+//
+// 给「手里已经有工程 id」的调用方用（如 presentation 构建链路）：不传工程时
+// service 只能靠 resolveProjectID 取唯一工程，多工程下必须报参数错误 ——
+// 与其让调用方撞上「需要显式指定工程」，不如在这里把 id 直接透下去。
+func (s *Service) GetScoped(ctx context.Context, projectID, id string) (res *contenttemplatedto.TemplateResp, err error) {
+	e, err := s.m.Get(ctx, projectID, id)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, errors.New(contenttemplateenums.ErrNotFound)
@@ -165,7 +184,11 @@ func (s *Service) List(ctx context.Context, req *contenttemplatedto.ListReq) (li
 	if req.EntityType != "" && !s.validEntityType(req.EntityType) {
 		return nil, errors.New(contenttemplateenums.ErrInvalidType)
 	}
-	rows, err := s.m.List(ctx, req.EntityType)
+	projectID, err := s.resolveProjectID(ctx, "")
+	if err != nil {
+		return nil, err
+	}
+	rows, err := s.m.List(ctx, projectID, req.EntityType)
 	if err != nil {
 		return nil, err
 	}
@@ -182,12 +205,25 @@ func (s *Service) List(ctx context.Context, req *contenttemplatedto.ListReq) (li
 //  2. 取该模板最新版本（LatestVersion）的 document；
 //  3. 组装 ResolvedTemplate{TemplateID, VersionID, Version, EntityType, Document}。
 func (s *Service) ResolveTemplate(ctx context.Context, entityType string) (res *contenttemplatecontract.ResolvedTemplate, err error) {
+	projectID, err := s.resolveProjectID(ctx, "")
+	if err != nil {
+		return nil, err
+	}
+	return s.ResolveTemplateScoped(ctx, projectID, entityType)
+}
+
+// ResolveTemplateScoped 在显式工程作用域内解析该类型的当前模板版本。
+//
+// 与 ResolveTemplate 的分工：后者没有工程参数，只能取「唯一工程」；
+// 构建链路（presentation）手里本来就有工程 id，走这条不会在多工程部署下
+// 撞上「需要显式指定工程」——而模板解析失败会让整次构建失败。
+func (s *Service) ResolveTemplateScoped(ctx context.Context, projectID, entityType string) (res *contenttemplatecontract.ResolvedTemplate, err error) {
 	if entityType == "" || !s.validEntityType(entityType) {
 		return nil, errors.New(contenttemplateenums.ErrInvalidType)
 	}
 	// 只取详情角色（审计 EDT-004）：归档模板与详情模板可以同类型共存，
 	// 不过滤就会把归档模板当成详情模板取用。
-	return s.ResolveTemplateByRole(ctx, entityType, contenttemplatemodel.TemplateRoleDetail)
+	return s.ResolveTemplateByRoleScoped(ctx, projectID, entityType, contenttemplatemodel.TemplateRoleDetail)
 }
 
 // ResolveTemplateByRole 按实体类型与角色解析模板（审计 EDT-004）。
@@ -195,13 +231,22 @@ func (s *Service) ResolveTemplate(ctx context.Context, entityType string) (res *
 // 归档型实例（分类页 / 标签页 / 品牌页）走这个入口取归档模板；没有配置时返回
 // ErrNotFound，由调用方决定是「跳过」还是「报错」——不在这里替调用方做决定。
 func (s *Service) ResolveTemplateByRole(ctx context.Context, entityType, role string) (res *contenttemplatecontract.ResolvedTemplate, err error) {
+	projectID, err := s.resolveProjectID(ctx, "")
+	if err != nil {
+		return nil, err
+	}
+	return s.ResolveTemplateByRoleScoped(ctx, projectID, entityType, role)
+}
+
+// ResolveTemplateByRoleScoped 在显式工程作用域内按实体类型与角色解析模板。
+func (s *Service) ResolveTemplateByRoleScoped(ctx context.Context, projectID, entityType, role string) (res *contenttemplatecontract.ResolvedTemplate, err error) {
 	if entityType == "" || !s.validEntityType(entityType) {
 		return nil, errors.New(contenttemplateenums.ErrInvalidType)
 	}
 	if role != "" && !contenttemplatemodel.IsValidTemplateRole(role) {
 		return nil, errors.New(contenttemplateenums.ErrInvalidParam)
 	}
-	rows, err := s.m.ListByRole(ctx, entityType, role)
+	rows, err := s.m.ListByRole(ctx, projectID, entityType, role)
 	if err != nil {
 		return nil, err
 	}
@@ -230,10 +275,19 @@ func (s *Service) ResolveTemplateByRole(ctx context.Context, entityType, role st
 // 「模板」与「模板版本」是两层——换一套模板是换 TemplateID，
 // 同一套模板改版式则产生新版本，两条路径都不需要调用方区分。
 func (s *Service) ResolveTemplateByID(ctx context.Context, templateID string) (res *contenttemplatecontract.ResolvedTemplate, err error) {
+	projectID, err := s.resolveProjectID(ctx, "")
+	if err != nil {
+		return nil, err
+	}
+	return s.ResolveTemplateByIDScoped(ctx, projectID, templateID)
+}
+
+// ResolveTemplateByIDScoped 在显式工程作用域内按模板 ID 解析其当前版本。
+func (s *Service) ResolveTemplateByIDScoped(ctx context.Context, projectID, templateID string) (res *contenttemplatecontract.ResolvedTemplate, err error) {
 	if strings.TrimSpace(templateID) == "" {
 		return nil, errors.New(contenttemplateenums.ErrInvalidParam)
 	}
-	tpl, err := s.m.Get(ctx, templateID)
+	tpl, err := s.m.Get(ctx, projectID, templateID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, errors.New(contenttemplateenums.ErrNotFound)

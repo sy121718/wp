@@ -38,7 +38,12 @@ func (s *Service) UpdateURL(ctx context.Context, req *presentationdto.UpdateURLR
 	if req == nil {
 		return nil, errors.New(presentationenums.ErrInvalidParam)
 	}
-	inst, err := s.locateInstance(ctx, req)
+	// 工程作用域（DB-009 第二批）：实例表的定位、占用预检、锁内重读全部在本工程内进行。
+	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	inst, err := s.locateInstance(ctx, projectID, req)
 	if err != nil {
 		return nil, err
 	}
@@ -53,7 +58,7 @@ func (s *Service) UpdateURL(ctx context.Context, req *presentationdto.UpdateURLR
 	defer lock.Unlock()
 
 	// 锁内重读：等锁期间实例可能已被重建、改过 URL 或删除。
-	inst, err = s.m.GetInstance(ctx, inst.ID)
+	inst, err = s.m.GetInstance(ctx, inst.ProjectID, inst.ID)
 	if err != nil {
 		return nil, errors.New(presentationenums.ErrNotFound)
 	}
@@ -95,9 +100,9 @@ func (s *Service) UpdateURL(ctx context.Context, req *presentationdto.UpdateURLR
 //
 // 两种入口都保留：后台「详情页模板」页只持有实体 id（列表行给的是商品/文章），
 // 而 API 调用方通常持有实例 id。
-func (s *Service) locateInstance(ctx context.Context, req *presentationdto.UpdateURLReq) (*presentationmodel.InstanceEntity, error) {
+func (s *Service) locateInstance(ctx context.Context, projectID string, req *presentationdto.UpdateURLReq) (*presentationmodel.InstanceEntity, error) {
 	if id := strings.TrimSpace(req.ID); id != "" {
-		inst, err := s.m.GetInstance(ctx, id)
+		inst, err := s.m.GetInstance(ctx, projectID, id)
 		if err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return nil, errors.New(presentationenums.ErrNotFound)
@@ -110,7 +115,7 @@ func (s *Service) locateInstance(ctx context.Context, req *presentationdto.Updat
 	if entityType == "" || entityID == "" {
 		return nil, errors.New(presentationenums.ErrInvalidParam)
 	}
-	inst, err := s.m.GetInstanceByEntity(ctx, entityType, entityID)
+	inst, err := s.m.GetInstanceByEntity(ctx, projectID, entityType, entityID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, errors.New(presentationenums.ErrNotFound)

@@ -8,6 +8,10 @@ package presentationmodel
 import (
 	"context"
 	"strings"
+
+	"gorm.io/gorm"
+
+	"go_wp/pkg/rls"
 )
 
 // maxLocatorEntityIDs 单次查询的实体 id 上限（片段参数来自 URL，不能无限长）。
@@ -49,15 +53,18 @@ func (m *Model) ListActiveURLPaths(ctx context.Context, projectID, entityType, l
 		EntityID   string `gorm:"column:entity_id"`
 		ActivePath string `gorm:"column:active_path"`
 	}
-	err = m.db.WithContext(ctx).
-		Table(tableNamePresentationInstances+" AS i").
-		Select(`i.entity_id,
+	// RLS（迁移 215）：投影的表 presentation_instances 带 FORCE 策略，
+	// 访问面的这条读路径同样要设 app.project_id —— 否则换角色后站内搜索恒为空链接。
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.Table(tableNamePresentationInstances+" AS i").
+			Select(`i.entity_id,
 			COALESCE(pp.active_path, i.url_path) AS active_path`).
-		Joins(`LEFT JOIN `+tableNamePresentationPublications+` AS pp
+			Joins(`LEFT JOIN `+tableNamePresentationPublications+` AS pp
 			ON pp.presentation_id = i.id AND pp.lang = ?`, lang).
-		Where("i.project_id = ? AND i.entity_type = ? AND i.active_artifact_id IS NOT NULL AND i.entity_id IN ?",
-			projectID, entityType, ids).
-		Find(&rows).Error
+			Where("i.project_id = ? AND i.entity_type = ? AND i.active_artifact_id IS NOT NULL AND i.entity_id IN ?",
+				projectID, entityType, ids).
+			Find(&rows).Error
+	})
 	if err != nil {
 		return nil, err
 	}

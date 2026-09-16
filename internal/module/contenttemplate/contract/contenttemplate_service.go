@@ -28,8 +28,14 @@ type ContentTemplateService interface {
 	Create(ctx context.Context, req *contenttemplatedto.CreateReq) (res *contenttemplatedto.TemplateResp, err error)
 	// Update 修改模板 → 产生新不可变版本（draft_version 递增）。
 	Update(ctx context.Context, req *contenttemplatedto.UpdateReq) (res *contenttemplatedto.TemplateResp, err error)
-	// Get 按 ID 查询。
+	// Get 按 ID 查询（工程作用域取唯一工程；多工程部署用 GetScoped）。
 	Get(ctx context.Context, req *contenttemplatedto.GetReq) (res *contenttemplatedto.TemplateResp, err error)
+	// GetScoped 在显式工程作用域内按 id 取模板（DB-009 第二批）。
+	//
+	// 存在的理由：content_templates 带 FORCE 策略，按 id 的读取必须告诉数据库
+	// 「当前是哪个工程」。已经持有工程 id 的调用方（构建链路）走这条，
+	// 不必依赖「工程唯一」这个前提。
+	GetScoped(ctx context.Context, projectID, id string) (res *contenttemplatedto.TemplateResp, err error)
 	// List 按类型列表。
 	List(ctx context.Context, req *contenttemplatedto.ListReq) (list []*contenttemplatedto.TemplateResp, err error)
 	// ResolveTemplate 取 entityType 的当前激活模板版本（presentation 派生
@@ -43,6 +49,20 @@ type ContentTemplateService interface {
 	// 归档型实例（分类页 / 标签页 / 品牌页）用 role=archive 取归档模板；
 	// 该角色没有配置时返回 ErrNotFound，由调用方决定跳过还是报错。
 	ResolveTemplateByRole(ctx context.Context, entityType, role string) (res *ResolvedTemplate, err error)
+
+	// ---- 带显式工程作用域的解析入口（DB-009 第二批）----
+	//
+	// 为什么另开一组方法而不是给上面几个加参数：上面三个是 dashboard 的
+	// 编译期依赖（后台页面直接引用该接口），改签名会连带动一片；
+	// 而构建链路（presentation）手里本来就有工程 id —— 它需要的是
+	// 「把 id 透下去」，不是「再解析一次唯一工程」。两组各自演进，互不绑架。
+
+	// ResolveTemplateScoped 在显式工程作用域内解析该类型的当前模板版本。
+	ResolveTemplateScoped(ctx context.Context, projectID, entityType string) (res *ResolvedTemplate, err error)
+	// ResolveTemplateByRoleScoped 在显式工程作用域内按类型与角色解析模板。
+	ResolveTemplateByRoleScoped(ctx context.Context, projectID, entityType, role string) (res *ResolvedTemplate, err error)
+	// ResolveTemplateByIDScoped 在显式工程作用域内按模板 ID 解析当前版本。
+	ResolveTemplateByIDScoped(ctx context.Context, projectID, templateID string) (res *ResolvedTemplate, err error)
 }
 
 // ResolvedTemplate 已解析的模板版本（presentation 派生快照的输入）。

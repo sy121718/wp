@@ -111,22 +111,33 @@ func (m *Model) Create(ctx context.Context, e *TemplateEntity) error {
 	})
 }
 
-// Get 按 ID 查询模板。
-func (m *Model) Get(ctx context.Context, id string) (e *TemplateEntity, err error) {
+// Get 按 ID 查询模板（工程作用域内）。
+//
+// projectID 必填（DB-009 第二批）：content_templates 带 FORCE 策略，无作用域的
+// 按 id 直查在非超级角色下静默 0 行 —— 表现为「模板不存在」，而模板其实还在，
+// 只是这条路径没有告诉数据库「我是哪个工程」。
+func (m *Model) Get(ctx context.Context, projectID, id string) (e *TemplateEntity, err error) {
 	var row TemplateEntity
-	if err = m.db.WithContext(ctx).Where("id = ?", id).First(&row).Error; err != nil {
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.Model(&TemplateEntity{}).
+			Where("id = ? AND project_id = ?", id, projectID).First(&row).Error
+	})
+	if err != nil {
 		return nil, err
 	}
 	return &row, nil
 }
 
-// List 按 entity_type 列表（默认模板优先，其次更新时间倒序；entity_type 为空时返回全部）。
-func (m *Model) List(ctx context.Context, entityType string) (list []*TemplateEntity, err error) {
-	q := m.db.WithContext(ctx).Order("is_default DESC, update_time DESC, id DESC")
-	if entityType != "" {
-		q = q.Where("entity_type = ?", entityType)
-	}
-	err = q.Find(&list).Error
+// List 列出**本工程**模板（默认模板优先，其次更新时间倒序；entity_type 为空时返回本工程全部）。
+func (m *Model) List(ctx context.Context, projectID, entityType string) (list []*TemplateEntity, err error) {
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		q := tx.Model(&TemplateEntity{}).Where("project_id = ?", projectID).
+			Order("is_default DESC, update_time DESC, id DESC")
+		if entityType != "" {
+			q = q.Where("entity_type = ?", entityType)
+		}
+		return q.Find(&list).Error
+	})
 	return list, err
 }
 
@@ -135,37 +146,43 @@ func (m *Model) List(ctx context.Context, entityType string) (list []*TemplateEn
 // 归档模板与详情模板可以同类型共存，解析时必须按角色过滤：混在一起时
 // 归档模板会被当成详情模板取用，画出来的页面结构完全不对 —— 而构建不会报错。
 // role 为空按 detail 处理（既有调用方的语义）。
-func (m *Model) ListByRole(ctx context.Context, entityType, role string) (list []*TemplateEntity, err error) {
+func (m *Model) ListByRole(ctx context.Context, projectID, entityType, role string) (list []*TemplateEntity, err error) {
 	if role == "" {
 		role = TemplateRoleDetail
 	}
-	q := m.db.WithContext(ctx).Where("template_role = ?", role).
-		Order("is_default DESC, update_time DESC, id DESC")
-	if entityType != "" {
-		q = q.Where("entity_type = ?", entityType)
-	}
-	err = q.Find(&list).Error
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		q := tx.Model(&TemplateEntity{}).Where("project_id = ? AND template_role = ?", projectID, role).
+			Order("is_default DESC, update_time DESC, id DESC")
+		if entityType != "" {
+			q = q.Where("entity_type = ?", entityType)
+		}
+		return q.Find(&list).Error
+	})
 	return list, err
 }
 
 // Save 更新草稿（draft_document + draft_version + current_version_id + update_time）。
 // 用 DB(ctx)（已绑定 Model）+ 显式 Where + Updates（避免 GORM Save
 // 在已绑定 Model 下报 WHERE conditions required）。
-func (m *Model) Save(ctx context.Context, e *TemplateEntity) error {
-	return m.DB(ctx).Where("id = ?", e.ID).Updates(map[string]any{
-		"draft_document":     e.DraftDocument,
-		"draft_version":      e.DraftVersion,
-		"current_version_id": e.CurrentVersionID,
-		"update_time":        e.UpdatedAt,
-	}).Error
+func (m *Model) Save(ctx context.Context, projectID string, e *TemplateEntity) error {
+	return rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.Model(&TemplateEntity{}).Where("id = ? AND project_id = ?", e.ID, projectID).Updates(map[string]any{
+			"draft_document":     e.DraftDocument,
+			"draft_version":      e.DraftVersion,
+			"current_version_id": e.CurrentVersionID,
+			"update_time":        e.UpdatedAt,
+		}).Error
+	})
 }
 
 // SetCurrentVersion 更新当前版本指针（版本行写入后回填）。
-func (m *Model) SetCurrentVersion(ctx context.Context, templateID, versionID string, at time.Time) error {
-	return m.DB(ctx).Where("id = ?", templateID).Updates(map[string]any{
-		"current_version_id": versionID,
-		"update_time":        at,
-	}).Error
+func (m *Model) SetCurrentVersion(ctx context.Context, projectID, templateID, versionID string, at time.Time) error {
+	return rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.Model(&TemplateEntity{}).Where("id = ? AND project_id = ?", templateID, projectID).Updates(map[string]any{
+			"current_version_id": versionID,
+			"update_time":        at,
+		}).Error
+	})
 }
 
 // CreateVersion 写入不可变版本快照。
@@ -198,12 +215,13 @@ func (m *Model) CreateWithVersion(ctx context.Context, e *TemplateEntity, v *Ver
 //
 // 版本行先落库而草稿 Save 失败时，指针停在旧版本，新版本成为不可达孤儿，
 // 且 draft_version 已自增导致重试版本号错位。
-func (m *Model) SaveWithVersion(ctx context.Context, v *VersionEntity, e *TemplateEntity) error {
-	return m.Transaction(ctx, func(tx *gorm.DB) error {
+func (m *Model) SaveWithVersion(ctx context.Context, projectID string, v *VersionEntity, e *TemplateEntity) error {
+	// content_templates 带 FORCE 策略：新版本行落库与草稿更新同事务，且都要承本工程作用域。
+	return rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
 		if err := tx.Create(v).Error; err != nil {
 			return err
 		}
-		return tx.Model(&TemplateEntity{}).Where("id = ?", e.ID).Updates(map[string]any{
+		return tx.Model(&TemplateEntity{}).Where("id = ? AND project_id = ?", e.ID, projectID).Updates(map[string]any{
 			"draft_document":     e.DraftDocument,
 			"draft_version":      e.DraftVersion,
 			"current_version_id": e.CurrentVersionID,

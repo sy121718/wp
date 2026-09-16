@@ -17,6 +17,8 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+
+	"go_wp/pkg/rls"
 )
 
 const (
@@ -160,22 +162,34 @@ func (m *Model) Transaction(ctx context.Context, fn func(tx *gorm.DB) error) err
 }
 
 // CreateInstance 新增实例。
+// RLS（迁移 215）：presentation_instances 已启用 FORCE 策略，写入承 e.ProjectID 的工程作用域。
 func (m *Model) CreateInstance(ctx context.Context, e *InstanceEntity) error {
-	return m.InstanceDB(ctx).Create(e).Error
+	return rls.InProjectScope(ctx, m.db, e.ProjectID, func(tx *gorm.DB) error {
+		return tx.Model(&InstanceEntity{}).Create(e).Error
+	})
 }
 
-// GetInstance 按 ID 查询。
-func (m *Model) GetInstance(ctx context.Context, id string) (e *InstanceEntity, err error) {
+// GetInstance 按 ID 查询（工程作用域内）。
+//
+// projectID 是**必填**（DB-009 第二批）：presentation_instances 带 FORCE 策略，
+// 不设 app.project_id 的读取在非超级角色下静默 0 行（fail closed，不报错），
+// 表现为「实例突然找不到了」。查询同时显式带 project_id 条件，
+// 与策略形成纵深（应用层漏条件时数据库层仍兜底）。
+func (m *Model) GetInstance(ctx context.Context, projectID, id string) (e *InstanceEntity, err error) {
 	var row InstanceEntity
-	if err = m.db.WithContext(ctx).Where("id = ?", id).First(&row).Error; err != nil {
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.Model(&InstanceEntity{}).
+			Where("id = ? AND project_id = ?", id, projectID).First(&row).Error
+	})
+	if err != nil {
 		return nil, err
 	}
 	return &row, nil
 }
 
 // GetInstanceByEntity 按内容实体查询。
-func (m *Model) GetInstanceByEntity(ctx context.Context, entityType, entityID string) (e *InstanceEntity, err error) {
-	return m.GetInstanceByEntityRole(ctx, entityType, entityID, "detail")
+func (m *Model) GetInstanceByEntity(ctx context.Context, projectID, entityType, entityID string) (e *InstanceEntity, err error) {
+	return m.GetInstanceByEntityRole(ctx, projectID, entityType, entityID, "detail")
 }
 
 // GetInstanceByEntityRole 按实体与**角色**查实例（审计 EDT-004）。
@@ -183,26 +197,36 @@ func (m *Model) GetInstanceByEntity(ctx context.Context, entityType, entityID st
 // 同一个分类既有详情页实例、也可能有归档页实例。只按实体查会把先建的当成
 // 「已存在」直接返回 —— 于是「给分类建归档页」这个动作静默变成「拿到详情页实例」，
 // 而调用方以为建成了。
-func (m *Model) GetInstanceByEntityRole(ctx context.Context, entityType, entityID, role string) (e *InstanceEntity, err error) {
+func (m *Model) GetInstanceByEntityRole(ctx context.Context, projectID, entityType, entityID, role string) (e *InstanceEntity, err error) {
 	if role == "" {
 		role = "detail"
 	}
 	var row InstanceEntity
-	if err = m.db.WithContext(ctx).
-		Where("entity_type = ? AND entity_id = ? AND instance_role = ?", entityType, entityID, role).
-		First(&row).Error; err != nil {
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.Model(&InstanceEntity{}).
+			Where("project_id = ? AND entity_type = ? AND entity_id = ? AND instance_role = ?",
+				projectID, entityType, entityID, role).
+			First(&row).Error
+	})
+	if err != nil {
 		return nil, err
 	}
 	return &row, nil
 }
 
-// ListInstances 按类型列表。
-func (m *Model) ListInstances(ctx context.Context, entityType string) (list []*InstanceEntity, err error) {
-	q := m.db.WithContext(ctx).Order("update_time DESC, id DESC")
-	if entityType != "" {
-		q = q.Where("entity_type = ?", entityType)
-	}
-	err = q.Find(&list).Error
+// ListInstances 列出**本工程**的实例（entityType 非空时再按类型过滤）。
+//
+// 工程维度是必选而不是可选：presentation_instances 带 FORCE 策略，无作用域的
+// 全表扫描在非超级角色下返回空集（fail closed），而「列表空」是最难归因的一种表现。
+func (m *Model) ListInstances(ctx context.Context, projectID, entityType string) (list []*InstanceEntity, err error) {
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		q := tx.Model(&InstanceEntity{}).Where("project_id = ?", projectID).
+			Order("update_time DESC, id DESC")
+		if entityType != "" {
+			q = q.Where("entity_type = ?", entityType)
+		}
+		return q.Find(&list).Error
+	})
 	return list, err
 }
 
@@ -211,26 +235,33 @@ func (m *Model) ListInstances(ctx context.Context, entityType string) (list []*I
 // 显式列白名单而非 Save：实例行的 project_id/template_id/entity_* 是不可变
 // 身份列，重建只允许改指针与状态，防止整体覆盖时误改身份。
 func (m *Model) UpdateInstancePointers(ctx context.Context, e *InstanceEntity) error {
-	return m.InstanceDB(ctx).Where("id = ?", e.ID).Updates(map[string]any{
-		"current_snapshot_id": e.CurrentSnapshotID,
-		"staged_snapshot_id":  e.StagedSnapshotID,
-		"staged_artifact_id":  e.StagedArtifactID,
-		"active_artifact_id":  e.ActiveArtifactID,
-		"stale":               e.Stale,
-		"published_at":        e.PublishedAt,
-		"update_time":         e.UpdatedAt,
-	}).Error
+	return rls.InProjectScope(ctx, m.db, e.ProjectID, func(tx *gorm.DB) error {
+		return tx.Model(&InstanceEntity{}).
+			Where("id = ? AND project_id = ?", e.ID, e.ProjectID).Updates(map[string]any{
+			"current_snapshot_id": e.CurrentSnapshotID,
+			"staged_snapshot_id":  e.StagedSnapshotID,
+			"staged_artifact_id":  e.StagedArtifactID,
+			"active_artifact_id":  e.ActiveArtifactID,
+			"stale":               e.Stale,
+			"published_at":        e.PublishedAt,
+			"update_time":         e.UpdatedAt,
+		}).Error
+	})
 }
 
 // MarkStale 批量标记实例待重建（依赖失效后的落库动作）。
-func (m *Model) MarkStale(ctx context.Context, ids []string, at time.Time) (n int64, err error) {
+func (m *Model) MarkStale(ctx context.Context, projectID string, ids []string, at time.Time) (n int64, err error) {
 	if len(ids) == 0 {
 		return 0, nil
 	}
-	res := m.InstanceDB(ctx).Where("id IN ?", ids).Updates(map[string]any{
-		"stale": true, "update_time": at,
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		res := tx.Model(&InstanceEntity{}).
+			Where("project_id = ? AND id IN ?", projectID, ids).
+			Updates(map[string]any{"stale": true, "update_time": at})
+		n = res.RowsAffected
+		return res.Error
 	})
-	return res.RowsAffected, res.Error
+	return n, err
 }
 
 // DeleteInstance 删除实例及其聚合内从属行（解引用 → 依赖 → 产物 → 快照 → 实例）。
@@ -242,9 +273,9 @@ func (m *Model) MarkStale(ctx context.Context, ids []string, at time.Time) (n in
 // 必须先解引用：实例的 staged/active_artifact_id 与 current/staged_snapshot_id
 // 反向引用产物与快照行，形成循环外键（presentation_instances_staged_artifact_fk
 // 等），不清空指针就删产物会被这些外键挡住。
-func (m *Model) DeleteInstance(ctx context.Context, id string) error {
-	return m.Transaction(ctx, func(tx *gorm.DB) error {
-		if err := tx.Model(&InstanceEntity{}).Where("id = ?", id).Updates(map[string]any{
+func (m *Model) DeleteInstance(ctx context.Context, projectID, id string) error {
+	return rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		if err := tx.Model(&InstanceEntity{}).Where("id = ? AND project_id = ?", id, projectID).Updates(map[string]any{
 			"current_snapshot_id": nil,
 			"staged_snapshot_id":  nil,
 			"staged_artifact_id":  nil,
@@ -261,7 +292,7 @@ func (m *Model) DeleteInstance(ctx context.Context, id string) error {
 		if err := tx.Where("presentation_instance_id = ?", id).Delete(&SnapshotEntity{}).Error; err != nil {
 			return err
 		}
-		return tx.Where("id = ?", id).Delete(&InstanceEntity{}).Error
+		return tx.Where("id = ? AND project_id = ?", id, projectID).Delete(&InstanceEntity{}).Error
 	})
 }
 
@@ -373,8 +404,14 @@ func (m *Model) CreateArtifactTx(tx *gorm.DB, e *ArtifactEntity) error {
 }
 
 // UpdateInstancePointersTx 事务内更新实例指针（列白名单同 UpdateInstancePointers）。
-func (m *Model) UpdateInstancePointersTx(tx *gorm.DB, e *InstanceEntity) error {
-	return tx.Model(&InstanceEntity{}).Where("id = ?", e.ID).Updates(map[string]any{
+//
+// 作用域用 rls.ScopeTx 设进**调用方的事务**（不是另开事务）：这些 *Tx 变体本来就是
+// service 编排多表原子写入时传进来的 tx，另开事务会让外层未提交数据不可见、同表写入自锁。
+func (m *Model) UpdateInstancePointersTx(tx *gorm.DB, projectID string, e *InstanceEntity) error {
+	if err := rls.ScopeTx(tx, projectID); err != nil {
+		return err
+	}
+	return tx.Model(&InstanceEntity{}).Where("id = ? AND project_id = ?", e.ID, projectID).Updates(map[string]any{
 		"current_snapshot_id": e.CurrentSnapshotID,
 		"staged_snapshot_id":  e.StagedSnapshotID,
 		"staged_artifact_id":  e.StagedArtifactID,
@@ -390,8 +427,11 @@ func (m *Model) UpdateInstancePointersTx(tx *gorm.DB, e *InstanceEntity) error {
 // template_id 曾是只读身份列（见 UpdateInstancePointers 注释），本票起它是**可切换的绑定**：
 // 切换必须与本次重建的快照/产物/指针在同一事务里落库，否则会出现「产物来自新模板、
 // 实例仍记着旧模板」的漂移，下一次重建又会退回旧模板。
-func (m *Model) UpdateInstanceTemplateTx(tx *gorm.DB, id, templateID string, at time.Time) error {
-	return tx.Model(&InstanceEntity{}).Where("id = ?", id).Updates(map[string]any{
+func (m *Model) UpdateInstanceTemplateTx(tx *gorm.DB, projectID, id, templateID string, at time.Time) error {
+	if err := rls.ScopeTx(tx, projectID); err != nil {
+		return err
+	}
+	return tx.Model(&InstanceEntity{}).Where("id = ? AND project_id = ?", id, projectID).Updates(map[string]any{
 		"template_id": templateID,
 		"update_time": at,
 	}).Error
@@ -407,8 +447,11 @@ func (m *Model) UpdateInstanceTemplateTx(tx *gorm.DB, id, templateID string, at 
 //
 // 只改 url_path 一列：归属身份（project_id / entity_type / entity_id /
 // template_id）不动 —— 改 URL 不是换实体。
-func (m *Model) UpdateInstanceURLTx(tx *gorm.DB, id, urlPath string, at time.Time) error {
-	return tx.Model(&InstanceEntity{}).Where("id = ?", id).Updates(map[string]any{
+func (m *Model) UpdateInstanceURLTx(tx *gorm.DB, projectID, id, urlPath string, at time.Time) error {
+	if err := rls.ScopeTx(tx, projectID); err != nil {
+		return err
+	}
+	return tx.Model(&InstanceEntity{}).Where("id = ? AND project_id = ?", id, projectID).Updates(map[string]any{
 		"url_path":    urlPath,
 		"update_time": at,
 	}).Error
@@ -421,13 +464,16 @@ func (m *Model) UpdateInstanceURLTx(tx *gorm.DB, id, urlPath string, at time.Tim
 // 完整性（漏登只影响「别人防我」，不影响「我防别人」）。返回 ErrRecordNotFound
 // 表示路径空闲。
 func (m *Model) FindInstanceByPath(ctx context.Context, projectID, urlPath, excludeInstanceID string) (e *InstanceEntity, err error) {
-	q := m.InstanceDB(ctx).
-		Where("project_id = ? AND url_path = ? AND deleted_at IS NULL", projectID, urlPath)
-	if excludeInstanceID != "" {
-		q = q.Where("id <> ?", excludeInstanceID)
-	}
 	var row InstanceEntity
-	if err = q.First(&row).Error; err != nil {
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		q := tx.Model(&InstanceEntity{}).
+			Where("project_id = ? AND url_path = ? AND deleted_at IS NULL", projectID, urlPath)
+		if excludeInstanceID != "" {
+			q = q.Where("id <> ?", excludeInstanceID)
+		}
+		return q.First(&row).Error
+	})
+	if err != nil {
 		return nil, err
 	}
 	return &row, nil
@@ -456,11 +502,15 @@ func (m *Model) ListDependencies(ctx context.Context, artifactID string) (list [
 //
 // 命中条件：该实例的**活跃或暂存**产物在依赖表里声明了这条依赖
 // （与 page 侧同一口径，见 page/model/page_dependency_model.go）。
-func (m *Model) MarkStaleByDependency(ctx context.Context, kind, key string, at time.Time) (ids []string, err error) {
+// projectID 是必填的工程作用域（DB-009 第二批）：本方法是**单工程**版本，
+// 跨工程扇出由 service 枚举工程后逐个调用 —— presentation_instances 带 FORCE 策略，
+// 无作用域时这条 UPDATE 会静默匹配 0 行（依赖失效不再触发自动重建，日志上却一切正常）。
+func (m *Model) MarkStaleByDependency(ctx context.Context, projectID, kind, key string, at time.Time) (ids []string, err error) {
 	if kind == "" || key == "" {
 		return nil, nil
 	}
-	err = m.db.WithContext(ctx).Raw(`
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.Raw(`
 		WITH affected AS (
 			SELECT DISTINCT d.presentation_id AS presentation_id
 			FROM presentation_dependencies d
@@ -471,8 +521,9 @@ func (m *Model) MarkStaleByDependency(ctx context.Context, kind, key string, at 
 			  AND d.artifact_id IN (p.active_artifact_id, p.staged_artifact_id)
 		)
 		UPDATE presentation_instances SET stale = true, update_time = ?
-		WHERE deleted_at IS NULL AND id IN (SELECT presentation_id FROM affected)
-		RETURNING id`, kind, key, at).Scan(&ids).Error
+		WHERE deleted_at IS NULL AND project_id = ? AND id IN (SELECT presentation_id FROM affected)
+		RETURNING id`, kind, key, at, projectID).Scan(&ids).Error
+	})
 	if err != nil {
 		return nil, err
 	}
