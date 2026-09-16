@@ -203,14 +203,17 @@ func TestSourceCreateTypesAndRelatedParty(t *testing.T) {
 	}
 
 	// 详情 + 删除。
-	got, err := f.inventory.GetSource(ctx, &inventorydto.GetSourceReq{ID: internal.ID})
+	//
+	// DB-009：库里有多个工程时，按 id 单查必须显式给出工程作用域（resolveProjectID 的
+	// 「唯一工程」兜底不再成立）—— 这正是隔离本身要求的调用形态。
+	got, err := f.inventory.GetSource(ctx, &inventorydto.GetSourceReq{ID: internal.ID, ProjectID: f.projectID})
 	if err != nil || got.Code != "GROUP_CO" {
 		t.Fatalf("货源详情异常：%v %+v", err, got)
 	}
-	if err = f.inventory.DeleteSource(ctx, &inventorydto.DeleteSourceReq{ID: factory.ID}); err != nil {
+	if err = f.inventory.DeleteSource(ctx, &inventorydto.DeleteSourceReq{ID: factory.ID, ProjectID: f.projectID}); err != nil {
 		t.Fatalf("删除货源失败: %v", err)
 	}
-	if _, err = f.inventory.GetSource(ctx, &inventorydto.GetSourceReq{ID: factory.ID}); err == nil ||
+	if _, err = f.inventory.GetSource(ctx, &inventorydto.GetSourceReq{ID: factory.ID, ProjectID: f.projectID}); err == nil ||
 		err.Error() != inventoryenums.ErrSourceNotFound {
 		t.Fatalf("删除后应按 ErrSourceNotFound 报错，实际 %v", err)
 	}

@@ -79,7 +79,7 @@ func (s *Service) RegisterReceipt(ctx context.Context, req *inventorydto.Registe
 	)
 	err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
 		// ②-1 锁采购单头：同一张单的并发收货在此串行化。
-		locked, lerr := s.m.LockPurchaseOrderTx(ctx, tx, strings.TrimSpace(req.OrderID))
+		locked, lerr := s.m.LockPurchaseOrderTx(ctx, tx, strings.TrimSpace(req.OrderID), projectID)
 		if lerr != nil {
 			return mapPurchaseOrderNotFound(lerr)
 		}
@@ -100,7 +100,7 @@ func (s *Service) RegisterReceipt(ctx context.Context, req *inventorydto.Registe
 		if lerr != nil {
 			return lerr
 		}
-		lines, lerr := s.m.ListPurchaseLinesTx(ctx, tx, locked.ID)
+		lines, lerr := s.m.ListPurchaseLinesTx(ctx, tx, locked.ID, projectID)
 		if lerr != nil {
 			return lerr
 		}
@@ -120,7 +120,7 @@ func (s *Service) RegisterReceipt(ctx context.Context, req *inventorydto.Registe
 			return errors.New(inventoryenums.ErrReceiptOrderDone)
 		}
 		receiptID := uuid.NewString()
-		seq, cerr := s.m.CountOrderReceiptsTx(ctx, tx, locked.ID)
+		seq, cerr := s.m.CountOrderReceiptsTx(ctx, tx, locked.ID, projectID)
 		if cerr != nil {
 			return cerr
 		}
@@ -149,7 +149,7 @@ func (s *Service) RegisterReceipt(ctx context.Context, req *inventorydto.Registe
 				unitPrice = *row.UnitPrice
 			}
 			// ②-2 已入库数量原子递增：守卫写在 WHERE 里，受影响行数 0 即超收。
-			affected, ierr := s.m.IncrPurchaseLineReceivedTx(ctx, tx, line.ID, row.Quantity, now)
+			affected, ierr := s.m.IncrPurchaseLineReceivedTx(ctx, tx, line.ID, row.Quantity, projectID, now)
 			if ierr != nil {
 				return ierr
 			}
@@ -169,7 +169,7 @@ func (s *Service) RegisterReceipt(ctx context.Context, req *inventorydto.Registe
 			})
 		}
 		// ②-3 状态由刚更新过的行重新推导（同一把锁之下，读到的是最新值）。
-		fresh, lerr := s.m.ListPurchaseLinesTx(ctx, tx, locked.ID)
+		fresh, lerr := s.m.ListPurchaseLinesTx(ctx, tx, locked.ID, projectID)
 		if lerr != nil {
 			return lerr
 		}
@@ -187,7 +187,7 @@ func (s *Service) RegisterReceipt(ctx context.Context, req *inventorydto.Registe
 			return cerr
 		}
 		order.Status = status
-		return s.m.UpdatePurchaseOrderStatusTx(ctx, tx, locked.ID, status, now)
+		return s.m.UpdatePurchaseOrderStatusTx(ctx, tx, locked.ID, status, projectID, now)
 	})
 	if err != nil {
 		// 并发重复提交：两路同时通过 idempotentReceipt 预检，第二路在 request_id 唯一键上撞车。
@@ -215,12 +215,12 @@ func (s *Service) RegisterReceipt(ctx context.Context, req *inventorydto.Registe
 	})
 	if cerr != nil {
 		// ④ 库存没动成功：退回已入库数量并删除入库单（不留「记了账没动库存」）。
-		_ = s.compensateReceipt(ctx, receipt.ID, order.ID, items)
+		_ = s.compensateReceipt(ctx, receipt.ID, order.ID, items, projectID)
 		return nil, cerr
 	}
 	batchID := change.BatchID
 	// ⑤ 提交之后：记批次号 + 置 posted + 回写成本价。
-	if serr := s.m.SetReceiptMovement(ctx, receipt.ID, batchID, inventoryenums.ReceiptStatusPosted); serr == nil {
+	if serr := s.m.SetReceiptMovement(ctx, receipt.ID, batchID, inventoryenums.ReceiptStatusPosted, projectID); serr == nil {
 		receipt.MovementBatchID = batchID
 		receipt.Status = inventoryenums.ReceiptStatusPosted
 	}
@@ -315,10 +315,10 @@ func (s *Service) RegisterProductionInbound(ctx context.Context, req *inventoryd
 		}},
 	})
 	if cerr != nil {
-		_ = s.compensateReceipt(ctx, receipt.ID, "", []*inventorymodel.ReceiptItemEntity{item})
+		_ = s.compensateReceipt(ctx, receipt.ID, "", []*inventorymodel.ReceiptItemEntity{item}, projectID)
 		return nil, cerr
 	}
-	if serr := s.m.SetReceiptMovement(ctx, receipt.ID, change.BatchID, inventoryenums.ReceiptStatusPosted); serr == nil {
+	if serr := s.m.SetReceiptMovement(ctx, receipt.ID, change.BatchID, inventoryenums.ReceiptStatusPosted, projectID); serr == nil {
 		receipt.MovementBatchID = change.BatchID
 		receipt.Status = inventoryenums.ReceiptStatusPosted
 	}
@@ -391,27 +391,27 @@ func (s *Service) idempotentReceipt(ctx context.Context, projectID, requestID st
 //
 // 补偿本身失败只能记日志层面感知（调用方已经要返回原始错误）：这里把错误吞掉并返回，
 // 因为此时「没有把库存动成」已经是确定的结果，残留的 pending 单据在后台可见、可人工核对。
-func (s *Service) compensateReceipt(ctx context.Context, receiptID, orderID string, items []*inventorymodel.ReceiptItemEntity) (err error) {
+func (s *Service) compensateReceipt(ctx context.Context, receiptID, orderID string, items []*inventorymodel.ReceiptItemEntity, projectID string) (err error) {
 	now := time.Now().UTC()
 	err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
 		for _, it := range items {
 			if it.LineID == nil {
 				continue
 			}
-			if _, derr := s.m.DecrPurchaseLineReceivedTx(ctx, tx, *it.LineID, it.Quantity, now); derr != nil {
+			if _, derr := s.m.DecrPurchaseLineReceivedTx(ctx, tx, *it.LineID, it.Quantity, projectID, now); derr != nil {
 				return derr
 			}
 		}
 		if orderID != "" {
-			lines, lerr := s.m.ListPurchaseLinesTx(ctx, tx, orderID)
+			lines, lerr := s.m.ListPurchaseLinesTx(ctx, tx, orderID, projectID)
 			if lerr != nil {
 				return lerr
 			}
-			if uerr := s.m.UpdatePurchaseOrderStatusTx(ctx, tx, orderID, derivePurchaseStatus(lines), now); uerr != nil {
+			if uerr := s.m.UpdatePurchaseOrderStatusTx(ctx, tx, orderID, derivePurchaseStatus(lines), projectID, now); uerr != nil {
 				return uerr
 			}
 		}
-		return s.m.DeleteReceiptTx(ctx, tx, receiptID)
+		return s.m.DeleteReceiptTx(ctx, tx, receiptID, projectID)
 	})
 	return err
 }
@@ -427,21 +427,21 @@ func (s *Service) applyReceiptCosts(ctx context.Context, items []*inventorymodel
 	for _, it := range items {
 		if s.variantCost == nil {
 			it.CostUpdated, it.CostError = false, inventoryenums.ErrVariantCostPortMissing
-			_ = s.m.UpdateReceiptItemCost(ctx, it.ID, false, it.CostError)
+			_ = s.m.UpdateReceiptItemCost(ctx, it.ID, false, it.CostError, it.ProjectID)
 			continue
 		}
-		if cerr := s.variantCost.UpdateVariantCost(ctx, it.VariantID, it.UnitPrice, operatorID); cerr != nil {
+		if cerr := s.variantCost.UpdateVariantCost(ctx, it.ProjectID, it.VariantID, it.UnitPrice, operatorID); cerr != nil {
 			it.CostUpdated, it.CostError = false, cerr.Error()
 		} else {
 			it.CostUpdated, it.CostError = true, ""
 		}
-		_ = s.m.UpdateReceiptItemCost(ctx, it.ID, it.CostUpdated, it.CostError)
+		_ = s.m.UpdateReceiptItemCost(ctx, it.ID, it.CostUpdated, it.CostError, it.ProjectID)
 	}
 }
 
 // receiptResp 组装入库单响应（行 + 货源 / 仓库 / 采购单展示信息）。
 func (s *Service) receiptResp(ctx context.Context, e *inventorymodel.ReceiptEntity, idempotent bool) (res *inventorydto.ReceiptResp, err error) {
-	items, err := s.m.ListReceiptItems(ctx, e.ID)
+	items, err := s.m.ListReceiptItems(ctx, e.ID, e.ProjectID)
 	if err != nil {
 		return nil, err
 	}
@@ -454,14 +454,14 @@ func (s *Service) receiptResp(ctx context.Context, e *inventorymodel.ReceiptEnti
 	}
 	if e.OrderID != nil {
 		resp.OrderID = *e.OrderID
-		if order, oerr := s.m.GetPurchaseOrder(ctx, *e.OrderID); oerr == nil {
+		if order, oerr := s.m.GetPurchaseOrder(ctx, *e.OrderID, e.ProjectID); oerr == nil {
 			resp.OrderCode = order.Code
 		}
 	}
-	if source, serr := s.m.GetSource(ctx, e.SourceID); serr == nil {
+	if source, serr := s.m.GetSource(ctx, e.SourceID, e.ProjectID); serr == nil {
 		resp.SourceName = source.Name
 	}
-	if wh, werr := s.m.GetWarehouse(ctx, e.WarehouseID); werr == nil {
+	if wh, werr := s.m.GetWarehouse(ctx, e.WarehouseID, e.ProjectID); werr == nil {
 		resp.WarehouseName = wh.Name
 	}
 	for _, it := range items {

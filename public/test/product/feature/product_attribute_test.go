@@ -181,7 +181,8 @@ func TestAttributeVariationFlag(t *testing.T) {
 		t.Fatalf("显式标记为不参与变体，实际 IsVariation=true")
 	}
 	// 落库核对：is_variation 确实是 false。
-	row, gerr := productmodel.NewModel(f.db).GetAttribute(ctx, created.ID)
+	// DB-009：按 id 单查带工程作用域（product_attributes 在迁移 215 名单里）。
+	row, gerr := productmodel.NewModel(f.db).GetAttribute(ctx, created.ID, f.projectID)
 	if gerr != nil {
 		t.Fatalf("读属性组失败: %v", gerr)
 	}

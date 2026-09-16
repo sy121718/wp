@@ -49,6 +49,11 @@ type ListPriceAdjustmentReq struct {
 }
 
 // GetPriceAdjustmentReq 单批次留痕详情（含逐变体明细）。
+//
+// ProjectID 是工程隔离（DB-009）的作用域来源：留痕批次按工程隔离，读取必须落在
+// 某个工程上。为空时由 service 走「唯一工程」兜底，多工程部署下会明确报参数错误
+// （好过静默读到别的工程的留痕）。
 type GetPriceAdjustmentReq struct {
-	ID string `form:"id" binding:"required"`
+	ID        string `form:"id" binding:"required"`
+	ProjectID string `form:"projectId"`
 }

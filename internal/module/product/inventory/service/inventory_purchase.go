@@ -96,11 +96,16 @@ func (s *Service) UpdatePurchaseOrder(ctx context.Context, req *inventorydto.Upd
 	if req == nil || strings.TrimSpace(req.ID) == "" {
 		return nil, errors.New(inventoryenums.ErrInvalidParam)
 	}
-	order, err := s.m.GetPurchaseOrder(ctx, req.ID)
+	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	order, err := s.m.GetPurchaseOrder(ctx, req.ID, projectID)
 	if err != nil {
 		return nil, mapPurchaseOrderNotFound(err)
 	}
-	projectID := order.ProjectID
+	// 行上的工程即解析结果（策略保证同工程），后续写入一律以它作为作用域。
+	projectID = order.ProjectID
 	if req.SourceID != nil {
 		source, serr := s.resolvePurchaseSource(ctx, projectID, *req.SourceID)
 		if serr != nil {
@@ -135,10 +140,10 @@ func (s *Service) UpdatePurchaseOrder(ctx context.Context, req *inventorydto.Upd
 	now := time.Now().UTC()
 	if err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
 		// 锁单头：与登记入库共用同一把锁，改单与收货不会交错出「半新半旧」的行集合。
-		if _, lerr := s.m.LockPurchaseOrderTx(ctx, tx, order.ID); lerr != nil {
+		if _, lerr := s.m.LockPurchaseOrderTx(ctx, tx, order.ID, projectID); lerr != nil {
 			return mapPurchaseOrderNotFound(lerr)
 		}
-		current, lerr := s.m.ListPurchaseLinesTx(ctx, tx, order.ID)
+		current, lerr := s.m.ListPurchaseLinesTx(ctx, tx, order.ID, projectID)
 		if lerr != nil {
 			return lerr
 		}
@@ -154,7 +159,7 @@ func (s *Service) UpdatePurchaseOrder(ctx context.Context, req *inventorydto.Upd
 			if berr != nil {
 				return berr
 			}
-			if rerr := s.m.ReplacePurchaseLinesTx(ctx, tx, order.ID, replaced); rerr != nil {
+			if rerr := s.m.ReplacePurchaseLinesTx(ctx, tx, order.ID, projectID, replaced); rerr != nil {
 				return rerr
 			}
 			lines = replaced
@@ -173,11 +178,15 @@ func (s *Service) GetPurchaseOrder(ctx context.Context, req *inventorydto.GetPur
 	if req == nil || strings.TrimSpace(req.ID) == "" {
 		return nil, errors.New(inventoryenums.ErrInvalidParam)
 	}
-	order, err := s.m.GetPurchaseOrder(ctx, req.ID)
+	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	order, err := s.m.GetPurchaseOrder(ctx, req.ID, projectID)
 	if err != nil {
 		return nil, mapPurchaseOrderNotFound(err)
 	}
-	lines, err := s.m.ListPurchaseLines(ctx, order.ID)
+	lines, err := s.m.ListPurchaseLines(ctx, order.ID, order.ProjectID)
 	if err != nil {
 		return nil, err
 	}
@@ -211,7 +220,7 @@ func (s *Service) ListPurchaseOrders(ctx context.Context, req *inventorydto.List
 		orderIDs = append(orderIDs, r.ID)
 	}
 	// 行一次性批量取回（列表页不产生 N+1）。
-	allLines, err := s.m.ListPurchaseLinesByOrders(ctx, orderIDs)
+	allLines, err := s.m.ListPurchaseLinesByOrders(ctx, orderIDs, projectID)
 	if err != nil {
 		return nil, err
 	}
@@ -310,7 +319,7 @@ func (s *Service) resolvePurchaseSource(ctx context.Context, projectID, sourceID
 	if id == "" {
 		return nil, errors.New(inventoryenums.ErrPurchaseSourceRequired)
 	}
-	e, err = s.m.GetSource(ctx, id)
+	e, err = s.m.GetSource(ctx, id, projectID)
 	if err != nil {
 		return nil, mapSourceNotFound(err)
 	}
@@ -328,12 +337,12 @@ func (s *Service) purchaseOrderResp(ctx context.Context, e *inventorymodel.Purch
 	lines []*inventorymodel.PurchaseLineEntity, source *inventorymodel.SourceEntity,
 	wh *inventorymodel.WarehouseEntity) *inventorydto.PurchaseOrderResp {
 	if source == nil {
-		if got, err := s.m.GetSource(ctx, e.SourceID); err == nil {
+		if got, err := s.m.GetSource(ctx, e.SourceID, e.ProjectID); err == nil {
 			source = got
 		}
 	}
 	if wh == nil {
-		if got, err := s.m.GetWarehouse(ctx, e.WarehouseID); err == nil {
+		if got, err := s.m.GetWarehouse(ctx, e.WarehouseID, e.ProjectID); err == nil {
 			wh = got
 		}
 	}

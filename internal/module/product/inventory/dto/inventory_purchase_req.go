@@ -43,6 +43,7 @@ type CreatePurchaseOrderReq struct {
 // （已有入库数量的行被改小会让「已入库 ≤ 采购数量」不成立）。
 type UpdatePurchaseOrderReq struct {
 	ID              string            `json:"id" binding:"required"`
+	ProjectID       string            `json:"projectId"`
 	SourceID        *string           `json:"sourceId"`
 	WarehouseID     *string           `json:"warehouseId"`
 	ExpectedAt      *utils.JSONTime   `json:"expectedAt"`
@@ -55,8 +56,13 @@ type UpdatePurchaseOrderReq struct {
 }
 
 // GetPurchaseOrderReq 按 ID 查询采购单（含全部采购行）。
+//
+// ProjectID 是工程隔离（DB-009）的作用域来源：采购单按工程隔离，读取必须落在
+// 某个工程上。为空时由 service 走「唯一工程」兜底，多工程部署下会明确报参数错误
+// （好过静默读到别的工程的采购单）。
 type GetPurchaseOrderReq struct {
-	ID string `form:"id" binding:"required"`
+	ID        string `form:"id" binding:"required"`
+	ProjectID string `form:"projectId"`
 }
 
 // ListPurchaseOrderReq 采购单列表（状态 / 货源 / 关键词都是可组合的筛选维度）。

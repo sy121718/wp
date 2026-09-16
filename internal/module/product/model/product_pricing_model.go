@@ -103,34 +103,51 @@ func (m *Model) CreateAdjustmentWithItemsTx(tx *gorm.DB, e *PriceAdjustmentEntit
 }
 
 // GetAdjustment 按 ID 查批次。
-func (m *Model) GetAdjustment(ctx context.Context, id string) (e *PriceAdjustmentEntity, err error) {
+//
+// projectID 由**调用方**给出（不是从行里读回来的）：product_price_adjustments 在
+// 迁移 215 名单里，跨工程的批次在策略下不可见，读不到即 ErrRecordNotFound。
+func (m *Model) GetAdjustment(ctx context.Context, id, projectID string) (e *PriceAdjustmentEntity, err error) {
 	e = &PriceAdjustmentEntity{}
-	err = m.AdjustmentDB(ctx).Where("id = ?", id).First(e).Error
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.WithContext(ctx).Model(&PriceAdjustmentEntity{}).Where("id = ?", id).First(e).Error
+	})
 	return e, err
 }
 
 // ListAdjustments 工程内的调价批次（新的在前）；limit <= 0 表示不限条数。
+//
+// projectID 必填（空串会被 rls 以 ErrInvalidProjectID 拒掉）：留痕列表是**工程内**
+// 的视图，此前 projectID 为空即退化成「所有工程的批次」——策略生效后那种调用
+// 会静默返回 0 行，所以把「必须指明工程」提到入口断言。
 func (m *Model) ListAdjustments(ctx context.Context, projectID string, limit int) (list []*PriceAdjustmentEntity, err error) {
-	q := m.AdjustmentDB(ctx)
-	if projectID != "" {
-		q = q.Where("project_id = ?", projectID)
-	}
-	q = q.Order("create_time DESC, id DESC")
-	if limit > 0 {
-		q = q.Limit(limit)
-	}
-	err = q.Find(&list).Error
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		q := tx.WithContext(ctx).Model(&PriceAdjustmentEntity{}).
+			Where("project_id = ?", projectID).
+			Order("create_time DESC, id DESC")
+		if limit > 0 {
+			q = q.Limit(limit)
+		}
+		return q.Find(&list).Error
+	})
 	return list, err
 }
 
 // ListAdjustmentItems 某批次的逐变体明细（按写入顺序，稳定可读）。
-func (m *Model) ListAdjustmentItems(ctx context.Context, adjustmentID string, limit int) (list []*PriceAdjustmentItemEntity, err error) {
-	q := m.AdjustmentItemDB(ctx).Where("adjustment_id = ?", adjustmentID).
-		Order("create_time ASC, sku_code ASC, id ASC")
-	if limit > 0 {
-		q = q.Limit(limit)
-	}
-	err = q.Find(&list).Error
+//
+// 明细表 product_price_adjustment_items **不带 project_id、也不在迁移 215 名单里**
+// （它靠父批次头归属工程，见实体注释），所以这里没有策略可依据。仍然把它收进
+// 工程作用域：调用方总是先按工程读到批次头再取明细，两者落在同一个隔离上下文里，
+// 将来若给明细表补上策略也不会漏掉这条路径。
+func (m *Model) ListAdjustmentItems(ctx context.Context, adjustmentID, projectID string, limit int) (list []*PriceAdjustmentItemEntity, err error) {
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		q := tx.WithContext(ctx).Model(&PriceAdjustmentItemEntity{}).
+			Where("adjustment_id = ?", adjustmentID).
+			Order("create_time ASC, sku_code ASC, id ASC")
+		if limit > 0 {
+			q = q.Limit(limit)
+		}
+		return q.Find(&list).Error
+	})
 	return list, err
 }
 
@@ -139,7 +156,19 @@ func (m *Model) ListAdjustmentItems(ctx context.Context, adjustmentID string, li
 // 只取筛选与展示需要的列；关键词只匹配商品名（与后台列表口径一致）。
 // 分类 / 标签是 JSONB 数组，用包含谓词命中 GIN 索引（与 ListProductsByTag 同一手法）。
 func (m *Model) ListProductsForPricing(ctx context.Context, f PricingFilter) (list []*ProductEntity, err error) {
-	q := m.DB(ctx).Select("id, project_id, name, slug, status, sort, category_ids, brand_id, tag_ids, create_time")
+	err = rls.InProjectScope(ctx, m.db, f.ProjectID, func(tx *gorm.DB) error {
+		return m.listProductsForPricing(tx, ctx, f, &list)
+	})
+	return list, err
+}
+
+// listProductsForPricing 在调用方给定的事务句柄上执行筛选集查询。
+//
+// 单独拆出来是因为 products 在 215 名单里：查询必须落在**已设作用域的那个事务**上，
+// 用 model 的裸句柄（m.db）会另取连接、另起事务，作用域读不到。
+func (m *Model) listProductsForPricing(tx *gorm.DB, ctx context.Context, f PricingFilter, out *[]*ProductEntity) error {
+	q := tx.WithContext(ctx).Model(&ProductEntity{}).
+		Select("id, project_id, name, slug, status, sort, category_ids, brand_id, tag_ids, create_time")
 	if f.ProjectID != "" {
 		q = q.Where("project_id = ?", f.ProjectID)
 	}
@@ -152,20 +181,19 @@ func (m *Model) ListProductsForPricing(ctx context.Context, f PricingFilter) (li
 	if f.CategoryID != "" {
 		probe, merr := json.Marshal([]string{f.CategoryID})
 		if merr != nil {
-			return nil, merr
+			return merr
 		}
 		q = q.Where("category_ids @> ?::jsonb", string(probe))
 	}
 	if f.TagID != "" {
 		probe, merr := json.Marshal([]string{f.TagID})
 		if merr != nil {
-			return nil, merr
+			return merr
 		}
 		q = q.Where("tag_ids @> ?::jsonb", string(probe))
 	}
 	if f.BrandID != "" {
 		q = q.Where("brand_id = ?", f.BrandID)
 	}
-	err = q.Order("sort ASC, create_time ASC, id ASC").Find(&list).Error
-	return list, err
+	return q.Order("sort ASC, create_time ASC, id ASC").Find(out).Error
 }

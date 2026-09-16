@@ -239,6 +239,11 @@ func (s *Service) ListPriceAdjustments(ctx context.Context, req *productdto.List
 	if limit > maxPricingAdjustments {
 		limit = maxPricingAdjustments
 	}
+	// 工程作用域：留痕列表是**工程内**视图（DB-009）。project_id 为空时走唯一工程
+	// 兜底，多工程部署下明确报错而不是退化成「所有工程的批次」。
+	if projectID, err = s.resolveProjectID(ctx, projectID); err != nil {
+		return nil, err
+	}
 	rows, err := s.m.ListAdjustments(ctx, projectID, limit)
 	if err != nil {
 		return nil, err
@@ -258,14 +263,18 @@ func (s *Service) GetPriceAdjustment(ctx context.Context, req *productdto.GetPri
 	if req == nil || strings.TrimSpace(req.ID) == "" {
 		return nil, errors.New(productenums.ErrInvalidParam)
 	}
-	row, err := s.m.GetAdjustment(ctx, req.ID)
+	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	row, err := s.m.GetAdjustment(ctx, req.ID, projectID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, errors.New(productenums.ErrPricingAdjustmentNotFound)
 		}
 		return nil, err
 	}
-	details, err := s.m.ListAdjustmentItems(ctx, row.ID, maxPricingAdjustmentItems)
+	details, err := s.m.ListAdjustmentItems(ctx, row.ID, projectID, maxPricingAdjustmentItems)
 	if err != nil {
 		return nil, err
 	}
@@ -472,7 +481,7 @@ func (s *Service) resolvePricingTargets(ctx context.Context, pr *pricingRequest)
 			}
 			return nil, gerr
 		}
-		p, perr := s.m.Get(ctx, v.ProductID, "")
+		p, perr := s.m.Get(ctx, v.ProductID, pr.projectID)
 		if perr != nil {
 			if errors.Is(perr, gorm.ErrRecordNotFound) {
 				return nil, errors.New(productenums.ErrPricingTargetNotFound)
@@ -482,7 +491,7 @@ func (s *Service) resolvePricingTargets(ctx context.Context, pr *pricingRequest)
 		return []*pricingTarget{{product: p, variant: v}}, nil
 
 	case productenums.PricingScopeProduct:
-		p, perr := s.m.Get(ctx, pr.targetID, "")
+		p, perr := s.m.Get(ctx, pr.targetID, pr.projectID)
 		if perr != nil {
 			if errors.Is(perr, gorm.ErrRecordNotFound) {
 				return nil, errors.New(productenums.ErrPricingTargetNotFound)
