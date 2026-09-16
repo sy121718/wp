@@ -6,9 +6,13 @@
 // 为什么必须走片段：商品详情的规格选择器是**已编译的静态产物**，而可用量在库存真源里
 // 每秒都可能变（docs/04 §1.1）；把可用量烘进产物等于发布一份过期库存。
 //
-// 参数只有变体 id（逗号分隔，≤100）：工程上下文由 product 模块按变体反查补齐，片段层不认识
-// 商品表结构，也不伪造工程 id。provider 未注入时降级为「以结算时库存为准」而不是报错 ——
-// 静态页面上一个读不到库存的规格选择器仍应可读可用，真正的把关在结算写路径。
+// 参数是工程 id + 变体 id（逗号分隔，≤100）：工程上下文由**片段参数**给出（与 productList
+// 片段同一口径，静态产物里本就烘了 projectId），product 模块在该工程的作用域内查库存真源 ——
+// 不属于该工程的变体由 RLS 策略天然查不到，不需要「按变体反查工程」那一步。
+//
+// 口径说明：片段参数可被篡改，越权面仅限「读到别的工程同样公开的库存数字」——商品与可用量
+// 本就是公开数据，与 productList 的判断一致；真正的把关在结算写路径。provider 未注入时降级为
+// 「以结算时库存为准」而不是报错 —— 静态页面上一个读不到库存的规格选择器仍应可读可用。
 package runtimefragment
 
 import (
@@ -42,8 +46,9 @@ func init() {
 
 // 参数名与上限。
 const (
-	variantAvailabilityParam  = "variantIds"
-	variantAvailabilityMaxIDs = 100
+	variantAvailabilityParam          = "variantIds"
+	variantAvailabilityParamProjectID = "projectId"
+	variantAvailabilityMaxIDs         = 100
 )
 
 // variantAvailabilityItem 单个变体的结论。
@@ -73,9 +78,14 @@ func renderVariantAvailability(ctx context.Context, r *Request) (string, error) 
 	if len(ids) == 0 {
 		return "", fmt.Errorf("缺少参数 %s（逗号分隔的变体 id）", variantAvailabilityParam)
 	}
+	projectID := strings.TrimSpace(r.Params[variantAvailabilityParamProjectID])
+	if projectID == "" {
+		// 与 productList 片段同口径：工程 id 是必填参数（缺它就无法定位库存真源）。
+		return "", fmt.Errorf("缺少参数 %s", variantAvailabilityParamProjectID)
+	}
 	avail := map[string]int{}
 	if variantAvailabilityProvider != nil {
-		got, err := variantAvailabilityProvider.VariantAvailabilities(ctx, ids)
+		got, err := variantAvailabilityProvider.VariantAvailabilities(ctx, projectID, ids)
 		if err != nil {
 			return "", err
 		}

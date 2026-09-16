@@ -55,8 +55,13 @@ type VariantAvailabilityPort interface {
 // 用途：商品详情规格选择器旁的「可用量」片段（runtimefragment 的 productVariantAvailability）——
 // 库存是运行期真源，构建期不可能把可用量烘进静态产物，只能每次请求现读（docs/04 §1.1）。
 type VariantAvailabilityLookupPort interface {
-	// VariantAvailabilities 批量读可用量：键为变体 id，未知 / 已删除的 id 不出现在结果里。
+	// VariantAvailabilities 批量读可用量：键为变体 id，未知 / 已删除 / **不属于该工程**的
+	// id 都不出现在结果里（隔离由 inventory_stocks 的 RLS 策略保证，不靠调用方过滤）。
 	// 端口未注入（inventory 未装配）时返回空结果而不报错 —— 调用方据此渲染「以结算为准」的降级文案；
 	// 缺货判定与加购校验另在写路径上做，不靠本端口兜底。
-	VariantAvailabilities(ctx context.Context, variantIDs []string) (map[string]int, error)
+	//
+	// projectID 是工程作用域（审计 DB-009）：它由调用方给出，**不再**由本模块按变体反查 ——
+	// 反查要先读 products（有 RLS 策略），那正是「手里只有变体 id」这条路的死结。
+	// 访问面片段从 URL 参数取（与 productList 片段同一口径），购物车从请求带的工程取。
+	VariantAvailabilities(ctx context.Context, projectID string, variantIDs []string) (map[string]int, error)
 }

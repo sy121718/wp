@@ -449,37 +449,6 @@ func (m *Model) ListVariantsByIDs(ctx context.Context, ids []string) (list []*Va
 	return list, err
 }
 
-// VariantProjectIDs 变体 id → 所属工程 id（issue #24）。
-//
-// 变体表只存 product_id，没有工程列 —— 「按变体查可用量」的访问面调用方（片段端点）手里
-// 只有变体 id，没有工程上下文，必须在这里反查补齐。两张表同属本模块，join 不越表隔离
-// （跨模块才禁止）。
-//
-// 只返回命中的行：缺的那些就是「变体已被删除」，由 service 判断怎么处理。
-func (m *Model) VariantProjectIDs(ctx context.Context, variantIDs []string) (out map[string]string, err error) {
-	out = map[string]string{}
-	if len(variantIDs) == 0 {
-		return out, nil
-	}
-	rows := []struct {
-		ID        string `gorm:"column:id"`
-		ProjectID string `gorm:"column:project_id"`
-	}{}
-	err = m.VariantDB(ctx).
-		Table("product_variants AS v").
-		Select("v.id AS id, p.project_id AS project_id").
-		Joins("JOIN products AS p ON p.id = v.product_id").
-		Where("v.id IN ?", variantIDs).
-		Scan(&rows).Error
-	if err != nil {
-		return nil, err
-	}
-	for _, r := range rows {
-		out[r.ID] = r.ProjectID
-	}
-	return out, nil
-}
-
 // GetVariant 按 ID 查变体。
 func (m *Model) GetVariant(ctx context.Context, id string) (e *VariantEntity, err error) {
 	e = &VariantEntity{}

@@ -49,7 +49,7 @@ func TestVariantAvailabilitiesLookup(t *testing.T) {
 
 	// 降级：未注入可用量端口（inventory 未装配 / 纯商品单测）→ 空结果且不报错。
 	// 片段层据此渲染「以结算时库存为准」；静态页面不该因为读不到库存而 500。
-	got, err := f.products.VariantAvailabilities(ctx, []string{v1})
+	got, err := f.products.VariantAvailabilities(ctx, f.projectID, []string{v1})
 	if err != nil {
 		t.Fatalf("端口未注入不该报错: %v", err)
 	}
@@ -60,7 +60,7 @@ func TestVariantAvailabilitiesLookup(t *testing.T) {
 	// 正常链路：注入桩端口，去重后按工程查一次。
 	port := &stubAvailabilityPort{data: map[string]int{v1: 7}}
 	f.products.SetAvailabilityPort(port)
-	got, err = f.products.VariantAvailabilities(ctx, []string{v1, v1, " ", v2, "does-not-exist"})
+	got, err = f.products.VariantAvailabilities(ctx, f.projectID, []string{v1, v1, " ", v2, "does-not-exist"})
 	if err != nil {
 		t.Fatalf("查询失败: %v", err)
 	}

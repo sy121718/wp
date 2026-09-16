@@ -70,7 +70,7 @@ func (s *Service) Add(ctx context.Context, req *cartdto.CartAddReq) (res *cartdt
 		return nil, errors.New(cartenums.ErrCartFull)
 	}
 	// 库存预检（拿得到真源时才做）：拿不到就放行，最终把关在结算的写路径上。
-	if err = s.checkAvailability(ctx, variantID, next); err != nil {
+	if err = s.checkAvailability(ctx, projectID, variantID, next); err != nil {
 		return nil, err
 	}
 	return s.applyChange(ctx, projectID, p.withLine(variantID, next))
@@ -99,7 +99,7 @@ func (s *Service) SetQuantity(ctx context.Context, req *cartdto.CartSetQuantityR
 	if _, err = s.fetchVariant(ctx, projectID, variantID); err != nil {
 		return nil, err
 	}
-	if err = s.checkAvailability(ctx, variantID, req.Quantity); err != nil {
+	if err = s.checkAvailability(ctx, projectID, variantID, req.Quantity); err != nil {
 		return nil, err
 	}
 	return s.applyChange(ctx, projectID, p.withLine(variantID, req.Quantity))
@@ -167,11 +167,11 @@ func (s *Service) fetchVariant(ctx context.Context, projectID, variantID string)
 }
 
 // checkAvailability 数量是否超过可用量（可用量未知时不拦）。
-func (s *Service) checkAvailability(ctx context.Context, variantID string, quantity int) error {
+func (s *Service) checkAvailability(ctx context.Context, projectID, variantID string, quantity int) error {
 	if s.availability == nil {
 		return nil
 	}
-	avail, err := s.availability.VariantAvailabilities(ctx, []string{variantID})
+	avail, err := s.availability.VariantAvailabilities(ctx, projectID, []string{variantID})
 	if err != nil {
 		// 读不到真源不算「库存不足」：把一次抖动说成缺货会让整店在访客眼里下架。
 		return nil
@@ -216,7 +216,7 @@ func (s *Service) snapshotOf(ctx context.Context, projectID string, p cartPayloa
 
 	avail := map[string]int{}
 	if s.availability != nil {
-		if m, aerr := s.availability.VariantAvailabilities(ctx, ids); aerr == nil && m != nil {
+		if m, aerr := s.availability.VariantAvailabilities(ctx, projectID, ids); aerr == nil && m != nil {
 			avail = m
 		}
 	}

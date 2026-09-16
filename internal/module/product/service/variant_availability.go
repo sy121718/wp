@@ -1,7 +1,12 @@
 // variant_availability.go — 按变体 id 查可用量（issue #24，商品详情实时库存）。
 //
-// 这是 VariantAvailabilityPort 面向访问面的包装：片段端点手里只有变体 id（静态产物里烘的
-// data 属性），没有工程上下文，工程在这里按变体反查补齐。
+// 这是 VariantAvailabilityPort 面向访问面的包装：调用方给出**工程作用域**（访问面片段从
+// URL 参数取 projectId，与 productList 片段同一口径；购物车从请求带的工程取），本方法在该
+// 工程的作用域内查库存真源 —— 不属于该工程的变体由策略天然查不到，不需要「按变体反查工程」
+// 那一步（反查要先读有策略的 products，正是死结所在）。
+//
+// 口径说明（与 productList 一致）：片段参数可被篡改，但商品与可用量本就是公开数据，
+// 越权面仅限「读到别的工程同样公开的库存数字」；真正的把关在结算写路径。
 //
 // 三条刻意的口径：
 //
@@ -15,7 +20,6 @@ package productservice
 
 import (
 	"context"
-	"sort"
 	"strings"
 )
 
@@ -23,7 +27,7 @@ import (
 const VariantAvailabilityLookupMaxIDs = 100
 
 // VariantAvailabilities 实现 productcontract.VariantAvailabilityLookupPort。
-func (s *Service) VariantAvailabilities(ctx context.Context, variantIDs []string) (out map[string]int, err error) {
+func (s *Service) VariantAvailabilities(ctx context.Context, projectID string, variantIDs []string) (out map[string]int, err error) {
 	out = map[string]int{}
 	ids := normalizeVariantIDs(variantIDs)
 	if len(ids) == 0 {
@@ -32,36 +36,23 @@ func (s *Service) VariantAvailabilities(ctx context.Context, variantIDs []string
 	if s.availability == nil {
 		return out, nil // 降级：调用方渲染「以结算时库存为准」
 	}
-	projects, perr := s.m.VariantProjectIDs(ctx, ids)
-	if perr != nil {
-		return nil, perr
+	// 工程作用域由调用方给定；工程号非法（空串 / 非 uuid）时返回空结果而不是报错 ——
+	// 本端口整体是「尽力而为」语义（读不到库存不该把页面变成 500）。
+	pid := strings.TrimSpace(projectID)
+	if pid == "" || !isUUID(pid) {
+		return out, nil
 	}
-	// 按工程分组：同一批变体可能跨工程（片段参数不受商品约束），可用量必须逐工程查。
-	byProject := map[string][]string{}
-	for _, id := range ids {
-		pid, ok := projects[id]
-		if !ok || pid == "" {
-			continue // 变体已删除：不出现在结果里（调用方按「未知」处理）
-		}
-		byProject[pid] = append(byProject[pid], id)
+	// 该工程的可用量一次查回：不属于本工程的变体由 inventory_stocks 的策略挡在外面，
+	// 它们不会出现在结果里，调用方按「未知」渲染兜底文案。
+	avail, aerr := s.availability.AvailableQuantities(ctx, pid, ids)
+	if aerr != nil {
+		return nil, aerr
 	}
-	// 工程键排序后逐个查：并发查同一批数据没有收益，而在确定性上要付代价。
-	pids := make([]string, 0, len(byProject))
-	for pid := range byProject {
-		pids = append(pids, pid)
-	}
-	sort.Strings(pids)
-	for _, pid := range pids {
-		avail, aerr := s.availability.AvailableQuantities(ctx, pid, byProject[pid])
-		if aerr != nil {
-			return nil, aerr
+	for id, n := range avail {
+		if n < 0 {
+			n = 0
 		}
-		for id, n := range avail {
-			if n < 0 {
-				n = 0
-			}
-			out[id] = n
-		}
+		out[id] = n
 	}
 	return out, nil
 }
