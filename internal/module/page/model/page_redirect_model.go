@@ -17,6 +17,8 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+
+	"go_wp/pkg/rls"
 )
 
 const tableNamePageRoutes = "page_routes"
@@ -53,9 +55,11 @@ func (m *Model) ListRedirectRoutes(ctx context.Context, projectID string) (list 
 	if projectID == "" {
 		return nil, nil
 	}
-	err = m.RouteDB(ctx).
-		Where("project_id = ? AND route_kind = ?", projectID, RouteKindRedirect).
-		Order("path ASC").Find(&list).Error
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.Model(&PageRouteEntity{}).
+			Where("project_id = ? AND route_kind = ?", projectID, RouteKindRedirect).
+			Order("path ASC").Find(&list).Error
+	})
 	return list, err
 }
 
@@ -67,9 +71,11 @@ func (m *Model) ListActiveRoutesByProject(ctx context.Context, projectID string)
 	if projectID == "" {
 		return nil, nil
 	}
-	err = m.RouteDB(ctx).
-		Where("project_id = ? AND route_kind = ?", projectID, RouteKindActive).
-		Order("path ASC").Find(&list).Error
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.Model(&PageRouteEntity{}).
+			Where("project_id = ? AND route_kind = ?", projectID, RouteKindActive).
+			Order("path ASC").Find(&list).Error
+	})
 	return list, err
 }
 
@@ -77,9 +83,11 @@ func (m *Model) ListActiveRoutesByProject(ctx context.Context, projectID string)
 // 不存在返回 gorm.ErrRecordNotFound。
 func (m *Model) GetActiveRouteByPath(ctx context.Context, projectID, path string) (e *PageRouteEntity, err error) {
 	e = &PageRouteEntity{}
-	err = m.RouteDB(ctx).
-		Where("project_id = ? AND path = ? AND route_kind = ?", projectID, path, RouteKindActive).
-		First(e).Error
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.Model(&PageRouteEntity{}).
+			Where("project_id = ? AND path = ? AND route_kind = ?", projectID, path, RouteKindActive).
+			First(e).Error
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -89,9 +97,11 @@ func (m *Model) GetActiveRouteByPath(ctx context.Context, projectID, path string
 // GetRedirectRoute 按路径取重定向行；不存在返回 gorm.ErrRecordNotFound。
 func (m *Model) GetRedirectRoute(ctx context.Context, projectID, path string) (e *PageRouteEntity, err error) {
 	e = &PageRouteEntity{}
-	err = m.RouteDB(ctx).
-		Where("project_id = ? AND path = ? AND route_kind = ?", projectID, path, RouteKindRedirect).
-		First(e).Error
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.Model(&PageRouteEntity{}).
+			Where("project_id = ? AND path = ? AND route_kind = ?", projectID, path, RouteKindRedirect).
+			First(e).Error
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -102,8 +112,15 @@ func (m *Model) GetRedirectRoute(ctx context.Context, projectID, path string) (e
 // 绝不触碰同路径上的其它行或目标实体的 active/reserved 行）。
 // 返回受影响行数（0 = 本来就没有）。
 func (m *Model) DeleteRedirectRoute(ctx context.Context, projectID, path string) (n int64, err error) {
-	res := m.RouteDB(ctx).
-		Where("project_id = ? AND path = ? AND route_kind = ?", projectID, path, RouteKindRedirect).
-		Delete(&PageRouteEntity{})
-	return res.RowsAffected, res.Error
+	var res *gorm.DB
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		res = tx.Model(&PageRouteEntity{}).
+			Where("project_id = ? AND path = ? AND route_kind = ?", projectID, path, RouteKindRedirect).
+			Delete(&PageRouteEntity{})
+		return res.Error
+	})
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected, nil
 }

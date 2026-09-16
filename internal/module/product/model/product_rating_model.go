@@ -15,6 +15,10 @@ package productmodel
 import (
 	"context"
 	"time"
+
+	"gorm.io/gorm"
+
+	"go_wp/pkg/rls"
 )
 
 // ProductRatingEntity 一条商品评分。
@@ -65,7 +69,9 @@ func (m *Model) ListRatings(ctx context.Context, productID string) (list []*Prod
 
 // CreateRating 写入一条评分（projectID 由调用方从商品带出，保持与商品同工程）。
 func (m *Model) CreateRating(ctx context.Context, e *ProductRatingEntity) (err error) {
-	return m.RatingDB(ctx).Create(e).Error
+	return rls.InProjectScope(ctx, m.db, e.ProjectID, func(tx *gorm.DB) error {
+		return tx.Model(&ProductRatingEntity{}).Create(e).Error
+	})
 }
 
 // GetRating 按 id 取一条评分（校验归属用）。

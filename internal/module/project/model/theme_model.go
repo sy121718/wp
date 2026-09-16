@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+
+	"go_wp/pkg/rls"
 )
 
 const tableNameThemes = "themes"
@@ -26,14 +28,19 @@ type ThemeEntity struct {
 func (ThemeEntity) TableName() string { return tableNameThemes }
 
 // CreateTheme 新增主题(同工程唯一名)。
+// RLS（迁移 215）：themes 已启用 FORCE 策略，写入承 e.ProjectID 的工程作用域。
 func (m *Model) CreateTheme(ctx context.Context, e *ThemeEntity) (err error) {
-	return m.ThemeDB(ctx).Create(e).Error
+	return rls.InProjectScope(ctx, m.db, e.ProjectID, func(tx *gorm.DB) error {
+		return tx.Model(&ThemeEntity{}).Create(e).Error
+	})
 }
 
 // ListThemes 列出工程全部主题(激活在前)。
 func (m *Model) ListThemes(ctx context.Context, projectID string) (list []ThemeEntity, err error) {
-	err = m.ThemeDB(ctx).Where("project_id = ?", projectID).
-		Order("is_active DESC, create_time ASC").Find(&list).Error
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.Model(&ThemeEntity{}).Where("project_id = ?", projectID).
+			Order("is_active DESC, create_time ASC").Find(&list).Error
+	})
 	return list, err
 }
 
@@ -62,9 +69,11 @@ func (m *Model) GetTheme(ctx context.Context, id string) (e *ThemeEntity, err er
 // GetActiveTheme 取工程当前激活主题(激活优先,否则取最早创建的)。
 func (m *Model) GetActiveTheme(ctx context.Context, projectID string) (e *ThemeEntity, err error) {
 	e = &ThemeEntity{}
-	if err = m.ThemeDB(ctx).
-		Where("project_id = ?", projectID).
-		Order("is_active DESC, create_time ASC").First(e).Error; err != nil {
+	if err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.Model(&ThemeEntity{}).
+			Where("project_id = ?", projectID).
+			Order("is_active DESC, create_time ASC").First(e).Error
+	}); err != nil {
 		return nil, err
 	}
 	return e, nil
@@ -83,7 +92,9 @@ func (m *Model) UpdateTheme(ctx context.Context, id, name string, settings json.
 // UPDATE 匹配 0 行且不报错，事务照样提交 —— 结果是整个工程 is_active 全 false，
 // 而 API 回报「激活成功」（状态与响应不符）。返回 gorm.ErrRecordNotFound 由 service 判型。
 func (m *Model) ActivateTheme(ctx context.Context, projectID, themeID string, updatedAt time.Time) (err error) {
-	return m.DB(ctx).Transaction(func(tx *gorm.DB) error {
+	// 复用 InProjectScope 的事务：scope 必须先设，否则换角色后下面两条 UPDATE 都会
+	// 因策略谓词为 NULL 而匹配 0 行 —— 其中第二条会被读成 ErrRecordNotFound（激活误报「主题不存在」）。
+	return rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
 		if err = tx.Model(&ThemeEntity{}).Where("project_id = ?", projectID).
 			Update("is_active", false).Error; err != nil {
 			return err
@@ -110,12 +121,15 @@ func (m *Model) DeleteTheme(ctx context.Context, id string) (rows int64, err err
 // ExistsByName 判断工程下是否已存在同名主题（大小写不敏感）。
 // excludeID 可选：排除指定主题自身（更新时复用）。
 func (m *Model) ExistsByName(ctx context.Context, projectID, name string, excludeID ...string) (exists bool, err error) {
-	q := m.ThemeDB(ctx).Where("project_id = ? AND LOWER(name) = LOWER(?)", projectID, name)
-	if len(excludeID) > 0 && strings.TrimSpace(excludeID[0]) != "" {
-		q = q.Where("id <> ?", excludeID[0])
-	}
 	var count int64
-	if err = q.Count(&count).Error; err != nil {
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		q := tx.Model(&ThemeEntity{}).Where("project_id = ? AND LOWER(name) = LOWER(?)", projectID, name)
+		if len(excludeID) > 0 && strings.TrimSpace(excludeID[0]) != "" {
+			q = q.Where("id <> ?", excludeID[0])
+		}
+		return q.Count(&count).Error
+	})
+	if err != nil {
 		return false, err
 	}
 	return count > 0, nil
@@ -123,6 +137,8 @@ func (m *Model) ExistsByName(ctx context.Context, projectID, name string, exclud
 
 // CountThemes 统计工程下主题数量（判断首建自动激活）。
 func (m *Model) CountThemes(ctx context.Context, projectID string) (count int64, err error) {
-	err = m.ThemeDB(ctx).Where("project_id = ?", projectID).Count(&count).Error
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.Model(&ThemeEntity{}).Where("project_id = ?", projectID).Count(&count).Error
+	})
 	return count, err
 }

@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+
+	"go_wp/pkg/rls"
 )
 
 // SourceEntity 货源（供应商 / 集团内关联公司 / 自家工厂）。
@@ -74,7 +76,9 @@ func (m *Model) SourceDB(ctx context.Context) *gorm.DB {
 
 // CreateSource 写入货源行。
 func (m *Model) CreateSource(ctx context.Context, e *SourceEntity) (err error) {
-	return m.SourceDB(ctx).Create(e).Error
+	return rls.InProjectScope(ctx, m.db, e.ProjectID, func(tx *gorm.DB) error {
+		return tx.Model(&SourceEntity{}).Create(e).Error
+	})
 }
 
 // GetSource 按 ID 查货源。
@@ -160,7 +164,9 @@ func (m *Model) SummarySources(ctx context.Context, projectID string) (rows []*S
 
 // UpdateSource 更新货源行（全字段保存）。
 func (m *Model) UpdateSource(ctx context.Context, e *SourceEntity) (err error) {
-	return m.SourceDB(ctx).Where("id = ?", e.ID).Save(e).Error
+	return rls.InProjectScope(ctx, m.db, e.ProjectID, func(tx *gorm.DB) error {
+		return tx.Model(&SourceEntity{}).Where("id = ?", e.ID).Save(e).Error
+	})
 }
 
 // DeleteSource 删除货源（硬删除；引用守卫属采购单一侧，issue #18 在 service 层补）。

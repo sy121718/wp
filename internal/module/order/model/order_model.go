@@ -15,6 +15,8 @@ import (
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+
+	"go_wp/pkg/rls"
 )
 
 // 订单状态。取值集合与迁移 135 的注释一致：
@@ -136,12 +138,23 @@ func (m *OrderModel) Transaction(ctx context.Context, fn func(tx *gorm.DB) error
 }
 
 // Create 落一单。
+// RLS（迁移 215）：orders 已启用 FORCE 策略，写入承 e.ProjectID 的工程作用域。
 func (m *OrderModel) Create(ctx context.Context, e *OrderEntity) (err error) {
-	return m.DB(ctx).Create(e).Error
+	return rls.InProjectScope(ctx, m.db, e.ProjectID, func(tx *gorm.DB) error {
+		return tx.Model(&OrderEntity{}).Create(e).Error
+	})
 }
 
 // CreateTx 事务内落一单。
+//
+// 这里用 ScopeTx 而**不是** InProjectScope：tx 是 service 编排的事务，作用域必须设在
+// 它上面。用 InProjectScope 会拿 m.db 另开事务、另取连接 —— 外层事务刚写的行在这个新
+// 事务里看不见，同表写入还会自锁。设好之后该事务里**后续所有语句**（明细、状态日志、
+// 库存动作）都已在同一工程作用域内，等于顺带把整条下单链路覆盖了。
 func (m *OrderModel) CreateTx(ctx context.Context, tx *gorm.DB, e *OrderEntity) (err error) {
+	if err = rls.ScopeTx(tx, e.ProjectID); err != nil {
+		return err
+	}
 	return tx.WithContext(ctx).Model(&OrderEntity{}).Create(e).Error
 }
 
@@ -149,11 +162,20 @@ func (m *OrderModel) CreateTx(ctx context.Context, tx *gorm.DB, e *OrderEntity) 
 // 不存在返回 (nil, nil)，由 service 决定报什么错。
 func (m *OrderModel) GetByID(ctx context.Context, id uint64, projectID string) (e *OrderEntity, err error) {
 	e = &OrderEntity{}
-	q := m.DB(ctx).Where("id = ?", id)
-	if strings.TrimSpace(projectID) != "" {
-		q = q.Where("project_id = ?", projectID)
+	// projectID 为空是「不限工程」的历史调用形态：不设 scope 时策略谓词为 NULL，
+	// 换非超级角色后该路径 fail closed（返回 nil）而不会读到别的工程。
+	if strings.TrimSpace(projectID) == "" {
+		if err = m.DB(ctx).Where("id = ?", id).First(e).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil, nil
+			}
+			return nil, err
+		}
+		return e, nil
 	}
-	if err = q.First(e).Error; err != nil {
+	if err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.Model(&OrderEntity{}).Where("id = ? AND project_id = ?", id, projectID).First(e).Error
+	}); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
 		}
@@ -198,7 +220,9 @@ func (m *OrderModel) LockByIDTx(ctx context.Context, tx *gorm.DB, id uint64) (e 
 // GetByNo 按订单号取单（工程内）。
 func (m *OrderModel) GetByNo(ctx context.Context, projectID string, orderNo string) (e *OrderEntity, err error) {
 	e = &OrderEntity{}
-	if err = m.DB(ctx).Where("project_id = ? AND order_no = ?", projectID, orderNo).First(e).Error; err != nil {
+	if err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.Model(&OrderEntity{}).Where("project_id = ? AND order_no = ?", projectID, orderNo).First(e).Error
+	}); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
 		}
@@ -213,7 +237,9 @@ func (m *OrderModel) GetByRequestID(ctx context.Context, projectID string, reque
 		return nil, nil
 	}
 	e = &OrderEntity{}
-	if err = m.DB(ctx).Where("project_id = ? AND request_id = ?", projectID, requestID).First(e).Error; err != nil {
+	if err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.Model(&OrderEntity{}).Where("project_id = ? AND request_id = ?", projectID, requestID).First(e).Error
+	}); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
 		}
@@ -224,7 +250,16 @@ func (m *OrderModel) GetByRequestID(ctx context.Context, projectID string, reque
 
 // List 订单列表。关键词匹配订单号 / 客户邮箱 / 客户姓名（ILIKE，PG 专有）。
 func (m *OrderModel) List(ctx context.Context, f OrderFilter) (list []*OrderEntity, total int64, err error) {
-	q := m.DB(ctx).Where("project_id = ?", f.ProjectID)
+	err = rls.InProjectScope(ctx, m.db, f.ProjectID, func(tx *gorm.DB) error {
+		return m.listLocked(tx, f, &list, &total)
+	})
+	return list, total, err
+}
+
+// listLocked 在已带工程作用域的句柄上执行订单列表查询（拆出来只为让 List 的
+// 条件拼装留在原处可读，行为与拆分前逐字一致）。
+func (m *OrderModel) listLocked(tx *gorm.DB, f OrderFilter, list *[]*OrderEntity, total *int64) error {
+	q := tx.Model(&OrderEntity{}).Where("project_id = ?", f.ProjectID)
 	if f.Status != "" {
 		q = q.Where("status = ?", f.Status)
 	}
@@ -244,15 +279,14 @@ func (m *OrderModel) List(ctx context.Context, f OrderFilter) (list []*OrderEnti
 		like := "%" + kw + "%"
 		q = q.Where("order_no ILIKE ? OR customer_email ILIKE ? OR customer_name ILIKE ?", like, like, like)
 	}
-	if err = q.Count(&total).Error; err != nil {
-		return nil, 0, err
+	if err := q.Count(total).Error; err != nil {
+		return err
 	}
 	limit := f.Limit
 	if limit <= 0 || limit > 200 {
 		limit = 20
 	}
-	err = q.Omit("attribution").Order("id DESC").Offset(f.Offset).Limit(limit).Find(&list).Error
-	return list, total, err
+	return q.Omit("attribution").Order("id DESC").Offset(f.Offset).Limit(limit).Find(list).Error
 }
 
 // UpdateFields 更新指定字段（调用方只传该改的列）。
@@ -281,8 +315,10 @@ func (m *OrderModel) CountByStatus(ctx context.Context, projectID string) (count
 		Status string `gorm:"column:status"`
 		N      int64  `gorm:"column:n"`
 	}
-	if err = m.DB(ctx).Select("status, COUNT(*) AS n").
-		Where("project_id = ?", projectID).Group("status").Scan(&rows).Error; err != nil {
+	if err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.Model(&OrderEntity{}).Select("status, COUNT(*) AS n").
+			Where("project_id = ?", projectID).Group("status").Scan(&rows).Error
+	}); err != nil {
 		return nil, err
 	}
 	counts = make(map[string]int64, len(rows))
@@ -347,10 +383,11 @@ const customerOrderSummarySQL = `SELECT COALESCE(w.order_count, 0)      AS order
 // 零订单的客户在窗口聚合下不产生任何行，没有哨兵就分不清「一单没下」与
 // 「查不到这个客户」—— 而页面正是靠 HasOrders 分支的。
 func (m *OrderModel) SummaryByUser(ctx context.Context, projectID string, userID uint64) (row CustomerOrderSummaryRow, err error) {
-	err = m.db.WithContext(ctx).
-		Raw(customerOrderSummarySQL,
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.Raw(customerOrderSummarySQL,
 			strings.Join(paidStatuses, ","), strings.Join(paidStatuses, ","),
 			projectID, userID).
-		Scan(&row).Error
+			Scan(&row).Error
+	})
 	return row, err
 }

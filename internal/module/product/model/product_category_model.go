@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+
+	"go_wp/pkg/rls"
 )
 
 // ProductCategoryEntity 商品分类（树形自引用；parent_id 为空即顶级）。
@@ -84,12 +86,16 @@ func (m *Model) ListCategoriesByIDs(ctx context.Context, ids []string) (list []*
 
 // CreateCategory 写入分类。
 func (m *Model) CreateCategory(ctx context.Context, e *ProductCategoryEntity) (err error) {
-	return m.CategoryDB(ctx).Create(e).Error
+	return rls.InProjectScope(ctx, m.db, e.ProjectID, func(tx *gorm.DB) error {
+		return tx.Model(&ProductCategoryEntity{}).Create(e).Error
+	})
 }
 
 // UpdateCategory 更新分类（整行保存；ParentID 为 nil 时写 NULL = 提升为顶级）。
 func (m *Model) UpdateCategory(ctx context.Context, e *ProductCategoryEntity) (err error) {
-	return m.CategoryDB(ctx).Where("id = ?", e.ID).Save(e).Error
+	return rls.InProjectScope(ctx, m.db, e.ProjectID, func(tx *gorm.DB) error {
+		return tx.Model(&ProductCategoryEntity{}).Where("id = ?", e.ID).Save(e).Error
+	})
 }
 
 // DeleteCategory 删除分类。子级由外键 ON DELETE SET NULL 兜底提升为顶级，

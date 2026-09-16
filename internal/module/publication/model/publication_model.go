@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+
+	"go_wp/pkg/rls"
 )
 
 const (
@@ -84,10 +86,12 @@ func (m *Model) Transaction(ctx context.Context, fn func(tx *gorm.DB) error) err
 
 // ListActivePaths 列出项目下全部已激活路由路径（升序，用于 sitemap 生成）。
 func (m *Model) ListActivePaths(ctx context.Context, projectID string) (paths []string, err error) {
-	err = m.RouteDB(ctx).
-		Where("project_id = ? AND route_kind = ?", projectID, RouteActive).
-		Order("path ASC").
-		Pluck("path", &paths).Error
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.Model(&RouteEntity{}).
+			Where("project_id = ? AND route_kind = ?", projectID, RouteActive).
+			Order("path ASC").
+			Pluck("path", &paths).Error
+	})
 	return paths, err
 }
 
@@ -98,10 +102,12 @@ func (m *Model) ListActivePaths(ctx context.Context, projectID string) (paths []
 // 最近一次激活时刻」（feed 的发布时间）。拆成两次查询，调用方还要按路径对回去，
 // 白跑一趟数据库且多一处可能对不上的口径。
 func (m *Model) ListActiveRoutes(ctx context.Context, projectID string) (routes []RouteEntity, err error) {
-	err = m.RouteDB(ctx).
-		Where("project_id = ? AND route_kind = ?", projectID, RouteActive).
-		Order("path ASC").
-		Find(&routes).Error
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.Model(&RouteEntity{}).
+			Where("project_id = ? AND route_kind = ?", projectID, RouteActive).
+			Order("path ASC").
+			Find(&routes).Error
+	})
 	return routes, err
 }
 

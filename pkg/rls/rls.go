@@ -16,6 +16,7 @@ package rls
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 
 	"github.com/google/uuid"
@@ -46,6 +47,56 @@ const GlobalPredicate = "(project_id IS NULL OR project_id = " +
 // （看起来像数据库故障，实际是入参错）。
 var ErrInvalidProjectID = errors.New("rls: 工程 id 不是合法 uuid")
 
+// ErrNotInTransaction 在**非事务**句柄上设置工程作用域时返回。
+//
+// 这是个必须显式报错的场景，不能静默放过：set_config(..., is_local => true) 只在
+// 当前事务内有效，autocommit 下设完即失效 —— 调用方以为包了 scope，实际策略谓词读到
+// 的仍是 NULL，表现为「查询静默返回 0 行」（fail closed 不报错）。与其让对方在
+// 「功能突然查不到数据」里排查，不如在入口把误用点出来。
+var ErrNotInTransaction = errors.New("rls: 会话变量必须在事务内设置（事务外会立即失效）")
+
+// ScopeTx 在**调用方已开启的事务**上设置工程作用域，不新开事务。
+//
+// 与 InProjectScope 的分工：InProjectScope 自带事务边界（model 的自足方法用它）；
+// 本函数用于「事务已经开着，只是还没设变量」的两个场景：
+//   - model 的 *Tx 变体（service 编排事务时传入的 tx），
+//   - 已由调用方开启事务的多步读写。
+//
+// 为什么不能在已开事务上改用 InProjectScope：它的 db 参数若是 model 的裸句柄
+// （m.db）而不是外层 tx，就会**另开一个事务、另取一条连接** —— 外层事务里的
+// 未提交数据在这个新事务里看不见，锁也可能自撞（同一个 model 内多次调用时），
+// 原子性被悄悄破坏。所以要有一个「只设变量、不动事务边界」的入口。
+func ScopeTx(tx *gorm.DB, projectID string) error {
+	if tx == nil || tx.Statement == nil {
+		return ErrNotInTransaction
+	}
+	// gorm 只在事务里把 ConnPool 换成 *sql.Tx；非事务句柄是 *sql.DB 连接池，
+	// 此时设置会随语句自动提交一起失效。类型断言是这里唯一可靠的判据。
+	if _, ok := tx.Statement.ConnPool.(*sql.Tx); !ok {
+		return ErrNotInTransaction
+	}
+	if _, err := uuid.Parse(projectID); err != nil {
+		return ErrInvalidProjectID
+	}
+	return tx.Exec("SELECT set_config('"+SettingKey+"', ?, true)", projectID).Error
+}
+
+// BypassedRole 报告当前连接的角色是否会**无条件绕过** RLS（superuser / BYPASSRLS）。
+//
+// 迁移 215 之后策略已在 53 个对象上，但超级用户总是绕过 RLS —— FORCE 只约束表属主，
+// 约束不了 superuser / BYPASSRLS 角色。所以「策略铺好了」不等于「隔离生效」，
+// 两者的差别全在这一个布尔值上。
+//
+// 用途是切换连接角色（DB-009 第二步）时的自检探针：应用连接返回 true 就说明
+// RLS 此刻一行都挡不住，即使所有路径都已包 scope。放在 pkg 而不是运维脚本里，
+// 是因为它同时是测试断言「这轮隔离验证是不是真的在非超级角色下跑的」的判据。
+func BypassedRole(ctx context.Context, db *gorm.DB) (bool, error) {
+	var bypass bool
+	err := db.WithContext(ctx).Raw(
+		"SELECT rolsuper OR rolbypassrls FROM pg_roles WHERE rolname = current_user").Scan(&bypass).Error
+	return bypass, err
+}
+
 // InProjectScope 在事务内设置工程作用域后执行 fn。
 //
 // fn 里拿到的 tx 已经带着隔离上下文：读写都受策略约束（USING 管读、WITH CHECK 管写）。
@@ -55,7 +106,7 @@ func InProjectScope(ctx context.Context, db *gorm.DB, projectID string, fn func(
 		return ErrInvalidProjectID
 	}
 	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Exec("SELECT set_config('"+SettingKey+"', ?, true)", projectID).Error; err != nil {
+		if err := ScopeTx(tx, projectID); err != nil {
 			return err
 		}
 		return fn(tx)

@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+
+	"go_wp/pkg/rls"
 )
 
 // ProductEntity 商品主体。价格与库存在变体上；关联关系走 JSON 列。
@@ -128,7 +130,9 @@ func (m *Model) RatingDB(ctx context.Context) *gorm.DB {
 
 // CreateWithVariants 在同一事务内写商品行与其初始变体（聚合内原子组合）。
 func (m *Model) CreateWithVariants(ctx context.Context, e *ProductEntity, variants []*VariantEntity) (err error) {
-	return m.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	// RLS（迁移 215）：products 已启用 FORCE 策略，写入承 e.ProjectID 的工程作用域。
+	// 变体表（product_variants）不在 215 的覆盖清单内，但同一事务里不受影响。
+	return rls.InProjectScope(ctx, m.db, e.ProjectID, func(tx *gorm.DB) error {
 		if err := tx.Create(e).Error; err != nil {
 			return err
 		}
@@ -366,7 +370,9 @@ func (m *Model) Count(ctx context.Context, projectID, keyword, status string) (n
 
 // Update 更新商品行（全字段保存）。
 func (m *Model) Update(ctx context.Context, e *ProductEntity) (err error) {
-	return m.DB(ctx).Where("id = ?", e.ID).Save(e).Error
+	return rls.InProjectScope(ctx, m.db, e.ProjectID, func(tx *gorm.DB) error {
+		return tx.Model(&ProductEntity{}).Where("id = ?", e.ID).Save(e).Error
+	})
 }
 
 // Delete 删除商品（变体由外键 ON DELETE CASCADE 连带删除）。

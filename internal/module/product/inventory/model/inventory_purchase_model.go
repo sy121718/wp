@@ -24,6 +24,8 @@ import (
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+
+	"go_wp/pkg/rls"
 )
 
 // PurchaseOrderEntity 采购单头（单号 / 货源 / 收货仓 / 推导状态）。
@@ -178,6 +180,11 @@ func (m *Model) purchaseOrderDB(ctx context.Context) *gorm.DB {
 
 // CreatePurchaseOrderTx 在同一事务内写采购单头与其采购行（聚合内原子组合）。
 func (m *Model) CreatePurchaseOrderTx(ctx context.Context, tx *gorm.DB, e *PurchaseOrderEntity, lines []*PurchaseLineEntity) (err error) {
+	// scope 设在调用方事务上：采购单头与行表都有策略，另开事务不仅看不到外层未提交数据，
+	// 还会与外层同表写入自锁。
+	if serr := rls.ScopeTx(tx, e.ProjectID); serr != nil {
+		return serr
+	}
 	if err = tx.WithContext(ctx).Create(e).Error; err != nil {
 		return err
 	}
@@ -221,6 +228,9 @@ func (m *Model) PurchaseCodeExists(ctx context.Context, projectID, code, exclude
 
 // UpdatePurchaseOrderTx 在给定事务内写回采购单头（全字段保存）。
 func (m *Model) UpdatePurchaseOrderTx(ctx context.Context, tx *gorm.DB, e *PurchaseOrderEntity) (err error) {
+	if serr := rls.ScopeTx(tx, e.ProjectID); serr != nil {
+		return serr
+	}
 	return tx.WithContext(ctx).Model(&PurchaseOrderEntity{}).Where("id = ?", e.ID).Save(e).Error
 }
 
@@ -322,6 +332,13 @@ func (m *Model) GetPurchaseLineTx(ctx context.Context, tx *gorm.DB, lineID strin
 
 // ReplacePurchaseLinesTx 在同一事务内全量替换某采购单的行（先删后写，聚合内原子组合）。
 func (m *Model) ReplacePurchaseLinesTx(ctx context.Context, tx *gorm.DB, orderID string, lines []*PurchaseLineEntity) (err error) {
+	// 行表有策略。lines 为空时只剩 DELETE，此时签名里没有工程 id，只能依赖调用方事务
+	// 已经设过作用域（同一 service 链路通常已由 CreatePurchaseOrderTx 设过）。
+	if len(lines) > 0 {
+		if serr := rls.ScopeTx(tx, lines[0].ProjectID); serr != nil {
+			return serr
+		}
+	}
 	if err = tx.WithContext(ctx).Model(&PurchaseLineEntity{}).
 		Where("order_id = ?", orderID).Delete(&PurchaseLineEntity{}).Error; err != nil {
 		return err
@@ -372,6 +389,10 @@ func (m *Model) CountOrderReceiptsTx(ctx context.Context, tx *gorm.DB, orderID s
 
 // CreateReceiptTx 在同一事务内写入库单头与全部入库行（聚合内原子组合）。
 func (m *Model) CreateReceiptTx(ctx context.Context, tx *gorm.DB, e *ReceiptEntity, items []*ReceiptItemEntity) (err error) {
+	// 入库单头与入库行都有策略，scope 设在调用方事务上。
+	if serr := rls.ScopeTx(tx, e.ProjectID); serr != nil {
+		return serr
+	}
 	if err = tx.WithContext(ctx).Create(e).Error; err != nil {
 		return err
 	}

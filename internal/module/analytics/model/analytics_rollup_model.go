@@ -15,6 +15,8 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+
+	"go_wp/pkg/rls"
 )
 
 // tableNameDailyStats 日汇总表。
@@ -87,16 +89,20 @@ const (
 //
 // 幂等：同一天跑多少次，结果都等于明细的当前状态。
 func (m *Model) RollupDay(ctx context.Context, projectID string, day, from, to time.Time) (err error) {
-	db := m.db.WithContext(ctx)
-	if err = db.Exec(rollupAllSQL, projectID, day, projectID, from, to, projectID, from, to).Error; err != nil {
-		return err
-	}
-	if err = db.Exec(rollupPathSQL, projectID, day, projectID, from, to).Error; err != nil {
-		return err
-	}
-	// 参数与占位符逐个对齐：cleanup 里的 project_id 只出现一次（子查询用 s.project_id 关联），
-	// 多传一个会得到「mismatched param and argument count」——那种错误不会指认是哪条语句。
-	return db.Exec(rollupCleanupSQL, projectID, day, from, to).Error
+	// 三条语句读写的是 analytics_daily_stats 与 page_views（两张都带策略），必须在同一
+	// 工程作用域里跑：汇总写入若被策略挡下，水位（LastRolledDay）却推进了 —— 会留下
+	// 一整段「已汇总但数字为 0」的历史，且没有任何报错。
+	return rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		if err := tx.Exec(rollupAllSQL, projectID, day, projectID, from, to, projectID, from, to).Error; err != nil {
+			return err
+		}
+		if err := tx.Exec(rollupPathSQL, projectID, day, projectID, from, to).Error; err != nil {
+			return err
+		}
+		// 参数与占位符逐个对齐：cleanup 里的 project_id 只出现一次（子查询用 s.project_id 关联），
+		// 多传一个会得到「mismatched param and argument count」——那种错误不会指认是哪条语句。
+		return tx.Exec(rollupCleanupSQL, projectID, day, from, to).Error
+	})
 }
 
 // ListProjectsWithViews 列出有访问明细的工程（汇总任务的输入）。
@@ -132,9 +138,11 @@ func (m *Model) EarliestViewDay(ctx context.Context, projectID string) (day time
 	// 而 GORM 无法把 NULL 扫进 *time.Time（报 unsupported destination）——
 	// 那会变成「读取水位失败」，进而让汇总整段跳过。
 	var raw sql.NullTime
-	err = m.db.WithContext(ctx).Model(&PageViewEntity{}).
-		Where("project_id = ?", projectID).
-		Select("MIN(viewed_at) AS min_viewed_at").Scan(&raw).Error
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.Model(&PageViewEntity{}).
+			Where("project_id = ?", projectID).
+			Select("MIN(viewed_at) AS min_viewed_at").Scan(&raw).Error
+	})
 	if err != nil || !raw.Valid {
 		return time.Time{}, false, err
 	}
@@ -146,10 +154,12 @@ func (m *Model) EarliestViewDay(ctx context.Context, projectID string) (day time
 // 只看 scope='all' 行：path 行的存在取决于当天有没有访问，不能用来判断水位。
 func (m *Model) LastRolledDay(ctx context.Context, projectID string) (day time.Time, ok bool, err error) {
 	var raw sql.NullTime
-	err = m.rollupScope(ctx).
-		Select("MAX(day) AS max_day").
-		Where("project_id = ? AND scope = ?", projectID, ScopeAll).
-		Scan(&raw).Error
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.Table(tableNameDailyStats).
+			Select("MAX(day) AS max_day").
+			Where("project_id = ? AND scope = ?", projectID, ScopeAll).
+			Scan(&raw).Error
+	})
 	if err != nil || !raw.Valid {
 		return time.Time{}, false, err
 	}
@@ -158,9 +168,11 @@ func (m *Model) LastRolledDay(ctx context.Context, projectID string) (day time.T
 
 // CountRolledDays 统计窗口内「已汇总」的天数（供查询侧判断能否走汇总表）。
 func (m *Model) CountRolledDays(ctx context.Context, projectID string, from, to time.Time) (n int64, err error) {
-	err = m.rollupScope(ctx).
-		Where("project_id = ? AND scope = ? AND day >= ?::date AND day < ?::date", projectID, ScopeAll, from, to).
-		Count(&n).Error
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.Table(tableNameDailyStats).
+			Where("project_id = ? AND scope = ? AND day >= ?::date AND day < ?::date", projectID, ScopeAll, from, to).
+			Count(&n).Error
+	})
 	return n, err
 }
 
@@ -170,10 +182,12 @@ func (m *Model) RollupTotals(ctx context.Context, projectID string, from, to tim
 		Views    int64 `gorm:"column:views"`
 		Visitors int64 `gorm:"column:visitors"`
 	}
-	err = m.rollupScope(ctx).
-		Select("COALESCE(SUM(views), 0) AS views, COALESCE(SUM(visitors), 0) AS visitors").
-		Where("project_id = ? AND scope = ? AND day >= ?::date AND day < ?::date", projectID, ScopeAll, from, to).
-		Scan(&row).Error
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.Table(tableNameDailyStats).
+			Select("COALESCE(SUM(views), 0) AS views, COALESCE(SUM(visitors), 0) AS visitors").
+			Where("project_id = ? AND scope = ? AND day >= ?::date AND day < ?::date", projectID, ScopeAll, from, to).
+			Scan(&row).Error
+	})
 	if err != nil {
 		return 0, 0, err
 	}
@@ -186,10 +200,12 @@ func (m *Model) RollupTotals(ctx context.Context, projectID string, from, to tim
 // （views=0，见 rollupAllSQL 的注释 —— 那一行是「已汇总」的凭据），
 // 若不在查询侧滤掉，报表里会冒出一串明细口径下不存在的零值天。
 func (m *Model) RollupByDay(ctx context.Context, projectID string, from, to time.Time) (rows []DayRow, err error) {
-	err = m.rollupScope(ctx).
-		Select("day, SUM(views) AS views, SUM(visitors) AS visitors").
-		Where("project_id = ? AND scope = ? AND day >= ?::date AND day < ?::date", projectID, ScopeAll, from, to).
-		Group("day").Having("SUM(views) > 0").Order("day ASC").Scan(&rows).Error
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.Table(tableNameDailyStats).
+			Select("day, SUM(views) AS views, SUM(visitors) AS visitors").
+			Where("project_id = ? AND scope = ? AND day >= ?::date AND day < ?::date", projectID, ScopeAll, from, to).
+			Group("day").Having("SUM(views) > 0").Order("day ASC").Scan(&rows).Error
+	})
 	return rows, err
 }
 
@@ -198,10 +214,12 @@ func (m *Model) RollupPathTotal(ctx context.Context, projectID string, from, to 
 	// COUNT(DISTINCT path) 而不是 COUNT(*) + GROUP BY path：
 	// 后者按分组返回多行，而这里 Scan 到单个标量只会拿到第一行 ——
 	// 得到的数字看着像「路径数」，其实恒等于 1。
-	err = m.rollupScope(ctx).
-		Select("COUNT(DISTINCT path) AS total").
-		Where("project_id = ? AND scope = ? AND day >= ?::date AND day < ?::date", projectID, ScopePath, from, to).
-		Scan(&total).Error
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.Table(tableNameDailyStats).
+			Select("COUNT(DISTINCT path) AS total").
+			Where("project_id = ? AND scope = ? AND day >= ?::date AND day < ?::date", projectID, ScopePath, from, to).
+			Scan(&total).Error
+	})
 	return total, err
 }
 
@@ -210,11 +228,13 @@ func (m *Model) RollupPathTotal(ctx context.Context, projectID string, from, to 
 // offset 仅在「调用方没有游标」时使用（见 RollupByPathKeyset）；
 // 有游标时走 keyset，深分页成本不随页码增长。
 func (m *Model) RollupByPath(ctx context.Context, projectID string, from, to time.Time, offset, limit int) (rows []PathRow, err error) {
-	err = m.rollupScope(ctx).
-		Select("path, SUM(views) AS views, SUM(visitors) AS visitors").
-		Where("project_id = ? AND scope = ? AND day >= ?::date AND day < ?::date", projectID, ScopePath, from, to).
-		Group("path").Order("views DESC, path ASC").
-		Offset(offset).Limit(limit).Scan(&rows).Error
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.Table(tableNameDailyStats).
+			Select("path, SUM(views) AS views, SUM(visitors) AS visitors").
+			Where("project_id = ? AND scope = ? AND day >= ?::date AND day < ?::date", projectID, ScopePath, from, to).
+			Group("path").Order("views DESC, path ASC").
+			Offset(offset).Limit(limit).Scan(&rows).Error
+	})
 	return rows, err
 }
 
@@ -226,13 +246,15 @@ func (m *Model) RollupByPath(ctx context.Context, projectID string, from, to tim
 //
 // afterPath 为空串表示「从第一页开始」（第一页没有前驱，条件整体不生效）。
 func (m *Model) RollupByPathKeyset(ctx context.Context, projectID string, from, to time.Time, afterViews int64, afterPath string, limit int) (rows []PathRow, err error) {
-	q := m.rollupScope(ctx).
-		Select("path, SUM(views) AS views, SUM(visitors) AS visitors").
-		Where("project_id = ? AND scope = ? AND day >= ?::date AND day < ?::date", projectID, ScopePath, from, to).
-		Group("path")
-	if afterPath != "" {
-		q = q.Having("SUM(views) < ? OR (SUM(views) = ? AND path > ?)", afterViews, afterViews, afterPath)
-	}
-	err = q.Order("views DESC, path ASC").Limit(limit).Scan(&rows).Error
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		q := tx.Table(tableNameDailyStats).
+			Select("path, SUM(views) AS views, SUM(visitors) AS visitors").
+			Where("project_id = ? AND scope = ? AND day >= ?::date AND day < ?::date", projectID, ScopePath, from, to).
+			Group("path")
+		if afterPath != "" {
+			q = q.Having("SUM(views) < ? OR (SUM(views) = ? AND path > ?)", afterViews, afterViews, afterPath)
+		}
+		return q.Order("views DESC, path ASC").Limit(limit).Scan(&rows).Error
+	})
 	return rows, err
 }

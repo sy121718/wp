@@ -21,6 +21,8 @@ import (
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+
+	"go_wp/pkg/rls"
 )
 
 // ReasonEntity 变动原因字典条目。
@@ -190,6 +192,10 @@ func (m *Model) EnsureStocksTx(ctx context.Context, tx *gorm.DB, rows []*StockEn
 	if len(rows) == 0 {
 		return nil
 	}
+	// inventory_stocks 有策略：scope 设在调用方事务上（另开事务会脱离外层原子性）。
+	if serr := rls.ScopeTx(tx, rows[0].ProjectID); serr != nil {
+		return serr
+	}
 	return tx.WithContext(ctx).Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "variant_id"}, {Name: "warehouse_id"}},
 		DoNothing: true,
@@ -218,6 +224,11 @@ func (m *Model) UpdateStockQuantityTx(ctx context.Context, tx *gorm.DB, id strin
 func (m *Model) CreateMovementsTx(ctx context.Context, tx *gorm.DB, rows []*MovementEntity) (err error) {
 	if len(rows) == 0 {
 		return nil
+	}
+	// inventory_stock_movements 是**分区表**：策略装在父表上（分区单独装，见迁移 215 与
+	// internal/partition.EnsureAhead）。写入走父表路由，scope 设在调用方事务上。
+	if serr := rls.ScopeTx(tx, rows[0].ProjectID); serr != nil {
+		return serr
 	}
 	return tx.WithContext(ctx).CreateInBatches(&rows, 100).Error
 }
@@ -408,12 +419,24 @@ func (m *Model) ReasonCodeExists(ctx context.Context, projectID, code string, ex
 
 // CreateReason 写入自定义原因。
 func (m *Model) CreateReason(ctx context.Context, e *ReasonEntity) (err error) {
-	return m.reasonDB(ctx).Create(e).Error
+	// project_id 为 NULL 的是**全局内置原因**，215 的策略对这类行有 "project_id IS NULL"
+	// 放行分支，不需要（也不该）设工程作用域；自带工程的行则必须设。
+	if e.ProjectID == nil || strings.TrimSpace(*e.ProjectID) == "" {
+		return m.reasonDB(ctx).Create(e).Error
+	}
+	return rls.InProjectScope(ctx, m.db, *e.ProjectID, func(tx *gorm.DB) error {
+		return tx.Model(&ReasonEntity{}).Create(e).Error
+	})
 }
 
 // UpdateReason 更新原因行（全字段保存）。
 func (m *Model) UpdateReason(ctx context.Context, e *ReasonEntity) (err error) {
-	return m.reasonDB(ctx).Where("id = ?", e.ID).Save(e).Error
+	if e.ProjectID == nil || strings.TrimSpace(*e.ProjectID) == "" {
+		return m.reasonDB(ctx).Where("id = ?", e.ID).Save(e).Error
+	}
+	return rls.InProjectScope(ctx, m.db, *e.ProjectID, func(tx *gorm.DB) error {
+		return tx.Model(&ReasonEntity{}).Where("id = ?", e.ID).Save(e).Error
+	})
 }
 
 // —— 物料清单（issue #16 验收 5）——
@@ -448,7 +471,15 @@ func (m *Model) ListBOMParents(ctx context.Context, componentVariantID string) (
 
 // ReplaceBOM 在同一事务内全量替换某父 SKU 的清单（先删后写，聚合内原子组合）。
 func (m *Model) ReplaceBOM(ctx context.Context, parentVariantID string, rows []*BOMItemEntity) (err error) {
-	return m.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	// rows 为空时拿不到工程 id（签名里没有）：此时不带作用域 —— 换非超级角色后
+	// 「清空 BOM」这条 DELETE 会静默匹配 0 行（表现是清空不生效），已列入 DB-009 剩余清单。
+	if len(rows) == 0 {
+		return m.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			return tx.WithContext(ctx).Model(&BOMItemEntity{}).
+				Where("parent_variant_id = ?", parentVariantID).Delete(&BOMItemEntity{}).Error
+		})
+	}
+	return rls.InProjectScope(ctx, m.db, rows[0].ProjectID, func(tx *gorm.DB) error {
 		if err := tx.WithContext(ctx).Model(&BOMItemEntity{}).
 			Where("parent_variant_id = ?", parentVariantID).Delete(&BOMItemEntity{}).Error; err != nil {
 			return err

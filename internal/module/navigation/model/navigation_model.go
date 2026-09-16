@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+
+	"go_wp/pkg/rls"
 )
 
 const tableNameNavigations = "navigations"
@@ -46,8 +48,11 @@ func (m *Model) DB(ctx context.Context) *gorm.DB {
 }
 
 // Create 新增导航项。
+// RLS（迁移 215）：navigations 已启用 FORCE 策略，写入承 e.ProjectID 的工程作用域。
 func (m *Model) Create(ctx context.Context, e *NavigationEntity) error {
-	return m.DB(ctx).Create(e).Error
+	return rls.InProjectScope(ctx, m.db, e.ProjectID, func(tx *gorm.DB) error {
+		return tx.Model(&NavigationEntity{}).Create(e).Error
+	})
 }
 
 // Get 按 ID 查询导航项。
@@ -61,24 +66,28 @@ func (m *Model) Get(ctx context.Context, id string) (e *NavigationEntity, err er
 
 // List 按工程（可选 kind）列出导航项，sort_order 升序、同序按 id 升序。
 func (m *Model) List(ctx context.Context, projectID, kind string) (list []*NavigationEntity, err error) {
-	q := m.db.WithContext(ctx).Where("project_id = ?", projectID)
-	if kind != "" {
-		q = q.Where("kind = ?", kind)
-	}
-	err = q.Order("sort_order ASC, id ASC").Find(&list).Error
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		q := tx.Model(&NavigationEntity{}).Where("project_id = ?", projectID)
+		if kind != "" {
+			q = q.Where("kind = ?", kind)
+		}
+		return q.Order("sort_order ASC, id ASC").Find(&list).Error
+	})
 	return list, err
 }
 
 // MaxSortOrder 返回同工程同 kind 同父级下的最大排序值（无记录返回 0）。
 // 供 service 在未显式指定排序时把新项追加到末尾。
 func (m *Model) MaxSortOrder(ctx context.Context, projectID, kind string, parentID *string) (maxOrder int, err error) {
-	q := m.DB(ctx).Where("project_id = ? AND kind = ?", projectID, kind)
-	if parentID == nil || *parentID == "" {
-		q = q.Where("parent_id IS NULL")
-	} else {
-		q = q.Where("parent_id = ?", *parentID)
-	}
-	err = q.Select("COALESCE(MAX(sort_order), 0)").Row().Scan(&maxOrder)
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		q := tx.Model(&NavigationEntity{}).Where("project_id = ? AND kind = ?", projectID, kind)
+		if parentID == nil || *parentID == "" {
+			q = q.Where("parent_id IS NULL")
+		} else {
+			q = q.Where("parent_id = ?", *parentID)
+		}
+		return q.Select("COALESCE(MAX(sort_order), 0)").Row().Scan(&maxOrder)
+	})
 	return maxOrder, err
 }
 
@@ -104,11 +113,14 @@ func (m *Model) DeleteMany(ctx context.Context, ids []string) error {
 // excludeID 非空时排除自身，供更新场景复用。
 func (m *Model) ExistsPath(ctx context.Context, projectID, kind, path, excludeID string) (bool, error) {
 	var count int64
-	q := m.DB(ctx).Where("project_id = ? AND kind = ? AND path = ?", projectID, kind, path)
-	if excludeID != "" {
-		q = q.Where("id <> ?", excludeID)
-	}
-	if err := q.Count(&count).Error; err != nil {
+	err := rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		q := tx.Model(&NavigationEntity{}).Where("project_id = ? AND kind = ? AND path = ?", projectID, kind, path)
+		if excludeID != "" {
+			q = q.Where("id <> ?", excludeID)
+		}
+		return q.Count(&count).Error
+	})
+	if err != nil {
 		return false, err
 	}
 	return count > 0, nil

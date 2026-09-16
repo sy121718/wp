@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+
+	"go_wp/pkg/rls"
 )
 
 const tableNameBlocks = "blocks"
@@ -73,23 +75,28 @@ func (m *Model) DB(ctx context.Context) *gorm.DB {
 }
 
 // Create 新增块。
+// RLS（迁移 215）：blocks 已启用 FORCE 策略，写入承 e.ProjectID 的工程作用域。
 func (m *Model) Create(ctx context.Context, e *BlockEntity) (err error) {
-	return m.DB(ctx).Create(e).Error
+	return rls.InProjectScope(ctx, m.db, e.ProjectID, func(tx *gorm.DB) error {
+		return tx.Model(&BlockEntity{}).Create(e).Error
+	})
 }
 
 // ListByProject 列出工程全部块（kind/category/reuseMode 可选过滤；类型序 + 创建序）。
 func (m *Model) ListByProject(ctx context.Context, projectID, kind, category, reuseMode string) (list []BlockEntity, err error) {
-	q := m.DB(ctx).Where("project_id = ?", projectID)
-	if kind != "" {
-		q = q.Where("kind = ?", kind)
-	}
-	if category != "" {
-		q = q.Where("category = ?", category)
-	}
-	if reuseMode != "" {
-		q = q.Where("reuse_mode = ?", reuseMode)
-	}
-	err = q.Order("kind ASC, create_time ASC").Find(&list).Error
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		q := tx.Model(&BlockEntity{}).Where("project_id = ?", projectID)
+		if kind != "" {
+			q = q.Where("kind = ?", kind)
+		}
+		if category != "" {
+			q = q.Where("category = ?", category)
+		}
+		if reuseMode != "" {
+			q = q.Where("reuse_mode = ?", reuseMode)
+		}
+		return q.Order("kind ASC, create_time ASC").Find(&list).Error
+	})
 	return list, err
 }
 
@@ -98,20 +105,29 @@ func (m *Model) ListByProject(ctx context.Context, projectID, kind, category, re
 // 注意：并发下同名仍可能穿透（需 DB 唯一索引兜底，见 service 层说明）。
 func (m *Model) ExistsByName(ctx context.Context, projectID, name string) (exists bool, err error) {
 	var count int64
-	err = m.DB(ctx).
-		Where("project_id = ? AND LOWER(name) = LOWER(?)", projectID, name).
-		Count(&count).Error
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.Model(&BlockEntity{}).
+			Where("project_id = ? AND LOWER(name) = LOWER(?)", projectID, name).
+			Count(&count).Error
+	})
 	return count > 0, err
 }
 
 // GetByID 按 ID 查询块。projectID 非空时追加工程归属条件（防跨工程 IDOR）。
 func (m *Model) GetByID(ctx context.Context, id string, projectID string) (e *BlockEntity, err error) {
 	e = &BlockEntity{}
-	q := m.DB(ctx).Where("id = ?", id)
-	if strings.TrimSpace(projectID) != "" {
-		q = q.Where("project_id = ?", projectID)
+	// projectID 为空是「不限工程」的历史调用形态：不设 scope 时不筛工程，换非超级角色后
+	// 该路径会 fail closed（0 行 → ErrRecordNotFound）而**不会**读到别的工程，方向是安全的；
+	// 需要该路径可用时必须由调用方补上 projectID（列入 DB-009 剩余清单）。
+	if strings.TrimSpace(projectID) == "" {
+		if err = m.DB(ctx).Where("id = ?", id).First(e).Error; err != nil {
+			return nil, err
+		}
+		return e, nil
 	}
-	if err = q.First(e).Error; err != nil {
+	if err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.Model(&BlockEntity{}).Where("id = ?", id).Where("project_id = ?", projectID).First(e).Error
+	}); err != nil {
 		return nil, err
 	}
 	return e, nil

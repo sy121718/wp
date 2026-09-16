@@ -15,6 +15,8 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+
+	"go_wp/pkg/rls"
 )
 
 const tableNamePageSiteSlots = "page_site_slots"
@@ -41,7 +43,9 @@ func (m *Model) ListSiteSlots(ctx context.Context, projectID string) (list []Sit
 	if projectID == "" {
 		return nil, nil
 	}
-	err = m.SiteSlotDB(ctx).Where("project_id = ?", projectID).Find(&list).Error
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.Model(&SiteSlotEntity{}).Where("project_id = ?", projectID).Find(&list).Error
+	})
 	return list, err
 }
 
@@ -51,25 +55,37 @@ func (m *Model) ListSiteSlots(ctx context.Context, projectID string) (list []Sit
 // 又要保留 create_time，ON CONFLICT DO UPDATE 只省一次往返；而这个入口的调用频率是
 // 「人工点保存」，不是热路径 —— 可读性更值钱。
 func (m *Model) UpsertSiteSlot(ctx context.Context, e *SiteSlotEntity) (err error) {
-	var existing SiteSlotEntity
-	err = m.SiteSlotDB(ctx).Where("project_id = ? AND slot = ?", e.ProjectID, e.Slot).First(&existing).Error
-	switch {
-	case err == nil:
-		return m.SiteSlotDB(ctx).Where("id = ?", existing.ID).Updates(map[string]any{
-			"page_id":     e.PageID,
-			"update_time": e.UpdatedAt,
-		}).Error
-	case errors.Is(err, gorm.ErrRecordNotFound):
-		return m.SiteSlotDB(ctx).Create(e).Error
-	default:
-		return err
-	}
+	// RLS（迁移 215）：page_site_slots 已启用 FORCE 策略，「查 + 写」必须在同一工程作用域
+	// 的同一事务里；否则换角色后 First 恒返回 ErrRecordNotFound，每次保存都走 Create
+	// 分支撞唯一索引 (project_id, slot) —— 表现为「保存报重复」而不是看起来的「查不到」。
+	return rls.InProjectScope(ctx, m.db, e.ProjectID, func(tx *gorm.DB) error {
+		var existing SiteSlotEntity
+		err = tx.Model(&SiteSlotEntity{}).Where("project_id = ? AND slot = ?", e.ProjectID, e.Slot).First(&existing).Error
+		switch {
+		case err == nil:
+			return tx.Model(&SiteSlotEntity{}).Where("id = ?", existing.ID).Updates(map[string]any{
+				"page_id":     e.PageID,
+				"update_time": e.UpdatedAt,
+			}).Error
+		case errors.Is(err, gorm.ErrRecordNotFound):
+			return tx.Model(&SiteSlotEntity{}).Create(e).Error
+		default:
+			return err
+		}
+	})
 }
 
 // DeleteSiteSlot 解绑槽位；返回受影响行数（0 = 本来就没绑）。
 func (m *Model) DeleteSiteSlot(ctx context.Context, projectID, slot string) (n int64, err error) {
-	res := m.SiteSlotDB(ctx).Where("project_id = ? AND slot = ?", projectID, slot).Delete(&SiteSlotEntity{})
-	return res.RowsAffected, res.Error
+	var res *gorm.DB
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		res = tx.Model(&SiteSlotEntity{}).Where("project_id = ? AND slot = ?", projectID, slot).Delete(&SiteSlotEntity{})
+		return res.Error
+	})
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected, nil
 }
 
 // ListSiteSlotsByPage 查某个页面被哪些槽位引用（删除页面时的引用提示）。
@@ -105,6 +121,8 @@ func (m *Model) MarkStaleForProject(ctx context.Context, projectID string, at ti
 	if projectID == "" {
 		return nil
 	}
-	return m.DB(ctx).Where("project_id = ? AND deleted_at IS NULL AND stale = ?", projectID, false).
-		Updates(map[string]any{"stale": true, "update_time": at}).Error
+	return rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.Model(&PageEntity{}).Where("project_id = ? AND deleted_at IS NULL AND stale = ?", projectID, false).
+			Updates(map[string]any{"stale": true, "update_time": at}).Error
+	})
 }

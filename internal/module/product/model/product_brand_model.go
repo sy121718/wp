@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+
+	"go_wp/pkg/rls"
 )
 
 // ProductBrandEntity 商品品牌。
@@ -80,12 +82,16 @@ func (m *Model) ListBrandsByIDs(ctx context.Context, ids []string) (list []*Prod
 
 // CreateBrand 写入品牌。
 func (m *Model) CreateBrand(ctx context.Context, e *ProductBrandEntity) (err error) {
-	return m.BrandDB(ctx).Create(e).Error
+	return rls.InProjectScope(ctx, m.db, e.ProjectID, func(tx *gorm.DB) error {
+		return tx.Model(&ProductBrandEntity{}).Create(e).Error
+	})
 }
 
 // UpdateBrand 更新品牌（整行保存）。
 func (m *Model) UpdateBrand(ctx context.Context, e *ProductBrandEntity) (err error) {
-	return m.BrandDB(ctx).Where("id = ?", e.ID).Save(e).Error
+	return rls.InProjectScope(ctx, m.db, e.ProjectID, func(tx *gorm.DB) error {
+		return tx.Model(&ProductBrandEntity{}).Where("id = ?", e.ID).Save(e).Error
+	})
 }
 
 // DeleteBrand 删除品牌。products.brand_id 有外键 ON DELETE SET NULL，

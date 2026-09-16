@@ -18,6 +18,8 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+
+	"go_wp/pkg/rls"
 )
 
 // WarehouseEntity 仓库实体。
@@ -112,16 +114,21 @@ func (m *Model) StockDB(ctx context.Context) *gorm.DB {
 // 「每工程一个默认仓」的不变量由 service 决定，原子性由本方法保证 —— 先清后写，
 // 中间态若被外部看到就是「没有默认仓」。
 func (m *Model) CreateWarehouse(ctx context.Context, e *WarehouseEntity, asDefault bool) (err error) {
+	// RLS（迁移 215）：inventory_warehouses 已启用 FORCE 策略，两个分支都承 e.ProjectID
+	// 的工程作用域（清旧默认标记的那条 UPDATE 同样受策略约束，缺 scope 会静默匹配 0 行，
+	// 表现为「设了新默认仓但旧仓还是默认」）。
 	if !asDefault {
-		return m.DB(ctx).Create(e).Error
+		return rls.InProjectScope(ctx, m.db, e.ProjectID, func(tx *gorm.DB) error {
+			return tx.Model(&WarehouseEntity{}).Create(e).Error
+		})
 	}
-	return m.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	return rls.InProjectScope(ctx, m.db, e.ProjectID, func(tx *gorm.DB) error {
 		if err := tx.Model(&WarehouseEntity{}).
 			Where("project_id = ? AND is_default", e.ProjectID).
 			Update("is_default", false).Error; err != nil {
 			return err
 		}
-		return tx.Create(e).Error
+		return tx.Model(&WarehouseEntity{}).Create(e).Error
 	})
 }
 
@@ -164,12 +171,14 @@ func (m *Model) ListWarehouses(ctx context.Context, projectID string) (list []*W
 
 // UpdateWarehouse 更新仓库行（全字段保存）。
 func (m *Model) UpdateWarehouse(ctx context.Context, e *WarehouseEntity) (err error) {
-	return m.DB(ctx).Where("id = ?", e.ID).Save(e).Error
+	return rls.InProjectScope(ctx, m.db, e.ProjectID, func(tx *gorm.DB) error {
+		return tx.Model(&WarehouseEntity{}).Where("id = ?", e.ID).Save(e).Error
+	})
 }
 
 // SetDefaultWarehouse 把 id 设为该工程唯一默认仓（同一事务内清旧标记）。
 func (m *Model) SetDefaultWarehouse(ctx context.Context, projectID, id string) (err error) {
-	return m.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	return rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
 		if err := tx.Model(&WarehouseEntity{}).
 			Where("project_id = ? AND is_default AND id <> ?", projectID, id).
 			Update("is_default", false).Error; err != nil {
@@ -207,20 +216,36 @@ func (m *Model) GetStockByVariantWarehouse(ctx context.Context, variantID, wareh
 // 后台按钮）必须落到同一行，故先读后写，并在唯一约束被并发命中时回读既有行 ——
 // 绝不产生第二条同维度记录。
 func (m *Model) EnsureStock(ctx context.Context, e *StockEntity) (out *StockEntity, err error) {
-	existing, gerr := m.GetStockByVariantWarehouse(ctx, e.VariantID, e.WarehouseID)
+	// inventory_stocks 有策略：定位与创建都必须在工程作用域内。缺 scope 时定位恒
+	// ErrRecordNotFound，每次调用都去 Create 并撞 (variant_id, warehouse_id) 唯一键 ——
+	// 表现为「重试偶尔能过」，实际是每次都在撞。
+	existing, gerr := m.getStockByVariantWarehouseScoped(ctx, e.ProjectID, e.VariantID, e.WarehouseID)
 	if gerr == nil {
 		return existing, nil
 	}
 	if !errors.Is(gerr, gorm.ErrRecordNotFound) {
 		return nil, gerr
 	}
-	if err = m.StockDB(ctx).Create(e).Error; err != nil {
-		if again, rerr := m.GetStockByVariantWarehouse(ctx, e.VariantID, e.WarehouseID); rerr == nil {
+	// 建失败（并发命中唯一键）时的回读**不并进同一事务**：PG 里一句出错就把事务标记为
+	// aborted，同事务内的后续 SELECT 会直接报 current transaction is aborted。
+	if err = rls.InProjectScope(ctx, m.db, e.ProjectID, func(tx *gorm.DB) error {
+		return tx.Model(&StockEntity{}).Create(e).Error
+	}); err != nil {
+		if again, rerr := m.getStockByVariantWarehouseScoped(ctx, e.ProjectID, e.VariantID, e.WarehouseID); rerr == nil {
 			return again, nil
 		}
 		return nil, err
 	}
 	return e, nil
+}
+
+// getStockByVariantWarehouseScoped 带工程作用域的「SKU × 仓库」定位。
+func (m *Model) getStockByVariantWarehouseScoped(ctx context.Context, projectID, variantID, warehouseID string) (e *StockEntity, err error) {
+	e = &StockEntity{}
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.Model(&StockEntity{}).Where("variant_id = ? AND warehouse_id = ?", variantID, warehouseID).First(e).Error
+	})
+	return e, err
 }
 
 // CountNonZeroStocks 某仓下数量不为 0 的库存记录数（删仓前的守卫依据）。

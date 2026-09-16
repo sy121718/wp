@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+
+	"go_wp/pkg/rls"
 )
 
 // ProductAttributeEntity 属性组（一行一组；值以 JSONB 数组承载）。
@@ -108,12 +110,16 @@ func (m *Model) ListAttributesByProject(ctx context.Context, projectID string) (
 
 // CreateAttribute 写入属性组。
 func (m *Model) CreateAttribute(ctx context.Context, e *ProductAttributeEntity) (err error) {
-	return m.AttributeDB(ctx).Create(e).Error
+	return rls.InProjectScope(ctx, m.db, e.ProjectID, func(tx *gorm.DB) error {
+		return tx.Model(&ProductAttributeEntity{}).Create(e).Error
+	})
 }
 
 // UpdateAttribute 更新属性组（整行保存）。
 func (m *Model) UpdateAttribute(ctx context.Context, e *ProductAttributeEntity) (err error) {
-	return m.AttributeDB(ctx).Where("id = ?", e.ID).Save(e).Error
+	return rls.InProjectScope(ctx, m.db, e.ProjectID, func(tx *gorm.DB) error {
+		return tx.Model(&ProductAttributeEntity{}).Where("id = ?", e.ID).Save(e).Error
+	})
 }
 
 // DeleteAttribute 删除属性组。

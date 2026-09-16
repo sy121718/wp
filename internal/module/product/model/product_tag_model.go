@@ -15,6 +15,8 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+
+	"go_wp/pkg/rls"
 )
 
 // ProductTagEntity 商品标签（手工 / 自动规则同表）。
@@ -98,12 +100,16 @@ func (m *Model) ListTagsByIDs(ctx context.Context, ids []string) (list []*Produc
 
 // CreateTag 写入标签。
 func (m *Model) CreateTag(ctx context.Context, e *ProductTagEntity) (err error) {
-	return m.TagDB(ctx).Create(e).Error
+	return rls.InProjectScope(ctx, m.db, e.ProjectID, func(tx *gorm.DB) error {
+		return tx.Model(&ProductTagEntity{}).Create(e).Error
+	})
 }
 
 // UpdateTag 更新标签（整行保存）。
 func (m *Model) UpdateTag(ctx context.Context, e *ProductTagEntity) (err error) {
-	return m.TagDB(ctx).Where("id = ?", e.ID).Save(e).Error
+	return rls.InProjectScope(ctx, m.db, e.ProjectID, func(tx *gorm.DB) error {
+		return tx.Model(&ProductTagEntity{}).Where("id = ?", e.ID).Save(e).Error
+	})
 }
 
 // DeleteTagTx 在给定事务里删除标签行（service 编排：先解绑引用再删）。
@@ -144,6 +150,12 @@ func (m *Model) CountProductsByTag(ctx context.Context, tagID string) (n int64, 
 // 只动这一个 tag id（jsonb 数组的 - 与 || 都是按元素操作），因此**不会碰其它标签** ——
 // 这正是「自动标签重算不覆盖手工标签归属」的实现基础。
 func (m *Model) ReplaceTagProductsTx(tx *gorm.DB, tagID, projectID string, productIDs []string, now time.Time) (err error) {
+	// 这里改的是 products 表（有策略），scope 必须设在调用方事务上：另开事务会看不到
+	// 外层刚写的行，而 products 的 UPDATE 在缺 scope 时**匹配 0 行且不报错** ——
+	// 表现为「标签关联保存成功但没生效」。
+	if serr := rls.ScopeTx(tx, projectID); serr != nil {
+		return serr
+	}
 	probe, merr := json.Marshal([]string{tagID})
 	if merr != nil {
 		return merr

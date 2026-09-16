@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+
+	"go_wp/pkg/rls"
 )
 
 // PriceAdjustmentEntity 调价批次（一次「按规则应用」一行）。
@@ -87,6 +89,10 @@ func (m *Model) AdjustmentItemDB(ctx context.Context) *gorm.DB {
 //
 // 只写「有改动」的变体明细：没改动的行留痕没有信息量，还会把台账撑大。
 func (m *Model) CreateAdjustmentWithItemsTx(tx *gorm.DB, e *PriceAdjustmentEntity, items []*PriceAdjustmentItemEntity) (err error) {
+	// product_price_adjustments 有策略，scope 设在调用方事务上（另开事务会脱离外层原子性）。
+	if serr := rls.ScopeTx(tx, e.ProjectID); serr != nil {
+		return serr
+	}
 	if err = tx.Create(e).Error; err != nil {
 		return err
 	}

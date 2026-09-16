@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+
+	"go_wp/pkg/rls"
 )
 
 var (
@@ -87,14 +89,16 @@ func (m *Model) Transaction(ctx context.Context, fn func(tx *gorm.DB) error) err
 // 主题是页面的归属（020_themes.sql：主题下面才是页面），但没归属的历史页面
 // 不能因为按主题过滤而不可见（建站已自带默认主题，NULL 分支是它们的唯一可见路径）。
 func (m *Model) ListAll(ctx context.Context, projectID, themeID string) (list []PageEntity, err error) {
-	q := m.DB(ctx).Omit("draft_document").Where("deleted_at IS NULL AND project_id = ?", projectID)
-	if themeID != "" {
-		// 未挂主题的页面一并列出：列表按「激活主题」浏览，但主题创建前建的页面
-		// （或绑定丢失的页面）不能因此从列表里消失 —— 那会变成「建了却找不到」。
-		// 建站已有默认主题后，这条 NULL 分支是历史数据唯一的可见路径。
-		q = q.Where("theme_id = ? OR theme_id IS NULL", themeID)
-	}
-	err = q.Order("update_time DESC, id DESC").Find(&list).Error
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		q := tx.Model(&PageEntity{}).Omit("draft_document").Where("deleted_at IS NULL AND project_id = ?", projectID)
+		if themeID != "" {
+			// 未挂主题的页面一并列出：列表按「激活主题」浏览，但主题创建前建的页面
+			// （或绑定丢失的页面）不能因此从列表里消失 —— 那会变成「建了却找不到」。
+			// 建站已有默认主题后，这条 NULL 分支是历史数据唯一的可见路径。
+			q = q.Where("theme_id = ? OR theme_id IS NULL", themeID)
+		}
+		return q.Order("update_time DESC, id DESC").Find(&list).Error
+	})
 	return list, err
 }
 
@@ -277,10 +281,12 @@ func (m *Model) MarkStaleForBlock(ctx context.Context, blockID string) (err erro
 // AttachThemeToUnassigned 把工程内尚未挂主题的页面挂到指定主题。
 // 工程首个主题创建时回填历史页面（迁移 020 的运行时兜底）。
 func (m *Model) AttachThemeToUnassigned(ctx context.Context, projectID, themeID string) (err error) {
-	err = m.DB(ctx).Exec(
-		"UPDATE pages SET theme_id = ?, update_time = ? WHERE project_id = ? AND theme_id IS NULL AND deleted_at IS NULL",
-		themeID, time.Now().UTC(), projectID,
-	).Error
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.Model(&PageEntity{}).Exec(
+			"UPDATE pages SET theme_id = ?, update_time = ? WHERE project_id = ? AND theme_id IS NULL AND deleted_at IS NULL",
+			themeID, time.Now().UTC(), projectID,
+		).Error
+	})
 	return err
 }
 
@@ -288,21 +294,31 @@ func (m *Model) AttachThemeToUnassigned(ctx context.Context, projectID, themeID 
 // 切换激活主题时调用，是「整站换皮」的前置：只有转挂后批量刷新（Refresh*/MarkStale*）
 // 才能以该主题为键命中整站页面。不改 draft_document 内容，也不 bump 版本。
 func (m *Model) ReattachProjectPagesToTheme(ctx context.Context, projectID, themeID string) (err error) {
-	err = m.DB(ctx).Exec(
-		"UPDATE pages SET theme_id = ?, update_time = ? WHERE project_id = ? AND deleted_at IS NULL",
-		themeID, time.Now().UTC(), projectID,
-	).Error
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.Model(&PageEntity{}).Exec(
+			"UPDATE pages SET theme_id = ?, update_time = ? WHERE project_id = ? AND deleted_at IS NULL",
+			themeID, time.Now().UTC(), projectID,
+		).Error
+	})
 	return err
 }
 
 // GetByID 按 ID 查询未删除的 Page。projectID 非空时追加工程归属条件（防跨工程 IDOR）。
 func (m *Model) GetByID(ctx context.Context, id, projectID string) (e *PageEntity, err error) {
 	e = &PageEntity{}
-	q := m.DB(ctx).Where("id = ? AND deleted_at IS NULL", id)
-	if strings.TrimSpace(projectID) != "" {
-		q = q.Where("project_id = ?", projectID)
+	// projectID 为空是「不限工程」的历史调用形态：不设 scope 时策略谓词为 NULL，
+	// 换非超级角色后该路径 fail closed（0 行 → ErrRecordNotFound）而不会读到别的工程；
+	// 要让它可用必须由调用方补 projectID（列入 DB-009 剩余清单）。
+	if strings.TrimSpace(projectID) == "" {
+		if err = m.DB(ctx).Where("id = ? AND deleted_at IS NULL", id).First(e).Error; err != nil {
+			return nil, err
+		}
+		return e, nil
 	}
-	if err = q.First(e).Error; err != nil {
+	if err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.Model(&PageEntity{}).
+			Where("id = ? AND deleted_at IS NULL AND project_id = ?", id, projectID).First(e).Error
+	}); err != nil {
 		return nil, err
 	}
 	return e, nil
@@ -363,7 +379,8 @@ func (m *Model) DeleteStaleRevisions(ctx context.Context, keep int, cutoff time.
 // 路径占用（page_routes 的 reserved 行）由 service 层经 publication contract
 // 的 ReservePath 处理——page_routes 单一所有归 publication，page model 不碰该表。
 func (m *Model) CreateWithRevision(ctx context.Context, page *PageEntity, revision *RevisionEntity) (err error) {
-	return m.Transaction(ctx, func(tx *gorm.DB) error {
+	// RLS（迁移 215）：pages 已启用 FORCE 策略，写入承 page.ProjectID 的工程作用域。
+	return rls.InProjectScope(ctx, m.db, page.ProjectID, func(tx *gorm.DB) error {
 		if err := tx.Create(page).Error; err != nil {
 			return err
 		}

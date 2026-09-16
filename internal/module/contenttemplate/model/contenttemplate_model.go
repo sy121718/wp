@@ -17,6 +17,8 @@ import (
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
 
 	"gorm.io/gorm"
+
+	"go_wp/pkg/rls"
 )
 
 const (
@@ -103,7 +105,10 @@ func (m *Model) Transaction(ctx context.Context, fn func(tx *gorm.DB) error) err
 
 // Create 新增模板草稿。
 func (m *Model) Create(ctx context.Context, e *TemplateEntity) error {
-	return m.DB(ctx).Create(e).Error
+	// content_templates 已启用 FORCE 策略，写入承 e.ProjectID 的工程作用域。
+	return rls.InProjectScope(ctx, m.db, e.ProjectID, func(tx *gorm.DB) error {
+		return tx.Model(&TemplateEntity{}).Create(e).Error
+	})
 }
 
 // Get 按 ID 查询模板。
@@ -174,7 +179,7 @@ func (m *Model) CreateVersion(ctx context.Context, v *VersionEntity) error {
 // 「版本行在、指针为空」的死模板 —— ResolveTemplate 直接失败且无法自愈
 // （重试也撞版本唯一索引）。属聚合内原子组合，事务边界留在 model。
 func (m *Model) CreateWithVersion(ctx context.Context, e *TemplateEntity, v *VersionEntity) error {
-	return m.Transaction(ctx, func(tx *gorm.DB) error {
+	return rls.InProjectScope(ctx, m.db, e.ProjectID, func(tx *gorm.DB) error {
 		if err := tx.Create(e).Error; err != nil {
 			return err
 		}

@@ -17,6 +17,8 @@ import (
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+
+	"go_wp/pkg/rls"
 )
 
 // 退货单状态。
@@ -124,6 +126,11 @@ func (m *ReturnModel) Transaction(ctx context.Context, fn func(tx *gorm.DB) erro
 
 // CreateTx 事务内写退货单头。
 func (m *ReturnModel) CreateTx(ctx context.Context, tx *gorm.DB, e *ReturnEntity) (err error) {
+	// 用 ScopeTx 而不是 InProjectScope：tx 是 service 编排的事务，作用域必须设在它上面
+	// （另开事务会看不到外层未提交数据、并与外层同表写入自锁）。
+	if serr := rls.ScopeTx(tx, e.ProjectID); serr != nil {
+		return serr
+	}
 	return tx.WithContext(ctx).Model(&ReturnEntity{}).Create(e).Error
 }
 
@@ -170,7 +177,9 @@ func (m *ReturnModel) GetByRequestID(ctx context.Context, projectID, requestID s
 		return nil, nil
 	}
 	e = &ReturnEntity{}
-	if err = m.DB(ctx).Where("project_id = ? AND request_id = ?", projectID, requestID).First(e).Error; err != nil {
+	if err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.Model(&ReturnEntity{}).Where("project_id = ? AND request_id = ?", projectID, requestID).First(e).Error
+	}); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
 		}
@@ -181,7 +190,15 @@ func (m *ReturnModel) GetByRequestID(ctx context.Context, projectID, requestID s
 
 // List 退货单列表。
 func (m *ReturnModel) List(ctx context.Context, f ReturnFilter) (list []*ReturnEntity, total int64, err error) {
-	q := m.DB(ctx).Where("project_id = ?", f.ProjectID)
+	err = rls.InProjectScope(ctx, m.db, f.ProjectID, func(tx *gorm.DB) error {
+		return m.listLocked(tx, f, &list, &total)
+	})
+	return list, total, err
+}
+
+// listLocked 在已带工程作用域的句柄上执行退货单列表查询。
+func (m *ReturnModel) listLocked(tx *gorm.DB, f ReturnFilter, list *[]*ReturnEntity, total *int64) error {
+	q := tx.Model(&ReturnEntity{}).Where("project_id = ?", f.ProjectID)
 	if f.Status != "" {
 		q = q.Where("status = ?", f.Status)
 	}
@@ -195,15 +212,14 @@ func (m *ReturnModel) List(ctx context.Context, f ReturnFilter) (list []*ReturnE
 		like := "%" + kw + "%"
 		q = q.Where("return_no ILIKE ? OR order_no ILIKE ? OR customer_email ILIKE ?", like, like, like)
 	}
-	if err = q.Count(&total).Error; err != nil {
-		return nil, 0, err
+	if err := q.Count(total).Error; err != nil {
+		return err
 	}
 	limit := f.Limit
 	if limit <= 0 || limit > 200 {
 		limit = 20
 	}
-	err = q.Order("id DESC").Offset(f.Offset).Limit(limit).Find(&list).Error
-	return list, total, err
+	return q.Order("id DESC").Offset(f.Offset).Limit(limit).Find(list).Error
 }
 
 // CountByStatus 按状态分组计数（列表页状态页签的角标）。
@@ -212,8 +228,10 @@ func (m *ReturnModel) CountByStatus(ctx context.Context, projectID string) (coun
 		Status string `gorm:"column:status"`
 		N      int64  `gorm:"column:n"`
 	}
-	if err = m.DB(ctx).Select("status, COUNT(*) AS n").
-		Where("project_id = ?", projectID).Group("status").Scan(&rows).Error; err != nil {
+	if err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.Model(&ReturnEntity{}).Select("status, COUNT(*) AS n").
+			Where("project_id = ?", projectID).Group("status").Scan(&rows).Error
+	}); err != nil {
 		return nil, err
 	}
 	counts = make(map[string]int64, len(rows))

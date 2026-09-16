@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+
+	"go_wp/pkg/rls"
 )
 
 const tableNamePageViews = "page_views"
@@ -45,8 +47,14 @@ func (m *Model) DB(ctx context.Context) *gorm.DB {
 }
 
 // Insert 写入一条页面浏览。
+//
+// 访客打点是全系统**唯一由浏览器写库**的路径（BIZ-8）：page_views 已启用 FORCE 策略
+// （迁移 215），不设工程作用域时换非超级角色后这条 INSERT 会被 WITH CHECK 直接拒绝 ——
+// 打点是有意静默失败的路径，缺 scope 的表现是「统计全为 0 且没有任何错误日志」。
 func (m *Model) Insert(ctx context.Context, e *PageViewEntity) (err error) {
-	return m.DB(ctx).Create(e).Error
+	return rls.InProjectScope(ctx, m.db, e.ProjectID, func(tx *gorm.DB) error {
+		return tx.Model(&PageViewEntity{}).Create(e).Error
+	})
 }
 
 // DayRow 按天聚合的一行（Day 为 UTC 日）。
@@ -77,10 +85,12 @@ func (m *Model) CountRange(ctx context.Context, projectID string, from, to time.
 		Views    int64
 		Visitors int64
 	}
-	err = m.DB(ctx).
-		Select(colViews+", "+colVisitors).
-		Where("project_id = ? AND viewed_at >= ? AND viewed_at < ?", projectID, from, to).
-		Scan(&row).Error
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.Model(&PageViewEntity{}).
+			Select(colViews+", "+colVisitors).
+			Where("project_id = ? AND viewed_at >= ? AND viewed_at < ?", projectID, from, to).
+			Scan(&row).Error
+	})
 	if err != nil {
 		return 0, 0, err
 	}
@@ -92,19 +102,23 @@ func (m *Model) CountRange(ctx context.Context, projectID string, from, to time.
 // 为什么用 UTC 日界：产物由全球访客访问，服务端时区换来换去会让同一批数据
 // 分到不同的日子里，报表对不上；UTC 是唯一与部署环境无关的口径。
 func (m *Model) CountByDay(ctx context.Context, projectID string, from, to time.Time) (rows []DayRow, err error) {
-	err = m.DB(ctx).
-		Select("(viewed_at AT TIME ZONE 'UTC')::date AS day, "+colViews+", "+colVisitors).
-		Where("project_id = ? AND viewed_at >= ? AND viewed_at < ?", projectID, from, to).
-		Group("day").Order("day ASC").Scan(&rows).Error
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.Model(&PageViewEntity{}).
+			Select("(viewed_at AT TIME ZONE 'UTC')::date AS day, "+colViews+", "+colVisitors).
+			Where("project_id = ? AND viewed_at >= ? AND viewed_at < ?", projectID, from, to).
+			Group("day").Order("day ASC").Scan(&rows).Error
+	})
 	return rows, err
 }
 
 // CountPathTotal 窗口内出现过的不同路径数（按路径聚合的分页总数）。
 func (m *Model) CountPathTotal(ctx context.Context, projectID string, from, to time.Time) (total int64, err error) {
-	err = m.DB(ctx).
-		Select("COUNT(DISTINCT path)").
-		Where("project_id = ? AND viewed_at >= ? AND viewed_at < ?", projectID, from, to).
-		Scan(&total).Error
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.Model(&PageViewEntity{}).
+			Select("COUNT(DISTINCT path)").
+			Where("project_id = ? AND viewed_at >= ? AND viewed_at < ?", projectID, from, to).
+			Scan(&total).Error
+	})
 	return total, err
 }
 
@@ -124,8 +138,15 @@ func (m *Model) ListRetentionPolicies(ctx context.Context) (list []RetentionPoli
 
 // DeleteViewsBefore 删除某工程在 cutoff 之前的访问明细，返回删除行数。
 func (m *Model) DeleteViewsBefore(ctx context.Context, projectID string, cutoff time.Time) (int64, error) {
-	res := m.DB(ctx).Where("project_id = ? AND viewed_at < ?", projectID, cutoff).Delete(&PageViewEntity{})
-	return res.RowsAffected, res.Error
+	var res *gorm.DB
+	err := rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		res = tx.Model(&PageViewEntity{}).Where("project_id = ? AND viewed_at < ?", projectID, cutoff).Delete(&PageViewEntity{})
+		return res.Error
+	})
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected, nil
 }
 
 // CountByPath 按路径聚合（浏览数降序、路径升序保证分页稳定），支持分页。
@@ -133,10 +154,12 @@ func (m *Model) DeleteViewsBefore(ctx context.Context, projectID string, cutoff 
 // 排序里那第二列 path 不是为了好看：只按 views 排序时，值相同的行在两次查询里
 // 顺序可能不同，翻页会出现重复与遗漏。
 func (m *Model) CountByPath(ctx context.Context, projectID string, from, to time.Time, offset, limit int) (rows []PathRow, err error) {
-	err = m.DB(ctx).
-		Select("path, "+colViews+", "+colVisitors).
-		Where("project_id = ? AND viewed_at >= ? AND viewed_at < ?", projectID, from, to).
-		Group("path").Order("views DESC, path ASC").
-		Offset(offset).Limit(limit).Scan(&rows).Error
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.Model(&PageViewEntity{}).
+			Select("path, "+colViews+", "+colVisitors).
+			Where("project_id = ? AND viewed_at >= ? AND viewed_at < ?", projectID, from, to).
+			Group("path").Order("views DESC, path ASC").
+			Offset(offset).Limit(limit).Scan(&rows).Error
+	})
 	return rows, err
 }

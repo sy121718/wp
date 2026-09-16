@@ -4,6 +4,10 @@ package model
 import (
 	"context"
 	"strings"
+
+	"gorm.io/gorm"
+
+	"go_wp/pkg/rls"
 )
 
 // CouponCountMismatchRow 一行对账结果（model 层形状，service 转 dto）。
@@ -17,11 +21,17 @@ type CouponCountMismatchRow struct {
 
 // CountCoupons 参与对账的券数量（分母）。projectID 为空时统计全部。
 func (m *CouponModel) CountCoupons(ctx context.Context, projectID string) (n int64, err error) {
-	q := m.db.WithContext(ctx).Model(&CouponEntity{})
-	if id := strings.TrimSpace(projectID); id != "" {
-		q = q.Where("project_id = ?", id)
+	// projectID 为空是「全量统计」：不设 scope 时策略谓词为 NULL，换非超级角色后
+	// 该分支 fail closed（恒 0）而不会跨工程统计 —— 方向安全，但需要全站口径时
+	// 必须由调用方给 projectID（列入 DB-009 剩余清单）。
+	id := strings.TrimSpace(projectID)
+	if id == "" {
+		err = m.db.WithContext(ctx).Model(&CouponEntity{}).Count(&n).Error
+		return n, err
 	}
-	err = q.Count(&n).Error
+	err = rls.InProjectScope(ctx, m.db, id, func(tx *gorm.DB) error {
+		return tx.Model(&CouponEntity{}).Where("project_id = ?", id).Count(&n).Error
+	})
 	return n, err
 }
 
@@ -45,7 +55,16 @@ func (m *CouponModel) ListCountMismatches(ctx context.Context, projectID string,
 		"ON r.coupon_id = c.id " +
 		"WHERE c.used_count <> COALESCE(r.cnt, 0) AND (? = '' OR c.project_id = ?) " +
 		"ORDER BY c.id LIMIT ?"
-	err = m.db.WithContext(ctx).Raw(q, strings.TrimSpace(projectID), strings.TrimSpace(projectID), limit).
-		Scan(&rows).Error
+	// 对账 SQL 一次扫 coupons + coupon_redemptions 两张带策略的表：scope 必须在同一条
+	// 语句上生效。否则换角色后 LEFT JOIN 的右表被策略挡空，产生**假的计数偏差**
+	// （used_count 全线「虚高」）—— 比查不到数据更坏，它是一份看起来合理的错误报告。
+	id := strings.TrimSpace(projectID)
+	if id == "" {
+		err = m.db.WithContext(ctx).Raw(q, id, id, limit).Scan(&rows).Error
+		return rows, err
+	}
+	err = rls.InProjectScope(ctx, m.db, id, func(tx *gorm.DB) error {
+		return tx.Raw(q, id, id, limit).Scan(&rows).Error
+	})
 	return rows, err
 }

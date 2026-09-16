@@ -15,6 +15,8 @@ import (
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+
+	"go_wp/pkg/rls"
 )
 
 // 优惠类型：percent 按小计百分比 / fixed 固定金额（分）。
@@ -126,8 +128,11 @@ func (m *CouponModel) Transaction(ctx context.Context, fn func(tx *gorm.DB) erro
 }
 
 // Create 新建优惠码。
+// RLS（迁移 215）：coupons 已启用 FORCE 策略，写入承 e.ProjectID 的工程作用域。
 func (m *CouponModel) Create(ctx context.Context, e *CouponEntity) (err error) {
-	return m.DB(ctx).Create(e).Error
+	return rls.InProjectScope(ctx, m.db, e.ProjectID, func(tx *gorm.DB) error {
+		return tx.Model(&CouponEntity{}).Create(e).Error
+	})
 }
 
 // GetByID 按主键取；不存在返回 (nil, nil)，由 service 决定报什么错。
@@ -145,7 +150,9 @@ func (m *CouponModel) GetByID(ctx context.Context, id uint64) (e *CouponEntity, 
 // GetByCode 按券码取（工程内唯一）；code 传归一化后的大写。
 func (m *CouponModel) GetByCode(ctx context.Context, projectID string, code string) (e *CouponEntity, err error) {
 	e = &CouponEntity{}
-	if err = m.DB(ctx).Where("project_id = ? AND code = ?", projectID, code).First(e).Error; err != nil {
+	if err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.Model(&CouponEntity{}).Where("project_id = ? AND code = ?", projectID, code).First(e).Error
+	}); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
 		}
@@ -170,7 +177,15 @@ func (m *CouponModel) LockByIDTx(ctx context.Context, tx *gorm.DB, id uint64) (e
 
 // List 优惠码列表。
 func (m *CouponModel) List(ctx context.Context, f CouponFilter) (list []*CouponEntity, total int64, err error) {
-	q := m.DB(ctx).Where("project_id = ?", f.ProjectID)
+	err = rls.InProjectScope(ctx, m.db, f.ProjectID, func(tx *gorm.DB) error {
+		return m.listLocked(tx, f, &list, &total)
+	})
+	return list, total, err
+}
+
+// listLocked 在已带工程作用域的句柄上执行券列表查询。
+func (m *CouponModel) listLocked(tx *gorm.DB, f CouponFilter, list *[]*CouponEntity, total *int64) error {
+	q := tx.Model(&CouponEntity{}).Where("project_id = ?", f.ProjectID)
 	if f.Status != nil {
 		q = q.Where("status = ?", *f.Status)
 	}
@@ -193,15 +208,14 @@ func (m *CouponModel) List(ctx context.Context, f CouponFilter) (list []*CouponE
 		like := "%" + kw + "%"
 		q = q.Where("code ILIKE ? OR name ILIKE ?", like, like)
 	}
-	if err = q.Count(&total).Error; err != nil {
-		return nil, 0, err
+	if err := q.Count(total).Error; err != nil {
+		return err
 	}
 	limit := f.Limit
 	if limit <= 0 || limit > 200 {
 		limit = 20
 	}
-	err = q.Order("id DESC").Offset(f.Offset).Limit(limit).Find(&list).Error
-	return list, total, err
+	return q.Order("id DESC").Offset(f.Offset).Limit(limit).Find(list).Error
 }
 
 // UpdateFields 更新指定列（可改列由 service 决定，model 不写死业务规则）。
@@ -240,6 +254,11 @@ func (m *CouponModel) CountRedemptionsTx(ctx context.Context, tx *gorm.DB, coupo
 // 那就是「这一单之前已经核销过这张券」，调用方据此幂等返回，而不是把它当失败。
 // 幂等兜底放在数据库唯一约束上而不是「先查一次再插」：后者在并发下必然漏判。
 func (m *CouponModel) InsertRedemptionTx(ctx context.Context, tx *gorm.DB, e *CouponRedemptionEntity) (inserted bool, err error) {
+	// 核销明细自带工程 id：写入前把 scope 补进 service 的事务（幂等），
+	// 使 coupon_redemptions 的 WITH CHECK 在缺 scope 的调用链上也能通过。
+	if serr := rls.ScopeTx(tx, e.ProjectID); serr != nil {
+		return false, serr
+	}
 	res := tx.WithContext(ctx).Model(&CouponRedemptionEntity{}).
 		Clauses(clause.OnConflict{
 			Columns:   []clause.Column{{Name: "coupon_id"}, {Name: "order_id"}},
@@ -309,23 +328,25 @@ func (m *CouponModel) IncrementUsedTx(ctx context.Context, tx *gorm.DB, couponID
 
 // ListRedemptions 核销记录列表。
 func (m *CouponModel) ListRedemptions(ctx context.Context, f CouponRedemptionFilter) (list []*CouponRedemptionEntity, total int64, err error) {
-	q := m.db.WithContext(ctx).Model(&CouponRedemptionEntity{}).Where("project_id = ?", f.ProjectID)
-	if f.CouponID != 0 {
-		q = q.Where("coupon_id = ?", f.CouponID)
-	}
-	if code := strings.TrimSpace(f.Code); code != "" {
-		q = q.Where("code = ?", code)
-	}
-	if f.OrderID != 0 {
-		q = q.Where("order_id = ?", f.OrderID)
-	}
-	if err = q.Count(&total).Error; err != nil {
-		return nil, 0, err
-	}
-	limit := f.Limit
-	if limit <= 0 || limit > 200 {
-		limit = 20
-	}
-	err = q.Order("id DESC").Offset(f.Offset).Limit(limit).Find(&list).Error
+	err = rls.InProjectScope(ctx, m.db, f.ProjectID, func(tx *gorm.DB) error {
+		q := tx.Model(&CouponRedemptionEntity{}).Where("project_id = ?", f.ProjectID)
+		if f.CouponID != 0 {
+			q = q.Where("coupon_id = ?", f.CouponID)
+		}
+		if code := strings.TrimSpace(f.Code); code != "" {
+			q = q.Where("code = ?", code)
+		}
+		if f.OrderID != 0 {
+			q = q.Where("order_id = ?", f.OrderID)
+		}
+		if cerr := q.Count(&total).Error; cerr != nil {
+			return cerr
+		}
+		limit := f.Limit
+		if limit <= 0 || limit > 200 {
+			limit = 20
+		}
+		return q.Order("id DESC").Offset(f.Offset).Limit(limit).Find(&list).Error
+	})
 	return list, total, err
 }

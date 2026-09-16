@@ -20,6 +20,8 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+
+	"go_wp/pkg/rls"
 )
 
 // TableMasterDataChanges 表名（迁移 111）。
@@ -101,13 +103,21 @@ func (m *Model) Append(ctx context.Context, rows []*ChangeEntity) (err error) {
 	if len(rows) == 0 {
 		return nil
 	}
-	return m.DB(ctx).Create(rows).Error
+	// master_data_changes 是**分区表**（策略在父表与各子表上，见迁移 215 与
+	// internal/partition.EnsureAhead）；写入承首行的工程 id。
+	return rls.InProjectScope(ctx, m.db, rows[0].ProjectID, func(tx *gorm.DB) error {
+		return tx.Model(&ChangeEntity{}).Create(rows).Error
+	})
 }
 
 // AppendTx 在外部事务内追加变更记录（与业务写操作同事务）。
 func (m *Model) AppendTx(tx *gorm.DB, rows []*ChangeEntity) (err error) {
 	if len(rows) == 0 || tx == nil {
 		return nil
+	}
+	// scope 设在调用方事务上：留痕必须与业务写同生共死，另开事务会破坏这个原子性。
+	if serr := rls.ScopeTx(tx, rows[0].ProjectID); serr != nil {
+		return serr
 	}
 	return tx.Create(rows).Error
 }
@@ -147,17 +157,21 @@ func applyChangeFilter(q *gorm.DB, f ChangeFilter) *gorm.DB {
 
 // List 变更记录列表（固定按「时间倒序 → id」返回，同一时刻的记录顺序也确定）。
 func (m *Model) List(ctx context.Context, f ChangeFilter, limit, offset int) (list []*ChangeEntity, err error) {
-	q := applyChangeFilter(m.DB(ctx), f).Order("create_time DESC, id ASC")
-	if limit > 0 {
-		q = q.Limit(limit).Offset(offset)
-	}
-	err = q.Find(&list).Error
+	err = rls.InProjectScope(ctx, m.db, f.ProjectID, func(tx *gorm.DB) error {
+		q := applyChangeFilter(tx.Model(&ChangeEntity{}), f).Order("create_time DESC, id ASC")
+		if limit > 0 {
+			q = q.Limit(limit).Offset(offset)
+		}
+		return q.Find(&list).Error
+	})
 	return list, err
 }
 
 // Count 变更记录计数（同条件，供分页用）。
 func (m *Model) Count(ctx context.Context, f ChangeFilter) (n int64, err error) {
-	err = applyChangeFilter(m.DB(ctx), f).Count(&n).Error
+	err = rls.InProjectScope(ctx, m.db, f.ProjectID, func(tx *gorm.DB) error {
+		return applyChangeFilter(tx.Model(&ChangeEntity{}), f).Count(&n).Error
+	})
 	return n, err
 }
 
@@ -166,20 +180,23 @@ func (m *Model) Count(ctx context.Context, f ChangeFilter) (n int64, err error) 
 // 取「最近一次变更」的原样值用 array_agg(...)[1]：同一时刻并列时按 id 兜底，
 // 保证同一份数据每次聚合出同样的结果（后台核对依赖确定性）。
 func (m *Model) ListEntityHistories(ctx context.Context, f ChangeFilter, limit, offset int) (list []*EntityHistoryRow, err error) {
-	q := applyChangeFilter(m.DB(ctx), f).
-		Select("entity_type, entity_id, " +
-			"(array_agg(entity_label ORDER BY create_time DESC, id ASC))[1] AS entity_label, " +
-			"COUNT(*) AS change_count, " +
-			"(array_agg(action ORDER BY create_time DESC, id ASC))[1] AS last_action, " +
-			"(array_agg(field ORDER BY create_time DESC, id ASC))[1] AS last_field, " +
-			"(array_agg(operator_id ORDER BY create_time DESC, id ASC))[1] AS last_operator_id, " +
-			"MAX(create_time) AS last_at").
-		Group("entity_type, entity_id").
-		Order("last_at DESC, entity_type ASC, entity_id ASC")
-	if limit > 0 {
-		q = q.Limit(limit).Offset(offset)
-	}
-	err = q.Scan(&list).Error
+	var q *gorm.DB
+	err = rls.InProjectScope(ctx, m.db, f.ProjectID, func(tx *gorm.DB) error {
+		q = applyChangeFilter(tx.Model(&ChangeEntity{}), f).
+			Select("entity_type, entity_id, " +
+				"(array_agg(entity_label ORDER BY create_time DESC, id ASC))[1] AS entity_label, " +
+				"COUNT(*) AS change_count, " +
+				"(array_agg(action ORDER BY create_time DESC, id ASC))[1] AS last_action, " +
+				"(array_agg(field ORDER BY create_time DESC, id ASC))[1] AS last_field, " +
+				"(array_agg(operator_id ORDER BY create_time DESC, id ASC))[1] AS last_operator_id, " +
+				"MAX(create_time) AS last_at").
+			Group("entity_type, entity_id").
+			Order("last_at DESC, entity_type ASC, entity_id ASC")
+		if limit > 0 {
+			q = q.Limit(limit).Offset(offset)
+		}
+		return q.Scan(&list).Error
+	})
 	return list, err
 }
 
@@ -188,8 +205,10 @@ func (m *Model) ListEntityHistories(ctx context.Context, f ChangeFilter, limit, 
 // COUNT(DISTINCT (a, b)) 是 PostgreSQL 的行构造去重计数：直接由数据库算，
 // 不把分组行拉回进程再数一遍。
 func (m *Model) CountEntities(ctx context.Context, f ChangeFilter) (n int64, err error) {
-	err = applyChangeFilter(m.DB(ctx), f).
-		Select("COUNT(DISTINCT (entity_type, entity_id)) AS count").
-		Scan(&n).Error
+	err = rls.InProjectScope(ctx, m.db, f.ProjectID, func(tx *gorm.DB) error {
+		return applyChangeFilter(tx.Model(&ChangeEntity{}), f).
+			Select("COUNT(DISTINCT (entity_type, entity_id)) AS count").
+			Scan(&n).Error
+	})
 	return n, err
 }
