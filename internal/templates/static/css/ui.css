@@ -18,17 +18,17 @@
     display: flex; align-items: center; justify-content: space-between; gap: 8px;
     width: 100%; box-sizing: border-box; padding: 8px 10px;
     font-size: 13px; font-family: inherit; line-height: 1.4;
-    border: 1px solid var(--sky-c-border, var(--c-border-input, #c6ccd4)); border-radius: var(--ui-r-sm);
-    background: var(--sky-c-surface, var(--c-surface, #fff)); color: inherit;
+    border: 1px solid var(--sky-c-border-input, #c6ccd4); border-radius: var(--ui-r-sm);
+    background: var(--sky-c-surface, #fff); color: inherit;
     cursor: pointer; text-align: left;
     transition: border-color var(--ui-motion-fast), box-shadow var(--ui-motion-fast), background-color var(--ui-motion-fast);
 }
 .wbs-trigger:disabled { opacity: .6; cursor: not-allowed; }
 .wbs-menu[hidden] { display: none; }
 .wbs-option[hidden] { display: none; }
-.wbs-trigger:hover { border-color: var(--sky-c-border-strong, var(--c-border-strong, #d1d5db)); }
-.wbs-trigger:focus-visible { outline: 2px solid var(--sky-c-primary, var(--c-primary, #3d444f)); outline-offset: 1px; }
-.wbs.is-open .wbs-trigger { border-color: var(--sky-c-primary, var(--c-primary, #3d444f)); }
+.wbs-trigger:hover { border-color: var(--sky-c-border-strong, #d1d5db); }
+.wbs-trigger:focus-visible { outline: 2px solid var(--sky-c-primary, #3d444f); outline-offset: 1px; }
+.wbs.is-open .wbs-trigger { border-color: var(--sky-c-primary, #3d444f); }
 .wbs-value { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wbs-caret {
     flex: 0 0 auto; width: 7px; height: 7px; margin-right: 3px;
@@ -39,14 +39,14 @@
 .wbs-menu {
     position: absolute; z-index: 60; left: 0; right: 0; margin: 4px 0 0; padding: 4px;
     list-style: none; max-height: 260px; overflow: auto;
-    background: var(--sky-c-surface, var(--c-surface, #fff));
-    border: 1px solid var(--sky-c-border, var(--c-border, #e5e7eb));
+    background: var(--sky-c-surface, #fff);
+    border: 1px solid var(--sky-c-border, #e5e7eb);
     border-radius: 10px; box-shadow: 0 8px 24px rgba(16, 20, 26, .12);
 }
 .wbs-option { padding: 7px 10px; border-radius: 6px; font-size: 13px; cursor: pointer; }
-.wbs-option.is-active { background: var(--sky-c-primary-bg, var(--c-primary-bg, #eceef1)); }
+.wbs-option.is-active { background: var(--sky-c-primary-bg, #eceef1); }
 @media (hover: hover) {
-    .wbs-option:not([aria-disabled="true"]):hover { background: var(--sky-c-primary-bg, var(--c-primary-bg, #eceef1)); }
+    .wbs-option:not([aria-disabled="true"]):hover { background: var(--sky-c-primary-bg, #eceef1); }
 }
 .wbs-option.is-selected { font-weight: 600; }
 .wbs-option[aria-disabled="true"] { opacity: .45; cursor: not-allowed; }
@@ -56,14 +56,14 @@
    用 <dialog> 承载 —— showModal() 自带焦点陷阱与 Esc 关闭，背景自动 inert。 */
 .wb-confirm {
     position: fixed; inset: 0; margin: auto;
-    padding: 0; border: 1px solid var(--sky-c-border, var(--c-border, #e5e7eb));
-    border-radius: 12px; background: var(--sky-c-surface, var(--c-surface, #fff));
+    padding: 0; border: 1px solid var(--sky-c-border, #e5e7eb);
+    border-radius: 12px; background: var(--sky-c-surface, #fff);
     color: inherit; max-width: min(92vw, 420px); box-shadow: 0 16px 48px rgba(16, 20, 26, .18);
 }
 .wb-confirm::backdrop { background: rgba(16, 20, 26, .35); }
 .wb-confirm-inner { padding: 20px; display: flex; flex-direction: column; gap: 10px; }
 .wb-confirm-title { margin: 0; font-size: 15px; font-weight: 600; }
-.wb-confirm-msg { margin: 0; font-size: 13px; line-height: 1.6; color: var(--sky-c-text-mute, var(--c-text-mute, #6b7280)); }
+.wb-confirm-msg { margin: 0; font-size: 13px; line-height: 1.6; color: var(--sky-c-text-mute, #6b7280); }
 .wb-confirm-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; }
 /* 提示框（WBUI.alert）：只有一个按钮，取消位靠类隐去 —— 不用 [hidden]，
    因为 ui.css 要能单独引（不依赖其它样式表里的 hidden 规则）。 */
@@ -75,8 +75,8 @@
    事件 target 是 inner 而不是 dialog，不会误判成点遮罩。 */
 .wb-modal {
     position: fixed; inset: 0; margin: auto;
-    padding: 0; border: 1px solid var(--sky-c-border, var(--c-border, #e5e7eb));
-    border-radius: 14px; background: var(--sky-c-surface, var(--c-surface, #fff));
+    padding: 0; border: 1px solid var(--sky-c-border, #e5e7eb);
+    border-radius: 14px; background: var(--sky-c-surface, #fff);
     color: inherit; width: min(92vw, 520px); max-height: min(88vh, 720px);
     box-shadow: 0 20px 60px rgba(16, 20, 26, .18);
 }
@@ -85,21 +85,21 @@
 .wb-modal-head {
     display: flex; align-items: center; justify-content: space-between; gap: var(--ui-sp-sm);
     padding: var(--ui-sp-md, 12px) var(--ui-sp-lg, 16px);
-    border-bottom: 1px solid var(--sky-c-border, var(--c-border, #e5e7eb));
+    border-bottom: 1px solid var(--sky-c-border, #e5e7eb);
     font-size: 15px; font-weight: 600;
 }
 .wb-modal-body { padding: var(--ui-sp-lg, 16px); overflow: auto; }
 .wb-modal-foot {
     display: flex; justify-content: flex-end; gap: var(--ui-sp-sm);
     padding: var(--ui-sp-md, 12px) var(--ui-sp-lg, 16px);
-    border-top: 1px solid var(--sky-c-border, var(--c-border, #e5e7eb));
+    border-top: 1px solid var(--sky-c-border, #e5e7eb);
 }
 .wb-modal-x {
     border: 0; background: transparent; cursor: pointer; color: inherit;
     font-size: 18px; line-height: 1; padding: 4px 6px; border-radius: var(--ui-r-md, 8px); opacity: .7;
 }
-.wb-modal-x:hover { opacity: 1; background: var(--sky-c-primary-bg, var(--c-primary-bg, #eceef1)); }
-.wb-modal-x:focus-visible { outline: 2px solid var(--sky-c-primary, var(--c-primary, #3d444f)); outline-offset: 1px; }
+.wb-modal-x:hover { opacity: 1; background: var(--sky-c-primary-bg, #eceef1); }
+.wb-modal-x:focus-visible { outline: 2px solid var(--sky-c-primary, #3d444f); outline-offset: 1px; }
 
 /* 进场：确认框与弹窗都是 <dialog>，showModal() 让元素从 display:none 变为可见 ——
    动画随之重新开始，不需要 JS 加类，关闭时也不会留下残留类。
@@ -123,16 +123,16 @@
     display: flex; align-items: center; gap: var(--ui-sp-sm);
     width: 100%; box-sizing: border-box;
     padding: var(--ui-sp-sm) var(--ui-sp-md, 12px);
-    border: 1px solid var(--sky-c-border, var(--c-border, #e5e7eb));
+    border: 1px solid var(--sky-c-border, #e5e7eb);
     border-radius: var(--ui-r-md, 8px);
-    background: var(--sky-c-surface, var(--c-surface, #fff));
+    background: var(--sky-c-surface, #fff);
     color: inherit; font-size: 13px; line-height: 1.5;
     box-shadow: var(--ui-shadow-md);
     animation: wb-ui-enter var(--ui-motion-base);
 }
 .wb-toast.is-leaving { opacity: 0; transition: opacity var(--ui-motion-base); }
-.wb-toast.is-success { border-color: var(--sky-c-success, var(--c-success, #059669)); }
-.wb-toast.is-error { border-color: var(--sky-c-danger, var(--c-danger, #dc2626)); }
+.wb-toast.is-success { border-color: var(--sky-c-success, #059669); }
+.wb-toast.is-error { border-color: var(--sky-c-danger, #dc2626); }
 .wb-toast-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .wb-toast-x {
     flex: none; border: 0; background: transparent; cursor: pointer; color: inherit;
@@ -158,8 +158,8 @@
     position: fixed; top: 0; right: 0; bottom: 0; z-index: 90;
     width: min(560px, 92vw); box-sizing: border-box;
     display: flex; flex-direction: column;
-    background: var(--sky-c-surface, var(--c-bg, #fff));
-    border-left: 1px solid var(--sky-c-border, var(--c-border, #e5e7eb));
+    background: var(--sky-c-surface, #fff);
+    border-left: 1px solid var(--sky-c-border, #e5e7eb);
     box-shadow: -16px 0 40px rgba(16, 20, 26, .14);
     transform: translateX(100%);
     transition: transform var(--ui-motion-base);
@@ -170,15 +170,15 @@ body.drawer-open { overflow: hidden; }
 .drawer-head {
     display: flex; align-items: center; justify-content: space-between;
     padding: var(--ui-sp-lg, 16px) var(--ui-sp-xl, 24px);
-    border-bottom: 1px solid var(--sky-c-border, var(--c-border, #e5e7eb));
+    border-bottom: 1px solid var(--sky-c-border, #e5e7eb);
 }
-.drawer-head .drawer-title { font-size: 15px; font-weight: 600; color: var(--sky-c-text, var(--c-text, #1f2937)); }
+.drawer-head .drawer-title { font-size: 15px; font-weight: 600; color: var(--sky-c-text, #1f2937); }
 .drawer-close {
     width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center;
     background: transparent; border: 0; border-radius: var(--ui-r-sm, 6px); cursor: pointer;
-    color: var(--sky-c-text-mute, var(--c-text-mute, #6b7280)); font-size: 18px; line-height: 1;
+    color: var(--sky-c-text-mute, #6b7280); font-size: 18px; line-height: 1;
 }
-.drawer-close:hover { background: var(--c-bg-hover, #f3f4f6); color: var(--sky-c-text, var(--c-text, #1f2937)); }
+.drawer-close:hover { background: var(--sky-c-bg-hover, #f3f4f6); color: var(--sky-c-text, #1f2937); }
 .drawer-body { flex: 1; overflow-y: auto; padding: var(--ui-sp-xl, 24px); }
 
 /* ===== 颜色字段（js/ui/colorfield.js）=====
@@ -203,23 +203,23 @@ body.drawer-open { overflow: hidden; }
 }
 .wbc-swatch {
     flex: none; width: 34px; height: 34px; padding: 0; cursor: pointer;
-    border: 1px solid var(--sky-c-border, var(--c-border, #e5e7eb));
+    border: 1px solid var(--sky-c-border, #e5e7eb);
     border-radius: var(--ui-r-md, 8px);
-    background-color: var(--sky-c-surface, var(--c-surface, #fff));
+    background-color: var(--sky-c-surface, #fff);
     background-image:
         linear-gradient(45deg, rgba(16, 20, 26, .10) 25%, transparent 25%, transparent 75%, rgba(16, 20, 26, .10) 75%),
         linear-gradient(45deg, rgba(16, 20, 26, .10) 25%, transparent 25%, transparent 75%, rgba(16, 20, 26, .10) 75%);
     background-size: 10px 10px;
     background-position: 0 0, 5px 5px;
 }
-.wbc-swatch:hover { border-color: var(--sky-c-border-strong, var(--c-border-strong, #d1d5db)); }
-.wbc-swatch:focus-visible { outline: 2px solid var(--sky-c-primary, var(--c-primary, #3d444f)); outline-offset: 1px; }
+.wbc-swatch:hover { border-color: var(--sky-c-border-strong, #d1d5db); }
+.wbc-swatch:focus-visible { outline: 2px solid var(--sky-c-primary, #3d444f); outline-offset: 1px; }
 /* 未设置：棋盘格 + 一道斜线，与「白色」区分得开 */
 .wbc.is-empty .wbc-swatch::after {
     content: ''; position: absolute; inset: 0; border-radius: inherit;
     background: linear-gradient(to top right,
-        transparent 45%, var(--sky-c-danger, var(--c-danger, #dc2626)) 45%,
-        var(--sky-c-danger, var(--c-danger, #dc2626)) 55%, transparent 55%);
+        transparent 45%, var(--sky-c-danger, #dc2626) 45%,
+        var(--sky-c-danger, #dc2626) 55%, transparent 55%);
 }
 .wbc.is-empty .wbc-swatch { position: relative; }
 .wbc-native { position: absolute; left: 0; bottom: 0; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
@@ -248,13 +248,14 @@ body.drawer-open { overflow: hidden; }
 /* ==========================================================================
    原始控件（与 js/ui/*.js 配套）—— 后台、工作台、前台产物共用一份
    ==========================================================================
-   令牌取法固定成三段桥：var(--sky-* 站点主题, var(--c-* 后台配色, 兜底值))。
-   桥的两端是两个**投递模型**（不是两代命名），所以不统一前缀：
-     · --sky-c-*  产物令牌：builder.ThemeVarsCSS 按主题生成，集合随主题设置变化；
-     · --c-*      后台令牌：theme.css 的 [data-theme] 块，含产物侧没有的派生色。
-   两集合不重合，改名只会让另一侧整条声明失效（理由见 docs/02-G-component-library.md §P6）。
-   约束：var(--sky-c-X, 兜底) 的兜底位必须是 var(--c-*, 兜底) —— 缺中间层时，后台
-   深色主题下会退化成写死的亮色值（断点在 ui_css_delivery_boundary_test.go）。
+   令牌**命名统一**（审计 UIK-003 / UIK-004 的第一层）：这一层只消费 --sky-* 命名空间。
+   统一的是名字，不是取值 —— 两端的投递模型仍不同：
+     · 产物侧：builder.ThemeVarsCSS 按站点主题生成 --sky-c-*（集合随主题设置变化）；
+     · 后台侧：theme.css 的 [data-theme] 把后台色板 --c-* 以同名 --sky-c-* 暴露出来。
+   于是基座里每条声明只写一个变量名，而后台的视觉仍由后台色板决定（不随站点主题变）。
+   约束：每个 var(--sky-c-X, 兜底) 都必须带兜底 —— 该变量在两端都可能缺失，
+   无兜底时整条声明会被丢弃（表现为「控件丢了颜色 / 边框」这类不报错的视觉缺失）。
+   清单一致性由 ui_css_test.go（基座引用 ↔ 后台别名，对表）钉住。
    语义量 --ui-sp-* / --ui-r-* / --ui-shadow-* 同理带兜底；--ui-r-lg / --ui-r-pill
    的兜底与后台值故意不同（前台更紧凑），不是待修的偏差。
    ========================================================================== */
@@ -309,19 +310,19 @@ body.drawer-open { overflow: hidden; }
 .btn:active, .wb-btn:active, .wb-icon-btn:active { transform: translateY(0.5px); }
 .btn:disabled, .wb-btn:disabled, .wb-icon-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .btn:focus-visible, .wb-btn:focus-visible, .wb-icon-btn:focus-visible {
-    outline: 2px solid var(--sky-c-primary, var(--c-primary, #3d444f)); outline-offset: 2px;
+    outline: 2px solid var(--sky-c-primary, #3d444f); outline-offset: 2px;
 }
-.btn-primary, .wb-btn-primary { background: var(--sky-c-primary, var(--c-primary, #3d444f)); color: #fff; }
-.btn-primary:hover, .wb-btn-primary:hover { background: var(--sky-c-primary-deep, var(--c-primary-deep, #2f353d)); }
+.btn-primary, .wb-btn-primary { background: var(--sky-c-primary, #3d444f); color: #fff; }
+.btn-primary:hover, .wb-btn-primary:hover { background: var(--sky-c-primary-deep, #2f353d); }
 .btn-secondary, .wb-btn-secondary {
-    background: var(--sky-c-bg, var(--c-bg, #fff));
-    color: var(--sky-c-primary, var(--c-primary, #3d444f));
-    border-color: var(--sky-c-border, var(--c-border, #e5e7eb));
+    background: var(--sky-c-bg, #fff);
+    color: var(--sky-c-primary, #3d444f);
+    border-color: var(--sky-c-border, #e5e7eb);
 }
-.btn-secondary:hover, .wb-btn-secondary:hover { background: var(--c-bg-hover, rgba(16, 20, 26, .04)); }
-.btn-ghost, .wb-btn-ghost, .wb-icon-btn { background: transparent; color: var(--sky-c-text, var(--c-text-secondary, #4b5563)); }
-.btn-ghost:hover, .wb-btn-ghost:hover, .wb-icon-btn:hover { background: var(--c-bg-hover, rgba(16, 20, 26, .04)); }
-.btn-danger { background: var(--sky-c-danger, var(--c-danger, #b34a4a)); color: #fff; }
+.btn-secondary:hover, .wb-btn-secondary:hover { background: var(--sky-c-bg-hover, rgba(16, 20, 26, .04)); }
+.btn-ghost, .wb-btn-ghost, .wb-icon-btn { background: transparent; color: var(--sky-c-text-secondary, #4b5563); }
+.btn-ghost:hover, .wb-btn-ghost:hover, .wb-icon-btn:hover { background: var(--sky-c-bg-hover, rgba(16, 20, 26, .04)); }
+.btn-danger { background: var(--sky-c-danger, #b34a4a); color: #fff; }
 .btn-danger:hover { filter: brightness(0.9); }
 .btn-sm { padding: var(--ui-sp-xs) var(--ui-sp-md); font-size: 13px; line-height: 18px; }
 .btn-icon { padding: var(--ui-sp-sm); width: 36px; height: 36px; }
@@ -340,15 +341,15 @@ body.drawer-open { overflow: hidden; }
    卡片
    ========================================================================== */
 .card {
-    background: var(--sky-c-surface, var(--c-bg, #fff));
-    border: 1px solid var(--sky-c-border, var(--c-border, #e5e7eb));
+    background: var(--sky-c-surface, #fff);
+    border: 1px solid var(--sky-c-border, #e5e7eb);
     border-radius: var(--ui-r-lg);
     box-shadow: var(--ui-shadow-sm);
     overflow: hidden;
 }
 .card-header {
     padding: var(--ui-sp-lg) var(--ui-sp-xl);
-    border-bottom: 1px solid var(--sky-c-border, var(--c-border, #e5e7eb));
+    border-bottom: 1px solid var(--sky-c-border, #e5e7eb);
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -366,11 +367,11 @@ body.drawer-open { overflow: hidden; }
 .action-row .inline-form { flex: 0 0 auto; }
 .entity-row {
     display: flex; flex-wrap: wrap; align-items: center; gap: var(--ui-sp-sm);
-    padding: var(--ui-sp-md) 0; border-bottom: 1px solid var(--c-border, #e5e7eb);
+    padding: var(--ui-sp-md) 0; border-bottom: 1px solid var(--sky-c-border, #e5e7eb);
 }
 .entity-row > :first-child { flex: 1 1 320px; min-width: 0; }
 .entity-row > .btn, .entity-row > .inline-form { flex: 0 0 auto; }
-.hint { margin: 0; color: var(--c-text-mute, #6b7280); font-size: 13px; line-height: 1.5; }
+.hint { margin: 0; color: var(--sky-c-text-mute, #6b7280); font-size: 13px; line-height: 1.5; }
 .list-reset { list-style: none; margin: 0; padding: 0; }
 .text-mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; }
 .disclosure { min-width: 0; }
@@ -388,22 +389,22 @@ body.drawer-open { overflow: hidden; }
 .disclosure > summary.card-header > strong { flex: 1 1 140px; }
 .disclosure > summary.card-header > code { flex: 1 1 160px; overflow-wrap: anywhere; }
 .disclosure > summary.card-header > * { min-width: 0; }
-.disclosure > summary:focus-visible { outline: 2px solid var(--c-primary, #3d444f); outline-offset: 2px; }
+.disclosure > summary:focus-visible { outline: 2px solid var(--sky-c-primary, #3d444f); outline-offset: 2px; }
 .disclosure[open] > summary { margin-bottom: var(--ui-sp-lg); }
 .disclosure > form + form { margin-top: var(--ui-sp-lg); }
 
 .card-footer {
     padding: var(--ui-sp-lg) var(--ui-sp-xl);
-    border-top: 1px solid var(--sky-c-border, var(--c-border, #e5e7eb));
-    background: var(--c-bg-soft, #f4f5f6);
+    border-top: 1px solid var(--sky-c-border, #e5e7eb);
+    background: var(--sky-c-bg-soft, #f4f5f6);
 }
 
 /* ==========================================================================
    表格
    ========================================================================== */
 .table-wrap {
-    background: var(--sky-c-surface, var(--c-bg, #fff));
-    border: 1px solid var(--sky-c-border, var(--c-border, #e5e7eb));
+    background: var(--sky-c-surface, #fff);
+    border: 1px solid var(--sky-c-border, #e5e7eb);
     border-radius: var(--ui-r-lg);
     /* 多端硬规则：宽表在窄视口下由容器自身横向滚动，绝不撑破卡片。
        overflow-y 保持 hidden 以维持圆角裁切 —— 与 overflow-x: auto 是合法组合，
@@ -413,7 +414,7 @@ body.drawer-open { overflow: hidden; }
     -webkit-overflow-scrolling: touch;
 }
 /* 键盘用户 Tab 进容器后用方向键横向滚动（overflow 容器可聚焦）。 */
-.table-wrap:focus-visible { outline: 2px solid var(--sky-c-primary, var(--c-primary, #3d444f)); outline-offset: 2px; }
+.table-wrap:focus-visible { outline: 2px solid var(--sky-c-primary, #3d444f); outline-offset: 2px; }
 table.data-table { width: 100%; border-collapse: collapse; font-size: 14px; }
 .data-table-wide { min-width: 480px; }
 .data-table thead th {
@@ -423,19 +424,19 @@ table.data-table { width: 100%; border-collapse: collapse; font-size: 14px; }
     font-size: 12px;
     text-transform: uppercase;
     letter-spacing: 0.3px;
-    color: var(--c-text-mute, #6b7280);
-    background: var(--c-bg-soft, #f4f5f6);
-    border-bottom: 1px solid var(--sky-c-border, var(--c-border, #e5e7eb));
+    color: var(--sky-c-text-mute, #6b7280);
+    background: var(--sky-c-bg-soft, #f4f5f6);
+    border-bottom: 1px solid var(--sky-c-border, #e5e7eb);
     white-space: nowrap;
 }
 .data-table tbody td {
     padding: var(--ui-sp-md) var(--ui-sp-lg);
-    border-bottom: 1px solid var(--sky-c-border, var(--c-border, #e5e7eb));
-    color: var(--sky-c-text, var(--c-text, #1a1d21));
+    border-bottom: 1px solid var(--sky-c-border, #e5e7eb);
+    color: var(--sky-c-text, #1a1d21);
 }
 .data-table tbody tr:last-child td { border-bottom: none; }
 .data-table tbody tr { transition: background var(--ui-tr-fast); }
-.data-table tbody tr:hover { background: var(--c-bg-hover, rgba(16, 20, 26, .04)); }
+.data-table tbody tr:hover { background: var(--sky-c-bg-hover, rgba(16, 20, 26, .04)); }
 .data-table .col-actions { text-align: right; white-space: nowrap; }
 
 /* ==========================================================================
@@ -447,9 +448,9 @@ table.data-table { width: 100%; border-collapse: collapse; font-size: 14px; }
     margin-bottom: var(--ui-sp-xs);
     font-size: 13px;
     font-weight: 500;
-    color: var(--c-text-secondary, #c2c8cf);
+    color: var(--sky-c-text-secondary, #c2c8cf);
 }
-.form-label .req { color: var(--c-danger, #cf8080); }
+.form-label .req { color: var(--sky-c-danger, #cf8080); }
 
 /* ===== 后台裸控件的兜底外观（审计 UIK-009）=====
    后台仍有页面把输入框裸写：既没有 form-input 系列类，也不在任何桥接容器里，
@@ -469,9 +470,9 @@ table.data-table { width: 100%; border-collapse: collapse; font-size: 14px; }
     font-family: inherit;
     font-size: 13px;
     line-height: 1.4;
-    color: var(--sky-c-text, var(--c-text, #1a1d21));
-    background: var(--sky-c-surface, var(--c-bg, #fff));
-    border: 1px solid var(--sky-c-border, var(--c-border-input, #c6ccd4));
+    color: var(--sky-c-text, #1a1d21);
+    background: var(--sky-c-surface, #fff);
+    border: 1px solid var(--sky-c-border-input, #c6ccd4);
     border-radius: var(--ui-r-sm);
 }
 
@@ -501,10 +502,10 @@ table.data-table { width: 100%; border-collapse: collapse; font-size: 14px; }
     width: 100%; min-width: 0; box-sizing: border-box;
     font-family: inherit; line-height: 1.4;
     padding: var(--ui-sp-sm) var(--ui-sp-md);
-    background: var(--sky-c-surface, var(--c-bg, #fff));
-    border: 1px solid var(--sky-c-border, var(--c-border-input, #c6ccd4));
+    background: var(--sky-c-surface, #fff);
+    border: 1px solid var(--sky-c-border-input, #c6ccd4);
     border-radius: var(--ui-r-sm);
-    color: var(--sky-c-text, var(--c-text, #1a1d21));
+    color: var(--sky-c-text, #1a1d21);
     /* 13px：与后台既有观感一致（此前 theme.css 各页写的是 13px，改基座比改十几个页面稳）。 */
     font-size: 13px;
     transition: border-color var(--ui-tr-fast), box-shadow var(--ui-tr-fast);
@@ -514,36 +515,36 @@ table.data-table { width: 100%; border-collapse: collapse; font-size: 14px; }
 .form-input:focus-visible,
 .form-select:focus-visible,
 .form-textarea:focus-visible {
-    outline: 2px solid var(--c-primary, #aeb6c0);
+    outline: 2px solid var(--sky-c-primary, #aeb6c0);
     outline-offset: 1px;
 }
 .form-input:focus,
 .form-select:focus,
 .form-textarea:focus {
-    border-color: var(--c-primary, #aeb6c0);
-    box-shadow: 0 0 0 3px var(--c-primary-bg, #2a3038);
+    border-color: var(--sky-c-primary, #aeb6c0);
+    box-shadow: 0 0 0 3px var(--sky-c-primary-bg, #2a3038);
 }
 .form-input:disabled,
 .form-select:disabled,
 .form-textarea:disabled {
     opacity: .6;
     cursor: not-allowed;
-    background: var(--c-bg-hover, #f4f5f7);
+    background: var(--sky-c-bg-hover, #f4f5f7);
 }
 /* 校验失败（服务端回填 aria-invalid 时）：边框与提示同一套语义色。 */
 .form-input[aria-invalid="true"],
 .form-select[aria-invalid="true"],
 .form-textarea[aria-invalid="true"] {
-    border-color: var(--c-danger, #cf8080);
+    border-color: var(--sky-c-danger, #cf8080);
 }
 .form-input[aria-invalid="true"]:focus,
 .form-select[aria-invalid="true"]:focus {
     box-shadow: 0 0 0 3px rgb(179 74 74 / 15%);
 }
-.form-input::placeholder { color: var(--c-text-faint, #5d656e); }
+.form-input::placeholder { color: var(--sky-c-text-faint, #5d656e); }
 .form-textarea { resize: vertical; min-height: 100px; }
-.form-hint { margin-top: var(--ui-sp-xs); font-size: 12px; color: var(--c-text-mute, #8a9199); }
-.form-error { margin-top: var(--ui-sp-xs); font-size: 12px; color: var(--c-danger, #cf8080); }
+.form-hint { margin-top: var(--ui-sp-xs); font-size: 12px; color: var(--sky-c-text-mute, #8a9199); }
+.form-error { margin-top: var(--ui-sp-xs); font-size: 12px; color: var(--sky-c-danger, #cf8080); }
 
 .form-row {
     display: grid;
@@ -558,15 +559,15 @@ table.data-table { width: 100%; border-collapse: collapse; font-size: 14px; }
     gap: var(--ui-sp-xs);
     cursor: pointer;
     font-size: 14px;
-    color: var(--sky-c-text, var(--c-text-secondary, #4b5563));
+    color: var(--sky-c-text-secondary, #4b5563);
 }
 .wb-check-field, .wb-field-check > label { min-height: 28px; margin: 0; font-size: 12px; gap: 8px; }
 .checkbox input, .wb-check-field input, .wb-field-check input[type="checkbox"] {
     width: 16px; height: 16px; min-height: 0; margin: 0; padding: 0; flex: none;
-    accent-color: var(--sky-c-primary, var(--c-primary, #3d444f));
+    accent-color: var(--sky-c-primary, #3d444f);
 }
 .checkbox input:focus-visible, .wb-check-field input:focus-visible, .wb-field-check input:focus-visible {
-    outline: 2px solid var(--sky-c-primary, var(--c-primary, #3d444f)); outline-offset: 2px;
+    outline: 2px solid var(--sky-c-primary, #3d444f); outline-offset: 2px;
 }
 
 /* ==========================================================================
@@ -581,11 +582,11 @@ table.data-table { width: 100%; border-collapse: collapse; font-size: 14px; }
     border-radius: var(--ui-r-pill);
     line-height: 20px;
 }
-.badge-success { background: var(--c-success-bg, #1b2820); color: var(--c-success, #7fb28d); }
-.badge-warning { background: var(--c-warning-bg, #2a2318); color: var(--c-warning, #c2a06a); }
-.badge-danger  { background: var(--c-danger-bg, #2b1c1c);  color: var(--c-danger, #cf8080); }
-.badge-info { background: var(--c-primary-bg, #eceef1); color: var(--c-primary, #3d444f); }
-.badge-mute    { background: var(--c-bg-hover, #1f242b);   color: var(--c-text-mute, #8a9199); }
+.badge-success { background: var(--sky-c-success-bg, #1b2820); color: var(--sky-c-success, #7fb28d); }
+.badge-warning { background: var(--sky-c-warning-bg, #2a2318); color: var(--sky-c-warning, #c2a06a); }
+.badge-danger  { background: var(--sky-c-danger-bg, #2b1c1c);  color: var(--sky-c-danger, #cf8080); }
+.badge-info { background: var(--sky-c-primary-bg, #eceef1); color: var(--sky-c-primary, #3d444f); }
+.badge-mute    { background: var(--sky-c-bg-hover, #1f242b);   color: var(--sky-c-text-mute, #8a9199); }
 
 .dot {
     display: inline-block;
@@ -594,10 +595,10 @@ table.data-table { width: 100%; border-collapse: collapse; font-size: 14px; }
     border-radius: 50%;
     margin-right: var(--ui-sp-xs);
 }
-.dot-success { background: var(--c-success, #7fb28d); }
-.dot-warning { background: var(--c-warning, #c2a06a); }
-.dot-danger  { background: var(--c-danger, #cf8080); }
-.dot-mute    { background: var(--c-text-faint, #5d656e); }
+.dot-success { background: var(--sky-c-success, #7fb28d); }
+.dot-warning { background: var(--sky-c-warning, #c2a06a); }
+.dot-danger  { background: var(--sky-c-danger, #cf8080); }
+.dot-mute    { background: var(--sky-c-text-faint, #5d656e); }
 
 /* ==========================================================================
    分页
@@ -607,10 +608,10 @@ table.data-table { width: 100%; border-collapse: collapse; font-size: 14px; }
     align-items: center;
     gap: var(--ui-sp-xs);
     padding: var(--ui-sp-md) var(--ui-sp-lg);
-    border-top: 1px solid var(--c-border, #232830);
+    border-top: 1px solid var(--sky-c-border, #232830);
     justify-content: space-between;
 }
-.pagination-info { font-size: 13px; color: var(--c-text-mute, #8a9199); }
+.pagination-info { font-size: 13px; color: var(--sky-c-text-mute, #8a9199); }
 .pagination-pages { display: flex; gap: var(--ui-sp-xxs); }
 /* 类选择器而非元素选择器：同一个分页条有三种载体 —— 链接（服务端渲染的翻页）、
    span（当前页 / 不可点）、button（客户端 AJAX 分页，如媒体库）。
@@ -625,16 +626,16 @@ table.data-table { width: 100%; border-collapse: collapse; font-size: 14px; }
     border-radius: var(--ui-r-sm);
     font-size: 13px;
     font-family: inherit;
-    color: var(--c-text-secondary, #c2c8cf);
+    color: var(--sky-c-text-secondary, #c2c8cf);
     background: transparent;
     border: 1px solid transparent;
     cursor: pointer;
     transition: background var(--ui-tr-fast), border-color var(--ui-tr-fast);
 }
-.pagination-pages .pagination-btn:hover { background: var(--c-bg-hover, #1f242b); text-decoration: none; }
+.pagination-pages .pagination-btn:hover { background: var(--sky-c-bg-hover, #1f242b); text-decoration: none; }
 .pagination-pages .pagination-btn.is-active {
-    background: var(--c-primary-bg, #2a3038);
-    color: var(--c-primary, #aeb6c0);
+    background: var(--sky-c-primary-bg, #2a3038);
+    color: var(--sky-c-primary, #aeb6c0);
     font-weight: 500;
 }
 .pagination-pages .pagination-btn:disabled,
@@ -661,7 +662,7 @@ table.data-table { width: 100%; border-collapse: collapse; font-size: 14px; }
 .mb-md { margin-bottom: var(--ui-sp-md); }
 .mb-lg { margin-bottom: var(--ui-sp-lg); }
 .mb-xl { margin-bottom: var(--ui-sp-xl); }
-.text-mute { color: var(--c-text-mute, #8a9199); }
+.text-mute { color: var(--sky-c-text-mute, #8a9199); }
 .text-sm { font-size: 13px; }
 .text-xs { font-size: 12px; }
 .text-right { text-align: right; }
@@ -676,15 +677,15 @@ table.data-table { width: 100%; border-collapse: collapse; font-size: 14px; }
     justify-content: center;
     width: 36px;
     height: 36px;
-    border: 1px solid var(--c-border, #232830);
+    border: 1px solid var(--sky-c-border, #232830);
     border-radius: var(--ui-r-pill);
-    background: var(--sky-c-surface, var(--c-bg, #fff));
+    background: var(--sky-c-surface, #fff);
     cursor: pointer;
     font-size: 16px;
-    color: var(--c-text-secondary, #c2c8cf);
+    color: var(--sky-c-text-secondary, #c2c8cf);
     transition: background var(--ui-tr-fast), border-color var(--ui-tr-fast);
 }
-.theme-toggle:hover { background: var(--c-bg-hover, #1f242b); }
+.theme-toggle:hover { background: var(--sky-c-bg-hover, #1f242b); }
 
 /* ==========================================================================
    语言切换（后台外壳，多语言 P1 第二步）：GET /admin/lang 表单，零 JS 依赖
@@ -695,34 +696,34 @@ table.data-table { width: 100%; border-collapse: collapse; font-size: 14px; }
     padding: 0 8px;
     font-size: 13px;
     font-family: inherit;
-    color: var(--c-text-secondary, #c2c8cf);
-    background: var(--sky-c-surface, var(--c-bg, #fff));
-    border: 1px solid var(--c-border, #232830);
+    color: var(--sky-c-text-secondary, #c2c8cf);
+    background: var(--sky-c-surface, #fff);
+    border: 1px solid var(--sky-c-border, #232830);
     border-radius: var(--ui-r-pill);
     cursor: pointer;
 }
-.lang-select:hover { background: var(--c-bg-hover, #1f242b); }
+.lang-select:hover { background: var(--sky-c-bg-hover, #1f242b); }
 .lang-submit {
     height: 36px;
     padding: 0 10px;
-    border: 1px solid var(--c-border, #232830);
+    border: 1px solid var(--sky-c-border, #232830);
     border-radius: var(--ui-r-pill);
-    background: var(--sky-c-surface, var(--c-bg, #fff));
-    color: var(--c-text-secondary, #c2c8cf);
+    background: var(--sky-c-surface, #fff);
+    color: var(--sky-c-text-secondary, #c2c8cf);
     cursor: pointer;
 }
 /* 登录页语言切换：卡片内居中、与副标题留出间距（链接式，登录前不写 Cookie） */
 .login-lang { display: flex; justify-content: center; gap: 10px; margin: 0 0 20px; }
 .lang-link {
     font-size: 12px;
-    color: var(--c-text-mute, #6b7280);
+    color: var(--sky-c-text-mute, #6b7280);
     text-decoration: none;
     padding: 2px 8px;
-    border: 1px solid var(--c-border, #e5e7eb);
+    border: 1px solid var(--sky-c-border, #e5e7eb);
     border-radius: var(--ui-r-pill);
 }
-.lang-link:hover { background: var(--c-bg-hover, #1f242b); }
-.lang-link.is-active { color: var(--c-text, #1a1d21); border-color: var(--c-primary-soft, #5b6572); cursor: default; }
+.lang-link:hover { background: var(--sky-c-bg-hover, #1f242b); }
+.lang-link.is-active { color: var(--sky-c-text, #1a1d21); border-color: var(--sky-c-primary-soft, #5b6572); cursor: default; }
 /* 视觉隐藏但屏幕阅读器可读（语言下拉的 label） */
 .sr-only {
     position: absolute;

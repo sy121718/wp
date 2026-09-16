@@ -101,6 +101,43 @@
     --tr-norm:  200ms ease;
 }
 
+/* ===== 基座令牌别名（两端同名，审计 UIK-003 / UIK-004） =====
+   ui.css 是后台（<link>）与前台产物（构建期内联）共用的同一份基座，它只消费 --sky-c-*
+   命名空间。产物侧由 builder.ThemeVarsCSS 按站点主题生成这套变量；后台侧没有那套生成器，
+   于是把后台色板 --c-* 在这里以同名的 --sky-c-* 暴露出来 —— **名字统一、取值各供**：
+   后台的取值仍是后台自己的色板（不随站点主题变），这是有意的边界，不是遗留。
+   两条纪律（都有测试守着）：
+     · 别名值必须带兜底。写成 var(--c-x) 时，一旦 --c-x 未定义，--sky-c-x 会解析成
+       guaranteed-invalid，引用它的声明整体失效 —— ui.css 里那层兜底救不回来；
+     · 选择器用 [data-theme] 而不是 :root：--c-* 由 [data-theme] 定义，同一元素上解析
+       才不会出现「别名先解析、主题值后到达」的空窗（admin/layout.html 把 data-theme
+       设在 documentElement）。
+   清单与 ui.css 的实际引用一一对应（ui_css_test.go 对表断言）：漏一条 = 后台深色主题下
+   那条声明退化成写死的亮色值。 */
+[data-theme] {
+    --sky-c-primary: var(--c-primary, #3d444f);
+    --sky-c-primary-deep: var(--c-primary-deep, #2f353d);
+    --sky-c-primary-soft: var(--c-primary-soft, #5b6572);
+    --sky-c-primary-bg: var(--c-primary-bg, #eceef1);
+    --sky-c-bg: var(--c-bg, #fff);
+    --sky-c-bg-soft: var(--c-bg-soft, #f4f5f6);
+    --sky-c-bg-hover: var(--c-bg-hover, #f4f5f7);
+    --sky-c-surface: var(--c-surface, #fff);
+    --sky-c-text: var(--c-text, #1a1d21);
+    --sky-c-text-secondary: var(--c-text-secondary, #4b5563);
+    --sky-c-text-mute: var(--c-text-mute, #6b7280);
+    --sky-c-text-faint: var(--c-text-faint, #5d656e);
+    --sky-c-border: var(--c-border, #e5e7eb);
+    --sky-c-border-strong: var(--c-border-strong, #d1d5db);
+    --sky-c-border-input: var(--c-border-input, #c6ccd4);
+    --sky-c-success: var(--c-success, #059669);
+    --sky-c-success-bg: var(--c-success-bg, #1b2820);
+    --sky-c-warning: var(--c-warning, #c2a06a);
+    --sky-c-warning-bg: var(--c-warning-bg, #2a2318);
+    --sky-c-danger: var(--c-danger, #dc2626);
+    --sky-c-danger-bg: var(--c-danger-bg, #2b1c1c);
+}
+
 /* ===== Reset ===== */
 *, *::before, *::after { box-sizing: border-box; }
 /* 显式归零 —— 不用通配符 margin/padding，避免清掉 <dialog> 的 UA margin:auto（showModal 居中）。 */
