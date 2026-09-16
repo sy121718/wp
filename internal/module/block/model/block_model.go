@@ -134,13 +134,29 @@ func (m *Model) GetByID(ctx context.Context, id string, projectID string) (e *Bl
 }
 
 // UpdateDocument 更新块名称、类型、分类、复用方式与文档（覆盖式，编辑器整树保存）。
-func (m *Model) UpdateDocument(ctx context.Context, id string, name, kind, category, reuseMode string, document json.RawMessage, updatedAt time.Time) (err error) {
-	return m.DB(ctx).Where("id = ?", id).Updates(map[string]any{
-		"name": name, "kind": kind, "category": category, "reuse_mode": reuseMode, "document": document, "update_time": updatedAt,
-	}).Error
+//
+// projectID 非空时在工程作用域内写（blocks 带 FORCE 策略）：越界写会被 WITH CHECK
+// 直接拒绝而不是静默改到别的工程。为空沿用「不限工程」的历史形态（DB-009 剩余清单）。
+func (m *Model) UpdateDocument(ctx context.Context, projectID, id string, name, kind, category, reuseMode string, document json.RawMessage, updatedAt time.Time) (err error) {
+	if strings.TrimSpace(projectID) == "" {
+		return m.DB(ctx).Where("id = ?", id).Updates(map[string]any{
+			"name": name, "kind": kind, "category": category, "reuse_mode": reuseMode, "document": document, "update_time": updatedAt,
+		}).Error
+	}
+	return rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.Model(&BlockEntity{}).Where("id = ? AND project_id = ?", id, projectID).Updates(map[string]any{
+			"name": name, "kind": kind, "category": category, "reuse_mode": reuseMode, "document": document, "update_time": updatedAt,
+		}).Error
+	})
 }
 
 // Delete 删除块。
-func (m *Model) Delete(ctx context.Context, id string) (err error) {
-	return m.DB(ctx).Where("id = ?", id).Delete(&BlockEntity{}).Error
+// projectID 非空时在工程作用域内删（越界删在换角色后会被策略拒绝，而不是删掉别的工程的块）。
+func (m *Model) Delete(ctx context.Context, projectID, id string) (err error) {
+	if strings.TrimSpace(projectID) == "" {
+		return m.DB(ctx).Where("id = ?", id).Delete(&BlockEntity{}).Error
+	}
+	return rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.Model(&BlockEntity{}).Where("id = ? AND project_id = ?", id, projectID).Delete(&BlockEntity{}).Error
+	})
 }

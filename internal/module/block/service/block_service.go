@@ -229,7 +229,8 @@ func (s *Service) Update(ctx context.Context, req *blockdto.UpdateReq) (res *blo
 		}
 	}
 	now := time.Now().UTC()
-	if err = s.model.UpdateDocument(ctx, entity.ID, name, kind, category, reuseMode, document, now); err != nil {
+	// 写路径带工程作用域（DB-009 第二批）：entity 是上面定位到的块，自带 ProjectID。
+	if err = s.model.UpdateDocument(ctx, entity.ProjectID, entity.ID, name, kind, category, reuseMode, document, now); err != nil {
 		return nil, err
 	}
 	entity.Name, entity.Kind, entity.Category, entity.ReuseMode, entity.Document, entity.UpdatedAt = name, kind, category, reuseMode, document, now
@@ -255,7 +256,7 @@ func (s *Service) Delete(ctx context.Context, req *blockdto.DeleteReq) (err erro
 	if entity.ReuseMode == blockmodel.ReuseGlobal && !req.Force && s.blockReferenced(ctx, entity.ID) {
 		return ErrBlockInUse
 	}
-	if err = s.model.Delete(ctx, entity.ID); err != nil {
+	if err = s.model.Delete(ctx, entity.ProjectID, entity.ID); err != nil {
 		return err
 	}
 	s.propagateStale(ctx, req.ID, entity.ReuseMode) // req.ID 为 dto 字符串形式，与引用检查口径一致
