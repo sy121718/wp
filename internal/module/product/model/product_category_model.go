@@ -71,15 +71,21 @@ func (m *Model) GetCategoryWithoutScope(ctx context.Context, id string) (e *Prod
 
 // CategorySlugExists 同工程下 slug 是否被占用（excludeID 为空表示新建场景）。
 func (m *Model) CategorySlugExists(ctx context.Context, projectID, slug, excludeID string) (exists bool, err error) {
-	q := m.CategoryDB(ctx).Where("project_id = ? AND slug = ?", projectID, slug)
-	if excludeID != "" {
-		q = q.Where("id <> ?", excludeID)
-	}
-	var n int64
-	if err = q.Count(&n).Error; err != nil {
-		return false, err
-	}
-	return n > 0, nil
+	// 唯一性判定要作用域：缺 scope 时恒「不存在」⇒ 重复创建被静默放行（DB-009）。
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		q := tx.WithContext(ctx).Model(&ProductCategoryEntity{}).
+			Where("project_id = ? AND slug = ?", projectID, slug)
+		if excludeID != "" {
+			q = q.Where("id <> ?", excludeID)
+		}
+		var n int64
+		if cerr := q.Count(&n).Error; cerr != nil {
+			return cerr
+		}
+		exists = n > 0
+		return nil
+	})
+	return exists, err
 }
 
 // ListCategories 工程内分类列表（条件以参数传入；同级按排序号 + 创建时间稳定排序）。

@@ -189,15 +189,21 @@ func (m *Model) ListByIDs(ctx context.Context, ids []string) (list []*ProductEnt
 
 // SlugExists 同工程下 slug 是否被占用（excludeID 为空表示新建场景）。
 func (m *Model) SlugExists(ctx context.Context, projectID, slug, excludeID string) (exists bool, err error) {
-	q := m.DB(ctx).Where("project_id = ? AND slug = ?", projectID, slug)
-	if excludeID != "" {
-		q = q.Where("id <> ?", excludeID)
-	}
-	var n int64
-	if err = q.Count(&n).Error; err != nil {
-		return false, err
-	}
-	return n > 0, nil
+	// 唯一性判定要作用域：缺 scope 时恒「不存在」⇒ 重复创建被静默放行（DB-009）。
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		q := tx.WithContext(ctx).Model(&ProductEntity{}).
+			Where("project_id = ? AND slug = ?", projectID, slug)
+		if excludeID != "" {
+			q = q.Where("id <> ?", excludeID)
+		}
+		var n int64
+		if cerr := q.Count(&n).Error; cerr != nil {
+			return cerr
+		}
+		exists = n > 0
+		return nil
+	})
+	return exists, err
 }
 
 // List 商品列表。只取列表需要的列：metadata 与 description 不参与列表查询（spec：默认不取）。
@@ -396,17 +402,16 @@ func (m *Model) CountForCollection(ctx context.Context, f CollectionFilter) (n i
 
 // Count 列表总数（与 List 同过滤条件）。
 func (m *Model) Count(ctx context.Context, projectID, keyword, status string) (n int64, err error) {
-	q := m.DB(ctx)
-	if projectID != "" {
-		q = q.Where("project_id = ?", projectID)
-	}
-	if keyword != "" {
-		q = q.Where("name ILIKE ?", "%"+keyword+"%")
-	}
-	if status != "" {
-		q = q.Where("status = ?", status)
-	}
-	err = q.Count(&n).Error
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		q := tx.WithContext(ctx).Model(&ProductEntity{})
+		if keyword != "" {
+			q = q.Where("name ILIKE ?", "%"+keyword+"%")
+		}
+		if status != "" {
+			q = q.Where("status = ?", status)
+		}
+		return q.Count(&n).Error
+	})
 	return n, err
 }
 

@@ -155,15 +155,21 @@ func (m *Model) GetDefaultWarehouse(ctx context.Context, projectID string) (e *W
 
 // CodeExists 某工程内短码是否被占用（大小写不敏感，excludeID 为空表示新建场景）。
 func (m *Model) CodeExists(ctx context.Context, projectID, code, excludeID string) (exists bool, err error) {
-	q := m.DB(ctx).Where("project_id = ? AND upper(code) = upper(?)", projectID, code)
-	if excludeID != "" {
-		q = q.Where("id <> ?", excludeID)
-	}
-	var n int64
-	if err = q.Count(&n).Error; err != nil {
-		return false, err
-	}
-	return n > 0, nil
+	// 唯一性判定要作用域：缺 scope 时恒「不存在」⇒ 重复创建被静默放行（DB-009）。
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		q := tx.WithContext(ctx).Model(&WarehouseEntity{}).
+			Where("project_id = ? AND upper(code) = upper(?)", projectID, code)
+		if excludeID != "" {
+			q = q.Where("id <> ?", excludeID)
+		}
+		var n int64
+		if cerr := q.Count(&n).Error; cerr != nil {
+			return cerr
+		}
+		exists = n > 0
+		return nil
+	})
+	return exists, err
 }
 
 // ListWarehouses 某工程的仓库列表（默认仓在最前，其后按排序号与短码）。

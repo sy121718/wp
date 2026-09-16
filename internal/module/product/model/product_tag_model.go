@@ -82,15 +82,21 @@ func (m *Model) GetTagWithoutScope(ctx context.Context, id string) (e *ProductTa
 
 // TagSlugExists 同工程下 slug 是否被占用（excludeID 为空表示新建场景）。
 func (m *Model) TagSlugExists(ctx context.Context, projectID, slug, excludeID string) (exists bool, err error) {
-	q := m.TagDB(ctx).Where("project_id = ? AND slug = ?", projectID, slug)
-	if excludeID != "" {
-		q = q.Where("id <> ?", excludeID)
-	}
-	var n int64
-	if err = q.Count(&n).Error; err != nil {
-		return false, err
-	}
-	return n > 0, nil
+	// 唯一性判定要作用域：缺 scope 时恒「不存在」⇒ 重复创建被静默放行（DB-009）。
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		q := tx.WithContext(ctx).Model(&ProductTagEntity{}).
+			Where("project_id = ? AND slug = ?", projectID, slug)
+		if excludeID != "" {
+			q = q.Where("id <> ?", excludeID)
+		}
+		var n int64
+		if cerr := q.Count(&n).Error; cerr != nil {
+			return cerr
+		}
+		exists = n > 0
+		return nil
+	})
+	return exists, err
 }
 
 // ListTags 工程内标签列表（条件以参数传入；按排序号 + 创建时间稳定排序）。

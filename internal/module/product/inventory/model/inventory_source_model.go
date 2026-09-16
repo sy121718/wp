@@ -94,15 +94,21 @@ func (m *Model) GetSource(ctx context.Context, id, projectID string) (e *SourceE
 
 // SourceCodeExists 某工程内货源编码是否被占用（大小写不敏感，excludeID 为空表示新建场景）。
 func (m *Model) SourceCodeExists(ctx context.Context, projectID, code, excludeID string) (exists bool, err error) {
-	q := m.SourceDB(ctx).Where("project_id = ? AND upper(code) = upper(?)", projectID, code)
-	if excludeID != "" {
-		q = q.Where("id <> ?", excludeID)
-	}
-	var n int64
-	if err = q.Count(&n).Error; err != nil {
-		return false, err
-	}
-	return n > 0, nil
+	// 唯一性判定要作用域：缺 scope 时恒「不存在」⇒ 重复创建被静默放行（DB-009）。
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		q := tx.WithContext(ctx).Model(&SourceEntity{}).
+			Where("project_id = ? AND upper(code) = upper(?)", projectID, code)
+		if excludeID != "" {
+			q = q.Where("id <> ?", excludeID)
+		}
+		var n int64
+		if cerr := q.Count(&n).Error; cerr != nil {
+			return cerr
+		}
+		exists = n > 0
+		return nil
+	})
+	return exists, err
 }
 
 // applySourceFilter 把查询条件施加到货源查询上（条件以参数传入）。

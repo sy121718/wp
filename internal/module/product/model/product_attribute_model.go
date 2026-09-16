@@ -70,15 +70,24 @@ func (m *Model) GetAttributeWithoutScope(ctx context.Context, id string) (e *Pro
 
 // AttributeKeyExists 同工程下属性组 key 是否被占用（excludeID 为空表示新建场景）。
 func (m *Model) AttributeKeyExists(ctx context.Context, projectID, key, excludeID string) (exists bool, err error) {
-	q := m.AttributeDB(ctx).Where("project_id = ? AND key = ?", projectID, key)
-	if excludeID != "" {
-		q = q.Where("id <> ?", excludeID)
-	}
-	var n int64
-	if err = q.Count(&n).Error; err != nil {
+	// 唯一性判定同样要作用域：缺 scope 时这里恒为「不存在」⇒ 重复创建被静默放行（DB-009）。
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		q := tx.WithContext(ctx).Model(&ProductAttributeEntity{}).
+			Where("project_id = ? AND key = ?", projectID, key)
+		if excludeID != "" {
+			q = q.Where("id <> ?", excludeID)
+		}
+		var n int64
+		if cerr := q.Count(&n).Error; cerr != nil {
+			return cerr
+		}
+		exists = n > 0
+		return nil
+	})
+	if err != nil {
 		return false, err
 	}
-	return n > 0, nil
+	return exists, nil
 }
 
 // ListAttributes 属性组列表（分页 + 可选过滤；variation 为 nil 表示不过滤）。
@@ -99,17 +108,16 @@ func (m *Model) ListAttributes(ctx context.Context, projectID, keyword string, v
 
 // CountAttributes 属性组总数（与 ListAttributes 同过滤条件）。
 func (m *Model) CountAttributes(ctx context.Context, projectID, keyword string, variation *bool) (n int64, err error) {
-	q := m.AttributeDB(ctx)
-	if projectID != "" {
-		q = q.Where("project_id = ?", projectID)
-	}
-	if keyword != "" {
-		q = q.Where("name ILIKE ? OR key ILIKE ?", "%"+keyword+"%", "%"+keyword+"%")
-	}
-	if variation != nil {
-		q = q.Where("is_variation = ?", *variation)
-	}
-	err = q.Count(&n).Error
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		q := tx.WithContext(ctx).Model(&ProductAttributeEntity{})
+		if keyword != "" {
+			q = q.Where("name ILIKE ? OR key ILIKE ?", "%"+keyword+"%", "%"+keyword+"%")
+		}
+		if variation != nil {
+			q = q.Where("is_variation = ?", *variation)
+		}
+		return q.Count(&n).Error
+	})
 	return n, err
 }
 
