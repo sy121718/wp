@@ -43,6 +43,22 @@ type Props struct {
 // Widget 基座实例。
 var Widget = core.Atom[Props]{
 	Spec: core.AtomSpec[Props]{
+		DisplayName:     "常见问题",
+		Hint:            "问答折叠",
+		PaletteCategory: core.PaletteCategoryBasic,
+		DefaultProps: map[string]any{
+			"items": []any{
+				map[string]any{
+					"question": "常见问题一？",
+					"answer":   "这里是回答内容。",
+					"open":     true,
+				},
+				map[string]any{
+					"question": "常见问题二？",
+					"answer":   "这里是回答内容。",
+				},
+			},
+		},
 		TypeName:      Type,
 		ValidateExtra: validateExtra,
 		// Translatable 可翻译字段白名单（多语言 P5b，docs/06-D §7.5 决策 F6）：

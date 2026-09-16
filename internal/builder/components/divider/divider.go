@@ -90,6 +90,13 @@ type Props struct {
 // Widget 基座实例。
 var Widget = core.Atom[Props]{
 	Spec: core.AtomSpec[Props]{
+		DisplayName:     "分隔线",
+		Hint:            "内容分隔",
+		PaletteCategory: core.PaletteCategoryBasic,
+		DefaultProps: map[string]any{
+			"style":  "solid",
+			"weight": "1px",
+		},
 		TypeName:      Type,
 		ValidateExtra: validateExtra,
 		// Translatable 可翻译字段白名单（多语言 P5b，docs/06-D §7.5 决策 F6）：

@@ -42,6 +42,28 @@ type Props struct {
 // Widget 基座实例。
 var Widget = core.Atom[Props]{
 	Spec: core.AtomSpec[Props]{
+		DisplayName:     "表格",
+		Hint:            "数据表格",
+		PaletteCategory: core.PaletteCategoryBasic,
+		DefaultProps: map[string]any{
+			"caption": "数据表格",
+			"headers": []any{
+				"列一",
+				"列二",
+			},
+			"rows": []any{
+				[]any{
+					"A",
+					"B",
+				},
+				[]any{
+					"C",
+					"D",
+				},
+			},
+			"striped":  true,
+			"bordered": true,
+		},
 		TypeName:      Type,
 		ValidateExtra: validateExtra,
 		// Translatable 可翻译字段白名单（多语言 P5b，docs/06-D §7.5 决策 F6）：

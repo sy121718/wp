@@ -29,6 +29,14 @@ type Props struct {
 // Widget 泛型基座实例。
 var Widget = core.Atom[Props]{
 	Spec: core.AtomSpec[Props]{
+		DisplayName:     "间隔",
+		Hint:            "留白空间",
+		PaletteCategory: core.PaletteCategoryBasic,
+		DefaultProps: map[string]any{
+			"height": map[string]any{
+				"desktop": "32px",
+			},
+		},
 		TypeName: Type,
 		ValidateExtra: func(p *Props, nodeID string) error {
 			for bp, v := range map[string]string{

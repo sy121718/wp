@@ -23,15 +23,8 @@ import (
 	"testing"
 )
 
-// paletteExemptTypes 合法不进组件库的组件及理由。
-//
-// 豁免不是「忽略漂移」，而是把「这些组件为什么不上面板」从隐性事实变成显式声明：
-// 它们都能编译、都有 schema，只是**由专门路径产生**，静态的组件库条目表达不了
-// 它们需要的上下文（块 ID / 主题绑定），拖进去反而会生成非法节点。
-var paletteExemptTypes = map[string]string{
-	"core.globalref":  "全局块引用：由画布的块列表拖入创建（canvas.js 带 blockId 构造），组件库条目给不出块 ID",
-	"core.layoutSlot": "结构槽位：编译期由主题的页眉/页脚绑定展开成 root 首尾节点（WithStructureSlots），作者不应手动插入",
-}
+// 组件库豁免表（PaletteExemptTypes）已上移到生产代码 palette.go：
+// 覆盖断言（palette_contract_test.go）与 Inspector schema 一致性检查共用同一份声明。
 
 // TestPaletteItemsMatchComponentSchemas 组件库条目与 Inspector schema 必须一一对应。
 func TestPaletteItemsMatchComponentSchemas(t *testing.T) {
@@ -61,7 +54,7 @@ func TestPaletteItemsMatchComponentSchemas(t *testing.T) {
 	// 方向一：有 schema 的组件必须能被拖出来。
 	missingInPalette := []string{}
 	for typ := range schemas {
-		if _, exempt := paletteExemptTypes[typ]; exempt {
+		if _, exempt := PaletteExemptTypes[typ]; exempt {
 			continue
 		}
 		if !inPalette[typ] {
@@ -71,7 +64,7 @@ func TestPaletteItemsMatchComponentSchemas(t *testing.T) {
 
 	// 豁免名单不能变成僵尸：被豁免的组件必须真的有 schema（组件删除 / 改名后名单要跟着收）。
 	stale := []string{}
-	for typ := range paletteExemptTypes {
+	for typ := range PaletteExemptTypes {
 		if _, ok := schemas[typ]; !ok {
 			stale = append(stale, typ)
 		}
@@ -98,4 +91,46 @@ func TestPaletteItemsMatchComponentSchemas(t *testing.T) {
 	}
 
 	t.Logf("组件库 %d 个条目 / Inspector schema %d 个组件，双向一致", len(inPalette), len(schemas))
+}
+
+// TestPaletteOutputMatchesGoSpec 前端派生条目必须与 Go 侧组件库输出一一对应（审计 REG-005）。
+//
+// palette.js 已不再手写条目：它由生成的 paletteSpec（组件 Go 声明）派生。
+// 本测试钉住派生结果不丢条目、不多条目 —— 并顺带证明「新增组件只改 Go」时，
+// 前端拿到的集合等于 Go 侧注册集合。
+func TestPaletteOutputMatchesGoSpec(t *testing.T) {
+	items, err := ComponentPalette()
+	if err != nil {
+		t.Fatalf("采集组件库元数据失败: %v", err)
+	}
+	if len(items) == 0 {
+		t.Fatal("组件库元数据为空，组件注册表可能未初始化")
+	}
+	p := runPaletteProbe(t)
+	jsTypes := map[string]bool{}
+	for _, typ := range p.ItemTypes {
+		jsTypes[typ] = true
+	}
+
+	lost := []string{}
+	for typ := range items {
+		if !jsTypes[typ] {
+			lost = append(lost, typ)
+		}
+	}
+	extra := []string{}
+	for typ := range jsTypes {
+		if _, ok := items[typ]; !ok {
+			extra = append(extra, typ)
+		}
+	}
+	sort.Strings(lost)
+	sort.Strings(extra)
+	if len(lost) > 0 {
+		t.Errorf("以下组件有 Go 侧组件库元数据，却没出现在前端组件库（palette.js 派生丢条目）: %v", lost)
+	}
+	if len(extra) > 0 {
+		t.Errorf("以下前端条目没有对应的 Go 侧组件库元数据（前端手写残留）: %v", extra)
+	}
+	t.Logf("组件库派生一致：Go 侧 %d 项 / 前端 %d 项", len(items), len(p.ItemTypes))
 }

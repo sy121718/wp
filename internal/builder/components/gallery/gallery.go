@@ -158,6 +158,26 @@ type Props struct {
 // Widget 基座实例。
 var Widget = core.Atom[Props]{
 	Spec: core.AtomSpec[Props]{
+		DisplayName:     "图集",
+		Hint:            "图片网格 / 轮播",
+		PaletteCategory: core.PaletteCategoryBasic,
+		DefaultProps: map[string]any{
+			"mode": "grid",
+			"items": []any{
+				map[string]any{
+					"url": "https://placehold.co/1200x800/png",
+					"alt": "图集占位图",
+				},
+			},
+			"grid": map[string]any{
+				"columns": map[string]any{
+					"desktop": 3,
+				},
+			},
+			"aspectRatio": "16:9",
+			"objectFit":   "cover",
+			"radius":      "8px",
+		},
 		TypeName:      Type,
 		ValidateExtra: validateExtra,
 		// Translatable 可翻译字段白名单（多语言 P5b，docs/06-D §7.5 决策 F6）：

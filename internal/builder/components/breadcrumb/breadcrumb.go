@@ -87,8 +87,11 @@ type Props struct {
 // Widget 基座实例。
 var Widget = core.Atom[Props]{
 	Spec: core.AtomSpec[Props]{
-		TypeName:      Type,
-		ValidateExtra: validateExtra,
+		DisplayName:     "面包屑",
+		Hint:            "当前页层级（自动按路径派生）",
+		PaletteCategory: core.PaletteCategoryBasic,
+		TypeName:        Type,
+		ValidateExtra:   validateExtra,
 		// Translatable 可翻译字段白名单（多语言 P5b，docs/06-D §7.5 决策 F6）：
 		// homeLabel 覆盖派生模式下的首页项，label 覆盖手填层级的各项。
 		Translatable: []string{"homeLabel", "label"},

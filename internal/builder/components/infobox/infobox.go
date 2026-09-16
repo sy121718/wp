@@ -35,6 +35,23 @@ func (c *Component) Translatable() []string { return []string{"title", "text", "
 // PropsSpec 实现 SpecProvider：暴露 Props 生成检查器 schema（样式字段声明式）。
 func (c *Component) PropsSpec() any { return &Props{} }
 
+// Palette 实现 core.PaletteProvider：组件库呈现元数据（审计 REG-005）。
+// 显示名 / 说明 / 分组 / 插入默认 Props 都在 Go 侧声明，前端只消费注入数据。
+func (c *Component) Palette() core.PaletteMeta {
+	return core.PaletteMeta{
+		Type:     Type,
+		Category: core.PaletteCategoryBasic,
+		DefaultProps: map[string]any{
+			"icon":  "shield",
+			"title": "信息框标题",
+			"text":  "一句话描述你的服务或卖点。",
+			"align": "center",
+		},
+		DisplayName: "信息框",
+		Hint:        "图标+标题+文本",
+	}
+}
+
 // Props 信息框属性。
 type Props struct {
 	// Icon 内置图标名（check/star/arrow/shield/truck/cross 等；与 MediaImage 二选一）。

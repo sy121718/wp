@@ -64,6 +64,20 @@ func Register(c Component) {
 			panic(fmt.Sprintf("组件 %s 对齐面板契约非法: %v", c.Type(), err))
 		}
 	}
+	if pp, ok := c.(PaletteProvider); ok {
+		var spec any
+		if sp, ok := c.(SpecProvider); ok {
+			spec = sp.PropsSpec()
+		}
+		meta := pp.Palette()
+		// 只校验「声明了要进组件库」的组件：未声明元数据由 builder 的覆盖断言
+		// 要求显式豁免（见 palette.go）。
+		if meta.DisplayName != "" || meta.Category != "" {
+			if err := ValidatePaletteMeta(c.Type(), spec, meta); err != nil {
+				panic(fmt.Sprintf("组件 %s 组件库元数据非法: %v", c.Type(), err))
+			}
+		}
+	}
 	if tp, ok := c.(TranslatableProvider); ok {
 		var spec any
 		if sp, ok := c.(SpecProvider); ok {

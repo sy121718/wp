@@ -84,7 +84,24 @@ type Component struct {
 
 // Widget 组件实例。
 var Widget = &Component{Atom: core.Atom[Props]{
-	Spec: core.AtomSpec[Props]{TypeName: Type, ValidateExtra: validateExtra},
+	Spec: core.AtomSpec[Props]{
+		TypeName:        Type,
+		ValidateExtra:   validateExtra,
+		PaletteCategory: core.PaletteCategoryBasic,
+		DisplayName:     "商品卡",
+		Hint:            "吃商品数据的最小展示单元（可作集合卡模板）",
+		DefaultProps: map[string]any{
+			"imageField":        "item.images",
+			"titleField":        "item.name",
+			"priceField":        "item.priceRange",
+			"comparePriceField": "item.comparePrice",
+			"tagsField":         "item.tags",
+			"linkField":         "item.url",
+			"linkPrefix":        "",
+			"currency":          "¥",
+			"titleTag":          "h3",
+		},
+	},
 }}
 
 // slotField 一个命名槽位与其声明的字段路径。

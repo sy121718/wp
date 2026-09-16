@@ -68,6 +68,12 @@ type Props struct {
 // Widget 基座实例。
 var Widget = core.Atom[Props]{
 	Spec: core.AtomSpec[Props]{
+		DisplayName:     "形状分隔线",
+		Hint:            "区块过渡装饰（波浪/弧线/斜坡）",
+		PaletteCategory: core.PaletteCategoryBasic,
+		DefaultProps: map[string]any{
+			"shape": "wave",
+		},
 		TypeName:      Type,
 		ValidateExtra: validateExtra,
 		// 无作者文本字段，Translatable 保持 nil（链接/色值/枚举永不翻译）。

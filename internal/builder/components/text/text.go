@@ -64,6 +64,14 @@ type Props struct {
 // Widget 泛型基座实例。
 var Widget = core.Atom[Props]{
 	Spec: core.AtomSpec[Props]{
+		DisplayName:     "文本",
+		Hint:            "正文段落",
+		PaletteCategory: core.PaletteCategoryBasic,
+		DefaultProps: map[string]any{
+			"mode":     "plaintext",
+			"plainTag": "p",
+			"text":     "在这里输入正文内容。",
+		},
 		TypeName:      Type,
 		ValidateExtra: validateExtra,
 		// Translatable 可翻译字段白名单（多语言 P5b，docs/06-D §7.5 决策 F6）：

@@ -1,6 +1,23 @@
-import { alignedRepeaters } from './generated-contracts.js';
+import { alignedRepeaters, paletteSpec } from './generated-contracts.js';
 
 // workbench/palette.js — 组件库清单与「插入默认内容」（无 DOM 依赖的纯数据/纯函数模块）。
+//
+// 单一真源（审计 REG-005）：组件库条目的**数据**（显示名 / 说明 / 分组 / 插入时的
+// 默认 Props）全部来自组件 Go 声明（core.AtomSpec 的 DisplayName / Hint /
+// PaletteCategory / DefaultProps，或自定义组件的 Palette() 方法），经
+// `go run ./cmd/workbench-contracts` 生成 ./generated-contracts.js 注入本模块。
+// **新增组件只改 Go**：生成物刷新后即出现在组件库，不需要动本文件。
+//
+// 本文件只保留两类**自动化不了**的人工信息：
+//   1. 排序表（paletteGroupOrder 分组顺序与标题、paletteTypeOrder 组内顺序）——
+//      排序是编辑体验决策，Go 侧声明里没有也不该有；
+//   2. 结构型组件的默认子树（DEFAULT_CONTENT.children）—— 它是节点树而非 Props，
+//      插入时要按 allocId 分配节点 ID，属于前端构造逻辑。
+//      注意：子树里**不含任何 Props 默认值**，那些走 defaultPropsOf（Go 侧真源）。
+//
+// 图标映射：当前组件库条目只渲染显示名 + 说明（见 methods/canvas.js 的 makeItem），
+// 不存在图标表 —— 所以这里不预先建一张没人用的表。将来要加图标时在本文件加一张
+// type → 图标名 的映射（那是真正需要人工的部分），而不是回到手写条目。
 //
 // 为什么独立成文件：组件库数据与「插入时补齐的最小内容」是纯数据，抽出来后可被
 // 浏览器 ES module 消费，也能被 node 直接 import 求值 —— 「组件库条目插入后必须
@@ -8,110 +25,92 @@ import { alignedRepeaters } from './generated-contracts.js';
 // 用 node 求值本模块，再交给 Go 侧 Validate 校验）。
 //
 // 与 Go 侧的关系：Validate 规则是唯一权威（本文件不改任何校验规则）。
-// DEFAULT_CONTENT 只负责「插入时不留空壳」，让默认节点天然满足最小校验。
+// 默认 Props / 默认子树只负责「插入时不留空壳」，让默认节点天然满足最小校验。
 
 /** 深拷贝（palette 数据全部为 JSON 可序列化值，用 JSON 往返最省事）。 */
 function deepClone(v) {
     return v === undefined ? undefined : JSON.parse(JSON.stringify(v));
 }
 
-/** 组件库：仅提供可直接通过 AST 校验的默认节点。 */
-export const paletteItems = [
-    { type: 'core.container', label: '容器', hint: '布局容器', props: { tag: 'section', layout: { engine: 'flex', flex: { direction: 'column', gap: '16px' } }, box: { padding: { desktop: '32px' } } } },
-    { type: 'core.heading', label: '标题', hint: '文字标题', props: { text: '新标题', tag: 'h2' } },
-    { type: 'core.text', label: '文本', hint: '正文段落', props: { mode: 'plaintext', plainTag: 'p', text: '在这里输入正文内容。' } },
-    { type: 'core.button', label: '按钮', hint: '行动按钮', props: { text: '了解更多', action: 'internal', value: '/' } },
-    { type: 'core.image', label: '图片', hint: '外部图片', props: { src: 'https://placehold.co/1200x800/png', alt: '图片占位符', objectFit: 'cover', width: '100%' } },
-    { type: 'core.gallery', label: '图集', hint: '图片网格 / 轮播', props: { mode: 'grid', items: [{ url: 'https://placehold.co/1200x800/png', alt: '图集占位图' }], grid: { columns: { desktop: 3 } }, aspectRatio: '16:9', objectFit: 'cover', radius: '8px' } },
-    { type: 'core.divider', label: '分隔线', hint: '内容分隔', props: { style: 'solid', weight: '1px' } },
-    // 形状分隔线（EDT-008）：区块过渡装饰，多层景深 + 三端高度 + CSS-only 漂移。
-    // 已实现并注册但对前端不可达，故在此补齐条目 —— 清单与 schema 的一致性由
-    // internal/builder/palette_schema_contract_test.go 双向钉住。
-    { type: 'core.shapedivider', label: '形状分隔线', hint: '区块过渡装饰（波浪/弧线/斜坡）', props: { shape: 'wave' } },
-    { type: 'core.spacer', label: '间隔', hint: '留白空间', props: { height: { desktop: '32px' } } },
-    { type: 'core.slider', label: '轮播', hint: '多屏滑动（可嵌套）', props: { perView: { desktop: 1 }, autoplay: 0, showArrows: true, showDots: true, gap: '16px' } },
-    { type: 'core.list', label: '列表', hint: '图标/序号/圆点列表', props: { style: 'icon', items: [{ icon: 'check', text: '列表项内容' }] } },
-    { type: 'core.infobox', label: '信息框', hint: '图标+标题+文本', props: { icon: 'shield', title: '信息框标题', text: '一句话描述你的服务或卖点。', align: 'center' } },
-    { type: 'core.social_buttons', label: '社交图标', hint: '社交平台图标组', props: { color: 'brand', size: '40px', shape: 'circle', items: [{ platform: 'facebook', url: 'https://facebook.com' }, { platform: 'x', url: 'https://x.com' }, { platform: 'instagram', url: 'https://instagram.com' }] } },
-    { type: 'core.video', label: '视频', hint: '外链嵌入/本地 MP4', props: { url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ', controls: true, ratio: '16:9' } },
-    { type: 'core.nav', label: '导航菜单', hint: '站点菜单（支持二级）', props: { items: [{ label: '首页', url: '/' }, { label: '产品', url: '/shop', children: [{ label: '一次性', url: '/shop/disposable' }, { label: '换弹', url: '/shop/pods' }] }, { label: '关于我们', url: '/about' }], orientation: 'horizontal', gap: '24px', color: '#3B3C40', hoverColor: '#D93425', itemPadding: '8px 0', mobileCollapse: true } },
-    { type: 'core.languages', label: '语言切换', hint: '多语言站点切换链接', props: { orientation: 'horizontal', gap: '16px' } },
-    { type: 'core.tabs', label: '页签', hint: '多面板切换', props: { tabs: [{ label: '页签一' }] } },
-    { type: 'core.accordion', label: '手风琴', hint: '折叠展开', props: { items: [{ title: '折叠项一', open: true }] } },
-    { type: 'core.marquee', label: '跑马灯', hint: '无缝滚动内容', props: { speed: 12, direction: 'left', gap: '24px' } },
-    { type: 'core.counter', label: '计数器', hint: '数字统计', props: { start: 0, end: 100, suffix: '+' } },
-    { type: 'core.table', label: '表格', hint: '数据表格', props: { caption: '数据表格', headers: ['列一', '列二'], rows: [['A', 'B'], ['C', 'D']], striped: true, bordered: true } },
-    { type: 'core.card', label: '卡片', hint: '标题+正文+按钮', props: { title: '卡片标题', text: '卡片正文内容。', buttonText: '了解更多', buttonLink: '/' } },
-    { type: 'core.cardstack', label: '卡片堆叠', hint: '悬停扇形/直排 · 滚动堆叠', props: { trigger: 'hover', shape: 'fan', count: 9, hueStep: 50, spreadAngle: 5, spreadDistance: 120 } },
-    { type: 'core.faq', label: '常见问题', hint: '问答折叠', props: { items: [{ question: '常见问题一？', answer: '这里是回答内容。', open: true }, { question: '常见问题二？', answer: '这里是回答内容。' }] } },
-    { type: 'core.quote', label: '引用', hint: '引用块', props: { text: '引用一段有力量的话。', author: '作者名', align: 'left' } },
-    { type: 'core.countdown', label: '倒计时', hint: '营销倒计时', props: { targetDate: '2030-01-01 00:00:00', showDays: true } },
-    { type: 'core.icon', label: '图标', hint: '通用 SVG 图标', props: { iconName: 'star', size: '24px' } },
-    { type: 'core.badge', label: '徽章', hint: '文本徽章', props: { text: '新品', variant: 'solid' } },
-    // 面包屑（审计 SEO-014）：props 留空即按构建期 CurrentPath 自动派生层级，
-    // 作者不需要手填每一项 —— 手填反而容易与实际路径脱节。
-    { type: 'core.breadcrumb', label: '面包屑', hint: '当前页层级（自动按路径派生）', props: {} },
-    { type: 'core.progress', label: '进度条', hint: '数据进度', props: { value: 60, max: 100, label: '完成度' } },
-    // 加载指示（EDT-008）：分类效果库「加载」的落地形态，九种纯 CSS 形态、零 JS。
-    { type: 'core.loader', label: '加载指示', hint: '纯 CSS 加载动画（九种形态）', props: { variant: 'spinner', size: '32px' } },
-    { type: 'core.rating', label: '评分', hint: '星形评分', props: { value: 4.5, max: 5 } },
-    { type: 'core.form', label: '表单', hint: '联系/订阅表单', props: { fields: [{ type: 'text', label: '姓名', name: 'name', required: true }, { type: 'email', label: '邮箱', name: 'email', required: true }], submitLabel: '提交' } },
-    // 商品详情（issue #6）：命名槽位声明需要的商品字段，构建期由商品解析器静态填入。
-    // 默认槽位给到「商品详情页」的最小可用组合（标题/主图/价格/描述）。
-    { type: 'core.product', label: '商品详情', hint: '吃商品数据的详情组件', props: { source: 'product', titleField: 'product.name', subtitleField: 'product.subtitle', mediaField: 'product.defaultImage', galleryField: 'product.images', priceField: 'product.priceRange', descriptionField: 'product.description', currency: '¥', titleTag: 'h2' } },
-    // 商品卡（issue #22）：默认用 item. 前缀 —— 拖进集合组件（商品列表 / cardstack）即成为
-    // 「每个商品一张卡」的模板；单独放在页面上时把前缀换成 product. 就绑当前商品实体。
-    // 价格用 priceRange（区间），划线价用 comparePrice，标签用 tags（名称数组）。
-    { type: 'core.productCard', label: '商品卡', hint: '吃商品数据的最小展示单元（可作集合卡模板）', props: { imageField: 'item.images', titleField: 'item.name', priceField: 'item.priceRange', comparePriceField: 'item.comparePrice', tagsField: 'item.tags', linkField: 'item.url', linkPrefix: '', currency: '¥', titleTag: 'h3' } },
-    // 商品列表（issue #23）：集合型组件 —— 按筛选维度取一批商品，网格 / 列表铺开。
-    // 筛选是构建期下推到集合源的等值维度（状态 / 分类 / 品牌 / 标签）；不分页，「取几条」截断。
-    { type: 'core.productList', label: '商品列表', hint: '网格 / 列表铺开一批商品', props: { collectionLimit: 8, layout: 'grid', columns: 'auto', filterStatus: 'published', imageField: 'item.images', titleField: 'item.name', priceField: 'item.priceRange', comparePriceField: 'item.comparePrice', tagsField: 'item.tags', linkField: 'item.url', linkPrefix: '', currency: '¥', titleTag: 'h3', emptyText: '暂无商品' } },
-    // 规格选择器（issue #26）：从商品详情里拆出来的可拖拽部件 —— 拖到自定义详情页模板上，
-    // 选规格切组合；每档组合自带实时可用量（片段现取，issue #24）。
-    { type: 'core.productSelector', label: '规格选择器', hint: '选规格切组合（可放详情页任意位置）', props: { optionsField: 'product.options', variantsField: 'product.variants', currency: '¥', emptyText: '该商品暂无可选规格' } },
-    // 加购按钮（BIZ-1 访问面）：把「变体 id 烘进产物 + 提交到购物车片段」变成一次拖拽。
-    // 变体与规格标签和规格选择器同源（同一个 product.variants / product.options）；
-    // 默认单变体模式（一键加购第一档）适合放商品卡或详情页，多变体商品改用逐变体模式。
-    // 购物车容器选择器（cartTarget）要指向页面上放 cartView 片段的那个元素，默认 #cart。
-    { type: 'core.addToCart', label: '加购按钮', hint: '加入购物车（提交到购物车片段）', props: { source: 'product', optionsField: 'product.options', variantsField: 'product.variants', variantMode: 'single', showQuantity: false, buttonText: '加入购物车', cartTarget: '#cart', currency: '¥' } },
-    // 购物车图标（BIZ-1）：页头常驻的购物车入口，四种形态（下拉浮层 / 侧边抽屉 /
-    // 居中弹窗 / 悬停浮层）共用同一份内容 —— 由 cartView 片段现拉，不是烘进产物的静态列表。
-    // 三种浮层用原生 <details> 承载（无 JS 也能展开、键盘可达），只有「点外部关闭」走一小段 enhance。
-    { type: 'core.cartIcon', label: '购物车图标', hint: '页头购物车入口（下拉 / 抽屉 / 弹窗 / 悬停）', props: { mode: 'dropdown', align: 'right', drawerSide: 'right', icon: 'shopping-cart', label: '购物车', showLabel: false, showCount: true } },
-    { type: 'core.orderList', label: '我的订单', hint: '访客订单列表（登录后可见，片段现拉）', props: { title: '我的订单', showTitle: true, pageSize: 10 } },
-    // 站内搜索（EDT-008）：产物只输出搜索框 + 结果挂载点，命中列表由片段现拉
-    // （与 cartIcon / orderList 同口径，构建期把 projectId / lang / limit 烘进片段 URL）。
-    { type: 'core.searchResults', label: '站内搜索', hint: '搜索框 + 结果列表（片段现拉）', props: { placeholder: '搜索站内内容', limit: 8 } },
-    { type: 'core.userForms', label: '账号表单', hint: '登录 / 注册 / 找回密码 / 账号面板（片段现拉）', props: { mode: 'login', title: '登录', showTitle: true, next: '' } }
+/** 分组顺序与标题（人工：排序是编辑体验决策，Go 侧声明只有分组键）。 */
+export const paletteGroupOrder = [
+    { key: 'basic', title: '基础组件' }
 ];
 
-/** 组件库分组：基础组件大分类平铺（细分类留给进阶组件，当前无进阶内容）；
- *  「区块」概念归全局块（页眉/页脚/区块）。 */
-export const paletteGroups = [
-    { key: 'basic', title: '基础组件', types: ['core.container', 'core.heading', 'core.text', 'core.button', 'core.image', 'core.gallery', 'core.divider', 'core.shapedivider', 'core.spacer', 'core.slider', 'core.list', 'core.infobox', 'core.social_buttons', 'core.video', 'core.nav', 'core.languages', 'core.tabs', 'core.accordion', 'core.marquee', 'core.counter', 'core.table', 'core.card', 'core.cardstack', 'core.faq', 'core.quote', 'core.countdown', 'core.icon', 'core.badge', 'core.breadcrumb', 'core.progress', 'core.loader', 'core.rating', 'core.form', 'core.product', 'core.productCard', 'core.productList', 'core.productSelector', 'core.addToCart', 'core.cartIcon', 'core.orderList', 'core.searchResults', 'core.userForms'] }
+/**
+ * 组内显示顺序（人工）。未列入本表的组件（新增组件还没来得及排序）按类型名
+ * 字典序追加到末尾 —— 保证「新增组件无需改 JS 即出现在组件库」，
+ * 排序只是可选的体验微调。
+ */
+export const paletteTypeOrder = [
+    'core.container', 'core.heading', 'core.text', 'core.button', 'core.image',
+    'core.gallery', 'core.divider', 'core.shapedivider', 'core.spacer', 'core.slider',
+    'core.list', 'core.infobox', 'core.social_buttons', 'core.video', 'core.nav',
+    'core.languages', 'core.tabs', 'core.accordion', 'core.marquee', 'core.counter',
+    'core.table', 'core.card', 'core.cardstack', 'core.faq', 'core.quote',
+    'core.countdown', 'core.icon', 'core.badge', 'core.breadcrumb', 'core.progress',
+    'core.loader', 'core.rating', 'core.form', 'core.product', 'core.productCard',
+    'core.productList', 'core.productSelector', 'core.addToCart', 'core.cartIcon',
+    'core.orderList', 'core.searchResults', 'core.userForms'
 ];
+
+/** 组件库全部类型：排序表在前的先出，其余按字典序追加（新组件自动可见）。 */
+export function paletteTypes() {
+    var items = paletteSpec.items || {};
+    var listed = paletteTypeOrder.filter(function (t) { return !!items[t]; });
+    var rest = Object.keys(items).filter(function (t) { return listed.indexOf(t) < 0; });
+    rest.sort();
+    return listed.concat(rest);
+}
+
+/** paletteItemFor 把 Go 侧元数据转成组件库条目（字段名与消费方对齐）。 */
+function paletteItemFor(type) {
+    var meta = (paletteSpec.items || {})[type];
+    if (!meta) return null;
+    return {
+        type: type,
+        label: meta.displayName,
+        hint: meta.hint || '',
+        props: deepClone(meta.defaultProps) || {}
+    };
+}
+
+/** 组件库条目（含可编译的默认 Props，来源见文件头）。 */
+export const paletteItems = paletteTypes().map(paletteItemFor).filter(function (item) { return !!item; });
+
+/** 组件库分组：分组顺序来自 paletteGroupOrder，组内顺序沿用 paletteItems 的顺序。 */
+export const paletteGroups = paletteGroupOrder.map(function (group) {
+    var items = paletteSpec.items || {};
+    return {
+        key: group.key,
+        title: group.title,
+        types: paletteItems.filter(function (item) {
+            return items[item.type] && items[item.type].category === group.key;
+        }).map(function (item) { return item.type; })
+    };
+}).filter(function (group) { return group.types.length > 0; });
+
+/** defaultPropsOf 组件的默认 Props（唯一来源：Go 侧组件声明）。 */
+export function defaultPropsOf(type) {
+    var meta = (paletteSpec.items || {})[type];
+    return (meta && meta.defaultProps) || {};
+}
 
 /**
  * DEFAULT_CONTENT 组件库默认内容：插入时自动补齐，避免「空壳组件」拖入即编译失败。
  *
- * 两类必需内容（Go 侧 Validate 的权威规则，本表只是「插入时就把内容填好」）：
+ * 本表**只放结构型组件的默认子树**（A 类）。数组型与单值 Props 的兜底不在这里 ——
+ * 它们来自 Go 侧组件声明的默认 Props（defaultPropsOf），本文件不再留第二份副本。
  *   A 类 结构型 children —— tabs 面板 / accordion 折叠项 / slider slide / marquee 内容，
  *      没有子节点直接编译失败，故 children 恒生成。
- *   B 类 数组型 props —— faq 问答 / form 字段 / gallery 图集，数组为空即编译失败，
- *      故 fallbackProps 在缺失或空数组时补一条（palette 自带示例时保留示例）。
- *   C 类 单值 props —— heading/text/button/image/badge/quote/countdown/video/container
- *      的必需标量（文本、地址、语义标签等），同样走 fallbackProps 兜底。
+ *   B/C 类（数组型 props / 单值 props）—— 由 Go 侧 DefaultProps 提供，见 defaultPropsOf。
  *
  * 字段语义：
- *   children      —— 默认子树模板（不含 id，插入时按 allocId 分配；深拷贝后实例化）。
- *   fallbackProps —— 键级兜底：目标 props 缺失该键（或空串/空数组/空对象）时填充，
- *                    已有值一律保留。
+ *   children —— 默认子树模板（不含 id，插入时按 allocId 分配；深拷贝后实例化）。
  */
 export const DEFAULT_CONTENT = {
     // ---- A 类：结构型（children 必需）----
     'core.tabs': {
-        // 标签数必须与面板数一致（Validate 强约束），故兜底标签与默认面板一一对应。
-        fallbackProps: { tabs: [{ label: '页签一' }] },
         children: [{
             type: 'core.container', name: '页签面板',
             props: { tag: 'div', layout: { engine: 'flex', flex: { direction: 'column', gap: '8px' } }, box: { padding: { desktop: '12px' } } },
@@ -119,7 +118,6 @@ export const DEFAULT_CONTENT = {
         }]
     },
     'core.accordion': {
-        fallbackProps: { items: [{ title: '折叠项一', open: true }] },
         children: [{
             type: 'core.container', name: '折叠项内容',
             props: { tag: 'div', layout: { engine: 'flex', flex: { direction: 'column', gap: '8px' } } },
@@ -159,23 +157,7 @@ export const DEFAULT_CONTENT = {
         // 跑马灯会把子节点渲染两份（无缝循环），故默认内容用无状态的行内文本，
         // 不用容器：避免同一 DOM id 出现两次。
         children: [{ type: 'core.text', name: '跑马灯内容', props: { mode: 'plaintext', plainTag: 'span', text: '跑马灯内容，点击编辑。' } }]
-    },
-
-    // ---- B 类：数组型 props（至少一项）----
-    'core.faq': { fallbackProps: { items: [{ question: '新问题？', answer: '在这里填写答案。', open: true }] } },
-    'core.form': { fallbackProps: { fields: [{ type: 'text', label: '姓名', name: 'name', required: true }], submitLabel: '提交' } },
-    'core.gallery': { fallbackProps: { items: [{ url: 'https://placehold.co/1200x800/png', alt: '图集占位图' }] } },
-
-    // ---- C 类：单值 props 兜底（palette 已提供，这里防止其他插入来源留空）----
-    'core.container': { fallbackProps: { tag: 'section', layout: { engine: 'flex', flex: { direction: 'column', gap: '16px' } } } },
-    'core.heading': { fallbackProps: { text: '新标题', tag: 'h2' } },
-    'core.text': { fallbackProps: { mode: 'plaintext', plainTag: 'p', text: '在这里输入正文内容。' } },
-    'core.button': { fallbackProps: { text: '了解更多', action: 'internal', value: '/' } },
-    'core.image': { fallbackProps: { src: 'https://placehold.co/1200x800/png', alt: '图片占位符' } },
-    'core.badge': { fallbackProps: { text: '新品' } },
-    'core.quote': { fallbackProps: { text: '引用一段有力量的话。' } },
-    'core.countdown': { fallbackProps: { targetDate: '2030-01-01 00:00:00' } },
-    'core.video': { fallbackProps: { url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ' } }
+    }
 };
 
 /** 空值判定：undefined / null / 空串 / 空数组 / 空对象 视为「没内容」。 */
@@ -223,12 +205,12 @@ export function buildInsertNode(item, allocId) {
     if (!item || !item.type || typeof allocId !== 'function') return null;
     var def = DEFAULT_CONTENT[item.type] || {};
     var props = deepClone(item.props) || {};
-    if (def.fallbackProps) props = mergeMissing(props, def.fallbackProps);
+    props = mergeMissing(props, defaultPropsOf(item.type));
     // 结构型：内容数组与默认子节点数量对齐（多则裁剪，少则用兜底项补齐）。
     var alignKey = alignKeyOf(item.type);
     if (alignKey && def.children && def.children.length) {
         var list = Array.isArray(props[alignKey]) ? props[alignKey].slice(0, def.children.length) : [];
-        var fill = (def.fallbackProps && def.fallbackProps[alignKey]) || [];
+        var fill = defaultPropsOf(item.type)[alignKey] || [];
         while (list.length < def.children.length) {
             list.push(deepClone(fill[list.length % Math.max(fill.length, 1)] || {}));
         }
@@ -266,13 +248,13 @@ export function buildDefaultChild(type, index, allocId) {
 }
 
 /**
- * buildDefaultAlignEntry 结构型组件内容数组的默认条目：DEFAULT_CONTENT 的
- * fallbackProps[alignKey] 第一条深拷贝，并按序号覆写文案字段（页签2 / 折叠项2…）。
+ * buildDefaultAlignEntry 结构型组件内容数组的默认条目：Go 侧默认 Props 里该数组的
+ * 第一条深拷贝，并按序号覆写文案字段（页签2 / 折叠项2…）。
  */
 export function buildDefaultAlignEntry(type, index) {
     var key = alignKeyOf(type);
     if (!key) return null;
-    var fill = ((DEFAULT_CONTENT[type] || {}).fallbackProps || {})[key] || [];
+    var fill = defaultPropsOf(type)[key] || [];
     if (!fill.length) return null;
     var at = Math.abs(Number(index) || 0);
     var entry = deepClone(fill[at % fill.length]);
@@ -343,7 +325,7 @@ export function alignMutation(type, list, children, action, allocId) {
  * 与 alignMutation 对称，构成两条互补方向：
  *   alignMutation      —— 检查器方向：改标签数组（加/删/调序）→ 跟着改 children；
  *   alignFromChildren  —— 画布方向：画布直接改 children（拖入 / 删除 / 重排）→ 跟着改数组。
- * 两条方向共用同一份 DEFAULT_CONTENT 与 buildDefaultAlignEntry，新标签/标题的文案
+ * 两条方向共用同一份默认 Props（Go 侧声明）与 buildDefaultAlignEntry，新标签/标题的文案
  * 只有一个来源（「页签N / 折叠项N」），不存在第二份默认内容。
  *
  * 为什么需要它：tabs/accordion 的校验是「标签数 = 面板数」（tabs.go:66 / accordion.go:68），

@@ -30,6 +30,22 @@ func (c *Component) Type() string { return Type }
 // PropsSpec 实现 SpecProvider：暴露 Props 生成检查器 schema（样式字段声明式）。
 func (c *Component) PropsSpec() any { return &Props{} }
 
+// Palette 实现 core.PaletteProvider：组件库呈现元数据（审计 REG-005）。
+// 显示名 / 说明 / 分组 / 插入默认 Props 都在 Go 侧声明，前端只消费注入数据。
+func (c *Component) Palette() core.PaletteMeta {
+	return core.PaletteMeta{
+		Type:     Type,
+		Category: core.PaletteCategoryBasic,
+		DefaultProps: map[string]any{
+			"url":      "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+			"controls": true,
+			"ratio":    "16:9",
+		},
+		DisplayName: "视频",
+		Hint:        "外链嵌入/本地 MP4",
+	}
+}
+
 // embedRe 外链平台识别。
 var (
 	youtubeRe = regexp.MustCompile(`(?:youtube\.com/watch\?v=|youtu\.be/|youtube\.com/embed/)([\w-]{6,})`)

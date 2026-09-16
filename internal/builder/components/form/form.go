@@ -80,6 +80,26 @@ type Props struct {
 // Widget 基座实例。
 var Widget = core.Atom[Props]{
 	Spec: core.AtomSpec[Props]{
+		DisplayName:     "表单",
+		Hint:            "联系/订阅表单",
+		PaletteCategory: core.PaletteCategoryBasic,
+		DefaultProps: map[string]any{
+			"fields": []any{
+				map[string]any{
+					"type":     "text",
+					"label":    "姓名",
+					"name":     "name",
+					"required": true,
+				},
+				map[string]any{
+					"type":     "email",
+					"label":    "邮箱",
+					"name":     "email",
+					"required": true,
+				},
+			},
+			"submitLabel": "提交",
+		},
 		TypeName:      Type,
 		ValidateExtra: validateExtra,
 		// Translatable 可翻译字段白名单（多语言 P5b，docs/06-D §7.5 决策 F6）：

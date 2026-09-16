@@ -34,6 +34,24 @@ func (c *Component) Translatable() []string { return []string{"label"} }
 // PropsSpec 实现 SpecProvider：暴露 Props 生成检查器 schema（样式字段声明式）。
 func (c *Component) PropsSpec() any { return &Props{} }
 
+// Palette 实现 core.PaletteProvider：组件库呈现元数据（审计 REG-005）。
+// 显示名 / 说明 / 分组 / 插入默认 Props 都在 Go 侧声明，前端只消费注入数据。
+func (c *Component) Palette() core.PaletteMeta {
+	return core.PaletteMeta{
+		Type:     Type,
+		Category: core.PaletteCategoryBasic,
+		DefaultProps: map[string]any{
+			"tabs": []any{
+				map[string]any{
+					"label": "页签一",
+				},
+			},
+		},
+		DisplayName: "页签",
+		Hint:        "多面板切换",
+	}
+}
+
 // AlignedRepeater 是服务端面板和客户端对齐操作共同消费的唯一声明。
 func (c *Component) AlignedRepeater() core.AlignedRepeaterSpec {
 	return core.AlignedRepeaterSpec{

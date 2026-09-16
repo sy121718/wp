@@ -81,6 +81,19 @@ type Props struct {
 // Widget 基座实例。
 var Widget = core.Atom[Props]{
 	Spec: core.AtomSpec[Props]{
+		DisplayName:     "加购按钮",
+		Hint:            "加入购物车（提交到购物车片段）",
+		PaletteCategory: core.PaletteCategoryBasic,
+		DefaultProps: map[string]any{
+			"source":        "product",
+			"optionsField":  "product.options",
+			"variantsField": "product.variants",
+			"variantMode":   "single",
+			"showQuantity":  false,
+			"buttonText":    "加入购物车",
+			"cartTarget":    "#cart",
+			"currency":      "¥",
+		},
 		TypeName:      Type,
 		ValidateExtra: validateExtra,
 		// 只翻「作者填写的文本」：按钮文字是给访客看的文案，理应按构建语言翻译。

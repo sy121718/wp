@@ -50,7 +50,19 @@ type Component struct {
 
 // Widget 组件实例。
 var Widget = &Component{Atom: core.Atom[Props]{
-	Spec: core.AtomSpec[Props]{TypeName: Type, ValidateExtra: validateExtra},
+	Spec: core.AtomSpec[Props]{
+		TypeName:        Type,
+		ValidateExtra:   validateExtra,
+		PaletteCategory: core.PaletteCategoryBasic,
+		DisplayName:     "规格选择器",
+		Hint:            "选规格切组合（可放详情页任意位置）",
+		DefaultProps: map[string]any{
+			"optionsField":  "product.options",
+			"variantsField": "product.variants",
+			"currency":      "¥",
+			"emptyText":     "该商品暂无可选规格",
+		},
+	},
 }}
 
 // validateExtra 关系性校验：字段必须来自 product 数据源（形状与数据源，不查白名单）。

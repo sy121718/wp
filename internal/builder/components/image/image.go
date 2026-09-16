@@ -116,6 +116,15 @@ type Props struct {
 // Widget 基座实例。
 var Widget = core.Atom[Props]{
 	Spec: core.AtomSpec[Props]{
+		DisplayName:     "图片",
+		Hint:            "外部图片",
+		PaletteCategory: core.PaletteCategoryBasic,
+		DefaultProps: map[string]any{
+			"src":       "https://placehold.co/1200x800/png",
+			"alt":       "图片占位符",
+			"objectFit": "cover",
+			"width":     "100%",
+		},
 		TypeName:      Type,
 		ValidateExtra: validateExtra,
 		// Translatable 可翻译字段白名单（多语言 P5b，docs/06-D §7.5 决策 F6）：

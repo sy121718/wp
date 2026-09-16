@@ -44,6 +44,13 @@ type Props struct {
 // Widget 基座实例。
 var Widget = core.Atom[Props]{
 	Spec: core.AtomSpec[Props]{
+		DisplayName:     "倒计时",
+		Hint:            "营销倒计时",
+		PaletteCategory: core.PaletteCategoryBasic,
+		DefaultProps: map[string]any{
+			"targetDate": "2030-01-01 00:00:00",
+			"showDays":   true,
+		},
 		TypeName:      Type,
 		ValidateExtra: validateExtra,
 	},

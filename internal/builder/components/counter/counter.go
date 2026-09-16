@@ -43,6 +43,22 @@ func (c *Component) Translatable() []string { return []string{"prefix", "suffix"
 // PropsSpec 实现 SpecProvider：暴露 Props 生成检查器 schema（样式字段声明式）。
 func (c *Component) PropsSpec() any { return &Props{} }
 
+// Palette 实现 core.PaletteProvider：组件库呈现元数据（审计 REG-005）。
+// 显示名 / 说明 / 分组 / 插入默认 Props 都在 Go 侧声明，前端只消费注入数据。
+func (c *Component) Palette() core.PaletteMeta {
+	return core.PaletteMeta{
+		Type:     Type,
+		Category: core.PaletteCategoryBasic,
+		DefaultProps: map[string]any{
+			"start":  0,
+			"end":    100,
+			"suffix": "+",
+		},
+		DisplayName: "计数器",
+		Hint:        "数字统计",
+	}
+}
+
 // Props 计数器属性。
 type Props struct {
 	// Start 起始值。

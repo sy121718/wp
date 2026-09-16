@@ -89,7 +89,24 @@ type Component struct {
 
 // Widget 组件实例。
 var Widget = &Component{Atom: core.Atom[Props]{
-	Spec: core.AtomSpec[Props]{TypeName: Type, ValidateExtra: validateExtra},
+	Spec: core.AtomSpec[Props]{
+		TypeName:        Type,
+		ValidateExtra:   validateExtra,
+		PaletteCategory: core.PaletteCategoryBasic,
+		DisplayName:     "商品详情",
+		Hint:            "吃商品数据的详情组件",
+		DefaultProps: map[string]any{
+			"source":           "product",
+			"titleField":       "product.name",
+			"subtitleField":    "product.subtitle",
+			"mediaField":       "product.defaultImage",
+			"galleryField":     "product.images",
+			"priceField":       "product.priceRange",
+			"descriptionField": "product.description",
+			"currency":         "¥",
+			"titleTag":         "h2",
+		},
+	},
 }}
 
 // validateExtra 关系性校验：槽位字段路径必须规范，且与数据源类型一致。

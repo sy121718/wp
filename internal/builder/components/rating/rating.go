@@ -40,6 +40,13 @@ type Props struct {
 // Widget 基座实例。
 var Widget = core.Atom[Props]{
 	Spec: core.AtomSpec[Props]{
+		DisplayName:     "评分",
+		Hint:            "星形评分",
+		PaletteCategory: core.PaletteCategoryBasic,
+		DefaultProps: map[string]any{
+			"value": 4.5,
+			"max":   5,
+		},
 		TypeName:      Type,
 		ValidateExtra: validateExtra,
 	},

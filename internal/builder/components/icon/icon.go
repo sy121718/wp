@@ -46,6 +46,13 @@ type Props struct {
 // Widget 基座实例。
 var Widget = core.Atom[Props]{
 	Spec: core.AtomSpec[Props]{
+		DisplayName:     "图标",
+		Hint:            "通用 SVG 图标",
+		PaletteCategory: core.PaletteCategoryBasic,
+		DefaultProps: map[string]any{
+			"iconName": "star",
+			"size":     "24px",
+		},
 		TypeName:      Type,
 		ValidateExtra: validateExtra,
 	},

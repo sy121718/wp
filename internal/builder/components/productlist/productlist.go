@@ -294,7 +294,29 @@ type Component struct {
 
 // Widget 组件实例。
 var Widget = &Component{Atom: core.Atom[Props]{
-	Spec: core.AtomSpec[Props]{TypeName: Type, ValidateExtra: validateExtra},
+	Spec: core.AtomSpec[Props]{
+		TypeName:        Type,
+		ValidateExtra:   validateExtra,
+		PaletteCategory: core.PaletteCategoryBasic,
+		DisplayName:     "商品列表",
+		Hint:            "网格 / 列表铺开一批商品",
+		DefaultProps: map[string]any{
+			"collectionLimit":   8,
+			"layout":            "grid",
+			"columns":           "auto",
+			"filterStatus":      "published",
+			"imageField":        "item.images",
+			"titleField":        "item.name",
+			"priceField":        "item.priceRange",
+			"comparePriceField": "item.comparePrice",
+			"tagsField":         "item.tags",
+			"linkField":         "item.url",
+			"linkPrefix":        "",
+			"currency":          "¥",
+			"titleTag":          "h3",
+			"emptyText":         "暂无商品",
+		},
+	},
 }}
 
 // slotFields 卡片槽位（顺序即渲染顺序）。

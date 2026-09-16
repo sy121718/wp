@@ -73,6 +73,18 @@ type Props struct {
 // Widget 基座实例。
 var Widget = core.Atom[Props]{
 	Spec: core.AtomSpec[Props]{
+		DisplayName:     "购物车图标",
+		Hint:            "页头购物车入口（下拉 / 抽屉 / 弹窗 / 悬停）",
+		PaletteCategory: core.PaletteCategoryBasic,
+		DefaultProps: map[string]any{
+			"mode":       "dropdown",
+			"align":      "right",
+			"drawerSide": "right",
+			"icon":       "shopping-cart",
+			"label":      "购物车",
+			"showLabel":  false,
+			"showCount":  true,
+		},
 		TypeName: Type,
 		// 标签文字是作者填的文案，参与内容翻译。
 		Translatable: []string{"label"},

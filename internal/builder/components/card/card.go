@@ -39,6 +39,15 @@ type Props struct {
 // Widget 基座实例。
 var Widget = core.Atom[Props]{
 	Spec: core.AtomSpec[Props]{
+		DisplayName:     "卡片",
+		Hint:            "标题+正文+按钮",
+		PaletteCategory: core.PaletteCategoryBasic,
+		DefaultProps: map[string]any{
+			"title":      "卡片标题",
+			"text":       "卡片正文内容。",
+			"buttonText": "了解更多",
+			"buttonLink": "/",
+		},
 		TypeName:      Type,
 		ValidateExtra: validateExtra,
 		// Translatable 可翻译字段白名单（多语言 P5b，docs/06-D §7.5 决策 F6）：

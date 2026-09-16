@@ -32,6 +32,13 @@ type Props struct {
 // Widget 基座实例。
 var Widget = core.Atom[Props]{
 	Spec: core.AtomSpec[Props]{
+		DisplayName:     "站内搜索",
+		Hint:            "搜索框 + 结果列表（片段现拉）",
+		PaletteCategory: core.PaletteCategoryBasic,
+		DefaultProps: map[string]any{
+			"placeholder": "搜索站内内容",
+			"limit":       8,
+		},
 		TypeName:     Type,
 		Translatable: []string{"placeholder"},
 	},

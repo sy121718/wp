@@ -49,6 +49,49 @@ func (c *Component) Translatable() []string { return []string{"label"} }
 // PropsSpec 实现 SpecProvider：暴露 Props 生成检查器 schema。
 func (c *Component) PropsSpec() any { return &Props{} }
 
+// Palette 实现 core.PaletteProvider：组件库呈现元数据（审计 REG-005）。
+// 显示名 / 说明 / 分组 / 插入默认 Props 都在 Go 侧声明，前端只消费注入数据。
+func (c *Component) Palette() core.PaletteMeta {
+	return core.PaletteMeta{
+		Type:     Type,
+		Category: core.PaletteCategoryBasic,
+		DefaultProps: map[string]any{
+			"items": []any{
+				map[string]any{
+					"label": "首页",
+					"url":   "/",
+				},
+				map[string]any{
+					"label": "产品",
+					"url":   "/shop",
+					"children": []any{
+						map[string]any{
+							"label": "一次性",
+							"url":   "/shop/disposable",
+						},
+						map[string]any{
+							"label": "换弹",
+							"url":   "/shop/pods",
+						},
+					},
+				},
+				map[string]any{
+					"label": "关于我们",
+					"url":   "/about",
+				},
+			},
+			"orientation":    "horizontal",
+			"gap":            "24px",
+			"color":          "#3B3C40",
+			"hoverColor":     "#D93425",
+			"itemPadding":    "8px 0",
+			"mobileCollapse": true,
+		},
+		DisplayName: "导航菜单",
+		Hint:        "站点菜单（支持二级）",
+	}
+}
+
 // Item 菜单项（支持一级子菜单，对齐 WP 菜单的父子层级）。
 type Item struct {
 	Label    string `json:"label,omitempty"`

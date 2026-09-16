@@ -43,6 +43,13 @@ type Props struct {
 // Widget 基座实例。
 var Widget = core.Atom[Props]{
 	Spec: core.AtomSpec[Props]{
+		DisplayName:     "加载指示",
+		Hint:            "纯 CSS 加载动画（九种形态）",
+		PaletteCategory: core.PaletteCategoryBasic,
+		DefaultProps: map[string]any{
+			"variant": "spinner",
+			"size":    "32px",
+		},
 		TypeName:      Type,
 		ValidateExtra: validateExtra,
 		Translatable:  []string{"label"},

@@ -91,6 +91,15 @@ type Props struct {
 // Widget 基座实例。
 var Widget = core.Atom[Props]{
 	Spec: core.AtomSpec[Props]{
+		DisplayName:     "账号表单",
+		Hint:            "登录 / 注册 / 找回密码 / 账号面板（片段现拉）",
+		PaletteCategory: core.PaletteCategoryBasic,
+		DefaultProps: map[string]any{
+			"mode":      "login",
+			"title":     "登录",
+			"showTitle": true,
+			"next":      "",
+		},
 		TypeName: Type,
 		// 标题是作者填的文案，参与内容翻译。
 		Translatable: []string{"title"},

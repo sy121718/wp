@@ -309,6 +309,25 @@ func (c *Component) Type() string { return Type }
 // PropsSpec 实现 SpecProvider：暴露 Props 生成检查器 schema。
 func (c *Component) PropsSpec() any { return &Props{} }
 
+// Palette 实现 core.PaletteProvider：组件库呈现元数据（审计 REG-005）。
+// 显示名 / 说明 / 分组 / 插入默认 Props 都在 Go 侧声明，前端只消费注入数据。
+func (c *Component) Palette() core.PaletteMeta {
+	return core.PaletteMeta{
+		Type:     Type,
+		Category: core.PaletteCategoryBasic,
+		DefaultProps: map[string]any{
+			"trigger":        "hover",
+			"shape":          "fan",
+			"count":          9,
+			"hueStep":        50,
+			"spreadAngle":    5,
+			"spreadDistance": 120,
+		},
+		DisplayName: "卡片堆叠",
+		Hint:        "悬停扇形/直排 · 滚动堆叠",
+	}
+}
+
 // Validate 校验：props 合法性 + 尺寸为 CSS 安全值 + 子节点递归校验。
 func (c *Component) Validate(node *core.Node, ids map[string]bool) (err error) {
 	if err = core.ValidateNodeID(node.ID, node.Name, ids); err != nil {

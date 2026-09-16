@@ -28,6 +28,36 @@ func (c *Component) Type() string { return Type }
 // PropsSpec 实现 SpecProvider：暴露 Props 生成检查器 schema（样式字段声明式）。
 func (c *Component) PropsSpec() any { return &Props{} }
 
+// Palette 实现 core.PaletteProvider：组件库呈现元数据（审计 REG-005）。
+// 显示名 / 说明 / 分组 / 插入默认 Props 都在 Go 侧声明，前端只消费注入数据。
+func (c *Component) Palette() core.PaletteMeta {
+	return core.PaletteMeta{
+		Type:     Type,
+		Category: core.PaletteCategoryBasic,
+		DefaultProps: map[string]any{
+			"color": "brand",
+			"size":  "40px",
+			"shape": "circle",
+			"items": []any{
+				map[string]any{
+					"platform": "facebook",
+					"url":      "https://facebook.com",
+				},
+				map[string]any{
+					"platform": "x",
+					"url":      "https://x.com",
+				},
+				map[string]any{
+					"platform": "instagram",
+					"url":      "https://instagram.com",
+				},
+			},
+		},
+		DisplayName: "社交图标",
+		Hint:        "社交平台图标组",
+	}
+}
+
 // Item 单个社交按钮。
 type Item struct {
 	// Platform 平台标识（facebook/x/instagram/youtube/tiktok/telegram/whatsapp/pinterest/linkedin）。

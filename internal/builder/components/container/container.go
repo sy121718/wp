@@ -277,6 +277,32 @@ func (Container) Type() string { return Type }
 // PropsSpec 实现 SpecProvider：暴露 Props 生成检查器 schema（声明式控件）。
 func (Container) PropsSpec() any { return &Props{} }
 
+// Palette 实现 core.PaletteProvider：组件库呈现元数据（审计 REG-005）。
+// 显示名 / 说明 / 分组 / 插入默认 Props 都在 Go 侧声明，前端只消费注入数据。
+func (Container) Palette() core.PaletteMeta {
+	return core.PaletteMeta{
+		Type:     Type,
+		Category: core.PaletteCategoryBasic,
+		DefaultProps: map[string]any{
+			"tag": "section",
+			"layout": map[string]any{
+				"engine": "flex",
+				"flex": map[string]any{
+					"direction": "column",
+					"gap":       "16px",
+				},
+			},
+			"box": map[string]any{
+				"padding": map[string]any{
+					"desktop": "32px",
+				},
+			},
+		},
+		DisplayName: "容器",
+		Hint:        "布局容器",
+	}
+}
+
 // IsSafeCSSValue 校验 CSS 值是否在安全白名单内（长度上限 500）。导出供其他组件复用。
 func IsSafeCSSValue(v string) bool {
 	return len(v) <= 500 && cssValueRe.MatchString(v)

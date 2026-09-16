@@ -50,6 +50,14 @@ type Props struct {
 // Widget 基座实例。
 var Widget = core.Atom[Props]{
 	Spec: core.AtomSpec[Props]{
+		DisplayName:     "我的订单",
+		Hint:            "访客订单列表（登录后可见，片段现拉）",
+		PaletteCategory: core.PaletteCategoryBasic,
+		DefaultProps: map[string]any{
+			"title":     "我的订单",
+			"showTitle": true,
+			"pageSize":  10,
+		},
 		TypeName: Type,
 		// 标题是作者填的文案，参与内容翻译。
 		Translatable: []string{"title"},

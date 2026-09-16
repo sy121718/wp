@@ -20,6 +20,22 @@ type AtomSpec[P any] struct {
 	// 只放「作者填写的文本」字段（text/title/alt/caption 等），
 	// 链接（/shop）、色值（#FF0000）、宽度、枚举一律不放。
 	Translatable []string
+
+	// --- 组件库呈现元数据（审计 REG-005，见 palette.go）---
+	// 这四项是「组件怎么出现在编辑器组件库」的唯一声明，前端不再手写组件条目
+	// （只消费生成的 paletteSpec + 自动化不了的人工排序表）。
+	// 不声明（DisplayName 为空）即不进组件库 —— 只允许由专门路径产生的组件这么做
+	// （core.globalref / core.layoutSlot），且必须登记在 builder 的覆盖豁免表里。
+
+	// DisplayName 组件库显示名（中文）。
+	DisplayName string
+	// Hint 组件库一句话说明。
+	Hint string
+	// PaletteCategory 组件库分组键（见 PaletteCategory* 常量）。
+	PaletteCategory string
+	// DefaultProps 插入时的默认 Props（示例内容，保证「插入即合法」）。
+	// 键必须在 Props 的 JSON 字段集合内（注册期校验）。
+	DefaultProps map[string]any
 }
 
 // Atom 泛型原子组件基座，实现 Component 接口。
@@ -47,6 +63,20 @@ func (a Atom[P]) PropsSpec() any { var p P; return &p }
 //
 // 所有 Atom 基座组件自动具备本方法（未声明返回 nil = 无可翻译字段）。
 func (a Atom[P]) Translatable() []string { return a.Spec.Translatable }
+
+// Palette 实现 PaletteProvider：返回组件库呈现元数据（审计 REG-005）。
+//
+// 所有 Atom 基座组件自动具备本方法：元数据完整（DisplayName + PaletteCategory）
+// 即进组件库，未声明则视为不进库（core.PaletteOf 判定）。
+func (a Atom[P]) Palette() PaletteMeta {
+	return PaletteMeta{
+		Type:         a.Spec.TypeName,
+		DisplayName:  a.Spec.DisplayName,
+		Hint:         a.Spec.Hint,
+		Category:     a.Spec.PaletteCategory,
+		DefaultProps: a.Spec.DefaultProps,
+	}
+}
 
 // Validate 实现组件接口：公共校验管线 + 声明式 + 组件关系性 + Advanced。
 func (a Atom[P]) Validate(node *Node, ids map[string]bool) (err error) {
