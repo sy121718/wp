@@ -16,6 +16,8 @@ import (
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
+
+	"go_wp/public/migrations"
 )
 
 // DefaultPGHost is the local postgres host used by tests; mirrors config.yaml database.host.
@@ -84,12 +86,24 @@ func localPGEndpoint() PGEndpoint {
 // Cleanup 通过 t.Cleanup 注册：DROP SCHEMA ... CASCADE 并回收连接。
 func NewPGTestDB(t *testing.T) (*gorm.DB, error) {
 	t.Helper()
-	return NewPGTestDBAt(t, localPGEndpoint())
+	return newTestDatabase(t, localPGEndpoint(), false)
 }
 
 // NewPGTestDBAt 与 NewPGTestDB 相同，但使用显式端点
 // （support/testenv.go 的容器回退路径复用；行为与原函数完全一致）。
 func NewPGTestDBAt(t *testing.T, ep PGEndpoint) (*gorm.DB, error) {
+	t.Helper()
+	return newTestDatabase(t, ep, false)
+}
+
+// newTestDatabase 建一个隔离的测试库并返回连接（每个测试独占一个库，Cleanup 时 DROP）。
+//
+// useTemplate=true：复制「跑完生产迁移的模板库」—— 表结构由生产迁移建成、与生产一致，
+// 且只要约 65ms（对比跑完整 209 条迁移约 1.1s）。给需要真实 schema 的链路测试用。
+// useTemplate=false：建**空库** —— 给那些自己建表（AutoMigrate、手抄 DDL）或故意构造
+// 旧 schema 的用例用；它们要的本来就是空环境，塞给它们完整生产结构反而会撞上外键约束
+// 与「约束名不符」这类 gorm 元数据对齐问题。
+func newTestDatabase(t *testing.T, ep PGEndpoint, useTemplate bool) (*gorm.DB, error) {
 	t.Helper()
 
 	host, port, user, password, dbname := ep.Host, ep.Port, ep.User, ep.Password, ep.Database
@@ -107,36 +121,41 @@ func NewPGTestDBAt(t *testing.T, ep PGEndpoint) (*gorm.DB, error) {
 		return nil, fmt.Errorf("%w: %v", ErrPGUnavailable, err)
 	}
 
-	// 扩展先落到共享 schema（进程内一次；advisory lock 防多进程竞态）。
-	if err := ensureSharedExtensions(adminDB); err != nil {
+	name := "t_" + randomHex(10)
+	createSQL := "CREATE DATABASE " + name
+	if useTemplate {
+		// 跑完生产迁移的模板库：复制它，而不是每次重跑 209 条迁移。
+		tpl, err := ensureTemplateDB(ep)
+		if err != nil {
+			adminSQL.Close()
+			return nil, err
+		}
+		createSQL = "CREATE DATABASE " + name + " TEMPLATE " + tpl
+	}
+	if err := adminDB.Exec(createSQL).Error; err != nil {
 		adminSQL.Close()
-		return nil, fmt.Errorf("准备共享扩展失败: %w", err)
+		return nil, fmt.Errorf("创建测试库失败: %w", err)
 	}
 
-	schema := "t_" + randomHex(10)
-	if err := adminDB.Exec(fmt.Sprintf("CREATE SCHEMA %s", schema)).Error; err != nil {
-		adminSQL.Close()
-		return nil, fmt.Errorf("创建测试 schema 失败: %w", err)
-	}
-
-	// 用 search_path 指向专属 schema 的连接做隔离。
-	dsn := pgDSN(host, port, user, password, dbname) + " search_path=" + schema + "," + sharedExtSchema
+	// 表结构全在 public（模板库由生产迁移建成）；search_path 带上 ext_shared 供 trgm
+	// 索引使用 —— 扩展随模板库一起复制过来，不需要再装。
+	dsn := pgDSN(host, port, user, password, name) + " search_path=public," + sharedExtSchema
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if err != nil {
-		// 连接失败时尽力清理 schema，避免残留。
-		adminDB.Exec(fmt.Sprintf("DROP SCHEMA IF EXISTS %s CASCADE", schema))
+		// 连接失败时尽力清理，避免残留库堆积。
+		_ = adminDB.Exec("DROP DATABASE IF EXISTS " + name).Error
 		adminSQL.Close()
 		return nil, fmt.Errorf("打开测试连接失败: %w", err)
 	}
 
 	t.Cleanup(func() {
-		// 顺序：先关测试连接 → 再 DROP schema → 最后关 admin 连接池。
-		// （旧实现 defer 提前关闭 adminSQL，Cleanup 里 DROP 用已关闭的池必然失败，schema 大量残留。）
+		// 顺序：先关测试连接（DROP DATABASE 要求该库没有活动连接）→ 再 DROP → 最后关 admin 池。
+		// （旧实现 defer 提前关闭 adminSQL，Cleanup 里用已关闭的池必然失败，对象大量残留。）
 		if sqlDB, err := db.DB(); err == nil {
 			sqlDB.Close()
 		}
-		if err := adminDB.Exec(fmt.Sprintf("DROP SCHEMA IF EXISTS %s CASCADE", schema)).Error; err != nil {
-			t.Logf("清理测试 schema %s 失败: %v", schema, err)
+		if err := adminDB.Exec("DROP DATABASE IF EXISTS " + name).Error; err != nil {
+			t.Logf("清理测试库 %s 失败: %v", name, err)
 		}
 		adminSQL.Close()
 	})
@@ -145,39 +164,92 @@ func NewPGTestDBAt(t *testing.T, ep PGEndpoint) (*gorm.DB, error) {
 
 // sharedExtSchema 承载 pg_trgm 的专用 schema。
 //
-// 扩展是**库级唯一**的：装进哪个 schema，只有 search_path 含它的连接才解析得到
-// gin_trgm_ops。历史行为是「跟着第一个跑迁移的 schema 走」—— 串行时靠测试结束
-// DROP SCHEMA CASCADE 把扩展一并删掉、下个 schema 重新装而侥幸通过，一旦并行就互相踩：
-// 后来者的 CREATE EXTENSION IF NOT EXISTS 静默跳过，随后建 trgm 索引直接报
-// "operator class gin_trgm_ops does not exist"。
-//
-// 刻意不借用 public：wp_test.public 里有历史残留的业务表，把它放进 search_path 会让
-// 迁移里的 to_regclass 判定误判「表已存在」，静默跳过整条迁移。
+// 扩展是**库级唯一**的，而 gin_trgm_ops 按 schema 解析。它固定装在这里（迁移 167/210），
+// 模板库因此自带它、复制出来的测试库也自带 —— 测试连接把它放进 search_path 就能用。
+// 刻意不借用 public：public 承载业务表，进 search_path 会让迁移里的 to_regclass 判定误判。
 const sharedExtSchema = "ext_shared"
 
+// templatePrefix 模板库名前缀，后面接迁移指纹。
+const templatePrefix = "wp_test_tpl_"
+
+// templateLockKey 建模板库的跨进程互斥键（多个测试进程会同时启动）。
+const templateLockKey int64 = 0x6770775f74657374 // "gwp_test"
+
 var (
-	sharedExtOnce sync.Once
-	sharedExtErr  error
+	templateOnce sync.Once
+	templateDB   string
+	templateErr  error
 )
 
-// ensureSharedExtensions 建好扩展 schema，并把 pg_trgm 固定在那里。
-func ensureSharedExtensions(db *gorm.DB) error {
-	sharedExtOnce.Do(func() {
-		sharedExtErr = db.Transaction(func(tx *gorm.DB) error {
-			if err := tx.Exec("SELECT pg_advisory_xact_lock(hashtextextended('go_wp_test_ext_shared', 0))").Error; err != nil {
+// ensureTemplateDB 保证「跑完生产迁移的模板库」存在，返回库名。
+//
+// 为什么值得这么做：测试的隔离单位过去是 schema，而 schema 没有复制原语 —— 每个用例都要
+// 建一个空 schema 再跑完整 209 条迁移（约 1.1s），这段耗时与「测什么业务」毫无关系
+// （admin 一个包 116 个用例就是 128s）。库有复制原语：CREATE DATABASE ... TEMPLATE 实测
+// 约 65ms（快 15 倍），复制出来的库还自带 ext_shared 与 pg_trgm，连扩展都不用再装。
+//
+// 模板名带迁移指纹（migrations.Fingerprint()）：迁移一改就换一个新名字重建，绝不去 DROP
+// 正在被别的测试进程使用的旧模板 —— 并发下那是必然冲突。旧模板库会残留，在建模板时顺手
+// 清理（清理失败只说明有进程正在用，忽略即可）。
+func ensureTemplateDB(ep PGEndpoint) (string, error) {
+	templateOnce.Do(func() {
+		admin, err := gorm.Open(postgres.Open(pgDSN(ep.Host, ep.Port, ep.User, ep.Password, ep.Database)), &gorm.Config{})
+		if err != nil {
+			templateErr = fmt.Errorf("%w: %v", ErrPGUnavailable, err)
+			return
+		}
+		defer func() {
+			if sdb, err := admin.DB(); err == nil {
+				sdb.Close()
+			}
+		}()
+		if err := admin.Exec("SELECT 1").Error; err != nil {
+			templateErr = fmt.Errorf("%w: %v", ErrPGUnavailable, err)
+			return
+		}
+
+		name := templatePrefix + migrations.Fingerprint()
+		templateErr = admin.Connection(func(conn *gorm.DB) error {
+			// 多个测试进程会同时走到这里：用 advisory lock 串行化建模板。
+			if err := conn.Exec("SELECT pg_advisory_lock(?)", templateLockKey).Error; err != nil {
 				return err
 			}
-			if err := tx.Exec("CREATE SCHEMA IF NOT EXISTS " + sharedExtSchema).Error; err != nil {
+			defer conn.Exec("SELECT pg_advisory_unlock(?)", templateLockKey)
+
+			var exists bool
+			if err := conn.Raw("SELECT EXISTS (SELECT 1 FROM pg_database WHERE datname = ?)", name).Scan(&exists).Error; err != nil {
 				return err
 			}
-			if err := tx.Exec("CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA " + sharedExtSchema).Error; err != nil {
-				return err
+			if !exists {
+				if err := conn.Exec("CREATE DATABASE " + name).Error; err != nil {
+					return fmt.Errorf("创建模板库 %s 失败: %w", name, err)
+				}
+				// 结构由生产迁移建（与「测试建表走生产迁移」一致，不手抄 DDL）。
+				tpl, err := gorm.Open(postgres.Open(pgDSN(ep.Host, ep.Port, ep.User, ep.Password, name)), &gorm.Config{})
+				if err != nil {
+					return fmt.Errorf("连接模板库失败: %w", err)
+				}
+				if err := migrations.Run(tpl); err != nil {
+					return fmt.Errorf("模板库执行生产迁移失败: %w", err)
+				}
+				// 复制前模板库必须没有活动连接。
+				if sdb, err := tpl.DB(); err == nil {
+					sdb.Close()
+				}
 			}
-			// 已存在但装在别处（历史遗留）：搬过来，否则 ext_shared 里没有 gin_trgm_ops。
-			return tx.Exec("DO $$ BEGIN IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_trgm' AND extnamespace <> '" + sharedExtSchema + "'::regnamespace) THEN ALTER EXTENSION pg_trgm SET SCHEMA " + sharedExtSchema + "; END IF; END $$;").Error
+			// 顺手清理其它指纹的旧模板（尽力而为：正被别的进程用时 DROP 会失败）。
+			var stale []string
+			conn.Raw("SELECT datname FROM pg_database WHERE datname LIKE ? AND datname <> ?", templatePrefix+"%", name).Scan(&stale)
+			for _, old := range stale {
+				conn.Exec("DROP DATABASE IF EXISTS " + old)
+			}
+			return nil
 		})
+		if templateErr == nil {
+			templateDB = name
+		}
 	})
-	return sharedExtErr
+	return templateDB, templateErr
 }
 
 func randomHex(n int) string {

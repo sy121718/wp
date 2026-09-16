@@ -4,8 +4,6 @@ import (
 	"testing"
 
 	"gorm.io/gorm"
-
-	"go_wp/public/migrations"
 )
 
 // NewMigratedPGTestDB 建隔离 schema 并**跑生产迁移**建表，返回可直接使用的库。
@@ -19,13 +17,12 @@ import (
 // PG 不可用时 t.Skip，与 NewPGTestDB 行为一致。
 func NewMigratedPGTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	db, err := NewPGTestDB(t)
+	// 复制「跑完生产迁移的模板库」，而不是每次新建空库再跑一遍迁移：
+	// 结构同样只由生产迁移产生（模板库就是这么建出来的），但每个用例约 65ms 而非约 1.1s。
+	db, err := newTestDatabase(t, localPGEndpoint(), true)
 	if err != nil {
 		t.Skipf("本地 PostgreSQL 不可用，跳过测试：%v", err)
 		return nil
-	}
-	if err := migrations.Run(db); err != nil {
-		t.Fatalf("执行生产迁移失败：%v", err)
 	}
 	return db
 }
