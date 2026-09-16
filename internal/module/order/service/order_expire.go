@@ -7,11 +7,9 @@ package orderservice
 
 import (
 	"context"
-	"errors"
 	"time"
 
 	orderdto "go_wp/internal/module/order/dto"
-	orderenums "go_wp/internal/module/order/enums"
 	ordermodel "go_wp/internal/module/order/model"
 	"go_wp/pkg/logger"
 )
@@ -39,12 +37,11 @@ func (s *Service) ExpirePendingOrders(ctx context.Context, olderThan time.Durati
 	if batchSize <= 0 {
 		batchSize = pendingOrderExpiryBatch
 	}
-	projectIDs, perr := s.orders.ListAllProjectIDs(ctx)
+	// 工程清单：优先经注入的 project 契约，未注入时回退到 projects 表的只读兜底
+	//（见 order_scope.go 的 SetProjects；装配落点见 DB-009 第四批报告）。
+	projectIDs, perr := s.projectIDs(ctx)
 	if perr != nil {
 		return 0, perr
-	}
-	if len(projectIDs) == 0 {
-		return 0, errors.New(orderenums.ErrProjectRequired)
 	}
 	cutoff := time.Now().Add(-olderThan)
 	for _, projectID := range projectIDs {

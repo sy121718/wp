@@ -81,8 +81,13 @@ func (s *Service) UpdateCoupon(ctx context.Context, req *orderdto.CouponSaveReq)
 	if req == nil || req.ID == 0 {
 		return nil, errors.New(orderenums.ErrInvalidParam)
 	}
-	// 定位跳（请求只给 id）无工程可用；拿到实体后的写与回读全部带工程作用域。
-	existing, err := s.coupons.GetByID(ctx, "", req.ID)
+	// 定位跳（DB-009 第四批）：请求只给 id；coupons 带 FORCE 策略，不带作用域的读取
+	// 在非超级角色下返回 nil（表现为「优惠码不存在」）。归属由逐工程探测确定。
+	projectID, perr := s.locateCouponProject(ctx, req.ID)
+	if perr != nil {
+		return nil, perr
+	}
+	existing, err := s.coupons.GetByID(ctx, projectID, req.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -145,7 +150,11 @@ func (s *Service) GetCoupon(ctx context.Context, couponID uint64) (res *orderdto
 	if couponID == 0 {
 		return nil, errors.New(orderenums.ErrInvalidParam)
 	}
-	e, err := s.coupons.GetByID(ctx, "", couponID)
+	projectID, perr := s.locateCouponProject(ctx, couponID)
+	if perr != nil {
+		return nil, perr
+	}
+	e, err := s.coupons.GetByID(ctx, projectID, couponID)
 	if err != nil {
 		return nil, err
 	}
@@ -201,7 +210,11 @@ func (s *Service) DeleteCoupon(ctx context.Context, couponID uint64) (err error)
 	if couponID == 0 {
 		return errors.New(orderenums.ErrInvalidParam)
 	}
-	e, err := s.coupons.GetByID(ctx, "", couponID)
+	projectID, perr := s.locateCouponProject(ctx, couponID)
+	if perr != nil {
+		return perr
+	}
+	e, err := s.coupons.GetByID(ctx, projectID, couponID)
 	if err != nil {
 		return err
 	}

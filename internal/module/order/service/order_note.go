@@ -28,7 +28,12 @@ func (s *Service) UpdateOrderNote(ctx context.Context, req *orderdto.UpdateOrder
 	if len(note) > maxAdminNoteLen {
 		return nil, errors.New(orderenums.ErrNoteTooLong)
 	}
-	head, err := s.orders.GetByID(ctx, req.OrderID, "")
+	// 定位跳（DB-009 第四批）：后台备注入口只给订单 id。
+	projectID, perr := s.locateOrderProject(ctx, req.OrderID)
+	if perr != nil {
+		return nil, perr
+	}
+	head, err := s.orders.GetByID(ctx, req.OrderID, projectID)
 	if err != nil {
 		return nil, err
 	}

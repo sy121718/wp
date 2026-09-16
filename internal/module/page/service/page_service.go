@@ -118,9 +118,15 @@ func (s *Service) newContentTranslator(ctx context.Context, projectID, lang stri
 	return i18n.NewContentTranslatorScoped(ctx, projectID, nil, lang, hashes)
 }
 
-// getExistingPage 查询未删除页面，统一映射未找到错误。
+// getExistingPage 按 id 定位未删除页面（逐工程独立作用域探测，DB-009 第四批），
+// 统一映射未找到错误。
+//
+// 为什么不能直查：pages 带 FORCE 策略，GetByID(ctx, id, 空工程) 在换非超级角色后一律
+// 返回 ErrRecordNotFound —— 于是构建 / 发布 / 回滚 / 改 URL 全部报「页面不存在」。
+// 调用方（后台 API）手上只有 pageId，归属只能由本层逐工程探测确定；拿到页面之后，
+// page.ProjectID 就是后续每一步写入的作用域来源。
 func (s *Service) getExistingPage(ctx context.Context, id string) (page *pagemodel.PageEntity, err error) {
-	page, err = s.model.GetByID(ctx, id, "")
+	page, err = s.locatePageInProjects(ctx, id)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, ErrPageNotFound
 	}

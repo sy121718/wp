@@ -18,6 +18,7 @@ import (
 	orderenums "go_wp/internal/module/order/enums"
 	ordermodel "go_wp/internal/module/order/model"
 	"go_wp/pkg/database"
+	"go_wp/pkg/rls"
 	"go_wp/pkg/utils"
 	"gorm.io/gorm"
 )
@@ -221,9 +222,17 @@ func (s *Service) CancelReturn(ctx context.Context, req *orderdto.ReturnCancelRe
 	if req == nil || req.ReturnID == 0 || req.UserID == 0 {
 		return errors.New(orderenums.ErrInvalidParam)
 	}
+	// 定位跳（DB-009 第四批）：访客撤销只给退货单 id（归属校验在下面用实体字段做）。
+	projectID, perr := s.locateReturnProject(ctx, req.ReturnID)
+	if perr != nil {
+		return perr
+	}
 	now := time.Now()
 	return s.returns.Transaction(ctx, func(tx *gorm.DB) error {
-		e, lerr := s.returns.LockByIDTx(ctx, tx, "", req.ReturnID)
+		if serr := rls.ScopeTx(tx, projectID); serr != nil {
+			return serr
+		}
+		e, lerr := s.returns.LockByIDTx(ctx, tx, projectID, req.ReturnID)
 		if lerr != nil {
 			return lerr
 		}

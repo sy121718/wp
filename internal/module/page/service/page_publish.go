@@ -64,7 +64,7 @@ func (s *Service) Build(ctx context.Context, req *pagedto.BuildReq) (res *pagedt
 	}
 	// 依赖记录落库（docs/03-pipeline.md §8.2）：本次产物声明的依赖集合，
 	// 供依赖源变更时按 (kind,key) 反查受影响页面（PIPE-3 精确 fan-out）。
-	s.persistDependencies(ctx, page.ID, artifactID, deps)
+	s.persistDependencies(ctx, page.ProjectID, page.ID, artifactID, deps)
 	now := time.Now().UTC()
 	// 暂存指针按语言记录（多语言 P3）：Build(en-US) 不再覆盖 Build(zh-CN) 的暂存指针，
 	// 「先构建两种语言、再逐个发布」由此可用；pages 的单值列仍是最近构建语言的镜像。
@@ -104,7 +104,7 @@ func (s *Service) Publish(ctx context.Context, req *pagedto.PublishReq) (res *pa
 		return nil, ErrNoStagedArtifact
 	}
 	// 活跃产物的依赖记录必须齐备（fan-out 反查的前提）：发布时按 Manifest 补写一次。
-	s.persistDependenciesFromManifest(ctx, page.ID, stagedArt.ID, stagedArt.Manifest)
+	s.persistDependenciesFromManifest(ctx, page.ProjectID, page.ID, stagedArt.ID, stagedArt.Manifest)
 
 	// FS 激活前预检：目标路径被其他页面/展示实例占用时提前失败（H7），
 	// 避免内核先把 FS 覆盖成本页产物、DB 路由写入才报错的状态分裂。
@@ -159,7 +159,7 @@ func (s *Service) Publish(ctx context.Context, req *pagedto.PublishReq) (res *pa
 		if aerr != nil {
 			return nil, aerr
 		}
-		s.persistDependencies(ctx, page.ID, artifactID, deps)
+		s.persistDependencies(ctx, page.ProjectID, page.ID, artifactID, deps)
 		// 三个地方都要换成本次的 hash，否则「暂存指针 / 激活指针 / 符号链接」各自指向
 		// 不同产物：stagedArt 用于落库与激活，built 供后续步骤读取。
 		stagedArt.ID = artifactID

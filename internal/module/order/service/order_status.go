@@ -91,9 +91,18 @@ func (s *Service) ChangeStatus(ctx context.Context, req *orderdto.ChangeStatusRe
 		return errors.New(orderenums.ErrStatusTransition)
 	}
 
+	// 定位跳（DB-009 第四批）：请求只给订单 id，而 orders 带 FORCE 策略 —— 缺作用域时
+	// 下面这条加锁读在非超级角色下拿不到行，接口会报「订单不存在」。
+	projectID, perr := s.locateOrderProject(ctx, req.OrderID)
+	if perr != nil {
+		return perr
+	}
 	now := time.Now()
 	return s.orders.Transaction(ctx, func(tx *gorm.DB) error {
-		e, lerr := s.orders.LockByIDTx(ctx, tx, "", req.OrderID)
+		if serr := rls.ScopeTx(tx, projectID); serr != nil {
+			return serr
+		}
+		e, lerr := s.orders.LockByIDTx(ctx, tx, projectID, req.OrderID)
 		if lerr != nil {
 			return lerr
 		}
@@ -143,18 +152,21 @@ func (s *Service) CancelOrder(ctx context.Context, req *orderdto.CancelOrderReq)
 		return nil, errors.New(orderenums.ErrCancelReasonRequired)
 	}
 
+	// 工程作用域（DB-009 第三批 + 第四批）：orders 带 FORCE 策略，加锁读、状态更新、
+	// 状态日志三步都在这个事务里 —— 缺 app.project_id 时它们会**静默**匹配 0 行 / 写不进去。
+	// 调用方显式给了工程（超时取消扫描逐工程调用）就用它；没给（后台取消按钮）则
+	// 事务外逐工程探测出归属 —— 不留「不限工程」这条路径。
+	scopeProjectID, perr := s.resolveOrderProject(ctx, req.OrderID, req.ProjectID)
+	if perr != nil {
+		return nil, perr
+	}
 	now := time.Now()
 	var orderNo, projectID string
 	err = s.orders.Transaction(ctx, func(tx *gorm.DB) error {
-		// 工程作用域（DB-009 第三批）：orders 带 FORCE 策略，加锁读、状态更新、状态日志
-		// 三步都在这个事务里 —— 缺少 app.project_id 时它们会**静默**匹配 0 行 / 写不进去。
-		// 调用方明确知道工程时（超时取消扫描逐工程调用）必须传下来。
-		if pid := strings.TrimSpace(req.ProjectID); pid != "" {
-			if serr := rls.ScopeTx(tx, pid); serr != nil {
-				return serr
-			}
+		if serr := rls.ScopeTx(tx, scopeProjectID); serr != nil {
+			return serr
 		}
-		e, lerr := s.orders.LockByIDTx(ctx, tx, strings.TrimSpace(req.ProjectID), req.OrderID)
+		e, lerr := s.orders.LockByIDTx(ctx, tx, scopeProjectID, req.OrderID)
 		if lerr != nil {
 			return lerr
 		}
@@ -241,9 +253,17 @@ func (s *Service) RefundOrder(ctx context.Context, req *orderdto.RefundOrderReq)
 	if req == nil || req.OrderID == 0 {
 		return errors.New(orderenums.ErrInvalidParam)
 	}
+	// 定位跳（DB-009 第四批）：同 ChangeStatus —— 请求只给订单 id。
+	projectID, perr := s.locateOrderProject(ctx, req.OrderID)
+	if perr != nil {
+		return perr
+	}
 	now := time.Now()
 	return s.orders.Transaction(ctx, func(tx *gorm.DB) error {
-		e, lerr := s.orders.LockByIDTx(ctx, tx, "", req.OrderID)
+		if serr := rls.ScopeTx(tx, projectID); serr != nil {
+			return serr
+		}
+		e, lerr := s.orders.LockByIDTx(ctx, tx, projectID, req.OrderID)
 		if lerr != nil {
 			return lerr
 		}

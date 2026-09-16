@@ -31,11 +31,13 @@ const (
 //
 // 放在保存路径上是刻意的：定时任务一天只跑一次，高频编辑的页面在这之间照样能堆出
 // 成百上千份完整文档快照。失败只记日志 —— 清理不该让一次保存失败。
-func (s *Service) pruneRevisions(ctx context.Context, pageID string) {
+// projectID 必填（DB-009 第四批）：修订表没有 project_id 列、不受策略约束，
+// 归属经 pages 判断 —— 缺它这条清理会删到别的工程页面的历史版本。
+func (s *Service) pruneRevisions(ctx context.Context, projectID, pageID string) {
 	if s == nil || s.model == nil {
 		return
 	}
-	n, err := s.model.PruneRevisions(ctx, pageID, pageRevisionKeep)
+	n, err := s.model.PruneRevisions(ctx, projectID, pageID, pageRevisionKeep)
 	if err != nil {
 		logger.Scene("page").With("pageId", pageID).Error(err, "收敛页面历史快照失败")
 		return
@@ -59,7 +61,24 @@ func (s *Service) PurgeRetention(ctx context.Context) (deletedRevisions int64, e
 		Retain: pageRevisionRetainDays * 24 * time.Hour, BatchSize: pageRetentionBatch,
 		Note: "每页保留最近若干版本；只有既超出条数、又早于保留期的才删（回退需要近期版本）",
 		Sweep: func(ctx context.Context, cutoff time.Time, limit int) (int64, error) {
-			return s.model.DeleteStaleRevisions(ctx, pageRevisionKeep, cutoff, limit)
+			// 逐工程（DB-009 第四批）：修订表不受策略约束，「全库清理」必须由调用方
+			// 逐工程展开，否则这条 DELETE 会跨工程删历史快照，而且一句日志都不报。
+			projects, perr := s.fanoutProjectIDs(ctx)
+			if perr != nil {
+				return 0, perr
+			}
+			var total int64
+			for _, pid := range projects {
+				if ctx.Err() != nil {
+					break
+				}
+				n, derr := s.model.DeleteStaleRevisions(ctx, pid, pageRevisionKeep, cutoff, limit)
+				if derr != nil {
+					return total, derr
+				}
+				total += n
+			}
+			return total, nil
 		},
 	}
 	outcomes := retention.RunAll(ctx, []retention.Task{revisions}, now)

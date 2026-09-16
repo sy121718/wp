@@ -90,7 +90,7 @@ func (s *Service) UpdateURL(ctx context.Context, req *pagedto.UpdateURLReq) (res
 	// 不建重定向（线上从未存在，无旧路径可处置）——审计 Medium：UpdateURL 纯草稿。
 	if !pageHasPublishedState(st) {
 		now := time.Now().UTC()
-		if err = s.model.MoveDraftPath(ctx, page.ID, newPath, now); err != nil {
+		if err = s.model.MoveDraftPath(ctx, page.ProjectID, page.ID, newPath, now); err != nil {
 			logger.Scene("page").With("pageId", page.ID).Error(err, "纯草稿路径迁移失败")
 			return nil, err
 		}
@@ -123,10 +123,10 @@ func (s *Service) UpdateURL(ctx context.Context, req *pagedto.UpdateURLReq) (res
 	}
 	// 归档即补依赖记录：URL 变更不改变依赖集合，但产物行可能新建，
 	// 依赖表必须同步（否则该产物的精确失效查询会漏掉它）。
-	s.persistDependencies(ctx, page.ID, artifactRowID, deps)
+	s.persistDependencies(ctx, page.ProjectID, page.ID, artifactRowID, deps)
 
 	now := time.Now().UTC()
-	if err = s.model.MoveDraftPath(ctx, page.ID, newPath, now); err != nil {
+	if err = s.model.MoveDraftPath(ctx, page.ProjectID, page.ID, newPath, now); err != nil {
 		logger.Scene("page").With("pageId", page.ID).Error(err, "草稿路径迁移失败")
 		return nil, err
 	}

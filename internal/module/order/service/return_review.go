@@ -27,6 +27,7 @@ import (
 	orderdto "go_wp/internal/module/order/dto"
 	orderenums "go_wp/internal/module/order/enums"
 	ordermodel "go_wp/internal/module/order/model"
+	"go_wp/pkg/rls"
 )
 
 // ReturnableOfOrder 该订单各订单项的当前可退数量（访客侧）。
@@ -100,7 +101,12 @@ func (s *Service) GetReturn(ctx context.Context, returnID uint64) (res *orderdto
 	if returnID == 0 {
 		return nil, errors.New(orderenums.ErrInvalidParam)
 	}
-	e, gerr := s.returns.GetByID(ctx, "", returnID)
+	// 定位跳（DB-009 第四批）：详情入口只给退货单 id，order_returns 带 FORCE 策略。
+	projectID, perr := s.locateReturnProject(ctx, returnID)
+	if perr != nil {
+		return nil, perr
+	}
+	e, gerr := s.returns.GetByID(ctx, projectID, returnID)
 	if gerr != nil {
 		return nil, gerr
 	}
@@ -286,9 +292,17 @@ func (s *Service) ReceiveReturn(ctx context.Context, req *orderdto.ReturnReceive
 // 返回的 admitted 为真表示**只有这次调用**会执行入库；already 状态（received / completed）
 // 返回 false，调用方据此跳过入库、只补退款。
 func (s *Service) admitReceive(ctx context.Context, returnID uint64, remark string) (rt *ordermodel.ReturnEntity, admitted bool, err error) {
+	// 定位跳（DB-009 第四批）：入库裁决只给退货单 id。
+	projectID, perr := s.locateReturnProject(ctx, returnID)
+	if perr != nil {
+		return nil, false, perr
+	}
 	now := time.Now()
 	err = s.returns.Transaction(ctx, func(tx *gorm.DB) error {
-		e, lerr := s.returns.LockByIDTx(ctx, tx, "", returnID)
+		if serr := rls.ScopeTx(tx, projectID); serr != nil {
+			return serr
+		}
+		e, lerr := s.returns.LockByIDTx(ctx, tx, projectID, returnID)
 		if lerr != nil {
 			return lerr
 		}
@@ -358,8 +372,15 @@ func (s *Service) stockInReturn(ctx context.Context, rt *ordermodel.ReturnEntity
 // 补偿本身的失败不再向上冒（调用方已经要拿到入库失败的结论了）：状态停在 received
 // 需要人工处理，但**留痕**必须尽力写成 —— 否则下一个操作员会以为货已经入库。
 func (s *Service) rollbackReceive(ctx context.Context, returnID uint64, cause string) error {
+	projectID, perr := s.locateReturnProject(ctx, returnID)
+	if perr != nil {
+		return perr
+	}
 	return s.returns.Transaction(ctx, func(tx *gorm.DB) error {
-		e, lerr := s.returns.LockByIDTx(ctx, tx, "", returnID)
+		if serr := rls.ScopeTx(tx, projectID); serr != nil {
+			return serr
+		}
+		e, lerr := s.returns.LockByIDTx(ctx, tx, projectID, returnID)
 		if lerr != nil || e == nil {
 			return lerr
 		}
@@ -449,7 +470,11 @@ func (s *Service) refundReturn(ctx context.Context, rt *ordermodel.ReturnEntity,
 
 // returnRespOf 取一张退货单的视图（含明细）。
 func (s *Service) returnRespOf(ctx context.Context, returnID uint64) (*orderdto.ReturnResp, error) {
-	e, err := s.returns.GetByID(ctx, "", returnID)
+	projectID, perr := s.locateReturnProject(ctx, returnID)
+	if perr != nil {
+		return nil, perr
+	}
+	e, err := s.returns.GetByID(ctx, projectID, returnID)
 	if err != nil {
 		return nil, err
 	}

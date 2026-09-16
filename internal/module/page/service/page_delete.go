@@ -27,8 +27,10 @@ func (s *Service) Delete(ctx context.Context, req *pagedto.DeleteReq) (err error
 	if req == nil || strings.TrimSpace(req.ID) == "" {
 		return ErrInvalidParam
 	}
-	// 先查页面拿 projectID（路由清理需要 project 维度）。
-	page, err := s.model.GetByID(ctx, req.ID, "")
+	// 先定位页面拿 projectID（路由清理需要 project 维度）。逐工程探测（DB-009 第四批）：
+	// 删除请求只带 pageId，而 pages 带 FORCE 策略 —— 不带作用域的直查在换非超级角色后
+	// 会一律报「页面不存在」，删除功能整体失效。
+	page, err := s.locatePageInProjects(ctx, req.ID)
 	if err != nil {
 		return mapPersistenceError(err)
 	}

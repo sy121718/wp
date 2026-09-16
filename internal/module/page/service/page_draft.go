@@ -180,7 +180,9 @@ func (s *Service) ProjectOfPage(ctx context.Context, pageID string) (projectID s
 	if id == "" {
 		return "", ErrInvalidParam
 	}
-	page, err := s.model.GetByID(ctx, id, "")
+	// 逐工程定位（DB-009 第四批）：本方法存在的意义就是「在没有工程上下文时问出归属」，
+	// 不带作用域的直查在换非超级角色后会一律报「页面不存在」—— 那正好废掉它。
+	page, err := s.locatePageInProjects(ctx, id)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return "", ErrPageNotFound
 	}
@@ -221,7 +223,9 @@ func (s *Service) SaveDraft(ctx context.Context, req *pagedto.SaveDraftReq) (res
 	if err != nil {
 		return nil, err
 	}
-	page, err := s.model.GetByID(ctx, req.ID, "")
+	// 逐工程定位（DB-009 第四批）：page.ProjectID 是后续 SaveDraftWithRevision、
+	// 路径迁移与修订收敛的作用域来源。
+	page, err := s.locatePageInProjects(ctx, req.ID)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, ErrPageNotFound
 	}
@@ -251,7 +255,7 @@ func (s *Service) SaveDraft(ctx context.Context, req *pagedto.SaveDraftReq) (res
 			return nil, mapPersistenceError(rerr)
 		}
 	}
-	if err = s.model.SaveDraftWithRevision(ctx, page.ID, page.DraftVersion,
+	if err = s.model.SaveDraftWithRevision(ctx, page.ProjectID, page.ID, page.DraftVersion,
 		path, doc, nextVersion, now, revision); err != nil {
 		// 草稿提交失败（版本冲突）：已迁移的 reserved 需回迁，保持路径占用与草稿一致。
 		if changedPath && s.routes != nil {
@@ -268,7 +272,7 @@ func (s *Service) SaveDraft(ctx context.Context, req *pagedto.SaveDraftReq) (res
 	page.UpdatedAt = now
 	// 保存后顺手收敛该页历史快照（IDX-005）：一次保存就是一份完整文档快照，
 	// 等每日任务来清会让高频编辑的页面在一天内堆出大量副本。失败不影响保存结果。
-	s.pruneRevisions(ctx, page.ID)
+	s.pruneRevisions(ctx, page.ProjectID, page.ID)
 	return pageResp(page), nil
 }
 
@@ -278,12 +282,15 @@ func (s *Service) ListRevisions(ctx context.Context, req *pagedto.RevisionReq) (
 	if req == nil || strings.TrimSpace(req.PageID) == "" {
 		return nil, ErrInvalidParam
 	}
-	if _, err = s.model.GetByID(ctx, req.PageID, ""); errors.Is(err, gorm.ErrRecordNotFound) {
+	// 先逐工程定位页面：page_revisions 没有 project_id 列、不受策略约束，
+	// 「这页属于哪个工程」只能由父实体给出（DB-009 第四批）。
+	page, err := s.locatePageInProjects(ctx, req.PageID)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, ErrPageNotFound
 	} else if err != nil {
 		return nil, err
 	}
-	list, err := s.model.ListRevisions(ctx, req.PageID)
+	list, err := s.model.ListRevisions(ctx, page.ProjectID, req.PageID)
 	if err != nil {
 		return nil, err
 	}

@@ -29,6 +29,7 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
+	pagedto "go_wp/internal/module/page/dto"
 	pagemodel "go_wp/internal/module/page/model"
 	pageservice "go_wp/internal/module/page/service"
 	projectmodel "go_wp/internal/module/project/model"
@@ -251,6 +252,44 @@ func TestRLS_PageFanout_ModelRejectsMissingScope(t *testing.T) {
 	}
 }
 
+// TestRLS_PageWritePathsRejectMissingScope 第四批新增的作用域门（写路径与子表路径）。
+//
+// 这些入口原先无作用域：pages 带 FORCE 策略（写静默 0 行），page_revisions / page_dependencies
+// 没有 project_id 列（不受策略约束，跨工程可读写）。现在一律要求显式工程。
+func TestRLS_PageWritePathsRejectMissingScope(t *testing.T) {
+	db, _ := rlsFixture(t)
+	m := pagemodel.NewPageModel(db)
+	ctx := context.Background()
+	id := uuid.NewString()
+	at := timeNow()
+
+	if _, err := m.ListRevisions(ctx, "", id); !errors.Is(err, pagemodel.ErrProjectRequired) {
+		t.Fatalf("ListRevisions 缺工程应 ErrProjectRequired，实际 %v", err)
+	}
+	if _, err := m.PruneRevisions(ctx, "", id, 5); !errors.Is(err, pagemodel.ErrProjectRequired) {
+		t.Fatalf("PruneRevisions 缺工程应 ErrProjectRequired，实际 %v", err)
+	}
+	if err := m.MoveDraftPath(ctx, "", id, "/x", at); !errors.Is(err, pagemodel.ErrProjectRequired) {
+		t.Fatalf("MoveDraftPath 缺工程应 ErrProjectRequired，实际 %v", err)
+	}
+	if err := m.MarkPublished(ctx, "", id, "/x", uuid.NewString(), at); !errors.Is(err, pagemodel.ErrProjectRequired) {
+		t.Fatalf("MarkPublished 缺工程应 ErrProjectRequired，实际 %v", err)
+	}
+	if err := m.SaveDraftWithRevision(ctx, "", id, 1, "/x", []byte(`{}`), 2, at,
+		&pagemodel.RevisionEntity{ID: uuid.NewString(), PageID: id, Version: 2}); !errors.Is(err, pagemodel.ErrProjectRequired) {
+		t.Fatalf("SaveDraftWithRevision 缺工程应 ErrProjectRequired，实际 %v", err)
+	}
+	if err := m.ReplaceDependencies(ctx, "", uuid.NewString(), nil); !errors.Is(err, pagemodel.ErrProjectRequired) {
+		t.Fatalf("ReplaceDependencies 缺工程应 ErrProjectRequired，实际 %v", err)
+	}
+	if _, err := m.CountDependenciesByKind(ctx, "", id, "direct_content"); !errors.Is(err, pagemodel.ErrProjectRequired) {
+		t.Fatalf("CountDependenciesByKind 缺工程应 ErrProjectRequired，实际 %v", err)
+	}
+	if _, err := m.DeleteStaleRevisions(ctx, "", 20, at, 10); !errors.Is(err, pagemodel.ErrProjectRequired) {
+		t.Fatalf("DeleteStaleRevisions 缺工程应 ErrProjectRequired，实际 %v", err)
+	}
+}
+
 // TestRLS_PageFanout_EmptyProjectTableFailsExplicitly 一个工程都没有时显式失败。
 //
 // 静默返回空结果会把「读不到工程表」伪装成「没有受影响的页面」—— 那正是本批要消灭的
@@ -305,6 +344,57 @@ func TestRLS_PageFanout_SingleProjectUnchanged(t *testing.T) {
 	if drafts, err := svc.ListDrafts(ctx); err != nil || len(drafts) != 1 {
 		t.Fatalf("单工程下草稿应为 1 条，实际 %d（err=%v）", len(drafts), err)
 	}
+}
+
+// TestRLS_PageLocateByIdAcrossProjects 只带 pageId 的路径在多工程下可用（逐工程定位）。
+//
+// 这些入口（ProjectOfPage / ListRevisions / Delete 的取页）原先用无作用域直查：
+// pages 带 FORCE 策略，换非超级角色后一律报「页面不存在」。现在先逐工程探测出归属，
+// 再用 page.ProjectID 作为后续写入与子表访问的作用域。
+func TestRLS_PageLocateByIdAcrossProjects(t *testing.T) {
+	db, svc, pA, pB := pageFanoutFixture(t)
+	ctx := context.Background()
+	idB := seedPage(t, db, pB, "/locate-b", `{"settings":{"layout":{"mode":"full"}},"root":[]}`)
+
+	// 只有 pageId 时问出归属（这条路径原来是无作用域直查）。
+	pid, err := svc.ProjectOfPage(ctx, idB)
+	if err != nil {
+		t.Fatalf("多工程下 ProjectOfPage 应成功: %v", err)
+	}
+	if pid != pB {
+		t.Fatalf("应定位到工程 B，实际 %s", pid)
+	}
+
+	// ListRevisions：page_revisions 没有 project_id 列、不受策略约束，隔离只能靠父实体。
+	if _, err := svc.ListRevisions(ctx, &pagedto.RevisionReq{PageID: idB}); err != nil {
+		t.Fatalf("多工程下列出本页修订应成功: %v", err)
+	}
+	if _, err := svc.ListRevisions(ctx, &pagedto.RevisionReq{PageID: uuid.NewString()}); !errors.Is(err, pageservice.ErrPageNotFound) {
+		t.Fatalf("不存在的页面应 ErrPageNotFound，实际: %v", err)
+	}
+
+	// page_revisions **没有 project_id 列**、不受策略约束（换角色后照样能读到行），
+	// 所以「跨工程读不到」这条完全靠 model 的归属校验（requirePageOwned）。
+	// 摘掉那层校验，下面两条断言立刻红 —— 这是本用例的失败能力所在。
+	m := pagemodel.NewPageModel(db)
+	if _, err := m.ListRevisions(ctx, pA, idB); !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("拿 A 的作用域读 B 的页面修订应 ErrRecordNotFound，实际: %v", err)
+	}
+	if _, err := m.ListRevisions(ctx, pB, idB); err != nil {
+		t.Fatalf("拿 B 的作用域读本页修订应成功，实际: %v", err)
+	}
+	if _, err := svc.ProjectOfPage(ctx, uuid.NewString()); !errors.Is(err, pageservice.ErrPageNotFound) {
+		t.Fatalf("不存在的页面应 ErrPageNotFound，实际: %v", err)
+	}
+
+	// Delete 也是「只带 pageId」的入口：定位到工程后软删（svc 的 routes 为 nil，跳过路由清理）。
+	if err := svc.Delete(ctx, &pagedto.DeleteReq{ID: idB}); err != nil {
+		t.Fatalf("多工程下删除本工程页面应成功: %v", err)
+	}
+	if _, err := svc.ProjectOfPage(ctx, idB); !errors.Is(err, pageservice.ErrPageNotFound) {
+		t.Fatalf("软删后应查不到，实际: %v", err)
+	}
+	_ = pA
 }
 
 // timeNow 取当前时间（把 time 依赖收敛到一处，避免各用例重复 import）。

@@ -21,7 +21,9 @@ func (s *Service) pageContextOf(ctx context.Context, pageID, lang string) (proje
 	if strings.TrimSpace(pageID) == "" {
 		return "", ""
 	}
-	page, err := s.model.GetByID(ctx, pageID, "")
+	// 逐工程定位（DB-009 第四批）：调用方只有 pageId；不带作用域的直查在换非超级角色后
+	// 一律失败 —— 这里的失败是**静默降级**（导航高亮悄悄消失），比报错更难发现。
+	page, err := s.locatePageInProjects(ctx, pageID)
 	if err != nil || page == nil {
 		return "", ""
 	}

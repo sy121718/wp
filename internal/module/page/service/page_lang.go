@@ -277,7 +277,9 @@ func (s *Service) buildDependencies(ctx context.Context, in pipeline.BuildInput)
 	for _, slot := range in.Usage.SiteSlotList() {
 		deps = append(deps, pipeline.Dependency{Kind: pipeline.DepKindSiteSlot, Key: slot})
 	}
-	if page, err := s.model.GetByID(ctx, in.PageID, ""); err == nil {
+	// 逐工程定位（DB-009 第四批）：构建输入不带工程，而 pages 带 FORCE 策略；
+	// 读取失败会退化成「不登记这些依赖」，也就是依赖失效时该页不再自动重建。
+	if page, err := s.locatePageInProjects(ctx, in.PageID); err == nil {
 		deps = append(deps, s.pageDependencyKeys(ctx, page)...)
 	} else {
 		logger.Scene("dependency").With("page_id", in.PageID).

@@ -96,7 +96,9 @@ func (s *Service) BindSiteSlot(ctx context.Context, req *pagedto.SiteSlotBindReq
 	if err != nil {
 		return err
 	}
-	page, err := s.model.GetByID(ctx, pageID, "")
+	// 这里本来就有工程（siteSlotTarget 解析出来的），直接按工程作用域取（DB-009 第四批）：
+	// 不带作用域在换非超级角色后一律「页面不存在」，下面的跨工程校验也就无从谈起。
+	page, err := s.model.GetByID(ctx, pageID, projectID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return errors.New(pageenums.ErrSlotPageMiss)

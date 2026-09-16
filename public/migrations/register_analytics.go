@@ -162,6 +162,19 @@ func registerAnalyticsSeoAndPermissions() {
 		SQL:       mustSQL("164_content_template_is_default.sql"),
 	})
 
+	// 223：content_templates 默认模板的唯一性从「全库唯一」改成「工程内唯一」（DB-009 第四批）。
+	// 判定按**新索引**的存在：新旧索引的替换在同一个 DO 块里完成（先建新、再删旧），
+	// 所以「新索引在」即表示整条迁移已完成。占位符 ? 收到的是 TableName（必须是表名，
+	// 因为 CheckSQL 没有别的入参通道），索引名写死字面量。
+	register(Migration{
+		Version:   "223-content-template-default-per-project",
+		TableName: "content_templates",
+		CheckSQL: "SELECT CASE WHEN COUNT(*) > 0 THEN 1 ELSE 0 END FROM pg_indexes " +
+			"WHERE schemaname = current_schema() AND tablename = ? " +
+			"AND indexname = 'idx_content_templates_default_per_project_type'",
+		SQL: mustSQL("223_content_template_default_per_project.sql"),
+	})
+
 	register(Migration{
 		Version:   "165-orders-status-check",
 		TableName: "orders",

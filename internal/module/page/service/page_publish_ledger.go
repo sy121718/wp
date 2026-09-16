@@ -125,7 +125,8 @@ func (s *Service) recoverOne(ctx context.Context, item pubcontract.PendingReceip
 		return false, nil
 	}
 	// 切换已生效、数据库没跟上：补齐活跃指针与路由行（两步都是幂等写）。
-	page, perr := s.model.GetByID(ctx, item.SourceID, "")
+	// 逐工程定位（DB-009 第四批）：对账只带 pageId，pages 带 FORCE 策略。
+	page, perr := s.locatePageInProjects(ctx, item.SourceID)
 	if perr != nil {
 		s.abortPublishReceipt(ctx, item.ID, "页面不存在")
 		return false, nil

@@ -22,6 +22,7 @@ import (
 	orderenums "go_wp/internal/module/order/enums"
 	ordermodel "go_wp/internal/module/order/model"
 	webhookcontract "go_wp/internal/module/webhook/contract"
+	"go_wp/pkg/rls"
 )
 
 // PayOrder 支付落账：pending → paid。
@@ -45,9 +46,18 @@ func (s *Service) PayOrder(ctx context.Context, req *orderdto.PayOrderReq) (res 
 	res = &orderdto.PayOrderResp{}
 	// paidEvent 在事务内捕获、在事务**提交之后**派发（通知不是事务的一部分）。
 	// 只有真正发生 pending → paid 跃迁的那一次才非 nil —— 见文件末尾的幂等说明。
+	// 定位跳（DB-009 第四批）：支付回调只带订单 id（或商户单号），而 orders 带 FORCE
+	// 策略 —— 没有作用域时这条加锁读拿不到行，回调会被当成「订单不存在」。
+	projectID, perr := s.locateOrderProject(ctx, req.OrderID)
+	if perr != nil {
+		return nil, perr
+	}
 	var paidEvent *OrderPaidEvent
 	err = s.orders.Transaction(ctx, func(tx *gorm.DB) error {
-		e, lerr := s.orders.LockByIDTx(ctx, tx, "", req.OrderID)
+		if serr := rls.ScopeTx(tx, projectID); serr != nil {
+			return serr
+		}
+		e, lerr := s.orders.LockByIDTx(ctx, tx, projectID, req.OrderID)
 		if lerr != nil {
 			return lerr
 		}

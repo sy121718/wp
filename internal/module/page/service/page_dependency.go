@@ -181,7 +181,10 @@ func (s *Service) enqueueOverflowBuildJobs(ctx context.Context, ids []string) {
 //
 // 失败只记日志：依赖记录是失效追踪的投影，不是构建输入，不阻断发布主链。
 // revision 为 null 的 runtime 依赖同样落库（Manifest 声明），但失效查询会跳过。
-func (s *Service) persistDependencies(ctx context.Context, pageID, artifactID string, deps []pipeline.Dependency) {
+// projectID 必填（DB-009 第四批）：page_dependencies 没有 project_id 列、不受策略约束，
+// 归属由 model 经 page_artifacts → pages 校验；缺它时一次越界的 artifactID 就能改写
+// 别的工程的依赖投影（而它不报任何错）。
+func (s *Service) persistDependencies(ctx context.Context, projectID, pageID, artifactID string, deps []pipeline.Dependency) {
 	if strings.TrimSpace(pageID) == "" || strings.TrimSpace(artifactID) == "" {
 		return
 	}
@@ -209,7 +212,7 @@ func (s *Service) persistDependencies(ctx context.Context, pageID, artifactID st
 		}
 		rows = append(rows, row)
 	}
-	if err := s.model.ReplaceDependencies(ctx, artifactID, rows); err != nil {
+	if err := s.model.ReplaceDependencies(ctx, projectID, artifactID, rows); err != nil {
 		logger.Scene("dependency").With("page_id", pageID).With("artifact_id", artifactID).
 			Error(err, "依赖记录写入失败（已降级，不影响构建结果）")
 	}
@@ -220,7 +223,7 @@ func (s *Service) persistDependencies(ctx context.Context, pageID, artifactID st
 // 用途：产物行早已存在（PIPE-3 之前归档的产物、或依赖行被手工清理）时，
 // 发布路径没有经过 ensureArtifactRow，依赖表可能是空的——发布时补写一次，
 // 保证「活跃产物必有依赖记录」这一 fan-out 前提成立。
-func (s *Service) persistDependenciesFromManifest(ctx context.Context, pageID, artifactID string, manifestJSON json.RawMessage) {
+func (s *Service) persistDependenciesFromManifest(ctx context.Context, projectID, pageID, artifactID string, manifestJSON json.RawMessage) {
 	if len(manifestJSON) == 0 {
 		return
 	}
@@ -230,7 +233,7 @@ func (s *Service) persistDependenciesFromManifest(ctx context.Context, pageID, a
 			Warn("产物 Manifest 解析失败，跳过依赖记录补写")
 		return
 	}
-	s.persistDependencies(ctx, pageID, artifactID, m.Dependencies)
+	s.persistDependencies(ctx, projectID, pageID, artifactID, m.Dependencies)
 }
 
 // pageDependencyKeys 由页面记录与文档推导本次构建的依赖源集合。

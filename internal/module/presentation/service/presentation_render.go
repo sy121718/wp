@@ -150,7 +150,10 @@ func (s *Service) renderHTML(ctx context.Context, entityType, entityID, urlPath,
 	if strings.TrimSpace(lang) == "" {
 		lang = s.resolveLang(ctx, projectID)
 	}
-	buildCtx := core.WithBuildLang(ctx, lang)
+	// 工程 id 必须进上下文（DB-009 第四批）：下面一行 ResolverFor 在 core.Compile **之前**
+	// 调用，而 WithBuildProjectID 只在 Compile 内部补 —— 不在这里显式带上，构建期实体字段源
+	// 拿不到工程 id，换非超级角色后按工程隔离的读取会 fail closed（字段渲染成空）。
+	buildCtx := core.WithBuildProjectID(core.WithBuildLang(ctx, lang), projectID)
 	logicalPath := pipeline.LogicalPathOf(ctx, s.project, projectID, urlPath)
 	highlightPath := pipeline.HighlightPath(ctx, s.project, projectID, lang, logicalPath)
 	if urlPath == "" {

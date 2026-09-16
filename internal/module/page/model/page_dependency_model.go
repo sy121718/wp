@@ -24,6 +24,9 @@ import (
 // tableNamePageDependencies page_dependencies 表名。
 const tableNamePageDependencies = "page_dependencies"
 
+// tableNamePageArtifacts 产物表名（依赖行的归属校验要经它 → pages 判断工程）。
+const tableNamePageArtifacts = "page_artifacts"
+
 // DependencyEntity page_dependencies 行（产物声明的构建期依赖）。
 type DependencyEntity struct {
 	PageID         string    `gorm:"column:page_id;type:uuid;primaryKey"`
@@ -47,8 +50,18 @@ func (m *Model) DependencyDB(ctx context.Context) *gorm.DB {
 // 同一产物重复构建（同 hash 原地替换，见 artifact 模块）时依赖集合可能变化，
 // 必须整体替换而非累加，否则会残留「旧文档声明过、新产物已不再依赖」的假依赖，
 // 造成内容变更时的过度标记。
-func (m *Model) ReplaceDependencies(ctx context.Context, artifactID string, rows []DependencyEntity) (err error) {
-	return m.Transaction(ctx, func(tx *gorm.DB) error {
+//
+// projectID 必填（DB-009 第四批）：page_dependencies **没有 project_id 列**（不受策略
+// 约束），所以「这条依赖记在谁的产物上」只能经 page_artifacts → pages 判断。缺这层校验时，
+// 一次越界的 artifactID 就能改写别的工程的依赖投影 —— 而它不报任何错。
+func (m *Model) ReplaceDependencies(ctx context.Context, projectID, artifactID string, rows []DependencyEntity) (err error) {
+	if strings.TrimSpace(projectID) == "" {
+		return ErrProjectRequired
+	}
+	return rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		if err := m.requireArtifactOwned(ctx, tx, projectID, artifactID); err != nil {
+			return err
+		}
 		if derr := tx.Where("artifact_id = ?", artifactID).Delete(&DependencyEntity{}).Error; derr != nil {
 			return derr
 		}
@@ -60,9 +73,18 @@ func (m *Model) ReplaceDependencies(ctx context.Context, artifactID string, rows
 }
 
 // ListDependencies 读取某产物的全部依赖记录（测试与诊断用，按 kind,key 排序）。
-func (m *Model) ListDependencies(ctx context.Context, artifactID string) (list []DependencyEntity, err error) {
-	err = m.DependencyDB(ctx).Where("artifact_id = ?", artifactID).
-		Order("dependency_kind, dependency_key").Find(&list).Error
+// projectID 必填（DB-009 第四批）：依赖表不受策略约束，归属经 page_artifacts → pages 判断。
+func (m *Model) ListDependencies(ctx context.Context, projectID, artifactID string) (list []DependencyEntity, err error) {
+	if strings.TrimSpace(projectID) == "" {
+		return nil, ErrProjectRequired
+	}
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		if err := m.requireArtifactOwned(ctx, tx, projectID, artifactID); err != nil {
+			return err
+		}
+		return tx.Model(&DependencyEntity{}).Where("artifact_id = ?", artifactID).
+			Order("dependency_kind, dependency_key").Find(&list).Error
+	})
 	return list, err
 }
 
@@ -109,8 +131,26 @@ func (m *Model) MarkStaleByDependency(ctx context.Context, projectID, kind, key 
 	return ids, nil
 }
 
+// requireArtifactOwned 校验产物行属于给定工程（经 page_artifacts → pages）。
+func (m *Model) requireArtifactOwned(ctx context.Context, tx *gorm.DB, projectID, artifactID string) error {
+	var n int64
+	if err := tx.WithContext(ctx).Table(tableNamePageArtifacts).Where("id = ?", artifactID).
+		Where("page_id IN (SELECT id FROM "+tableNamePages+" WHERE project_id = ?)", projectID).
+		Count(&n).Error; err != nil {
+		return err
+	}
+	if n == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
+}
+
 // CountDependenciesByKind 统计某页面当前活跃产物声明的依赖条数（诊断/测试用）。
-func (m *Model) CountDependenciesByKind(ctx context.Context, pageID, kind string) (n int64, err error) {
+// projectID 必填（DB-009 第四批）：同 ReplaceDependencies —— 依赖表不受策略约束。
+func (m *Model) CountDependenciesByKind(ctx context.Context, projectID, pageID, kind string) (n int64, err error) {
+	if strings.TrimSpace(projectID) == "" {
+		return 0, ErrProjectRequired
+	}
 	err = m.DependencyDB(ctx).
 		Where("page_id = ? AND dependency_kind = ?", pageID, kind).
 		Count(&n).Error

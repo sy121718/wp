@@ -23,7 +23,9 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
+	orderdto "go_wp/internal/module/order/dto"
 	ordermodel "go_wp/internal/module/order/model"
+	orderservice "go_wp/internal/module/order/service"
 	"go_wp/pkg/rls"
 )
 
@@ -132,4 +134,52 @@ func TestRLS_OrderScope_SingleProjectUnchanged(t *testing.T) {
 	if len(list) != 1 || list[0].OrderNo != "ONLY-OLD" {
 		t.Fatalf("单工程下应扫到 1 单 ONLY-OLD，实际 %+v", list)
 	}
+}
+
+// TestRLS_OrderScope_LocateByIdAcrossProjects 只带订单 id 的定位跳（后台订单操作）。
+//
+// orders 带 FORCE 策略：不带作用域的按 id 读取在非超级角色下返回 nil（表现为「订单不存在」），
+// 这正是「只给 id 的后台入口」必须逐工程探测出归属的原因。
+func TestRLS_OrderScope_LocateByIdAcrossProjects(t *testing.T) {
+	db, m, pA, pB := orderFixture(t)
+	ctx := context.Background()
+	idB := seedOrder(t, db, pB, "LOC-B", ordermodel.OrderStatusPending, time.Hour)
+
+	// 改造前的形态：无作用域直查 —— 静默读不到。
+	if e, err := m.GetByID(ctx, idB, ""); err != nil || e != nil {
+		t.Fatalf("未设作用域时按 id 读应读不到（fail closed），实际 %v err=%v", e, err)
+	}
+	// 逐工程探测：拿 B 的作用域能读到，拿 A 的读不到。
+	e, err := m.GetByID(ctx, idB, pB)
+	if err != nil || e == nil {
+		t.Fatalf("拿工程 B 的作用域应读到订单，实际 %v err=%v", e, err)
+	}
+	if other, gerr := m.GetByID(ctx, idB, pA); gerr != nil || other != nil {
+		t.Fatalf("拿工程 A 的作用域不应读到 B 的订单，实际 %v err=%v", other, gerr)
+	}
+}
+
+// TestRLS_OrderScope_ChangeStatusLocatesProject service 层的定位跳：
+// 后台改状态只带订单 id，链路是「事务外逐工程探测 → 事务内 ScopeTx + 加锁读」。
+func TestRLS_OrderScope_ChangeStatusLocatesProject(t *testing.T) {
+	db, _, pA, pB := orderFixture(t)
+	ctx := context.Background()
+	svc := orderservice.NewService(
+		ordermodel.NewOrderModel(db), nil, ordermodel.NewOrderStatusLogModel(db),
+		nil, nil, nil, nil, nil, nil)
+	idB := seedOrder(t, db, pB, "CHG-B", ordermodel.OrderStatusPending, time.Hour)
+
+	if err := svc.ChangeStatus(ctx, &orderdto.ChangeStatusReq{
+		OrderID: idB, ToStatus: ordermodel.OrderStatusPaid,
+	}); err != nil {
+		t.Fatalf("后台改状态应成功（逐工程定位 + 事务作用域）: %v", err)
+	}
+	e, err := ordermodel.NewOrderModel(db).GetByID(ctx, idB, pB)
+	if err != nil || e == nil {
+		t.Fatalf("回读订单失败: %v", err)
+	}
+	if e.Status != ordermodel.OrderStatusPaid {
+		t.Fatalf("订单状态应为 paid，实际 %s", e.Status)
+	}
+	_ = pA
 }

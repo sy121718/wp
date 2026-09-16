@@ -55,6 +55,16 @@ const ctPageDoc = `{"settings":{"layout":{"mode":"full"}},"root":[]}`
 // 测试只能按现状只让一个工程带默认标记。
 func seedTemplate(t *testing.T, db *gorm.DB, projectID, name string, isDefault bool) string {
 	t.Helper()
+	id, err := insertTemplate(db, projectID, name, isDefault)
+	if err != nil {
+		t.Fatalf("写入模板失败: %v", err)
+	}
+	return id
+}
+
+// insertTemplate 直接落一行模板 + 首个版本，返回 (id, error)：
+// 默认模板的唯一索引要能看到**失败**，所以不能把断言烧进 helper。
+func insertTemplate(db *gorm.DB, projectID, name string, isDefault bool) (string, error) {
 	id, verID := uuid.NewString(), uuid.NewString()
 	now := time.Now().UTC()
 	doc := json.RawMessage(ctPageDoc)
@@ -69,10 +79,7 @@ func seedTemplate(t *testing.T, db *gorm.DB, projectID, name string, isDefault b
 			ID: verID, TemplateID: id, Version: 1, Document: doc,
 			SourceHash: "h", CreatedBy: "00000000-0000-0000-0000-000000000000", CreatedAt: now,
 		})
-	if err != nil {
-		t.Fatalf("写入模板失败: %v", err)
-	}
-	return id
+	return id, err
 }
 
 // ctFixture 造「非超级角色 + 两个工程 + contenttemplate service」。
@@ -177,5 +184,46 @@ func TestRLS_ContentTemplate_SingleProjectUnchanged(t *testing.T) {
 	}
 	if resolved.TemplateID != tpl {
 		t.Fatalf("应解析到 %s，实际 %s", tpl, resolved.TemplateID)
+	}
+}
+
+// TestRLS_ContentTemplate_DefaultTemplatePerProject 迁移 223 的实测：默认模板的唯一性
+// 从「全库唯一」改成「工程内唯一」。
+//
+// 改前旧索引是 (entity_type) WHERE is_default —— 第二个工程给同类型标默认会撞 23505
+// （本文件第一次写这些用例时就是这么红的）；改后两个工程可各有一个默认 article 模板，
+// 而同工程同类型再来一个仍然被拒（粒度变细，唯一性没有放松）。
+func TestRLS_ContentTemplate_DefaultTemplatePerProject(t *testing.T) {
+	db, _, pA, pB := ctFixture(t)
+
+	if _, err := insertTemplate(db, pA, "A 默认", true); err != nil {
+		t.Fatalf("工程 A 的首个默认模板应可写入: %v", err)
+	}
+	if _, err := insertTemplate(db, pB, "B 默认", true); err != nil {
+		t.Fatalf("工程 B 也应能各有一个默认模板（迁移 223 之前这里撞唯一索引）: %v", err)
+	}
+	if _, err := insertTemplate(db, pA, "A 第二个默认", true); err == nil {
+		t.Fatal("同工程同实体类型不应允许两个默认模板")
+	}
+	if _, err := insertTemplate(db, pA, "A 非默认", false); err != nil {
+		t.Fatalf("非默认模板不受唯一索引约束: %v", err)
+	}
+
+	// 索引层面的实测：旧索引已删、新索引在。
+	var n int64
+	if err := db.Raw(`SELECT COUNT(*) FROM pg_indexes WHERE schemaname = current_schema()
+		AND indexname IN ('idx_content_templates_default_per_project_type', 'idx_content_templates_default_per_type')
+		AND indexname = 'idx_content_templates_default_per_type'`).Scan(&n).Error; err != nil {
+		t.Fatalf("查询索引失败: %v", err)
+	}
+	if n != 0 {
+		t.Fatal("迁移 223 后旧的 (entity_type) 唯一索引应已删除")
+	}
+	if err := db.Raw(`SELECT COUNT(*) FROM pg_indexes WHERE schemaname = current_schema()
+		AND indexname = 'idx_content_templates_default_per_project_type'`).Scan(&n).Error; err != nil {
+		t.Fatalf("查询索引失败: %v", err)
+	}
+	if n != 1 {
+		t.Fatal("迁移 223 后应存在 (project_id, entity_type) WHERE is_default 唯一索引")
 	}
 }

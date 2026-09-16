@@ -31,6 +31,22 @@ const (
 	tableNamePageRevisions = "page_revisions"
 )
 
+// ListAllProjectIDs 列出全部站点工程 id（跨工程扇出的兜底清单）。
+//
+// 为什么 page model 要读 projects 表（DB-009 第四批）：一批跨工程扇出入口（整站标记、
+// 全站草稿扫描、按依赖源标记）的工程清单来自 project 契约 —— 契约未注入时（测试装配、
+// 或将来某个装配点漏接）扇出会整体失败，表现为「译文改了页面不被标记」这类静默失效。
+// projects 是隔离的**主体**：它没有 project_id 列、不在迁移 215 的 53 个对象里，
+// 读它不涉及任何被隔离数据。order model 的 ListAllProjectIDs 是同一处境的同形兜底。
+//
+// 正确的修法是装配点注入 project 契约（生产装配已注入，见 routers 的 SetupPageRoutes；
+// 漏的是两处测试装配 —— 落点见 DB-009 第四批报告）。
+func (m *Model) ListAllProjectIDs(ctx context.Context) (ids []string, err error) {
+	err = m.db.WithContext(ctx).
+		Raw("SELECT id::text FROM projects ORDER BY create_time ASC, id ASC").Scan(&ids).Error
+	return ids, err
+}
+
 // PageEntity 对应 pages 表的手工 Page 字段。
 type PageEntity struct {
 	ID        string `gorm:"column:id;type:uuid;primaryKey"`
@@ -418,9 +434,22 @@ func (m *Model) GetByID(ctx context.Context, id, projectID string) (e *PageEntit
 	return e, nil
 }
 
-// ListRevisions 按版本倒序读取修订快照。
-func (m *Model) ListRevisions(ctx context.Context, pageID string) (list []RevisionEntity, err error) {
-	err = m.RevisionDB(ctx).Where("page_id = ?", pageID).Order("version DESC").Find(&list).Error
+// ListRevisions 在**指定工程内**按版本倒序读取页面的修订快照。
+//
+// projectID 必填（DB-009 第四批）：page_revisions **没有 project_id 列**，不在迁移 215 的
+// 清单里，因此它不受策略约束 —— 换角色后「按 page_id 直查」照样能读到**别的工程**的
+// 历史文档。这个入口的隔离只能靠父实体：先确认页面属于该工程，再读它的修订。
+func (m *Model) ListRevisions(ctx context.Context, projectID, pageID string) (list []RevisionEntity, err error) {
+	if strings.TrimSpace(projectID) == "" {
+		return nil, ErrProjectRequired
+	}
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		if err := m.requirePageOwned(ctx, tx, projectID, pageID); err != nil {
+			return err
+		}
+		return tx.Model(&RevisionEntity{}).Where("page_id = ?", pageID).
+			Order("version DESC").Find(&list).Error
+	})
 	return list, err
 }
 
@@ -429,21 +458,35 @@ func (m *Model) ListRevisions(ctx context.Context, pageID string) (list []Revisi
 // 保存草稿后顺手调用（IDX-005）：改一次存一份完整 draft_document，高频编辑的页面
 // 会把表撑起来，而保留条数之外的历史版本本来就是给回退用的、不需要无限留着。
 // 只按条数收敛、不看时间：编辑者刚存的那几个版本必须都在。
-func (m *Model) PruneRevisions(ctx context.Context, pageID string, keep int) (int64, error) {
+//
+// projectID 必填（DB-009 第四批）：修订表不受策略约束（无 project_id 列），
+// 缺归属校验时这条 DELETE 能删掉**别的工程**页面的历史版本。先经 pages 确认归属。
+func (m *Model) PruneRevisions(ctx context.Context, projectID, pageID string, keep int) (int64, error) {
+	if strings.TrimSpace(projectID) == "" {
+		return 0, ErrProjectRequired
+	}
 	if strings.TrimSpace(pageID) == "" || keep < 1 {
 		return 0, nil
 	}
-	var threshold int
-	err := m.RevisionDB(ctx).Where("page_id = ?", pageID).
-		Order("version DESC").Offset(keep-1).Limit(1).
-		Pluck("version", &threshold).Error
-	if err != nil || threshold <= 1 {
-		// 没有第 keep 个版本（说明总数还不够）→ 无可收敛。
-		return 0, err
-	}
-	res := m.RevisionDB(ctx).Where("page_id = ? AND version < ?", pageID, threshold).Delete(&RevisionEntity{})
-	_ = threshold
-	return res.RowsAffected, res.Error
+	var deleted int64
+	err := rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		if err := m.requirePageOwned(ctx, tx, projectID, pageID); err != nil {
+			return err
+		}
+		var threshold int
+		err := tx.Model(&RevisionEntity{}).Where("page_id = ?", pageID).
+			Order("version DESC").Offset(keep-1).Limit(1).
+			Pluck("version", &threshold).Error
+		if err != nil || threshold <= 1 {
+			// 没有第 keep 个版本（说明总数还不够）→ 无可收敛。
+			return err
+		}
+		res := tx.Model(&RevisionEntity{}).Where("page_id = ? AND version < ?", pageID, threshold).
+			Delete(&RevisionEntity{})
+		deleted = res.RowsAffected
+		return res.Error
+	})
+	return deleted, err
 }
 
 // DeleteStaleRevisions 全库分批清理「超出保留条数**且**早于保留期」的历史快照。
@@ -454,18 +497,27 @@ func (m *Model) PruneRevisions(ctx context.Context, pageID string, keep int) (in
 //
 // 已发布版本不在这里单独排除：page_revisions 没有「哪个版本已发布」的标记（发布状态在
 // publication / artifacts 侧），因此以保留期兜底 —— 保留期内的版本一律不动。
-func (m *Model) DeleteStaleRevisions(ctx context.Context, keep int, cutoff time.Time, limit int) (int64, error) {
+//
+// projectID 必填（DB-009 第四批）：修订表无 project_id 列、不受策略约束，所以「全库清理」
+// 必须由调用方**逐工程**展开 —— 否则这条 DELETE 会跨工程删除历史快照，而它连一句日志
+// 都不会报。归属经 pages 判断（EXISTS 子查询）而不是靠会话变量，读起来更直白。
+func (m *Model) DeleteStaleRevisions(ctx context.Context, projectID string, keep int, cutoff time.Time, limit int) (int64, error) {
+	if strings.TrimSpace(projectID) == "" {
+		return 0, ErrProjectRequired
+	}
 	if keep < 1 || limit < 1 {
 		return 0, nil
 	}
 	// ctid 定位：PostgreSQL 的 DELETE 不支持 LIMIT，用子查询挑出本批目标。
 	const q = `DELETE FROM page_revisions WHERE ctid IN (
 		SELECT ctid FROM (
-			SELECT ctid, row_number() OVER (PARTITION BY page_id ORDER BY version DESC) AS rn, create_time
+			SELECT ctid, row_number() OVER (PARTITION BY page_id ORDER BY version DESC) AS rn, create_time, page_id
 			FROM page_revisions
-		) t WHERE t.rn > ? AND t.create_time < ? LIMIT ?
+		) t WHERE t.rn > ? AND t.create_time < ?
+		  AND EXISTS (SELECT 1 FROM pages p WHERE p.id = t.page_id AND p.project_id = ?)
+		LIMIT ?
 	)`
-	res := m.DB(ctx).Exec(q, keep, cutoff, limit)
+	res := m.DB(ctx).Exec(q, keep, cutoff, projectID, limit)
 	return res.RowsAffected, res.Error
 }
 
@@ -485,8 +537,12 @@ func (m *Model) CreateWithRevision(ctx context.Context, page *PageEntity, revisi
 // SaveDraftWithRevision 使用乐观锁原子保存草稿与修订。
 // 改路径时的 reserved 占用迁移由 service 层经 publication contract 的
 // RenameReserved 处理——page model 不再碰 page_routes。
+// projectID 必填（DB-009 第四批）：pages 带 FORCE 策略，本事务第一条就是 UPDATE pages ——
+// 不设 app.project_id 时它在非超级角色下匹配 0 行，返回的却是 ErrDraftVersionConflict
+// （乐观锁未命中），于是「保存草稿」被误报成「版本冲突」。
 func (m *Model) SaveDraftWithRevision(
 	ctx context.Context,
+	projectID string,
 	pageID string,
 	expectedVersion int64,
 	path string,
@@ -495,9 +551,15 @@ func (m *Model) SaveDraftWithRevision(
 	updatedAt time.Time,
 	revision *RevisionEntity,
 ) (err error) {
+	if strings.TrimSpace(projectID) == "" {
+		return ErrProjectRequired
+	}
 	return m.Transaction(ctx, func(tx *gorm.DB) error {
+		if serr := rls.ScopeTx(tx, projectID); serr != nil {
+			return serr
+		}
 		result := tx.Model(&PageEntity{}).
-			Where("id = ? AND deleted_at IS NULL AND draft_version = ?", pageID, expectedVersion).
+			Where("id = ? AND project_id = ? AND deleted_at IS NULL AND draft_version = ?", pageID, projectID, expectedVersion).
 			Updates(map[string]any{
 				"draft_path":     path,
 				"draft_document": document,
@@ -516,23 +578,40 @@ func (m *Model) SaveDraftWithRevision(
 }
 
 // MarkPublished 回写活跃产物指针与发布元数据（发布/回滚共用）。
-func (m *Model) MarkPublished(ctx context.Context, pageID, path, artifactID string, at time.Time) (err error) {
-	return m.DB(ctx).Where("id = ? AND deleted_at IS NULL", pageID).
-		Updates(map[string]any{
-			"active_artifact_id": artifactID,
-			"active_path":        path,
-			"published_at":       at,
-			"stale":              false,
-			"update_time":        at,
-		}).Error
+//
+// projectID 必填（DB-009 第四批）：裸 UPDATE pages，缺作用域时在非超级角色下匹配 0 行
+// 且不报错 —— 发布链「成功」了，活跃指针却一直留在原处。
+func (m *Model) MarkPublished(ctx context.Context, projectID, pageID, path, artifactID string, at time.Time) (err error) {
+	if strings.TrimSpace(projectID) == "" {
+		return ErrProjectRequired
+	}
+	return rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.Model(&PageEntity{}).
+			Where("id = ? AND project_id = ? AND deleted_at IS NULL", pageID, projectID).
+			Updates(map[string]any{
+				"active_artifact_id": artifactID,
+				"active_path":        path,
+				"published_at":       at,
+				"stale":              false,
+				"update_time":        at,
+			}).Error
+	})
 }
 
 // MoveDraftPath 发布改 URL 后同步草稿路径（逻辑路径，不含语言前缀）。
 // 激活路径不再在此处写：它按语言存放在 page_publications，
 // 由 MovePublicationPath 单独同步（多语言 P3，docs/06-D §15.5 第 2 条）。
-func (m *Model) MoveDraftPath(ctx context.Context, pageID, newPath string, at time.Time) (err error) {
-	return m.DB(ctx).Where("id = ? AND deleted_at IS NULL", pageID).
-		Updates(map[string]any{"draft_path": newPath, "update_time": at}).Error
+// projectID 必填（DB-009 第四批）：同 MarkPublished —— 缺作用域是静默 0 行，
+// 表现为「改了 URL 但草稿路径没变」，而接口回报成功。
+func (m *Model) MoveDraftPath(ctx context.Context, projectID, pageID, newPath string, at time.Time) (err error) {
+	if strings.TrimSpace(projectID) == "" {
+		return ErrProjectRequired
+	}
+	return rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.Model(&PageEntity{}).
+			Where("id = ? AND project_id = ? AND deleted_at IS NULL", pageID, projectID).
+			Updates(map[string]any{"draft_path": newPath, "update_time": at}).Error
+	})
 }
 
 // SoftDelete 软删 Page（deleted_at 置时间，审计留痕）；页面不存在或已软删
@@ -581,6 +660,23 @@ func (m *Model) softDeleteTx(ctx context.Context, tx *gorm.DB, projectID, pageID
 		}
 	}
 	return scope(tx)
+}
+
+// requirePageOwned 校验页面属于给定工程，否则返回 gorm.ErrRecordNotFound。
+//
+// 用途（DB-009 第四批）：不带 project_id 列的子表（page_revisions / page_dependencies）
+// 不在策略覆盖范围内，「这行属于哪个工程」只能经父实体判断。必须在**同一事务**里做：
+// 事务外判定会留下 TOCTOU 窗口（判定后页面被迁走/删除）。
+func (m *Model) requirePageOwned(ctx context.Context, tx *gorm.DB, projectID, pageID string) error {
+	var n int64
+	if err := tx.WithContext(ctx).Model(&PageEntity{}).
+		Where("id = ? AND project_id = ?", pageID, projectID).Count(&n).Error; err != nil {
+		return err
+	}
+	if n == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
 }
 
 // DraftPathValue 返回草稿访问路径（空安全）。

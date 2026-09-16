@@ -13,6 +13,7 @@ import (
 	ordercontract "go_wp/internal/module/order/contract"
 	ordermodel "go_wp/internal/module/order/model"
 	productcontract "go_wp/internal/module/product/contract"
+	projectcontract "go_wp/internal/module/project/contract"
 	usercontract "go_wp/internal/module/user/contract"
 	webhookcontract "go_wp/internal/module/webhook/contract"
 )
@@ -33,6 +34,11 @@ type Service struct {
 	// 允许为 nil —— webhook 是插件生态的外部能力，不是订单域的必需品；
 	// 未接线时整体跳过，不报错（见 order_events.go 的 dispatchEvent）。
 	webhooks webhookcontract.Dispatcher
+	// projects 工程清单来源（DB-009 第四批）：orders/epc 带 FORCE 策略，一批只带 id 的
+	// 入口（后台订单操作、支付回调、超时扫描）需要先逐工程探测出归属。
+	// 允许为 nil：装配点尚未注入时回退到 OrderModel.ListAllProjectIDs 的只读清单
+	//（那条路径的落点与消除办法见 order_scope.go 的注释与 DB-009 报告）。
+	projects projectcontract.ProjectService
 }
 
 // NewService 构造（参数直传，不用 Deps 结构体）。
