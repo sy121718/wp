@@ -201,28 +201,46 @@ func BuildView(node *core.Node, p *Props, ctx *core.RenderContext) (View, error)
 	if merged := p.withArchiveFilter(ctx); merged != nil {
 		p = merged
 	}
-	items, err := resolveProducts(ctx, source, collectionFilter(p))
+	filter := collectionFilter(p)
+	page, pageSize := EffectivePage(p), EffectivePageSize(p)
+	// 审计 PERF-019：**第 2 页起改为按页取数**（把 offset 下推到 SQL），而不是在「一次取回的
+	// 集合源上限条」里切内存 —— 后者让超出上限的数据永远翻不到：翻到第 N 页拿到的仍是前 100
+	// 条里的那一段，再往后就是空页，而分页控件还在。
+	//
+	// **第 1 页刻意保持原路径**：构建期只走这一支（发布产物恒定 page=1），换路径会改产物字节。
+	// 首屏本来就只渲染第一页，两种取法在结果上等价，但字节等价只有原路径能保证。
+	pagedFetch := pageSize > 0 && page > 1
+	var items []map[string]any
+	// total > 0 表示分页源给得出总量（用于判断还有没有下一页）；0 表示未知，按已取回条数判。
+	total := 0
+	var err error
+	if pagedFetch {
+		items, total, err = resolveProductsPage(ctx, source, filter, (page-1)*pageSize, pageSize)
+	} else {
+		items, err = resolveProducts(ctx, source, filter)
+	}
 	if err != nil {
 		return View{}, fmt.Errorf("节点 %s: 商品集合解析失败: %w", node.ID, err)
 	}
 	sortItems(items, effectiveOrder(p))
-	if limit := effectiveLimit(p); len(items) > limit {
-		items = items[:limit]
-	}
-	// 分页：先截到「本页末」，再取本页那段。顺序不能反 ——
-	// 反了的话第 2 页会拿到「全部条目里的第 pageSize+1 条开始」，但总数判断却是截断后的，
-	// 于是最后一页之后还会多出一页空列表。
 	fetched := len(items)
-	page, pageSize := EffectivePage(p), EffectivePageSize(p)
-	if pageSize > 0 {
-		start := (page - 1) * pageSize
-		switch {
-		case start >= fetched:
-			items = items[:0]
-		default:
-			items = items[start:]
-			if len(items) > pageSize {
-				items = items[:pageSize]
+	if !pagedFetch {
+		if limit := effectiveLimit(p); len(items) > limit {
+			items = items[:limit]
+		}
+		// 分页：先截到「本页末」，再取本页那段。顺序不能反 ——
+		// 反了的话第 2 页会拿到「全部条目里的第 pageSize+1 条开始」，但总数判断却是截断后的，
+		// 于是最后一页之后还会多出一页空列表。
+		if pageSize > 0 {
+			start := (page - 1) * pageSize
+			switch {
+			case start >= fetched:
+				items = items[:0]
+			default:
+				items = items[start:]
+				if len(items) > pageSize {
+					items = items[:pageSize]
+				}
 			}
 		}
 	}
@@ -245,7 +263,13 @@ func BuildView(node *core.Node, p *Props, ctx *core.RenderContext) (View, error)
 	// 翻页可达性按**已取回条数**判断：不够就说明这一页之后没有更多了（不猜未取回的部分）。
 	if pageSize > 0 {
 		view.HasPrev = page > 1
-		view.HasNext = page*pageSize < fetched
+		// 分页源给得出总量时用它判断（本页满不满意都不能说明还有没有下一页）；
+		// 退化路径（无分页能力）仍按已取回条数判 —— 那是它唯一知道的信息。
+		if total > 0 {
+			view.HasNext = page*pageSize < total
+		} else {
+			view.HasNext = page*pageSize < fetched
+		}
 		view.HasPager = true
 		if view.HasPrev {
 			view.PrevPage = page - 1
@@ -426,6 +450,46 @@ func resolveProducts(ctx *core.RenderContext, source string, filter map[string]s
 		return ctx.Product.ResolveCollection(ctx.Context, source, filter)
 	}
 	return ctx.Collection.ResolveCollection(ctx.Context, source, filter)
+}
+
+// resolveProductsPage 按页取数（审计 PERF-019）：集合源支持分页能力时把 offset 交给 SQL。
+//
+// 两条数据源都要探测：ctx.Product 是商品数据源（受限契约），ctx.Collection 是集合注册表 ——
+// 两者都可能实现 CollectionPager，也可能都不实现（纯组件单测路径）。
+// 不支持时不报错，退回「取一批再由调用方切片」：能力缺失只该让翻页退化成它本来的样子，
+// 不该让整块列表渲染不出来。
+//
+// 第二个返回值是总量：> 0 时调用方用它判断还有没有下一页；0 表示源给不出（退化了）。
+func resolveProductsPage(ctx *core.RenderContext, source string, filter map[string]string, offset, limit int) ([]map[string]any, int, error) {
+	q := core.CollectionQuery{Filter: filter, Offset: offset, Limit: limit}
+	if ctx.Product != nil {
+		if pager, ok := ctx.Product.(core.CollectionPager); ok {
+			page, err := pager.ResolveCollectionPage(ctx.Context, source, q)
+			if err != nil {
+				return nil, 0, err
+			}
+			total := page.Total
+			if total < 0 {
+				total = 0
+			}
+			return page.Items, total, nil
+		}
+		items, err := ctx.Product.ResolveCollection(ctx.Context, source, filter)
+		return items, 0, err
+	}
+	if pager, ok := ctx.Collection.(core.CollectionPager); ok {
+		page, err := pager.ResolveCollectionPage(ctx.Context, source, q)
+		if err != nil {
+			return nil, 0, err
+		}
+		total := page.Total
+		if total < 0 {
+			total = 0
+		}
+		return page.Items, total, nil
+	}
+	items, err := ctx.Collection.ResolveCollection(ctx.Context, source, filter)
+	return items, 0, err
 }
 
 // DeclareFeatures 实现 core.ViewFeatureDeclarer（审计 PERF-014）：商品列表的容器 div 恒带

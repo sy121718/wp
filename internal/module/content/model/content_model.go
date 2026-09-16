@@ -164,9 +164,12 @@ type CollectionItem struct {
 // 投影用 jsonb_strip_nulls 包住：jsonb_build_object 对缺失字段会写出 null，
 // 而改造前「键不存在」与「键存在但为 null」是两种状态，组件靠它区分「没有这个字段」
 // 与「字段是空的」（见 builder/source 的取值访问器语义），不能合并成一种。
-func (m *Model) ListForCollection(ctx context.Context, entityType string, fields []string, filter map[string]string, limit int) (list []*CollectionItem, err error) {
+func (m *Model) ListForCollection(ctx context.Context, entityType string, fields []string, filter map[string]string, offset, limit int) (list []*CollectionItem, err error) {
 	if limit <= 0 {
 		limit = collectionItemLimit
+	}
+	if offset < 0 {
+		offset = 0
 	}
 	parts := make([]string, 0, len(fields))
 	args := make([]any, 0, len(fields)*2+2)
@@ -178,7 +181,28 @@ func (m *Model) ListForCollection(ctx context.Context, entityType string, fields
 	}
 	projection := "id, slug, revision, update_time, jsonb_strip_nulls(jsonb_build_object(" +
 		strings.Join(parts, ", ") + ")) AS fields"
-	q := m.db.WithContext(ctx).Table(tableNameContents).Select(projection, args...)
+	q := m.collectionQuery(ctx, entityType, filter).Select(projection, args...)
+	// offset 由调用方给（审计 PERF-019）：构建期恒为 0（只取第一屏），片段期按页码算。
+	err = q.Order("update_time DESC, id DESC").Limit(limit).Offset(offset).Find(&list).Error
+	return list, err
+}
+
+// CountForCollection 满足同一组过滤条件的总条数（审计 PERF-019）。
+//
+// 分页要算总页数就得知道总量，而总量只能在 SQL 侧数 —— 把「已取回的一页」当成全部，
+// 正是这条审计要修的那个问题（翻不过第 N 页还以为到底了）。
+// 过滤条件与 ListForCollection 共用 collectionQuery，两条查询不会各自漂移。
+func (m *Model) CountForCollection(ctx context.Context, entityType string, filter map[string]string) (total int64, err error) {
+	err = m.collectionQuery(ctx, entityType, filter).Count(&total).Error
+	return total, err
+}
+
+// collectionQuery 集合源查询的公共部分：表 + 实体类型 + 白名单等值过滤。
+//
+// 抽出来是为一件事：List 与 Count 必须用**完全一致**的过滤条件 —— 一边改了另一边没改，
+// 表现是「总页数按旧条件算」，翻到最后一页才发现少了几条，而两条 SQL 各自看都对。
+func (m *Model) collectionQuery(ctx context.Context, entityType string, filter map[string]string) *gorm.DB {
+	q := m.db.WithContext(ctx).Table(tableNameContents)
 	if entityType != "" {
 		q = q.Where("entity_type = ?", entityType)
 	}
@@ -193,6 +217,5 @@ func (m *Model) ListForCollection(ctx context.Context, entityType string, fields
 		// 同样显式转型：->> 的右操作数必须是 text，比较值也一样。
 		q = q.Where("(data ->> ?::text) = ?::text", k, filter[k])
 	}
-	err = q.Order("update_time DESC, id DESC").Limit(limit).Find(&list).Error
-	return list, err
+	return q
 }

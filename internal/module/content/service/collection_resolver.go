@@ -18,28 +18,55 @@ import (
 // collectionSourcePrefix 内容实体集合源前缀。
 const collectionSourcePrefix = "content:"
 
+// 编译期断言：内容集合源支持按页取数（审计 PERF-019）。
+// 没有这行的话，ResolveCollectionPage 被重命名或改签名时不会有任何提示 ——
+// 注册表那边只是「探测不到这个能力」然后静默退回取一批再截断。
+var _ core.CollectionPager = (*Service)(nil)
+
 // ResolveCollection 实现 core.CollectionResolver：按集合源查实体列表。
 // filter 为白名单等值过滤（MVP：仅支持空 filter 或按 entity_type 外的
 // 数据字段等值匹配；字段值白名单由调用方组件声明控制）。
 func (s *Service) ResolveCollection(ctx context.Context, source string, filter map[string]string) (items []map[string]any, err error) {
+	items, _, err = s.resolveCollection(ctx, source, filter, 0, 0)
+	return items, err
+}
+
+// ResolveCollectionPage 实现可选能力 core.CollectionPager（审计 PERF-019）：按页取数，
+// 并给出该过滤条件下的总量。
+//
+// 构建期不需要它（只取第一屏），所以它是可选能力而不是把参数塞进 CollectionResolver ——
+// 那样全部实现与所有测试 fake 都要跟着改，收益为零（见 source.CollectionPager 的注释）。
+func (s *Service) ResolveCollectionPage(ctx context.Context, source string, q core.CollectionQuery) (core.CollectionPage, error) {
+	items, total, err := s.resolveCollection(ctx, source, q.Filter, q.Offset, q.Limit)
+	if err != nil {
+		return core.CollectionPage{}, err
+	}
+	return core.CollectionPage{Items: items, Total: total}, nil
+}
+
+// resolveCollection 两个入口的共用实现。
+//
+// total 的语义：返回的是**满足过滤条件的总数**，不是本页条数。取数不满一页时不必再 COUNT ——
+// 后面已经没有了，总量就是 offset + 本页条数；省下的那次查询在列表页每次翻页都会用到。
+func (s *Service) resolveCollection(ctx context.Context, source string, filter map[string]string, offset, limit int) (items []map[string]any, total int, err error) {
 	entityType, ok := strings.CutPrefix(source, collectionSourcePrefix)
 	if !ok || !contentcontract.IsValidType(entityType) {
-		return nil, fmt.Errorf("%s: %q（期望 content:{product|article|category}）", contentenums.ErrInvalidType, source)
+		return nil, 0, fmt.Errorf("%s: %q（期望 content:{product|article|category}）", contentenums.ErrInvalidType, source)
 	}
 	// 列投影 + 筛选下推（审计 PERF-008）：此前先 List 取回 100 行**整行**（data 里含正文
 	// 全文）再在 Go 里过滤，等于为了渲染几张卡片把正文都读了一遍。
 	// 投影字段取集合白名单（自动排除 body / focusKeyword），筛选条件下沉成 SQL。
 	fields := contentcontract.CollectionFieldWhitelist(entityType)
-	rows, err := s.m.ListForCollection(ctx, entityType, fields, filter, 0)
+	rows, err := s.m.ListForCollection(ctx, entityType, fields, filter, offset, limit)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	items = make([]map[string]any, 0, len(rows))
 	for _, r := range rows {
 		out := map[string]any{}
 		if len(r.Fields) > 0 {
 			if uerr := json.Unmarshal(r.Fields, &out); uerr != nil {
-				return nil, fmt.Errorf("%s: %w", contentenums.ErrDataInvalid, uerr)
+				return nil, 0, fmt.Errorf("%s: %w", contentenums.ErrDataInvalid, uerr)
 			}
 		}
 		// 复查（防御，不是主路径）：筛选已下推到 SQL，这里再比一次是为了让
@@ -52,7 +79,17 @@ func (s *Service) ResolveCollection(ctx context.Context, source string, filter m
 		out["id"], out["slug"], out["revision"] = r.ID, r.Slug, r.Revision
 		items = append(items, out)
 	}
-	return items, nil
+	// 取数不满一页说明已经到底：总量就是 offset 加上本页条数，不必再 COUNT 一次。
+	// 满页时才需要真去数 —— 列表页每翻一页都会走这里，省下的是每次翻页一次聚合查询。
+	if limit > 0 && len(rows) < limit {
+		total = offset + len(items)
+		return items, total, nil
+	}
+	n, cerr := s.m.CountForCollection(ctx, entityType, filter)
+	if cerr != nil {
+		return nil, 0, cerr
+	}
+	return items, int(n), nil
 }
 
 // matchFilter 等值过滤（全部键匹配才保留）。

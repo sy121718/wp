@@ -36,29 +36,40 @@ import (
 // 真正需要「翻页的商品列表」属于后续的数据驱动页面能力，不在集合源职责内。
 const collectionItemLimit = 100
 
+// 编译期断言：商品集合源支持按页取数（审计 PERF-019）。
+// 没有这行的话，ResolveCollectionPage 被改名或改签名时不会有任何提示 ——
+// 注册表只是「探测不到这个能力」然后静默退回取一批再截断。
+var _ core.CollectionPager = (*Service)(nil)
+
 // ResolveCollection 实现 core.CollectionResolver：解析 "content:product" 集合源。
 //
 // filter 为白名单等值过滤（当前只有 status）：白名单外的维度直接报错，
 // 不接受任意过滤表达式（不变量 4）。
 // 工程范围取自构建上下文（core.BuildProjectID，由 builder.Compile 注入）：
 // 商品是分工程的数据，缺工程 ID 时不限工程（后台预览等无站点上下文的场景）。
-func (s *Service) ResolveCollection(ctx context.Context, source string, filter map[string]string) (items []map[string]any, err error) {
+// resolveCollection 两个入口的共用实现（审计 PERF-019）。
+//
+// total 的语义：满足过滤条件的**总数**，不是本页条数。取数不满一页时不必再 COUNT ——
+// 后面已经没有了，总量就是 offset + 本页条数。
+func (s *Service) resolveCollection(ctx context.Context, source string, filter map[string]string, offset, limit int) (items []map[string]any, total int, err error) {
 	if source != productcontract.CollectionSourceProduct {
-		return nil, fmt.Errorf("%s: %q", productenums.ErrCollectionSourceInvalid, source)
+		return nil, 0, fmt.Errorf("%s: %q", productenums.ErrCollectionSourceInvalid, source)
 	}
 	f, err := parseCollectionFilter(filter)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	// 工程范围取自构建上下文（后台预览等无站点上下文的场景为空 = 不限工程）。
 	f.ProjectID = core.BuildProjectID(ctx)
-	rows, err := s.m.ListForCollection(ctx, f, collectionItemLimit, 0)
+	rows, err := s.m.ListForCollection(ctx, f, limit, offset)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	items = make([]map[string]any, 0, len(rows))
 	if len(rows) == 0 {
-		return items, nil
+		// 本页空：调用方不会凭空跳到第 N 页，所以 offset 之前必然已有内容，总量就是 offset ——
+		// 与「不满一页即到底」同一个判断，省掉一次 COUNT。
+		return items, offset, nil
 	}
 	lang := core.BuildLang(ctx)
 	ids := make([]string, 0, len(rows))
@@ -76,7 +87,7 @@ func (s *Service) ResolveCollection(ctx context.Context, source string, filter m
 	// 变体与属性组各批量取一次（列表页专用，零 N+1）：价格区间的派生需要变体。
 	variants, err := s.m.ListVariantsByProducts(ctx, ids)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	byProduct := map[string][]*productmodel.VariantEntity{}
 	for _, v := range variants {
@@ -84,19 +95,19 @@ func (s *Service) ResolveCollection(ctx context.Context, source string, filter m
 	}
 	attrs, err := s.m.ListAttributesByIDs(ctx, attrIDs)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	// 分类 / 品牌 / 标签一次取好（issue #12：展示名要取译文，逐个商品查会变成 N 次）。
 	categoryIndex, brandIndex, tagIndex, ierr := s.taxonomyIndex(ctx, rows)
 	if ierr != nil {
-		return nil, ierr
+		return nil, 0, ierr
 	}
 	valueBatches := make([]map[string]string, 0, len(rows))
 	for _, r := range rows {
 		// 与实体绑定同源：同一份派生值 + 同一份译文替换（语境 实体类型.<字段名>）。
 		loc, lerr := s.localizeRelatedFrom(ctx, lang, r, categoryIndex, brandIndex, tagIndex, attrs)
 		if lerr != nil {
-			return nil, lerr
+			return nil, 0, lerr
 		}
 		valueBatches = append(valueBatches, productFieldValues(r, byProduct[r.ID], attrs, loc))
 	}
@@ -105,7 +116,7 @@ func (s *Service) ResolveCollection(ctx context.Context, source string, filter m
 	if s.publishedLocator != nil && f.ProjectID != "" && len(ids) > 0 {
 		publishedPaths, err = s.publishedLocator.PublishedEntityPaths(ctx, f.ProjectID, productcontract.EntityTypeProduct, lang, ids)
 		if err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 	}
 	for i, r := range rows {
@@ -115,7 +126,38 @@ func (s *Service) ResolveCollection(ctx context.Context, source string, filter m
 		}
 		items = append(items, item)
 	}
-	return items, nil
+	// 取数不满一页说明已经到底：总量就是 offset + 本页条数，不必再 COUNT 一次。
+	// 满页时才真去数 —— 列表页每翻一页都走这里，省下的是每次翻页一次聚合查询。
+	if limit > 0 && len(rows) < limit {
+		return items, offset + len(items), nil
+	}
+	n, cerr := s.m.CountForCollection(ctx, f)
+	if cerr != nil {
+		return nil, 0, cerr
+	}
+	return items, int(n), nil
+}
+
+// ResolveCollection 实现 core.CollectionResolver：按集合源查商品列表（构建期取第一屏）。
+func (s *Service) ResolveCollection(ctx context.Context, source string, filter map[string]string) (items []map[string]any, err error) {
+	items, _, err = s.resolveCollection(ctx, source, filter, 0, collectionItemLimit)
+	return items, err
+}
+
+// ResolveCollectionPage 实现可选能力 core.CollectionPager（审计 PERF-019）：按页取数并给出总量。
+//
+// 构建期不需要它（只取第一屏），所以是可选能力而不是往 CollectionResolver 上加参数 ——
+// 那样全部实现与所有测试 fake 都要跟着改（见 source.CollectionPager 的注释）。
+func (s *Service) ResolveCollectionPage(ctx context.Context, source string, q core.CollectionQuery) (core.CollectionPage, error) {
+	limit := q.Limit
+	if limit <= 0 {
+		limit = collectionItemLimit
+	}
+	items, total, err := s.resolveCollection(ctx, source, q.Filter, q.Offset, limit)
+	if err != nil {
+		return core.CollectionPage{}, err
+	}
+	return core.CollectionPage{Items: items, Total: total}, nil
 }
 
 // taxonomyIndex 一次取回该批商品引用的分类 / 品牌 / 标签（列表页专用，零 N+1）。

@@ -239,15 +239,17 @@ func sortedOptionKeys(options map[string]string) []string {
 	return keys
 }
 
-// ListForCollection 集合源取数（issue #9）：一次取回集合项所需的全部白名单字段列。
+// collectionQuery 集合源的查询构建：投影 + 全部过滤条件，List 与 Count 共用。
 //
-// 与 List 的差异是刻意的：List 是后台列表（只要标题/图/状态那几列、按 update_time 语义），
-// 集合源要的是「详情可绑定字段」的投影（副标题/描述/单位/属性引用等），且必须同一份
-// 确定性排序 —— 同一批数据每次构建输出同样字节（不变量 5）。
+// 抽出来是为一件事：**分页的总量**（审计 PERF-019）必须按与取数完全一致的过滤条件去数。
+// 过滤条件有十来个维度（工程 / 状态 / 分类 / 标签 / 价格区间 / 评分 / 在售 / 属性值…），
+// 各自抄一份迟早会漂 —— 表现是「总页数按旧条件算」，一路翻到最后一页才发现少了几条，
+// 而两条 SQL 分开看都是对的。
 //
-// 条件以参数传入（CollectionFilter 的各个等值维度 / 分页），方法内不写死业务判断；
-// limit <= 0 表示不限条数。
-func (m *Model) ListForCollection(ctx context.Context, f CollectionFilter, limit, offset int) (list []*ProductEntity, err error) {
+// 投影列必须覆盖集合项白名单里的全部字段来源：related（分类 / 品牌 / 标签）、
+// tags、imageAlt / imageAlts（images_alt）都从这些列派生 —— 漏取任意一列，
+// 对应的集合项字段就会**恒为空**（issue #22 排查商品卡标签时发现的 #9 遗留缺陷）。
+func (m *Model) collectionQuery(ctx context.Context, f CollectionFilter) *gorm.DB {
 	// 投影列必须覆盖集合项白名单里的全部字段来源：related（分类 / 品牌 / 标签）、
 	// tags、imageAlt / imageAlts（images_alt）都从这些列派生 —— 漏取任意一列，
 	// 对应的集合项字段就会**恒为空**（issue #22 排查商品卡标签时发现的 #9 遗留缺陷：
@@ -344,12 +346,32 @@ func (m *Model) ListForCollection(ctx context.Context, f CollectionFilter, limit
 				" AND v.enabled AND v.option_values @> jsonb_build_object(?::text, ?::text))",
 			key, f.Options[key])
 	}
-	q = q.Order("sort ASC, create_time ASC, id ASC")
+	return q
+}
+
+// ListForCollection 集合源取数（issue #9）：一次取回集合项所需的全部白名单字段列。
+//
+// 与 List 的差异是刻意的：List 是后台列表（只要标题/图/状态那几列、按 update_time 语义），
+// 集合源要的是「详情可绑定字段」的投影，且必须同一份确定性排序 ——
+// 同一批数据每次构建输出同样字节（不变量 5）。
+//
+// offset 由调用方给（审计 PERF-019）：构建期恒为 0（只取第一屏），片段期按页码算。
+// limit <= 0 表示由调用方那边的默认上限兜底。
+func (m *Model) ListForCollection(ctx context.Context, f CollectionFilter, limit, offset int) (list []*ProductEntity, err error) {
+	q := m.collectionQuery(ctx, f).Order("sort ASC, create_time ASC, id ASC")
 	if limit > 0 {
 		q = q.Limit(limit).Offset(offset)
 	}
 	err = q.Find(&list).Error
 	return list, err
+}
+
+// CountForCollection 满足同一组过滤条件的总条数（审计 PERF-019）：分页算总页数要用。
+//
+// 与 ListForCollection 共用 collectionQuery，两条查询不会各自漂移。
+func (m *Model) CountForCollection(ctx context.Context, f CollectionFilter) (n int64, err error) {
+	err = m.collectionQuery(ctx, f).Count(&n).Error
+	return n, err
 }
 
 // Count 列表总数（与 List 同过滤条件）。
