@@ -68,11 +68,9 @@ snapshot() {
 }
 
 print_snapshot() {
-    printf '%-46s %-46s %10s %10s %14s %8s
-' TABLE INDEX IDX_SCAN TUP_READ SIZE_BYTES KIND
+    printf '%-46s %-46s %10s %10s %14s %8s\n' TABLE INDEX IDX_SCAN TUP_READ SIZE_BYTES KIND
     awk -F'	' '{
-        printf "%-46s %-46s %10s %10s %14s %8s
-", $1, $2, $3, $4, $6, $7
+        printf "%-46s %-46s %10s %10s %14s %8s\n", $1, $2, $3, $4, $6, $7
     }'
 }
 
