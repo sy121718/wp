@@ -450,7 +450,7 @@ func (a *assembly) buildIdentityAndCommerce() {
 		panic("库存模块装配返回的不是具体 service（无法注入商品用例）")
 	}
 	a.inventoryConcrete = invConcrete
-	orderSvc := orderhttp.SetupOrderRoutes(authorizedAPI, db, productSvc, orderstock.New(invConcrete), userSvc, webhookDispatcher)
+	orderSvc := orderhttp.SetupOrderRoutes(authorizedAPI, db, productSvc, orderstock.New(invConcrete), userSvc, webhookDispatcher, a.projectService)
 	marks.mark(portWebhookDispatcher)
 
 	a.mailSvc = mailSvc

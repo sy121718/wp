@@ -186,7 +186,7 @@ func (idx trCandidates) hasContext(contextName string) bool {
 func trWorkbench(t *testing.T, f *trFixture) *gin.Engine {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
-	pages := pageservice.NewService(pagemodel.NewPageModel(f.db), nil, nil, nil, nil, nil, nil, nil, nil)
+	pages := pageservice.NewService(pagemodel.NewPageModel(f.db), nil, nil, f.projects, nil, nil, nil, nil, nil)
 	handle := dashboardhttp.NewProductTranslationHandle(f.products, f.projects, pages, nil)
 	handle.SetContentTranslationStore(i18n.NewContentWriter(f.db))
 	engine := gin.New()
@@ -781,7 +781,7 @@ func TestProductTranslationStalesPresentationInstances(t *testing.T) {
 
 	// 工作台注入实例失效端口（presentation 契约实现，与线上装配同形）。
 	gin.SetMode(gin.TestMode)
-	pages := pageservice.NewService(pagemodel.NewPageModel(f.db), nil, nil, nil, nil, nil, nil, nil, nil)
+	pages := pageservice.NewService(pagemodel.NewPageModel(f.db), nil, nil, f.projects, nil, nil, nil, nil, nil)
 	handle := dashboardhttp.NewProductTranslationHandle(f.products, f.projects, pages, f.pres)
 	handle.SetContentTranslationStore(i18n.NewContentWriter(f.db))
 	engine := gin.New()

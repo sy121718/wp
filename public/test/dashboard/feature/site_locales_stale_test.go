@@ -50,7 +50,7 @@ func newLocaleStaleEnv(t *testing.T) (*gin.Engine, *projectservice.Service, *gor
 	if err != nil {
 		t.Fatalf("创建测试工程失败: %v", err)
 	}
-	pages := pageservice.NewService(pagemodel.NewPageModel(db), nil, nil, nil, nil, nil, nil, nil, nil)
+	pages := pageservice.NewService(pagemodel.NewPageModel(db), nil, nil, projects, nil, nil, nil, nil, nil)
 	handle := dashboardhttp.NewHandle(pages, projects, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	router := gin.New()
 	router.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)

@@ -11,6 +11,7 @@ import (
 	ordermodel "go_wp/internal/module/order/model"
 	orderservice "go_wp/internal/module/order/service"
 	productcontract "go_wp/internal/module/product/contract"
+	projectcontract "go_wp/internal/module/project/contract"
 	usercontract "go_wp/internal/module/user/contract"
 	webhookcontract "go_wp/internal/module/webhook/contract"
 	"go_wp/internal/permission"
@@ -28,6 +29,9 @@ func SetupOrderRoutes(rg *permission.RouteGroup,
 	// webhooks 外部集成派发口（OSS-006）：支付落账后向登记的端点派发 order.paid。
 	// 只取 DispatchEvent 一条能力（收窄端口），订单看不到端点配置与投递日志。
 	webhooks webhookcontract.Dispatcher,
+	// projects 工程契约：只用于列出工程 id，给「只带 id」的入口逐工程探测归属。
+	// 未注入时退回读 projects 表的兜底路径（本模块唯一的跨表读取），故装配点必须注入。
+	projects projectcontract.ProjectService,
 ) ordercontract.OrderService {
 	svc := orderservice.NewService(
 		ordermodel.NewOrderModel(db),
@@ -43,6 +47,9 @@ func SetupOrderRoutes(rg *permission.RouteGroup,
 		guest,
 		webhooks,
 	)
+	// 只带 id 的入口（取消 / 改状态 / 退款 / 备注 / 超时扫描）靠它逐工程定位归属，
+	// 不注入会退回读 projects 表的兜底路径。
+	svc.SetProjects(projects)
 	h := NewHandle(svc)
 	// 待付款超时自动取消（TX-001）：进程内定时扫描，失败不阻断启动。
 	orderservice.StartPendingOrderExpiryScheduler(svc)

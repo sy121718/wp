@@ -554,7 +554,7 @@ func TestMasterDataChangePriceOrigins(t *testing.T) {
 	}
 
 	// 入库成本价回写（来源 = receipt）：成本价 40 → 22.5。
-	if err := f.products.UpdateVariantCost(ctx, v.ID, 22.5, operatorForTest); err != nil {
+	if err := f.products.UpdateVariantCost(ctx, f.projectID, v.ID, 22.5, operatorForTest); err != nil {
 		t.Fatalf("成本价回写失败: %v", err)
 	}
 	rows = f.entityChanges(t, masterdataenums.EntityProductVariant, v.ID)
