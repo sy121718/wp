@@ -107,11 +107,47 @@ func (m *Model) RollupDay(ctx context.Context, projectID string, day, from, to t
 
 // ListProjectsWithViews 列出有访问明细的工程（汇总任务的输入）。
 //
-// 取明细里的 DISTINCT 而不是 projects 全表：没有访问的工程不需要汇总行，
+// 取「有访问的工程」而不是 projects 全表：没有访问的工程不需要汇总行，
 // 汇总任务也不该被空工程拖着跑。
+//
+// 实现形状（DB-009 第七批）：工程清单取自 projects 表 —— 它是隔离的**主体**
+// （没有 project_id 列、不在迁移 215 的 53 个对象里），读它不涉及任何被隔离数据 ——
+// 再**逐工程在作用域内**探测明细是否存在。原来的写法是
+// SELECT DISTINCT project_id FROM page_views，而 page_views 带 FORCE 策略、
+// 谓词读会话变量 app.project_id：没有作用域时那条 SELECT 恒返回空集（fail closed 不报错）。
+// 失效形态是最难发现的一种 —— 汇总任务照常每小时跑，RollupRecent 返回 projects=0，
+// 日志里一行异常都没有，站点只是「历史窗口的数字一直比明细少」。
 func (m *Model) ListProjectsWithViews(ctx context.Context) (ids []string, err error) {
-	err = m.db.WithContext(ctx).Model(&PageViewEntity{}).
-		Distinct().Order("project_id").Pluck("project_id", &ids).Error
+	candidates, err := m.listAllProjectIDs(ctx)
+	if err != nil {
+		return nil, err
+	}
+	ids = make([]string, 0, len(candidates))
+	for _, pid := range candidates {
+		if cerr := ctx.Err(); cerr != nil {
+			return ids, cerr
+		}
+		var n int64
+		// 作用域逐个建：会话变量是单值，多个工程不可能并进一次查询。
+		if err = rls.InProjectScope(ctx, m.db, pid, func(tx *gorm.DB) error {
+			return tx.Model(&PageViewEntity{}).Where("project_id = ?", pid).Limit(1).Count(&n).Error
+		}); err != nil {
+			return nil, err
+		}
+		if n > 0 {
+			ids = append(ids, pid)
+		}
+	}
+	return ids, nil
+}
+
+// listAllProjectIDs 全部站点工程 id（逐工程扇出的清单来源）。
+//
+// 读 projects 表不需要工程作用域：那是隔离的主体而不是被隔离的数据。
+// analytics 侧已有先例（ListRetentionPolicies 同样直读 projects），落点与口径一致。
+func (m *Model) listAllProjectIDs(ctx context.Context) (ids []string, err error) {
+	err = m.db.WithContext(ctx).
+		Raw("SELECT id::text FROM projects ORDER BY create_time ASC, id ASC").Scan(&ids).Error
 	return ids, err
 }
 

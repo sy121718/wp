@@ -28,6 +28,7 @@ import (
 
 	"go_wp/pkg/database"
 	"go_wp/pkg/logger"
+	"go_wp/pkg/rls"
 
 	"gorm.io/gorm"
 )
@@ -178,12 +179,21 @@ func loadContentTargets(ctx context.Context, db *gorm.DB, projectID, lang string
 
 	projectID = strings.TrimSpace(projectID)
 	var rows []contentTranslationRow
-	query, args := contentTranslationQuery, []any{hashes, lang}
-	if projectID != "" {
-		query, args = contentTranslationProjectQuery, []any{hashes, lang, projectID}
-	}
-	if err := db.WithContext(ctx).Raw(query, args...).Scan(&rows).Error; err != nil {
-		return nil, err
+	if projectID == "" {
+		if err := db.WithContext(ctx).Raw(contentTranslationQuery, hashes, lang).Scan(&rows).Error; err != nil {
+			return nil, err
+		}
+	} else {
+		// 工程上下文**必须在会话变量里也设一遍**（DB-009）：sys_translation 带 FORCE 策略，
+		// 谓词是「本工程行或全局行」。上面那条 SQL 里的 project_id = $3 只是应用层条件，
+		// 管不到策略 —— 不设 app.project_id 时策略只放行 project_id IS NULL 的全局行，
+		// 本工程自己的译文会被静默挡掉，表现为「译文写进去了，构建产物里却永远是全局译法」，
+		// 而且没有任何错误（取词失败一律回退原文，这条路连日志都不会有）。
+		if err := rls.InProjectScope(ctx, db, projectID, func(tx *gorm.DB) error {
+			return tx.Raw(contentTranslationProjectQuery, hashes, lang, projectID).Scan(&rows).Error
+		}); err != nil {
+			return nil, err
+		}
 	}
 
 	for _, row := range rows {

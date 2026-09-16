@@ -30,6 +30,7 @@ import (
 	"time"
 
 	"go_wp/pkg/database"
+	"go_wp/pkg/rls"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -201,13 +202,22 @@ func (w *ContentWriter) LoadDetailsForProject(ctx context.Context, projectID, la
 		return out, nil
 	}
 	projectID = strings.TrimSpace(projectID)
-	query, args := contentTranslationDetailQuery, []any{hashes, lang}
-	if projectID != "" {
-		query, args = contentTranslationDetailProjectQuery, []any{hashes, lang, projectID}
-	}
 	var rows []contentTranslationDetailRow
-	if err := w.db.WithContext(ctx).Raw(query, args...).Scan(&rows).Error; err != nil {
-		return nil, err
+	if projectID == "" {
+		if err := w.db.WithContext(ctx).Raw(
+			contentTranslationDetailQuery, hashes, lang).Scan(&rows).Error; err != nil {
+			return nil, err
+		}
+	} else {
+		// 工程上下文除 SQL 条件（project_id IS NULL OR project_id = $3）之外**还必须设会话变量**
+		// （DB-009）：sys_translation 带 FORCE 策略，未设 app.project_id 时策略只放行
+		// project_id IS NULL 的全局行，本工程那几行被静默挡掉 —— 工作台会显示全局译法，
+		// 保存前的「是否变化」判定也会把每一行都当成已变更。
+		if err := rls.InProjectScope(ctx, w.db, projectID, func(tx *gorm.DB) error {
+			return tx.Raw(contentTranslationDetailProjectQuery, hashes, lang, projectID).Scan(&rows).Error
+		}); err != nil {
+			return nil, err
+		}
 	}
 	for _, row := range rows {
 		if row.TargetText == "" {
@@ -227,6 +237,13 @@ func (w *ContentWriter) LoadDetailsForProject(ctx context.Context, projectID, la
 // 避免工作台一次提交里「部分成功」造成难以解释的中间态。
 // 作用域由条目自身的 ProjectID 决定（空 = 全局共享行）；不同工程的同 key 译文
 // 落在不同的唯一键上，因此各自独立、互不覆盖。
+//
+// 工程行**必须在会话变量里也设一遍**（DB-009）：sys_translation 带 FORCE 策略，
+// 策略的 WITH CHECK 是「本工程行或全局行」—— 不设 app.project_id 时写工程行会被
+// 直接拒绝（RLS 的 INSERT 违规是**报错**而不是静默 0 行），工作台表现为「保存译文失败」。
+// 会话变量是**单值**的，所以按 ProjectID 分组、在同一事务内逐组 set_config 后再写：
+// 整批仍原子（任一组失败整批回滚），每组语句又都在正确的策略谓词下执行。
+// 全局行那一组不需要作用域（策略对 project_id IS NULL 恒真）。
 // 返回写入条数（含覆盖更新）。
 func (w *ContentWriter) Upsert(ctx context.Context, items []ContentWriteItem) (written int, err error) {
 	if w == nil || w.db == nil {
@@ -244,13 +261,58 @@ func (w *ContentWriter) Upsert(ctx context.Context, items []ContentWriteItem) (w
 		}
 		rows = append(rows, row)
 	}
-	if err = w.db.WithContext(ctx).Clauses(clause.OnConflict{
-		Columns:   []clause.Column{{Name: "project_id"}, {Name: "source_hash"}, {Name: "context"}, {Name: "lang"}},
-		DoUpdates: clause.AssignmentColumns([]string{"source_text", "target_text", "engine", "update_time"}),
-	}).Create(&rows).Error; err != nil {
+	groups := make([]contentWriteGroup, 0, 2)
+	groupIndex := make(map[string]int, 2)
+	for i := range rows {
+		key := ""
+		if rows[i].ProjectID != nil {
+			key = *rows[i].ProjectID
+		}
+		gi, ok := groupIndex[key]
+		if !ok {
+			groups = append(groups, contentWriteGroup{projectID: key})
+			gi = len(groups) - 1
+			groupIndex[key] = gi
+		}
+		groups[gi].rows = append(groups[gi].rows, rows[i])
+	}
+	if err = w.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		for gi := range groups {
+			g := &groups[gi]
+			if g.projectID != "" {
+				if serr := rls.ScopeTx(tx, g.projectID); serr != nil {
+					return serr
+				}
+			}
+			if werr := upsertContentTranslations(tx, g.rows); werr != nil {
+				return werr
+			}
+		}
+		return nil
+	}); err != nil {
 		return 0, err
 	}
 	return len(rows), nil
+}
+
+// contentWriteGroup 同一工程作用域下的一批写入行（全局行归入 projectID == "" 组）。
+type contentWriteGroup struct {
+	projectID string
+	rows      []contentTranslationEntity
+}
+
+// upsertContentTranslations 一批译文行的 ON CONFLICT DO UPDATE 写入。
+//
+// 独立成函数的原因：分批写入要在**同一个事务**里对多组各写一次，而 ON CONFLICT 的
+// 冲突列声明只能有一处 —— 复制第二份必然漂移。
+func upsertContentTranslations(tx *gorm.DB, rows []contentTranslationEntity) error {
+	if len(rows) == 0 {
+		return nil
+	}
+	return tx.Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "project_id"}, {Name: "source_hash"}, {Name: "context"}, {Name: "lang"}},
+		DoUpdates: clause.AssignmentColumns([]string{"source_text", "target_text", "engine", "update_time"}),
+	}).Create(&rows).Error
 }
 
 // normalizeContentWriteItem 校验并归一单条写入（返回可直接入库的行）。

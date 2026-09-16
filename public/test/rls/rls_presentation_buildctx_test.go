@@ -12,9 +12,9 @@ package rlstest
 // i18n.NewContentTranslatorScoped(ctx, core.BuildProjectID(ctx), ...)）。
 // 没有工程 id 时本工程的译文取不到，发布产物里这些字段会回落原文。
 //
-// 全程非超级角色：sys_translation 带全局策略（project_id IS NULL 或 = 当前），
-// 所以两次取词都在**同一个工程作用域**内做，唯一变量是取词器的 projectID 参数 ——
-// 这样断言区分的是「工程 id 传没传」，而不是「数据库能不能看见」。
+// 全程非超级角色：sys_translation 带全局策略（project_id IS NULL 或 = 当前）。
+// 第七批收口后「工程 id」是**充分**条件 —— 取词路径内部会为它建立会话作用域，
+// 所以本文件断言的不再是「还需要作用域」，而是「带上工程 id 就够了」。
 
 import (
 	"context"
@@ -55,11 +55,15 @@ func TestRLS_BuildCtxProjectIDScopesContentTranslation(t *testing.T) {
 		t.Fatalf("无作用域、无工程 id 时应回落原文，实际 %q", got)
 	}
 
-	// 组合 2：只补上工程 id（= 本批 presentation_render 的那一行），仍无作用域。
-	// 实测结论：**还不够** —— 作用域不建立时策略照样过滤掉本工程行。
+	// 组合 2：只补上工程 id —— **不再需要调用方手工建立作用域**（DB-009 第七批）。
+	//
+	// 第四批在这里记下的结论是「还不够：作用域不建立时策略照样过滤掉本工程行」，
+	// 那条缺口已在第七批收口：有工程上下文的取词路径（content_store.go 的
+	// loadContentTargets）自己在事务内设 app.project_id，所以只带工程 id 就能命中本工程行。
+	// 本组合因此从「缺口对照」变成正面断言 —— 若有人把取词路径里的作用域摘掉，这里立刻红。
 	onlyID := i18n.NewContentTranslatorScoped(ctx, pA, i18n.NewDBContentStore(db), "en-US", []string{hash})
-	if got := onlyID.TranslateContent(src, ctxName); got != src {
-		t.Fatalf("仅有工程 id、无作用域时应仍回落原文，实际 %q —— 这说明还需要作用域", got)
+	if got := onlyID.TranslateContent(src, ctxName); got != "Summer Shirt" {
+		t.Fatalf("有工程 id 时应命中本工程译文（作用域由取词路径内部建立），实际 %q", got)
 	}
 
 	// 组合 3：工程 id + 作用域同时具备 → 命中本工程译文。

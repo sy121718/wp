@@ -19,15 +19,15 @@ type CouponCountMismatchRow struct {
 	ActualCount int64
 }
 
-// CountCoupons 参与对账的券数量（分母）。projectID 为空时统计全部。
+// CountCoupons 参与对账的券数量（分母）。projectID 必填（DB-009 第七批）。
+//
+// 原来 projectID 为空时走「全量统计」—— coupons 带 FORCE 策略、谓词读会话变量，
+// 那条不带作用域的 Count 在非超级角色下**恒 0**（fail closed 不报错），于是对账输出
+// 「检查了 0 张券、0 个偏差」的看起来正常的假报告。全站口径由 service 逐工程扇出后合并。
 func (m *CouponModel) CountCoupons(ctx context.Context, projectID string) (n int64, err error) {
-	// projectID 为空是「全量统计」：不设 scope 时策略谓词为 NULL，换非超级角色后
-	// 该分支 fail closed（恒 0）而不会跨工程统计 —— 方向安全，但需要全站口径时
-	// 必须由调用方给 projectID（列入 DB-009 剩余清单）。
 	id := strings.TrimSpace(projectID)
 	if id == "" {
-		err = m.db.WithContext(ctx).Model(&CouponEntity{}).Count(&n).Error
-		return n, err
+		return 0, ErrProjectRequired
 	}
 	err = rls.InProjectScope(ctx, m.db, id, func(tx *gorm.DB) error {
 		return tx.Model(&CouponEntity{}).Where("project_id = ?", id).Count(&n).Error
@@ -53,18 +53,17 @@ func (m *CouponModel) ListCountMismatches(ctx context.Context, projectID string,
 		"FROM coupons c " +
 		"LEFT JOIN (SELECT coupon_id, COUNT(*) AS cnt FROM coupon_redemptions GROUP BY coupon_id) r " +
 		"ON r.coupon_id = c.id " +
-		"WHERE c.used_count <> COALESCE(r.cnt, 0) AND (? = '' OR c.project_id = ?) " +
+		"WHERE c.used_count <> COALESCE(r.cnt, 0) AND c.project_id = ? " +
 		"ORDER BY c.id LIMIT ?"
 	// 对账 SQL 一次扫 coupons + coupon_redemptions 两张带策略的表：scope 必须在同一条
 	// 语句上生效。否则换角色后 LEFT JOIN 的右表被策略挡空，产生**假的计数偏差**
 	// （used_count 全线「虚高」）—— 比查不到数据更坏，它是一份看起来合理的错误报告。
 	id := strings.TrimSpace(projectID)
 	if id == "" {
-		err = m.db.WithContext(ctx).Raw(q, id, id, limit).Scan(&rows).Error
-		return rows, err
+		return nil, ErrProjectRequired
 	}
 	err = rls.InProjectScope(ctx, m.db, id, func(tx *gorm.DB) error {
-		return tx.Raw(q, id, id, limit).Scan(&rows).Error
+		return tx.Raw(q, id, limit).Scan(&rows).Error
 	})
 	return rows, err
 }

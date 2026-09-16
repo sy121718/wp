@@ -12,10 +12,24 @@ package orderservice
 
 import (
 	"context"
+	"strings"
 
 	orderdto "go_wp/internal/module/order/dto"
 	"go_wp/pkg/logger"
 )
+
+// auditProjectIDs 对账要跑哪些工程：显式工程优先，留空则枚举全部工程逐工程对账。
+//
+// 为什么不保留「不限工程一次查完」（DB-009 第七批）：coupons 与 coupon_redemptions
+// 都带 FORCE 策略、谓词读会话变量 —— 没有作用域的查询恒返回空集、计数恒 0，
+// 对账于是输出一份「检查了 0 张券、0 个偏差」的**看起来正常的假报告**，
+// 而那正是对账要发现问题的场景。取不到工程清单时显式失败，不退化成「不限工程」。
+func (s *Service) auditProjectIDs(ctx context.Context, explicit string) ([]string, error) {
+	if pid := strings.TrimSpace(explicit); pid != "" {
+		return []string{pid}, nil
+	}
+	return s.projectIDs(ctx)
+}
 
 // AuditCouponCounts 对账券的 used_count 与核销明细行数。
 func (s *Service) AuditCouponCounts(ctx context.Context, req *orderdto.CouponCountAuditReq) (res *orderdto.CouponCountAuditResp, err error) {
@@ -25,30 +39,41 @@ func (s *Service) AuditCouponCounts(ctx context.Context, req *orderdto.CouponCou
 	projectID := ""
 	limit := 100
 	if req != nil {
-		projectID = req.ProjectID
+		projectID = strings.TrimSpace(req.ProjectID)
 		if req.Limit > 0 {
 			limit = req.Limit
 		}
 	}
-	checked, cerr := s.coupons.CountCoupons(ctx, projectID)
-	if cerr != nil {
-		return nil, cerr
+	// 工程清单（DB-009 第七批）：显式工程优先，留空则逐工程独立作用域跑一遍再合并。
+	projects, perr := s.auditProjectIDs(ctx, projectID)
+	if perr != nil {
+		return nil, perr
 	}
-	rows, lerr := s.coupons.ListCountMismatches(ctx, projectID, limit)
-	if lerr != nil {
-		return nil, lerr
-	}
-	res = &orderdto.CouponCountAuditResp{
-		Checked:    int(checked),
-		Mismatched: len(rows),
-		Items:      make([]orderdto.CouponCountMismatch, 0, len(rows)),
-	}
-	for _, row := range rows {
-		res.Items = append(res.Items, orderdto.CouponCountMismatch{
-			CouponID: row.CouponID, ProjectID: row.ProjectID, Code: row.Code,
-			UsedCount: row.UsedCount, ActualCount: row.ActualCount,
-			Diff: row.UsedCount - row.ActualCount,
-		})
+	res = &orderdto.CouponCountAuditResp{Items: make([]orderdto.CouponCountMismatch, 0)}
+	for _, pid := range projects {
+		if ctx.Err() != nil {
+			break
+		}
+		checked, cerr := s.coupons.CountCoupons(ctx, pid)
+		if cerr != nil {
+			return nil, cerr
+		}
+		// limit 是**每工程**的明细上限（全站口径下原来是全局 top-N）：会话变量是单值，
+		// 多个工程不可能并进一次查询。它只决定一次返回多少行明细，
+		// 不改变 Checked / Mismatched 的口径。
+		rows, lerr := s.coupons.ListCountMismatches(ctx, pid, limit)
+		if lerr != nil {
+			return nil, lerr
+		}
+		res.Checked += int(checked)
+		res.Mismatched += len(rows)
+		for _, row := range rows {
+			res.Items = append(res.Items, orderdto.CouponCountMismatch{
+				CouponID: row.CouponID, ProjectID: row.ProjectID, Code: row.Code,
+				UsedCount: row.UsedCount, ActualCount: row.ActualCount,
+				Diff: row.UsedCount - row.ActualCount,
+			})
+		}
 	}
 	if len(res.Items) > 0 {
 		// 记日志而不告警升级：偏差不一定影响可用性，但需要有人知道。
