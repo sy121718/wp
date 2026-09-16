@@ -805,4 +805,27 @@ func registerAdminI18nSeedsAndLatest() {
 			"'MsgThemeBundleImported', 'MsgThemeBundleImportedPartial')",
 		SQL: mustSQL("221_i18n_seed_theme_bundle.sql"),
 	})
+
+	// 222：访问统计页维度榜与保留期提示的后台模板文案词条（18 个 template key × 2 语言，
+	// SEO-019 / SEO-021 的读路径）。
+	//
+	// 判据按本批自己的 key **全集合枚举**计数，不能按 admin.analytics.% 前缀：
+	// 193 已经 seed 了 28 个同前缀词条，前缀计数在干净库上立刻满足，本批会被静默跳过
+	//（060 与 221 的注释都记过这个坑）。
+	registerSeed(Seed{
+		Version:   "222-i18n-seed-analytics-dimensions",
+		TableName: "sys_i18n",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 18 THEN 1 ELSE 0 END FROM sys_i18n " +
+			"WHERE lang = 'zh-CN' AND item_key IN (" +
+			"'admin.analytics.referrers.title', 'admin.analytics.referrers.hint', " +
+			"'admin.analytics.referrers.empty', 'admin.analytics.referrers.unknown', " +
+			"'admin.analytics.ua.title', 'admin.analytics.ua.hint', " +
+			"'admin.analytics.ua.empty', 'admin.analytics.ua.unknown', " +
+			"'admin.analytics.langs.title', 'admin.analytics.langs.hint', " +
+			"'admin.analytics.langs.empty', 'admin.analytics.langs.unknown', " +
+			"'admin.analytics.rank.hint_lead', 'admin.analytics.rank.hint_tail', " +
+			"'admin.analytics.col.referrer', 'admin.analytics.col.ua_class', " +
+			"'admin.analytics.col.lang', 'admin.analytics.breakdown.retention_hint')",
+		SQL: mustSQL("222_i18n_seed_analytics_dimensions.sql"),
+	})
 }

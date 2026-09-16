@@ -137,11 +137,11 @@ func TestI18nEnumsSeedSchemaAndIdempotency(t *testing.T) {
 	//（下面的分组断言与「en 不许缺行」的检查就是为这件事兜底的）。
 	zhCount := countRows(t, db, "sys_i18n", "lang = ?", "zh-CN")
 	enCount := countRows(t, db, "sys_i18n", "lang = ?", "en-US")
-	if zhCount != 3019 {
-		t.Fatalf("sys_i18n zh-CN 行数应为 3019（含 site.fragment.* 片段词条、176 商品列表词条，以及 187/188/189/190/191/192/193/197 八批后台模板抽取：settings/plugins/media 101、article/content 149、自定义 404 页 9、营销订单类 765、商品库存类 582、站点结构类 298、系统管理类 342、HTMX/仪表盘 8 —— 审计 I18N-001 与 SEO-013 的落地；+7 为 198 masterdata 模块文案 key 化；+17 为 216 webhook 模块文案 key 化 —— 8 个 Err*（含 SSRF 五个）与 4 个 Msg*，审计 CQ-010；+38 为 217 SEO 控制台页面文案 key 化 —— 该页 436d20b 随门禁脚本一起提交时漏了 key 化，门禁因此从第一天红着；+60 为 219 重定向管理页文案 key 化，审计 SEO-025；+15 为主题包导入导出的错误与提示文案 key 化，审计 VIS-014），实际 %d", zhCount)
+	if zhCount != 3037 {
+		t.Fatalf("sys_i18n zh-CN 行数应为 3037（含 site.fragment.* 片段词条、176 商品列表词条，以及 187/188/189/190/191/192/193/197 八批后台模板抽取：settings/plugins/media 101、article/content 149、自定义 404 页 9、营销订单类 765、商品库存类 582、站点结构类 298、系统管理类 342、HTMX/仪表盘 8 —— 审计 I18N-001 与 SEO-013 的落地；+7 为 198 masterdata 模块文案 key 化；+17 为 216 webhook 模块文案 key 化 —— 8 个 Err*（含 SSRF 五个）与 4 个 Msg*，审计 CQ-010；+38 为 217 SEO 控制台页面文案 key 化 —— 该页 436d20b 随门禁脚本一起提交时漏了 key 化，门禁因此从第一天红着；+60 为 219 重定向管理页文案 key 化，审计 SEO-025；+15 为主题包导入导出的错误与提示文案 key 化，审计 VIS-014；+18 为 222 访问统计页维度榜与保留期提示的后台模板文案 key 化，审计 SEO-019 / SEO-021），实际 %d", zhCount)
 	}
-	if enCount != 2903 {
-		t.Fatalf("sys_i18n en-US 行数应为 2903（同上；webhook 的 17 个、SEO 控制台的 38 个、重定向管理页的 60 个与主题包的 15 个 key 中英各一行），实际 %d", enCount)
+	if enCount != 2921 {
+		t.Fatalf("sys_i18n en-US 行数应为 2921（同上；webhook 的 17 个、SEO 控制台的 38 个、重定向管理页的 60 个、主题包的 15 个与访问统计维度榜的 18 个 key 中英各一行），实际 %d", enCount)
 	}
 
 	// 4-B) 访客面组件词条（060）：13 个 key，zh-CN/en-US 各一行；中英必须都有（不许缺翻译）。
