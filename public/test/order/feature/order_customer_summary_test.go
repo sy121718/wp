@@ -18,7 +18,6 @@ import (
 	ordermodel "go_wp/internal/module/order/model"
 	orderservice "go_wp/internal/module/order/service"
 
-	"go_wp/public/migrations"
 	"go_wp/public/test/support"
 )
 
@@ -31,13 +30,9 @@ const (
 // 这条只读能力不碰商品与库存，传 nil 即可（NewService 允许，且这里根本不会走到那两条依赖）。
 func newSummaryFixture(t *testing.T) (*ordermodel.OrderModel, *orderservice.Service) {
 	t.Helper()
-	db, err := support.NewPGTestDB(t)
-	if err != nil {
-		t.Skipf("本地 PostgreSQL 不可用：%v", err)
+	db := support.NewMigratedPGTestDB(t)
+	if db == nil {
 		return nil, nil
-	}
-	if err := migrations.Run(db); err != nil {
-		t.Fatalf("执行生产迁移建表失败: %v", err)
 	}
 	m := ordermodel.NewOrderModel(db)
 	svc := orderservice.NewService(

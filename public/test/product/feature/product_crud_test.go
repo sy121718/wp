@@ -21,7 +21,6 @@ import (
 	projectmodel "go_wp/internal/module/project/model"
 	projectservice "go_wp/internal/module/project/service"
 
-	"go_wp/public/migrations"
 	"go_wp/public/test/support"
 )
 
@@ -34,13 +33,9 @@ type fixture struct {
 
 func newFixture(t *testing.T) *fixture {
 	t.Helper()
-	db, err := support.NewPGTestDB(t)
-	if err != nil {
-		t.Skipf("本地 PostgreSQL 不可用：%v", err)
+	db := support.NewMigratedPGTestDB(t)
+	if db == nil {
 		return nil
-	}
-	if err := migrations.Run(db); err != nil {
-		t.Fatalf("执行生产迁移建表失败: %v", err)
 	}
 	projects := projectservice.NewService(projectmodel.NewProjectModel(db))
 	project, err := projects.Create(context.Background(), &projectdto.CreateReq{Name: "商品测试工程"})

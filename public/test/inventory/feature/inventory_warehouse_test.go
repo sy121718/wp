@@ -56,13 +56,9 @@ type invFixture struct {
 
 func newInvFixture(t *testing.T) *invFixture {
 	t.Helper()
-	db, err := support.NewPGTestDB(t)
-	if err != nil {
-		t.Skipf("本地 PostgreSQL 不可用：%v", err)
+	db := support.NewMigratedPGTestDB(t)
+	if db == nil {
 		return nil
-	}
-	if err := migrations.Run(db); err != nil {
-		t.Fatalf("执行生产迁移建表失败: %v", err)
 	}
 	// 数据种子与生产一致（迁移 103 的内置变动原因、100/104 的权限点都要在，
 	// issue #16 的「原因必须是字典里的条目」才有可用的字典）。

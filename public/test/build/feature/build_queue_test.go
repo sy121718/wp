@@ -24,20 +24,15 @@ import (
 	buildmodel "go_wp/internal/module/build/model"
 	buildservice "go_wp/internal/module/build/service"
 
-	"go_wp/public/migrations"
 	"go_wp/public/test/support"
 )
 
 // newBuildFixture 隔离 PG schema + 生产迁移建表（build_jobs 来自 init_builder_schema）。
 func newBuildFixture(t *testing.T) (*gorm.DB, *buildservice.Service) {
 	t.Helper()
-	db, err := support.NewPGTestDB(t)
-	if err != nil {
-		t.Skipf("本地 PostgreSQL 不可用：%v", err)
+	db := support.NewMigratedPGTestDB(t)
+	if db == nil {
 		return nil, nil
-	}
-	if err := migrations.Run(db); err != nil {
-		t.Fatalf("执行生产迁移失败: %v", err)
 	}
 	return db, buildservice.NewService(buildmodel.NewModel(db))
 }

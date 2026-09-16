@@ -27,7 +27,6 @@ import (
 	userhttp "go_wp/internal/module/user/inbound/http"
 	usermodel "go_wp/internal/module/user/model"
 	"go_wp/internal/templates"
-	"go_wp/public/migrations"
 	"go_wp/public/test/support"
 )
 
@@ -44,13 +43,7 @@ func newUserHTTPEnv(t *testing.T) *userHTTPEnv {
 	if err := support.SetupRedisForTest(t); err != nil {
 		t.Skipf("本地 Redis 不可用，跳过访客 HTTP 链路测试: %v", err)
 	}
-	db, err := support.NewPGTestDB(t)
-	if err != nil {
-		t.Skipf("本地 PostgreSQL 不可用，跳过访客 HTTP 链路测试: %v", err)
-	}
-	if err := migrations.Run(db); err != nil {
-		t.Fatalf("执行迁移失败: %v", err)
-	}
+	db := support.NewMigratedPGTestDB(t)
 
 	gin.SetMode(gin.TestMode)
 	router := gin.New()

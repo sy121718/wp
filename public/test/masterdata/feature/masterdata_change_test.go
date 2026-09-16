@@ -60,16 +60,12 @@ type mdFixture struct {
 // newMDFixture 建隔离 schema 并装配三个模块（接线方式与 routers.SetupRoutes 一致）。
 func newMDFixture(t *testing.T) *mdFixture {
 	t.Helper()
-	db, err := support.NewPGTestDB(t)
-	if err != nil {
-		t.Skipf("本地 PostgreSQL 不可用：%v", err)
-		return nil
-	}
-	if err := migrations.Run(db); err != nil {
-		t.Fatalf("执行生产迁移建表失败: %v", err)
-	}
+	db := support.NewMigratedPGTestDB(t)
 	if err := migrations.RunSeeds(db); err != nil {
 		t.Fatalf("执行生产数据种子失败: %v", err)
+	}
+	if db == nil {
+		return nil
 	}
 	projects := projectservice.NewService(projectmodel.NewProjectModel(db))
 	project, err := projects.Create(context.Background(), &projectdto.CreateReq{Name: "变更记录测试工程"})

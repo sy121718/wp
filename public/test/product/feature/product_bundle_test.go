@@ -47,13 +47,9 @@ type bundleFixture struct {
 
 func newBundleFixture(t *testing.T) *bundleFixture {
 	t.Helper()
-	db, err := support.NewPGTestDB(t)
-	if err != nil {
-		t.Skipf("本地 PostgreSQL 不可用：%v", err)
+	db := support.NewMigratedPGTestDB(t)
+	if db == nil {
 		return nil
-	}
-	if err := migrations.Run(db); err != nil {
-		t.Fatalf("执行生产迁移建表失败: %v", err)
 	}
 	// 内置变动原因字典（迁移 103）必须就位：库存变动只认字典里的原因。
 	if err := migrations.RunSeeds(db); err != nil {

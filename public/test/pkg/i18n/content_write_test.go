@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"go_wp/pkg/i18n"
-	"go_wp/public/migrations"
 	"go_wp/public/test/support"
 
 	"gorm.io/gorm"
@@ -26,13 +25,7 @@ import (
 // newContentWriteDB 建隔离 schema + 跑全量迁移（sys_translation 落库）。
 func newContentWriteDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	db, err := support.NewPGTestDB(t)
-	if err != nil {
-		t.Skipf("跳过：本地 PostgreSQL 不可用: %v", err)
-	}
-	if err := migrations.Run(db); err != nil {
-		t.Fatalf("迁移失败: %v", err)
-	}
+	db := support.NewMigratedPGTestDB(t)
 	return db
 }
 

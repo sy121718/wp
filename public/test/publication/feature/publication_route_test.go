@@ -10,7 +10,6 @@ import (
 	pubmodel "go_wp/internal/module/publication/model"
 	pubservice "go_wp/internal/module/publication/service"
 
-	"go_wp/public/migrations"
 	"go_wp/public/test/support"
 )
 
@@ -31,16 +30,8 @@ const (
 
 func newPublicationService(t *testing.T) *pubservice.Service {
 	t.Helper()
-	db, err := support.NewPGTestDB(t)
-	if err != nil {
-		t.Skipf("本地 PostgreSQL 不可用，跳过测试：%v", err)
-		return nil
-	}
-	// 走生产迁移建表，不手抄 DDL：手抄版本会在迁移改名/换类型后静默失配
-	// （DB-019/DB-020 把 id 换成 bigint identity、create_time 换成 create_time）。
-	if err := migrations.Run(db); err != nil {
-		t.Fatalf("执行生产迁移失败: %v", err)
-	}
+	// 表结构来自生产迁移建成的模板库（不手抄 DDL：手抄版本会在迁移改名 / 换类型后静默失配）。
+	db := support.NewMigratedPGTestDB(t)
 	// page_routes.project_id 有 FK → projects(id)，必须先落一条工程行。
 	if err := db.Exec("INSERT INTO projects (id, name, settings, create_time, update_time) VALUES (?, '站点', '{}', NOW(), NOW())", projectID).Error; err != nil {
 		t.Fatalf("准备工程失败: %v", err)

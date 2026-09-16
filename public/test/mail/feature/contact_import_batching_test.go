@@ -24,7 +24,6 @@ import (
 	mailmodel "go_wp/internal/module/mail/model"
 	mailservice "go_wp/internal/module/mail/service"
 
-	"go_wp/public/migrations"
 	"go_wp/public/test/support"
 )
 
@@ -65,14 +64,7 @@ func (c *sqlCounter) snapshot() (int, []string) {
 // importFixture 建库 + 迁移，并把 db 挂上语句计数器。
 func importFixture(t *testing.T, counter *sqlCounter) (*mailservice.Service, *mailmodel.MailModel) {
 	t.Helper()
-	db, err := support.NewPGTestDB(t)
-	if err != nil {
-		t.Skipf("本地 PostgreSQL 不可用：%v", err)
-		return nil, nil
-	}
-	if err = migrations.Run(db); err != nil {
-		t.Fatalf("执行生产迁移建表失败: %v", err)
-	}
+	db := support.NewMigratedPGTestDB(t)
 	db = db.Session(&gorm.Session{Logger: counter})
 	m := mailmodel.NewMailModel(db)
 	return mailservice.NewService(m), m

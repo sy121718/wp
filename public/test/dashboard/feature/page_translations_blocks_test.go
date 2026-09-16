@@ -31,7 +31,6 @@ import (
 	projectservice "go_wp/internal/module/project/service"
 	"go_wp/internal/templates"
 	"go_wp/pkg/i18n"
-	"go_wp/public/migrations"
 	"go_wp/public/test/support"
 
 	"github.com/gin-gonic/gin"
@@ -49,13 +48,9 @@ func newBlockTranslationEnv(t *testing.T) (*gin.Engine, *gorm.DB, string, string
 	t.Helper()
 	t.Setenv("GO_WP_ARTIFACT_ROOT", t.TempDir())
 	gin.SetMode(gin.TestMode)
-	db, err := support.NewPGTestDB(t)
-	if err != nil {
-		t.Skipf("本地 PostgreSQL 不可用，跳过测试：%v", err)
+	db := support.NewMigratedPGTestDB(t)
+	if db == nil {
 		return nil, nil, "", "", ""
-	}
-	if err := migrations.Run(db); err != nil {
-		t.Fatalf("迁移失败: %v", err)
 	}
 	projects := projectservice.NewService(projectmodel.NewProjectModel(db))
 	project, err := projects.Create(t.Context(), &projectdto.CreateReq{Name: "块内文本工作台站点"})

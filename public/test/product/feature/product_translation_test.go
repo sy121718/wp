@@ -39,7 +39,6 @@ import (
 	projectservice "go_wp/internal/module/project/service"
 	"go_wp/internal/templates"
 	"go_wp/pkg/i18n"
-	"go_wp/public/migrations"
 	"go_wp/public/test/support"
 )
 
@@ -65,13 +64,9 @@ type trFixture struct {
 func newTRFixture(t *testing.T) *trFixture {
 	t.Helper()
 	t.Setenv("GO_WP_ARTIFACT_ROOT", t.TempDir())
-	db, err := support.NewPGTestDB(t)
-	if err != nil {
-		t.Skipf("本地 PostgreSQL 不可用：%v", err)
+	db := support.NewMigratedPGTestDB(t)
+	if db == nil {
 		return nil
-	}
-	if err := migrations.Run(db); err != nil {
-		t.Fatalf("执行生产迁移建表失败: %v", err)
 	}
 	ctx := context.Background()
 	projects := projectservice.NewService(projectmodel.NewProjectModel(db))

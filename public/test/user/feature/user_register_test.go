@@ -18,7 +18,6 @@ import (
 	userdto "go_wp/internal/module/user/dto"
 	usermodel "go_wp/internal/module/user/model"
 	userservice "go_wp/internal/module/user/service"
-	"go_wp/public/migrations"
 	"go_wp/public/test/support"
 )
 
@@ -52,13 +51,9 @@ type userFixture struct {
 
 func newUserFixture(t *testing.T) *userFixture {
 	t.Helper()
-	db, err := support.NewPGTestDB(t)
-	if err != nil {
-		t.Skipf("本地 PostgreSQL 不可用：%v", err)
+	db := support.NewMigratedPGTestDB(t)
+	if db == nil {
 		return nil
-	}
-	if err := migrations.Run(db); err != nil {
-		t.Fatalf("执行生产迁移建表失败: %v", err)
 	}
 	m := usermodel.NewUserModel(db)
 	pm := usermodel.NewUserProfileModel(db)

@@ -24,7 +24,6 @@ import (
 	projectdto "go_wp/internal/module/project/dto"
 	projectmodel "go_wp/internal/module/project/model"
 	projectservice "go_wp/internal/module/project/service"
-	"go_wp/public/migrations"
 	"go_wp/public/test/support"
 )
 
@@ -33,14 +32,7 @@ const ga4DocJSON = `{"settings":{"layout":{"mode":"full"}},"root":[]}`
 
 // TestSiteGA4InjectedIntoBuiltHead 站点设置里的测量 ID 进产物 head；清空后零字节。
 func TestSiteGA4InjectedIntoBuiltHead(t *testing.T) {
-	db, err := support.NewPGTestDB(t)
-	if err != nil {
-		t.Skipf("本地 PostgreSQL 不可用：%v", err)
-		return
-	}
-	if err := migrations.Run(db); err != nil {
-		t.Fatalf("执行生产迁移建表失败: %v", err)
-	}
+	db := support.NewMigratedPGTestDB(t)
 	projects := projectservice.NewService(projectmodel.NewProjectModel(db))
 	project, err := projects.Create(context.Background(), &projectdto.CreateReq{Name: "GA4 注入测试工程"})
 	if err != nil {

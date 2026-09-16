@@ -54,16 +54,12 @@ type customerE2EEnv struct {
 
 func newCustomerE2EEnv(t *testing.T) *customerE2EEnv {
 	t.Helper()
-	db, err := support.NewPGTestDB(t)
-	if err != nil {
-		t.Skipf("本地 PostgreSQL 不可用：%v", err)
-		return nil
-	}
-	if err := migrations.Run(db); err != nil {
-		t.Fatalf("执行生产迁移建表失败: %v", err)
-	}
+	db := support.NewMigratedPGTestDB(t)
 	if err := migrations.RunSeeds(db); err != nil {
 		t.Fatalf("执行生产数据种子失败: %v", err)
+	}
+	if db == nil {
+		return nil
 	}
 
 	ctx := context.Background()

@@ -20,7 +20,6 @@ import (
 	mailmodel "go_wp/internal/module/mail/model"
 	mailservice "go_wp/internal/module/mail/service"
 
-	"go_wp/public/migrations"
 	"go_wp/public/test/support"
 )
 
@@ -32,13 +31,9 @@ type fixture struct {
 
 func newFixture(t *testing.T) *fixture {
 	t.Helper()
-	db, err := support.NewPGTestDB(t)
-	if err != nil {
-		t.Skipf("本地 PostgreSQL 不可用：%v", err)
+	db := support.NewMigratedPGTestDB(t)
+	if db == nil {
 		return nil
-	}
-	if err := migrations.Run(db); err != nil {
-		t.Fatalf("执行生产迁移建表失败: %v", err)
 	}
 	m := mailmodel.NewMailModel(db)
 	return &fixture{svc: mailservice.NewService(m), m: m, db: db}
