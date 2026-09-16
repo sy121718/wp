@@ -7,13 +7,13 @@
     "branch": "main",
     "language": "zh-CN",
     "status": "remediation-in-progress",
-    "scopeNote": "2026-09-13 出审查结论，2026-09-14 起按 P0→P7 分批落地。当前进度以 docs/audit/README.md 为准（2026-09-15：268 条中 234 条 resolved、34 条 open；high 8 / medium 16 / low 10，集中在 OSS-001/002/003/005/007、SEC-005、CQ-007、UIK-003 等）。P0 已全部收口（SEC-004 / SEC-007 / SEC-009 / TX-016 / CQ-023）。本条 summary 的 resolved/open 已同步为实测值，分维明细在 dimensions/（分批推进中的条目看其 progressNote）。",
+    "scopeNote": "2026-09-13 出审查结论，2026-09-14 起按 P0→P7 分批落地。当前进度以 docs/audit/README.md 为准（2026-09-16：268 条中 242 条 resolved、26 条 open；high 8 / medium 13 / low 5，其中 9 条按决策延后（插件生态 + SEC-005），未延后的 17 条集中在 DB-009、CQ-007、CQ-008、UIK-003/005/013、UI-015、SEC-011、VIS-014/015、OSS-018 等）。P0 已全部收口（SEC-004 / SEC-007 / SEC-009 / TX-016 / CQ-023）。本条 summary 的 resolved/open 已同步为实测值，分维明细在 dimensions/（分批推进中的条目看其 progressNote，按决策延后的看 deferredNote）。",
     "readMe": "docs/audit/README.md"
   },
   "summary": {
     "findingsTotal": 268,
-    "resolved": 234,
-    "open": 34,
+    "resolved": 242,
+    "open": 26,
     "bySeverity": {
       "critical": 16,
       "high": 58,
@@ -96,7 +96,18 @@
         "file": "dimensions/14-ui-kit-and-registry.json",
         "count": 19
       }
-    ]
+    ],
+    "openBySeverity": {
+      "high": 8,
+      "medium": 13,
+      "low": 5
+    },
+    "openByPhase": {
+      "P5": 1,
+      "P6": 4,
+      "P7": 17,
+      "P8": 4
+    }
   },
   "headline": "控制面与访问面分离、确定性构建、库存锁序这些骨架是对的。真正挡发布与开源的是：动态页编辑器断了、page/presentation 装配分裂、同步整站重建、几处资损窗口、以及「控件基座声称两端共用但产物侧几乎接不住」。",
   "critical": [

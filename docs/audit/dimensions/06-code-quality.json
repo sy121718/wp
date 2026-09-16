@@ -1391,7 +1391,8 @@
         "admin",
         "ci"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-16：门禁脚本 scripts/check-service-db-boundary.sh，两条判据：① 非 admin 模块的 service 出现 DB(ctx)/RevisionDB(ctx) 即失败（admin 的明文豁免在脚本里显式排除 —— 边界写进脚本，而不是只写在文档里靠人记）；② 任何模块的 service 直接 import 其它模块的 model/service 即失败（product 与 product/inventory 视为同一棵树，不误报）。负向验证：临时植入 cart→product/model 的引用，两条判据同时命中并打印替换指引；同树引用（inventory→product/model）验证为不报、清理后复绿。已接入 CI unit job 的 Static checks 步骤。\n顺带修掉判据② 唯一命中的真实越界：presentation/service 只为拿一个枚举常量就 import 了 contenttemplate/model，现把 TemplateRoleDetail / TemplateRoleArchive 的定义移到 contenttemplate 的 contract（真源在契约，model 转发一份供模块内引用），presentation 改为只依赖 contract。"
     },
     {
       "id": "CQ-026",

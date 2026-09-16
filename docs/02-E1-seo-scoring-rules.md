@@ -150,6 +150,24 @@ type Check struct {
 
 > 调权必须在结果里回显「本页型权重及理由」。
 
+### 5.1 实现口径与未做部分
+
+上表的页型档案在 `internal/seo/scoring` 里就是 `ProductProfile()` / `LandingProfile()` / `GuideProfile()` 三个函数，由 `ProfileFor(kind)` 统一选（生产入口唯一的选择处），`ScoreEntityPage` 是唯一入口。
+
+- **已接线**（审计 SEO-016）：商品页走 product 档案，分类页与品牌页走 landing 档案；
+  页面草稿与文章保持默认权重 —— 没有依据的页型不现造档案，`ProfileFor` 返回 nil 即默认。
+- **一致性由测试钉住**：`TestProductProfileWeightsMatchDoc` 断言商品档案与上表逐项一致，
+  `TestProfileForWiring` 断言页型 → 档案的映射，`TestScoreEntityPageEchoesProfile` 断言调权在结果里回显（本文档末尾的那条硬要求）。
+
+**未做：站点级自定义权重**（审计 SEO-023）。当前的调权粒度是「页型」，站点自己改不了 ——
+权重写在 `defaultWeights()` 与 `benchmarks.go` 的基准表里，改它要改 Go 代码重新编译。
+
+先不做站点级配置的理由：上表的数字来自 rubric 的 Weight Adjustments 表，是有出处的经验值；
+一旦开放站点自配，同一页型在不同站点的评分就不再可比，还需要配套一套「改完看什么」的界面。
+代价大于收益，直到出现真实需求为止。
+
+触发条件：出现「同一页型在不同站点该有不同权重」的实际诉求时再启动。届时的做法是把 `Profile` 变成可持久化的站点配置（含默认回落），而不是让每个站点从零配一遍。
+
 ## 6. 与开源算法印证（2026-09 调研，来源 docs/02-E §7）
 
 | 维度 | 本地 rubric | Yoast（开源 content-analysis） | RankMath（公开文档） | Lighthouse |

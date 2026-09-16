@@ -516,7 +516,7 @@
         "blocker"
       ],
       "status": "resolved",
-      "resolutionNote": "2026-09-13：.github/workflows/go-test.yml unit + PG/Redis integration job。"
+      "resolutionNote": "2026-09-16 修正：CI 文件在（unit 加 integration 两个 job），但它当时的门禁并不完整，如实记录：① unit job 只跑 5 个包路径，30 个含测试的包在 CI 里一个都不跑（internal/module 占 20），其中恰好包含迁移判据（public/migrations）、retention 目录不变量（internal/retention）、路由装配断言（internal/routers）、架构边界（internal/architecture）这些护栏；② integration job 挂着 continue-on-error: true，feature 测试跑红也不阻断；③ 该 job 的 env 写的是 DATABASE_URL，而全仓没有任何代码读它（测试基建走 libpq 的 PGHOST/PGUSER/... 与 TEST_REDIS_ADDR），且 config.yaml 被 .gitignore —— CI 里根本没有这个文件，于是测试要么回退 testcontainers 拉容器，要么静默 skip；④ 有几个用例走 SetupTestBootstrap（真实 config 加全组件装配），连的是 config.yaml 里的 wp 库，而 CI 里那是个空库。\n本次收口：unit job 改为按目录整体覆盖（pkg / internal / cmd / config / public/migrations），新增包自动纳入；integration 去掉 continue-on-error，把服务容器凭据对齐 config.yaml.example 的默认值（root/root/wp），建出测试基建要用的 wp_test 库，并先用新加的 cmd 迁移入口把 wp 建好，再跑 go test -p 4 ./...。\n验证：本地按两条命令各跑一遍 —— unit 层把所有 GOWP_ / PG 变量 / TEST_REDIS_ADDR 指向不可达端口以模拟无服务，全绿；integration 层 -p 4 ./... 149 个包 ok、零 FAIL。另以 config.yaml.example 顶替配置加 GOWP_DATABASE_PASSWORD 注入的方式实跑 migrate-only 与 public/test/feature，确认 CI 的配置准备方式确实可行。"
     },
     {
       "id": "OSS-011",
@@ -716,7 +716,7 @@
         "deployment"
       ],
       "status": "resolved",
-      "resolutionNote": "2026-09-13：config GOWP_ AutomaticEnv 环境变量覆盖 YAML。"
+      "resolutionNote": "2026-09-16 修正：原 note 称 config GOWP_ AutomaticEnv 环境变量覆盖 YAML —— 这条承诺当时并不成立。AutomaticEnv 只作用于 Get* 系列，而本项目所有组件都走 UnmarshalKey，它内部是 decode(Get(段名))，返回的是配置文件里那棵子树，环境变量不在其中。实测反例：GOWP_DATABASE_DBNAME 指向一个不存在的库，-migrate-only 照旧迁移 config.yaml 里写的那个库并成功返回（退出码 0）—— 被静默忽略，没有任何报错信号。\n本次真正修好：config.Init 在 AutomaticEnv 之外，对 envBindableKeys（database / redis 的连接项，以及 auth.session_secret / app.secret / analytics.pepper）把环境变量值并入所属顶层段再整段 Set 回去，段级 Get 命中 override，UnmarshalKey 才读得到；键在配置文件里不存在也无妨（app.secret 在 config.yaml.example 里就没有，而部署正需要注入它）。空值按未设置处理 —— 形如 VAR= 的空赋值在 shell 与 CI 里太容易意外出现。\n测试：config/config_env_test.go 三个用例按 UnmarshalKey 这条真实路径断言覆盖生效、未覆盖字段保持文件值（防整段被替换成只剩 env 字段这种更隐蔽的坏法）、空值不覆盖；用例自身隔离外部 GOWP_ 变量，否则 CI integration job 的 GOWP_DATABASE_PASSWORD 会让断言随运行环境漂移。\n顺带：config.yaml.example 里那句推荐用环境变量注入，从空承诺变成真的。"
     },
     {
       "id": "OSS-015",

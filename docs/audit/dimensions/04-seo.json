@@ -1102,7 +1102,8 @@
         "scoring",
         "configuration"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-16：按 remediation 的三项收口。① 接线随 SEO-016 已完成：ProfileFor(kind) 是页型到权重档案的唯一选择处（商品→ProductProfile，分类/品牌→LandingProfile，页面草稿与文章保持默认权重），ScoreEntityPage 是唯一入口；TestProfileForWiring / TestProductProfileWeightsMatchDoc / TestScoreEntityPageEchoesProfile 分别钉住映射、权重与文档一致、调权回显。② 文档说明各 Profile 的权重差异补齐：docs/02-E1-seo-scoring-rules.md §5 原有调权表，本次新增 §5.1 写明实现口径（哪几个函数、谁选取、被哪些测试钉住）。③ 站点级自定义权重记入 backlog 落在同一节：写明未做的理由（调权数字来自 rubric 的 Weight Adjustments 表，是有出处的经验值；开放站点自配会让同一页型在不同站点不可比，还要配套改完看什么的界面）与触发条件（出现真实诉求时把 Profile 做成可持久化的站点配置并保留默认回落）。"
     },
     {
       "id": "SEO-024",

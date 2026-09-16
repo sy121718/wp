@@ -490,7 +490,8 @@
         "workbench",
         "documentation"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-16：分工规则写进 docs/03-A-workbench.md §2.1。结论不是统一到一边，而是按需不需要控件本体分派：服务端 inspectorFieldOf 负责 schema→字段、取数（实体引用候选项要查库，客户端拿不到）与一个值加一组选项型控件（bool/select/textarea/number/classes/cssdecls）的完整渲染；复杂控件只输出 data-wb-slot 占位，由客户端 controls/*.js 就地填充（richtext/color/spacing/boxspacing/rtext/media/mediaList/dimension/collectionfield/bindingfield，逐条写明为什么必须在客户端 —— 第三方 UI 实例、多输入同字段、断点切换、白名单随节点重取）。另有一类服务端片段里根本没有的内容（repeater 手写面板、排版与动效面板、底部操作按钮）由客户端经 sectionFor/into 落进服务端渲染的 details 分组，顺序与折叠状态仍归服务端。新增字段的判据（能不能表达成一个字符串加一组选项）与同一字段不要两边各写一份的边界一并写入。"
     },
     {
       "id": "EDT-010",

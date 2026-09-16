@@ -2,12 +2,35 @@
 
 本目录为审查结论与整改进度追踪。主索引是 [audit-2026-09.json](./audit-2026-09.json)，分维明细在 [dimensions/](./dimensions/)。
 
-## 状态（2026-09-15 更新）
+## 状态（2026-09-16 更新）
 
-- **已 resolved**：234 条
-- **仍 open**：34 条（high 8 / medium 16 / low 10；按阶段 P4 0 / P5 2 / P6 10 / P7 18 / P8 4）。
+- **已 resolved**：242 条
+- **仍 open**：26 条（high 8 / medium 13 / low 5；按阶段 P5 1 / P6 4 / P7 17 / P8 4）。
   · 其中 **9 条按决策延后**（插件生态，标 `deferredNote`）：`OSS-001/002/003/004/005/007/008/019`、`SEC-005`。
-  · 仍待推进的 high 只剩 2 条：`CQ-007`（dashboard 上帝模块）、`UIK-003`（四套视觉体系并行）。
+  · 仍待推进的 17 条里 high 只剩 2 条：`CQ-007`（dashboard 上帝模块）、`UIK-003`（四套视觉体系并行）。
+
+### 2026-09-16 收口批次
+
+本批修掉 5 条（`PERF-013` / `CQ-025` / `EDT-009` / `SEO-023` / `PERF-017`），
+并**修正两条已 resolved 的结论** —— 它们此前是「文件在、门禁不生效」：
+
+- `OSS-014`（环境变量覆盖 YAML）：`AutomaticEnv` 只作用于 `Get*` 系列，
+  而全仓配置读取走 `UnmarshalKey`，环境变量被**静默忽略**（实测：`GOWP_DATABASE_DBNAME` 指向
+  一个不存在的库，`-migrate-only` 照旧迁移 config.yaml 里写的那个库并返回 0）。
+  已改为把环境变量并入所属顶层段再整段写回，并加测试按真实读取路径钉住。
+- `OSS-010`（CI）：unit job 只覆盖 5 个包路径，**30 个含测试的包一个都不跑**
+  （其中恰好是迁移判据、retention 不变量、路由装配断言这些护栏）；integration job 挂着
+  `continue-on-error`；其 `DATABASE_URL` 全仓无人读、`config.yaml` 又被 gitignore，
+  于是测试要么回退 testcontainers，要么静默 skip。已逐条收口，见该条的 resolutionNote。
+
+本轮顺带修掉的既有缺陷（不在 268 条内）：
+
+| 缺陷 | 症状 | 位置 |
+|---|---|---|
+| CI 的数据库配置是死配置 | `DATABASE_URL` 全仓零引用（测试基建走 libpq 的 PGHOST/PGUSER/… 与 `TEST_REDIS_ADDR`）；服务容器凭据与 `config.yaml.example` 的默认值不一致，只能靠容器回退兜底 | `.github/workflows/go-test.yml` |
+| 没有独立的迁移入口 | 「把库迁好」与「启动服务」绑在一起，CI 与部署只能先起实例再杀掉，失败原因混在启动日志里 | `cmd/main.go` 新增 `-migrate-only`；`Makefile` 的 `migrate` 目标随之改成真跑迁移 |
+| presentation 为拿一个枚举常量 import 了对方 model | 跨模块依赖数据访问包，与「只用 contract 与不可变 dto」相悖 | `contenttemplate/contract`（`TemplateRole*` 常量上移，model 转发） |
+| `cmd/` 不在 gofmt lint 范围 | `make lint` 只扫 internal/pkg/public，`cmd/main.go` 长期不合规 | `Makefile` 的 `lint` / `test-short` / `check` 三个目标 |
 - 批量标记脚本：`scripts/audit-mark-resolved.py`（标记新 resolved）、`scripts/audit-fix-note.py`（覆盖已 resolved 条目的结论修订）
 
 ## 怎么读
@@ -56,7 +79,7 @@ P0 收口过程中撞到一批**不在 268 条内**的缺陷：它们让全仓�
 | `ReplaceArtifactContent` 在同一事务里**先写闭包、后写被引用的内容对象** | 顺序违反外键：多语言第二次发布（`EnsureRecord` 的同版本替换分支）必挂 23503 | `internal/module/artifact/model/artifact_model.go`（两段对调） |
 | artifact/unit 的 AutoMigrate 表缺生产约束（`UNIQUE (provider, object_key)` 与两条外键），两个 first-writer-wins 用例把「产物级 object_key」当成正确语义钉住 | 测试跑在一套**不存在约束**的表上，真实缺陷被静默放过（同属「手抄表掩盖生产约束」这一族） | `public/test/artifact/unit/helper_test.go`、`content_object_test.go` |
 | 访客会话台账落库（`user_sessions`）：会话状态本来就在 Redis，台账只是设备视图的第二份真源 | 要额外维护保留期声明 + 每日清理任务 + 167 的部分索引；改为一律 Redis（索引 ZSET `gwp:userauth:user:<userID>:sess`）后整表删除，顺带消掉「Redis 存明文令牌」的隐患 | `public/migrations/203_drop_unused_user_tables.sql`、`internal/module/user/service/user_session*.go` |
-| 同类隐患的存量面：28 个测试文件共 109 条手抄 `CREATE TABLE`（`*/unit` 下的迁移机制/分区/插件用例属于设计使然，风险集中在 `{admin,artifact,dashboard,media,navigation,page,project}/feature`） | 手抄表与生产 schema 静默分叉；DB-019/020 的后续批次继续改列名与主键类型时，这些包会集体变红，且失败信息看起来像「迁移把库改坏了」 | `public/test/*/feature/*_test.go`（建议改为 `migrations.Run` + 只补必要的父行，如 `projects`） |
+| 同类隐患的存量面：28 个测试文件共 109 条手抄 `CREATE TABLE`（`*/unit` 下的迁移机制/分区/插件用例属于设计使然，风险集中在 `{admin,artifact,dashboard,media,navigation,page,project}/feature`） | 手抄表与生产 schema 静默分叉；DB-019/020 的后续批次继续改列名与主键类型时，这些包会集体变红，且失败信息看起来像「迁移把库改坏了」 | `public/test/*/feature/*_test.go`（建议改为 `migrations.Run` + 只补必要的父行，如 `projects`）。**2026-09-16 复核：存量已降到 10 个文件 20 条**，剩余集中在 `*/unit` 与 `public/migrations` 下有意构造旧 schema 的用例 |
 ## 高风险项收口情况（2026-09-14）
 
 **DB-004 分区**：三张只增表（`page_views` / `inventory_stock_movements` / `master_data_changes`）
@@ -94,12 +117,12 @@ P0 收口过程中撞到一批**不在 268 条内**的缺陷：它们让全仓�
 |---|---|---|---|---|
 | `page_views` | `viewed_at` | 工程可配（`analytics_retention_days`） | analytics 调度 | IDX-001 起就有 |
 | `page_views_daily` | `day` | 不清理（每天一行 × 路径数，体量远小于明细） | analytics 每小时汇总 | 161 建表、170 扩为汇总口径（DB-005/IDX-010）；明细清理后由重算自动收敛 |
-| `page_revisions` | `created_at` | 90 天 **且** 每页保留最近 20 个 | 保存草稿时收敛 + page 每日任务 | 两个条件同时满足才删 |
-| `page_artifacts` | `created_at` | 30 天（无指针引用才回收） | page 每日任务 | 顺带回收磁盘产物 |
+| `page_revisions` | `create_time` | 90 天 **且** 每页保留最近 20 个 | 保存草稿时收敛 + page 每日任务 | 两个条件同时满足才删 |
+| `page_artifacts` | `create_time` | 30 天（无指针引用才回收） | page 每日任务 | 顺带回收磁盘产物 |
 | `mail_campaign_events` | `create_time` | 180 天 | mail 每日任务 | **先固化汇总**（`open_count` / `click_count`）再删明细 |
 | `mail_logs` | `create_time` | 180 天 | mail 每日任务 | 与事件明细同一口径 |
 | `mail_automation_node_logs` | `create_time` | 180 天 | mail 每日任务 | 自动化逐节点一行，启用后增长最快 |
-| `content_objects` | `created_at` | 30 天（无任何现存产物引用才回收） | page 每日任务 | 与产物 GC 同一趟：先删产物再清孤儿对象（IDX-016） |
+| `content_objects` | `create_time` | 30 天（无任何现存产物引用才回收） | page 每日任务 | 与产物 GC 同一趟：先删产物再清孤儿对象（IDX-016） |
 | `artifacts` 磁盘目录 | 随产物行 | 30 天 | page 每日任务 | 内容寻址目录，与产物行同批删除 |
 
 **声明为不清理的表**（完整理由在 `catalog.go`）：`inventory_stock_movements` 与

@@ -662,7 +662,8 @@
         "dead-code",
         "bug"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-16：确认后删除 ListVariantIDs。product_variants 没有 project_id 列（081 建表只有 product_id；product_tag.go:454 的注释自己也写明了这点），该方法一被调用就是 42703 列不存在；全仓零调用方 —— issue #32 的库存投影实际走 product_resp.go 的批量取真源汇总，与它无关。属于埋着的地雷而不是待接线能力，按 remediation 的确认无调用方后删除处理。将来真需要按工程列变体，实现为 JOIN products（审计已给出这个方向）。"
     },
     {
       "id": "PERF-014",
@@ -850,7 +851,8 @@
         "testing",
         "developer-experience"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-16：实际解法与审计建议不同，按现状收口。① CI 分两个 job 已落地：go-test.yml 现在就是 unit（无外部服务，跑除 public/test 外的全部包）加 integration（真 PG/Redis，跑 ./...）两层。② 依赖 PG/Redis 的测试加 skip 用项目既有机制实现：测试基建返回 ErrEnvUnavailable / ErrPGUnavailable，调用方 t.Skip —— 不走 testing.Short()，因为分层判据是能不能连上服务而不是命令行开关，本地与 CI 同一套。③ 最慢的包已解决：user feature 那 21 秒来自每个用例重跑全部迁移，模板库方案（CREATE DATABASE ... TEMPLATE）把它降到约 65ms/用例，全量从串行 966s 降到 -p 16 约 65s。④ 未做的一项如实记录：time.Sleep 没有逐处改为条件轮询，当前没有观测到它造成的不稳定，不作为收口条件。"
     },
     {
       "id": "PERF-018",

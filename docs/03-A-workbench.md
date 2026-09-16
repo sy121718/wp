@@ -67,6 +67,49 @@ Node 新字段均过白名单后持久化，编译输出零影响。
 
 后端 AST/编译契约（§1）始终有效；前端以 ES modules + HTMX 为主路径（见 `docs/09-session-handoff.md` §3）。
 
+### 2.1 检查器控件的双轨分工（审计 EDT-009）
+
+检查器面板的字段来自两个渲染来源：服务端 `inspector_handle.go` 出片段，
+客户端 `methods/controls/*.js` 出控件本体。两种来源并存是既成事实，
+**规则不是「统一到一边」，而是「按需不需要控件本体分派」** —— 写在这里，
+免得每加一个字段都重新争论一次。
+
+**服务端负责**（`inspectorFieldOf`）：
+
+- 把组件 `ct` 标签声明的 schema 转成字段（label / min / max / step / placeholder）；
+- **取数**：实体引用的候选项要查库（`entityRefInspectorOptions` 按工程与实体类型取），
+  这一层客户端拿不到，必须服务端做；
+- **判型并出完整控件**：`bool` / `select` / `textarea` / `number` / `classes` / `cssdecls` —— 它们的形态是「一个值 + 一组选项」，
+  服务端直接渲染即可。
+
+**客户端负责**（`schemaField` / `fillInspectorSlots`，见 `controls/` 下各文件）：
+服务端对复杂控件只输出 `data-wb-slot` 占位，客户端按 slot/kind 就地填充 ——
+这样既保留了服务端「知道有哪些字段、什么顺序、什么分组」的权威，
+又不用把第三方 UI 实例的初始化塞进 Go 模板。
+
+| Slot / kind | 控件 | 为什么必须在客户端 |
+|---|---|---|
+| `richtext` | Trix | 第三方编辑器实例（`core.text` 的 plaintext 模式回退多行输入） |
+| `color` | 取色器 | 需要调色板 UI 与即时预览 |
+| `spacing` / `boxspacing` / `margin` | 四向输入 + 联动锁 | 一个字段对应多个输入，交给模板反而更难维护 |
+| `rtext` | 三端响应式输入 | 要在断点之间切换同一字段 |
+| `media` / `mediaList` | 媒体库选择器 | 要打开媒体库、支持多选与排序 |
+| `dimension` | 带单位数值 | 数值与单位分离 |
+| `collectionfield` / `bindingfield` | 白名单下拉 | 选项依赖当前节点的「内容集合」，随节点变化要重取；手填会绕过白名单 |
+
+另有一类**服务端片段里根本没有**的内容，由客户端整体补上（`renderInspectorExtras`）：
+repeater 类手写面板（list / infobox / faq / social / nav / marquee / gallery）、
+排版与动效面板、以及面板底部的「复制组件 / 粘贴样式」按钮。
+它们经 `sectionFor()` / `into()` 落进**服务端渲染的** `<details>` 分组里，
+按 `data-wb-section` 找容器、找不到才新建 —— 顺序与折叠状态因此仍由服务端决定。
+
+**新增字段时的判据**：字段值能不能表达成「一个字符串 + 一组选项」？
+能 → 服务端出完整控件；需要多输入、第三方 UI 实例、跨字段联动或异步取数 → 服务端只出 slot。
+两种都做不算违规，但**同一个字段不要两边各写一份**：slot 为空即服务端负责，客户端不要再接管。
+
+外观一致性由 `workbench.css` 的字段容器类与客户端控件共同保证，
+新增控件时沿用既有类名，不要另起一套。
+
 ## 3. 实现位置
 
 | 文件 | 内容 |
