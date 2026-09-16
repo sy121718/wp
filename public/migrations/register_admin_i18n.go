@@ -752,4 +752,29 @@ func registerAdminI18nSeedsAndLatest() {
 			"WHERE lang = 'zh-CN' AND item_key IN ('admin.seo.eyebrow.visibility', 'admin.seo.title', 'admin.seo.subtitle', 'admin.seo.label.project', 'admin.seo.action.view', 'admin.seo.err.project_list', 'admin.seo.eyebrow.issues', 'admin.seo.audit.title', 'admin.seo.audit.intro', 'admin.seo.audit.run', 'admin.seo.audit.placeholder', 'admin.seo.audit.no_permission', 'admin.seo.paths.eyebrow', 'admin.seo.paths.title', 'admin.seo.paths.error', 'admin.seo.paths.col.path', 'admin.seo.paths.col.views', 'admin.seo.paths.col.visitors', 'admin.seo.paths.empty', 'admin.seo.sources.eyebrow', 'admin.seo.sources.title', 'admin.seo.sources.unavailable', 'admin.seo.site_files.eyebrow', 'admin.seo.site_files.title', 'admin.seo.site_files.unavailable', 'admin.seo.external.eyebrow', 'admin.seo.external.title', 'admin.seo.external.unavailable', 'admin.seo.audit.loading', 'admin.seo.audit.request_failed', 'admin.seo.audit.clean_lead', 'admin.seo.audit.clean_tail', 'admin.seo.audit.issues_lead', 'admin.seo.audit.issues_mid', 'admin.seo.audit.issues_tail', 'admin.seo.audit.col.level', 'admin.seo.audit.col.path', 'admin.seo.audit.col.issue')",
 		SQL: mustSQL("217_i18n_seed_admin_seo.sql"),
 	})
+
+	// 218：重定向管理权限点与超管策略（审计 SEO-025）。
+	// 判定把 4 个权限点代码写进 SQL 字面量：Seed 的 ConditionSQL 不接收参数，
+	// 且用 LIKE 'page:redirect_%' 会被将来同前缀的权限点顺带满足（本批就被静默跳过）。
+	// 三张表（sys_permission / sys_casbin_rule / sys_menus）写在同一个 seed 里：
+	// 权限点与超管策略分两批落会出现「接口上线但超管也点不动」的空窗。
+	registerSeed(Seed{
+		Version:   "218-page-redirect-permissions",
+		TableName: "sys_permission",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 4 THEN 1 ELSE 0 END FROM sys_permission " +
+			"WHERE permission_code IN ('page:redirect_view', 'page:redirect_create', " +
+			"'page:redirect_delete', 'page:redirect_merge')",
+		SQL: mustSQL("218_page_redirect_permissions.sql"),
+	})
+
+	// 219：重定向管理页文案词条（60 个 key × 2 语言）。
+	// 判据按本批自己的 key 全集合枚举计数：前缀 LIKE 'admin.redirect.%' 会被将来
+	// 同前缀的词条满足，本批就被静默跳过了。
+	registerSeed(Seed{
+		Version:   "219-page-redirect-i18n",
+		TableName: "sys_i18n",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 60 THEN 1 ELSE 0 END FROM sys_i18n " +
+			"WHERE lang = 'zh-CN' AND item_key IN ('admin.redirect.title', 'admin.redirect.back', 'admin.redirect.intro.lead', 'admin.redirect.intro.q1', 'admin.redirect.intro.conn1', 'admin.redirect.intro.q2', 'admin.redirect.intro.conn2', 'admin.redirect.intro.q3', 'admin.redirect.intro.tail', 'admin.redirect.intro2.lead', 'admin.redirect.intro2.strong', 'admin.redirect.intro2.tail', 'admin.redirect.label.project', 'admin.redirect.no_project', 'admin.redirect.overview.title', 'admin.redirect.stat.total', 'admin.redirect.stat.effective', 'admin.redirect.stat.multihop', 'admin.redirect.stat.loop', 'admin.redirect.chain.notice', 'admin.redirect.loop.notice', 'admin.redirect.create.title', 'admin.redirect.create.hint.lead', 'admin.redirect.create.hint.strong', 'admin.redirect.create.hint.tail', 'admin.redirect.create.source', 'admin.redirect.create.arrow', 'admin.redirect.create.target', 'admin.redirect.create.submit', 'admin.redirect.list.title', 'admin.redirect.list.aria', 'admin.redirect.empty', 'admin.redirect.col.source', 'admin.redirect.col.target', 'admin.redirect.col.status', 'admin.redirect.col.owner', 'admin.redirect.col.updated', 'admin.redirect.col.actions', 'admin.redirect.badge.multihop', 'admin.redirect.target.none', 'admin.redirect.badge.loop', 'admin.redirect.badge.effective', 'admin.redirect.badge.inactive', 'admin.redirect.owner.page', 'admin.redirect.owner.presentation', 'admin.redirect.owner.unknown', 'admin.redirect.action.merge', 'admin.redirect.action.delete', 'admin.redirect.pick_project', 'admin.redirect.msg.delete_confirm', 'admin.redirect.err.occupied', 'admin.redirect.err.target_missing', 'admin.redirect.err.loop', 'admin.redirect.err.not_found', 'admin.redirect.err.unavailable', 'admin.redirect.err.invalid', 'admin.redirect.err.internal', 'admin.redirect.ok.created', 'admin.redirect.ok.deleted', 'admin.redirect.ok.merged')",
+		SQL: mustSQL("219_i18n_seed_admin_redirects.sql"),
+	})
 }

@@ -32,4 +32,13 @@ var (
 	ErrNoStagedArtifact     = errors.New(pageenums.ErrNoStagedArtifact)
 	ErrRollbackTargetMiss   = errors.New(pageenums.ErrRollbackTargetMiss)
 	ErrRebuildRequired      = errors.New(pageenums.ErrRebuildRequired)
+
+	// 重定向管理（审计 SEO-025）。ErrRedirectUnavailable 覆盖「装配期未注入路由契约」
+	// 这一种明确异常：此时新增/删除重定向只会产生「线上生效但账上没有」的半成品，
+	// 宁可显式失败也不静默跳过。
+	ErrRedirectUnavailable = errors.New(pageenums.ErrRedirectUnavailable)
+	ErrRedirectNotFound    = errors.New(pageenums.ErrRedirectNotFound)
+	ErrRedirectOccupied    = errors.New(pageenums.ErrRedirectOccupied)
+	ErrRedirectTargetMiss  = errors.New(pageenums.ErrRedirectTargetMiss)
+	ErrRedirectLoop        = errors.New(pageenums.ErrRedirectLoop)
 )

@@ -32,6 +32,15 @@ type (
 	SiteSlotUnbindReq = pagedto.SiteSlotUnbindReq
 	SiteSlotListResp  = pagedto.SiteSlotListResp
 	SiteSlotItem      = pagedto.SiteSlotItem
+
+	// 重定向管理（审计 SEO-025）。
+	RedirectListReq       = pagedto.RedirectListReq
+	RedirectListResp      = pagedto.RedirectListResp
+	RedirectItem          = pagedto.RedirectItem
+	RedirectCreateReq     = pagedto.RedirectCreateReq
+	RedirectDeleteReq     = pagedto.RedirectDeleteReq
+	RedirectMergeReq      = pagedto.RedirectMergeReq
+	RedirectProjectOption = pagedto.RedirectProjectOption
 )
 
 // SitePageResolver 系统页面槽位解析能力（构建期与片段层消费的**只读**面）。
@@ -167,4 +176,18 @@ type PageService interface {
 	ReattachProjectPagesToTheme(ctx context.Context, projectID, themeID string) error
 	// ReskinProjectForTheme 激活主题后的整站换皮（转挂 + 刷新快照 + 标记 stale，同一事务）。
 	ReskinProjectForTheme(ctx context.Context, projectID, themeID string, theme, structure json.RawMessage) error
+
+	// ---- 重定向管理（审计 SEO-025）----
+	//
+	// 改 URL 留下的 301 此前只有「生效」这一半：产物与中间件都在，但没有界面能看见
+	// 有哪些重定向、也无法手动增删。下面四条是管理页的完整能力面。
+
+	// ListRedirects 列出工程下全部重定向（含未生效条目、多跳与成环标记）。
+	ListRedirects(ctx context.Context, req *pagedto.RedirectListReq) (res *pagedto.RedirectListResp, err error)
+	// CreateRedirect 手动新增重定向：源路径须空闲、目标须已激活、且不得成环。
+	CreateRedirect(ctx context.Context, req *pagedto.RedirectCreateReq) (res *pagedto.RedirectItem, err error)
+	// DeleteRedirect 删除一条重定向（解除访问面激活 + 清占用账）。
+	DeleteRedirect(ctx context.Context, req *pagedto.RedirectDeleteReq) (err error)
+	// MergeRedirectChain 把多跳链合并为直达（A→B、B→C 合成 A→C）。
+	MergeRedirectChain(ctx context.Context, req *pagedto.RedirectMergeReq) (res *pagedto.RedirectItem, err error)
 }

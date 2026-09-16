@@ -1,0 +1,202 @@
+{* admin/page_redirects.html — 重定向管理（审计 SEO-025）。 *}
+{* 为什么单独成页：改 URL 可以勾「保留旧链接」，系统会落一份 redirect.json 并由 *}
+{* SiteRedirectMiddleware 生效，但此前没有任何地方能看见这些 301，也无法手动增删。 *}
+{* 本页把「当前有哪些重定向、指向哪、是否成链成环」摊开，并给出增删与一键合并。 *}
+{* 写法约束：注释一律用 Jet 注释（花括号加星号，见本文件其余注释的写法）—— HTML 与 JS
+   注释里的中文会被 i18n 门禁算成「未 key 文案」，注释里也不要再写 Jet 注释的字面形式，
+   否则门禁脚本的非贪婪匹配会在那里提前收尾，把后半句当正文统计。 *}
+{* range 内不读外层 map（Jet 只在块顶部存变量才可靠），故先把用到的键全部存成变量。 *}
+{* 页面不继承 layout.html：本页挂在 /api 路由组下（见 page_redirect_handle.go 的说明）， *}
+{* 拿不到侧栏导航所需的 NavGroups，故自带最小外壳与返回后台的链接。 *}
+{{tr := .["t"]}}
+{{pagePath := .PagePath}}
+{{csrfToken := .["csrf_token"]}}
+{{selectedProject := .["SelectedProject"]}}
+{{okKey := .OkKey}}
+{{errKey := .ErrKey}}
+{{projects := .Projects}}
+{{items := .Items}}
+{{lang := .["lang"]}}
+<!DOCTYPE html>
+<html lang="{{lang}}">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="{{csrfToken}}">
+    <title>{{ .Title }} — go_wp {{tr("shell.brand", "管理后台")}}</title>
+    <link rel="stylesheet" href="/static/css/theme.css">
+    <link rel="stylesheet" href="/static/css/ui.css">
+</head>
+<body class="sidebar-collapsed" data-redirect-page
+      data-msg-delete-confirm="{{tr("admin.redirect.msg.delete_confirm", "删除这条重定向？旧路径将直接返回 404（可以再手动加回来）。")}}">
+<div class="admin-layout">
+    <main class="admin-content">
+        <div class="stack site-slots-page">
+            <section class="card card-body">
+                <div class="action-row">
+                    <h2>{{tr("admin.redirect.title", "重定向管理")}}</h2>
+                    <a class="btn btn-ghost" href="/admin/pages">{{tr("admin.redirect.back", "返回后台")}}</a>
+                </div>
+                <p class="hint">
+                    {{tr("admin.redirect.intro.lead", "这一页回答三个问题：")}}
+                    <strong>{{tr("admin.redirect.intro.q1", "线上现在有哪些 301")}}</strong>{{tr("admin.redirect.intro.conn1", "、")}}
+                    <strong>{{tr("admin.redirect.intro.q2", "它们指向哪里")}}</strong>{{tr("admin.redirect.intro.conn2", "、")}}
+                    <strong>{{tr("admin.redirect.intro.q3", "有没有该清理的")}}</strong>{{tr("admin.redirect.intro.tail", "。")}}
+                </p>
+                <p class="hint">
+                    {{tr("admin.redirect.intro2.lead", "条目有两个来源：改页面 URL 时勾了「保留旧链接」留下的重定向，以及下面手动新增的。")}}
+                    <strong>{{tr("admin.redirect.intro2.strong", "删除一条重定向不会删除任何页面或产物")}}</strong>
+                    {{tr("admin.redirect.intro2.tail", "，只让那个旧路径不再跳转（访客会看到 404）。")}}
+                </p>
+                {{if okKey != ""}}
+                <p class="badge badge-success">{{ .["t"](okKey, "操作完成")}}</p>
+                {{end}}
+                {{if errKey != ""}}
+                <p class="badge badge-danger">{{ .["t"](errKey, "操作未完成")}}</p>
+                {{end}}
+                <form method="get" action="{{pagePath}}" class="form-inline">
+                    <label class="sr-only" for="project-select">{{tr("admin.redirect.label.project", "站点")}}</label>
+                    <select class="form-select" id="project-select" name="project" onchange="this.form.submit()">
+                        {{range _, p := projects}}
+                        <option value="{{p.ID}}" {{if p.ID == selectedProject}}selected{{end}}>{{p.Name}}</option>
+                        {{end}}
+                    </select>
+                </form>
+                {{if len(projects) == 0}}
+                <p class="hint">{{tr("admin.redirect.no_project", "还没有站点工程 —— 先去页面管理建一个工程，重定向是挂在工程下的。")}}</p>
+                {{end}}
+            </section>
+
+            {{if selectedProject != ""}}
+            <section class="card card-body">
+                <h2>{{tr("admin.redirect.overview.title", "概览")}}</h2>
+                <div class="action-row">
+                    <span class="badge badge-mute">{{tr("admin.redirect.stat.total", "重定向")}} {{.Total}}</span>
+                    <span class="badge badge-mute">{{tr("admin.redirect.stat.effective", "已生效")}} {{.EffectiveCount}}</span>
+                    <span class="badge {{if .MultiHopCount > 0}}badge-warning{{else}}badge-mute{{end}}">{{tr("admin.redirect.stat.multihop", "多跳")}} {{.MultiHopCount}}</span>
+                    <span class="badge {{if .LoopCount > 0}}badge-danger{{else}}badge-mute{{end}}">{{tr("admin.redirect.stat.loop", "成环")}} {{.LoopCount}}</span>
+                </div>
+                {{if .MultiHopCount > 0}}
+                <p class="hint">{{tr("admin.redirect.chain.notice", "检测到多跳链：A 到 B、B 再到 C 会让访客多跳一次，点该行的「合并」让它直达终点。")}}</p>
+                {{end}}
+                {{if .LoopCount > 0}}
+                <p class="hint">{{tr("admin.redirect.loop.notice", "有重定向处在环里（互相指向），访客会撞上「重定向次数过多」：请删除或修正其中一条。")}}</p>
+                {{end}}
+            </section>
+
+            <section class="card card-body">
+                <h2>{{tr("admin.redirect.create.title", "手动新增")}}</h2>
+                <p class="hint">
+                    {{tr("admin.redirect.create.hint.lead", "源路径是访客访问的地址（营销短链或旧路径），目标路径必须是")}}
+                    <strong>{{tr("admin.redirect.create.hint.strong", "站内已发布")}}</strong>
+                    {{tr("admin.redirect.create.hint.tail", "的路径。源路径已被占用、目标不存在、或会与现有重定向成环时，系统会拒绝并说明原因。")}}
+                </p>
+                <form method="post" action="{{pagePath}}/create" class="form-inline">
+                    <input type="hidden" name="csrf_token" value="{{csrfToken}}">
+                    <input type="hidden" name="project" value="{{selectedProject}}">
+                    <label class="sr-only" for="source-path">{{tr("admin.redirect.create.source", "源路径")}}</label>
+                    <input class="form-input" id="source-path" name="sourcePath" placeholder="/promo/spring" required>
+                    <span class="hint">{{tr("admin.redirect.create.arrow", "跳转到")}}</span>
+                    <label class="sr-only" for="target-path">{{tr("admin.redirect.create.target", "目标路径")}}</label>
+                    <input class="form-input" id="target-path" name="targetPath" placeholder="/products" required>
+                    <button type="submit" class="btn btn-primary">{{tr("admin.redirect.create.submit", "新增重定向")}}</button>
+                </form>
+            </section>
+
+            <section class="card card-body">
+                <h2>{{tr("admin.redirect.list.title", "当前重定向")}}</h2>
+                {{if len(items) == 0}}
+                <p class="hint">{{tr("admin.redirect.empty", "当前站点还没有重定向 —— 上面新增一条，或在页面里改 URL 时勾选「保留旧链接」。")}}</p>
+                {{else}}
+                <div class="table-wrap" tabindex="0" role="region" aria-label="{{tr("admin.redirect.list.aria", "重定向列表")}}">
+                    <table class="table">
+                        <thead>
+                        <tr>
+                            <th>{{tr("admin.redirect.col.source", "源路径")}}</th>
+                            <th>{{tr("admin.redirect.col.target", "目标路径")}}</th>
+                            <th>{{tr("admin.redirect.col.status", "状态")}}</th>
+                            <th>{{tr("admin.redirect.col.owner", "归属")}}</th>
+                            <th>{{tr("admin.redirect.col.updated", "更新时间")}}</th>
+                            <th>{{tr("admin.redirect.col.actions", "操作")}}</th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        {{range _, it := items}}
+                        <tr>
+                            <td><code>{{it.SourcePath}}</code></td>
+                            <td>
+                                {{if it.Effective}}
+                                <a href="/site{{it.TargetPath}}" target="_blank" rel="noopener"><code>{{it.TargetPath}}</code></a>
+                                {{if it.MultiHop}}
+                                <span class="badge badge-warning">{{tr("admin.redirect.badge.multihop", "多跳")}} → <code>{{it.FinalPath}}</code></span>
+                                {{end}}
+                                {{else}}
+                                <span class="hint">{{tr("admin.redirect.target.none", "访问面上没有重定向产物")}}</span>
+                                {{end}}
+                            </td>
+                            <td>
+                                {{if it.Loop}}
+                                <span class="badge badge-danger">{{tr("admin.redirect.badge.loop", "成环")}}</span>
+                                {{else if it.Effective}}
+                                <span class="badge badge-success">{{tr("admin.redirect.badge.effective", "生效")}} {{it.StatusCode}}</span>
+                                {{else}}
+                                <span class="badge badge-warning">{{tr("admin.redirect.badge.inactive", "未生效")}}</span>
+                                {{end}}
+                            </td>
+                            <td>
+                                {{if it.OwnerKind == "page"}}
+                                {{tr("admin.redirect.owner.page", "页面")}} <code>{{it.OwnerTitle}}</code>
+                                {{else if it.OwnerKind == "presentation"}}
+                                {{tr("admin.redirect.owner.presentation", "自动发布实例")}}
+                                {{else}}
+                                {{tr("admin.redirect.owner.unknown", "未知归属")}}
+                                {{end}}
+                            </td>
+                            <td>{{it.UpdatedAt}}</td>
+                            <td>
+                                <div class="action-row">
+                                    {{if it.MultiHop}}
+                                    <form method="post" action="{{pagePath}}/merge" class="inline-form">
+                                        <input type="hidden" name="csrf_token" value="{{csrfToken}}">
+                                        <input type="hidden" name="project" value="{{selectedProject}}">
+                                        <input type="hidden" name="path" value="{{it.SourcePath}}">
+                                        <button type="submit" class="btn btn-ghost">{{tr("admin.redirect.action.merge", "合并")}}</button>
+                                    </form>
+                                    {{end}}
+                                    <form method="post" action="{{pagePath}}/delete" class="inline-form" data-action="delete">
+                                        <input type="hidden" name="csrf_token" value="{{csrfToken}}">
+                                        <input type="hidden" name="project" value="{{selectedProject}}">
+                                        <input type="hidden" name="path" value="{{it.SourcePath}}">
+                                        <button type="submit" class="btn btn-ghost">{{tr("admin.redirect.action.delete", "删除")}}</button>
+                                    </form>
+                                </div>
+                            </td>
+                        </tr>
+                        {{end}}
+                        </tbody>
+                    </table>
+                </div>
+                {{end}}
+            </section>
+            {{else}}
+            <section class="card card-body">
+                <p class="hint">{{tr("admin.redirect.pick_project", "先在上面选一个站点工程。")}}</p>
+            </section>
+            {{end}}
+        </div>
+    </main>
+</div>
+<script>
+(function () {
+    var root = document.querySelector('[data-redirect-page]');
+    if (!root) { return; }
+    var msg = root.getAttribute('data-msg-delete-confirm') || '';
+    root.addEventListener('submit', function (ev) {
+        var form = ev.target;
+        if (!form || !form.matches('form[data-action="delete"]')) { return; }
+        if (msg && !window.confirm(msg)) { ev.preventDefault(); }
+    });
+})();
+</script>
+</body>
+</html>

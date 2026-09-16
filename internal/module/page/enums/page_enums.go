@@ -25,6 +25,13 @@ const (
 	// 系统页面槽位（BIZ-1）。
 	ErrInvalidSlot  = "ErrInvalidSlot"  // 槽位键不在白名单内
 	ErrSlotPageMiss = "ErrSlotPageMiss" // 槽位要绑的页面不存在或不属于本工程
+
+	// 重定向管理（审计 SEO-025）。
+	ErrRedirectUnavailable = "ErrRedirectUnavailable" // 路由能力未接入，无法管理重定向
+	ErrRedirectNotFound    = "ErrRedirectNotFound"    // 这条重定向不存在
+	ErrRedirectOccupied    = "ErrRedirectOccupied"    // 源路径已被占用
+	ErrRedirectTargetMiss  = "ErrRedirectTargetMiss"  // 目标路径不存在或未激活
+	ErrRedirectLoop        = "ErrRedirectLoop"        // 重定向成环
 )
 
 const (
@@ -39,6 +46,9 @@ const (
 	MsgURLUpdated      = "MsgURLUpdated"      // 访问路径已更新
 	MsgSiteSlotBound   = "MsgSiteSlotBound"   // 系统页面已绑定
 	MsgSiteSlotUnbound = "MsgSiteSlotUnbound" // 系统页面已解绑
+	MsgRedirectCreated = "MsgRedirectCreated" // 重定向已新增
+	MsgRedirectDeleted = "MsgRedirectDeleted" // 重定向已删除
+	MsgRedirectMerged  = "MsgRedirectMerged"  // 重定向链已合并
 )
 
 // 系统页面槽位：把「结算页是哪一页」这类事实固定下来（BIZ-1）。

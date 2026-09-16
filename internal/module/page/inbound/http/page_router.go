@@ -48,6 +48,13 @@ func SetupPageRoutes(rg *gin.RouterGroup, db *gorm.DB,
 	g.POST("/publish", handle.Publish)
 	g.POST("/rollback", handle.Rollback)
 	g.POST("/url/update", handle.UpdateURL)
+	// 重定向管理（审计 SEO-025）：改 URL 留下的旧路径 301 此前只能生效、不能查看与清理。
+	// 页面路由同样挂在本组：page 模块只拿到 authorizedAPI 这一个装配好的组，
+	// 挂这里可让 Session / CSRF / Casbin 三层链与 API 完全一致（不改 routes.go）。
+	g.GET("/redirect", handle.RedirectPage)
+	g.POST("/redirect/create", handle.RedirectCreate)
+	g.POST("/redirect/delete", handle.RedirectDelete)
+	g.POST("/redirect/merge", handle.RedirectMerge)
 	// 系统页面槽位（BIZ-1）：把「结算页是哪一页」这类事实固定下来，供链接生成与跳转使用。
 	g.GET("/site-slot/list", handle.ListSiteSlots)
 	g.POST("/site-slot/bind", handle.BindSiteSlot)
