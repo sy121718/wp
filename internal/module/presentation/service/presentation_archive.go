@@ -15,7 +15,7 @@ import (
 	"errors"
 	"strings"
 
-	"go_wp/internal/module/contenttemplate/model"
+	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
 	presentationdto "go_wp/internal/module/presentation/dto"
 	presentationenums "go_wp/internal/module/presentation/enums"
 )
@@ -46,7 +46,7 @@ func (s *Service) EnsureArchiveInstance(ctx context.Context, req *presentationdt
 	if s.templates == nil {
 		return &presentationdto.EnsureArchiveResp{Skipped: "模板契约未装配"}, nil
 	}
-	tpl, terr := s.templates.ResolveTemplateByRole(ctx, req.EntityType, contenttemplatemodel.TemplateRoleArchive)
+	tpl, terr := s.templates.ResolveTemplateByRole(ctx, req.EntityType, contenttemplatecontract.TemplateRoleArchive)
 	if terr != nil {
 		// 没有归档模板是最常见的情况，按「跳过」处理；其它错误照常上报。
 		if strings.Contains(terr.Error(), "not found") || strings.Contains(terr.Error(), "ErrNotFound") {

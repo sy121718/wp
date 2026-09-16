@@ -8,6 +8,18 @@ import (
 	"go_wp/internal/module/contenttemplate/dto"
 )
 
+// 模板角色（审计 EDT-004）。
+//
+// 定义在契约而不是 model：它出现在 ResolveTemplateByRole 的参数位置上，属于跨模块
+// 调用方需要知道的东西。留在 model 里会迫使 presentation 这类调用方 import 对方的
+// 数据访问包 —— 与「跨模块只用 contract 与不可变 dto」的约定相悖（实测确有一处）。
+const (
+	// TemplateRoleDetail 实体详情页模板（既有语义，默认值）。
+	TemplateRoleDetail = "detail"
+	// TemplateRoleArchive 归档列表页模板（如「分类页」：列该分类下的内容）。
+	TemplateRoleArchive = "archive"
+)
+
 // ContentTemplateService 内容结构模板管理契约（docs/02-domain.md §2）。
 // 与 Page Blueprint 的关键区别：模板参与每次构建（presentation 派生
 // DocumentSnapshot 时经 ResolveTemplate 取当前版本 AST）。

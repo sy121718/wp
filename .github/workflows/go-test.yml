@@ -6,6 +6,11 @@ on:
   pull_request:
     branches: [main]
 
+# 两个 job 的分工：
+#   unit        —— 无外部服务、秒级反馈：静态检查 + 除 public/test 外的全部包。
+#                  需要 PG/Redis 的用例按测试基建的既有约定自行 t.Skip。
+#   integration —— 起真的 PostgreSQL 16 + Redis 7，跑全量（含 public/test）。
+#                  这一层是门禁：**没有 continue-on-error**，红了就是红。
 jobs:
   unit:
     runs-on: ubuntu-latest
@@ -16,20 +21,23 @@ jobs:
           go-version-file: go.mod
       - name: Build
         run: go build ./...
-      # 纯文件扫描的静态检查：不需要数据库，秒级完成，放在最前面 ——
-      # 它们拦的是「评审时看不出来」的回归（内部错误直出会让表名/SQL/路径上屏；
-      # 硬编码文案会让后台在非默认语言下显示中文）。这类问题一旦进门，
-      # 就只能靠人工逐页翻，所以宁可让 CI 早失败。
       - name: Static checks (no external services)
+        # 纯文件扫描，不需要数据库，秒级完成 ——
+        # 它们拦的是「评审时看不出来」的回归（内部错误直出会让表名/SQL/路径上屏；
+        # 硬编码文案会让后台在非默认语言下显示中文）。这类问题一旦进门，
+        # 就只能靠人工逐页翻，所以宁可让 CI 早失败。
         run: |
           scripts/check-no-internal-error-leak.sh
           scripts/check-i18n-coverage.sh
+          scripts/check-service-db-boundary.sh
       - name: Unit tests (no external services)
+        # 覆盖范围以前是逐个包列举（pkg / builder / pipeline / order/service /
+        # page/enums），漏掉了 30 个含测试的包 —— 其中有迁移判据、retention 目录
+        # 不变量、路由装配断言这些**护栏**，恰好是最该被 CI 盯住的一批。
+        # 现在按目录整体覆盖：新增包自动纳入，不需要记得回来改这里。
         run: |
-          go test ./pkg/... ./internal/builder/... ./internal/pipeline/... \
-            ./internal/module/order/service/... \
-            ./internal/module/page/enums/... \
-            -count=1 -timeout 10m
+          go test ./pkg/... ./internal/... ./cmd/... ./config/... \
+            ./public/migrations/... -count=1 -timeout 10m
 
   integration:
     runs-on: ubuntu-latest
@@ -37,13 +45,17 @@ jobs:
       postgres:
         image: postgres:16
         env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: base
+          # 与 config.yaml.example 的 database 段默认值对齐（127.0.0.1:5432 / root / wp）：
+          # 测试基建 public/test/support/pgtest.go 走 libpq 的 PGHOST/PGUSER/...，
+          # 默认值正是这一组。对齐之后测试直接连服务容器，不再回退 testcontainers ——
+          # 那条路在 CI 上慢，且失败时表现为「用例被 skip」，看着像通过。
+          POSTGRES_USER: root
+          POSTGRES_PASSWORD: root
+          POSTGRES_DB: wp
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U postgres"
+          --health-cmd "pg_isready -U root -d wp"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
@@ -51,16 +63,34 @@ jobs:
         image: redis:7
         ports:
           - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     env:
-      DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/base?sslmode=disable
+      # 密码与密钥走环境变量注入（config.envBindableKeys），
+      # 因此可以直接用仓库里的 config.yaml.example，不必在 CI 里改配置文件内容。
+      GOWP_DATABASE_PASSWORD: root
+      GOWP_AUTH_SESSION_SECRET: ci-session-secret-not-for-production-use
+      GOWP_APP_SECRET: 9f2c1a7b4e6d8f0a1b3c5d7e9f0a2b4c6d8e0f1a3b5c7d9e0f2a4b6c8d0e1f3a
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      - name: Feature tests
-        # -p 4：pg_trgm 固定到 ext_shared、迁移锁按 schema 派生、迁移固定在单连接，且测试
-        # 改为复制模板库（不再各自重跑 209 条迁移）—— 并发不再互相踩，也不再撑爆锁表。
-        # 本地 16 核实测 -p 8 为 271s；runner 核数少，这里保守取 4。
-        run: go test -p 4 ./public/test/... -count=1 -timeout 30m
-        continue-on-error: true
+      - name: Prepare config and test database
+        run: |
+          cp config.yaml.example config.yaml
+          # 测试基建连的库名是 wp_test（pgtest.go 的 DefaultPGDatabase）：它作为
+          # 「管理库」用来 CREATE DATABASE ... TEMPLATE 复制模板库，自身不需要结构。
+          PGPASSWORD=root psql -h 127.0.0.1 -U root -d postgres -v ON_ERROR_STOP=1 \
+            -c 'CREATE DATABASE wp_test'
+      - name: Migrate schema and seeds
+        # 有几个用例走 SetupTestBootstrap（真实 config + 全组件装配），它们连的是
+        # config.yaml 里的 wp 库，因此该库必须先有完整结构。此前没有这一步，
+        # 这些用例在 CI 上连的是空库，失败被 continue-on-error 吞掉了。
+        run: go run ./cmd -migrate-only
+      - name: Full suite (real PostgreSQL + Redis)
+        # -p 4：runner 核数少，保守取值。本地 16 核实测 -p 16 约 65s。
+        run: go test -p 4 ./... -count=1 -timeout 30m

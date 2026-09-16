@@ -57,27 +57,30 @@ test: ## 全量测试（feature + unit；默认按 CPU 核数并发，可用 TES
 	go test -p $(TEST_PARALLEL) ./... -count=1
 
 .PHONY: test-short
-test-short: ## 快速测试（不依赖数据库的包）
-	go test ./pkg/... ./internal/builder/... ./internal/pipeline/... -count=1
+test-short: ## 快速测试（不依赖数据库的包；与 CI 的 unit job 同覆盖面）
+	go test ./pkg/... ./internal/... ./cmd/... ./config/... ./public/migrations/... -count=1
 
 .PHONY: lint
 lint: ## 格式与静态检查
-	gofmt -l internal/ pkg/ public/
+	gofmt -l internal/ pkg/ public/ cmd/ config/
 	go vet ./...
 
 .PHONY: check
 check: lint ## 静态检查 + CI 同款门禁脚本
 	scripts/check-no-internal-error-leak.sh
 	scripts/check-i18n-coverage.sh
+	scripts/check-service-db-boundary.sh
 
 .PHONY: migrate
-# 迁移与 seed 随进程启动自动执行（cmd/main.go → routers → migrations.RunSeeds），
-# 没有独立的 migrate 子命令，所以这里不做假动作：目标是「把依赖起到位，让下一次启动
-# 自己把库迁好」，并对尚未就绪的依赖给出明确等待，而不是让 go run 抛一个连接错误。
-migrate: up ## 起依赖并等待就绪（迁移随应用启动自动执行）
+# -migrate-only：只执行结构迁移与业务 seed 后退出，不启动 HTTP 服务、不监听端口。
+# 这个入口是 2026-09-16 补的 —— 此前没有独立迁移命令，migrate 只能「把依赖起到位、
+# 让下一次启动自己把库迁好」，失败混在启动日志里；现在真跑一次迁移，成功与否直接
+# 反映在退出码上（CI 也用它准备测试库）。
+migrate: up ## 执行数据库迁移与 seed（幂等；先确保依赖已就绪）
 	@echo '等待 PostgreSQL 就绪…'
 	@for i in $$(seq 1 30); do \
 		if docker compose exec -T postgres pg_isready -U $(PGUSER) -d $(PGDATABASE) >/dev/null 2>&1; then \
-			echo '✓ PostgreSQL 已就绪，启动应用时会自动跑迁移与 seed'; exit 0; \
+			echo '✓ PostgreSQL 已就绪，开始执行迁移与 seed'; exit 0; \
 		fi; sleep 2; \
 	done; echo '✗ PostgreSQL 未在 60 秒内就绪，请查看 docker compose logs postgres' >&2; exit 1
+	go run ./cmd -migrate-only

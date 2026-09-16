@@ -488,13 +488,6 @@ func (m *Model) UpdateVariantCost(ctx context.Context, variantID string, cost fl
 	return nil
 }
 
-// ListVariantIDs 取工程的变体 id 列表（issue #32：库存投影按变体 id 批量取真源汇总用）。
-func (m *Model) ListVariantIDs(ctx context.Context, projectID string) (out []string, err error) {
-	out = []string{}
-	err = m.VariantDB(ctx).Where("project_id = ?", projectID).Order("id").Pluck("id", &out).Error
-	return out, nil
-}
-
 // SaveVariants 在同一事务内写一批变体改动：先更新既有行，再批量插入新行。
 //
 // 组合生成是「一次请求改多行」的聚合内原子组合（无规格占位变体就地承接第一个

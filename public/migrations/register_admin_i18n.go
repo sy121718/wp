@@ -743,4 +743,13 @@ func registerAdminI18nSeedsAndLatest() {
 			"'webhook.err.urlHostMissing', 'webhook.err.urlUnresolvable', 'webhook.err.urlDenied')",
 		SQL: mustSQL("216_webhook_i18n.sql"),
 	})
+	// 217：SEO 控制台模板文案词条（436d20b 引入该页时漏 key 化，门禁因此从第一天就红着）。
+	// 判据按本批自己的 38 个 key 枚举计数：前缀 LIKE "admin.seo.%" 会被将来同前缀的词条满足。
+	registerSeed(Seed{
+		Version:   "217-admin-seo-i18n",
+		TableName: "sys_i18n",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 38 THEN 1 ELSE 0 END FROM sys_i18n " +
+			"WHERE lang = 'zh-CN' AND item_key IN ('admin.seo.eyebrow.visibility', 'admin.seo.title', 'admin.seo.subtitle', 'admin.seo.label.project', 'admin.seo.action.view', 'admin.seo.err.project_list', 'admin.seo.eyebrow.issues', 'admin.seo.audit.title', 'admin.seo.audit.intro', 'admin.seo.audit.run', 'admin.seo.audit.placeholder', 'admin.seo.audit.no_permission', 'admin.seo.paths.eyebrow', 'admin.seo.paths.title', 'admin.seo.paths.error', 'admin.seo.paths.col.path', 'admin.seo.paths.col.views', 'admin.seo.paths.col.visitors', 'admin.seo.paths.empty', 'admin.seo.sources.eyebrow', 'admin.seo.sources.title', 'admin.seo.sources.unavailable', 'admin.seo.site_files.eyebrow', 'admin.seo.site_files.title', 'admin.seo.site_files.unavailable', 'admin.seo.external.eyebrow', 'admin.seo.external.title', 'admin.seo.external.unavailable', 'admin.seo.audit.loading', 'admin.seo.audit.request_failed', 'admin.seo.audit.clean_lead', 'admin.seo.audit.clean_tail', 'admin.seo.audit.issues_lead', 'admin.seo.audit.issues_mid', 'admin.seo.audit.issues_tail', 'admin.seo.audit.col.level', 'admin.seo.audit.col.path', 'admin.seo.audit.col.issue')",
+		SQL: mustSQL("217_i18n_seed_admin_seo.sql"),
+	})
 }

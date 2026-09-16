@@ -14,6 +14,8 @@ import (
 	"encoding/json"
 	"time"
 
+	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
+
 	"gorm.io/gorm"
 )
 
@@ -22,12 +24,15 @@ const (
 	tableNameContentTemplateVersions = "content_template_versions"
 )
 
-// 模板角色（审计 EDT-004）。
+// 模板角色（审计 EDT-004）：真源在 contract。
+//
+// 它出现在契约方法 ResolveTemplateByRole 的参数位置上，跨模块调用方应当从契约取值，
+// 不该为了一个字符串去 import 本模块的数据访问包。这里转发一份，供模块内部引用。
 const (
 	// TemplateRoleDetail 实体详情页模板（既有语义，默认值）。
-	TemplateRoleDetail = "detail"
+	TemplateRoleDetail = contenttemplatecontract.TemplateRoleDetail
 	// TemplateRoleArchive 归档列表页模板（如「分类页」：列该分类下的内容）。
-	TemplateRoleArchive = "archive"
+	TemplateRoleArchive = contenttemplatecontract.TemplateRoleArchive
 )
 
 // IsValidTemplateRole 角色是否合法。

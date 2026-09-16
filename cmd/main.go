@@ -16,6 +16,7 @@ package main
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"go_wp/config"
 	"go_wp/internal/middleware"
@@ -37,7 +38,15 @@ import (
 // main 是 Go 程序唯一入口，编译后直接运行。
 // 所有错误上报到 run() 后统一由此处 log.Fatalf 终止进程。
 func main() {
-	if err := run(); err != nil {
+	// -migrate-only：把库结构与业务 seed 迁到最新后立即退出，不启动 HTTP 服务。
+	//
+	// 单独留一个入口，是因为「把库迁好」与「启动服务」是两件事：CI 要在跑测试前
+	// 准备出结构完整的库，部署脚本要在切换流量前确认迁移成功。没有它就只能先起一个
+	// 实例再把它杀掉 —— 既慢，又要处理端口占用与信号，失败原因还混在启动日志里。
+	migrateOnly := flag.Bool("migrate-only", false, "只执行数据库结构迁移与业务 seed，然后退出（不启动 HTTP 服务）")
+	flag.Parse()
+
+	if err := run(*migrateOnly); err != nil {
 		logger.Scene("init").Error(err, "服务启动失败")
 		log.Fatal("服务启动失败")
 	}
@@ -45,7 +54,7 @@ func main() {
 
 // run 是实际的主流程函数。
 // 返回 error 即可让 main() 终止进程，组件自身不调用 os.Exit。
-func run() error {
+func run(migrateOnly bool) error {
 	// 1) 加载配置 + 初始化组件（数据库、会话存储、日志、缓存、队列等）。
 	serverCfg, err := loadAndPrepareRuntime("config.yaml")
 	if err != nil {
@@ -55,6 +64,18 @@ func run() error {
 	// 1.5) 数据库结构迁移：按版本幂等执行建表语句（空库可重建，重复执行跳过）。
 	if err := runMigrations(); err != nil {
 		return err
+	}
+
+	// 1.6) -migrate-only：结构迁移之后补上业务 seed 就返回，不装配路由、不监听端口。
+	if migrateOnly {
+		if err := runSeeds(); err != nil {
+			return err
+		}
+		logger.Scene("init").Info("数据库迁移与 seed 完成（-migrate-only），未启动 HTTP 服务")
+		if closeErr := config.CloseComponents(); closeErr != nil {
+			logger.Scene("init").Error(closeErr, "组件关闭失败")
+		}
+		return nil
 	}
 
 	// 2) 构建 HTTP 路由引擎。
@@ -125,6 +146,23 @@ func runMigrations() error {
 	return migrations.Run(db)
 }
 
+// runSeeds 执行幂等的业务 seed（权限点、菜单、默认超管策略）。
+//
+// 正常启动流程里 seed 由 routers.SetupRoutes 触发（装配路由时顺带执行，紧跟其后
+// 重载 Casbin 内存策略）；-migrate-only 不装配路由，所以在这里直接调用 ——
+// seed 本身幂等（ConditionSQL 判据已存在即跳过），语义与启动时一致。
+// 进程随即退出，不需要重载策略。
+func runSeeds() error {
+	db, err := database.GetDB()
+	if err != nil {
+		return fmt.Errorf("seed 前置检查失败: %w", err)
+	}
+	if err := migrations.RunSeeds(db); err != nil {
+		return fmt.Errorf("业务 seed 失败: %w", err)
+	}
+	return nil
+}
+
 // loadAndPrepareRuntime 加载配置并初始化运行时组件。
 //
 // 执行顺序：
@@ -188,10 +226,12 @@ func buildHTTPRouter(
 // true 才绑定全部接口。
 //
 // 为什么收紧：debug 模式带着三处放宽 ——
-//  ① /admin/dev-login 一键登录（不校验凭据，只认 RemoteAddr 环回）；
-//  ② CORS 未配白名单时反射任意 Origin 且带 Allow-Credentials: true；
-//  ③ Gin 默认信任所有代理，c.ClientIP() 采信 X-Forwarded-For ——
-//     基于 IP 的限流可被绕过、登录审计 IP 失真。
+//
+//	① /admin/dev-login 一键登录（不校验凭据，只认 RemoteAddr 环回）；
+//	② CORS 未配白名单时反射任意 Origin 且带 Allow-Credentials: true；
+//	③ Gin 默认信任所有代理，c.ClientIP() 采信 X-Forwarded-For ——
+//	   基于 IP 的限流可被绕过、登录审计 IP 失真。
+//
 // ① 自身的环回锁用 RemoteAddr（不受 XFF 影响，改 XFF 绕不过去），单看 ②③ 也只是
 // 开发体验问题。但它们的共同前提是「这台机器只在本地被访问」：一旦 debug 实例
 // 落到公网可达的地址上，② 会让任意站点带着受害者浏览器里的凭据发起跨域请求，
