@@ -45,6 +45,12 @@ type SummaryReq struct {
 	// 后台页面因此可以只翻「下一页」时改用游标，无需整体改造。
 	PathAfterViews int64  `form:"pathAfterViews" json:"pathAfterViews"`
 	PathAfter      string `form:"pathAfter" json:"pathAfter"`
+	// RankLimit 维度排行（来源域 / 设备分类 / 语言）各取前多少条（默认 20，上限 200）。
+	//
+	// 三组维度**不做分页**：它们的取值域是天然收敛的（设备分类最多 5 种、语言十几、
+	// 来源域远少于路径数），Top-N 已经覆盖运营要看的部分；给三个榜各配一套游标
+	// 只会让调用方多维护三份翻页状态，换不到任何东西。
+	RankLimit int `form:"rankLimit" json:"rankLimit"`
 }
 
 // 统计取数来源（响应回显，便于确认「这次数字是明细还是预聚合给的」）。
@@ -72,6 +78,19 @@ type PathCount struct {
 	Visitors int64  `json:"visitors"`
 }
 
+// RankCount 某个维度取值（来源域 / 设备分类 / 语言）的浏览数与独立访客数。
+//
+// 三组排行共用同一个形状：Value 的语义由它所在的数组决定（Referrers 里是域名、
+// UAClasses 里是分类、Langs 里是语言码）。三个近乎相同的结构体只会让 DTO
+// 与模板各多两份重复，而它们的字段名本来就一模一样。
+type RankCount struct {
+	// Value 维度取值。**空串是合法取值**：它代表「没有来源 / UA 缺失 / 没上报语言」
+	//（见 model.CountByDimension 的说明），展示层负责渲染成占位文案。
+	Value    string `json:"value"`
+	Views    int64  `json:"views"`
+	Visitors int64  `json:"visitors"`
+}
+
 // SummaryResp 访问统计汇总。
 type SummaryResp struct {
 	ProjectID string `json:"projectId"`
@@ -91,6 +110,20 @@ type SummaryResp struct {
 	// PathPage / PathLimit 本次分页参数（回显用）。
 	PathPage  int `json:"pathPage"`
 	PathLimit int `json:"pathLimit"`
+	// Referrers / UAClasses / Langs 来源域 / 设备分类 / 语言的排行
+	// （浏览数降序，并列时按取值升序；各取 RankLimit 条）。
+	Referrers []RankCount `json:"referrers"`
+	UAClasses []RankCount `json:"uaClasses"`
+	Langs     []RankCount `json:"langs"`
+	// RankLimit 本次三组排行的条数上限（回显用）。
+	RankLimit int `json:"rankLimit"`
+	// BreakdownSource 三组维度排行的取数来源，**恒为 detail**。
+	//
+	// 与 Source 分开回显而不是复用它：Source 讲的是 Total / Daily / Paths 的来源，
+	// 而维度排行固定读明细（理由见 service.Summary 的形态选择注释）。
+	// 让调用方从 Source 反推维度排行的来源，会在「窗口完全在过去」的请求上
+	// 得到相反的结论 —— 那种回显错误比不回显更难发现。
+	BreakdownSource string `json:"breakdownSource"`
 	// Source 本次统计的取数来源（detail / summary），见上方常量。
 	Source string `json:"source"`
 	// PathNextAfterViews / PathNextAfter 下一页游标（本页最后一行）；

@@ -20,6 +20,13 @@ const (
 	// defaultPathLimit / maxPathLimit 路径聚合的每页条数。
 	defaultPathLimit = 20
 	maxPathLimit     = 200
+	// defaultRankLimit / maxRankLimit 维度排行（来源域 / 设备分类 / 语言）的条数。
+	//
+	// 与路径排行的 20/200 同值但**刻意分成两组常量**：两者将来收紧的理由不一样 ——
+	// 路径的取值域随站点规模无上限增长，而这三组的取值域是收敛的，
+	// 共用一组数字会让「调路径分页」顺带改掉维度排行的形状。
+	defaultRankLimit = 20
+	maxRankLimit     = 200
 )
 
 // dateLayout 请求与响应里的日期格式（后台表单与 JSON 同一格式）。
@@ -42,6 +49,7 @@ func (s *Service) Summary(ctx context.Context, req *analyticsdto.SummaryReq) (re
 		return nil, rerr
 	}
 	page, limit := normalizePathPaging(req.PathPage, req.PathLimit)
+	rankLimit := normalizeRankLimit(req.RankLimit)
 
 	// 取数来源（审计 DB-005 / IDX-010）：窗口完全落在今天之前 → 读按天预聚合表；
 	// 窗口含今天 → 读明细表。
@@ -103,6 +111,43 @@ func (s *Service) Summary(ctx context.Context, req *analyticsdto.SummaryReq) (re
 		}
 	}
 
+	// 来源域 / 设备分类 / 语言的排行。
+	//
+	// **形态选择：恒定读明细，不为这三个维度引入新的预聚合 scope。** 三条理由：
+	//
+	//  1. 加 scope 要动 DDL。scope 的取值受迁移 170 的 CHECK 约束（scope IN ('all','path')），
+	//     而预聚合表只有 (project_id, day, scope, path) 这一个形状 —— 新维度只能把取值
+	//     塞进第 4 列 path，让同一列同时表示「路径 / 来源域 / UA 分类 / 语言码」四种语义。
+	//     那不是命名问题：表里所有既有的按 path 过滤（RollupByPath / RollupPathTotal /
+	//     清理重算里的 NOT EXISTS）都因此要多带一个 scope 谓词，将来漏一个就会把
+	//     来源域当路径读出来，而且是静默的。
+	//  2. 正确性上不需要汇总。预聚合是「对已落定的天全量重算」（rollup 的幂等设计，
+	//     有 TestRollupMatchesDetail 逐项对账），所以**过去窗口**下走明细与走汇总
+	//     算出来的是同一个数字 —— 两者的差异只在成本，不在口径。
+	//  3. 成本可控。维度排行的形状是「单列 GROUP BY + 排序 + LIMIT Top-N」，
+	//     不做深分页（取值域天然收敛：ua_class 受 CHECK 约束只有 5 种可能值、
+	//     语言码十几、来源域远小于路径数）。它与路径排行在**明细分支**里已经在做
+	//     的事同量级（CountByPath 同样是全窗口扫描），不是新的复杂度来源；
+	//     而汇总任务本身每小时就对整个窗口做两遍全量聚合。
+	//
+	// 「窗口含今天必须走明细」这条既有约束在这里的含义：它只决定 Total/Daily/Paths
+	// 从哪张表取数，不约束维度排行 —— 维度恒定走明细，所以不存在
+	// 「总数来自明细、来源域来自一小时前的快照」这种同一响应内的口径分裂。
+	// 代价是三次扫描同一窗口；合并成 GROUPING SETS 能省两次扫描，
+	// 但会把「三个各自独立的榜」变成「一次扫描按分组标签拆行」，不值得。
+	breakdown := make(map[string][]analyticsmodel.DimensionRow, 3)
+	for _, dim := range []string{
+		analyticsmodel.DimensionReferrer,
+		analyticsmodel.DimensionUA,
+		analyticsmodel.DimensionLang,
+	} {
+		rows, rerr := s.m.CountByDimension(ctx, projectID, from, to, dim, rankLimit)
+		if rerr != nil {
+			return nil, rerr
+		}
+		breakdown[dim] = rows
+	}
+
 	daily := make([]analyticsdto.DailyCount, 0, len(dayRows))
 	for _, row := range dayRows {
 		daily = append(daily, analyticsdto.DailyCount{
@@ -133,6 +178,13 @@ func (s *Service) Summary(ctx context.Context, req *analyticsdto.SummaryReq) (re
 		PathTotal: pathTotal,
 		PathPage:  page,
 		PathLimit: limit,
+
+		Referrers: toRankCounts(breakdown[analyticsmodel.DimensionReferrer]),
+		UAClasses: toRankCounts(breakdown[analyticsmodel.DimensionUA]),
+		Langs:     toRankCounts(breakdown[analyticsmodel.DimensionLang]),
+		RankLimit: rankLimit,
+		// 恒定明细：这三个榜不读预聚合（见上方形态选择）。
+		BreakdownSource: analyticsdto.SourceDetail,
 
 		Source:             source,
 		PathNextAfterViews: nextViews,
@@ -185,6 +237,27 @@ func parseDay(raw string) (t time.Time, ok bool) {
 func dayStart(t time.Time) time.Time {
 	u := t.UTC()
 	return time.Date(u.Year(), u.Month(), u.Day(), 0, 0, 0, 0, time.UTC)
+}
+
+// toRankCounts 把维度聚合行转成对外形状（空结果给空切片而不是 nil：
+// 响应里的 [] 与 null 是两种不同的信号，前者是「这个维度没有数据」）。
+func toRankCounts(rows []analyticsmodel.DimensionRow) []analyticsdto.RankCount {
+	out := make([]analyticsdto.RankCount, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, analyticsdto.RankCount{Value: r.Value, Views: r.Views, Visitors: r.Visitors})
+	}
+	return out
+}
+
+// normalizeRankLimit 归一化维度排行的条数（<1 取默认，越界收敛到上限）。
+func normalizeRankLimit(limit int) int {
+	if limit < 1 {
+		return defaultRankLimit
+	}
+	if limit > maxRankLimit {
+		return maxRankLimit
+	}
+	return limit
 }
 
 // normalizePathPaging 归一化分页参数（页码 <1 取 1，条数越界收敛到 [1, maxPathLimit]）。

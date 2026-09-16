@@ -14,6 +14,7 @@ type (
 	SummaryResp = analyticsdto.SummaryResp
 	DailyCount  = analyticsdto.DailyCount
 	PathCount   = analyticsdto.PathCount
+	RankCount   = analyticsdto.RankCount
 )
 
 // AnalyticsService 访问统计能力。

@@ -8,6 +8,10 @@
 {{selectedProject := .SelectedProject}}
 {{daily := .Daily}}
 {{paths := .Paths}}
+{{referrers := .Referrers}}
+{{uaClasses := .UAClasses}}
+{{langs := .Langs}}
+{{rankLimit := .RankLimit}}
 <div class="stack analytics-page">
     <section class="card card-body">
         <h2>{{ .["t"]("admin.analytics.title", "访问统计") }}</h2>
@@ -85,6 +89,60 @@
         </table>
         {{end}}
         {{include "partials/pagination.html"}}
+    </section>
+
+    <section class="card card-body">
+        <h2>{{ .["t"]("admin.analytics.referrers.title", "来源域") }}</h2>
+        <p class="hint">
+            {{ .["t"]("admin.analytics.referrers.hint", "打点只上报域名（服务端再去掉协议与路径），所以同一站点的不同页面算同一个来源。空值是没有来源的访问：从地址栏输入、书签打开，或客户端没有发送 referrer。") }}
+            {{ .["t"]("admin.analytics.rank.hint_lead", "下面三个维度榜各取前") }}<strong>{{rankLimit}}</strong>{{ .["t"]("admin.analytics.rank.hint_tail", "条，按浏览数降序、并列时按取值升序（顺序是确定的，刷新不会换名次）；它们恒定读访问明细，与上方的「取数来源」无关。") }}
+        </p>
+        {{if len(referrers) == 0}}
+        <p class="hint">{{ .["t"]("admin.analytics.referrers.empty", "没有来源数据。") }}</p>
+        {{else}}
+        <table class="table">
+            <thead><tr><th>{{ .["t"]("admin.analytics.col.referrer", "来源域") }}</th><th>{{ .["t"]("admin.analytics.col.views", "浏览数") }}</th><th>{{ .["t"]("admin.analytics.col.visitors", "独立访客") }}</th></tr></thead>
+            <tbody>
+                {{range _, v := referrers}}
+                <tr><td>{{if v.Value == ""}}{{tr("admin.analytics.referrers.unknown", "（无来源）")}}{{else}}<code>{{v.Value}}</code>{{end}}</td><td>{{v.Views}}</td><td>{{v.Visitors}}</td></tr>
+                {{end}}
+            </tbody>
+        </table>
+        {{end}}
+    </section>
+
+    <section class="card card-body">
+        <h2>{{ .["t"]("admin.analytics.ua.title", "设备分类") }}</h2>
+        <p class="hint">{{ .["t"]("admin.analytics.ua.hint", "分类由服务端按请求头判定（desktop / tablet / mobile / bot），不采信上报里的字段 —— 客户端可以自称任何设备。空值是请求没有带 UA。") }}</p>
+        {{if len(uaClasses) == 0}}
+        <p class="hint">{{ .["t"]("admin.analytics.ua.empty", "没有设备数据。") }}</p>
+        {{else}}
+        <table class="table">
+            <thead><tr><th>{{ .["t"]("admin.analytics.col.ua_class", "设备分类") }}</th><th>{{ .["t"]("admin.analytics.col.views", "浏览数") }}</th><th>{{ .["t"]("admin.analytics.col.visitors", "独立访客") }}</th></tr></thead>
+            <tbody>
+                {{range _, v := uaClasses}}
+                <tr><td>{{if v.Value == ""}}{{tr("admin.analytics.ua.unknown", "（未识别）")}}{{else}}<code>{{v.Value}}</code>{{end}}</td><td>{{v.Views}}</td><td>{{v.Visitors}}</td></tr>
+                {{end}}
+            </tbody>
+        </table>
+        {{end}}
+    </section>
+
+    <section class="card card-body">
+        <h2>{{ .["t"]("admin.analytics.langs.title", "语言") }}</h2>
+        <p class="hint">{{ .["t"]("admin.analytics.langs.hint", "语言由产物在构建期烘进打点配置，所以它反映的是页面自己声明的语言，不是访客的浏览器语言。空值是这一页没有上报语言。") }}</p>
+        {{if len(langs) == 0}}
+        <p class="hint">{{ .["t"]("admin.analytics.langs.empty", "没有语言数据。") }}</p>
+        {{else}}
+        <table class="table">
+            <thead><tr><th>{{ .["t"]("admin.analytics.col.lang", "语言") }}</th><th>{{ .["t"]("admin.analytics.col.views", "浏览数") }}</th><th>{{ .["t"]("admin.analytics.col.visitors", "独立访客") }}</th></tr></thead>
+            <tbody>
+                {{range _, v := langs}}
+                <tr><td>{{if v.Value == ""}}{{tr("admin.analytics.langs.unknown", "（未上报）")}}{{else}}<code>{{v.Value}}</code>{{end}}</td><td>{{v.Views}}</td><td>{{v.Visitors}}</td></tr>
+                {{end}}
+            </tbody>
+        </table>
+        {{end}}
     </section>
     {{end}}
 </div>

@@ -34,8 +34,17 @@ func TestAnalyticsPageTemplateRenders(t *testing.T) {
 		"FilterFrom":      "2026-01-01", "FilterTo": "2026-01-15",
 		"RangeFrom": "2026-01-01", "RangeTo": "2026-01-15",
 		"Total": 3, "Visitors": 2, "PathTotal": 2,
-		"Daily":          []analyticscontract.DailyCount{{Day: "2026-01-15", Views: 3, Visitors: 2}},
-		"Paths":          []analyticscontract.PathCount{{Path: "/about", Views: 2, Visitors: 1}},
+		"Daily": []analyticscontract.DailyCount{{Day: "2026-01-15", Views: 3, Visitors: 2}},
+		"Paths": []analyticscontract.PathCount{{Path: "/about", Views: 2, Visitors: 1}},
+		// 来源域 / 设备分类 / 语言：其中一行故意给空取值，钉住「空值渲染成占位文案」
+		// 而不是留一个空格子（空串是合法取值，见 model.CountByDimension）。
+		"Referrers": []analyticscontract.RankCount{
+			{Value: "ref.example.com", Views: 2, Visitors: 1},
+			{Value: "", Views: 1, Visitors: 1},
+		},
+		"UAClasses":      []analyticscontract.RankCount{{Value: "desktop", Views: 2, Visitors: 2}},
+		"Langs":          []analyticscontract.RankCount{{Value: "zh-CN", Views: 3, Visitors: 2}},
+		"RankLimit":      20,
 		"PaginationInfo": "共 2 条", "PaginationLinks": nil,
 		"Err": "",
 	}
@@ -54,6 +63,11 @@ func TestAnalyticsPageTemplateRenders(t *testing.T) {
 	for _, want := range []string{
 		"访问统计", "演示站", "2026-01-15", "/about",
 		"总浏览数", "独立访客", "按天", "按路径",
+		// 三个维度区块（SEO-021 的读路径）—— 页面上真的渲染出来，而不是「接口对了、区块空白」。
+		"来源域", "设备分类", "语言",
+		"ref.example.com", "desktop", "zh-CN",
+		// 空取值渲染为占位文案，不是空格子。
+		"（无来源）",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("渲染结果缺少 %q", want)

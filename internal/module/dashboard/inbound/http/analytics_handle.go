@@ -66,12 +66,15 @@ func (h *analyticsPageHandle) AnalyticsPage(c *gin.Context) {
 	page, limit := pageParams(c)
 
 	var (
-		total, visitors    int64
-		pathTotal          int64
-		daily              []analyticscontract.DailyCount
-		paths              []analyticscontract.PathCount
-		rangeFrom, rangeTo string
-		pageErr            string
+		total, visitors int64
+		pathTotal       int64
+		daily           []analyticscontract.DailyCount
+		paths           []analyticscontract.PathCount
+		// 来源域 / 设备分类 / 语言的排行（与 Paths 同源：全部由 Summary 给出）。
+		referrers, uaClasses, langs []analyticscontract.RankCount
+		rankLimit                   int
+		rangeFrom, rangeTo          string
+		pageErr                     string
 	)
 	if selected != "" {
 		res, serr := h.analytics.Summary(ctx, &analyticsdto.SummaryReq{
@@ -82,6 +85,8 @@ func (h *analyticsPageHandle) AnalyticsPage(c *gin.Context) {
 		} else if res != nil {
 			total, visitors = res.Total, res.Visitors
 			daily, paths, pathTotal = res.Daily, res.Paths, res.PathTotal
+			referrers, uaClasses, langs = res.Referrers, res.UAClasses, res.Langs
+			rankLimit = res.RankLimit
 			rangeFrom, rangeTo = res.From, res.To
 		}
 	}
@@ -100,6 +105,10 @@ func (h *analyticsPageHandle) AnalyticsPage(c *gin.Context) {
 		"Daily":           daily,
 		"Paths":           paths,
 		"PathTotal":       pathTotal,
+		"Referrers":       referrers,
+		"UAClasses":       uaClasses,
+		"Langs":           langs,
+		"RankLimit":       rankLimit,
 		"Err":             pageErr,
 	})
 	base := filterBaseURL("/admin/analytics", map[string]string{
