@@ -1,0 +1,5 @@
+<article class="ck-coupon {{ .Classes }}">
+  {{ if .V.benefit }}<p class="ck-coupon__benefit">{{ .V.benefit }}</p>{{ end }}
+  <p class="ck-coupon__code">{{ .V.code }}</p>
+  {{ if .V.expires }}<p class="ck-coupon__expires">{{ .V.expires }}</p>{{ end }}
+</article>

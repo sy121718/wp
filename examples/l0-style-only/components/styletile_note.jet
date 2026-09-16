@@ -1,0 +1,4 @@
+<aside class="{{ .Classes }}">
+  <p class="st-title">{{ .V.title }}</p>
+  <p class="st-body">{{ .V.body }}</p>
+</aside>

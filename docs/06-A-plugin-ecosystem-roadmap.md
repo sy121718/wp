@@ -40,10 +40,16 @@ SEO 分析器（Yoast 式评分）做插件（编辑器增强，只读分析）�
 ```
 纯展示/弱逻辑（无表或简单表）        → 轻轨 zip 插件（L0/L1）
 需要数据进可视化绑定                 → 轻轨 + L2（等 CollectionSource 落地）
+需要新的检查器控件类型 / 新 CSS 原语  → 本体内核（扩白名单或 style 引擎原语）
+需要新的 Go 组件（执行逻辑/读写数据）  → 重轨 Go 模块，或 0-D runtimefragment
 强状态/并发/资金（扣库存/核销/支付）  → 重轨 Go 模块（可配插件壳提供管理页/展示）
 构建产物的一部分（sitemap/meta）      → 本体管线
 编辑器增强（分析/建议）              → 插件（只读，L0）
 ```
+
+> 第三、四行是同一件事的两面：**插件不能携带可执行组件**（确定性构建 + 不执行第三方代码，
+> 见 [06-plugin-system.md](./06-plugin-system.md) §11A.1）。撞到这条边界的判断与路径见
+> [06-E-plugin-authoring.md](./06-E-plugin-authoring.md) §2。
 
 ## 2. SEO 能力（本体基建 + 插件增强）
 
@@ -83,6 +89,11 @@ SEO 分析器（Yoast 式评分）做插件（编辑器增强，只读分析）�
 | 12 | **组件包 packs** | L0 | — | 随需 | 轮播/动效/图标库/定价表/团队墙/时间线——纯 L0，上传即用（对标 WP 模板市场） |
 
 > 组件包（L0）是生态走量主力：无表无迁移，样式声明引擎（06 §6）+ presets 已全部就绪，**现在就能写**。
+>
+> 已经写好的三个档位范例（可直接安装，验收见 `public/test/plugin/unit/example_tiers_test.go`）：
+> `examples/l0-style-only/`（纯样式声明）、`examples/l0-template-assets/`（模板片段 + 静态资产）、
+> `examples/l1-marketing/`（L1 数据层 + 容器/主题查询）。字段参考与排错见
+> [06-E-plugin-authoring.md](./06-E-plugin-authoring.md)。
 
 ## 4. 商品（commerce）：本体模块（v2 决策，见 06-B 变更记录）
 

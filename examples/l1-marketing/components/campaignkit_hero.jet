@@ -1,0 +1,6 @@
+<section class="ck-hero {{ .Classes }}">
+  {{ if .V.eyebrow }}<p class="ck-hero__eyebrow">{{ .V.eyebrow }}</p>{{ end }}
+  <h2 class="ck-hero__title">{{ .V.title }}</h2>
+  <p class="ck-hero__subtitle">{{ .V.subtitle }}</p>
+  {{ if .V.ctaLabel }}<a class="ck-hero__cta" href="{{ .V.ctaHref }}">{{ .V.ctaLabel }}</a>{{ end }}
+</section>

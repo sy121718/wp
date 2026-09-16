@@ -15,8 +15,12 @@ import (
 //     编辑器桥接依赖 sky-c-{id} 还原 data-sky-id）；
 //   - props：检查器控件值（键为 manifest props schema 的键，值 string/number；
 //     非字符串值转字符串；空值跳过声明，与内置组件 CSSDecl 跳空值语义一致）；
-//   - 值防御深度：绑定值（用户运行期输入）在此处再过 core.IsSafeCSSValue，
+//   - 值防御深度：绑定值与变量值（用户运行期输入）在此处再过 core.IsSafeCSSValue，
 //     不安全值返回错误（构建失败优于静默丢样式——与草稿校验失败拒绝保存同立场）。
+//
+// 伪类分派（触屏治理，与内置组件同一规则）：hover → AddHover（包 @media (hover: hover)）、
+// hover-none → AddHoverNone（@media (hover: none) 的触屏等价形态）、active → AddActive
+// （不包媒体查询，触屏唯一可靠的按下反馈）、其余伪类进桌面断点桶。
 //
 // 确定性：规则按声明序编译，声明/绑定按数组序输出，断点只追加不排序，
 // 全部走样式桶的 Add（与内置组件同一确定性管线）。
@@ -41,11 +45,27 @@ func Compile(nodeID string, props map[string]any, schema *Schema, b source.Style
 		if !matchWhen(r.When, props) {
 			continue
 		}
-		selector := buildSelector(base, r.Target, r.Pseudo)
-		// 主声明（desktop）：静态 + 绑定。
-		decls := make([]string, 0, len(r.Decls)+len(r.Bindings))
+		// hover-none 是「无悬停设备」的形态槽位（路由到 AddHoverNone），不是 CSS 伪类，
+		// 不拼进选择器；其余伪类按枚举拼在尾部。
+		selPseudo := r.Pseudo
+		if selPseudo == "hover-none" {
+			selPseudo = ""
+		}
+		selector := buildSelector(base, r.Target, selPseudo)
+		// 主声明：静态 → 变量导出 → 属性绑定（固定顺序，同一 schema 恒同字节）。
+		decls := make([]string, 0, len(r.Decls)+len(r.Vars)+len(r.Bindings))
 		for _, d := range r.Decls {
 			decls = append(decls, core.CSSDecl(d[0], d[1]))
+		}
+		for _, v := range r.Vars {
+			val, ok := propString(props, v.From)
+			if !ok || val == "" {
+				continue // 控件未设置：不导出该变量（消费端用 var(--x, 兜底值) 处理）
+			}
+			if !core.IsSafeCSSValue(val) {
+				return fmt.Errorf("节点 %s: 变量 --%s 的值（来自 %q）含非法字符", nodeID, v.Name, v.From)
+			}
+			decls = append(decls, core.CSSDecl("--"+v.Name, val))
 		}
 		for _, bind := range r.Bindings {
 			v, ok := propString(props, bind.From)
@@ -59,8 +79,34 @@ func Compile(nodeID string, props map[string]any, schema *Schema, b source.Style
 			}
 			decls = append(decls, core.CSSDecl(bind.Prop, full))
 		}
-		b.Add(core.BreakpointDesktop, selector, decls)
-		// 断点覆盖（tablet/mobile）。
+		// 伪类分派：hover / hover-none / active 走专用桶（触屏治理，与内置组件同规则），
+		// 其余伪类进桌面断点桶。
+		switch r.Pseudo {
+		case "hover":
+			b.AddHover(selector, decls)
+		case "hover-none":
+			b.AddHoverNone(selector, decls)
+		case "active":
+			b.AddActive(selector, decls)
+		default:
+			b.Add(core.BreakpointDesktop, selector, decls)
+		}
+		// 容器 / 主题查询：与断点正交，分别进 sky-auto / sky-theme / sky-local 层。
+		for _, q := range r.Queries {
+			qDecls := make([]string, 0, len(q.Decls))
+			for _, d := range q.Decls {
+				qDecls = append(qDecls, core.CSSDecl(d[0], d[1]))
+			}
+			switch q.Kind {
+			case "size":
+				b.AddContainer(q.Condition, selector, qDecls)
+			case "theme":
+				b.AddThemeQuery(q.Container, q.Prop, q.Value, selector, qDecls)
+			default: // local（校验期已排除其他取值）
+				b.AddStyleQuery(q.Container, q.Prop, q.Value, selector, qDecls)
+			}
+		}
+		// 断点覆盖（tablet/mobile）。专用桶伪类已在校验期排除断点声明。
 		for _, bp := range []string{core.BreakpointTablet, core.BreakpointMobile} {
 			over, ok := r.Breakpoints[bp]
 			if !ok {

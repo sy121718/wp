@@ -1,0 +1,369 @@
+{
+  "id": "notecards",
+  "name": "卡片模板样例",
+  "version": "1.0.0",
+  "components": [
+    {
+      "name": "notecards_card",
+      "label": "特性卡（模板 + 静态资产）",
+      "hint": "模板片段 + assets CSS 消费导出的 CSS 变量",
+      "template": "notecards_card.jet",
+      "props": {
+        "title": {
+          "kind": "text",
+          "label": "标题",
+          "default": "30 分钟上线"
+        },
+        "subtitle": {
+          "kind": "text",
+          "label": "副标题",
+          "default": "Starter"
+        },
+        "body": {
+          "kind": "textarea",
+          "label": "正文",
+          "maxlen": 300,
+          "default": "用预设插入整块内容区，改文案即可发布。"
+        },
+        "price": {
+          "kind": "text",
+          "label": "价格文案",
+          "default": "免费"
+        },
+        "accent": {
+          "kind": "color",
+          "label": "强调色",
+          "default": "#2563eb"
+        },
+        "radius": {
+          "kind": "unit",
+          "label": "圆角",
+          "default": "16px"
+        },
+        "align": {
+          "kind": "select",
+          "label": "对齐",
+          "options": [
+            "left",
+            "center"
+          ],
+          "default": "left"
+        }
+      },
+      "styles": {
+        "rules": [
+          {
+            "decls": [
+              [
+                "display",
+                "flex"
+              ],
+              [
+                "flex-direction",
+                "column"
+              ],
+              [
+                "gap",
+                "8px"
+              ],
+              [
+                "background",
+                "#ffffff"
+              ],
+              [
+                "border",
+                "1px solid #e2e8f0"
+              ],
+              [
+                "box-shadow",
+                "0 1px 3px rgba(0,0,0,0.12)"
+              ],
+              [
+                "padding",
+                "24px"
+              ],
+              [
+                "transition",
+                "transform 160ms ease, box-shadow 160ms ease"
+              ]
+            ],
+            "vars": [
+              {
+                "name": "nc-accent",
+                "from": "accent"
+              }
+            ],
+            "bindings": [
+              {
+                "prop": "border-radius",
+                "from": "radius"
+              }
+            ],
+            "breakpoints": {
+              "mobile": [
+                [
+                  "padding",
+                  "16px"
+                ]
+              ]
+            }
+          },
+          {
+            "when": "align=center",
+            "decls": [
+              [
+                "align-items",
+                "center"
+              ],
+              [
+                "text-align",
+                "center"
+              ]
+            ]
+          },
+          {
+            "target": ".nc-card__title",
+            "decls": [
+              [
+                "color",
+                "#0f172a"
+              ],
+              [
+                "font-size",
+                "18px"
+              ],
+              [
+                "font-weight",
+                "700"
+              ],
+              [
+                "margin",
+                "0"
+              ]
+            ]
+          },
+          {
+            "target": ".nc-card__body",
+            "decls": [
+              [
+                "color",
+                "#475569"
+              ],
+              [
+                "line-height",
+                "1.6"
+              ],
+              [
+                "margin",
+                "0"
+              ]
+            ]
+          },
+          {
+            "target": ".nc-card__price",
+            "decls": [
+              [
+                "color",
+                "var(--nc-accent, #2563eb)"
+              ],
+              [
+                "font-size",
+                "20px"
+              ],
+              [
+                "font-weight",
+                "700"
+              ]
+            ]
+          },
+          {
+            "pseudo": "hover",
+            "decls": [
+              [
+                "transform",
+                "translateY(-4px)"
+              ],
+              [
+                "box-shadow",
+                "0 20px 48px rgba(0,0,0,0.2)"
+              ]
+            ]
+          },
+          {
+            "pseudo": "hover-none",
+            "decls": [
+              [
+                "border-color",
+                "#cbd5e1"
+              ]
+            ]
+          },
+          {
+            "pseudo": "active",
+            "decls": [
+              [
+                "transform",
+                "scale(0.99)"
+              ]
+            ]
+          },
+          {
+            "decls": [],
+            "queries": [
+              {
+                "kind": "size",
+                "condition": "(width >= 420px)",
+                "decls": [
+                  [
+                    "min-height",
+                    "220px"
+                  ],
+                  [
+                    "justify-content",
+                    "space-between"
+                  ]
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "notecards_badge",
+      "label": "角标",
+      "hint": "最小组件：一个 span + 两条变体",
+      "template": "notecards_badge.jet",
+      "props": {
+        "label": {
+          "kind": "text",
+          "label": "文案",
+          "default": "NEW"
+        },
+        "tone": {
+          "kind": "select",
+          "label": "色调",
+          "options": [
+            "accent",
+            "muted"
+          ],
+          "default": "accent"
+        },
+        "accent": {
+          "kind": "color",
+          "label": "强调色",
+          "default": "#2563eb"
+        }
+      },
+      "styles": {
+        "rules": [
+          {
+            "decls": [
+              [
+                "display",
+                "inline-block"
+              ],
+              [
+                "padding",
+                "2px 10px"
+              ],
+              [
+                "border-radius",
+                "999px"
+              ],
+              [
+                "font-size",
+                "12px"
+              ],
+              [
+                "font-weight",
+                "700"
+              ],
+              [
+                "letter-spacing",
+                "0.04em"
+              ]
+            ],
+            "vars": [
+              {
+                "name": "nc-badge-accent",
+                "from": "accent"
+              }
+            ]
+          },
+          {
+            "when": "tone=accent",
+            "decls": [
+              [
+                "background",
+                "var(--nc-badge-accent, #2563eb)"
+              ],
+              [
+                "color",
+                "#ffffff"
+              ]
+            ]
+          },
+          {
+            "when": "tone=muted",
+            "decls": [
+              [
+                "background",
+                "#f1f5f9"
+              ],
+              [
+                "color",
+                "#475569"
+              ]
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "presets": [
+    {
+      "id": "notecards-feature",
+      "label": "三卡特性区",
+      "category": "内容区块",
+      "thumbnail": "assets/thumb.svg",
+      "document": [
+        {
+          "id": "nc-feature",
+          "type": "core.container",
+          "props": {
+            "tag": "section",
+            "layout": {
+              "engine": "flex",
+              "flex": {
+                "direction": "column",
+                "gap": "16px"
+              }
+            }
+          },
+          "children": [
+            {
+              "id": "nc-feature-title",
+              "type": "core.heading",
+              "props": {
+                "text": "为什么选择我们",
+                "tag": "h2"
+              }
+            },
+            {
+              "id": "nc-feature-card",
+              "type": "plugin.notecards.notecards_card",
+              "props": {
+                "title": "30 分钟上线",
+                "subtitle": "Starter",
+                "body": "用预设插入整块内容区，改文案即可发布。",
+                "price": "免费",
+                "accent": "#2563eb"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

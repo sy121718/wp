@@ -177,6 +177,11 @@ func TestValidateAcceptsLegalSchema(t *testing.T) {
 			Target: ".badge", Pseudo: "hover", When: "style=raised",
 			Decls:    [][2]string{{"box-shadow", "0 1px 3px rgba(0,0,0,.12)"}},
 			Bindings: []Binding{{Prop: "transform", From: "lift", Prefix: "translateY(", Suffix: ")"}},
+		},
+		{
+			// 断点覆盖挂在普通规则上：hover / hover-none / active 走专用桶，没有断点维度
+			// （同时声明会被 Validate 拒绝，见 style_rules_test.go）。
+			Decls: [][2]string{{"font-size", "14px"}},
 			Breakpoints: map[string][][2]string{
 				core.BreakpointMobile: {{"font-size", "12px"}},
 			},

@@ -1,0 +1,25 @@
+/* 插件静态资产（docs/06-plugin-system.md §5.1）：按文件名序拼接，构建期注入产物主 CSS 之后。
+   这里消费组件导出的 CSS 变量：静态 CSS 是全局的，拿不到单个组件的检查器值，
+   manifest styles.vars 是两者之间唯一的桥（变量声明在组件根，子树内可继承，不外溢）。 */
+.nc-card__subtitle {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 11px;
+  margin: 0;
+  color: #64748b;
+}
+
+.nc-card__price {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  border-top: 1px dashed rgba(15, 23, 42, 0.12);
+  padding-top: 10px;
+}
+
+.nc-card__price::first-letter {
+  font-size: 1.1em;
+}
+
+.nc-badge {
+  box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.06);
+}

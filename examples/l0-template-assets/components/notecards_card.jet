@@ -1,0 +1,6 @@
+<article class="nc-card {{ .Classes }}">
+  <h3 class="nc-card__title">{{ .V.title }}</h3>
+  {{ if .V.subtitle }}<p class="nc-card__subtitle">{{ .V.subtitle }}</p>{{ end }}
+  <p class="nc-card__body">{{ .V.body }}</p>
+  {{ if .V.price }}<p class="nc-card__price">{{ .V.price }}</p>{{ end }}
+</article>

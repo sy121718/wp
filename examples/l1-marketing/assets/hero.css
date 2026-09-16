@@ -1,0 +1,14 @@
+/* 插件静态资产：消费 manifest styles.vars 导出的 --ck-accent / --ck-coupon-accent。 */
+.ck-hero__eyebrow + .ck-hero__title {
+  margin-top: -4px;
+}
+
+.ck-hero__cta:focus-visible {
+  outline: 3px solid #ffffff;
+  outline-offset: 2px;
+}
+
+.ck-coupon__code::selection {
+  background: var(--ck-coupon-accent, #f97316);
+  color: #ffffff;
+}

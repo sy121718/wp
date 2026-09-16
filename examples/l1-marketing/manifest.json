@@ -1,0 +1,515 @@
+{
+  "id": "campaignkit",
+  "name": "营销组件样例",
+  "version": "1.0.0",
+  "migrations": "migrations",
+  "schemaVersion": 1,
+  "components": [
+    {
+      "name": "campaignkit_hero",
+      "label": "营销 Hero",
+      "hint": "容器查询 + 主题档位 + 变量导出",
+      "template": "campaignkit_hero.jet",
+      "props": {
+        "eyebrow": {
+          "kind": "text",
+          "label": "眉标",
+          "default": "限时活动"
+        },
+        "title": {
+          "kind": "text",
+          "label": "主标题",
+          "default": "秋季大促，全场五折"
+        },
+        "subtitle": {
+          "kind": "textarea",
+          "label": "副标题",
+          "maxlen": 240,
+          "default": "9 月 20 日 0 点开抢，售完即止。"
+        },
+        "ctaLabel": {
+          "kind": "text",
+          "label": "按钮文案",
+          "default": "立即抢购"
+        },
+        "ctaHref": {
+          "kind": "text",
+          "label": "按钮链接",
+          "default": "/site/campaign"
+        },
+        "accent": {
+          "kind": "color",
+          "label": "强调色",
+          "default": "#f97316"
+        },
+        "accentSoft": {
+          "kind": "color",
+          "label": "强调色（悬停）",
+          "default": "#ea580c"
+        },
+        "align": {
+          "kind": "select",
+          "label": "对齐",
+          "options": [
+            "left",
+            "center"
+          ],
+          "default": "left"
+        }
+      },
+      "styles": {
+        "rules": [
+          {
+            "decls": [
+              [
+                "display",
+                "flex"
+              ],
+              [
+                "flex-direction",
+                "column"
+              ],
+              [
+                "gap",
+                "12px"
+              ],
+              [
+                "padding",
+                "48px 24px"
+              ],
+              [
+                "border-radius",
+                "20px"
+              ],
+              [
+                "background",
+                "linear-gradient(135deg,#1e293b,#334155)"
+              ],
+              [
+                "color",
+                "#f8fafc"
+              ]
+            ],
+            "vars": [
+              {
+                "name": "ck-accent",
+                "from": "accent"
+              },
+              {
+                "name": "ck-accent-soft",
+                "from": "accentSoft"
+              }
+            ],
+            "breakpoints": {
+              "mobile": [
+                [
+                  "padding",
+                  "32px 16px"
+                ],
+                [
+                  "gap",
+                  "8px"
+                ]
+              ]
+            }
+          },
+          {
+            "when": "align=center",
+            "decls": [
+              [
+                "align-items",
+                "center"
+              ],
+              [
+                "text-align",
+                "center"
+              ]
+            ]
+          },
+          {
+            "target": ".ck-hero__eyebrow",
+            "decls": [
+              [
+                "margin",
+                "0"
+              ],
+              [
+                "font-size",
+                "12px"
+              ],
+              [
+                "letter-spacing",
+                "0.16em"
+              ],
+              [
+                "text-transform",
+                "uppercase"
+              ],
+              [
+                "color",
+                "var(--ck-accent, #f97316)"
+              ]
+            ]
+          },
+          {
+            "target": ".ck-hero__title",
+            "decls": [
+              [
+                "margin",
+                "0"
+              ],
+              [
+                "font-size",
+                "clamp(28px,6vw,44px)"
+              ],
+              [
+                "line-height",
+                "1.15"
+              ]
+            ]
+          },
+          {
+            "target": ".ck-hero__subtitle",
+            "decls": [
+              [
+                "margin",
+                "0"
+              ],
+              [
+                "color",
+                "#cbd5e1"
+              ],
+              [
+                "line-height",
+                "1.6"
+              ]
+            ]
+          },
+          {
+            "target": ".ck-hero__cta",
+            "decls": [
+              [
+                "display",
+                "inline-block"
+              ],
+              [
+                "padding",
+                "12px 24px"
+              ],
+              [
+                "border-radius",
+                "999px"
+              ],
+              [
+                "background",
+                "var(--ck-accent, #f97316)"
+              ],
+              [
+                "color",
+                "#ffffff"
+              ],
+              [
+                "font-weight",
+                "700"
+              ],
+              [
+                "text-decoration",
+                "none"
+              ],
+              [
+                "transition",
+                "background 160ms ease, transform 120ms ease"
+              ]
+            ]
+          },
+          {
+            "target": ".ck-hero__cta",
+            "pseudo": "hover",
+            "decls": [
+              [
+                "background",
+                "var(--ck-accent-soft, #ea580c)"
+              ],
+              [
+                "transform",
+                "translateY(-2px)"
+              ]
+            ]
+          },
+          {
+            "target": ".ck-hero__cta",
+            "pseudo": "hover-none",
+            "decls": [
+              [
+                "box-shadow",
+                "inset 0 0 0 2px #ffffff"
+              ]
+            ]
+          },
+          {
+            "target": ".ck-hero__cta",
+            "pseudo": "active",
+            "decls": [
+              [
+                "transform",
+                "scale(0.98)"
+              ]
+            ]
+          },
+          {
+            "decls": [],
+            "queries": [
+              {
+                "kind": "size",
+                "condition": "(width >= 640px)",
+                "decls": [
+                  [
+                    "padding",
+                    "64px 40px"
+                  ]
+                ]
+              },
+              {
+                "kind": "theme",
+                "container": "sky-theme",
+                "prop": "--sky-density",
+                "value": "compact",
+                "decls": [
+                  [
+                    "padding",
+                    "32px 16px"
+                  ],
+                  [
+                    "border-radius",
+                    "12px"
+                  ]
+                ]
+              },
+              {
+                "kind": "local",
+                "container": "sky-ink",
+                "prop": "--sky-scheme",
+                "value": "light",
+                "decls": [
+                  [
+                    "color",
+                    "#0f172a"
+                  ]
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "campaignkit_coupon",
+      "label": "优惠券卡",
+      "hint": "结构伪类 + 专用桶状态",
+      "template": "campaignkit_coupon.jet",
+      "props": {
+        "benefit": {
+          "kind": "text",
+          "label": "优惠文案",
+          "default": "满 199 减 50"
+        },
+        "code": {
+          "kind": "text",
+          "label": "券码",
+          "default": "AUTUMN50"
+        },
+        "expires": {
+          "kind": "text",
+          "label": "有效期文案",
+          "default": "有效期至 9 月 30 日"
+        },
+        "accent": {
+          "kind": "color",
+          "label": "强调色",
+          "default": "#f97316"
+        }
+      },
+      "styles": {
+        "rules": [
+          {
+            "decls": [
+              [
+                "display",
+                "flex"
+              ],
+              [
+                "flex-direction",
+                "column"
+              ],
+              [
+                "gap",
+                "6px"
+              ],
+              [
+                "padding",
+                "20px"
+              ],
+              [
+                "border-style",
+                "dashed"
+              ],
+              [
+                "border-width",
+                "2px"
+              ],
+              [
+                "border-radius",
+                "12px"
+              ],
+              [
+                "background",
+                "#fff7ed"
+              ]
+            ],
+            "vars": [
+              {
+                "name": "ck-coupon-accent",
+                "from": "accent"
+              }
+            ],
+            "bindings": []
+          },
+          {
+            "target": ".ck-coupon__benefit",
+            "decls": [
+              [
+                "margin",
+                "0"
+              ],
+              [
+                "font-size",
+                "20px"
+              ],
+              [
+                "font-weight",
+                "700"
+              ],
+              [
+                "color",
+                "var(--ck-coupon-accent, #f97316)"
+              ]
+            ]
+          },
+          {
+            "target": ".ck-coupon__code",
+            "decls": [
+              [
+                "margin",
+                "0"
+              ],
+              [
+                "font-family",
+                "ui-monospace, SFMono-Regular, Menlo, monospace"
+              ],
+              [
+                "letter-spacing",
+                "0.08em"
+              ]
+            ]
+          },
+          {
+            "target": ".ck-coupon__expires",
+            "decls": [
+              [
+                "margin",
+                "0"
+              ],
+              [
+                "font-size",
+                "12px"
+              ],
+              [
+                "color",
+                "#78716c"
+              ]
+            ]
+          },
+          {
+            "target": ".ck-coupon__expires",
+            "pseudo": "first-child",
+            "decls": [
+              [
+                "margin-top",
+                "0"
+              ]
+            ]
+          },
+          {
+            "pseudo": "hover",
+            "decls": [
+              [
+                "transform",
+                "translateY(-2px)"
+              ],
+              [
+                "box-shadow",
+                "0 10px 28px rgba(0,0,0,0.16)"
+              ]
+            ]
+          },
+          {
+            "pseudo": "hover-none",
+            "decls": [
+              [
+                "border-width",
+                "3px"
+              ]
+            ]
+          },
+          {
+            "pseudo": "active",
+            "decls": [
+              [
+                "transform",
+                "scale(0.99)"
+              ]
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "presets": [
+    {
+      "id": "campaignkit-hero-preset",
+      "label": "营销 Hero 区块",
+      "category": "营销区块",
+      "document": [
+        {
+          "id": "ck-preset-wrap",
+          "type": "core.container",
+          "props": {
+            "tag": "section",
+            "layout": {
+              "engine": "flex",
+              "flex": {
+                "direction": "column",
+                "gap": "16px"
+              }
+            }
+          },
+          "children": [
+            {
+              "id": "ck-preset-hero",
+              "type": "plugin.campaignkit.campaignkit_hero",
+              "props": {
+                "eyebrow": "限时活动",
+                "title": "秋季大促，全场五折",
+                "subtitle": "9 月 20 日 0 点开抢，售完即止。",
+                "ctaLabel": "立即抢购",
+                "ctaHref": "/site/campaign",
+                "accent": "#f97316",
+                "accentSoft": "#ea580c"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

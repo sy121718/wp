@@ -1,0 +1,264 @@
+{
+  "id": "styletile",
+  "name": "样式声明样例",
+  "version": "1.0.0",
+  "components": [
+    {
+      "name": "styletile_note",
+      "label": "提示条（纯样式声明）",
+      "hint": "零 CSS 资产：全部样式由 manifest styles 段声明",
+      "template": "styletile_note.jet",
+      "props": {
+        "title": {
+          "kind": "text",
+          "label": "标题",
+          "default": "注意"
+        },
+        "body": {
+          "kind": "textarea",
+          "label": "正文",
+          "maxlen": 300,
+          "default": "这是一条提示。"
+        },
+        "tone": {
+          "kind": "select",
+          "label": "语义",
+          "options": [
+            "info",
+            "success",
+            "warning"
+          ],
+          "default": "info"
+        },
+        "accent": {
+          "kind": "color",
+          "label": "强调色",
+          "default": "#2563eb"
+        },
+        "padY": {
+          "kind": "unit",
+          "label": "纵向内边距",
+          "default": "16px"
+        },
+        "lift": {
+          "kind": "unit",
+          "label": "悬浮位移",
+          "default": "-2px"
+        }
+      },
+      "styles": {
+        "rules": [
+          {
+            "decls": [
+              [
+                "display",
+                "flex"
+              ],
+              [
+                "flex-direction",
+                "column"
+              ],
+              [
+                "gap",
+                "6px"
+              ],
+              [
+                "border-radius",
+                "12px"
+              ],
+              [
+                "border-left-style",
+                "solid"
+              ],
+              [
+                "border-left-width",
+                "4px"
+              ],
+              [
+                "transition",
+                "box-shadow 160ms ease, transform 120ms ease"
+              ]
+            ],
+            "vars": [
+              {
+                "name": "st-accent",
+                "from": "accent"
+              }
+            ],
+            "bindings": [
+              {
+                "prop": "padding",
+                "from": "padY"
+              }
+            ],
+            "breakpoints": {
+              "mobile": [
+                [
+                  "padding",
+                  "12px"
+                ],
+                [
+                  "gap",
+                  "4px"
+                ]
+              ]
+            }
+          },
+          {
+            "when": "tone=info",
+            "decls": [
+              [
+                "border-left-color",
+                "#2563eb"
+              ],
+              [
+                "background",
+                "#eff6ff"
+              ]
+            ]
+          },
+          {
+            "when": "tone=success",
+            "decls": [
+              [
+                "border-left-color",
+                "#16a34a"
+              ],
+              [
+                "background",
+                "#f0fdf4"
+              ]
+            ]
+          },
+          {
+            "when": "tone=warning",
+            "decls": [
+              [
+                "border-left-color",
+                "#d97706"
+              ],
+              [
+                "background",
+                "#fffbeb"
+              ]
+            ]
+          },
+          {
+            "target": ".st-title",
+            "decls": [
+              [
+                "color",
+                "var(--st-accent)"
+              ],
+              [
+                "font-weight",
+                "700"
+              ],
+              [
+                "font-size",
+                "15px"
+              ]
+            ]
+          },
+          {
+            "target": ".st-title",
+            "pseudo": "first-child",
+            "decls": [
+              [
+                "margin-top",
+                "0"
+              ]
+            ]
+          },
+          {
+            "target": ".st-body",
+            "decls": [
+              [
+                "color",
+                "#475569"
+              ],
+              [
+                "line-height",
+                "1.6"
+              ]
+            ]
+          },
+          {
+            "pseudo": "hover",
+            "bindings": [
+              {
+                "prop": "transform",
+                "from": "lift",
+                "prefix": "translateY(",
+                "suffix": ")"
+              }
+            ],
+            "decls": [
+              [
+                "box-shadow",
+                "0 10px 28px rgba(0,0,0,0.16)"
+              ]
+            ]
+          },
+          {
+            "pseudo": "hover-none",
+            "decls": [
+              [
+                "border-left-width",
+                "8px"
+              ]
+            ]
+          },
+          {
+            "pseudo": "active",
+            "decls": [
+              [
+                "transform",
+                "scale(0.99)"
+              ]
+            ]
+          },
+          {
+            "decls": [],
+            "queries": [
+              {
+                "kind": "size",
+                "condition": "(width >= 480px)",
+                "decls": [
+                  [
+                    "flex-direction",
+                    "row"
+                  ],
+                  [
+                    "align-items",
+                    "baseline"
+                  ],
+                  [
+                    "gap",
+                    "12px"
+                  ]
+                ]
+              },
+              {
+                "kind": "theme",
+                "container": "sky-theme",
+                "prop": "--sky-density",
+                "value": "compact",
+                "decls": [
+                  [
+                    "padding",
+                    "8px"
+                  ],
+                  [
+                    "gap",
+                    "4px"
+                  ]
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

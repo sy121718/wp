@@ -4,6 +4,9 @@
 > （`internal/builder/style`，含 fuzz 回归资产）；其余部分按 §13 阶段计划推进。
 > 本文档是插件体系的唯一权威设计来源，会话与实现冲突时以本文档为准，
 > 本文与实际代码冲突时先改文档评审、再改代码。
+>
+> 插件作者的入口（能做什么 / 不能做什么、字段合法值、可安装示例、排错）见
+> [06-E-plugin-authoring.md](./06-E-plugin-authoring.md)。
 
 ## 1. 定位与核心决策
 
@@ -101,19 +104,20 @@ Fragment 落地后的再评估项，首发不做。**
 
 ```text
 marketing-plugin.zip
-├── manifest.json          # 唯一入口声明：版本/L1迁移清单/L2内容源/组件/presets/后台
-├── migrations/            # L1：001_init.sql（CREATE SCHEMA + 建表）…（版本化）
-├── collections.json       # L2：内容源注册（§9）
-├── components/            # L0：可视化组件
-│   ├── campaign_list/
-│   │   ├── manifest.json  # props schema（ct 语义）+ styles 声明（§6）
-│   │   └── list.jet       # Jet 模板
-│   └── coupon_card/
-├── presets/               # L0：区块预设（对标 GrapesJS Block Manager）
-├── admin/                 # L1：后台管理页（Jet 模板 + HTMX，菜单经 manifest 注册）
-├── fragments/             # 运行时片段（表单提交/剩余名额，0-D 落地后启用）
-└── assets/                # 静态资产（css/js/图片，打包进产物）
+├── manifest.json          # 唯一入口：插件元数据 + components[]（组件声明内联在此）+ presets[]
+├── components/            # L0：只放 Jet 模板文件；声明（props/styles）在 manifest.components[]
+│   ├── campaign_list.jet
+│   └── coupon_card.jet
+├── assets/                # 静态资产：*.css 按文件名序拼接，注入产物 @layer sky-plugin
+├── migrations/            # L1：001_init.sql（CREATE SCHEMA plugin_<id> + 建表）…（版本化）
+├── collections.json       # L2：内容源注册（§9）—— **未实现**（缺口见 §11A / §13）
+├── admin/                 # L1：后台管理页 —— **未实现**（缺口见 §11A / §13）
+└── fragments/             # 运行时片段 —— 0-D 落地前不对插件开放
 ```
+
+> 组件是**内联在 `manifest.json` 的 `components[]`**，不是「每个组件一个子目录 manifest」——
+> `components/` 目录只承载 `.jet` 模板文件（安装期校验「声明了模板但包里没有 → 拒绝」）。
+> 手写插件的完整字段参考与三个可安装示例见 [06-E-plugin-authoring.md](./06-E-plugin-authoring.md)。
 
 ### 5.2 presets（区块预设）
 
@@ -166,10 +170,12 @@ marketing-plugin.zip
 | 能力 | 字段 | 对标内置组件的既有模式 |
 |---|---|---|
 | 属性绑定 | `bindings: [{prop, from, prefix?, suffix?}]` | 检查器控件值 → CSS 声明 |
+| 变量导出 | `vars: [{name, from}]` | 控件值 → CSS 变量 `--<name>`，供 `assets/*.css` 与同规则 `var()` 消费 |
 | 变体 | `when: "style=raised"`（枚举等值） | button 的 solid/outline/ghost |
-| 状态 | `pseudo: "hover"`（枚举） | button 的 Normal/Hover 双态 |
+| 状态 | `pseudo` 枚举（含 `hover` / `hover-none` / `active` 专用桶与 `first-child` 等结构伪类） | button 的 Normal/Hover 双态、触屏等价形态与按压反馈 |
 | 响应式 | `breakpoints: {tablet/mobile: [...]}` | 三端桶（core.Breakpoint*） |
-| 子元素 | `target: ".badge"`（1~3 段类） | 容器内子结构样式 |
+| 容器 / 主题查询 | `queries: [{kind: size/theme/local, ...}]` | AddContainer（sky-auto）/ AddThemeQuery（sky-theme）/ AddStyleQuery（sky-local） |
+| 子元素 | `target: ".badge"`（1~3 段类，后代语义） | 容器内子结构样式 |
 
 ### 6.2 三重安全约束（无任意 CSS 逃逸面）
 
@@ -188,8 +194,14 @@ marketing-plugin.zip
   返回错误（构建失败优于静默丢样式）；
 - 确定性：声明用 slice 保序 + 复用 `CSSBuckets.Add`，产物与内置组件
   字节级同构；
-- 复杂动画/特殊结构不在引擎内表达：走插件包 `assets/*.css` 静态资产
-  （打包层 scope 处理）；
+- **伪类分派遵循多端硬规则**：`hover` 进 `AddHover`（规则包进 `@media (hover: hover)`，
+  触屏整段不输出，防粘滞 hover）、`hover-none` 进 `AddHoverNone`（触屏等价形态）、
+  `active` 进 `AddActive`（不包媒体查询 —— `:active` 在触屏同样触发，是移动端唯一可靠的
+  按压反馈）；专用桶没有断点维度，与 `breakpoints` 互斥（校验期拒绝，不静默丢样式）；
+- 不在引擎内表达的（有意取舍）：伪元素（`::before/::after`，`content` 是注入载体）、
+  `@keyframes` 与复杂动画、`@font-face` / 外联资源、子代组合符（`>`）与任意选择器 ——
+  前两类写进插件包 `assets/*.css` 静态资产（打包层 scope 处理），后两类是安全边界的代价。
+  完整清单与「想要时走哪条路」见 [06-E-plugin-authoring.md](./06-E-plugin-authoring.md) §2。
 - 已含 12 语义/注入用例 + fuzz（30s 720 万次执行零失败）；开发中 fuzz
   实际抓出两个真 bug（后代选择器缺空格、nodeID 未校验）并修复，失败
   样本入库 `testdata/fuzz` 作回归资产。
@@ -282,14 +294,62 @@ Query DSL）：
 
 > 结论先行：**渲染同管线、样式同白名单、模板同约束**；差距只在「Go 能力面」——
 > 插件是编译期数据输入，凡需要 Go 逻辑、运行时行为或超出声明白名单的能力，
-> 插件组件一律没有。示例见 `examples/l0-demo/`（与 `plugin init` 产物一致）。
+> 插件组件一律没有。
+
+### 11A.1 为什么轻轨插件不能携带新组件（VIS-015）
+
+**机制事实**：内核组件（`core.*`）是编译进二进制的 Go 包 —— 各组件包在自己的 `init()`
+里注册，`internal/builder/builder.go` 用空导入把它们串起来。插件包的「组件」不是代码，
+而是**三份声明**（Jet 模板 + props 控件 schema + styles 样式规则），由内核的
+`plugincomp` / `style` / CompositeLoader 消费成与内置组件同形的编译输入。
+
+所以「插件带新组件」在 go_wp 里的真实含义是**换一种形态表达组件**，而不是不能扩展组件；
+但若要求的是「插件里写 Go 代码，安装后在构建期/运行期执行它」，那就是另一回事 —— 两条硬理由否掉它：
+
+1. **确定性构建（架构不变量 5）**：产物必须由「Page Document + BuildContext + Registry + Compiler」
+   唯一决定，同一输入恒同字节。运行时加载第三方 Go 代码意味着产物取决于「当时加载到了什么」，
+   hash 寻址复用、stale 标记、发布回滚都失去判定依据；Go 官方的 `plugin` 包还要求同环境同编译器
+   构建（cgo + 精确版本匹配），官方不建议用于生产。
+2. **「不执行第三方代码」的安全边界**：访问面只读静态产物（不变量 1），控制面若在构建期执行
+   插件携带的代码，等于把任意代码执行权交给了 zip 的分发链路。插件生态一旦对上第三方开放，
+   这道边界就再也没有第二个落点。
+
+这是**有意的取舍**（06 §1.2 一票定调），不是待偿还的技术债；把它讲清楚，是为了让插件作者知道
+能力天花板在哪里、以及撞到天花板时该往哪走。
+
+### 11A.2 想要新组件时的正确路径
+
+| 需求 | 路径 | 代价 / 现状 |
+|---|---|---|
+| 既有元素的重新组合、换皮、布局变体 | **轻轨插件**（模板 + 样式声明 + presets） | 最低，上传即用；三个示例覆盖三档表达力（见 §11A.3） |
+| 需要数据进可视化绑定 | 轻轨 + L2 内容源 | `collections.json` 未实现（§13 P3，硬依赖 0-A2） |
+| 需要新的检查器控件类型 / 新的 CSS 原语 | **内核**（Issue / PR）：扩 `propKindWhitelist` 或 style 引擎原语 | 一次投入，内置组件与所有插件同时受益 |
+| 需要 Go 逻辑、运行时行为、并发或资金操作 | **重轨模块**（`internal/module/`，§4.2）或 0-D `runtimefragment` | 编译期接入、走模块纪律；插件壳可提供展示与管理页 |
+| 组件必须访问数据库 / 跨表 | 重轨模块 + 受限数据源接口（不变量 7） | 契约包声明只读接口，`builder/core` 持有契约 |
+
+判定速查：**「这些像素用声明能描出来吗」→ 能就是轻轨插件；描不出来但只是差一种 CSS 原语 → 提内核需求；
+差的是执行逻辑或数据读写 → 重轨模块。**
+
+### 11A.3 能力清单的权威版与示例
+
+下面两张表是速查版；**逐条合法值、报错文案、排查路径**的权威版在
+[06-E-plugin-authoring.md](./06-E-plugin-authoring.md)（含三个可直接安装的示例）：
+
+| 示例 | 档位 | 展示的表达力 |
+|---|---|---|
+| `examples/l0-style-only/` | 纯样式声明 | 绑定 / 变体 / 伪类三态 / 结构伪类 / 变量导出 / 断点 / 容器与主题查询 |
+| `examples/l0-template-assets/` | 模板片段 + 静态资产 | Jet 模板条件输出 + `assets/*.css` 消费导出变量 + presets |
+| `examples/l1-marketing/` | 完整档 | L1 迁移（自有 schema）+ 容器查询三桶 + presets + 多组件 |
+| `examples/l0-demo/` | 最小样例 | 与 `go run ./cmd/plugin init <id>` 脚手架产物逐字节一致 |
+
+三档示例的自动化验收（真实安装 + 真实编译渲染）见 `public/test/plugin/unit/example_tiers_test.go`。
 
 ### 插件组件能用的能力（全部已实现）
 
 | 能力 | 说明 |
 |---|---|
 | Jet 模板渲染 | 与内置组件同一 CompositeLoader（§7）与受限全局函数集，Jet 默认转义；`{{ .V.字段 }}` 走检查器 props |
-| 样式声明（§6） | 与内置组件同一 style 引擎：属性绑定 / 变体 / 伪类 / 响应式断点 / 子元素 target，编译进 `core.CSSBuckets`，同一确定性约束 |
+| 样式声明（§6） | 与内置组件同一 style 引擎：属性绑定 / 变量导出 / 变体 / 伪类（含 `hover`、`hover-none`、`active` 三个专用桶与结构伪类）/ 响应式断点 / 容器与主题查询 / 子元素 target，编译进 `core.CSSBuckets`，同一确定性约束 |
 | props 控件白名单 | 7 种：text / textarea / number / select / color / media / unit（`plugincomp.propKindWhitelist`） |
 | 区块预设 presets | 与内置组件同库注册，预设 AST 可引用 `core.*` 内置组件 |
 | L1 迁移 | 安装/升级时执行 `CREATE SCHEMA plugin_<id>` + 版本化 SQL，级联卸载 |
@@ -302,14 +362,17 @@ Query DSL）：
 |---|---|
 | 任意 Go 逻辑 / 运行时代码 | §1.2 一票定调：插件 = 编译期输入；运行时行为等 0-D runtimefragment 能力对插件开放（当前未开放） |
 | 新增检查器控件类型 | 控件类型白名单封闭（越权类型在 manifest 校验期拒绝），扩展需先扩检查器原语 |
-| 任意 CSS / 外联资源 | §6.2 三重约束对插件与内置同样生效：属性白名单约 90 个、值白名单封 url() 外联、选择器 1~3 段白名单 |
+| 任意 CSS / 外联资源 | §6.2 三重约束对插件与内置同样生效：属性名白名单（布局/盒模型/视觉/排版/变换约 100 项）、值白名单封 `url()` 外联、选择器 1~3 段类白名单 |
+| 伪元素、`@keyframes`、`@font-face` | 不在声明引擎内表达（`content` 是字符串注入载体）；写进 `assets/*.css` 静态资产 |
+| 子代组合符（`>`）、属性选择器、`nth-child(n)` | 放宽选择器组合面只增加越权命中风险；后代选择器 + `first-child` / `last-child` / `only-child` 已覆盖绝大多数需求 |
 | 覆盖内置模板/组件 | CompositeLoader 命名空间隔离（plugin/{pid}/），路径层面不存在覆盖 |
 | 直连数据库 / 跨表查询 | 只能经 §8 迁移建自有 schema 表；Page Document 数据只走 CollectionSource 白名单（§9） |
 | 后台菜单/管理页 | manifest `admin` 字段未实现（**能力缺口**，依赖后台菜单注册链路对插件开放） |
 | L2 内容源 | `collections.json` 未实现（**能力缺口**，硬依赖 0-A2 落地节奏，见 §13 P3） |
 
-> 两个能力缺口（admin 页 / collections）在 `examples/l0-demo/README.md` 同步标注；
-> L1/L2 声明式片段在缺口闭合前不得在示例或脚手架中伪造。
+> 两个能力缺口（admin 页 / collections）在 `examples/l0-demo/README.md` 与本文件的
+> §11A.2 同步标注；L1/L2 声明式片段在缺口闭合前不得在示例或脚手架中伪造。
+> 已实现的 L0 三档示例不在此列 —— 它们的每一行声明都由 `example_tiers_test.go` 真实验收。
 
 ## 11. 安全边界汇总
 
@@ -340,6 +403,7 @@ Query DSL）：
 | **P0（已完成）** | 样式声明引擎 `internal/builder/style`（§6） | ✅ 已合入主干 |
 | **P1（已完成）** | `plugin` 模块（上传/版本/启停/卸载 + registry + zip 安全解析 + manifest 校验）；CompositeLoader 命名空间合并（§7）；plugin.* 节点编译分发（builder 内核契约）；组件注册进 workbench palette；编译同源注入（dashboard 预览 + page 构建）；后台插件管理页 | ✅ 已合入主干 |
 | **P2（已完成）** | L1 数据层迁移执行器（插件 schema 创建/版本管理/级联卸载 + registry 记账，真实 PG 测试）；presets 区块预设注册进组件库（§5.2，对标 GrapesJS Block Manager） | ✅ 已合入主干 |
+| **P2.5（已完成）** | 轻轨插件表达力收口（VIS-015）：style 引擎补齐变量导出 / 容器与主题查询 / 触屏三态分派 / 结构伪类 / 单项边框属性；三档可安装示例（`examples/l0-style-only`、`l0-template-assets`、`l1-marketing`）；作者指南 06-E | ✅ 已合入主干 |
 | **P3** | L2 CollectionSource（对齐 0-A2 content 落地节奏，**硬依赖 0-A2 未落地，缓**）；脚手架 `plugin init`（对标 strapi generate） | 脚手架 ✅ 已合入；CollectionSource 待做 |
 | **演进** | 第三轨（Yaegi/Wasm 受限逻辑）；插件市场与签名分发 | 评估项 |
 

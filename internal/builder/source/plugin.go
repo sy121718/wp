@@ -45,12 +45,24 @@ type CollectionBinding struct {
 //
 // 为什么是接口而不是具体类型：编译期的样式桶实现是 core.CSSBuckets（住在内核里），
 // 而本包不能 import core —— 那样共享形状又变回内核的一部分，契约包照样被钉死在 core 上。
-// 这里只声明内核实际使用的那一个方法（style 引擎编译规则时只调 Add），
-// core.CSSBuckets 天然满足，于是「样式编译闭包」的类型能留在本包，
-// 内核侧继续零改动地传 *CSSBuckets。
+// 这里声明 style 引擎实际使用的全部写入方法（断点桶 + 悬浮/按压专用桶 + 容器查询三桶），
+// core.CSSBuckets 天然满足（这些方法它本来就有，内置组件走的就是它们），
+// 于是「样式编译闭包」的类型能留在本包，内核侧继续零改动地传 *CSSBuckets。
 type StyleSink interface {
 	// Add 追加一条规则到指定断点桶（selector 已按 node 作用域化，decls 为声明列表）。
 	Add(breakpoint, selector string, decls []string)
+	// AddHover 悬浮规则：实现方须把规则包进 @media (hover: hover)（触屏不输出，防粘滞 hover）。
+	AddHover(selector string, decls []string)
+	// AddHoverNone 无悬停设备（触屏）的等价形态：实现方须包 @media (hover: none)。
+	AddHoverNone(selector string, decls []string)
+	// AddActive 按压规则：实现方须**不**包媒体查询（:active 在触屏同样触发）。
+	AddActive(selector string, decls []string)
+	// AddContainer 容器尺寸查询：condition 形如 "(width >= 480px)"。
+	AddContainer(condition, selector string, decls []string)
+	// AddThemeQuery 主题档位样式查询：containerName style(prop: value)。
+	AddThemeQuery(containerName, prop, value, selector string, decls []string)
+	// AddStyleQuery 局部样式查询：containerName style(prop: value)，与主题档位分层输出。
+	AddStyleQuery(containerName, prop, value, selector string, decls []string)
 }
 
 // PluginComponentSpec 插件组件的编译规格（编译内核消费的中性形状）。
