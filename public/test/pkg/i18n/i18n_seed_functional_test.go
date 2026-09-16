@@ -144,6 +144,53 @@ func TestI18nEnumsSeedSchemaAndIdempotency(t *testing.T) {
 		t.Fatalf("sys_i18n en-US 行数应为 2921（同上；webhook 的 17 个、SEO 控制台的 38 个、重定向管理页的 60 个、主题包的 15 个与访问统计维度榜的 18 个 key 中英各一行），实际 %d", enCount)
 	}
 
+	// 4-C) 本批（222）的后台访问统计维度榜词条：18 个 key 中英成对，且取值不同。
+	//
+	// 总数 ledger 只保证「行数对得上」——漏一条 en-US、同时多写一条别的 key 也能凑数，
+	// 所以这里按本批 key 逐条对账（含「英文不是复制中文」这一项，与 4-B 同形）。
+	// 这批词条的特殊性在于：模板兜底文案本身就是中文，漏了 en-US 不会有任何报错，
+	// 只会让英文界面显示中文 —— 那种缺陷在测试里不钉住，就只能等用户看见。
+	dimensionKeys := []string{
+		"admin.analytics.referrers.title", "admin.analytics.referrers.hint",
+		"admin.analytics.referrers.empty", "admin.analytics.referrers.unknown",
+		"admin.analytics.ua.title", "admin.analytics.ua.hint",
+		"admin.analytics.ua.empty", "admin.analytics.ua.unknown",
+		"admin.analytics.langs.title", "admin.analytics.langs.hint",
+		"admin.analytics.langs.empty", "admin.analytics.langs.unknown",
+		"admin.analytics.rank.hint_lead", "admin.analytics.rank.hint_tail",
+		"admin.analytics.col.referrer", "admin.analytics.col.ua_class",
+		"admin.analytics.col.lang", "admin.analytics.breakdown.retention_hint",
+	}
+	if got := countRows(t, db, "sys_i18n", "item_key IN (?) AND lang = ?", dimensionKeys, "zh-CN"); got != 18 {
+		t.Fatalf("222 的 18 个 key 应有 zh-CN 各一行，实际 %d", got)
+	}
+	if got := countRows(t, db, "sys_i18n", "item_key IN (?) AND lang = ?", dimensionKeys, "en-US"); got != 18 {
+		t.Fatalf("222 的 18 个 key 应有 en-US 各一行（不许只写中文），实际 %d", got)
+	}
+	var dimensionPairs []struct {
+		ItemKey string
+		ZH      string
+		EN      string
+	}
+	if err := db.Table("sys_i18n AS z").
+		Select("z.item_key AS item_key, z.item_value AS zh, e.item_value AS en").
+		Joins("JOIN sys_i18n e ON e.item_key = z.item_key AND e.lang = 'en-US'").
+		Where("z.lang = 'zh-CN' AND z.item_key IN (?)", dimensionKeys).
+		Scan(&dimensionPairs).Error; err != nil {
+		t.Fatalf("查询 222 词条中英对失败: %v", err)
+	}
+	if len(dimensionPairs) != 18 {
+		t.Fatalf("222 词条中英匹配应为 18 对，实际 %d 对", len(dimensionPairs))
+	}
+	for _, p := range dimensionPairs {
+		if p.ZH == "" || p.EN == "" {
+			t.Fatalf("%s 中英文案不得为空（zh=%q en=%q）", p.ItemKey, p.ZH, p.EN)
+		}
+		if p.ZH == p.EN {
+			t.Fatalf("%s 中英文案相同（%q），疑似未翻译", p.ItemKey, p.ZH)
+		}
+	}
+
 	// 4-B) 访客面组件词条（060）：13 个 key，zh-CN/en-US 各一行；中英必须都有（不许缺翻译）。
 	if got := countRows(t, db, "sys_i18n", "item_key LIKE 'site.component.%' AND lang = ?", "zh-CN"); got != 56 {
 		t.Fatalf("site.component.* zh-CN 应为 56 行（060 的 13 + 065 的 1 + 176 的 16 + 177 的 26），实际 %d", got)
