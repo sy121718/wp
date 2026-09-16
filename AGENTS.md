@@ -243,7 +243,8 @@ Cookie 属性：`HttpOnly`、`Secure`（release 自动启用）、`SameSite=Lax`
 - 迁移的 `CheckSQL` 里 `?` 由迁移器传入的是**表名**；判定要用的其它值（权限点代码等）必须写进 SQL 字面量，否则判定恒为 0、迁移每次启动都重跑（178 踩过）
 - **主键选型按「这个 id 会不会出现在系统边界之外」判**（DB-020 复核结论）：对外实体（`projects` / `pages` / `products` / `blocks` / `themes` / `content_templates` 等有对外接口，或 id 进了 Page Document / 产物元数据 / 导出物的）用 **uuid**；纯内部流水与字典（`page_views`、`build_jobs`、`publication_receipts`、`page_site_slots`、`inventory_change_reasons`、`sys_*` 全系）用 **bigint identity**。**两套并存是设计，不是待消除的不一致** —— 缺判据才是问题；新表按此选型，别为了「统一」把对外实体改成自增（id 一旦可枚举就少一层纵深，与 DB-009 想要的隔离方向相反）。判据只约束**新表**，**存量按现状为准**：`master_data_changes` / `inventory_stock_movements` 是 uuid 存量（后者 id 已进对外列表投影 `MovementRow`），说明「流水必然内部」这个直觉不成立 —— 别拿判据去反推存量
 - **主键类型的代价是实测过的，别凭感觉排优劣**（本地 PG 18.6，100 万行同结构同 payload）：插入 `bigint identity` 1.90s / `uuid` v7 2.81s / `uuid` v4 5.42s，主键索引 21MB / 30MB / 38MB，**点查三者无差别**（都在测量噪声内 —— 别拿它当任何一方的论据）。所以 uuid 不是「更好的主键」，而是为「id 不可枚举」付的写放大（v4 随机插入导致 B-tree 页分裂，写放大 2.85 倍）：付它的唯一依据就是上面那一行判据，量级越大的内部表越该用 bigint；对外实体真要用 uuid 就用 v7，实测能追回六成以上代价
-- 新表选 uuid 时**在应用层生成**（`uuid.NewString()`，见 project / block 的创建路径）：DDL 的 `DEFAULT gen_random_uuid()` 只是兜底 —— gorm 对 string 主键的零值会**显式写入空串**（不像 int 那样交给 identity），依赖 DB 默认值会踩 22P02。长期可用 UUIDv7（时间有序，索引局部性接近 bigint），但 `uuidv7()` 是 PG 18 函数而 CI 是 PG 16，所以同样走应用层 `uuid.NewV7()`
+- **只增的分区流水表用 UUIDv7**（`inventory_stock_movements` / `master_data_changes`，统一经 `utils.NewTimeOrderedID()`）：写入点集中在索引右端，实测把 v4 的写放大砍掉一半（插入 5.42s → 2.81s、主键索引 38MB → 30MB）。与上一条判据不冲突 —— 判据决定「bigint 还是 uuid」，v7 决定「内部表用哪种形状的 uuid」。两个反作用要记住：**v7 的时间前缀会透露创建时间**，所以对外实体（`projects` / `pages` / `products` / `blocks`）继续用 v4 的 `uuid.NewString()`，别顺手替换；从 v4 切到 v7 后「按 id 排序」会从无序变成等价于创建先后，原先靠 id 排序读创建顺序的写法要显式改用 `create_time`
+- 新表选 uuid 时**在应用层生成**（`uuid.NewString()`，见 project / block 的创建路径）：DDL 的 `DEFAULT gen_random_uuid()` 只是兜底 —— gorm 对 string 主键的零值会**显式写入空串**（不像 int 那样交给 identity），依赖 DB 默认值会踩 22P02。内部流水表用 UUIDv7 见下一条（`uuidv7()` 是 PG 18 函数而 CI 是 PG 16，所以一律走应用层）
 - **改主键类型时，引用会渗进文档内容**：`blocks.id` 同时存在于 `props.blockId`（root 树任意深度）、`settings.structure.headerBlockId/footerBlockId`、`settings.slots.*` 三处，分布在 10 个 JSONB 列（含 `page_revisions` / `document_snapshots` 历史快照与 `page_artifacts.source_document`）加 `page_dependencies.dependency_key`。改这类 id 之前先用键名把存储点摸全（迁移 209 的注释列了完整清单），否则会静默留下断裂引用
 
 ### model 层定位（重要，评审与开发共同遵守）
@@ -265,10 +266,26 @@ Cookie 属性：`HttpOnly`、`Secure`（release 自动启用）、`SameSite=Lax`
 - 默认跑现有测试，不新增额外测试框架
 - 接口优先维护 feature 链路测试（`public/test/`，真实 PostgreSQL 环境），复杂逻辑补 unit
 - 测试基建已迁移到本地 PostgreSQL（sqlite 驱动已移除）；PG/Redis 不可用时相关用例 `t.Skip`
-- **全量测试一律 `-p 1` 串行**（`make test` 已是）：feature 测试各自建隔离 schema 跑同一套迁移，
-  而 `pg_trgm` 是**库级唯一**的扩展 —— 并行时一个 schema 装上它，另一个 schema 的
-  `CREATE EXTENSION IF NOT EXISTS` 就静默空转，随后 `gin_trgm_ops` 解析失败、整条迁移报错
-  （表现是随机几个包红，与「迁移改坏了库」极像）。
+- **全量测试可以并发：`make test` 走 `-p 4`**（实测 438s，串行 966s）。2026-09 之前只能
+  `-p 1`：`pg_trgm` 是**库级唯一**的扩展，装在哪个 schema 只有 search_path 含它的连接才解析得到
+  `gin_trgm_ops` —— 串行时靠「测试结束 DROP SCHEMA 把扩展一并删掉、下个 schema 重新装」侥幸通过，
+  一旦并行就互相踩（后来者 `CREATE EXTENSION IF NOT EXISTS` 静默跳过，随后整条迁移报
+  operator class does not exist）。现在扩展固定装在专用 schema **`ext_shared`**（迁移 210 负责
+  既有库搬迁，`pgtest.go` 预置新库、用 advisory lock 防多进程竞态），迁移器在 `Run` 里统一把它
+  补进 search_path —— 任何调用方（包括自己开连接跑迁移的测试）都不会再踩。
+  · **并发度受锁表容量限制**：`max_locks_per_transaction`（默认 64）撑不住太多路完整迁移，
+    实测 `-p 4` 全绿、`-p 8` 会随机几个包 `out of shared memory`（失败包每次都不同，别误读成
+    「某个包坏了」）。要提高并发先把该参数调大并重启 PG。
+- **按对象名查 catalog 的 SQL 必须限定 `current_schema()`**：`pg_class` / `pg_indexes` 是**全库**的，
+  并发（或库里残留了旧 schema）时同名表 / 索引会被一并查到。迁移判定与测试断言各踩过一次：
+  167 的判定漏了 `schemaname` 会让整条迁移被静默跳过（该 schema 的 trgm 索引全缺），
+  `p7_index_audit_test` 则把 35 个 schema 的同名索引键列拼成了一份。用 `'表名'::regclass` /
+  `to_regclass` 锚定对象是安全的（按 search_path 解析），按 `relname` / `indexname` 过滤才需要显式限定。
+- **迁移必须在单连接上跑**（`Run` 用 `db.Connection`）：`pg_advisory_lock` 是会话级的，而
+  `db.Raw` / `db.Exec` 每次都从连接池取连接 —— 换连接会让 `unlock` 落到别的连接上（锁永不释放，
+  几十个测试进程一起泄漏直接 `out of shared memory`），那把锁也根本保护不到迁移语句本身。
+  锁键按 `current_database() || current_schema()` 派生：生产多实例同库同 schema 仍然互斥（原意），
+  测试各用隔离 schema 时不再互相排队。
 - **测试建表一律走生产迁移**（`support.NewMigratedPGTestDB(t)`，内部跑 `migrations.Run`），禁止手抄
   `CREATE TABLE`：手抄表与生产 schema 会静默分叉，迁移改列名 / 换主键类型时整包变红，失败信息还会
   被读成「迁移把库改坏了」（实测代价：`publication` 用例手抄的 `publication_receipts` 停在
