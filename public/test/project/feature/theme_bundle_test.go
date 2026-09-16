@@ -744,3 +744,36 @@ func buildBundleZip(t *testing.T, files map[string]any) []byte {
 	}
 	return buf.Bytes()
 }
+
+// TestThemeBundlePortOnlyRequiredWhenBlocksReferenced 资产端口只在真的要用时才要求：
+// 纯令牌主题可以独立导出，引用了块的主题在端口缺失时明确拒绝（而不是导出一个缺页眉的包）。
+func TestThemeBundlePortOnlyRequiredWhenBlocksReferenced(t *testing.T) {
+	setBundleMediaRoot(t, t.TempDir())
+	db := support.NewMigratedPGTestDB(t)
+	projects := projectservice.NewService(projectmodel.NewProjectModel(db))
+	ctx := context.Background()
+	src, err := projects.Create(ctx, &projectdto.CreateReq{Name: "源站点"})
+	if err != nil {
+		t.Fatalf("建工程失败: %v", err)
+	}
+
+	plain := createTheme(t, projects, src.ID, "纯令牌主题", map[string]any{
+		"colors": map[string]any{"primary": "#0a0b0c"},
+	})
+	res, err := projects.ExportThemeBundle(ctx, &projectdto.ThemeBundleExportReq{ThemeID: plain.ID})
+	if err != nil {
+		t.Fatalf("纯令牌主题不该依赖资产端口: %v", err)
+	}
+	if res.BlockCount != 0 || res.PageCount != 0 {
+		t.Fatalf("纯令牌主题不应包含块或页面: %+v", res)
+	}
+
+	withSlot := createTheme(t, projects, src.ID, "带槽位主题", map[string]any{
+		"colors":        map[string]any{"primary": "#0a0b0c"},
+		"headerBlockId": "33333333-3333-4333-8333-333333333333",
+	})
+	_, err = projects.ExportThemeBundle(ctx, &projectdto.ThemeBundleExportReq{ThemeID: withSlot.ID})
+	if !errors.Is(err, projectservice.ErrThemeBundlePortUnavailable) {
+		t.Fatalf("引用了块但没有资产端口时应明确拒绝，实际 %v", err)
+	}
+}

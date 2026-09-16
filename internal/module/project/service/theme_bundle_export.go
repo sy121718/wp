@@ -63,9 +63,6 @@ func (s *Service) ExportThemeBundle(ctx context.Context, req *projectdto.ThemeBu
 	if req == nil || strings.TrimSpace(req.ThemeID) == "" {
 		return nil, ErrThemeNotFound
 	}
-	if s.assets == nil {
-		return nil, ErrThemeBundlePortUnavailable
-	}
 	mediaMode := strings.TrimSpace(req.Media)
 	switch mediaMode {
 	case "":
@@ -110,6 +107,11 @@ func (s *Service) ExportThemeBundle(ctx context.Context, req *projectdto.ThemeBu
 		return nil, ErrThemeBundleTokensInvalid
 	}
 	slots := extractThemeSlots(settingsMap)
+	// 需要跨模块资产时才要求端口：没有任何块引用、也不带页面的纯令牌主题，
+	// 导出不需要 block/page 参与，不该被一个与本主题无关的装配缺失挡住。
+	if (req.WithPages || !slots.isEmpty()) && s.assets == nil {
+		return nil, ErrThemeBundlePortUnavailable
+	}
 
 	// 可选页面：页面属站点内容，默认不带（主题包应能在另一站点直接铺开而不覆盖其内容）。
 	var pages []bundlePageAsset
