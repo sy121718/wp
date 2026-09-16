@@ -75,6 +75,8 @@ func (h *analyticsPageHandle) AnalyticsPage(c *gin.Context) {
 		rankLimit                   int
 		rangeFrom, rangeTo          string
 		pageErr                     string
+		// 维度分布不可用（明细被保留期清理、按天汇总仍在）：见 breakdownUnavailable。
+		breakdownMissing bool
 	)
 	if selected != "" {
 		res, serr := h.analytics.Summary(ctx, &analyticsdto.SummaryReq{
@@ -88,6 +90,7 @@ func (h *analyticsPageHandle) AnalyticsPage(c *gin.Context) {
 			referrers, uaClasses, langs = res.Referrers, res.UAClasses, res.Langs
 			rankLimit = res.RankLimit
 			rangeFrom, rangeTo = res.From, res.To
+			breakdownMissing = breakdownUnavailable(res)
 		}
 	}
 
@@ -109,7 +112,9 @@ func (h *analyticsPageHandle) AnalyticsPage(c *gin.Context) {
 		"UAClasses":       uaClasses,
 		"Langs":           langs,
 		"RankLimit":       rankLimit,
-		"Err":             pageErr,
+		// 只有「总数有数、维度榜全空」这一种情况给解释，见 breakdownUnavailable。
+		"BreakdownUnavailable": breakdownMissing,
+		"Err":                  pageErr,
 	})
 	base := filterBaseURL("/admin/analytics", map[string]string{
 		"project": selected, "from": from, "to": to,
@@ -118,6 +123,26 @@ func (h *analyticsPageHandle) AnalyticsPage(c *gin.Context) {
 		data[k] = v
 	}
 	c.HTML(http.StatusOK, "admin/analytics.html", data)
+}
+
+// breakdownUnavailable 判断「维度分布不可用」—— 这时页面要给一句解释，而不是让运营看空表。
+//
+// 判据是「总数有数、三个维度榜全空」：三个维度榜读的是访问明细（page_views），
+// 而按天汇总（page_views_daily）在明细被保留期清理之后仍然保留（清理只删明细）。
+// 所以「总数与路径榜有值、维度榜全空」只可能来自这种状态；
+// 真的没有流量时不在此列（那时的总数也是 0），不该提示。
+//
+// BreakdownSource == detail 这一项当前恒真（维度排行固定读明细，见 analytics 模块
+// Summary 的形态选择），写出来是为了这个判断在将来维度改走预聚合时仍然正确 ——
+// 那时它就不再是冗余条件了。
+func breakdownUnavailable(res *analyticscontract.SummaryResp) bool {
+	if res == nil || res.Total <= 0 {
+		return false
+	}
+	if res.BreakdownSource != analyticsdto.SourceDetail {
+		return false
+	}
+	return len(res.Referrers)+len(res.UAClasses)+len(res.Langs) == 0
 }
 
 // analyticsFacingError 把统计错误映射为页面可显示的文案（白名单收口，见 analyticsFacingMessages）。

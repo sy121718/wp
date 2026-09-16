@@ -408,3 +408,42 @@ func TestAnalyticsDimensionLargeWindow(t *testing.T) {
 	assertRanks(t, "语言（大窗口）", res.Langs,
 		[]string{"en", "zh-CN"}, []int64{8, 8}, []int64{8, 8})
 }
+
+// TestAnalyticsDimensionUnavailableAfterRetentionPurge 「明细被清理、汇总仍在」的实际表现。
+//
+// 保留期清理只删 page_views（明细），page_views_daily 保留 —— 已被清理的历史窗口因此
+// 会出现「总数与路径榜有数、三个维度榜全空」。这条用例把那个状态真造出来，
+// 钉住判据的输入（Total > 0 + breakdownSource=detail + 三榜全空）；
+// 据此给页面的解释与渲染见 dashboard 包的 analytics_breakdown_hint_test.go。
+func TestAnalyticsDimensionUnavailableAfterRetentionPurge(t *testing.T) {
+	f := newAnalyticsFixture(t)
+	day := utcDay(time.Now()).AddDate(0, 0, -1)
+	// 只写汇总行（等同于明细已被保留期清理掉）：当天总计 + 一条路径行。
+	const rollupSQL = "INSERT INTO page_views_daily (project_id, day, scope, path, views, visitors, rolled_at) " +
+		"VALUES (?, ?::date, ?, ?, ?, ?, now())"
+	if err := f.db.Exec(rollupSQL, f.projectID, dayStr(day), "all", "", 7, 4).Error; err != nil {
+		t.Fatalf("插入汇总行失败: %v", err)
+	}
+	if err := f.db.Exec(rollupSQL, f.projectID, dayStr(day), "path", "/a", 7, 4).Error; err != nil {
+		t.Fatalf("插入路径汇总行失败: %v", err)
+	}
+
+	res := summaryRank(t, f, dayStr(day), dayStr(day), 0)
+	if res.Source != analyticsdto.SourceSummary {
+		t.Fatalf("已汇总的过去窗口应走预聚合，实际来源 %q", res.Source)
+	}
+	if res.Total != 7 || res.Visitors != 4 {
+		t.Fatalf("总数应来自汇总行（PV=7 UV=4），实际 PV=%d UV=%d", res.Total, res.Visitors)
+	}
+	if len(res.Paths) != 1 || res.Paths[0].Path != "/a" {
+		t.Fatalf("路径榜读汇总，应有那条 /a 行，实际 %+v", res.Paths)
+	}
+	if n := len(res.Referrers) + len(res.UAClasses) + len(res.Langs); n != 0 {
+		t.Fatalf("明细为空时三个维度榜都应为空，实际 ref=%d ua=%d lang=%d",
+			len(res.Referrers), len(res.UAClasses), len(res.Langs))
+	}
+	// 判据输入：总数有数 + 维度全空 + 取数来源为明细 —— 后台页正是据此给出解释。
+	if res.Total <= 0 || res.BreakdownSource != analyticsdto.SourceDetail {
+		t.Fatalf("判据输入不符：total=%d breakdownSource=%q", res.Total, res.BreakdownSource)
+	}
+}
