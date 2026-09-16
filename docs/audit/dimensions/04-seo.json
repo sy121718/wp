@@ -1012,7 +1012,8 @@
         "analytics",
         "ga4"
       ],
-      "status": "open"
+      "status": "open",
+      "progressNote": "2026-09-16 完成了 remediation 的第 1 步（原定「先确认自有 analytics 能覆盖哪些需求」），产物是 docs/02-E2-analytics-coverage.md（94 行，逐项带文件与行号依据）。核对结果更正了本条的一个前提：审计原文写「PV / UV / 热门路径 / 来源域已有」，其中「来源域已有」不成立 —— referrer_host、ua_class、lang 三个维度只有写入点（internal/module/analytics/service/analytics_collect.go:71/74/75），全仓没有任何非测试读引用，汇总任务只按 path 聚合（internal/module/analytics/model/analytics_rollup_model.go:73 的 GROUP BY path），后台页面也没有对应区块。也就是说这三个维度目前是「存储与写入成本已经付了、洞察拿不到」的数据。第 1 步的结论：自有侧已经覆盖 PV / UV / 按日趋势 / 热门路径排行（含游标深分页）/ 任意窗口查询，这部分不需要 GA4；真正该先做的是给这三个维度补读路径 —— 纯本地改动，没有凭据、配额与合规面的开销。本条维持 open 的理由因此更正为「先补自有侧读路径；GA4 回流取决于是否真的需要页面内行为数据（事件 / 转化 / 受众）」，而不再是「缺 GA4 凭据」。第 2、3 步（service account 凭据管理、Data API 取数任务落在后台定时任务里、落库带保留期）的前置条件写在文档 §5；文档 §4 还写明了判断标准，避免以后反复讨论「要不要接 GA4」。"
     },
     {
       "id": "SEO-022",
