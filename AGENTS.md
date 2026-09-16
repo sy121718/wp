@@ -266,16 +266,16 @@ Cookie 属性：`HttpOnly`、`Secure`（release 自动启用）、`SameSite=Lax`
 - 默认跑现有测试，不新增额外测试框架
 - 接口优先维护 feature 链路测试（`public/test/`，真实 PostgreSQL 环境），复杂逻辑补 unit
 - 测试基建已迁移到本地 PostgreSQL（sqlite 驱动已移除）；PG/Redis 不可用时相关用例 `t.Skip`
-- **全量测试可以并发：`make test` 走 `-p 4`**（实测 438s，串行 966s）。2026-09 之前只能
-  `-p 1`：`pg_trgm` 是**库级唯一**的扩展，装在哪个 schema 只有 search_path 含它的连接才解析得到
-  `gin_trgm_ops` —— 串行时靠「测试结束 DROP SCHEMA 把扩展一并删掉、下个 schema 重新装」侥幸通过，
-  一旦并行就互相踩（后来者 `CREATE EXTENSION IF NOT EXISTS` 静默跳过，随后整条迁移报
-  operator class does not exist）。现在扩展固定装在专用 schema **`ext_shared`**（迁移 210 负责
-  既有库搬迁，`pgtest.go` 预置新库、用 advisory lock 防多进程竞态），迁移器在 `Run` 里统一把它
-  补进 search_path —— 任何调用方（包括自己开连接跑迁移的测试）都不会再踩。
-  · **并发度受锁表容量限制**：`max_locks_per_transaction`（默认 64）撑不住太多路完整迁移，
-    实测 `-p 4` 全绿、`-p 8` 会随机几个包 `out of shared memory`（失败包每次都不同，别误读成
-    「某个包坏了」）。要提高并发先把该参数调大并重启 PG。
+- **全量测试可以并发：`make test` 走 `-p 8`**（实测 271s；串行 966s）。2026-09 之前只能 `-p 1`，
+  两道拦路虎都已拆掉：
+  · `pg_trgm` 是**库级唯一**的扩展，装在哪个 schema 只有 search_path 含它的连接才解析得到
+    `gin_trgm_ops` —— 过去串行时靠「测试结束 DROP SCHEMA 把扩展一并删掉、下个 schema 重新装」
+    侥幸通过，一并行就互相踩（后来者 `CREATE EXTENSION IF NOT EXISTS` 静默跳过，随后整条迁移
+    报 operator class does not exist）。现在它固定装在有专用 schema **`ext_shared`**（迁移 210
+    负责既有库搬迁），迁移器 `Run` 统一把该 schema 补进 search_path —— 任何调用方都不会再踩。
+  · **测试不再为每个用例重跑 209 条迁移**（见下面「模板库」那条），并发时的锁表压力随之消失。
+    这正是当初 `-p 8` 会随机几个包 `out of shared memory` 的原因（失败包每次都不同，别误读成
+    「某个包坏了」）。要再往上提并发，先确认 `max_locks_per_transaction`（默认 64）够用。
 - **按对象名查 catalog 的 SQL 必须限定 `current_schema()`**：`pg_class` / `pg_indexes` 是**全库**的，
   并发（或库里残留了旧 schema）时同名表 / 索引会被一并查到。迁移判定与测试断言各踩过一次：
   167 的判定漏了 `schemaname` 会让整条迁移被静默跳过（该 schema 的 trgm 索引全缺），
@@ -286,12 +286,18 @@ Cookie 属性：`HttpOnly`、`Secure`（release 自动启用）、`SameSite=Lax`
   几十个测试进程一起泄漏直接 `out of shared memory`），那把锁也根本保护不到迁移语句本身。
   锁键按 `current_database() || current_schema()` 派生：生产多实例同库同 schema 仍然互斥（原意），
   测试各用隔离 schema 时不再互相排队。
-- **测试建表一律走生产迁移**（`support.NewMigratedPGTestDB(t)`，内部跑 `migrations.Run`），禁止手抄
-  `CREATE TABLE`：手抄表与生产 schema 会静默分叉，迁移改列名 / 换主键类型时整包变红，失败信息还会
-  被读成「迁移把库改坏了」（实测代价：`publication` 用例手抄的 `publication_receipts` 停在
-  `uuid` + `created_at`，与生产迁移后的 `bigint` + `create_time` 脱节；同类手抄分布在 7 个 feature 目录）。
-  测试只额外补**真实父行**（`support.SeedProjectRow` 等）。例外：`*/unit` 下迁移机制 / 分区 / 插件迁移
-  自身的用例 —— 它们造最小 schema 是设计使然。
+- **测试的表结构一律来自生产迁移**，两个 helper 分工明确，别混用：
+  · `support.NewMigratedPGTestDB(t)` —— 需要真实 schema 的用例（feature / 链路 / 大部分 unit）。
+    它复制一份**模板库**（`CREATE DATABASE ... TEMPLATE wp_test_tpl_<指纹>`，实测约 65ms），
+    模板库由 `migrations.Run` 建成：结构与生产逐字节一致，只是不再为每个用例重付那 1.1s
+    （admin 一个包 116 个用例过去就是 128s，现在 46s）。模板名带 `migrations.Fingerprint()`：
+    迁移一改就换新名字重建，绝不会拿过期结构跑测试；旧模板在建模板时顺手清理。
+  · `support.NewPGTestDB(t)` —— 建**空库**，给自己建表（`AutoMigrate` / 手抄 DDL）或故意构造旧
+    schema 的用例用。**塞给它们完整生产结构反而会坏**：实测 `AutoMigrate` 会去对齐一个名字不同的
+    约束而报 42704，手抄的最小 schema 没有外键、换成生产结构后 INSERT 立刻撞 FK。
+  · 禁止手抄 `CREATE TABLE` 去伪造「看起来像生产」的表：会与生产静默分叉（`publication` 用例手抄的
+    `publication_receipts` 停在 `uuid` + `created_at`，与生产迁移后的 `bigint` + `create_time` 脱节；
+    同类手抄分布在 7 个 feature 目录）。测试只额外补**真实父行**（`support.SeedProjectRow` 等）。
 - 组件测试在组件包内（`internal/builder/components/*`），含确定性构建与 fuzz 测试
 - 并发敏感代码跑 `go test -race`
 - **交互改动的验证清单**：涉及输入的改动，逐种输入方式各测一遍 —— 鼠标拖拽 / 滚轮与触摸板 /
