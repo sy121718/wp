@@ -204,6 +204,8 @@ type SetBOMReq struct {
 
 // GetBOMReq 查看某个父 SKU 的物料清单。
 type GetBOMReq struct {
+	// ProjectID 是工程隔离（DB-009）的作用域来源；为空时由 service 走唯一工程兜底。
+	ProjectID       string `form:"projectId"`
 	ParentVariantID string `form:"parentVariantId" binding:"required"`
 }
 

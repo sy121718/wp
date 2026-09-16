@@ -176,9 +176,17 @@ func (m *Model) Transaction(ctx context.Context, fn func(tx *gorm.DB) error) err
 //
 // 加锁是独立的第二步（LockStockRowTx），两步分开是为了让 service 能先把
 // 「按标识排序」的锁顺序固定下来 —— 边查边锁会让并发批次的等待链成环。
-func (m *Model) ListStocksByVariantsTx(ctx context.Context, tx *gorm.DB, variantIDs []string) (list []*StockEntity, err error) {
+//
+// projectID 由调用方给，且这里**自己设作用域**（与 EnsureStocksTx / CreateMovementsTx 同款）：
+// 它是 applyStockChanges 事务里的**第一条**语句，比 EnsureStocksTx 那次设变量更早 ——
+// 缺它时读到 0 行（静默），展开扣减里「子项的商品 / SKU 快照由真源解析」的设计随之失效，
+// 表现为子项 productID 为空、报 ErrStockProductRequired（deduct + expandBom 直接失败）。
+func (m *Model) ListStocksByVariantsTx(ctx context.Context, tx *gorm.DB, variantIDs []string, projectID string) (list []*StockEntity, err error) {
 	if len(variantIDs) == 0 {
 		return nil, nil
+	}
+	if serr := rls.ScopeTx(tx, projectID); serr != nil {
+		return nil, serr
 	}
 	err = tx.WithContext(ctx).Model(&StockEntity{}).Where("variant_id IN ?", variantIDs).Find(&list).Error
 	return list, err
@@ -252,9 +260,11 @@ func (m *Model) StockTotals(ctx context.Context, projectID string, variantIDs []
 
 // —— 流水查询（issue #16 验收 3）——
 
-// movementRows 流水 + 仓库 + 原因名的只读投影查询（本模块三表 join 的唯一定义处）。
-func (m *Model) movementRows(ctx context.Context) *gorm.DB {
-	return m.db.WithContext(ctx).Table("inventory_stock_movements AS mv").
+// movementRowsQuery 流水 + 仓库 + 原因名的只读投影查询（本模块三表 join 的唯一定义处）。
+//
+// 句柄由调用方给（同 stockRowsQuery）：作用域闭包里必须把查询建在同一个 tx 上。
+func movementRowsQuery(ctx context.Context, db *gorm.DB) *gorm.DB {
+	return db.WithContext(ctx).Table("inventory_stock_movements AS mv").
 		Select("mv.id, mv.project_id, mv.warehouse_id, mv.product_id, mv.variant_id, mv.sku_code, " +
 			"mv.direction, mv.quantity, mv.delta, mv.quantity_before, mv.quantity_after, " +
 			"mv.reason_id, mv.reason_code, mv.parent_variant_id, mv.source_type, mv.source_ref, " +
@@ -284,8 +294,23 @@ func (m *Model) ExistsMovementBySource(ctx context.Context, projectID, sourceTyp
 // ListMovementRows 流水列表（按条件过滤 + 分页；limit <= 0 表示不限条数）。
 //
 // 排序固定「时间倒序 → id 倒序」：同一批次的流水顺序确定，便于后台核对与对比。
+//
+// RLS（迁移 215）：inventory_stock_movements（含分区子表）与 join 的仓库 / 原因表
+// 都在名单里，作用域取自 f.ProjectID。缺作用域时这条投影**静默空集** ——
+// 流水页显示「暂无数据」，与「这批确实没发生过变动」在界面上完全一样。
 func (m *Model) ListMovementRows(ctx context.Context, f MovementFilter, limit, offset int) (list []*MovementRow, err error) {
-	q := m.movementRows(ctx)
+	err = rls.InProjectScope(ctx, m.db, f.ProjectID, func(tx *gorm.DB) error {
+		return m.scanMovementRows(ctx, movementRowsQuery(ctx, tx), f, limit, offset, &list)
+	})
+	return list, err
+}
+
+// scanMovementRows 在给定句柄上施加过滤 / 排序 / 分页并落库结果。
+//
+// 过滤条件与句柄分开传，是为了让 List 这类「先包作用域再施加条件」的路径
+// 不必把十个 if 塞进闭包里。
+func (m *Model) scanMovementRows(ctx context.Context, q *gorm.DB, f MovementFilter,
+	limit, offset int, list *[]*MovementRow) error {
 	if f.ProjectID != "" {
 		q = q.Where("mv.project_id = ?", f.ProjectID)
 	}
@@ -320,35 +345,43 @@ func (m *Model) ListMovementRows(ctx context.Context, f MovementFilter, limit, o
 	if limit > 0 {
 		q = q.Limit(limit).Offset(offset)
 	}
-	err = q.Scan(&list).Error
-	return list, err
+	return q.Scan(list).Error
 }
 
 // CountMovements 流水条数（与 List 同过滤条件）。
+//
+// RLS（迁移 215）：inventory_stock_movements 在名单里。缺作用域时计数**恒为 0**
+// 且不报错 —— 分页总量与列表因此会同时退化成「暂无数据」，两边一致所以更难发现。
+//
+// 当前仓库内没有调用方（列表接口只取 ListMovementRows）：保留它是因为
+// 「与 List 同条件的计数」是分页契约的一部分，且它此前正是漏包作用域的那类路径。
+// 一旦接回分页总量，作用域判据必须与 List 完全一致，故在这里一并收口。
 func (m *Model) CountMovements(ctx context.Context, f MovementFilter) (n int64, err error) {
-	q := m.db.WithContext(ctx).Table("inventory_stock_movements")
-	if f.ProjectID != "" {
-		q = q.Where("project_id = ?", f.ProjectID)
-	}
-	if f.WarehouseID != "" {
-		q = q.Where("warehouse_id = ?", f.WarehouseID)
-	}
-	if f.VariantID != "" {
-		q = q.Where("variant_id = ?", f.VariantID)
-	}
-	if f.SKUCode != "" {
-		q = q.Where("sku_code = ?", f.SKUCode)
-	}
-	if f.Direction != "" {
-		q = q.Where("direction = ?", f.Direction)
-	}
-	if f.ReasonCode != "" {
-		q = q.Where("reason_code = ?", f.ReasonCode)
-	}
-	if f.BatchID != "" {
-		q = q.Where("batch_id = ?", f.BatchID)
-	}
-	err = q.Count(&n).Error
+	err = rls.InProjectScope(ctx, m.db, f.ProjectID, func(tx *gorm.DB) error {
+		q := tx.WithContext(ctx).Table("inventory_stock_movements")
+		if f.ProjectID != "" {
+			q = q.Where("project_id = ?", f.ProjectID)
+		}
+		if f.WarehouseID != "" {
+			q = q.Where("warehouse_id = ?", f.WarehouseID)
+		}
+		if f.VariantID != "" {
+			q = q.Where("variant_id = ?", f.VariantID)
+		}
+		if f.SKUCode != "" {
+			q = q.Where("sku_code = ?", f.SKUCode)
+		}
+		if f.Direction != "" {
+			q = q.Where("direction = ?", f.Direction)
+		}
+		if f.ReasonCode != "" {
+			q = q.Where("reason_code = ?", f.ReasonCode)
+		}
+		if f.BatchID != "" {
+			q = q.Where("batch_id = ?", f.BatchID)
+		}
+		return q.Count(&n).Error
+	})
 	return n, err
 }
 
@@ -454,39 +487,59 @@ func (m *Model) bomDB(ctx context.Context) *gorm.DB {
 }
 
 // ListBOMItems 某个父 SKU 的清单子项（按子项变体 id 升序：展开顺序确定）。
-func (m *Model) ListBOMItems(ctx context.Context, parentVariantID string) (list []*BOMItemEntity, err error) {
-	err = m.bomDB(ctx).Where("parent_variant_id = ?", parentVariantID).
-		Order("component_variant_id ASC").Find(&list).Error
+//
+// projectID 由调用方给出：inventory_bom_items 在迁移 215 名单里，跨工程的行不可见。
+// 缺作用域时这里**静默返回空清单** —— 表现是「BOM 明细页显示这个 SKU 没有清单」，
+// 而扣减时又按「无清单」走自身扣减，两边一致地错，界面上看不出异常。
+func (m *Model) ListBOMItems(ctx context.Context, parentVariantID, projectID string) (list []*BOMItemEntity, err error) {
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.WithContext(ctx).Model(&BOMItemEntity{}).
+			Where("parent_variant_id = ?", parentVariantID).
+			Order("component_variant_id ASC").Find(&list).Error
+	})
 	return list, err
 }
 
 // ListBOMItemsByParents 批量取多个父 SKU 的清单子项（展开时不产生 N+1）。
-func (m *Model) ListBOMItemsByParents(ctx context.Context, parentVariantIDs []string) (list []*BOMItemEntity, err error) {
+//
+// projectID 由调用方给出：inventory_bom_items 在迁移 215 名单里。这条路径的失效是
+// **成环展开的帮凶**：读不到子项 ⇒ 每个父 SKU 都被当成叶子，「有清单」这件事消失，
+// 展开直接退化成按自身扣减（少扣子项料、不报错）。
+func (m *Model) ListBOMItemsByParents(ctx context.Context, parentVariantIDs []string, projectID string) (list []*BOMItemEntity, err error) {
 	if len(parentVariantIDs) == 0 {
 		return nil, nil
 	}
-	err = m.bomDB(ctx).Where("parent_variant_id IN ?", parentVariantIDs).
-		Order("parent_variant_id ASC, component_variant_id ASC").Find(&list).Error
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.WithContext(ctx).Model(&BOMItemEntity{}).
+			Where("parent_variant_id IN ?", parentVariantIDs).
+			Order("parent_variant_id ASC, component_variant_id ASC").Find(&list).Error
+	})
 	return list, err
 }
 
 // ListBOMParents 某子项出现在哪些父 SKU 的清单里（维护入口的成环检测用）。
-func (m *Model) ListBOMParents(ctx context.Context, componentVariantID string) (list []*BOMItemEntity, err error) {
-	err = m.bomDB(ctx).Where("component_variant_id = ?", componentVariantID).Find(&list).Error
+//
+// projectID 由调用方给出 —— **这条是本批最危险的失效点**：成环检测的方向是
+// 「从父 SKU 沿父链上行，撞到新子项即判环」，读不到 parents 就等于「上行路径为空」，
+// 于是 A→B→A 被判成无环、清单写入成功，扣减时展开递归到 maxBOMDepth 才认输
+// （后端返回层数超限，而清单本身已经落库，每次扣减都要重走一遍死循环）。
+// 隔离缺失在这里**不是查不到数据，而是把该拒绝的写入放行**。
+func (m *Model) ListBOMParents(ctx context.Context, componentVariantID, projectID string) (list []*BOMItemEntity, err error) {
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.WithContext(ctx).Model(&BOMItemEntity{}).
+			Where("component_variant_id = ?", componentVariantID).Find(&list).Error
+	})
 	return list, err
 }
 
 // ReplaceBOM 在同一事务内全量替换某父 SKU 的清单（先删后写，聚合内原子组合）。
-func (m *Model) ReplaceBOM(ctx context.Context, parentVariantID string, rows []*BOMItemEntity) (err error) {
-	// rows 为空时拿不到工程 id（签名里没有）：此时不带作用域 —— 换非超级角色后
-	// 「清空 BOM」这条 DELETE 会静默匹配 0 行（表现是清空不生效），已列入 DB-009 剩余清单。
-	if len(rows) == 0 {
-		return m.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-			return tx.WithContext(ctx).Model(&BOMItemEntity{}).
-				Where("parent_variant_id = ?", parentVariantID).Delete(&BOMItemEntity{}).Error
-		})
-	}
-	return rls.InProjectScope(ctx, m.db, rows[0].ProjectID, func(tx *gorm.DB) error {
+//
+// projectID 由调用方给出，**两个分支共用同一把作用域**（此前只有 rows 非空的分支
+// 能取到工程 id，空 rows 那条是裸事务）。空 rows 即「清空清单」，是本方法里最需要
+// 作用域的一条：策略挡写时 DELETE **影响 0 行且不报错** —— 接口回报成功、清单里
+// 什么都没删，而调用方拿到的响应与真的清空一模一样。
+func (m *Model) ReplaceBOM(ctx context.Context, parentVariantID, projectID string, rows []*BOMItemEntity) (err error) {
+	return rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
 		if err := tx.WithContext(ctx).Model(&BOMItemEntity{}).
 			Where("parent_variant_id = ?", parentVariantID).Delete(&BOMItemEntity{}).Error; err != nil {
 			return err
@@ -494,6 +547,8 @@ func (m *Model) ReplaceBOM(ctx context.Context, parentVariantID string, rows []*
 		if len(rows) == 0 {
 			return nil
 		}
+		// 传入行的工程与作用域必须一致：不一致时策略的 WITH CHECK 会拒绝写入
+		// （fail closed），这正是想要的 —— 而不是靠调用方自觉。
 		return tx.WithContext(ctx).CreateInBatches(&rows, 100).Error
 	})
 }

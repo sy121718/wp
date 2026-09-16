@@ -61,13 +61,16 @@ func (s *Service) SetBOM(ctx context.Context, req *inventorydto.SetBOMReq) (res 
 			Quantity: item.Quantity, CreatedAt: now, UpdatedAt: now,
 		})
 	}
-	if err = s.assertBOMNoCycle(ctx, parentVariantID, rows); err != nil {
+	// 成环检测与全量替换都在工程作用域内（inventory_bom_items 在迁移 215 名单里）：
+	// 检测读不到父链会**放行成环**，替换缺作用域则静默 0 行。两处都用调用方已解析出的
+	// projectID，不依赖「唯一工程兜底」——那在多工程下会退化成 ErrInvalidParam。
+	if err = s.assertBOMNoCycle(ctx, parentVariantID, projectID, rows); err != nil {
 		return nil, err
 	}
-	if err = s.m.ReplaceBOM(ctx, parentVariantID, rows); err != nil {
+	if err = s.m.ReplaceBOM(ctx, parentVariantID, projectID, rows); err != nil {
 		return nil, err
 	}
-	return s.GetBOM(ctx, &inventorydto.GetBOMReq{ParentVariantID: parentVariantID})
+	return s.GetBOM(ctx, &inventorydto.GetBOMReq{ProjectID: projectID, ParentVariantID: parentVariantID})
 }
 
 // GetBOM 某个父 SKU 的物料清单（无清单返回空 items，不是错误）。
@@ -79,7 +82,11 @@ func (s *Service) GetBOM(ctx context.Context, req *inventorydto.GetBOMReq) (res 
 	if parentVariantID == "" {
 		return nil, errors.New(inventoryenums.ErrStockVariantRequired)
 	}
-	rows, err := s.m.ListBOMItems(ctx, parentVariantID)
+	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := s.m.ListBOMItems(ctx, parentVariantID, projectID)
 	if err != nil {
 		return nil, err
 	}
@@ -99,13 +106,18 @@ func (s *Service) GetBOM(ctx context.Context, req *inventorydto.GetBOMReq) (res 
 	return res, nil
 }
 
-// assertBOMNoCycle 成环检测：新增 P → C 会成环，当且仅当「C 已经能走到 P」
+// assertBOMNoCycle 成环检测（作用域由调用方给）：新增 P → C 会成环，当且仅当「C 已经能走到 P」
 // （即 P 是 C 的祖先）。判定办法是从 P 沿「谁把 X 当子项」一路上行，
 // 若途中撞到任何一个新子项 C，就说明存在 C → … → P 的既有路径，加上 P → C 即成环。
 //
 // 方向很容易写反：从子项向上找到的是「C 的祖先」，那只能说明 P → … → C 早已存在，
 // 再加 P → C 只是多了一条通路，并不成环 —— 这样的清单会被放行，展开时直接死循环。
-func (s *Service) assertBOMNoCycle(ctx context.Context, parentVariantID string, rows []*inventorymodel.BOMItemEntity) (err error) {
+//
+// projectID 必须传：inventory_bom_items 带 FORCE 策略，缺作用域时 ListBOMParents 读到空
+// 父链 —— 判定于是「一路都没撞到新子项」，**成环被静默放行**。这不是查不到数据，
+// 而是把该拒绝的写入放行（清单已经落库，靠下游 maxBOMDepth 才表现出来）。
+func (s *Service) assertBOMNoCycle(ctx context.Context, parentVariantID, projectID string,
+	rows []*inventorymodel.BOMItemEntity) (err error) {
 	components := make(map[string]bool, len(rows))
 	for _, r := range rows {
 		components[r.ComponentVariantID] = true
@@ -120,7 +132,7 @@ func (s *Service) assertBOMNoCycle(ctx context.Context, parentVariantID string, 
 				continue
 			}
 			visited[id] = true
-			parents, perr := s.m.ListBOMParents(ctx, id)
+			parents, perr := s.m.ListBOMParents(ctx, id, projectID)
 			if perr != nil {
 				return perr
 			}
@@ -140,7 +152,10 @@ func (s *Service) assertBOMNoCycle(ctx context.Context, parentVariantID string, 
 // 逐层展开（BFS）：有清单的 SKU 换成子项（用量 = 子项用量 × 请求量），
 // 没有清单的 SKU 就是叶子，按自身扣减。子项沿用**父项解析出的仓库**，
 // 这样一次扣减的仓库口径唯一；祖先链随节点携带，出现环即拒绝。
-func (s *Service) expandBOM(ctx context.Context, items []changeItem) (out []changeItem, err error) {
+//
+// projectID 是 inventory_bom_items 的作用域（迁移 215）：缺它时每层都读到空子项，
+// 有清单的 SKU 全被当成叶子 —— 扣减静默少扣子项料，且不报错。
+func (s *Service) expandBOM(ctx context.Context, projectID string, items []changeItem) (out []changeItem, err error) {
 	type node struct {
 		item  changeItem
 		chain map[string]bool
@@ -158,7 +173,7 @@ func (s *Service) expandBOM(ctx context.Context, items []changeItem) (out []chan
 		for _, n := range frontier {
 			parents = append(parents, n.item.key.variantID)
 		}
-		rows, lerr := s.m.ListBOMItemsByParents(ctx, parents)
+		rows, lerr := s.m.ListBOMItemsByParents(ctx, parents, projectID)
 		if lerr != nil {
 			return nil, lerr
 		}

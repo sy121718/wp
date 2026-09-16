@@ -302,9 +302,13 @@ func (m *Model) CountNonZeroStocksByVariant(ctx context.Context, variantID, proj
 	return n, err
 }
 
-// stockRows 库存行 + 仓库信息的只读投影查询（本模块两表 join 的唯一定义处）。
-func (m *Model) stockRows(ctx context.Context) *gorm.DB {
-	return m.db.WithContext(ctx).Table("inventory_stocks AS s").
+// stockRowsQuery 库存行 + 仓库信息的只读投影查询（本模块两表 join 的唯一定义处）。
+//
+// 句柄由调用方给：列表路径的作用域闭包必须把查询建在**同一个 tx** 上 ——
+// 改用 m.db 会另取一条连接、脱离事务，策略谓词读到的 app.project_id 恒为 NULL，
+// 列表静默空集（这正是 DB-009 要消灭的形态）。
+func stockRowsQuery(ctx context.Context, db *gorm.DB) *gorm.DB {
+	return db.WithContext(ctx).Table("inventory_stocks AS s").
 		Select("s.id, s.project_id, s.warehouse_id, s.product_id, s.variant_id, s.sku_code, " +
 			"s.quantity, s.create_time, s.update_time, " +
 			"w.code AS warehouse_code, w.name AS warehouse_name").
@@ -335,11 +339,19 @@ func applyStockFilter(q *gorm.DB, f StockFilter) *gorm.DB {
 //
 // 排序固定「默认仓优先 → 仓库排序号 → 短码 → 变体」：同一 SKU 在各仓的库存
 // 每次都以同样顺序返回（后台核对与快照对比都依赖这个确定性）。
+//
+// RLS（迁移 215）：inventory_stocks 与 join 的 inventory_warehouses 都在名单里，
+// 作用域取自 f.ProjectID —— 列表**必须**带工程，缺它时这里直接返回
+// rls.ErrInvalidProjectID，不退化成「不限工程」。后者换非超级角色后是**静默空集**：
+// 列表页显示「暂无数据」，既不报错也没有日志，排障时会一路查到业务逻辑上去。
 func (m *Model) ListStockRows(ctx context.Context, f StockFilter, limit, offset int) (list []*StockRow, err error) {
-	q := applyStockFilter(m.stockRows(ctx), f).Order("w.is_default DESC, w.sort ASC, w.code ASC, s.variant_id ASC")
-	if limit > 0 {
-		q = q.Limit(limit).Offset(offset)
-	}
-	err = q.Scan(&list).Error
+	err = rls.InProjectScope(ctx, m.db, f.ProjectID, func(tx *gorm.DB) error {
+		q := applyStockFilter(stockRowsQuery(ctx, tx), f).
+			Order("w.is_default DESC, w.sort ASC, w.code ASC, s.variant_id ASC")
+		if limit > 0 {
+			q = q.Limit(limit).Offset(offset)
+		}
+		return q.Scan(&list).Error
+	})
 	return list, err
 }

@@ -151,8 +151,9 @@ func (s *Service) DeductStock(ctx context.Context, req *inventorydto.DeductStock
 		return nil, err
 	}
 	// 按物料清单展开：父 SKU → 子项 SKU × 用量 × 请求量（多级清单逐层展开）。
+	// 展开要读 inventory_bom_items（迁移 215 名单），作用域用本请求已解析出的 projectID。
 	if req.ExpandBOM {
-		if items, err = s.expandBOM(ctx, items); err != nil {
+		if items, err = s.expandBOM(ctx, projectID, items); err != nil {
 			return nil, err
 		}
 	}
@@ -279,7 +280,9 @@ func (s *Service) applyStockChanges(ctx context.Context, projectID string, items
 
 	err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
 		// 变动前的元数据解析（**不加锁**）：目标行已存在时沿用它的商品 / SKU 快照。
-		existing, lerr := s.m.ListStocksByVariantsTx(ctx, tx, variantIDs)
+		// projectID 必传：inventory_stocks 带 FORCE 策略，这条事务内的首读没有作用域时
+		// 恒 0 行 —— 展开出来的子项于是解析不到商品快照（见该方法的注释）。
+		existing, lerr := s.m.ListStocksByVariantsTx(ctx, tx, variantIDs, projectID)
 		if lerr != nil {
 			return lerr
 		}
