@@ -31,10 +31,11 @@ jobs:
           scripts/check-i18n-coverage.sh
           scripts/check-service-db-boundary.sh
           # 多端硬规则守卫（审计 UI-015）：裸 :hover / 写死 px 宽度 / 有 hover 桶无触屏等价形态 /
-          # clamp 下界超最窄视口。当前是 warn —— 只打印全量违规清单，不拦（整改是后续批次）。
-          # 整改完成后把 SKY_CSS_GUARD 改成 error：同一个脚本立刻变成硬门禁，且构建路径上的产物
-          # 守卫（Compile 内的 guardProductCSS）一并生效，不再需要改脚本与构建代码。
-          SKY_CSS_GUARD=warn scripts/check-multidevice-css.sh
+          # clamp 下界超最窄视口。**现在是 error —— 硬门禁**：未豁免违规直接让这一步失败，
+          # 且构建路径上的产物守卫（Compile 内的 guardProductCSS）一并生效。
+          # 例外只有显式豁免（internal/builder/css_verify_exempt.go，每条都要写清「规则为何在此不适用」，
+          # 由测试断言理由非空且不含占位词）—— 不要为了过这一步放宽阈值或删规则。
+          SKY_CSS_GUARD=error scripts/check-multidevice-css.sh
       - name: Unit tests (no external services)
         # 覆盖范围以前是逐个包列举（pkg / builder / pipeline / order/service /
         # page/enums），漏掉了 30 个含测试的包 —— 其中有迁移判据、retention 目录

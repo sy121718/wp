@@ -109,14 +109,9 @@ a[href]:focus-visible,
         /* 原：wb-panel-in 180ms，translateY(3px) + 淡入；面板切换改为直接显示 */
         animation: none !important;
     }
-    .wb-palette-item:hover,
-    .wb-btn:hover,
-    .wb-icon-btn:hover,
-    .wb-node-action:hover,
-    .wb-color-swatch:hover {
-        /* 原：hover 上浮 translateY(-1px)；改为零位移，阴影/边框/底色反馈保留 */
-        transform: none !important;
-    }
+    /* 悬停上浮的零位移覆盖已移到文件末尾（审计 UI-015）：它的条件必须带上
+       (hover: hover)，而本块的条件是 prefers-reduced-motion —— 两个条件不能靠整块
+       收窄来表达（本块里还有非悬停规则），所以拆成独立块。 */
 
     /* 2.3 抽屉 / 画布宽度 / 弹层：位移终值必须保留（关闭态依赖 translateX(-100%)、
        断点依赖 max-width），所以只去掉过渡，绝不把 transform 置为 none。 */
@@ -157,5 +152,20 @@ a[href]:focus-visible,
     .wb-color-text,
     .wbs-trigger {
         transition-property: background-color, color, border-color, box-shadow, outline-color, opacity;
+    }
+}
+
+/* 2.6 悬停上浮的零位移覆盖（原在 2.2 块内）。
+   条件写成 prefers-reduced-motion（减弱动效）**且** (hover: hover)（真有指针悬停）：
+   触屏上根本不触发 :hover，这条覆盖对触屏没有意义；而 :hover 规则不包 hover 媒体查询
+   会让触屏出现「点一下粘住悬停态」—— 多端硬规则要求这类规则一律分桶（审计 UI-015）。 */
+@media (prefers-reduced-motion: reduce) and (hover: hover) {
+    .wb-palette-item:hover,
+    .wb-btn:hover,
+    .wb-icon-btn:hover,
+    .wb-node-action:hover,
+    .wb-color-swatch:hover {
+        /* 原：hover 上浮 translateY(-1px)；改为零位移，阴影/边框/底色反馈保留 */
+        transform: none !important;
     }
 }

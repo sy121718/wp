@@ -109,7 +109,8 @@
   flex-direction: column;
   border-bottom: 0;
   border-right: 1px solid var(--sky-c-border, rgba(0,0,0,.1));
-  min-width: 140px;
+  /* 多端硬规则（审计 UI-015）：竖向页签导航的最小宽度按容器收口。 */
+  min-width: min(100%, 140px);
   padding: 4px 0;
 }
 

@@ -62,8 +62,10 @@ func TestNavCSSSubmenuBg(t *testing.T) {
 	if !strings.Contains(navCSSFor(&Props{SubmenuBg: "#eee"}), "background: #eee;") {
 		t.Errorf("自定义子菜单底色缺失")
 	}
-	if !strings.Contains(navCSSFor(&Props{SubmenuWidth: "240px"}), "min-width: 240px;") {
-		t.Errorf("子菜单宽度未覆盖")
+	// 宽度是「设计宽度」不是定值：必须写成 min(100%, Npx) 才能在窄视口收口
+	// （多端硬规则；审计 UI-015 的产物级守卫就是在这条规则上抓到子菜单的）。
+	if !strings.Contains(navCSSFor(&Props{SubmenuWidth: "240px"}), "min-width: min(100%, 240px);") {
+		t.Errorf("子菜单宽度未覆盖，或没有按容器收口（应写成 min(100%%, 240px)）")
 	}
 }
 

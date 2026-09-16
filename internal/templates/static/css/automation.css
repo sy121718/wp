@@ -61,7 +61,7 @@
 
 /* 节点：绝对定位，位置来自图定义里的 x / y。 */
 .auto-node {
-  position: absolute; min-width: 150px; max-width: 240px;
+  position: absolute; min-width: min(100%, 150px); max-width: 240px;
   padding: 8px 10px; border-radius: 8px;
   border: 2px solid var(--ui-border, #ccd); background: var(--ui-surface, #fff);
   box-shadow: 0 1px 3px rgb(0 0 0 / 12%);

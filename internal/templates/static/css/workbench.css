@@ -32,7 +32,7 @@
 
 /* 左检查器 */
 .wb-inspector {
-    width: 300px; min-width: 300px; overflow-y: auto;
+    width: min(100%, 300px); min-width: min(100%, 300px); overflow-y: auto;
     border-right: 1px solid var(--c-border, #e5e7eb); padding: 12px;
     display: flex; flex-direction: column; gap: 12px;
 }
@@ -52,7 +52,9 @@
     min-height: 54px; padding: 7px 8px; text-align: left; cursor: pointer;
     border: 1px solid var(--c-border, #e5e7eb); border-radius: 7px; background: var(--c-surface, #fff);
 }
+@media (hover: hover) {
 .wb-palette-item:hover { border-color: var(--c-primary, #3d444f); background: var(--c-primary-bg, #eceef1); }
+}
 .wb-palette-item strong, .wb-palette-item span { display: block; }
 .wb-palette-item strong { font-size: 13px; }
 .wb-palette-item span { margin-top: 2px; color: var(--c-text-mute, #6b7280); font-size: 11px; }
@@ -73,7 +75,7 @@
 
 /* 浮动大纲树 */
 .wb-navigator {
-    position: absolute; right: 12px; top: 12px; width: 280px; max-height: calc(100% - 24px);
+    position: absolute; right: 12px; top: 12px; width: min(100%, 280px); max-height: calc(100% - 24px);
     display: flex; flex-direction: column; z-index: 30;
     background: var(--c-surface, #fff); border: 1px solid var(--c-border, #e5e7eb);
     border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.08);
@@ -88,7 +90,9 @@
     display: flex; align-items: center; gap: 6px; padding: 4px 6px;
     border-radius: 6px; cursor: pointer; user-select: none;
 }
+@media (hover: hover) {
 .wb-node:hover { background: var(--c-bg-hover, #ececec); }
+}
 .wb-node.is-selected { background: var(--c-primary-bg, #eceef1); outline: 1px solid var(--c-primary, #3d444f); }
 .wb-node.is-drop-target { background: var(--c-primary-bg, #eceef1); position: relative; }
 .wb-node.is-drop-before::before, .wb-node.is-drop-after::after {
@@ -115,7 +119,7 @@
 /* 左侧面板（组件库 / 结构树）可拖拽调宽：拖右下角手柄，双击手柄区可折叠 */
 #wb-panel-library, #wb-panel-navigator {
     resize: horizontal; overflow: auto;
-    min-width: 180px; max-width: 560px;
+    min-width: min(100%, 180px); max-width: 560px;
     box-sizing: border-box;
 }
 .wb-panel[hidden] { display: none; }
@@ -138,7 +142,9 @@
     border: none; background: none; cursor: pointer; font-size: 12px; line-height: 1;
     padding: 2px 4px; border-radius: 4px; color: var(--c-text-mute, #6b7280);
 }
+@media (hover: hover) {
 .wb-node-action:hover { background: var(--c-primary-bg, #eceef1); color: var(--c-primary, #3d444f); }
+}
 .wb-tree li.is-collapsed > ul { display: none; }
 /* 大纲树在窄屏下不被画布挤压：允许自身横向滚动 */
 .wb-navigator { overflow: hidden; }
@@ -156,7 +162,7 @@
     }
     .wb-inspector.is-open { transform: translateX(0); }
     .wb-canvas-wrap { overflow-x: auto; padding: 10px; }
-    .wb-canvas-frame { min-width: 375px; }
+    .wb-canvas-frame { min-width: min(100%, 375px); }
     .wb-topbar { flex-wrap: wrap; gap: 6px; padding: 6px 10px; }
     .wb-navigator { width: min(280px, 92vw); }
 }
@@ -196,7 +202,9 @@
     border: 1px solid var(--c-border, #e5e7eb); border-radius: 8px; cursor: pointer;
     background: var(--c-surface, #fff); padding: 6px; text-align: left;
 }
+@media (hover: hover) {
 .wb-media-cell:hover { border-color: var(--c-primary, #3d444f); box-shadow: 0 2px 8px var(--c-primary-bg, #eceef1); }
+}
 .wb-media-cell img { width: 100%; height: 84px; object-fit: cover; border-radius: 5px; display: block; background: #f3f4f6; }
 .wb-media-cell span { display: block; margin-top: 4px; font-size: 11px; color: var(--c-text-mute, #6b7280); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wb-field { position: relative; }
@@ -244,7 +252,9 @@
     grid-column: 1 / -1; display: block; text-align: left; cursor: pointer;
     border: 1px solid var(--c-border, #e5e7eb); border-radius: 8px; background: var(--c-surface, #fff); padding: 10px 12px;
 }
+@media (hover: hover) {
 .wb-block-card:hover { border-color: var(--c-primary, #3d444f); background: var(--c-primary-bg, #eceef1); }
+}
 .wb-block-card strong { display: block; font-size: 13px; }
 .wb-block-card span { display: block; margin-top: 2px; color: var(--c-text-mute, #6b7280); font-size: 11px; }
 
@@ -290,7 +300,9 @@
     border-radius: 6px; cursor: pointer; font-size: 12px; padding: 5px 10px;
     color: inherit; transition: all .12s ease;
 }
+@media (hover: hover) {
 .wb-seg-btn:hover { border-color: var(--c-primary, #3d444f); color: var(--c-primary, #3d444f); }
+}
 .wb-seg-btn.is-active {
     background: var(--c-primary, #3d444f); color: #fff; border-color: var(--c-primary, #3d444f);
 }
@@ -362,7 +374,9 @@
     color: var(--c-text-secondary, #4b5563);
     display: flex; align-items: center; justify-content: center;
 }
+@media (hover: hover) {
 .wb-rail-btn:hover { background: var(--c-bg-hover, #f3f4f6); }
+}
 .wb-rail-btn.is-active { background: var(--c-primary-bg, #eff6ff); color: var(--c-primary, #3d444f); }
 .wb-rail-spacer { flex: 1 1 auto; }
 /* 顶栏内的图标栏：去掉独立工具栏的 padding/border/背景，融入顶栏一行 */
@@ -388,14 +402,16 @@
     font-size: 12px; font-weight: 600; color: var(--c-text-mute, #6b7280);
     cursor: pointer;
 }
+@media (hover: hover) {
 button.wb-palette-group:hover { color: var(--c-primary, #3d444f); }
+}
 .wb-palette-caret::before { content: '▾'; display: inline-block; transition: transform .15s; }
 .wb-palette-group:not(.is-open) .wb-palette-caret::before { transform: rotate(-90deg); }
 .wb-palette-group-body { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 2px 0 8px; }
 
 /* ===== 结构树右键菜单 ===== */
 .wb-context-menu {
-    position: fixed; z-index: 1000; min-width: 168px;
+    position: fixed; z-index: 1000; min-width: min(100%, 168px);
     background: var(--c-surface, #fff);
     border: 1px solid var(--c-border, #e5e7eb);
     border-radius: 10px; padding: 6px;
@@ -406,7 +422,9 @@ button.wb-palette-group:hover { color: var(--c-primary, #3d444f); }
     padding: 8px 10px; border: none; background: transparent;
     font-size: 13px; border-radius: 6px; cursor: pointer; color: inherit;
 }
+@media (hover: hover) {
 .wb-context-menu button:hover:not(:disabled) { background: var(--c-bg-hover, #f3f4f6); }
+}
 .wb-context-menu button:disabled { color: var(--c-text-mute, #9ca3af); cursor: default; }
 .wb-context-menu button.is-danger { color: var(--c-danger, #dc2626); }
 
@@ -437,7 +455,9 @@ button.wb-palette-group:hover { color: var(--c-primary, #3d444f); }
     padding: 5px 8px; border-radius: 6px; cursor: pointer;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+@media (hover: hover) {
 .wb-media-tree-node:hover { background: var(--c-bg-hover, #f3f4f6); }
+}
 .wb-media-tree-node.is-selected { background: var(--c-primary-bg, #eff6ff); color: var(--c-primary, #3d444f); font-weight: 500; }
 .wb-media-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
 .wb-media-toolbar { display: flex; }
@@ -485,7 +505,9 @@ button.wb-palette-group:hover { color: var(--c-primary, #3d444f); }
     background: var(--c-surface, #fff); color: var(--c-text-secondary, #4b5563);
     cursor: pointer;
 }
+@media (hover: hover) {
 .wb-icon-cat:hover { border-color: var(--c-primary, #3d444f); }
+}
 .wb-icon-cat.is-active {
     border-color: var(--c-primary, #3d444f);
     background: var(--c-primary, #3d444f); color: #fff;
@@ -505,7 +527,9 @@ button.wb-palette-group:hover { color: var(--c-primary, #3d444f); }
     font-size: 20px; color: var(--c-text-secondary, #4b5563);
 }
 .wb-icon-cell svg { width: 22px; height: 22px; }
+@media (hover: hover) {
 .wb-icon-cell:hover { border-color: var(--c-primary, #3d444f); }
+}
 .wb-icon-cell.is-active {
     border-color: var(--c-primary, #3d444f);
     background: var(--c-primary-bg, #eff6ff);
@@ -519,7 +543,9 @@ button.wb-palette-group:hover { color: var(--c-primary, #3d444f); }
     font-size: 16px; color: var(--c-text-secondary, #4b5563);
 }
 .wb-icon-inline svg { width: 16px; height: 16px; }
+@media (hover: hover) {
 .wb-icon-inline:hover { border-color: var(--c-primary, #3d444f); color: var(--c-primary, #3d444f); }
+}
 
 /* ===== 检查器紧凑化（减少松散留白） ===== */
 .wb-field { margin-bottom: 2px; }
@@ -539,10 +565,12 @@ button.wb-palette-group:hover { color: var(--c-primary, #3d444f); }
     font-size: 18px; color: var(--c-text-secondary, #4b5563);
 }
 .wb-icon-pop svg { width: 18px; height: 18px; }
+@media (hover: hover) {
 .wb-icon-pop:hover { border-color: var(--c-primary, #3d444f); color: var(--c-primary, #3d444f); }
+}
 .wb-icon-pop-menu {
     position: absolute; z-index: 300; top: calc(100% + 6px); left: 0;
-    width: 220px;
+    width: min(100%, 220px);
     background: var(--c-surface, #fff);
     border: 1px solid var(--c-border, #e5e7eb); border-radius: 10px;
     padding: 8px; box-shadow: 0 12px 32px rgba(0,0,0,.14);
@@ -593,11 +621,13 @@ button.wb-palette-group:hover { color: var(--c-primary, #3d444f); }
                 border-color 150ms var(--ui-ease-out),
                 background-color 150ms var(--ui-ease-out);
 }
+@media (hover: hover) {
 .wb-palette-item:hover {
     transform: translateY(-1px);
     box-shadow: 0 2px 8px rgba(0, 0, 0, .08);
     border-color: var(--c-primary, #3d444f);
     background: var(--c-primary-bg, #eceef1);
+}
 }
 
 /* —— 结构树节点：背景过渡 + 选中弹簧感 —— */
@@ -615,7 +645,9 @@ button.wb-palette-group:hover { color: var(--c-primary, #3d444f); }
     transform: translateY(-50%);
     transition: height 150ms var(--ui-ease-out);
 }
+@media (hover: hover) {
 .wb-rail-btn:hover::before { height: 55%; }
+}
 .wb-rail-btn.is-active::before { height: 70%; }
 
 /* 面板进场动效由 ui.css 的 .wb-panel 提供。 */
@@ -644,8 +676,10 @@ button.wb-palette-group:hover { color: var(--c-primary, #3d444f); }
 .wb-canvas-frame::-webkit-scrollbar-thumb {
     background: var(--c-border-strong, #d1d5db); border-radius: 4px;
 }
+@media (hover: hover) {
 .wb-inspector::-webkit-scrollbar-thumb:hover, .wb-navigator::-webkit-scrollbar-thumb:hover {
     background: var(--c-text-faint, #9ca3af);
+}
 }
 
 /* 公共下拉仅在工作台调整密度，外观与行为由 UI Kit 提供。 */
@@ -698,7 +732,9 @@ button.wb-palette-group:hover { color: var(--c-primary, #3d444f); }
     color: var(--c-text-faint, #9ca3af); list-style: none;
 }
 .wb-node-slot { cursor: pointer; }
+@media (hover: hover) {
 .wb-node-slot:hover { background: var(--c-bg-hover, #f3f4f6); }
+}
 .wb-slot-tag {
     flex: 0 0 auto; padding: 1px 6px; margin-right: 6px; border-radius: 4px;
     font-size: 11px; background: var(--c-primary-bg, #eceef1); color: var(--c-primary, #3d444f);
@@ -731,7 +767,9 @@ button.wb-palette-group:hover { color: var(--c-primary, #3d444f); }
 .wb-seo-sec-val { font-size: 12px; color: var(--c-text-mute, #6b7280); }
 .wb-seo-issues { margin: 0 0 6px 18px; padding: 0; font-size: 12px; line-height: 1.5; color: var(--c-text-mute, #6b7280); }
 .wb-seo-issues li.is-jump { cursor: pointer; border-bottom: 1px dashed transparent; }
+@media (hover: hover) {
 .wb-seo-issues li.is-jump:hover { color: var(--c-primary, #3d444f); border-bottom-color: var(--c-primary, #3d444f); }
+}
 .wb-seo-serp {
     margin-top: 10px; padding: 10px 12px; border-radius: 8px;
     border: 1px solid var(--c-border, #e5e7eb); background: var(--c-surface, #fff);
@@ -756,7 +794,9 @@ button.wb-palette-group:hover { color: var(--c-primary, #3d444f); }
     border: 1px solid var(--c-border, #e5e7eb); background: var(--c-bg-hover, #f9fafb); color: var(--c-text, #1f2937);
 }
 .wb-acc-head:first-child { margin-top: 0; }
+@media (hover: hover) {
 .wb-acc-head:hover { border-color: var(--c-primary, #3d444f); }
+}
 .wb-acc-arrow {
     flex: none; width: 0; height: 0; border-left: 5px solid currentColor;
     border-top: 4px solid transparent; border-bottom: 4px solid transparent;
@@ -781,7 +821,9 @@ button.wb-palette-group:hover { color: var(--c-primary, #3d444f); }
     border: 1px solid var(--c-border, #e5e7eb); border-radius: 7px;
     background: transparent; color: var(--c-text-muted, #6b7280);
 }
+@media (hover: hover) {
 .wb-subtab:hover:not(:disabled) { border-color: var(--c-primary, #3d444f); color: var(--c-primary, #3d444f); }
+}
 .wb-subtab.is-active { background: var(--c-primary, #3d444f); border-color: var(--c-primary, #3d444f); color: #fff; }
 .wb-subtab:disabled { opacity: .45; cursor: default; }
 
@@ -792,9 +834,11 @@ button.wb-color-swatch {
     background-size: 12px 12px;
     background-position: 0 0;
 }
+@media (hover: hover) {
 button.wb-color-swatch:hover { border-color: var(--c-primary, #3d444f); }
+}
 .wb-cp {
-    position: fixed; z-index: 90; width: 236px; padding: 10px;
+    position: fixed; z-index: 90; width: min(100%, 236px); padding: 10px;
     display: flex; flex-direction: column; gap: 8px;
     border: 1px solid var(--c-border, #e5e7eb); border-radius: 10px;
     background: var(--c-bg, #fff); box-shadow: 0 14px 34px rgba(15, 23, 42, .18);
@@ -827,7 +871,9 @@ button.wb-color-swatch:hover { border-color: var(--c-primary, #3d444f); }
     flex: none; padding: 4px 8px; font-size: 12px; border-radius: 6px; cursor: pointer;
     border: 1px solid var(--c-border, #e5e7eb); background: transparent; color: inherit;
 }
+@media (hover: hover) {
 .wb-cp-btn:hover { border-color: var(--c-primary, #3d444f); color: var(--c-primary, #3d444f); }
+}
 .wb-cp-presets { display: flex; flex-wrap: wrap; gap: 6px; }
 .wb-cp-presets:empty { display: none; }
 .wb-cp-tools { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
@@ -855,7 +901,9 @@ button.wb-color-swatch:hover { border-color: var(--c-primary, #3d444f); }
     color: var(--c-text-mute, #6b7280); background: var(--c-bg, #fff);
     border: 1px solid var(--c-border, #e5e7eb); border-radius: 5px; cursor: pointer;
 }
+@media (hover: hover) {
 .wb-icon-page-btn:hover { background: var(--c-bg-hover, #f3f4f6); color: var(--c-text, #1f2937); }
+}
 .wb-icon-page-btn.is-active { background: var(--c-primary-bg, #eceef1); color: var(--c-primary, #3d444f); font-weight: 600; }
 .wb-icon-page-btn.is-disabled { opacity: .45; cursor: not-allowed; }
 .wb-icon-page-dot { color: var(--c-text-faint, #9ca3af); }
@@ -917,9 +965,13 @@ button.wb-color-swatch:hover { border-color: var(--c-primary, #3d444f); }
     transform: rotate(-45deg);
     transition: transform .18s cubic-bezier(.4, 0, .2, 1), border-color .15s ease;
 }
+@media (hover: hover) {
 .wb-inspector-group > summary.wb-inspector-section:hover { color: var(--c-primary, #3d444f); }
+}
+@media (hover: hover) {
 .wb-inspector-group > summary.wb-inspector-section:hover::before {
     border-color: var(--c-primary, #3d444f);
+}
 }
 .wb-inspector-group[open] > summary.wb-inspector-section::before {
     transform: rotate(45deg);
@@ -1053,7 +1105,7 @@ button.wb-color-swatch:hover { border-color: var(--c-primary, #3d444f); }
     flex: 1 1 auto; min-width: 0; margin: 0; height: 4px;
     accent-color: var(--c-primary, #5e5cfc); cursor: pointer;
 }
-.wb-range-row input[type="number"] { flex: 0 0 76px; width: 76px; }
+.wb-range-row input[type="number"] { flex: 0 0 76px; width: min(100%, 76px); }
 
 /* 多选实体（标签 id 列表等，审计 EDT-007）：勾选面板替代「手写一串 id」——
    id 既难记也难核对，勾选状态直接来自当前值，打开就知道选了什么。

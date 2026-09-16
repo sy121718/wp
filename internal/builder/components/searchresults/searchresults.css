@@ -67,3 +67,9 @@
 @hover & .sky-search-submit:hover {
 	background: var(--sky-c-primary-strong, #374151);
 }
+
+/* 触屏等价形态（审计 UI-015 的多端硬规则）：提交是搜索的唯一操作入口，
+   触屏没有悬停 —— 手指按下即触发 @active 的加深反馈（@active 不包媒体查询）。 */
+@active & .sky-search-submit:active {
+	background: var(--sky-c-primary-deep, #1f2937);
+}

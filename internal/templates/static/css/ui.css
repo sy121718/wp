@@ -26,7 +26,9 @@
 .wbs-trigger:disabled { opacity: .6; cursor: not-allowed; }
 .wbs-menu[hidden] { display: none; }
 .wbs-option[hidden] { display: none; }
+@media (hover: hover) {
 .wbs-trigger:hover { border-color: var(--sky-c-border-strong, #d1d5db); }
+}
 .wbs-trigger:focus-visible { outline: 2px solid var(--sky-c-primary, #3d444f); outline-offset: 1px; }
 .wbs.is-open .wbs-trigger { border-color: var(--sky-c-primary, #3d444f); }
 .wbs-value { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -98,7 +100,9 @@
     border: 0; background: transparent; cursor: pointer; color: inherit;
     font-size: 18px; line-height: 1; padding: 4px 6px; border-radius: var(--ui-r-md, 8px); opacity: .7;
 }
+@media (hover: hover) {
 .wb-modal-x:hover { opacity: 1; background: var(--sky-c-primary-bg, #eceef1); }
+}
 .wb-modal-x:focus-visible { outline: 2px solid var(--sky-c-primary, #3d444f); outline-offset: 1px; }
 
 /* 进场：确认框与弹窗都是 <dialog>，showModal() 让元素从 display:none 变为可见 ——
@@ -138,7 +142,9 @@
     flex: none; border: 0; background: transparent; cursor: pointer; color: inherit;
     opacity: .6; font-size: 15px; line-height: 1; padding: 0 2px; border-radius: var(--ui-r-sm, 6px);
 }
+@media (hover: hover) {
 .wb-toast-x:hover { opacity: 1; }
+}
 @keyframes wb-ui-enter { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 
 /* ===== 抽屉（js/ui/drawer.js）=====
@@ -178,7 +184,9 @@ body.drawer-open { overflow: hidden; }
     background: transparent; border: 0; border-radius: var(--ui-r-sm, 6px); cursor: pointer;
     color: var(--sky-c-text-mute, #6b7280); font-size: 18px; line-height: 1;
 }
+@media (hover: hover) {
 .drawer-close:hover { background: var(--sky-c-bg-hover, #f3f4f6); color: var(--sky-c-text, #1f2937); }
+}
 .drawer-body { flex: 1; overflow-y: auto; padding: var(--ui-sp-xl, 24px); }
 
 /* ===== 颜色字段（js/ui/colorfield.js）=====
@@ -212,7 +220,9 @@ body.drawer-open { overflow: hidden; }
     background-size: 10px 10px;
     background-position: 0 0, 5px 5px;
 }
+@media (hover: hover) {
 .wbc-swatch:hover { border-color: var(--sky-c-border-strong, #d1d5db); }
+}
 .wbc-swatch:focus-visible { outline: 2px solid var(--sky-c-primary, #3d444f); outline-offset: 1px; }
 /* 未设置：棋盘格 + 一道斜线，与「白色」区分得开 */
 .wbc.is-empty .wbc-swatch::after {
@@ -313,17 +323,25 @@ body.drawer-open { overflow: hidden; }
     outline: 2px solid var(--sky-c-primary, #3d444f); outline-offset: 2px;
 }
 .btn-primary, .wb-btn-primary { background: var(--sky-c-primary, #3d444f); color: #fff; }
+@media (hover: hover) {
 .btn-primary:hover, .wb-btn-primary:hover { background: var(--sky-c-primary-deep, #2f353d); }
+}
 .btn-secondary, .wb-btn-secondary {
     background: var(--sky-c-bg, #fff);
     color: var(--sky-c-primary, #3d444f);
     border-color: var(--sky-c-border, #e5e7eb);
 }
+@media (hover: hover) {
 .btn-secondary:hover, .wb-btn-secondary:hover { background: var(--sky-c-bg-hover, rgba(16, 20, 26, .04)); }
+}
 .btn-ghost, .wb-btn-ghost, .wb-icon-btn { background: transparent; color: var(--sky-c-text-secondary, #4b5563); }
+@media (hover: hover) {
 .btn-ghost:hover, .wb-btn-ghost:hover, .wb-icon-btn:hover { background: var(--sky-c-bg-hover, rgba(16, 20, 26, .04)); }
+}
 .btn-danger { background: var(--sky-c-danger, #b34a4a); color: #fff; }
+@media (hover: hover) {
 .btn-danger:hover { filter: brightness(0.9); }
+}
 .btn-sm { padding: var(--ui-sp-xs) var(--ui-sp-md); font-size: 13px; line-height: 18px; }
 .btn-icon { padding: var(--ui-sp-sm); width: 36px; height: 36px; }
 /* 工作台紧凑规格：共用控件实现，只声明密度。 */
@@ -416,7 +434,7 @@ body.drawer-open { overflow: hidden; }
 /* 键盘用户 Tab 进容器后用方向键横向滚动（overflow 容器可聚焦）。 */
 .table-wrap:focus-visible { outline: 2px solid var(--sky-c-primary, #3d444f); outline-offset: 2px; }
 table.data-table { width: 100%; border-collapse: collapse; font-size: 14px; }
-.data-table-wide { min-width: 480px; }
+.data-table-wide { min-width: min(100%, 480px); }
 .data-table thead th {
     padding: var(--ui-sp-sm) var(--ui-sp-lg);
     text-align: left;
@@ -436,7 +454,9 @@ table.data-table { width: 100%; border-collapse: collapse; font-size: 14px; }
 }
 .data-table tbody tr:last-child td { border-bottom: none; }
 .data-table tbody tr { transition: background var(--ui-tr-fast); }
+@media (hover: hover) {
 .data-table tbody tr:hover { background: var(--sky-c-bg-hover, rgba(16, 20, 26, .04)); }
+}
 .data-table .col-actions { text-align: right; white-space: nowrap; }
 
 /* ==========================================================================
@@ -632,7 +652,9 @@ table.data-table { width: 100%; border-collapse: collapse; font-size: 14px; }
     cursor: pointer;
     transition: background var(--ui-tr-fast), border-color var(--ui-tr-fast);
 }
+@media (hover: hover) {
 .pagination-pages .pagination-btn:hover { background: var(--sky-c-bg-hover, #1f242b); text-decoration: none; }
+}
 .pagination-pages .pagination-btn.is-active {
     background: var(--sky-c-primary-bg, #2a3038);
     color: var(--sky-c-primary, #aeb6c0);
@@ -685,7 +707,9 @@ table.data-table { width: 100%; border-collapse: collapse; font-size: 14px; }
     color: var(--sky-c-text-secondary, #c2c8cf);
     transition: background var(--ui-tr-fast), border-color var(--ui-tr-fast);
 }
+@media (hover: hover) {
 .theme-toggle:hover { background: var(--sky-c-bg-hover, #1f242b); }
+}
 
 /* ==========================================================================
    语言切换（后台外壳，多语言 P1 第二步）：GET /admin/lang 表单，零 JS 依赖
@@ -702,7 +726,9 @@ table.data-table { width: 100%; border-collapse: collapse; font-size: 14px; }
     border-radius: var(--ui-r-pill);
     cursor: pointer;
 }
+@media (hover: hover) {
 .lang-select:hover { background: var(--sky-c-bg-hover, #1f242b); }
+}
 .lang-submit {
     height: 36px;
     padding: 0 10px;
@@ -722,7 +748,9 @@ table.data-table { width: 100%; border-collapse: collapse; font-size: 14px; }
     border: 1px solid var(--sky-c-border, #e5e7eb);
     border-radius: var(--ui-r-pill);
 }
+@media (hover: hover) {
 .lang-link:hover { background: var(--sky-c-bg-hover, #1f242b); }
+}
 .lang-link.is-active { color: var(--sky-c-text, #1a1d21); border-color: var(--sky-c-primary-soft, #5b6572); cursor: default; }
 /* 视觉隐藏但屏幕阅读器可读（语言下拉的 label） */
 .sr-only {

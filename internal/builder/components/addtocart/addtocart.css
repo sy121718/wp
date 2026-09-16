@@ -52,7 +52,8 @@
 }
 
 & .sky-cart-add-qty {
-  width: 72px;
+  /* 多端硬规则（审计 UI-015）：不写死绝对宽度，窄视口按容器收口。 */
+  width: min(100%, 72px);
   min-height: 44px;
   padding: 6px 8px;
   border: 1px solid var(--sky-c-border, #d1d5db);

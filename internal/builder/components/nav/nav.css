@@ -63,7 +63,9 @@
   visibility: hidden;
   transition: opacity .15s ease, visibility .15s ease;
   background: {{submenuBg}};
-  min-width: {{submenuWidth}};
+  /* 多端硬规则（审计 UI-015）：子菜单宽度是「设计宽度」而不是定值 ——
+     窄视口下按容器收口（源扫描看不到 {{submenuWidth}} 的取值，只有产物级守卫能判定这一处）。 */
+  min-width: min(100%, {{submenuWidth}});
 }
 
 /* 桌面悬停展开子菜单：进 hover 桶 —— 触屏上这条不该输出（触屏没有悬停，

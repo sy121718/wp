@@ -184,18 +184,20 @@
   position: fixed;
   transition: transform 0.3s ease;
   z-index: 900;
+  /* 抽屉宽度不写死（审计 UI-015 的多端硬规则）：窄视口下按视口收口，
+     否则 fixed 定位的抽屉会横向溢出（min() 让「设计宽度」成为上限而不是定值）。 */
   @if drawerLeft
   left: 0;
   top: 0;
   bottom: 0;
-  width: 300px;
+  width: min(100%, 300px);
   transform: translateX(-100%);
   @endif
   @if drawerRight
   right: 0;
   top: 0;
   bottom: 0;
-  width: 300px;
+  width: min(100%, 300px);
   transform: translateX(100%);
   @endif
   @if drawerBottom

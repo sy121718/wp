@@ -163,7 +163,9 @@ body {
     transition: background var(--tr-norm), color var(--tr-norm);
 }
 a { color: var(--c-primary); text-decoration: none; }
+@media (hover: hover) {
 a:hover { text-decoration: underline; }
+}
 ul, ol { list-style: none; }
 img { max-width: 100%; display: block; }
 button, input, select, textarea { font: inherit; color: inherit; }
@@ -415,7 +417,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .tr-field { white-space: nowrap; font-family: monospace; font-size: 12px; }
 .tr-source { max-width: 320px; word-break: break-word; }
 .tr-target textarea {
-    width: 100%; min-width: 240px; padding: 6px 10px; font-size: 13px; line-height: 20px;
+    width: 100%; min-width: min(100%, 240px); padding: 6px 10px; font-size: 13px; line-height: 20px;
     border: 1px solid var(--c-border, #e5e7eb); border-radius: 8px; font-family: inherit;
     background: var(--c-surface, #fff); color: inherit;
 }
@@ -427,7 +429,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 
 /* ===== 站点语言清单（admin/settings.html 语言分组，多语言 P3） ===== */
 .locale-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 6px 0; }
-.locale-row .locale-lang { padding: 6px 10px; font-size: 13px; border: 1px solid var(--c-border, #e5e7eb); border-radius: 8px; min-width: 160px; }
+.locale-row .locale-lang { padding: 6px 10px; font-size: 13px; border: 1px solid var(--c-border, #e5e7eb); border-radius: 8px; min-width: min(100%, 160px); }
 .locale-flag { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; color: var(--c-text-mute, #6b7280); }
 .locale-add { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
 /* .locale-add input 的视觉规则已删（审计 UIK-010）：它与 ui.css 桥接段里的同名选择器
@@ -490,7 +492,9 @@ button, input, select, textarea { font: inherit; color: inherit; }
     transition: background var(--tr-fast), color var(--tr-fast);
 }
 .rail-btn svg { width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-width: 1.6; }
+@media (hover: hover) {
 .rail-btn:hover { background: var(--c-bg-hover); color: var(--c-text); }
+}
 .rail-btn.is-active { background: var(--c-primary-bg); color: var(--c-primary); font-weight: 600; }
 .rail-btn.is-active::before {
     content: ''; position: absolute; left: -8px; top: 50%; transform: translateY(-50%);
@@ -515,7 +519,9 @@ body.sidebar-collapsed .subnav { flex-basis: 0; width: 0; border-right: 0; opaci
     border-radius: var(--r-md); color: var(--c-text); text-decoration: none; font-size: 13px; font-weight: 600;
     background: var(--c-bg-soft, var(--c-bg-hover)); transition: background var(--tr-fast), color var(--tr-fast);
 }
+@media (hover: hover) {
 .subnav-overview:hover { background: var(--c-bg-hover); }
+}
 .subnav-overview.is-active { background: var(--c-primary-bg); color: var(--c-primary); }
 .subnav-overview svg { width: 15px; height: 15px; stroke: currentColor; fill: none; stroke-width: 1.7; flex: 0 0 auto; }
 .subnav-divider { height: 1px; background: var(--c-border); margin: 0 4px 10px; }
@@ -525,7 +531,9 @@ body.sidebar-collapsed .subnav { flex-basis: 0; width: 0; border-right: 0; opaci
     border-radius: var(--r-md); background: var(--c-bg); color: var(--c-text-mute); font-size: 12px;
     font-family: inherit; cursor: pointer; transition: background var(--tr-fast), color var(--tr-fast), border-color var(--tr-fast);
 }
+@media (hover: hover) {
 .pin-btn:hover { background: var(--c-bg-hover); color: var(--c-text); }
+}
 .pin-btn.is-on { background: var(--c-primary-bg); color: var(--c-primary); border-color: transparent; font-weight: 600; }
 .pin-btn svg { width: 13px; height: 13px; stroke: currentColor; fill: none; stroke-width: 1.7; }
 .pin-hint { margin-left: auto; font-size: 11px; color: var(--c-text-faint); }
@@ -542,7 +550,9 @@ body.sidebar-collapsed .subnav { flex-basis: 0; width: 0; border-right: 0; opaci
     border: 0; border-radius: 6px; background: transparent; color: var(--c-text-faint); cursor: pointer;
     transition: background var(--tr-fast), color var(--tr-fast);
 }
+@media (hover: hover) {
 .tree-toggle:hover { background: var(--c-bg-hover); color: var(--c-text); }
+}
 .tree-toggle .caret {
     width: 0; height: 0; border-left: 4px solid currentColor; border-top: 3.5px solid transparent;
     border-bottom: 3.5px solid transparent; transform: rotate(90deg); transform-origin: 40% 50%;
@@ -557,7 +567,9 @@ body.sidebar-collapsed .subnav { flex-basis: 0; width: 0; border-right: 0; opaci
     border-radius: var(--r-md); color: var(--c-text-mute); text-decoration: none; font-size: 13px;
     transition: background var(--tr-fast), color var(--tr-fast);
 }
+@media (hover: hover) {
 .tree-link:hover { background: var(--c-bg-hover); color: var(--c-text); }
+}
 .tree-link.is-active { background: var(--c-primary-bg); color: var(--c-primary); font-weight: 600; }
 .tree-link.is-group { cursor: default; }
 .tree-link .dot { width: 5px; height: 5px; border-radius: 50%; background: var(--c-border-strong); flex: 0 0 auto; }
@@ -578,7 +590,9 @@ body.sidebar-collapsed .subnav { flex-basis: 0; width: 0; border-right: 0; opaci
     text-decoration: none;
     transition: background var(--tr-fast), border-color var(--tr-fast), color var(--tr-fast);
 }
+@media (hover: hover) {
 a.pagination-btn:hover { background: var(--c-bg-hover); color: var(--c-text); }
+}
 .pagination-btn.is-active { background: var(--c-primary-bg); color: var(--c-primary); font-weight: 600; }
 .pagination-btn.is-disabled { color: var(--c-text-faint); cursor: not-allowed; opacity: .6; }
 
@@ -593,7 +607,9 @@ a.pagination-btn:hover { background: var(--c-bg-hover); color: var(--c-text); }
     color: var(--c-text); background: var(--c-bg); border: 1px solid var(--c-border);
     border-radius: 6px; transition: border-color var(--tr-fast), box-shadow var(--tr-fast);
 }
+@media (hover: hover) {
 .sky-ip-btn:hover { border-color: var(--c-border-strong); }
+}
 .sky-ip.is-open .sky-ip-btn { border-color: var(--c-primary); box-shadow: 0 0 0 3px var(--c-primary-bg); }
 .sky-ip-preview { display: inline-flex; width: 18px; height: 18px; flex: 0 0 auto; }
 .sky-ip-preview svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 1.7; }
@@ -614,7 +630,9 @@ a.pagination-btn:hover { background: var(--c-bg-hover); color: var(--c-text); }
     color: var(--c-text-mute); background: var(--c-bg-soft, var(--c-bg-hover));
     border: 1px solid transparent; border-radius: 999px;
 }
+@media (hover: hover) {
 .sky-ip-cat:hover { color: var(--c-text); }
+}
 .sky-ip-cat.is-active { color: var(--c-primary); background: var(--c-primary-bg); font-weight: 600; }
 .sky-ip-grid {
     display: grid; grid-template-columns: repeat(auto-fill, minmax(32px, 1fr)); gap: 4px;
@@ -626,7 +644,9 @@ a.pagination-btn:hover { background: var(--c-bg-hover); color: var(--c-text); }
     background: transparent; border: 1px solid transparent; border-radius: 6px;
 }
 .sky-ip-cell svg { width: 17px; height: 17px; stroke: currentColor; fill: none; stroke-width: 1.7; }
+@media (hover: hover) {
 .sky-ip-cell:hover { background: var(--c-bg-hover); color: var(--c-text); }
+}
 .sky-ip-cell.is-active { background: var(--c-primary-bg); color: var(--c-primary); border-color: var(--c-primary); }
 .sky-ip-more { grid-column: 1 / -1; font-size: 12px; color: var(--c-text-faint); padding: 6px 2px; }
 .sky-ip-foot { display: flex; justify-content: flex-end; padding-top: 8px; }
@@ -634,7 +654,9 @@ a.pagination-btn:hover { background: var(--c-bg-hover); color: var(--c-text); }
     padding: 4px 10px; font-size: 12px; font-family: inherit; cursor: pointer;
     color: var(--c-text-mute); background: var(--c-bg); border: 1px solid var(--c-border); border-radius: 6px;
 }
+@media (hover: hover) {
 .sky-ip-clear:hover { color: var(--c-danger, #dc2626); border-color: currentColor; }
+}
 
 
 /* ===== 商品定价工具（admin/product_pricing.html，issue #13） =====
@@ -654,7 +676,7 @@ a.pagination-btn:hover { background: var(--c-bg-hover); color: var(--c-text); }
 /* 容器自身不是控件，但横向可滚动区域要能被键盘聚焦（否则键盘用户滚不动）。 */
 .pricing-table-wrap:focus-visible { outline: 2px solid var(--c-primary, #3d444f); outline-offset: 2px; }
 .pricing-page-table th, .pricing-page-table td { word-break: break-word; overflow-wrap: anywhere; }
-.pricing-page-table th:first-child, .pricing-page-table td:first-child { min-width: 132px; }
+.pricing-page-table th:first-child, .pricing-page-table td:first-child { min-width: min(100%, 132px); }
 /* 规则参考表是「标识符 + 长说明」，窄屏三列挤在一起会把 cost_multiple 断成
    cost_ / multi / ple：与标签页的规则表同一手法，手机端整表堆叠成块。 */
 .pricing-rule-table th:first-child, .pricing-rule-table td:first-child { white-space: nowrap; }
