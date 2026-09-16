@@ -958,7 +958,8 @@
         "pagination",
         "runtimefragment"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "审计 PERF-019 的实现分两批落地。第一批（58ba19f）下推 SQL 侧 offset/limit：集合源新增可选能力 CollectionPager（ResolveCollectionPage + CollectionPage.Total），content 与 product 两个集合源的 ListForCollection 增 offset、新增 CountForCollection，productlist 组件第 2 页起走按页取数 —— 第 1 页刻意保留原路径，因为构建期只渲染第 1 页，换路径会改发布产物字节（golden 22 用例未改动、TestJetViewByteEquivalent 全绿）。第二批（38fbf3c）补齐运行时片段链路上缺失的三处接线，三处都只在真实 HTTP 路径上暴露：① productListProps 不认识 page / pageSize，组件于是永远按「不分页、第 1 页」渲染，SQL 侧下推一次也走不到，而分页控件的链接照常输出（表现是「点下一页 URL 变了、列表一动不动」）；② Props.PushQuery 写着 json:\"-\"，没有任何非测试代码能给它赋值，「切下一页时带上现有筛选」从未生效 —— 改为可序列化，并由片段端按语义白名单从 URL 键重新合成（不原样回传：组件会把它并进片段请求并覆盖实例配置，原样回传等于让访客用 query 换掉自己请求的 nodeId / projectId）；③ 片段端点 GET 参数名上限只有 10，而商品列表的实例配置本身就有 12 个键、加筛选与页码后典型请求 18 个参数名，真实请求被自己拒成 400「参数过多」，上限提到 48。验证：失败能力实测（把 maxParamCount 改回 10，参数预算用例立刻红并报 400 参数过多，恢复后绿）；make test 全绿；四条守卫全过（permission gaps / service-db-boundary / i18n 基线 18 / multidevice CSS 0 违规）。"
     },
     {
       "id": "PERF-020",
