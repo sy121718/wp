@@ -59,9 +59,17 @@ var (
 
 // Declare 登记一条授权路由（由 RouteGroup 的 GET/POST 调用，业务代码不直接调）。
 //
-// 两条 fail-fast 校验，都是装配缺陷、必须当场炸掉：
+// 三条 fail-fast 校验，都是装配缺陷、必须当场炸掉：
 //   - perm 不在常量表里（含拼写错误的字面量）→ panic，而不是安静地建一个没人认识的权限点；
-//   - 同一 method+path 被声明两次 → panic（同一路由的两个权限点等于没有确定语义）。
+//   - 同一 method+path 被声明了**两种不同**的权限点（或豁免与权限点混用）→ panic
+//     ——两份注册点抢同一条路径却要不同权限，无论哪份生效都有一半是错的；
+//   - 重复登记**同一个**权限点是幂等的（见下）。
+//
+// 幂等这条不是宽容，而是必需：同一进程内装配两次是常见场景 —— feature 测试每个用例都会
+// 装配一次路由，而声明表是包级全局的 —— 把它当错误会让「多跑一次装配」直接 panic。
+// 实测触发形态：全量测试按包并发时每个用例各装配一次，报「同一路由被声明了两次权限点：
+// GET /api/analytics/summary → analytics:view / analytics:view」（两个值相同，根本不是冲突）；
+// 而单跑 -run 一个用例反而全绿，很容易被当成 flaky 忽略过去。
 func Declare(method, path string, p Perm) {
 	regMu.Lock()
 	defer regMu.Unlock()
@@ -69,20 +77,27 @@ func Declare(method, path string, p Perm) {
 		declaredKeys = map[string]Perm{}
 	}
 	key := method + " " + path
-	if p == Exempt {
-		if _, dup := declaredKeys[key]; !dup {
-			declaredKeys[key] = Exempt
-			exemptRoutes = append(exemptRoutes, key)
+	if prev, dup := declaredKeys[key]; dup {
+		if prev == p {
+			return
 		}
+		if p == Exempt {
+			panic("同一路由既声明了权限点又声明了豁免：" + key + " → " + string(prev) + " / Exempt")
+		}
+		if prev == Exempt {
+			panic("同一路由既声明了豁免又声明了权限点：" + key + " → Exempt / " + string(p))
+		}
+		panic("同一路由被声明了两种权限点：" + key + " → " + string(prev) + " / " + string(p))
+	}
+	if p == Exempt {
+		declaredKeys[key] = Exempt
+		exemptRoutes = append(exemptRoutes, key)
 		return
 	}
 	s, ok := specs[p]
 	if !ok {
 		panic("权限点未登记：路由 " + key + " 声明了 " + string(p) +
 			"，但 internal/permission/codes.go 里没有这条常量（拼写错误？新增权限点要同时加常量）")
-	}
-	if prev, dup := declaredKeys[key]; dup {
-		panic("同一路由被声明了两次权限点：" + key + " → " + string(prev) + " / " + string(p))
 	}
 	declaredKeys[key] = p
 	declared = append(declared, RouteSpec{Method: method, Path: path, Perm: p, Module: s.module, Name: s.name})

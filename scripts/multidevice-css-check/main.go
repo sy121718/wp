@@ -45,6 +45,13 @@ func main() {
 			len(report.Violations), builder.CSSGuardModeEnv)
 		os.Exit(1)
 	}
+	// 尾注必须跟着模式走：整改完成后（UI-015）error 已是常态，还印「只报告不拦截」
+	// 会让人以为这道门禁形同虚设 —— 报告文案与实际行为不符，比没有文案更糟。
+	if report.Mode == builder.CSSGuardModeError {
+		fmt.Printf("\n模式 %s：违规即失败（本步骤已是硬门禁）。豁免项须写明理由并被测试断言。\n",
+			report.Mode)
+		return
+	}
 	fmt.Printf("\n模式 %s：只报告不拦截。整改完成后把 %s 设为 error，本步骤即成为硬门禁。\n",
 		report.Mode, builder.CSSGuardModeEnv)
 }
