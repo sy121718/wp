@@ -53,10 +53,15 @@ func verifyAnimationRefs(css string) error {
 			}
 		}
 	}
-	if len(missing) == 0 {
-		return nil
+	if len(missing) > 0 {
+		sort.Strings(missing) // 稳定顺序：同一份输入给出同一份报错
+		return fmt.Errorf("产物引用了未定义的关键帧: %s（动画名来自动效词汇表，对应关键帧应写在 core/keyframes/ 里）",
+			strings.Join(missing, ", "))
 	}
-	sort.Strings(missing) // 稳定顺序：同一份输入给出同一份报错
-	return fmt.Errorf("产物引用了未定义的关键帧: %s（动画名来自动效词汇表，对应关键帧应写在 core/keyframes/ 里）",
-		strings.Join(missing, ", "))
+	// 动画名自洽之后，接着跑多端硬规则守卫（审计 UI-015，见 css_verify_multidevice.go）。
+	// 挂在这里的理由与动画检查相同：此刻 css 已经拼完整（基础层 / 插件层 / 容器查询 / 顶层 /
+	// 无障碍 / 页面转场都在内），是唯一能一次看到全部样式来源的位置 —— 组件样式源、Go 侧拼的
+	// 规则、插件 extraCSS、主题样式都在这一份文本里。
+	// 模式由 SKY_CSS_GUARD 控制，默认 warn（报告但不拦），error 时才让构建失败。
+	return guardProductCSS(css)
 }
