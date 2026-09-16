@@ -36,7 +36,9 @@ func (s *Service) VariantSnapshots(ctx context.Context, variantIDs []string) (li
 			productIDs = append(productIDs, v.ProductID)
 		}
 	}
-	products, err := s.m.ListByIDs(ctx, productIDs)
+	// 显式例外（审计 DB-009）：本端口的契约里没有工程，见 model.ListByIDsWithoutScope
+	// 的注释 —— 补作用域要动 VariantSnapshotPort 契约与三个消费方，不在这一批。
+	products, err := s.m.ListByIDsWithoutScope(ctx, productIDs)
 	if err != nil {
 		return nil, err
 	}

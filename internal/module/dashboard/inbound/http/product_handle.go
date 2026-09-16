@@ -115,7 +115,7 @@ func (h *productPageHandle) ProductsPage(c *gin.Context) {
 				continue
 			}
 			// 评分读一次：明细 + 投影值（issue #33）。读不到按「没有评分」处理，页面照常渲染。
-			rating := ratingOf(h.products, ctx, detail.ID)
+			rating := ratingOf(h.products, ctx, selected, detail.ID)
 			ratingRows := make([]gin.H, 0, len(rating.Items))
 			for _, it := range rating.Items {
 				ratingRows = append(ratingRows, gin.H{
@@ -303,6 +303,8 @@ func (h *productPageHandle) ProductsRatingDelete(c *gin.Context) {
 	projectID := c.PostForm("projectId")
 	if err := h.products.DeleteRating(c.Request.Context(), &productdto.DeleteRatingReq{
 		ID: c.PostForm("id"),
+		// 工程显式回传（DB-009）：product_ratings 有 FORCE 策略，删一条评分要在工程作用域里。
+		ProjectID: projectID,
 	}); err != nil {
 		c.Redirect(http.StatusFound, "/admin/products?project="+projectID+"&err="+err.Error())
 		return

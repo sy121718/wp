@@ -30,6 +30,7 @@ import (
 
 	inventorymodel "go_wp/internal/module/product/inventory/model"
 	productmodel "go_wp/internal/module/product/model"
+	"go_wp/pkg/rls"
 )
 
 // seedProductWithVariant 经 model 的写入路径落一行商品 + 一行变体（变体表不在 215 名单，无策略）。
@@ -160,6 +161,7 @@ func productScopeFixture(t *testing.T, db *gorm.DB) (pA, pB string, aIDs, bIDs m
 		pid, out, sfx := pair.project, pair.out, pair.suffix
 		productID, variantID := seedProductWithVariant(t, db, pid, "护栏商品 "+sfx)
 		out["products"] = productID
+		out["variant"] = variantID
 		out["tag"] = seedTag(t, db, pid, "护栏标签 "+sfx)
 		whID := seedWarehouse(t, db, pid, "WH"+sfx)
 		out["warehouse"] = whID
@@ -275,5 +277,301 @@ func TestRLS_ProductScope_FailClosedWithoutScope(t *testing.T) {
 	}
 	if raw != 0 {
 		t.Fatalf("作用域事务结束后应重新 fail closed（0 行），实际 %d 行 —— 会话变量泄漏", raw)
+	}
+}
+
+// —— 第三批 6：写路径 / 守卫计数 / 集合源 / 契约链的护栏 ——
+//
+// 上面两条钉的是「按 id 单查」。这一节补的是同批另一类入口 —— 它们的失效形态各不相同，
+// 逐类断言才有意义：
+//
+//   · **写路径**（Delete / DeleteRating）：策略挡写时**不报错、影响 0 行** —— 页面会说
+//     「删除成功」，刷新一看行还在。所以断言必须是「B 的行仍在」，而不是「调用没报错」；
+//   · **守卫计数**（CountNonZeroStocks*）：反向失效 —— 数出 0 ⇒ 把有货的仓 / SKU 判成
+//     可以删，外键级联把库存一起清掉。这是这一批里唯一会**丢数据**的一条；
+//   · **集合源**（ListForCollection / CountForCollection）：工程是必填作用域，
+//     缺它时必须 ErrInvalidProjectID（显式报错），不接受「不限工程」那种读法；
+//   · **显式例外**（ListByIDsWithoutScope）：契约里没有工程，是不带作用域的入口 ——
+//     要钉住的是「它没被作用域校验拦下、也没假装有隔离」，而不是「它能读到数据」
+//     （非超级角色下它本来就 fail closed，见该条测试）。
+
+// TestRLS_ProductScope_RejectsMissingScope 缺工程作用域时这批入口显式报 ErrInvalidProjectID。
+//
+// 与上面那条「裸查 0 行」是两种不同的失效形态，都要钉住：裸句柄是**静默** fail closed，
+// 而这里的新入口有 rls.InProjectScope 把关，缺工程时**当场报错**。后者才是想要的 ——
+// 调用方一眼看出是调用点漏传工程，而不是在生产上排查「功能突然查不到数据」。
+//
+// 空串与非法 uuid 各测一次：前者对应「调用方忘了传」，后者对应「传了个 id 形状的东西」
+// （策略谓词里有 ::uuid 强转，不先校验会把 PG 的语法错误抛给调用方，错误归属变得难判断）。
+func TestRLS_ProductScope_RejectsMissingScope(t *testing.T) {
+	db, _ := rlsFixture(t)
+	ctx := context.Background()
+	pm := productmodel.NewModel(db)
+	im := inventorymodel.NewModel(db)
+
+	pA, _, aIDs, _ := productScopeFixture(t, db)
+
+	for _, bad := range []string{"", "not-a-uuid"} {
+		label := bad
+		if label == "" {
+			label = "空串"
+		}
+		cases := []struct {
+			name string
+			run  func() error
+		}{
+			{"Delete(products)", func() error { return pm.Delete(ctx, aIDs["products"], bad) }},
+			{"ListRatings(product_ratings)", func() error {
+				_, err := pm.ListRatings(ctx, aIDs["products"], bad)
+				return err
+			}},
+			{"DeleteRating(product_ratings)", func() error { return pm.DeleteRating(ctx, aIDs["products"], bad) }},
+			{"ListForCollection(products)", func() error {
+				_, err := pm.ListForCollection(ctx, productmodel.CollectionFilter{ProjectID: bad}, 10, 0)
+				return err
+			}},
+			{"CountForCollection(products)", func() error {
+				_, err := pm.CountForCollection(ctx, productmodel.CollectionFilter{ProjectID: bad})
+				return err
+			}},
+			{"DeleteWarehouse(inventory_warehouses)", func() error { return im.DeleteWarehouse(ctx, aIDs["warehouse"], bad) }},
+			{"CountNonZeroStocks(inventory_stocks)", func() error {
+				_, err := im.CountNonZeroStocks(ctx, aIDs["warehouse"], bad)
+				return err
+			}},
+			{"CountNonZeroStocksByVariant(inventory_stocks)", func() error {
+				_, err := im.CountNonZeroStocksByVariant(ctx, aIDs["variant"], bad)
+				return err
+			}},
+		}
+		for _, c := range cases {
+			err := c.run()
+			if !errors.Is(err, rls.ErrInvalidProjectID) {
+				t.Errorf("工程 id 为%s 时 %s 应返回 rls.ErrInvalidProjectID，实际 %v", label, c.name, err)
+			}
+		}
+	}
+
+	// 对照：把作用域换成 A 自己，同一批调用全部成功 —— 上面的红只来自作用域，不来自数据。
+	if n, err := im.CountNonZeroStocks(ctx, aIDs["warehouse"], pA); err != nil || n != 1 {
+		t.Fatalf("工程 A 数自己仓的非零库存行应得 1，实际 n=%d err=%v", n, err)
+	}
+}
+
+// TestRLS_ProductScope_DeleteStaysInProject 删除类入口只动本工程的行。
+//
+// 判据是**行还在不在**，不是「调用返回 nil」：策略挡写时 DELETE 影响 0 行、不报错 ——
+// 只断言 err == nil 的话，没包 scope 的版本会照样绿。
+func TestRLS_ProductScope_DeleteStaysInProject(t *testing.T) {
+	db, _ := rlsFixture(t)
+	ctx := context.Background()
+	pm := productmodel.NewModel(db)
+	im := inventorymodel.NewModel(db)
+
+	pA, pB, aIDs, bIDs := productScopeFixture(t, db)
+
+	// 拿 A 的作用域删 B 的行：不报错，但一行都不该动。
+	if err := pm.Delete(ctx, bIDs["products"], pA); err != nil {
+		t.Fatalf("跨工程删除不该报错（策略是「不可见」而非「拒绝」），实际 %v", err)
+	}
+	if _, err := pm.Get(ctx, bIDs["products"], pB); err != nil {
+		t.Fatalf("拿 A 的作用域删 B 的商品：B 的行必须仍在，实际读不到 %v", err)
+	}
+	// 仓与库存同理。B 的 fixture 仓被 B 自己的采购单引用（PO-B 的 warehouse_id），
+	// 所以「删不动」在这里有个自带的第二重证据：真删成了会先撞外键报错 —— 两种失败
+	// 都能被下面两行抓到。
+	if err := im.DeleteWarehouse(ctx, bIDs["warehouse"], pA); err != nil {
+		t.Fatalf("跨工程删仓不该报错，实际 %v", err)
+	}
+	if _, err := im.GetWarehouse(ctx, bIDs["warehouse"], pB); err != nil {
+		t.Fatalf("拿 A 的作用域删 B 的仓：B 的仓必须仍在，实际 %v", err)
+	}
+	if _, err := im.GetStock(ctx, bIDs["stock"], pB); err != nil {
+		t.Fatalf("拿 A 的作用域删 B 的仓：B 的库存行必须仍在（否则就是级联丢账），实际 %v", err)
+	}
+
+	// 对照：同一个调用换成 B 自己的作用域，**真的删得掉** —— 证明上面的「还在」不是因为
+	// 调用本身是空操作，而是作用域把它挡在了外面。对照用另造的空仓：fixture 仓被采购单
+	// 引用，删它会先撞外键，那是「引用完整性」而不是「作用域」在起作用，会污染判别。
+	freeA := seedWarehouse(t, db, pB, "WHFREE-A")
+	if err := im.DeleteWarehouse(ctx, freeA, pA); err != nil {
+		t.Fatalf("跨工程删空仓不该报错，实际 %v", err)
+	}
+	if _, err := im.GetWarehouse(ctx, freeA, pB); err != nil {
+		t.Fatalf("拿 A 的作用域删 B 的空仓：必须仍在，实际 %v", err)
+	}
+	if err := im.DeleteWarehouse(ctx, freeA, pB); err != nil {
+		t.Fatalf("工程 B 删自己的空仓应成功，实际 %v", err)
+	}
+	if _, err := im.GetWarehouse(ctx, freeA, pB); !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("删掉之后应读不到该仓，实际 %v", err)
+	}
+
+	// A 的两行从头到尾没被上面任何一步碰到。
+	if _, err := pm.Get(ctx, aIDs["products"], pA); err != nil {
+		t.Fatalf("工程 A 的商品不该受跨工程删除影响，实际 %v", err)
+	}
+	if _, err := im.GetWarehouse(ctx, aIDs["warehouse"], pA); err != nil {
+		t.Fatalf("工程 A 的仓不该受跨工程删除影响，实际 %v", err)
+	}
+}
+
+// TestRLS_ProductScope_StockGuardSeesOwnProject 删仓 / 删 SKU 前的非零库存守卫在自己的工程里数得准。
+//
+// 这条是本批唯一会**丢数据**的失效路径：守卫数出 0 ⇒ 有货被判成可以删 ⇒ 外键级联把
+// inventory_stocks 一起清掉。所以两个方向都要断言：
+//
+//	· 本工程（仓里真有 7 件）⇒ 数得到，删仓守卫拦得住；
+//	· 拿**别的**工程的作用域数 ⇒ 0 —— 这正是「守卫反向失效」的样子，也是为什么守卫
+//	  必须带上工程：它绝不能靠「不限工程」来数（那种读法换非超级角色后恒为 0）。
+func TestRLS_ProductScope_StockGuardSeesOwnProject(t *testing.T) {
+	db, _ := rlsFixture(t)
+	ctx := context.Background()
+	im := inventorymodel.NewModel(db)
+
+	pA, pB, aIDs, _ := productScopeFixture(t, db)
+
+	byWarehouse, err := im.CountNonZeroStocks(ctx, aIDs["warehouse"], pA)
+	if err != nil {
+		t.Fatalf("数本工程仓的非零库存失败: %v", err)
+	}
+	if byWarehouse != 1 {
+		t.Errorf("本工程仓内有 1 行 7 件库存，守卫应数出 1，实际 %d", byWarehouse)
+	}
+	byVariant, err := im.CountNonZeroStocksByVariant(ctx, aIDs["variant"], pA)
+	if err != nil {
+		t.Fatalf("数本工程 SKU 的非零库存失败: %v", err)
+	}
+	if byVariant != 1 {
+		t.Errorf("本工程 SKU 有 1 行 7 件库存，守卫应数出 1，实际 %d", byVariant)
+	}
+
+	// 拿 B 的作用域数 A 的仓 / SKU：数不到（策略让那些行不可见）。
+	// 这不是 bug 而是隔离在生效 —— 但正因为**数不到就是 0**，守卫必须显式带工程，
+	// 绝不能靠「不限工程」兜底：那样在多工程下会把每一行都数成 0。
+	if n, err := im.CountNonZeroStocks(ctx, aIDs["warehouse"], pB); err != nil || n != 0 {
+		t.Errorf("拿 B 的作用域数 A 的仓应得 0（行不可见），实际 n=%d err=%v", n, err)
+	}
+	if n, err := im.CountNonZeroStocksByVariant(ctx, aIDs["variant"], pB); err != nil || n != 0 {
+		t.Errorf("拿 B 的作用域数 A 的 SKU 应得 0（行不可见），实际 n=%d err=%v", n, err)
+	}
+}
+
+// TestRLS_ProductScope_RatingWriteAndReadInsideProject 评分明细的读写都落在工程作用域内。
+func TestRLS_ProductScope_RatingWriteAndReadInsideProject(t *testing.T) {
+	db, _ := rlsFixture(t)
+	ctx := context.Background()
+	pm := productmodel.NewModel(db)
+
+	pA, _, aIDs, _ := productScopeFixture(t, db)
+
+	ratingID := uuid.NewString()
+	now := time.Now()
+	err := pm.CreateRating(ctx, &productmodel.ProductRatingEntity{
+		ID: ratingID, ProjectID: pA, ProductID: aIDs["products"],
+		Score: 4.5, Source: "manual", CreatedAt: now, UpdatedAt: now,
+	})
+	if err != nil {
+		t.Fatalf("写入评分失败: %v", err)
+	}
+
+	rows, err := pm.ListRatings(ctx, aIDs["products"], pA)
+	if err != nil {
+		t.Fatalf("读评分明细失败: %v", err)
+	}
+	if len(rows) != 1 || rows[0].ID != ratingID {
+		t.Fatalf("应读到刚写入的那一条评分，实际 %d 行", len(rows))
+	}
+
+	if err = pm.DeleteRating(ctx, ratingID, pA); err != nil {
+		t.Fatalf("删评分失败: %v", err)
+	}
+	rows, err = pm.ListRatings(ctx, aIDs["products"], pA)
+	if err != nil {
+		t.Fatalf("删后读评分明细失败: %v", err)
+	}
+	if len(rows) != 0 {
+		t.Fatalf("删掉的评分不该还在，实际 %d 行", len(rows))
+	}
+}
+
+// TestRLS_ProductScope_CollectionRespectsProject 集合源只能取到本工程的商品。
+//
+// 集合源是构建期唯一一处商品列表读库（产物零查库，不变量 1），它的作用域来自
+// core.BuildProjectID(ctx)。取数（ListForCollection）与分页总量（CountForCollection）
+// 必须同一把作用域 —— 少包任何一个都会让「翻到最后一页少数几条」这种漂移重新出现。
+func TestRLS_ProductScope_CollectionRespectsProject(t *testing.T) {
+	db, _ := rlsFixture(t)
+	ctx := context.Background()
+	pm := productmodel.NewModel(db)
+
+	pA, pB, aIDs, _ := productScopeFixture(t, db)
+
+	rows, err := pm.ListForCollection(ctx, productmodel.CollectionFilter{ProjectID: pA}, 100, 0)
+	if err != nil {
+		t.Fatalf("集合源取数失败: %v", err)
+	}
+	if len(rows) != 1 || rows[0].ID != aIDs["products"] {
+		t.Fatalf("集合源应只出工程 A 的 1 个商品，实际 %d 行", len(rows))
+	}
+
+	n, err := pm.CountForCollection(ctx, productmodel.CollectionFilter{ProjectID: pA})
+	if err != nil {
+		t.Fatalf("集合源计数失败: %v", err)
+	}
+	if n != 1 {
+		t.Errorf("工程 A 的集合总量应为 1（与取数一致），实际 %d", n)
+	}
+
+	// B 的商品不会因为「名字也是护栏商品」而被算进来（两条 fixture 同名，只有工程不同）。
+	others, err := pm.ListForCollection(ctx, productmodel.CollectionFilter{ProjectID: pB}, 100, 0)
+	if err != nil {
+		t.Fatalf("集合源取 B 失败: %v", err)
+	}
+	if len(others) != 1 {
+		t.Errorf("工程 B 的集合总量应为 1，实际 %d 行", len(others))
+	}
+}
+
+// TestRLS_ProductScope_ExplicitWithoutScopeEntryUnaffected 显式例外入口按「无隔离」的形状固定住。
+//
+// ListByIDsWithoutScope 是这一批里**唯一**保留的裸读入口（唯一调用方 VariantSnapshotPort
+// 的契约里没有工程，为什么补不上见 model 上的长注释）。与 rls_product_taxonomy_scope_test.go
+// 里那批 GetXxxWithoutScope 同一口径：断言的是**形状**，不是「它能读到数据」。
+//
+//   - 不能被作用域校验拦下 —— 报 ErrInvalidProjectID 等于把「结构上拿不到工程」换成
+//     一个更难懂的错误，而不是诚实表达「这条路径没有隔离」；
+//   - 在非超级角色下必须 fail closed：0 行、**且不报错**。这正是换角色之后订单落快照 /
+//     加购 / 价格核对片段的真实表现，也是「先补 VariantSnapshotPort 契约再换角色」
+//     这条待办的依据（model 注释里列了要动的三处）。
+//
+// 这条绿不代表该路径安全，只代表它**没有骗人**：既不静默给出别的工程的数据，
+// 也不假装自己带了作用域。后来者若给它包上 scope，这里会立刻红 —— 那说明契约链
+// 已经补完，应当同时把方法名改回 ListByIDs 并删掉这段。
+func TestRLS_ProductScope_ExplicitWithoutScopeEntryUnaffected(t *testing.T) {
+	db, _ := rlsFixture(t)
+	ctx := context.Background()
+	pm := productmodel.NewModel(db)
+
+	pA, _, aIDs, bIDs := productScopeFixture(t, db)
+
+	rows, err := pm.ListByIDsWithoutScope(ctx, []string{aIDs["products"], bIDs["products"]})
+	if errors.Is(err, rls.ErrInvalidProjectID) {
+		t.Fatalf("显式例外入口不应被作用域校验拦下，实际 %v", err)
+	}
+	if err != nil {
+		t.Fatalf("显式例外入口在非超级角色下应静默 fail closed（不报错），实际 %v", err)
+	}
+	if len(rows) != 0 {
+		t.Fatalf("非超级角色 + 未设工程变量时例外入口应 0 行（fail closed），实际 %d 行", len(rows))
+	}
+
+	// 对照：同样两个 id 走带作用域的 Get —— 本工程读得到、跨工程读不到。
+	// 两条路径的差别是「有没有工程作用域」，不是数据本身。
+	if _, err := pm.Get(ctx, aIDs["products"], pA); err != nil {
+		t.Fatalf("本工程按 id 读应成功，实际 %v", err)
+	}
+	if _, err := pm.Get(ctx, bIDs["products"], pA); !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("带作用域的 Get 读别的工程的商品应 ErrRecordNotFound，实际 %v", err)
 	}
 }

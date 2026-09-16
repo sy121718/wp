@@ -333,7 +333,7 @@ func (s *Service) Delete(ctx context.Context, req *productdto.DeleteReq) (err er
 	if verr != nil {
 		return verr
 	}
-	if err = s.m.Delete(ctx, req.ID); err != nil {
+	if err = s.m.Delete(ctx, req.ID, projectID); err != nil {
 		return err
 	}
 	inputs := make([]*masterdatacontract.ChangeInput, 0, len(variants)+1)

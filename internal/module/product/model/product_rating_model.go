@@ -62,8 +62,16 @@ func (p *ProductEntity) RatingSummaryOf() (avg float64, count int, ok bool) {
 }
 
 // ListRatings 取某商品的评分明细（按时间倒序：最近的在前）。
-func (m *Model) ListRatings(ctx context.Context, productID string) (list []*ProductRatingEntity, err error) {
-	err = m.RatingDB(ctx).Where("product_id = ?", productID).Order("create_time DESC, id DESC").Find(&list).Error
+//
+// projectID 由调用方给出：product_ratings 在迁移 215 名单里，缺作用域时这条查询会
+// 静默返回空明细 —— 页面上表现为「评分突然全没了」，而 SQL 本身没有任何错。
+// 明细空 ⇒ RatingSummary 的 ok=false ⇒ 连商品的评分标签一起消失。
+func (m *Model) ListRatings(ctx context.Context, productID, projectID string) (list []*ProductRatingEntity, err error) {
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.WithContext(ctx).Model(&ProductRatingEntity{}).
+			Where("product_id = ?", productID).
+			Order("create_time DESC, id DESC").Find(&list).Error
+	})
 	return list, err
 }
 
@@ -88,6 +96,13 @@ func (m *Model) GetRating(ctx context.Context, id, projectID string) (e *Product
 }
 
 // DeleteRating 删除一条评分。
-func (m *Model) DeleteRating(ctx context.Context, id string) (err error) {
-	return m.RatingDB(ctx).Where("id = ?", id).Delete(&ProductRatingEntity{}).Error
+//
+// projectID 由调用方给出：product_ratings 在迁移 215 名单里，缺作用域时 DELETE 会静默
+// 匹配 0 行 —— service 已经先 GetRating 确认过行存在，所以这里不会报「找不到」，
+// 表现是「点了删除，刷新一条没少」。
+func (m *Model) DeleteRating(ctx context.Context, id, projectID string) (err error) {
+	return rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.WithContext(ctx).Model(&ProductRatingEntity{}).
+			Where("id = ?", id).Delete(&ProductRatingEntity{}).Error
+	})
 }

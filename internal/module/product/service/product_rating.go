@@ -55,7 +55,7 @@ func (s *Service) AddRating(ctx context.Context, req *productdto.AddRatingReq) (
 	if err = s.m.CreateRating(ctx, row); err != nil {
 		return nil, err
 	}
-	return s.ratingRespOf(ctx, product.ID)
+	return s.ratingRespOf(ctx, product.ProjectID, product.ID)
 }
 
 // ListRatings 取某商品的评分明细与投影值。
@@ -70,7 +70,7 @@ func (s *Service) ListRatings(ctx context.Context, req *productdto.ListRatingsRe
 	if _, err = s.m.Get(ctx, strings.TrimSpace(req.ProductID), projectID); err != nil {
 		return nil, mapNotFound(err)
 	}
-	return s.ratingRespOf(ctx, strings.TrimSpace(req.ProductID))
+	return s.ratingRespOf(ctx, projectID, strings.TrimSpace(req.ProductID))
 }
 
 // DeleteRating 删除一条评分（不存在即报找不到，不静默成功）。
@@ -85,12 +85,15 @@ func (s *Service) DeleteRating(ctx context.Context, req *productdto.DeleteRating
 	if _, err = s.m.GetRating(ctx, strings.TrimSpace(req.ID), projectID); err != nil {
 		return mapNotFound(err)
 	}
-	return s.m.DeleteRating(ctx, strings.TrimSpace(req.ID))
+	return s.m.DeleteRating(ctx, strings.TrimSpace(req.ID), projectID)
 }
 
 // ratingRespOf 组装某商品的评分明细与投影值。
-func (s *Service) ratingRespOf(ctx context.Context, productID string) (res *productdto.RatingResp, err error) {
-	rows, err := s.m.ListRatings(ctx, productID)
+//
+// projectID 一路传到 model：product_ratings 在迁移 215 名单里，明细查询缺作用域会
+// 静默返回空 —— 明细空则 RatingSummary 的 ok=false，商品的评分标签跟着一起消失。
+func (s *Service) ratingRespOf(ctx context.Context, projectID, productID string) (res *productdto.RatingResp, err error) {
+	rows, err := s.m.ListRatings(ctx, productID, projectID)
 	if err != nil {
 		return nil, err
 	}

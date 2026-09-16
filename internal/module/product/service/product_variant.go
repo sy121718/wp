@@ -172,18 +172,21 @@ func (s *Service) DeleteVariant(ctx context.Context, req *productdto.DeleteVaria
 	}
 	// issue #19：删除前取快照与工程（删完之后这两个值都查不到了）。
 	// DB-009：这次「按变体反查工程」同样需要工程作用域，所以先把请求给的工程解析出来
-	//（留痕端口未注入时保持原样：一次库都不读）。
+	//（留痕与库存两个端口都没注入时保持原样：一次库都不读 —— 删变体前的非零库存守卫
+	// 读的是 inventory_stocks，它也在迁移 215 名单里，缺作用域会数出 0 而放行删除）。
 	var projectID, scopeID string
-	if s.changes != nil {
+	if s.changes != nil || s.inv != nil {
 		if scopeID, gerr = s.resolveProjectID(ctx, req.ProjectID); gerr != nil {
 			return gerr
 		}
+	}
+	if s.changes != nil {
 		if projectID, gerr = s.variantProjectID(ctx, v, scopeID); gerr != nil {
 			return gerr
 		}
 	}
 	if s.inv != nil {
-		if n, cerr := s.inv.CountNonZeroStocksByVariant(ctx, req.ID); cerr != nil {
+		if n, cerr := s.inv.CountNonZeroStocksByVariant(ctx, req.ID, scopeID); cerr != nil {
 			return cerr
 		} else if n > 0 {
 			return errors.New(productenums.ErrVariantHasStock)

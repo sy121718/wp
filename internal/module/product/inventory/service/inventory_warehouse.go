@@ -191,14 +191,14 @@ func (s *Service) DeleteWarehouse(ctx context.Context, req *inventorydto.DeleteW
 		return errors.New(inventoryenums.ErrWarehouseIsDefault)
 	}
 	// 库存行随仓删除（外键级联）—— 有货被删掉就是静默丢账，必须先清货 / 调拨。
-	n, cerr := s.m.CountNonZeroStocks(ctx, e.ID)
+	n, cerr := s.m.CountNonZeroStocks(ctx, e.ID, e.ProjectID)
 	if cerr != nil {
 		return cerr
 	}
 	if n > 0 {
 		return errors.New(inventoryenums.ErrWarehouseHasStock)
 	}
-	return s.m.DeleteWarehouse(ctx, e.ID)
+	return s.m.DeleteWarehouse(ctx, e.ID, e.ProjectID)
 }
 
 // resolveWarehouse 解析归属仓：显式指定优先（必须同工程且启用），为空则兜底默认仓。

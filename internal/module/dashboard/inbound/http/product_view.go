@@ -105,8 +105,12 @@ func formatScore(v float64) string {
 }
 
 // ratingOf 读某商品的评分明细与投影值（读不到就按「没有评分」处理，页面照常渲染）。
-func ratingOf(svc productcontract.ProductService, ctx context.Context, productID string) *productdto.RatingResp {
-	res, err := svc.ListRatings(ctx, &productdto.ListRatingsReq{ProductID: productID})
+//
+// projectID 由调用方给出（DB-009）：product_ratings 有 FORCE 策略，明细查询要工程作用域。
+// 兜底解析（resolveProjectID 取唯一工程）在多工程下会直接判参数错，所以后台页这里把
+// 自己在用的那个工程显式传下去，不走兜底。
+func ratingOf(svc productcontract.ProductService, ctx context.Context, projectID, productID string) *productdto.RatingResp {
+	res, err := svc.ListRatings(ctx, &productdto.ListRatingsReq{ProductID: productID, ProjectID: projectID})
 	if err != nil || res == nil {
 		return &productdto.RatingResp{}
 	}

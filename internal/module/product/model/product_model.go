@@ -176,10 +176,30 @@ func (m *Model) GetWithoutScope(ctx context.Context, id string) (e *ProductEntit
 	return e, err
 }
 
-// ListByIDs 批量按 ID 取商品（订单落快照时按变体反查商品名，避免 N+1）。
+// ListByIDsWithoutScope 批量按 ID 取商品行，**不设工程作用域**（审计 DB-009 的显式例外，
+// 与 GetWithoutScope 同类）。
 //
-// 只返回命中的行：缺的那些就是「商品已被删除」，由 service 判断怎么处理。
-func (m *Model) ListByIDs(ctx context.Context, ids []string) (list []*ProductEntity, err error) {
+// 为什么这一处保留现状：唯一调用方是 ProductService.VariantSnapshots（跨模块只读端口
+// VariantSnapshotPort），消费方是 order 下单落快照 / cart 两处加购与结算 / productLivePrice
+// 片段三条链。要给它补作用域，三件事缺一不可：
+//
+//	① 契约层：VariantSnapshotPort.VariantSnapshots 加 projectID 形参（order / cart /
+//	   runtimefragment 三个消费方的调用点同步改）；
+//	② 片段那条**只能**由商品组件把工程烘进 URL —— runtimefragment.Request 里没有工程字段
+//	   （只有 Params / Cookies / UserID），而组件侧的设计写死了「工程上下文由商品模块按变体
+//	   反查补齐，组件不需要也不该知道工程表结构」（builder/components/product/jet.go 的
+//	   livePriceFragmentURL，且它经纯函数 ParseVariantOptions 传入，签名里连 ctx 都没有）；
+//	   改它等于重发全部已发布产物的字节。
+//
+// 那是跨 5 个模块的契约变更，不属于「补 model 遗漏」这一批，故此处**显式保留现状**，
+// 而不是塞一个空串兜底（空串会被 rls 拒掉，等于把静默 0 行换成一个更难懂的错误）。
+//
+// 换非超级角色之后的后果（DB-009 第二步之前必须解决）：本方法在策略下 fail closed
+// ⇒ 取不到商品名与工程 ⇒ 订单快照 / 加购 / 价格核对片段一并**静默失效**（不报错）。
+// 补完上面那条契约链后删掉本方法，改用带 projectID 的 ListByIDs。
+//
+// 不要给本方法加新的调用方。
+func (m *Model) ListByIDsWithoutScope(ctx context.Context, ids []string) (list []*ProductEntity, err error) {
 	if len(ids) == 0 {
 		return nil, nil
 	}
@@ -227,7 +247,12 @@ func (m *Model) List(ctx context.Context, projectID, keyword, status string, lim
 // CollectionFilter 集合源的取数条件（issue #21：状态 + 分类 / 品牌 / 标签）。
 //
 // 全部是**等值**维度且彼此 AND —— 集合源只接受声明过的维度，不接受过滤表达式
-// （不变量 4）。空串表示该维度不参与过滤；ProjectID 为空表示不限工程。
+// （不变量 4）。空串表示该维度不参与过滤。
+//
+// ProjectID 例外：它是**必填的工程作用域**（DB-009），不是可空过滤维度。products 在
+// 迁移 215 名单里，ListForCollection / CountForCollection 拿它开 rls.InProjectScope ——
+// 空串或非 uuid 直接返回 rls.ErrInvalidProjectID。不接受「不限工程」这种读法：换非超级
+// 角色后它不会报错，只会静默退化成 0 行（集合卡整块变空，产物看着完全正常）。
 type CollectionFilter struct {
 	ProjectID  string
 	Status     string
@@ -277,12 +302,15 @@ func sortedOptionKeys(options map[string]string) []string {
 // 投影列必须覆盖集合项白名单里的全部字段来源：related（分类 / 品牌 / 标签）、
 // tags、imageAlt / imageAlts（images_alt）都从这些列派生 —— 漏取任意一列，
 // 对应的集合项字段就会**恒为空**（issue #22 排查商品卡标签时发现的 #9 遗留缺陷）。
-func (m *Model) collectionQuery(ctx context.Context, f CollectionFilter) *gorm.DB {
+// tx 由调用方给（ListForCollection / CountForCollection 的 InProjectScope 闭包）：
+// 作用域就是事务级的 set_config，**绝不能在闭包里退回 m.DB(ctx)** —— 那会另取一条连接、
+// 脱离事务，策略谓词读到的仍是 NULL，查询静默返回 0 行。
+func (m *Model) collectionQuery(tx *gorm.DB, ctx context.Context, f CollectionFilter) *gorm.DB {
 	// 投影列必须覆盖集合项白名单里的全部字段来源：related（分类 / 品牌 / 标签）、
 	// tags、imageAlt / imageAlts（images_alt）都从这些列派生 —— 漏取任意一列，
 	// 对应的集合项字段就会**恒为空**（issue #22 排查商品卡标签时发现的 #9 遗留缺陷：
 	// 当时只取了列表展示需要的几列，白名单字段却已经放开了）。
-	q := m.DB(ctx).Select(
+	q := tx.WithContext(ctx).Model(&ProductEntity{}).Select(
 		"id, project_id, name, subtitle, description, slug, status, sort, unit, " +
 			"images, images_alt, attribute_ids, category_ids, tag_ids, brand_id, related_ids, " +
 			"default_image, create_time, update_time, " +
@@ -352,7 +380,8 @@ func (m *Model) collectionQuery(ctx context.Context, f CollectionFilter) *gorm.D
 		// 为什么筛选必须在 SQL 侧：集合源一次最多取 100 条，先取回再在内存里筛是错的
 		//（筛掉的可能本该排在前面）。排序则相反 —— 集合项已带投影出的 ratingValue，
 		// 排在组件层做，不必进 SQL。
-		rated := m.RatingDB(ctx).Select("product_id").Group("product_id").Having("AVG(score) >= ?", *f.MinRating)
+		rated := tx.WithContext(ctx).Model(&ProductRatingEntity{}).
+			Select("product_id").Group("product_id").Having("AVG(score) >= ?", *f.MinRating)
 		q = q.Where("products.id IN (?)", rated)
 	}
 	// 在售（issue #27）：与自动标签 on_sale 同一判定 —— 存在启用变体且划线价高于售价。
@@ -386,11 +415,16 @@ func (m *Model) collectionQuery(ctx context.Context, f CollectionFilter) *gorm.D
 // offset 由调用方给（审计 PERF-019）：构建期恒为 0（只取第一屏），片段期按页码算。
 // limit <= 0 表示由调用方那边的默认上限兜底。
 func (m *Model) ListForCollection(ctx context.Context, f CollectionFilter, limit, offset int) (list []*ProductEntity, err error) {
-	q := m.collectionQuery(ctx, f).Order("sort ASC, create_time ASC, id ASC")
-	if limit > 0 {
-		q = q.Limit(limit).Offset(offset)
-	}
-	err = q.Find(&list).Error
+	// 工程作用域取自 f.ProjectID（必填，见 CollectionFilter 的注释）：build 期与片段期
+	// 都从 core.BuildProjectID(ctx) 拿 —— 缺工程时**显式报 ErrInvalidProjectID**，
+	// 不退化成「不限工程」（后者换非超级角色后静默 0 行，集合卡整块变空）。
+	err = rls.InProjectScope(ctx, m.db, f.ProjectID, func(tx *gorm.DB) error {
+		q := m.collectionQuery(tx, ctx, f).Order("sort ASC, create_time ASC, id ASC")
+		if limit > 0 {
+			q = q.Limit(limit).Offset(offset)
+		}
+		return q.Find(&list).Error
+	})
 	return list, err
 }
 
@@ -398,7 +432,10 @@ func (m *Model) ListForCollection(ctx context.Context, f CollectionFilter, limit
 //
 // 与 ListForCollection 共用 collectionQuery，两条查询不会各自漂移。
 func (m *Model) CountForCollection(ctx context.Context, f CollectionFilter) (n int64, err error) {
-	err = m.collectionQuery(ctx, f).Count(&n).Error
+	// 与 ListForCollection 同一把作用域与同一条 collectionQuery —— 取数与计数不会漂。
+	err = rls.InProjectScope(ctx, m.db, f.ProjectID, func(tx *gorm.DB) error {
+		return m.collectionQuery(tx, ctx, f).Count(&n).Error
+	})
 	return n, err
 }
 
@@ -425,8 +462,13 @@ func (m *Model) Update(ctx context.Context, e *ProductEntity) (err error) {
 }
 
 // Delete 删除商品（变体由外键 ON DELETE CASCADE 连带删除）。
-func (m *Model) Delete(ctx context.Context, id string) (err error) {
-	return m.DB(ctx).Where("id = ?", id).Delete(&ProductEntity{}).Error
+//
+// projectID 由调用方给出：products 在迁移 215 名单里，缺作用域时 DELETE 会静默匹配
+// 0 行（不报错、也不删）——「点了删除但商品还在」正是本批要消灭的 fail-silent。
+func (m *Model) Delete(ctx context.Context, id, projectID string) (err error) {
+	return rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.WithContext(ctx).Model(&ProductEntity{}).Where("id = ?", id).Delete(&ProductEntity{}).Error
+	})
 }
 
 // ListVariants 某商品全部变体。

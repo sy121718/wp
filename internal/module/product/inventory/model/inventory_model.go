@@ -202,8 +202,15 @@ func (m *Model) SetDefaultWarehouse(ctx context.Context, projectID, id string) (
 
 // DeleteWarehouse 删除仓库（库存行由外键 ON DELETE CASCADE 连带删除；
 // 默认仓与有非零库存的仓由 service 先拒绝）。
-func (m *Model) DeleteWarehouse(ctx context.Context, id string) (err error) {
-	return m.DB(ctx).Where("id = ?", id).Delete(&WarehouseEntity{}).Error
+//
+// projectID 由调用方给出：inventory_warehouses 在迁移 215 名单里，缺作用域时 DELETE
+// 静默匹配 0 行 —— 前置的归属校验（GetWarehouse + 非零库存守卫）全都过了，唯独真删
+// 不动，表现是「删除按钮点了没反应也不报错」。
+func (m *Model) DeleteWarehouse(ctx context.Context, id, projectID string) (err error) {
+	return rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.WithContext(ctx).Model(&WarehouseEntity{}).
+			Where("id = ?", id).Delete(&WarehouseEntity{}).Error
+	})
 }
 
 // —— 库存记录 ——
@@ -271,14 +278,27 @@ func (m *Model) getStockByVariantWarehouseScoped(ctx context.Context, projectID,
 }
 
 // CountNonZeroStocks 某仓下数量不为 0 的库存记录数（删仓前的守卫依据）。
-func (m *Model) CountNonZeroStocks(ctx context.Context, warehouseID string) (n int64, err error) {
-	err = m.StockDB(ctx).Where("warehouse_id = ? AND quantity <> 0", warehouseID).Count(&n).Error
+//
+// projectID 由调用方给出：inventory_stocks 在迁移 215 名单里。这条守卫是**反向**失效的
+// —— 缺作用域时数出 0，于是「还有货的仓」被判定成可以删，DELETE 会把整仓库存连同
+// 库存行一起清掉（外键级联）。这就是静默丢账，不是「查得慢一点」。
+func (m *Model) CountNonZeroStocks(ctx context.Context, warehouseID, projectID string) (n int64, err error) {
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.WithContext(ctx).Model(&StockEntity{}).
+			Where("warehouse_id = ? AND quantity <> 0", warehouseID).Count(&n).Error
+	})
 	return n, err
 }
 
 // CountNonZeroStocksByVariant 某变体在各仓的非零库存行数（删变体前的守卫依据）。
-func (m *Model) CountNonZeroStocksByVariant(ctx context.Context, variantID string) (n int64, err error) {
-	err = m.StockDB(ctx).Where("variant_id = ? AND quantity <> 0", variantID).Count(&n).Error
+//
+// projectID 由调用方给出：inventory_stocks 在迁移 215 名单里。与 CountNonZeroStocks
+// 同一条反向失效路径 —— 缺作用域数出 0 ⇒ 有货的 SKU 被判成可删。
+func (m *Model) CountNonZeroStocksByVariant(ctx context.Context, variantID, projectID string) (n int64, err error) {
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.WithContext(ctx).Model(&StockEntity{}).
+			Where("variant_id = ? AND quantity <> 0", variantID).Count(&n).Error
+	})
 	return n, err
 }
 
