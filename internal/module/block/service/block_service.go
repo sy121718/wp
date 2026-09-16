@@ -9,15 +9,15 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
+	"gorm.io/gorm"
+
 	"go_wp/internal/builder"
 	blockcontract "go_wp/internal/module/block/contract"
 	blockdto "go_wp/internal/module/block/dto"
 	blockmodel "go_wp/internal/module/block/model"
 	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/pkg/logger"
-
-	"gorm.io/gorm"
-	"strconv"
 )
 
 var _ blockcontract.BlockService = (*Service)(nil)
@@ -125,11 +125,7 @@ func (s *Service) Detail(ctx context.Context, req *blockdto.DetailReq) (res *blo
 	if err = s.requireProject(ctx, req.ProjectID); err != nil {
 		return nil, err
 	}
-	bid, perr := strconv.ParseInt(strings.TrimSpace(req.ID), 10, 64)
-	if perr != nil {
-		return nil, ErrNotFound
-	}
-	entity, err := s.model.GetByID(ctx, bid, req.ProjectID)
+	entity, err := s.model.GetByID(ctx, strings.TrimSpace(req.ID), req.ProjectID)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, ErrNotFound
 	}
@@ -173,7 +169,11 @@ func (s *Service) Create(ctx context.Context, req *blockdto.CreateReq) (res *blo
 		return nil, ErrDuplicate
 	}
 	now := time.Now().UTC()
+	// id 显式生成：blocks.id 是 uuid、DDL 带 DEFAULT gen_random_uuid()，但 gorm 对
+	// string 主键的零值会**显式写入空串**（不像 int 那样交给 identity），
+	// 落到 PG 就是 22P02 invalid input syntax for type uuid。与 project / page 的创建一致。
 	entity := &blockmodel.BlockEntity{
+		ID:        uuid.NewString(),
 		ProjectID: req.ProjectID,
 		Name:      strings.TrimSpace(req.Name), Kind: kind, Category: category, ReuseMode: reuseMode, Document: document,
 		CreateTime: now, UpdatedAt: now,
@@ -218,7 +218,7 @@ func (s *Service) Update(ctx context.Context, req *blockdto.UpdateReq) (res *blo
 		// global→template 切换防御：仍被引用的 global 块一旦切成 template，
 		// 引用页面将悬空（stale 不再传播），必须先解除引用。
 		if entity.ReuseMode == blockmodel.ReuseGlobal && reuseMode == blockmodel.ReuseTemplate &&
-			s.blockReferenced(ctx, strconv.FormatInt(entity.ID, 10)) {
+			s.blockReferenced(ctx, entity.ID) {
 			return nil, ErrBlockInUse
 		}
 	}
@@ -233,7 +233,7 @@ func (s *Service) Update(ctx context.Context, req *blockdto.UpdateReq) (res *blo
 		return nil, err
 	}
 	entity.Name, entity.Kind, entity.Category, entity.ReuseMode, entity.Document, entity.UpdatedAt = name, kind, category, reuseMode, document, now
-	s.propagateStale(ctx, strconv.FormatInt(entity.ID, 10), entity.ReuseMode)
+	s.propagateStale(ctx, entity.ID, entity.ReuseMode)
 	return blockRespPtr(entity), nil
 }
 
@@ -252,7 +252,7 @@ func (s *Service) Delete(ctx context.Context, req *blockdto.DeleteReq) (err erro
 	if err != nil {
 		return err
 	}
-	if entity.ReuseMode == blockmodel.ReuseGlobal && !req.Force && s.blockReferenced(ctx, strconv.FormatInt(entity.ID, 10)) {
+	if entity.ReuseMode == blockmodel.ReuseGlobal && !req.Force && s.blockReferenced(ctx, entity.ID) {
 		return ErrBlockInUse
 	}
 	if err = s.model.Delete(ctx, entity.ID); err != nil {
@@ -285,16 +285,17 @@ func (s *Service) CloneAST(ctx context.Context, req *blockdto.CloneReq) (res *bl
 }
 
 func (s *Service) getExistingBlock(ctx context.Context, id string) (e *blockmodel.BlockEntity, err error) {
-	// 不是合法十进制整数的 id 直接判「不存在」，别让查询落到 PG 上：blocks.id 是 bigint 列
-	// （DB-020 统一 BIGSERIAL），dto 层仍以字符串承载以维持 API 兼容。
+	// 非法形状的 id 直接判「不存在」，别让它落到 PG 上：blocks.id 是 uuid 列
+	// （迁移 209 把 201 的 bigint 改回来了 —— 它对外有接口、且 blockId 写进页面文档，
+	// 按主键选型判据属于「对外实体」），非法输入会让 PG 报 22P02 并冒成 500。
 	//
 	// 判「不存在」而不是「参数错误」：这四个调用方（详情 / 更新 / 删除 / 克隆）
 	// 对这两种情况的处理本来就一样，多一个 400 分支只会逼每条调用路径判断两种错。
-	bid, perr := strconv.ParseInt(strings.TrimSpace(id), 10, 64)
-	if perr != nil {
+	trimmed := strings.TrimSpace(id)
+	if _, perr := uuid.Parse(trimmed); perr != nil {
 		return nil, ErrNotFound
 	}
-	e, err = s.model.GetByID(ctx, bid, "")
+	e, err = s.model.GetByID(ctx, trimmed, "")
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, ErrNotFound
 	}
@@ -391,7 +392,7 @@ func validateDocument(raw json.RawMessage) (json.RawMessage, error) {
 
 func blockResp(e *blockmodel.BlockEntity) blockdto.BlockResp {
 	return blockdto.BlockResp{
-		ID: strconv.FormatInt(e.ID, 10), ProjectID: e.ProjectID, Name: e.Name, Kind: e.Kind, Category: e.Category,
+		ID: e.ID, ProjectID: e.ProjectID, Name: e.Name, Kind: e.Kind, Category: e.Category,
 		ReuseMode: e.ReuseMode, Document: e.Document, CreatedAt: e.CreateTime, UpdatedAt: e.UpdatedAt,
 	}
 }

@@ -382,4 +382,19 @@ func registerAnalyticsSeoAndPermissions() {
 			"WHERE table_schema = current_schema() AND table_name = ? AND column_name = 'deleted_time'",
 		SQL: mustSQL("208_db020_soft_delete_column.sql"),
 	})
+
+	// 209：blocks.id 回到 uuid（主键选型判据：对外边界用不可枚举标识）。
+	// 201 按「主键统一 bigint」把 blocks 划到自增侧，但它两条判据都踩：对外有 /api/block/*，
+	// 且 props.blockId 写进 Page Document 并挂着 GIN 部分索引（idx_pages_blockref）。
+	// 同批的 build_jobs / page_site_slots / publication_receipts / inventory_change_reasons
+	// 是内部流水与字典，继续 bigint，不动。
+	// 判定按「blocks.id 已是 uuid」：默认判定（表存在）会让这条迁移永不执行。
+	register(Migration{
+		Version:   "209-blocks-id-uuid",
+		TableName: "blocks",
+		CheckSQL: "SELECT CASE WHEN COUNT(*) = 1 THEN 1 ELSE 0 END FROM information_schema.columns " +
+			"WHERE table_schema = current_schema() AND table_name = ? " +
+			"AND column_name = 'id' AND data_type = 'uuid'",
+		SQL: mustSQL("209_blocks_id_uuid.sql"),
+	})
 }

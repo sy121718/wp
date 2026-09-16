@@ -46,7 +46,7 @@ const DefaultCategory = "general"
 
 // BlockEntity 对应 blocks 表：全局块（组件树文档与页面 root 同构）。
 type BlockEntity struct {
-	ID         int64           `gorm:"column:id;type:bigint;primaryKey"`
+	ID         string          `gorm:"column:id;type:uuid;primaryKey"`
 	ProjectID  string          `gorm:"column:project_id;type:uuid;not null"`
 	Name       string          `gorm:"column:name;type:text;not null"`
 	Kind       string          `gorm:"column:kind;type:text;not null"`
@@ -105,7 +105,7 @@ func (m *Model) ExistsByName(ctx context.Context, projectID, name string) (exist
 }
 
 // GetByID 按 ID 查询块。projectID 非空时追加工程归属条件（防跨工程 IDOR）。
-func (m *Model) GetByID(ctx context.Context, id int64, projectID string) (e *BlockEntity, err error) {
+func (m *Model) GetByID(ctx context.Context, id string, projectID string) (e *BlockEntity, err error) {
 	e = &BlockEntity{}
 	q := m.DB(ctx).Where("id = ?", id)
 	if strings.TrimSpace(projectID) != "" {
@@ -118,13 +118,13 @@ func (m *Model) GetByID(ctx context.Context, id int64, projectID string) (e *Blo
 }
 
 // UpdateDocument 更新块名称、类型、分类、复用方式与文档（覆盖式，编辑器整树保存）。
-func (m *Model) UpdateDocument(ctx context.Context, id int64, name, kind, category, reuseMode string, document json.RawMessage, updatedAt time.Time) (err error) {
+func (m *Model) UpdateDocument(ctx context.Context, id string, name, kind, category, reuseMode string, document json.RawMessage, updatedAt time.Time) (err error) {
 	return m.DB(ctx).Where("id = ?", id).Updates(map[string]any{
 		"name": name, "kind": kind, "category": category, "reuse_mode": reuseMode, "document": document, "update_time": updatedAt,
 	}).Error
 }
 
 // Delete 删除块。
-func (m *Model) Delete(ctx context.Context, id int64) (err error) {
+func (m *Model) Delete(ctx context.Context, id string) (err error) {
 	return m.DB(ctx).Where("id = ?", id).Delete(&BlockEntity{}).Error
 }
