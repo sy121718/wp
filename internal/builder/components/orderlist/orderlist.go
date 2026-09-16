@@ -104,8 +104,8 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		// 样式源解析失败属于构建期缺陷：静默跳过的后果是产物悄悄少了样式。
 		panic(fmt.Sprintf("orderList 组件样式解析失败: %v", err))
 	}
-	// 片段内容的基础样式（幂等：多个订单列表组件同页也只出一份）。
-	AddOrdersFragmentCSS(b)
+	// 订单**片段**的样式不在这里注入（审计 UIK-005）：片段样式已归基座
+	// （internal/builder/fragment_base.go），按 hx-* 指向 /_fragments/ 的特征判定。
 }
 
 //go:embed orders_widget.jet

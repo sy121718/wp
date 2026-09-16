@@ -85,10 +85,15 @@ func UIAssetFiles() []string {
 // htmlFeatures 是同一份最终 HTML 的能力属性集合，控件与组件增强共享。
 type htmlFeatures map[string]struct{}
 
-// htmlScan 是同一份 HTML 的能力扫描结果：属性驱动行为脚本，class 驱动基座样式。
+// htmlScan 是同一份 HTML 的能力扫描结果：属性驱动行为脚本，class 驱动基座样式，
+// 片段能力（hx-* 的值）驱动片段基座样式（审计 UIK-005）。
 type htmlScan struct {
 	attrs   htmlFeatures
 	classes htmlFeatures
+	// frags 页面引用的运行时片段能力（小写能力名，如 cartview）。它是唯一**值敏感**的
+	// 特征：属性名给不出「hx-get 指向哪个能力」，所以这一项始终由 fragmentCapsFromHTML
+	// 从 HTML 里提取（登记路径与 tokenize 路径都跑同一段解析，结果必然一致）。
+	frags htmlFeatures
 }
 
 // featureScan 返回产物组装要用的能力集合（审计 PERF-014）。
@@ -102,10 +107,22 @@ type htmlScan struct {
 // 两边结果必须逐字节一致。两条路径并存期间，回退保证「没接登记的调用方」行为不变。
 func (c *CompiledPage) featureScan() htmlScan {
 	if c.Features != nil {
-		return htmlScan{
-			attrs:   htmlFeatures(c.Features.Attrs()),
+		attrs := htmlFeatures(c.Features.Attrs())
+		scan := htmlScan{
+			attrs:   attrs,
 			classes: htmlFeatures(c.Features.Classes()),
 		}
+		// 片段能力是值敏感特征（属性名给不出「hx-get 指向哪个能力」），只能从 HTML 提取。
+		// 两个前置判据任一成立才付这次解析：
+		//   · 登记表里有 hx-* 属性 —— 组件输出 htmx 请求的常规路径；
+		//   · HTML 里出现 /_fragments/ 子串 —— 作者手写（或经 HTML 节点注入）的引用
+		//     不一定进登记表，而漏判的表现是「片段刷新出来是裸 HTML」，静默且难查。
+		// 第二条只是一次 strings.Contains（O(字节)，不做解析），纯内容页的成本可忽略；
+		// 真正贵的那次 tokenize 只在命中时才发生，PERF-014 的收敛不被推翻。
+		if hasHXAttr(attrs) || strings.Contains(c.HTML, fragmentPathPrefix) {
+			scan.frags = fragmentCapsFromHTML(c.HTML)
+		}
+		return scan
 	}
 	return collectHTMLScan(c.HTML)
 }
@@ -115,7 +132,7 @@ func collectHTMLFeatures(content string) htmlFeatures {
 }
 
 func collectHTMLScan(content string) htmlScan {
-	out := htmlScan{attrs: make(htmlFeatures), classes: make(htmlFeatures)}
+	out := htmlScan{attrs: make(htmlFeatures), classes: make(htmlFeatures), frags: make(htmlFeatures)}
 	z := html.NewTokenizer(strings.NewReader(content))
 	for {
 		kind := z.Next()
@@ -132,6 +149,13 @@ func collectHTMLScan(content string) htmlScan {
 			name := strings.ToLower(string(key))
 			if strings.HasPrefix(name, "data-") || strings.HasPrefix(name, "hx-") {
 				out.attrs[name] = struct{}{}
+			}
+			// 片段能力只看 hx-* 的值（htmx 是片段消费的唯一入口，组件在输出 hx-post 的
+			// 同时也输出同一 URL 的原生降级路径，所以覆盖 hx-* 就覆盖了全部消费方式）。
+			if strings.HasPrefix(name, "hx-") {
+				for _, cap := range fragmentCapsIn(string(val)) {
+					out.frags[cap] = struct{}{}
+				}
 			}
 			if name == "class" {
 				for _, token := range strings.Fields(string(val)) {
@@ -226,6 +250,9 @@ func usedUIFiles(attrs htmlFeatures) (files []string, needBase bool) {
 }
 
 // uiAssetsFor 一次识别能力并同时组装 CSS/JS，防止两次扫描的规则漂移。
+//
+// CSS 由两段构成：控件基座（ui.css）与片段基座（按页面引用到的片段族选，审计 UIK-005）。
+// 两段判据彼此独立 —— 控件看属性与外观 class，片段看 hx-* 的值。
 // sources=nil 表示调用方选择无脚本输出；非 nil（含空 map）表示已启用控件增强，
 // 命中的控件、基座、入口或样式缺失都返回构建错误，不能生成残缺产物。
 func uiAssetsFor(attrs htmlFeatures, css string, sources map[string]string) (string, string, error) {
@@ -235,14 +262,14 @@ func uiAssetsFor(attrs htmlFeatures, css string, sources map[string]string) (str
 func uiAssetsForScan(scan htmlScan, css string, sources map[string]string) (string, string, error) {
 	files, needStyleFromAttrs := usedUIFiles(scan.attrs)
 	needStyle := needStyleFromAttrs || hasUIBaseClass(scan.classes)
-	if len(files) == 0 && !needStyle {
+	// 片段基座样式与控件基座**彼此独立**（审计 UIK-005）：页面只写 hx-post="/_fragments/cartAdd"
+	// 而没有用任何控件类时，它仍需要购物车片段的样式 —— 不能因为「没有控件」而整页零注入。
+	fragCSS := fragmentBaseCSSFor(scan.frags)
+	if len(files) == 0 && !needStyle && fragCSS == "" {
 		return "", "", nil
 	}
 	if sources == nil {
-		if needStyle {
-			return css, "", nil
-		}
-		return "", "", nil
+		return joinCSS(pickCSS(needStyle, css), fragCSS), "", nil
 	}
 	if len(files) > 0 {
 		if needStyleFromAttrs {
@@ -261,9 +288,24 @@ func uiAssetsForScan(scan htmlScan, css string, sources map[string]string) (stri
 	if needStyle && strings.TrimSpace(css) == "" {
 		return "", "", fmt.Errorf("控件资源缺失: ui.css")
 	}
-	outCSS := ""
-	if needStyle {
-		outCSS = css
+	return joinCSS(pickCSS(needStyle, css), fragCSS), strings.Join(parts, "\n"), nil
+}
+
+// pickCSS 按需取用控件基座样式（不需要时返回空串，不产生多余字节）。
+func pickCSS(need bool, css string) string {
+	if need {
+		return css
 	}
-	return outCSS, strings.Join(parts, "\n"), nil
+	return ""
+}
+
+// joinCSS 拼接两段 CSS（某段为空时不留下多余空行）。
+func joinCSS(first, second string) string {
+	switch {
+	case first == "":
+		return second
+	case second == "":
+		return first
+	}
+	return first + "\n\n" + second
 }

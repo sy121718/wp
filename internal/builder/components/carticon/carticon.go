@@ -176,8 +176,9 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	if mode == ModeHover {
 		b.AddHover(sel+" .sky-cart-icon-hoverwrap:hover .sky-cart-icon-panel", []string{"display: block"})
 	}
-	// 购物车片段内容的基础样式（幂等：两个组件同时用也只出一份）。
-	AddCartFragmentCSS(b)
+	// 购物车**片段**的样式不在这里注入（审计 UIK-005）：片段样式已归基座
+	// （internal/builder/fragment_base.go），按「页面里有没有指向 /_fragments/ 的 htmx 请求」
+	// 判定 —— 否则「片段有没有样式」会取决于页面上放没放这个组件。
 }
 
 //go:embed enhance.js

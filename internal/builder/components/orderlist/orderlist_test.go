@@ -103,39 +103,32 @@ func TestEffectiveTitle(t *testing.T) {
 	}
 }
 
-// TestCompileCSSInjectsFragmentStyles 组件必须把**片段内容**的基础样式一起带上。
+// TestCompileCSSLeavesFragmentStylesToBase 片段基座样式**不由组件注入**（审计 UIK-005）。
 //
-// 片段 HTML 是运行时渲染的，页面作者在编辑器里看不到它 ——
-// 不带样式的结果是「点开订单是一列裸 HTML」，用户会直接当成坏了。
-func TestCompileCSSInjectsFragmentStyles(t *testing.T) {
+// 迁移前片段样式由组件带出，后果是「页面上放没放这个组件」决定片段有没有样式：
+// 只写 hx-post="/_fragments/cartAdd" 的自定义入口拿到的是裸 HTML（条目原文的症状）。
+// 现在片段样式归基座（internal/builder/fragment_base.go），按 hx-* 指向 /_fragments/ 判定，
+// 组件只负责自己的节点作用域外壳。本用例反向钉住「别把片段样式又写回组件」——
+// 写回去就等于把那个耦合重新装回来。
+//
+// 片段样式本身的两条验收（自定义引用也能拿到、按片段能力细分）在 builder 包：
+// internal/builder/fragment_base_test.go。
+func TestCompileCSSLeavesFragmentStylesToBase(t *testing.T) {
 	var b core.CSSBuckets
 	CompileCSS("t", &Props{Color: "#c00"}, &b)
 	css := b.String()
-	for _, want := range []string{
-		".sky-orders-list",
-		".sky-orders-item",
-		".sky-order-line-total",
-		".sky-order-logs",
-		"#c00", // 自定义强调色真的进了产物
+	for _, unwanted := range []string{
+		".sky-orders-list", ".sky-orders-item", ".sky-order-line-total", ".sky-order-logs",
 	} {
-		if !strings.Contains(css, want) {
-			t.Fatalf("样式缺少 %q；实际样式：\n%s", want, css)
+		if strings.Contains(css, unwanted) {
+			t.Fatalf("组件样式里出现片段基座类 %q：片段样式只该在基座里定义（UIK-005）；实际样式：\n%s", unwanted, css)
 		}
 	}
-}
-
-// TestAddOrdersFragmentCSSIsIdempotent 幂等：一页放多个订单列表组件也只出一份片段样式。
-func TestAddOrdersFragmentCSSIsIdempotent(t *testing.T) {
-	var b core.CSSBuckets
-	AddOrdersFragmentCSS(&b)
-	first := b.String()
-	CompileCSS("second", &Props{}, &b)
-	second := b.String()
-	if first == second {
-		t.Fatal("第二次编译应补上组件外壳样式")
+	if !strings.Contains(css, "#c00") {
+		t.Fatalf("自定义强调色应进产物；实际样式：\n%s", css)
 	}
-	if c := strings.Count(second, ".sky-orders-item {"); c != 1 {
-		t.Fatalf("片段样式被重复注入 %d 次", c)
+	if !strings.Contains(css, ".sky-c-t") {
+		t.Fatalf("组件外壳样式必须按 node id 作用域化；实际样式：\n%s", css)
 	}
 }
 

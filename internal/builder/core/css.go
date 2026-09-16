@@ -101,6 +101,15 @@ type CSSBuckets struct {
 	customOrder     []string
 }
 
+// NewCSSBuckets 返回空的规则收集器。
+//
+// 用途：**基座样式**是编译期常量（片段基座、将来可能的其它基座层），需要在编译期之外
+// 一次性生成（见 builder/fragment_base.go）。用零值也能工作，但那样「哪些字段必须初始化」
+// 就成了隐性知识；显式构造函数把这件事钉在 core 里，加字段时改这一处即可。
+func NewCSSBuckets() *CSSBuckets {
+	return &CSSBuckets{}
+}
+
 // DiscardCSS 返回 no-op CSS 收集器：规则写入被丢弃，String 恒为空。
 func DiscardCSS() *CSSBuckets {
 	return &CSSBuckets{discard: true}
