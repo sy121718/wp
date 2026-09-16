@@ -22,6 +22,7 @@ type CreateCategoryReq struct {
 // ParentID 语义与其它可选字段一致：nil 表示本次不改；指向空串表示**提升为顶级**。
 type UpdateCategoryReq struct {
 	ID             string  `json:"id" binding:"required"`
+	ProjectID      string  `json:"projectId"`
 	ParentID       *string `json:"parentId"`
 	Name           *string `json:"name"`
 	Slug           *string `json:"slug"`
@@ -34,7 +35,8 @@ type UpdateCategoryReq struct {
 
 // GetCategoryReq 按 ID 查询分类。
 type GetCategoryReq struct {
-	ID string `form:"id" binding:"required"`
+	ID        string `form:"id" binding:"required"`
+	ProjectID string `form:"projectId"`
 }
 
 // ListCategoryReq 分类列表（按工程过滤；返回树）。
@@ -45,7 +47,8 @@ type ListCategoryReq struct {
 
 // DeleteCategoryReq 删除分类（有子级或被商品引用时拒绝）。
 type DeleteCategoryReq struct {
-	ID string `json:"id" binding:"required"`
+	ID        string `json:"id" binding:"required"`
+	ProjectID string `json:"projectId"`
 }
 
 // CreateBrandReq 新建品牌。
@@ -63,6 +66,7 @@ type CreateBrandReq struct {
 // UpdateBrandReq 修改品牌（可选字段为 nil 表示不变）。
 type UpdateBrandReq struct {
 	ID             string  `json:"id" binding:"required"`
+	ProjectID      string  `json:"projectId"`
 	Name           *string `json:"name"`
 	Slug           *string `json:"slug"`
 	Logo           *string `json:"logo"`
@@ -74,7 +78,8 @@ type UpdateBrandReq struct {
 
 // GetBrandReq 按 ID 查询品牌。
 type GetBrandReq struct {
-	ID string `form:"id" binding:"required"`
+	ID        string `form:"id" binding:"required"`
+	ProjectID string `form:"projectId"`
 }
 
 // ListBrandReq 品牌列表（按工程过滤）。
@@ -85,5 +90,6 @@ type ListBrandReq struct {
 
 // DeleteBrandReq 删除品牌（被商品引用时拒绝）。
 type DeleteBrandReq struct {
-	ID string `json:"id" binding:"required"`
+	ID        string `json:"id" binding:"required"`
+	ProjectID string `json:"projectId"`
 }

@@ -244,7 +244,7 @@ func (s *Service) localizeRelated(ctx context.Context, lang string, e *productmo
 		}
 	}
 	if e.BrandID != nil && strings.TrimSpace(*e.BrandID) != "" {
-		if row, berr := s.m.GetBrand(ctx, *e.BrandID); berr == nil {
+		if row, berr := s.m.GetBrand(ctx, *e.BrandID, e.ProjectID); berr == nil {
 			loc.brands[row.ID] = row
 		}
 	}

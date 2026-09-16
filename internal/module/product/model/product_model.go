@@ -145,14 +145,34 @@ func (m *Model) CreateWithVariants(ctx context.Context, e *ProductEntity, varian
 	})
 }
 
-// Get 按 ID 查商品。projectID 非空时追加工程归属条件（防跨工程 IDOR）。
+// Get 按 ID 查商品。
+//
+// projectID 是**必填**的工程作用域：products 在迁移 215 名单里，策略谓词读的是会话变量
+// （app.project_id），而 WHERE project_id = ? 只是普通过滤 —— 换连接角色后**没有作用域
+// 的查询会静默返回 0 行**（fail closed 不报错）。空串会被 rls 直接拒掉，不会退化成
+// 「查一个不存在的工程」那种更难排查的形态。
 func (m *Model) Get(ctx context.Context, id, projectID string) (e *ProductEntity, err error) {
 	e = &ProductEntity{}
-	q := m.DB(ctx).Where("id = ?", id)
-	if strings.TrimSpace(projectID) != "" {
-		q = q.Where("project_id = ?", projectID)
-	}
-	err = q.First(e).Error
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.WithContext(ctx).Model(&ProductEntity{}).Where("id = ?", id).First(e).Error
+	})
+	return e, err
+}
+
+// GetWithoutScope 按 ID 读商品行，**不设工程作用域**（审计 DB-009 的显式例外）。
+//
+// 唯一调用方是 ProductTranslationCandidates —— 它的契约签名里没有 projectID，
+// 而调用它的是 dashboard（跨模块，本模块无法替它决定该用哪个工程）。这是
+// 「确实拿不到工程上下文」的那一类，按 DB-009 的口径**显式保留现状**而不是
+// 加空串兜底（空串会被 rls 拒掉，等于把静默 0 行换成一个更难懂的错误）。
+//
+// 换非超级角色后本方法会 fail closed（策略谓词为 NULL ⇒ 0 行）：届时必须给
+// contract.ProductService 的那个方法补 projectID 参数并让 dashboard 传下来。
+//
+// 不要给本方法加新的调用方：需要按 id 读商品的一律用 Get(ctx, id, projectID)。
+func (m *Model) GetWithoutScope(ctx context.Context, id string) (e *ProductEntity, err error) {
+	e = &ProductEntity{}
+	err = m.DB(ctx).Where("id = ?", id).First(e).Error
 	return e, err
 }
 

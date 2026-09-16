@@ -82,9 +82,13 @@ func (m *Model) CreateSource(ctx context.Context, e *SourceEntity) (err error) {
 }
 
 // GetSource 按 ID 查货源。
-func (m *Model) GetSource(ctx context.Context, id string) (e *SourceEntity, err error) {
+//
+// projectID 由调用方给出：inventory_sources 在迁移 215 名单里，跨工程的行不可见。
+func (m *Model) GetSource(ctx context.Context, id, projectID string) (e *SourceEntity, err error) {
 	e = &SourceEntity{}
-	err = m.SourceDB(ctx).Where("id = ?", id).First(e).Error
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.WithContext(ctx).Model(&SourceEntity{}).Where("id = ?", id).First(e).Error
+	})
 	return e, err
 }
 

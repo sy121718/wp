@@ -48,7 +48,9 @@ type CreateReq struct {
 
 // UpdateReq 修改商品（含 slug 改名；变体单独接口）。
 type UpdateReq struct {
-	ID             string          `json:"id" binding:"required"`
+	ID string `json:"id" binding:"required"`
+	// ProjectID 是工程隔离（DB-009）的作用域来源；为空时由 service 走唯一工程兜底。
+	ProjectID      string          `json:"projectId"`
 	Name           *string         `json:"name"`
 	Subtitle       *string         `json:"subtitle"`
 	Description    json.RawMessage `json:"description"`
@@ -100,6 +102,8 @@ type ListReq struct {
 // DeleteReq 删除商品（连带其变体）。
 type DeleteReq struct {
 	ID string `json:"id" binding:"required"`
+	// ProjectID 是工程隔离（DB-009）的作用域来源；为空时由 service 走唯一工程兜底。
+	ProjectID string `json:"projectId"`
 	// OperatorID 操作人（issue #19）：由 inbound 从会话覆盖写入，客户端传入的值被忽略
 	// （json/form 标签为 "-"，不可由外部指定）。变更记录记「谁改的」，
 	// 统一取会话里的登录名；缺失时为空串（留痕字段允许为空）。
@@ -110,7 +114,9 @@ type DeleteReq struct {
 //
 // 未填字段由 service 逐字段判空后继承商品级默认值（空值以 NULL 判定，0 与 false 视为已填）。
 type CreateVariantReq struct {
-	ProductID    string          `json:"productId" binding:"required"`
+	ProductID string `json:"productId" binding:"required"`
+	// ProjectID 是工程隔离（DB-009）的作用域来源；为空时由 service 走唯一工程兜底。
+	ProjectID    string          `json:"projectId"`
 	SKUCode      string          `json:"skuCode"`
 	Barcode      string          `json:"barcode"`
 	Price        *float64        `json:"price"`
@@ -131,7 +137,9 @@ type CreateVariantReq struct {
 
 // UpdateVariantReq 修改变体（编辑路径不做默认值填充）。
 type UpdateVariantReq struct {
-	ID           string          `json:"id" binding:"required"`
+	ID string `json:"id" binding:"required"`
+	// ProjectID 是工程隔离（DB-009）的作用域来源；为空时由 service 走唯一工程兜底。
+	ProjectID    string          `json:"projectId"`
 	SKUCode      *string         `json:"skuCode"`
 	Barcode      *string         `json:"barcode"`
 	Price        *float64        `json:"price"`
@@ -150,6 +158,8 @@ type UpdateVariantReq struct {
 // DeleteVariantReq 删除变体。
 type DeleteVariantReq struct {
 	ID string `json:"id" binding:"required"`
+	// ProjectID 是工程隔离（DB-009）的作用域来源；为空时由 service 走唯一工程兜底。
+	ProjectID string `json:"projectId"`
 	// OperatorID 操作人（issue #19）：由 inbound 从会话覆盖写入，客户端传入的值被忽略
 	// （json/form 标签为 "-"，不可由外部指定）。变更记录记「谁改的」，
 	// 统一取会话里的登录名；缺失时为空串（留痕字段允许为空）。
@@ -179,7 +189,9 @@ type VariantSelectionReq struct {
 // 保护性上限：参与维度与组合总数分别有上限，超过时整体拒绝，一条变体都不写。
 // 已存在的规格组合一律跳过（幂等），因此重复提交不会产生重复变体。
 type GenerateVariantsReq struct {
-	ProductID  string                `json:"productId" binding:"required"`
+	ProductID string `json:"productId" binding:"required"`
+	// ProjectID 是工程隔离（DB-009）的作用域来源；为空时由 service 走唯一工程兜底。
+	ProjectID  string                `json:"projectId"`
 	Selections []VariantSelectionReq `json:"selections"`
 	// WarehouseID 归属仓（issue #15）：本批新建的变体都落在该仓（不选则默认仓），
 	// 并在该仓为每个新变体生成初始 0 的库存记录。

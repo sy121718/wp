@@ -75,9 +75,13 @@ func (m *Model) CreateRating(ctx context.Context, e *ProductRatingEntity) (err e
 }
 
 // GetRating 按 id 取一条评分（校验归属用）。
-func (m *Model) GetRating(ctx context.Context, id string) (e *ProductRatingEntity, err error) {
+//
+// projectID 由调用方给出：product_ratings 在迁移 215 名单里，跨工程的行不可见。
+func (m *Model) GetRating(ctx context.Context, id, projectID string) (e *ProductRatingEntity, err error) {
 	var row ProductRatingEntity
-	if err = m.RatingDB(ctx).Where("id = ?", id).Take(&row).Error; err != nil {
+	if err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.WithContext(ctx).Model(&ProductRatingEntity{}).Where("id = ?", id).Take(&row).Error
+	}); err != nil {
 		return nil, err
 	}
 	return &row, nil

@@ -32,7 +32,11 @@ func (s *Service) ValidateBundleSelection(ctx context.Context, req *productdto.V
 	if req == nil || strings.TrimSpace(req.ProductID) == "" {
 		return nil, errors.New(productenums.ErrInvalidParam)
 	}
-	e, gerr := s.m.Get(ctx, strings.TrimSpace(req.ProductID), "")
+	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	e, gerr := s.m.Get(ctx, strings.TrimSpace(req.ProductID), projectID)
 	if gerr != nil {
 		return nil, mapNotFound(gerr)
 	}

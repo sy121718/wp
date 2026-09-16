@@ -101,7 +101,11 @@ func (s *Service) UpdateReason(ctx context.Context, req *inventorydto.UpdateReas
 	if perr != nil {
 		return nil, errors.New(inventoryenums.ErrReasonNotFound)
 	}
-	e, err := s.m.GetReason(ctx, rid)
+	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	e, err := s.m.GetReason(ctx, rid, projectID)
 	if err != nil {
 		return nil, mapReasonNotFound(err)
 	}

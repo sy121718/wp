@@ -28,7 +28,10 @@ import (
 // 返回顺序：商品自身 → 分类（商品引用顺序）→ 品牌 → 标签 → 属性组。
 // 实体不存在 / 引用已失效 → 跳过该实体，不报错（与详情页读取口径一致）。
 func (s *Service) ProductTranslationCandidates(ctx context.Context, productID string) (list []productcontract.TranslationCandidate, err error) {
-	e, gerr := s.m.Get(ctx, productID, "")
+	// 契约签名（contract.ProductService）不含 projectID，调用方是 dashboard（跨模块）
+	// —— 这条是 DB-009 里「确实拿不到工程上下文」的显式例外，走 GetWithoutScope
+	// 保留现状（详见该方法的注释与迁移 215 的说明）。
+	e, gerr := s.m.GetWithoutScope(ctx, productID)
 	if gerr != nil {
 		return nil, mapNotFound(gerr)
 	}
@@ -78,7 +81,7 @@ func (s *Service) translationCandidatesForProduct(ctx context.Context, e *produc
 			map[string]string{"name": row.Name, "description": row.Description, "seoTitle": row.SEOTitle})...)
 	}
 	if e.BrandID != nil && strings.TrimSpace(*e.BrandID) != "" {
-		if row, berr := s.m.GetBrand(ctx, *e.BrandID); berr == nil {
+		if row, berr := s.m.GetBrand(ctx, *e.BrandID, e.ProjectID); berr == nil {
 			list = append(list, entityTextCandidates(productcontract.EntityTypeBrand, row.ID, row.Name,
 				map[string]string{"name": row.Name, "description": row.Description, "seoTitle": row.SEOTitle})...)
 		}

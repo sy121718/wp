@@ -60,13 +60,17 @@ func NewEmptyBundleConfig() BundleConfig {
 // GetBundleConfigReq 读取某商品的捆绑配置。
 type GetBundleConfigReq struct {
 	ProductID string `form:"productId" json:"productId" binding:"required"`
+	// ProjectID 是工程隔离（DB-009）的作用域来源；为空时由 service 走唯一工程兜底。
+	ProjectID string `form:"projectId" json:"projectId"`
 }
 
 // SetBundleConfigReq 保存某商品的捆绑配置（整体替换）。
 //
 // OperatorID 由 inbound 从会话覆盖写入（客户端传入被忽略）：配置变更要落主数据变更记录。
 type SetBundleConfigReq struct {
-	ProductID  string       `form:"productId" json:"productId" binding:"required"`
+	ProductID string `form:"productId" json:"productId" binding:"required"`
+	// ProjectID 是工程隔离（DB-009）的作用域来源；为空时由 service 走唯一工程兜底。
+	ProjectID  string       `form:"projectId" json:"projectId"`
 	Config     BundleConfig `json:"config"`
 	OperatorID string       `json:"-" form:"-"`
 }
@@ -129,7 +133,9 @@ type BundleSelectItem struct {
 // Items 是**整单的完整选择**（不是增量）：漏填的必选项在这里就是缺席，
 // 校验因此是纯函数式的 —— 同样的选择永远得到同样的结论。
 type ValidateBundleSelectionReq struct {
-	ProductID string             `json:"productId" form:"productId"`
+	ProductID string `json:"productId" form:"productId"`
+	// ProjectID 是工程隔离（DB-009）的作用域来源；为空时由 service 走唯一工程兜底。
+	ProjectID string             `json:"projectId" form:"projectId"`
 	Items     []BundleSelectItem `json:"items" form:"-"`
 }
 

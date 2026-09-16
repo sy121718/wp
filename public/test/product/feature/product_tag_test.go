@@ -74,7 +74,8 @@ func TestTagManualAttachAndGuards(t *testing.T) {
 		t.Fatalf("商品应挂上手工标签，实际 %v", p.TagIDs)
 	}
 	// 验收 4：按标签反查命中商品。
-	detail, err := f.svc.GetTag(ctx, &productdto.GetTagReq{ID: manual.ID})
+	// DB-009：库里有多个工程时按 id 单查必须显式给工程（唯一工程兜底不成立）。
+	detail, err := f.svc.GetTag(ctx, &productdto.GetTagReq{ProjectID: f.projectID, ID: manual.ID})
 	if err != nil {
 		t.Fatalf("标签详情失败: %v", err)
 	}
@@ -82,13 +83,13 @@ func TestTagManualAttachAndGuards(t *testing.T) {
 		t.Fatalf("标签应命中 1 个商品，实际 %+v", detail.Products)
 	}
 	// 验收 4 的接口形态：ListTagProducts。
-	hits, err := f.svc.ListTagProducts(ctx, &productdto.ListTagProductsReq{TagID: manual.ID})
+	hits, err := f.svc.ListTagProducts(ctx, &productdto.ListTagProductsReq{ProjectID: f.projectID, TagID: manual.ID})
 	if err != nil || len(hits) != 1 || hits[0].Name != "清仓商品" {
 		t.Fatalf("ListTagProducts 应返回命中商品，实际 %v %+v", err, hits)
 	}
 
 	// 手工解绑（整体替换语义）。
-	if _, err = f.svc.Update(ctx, &productdto.UpdateReq{ID: p.ID, TagIDs: []string{}}); err != nil {
+	if _, err = f.svc.Update(ctx, &productdto.UpdateReq{ProjectID: f.projectID, ID: p.ID, TagIDs: []string{}}); err != nil {
 		t.Fatalf("解绑标签失败: %v", err)
 	}
 	got, err := f.svc.Get(ctx, &productdto.GetReq{ProjectID: f.projectID, ID: p.ID})
@@ -98,7 +99,7 @@ func TestTagManualAttachAndGuards(t *testing.T) {
 
 	// 三条引用拦截：不存在 / 跨工程 / 自动标签。
 	missing := "00000000-0000-0000-0000-000000000000"
-	if _, err = f.svc.Update(ctx, &productdto.UpdateReq{ID: p.ID, TagIDs: []string{missing}}); err == nil ||
+	if _, err = f.svc.Update(ctx, &productdto.UpdateReq{ProjectID: f.projectID, ID: p.ID, TagIDs: []string{missing}}); err == nil ||
 		err.Error() != productenums.ErrTagNotFound {
 		t.Fatalf("不存在的标签应返回 ErrTagNotFound，实际 %v", err)
 	}
@@ -106,7 +107,7 @@ func TestTagManualAttachAndGuards(t *testing.T) {
 	if err != nil {
 		t.Fatalf("建他工程标签失败: %v", err)
 	}
-	if _, err = f.svc.Update(ctx, &productdto.UpdateReq{ID: p.ID, TagIDs: []string{foreign.ID}}); err == nil ||
+	if _, err = f.svc.Update(ctx, &productdto.UpdateReq{ProjectID: f.projectID, ID: p.ID, TagIDs: []string{foreign.ID}}); err == nil ||
 		err.Error() != productenums.ErrTagProjectMismatch {
 		t.Fatalf("跨工程标签应返回 ErrTagProjectMismatch，实际 %v", err)
 	}
@@ -117,7 +118,7 @@ func TestTagManualAttachAndGuards(t *testing.T) {
 	if err != nil {
 		t.Fatalf("建自动标签失败: %v", err)
 	}
-	if _, err = f.svc.Update(ctx, &productdto.UpdateReq{ID: p.ID, TagIDs: []string{rule.ID}}); err == nil ||
+	if _, err = f.svc.Update(ctx, &productdto.UpdateReq{ProjectID: f.projectID, ID: p.ID, TagIDs: []string{rule.ID}}); err == nil ||
 		err.Error() != productenums.ErrTagNotManual {
 		t.Fatalf("手工挂自动标签应返回 ErrTagNotManual，实际 %v", err)
 	}
@@ -206,11 +207,11 @@ func TestTagRuleValidation(t *testing.T) {
 		t.Fatalf("改规则参数未生效: %+v", updated)
 	}
 	bad := `{"days":0}`
-	if _, err = f.svc.UpdateTag(ctx, &productdto.UpdateTagReq{ID: both.ID, RuleParams: json.RawMessage(bad)}); err == nil ||
+	if _, err = f.svc.UpdateTag(ctx, &productdto.UpdateTagReq{ProjectID: f.projectID, ID: both.ID, RuleParams: json.RawMessage(bad)}); err == nil ||
 		!strings.Contains(err.Error(), productenums.ErrTagRuleParamsInvalid) {
 		t.Fatalf("非法参数应被拒绝，实际 %v", err)
 	}
-	again, err := f.svc.GetTag(ctx, &productdto.GetTagReq{ID: both.ID})
+	again, err := f.svc.GetTag(ctx, &productdto.GetTagReq{ProjectID: f.projectID, ID: both.ID})
 	if err != nil {
 		t.Fatalf("读标签失败: %v", err)
 	}
@@ -279,7 +280,7 @@ func TestTagAutoRecalcMembership(t *testing.T) {
 
 	// ② 状态转 published → 上架时间落库、新品规则命中。
 	published := productenums.StatusPublished
-	if _, err = f.svc.Update(ctx, &productdto.UpdateReq{ID: p.ID, Status: &published}); err != nil {
+	if _, err = f.svc.Update(ctx, &productdto.UpdateReq{ProjectID: f.projectID, ID: p.ID, Status: &published}); err != nil {
 		t.Fatalf("上架失败: %v", err)
 	}
 	got, err := f.svc.Get(ctx, &productdto.GetReq{ProjectID: f.projectID, ID: p.ID})
@@ -343,7 +344,7 @@ func TestTagAutoRecalcMembership(t *testing.T) {
 
 	// ⑤ 标签规则变更后立刻重算：把价格区间放宽到 1000，商品重新命中。
 	wide := `{"minPrice":100,"maxPrice":1000}`
-	if _, err = f.svc.UpdateTag(ctx, &productdto.UpdateTagReq{ID: priceRange.ID, RuleParams: json.RawMessage(wide)}); err != nil {
+	if _, err = f.svc.UpdateTag(ctx, &productdto.UpdateTagReq{ProjectID: f.projectID, ID: priceRange.ID, RuleParams: json.RawMessage(wide)}); err != nil {
 		t.Fatalf("放宽价格区间失败: %v", err)
 	}
 	if !containsString(tagProductIDs(t, f, priceRange.ID), p.ID) {
@@ -361,7 +362,7 @@ func TestTagAutoRecalcMembership(t *testing.T) {
 	if _, err = f.svc.RecalcTags(ctx, &productdto.RecalcTagsReq{TagID: manual.ID}); err != nil {
 		t.Fatalf("重算手工标签应安全无操作: %v", err)
 	}
-	manualDetail, err := f.svc.GetTag(ctx, &productdto.GetTagReq{ID: manual.ID})
+	manualDetail, err := f.svc.GetTag(ctx, &productdto.GetTagReq{ProjectID: f.projectID, ID: manual.ID})
 	if err != nil {
 		t.Fatalf("读手工标签失败: %v", err)
 	}
@@ -369,7 +370,7 @@ func TestTagAutoRecalcMembership(t *testing.T) {
 		t.Fatalf("手工标签归属不应被重算改动，实际命中 %d", manualDetail.ProductCount)
 	}
 	// 重算时间已记录（后台可见的重算证据）。
-	autoDetail, err := f.svc.GetTag(ctx, &productdto.GetTagReq{ID: newArrival.ID})
+	autoDetail, err := f.svc.GetTag(ctx, &productdto.GetTagReq{ProjectID: f.projectID, ID: newArrival.ID})
 	if err != nil {
 		t.Fatalf("读自动标签失败: %v", err)
 	}
@@ -411,7 +412,7 @@ func TestTagDeleteUnbindsProducts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("建商品失败: %v", err)
 	}
-	if err = f.svc.DeleteTag(ctx, &productdto.DeleteTagReq{ID: tag.ID}); err != nil {
+	if err = f.svc.DeleteTag(ctx, &productdto.DeleteTagReq{ProjectID: f.projectID, ID: tag.ID}); err != nil {
 		t.Fatalf("删除标签失败: %v", err)
 	}
 	got, err := f.svc.Get(ctx, &productdto.GetReq{ProjectID: f.projectID, ID: p.ID})
@@ -421,7 +422,7 @@ func TestTagDeleteUnbindsProducts(t *testing.T) {
 	if len(got.TagIDs) != 0 {
 		t.Fatalf("删除标签后商品不应再有悬空引用，实际 %v", got.TagIDs)
 	}
-	if _, err = f.svc.GetTag(ctx, &productdto.GetTagReq{ID: tag.ID}); err == nil ||
+	if _, err = f.svc.GetTag(ctx, &productdto.GetTagReq{ProjectID: f.projectID, ID: tag.ID}); err == nil ||
 		err.Error() != productenums.ErrTagNotFound {
 		t.Fatalf("删除后应返回 ErrTagNotFound，实际 %v", err)
 	}
@@ -519,7 +520,7 @@ func TestTagAdminPages(t *testing.T) {
 		t.Fatalf("建商品失败: %v", err)
 	}
 	published := productenums.StatusPublished
-	if _, err = f.svc.Update(context.Background(), &productdto.UpdateReq{ID: p.ID, Status: &published}); err != nil {
+	if _, err = f.svc.Update(context.Background(), &productdto.UpdateReq{ProjectID: f.projectID, ID: p.ID, Status: &published}); err != nil {
 		t.Fatalf("上架失败: %v", err)
 	}
 	manualID := tagIDByName(t, f, "清仓")
@@ -571,7 +572,7 @@ func TestTagAdminPages(t *testing.T) {
 	if rec.Code != http.StatusFound {
 		t.Fatalf("POST 删除标签应 302，实际 %d", rec.Code)
 	}
-	if _, err = f.svc.GetTag(context.Background(), &productdto.GetTagReq{ID: manualID}); err == nil {
+	if _, err = f.svc.GetTag(context.Background(), &productdto.GetTagReq{ProjectID: f.projectID, ID: manualID}); err == nil {
 		t.Fatalf("删除后标签应不存在")
 	}
 }
@@ -579,7 +580,7 @@ func TestTagAdminPages(t *testing.T) {
 // tagProductIDs 取某标签当前命中的商品 id（测试内的小工具）。
 func tagProductIDs(t *testing.T, f *attrFixture, tagID string) []string {
 	t.Helper()
-	hits, err := f.svc.ListTagProducts(t.Context(), &productdto.ListTagProductsReq{TagID: tagID})
+	hits, err := f.svc.ListTagProducts(t.Context(), &productdto.ListTagProductsReq{ProjectID: f.projectID, TagID: tagID})
 	if err != nil {
 		t.Fatalf("查询标签命中商品失败: %v", err)
 	}

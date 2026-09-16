@@ -58,7 +58,11 @@ func (s *Service) GenerateVariants(ctx context.Context, req *productdto.Generate
 	if req == nil || strings.TrimSpace(req.ProductID) == "" {
 		return nil, errors.New(productenums.ErrInvalidParam)
 	}
-	p, gerr := s.m.Get(ctx, req.ProductID, "")
+	projectID, gerr := s.resolveProjectID(ctx, req.ProjectID)
+	if gerr != nil {
+		return nil, gerr
+	}
+	p, gerr := s.m.Get(ctx, req.ProductID, projectID)
 	if gerr != nil {
 		return nil, mapNotFound(gerr)
 	}
@@ -169,7 +173,7 @@ func (s *Service) GenerateVariants(ctx context.Context, req *productdto.Generate
 	}
 	res.Created = len(created)
 	// 重算时机之一：变体写操作后 —— 组合生成会新建一整批变体，价格整体变化。
-	if err = s.recalcProjectAutoTags(ctx, p.ID); err != nil {
+	if err = s.recalcProjectAutoTags(ctx, p.ID, p.ProjectID); err != nil {
 		return nil, err
 	}
 

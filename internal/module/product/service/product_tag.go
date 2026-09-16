@@ -93,7 +93,11 @@ func (s *Service) UpdateTag(ctx context.Context, req *productdto.UpdateTagReq) (
 	if req == nil || req.ID == "" {
 		return nil, errors.New(productenums.ErrInvalidParam)
 	}
-	e, err := s.m.GetTag(ctx, req.ID)
+	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	e, err := s.m.GetTag(ctx, req.ID, projectID)
 	if err != nil {
 		return nil, mapTagNotFound(err)
 	}
@@ -204,7 +208,11 @@ func (s *Service) GetTag(ctx context.Context, req *productdto.GetTagReq) (res *p
 	if req == nil || req.ID == "" {
 		return nil, errors.New(productenums.ErrInvalidParam)
 	}
-	e, err := s.m.GetTag(ctx, req.ID)
+	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	e, err := s.m.GetTag(ctx, req.ID, projectID)
 	if err != nil {
 		return nil, mapTagNotFound(err)
 	}
@@ -241,7 +249,11 @@ func (s *Service) ListTagProducts(ctx context.Context, req *productdto.ListTagPr
 	if req == nil || req.TagID == "" {
 		return nil, errors.New(productenums.ErrInvalidParam)
 	}
-	if _, gerr := s.m.GetTag(ctx, req.TagID); gerr != nil {
+	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	if _, gerr := s.m.GetTag(ctx, req.TagID, projectID); gerr != nil {
 		return nil, mapTagNotFound(gerr)
 	}
 	limit := req.Limit
@@ -266,7 +278,11 @@ func (s *Service) DeleteTag(ctx context.Context, req *productdto.DeleteTagReq) (
 	if req == nil || req.ID == "" {
 		return errors.New(productenums.ErrInvalidParam)
 	}
-	tag, gerr := s.m.GetTag(ctx, req.ID)
+	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
+	if err != nil {
+		return err
+	}
+	tag, gerr := s.m.GetTag(ctx, req.ID, projectID)
 	if gerr != nil {
 		return mapTagNotFound(gerr)
 	}
@@ -296,7 +312,12 @@ func (s *Service) RecalcTags(ctx context.Context, req *productdto.RecalcTagsReq)
 	projectID := strings.TrimSpace(req.ProjectID)
 	var tags []*productmodel.ProductTagEntity
 	if id := strings.TrimSpace(req.TagID); id != "" {
-		tag, gerr := s.m.GetTag(ctx, id)
+		// 作用域：显式 projectId 优先，否则取标签自身的工程（这里先按请求工程读标签本身）。
+		scopeID, serr := s.resolveProjectID(ctx, projectID)
+		if serr != nil {
+			return nil, serr
+		}
+		tag, gerr := s.m.GetTag(ctx, id, scopeID)
 		if gerr != nil {
 			return nil, mapTagNotFound(gerr)
 		}
@@ -422,11 +443,19 @@ func (s *Service) recalcAutoTags(ctx context.Context, projectID string) (err err
 // recalcProjectAutoTags 按商品 id 反查工程后重算（商品 / 变体写操作后的统一收口）。
 //
 // 商品已不存在（例如刚被删除）时直接返回：归属随商品行一起消失，没有需要重算的东西。
-func (s *Service) recalcProjectAutoTags(ctx context.Context, productID string) (err error) {
+// projectID 是工程作用域（DB-009）：products 有 RLS 策略，这次反查同样要在作用域内。
+// 调用方没有工程上下文时（纯商品单测路径）按唯一工程兜底 —— 唯一的兜底入口，
+// 不静默跳过作用域（那正是换角色后「静默 0 行」的来源）。
+func (s *Service) recalcProjectAutoTags(ctx context.Context, productID, projectID string) (err error) {
 	if productID == "" {
 		return nil
 	}
-	p, gerr := s.m.Get(ctx, productID, "")
+	if strings.TrimSpace(projectID) == "" {
+		if projectID, err = s.resolveProjectID(ctx, ""); err != nil {
+			return err
+		}
+	}
+	p, gerr := s.m.Get(ctx, productID, projectID)
 	if gerr != nil {
 		if errors.Is(gerr, gorm.ErrRecordNotFound) {
 			return nil

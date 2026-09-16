@@ -59,34 +59,44 @@ func (s *Service) ResolverFor(ctx context.Context, entityType, entityID string) 
 		return nil, errors.New(productenums.ErrInvalidType)
 	}
 	lang := core.BuildLang(ctx)
+	// 工程作用域例外（审计 DB-009，product 域第三批）：本方法在 builder.Compile **之前**
+	// 被 presentation 的 renderHTML 调用，那时 ctx 里**还没有**工程 id ——
+	// core.WithBuildProjectID 是 Compile 内部才补上的（见 internal/builder/builder.go 的
+	// buildCtx 构造），而 ResolverFor 早于它。所以这条路径走显式无作用域读，
+	// 而不是把空串塞进 rls（那会被拒掉，发布直接报错）。
+	//
+	// 换非超级角色后的影响：这四处会 fail closed（0 行）⇒ 商品 / 分类等实体的
+	// 字段源解析失败 ⇒ 发布产物里对应区块缺失。要修的是 presentation 侧在
+	// renderHTML 的 buildCtx 上补 core.WithBuildProjectID(ctx, projectID) ——
+	// presentation 不在本批的改动域内，见交付清单。
 	switch entityType {
 	case productcontract.EntityTypeCategory:
 		var row *productmodel.ProductCategoryEntity
-		if row, err = s.m.GetCategory(ctx, entityID); err != nil {
+		if row, err = s.m.GetCategoryWithoutScope(ctx, entityID); err != nil {
 			return nil, mapNotFound(err)
 		}
 		return &entityResolver{entityType: entityType, values: s.categoryValues(ctx, lang, row)}, nil
 	case productcontract.EntityTypeBrand:
 		var row *productmodel.ProductBrandEntity
-		if row, err = s.m.GetBrand(ctx, entityID); err != nil {
+		if row, err = s.m.GetBrandWithoutScope(ctx, entityID); err != nil {
 			return nil, mapNotFound(err)
 		}
 		return &entityResolver{entityType: entityType, values: s.brandValues(ctx, lang, row)}, nil
 	case productcontract.EntityTypeTag:
 		var row *productmodel.ProductTagEntity
-		if row, err = s.m.GetTag(ctx, entityID); err != nil {
+		if row, err = s.m.GetTagWithoutScope(ctx, entityID); err != nil {
 			return nil, mapNotFound(err)
 		}
 		return &entityResolver{entityType: entityType, values: s.tagValues(ctx, lang, row)}, nil
 	case productcontract.EntityTypeAttribute:
 		var row *productmodel.ProductAttributeEntity
-		if row, err = s.m.GetAttribute(ctx, entityID); err != nil {
+		if row, err = s.m.GetAttributeWithoutScope(ctx, entityID); err != nil {
 			return nil, mapNotFound(err)
 		}
 		return &entityResolver{entityType: entityType, values: s.attributeValues(ctx, lang, row)}, nil
 	}
 
-	e, gerr := s.m.Get(ctx, entityID, "")
+	e, gerr := s.m.GetWithoutScope(ctx, entityID)
 	if gerr != nil {
 		return nil, mapNotFound(gerr)
 	}

@@ -378,9 +378,14 @@ func (m *Model) ListReasons(ctx context.Context, f ReasonFilter) (list []*Reason
 }
 
 // GetReason 按 ID 查原因。
-func (m *Model) GetReason(ctx context.Context, id int64) (e *ReasonEntity, err error) {
+//
+// inventory_change_reasons 用的是 global 谓词（放行 project_id IS NULL 的内置条目）：
+// 设上作用域后「本工程自定义 + 内置」都可见，与 ListReasons 的过滤口径一致。
+func (m *Model) GetReason(ctx context.Context, id int64, projectID string) (e *ReasonEntity, err error) {
 	e = &ReasonEntity{}
-	err = m.reasonDB(ctx).Where("id = ?", id).First(e).Error
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.WithContext(ctx).Model(&ReasonEntity{}).Where("id = ?", id).First(e).Error
+	})
 	return e, err
 }
 
@@ -389,13 +394,12 @@ func (m *Model) GetReason(ctx context.Context, id int64) (e *ReasonEntity, err e
 // 只返回 active 的条目 —— 停用的原因不能再被新的变动引用（历史流水不受影响）。
 func (m *Model) FindReasonByCode(ctx context.Context, projectID, code string) (e *ReasonEntity, err error) {
 	e = &ReasonEntity{}
-	q := m.reasonDB(ctx).Where("lower(code) = lower(?) AND status = 'active'", code)
-	if projectID != "" {
-		q = q.Where("project_id = ? OR project_id IS NULL", projectID)
-	} else {
-		q = q.Where("project_id IS NULL")
-	}
-	err = q.Order("project_id NULLS LAST, is_builtin ASC").First(e).Error
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		q := tx.WithContext(ctx).Model(&ReasonEntity{}).
+			Where("lower(code) = lower(?) AND status = 'active'", code).
+			Where("project_id = ? OR project_id IS NULL", projectID)
+		return q.Order("project_id NULLS LAST, is_builtin ASC").First(e).Error
+	})
 	return e, err
 }
 

@@ -127,7 +127,7 @@ func (s *Service) fillRelated(ctx context.Context, resp *productdto.ProductResp,
 		}
 	}
 	if e.BrandID != nil && strings.TrimSpace(*e.BrandID) != "" {
-		if row, berr := s.m.GetBrand(ctx, *e.BrandID); berr == nil {
+		if row, berr := s.m.GetBrand(ctx, *e.BrandID, e.ProjectID); berr == nil {
 			resp.Brand = toBrandResp(row)
 		}
 	}

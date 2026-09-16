@@ -73,11 +73,13 @@ func variantChangeSnapshot(v *productmodel.VariantEntity, ref *productcontract.W
 // variantProjectID 变体所属工程（变更记录按工程隔离，变体行只有 product_id）。
 //
 // 只在留痕端口已注入时才多查一次商品：未注入的纯商品单测路径一个多余的查询都不发。
-func (s *Service) variantProjectID(ctx context.Context, v *productmodel.VariantEntity) (projectID string, err error) {
+// scopeID 是调用方给的工程作用域：products 表有 RLS 策略，反查本身也需要作用域
+// （详见 pkg/rls 与 AGENTS.md 的 DB-009 段）。
+func (s *Service) variantProjectID(ctx context.Context, v *productmodel.VariantEntity, scopeID string) (projectID string, err error) {
 	if s.changes == nil || v == nil {
 		return "", nil
 	}
-	p, gerr := s.m.Get(ctx, v.ProductID, "")
+	p, gerr := s.m.Get(ctx, v.ProductID, scopeID)
 	if gerr != nil {
 		return "", mapNotFound(gerr)
 	}

@@ -80,7 +80,11 @@ func (s *Service) UpdateAttribute(ctx context.Context, req *productdto.UpdateAtt
 	if req == nil || req.ID == "" {
 		return nil, errors.New(productenums.ErrInvalidParam)
 	}
-	e, err := s.m.GetAttribute(ctx, req.ID)
+	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	e, err := s.m.GetAttribute(ctx, req.ID, projectID)
 	if err != nil {
 		return nil, mapNotFound(err)
 	}
@@ -121,7 +125,11 @@ func (s *Service) SetAttributeValues(ctx context.Context, req *productdto.SetAtt
 	if req == nil || req.ID == "" {
 		return nil, errors.New(productenums.ErrInvalidParam)
 	}
-	e, err := s.m.GetAttribute(ctx, req.ID)
+	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	e, err := s.m.GetAttribute(ctx, req.ID, projectID)
 	if err != nil {
 		return nil, mapNotFound(err)
 	}
@@ -139,7 +147,11 @@ func (s *Service) GetAttribute(ctx context.Context, req *productdto.GetAttribute
 	if req == nil || req.ID == "" {
 		return nil, errors.New(productenums.ErrInvalidParam)
 	}
-	e, err := s.m.GetAttribute(ctx, req.ID)
+	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	e, err := s.m.GetAttribute(ctx, req.ID, projectID)
 	if err != nil {
 		return nil, mapNotFound(err)
 	}
@@ -186,7 +198,11 @@ func (s *Service) DeleteAttribute(ctx context.Context, req *productdto.DeleteAtt
 	if req == nil || req.ID == "" {
 		return errors.New(productenums.ErrInvalidParam)
 	}
-	if _, gerr := s.m.GetAttribute(ctx, req.ID); gerr != nil {
+	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
+	if err != nil {
+		return err
+	}
+	if _, gerr := s.m.GetAttribute(ctx, req.ID, projectID); gerr != nil {
 		return mapNotFound(gerr)
 	}
 	if _, uerr := s.m.ProductUsingAttribute(ctx, req.ID); uerr == nil {

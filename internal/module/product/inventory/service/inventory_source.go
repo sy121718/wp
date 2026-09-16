@@ -106,7 +106,11 @@ func (s *Service) UpdateSource(ctx context.Context, req *inventorydto.UpdateSour
 	if req == nil || strings.TrimSpace(req.ID) == "" {
 		return nil, errors.New(inventoryenums.ErrInvalidParam)
 	}
-	e, err := s.m.GetSource(ctx, req.ID)
+	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	e, err := s.m.GetSource(ctx, req.ID, projectID)
 	if err != nil {
 		return nil, mapSourceNotFound(err)
 	}
@@ -198,7 +202,11 @@ func (s *Service) GetSource(ctx context.Context, req *inventorydto.GetSourceReq)
 	if req == nil || strings.TrimSpace(req.ID) == "" {
 		return nil, errors.New(inventoryenums.ErrInvalidParam)
 	}
-	e, err := s.m.GetSource(ctx, req.ID)
+	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	e, err := s.m.GetSource(ctx, req.ID, projectID)
 	if err != nil {
 		return nil, mapSourceNotFound(err)
 	}
@@ -210,7 +218,11 @@ func (s *Service) DeleteSource(ctx context.Context, req *inventorydto.DeleteSour
 	if req == nil || strings.TrimSpace(req.ID) == "" {
 		return errors.New(inventoryenums.ErrInvalidParam)
 	}
-	e, err := s.m.GetSource(ctx, req.ID)
+	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
+	if err != nil {
+		return err
+	}
+	e, err := s.m.GetSource(ctx, req.ID, projectID)
 	if err != nil {
 		return mapSourceNotFound(err)
 	}

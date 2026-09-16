@@ -26,5 +26,10 @@ type VariantCostPort interface {
 	//
 	// operatorID 是这次入库登记的操作人（issue #19 起成本价回写要进主数据变更记录，
 	// 记录里的「谁改的」取自这里）；缺失时传空串，留痕字段允许为空。
-	UpdateVariantCost(ctx context.Context, variantID string, cost float64, operatorID string) (err error)
+	//
+	// projectID 是工程隔离（DB-009）的作用域来源：回写要先按变体反查所属商品，
+	// 而 products 在迁移 215 名单里 —— 没有工程作用域时这次读会静默返回 0 行，
+	// 表现为「成本价回写失败」而没有任何错误日志。调用方（inventory 的入库登记）
+	// 手里有入库单行的 project_id，直接传下来即可。
+	UpdateVariantCost(ctx context.Context, projectID, variantID string, cost float64, operatorID string) (err error)
 }

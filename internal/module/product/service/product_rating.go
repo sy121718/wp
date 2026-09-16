@@ -31,7 +31,11 @@ func (s *Service) AddRating(ctx context.Context, req *productdto.AddRatingReq) (
 	if req.Score < 0 || req.Score > maxRatingScore {
 		return nil, errors.New(productenums.ErrInvalidParam)
 	}
-	product, err := s.m.Get(ctx, strings.TrimSpace(req.ProductID), "")
+	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	product, err := s.m.Get(ctx, strings.TrimSpace(req.ProductID), projectID)
 	if err != nil {
 		return nil, mapNotFound(err)
 	}
@@ -59,7 +63,11 @@ func (s *Service) ListRatings(ctx context.Context, req *productdto.ListRatingsRe
 	if req == nil || strings.TrimSpace(req.ProductID) == "" {
 		return nil, errors.New(productenums.ErrInvalidParam)
 	}
-	if _, err = s.m.Get(ctx, strings.TrimSpace(req.ProductID), ""); err != nil {
+	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	if _, err = s.m.Get(ctx, strings.TrimSpace(req.ProductID), projectID); err != nil {
 		return nil, mapNotFound(err)
 	}
 	return s.ratingRespOf(ctx, strings.TrimSpace(req.ProductID))
@@ -70,7 +78,11 @@ func (s *Service) DeleteRating(ctx context.Context, req *productdto.DeleteRating
 	if req == nil || strings.TrimSpace(req.ID) == "" {
 		return errors.New(productenums.ErrInvalidParam)
 	}
-	if _, err = s.m.GetRating(ctx, strings.TrimSpace(req.ID)); err != nil {
+	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
+	if err != nil {
+		return err
+	}
+	if _, err = s.m.GetRating(ctx, strings.TrimSpace(req.ID), projectID); err != nil {
 		return mapNotFound(err)
 	}
 	return s.m.DeleteRating(ctx, strings.TrimSpace(req.ID))

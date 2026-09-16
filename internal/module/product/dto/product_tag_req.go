@@ -28,6 +28,7 @@ type CreateTagReq struct {
 //   - rule → manual：规则定义整体清掉，当前命中结果**保留为手工归属**（管理员可以再手工调整）。
 type UpdateTagReq struct {
 	ID         string          `json:"id" binding:"required"`
+	ProjectID  string          `json:"projectId"`
 	Name       *string         `json:"name"`
 	Slug       *string         `json:"slug"`
 	Kind       *string         `json:"kind"`
@@ -38,7 +39,8 @@ type UpdateTagReq struct {
 
 // GetTagReq 按 ID 查询标签（返回规则说明与命中商品）。
 type GetTagReq struct {
-	ID string `form:"id" binding:"required"`
+	ID        string `form:"id" binding:"required"`
+	ProjectID string `form:"projectId"`
 }
 
 // ListTagReq 标签列表（按工程过滤；kind 为空表示手工与自动都要）。
@@ -50,14 +52,16 @@ type ListTagReq struct {
 
 // ListTagProductsReq 查某标签命中的商品（验收 4：后台可查看某标签命中哪些商品）。
 type ListTagProductsReq struct {
-	TagID string `form:"id" binding:"required"`
+	TagID     string `form:"id" binding:"required"`
+	ProjectID string `form:"projectId"`
 	// Limit 展示上限（<=0 用服务端默认上限）。
 	Limit int `form:"limit"`
 }
 
 // DeleteTagReq 删除标签（连同它在商品上的引用一起解绑）。
 type DeleteTagReq struct {
-	ID string `json:"id" binding:"required"`
+	ID        string `json:"id" binding:"required"`
+	ProjectID string `json:"projectId"`
 }
 
 // RecalcTagsReq 手动触发重算（重算时机之一）。

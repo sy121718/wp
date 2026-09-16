@@ -42,7 +42,11 @@ func (s *Service) CreateVariant(ctx context.Context, req *productdto.CreateVaria
 	if req == nil || req.ProductID == "" {
 		return nil, errors.New(productenums.ErrInvalidParam)
 	}
-	p, err := s.m.Get(ctx, req.ProductID, "")
+	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	p, err := s.m.Get(ctx, req.ProductID, projectID)
 	if err != nil {
 		return nil, mapNotFound(err)
 	}
@@ -70,7 +74,7 @@ func (s *Service) CreateVariant(ctx context.Context, req *productdto.CreateVaria
 		return nil, err
 	}
 	// 重算时机之一：变体写操作后 —— 价格 / 对比价参与自动标签规则判定。
-	if err = s.recalcProjectAutoTags(ctx, p.ID); err != nil {
+	if err = s.recalcProjectAutoTags(ctx, p.ID, p.ProjectID); err != nil {
 		return nil, err
 	}
 	return toVariantResp(v), nil
@@ -87,8 +91,16 @@ func (s *Service) UpdateVariant(ctx context.Context, req *productdto.UpdateVaria
 	if err != nil {
 		return nil, mapNotFound(err)
 	}
-	// issue #19：改前快照必须在任何赋值之前取；工程维度只在留痕端口已注入时才查。
-	projectID, err := s.variantProjectID(ctx, v)
+	// issue #19：改前快照必须在任何赋值之前取；工程维度只在留痕端口已注入时才查
+	//（纯商品单测路径不读库）。DB-009 之后这次「按变体反查工程」也需要工程作用域，
+	// 所以先把请求给的工程解析出来当作用域。
+	scopeID := ""
+	if s.changes != nil {
+		if scopeID, err = s.resolveProjectID(ctx, req.ProjectID); err != nil {
+			return nil, err
+		}
+	}
+	projectID, err := s.variantProjectID(ctx, v, scopeID)
 	if err != nil {
 		return nil, err
 	}
@@ -140,7 +152,7 @@ func (s *Service) UpdateVariant(ctx context.Context, req *productdto.UpdateVaria
 		return nil, err
 	}
 	// 重算时机之一：变体写操作后（改价格 / 改启用状态都会改自动标签归属）。
-	if err = s.recalcProjectAutoTags(ctx, v.ProductID); err != nil {
+	if err = s.recalcProjectAutoTags(ctx, v.ProductID, projectID); err != nil {
 		return nil, err
 	}
 	return toVariantResp(v), nil
@@ -159,9 +171,16 @@ func (s *Service) DeleteVariant(ctx context.Context, req *productdto.DeleteVaria
 		return mapNotFound(gerr)
 	}
 	// issue #19：删除前取快照与工程（删完之后这两个值都查不到了）。
-	projectID, perr := s.variantProjectID(ctx, v)
-	if perr != nil {
-		return perr
+	// DB-009：这次「按变体反查工程」同样需要工程作用域，所以先把请求给的工程解析出来
+	//（留痕端口未注入时保持原样：一次库都不读）。
+	var projectID, scopeID string
+	if s.changes != nil {
+		if scopeID, gerr = s.resolveProjectID(ctx, req.ProjectID); gerr != nil {
+			return gerr
+		}
+		if projectID, gerr = s.variantProjectID(ctx, v, scopeID); gerr != nil {
+			return gerr
+		}
 	}
 	if s.inv != nil {
 		if n, cerr := s.inv.CountNonZeroStocksByVariant(ctx, req.ID); cerr != nil {
@@ -179,7 +198,11 @@ func (s *Service) DeleteVariant(ctx context.Context, req *productdto.DeleteVaria
 		return err
 	}
 	// 重算时机之一：变体写操作后（删掉唯一命中价格区间的变体会让商品脱钩）。
-	return s.recalcProjectAutoTags(ctx, v.ProductID)
+	recalcScope := scopeID
+	if recalcScope == "" {
+		recalcScope = projectID
+	}
+	return s.recalcProjectAutoTags(ctx, v.ProductID, recalcScope)
 }
 
 // newVariantFromDefaults 商品级默认值 → 新变体的**唯一填充入口**。

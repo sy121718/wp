@@ -133,16 +133,23 @@ func (m *Model) CreateWarehouse(ctx context.Context, e *WarehouseEntity, asDefau
 }
 
 // GetWarehouse 按 ID 查仓库。
-func (m *Model) GetWarehouse(ctx context.Context, id string) (e *WarehouseEntity, err error) {
+//
+// projectID 由调用方给出：inventory_warehouses 在迁移 215 名单里，跨工程的行不可见。
+func (m *Model) GetWarehouse(ctx context.Context, id, projectID string) (e *WarehouseEntity, err error) {
 	e = &WarehouseEntity{}
-	err = m.DB(ctx).Where("id = ?", id).First(e).Error
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.WithContext(ctx).Model(&WarehouseEntity{}).Where("id = ?", id).First(e).Error
+	})
 	return e, err
 }
 
 // GetDefaultWarehouse 取某工程的默认仓（不存在返回 gorm.ErrRecordNotFound）。
 func (m *Model) GetDefaultWarehouse(ctx context.Context, projectID string) (e *WarehouseEntity, err error) {
 	e = &WarehouseEntity{}
-	err = m.DB(ctx).Where("project_id = ? AND is_default", projectID).First(e).Error
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.WithContext(ctx).Model(&WarehouseEntity{}).
+			Where("project_id = ? AND is_default", projectID).First(e).Error
+	})
 	return e, err
 }
 
@@ -197,16 +204,26 @@ func (m *Model) DeleteWarehouse(ctx context.Context, id string) (err error) {
 // —— 库存记录 ——
 
 // GetStock 按 ID 查库存记录。
-func (m *Model) GetStock(ctx context.Context, id string) (e *StockEntity, err error) {
+//
+// projectID 由调用方给出：inventory_stocks 在迁移 215 名单里，跨工程的行不可见。
+func (m *Model) GetStock(ctx context.Context, id, projectID string) (e *StockEntity, err error) {
 	e = &StockEntity{}
-	err = m.StockDB(ctx).Where("id = ?", id).First(e).Error
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.WithContext(ctx).Model(&StockEntity{}).Where("id = ?", id).First(e).Error
+	})
 	return e, err
 }
 
 // GetStockByVariantWarehouse 按「SKU × 仓库」定位库存记录（维度唯一键）。
-func (m *Model) GetStockByVariantWarehouse(ctx context.Context, variantID, warehouseID string) (e *StockEntity, err error) {
+//
+// projectID 由调用方给出：inventory_stocks 在迁移 215 名单里，无作用域时定位恒
+// ErrRecordNotFound（与 EnsureStock 里那条注释同一个坑）。
+func (m *Model) GetStockByVariantWarehouse(ctx context.Context, variantID, warehouseID, projectID string) (e *StockEntity, err error) {
 	e = &StockEntity{}
-	err = m.StockDB(ctx).Where("variant_id = ? AND warehouse_id = ?", variantID, warehouseID).First(e).Error
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.WithContext(ctx).Model(&StockEntity{}).
+			Where("variant_id = ? AND warehouse_id = ?", variantID, warehouseID).First(e).Error
+	})
 	return e, err
 }
 

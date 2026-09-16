@@ -19,9 +19,11 @@ type CreateWarehouseReq struct {
 
 // UpdateWarehouseReq 修改仓库（逐字段可选；nil = 本次不改）。
 type UpdateWarehouseReq struct {
-	ID   string  `json:"id" binding:"required"`
-	Code *string `json:"code"`
-	Name *string `json:"name"`
+	ID string `json:"id" binding:"required"`
+	// ProjectID 是工程隔离（DB-009）的作用域来源；为空时由 service 走唯一工程兜底。
+	ProjectID string  `json:"projectId"`
+	Code      *string `json:"code"`
+	Name      *string `json:"name"`
 	// IsDefault 置真即「切换默认仓」（同工程唯一）；置假在已是默认仓时被拒绝 ——
 	// 取消默认会让「未指定仓库」失去兜底，必须先指定另一个默认仓。
 	IsDefault *bool           `json:"isDefault"`
@@ -33,6 +35,8 @@ type UpdateWarehouseReq struct {
 // GetWarehouseReq 按 ID 查询仓库。
 type GetWarehouseReq struct {
 	ID string `form:"id" binding:"required"`
+	// ProjectID 是工程隔离（DB-009）的作用域来源；为空时由 service 走唯一工程兜底。
+	ProjectID string `form:"projectId"`
 }
 
 // ListWarehouseReq 仓库列表（工程维度）。
@@ -43,6 +47,8 @@ type ListWarehouseReq struct {
 // DeleteWarehouseReq 删除仓库。
 type DeleteWarehouseReq struct {
 	ID string `json:"id" binding:"required"`
+	// ProjectID 是工程隔离（DB-009）的作用域来源；为空时由 service 走唯一工程兜底。
+	ProjectID string `json:"projectId"`
 }
 
 // EnsureStockReq 确保某个 SKU 在某仓有一条库存记录（初始 0）。
@@ -61,6 +67,8 @@ type GetStockReq struct {
 	ID          string `form:"id"`
 	VariantID   string `form:"variantId"`
 	WarehouseID string `form:"warehouseId"`
+	// ProjectID 是工程隔离（DB-009）的作用域来源；为空时由 service 走唯一工程兜底。
+	ProjectID string `form:"projectId"`
 }
 
 // ListStockBySKUReq 某 SKU 在各仓的库存（验收 3/4：库存以「SKU × 仓库」为维度）。
@@ -171,6 +179,8 @@ type UpdateReasonReq struct {
 	Name   *string `json:"name"`
 	Status *string `json:"status"`
 	Sort   *int    `json:"sort"`
+	// ProjectID 是工程隔离（DB-009）的作用域来源；为空时由 service 走唯一工程兜底。
+	ProjectID string `json:"projectId"`
 }
 
 // —— 物料清单（issue #16 验收 5）——
@@ -226,7 +236,9 @@ type CreateSourceReq struct {
 //
 // ClearSettlePrice 显式清空结算价 —— 指针为 nil 表示「不改」，没有它就无法把值改回 NULL。
 type UpdateSourceReq struct {
-	ID               string          `json:"id" binding:"required"`
+	ID string `json:"id" binding:"required"`
+	// ProjectID 是工程隔离（DB-009）的作用域来源；为空时由 service 走唯一工程兜底。
+	ProjectID        string          `json:"projectId"`
 	Code             *string         `json:"code"`
 	Name             *string         `json:"name"`
 	Type             *string         `json:"type"`
@@ -246,11 +258,15 @@ type UpdateSourceReq struct {
 // GetSourceReq 按 ID 查询货源。
 type GetSourceReq struct {
 	ID string `form:"id" binding:"required"`
+	// ProjectID 是工程隔离（DB-009）的作用域来源；为空时由 service 走唯一工程兜底。
+	ProjectID string `form:"projectId"`
 }
 
 // DeleteSourceReq 删除货源。
 type DeleteSourceReq struct {
 	ID string `json:"id" binding:"required"`
+	// ProjectID 是工程隔离（DB-009）的作用域来源；为空时由 service 走唯一工程兜底。
+	ProjectID string `json:"projectId"`
 	// OperatorID 操作人（issue #19）：由 inbound 从会话覆盖写入，客户端传入的值被忽略
 	// （json 标签为 "-"，不可由外部指定）。变更记录记「谁改的」，
 	// 统一取会话里的登录名；缺失时为空串（留痕字段允许为空）。

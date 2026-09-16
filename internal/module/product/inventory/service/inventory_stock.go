@@ -57,13 +57,17 @@ func (s *Service) GetStock(ctx context.Context, req *inventorydto.GetStockReq) (
 	if req == nil {
 		return nil, errors.New(inventoryenums.ErrInvalidParam)
 	}
+	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
+	if err != nil {
+		return nil, err
+	}
 	var e *inventorymodel.StockEntity
 	if strings.TrimSpace(req.ID) != "" {
-		if e, err = s.m.GetStock(ctx, req.ID); err != nil {
+		if e, err = s.m.GetStock(ctx, req.ID, projectID); err != nil {
 			return nil, mapStockNotFound(err)
 		}
 	} else if strings.TrimSpace(req.VariantID) != "" && strings.TrimSpace(req.WarehouseID) != "" {
-		if e, err = s.m.GetStockByVariantWarehouse(ctx, req.VariantID, req.WarehouseID); err != nil {
+		if e, err = s.m.GetStockByVariantWarehouse(ctx, req.VariantID, req.WarehouseID, projectID); err != nil {
 			return nil, mapStockNotFound(err)
 		}
 	} else {
@@ -123,7 +127,7 @@ func (s *Service) toStockResp(ctx context.Context, e *inventorymodel.StockEntity
 		Quantity:  e.Quantity,
 		CreatedAt: e.CreatedAt.Format(time.RFC3339), UpdatedAt: e.UpdatedAt.Format(time.RFC3339),
 	}
-	if wh, err := s.m.GetWarehouse(ctx, e.WarehouseID); err == nil {
+	if wh, err := s.m.GetWarehouse(ctx, e.WarehouseID, e.ProjectID); err == nil {
 		resp.WarehouseCode, resp.WarehouseName = wh.Code, wh.Name
 	}
 	return resp

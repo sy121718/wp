@@ -75,7 +75,11 @@ func (s *Service) UpdateWarehouse(ctx context.Context, req *inventorydto.UpdateW
 	if req == nil || strings.TrimSpace(req.ID) == "" {
 		return nil, errors.New(inventoryenums.ErrInvalidParam)
 	}
-	e, err := s.m.GetWarehouse(ctx, req.ID)
+	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	e, err := s.m.GetWarehouse(ctx, req.ID, projectID)
 	if err != nil {
 		return nil, mapWarehouseNotFound(err)
 	}
@@ -137,7 +141,11 @@ func (s *Service) GetWarehouse(ctx context.Context, req *inventorydto.GetWarehou
 	if req == nil || strings.TrimSpace(req.ID) == "" {
 		return nil, errors.New(inventoryenums.ErrInvalidParam)
 	}
-	e, err := s.m.GetWarehouse(ctx, req.ID)
+	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	e, err := s.m.GetWarehouse(ctx, req.ID, projectID)
 	if err != nil {
 		return nil, mapWarehouseNotFound(err)
 	}
@@ -171,7 +179,11 @@ func (s *Service) DeleteWarehouse(ctx context.Context, req *inventorydto.DeleteW
 	if req == nil || strings.TrimSpace(req.ID) == "" {
 		return errors.New(inventoryenums.ErrInvalidParam)
 	}
-	e, err := s.m.GetWarehouse(ctx, req.ID)
+	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
+	if err != nil {
+		return err
+	}
+	e, err := s.m.GetWarehouse(ctx, req.ID, projectID)
 	if err != nil {
 		return mapWarehouseNotFound(err)
 	}
@@ -196,11 +208,21 @@ func (s *Service) DeleteWarehouse(ctx context.Context, req *inventorydto.DeleteW
 func (s *Service) resolveWarehouse(ctx context.Context, projectID, warehouseID string) (e *inventorymodel.WarehouseEntity, err error) {
 	id := strings.TrimSpace(warehouseID)
 	if id != "" {
-		e, err = s.m.GetWarehouse(ctx, id)
+		// 作用域：显式工程优先，未指定时按唯一工程兜底 —— 与下面「兜底默认仓」分支同一口径。
+		// 商品模块建变体经 ResolveWarehouse 端口调用本方法时**不带工程上下文**，
+		// 因此这里不能要求 projectID 必填。
+		//
+		// 作用域只能用调用方给的工程，**不能**用行上的工程：那要先读到行才知道，
+		// 而读行本身就要求作用域（鸡生蛋）。
+		pid, perr := s.resolveProjectID(ctx, projectID)
+		if perr != nil {
+			return nil, perr
+		}
+		e, err = s.m.GetWarehouse(ctx, id, pid)
 		if err != nil {
 			return nil, mapWarehouseNotFound(err)
 		}
-		if pid := strings.TrimSpace(projectID); pid != "" && e.ProjectID != pid {
+		if e.ProjectID != pid {
 			return nil, errors.New(inventoryenums.ErrWarehouseProjectMismatch)
 		}
 		if e.Status != inventoryenums.StatusActive {

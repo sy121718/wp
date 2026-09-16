@@ -61,7 +61,11 @@ func (s *Service) UpdateBrand(ctx context.Context, req *productdto.UpdateBrandRe
 	if req == nil || req.ID == "" {
 		return nil, errors.New(productenums.ErrInvalidParam)
 	}
-	e, err := s.m.GetBrand(ctx, req.ID)
+	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	e, err := s.m.GetBrand(ctx, req.ID, projectID)
 	if err != nil {
 		return nil, mapNotFound(err)
 	}
@@ -111,7 +115,11 @@ func (s *Service) GetBrand(ctx context.Context, req *productdto.GetBrandReq) (re
 	if req == nil || req.ID == "" {
 		return nil, errors.New(productenums.ErrInvalidParam)
 	}
-	e, err := s.m.GetBrand(ctx, req.ID)
+	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	e, err := s.m.GetBrand(ctx, req.ID, projectID)
 	if err != nil {
 		return nil, mapNotFound(err)
 	}
@@ -141,7 +149,11 @@ func (s *Service) DeleteBrand(ctx context.Context, req *productdto.DeleteBrandRe
 	if req == nil || req.ID == "" {
 		return errors.New(productenums.ErrInvalidParam)
 	}
-	if _, gerr := s.m.GetBrand(ctx, req.ID); gerr != nil {
+	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
+	if err != nil {
+		return err
+	}
+	if _, gerr := s.m.GetBrand(ctx, req.ID, projectID); gerr != nil {
 		return mapNotFound(gerr)
 	}
 	if _, uerr := s.m.ProductUsingBrand(ctx, req.ID); uerr == nil {
@@ -160,7 +172,7 @@ func (s *Service) resolveBrandID(ctx context.Context, projectID, brandID string)
 	if brandID == "" {
 		return nil, nil
 	}
-	row, err := s.m.GetBrand(ctx, brandID)
+	row, err := s.m.GetBrand(ctx, brandID, projectID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, errors.New(productenums.ErrBrandNotFound)

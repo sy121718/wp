@@ -39,7 +39,28 @@ func (m *Model) BrandDB(ctx context.Context) *gorm.DB {
 }
 
 // GetBrand 按 ID 查品牌。
-func (m *Model) GetBrand(ctx context.Context, id string) (e *ProductBrandEntity, err error) {
+//
+// projectID 由调用方给出：product_brands 在迁移 215 名单里，跨工程的行不可见。
+func (m *Model) GetBrand(ctx context.Context, id, projectID string) (e *ProductBrandEntity, err error) {
+	e = &ProductBrandEntity{}
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.WithContext(ctx).Model(&ProductBrandEntity{}).Where("id = ?", id).First(e).Error
+	})
+	return e, err
+}
+
+// GetBrandWithoutScope 按 ID 读行，**不设工程作用域**（审计 DB-009 的显式例外）。
+//
+// 唯一调用方是 ResolverFor —— 它在 builder.Compile **之前**被 presentation 的 renderHTML
+// 调用，那时 ctx 里还没有工程 id（core.WithBuildProjectID 是 Compile 内部才补上的），
+// 所以这条路径**拿不到工程上下文**。按 DB-009 的口径显式保留现状：不加空串兜底
+// （那会被 rls 拒掉，把「静默 0 行」换成一个更难懂的错误），也不假装它已被隔离。
+//
+// 换非超级角色后本方法会 fail closed（策略谓词为 NULL ⇒ 0 行）：届时需要
+// presentation 侧在 buildCtx 上补 WithBuildProjectID（本批禁改的域）。
+//
+// 不要给本方法加新的调用方：需要按 id 读的一律用带 projectID 的那个。
+func (m *Model) GetBrandWithoutScope(ctx context.Context, id string) (e *ProductBrandEntity, err error) {
 	e = &ProductBrandEntity{}
 	err = m.BrandDB(ctx).Where("id = ?", id).First(e).Error
 	return e, err

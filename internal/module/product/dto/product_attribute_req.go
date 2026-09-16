@@ -20,6 +20,7 @@ type CreateAttributeReq struct {
 // UpdateAttributeReq 修改属性组（只改组本身；属性值走 SetAttributeValuesReq）。
 type UpdateAttributeReq struct {
 	ID          string  `json:"id" binding:"required"`
+	ProjectID   string  `json:"projectId"`
 	Key         *string `json:"key"`
 	Name        *string `json:"name"`
 	IsVariation *bool   `json:"isVariation"`
@@ -31,8 +32,9 @@ type UpdateAttributeReq struct {
 // 语义是「全量替换」：请求里没有的值被删除，已有的按 id 更新、无 id 的新建。
 // 这样上移/下移/改名/增删都在一次提交里完成，不会出现「值序号错乱」。
 type SetAttributeValuesReq struct {
-	ID     string              `json:"id" binding:"required"`
-	Values []AttributeValueReq `json:"values"`
+	ID        string              `json:"id" binding:"required"`
+	ProjectID string              `json:"projectId"`
+	Values    []AttributeValueReq `json:"values"`
 }
 
 // AttributeValueReq 单个属性值。
@@ -46,7 +48,8 @@ type AttributeValueReq struct {
 
 // GetAttributeReq 按 ID 查询属性组。
 type GetAttributeReq struct {
-	ID string `form:"id" binding:"required"`
+	ID        string `form:"id" binding:"required"`
+	ProjectID string `form:"projectId"`
 }
 
 // ListAttributeReq 属性组列表（分页 + 可选过滤）。
@@ -62,5 +65,6 @@ type ListAttributeReq struct {
 
 // DeleteAttributeReq 删除属性组。
 type DeleteAttributeReq struct {
-	ID string `json:"id" binding:"required"`
+	ID        string `json:"id" binding:"required"`
+	ProjectID string `json:"projectId"`
 }

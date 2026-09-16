@@ -106,7 +106,11 @@ func (s *Service) UpdateCategory(ctx context.Context, req *productdto.UpdateCate
 	if req == nil || req.ID == "" {
 		return nil, errors.New(productenums.ErrInvalidParam)
 	}
-	e, err := s.m.GetCategory(ctx, req.ID)
+	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	e, err := s.m.GetCategory(ctx, req.ID, projectID)
 	if err != nil {
 		return nil, mapNotFound(err)
 	}
@@ -166,7 +170,11 @@ func (s *Service) GetCategory(ctx context.Context, req *productdto.GetCategoryRe
 	if req == nil || req.ID == "" {
 		return nil, errors.New(productenums.ErrInvalidParam)
 	}
-	e, err := s.m.GetCategory(ctx, req.ID)
+	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	e, err := s.m.GetCategory(ctx, req.ID, projectID)
 	if err != nil {
 		return nil, mapNotFound(err)
 	}
@@ -199,7 +207,11 @@ func (s *Service) DeleteCategory(ctx context.Context, req *productdto.DeleteCate
 	if req == nil || req.ID == "" {
 		return errors.New(productenums.ErrInvalidParam)
 	}
-	if _, gerr := s.m.GetCategory(ctx, req.ID); gerr != nil {
+	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
+	if err != nil {
+		return err
+	}
+	if _, gerr := s.m.GetCategory(ctx, req.ID, projectID); gerr != nil {
 		return mapNotFound(gerr)
 	}
 	if n, cerr := s.m.CountCategoryChildren(ctx, req.ID); cerr != nil {
@@ -222,7 +234,7 @@ func (s *Service) resolveCategoryParent(ctx context.Context, projectID, parentID
 	if parentID == "" {
 		return nil, nil
 	}
-	parent, err := s.m.GetCategory(ctx, parentID)
+	parent, err := s.m.GetCategory(ctx, parentID, projectID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, errors.New(productenums.ErrCategoryNotFound)
@@ -241,7 +253,7 @@ func (s *Service) resolveCategoryParent(ctx context.Context, projectID, parentID
 			if cur.ParentID == nil || *cur.ParentID == "" {
 				break
 			}
-			next, gerr := s.m.GetCategory(ctx, *cur.ParentID)
+			next, gerr := s.m.GetCategory(ctx, *cur.ParentID, projectID)
 			if gerr != nil {
 				if errors.Is(gerr, gorm.ErrRecordNotFound) {
 					break
@@ -295,7 +307,7 @@ func (s *Service) applyCategoryRefs(
 		value = strings.TrimSpace(*currentPrimary)
 	}
 	if value != "" {
-		row, gerr := s.m.GetCategory(ctx, value)
+		row, gerr := s.m.GetCategory(ctx, value, projectID)
 		if gerr != nil {
 			if errors.Is(gerr, gorm.ErrRecordNotFound) {
 				return nil, nil, errors.New(productenums.ErrCategoryNotFound)

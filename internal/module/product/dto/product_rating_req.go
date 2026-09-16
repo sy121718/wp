@@ -8,6 +8,7 @@ package productdto
 // AddRatingReq 写入一条商品评分。
 type AddRatingReq struct {
 	ProductID string `json:"productId" binding:"required"`
+	ProjectID string `json:"projectId"`
 	// Score 评分 0~5（含端）；越界即拒绝（数据库还有 CHECK 兜底）。
 	Score float64 `json:"score" binding:"required"`
 	// Source 来源：空 = manual（运营补录）；将来评论域写 review。
@@ -19,9 +20,11 @@ type AddRatingReq struct {
 // ListRatingsReq 取某商品的评分明细。
 type ListRatingsReq struct {
 	ProductID string `json:"productId" binding:"required"`
+	ProjectID string `json:"projectId"`
 }
 
 // DeleteRatingReq 删除一条评分。
 type DeleteRatingReq struct {
-	ID string `json:"id" binding:"required"`
+	ID        string `json:"id" binding:"required"`
+	ProjectID string `json:"projectId"`
 }

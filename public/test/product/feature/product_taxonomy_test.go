@@ -84,7 +84,7 @@ func TestCategoryTreeHierarchySortSlugSEO(t *testing.T) {
 		t.Fatalf("Depth 应由服务端填好（顶级 0 / 子级 1），实际 %d / %d",
 			tree[1].Depth, tree[1].Children[0].Depth)
 	}
-	got, err := f.svc.GetCategory(ctx, &productdto.GetCategoryReq{ID: root.ID})
+	got, err := f.svc.GetCategory(ctx, &productdto.GetCategoryReq{ProjectID: f.projectID, ID: root.ID})
 	if err != nil {
 		t.Fatalf("分类详情失败: %v", err)
 	}
@@ -125,12 +125,12 @@ func TestCategoryCrossProjectAndCycleGuards(t *testing.T) {
 	}
 
 	self := root.ID
-	if _, err = f.svc.UpdateCategory(ctx, &productdto.UpdateCategoryReq{ID: root.ID, ParentID: &self}); err == nil ||
+	if _, err = f.svc.UpdateCategory(ctx, &productdto.UpdateCategoryReq{ProjectID: f.projectID, ID: root.ID, ParentID: &self}); err == nil ||
 		err.Error() != productenums.ErrCategoryCycle {
 		t.Fatalf("挂到自身应返回 ErrCategoryCycle，实际 %v", err)
 	}
 	// 把「根」挂到自己的后代「子」下面 → 成环，必须拒绝。
-	if _, err = f.svc.UpdateCategory(ctx, &productdto.UpdateCategoryReq{ID: root.ID, ParentID: &child.ID}); err == nil ||
+	if _, err = f.svc.UpdateCategory(ctx, &productdto.UpdateCategoryReq{ProjectID: f.projectID, ID: root.ID, ParentID: &child.ID}); err == nil ||
 		err.Error() != productenums.ErrCategoryCycle {
 		t.Fatalf("挂到自己的后代应返回 ErrCategoryCycle，实际 %v", err)
 	}
@@ -139,14 +139,14 @@ func TestCategoryCrossProjectAndCycleGuards(t *testing.T) {
 	if err != nil {
 		t.Fatalf("建他工程分类失败: %v", err)
 	}
-	if _, err = f.svc.UpdateCategory(ctx, &productdto.UpdateCategoryReq{ID: root.ID, ParentID: &foreign.ID}); err == nil ||
+	if _, err = f.svc.UpdateCategory(ctx, &productdto.UpdateCategoryReq{ProjectID: f.projectID, ID: root.ID, ParentID: &foreign.ID}); err == nil ||
 		err.Error() != productenums.ErrCategoryParentMismatch {
 		t.Fatalf("跨工程父级应返回 ErrCategoryParentMismatch，实际 %v", err)
 	}
 
 	// 换父级成功路径：子 → 顶级（空串即提升）。
 	top := ""
-	upd, err := f.svc.UpdateCategory(ctx, &productdto.UpdateCategoryReq{ID: child.ID, ParentID: &top})
+	upd, err := f.svc.UpdateCategory(ctx, &productdto.UpdateCategoryReq{ProjectID: f.projectID, ID: child.ID, ParentID: &top})
 	if err != nil {
 		t.Fatalf("提升为顶级失败: %v", err)
 	}
@@ -166,7 +166,7 @@ func TestCategoryDeleteGuards(t *testing.T) {
 	child, _ := f.svc.CreateCategory(ctx, &productdto.CreateCategoryReq{
 		ProjectID: f.projectID, Name: "子", Slug: "child", ParentID: root.ID,
 	})
-	if err := f.svc.DeleteCategory(ctx, &productdto.DeleteCategoryReq{ID: root.ID}); err == nil ||
+	if err := f.svc.DeleteCategory(ctx, &productdto.DeleteCategoryReq{ProjectID: f.projectID, ID: root.ID}); err == nil ||
 		err.Error() != productenums.ErrCategoryHasChildren {
 		t.Fatalf("有子级应返回 ErrCategoryHasChildren，实际 %v", err)
 	}
@@ -177,16 +177,16 @@ func TestCategoryDeleteGuards(t *testing.T) {
 	if err != nil {
 		t.Fatalf("建商品失败: %v", err)
 	}
-	if err = f.svc.DeleteCategory(ctx, &productdto.DeleteCategoryReq{ID: child.ID}); err == nil ||
+	if err = f.svc.DeleteCategory(ctx, &productdto.DeleteCategoryReq{ProjectID: f.projectID, ID: child.ID}); err == nil ||
 		err.Error() != productenums.ErrCategoryInUse {
 		t.Fatalf("被商品引用应返回 ErrCategoryInUse，实际 %v", err)
 	}
 
 	// 解绑后即可删除。
-	if _, err = f.svc.Update(ctx, &productdto.UpdateReq{ID: p.ID, CategoryIDs: []string{}}); err != nil {
+	if _, err = f.svc.Update(ctx, &productdto.UpdateReq{ProjectID: f.projectID, ID: p.ID, CategoryIDs: []string{}}); err != nil {
 		t.Fatalf("解绑分类失败: %v", err)
 	}
-	if err = f.svc.DeleteCategory(ctx, &productdto.DeleteCategoryReq{ID: child.ID}); err != nil {
+	if err = f.svc.DeleteCategory(ctx, &productdto.DeleteCategoryReq{ProjectID: f.projectID, ID: child.ID}); err != nil {
 		t.Fatalf("解绑后应可删除分类: %v", err)
 	}
 }
@@ -217,7 +217,7 @@ func TestBrandCRUDAndGuards(t *testing.T) {
 		t.Fatalf("品牌 slug 重复应返回 ErrBrandSlugTaken，实际 %v", err)
 	}
 	name := "山野户外"
-	got, err := f.svc.UpdateBrand(ctx, &productdto.UpdateBrandReq{ID: brand.ID, Name: &name})
+	got, err := f.svc.UpdateBrand(ctx, &productdto.UpdateBrandReq{ProjectID: f.projectID, ID: brand.ID, Name: &name})
 	if err != nil {
 		t.Fatalf("改品牌失败: %v", err)
 	}
@@ -234,16 +234,16 @@ func TestBrandCRUDAndGuards(t *testing.T) {
 	if p.BrandID != brand.ID {
 		t.Fatalf("商品应挂上品牌，实际 %q", p.BrandID)
 	}
-	if err = f.svc.DeleteBrand(ctx, &productdto.DeleteBrandReq{ID: brand.ID}); err == nil ||
+	if err = f.svc.DeleteBrand(ctx, &productdto.DeleteBrandReq{ProjectID: f.projectID, ID: brand.ID}); err == nil ||
 		err.Error() != productenums.ErrBrandInUse {
 		t.Fatalf("被商品引用应返回 ErrBrandInUse，实际 %v", err)
 	}
 
 	empty := ""
-	if _, err = f.svc.Update(ctx, &productdto.UpdateReq{ID: p.ID, BrandID: &empty}); err != nil {
+	if _, err = f.svc.Update(ctx, &productdto.UpdateReq{ProjectID: f.projectID, ID: p.ID, BrandID: &empty}); err != nil {
 		t.Fatalf("解绑品牌失败: %v", err)
 	}
-	if err = f.svc.DeleteBrand(ctx, &productdto.DeleteBrandReq{ID: brand.ID}); err != nil {
+	if err = f.svc.DeleteBrand(ctx, &productdto.DeleteBrandReq{ProjectID: f.projectID, ID: brand.ID}); err != nil {
 		t.Fatalf("解绑后应可删除品牌: %v", err)
 	}
 }
@@ -286,7 +286,7 @@ func TestProductCategoryRefsAndInvariant(t *testing.T) {
 
 	// 未显式改主分类，但附属列表被整体替换掉原主分类 → 主分类自动解绑。
 	onlyA := []string{catA.ID}
-	upd, err := f.svc.Update(ctx, &productdto.UpdateReq{ID: p.ID, CategoryIDs: onlyA})
+	upd, err := f.svc.Update(ctx, &productdto.UpdateReq{ProjectID: f.projectID, ID: p.ID, CategoryIDs: onlyA})
 	if err != nil {
 		t.Fatalf("替换附属分类失败: %v", err)
 	}
@@ -298,7 +298,7 @@ func TestProductCategoryRefsAndInvariant(t *testing.T) {
 	}
 
 	// 只改主分类（不给 CategoryIDs）时同样自动纳入。
-	upd, err = f.svc.Update(ctx, &productdto.UpdateReq{ID: p.ID, PrimaryCategoryID: &catB.ID})
+	upd, err = f.svc.Update(ctx, &productdto.UpdateReq{ProjectID: f.projectID, ID: p.ID, PrimaryCategoryID: &catB.ID})
 	if err != nil {
 		t.Fatalf("指定主分类失败: %v", err)
 	}
@@ -308,27 +308,27 @@ func TestProductCategoryRefsAndInvariant(t *testing.T) {
 
 	// 不存在的分类 / 跨工程分类 / 不存在的品牌一律拒绝。
 	missing := "00000000-0000-0000-0000-000000000000"
-	if _, err = f.svc.Update(ctx, &productdto.UpdateReq{ID: p.ID, CategoryIDs: []string{missing}}); err == nil ||
+	if _, err = f.svc.Update(ctx, &productdto.UpdateReq{ProjectID: f.projectID, ID: p.ID, CategoryIDs: []string{missing}}); err == nil ||
 		err.Error() != productenums.ErrCategoryNotFound {
 		t.Fatalf("不存在的分类应返回 ErrCategoryNotFound，实际 %v", err)
 	}
 	foreign, _ := f.svc.CreateCategory(ctx, &productdto.CreateCategoryReq{ProjectID: other.ID, Name: "别家", Slug: "foreign"})
-	if _, err = f.svc.Update(ctx, &productdto.UpdateReq{ID: p.ID, CategoryIDs: []string{foreign.ID}}); err == nil ||
+	if _, err = f.svc.Update(ctx, &productdto.UpdateReq{ProjectID: f.projectID, ID: p.ID, CategoryIDs: []string{foreign.ID}}); err == nil ||
 		err.Error() != productenums.ErrCategoryProjectMismatch {
 		t.Fatalf("跨工程分类应返回 ErrCategoryProjectMismatch，实际 %v", err)
 	}
-	if _, err = f.svc.Update(ctx, &productdto.UpdateReq{ID: p.ID, PrimaryCategoryID: &missing}); err == nil ||
+	if _, err = f.svc.Update(ctx, &productdto.UpdateReq{ProjectID: f.projectID, ID: p.ID, PrimaryCategoryID: &missing}); err == nil ||
 		err.Error() != productenums.ErrCategoryNotFound {
 		t.Fatalf("不存在的主分类应返回 ErrCategoryNotFound，实际 %v", err)
 	}
 	brandID := missing
-	if _, err = f.svc.Update(ctx, &productdto.UpdateReq{ID: p.ID, BrandID: &brandID}); err == nil ||
+	if _, err = f.svc.Update(ctx, &productdto.UpdateReq{ProjectID: f.projectID, ID: p.ID, BrandID: &brandID}); err == nil ||
 		err.Error() != productenums.ErrBrandNotFound {
 		t.Fatalf("不存在的品牌应返回 ErrBrandNotFound，实际 %v", err)
 	}
 	foreignBrand, _ := f.svc.CreateBrand(ctx, &productdto.CreateBrandReq{ProjectID: other.ID, Name: "别家品牌", Slug: "fb"})
 	fb := foreignBrand.ID
-	if _, err = f.svc.Update(ctx, &productdto.UpdateReq{ID: p.ID, BrandID: &fb}); err == nil ||
+	if _, err = f.svc.Update(ctx, &productdto.UpdateReq{ProjectID: f.projectID, ID: p.ID, BrandID: &fb}); err == nil ||
 		err.Error() != productenums.ErrBrandProjectMismatch {
 		t.Fatalf("跨工程品牌应返回 ErrBrandProjectMismatch，实际 %v", err)
 	}
