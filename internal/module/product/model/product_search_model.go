@@ -11,7 +11,10 @@ import (
 	"context"
 	"strings"
 
+	"gorm.io/gorm"
+
 	"go_wp/pkg/database"
+	"go_wp/pkg/rls"
 )
 
 // maxProductSearchLimit 单次检索的硬上限（访问面 anonymous 请求，不能退化成全表扫描）。
@@ -39,14 +42,18 @@ func (m *Model) SearchPublished(ctx context.Context, projectID, keyword string, 
 		limit = maxProductSearchLimit
 	}
 	pattern := "%" + database.EscapeLikePattern(keyword) + "%"
-	err = m.db.WithContext(ctx).
-		Select("id, project_id, name, subtitle, slug, status, default_image, update_time").
-		Where("project_id = ?", projectID).
-		Where("status = ?", productStatusPublished).
-		Where("(name ILIKE ? ESCAPE '\\' OR subtitle ILIKE ? ESCAPE '\\')", pattern, pattern).
-		Order("update_time DESC, id DESC").
-		Limit(limit).
-		Find(&list).Error
+	// 站内搜索是对外可观察的读取路径（anonymous 片段），漏包作用域的表现是
+	// 换非超级角色后**搜索结果恒为空**且没有任何日志 —— 比报错更难查。
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.Model(&ProductEntity{}).
+			Select("id, project_id, name, subtitle, slug, status, default_image, update_time").
+			Where("project_id = ?", projectID).
+			Where("status = ?", productStatusPublished).
+			Where("(name ILIKE ? ESCAPE '\\' OR subtitle ILIKE ? ESCAPE '\\')", pattern, pattern).
+			Order("update_time DESC, id DESC").
+			Limit(limit).
+			Find(&list).Error
+	})
 	return list, err
 }
 
