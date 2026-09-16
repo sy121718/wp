@@ -1,52 +1,38 @@
 package response
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
-	"fmt"
 	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
 
-	"go_wp/pkg/database"
 	"go_wp/pkg/i18n"
 
 	"github.com/gin-gonic/gin"
-	"github.com/spf13/viper"
-	"gorm.io/driver/mysql"
-	"gorm.io/gorm"
 )
 
-// i18nRecord 测试用 sys_i18n 表结构（仅覆盖 translate 用例所需字段）。
-type i18nRecord struct {
-	ID        uint64 `gorm:"primaryKey"`
-	ItemKey   string `gorm:"column:item_key"`
-	Lang      string `gorm:"column:lang"`
-	ItemValue string `gorm:"column:item_value"`
-	HttpCode  int    `gorm:"column:http_code"`
-	Status    int    `gorm:"column:status"`
-}
-
-func (i18nRecord) TableName() string {
-	return "sys_i18n"
-}
-
-// translate 测试种子：与 TestTranslateForms 用例一一对应。
-var translateSeeds = []i18nRecord{
-	{ItemKey: "ErrAdminNotFound", Lang: "zh-CN", ItemValue: "管理员不存在", HttpCode: 404, Status: 1},
-	{ItemKey: "ErrAdminNotFound", Lang: "en-US", ItemValue: "Admin not found", HttpCode: 404, Status: 1},
-	{ItemKey: "ErrAccountLocked", Lang: "zh-CN", ItemValue: "账号已被锁定，请 %s 后重试", HttpCode: 423, Status: 1},
-	{ItemKey: "ErrAccountLocked", Lang: "en-US", ItemValue: "Account locked, retry in %s", HttpCode: 423, Status: 1},
-	{ItemKey: "ErrInvalidParams", Lang: "zh-CN", ItemValue: "请求参数错误", HttpCode: 400, Status: 1},
-	{ItemKey: "ErrInvalidParams", Lang: "en-US", ItemValue: "Invalid parameters", HttpCode: 400, Status: 1},
+// translateSeeds 测试词条：与 TestTranslateForms 用例一一对应。
+//
+// 直接以 i18n 内存缓存的形态声明 —— 用例要验证的是 translate 的行为，
+// 不需要中间那张表的往返（原先为此建真库，见 initTranslateFixture 的说明）。
+var translateSeeds = map[string]map[string]string{
+	"ErrAdminNotFound": {"zh-CN": "管理员不存在", "en-US": "Admin not found"},
+	"ErrAccountLocked": {"zh-CN": "账号已被锁定，请 %s 后重试", "en-US": "Account locked, retry in %s"},
+	"ErrInvalidParams": {"zh-CN": "请求参数错误", "en-US": "Invalid parameters"},
 	// key|param 协议外占位符（%d）验证：不应注入，按 key 原文降级
-	{ItemKey: "ErrTestIntPlaceholder", Lang: "zh-CN", ItemValue: "已失败 %d 次，请稍后再试", HttpCode: 429, Status: 1},
-	{ItemKey: "ErrTestIntPlaceholder", Lang: "en-US", ItemValue: "Failed %d times, retry later", HttpCode: 429, Status: 1},
+	"ErrTestIntPlaceholder": {"zh-CN": "已失败 %d 次，请稍后再试", "en-US": "Failed %d times, retry later"},
 	// 通用操作成功消息（Success 响应）
-	{ItemKey: "msg_operation_success", Lang: "zh-CN", ItemValue: "操作成功", HttpCode: 200, Status: 1},
-	{ItemKey: "msg_operation_success", Lang: "en-US", ItemValue: "Operation successful", HttpCode: 200, Status: 1},
+	"msg_operation_success": {"zh-CN": "操作成功", "en-US": "Operation successful"},
+}
+
+// translateHttpCodes 与 translateSeeds 同批 key 的 http_code（缓存里两者分开存）。
+var translateHttpCodes = map[string]int{
+	"ErrAdminNotFound":      404,
+	"ErrAccountLocked":      423,
+	"ErrInvalidParams":      400,
+	"ErrTestIntPlaceholder": 429,
+	"msg_operation_success": 200,
 }
 
 var (
@@ -66,66 +52,22 @@ func ensureTranslateFixture(t *testing.T) {
 	}
 }
 
-// initTranslateFixture 创建 MySQL 临时测试库并加载 i18n 缓存。
-// 不依赖 public/test/support（避免 pkg/response → routers 的 import cycle），建库逻辑内联。
+// initTranslateFixture 把测试词条直接注入 i18n 内存缓存。
+//
+// 这里以前是「建 MySQL 临时库 → AutoMigrate sys_i18n → 写种子 → i18n.Init 加载」。
+// 项目早已移除 MySQL 驱动、CI 里也没有 3306 实例，所以那组用例实际只在旧环境跑得起来 ——
+// CI 第一次真正执行 pkg 测试时立刻报 dial tcp 127.0.0.1:3306: connection refused。
+// 用例要验证的是 response 的 translate 行为，缓存里有词条就够了，不必绕一层真库；
+// 改完之后它不再依赖任何外部服务。
 func initTranslateFixture(t *testing.T) error {
 	t.Helper()
 
-	// 1) 建独立临时库（测试结束自动 drop，不污染开发库）
-	dbName := "go_test_resp_" + randomSuffix()
-	admin, err := gorm.Open(mysql.Open("root:root@tcp(127.0.0.1:3306)/?charset=utf8mb4&parseTime=True&loc=Local"), &gorm.Config{})
-	if err != nil {
-		return fmt.Errorf("连接 MySQL 失败: %w", err)
-	}
-	if err := admin.Exec("CREATE DATABASE `" + dbName + "`").Error; err != nil {
-		return fmt.Errorf("创建临时库 %s 失败: %w", dbName, err)
-	}
-	t.Cleanup(func() {
-		_ = admin.Exec("DROP DATABASE IF EXISTS `" + dbName + "`")
-		if sqlDB, err := admin.DB(); err == nil {
-			_ = sqlDB.Close()
-		}
-	})
-
-	// 2) 初始化 database 组件并写入种子
-	cfg := viper.New()
-	cfg.Set("server.mode", "test")
-	cfg.Set("database.driver", "mysql")
-	cfg.Set("database.host", "127.0.0.1")
-	cfg.Set("database.port", 3306)
-	cfg.Set("database.user", "root")
-	cfg.Set("database.password", "root")
-	cfg.Set("database.dbname", dbName)
-	cfg.Set("database.max_idle_conns", 1)
-	cfg.Set("database.max_open_conns", 1)
-
-	if err := database.Init(cfg); err != nil {
-		return err
-	}
-
-	db, err := database.GetDB()
-	if err != nil {
-		return err
-	}
-	if err := db.AutoMigrate(&i18nRecord{}); err != nil {
-		return err
-	}
-	if err := db.Create(&translateSeeds).Error; err != nil {
-		return err
-	}
-
-	// 3) 加载 i18n 缓存并注册清理
-	t.Cleanup(func() {
-		_ = i18n.Close()
-		_ = database.Close()
-	})
-	return i18n.Init(cfg)
-}
-
-func randomSuffix() string {
-	b := make([]byte, 4)
-	_, _ = rand.Read(b)
-	return hex.EncodeToString(b)
+	// 只注入、不在 t.Cleanup 里清理：缓存是进程级的全局状态，而注入走 sync.Once
+	// （只发生一次）。若在第一个用例结束时清空，后面的用例拿到的就是 key 原文 ——
+	// 表现为「同一个 fixture 有的用例过、有的不过」。进程退出时缓存自然释放。
+	i18n.SetDefaultLang("zh-CN")
+	i18n.InjectForTest(translateSeeds, translateHttpCodes)
+	return nil
 }
 
 // newTestCtx 构造带 Accept-Language 的测试上下文。

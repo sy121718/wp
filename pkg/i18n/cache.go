@@ -86,6 +86,20 @@ func (c *MemoryCache) Update(newData map[string]map[string]string, newHttpCodes 
 	c.version++
 }
 
+// InjectForTest 直接写入内存缓存，供**包外**测试使用（包内测试直接调 cache.Update）。
+//
+// 为什么需要它：pkg/response 的 translate 用例要验证「key 命中时按语言出文案」，
+// 此前为了拿到这份数据，它建了一个 MySQL 临时库、AutoMigrate sys_i18n、写种子，
+// 再走 i18n.Init 加载 —— 而项目早已移除 MySQL 驱动，CI 里也没有 3306 实例，
+// 于是那组用例实际只在旧环境跑得起来（CI 第一次真正执行 pkg 测试时立刻红）。
+// 用例真正需要的是缓存里有词条，不是库里有表。
+//
+// 生产代码不要调用：运行时的数据来源是 sys_i18n 表（LoadCache / StartAutoRefresh）。
+// 命名对齐 config.ResetForTest —— 见到 ForTest 就知道这不是运行路径。
+func InjectForTest(data map[string]map[string]string, httpCodes map[string]int) {
+	cache.Update(data, httpCodes)
+}
+
 // GetVersion 获取缓存版本
 func (c *MemoryCache) GetVersion() int64 {
 	c.mu.RLock()

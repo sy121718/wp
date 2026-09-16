@@ -11,6 +11,7 @@ import (
 	"go_wp/pkg/queue"
 	"go_wp/pkg/upload"
 	pkgvalidate "go_wp/pkg/validate"
+	migrations "go_wp/public/migrations"
 
 	"github.com/spf13/viper"
 )
@@ -48,6 +49,23 @@ var runtimeComponents = []runtimeComponent{
 		Init:     database.Init,
 		Ready:    database.Ready,
 		Close:    database.Close,
+	},
+	{
+		// 迁移必须排在 database 之后、casbin / i18n 之前 —— 后两者初始化时就要读
+		// sys_casbin_rule / sys_i18n。
+		//
+		// 放在这里而不是 cmd/main.go，是为了让「空库首次启动」真的能走通：此前迁移在
+		// 组件初始化**之后**执行，在增量演化的开发库上看不出问题（表早就存在），
+		// 全新库必然失败 —— relation "sys_i18n" does not exist。
+		Name:     "migrations",
+		Critical: true,
+		Init: func(_ *viper.Viper) error {
+			db, err := database.GetDB()
+			if err != nil {
+				return err
+			}
+			return migrations.Run(db)
+		},
 	},
 	{
 		Name: "casbin",

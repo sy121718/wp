@@ -61,12 +61,12 @@ func run(migrateOnly bool) error {
 		return err
 	}
 
-	// 1.5) 数据库结构迁移：按版本幂等执行建表语句（空库可重建，重复执行跳过）。
-	if err := runMigrations(); err != nil {
-		return err
-	}
+	// 1.5) 结构迁移已由组件编排完成：config.runtimeComponents 里的 migrations 组件排在
+	//      database 之后、casbin / i18n 之前（后两者初始化时就要读表）。放在组件链里而不是
+	//      这里，是因为「迁移必须在读表的组件之前」—— 写在 main 里时它其实晚于组件初始化，
+	//      空库首次启动必然失败（relation "sys_i18n" does not exist）。
 
-	// 1.6) -migrate-only：结构迁移之后补上业务 seed 就返回，不装配路由、不监听端口。
+	// 1.6) -migrate-only：迁移之后补上业务 seed 就返回，不装配路由、不监听端口。
 	if migrateOnly {
 		if err := runSeeds(); err != nil {
 			return err
@@ -135,15 +135,6 @@ func run(migrateOnly bool) error {
 
 	logger.Scene("init").Info("服务已退出")
 	return nil
-}
-
-// runMigrations 在数据库组件就绪后执行结构迁移。
-func runMigrations() error {
-	db, err := database.GetDB()
-	if err != nil {
-		return fmt.Errorf("迁移前置检查失败: %w", err)
-	}
-	return migrations.Run(db)
 }
 
 // runSeeds 执行幂等的业务 seed（权限点、菜单、默认超管策略）。
