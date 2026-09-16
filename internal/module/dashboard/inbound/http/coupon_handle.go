@@ -1,36 +1,10 @@
-// coupon_handle.go — 后台优惠码管理页（BIZ-1 销售侧）。
-//
-// 优惠码模块的后台 API 已就绪（7 个接口挂在 /api/order/coupon/* 的三层链上：
-// Session + CSRF + Casbin），但后台没有管理界面 —— 运营看不到也建不了券。
-// 本文件补齐这个入口：工程切换 + 组合筛选 + 列表 + 新建 + 行内修改
-// （同一页面靠 couponId 查询参数展开，不新开页面路由）+ 停用 / 启用 + 删除 + 核销记录。
-// **无 JS 也能用**：所有链接都是普通 GET，所有写操作都是原生表单 POST + csrf_token 隐藏域。
-//
-// 四条与优惠码模块的约定：
-//
-//  1. 跨模块只依赖 ordercontract.OrderService 与不可变 orderdto，
-//     **不 import 订单模块的 model / service**（CouponService 已嵌在 OrderService 里）。
-//
-//  2. **没有、也不应该有「核销」按钮**：核销发生在建单事务内部
-//     （扣次数、插核销明细与写订单同生共死），单独暴露一个「先核销、后建单」的入口
-//     一定会被用出「券没了但没下单」这种状态。本页只展示核销**结果**（按 couponId 列记录）。
-//
-//  3. 金额与文案的换算**只在服务端发生一次**：DiscountLabel / MinSubtotalLabel / StatusLabel
-//     都是 CouponResp 里算好的展示字段，handler 与模板都不做任何金额换算 ——
-//     两处换算迟早会分叉，而券的力度分叉出来就是客诉。
-//     「已用 / 上限」「每人限次」「时间窗」这类分支也在这里拼成文本，模板只负责摆放。
-//
-//  4. 操作人（OperatorID / OperatorName）由 handler 从会话覆盖写入，
-//     表单里不存在这两个字段：能被客户端伪造的操作人，等于审计上没有操作人。
 package dashboardhttp
 
 import (
-	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -39,9 +13,55 @@ import (
 	orderdto "go_wp/internal/module/order/dto"
 	orderenums "go_wp/internal/module/order/enums"
 	projectcontract "go_wp/internal/module/project/contract"
-
-	"go_wp/internal/middleware/builtin"
 )
+
+// coupon_handle.go — 后台优惠码管理页（BIZ-1 销售侧）。
+
+//
+
+// 优惠码模块的后台 API 已就绪（7 个接口挂在 /api/order/coupon/* 的三层链上：
+
+// Session + CSRF + Casbin），但后台没有管理界面 —— 运营看不到也建不了券。
+
+// 本文件补齐这个入口：工程切换 + 组合筛选 + 列表 + 新建 + 行内修改
+
+// （同一页面靠 couponId 查询参数展开，不新开页面路由）+ 停用 / 启用 + 删除 + 核销记录。
+
+// **无 JS 也能用**：所有链接都是普通 GET，所有写操作都是原生表单 POST + csrf_token 隐藏域。
+
+//
+
+// 四条与优惠码模块的约定：
+
+//
+
+//  1. 跨模块只依赖 ordercontract.OrderService 与不可变 orderdto，
+
+//     **不 import 订单模块的 model / service**（CouponService 已嵌在 OrderService 里）。
+
+//
+
+//  2. **没有、也不应该有「核销」按钮**：核销发生在建单事务内部
+
+//     （扣次数、插核销明细与写订单同生共死），单独暴露一个「先核销、后建单」的入口
+
+//     一定会被用出「券没了但没下单」这种状态。本页只展示核销**结果**（按 couponId 列记录）。
+
+//
+
+//  3. 金额与文案的换算**只在服务端发生一次**：DiscountLabel / MinSubtotalLabel / StatusLabel
+
+//     都是 CouponResp 里算好的展示字段，handler 与模板都不做任何金额换算 ——
+
+//     两处换算迟早会分叉，而券的力度分叉出来就是客诉。
+
+//     「已用 / 上限」「每人限次」「时间窗」这类分支也在这里拼成文本，模板只负责摆放。
+
+//
+
+//  4. 操作人（OperatorID / OperatorName）由 handler 从会话覆盖写入，
+
+//     表单里不存在这两个字段：能被客户端伪造的操作人，等于审计上没有操作人。
 
 const (
 	// couponPageTitle 页面标题（dashboard enums 里没有这个键，直接走 withI18n 的 fallback 链路）。
@@ -314,158 +334,6 @@ func (h *couponPageHandle) CouponDelete(c *gin.Context) {
 
 // —— 页面取数（视图组装：模板不做逻辑与算术）——
 
-// couponRowView 优惠码行 → 模板视图（展示文本、编辑链接、停用表单的隐藏域都在这里定型）。
-func couponRowView(cp *orderdto.CouponResp, filter couponFilter, projectID string, page, limit int) gin.H {
-	if cp == nil {
-		return gin.H{}
-	}
-	// 编辑链接在同一页面上展开（靠 couponId 参数），因此把当前窗口一起带上：
-	// 收起编辑区或再翻页时，用户还站在原来那一屏。
-	vals := couponFilterValues(projectID, filter)
-	vals["couponId"] = strconv.FormatUint(cp.ID, 10)
-	vals["page"] = strconv.Itoa(page)
-	vals["limit"] = strconv.Itoa(limit)
-	collapse := couponFilterValues(projectID, filter)
-	collapse["page"] = strconv.Itoa(page)
-	collapse["limit"] = strconv.Itoa(limit)
-
-	return gin.H{
-		"Code":             cp.Code,
-		"Name":             orderTextOrEmpty(cp.Name),
-		"DiscountLabel":    cp.DiscountLabel,
-		"MinSubtotalLabel": cp.MinSubtotalLabel,
-		"UsageLabel":       couponUsageLabel(cp.UsedCount, cp.MaxUses),
-		"PerUserLabel":     couponNumberLabel(cp.PerUserLimit),
-		"WindowLabel":      couponWindowLabel(cp.StartsAt.TimePtr(), cp.EndsAt.TimePtr()),
-		"StatusLabel":      cp.StatusLabel,
-		"Badge":            couponStatusBadge(cp.StatusLabel),
-		"Remark":           orderTextOrEmpty(cp.Remark),
-		"EditURL":          filterBaseURL("/admin/coupons", vals),
-		"CollapseURL":      filterBaseURL("/admin/coupons", collapse),
-		"Expanded":         filter.CouponID == cp.ID,
-		// 停用 / 启用复用更新接口，表单必须回送**全部可改字段**（见 CouponUpdate 的注释）。
-		"ToggleStatus": strconv.Itoa(couponToggleStatus(cp.Status)),
-		"ToggleLabel":  couponToggleLabel(cp.Status),
-		"Form": gin.H{
-			"ID":            strconv.FormatUint(cp.ID, 10),
-			"Name":          cp.Name,
-			"DiscountType":  cp.DiscountType,
-			"DiscountValue": cp.DiscountValue,
-			"MinSubtotal":   cp.MinSubtotal,
-			"MaxUses":       cp.MaxUses,
-			"PerUserLimit":  cp.PerUserLimit,
-			"StartsAt":      couponFormTime(cp.StartsAt.TimePtr()),
-			"EndsAt":        couponFormTime(cp.EndsAt.TimePtr()),
-			"Remark":        cp.Remark,
-		},
-		"Back": couponBackQuery(projectID, filter, page, limit, filter.CouponID),
-	}
-}
-
-// couponEditView 展开区（编辑表单 + 该券的当前状态摘要）→ 模板视图。
-func couponEditView(cp *orderdto.CouponResp, filter couponFilter, projectID string, page, limit int) gin.H {
-	if cp == nil {
-		return gin.H{}
-	}
-	return gin.H{
-		"ID":               cp.ID,
-		"Code":             cp.Code,
-		"Name":             cp.Name,
-		"DiscountType":     cp.DiscountType,
-		"DiscountValue":    cp.DiscountValue,
-		"MinSubtotal":      cp.MinSubtotal,
-		"MaxUses":          cp.MaxUses,
-		"PerUserLimit":     cp.PerUserLimit,
-		"StartsAt":         couponFormTime(cp.StartsAt.TimePtr()),
-		"EndsAt":           couponFormTime(cp.EndsAt.TimePtr()),
-		"StatusValue":      strconv.Itoa(cp.Status),
-		"StatusLabel":      cp.StatusLabel,
-		"Badge":            couponStatusBadge(cp.StatusLabel),
-		"DiscountLabel":    cp.DiscountLabel,
-		"MinSubtotalLabel": cp.MinSubtotalLabel,
-		"UsageLabel":       couponUsageLabel(cp.UsedCount, cp.MaxUses),
-		"PerUserLabel":     couponNumberLabel(cp.PerUserLimit),
-		"WindowLabel":      couponWindowLabel(cp.StartsAt.TimePtr(), cp.EndsAt.TimePtr()),
-		"Remark":           cp.Remark,
-		"Back":             couponBackQuery(projectID, filter, page, limit, filter.CouponID),
-	}
-}
-
-// couponRedemptionRow 核销记录行 → 模板视图。
-func couponRedemptionRow(rd *orderdto.CouponRedemptionResp) gin.H {
-	if rd == nil {
-		return gin.H{}
-	}
-	// 匿名下单（结算链路不要求先注册）没有 userId：显示「匿名访客」而不是空单元格，
-	// 否则看起来像是「核销人丢了」。
-	user := "匿名访客"
-	if rd.UserID != nil && *rd.UserID > 0 {
-		user = strconv.FormatUint(*rd.UserID, 10)
-	}
-	return gin.H{
-		"Time":          orderTimeLabel(rd.CreateTime.Time()),
-		"OrderNo":       orderTextOrEmpty(rd.OrderNo),
-		"UserID":        user,
-		"DiscountLabel": rd.DiscountLabel,
-	}
-}
-
-// couponSaveReqFromForm 从表单读取优惠码保存请求。
-//
-// 字段名必须与 CouponSaveReq 的 form tag 逐字一致：写错不会报错，只会绑定到零值
-// （表现是「时间窗填了却被当成不限」「门槛被清零」这类静默的错误数据）。
-func couponSaveReqFromForm(c *gin.Context) *orderdto.CouponSaveReq {
-	return &orderdto.CouponSaveReq{
-		ID:            orderQueryID(c.PostForm("id")),
-		ProjectID:     strings.TrimSpace(c.PostForm("projectId")),
-		Code:          strings.TrimSpace(c.PostForm("code")),
-		Name:          strings.TrimSpace(c.PostForm("name")),
-		DiscountType:  strings.TrimSpace(c.PostForm("discountType")),
-		DiscountValue: couponFormInt64(c, "discountValue"),
-		MinSubtotal:   couponFormInt64(c, "minSubtotal"),
-		MaxUses:       couponFormInt(c, "maxUses"),
-		PerUserLimit:  couponFormInt(c, "perUserLimit"),
-		StartsAt:      strings.TrimSpace(c.PostForm("startsAt")),
-		EndsAt:        strings.TrimSpace(c.PostForm("endsAt")),
-		Status:        couponFormInt(c, "status"),
-		Remark:        strings.TrimSpace(c.PostForm("remark")),
-		// 操作人由会话覆盖写入，绝不受表单影响。
-		OperatorID:   couponOperatorID(c),
-		OperatorName: builtin.GetUsername(c),
-	}
-}
-
-// couponFormInt 读取整数表单字段；缺失 / 非法一律当 0（由服务端业务规则决定 0 是否可接受）。
-//
-// 负数**不在这里吞掉**：填了 -5 就应该让服务端报「优惠值不合法」，
-// 静默改成 0 会让运营以为保存成功了，而券的配置并不是他填的那个。
-func couponFormInt(c *gin.Context, key string) int {
-	v, err := strconv.Atoi(strings.TrimSpace(c.PostForm(key)))
-	if err != nil {
-		return 0
-	}
-	return v
-}
-
-// couponFormInt64 读取 int64 表单字段（金额一律整数分）。
-func couponFormInt64(c *gin.Context, key string) int64 {
-	v, err := strconv.ParseInt(strings.TrimSpace(c.PostForm(key)), 10, 64)
-	if err != nil {
-		return 0
-	}
-	return v
-}
-
-// couponOperatorID 当前登录管理员 id（写进券的 create_by / update_by）。
-func couponOperatorID(c *gin.Context) uint64 {
-	if id := builtin.GetUserID(c); id > 0 {
-		return uint64(id)
-	}
-	return 0
-}
-
-// —— 表单与文案工具 ——
-
 // couponRedirect 回列表页并把结论经查询参数回显（错误 ?err=、成功 ?ok=）。
 func couponRedirect(c *gin.Context, okText, errText string) {
 	couponRedirectSkip(c, okText, errText, "")
@@ -499,152 +367,4 @@ func couponRedirectSkip(c *gin.Context, okText, errText, skipKey string) {
 		q.Set("err", errText)
 	}
 	c.Redirect(http.StatusFound, "/admin/coupons?"+q.Encode())
-}
-
-// couponBackKeys 允许在回跳 URL 里透传的查询键（与页面 GET 认的参数一致）。
-var couponBackKeys = map[string]bool{
-	"project": true, "status": true, "keyword": true,
-	"page": true, "limit": true, "couponId": true,
-}
-
-// couponBackQuery 当前页面的回跳查询串（写操作表单的一个隐藏域）。
-func couponBackQuery(projectID string, filter couponFilter, page, limit int, couponID uint64) string {
-	q := url.Values{}
-	set := func(key, value string) {
-		if strings.TrimSpace(value) != "" {
-			q.Set(key, value)
-		}
-	}
-	set("project", projectID)
-	set("status", filter.Status)
-	set("keyword", filter.Keyword)
-	set("page", strconv.Itoa(page))
-	set("limit", strconv.Itoa(limit))
-	if couponID > 0 {
-		q.Set("couponId", strconv.FormatUint(couponID, 10))
-	}
-	return q.Encode()
-}
-
-// couponFilterValues 列表页链接要保留的筛选条件（空值由 filterBaseURL 丢弃）。
-func couponFilterValues(projectID string, filter couponFilter) map[string]string {
-	return map[string]string{
-		"project": projectID,
-		"status":  filter.Status,
-		"keyword": filter.Keyword,
-	}
-}
-
-// couponFacingError 把订单模块的错误转成可展示文案。
-//
-// 订单模块的业务错误本来就是给运营看的中文（「这个优惠码已经存在」），但它同时也可能是
-// 数据库错误的原文（带表名甚至 SQL 片段）。因此先放行模块自己声明的
-// orderenums.UserFacingMessages，再放行本页登记的管理侧文案，其余一律落到统一提示。
-func couponFacingError(c *gin.Context, err error) string {
-	if err == nil {
-		return ""
-	}
-	if msg := couponFacingText(err.Error()); msg != "" {
-		return msg
-	}
-	return orderInternalText(c)
-}
-
-// couponFacingText 白名单校验：命中返回原文，未命中返回空串。
-func couponFacingText(raw string) string {
-	msg := strings.TrimSpace(raw)
-	if msg == "" {
-		return ""
-	}
-	if hit := orderFacingText(msg); hit != "" {
-		return hit
-	}
-	for _, allowed := range couponFacingExtras {
-		if msg == allowed {
-			return msg
-		}
-	}
-	return ""
-}
-
-// couponQueryText 查询参数回显（?err= / ?ok=）：同样过白名单，
-// 未命中时用 fallback（错误提示落统一文案，成功提示落空串）——
-// 免得任何人手拼一个 URL 就能往页面上塞任意「提示」。
-func couponQueryText(c *gin.Context, raw, fallback string) string {
-	if strings.TrimSpace(raw) == "" {
-		return ""
-	}
-	if msg := couponFacingText(raw); msg != "" {
-		return msg
-	}
-	return fallback
-}
-
-// couponStatusBadge 状态文案 → 徽章样式；认不出的状态给中性徽章（不猜颜色）。
-func couponStatusBadge(statusLabel string) string {
-	if badge, ok := couponStatusBadges[strings.TrimSpace(statusLabel)]; ok {
-		return badge
-	}
-	return "badge-mute"
-}
-
-// couponUsageLabel 用次展示：「3 / 100」「3 / 不限」。
-func couponUsageLabel(used, max int) string {
-	if max <= 0 {
-		return fmt.Sprintf("%d / %s", used, couponUnlimitedLabel)
-	}
-	return fmt.Sprintf("%d / %d", used, max)
-}
-
-// couponNumberLabel 次数类字段展示：0 = 不限（每人限次与总上限同口径）。
-func couponNumberLabel(limit int) string {
-	if limit <= 0 {
-		return couponUnlimitedLabel
-	}
-	return strconv.Itoa(limit)
-}
-
-// couponWindowLabel 时间窗展示：两端都不限时只说一次「不限」，不做「不限 ~ 不限」这种噪音。
-func couponWindowLabel(startsAt, endsAt *time.Time) string {
-	if startsAt == nil && endsAt == nil {
-		return couponUnlimitedLabel
-	}
-	return couponWindowSide(startsAt) + " ~ " + couponWindowSide(endsAt)
-}
-
-// couponWindowSide 时间窗的一端：nil = 不限（不是「没有值」——
-// 这里「不限」说明该侧没有约束，「—」会让人以为数据缺了）。
-func couponWindowSide(at *time.Time) string {
-	if at == nil {
-		return couponUnlimitedLabel
-	}
-	return orderTimeLabel(*at)
-}
-
-// couponFormTime 时间 → 表单回填文本（空串 = 不限）。
-//
-// 用「2006-01-02 15:04」这一种写法而不是 <input type="datetime-local">：
-// 后者提交的是带 T 的 ISO 文本，而服务端只接受 2006-01-02 / 2006-01-02 15:04(:05)，
-// 带 T 的写法会被判成「生效时间不合法」—— 也就是表单自己生成的格式自己都不收。
-func couponFormTime(at *time.Time) string {
-	if at == nil {
-		return ""
-	}
-	return at.Local().Format("2006-01-02 15:04")
-}
-
-// couponToggleStatus 停用 / 启用目标值：生效的券给出停用（0），其余给出启用（1）。
-func couponToggleStatus(status int) int {
-	if status == 1 {
-		return 0
-	}
-	return 1
-}
-
-// couponToggleLabel 停用 / 启用按钮文案。
-func couponToggleLabel(status int) string {
-	if status == 1 {
-		return "停用"
-	}
-	return "启用"
 }
