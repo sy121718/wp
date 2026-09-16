@@ -972,7 +972,8 @@
         "workbench",
         "registry"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-16 完成。AtomSpec 新增 DisplayName / Hint / PaletteCategory / DefaultProps，Atom 基座自动实现 Palette()，自定义结构组件就近写 Palette()；Register 期校验 DefaultProps 的键必须是组件 Props 的 JSON 字段（复用 jsonFieldNames，拼错即 panic —— 这条守卫在开发中立刻抓出 4 处漏写分组、13 处重复 Hint）。新增独立采集线 ComponentPalette() 并经 EditorContractsJS() 追加到 generated-contracts.js，**没有动 ComponentSchemas()**：它的输出是 Inspector 控件描述符数组、形状固定、消费方是检查器面板，塞组件级元数据会同时污染两件事 —— 这是审计描述的一处偏差。palette.js 删掉手写的 42 条条目、分组 types 清单与第二份默认 Props（fallbackProps 与 DefaultProps 完全重复），只保留三类自动化不了的信息：分组顺序与标题表、组内排序表（未列入的新组件按字典序追加末尾，所以新增组件不缺显示）、结构型默认子树 children（它是节点树、要按 allocId 分配 ID，不是 Props）。断言：palette 输出加豁免表必须等于 core.Types()（附数量硬账与差集报告），失败能力有实测证据 —— 删掉 heading 整块元数据即报出 [core.heading]（注册 44 / 组件库 41 / 豁免 2），给豁免组件临时加元数据后重新生成，palette.js 的 sha256 前后完全一致（证明「只改 Go、不改 JS 即出现在组件库」）。人工补标签量：42 个组件全部需要人工补（ct 标签只有字段类型与校验，给不出中文显示名与示例内容），其中 29 个走 AtomSpec、13 个加 Palette() 方法；数字闭合：注册 44 = 组件库 42 + 豁免 2（core.globalref、core.layoutSlot，由专门路径产生、静态条目给不出块 ID 或主题绑定）。另修正审计一处描述：审计说 palette 元数据含「图标映射」，实测该文件从来没有图标（条目只渲染显示名与说明），故没有预建一张空表。"
     },
     {
       "id": "UIK-013",

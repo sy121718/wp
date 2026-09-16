@@ -674,7 +674,8 @@
         "marketplace",
         "opensource"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-16 完成。zip 包格式：manifest.json（format 标识 + 整数 schemaVersion + source + theme.slots + blocks/pages/media 清单）、tokens.json（themes.settings 去掉结构分区与只读元数据）、slots.json（可选）、blocks/<key>.json、pages/<key>.json（可选）、preview.png（格式预留）、media/<key>（可选内嵌字节）；包内条目固定时间戳，同一内容重复导出字节一致。版本号用整数不用 semver —— 兼容是「读不读得懂」的二元判定：高版本一律拒绝、低版本交给 upgradeThemeBundle 逐级升级（当前只有 v1，分支已留位）。接口 GET /api/theme/export（返回 zip 流，参数 themeId/withPages/media=embed|declare）与 POST /api/theme/import（multipart，返回含 blocks/pages/media/skippedPages/warnings 的报告），权限点与超管策略同批 seed。**块 id 重分配是格式性质而非约定**：包内不保存任何块或页面 id，块只用 key 标识；导出从槽位与页面文档的块引用做 BFS 闭包（防环、上限 200）并改写为 key，导入按拓扑序建块拿新 uuid 再回写块文档、页面文档与槽位快照（节点级 node id 保留 —— 它是文档内局部标识，跨工程不冲突）。媒体依赖策略：扫描文档字节里的 /storage 引用（不依赖字段名清单），能读到字节的按 embed 内嵌并在导入时写回，读不到的进 missing 清单（url + 引用来源 + willDeadLink=true），绝不静默留死链；目标已有同内容跳过、同名不同内容不覆盖并进 conflicts。页面路径在目标工程被占用时跳过并上报，名字撞车自动加后缀并置 nameAdjusted。验证：6 个 feature 用例全绿（跨工程往返一致、版本/格式/manifest/zip-slip 四类拒绝、媒体缺失清单、内嵌媒体落盘、页面文档块引用重写、端口按需要求），check-permission-gaps 与 check-service-db-boundary 无违规，i18n 门禁与基线一致。遗留：preview.png 只做格式预留（没有预览图生成能力，导出不写、导入忽略并记 warning）；未做后台页面入口（审计只要求 API，加页面须同批 i18n 化）；导入非原子（媒体→块→页面→主题→激活，单页失败只跳过并上报）；内嵌媒体只落 /storage 文件、不写 sys_attachment（那是 media 模块的表，不越权写；如需媒体库可见要 media 侧提供受限落库端口）。"
     },
     {
       "id": "VIS-015",

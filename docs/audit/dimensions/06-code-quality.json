@@ -379,7 +379,8 @@
         "refactor",
         "maintainability"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "2026-09-16 完成（未做子包化）。inbound/http 从 85 个文件 21253 行变成 120 个文件 21733 行，**无任何文件超过 400 行**（当前最大 399 是既有的测试文件、未改动；改过的文件最大 370）：dashboard_handle 770→184、dashboard_router 484→142、customer_handle 773→360、order_handle 715→351、admin_handle 715→168、return_handle 699→307、coupon_handle 650→370、product_translation_handle 600→266、theme_handle 597→271、page_translations_handle 591→326、inspector_handle 567→279、seo_entity_score_handle 487→314、product_handle 453→337、article_handle 452→215。域划分两条依据：先按模块契约分域，再把同域大文件按「一个文件一个关注点」切成 处理/视图/查询 三类；真正跨域混合的只有 3 个文件（dashboard_handle、admin_handle、dashboard_router）。路由注册拆成 13 个 setup 函数（12 个 router_*.go，549 行），主函数只剩 routeDeps（14 字段）汇总与顺序调用。**刻意不做 Go 子包化**：Handle 攥着 page/project/block/product 一整套契约、dashboard_router 里有 75 处 handle. 调用，拆子包要先把 Handle 按域拆成四个结构，那是设计改动而不是机械重构 —— 审计写的「纯机械、风险低」只在同包拆文件这一半成立。安全网用的是上一批新增的路由快照；另有脚本逐条比对 dashboard 的注册调用，HEAD 与拆分后 199 条逐字一致（0 差异），未改路径/方法/分组/中间件。修正审计三处描述：模块实测 21253 行（审计 17894？实为审计记的 17994）、single 文件行数普遍偏低（dashboard_handle 审计 564 实测 770、theme_handle 审计 554 实测 597）、SetupDashboardRoutes 实测 35-484 行；审计说「所有后台页面按技术维度平铺」，实际 order/coupon/return/customer/article/product 早有独立 handle 类型与文件。"
     },
     {
       "id": "CQ-008",
