@@ -132,7 +132,7 @@ func (s *Service) ReskinProjectForTheme(ctx context.Context, projectID, themeID 
 		if err := s.model.ReattachProjectPagesToThemeTx(ctx, tx, projectID, themeID); err != nil {
 			return err
 		}
-		rows, err := s.model.ListThemePageSnapshotsTx(ctx, tx, themeID)
+		rows, err := s.model.ListThemePageSnapshotsTx(ctx, tx, projectID, themeID)
 		if err != nil {
 			return err
 		}
@@ -144,11 +144,11 @@ func (s *Service) ReskinProjectForTheme(ctx context.Context, projectID, themeID 
 			}
 			// themeId 只读标识随快照落库（VIS-008 主题绑定）。
 			snapshot = builder.InjectThemeID(snapshot, themeID)
-			if err := s.model.UpdateThemeSnapshotTx(ctx, tx, row.ID, snapshot, now); err != nil {
+			if err := s.model.UpdateThemeSnapshotTx(ctx, tx, projectID, row.ID, snapshot, now); err != nil {
 				return err
 			}
 		}
-		structRows, err := s.model.ListThemePageStructureSnapshotsTx(ctx, tx, themeID)
+		structRows, err := s.model.ListThemePageStructureSnapshotsTx(ctx, tx, projectID, themeID)
 		if err != nil {
 			return err
 		}
@@ -164,11 +164,11 @@ func (s *Service) ReskinProjectForTheme(ctx context.Context, projectID, themeID 
 			return err
 		}
 		for _, row := range structRows {
-			if err := s.model.UpdateStructureSnapshotTx(ctx, tx, row.ID, structureJSON, now); err != nil {
+			if err := s.model.UpdateStructureSnapshotTx(ctx, tx, projectID, row.ID, structureJSON, now); err != nil {
 				return err
 			}
 		}
-		return s.model.MarkStaleForThemeTx(ctx, tx, themeID, now)
+		return s.model.MarkStaleForThemeTx(ctx, tx, projectID, themeID, now)
 	})
 }
 

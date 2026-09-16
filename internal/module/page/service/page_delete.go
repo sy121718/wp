@@ -59,7 +59,10 @@ func (s *Service) Delete(ctx context.Context, req *pagedto.DeleteReq) (err error
 			return rerr
 		}
 	}
-	if err = s.model.SoftDelete(ctx, req.ID, time.Now().UTC()); err != nil {
+	// 软删带工程作用域（DB-009 第二批）：pages 带 FORCE 策略，越界写会被
+	// WITH CHECK 直接拒绝而不是静默改到别的工程。上面 GetByID 的定位跳仍是
+	// 「不限工程」形态（请求只给 id），列入剩余清单。
+	if err = s.model.SoftDelete(ctx, page.ProjectID, req.ID, time.Now().UTC()); err != nil {
 		return mapPersistenceError(err)
 	}
 	return nil

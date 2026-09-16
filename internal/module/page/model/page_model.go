@@ -446,8 +446,20 @@ func (m *Model) MoveDraftPath(ctx context.Context, pageID, newPath string, at ti
 // 的 DeleteRoutesByPage 处理——page model 不再碰 page_routes。
 // 同时清理 page_publications（同聚合原子组合）：软删后残留的激活记录
 // 会让「同路径新建页面」读到幽灵激活状态。
-func (m *Model) SoftDelete(ctx context.Context, pageID string, at time.Time) (err error) {
+// projectID 非空时在工程作用域内软删（DB-009 第二批）：pages 带 FORCE 策略，
+// 越界写会被 WITH CHECK 拒绝；同时显式带 project_id 条件，形成应用层与数据库层的双保险。
+func (m *Model) SoftDelete(ctx context.Context, projectID, pageID string, at time.Time) (err error) {
+	if strings.TrimSpace(projectID) == "" {
+		return m.softDeleteTx(ctx, nil, "", pageID, at)
+	}
 	return m.Transaction(ctx, func(tx *gorm.DB) error {
+		return m.softDeleteTx(ctx, tx, projectID, pageID, at)
+	})
+}
+
+// softDeleteTx 软删主体（tx 非空时在其上执行，并先设工程作用域）。
+func (m *Model) softDeleteTx(ctx context.Context, tx *gorm.DB, projectID, pageID string, at time.Time) (err error) {
+	scope := func(tx *gorm.DB) error {
 		result := tx.Model(&PageEntity{}).
 			Where("id = ? AND deleted_at IS NULL", pageID).
 			Update("deleted_at", at)
@@ -463,7 +475,18 @@ func (m *Model) SoftDelete(ctx context.Context, pageID string, at time.Time) (er
 		}
 		return tx.Model(&StagingEntity{}).Where("page_id = ?", pageID).
 			Delete(&StagingEntity{}).Error
-	})
+	}
+	if tx == nil {
+		// 无工程作用域的历史形态：不设 scope 时换非超级角色会自动 fail closed
+		// （0 行 → ErrRecordNotFound），不会删到别的工程，方向是安全的。
+		return m.Transaction(ctx, scope)
+	}
+	if projectID != "" {
+		if serr := rls.ScopeTx(tx, projectID); serr != nil {
+			return serr
+		}
+	}
+	return scope(tx)
 }
 
 // DraftPathValue 返回草稿访问路径（空安全）。
