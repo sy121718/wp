@@ -101,6 +101,12 @@ jobs:
         # 这条检查要连库比对「运行时装配出来的路由表」与 sys_permission，所以只能在有 PG 的
         # 这一层跑，且必须排在 Migrate 之后（权限点由 seed 写入）。
         run: bash scripts/check-permission-gaps.sh
+      - name: Route table snapshot
+        # 装配重构（审计 CQ-008）的安全网。SetupRoutes 是约 700 行的线性装配，人眼 review
+        # 看不出「少挂了一行中间件」或「某个 group 换了父节点」这类漂移 —— 它们不会编译失败，
+        # 只表现为「某个接口突然不用鉴权」或「某条路径 404」。有意的路由增删要显式更新快照
+        # （WP_DUMP_ROUTES=write），这样任何未预期的路由变化都会在 CI 里被挡下来。
+        run: WP_DUMP_ROUTES=1 go test ./internal/routers/ -run TestRouteSnapshotStable -count=1
       - name: Full suite (real PostgreSQL + Redis)
         # -p 4：runner 核数少，保守取值。本地 16 核实测 -p 16 约 65s。
         run: go test -p 4 ./... -count=1 -timeout 30m

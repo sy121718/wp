@@ -204,22 +204,27 @@ func (s *Service) publishedPathOf(ctx context.Context, page *pagemodel.PageEntit
 
 // ---- 内核记录重建辅助 ----
 
-// ensureRedirectRoute 把「本语言的旧发布路径」占用标记为 redirect 并落盘重定向产物。
+// ensureRedirectRoute 把「本语言的旧发布路径」登记为 redirect 行。
+//
 // publishedPath 由调用方按语言解析（page_publications 真源）——旧实现用
 // pages.active_path 单值，多语言下会拿到别的语言的路径。
+//
+// 这里**只登记 DB 占用**，不落盘重定向产物：旧路径 → 新路径的 301 产物由内核
+// publisher.UpdateURL 落盘并激活到旧路径（internal/pipeline/publisher.go 的
+// withRedirect 分支），本条 UpdateURL 流程正是经由那个调用进入这里。
+//
+// 此前这里还会自己 NewRedirectArtifact(publishedPath, 301) 再 PutRedirect 一次 ——
+// 该函数第一个参数是 targetPath，传旧路径自身等于生成一条 A→A 的自环 301。它落在
+// 内容寻址 store 里、从不被激活（PutRedirect 只写 artifacts/redirects/<hash>，
+// 激活由调用方另行发起），所以线上行为一直是对的（生效的是内核那份），代价是
+// 每工程每改一次 URL 就多一份永不使用的垃圾产物；而一旦有人把它的 Locator 拿去
+// 激活，得到的就是无限重定向。已删除。
 func (s *Service) ensureRedirectRoute(ctx context.Context, page *pagemodel.PageEntity, publishedPath string) error {
-	// 未发布页面没有旧线上路径：无法（也无需）创建 301 重定向产物。
+	// 未发布页面没有旧线上路径：无法（也无需）登记重定向。
 	// 旧实现无条件用 ActivePathValue()（未发布为空串）构造产物，
 	// 在 FS/DB 已迁移后报「路径不能为空」，造成状态分裂。
 	if publishedPath == "" {
 		return nil
-	}
-	ra, raErr := pipeline.NewRedirectArtifact(publishedPath, 301)
-	if raErr != nil {
-		return raErr
-	}
-	if _, saErr := s.store.PutRedirect(ra); saErr != nil {
-		return saErr
 	}
 	_, rerr := s.routes.Redirect(ctx, &pubcontract.RedirectReq{
 		ProjectID: page.ProjectID, OldPath: publishedPath, PageID: page.ID,

@@ -29,8 +29,7 @@
 </head>
 <body class="sidebar-collapsed" data-redirect-page
       data-msg-delete-confirm="{{tr("admin.redirect.msg.delete_confirm", "删除这条重定向？旧路径将直接返回 404（可以再手动加回来）。")}}">
-<div class="admin-layout">
-    <main class="admin-content">
+<main class="admin-content">
         <div class="stack site-slots-page">
             <section class="card card-body">
                 <div class="action-row">
@@ -185,7 +184,6 @@
             {{end}}
         </div>
     </main>
-</div>
 <script>
 (function () {
     var root = document.querySelector('[data-redirect-page]');
