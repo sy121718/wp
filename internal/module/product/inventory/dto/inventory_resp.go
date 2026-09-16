@@ -107,8 +107,9 @@ type MovementResp struct {
 
 // StockChangeResp 一次库存变动（或一次 BOM 展开扣减）的结果。
 //
-// CacheTotals / CacheSynced / CacheFailures 描述的是**提交之后**的缓存同步：
-// 同步失败不影响主流程（真源已经落库），失败项由对账兜底。
+// CacheTotals / CacheSynced / CacheFailures 是商品侧库存缓存时代的字段（issue #16）：那层
+// 缓存已由迁移 121 删除、同步动作随之移除，三个字段保留以免改动对外响应结构 —— 值恒为
+// 空 map / true / 空切片，**不代表任何真实同步结果**。
 type StockChangeResp struct {
 	BatchID       string          `json:"batchId"`
 	Direction     string          `json:"direction"`
@@ -153,22 +154,10 @@ type BOMResp struct {
 	UpdatedAt       string         `json:"updatedAt"`
 }
 
-// —— 商品侧缓存同步与对账（issue #16 验收 6/7）——
-
-// CacheSyncItemResp 单个变体的缓存同步结果（带时间戳）。
-type CacheSyncItemResp struct {
-	VariantID   string `json:"variantId"`
-	SKUCode     string `json:"skuCode"`
-	TrueTotal   int    `json:"trueTotal"`
-	CachedTotal int    `json:"cachedTotal"`
-	SyncedAt    string `json:"syncedAt"`
-	Status      string `json:"status"`
-	Error       string `json:"error"`
-}
-
-// SyncStockCacheResp 缓存同步结果（Synced + Failed == len(Items)）。
-
-// ReconcileItemResp 对账明细的一行。
+// —— 库存对账（issue #16 验收 7）——
+//
+// 同族的 CacheSyncItemResp / SyncStockCacheResp 已随迁移 121 删除商品侧缓存一并移除：
+// 前者是当时缓存同步结果的响应结构，后者在删除时只剩一行注释、定义早已不存在。
 type ReconcileItemResp struct {
 	VariantID   string `json:"variantId"`
 	SKUCode     string `json:"skuCode"`

@@ -379,9 +379,12 @@ func (s *Service) applyStockChanges(ctx context.Context, projectID string, items
 	return out, nil
 }
 
-// finishChange 组装响应，并在事务提交之后执行缓存同步。
+// finishChange 组装响应。
 //
-// 同步失败**不返回错误**：真源已经落库，主流程成功；失败项落台账并由对账兜底。
+// 历史上这里还要在事务提交之后做一次商品侧缓存同步（issue #16）。迁移 121 删掉那层缓存
+// 之后已无同步动作：CacheTotals / CacheSynced / CacheFailures 三个字段仍在响应结构里，
+// 值恒为「空 map / true / 空切片」—— 别把它们读成「同步确实成功了」，它们现在只表示这条
+// 老路径没有任何失败可报。
 func (s *Service) finishChange(ctx context.Context, projectID, direction string, out *changeOutcome) *inventorydto.StockChangeResp {
 	resp := &inventorydto.StockChangeResp{
 		BatchID:       out.batchID,

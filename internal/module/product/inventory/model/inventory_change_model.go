@@ -141,23 +141,6 @@ type BOMItemEntity struct {
 // TableName 实现 gorm 表名。
 func (BOMItemEntity) TableName() string { return "inventory_bom_items" }
 
-// CacheSyncEntity 商品侧库存缓存同步台账（每个变体一行：最近一次同步状态）。
-type CacheSyncEntity struct {
-	ID          string    `gorm:"column:id;type:uuid;primaryKey"`
-	ProjectID   string    `gorm:"column:project_id;type:uuid;not null"`
-	VariantID   string    `gorm:"column:variant_id;type:uuid;not null"`
-	SKUCode     string    `gorm:"column:sku_code;type:text;not null"`
-	TrueTotal   int       `gorm:"column:true_total;not null"`
-	CachedTotal int       `gorm:"column:cached_total;not null"`
-	Status      string    `gorm:"column:status;type:text;not null"`
-	Error       string    `gorm:"column:error;type:text;not null"`
-	SyncedAt    time.Time `gorm:"column:synced_at;not null"`
-	UpdatedAt   time.Time `gorm:"column:update_time;not null"`
-}
-
-// TableName 实现 gorm 表名。
-func (CacheSyncEntity) TableName() string { return "inventory_stock_cache_syncs" }
-
 // StockTotalRow 某个变体的真源汇总（跨仓求和）+ SKU 快照。
 type StockTotalRow struct {
 	VariantID string `gorm:"column:variant_id"`
@@ -393,23 +376,36 @@ func (m *Model) reasonDB(ctx context.Context) *gorm.DB {
 }
 
 // ListReasons 原因字典（工程自定义 + 内置；可按方向 / 关键字 / 是否含停用过滤）。
+//
+// 工程 id 非空时包作用域：inventory_change_reasons 用的是 global 谓词（额外放行
+// project_id IS NULL 的内置行），不设作用域时非超级角色只看得到内置行 —— 工程自定义的原因
+// 会从下拉里静默消失，且日志里没有任何线索。工程 id 为空是「只看内置」的既有语义，
+// 此时保持裸句柄（内置行本就是全局行，与 CreateReason 的 NULL 分支同一口径）。
 func (m *Model) ListReasons(ctx context.Context, f ReasonFilter) (list []*ReasonEntity, err error) {
-	q := m.reasonDB(ctx)
-	if f.ProjectID != "" {
-		q = q.Where("project_id = ? OR project_id IS NULL", f.ProjectID)
-	} else {
-		q = q.Where("project_id IS NULL")
+	pid := strings.TrimSpace(f.ProjectID)
+	build := func(q *gorm.DB) *gorm.DB {
+		if pid != "" {
+			q = q.Where("project_id = ? OR project_id IS NULL", pid)
+		} else {
+			q = q.Where("project_id IS NULL")
+		}
+		if f.Direction != "" {
+			q = q.Where("direction = ?", f.Direction)
+		}
+		if kw := strings.TrimSpace(f.Keyword); kw != "" {
+			q = q.Where("code ILIKE ? OR name ILIKE ?", "%"+kw+"%", "%"+kw+"%")
+		}
+		if !f.IncludeDisabled {
+			q = q.Where("status = 'active'")
+		}
+		return q.Order("is_builtin DESC, direction ASC, sort ASC, code ASC")
 	}
-	if f.Direction != "" {
-		q = q.Where("direction = ?", f.Direction)
+	if pid == "" {
+		return list, build(m.reasonDB(ctx)).Find(&list).Error
 	}
-	if kw := strings.TrimSpace(f.Keyword); kw != "" {
-		q = q.Where("code ILIKE ? OR name ILIKE ?", "%"+kw+"%", "%"+kw+"%")
-	}
-	if !f.IncludeDisabled {
-		q = q.Where("status = 'active'")
-	}
-	err = q.Order("is_builtin DESC, direction ASC, sort ASC, code ASC").Find(&list).Error
+	err = rls.InProjectScope(ctx, m.db, pid, func(tx *gorm.DB) error {
+		return build(tx.WithContext(ctx).Model(&ReasonEntity{})).Find(&list).Error
+	})
 	return list, err
 }
 
@@ -440,21 +436,38 @@ func (m *Model) FindReasonByCode(ctx context.Context, projectID, code string) (e
 }
 
 // ReasonCodeExists 同工程（含内置）下 code 是否已被占用（excludeID 为空表示新建场景）。
+//
+// 与 ListReasons 同一口径：唯一性判定漏作用域时「同 code 的工程自定义原因」不可见，
+// 于是重复创建被静默放行 —— 判定类查询比重建数据更难发现，故这里必须与读路径同源。
 func (m *Model) ReasonCodeExists(ctx context.Context, projectID, code string, excludeID int64) (exists bool, err error) {
-	q := m.reasonDB(ctx).Where("lower(code) = lower(?)", code)
-	if projectID != "" {
-		q = q.Where("project_id = ? OR project_id IS NULL", projectID)
-	} else {
-		q = q.Where("project_id IS NULL")
+	pid := strings.TrimSpace(projectID)
+	build := func(q *gorm.DB) *gorm.DB {
+		q = q.Where("lower(code) = lower(?)", code)
+		if pid != "" {
+			q = q.Where("project_id = ? OR project_id IS NULL", pid)
+		} else {
+			q = q.Where("project_id IS NULL")
+		}
+		if excludeID != 0 {
+			q = q.Where("id <> ?", excludeID)
+		}
+		return q
 	}
-	if excludeID != 0 {
-		q = q.Where("id <> ?", excludeID)
+	count := func(q *gorm.DB) error {
+		var n int64
+		if cerr := build(q).Count(&n).Error; cerr != nil {
+			return cerr
+		}
+		exists = n > 0
+		return nil
 	}
-	var n int64
-	if err = q.Count(&n).Error; err != nil {
-		return false, err
+	if pid == "" {
+		return exists, count(m.reasonDB(ctx))
 	}
-	return n > 0, nil
+	err = rls.InProjectScope(ctx, m.db, pid, func(tx *gorm.DB) error {
+		return count(tx.WithContext(ctx).Model(&ReasonEntity{}))
+	})
+	return exists, err
 }
 
 // CreateReason 写入自定义原因。
@@ -553,39 +566,9 @@ func (m *Model) ReplaceBOM(ctx context.Context, parentVariantID, projectID strin
 	})
 }
 
-// —— 缓存同步台账（issue #16 验收 6）——
-
-// cacheSyncDB 缓存同步台账表句柄（同上，仅本 model 内部使用）。
-func (m *Model) cacheSyncDB(ctx context.Context) *gorm.DB {
-	return m.db.WithContext(ctx).Model(&CacheSyncEntity{})
-}
-
-// UpsertCacheSync 记下某个变体最近一次缓存同步的结果（每个变体一行）。
-func (m *Model) UpsertCacheSync(ctx context.Context, e *CacheSyncEntity) (err error) {
-	return m.cacheSyncDB(ctx).Clauses(clause.OnConflict{
-		Columns: []clause.Column{{Name: "variant_id"}},
-		DoUpdates: clause.AssignmentColumns([]string{
-			"project_id", "sku_code", "true_total", "cached_total", "status", "error", "synced_at", "update_time",
-		}),
-	}).Create(e).Error
-}
-
-// ListCacheSyncs 台账列表（按工程 + 可选变体过滤；默认按同步时间倒序）。
-func (m *Model) ListCacheSyncs(ctx context.Context, projectID string, variantIDs []string) (list []*CacheSyncEntity, err error) {
-	q := m.cacheSyncDB(ctx)
-	if projectID != "" {
-		q = q.Where("project_id = ?", projectID)
-	}
-	if len(variantIDs) > 0 {
-		q = q.Where("variant_id IN ?", variantIDs)
-	}
-	err = q.Order("synced_at DESC, variant_id ASC").Find(&list).Error
-	return list, err
-}
-
-// GetCacheSync 某个变体的台账行（不存在返回 gorm.ErrRecordNotFound）。
-func (m *Model) GetCacheSync(ctx context.Context, variantID string) (e *CacheSyncEntity, err error) {
-	e = &CacheSyncEntity{}
-	err = m.cacheSyncDB(ctx).Where("variant_id = ?", variantID).First(e).Error
-	return e, err
-}
+// —— 缓存同步台账：已随迁移 121 删除 ——
+//
+// 这里曾有 CacheSyncEntity 与 UpsertCacheSync / ListCacheSyncs / GetCacheSync 三个方法。
+// 迁移 121 删掉商品侧库存缓存时 DROP 了 inventory_stock_cache_syncs 表（它记录的是「缓存
+// 同步结果」，缓存没了它也就没有意义），三个方法从此没有任何调用者，留着只会在换连接角色
+// 之后变成三个「表不存在」的运行时炸弹。整个能力已移除，不留兼容壳。
