@@ -174,11 +174,10 @@ func (m *Model) CodeExists(ctx context.Context, projectID, code, excludeID strin
 
 // ListWarehouses 某工程的仓库列表（默认仓在最前，其后按排序号与短码）。
 func (m *Model) ListWarehouses(ctx context.Context, projectID string) (list []*WarehouseEntity, err error) {
-	q := m.DB(ctx)
-	if projectID != "" {
-		q = q.Where("project_id = ?", projectID)
-	}
-	err = q.Order("is_default DESC, sort ASC, code ASC").Find(&list).Error
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.WithContext(ctx).Model(&WarehouseEntity{}).
+			Order("is_default DESC, sort ASC, code ASC").Find(&list).Error
+	})
 	return list, err
 }
 

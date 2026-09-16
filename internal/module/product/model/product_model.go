@@ -208,17 +208,19 @@ func (m *Model) SlugExists(ctx context.Context, projectID, slug, excludeID strin
 
 // List 商品列表。只取列表需要的列：metadata 与 description 不参与列表查询（spec：默认不取）。
 func (m *Model) List(ctx context.Context, projectID, keyword, status string, limit, offset int) (list []*ProductEntity, err error) {
-	q := m.DB(ctx).Select("id, project_id, name, slug, status, images, sort, default_image, create_time, update_time")
-	if projectID != "" {
-		q = q.Where("project_id = ?", projectID)
-	}
-	if keyword != "" {
-		q = q.Where("name ILIKE ?", "%"+keyword+"%")
-	}
-	if status != "" {
-		q = q.Where("status = ?", status)
-	}
-	err = q.Order("sort ASC, create_time DESC").Limit(limit).Offset(offset).Find(&list).Error
+	// 工程作用域必填：原本「projectID 为空即不限工程」在策略下会退化成读 0 行
+	// （fail closed 不报错），是比裸查更难排查的静默失效。
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		q := tx.WithContext(ctx).Model(&ProductEntity{}).
+			Select("id, project_id, name, slug, status, images, sort, default_image, create_time, update_time")
+		if keyword != "" {
+			q = q.Where("name ILIKE ?", "%"+keyword+"%")
+		}
+		if status != "" {
+			q = q.Where("status = ?", status)
+		}
+		return q.Order("sort ASC, create_time DESC").Limit(limit).Offset(offset).Find(&list).Error
+	})
 	return list, err
 }
 

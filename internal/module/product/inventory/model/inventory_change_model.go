@@ -238,16 +238,15 @@ func (m *Model) CreateMovementsTx(ctx context.Context, tx *gorm.DB, rows []*Move
 // projectID 为空表示不限工程；variantIDs 为空表示该范围内的全部变体。
 // 这是「商品侧缓存该被同步成什么值」的**唯一依据** —— 汇总读的是真源，不是缓存。
 func (m *Model) StockTotals(ctx context.Context, projectID string, variantIDs []string) (list []*StockTotalRow, err error) {
-	q := m.StockDB(ctx).
-		Select("variant_id, MAX(sku_code) AS sku_code, SUM(quantity) AS total").
-		Group("variant_id").Order("variant_id ASC")
-	if projectID != "" {
-		q = q.Where("project_id = ?", projectID)
-	}
-	if len(variantIDs) > 0 {
-		q = q.Where("variant_id IN ?", variantIDs)
-	}
-	err = q.Scan(&list).Error
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		q := tx.WithContext(ctx).Model(&StockEntity{}).
+			Select("variant_id, MAX(sku_code) AS sku_code, SUM(quantity) AS total").
+			Group("variant_id").Order("variant_id ASC")
+		if len(variantIDs) > 0 {
+			q = q.Where("variant_id IN ?", variantIDs)
+		}
+		return q.Scan(&list).Error
+	})
 	return list, err
 }
 
@@ -272,9 +271,13 @@ func (m *Model) ExistsMovementBySource(ctx context.Context, projectID, sourceTyp
 		return false, nil
 	}
 	var count int64
-	err := m.DB(ctx).Table("inventory_stock_movements").
-		Where("project_id = ? AND source_type = ? AND source_ref = ?", projectID, sourceType, sourceRef).
-		Limit(1).Count(&count).Error
+	// inventory_stock_movements 在 215 名单里（含分区子表）：没有作用域时这里恒 0 条，
+	// 幂等判定会退化成「每次都当新单处理」——重复记账而不报错。
+	err := rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.WithContext(ctx).Table("inventory_stock_movements").
+			Where("project_id = ? AND source_type = ? AND source_ref = ?", projectID, sourceType, sourceRef).
+			Limit(1).Count(&count).Error
+	})
 	return count > 0, err
 }
 
