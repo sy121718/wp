@@ -208,10 +208,10 @@ DROP TABLE IF EXISTS master_data_changes_legacy;
 
 -- ── 6. 索引（父表上建，自动下沉到分区）──────────────────────────────────────────
 --
--- 自带 CREATE EXTENSION：entity_label 的 trgm 索引依赖它，而扩展按 schema 解析
---（169 踩过这个坑：在别的 schema 里装过，这里就找不到 gin_trgm_ops）。幂等，已装时空操作。
+-- entity_label 的 trgm 索引依赖 pg_trgm；扩展挂在共享 schema ext_shared（见 167 / 210），
+-- 这里显式带 SCHEMA 保持同一落点。幂等，已装时空操作。
 
-CREATE EXTENSION IF NOT EXISTS pg_trgm;
+CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA ext_shared;
 
 CREATE INDEX IF NOT EXISTS idx_page_views_project_time ON page_views (project_id, viewed_at DESC);
 CREATE INDEX IF NOT EXISTS idx_page_views_project_path_time ON page_views (project_id, path, viewed_at DESC);

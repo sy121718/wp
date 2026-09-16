@@ -10,7 +10,13 @@
 -- 媒体文件名、主数据实体名）—— 没有扩展时这些查询只能全表扫。
 -- 安装扩展需要建库角色有权限（superuser / rds_superuser）：这里刻意**不吞异常**，
 -- 建不上就让迁移失败并暴露出来，而不是留下「索引建了、其实用不上」的静默状态。
-CREATE EXTENSION IF NOT EXISTS pg_trgm;
+--
+-- 固定装到专用 schema ext_shared：ext_shared 只承载扩展对象、不会被业务表污染（借 public 会让它
+-- 进入测试 search_path 后干扰迁移的 to_regclass 判定）。不带 SCHEMA 会装进「当前 schema」，
+-- 而 pg_trgm 是库级唯一的 —— 那会让它只对第一个跑迁移的 schema 生效，并行的其它 schema
+-- 解析不到 gin_trgm_ops（见 210）。
+CREATE SCHEMA IF NOT EXISTS ext_shared;
+CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA ext_shared;
 
 -- ── 2. 订单列表（IDX-002）────────────────────────────────────────────────────
 -- 关键词对 order_no / customer_email / customer_name 三列做 OR ILIKE。

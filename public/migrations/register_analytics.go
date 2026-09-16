@@ -174,7 +174,7 @@ func registerAnalyticsSeoAndPermissions() {
 			"SELECT oid FROM pg_constraint WHERE conrelid = ?::regclass AND conname = 'orders_status_check') " +
 			"SELECT CASE WHEN (SELECT COUNT(*) FROM pg_constraint pc JOIN target t ON t.oid = pc.oid " +
 			"WHERE pg_get_constraintdef(pc.oid) LIKE '%refunded%') = 1 THEN 1 ELSE 0 END",
-		SQL:       mustSQL("165_orders_status_check.sql"),
+		SQL: mustSQL("165_orders_status_check.sql"),
 	})
 
 	register(Migration{
@@ -186,7 +186,7 @@ func registerAnalyticsSeoAndPermissions() {
 			"SELECT oid FROM pg_constraint WHERE conrelid = ?::regclass AND conname = 'blocks_kind_check') " +
 			"SELECT CASE WHEN (SELECT COUNT(*) FROM pg_constraint pc JOIN target t ON t.oid = pc.oid " +
 			"WHERE pg_get_constraintdef(pc.oid) LIKE '%snippet%') = 1 THEN 1 ELSE 0 END",
-		SQL:       mustSQL("166_blocks_kind_check.sql"),
+		SQL: mustSQL("166_blocks_kind_check.sql"),
 	})
 
 	// 167 幂等判据取 orders 上的三条 trgm 索引：它们同时依赖 pg_trgm 扩展与这批建索引语句，
@@ -194,8 +194,10 @@ func registerAnalyticsSeoAndPermissions() {
 	register(Migration{
 		Version:   "167-index-foundation",
 		TableName: "orders",
-		CheckSQL:  "SELECT CASE WHEN COUNT(*) >= 3 THEN 1 ELSE 0 END FROM pg_indexes WHERE tablename = ? AND indexname LIKE 'idx_orders_%_trgm'",
-		SQL:       mustSQL("167_index_foundation.sql"),
+		// schemaname 必须限定：pg_indexes 是全库视图，并行测试时别的隔离 schema 里的同名
+		// 索引会被算进 COUNT，判定「已应用」后本条被静默跳过（该 schema 的 trgm 索引全缺）。
+		CheckSQL: "SELECT CASE WHEN COUNT(*) >= 3 THEN 1 ELSE 0 END FROM pg_indexes WHERE schemaname = current_schema() AND tablename = ? AND indexname LIKE 'idx_orders_%_trgm'",
+		SQL:      mustSQL("167_index_foundation.sql"),
 	})
 
 	register(Migration{
@@ -277,8 +279,8 @@ func registerAnalyticsSeoAndPermissions() {
 		TableName: "build_jobs",
 		// 必须按「目标列已存在」判定：build_jobs 由 init_builder_schema.sql 先建，
 		// 默认判据（表存在即跳过）会让整批 SQL 永不执行。
-		CheckSQL:  "SELECT CASE WHEN COUNT(*) = 1 THEN 1 ELSE 0 END FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = ? AND column_name = 'create_time'",
-		SQL:       mustSQL("199_db019_db020_batch1.sql"),
+		CheckSQL: "SELECT CASE WHEN COUNT(*) = 1 THEN 1 ELSE 0 END FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = ? AND column_name = 'create_time'",
+		SQL:      mustSQL("199_db019_db020_batch1.sql"),
 	})
 
 	// 202：DB-015 残余第三处 —— inventory_warehouses.status 的 DDL CHECK。
@@ -396,5 +398,18 @@ func registerAnalyticsSeoAndPermissions() {
 			"WHERE table_schema = current_schema() AND table_name = ? " +
 			"AND column_name = 'id' AND data_type = 'uuid'",
 		SQL: mustSQL("209_blocks_id_uuid.sql"),
+	})
+
+	// 210：pg_trgm 固定到专用 schema ext_shared（多 schema / 并发测试的前提）。
+	// 扩展是**库级唯一**的，装进「当前 schema」会让并发的第二个 schema 静默跳过安装，
+	// 随后建 trgm 索引报 operator class "gin_trgm_ops" does not exist。
+	// 167/169/173 已带 WITH SCHEMA ext_shared（新库直接对），本迁移负责既有库：把扩展搬过来。
+	register(Migration{
+		Version:   "210-pg-trgm-shared-schema",
+		TableName: "ext_shared",
+		CheckSQL: "SELECT CASE WHEN to_regnamespace(?) IS NOT NULL AND EXISTS (" +
+			"SELECT 1 FROM pg_extension WHERE extname = 'pg_trgm' AND extnamespace = 'ext_shared'::regnamespace) " +
+			"THEN 1 ELSE 0 END",
+		SQL: mustSQL("210_pg_trgm_shared_schema.sql"),
 	})
 }

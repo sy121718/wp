@@ -100,7 +100,10 @@ func TestP7IndexAuditMigrationCreatesExpectedIndexes(t *testing.T) {
 	if err := db.Raw(`SELECT c.relname AS index_name, pg_get_indexdef(i.indexrelid) AS index_def,
 		pg_get_expr(i.indpred, i.indrelid) AS predicate
 		FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid
-		WHERE c.relname IN ('idx_inventory_stocks_warehouse_nonzero', 'idx_page_routes_project_kind_path')
+		-- 必须限定当前 schema：pg_class 是全库的，并发跑测试时别的隔离 schema 里的同名索引
+		-- 会一起被查出来（实测键列被放大成 35 份）。
+		WHERE c.relnamespace = current_schema()::regnamespace
+		  AND c.relname IN ('idx_inventory_stocks_warehouse_nonzero', 'idx_page_routes_project_kind_path')
 		ORDER BY c.relname`).Scan(&rows).Error; err != nil {
 		t.Fatalf("查询索引失败: %v", err)
 	}
@@ -132,7 +135,8 @@ func TestP7IndexAuditMigrationCreatesExpectedIndexes(t *testing.T) {
 		JOIN pg_class c ON c.oid = i.indexrelid
 		CROSS JOIN LATERAL unnest(i.indkey) WITH ORDINALITY AS k(attnum, ord)
 		JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = k.attnum
-		WHERE c.relname = 'idx_page_routes_project_kind_path'
+		WHERE c.relnamespace = current_schema()::regnamespace
+		  AND c.relname = 'idx_page_routes_project_kind_path'
 		ORDER BY k.ord`).Scan(&cols).Error; err != nil {
 		t.Fatalf("查询路由索引键列失败: %v", err)
 	}

@@ -59,8 +59,8 @@ jobs:
         with:
           go-version-file: go.mod
       - name: Feature tests
-        # -p 1：与 Makefile 的 test 目标同口径。feature 测试各自建隔离 schema 跑同一套迁移，
-        # 而 pg_trgm 是**库级唯一**的扩展 —— 并行时一个 schema 装上了，另一个 schema 的
-        # CREATE EXTENSION IF NOT EXISTS 会静默空转，随后 gin_trgm_ops 解析失败、整条迁移报错。
-        run: go test -p 1 ./public/test/... -count=1 -timeout 30m
+        # -p 4：与 Makefile 的 test 目标同口径。pg_trgm 已固定到 ext_shared（迁移 210 +
+        # pgtest 预置），迁移锁按 schema 派生、迁移固定在单连接，并发不再互相踩；
+        # 上限来自 max_locks_per_transaction（默认 64）—— -p 8 会 out of shared memory。
+        run: go test -p 4 ./public/test/... -count=1 -timeout 30m
         continue-on-error: true

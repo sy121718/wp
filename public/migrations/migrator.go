@@ -17,8 +17,12 @@ import (
 	"gorm.io/gorm"
 )
 
-// migrationAdvisoryLockKey 多实例启动时迁移互斥锁（PostgreSQL pg_advisory_lock）。
-const migrationAdvisoryLockKey int64 = 0x677077706D6967 // "gwp mig"
+// migrationAdvisoryLockExpr 多实例启动时迁移互斥锁的键（PostgreSQL advisory lock）。
+//
+// 键按 database + current_schema() 派生，而不是写死常量：生产多实例「同库同 schema」
+// 仍然互斥（原意不变），而测试为每个包建独立隔离 schema —— 固定键会让上百个测试包的
+// 迁移完全串行排队（实测并发两个 schema 跑迁移 2.49s，单个只需 1.08s，等于没并行）。
+const migrationAdvisoryLockExpr = `hashtextextended(current_database() || ':' || current_schema() || ':go_wp_migrations', 0)`
 
 // Migration 描述一次表结构迁移。
 type Migration struct {
@@ -137,12 +141,31 @@ func Run(db *gorm.DB) error {
 	if err := ValidateRegistry(); err != nil {
 		return err
 	}
-	if db.Dialector != nil && db.Dialector.Name() == "postgres" {
-		if err := acquireMigrationAdvisoryLock(db); err != nil {
+	if db.Dialector == nil || db.Dialector.Name() != "postgres" {
+		return runAll(db)
+	}
+	// 迁移必须固定在**同一个连接**上跑：advisory lock 是会话级的，而 db.Raw/db.Exec
+	// 每次都从连接池取连接 —— 换连接会让 unlock 落到别的连接上（锁永不释放，几十个
+	// 测试进程一起泄漏就把锁表撑爆，报 out of shared memory），也会让锁根本保护不到
+	// 真正的迁移语句。db.Connection 提供单连接会话。
+	return db.Connection(func(conn *gorm.DB) error {
+		if err := acquireMigrationAdvisoryLock(conn); err != nil {
 			return fmt.Errorf("获取迁移锁失败: %w", err)
 		}
-		defer releaseMigrationAdvisoryLock(db)
-	}
+		defer releaseMigrationAdvisoryLock(conn)
+		// 共享扩展 schema（ext_shared，pg_trgm 装在这里）未必在调用方的 search_path 里：
+		// 测试自己的连接、插件迁移、以及任何非 pgtest 路径都可能直接开连接跑迁移。
+		// 167/169/173 要用 gin_trgm_ops 建索引，缺了它整条迁移会报 operator class does not exist。
+		// 这里统一补上（schema 尚未创建时该名字在 search_path 里无害，创建后自动生效）。
+		if err := conn.Exec("SELECT set_config('search_path', current_setting('search_path') || ',ext_shared', false)").Error; err != nil {
+			return fmt.Errorf("设置迁移 search_path 失败: %w", err)
+		}
+		return runAll(conn)
+	})
+}
+
+// runAll 按版本顺序执行全部迁移。
+func runAll(db *gorm.DB) error {
 	for _, m := range All() {
 		if err := apply(db, m); err != nil {
 			return fmt.Errorf("迁移 %s (%s) 失败: %w", m.Version, m.TableName, err)
@@ -156,7 +179,7 @@ func acquireMigrationAdvisoryLock(db *gorm.DB) error {
 	deadline := time.Now().Add(maxWait)
 	for {
 		var locked bool
-		if err := db.Raw("SELECT pg_try_advisory_lock(?)", migrationAdvisoryLockKey).Scan(&locked).Error; err != nil {
+		if err := db.Raw("SELECT pg_try_advisory_lock(" + migrationAdvisoryLockExpr + ")").Scan(&locked).Error; err != nil {
 			return err
 		}
 		if locked {
@@ -171,7 +194,7 @@ func acquireMigrationAdvisoryLock(db *gorm.DB) error {
 
 func releaseMigrationAdvisoryLock(db *gorm.DB) {
 	var unlocked bool
-	if err := db.Raw("SELECT pg_advisory_unlock(?)", migrationAdvisoryLockKey).Scan(&unlocked).Error; err != nil {
+	if err := db.Raw("SELECT pg_advisory_unlock(" + migrationAdvisoryLockExpr + ")").Scan(&unlocked).Error; err != nil {
 		logger.Scene("init").Error(err, "释放迁移锁失败")
 	}
 }

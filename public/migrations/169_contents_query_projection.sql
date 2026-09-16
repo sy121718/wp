@@ -20,12 +20,11 @@ ALTER TABLE contents ADD COLUMN IF NOT EXISTS title text GENERATED ALWAYS AS (da
 COMMENT ON COLUMN contents.title IS '由 data->>''title'' 生成的查询列（审计 DB-024）：只读，供检索与排序用；写入仍只写 data';
 
 -- ── 2. 检索索引 ───────────────────────────────────────────────────────────────
--- 必须自带 CREATE EXTENSION，不能假定「167 装过了」：扩展是**按 schema** 解析的，
--- 167 若在另一个 schema 里（测试的隔离 schema 就是这种情况）执行过，
--- 这里的 gin_trgm_ops 就找不到 —— 报错是 "operator class does not exist"，
--- 与「扩展没装」看起来一样，但只要把两句放在一起就不会有这个疑问。
+-- 必须自带 CREATE EXTENSION，不能假定「167 装过了」：扩展按 schema 解析，而安装是
+-- 库级唯一的。这里显式带 SCHEMA ext_shared，保证不论谁先跑都落在同一处；不带 SCHEMA 会落进
+-- 「当前 schema」，后跑的 schema 只会静默跳过，随后建 trgm 索引报 operator class does not exist。
 -- 幂等：已装时是一条空操作。
-CREATE EXTENSION IF NOT EXISTS pg_trgm;
+CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA ext_shared;
 
 CREATE INDEX IF NOT EXISTS idx_contents_title_trgm ON contents USING gin (title gin_trgm_ops);
 

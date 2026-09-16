@@ -48,8 +48,8 @@ run: build ## 编译并直接运行（无热重载）
 	go run ./cmd
 
 .PHONY: test
-test: ## 全量测试（feature + unit，串行以免抢库）
-	go test -p 1 ./... -count=1
+test: ## 全量测试（feature + unit；-p 4 并发，上限见 max_locks_per_transaction）
+	go test -p 4 ./... -count=1
 
 .PHONY: test-short
 test-short: ## 快速测试（不依赖数据库的包）

@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 
 	"gorm.io/driver/postgres"
@@ -106,6 +107,12 @@ func NewPGTestDBAt(t *testing.T, ep PGEndpoint) (*gorm.DB, error) {
 		return nil, fmt.Errorf("%w: %v", ErrPGUnavailable, err)
 	}
 
+	// 扩展先落到共享 schema（进程内一次；advisory lock 防多进程竞态）。
+	if err := ensureSharedExtensions(adminDB); err != nil {
+		adminSQL.Close()
+		return nil, fmt.Errorf("准备共享扩展失败: %w", err)
+	}
+
 	schema := "t_" + randomHex(10)
 	if err := adminDB.Exec(fmt.Sprintf("CREATE SCHEMA %s", schema)).Error; err != nil {
 		adminSQL.Close()
@@ -113,7 +120,7 @@ func NewPGTestDBAt(t *testing.T, ep PGEndpoint) (*gorm.DB, error) {
 	}
 
 	// 用 search_path 指向专属 schema 的连接做隔离。
-	dsn := pgDSN(host, port, user, password, dbname) + " search_path=" + schema
+	dsn := pgDSN(host, port, user, password, dbname) + " search_path=" + schema + "," + sharedExtSchema
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if err != nil {
 		// 连接失败时尽力清理 schema，避免残留。
@@ -134,6 +141,43 @@ func NewPGTestDBAt(t *testing.T, ep PGEndpoint) (*gorm.DB, error) {
 		adminSQL.Close()
 	})
 	return db, nil
+}
+
+// sharedExtSchema 承载 pg_trgm 的专用 schema。
+//
+// 扩展是**库级唯一**的：装进哪个 schema，只有 search_path 含它的连接才解析得到
+// gin_trgm_ops。历史行为是「跟着第一个跑迁移的 schema 走」—— 串行时靠测试结束
+// DROP SCHEMA CASCADE 把扩展一并删掉、下个 schema 重新装而侥幸通过，一旦并行就互相踩：
+// 后来者的 CREATE EXTENSION IF NOT EXISTS 静默跳过，随后建 trgm 索引直接报
+// "operator class gin_trgm_ops does not exist"。
+//
+// 刻意不借用 public：wp_test.public 里有历史残留的业务表，把它放进 search_path 会让
+// 迁移里的 to_regclass 判定误判「表已存在」，静默跳过整条迁移。
+const sharedExtSchema = "ext_shared"
+
+var (
+	sharedExtOnce sync.Once
+	sharedExtErr  error
+)
+
+// ensureSharedExtensions 建好扩展 schema，并把 pg_trgm 固定在那里。
+func ensureSharedExtensions(db *gorm.DB) error {
+	sharedExtOnce.Do(func() {
+		sharedExtErr = db.Transaction(func(tx *gorm.DB) error {
+			if err := tx.Exec("SELECT pg_advisory_xact_lock(hashtextextended('go_wp_test_ext_shared', 0))").Error; err != nil {
+				return err
+			}
+			if err := tx.Exec("CREATE SCHEMA IF NOT EXISTS " + sharedExtSchema).Error; err != nil {
+				return err
+			}
+			if err := tx.Exec("CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA " + sharedExtSchema).Error; err != nil {
+				return err
+			}
+			// 已存在但装在别处（历史遗留）：搬过来，否则 ext_shared 里没有 gin_trgm_ops。
+			return tx.Exec("DO $$ BEGIN IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_trgm' AND extnamespace <> '" + sharedExtSchema + "'::regnamespace) THEN ALTER EXTENSION pg_trgm SET SCHEMA " + sharedExtSchema + "; END IF; END $$;").Error
+		})
+	})
+	return sharedExtErr
 }
 
 func randomHex(n int) string {
