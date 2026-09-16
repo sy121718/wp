@@ -14,7 +14,10 @@ package feature
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -341,6 +344,33 @@ func TestAnalyticsDimensionEmptyProject(t *testing.T) {
 	}
 	if res.BreakdownSource != analyticsdto.SourceDetail {
 		t.Errorf("空表下取数来源仍应回显 detail，实际 %q", res.BreakdownSource)
+	}
+
+	// HTTP 层再看一眼 JSON 形状：消费方（后台页、后续的 /admin/seo 聚合）读的是这些字段名，
+	// 空表下必须是 [] 而不是 null。
+	rec := httptest.NewRecorder()
+	f.engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, summaryPath+"?projectId="+f.projectID, nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("只读接口应回 200，实际 %d（body=%s）", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Data struct {
+			Referrers       []map[string]any `json:"referrers"`
+			UAClasses       []map[string]any `json:"uaClasses"`
+			Langs           []map[string]any `json:"langs"`
+			RankLimit       int              `json:"rankLimit"`
+			BreakdownSource string           `json:"breakdownSource"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("解析响应失败: %v（body=%s）", err, rec.Body.String())
+	}
+	if body.Data.Referrers == nil || body.Data.UAClasses == nil || body.Data.Langs == nil {
+		t.Errorf("JSON 里三组榜应是 [] 而不是 null：%s", rec.Body.String())
+	}
+	if body.Data.RankLimit != 20 || body.Data.BreakdownSource != analyticsdto.SourceDetail {
+		t.Errorf("rankLimit / breakdownSource 回显不符：%d / %q",
+			body.Data.RankLimit, body.Data.BreakdownSource)
 	}
 }
 
