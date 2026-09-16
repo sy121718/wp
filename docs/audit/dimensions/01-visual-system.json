@@ -717,7 +717,8 @@
         "theme",
         "documentation"
       ],
-      "status": "open"
+      "status": "resolved",
+      "resolutionNote": "VIS-015 的三步 remediation 已由前批落地，本次复核并实证：① docs/06-E-plugin-authoring.md（213 行）给出作者视角的「能做什么 / 不能做什么」，每条限制都标了依据与「想要时的正确路径」；§2.1 专门讲清「插件不能携带新组件」这条最关键的限制 —— 运行时加载 Go 代码会破坏确定性构建与安全边界，是有意取舍而非疏漏。② examples/ 下三个可直接安装的示例覆盖轻轨插件的表达力边界：l0-style-only（纯样式声明，覆盖绑定/变体/伪类三态/结构伪类/变量导出/断点/容器与主题查询）、l0-template-assets（Jet 模板条件输出 + assets/*.css 消费导出的变量 + 预设引用内置与自身组件）、l1-marketing（完整档：L1 迁移建自有 schema + 容器查询三桶 + 多组件 + presets），各有 README 与安装步骤。③ 样式声明引擎的表达力缺口按前批评估补齐四处，其中「hover 被拼成裸 :hover 进桌面桶」违反多端硬规则，是真缺陷。验收判据「示例插件可在干净环境安装并渲染」由 public/test/plugin/unit/example_tiers_test.go 真实覆盖（真实装包 + 真实编译渲染，不是伪造）：TestExamplePluginInstallable、TestExampleTiersEndToEnd（三档逐档）、TestExampleTemplateConditional、TestExamplePresetsCompile 本次实测全部通过（ok go_wp/public/test/plugin/unit 0.810s）。范围说明：本条要求的是「把不引入 Go 运行时代码的轻轨路径做足并讲清边界」，与插件生态的整体延后（OSS-001/002/003/004/005/007/008/019 与 SEC-005 仍标 deferred）不冲突 —— 那些要的是内核新增注册面与签名校验能力，不在本条交付范围内。"
     }
   ]
 }
