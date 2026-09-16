@@ -1,15 +1,17 @@
 package dashboardhttp
 
 import (
+	"net/url"
+	"strconv"
 	"strings"
-
-	admincontract "go_wp/internal/module/admin/contract"
 
 	"go_wp/pkg/logger"
 
-	"go_wp/internal/middleware/builtin"
-
 	"github.com/gin-gonic/gin"
+
+	admincontract "go_wp/internal/module/admin/contract"
+
+	"go_wp/internal/middleware/builtin"
 )
 
 // helpers.go - 后台页面共享辅助（CSRF 数据注入、权限上下文、侧边栏状态、JSON 安全串、表单取值与分页解析）。
@@ -135,4 +137,74 @@ func jsonSafe(s string) string {
 	s = strings.ReplaceAll(s, "</", `<\/`)
 	s = strings.ReplaceAll(s, "<!--", `<\!--`)
 	return s
+}
+
+// fieldValue 取 PostForm 值并去掉首尾空白；无值返回空串。
+func fieldValue(c *gin.Context, key string) string {
+	return strings.TrimSpace(c.PostForm(key))
+}
+
+// parseUint 解析非负整数；空串或非法返回 0。
+func parseUint(s string) uint64 {
+	v, _ := strconv.ParseUint(strings.TrimSpace(s), 10, 64)
+	return v
+}
+
+// parseStatus 解析状态；空串返回 0（多数域 0=禁用，service 默认启用由各 create 处理）。
+func parseStatus(s string) int {
+	v, _ := strconv.Atoi(strings.TrimSpace(s))
+	return v
+}
+
+// parseStatusPtr 解析状态为 *int（RoleCreate 用 nil 表示未传即启用）。
+func parseStatusPtr(s string) *int {
+	t := strings.TrimSpace(s)
+	if t == "" {
+		return nil
+	}
+	v, _ := strconv.Atoi(t)
+	return &v
+}
+
+// adminWriteFailed 统一的页面写操作失败响应：直接透出 service 返回的模块枚举错误消息，
+// 不经由内部细节；必填缺失返回 BadRequest，其余按 422 处理。
+func adminWriteFailed(c *gin.Context, err error) {
+	if err == nil {
+		return
+	}
+	logger.Scene("admin-page").With("path", c.Request.URL.Path).Error(err, "管理页写操作失败")
+	pageErrorBadRequest(c, "admin", err)
+}
+
+// --- 管理员 administrators ---
+
+// filterBaseURL 拼出「路径 + 非空筛选参数」作为分页链接前缀，翻页时保留筛选条件。
+func filterBaseURL(path string, filters map[string]string) string {
+	q := url.Values{}
+	for k, v := range filters {
+		if v != "" {
+			q.Set(k, v)
+		}
+	}
+	if len(q) == 0 {
+		return path
+	}
+	return path + "?" + q.Encode()
+}
+
+// pageParams 读取分页查询参数（?page=&limit=），缺省第 1 页、每页 20 条。
+// limit 上限 100（与各模块 GetLimit() 的上限一致）。
+func pageParams(c *gin.Context) (page, limit int) {
+	page, _ = strconv.Atoi(c.Query("page"))
+	limit, _ = strconv.Atoi(c.Query("limit"))
+	if page < 1 {
+		page = 1
+	}
+	if limit < 1 {
+		limit = 20
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	return page, limit
 }
