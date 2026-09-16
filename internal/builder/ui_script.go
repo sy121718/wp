@@ -268,8 +268,14 @@ func uiAssetsForScan(scan htmlScan, css string, sources map[string]string) (stri
 	if len(files) == 0 && !needStyle && fragCSS == "" {
 		return "", "", nil
 	}
+	// 控件基座按页面的控件用量切分注入（审计 UIK-013）：未切分源（测试桩、插件样式）
+	// 原样返回，所以这里对两类输入是同一条代码路径。
+	baseCSS, err := uiCSSFor(pickCSS(needStyle, css), scan)
+	if err != nil {
+		return "", "", fmt.Errorf("切分控件基座样式失败: %w", err)
+	}
 	if sources == nil {
-		return joinCSS(pickCSS(needStyle, css), fragCSS), "", nil
+		return joinCSS(baseCSS, fragCSS), "", nil
 	}
 	if len(files) > 0 {
 		if needStyleFromAttrs {
@@ -288,7 +294,7 @@ func uiAssetsForScan(scan htmlScan, css string, sources map[string]string) (stri
 	if needStyle && strings.TrimSpace(css) == "" {
 		return "", "", fmt.Errorf("控件资源缺失: ui.css")
 	}
-	return joinCSS(pickCSS(needStyle, css), fragCSS), strings.Join(parts, "\n"), nil
+	return joinCSS(baseCSS, fragCSS), strings.Join(parts, "\n"), nil
 }
 
 // pickCSS 按需取用控件基座样式（不需要时返回空串，不产生多余字节）。
