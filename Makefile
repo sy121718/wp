@@ -48,8 +48,13 @@ run: build ## 编译并直接运行（无热重载）
 	go run ./cmd
 
 .PHONY: test
-test: ## 全量测试（feature + unit；-p 8 并发，实测 271s）
-	go test -p 8 ./... -count=1
+# 全量测试并发度。同机实测（16 核 / 147 个包全绿）：-p 8 = 271s、-p 16 = 227s、-p 24 = 205s。
+# 收益递减的原因不在核数：并发越高单个包耗时越被争用放大（product/feature 从 57s 涨到 171s），
+# 总时长已由「最慢的那个包」决定，跑长尾时 CPU 空闲率能到 76%。
+# 上限是 PG 的 max_connections=100（-p 24 时连接峰值 51）。要更快得砍最慢包，不是加并发。
+TEST_PARALLEL ?= $(shell nproc)
+test: ## 全量测试（feature + unit；默认按 CPU 核数并发，可用 TEST_PARALLEL=8 覆盖）
+	go test -p $(TEST_PARALLEL) ./... -count=1
 
 .PHONY: test-short
 test-short: ## 快速测试（不依赖数据库的包）
