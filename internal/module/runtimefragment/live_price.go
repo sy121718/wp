@@ -29,6 +29,7 @@ import (
 	"strconv"
 	"strings"
 
+	"go_wp/internal/builder/core"
 	productcontract "go_wp/internal/module/product/contract"
 	"go_wp/internal/templates"
 	"go_wp/pkg/money"
@@ -59,9 +60,19 @@ func init() {
 
 // 参数名。
 const (
-	livePriceParamIDs      = "variantIds"
-	livePriceParamPrices   = "prices"
-	livePriceParamCurrency = "currency"
+	livePriceParamIDs = "variantIds"
+	// livePriceParamProjectID 站点工程 id（**实例配置**，构建期由商品组件烘进 URL，见
+	// builder/components/product/jet.go 的 livePriceFragmentURL）。
+	//
+	// 为什么工程必须进 URL 而不是由片段自己反查：runtimefragment.Request 里没有工程字段
+	// （只有 Params / Cookies / UserID），而「建一个只服务价格核对的工程反查端口」等于
+	// 让片段自己猜工程 —— 猜错的后果是跨工程读价，方向与 DB-009 相反。所以由构建期
+	// （唯一知道工程的地方）把工程烘进产物，片段只负责读它。
+	//
+	// 与 productList 片段的 projectId 同名同值、同源：都取构建上下文里的 ProjectID。
+	livePriceParamProjectID = "projectId"
+	livePriceParamPrices    = "prices"
+	livePriceParamCurrency  = "currency"
 	// livePriceDefaultCurrency 货币符号缺省值（与商品组件侧同一口径；组件会把实际符号传进来）。
 	livePriceDefaultCurrency = "¥"
 )
@@ -88,6 +99,16 @@ func renderProductLivePrice(ctx context.Context, r *Request) (string, error) {
 		// 参数为空 / 全是非法 id 形状：没有可核对的对象，输出空片段（调用方保留产物里的价）。
 		return "", nil
 	}
+	// 工程作用域：有可核对对象才要求它 —— 参数为空 / 全是非法 id 时上面已经沉默返回，
+	// 那种请求本来就没有结论可言（不把参数缺失与「没对象」混成同一个 500）。
+	//
+	// 缺工程时**显式报错**（与 product_list 的 projectId 同一条形状）：产物里的 URL 没带
+	// 工程是组件升级缺口，报错能立刻看见；若降级沉默，表现会是「价格核对永远没有结论」——
+	// 那正是本批要消灭的 fail-silent。
+	projectID := strings.TrimSpace(r.Params[livePriceParamProjectID])
+	if projectID == "" {
+		return "", fmt.Errorf("缺少参数 %s", livePriceParamProjectID)
+	}
 	currency := strings.TrimSpace(r.Params[livePriceParamCurrency])
 	if currency == "" {
 		currency = livePriceDefaultCurrency
@@ -100,7 +121,11 @@ func renderProductLivePrice(ctx context.Context, r *Request) (string, error) {
 	for _, pair := range pairs {
 		ids = append(ids, pair.id)
 	}
-	snaps, err := variantSnapshotProvider.VariantSnapshots(ctx, ids)
+	// 工程进上下文（与 product_list 片段同一形状）：端口本身按形参取作用域，上下文里
+	// 也带上工程，供下游任何按 core.BuildProjectID(ctx) 取数的路径使用 —— 一处读、一处传，
+	// 不让「工程从哪来」在调用链上分叉。
+	scoped := core.WithBuildProjectID(ctx, projectID)
+	snaps, err := variantSnapshotProvider.VariantSnapshots(scoped, ids, projectID)
 	if err != nil {
 		return "", err
 	}

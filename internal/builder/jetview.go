@@ -502,7 +502,13 @@ func containerViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*
 
 // productViewOf 转换商品详情节点（字段经商品解析器静态填入，越界字段编译期报错）。
 func productViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeView, error) {
-	return contentAtomViewOf(node, topLevel, ctx, productPkg.Type, "product", productPkg.CompileCSS, productPkg.BuildView)
+	return contentAtomViewOf(node, topLevel, ctx, productPkg.Type, "product", productPkg.CompileCSS,
+		// 闭包适配：实时价格核对 / 可用量两个片段位都要把站点工程 id 烘进 URL，
+		// 而 contentAtomViewOf 只接受 func(*Props, ContentResolver) (View, error)
+		// （与 cardViewOf 同路）。工程取自构建上下文，组件包不感知它从哪来。
+		func(p *productPkg.Props, content core.ContentResolver) (productPkg.View, error) {
+			return productPkg.BuildView(p, content, ctx.ProjectID)
+		})
 }
 
 // productCardViewOf 转换商品卡节点（issue #22）。
@@ -696,7 +702,11 @@ func cardstackViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*
 // productSelectorViewOf 转换规格选择器节点（issue #26）：与商品详情同一条链路
 // （contentAtomViewOf），只是渲染的是「可独立拖拽的选择器」而不是整块详情。
 func productSelectorViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeView, error) {
-	return contentAtomViewOf(node, topLevel, ctx, productselectorPkg.Type, "product_selector", productselectorPkg.CompileCSS, productselectorPkg.BuildView)
+	return contentAtomViewOf(node, topLevel, ctx, productselectorPkg.Type, "product_selector", productselectorPkg.CompileCSS,
+		// 与商品详情同一条闭包适配：规格选择器也要把工程 id 烘进片段 URL。
+		func(p *productselectorPkg.Props, content core.ContentResolver) (productselectorPkg.View, error) {
+			return productselectorPkg.BuildView(p, content, ctx.ProjectID)
+		})
 }
 
 // cartIconViewOf 转换购物车图标节点（BIZ-1 访问面）。

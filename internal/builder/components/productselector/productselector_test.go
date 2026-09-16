@@ -46,6 +46,14 @@ func decodePropsOf(t *testing.T, kv map[string]any) Props {
 	return p
 }
 
+// testProjectID 单测用的站点工程 id（理由同 product_test.go：片段地址必须带工程）。
+const testProjectID = "proj-1"
+
+// buildViewFor 补上构建期工程 id 的 BuildView 包装（用例只关心组件本身时用它）。
+func buildViewFor(p *Props, content core.ContentResolver) (View, error) {
+	return BuildView(p, content, testProjectID)
+}
+
 const (
 	testOptions  = `[{"key":"color","name":"颜色","values":[{"key":"red","label":"红"},{"key":"blue","label":"蓝"}]}]`
 	testVariants = `[{"id":"var-1","sku":"SKU-1","price":"99","comparePrice":"129","enabled":true,"options":{"color":"red"}},` +
@@ -101,7 +109,7 @@ func TestFieldBindings(t *testing.T) {
 // 维度值组、组合行（价格 / 划线价）、每档实时库存片段（变体 id + 兜底文案）。
 func TestBuildViewRendersOptionsAndStock(t *testing.T) {
 	p := decodePropsOf(t, map[string]any{})
-	view, err := BuildView(&p, stubResolver{values: map[string]string{
+	view, err := buildViewFor(&p, stubResolver{values: map[string]string{
 		"product.options":  testOptions,
 		"product.variants": testVariants,
 	}})
@@ -137,7 +145,8 @@ func TestBuildViewRendersOptionsAndStock(t *testing.T) {
 		"sky-selector-group",
 		"sky-selector-radio",
 		"<label class=\"sky-selector-value\" for=\"sky-sel-s1-color-red\">红</label>",
-		"/_fragments/productVariantAvailability?variantIds=var-1",
+		// 工程 id 必须在地址里（片段侧当必填参数）；& 经 Jet 转义成 &amp;，htmx 读到的仍是 &。
+		"/_fragments/productVariantAvailability?projectId=proj-1&amp;variantIds=var-1",
 		"hx-trigger=\"load, every 60s\"",
 		`aria-live="polite"`,
 		StockFallback,
@@ -151,7 +160,7 @@ func TestBuildViewRendersOptionsAndStock(t *testing.T) {
 // TestBuildViewSingleVariant 单变体（没有可切换的组合）→ 空态，不输出选择器。
 func TestBuildViewSingleVariant(t *testing.T) {
 	p := decodePropsOf(t, map[string]any{"emptyText": "该商品暂无可选规格"})
-	view, err := BuildView(&p, stubResolver{values: map[string]string{
+	view, err := buildViewFor(&p, stubResolver{values: map[string]string{
 		"product.options":  `[]`,
 		"product.variants": `[{"id":"only","sku":"SKU-1","price":"99","enabled":true,"options":{}}]`,
 	}})
@@ -169,10 +178,10 @@ func TestBuildViewSingleVariant(t *testing.T) {
 // TestBuildViewErrors 缺解析器 / 字段越界都要上抛（不静默出空选择器）。
 func TestBuildViewErrors(t *testing.T) {
 	p := decodePropsOf(t, map[string]any{})
-	if _, err := BuildView(&p, nil); err == nil {
+	if _, err := buildViewFor(&p, nil); err == nil {
 		t.Fatalf("缺解析器应报错")
 	}
-	if _, err := BuildView(&p, stubResolver{errOn: "product.options"}); err == nil {
+	if _, err := buildViewFor(&p, stubResolver{errOn: "product.options"}); err == nil {
 		t.Fatalf("字段越界应上抛")
 	}
 }
@@ -183,7 +192,7 @@ func TestShowStockOff(t *testing.T) {
 	if ShowStock(&p) {
 		t.Fatalf("stock=off 应关闭片段")
 	}
-	view, err := BuildView(&p, stubResolver{values: map[string]string{
+	view, err := buildViewFor(&p, stubResolver{values: map[string]string{
 		"product.options":  testOptions,
 		"product.variants": testVariants,
 	}})
@@ -192,5 +201,51 @@ func TestShowStockOff(t *testing.T) {
 	}
 	if view.ShowStock {
 		t.Fatalf("视图应标记关闭实时可用量")
+	}
+}
+
+// TestBuildViewStockFragmentURLCarriesRenderProject 片段地址必须带**本次渲染所用**的工程 id。
+//
+// 与 product / orderlist 组件同一条不变量：productVariantAvailability 片段把 projectId 当必填
+// 参数（缺它无法定位库存真源），缺参时片段端回 500，而 htmx 换不动目标节点 —— 页面上看不出
+// 异常，库存位永远停在构建期兜底文案。断言「值等于本次渲染传入的工程」，而不是「有字样」。
+func TestBuildViewStockFragmentURLCarriesRenderProject(t *testing.T) {
+	const projectID = "proj-9"
+	p := decodePropsOf(t, map[string]any{})
+	view, err := BuildView(&p, stubResolver{values: map[string]string{
+		"product.options":  testOptions,
+		"product.variants": testVariants,
+	}}, projectID)
+	if err != nil {
+		t.Fatalf("BuildView: %v", err)
+	}
+	if len(view.VariantOptions) == 0 {
+		t.Fatalf("应有组合行")
+	}
+	for _, vo := range view.VariantOptions {
+		if !strings.Contains(vo.StockAvailabilityGet, "projectId="+projectID) {
+			t.Fatalf("可用量片段地址缺本次渲染的工程 %s: %q", projectID, vo.StockAvailabilityGet)
+		}
+	}
+
+	set, err := templates.NewEmbeddedComponentSet()
+	if err != nil {
+		t.Fatalf("NewEmbeddedComponentSet: %v", err)
+	}
+	tpl, err := set.GetTemplate("product_selector")
+	if err != nil {
+		t.Fatalf("GetTemplate(product_selector): %v", err)
+	}
+	var buf strings.Builder
+	if err := tpl.Execute(&buf, nil, struct {
+		Classes  string
+		CustomID string
+		NodeID   string
+		V        View
+	}{Classes: "sky-c-s1", NodeID: "s1", V: view}); err != nil {
+		t.Fatalf("渲染模板失败: %v", err)
+	}
+	if !strings.Contains(buf.String(), `hx-get="/_fragments/productVariantAvailability?projectId=proj-9&amp;variantIds=var-1"`) {
+		t.Fatalf("产物里的可用量片段地址没带工程:\n%s", buf.String())
 	}
 }

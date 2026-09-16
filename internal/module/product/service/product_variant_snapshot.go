@@ -15,7 +15,9 @@ import (
 var _ productcontract.VariantSnapshotPort = (*Service)(nil)
 
 // VariantSnapshots 按变体 id 批量取下单快照需要的事实。只读、无副作用。
-func (s *Service) VariantSnapshots(ctx context.Context, variantIDs []string) (list []*productcontract.VariantSnapshot, err error) {
+//
+// projectID 是必填的工程作用域（审计 DB-009）：见端口与 model.ListByIDs 的注释。
+func (s *Service) VariantSnapshots(ctx context.Context, variantIDs []string, projectID string) (list []*productcontract.VariantSnapshot, err error) {
 	ids := dedupeNonEmpty(variantIDs)
 	if len(ids) == 0 {
 		return nil, nil
@@ -36,9 +38,9 @@ func (s *Service) VariantSnapshots(ctx context.Context, variantIDs []string) (li
 			productIDs = append(productIDs, v.ProductID)
 		}
 	}
-	// 显式例外（审计 DB-009）：本端口的契约里没有工程，见 model.ListByIDsWithoutScope
-	// 的注释 —— 补作用域要动 VariantSnapshotPort 契约与三个消费方，不在这一批。
-	products, err := s.m.ListByIDsWithoutScope(ctx, productIDs)
+	// 商品名与工程一并补齐：作用域与变体那次读取同源（端口入参的 projectID），
+	// 不在这里另取工程上下文 —— 消费方给的工程就是唯一真源。
+	products, err := s.m.ListByIDs(ctx, productIDs, projectID)
 	if err != nil {
 		return nil, err
 	}
@@ -50,10 +52,24 @@ func (s *Service) VariantSnapshots(ctx context.Context, variantIDs []string) (li
 	}
 	list = make([]*productcontract.VariantSnapshot, 0, len(variants))
 	for _, v := range variants {
+		// 商品行在本工程作用域内不可见 ⇒ 该变体不属于本工程，**丢掉它**。
+		//
+		// 这一步不能省，也不能改成「照旧返回一条 ProductName / ProjectID 为空的快照」：
+		// 变体表（product_variants）不在迁移 215 的名单里、没有策略，所以别的工程的变体 id
+		// 会被照常读出来；若把它交给消费方，order / cart 那道
+		// 「sn.ProjectID != "" && sn.ProjectID != projectID」的守卫会因为 ProjectID 为空而
+		// **放行** —— 那是用一次静默降级换掉一条越权拦截（订单会落一行商品名为空的快照项）。
+		//
+		// 丢掉之后，消费方看到的现象与「这个规格不存在」完全一致 —— 端口契约本来就这么写
+		// （查不到的 id 不出现在返回里），调用方按差集判定「不存在或已删除」。
+		ownerProject := projectOf[v.ProductID]
+		if ownerProject == "" {
+			continue
+		}
 		list = append(list, &productcontract.VariantSnapshot{
 			VariantID:    v.ID,
 			ProductID:    v.ProductID,
-			ProjectID:    projectOf[v.ProductID],
+			ProjectID:    ownerProject,
 			ProductName:  nameOf[v.ProductID],
 			VariantLabel: variantOptionLabel(v.OptionValues),
 			SKU:          v.SKUCode,

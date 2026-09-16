@@ -29,8 +29,9 @@ const (
 	defaultCurrency      = "¥"
 	// StockFallback 无脚本 / 片段不可用时的兜底文案（与片段层「未知」态同一句）。
 	StockFallback = "以结算时库存为准"
-	// StockFragmentPath 实时可用量片段端点（issue #24）。
-	StockFragmentPath = "/_fragments/productVariantAvailability"
+	// 可用量片段的**端点**不在这里：每档组合自带完整 URL（VariantOption.StockAvailabilityGet，
+	// 由 product 包的 stockAvailabilityFragmentURL 一处拼装）—— 地址里必须带工程 id，
+	// 而工程只有构建期知道。两个组件（本选择器与商品详情）共用那一份口径。
 )
 
 // Props core.productSelector 属性。

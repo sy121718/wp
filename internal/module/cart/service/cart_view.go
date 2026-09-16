@@ -148,7 +148,7 @@ func (s *Service) validateLine(_ string, projectID, variantID string) (pid, vid 
 
 // fetchVariant 取单个变体，并校验它属于本工程且已启用。
 func (s *Service) fetchVariant(ctx context.Context, projectID, variantID string) (sn *productcontract.VariantSnapshot, err error) {
-	snaps, err := s.product.VariantSnapshots(ctx, []string{variantID})
+	snaps, err := s.product.VariantSnapshots(ctx, []string{variantID}, projectID)
 	if err != nil {
 		return nil, err
 	}
@@ -158,6 +158,9 @@ func (s *Service) fetchVariant(ctx context.Context, projectID, variantID string)
 		}
 		// 跨工程加购是越权而不是「查不到」：结论对访客一样（这件商品买不了），
 		// 但对日志与排查不一样，所以两边都归到同一个对外文案上。
+		//
+		// 端口已按工程作用域过滤（别的工程的变体不会出现在快照里），这里到不了 ——
+		// 留着当第二道防线：端口契约被改坏时仍然拦得住。
 		if !sn.Enabled || (sn.ProjectID != "" && sn.ProjectID != projectID) {
 			return nil, errors.New(cartenums.ErrVariantNotFound)
 		}
@@ -203,7 +206,7 @@ func (s *Service) snapshotOf(ctx context.Context, projectID string, p cartPayloa
 	for _, l := range lines {
 		ids = append(ids, l.VariantID)
 	}
-	snaps, err := s.product.VariantSnapshots(ctx, ids)
+	snaps, err := s.product.VariantSnapshots(ctx, ids, projectID)
 	if err != nil {
 		return nil, err
 	}

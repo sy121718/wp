@@ -24,11 +24,13 @@ type View struct {
 	VariantOptions []product.VariantOption
 
 	// ShowStock 是否在每档组合挂实时可用量片段（构建期只烘变体 id，可用量现取）。
+	//
+	// 片段的**地址**不在这里：它随每档组合烘在 VariantOption.StockAvailabilityGet 上
+	// （与实时价格核对位同形）—— 地址里必须带工程 id，而工程只有构建期知道，
+	// 由 product 包的拼装函数一处产出，两个组件共用同一份口径。
 	ShowStock bool
 	// StockFallback 无脚本时的兜底文案。
 	StockFallback string
-	// StockFragmentPath 可用量片段端点。
-	StockFragmentPath string
 
 	// HasEmpty / EmptyText 无规格时的空态（文案留空则整块不输出）。
 	HasEmpty  bool
@@ -40,7 +42,10 @@ type View struct {
 // content 为构建期注入的解析器（商品实体解析器）：两个槽位字段都必须能取到值，
 // 取不到（越界字段 / 缺解析器）即报错终止构建 —— 静默渲染一个没有规格的选择器
 // 比构建失败危险得多（页面上看不出少了什么）。
-func BuildView(p *Props, content core.ContentResolver) (View, error) {
+//
+// projectID 为本次编译的站点工程 id（core.RenderContext.ProjectID），经 ParseVariantOptions
+// 烘进实时价格核对片段的 URL（口径只有一份：与商品详情组件共用同一个解析函数）。
+func BuildView(p *Props, content core.ContentResolver, projectID string) (View, error) {
 	if p == nil {
 		return View{}, fmt.Errorf("规格选择器属性为空")
 	}
@@ -58,15 +63,14 @@ func BuildView(p *Props, content core.ContentResolver) (View, error) {
 	}
 
 	groups := product.ParseOptionGroups(strings.TrimSpace(optionsRaw))
-	rows := product.ParseVariantOptions(strings.TrimSpace(variantsRaw), groups, EffectiveCurrency(p))
+	rows := product.ParseVariantOptions(strings.TrimSpace(variantsRaw), groups, EffectiveCurrency(p), projectID)
 
 	view := View{
-		OptionGroups:      groups,
-		VariantOptions:    rows,
-		HasOptions:        len(groups) > 0 && len(rows) > 1,
-		ShowStock:         ShowStock(p),
-		StockFallback:     StockFallback,
-		StockFragmentPath: StockFragmentPath,
+		OptionGroups:   groups,
+		VariantOptions: rows,
+		HasOptions:     len(groups) > 0 && len(rows) > 1,
+		ShowStock:      ShowStock(p),
+		StockFallback:  StockFallback,
 	}
 	if !view.HasOptions {
 		view.EmptyText = EffectiveEmptyText(p)
@@ -78,8 +82,10 @@ func BuildView(p *Props, content core.ContentResolver) (View, error) {
 // DeclareFeatures 实现 core.ViewFeatureDeclarer（审计 PERF-014）：每档规格按需挂实时库存位
 // （hx-get），并可选挂实时价格核对位。没有规格组合时模板整块不输出这些 span。
 func (v View) DeclareFeatures() (attrs, classes []string) {
+	// 按**实际烘出的 URL** 判断（不是「网格有规格就登记」）：缺工程 id 时两个片段位
+	// 都是空串、模板不输出 hx-get，此时登记会让产物白白多注入一份 htmx 脚本。
 	for _, vo := range v.VariantOptions {
-		if v.ShowStock || vo.LivePriceGet != "" {
+		if (v.ShowStock && vo.StockAvailabilityGet != "") || vo.LivePriceGet != "" {
 			return []string{"hx-get", "hx-trigger", "hx-swap"}, nil
 		}
 	}

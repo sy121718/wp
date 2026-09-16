@@ -179,7 +179,7 @@ func TestProductLivePriceFragment(t *testing.T) {
 
 	// ① 产物里的价与库里一致 → 沉默（页面保留产物里的价）。
 	body := fragmentGet(t, "productLivePrice", url.Values{
-		"variantIds": {variant.ID}, "prices": {"12900"},
+		"projectId": {f.projectID}, "variantIds": {variant.ID}, "prices": {"12900"},
 	})
 	if strings.TrimSpace(body) != "" {
 		t.Fatalf("价格一致时应沉默，实际：%s", oneLine(body))
@@ -187,7 +187,7 @@ func TestProductLivePriceFragment(t *testing.T) {
 
 	// ② 产物里的价过期（99 元 vs 当前 129 元）→ 明确交代当前价。
 	body = fragmentGet(t, "productLivePrice", url.Values{
-		"variantIds": {variant.ID}, "prices": {"9900"},
+		"projectId": {f.projectID}, "variantIds": {variant.ID}, "prices": {"9900"},
 	})
 	if !strings.Contains(body, "价格已更新为 ¥129，以结算为准") {
 		t.Fatalf("价不一致时应交代当前价：%s", oneLine(body))
@@ -199,7 +199,7 @@ func TestProductLivePriceFragment(t *testing.T) {
 		t.Fatalf("改价失败: %v", err)
 	}
 	body = fragmentGet(t, "productLivePrice", url.Values{
-		"variantIds": {variant.ID}, "prices": {"12900"},
+		"projectId": {f.projectID}, "variantIds": {variant.ID}, "prices": {"12900"},
 	})
 	if !strings.Contains(body, "价格已更新为 ¥149，以结算为准") {
 		t.Fatalf("改价后片段应给出新价：%s", oneLine(body))

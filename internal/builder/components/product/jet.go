@@ -114,6 +114,14 @@ type VariantOption struct {
 	// 所以片段唯一能拿来对比的基准就是**产物自己烘下来的那份价**。空串 = 价格形状不可解析，
 	// 此时不请求片段（片段也只会沉默）。
 	LivePriceGet string
+	// StockAvailabilityGet 实时可用量片段的请求 URL（构建期拼好；模板只把它放进 hx-get）。
+	//
+	// 与 LivePriceGet 同族、同一理由：可用量是运行期真源（构建期只烘变体 id），
+	// 而片段侧把工程 id 当必填参数（缺它无法定位库存真源），工程只能由构建期送来。
+	//
+	// 空串 = 缺工程 id（或变体 id 为空）：此时**不请求** —— 带空 projectId 的请求会被
+	// 片段判成「缺少参数」并回 500，htmx 换不动目标节点，页面上看不出任何异常。
+	StockAvailabilityGet string
 }
 
 // optionGroupJSON 商品解析器输出的规格维度结构（product.options）。
@@ -141,7 +149,11 @@ type variantJSON struct {
 //
 // content 为构建期注入的商品解析器（未注入时声明了槽位即报错，不静默出空块）；
 // 解析失败（字段越界 / 类型不符）原样上抛，由编译链报错终止发布。
-func BuildView(p *Props, content core.ContentResolver) (View, error) {
+//
+// projectID 为本次编译的站点工程 id（core.RenderContext.ProjectID）：只用于把工程烘进
+// 实时价格核对片段的 URL（见 livePriceFragmentURL 的长注释）。工程为空时该片段不请求，
+// 但页面其余部分照常渲染 —— 与其他「站点级资源」组件同一口径（缺工程是降级而不是失败）。
+func BuildView(p *Props, content core.ContentResolver, projectID string) (View, error) {
 	source := effectiveSource(p)
 	slots := p.slotFields()
 	declared := 0
@@ -222,7 +234,7 @@ func BuildView(p *Props, content core.ContentResolver) (View, error) {
 	}
 	// 规格选择器：有维度且可展示的组合 ≥2 才输出 —— 单变体商品不输出选择器。
 	view.OptionGroups = ParseOptionGroups(rawOptions)
-	view.VariantOptions = ParseVariantOptions(rawVariants, view.OptionGroups, view.Currency)
+	view.VariantOptions = ParseVariantOptions(rawVariants, view.OptionGroups, view.Currency, projectID)
 	view.HasOptions = len(view.OptionGroups) > 0 && len(view.VariantOptions) > 1
 	return view, nil
 }
@@ -269,7 +281,10 @@ func ParseOptionGroups(raw string) []OptionGroup {
 //   - 无规格组合（option_values 为空）不进规格清单 —— 它是商品的占位 / 手工变体，
 //     不是规格选择器里的一格；
 //   - 未启用的变体不上架，因而不出现在选择器里（组合计数也不含它）。
-func ParseVariantOptions(raw string, groups []OptionGroup, currency string) []VariantOption {
+//
+// projectID 只透传给实时价格核对片段的 URL（见 livePriceFragmentURL）：三个调用方
+// （商品详情 / 独立选择器 / 加购）都必须给出自己那份构建上下文里的工程 id。
+func ParseVariantOptions(raw string, groups []OptionGroup, currency, projectID string) []VariantOption {
 	raw = strings.TrimSpace(raw)
 	if raw == "" || len(groups) == 0 {
 		return nil
@@ -318,11 +333,14 @@ func ParseVariantOptions(raw string, groups []OptionGroup, currency string) []Va
 			SKUCode: r.SKU, Labels: strings.Join(parts, " · "),
 			Price: currency + r.Price,
 		}
+		// 实时可用量位（issue #24）：与价格核对位同形 —— 构建期只烘「变体 id + 工程 id」，
+		// 可用量每次请求现取（烘进产物等于发布一份过期库存）。
+		row.StockAvailabilityGet = stockAvailabilityFragmentURL(r.ID, projectID)
 		// 实时价格核对（BIZ-2）：价格形状可解析时才烘 URL —— 解析不出来的价拿去比对
 		// 只会得到一句错话，不如不请求。
 		if cents, ok := priceYuanCents(r.Price); ok {
 			row.PriceCents = cents
-			row.LivePriceGet = livePriceFragmentURL(r.ID, cents, currency)
+			row.LivePriceGet = livePriceFragmentURL(r.ID, cents, currency, projectID)
 		}
 		if strings.TrimSpace(r.ComparePrice) != "" {
 			row.ComparePrice = currency + r.ComparePrice
@@ -335,21 +353,71 @@ func ParseVariantOptions(raw string, groups []OptionGroup, currency string) []Va
 // LivePriceFragmentPath 实时价格核对片段端点（与 runtimefragment 的 capability 名一致）。
 const LivePriceFragmentPath = "/_fragments/productLivePrice"
 
+// StockAvailabilityFragmentPath 实时可用量片段端点（与 runtimefragment 的 capability 名一致）。
+const StockAvailabilityFragmentPath = "/_fragments/productVariantAvailability"
+
+// paramProjectID 片段参数名：站点工程 id。
+//
+// 商品侧的两个片段（实时价格核对 / 实时可用量）都以它为**必填**参数，runtimefragment 侧
+// 各有同名常量（livePriceParamProjectID / variantAvailabilityParamProjectID）。
+// 这里收敛成一个常量：组件侧只有一处真源，就不会出现「改了一个 URL、忘了另一个」。
+const paramProjectID = "projectId"
+
 // livePriceFragmentURL 拼实时价格核对片段的请求 URL（逐变体一行一个请求，与库存片段同构）。
 //
-// 参数只有三个：变体 id、构建期价（分）、货币符号；工程上下文由商品模块按变体反查补齐，
-// 组件不需要也不该知道工程表结构。
-func livePriceFragmentURL(variantID string, cents int64, currency string) string {
+// 参数四个：变体 id、构建期价（分）、货币符号、站点工程 id。
+//
+// **为什么工程必须烘进 URL**（审计 DB-009）：片段端经 VariantSnapshotPort 取「这个变体
+// 此刻的价与启用态」，而该端口必带工程作用域 —— products 在迁移 215 的 RLS 名单里，
+// 没有作用域的读取在非超级角色下**静默返回 0 行**。片段查不到变体就只能沉默（降级设计），
+// 于是整条价格核对链一声不响地失效。而 runtimefragment.Request 里没有工程字段
+// （只有 Params / Cookies / UserID），工程只能由唯一知道它的构建期送来。
+//
+// 代价是**已发布产物的字节会变**，这是预期的组件升级而不是缺陷：组件清单指纹变化 ⇒
+// builder.RegistryVersion() 与 page_artifacts.registry_version 不等 ⇒ 启动时把相关页面
+// 标记 stale（只标记、不重建）⇒ 运维经 page.RebuildStale 重建。不要为了「字节不变」把工程
+// 塞进 header / 包级变量 / 从 referer 推断 —— 那是把一次可审计的升级换成隐式状态。
+//
+// 工程为空时返回空串（不请求片段）：URL 里带一个空的 projectId 会被片段端判成「缺少参数」
+// 并返回 500，与「价格形状不可解析就不请求」是同一条判断 —— 没有工程就没有核对可言。
+func livePriceFragmentURL(variantID string, cents int64, currency, projectID string) string {
 	if strings.TrimSpace(variantID) == "" {
 		return ""
 	}
+	projectID = strings.TrimSpace(projectID)
+	if projectID == "" {
+		return ""
+	}
 	q := url.Values{}
+	q.Set(paramProjectID, projectID)
 	q.Set("variantIds", variantID)
 	q.Set("prices", strconv.FormatInt(cents, 10))
 	if strings.TrimSpace(currency) != "" {
 		q.Set("currency", currency)
 	}
 	return LivePriceFragmentPath + "?" + q.Encode()
+}
+
+// stockAvailabilityFragmentURL 拼实时可用量片段的请求 URL（逐变体一行一个请求）。
+//
+// 与 livePriceFragmentURL 同一形状、同一理由（工程必进 URL，见那个函数的长注释）：
+// 片段侧 renderVariantAvailability 把 projectId 当**必填**参数（缺它无法定位库存真源），
+// 而 runtimefragment.Request 里没有工程字段，工程只能由构建期烘进来。
+//
+// 缺工程 id 时返回空串：不请求一个必然被判「缺少参数」的 URL。调用方（模板）据此不输出
+// hx-get，该位退化为纯兜底文案 —— 访客看到的是「以结算时库存为准」，而不是一个永远空着的位。
+func stockAvailabilityFragmentURL(variantID, projectID string) string {
+	if strings.TrimSpace(variantID) == "" {
+		return ""
+	}
+	projectID = strings.TrimSpace(projectID)
+	if projectID == "" {
+		return ""
+	}
+	q := url.Values{}
+	q.Set(paramProjectID, projectID)
+	q.Set("variantIds", variantID)
+	return StockAvailabilityFragmentPath + "?" + q.Encode()
 }
 
 // priceYuanCents 元文本（商品字段解析器 formatPrice 的输出形态，如 "99" / "99.5"）→ 分。
@@ -413,5 +481,12 @@ func (v View) DeclareFeatures() (attrs, classes []string) {
 	if !v.HasOptions || len(v.VariantOptions) == 0 {
 		return nil, nil
 	}
-	return []string{"hx-get", "hx-trigger", "hx-swap"}, nil
+	// 按**实际烘出的 URL** 判断，而不是按「有规格组合」：缺工程 id 时两个片段位都不输出，
+	// 此时登记 hx-* 会让产物白白多注入一份 htmx 脚本（PERF-014 的登记就是为这件事设的）。
+	for _, vo := range v.VariantOptions {
+		if vo.LivePriceGet != "" || vo.StockAvailabilityGet != "" {
+			return []string{"hx-get", "hx-trigger", "hx-swap"}, nil
+		}
+	}
+	return nil, nil
 }

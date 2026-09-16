@@ -20,18 +20,24 @@ import (
 const (
 	liveVariantA = "11111111-1111-1111-1111-111111111111"
 	liveVariantB = "22222222-2222-2222-2222-222222222222"
+	// liveProjectA 站点工程 id：片段把它当**必填**参数并原样传给快照端口，
+	// 所以桩要能证明「工程真的传下去了」，而不只是出现在 URL 里。
+	liveProjectA = "33333333-3333-3333-3333-333333333333"
 )
 
 // stubSnapshots 变体快照桩：只回声请求里出现的那些 id（与真实实现「查不到就不出现」同形），
-// 并记录实际传给端口的 id 列表（用于断言非法 id 没有流进去）。
+// 并记录实际传给端口的 id 列表（用于断言非法 id 没有流进去）与工程作用域
+// （用于断言片段没把工程吞掉 —— 吞掉的话非超级角色下端口会静默返回 0 行）。
 type stubSnapshots struct {
-	all  []*productcontract.VariantSnapshot
-	err  error
-	seen []string
+	all         []*productcontract.VariantSnapshot
+	err         error
+	seen        []string
+	seenProject string
 }
 
-func (s *stubSnapshots) VariantSnapshots(_ context.Context, ids []string) ([]*productcontract.VariantSnapshot, error) {
+func (s *stubSnapshots) VariantSnapshots(_ context.Context, ids []string, projectID string) ([]*productcontract.VariantSnapshot, error) {
 	s.seen = ids
+	s.seenProject = projectID
 	if s.err != nil {
 		return nil, s.err
 	}
@@ -56,7 +62,7 @@ func TestRenderProductLivePriceChanged(t *testing.T) {
 	defer SetVariantSnapshotProvider(nil)
 
 	out, err := renderProductLivePrice(context.Background(), &Request{Params: map[string]string{
-		"variantIds": liveVariantA, "prices": "9900", "currency": "币",
+		"variantIds": liveVariantA, "prices": "9900", "projectId": liveProjectA, "currency": "币",
 	}})
 	if err != nil {
 		t.Fatalf("渲染失败: %v", err)
@@ -78,7 +84,7 @@ func TestRenderProductLivePriceUnchanged(t *testing.T) {
 	defer SetVariantSnapshotProvider(nil)
 
 	out, err := renderProductLivePrice(context.Background(), &Request{Params: map[string]string{
-		"variantIds": liveVariantA, "prices": "9900",
+		"variantIds": liveVariantA, "prices": "9900", "projectId": liveProjectA,
 	}})
 	if err != nil {
 		t.Fatalf("渲染失败: %v", err)
@@ -93,7 +99,7 @@ func TestRenderProductLivePriceFallbacks(t *testing.T) {
 	// ① 端口未接入。
 	SetVariantSnapshotProvider(nil)
 	if out, err := renderProductLivePrice(context.Background(), &Request{Params: map[string]string{
-		"variantIds": liveVariantA, "prices": "9900",
+		"variantIds": liveVariantA, "prices": "9900", "projectId": liveProjectA,
 	}}); err != nil || strings.TrimSpace(out) != "" {
 		t.Fatalf("端口未接入应沉默且不报错，out=%q err=%v", out, err)
 	}
@@ -106,7 +112,7 @@ func TestRenderProductLivePriceFallbacks(t *testing.T) {
 	SetVariantSnapshotProvider(stub)
 	defer SetVariantSnapshotProvider(nil)
 	if out, err := renderProductLivePrice(context.Background(), &Request{Params: map[string]string{
-		"variantIds": "not-a-uuid,12345", "prices": "9900,9900",
+		"variantIds": "not-a-uuid,12345", "prices": "9900,9900", "projectId": liveProjectA,
 	}}); err != nil || strings.TrimSpace(out) != "" {
 		t.Fatalf("非法 id 形状应沉默，out=%q err=%v", out, err)
 	}
@@ -118,7 +124,7 @@ func TestRenderProductLivePriceFallbacks(t *testing.T) {
 		{VariantID: liveVariantA, Price: 12900, Enabled: true},
 	}})
 	if out, err := renderProductLivePrice(context.Background(), &Request{Params: map[string]string{
-		"variantIds": liveVariantA,
+		"variantIds": liveVariantA, "projectId": liveProjectA,
 	}}); err != nil || strings.TrimSpace(out) != "" {
 		t.Fatalf("无构建期价应沉默，out=%q err=%v", out, err)
 	}
@@ -136,7 +142,7 @@ func TestRenderProductLivePriceDisabled(t *testing.T) {
 	defer SetVariantSnapshotProvider(nil)
 
 	out, err := renderProductLivePrice(context.Background(), &Request{Params: map[string]string{
-		"variantIds": liveVariantA, "prices": "9900",
+		"variantIds": liveVariantA, "prices": "9900", "projectId": liveProjectA,
 	}})
 	if err != nil {
 		t.Fatalf("渲染失败: %v", err)
@@ -151,9 +157,61 @@ func TestRenderProductLivePricePortError(t *testing.T) {
 	SetVariantSnapshotProvider(&stubSnapshots{err: errors.New("数据库不可用")})
 	defer SetVariantSnapshotProvider(nil)
 	if _, err := renderProductLivePrice(context.Background(), &Request{Params: map[string]string{
-		"variantIds": liveVariantA, "prices": "9900",
+		"variantIds": liveVariantA, "prices": "9900", "projectId": liveProjectA,
 	}}); err == nil {
 		t.Fatalf("端口报错应上抛")
+	}
+}
+
+// TestRenderProductLivePriceRequiresProject 有可核对对象却没有工程 → 显式报错，不沉默。
+//
+// 与「参数为空 / 全是非法 id」那两条**刻意不同**：那些请求本来就没有可核对的对象（沉默是对的），
+// 而这里参数齐全、只是产物里的 URL 没带工程 —— 那是组件升级留下的缺口。沉默会让它表现成
+// 「价格核对永远没有结论」，从现象上查不出来；显式报错能立刻看见（与 productList 片段同一条形状）。
+func TestRenderProductLivePriceRequiresProject(t *testing.T) {
+	stub := &stubSnapshots{all: []*productcontract.VariantSnapshot{
+		{VariantID: liveVariantA, Price: 12900, Enabled: true},
+	}}
+	SetVariantSnapshotProvider(stub)
+	defer SetVariantSnapshotProvider(nil)
+
+	_, err := renderProductLivePrice(context.Background(), &Request{Params: map[string]string{
+		"variantIds": liveVariantA, "prices": "9900",
+	}})
+	if err == nil {
+		t.Fatalf("缺工程 id 应显式报错，而不是沉默（沉默 = 价格核对永远没有结论）")
+	}
+	if !strings.Contains(err.Error(), "projectId") {
+		t.Fatalf("错误应点名缺失的参数，实际 %v", err)
+	}
+	if len(stub.seen) != 0 {
+		t.Fatalf("缺工程时不该先查库（查了也是 0 行），实际传了 %+v", stub.seen)
+	}
+}
+
+// TestRenderProductLivePricePassesProjectToPort 工程必须**原样传到快照端口**。
+//
+// 端口按工程作用域取数（审计 DB-009）：片段只把它放进 URL 却不传给端口的话，
+// 非超级角色下端口静默返回 0 行 —— 表现同样是「价格核对永远没有结论」。
+// 所以这里断言桩收到的工程，而不是只看 URL 里有没有那个参数。
+func TestRenderProductLivePricePassesProjectToPort(t *testing.T) {
+	stub := &stubSnapshots{all: []*productcontract.VariantSnapshot{
+		{VariantID: liveVariantA, Price: 12900, Enabled: true},
+	}}
+	SetVariantSnapshotProvider(stub)
+	defer SetVariantSnapshotProvider(nil)
+
+	out, err := renderProductLivePrice(context.Background(), &Request{Params: map[string]string{
+		"variantIds": liveVariantA, "prices": "9900", "projectId": liveProjectA,
+	}})
+	if err != nil {
+		t.Fatalf("渲染失败: %v", err)
+	}
+	if stub.seenProject != liveProjectA {
+		t.Fatalf("工程应原样传给端口，实际 %q", stub.seenProject)
+	}
+	if !strings.Contains(out, "价格已更新") {
+		t.Fatalf("价不一致时应给出提示，实际 %q", out)
 	}
 }
 

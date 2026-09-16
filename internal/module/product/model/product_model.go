@@ -176,34 +176,27 @@ func (m *Model) GetWithoutScope(ctx context.Context, id string) (e *ProductEntit
 	return e, err
 }
 
-// ListByIDsWithoutScope 批量按 ID 取商品行，**不设工程作用域**（审计 DB-009 的显式例外，
-// 与 GetWithoutScope 同类）。
+// ListByIDs 批量按 ID 取商品行，**必带工程作用域**。
 //
-// 为什么这一处保留现状：唯一调用方是 ProductService.VariantSnapshots（跨模块只读端口
-// VariantSnapshotPort），消费方是 order 下单落快照 / cart 两处加购与结算 / productLivePrice
-// 片段三条链。要给它补作用域，三件事缺一不可：
+// projectID 是**必填**的工程作用域（不是可选过滤条件）：products 在迁移 215 名单里，
+// 策略谓词读会话变量 app.project_id，而 WHERE id IN (...) 只是普通过滤 —— 换连接角色后
+// **没有作用域的查询会静默返回 0 行**（fail closed 不报错）。空串或非 uuid 会被 rls
+// 直接拒掉（rls.ErrInvalidProjectID），不会退化成「查一个不存在的工程」那种更难排查的形态。
 //
-//	① 契约层：VariantSnapshotPort.VariantSnapshots 加 projectID 形参（order / cart /
-//	   runtimefragment 三个消费方的调用点同步改）；
-//	② 片段那条**只能**由商品组件把工程烘进 URL —— runtimefragment.Request 里没有工程字段
-//	   （只有 Params / Cookies / UserID），而组件侧的设计写死了「工程上下文由商品模块按变体
-//	   反查补齐，组件不需要也不该知道工程表结构」（builder/components/product/jet.go 的
-//	   livePriceFragmentURL，且它经纯函数 ParseVariantOptions 传入，签名里连 ctx 都没有）；
-//	   改它等于重发全部已发布产物的字节。
-//
-// 那是跨 5 个模块的契约变更，不属于「补 model 遗漏」这一批，故此处**显式保留现状**，
-// 而不是塞一个空串兜底（空串会被 rls 拒掉，等于把静默 0 行换成一个更难懂的错误）。
-//
-// 换非超级角色之后的后果（DB-009 第二步之前必须解决）：本方法在策略下 fail closed
-// ⇒ 取不到商品名与工程 ⇒ 订单快照 / 加购 / 价格核对片段一并**静默失效**（不报错）。
-// 补完上面那条契约链后删掉本方法，改用带 projectID 的 ListByIDs。
-//
-// 不要给本方法加新的调用方。
-func (m *Model) ListByIDsWithoutScope(ctx context.Context, ids []string) (list []*ProductEntity, err error) {
+// 唯一调用方是 ProductService.VariantSnapshots（跨模块只读端口 VariantSnapshotPort），
+// 消费方三条链：order 下单落快照 / cart 加购与结算 / productLivePrice 价格核对片段。
+// 三者都能拿到工程（片段那条由商品组件把工程烘进片段 URL），所以这条链上不再保留
+// 不带作用域的入口 —— 曾经这里是 ListByIDsWithoutScope，换非超级角色的后果是
+// 「订单快照为空、加购拿不到变体、价格核对对不出任何结论」且一条错误日志都没有。
+func (m *Model) ListByIDs(ctx context.Context, ids []string, projectID string) (list []*ProductEntity, err error) {
 	if len(ids) == 0 {
 		return nil, nil
 	}
-	err = m.DB(ctx).Where("id IN ?", ids).Find(&list).Error
+	// 闭包里用 tx，**绝不能退回 m.DB(ctx)**：那会另取一条连接、脱离事务，
+	// 策略谓词读到的仍是 NULL，查询静默返回 0 行（与 collectionQuery 同一条禁令）。
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.WithContext(ctx).Model(&ProductEntity{}).Where("id IN ?", ids).Find(&list).Error
+	})
 	return list, err
 }
 

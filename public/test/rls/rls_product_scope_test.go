@@ -291,9 +291,11 @@ func TestRLS_ProductScope_FailClosedWithoutScope(t *testing.T) {
 //     可以删，外键级联把库存一起清掉。这是这一批里唯一会**丢数据**的一条；
 //   · **集合源**（ListForCollection / CountForCollection）：工程是必填作用域，
 //     缺它时必须 ErrInvalidProjectID（显式报错），不接受「不限工程」那种读法；
-//   · **显式例外**（ListByIDsWithoutScope）：契约里没有工程，是不带作用域的入口 ——
-//     要钉住的是「它没被作用域校验拦下、也没假装有隔离」，而不是「它能读到数据」
-//     （非超级角色下它本来就 fail closed，见该条测试）。
+//   · **批量按 id 取商品**（ListByIDs，变体快照链的最后一环）：这条入口曾是本批唯一的
+//     「显式例外」（契约里没有工程）。VariantSnapshotPort 契约补完之后它改回带作用域的
+//     ListByIDs，断言随之从「它没假装有隔离」换成「缺工程当场报错 + 跨工程读不到」
+//     （见下方 TestRLS_ProductScope_BatchByIDsRequiresScope，
+//     端到端的变体快照护栏在 rls_variant_snapshot_scope_test.go）。
 
 // TestRLS_ProductScope_RejectsMissingScope 缺工程作用域时这批入口显式报 ErrInvalidProjectID。
 //
@@ -533,45 +535,45 @@ func TestRLS_ProductScope_CollectionRespectsProject(t *testing.T) {
 	}
 }
 
-// TestRLS_ProductScope_ExplicitWithoutScopeEntryUnaffected 显式例外入口按「无隔离」的形状固定住。
+// TestRLS_ProductScope_BatchByIDsRequiresScope 批量按 id 取商品必须带工程作用域。
 //
-// ListByIDsWithoutScope 是这一批里**唯一**保留的裸读入口（唯一调用方 VariantSnapshotPort
-// 的契约里没有工程，为什么补不上见 model 上的长注释）。与 rls_product_taxonomy_scope_test.go
-// 里那批 GetXxxWithoutScope 同一口径：断言的是**形状**，不是「它能读到数据」。
+// ListByIDsWithoutScope 是本批最后一条不带作用域的读数入口（唯一调用方是跨模块只读端口
+// VariantSnapshotPort）。它的契约补完之后入口改回 ListByIDs(ctx, ids, projectID)，
+// 断言随之从「它没假装有隔离」换成这一条：**缺工程当场报错**（调用点漏传工程必须一眼
+// 看出来，而不是在生产上排查「功能突然查不到数据」），**跨工程读不到**（隔离真的生效）。
 //
-//   - 不能被作用域校验拦下 —— 报 ErrInvalidProjectID 等于把「结构上拿不到工程」换成
-//     一个更难懂的错误，而不是诚实表达「这条路径没有隔离」；
-//   - 在非超级角色下必须 fail closed：0 行、**且不报错**。这正是换角色之后订单落快照 /
-//     加购 / 价格核对片段的真实表现，也是「先补 VariantSnapshotPort 契约再换角色」
-//     这条待办的依据（model 注释里列了要动的三处）。
-//
-// 这条绿不代表该路径安全，只代表它**没有骗人**：既不静默给出别的工程的数据，
-// 也不假装自己带了作用域。后来者若给它包上 scope，这里会立刻红 —— 那说明契约链
-// 已经补完，应当同时把方法名改回 ListByIDs 并删掉这段。
-func TestRLS_ProductScope_ExplicitWithoutScopeEntryUnaffected(t *testing.T) {
+// 这条测试是「先补 scope、再换连接角色」那个顺序的可执行证据：摘掉 model 里的
+// rls.InProjectScope，跨工程那次读取会读到 B 的商品，这里立刻红。
+func TestRLS_ProductScope_BatchByIDsRequiresScope(t *testing.T) {
 	db, _ := rlsFixture(t)
 	ctx := context.Background()
 	pm := productmodel.NewModel(db)
 
 	pA, _, aIDs, bIDs := productScopeFixture(t, db)
 
-	rows, err := pm.ListByIDsWithoutScope(ctx, []string{aIDs["products"], bIDs["products"]})
-	if errors.Is(err, rls.ErrInvalidProjectID) {
-		t.Fatalf("显式例外入口不应被作用域校验拦下，实际 %v", err)
-	}
+	// 本工程：读得到（证明作用域没有把正常读取一起挡掉）。
+	rows, err := pm.ListByIDs(ctx, []string{aIDs["products"]}, pA)
 	if err != nil {
-		t.Fatalf("显式例外入口在非超级角色下应静默 fail closed（不报错），实际 %v", err)
+		t.Fatalf("本工程批量按 id 读应成功，实际 %v", err)
 	}
-	if len(rows) != 0 {
-		t.Fatalf("非超级角色 + 未设工程变量时例外入口应 0 行（fail closed），实际 %d 行", len(rows))
+	if len(rows) != 1 || rows[0].ID != aIDs["products"] {
+		t.Fatalf("本工程应读到 1 行，实际 %d 行", len(rows))
 	}
 
-	// 对照：同样两个 id 走带作用域的 Get —— 本工程读得到、跨工程读不到。
-	// 两条路径的差别是「有没有工程作用域」，不是数据本身。
-	if _, err := pm.Get(ctx, aIDs["products"], pA); err != nil {
-		t.Fatalf("本工程按 id 读应成功，实际 %v", err)
+	// 跨工程：0 行 —— 不报错，但也绝不把别的工程的数据交出来。
+	// 混合入参同样只出本工程的那条（调用方一次可能传多个 id）。
+	mixed, err := pm.ListByIDs(ctx, []string{aIDs["products"], bIDs["products"]}, pA)
+	if err != nil {
+		t.Fatalf("混合入参读取不应报错，实际 %v", err)
 	}
-	if _, err := pm.Get(ctx, bIDs["products"], pA); !errors.Is(err, gorm.ErrRecordNotFound) {
-		t.Fatalf("带作用域的 Get 读别的工程的商品应 ErrRecordNotFound，实际 %v", err)
+	if len(mixed) != 1 || mixed[0].ID != aIDs["products"] {
+		t.Fatalf("混合入参应只出工程 A 的 1 行，实际 %d 行", len(mixed))
+	}
+
+	// 缺工程：显式报错。空串 = 调用方忘了传，非法形状 = 传进来的不是工程 id。
+	for _, bad := range []string{"", "not-a-uuid"} {
+		if _, err := pm.ListByIDs(ctx, []string{aIDs["products"]}, bad); !errors.Is(err, rls.ErrInvalidProjectID) {
+			t.Errorf("工程 id 为 %q 时应返回 rls.ErrInvalidProjectID，实际 %v", bad, err)
+		}
 	}
 }

@@ -115,7 +115,7 @@ func BuildView(p *Props, content core.ContentResolver, projectID string) (View, 
 	}
 
 	groups := product.ParseOptionGroups(rawOptions)
-	options := product.ParseVariantOptions(rawVariants, groups, effectiveCurrency(p))
+	options := product.ParseVariantOptions(rawVariants, groups, effectiveCurrency(p), view.ProjectID)
 	if len(options) == 0 {
 		// 没有启用变体（未上架 / 全部停用）：留一句提示，不做成一个点了没反应的按钮。
 		view.Notice = "暂无可购买的规格"

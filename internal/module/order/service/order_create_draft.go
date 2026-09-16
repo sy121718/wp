@@ -147,7 +147,10 @@ func (s *Service) buildOrderItems(ctx context.Context, req *orderdto.CreateOrder
 	for _, it := range req.Items {
 		variantIDs = append(variantIDs, strings.TrimSpace(it.VariantID))
 	}
-	snapshots, err := s.product.VariantSnapshots(ctx, variantIDs)
+	// 工程作用域随端口下传（审计 DB-009）：没有它，换非超级角色后这次读取会静默返回 0 行，
+	// 表现是「每个变体都查不到」⇒ 下单报「规格不存在」，而库里明明有。projectID 就是本函数
+	// 的形参 —— 调用方（草稿 / 下单）已经带着它，不存在「拿不到工程」的情形。
+	snapshots, err := s.product.VariantSnapshots(ctx, variantIDs, projectID)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -172,6 +175,10 @@ func (s *Service) buildOrderItems(ctx context.Context, req *orderdto.CreateOrder
 		}
 		if sn.ProjectID != "" && sn.ProjectID != projectID {
 			// 跨工程下单是越权，不是「查不到」。
+			//
+			// 端口已按工程作用域过滤（不属于本工程的变体根本不出现在快照里，见
+			// VariantSnapshotPort 的契约），所以这里到不了 —— 留着当第二道防线：
+			// 端口契约被改坏时仍然拦得住，而不是让订单落一行商品名为空的快照项。
 			return nil, 0, errors.New(orderenums.ErrVariantNotFound)
 		}
 		if !sn.Enabled {
