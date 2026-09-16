@@ -4,7 +4,7 @@ package analyticsservice
 //
 // 明细表（page_views）只增不减，而统计查询几乎总是查过去若干天。
 // 那些天一旦过去就不会再变，却每次都被重新 GROUP BY 一遍。
-// 本文件把「已经落定的天」提前算好写进 analytics_daily_stats，
+// 本文件把「已经落定的天」提前算好写进 page_views_daily，
 // 让历史窗口的查询成本与明细行数脱钩。
 //
 // 两条刻意的取舍：

@@ -89,7 +89,7 @@ const (
 //
 // 幂等：同一天跑多少次，结果都等于明细的当前状态。
 func (m *Model) RollupDay(ctx context.Context, projectID string, day, from, to time.Time) (err error) {
-	// 三条语句读写的是 analytics_daily_stats 与 page_views（两张都带策略），必须在同一
+	// 三条语句读写的是 page_views_daily 与 page_views（两张都带策略），必须在同一
 	// 工程作用域里跑：汇总写入若被策略挡下，水位（LastRolledDay）却推进了 —— 会留下
 	// 一整段「已汇总但数字为 0」的历史，且没有任何报错。
 	return rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {

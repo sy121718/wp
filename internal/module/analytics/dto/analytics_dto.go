@@ -51,7 +51,7 @@ type SummaryReq struct {
 const (
 	// SourceDetail 明细表 page_views（窗口含今天时的唯一选择）。
 	SourceDetail = "detail"
-	// SourceSummary 按天预聚合表 analytics_daily_stats（窗口完全在过去时）。
+	// SourceSummary 按天预聚合表 page_views_daily（窗口完全在过去时）。
 	SourceSummary = "summary"
 )
 
