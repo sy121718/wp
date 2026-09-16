@@ -63,6 +63,8 @@ import (
 	runtimefragment "go_wp/internal/module/runtimefragment"
 	usercontract "go_wp/internal/module/user/contract"
 	userhttp "go_wp/internal/module/user/inbound/http"
+	webhookcontract "go_wp/internal/module/webhook/contract"
+	webhookhttp "go_wp/internal/module/webhook/inbound/http"
 	"go_wp/internal/partition"
 	"go_wp/internal/pipeline"
 	"go_wp/internal/templates"
@@ -259,6 +261,23 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 	// 营销追踪端点（#38 P1）：公开路由（访问面），无鉴权 —— 能力由 TrackingService 收窄。
 	mailhttp.SetupTrackingRoutes(router, mailSvc)
 	_ = mailSvc
+	// webhook 外部集成通道（OSS-006 端点白名单 + SEC-015 SSRF 防护）：
+	// 表与 service 在 199 就建好了，却一直没有 contract / inbound / 调用方 ——
+	// 与 CQ-019（商品侧注入点「有 setter、无调用方」）同一类的死代码。
+	// 本轮补三段接线：后台配置面（这里）、事件派发口（下面注入订单）、
+	// worker 注册（SetupWebhookRoutes 内部调 RegisterWebhookTaskHandler）。
+	// 密钥在 SetupWebhookRoutes 内从 config.yaml 的 app.secret 注入（与 mail 同一手法）。
+	webhookSvc := webhookhttp.SetupWebhookRoutes(authorizedAPI, db)
+	marks.mark(portWebhookCipherSecret)
+	// 派发口只取 DispatchEvent 一条能力（webhookcontract.Dispatcher），不是端点管理契约 ——
+	// 订单不需要也不该有「替管理员改端点配置、看别人投递日志」的能力。
+	// 这里断言取那份**收窄**端口：装配缺陷（webhook 侧改了派发形状）要在启动时炸掉，
+	// 而不是等订单支付成功后发现通知发不出去。
+	webhookDispatcher, webhookOK := webhookSvc.(webhookcontract.Dispatcher)
+	if !webhookOK {
+		panic("webhook 模块未实现 Dispatcher（事件派发契约），装配缺陷")
+	}
+
 	// 订单模块（BIZ-1 销售侧）：依赖两条**收窄过**的端口 —— product 的变体快照（只读，
 	// 一个方法）与 inventory 的扣减 / 归还（两个方法），不是各自模块的完整 Service。
 	// 建单会读商品事实落快照、并扣减库存，两者缺失都只能在建单那一刻失败，故不设可选依赖。
@@ -274,7 +293,8 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 	if !ok {
 		panic("库存模块装配返回的不是具体 service（无法注入商品用例）")
 	}
-	orderSvc := orderhttp.SetupOrderRoutes(authorizedAPI, db, productSvc, orderstock.New(invConcrete), userSvc)
+	orderSvc := orderhttp.SetupOrderRoutes(authorizedAPI, db, productSvc, orderstock.New(invConcrete), userSvc, webhookDispatcher)
+	marks.mark(portWebhookDispatcher)
 	// 库存 model 注入商品用例（issue #32）：商品与库存合并为同一模块后，商品查询直接读
 	// 库存真源做**查询期投影**（不再有商品侧缓存列、同步台账与对账）。同模块内直调 model。
 	// 商品与库存同属一个模块（issue #32）：库存用例直接交给商品用例，

@@ -53,6 +53,8 @@ const (
 	portProductContentStore            = "product.SetContentStore"
 	portContentContentStore            = "content.SetContentStore"
 	portMailCipherSecret               = "mail.SetCipherSecret"
+	portWebhookCipherSecret            = "webhook.SetCipherSecret"
+	portWebhookDispatcher              = "order.SetWebhookDispatcher"
 	portProductInventoryService        = "product.SetInventoryService"
 	portProductInventoryModel          = "product.SetInventory"
 	portInventoryVariantCost           = "inventory.SetVariantCost"
@@ -141,6 +143,10 @@ var wiringManifest = []wiringEntry{
 		"插件读不到当前用户权限上下文（AdminAuthz() 返回 nil，调用方判空降级）"},
 	{portMailCipherSecret, "config app.secret", "mail", wiringOptionalDegraded,
 		"保存发信账号时明确报错（宁可不能用，也不用弱密钥把 SMTP 密码当明文存）"},
+	{portWebhookCipherSecret, "config app.secret", "webhook", wiringOptionalDegraded,
+		"保存集成端点时明确报错（同一理由：绝不用弱密钥把签名密钥当明文存）"},
+	{portWebhookDispatcher, "webhook", "order", wiringRequiredPort,
+		"订单支付落账不再对外派发任何事件（订阅端点在支付后收不到投递，投递日志恒空且无告警）"},
 
 	// —— 商品 / 库存域 ——
 	{portProductInventoryService, "inventory", "product", wiringRequiredPort,

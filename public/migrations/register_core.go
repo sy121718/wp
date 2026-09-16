@@ -200,8 +200,8 @@ func registerCoreSchemaAndAccess() {
 		TableName: "page_routes",
 		// apply() 的判定是「count > 0 → 跳过」，所以这里必须表达「FK 不存在才算已完成」；
 		// 直接 COUNT(FK) 会把「FK 存在（正需要删）」判成已完成，DROP 永不执行。
-		CheckSQL:  "SELECT CASE WHEN COUNT(*) = 0 THEN 1 ELSE 0 END FROM pg_constraint WHERE conname = 'page_routes_page_id_fkey' AND conrelid = ?::regclass",
-		SQL:       mustSQL("053_drop_route_page_fk.sql"),
+		CheckSQL: "SELECT CASE WHEN COUNT(*) = 0 THEN 1 ELSE 0 END FROM pg_constraint WHERE conname = 'page_routes_page_id_fkey' AND conrelid = ?::regclass",
+		SQL:      mustSQL("053_drop_route_page_fk.sql"),
 	})
 
 	registerSeed(Seed{

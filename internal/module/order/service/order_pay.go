@@ -21,6 +21,7 @@ import (
 	orderdto "go_wp/internal/module/order/dto"
 	orderenums "go_wp/internal/module/order/enums"
 	ordermodel "go_wp/internal/module/order/model"
+	webhookcontract "go_wp/internal/module/webhook/contract"
 )
 
 // PayOrder 支付落账：pending → paid。
@@ -42,6 +43,9 @@ func (s *Service) PayOrder(ctx context.Context, req *orderdto.PayOrderReq) (res 
 	now := time.Now()
 
 	res = &orderdto.PayOrderResp{}
+	// paidEvent 在事务内捕获、在事务**提交之后**派发（通知不是事务的一部分）。
+	// 只有真正发生 pending → paid 跃迁的那一次才非 nil —— 见文件末尾的幂等说明。
+	var paidEvent *OrderPaidEvent
 	err = s.orders.Transaction(ctx, func(tx *gorm.DB) error {
 		e, lerr := s.orders.LockByIDTx(ctx, tx, req.OrderID)
 		if lerr != nil {
@@ -118,10 +122,32 @@ func (s *Service) PayOrder(ctx context.Context, req *orderdto.PayOrderReq) (res 
 		}
 		res.ID, res.OrderNo, res.Status = e.ID, e.OrderNo, ordermodel.OrderStatusPaid
 		res.TransactionID = txnID
+		paidEvent = &OrderPaidEvent{
+			OrderID:       e.ID,
+			OrderNo:       e.OrderNo,
+			Status:        ordermodel.OrderStatusPaid,
+			Currency:      e.Currency,
+			Total:         e.Total,
+			Subtotal:      e.Subtotal,
+			DiscountTotal: e.DiscountTotal,
+			ShippingTotal: e.ShippingTotal,
+			TaxTotal:      e.TaxTotal,
+			PaymentMethod: method,
+			TransactionID: txnID,
+			PaidAt:        now,
+		}
 		return nil
 	})
 	if err != nil {
 		return nil, err
+	}
+	// 对外通知（best-effort）：事务已提交才派发，失败只记日志。
+	//
+	// **只有真正发生状态跃迁的那一次才派发**：上面三个幂等分支（重复的网关回调、
+	// 用户双击、上层重试）若也通知，对端会重复发货、重复记账 ——
+	// 那已经不是「通知」而是事故。这正是把 paidEvent 留在跃迁分支里赋值的原因。
+	if paidEvent != nil {
+		s.dispatchEvent(ctx, webhookcontract.EventOrderPaid, paidEvent)
 	}
 	return res, nil
 }

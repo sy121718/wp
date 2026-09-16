@@ -47,6 +47,7 @@ func TestWiringPortConstantsMatchManifest(t *testing.T) {
 	constants := []string{
 		portContentCollectionSource, portProductCollectionSource,
 		portProductContentStore, portContentContentStore, portMailCipherSecret,
+		portWebhookCipherSecret, portWebhookDispatcher,
 		portProductInventoryService, portProductInventoryModel, portInventoryVariantCost,
 		portProductMasterDataChanges, portInventoryMasterDataChanges, portProductAvailability,
 		portProductArchiveEnsurer, portProductPublishedLocator, portProductFragmentCacheBumper,

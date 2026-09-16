@@ -48,7 +48,18 @@ func TestBlocksIDMigrationRewritesAllBlockRefs(t *testing.T) {
 	)
 	support.SeedProjectRow(t, db, projectID, "迁移 209 用例站点")
 
-	// 造「映射已分配」的状态：映射表由迁移 209 建出（迁移已跑过），这里只补两行。
+	// 自建映射表：它由迁移 209 建出、由迁移 211 删除（映射一次性用掉，留着一张永远为空、
+	// 没人查的表只会让人以为存在「按旧 id 反查」的能力）。本用例验证的是 209 的**重写逻辑**，
+	// 不是这张表的持久存在 —— 所以在这里按 209 的 DDL 建一次。
+	// 依赖「迁移跑完还留着它」会让用例与 211 的清理动作互相锁死：删表就必须改测试。
+	if err := db.Exec(`CREATE TABLE IF NOT EXISTS block_id_uuid_map (
+		old_id    bigint PRIMARY KEY,
+		new_id    uuid NOT NULL UNIQUE,
+		mapped_at timestamptz NOT NULL DEFAULT now()
+	)`).Error; err != nil {
+		t.Fatalf("建映射表失败: %v", err)
+	}
+	// 造「映射已分配」的状态。
 	if err := db.Exec(
 		"INSERT INTO block_id_uuid_map (old_id, new_id) VALUES (?::bigint, ?::uuid), (?::bigint, ?::uuid)",
 		oldID1, newID1, oldID2, newID2,

@@ -7,6 +7,7 @@ package webhookmodel
 
 import (
 	"context"
+	"time"
 
 	"gorm.io/gorm"
 )
@@ -22,8 +23,9 @@ type WebhookEndpointEntity struct {
 	SecretCipher string `gorm:"column:secret_cipher;size:512;not null"`
 	Description  string `gorm:"column:description;size:512"`
 	Status       int    `gorm:"column:status;not null;default:1;index"`
-	CreatedAt    int64  `gorm:"column:create_time;not null"`
-	UpdatedAt    int64  `gorm:"column:update_time;not null"`
+	// 时间列与全库口径一致：timestamptz + time.Time（迁移 212 把建表时的 bigint 秒改过来）。
+	CreatedAt time.Time `gorm:"column:create_time;not null"`
+	UpdatedAt time.Time `gorm:"column:update_time;not null"`
 }
 
 // TableName 表名。
@@ -39,8 +41,9 @@ type WebhookDeliveryEntity struct {
 	Attempts       int    `gorm:"column:attempts;not null;default:0"`
 	ResponseStatus int    `gorm:"column:response_status"`
 	LastError      string `gorm:"column:last_error;size:1024"`
-	CreatedAt      int64  `gorm:"column:create_time;not null"`
-	UpdatedAt      int64  `gorm:"column:update_time;not null"`
+	// 时间列同 webhook_endpoints：timestamptz + time.Time。
+	CreatedAt time.Time `gorm:"column:create_time;not null"`
+	UpdatedAt time.Time `gorm:"column:update_time;not null"`
 }
 
 // TableName 表名。
@@ -109,4 +112,46 @@ func (m *WebhookModel) GetDelivery(ctx context.Context, id uint64) (e *WebhookDe
 // UpdateDeliveryResult 回写投递结果。
 func (m *WebhookModel) UpdateDeliveryResult(ctx context.Context, id uint64, fields map[string]any) error {
 	return m.tx(ctx).Model(&WebhookDeliveryEntity{}).Where("id = ?", id).Updates(fields).Error
+}
+
+// deliveryFilter 投递日志的查询条件（零值即不筛选）。
+//
+// 放在 model 而不是 dto：它是持久化层的 WHERE 形状，不是对外协议 ——
+// dto 改字段名不该牵动这里，反之亦然。
+type deliveryFilter struct {
+	EndpointID uint64
+	EventType  string
+	Status     string
+}
+
+// apply 把非零条件挂到查询上。
+func (f deliveryFilter) apply(q *gorm.DB) *gorm.DB {
+	if f.EndpointID != 0 {
+		q = q.Where("endpoint_id = ?", f.EndpointID)
+	}
+	if f.EventType != "" {
+		q = q.Where("event_type = ?", f.EventType)
+	}
+	if f.Status != "" {
+		q = q.Where("status = ?", f.Status)
+	}
+	return q
+}
+
+// ListDeliveries 按条件分页列出投递日志，最新的在前。
+//
+// 排序加 id 兜底：一次 DispatchEvent 产生的多条投递 create_time 是同一个 now()，
+// 只按时间排序在分页边界上会重复或漏行。
+func (m *WebhookModel) ListDeliveries(ctx context.Context, endpointID uint64, eventType, status string, offset, limit int) (list []*WebhookDeliveryEntity, err error) {
+	f := deliveryFilter{EndpointID: endpointID, EventType: eventType, Status: status}
+	err = f.apply(m.tx(ctx).Model(&WebhookDeliveryEntity{})).
+		Order("create_time DESC, id DESC").Offset(offset).Limit(limit).Find(&list).Error
+	return list, err
+}
+
+// CountDeliveries 按同一条件计数（分页用；条件口径必须与 ListDeliveries 一致）。
+func (m *WebhookModel) CountDeliveries(ctx context.Context, endpointID uint64, eventType, status string) (n int64, err error) {
+	f := deliveryFilter{EndpointID: endpointID, EventType: eventType, Status: status}
+	err = f.apply(m.tx(ctx).Model(&WebhookDeliveryEntity{})).Count(&n).Error
+	return n, err
 }

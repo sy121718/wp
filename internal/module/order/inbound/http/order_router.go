@@ -13,6 +13,7 @@ import (
 	orderservice "go_wp/internal/module/order/service"
 	productcontract "go_wp/internal/module/product/contract"
 	usercontract "go_wp/internal/module/user/contract"
+	webhookcontract "go_wp/internal/module/webhook/contract"
 )
 
 // SetupOrderRoutes 装配订单模块路由，返回模块契约。
@@ -25,6 +26,9 @@ func SetupOrderRoutes(
 	product productcontract.VariantSnapshotPort,
 	stock ordercontract.StockOperator,
 	guest usercontract.GuestAccountProvisioner,
+	// webhooks 外部集成派发口（OSS-006）：支付落账后向登记的端点派发 order.paid。
+	// 只取 DispatchEvent 一条能力（收窄端口），订单看不到端点配置与投递日志。
+	webhooks webhookcontract.Dispatcher,
 ) ordercontract.OrderService {
 	svc := orderservice.NewService(
 		ordermodel.NewOrderModel(db),
@@ -38,6 +42,7 @@ func SetupOrderRoutes(
 		product,
 		stock,
 		guest,
+		webhooks,
 	)
 	h := NewHandle(svc)
 	// 待付款超时自动取消（TX-001）：进程内定时扫描，失败不阻断启动。

@@ -407,9 +407,55 @@ func registerAnalyticsSeoAndPermissions() {
 	register(Migration{
 		Version:   "210-pg-trgm-shared-schema",
 		TableName: "ext_shared",
-		CheckSQL: "SELECT CASE WHEN to_regnamespace(?) IS NOT NULL AND EXISTS (" +
-			"SELECT 1 FROM pg_extension WHERE extname = 'pg_trgm' AND extnamespace = 'ext_shared'::regnamespace) " +
-			"THEN 1 ELSE 0 END",
+		// 判定按「pg_trgm 装在 ext_shared」—— 用 nspname 文本比较，**不要**写成
+		// extnamespace = 'ext_shared'::regnamespace：那个强转在 ext_shared 还不存在的库上
+		// 直接抛 3F000（schema does not exist），而这条迁移要处理的正是那些库
+		// （wp 库的 pg_trgm 在 public、ext_shared 尚未建）。AND/EXISTS 不保证短路，
+		// 把强转塞进子查询同理。TableName 仍传 ext_shared，但 CheckSQL 里没有 ? 占位符。
+		CheckSQL: "SELECT CASE WHEN EXISTS (SELECT 1 FROM pg_extension e " +
+			"JOIN pg_namespace n ON n.oid = e.extnamespace " +
+			"WHERE e.extname = 'pg_trgm' AND n.nspname = 'ext_shared') THEN 1 ELSE 0 END",
 		SQL: mustSQL("210_pg_trgm_shared_schema.sql"),
+	})
+
+	// 211：删除 209 遗留的区块 id 映射表。
+	// 209 的判定按「blocks.id 已是 uuid」，不读这张表 —— 删掉不会让 209 重跑。
+	// 判定按「表已不存在」：默认判定（表存在）会让这条迁移永不被视为完成。
+	register(Migration{
+		Version:   "211-drop-block-id-uuid-map",
+		TableName: "block_id_uuid_map",
+		CheckSQL:  "SELECT CASE WHEN to_regclass(?) IS NULL THEN 1 ELSE 0 END",
+		SQL:       mustSQL("211_drop_block_id_uuid_map.sql"),
+	})
+
+	// 212：webhook 两张表的时间列 bigint → timestamptz（DB-019 尾账）。
+	// 205 只改列名不改类型，这两张表因此成为全库唯一的 bigint 时间列。
+	// 判定按「四列都已是 timestamptz」，且 SQL 内按列类型二次判定 —— 见文件注释。
+	register(Migration{
+		Version:   "212-webhook-time-columns",
+		TableName: "webhook_endpoints",
+		CheckSQL: "SELECT CASE WHEN COUNT(*) = 4 THEN 1 ELSE 0 END FROM information_schema.columns " +
+			"WHERE table_schema = current_schema() AND table_name IN ('webhook_endpoints', 'webhook_deliveries') " +
+			"AND column_name IN ('create_time', 'update_time') AND data_type = 'timestamp with time zone'",
+		SQL: mustSQL("212_webhook_time_columns.sql"),
+	})
+
+	// 213：webhook 权限点与超管策略（模块接线）。
+	// 判定要求 6 个权限点全在 —— 用 LIKE 计数的写法在「只 seed 了一半」时
+	// 也会返回非零而被判完成，权限点缺一条就是 403。
+	registerSeed(Seed{
+		Version:      "213-webhook-permissions",
+		TableName:    "sys_permission",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) = 6 THEN 1 ELSE 0 END FROM sys_permission WHERE permission_code LIKE 'webhook:%'",
+		SQL:          mustSQL("213_webhook_permissions.sql"),
+	})
+
+	// 214：补齐 check-permission-gaps.sh 审出的 5 条缺口（build / publication / order）。
+	// 缺权限点的接口对内**含超管**一律 403，属静默坏掉的后台功能。
+	registerSeed(Seed{
+		Version:      "214-missing-permission-points-2",
+		TableName:    "sys_permission",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) = 5 THEN 1 ELSE 0 END FROM sys_permission WHERE permission_code IN ('build:jobs', 'build:queue', 'build:retry', 'publication:seo_audit', 'order:coupon_count_audit')",
+		SQL:          mustSQL("214_missing_permission_points_2.sql"),
 	})
 }
