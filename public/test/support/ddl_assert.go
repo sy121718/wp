@@ -38,8 +38,15 @@ func ModelColumns(t *testing.T, dest any) map[string]string {
 func DDLColumns(t *testing.T, db *gorm.DB, table string) map[string]bool {
 	t.Helper()
 	var names []string
-	if err := db.Raw(`SELECT column_name FROM information_schema.columns
-		WHERE table_schema = current_schema() AND table_name = ?`, table).Scan(&names).Error; err != nil {
+	// 走 pg_catalog 而不是 information_schema.columns：后者是多重 join 的视图，无法下推
+	// table_schema / table_name 谓词，实测单次约 270ms 且随库里表数增长，而这条断言每个
+	// 用例都要跑一次（admin 单元测试 116 个用例就是 31s）。语义一致：information_schema
+	// 同样只列出非系统列、非已删除列。
+	if err := db.Raw(`SELECT a.attname FROM pg_attribute a
+		JOIN pg_class c ON c.oid = a.attrelid
+		WHERE c.relnamespace = current_schema()::regnamespace
+		  AND c.relname = ? AND a.attnum > 0 AND NOT a.attisdropped
+		ORDER BY a.attnum`, table).Scan(&names).Error; err != nil {
 		t.Fatalf("读取 %s 列失败: %v", table, err)
 	}
 	if len(names) == 0 {

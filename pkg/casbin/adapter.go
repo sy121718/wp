@@ -53,23 +53,39 @@ func NewAdapter(db *gorm.DB) (*Adapter, error) {
 	return a, nil
 }
 
-// createTable 确保策略表存在：AutoMigrate 建表，并补建 ptype+v0..v5 唯一索引。
+// createTable 确保策略表存在：表缺失才 AutoMigrate 建表，索引缺失才补建。
+//
+// 不做无条件 AutoMigrate：它对 information_schema 连做两次昂贵 join（实测单次约 400ms，
+// 且随库里表数增长 —— 该视图无法下推 schema / 表名谓词），而策略表在生产与测试里都由迁移
+// 建立，每次初始化都全扫一遍元数据纯属浪费（admin 单元测试 116 个用例各初始化一次 = 93s）。
+// 存在性检查改走 to_regclass、索引检查改走 pg_class，都是亚毫秒级。
 func (a *Adapter) createTable() error {
 	rule := &CasbinRule{}
-	if err := a.db.AutoMigrate(rule); err != nil {
+	var tableExists bool
+	if err := a.db.Raw("SELECT to_regclass(?) IS NOT NULL", casbinRuleTable).Scan(&tableExists).Error; err != nil {
 		return err
 	}
-	indexName := "idx_" + casbinRuleTable
-	hasIndex := a.db.Migrator().HasIndex(rule, indexName)
-	if !hasIndex {
-		if err := a.db.Exec(fmt.Sprintf(
-			"CREATE UNIQUE INDEX IF NOT EXISTS %s ON %s (ptype,v0,v1,v2,v3,v4,v5)",
-			indexName, casbinRuleTable,
-		)).Error; err != nil {
+	if !tableExists {
+		if err := a.db.AutoMigrate(rule); err != nil {
 			return err
 		}
 	}
-	return nil
+
+	indexName := "idx_" + casbinRuleTable
+	var indexExists bool
+	if err := a.db.Raw(`SELECT EXISTS (
+		SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+		WHERE c.relkind = 'i' AND c.relname = ? AND n.nspname = current_schema())`,
+		indexName).Scan(&indexExists).Error; err != nil {
+		return err
+	}
+	if indexExists {
+		return nil
+	}
+	return a.db.Exec(fmt.Sprintf(
+		"CREATE UNIQUE INDEX IF NOT EXISTS %s ON %s (ptype,v0,v1,v2,v3,v4,v5)",
+		indexName, casbinRuleTable,
+	)).Error
 }
 
 // ruleToPolicyArray 把一行策略转成 policy 数组，去掉尾部空字段。
