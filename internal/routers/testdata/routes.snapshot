@@ -178,6 +178,7 @@ GET /api/role/list
 GET /api/role/menu/list
 GET /api/role/user/list
 GET /api/theme/active
+GET /api/theme/export
 GET /api/theme/list
 GET /api/webhook/delivery/list
 GET /api/webhook/endpoint/list
@@ -482,6 +483,7 @@ POST /api/role/user/save
 POST /api/theme/activate
 POST /api/theme/create
 POST /api/theme/delete
+POST /api/theme/import
 POST /api/theme/update
 POST /api/webhook/delivery/retry
 POST /api/webhook/endpoint/delete

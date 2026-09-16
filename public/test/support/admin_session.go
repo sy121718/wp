@@ -133,6 +133,17 @@ func SeedTestAdmin(t *testing.T, db *gorm.DB, username, password string) error {
 		FirstOrCreate(&entity).Error; err != nil {
 		return fmt.Errorf("写入测试管理员失败: %w", err)
 	}
+
+	// 上面显式指定了主键 id = 1：BIGSERIAL 的序列不会因此推进，之后任何走 nextval 的插入
+	// 仍会拿到 1 并撞 sys_admin_pkey。真实触发过：030a 默认超管 seed（对测试库跑 RunSeeds 时）
+	// 报 duplicate key value violates unique constraint "sys_admin_pkey" —— 而生产全新库里
+	// 序列是干净的，只有这种「先手工插固定 id、再跑 seed」的测试序才会踩到。
+	// 把序列对齐到当前最大值，让后续插入从 max+1 开始。
+	if err := db.Exec(
+		"SELECT setval(pg_get_serial_sequence('sys_admin', 'id'), COALESCE((SELECT MAX(id) FROM sys_admin), 1))",
+	).Error; err != nil {
+		return fmt.Errorf("同步 sys_admin id 序列失败: %w", err)
+	}
 	return nil
 }
 

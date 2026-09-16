@@ -26,6 +26,7 @@ import (
 	presentationhttp "go_wp/internal/module/presentation/inbound/http"
 	productcontract "go_wp/internal/module/product/contract"
 	projectcontract "go_wp/internal/module/project/contract"
+	projectservice "go_wp/internal/module/project/service"
 	runtimefragment "go_wp/internal/module/runtimefragment"
 	userhttp "go_wp/internal/module/user/inbound/http"
 	"go_wp/internal/partition"
@@ -173,6 +174,19 @@ func (a *assembly) wirePublishingPorts() {
 	}
 	projectService.SetLocaleRetirePort(retire)
 	marks.mark(portProjectLocaleRetire)
+	// 主题包资产端口（审计 VIS-014）：主题导出要读**跨模块**的块与页面，而 project 模块
+	// 不认识 block/page 的任何包 —— 能力经适配器注入（适配层在 project 侧，依赖方向是
+	// 「实现方依赖调用方契约」，与 orderstock 同一手法）。未注入时导出/导入返回 503
+	// ErrThemeBundlePortUnavailable：明确拒绝并说明「端口未装配」，而不是静默降级成只导令牌。
+	// 注入点定义在具体 service 上而不是 projectcontract.ProjectService：它是**装配期 setter**，
+	// 不属于运行时契约（契约只放消费方调用的业务能力）。与库存那条（SetInventoryService）、
+	// 商品那条（SetAvailabilityPort）同一手法：断言具体类型，拿不到就是装配缺陷，当场炸掉。
+	projectConcrete, projectOK := projectService.(*projectservice.Service)
+	if !projectOK {
+		panic("project 模块装配返回的不是具体 service（无法注入主题包资产端口）")
+	}
+	projectConcrete.SetThemeBundleAssetPort(projectservice.NewThemeBundleAssetPort(a.blockSvc, pageService))
+	marks.mark(portProjectThemeBundleAssets)
 	// 产物磁盘对账的属主清单（IDX-015）：自动发布实例与手工页面共用同一个 artifacts 根，
 	// 反向对账必须同时问两个模块「这些磁盘目录是不是你产出的」。漏接的后果不是报错而是
 	// **误报**：实例产物全被列成孤儿，一份看不出真假的对账结果比没有对账更糟。
