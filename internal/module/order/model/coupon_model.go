@@ -136,9 +136,24 @@ func (m *CouponModel) Create(ctx context.Context, e *CouponEntity) (err error) {
 }
 
 // GetByID 按主键取；不存在返回 (nil, nil)，由 service 决定报什么错。
-func (m *CouponModel) GetByID(ctx context.Context, id uint64) (e *CouponEntity, err error) {
+//
+// projectID 非空时在工程作用域内查（DB-009 第二批）：coupons 带 FORCE 策略，
+// 无作用域的按 id 直查在非超级角色下返回 (nil, nil) —— 表现为「优惠码不存在」，
+// 是功能回归。调用方拿到工程时要传下来。
+func (m *CouponModel) GetByID(ctx context.Context, projectID string, id uint64) (e *CouponEntity, err error) {
 	e = &CouponEntity{}
-	if err = m.DB(ctx).Where("id = ?", id).First(e).Error; err != nil {
+	if strings.TrimSpace(projectID) == "" {
+		if err = m.DB(ctx).Where("id = ?", id).First(e).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil, nil
+			}
+			return nil, err
+		}
+		return e, nil
+	}
+	if err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.Model(&CouponEntity{}).Where("id = ? AND project_id = ?", id, projectID).First(e).Error
+	}); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
 		}
@@ -162,11 +177,22 @@ func (m *CouponModel) GetByCode(ctx context.Context, projectID string, code stri
 }
 
 // LockByIDTx 事务内按主键加行锁取券（核销路径用）。
-func (m *CouponModel) LockByIDTx(ctx context.Context, tx *gorm.DB, id uint64) (e *CouponEntity, err error) {
+// projectID 非空时把作用域设进调用方的事务并在 SQL 里带工程条件
+// （核销路径的加锁读，换角色后无作用域会返回 (nil, nil) → 「优惠码不存在」，DB-009 第二批）。
+func (m *CouponModel) LockByIDTx(ctx context.Context, tx *gorm.DB, projectID string, id uint64) (e *CouponEntity, err error) {
+	if strings.TrimSpace(projectID) != "" {
+		if serr := rls.ScopeTx(tx, projectID); serr != nil {
+			return nil, serr
+		}
+	}
 	e = &CouponEntity{}
-	if err = tx.WithContext(ctx).Model(&CouponEntity{}).
+	q := tx.WithContext(ctx).Model(&CouponEntity{}).
 		Clauses(clause.Locking{Strength: "UPDATE"}).
-		Where("id = ?", id).First(e).Error; err != nil {
+		Where("id = ?", id)
+	if strings.TrimSpace(projectID) != "" {
+		q = q.Where("project_id = ?", projectID)
+	}
+	if err = q.First(e).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
 		}
@@ -219,13 +245,24 @@ func (m *CouponModel) listLocked(tx *gorm.DB, f CouponFilter, list *[]*CouponEnt
 }
 
 // UpdateFields 更新指定列（可改列由 service 决定，model 不写死业务规则）。
-func (m *CouponModel) UpdateFields(ctx context.Context, id uint64, fields map[string]any) (err error) {
-	return m.DB(ctx).Where("id = ?", id).Updates(fields).Error
+// projectID 非空时在工程作用域内写（越界写被 WITH CHECK 拒绝，而不是静默改到别的工程）。
+func (m *CouponModel) UpdateFields(ctx context.Context, projectID string, id uint64, fields map[string]any) (err error) {
+	if strings.TrimSpace(projectID) == "" {
+		return m.DB(ctx).Where("id = ?", id).Updates(fields).Error
+	}
+	return rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.Model(&CouponEntity{}).Where("id = ? AND project_id = ?", id, projectID).Updates(fields).Error
+	})
 }
 
 // Delete 删除优惠码（是否允许删由 service 判断：有核销记录的不许删）。
-func (m *CouponModel) Delete(ctx context.Context, id uint64) (err error) {
-	return m.DB(ctx).Where("id = ?", id).Delete(&CouponEntity{}).Error
+func (m *CouponModel) Delete(ctx context.Context, projectID string, id uint64) (err error) {
+	if strings.TrimSpace(projectID) == "" {
+		return m.DB(ctx).Where("id = ?", id).Delete(&CouponEntity{}).Error
+	}
+	return rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.Model(&CouponEntity{}).Where("id = ? AND project_id = ?", id, projectID).Delete(&CouponEntity{}).Error
+	})
 }
 
 // CountRedemptions 统计核销条数；userID 非 nil 时只数该用户的。

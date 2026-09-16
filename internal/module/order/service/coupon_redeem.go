@@ -28,7 +28,7 @@ func (s *Service) redeemCouponTx(ctx context.Context, tx *gorm.DB, e *ordermodel
 	if e == nil {
 		return nil
 	}
-	locked, lerr := s.coupons.LockByIDTx(ctx, tx, e.ID)
+	locked, lerr := s.coupons.LockByIDTx(ctx, tx, e.ProjectID, e.ID)
 	if lerr != nil {
 		return lerr
 	}

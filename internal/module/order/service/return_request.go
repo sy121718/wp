@@ -97,7 +97,7 @@ func (s *Service) RequestReturn(ctx context.Context, req *orderdto.ReturnRequest
 		}
 	}
 
-	order, oerr := s.orders.GetByID(ctx, req.OrderID, "")
+	order, oerr := s.orders.GetByID(ctx, req.OrderID, projectID)
 	if oerr != nil {
 		return nil, oerr
 	}
@@ -153,7 +153,7 @@ func (s *Service) RequestReturn(ctx context.Context, req *orderdto.ReturnRequest
 	var returnable map[uint64]int
 
 	err = s.returns.Transaction(ctx, func(tx *gorm.DB) error {
-		locked, lerr := s.orders.LockByIDTx(ctx, tx, order.ID)
+		locked, lerr := s.orders.LockByIDTx(ctx, tx, order.ProjectID, order.ID)
 		if lerr != nil {
 			return lerr
 		}
@@ -223,7 +223,7 @@ func (s *Service) CancelReturn(ctx context.Context, req *orderdto.ReturnCancelRe
 	}
 	now := time.Now()
 	return s.returns.Transaction(ctx, func(tx *gorm.DB) error {
-		e, lerr := s.returns.LockByIDTx(ctx, tx, req.ReturnID)
+		e, lerr := s.returns.LockByIDTx(ctx, tx, "", req.ReturnID)
 		if lerr != nil {
 			return lerr
 		}
@@ -235,7 +235,7 @@ func (s *Service) CancelReturn(ctx context.Context, req *orderdto.ReturnCancelRe
 			// 已同意的申请不能自己撤：仓库可能已经在收货了。
 			return errors.New(orderenums.ErrReturnNotCancellable)
 		}
-		return s.returns.UpdateFieldsTx(ctx, tx, e.ID, map[string]any{
+		return s.returns.UpdateFieldsTx(ctx, tx, e.ProjectID, e.ID, map[string]any{
 			"status":      ordermodel.ReturnStatusCancelled,
 			"admin_note":  strings.TrimSpace(req.Reason),
 			"update_time": now,

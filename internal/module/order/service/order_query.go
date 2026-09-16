@@ -162,7 +162,7 @@ func (s *Service) GetVisitorOrder(ctx context.Context, req *orderdto.VisitorOrde
 	if req == nil || req.OrderID == 0 || req.UserID == 0 {
 		return nil, errors.New(orderenums.ErrInvalidParam)
 	}
-	head, err := s.orders.GetByIDForUser(ctx, req.OrderID, req.UserID)
+	head, err := s.orders.GetByIDForUser(ctx, req.ProjectID, req.OrderID, req.UserID)
 	if err != nil {
 		return nil, err
 	}

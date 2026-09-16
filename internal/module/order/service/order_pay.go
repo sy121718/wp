@@ -47,7 +47,7 @@ func (s *Service) PayOrder(ctx context.Context, req *orderdto.PayOrderReq) (res 
 	// 只有真正发生 pending → paid 跃迁的那一次才非 nil —— 见文件末尾的幂等说明。
 	var paidEvent *OrderPaidEvent
 	err = s.orders.Transaction(ctx, func(tx *gorm.DB) error {
-		e, lerr := s.orders.LockByIDTx(ctx, tx, req.OrderID)
+		e, lerr := s.orders.LockByIDTx(ctx, tx, "", req.OrderID)
 		if lerr != nil {
 			return lerr
 		}
@@ -105,7 +105,7 @@ func (s *Service) PayOrder(ctx context.Context, req *orderdto.PayOrderReq) (res 
 		if txnID != "" {
 			fields["transaction_id"] = txnID
 		}
-		if uerr := s.orders.UpdateFieldsTx(ctx, tx, e.ID, fields); uerr != nil {
+		if uerr := s.orders.UpdateFieldsTx(ctx, tx, e.ProjectID, e.ID, fields); uerr != nil {
 			return uerr
 		}
 		if cerr := s.logs.CreateTx(ctx, tx, &ordermodel.OrderStatusLogEntity{

@@ -143,9 +143,22 @@ func (m *ReturnModel) CreateItemsTx(ctx context.Context, tx *gorm.DB, items []*R
 }
 
 // GetByID 按主键取；不存在返回 (nil, nil)。
-func (m *ReturnModel) GetByID(ctx context.Context, id uint64) (e *ReturnEntity, err error) {
+// projectID 非空时在工程作用域内查（DB-009 第二批）：order_returns 带 FORCE 策略，
+// 无作用域的按 id 直查在非超级角色下返回 (nil, nil) —— 表现为「退货单不存在」。
+func (m *ReturnModel) GetByID(ctx context.Context, projectID string, id uint64) (e *ReturnEntity, err error) {
 	e = &ReturnEntity{}
-	if err = m.DB(ctx).Where("id = ?", id).First(e).Error; err != nil {
+	if strings.TrimSpace(projectID) == "" {
+		if err = m.DB(ctx).Where("id = ?", id).First(e).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil, nil
+			}
+			return nil, err
+		}
+		return e, nil
+	}
+	if err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.Model(&ReturnEntity{}).Where("id = ? AND project_id = ?", id, projectID).First(e).Error
+	}); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
 		}
@@ -158,11 +171,21 @@ func (m *ReturnModel) GetByID(ctx context.Context, id uint64) (e *ReturnEntity, 
 //
 // 审核与收货都必须串行：并发两次「确认收货」若都读到 approved，就会都去入库 ——
 // 而入库没有幂等键，结果是同一批货被加了两遍。
-func (m *ReturnModel) LockByIDTx(ctx context.Context, tx *gorm.DB, id uint64) (e *ReturnEntity, err error) {
+// projectID 非空时把作用域设进调用方的事务并在 SQL 里带工程条件（DB-009 第二批）。
+func (m *ReturnModel) LockByIDTx(ctx context.Context, tx *gorm.DB, projectID string, id uint64) (e *ReturnEntity, err error) {
+	if strings.TrimSpace(projectID) != "" {
+		if serr := rls.ScopeTx(tx, projectID); serr != nil {
+			return nil, serr
+		}
+	}
 	e = &ReturnEntity{}
-	if err = tx.WithContext(ctx).Model(&ReturnEntity{}).
+	q := tx.WithContext(ctx).Model(&ReturnEntity{}).
 		Clauses(clause.Locking{Strength: "UPDATE"}).
-		Where("id = ?", id).First(e).Error; err != nil {
+		Where("id = ?", id)
+	if strings.TrimSpace(projectID) != "" {
+		q = q.Where("project_id = ?", projectID)
+	}
+	if err = q.First(e).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
 		}
@@ -241,9 +264,18 @@ func (m *ReturnModel) CountByStatus(ctx context.Context, projectID string) (coun
 	return counts, nil
 }
 
-// UpdateFieldsTx 事务内更新指定列。
-func (m *ReturnModel) UpdateFieldsTx(ctx context.Context, tx *gorm.DB, id uint64, fields map[string]any) (err error) {
-	return tx.WithContext(ctx).Model(&ReturnEntity{}).Where("id = ?", id).Updates(fields).Error
+// UpdateFieldsTx 事务内更新指定列（作用域设进调用方的事务，不另开）。
+func (m *ReturnModel) UpdateFieldsTx(ctx context.Context, tx *gorm.DB, projectID string, id uint64, fields map[string]any) (err error) {
+	if strings.TrimSpace(projectID) != "" {
+		if serr := rls.ScopeTx(tx, projectID); serr != nil {
+			return serr
+		}
+	}
+	q := tx.WithContext(ctx).Model(&ReturnEntity{}).Where("id = ?", id)
+	if strings.TrimSpace(projectID) != "" {
+		q = q.Where("project_id = ?", projectID)
+	}
+	return q.Updates(fields).Error
 }
 
 // ItemsByReturnID 某退货单的明细。

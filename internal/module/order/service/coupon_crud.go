@@ -81,7 +81,8 @@ func (s *Service) UpdateCoupon(ctx context.Context, req *orderdto.CouponSaveReq)
 	if req == nil || req.ID == 0 {
 		return nil, errors.New(orderenums.ErrInvalidParam)
 	}
-	existing, err := s.coupons.GetByID(ctx, req.ID)
+	// 定位跳（请求只给 id）无工程可用；拿到实体后的写与回读全部带工程作用域。
+	existing, err := s.coupons.GetByID(ctx, "", req.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -126,10 +127,10 @@ func (s *Service) UpdateCoupon(ctx context.Context, req *orderdto.CouponSaveReq)
 		"update_by":      req.OperatorID,
 		"update_time":    now,
 	}
-	if uerr := s.coupons.UpdateFields(ctx, next.ID, fields); uerr != nil {
+	if uerr := s.coupons.UpdateFields(ctx, next.ProjectID, next.ID, fields); uerr != nil {
 		return nil, uerr
 	}
-	updated, err := s.coupons.GetByID(ctx, next.ID)
+	updated, err := s.coupons.GetByID(ctx, next.ProjectID, next.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -144,7 +145,7 @@ func (s *Service) GetCoupon(ctx context.Context, couponID uint64) (res *orderdto
 	if couponID == 0 {
 		return nil, errors.New(orderenums.ErrInvalidParam)
 	}
-	e, err := s.coupons.GetByID(ctx, couponID)
+	e, err := s.coupons.GetByID(ctx, "", couponID)
 	if err != nil {
 		return nil, err
 	}
@@ -200,7 +201,7 @@ func (s *Service) DeleteCoupon(ctx context.Context, couponID uint64) (err error)
 	if couponID == 0 {
 		return errors.New(orderenums.ErrInvalidParam)
 	}
-	e, err := s.coupons.GetByID(ctx, couponID)
+	e, err := s.coupons.GetByID(ctx, "", couponID)
 	if err != nil {
 		return err
 	}
@@ -214,7 +215,8 @@ func (s *Service) DeleteCoupon(ctx context.Context, couponID uint64) (err error)
 	if used > 0 {
 		return errors.New(orderenums.ErrCouponInUse)
 	}
-	return s.coupons.Delete(ctx, couponID)
+	// 删除带工程作用域：越界删在换角色后会被策略拒绝，而不是删掉别的工程的券。
+	return s.coupons.Delete(ctx, e.ProjectID, couponID)
 }
 
 // ListCouponRedemptions 核销记录列表。

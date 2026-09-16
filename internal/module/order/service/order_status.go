@@ -92,7 +92,7 @@ func (s *Service) ChangeStatus(ctx context.Context, req *orderdto.ChangeStatusRe
 
 	now := time.Now()
 	return s.orders.Transaction(ctx, func(tx *gorm.DB) error {
-		e, lerr := s.orders.LockByIDTx(ctx, tx, req.OrderID)
+		e, lerr := s.orders.LockByIDTx(ctx, tx, "", req.OrderID)
 		if lerr != nil {
 			return lerr
 		}
@@ -112,7 +112,7 @@ func (s *Service) ChangeStatus(ctx context.Context, req *orderdto.ChangeStatusRe
 		case ordermodel.OrderStatusShipped:
 			fields["completed_at"] = nil
 		}
-		if uerr := s.orders.UpdateFieldsTx(ctx, tx, e.ID, fields); uerr != nil {
+		if uerr := s.orders.UpdateFieldsTx(ctx, tx, e.ProjectID, e.ID, fields); uerr != nil {
 			return uerr
 		}
 		return s.logs.CreateTx(ctx, tx, &ordermodel.OrderStatusLogEntity{
@@ -145,7 +145,7 @@ func (s *Service) CancelOrder(ctx context.Context, req *orderdto.CancelOrderReq)
 	now := time.Now()
 	var orderNo, projectID string
 	err = s.orders.Transaction(ctx, func(tx *gorm.DB) error {
-		e, lerr := s.orders.LockByIDTx(ctx, tx, req.OrderID)
+		e, lerr := s.orders.LockByIDTx(ctx, tx, "", req.OrderID)
 		if lerr != nil {
 			return lerr
 		}
@@ -156,7 +156,7 @@ func (s *Service) CancelOrder(ctx context.Context, req *orderdto.CancelOrderReq)
 			return errors.New(transitionError(e.Status, ordermodel.OrderStatusCancelled))
 		}
 		orderNo, projectID = e.OrderNo, e.ProjectID
-		if uerr := s.orders.UpdateFieldsTx(ctx, tx, e.ID, map[string]any{
+		if uerr := s.orders.UpdateFieldsTx(ctx, tx, e.ProjectID, e.ID, map[string]any{
 			"status":        ordermodel.OrderStatusCancelled,
 			"cancel_reason": reason,
 			"update_time":   now,
@@ -234,7 +234,7 @@ func (s *Service) RefundOrder(ctx context.Context, req *orderdto.RefundOrderReq)
 	}
 	now := time.Now()
 	return s.orders.Transaction(ctx, func(tx *gorm.DB) error {
-		e, lerr := s.orders.LockByIDTx(ctx, tx, req.OrderID)
+		e, lerr := s.orders.LockByIDTx(ctx, tx, "", req.OrderID)
 		if lerr != nil {
 			return lerr
 		}
@@ -248,7 +248,7 @@ func (s *Service) RefundOrder(ctx context.Context, req *orderdto.RefundOrderReq)
 		if tid := strings.TrimSpace(req.TransactionID); tid != "" {
 			fields["transaction_id"] = tid
 		}
-		if uerr := s.orders.UpdateFieldsTx(ctx, tx, e.ID, fields); uerr != nil {
+		if uerr := s.orders.UpdateFieldsTx(ctx, tx, e.ProjectID, e.ID, fields); uerr != nil {
 			return uerr
 		}
 		return s.logs.CreateTx(ctx, tx, &ordermodel.OrderStatusLogEntity{

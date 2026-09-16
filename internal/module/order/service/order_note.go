@@ -35,13 +35,13 @@ func (s *Service) UpdateOrderNote(ctx context.Context, req *orderdto.UpdateOrder
 	if head == nil {
 		return nil, errors.New(orderenums.ErrOrderNotFound)
 	}
-	if err = s.orders.UpdateFields(ctx, head.ID, map[string]any{
+	if err = s.orders.UpdateFields(ctx, head.ProjectID, head.ID, map[string]any{
 		"admin_note":  note,
 		"update_time": time.Now(),
 	}); err != nil {
 		return nil, err
 	}
-	updated, err := s.orders.GetByID(ctx, head.ID, "")
+	updated, err := s.orders.GetByID(ctx, head.ID, head.ProjectID)
 	if err != nil {
 		return nil, err
 	}

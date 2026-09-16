@@ -35,7 +35,7 @@ func (s *Service) ReturnableOfOrder(ctx context.Context, req *orderdto.VisitorOr
 		return nil, errors.New(orderenums.ErrInvalidParam)
 	}
 	// 与访客查详情同一套归属校验：别人的单在这里也同样表现为「订单不存在」。
-	order, oerr := s.orders.GetByIDForUser(ctx, req.OrderID, req.UserID)
+	order, oerr := s.orders.GetByIDForUser(ctx, req.ProjectID, req.OrderID, req.UserID)
 	if oerr != nil {
 		return nil, oerr
 	}
@@ -100,7 +100,7 @@ func (s *Service) GetReturn(ctx context.Context, returnID uint64) (res *orderdto
 	if returnID == 0 {
 		return nil, errors.New(orderenums.ErrInvalidParam)
 	}
-	e, gerr := s.returns.GetByID(ctx, returnID)
+	e, gerr := s.returns.GetByID(ctx, "", returnID)
 	if gerr != nil {
 		return nil, gerr
 	}
@@ -111,7 +111,7 @@ func (s *Service) GetReturn(ctx context.Context, returnID uint64) (res *orderdto
 	if ierr != nil {
 		return nil, ierr
 	}
-	order, oerr := s.orders.GetByID(ctx, e.OrderID, "")
+	order, oerr := s.orders.GetByID(ctx, e.OrderID, e.ProjectID)
 	if oerr != nil {
 		return nil, oerr
 	}
@@ -137,7 +137,7 @@ func (s *Service) ApproveReturn(ctx context.Context, req *orderdto.ReturnReviewR
 	}
 	now := time.Now()
 	err = s.returns.Transaction(ctx, func(tx *gorm.DB) error {
-		e, lerr := s.returns.LockByIDTx(ctx, tx, req.ReturnID)
+		e, lerr := s.returns.LockByIDTx(ctx, tx, "", req.ReturnID)
 		if lerr != nil {
 			return lerr
 		}
@@ -147,7 +147,7 @@ func (s *Service) ApproveReturn(ctx context.Context, req *orderdto.ReturnReviewR
 		if e.Status != ordermodel.ReturnStatusRequested {
 			return errors.New(orderenums.ErrReturnNotReviewable)
 		}
-		return s.returns.UpdateFieldsTx(ctx, tx, e.ID, map[string]any{
+		return s.returns.UpdateFieldsTx(ctx, tx, e.ProjectID, e.ID, map[string]any{
 			"status":        ordermodel.ReturnStatusApproved,
 			"admin_note":    strings.TrimSpace(req.Remark),
 			"reviewer_id":   req.OperatorID,
@@ -187,7 +187,7 @@ func (s *Service) RejectReturn(ctx context.Context, req *orderdto.ReturnReviewRe
 	}
 	now := time.Now()
 	err = s.returns.Transaction(ctx, func(tx *gorm.DB) error {
-		e, lerr := s.returns.LockByIDTx(ctx, tx, req.ReturnID)
+		e, lerr := s.returns.LockByIDTx(ctx, tx, "", req.ReturnID)
 		if lerr != nil {
 			return lerr
 		}
@@ -197,7 +197,7 @@ func (s *Service) RejectReturn(ctx context.Context, req *orderdto.ReturnReviewRe
 		if e.Status != ordermodel.ReturnStatusRequested {
 			return errors.New(orderenums.ErrReturnNotReviewable)
 		}
-		return s.returns.UpdateFieldsTx(ctx, tx, e.ID, map[string]any{
+		return s.returns.UpdateFieldsTx(ctx, tx, e.ProjectID, e.ID, map[string]any{
 			"status":        ordermodel.ReturnStatusRejected,
 			"admin_note":    remark,
 			"reviewer_id":   req.OperatorID,
@@ -252,7 +252,7 @@ func (s *Service) ReceiveReturn(ctx context.Context, req *orderdto.ReturnReceive
 	// ④ 收尾：置 completed 并记流水号。
 	now := time.Now()
 	err = s.returns.Transaction(ctx, func(tx *gorm.DB) error {
-		e, lerr := s.returns.LockByIDTx(ctx, tx, rt.ID)
+		e, lerr := s.returns.LockByIDTx(ctx, tx, rt.ProjectID, rt.ID)
 		if lerr != nil {
 			return lerr
 		}
@@ -273,7 +273,7 @@ func (s *Service) ReceiveReturn(ctx context.Context, req *orderdto.ReturnReceive
 		if note := strings.TrimSpace(req.Remark); note != "" {
 			fields["admin_note"] = note
 		}
-		return s.returns.UpdateFieldsTx(ctx, tx, e.ID, fields)
+		return s.returns.UpdateFieldsTx(ctx, tx, e.ProjectID, e.ID, fields)
 	})
 	if err != nil {
 		return nil, err
@@ -288,7 +288,7 @@ func (s *Service) ReceiveReturn(ctx context.Context, req *orderdto.ReturnReceive
 func (s *Service) admitReceive(ctx context.Context, returnID uint64, remark string) (rt *ordermodel.ReturnEntity, admitted bool, err error) {
 	now := time.Now()
 	err = s.returns.Transaction(ctx, func(tx *gorm.DB) error {
-		e, lerr := s.returns.LockByIDTx(ctx, tx, returnID)
+		e, lerr := s.returns.LockByIDTx(ctx, tx, "", returnID)
 		if lerr != nil {
 			return lerr
 		}
@@ -307,7 +307,7 @@ func (s *Service) admitReceive(ctx context.Context, returnID uint64, remark stri
 			if note := strings.TrimSpace(remark); note != "" {
 				fields["admin_note"] = note
 			}
-			return s.returns.UpdateFieldsTx(ctx, tx, e.ID, fields)
+			return s.returns.UpdateFieldsTx(ctx, tx, e.ProjectID, e.ID, fields)
 		case ordermodel.ReturnStatusReceived, ordermodel.ReturnStatusCompleted:
 			// 已经越过门闩：这批货的入库已经授过权（发生过或正在进行），本次不重复入库。
 			return nil
@@ -359,14 +359,14 @@ func (s *Service) stockInReturn(ctx context.Context, rt *ordermodel.ReturnEntity
 // 需要人工处理，但**留痕**必须尽力写成 —— 否则下一个操作员会以为货已经入库。
 func (s *Service) rollbackReceive(ctx context.Context, returnID uint64, cause string) error {
 	return s.returns.Transaction(ctx, func(tx *gorm.DB) error {
-		e, lerr := s.returns.LockByIDTx(ctx, tx, returnID)
+		e, lerr := s.returns.LockByIDTx(ctx, tx, "", returnID)
 		if lerr != nil || e == nil {
 			return lerr
 		}
 		if e.Status != ordermodel.ReturnStatusReceived {
 			return nil
 		}
-		return s.returns.UpdateFieldsTx(ctx, tx, e.ID, map[string]any{
+		return s.returns.UpdateFieldsTx(ctx, tx, e.ProjectID, e.ID, map[string]any{
 			"status":      ordermodel.ReturnStatusApproved,
 			"received_at": nil,
 			"admin_note":  "入库失败，需人工处理：" + cause,
@@ -384,7 +384,7 @@ func (s *Service) refundReturn(ctx context.Context, rt *ordermodel.ReturnEntity,
 	var orderStatus string
 	var full bool
 	err := s.orders.Transaction(ctx, func(tx *gorm.DB) error {
-		order, lerr := s.orders.LockByIDTx(ctx, tx, rt.OrderID)
+		order, lerr := s.orders.LockByIDTx(ctx, tx, rt.ProjectID, rt.OrderID)
 		if lerr != nil {
 			return lerr
 		}
@@ -449,7 +449,7 @@ func (s *Service) refundReturn(ctx context.Context, rt *ordermodel.ReturnEntity,
 
 // returnRespOf 取一张退货单的视图（含明细）。
 func (s *Service) returnRespOf(ctx context.Context, returnID uint64) (*orderdto.ReturnResp, error) {
-	e, err := s.returns.GetByID(ctx, returnID)
+	e, err := s.returns.GetByID(ctx, "", returnID)
 	if err != nil {
 		return nil, err
 	}

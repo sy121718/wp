@@ -189,9 +189,24 @@ func (m *OrderModel) GetByID(ctx context.Context, id uint64, projectID string) (
 // 归属条件写在 SQL 里而不是「取回来再比对」：后者的失败模式是「访客看到别人的订单」，
 // 而它只差一次调用顺序的调整。查不到与不属于本人返回同一个结果（nil），
 // 让调用方无法用响应差异探测订单是否存在。
-func (m *OrderModel) GetByIDForUser(ctx context.Context, id uint64, userID uint64) (e *OrderEntity, err error) {
+// projectID 非空时在工程作用域内查（DB-009 第二批）：orders 带 FORCE 策略，
+// 不设 app.project_id 的读取在非超级角色下会「订单不存在」——访客查自己的订单
+// 是**功能回归**而不是安全问题，所以调用方拿到工程时要传下来。
+func (m *OrderModel) GetByIDForUser(ctx context.Context, projectID string, id uint64, userID uint64) (e *OrderEntity, err error) {
 	e = &OrderEntity{}
-	if err = m.DB(ctx).Where("id = ? AND user_id = ?", id, userID).First(e).Error; err != nil {
+	if strings.TrimSpace(projectID) == "" {
+		if err = m.DB(ctx).Where("id = ? AND user_id = ?", id, userID).First(e).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil, nil
+			}
+			return nil, err
+		}
+		return e, nil
+	}
+	if err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.Model(&OrderEntity{}).
+			Where("id = ? AND user_id = ? AND project_id = ?", id, userID, projectID).First(e).Error
+	}); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
 		}
@@ -204,11 +219,23 @@ func (m *OrderModel) GetByIDForUser(ctx context.Context, id uint64, userID uint6
 //
 // 状态流转必须串行：并发的两次「发货」只应成功一次，否则会写出两条流转记录、
 // 或两次库存动作叠加。
-func (m *OrderModel) LockByIDTx(ctx context.Context, tx *gorm.DB, id uint64) (e *OrderEntity, err error) {
+// projectID 非空时把作用域设进**调用方的事务**（rls.ScopeTx）并在 SQL 里带工程条件：
+// 这是订单状态流转的入口，换角色后无作用域的加锁读会 0 行 —— 表现为「订单不存在」，
+// 是功能回归而非安全问题，所以要尽量把工程传下来（DB-009 第二批）。
+func (m *OrderModel) LockByIDTx(ctx context.Context, tx *gorm.DB, projectID string, id uint64) (e *OrderEntity, err error) {
+	if strings.TrimSpace(projectID) != "" {
+		if serr := rls.ScopeTx(tx, projectID); serr != nil {
+			return nil, serr
+		}
+	}
 	e = &OrderEntity{}
-	if err = tx.WithContext(ctx).Model(&OrderEntity{}).
+	q := tx.WithContext(ctx).Model(&OrderEntity{}).
 		Clauses(clause.Locking{Strength: "UPDATE"}).
-		Where("id = ?", id).First(e).Error; err != nil {
+		Where("id = ?", id)
+	if strings.TrimSpace(projectID) != "" {
+		q = q.Where("project_id = ?", projectID)
+	}
+	if err = q.First(e).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
 		}
@@ -290,13 +317,28 @@ func (m *OrderModel) listLocked(tx *gorm.DB, f OrderFilter, list *[]*OrderEntity
 }
 
 // UpdateFields 更新指定字段（调用方只传该改的列）。
-func (m *OrderModel) UpdateFields(ctx context.Context, id uint64, fields map[string]any) (err error) {
-	return m.DB(ctx).Where("id = ?", id).Updates(fields).Error
+// projectID 非空时在工程作用域内写：越界写会被 WITH CHECK 直接拒绝，而不是静默改到别的工程。
+func (m *OrderModel) UpdateFields(ctx context.Context, projectID string, id uint64, fields map[string]any) (err error) {
+	if strings.TrimSpace(projectID) == "" {
+		return m.DB(ctx).Where("id = ?", id).Updates(fields).Error
+	}
+	return rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.Model(&OrderEntity{}).Where("id = ? AND project_id = ?", id, projectID).Updates(fields).Error
+	})
 }
 
-// UpdateFieldsTx 事务内更新指定字段。
-func (m *OrderModel) UpdateFieldsTx(ctx context.Context, tx *gorm.DB, id uint64, fields map[string]any) (err error) {
-	return tx.WithContext(ctx).Model(&OrderEntity{}).Where("id = ?", id).Updates(fields).Error
+// UpdateFieldsTx 事务内更新指定字段（作用域设进调用方的事务，不另开）。
+func (m *OrderModel) UpdateFieldsTx(ctx context.Context, tx *gorm.DB, projectID string, id uint64, fields map[string]any) (err error) {
+	if strings.TrimSpace(projectID) != "" {
+		if serr := rls.ScopeTx(tx, projectID); serr != nil {
+			return serr
+		}
+	}
+	q := tx.WithContext(ctx).Model(&OrderEntity{}).Where("id = ?", id)
+	if strings.TrimSpace(projectID) != "" {
+		q = q.Where("project_id = ?", projectID)
+	}
+	return q.Updates(fields).Error
 }
 
 // ListPendingCreatedBefore 列出创建时间早于 cutoff 的待付款订单（超时取消扫描用）。

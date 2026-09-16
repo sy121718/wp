@@ -86,7 +86,7 @@ func (s *Service) deductStockOrCompensate(ctx context.Context, d *orderDraft) er
 	if !strings.Contains(msg, "不足") && !strings.Contains(msg, "insufficient") {
 		reason = orderenums.ErrStockUnavailable
 	}
-	_ = s.markAutoCancelled(ctx, d.head.ID, reason)
+	_ = s.markAutoCancelled(ctx, d.head.ProjectID, d.head.ID, reason)
 	return errors.New(reason)
 }
 
@@ -94,10 +94,10 @@ func (s *Service) deductStockOrCompensate(ctx context.Context, d *orderDraft) er
 //
 // 补偿本身的失败**不再向上冒**：调用方已经要拿到「库存不足」这个结论了，
 // 再叠一个补偿错误只会让原因变得看不出主次；订单留在 pending 会被后续的人工处理看到。
-func (s *Service) markAutoCancelled(ctx context.Context, orderID uint64, reason string) error {
+func (s *Service) markAutoCancelled(ctx context.Context, projectID string, orderID uint64, reason string) error {
 	now := time.Now()
 	err := s.orders.Transaction(ctx, func(tx *gorm.DB) error {
-		if uerr := s.orders.UpdateFieldsTx(ctx, tx, orderID, map[string]any{
+		if uerr := s.orders.UpdateFieldsTx(ctx, tx, projectID, orderID, map[string]any{
 			"status":        ordermodel.OrderStatusCancelled,
 			"cancel_reason": reason,
 			"update_time":   now,
