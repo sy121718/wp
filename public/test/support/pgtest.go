@@ -49,7 +49,10 @@ func pgEnv(key, fallback string) string {
 
 // pgDSN 拼装 pgx / libpq 风格 DSN。
 func pgDSN(host, port, user, password, dbname string) string {
-	return fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%s sslmode=disable TimeZone=Asia/Shanghai",
+	// synchronous_commit=off：测试数据全是用完即弃的，但每个用例都要建库、跑 DDL、灌种子，
+	// 提交路径的 WAL 刷盘是纯开销。实测全量 -p 16 从 227s 降到 181s（约 20%）。
+	// 只作用于测试连接，不碰生产库；崩库最多丢最后几个未落盘的事务，测试场景无所谓。
+	return fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%s sslmode=disable TimeZone=Asia/Shanghai synchronous_commit=off",
 		host, user, password, dbname, port)
 }
 
