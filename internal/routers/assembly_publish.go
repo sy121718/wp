@@ -11,11 +11,16 @@ import (
 	"go_wp/internal/builder"
 	"go_wp/internal/builder/core"
 	admincontract "go_wp/internal/module/admin/contract"
+	adminhttp "go_wp/internal/module/admin/inbound/http"
+	blockhttp "go_wp/internal/module/block/inbound/http"
 	blueprintcontract "go_wp/internal/module/blueprint/contract"
 	buildcontract "go_wp/internal/module/build/contract"
 	contentcontract "go_wp/internal/module/content/contract"
-	dashboardhttp "go_wp/internal/module/dashboard/inbound/http"
+	contenthttp "go_wp/internal/module/content/inbound/http"
+	contenttemplatehttp "go_wp/internal/module/contenttemplate/inbound/http"
+	mediahttp "go_wp/internal/module/media/inbound/http"
 	navigationcontract "go_wp/internal/module/navigation/contract"
+	navigationhttp "go_wp/internal/module/navigation/inbound/http"
 	navsource "go_wp/internal/module/navigation/outbound/source"
 	pagecontract "go_wp/internal/module/page/contract"
 	pagedto "go_wp/internal/module/page/dto"
@@ -25,10 +30,12 @@ import (
 	presentationcontract "go_wp/internal/module/presentation/contract"
 	presentationhttp "go_wp/internal/module/presentation/inbound/http"
 	productcontract "go_wp/internal/module/product/contract"
+	producthttp "go_wp/internal/module/product/inbound/http"
 	projectcontract "go_wp/internal/module/project/contract"
-	projectservice "go_wp/internal/module/project/service"
+	projecthttp "go_wp/internal/module/project/inbound/http"
 	runtimefragment "go_wp/internal/module/runtimefragment"
 	userhttp "go_wp/internal/module/user/inbound/http"
+	workbenchhttp "go_wp/internal/module/workbench/inbound/http"
 	"go_wp/internal/partition"
 	"go_wp/internal/pipeline"
 	"go_wp/pkg/logger"
@@ -137,7 +144,23 @@ func (a *assembly) buildPublishingModules() {
 	}
 	marks.mark(portProductFragmentCacheBumper)
 	// navigationSvc 注入 page 装配：core.nav 绑定菜单位置时构建期解析菜单项。
-	pageService := pagehttp.SetupPageRoutes(authorizedAPI, db, artifactSvc, publicationSvc, projectService, blockSvc, pluginSvc, collectionResolver, navigationSvc, mediaSvc)
+	pageService := pagehttp.SetupPageRoutes(authorizedAPI, db, artifactSvc, publicationSvc, projectService, blockSvc, pluginSvc, collectionResolver, navigationSvc, mediaSvc, a.adminPages, a.workbenchPages)
+
+	// block ↔ page 的装配期接线（原在 dashboard 的 NewHandle 内，页面回迁后移到装配层）：
+	// 块内容变更/删除后的 stale 传播，与删除前的引用检查。两个闭包只依赖 page/project 契约。
+	if setter, ok := blockSvc.(interface {
+		SetStalePropagator(func(ctx context.Context, blockID string) error)
+	}); ok {
+		setter.SetStalePropagator(BlockStalePropagator(pageService, projectService))
+	}
+	if checker, ok := blockSvc.(interface {
+		SetReferenceChecker(func(ctx context.Context, blockID string) (bool, error))
+	}); ok {
+		checker.SetReferenceChecker(BlockReferenceChecker(pageService, projectService))
+	}
+	if wired, ok := blockSvc.(interface{ RequireWiring() }); ok {
+		wired.RequireWiring()
+	}
 
 	a.presentationSvc = presentationSvc
 	a.pluginSvc = pluginSvc
@@ -174,19 +197,6 @@ func (a *assembly) wirePublishingPorts() {
 	}
 	projectService.SetLocaleRetirePort(retire)
 	marks.mark(portProjectLocaleRetire)
-	// 主题包资产端口（审计 VIS-014）：主题导出要读**跨模块**的块与页面，而 project 模块
-	// 不认识 block/page 的任何包 —— 能力经适配器注入（适配层在 project 侧，依赖方向是
-	// 「实现方依赖调用方契约」，与 orderstock 同一手法）。未注入时导出/导入返回 503
-	// ErrThemeBundlePortUnavailable：明确拒绝并说明「端口未装配」，而不是静默降级成只导令牌。
-	// 注入点定义在具体 service 上而不是 projectcontract.ProjectService：它是**装配期 setter**，
-	// 不属于运行时契约（契约只放消费方调用的业务能力）。与库存那条（SetInventoryService）、
-	// 商品那条（SetAvailabilityPort）同一手法：断言具体类型，拿不到就是装配缺陷，当场炸掉。
-	projectConcrete, projectOK := projectService.(*projectservice.Service)
-	if !projectOK {
-		panic("project 模块装配返回的不是具体 service（无法注入主题包资产端口）")
-	}
-	projectConcrete.SetThemeBundleAssetPort(projectservice.NewThemeBundleAssetPort(a.blockSvc, pageService))
-	marks.mark(portProjectThemeBundleAssets)
 	// 产物磁盘对账的属主清单（IDX-015）：自动发布实例与手工页面共用同一个 artifacts 根，
 	// 反向对账必须同时问两个模块「这些磁盘目录是不是你产出的」。漏接的后果不是报错而是
 	// **误报**：实例产物全被列成孤儿，一份看不出真假的对账结果比没有对账更糟。
@@ -418,26 +428,36 @@ func (a *assembly) mountAdminPages() {
 		admincontract.DeptService
 		admincontract.RuleService
 	})
-	dashHandle := dashboardhttp.SetupDashboardRoutes(a.router, a.pageService, a.projectService, a.blockSvc, a.pluginSvc, a.collectionResolver,
-		adminCRUD, adminCRUD, adminCRUD, adminCRUD, adminCRUD, adminCRUD, adminAuthzSvc, a.navigationSvc, a.productSvc, a.presentationSvc, a.contentTemplateSvc,
-		// 文章管理页（INF-1）：content 契约在注入片段端口时已拿到，这里复用同一个实例。
-		a.contentSvc,
-		a.inventorySvc, a.masterdataSvc, a.mailSvc,
-		// 订单管理页（BIZ-1）：orderSvc 是在前面装配订单模块时拿到的契约
-		//（它同时提供访客查询与优惠码能力，后台页只用查询与状态流转那几条）。
-		a.orderSvc,
-		// 访问统计页（BIZ-8）：只读聚合（按天 / 按路径 + 时间范围筛选 + 分页）。
-		a.analyticsSvc,
-		// 客户管理页：用户模块的后台面（收窄到四条方法，见 usercontract.CustomerAdminPort）。
-		// 它同时也是「访客面 /user/*」那套 service 的同一个实例 —— 两个面共用实现，
-		// 但页面拿到的接口里只有「读客户 + 停用启用 + 解除锁定」。
-		a.userAdminSvc)
-	// 蓝图（审计 VIS-010）：新建页面表单的「从蓝图开始」下拉需要蓝图列表。
-	// 未注入时页面表单不显示该下拉（建页照常走空白草稿），因此这里是可选端口。
-	if dashHandle != nil {
-		dashHandle.SetBlueprints(a.blueprintSvc)
-		marks.mark(portDashboardBlueprints)
-	}
+	// 各模块后台页面统一在这里接线。两种形态并存（见各模块 admin_pages 文件）：
+	//   - 页面只依赖本模块 svc：Setup 追加页面组参数，在模块 Setup 内自注册；
+	//   - 页面依赖晚装配契约（content / contenttemplate / product / user / project）：
+	//     独立入口，契约齐备后在这里调用。
+	// 中间件链（Session + CSRF + 权限上下文）由两个页面组承担：adminPages（/admin 前缀）
+	// 与 workbenchPages（根级前缀，编辑器与仪表盘首页），均由 assembly.go 创建。
+	adminhttp.SetupAdminPages(a.adminPages, adminCRUD, adminCRUD, adminCRUD, adminCRUD, adminCRUD, adminCRUD)
+	adminhttp.SetupAdminShellPages(a.router)
+
+	blockhttp.SetupBlockPages(a.adminPages, a.blockSvc, a.projectService)
+	mediahttp.SetupMediaPages(a.adminPages)
+	pluginhttp.SetupPluginPages(a.adminPages, a.pluginSvc)
+	navigationhttp.SetupNavigationPages(a.adminPages, a.navigationSvc, a.projectService, a.pageService)
+
+	contenthttp.SetupContentPages(a.adminPages, a.contentSvc, a.projectService,
+		a.contentTemplateSvc, a.pageService, a.presentationSvc)
+	contenttemplatehttp.SetupContentTemplatePages(a.adminPages, a.contentTemplateSvc,
+		a.projectService, a.productSvc, a.contentSvc)
+	userhttp.SetupCustomerPages(a.adminPages, a.userAdminSvc, a.orderSvc, a.projectService)
+	producthttp.SetupProductPages(a.adminPages, a.productSvc, a.projectService,
+		a.contentTemplateSvc, a.presentationSvc, a.inventorySvc, a.pageService, a.contentSvc)
+	projecthttp.SetupProjectPages(a.adminPages, a.workbenchPages, a.projectService, a.pageService, a.blockSvc)
+
+	// 编辑器平台（workbench 模块）：仪表盘首页 + /workbench/* 全部路由。
+	// contentStore 传 nil：未注入时模块内部惰性回退默认实现（与原行为一致）。
+	workbenchhttp.SetupWorkbenchRoutes(a.workbenchPages, a.pageService, a.projectService,
+		a.blockSvc, a.pluginSvc, a.collectionResolver, a.contentTemplateSvc, a.presentationSvc,
+		a.blueprintSvc, a.productSvc, nil)
+	// 蓝图（审计 VIS-010）已作为 workbench Setup 的参数传入，端口标记保留。
+	marks.mark(portDashboardBlueprints)
 }
 
 // runSelfCheck 装配自检（审计 CQ-019）：必需端口逐个核对，缺失即 fail-fast 并

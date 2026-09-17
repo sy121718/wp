@@ -4,6 +4,9 @@
 {{extends "layout.html"}}
 {{block body()}}
 <div class="stack">
+    <section class="card card-body">
+        <span class="text-mute text-sm">{{ .["t"]("admin.theme.site_slots_hint", "系统页面槽位（结算页 / 购物车页等绑定哪个页面）已并入本页：") }} <a class="btn btn-primary" href="/admin/site-slots">{{ .["t"]("admin.theme.site_slots_link", "系统页面槽位") }}</a></span>
+    </section>
     {{if len(.Projects) == 0}}
     <section class="card card-body">
         <p class="text-mute text-sm">{{ .["t"]("admin.theme.no_project", "请先在「页面」里创建一个站点工程，再管理主题。") }}</p>

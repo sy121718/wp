@@ -3,21 +3,51 @@
 package inventoryhttp
 
 import (
+	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
+
+	"go_wp/internal/middleware/builtin"
+	productcontract "go_wp/internal/module/product/contract"
 	inventorycontract "go_wp/internal/module/product/inventory/contract"
 	inventorymodel "go_wp/internal/module/product/inventory/model"
 	inventoryservice "go_wp/internal/module/product/inventory/service"
 	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/internal/permission"
-
-	"gorm.io/gorm"
 )
 
+// productCatalogConsumer 需要商品契约做「商品 → 变体」下拉的后台页面处理器。
+type productCatalogConsumer interface {
+	setProductCatalog(products productcontract.ProductService)
+}
+
+// pageCatalogConsumers 装配期登记的后台页面处理器（写一次，之后只读）。
+var pageCatalogConsumers []productCatalogConsumer
+
+// SetProductCatalog 为已注册的后台页面补注商品契约（下拉数据源）。
+//
+// 为什么必须后置注入：商品模块的 Setup 需要本模块的 InventoryService（VariantStockPort），
+// 本模块的后台页面又需要商品契约做「商品 → 变体」下拉 —— 两边互为依赖，固定顺序装配不出来。
+// 与本仓 runtimefragment.SetBundleProvider 同一手法：装配期注入一次，之后只读。
+// 未注入时页面照常渲染，只是下拉为空（handler 侧对 nil 做降级，不 panic）。
+func SetProductCatalog(products productcontract.ProductService) {
+	for _, consumer := range pageCatalogConsumers {
+		consumer.setProductCatalog(products)
+	}
+}
+
 // SetupInventoryRoutes 装配 inventory 模块路由，返回模块契约。
+//
+// rg 是 API 组（前缀 /api，三层链），pages 是后台页面组（前缀 /admin，Session + CSRF +
+// 权限上下文 / 侧栏菜单树由装配层统一挂在组上）—— pages 为 nil 时跳过页面注册，
+// 与 rg 为 nil 的早退同构。
+//
 // project 用于把「未指定工程」解析为唯一工程（warehouses.project_id 为 NOT NULL 外键）。
 //
 // 返回的契约同时实现了 product 契约定义的 VariantStockPort（ResolveWarehouse /
 // EnsureVariantStock）—— 顶层装配时注入商品模块（依赖方向 inventory → product）。
-func SetupInventoryRoutes(rg *permission.RouteGroup, db *gorm.DB, project projectcontract.ProjectService) inventorycontract.InventoryService {
+// 页面所需的商品契约反向依赖商品模块，因此不在参数表里，由装配收尾的 SetProductCatalog 补注。
+func SetupInventoryRoutes(rg *permission.RouteGroup, pages *gin.RouterGroup, db *gorm.DB,
+	project projectcontract.ProjectService) inventorycontract.InventoryService {
 	svc := inventoryservice.NewService(inventorymodel.NewModel(db), project)
 	handle := NewHandle(svc)
 
@@ -68,5 +98,37 @@ func SetupInventoryRoutes(rg *permission.RouteGroup, db *gorm.DB, project projec
 	g.POST("/purchase/production", permission.InventoryPurchaseProduction, handle.RegisterProductionInbound)
 
 	// 商品侧缓存同步与对账（issue #16 验收 6/7）：提交后的独立步骤，不进变动事务。
+
+	// 后台页面（issue #15 / #16 / #17 / #18）：GET 渲染完整页，写动作复用上面这些 API 的
+	// 权限点 —— CasbinMiddlewareForPath 的路径是权限点声明的真源，一个字符都不能改。
+	if pages != nil {
+		// 商品契约（下拉数据源）留待装配收尾补注，见 SetProductCatalog。
+		inventoryPages := NewInventoryPageHandle(svc, project, nil)
+		pageCatalogConsumers = append(pageCatalogConsumers, inventoryPages)
+		pages.GET("/inventory", inventoryPages.InventoryPage)
+		pages.POST("/inventory/warehouse/create", builtin.CasbinMiddlewareForPath("/api/inventory/warehouse/create"), inventoryPages.InventoryWarehouseCreate)
+		pages.POST("/inventory/warehouse/update", builtin.CasbinMiddlewareForPath("/api/inventory/warehouse/update"), inventoryPages.InventoryWarehouseUpdate)
+		pages.POST("/inventory/warehouse/default", builtin.CasbinMiddlewareForPath("/api/inventory/warehouse/update"), inventoryPages.InventoryWarehouseDefault)
+		pages.POST("/inventory/warehouse/delete", builtin.CasbinMiddlewareForPath("/api/inventory/warehouse/delete"), inventoryPages.InventoryWarehouseDelete)
+		// 库存变动与原因字典（issue #16）：变动走真源行锁 + 流水，原因新建走原因字典。
+		pages.POST("/inventory/stock/change", builtin.CasbinMiddlewareForPath("/api/inventory/stock/change"), inventoryPages.InventoryStockChange)
+		pages.POST("/inventory/reason/create", builtin.CasbinMiddlewareForPath("/api/inventory/reason/create"), inventoryPages.InventoryReasonCreate)
+
+		// 货源管理页（issue #17）：类型与关联方两个结构化维度支撑报表区分。
+		sourcePages := NewInventorySourcePageHandle(svc, project)
+		pages.GET("/inventory/sources", sourcePages.InventorySourcesPage)
+		pages.POST("/inventory/sources/create", builtin.CasbinMiddlewareForPath("/api/inventory/source/create"), sourcePages.InventorySourceCreate)
+		pages.POST("/inventory/sources/update", builtin.CasbinMiddlewareForPath("/api/inventory/source/update"), sourcePages.InventorySourceUpdate)
+		pages.POST("/inventory/sources/delete", builtin.CasbinMiddlewareForPath("/api/inventory/source/delete"), sourcePages.InventorySourceDelete)
+
+		// 采购入库页（issue #18）：采购单 → 逐行收货入库（复用 #16 的变动契约）+ 生产入库 + 进货历史。
+		purchasePages := NewInventoryPurchasePageHandle(svc, project, nil)
+		pageCatalogConsumers = append(pageCatalogConsumers, purchasePages)
+		pages.GET("/inventory/purchases", purchasePages.InventoryPurchasesPage)
+		pages.POST("/inventory/purchases/create", builtin.CasbinMiddlewareForPath("/api/inventory/purchase/create"), purchasePages.InventoryPurchaseCreate)
+		pages.POST("/inventory/purchases/receipt", builtin.CasbinMiddlewareForPath("/api/inventory/purchase/receipt"), purchasePages.InventoryPurchaseReceipt)
+		pages.POST("/inventory/purchases/production", builtin.CasbinMiddlewareForPath("/api/inventory/purchase/production"), purchasePages.InventoryPurchaseProduction)
+	}
+
 	return svc
 }

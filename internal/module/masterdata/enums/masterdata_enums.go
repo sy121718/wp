@@ -186,6 +186,12 @@ var fieldLabels = map[string]string{
 	EntityInventorySource + ".sort":          "排序",
 }
 
+// MsgMasterDataChangesTitle 变更记录页标题（i18n key）。
+//
+// 与 dashboard/enums 里的历史同名常量同值：i18n key 是字符串协议，页面搬回本模块后
+// 在本模块留一份常量，比让模块反向依赖 web/dashboard 层干净。
+const MsgMasterDataChangesTitle = "MsgMasterDataChangesTitle"
+
 // FieldLabel 字段展示名（未登记时回退字段名本身）。
 func FieldLabel(entityType, field string) string {
 	if label, ok := fieldLabels[entityType+"."+field]; ok {

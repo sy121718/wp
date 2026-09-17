@@ -20,9 +20,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	dashboardhttp "go_wp/internal/module/dashboard/inbound/http"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
+	producthttp "go_wp/internal/module/product/inbound/http"
 	"go_wp/internal/templates"
 )
 
@@ -36,7 +36,7 @@ func newVariantPageEngine(t *testing.T) (*gin.Engine, *attrFixture) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
-	handle := dashboardhttp.NewProductPageHandle(f.svc, f.projects)
+	handle := producthttp.NewProductPageHandle(f.svc, f.projects)
 	engine.GET("/admin/products", handle.ProductsPage)
 	engine.POST("/admin/products/variant/generate", handle.ProductsVariantGenerate)
 	return engine, f

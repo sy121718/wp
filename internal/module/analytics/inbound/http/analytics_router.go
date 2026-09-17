@@ -20,6 +20,7 @@ import (
 	analyticscontract "go_wp/internal/module/analytics/contract"
 	analyticsmodel "go_wp/internal/module/analytics/model"
 	analyticsservice "go_wp/internal/module/analytics/service"
+	projectcontract "go_wp/internal/module/project/contract"
 )
 
 const (
@@ -32,9 +33,13 @@ const (
 // sessionSecret 为会话密钥，**只作兜底输入**：匿名 hash 的盐优先取配置项
 // analytics.pepper（独立盐），未配置时由会话密钥经 HKDF 派生（SEC-013）——
 // 不再把会话密钥直接当盐用。IP 与访客标识只以带盐哈希落库。
-// rg 为已挂 Session + CSRF + Casbin 的业务 API 组；router 为引擎（公开路由挂它）。
+// rg 为已挂 Session + CSRF + Casbin 的业务 API 组；router 为引擎（公开路由挂它）；
+// pages 为装配层传入的后台页面组（/admin，已挂 Session + CSRF + 权限上下文），
+// projects 是统计页选工程要用的契约（页面只依赖 contract，不碰 project 的 model/service）。
+// pages 为 nil 时只跳过页面注册。
 func SetupAnalyticsRoutes(rg *permission.RouteGroup, router *gin.Engine, db *gorm.DB,
-	sessionSecret string) analyticscontract.AnalyticsService {
+	sessionSecret string, pages *gin.RouterGroup,
+	projects projectcontract.ProjectService) analyticscontract.AnalyticsService {
 	svc := analyticsservice.NewService(analyticsmodel.NewModel(db), resolveAnonSalt(sessionSecret))
 	analyticsservice.StartAnalyticsRetentionScheduler(svc)
 	// 按天预聚合（审计 DB-005 / IDX-010）：历史窗口的统计查询读汇总表，
@@ -53,6 +58,10 @@ func SetupAnalyticsRoutes(rg *permission.RouteGroup, router *gin.Engine, db *gor
 		g := rg.Group("/analytics")
 		g.GET("/summary", permission.AnalyticsView, handle.Summary)
 	}
+
+	// 后台统计页（/admin/analytics）：与上面只读 API 共用同一份 Summary 实现。
+	setupAnalyticsPageRoutes(pages, svc, projects)
+
 	return svc
 }
 

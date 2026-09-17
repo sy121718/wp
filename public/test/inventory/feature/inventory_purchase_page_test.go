@@ -22,8 +22,8 @@ import (
 	productdto "go_wp/internal/module/product/dto"
 	inventorydto "go_wp/internal/module/product/inventory/dto"
 	inventoryenums "go_wp/internal/module/product/inventory/enums"
+	inventoryhttp "go_wp/internal/module/product/inventory/inbound/http"
 
-	dashboardhttp "go_wp/internal/module/dashboard/inbound/http"
 	"go_wp/internal/templates"
 
 	"go_wp/public/migrations"
@@ -39,7 +39,7 @@ func newPurchasePageEngine(t *testing.T) (*gin.Engine, *invFixture) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(templateRoot(), true)
-	handle := dashboardhttp.NewInventoryPurchasePageHandle(f.inventory, f.projects, f.products)
+	handle := inventoryhttp.NewInventoryPurchasePageHandle(f.inventory, f.projects, f.products)
 	engine.GET("/admin/inventory/purchases", handle.InventoryPurchasesPage)
 	engine.POST("/admin/inventory/purchases/create", handle.InventoryPurchaseCreate)
 	engine.POST("/admin/inventory/purchases/receipt", handle.InventoryPurchaseReceipt)

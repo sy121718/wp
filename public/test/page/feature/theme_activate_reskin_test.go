@@ -26,12 +26,12 @@ import (
 	artifactservice "go_wp/internal/module/artifact/service"
 	blockmodel "go_wp/internal/module/block/model"
 	blockservice "go_wp/internal/module/block/service"
-	dashboardhttp "go_wp/internal/module/dashboard/inbound/http"
 	pagecontract "go_wp/internal/module/page/contract"
 	pagedto "go_wp/internal/module/page/dto"
 	pagemodel "go_wp/internal/module/page/model"
 	pageservice "go_wp/internal/module/page/service"
 	projectdto "go_wp/internal/module/project/dto"
+	projecthttp "go_wp/internal/module/project/inbound/http"
 	projectmodel "go_wp/internal/module/project/model"
 	projectservice "go_wp/internal/module/project/service"
 	pubmodel "go_wp/internal/module/publication/model"
@@ -179,11 +179,11 @@ func TestActivateThemeThenSaveKeepsNewTheme(t *testing.T) {
 func activateThemeHTTP(t *testing.T, svc pagecontract.PageService, projects *projectservice.Service,
 	themeID string) int {
 	t.Helper()
-	// dashboardhttp.NewHandle 现收 block/plugin/collection + 6 个 admin contract（六领域 CRUD 契约），
-	// 本测试仅覆盖 ActivateTheme，admin 实例传 nil（不触达 admin 页面）。
-	handle := dashboardhttp.NewHandle(svc, projects, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	// ActivateTheme 的换皮编排已随页面回 project 模块（themeAdminHandle）：
+	// 直挂 handler（不经 SetupProjectPages —— 那里带 Casbin 中间件，裸测试引擎没有鉴权链）。
+	themes := projecthttp.NewThemeAdminHandle(projects, svc, nil)
 	router := gin.New()
-	router.POST("/admin/themes/activate", handle.ActivateTheme)
+	router.POST("/admin/themes/activate", themes.ActivateTheme)
 
 	form := url.Values{"id": {themeID}}
 	recorder := httptest.NewRecorder()

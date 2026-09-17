@@ -15,9 +15,9 @@ import (
 	"strings"
 	"testing"
 
-	dashboardhttp "go_wp/internal/module/dashboard/inbound/http"
 	pagecontract "go_wp/internal/module/page/contract"
 	pagedto "go_wp/internal/module/page/dto"
+	"go_wp/internal/module/page/inbound/http"
 
 	"github.com/gin-gonic/gin"
 )
@@ -50,7 +50,7 @@ func TestHistoryRestoreOverwritesDraft(t *testing.T) {
 	firstVersion := revs[len(revs)-1].Version // 列表按版本升序，最后一条为最早版本
 
 	gin.SetMode(gin.TestMode)
-	handle := dashboardhttp.NewHandle(svc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	handle := pagehttp.NewPagesAdminHandle(svc, nil, nil, nil)
 	router := gin.New()
 	router.POST("/workbench/history/restore", handle.HistoryRestore)
 	form := url.Values{"pageId": {created.ID}, "version": {fmt.Sprint(firstVersion)}}

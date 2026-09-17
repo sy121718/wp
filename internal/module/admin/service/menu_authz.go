@@ -54,7 +54,7 @@ func (s *Service) CountByPermissionCodes(ctx context.Context, codes []string) (c
 // BuildAuthorizedTree 根据有效 permission_code 列表构建用户可见菜单树。
 // 自动补齐祖先目录，只包含 type=1（目录）和 type=2（菜单）。
 func (s *Service) BuildAuthorizedTree(ctx context.Context, codes []string) ([]admindto.MenuTreeNode, error) {
-	all, err := s.listAllMenusCached(ctx)
+	all, err := s.listEnabledMenusCached(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -124,7 +124,7 @@ func buildAuthorizedTree(all []adminmodel.MenuEntity, codes []string) []admindto
 // BuildAuthorizedRoutes 根据有效 permission_code 列表构建前端动态路由树。
 // lang 为请求语言，菜单 title 按 title_key 翻译（未配置或未命中时回退 title 原文）。
 func (s *Service) BuildAuthorizedRoutes(ctx context.Context, codes []string, lang string) (res []admindto.RouteNode, err error) {
-	all, err := s.listAllMenusCached(ctx)
+	all, err := s.listEnabledMenusCached(ctx)
 	if err != nil {
 		return nil, err
 	}

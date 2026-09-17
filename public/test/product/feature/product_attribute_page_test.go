@@ -19,7 +19,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	dashboardhttp "go_wp/internal/module/dashboard/inbound/http"
+	producthttp "go_wp/internal/module/product/inbound/http"
 	productmodel "go_wp/internal/module/product/model"
 	productservice "go_wp/internal/module/product/service"
 	projectmodel "go_wp/internal/module/project/model"
@@ -43,7 +43,7 @@ func newAttrPageEngine(t *testing.T) (*gin.Engine, *attrFixture) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
-	handle := dashboardhttp.NewProductPageHandle(f.svc, f.projects)
+	handle := producthttp.NewProductPageHandle(f.svc, f.projects)
 	engine.GET("/admin/product-attributes", handle.ProductAttributesPage)
 	engine.POST("/admin/product-attributes/value-rows", handle.ProductAttributesValueRows)
 	engine.POST("/admin/product-attributes/create", handle.ProductAttributesCreate)

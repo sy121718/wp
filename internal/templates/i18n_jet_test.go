@@ -277,10 +277,14 @@ type testNavNode struct {
 	Open     bool
 }
 
+// 菜单真源是 sys_menus：一级项用表里的 id 做前后端配对（data-group），
+// 图标取表里的 icon key；目录（Nodes 非空）与一级直接链接（Nodes 为空、有 Path）两种形态。
 type testNavGroup struct {
-	Key      string
+	ID       uint64
 	Title    string
-	Overview *testNavNode
+	Icon     string
+	IconSVG  string
+	Path     string
 	Nodes    []testNavNode
 	Active   bool
 	FirstURL string
@@ -293,11 +297,12 @@ func TestShellSidebarPartialsRender(t *testing.T) {
 	set := jet.NewSet(loader, jet.WithTemplateNameExtensions([]string{"", ".html"}))
 
 	groups := []testNavGroup{{
-		Key:      "content",
+		ID:       1,
 		Title:    "内容",
+		Icon:     "file-text",
+		IconSVG:  `<svg viewBox="0 0 24 24"><path d="M5 4h9l5 5v11H5z"/></svg>`,
 		Active:   true,
 		FirstURL: "/admin/pages",
-		Overview: &testNavNode{Title: "内容总览", Path: "/admin/pages", Active: true},
 		Nodes: []testNavNode{{
 			Title: "页面管理", Path: "/admin/pages", Active: true, Open: true,
 			Children: []testNavNode{{Title: "回收站", Path: "/admin/pages?trash=1"}},

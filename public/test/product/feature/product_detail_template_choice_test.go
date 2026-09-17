@@ -28,9 +28,9 @@ import (
 	contenttemplatedto "go_wp/internal/module/contenttemplate/dto"
 	contenttemplateenums "go_wp/internal/module/contenttemplate/enums"
 	contenttemplatemodel "go_wp/internal/module/contenttemplate/model"
-	dashboardhttp "go_wp/internal/module/dashboard/inbound/http"
 	presentationdto "go_wp/internal/module/presentation/dto"
 	presentationenums "go_wp/internal/module/presentation/enums"
+	producthttp "go_wp/internal/module/product/inbound/http"
 	"go_wp/internal/pipeline"
 	"go_wp/internal/templates"
 
@@ -467,7 +467,7 @@ func newDetailTemplatePageEngine(t *testing.T) (*gin.Engine, *detailFixture) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
-	handle := dashboardhttp.NewProductPageHandle(f.products, f.projects)
+	handle := producthttp.NewProductPageHandle(f.products, f.projects)
 	handle.SetDetailTemplateDeps(f.templates, f.pres)
 	engine.GET("/admin/products/template", handle.ProductDetailTemplatePage)
 	engine.POST("/admin/products/template/create", handle.ProductDetailTemplateCreate)

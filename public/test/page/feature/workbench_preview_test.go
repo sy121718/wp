@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	dashboardhttp "go_wp/internal/module/dashboard/inbound/http"
 	pagedto "go_wp/internal/module/page/dto"
+	workbenchhttp "go_wp/internal/module/workbench/inbound/http"
 
 	"github.com/gin-gonic/gin"
 )
@@ -37,7 +37,7 @@ func TestWorkbenchPreviewDraft(t *testing.T) {
 	}
 
 	// dashboardhttp.NewHandle 现收 block/plugin/collection + 6 个 admin contract；本测试仅用 page 能力，补 nil。
-	handle := dashboardhttp.NewHandle(svc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	handle := workbenchhttp.New(svc, nil, nil, nil, nil, nil, nil)
 	router := gin.New()
 	router.GET("/workbench/preview", handle.Preview)
 	router.POST("/workbench/preview", handle.PreviewDraft)
@@ -92,7 +92,7 @@ func TestWorkbenchPreviewDraftRejectsStaleVersion(t *testing.T) {
 	}
 
 	// dashboardhttp.NewHandle 现收 block/plugin/collection + 6 个 admin contract；本测试仅用 page 能力，补 nil。
-	handle := dashboardhttp.NewHandle(svc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	handle := workbenchhttp.New(svc, nil, nil, nil, nil, nil, nil)
 	router := gin.New()
 	router.POST("/workbench/preview", handle.PreviewDraft)
 	body := url.Values{

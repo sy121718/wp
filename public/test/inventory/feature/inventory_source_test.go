@@ -34,7 +34,6 @@ import (
 	inventoryhttp "go_wp/internal/module/product/inventory/inbound/http"
 	projectdto "go_wp/internal/module/project/dto"
 
-	dashboardhttp "go_wp/internal/module/dashboard/inbound/http"
 	"go_wp/internal/templates"
 
 	"go_wp/public/migrations"
@@ -805,7 +804,7 @@ func newSourcePageEngine(t *testing.T) (*gin.Engine, *invFixture) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(templateRoot(), true)
-	handle := dashboardhttp.NewInventorySourcePageHandle(f.inventory, f.projects)
+	handle := inventoryhttp.NewInventorySourcePageHandle(f.inventory, f.projects)
 	engine.GET("/admin/inventory/sources", handle.InventorySourcesPage)
 	engine.POST("/admin/inventory/sources/create", handle.InventorySourceCreate)
 	engine.POST("/admin/inventory/sources/update", handle.InventorySourceUpdate)

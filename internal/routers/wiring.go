@@ -66,7 +66,6 @@ const (
 	portProductFragmentCacheBumper     = "product.SetFragmentCacheBumper"
 	portPluginAdminAuthz               = "plugin.SetAdminAuthz"
 	portProjectLocaleRetire            = "project.SetLocaleRetirePort"
-	portProjectThemeBundleAssets       = "project.SetThemeBundleAssetPort"
 	portPageExternalArtifactOwners     = "page.SetExternalArtifactOwners"
 	portPageBlueprints                 = "page.SetBlueprints"
 	portPageBuildQueue                 = "page.SetBuildQueue"
@@ -173,8 +172,6 @@ var wiringManifest = []wiringEntry{
 	// —— 工程 / 页面 / 发布域 ——
 	{portProjectLocaleRetire, "page", "project", wiringRequiredPort,
 		"禁用语言只记日志不下路由，该语言的站点仍在线上可访问"},
-	{portProjectThemeBundleAssets, "block + page（经 project 侧适配器）", "project / 主题包", wiringOptionalDegraded,
-		"主题导出与导入接口返回 503（ErrThemeBundlePortUnavailable，接口明说端口未装配）"},
 	{portPageExternalArtifactOwners, "presentation", "page", wiringRequiredPort,
 		"反向产物对账把自动发布实例的产物误报成孤儿（一份看不出真假的对账结果）"},
 	{portPageBlueprints, "blueprint", "page", wiringRequiredPort,

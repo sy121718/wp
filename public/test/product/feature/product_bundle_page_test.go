@@ -14,8 +14,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	dashboardhttp "go_wp/internal/module/dashboard/inbound/http"
 	productdto "go_wp/internal/module/product/dto"
+	producthttp "go_wp/internal/module/product/inbound/http"
 	runtimefragment "go_wp/internal/module/runtimefragment"
 	"go_wp/internal/templates"
 )
@@ -267,7 +267,7 @@ func newBundlePageEngine(t *testing.T) (*gin.Engine, *bundleFixture) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
-	handle := dashboardhttp.NewProductPageHandle(f.products, f.projects)
+	handle := producthttp.NewProductPageHandle(f.products, f.projects)
 	engine.GET("/admin/products/bundle", handle.ProductBundlePage)
 	engine.POST("/admin/products/bundle/save", handle.ProductBundleSave)
 	return engine, f

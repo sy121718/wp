@@ -3,14 +3,14 @@
 package producthttp
 
 import (
+	"gorm.io/gorm"
+
 	productcontract "go_wp/internal/module/product/contract"
 	productmodel "go_wp/internal/module/product/model"
 	productservice "go_wp/internal/module/product/service"
 	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/internal/permission"
 	"go_wp/pkg/i18n"
-
-	"gorm.io/gorm"
 )
 
 // SetupProductRoutes 装配 product 模块路由，返回模块契约。

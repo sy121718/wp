@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	dashboardhttp "go_wp/internal/module/dashboard/inbound/http"
 	productdto "go_wp/internal/module/product/dto"
+	producthttp "go_wp/internal/module/product/inbound/http"
 	projectdto "go_wp/internal/module/project/dto"
 	"go_wp/internal/templates"
 
@@ -55,7 +55,7 @@ func newTaxonomyUIFixture(t *testing.T) *gin.Engine {
 		c.Next()
 	})
 	router.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
-	h := dashboardhttp.NewProductPageHandle(f.svc, f.projects)
+	h := producthttp.NewProductPageHandle(f.svc, f.projects)
 	router.GET("/admin/product-brands", h.ProductBrandsPage)
 	router.POST("/admin/product-brands/create", h.ProductBrandsCreate)
 	router.POST("/admin/product-brands/update", h.ProductBrandsUpdate)

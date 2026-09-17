@@ -73,6 +73,7 @@ import (
 	webhookhttp "go_wp/internal/module/webhook/inbound/http"
 	"go_wp/internal/permission"
 	"go_wp/internal/templates"
+	"go_wp/internal/web/shell"
 	"go_wp/pkg/auth"
 	"go_wp/pkg/casbin"
 	"go_wp/pkg/database"
@@ -140,6 +141,13 @@ type assembly struct {
 	// 注册时必须给出权限点（permission.Perm），路径由注册动作自身算出，
 	// 装配末尾统一幂等 upsert 进 sys_permission 与超管策略。
 	authorizedAPI *permission.RouteGroup
+	// adminPages 是后台页面路由组（Session + CSRF + 权限上下文），在 admin 模块装配后
+	// 立即创建 —— admin 是全部模块里最早装配的，所以页面组能在任何模块注册后台页面
+	// 之前就绪。各模块在自己的 Setup 里拿它注册页面，与注册 API 完全同构。
+	adminPages *gin.RouterGroup
+	// workbenchPages 是编辑器路由组（**根级前缀**：/workbench* 与仪表盘首页 "/"）。
+	// 中间件与 adminPages 相同（Session + CSRF + 权限上下文），前缀不同而已。
+	workbenchPages *gin.RouterGroup
 
 	adminAuthzSvc admincontract.AuthzContextService
 
@@ -296,6 +304,16 @@ func (a *assembly) buildAPIAndCoreCRUD() {
 	// 带声明能力的包装组而非 authorizedAPI：路径前缀仍是 /api，权限点声明照常生效。
 	adminAuthzSvc := adminhttp.SetupAdminRoutes(permission.NewRouteGroup(api), db)
 	a.adminAuthzSvc = adminAuthzSvc
+	// 后台页面组在这里就绪：各模块在自己的 Setup 里既注册 /api/* 也注册 /admin/*，
+	// 中间件链（Session + CSRF + 权限上下文 / 侧栏菜单树）只由这一处定义 ——
+	// 模块不必各写一遍，也就不会漏挂某一环。
+	a.adminPages = router.Group("/admin",
+		builtin.SessionAuthMiddleware(), builtin.CSRFMiddleware(),
+		shell.PermContextMiddleware(adminAuthzSvc))
+	// 编辑器组：根级前缀（/workbench*、仪表盘首页），中间件与后台页面组一致。
+	a.workbenchPages = router.Group("",
+		builtin.SessionAuthMiddleware(), builtin.CSRFMiddleware(),
+		shell.PermContextMiddleware(adminAuthzSvc))
 	// 开发阶段一键登录（浏览器直接访问 /admin/dev-login?to=/admin/xxx）：
 	// **只在 debug 模式下注册** —— release 环境这个路由根本不存在，比运行时判断更可靠。
 	// 具体安全约束（只认环回地址、只登超管、走同一套会话路径）见 admin/inbound/http/dev_login.go。
@@ -351,14 +369,19 @@ func (a *assembly) buildAPIAndCoreCRUD() {
 	// 必须早于商品与库存两个模块装配：它们在写关键主数据时经本模块契约留痕
 	//（依赖方向 product / inventory → masterdata），装配期把契约注入它们的可变端口。
 	// 本模块不认识任何业务表：调用方把「改前 / 改后」字段快照递进来，它只做 diff 与落库。
-	masterdataSvc := masterdatahttp.SetupMasterDataRoutes(authorizedAPI, db, projectService)
+	masterdataSvc := masterdatahttp.SetupMasterDataRoutes(authorizedAPI, a.adminPages, db, projectService)
 	// 仓库与库存记录（issue #15）：库存真源（SKU × 仓库）+ 仓库实体（短码 / 名称 / 默认仓）。
 	// 必须早于商品模块装配：商品模块的变体库存端口由本模块实现（依赖方向 inventory → product），
 	// 装配期把实现当作端口传进去 —— 建变体时解析归属仓（不选则默认仓）、并在归属仓
 	// 生成一条初始 0 的库存记录。
-	inventorySvc := inventoryhttp.SetupInventoryRoutes(authorizedAPI, db, projectService)
+	inventorySvc := inventoryhttp.SetupInventoryRoutes(authorizedAPI, a.adminPages, db, projectService)
 	// 商品域（issue #5）：商品与变体管理。商品是独立领域模块，不再寄居内容表。
 	productSvc := producthttp.SetupProductRoutes(authorizedAPI, db, projectService)
+	// product ↔ inventory 是循环依赖：product 的 Setup 要 inventory 契约，而库存页面
+	// 要 product 契约做「商品 → 变体」下拉，任何固定顺序都装配不出来。
+	// 所以 products 不进参数表，改为后置注入（装配期写一次、之后只读；
+	// 与 runtimefragment.SetBundleProvider 同一手法），handler 侧对 nil 降级为下拉为空。
+	inventoryhttp.SetProductCatalog(productSvc)
 	// 商品译文存储由 SetupProductRoutes 内部用同一个 db 注入（可选端口：未接入即回退原文）。
 	marks.mark(portProductContentStore)
 
@@ -393,7 +416,7 @@ func (a *assembly) buildIdentityAndCommerce() {
 	inventorySvc := a.inventorySvc
 
 	// 邮箱模块（issue #37）：加密密钥在 SetupMailRoutes 内从 config.yaml 的 app.secret 注入。
-	mailSvc := mailhttp.SetupMailRoutes(authorizedAPI, db)
+	mailSvc := mailhttp.SetupMailRoutes(authorizedAPI, db, a.adminPages)
 	// 敏感配置加密密钥由 SetupMailRoutes 内部从 config 读取后注入。
 	marks.mark(portMailCipherSecret)
 	// 用户模块（issue #36）：访客账号（注册 / 验证 / 登录 / 账号中心）。
@@ -451,7 +474,7 @@ func (a *assembly) buildIdentityAndCommerce() {
 		panic("库存模块装配返回的不是具体 service（无法注入商品用例）")
 	}
 	a.inventoryConcrete = invConcrete
-	orderSvc := orderhttp.SetupOrderRoutes(authorizedAPI, db, productSvc, orderstock.New(invConcrete), userSvc, webhookDispatcher, a.projectService)
+	orderSvc := orderhttp.SetupOrderRoutes(authorizedAPI, db, productSvc, orderstock.New(invConcrete), userSvc, webhookDispatcher, a.projectService, a.adminPages, orderstock.NewWarehouseSource(a.inventorySvc))
 	marks.mark(portWebhookDispatcher)
 
 	a.mailSvc = mailSvc
@@ -619,7 +642,7 @@ func (a *assembly) wireRuntimeAccessFace() {
 	// 后台只读聚合（/api/analytics/summary）走 authorizedAPI 三层链，权限点 analytics:view。
 	// pepper 用会话密钥：IP 与访客标识只以带盐哈希落库 —— 裸哈希在 IPv4 空间（2^32）里
 	// 等于把明文换个写法存下来。
-	analyticsSvc := analyticshttp.SetupAnalyticsRoutes(authorizedAPI, router, db, secret)
+	analyticsSvc := analyticshttp.SetupAnalyticsRoutes(authorizedAPI, router, db, secret, a.adminPages, a.projectService)
 	a.analyticsSvc = analyticsSvc
 	// 商品实体类型注册（issue #6）：注册后商品可作为内容模板的数据源
 	// （类型合法性 + 字段白名单由注册表判定），构建期经注册表取商品字段解析器。

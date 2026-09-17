@@ -27,6 +27,7 @@ import (
 	productdto "go_wp/internal/module/product/dto"
 	inventorydto "go_wp/internal/module/product/inventory/dto"
 	inventoryenums "go_wp/internal/module/product/inventory/enums"
+	inventoryhttp "go_wp/internal/module/product/inventory/inbound/http"
 	inventorymodel "go_wp/internal/module/product/inventory/model"
 	inventoryservice "go_wp/internal/module/product/inventory/service"
 	productmodel "go_wp/internal/module/product/model"
@@ -35,7 +36,7 @@ import (
 	projectmodel "go_wp/internal/module/project/model"
 	projectservice "go_wp/internal/module/project/service"
 
-	dashboardhttp "go_wp/internal/module/dashboard/inbound/http"
+	producthttp "go_wp/internal/module/product/inbound/http"
 	"go_wp/internal/templates"
 
 	"go_wp/public/migrations"
@@ -580,7 +581,7 @@ func TestProductPageWarehouseSelect(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(templateRoot(), true)
-	handle := dashboardhttp.NewProductPageHandle(f.products, f.projects)
+	handle := producthttp.NewProductPageHandle(f.products, f.projects)
 	handle.SetInventoryDeps(f.inventory)
 	engine.GET("/admin/products", handle.ProductsPage)
 	engine.POST("/admin/products/variant/create", handle.ProductsVariantCreate)
@@ -669,7 +670,7 @@ func newInventoryPageEngine(t *testing.T) (*gin.Engine, *invFixture) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(templateRoot(), true)
-	handle := dashboardhttp.NewInventoryPageHandle(f.inventory, f.projects, f.products)
+	handle := inventoryhttp.NewInventoryPageHandle(f.inventory, f.projects, f.products)
 	engine.GET("/admin/inventory", handle.InventoryPage)
 	engine.POST("/admin/inventory/warehouse/create", handle.InventoryWarehouseCreate)
 	engine.POST("/admin/inventory/warehouse/update", handle.InventoryWarehouseUpdate)

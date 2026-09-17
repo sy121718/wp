@@ -26,12 +26,12 @@ import (
 
 	"go_wp/internal/builder"
 	"go_wp/internal/builder/core"
-	dashboardhttp "go_wp/internal/module/dashboard/inbound/http"
 	pagemodel "go_wp/internal/module/page/model"
 	pageservice "go_wp/internal/module/page/service"
 	presentationdto "go_wp/internal/module/presentation/dto"
 	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
+	producthttp "go_wp/internal/module/product/inbound/http"
 	productmodel "go_wp/internal/module/product/model"
 	productservice "go_wp/internal/module/product/service"
 	projectdto "go_wp/internal/module/project/dto"
@@ -187,7 +187,7 @@ func trWorkbench(t *testing.T, f *trFixture) *gin.Engine {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	pages := pageservice.NewService(pagemodel.NewPageModel(f.db), nil, nil, f.projects, nil, nil, nil, nil, nil)
-	handle := dashboardhttp.NewProductTranslationHandle(f.products, f.projects, pages, nil)
+	handle := producthttp.NewProductTranslationHandle(f.products, f.projects, pages, nil)
 	handle.SetContentTranslationStore(i18n.NewContentWriter(f.db))
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
@@ -782,7 +782,7 @@ func TestProductTranslationStalesPresentationInstances(t *testing.T) {
 	// 工作台注入实例失效端口（presentation 契约实现，与线上装配同形）。
 	gin.SetMode(gin.TestMode)
 	pages := pageservice.NewService(pagemodel.NewPageModel(f.db), nil, nil, f.projects, nil, nil, nil, nil, nil)
-	handle := dashboardhttp.NewProductTranslationHandle(f.products, f.projects, pages, f.pres)
+	handle := producthttp.NewProductTranslationHandle(f.products, f.projects, pages, f.pres)
 	handle.SetContentTranslationStore(i18n.NewContentWriter(f.db))
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)

@@ -551,9 +551,7 @@ const (
 	// 删除主题（POST /api/theme/delete）
 	ProjectThemeDelete Perm = "project:theme_delete"
 	// 导出主题包（GET /api/theme/export）
-	ProjectThemeExport Perm = "project:theme_export"
 	// 导入主题包（POST /api/theme/import）
-	ProjectThemeImport Perm = "project:theme_import"
 	// 主题列表（GET /api/theme/list）
 	ProjectThemeList Perm = "project:theme_list"
 	// 更新主题（POST /api/theme/update）
@@ -908,8 +906,6 @@ var specs = map[Perm]spec{
 	ProjectThemeActive:   {module: "project", name: "当前主题"},
 	ProjectThemeCreate:   {module: "project", name: "新建主题"},
 	ProjectThemeDelete:   {module: "project", name: "删除主题"},
-	ProjectThemeExport:   {module: "project", name: "导出主题包"},
-	ProjectThemeImport:   {module: "project", name: "导入主题包"},
 	ProjectThemeList:     {module: "project", name: "主题列表"},
 	ProjectThemeUpdate:   {module: "project", name: "更新主题"},
 	ProjectUpdate:        {module: "project", name: "更新项目"},

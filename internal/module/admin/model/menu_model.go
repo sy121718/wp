@@ -98,9 +98,25 @@ func (m *MenuModel) GetByID(ctx context.Context, id uint64) (*MenuEntity, error)
 }
 
 // ListAll 查询全部未删除菜单，按 sort_order、id 排序。
+//
+// 含禁用项与按钮（type=3）：菜单管理页要能看到并编辑它们。
+// 只做导航 / 授权构建的路径用 ListEnabled —— 那个条件与用户无关，下推到 SQL 更省。
 func (m *MenuModel) ListAll(ctx context.Context) ([]MenuEntity, error) {
 	var list []MenuEntity
 	err := m.DB(ctx).Where("deleted_at IS NULL").Order("sort_order ASC, id ASC").Find(&list).Error
+	return list, err
+}
+
+// ListEnabled 查询启用且未删除的菜单，按 sort_order、id 排序。
+//
+// 导航树与动态路由都只认 status=1（禁用项从不进树），这是与用户无关的静态条件，
+// 放在 SQL 里可以少读一半行 —— 更何况 type=3 的按钮权限点通常占表里的大头。
+func (m *MenuModel) ListEnabled(ctx context.Context) ([]MenuEntity, error) {
+	var list []MenuEntity
+	err := m.DB(ctx).
+		Where("deleted_at IS NULL AND status = ?", MenuStatusEnabled).
+		Order("sort_order ASC, id ASC").
+		Find(&list).Error
 	return list, err
 }
 

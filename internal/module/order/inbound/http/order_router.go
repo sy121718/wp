@@ -5,6 +5,7 @@
 package orderhttp
 
 import (
+	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
 	ordercontract "go_wp/internal/module/order/contract"
@@ -14,6 +15,8 @@ import (
 	projectcontract "go_wp/internal/module/project/contract"
 	usercontract "go_wp/internal/module/user/contract"
 	webhookcontract "go_wp/internal/module/webhook/contract"
+
+	"go_wp/internal/middleware/builtin"
 	"go_wp/internal/permission"
 )
 
@@ -32,6 +35,13 @@ func SetupOrderRoutes(rg *permission.RouteGroup,
 	// projects 工程契约：只用于列出工程 id，给「只带 id」的入口逐工程探测归属。
 	// 未注入时退回读 projects 表的兜底路径（本模块唯一的跨表读取），故装配点必须注入。
 	projects projectcontract.ProjectService,
+	// pages 后台页面组（前缀 /admin，装配层已挂 Session + CSRF + 权限上下文）。
+	// 传 nil 时只注册 API，不注册后台页面 —— 与 rg 为空时的语义一致。
+	pages *gin.RouterGroup,
+	// warehouses 退货页「入库仓库」下拉的窄端口（ordercontract 自有视图类型，
+	// 库存侧持有适配器 —— CQ-004 同一手法，订单模块不 import 库存的 dto）：
+	// 退货入到哪个仓是运营的决定，让他手填仓库 id 是把内部标识当输入项，填错不报错、货就进错仓。
+	warehouses ordercontract.ReturnWarehouseSource,
 ) ordercontract.OrderService {
 	svc := orderservice.NewService(
 		ordermodel.NewOrderModel(db),
@@ -88,6 +98,40 @@ func SetupOrderRoutes(rg *permission.RouteGroup,
 	rgp.POST("/approve", permission.OrderReturnApprove, h.ApproveReturn)
 	rgp.POST("/reject", permission.OrderReturnReject, h.RejectReturn)
 	rgp.POST("/receive", permission.OrderReturnReceive, h.ReceiveReturn)
+
+	// ——— 后台页面（/admin/*，BIZ-1 销售侧）———
+	//
+	// 页面 GET 走 /admin 组认证（Session + CSRF，无 Casbin）；写动作复用订单 API 的权限点，
+	// 由 builtin.CasbinMiddlewareForPath 按**实际 API 路径**鉴权 —— 权限点路径一个字符都不能改。
+	// 页面 handler 与 API handler 同用这一个 svc 实例（同一个契约，不另建一套）。
+	if pages != nil {
+		// 订单管理页：列表 + 状态计数 + 详情（同一页面靠 orderId 展开）+ 流转 / 取消 / 退款 / 备注。
+		// 状态合法性不在这里判断：服务端状态机拒绝哪条边，页面就把哪条边藏起来 ——
+		// 前端最多只能少给一个按钮，给多了也只是被服务端拒掉并原样回显原因。
+		orderPages := NewOrderPageHandle(svc, projects)
+		pages.GET("/orders", orderPages.OrdersPage)
+		pages.POST("/orders/status", builtin.CasbinMiddlewareForPath("/api/order/status"), orderPages.OrderStatusChange)
+		pages.POST("/orders/cancel", builtin.CasbinMiddlewareForPath("/api/order/cancel"), orderPages.OrderCancel)
+		pages.POST("/orders/refund", builtin.CasbinMiddlewareForPath("/api/order/refund"), orderPages.OrderRefund)
+		// 后台备注（迁移 146 的 order:note）：只改 admin_note 一列，不写状态流转。
+		pages.POST("/orders/note", builtin.CasbinMiddlewareForPath("/api/order/note"), orderPages.OrderNoteSave)
+
+		// 退货入库（RMA）：客户在访问面提交申请，后台在这里审核与收货。
+		// **先入库、后退款**的强顺序由 service 保证（见 return_review.go）。
+		returnPages := NewReturnPageHandle(svc, projects, warehouses)
+		pages.GET("/returns", returnPages.ReturnsPage)
+		pages.POST("/returns/approve", builtin.CasbinMiddlewareForPath("/api/order/return/approve"), returnPages.ReturnApprove)
+		pages.POST("/returns/reject", builtin.CasbinMiddlewareForPath("/api/order/return/reject"), returnPages.ReturnReject)
+		pages.POST("/returns/receive", builtin.CasbinMiddlewareForPath("/api/order/return/receive"), returnPages.ReturnReceive)
+
+		// 优惠码管理页：列表 + 新建 + 修改（含停用 / 启用）+ 删除 + 核销记录。
+		// 核销**没有手工入口** —— 它发生在建单事务内，页面只展示结果（核销明细是真源）。
+		couponPages := NewCouponPageHandle(svc, projects)
+		pages.GET("/coupons", couponPages.CouponsPage)
+		pages.POST("/coupons/create", builtin.CasbinMiddlewareForPath("/api/order/coupon/create"), couponPages.CouponCreate)
+		pages.POST("/coupons/update", builtin.CasbinMiddlewareForPath("/api/order/coupon/update"), couponPages.CouponUpdate)
+		pages.POST("/coupons/delete", builtin.CasbinMiddlewareForPath("/api/order/coupon/delete"), couponPages.CouponDelete)
+	}
 
 	return svc
 }

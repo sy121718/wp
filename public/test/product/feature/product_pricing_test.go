@@ -24,9 +24,9 @@ import (
 	"gorm.io/gorm"
 
 	"go_wp/internal/builder/core"
-	dashboardhttp "go_wp/internal/module/dashboard/inbound/http"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
+	producthttp "go_wp/internal/module/product/inbound/http"
 	productmodel "go_wp/internal/module/product/model"
 	productservice "go_wp/internal/module/product/service"
 	projectdto "go_wp/internal/module/project/dto"
@@ -823,7 +823,7 @@ func newPricingPageEngine(t *testing.T) (*gin.Engine, *pricingFixture) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
-	handle := dashboardhttp.NewProductPageHandle(f.svc, f.projects)
+	handle := producthttp.NewProductPageHandle(f.svc, f.projects)
 	engine.GET("/admin/product-pricing", handle.ProductPricingPage)
 	engine.POST("/admin/product-pricing/preview", handle.ProductPricingPreview)
 	engine.POST("/admin/product-pricing/apply", handle.ProductPricingApply)

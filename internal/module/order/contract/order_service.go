@@ -179,6 +179,30 @@ type StockLine struct {
 	WarehouseID string
 }
 
+// ReturnWarehouseSource 退货页「入库仓库」下拉所需的最窄读能力。
+//
+// 与 StockOperator 同一手法（CQ-004）：订单侧不 import 库存的 dto ——
+// 仓库列表以本契约的自有视图类型（ReturnWarehouse）返回，适配器在库存侧
+// （product/inventory/outbound/orderstock）装配。
+type ReturnWarehouseSource interface {
+	// ListReturnWarehouses 某工程的仓库视图列表（默认仓在最前，由库存侧排序保证）。
+	ListReturnWarehouses(ctx context.Context, projectID string) ([]ReturnWarehouse, error)
+}
+
+// ReturnWarehouse 退货入库下拉里的一行仓库视图。
+type ReturnWarehouse struct {
+	// ID 仓库标识（表单提交值）。
+	ID string
+	// Name 仓库名。
+	Name string
+	// Code 仓库短码（SKU 编码前缀，运营认它比认全名快）。
+	Code string
+	// Status 启用状态（enabled / disabled）。
+	Status string
+	// IsDefault 是否默认仓（留空时的兜底目标）。
+	IsDefault bool
+}
+
 // StockDeduction 建单出库的入参。
 type StockDeduction struct {
 	ProjectID  string

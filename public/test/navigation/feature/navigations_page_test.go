@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	dashboardhttp "go_wp/internal/module/dashboard/inbound/http"
+	navigationhttp "go_wp/internal/module/navigation/inbound/http"
 	navsource "go_wp/internal/module/navigation/outbound/source"
 	pagedto "go_wp/internal/module/page/dto"
 	projectmodel "go_wp/internal/module/project/model"
@@ -29,7 +29,7 @@ func TestNavigationsPageRenders(t *testing.T) {
 	addNavItem(t, navSvc, projectID, "新品", "/new", &parentID, "blank")
 
 	projects := projectservice.NewService(projectmodel.NewProjectModel(db))
-	handle := dashboardhttp.NewHandle(nil, projects, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, navSvc)
+	handle := navigationhttp.NewNavigationPageHandle(navSvc, projects)
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	router.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
@@ -63,7 +63,7 @@ func TestNavigationsPageShowsSourceCandidates(t *testing.T) {
 	navSvc.SetSourceResolver(navsource.New(pages, nil, nil, nil))
 
 	projects := projectservice.NewService(projectmodel.NewProjectModel(db))
-	handle := dashboardhttp.NewHandle(nil, projects, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, navSvc)
+	handle := navigationhttp.NewNavigationPageHandle(navSvc, projects)
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	router.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)

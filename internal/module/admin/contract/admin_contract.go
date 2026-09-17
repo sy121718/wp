@@ -98,6 +98,11 @@ type AuthzContextService interface {
 	// EffectivePermissionCodes 用户全部有效权限码（直接 + 角色继承）。
 	// 渲染层据此做菜单 / 按钮 / 字段可见性过滤，与 Casbin API 鉴权同源。
 	EffectivePermissionCodes(ctx context.Context, userID uint64) ([]string, error)
+	// BuildAuthorizedTree 根据权限 codes 构建后台导航树：只含目录（type=1）与菜单（type=2），
+	// 自动补齐可见子项的祖先目录，排除按钮 / iframe / 外链；is_public=1 的空权限项照常可见。
+	// 后台侧栏直接消费它 —— 菜单真源是 sys_menus 表，各页面不再有 Go 侧硬编码菜单表。
+	// TitleKey / Title 原样透出，标题翻译由渲染层决定（本模块不依赖模板层文案）。
+	BuildAuthorizedTree(ctx context.Context, codes []string) ([]admindto.MenuTreeNode, error)
 }
 
 // RuleService 数据权限规则领域业务能力。

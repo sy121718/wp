@@ -37,11 +37,6 @@ func SetupThemeRoutes(rg *permission.RouteGroup, db *gorm.DB) {
 	g.POST("/activate", permission.ProjectThemeActivate, h.Activate)
 	g.POST("/delete", permission.ProjectThemeDelete, h.Delete)
 	g.GET("/active", permission.ProjectThemeActive, h.Active)
-	// 主题包（审计 VIS-014）：导出 zip / 导入 zip。
-	// 权限点 project:theme_export / project:theme_import 见迁移 220 —— 与路由同批 seed，
-	// 漏了会连超管一起 403（authorizedAPI 组按实际路径 enforce）。
-	g.GET("/export", permission.ProjectThemeExport, h.ExportBundle)
-	g.POST("/import", permission.ProjectThemeImport, h.ImportBundle)
 }
 
 // themeError 将主题业务错误映射为响应状态码与文案：

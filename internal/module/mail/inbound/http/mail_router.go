@@ -2,6 +2,7 @@
 package mailhttp
 
 import (
+	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
 	"go_wp/config"
@@ -16,7 +17,10 @@ import (
 // 加密密钥（config.yaml 的 app.secret）在这里从配置读入并注入 service，
 // 同时交给队列 handler —— worker 要解密账号密码才能发信。
 // service 自己不读 config（模块不直接碰配置读取，装配层负责注入）。
-func SetupMailRoutes(rg *permission.RouteGroup, db *gorm.DB) mailcontract.MailService {
+//
+// pages 为装配层传入的后台页面组（/admin，已挂 Session + CSRF + 权限上下文）；
+// 页面与 API 在同一处装配，pages 为 nil 时只跳过页面注册。
+func SetupMailRoutes(rg *permission.RouteGroup, db *gorm.DB, pages *gin.RouterGroup) mailcontract.MailService {
 	secret := ""
 	if v, err := config.GetViper(); err == nil && v != nil {
 		secret = v.GetString("app.secret")
@@ -69,6 +73,9 @@ func SetupMailRoutes(rg *permission.RouteGroup, db *gorm.DB) mailcontract.MailSe
 	g.GET("/automation/run/detail", permission.MailAutomationRunDetail, handle.AutomationRunDetail)
 	// 延时兜底的手工触发：队列延时任务失效时，运维可立刻补投一轮。
 	g.POST("/automation/tick", permission.MailAutomationTick, handle.AutomationTick)
+
+	// 后台页面（/admin/mail*）：壳层与权限点见 mail_page_router.go。
+	setupMailPageRoutes(pages, svc)
 
 	return svc
 }

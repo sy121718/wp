@@ -19,8 +19,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	dashboardhttp "go_wp/internal/module/dashboard/inbound/http"
 	productdto "go_wp/internal/module/product/dto"
+	producthttp "go_wp/internal/module/product/inbound/http"
 	"go_wp/internal/templates"
 )
 
@@ -34,7 +34,7 @@ func newProductsPageEngine(t *testing.T) (*gin.Engine, *detailFixture) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
-	handle := dashboardhttp.NewProductPageHandle(f.products, f.projects)
+	handle := producthttp.NewProductPageHandle(f.products, f.projects)
 	engine.GET("/admin/products", handle.ProductsPage)
 	engine.POST("/admin/products/rating/add", handle.ProductsRatingAdd)
 	engine.POST("/admin/products/rating/delete", handle.ProductsRatingDelete)

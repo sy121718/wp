@@ -69,7 +69,8 @@ func newAnalyticsFixture(t *testing.T) *analyticsFixture {
 	engine := gin.New()
 	// 测试里不挂三层链（鉴权链路由 auth feature 覆盖），只验证参数绑定、service 与 SQL。
 	// 声明式权限路由组（与 routes.go 同款包装）；本测试不挂三层链，声明只作登记、不写库。
-	svc := analyticshttp.SetupAnalyticsRoutes(permission.NewRouteGroup(engine.Group("/api")), engine, db, testPepper)
+	// pages 传 nil：本测试只打点与只读 API，后台页面路由不在此覆盖（会跳过注册）。
+	svc := analyticshttp.SetupAnalyticsRoutes(permission.NewRouteGroup(engine.Group("/api")), engine, db, testPepper, nil, projects)
 	return &analyticsFixture{engine: engine, svc: svc, db: db, projectID: project.ID}
 }
 

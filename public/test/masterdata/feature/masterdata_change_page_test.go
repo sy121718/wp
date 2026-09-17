@@ -19,8 +19,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	dashboardhttp "go_wp/internal/module/dashboard/inbound/http"
 	masterdataenums "go_wp/internal/module/masterdata/enums"
+	masterdatahttp "go_wp/internal/module/masterdata/inbound/http"
 	productdto "go_wp/internal/module/product/dto"
 	"go_wp/internal/templates"
 )
@@ -35,7 +35,7 @@ func newMasterDataPageEngine(t *testing.T) (*gin.Engine, *mdFixture) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(templateRoot(), true)
-	handle := dashboardhttp.NewMasterDataChangePageHandle(f.changes, f.projects)
+	handle := masterdatahttp.NewMasterDataChangePageHandle(f.changes, f.projects)
 	engine.GET("/admin/masterdata/changes", handle.MasterDataChangesPage)
 	return engine, f
 }
