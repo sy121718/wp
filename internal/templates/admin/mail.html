@@ -67,33 +67,9 @@
     {{end}}
 
     <h3>{{ .["t"]("admin.mail.account_form.heading", "新建 / 更新账号") }}</h3>
-    <form method="post" action="/admin/mail/account/save" class="form-row items-center">
-      <input type="hidden" name="csrf_token" value="{{csrf}}">
-      <input type="hidden" name="id" value="0">
-      <label>{{ .["t"]("admin.mail.account_form.name", "名称") }} <input class="form-input" type="text" name="name" required></label>
-      <label>{{ .["t"]("admin.mail.account_form.purpose", "用途") }}
-        <select class="form-select" name="purpose">
-          <option value="transactional">{{ .["t"]("admin.mail.account_form.purpose.transactional", "事务邮件") }}</option>
-          <option value="marketing">{{ .["t"]("admin.mail.account_form.purpose.marketing", "营销邮件") }}</option>
-        </select>
-      </label>
-      <label>{{ .["t"]("admin.mail.account_form.from_name", "发件人名称") }} <input class="form-input" type="text" name="from_name"></label>
-      <label>{{ .["t"]("admin.mail.account_form.from_email", "发件邮箱") }} <input class="form-input" type="email" name="from_email" required></label>
-      <label>{{ .["t"]("admin.mail.account_form.reply_to", "回复地址") }} <input class="form-input" type="email" name="reply_to"></label>
-      <label>{{ .["t"]("admin.mail.account_form.host", "服务器") }} <input class="form-input" type="text" name="host" placeholder="mail.example.com" required></label>
-      <label>{{ .["t"]("admin.mail.account_form.port", "端口") }} <input class="form-input" type="number" name="port" value="587"></label>
-      <label>{{ .["t"]("admin.mail.account_form.encryption", "加密") }}
-        <select class="form-select" name="encryption">
-          <option value="starttls">STARTTLS (587)</option>
-          <option value="ssl">SSL (465)</option>
-          <option value="none">{{ .["t"]("admin.mail.account_form.encryption.none", "不加密") }}</option>
-        </select>
-      </label>
-      <label>{{ .["t"]("admin.mail.account_form.username", "用户名") }} <input class="form-input" type="text" name="username"></label>
-      <label>{{ .["t"]("admin.mail.account_form.password", "密码") }} <input class="form-input" type="password" name="password" placeholder="{{ .["t"]("admin.mail.account_form.ph.password", "更新时留空表示不改") }}"></label>
-      <label>{{ .["t"]("admin.mail.account_form.rate", "每小时上限") }} <input class="form-input" type="number" name="rate_per_hour" value="0"></label>
-      <button type="submit" class="btn btn-primary">{{ .["t"]("admin.mail.account_form.save", "保存账号") }}</button>
-    </form>
+    {{if isset(.PermSet["mail:account_save"])}}
+    <button type="button" class="btn btn-primary" data-drawer-open="#tpl-mail-account" data-drawer-title="{{ .["t"]("admin.mail.account_form.save", "保存账号") }}">＋ {{ .["t"]("admin.mail.account_form.save", "保存账号") }}</button>
+    {{end}}
   </section>
 
   <section class="card card-body">
@@ -130,6 +106,46 @@
     {{end}}
 
     <h3>{{ .["t"]("admin.mail.template_form.heading", "新建 / 覆盖模板") }}</h3>
+    {{if isset(.PermSet["mail:template_save"])}}
+    <button type="button" class="btn btn-primary" data-drawer-open="#tpl-mail-template" data-drawer-title="{{ .["t"]("admin.mail.template_form.save", "保存模板") }}">＋ {{ .["t"]("admin.mail.template_form.save", "保存模板") }}</button>
+    {{end}}
+  </section>
+
+    {{if isset(.PermSet["mail:account_save"])}}
+    <template id="tpl-mail-account">
+    <form method="post" action="/admin/mail/account/save" class="form-row items-center">
+      <input type="hidden" name="csrf_token" value="{{csrf}}">
+      <input type="hidden" name="id" value="0">
+      <label>{{ .["t"]("admin.mail.account_form.name", "名称") }} <input class="form-input" type="text" name="name" required></label>
+      <label>{{ .["t"]("admin.mail.account_form.purpose", "用途") }}
+        <select class="form-select" name="purpose">
+          <option value="transactional">{{ .["t"]("admin.mail.account_form.purpose.transactional", "事务邮件") }}</option>
+          <option value="marketing">{{ .["t"]("admin.mail.account_form.purpose.marketing", "营销邮件") }}</option>
+        </select>
+      </label>
+      <label>{{ .["t"]("admin.mail.account_form.from_name", "发件人名称") }} <input class="form-input" type="text" name="from_name"></label>
+      <label>{{ .["t"]("admin.mail.account_form.from_email", "发件邮箱") }} <input class="form-input" type="email" name="from_email" required></label>
+      <label>{{ .["t"]("admin.mail.account_form.reply_to", "回复地址") }} <input class="form-input" type="email" name="reply_to"></label>
+      <label>{{ .["t"]("admin.mail.account_form.host", "服务器") }} <input class="form-input" type="text" name="host" placeholder="mail.example.com" required></label>
+      <label>{{ .["t"]("admin.mail.account_form.port", "端口") }} <input class="form-input" type="number" name="port" value="587"></label>
+      <label>{{ .["t"]("admin.mail.account_form.encryption", "加密") }}
+        <select class="form-select" name="encryption">
+          <option value="starttls">STARTTLS (587)</option>
+          <option value="ssl">SSL (465)</option>
+          <option value="none">{{ .["t"]("admin.mail.account_form.encryption.none", "不加密") }}</option>
+        </select>
+      </label>
+      <label>{{ .["t"]("admin.mail.account_form.username", "用户名") }} <input class="form-input" type="text" name="username"></label>
+      <label>{{ .["t"]("admin.mail.account_form.password", "密码") }} <input class="form-input" type="password" name="password" placeholder="{{ .["t"]("admin.mail.account_form.ph.password", "更新时留空表示不改") }}"></label>
+      <label>{{ .["t"]("admin.mail.account_form.rate", "每小时上限") }} <input class="form-input" type="number" name="rate_per_hour" value="0"></label>
+      <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button>
+        <button type="submit" class="btn btn-primary">{{ .["t"]("admin.mail.account_form.save", "保存账号") }}</button>
+    </form>
+    </template>
+    {{end}}
+
+    {{if isset(.PermSet["mail:template_save"])}}
+    <template id="tpl-mail-template">
     <form method="post" action="/admin/mail/template/save" class="form-row items-center">
       <input type="hidden" name="csrf_token" value="{{csrf}}">
       <label>{{ .["t"]("admin.mail.template_form.key", "标识") }} <input class="form-input" type="text" name="template_key" placeholder="register_verify" required></label>
@@ -139,8 +155,10 @@
       <label>{{ .["t"]("admin.mail.template_form.body_html", "HTML 正文") }} <textarea class="form-textarea" name="body_html" rows="8"></textarea></label>
       <label>{{ .["t"]("admin.mail.template_form.body_text", "纯文本正文") }} <textarea class="form-textarea" name="body_text" rows="4"></textarea></label>
       <label>{{ .["t"]("admin.mail.template_form.variables", "变量（逗号分隔）") }} <input class="form-input" type="text" name="variables" placeholder="name,email"></label>
-      <button type="submit" class="btn btn-primary">{{ .["t"]("admin.mail.template_form.save", "保存模板") }}</button>
+      <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button>
+        <button type="submit" class="btn btn-primary">{{ .["t"]("admin.mail.template_form.save", "保存模板") }}</button>
     </form>
-  </section>
+    </template>
+    {{end}}
 </div>
 {{end}}

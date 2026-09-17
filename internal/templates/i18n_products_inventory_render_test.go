@@ -31,7 +31,12 @@ func groupDData(extra map[string]any) map[string]any {
 		// 漏补的表现是「按钮不渲染、wants 断言红」，与模板本身无关。
 		"PermSet": map[string]any{
 			"contenttemplate:create": true, "contenttemplate:update": true,
-			"product:create": true, "product:update": true, "inventory:create": true, "inventory:update": true,
+			"product:create": true, "product:update": true,
+			"product:brand_create": true, "product:category_create": true,
+			"product:tag_create": true, "product:attribute_create": true,
+			"inventory:warehouse_create": true, "inventory:source_create": true,
+			"inventory:purchase_create": true, "inventory:reason_create": true,
+			"order:coupon_create": true,
 		},
 	}
 	for k, v := range extra {

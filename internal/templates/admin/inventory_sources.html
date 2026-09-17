@@ -68,32 +68,9 @@
 
     <section class="card card-body">
         <h2>{{ .["t"]("admin.inventory_sources.create.title", "新建货源") }}</h2>
-        <form method="post" action="/admin/inventory/sources/create" class="form-stack">
-            <input type="hidden" name="csrf_token" value="{{csrf}}">
-            <input type="hidden" name="projectId" value="{{selectedProject}}">
-            <div class="form-inline">
-                <input type="text" class="form-input" name="code" placeholder="{{ .["t"]("admin.inventory_sources.ph.code", "货源编码（如 SZ_SUPPLIER）") }}" required autocomplete="off">
-                <input type="text" class="form-input" name="name" placeholder="{{ .["t"]("admin.inventory_sources.ph.name", "货源名称（如 苏州通达电子）") }}" required>
-                <select class="form-select" name="type">
-                    {{range _, t := .TypeOptions}}
-                    <option value="{{t.Value}}">{{t.Label}}</option>
-                    {{end}}
-                </select>
-                <select class="form-select" name="relatedParty">
-                    {{range _, r := .RelatedOptions}}
-                    <option value="{{r.Value}}">{{r.Label}}</option>
-                    {{end}}
-                </select>
-                <input type="number" class="form-input" name="settlePrice" placeholder="{{ .["t"]("admin.inventory_sources.ph.settlePrice", "内部结算价（仅内部货源）") }}" inputmode="decimal" step="0.01" min="0">
-                <input type="number" class="form-input" name="sort" value="0" placeholder="{{ .["t"]("admin.inventory_sources.ph.sort", "排序") }}" inputmode="numeric" step="1">
-            </div>
-            <div class="form-inline">
-                <textarea class="form-textarea" name="config" rows="2" placeholder="{{ .["t"]("admin.inventory_sources.ph.config", "对接配置（JSON 对象，如 {\"erp\":\"sap\",\"endpoint\":\"https://ERP_HOST/api\",\"warehouseCode\":\"SZ01\"}）") }}"></textarea>
-            </div>
-            <div class="action-row">
-                <button type="submit" class="btn btn-primary">{{ .["t"]("admin.inventory_sources.create.submit", "新建货源") }}</button>
-            </div>
-        </form>
+        {{if isset(.PermSet["inventory:source_create"])}}
+        <button type="button" class="btn btn-primary" data-drawer-open="#tpl-source-create" data-drawer-title="{{ .["t"]("admin.inventory_sources.create.title", "新建货源") }}">＋ {{ .["t"]("admin.inventory_sources.create.title", "新建货源") }}</button>
+        {{end}}
         <p class="hint">
             {{ .["t"]("admin.inventory_sources.create.hint.lead", "类型选「内部」时") }}<strong>{{ .["t"]("admin.inventory_sources.create.hint.bold", "自动成为关联方") }}</strong>{{ .["t"]("admin.inventory_sources.create.hint.tail", "（内部交易必须能被关联方报表捕获）；内部货源才能填结算价 —— 外部供应商的成本口径是采购单价，不在这里填。") }}
         </p>
@@ -197,5 +174,37 @@
         {{end}}
         {{end}}
     </section>
+
+    {{if isset(.PermSet["inventory:source_create"])}}
+    <template id="tpl-source-create">
+        <form method="post" action="/admin/inventory/sources/create" class="form-stack">
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <input type="hidden" name="projectId" value="{{selectedProject}}">
+            <div class="form-inline">
+                <input type="text" class="form-input" name="code" placeholder="{{ .["t"]("admin.inventory_sources.ph.code", "货源编码（如 SZ_SUPPLIER）") }}" required autocomplete="off">
+                <input type="text" class="form-input" name="name" placeholder="{{ .["t"]("admin.inventory_sources.ph.name", "货源名称（如 苏州通达电子）") }}" required>
+                <select class="form-select" name="type">
+                    {{range _, t := .TypeOptions}}
+                    <option value="{{t.Value}}">{{t.Label}}</option>
+                    {{end}}
+                </select>
+                <select class="form-select" name="relatedParty">
+                    {{range _, r := .RelatedOptions}}
+                    <option value="{{r.Value}}">{{r.Label}}</option>
+                    {{end}}
+                </select>
+                <input type="number" class="form-input" name="settlePrice" placeholder="{{ .["t"]("admin.inventory_sources.ph.settlePrice", "内部结算价（仅内部货源）") }}" inputmode="decimal" step="0.01" min="0">
+                <input type="number" class="form-input" name="sort" value="0" placeholder="{{ .["t"]("admin.inventory_sources.ph.sort", "排序") }}" inputmode="numeric" step="1">
+            </div>
+            <div class="form-inline">
+                <textarea class="form-textarea" name="config" rows="2" placeholder="{{ .["t"]("admin.inventory_sources.ph.config", "对接配置（JSON 对象，如 {\"erp\":\"sap\",\"endpoint\":\"https://ERP_HOST/api\",\"warehouseCode\":\"SZ01\"}）") }}"></textarea>
+            </div>
+            <div class="action-row">
+            <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button>
+                <button type="submit" class="btn btn-primary">{{ .["t"]("admin.inventory_sources.create.submit", "新建货源") }}</button>
+            </div>
+        </form>
+    </template>
+    {{end}}
 </div>
 {{end}}

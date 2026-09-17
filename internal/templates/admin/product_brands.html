@@ -24,24 +24,9 @@
 
     <section class="card card-body">
         <h2 class="card-title mb-lg">{{ .["t"]("admin.product_brands.create.title", "新建品牌") }}</h2>
-        <form method="post" action="/admin/product-brands/create" class="form-stack">
-            <input type="hidden" name="csrf_token" value="{{csrf}}">
-            <input type="hidden" name="projectId" value="{{selectedProject}}">
-            <div class="form-inline">
-                <input aria-label="{{ .["t"]("admin.product_brands.ph.nameExample", "品牌名称（如 山野）") }}" class="form-input" type="text" name="name" placeholder="{{ .["t"]("admin.product_brands.ph.nameExample", "品牌名称（如 山野）") }}" required>
-                <input aria-label="{{ .["t"]("admin.product_brands.ph.slug", "URL 段（留空自动生成）") }}" class="form-input" type="text" name="slug" placeholder="{{ .["t"]("admin.product_brands.ph.slug", "URL 段（留空自动生成）") }}" autocomplete="off">
-                <input aria-label="{{ .["t"]("admin.product_brands.ph.sort", "排序") }}" class="form-input" type="number" name="sort" value="0" placeholder="{{ .["t"]("admin.product_brands.ph.sort", "排序") }}" inputmode="numeric" step="1">
-                <input aria-label="{{ .["t"]("admin.product_brands.ph.logo", "logo URL（可留空）") }}" class="form-input" type="text" name="logo" placeholder="{{ .["t"]("admin.product_brands.ph.logo", "logo URL（可留空）") }}" autocomplete="off">
-            </div>
-            <div class="form-inline">
-                <input aria-label="{{ .["t"]("admin.product_brands.ph.seoTitle", "SEO 标题（可留空）") }}" class="form-input" type="text" name="seoTitle" placeholder="{{ .["t"]("admin.product_brands.ph.seoTitle", "SEO 标题（可留空）") }}">
-                <input aria-label="{{ .["t"]("admin.product_brands.ph.seoDesc", "SEO 描述（可留空）") }}" class="form-input" type="text" name="seoDescription" placeholder="{{ .["t"]("admin.product_brands.ph.seoDesc", "SEO 描述（可留空）") }}">
-                <input aria-label="{{ .["t"]("admin.product_brands.ph.description", "品牌描述（可留空）") }}" class="form-input" type="text" name="description" placeholder="{{ .["t"]("admin.product_brands.ph.description", "品牌描述（可留空）") }}">
-            </div>
-            <div class="form-inline">
-                <button type="submit" class="btn btn-primary">{{ .["t"]("admin.product_brands.create.submit", "新建品牌") }}</button>
-            </div>
-        </form>
+        {{if isset(.PermSet["product:brand_create"])}}
+        <button type="button" class="btn btn-primary" data-drawer-open="#tpl-brand-create" data-drawer-title="{{ .["t"]("admin.product_brands.create.title", "新建品牌") }}">＋ {{ .["t"]("admin.product_brands.create.title", "新建品牌") }}</button>
+        {{end}}
     </section>
 
     <section class="card card-body">
@@ -98,5 +83,29 @@
         {{end}}
         {{end}}
     </section>
+
+    {{if isset(.PermSet["product:brand_create"])}}
+    <template id="tpl-brand-create">
+        <form method="post" action="/admin/product-brands/create" class="form-stack">
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <input type="hidden" name="projectId" value="{{selectedProject}}">
+            <div class="form-inline">
+                <input aria-label="{{ .["t"]("admin.product_brands.ph.nameExample", "品牌名称（如 山野）") }}" class="form-input" type="text" name="name" placeholder="{{ .["t"]("admin.product_brands.ph.nameExample", "品牌名称（如 山野）") }}" required>
+                <input aria-label="{{ .["t"]("admin.product_brands.ph.slug", "URL 段（留空自动生成）") }}" class="form-input" type="text" name="slug" placeholder="{{ .["t"]("admin.product_brands.ph.slug", "URL 段（留空自动生成）") }}" autocomplete="off">
+                <input aria-label="{{ .["t"]("admin.product_brands.ph.sort", "排序") }}" class="form-input" type="number" name="sort" value="0" placeholder="{{ .["t"]("admin.product_brands.ph.sort", "排序") }}" inputmode="numeric" step="1">
+                <input aria-label="{{ .["t"]("admin.product_brands.ph.logo", "logo URL（可留空）") }}" class="form-input" type="text" name="logo" placeholder="{{ .["t"]("admin.product_brands.ph.logo", "logo URL（可留空）") }}" autocomplete="off">
+            </div>
+            <div class="form-inline">
+                <input aria-label="{{ .["t"]("admin.product_brands.ph.seoTitle", "SEO 标题（可留空）") }}" class="form-input" type="text" name="seoTitle" placeholder="{{ .["t"]("admin.product_brands.ph.seoTitle", "SEO 标题（可留空）") }}">
+                <input aria-label="{{ .["t"]("admin.product_brands.ph.seoDesc", "SEO 描述（可留空）") }}" class="form-input" type="text" name="seoDescription" placeholder="{{ .["t"]("admin.product_brands.ph.seoDesc", "SEO 描述（可留空）") }}">
+                <input aria-label="{{ .["t"]("admin.product_brands.ph.description", "品牌描述（可留空）") }}" class="form-input" type="text" name="description" placeholder="{{ .["t"]("admin.product_brands.ph.description", "品牌描述（可留空）") }}">
+            </div>
+            <div class="form-inline">
+                <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button>
+            <button type="submit" class="btn btn-primary">{{ .["t"]("admin.product_brands.create.submit", "新建品牌") }}</button>
+            </div>
+        </form>
+    </template>
+    {{end}}
 </div>
 {{end}}

@@ -37,21 +37,10 @@
 
     <section class="card card-body">
         <h2>{{ .["t"]("admin.inventory.create.title", "新建仓库") }}</h2>
-        <form method="post" action="/admin/inventory/warehouse/create" class="form-stack">
-            <input type="hidden" name="csrf_token" value="{{csrf}}">
-            <input type="hidden" name="projectId" value="{{selectedProject}}">
-            <div class="form-inline">
-                <input type="text" class="form-input" name="code" placeholder="{{ .["t"]("admin.inventory.ph.code", "仓库短码（如 SZ，大写字母数字）") }}" required autocomplete="off">
-                <input type="text" class="form-input" name="name" placeholder="{{ .["t"]("admin.inventory.ph.name", "仓库名称（如 苏州仓）") }}" required>
-                <input type="number" class="form-input" name="sort" value="0" placeholder="{{ .["t"]("admin.inventory.ph.sort", "排序") }}" inputmode="numeric" step="1">
-                <label class="var-value">
-                    <input type="checkbox" name="isDefault" value="1"> {{ .["t"]("admin.inventory.setDefault", "设为默认仓") }}
-                </label>
-            </div>
-            <div class="action-row">
-                <button type="submit" class="btn btn-primary">{{ .["t"]("admin.inventory.create.submit", "新建仓库") }}</button>
-            </div>
-        </form>
+        {* 表单进右侧抽屉，按钮留在原位。 *}
+        {{if isset(.PermSet["inventory:warehouse_create"])}}
+        <button type="button" class="btn btn-primary" data-drawer-open="#tpl-warehouse-create" data-drawer-title="{{ .["t"]("admin.inventory.create.title", "新建仓库") }}">＋ {{ .["t"]("admin.inventory.create.submit", "新建仓库") }}</button>
+        {{end}}
         <p class="hint">{{ .["t"]("admin.inventory.create.hint", "这个工程还没有仓库时，第一个建成的仓库会自动成为默认仓。") }}</p>
     </section>
 
@@ -269,5 +258,35 @@
         </div>
         {{end}}
     </section>
+
+    {{if isset(.PermSet["inventory:warehouse_create"])}}
+    <template id="tpl-warehouse-create">
+        <form method="post" action="/admin/inventory/warehouse/create">
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <input type="hidden" name="projectId" value="{{selectedProject}}">
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label req">{{ .["t"]("admin.inventory.col.code", "仓库短码") }}</label>
+                    <input type="text" class="form-input" name="code" placeholder="{{ .["t"]("admin.inventory.ph.code", "仓库短码（如 SZ，大写字母数字）") }}" required autocomplete="off">
+                </div>
+                <div class="form-group">
+                    <label class="form-label req">{{ .["t"]("admin.inventory.col.name", "仓库名称") }}</label>
+                    <input type="text" class="form-input" name="name" placeholder="{{ .["t"]("admin.inventory.ph.name", "仓库名称（如 苏州仓）") }}" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">{{ .["t"]("admin.inventory.ph.sort", "排序") }}</label>
+                    <input type="number" class="form-input" name="sort" value="0" placeholder="{{ .["t"]("admin.inventory.ph.sort", "排序") }}" inputmode="numeric" step="1">
+                </div>
+            </div>
+            <label class="var-value">
+                <input type="checkbox" name="isDefault" value="1"> {{ .["t"]("admin.inventory.setDefault", "设为默认仓") }}
+            </label>
+            <div class="action-row">
+                <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button>
+                <button type="submit" class="btn btn-primary">{{ .["t"]("admin.inventory.create.submit", "新建仓库") }}</button>
+            </div>
+        </form>
+    </template>
+    {{end}}
 </div>
 {{end}}

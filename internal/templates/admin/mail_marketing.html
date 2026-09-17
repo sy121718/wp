@@ -135,6 +135,13 @@
     {{end}}
 
     <h3>{{ .["t"]("admin.mail.marketing.new_campaign.heading", "新建活动") }}</h3>
+    {{if isset(.PermSet["mail:campaign_save"])}}
+    <button type="button" class="btn btn-primary" data-drawer-open="#tpl-campaign-create" data-drawer-title="{{ .["t"]("admin.mail.marketing.campaign_form.save", "保存活动") }}">＋ {{ .["t"]("admin.mail.marketing.campaign_form.save", "保存活动") }}</button>
+    {{end}}
+  </section>
+
+    {{if isset(.PermSet["mail:campaign_save"])}}
+    <template id="tpl-campaign-create">
     <form method="post" action="/admin/mail/campaign/save" class="form-row items-center">
       <input type="hidden" name="csrf_token" value="{{csrf}}">
       <input type="hidden" name="id" value="0">
@@ -151,8 +158,10 @@
       </label>
       <label>{{ .["t"]("admin.mail.marketing.campaign_form.target_tags", "目标标签（逗号分隔，留空 = 全部已订阅）") }} <input class="form-input" type="text" name="target_tags" placeholder="vip"></label>
       <label>{{ .["t"]("admin.mail.marketing.campaign_form.subject", "邮件主题") }} <input class="form-input" type="text" name="subject" required></label>
-      <button type="submit" class="btn btn-primary">{{ .["t"]("admin.mail.marketing.campaign_form.save", "保存活动") }}</button>
+      <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button>
+        <button type="submit" class="btn btn-primary">{{ .["t"]("admin.mail.marketing.campaign_form.save", "保存活动") }}</button>
     </form>
-  </section>
+    </template>
+    {{end}}
 </div>
 {{end}}

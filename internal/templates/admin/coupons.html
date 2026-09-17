@@ -49,56 +49,9 @@
         <p class="hint">
             {{ .["t"]("admin.coupons.create.hint.lead", "券码提交后统一转成") }}<strong>{{ .["t"]("admin.coupons.create.hint.strong_upper", "大写") }}</strong>{{ .["t"]("admin.coupons.create.hint.mid", "并") }}<strong>{{ .["t"]("admin.coupons.create.hint.strong_immutable", "不可再改") }}</strong>{{ .["t"]("admin.coupons.create.hint.mid2", "（改码等于换一张券，历史核销记录里的码会指向一个查不到的值）—— 需要新码就新建一张，把旧的") }}<strong>{{ .["t"]("admin.coupons.status.disabled", "停用") }}</strong>{{ .["t"]("admin.coupons.create.hint.tail", "。") }}
         </p>
-        <form method="post" action="/admin/coupons/create" class="form-stack">
-            <input type="hidden" name="csrf_token" value="{{csrf}}">
-            <input type="hidden" name="returnQuery" value="{{.CreateBack}}">
-            <input type="hidden" name="projectId" value="{{selectedProject}}">
-            <div class="form-inline">
-                <input type="text" class="form-input" name="code" placeholder="{{ .["t"]("admin.coupons.create.ph.code", "券码（工程内唯一，如 SAVE20）") }}"
-                       required autocomplete="off" maxlength="64">
-                <input type="text" class="form-input" name="name" placeholder="{{ .["t"]("admin.coupons.create.ph.name", "名称（如 双十一全场券）") }}"
-                       autocomplete="off" maxlength="120">
-            </div>
-            <div class="form-inline">
-                <select class="form-select" name="discountType" required>
-                    {{range _, t := typeOptions}}
-                    <option value="{{t.Value}}">{{t.Label}}</option>
-                    {{end}}
-                </select>
-                <input type="number" class="form-input" name="discountValue" placeholder="{{ .["t"]("admin.coupons.create.ph.discount_value", "折扣值（必填，单位见下）") }}"
-                       inputmode="numeric" step="1" min="1" required>
-                <input type="number" class="form-input" name="minSubtotal" placeholder="{{ .["t"]("admin.coupons.create.ph.min_subtotal", "使用门槛（分，0 = 无门槛）") }}"
-                       inputmode="numeric" step="1" min="0" value="0">
-            </div>
-            <p class="hint">
-                {{ .["t"]("admin.coupons.create.unit_hint.lead", "折扣值的") }}<strong>{{ .["t"]("admin.coupons.create.unit_hint.strong", "单位随折扣类型而变") }}</strong>{{ .["t"]("admin.coupons.create.unit_hint.mid", "，两种口径的语义完全不同：") }}<strong>{{ .["t"]("admin.coupons.unit.percent", "按比例") }}</strong>{{ .["t"]("admin.coupons.create.unit_hint.mid2", "填 1..100，表示") }}<strong>{{ .["t"]("admin.coupons.create.unit_hint.strong_strength", "折扣力度") }}</strong>{{ .["t"]("admin.coupons.create.unit_hint.mid3", " —— 20 表示「减 20%」（注意不是打 2 折）；") }}<strong>{{ .["t"]("admin.coupons.unit.fixed", "固定金额") }}</strong>{{ .["t"]("admin.coupons.create.unit_hint.mid4", "填") }}<strong>{{ .["t"]("admin.coupons.unit.cent", "分") }}</strong>{{ .["t"]("admin.coupons.create.unit_hint.mid5", " —— 2000 表示「减 20.00 元」。门槛同样是") }}<strong>{{ .["t"]("admin.coupons.unit.cent", "分") }}</strong>{{ .["t"]("admin.coupons.create.unit_hint.tail", "：9900 表示「满 99.00 元可用」。") }}
-            </p>
-            <div class="form-inline">
-                <input type="number" class="form-input" name="maxUses" placeholder="{{ .["t"]("admin.coupons.ph.max_uses", "总次数上限（0 = 不限）") }}"
-                       inputmode="numeric" step="1" min="0" value="0">
-                <input type="number" class="form-input" name="perUserLimit" placeholder="{{ .["t"]("admin.coupons.ph.per_user_limit", "每人限次（0 = 不限）") }}"
-                       inputmode="numeric" step="1" min="0" value="0">
-                <select class="form-select" name="status">
-                    {{range _, s := enableOptions}}
-                    <option value="{{s.Value}}" {{if s.Value == "1"}}selected{{end}}>{{s.Label}}</option>
-                    {{end}}
-                </select>
-            </div>
-            <div class="form-inline">
-                <input type="text" class="form-input" name="startsAt"
-                       placeholder="{{ .["t"]("admin.coupons.ph.starts_at", "开始时间（留空 = 不限），如 2026-01-01 或 2026-01-01 09:00") }}" autocomplete="off">
-                <input type="text" class="form-input" name="endsAt"
-                       placeholder="{{ .["t"]("admin.coupons.ph.ends_at", "结束时间（留空 = 不限），如 2026-01-31 23:59") }}" autocomplete="off">
-            </div>
-            <p class="hint">
-                {{ .["t"]("admin.coupons.create.time_hint.lead", "时间窗用") }}<strong>{{ .["t"]("admin.coupons.create.time_hint.strong", "文本") }}</strong>{{ .["t"]("admin.coupons.create.time_hint.mid", "填写，两种写法都接受：") }}<code>2006-01-02</code>{{ .["t"]("admin.coupons.create.time_hint.mid2", " 或 ") }}<code>2006-01-02 15:04</code>{{ .["t"]("admin.coupons.create.time_hint.tail", "，按站点本地时间理解（带时区的写法会被拒绝）。结束时间必须晚于开始时间，否则这张券永远不会生效 —— 服务端会直接拒绝。") }}
-            </p>
-            <input type="text" class="form-input" name="remark" placeholder="{{ .["t"]("admin.coupons.ph.remark", "备注（活动说明 / 内部口径）") }}"
-                   autocomplete="off" maxlength="255">
-            <div class="action-row">
-                <button type="submit" class="btn btn-primary">{{ .["t"]("admin.coupons.create.submit", "新建优惠码") }}</button>
-            </div>
-        </form>
+        {{if isset(.PermSet["order:coupon_create"])}}
+        <button type="button" class="btn btn-primary" data-drawer-open="#tpl-coupon-create" data-drawer-title="{{ .["t"]("admin.coupons.create.submit", "新建优惠码") }}">＋ {{ .["t"]("admin.coupons.create.submit", "新建优惠码") }}</button>
+        {{end}}
     </section>
     {{end}}
 
@@ -286,6 +239,62 @@
         </div>
         {{end}}
     </section>
+    {{end}}
+
+    {{if isset(.PermSet["order:coupon_create"])}}
+    <template id="tpl-coupon-create">
+        <form method="post" action="/admin/coupons/create" class="form-stack">
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <input type="hidden" name="returnQuery" value="{{.CreateBack}}">
+            <input type="hidden" name="projectId" value="{{selectedProject}}">
+            <div class="form-inline">
+                <input type="text" class="form-input" name="code" placeholder="{{ .["t"]("admin.coupons.create.ph.code", "券码（工程内唯一，如 SAVE20）") }}"
+                       required autocomplete="off" maxlength="64">
+                <input type="text" class="form-input" name="name" placeholder="{{ .["t"]("admin.coupons.create.ph.name", "名称（如 双十一全场券）") }}"
+                       autocomplete="off" maxlength="120">
+            </div>
+            <div class="form-inline">
+                <select class="form-select" name="discountType" required>
+                    {{range _, t := typeOptions}}
+                    <option value="{{t.Value}}">{{t.Label}}</option>
+                    {{end}}
+                </select>
+                <input type="number" class="form-input" name="discountValue" placeholder="{{ .["t"]("admin.coupons.create.ph.discount_value", "折扣值（必填，单位见下）") }}"
+                       inputmode="numeric" step="1" min="1" required>
+                <input type="number" class="form-input" name="minSubtotal" placeholder="{{ .["t"]("admin.coupons.create.ph.min_subtotal", "使用门槛（分，0 = 无门槛）") }}"
+                       inputmode="numeric" step="1" min="0" value="0">
+            </div>
+            <p class="hint">
+                {{ .["t"]("admin.coupons.create.unit_hint.lead", "折扣值的") }}<strong>{{ .["t"]("admin.coupons.create.unit_hint.strong", "单位随折扣类型而变") }}</strong>{{ .["t"]("admin.coupons.create.unit_hint.mid", "，两种口径的语义完全不同：") }}<strong>{{ .["t"]("admin.coupons.unit.percent", "按比例") }}</strong>{{ .["t"]("admin.coupons.create.unit_hint.mid2", "填 1..100，表示") }}<strong>{{ .["t"]("admin.coupons.create.unit_hint.strong_strength", "折扣力度") }}</strong>{{ .["t"]("admin.coupons.create.unit_hint.mid3", " —— 20 表示「减 20%」（注意不是打 2 折）；") }}<strong>{{ .["t"]("admin.coupons.unit.fixed", "固定金额") }}</strong>{{ .["t"]("admin.coupons.create.unit_hint.mid4", "填") }}<strong>{{ .["t"]("admin.coupons.unit.cent", "分") }}</strong>{{ .["t"]("admin.coupons.create.unit_hint.mid5", " —— 2000 表示「减 20.00 元」。门槛同样是") }}<strong>{{ .["t"]("admin.coupons.unit.cent", "分") }}</strong>{{ .["t"]("admin.coupons.create.unit_hint.tail", "：9900 表示「满 99.00 元可用」。") }}
+            </p>
+            <div class="form-inline">
+                <input type="number" class="form-input" name="maxUses" placeholder="{{ .["t"]("admin.coupons.ph.max_uses", "总次数上限（0 = 不限）") }}"
+                       inputmode="numeric" step="1" min="0" value="0">
+                <input type="number" class="form-input" name="perUserLimit" placeholder="{{ .["t"]("admin.coupons.ph.per_user_limit", "每人限次（0 = 不限）") }}"
+                       inputmode="numeric" step="1" min="0" value="0">
+                <select class="form-select" name="status">
+                    {{range _, s := enableOptions}}
+                    <option value="{{s.Value}}" {{if s.Value == "1"}}selected{{end}}>{{s.Label}}</option>
+                    {{end}}
+                </select>
+            </div>
+            <div class="form-inline">
+                <input type="text" class="form-input" name="startsAt"
+                       placeholder="{{ .["t"]("admin.coupons.ph.starts_at", "开始时间（留空 = 不限），如 2026-01-01 或 2026-01-01 09:00") }}" autocomplete="off">
+                <input type="text" class="form-input" name="endsAt"
+                       placeholder="{{ .["t"]("admin.coupons.ph.ends_at", "结束时间（留空 = 不限），如 2026-01-31 23:59") }}" autocomplete="off">
+            </div>
+            <p class="hint">
+                {{ .["t"]("admin.coupons.create.time_hint.lead", "时间窗用") }}<strong>{{ .["t"]("admin.coupons.create.time_hint.strong", "文本") }}</strong>{{ .["t"]("admin.coupons.create.time_hint.mid", "填写，两种写法都接受：") }}<code>2006-01-02</code>{{ .["t"]("admin.coupons.create.time_hint.mid2", " 或 ") }}<code>2006-01-02 15:04</code>{{ .["t"]("admin.coupons.create.time_hint.tail", "，按站点本地时间理解（带时区的写法会被拒绝）。结束时间必须晚于开始时间，否则这张券永远不会生效 —— 服务端会直接拒绝。") }}
+            </p>
+            <input type="text" class="form-input" name="remark" placeholder="{{ .["t"]("admin.coupons.ph.remark", "备注（活动说明 / 内部口径）") }}"
+                   autocomplete="off" maxlength="255">
+            <div class="action-row">
+            <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button>
+                <button type="submit" class="btn btn-primary">{{ .["t"]("admin.coupons.create.submit", "新建优惠码") }}</button>
+            </div>
+        </form>
+    </template>
     {{end}}
 </div>
 {{end}}
