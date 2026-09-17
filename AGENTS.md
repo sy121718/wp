@@ -252,7 +252,7 @@ Cookie 属性：`HttpOnly`、`Secure`（release 自动启用）、`SameSite=Lax`
   · 分区子表必须单独设：**PG 的 `ENABLE` / `FORCE` 不递归到分区**（实测父表 `relrowsecurity=t`、子表全为 `f`），新分区的策略由 `internal/partition.EnsureAhead` 建表后补
   · 样板：`internal/module/project/model/locale_model.go`（`project_locales` 是 199 的试点，也是当前**唯一**接了 scope 的表）
 - **对外时间默认只到秒（`utils.JSONTime`）**：库里的时间是微秒精度（`timestamptz(6)`，全库 199 列口径一致），但对外 JSON **不该把存储精度透出去** —— Go 的 `time.Time` 默认按 RFC3339Nano 序列化（`2026-09-16T13:57:50.123456+08:00`）：同一秒内的两次写入看起来不同、前端做秒级比较 / 分组要自己截断、每条记录多 7~10 字节（列表接口乘起来很可观），而且协议会跟着存储走。dto 的时间字段一律用 `utils.JSONTime`（可空用 `*JSONTime`）：序列化 RFC3339 **到秒**、零值与 nil 给 `null`（不是 `0001-01-01T00:00:00Z`）、解析比标准库宽松（RFC3339 / `2006-01-02 15:04:05` / `2006-01-02` —— 后两种是后台原生表单与既有客户端在用的）、写库仍走 `time.Time` 保留微秒。service 在 model 与 dto 之间转换：去程 `utils.NewJSONTime` / `utils.NewJSONTimePtr`，回程 `.Time()` / `.TimePtr()`。布局常量收在 `utils.LayoutSecond` / `LayoutDay` / `LayoutJSON`（此前十余处硬编码 `"2006-01-02 15:04:05"`）
-- **model 里不要再写 `gorm:"type:timestamp(3)"`**：那是**无时区 + 毫秒**，与实际列型（timestamptz 微秒）不符 —— 已清理 57 处。任何 AutoMigrate 路径会照它建出错的列型；时间列的类型由迁移决定，model 标签不重复声明
+- **model 一律不声明列型**（2026-09 收口，架构测试 `internal/architecture/model_gorm_tag_test.go` 守门）：列的类型由迁移决定，model 标签不重复声明。重复声明就等于**两份真相** —— 抄错时没有任何东西会报错（`sys_admin.status` 真实是 `smallint`、标签写着 `tinyint(4)`；时间列真实是 `timestamptz(6)`、标签写着 `timestamp(3)` 无时区 + 毫秒），而任何 AutoMigrate 路径会照标签把错的列型建出来。本轮清掉 598 处 —— 其中 57 处 `type:timestamp(3)` 与 17 处 `type:datetime(3)` 是**上一轮清过又长回来的**（当时没有测试兜底），所以这次连红线一起立。**唯一例外**：gorm 无法自行推断列型的字段（`json.RawMessage` / `JSONMap` / `StringArray` 等）必须保留 `type:`（或改用 `serializer:`）指明映射 —— 那说的是「Go 值怎么变成 SQL 值」，不是列型真相，删掉会直接报 unsupported data type
 - 改列名时注意两类**不会自动跟随**的对象：**触发器 / plpgsql 函数体**（函数体是字符串，RENAME 后仍按旧名解析，迁移 206 修的就是它）与 **seed SQL**（seed 可重复执行，必须同步改；历史迁移 SQL 保持原样）。索引表达式、视图、约束由 PG 自动重写
 - 迁移的 `CheckSQL` 里 `?` 由迁移器传入的是**表名**；判定要用的其它值（权限点代码等）必须写进 SQL 字面量，否则判定恒为 0、迁移每次启动都重跑（178 踩过）
 - **主键选型按「这个 id 会不会出现在系统边界之外」判**（DB-020 复核结论）：对外实体（`projects` / `pages` / `products` / `blocks` / `themes` / `content_templates` 等有对外接口，或 id 进了 Page Document / 产物元数据 / 导出物的）用 **uuid**；纯内部流水与字典（`page_views`、`build_jobs`、`publication_receipts`、`page_site_slots`、`inventory_change_reasons`、`sys_*` 全系）用 **bigint identity**。**两套并存是设计，不是待消除的不一致** —— 缺判据才是问题；新表按此选型，别为了「统一」把对外实体改成自增（id 一旦可枚举就少一层纵深，与 DB-009 想要的隔离方向相反）。判据只约束**新表**，**存量按现状为准**：`master_data_changes` / `inventory_stock_movements` 是 uuid 存量（后者 id 已进对外列表投影 `MovementRow`），说明「流水必然内部」这个直觉不成立 —— 别拿判据去反推存量
@@ -309,6 +309,15 @@ Cookie 属性：`HttpOnly`、`Secure`（release 自动启用）、`SameSite=Lax`
   · `support.NewPGTestDB(t)` —— 建**空库**，给自己建表（`AutoMigrate` / 手抄 DDL）或故意构造旧
     schema 的用例用。**塞给它们完整生产结构反而会坏**：实测 `AutoMigrate` 会去对齐一个名字不同的
     约束而报 42704，手抄的最小 schema 没有外键、换成生产结构后 INSERT 立刻撞 FK。
+  · **AutoMigrate 不是「简化版建表」**：它照 model 的 gorm 标签建列，与生产 DDL 静默分叉 ——
+    `artifact` / `media` / `plugin` / `publication` 四个包曾因此跑在「没有外键、没有唯一键、列型不对」
+    的表上，断言在测试里全绿、到生产才暴露（`plugin_registry.manifest` 被建成 bytea 而生产是 jsonb、
+    `page_routes` 缺 `page_id/presentation_id` 恰有一个的 check、`receipt_data` 不是 jsonb 于是
+    非法 JSON 也能落库）。四包已全部切到 `support.NewMigratedPGTestDB`（`artifact` 用
+    `NewMigratedPGTestDBTranslateError` 对齐生产的 gorm TranslateError），连带的代价是要补真实父行
+    （`support.SeedProjectRow` + pages / content_templates / presentation_instances 等）；
+    AutoMigrate 只留给「故意构造旧 schema」的用例；`page` / `block` / `project` / `content` 的 unit 包
+    仍用它自建表（当前断言不依赖列型细节，属待收敛的存量），改到那片代码时顺手切过来。
   · 禁止手抄 `CREATE TABLE` 去伪造「看起来像生产」的表：会与生产静默分叉（`publication` 用例手抄的
     `publication_receipts` 停在 `uuid` + `created_at`，与生产迁移后的 `bigint` + `create_time` 脱节；
     同类手抄分布在 7 个 feature 目录）。测试只额外补**真实父行**（`support.SeedProjectRow` 等）。
