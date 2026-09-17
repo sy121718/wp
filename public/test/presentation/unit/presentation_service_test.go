@@ -56,6 +56,14 @@ type presFixture struct {
 // newPresFixture 装配 fixture；PG 不可用时 t.Skip（返回 nil）。
 func newPresFixture(t *testing.T) *presFixture {
 	t.Helper()
+	return newPresFixtureWithRoutes(t, nil)
+}
+
+// newPresFixtureWithRoutes 同 newPresFixture，但允许在装配时包装路由契约（故障注入用：
+// 验证「路由登记失败时发布必须失败且可恢复」，审计 AR2-004）。
+func newPresFixtureWithRoutes(t *testing.T,
+	wrap func(pubcontract.PublicationService) pubcontract.PublicationService) *presFixture {
+	t.Helper()
 	t.Setenv("GO_WP_ARTIFACT_ROOT", t.TempDir())
 	db, err := support.NewPGTestDB(t)
 	if err != nil {
@@ -80,10 +88,14 @@ func newPresFixture(t *testing.T) *presFixture {
 	}
 	tplSvc := contenttemplateservice.NewService(contenttemplatemodel.NewModel(db), projects, registry)
 	pubSvc := pubservice.NewService(pubmodel.NewPublicationModel(db))
-	presSvc := presentationservice.NewService(presentationmodel.NewModel(db), tplSvc, registry, projects, nil, pubSvc)
+	var routes pubcontract.PublicationService = pubSvc
+	if wrap != nil {
+		routes = wrap(routes)
+	}
+	presSvc := presentationservice.NewService(presentationmodel.NewModel(db), tplSvc, registry, projects, nil, routes)
 	return &presFixture{
 		db: db, content: contentSvc, templates: tplSvc, pres: presSvc,
-		routes: pubSvc, projectID: project.ID,
+		routes: routes, projectID: project.ID,
 	}
 }
 

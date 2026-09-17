@@ -90,17 +90,48 @@ func (s *Service) publishAllLangs(ctx context.Context, inst *presentationmodel.I
 		return "", err
 	}
 
+	// 本次发布前各语言的活跃产物（回执里的 from）：恢复与审计据此比对「从哪个产物
+	// 切到了哪个」。查询失败不阻断发布 —— 回执的 to 才是恢复判据。
+	previousArtifacts := map[string]string{}
+	if pubs, perr := s.m.ListPublications(ctx, inst.ID); perr == nil {
+		for _, pub := range pubs {
+			if pub.ArtifactID != nil {
+				previousArtifacts[pub.Lang] = *pub.ArtifactID
+			}
+		}
+	}
+
 	pinged := make([]string, 0, len(results))
 	for i := range results {
 		b := &results[i]
+		// 每语言在切换访问面之前登记 pending 回执：切换是不可逆的访问面副作用，
+		// 先有账本才谈得上恢复（登记失败即中止，不切换）。
+		receiptID, berr := s.beginPublishReceipt(ctx, inst, b.accessPath, b.lang,
+			previousArtifacts[b.lang], b.artifactID)
+		if berr != nil {
+			return "", fmt.Errorf("登记 %s 的发布回执失败（未切换访问面）: %w", b.accessPath, berr)
+		}
 		if err = s.activate(b.accessPath, b.built); err != nil {
+			s.abortPublishReceipt(ctx, receiptID, "访问面切换失败")
 			return "", fmt.Errorf("激活 %s 失败: %w", b.accessPath, err)
 		}
-		pinged = append(pinged, b.accessPath)
+		// 路由登记失败不再只是日志里的 Warn（审计 AR2-004）：访问面已切换、路由账本
+		// 缺行，会让占用预检 / 回滚 / 删除 / GC 全部依据错误的路由表决策。回执保持
+		// pending —— 它记录的正是「访问面已激活但路由未登记」这个可恢复状态，
+		// 启动恢复按访问面实际指向幂等补齐登记。
 		if rerr := s.registerRoute(ctx, inst, b.accessPath, b.artifactID); rerr != nil {
 			logger.Scene("build").With("instanceId", inst.ID).With("url", b.accessPath).
-				Warn("多语言路由登记失败（线上已激活）: " + rerr.Error())
+				Error(rerr, "多语言路由登记失败（访问面已激活，回执待恢复）")
+			return "", fmt.Errorf("登记 %s 的路由占用失败（访问面已激活，回执 %s 待恢复）: %w",
+				b.accessPath, receiptID, rerr)
 		}
+		// 结案失败只意味着账本没落终结态：访问面与路由都已生效，未结案回执会在下次
+		// 启动恢复时按同样证据补齐（幂等），因此不把整次发布判为失败。
+		if cerr := s.completePublishReceipt(ctx, receiptID); cerr != nil {
+			logger.Scene("build").With("instanceId", inst.ID).With("url", b.accessPath).
+				Warn("多语言发布回执结案失败（访问面与路由已生效，留待恢复补齐）: " + cerr.Error())
+		}
+		pinged = append(pinged, b.accessPath)
 	}
 	s.notifyIndexNow(ctx, inst, pinged...)
 	return primaryArtifactID, nil

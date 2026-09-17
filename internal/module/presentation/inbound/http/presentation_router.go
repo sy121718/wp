@@ -3,6 +3,9 @@ package presentationhttp
 // presentation_router.go — presentation 模块路由自装配（0-A2）。
 
 import (
+	"context"
+	"time"
+
 	"go_wp/internal/builder/core"
 	blockcontract "go_wp/internal/module/block/contract"
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
@@ -45,5 +48,14 @@ func SetupPresentationRoutes(rg *permission.RouteGroup, db *gorm.DB,
 	// 改 URL（已发布详情页的线上路径变更）：新路径激活 + 旧路径 301/取消激活。
 	// 独立端点而非复用 create：改 URL 不是重建，它还要处置旧路径与路由占用。
 	g.POST("/update-url", permission.PresentationUpdateURL, handle.UpdateURL)
+	// 多语言发布回执恢复（审计 AR2-004）：上次进程若在多语言发布的「已切换访问面、
+	// 未登记路由 / 未结案」之间失败或崩溃，这里按符号链接的实际指向补齐路由登记
+	// 并结案（判据不足则结案为未生效）。与 page 侧同一形状：异步执行，
+	// 恢复要读文件系统，不该拖住路由装配。
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		defer cancel()
+		_, _, _ = svc.RecoverPendingPublications(ctx)
+	}()
 	return svc
 }
