@@ -75,7 +75,11 @@
                 <span class="text-mute text-sm">{{ .["t"]("admin.product_tags.list.hitLead", "命中 ") }}{{t.ProductCount}}{{ .["t"]("admin.product_tags.list.hitMid", " 个商品 · 重算：") }}{{t.RecalcAt}}</span>
             </summary>
 
-            <form method="post" action="/admin/product-tags/update" class="form-stack">
+            {{if isset(.PermSet["product:tag_update"])}}
+            <button type="button" class="btn btn-sm" data-drawer-open="#tpl-tag-edit-{{t.ID}}" data-drawer-title="{{ .["t"]("admin.common.action.edit", "编辑") }}">{{ .["t"]("admin.common.action.edit", "编辑") }}</button>
+            {{end}}
+            <template id="tpl-tag-edit-{{t.ID}}">
+            <form method="post" action="/admin/product-tags/update">
                 <input type="hidden" name="csrf_token" value="{{csrf}}">
                 <input type="hidden" name="projectId" value="{{selectedProject}}">
                 <input type="hidden" name="id" value="{{t.ID}}">
@@ -100,9 +104,11 @@
                     <input aria-label="{{ .["t"]("admin.product_tags.ph.daysShort", "days（1~365）") }}" class="form-input" type="number" name="days" value="{{t.RuleDays}}" placeholder="{{ .["t"]("admin.product_tags.ph.daysShort", "days（1~365）") }}" inputmode="numeric" min="1" max="365" step="1">
                     <input aria-label="minPrice" class="form-input" type="text" name="minPrice" value="{{t.RuleMinPrice}}" placeholder="minPrice" inputmode="decimal" autocomplete="off">
                     <input aria-label="maxPrice" class="form-input" type="text" name="maxPrice" value="{{t.RuleMaxPrice}}" placeholder="maxPrice" inputmode="decimal" autocomplete="off">
-                    <button type="submit" class="btn btn-sm">{{ .["t"]("admin.product_tags.list.save", "保存标签") }}</button>
+                    <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button>
+                <button type="submit" class="btn btn-sm">{{ .["t"]("admin.product_tags.list.save", "保存标签") }}</button>
                 </div>
             </form>
+            </template>
 
             {{if t.IsRule}}
             <form method="post" action="/admin/product-tags/recalc">

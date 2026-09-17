@@ -46,7 +46,11 @@
                 {{end}}
             </summary>
 
-            <form method="post" action="/admin/product-categories/update" class="form-stack">
+            {{if isset(.PermSet["product:category_update"])}}
+            <button type="button" class="btn btn-sm" data-drawer-open="#tpl-category-edit-{{row.ID}}" data-drawer-title="{{ .["t"]("admin.common.action.edit", "编辑") }}">{{ .["t"]("admin.common.action.edit", "编辑") }}</button>
+            {{end}}
+            <template id="tpl-category-edit-{{row.ID}}">
+            <form method="post" action="/admin/product-categories/update">
                 <input type="hidden" name="csrf_token" value="{{csrf}}">
                 <input type="hidden" name="projectId" value="{{selectedProject}}">
                 <input type="hidden" name="id" value="{{row.ID}}">
@@ -68,7 +72,8 @@
                     <input aria-label="{{ .["t"]("admin.product_categories.label.seoTitle", "SEO 标题") }}" class="form-input" type="text" name="seoTitle" value="{{row.SEOTitle}}" placeholder="{{ .["t"]("admin.product_categories.label.seoTitle", "SEO 标题") }}">
                     <input aria-label="{{ .["t"]("admin.product_categories.label.seoDesc", "SEO 描述") }}" class="form-input" type="text" name="seoDescription" value="{{row.SEODescription}}" placeholder="{{ .["t"]("admin.product_categories.label.seoDesc", "SEO 描述") }}">
                     <input aria-label="{{ .["t"]("admin.product_categories.label.description", "分类描述") }}" class="form-input" type="text" name="description" value="{{row.Description}}" placeholder="{{ .["t"]("admin.product_categories.label.description", "分类描述") }}">
-                    <button type="submit" class="btn btn-sm">{{ .["t"]("admin.product_categories.list.save", "保存分类") }}</button>
+                    <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button>
+                <button type="submit" class="btn btn-sm">{{ .["t"]("admin.product_categories.list.save", "保存分类") }}</button>
                     {* SEO 评分（审计 SEO-016）：分类页按落地页权重评分；title 唯一性检查
                        （SEO-018）列出冲突页面。hx-include 取本表单的字段（含 id / projectId / csrf）。
                        只读计算，不写库不改产物。 *}
@@ -77,6 +82,7 @@
                             hx-target="#category-seo-score-{{row.ID}}" hx-swap="innerHTML">{{ .["t"]("admin.product_categories.seoScore", "SEO 评分") }}</button>
                 </div>
             </form>
+            </template>
 
             {* 评分结果容器：点「SEO 评分」后由片段填充（空容器不占位）。 *}
             <div id="category-seo-score-{{row.ID}}" class="wb-seo-panel"></div>

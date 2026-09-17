@@ -45,7 +45,11 @@
                 {{end}}
             </summary>
 
-            <form method="post" action="/admin/product-brands/update" class="form-stack">
+            {{if isset(.PermSet["product:brand_update"])}}
+            <button type="button" class="btn btn-sm" data-drawer-open="#tpl-brand-edit-{{b.ID}}" data-drawer-title="{{ .["t"]("admin.common.action.edit", "编辑") }}">{{ .["t"]("admin.common.action.edit", "编辑") }}</button>
+            {{end}}
+            <template id="tpl-brand-edit-{{b.ID}}">
+            <form method="post" action="/admin/product-brands/update">
                 <input type="hidden" name="csrf_token" value="{{csrf}}">
                 <input type="hidden" name="projectId" value="{{selectedProject}}">
                 <input type="hidden" name="id" value="{{b.ID}}">
@@ -59,7 +63,8 @@
                     <input aria-label="{{ .["t"]("admin.product_brands.label.seoTitle", "SEO 标题") }}" class="form-input" type="text" name="seoTitle" value="{{b.SEOTitle}}" placeholder="{{ .["t"]("admin.product_brands.label.seoTitle", "SEO 标题") }}">
                     <input aria-label="{{ .["t"]("admin.product_brands.label.seoDesc", "SEO 描述") }}" class="form-input" type="text" name="seoDescription" value="{{b.SEODescription}}" placeholder="{{ .["t"]("admin.product_brands.label.seoDesc", "SEO 描述") }}">
                     <input aria-label="{{ .["t"]("admin.product_brands.label.description", "品牌描述") }}" class="form-input" type="text" name="description" value="{{b.Description}}" placeholder="{{ .["t"]("admin.product_brands.label.description", "品牌描述") }}">
-                    <button type="submit" class="btn btn-sm">{{ .["t"]("admin.product_brands.list.save", "保存品牌") }}</button>
+                    <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button>
+                <button type="submit" class="btn btn-sm">{{ .["t"]("admin.product_brands.list.save", "保存品牌") }}</button>
                     {* SEO 评分（审计 SEO-016）：品牌页按落地页权重评分；title 唯一性检查
                        （SEO-018）列出冲突页面。hx-include 取本表单的字段（含 id / projectId / csrf）。
                        只读计算，不写库不改产物。 *}
@@ -68,6 +73,7 @@
                             hx-target="#brand-seo-score-{{b.ID}}" hx-swap="innerHTML">{{ .["t"]("admin.product_brands.seoScore", "SEO 评分") }}</button>
                 </div>
             </form>
+            </template>
 
             {* 评分结果容器：点「SEO 评分」后由片段填充（空容器不占位）。 *}
             <div id="brand-seo-score-{{b.ID}}" class="wb-seo-panel"></div>

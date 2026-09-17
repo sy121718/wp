@@ -284,8 +284,8 @@ func registerCoreSchemaAndAccess() {
 	registerSeed(Seed{
 		Version:   "227-i18n-seed-common-actions",
 		TableName: "sys_i18n",
-		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 2 THEN 1 ELSE 0 END FROM sys_i18n " +
-			"WHERE lang = 'zh-CN' AND item_key IN ('admin.common.action.cancel', 'admin.common.action.save')",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 3 THEN 1 ELSE 0 END FROM sys_i18n " +
+			"WHERE lang = 'zh-CN' AND item_key IN ('admin.common.action.cancel', 'admin.common.action.save', 'admin.common.action.edit')",
 		SQL: mustSQL("227_i18n_seed_common_actions.sql"),
 	})
 
