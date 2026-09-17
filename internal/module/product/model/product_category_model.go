@@ -17,15 +17,15 @@ import (
 
 // ProductCategoryEntity 商品分类（树形自引用；parent_id 为空即顶级）。
 type ProductCategoryEntity struct {
-	ID             string          `gorm:"column:id;type:uuid;primaryKey"`
-	ProjectID      string          `gorm:"column:project_id;type:uuid;not null"`
-	ParentID       *string         `gorm:"column:parent_id;type:uuid"`
-	Name           string          `gorm:"column:name;type:text;not null"`
-	Slug           string          `gorm:"column:slug;type:text;not null"`
-	Description    string          `gorm:"column:description;type:text;not null"`
-	Image          string          `gorm:"column:image;type:text;not null"`
-	SEOTitle       string          `gorm:"column:seo_title;type:text;not null"`
-	SEODescription string          `gorm:"column:seo_description;type:text;not null"`
+	ID             string          `gorm:"column:id;primaryKey"`
+	ProjectID      string          `gorm:"column:project_id;not null"`
+	ParentID       *string         `gorm:"column:parent_id"`
+	Name           string          `gorm:"column:name;not null"`
+	Slug           string          `gorm:"column:slug;not null"`
+	Description    string          `gorm:"column:description;not null"`
+	Image          string          `gorm:"column:image;not null"`
+	SEOTitle       string          `gorm:"column:seo_title;not null"`
+	SEODescription string          `gorm:"column:seo_description;not null"`
 	Sort           int             `gorm:"column:sort;not null"`
 	Metadata       json.RawMessage `gorm:"column:metadata;type:jsonb;not null"`
 	CreatedAt      time.Time       `gorm:"column:create_time;not null"`

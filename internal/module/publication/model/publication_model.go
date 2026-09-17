@@ -33,12 +33,12 @@ const (
 
 // RouteEntity 对应 page_routes 表。
 type RouteEntity struct {
-	ProjectID      string    `gorm:"column:project_id;type:uuid;primaryKey"`
-	Path           string    `gorm:"column:path;type:text;primaryKey"`
-	PageID         *string   `gorm:"column:page_id;type:uuid"`
-	PresentationID *string   `gorm:"column:presentation_id;type:uuid"`
-	RouteKind      string    `gorm:"column:route_kind;type:text;not null"`
-	ArtifactID     *string   `gorm:"column:artifact_id;type:uuid"`
+	ProjectID      string    `gorm:"column:project_id;primaryKey"`
+	Path           string    `gorm:"column:path;primaryKey"`
+	PageID         *string   `gorm:"column:page_id"`
+	PresentationID *string   `gorm:"column:presentation_id"`
+	RouteKind      string    `gorm:"column:route_kind;not null"`
+	ArtifactID     *string   `gorm:"column:artifact_id"`
 	UpdatedAt      time.Time `gorm:"column:update_time;not null"`
 }
 
@@ -46,14 +46,14 @@ func (RouteEntity) TableName() string { return tableNamePageRoutes }
 
 // ReceiptEntity 对应 publication_receipts 表：发布回执（故障恢复依据）。
 type ReceiptEntity struct {
-	ID           int64           `gorm:"column:id;type:bigint;primaryKey"`
-	SourceType   string          `gorm:"column:source_type;type:text;not null"`
-	SourceID     string          `gorm:"column:source_id;type:uuid;not null"`
-	Action       string          `gorm:"column:action;type:text;not null"`
-	Path         string          `gorm:"column:path;type:text;not null"`
-	FromArtifact *string         `gorm:"column:from_artifact_id;type:uuid"`
-	ToArtifact   *string         `gorm:"column:to_artifact_id;type:uuid"`
-	ReceiptState string          `gorm:"column:receipt_state;type:text;not null"`
+	ID           int64           `gorm:"column:id;primaryKey"`
+	SourceType   string          `gorm:"column:source_type;not null"`
+	SourceID     string          `gorm:"column:source_id;not null"`
+	Action       string          `gorm:"column:action;not null"`
+	Path         string          `gorm:"column:path;not null"`
+	FromArtifact *string         `gorm:"column:from_artifact_id"`
+	ToArtifact   *string         `gorm:"column:to_artifact_id"`
+	ReceiptState string          `gorm:"column:receipt_state;not null"`
 	ReceiptData  json.RawMessage `gorm:"column:receipt_data;type:jsonb;not null"`
 	CreateTime   time.Time       `gorm:"column:create_time;not null"`
 	CompletedAt  *time.Time      `gorm:"column:completed_at"`

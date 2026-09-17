@@ -89,14 +89,14 @@ func localPGEndpoint() PGEndpoint {
 // Cleanup 通过 t.Cleanup 注册：DROP SCHEMA ... CASCADE 并回收连接。
 func NewPGTestDB(t *testing.T) (*gorm.DB, error) {
 	t.Helper()
-	return newTestDatabase(t, localPGEndpoint(), false)
+	return newTestDatabase(t, localPGEndpoint(), false, false)
 }
 
 // NewPGTestDBAt 与 NewPGTestDB 相同，但使用显式端点
 // （support/testenv.go 的容器回退路径复用；行为与原函数完全一致）。
 func NewPGTestDBAt(t *testing.T, ep PGEndpoint) (*gorm.DB, error) {
 	t.Helper()
-	return newTestDatabase(t, ep, false)
+	return newTestDatabase(t, ep, false, false)
 }
 
 // newTestDatabase 建一个隔离的测试库并返回连接（每个测试独占一个库，Cleanup 时 DROP）。
@@ -106,7 +106,7 @@ func NewPGTestDBAt(t *testing.T, ep PGEndpoint) (*gorm.DB, error) {
 // useTemplate=false：建**空库** —— 给那些自己建表（AutoMigrate、手抄 DDL）或故意构造
 // 旧 schema 的用例用；它们要的本来就是空环境，塞给它们完整生产结构反而会撞上外键约束
 // 与「约束名不符」这类 gorm 元数据对齐问题。
-func newTestDatabase(t *testing.T, ep PGEndpoint, useTemplate bool) (*gorm.DB, error) {
+func newTestDatabase(t *testing.T, ep PGEndpoint, useTemplate, translateError bool) (*gorm.DB, error) {
 	t.Helper()
 
 	host, port, user, password, dbname := ep.Host, ep.Port, ep.User, ep.Password, ep.Database
@@ -143,7 +143,7 @@ func newTestDatabase(t *testing.T, ep PGEndpoint, useTemplate bool) (*gorm.DB, e
 	// 表结构全在 public（模板库由生产迁移建成）；search_path 带上 ext_shared 供 trgm
 	// 索引使用 —— 扩展随模板库一起复制过来，不需要再装。
 	dsn := pgDSN(host, port, user, password, name) + " search_path=public," + sharedExtSchema
-	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{TranslateError: translateError})
 	if err != nil {
 		// 连接失败时尽力清理，避免残留库堆积。
 		_ = adminDB.Exec("DROP DATABASE IF EXISTS " + name).Error

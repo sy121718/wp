@@ -20,18 +20,18 @@ const (
 type DeptEntity struct {
 	ID        uint64  `gorm:"column:id;primaryKey"`
 	ParentID  uint64  `gorm:"column:parent_id;default:0"`
-	Ancestors string  `gorm:"column:ancestors;type:varchar(500)"`
-	DeptName  string  `gorm:"column:dept_name;type:varchar(100)"`
-	DeptCode  string  `gorm:"column:dept_code;type:varchar(50);uniqueIndex"`
+	Ancestors string  `gorm:"column:ancestors"`
+	DeptName  string  `gorm:"column:dept_name"`
+	DeptCode  string  `gorm:"column:dept_code;uniqueIndex"`
 	LeaderID  *uint64 `gorm:"column:leader_id"`
 	SortOrder int     `gorm:"column:sort_order;default:0"`
 	// Status 不带 gorm default tag：避免 gorm 把显式 0（禁用）改写为 1（见 SysRuleEntity.Status 注释）。
 	Status     int        `gorm:"column:status"`
-	Remark     *string    `gorm:"column:remark;type:varchar(200)"`
-	CreateBy   uint64     `gorm:"column:create_by;type:bigint unsigned"`
-	CreateTime *time.Time `gorm:"column:create_time;type:datetime(3)"`
-	UpdateBy   uint64     `gorm:"column:update_by;type:bigint unsigned"`
-	UpdateTime *time.Time `gorm:"column:update_time;type:datetime(3)"`
+	Remark     *string    `gorm:"column:remark"`
+	CreateBy   uint64     `gorm:"column:create_by"`
+	CreateTime *time.Time `gorm:"column:create_time"`
+	UpdateBy   uint64     `gorm:"column:update_by"`
+	UpdateTime *time.Time `gorm:"column:update_time"`
 }
 
 func (DeptEntity) TableName() string {

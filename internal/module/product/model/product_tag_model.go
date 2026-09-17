@@ -21,14 +21,14 @@ import (
 
 // ProductTagEntity 商品标签（手工 / 自动规则同表）。
 type ProductTagEntity struct {
-	ID        string `gorm:"column:id;type:uuid;primaryKey"`
-	ProjectID string `gorm:"column:project_id;type:uuid;not null"`
-	Name      string `gorm:"column:name;type:text;not null"`
-	Slug      string `gorm:"column:slug;type:text;not null"`
+	ID        string `gorm:"column:id;primaryKey"`
+	ProjectID string `gorm:"column:project_id;not null"`
+	Name      string `gorm:"column:name;not null"`
+	Slug      string `gorm:"column:slug;not null"`
 	// Kind manual=手工挂载 / rule=按内置规则自动维护。
-	Kind string `gorm:"column:kind;type:text;not null"`
+	Kind string `gorm:"column:kind;not null"`
 	// RuleType 内置规则类型（kind=manual 时为空串，091 的 CHECK 约束维持这个形状）。
-	RuleType string `gorm:"column:rule_type;type:text;not null"`
+	RuleType string `gorm:"column:rule_type;not null"`
 	// RuleParams 规则参数（JSONB 对象；键集合由规则类型决定）。
 	RuleParams json.RawMessage `gorm:"column:rule_params;type:jsonb;not null"`
 	// RecalcAt 最近一次按规则重算的时间（手工标签恒为 NULL）。

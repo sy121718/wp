@@ -1,8 +1,12 @@
 package unit
 
 // helper_test.go — media service 层单元测试公共支撑：
-// 隔离 PG schema + AutoMigrate 建表 + 服务实例 + 种子数据。
-// 每次调用 NewPGTestDB 创建独立 schema，测试结束自动 DROP，测试幂等。
+// 隔离测试库（表结构来自生产迁移）+ 服务实例 + 种子数据。
+// 每次调用 NewMigratedPGTestDB 复制一份跑完生产迁移的库，测试结束自动 DROP，测试幂等。
+//
+// 不再用 AutoMigrate 建表：它照 model 的 gorm 标签建列，与生产 DDL 静默分叉 ——
+// 实测分类名长度上限与 extra_info 的 json 列在 AutoMigrate 下都建错，
+// 于是「超长名应报错」「非法 JSON 应报错」这类断言在测试里全绿、到生产才暴露。
 
 import (
 	"testing"
@@ -17,14 +21,7 @@ import (
 // newMediaUnitService 创建隔离 PG schema + media 两张表 + service 实例。
 func newMediaUnitService(t *testing.T) (*gorm.DB, *mediaservice.Service) {
 	t.Helper()
-	db, err := support.NewPGTestDB(t)
-	if err != nil {
-		t.Skipf("本地 PostgreSQL 不可用，跳过测试：%v", err)
-		return nil, nil
-	}
-	if err := db.AutoMigrate(&mediamodel.AttachmentEntity{}, &mediamodel.FileCategoryEntity{}, &mediamodel.MediaVariantEntity{}); err != nil {
-		t.Fatalf("AutoMigrate media 表失败: %v", err)
-	}
+	db := support.NewMigratedPGTestDB(t)
 	svc := mediaservice.NewService(
 		mediamodel.NewAttachmentModel(db),
 		mediamodel.NewFileCategoryModel(db),

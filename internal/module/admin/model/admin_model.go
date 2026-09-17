@@ -50,31 +50,31 @@ func (j *JSONMap) Scan(value any) error {
 // 没有 tag 的字段不进白名单，规则也就无法引用它 —— 这是唯一的字段白名单来源，
 // 不要在别处再抄一份（抄错列名不会有人发现，直到行级过滤静默失效）。
 type AdminEntity struct {
-	ID                uint64     `gorm:"column:id;primaryKey"`                                                                       // 用户ID（唯一）
-	DeptID            uint64     `gorm:"column:dept_id;type:bigint unsigned;default:0" datarule:"label=所属部门;ops=EQ,NEQ,IN,NOT_IN"`   // 所属部门ID
-	Username          string     `gorm:"column:username;type:varchar(50);uniqueIndex" datarule:"label=用户名;ops=EQ,NEQ,LIKE,NOT_LIKE"` // 登录账号用户名
-	Password          string     `gorm:"column:password;type:varchar(100)"`                                                          // 加密密码
-	Name              *string    `gorm:"column:name;type:varchar(50)"`                                                               // 用户姓名
-	Avatar            *string    `gorm:"column:avatar;type:varchar(255)"`                                                            // 头像URL
-	Email             *string    `gorm:"column:email;type:varchar(100);index" datarule:"label=邮箱;ops=EQ,NEQ,LIKE"`                   // 邮箱
-	Phone             *string    `gorm:"column:phone;type:varchar(20);index" datarule:"label=手机号;ops=EQ,NEQ"`                        // 手机号
-	Status            int        `gorm:"column:status;type:tinyint(4);default:1;index" datarule:"label=状态;ops=EQ,NEQ,IN,NOT_IN"`     // 状态：1启用 2禁用 3封禁
-	IsAdmin           int        `gorm:"column:is_admin;type:tinyint(4);default:0"`                                                  // 是否管理员：0否 1是
-	LoginFailureCount uint16     `gorm:"column:login_failure_count;type:smallint unsigned;default:0"`                                // 连续登录失败次数
-	LockedUntilTime   *time.Time `gorm:"column:locked_until_time;type:datetime(3)"`                                                  // 封禁至
-	Metadata          JSONMap    `gorm:"column:metadata;type:json"`                                                                  // 扩展元数据
-	LastFailureTime   *time.Time `gorm:"column:last_failure_time;type:datetime(3)"`                                                  // 最后一次登录失败时间
-	RegisterIP        *string    `gorm:"column:register_ip;type:varchar(50)"`                                                        // 注册IP地址
-	RegisterLocation  *string    `gorm:"column:register_location;type:varchar(100)"`                                                 // 注册地理位置
-	LastLoginIP       *string    `gorm:"column:last_login_ip;type:varchar(50)"`                                                      // 最后登录IP
-	LastLoginLocation *string    `gorm:"column:last_login_location;type:varchar(100)"`                                               // 最后登录地理位置
-	LastLoginISP      *string    `gorm:"column:last_login_isp;type:varchar(50)"`                                                     // 最后登录网络运营商
-	LastLoginTime     *time.Time `gorm:"column:last_login_time;type:datetime(3)"`                                                    // 最后登录时间
-	CreateBy          uint64     `gorm:"column:create_by;type:bigint unsigned"`                                                      // 创建人ID
-	CreateTime        *time.Time `gorm:"column:create_time;type:datetime(3)"`                                                        // 创建时间
-	UpdateBy          uint64     `gorm:"column:update_by;type:bigint unsigned"`                                                      // 更新人ID
-	UpdateTime        *time.Time `gorm:"column:update_time;type:datetime(3)"`
-	Remark            *string    `gorm:"column:remark;type:varchar(255)"` // 备注
+	ID                uint64     `gorm:"column:id;primaryKey"`                                                      // 用户ID（唯一）
+	DeptID            uint64     `gorm:"column:dept_id;default:0" datarule:"label=所属部门;ops=EQ,NEQ,IN,NOT_IN"`       // 所属部门ID
+	Username          string     `gorm:"column:username;uniqueIndex" datarule:"label=用户名;ops=EQ,NEQ,LIKE,NOT_LIKE"` // 登录账号用户名
+	Password          string     `gorm:"column:password"`                                                           // 加密密码
+	Name              *string    `gorm:"column:name"`                                                               // 用户姓名
+	Avatar            *string    `gorm:"column:avatar"`                                                             // 头像URL
+	Email             *string    `gorm:"column:email;index" datarule:"label=邮箱;ops=EQ,NEQ,LIKE"`                    // 邮箱
+	Phone             *string    `gorm:"column:phone;index" datarule:"label=手机号;ops=EQ,NEQ"`                        // 手机号
+	Status            int        `gorm:"column:status;default:1;index" datarule:"label=状态;ops=EQ,NEQ,IN,NOT_IN"`    // 状态：1启用 2禁用 3封禁
+	IsAdmin           int        `gorm:"column:is_admin;default:0"`                                                 // 是否管理员：0否 1是
+	LoginFailureCount uint16     `gorm:"column:login_failure_count;default:0"`                                      // 连续登录失败次数
+	LockedUntilTime   *time.Time `gorm:"column:locked_until_time"`                                                  // 封禁至
+	Metadata          JSONMap    `gorm:"column:metadata;type:json"`                                                 // 扩展元数据
+	LastFailureTime   *time.Time `gorm:"column:last_failure_time"`                                                  // 最后一次登录失败时间
+	RegisterIP        *string    `gorm:"column:register_ip"`                                                        // 注册IP地址
+	RegisterLocation  *string    `gorm:"column:register_location"`                                                  // 注册地理位置
+	LastLoginIP       *string    `gorm:"column:last_login_ip"`                                                      // 最后登录IP
+	LastLoginLocation *string    `gorm:"column:last_login_location"`                                                // 最后登录地理位置
+	LastLoginISP      *string    `gorm:"column:last_login_isp"`                                                     // 最后登录网络运营商
+	LastLoginTime     *time.Time `gorm:"column:last_login_time"`                                                    // 最后登录时间
+	CreateBy          uint64     `gorm:"column:create_by"`                                                          // 创建人ID
+	CreateTime        *time.Time `gorm:"column:create_time"`                                                        // 创建时间
+	UpdateBy          uint64     `gorm:"column:update_by"`                                                          // 更新人ID
+	UpdateTime        *time.Time `gorm:"column:update_time"`
+	Remark            *string    `gorm:"column:remark"` // 备注
 }
 
 // AdminModel 持有 gorm 连接，供 service 层调用。

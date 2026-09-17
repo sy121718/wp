@@ -16,9 +16,9 @@ const tableNameThemes = "themes"
 
 // ThemeEntity 对应 themes 表:站点前端主题(颜色/字体/页眉页脚引用/布局参数)。
 type ThemeEntity struct {
-	ID        string          `gorm:"column:id;type:uuid;primaryKey"`
-	ProjectID string          `gorm:"column:project_id;type:uuid;not null"`
-	Name      string          `gorm:"column:name;type:text;not null"`
+	ID        string          `gorm:"column:id;primaryKey"`
+	ProjectID string          `gorm:"column:project_id;not null"`
+	Name      string          `gorm:"column:name;not null"`
 	Settings  json.RawMessage `gorm:"column:settings;type:jsonb;not null"`
 	IsActive  bool            `gorm:"column:is_active;not null"`
 	CreatedAt time.Time       `gorm:"column:create_time;not null"`

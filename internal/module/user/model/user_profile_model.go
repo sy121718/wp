@@ -18,25 +18,25 @@ import (
 // UserProfileEntity 对应 user_profiles 表（扩展资料）。
 type UserProfileEntity struct {
 	ID        uint64  `gorm:"column:id;primaryKey"`
-	UserID    uint64  `gorm:"column:user_id;type:bigint;uniqueIndex"`
-	FirstName *string `gorm:"column:first_name;type:varchar(60)"`
-	LastName  *string `gorm:"column:last_name;type:varchar(60)"`
-	Gender    int     `gorm:"column:gender;type:smallint;default:0"`
+	UserID    uint64  `gorm:"column:user_id;uniqueIndex"`
+	FirstName *string `gorm:"column:first_name"`
+	LastName  *string `gorm:"column:last_name"`
+	Gender    int     `gorm:"column:gender;default:0"`
 	// Birthday 只用到日期部分（列类型是 DATE）：时分秒在写库时被数据库丢弃。
-	Birthday   *time.Time `gorm:"column:birthday;type:date"`
-	Bio        *string    `gorm:"column:bio;type:text"`
-	Website    *string    `gorm:"column:website;type:varchar(255)"`
-	Locale     *string    `gorm:"column:locale;type:varchar(16)"`
-	Timezone   *string    `gorm:"column:timezone;type:varchar(64)"`
-	Country    *string    `gorm:"column:country;type:varchar(64)"`
-	Province   *string    `gorm:"column:province;type:varchar(64)"`
-	City       *string    `gorm:"column:city;type:varchar(64)"`
-	Address    *string    `gorm:"column:address;type:varchar(255)"`
-	Postcode   *string    `gorm:"column:postcode;type:varchar(20)"`
-	Phone      *string    `gorm:"column:phone;type:varchar(20)"`
-	Company    *string    `gorm:"column:company;type:varchar(100)"`
-	CreateTime *time.Time `gorm:"column:create_time;type:timestamp(3);autoCreateTime"`
-	UpdateTime *time.Time `gorm:"column:update_time;type:timestamp(3)"`
+	Birthday   *time.Time `gorm:"column:birthday"`
+	Bio        *string    `gorm:"column:bio"`
+	Website    *string    `gorm:"column:website"`
+	Locale     *string    `gorm:"column:locale"`
+	Timezone   *string    `gorm:"column:timezone"`
+	Country    *string    `gorm:"column:country"`
+	Province   *string    `gorm:"column:province"`
+	City       *string    `gorm:"column:city"`
+	Address    *string    `gorm:"column:address"`
+	Postcode   *string    `gorm:"column:postcode"`
+	Phone      *string    `gorm:"column:phone"`
+	Company    *string    `gorm:"column:company"`
+	CreateTime *time.Time `gorm:"column:create_time;autoCreateTime"`
+	UpdateTime *time.Time `gorm:"column:update_time"`
 }
 
 // TableName 表名。
@@ -45,18 +45,18 @@ func (UserProfileEntity) TableName() string { return "user_profiles" }
 // UserPreferenceEntity 对应 user_preferences 表（前台偏好）。
 type UserPreferenceEntity struct {
 	ID          uint64  `gorm:"column:id;primaryKey"`
-	UserID      uint64  `gorm:"column:user_id;type:bigint;uniqueIndex"`
-	Theme       *string `gorm:"column:theme;type:varchar(64)"`
-	Locale      *string `gorm:"column:locale;type:varchar(16)"`
-	Timezone    *string `gorm:"column:timezone;type:varchar(64)"`
-	PageSize    int     `gorm:"column:page_size;type:smallint;default:20"`
-	EmailNotify bool    `gorm:"column:email_notify;type:boolean;default:true"`
-	SmsNotify   bool    `gorm:"column:sms_notify;type:boolean;default:false"`
+	UserID      uint64  `gorm:"column:user_id;uniqueIndex"`
+	Theme       *string `gorm:"column:theme"`
+	Locale      *string `gorm:"column:locale"`
+	Timezone    *string `gorm:"column:timezone"`
+	PageSize    int     `gorm:"column:page_size;default:20"`
+	EmailNotify bool    `gorm:"column:email_notify;default:true"`
+	SmsNotify   bool    `gorm:"column:sms_notify;default:false"`
 	// ProfileVisibility public / members / private（取值校验在 service）。
-	ProfileVisibility string     `gorm:"column:profile_visibility;type:varchar(16);default:public"`
-	ShowOnline        bool       `gorm:"column:show_online;type:boolean;default:true"`
-	CreateTime        *time.Time `gorm:"column:create_time;type:timestamp(3);autoCreateTime"`
-	UpdateTime        *time.Time `gorm:"column:update_time;type:timestamp(3)"`
+	ProfileVisibility string     `gorm:"column:profile_visibility;default:public"`
+	ShowOnline        bool       `gorm:"column:show_online;default:true"`
+	CreateTime        *time.Time `gorm:"column:create_time;autoCreateTime"`
+	UpdateTime        *time.Time `gorm:"column:update_time"`
 }
 
 // TableName 表名。

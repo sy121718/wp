@@ -17,11 +17,11 @@ const tableNamePresentationPublications = "presentation_publications"
 
 // PublicationEntity 对应 presentation_publications 表。
 type PublicationEntity struct {
-	PresentationID string    `gorm:"column:presentation_id;type:uuid;primaryKey"`
-	Lang           string    `gorm:"column:lang;type:text;primaryKey"`
-	ActivePath     string    `gorm:"column:active_path;type:text;not null"`
-	ArtifactID     *string   `gorm:"column:artifact_id;type:uuid"`
-	ArtifactHash   string    `gorm:"column:artifact_hash;type:text;not null"`
+	PresentationID string    `gorm:"column:presentation_id;primaryKey"`
+	Lang           string    `gorm:"column:lang;primaryKey"`
+	ActivePath     string    `gorm:"column:active_path;not null"`
+	ArtifactID     *string   `gorm:"column:artifact_id"`
+	ArtifactHash   string    `gorm:"column:artifact_hash;not null"`
 	PublishedAt    time.Time `gorm:"column:published_at;not null"`
 	UpdatedAt      time.Time `gorm:"column:update_time;not null"`
 }

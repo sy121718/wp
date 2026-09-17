@@ -44,8 +44,8 @@ func IsValidTemplateRole(role string) bool {
 
 // TemplateEntity content_templates 表实体（模板草稿，可继续编辑）。
 type TemplateEntity struct {
-	ID         string `gorm:"column:id;type:uuid;primaryKey"`
-	ProjectID  string `gorm:"column:project_id;type:uuid;not null"`
+	ID         string `gorm:"column:id;primaryKey"`
+	ProjectID  string `gorm:"column:project_id;not null"`
 	Name       string `gorm:"column:name;not null"`
 	EntityType string `gorm:"column:entity_type;not null"`
 	// TemplateRole 模板角色（审计 EDT-004）：detail = 实体详情页，archive = 归档列表页。
@@ -55,7 +55,7 @@ type TemplateEntity struct {
 	DraftDocument json.RawMessage `gorm:"column:draft_document;type:jsonb;not null"`
 	DraftVersion  int64           `gorm:"column:draft_version;not null"`
 	// CurrentVersionID 当前版本指针（content_template_versions.id）。
-	CurrentVersionID *string `gorm:"column:current_version_id;type:uuid"`
+	CurrentVersionID *string `gorm:"column:current_version_id"`
 	// IsDefault 该实体类型的显式默认模板（EDT-014；每个 entity_type 至多一个）。
 	IsDefault bool      `gorm:"column:is_default;not null"`
 	CreatedAt time.Time `gorm:"column:create_time;not null"`
@@ -67,13 +67,13 @@ func (TemplateEntity) TableName() string { return tableNameContentTemplates }
 
 // VersionEntity content_template_versions 表实体（不可变版本快照）。
 type VersionEntity struct {
-	ID         string          `gorm:"column:id;type:uuid;primaryKey"`
-	TemplateID string          `gorm:"column:template_id;type:uuid;not null"`
+	ID         string          `gorm:"column:id;primaryKey"`
+	TemplateID string          `gorm:"column:template_id;not null"`
 	Version    int64           `gorm:"column:version;not null"`
 	Document   json.RawMessage `gorm:"column:document;type:jsonb;not null"`
 	// SourceHash 版本文档的内容哈希（NOT NULL）。
 	SourceHash string    `gorm:"column:source_hash;not null"`
-	CreatedBy  string    `gorm:"column:created_by;type:uuid;not null"`
+	CreatedBy  string    `gorm:"column:created_by;not null"`
 	CreatedAt  time.Time `gorm:"column:create_time;not null"`
 }
 

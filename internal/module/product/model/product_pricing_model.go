@@ -20,27 +20,27 @@ import (
 
 // PriceAdjustmentEntity 调价批次（一次「按规则应用」一行）。
 type PriceAdjustmentEntity struct {
-	ID string `gorm:"column:id;type:uuid;primaryKey"`
+	ID string `gorm:"column:id;primaryKey"`
 	// ProjectID 作用范围所在工程（决策与后台列表的隔离维度）。
-	ProjectID string `gorm:"column:project_id;type:uuid;not null"`
+	ProjectID string `gorm:"column:project_id;not null"`
 	// RuleType 内置定价规则类型（cost_multiple / cost_markup / target_margin / fixed_price）。
-	RuleType string `gorm:"column:rule_type;type:text;not null"`
+	RuleType string `gorm:"column:rule_type;not null"`
 	// RuleParams 归一后的规则参数（键集合由规则类型决定）。
 	RuleParams json.RawMessage `gorm:"column:rule_params;type:jsonb;not null"`
 	// Rounding 尾数处理方式（none / integer / end_9 / end_99）。
-	Rounding string `gorm:"column:rounding;type:text;not null"`
+	Rounding string `gorm:"column:rounding;not null"`
 	// Scope 作用范围（sku / product / filter）。
-	Scope string `gorm:"column:scope;type:text;not null"`
+	Scope string `gorm:"column:scope;not null"`
 	// TargetID 单个 SKU / 单个商品范围的目标 id（筛选集范围为 NULL）。
-	TargetID *string `gorm:"column:target_id;type:uuid"`
+	TargetID *string `gorm:"column:target_id"`
 	// Filter 筛选集范围条件（status / keyword / categoryId / brandId / tagId）。
 	Filter json.RawMessage `gorm:"column:filter;type:jsonb;not null"`
 	// VariantCount 本次参与试算的变体数；ChangedCount 实际改动的变体数。
 	VariantCount int    `gorm:"column:variant_count;not null"`
 	ChangedCount int    `gorm:"column:changed_count;not null"`
-	Note         string `gorm:"column:note;type:text;not null"`
+	Note         string `gorm:"column:note;not null"`
 	// OperatorID 操作人 id（取自会话；脚本 / 测试路径为空串）。
-	OperatorID string    `gorm:"column:operator_id;type:text;not null"`
+	OperatorID string    `gorm:"column:operator_id;not null"`
 	CreatedAt  time.Time `gorm:"column:create_time;not null"`
 }
 
@@ -52,13 +52,13 @@ func (PriceAdjustmentEntity) TableName() string { return "product_price_adjustme
 // 不建指向 product_variants 的外键（与 081 的关联列精简原则一致）：
 // 变体后续被删掉，历史留痕仍要可读，故 SKU 编码与商品 id 都存当时的快照。
 type PriceAdjustmentItemEntity struct {
-	ID           string    `gorm:"column:id;type:uuid;primaryKey"`
-	AdjustmentID string    `gorm:"column:adjustment_id;type:uuid;not null"`
-	ProductID    string    `gorm:"column:product_id;type:uuid;not null"`
-	VariantID    string    `gorm:"column:variant_id;type:uuid;not null"`
-	SKUCode      string    `gorm:"column:sku_code;type:text;not null"`
-	OldPrice     float64   `gorm:"column:old_price;type:numeric(12,2);not null"`
-	NewPrice     float64   `gorm:"column:new_price;type:numeric(12,2);not null"`
+	ID           string    `gorm:"column:id;primaryKey"`
+	AdjustmentID string    `gorm:"column:adjustment_id;not null"`
+	ProductID    string    `gorm:"column:product_id;not null"`
+	VariantID    string    `gorm:"column:variant_id;not null"`
+	SKUCode      string    `gorm:"column:sku_code;not null"`
+	OldPrice     float64   `gorm:"column:old_price;not null"`
+	NewPrice     float64   `gorm:"column:new_price;not null"`
 	CreatedAt    time.Time `gorm:"column:create_time;not null"`
 }
 

@@ -19,13 +19,13 @@ import (
 type OrderStatusLogEntity struct {
 	ID           uint64    `gorm:"column:id;primaryKey"`
 	OrderID      uint64    `gorm:"column:order_id"`
-	FromStatus   string    `gorm:"column:from_status;type:varchar(20)"`
-	ToStatus     string    `gorm:"column:to_status;type:varchar(20)"`
-	OperatorType string    `gorm:"column:operator_type;type:varchar(20)"`
+	FromStatus   string    `gorm:"column:from_status"`
+	ToStatus     string    `gorm:"column:to_status"`
+	OperatorType string    `gorm:"column:operator_type"`
 	OperatorID   uint64    `gorm:"column:operator_id"`
-	OperatorName string    `gorm:"column:operator_name;type:varchar(60)"`
-	Remark       string    `gorm:"column:remark;type:varchar(255)"`
-	CreateTime   time.Time `gorm:"column:create_time;type:timestamp(3)"`
+	OperatorName string    `gorm:"column:operator_name"`
+	Remark       string    `gorm:"column:remark"`
+	CreateTime   time.Time `gorm:"column:create_time"`
 }
 
 // TableName 实现 gorm 表名（默认推断为 order_status_log_entities）。

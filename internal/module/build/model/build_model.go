@@ -35,14 +35,14 @@ const (
 
 // Entity build_jobs 表实体。
 type Entity struct {
-	ID             int64      `gorm:"column:id;type:bigint;primaryKey"`
-	SourceType     string     `gorm:"column:source_type;type:text;not null"`
-	SourceID       string     `gorm:"column:source_id;type:uuid;not null"`
+	ID             int64      `gorm:"column:id;primaryKey"`
+	SourceType     string     `gorm:"column:source_type;not null"`
+	SourceID       string     `gorm:"column:source_id;not null"`
 	DraftVersion   int64      `gorm:"column:draft_version;not null"`
-	BuildInputHash string     `gorm:"column:build_input_hash;type:text;not null"`
-	Status         string     `gorm:"column:status;type:text;not null"`
-	ArtifactID     *string    `gorm:"column:artifact_id;type:uuid"`
-	ErrorMessage   *string    `gorm:"column:error_message;type:text"`
+	BuildInputHash string     `gorm:"column:build_input_hash;not null"`
+	Status         string     `gorm:"column:status;not null"`
+	ArtifactID     *string    `gorm:"column:artifact_id"`
+	ErrorMessage   *string    `gorm:"column:error_message"`
 	CreateTime     time.Time  `gorm:"column:create_time;not null"`
 	StartedAt      *time.Time `gorm:"column:started_at"`
 	CompletedAt    *time.Time `gorm:"column:completed_at"`

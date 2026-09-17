@@ -16,18 +16,18 @@ const (
 
 // PermissionEntity 对应 sys_permission 表字段（权限点目录，非 Casbin 授权记录）。
 type PermissionEntity struct {
-	ID             uint64     `gorm:"column:id;primaryKey"`                                 // 主键ID
-	PermissionCode string     `gorm:"column:permission_code;type:varchar(100);uniqueIndex"` // 权限编码，如 admin:list
-	PermissionName string     `gorm:"column:permission_name;type:varchar(100)"`             // 权限名称，如 管理员列表
-	Module         string     `gorm:"column:module;type:varchar(50);index"`                 // 所属模块，如 admin
-	APIPath        string     `gorm:"column:api_path;type:varchar(200)"`                    // 后端接口路径
-	APIMethod      string     `gorm:"column:api_method;type:varchar(10);default:GET"`       // 请求方法 GET/POST
-	Status         int        `gorm:"column:status;type:tinyint;index"`                     // 状态：0=禁用 1=启用；不带 default tag，避免 gorm 把显式 0（禁用）改写为 1（见 SysRuleEntity.Status 注释）
-	Remark         *string    `gorm:"column:remark;type:varchar(200)"`                      // 备注
-	CreateBy       uint64     `gorm:"column:create_by;type:bigint unsigned"`                // 创建人ID
-	CreateTime     *time.Time `gorm:"column:create_time;type:datetime(3)"`                  // 创建时间
-	UpdateBy       uint64     `gorm:"column:update_by;type:bigint unsigned"`                // 更新人ID
-	UpdateTime     *time.Time `gorm:"column:update_time;type:datetime(3)"`                  // 更新时间
+	ID             uint64     `gorm:"column:id;primaryKey"`               // 主键ID
+	PermissionCode string     `gorm:"column:permission_code;uniqueIndex"` // 权限编码，如 admin:list
+	PermissionName string     `gorm:"column:permission_name"`             // 权限名称，如 管理员列表
+	Module         string     `gorm:"column:module;index"`                // 所属模块，如 admin
+	APIPath        string     `gorm:"column:api_path"`                    // 后端接口路径
+	APIMethod      string     `gorm:"column:api_method;default:GET"`      // 请求方法 GET/POST
+	Status         int        `gorm:"column:status;index"`                // 状态：0=禁用 1=启用；不带 default tag，避免 gorm 把显式 0（禁用）改写为 1（见 SysRuleEntity.Status 注释）
+	Remark         *string    `gorm:"column:remark"`                      // 备注
+	CreateBy       uint64     `gorm:"column:create_by"`                   // 创建人ID
+	CreateTime     *time.Time `gorm:"column:create_time"`                 // 创建时间
+	UpdateBy       uint64     `gorm:"column:update_by"`                   // 更新人ID
+	UpdateTime     *time.Time `gorm:"column:update_time"`                 // 更新时间
 }
 
 // PermissionModel 权限点数据访问，持有 gorm 连接。

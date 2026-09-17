@@ -49,27 +49,27 @@ var ReturnActiveStatuses = []string{
 // ReturnEntity 对应 order_returns 表。
 type ReturnEntity struct {
 	ID        uint64 `gorm:"column:id;primaryKey"`
-	ProjectID string `gorm:"column:project_id;type:uuid"`
+	ProjectID string `gorm:"column:project_id"`
 	OrderID   uint64 `gorm:"column:order_id"`
-	OrderNo   string `gorm:"column:order_no;type:varchar(40)"`
-	ReturnNo  string `gorm:"column:return_no;type:varchar(40)"`
-	Status    string `gorm:"column:status;type:varchar(20)"`
-	Reason    string `gorm:"column:reason;type:varchar(255)"`
+	OrderNo   string `gorm:"column:order_no"`
+	ReturnNo  string `gorm:"column:return_no"`
+	Status    string `gorm:"column:status"`
+	Reason    string `gorm:"column:reason"`
 	// RefundAmount 整单退款额（分，明细之和）。
 	RefundAmount  int64      `gorm:"column:refund_amount"`
 	UserID        *uint64    `gorm:"column:user_id"`
-	CustomerEmail string     `gorm:"column:customer_email;type:varchar(120)"`
-	CustomerName  string     `gorm:"column:customer_name;type:varchar(60)"`
-	AdminNote     string     `gorm:"column:admin_note;type:varchar(500)"`
+	CustomerEmail string     `gorm:"column:customer_email"`
+	CustomerName  string     `gorm:"column:customer_name"`
+	AdminNote     string     `gorm:"column:admin_note"`
 	ReviewerID    uint64     `gorm:"column:reviewer_id"`
-	ReviewerName  string     `gorm:"column:reviewer_name;type:varchar(60)"`
-	ReviewedAt    *time.Time `gorm:"column:reviewed_at;type:timestamp(3)"`
-	ReceivedAt    *time.Time `gorm:"column:received_at;type:timestamp(3)"`
-	RefundedAt    *time.Time `gorm:"column:refunded_at;type:timestamp(3)"`
-	TransactionID string     `gorm:"column:transaction_id;type:varchar(120)"`
-	RequestID     string     `gorm:"column:request_id;type:varchar(64)"`
-	CreateTime    time.Time  `gorm:"column:create_time;type:timestamp(3)"`
-	UpdateTime    time.Time  `gorm:"column:update_time;type:timestamp(3)"`
+	ReviewerName  string     `gorm:"column:reviewer_name"`
+	ReviewedAt    *time.Time `gorm:"column:reviewed_at"`
+	ReceivedAt    *time.Time `gorm:"column:received_at"`
+	RefundedAt    *time.Time `gorm:"column:refunded_at"`
+	TransactionID string     `gorm:"column:transaction_id"`
+	RequestID     string     `gorm:"column:request_id"`
+	CreateTime    time.Time  `gorm:"column:create_time"`
+	UpdateTime    time.Time  `gorm:"column:update_time"`
 }
 
 // TableName 实现 gorm 表名（显式给：默认复数推断会得到 return_entities）。
@@ -80,17 +80,17 @@ type ReturnItemEntity struct {
 	ID           uint64 `gorm:"column:id;primaryKey"`
 	ReturnID     uint64 `gorm:"column:return_id"`
 	OrderItemID  uint64 `gorm:"column:order_item_id"`
-	ProductID    string `gorm:"column:product_id;type:uuid"`
-	VariantID    string `gorm:"column:variant_id;type:uuid"`
-	ProductName  string `gorm:"column:product_name;type:varchar(200)"`
-	VariantLabel string `gorm:"column:variant_label;type:varchar(200)"`
-	SKU          string `gorm:"column:sku;type:varchar(80)"`
+	ProductID    string `gorm:"column:product_id"`
+	VariantID    string `gorm:"column:variant_id"`
+	ProductName  string `gorm:"column:product_name"`
+	VariantLabel string `gorm:"column:variant_label"`
+	SKU          string `gorm:"column:sku"`
 	UnitPrice    int64  `gorm:"column:unit_price"`
 	Quantity     int    `gorm:"column:quantity"`
 	// ReceivedQuantity 实际入库数量（首版等于申请数量，列留着以备「少件 / 折价」）。
 	ReceivedQuantity int       `gorm:"column:received_quantity"`
 	RefundAmount     int64     `gorm:"column:refund_amount"`
-	CreateTime       time.Time `gorm:"column:create_time;type:timestamp(3)"`
+	CreateTime       time.Time `gorm:"column:create_time"`
 }
 
 // TableName 实现 gorm 表名。

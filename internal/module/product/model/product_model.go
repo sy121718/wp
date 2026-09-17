@@ -20,22 +20,22 @@ import (
 
 // ProductEntity 商品主体。价格与库存在变体上；关联关系走 JSON 列。
 type ProductEntity struct {
-	ID          string          `gorm:"column:id;type:uuid;primaryKey"`
-	ProjectID   string          `gorm:"column:project_id;type:uuid;not null"`
-	Name        string          `gorm:"column:name;type:text;not null"`
-	Subtitle    string          `gorm:"column:subtitle;type:text;not null"`
+	ID          string          `gorm:"column:id;primaryKey"`
+	ProjectID   string          `gorm:"column:project_id;not null"`
+	Name        string          `gorm:"column:name;not null"`
+	Subtitle    string          `gorm:"column:subtitle;not null"`
 	Description json.RawMessage `gorm:"column:description;type:jsonb;not null"`
-	Slug        string          `gorm:"column:slug;type:text;not null"`
-	Status      string          `gorm:"column:status;type:text;not null"`
+	Slug        string          `gorm:"column:slug;not null"`
+	Status      string          `gorm:"column:status;not null"`
 	// PublishedAt 上架时间（issue #11）：最近一次进入 published 的时刻，由 service 在
 	// 状态转 published 时写入；自动标签的「新品」规则以它为判定基准（不用 create_time，
 	// 否则「建了草稿很久才上架」的商品会被误判成新品）。
 	PublishedAt    *time.Time      `gorm:"column:published_at"`
 	Sort           int             `gorm:"column:sort;not null"`
-	Unit           string          `gorm:"column:unit;type:text;not null"`
-	Weight         *float64        `gorm:"column:weight;type:numeric(12,3)"`
-	SEOTitle       string          `gorm:"column:seo_title;type:text;not null"`
-	SEODescription string          `gorm:"column:seo_description;type:text;not null"`
+	Unit           string          `gorm:"column:unit;not null"`
+	Weight         *float64        `gorm:"column:weight"`
+	SEOTitle       string          `gorm:"column:seo_title;not null"`
+	SEODescription string          `gorm:"column:seo_description;not null"`
 	Images         json.RawMessage `gorm:"column:images;type:jsonb;not null"`
 	// ImageAlts 图集 alt 文本数组（issue #12，迁移 094）：与 Images 逐位对应，
 	// 元素可为空串（该图仍是装饰性图片，产物由商品名兜底）。
@@ -48,7 +48,7 @@ type ProductEntity struct {
 	// PrimaryCategoryID 主分类（issue #10）：附属分类是 category_ids 数组，
 	// 主分类需要「唯一 + 可反查 + 分类被删即自动解绑」，故落成真列 + 外键。
 	// 不变量：主分类必然同时出现在 category_ids 里（由 service 维护）。
-	PrimaryCategoryID *string         `gorm:"column:primary_category_id;type:uuid"`
+	PrimaryCategoryID *string         `gorm:"column:primary_category_id"`
 	TagIDs            json.RawMessage `gorm:"column:tag_ids;type:jsonb;not null"`
 	// Ratings 评分明细（issue #30）：与商品是 hasMany 关联，详情页等路径仍可用 Preload。
 	//
@@ -69,11 +69,11 @@ type ProductEntity struct {
 	MinPrice            *float64        `gorm:"column:min_price;->"`
 	RelatedIDs          json.RawMessage `gorm:"column:related_ids;type:jsonb;not null"`
 	BundleItems         json.RawMessage `gorm:"column:bundle_items;type:jsonb;not null"`
-	BrandID             *string         `gorm:"column:brand_id;type:uuid"`
-	DefaultPrice        *float64        `gorm:"column:default_price;type:numeric(12,2)"`
-	DefaultComparePrice *float64        `gorm:"column:default_compare_price;type:numeric(12,2)"`
-	DefaultCostPrice    *float64        `gorm:"column:default_cost_price;type:numeric(12,2)"`
-	DefaultImage        string          `gorm:"column:default_image;type:text;not null"`
+	BrandID             *string         `gorm:"column:brand_id"`
+	DefaultPrice        *float64        `gorm:"column:default_price"`
+	DefaultComparePrice *float64        `gorm:"column:default_compare_price"`
+	DefaultCostPrice    *float64        `gorm:"column:default_cost_price"`
+	DefaultImage        string          `gorm:"column:default_image;not null"`
 	Metadata            json.RawMessage `gorm:"column:metadata;type:jsonb;not null"`
 	CreatedAt           time.Time       `gorm:"column:create_time;not null"`
 	UpdatedAt           time.Time       `gorm:"column:update_time;not null"`
@@ -88,14 +88,14 @@ func (ProductEntity) TableName() string { return "products" }
 // 由查询期投影得到（同模块的库存用例提供真源汇总）。曾经的 stock_total 缓存列
 // 与随之而来的同步 / 台账 / 对账已一并删除。
 type VariantEntity struct {
-	ID           string          `gorm:"column:id;type:uuid;primaryKey"`
-	ProductID    string          `gorm:"column:product_id;type:uuid;not null"`
-	SKUCode      string          `gorm:"column:sku_code;type:text;not null"`
-	Barcode      string          `gorm:"column:barcode;type:text;not null"`
-	Price        float64         `gorm:"column:price;type:numeric(12,2);not null"`
-	ComparePrice *float64        `gorm:"column:compare_price;type:numeric(12,2)"`
-	CostPrice    *float64        `gorm:"column:cost_price;type:numeric(12,2)"`
-	Image        string          `gorm:"column:image;type:text;not null"`
+	ID           string          `gorm:"column:id;primaryKey"`
+	ProductID    string          `gorm:"column:product_id;not null"`
+	SKUCode      string          `gorm:"column:sku_code;not null"`
+	Barcode      string          `gorm:"column:barcode;not null"`
+	Price        float64         `gorm:"column:price;not null"`
+	ComparePrice *float64        `gorm:"column:compare_price"`
+	CostPrice    *float64        `gorm:"column:cost_price"`
+	Image        string          `gorm:"column:image;not null"`
 	OptionValues json.RawMessage `gorm:"column:option_values;type:jsonb;not null"`
 	Enabled      bool            `gorm:"column:enabled;not null"`
 	Sort         int             `gorm:"column:sort;not null"`

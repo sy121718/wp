@@ -48,19 +48,19 @@ func IsValidInstanceRole(role string) bool {
 //   - stale 表示「依赖已变更、待重建」；
 //   - project_id / template_id 为 NOT NULL 外键，装配时必须落库。
 type InstanceEntity struct {
-	ID         string `gorm:"column:id;type:uuid;primaryKey"`
-	ProjectID  string `gorm:"column:project_id;type:uuid;not null"`
+	ID         string `gorm:"column:id;primaryKey"`
+	ProjectID  string `gorm:"column:project_id;not null"`
 	EntityType string `gorm:"column:entity_type;not null"`
-	EntityID   string `gorm:"column:entity_id;type:uuid;not null"`
+	EntityID   string `gorm:"column:entity_id;not null"`
 	// InstanceRole 实例角色（审计 EDT-004）：detail = 实体详情页，archive = 归档列表页。
 	// 同一个分类可以同时有这两张页面，所以唯一键是（实体 + 角色）而不是实体。
 	InstanceRole      string  `gorm:"column:instance_role;not null;default:detail"`
 	URLPath           string  `gorm:"column:url_path;not null"`
-	TemplateID        string  `gorm:"column:template_id;type:uuid;not null"`
-	CurrentSnapshotID *string `gorm:"column:current_snapshot_id;type:uuid"`
-	StagedSnapshotID  *string `gorm:"column:staged_snapshot_id;type:uuid"`
-	StagedArtifactID  *string `gorm:"column:staged_artifact_id;type:uuid"`
-	ActiveArtifactID  *string `gorm:"column:active_artifact_id;type:uuid"`
+	TemplateID        string  `gorm:"column:template_id;not null"`
+	CurrentSnapshotID *string `gorm:"column:current_snapshot_id"`
+	StagedSnapshotID  *string `gorm:"column:staged_snapshot_id"`
+	StagedArtifactID  *string `gorm:"column:staged_artifact_id"`
+	ActiveArtifactID  *string `gorm:"column:active_artifact_id"`
 	Stale             bool    `gorm:"column:stale;not null"`
 	// DeletedAt 保留列（本轮不启用软删语义，删除走聚合内级联硬删）。
 	DeletedAt   *time.Time `gorm:"column:deleted_at"`
@@ -77,10 +77,10 @@ func (InstanceEntity) TableName() string { return tableNamePresentationInstances
 // SourceEntityRevisionID 对应真实列 source_entity_revision_id（uuid NOT NULL）：
 // 指向产生本快照的内容实体 ID（当前无独立的 revision 行表，落实体 ID）。
 type SnapshotEntity struct {
-	ID                      string          `gorm:"column:id;type:uuid;primaryKey"`
-	PresentationInstanceID  string          `gorm:"column:presentation_instance_id;type:uuid;not null"`
-	SourceTemplateVersionID string          `gorm:"column:source_template_version_id;type:uuid;not null"`
-	SourceEntityRevisionID  string          `gorm:"column:source_entity_revision_id;type:uuid;not null"`
+	ID                      string          `gorm:"column:id;primaryKey"`
+	PresentationInstanceID  string          `gorm:"column:presentation_instance_id;not null"`
+	SourceTemplateVersionID string          `gorm:"column:source_template_version_id;not null"`
+	SourceEntityRevisionID  string          `gorm:"column:source_entity_revision_id;not null"`
 	Document                json.RawMessage `gorm:"column:document;type:jsonb;not null"`
 	CreatedAt               time.Time       `gorm:"column:create_time;not null"`
 }
@@ -90,12 +90,12 @@ func (SnapshotEntity) TableName() string { return tableNameDocumentSnapshots }
 
 // ArtifactEntity presentation_artifacts 表实体（自动发布实例的产物元数据）。
 type ArtifactEntity struct {
-	ID                     string `gorm:"column:id;type:uuid;primaryKey"`
-	PresentationInstanceID string `gorm:"column:presentation_instance_id;type:uuid;not null;uniqueIndex:uk_presentation_artifacts_instance_version_lang,priority:1"`
-	SnapshotID             string `gorm:"column:snapshot_id;type:uuid;not null"`
+	ID                     string `gorm:"column:id;primaryKey"`
+	PresentationInstanceID string `gorm:"column:presentation_instance_id;not null;uniqueIndex:uk_presentation_artifacts_instance_version_lang,priority:1"`
+	SnapshotID             string `gorm:"column:snapshot_id;not null"`
 	Version                int64  `gorm:"column:version;not null;uniqueIndex:uk_presentation_artifacts_instance_version_lang,priority:2"`
 	// Lang 构建语言（I18N-013）：同版本多语言各占一行。
-	Lang               string          `gorm:"column:lang;type:text;not null;uniqueIndex:uk_presentation_artifacts_instance_version_lang,priority:3"`
+	Lang               string          `gorm:"column:lang;not null;uniqueIndex:uk_presentation_artifacts_instance_version_lang,priority:3"`
 	SourceHash         string          `gorm:"column:source_hash;not null"`
 	BuildInputManifest json.RawMessage `gorm:"column:build_input_manifest;type:jsonb;not null"`
 	BuildInputHash     string          `gorm:"column:build_input_hash;not null"`
@@ -108,7 +108,7 @@ type ArtifactEntity struct {
 	PayloadState       string          `gorm:"column:payload_state;not null"`
 	PayloadDeletedAt   *time.Time      `gorm:"column:payload_deleted_at"`
 	Note               string          `gorm:"column:note;not null"`
-	CreatedBy          string          `gorm:"column:created_by;type:uuid;not null"`
+	CreatedBy          string          `gorm:"column:created_by;not null"`
 	CreatedAt          time.Time       `gorm:"column:create_time;not null"`
 }
 
@@ -117,8 +117,8 @@ func (ArtifactEntity) TableName() string { return tableNamePresentationArtifacts
 
 // DependencyEntity presentation_dependencies 行（产物声明的构建期依赖）。
 type DependencyEntity struct {
-	PresentationID string    `gorm:"column:presentation_id;type:uuid;primaryKey"`
-	ArtifactID     string    `gorm:"column:artifact_id;type:uuid;primaryKey"`
+	PresentationID string    `gorm:"column:presentation_id;primaryKey"`
+	ArtifactID     string    `gorm:"column:artifact_id;primaryKey"`
 	DependencyKind string    `gorm:"column:dependency_kind;primaryKey"`
 	DependencyKey  string    `gorm:"column:dependency_key;primaryKey"`
 	Revision       *string   `gorm:"column:revision"`

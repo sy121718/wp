@@ -36,8 +36,8 @@ const (
 
 // DailyStatEntity 预聚合表实体。
 type DailyStatEntity struct {
-	ProjectID string    `gorm:"column:project_id;type:uuid;primaryKey"`
-	Day       time.Time `gorm:"column:day;type:date;primaryKey"`
+	ProjectID string    `gorm:"column:project_id;primaryKey"`
+	Day       time.Time `gorm:"column:day;primaryKey"`
 	Scope     string    `gorm:"column:scope;primaryKey"`
 	Path      string    `gorm:"column:path;primaryKey"`
 	Views     int64     `gorm:"column:views;not null"`

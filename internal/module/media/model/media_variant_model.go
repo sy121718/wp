@@ -36,13 +36,13 @@ func VariantTypes() []string {
 type MediaVariantEntity struct {
 	ID           uint64     `gorm:"column:id;primaryKey"`
 	AttachmentID uint64     `gorm:"column:attachment_id"`
-	VariantType  string     `gorm:"column:variant_type;type:varchar(20)"`
-	FilePath     string     `gorm:"column:file_path;type:varchar(500)"`
+	VariantType  string     `gorm:"column:variant_type"`
+	FilePath     string     `gorm:"column:file_path"`
 	Width        *int       `gorm:"column:width"`
 	Height       *int       `gorm:"column:height"`
 	FileSize     int64      `gorm:"column:file_size"`
-	MimeType     *string    `gorm:"column:mime_type;type:varchar(100)"`
-	Status       string     `gorm:"column:status;type:varchar(20);default:pending"`
+	MimeType     *string    `gorm:"column:mime_type"`
+	Status       string     `gorm:"column:status;default:pending"`
 	CreateTime   time.Time  `gorm:"column:create_time;autoCreateTime"`
 	UpdateTime   *time.Time `gorm:"column:update_time"`
 }

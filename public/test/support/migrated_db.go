@@ -19,7 +19,22 @@ func NewMigratedPGTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	// 复制「跑完生产迁移的模板库」，而不是每次新建空库再跑一遍迁移：
 	// 结构同样只由生产迁移产生（模板库就是这么建出来的），但每个用例约 65ms 而非约 1.1s。
-	db, err := newTestDatabase(t, localPGEndpoint(), true)
+	db, err := newTestDatabase(t, localPGEndpoint(), true, false)
+	if err != nil {
+		t.Skipf("本地 PostgreSQL 不可用，跳过测试：%v", err)
+		return nil
+	}
+	return db
+}
+
+// NewMigratedPGTestDBTranslateError 与 NewMigratedPGTestDB 相同，但按生产配置打开连接
+// （gorm.Config{TranslateError:true}，见 pkg/database）：service 里依赖
+// gorm.ErrDuplicatedKey 归一化唯一键冲突的分支只在这时命中 —— 默认连接返回原始 PG 23505
+// （SQLSTATE 23505），errors.Is 判假，冲突会被当成未知持久化错误往上抛。
+// 样板消费者：artifact service 的 mapPersistenceError。
+func NewMigratedPGTestDBTranslateError(t *testing.T) *gorm.DB {
+	t.Helper()
+	db, err := newTestDatabase(t, localPGEndpoint(), true, true)
 	if err != nil {
 		t.Skipf("本地 PostgreSQL 不可用，跳过测试：%v", err)
 		return nil

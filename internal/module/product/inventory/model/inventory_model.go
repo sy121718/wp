@@ -29,11 +29,11 @@ import (
 // SKU 本身是全局的，货可以在多个仓分布。
 // IsDefault 标记默认仓：每工程至多一行（DDL 侧部分唯一索引），是「未指定仓库」时的兜底。
 type WarehouseEntity struct {
-	ID        string          `gorm:"column:id;type:uuid;primaryKey"`
-	ProjectID string          `gorm:"column:project_id;type:uuid;not null"`
-	Code      string          `gorm:"column:code;type:text;not null"`
-	Name      string          `gorm:"column:name;type:text;not null"`
-	Status    string          `gorm:"column:status;type:text;not null"`
+	ID        string          `gorm:"column:id;primaryKey"`
+	ProjectID string          `gorm:"column:project_id;not null"`
+	Code      string          `gorm:"column:code;not null"`
+	Name      string          `gorm:"column:name;not null"`
+	Status    string          `gorm:"column:status;not null"`
 	IsDefault bool            `gorm:"column:is_default;not null"`
 	Sort      int             `gorm:"column:sort;not null"`
 	Metadata  json.RawMessage `gorm:"column:metadata;type:jsonb;not null"`
@@ -50,12 +50,12 @@ func (WarehouseEntity) TableName() string { return "inventory_warehouses" }
 // Quantity 是可用量真源；一切影响可用量的判断（扣减、超卖校验）只能读本表的这一列
 // 并加行锁，绝不读 product_variants.stock_total（那只是后台列表的冗余缓存）。
 type StockEntity struct {
-	ID          string          `gorm:"column:id;type:uuid;primaryKey"`
-	ProjectID   string          `gorm:"column:project_id;type:uuid;not null"`
-	WarehouseID string          `gorm:"column:warehouse_id;type:uuid;not null"`
-	ProductID   string          `gorm:"column:product_id;type:uuid;not null"`
-	VariantID   string          `gorm:"column:variant_id;type:uuid;not null"`
-	SKUCode     string          `gorm:"column:sku_code;type:text;not null"`
+	ID          string          `gorm:"column:id;primaryKey"`
+	ProjectID   string          `gorm:"column:project_id;not null"`
+	WarehouseID string          `gorm:"column:warehouse_id;not null"`
+	ProductID   string          `gorm:"column:product_id;not null"`
+	VariantID   string          `gorm:"column:variant_id;not null"`
+	SKUCode     string          `gorm:"column:sku_code;not null"`
 	Quantity    int             `gorm:"column:quantity;not null"`
 	Metadata    json.RawMessage `gorm:"column:metadata;type:jsonb;not null"`
 	CreatedAt   time.Time       `gorm:"column:create_time;not null"`

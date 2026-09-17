@@ -23,11 +23,11 @@ import (
 
 // ProductRatingEntity 一条商品评分。
 type ProductRatingEntity struct {
-	ID        string    `gorm:"column:id;type:uuid;primaryKey"`
-	ProjectID string    `gorm:"column:project_id;type:uuid;not null"`
-	ProductID string    `gorm:"column:product_id;type:uuid;not null"`
-	Score     float64   `gorm:"column:score;type:numeric(3,2);not null"`
-	Source    string    `gorm:"column:source;type:text;not null"`
+	ID        string    `gorm:"column:id;primaryKey"`
+	ProjectID string    `gorm:"column:project_id;not null"`
+	ProductID string    `gorm:"column:product_id;not null"`
+	Score     float64   `gorm:"column:score;not null"`
+	Source    string    `gorm:"column:source;not null"`
 	CreatedAt time.Time `gorm:"column:create_time;not null"`
 	UpdatedAt time.Time `gorm:"column:update_time;not null"`
 }

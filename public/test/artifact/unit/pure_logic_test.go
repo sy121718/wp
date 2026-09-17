@@ -67,7 +67,7 @@ func TestArtifactMapPersistenceError(t *testing.T) {
 	})
 
 	t.Run("生产唯一约束冲突映射为ErrArtifactMismatch", func(t *testing.T) {
-		svc := newServiceWithProdConstraint(t)
+		svc := newService(t)
 		mustRecord(t, svc, validReq())
 		reqB := validReq()
 		reqB.ArtifactID = testArtifactID2

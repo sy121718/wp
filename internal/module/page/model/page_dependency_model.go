@@ -29,8 +29,8 @@ const tableNamePageArtifacts = "page_artifacts"
 
 // DependencyEntity page_dependencies 行（产物声明的构建期依赖）。
 type DependencyEntity struct {
-	PageID         string    `gorm:"column:page_id;type:uuid;primaryKey"`
-	ArtifactID     string    `gorm:"column:artifact_id;type:uuid;primaryKey"`
+	PageID         string    `gorm:"column:page_id;primaryKey"`
+	ArtifactID     string    `gorm:"column:artifact_id;primaryKey"`
 	DependencyKind string    `gorm:"column:dependency_kind;primaryKey"`
 	DependencyKey  string    `gorm:"column:dependency_key;primaryKey"`
 	Revision       *string   `gorm:"column:revision"`

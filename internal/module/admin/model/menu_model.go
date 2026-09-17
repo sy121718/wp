@@ -26,27 +26,27 @@ const (
 // MenuEntity 对应 sys_menus 表。
 type MenuEntity struct {
 	ID             uint64  `gorm:"column:id;primaryKey"`
-	PermissionCode *string `gorm:"column:permission_code;type:varchar(100)"`
-	Title          string  `gorm:"column:title;type:varchar(50)"`
-	TitleKey       *string `gorm:"column:title_key;type:varchar(100)"`
+	PermissionCode *string `gorm:"column:permission_code"`
+	Title          string  `gorm:"column:title"`
+	TitleKey       *string `gorm:"column:title_key"`
 	ParentID       uint64  `gorm:"column:parent_id;default:0"`
 	Type           int     `gorm:"column:type;default:2"`
-	Path           string  `gorm:"column:path;type:varchar(100)"`
-	Component      string  `gorm:"column:component;type:varchar(255)"`
-	ExternalURL    string  `gorm:"column:external_url;type:varchar(300)"`
-	Icon           string  `gorm:"column:icon;type:varchar(50)"`
+	Path           string  `gorm:"column:path"`
+	Component      string  `gorm:"column:component"`
+	ExternalURL    string  `gorm:"column:external_url"`
+	Icon           string  `gorm:"column:icon"`
 	// Status 不带 gorm default tag：避免 gorm 把显式 0（禁用）改写为 1（见 SysRuleEntity.Status 注释）。
 	Status     int        `gorm:"column:status"`
 	IsHidden   int        `gorm:"column:is_hidden;default:0"`
 	IsPublic   int        `gorm:"column:is_public;default:0"`
 	IsSystem   int        `gorm:"column:is_system;default:0"`
 	SortOrder  int        `gorm:"column:sort_order;default:0"`
-	Remark     *string    `gorm:"column:remark;type:varchar(200)"`
-	CreateBy   uint64     `gorm:"column:create_by;type:bigint unsigned"`
-	CreateTime *time.Time `gorm:"column:create_time;type:datetime(3)"`
-	UpdateBy   uint64     `gorm:"column:update_by;type:bigint unsigned"`
-	UpdateTime *time.Time `gorm:"column:update_time;type:datetime(3)"`
-	DeletedAt  *time.Time `gorm:"column:deleted_at;type:datetime(3)"`
+	Remark     *string    `gorm:"column:remark"`
+	CreateBy   uint64     `gorm:"column:create_by"`
+	CreateTime *time.Time `gorm:"column:create_time"`
+	UpdateBy   uint64     `gorm:"column:update_by"`
+	UpdateTime *time.Time `gorm:"column:update_time"`
+	DeletedAt  *time.Time `gorm:"column:deleted_at"`
 }
 
 // TableName 返回 sys_menus 表名。

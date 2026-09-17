@@ -57,7 +57,7 @@ func rowsByLang(t *testing.T, svc *artifactservice.Service, pageID string) map[s
 // TestArtifactEnsureRecordSamePageTwoLangsCoexist 同一页面同一草稿版本下，
 // 两个语言各登记一行且互不覆盖（旧 UNIQUE(page_id, version) 下第二个语言会替换第一行）。
 func TestArtifactEnsureRecordSamePageTwoLangsCoexist(t *testing.T) {
-	svc := newServiceWithProdConstraint(t)
+	svc := newService(t)
 	ctx := context.Background()
 
 	zhReq := langReq("zh-CN", 1, testArtifactID, "hash-zh", "artifacts/hash-zh", "/zh-CN/about")
@@ -111,7 +111,7 @@ func TestArtifactEnsureRecordSamePageTwoLangsCoexist(t *testing.T) {
 // TestArtifactEnsureRecordSameLangSameVersionReplaces 同一语言同一版本重构建
 // （编译器升级导致 hash 变化）仍是替换语义：行 ID 不变、指针更新、行数不增。
 func TestArtifactEnsureRecordSameLangSameVersionReplaces(t *testing.T) {
-	svc := newServiceWithProdConstraint(t)
+	svc := newService(t)
 	ctx := context.Background()
 
 	first, err := svc.EnsureRecord(ctx, langReq("zh-CN", 1, testArtifactID, "hash-zh-v1", "artifacts/hash-zh-v1", "/zh-CN/about"))
@@ -149,7 +149,7 @@ func TestArtifactEnsureRecordSameLangSameVersionReplaces(t *testing.T) {
 // TestArtifactEnsureRecordEmptyLangFallsBackToDefault 空语言（存量调用方）落库为
 // 站点默认语言，绝不留空 —— 否则唯一键退化为 (page_id, version)。
 func TestArtifactEnsureRecordEmptyLangFallsBackToDefault(t *testing.T) {
-	svc := newServiceWithProdConstraint(t)
+	svc := newService(t)
 	ctx := context.Background()
 	defaultLang := i18n.GetDefaultLang()
 
@@ -185,7 +185,7 @@ func TestArtifactEnsureRecordEmptyLangFallsBackToDefault(t *testing.T) {
 // TestArtifactGetByPageVersionLangScoped 按语言取行：语言维度参与查询，
 // 不存在的语言返回 ErrRecordNotFound（而不是随机命中其他语言的行）。
 func TestArtifactGetByPageVersionLangScoped(t *testing.T) {
-	svc := newServiceWithProdConstraint(t)
+	svc := newService(t)
 	ctx := context.Background()
 
 	if _, err := svc.EnsureRecord(ctx, langReq("zh-CN", 7, testArtifactID, "hash-zh-7", "artifacts/hash-zh-7", "/zh-CN/p")); err != nil {

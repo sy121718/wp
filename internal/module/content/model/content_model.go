@@ -17,7 +17,7 @@ const tableNameContents = "contents"
 
 // Entity contents 表实体。
 type Entity struct {
-	ID         string          `gorm:"column:id;type:uuid;primaryKey"`
+	ID         string          `gorm:"column:id;primaryKey"`
 	EntityType string          `gorm:"column:entity_type;not null"`
 	Slug       string          `gorm:"column:slug;not null"`
 	Revision   int64           `gorm:"column:revision;not null"`

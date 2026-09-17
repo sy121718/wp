@@ -158,21 +158,21 @@ func decodePGTextArray(raw string) (StringArray, error) {
 // MailContactEntity 对应 mail_contacts 表。
 type MailContactEntity struct {
 	ID            uint64     `gorm:"column:id;primaryKey"`
-	Email         string     `gorm:"column:email;type:varchar(254)"`
-	Name          *string    `gorm:"column:name;type:varchar(128)"`
+	Email         string     `gorm:"column:email"`
+	Name          *string    `gorm:"column:name"`
 	UserID        *uint64    `gorm:"column:user_id"`
-	Source        string     `gorm:"column:source;type:varchar(16)"`
-	Status        string     `gorm:"column:status;type:varchar(16)"`
-	SubscribedAt  *time.Time `gorm:"column:subscribed_at;type:timestamp(3)"`
-	ConsentSource *string    `gorm:"column:consent_source;type:varchar(64)"`
+	Source        string     `gorm:"column:source"`
+	Status        string     `gorm:"column:status"`
+	SubscribedAt  *time.Time `gorm:"column:subscribed_at"`
+	ConsentSource *string    `gorm:"column:consent_source"`
 	// Tags PG 原生 text[]，用 StringArray 映射（裸 []string 会被 pgx 编码成元组字面量，
 	// 实测报 22P02；见 StringArray 的注释）。零值需注意：列是 NOT NULL DEFAULT '{}'，
 	// nil 会写成 NULL 触发约束错误，所以写入前统一兜底成空数组。
 	Tags           StringArray `gorm:"column:tags;type:text[]"`
 	Attributes     JSONMap     `gorm:"column:attributes;type:jsonb"`
-	LastActivityAt *time.Time  `gorm:"column:last_activity_at;type:timestamp(3)"`
-	CreateTime     *time.Time  `gorm:"column:create_time;type:timestamp(3);autoCreateTime"`
-	UpdateTime     *time.Time  `gorm:"column:update_time;type:timestamp(3)"`
+	LastActivityAt *time.Time  `gorm:"column:last_activity_at"`
+	CreateTime     *time.Time  `gorm:"column:create_time;autoCreateTime"`
+	UpdateTime     *time.Time  `gorm:"column:update_time"`
 }
 
 // TableName 表名。
@@ -181,22 +181,22 @@ func (MailContactEntity) TableName() string { return "mail_contacts" }
 // MailCampaignEntity 对应 mail_campaigns 表。
 type MailCampaignEntity struct {
 	ID          uint64      `gorm:"column:id;primaryKey"`
-	Name        string      `gorm:"column:name;type:varchar(150)"`
+	Name        string      `gorm:"column:name"`
 	AccountID   uint64      `gorm:"column:account_id"`
 	TemplateID  uint64      `gorm:"column:template_id"`
 	TargetTags  StringArray `gorm:"column:target_tags;type:text[]"`
-	Subject     string      `gorm:"column:subject;type:varchar(255)"`
+	Subject     string      `gorm:"column:subject"`
 	Variables   JSONMap     `gorm:"column:variables;type:jsonb"`
-	Status      string      `gorm:"column:status;type:varchar(16)"`
-	ScheduledAt *time.Time  `gorm:"column:scheduled_at;type:timestamp(3)"`
-	StartedAt   *time.Time  `gorm:"column:started_at;type:timestamp(3)"`
-	FinishedAt  *time.Time  `gorm:"column:finished_at;type:timestamp(3)"`
+	Status      string      `gorm:"column:status"`
+	ScheduledAt *time.Time  `gorm:"column:scheduled_at"`
+	StartedAt   *time.Time  `gorm:"column:started_at"`
+	FinishedAt  *time.Time  `gorm:"column:finished_at"`
 	TotalCount  int         `gorm:"column:total_count"`
 	SentCount   int         `gorm:"column:sent_count"`
 	FailedCount int         `gorm:"column:failed_count"`
 	CreateBy    uint64      `gorm:"column:create_by"`
-	CreateTime  *time.Time  `gorm:"column:create_time;type:timestamp(3);autoCreateTime"`
-	UpdateTime  *time.Time  `gorm:"column:update_time;type:timestamp(3)"`
+	CreateTime  *time.Time  `gorm:"column:create_time;autoCreateTime"`
+	UpdateTime  *time.Time  `gorm:"column:update_time"`
 }
 
 // TableName 表名。
@@ -207,11 +207,11 @@ type MailCampaignEventEntity struct {
 	ID         uint64     `gorm:"column:id;primaryKey"`
 	CampaignID uint64     `gorm:"column:campaign_id"`
 	ContactID  uint64     `gorm:"column:contact_id"`
-	EventType  string     `gorm:"column:event_type;type:varchar(16)"`
-	URL        *string    `gorm:"column:url;type:varchar(1000)"`
-	IP         *string    `gorm:"column:ip;type:varchar(50)"`
-	UserAgent  *string    `gorm:"column:user_agent;type:varchar(255)"`
-	CreateTime *time.Time `gorm:"column:create_time;type:timestamp(3);autoCreateTime"`
+	EventType  string     `gorm:"column:event_type"`
+	URL        *string    `gorm:"column:url"`
+	IP         *string    `gorm:"column:ip"`
+	UserAgent  *string    `gorm:"column:user_agent"`
+	CreateTime *time.Time `gorm:"column:create_time;autoCreateTime"`
 }
 
 // TableName 表名。

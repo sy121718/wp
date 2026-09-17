@@ -27,16 +27,16 @@ const (
 type AttachmentEntity struct {
 	ID          uint64  `gorm:"column:id;primaryKey"`
 	CategoryID  *uint64 `gorm:"column:category_id"`
-	FileName    string  `gorm:"column:file_name;type:varchar(255)"`
-	FilePath    string  `gorm:"column:file_path;type:varchar(500)"`
+	FileName    string  `gorm:"column:file_name"`
+	FilePath    string  `gorm:"column:file_path"`
 	FileSize    int64   `gorm:"column:file_size"`
-	FileType    string  `gorm:"column:file_type;type:varchar(50)"`
-	MimeType    *string `gorm:"column:mime_type;type:varchar(100)"`
-	StorageType string  `gorm:"column:storage_type;type:varchar(50);default:local"`
-	StoragePath *string `gorm:"column:storage_path;type:varchar(500)"`
-	URL         *string `gorm:"column:url;type:varchar(500)"`
-	MD5         *string `gorm:"column:md5;type:varchar(32)"`
-	ExtraInfo   *string `gorm:"column:extra_info;type:jsonb"`
+	FileType    string  `gorm:"column:file_type"`
+	MimeType    *string `gorm:"column:mime_type"`
+	StorageType string  `gorm:"column:storage_type;default:local"`
+	StoragePath *string `gorm:"column:storage_path"`
+	URL         *string `gorm:"column:url"`
+	MD5         *string `gorm:"column:md5"`
+	ExtraInfo   *string `gorm:"column:extra_info"`
 	// Generation 换图代数（迁移 067）：初始 1，每次换图 +1，供依赖记录/构建期重建判定。
 	Generation int        `gorm:"column:generation;not null;default:1"`
 	Status     int        `gorm:"column:status;default:1"`
@@ -51,11 +51,11 @@ func (AttachmentEntity) TableName() string { return tableNameSysAttachment }
 // FileCategoryEntity 对应 sys_file_category 表。
 type FileCategoryEntity struct {
 	ID           uint64     `gorm:"column:id;primaryKey"`
-	CategoryName string     `gorm:"column:category_name;type:varchar(100)"`
-	CategoryCode string     `gorm:"column:category_code;type:varchar(50);uniqueIndex"`
+	CategoryName string     `gorm:"column:category_name"`
+	CategoryCode string     `gorm:"column:category_code;uniqueIndex"`
 	ParentID     uint64     `gorm:"column:parent_id;default:0"`
 	SortOrder    int        `gorm:"column:sort_order;default:0"`
-	Icon         *string    `gorm:"column:icon;type:varchar(50)"`
+	Icon         *string    `gorm:"column:icon"`
 	Status       int        `gorm:"column:status;default:1"`
 	CreateBy     *uint64    `gorm:"column:create_by"`
 	UpdateBy     *uint64    `gorm:"column:update_by"`

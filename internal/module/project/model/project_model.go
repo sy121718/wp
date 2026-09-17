@@ -13,8 +13,8 @@ const tableNameProjects = "projects"
 
 // ProjectEntity 对应 projects 表。
 type ProjectEntity struct {
-	ID        string          `gorm:"column:id;type:uuid;primaryKey"`
-	Name      string          `gorm:"column:name;type:text;not null"`
+	ID        string          `gorm:"column:id;primaryKey"`
+	Name      string          `gorm:"column:name;not null"`
 	Settings  json.RawMessage `gorm:"column:settings;type:jsonb;not null"`
 	CreatedAt time.Time       `gorm:"column:create_time;not null"`
 	UpdatedAt time.Time       `gorm:"column:update_time;not null"`

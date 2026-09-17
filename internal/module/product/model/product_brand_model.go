@@ -16,14 +16,14 @@ import (
 
 // ProductBrandEntity 商品品牌。
 type ProductBrandEntity struct {
-	ID             string          `gorm:"column:id;type:uuid;primaryKey"`
-	ProjectID      string          `gorm:"column:project_id;type:uuid;not null"`
-	Name           string          `gorm:"column:name;type:text;not null"`
-	Slug           string          `gorm:"column:slug;type:text;not null"`
-	Logo           string          `gorm:"column:logo;type:text;not null"`
-	Description    string          `gorm:"column:description;type:text;not null"`
-	SEOTitle       string          `gorm:"column:seo_title;type:text;not null"`
-	SEODescription string          `gorm:"column:seo_description;type:text;not null"`
+	ID             string          `gorm:"column:id;primaryKey"`
+	ProjectID      string          `gorm:"column:project_id;not null"`
+	Name           string          `gorm:"column:name;not null"`
+	Slug           string          `gorm:"column:slug;not null"`
+	Logo           string          `gorm:"column:logo;not null"`
+	Description    string          `gorm:"column:description;not null"`
+	SEOTitle       string          `gorm:"column:seo_title;not null"`
+	SEODescription string          `gorm:"column:seo_description;not null"`
 	Sort           int             `gorm:"column:sort;not null"`
 	Metadata       json.RawMessage `gorm:"column:metadata;type:jsonb;not null"`
 	CreatedAt      time.Time       `gorm:"column:create_time;not null"`

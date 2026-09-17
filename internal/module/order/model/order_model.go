@@ -55,52 +55,52 @@ const (
 // 用户改邮箱改地址，都不该改写历史订单。
 type OrderEntity struct {
 	ID                 uint64     `gorm:"column:id;primaryKey"`
-	ProjectID          string     `gorm:"column:project_id;type:uuid"`
-	OrderNo            string     `gorm:"column:order_no;type:varchar(40)"`
-	Status             string     `gorm:"column:status;type:varchar(20)"`
+	ProjectID          string     `gorm:"column:project_id"`
+	OrderNo            string     `gorm:"column:order_no"`
+	Status             string     `gorm:"column:status"`
 	UserID             *uint64    `gorm:"column:user_id"`
-	CustomerEmail      string     `gorm:"column:customer_email;type:varchar(120)"`
-	CustomerName       string     `gorm:"column:customer_name;type:varchar(60)"`
-	CustomerPhone      string     `gorm:"column:customer_phone;type:varchar(40)"`
-	Currency           string     `gorm:"column:currency;type:varchar(8)"`
+	CustomerEmail      string     `gorm:"column:customer_email"`
+	CustomerName       string     `gorm:"column:customer_name"`
+	CustomerPhone      string     `gorm:"column:customer_phone"`
+	Currency           string     `gorm:"column:currency"`
 	Subtotal           int64      `gorm:"column:subtotal"`
 	DiscountTotal      int64      `gorm:"column:discount_total"`
 	ShippingTotal      int64      `gorm:"column:shipping_total"`
 	TaxTotal           int64      `gorm:"column:tax_total"`
 	Total              int64      `gorm:"column:total"`
-	ShipName           string     `gorm:"column:ship_name;type:varchar(60)"`
-	ShipPhone          string     `gorm:"column:ship_phone;type:varchar(40)"`
-	ShipProvince       string     `gorm:"column:ship_province;type:varchar(40)"`
-	ShipCity           string     `gorm:"column:ship_city;type:varchar(40)"`
-	ShipDistrict       string     `gorm:"column:ship_district;type:varchar(40)"`
-	ShipAddress        string     `gorm:"column:ship_address;type:varchar(255)"`
-	ShipZip            string     `gorm:"column:ship_zip;type:varchar(20)"`
-	BillName           string     `gorm:"column:bill_name;type:varchar(60)"`
-	BillPhone          string     `gorm:"column:bill_phone;type:varchar(40)"`
-	BillProvince       string     `gorm:"column:bill_province;type:varchar(40)"`
-	BillCity           string     `gorm:"column:bill_city;type:varchar(40)"`
-	BillDistrict       string     `gorm:"column:bill_district;type:varchar(40)"`
-	BillAddress        string     `gorm:"column:bill_address;type:varchar(255)"`
-	BillZip            string     `gorm:"column:bill_zip;type:varchar(20)"`
-	PaymentMethod      string     `gorm:"column:payment_method;type:varchar(40)"`
-	PaymentMethodTitle string     `gorm:"column:payment_method_title;type:varchar(60)"`
-	TransactionID      string     `gorm:"column:transaction_id;type:varchar(120)"`
-	PaidAt             *time.Time `gorm:"column:paid_at;type:timestamp(3)"`
-	CompletedAt        *time.Time `gorm:"column:completed_at;type:timestamp(3)"`
-	CreatedVia         string     `gorm:"column:created_via;type:varchar(20)"`
-	IPAddress          string     `gorm:"column:ip_address;type:varchar(50)"`
-	UserAgent          string     `gorm:"column:user_agent;type:varchar(255)"`
+	ShipName           string     `gorm:"column:ship_name"`
+	ShipPhone          string     `gorm:"column:ship_phone"`
+	ShipProvince       string     `gorm:"column:ship_province"`
+	ShipCity           string     `gorm:"column:ship_city"`
+	ShipDistrict       string     `gorm:"column:ship_district"`
+	ShipAddress        string     `gorm:"column:ship_address"`
+	ShipZip            string     `gorm:"column:ship_zip"`
+	BillName           string     `gorm:"column:bill_name"`
+	BillPhone          string     `gorm:"column:bill_phone"`
+	BillProvince       string     `gorm:"column:bill_province"`
+	BillCity           string     `gorm:"column:bill_city"`
+	BillDistrict       string     `gorm:"column:bill_district"`
+	BillAddress        string     `gorm:"column:bill_address"`
+	BillZip            string     `gorm:"column:bill_zip"`
+	PaymentMethod      string     `gorm:"column:payment_method"`
+	PaymentMethodTitle string     `gorm:"column:payment_method_title"`
+	TransactionID      string     `gorm:"column:transaction_id"`
+	PaidAt             *time.Time `gorm:"column:paid_at"`
+	CompletedAt        *time.Time `gorm:"column:completed_at"`
+	CreatedVia         string     `gorm:"column:created_via"`
+	IPAddress          string     `gorm:"column:ip_address"`
+	UserAgent          string     `gorm:"column:user_agent"`
 	// Attribution 归因与轨迹快照（JSONB）：下单时刻的流量来源 / 广告参数 / 会话 / 浏览轨迹。
 	// 存 RawMessage 而不是结构化类型 —— 形状由 dto 定义，model 不重复声明一遍。
 	Attribution json.RawMessage `gorm:"column:attribution;type:jsonb;not null"`
 	// AdminNote 后台备注：自建订单与代发订单的填写位置（与客户填的 remark 分开）。
-	AdminNote    string    `gorm:"column:admin_note;type:varchar(500)"`
-	RequestID    string    `gorm:"column:request_id;type:varchar(64)"`
-	Remark       string    `gorm:"column:remark;type:varchar(255)"`
-	CancelReason string    `gorm:"column:cancel_reason;type:varchar(255)"`
+	AdminNote    string    `gorm:"column:admin_note"`
+	RequestID    string    `gorm:"column:request_id"`
+	Remark       string    `gorm:"column:remark"`
+	CancelReason string    `gorm:"column:cancel_reason"`
 	CreateBy     uint64    `gorm:"column:create_by"`
-	CreateTime   time.Time `gorm:"column:create_time;type:timestamp(3)"`
-	UpdateTime   time.Time `gorm:"column:update_time;type:timestamp(3)"`
+	CreateTime   time.Time `gorm:"column:create_time"`
+	UpdateTime   time.Time `gorm:"column:update_time"`
 }
 
 // TableName 实现 gorm 表名。

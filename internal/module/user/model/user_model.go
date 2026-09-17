@@ -54,39 +54,39 @@ func (j *JSONMap) Scan(value any) error {
 // UserEntity 对应 users 表（身份与认证）。
 type UserEntity struct {
 	ID                  uint64     `gorm:"column:id;primaryKey"`
-	Username            string     `gorm:"column:username;type:varchar(60)"`
-	Password            string     `gorm:"column:password;type:varchar(100)"`
-	Email               string     `gorm:"column:email;type:varchar(100)"`
-	EmailVerifiedAt     *time.Time `gorm:"column:email_verified_at;type:timestamp(3)"`
-	Status              int        `gorm:"column:status;type:smallint;default:1"`
-	Nickname            *string    `gorm:"column:nickname;type:varchar(60)"`
-	DisplayName         *string    `gorm:"column:display_name;type:varchar(250)"`
-	Avatar              *string    `gorm:"column:avatar;type:varchar(255)"`
-	ActivationKey       *string    `gorm:"column:activation_key;type:varchar(64)"`
-	ActivationExpiresAt *time.Time `gorm:"column:activation_expires_at;type:timestamp(3)"`
-	LoginFailureCount   int        `gorm:"column:login_failure_count;type:integer;default:0"`
-	LockedUntilTime     *time.Time `gorm:"column:locked_until_time;type:timestamp(3)"`
-	LastFailureTime     *time.Time `gorm:"column:last_failure_time;type:timestamp(3)"`
-	RegisterIP          *string    `gorm:"column:register_ip;type:varchar(50)"`
-	RegisterLocation    *string    `gorm:"column:register_location;type:varchar(100)"`
-	LastLoginIP         *string    `gorm:"column:last_login_ip;type:varchar(50)"`
-	LastLoginLocation   *string    `gorm:"column:last_login_location;type:varchar(100)"`
+	Username            string     `gorm:"column:username"`
+	Password            string     `gorm:"column:password"`
+	Email               string     `gorm:"column:email"`
+	EmailVerifiedAt     *time.Time `gorm:"column:email_verified_at"`
+	Status              int        `gorm:"column:status;default:1"`
+	Nickname            *string    `gorm:"column:nickname"`
+	DisplayName         *string    `gorm:"column:display_name"`
+	Avatar              *string    `gorm:"column:avatar"`
+	ActivationKey       *string    `gorm:"column:activation_key"`
+	ActivationExpiresAt *time.Time `gorm:"column:activation_expires_at"`
+	LoginFailureCount   int        `gorm:"column:login_failure_count;default:0"`
+	LockedUntilTime     *time.Time `gorm:"column:locked_until_time"`
+	LastFailureTime     *time.Time `gorm:"column:last_failure_time"`
+	RegisterIP          *string    `gorm:"column:register_ip"`
+	RegisterLocation    *string    `gorm:"column:register_location"`
+	LastLoginIP         *string    `gorm:"column:last_login_ip"`
+	LastLoginLocation   *string    `gorm:"column:last_login_location"`
 	// RegisteredAt 是 NOT NULL 列：必须由 model 自己兜底填值，
 	// 否则调用方漏填时 GORM 会显式插入 NULL 撞约束（不是「用数据库默认值」，
 	// 显式列在 INSERT 列表里就会覆盖掉 DEFAULT CURRENT_TIMESTAMP）。
-	RegisteredAt  *time.Time `gorm:"column:registered_at;type:timestamp(3);autoCreateTime"`
-	LastLoginTime *time.Time `gorm:"column:last_login_time;type:timestamp(3)"`
-	LastActiveAt  *time.Time `gorm:"column:last_active_at;type:timestamp(3)"`
+	RegisteredAt  *time.Time `gorm:"column:registered_at;autoCreateTime"`
+	LastLoginTime *time.Time `gorm:"column:last_login_time"`
+	LastActiveAt  *time.Time `gorm:"column:last_active_at"`
 	Metadata      JSONMap    `gorm:"column:metadata;type:jsonb"`
-	CreateBy      uint64     `gorm:"column:create_by;type:bigint;default:0"`
-	CreateTime    *time.Time `gorm:"column:create_time;type:timestamp(3);autoCreateTime"`
-	UpdateTime    *time.Time `gorm:"column:update_time;type:timestamp(3)"`
+	CreateBy      uint64     `gorm:"column:create_by;default:0"`
+	CreateTime    *time.Time `gorm:"column:create_time;autoCreateTime"`
+	UpdateTime    *time.Time `gorm:"column:update_time"`
 	// DeletedAt 注销时间（**软删除**：数据保留，只是不再可见）。
 	//
 	// 用 GORM 的软删除类型：Delete 自动变成 UPDATE deleted_at，所有查询自动加
 	// `deleted_at IS NULL`（注销的账号自然登录不上、列表里也不出现），
 	// 需要看已注销的用 Unscoped()。
-	DeletedAt gorm.DeletedAt `gorm:"column:deleted_at;type:timestamp(3);index"`
+	DeletedAt gorm.DeletedAt `gorm:"column:deleted_at;index"`
 }
 
 // TableName 表名（迁移 123）。

@@ -36,7 +36,7 @@ type WebhookDeliveryEntity struct {
 	ID             uint64 `gorm:"primaryKey;autoIncrement"`
 	EndpointID     uint64 `gorm:"column:endpoint_id;not null;index"`
 	EventType      string `gorm:"column:event_type;size:128;not null;index"`
-	Payload        string `gorm:"column:payload;type:text;not null"`
+	Payload        string `gorm:"column:payload;not null"`
 	Status         string `gorm:"column:status;size:16;not null;default:'pending';index"`
 	Attempts       int    `gorm:"column:attempts;not null;default:0"`
 	ResponseStatus int    `gorm:"column:response_status"`

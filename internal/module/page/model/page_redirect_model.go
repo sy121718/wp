@@ -34,12 +34,12 @@ const (
 
 // PageRouteEntity 对应 page_routes 行（只映射本模块用到的列）。
 type PageRouteEntity struct {
-	ProjectID      string    `gorm:"column:project_id;type:uuid;primaryKey"`
-	Path           string    `gorm:"column:path;type:text;primaryKey"`
-	PageID         *string   `gorm:"column:page_id;type:uuid"`
-	PresentationID *string   `gorm:"column:presentation_id;type:uuid"`
-	RouteKind      string    `gorm:"column:route_kind;type:text;not null"`
-	ArtifactID     *string   `gorm:"column:artifact_id;type:uuid"`
+	ProjectID      string    `gorm:"column:project_id;primaryKey"`
+	Path           string    `gorm:"column:path;primaryKey"`
+	PageID         *string   `gorm:"column:page_id"`
+	PresentationID *string   `gorm:"column:presentation_id"`
+	RouteKind      string    `gorm:"column:route_kind;not null"`
+	ArtifactID     *string   `gorm:"column:artifact_id"`
 	UpdatedAt      time.Time `gorm:"column:update_time;not null"`
 }
 

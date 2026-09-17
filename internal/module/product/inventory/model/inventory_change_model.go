@@ -30,13 +30,13 @@ import (
 // ProjectID 为 nil 表示**内置原因**（迁移 103 seed，全工程可见，不可修改）；
 // 非 nil 表示工程自定义原因（工程内 code 唯一，可改名 / 停用）。
 type ReasonEntity struct {
-	ID         int64     `gorm:"column:id;type:bigint;primaryKey"`
-	ProjectID  *string   `gorm:"column:project_id;type:uuid"`
-	Code       string    `gorm:"column:code;type:text;not null"`
-	Name       string    `gorm:"column:name;type:text;not null"`
-	Direction  string    `gorm:"column:direction;type:text;not null"`
+	ID         int64     `gorm:"column:id;primaryKey"`
+	ProjectID  *string   `gorm:"column:project_id"`
+	Code       string    `gorm:"column:code;not null"`
+	Name       string    `gorm:"column:name;not null"`
+	Direction  string    `gorm:"column:direction;not null"`
 	IsBuiltin  bool      `gorm:"column:is_builtin;not null"`
-	Status     string    `gorm:"column:status;type:text;not null"`
+	Status     string    `gorm:"column:status;not null"`
 	Sort       int       `gorm:"column:sort;not null"`
 	CreateTime time.Time `gorm:"column:create_time;not null"`
 	UpdatedAt  time.Time `gorm:"column:update_time;not null"`
@@ -50,25 +50,25 @@ func (ReasonEntity) TableName() string { return "inventory_change_reasons" }
 // Quantity 是绝对变化量（恒 > 0），Delta 是带符号的实际变化量；
 // ReasonCode 是快照列（原因字典条目被删后历史流水仍可读）。
 type MovementEntity struct {
-	ID              string    `gorm:"column:id;type:uuid;primaryKey"`
-	ProjectID       string    `gorm:"column:project_id;type:uuid;not null"`
-	WarehouseID     string    `gorm:"column:warehouse_id;type:uuid;not null"`
-	ProductID       string    `gorm:"column:product_id;type:uuid;not null"`
-	VariantID       string    `gorm:"column:variant_id;type:uuid;not null"`
-	SKUCode         string    `gorm:"column:sku_code;type:text;not null"`
-	Direction       string    `gorm:"column:direction;type:text;not null"`
+	ID              string    `gorm:"column:id;primaryKey"`
+	ProjectID       string    `gorm:"column:project_id;not null"`
+	WarehouseID     string    `gorm:"column:warehouse_id;not null"`
+	ProductID       string    `gorm:"column:product_id;not null"`
+	VariantID       string    `gorm:"column:variant_id;not null"`
+	SKUCode         string    `gorm:"column:sku_code;not null"`
+	Direction       string    `gorm:"column:direction;not null"`
 	Quantity        int       `gorm:"column:quantity;not null"`
 	Delta           int       `gorm:"column:delta;not null"`
 	QuantityBefore  int       `gorm:"column:quantity_before;not null"`
 	QuantityAfter   int       `gorm:"column:quantity_after;not null"`
-	ReasonID        *int64    `gorm:"column:reason_id;type:bigint"`
-	ReasonCode      string    `gorm:"column:reason_code;type:text;not null"`
-	ParentVariantID *string   `gorm:"column:parent_variant_id;type:uuid"`
-	SourceType      string    `gorm:"column:source_type;type:text;not null"`
-	SourceRef       string    `gorm:"column:source_ref;type:text;not null"`
-	Remark          string    `gorm:"column:remark;type:text;not null"`
-	OperatorID      string    `gorm:"column:operator_id;type:text;not null"`
-	BatchID         string    `gorm:"column:batch_id;type:uuid;not null"`
+	ReasonID        *int64    `gorm:"column:reason_id"`
+	ReasonCode      string    `gorm:"column:reason_code;not null"`
+	ParentVariantID *string   `gorm:"column:parent_variant_id"`
+	SourceType      string    `gorm:"column:source_type;not null"`
+	SourceRef       string    `gorm:"column:source_ref;not null"`
+	Remark          string    `gorm:"column:remark;not null"`
+	OperatorID      string    `gorm:"column:operator_id;not null"`
+	BatchID         string    `gorm:"column:batch_id;not null"`
 	CreatedAt       time.Time `gorm:"column:create_time;not null"`
 }
 
@@ -127,12 +127,12 @@ type ReasonFilter struct {
 
 // BOMItemEntity 物料清单的一条子项（父 SKU → 子项 SKU × 用量）。
 type BOMItemEntity struct {
-	ID                 string    `gorm:"column:id;type:uuid;primaryKey"`
-	ProjectID          string    `gorm:"column:project_id;type:uuid;not null"`
-	ParentVariantID    string    `gorm:"column:parent_variant_id;type:uuid;not null"`
-	ParentSKUCode      string    `gorm:"column:parent_sku_code;type:text;not null"`
-	ComponentVariantID string    `gorm:"column:component_variant_id;type:uuid;not null"`
-	ComponentSKUCode   string    `gorm:"column:component_sku_code;type:text;not null"`
+	ID                 string    `gorm:"column:id;primaryKey"`
+	ProjectID          string    `gorm:"column:project_id;not null"`
+	ParentVariantID    string    `gorm:"column:parent_variant_id;not null"`
+	ParentSKUCode      string    `gorm:"column:parent_sku_code;not null"`
+	ComponentVariantID string    `gorm:"column:component_variant_id;not null"`
+	ComponentSKUCode   string    `gorm:"column:component_sku_code;not null"`
 	Quantity           int       `gorm:"column:quantity;not null"`
 	CreatedAt          time.Time `gorm:"column:create_time;not null"`
 	UpdatedAt          time.Time `gorm:"column:update_time;not null"`

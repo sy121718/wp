@@ -20,10 +20,10 @@ import (
 // Values 沿用 081 的 jsonb 列：本票把元素结构固定为 [{id,key,label,sort,enabled}]，
 // 历史纯字符串数组由 service 读取时兜底归一（见 attribute_values.go）。
 type ProductAttributeEntity struct {
-	ID          string          `gorm:"column:id;type:uuid;primaryKey"`
-	ProjectID   string          `gorm:"column:project_id;type:uuid;not null"`
-	Key         string          `gorm:"column:key;type:text;not null"`
-	Name        string          `gorm:"column:name;type:text;not null"`
+	ID          string          `gorm:"column:id;primaryKey"`
+	ProjectID   string          `gorm:"column:project_id;not null"`
+	Key         string          `gorm:"column:key;not null"`
+	Name        string          `gorm:"column:name;not null"`
 	IsVariation bool            `gorm:"column:is_variation;not null"`
 	Sort        int             `gorm:"column:sort;not null"`
 	Values      json.RawMessage `gorm:"column:values;type:jsonb;not null"`

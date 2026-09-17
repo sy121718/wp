@@ -42,18 +42,18 @@ const (
 // SysRuleEntity 对应 sys_rule 表。
 type SysRuleEntity struct {
 	ID       uint64 `gorm:"column:id;primaryKey"`
-	RuleName string `gorm:"column:rule_name;type:varchar(100)"`
-	Domain   string `gorm:"column:domain;type:varchar(50);index"`
-	Config   string `gorm:"column:config;type:json"`
+	RuleName string `gorm:"column:rule_name"`
+	Domain   string `gorm:"column:domain;index"`
+	Config   string `gorm:"column:config"`
 	// Status 不带 gorm default tag：gorm 对带 default 的字段在零值时会用 DB 默认值
 	// 替换并回写 struct，导致显式传入的 status=0（禁用）被改写成 1（启用）。
 	// service 层总是显式设置 Status（RuleCreate/RuleUpdate），DB 列 DEFAULT 1 仅兜底直接 SQL 插入。
-	Status     int        `gorm:"column:status;type:tinyint;index"`
-	Remark     *string    `gorm:"column:remark;type:varchar(200)"`
-	CreateBy   uint64     `gorm:"column:create_by;type:bigint unsigned"`
-	CreateTime *time.Time `gorm:"column:create_time;type:datetime(3)"`
-	UpdateBy   uint64     `gorm:"column:update_by;type:bigint unsigned"`
-	UpdateTime *time.Time `gorm:"column:update_time;type:datetime(3)"`
+	Status     int        `gorm:"column:status;index"`
+	Remark     *string    `gorm:"column:remark"`
+	CreateBy   uint64     `gorm:"column:create_by"`
+	CreateTime *time.Time `gorm:"column:create_time"`
+	UpdateBy   uint64     `gorm:"column:update_by"`
+	UpdateTime *time.Time `gorm:"column:update_time"`
 }
 
 // TableName 返回 sys_rule 表名。
@@ -79,12 +79,12 @@ func (e *SysRuleEntity) BeforeUpdate(tx *gorm.DB) error {
 // SysRuleAssignmentEntity 对应 sys_rule_assignment 表。
 type SysRuleAssignmentEntity struct {
 	ID          uint64     `gorm:"column:id;primaryKey"`
-	RuleID      uint64     `gorm:"column:rule_id;type:bigint unsigned;index"`
-	TargetType  int        `gorm:"column:target_type;type:tinyint;index"`
-	TargetID    uint64     `gorm:"column:target_id;type:bigint unsigned;index"`
-	TargetScope int        `gorm:"column:target_scope;type:tinyint;default:0"`
-	CreateBy    uint64     `gorm:"column:create_by;type:bigint unsigned"`
-	CreateTime  *time.Time `gorm:"column:create_time;type:datetime(3)"`
+	RuleID      uint64     `gorm:"column:rule_id;index"`
+	TargetType  int        `gorm:"column:target_type;index"`
+	TargetID    uint64     `gorm:"column:target_id;index"`
+	TargetScope int        `gorm:"column:target_scope;default:0"`
+	CreateBy    uint64     `gorm:"column:create_by"`
+	CreateTime  *time.Time `gorm:"column:create_time"`
 }
 
 // TableName 返回 sys_rule_assignment 表名。

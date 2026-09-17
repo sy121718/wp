@@ -16,17 +16,17 @@ const tableNameNavigations = "navigations"
 
 // NavigationEntity 对应 navigations 表。
 type NavigationEntity struct {
-	ID        string `gorm:"column:id;type:uuid;primaryKey"`
-	ProjectID string `gorm:"column:project_id;type:uuid;not null"`
+	ID        string `gorm:"column:id;primaryKey"`
+	ProjectID string `gorm:"column:project_id;not null"`
 	Title     string `gorm:"column:title;not null"`
 	Path      string `gorm:"column:path;not null"`
 	Kind      string `gorm:"column:kind;not null"`
 	// SourceType / SourceID 菜单项来源（custom/page/article/product/category/block）。
 	SourceType string  `gorm:"column:source_type;not null;default:custom"`
-	SourceID   *string `gorm:"column:source_id;type:uuid"`
+	SourceID   *string `gorm:"column:source_id"`
 	// Target 打开方式：self / blank。
 	Target    string    `gorm:"column:target;not null;default:self"`
-	ParentID  *string   `gorm:"column:parent_id;type:uuid"`
+	ParentID  *string   `gorm:"column:parent_id"`
 	SortOrder int       `gorm:"column:sort_order;not null"`
 	CreatedAt time.Time `gorm:"column:create_time;not null"`
 	UpdatedAt time.Time `gorm:"column:update_time;not null"`

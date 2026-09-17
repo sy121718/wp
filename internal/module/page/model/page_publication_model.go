@@ -23,11 +23,11 @@ const tableNamePagePublications = "page_publications"
 
 // PublicationEntity 对应 page_publications 表。
 type PublicationEntity struct {
-	PageID       string    `gorm:"column:page_id;type:uuid;primaryKey"`
-	Lang         string    `gorm:"column:lang;type:text;primaryKey"`
-	ActivePath   string    `gorm:"column:active_path;type:text;not null"`
-	ArtifactID   *string   `gorm:"column:artifact_id;type:uuid"`
-	ArtifactHash string    `gorm:"column:artifact_hash;type:text;not null"`
+	PageID       string    `gorm:"column:page_id;primaryKey"`
+	Lang         string    `gorm:"column:lang;primaryKey"`
+	ActivePath   string    `gorm:"column:active_path;not null"`
+	ArtifactID   *string   `gorm:"column:artifact_id"`
+	ArtifactHash string    `gorm:"column:artifact_hash;not null"`
 	PublishedAt  time.Time `gorm:"column:published_at;not null"`
 	UpdatedAt    time.Time `gorm:"column:update_time;not null"`
 }
@@ -142,10 +142,10 @@ const tableNamePageStagings = "page_stagings"
 
 // StagingEntity 对应 page_stagings 表：页面在某语言下已构建、待激活的产物指针。
 type StagingEntity struct {
-	PageID       string    `gorm:"column:page_id;type:uuid;primaryKey"`
-	Lang         string    `gorm:"column:lang;type:text;primaryKey"`
-	ArtifactID   string    `gorm:"column:artifact_id;type:uuid;not null"`
-	ArtifactHash string    `gorm:"column:artifact_hash;type:text;not null"`
+	PageID       string    `gorm:"column:page_id;primaryKey"`
+	Lang         string    `gorm:"column:lang;primaryKey"`
+	ArtifactID   string    `gorm:"column:artifact_id;not null"`
+	ArtifactHash string    `gorm:"column:artifact_hash;not null"`
 	DraftVersion int64     `gorm:"column:draft_version;not null"`
 	UpdatedAt    time.Time `gorm:"column:update_time;not null"`
 }

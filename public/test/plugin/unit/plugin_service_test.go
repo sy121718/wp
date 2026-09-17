@@ -43,19 +43,16 @@ const testManifest = `{
   }]
 }`
 
-// newService 隔离 PG schema + AutoMigrate plugin_registry + 装配 service。
+// newService 隔离测试库 + 装配 service。
+//
+// 表结构来自生产迁移（plugin_registry 由 040 建，manifest 列是 jsonb）：AutoMigrate 会照
+// model 的 []byte 字段建成 bytea，与生产分叉 —— 实测表现为「column "manifest" is of type
+// bytea but expression is of type jsonb」。
 func newService(t *testing.T) *pluginservice.Service {
 	t.Helper()
 	// 插件存储隔离到临时目录（避免相对路径 public/runtime/plugins 污染测试目录）。
 	t.Setenv("GO_WP_PLUGIN_ROOT", t.TempDir())
-	db, err := support.NewPGTestDB(t)
-	if err != nil {
-		t.Skipf("本地 PostgreSQL 不可用：%v", err)
-		return nil
-	}
-	if err := db.AutoMigrate(&pluginmodel.Entity{}); err != nil {
-		t.Fatalf("AutoMigrate 失败: %v", err)
-	}
+	db := support.NewMigratedPGTestDB(t)
 	return pluginservice.NewService(pluginmodel.NewModel(db))
 }
 

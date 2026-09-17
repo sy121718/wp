@@ -48,12 +48,12 @@ const DefaultCategory = "general"
 
 // BlockEntity 对应 blocks 表：全局块（组件树文档与页面 root 同构）。
 type BlockEntity struct {
-	ID         string          `gorm:"column:id;type:uuid;primaryKey"`
-	ProjectID  string          `gorm:"column:project_id;type:uuid;not null"`
-	Name       string          `gorm:"column:name;type:text;not null"`
-	Kind       string          `gorm:"column:kind;type:text;not null"`
-	Category   string          `gorm:"column:category;type:text;not null;default:general"`
-	ReuseMode  string          `gorm:"column:reuse_mode;type:text;not null;default:global"`
+	ID         string          `gorm:"column:id;primaryKey"`
+	ProjectID  string          `gorm:"column:project_id;not null"`
+	Name       string          `gorm:"column:name;not null"`
+	Kind       string          `gorm:"column:kind;not null"`
+	Category   string          `gorm:"column:category;not null;default:general"`
+	ReuseMode  string          `gorm:"column:reuse_mode;not null;default:global"`
 	Document   json.RawMessage `gorm:"column:document;type:jsonb;not null"`
 	CreateTime time.Time       `gorm:"column:create_time;not null"`
 	UpdatedAt  time.Time       `gorm:"column:update_time;not null"`

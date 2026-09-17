@@ -20,20 +20,13 @@ import (
 	"gorm.io/gorm"
 )
 
-// newMigrateService 隔离 PG schema + AutoMigrate plugin_registry + 装配 service，
+// newMigrateService 隔离测试库 + 装配 service（表结构来自生产迁移，理由见 newService），
 // 同时返回裸 *gorm.DB 供断言 schema 存在性。
 func newMigrateService(t *testing.T) (*gorm.DB, *pluginservice.Service) {
 	t.Helper()
 	// 插件存储隔离到临时目录（避免相对路径 public/runtime/plugins 污染测试目录）。
 	t.Setenv("GO_WP_PLUGIN_ROOT", t.TempDir())
-	db, err := support.NewPGTestDB(t)
-	if err != nil {
-		t.Skipf("本地 PostgreSQL 不可用：%v", err)
-		return nil, nil
-	}
-	if err := db.AutoMigrate(&pluginmodel.Entity{}); err != nil {
-		t.Fatalf("AutoMigrate 失败: %v", err)
-	}
+	db := support.NewMigratedPGTestDB(t)
 	return db, pluginservice.NewService(pluginmodel.NewModel(db))
 }
 

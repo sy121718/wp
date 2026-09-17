@@ -29,14 +29,14 @@ import (
 //   - Config 是**异构对接扩展信息**（JSON 对象）：不同来源的字段形状各不相同，只有它是
 //     JSONB；SettlePrice / Status 等必须结构化，报表与采购单都按它们校验。
 type SourceEntity struct {
-	ID           string          `gorm:"column:id;type:uuid;primaryKey"`
-	ProjectID    string          `gorm:"column:project_id;type:uuid;not null"`
-	Code         string          `gorm:"column:code;type:text;not null"`
-	Name         string          `gorm:"column:name;type:text;not null"`
-	Type         string          `gorm:"column:type;type:text;not null"`
+	ID           string          `gorm:"column:id;primaryKey"`
+	ProjectID    string          `gorm:"column:project_id;not null"`
+	Code         string          `gorm:"column:code;not null"`
+	Name         string          `gorm:"column:name;not null"`
+	Type         string          `gorm:"column:type;not null"`
 	RelatedParty bool            `gorm:"column:related_party;not null"`
-	SettlePrice  *float64        `gorm:"column:settle_price;type:numeric(12,2)"`
-	Status       string          `gorm:"column:status;type:text;not null"`
+	SettlePrice  *float64        `gorm:"column:settle_price"`
+	Status       string          `gorm:"column:status;not null"`
 	Config       json.RawMessage `gorm:"column:config;type:jsonb;not null"`
 	Sort         int             `gorm:"column:sort;not null"`
 	Metadata     json.RawMessage `gorm:"column:metadata;type:jsonb;not null"`

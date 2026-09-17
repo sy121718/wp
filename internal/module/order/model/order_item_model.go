@@ -17,11 +17,11 @@ import (
 type OrderItemEntity struct {
 	ID           uint64    `gorm:"column:id;primaryKey"`
 	OrderID      uint64    `gorm:"column:order_id"`
-	ProductID    string    `gorm:"column:product_id;type:uuid"`
-	VariantID    string    `gorm:"column:variant_id;type:uuid"`
-	ProductName  string    `gorm:"column:product_name;type:varchar(200)"`
-	VariantLabel string    `gorm:"column:variant_label;type:varchar(200)"`
-	SKU          string    `gorm:"column:sku;type:varchar(80)"`
+	ProductID    string    `gorm:"column:product_id"`
+	VariantID    string    `gorm:"column:variant_id"`
+	ProductName  string    `gorm:"column:product_name"`
+	VariantLabel string    `gorm:"column:variant_label"`
+	SKU          string    `gorm:"column:sku"`
 	UnitPrice    int64     `gorm:"column:unit_price"`
 	Quantity     int       `gorm:"column:quantity"`
 	LineSubtotal int64     `gorm:"column:line_subtotal"`
@@ -29,7 +29,7 @@ type OrderItemEntity struct {
 	LineTax      int64     `gorm:"column:line_tax"`
 	LineTotal    int64     `gorm:"column:line_total"`
 	CostPrice    int64     `gorm:"column:cost_price"`
-	CreateTime   time.Time `gorm:"column:create_time;type:timestamp(3)"`
+	CreateTime   time.Time `gorm:"column:create_time"`
 }
 
 // TableName 实现 gorm 表名（默认推断为 order_item_entities）。

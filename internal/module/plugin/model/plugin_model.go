@@ -15,7 +15,7 @@ type Entity struct {
 	Version       string    `gorm:"column:version"`
 	SchemaVersion int       `gorm:"column:schema_version"`
 	Enabled       bool      `gorm:"column:enabled"`
-	Manifest      []byte    `gorm:"column:manifest;type:jsonb"`
+	Manifest      []byte    `gorm:"column:manifest"`
 	StoragePath   string    `gorm:"column:storage_path"`
 	InstalledAt   time.Time `gorm:"column:installed_at"`
 	UpdatedAt     time.Time `gorm:"column:update_time"`

@@ -37,7 +37,7 @@ func locatorOf(t *testing.T, svc *artifactservice.Service, hash string) (provide
 func TestArtifactContentObjectFirstWriterWins(t *testing.T) {
 	// 用带生产约束的版本：object_key 的文件粒度正是为了满足
 	// UNIQUE (provider, object_key)，跑在无约束的表上验证不到这条语义。
-	svc := newServiceWithProdConstraint(t)
+	svc := newService(t)
 	ctx := context.Background()
 
 	// 首条记录：provider=local，files 含 hash-html / hash-manifest。
@@ -95,7 +95,7 @@ func TestArtifactContentObjectFirstWriterWins(t *testing.T) {
 // EnsureRecord 同版本替换（不同 hash/provider）时，与新闭包共享的旧 hash
 // 仍保持首条定位，不被替换请求的 provider 覆盖。
 func TestArtifactContentObjectFirstWriterWinsOnReplace(t *testing.T) {
-	svc := newServiceWithProdConstraint(t)
+	svc := newService(t)
 	ctx := context.Background()
 
 	mustRecord(t, svc, validReq()) // v1: hash=artifact-hash-a, files: hash-html/hash-manifest, provider=local

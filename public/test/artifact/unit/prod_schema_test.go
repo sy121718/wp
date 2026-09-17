@@ -11,7 +11,7 @@ import (
 // UNIQUE(page_id, version, lang)，迁移 061）下验证：同 (page, version, lang)
 // 不同 hash 的 Record 撞唯一键 → mapPersistenceError 归一化为 ErrArtifactMismatch。
 func TestArtifactRecordHashConflictWithProdConstraint(t *testing.T) {
-	svc := newServiceWithProdConstraint(t)
+	svc := newService(t)
 	ctx := context.Background()
 
 	mustRecord(t, svc, validReq()) // version=1, hash=v1

@@ -19,7 +19,7 @@ const tableNamePageViews = "page_views"
 // 一旦落库就要为泄漏负责，而它们本来也推不回任何东西。
 type PageViewEntity struct {
 	ID           int64     `gorm:"column:id;primaryKey"`
-	ProjectID    string    `gorm:"column:project_id;type:uuid;not null"`
+	ProjectID    string    `gorm:"column:project_id;not null"`
 	Path         string    `gorm:"column:path;not null"`
 	Lang         string    `gorm:"column:lang;not null"`
 	SessionID    string    `gorm:"column:session_id;not null"`

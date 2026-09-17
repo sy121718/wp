@@ -20,19 +20,19 @@ const (
 // RoleEntity 对应 sys_role 表。
 type RoleEntity struct {
 	ID       uint64 `gorm:"column:id;primaryKey"`
-	RoleCode string `gorm:"column:role_code;type:varchar(50);uniqueIndex"`
-	RoleName string `gorm:"column:role_name;type:varchar(100)"`
+	RoleCode string `gorm:"column:role_code;uniqueIndex"`
+	RoleName string `gorm:"column:role_name"`
 	// Status 不带 gorm default tag：gorm 对带 default 的字段在零值时会用 DB 默认值
 	// 替换并回写 struct，导致显式传入的 status=0（禁用）被改写成 1（启用）。
 	// service 层总是显式设置 Status，DB 列 DEFAULT 1 仅兜底直接 SQL 插入。
-	Status     int        `gorm:"column:status;type:tinyint"`
-	IsSystem   int        `gorm:"column:is_system;type:tinyint;default:0"`
+	Status     int        `gorm:"column:status"`
+	IsSystem   int        `gorm:"column:is_system;default:0"`
 	SortOrder  int        `gorm:"column:sort_order;default:0"`
-	Remark     *string    `gorm:"column:remark;type:varchar(200)"`
-	CreateBy   uint64     `gorm:"column:create_by;type:bigint unsigned"`
-	CreateTime *time.Time `gorm:"column:create_time;type:datetime(3)"`
-	UpdateBy   uint64     `gorm:"column:update_by;type:bigint unsigned"`
-	UpdateTime *time.Time `gorm:"column:update_time;type:datetime(3)"`
+	Remark     *string    `gorm:"column:remark"`
+	CreateBy   uint64     `gorm:"column:create_by"`
+	CreateTime *time.Time `gorm:"column:create_time"`
+	UpdateBy   uint64     `gorm:"column:update_by"`
+	UpdateTime *time.Time `gorm:"column:update_time"`
 }
 
 // TableName 返回 sys_role 表名。

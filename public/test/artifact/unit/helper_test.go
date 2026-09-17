@@ -10,6 +10,7 @@ import (
 	artifactenums "go_wp/internal/module/artifact/enums"
 	artifactmodel "go_wp/internal/module/artifact/model"
 	artifactservice "go_wp/internal/module/artifact/service"
+	"go_wp/public/test/support"
 
 	"gorm.io/gorm"
 )
@@ -27,75 +28,51 @@ const (
 	artifactHashV2  = "artifact-hash-b"
 )
 
-// newService 按任务要求用 AutoMigrate 建表后创建 service。
-// PG 不可用时 t.Skip（由调用方遵守测试基建约定）。
+// newService 建隔离测试库并装配 service。
+//
+// 表结构来自生产迁移（page_artifacts / content_objects / page_artifact_objects 三表、
+// UNIQUE(page_id, version, lang) 与两条外键都由生产 DDL 建立）—— 过去这里是 AutoMigrate
+// 建表 + 逐条手抄约束，抄漏一条就让测试跑在一套不存在的约束上：「同一产物的第二个内容对象
+// 撞唯一键」这类真实缺陷会被静默放过（本项目已实证过一次）。
+//
+// TranslateError 对齐生产连接配置（pkg/database）：service 的 mapPersistenceError 依赖
+// gorm.ErrDuplicatedKey 把唯一键冲突归一化为 ErrArtifactMismatch，默认连接返回原始
+// PG 23505、该分支不命中。
 func newService(t *testing.T) *artifactservice.Service {
 	t.Helper()
-	db := newMigratedDB(t, false)
+	db := support.NewMigratedPGTestDBTranslateError(t)
+	seedArtifactFixtures(t, db)
 	return artifactservice.NewService(artifactmodel.NewArtifactModel(db))
 }
 
-// newServiceWithProdConstraint 在 AutoMigrate 之外补建生产 DDL 中的
-// UNIQUE(page_id, version, lang) 唯一键（迁移 061），用于验证生产 schema 语义下
-// service 的行为。
-func newServiceWithProdConstraint(t *testing.T) *artifactservice.Service {
-	t.Helper()
-	db := newMigratedDB(t, true)
-	return artifactservice.NewService(artifactmodel.NewArtifactModel(db))
+// testProjectID 夹具工程 ID（pages.project_id → projects(id) 需要真实父行）。
+const testProjectID = "dddddddd-0000-0000-0000-000000000001"
+
+// testPageIDs 本包用到的全部页面 ID。
+//
+// 生产 schema 里 page_artifacts.page_id → pages(id)，每个被写入的 page 都必须先有真实父行；
+// 过去这里用 AutoMigrate 自建表、表上没有外键，所以「父行不存在」这件事从没暴露过。
+var testPageIDs = []string{
+	"bbbbbbbb-0000-0000-0000-000000000001",
+	"bbbbbbbb-0000-0000-0000-000000000002",
+	"bbbbbbbb-0000-0000-0000-000000000011",
+	"bbbbbbbb-0000-0000-0000-000000000012",
+	"bbbbbbbb-0000-0000-0000-000000000013",
 }
 
-func newMigratedDB(t *testing.T, withProdConstraint bool) *gorm.DB {
+// seedArtifactFixtures 插入用例需要的真实父行（projects + pages）。
+func seedArtifactFixtures(t *testing.T, db *gorm.DB) {
 	t.Helper()
-	// 测试基建：NewPGTestDB 语义的隔离 schema 连接（见 local_pg_test.go）。
-	// 有意保留 local_pg 基建而非切回 support.NewPGTestDB：本包 6 处断言
-	// ErrArtifactMismatch 的测试依赖 gorm.Config{TranslateError:true}（对齐生产
-	// pkg/database），而 support 未开启 TranslateError——唯一约束冲突返回原始
-	// PG 23505，mapPersistenceError 的 gorm.ErrDuplicatedKey 分支不命中
-	// （实证结论见 local_pg_test.go 头部说明）。
-	db, err := newLocalPGDB(t)
-	if err != nil {
-		t.Skipf("本地 PostgreSQL 不可用，跳过测试：%v", err)
-	}
-	if err := db.AutoMigrate(
-		&artifactmodel.PageArtifactEntity{},
-		&artifactmodel.ContentObjectEntity{},
-		&artifactmodel.PageArtifactObjectEntity{},
-	); err != nil {
-		t.Fatalf("AutoMigrate 建表失败: %v", err)
-	}
-	if withProdConstraint {
-		// PageArtifactEntity 的 gorm 标签已声明
-		// uniqueIndex:uk_page_artifacts_page_version_lang（page_id, version, lang 复合），
-		// AutoMigrate 即生成该唯一键；此处再以迁移 061
-		// （public/migrations/061_page_artifacts_lang.sql）同款语句幂等补建，
-		// 显式对齐生产 schema 语义（同页多语言各占一行）。
+	support.SeedProjectRow(t, db, testProjectID, "artifact 测试站点")
+	for _, pageID := range testPageIDs {
 		if err := db.Exec(
-			`CREATE UNIQUE INDEX IF NOT EXISTS uk_page_artifacts_page_version_lang
-			 ON page_artifacts (page_id, version, lang)`,
+			`INSERT INTO pages (id, project_id, kind, content_target_type, draft_path, draft_document, create_time, update_time)
+			 VALUES (?, ?, 'home', 'none', ?, '{}'::jsonb, NOW(), NOW())`,
+			pageID, testProjectID, "/artifact-test-"+pageID,
 		).Error; err != nil {
-			t.Fatalf("补建唯一键失败: %v", err)
-		}
-		// content_objects 的 UNIQUE (provider, object_key) 与两条外键都由生产 DDL 建立
-		// （init_builder_schema.sql），实体标签里没有，AutoMigrate 不会生成。
-		// 必须补：不补的话测试跑在一套**不存在约束**的表上，「同一产物的第二个内容对象
-		// 撞唯一键」这类真实缺陷会被静默放过（本次已实证：产物级 object_key 在生产 schema 下
-		// 必然撞 UNIQUE(provider, object_key)）。
-		for _, stmt := range []string{
-			`ALTER TABLE content_objects
-			   ADD CONSTRAINT uq_content_objects_provider_object_key UNIQUE (provider, object_key)`,
-			`ALTER TABLE page_artifact_objects
-			   ADD CONSTRAINT fk_page_artifact_objects_content_hash
-			   FOREIGN KEY (content_hash) REFERENCES content_objects(content_hash)`,
-			`ALTER TABLE page_artifact_objects
-			   ADD CONSTRAINT fk_page_artifact_objects_artifact_id
-			   FOREIGN KEY (artifact_id) REFERENCES page_artifacts(id)`,
-		} {
-			if err := db.Exec(stmt).Error; err != nil {
-				t.Fatalf("补建生产约束失败: %v", err)
-			}
+			t.Fatalf("准备页面行 %s 失败：%v", pageID, err)
 		}
 	}
-	return db
 }
 
 // validReq 构造合法归档请求。

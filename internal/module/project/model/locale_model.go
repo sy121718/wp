@@ -31,8 +31,8 @@ func (m *Model) withProjectScope(ctx context.Context, projectID string, fn func(
 
 // LocaleEntity 对应 project_locales 表。
 type LocaleEntity struct {
-	ProjectID string    `gorm:"column:project_id;type:uuid;primaryKey"`
-	Lang      string    `gorm:"column:lang;type:text;primaryKey"`
+	ProjectID string    `gorm:"column:project_id;primaryKey"`
+	Lang      string    `gorm:"column:lang;primaryKey"`
 	SortOrder int       `gorm:"column:sort_order;not null"`
 	IsDefault bool      `gorm:"column:is_default;not null"`
 	Enabled   bool      `gorm:"column:enabled;not null"`

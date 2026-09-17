@@ -34,12 +34,12 @@ const (
 // CouponEntity 对应 coupons 表。
 type CouponEntity struct {
 	ID        uint64 `gorm:"column:id;primaryKey"`
-	ProjectID string `gorm:"column:project_id;type:uuid"`
+	ProjectID string `gorm:"column:project_id"`
 	// Code 券码（存归一化后的大写）：工程内唯一。
-	Code string `gorm:"column:code;type:varchar(64)"`
-	Name string `gorm:"column:name;type:varchar(120)"`
+	Code string `gorm:"column:code"`
+	Name string `gorm:"column:name"`
 	// DiscountType / DiscountValue 折扣口径：百分比 1..100 或固定金额（分）。
-	DiscountType  string `gorm:"column:discount_type;type:varchar(16)"`
+	DiscountType  string `gorm:"column:discount_type"`
 	DiscountValue int64  `gorm:"column:discount_value"`
 	// MinSubtotal 使用门槛（分）。
 	MinSubtotal int64 `gorm:"column:min_subtotal"`
@@ -48,16 +48,16 @@ type CouponEntity struct {
 	UsedCount int `gorm:"column:used_count"`
 	// PerUserLimit 每人可用次数（0 = 不限）。
 	PerUserLimit int        `gorm:"column:per_user_limit"`
-	StartsAt     *time.Time `gorm:"column:starts_at;type:timestamp(3)"`
-	EndsAt       *time.Time `gorm:"column:ends_at;type:timestamp(3)"`
+	StartsAt     *time.Time `gorm:"column:starts_at"`
+	EndsAt       *time.Time `gorm:"column:ends_at"`
 	// Status 1 启用 / 0 停用。停用不删：历史核销记录还要读它。
 	Status int `gorm:"column:status"`
 	// Remark 备注（活动说明 / 内部口径）。
-	Remark     string    `gorm:"column:remark;type:varchar(255)"`
+	Remark     string    `gorm:"column:remark"`
 	CreateBy   uint64    `gorm:"column:create_by"`
 	UpdateBy   uint64    `gorm:"column:update_by"`
-	CreateTime time.Time `gorm:"column:create_time;type:timestamp(3)"`
-	UpdateTime time.Time `gorm:"column:update_time;type:timestamp(3)"`
+	CreateTime time.Time `gorm:"column:create_time"`
+	UpdateTime time.Time `gorm:"column:update_time"`
 }
 
 // TableName 实现 gorm 表名（显式给：默认复数推断会得到 coupon_entities）。
@@ -70,15 +70,15 @@ func (CouponEntity) TableName() string { return "coupons" }
 type CouponRedemptionEntity struct {
 	ID        uint64 `gorm:"column:id;primaryKey"`
 	CouponID  uint64 `gorm:"column:coupon_id"`
-	ProjectID string `gorm:"column:project_id;type:uuid"`
-	Code      string `gorm:"column:code;type:varchar(64)"`
+	ProjectID string `gorm:"column:project_id"`
+	Code      string `gorm:"column:code"`
 	OrderID   uint64 `gorm:"column:order_id"`
-	OrderNo   string `gorm:"column:order_no;type:varchar(40)"`
+	OrderNo   string `gorm:"column:order_no"`
 	// DiscountAmount 本次实际抵扣（分）。
 	DiscountAmount int64 `gorm:"column:discount_amount"`
 	// UserID 核销人（匿名下单时为 NULL）。
 	UserID     *uint64   `gorm:"column:user_id"`
-	CreateTime time.Time `gorm:"column:create_time;type:timestamp(3)"`
+	CreateTime time.Time `gorm:"column:create_time"`
 }
 
 // TableName 实现 gorm 表名。

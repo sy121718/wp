@@ -57,18 +57,18 @@ const (
 // MailAutomationEntity 对应 mail_automations 表。
 type MailAutomationEntity struct {
 	ID            uint64  `gorm:"column:id;primaryKey"`
-	Name          string  `gorm:"column:name;type:varchar(150)"`
-	Description   *string `gorm:"column:description;type:varchar(500)"`
-	TriggerType   string  `gorm:"column:trigger_type;type:varchar(32)"`
+	Name          string  `gorm:"column:name"`
+	Description   *string `gorm:"column:description"`
+	TriggerType   string  `gorm:"column:trigger_type"`
 	TriggerParams JSONMap `gorm:"column:trigger_params;type:jsonb"`
 	// Definition 图定义。用 JSONB 是正当的「自由形状」用法：节点形状各异，
 	// 且编辑器整体读写整张图，拆成关联表只会让读写更碎。
 	Definition JSONMap    `gorm:"column:definition;type:jsonb"`
-	Status     string     `gorm:"column:status;type:varchar(16)"`
+	Status     string     `gorm:"column:status"`
 	Version    int        `gorm:"column:version"`
 	CreateBy   uint64     `gorm:"column:create_by"`
-	CreateTime *time.Time `gorm:"column:create_time;type:timestamp(3);autoCreateTime"`
-	UpdateTime *time.Time `gorm:"column:update_time;type:timestamp(3)"`
+	CreateTime *time.Time `gorm:"column:create_time;autoCreateTime"`
+	UpdateTime *time.Time `gorm:"column:update_time"`
 }
 
 // TableName 表名。
@@ -80,15 +80,15 @@ type MailAutomationRunEntity struct {
 	AutomationID      uint64     `gorm:"column:automation_id"`
 	AutomationVersion int        `gorm:"column:automation_version"`
 	ContactID         uint64     `gorm:"column:contact_id"`
-	Status            string     `gorm:"column:status;type:varchar(16)"`
-	CurrentNode       *string    `gorm:"column:current_node;type:varchar(64)"`
-	NextRunAt         *time.Time `gorm:"column:next_run_at;type:timestamp(3)"`
+	Status            string     `gorm:"column:status"`
+	CurrentNode       *string    `gorm:"column:current_node"`
+	NextRunAt         *time.Time `gorm:"column:next_run_at"`
 	ErrorMessage      *string    `gorm:"column:error_message"`
-	TriggerEvent      *string    `gorm:"column:trigger_event;type:varchar(32)"`
-	StartedAt         *time.Time `gorm:"column:started_at;type:timestamp(3)"`
-	FinishedAt        *time.Time `gorm:"column:finished_at;type:timestamp(3)"`
-	CreateTime        *time.Time `gorm:"column:create_time;type:timestamp(3);autoCreateTime"`
-	UpdateTime        *time.Time `gorm:"column:update_time;type:timestamp(3)"`
+	TriggerEvent      *string    `gorm:"column:trigger_event"`
+	StartedAt         *time.Time `gorm:"column:started_at"`
+	FinishedAt        *time.Time `gorm:"column:finished_at"`
+	CreateTime        *time.Time `gorm:"column:create_time;autoCreateTime"`
+	UpdateTime        *time.Time `gorm:"column:update_time"`
 }
 
 // TableName 表名。
@@ -98,11 +98,11 @@ func (MailAutomationRunEntity) TableName() string { return "mail_automation_runs
 type MailAutomationNodeLogEntity struct {
 	ID         uint64     `gorm:"column:id;primaryKey"`
 	RunID      uint64     `gorm:"column:run_id"`
-	NodeKey    string     `gorm:"column:node_key;type:varchar(64)"`
-	NodeType   string     `gorm:"column:node_type;type:varchar(32)"`
-	Status     string     `gorm:"column:status;type:varchar(16)"`
+	NodeKey    string     `gorm:"column:node_key"`
+	NodeType   string     `gorm:"column:node_type"`
+	Status     string     `gorm:"column:status"`
 	Detail     *string    `gorm:"column:detail"`
-	CreateTime *time.Time `gorm:"column:create_time;type:timestamp(3);autoCreateTime"`
+	CreateTime *time.Time `gorm:"column:create_time;autoCreateTime"`
 }
 
 // TableName 表名。

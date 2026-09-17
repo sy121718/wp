@@ -33,23 +33,23 @@ const TableMasterDataChanges = "master_data_changes"
 // 新增与删除同样逐字段落行（新增时 old 为空，删除时 new 为空），
 // 因此「按实体查询」拿到的是一份与动作无关、形状一致的字段级时间线。
 type ChangeEntity struct {
-	ID string `gorm:"column:id;type:uuid;primaryKey"`
+	ID string `gorm:"column:id;primaryKey"`
 	// ProjectID 工程（查询与鉴权的最小范围）。
-	ProjectID string `gorm:"column:project_id;type:uuid;not null"`
+	ProjectID string `gorm:"column:project_id;not null"`
 	// EntityType 实体类型白名单（product / product_variant / inventory_source）。
-	EntityType string `gorm:"column:entity_type;type:text;not null"`
-	EntityID   string `gorm:"column:entity_id;type:uuid;not null"`
+	EntityType string `gorm:"column:entity_type;not null"`
+	EntityID   string `gorm:"column:entity_id;not null"`
 	// EntityLabel 实体展示名快照（商品名 / SKU 编码 / 货源名），实体删除后仍可读。
-	EntityLabel string `gorm:"column:entity_label;type:text;not null"`
-	Action      string `gorm:"column:action;type:text;not null"`
-	Field       string `gorm:"column:field;type:text;not null"`
-	OldValue    string `gorm:"column:old_value;type:text;not null"`
-	NewValue    string `gorm:"column:new_value;type:text;not null"`
+	EntityLabel string `gorm:"column:entity_label;not null"`
+	Action      string `gorm:"column:action;not null"`
+	Field       string `gorm:"column:field;not null"`
+	OldValue    string `gorm:"column:old_value;not null"`
+	NewValue    string `gorm:"column:new_value;not null"`
 	// Origin 这条记录由哪条写入路径产生（product / variant / pricing / receipt / source …）。
-	Origin string `gorm:"column:origin;type:text;not null"`
+	Origin string `gorm:"column:origin;not null"`
 	// OperatorID 操作人（会话里的登录名；缺失时为空串）。历史记录允许为空，
 	// 但绝不允许事后补写 —— 本表 append-only。
-	OperatorID string    `gorm:"column:operator_id;type:text;not null"`
+	OperatorID string    `gorm:"column:operator_id;not null"`
 	CreatedAt  time.Time `gorm:"column:create_time;not null"`
 }
 

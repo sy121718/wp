@@ -82,24 +82,24 @@ const (
 // MailAccountEntity 对应 mail_accounts 表。
 type MailAccountEntity struct {
 	ID             uint64     `gorm:"column:id;primaryKey"`
-	Name           string     `gorm:"column:name;type:varchar(64)"`
-	Purpose        string     `gorm:"column:purpose;type:varchar(16)"`
+	Name           string     `gorm:"column:name"`
+	Purpose        string     `gorm:"column:purpose"`
 	IsDefault      bool       `gorm:"column:is_default"`
-	FromName       *string    `gorm:"column:from_name;type:varchar(100)"`
-	FromEmail      string     `gorm:"column:from_email;type:varchar(254)"`
-	ReplyTo        *string    `gorm:"column:reply_to;type:varchar(254)"`
-	Provider       string     `gorm:"column:provider;type:varchar(32)"`
-	Host           *string    `gorm:"column:host;type:varchar(255)"`
+	FromName       *string    `gorm:"column:from_name"`
+	FromEmail      string     `gorm:"column:from_email"`
+	ReplyTo        *string    `gorm:"column:reply_to"`
+	Provider       string     `gorm:"column:provider"`
+	Host           *string    `gorm:"column:host"`
 	Port           *int       `gorm:"column:port"`
-	Username       *string    `gorm:"column:username;type:varchar(255)"`
+	Username       *string    `gorm:"column:username"`
 	PasswordCipher *string    `gorm:"column:password_cipher"`
-	Encryption     string     `gorm:"column:encryption;type:varchar(16)"`
+	Encryption     string     `gorm:"column:encryption"`
 	RatePerHour    int        `gorm:"column:rate_per_hour"`
-	Status         int        `gorm:"column:status;type:smallint"`
-	LastCheckAt    *time.Time `gorm:"column:last_check_at;type:timestamp(3)"`
+	Status         int        `gorm:"column:status"`
+	LastCheckAt    *time.Time `gorm:"column:last_check_at"`
 	LastCheckError *string    `gorm:"column:last_check_error"`
-	CreateTime     *time.Time `gorm:"column:create_time;type:timestamp(3);autoCreateTime"`
-	UpdateTime     *time.Time `gorm:"column:update_time;type:timestamp(3)"`
+	CreateTime     *time.Time `gorm:"column:create_time;autoCreateTime"`
+	UpdateTime     *time.Time `gorm:"column:update_time"`
 }
 
 // TableName 表名。
@@ -108,18 +108,18 @@ func (MailAccountEntity) TableName() string { return "mail_accounts" }
 // MailTemplateEntity 对应 mail_templates 表。
 type MailTemplateEntity struct {
 	ID          uint64 `gorm:"column:id;primaryKey"`
-	TemplateKey string `gorm:"column:template_key;type:varchar(64)"`
-	Locale      string `gorm:"column:locale;type:varchar(16)"`
-	Name        string `gorm:"column:name;type:varchar(100)"`
-	Subject     string `gorm:"column:subject;type:varchar(255)"`
+	TemplateKey string `gorm:"column:template_key"`
+	Locale      string `gorm:"column:locale"`
+	Name        string `gorm:"column:name"`
+	Subject     string `gorm:"column:subject"`
 	BodyHTML    string `gorm:"column:body_html"`
 	BodyText    string `gorm:"column:body_text"`
 	// Variables 模板用到的变量名列表。存 JSON **数组**（[\"name\",\"code\"]）而不是对象 ——
 	// 语义上它是「用到哪些变量」，不是「变量用什么值」（值在发送时由调用方给）。
 	Variables  StringArray `gorm:"column:variables;type:jsonb"`
-	Status     int         `gorm:"column:status;type:smallint"`
-	CreateTime *time.Time  `gorm:"column:create_time;type:timestamp(3);autoCreateTime"`
-	UpdateTime *time.Time  `gorm:"column:update_time;type:timestamp(3)"`
+	Status     int         `gorm:"column:status"`
+	CreateTime *time.Time  `gorm:"column:create_time;autoCreateTime"`
+	UpdateTime *time.Time  `gorm:"column:update_time"`
 }
 
 // TableName 表名。
@@ -129,20 +129,20 @@ func (MailTemplateEntity) TableName() string { return "mail_templates" }
 type MailLogEntity struct {
 	ID          uint64  `gorm:"column:id;primaryKey"`
 	AccountID   *uint64 `gorm:"column:account_id"`
-	TemplateKey *string `gorm:"column:template_key;type:varchar(64)"`
-	ToEmail     string  `gorm:"column:to_email;type:varchar(254)"`
+	TemplateKey *string `gorm:"column:template_key"`
+	ToEmail     string  `gorm:"column:to_email"`
 	// CampaignID / ContactID 只由群发链路填：事务邮件（注册验证等）不属于任何活动。
 	CampaignID    *uint64    `gorm:"column:campaign_id"`
 	ContactID     *uint64    `gorm:"column:contact_id"`
-	Subject       *string    `gorm:"column:subject;type:varchar(255)"`
-	Status        string     `gorm:"column:status;type:varchar(16)"`
-	Provider      *string    `gorm:"column:provider;type:varchar(32)"`
-	ProviderMsgID *string    `gorm:"column:provider_msg_id;type:varchar(191)"`
-	ErrorKind     *string    `gorm:"column:error_kind;type:varchar(16)"`
+	Subject       *string    `gorm:"column:subject"`
+	Status        string     `gorm:"column:status"`
+	Provider      *string    `gorm:"column:provider"`
+	ProviderMsgID *string    `gorm:"column:provider_msg_id"`
+	ErrorKind     *string    `gorm:"column:error_kind"`
 	ErrorMessage  *string    `gorm:"column:error_message"`
 	RetryCount    int        `gorm:"column:retry_count"`
-	SentAt        *time.Time `gorm:"column:sent_at;type:timestamp(3)"`
-	CreateTime    *time.Time `gorm:"column:create_time;type:timestamp(3);autoCreateTime"`
+	SentAt        *time.Time `gorm:"column:sent_at"`
+	CreateTime    *time.Time `gorm:"column:create_time;autoCreateTime"`
 }
 
 // TableName 表名。
@@ -151,11 +151,11 @@ func (MailLogEntity) TableName() string { return "mail_logs" }
 // MailSuppressionEntity 对应 mail_suppressions 表。
 type MailSuppressionEntity struct {
 	ID         uint64     `gorm:"column:id;primaryKey"`
-	Email      string     `gorm:"column:email;type:varchar(254)"`
-	Reason     string     `gorm:"column:reason;type:varchar(16)"`
-	Source     *string    `gorm:"column:source;type:varchar(64)"`
-	Note       *string    `gorm:"column:note;type:varchar(255)"`
-	CreateTime *time.Time `gorm:"column:create_time;type:timestamp(3);autoCreateTime"`
+	Email      string     `gorm:"column:email"`
+	Reason     string     `gorm:"column:reason"`
+	Source     *string    `gorm:"column:source"`
+	Note       *string    `gorm:"column:note"`
+	CreateTime *time.Time `gorm:"column:create_time;autoCreateTime"`
 }
 
 // TableName 表名。

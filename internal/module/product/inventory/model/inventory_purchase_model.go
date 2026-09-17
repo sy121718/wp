@@ -40,16 +40,16 @@ import (
 
 // PurchaseOrderEntity 采购单头（单号 / 货源 / 收货仓 / 推导状态）。
 type PurchaseOrderEntity struct {
-	ID          string          `gorm:"column:id;type:uuid;primaryKey"`
-	ProjectID   string          `gorm:"column:project_id;type:uuid;not null"`
-	Code        string          `gorm:"column:code;type:text;not null"`
-	SourceID    string          `gorm:"column:source_id;type:uuid;not null"`
-	WarehouseID string          `gorm:"column:warehouse_id;type:uuid;not null"`
-	Status      string          `gorm:"column:status;type:text;not null"`
+	ID          string          `gorm:"column:id;primaryKey"`
+	ProjectID   string          `gorm:"column:project_id;not null"`
+	Code        string          `gorm:"column:code;not null"`
+	SourceID    string          `gorm:"column:source_id;not null"`
+	WarehouseID string          `gorm:"column:warehouse_id;not null"`
+	Status      string          `gorm:"column:status;not null"`
 	OrderedAt   time.Time       `gorm:"column:ordered_at;not null"`
 	ExpectedAt  *time.Time      `gorm:"column:expected_at"`
-	Remark      string          `gorm:"column:remark;type:text;not null"`
-	OperatorID  string          `gorm:"column:operator_id;type:text;not null"`
+	Remark      string          `gorm:"column:remark;not null"`
+	OperatorID  string          `gorm:"column:operator_id;not null"`
 	Metadata    json.RawMessage `gorm:"column:metadata;type:jsonb;not null"`
 	CreatedAt   time.Time       `gorm:"column:create_time;not null"`
 	UpdatedAt   time.Time       `gorm:"column:update_time;not null"`
@@ -60,17 +60,17 @@ func (PurchaseOrderEntity) TableName() string { return "inventory_purchase_order
 
 // PurchaseLineEntity 采购行（SKU × 采购数量 × 采购单价 × 已入库数量）。
 type PurchaseLineEntity struct {
-	ID               string          `gorm:"column:id;type:uuid;primaryKey"`
-	OrderID          string          `gorm:"column:order_id;type:uuid;not null"`
-	ProjectID        string          `gorm:"column:project_id;type:uuid;not null"`
-	ProductID        string          `gorm:"column:product_id;type:uuid;not null"`
-	VariantID        string          `gorm:"column:variant_id;type:uuid;not null"`
-	SKUCode          string          `gorm:"column:sku_code;type:text;not null"`
+	ID               string          `gorm:"column:id;primaryKey"`
+	OrderID          string          `gorm:"column:order_id;not null"`
+	ProjectID        string          `gorm:"column:project_id;not null"`
+	ProductID        string          `gorm:"column:product_id;not null"`
+	VariantID        string          `gorm:"column:variant_id;not null"`
+	SKUCode          string          `gorm:"column:sku_code;not null"`
 	Quantity         int             `gorm:"column:quantity;not null"`
 	ReceivedQuantity int             `gorm:"column:received_quantity;not null"`
-	UnitPrice        float64         `gorm:"column:unit_price;type:numeric(12,2);not null"`
+	UnitPrice        float64         `gorm:"column:unit_price;not null"`
 	Sort             int             `gorm:"column:sort;not null"`
-	Remark           string          `gorm:"column:remark;type:text;not null"`
+	Remark           string          `gorm:"column:remark;not null"`
 	Metadata         json.RawMessage `gorm:"column:metadata;type:jsonb;not null"`
 	CreatedAt        time.Time       `gorm:"column:create_time;not null"`
 	UpdatedAt        time.Time       `gorm:"column:update_time;not null"`
@@ -81,18 +81,18 @@ func (PurchaseLineEntity) TableName() string { return "inventory_purchase_order_
 
 // ReceiptEntity 入库单头（采购收货 / 自家工厂生产入库）。
 type ReceiptEntity struct {
-	ID              string          `gorm:"column:id;type:uuid;primaryKey"`
-	ProjectID       string          `gorm:"column:project_id;type:uuid;not null"`
-	Code            string          `gorm:"column:code;type:text;not null"`
-	Kind            string          `gorm:"column:kind;type:text;not null"`
-	OrderID         *string         `gorm:"column:order_id;type:uuid"`
-	SourceID        string          `gorm:"column:source_id;type:uuid;not null"`
-	WarehouseID     string          `gorm:"column:warehouse_id;type:uuid;not null"`
-	RequestID       string          `gorm:"column:request_id;type:text;not null"`
-	Status          string          `gorm:"column:status;type:text;not null"`
-	MovementBatchID string          `gorm:"column:movement_batch_id;type:text;not null"`
-	Remark          string          `gorm:"column:remark;type:text;not null"`
-	OperatorID      string          `gorm:"column:operator_id;type:text;not null"`
+	ID              string          `gorm:"column:id;primaryKey"`
+	ProjectID       string          `gorm:"column:project_id;not null"`
+	Code            string          `gorm:"column:code;not null"`
+	Kind            string          `gorm:"column:kind;not null"`
+	OrderID         *string         `gorm:"column:order_id"`
+	SourceID        string          `gorm:"column:source_id;not null"`
+	WarehouseID     string          `gorm:"column:warehouse_id;not null"`
+	RequestID       string          `gorm:"column:request_id;not null"`
+	Status          string          `gorm:"column:status;not null"`
+	MovementBatchID string          `gorm:"column:movement_batch_id;not null"`
+	Remark          string          `gorm:"column:remark;not null"`
+	OperatorID      string          `gorm:"column:operator_id;not null"`
 	ReceivedAt      time.Time       `gorm:"column:received_at;not null"`
 	Metadata        json.RawMessage `gorm:"column:metadata;type:jsonb;not null"`
 	CreatedAt       time.Time       `gorm:"column:create_time;not null"`
@@ -103,17 +103,17 @@ func (ReceiptEntity) TableName() string { return "inventory_purchase_receipts" }
 
 // ReceiptItemEntity 入库单行（数量 + 单价快照 + 成本价回写结果）。
 type ReceiptItemEntity struct {
-	ID          string    `gorm:"column:id;type:uuid;primaryKey"`
-	ReceiptID   string    `gorm:"column:receipt_id;type:uuid;not null"`
-	ProjectID   string    `gorm:"column:project_id;type:uuid;not null"`
-	LineID      *string   `gorm:"column:line_id;type:uuid"`
-	ProductID   string    `gorm:"column:product_id;type:uuid;not null"`
-	VariantID   string    `gorm:"column:variant_id;type:uuid;not null"`
-	SKUCode     string    `gorm:"column:sku_code;type:text;not null"`
+	ID          string    `gorm:"column:id;primaryKey"`
+	ReceiptID   string    `gorm:"column:receipt_id;not null"`
+	ProjectID   string    `gorm:"column:project_id;not null"`
+	LineID      *string   `gorm:"column:line_id"`
+	ProductID   string    `gorm:"column:product_id;not null"`
+	VariantID   string    `gorm:"column:variant_id;not null"`
+	SKUCode     string    `gorm:"column:sku_code;not null"`
 	Quantity    int       `gorm:"column:quantity;not null"`
-	UnitPrice   float64   `gorm:"column:unit_price;type:numeric(12,2);not null"`
+	UnitPrice   float64   `gorm:"column:unit_price;not null"`
 	CostUpdated bool      `gorm:"column:cost_updated;not null"`
-	CostError   string    `gorm:"column:cost_error;type:text;not null"`
+	CostError   string    `gorm:"column:cost_error;not null"`
 	CreatedAt   time.Time `gorm:"column:create_time;not null"`
 }
 

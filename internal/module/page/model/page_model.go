@@ -49,20 +49,20 @@ func (m *Model) ListAllProjectIDs(ctx context.Context) (ids []string, err error)
 
 // PageEntity 对应 pages 表的手工 Page 字段。
 type PageEntity struct {
-	ID        string `gorm:"column:id;type:uuid;primaryKey"`
-	ProjectID string `gorm:"column:project_id;type:uuid;not null"`
+	ID        string `gorm:"column:id;primaryKey"`
+	ProjectID string `gorm:"column:project_id;not null"`
 	// ThemeID 工程当前激活主题的快照；激活主题时 ReattachProjectPagesToTheme 会全工程转挂，
 	// 不支持页面级异主题 —— 勿当作「每页可选主题」维度。
-	ThemeID           *string         `gorm:"column:theme_id;type:uuid"`
-	Kind              string          `gorm:"column:kind;type:text;not null"`
-	ContentTargetType string          `gorm:"column:content_target_type;type:text;not null"`
-	ContentTargetID   *string         `gorm:"column:content_target_id;type:uuid"`
-	DraftPath         string          `gorm:"column:draft_path;type:text;not null"`
-	ActivePath        *string         `gorm:"column:active_path;type:text"`
+	ThemeID           *string         `gorm:"column:theme_id"`
+	Kind              string          `gorm:"column:kind;not null"`
+	ContentTargetType string          `gorm:"column:content_target_type;not null"`
+	ContentTargetID   *string         `gorm:"column:content_target_id"`
+	DraftPath         string          `gorm:"column:draft_path;not null"`
+	ActivePath        *string         `gorm:"column:active_path"`
 	DraftDocument     json.RawMessage `gorm:"column:draft_document;type:jsonb;not null"`
 	DraftVersion      int64           `gorm:"column:draft_version;not null"`
-	StagedArtifactID  *string         `gorm:"column:staged_artifact_id;type:uuid"`
-	ActiveArtifactID  *string         `gorm:"column:active_artifact_id;type:uuid"`
+	StagedArtifactID  *string         `gorm:"column:staged_artifact_id"`
+	ActiveArtifactID  *string         `gorm:"column:active_artifact_id"`
 	Stale             bool            `gorm:"column:stale;not null"`
 	DeletedAt         *time.Time      `gorm:"column:deleted_at"`
 	PublishedAt       *time.Time      `gorm:"column:published_at"`
@@ -74,12 +74,12 @@ func (PageEntity) TableName() string { return tableNamePages }
 
 // RevisionEntity 对应 page_revisions 表：每次保存的不可变草稿快照。
 type RevisionEntity struct {
-	ID            string          `gorm:"column:id;type:uuid;primaryKey"`
-	PageID        string          `gorm:"column:page_id;type:uuid;not null"`
+	ID            string          `gorm:"column:id;primaryKey"`
+	PageID        string          `gorm:"column:page_id;not null"`
 	Version       int64           `gorm:"column:version;not null"`
-	DraftPath     string          `gorm:"column:draft_path;type:text;not null"`
+	DraftPath     string          `gorm:"column:draft_path;not null"`
 	DraftDocument json.RawMessage `gorm:"column:draft_document;type:jsonb;not null"`
-	SourceHash    string          `gorm:"column:source_hash;type:text;not null"`
+	SourceHash    string          `gorm:"column:source_hash;not null"`
 	CreatedAt     time.Time       `gorm:"column:create_time;not null"`
 }
 

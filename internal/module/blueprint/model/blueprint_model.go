@@ -32,7 +32,7 @@ func PageKinds() []string { return pageenums.PageKinds() }
 
 // BlueprintEntity blueprints 表实体（可编辑草稿）。
 type BlueprintEntity struct {
-	ID            string          `gorm:"column:id;type:uuid;primaryKey"`
+	ID            string          `gorm:"column:id;primaryKey"`
 	Name          string          `gorm:"column:name;not null"`
 	Kind          string          `gorm:"column:kind;not null"`
 	DraftDocument json.RawMessage `gorm:"column:draft_document;type:jsonb;not null"`
@@ -46,8 +46,8 @@ func (BlueprintEntity) TableName() string { return tableNameBlueprints }
 
 // VersionEntity blueprint_versions 表实体（不可变版本快照）。
 type VersionEntity struct {
-	ID          string          `gorm:"column:id;type:uuid;primaryKey"`
-	BlueprintID string          `gorm:"column:blueprint_id;type:uuid;not null"`
+	ID          string          `gorm:"column:id;primaryKey"`
+	BlueprintID string          `gorm:"column:blueprint_id;not null"`
 	Version     int64           `gorm:"column:version;not null"`
 	Document    json.RawMessage `gorm:"column:document;type:jsonb;not null"`
 	CreatedAt   time.Time       `gorm:"column:create_time;not null"`

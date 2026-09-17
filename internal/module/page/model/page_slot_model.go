@@ -24,10 +24,10 @@ const tableNamePageSiteSlots = "page_site_slots"
 
 // SiteSlotEntity 对应 page_site_slots 表：一个工程里「某个角色由哪个页面担任」。
 type SiteSlotEntity struct {
-	ID         int64     `gorm:"column:id;type:bigint;primaryKey"`
-	ProjectID  string    `gorm:"column:project_id;type:uuid;not null"`
-	Slot       string    `gorm:"column:slot;type:text;not null"`
-	PageID     string    `gorm:"column:page_id;type:uuid;not null"`
+	ID         int64     `gorm:"column:id;primaryKey"`
+	ProjectID  string    `gorm:"column:project_id;not null"`
+	Slot       string    `gorm:"column:slot;not null"`
+	PageID     string    `gorm:"column:page_id;not null"`
 	CreateTime time.Time `gorm:"column:create_time;not null"`
 	UpdatedAt  time.Time `gorm:"column:update_time;not null"`
 }
