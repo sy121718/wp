@@ -21,6 +21,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"time"
 
 	presentationmodel "go_wp/internal/module/presentation/model"
 	pubcontract "go_wp/internal/module/publication/contract"
@@ -98,6 +99,9 @@ func (s *Service) RecoverPendingPublications(ctx context.Context) (recovered, ro
 	if lerr != nil {
 		return 0, 0, lerr
 	}
+	// 涉及的实例：回执只能证明「单个语言的切换是否生效」，批次是否收敛要看语言账本
+	// 与实例指针（见 convergeInstanceBatch）。
+	touched := make(map[string]string)
 	for _, item := range pending {
 		if item.Action != presentationReceiptAction || item.SourceType != presentationReceiptSourceType {
 			continue
@@ -108,17 +112,92 @@ func (s *Service) RecoverPendingPublications(ctx context.Context) (recovered, ro
 				Error(rerr, "多语言发布回执恢复失败")
 			continue
 		}
+		touched[item.SourceID] = item.ProjectID
 		if done {
 			recovered++
 		} else {
 			rolledBack++
 		}
 	}
+	for instanceID, projectID := range touched {
+		if ctx.Err() != nil {
+			break
+		}
+		s.convergeInstanceBatch(ctx, projectID, instanceID)
+	}
 	if recovered > 0 || rolledBack > 0 {
 		logger.Scene("publication").With("recovered", recovered).With("rolledBack", rolledBack).
 			Info("多语言发布回执恢复完成")
 	}
 	return recovered, rolledBack, nil
+}
+
+// convergeInstanceBatch 批次收敛：语言账本没铺满、或实例指针没推进的实例重跑一次发布。
+//
+// 为什么光靠回执不够：回执只覆盖「已经切过访问面」的语言。激活之前就失败的语言
+// （例如第二种语言的文件激活失败）根本没有生效的切换，补齐无从谈起 —— 只有重跑整批
+// 才能把它带上线。重建是幂等的（同字节产物复用产物行），因此重跑不堆产物、也不会
+// 产生混合版本。
+func (s *Service) convergeInstanceBatch(ctx context.Context, projectID, instanceID string) {
+	inst, ierr := s.locateInstanceForReceipt(ctx, projectID, instanceID)
+	if ierr != nil {
+		return
+	}
+	if s.batchConverged(ctx, inst) {
+		return
+	}
+	s.markBatchUnconverged(ctx, inst, errors.New("多语言发布批次未收敛（启动恢复重跑一次）"))
+	if s.buildQueue != nil {
+		if qerr := s.buildQueue.EnqueuePresentationBuild(ctx, instanceID); qerr != nil {
+			logger.Scene("publication").With("instanceId", instanceID).
+				Error(qerr, "启动恢复入队重建失败（实例保持 stale）")
+		}
+		return
+	}
+	if rerr := s.RebuildInstance(ctx, instanceID); rerr != nil {
+		logger.Scene("publication").With("instanceId", instanceID).
+			Error(rerr, "启动恢复重建失败（实例保持 stale）")
+		return
+	}
+	logger.Scene("publication").With("instanceId", instanceID).
+		Info("启动恢复：多语言发布批次已收敛")
+}
+
+// batchConverged 该实例是否已收敛到「全部启用语言都有账本行，且指针指着默认语言产物」。
+//
+// 判据刻意从严：查不到语言清单或账本时按「已收敛」处理 —— 恢复流程不该因为读不到状态
+// 就触发重建（那会在启动时对每个实例白跑一次构建）。
+func (s *Service) batchConverged(ctx context.Context, inst *presentationmodel.InstanceEntity) bool {
+	langs := pipeline.EnabledLangs(ctx, s.project, inst.ProjectID)
+	if len(langs) == 0 {
+		return true
+	}
+	pubs, perr := s.m.ListPublications(ctx, inst.ID)
+	if perr != nil {
+		logger.Scene("publication").With("instanceId", inst.ID).
+			Error(perr, "读取语言账本失败，跳过批次收敛判定")
+		return true
+	}
+	byLang := make(map[string]string, len(pubs))
+	for _, pub := range pubs {
+		if pub.ArtifactID != nil && strings.TrimSpace(*pub.ArtifactID) != "" {
+			byLang[pub.Lang] = *pub.ArtifactID
+		}
+	}
+	defaultLang := pipeline.DefaultLocale(ctx, s.project, inst.ProjectID)
+	primary := byLang[defaultLang]
+	if primary == "" {
+		primary = byLang[langs[0]]
+	}
+	for _, lang := range langs {
+		if byLang[lang] == "" {
+			return false
+		}
+	}
+	if primary == "" || inst.ActiveArtifactID == nil || *inst.ActiveArtifactID != primary {
+		return false
+	}
+	return !inst.Stale
 }
 
 // recoverOneReceipt 判定单条回执。返回 true 表示已补齐，false 表示已标回滚。
@@ -149,9 +228,17 @@ func (s *Service) recoverOneReceipt(ctx context.Context, item pubcontract.Pendin
 		s.abortPublishReceipt(ctx, item.ID, "访问面未指向本次产物")
 		return false, nil
 	}
-	// 访问面已切换、路由账本没跟上：补齐登记（同归属者幂等）后结案。
+	// 访问面已切换、账本没跟上：补齐路由登记与语言账本（两步都是幂等写）后结案。
 	if rerr := s.registerRoute(ctx, inst, item.Path, item.ToArtifactID); rerr != nil {
 		return false, rerr
+	}
+	if lang := strings.TrimSpace(item.Lang); lang != "" {
+		if merr := s.m.MarkPublishedLang(ctx, presentationmodel.PublicationRecord{
+			PresentationID: inst.ID, Lang: lang, ActivePath: item.Path,
+			ArtifactID: item.ToArtifactID, ArtifactHash: expectedHash, PublishedAt: time.Now().UTC(),
+		}); merr != nil {
+			return false, merr
+		}
 	}
 	if cerr := s.completePublishReceipt(ctx, item.ID); cerr != nil {
 		return false, cerr

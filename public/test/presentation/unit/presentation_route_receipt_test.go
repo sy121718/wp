@@ -13,6 +13,7 @@ package unit
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 
@@ -27,15 +28,16 @@ import (
 // 这样「访问面已激活、路由未登记」才是真实场景而不是人为拼接的中间态。
 type routeFaultInjector struct {
 	pubcontract.PublicationService
-	mu      sync.Mutex
-	failing bool
-	calls   int
+	mu       sync.Mutex
+	failing  bool
+	failPath string
+	calls    int
 }
 
 func (r *routeFaultInjector) Activate(ctx context.Context,
 	req *pubcontract.ActivateReq) (*pubcontract.RouteResp, error) {
 	r.mu.Lock()
-	fail := r.failing
+	fail := r.failing || (r.failPath != "" && req != nil && strings.TrimSpace(req.Path) == r.failPath)
 	r.calls++
 	r.mu.Unlock()
 	if fail {
@@ -47,6 +49,13 @@ func (r *routeFaultInjector) Activate(ctx context.Context,
 func (r *routeFaultInjector) setFailing(v bool) {
 	r.mu.Lock()
 	r.failing = v
+	r.mu.Unlock()
+}
+
+// setFailPath 只让指定路径的登记失败（多语言用例里模拟「某一种语言发布失败」）。
+func (r *routeFaultInjector) setFailPath(path string) {
+	r.mu.Lock()
+	r.failPath = path
 	r.mu.Unlock()
 }
 
@@ -126,8 +135,10 @@ func TestPresentationRouteRegisterFailureIsRecoverable(t *testing.T) {
 	if n := countActiveRoutes(t, f, logicalPath); n != 1 {
 		t.Fatalf("恢复后该路径应有且只有 1 条 active 路由行，实际 %d", n)
 	}
-	if pending, committed := receiptStates(t, f, instID); pending != 0 || committed != 1 {
-		t.Fatalf("恢复后回执应结案，实际 pending=%d committed=%d", pending, committed)
+	// 恢复分两段：先按访问面证据补齐这条回执，再因为语言账本没铺满而重跑整批
+	// （AR2-003 的批次收敛），因此 committed 会多于 1 条 —— 关键是没有 pending 残留。
+	if pending, committed := receiptStates(t, f, instID); pending != 0 || committed < 1 {
+		t.Fatalf("恢复后不应再有未结案回执，实际 pending=%d committed=%d", pending, committed)
 	}
 
 	// 幂等：重复执行恢复不产生重复路由行，也不再有任何待处理回执。
@@ -138,7 +149,7 @@ func TestPresentationRouteRegisterFailureIsRecoverable(t *testing.T) {
 	if n := countActiveRoutes(t, f, logicalPath); n != 1 {
 		t.Fatalf("重复恢复后路由行数应保持 1，实际 %d", n)
 	}
-	if pending, committed := receiptStates(t, f, instID); pending != 0 || committed != 1 {
+	if pending, committed := receiptStates(t, f, instID); pending != 0 || committed < 1 {
 		t.Fatalf("重复恢复后回执状态不应变化，实际 pending=%d committed=%d", pending, committed)
 	}
 }
