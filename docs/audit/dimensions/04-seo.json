@@ -1251,8 +1251,9 @@
         "presentation",
         "publish-order"
       ],
-      "status": "open",
-      "progressNote": "2026-09-17 由 AR2 批次执行期实测发现（不是 codex 第二轮复审的输出）：修 AR2-003 时执行者为了让幂等断言稳定，先对比「首发布 vs 重建」的产物 hash，结果两者不同。已在基线 0e19b66 的干净 worktree 上复现，确认是既有行为、非 AR2-003 引入。它与已 resolved 的 SEO-008 是同一主题的两个阶段：SEO-008 解决「输出不输出」，本条是「首次发布时输出不完整」。"
+      "status": "resolved",
+      "progressNote": "2026-09-17 由 AR2 批次执行期实测发现（不是 codex 第二轮复审的输出）：修 AR2-003 时执行者为了让幂等断言稳定，先对比「首发布 vs 重建」的产物 hash，结果两者不同。已在基线 0e19b66 的干净 worktree 上复现，确认是既有行为、非 AR2-003 引入。它与已 resolved 的 SEO-008 是同一主题的两个阶段：SEO-008 解决「输出不输出」，本条是「首次发布时输出不完整」。",
+      "resolutionNote": "2026-09-17 已修（commit 25acbec）。判定依据从「账本里是否已结案」改为「本批次目标语言集合」：渲染时把 publishAllLangs 里那份 langs（pipeline.EnabledLangs 读 project_locales，默认语言在前）原样透传 —— presentation_i18n.go → buildArtifact → renderHTML(targetLangs) → pipeline.SiteCompileParams.TargetLangs → pipeline.LocaleView。TargetLangs 非空时它就是互指的唯一判据（路径直接由该集合推导），filterPublishedLocales 整段不执行；为空时（手工 Page）退回访问面口径，行为逐字不变。核心判据实测：同一实例首发布与重建的三个语言 hash 逐字相同（en-US 4cf17a89… / ja-JP 1c2e0149… / zh-CN 4b8b312d…）；首发布 hreflang 完整（三语言互指 + x-default 指向默认语言）。失败能力实测：把 TargetLangs 改回 nil → 用例立刻红（「首发布 en-US 的 hreflang 互指应有 4 条，实际 0 条」），还原转绿。新增 internal/pipeline/site_lang_scope_test.go 把两条判据的边界各钉一条。\n\n执行者对本条的更正（已并入以上描述）：① 落点是装配层的 SiteCompileParams.TargetLangs，不是 builder.CompileOption（builder 的 WithAlternates 只接收算好的切片、自己不做判定，判定只能发生在装配层）；② 原描述漏了一个成分 —— compile_site.go:71-78 的 self 补偿会把**当前构建语言**无条件并进已发布集合，于是首发布不是「缺跨语言互指」而是「只剩自己一条」，而 alternateLinks 对少于 2 条直接返回空串，所以现象是**整段 hreflang 一个字节都没有**（探针实测正是 0 条）；③ rootCause 里「AR2-003 把窗口显式化」不准确 —— 判据取错层与结案状态机无耦合，该缺陷在 0e19b66 及更早就在，AR2-003 只是让「结案发生在构建之后」这件事更容易观察到；④ 只找到一处过滤点（LocaleView → filterPublishedLocales），预览路径 logicalPath 为空、alternates 分支本就不走。"
     }
   ]
 }
