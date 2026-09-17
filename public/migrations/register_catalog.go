@@ -146,11 +146,20 @@ func registerCatalogAndInventory() {
 	})
 
 	// 086：商品属性组与属性值（issue #7）—— product_attributes 由 081 建好，
-	// 本迁移只在其上补 key 唯一的部分索引 + 回填历史空 key + is_variation 显式 CHECK。
-	// 表早已存在，默认「表存在即跳过」必然误跳过，故按索引名判定（与 037/038/068 同一手法）。
+	// 本迁移在 **products** 上补 attribute_ids 列，并在 product_attributes 上补 key 唯一的部分
+	// 索引、回填历史空 key、加 is_variation 的显式 CHECK。
+	//
+	// 判定对象必须与 SQL 实际改的表一致（2026-09-17 修）：
+	//   · 不能按表名判定 —— product_attributes 在 081 就建好了，会误跳过整条迁移；
+	//   · 更不能用它查 product_attributes 的列 —— attribute_ids 是 **products** 的列，
+	//     拿着张冠李戴的对象去判 ⇒ 计数恒为 0 ⇒ 这条迁移**每次启动都重跑**。
+	//     超级用户下靠 SQL 里的 IF NOT EXISTS 兜住了，所以一直没人发现（AGENTS.md 记的
+	//     178 是同一种「判定恒 0」形态）；一旦换成非超级角色连接（DB-009 换角色），
+	//     重跑会撞 "must be owner of table products (42501)"，**应用直接启动失败**。
+	//     实测：2026-09-17 换角色预演就是这么炸的（ALTER TABLE 的所有权检查与 IF NOT EXISTS 无关）。
 	register(Migration{
 		Version:   "086-product-attribute-specs",
-		TableName: "product_attributes",
+		TableName: "products",
 		CheckSQL: "SELECT COUNT(*) FROM information_schema.columns " +
 			"WHERE table_schema = current_schema() AND table_name = ? AND column_name = 'attribute_ids'",
 		SQL: mustSQL("086_product_attribute_specs.sql"),

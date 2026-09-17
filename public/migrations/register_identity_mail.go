@@ -110,7 +110,15 @@ func registerIdentityAndMail() {
 		// 8 个约束必须**全部**存在才算已执行：只查其中一个的话，部分缺失时会被判成
 		// 「已存在」而永久跳过，缺的那几条外键再也不会补上。SQL 本身逐条 IF NOT EXISTS，
 		// 判为未执行时重跑是安全的。
-		CheckSQL: "SELECT CASE WHEN COUNT(*) = 8 THEN 1 ELSE 0 END FROM pg_constraint c WHERE (CAST(? AS text) IS NOT NULL) AND c.conname IN (" +
+		//
+		// 必须按 **DISTINCT conname** 计数（2026-09-17 修）：inventory_stock_movements 是
+		// **分区表**，每个子分区各带一份同名约束 —— 按行数会膨胀（实测 7 个子分区 ⇒ 同一个
+		// fk_inventory_movements_product 出现 7 次，8 个名字实际数出 14 行），于是
+		// 「COUNT(*) 等于 8」恒不成立、判定恒 0、**每次启动都重跑 134**。超级用户下 SQL 里的
+		// IF NOT EXISTS 把重跑兜住了，所以一直没暴露；换成非超级角色连接（DB-009 换角色）时，
+		// 重跑撞 "must be owner of table inventory_stocks (42501)" ⇒ **应用直接启动失败**。
+		// 用 DISTINCT 后语义不变（8 个名字必须都出现过），但不再受分区子表重复计数影响。
+		CheckSQL: "SELECT CASE WHEN COUNT(DISTINCT c.conname) = 8 THEN 1 ELSE 0 END FROM pg_constraint c WHERE (CAST(? AS text) IS NOT NULL) AND c.conname IN (" +
 			"'fk_inventory_stocks_product', 'fk_inventory_purchase_lines_product'," +
 			"'fk_inventory_purchase_lines_variant', 'fk_inventory_receipt_items_product'," +
 			"'fk_inventory_receipt_items_variant', 'fk_inventory_movements_product'," +
