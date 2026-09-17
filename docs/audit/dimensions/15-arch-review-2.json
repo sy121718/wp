@@ -55,8 +55,9 @@
         "presentation",
         "static-publishing"
       ],
-      "status": "open",
-      "existingCoverage": "新增"
+      "status": "resolved",
+      "existingCoverage": "新增",
+      "resolutionNote": "2026-09-17 已修（commit ac2c2eb）。presentation.Service 接入内容失效扇出：装配处补 fanout.Register(SourceTypePresentation, presentationSvc) + 断言其实现 pipeline.StaleRebuilder（它的 RebuildStale 在 PERF-020 之后走构建队列入队，不在触发进程同步重建，所以正确做法是让它成为失效目标而不是另起重建路径）。pipeline.Fanout 新增 RegisteredSourceTypes()，把「漏注册一个发布来源」从「静默不重建」变成装配期可断言；wiring 端口表新增 pipeline.Fanout.SetRebuilder(presentation)，漏接后果写明「自动发布的详情页不在失效扇出里」。失败能力实测三探针（在 0e19b66 干净 worktree 上以 WP_DUMP_ROUTES=1 真跑装配）：① 摘掉 Register → panic「依赖扇出缺少发布来源 presentation」；② 摘掉 marks.mark → panic「装配自检失败：端口接线不完整 - pipeline.Fanout.SetRebuilder(presentation)」；③ 摘掉 SetRebuilder → 编译错误（presentationRebuilder declared and not used）。三次还原后文件逐字节一致、用例通过。注：首次实测三探针全绿是假象 —— TestRouteSnapshotStable 在未设 WP_DUMP_ROUTES 时 t.Skip，根本没跑装配。"
     },
     {
       "id": "AR2-002",
@@ -115,8 +116,9 @@
         "receipt",
         "recovery"
       ],
-      "status": "open",
-      "existingCoverage": "更正 TX-009"
+      "status": "resolved",
+      "existingCoverage": "更正 TX-009",
+      "resolutionNote": "2026-09-17 已修（commit 37858c9）。发布回执接进发布主链：beginPublishReceipt（page_publish.go:176，拿不到回执 id 即硬失败、不切访问面）→ publisher.Publish 原子切访问面（失败 → abortPublishReceipt，186 行，依据内核「激活失败线上保持不变」）→ publishedPathOf / MarkPublishedLang / Deactivate / deactivatePaths / Activate 任一失败 → keepPublishReceiptPending（5 处，保留 pending 交启动恢复按链接实际指向判定）→ 全部写入完成后才 completePublishReceipt（257 行）。收敛规则比复审建议更严：切访问面之前一律不留 pending、切访问面之后一律保留，避免把「已生效」误标为 rolled_back。故障注入用例 TestPublishCrashBetweenActivateAndDBConvergesOnRecovery 通过（恢复 recovered=1 / rolledBack=0、回执 committed、激活记录补齐、重复恢复 0/0、陪跑页面未被改）。执行者实测另发现：publication_receipts 是共用表，Activate 每次也按同一 path 登记一条路由类 pending 回执，按 path 查会串读 —— 恢复逻辑按 action/sourceType 筛，测试断言按 action='switch_active' 过滤。"
     },
     {
       "id": "AR2-003",
@@ -170,8 +172,9 @@
         "filesystem",
         "transaction"
       ],
-      "status": "open",
-      "existingCoverage": "新增"
+      "status": "resolved",
+      "existingCoverage": "新增",
+      "resolutionNote": "2026-09-17 已修（commit 4666a30）。多语言发布改为逐语言结案：构建（写不可变字节，无访问面副作用）→ 登记账本产物（单事务：快照 + 各语言产物行 + 依赖；不写语言账本、不动指针）→ 逐语言【登记 pending 回执 → 激活访问面 → 登记路由 → 写 presentation_publications 行 → 结案】→ 全部语言成功后 finalizeMultiLangBatch 才推进 active/staged 指针并清 stale。失败收敛：任一步失败即向上返回，不写该语言账本行、不推进指针、实例 stale=true（后台可见的「明确 partial」）、回执保留 pending 记录切到哪一步。启动恢复先按「访问面是否真的指向本次产物」逐条补齐（幂等）或结案为未生效，再做批次收敛：账本没铺满或指针没推进的实例重跑一次发布（重建幂等、同字节复用产物行）。用例 TestPresentationMultiLangPartialFailureNeverClaimsUnpublished 断言第二语言失败后 DB 只有已上线语言一行、active_artifact_id 为空、stale=true；恢复后三语言全结案、指针指向默认语言产物、每条账本 hash 与访问面 Inspect 逐一相等。"
     },
     {
       "id": "AR2-004",
@@ -224,8 +227,9 @@
         "routes",
         "recovery"
       ],
-      "status": "open",
-      "existingCoverage": "新增"
+      "status": "resolved",
+      "existingCoverage": "新增",
+      "resolutionNote": "2026-09-17 已修（commit 166657b）。registerRoute 失败不再只写 Warn：改为向上返回错误并保留 pending 回执（访问面已激活，不能标 rolled_back 谎称没发生）。新增 presentation_ledger.go 承载回执与启动恢复（复用 publication 既有 BeginPublishReceipt / ListPendingReceipts 契约，source_type=presentation，无需加列），带「回执路径是否仍是该语言当前访问路径」的过期守卫（改过 URL 的旧回执只结案、不写账本）；装配处异步执行一次恢复，与 page 侧 RecoverPendingPublications 同形状。失败能力抽查（本次复核亲自执行，非仅采信报告）：把「返回错误」改回旧行为后 TestPresentationRouteRegisterFailureIsRecoverable 与 TestPresentationMultiLangPartialFailureNeverClaimsUnpublished 双双 FAIL，还原后 ok、文件逐字节一致。"
     }
   ]
 }

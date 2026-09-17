@@ -1196,6 +1196,63 @@
       ],
       "status": "resolved",
       "resolutionNote": "2026-09-16 完成。新增重定向管理页：列出全部 301（DB 占用账与访问面 redirect.json 合并）、手动新增、删除、多跳链一键合并；接口 GET /api/page/redirect 与 POST /api/page/redirect/create|delete|merge，权限点 page:redirect_view/create/delete/merge（迁移 218 同批 seed 权限点 + 超管策略 + 菜单；迁移 219 是 60 个 key 乘 zh-CN/en-US，并在 register_admin_i18n.go 注册）。两个关键实现事实：page_routes 的 redirect 行**不存目标路径**，目标只在产物 redirect.json 里，所以列表必须合并两个来源，账上有而线上没有的条目显式显示未生效而不是假装成功；成环判定用 resolveRedirectTail 以 source 为起点做 visited 沿边前进（一次覆盖 A 到 A、A 到 B 到 A、A 到 B 到 C 到 B），hop 上限 32 只作脏数据护栏。新增校验顺序：源空闲 → 沿链解析到链尾（自动消除多跳）→ 链尾须命中 route_kind=active 行 → 先登记 DB 占用再落产物激活，激活失败回滚占用行。合并只重写 source 的 redirect.json 指向链尾、DB 行不动 —— 链只存在于产物里，所以不需要新表（migrationNeeded 由 218/219 满足）。验证：go build 与 go vet 通过，迁移首次与重复执行均 exit 0 且零 ERROR，page 的 unit 与 feature 测试 ok，check-permission-gaps 无缺口（277 路由 / 276 权限点 / 5 豁免），i18n 门禁 18 等于基线。顺带修掉一处真实缺陷：ensureRedirectRoute 此前用 NewRedirectArtifact(publishedPath, 301) 自行落一份重定向产物，而该函数第一个参数是 targetPath —— 传旧路径自身等于生成一条 A 到 A 的自环 301；它落在内容寻址 store 里从不被激活，所以线上行为一直是对的（生效的是内核 publisher.UpdateURL 那份），代价是每个工程每改一次 URL 就多一份永不使用的垃圾产物，且一旦有人把它的 Locator 拿去激活就是无限重定向。产物落盘与激活本就由内核负责，该处已改为只登记 DB 占用。遗留：页面挂在 /api 下且不继承 layout.html（page 模块拿不到 layout 的 NavGroups，而 sidebar partial 对 nil 会直接 range 中断渲染），因此没有侧栏入口，sys_menus 那条 seed 只在菜单管理页可见；要挂侧栏需在 dashboard 的 nav_menu.go 加一行。"
+    },
+    {
+      "id": "SEO-026",
+      "title": "首次发布的详情页缺 hreflang，重建后才补上（SEO-008 的修复不完整）",
+      "severity": "medium",
+      "type": "correctness",
+      "confidence": "confirmed",
+      "problem": "SEO-008 修复后自动发布详情页确实会输出 hreflang —— 但只在重建时成立。首次发布的产物 alternates 不完整，重建一次才补上。根因是 hreflang 的互指判定取决于「某个访问路径是否真的已发布」：pipeline.LocaleView 的 published 参数（由 ports.RoutePublished 提供）在首发布时按语言账本判定，而这一批语言的账本行要等逐语言结案才写入 —— 构建发生时它们还没结案，于是互指全部落空。",
+      "evidence": [
+        {
+          "file": "internal/pipeline/site_lang.go",
+          "lines": "106-108",
+          "snippet": "LocaleView(ctx, Project, ProjectID, lp, Lang, published) —— published 报告某个访问路径是否真的已发布（审计 I18N-021），为 nil 时按「全部已发布」",
+          "note": "hreflang 互指的唯一判据就是这个回调"
+        },
+        {
+          "file": "internal/pipeline/compile_site.go",
+          "lines": "70-79",
+          "snippet": "published := ports.RoutePublished；... alts, links := LocaleView(..., published)",
+          "note": "跨模块端口把「路由是否已发布」带进构建期"
+        },
+        {
+          "file": "（复现证据）",
+          "lines": "基线 0e19b66 的干净 worktree",
+          "snippet": "同一实例首次发布产物 hash 99b4406… vs 紧随其后重建 fcc2253…，equal=false",
+          "note": "两次产物字节不同，差异集中在 hreflang 互指；由 AR2 批次执行期实测发现"
+        }
+      ],
+      "impact": "新上线的多语言详情页在搜索引擎首次抓取时没有语言关联声明，可能被判为重复内容或只索引一种语言。除非有人触发一次重建（改内容 / 改模板 / 组件升级都会），否则该状态一直保持 —— 表现为「hreflang 明明实现了、线上却时有时无」，排查时容易怀疑爬虫缓存，真因是发布时序。",
+      "rootCause": "读侧（alternates 生成）依赖写侧（语言账本结案）的最终状态，而首发布时写侧还没走完：构建与结案之间存在「产物已生成、状态未落定」的窗口。AR2-003 把这个窗口显式化了（现在是「先登记产物、再逐语言结案」），但缺陷本身在 0e19b66 就存在。",
+      "remediation": {
+        "approach": "把「本批次将上线哪些语言」作为构建输入显式传给 LocaleView，而不是让它回头读账本 —— 判定依据应当是「本批次的目标语言集合」，那是构建期已经知道的事实。",
+        "steps": [
+          "构建前先算出本批次的目标语言集合（与逐语言结案用的是同一份 langs）",
+          "把它经 BuildInput / CompileOption 传进 LocaleView 的 published 判定，替代读账本",
+          "断言：同一实例首发布产物与紧随其后的重建产物字节一致（把这次发现的 hash 差异钉成回归用例）"
+        ],
+        "effortDays": 1,
+        "risk": "medium",
+        "breaking": false,
+        "migrationNeeded": false
+      },
+      "verification": [
+        "多语言实例首次发布的产物 hash == 紧随其后重建的产物 hash",
+        "首发布产物里 hreflang 互指完整且含 x-default"
+      ],
+      "dependsOn": [],
+      "blocks": [],
+      "phase": "P1",
+      "tags": [
+        "seo",
+        "hreflang",
+        "presentation",
+        "publish-order"
+      ],
+      "status": "open",
+      "progressNote": "2026-09-17 由 AR2 批次执行期实测发现（不是 codex 第二轮复审的输出）：修 AR2-003 时执行者为了让幂等断言稳定，先对比「首发布 vs 重建」的产物 hash，结果两者不同。已在基线 0e19b66 的干净 worktree 上复现，确认是既有行为、非 AR2-003 引入。它与已 resolved 的 SEO-008 是同一主题的两个阶段：SEO-008 解决「输出不输出」，本条是「首次发布时输出不完整」。"
     }
   ]
 }
