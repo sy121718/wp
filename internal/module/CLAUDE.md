@@ -6,7 +6,7 @@
 
 - `admin/` — 管理控制面大模块（管理员、角色、权限点、菜单、部门、数据权限）
 - `common/` — 公共业务能力（验证码）
-- `dashboard/` — 需要后端逻辑的后台页面入口（仪表盘、工作台、媒体库、文章管理、客户管理）
+- `workbench/` — 可视化编辑器平台（仪表盘首页、画布预览、检查器、结构树）；各业务域的后台页面由**各模块自己**在 `inbound/http` 注册（壳层公共能力在 `internal/web/shell`）
 - `media/` — 附件与文件分类
 - `project/` — 站点工程、SiteSettings、多主题
 - `page/` — 手工 Page 与 Page Document（草稿 / 构建 / 发布 / 回滚 / 改 URL、系统页面槽位）
@@ -212,7 +212,7 @@ presentationSvc := presentationhttp.SetupPresentationRoutes(authorizedAPI, db, c
 已覆盖：`order`（状态机穷举边 + 金额）、`page`（发布纯函数、槽位与 kind 枚举）、
 `presentation`（模板解析的错误分类）、`blueprint`（文档校验）、
 `contenttemplate`（文档校验与哈希）、`analytics`、`cart`、`mail`（自动化图）、
-`runtimefragment`、`dashboard`（局部）、`user`（局部）。
+`runtimefragment`、`user`（局部）。
 
 **feature / 集成测试**（`public/test/**`）—— 需要数据库、事务、HTTP 或完整装配路径的行为：
 `admin`、`artifact`、`block`、`content`、`masterdata`、`media`、`navigation`、`plugin`、

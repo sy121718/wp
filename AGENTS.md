@@ -125,7 +125,7 @@ Artifact          ≠ 可编辑源码
 |---|---|---|
 | `admin` | 管理控制面：管理员、角色、权限点、菜单、部门、数据权限 | CMS 内容、公开站点用户 |
 | `common` | 公共业务入口（验证码） | 通用基础设施 |
-| `dashboard` | 需要后端逻辑的后台页面入口 | — |
+| `workbench` | 可视化编辑器平台：仪表盘首页、画布预览、检查器（schema→表单）、结构树 | 业务域页面（各模块自注册） |
 | `media` | 附件与文件分类 | — |
 | `project` | 站点工程、SiteSettings、多主题 | — |
 | `page` | 手工 Page 与 Page Document | 槽位指向页面的外观排版 |
@@ -225,7 +225,7 @@ Cookie 属性：`HttpOnly`、`Secure`（release 自动启用）、`SameSite=Lax`
 
 - 未登录页面请求 302 到 `/admin/login`；API 请求返回 401 JSON
 - 业务模块统一通过模块 `enums` 提供响应消息；`pkg` 和系统包直接用中文提示或原始 `err`
-- dashboard 页面 handler 禁止 `c.String(500, err.Error())` 直出内部错误，必须走 `pkg/response` + enums
+- 后台页面 handler 禁止 `c.String(500, err.Error())` 直出内部错误，必须走 `shell.PageError` / `pkg/response` + enums
 
 ### 数据库
 
