@@ -137,10 +137,10 @@ func TestI18nEnumsSeedSchemaAndIdempotency(t *testing.T) {
 	//（下面的分组断言与「en 不许缺行」的检查就是为这件事兜底的）。
 	zhCount := countRows(t, db, "sys_i18n", "lang = ?", "zh-CN")
 	enCount := countRows(t, db, "sys_i18n", "lang = ?", "en-US")
-	if zhCount != 3038 {
-		t.Fatalf("sys_i18n zh-CN 行数应为 3022（含 site.fragment.* 片段词条、176 商品列表词条，以及 187/188/189/190/191/192/193/197 八批后台模板抽取：settings/plugins/media 101、article/content 149、自定义 404 页 9、营销订单类 765、商品库存类 582、站点结构类 298、系统管理类 342、HTMX/仪表盘 8 —— 审计 I18N-001 与 SEO-013 的落地；+7 为 198 masterdata 模块文案 key 化；+17 为 216 webhook 模块文案 key 化 —— 8 个 Err*（含 SSRF 五个）与 4 个 Msg*，审计 CQ-010；+38 为 217 SEO 控制台页面文案 key 化 —— 该页 436d20b 随门禁脚本一起提交时漏了 key 化，门禁因此从第一天红着；+60 为 219 重定向管理页文案 key 化，审计 SEO-025；+18 为 222 访问统计页维度榜与保留期提示的后台模板文案 key 化，审计 SEO-019 / SEO-021；【-15】为主题包导入导出 15 条文案：该能力随 VIS-014 线下线（023 迁移 225 删除，seed 220/221 注销），总数由 3037 回落；+4 为 226 数据规则配置校验词条 —— ErrRuleConfigInvalid / ErrRuleFieldNotAllowed / ErrRuleLogicNotAllowed / ErrRuleOpNotAllowed，域白名单收口时「越界报哪一项」的明确文案），实际 %d", zhCount)
+	if zhCount != 3040 {
+		t.Fatalf("sys_i18n zh-CN 行数应为 3022（含 site.fragment.* 片段词条、176 商品列表词条，以及 187/188/189/190/191/192/193/197 八批后台模板抽取：settings/plugins/media 101、article/content 149、自定义 404 页 9、营销订单类 765、商品库存类 582、站点结构类 298、系统管理类 342、HTMX/仪表盘 8 —— 审计 I18N-001 与 SEO-013 的落地；+7 为 198 masterdata 模块文案 key 化；+17 为 216 webhook 模块文案 key 化 —— 8 个 Err*（含 SSRF 五个）与 4 个 Msg*，审计 CQ-010；+38 为 217 SEO 控制台页面文案 key 化 —— 该页 436d20b 随门禁脚本一起提交时漏了 key 化，门禁因此从第一天红着；+60 为 219 重定向管理页文案 key 化，审计 SEO-025；+18 为 222 访问统计页维度榜与保留期提示的后台模板文案 key 化，审计 SEO-019 / SEO-021；【-15】为主题包导入导出 15 条文案：该能力随 VIS-014 线下线（023 迁移 225 删除，seed 220/221 注销），总数由 3037 回落；+4 为 226 数据规则配置校验词条 —— ErrRuleConfigInvalid / ErrRuleFieldNotAllowed / ErrRuleLogicNotAllowed / ErrRuleOpNotAllowed，域白名单收口时「越界报哪一项」的明确文案；+2 为 227 抽屉表单的通用操作词条 —— admin.common.action.cancel / save，列表页新建编辑统一进抽屉后不再逐页复制同义词条），实际 %d", zhCount)
 	}
-	if enCount != 2922 {
+	if enCount != 2924 {
 		t.Fatalf("sys_i18n en-US 行数应为 2910（同上；webhook 的 17 个、SEO 控制台的 38 个、重定向管理页的 60 个与访问统计维度榜的 18 个、数据规则配置校验的 4 个 key 中英各一行；主题包的 15 个随 VIS-014 下线删除），实际 %d", enCount)
 	}
 

@@ -79,6 +79,8 @@ func TestSiteStructureTemplatesRender(t *testing.T) {
 			data: map[string]any{
 				"SelectedProject": "p1",
 				"Projects":        []map[string]any{{"ID": "p1", "Name": "官网"}},
+				// 新建走抽屉后按钮显隐依赖权限集合（shell.Prepare 一定注入，测试数据补齐）。
+				"PermSet": map[string]any{"theme:create": true},
 				"Themes": []map[string]any{{
 					"ID": "t1", "ProjectID": "p1", "Name": "春季促销版", "IsActive": false,
 					"CreatedAt": "2026-01-01", "UpdatedAt": "2026-01-02",
@@ -113,6 +115,8 @@ func TestSiteStructureTemplatesRender(t *testing.T) {
 			data: map[string]any{
 				"Projects":   []map[string]any{{"ID": "p1", "Name": "官网"}},
 				"Blueprints": []map[string]any{{"ID": "b1", "Name": "落地页"}},
+				// 一页两个创建入口 → 两个权限码都要给（缺一个按钮就不渲染，wants 会红）。
+				"PermSet": map[string]any{"project:create": true, "page:create": true},
 				"Pages": []map[string]any{{
 					"ID": "pg1", "DraftPath": "/about", "Kind": "page", "Active": true,
 					"Stale": true, "Staged": false, "Version": 3, "UpdatedAt": "2026-01-02",
@@ -145,6 +149,7 @@ func TestSiteStructureTemplatesRender(t *testing.T) {
 			data: map[string]any{
 				"SelectedProject": "p1",
 				"Projects":        []map[string]any{{"ID": "p1", "Name": "官网"}},
+				"PermSet":         map[string]any{"block:create": true},
 				"Headers":         []map[string]any{{"ID": "b1", "Name": "站点页眉", "UpdatedAt": "2026-01-02"}},
 				"Footers":         []map[string]any{{"ID": "b2", "Name": "站点页脚", "UpdatedAt": "2026-01-02"}},
 				"Blocks":          []map[string]any{{"ID": "b3", "Name": "商品卡", "KindLabel": "区块", "ReuseModeLabel": "一次性复制", "UpdatedAt": "2026-01-02"}},

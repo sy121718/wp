@@ -15,7 +15,7 @@
             </div>
             <button type="submit" class="btn">{{ .["t"]("admin.roles.action.filter", "筛选") }}</button>
             <a class="btn btn-ghost" href="/admin/roles">{{ .["t"]("admin.roles.action.reset", "重置") }}</a>
-            {{include "partials/toolbar_create.html" map("allowed", .PermSet["role:create"], "tpl", "#tpl-role-create", "title", tr("admin.roles.action.create", "新建角色"), "label", tr("admin.roles.action.create", "新建角色"))}}
+            {{include "partials/toolbar_create.html" map("allowed", isset(.PermSet["role:create"]), "tpl", "#tpl-role-create", "title", tr("admin.roles.action.create", "新建角色"), "label", tr("admin.roles.action.create", "新建角色"))}}
         </form>
         <div class="card-body">
             {{if len(.Rows) == 0}}
@@ -35,8 +35,8 @@
                 <td>{{r.SortOrder}}</td>
                 <td>{{if r.Remark}}{{r.Remark}}{{end}}</td>
                 <td class="col-actions">
-                    {{if .PermSet["role:update"]}}<button type="button" class="btn btn-sm btn-ghost" data-drawer-open="#tpl-role-edit-{{r.ID}}" data-drawer-title="{{tr("admin.roles.edit.title", "编辑角色：")}}{{r.RoleName}}">{{tr("admin.roles.action.edit", "编辑")}}</button>{{end}}
-                    {{if .PermSet["role:delete"]}}<button type="submit" form="role-del-{{r.ID}}" class="btn btn-sm btn-danger" data-confirm="{{tr("admin.roles.confirm.delete", "确认删除？")}}" data-confirm-danger>{{tr("admin.roles.action.delete", "删除")}}</button>{{end}}
+                    {{if isset(.PermSet["role:update"])}}<button type="button" class="btn btn-sm btn-ghost" data-drawer-open="#tpl-role-edit-{{r.ID}}" data-drawer-title="{{tr("admin.roles.edit.title", "编辑角色：")}}{{r.RoleName}}">{{tr("admin.roles.action.edit", "编辑")}}</button>{{end}}
+                    {{if isset(.PermSet["role:delete"])}}<button type="submit" form="role-del-{{r.ID}}" class="btn btn-sm btn-danger" data-confirm="{{tr("admin.roles.confirm.delete", "确认删除？")}}" data-confirm-danger>{{tr("admin.roles.action.delete", "删除")}}</button>{{end}}
                     <form id="role-del-{{r.ID}}" method="post" action="/admin/roles/delete" class="hidden-form">
                         <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
                         <input type="hidden" name="id" value="{{r.ID}}">

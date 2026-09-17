@@ -12,7 +12,7 @@
             <div class="toolbar-search">
                 <input type="text" data-filter-input placeholder="{{ .["t"]("admin.menus.filter_placeholder", "筛选：标题 / 路径 / 备注…") }}" class="form-input">
             </div>
-            {{include "partials/toolbar_create.html" map("allowed", .PermSet["menu:create"], "tpl", "#tpl-menu-create", "title", tr("admin.menus.create_drawer_title", "新建菜单"), "label", tr("admin.menus.create", "新建菜单"))}}
+            {{include "partials/toolbar_create.html" map("allowed", isset(.PermSet["menu:create"]), "tpl", "#tpl-menu-create", "title", tr("admin.menus.create_drawer_title", "新建菜单"), "label", tr("admin.menus.create", "新建菜单"))}}
         </div>
         <div class="card-body">
             {{if len(.Rows) == 0}}
@@ -35,8 +35,8 @@
                 <td>{{m.SortOrder}}</td>
                 <td>{{if m.Remark}}{{m.Remark}}{{end}}</td>
                 <td class="col-actions">
-                    {{if .PermSet["menu:update"]}}<button type="button" class="btn btn-sm btn-ghost" data-drawer-open="#tpl-menu-edit-{{m.ID}}" data-drawer-title="{{tr("admin.menus.edit_drawer_prefix", "编辑菜单：")}}{{m.Title}}">{{tr("admin.menus.action.edit", "编辑")}}</button>{{end}}
-                    {{if .PermSet["menu:delete"]}}<button type="submit" form="menu-del-{{m.ID}}" class="btn btn-sm btn-danger" data-confirm="{{tr("admin.menus.confirm_delete", "确认删除？")}}" data-confirm-danger>{{tr("admin.menus.action.delete", "删除")}}</button>{{end}}
+                    {{if isset(.PermSet["menu:update"])}}<button type="button" class="btn btn-sm btn-ghost" data-drawer-open="#tpl-menu-edit-{{m.ID}}" data-drawer-title="{{tr("admin.menus.edit_drawer_prefix", "编辑菜单：")}}{{m.Title}}">{{tr("admin.menus.action.edit", "编辑")}}</button>{{end}}
+                    {{if isset(.PermSet["menu:delete"])}}<button type="submit" form="menu-del-{{m.ID}}" class="btn btn-sm btn-danger" data-confirm="{{tr("admin.menus.confirm_delete", "确认删除？")}}" data-confirm-danger>{{tr("admin.menus.action.delete", "删除")}}</button>{{end}}
                     <form id="menu-del-{{m.ID}}" method="post" action="/admin/menus/delete" class="hidden-form">
                         <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
                         <input type="hidden" name="id" value="{{m.ID}}">

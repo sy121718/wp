@@ -17,7 +17,7 @@
             </div>
             <button type="submit" class="btn">{{ .["t"]("admin.datarules.action.filter", "筛选") }}</button>
             <a class="btn btn-ghost" href="/admin/datarules">{{ .["t"]("admin.datarules.action.reset", "重置") }}</a>
-            {{include "partials/toolbar_create.html" map("allowed", .PermSet["datarule:create"], "tpl", "#tpl-rule-create", "title", tr("admin.datarules.action.create", "新建数据规则"), "label", tr("admin.datarules.action.create_short", "新建规则"))}}
+            {{include "partials/toolbar_create.html" map("allowed", isset(.PermSet["datarule:create"]), "tpl", "#tpl-rule-create", "title", tr("admin.datarules.action.create", "新建数据规则"), "label", tr("admin.datarules.action.create_short", "新建规则"))}}
         </form>
         <div class="card-body">
             {{if len(.Rows) == 0}}
@@ -37,8 +37,8 @@
                 <td>{{if r.Remark}}{{r.Remark}}{{end}}</td>
                 <td class="text-mute">{{if r.UpdateTime}}{{r.UpdateTime}}{{else}}{{r.CreateTime}}{{end}}</td>
                 <td class="col-actions">
-                    {{if .PermSet["datarule:update"]}}<button type="button" class="btn btn-sm btn-ghost" data-drawer-open="#tpl-rule-edit-{{r.ID}}" data-drawer-title="{{tr("admin.datarules.edit.title", "编辑规则：")}}{{r.RuleName}}">{{tr("admin.datarules.action.edit", "编辑")}}</button>{{end}}
-                    {{if .PermSet["datarule:delete"]}}<button type="submit" form="rule-del-{{r.ID}}" class="btn btn-sm btn-danger" data-confirm="{{tr("admin.datarules.confirm.delete", "确认删除？")}}" data-confirm-danger>{{tr("admin.datarules.action.delete", "删除")}}</button>{{end}}
+                    {{if isset(.PermSet["datarule:update"])}}<button type="button" class="btn btn-sm btn-ghost" data-drawer-open="#tpl-rule-edit-{{r.ID}}" data-drawer-title="{{tr("admin.datarules.edit.title", "编辑规则：")}}{{r.RuleName}}">{{tr("admin.datarules.action.edit", "编辑")}}</button>{{end}}
+                    {{if isset(.PermSet["datarule:delete"])}}<button type="submit" form="rule-del-{{r.ID}}" class="btn btn-sm btn-danger" data-confirm="{{tr("admin.datarules.confirm.delete", "确认删除？")}}" data-confirm-danger>{{tr("admin.datarules.action.delete", "删除")}}</button>{{end}}
                     <form id="rule-del-{{r.ID}}" method="post" action="/admin/datarules/delete" class="hidden-form">
                         <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
                         <input type="hidden" name="id" value="{{r.ID}}">

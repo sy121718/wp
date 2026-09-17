@@ -32,7 +32,7 @@
             </div>
         </div>
         <p>{{ .["t"]("admin.seo.audit.intro", "体检读取已激活的 HTML 产物，检查标题、描述、canonical、图片替代文本、内部链接与 hreflang。") }}</p>
-        {{if .PermSet["seo:audit"]}}
+        {{if isset(.PermSet["seo:audit"])}}
         <form method="post" action="/api/publication/seo-audit" data-seo-audit-action>
             <input type="hidden" name="csrf_token" value="{{.["csrf_token"]}}">
             <input type="hidden" name="project" value="{{.SelectedProject}}">

@@ -55,8 +55,11 @@ func TestMigratedAdminPagesDoNotUseLegacyClasses(t *testing.T) {
 		if !strings.Contains(html, "card") {
 			t.Errorf("%s 未使用公共类 %q", path, "card")
 		}
-		if !strings.Contains(html, "form-inline") && !strings.Contains(html, "form-stack") {
-			t.Errorf("%s 未使用公共表单布局类", path)
+		// 公共表单布局类有三支：form-inline（工具栏式一行）、form-stack（纵向）、
+		// form-row（等宽自动列数 + 窄屏堆叠，抽屉里的表单用它）。只认前两支会让
+		// 改造后改用 form-row 的页面被判成「没接公共类」。
+		if !strings.Contains(html, "form-inline") && !strings.Contains(html, "form-stack") && !strings.Contains(html, "form-row") {
+			t.Errorf("%s 未使用公共表单布局类（form-inline / form-stack / form-row）", path)
 		}
 		if name == "theme_settings.html" && strings.Contains(html, "theme-font-input") {
 			t.Errorf("%s 仍依赖主题页私有控件视觉类", path)

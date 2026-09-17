@@ -20,12 +20,25 @@
                 {{end}}
             </select>
         </form>
-        {* 新建块（原生 POST 提交，携带 CSRF 隐藏域；hx-headers 只对 htmx 请求生效） *}
-        <form method="post" action="/admin/blocks/create" class="form-inline mt-md">
+        {* 新建块走右侧抽屉（原生 POST，自带 CSRF 隐藏域；hx-headers 只对 htmx 请求生效） *}
+        {{if isset(.PermSet["block:create"])}}
+        <button type="button" class="btn btn-primary mt-md" data-drawer-open="#tpl-block-create" data-drawer-title="{{ .["t"]("admin.blocks.create", "新建并编辑") }}">＋ {{ .["t"]("admin.blocks.create", "新建并编辑") }}</button>
+        {{end}}
+    </section>
+
+    <template id="tpl-block-create">
+        <form method="post" action="/admin/blocks/create">
             <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
             <input type="hidden" name="projectId" value="{{.SelectedProject}}">
-            <input type="text" name="name" placeholder="{{ .["t"]("admin.blocks.name_placeholder", "块名称，如：站点页眉") }}" required>
-            <select name="kind">
+            <div class="form-row">
+                <div class="form-group">
+                    <input type="text" name="name" class="form-input" placeholder="{{ .["t"]("admin.blocks.name_placeholder", "块名称，如：站点页眉") }}" required>
+                </div>
+            </div>
+            <div class="form-row">
+            <div class="form-group">
+            <label class="form-label">{{ .["t"]("admin.blocks.col_kind", "类型") }}</label>
+            <select name="kind" class="form-select">
                 <option value="block">{{ .["t"]("admin.blocks.kind.block", "区块") }}</option>
                 <option value="header">{{ .["t"]("admin.blocks.kind.header", "页眉") }}</option>
                 <option value="footer">{{ .["t"]("admin.blocks.kind.footer", "页脚") }}</option>
@@ -43,13 +56,21 @@
                 <option value="grid">{{ .["t"]("admin.blocks.kind.grid", "多栏布局") }}</option>
                 <option value="snippet">{{ .["t"]("admin.blocks.kind.snippet", "片段模板") }}</option>
             </select>
-            <select name="reuseMode">
+            </div>
+            <div class="form-group">
+            <label class="form-label">{{ .["t"]("admin.blocks.col_reuse", "复用方式") }}</label>
+            <select name="reuseMode" class="form-select">
                 <option value="global">{{ .["t"]("admin.blocks.reuse.global", "全局引用（改一处，引用页一起更新）") }}</option>
                 <option value="template">{{ .["t"]("admin.blocks.reuse.template", "一次性复制（插入即独立，互不影响）") }}</option>
             </select>
-            <button type="submit" class="btn btn-primary">{{ .["t"]("admin.blocks.create", "新建并编辑") }}</button>
+            </div>
+            </div>
+            <div class="action-row">
+                <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button>
+                <button type="submit" class="btn btn-primary">{{ .["t"]("admin.blocks.create", "新建并编辑") }}</button>
+            </div>
         </form>
-    </section>
+    </template>
 
     <section class="card card-body">
         <h2>{{ .["t"]("admin.blocks.headers_heading", "页眉") }}</h2>

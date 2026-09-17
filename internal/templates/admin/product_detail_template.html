@@ -133,22 +133,40 @@
             </tbody>
         </table></div>
         {{end}}
-        {* 新建命名模板：复制一套现有模板的文档作为起点（内容编辑仍属模板/工作台侧）。 *}
-        <form method="post" action="/admin/products/template/create" class="form-inline mt-md">
+        {* 新建命名模板：复制一套现有模板的文档作为起点（内容编辑仍属模板/工作台侧）。
+           表单进右侧抽屉，按钮留在原位。 *}
+        {{if isset(.PermSet["contenttemplate:create"])}}
+        <button type="button" class="btn mt-md" data-drawer-open="#tpl-detail-template-create" data-drawer-title="{{ .["t"]("admin.product_detail_template.named.create", "新建命名模板") }}">＋ {{ .["t"]("admin.product_detail_template.named.create", "新建命名模板") }}</button>
+        {{end}}
+    </section>
+
+    {{if isset(.PermSet["contenttemplate:create"])}}
+    <template id="tpl-detail-template-create">
+        <form method="post" action="/admin/products/template/create">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <input type="hidden" name="productId" value="{{.Product.ID}}">
-            <input type="text" class="form-input" name="name" placeholder="{{ .["t"]("admin.product_detail_template.named.ph.name", "新模板名（例如：夏季活动详情页）") }}" required>
-            <label>{{ .["t"]("admin.product_detail_template.named.label.copyFrom", "复制自") }}
-                <select class="form-select" name="copyFrom">
-                    {{range _, t := .Templates}}
-                    <option value="{{t.ID}}" {{if t.IsDefault}}selected{{end}}>{{t.Name}}{{ .["t"]("admin.product_detail_template.versionLead", "（v") }}{{t.DraftVersion}}{{ .["t"]("admin.product_detail_template.versionTail", "）") }}</option>
-                    {{end}}
-                </select>
-            </label>
-            <button type="submit" class="btn">{{ .["t"]("admin.product_detail_template.named.create", "新建命名模板") }}</button>
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label req">{{ .["t"]("admin.product_detail_template.named.ph.name", "新模板名") }}</label>
+                    <input type="text" class="form-input" name="name" placeholder="{{ .["t"]("admin.product_detail_template.named.ph.name", "新模板名（例如：夏季活动详情页）") }}" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">{{ .["t"]("admin.product_detail_template.named.label.copyFrom", "复制自") }}</label>
+                    <select class="form-select" name="copyFrom">
+                        {{range _, t := .Templates}}
+                        <option value="{{t.ID}}" {{if t.IsDefault}}selected{{end}}>{{t.Name}}{{ .["t"]("admin.product_detail_template.versionLead", "（v") }}{{t.DraftVersion}}{{ .["t"]("admin.product_detail_template.versionTail", "）") }}</option>
+                        {{end}}
+                    </select>
+                </div>
+            </div>
+            <div class="action-row">
+                <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button>
+                <button type="submit" class="btn btn-primary">{{ .["t"]("admin.product_detail_template.named.create", "新建命名模板") }}</button>
+            </div>
         </form>
-    </section>
+    </template>
+    {{end}}
     {{end}}
 </div>
 {{end}}

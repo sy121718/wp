@@ -20,12 +20,10 @@
 
     <section class="card card-body">
         <h2>{{ .["t"]("admin.article.list.createHeading", "新建文章") }}</h2>
-        <form method="post" action="/admin/articles/create" class="form-inline">
-            <input type="hidden" name="csrf_token" value="{{csrf}}">
-            <input type="text" name="title" placeholder="{{ .["t"]("admin.article.list.titlePlaceholder", "文章标题") }}" required>
-            <input type="text" name="slug" placeholder="{{ .["t"]("admin.article.list.slugPlaceholder", "路径片段，如 hello-world") }}" required>
-            <button type="submit" class="btn btn-primary">{{ .["t"]("admin.article.list.createSubmit", "创建并开始编辑") }}</button>
-        </form>
+        {* 表单进右侧抽屉，按钮留在原位（信息架构不变）。原生表单自带 csrf_token。 *}
+        {{if isset(.PermSet["content:create"])}}
+        <button type="button" class="btn btn-primary" data-drawer-open="#tpl-article-create" data-drawer-title="{{ .["t"]("admin.article.list.createHeading", "新建文章") }}">＋ {{ .["t"]("admin.article.list.createSubmit", "创建并开始编辑") }}</button>
+        {{end}}
         <p class="hint">{{ .["t"]("admin.article.list.createHint", "先建一个空壳，正文、摘要、封面与 SEO 字段都在编辑页里填。新建后会自动跳进编辑页。") }}</p>
     </section>
 
@@ -80,5 +78,25 @@
         <p class="hint">{{ .["t"]("admin.article.list.footHint", "按更新时间倒序排列，一次最多列出 50 篇（超过这个量级再谈分页）。「未发布」表示这篇文章还没有线上详情页 —— 不一定是问题（草稿就该是未发布），编辑页的「发布」区块里能看到它当前缺什么。") }}</p>
         {{end}}
     </section>
+
+    {{if isset(.PermSet["content:create"])}}
+    <template id="tpl-article-create">
+        <form method="post" action="/admin/articles/create">
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <div class="form-row">
+                <div class="form-group">
+                    <input type="text" name="title" class="form-input" placeholder="{{ .["t"]("admin.article.list.titlePlaceholder", "文章标题") }}" required>
+                </div>
+                <div class="form-group">
+                    <input type="text" name="slug" class="form-input" placeholder="{{ .["t"]("admin.article.list.slugPlaceholder", "路径片段，如 hello-world") }}" required>
+                </div>
+            </div>
+            <div class="action-row">
+                <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button>
+                <button type="submit" class="btn btn-primary">{{ .["t"]("admin.common.action.save", "保存") }}</button>
+            </div>
+        </form>
+    </template>
+    {{end}}
 </div>
 {{end}}

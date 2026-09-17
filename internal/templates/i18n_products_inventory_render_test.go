@@ -26,6 +26,13 @@ func groupDData(extra map[string]any) map[string]any {
 	d := map[string]any{
 		"lang": "zh-CN", "langs": LanguageOptions("zh-CN"),
 		"title": "组D", "t": TranslateFunc("zh-CN"), "csrf_token": "tok",
+		// 列表页的新建/编辑入口改走抽屉后，按钮按权限显隐（运行时由 shell.Prepare 注入，
+		// 测试外壳给一份全集）：否则每加一个入口就要往各页数据里补一个权限码，
+		// 漏补的表现是「按钮不渲染、wants 断言红」，与模板本身无关。
+		"PermSet": map[string]any{
+			"contenttemplate:create": true, "contenttemplate:update": true,
+			"product:create": true, "product:update": true, "inventory:create": true, "inventory:update": true,
+		},
 	}
 	for k, v := range extra {
 		d[k] = v

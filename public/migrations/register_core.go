@@ -279,6 +279,16 @@ func registerCoreSchemaAndAccess() {
 		SQL: mustSQL("226_i18n_seed_datarule_errors.sql"),
 	})
 
+	// 227：抽屉表单的通用操作词条（取消 / 保存）—— 列表页新建/编辑统一进抽屉后用同一对文案，
+	// 不再逐页复制同义词条。判定同样限定在自己的 key 上（理由见 226）。
+	registerSeed(Seed{
+		Version:   "227-i18n-seed-common-actions",
+		TableName: "sys_i18n",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 2 THEN 1 ELSE 0 END FROM sys_i18n " +
+			"WHERE lang = 'zh-CN' AND item_key IN ('admin.common.action.cancel', 'admin.common.action.save')",
+		SQL: mustSQL("227_i18n_seed_common_actions.sql"),
+	})
+
 	// 超管全量策略补全（每次启动检查，缺哪条补哪条）。
 	//
 	// ConditionSQL 语义是「返回 > 0 则跳过整个 seed」，因此这里必须表达

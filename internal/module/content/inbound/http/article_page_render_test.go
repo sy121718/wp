@@ -33,6 +33,9 @@ func articleLayoutData(base gin.H) gin.H {
 	base["t"] = templates.TranslateFunc(lang)
 	base["langs"] = templates.LanguageOptions(lang)
 	base["lang_redirect"] = "/admin/articles"
+	// 新建入口进抽屉后按权限显隐，抽屉 <template> 只在有权限时渲染 —— 测试数据给全集
+	//（运行时由 shell.Prepare 注入该用户拥有的权限码）。
+	base["PermSet"] = map[string]any{"content:create": true, "content:update": true, "content:delete": true}
 	return base
 }
 

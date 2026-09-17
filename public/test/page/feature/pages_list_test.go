@@ -27,6 +27,9 @@ func TestPagesListTemplate(t *testing.T) {
 			// withCSRF→withI18n 注入；这里缺了它，渲染会在第一个 t() 调用处中断 ——
 			// 表现是 HTTP 200 但后半段整块消失，所以直接渲染模板的测试必须自己注入。
 			"title": "页面管理", "menu": "pages", "t": templates.TranslateFunc("en-US"),
+			// 两个新建入口改走抽屉后按权限显隐（shell.Prepare 注入该用户拥有的权限码）；
+			// 这里直接渲染模板，测试数据给全集，否则抽屉 <template> 不渲染、断言缺内容。
+			"PermSet":  map[string]any{"project:create": true, "page:create": true},
 			"Projects": []map[string]any{{"ID": "p1", "Name": "站点A"}},
 			"Pages": []map[string]any{
 				{"ID": "pg1", "ProjectID": "p1", "Kind": "home", "DraftPath": "/demo", "Active": true, "Staged": true, "Stale": true, "Version": int64(3), "UpdatedAt": now},

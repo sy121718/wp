@@ -22,13 +22,11 @@
                 {{end}}
             </select>
         </form>
-        {* 新建主题 *}
-        <form method="post" action="/admin/themes/create" class="form-inline mt-md">
-            <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
-            <input type="hidden" name="projectId" value="{{.SelectedProject}}">
-            <input type="text" name="name" placeholder="{{ .["t"]("admin.theme.name_placeholder", "主题名称，如：春季促销版") }}" required>
-            <button type="submit" class="btn btn-primary">{{ .["t"]("admin.theme.create", "新建主题") }}</button>
-        </form>
+        {* 新建走右侧抽屉：表单本体在页面底部的 <template>（layout 提供抽屉外壳、drawer.js 克隆内容）。
+           注意 hx-headers 只对 htmx 请求生效，原生表单必须自带 csrf_token 隐藏域。 *}
+        {{if isset(.PermSet["project:theme_create"])}}
+        <button type="button" class="btn btn-primary mt-md" data-drawer-open="#tpl-theme-create" data-drawer-title="{{ .["t"]("admin.theme.create", "新建主题") }}">＋ {{ .["t"]("admin.theme.create", "新建主题") }}</button>
+        {{end}}
     </section>
 
     <section class="card card-body">
@@ -84,6 +82,25 @@
             {{ .["t"]("admin.theme.notes", "主题 = 站点前端项目（全局颜色/字体/页眉页脚引用），一次一套激活；页面挂在主题下。切换激活主题即整站前端换皮，页面内容不动。「设置」里编辑颜色与字体，保存后合入该主题下全部页面，构建产物注入 :root CSS 变量——已发布页面需重新构建才会带新主题。") }}
         </p>
     </section>
+    {{end}}
+    {{if isset(.PermSet["project:theme_create"])}}
+    {* 抽屉表单：字段容器用通用的 .form-row（等宽自动列数 + 窄屏堆叠），不写页面级 CSS。 *}
+    <template id="tpl-theme-create">
+        <form method="post" action="/admin/themes/create">
+            <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
+            <input type="hidden" name="projectId" value="{{.SelectedProject}}">
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label req">{{ .["t"]("admin.theme.name_label", "主题名称") }}</label>
+                    <input type="text" name="name" class="form-input" placeholder="{{ .["t"]("admin.theme.name_placeholder", "主题名称，如：春季促销版") }}" required>
+                </div>
+            </div>
+            <div class="action-row">
+                <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button>
+                <button type="submit" class="btn btn-primary">{{ .["t"]("admin.common.action.save", "保存") }}</button>
+            </div>
+        </form>
+    </template>
     {{end}}
     </div>
 {{end}}

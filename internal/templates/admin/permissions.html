@@ -18,7 +18,7 @@
             </div>
             <button type="submit" class="btn">{{ .["t"]("admin.permissions.action.filter", "筛选") }}</button>
             <a class="btn btn-ghost" href="/admin/permissions">{{ .["t"]("admin.permissions.action.reset", "重置") }}</a>
-            {{include "partials/toolbar_create.html" map("allowed", .PermSet["permission:create"], "tpl", "#tpl-perm-create", "title", tr("admin.permissions.action.create", "新建权限点"), "label", tr("admin.permissions.action.create", "新建权限点"))}}
+            {{include "partials/toolbar_create.html" map("allowed", isset(.PermSet["permission:create"]), "tpl", "#tpl-perm-create", "title", tr("admin.permissions.action.create", "新建权限点"), "label", tr("admin.permissions.action.create", "新建权限点"))}}
         </form>
         <div class="card-body">
             {{if len(.Rows) == 0}}
@@ -40,8 +40,8 @@
                 <td>{{if p.Status == 1}}<span class="badge badge-success">{{tr("admin.permissions.status.enabled", "启用")}}</span>{{else}}<span class="badge badge-mute">{{tr("admin.permissions.status.disabled", "禁用")}}</span>{{end}}</td>
                 <td>{{if p.Remark}}{{p.Remark}}{{end}}</td>
                 <td class="col-actions">
-                    {{if .PermSet["permission:update"]}}<button type="button" class="btn btn-sm btn-ghost" data-drawer-open="#tpl-perm-edit-{{p.ID}}" data-drawer-title="{{tr("admin.permissions.edit.title", "编辑权限点：")}}{{p.PermissionName}}">{{tr("admin.permissions.action.edit", "编辑")}}</button>{{end}}
-                    {{if .PermSet["permission:delete"]}}<button type="submit" form="perm-del-{{p.ID}}" class="btn btn-sm btn-danger" data-confirm="{{tr("admin.permissions.confirm.delete", "确认删除？")}}" data-confirm-danger>{{tr("admin.permissions.action.delete", "删除")}}</button>{{end}}
+                    {{if isset(.PermSet["permission:update"])}}<button type="button" class="btn btn-sm btn-ghost" data-drawer-open="#tpl-perm-edit-{{p.ID}}" data-drawer-title="{{tr("admin.permissions.edit.title", "编辑权限点：")}}{{p.PermissionName}}">{{tr("admin.permissions.action.edit", "编辑")}}</button>{{end}}
+                    {{if isset(.PermSet["permission:delete"])}}<button type="submit" form="perm-del-{{p.ID}}" class="btn btn-sm btn-danger" data-confirm="{{tr("admin.permissions.confirm.delete", "确认删除？")}}" data-confirm-danger>{{tr("admin.permissions.action.delete", "删除")}}</button>{{end}}
                     <form id="perm-del-{{p.ID}}" method="post" action="/admin/permissions/delete" class="hidden-form">
                         <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
                         <input type="hidden" name="id" value="{{p.ID}}">

@@ -7,40 +7,18 @@
 <div class="stack">
     <section class="card card-body">
         <h2>{{ .["t"]("admin.pages.create_project_heading", "新建站点工程") }}</h2>
-        <form method="post" action="/admin/projects/create" class="form-inline">
-            <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
-            <input type="text" name="name" placeholder="{{ .["t"]("admin.pages.project_name_placeholder", "站点工程名称，如：官网") }}" required>
-            <button type="submit" class="btn btn-primary">{{ .["t"]("admin.pages.create_project_submit", "创建工程") }}</button>
-        </form>
+        {* 两个创建表单各自一个抽屉（本页两个实体：站点工程 / 页面）。 *}
+        {{if isset(.PermSet["project:create"])}}
+        <button type="button" class="btn btn-primary" data-drawer-open="#tpl-project-create" data-drawer-title="{{ .["t"]("admin.pages.create_project_heading", "新建站点工程") }}">＋ {{ .["t"]("admin.pages.create_project_submit", "创建工程") }}</button>
+        {{end}}
     </section>
 
     <section class="card card-body">
         <h2>{{ .["t"]("admin.pages.create_page_heading", "新建页面") }}</h2>
         {{if len(.Projects) > 0}}
-        <form method="post" action="/admin/pages/create" class="form-inline">
-            <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
-            <select name="projectId" required>
-                {{range _, p := .Projects}}
-                <option value="{{p.ID}}">{{p.Name}}</option>
-                {{end}}
-            </select>
-            <input type="text" name="draftPath" placeholder="{{ .["t"]("admin.pages.path_placeholder", "页面路径，如 /about") }}" required>
-            {* 从蓝图开始（审计 VIS-010）：蓝图是「用完即弃」的初始化输入 —— 创建时复制
-               完整 AST 并重生成节点 ID，之后页面与蓝图互不影响。没有蓝图时该下拉不渲染，
-               建页流程与以前完全一致。 *}
-            {* 用 isset 而不是 if .Blueprints：可选键在不带它的数据里（如直接渲染模板的单测）
-               求值成 nil，而 Jet 的 if 要求 bool —— 类型不符会让整个模板渲染中断，
-               表现是「页面状态码 200、后半部分内容整块消失」，很难从现象定位到模板。 *}
-            {{if isset(.Blueprints)}}
-            <select name="blueprintId" title="{{ .["t"]("admin.pages.blueprint_title", "从蓝图初始化页面结构") }}">
-                <option value="">{{ .["t"]("admin.pages.blank_page", "空白页面") }}</option>
-                {{range _, b := .Blueprints}}
-                <option value="{{b.ID}}">{{b.Name}}</option>
-                {{end}}
-            </select>
-            {{end}}
-            <button type="submit" class="btn btn-primary">{{ .["t"]("admin.pages.create_page_submit", "创建页面") }}</button>
-        </form>
+        {{if isset(.PermSet["page:create"])}}
+        <button type="button" class="btn btn-primary" data-drawer-open="#tpl-page-create" data-drawer-title="{{ .["t"]("admin.pages.create_page_heading", "新建页面") }}">＋ {{ .["t"]("admin.pages.create_page_submit", "创建页面") }}</button>
+        {{end}}
         {{else}}
         <p class="text-mute text-sm">{{ .["t"]("admin.pages.no_project", "先创建一个站点工程，再新建页面。") }}</p>
         {{end}}
@@ -84,5 +62,67 @@
         </table></div>
         {{end}}
     </section>
+
+    {{if isset(.PermSet["project:create"])}}
+    <template id="tpl-project-create">
+        <form method="post" action="/admin/projects/create">
+            <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
+            <div class="form-row">
+                <div class="form-group">
+                    <input type="text" name="name" class="form-input" placeholder="{{ .["t"]("admin.pages.project_name_placeholder", "站点工程名称，如：官网") }}" required>
+                </div>
+            </div>
+            <div class="action-row">
+                <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button>
+                <button type="submit" class="btn btn-primary">{{ .["t"]("admin.pages.create_project_submit", "创建工程") }}</button>
+            </div>
+        </form>
+    </template>
+    {{end}}
+
+    {{if isset(.PermSet["page:create"])}}
+    <template id="tpl-page-create">
+        <form method="post" action="/admin/pages/create">
+            <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">{{ .["t"]("admin.pages.col_project", "所属工程") }}</label>
+                    <select name="projectId" class="form-select" required>
+                        {{range _, p := .Projects}}
+                        <option value="{{p.ID}}">{{p.Name}}</option>
+                        {{end}}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label req">{{ .["t"]("admin.pages.path_placeholder", "页面路径") }}</label>
+                    <input type="text" name="draftPath" class="form-input" placeholder="{{ .["t"]("admin.pages.path_placeholder", "页面路径，如 /about") }}" required>
+                </div>
+            </div>
+            {* 从蓝图开始（审计 VIS-010）：蓝图是「用完即弃」的初始化输入 —— 创建时复制
+               完整 AST 并重生成节点 ID，之后页面与蓝图互不影响。没有蓝图时该下拉不渲染，
+               建页流程与以前完全一致。 *}
+            {* 用 isset 而不是 if .Blueprints：可选键在不带它的数据里（如直接渲染模板的单测）
+               求值成 nil，而 Jet 的 if 要求 bool —— 类型不符会让整个模板渲染中断，
+               表现是「页面状态码 200、后半部分内容整块消失」，很难从现象定位到模板。 *}
+            {{if isset(.Blueprints)}}
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">{{ .["t"]("admin.pages.blueprint_title", "从蓝图初始化页面结构") }}</label>
+                    <select name="blueprintId" class="form-select">
+                        <option value="">{{ .["t"]("admin.pages.blank_page", "空白页面") }}</option>
+                        {{range _, b := .Blueprints}}
+                        <option value="{{b.ID}}">{{b.Name}}</option>
+                        {{end}}
+                    </select>
+                </div>
+            </div>
+            {{end}}
+            <div class="action-row">
+                <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button>
+                <button type="submit" class="btn btn-primary">{{ .["t"]("admin.pages.create_page_submit", "创建页面") }}</button>
+            </div>
+        </form>
+    </template>
+    {{end}}
 </div>
 {{end}}

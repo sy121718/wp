@@ -33,6 +33,7 @@ import (
 	producthttp "go_wp/internal/module/product/inbound/http"
 	"go_wp/internal/pipeline"
 	"go_wp/internal/templates"
+	"go_wp/internal/web/shell"
 
 	"github.com/google/uuid"
 )
@@ -467,6 +468,11 @@ func newDetailTemplatePageEngine(t *testing.T) (*gin.Engine, *detailFixture) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
+	// 页面的「新建命名模板」入口按权限显隐（shell.Prepare 读 PermSetKey），而这条链路
+	// 不走鉴权中间件：注入一份全权限，让用例聚焦页面本身的行为。
+	engine.Use(func(c *gin.Context) {
+		c.Set(shell.PermSetKey, map[string]bool{"contenttemplate:create": true})
+	})
 	handle := producthttp.NewProductPageHandle(f.products, f.projects)
 	handle.SetDetailTemplateDeps(f.templates, f.pres)
 	engine.GET("/admin/products/template", handle.ProductDetailTemplatePage)
