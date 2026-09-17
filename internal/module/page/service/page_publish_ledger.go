@@ -24,21 +24,68 @@ import (
 // ErrPublishLedgerUnavailable 发布回执登记失败（无法判定状态，因此不切换访问面）。
 var ErrPublishLedgerUnavailable = errors.New("发布回执登记失败，未切换访问面")
 
-// beginPublishReceipt 登记 pending 回执；失败返回空串（调用方据此中止发布）。
-func (s *Service) beginPublishReceipt(ctx context.Context, projectID, pageID, path, lang, toArtifactID string) string {
+// beginPublishReceipt 登记 pending 回执，返回回执 id 与失败原因（AR2-002 / TX-009）。
+//
+// 必须在访问面切换**之前**调用：切换是不可逆的副作用，登记放在之后，崩溃窗口里就
+// 查不到「这次发布发生过」。拿不到 id 一律按硬失败返回 —— 带着未知状态去切访问面，
+// 正是这条回执要消灭的分裂状态，调用方据此中止发布（不静默继续）。
+//
+// 唯一不算失败的是路由契约未装配（s.routes == nil）：此时发布链本身也不写路由行，
+// 属于「这台实例没有回执设施」而不是「登记失败」，返回空 id + nil 让发布按原样继续。
+func (s *Service) beginPublishReceipt(ctx context.Context, projectID, pageID, path, lang,
+	fromArtifactID, toArtifactID string) (string, error) {
 	if s == nil || s.routes == nil {
-		return ""
+		return "", nil
 	}
 	id, err := s.routes.BeginPublishReceipt(ctx, &pubcontract.BeginPublishReceiptReq{
 		ProjectID: projectID, Path: path, PageID: pageID,
-		ToArtifactID: toArtifactID, Lang: lang,
+		FromArtifactID: fromArtifactID, ToArtifactID: toArtifactID, Lang: lang,
 	})
+	if err == nil && strings.TrimSpace(id) == "" {
+		err = errors.New("发布回执登记未返回 id")
+	}
 	if err != nil {
 		logger.Scene("publication").With("pageId", pageID).With("path", path).
 			Error(err, "发布回执登记失败（不切换访问面）")
+		return "", ErrPublishLedgerUnavailable
+	}
+	return id, nil
+}
+
+// publishedArtifactIDOf 取该语言当前激活产物 id（page_publications 为真源）。
+//
+// 回执要如实记录「切换前指着哪个产物」：from/to 两侧合起来才是这次发布是从哪个版本
+// 切到哪个版本，只记 to 会让回滚与审计失去「从哪来」的依据。口径与 publishedPathOf
+// 一致 —— 没有该语言的激活记录（本语言从未发布）返回空串，绝不拿别的语言的产物顶替。
+func (s *Service) publishedArtifactIDOf(ctx context.Context, page *pagemodel.PageEntity, lang string) string {
+	if s == nil || page == nil {
 		return ""
 	}
-	return id
+	pub, err := s.model.GetPublication(ctx, page.ID, lang)
+	if err != nil || pub == nil || pub.ArtifactID == nil {
+		return ""
+	}
+	return *pub.ArtifactID
+}
+
+// publishWindowFaultHit 触发「访问面已切换、数据库尚未写入」窗口的故障注入点
+// （生产恒为 nil，只多一次判空；见 Service.publishWindowFault 字段注释）。
+func (s *Service) publishWindowFaultHit() error {
+	if s == nil || s.publishWindowFault == nil {
+		return nil
+	}
+	return s.publishWindowFault()
+}
+
+// keepPublishReceiptPending 收敛「无法判定」的失败：访问面可能已经切换，此刻把回执
+// 标成 rolled_back 会让启动恢复以为这次发布从未生效 —— 错误判定比不判定更糟。
+// 因此只记日志、保留 pending，交给启动恢复按符号链接的实际指向补齐或回滚。
+func (s *Service) keepPublishReceiptPending(receiptID, reason string) {
+	if s == nil || strings.TrimSpace(receiptID) == "" {
+		return
+	}
+	logger.Scene("publication").With("receiptId", receiptID).
+		Warn("发布中断在「已切换访问面、数据库未跟上」窗口，回执保持 pending 交启动恢复判定：" + reason)
 }
 
 // completePublishReceipt 结案（访问面与数据库已一致）。

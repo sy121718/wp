@@ -67,6 +67,14 @@ type Service struct {
 	// 自动发布实例的产物与本模块共用一个 artifacts 根：不注入就只能把它们误报成孤儿。
 	// 用 setter 注入而不是构造参数 —— page 不能反向依赖 presentation（那是依赖成环）。
 	externalArtifactOwners func(ctx context.Context) ([]string, error)
+	// publishWindowFault 是发布链「访问面已切换、数据库尚未写入」窗口的故障注入点
+	// （审计 AR2-002 的故障注入测试）。生产恒为 nil。
+	//
+	// 为什么需要它：这个窗口恰好是崩溃恢复协议唯一无法用静态断言覆盖的分支 ——
+	// 真实崩溃会连进程一起终止，子进程方案又无法保证终止点落在两次调用之间。
+	// 注入后主链按「状态不可判定」收敛：保留 pending 回执、把错误上抛，由启动恢复
+	// 按符号链接的实际指向补齐或回滚。测试见 public/test/page/unit/page_publish_ledger_test.go。
+	publishWindowFault func() error
 }
 
 // NewService 创建 Page 服务；同时初始化本地产物根（GO_WP_ARTIFACT_ROOT 可覆盖，
@@ -144,3 +152,11 @@ func (s *Service) SetProductDataSource(ds productcontract.ProductDataSource) { s
 // 未注入时「从蓝图建页」会明确报错而不是静默建空页：空页在后台看起来像新建成功，
 // 要等编辑者打开画布才发现什么都没有。
 func (s *Service) SetBlueprints(bp blueprintcontract.BlueprintService) { s.blueprints = bp }
+
+// SetPublishWindowFault 注入「访问面已切换、数据库尚未写入」窗口的故障（见字段注释；测试用）。
+func (s *Service) SetPublishWindowFault(fn func() error) {
+	if s == nil {
+		return
+	}
+	s.publishWindowFault = fn
+}

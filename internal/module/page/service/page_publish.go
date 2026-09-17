@@ -166,10 +166,32 @@ func (s *Service) Publish(ctx context.Context, req *pagedto.PublishReq) (res *pa
 		stagedArt.ArtifactHash = refreshed
 		built = refreshed
 	}
+	// 发布前快照：本语言当前激活的产物（page_publications 为真源）。回执要如实记录
+	// 「从哪个产物切到哪个产物」，所以必须在切换之前读。
+	fromArtifactID := s.publishedArtifactIDOf(ctx, page, lang)
+
+	// 登记 pending 回执，必须在访问面切换之前（AR2-002 / TX-009）：切换是不可逆的
+	// 副作用，登记放在之后，崩溃窗口里就查不到「这次发布发生过」。登记拿不到回执 id
+	// 一律中止发布 —— 带着未知状态去切访问面，正是这条回执要消灭的分裂状态。
+	receiptID, rerr := s.beginPublishReceipt(ctx, page.ProjectID, page.ID, path, lang,
+		fromArtifactID, stagedArt.ID)
+	if rerr != nil {
+		return nil, rerr
+	}
+
 	hash, err := s.publisher.Publish(page.ID)
 	if err != nil {
+		// 内核保证「激活失败线上保持不变」（pipeline.Publisher.Publish 同一分支），
+		// 属于可判定的无副作用失败：显式结案为已回滚，不留给启动恢复一个假 pending。
+		s.abortPublishReceipt(ctx, receiptID, "访问面切换失败")
 		logger.Scene("publication").With("pageId", page.ID).Error(err, "发布失败")
 		return nil, mapPublishError(err)
+	}
+	// 访问面已切换（符号链接原子替换）。此后任何失败都不能判定为「没生效」，
+	// 一律保留 pending，交给启动恢复按链接的实际指向补齐或回滚。
+	if ferr := s.publishWindowFaultHit(); ferr != nil {
+		s.keepPublishReceiptPending(receiptID, "故障注入点命中")
+		return nil, fmt.Errorf("发布在「已切换访问面、数据库未跟上」窗口被中断: %w", ferr)
 	}
 
 	// 记录发布前「本语言」的旧 active 路径快照（page_publications 为该语言真源）：
@@ -181,6 +203,7 @@ func (s *Service) Publish(ctx context.Context, req *pagedto.PublishReq) (res *pa
 	// /zh-CN/about 的激活路由——「一页多语言同时在线」由此成立。
 	oldPath, perr := s.publishedPathOf(ctx, page, lang)
 	if perr != nil {
+		s.keepPublishReceiptPending(receiptID, "读取发布前激活快照失败")
 		return nil, perr
 	}
 
@@ -191,6 +214,8 @@ func (s *Service) Publish(ctx context.Context, req *pagedto.PublishReq) (res *pa
 	}); err != nil {
 		// FS 已原子激活（线上已生效），此处 DB active 指针更新失败属于部分成功：
 		// 错误必须明确暴露，且重试可收敛（复构建 hash 与暂存一致 → 幂等再激活）。
+		// 回执保持 pending：启动恢复看得到链接已指向本次产物，会补写这条记录。
+		s.keepPublishReceiptPending(receiptID, "DB 活跃指针写入失败")
 		logger.Scene("publication").With("pageId", page.ID).With("hash", hash).
 			Error(err, "发布 FS 已激活，但 DB 活跃指针更新失败（线上已生效，重试可收敛）")
 		return nil, fmt.Errorf("发布已生效但数据库状态同步失败: %w", err)
@@ -202,6 +227,7 @@ func (s *Service) Publish(ctx context.Context, req *pagedto.PublishReq) (res *pa
 			if derr := s.routes.Deactivate(ctx, &pubcontract.DeactivateReq{
 				ProjectID: page.ProjectID, Path: oldPath,
 			}); derr != nil {
+				s.keepPublishReceiptPending(receiptID, "取消旧路径激活失败")
 				logger.Scene("publication").With("pageId", page.ID).With("oldPath", oldPath).Error(derr, "发布前取消旧路径激活失败")
 				return nil, derr
 			}
@@ -210,6 +236,7 @@ func (s *Service) Publish(ctx context.Context, req *pagedto.PublishReq) (res *pa
 			// 继续输出旧产物（同页双 active 占用），且此后没有任何入口能查到
 			// 该清哪个链接 —— 与页面删除同一根因。
 			if derr := s.deactivatePaths([]string{oldPath}); derr != nil {
+				s.keepPublishReceiptPending(receiptID, "解除旧路径访问面激活失败")
 				logger.Scene("publication").With("pageId", page.ID).With("oldPath", oldPath).Error(derr, "发布前解除旧路径访问面激活失败")
 				return nil, derr
 			}
@@ -218,9 +245,18 @@ func (s *Service) Publish(ctx context.Context, req *pagedto.PublishReq) (res *pa
 			ProjectID: page.ProjectID, Path: path,
 			PageID: page.ID, ArtifactID: stagedArt.ID,
 		}); err != nil {
+			s.keepPublishReceiptPending(receiptID, "路由行激活失败")
 			logger.Scene("publication").With("pageId", page.ID).Error(err, "发布路由激活失败")
 			return nil, err
 		}
+	}
+
+	// 结案：访问面（符号链接）与数据库（page_publications + 指针 + 路由行）已经一致。
+	// 结案本身失败不阻断发布 —— 此时两边都已就位，回执留在 pending 只会被下次启动的
+	// 恢复流程幂等收尾（Inspect 看到链接指向本次产物 → 补完成）。
+	if cerr := s.completePublishReceipt(ctx, receiptID); cerr != nil {
+		logger.Scene("publication").With("pageId", page.ID).With("receiptId", receiptID).
+			Error(cerr, "发布回执结案失败（状态已一致，启动恢复会幂等收尾）")
 	}
 	logger.Scene("publication").With("pageId", page.ID).With("hash", hash).Info("发布完成")
 	// 站点级 SEO 产物与自定义 404 页：发布激活后刷新

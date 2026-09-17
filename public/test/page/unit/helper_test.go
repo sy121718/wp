@@ -20,6 +20,7 @@ import (
 	projectdto "go_wp/internal/module/project/dto"
 	projectmodel "go_wp/internal/module/project/model"
 	projectservice "go_wp/internal/module/project/service"
+	pubcontract "go_wp/internal/module/publication/contract"
 	pubmodel "go_wp/internal/module/publication/model"
 	pubservice "go_wp/internal/module/publication/service"
 
@@ -39,6 +40,14 @@ const headingDocument = `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"h
 // 返回 db（供直接 SQL 断言）、svc、projects（供主题用例）、projectID。
 func newPageService(t *testing.T) (*gorm.DB, pagecontract.PageService, *projectservice.Service, string) {
 	t.Helper()
+	return newPageServiceWithRouter(t, nil)
+}
+
+// newPageServiceWithRouter 同上，但允许包装路由契约（wrap 为 nil = 用真实 publication service）。
+// 故障注入用例要让「回执登记」这一步失败，而登记只在 page 侧调用 —— 只能从契约外部注入。
+// 传包装函数而不是整个契约：装饰器嵌在真实实现上，其余方法照常透传。
+func newPageServiceWithRouter(t *testing.T, wrap func(pubcontract.PublicationService) pubcontract.PublicationService) (*gorm.DB, pagecontract.PageService, *projectservice.Service, string) {
+	t.Helper()
 	t.Setenv("GO_WP_ARTIFACT_ROOT", t.TempDir())
 	db := support.NewMigratedPGTestDB(t)
 	projects := projectservice.NewService(projectmodel.NewProjectModel(db))
@@ -54,7 +63,10 @@ func newPageService(t *testing.T) (*gorm.DB, pagecontract.PageService, *projects
 	}
 	pageModel := pagemodel.NewPageModel(db)
 	artifacts := artifactservice.NewService(artifactmodel.NewArtifactModel(db))
-	routes := pubservice.NewService(pubmodel.NewPublicationModel(db))
+	var routes pubcontract.PublicationService = pubservice.NewService(pubmodel.NewPublicationModel(db))
+	if wrap != nil {
+		routes = wrap(routes)
+	}
 	blocks := blockservice.NewService(blockmodel.NewBlockModel(db), projects)
 	return db, pageservice.NewService(pageModel, artifacts, routes, projects, blocks, nil, nil, nil, nil), projects, project.ID
 }
