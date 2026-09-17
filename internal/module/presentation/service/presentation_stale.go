@@ -205,7 +205,9 @@ func (s *Service) PreviewInstance(ctx context.Context, req *presentationdto.Prev
 	}
 	// urlPath 传空：预览不激活 URL，canonical 由模板 settings.seo 决定（通常为空）。
 	// 这是预览与发布在字节上的唯一有意差异（见 presentation_seo.go 取舍 2）。
-	html, err := s.renderHTML(ctx, req.EntityType, req.EntityID, "", projectID, "", tpl)
+	// targetLangs 传 nil：预览没有批次概念，语言切换器按线上访问面现状输出；而且
+	// urlPath 为空时 logicalPath 也是空，alternates 分支本来就不会走（SEO-026）。
+	html, err := s.renderHTML(ctx, req.EntityType, req.EntityID, "", projectID, "", nil, tpl)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", presentationenums.ErrBuildFailed, err)
 	}

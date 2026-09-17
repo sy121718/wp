@@ -14,6 +14,8 @@ package unit
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -230,11 +232,68 @@ func ledgerBatch(t *testing.T, f *presFixture, instanceID string) []artifactBatc
 	return rows
 }
 
-// TestPresentationMultiLangRebuildIdempotent 重复重建与并发重建都不产生混合版本。
+// hreflangPairs 提取产物里的 hreflang 互指（顺序即产物顺序，含 x-default）。
+func hreflangPairs(html string) [][2]string {
+	out := [][2]string{}
+	for _, line := range strings.Split(html, "\n") {
+		if !strings.Contains(line, "rel=\"alternate\"") || !strings.Contains(line, "hreflang=") {
+			continue
+		}
+		lang := between(line, "hreflang=\"", "\"")
+		href := between(line, "href=\"", "\"")
+		if lang == "" || href == "" {
+			continue
+		}
+		out = append(out, [2]string{lang, href})
+	}
+	return out
+}
+
+// between 取 s 中位于 open..close 之间的第一段（缺失返回空串）。
+func between(s, open, close string) string {
+	i := strings.Index(s, open)
+	if i < 0 {
+		return ""
+	}
+	rest := s[i+len(open):]
+	j := strings.Index(rest, close)
+	if j < 0 {
+		return ""
+	}
+	return rest[:j]
+}
+
+// artifactHTML 读取内容寻址目录里的产物字节（{root}/artifacts/{hash}/index.html）。
+func artifactHTML(t *testing.T, hash string) string {
+	t.Helper()
+	b, err := os.ReadFile(filepath.Join(pipeline.DefaultArtifactRoot(), "artifacts", hash, "index.html"))
+	if err != nil {
+		t.Fatalf("读取产物 %s 失败: %v", hash, err)
+	}
+	return string(b)
+}
+
+// assertHreflangComplete 产物应含本批次全部语言的互指 + x-default，且指向各自站点路径。
+func assertHreflangComplete(t *testing.T, label, html string, want [][2]string) {
+	t.Helper()
+	got := hreflangPairs(html)
+	t.Logf("%s 的 hreflang 互指：%v", label, got)
+	if len(got) != len(want) {
+		t.Fatalf("%s 的 hreflang 互指应有 %d 条，实际 %d 条：%+v", label, len(want), len(got), got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("%s 的 hreflang 第 %d 条应为 %v，实际 %v（全部：%+v）", label, i+1, want[i], got[i], got)
+		}
+	}
+}
+
+// TestPresentationMultiLangRebuildIdempotent 重复重建与并发重建都不产生混合版本，
+// 且**首次发布的产物字节与紧随其后的重建产物逐字节相同**（审计 SEO-026）。
 //
-// 幂等口径取「收敛之后的连续重建」：首次发布的产物与重建后的产物在 hreflang 上有
-// 一处**既有**差异（LocaleView 的 published 回调按语言账本过滤互指，首发布时同批的
-// 其他语言尚未结案，于是没有互指链接），这不是本次改动引入的，也不在 AR2-003 范围。
+// 后一条是本用例的核心：曾经首发布产物缺 hreflang（互指按「是否已结案」过滤，
+// 而结案发生在构建之后），重建一次才补上 —— 同一个实例、同一套输入产出两种字节。
+// 判定依据改为「本批次准备上线哪些语言」之后，两次构建必须一致。
 func TestPresentationMultiLangRebuildIdempotent(t *testing.T) {
 	f := newPresFixture(t)
 	if f == nil {
@@ -260,16 +319,35 @@ func TestPresentationMultiLangRebuildIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateInstance 失败: %v", err)
 	}
-	if rows := publicationRows(t, f, inst.ID); len(rows) != 3 {
-		t.Fatalf("首发布应有三种语言结案，实际 %+v", rows)
+	first := publicationRows(t, f, inst.ID)
+	if len(first) != 3 {
+		t.Fatalf("首发布应有三种语言结案，实际 %+v", first)
 	}
 	assertLedgerMatchesAccessSurface(t, f, inst.ID)
 
-	// 先做一次重建让产物收敛（见函数注释里的 hreflang 既有差异），以此为幂等基线。
+	// 回归判据（SEO-026）：首发布产物必须已经带齐 hreflang 互指 ——
+	// 三种语言各一条 + x-default 指向默认语言路径，一条不缺。
+	// 产物内顺序由 builder 固定为语言码升序、x-default 收尾（与当前构建语言无关）。
+	want := [][2]string{
+		{"en-US", "/en/products/i18n-idempotent-shirt"},
+		{"ja-JP", "/ja/products/i18n-idempotent-shirt"},
+		{"zh-CN", "/products/i18n-idempotent-shirt"},
+		{"x-default", "/products/i18n-idempotent-shirt"},
+	}
+	for _, row := range first {
+		assertHreflangComplete(t, "首发布 "+row.Lang, artifactHTML(t, row.ArtifactHash), want)
+	}
+
+	// 回归判据（SEO-026）核心：同一实例首发布产物 hash == 紧随其后重建的产物 hash。
+	// 产物是内容寻址的（hash 由字节算出），hash 相同即字节相同 —— 两次构建的
+	// hreflang 判定不再依赖「构建之后才产生的状态」。
 	if rerr := f.pres.RebuildInstance(ctx, inst.ID); rerr != nil {
-		t.Fatalf("收敛重建失败: %v", rerr)
+		t.Fatalf("重建失败: %v", rerr)
 	}
 	settled := publicationRows(t, f, inst.ID)
+	if !samePublicationRows(first, settled) {
+		t.Fatalf("首发布产物 hash 必须与紧随其后的重建一致（SEO-026），实际\n首发布：%+v\n重建后：%+v", first, settled)
+	}
 	settledBatch := ledgerBatch(t, f, inst.ID)
 	if len(settledBatch) != 3 {
 		t.Fatalf("收敛后应有三条批次行，实际 %+v", settledBatch)

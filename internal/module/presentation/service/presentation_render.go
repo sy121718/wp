@@ -96,9 +96,12 @@ func (s *Service) resolveBoundTemplate(ctx context.Context, inst *presentationmo
 //
 // 激活由调用方在实例落库成功后单独执行（见 activate）：先激活后落库时，
 // 一旦落库失败，线上已渲染出新实体内容却没有任何恢复入口。
+//
+// targetLangs 是本次批次准备上线的语言集合（SEO-026），逐字透传给 renderHTML 的
+// hreflang 判定 —— 调用方必须传它逐语言结案用的那一份，不要在中间重新推导。
 func (s *Service) buildArtifact(ctx context.Context, entityType, entityID, urlPath, projectID, lang string,
-	tpl *contenttemplatecontract.ResolvedTemplate) (built builtArtifact, err error) {
-	html, err := s.renderHTML(ctx, entityType, entityID, urlPath, projectID, lang, tpl)
+	targetLangs []string, tpl *contenttemplatecontract.ResolvedTemplate) (built builtArtifact, err error) {
+	html, err := s.renderHTML(ctx, entityType, entityID, urlPath, projectID, lang, targetLangs, tpl)
 	if err != nil {
 		return built, err
 	}
@@ -132,8 +135,12 @@ func (s *Service) buildArtifact(ctx context.Context, entityType, entityID, urlPa
 // urlPath 是该实例的线上路径（预览传空）：它是 SEO 头 canonical 的来源，
 // 见 presentation_seo.go —— 唯一注入点的第二半（渲染函数本身不认识 SEO）。
 // lang 为空时取站点默认语言；非默认语言时接入模板内作者文案翻译（ContentTranslator）。
+//
+// targetLangs 是本次批次准备上线的语言集合（SEO-026，预览传 nil）：hreflang 互指
+// 按它生成，而不是回头读「某个语言是否已结案」—— 批次是「先构建全部语言、再逐语言
+// 结案」，账本行在构建时还不存在，读它会让首发布产出的互指全部落空。
 func (s *Service) renderHTML(ctx context.Context, entityType, entityID, urlPath, projectID, lang string,
-	tpl *contenttemplatecontract.ResolvedTemplate) (html []byte, err error) {
+	targetLangs []string, tpl *contenttemplatecontract.ResolvedTemplate) (html []byte, err error) {
 	page, err := builder.ParsePage(tpl.Document)
 	if err != nil {
 		return nil, err
@@ -186,12 +193,15 @@ func (s *Service) renderHTML(ctx context.Context, entityType, entityID, urlPath,
 	}
 	compileOpts = append(compileOpts, pluginOpts...)
 	compileOpts = append(compileOpts, pipeline.LocaleCompileOptions(lang)...)
+	// hreflang 互指的判定依据是**本批次准备上线哪些语言**（SEO-026），不是「某个
+	// 访问路径是否已发布」：后者要等逐语言结案才成立，首发布构建时它必然为假，
+	// 于是互指全部落空、产物缺 hreflang，重建一次（账本已写全）才补上。
+	//
+	// 因此发布路径不再传 RoutePublished —— 传了反而会被它盖住（见 SiteCompileParams.TargetLangs）：
+	// TargetLangs 非空时 published 不参与判定。预览（targetLangs 为空）沿用访问面口径：
+	// 预览没有「本次要上线谁」这件事，它面向的是线上现状 + 这份草稿内容。
 	siteOpts, serr := pipeline.SiteCompileOptions(pipeline.SiteCompilePorts{
 		Project: s.project, Navigation: s.navigation, SitePages: s.sitePages, MediaProbe: s.mediaProbe,
-		// 语言切换器的发布状态查询（审计 I18N-021）：已登记但未发布的语言不进切换器 ——
-		// 那不是「暂时没有内容」，而是一个必然 404 的链接。判定来源是**访问面本身**
-		//（active 目录的符号链接），与访客看到的完全一致；查数据库路由表只会得出
-		//「已登记 = 可见」，那正是这条 finding 的成因。
 		RoutePublished: func(accessPath string) bool {
 			state, ierr := s.publication.Inspect(accessPath)
 			return ierr == nil && state != nil && state.Kind != "none"
@@ -199,6 +209,7 @@ func (s *Service) renderHTML(ctx context.Context, entityType, entityID, urlPath,
 	}, pipeline.SiteCompileParams{
 		Ctx: ctx, ProjectID: projectID, Lang: lang,
 		LogicalPath: logicalPath, CurrentPath: highlightPath,
+		TargetLangs: targetLangs,
 	})
 	if serr != nil {
 		return nil, serr

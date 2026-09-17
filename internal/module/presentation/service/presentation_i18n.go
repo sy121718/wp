@@ -90,7 +90,9 @@ func (s *Service) publishAllLangs(ctx context.Context, inst *presentationmodel.I
 		if perr != nil {
 			return "", perr
 		}
-		built, berr := s.buildArtifact(ctx, inst.EntityType, inst.EntityID, accessPath, inst.ProjectID, lang, tpl)
+		// langs 原样透传（SEO-026）：就是本循环随后逐个结案的那一份，中间不再推导第二次。
+		// 产物里的 hreflang 互指因此只依赖「本批次要上线哪些语言」这个构建期事实。
+		built, berr := s.buildArtifact(ctx, inst.EntityType, inst.EntityID, accessPath, inst.ProjectID, lang, langs, tpl)
 		if berr != nil {
 			return "", berr
 		}

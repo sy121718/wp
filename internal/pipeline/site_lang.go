@@ -82,8 +82,15 @@ func LocalizeMenuURL(ctx context.Context, project projectcontract.ProjectService
 
 // SiteRouteEntries 按启用语言计算逻辑路径的各语言站点路径（默认语言在前）。
 func SiteRouteEntries(ctx context.Context, project projectcontract.ProjectService, projectID, logical string) ([]SiteRouteEntry, error) {
-	langs := EnabledLangs(ctx, project, projectID)
-	rule := LangURLRuleForProject(ctx, project, projectID)
+	return siteRouteEntriesForLangs(LangURLRuleForProject(ctx, project, projectID), EnabledLangs(ctx, project, projectID), logical)
+}
+
+// siteRouteEntriesForLangs 按**给定**语言集合推导逻辑路径的各语言站点路径。
+//
+// 抽出来是为了让调用方能自带语言集合：批次发布的目标语言在构建前就已确定
+// （SEO-026），不必再从站点语言清单推导一次 —— 两份来源各自演进就是漂移的开始。
+// langs 的顺序即输出顺序（默认语言在前由调用方保证）。
+func siteRouteEntriesForLangs(rule LangURLRule, langs []string, logical string) ([]SiteRouteEntry, error) {
 	if err := rule.Validate(langs); err != nil {
 		return nil, err
 	}
@@ -103,39 +110,77 @@ func SiteRouteEntries(ctx context.Context, project projectcontract.ProjectServic
 	return out, nil
 }
 
+// LocaleViewInput LocaleView 的输入。
+//
+// 聚成结构体而不是继续加位置参数：这里已经同时存在两个「语言集合来源」，
+// 位置参数一旦错位，产物只会静默少几条互指链接。
+type LocaleViewInput struct {
+	Ctx         context.Context
+	Project     projectcontract.ProjectService
+	ProjectID   string
+	LogicalPath string
+	Lang        string
+
+	// TargetLangs 本批次准备上线的语言集合（SEO-026）。非空时它是 hreflang 互指的
+	// **唯一**判据：这份集合是构建期就已经知道的事实（调用方正逐个构建它们，紧接着
+	// 逐个结案），产物于是只依赖构建输入，不依赖「构建完之后才产生的状态」。
+	//
+	// 契约：当前构建语言必须在集合内（它正在被构建，紧接着就要上线）。
+	// 为空表示调用方没有批次概念（手工 Page 的逐页发布），此时退回
+	// 「站点启用语言推导 + Published 过滤」—— page 侧口径逐字不变。
+	TargetLangs []string
+
+	// Published 报告某个访问路径是否真的已发布（审计 I18N-021）。只在 TargetLangs 为空时使用。
+	Published func(accessPath string) bool
+}
+
 // LocaleView 计算 hreflang 互指与语言切换器链接（与 page.localeViewOf 同源）。
 //
-// published 报告某个访问路径是否真的已发布（审计 I18N-021）。为 nil 时按「全部已发布」
-// 处理，行为与接入前逐字一致 —— 未接入校验不该改变产物。
+// 两条判据二选一，取哪个由调用方决定（见 LocaleViewInput.TargetLangs）：
 //
-// 为什么必须有这道校验：SiteRouteEntries 只是从**启用语言**推导路径，它不知道某个语言
-// 的页面到底有没有构建成功。于是一个「已登记但未发布」的语言会出现在切换器里，
-// 用户点过去看到的不是「还没翻译」而是站内 404 —— 站点看起来是坏的，
-// 而不是「这个语言还没做」。
+//  1. 批次口径（TargetLangs 非空，自动发布实例）：互指 = 本批次要上线的语言。
+//     这里**不做任何已发布状态过滤** —— 账本行要等逐语言结案才写，首发布构建时
+//     它必然为空，按它过滤等于把「本次正在上线的语言」全部剔除（SEO-026：
+//     首发布产物缺 hreflang，重建一次才补上）。批次口径的自我约束是：
+//     集合不多不少就是本批次逐个激活的那一份，任一语言失败则整批标 stale 并重建，
+//     「没上线的语言」是该状态要暴露的问题，不是靠产物静默裁剪来掩盖的。
 //
-// 只跳过**非当前语言**：当前语言那一项必须保留，否则切换器里没有「你正在看的这一版」。
-func LocaleView(ctx context.Context, project projectcontract.ProjectService, projectID, logicalPath, lang string, published func(accessPath string) bool) (alts []builder.Alternate, links []core.LocaleLink) {
-	if !i18n.SiteLangURLsSeparated() || strings.TrimSpace(projectID) == "" || strings.TrimSpace(logicalPath) == "" {
+//  2. 访问面口径（TargetLangs 为空，手工 Page）：SiteRouteEntries 只从**启用语言**
+//     推导路径，它不知道某个语言的页面到底有没有构建成功。于是一个「已登记但未发布」
+//     的语言会出现在切换器里，用户点过去看到的不是「还没翻译」而是站内 404 ——
+//     站点看起来是坏的，而不是「这个语言还没做」。所以按 Published 过滤，
+//     且只跳过**非当前语言**：当前语言那一项必须保留，否则切换器里没有
+//     「你正在看的这一版」。
+func LocaleView(in LocaleViewInput) (alts []builder.Alternate, links []core.LocaleLink) {
+	if !i18n.SiteLangURLsSeparated() || strings.TrimSpace(in.ProjectID) == "" || strings.TrimSpace(in.LogicalPath) == "" {
 		return nil, nil
 	}
-	entries, err := SiteRouteEntries(ctx, project, projectID, logicalPath)
+	// 语言集合的唯一来源：有批次就按批次，没批次才回落到站点启用语言清单。
+	langs := in.TargetLangs
+	if len(langs) == 0 {
+		langs = EnabledLangs(in.Ctx, in.Project, in.ProjectID)
+	}
+	rule := LangURLRuleForProject(in.Ctx, in.Project, in.ProjectID)
+	entries, err := siteRouteEntriesForLangs(rule, langs, in.LogicalPath)
 	if err != nil || len(entries) < 2 {
 		return nil, nil
 	}
-	defaultLang := DefaultLocale(ctx, project, projectID)
+	if len(in.TargetLangs) == 0 {
+		entries = filterPublishedLocales(entries, in.Lang, in.Published)
+		if len(entries) < 2 {
+			return nil, nil
+		}
+	}
+	defaultLang := DefaultLocale(in.Ctx, in.Project, in.ProjectID)
 	base := strings.TrimSpace(os.Getenv("WP_SITE_BASE_URL"))
 	alts = make([]builder.Alternate, 0, len(entries))
 	links = make([]core.LocaleLink, 0, len(entries))
-	entries = filterPublishedLocales(entries, lang, published)
-	if len(entries) < 2 {
-		return nil, nil
-	}
 	for _, e := range entries {
 		pubPath := seo.CanonicalPublicPath(e.Path)
 		alts = append(alts, builder.Alternate{
 			Lang: e.Lang, Href: seo.JoinURL(base, pubPath), Default: e.Lang == defaultLang,
 		})
-		links = append(links, core.LocaleLink{Lang: e.Lang, Href: pubPath, Current: e.Lang == lang})
+		links = append(links, core.LocaleLink{Lang: e.Lang, Href: pubPath, Current: e.Lang == in.Lang})
 	}
 	return alts, links
 }

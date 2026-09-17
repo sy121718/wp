@@ -36,6 +36,12 @@ type SiteCompileParams struct {
 	Lang        string
 	LogicalPath string // hreflang / 语言切换；空则跳过 alternates
 	CurrentPath string // 导航当前项高亮；空则跳过
+	// TargetLangs 本批次准备上线的语言集合（SEO-026），由批次发布方传入 —— 必须与
+	// 它自己逐语言结案用的那一份是同一个切片，不许各自再读一次语言清单。
+	//
+	// 非空 = 批次口径：hreflang 互指按这份集合生成，不回读访问面 / 语言账本。
+	// 为空 = 访问面口径：沿用 RoutePublished（手工 Page 的逐页发布）。
+	TargetLangs []string
 }
 
 // SiteCompileOptions 构造 page 与 presentation 共用的站点级 CompileOption。
@@ -58,25 +64,39 @@ func SiteCompileOptions(ports SiteCompilePorts, p SiteCompileParams) (opts []bui
 		}
 	}
 	if lp := p.LogicalPath; lp != "" {
-		// 本次构建的语言自己也当作「已发布」（审计 I18N-021 的确定性修正）。
+		// 判定依据二选一（SEO-026）：
 		//
-		// 不加这一句会破坏「同一输入产出同一 hash」：产物里的语言切换器按访问面过滤，
-		// 而 Build 与 Publish 的复构建之间，其它语言可能刚好发布了 —— 于是两次构建
-		// 产出不同的切换器，Publish 的 built != staged 校验把发布挡成 ErrRebuildRequired。
-		// 表现是「先构建两种语言再逐个发布」这个常规流程永远发布不了第二种语言。
+		//   批次口径：调用方传了 TargetLangs —— 本批次要上线哪些语言是**构建输入**，
+		//   构建期就已确定，产物只依赖它；published 整个不参与（自动发布是「先构建
+		//   全部语言、再逐语言结案」，账本行要到结案才写，首发布时按它过滤会把本次
+		//   正在上线的语言全部剔除，产物缺 hreflang，重建一次才补上）。
 		//
-		// 把「自己」并进集合是自洽的：正在构建它，紧接着就要发布它；而对别的语言
-		// 仍然只认访问面 —— 没发布的语言不会进切换器，I18N-021 要防的 404 依然防住。
+		//   访问面口径：没有批次概念的手工 Page —— 行为与接入前逐字一致。
 		published := ports.RoutePublished
-		if published != nil && p.Lang != "" && lp != "" {
-			if self, serr := SitePath(LangURLRuleForProject(p.Ctx, ports.Project, p.ProjectID), p.Lang, lp); serr == nil {
-				base, selfPath := published, self
-				published = func(accessPath string) bool {
-					return accessPath == selfPath || base(accessPath)
+		if len(p.TargetLangs) == 0 {
+			// 本次构建的语言自己也当作「已发布」（审计 I18N-021 的确定性修正）。
+			//
+			// 不加这一句会破坏「同一输入产出同一 hash」：产物里的语言切换器按访问面过滤，
+			// 而 Build 与 Publish 的复构建之间，其它语言可能刚好发布了 —— 于是两次构建
+			// 产出不同的切换器，Publish 的 built != staged 校验把发布挡成 ErrRebuildRequired。
+			// 表现是「先构建两种语言再逐个发布」这个常规流程永远发布不了第二种语言。
+			//
+			// 把「自己」并进集合是自洽的：正在构建它，紧接着就要发布它；而对别的语言
+			// 仍然只认访问面 —— 没发布的语言不会进切换器，I18N-021 要防的 404 依然防住。
+			if published != nil && p.Lang != "" {
+				if self, serr := SitePath(LangURLRuleForProject(p.Ctx, ports.Project, p.ProjectID), p.Lang, lp); serr == nil {
+					base, selfPath := published, self
+					published = func(accessPath string) bool {
+						return accessPath == selfPath || base(accessPath)
+					}
 				}
 			}
 		}
-		alts, links := LocaleView(p.Ctx, ports.Project, p.ProjectID, lp, p.Lang, published)
+		alts, links := LocaleView(LocaleViewInput{
+			Ctx: p.Ctx, Project: ports.Project, ProjectID: p.ProjectID,
+			LogicalPath: lp, Lang: p.Lang,
+			TargetLangs: p.TargetLangs, Published: published,
+		})
 		if len(alts) > 1 {
 			opts = append(opts, builder.WithAlternates(alts))
 		}
