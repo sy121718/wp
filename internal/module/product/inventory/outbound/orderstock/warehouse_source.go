@@ -3,7 +3,7 @@ package orderstock
 import (
 	"context"
 
-ordercontract "go_wp/internal/module/order/contract"
+	ordercontract "go_wp/internal/module/order/contract"
 	inventorycontract "go_wp/internal/module/product/inventory/contract"
 	inventorydto "go_wp/internal/module/product/inventory/dto"
 )

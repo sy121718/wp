@@ -210,7 +210,7 @@ const (
 
 // 后台页面标题（i18n key）。
 //
-// 与 dashboard/enums 里的历史同名常量同值：i18n key 是字符串协议，模板与词条表都按
+// 与原 dashboard/enums 里的历史同名常量同值：i18n key 是字符串协议，模板与词条表都按
 // 字面量取值，页面搬回本模块后在本模块留一份常量，比让模块反向依赖 web/dashboard 层干净。
 const (
 	// MsgInventorySourcesTitle 货源管理页标题（issue #17）。

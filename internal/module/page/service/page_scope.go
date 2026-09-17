@@ -2,7 +2,7 @@ package pageservice
 
 // page_scope.go — 跨工程入口的逐工程扇出（DB-009 第三批）。
 //
-// 一批 page 入口的签名里没有工程参数：契约由 dashboard 编译期依赖（改签名会连带动
+// 一批 page 入口的签名里没有工程参数：契约由 workbench 等消费方编译期依赖（改签名会连带动
 // 一大片），pipeline.DependencyTarget 也只带 (kind,key)。它们的语义本来就是跨工程的
 // （整站标记待重建、按主题/块标记、全站草稿扫描），而 pages 在迁移 215 里带 FORCE 策略，
 // 作用域只能落到某一个具体工程。

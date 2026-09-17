@@ -11,8 +11,8 @@ import (
 	"net/http"
 	"strings"
 
-	blockcontract "go_wp/internal/module/block/contract"
 	"go_wp/internal/middleware/builtin"
+	blockcontract "go_wp/internal/module/block/contract"
 	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/internal/web/shell"
 	"go_wp/pkg/logger"

@@ -55,7 +55,7 @@ type TemplatePreviewPort interface {
 	PreviewInstance(ctx context.Context, req *presentationdto.PreviewInstanceReq) (res *presentationdto.PreviewInstanceResp, err error)
 }
 
-// ContentTranslationPort 工作台使用的内容译文读写端口（与 dashboard 同形状；
+// ContentTranslationPort 工作台使用的内容译文读写端口（与回迁前的 dashboard 实现同形状；
 // 为 nil 时按默认实现惰性构造，测试注入隔离 schema 的写入器）。
 type ContentTranslationPort interface {
 	LoadDetails(ctx context.Context, lang string, hashes []string) (map[string]i18n.ContentTargetInfo, error)

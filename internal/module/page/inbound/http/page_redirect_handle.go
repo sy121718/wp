@@ -2,9 +2,9 @@ package pagehttp
 
 // page_redirect_handle.go — 重定向管理页与增删改接口（审计 SEO-025）。
 //
-// 页面挂在 authorizdedAPI 组下（/api/page/redirect）而不是 /admin/*：page 模块在
-// routes.go 里只拿到 authorizedAPI 这一个已装配好的组（页面路由由 dashboard 模块
-// 注册到引擎根）。这样挂的代价是 URL 少一层「后台感」，换来的是三层链
+// 页面挂在 authorizedAPI 组下（/api/page/redirect）而不是 /admin/*：page 模块在
+// routes.go 里只拿到 authorizedAPI 这一个已装配好的组（页面路由组由 assembly 创建、
+// 分发给各模块注册）。这样挂的代价是 URL 少一层「后台感」，换来的是三层链
 // （Session / CSRF / Casbin）与 API 完全一致，不需要改动 routes.go。
 //
 // 交互约定：GET 渲染整页；三个 POST 都是原生表单提交（带 csrf_token 隐藏域），

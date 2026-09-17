@@ -13,9 +13,9 @@ import (
 
 // loginPagePath 登录页路径。
 //
-// 说明：当前项目尚无独立的页面登录路由（dashboard 未注册 /admin/login 页面，
-// internal/templates 下亦无 login 模板），此处指向 /api/admin/login 对应的
-// 页面路径 /admin/login。页面路由落地后本常量无需再调整。
+// 说明：页面登录路由由 admin 模块注册（SetupAdminShellPages → /admin/login，
+// 模板 internal/templates/admin/login.html），与 /api/admin/login 是同一路径的
+// 页面侧；本常量与它保持同值。
 const loginPagePath = "/admin/login"
 
 // SessionAuthMiddleware Session + Cookie 认证中间件。

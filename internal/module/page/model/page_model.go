@@ -130,7 +130,7 @@ func (m *Model) ListAll(ctx context.Context, projectID, themeID string) (list []
 //
 // 与 ListAll 的区别：带 draft_document 大字段（工作台要按组件白名单收集候选，
 // 无法在 SQL 侧完成——白名单在 Go 里）；按 update_time 倒序，便于诊断。
-// 代价：一次查询返回本工程全部草稿 JSONB，调用方必须自带缓存与页数上限（见 dashboard 工作台）。
+// 代价：一次查询返回本工程全部草稿 JSONB，调用方必须自带缓存与页数上限（见 workbench 工作台）。
 //
 // projectID 必填（DB-009 第三批）：本方法原是「全站扫描」，而 pages 带 FORCE 策略——
 // 「全站」在多工程部署下只能由 service 层逐工程调用拼出来（model 层不许出现「不限工程」，

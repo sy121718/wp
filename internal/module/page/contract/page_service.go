@@ -53,9 +53,9 @@ type SitePageResolver interface {
 	ResolveSitePages(ctx context.Context, projectID, lang string) (map[string]string, error)
 }
 
-// 预览编译错误哨兵：dashboard 预览复用本契约的编译能力时，
+// 预览编译错误哨兵：workbench 预览复用本契约的编译能力时，
 // 经 errors.Is 精确分类 HTTP 状态码（解析失败 400 / 编译失败 422 / 其余 500），
-// 文案由调用方（dashboard enums）自行下发，此处仅作错误类型标识。
+// 文案由调用方（workbench enums）自行下发，此处仅作错误类型标识。
 var (
 	// ErrPreviewInvalidDocument 预览文档解析失败（JSON 非法或空文档）。
 	ErrPreviewInvalidDocument = errors.New("预览文档解析失败")

@@ -1,6 +1,6 @@
 // inventory_page_handle.go — 后台库存管理页（issue #15 / #16）。
 //
-// 与商品后台页同一模式：独立于 dashboard 通用 Handle 的页面处理器，只依赖本模块
+// 与商品后台页同一模式：独立于工作台通用 Handle 的页面处理器，只依赖本模块
 // 契约、product 契约与 project 契约；GET 渲染完整页，POST 处理完 302 回列表
 // （原生表单 + csrf_token 隐藏域），错误经 ?err= 回显。
 //

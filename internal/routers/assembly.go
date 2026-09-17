@@ -462,7 +462,7 @@ func (a *assembly) buildIdentityAndCommerce() {
 	// 一个方法）与 inventory 的扣减 / 归还（两个方法），不是各自模块的完整 Service。
 	// 建单会读商品事实落快照、并扣减库存，两者缺失都只能在建单那一刻失败，故不设可选依赖。
 	// guest 传 userSvc：订单用它为访客下单自动开号（收窄的单方法接口，见 user contract）。
-	// orderSvc 的消费方有三个：cart（结算建单 + 支付落账）、dashboard（订单管理页）、
+	// orderSvc 的消费方有三个：cart（结算建单 + 支付落账）、order 模块后台页（订单管理）、
 	// runtimefragment（访客订单片段）。契约里同时含访客查询与优惠码两组能力，
 	// 各消费方拿到的都是同一个实现 —— 不加壳、不复制。
 	//

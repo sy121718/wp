@@ -8,9 +8,9 @@ import (
 	"io"
 	"net/http"
 
+	"go_wp/internal/middleware/builtin"
 	plugincontract "go_wp/internal/module/plugin/contract"
 	pluginenums "go_wp/internal/module/plugin/enums"
-	"go_wp/internal/middleware/builtin"
 	"go_wp/internal/web/shell"
 	"go_wp/pkg/logger"
 

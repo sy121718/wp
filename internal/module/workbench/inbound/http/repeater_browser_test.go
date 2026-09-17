@@ -17,7 +17,7 @@ import (
 )
 
 // 手工浏览器夹具，复用真实 Inspector handler/模板/JS/撤销逻辑/编译器，无数据库。
-// GOWP_REPEATER_BROWSER=1 go test ./public/test/dashboard/feature -run TestRepeaterBrowserFixture -v -timeout 20m
+// GOWP_REPEATER_BROWSER=1 go test ./internal/module/workbench/inbound/http -run TestRepeaterBrowserFixture -v -timeout 20m
 // 只监听回环地址；不是生产应用，也不提供持久化写入口。
 func TestRepeaterBrowserFixture(t *testing.T) {
 	if os.Getenv("GOWP_REPEATER_BROWSER") != "1" {

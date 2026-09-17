@@ -1,7 +1,7 @@
 package pageservice
 
 // page_preview.go — 预览编译用例：基于未落盘文档 JSON 编译完整 HTML。
-// dashboard 工作台预览（Preview/PreviewDraft/BlockPreview）复用本方法，
+// workbench 工作台预览（Preview/PreviewDraft/BlockPreview）复用本方法，
 // 与正式构建共用 compileDocument 装配管线（docs/03-A §4.2 隔离预览）。
 
 import (

@@ -28,7 +28,7 @@ package workbenchhttp
 //	嵌套数组（nav）          条目带子项递归、两个字段、目标切换，行结构不是一维的。
 //
 // 支持范围由组件的 AlignedRepeaterProvider 声明，注册时核对真实 Props 类型；
-// Go 面板与 generated-contracts.js 共用声明，不在 dashboard 维护组件配置表。
+// Go 面板与 generated-contracts.js 共用声明，不在工作台维护组件配置表。
 
 import (
 	"fmt"

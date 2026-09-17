@@ -10,9 +10,9 @@ import (
 	"net/http"
 	"strings"
 
+	"go_wp/internal/middleware/builtin"
 	navigationcontract "go_wp/internal/module/navigation/contract"
 	navigationdto "go_wp/internal/module/navigation/dto"
-	"go_wp/internal/middleware/builtin"
 	pagecontract "go_wp/internal/module/page/contract"
 	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/internal/web/shell"

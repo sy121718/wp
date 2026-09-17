@@ -415,7 +415,7 @@ func (a *assembly) startRuntimeTasks() {
 // mountAdminPages 后台页面路由（编辑器外壳依赖 page/block/plugin 契约，置于 API 装配之后）。
 //
 // admin 六领域 CRUD 契约：SetAdminRoutes 返回的 AuthzContextService 动态类型即合并后的
-// *Service（同实现全部六接口），此处匿名接口断言获得管理面 CRUD 能力注入 dashboard，
+// *Service（同实现全部六接口），此处匿名接口断言获得管理面 CRUD 能力并交给页面装配，
 // 供 /admin 六领域管理页（管理员/角色/菜单/权限/部门/数据权限）消费；不使用 GET/POST 之外的动词。
 func (a *assembly) mountAdminPages() {
 	marks := a.marks
