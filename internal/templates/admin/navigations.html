@@ -107,9 +107,11 @@
                     </form>
                 </td>
                 <td class="action-row">
-                    <details style="display:inline-block">
-                        <summary class="btn">{{tr("admin.navigations.action.edit", "编辑")}}</summary>
-                        <form method="post" action="/admin/navigations/update" class="form-inline">
+                    {{if isset(.PermSet["navigation:update"])}}
+                        <button type="button" class="btn btn-sm" data-drawer-open="#tpl-nav-edit-{{r.ID}}" data-drawer-title="{{ .["t"]("admin.common.action.edit", "编辑") }}">{{ .["t"]("admin.common.action.edit", "编辑") }}</button>
+                        {{end}}
+                        <template id="tpl-nav-edit-{{r.ID}}">
+                        <form method="post" action="/admin/navigations/update">
                             <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
                             <input type="hidden" name="projectId" value="{{.SelectedProject}}">
                             <input type="hidden" name="kind" value="{{.Kind}}">
@@ -120,9 +122,10 @@
                                 <option value="self" {{if r.Target == "self"}}selected{{end}}>{{tr("admin.navigations.target.self", "当前窗口")}}</option>
                                 <option value="blank" {{if r.Target == "blank"}}selected{{end}}>{{tr("admin.navigations.target.blank", "新标签页")}}</option>
                             </select>
+                            <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button>
                             <button type="submit" class="btn btn-primary">{{tr("admin.navigations.save", "保存")}}</button>
                         </form>
-                    </details>
+                        </template>
                     <form method="post" action="/admin/navigations/delete" class="form-inline" style="display:inline"
                           data-confirm="{{tr("admin.navigations.confirm_delete_prefix", "确定删除「")}}{{r.Title|safeJs}}{{tr("admin.navigations.confirm_delete_suffix", "」？它的子菜单项会一并删除。")}}">
                         <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
