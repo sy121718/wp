@@ -15,11 +15,11 @@ func TestRuleCreateAndDetailRoundTrip(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
 
-	ruleID := ruleCreate(t, e, "只看本部门", "ORDER", 1, datarule.RuleConfig{
+	ruleID := ruleCreate(t, e, "只看本部门", "ORDER", 1, admindto.RuleConfigDTO{
 		OmitFields: []string{"price"},
-		ConditionGroups: []datarule.ConditionGroup{{
+		ConditionGroups: []admindto.RuleConditionGroupDTO{{
 			Logic: "AND",
-			Conditions: []datarule.Condition{
+			Conditions: []admindto.RuleConditionDTO{
 				{Field: "dept_id", Op: "EQ", Value: "dept.scope:SELF"},
 			},
 		}},
@@ -52,10 +52,10 @@ func TestRuleUpdateSuccess(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
 
-	ruleID := ruleCreate(t, e, "旧规则", "ORDER", 1, datarule.RuleConfig{})
+	ruleID := ruleCreate(t, e, "旧规则", "ORDER", 1, admindto.RuleConfigDTO{})
 	err := e.svc.RuleUpdate(ctx, &admindto.RuleUpdateReq{
 		ID: ruleID, RuleName: "新规则", Domain: "ADMIN",
-		Config: datarule.RuleConfig{OmitFields: []string{"phone"}}, Status: 1,
+		Config: admindto.RuleConfigDTO{OmitFields: []string{"phone"}}, Status: 1,
 	})
 	wantErr(t, err, "")
 
@@ -72,7 +72,7 @@ func TestRuleUpdateNotFound(t *testing.T) {
 	ctx := context.Background()
 
 	err := e.svc.RuleUpdate(ctx, &admindto.RuleUpdateReq{
-		ID: 777777, RuleName: "x", Domain: "ORDER", Config: datarule.RuleConfig{}, Status: 1,
+		ID: 777777, RuleName: "x", Domain: "ORDER", Config: admindto.RuleConfigDTO{}, Status: 1,
 	})
 	wantErr(t, err, adminenums.ErrRuleNotFound)
 }
@@ -82,7 +82,7 @@ func TestRuleDeleteCleansAssignments(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
 
-	ruleID := ruleCreate(t, e, "待删规则", "ORDER", 1, datarule.RuleConfig{})
+	ruleID := ruleCreate(t, e, "待删规则", "ORDER", 1, admindto.RuleConfigDTO{})
 	err := e.svc.RuleAssignmentSave(ctx, &admindto.RuleAssignmentSaveReq{
 		RuleID: ruleID,
 		Assignments: []admindto.RuleAssignmentItem{
@@ -111,8 +111,8 @@ func TestRuleListFilters(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
 
-	ruleCreate(t, e, "订单规则", "ORDER", 1, datarule.RuleConfig{})
-	ruleCreate(t, e, "管理员规则", "ADMIN", 1, datarule.RuleConfig{})
+	ruleCreate(t, e, "订单规则", "ORDER", 1, admindto.RuleConfigDTO{})
+	ruleCreate(t, e, "管理员规则", "ADMIN", 1, admindto.RuleConfigDTO{})
 
 	res, err := e.svc.RuleList(ctx, &admindto.RuleListReq{Domain: "ORDER"})
 	wantErr(t, err, "")
@@ -131,7 +131,7 @@ func TestRuleAssignmentSaveInvalidTarget(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
 
-	ruleID := ruleCreate(t, e, "规则", "ORDER", 1, datarule.RuleConfig{})
+	ruleID := ruleCreate(t, e, "规则", "ORDER", 1, admindto.RuleConfigDTO{})
 
 	// TargetID=0
 	err := e.svc.RuleAssignmentSave(ctx, &admindto.RuleAssignmentSaveReq{
@@ -160,7 +160,7 @@ func TestRuleAssignmentSaveDedupAndReplace(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
 
-	ruleID := ruleCreate(t, e, "分配规则", "ORDER", 1, datarule.RuleConfig{})
+	ruleID := ruleCreate(t, e, "分配规则", "ORDER", 1, admindto.RuleConfigDTO{})
 
 	// 重复 target 只落一条
 	err := e.svc.RuleAssignmentSave(ctx, &admindto.RuleAssignmentSaveReq{
@@ -198,7 +198,7 @@ func TestGetRulesByUser(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
 
-	ruleID := ruleCreate(t, e, "用户规则", "ORDER", 1, datarule.RuleConfig{
+	ruleID := ruleCreate(t, e, "用户规则", "ORDER", 1, admindto.RuleConfigDTO{
 		OmitFields: []string{"price"},
 	})
 	if err := e.svc.RuleAssignmentSave(ctx, &admindto.RuleAssignmentSaveReq{
@@ -230,7 +230,7 @@ func TestGetRulesByRole(t *testing.T) {
 	ctx := context.Background()
 
 	roleID := createRole(t, e, "editor_"+uniq(""), "编辑")
-	ruleID := ruleCreate(t, e, "角色规则", "ORDER", 1, datarule.RuleConfig{})
+	ruleID := ruleCreate(t, e, "角色规则", "ORDER", 1, admindto.RuleConfigDTO{})
 	if err := e.svc.RuleAssignmentSave(ctx, &admindto.RuleAssignmentSaveReq{
 		RuleID: ruleID,
 		Assignments: []admindto.RuleAssignmentItem{
@@ -257,7 +257,7 @@ func TestGetRulesByDeptScope(t *testing.T) {
 	child := deptCreate(t, e, "分部", "DC2_"+uniq(""), root)
 
 	// 规则A：scope=SELF 给总部 → 只对总部生效
-	ruleSelf := ruleCreate(t, e, "本部门规则", "ORDER", 1, datarule.RuleConfig{})
+	ruleSelf := ruleCreate(t, e, "本部门规则", "ORDER", 1, admindto.RuleConfigDTO{})
 	if err := e.svc.RuleAssignmentSave(ctx, &admindto.RuleAssignmentSaveReq{
 		RuleID: ruleSelf,
 		Assignments: []admindto.RuleAssignmentItem{
@@ -268,7 +268,7 @@ func TestGetRulesByDeptScope(t *testing.T) {
 	}
 
 	// 规则B：scope=SELF_AND_CHILDREN 给总部 → 覆盖子孙
-	ruleTree := ruleCreate(t, e, "树形规则", "ORDER", 1, datarule.RuleConfig{})
+	ruleTree := ruleCreate(t, e, "树形规则", "ORDER", 1, admindto.RuleConfigDTO{})
 	if err := e.svc.RuleAssignmentSave(ctx, &admindto.RuleAssignmentSaveReq{
 		RuleID: ruleTree,
 		Assignments: []admindto.RuleAssignmentItem{
@@ -364,7 +364,7 @@ func TestRuleCreateInvalidDomain(t *testing.T) {
 
 	err := e.svc.RuleCreate(ctx, &admindto.RuleCreateReq{
 		RuleName: "非法域规则", Domain: "NOT_REGISTERED",
-		Config: datarule.RuleConfig{}, Status: 1,
+		Config: admindto.RuleConfigDTO{}, Status: 1,
 	})
 	wantErr(t, err, adminenums.ErrInvalidDomain)
 
@@ -383,10 +383,10 @@ func TestRuleUpdateInvalidDomain(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
 
-	ruleID := ruleCreate(t, e, "合法规则", "ORDER", 1, datarule.RuleConfig{})
+	ruleID := ruleCreate(t, e, "合法规则", "ORDER", 1, admindto.RuleConfigDTO{})
 	err := e.svc.RuleUpdate(ctx, &admindto.RuleUpdateReq{
 		ID: ruleID, RuleName: "改名", Domain: "NOT_REGISTERED",
-		Config: datarule.RuleConfig{}, Status: 1,
+		Config: admindto.RuleConfigDTO{}, Status: 1,
 	})
 	wantErr(t, err, adminenums.ErrInvalidDomain)
 
@@ -404,7 +404,7 @@ func TestRuleCreateDisabledExplicit(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
 
-	ruleID := ruleCreate(t, e, "禁用规则"+uniq(""), "ORDER", adminmodel.RuleStatusDisabled, datarule.RuleConfig{})
+	ruleID := ruleCreate(t, e, "禁用规则"+uniq(""), "ORDER", adminmodel.RuleStatusDisabled, admindto.RuleConfigDTO{})
 
 	var rule adminmodel.SysRuleEntity
 	if err := e.db.First(&rule, ruleID).Error; err != nil {
@@ -437,10 +437,10 @@ func TestRuleUpdateDisablePersists(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
 
-	ruleID := ruleCreate(t, e, "待禁用规则"+uniq(""), "ORDER", adminmodel.RuleStatusEnabled, datarule.RuleConfig{})
+	ruleID := ruleCreate(t, e, "待禁用规则"+uniq(""), "ORDER", adminmodel.RuleStatusEnabled, admindto.RuleConfigDTO{})
 	err := e.svc.RuleUpdate(ctx, &admindto.RuleUpdateReq{
 		ID: ruleID, RuleName: "已禁用规则", Domain: "ORDER",
-		Config: datarule.RuleConfig{}, Status: adminmodel.RuleStatusDisabled,
+		Config: admindto.RuleConfigDTO{}, Status: adminmodel.RuleStatusDisabled,
 	})
 	wantErr(t, err, "")
 
@@ -453,9 +453,109 @@ func TestRuleUpdateDisablePersists(t *testing.T) {
 	}
 }
 
+// TestRuleCreateRejectsConfigOutsideDomain 规则配置只能引用数据域声明过的字段与该字段的操作符。
+//
+// 修复前 service 只校验 domain 是否注册，配置原样落库；引擎侧只做「字符集合法性」（escapeField）
+// 与「全局操作符白名单」（validOp）两层过滤，于是字段名写错、用错操作符、Omit 一个不存在的列
+// 全都是静默无效 —— 规则看起来生效，实际一条都没拦（fail-open）。
+func TestRuleCreateRejectsConfigOutsideDomain(t *testing.T) {
+	e := setupEnv(t)
+	ctx := context.Background()
+
+	conditionCase := func(field, op string) admindto.RuleConfigDTO {
+		return admindto.RuleConfigDTO{ConditionGroups: []admindto.RuleConditionGroupDTO{{
+			Logic:      "AND",
+			Conditions: []admindto.RuleConditionDTO{{Field: field, Op: op, Value: "1"}},
+		}}}
+	}
+	logicCase := func(logic string) admindto.RuleConfigDTO {
+		return admindto.RuleConfigDTO{ConditionGroups: []admindto.RuleConditionGroupDTO{{
+			Logic:      logic,
+			Conditions: []admindto.RuleConditionDTO{{Field: "status", Op: "EQ", Value: "1"}},
+		}}}
+	}
+
+	cases := []struct {
+		name   string
+		domain string
+		config admindto.RuleConfigDTO
+		want   string
+	}{
+		{"条件字段不在白名单", "ORDER", conditionCase("created_by", "EQ"), adminenums.ErrRuleFieldNotAllowed},
+		{"操作符不在该字段声明内", "ORDER", conditionCase("order_no", "GT"), adminenums.ErrRuleOpNotAllowed},
+		{"操作符小写不接受", "ADMIN", conditionCase("status", "eq"), adminenums.ErrRuleOpNotAllowed},
+		{"条件逻辑非法", "ADMIN", logicCase("XOR"), adminenums.ErrRuleLogicNotAllowed},
+		{"条件逻辑小写不接受", "ADMIN", logicCase("or"), adminenums.ErrRuleLogicNotAllowed},
+		{"屏蔽字段不在白名单", "ADMIN", admindto.RuleConfigDTO{OmitFields: []string{"password"}}, adminenums.ErrRuleFieldNotAllowed},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			err := e.svc.RuleCreate(ctx, &admindto.RuleCreateReq{
+				RuleName: "拒绝_" + uniq(""), Domain: c.domain, Config: c.config,
+				Status: adminmodel.RuleStatusEnabled,
+			})
+			wantErr(t, err, c.want)
+		})
+	}
+
+	var count int64
+	if err := e.db.Model(&adminmodel.SysRuleEntity{}).Count(&count).Error; err != nil {
+		t.Fatalf("查询失败: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("被拒绝的规则不应落库: %d", count)
+	}
+}
+
+// TestRuleUpdateRejectsConfigOutsideDomain 更新路径同样按域白名单把关，且失败时原规则不被改动。
+func TestRuleUpdateRejectsConfigOutsideDomain(t *testing.T) {
+	e := setupEnv(t)
+	ctx := context.Background()
+
+	ruleName := "合法规则" + uniq("")
+	ruleID := ruleCreate(t, e, ruleName, "ORDER", adminmodel.RuleStatusEnabled,
+		admindto.RuleConfigDTO{OmitFields: []string{"price"}})
+
+	err := e.svc.RuleUpdate(ctx, &admindto.RuleUpdateReq{
+		ID: ruleID, RuleName: "改名", Domain: "ORDER",
+		Config: admindto.RuleConfigDTO{
+			OmitFields: []string{"price"},
+			ConditionGroups: []admindto.RuleConditionGroupDTO{{
+				Logic:      "AND",
+				Conditions: []admindto.RuleConditionDTO{{Field: "order_no", Op: "BETWEEN", Value: "1,2"}},
+			}},
+		},
+		Status: adminmodel.RuleStatusEnabled,
+	})
+	wantErr(t, err, adminenums.ErrRuleOpNotAllowed)
+
+	detail, err := e.svc.RuleDetail(ctx, &admindto.RuleDetailReq{ID: ruleID})
+	wantErr(t, err, "")
+	if detail.RuleName != ruleName || len(detail.Config.ConditionGroups) != 0 {
+		t.Fatalf("非法配置更新不应改动原规则: %+v", detail)
+	}
+}
+
+// TestRuleCreateAcceptsDeclaredOperators 白名单内声明的操作符可用（EQ/IN/部门范围引用）。
+func TestRuleCreateAcceptsDeclaredOperators(t *testing.T) {
+	e := setupEnv(t)
+
+	ruleCreate(t, e, "部门范围"+uniq(""), "ADMIN", adminmodel.RuleStatusEnabled, admindto.RuleConfigDTO{
+		OmitFields: []string{"phone"},
+		ConditionGroups: []admindto.RuleConditionGroupDTO{
+			{Logic: "AND", Conditions: []admindto.RuleConditionDTO{{Field: "dept_id", Op: "EQ", Value: "dept.scope:SELF"}}},
+			{Logic: "OR", Conditions: []admindto.RuleConditionDTO{
+				{Field: "username", Op: "LIKE", Value: "admin"},
+				{Field: "status", Op: "IN", Value: "1,2"},
+			}},
+		},
+	})
+}
+
 // --- helpers ---
 
-func ruleCreate(t *testing.T, e *env, name, domain string, status int, config datarule.RuleConfig) uint64 {
+func ruleCreate(t *testing.T, e *env, name, domain string, status int, config admindto.RuleConfigDTO) uint64 {
 	t.Helper()
 	err := e.svc.RuleCreate(context.Background(), &admindto.RuleCreateReq{
 		RuleName: name, Domain: domain, Config: config, Status: status,

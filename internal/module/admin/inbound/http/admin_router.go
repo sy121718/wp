@@ -7,8 +7,6 @@ import (
 	admincontract "go_wp/internal/module/admin/contract"
 	adminservice "go_wp/internal/module/admin/service"
 	"go_wp/internal/permission"
-	datarulepkg "go_wp/pkg/datarule"
-	"go_wp/pkg/logger"
 
 	"gorm.io/gorm"
 )
@@ -33,11 +31,9 @@ func SetupAdminRoutes(rg *permission.RouteGroup, db *gorm.DB) admincontract.Auth
 	svc := adminservice.NewService(db)
 	handle := NewHandle(svc)
 
-	// 注册数据权限 RuleProvider 到 datarule 引擎
-	datarulepkg.SetProvider(svc)
-	if err := datarulepkg.RegisterPluginWithDB(db); err != nil {
-		logger.Scene("init").Error(err, "注册 datarule GORM 插件失败")
-	}
+	// 数据权限装配（域注册 + RuleProvider + GORM 插件）在路由注册之前完成：
+	// 域没注册上的表不会被任何规则拦住，晚一步就是一段静默不设防的窗口。
+	bootstrapDataRule(svc, db)
 
 	// --- 管理员 ---
 	admin := rg.Group("/admin")
@@ -139,7 +135,6 @@ func SetupAdminRoutes(rg *permission.RouteGroup, db *gorm.DB) admincontract.Auth
 	}
 
 	// --- 数据权限规则 ---
-	registerDomains()
 	datarule := rg.Group("/datarule").Use(
 		builtin.SessionAuthMiddleware(),
 		builtin.CSRFMiddleware(),
@@ -158,20 +153,4 @@ func SetupAdminRoutes(rg *permission.RouteGroup, db *gorm.DB) admincontract.Auth
 	}
 
 	return svc
-}
-
-// registerDomains 注册所有数据域及字段白名单。
-func registerDomains() {
-	datarulepkg.RegisterDomain(datarulepkg.DomainConfig{
-		Domain:      "ADMIN",
-		DomainLabel: "管理员",
-		TableName:   "sys_admin",
-		WhiteList: []datarulepkg.FieldDef{
-			{Field: "username", Label: "用户名", DataType: "varchar", Operators: []string{"EQ", "NEQ", "LIKE", "NOT_LIKE"}},
-			{Field: "email", Label: "邮箱", DataType: "varchar", Operators: []string{"EQ", "NEQ", "LIKE"}},
-			{Field: "phone", Label: "手机号", DataType: "varchar", Operators: []string{"EQ", "NEQ"}},
-			{Field: "status", Label: "状态", DataType: "tinyint", Operators: []string{"EQ", "NEQ", "IN", "NOT_IN"}},
-			{Field: "dept_id", Label: "所属部门", DataType: "bigint", Operators: []string{"EQ", "NEQ", "IN", "NOT_IN"}},
-		},
-	})
 }

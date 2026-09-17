@@ -82,7 +82,11 @@ const (
 // --- 数据权限规则 ---
 
 const (
-	ErrRuleNotFound      = "ErrRuleNotFound"      // 数据规则不存在
-	ErrInvalidDomain     = "ErrInvalidDomain"     // 不支持的数据域
-	ErrInvalidAssignment = "ErrInvalidAssignment" // 无效的数据规则分配目标
+	ErrRuleNotFound        = "ErrRuleNotFound"        // 数据规则不存在
+	ErrInvalidDomain       = "ErrInvalidDomain"       // 不支持的数据域
+	ErrInvalidAssignment   = "ErrInvalidAssignment"   // 无效的数据规则分配目标
+	ErrRuleConfigInvalid   = "ErrRuleConfigInvalid"   // 数据规则配置不合法
+	ErrRuleFieldNotAllowed = "ErrRuleFieldNotAllowed" // 规则引用了数据域白名单之外的字段
+	ErrRuleOpNotAllowed    = "ErrRuleOpNotAllowed"    // 规则使用了该字段不支持的操作符
+	ErrRuleLogicNotAllowed = "ErrRuleLogicNotAllowed" // 条件组的组合逻辑只能是 AND 或 OR
 )

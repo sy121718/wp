@@ -30,6 +30,17 @@ import (
 	"gorm.io/gorm"
 )
 
+// orderProbeEntity 测试用订单域实体：不下任何真实表（sys_order 在迁移里不存在），
+// 只用于声明白名单，走与生产相同的 tag 语法与 TableName() 约定。
+type orderProbeEntity struct {
+	OrderNo string  `gorm:"column:order_no" datarule:"label=订单号;ops=EQ,NEQ,LIKE"`
+	DeptID  uint64  `gorm:"column:dept_id" datarule:"label=所属部门;ops=EQ,NEQ,IN,NOT_IN"`
+	Price   float64 `gorm:"column:price" datarule:"label=金额;ops=EQ,NEQ,GT,GTE,LT,LTE"`
+}
+
+// TableName 返回测试域的模拟表名（引擎按表名匹配域，与真实表无关）。
+func (orderProbeEntity) TableName() string { return "sys_order" }
+
 // env 一次测试的独立环境。
 type env struct {
 	svc  *adminservice.Service
@@ -57,29 +68,23 @@ func setupEnv(t *testing.T) *env {
 
 	db := support.NewMigratedPGTestDB(t)
 
-	// 注册测试数据域（生产由 admin_router.registerDomains 装配时注册；此处幂等注册）。
-	// ADMIN 与生产一致；ORDER 为测试模拟的第二个业务域（datarule 测试大量使用）。
-	datarule.RegisterDomain(datarule.DomainConfig{
-		Domain:      "ADMIN",
-		DomainLabel: "管理员",
-		TableName:   "sys_admin",
-		WhiteList: []datarule.FieldDef{
-			{Field: "username", Label: "用户名", DataType: "varchar", Operators: []string{"EQ", "NEQ", "LIKE", "NOT_LIKE"}},
-			{Field: "email", Label: "邮箱", DataType: "varchar", Operators: []string{"EQ", "NEQ", "LIKE"}},
-			{Field: "phone", Label: "手机号", DataType: "varchar", Operators: []string{"EQ", "NEQ"}},
-			{Field: "status", Label: "状态", DataType: "tinyint", Operators: []string{"EQ", "NEQ", "IN", "NOT_IN"}},
-			{Field: "dept_id", Label: "所属部门", DataType: "bigint", Operators: []string{"EQ", "NEQ", "IN", "NOT_IN"}},
-		},
-	})
-	datarule.RegisterDomain(datarule.DomainConfig{
-		Domain:      "ORDER",
-		DomainLabel: "订单",
-		TableName:   "sys_order",
-		WhiteList: []datarule.FieldDef{
-			{Field: "order_no", Label: "订单号", DataType: "varchar", Operators: []string{"EQ", "NEQ", "LIKE"}},
-			{Field: "price", Label: "金额", DataType: "decimal", Operators: []string{"EQ", "NEQ", "GT", "GTE", "LT", "LTE"}},
-		},
-	})
+	// 注册测试数据域：ADMIN 直接用生产声明（adminmodel.AdminDataRuleDomain，白名单由
+	// AdminEntity 的 datarule tag 派生）—— 测试与运行时同一来源，不再手抄一份白名单；
+	// ORDER 是测试模拟的第二个业务域，用本地 probe 实体声明，tag 语法与生产完全一致。
+	adminDomain, err := adminmodel.AdminDataRuleDomain()
+	if err != nil {
+		t.Fatalf("生成 ADMIN 数据域失败: %v", err)
+	}
+	if err := datarule.RegisterDomain(adminDomain); err != nil {
+		t.Fatalf("注册 ADMIN 数据域失败: %v", err)
+	}
+	orderDomain, err := datarule.DomainFromEntity("ORDER", "订单", orderProbeEntity{})
+	if err != nil {
+		t.Fatalf("生成 ORDER 数据域失败: %v", err)
+	}
+	if err := datarule.RegisterDomain(orderDomain); err != nil {
+		t.Fatalf("注册 ORDER 数据域失败: %v", err)
+	}
 
 	// casbin 单例：重置后绑定当前测试 schema（进程级全局，测试包内串行执行）。
 	if err := pkgcasbin.Close(); err != nil {

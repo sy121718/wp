@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"strings"
 
 	admindto "go_wp/internal/module/admin/dto"
 	adminenums "go_wp/internal/module/admin/enums"
@@ -57,12 +59,13 @@ func (s *Service) RuleDetail(ctx context.Context, req *admindto.RuleDetailReq) (
 
 // RuleCreate 新建数据规则。
 func (s *Service) RuleCreate(ctx context.Context, req *admindto.RuleCreateReq) error {
-	// domain 必须已注册（pkg/datarule 注册中心），否则规则落库后无引擎消费。
-	if !isRegisteredDomain(req.Domain) {
-		return errors.New(adminenums.ErrInvalidDomain)
+	// domain 必须已注册（pkg/datarule 注册中心），且配置只能引用该域声明过的字段与操作符；
+	// 白名单不在这里把关的话，规则会「落库成功但运行时被引擎静默丢弃」。
+	validated, err := validateRuleConfig(req.Domain, req.Config.ToRuleConfig())
+	if err != nil {
+		return err
 	}
-
-	config, err := encodeRuleConfig(req.Config)
+	config, err := encodeRuleConfig(validated)
 	if err != nil {
 		return err
 	}
@@ -91,12 +94,12 @@ func (s *Service) RuleUpdate(ctx context.Context, req *admindto.RuleUpdateReq) e
 	if entity == nil {
 		return errors.New(adminenums.ErrRuleNotFound)
 	}
-	// domain 必须已注册；先查存在性（规则不存在语义优先），再校验 domain。
-	if !isRegisteredDomain(req.Domain) {
-		return errors.New(adminenums.ErrInvalidDomain)
+	// 先查规则存在性（「规则不存在」语义优先），再校验 domain 与配置。
+	validated, err := validateRuleConfig(req.Domain, req.Config.ToRuleConfig())
+	if err != nil {
+		return err
 	}
-
-	config, err := encodeRuleConfig(req.Config)
+	config, err := encodeRuleConfig(validated)
 	if err != nil {
 		return err
 	}
@@ -129,11 +132,70 @@ func (s *Service) RuleDelete(ctx context.Context, req *admindto.RuleDeleteReq) e
 	return err
 }
 
-// isRegisteredDomain 校验 domain 是否已在 pkg/datarule 注册中心注册。
-// 与 RuleSchemaList/RuleSchemaDetail 同一数据源（GetRegisteredDomains）。
-func isRegisteredDomain(domain string) bool {
-	for _, d := range datarule.GetRegisteredDomains() {
-		if d.Domain == domain {
+// validateRuleConfig 校验规则配置只能引用该数据域白名单内的字段与该字段声明的操作符，
+// 并返回可直接落库的配置（字段名、逻辑、操作符都按声明口径原样保留）。
+//
+// 为什么这层必须有：白名单的消费者只有引擎的「字段名合法性」与操作符白名单 ——
+// 前者只过滤字符集（escapeField），后者只查全局 supportedOps。字段名写错、字段存在但
+// 用错操作符、OmitFields 写了本表没有的列，引擎全都静默跳过或静默无效：规则看起来生效，
+// 实际什么都没拦。所以引用完整性在这里按域声明逐项判定，不合法直接拒绝落库。
+//
+// 调用方（表单路径 adminConfigFromJSON）不经过 gin 的 binding 校验，因此各分支在这里兜底重判。
+func validateRuleConfig(domain string, cfg datarule.RuleConfig) (datarule.RuleConfig, error) {
+	declared, ok := datarule.GetDomain(domain)
+	if !ok {
+		return datarule.RuleConfig{}, errors.New(adminenums.ErrInvalidDomain)
+	}
+
+	allowed := make(map[string]datarule.FieldDef, len(declared.WhiteList))
+	for _, field := range declared.WhiteList {
+		allowed[field.Field] = field
+	}
+
+	omitFields := make([]string, 0, len(cfg.OmitFields))
+	for _, field := range cfg.OmitFields {
+		if _, ok := allowed[field]; !ok {
+			return datarule.RuleConfig{}, fmt.Errorf("%s: %s", adminenums.ErrRuleFieldNotAllowed, field)
+		}
+		omitFields = append(omitFields, field)
+	}
+
+	groups := make([]datarule.ConditionGroup, 0, len(cfg.ConditionGroups))
+	for _, group := range cfg.ConditionGroups {
+		// 引擎对未知 Logic 会静默降级为 AND（buildConditions），这里不接受「差不多」的写法。
+		// 取值口径与 dto 的 binding 声明一致（只认大写），表单路径与 JSON API 行为才不会有微妙差异。
+		logic := strings.TrimSpace(group.Logic)
+		if logic != datarule.LogicAnd && logic != datarule.LogicOr {
+			return datarule.RuleConfig{}, fmt.Errorf("%s: %s", adminenums.ErrRuleLogicNotAllowed, group.Logic)
+		}
+
+		conditions := make([]datarule.Condition, 0, len(group.Conditions))
+		for _, condition := range group.Conditions {
+			field, ok := allowed[condition.Field]
+			if !ok {
+				return datarule.RuleConfig{}, fmt.Errorf("%s: %s", adminenums.ErrRuleFieldNotAllowed, condition.Field)
+			}
+			// 同上：只认大写，且必须是该字段声明过的操作符（不是「引擎全局支持」就算数）。
+			op := strings.TrimSpace(condition.Op)
+			if strings.ToUpper(op) != op || !containsOperator(field.Operators, op) {
+				return datarule.RuleConfig{}, fmt.Errorf("%s: %s.%s", adminenums.ErrRuleOpNotAllowed, field.Field, condition.Op)
+			}
+			conditions = append(conditions, datarule.Condition{
+				Field: field.Field,
+				Op:    op,
+				Value: condition.Value,
+			})
+		}
+		groups = append(groups, datarule.ConditionGroup{Logic: logic, Conditions: conditions})
+	}
+
+	return datarule.RuleConfig{OmitFields: omitFields, ConditionGroups: groups}, nil
+}
+
+// containsOperator 报告字段声明的操作符里是否包含 op（两侧都已是大写）。
+func containsOperator(operators []string, op string) bool {
+	for _, item := range operators {
+		if strings.EqualFold(strings.TrimSpace(item), op) {
 			return true
 		}
 	}
@@ -148,10 +210,10 @@ func encodeRuleConfig(config datarule.RuleConfig) (string, error) {
 	return string(data), nil
 }
 
-func decodeRuleConfig(config string) (datarule.RuleConfig, error) {
-	var result datarule.RuleConfig
+func decodeRuleConfig(config string) (admindto.RuleConfigDTO, error) {
+	var result admindto.RuleConfigDTO
 	if err := json.Unmarshal([]byte(config), &result); err != nil {
-		return datarule.RuleConfig{}, err
+		return admindto.RuleConfigDTO{}, err
 	}
 	return result, nil
 }
@@ -220,7 +282,6 @@ func (s *Service) RuleSchemaDetail(ctx context.Context, req *admindto.RuleSchema
 				fields = append(fields, admindto.RuleFieldDef{
 					Field:     f.Field,
 					Label:     f.Label,
-					DataType:  f.DataType,
 					Operators: f.Operators,
 				})
 			}

@@ -11,6 +11,12 @@ type RuleConfig struct {
 	ConditionGroups []ConditionGroup `json:"condition_groups"` // 过滤条件组列表，组间为 AND 关系
 }
 
+// 条件组支持的组合逻辑。校验与引擎统一引用这两个常量，不再散落字面量。
+const (
+	LogicAnd = "AND"
+	LogicOr  = "OR"
+)
+
 // ConditionGroup 条件组，组内多个条件按 Logic（AND/OR）组合。
 // 多个 ConditionGroup 之间为 AND 关系。
 type ConditionGroup struct {
@@ -50,11 +56,14 @@ type DomainConfig struct {
 }
 
 // FieldDef 数据域中允许配置的字段定义，描述字段的元信息及可用的操作符。
+// 字段的可配置性由实体字段上的 datarule tag 声明，经 DomainFromEntity 派生 ——
+// 没有 tag 的字段不在白名单里，规则也只能引用白名单内的字段。
+// 只保留 label 与 operators：数据类型不是可配置性的判据，且它的权威来源是
+// 数据库 catalog（information_schema），照抄进声明只会在列型变化时静默漂移。
 type FieldDef struct {
-	Field     string   `json:"field"`     // 数据库字段名
+	Field     string   `json:"field"`     // 数据库列名（取自实体 gorm column 标签）
 	Label     string   `json:"label"`     // 字段的中文标签，用于前端展示
-	DataType  string   `json:"data_type"` // 字段数据类型：int, varchar, text, datetime 等
-	Operators []string `json:"operators"` // 该字段允许使用的操作符列表
+	Operators []string `json:"operators"` // 该字段允许使用的操作符，必须是引擎支持的操作符
 }
 
 // RuleProvider 规则查询接口，由外部模块注入实现。

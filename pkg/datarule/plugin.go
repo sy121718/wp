@@ -172,9 +172,9 @@ func buildConditions(group ConditionGroup, uc *UserContext, dialect string) (Fil
 		return FilterCondition{}, false
 	}
 
-	logic := "AND"
-	if strings.EqualFold(group.Logic, "OR") {
-		logic = "OR"
+	logic := LogicAnd
+	if strings.EqualFold(group.Logic, LogicOr) {
+		logic = LogicOr
 	}
 	return FilterCondition{
 		Query: strings.Join(queries, " "+logic+" "),

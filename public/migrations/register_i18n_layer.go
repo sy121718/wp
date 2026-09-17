@@ -33,11 +33,14 @@ func registerI18nDataLayer() {
 	})
 
 	// 058：enums 全量词条 seed（zh-CN 195 行 / en-US 79 行，ON CONFLICT 幂等）。
-	// ConditionSQL 以 zh-CN 行数为门槛：已灌满则跳过；新增词条时同步调大阈值即可重跑补齐。
+	// ConditionSQL 以 zh-CN 行数为门槛：已灌满则跳过。
+	// 注意：门槛统计的是**全库** zh-CN 行数，任何存量库都远超该值 —— 也就是说这条 seed
+	//       只在首次建库时真正执行，往列表里补词条不会生效。新增词条一律另起迁移，
+	//       并把 ConditionSQL 限制在自己的 item_key 上（样板见 226）。
 	registerSeed(Seed{
 		Version:      "058-i18n-seed-enums",
 		TableName:    "sys_i18n",
-		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 195 THEN 1 ELSE 0 END FROM sys_i18n WHERE lang = 'zh-CN'",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 199 THEN 1 ELSE 0 END FROM sys_i18n WHERE lang = 'zh-CN'",
 		SQL:          mustSQL("058_i18n_seed_enums.sql"),
 	})
 

@@ -20,7 +20,6 @@ import (
 	"go_wp/config"
 	"go_wp/internal/web/shell"
 	"go_wp/pkg/captcha"
-	"go_wp/pkg/datarule"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/response"
 
@@ -39,6 +38,7 @@ const (
 	pagesMsgDepartmentsTitle    = "MsgDepartmentsTitle"    // 部门管理
 	pagesMsgDatarulesTitle      = "MsgDatarulesTitle"      // 数据权限
 	pagesMsgFieldRequired       = "MsgFieldRequired"       // 必填字段不能为空
+	pagesMsgRuleConfigInvalid   = "ErrRuleConfigInvalid"   // 数据规则配置 JSON 不合法
 	pagesMsgAdminGenericFailed  = "MsgAdminGenericFailed"  // 操作失败，请检查输入或联系管理员
 )
 
@@ -567,7 +567,7 @@ func (h *AdminPagesHandle) DatarulesCreate(c *gin.Context) {
 	}
 	config, err := adminConfigFromJSON(shell.FieldValue(c, "config"))
 	if err != nil {
-		c.String(http.StatusBadRequest, "配置 JSON 不合法")
+		c.String(http.StatusBadRequest, pagesMsgRuleConfigInvalid)
 		return
 	}
 	if err := h.rules.RuleCreate(c.Request.Context(), &admindto.RuleCreateReq{
@@ -623,7 +623,7 @@ func (h *AdminPagesHandle) DatarulesUpdate(c *gin.Context) {
 	}
 	config, err := adminConfigFromJSON(shell.FieldValue(c, "config"))
 	if err != nil {
-		c.String(http.StatusBadRequest, "配置 JSON 不合法")
+		c.String(http.StatusBadRequest, pagesMsgRuleConfigInvalid)
 		return
 	}
 	if _, ok := c.GetPostForm("config"); !ok {
@@ -658,8 +658,8 @@ func (h *AdminPagesHandle) DatarulesDelete(c *gin.Context) {
 	c.Redirect(http.StatusSeeOther, "/admin/datarules")
 }
 
-// adminConfigToJSON 序列化 RuleConfig 为缩进 JSON 文本（编辑回显）。
-func adminConfigToJSON(cfg datarule.RuleConfig) (string, error) {
+// adminConfigToJSON 序列化规则配置为缩进 JSON 文本（编辑回显）。
+func adminConfigToJSON(cfg admindto.RuleConfigDTO) (string, error) {
 	b, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
 		return "", err
@@ -667,15 +667,16 @@ func adminConfigToJSON(cfg datarule.RuleConfig) (string, error) {
 	return string(b), nil
 }
 
-// adminConfigFromJSON 解析表单配置 JSON 文本为 RuleConfig；空文本返回空配置。
-func adminConfigFromJSON(s string) (datarule.RuleConfig, error) {
+// adminConfigFromJSON 解析表单配置 JSON 文本；空文本返回空配置。
+// 表单路径不经过 gin 的 binding 校验，形状与取值由 service 的 validateRuleConfig 兜底重判。
+func adminConfigFromJSON(s string) (admindto.RuleConfigDTO, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {
-		return datarule.RuleConfig{}, nil
+		return admindto.RuleConfigDTO{}, nil
 	}
-	var cfg datarule.RuleConfig
+	var cfg admindto.RuleConfigDTO
 	if err := json.Unmarshal([]byte(s), &cfg); err != nil {
-		return datarule.RuleConfig{}, err
+		return admindto.RuleConfigDTO{}, err
 	}
 	return cfg, nil
 }

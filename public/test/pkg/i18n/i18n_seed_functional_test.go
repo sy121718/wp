@@ -137,11 +137,11 @@ func TestI18nEnumsSeedSchemaAndIdempotency(t *testing.T) {
 	//（下面的分组断言与「en 不许缺行」的检查就是为这件事兜底的）。
 	zhCount := countRows(t, db, "sys_i18n", "lang = ?", "zh-CN")
 	enCount := countRows(t, db, "sys_i18n", "lang = ?", "en-US")
-	if zhCount != 3022 {
-		t.Fatalf("sys_i18n zh-CN 行数应为 3022（含 site.fragment.* 片段词条、176 商品列表词条，以及 187/188/189/190/191/192/193/197 八批后台模板抽取：settings/plugins/media 101、article/content 149、自定义 404 页 9、营销订单类 765、商品库存类 582、站点结构类 298、系统管理类 342、HTMX/仪表盘 8 —— 审计 I18N-001 与 SEO-013 的落地；+7 为 198 masterdata 模块文案 key 化；+17 为 216 webhook 模块文案 key 化 —— 8 个 Err*（含 SSRF 五个）与 4 个 Msg*，审计 CQ-010；+38 为 217 SEO 控制台页面文案 key 化 —— 该页 436d20b 随门禁脚本一起提交时漏了 key 化，门禁因此从第一天红着；+60 为 219 重定向管理页文案 key 化，审计 SEO-025；+18 为 222 访问统计页维度榜与保留期提示的后台模板文案 key 化，审计 SEO-019 / SEO-021；【-15】为主题包导入导出 15 条文案：该能力随 VIS-014 线下线（023 迁移 225 删除，seed 220/221 注销），总数由 3037 回落），实际 %d", zhCount)
+	if zhCount != 3026 {
+		t.Fatalf("sys_i18n zh-CN 行数应为 3022（含 site.fragment.* 片段词条、176 商品列表词条，以及 187/188/189/190/191/192/193/197 八批后台模板抽取：settings/plugins/media 101、article/content 149、自定义 404 页 9、营销订单类 765、商品库存类 582、站点结构类 298、系统管理类 342、HTMX/仪表盘 8 —— 审计 I18N-001 与 SEO-013 的落地；+7 为 198 masterdata 模块文案 key 化；+17 为 216 webhook 模块文案 key 化 —— 8 个 Err*（含 SSRF 五个）与 4 个 Msg*，审计 CQ-010；+38 为 217 SEO 控制台页面文案 key 化 —— 该页 436d20b 随门禁脚本一起提交时漏了 key 化，门禁因此从第一天红着；+60 为 219 重定向管理页文案 key 化，审计 SEO-025；+18 为 222 访问统计页维度榜与保留期提示的后台模板文案 key 化，审计 SEO-019 / SEO-021；【-15】为主题包导入导出 15 条文案：该能力随 VIS-014 线下线（023 迁移 225 删除，seed 220/221 注销），总数由 3037 回落；+4 为 226 数据规则配置校验词条 —— ErrRuleConfigInvalid / ErrRuleFieldNotAllowed / ErrRuleLogicNotAllowed / ErrRuleOpNotAllowed，域白名单收口时「越界报哪一项」的明确文案），实际 %d", zhCount)
 	}
-	if enCount != 2906 {
-		t.Fatalf("sys_i18n en-US 行数应为 2906（同上；webhook 的 17 个、SEO 控制台的 38 个、重定向管理页的 60 个与访问统计维度榜的 18 个 key 中英各一行；主题包的 15 个随 VIS-014 下线删除），实际 %d", enCount)
+	if enCount != 2910 {
+		t.Fatalf("sys_i18n en-US 行数应为 2910（同上；webhook 的 17 个、SEO 控制台的 38 个、重定向管理页的 60 个与访问统计维度榜的 18 个、数据规则配置校验的 4 个 key 中英各一行；主题包的 15 个随 VIS-014 下线删除），实际 %d", enCount)
 	}
 
 	// 4-C) 本批（222）的后台访问统计维度榜词条：18 个 key 中英成对，且取值不同。
@@ -183,6 +183,43 @@ func TestI18nEnumsSeedSchemaAndIdempotency(t *testing.T) {
 		t.Fatalf("222 词条中英匹配应为 18 对，实际 %d 对", len(dimensionPairs))
 	}
 	for _, p := range dimensionPairs {
+		if p.ZH == "" || p.EN == "" {
+			t.Fatalf("%s 中英文案不得为空（zh=%q en=%q）", p.ItemKey, p.ZH, p.EN)
+		}
+		if p.ZH == p.EN {
+			t.Fatalf("%s 中英文案相同（%q），疑似未翻译", p.ItemKey, p.ZH)
+		}
+	}
+
+	// 4-D) 数据规则配置校验词条（226）：4 个 key，中英成对且取值不同。
+	// 域白名单收口后，规则的字段/操作符越界不再静默落库，而是报出究竟哪一项越界 ——
+	// 缺了 en-US 只会让英文界面显示裸 key，与其它批次同样的坑，所以按 key 逐条对账。
+	ruleKeys := []string{
+		"ErrRuleConfigInvalid", "ErrRuleFieldNotAllowed",
+		"ErrRuleLogicNotAllowed", "ErrRuleOpNotAllowed",
+	}
+	if got := countRows(t, db, "sys_i18n", "item_key IN (?) AND lang = ?", ruleKeys, "zh-CN"); got != 4 {
+		t.Fatalf("226 的 4 个 key 应有 zh-CN 各一行，实际 %d", got)
+	}
+	if got := countRows(t, db, "sys_i18n", "item_key IN (?) AND lang = ?", ruleKeys, "en-US"); got != 4 {
+		t.Fatalf("226 的 4 个 key 应有 en-US 各一行（不许只写中文），实际 %d", got)
+	}
+	var rulePairs []struct {
+		ItemKey string
+		ZH      string
+		EN      string
+	}
+	if err := db.Table("sys_i18n AS z").
+		Select("z.item_key AS item_key, z.item_value AS zh, e.item_value AS en").
+		Joins("JOIN sys_i18n e ON e.item_key = z.item_key AND e.lang = 'en-US'").
+		Where("z.lang = 'zh-CN' AND z.item_key IN (?)", ruleKeys).
+		Scan(&rulePairs).Error; err != nil {
+		t.Fatalf("查询 226 词条中英对失败: %v", err)
+	}
+	if len(rulePairs) != 4 {
+		t.Fatalf("226 词条中英匹配应为 4 对，实际 %d 对", len(rulePairs))
+	}
+	for _, p := range rulePairs {
 		if p.ZH == "" || p.EN == "" {
 			t.Fatalf("%s 中英文案不得为空（zh=%q en=%q）", p.ItemKey, p.ZH, p.EN)
 		}

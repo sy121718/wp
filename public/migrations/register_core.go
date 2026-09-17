@@ -267,6 +267,18 @@ func registerCoreSchemaAndAccess() {
 		SQL: mustSQL("225_remove_theme_bundle_and_site_slots_menu.sql"),
 	})
 
+	// 226：数据规则配置校验词条（域白名单收口：字段/操作符越界的明确报错）。
+	// 判定限定在这 4 个 key 上，不用「全库 zh-CN 行数」当门槛 —— 其它迁移的 seed 会污染计数，
+	// 让判定恒为「已灌满」而静默跳过（058 就是这个形状，详见 226 文件头注释）。
+	registerSeed(Seed{
+		Version:   "226-i18n-seed-datarule-errors",
+		TableName: "sys_i18n",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 4 THEN 1 ELSE 0 END FROM sys_i18n " +
+			"WHERE lang = 'zh-CN' AND item_key IN ('ErrRuleConfigInvalid', 'ErrRuleFieldNotAllowed', " +
+			"'ErrRuleLogicNotAllowed', 'ErrRuleOpNotAllowed')",
+		SQL: mustSQL("226_i18n_seed_datarule_errors.sql"),
+	})
+
 	// 超管全量策略补全（每次启动检查，缺哪条补哪条）。
 	//
 	// ConditionSQL 语义是「返回 > 0 则跳过整个 seed」，因此这里必须表达
