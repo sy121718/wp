@@ -160,7 +160,7 @@ func TestSiteStructureTemplatesRender(t *testing.T) {
 			name: "admin/navigations",
 			data: map[string]any{
 				"SelectedProject": "p1", "Kind": "header",
-				"PermSet": map[string]any{"navigation:update": true, "navigation:create": true},
+				"PermSet":       map[string]any{"navigation:update": true, "navigation:create": true},
 				"Projects":      []map[string]any{{"ID": "p1", "Name": "官网"}},
 				"ParentOptions": []map[string]any{{"ID": "n1", "Title": "商品"}},
 				"SourceGroups": []map[string]any{{
