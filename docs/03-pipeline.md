@@ -10,7 +10,8 @@
 >   - §6.5 UpdateURL：`internal/module/page/service/page_publish.go`（新 URL 构建激活 + 旧 URL 301/取消激活，传 artifact uuid 而非内容 hash、占用前置检查 `ensureRouteNotOccupied`）；
 >   - §9 两段式发布回执：`publication_control.go`（pending → committed / rolled_back 补偿，含占用归属校验）。
 > - 🟡 **部分实现**：§4.4 Redirect Artifact——`redirect.json` 落盘与 symlink 激活已有（`store.go` PutRedirect/GetRedirect/DeleteRedirect），对象存储/CDN 等价实现仍为规划。
-> - 🟡 **部分实现**：§8 依赖 fan-out（PIPE-3，2026-09）：依赖记录已落库（`page_dependencies` + `presentation_dependencies`）、内容变更按 (kind,key) 精确反查并标记 stale、受影响产物自动重建（page 已发布语言自动回写线上，presentation 重建即重新发布）；**构建队列消费端（§8.3 / PIPE-2）仍未落地**，自动重建目前在内容写入请求内同步执行且有单次上限。
+> - 🟡 **部分实现**：§8 依赖 fan-out（PIPE-3，2026-09）：依赖记录已落库（`page_dependencies` + `presentation_dependencies`）、内容变更按 (kind,key) 精确反查并标记 stale、受影响产物自动重建（page 已发布语言自动回写线上，presentation 重建即重新发布）；**构建队列消费端已落地**（`internal/module/build` + `assembly_publish.go` 的 `RegisterExecutor` / `StartWorkers`），page 与 presentation 的自动重建都已改为入队执行，不在内容写入请求内同步构建。
+>   （2026-09-17 更正：本节此前写「构建队列消费端仍未落地、自动重建在请求内同步执行且有单次上限」，那是队列落地之前的描述。）
 > - ⏳ **规划态**：§7 删除/取消发布与 GC 保留期（删除/取消发布流程有，GC 保留期调度未完整模块化）。
 
 ## 1. Editor Kernel
@@ -406,10 +407,11 @@ URL 修改不是普通 props 更新：
 >
 > - 依赖记录**已落库**：页面构建成功后把 `Manifest.dependencies` 写入 `page_dependencies`（`internal/module/page/service/page_dependency.go` 的 `persistDependencies`；发布时按 Manifest 补写一次，保证活跃产物必有依赖记录）。
 > - **精确 fan-out 已替代全站标记**：内容实体增/改/删 → `content` 模块扇出 `direct_content:{type}:{id}` 与 `content_collection:collection:content:{type}` 两条键 → `pipeline.Fanout` 分发 → `page.MarkStaleByDependency` 按依赖表反查（命中条件见下方「反查口径」）→ 只标记真正受影响的页面。
-> - **自动重建已接通**：`page.RebuildStale` 对受影响页面按启用语言逐个构建（只产生 staged Artifact），**此前已发布的语言自动发布**；单次上限 20 页，超限页面保持 stale（PIPE-2 构建队列落地后应改为入队）。
+> - **自动重建已接通（走构建队列）**：`page.RebuildStale` 对受影响页面按启用语言逐个构建（只产生 staged Artifact），**此前已发布的语言自动发布**；队列接入后改为入队，由 worker 按 `FOR UPDATE SKIP LOCKED` claim 执行（多实例部署下同一来源不会被两个 worker 同时重建）。
+>   （2026-09-17 更正：此前写「单次上限 20 页、超限保持 stale」，那是队列落地前在请求内同步执行的口径。）
 > - **既有全站标记保留不退化**：`MarkStaleForTheme` / `MarkStaleForBlock` / `MarkStaleForI18n` 语义不变（来源自身无法精确表达影响面时的保守标记）。
-> - **presentation 侧已接入同一 fan-out**（2026-09 DDL 对齐修复）：`presentation_dependencies` 随构建落库（`direct_content` + `content_template` 两条键），`presentation.MarkStaleByDependency` / `RebuildStale` 与 page 侧同形（同一 `pipeline.Fanout` 注册两个来源）；实例表按生产 DDL 持久化（`stale` + `staged/active_artifact_id` 指针，无 `status`/`artifact_hash` 列），`project_id`/`template_id` 由 project 契约与 `ResolvedTemplate.TemplateID` 提供。
-> - **未完成**：menu/media/site_setting 三类依赖尚未在构建期登记（`content_template` 目前仅 presentation 侧登记，page 侧待补）；§8.3 队列消费端属 PIPE-2。
+> - **presentation 侧接入同一 fan-out**（2026-09-17 更正 —— 这里此前写「同一 `pipeline.Fanout` 注册两个来源」，**实测并非如此**）：装配处当时只 `Register(SourceTypePage, …)`，presentation 虽然实现了 `MarkStaleByDependency` / `RebuildStale`，却不在扇出里，于是「改了文章/商品，自动发布的详情页不重建」且全程零报错（第二轮架构复审 AR2-001）。现已真正注册，并补了装配期自检（`Fanout.RegisteredSourceTypes()` + wiring 端口表登记 `pipeline.Fanout.SetRebuilder(presentation)`），再漏一个来源会在启动时直接失败。`presentation_dependencies` 随构建落库（`direct_content` + `content_template` 两条键），`presentation.MarkStaleByDependency` / `RebuildStale` 与 page 侧同形；实例表按生产 DDL 持久化（`stale` + `staged/active_artifact_id` 指针，无 `status`/`artifact_hash` 列），`project_id`/`template_id` 由 project 契约与 `ResolvedTemplate.TemplateID` 提供。
+> - **未完成**：menu/media/site_setting 三类依赖尚未在构建期登记（`content_template` 目前仅 presentation 侧登记，page 侧待补）。§8.3 队列消费端已落地（见上）。
 
 ### 8.1 Revision 机制
 
