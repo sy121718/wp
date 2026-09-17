@@ -192,6 +192,19 @@ page/service → 调 pubcontract.PublicationService
 
 各模块自己负责装配 `model` 和 `service`，顶层 `routes.go` 获取通用依赖（`db`）并按依赖顺序调用模块的 Setup 函数。
 
+### 数据域（datarule）注册
+
+模块要用数据权限（行级过滤 / 字段屏蔽）时，**域声明属于拥有该表的模块**：
+
+- 白名单写在实体字段的 tag 上：`DeptID uint64 `gorm:"column:dept_id" datarule:"label=所属部门;ops=EQ,NEQ,IN,NOT_IN"`，
+  没有 tag 的字段不可配（fail-closed）；表名取实体的 `TableName()`，不另写字符串；
+- 域值由 model 暴露（如 `adminmodel.AdminDataRuleDomain()`），**注册动作在装配入口**完成，
+  并且要在注册路由之前 —— 域没注册上的表不会被任何规则拦住（引擎按表名匹配域，匹配不到就直接放行）；
+- 声明写错（未知操作符、缺 label、字段名非法）一律装配期失败，不要降级成「这个域没有白名单」；
+- 运行时校验在 service：规则的字段/操作符必须属于该域声明，越界拒绝落库（模板见
+  `internal/module/admin/service/datarule_crud.go` 的 `validateRuleConfig`），
+  request 形状与枚举放 dto 的 `binding` tag。
+
 对于需要跨模块契约的模块，顶层 routes.go 在调用时从被依赖模块获取契约并传递过去：
 
 ```go

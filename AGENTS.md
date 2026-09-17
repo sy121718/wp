@@ -238,6 +238,12 @@ Cookie 属性：`HttpOnly`、`Secure`（release 自动启用）、`SameSite=Lax`
   **含超管在内全员 403**（072/077/078/079 各踩过一次，151 又补了 page:delete 与 block:clone）。
   改完跑 `bash scripts/check-permission-gaps.sh` 审计「有路由、无权限点」的接口
 - datarule 插件字段引用按方言（PG 双引号 / MySQL 反引号）；部门范围整段精确匹配
+- **数据域（datarule）白名单由拥有该表的实体声明**：实体字段上写 `datarule:"label=用户名;ops=EQ,NEQ,LIKE"`，
+  经 `pkg/datarule.DomainFromEntity` 派生（表名取实体 `TableName()`，列名取 gorm `column` 标签），
+  由模块装配入口注册（样板：`internal/module/admin/inbound/http/datarule_bootstrap.go`）。
+  **没有 tag 的字段不在白名单里**（fail-closed），不要另抄一份字段表 —— 抄错列名不会报错，
+  只会在运行时表现为「过滤条件被静默丢弃 / Omit 一个不存在的列」，规则看起来生效、实际什么都没拦。
+  规则配置的字段与操作符在写入侧按域声明逐项校验（dto 声明形状与枚举，service 判定是否属于该域）
 - **时间列命名统一为 `create_time` / `update_time`**（审计 DB-019，迁移 205 收口）：全库已无 `created_at` / `updated_at`，新表新列一律用 `*_time`，不要再引入 `*_at`
 - **时间列类型统一 `timestamptz`**（迁移 212 收口）：全库 191 个时间列现在都是 `timestamp with time zone`。最后 4 个是 webhook 两张表的 `create_time`/`update_time`（199 建表时用 BIGINT 存 `time.Now().Unix()`，205 只改了列名没改类型，于是它们成了仅有的例外），212 用 `USING to_timestamp(...)` 转换过来。**新表一律 `timestamptz` + Go 的 `time.Time`**，不要再引入 int64 时间戳：它丢掉亚秒精度（投递日志同秒内排序不稳定）、无法直接用 PG 的时间运算与区间索引（BRIN / `date_trunc` 分组要先转换）、与其它表的列比较必须显式转换
 - **软删除列名统一为 `deleted_at`**（审计 DB-020，迁移 208 收口）：`sys_menus` 原本的 `deleted_time` 已改名。`sys_attachment` 用 `status` 表达删除属**存量例外**，新表不要照抄

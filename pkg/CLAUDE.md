@@ -12,7 +12,7 @@ pkg/
 ├── casbin/        # 鉴权（自研 persist.Adapter，SyncedEnforcer）
 ├── crypto/        # 签名与哈希
 ├── database/      # 数据库（PostgreSQL 主库 / MySQL 兼容）
-├── datarule/      # 数据权限（方言引用符 + 部门整段匹配）
+├── datarule/      # 数据权限（域白名单 + 方言引用符 + 部门整段匹配）
 ├── enums/         # 历史兼容常量仓库
 ├── i18n/          # 文案直查
 ├── logger/        # 结构化日志
