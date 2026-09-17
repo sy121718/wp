@@ -356,6 +356,28 @@ func (a *assembly) startRuntimeTasks() {
 	// 再由内容服务持有扇出端口；presentation 侧待其 DB 持久化对齐后接入同一 Fanout。
 	fanout := pipeline.NewFanout()
 	fanout.Register(pipeline.SourceTypePage, pageService)
+	// 自动发布实例同样是依赖失效目标（审计 AR2-001）：它实现了 MarkStaleByDependency 与
+	// RebuildStale，但此前**没有被注册进扇出** —— 页面上引用的文章 / 商品更新时，手工 Page
+	// 会重建、自动发布的详情页不会：数据库里的内容 revision 已经变了，访问面继续提供旧字节，
+	// 全程没有任何报错。注册后 presentation 侧的失效按同一套语义走（PRES-020 之后是入队，
+	// 不在触发进程里同步重建）。
+	fanout.Register(pipeline.SourceTypePresentation, presentationSvc)
+	// 漏注册一个发布来源不会报错（审计 AR2-001）：它只是永远不参与失效标记与自动重建，
+	// 表现是「内容更新了、那一类页面停在旧版本」，日志里什么都没有。所以这里显式断言
+	// 期望的来源都在 —— 把「静默少接一个」变成启动即失败，而不是等到线上内容陈旧才被发现。
+	registeredSources := fanout.RegisteredSourceTypes()
+	for _, want := range []string{pipeline.SourceTypePage, pipeline.SourceTypePresentation} {
+		found := false
+		for _, got := range registeredSources {
+			if got == want {
+				found = true
+				break
+			}
+		}
+		if !found {
+			panic("依赖扇出缺少发布来源 " + want + "：该来源的内容更新既不会被标记也不会自动重建（审计 AR2-001）")
+		}
+	}
 	// SetRebuilder 对 nil 是**静默 no-op**（「未绑定时只标记不重建」）—— 若 pageService
 	// 没实现 StaleRebuilder，内容保存会照常成功、stale 也照常标记，只是永远不重建：
 	// 线上内容停在旧版本，没有任何报错（审计 CQ-019）。故先断言再注入。
@@ -365,6 +387,12 @@ func (a *assembly) startRuntimeTasks() {
 	}
 	fanout.SetRebuilder(pipeline.SourceTypePage, pageRebuilder)
 	marks.mark(portPipelinePageRebuilder)
+	presentationRebuilder, ok := presentationSvc.(pipeline.StaleRebuilder)
+	if !ok {
+		panic("自动发布模块未实现依赖失效重建接口（pipeline.StaleRebuilder）")
+	}
+	fanout.SetRebuilder(pipeline.SourceTypePresentation, presentationRebuilder)
+	marks.mark(portPipelinePresentationRebuilder)
 	contentSvc.SetDependencyInvalidator(fanout)
 	marks.mark(portContentDependencyInvalidator)
 

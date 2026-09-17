@@ -75,6 +75,7 @@ const (
 	portPresentationProductDataSource  = "presentation.SetProductDataSource"
 	portPresentationSiteAssembly       = "presentation.SetNavigationService/SetSitePageResolver/SetMediaProbe/SetPluginService"
 	portPipelinePageRebuilder          = "pipeline.Fanout.SetRebuilder(page)"
+	portPipelinePresentationRebuilder  = "pipeline.Fanout.SetRebuilder(presentation)"
 	portContentDependencyInvalidator   = "content.SetDependencyInvalidator"
 	portNavigationSourceResolver       = "navigation.SetSourceResolver"
 	portDashboardBlueprints            = "dashboard.SetBlueprints"
@@ -190,6 +191,8 @@ var wiringManifest = []wiringEntry{
 		"自动发布详情页缺头尾菜单 / 槽位链接 / 响应式 srcset / 插件组件（只有详情页受影响）"},
 	{portPipelinePageRebuilder, "page", "pipeline.Fanout", wiringRequiredPort,
 		"内容变更只标记 stale 不自动重建（线上内容停在旧版本）"},
+	{portPipelinePresentationRebuilder, "presentation", "pipeline.Fanout", wiringRequiredPort,
+		"自动发布的详情页不在失效扇出里：内容更新只重建手工页，详情页继续给旧字节（审计 AR2-001）"},
 	{portContentDependencyInvalidator, "pipeline.Fanout", "content", wiringOptionalDegraded,
 		"内容变更不触发精确失效（行为与本端口接入前逐字一致）"},
 	{portNavigationSourceResolver, "navsource", "navigation", wiringOptionalDegraded,

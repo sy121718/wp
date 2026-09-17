@@ -127,6 +127,26 @@ func (f *Fanout) Register(sourceType string, t DependencyTarget) {
 	f.targets = append(f.targets, targetEntry{sourceType: sourceType, target: t})
 }
 
+// RegisteredSourceTypes 返回已注册的失效来源类型（按注册顺序）。
+//
+// 为什么需要它：**漏注册一个发布来源不会报错**。该来源既不参与失效标记、也不参与
+// 自动重建，表现是「内容更新了，但那一类页面永远停在旧版本」，日志里什么都没有 ——
+// 审计 AR2-001 的 presentation 就是这样漏掉的（它的 MarkStaleByDependency 与
+// RebuildStale 都写好了，只是没人把它注册进来）。装配期必须能断言「我期望的来源都在」，
+// 否则连「少接了一个」这件事本身都无从发现。
+func (f *Fanout) RegisteredSourceTypes() []string {
+	if f == nil {
+		return nil
+	}
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+	out := make([]string, 0, len(f.targets))
+	for _, e := range f.targets {
+		out = append(out, e.sourceType)
+	}
+	return out
+}
+
 // SetSyncRebuild 测试专用：为 true 时 RebuildStale 在当前 goroutine 执行（默认异步）。
 func (f *Fanout) SetSyncRebuild(v bool) {
 	if f == nil {
