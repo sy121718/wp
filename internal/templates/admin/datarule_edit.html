@@ -7,7 +7,9 @@
     <section class="card">
         <div class="card-header"><span class="card-title">{{ .["t"]("admin.datarules.edit_page_title", "编辑数据规则 #") }}{{.Detail.ID}}</span></div>
         <div class="card-body">
-            <form method="post" action="/admin/datarules/update" class="form-inline">
+            {* 不用 form-inline：它是 flex 容器，会把 .form-row 压成内容宽（grid 的 auto-fit 因此
+               永远排不出多列，四个字段挤在左侧一列）。普通块级表单里 .form-row 才能铺满一行。 *}
+            <form method="post" action="/admin/datarules/update">
                 <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
                 <input type="hidden" name="id" value="{{.Detail.ID}}">
                 <div class="form-row">
@@ -17,7 +19,10 @@
                     </div>
                     <div class="form-group">
                         <label class="form-label req">{{ .["t"]("admin.datarules.field.domain", "数据域") }}</label>
-                        <select name="domain" class="form-select">
+                        {* 换域即按新域白名单重渲染条件区（字段 / 操作符都跟着换）。 *}
+                        <select name="domain" class="form-select"
+                                hx-post="/admin/datarules/config-editor" hx-include="closest form"
+                                hx-vals='{"action":"refresh"}' hx-target="#datarule-config-editor" hx-swap="innerHTML">
                             {{range _, dm := .Domains}}
                             <option value="{{dm.Domain}}"{{if .Detail.Domain == dm.Domain}} selected{{end}}>{{dm.DomainLabel}}{{tr("admin.datarules.paren_open", "（")}}{{dm.Domain}}{{tr("admin.datarules.paren_close", "）")}}</option>
                             {{end}}
@@ -35,12 +40,15 @@
                         <input type="text" name="remark" class="form-input" maxlength="200" value="{{if .Detail.Remark}}{{.Detail.Remark}}{{end}}">
                     </div>
                 </div>
-                <div class="form-group">
-                    <label class="form-label">{{ .["t"]("admin.datarules.field.config_plain", "配置（RuleConfig JSON）") }}</label>
-                    <textarea name="config" class="form-textarea" rows="10">{{.Config}}</textarea>
+                {* 配置编辑器标记：出现即表示本次提交带完整配置（列表抽屉不带，沿用库中配置） *}
+                <input type="hidden" name="config_editor" value="1">
+                {* 不传参：片段与本页共享同一份数据上下文（片段里取 .Editor），
+                   与片段端点自己渲染时的形状一致 —— 否则同一份模板会有两种数据形状。 *}
+                {{include "partials/datarule_config_editor.html"}}
+                <div class="action-row">
+                    <button type="submit" class="btn btn-primary">{{ .["t"]("admin.datarules.action.save_plain", "保存") }}</button>
+                    <a class="btn" href="/admin/datarules">{{ .["t"]("admin.datarules.action.back", "返回列表") }}</a>
                 </div>
-                <button type="submit" class="btn btn-primary">{{ .["t"]("admin.datarules.action.save_plain", "保存") }}</button>
-                <a class="btn" href="/admin/datarules">{{ .["t"]("admin.datarules.action.back", "返回列表") }}</a>
             </form>
         </div>
     </section>

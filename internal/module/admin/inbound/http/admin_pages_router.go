@@ -59,6 +59,8 @@ func SetupAdminPages(adminPages *gin.RouterGroup,
 	adminPages.POST("/datarules/create", builtin.CasbinMiddlewareForPath("/api/datarule/create"), handle.DatarulesCreate)
 	adminPages.POST("/datarules/update", builtin.CasbinMiddlewareForPath("/api/datarule/update"), handle.DatarulesUpdate)
 	adminPages.POST("/datarules/delete", builtin.CasbinMiddlewareForPath("/api/datarule/delete"), handle.DatarulesDelete)
+	// 配置编辑器片段：纯渲染、不落库，因此不挂 Casbin（写入仍走 /datarules/update）。
+	adminPages.POST("/datarules/config-editor", handle.DataruleConfigEditor)
 
 	// 文案词条页（审计 I18N-003）：读页面不挂 Casbin（与其它只读页一致），
 	// 写操作挂 i18n:manage（/api/i18n/save）——漏挂等于任何登录管理员都能改全站文案。

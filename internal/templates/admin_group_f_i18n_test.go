@@ -35,6 +35,8 @@ var groupFTemplates = []string{
 	"admin/masterdata_changes.html",
 	"admin/datarules.html",
 	"admin/datarule_edit.html",
+	// 数据规则配置编辑器片段：随编辑页下线裸 JSON textarea 后新增，纳入本批门禁。
+	"admin/partials/datarule_config_editor.html",
 	"admin/analytics.html",
 }
 

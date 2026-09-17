@@ -82,10 +82,7 @@
             <label class="form-label">{{ .["t"]("admin.datarules.field.remark", "备注") }}</label>
             <input type="text" name="remark" class="form-input" maxlength="200">
         </div>
-        <div class="form-group">
-            <label class="form-label">{{ .["t"]("admin.datarules.field.config", "配置（可选，RuleConfig JSON）") }}</label>
-            <textarea name="config" class="form-textarea" rows="4" placeholder='{"omit_fields":[],"condition_groups":[]}'></textarea>
-        </div>
+        <p class="hint">{{ .["t"]("admin.datarules.create.config_hint", "创建后到编辑页配置屏蔽字段与过滤条件｜字段与操作符都来自该数据域的声明") }}</p>
         <div class="form-actions">
             <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.datarules.action.cancel", "取消") }}</button>
             <button type="submit" class="btn btn-primary">{{ .["t"]("admin.datarules.action.create_submit", "创建规则") }}</button>

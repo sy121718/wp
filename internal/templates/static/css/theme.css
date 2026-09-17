@@ -783,3 +783,40 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
 @media (max-width: 639px) {
     .admin-content { padding: var(--sp-md) 10px; }
 }
+
+/* 数据规则配置编辑器（admin/datarule_edit.html + partials/datarule_config_editor.html）。
+   鼠标 / 触屏 / 键盘三路都要能用，所以控件全用原生表单元素（select / input / checkbox）、
+   布局用 grid：窄屏自动堆叠，宽度一律 min(100%, …)，不写死像素宽度（见组件多端规范）。 */
+.datarule-editor { display: grid; gap: 12px; }
+.datarule-editor .checkbox-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 180px), 1fr));
+    gap: 8px 12px;
+}
+.datarule-editor .checkbox-item { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.datarule-editor .checkbox-item input[type="checkbox"] {
+    width: 16px; height: 16px; margin: 0; flex: none;
+    accent-color: var(--sky-c-primary, #3d444f);
+}
+.datarule-editor .checkbox-item span { min-width: 0; overflow-wrap: anywhere; }
+.datarule-group {
+    display: grid; gap: 8px;
+    margin: 0 0 12px; padding: 12px;
+    border: 1px solid var(--sky-c-border, #e5e7eb); border-radius: 8px;
+}
+.datarule-group-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.datarule-group-title { font-weight: 600; }
+/* select 被 select.js 包进 .wbs（增强控件），限宽必须同时落在包装层上 ——
+   只限原生 select 的话包装层仍是满宽，会把同行的「删除本组」挤到下一行。 */
+.datarule-group-head .form-select,
+.datarule-group-head .wbs { width: min(100%, 280px); }
+.datarule-row {
+    display: grid; gap: 8px; align-items: center;
+    grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1.4fr) auto;
+}
+.datarule-row .form-select, .datarule-row .form-input { width: 100%; min-width: 0; }
+/* 平板及以下：一行放不下三个控件，改为纵向堆叠（触摸目标不缩小）。 */
+@media (max-width: 900px) {
+    .datarule-row { grid-template-columns: 1fr; }
+    .datarule-row .btn { justify-self: start; }
+}

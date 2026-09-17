@@ -11,7 +11,6 @@ package adminhttp
 // 页面文案标题沿用原有 i18n 词条 key（与 dashboard 副本逐字一致，保证渲染不变）。
 
 import (
-	"encoding/json"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -557,7 +556,9 @@ func (h *AdminPagesHandle) DatarulesPage(c *gin.Context) {
 }
 
 // DatarulesCreate 新建数据规则（POST /admin/datarules/create）。
-// config 为可选 JSON 文本（RuleConfig；缺省给空配置 {}）。
+//
+// 创建只收基础字段：规则配置在编辑页按该数据域的白名单逐项填写 —— 列表页的抽屉表单是
+// 静态模板、拿不到白名单，让它在没有字段清单的情况下收配置等于把 JSON 换了个地方手写。
 func (h *AdminPagesHandle) DatarulesCreate(c *gin.Context) {
 	ruleName := shell.FieldValue(c, "rule_name")
 	domain := shell.FieldValue(c, "domain")
@@ -565,13 +566,8 @@ func (h *AdminPagesHandle) DatarulesCreate(c *gin.Context) {
 		c.String(http.StatusBadRequest, pagesMsgFieldRequired)
 		return
 	}
-	config, err := adminConfigFromJSON(shell.FieldValue(c, "config"))
-	if err != nil {
-		c.String(http.StatusBadRequest, pagesMsgRuleConfigInvalid)
-		return
-	}
 	if err := h.rules.RuleCreate(c.Request.Context(), &admindto.RuleCreateReq{
-		RuleName: ruleName, Domain: domain, Config: config,
+		RuleName: ruleName, Domain: domain, Config: admindto.RuleConfigDTO{},
 		Status: shell.ParseStatus(c.PostForm("status")), Remark: shell.FieldValue(c, "remark"),
 	}); err != nil {
 		shell.AdminWriteFailed(c, err)
@@ -597,22 +593,22 @@ func (h *AdminPagesHandle) DatarulesEditPage(c *gin.Context) {
 	if domains == nil {
 		domains = []admindto.RuleDomainItem{}
 	}
-	configJSON, err := adminConfigToJSON(detail.Config)
-	if err != nil {
-		configJSON = ""
-	}
+	// 条件编辑器按该数据域的白名单渲染（字段 / 操作符下拉都来自域声明）。
+	editor := h.dataruleEditorContext(c, detail.Domain, detail.Config)
 	c.HTML(http.StatusOK, "admin/datarule_edit", shell.Prepare(c, gin.H{
 		"title":   pagesMsgDatarulesTitle,
 		"menu":    "datarules",
 		"Detail":  detail,
 		"Domains": domains,
-		"Config":  configJSON,
+		"Editor":  editor,
 	}))
 }
 
 // DatarulesUpdate 保存数据规则（POST /admin/datarules/update）。
-// config 为可选字段：列表抽屉表单不含该字段（列表 dto 无 config），此时沿用库中原配置，
-// 避免「只改基础字段」把规则配置清空；显式提交 config（含空串）仍按提交值处理。
+//
+// 配置来源按提交内容判定：带编辑器标记的（编辑页）从表单重建配置，否则沿用库中原配置 ——
+// 列表抽屉只改基础字段，不该把规则配置清空。空行与空条件组在这里被清掉：字段为空的行会被
+// 引擎直接丢弃、值为空的行会变成 field = ”，两种都会让界面上的条数与实际生效的条数对不上。
 func (h *AdminPagesHandle) DatarulesUpdate(c *gin.Context) {
 	id := shell.ParseUint(c.PostForm("id"))
 	ruleName := shell.FieldValue(c, "rule_name")
@@ -621,12 +617,10 @@ func (h *AdminPagesHandle) DatarulesUpdate(c *gin.Context) {
 		c.String(http.StatusBadRequest, pagesMsgFieldRequired)
 		return
 	}
-	config, err := adminConfigFromJSON(shell.FieldValue(c, "config"))
-	if err != nil {
-		c.String(http.StatusBadRequest, pagesMsgRuleConfigInvalid)
-		return
-	}
-	if _, ok := c.GetPostForm("config"); !ok {
+	config := admindto.RuleConfigDTO{}
+	if c.PostForm(dataruleEditorMarker) != "" {
+		config = dataruleDropEmptyGroups(dataruleConfigFromForm(c))
+	} else {
 		detail, detailErr := h.rules.RuleDetail(c.Request.Context(), &admindto.RuleDetailReq{ID: id})
 		if detailErr != nil || detail == nil {
 			shell.AdminWriteFailed(c, detailErr)
@@ -656,29 +650,6 @@ func (h *AdminPagesHandle) DatarulesDelete(c *gin.Context) {
 		return
 	}
 	c.Redirect(http.StatusSeeOther, "/admin/datarules")
-}
-
-// adminConfigToJSON 序列化规则配置为缩进 JSON 文本（编辑回显）。
-func adminConfigToJSON(cfg admindto.RuleConfigDTO) (string, error) {
-	b, err := json.MarshalIndent(cfg, "", "  ")
-	if err != nil {
-		return "", err
-	}
-	return string(b), nil
-}
-
-// adminConfigFromJSON 解析表单配置 JSON 文本；空文本返回空配置。
-// 表单路径不经过 gin 的 binding 校验，形状与取值由 service 的 validateRuleConfig 兜底重判。
-func adminConfigFromJSON(s string) (admindto.RuleConfigDTO, error) {
-	s = strings.TrimSpace(s)
-	if s == "" {
-		return admindto.RuleConfigDTO{}, nil
-	}
-	var cfg admindto.RuleConfigDTO
-	if err := json.Unmarshal([]byte(s), &cfg); err != nil {
-		return admindto.RuleConfigDTO{}, err
-	}
-	return cfg, nil
 }
 
 // --- 文案词条页（审计 I18N-003） ---
