@@ -50,13 +50,7 @@ func registerOrderAndSiteSlots() {
 		SQL: mustSQL("139_page_site_slot_permissions.sql"),
 	})
 
-	// 140：后台菜单入口。
-	registerSeed(Seed{
-		Version:      "140-page-site-slot-menu",
-		TableName:    "sys_menus",
-		ConditionSQL: "SELECT COUNT(*) FROM sys_menus WHERE title = '系统页面' AND type = 2 AND deleted_at IS NULL",
-		SQL:          mustSQL("140_page_site_slot_menu.sql"),
-	})
+	// 140：后台菜单入口 —— 已随「系统页面槽位并入主题管理页」下线（迁移 225 删除存量菜单行）。
 
 	// 137：访客下单自动开号用的「初始密码」邮件模板。
 	registerSeed(Seed{

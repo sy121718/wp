@@ -228,6 +228,45 @@ func registerCoreSchemaAndAccess() {
 		SQL:          mustSQL("052_menu_icons.sql"),
 	})
 
+	// 224：后台导航菜单收口 —— 侧栏改由 sys_menus 驱动（唯一真源）。
+	//
+	// 侧栏此前读的是 dashboard 包里硬编码的 navConfig，与这张表双份漂移
+	// （路径前缀都不同，交集只剩 1 条），且漏掉十几个已存在的页面。
+	// 现在 navConfig 已删除，本 seed 把表的菜单树修正成可渲染形态。
+	//
+	// ConditionSQL 表达「收口已完成」：6 个分组目录 + 仪表盘全部就位才跳过。
+	// 不用「仪表盘存在」单条判定 —— 那条最容易先成功，中途失败会让半成品数据
+	// 被误判为已完成而永不修复；本条件在部分缺失时返回 0 → 重跑补齐（SQL 幂等）。
+	registerSeed(Seed{
+		Version:   "224-admin-nav-menu-rebuild",
+		TableName: "sys_menus",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) = 7 THEN 1 ELSE 0 END FROM sys_menus " +
+			"WHERE deleted_at IS NULL AND (" +
+			"(type = 1 AND title IN ('管理', '内容', '商品与库存', '交易', '站点', '系统')) " +
+			"OR (type = 2 AND path = '/admin'))",
+		SQL: mustSQL("224_admin_nav_menu_rebuild.sql"),
+	})
+
+	// 225：主题架构简化 —— 删除主题包导入导出权限点与「系统页面」菜单（VIS-014 下线）。
+	//
+	// 配套改动：220 / 221 / 140 三个 seed 已连注册带 SQL 注销（否则存在性判定会把
+	// 删掉的数据重新灌回）；槽位页面与 page:site_slot_* 权限点保留，运营入口改在
+	// 主题管理页顶部（admin/theme.html）。
+	// CheckSQL 表达「清理已完成」：三类目标行全为 0 才跳过（条件删除，天然幂等）。
+	register(Migration{
+		Version:   "225-remove-theme-bundle-and-site-slots-menu",
+		TableName: "sys_permission",
+		CheckSQL: "SELECT CASE WHEN COUNT(*) = 0 THEN 1 ELSE 0 END FROM (" +
+			"SELECT permission_code FROM sys_permission WHERE (CAST(? AS text) IS NOT NULL) " +
+			"AND permission_code IN ('project:theme_export', 'project:theme_import') " +
+			"UNION ALL SELECT title FROM sys_menus WHERE type = 2 AND permission_code = 'page:site_slot_list' " +
+			"AND path IN ('/site-slots', '/admin/site-slots') " +
+			"UNION ALL SELECT v3 FROM sys_casbin_rule WHERE ptype = 'p' " +
+			"AND v3 IN ('project:theme_export', 'project:theme_import')" +
+			") AS leftover",
+		SQL: mustSQL("225_remove_theme_bundle_and_site_slots_menu.sql"),
+	})
+
 	// 超管全量策略补全（每次启动检查，缺哪条补哪条）。
 	//
 	// ConditionSQL 语义是「返回 > 0 则跳过整个 seed」，因此这里必须表达

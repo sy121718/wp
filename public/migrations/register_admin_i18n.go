@@ -778,33 +778,7 @@ func registerAdminI18nSeedsAndLatest() {
 		SQL: mustSQL("219_i18n_seed_admin_redirects.sql"),
 	})
 
-	// 220：主题包（Theme Bundle）导入导出权限点与超管策略（审计 VIS-014）。
-	// 判定把两个权限点代码写进 SQL 字面量：Seed 的 ConditionSQL 不接收参数，
-	// 而用 LIKE 'project:theme_%' 会被 035 已有的 6 个主题权限点满足 ——
-	// 那样这条 seed 在干净库上会被静默跳过，新增的两个接口连超管都 403。
-	registerSeed(Seed{
-		Version:   "220-theme-bundle-permissions",
-		TableName: "sys_permission",
-		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 2 THEN 1 ELSE 0 END FROM sys_permission " +
-			"WHERE permission_code IN ('project:theme_export', 'project:theme_import')",
-		SQL: mustSQL("220_theme_bundle_permissions.sql"),
-	})
-
-	// 221：主题包业务文案词条（15 个 enums key × 2 语言）。
-	// 判据按本批自己的 key 全集合枚举计数：前缀 LIKE 会被将来同前缀的词条满足，
-	// 本批就被静默跳过了（060 踩过这个坑）。
-	registerSeed(Seed{
-		Version:   "221-i18n-seed-theme-bundle",
-		TableName: "sys_i18n",
-		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 15 THEN 1 ELSE 0 END FROM sys_i18n " +
-			"WHERE lang = 'zh-CN' AND item_key IN ('ErrThemeBundleFileRequired', " +
-			"'ErrThemeBundleFormatUnknown', 'ErrThemeBundleMissingManifest', 'ErrThemeBundleManifestInvalid', " +
-			"'ErrThemeBundleVersionTooNew', 'ErrThemeBundleVersionInvalid', 'ErrThemeBundleUnsafeEntry', " +
-			"'ErrThemeBundleTooLarge', 'ErrThemeBundleTokensInvalid', 'ErrThemeBundleBlockMissing', " +
-			"'ErrThemeBundleBlockCycle', 'ErrThemeBundleAssetMissing', 'ErrThemeBundlePortUnavailable', " +
-			"'MsgThemeBundleImported', 'MsgThemeBundleImportedPartial')",
-		SQL: mustSQL("221_i18n_seed_theme_bundle.sql"),
-	})
+	// 220 / 221：主题包导入导出权限点与业务词条 —— 已随 VIS-014 线下线（迁移 225 清理存量）。
 
 	// 222：访问统计页维度榜与保留期提示的后台模板文案词条（18 个 template key × 2 语言，
 	// SEO-019 / SEO-021 的读路径）。
