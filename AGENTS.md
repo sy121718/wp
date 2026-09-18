@@ -177,7 +177,16 @@ Artifact          ≠ 可编辑源码
 - 所有后台页面由 Go 服务端使用 Jet v6 渲染，实现 `gin.HTMLRender` 接口包装为 Gin 标准 Render
 - 模板位置：`internal/templates/admin/`（后台页面）、`internal/templates/components/`（构建期组件，go:embed）
 - 开发模式 `jet.DevelopmentMode(true)` 禁用模板缓存；**生产模式必须关闭**（由部署配置驱动）
-- Jet 模板内 CSRF token 注入必须用 chain 索引写法 `{{ .["csrf_token"] }}`（`{{.csrf_token}}` 缺 key 会运行时报错）
+- Jet 模板内 CSRF token 只有**一条取值链**：渲染数据键 `csrf_token`，经 chain 索引 `{{ .["csrf_token"] }}` 取出。
+  两种写法**等价且都合法**，按复用程度选：
+  · 直接用 `{{ .["csrf_token"] }}`（也用于存在性判断，如 `{{if .["DevLogin"]}}`）—— map 末级缺 key 安全；
+  · 或文件顶部 `{{csrf := .["csrf_token"]}}` 声明一次、本文件内复用 `{{csrf}}` —— 41 个模板 / 157 处的**事实主流**写法。
+  `{{csrf}}` 是 Jet 的**模板内 let 变量，不是全局函数**（`internal/templates/funcs.go` 的 `injectGlobals` 未注册任何 csrf 符号）：
+  未声明就裸用会报 `identifier "csrf" not available …`，且声明必须在使用之前。
+- **禁止 `{{.csrf_token}}`（点号无索引）**：data 是 map 时缺 key 会运行时报错中断渲染（状态码仍是 200，之后的 HTML 整块消失）。
+- 注入点：后台页面 `shell.Prepare`（`internal/web/shell/shell.go`）、访客页面 `user.Handle.render`；
+  **fragment 模板例外** —— `fragments/*.jet` 的 data 是 struct（字段 `CSRFToken`），chain 索引会报
+  `can't use csrf_token as field name in struct type`，只能写 `{{ .CSRFToken }}`。详见 `internal/templates/CLAUDE.md`。
 
 ### 交互方式（HTMX）
 
