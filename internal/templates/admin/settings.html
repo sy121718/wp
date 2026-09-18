@@ -162,8 +162,13 @@
     </form>
 
     {* 语言分组（多语言 P3）：站点语言清单真源 project_locales，经 project 契约读写。
-        行片段走 HTMX 服务端渲染（增/删一行即时回显），整表提交落库。 *}
-    <details class="section-fold card">
+        行片段走 HTMX 服务端渲染（增/删一行即时回显），整表提交落库。
+
+        **默认展开**：这是功能区（增删语言清单）而不是口径说明。折叠策略针对的是说明文字，
+        把编辑入口一并折起来会让「站点现在有哪几种语言、去哪儿加」无处可寻 —— 实际表现是
+        「多语言页面里只有中文，也找不到添加语言的地方」（清单为空时 EnabledLangs 会兜底成
+        默认语言，页面不会报错，只是没有别的语言可选）。 *}
+    <details class="section-fold card" open>
         <summary>
             <span class="fold-title">{{ .["t"]("admin.settings.locales.title", "语言") }}</span>
             <span class="fold-note">{{ .["t"]("admin.settings.locales.summary_note", "站点语言清单与访问路径方案") }}</span>

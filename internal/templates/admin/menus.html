@@ -60,7 +60,7 @@
                 {{if canDelete}}<td class="col-check"><input type="checkbox" name="ids" value="{{m.ID}}" data-check-item aria-label="{{ .["t"]("admin.common.bulk.selectRow", "选择该行") }}"></td>{{end}}
                 {* 图标由 admin.js 在图标库加载后填充 SVG（data-icon-name 为图标库键名） *}
                 <td class="col-icon"><span class="menu-icon" data-icon-name="{{if m.Icon}}{{m.Icon}}{{end}}"></span></td>
-                <td>{{m.Indent}}{{m.Title}}</td>
+                <td>{{if isset(.PermSet["menu:update"])}}<button type="button" class="row-title-link" data-drawer-open="#tpl-menu-edit-{{m.ID}}" data-drawer-title="{{tr("admin.menus.edit_drawer_prefix", "编辑菜单：")}}{{m.Title}}">{{m.Indent}}{{m.Title}}</button>{{else}}{{m.Indent}}{{m.Title}}{{end}}</td>
                 <td>{{if m.Type == 1}}<span class="badge badge-mute">{{tr("admin.menus.type.dir", "目录")}}</span>{{else if m.Type == 2}}<span class="badge">{{tr("admin.menus.type.menu", "菜单")}}</span>{{else if m.Type == 3}}<span class="badge badge-mute">{{tr("admin.menus.type.button", "按钮")}}</span>{{else if m.Type == 4}}<span class="badge badge-mute">iframe</span>{{else if m.Type == 5}}<span class="badge badge-mute">{{tr("admin.menus.type.link", "外链")}}</span>{{else}}<span class="badge badge-mute">{{tr("admin.menus.type.unknown", "未知")}}</span>{{end}}</td>
                 <td class="text-mute">{{if m.Path}}{{m.Path}}{{end}}</td>
                 <td>{{if m.Status == 1}}<span class="badge badge-success">{{tr("admin.menus.status.enabled", "启用")}}</span>{{else}}<span class="badge badge-mute">{{tr("admin.menus.status.disabled", "禁用")}}</span>{{end}}</td>

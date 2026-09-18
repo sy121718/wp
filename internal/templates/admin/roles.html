@@ -63,7 +63,7 @@
                 <tr data-filter-text="{{r.RoleCode}} {{r.RoleName}} {{r.Remark}}">
                 {{if canDelete}}<td class="col-check"><input type="checkbox" name="ids" value="{{r.ID}}" data-check-item aria-label="{{ .["t"]("admin.common.bulk.selectRow", "选择该行") }}"></td>{{end}}
                 <td class="text-mute">{{r.RoleCode}}{{if r.IsSystem == 1}} <span class="badge badge-mute">{{tr("admin.roles.badge.system", "系统")}}</span>{{end}}</td>
-                <td>{{r.RoleName}}</td>
+                <td>{{if isset(.PermSet["role:update"])}}<button type="button" class="row-title-link" data-drawer-open="#tpl-role-edit-{{r.ID}}" data-drawer-title="{{tr("admin.roles.edit.title", "编辑角色：")}}{{r.RoleName}}">{{r.RoleName}}</button>{{else}}{{r.RoleName}}{{end}}</td>
                 <td>{{if r.Status == 1}}<span class="badge badge-success">{{tr("admin.roles.status.enabled", "启用")}}</span>{{else}}<span class="badge badge-mute">{{tr("admin.roles.status.disabled", "禁用")}}</span>{{end}}</td>
                 <td>{{r.SortOrder}}</td>
                 <td>{{if r.Remark}}{{r.Remark}}{{end}}</td>

@@ -153,7 +153,7 @@
             <tr>
                 <td class="col-check" data-label="{{tr("admin.common.bulk.column", "选择")}}"><input type="checkbox" name="ids" value="{{r.Form.ID}}" data-check-item aria-label="{{ .["t"]("admin.common.bulk.selectRow", "选择该行") }}"></td>
                 <td data-label="{{tr("admin.coupons.col.code", "券码")}}"><code>{{r.Code}}</code></td>
-                <td data-label="{{tr("admin.coupons.col.name", "名称")}}">{{r.Name}}</td>
+                <td data-label="{{tr("admin.coupons.col.name", "名称")}}">{{if canUpdate}}<button type="button" class="row-title-link" data-drawer-open="#tpl-coupon-edit-{{r.Form.ID}}" data-drawer-title="{{tr("admin.coupons.detail.heading", "修改优惠码")}} {{r.Code}}">{{r.Name}}</button>{{else}}{{r.Name}}{{end}}</td>
                 <td data-label="{{tr("admin.coupons.col.discount", "折扣")}}">{{r.DiscountLabel}}</td>
                 <td data-label="{{tr("admin.coupons.col.min_subtotal", "门槛")}}">{{r.MinSubtotalLabel}}</td>
                 <td data-label="{{tr("admin.coupons.col.usage", "已用 / 上限")}}">{{r.UsageLabel}}</td>

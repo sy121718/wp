@@ -316,7 +316,7 @@
             {{range _, r := rows}}
             <tr>
                 <td class="col-check" data-label="{{tr("admin.common.bulk.column", "选择")}}"><input type="checkbox" name="ids" value="{{r.ID}}" data-check-item aria-label="{{ .["t"]("admin.common.bulk.selectRow", "选择该行") }}"></td>
-                <td data-label="{{tr("admin.returns.col.return_no", "退货单号")}}"><code>{{r.ReturnNo}}</code></td>
+                <td data-label="{{tr("admin.returns.col.return_no", "退货单号")}}"><a class="row-title-link" href="{{r.DetailURL}}"><code>{{r.ReturnNo}}</code></a></td>
                 <td data-label="{{tr("admin.returns.col.order_no", "订单号")}}"><code>{{r.OrderNo}}</code></td>
                 <td data-label="{{tr("admin.returns.col.customer", "客户")}}">{{r.CustomerName}} <span class="hint">{{r.CustomerEmail}}</span></td>
                 <td data-label="{{tr("admin.returns.col.status", "状态")}}"><span class="badge {{r.Badge}}">{{r.StatusLabel}}</span></td>

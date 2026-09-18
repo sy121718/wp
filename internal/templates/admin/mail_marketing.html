@@ -184,7 +184,7 @@
       {{range _, cp := .Campaigns}}
       <tr>
         <td class="col-check"><input type="checkbox" name="ids" value="{{cp.ID}}" data-check-item aria-label="{{ .["t"]("admin.common.bulk.selectRow", "选择该行") }}"></td>
-        <td>{{cp.Name}}</td>
+        <td><a class="row-title-link" href="/admin/mail/campaign?id={{cp.ID}}">{{cp.Name}}</a></td>
         <td>
           {{if cp.Status == "sending"}}<span class="badge badge-mute">{{tr("admin.mail.marketing.campaign_status.sending", "发送中")}}</span>
           {{else if cp.Status == "sent"}}<span class="badge badge-success">{{tr("admin.mail.marketing.campaign_status.sent", "已完成")}}</span>

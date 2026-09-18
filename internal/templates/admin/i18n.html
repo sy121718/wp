@@ -108,7 +108,7 @@
                         <td class="col-check">
                             <input type="checkbox" name="ids" value="{{e.Key}}|{{e.Lang}}" data-check-item aria-label="{{ .["t"]("admin.common.bulk.selectRow", "选择该行") }}">
                         </td>
-                        <td><code>{{e.Key}}</code></td>
+                        <td>{{if canManage}}<button type="button" class="row-title-link" data-drawer-open="#tpl-i18n-edit-{{i}}" data-drawer-title="{{tr("admin.i18n.action.edit", "编辑")}} {{e.Key}}"><code>{{e.Key}}</code></button>{{else}}<code>{{e.Key}}</code>{{end}}</td>
                         <td>{{e.Lang}}</td>
                         <td>{{e.Value}}</td>
                         <td>{{e.Category}}</td>

@@ -86,7 +86,7 @@
                     <td class="col-check">
                         <input type="checkbox" name="ids" value="{{r.ID}}" data-check-item aria-label="{{ .["t"]("admin.common.bulk.selectRow", "选择该行") }}">
                     </td>
-                    <td>{{r.Title}}</td>
+                    <td><a class="row-title-link" href="{{r.EditURL}}">{{r.Title}}</a></td>
                     <td class="text-mono">{{r.Slug}}</td>
                     <td>{{r.Excerpt}}</td>
                     <td>

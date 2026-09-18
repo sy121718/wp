@@ -64,7 +64,7 @@
                 <tr data-filter-text="{{p.PermissionCode}} {{p.PermissionName}} {{p.Module}} {{p.APIPath}} {{p.APIMethod}} {{if p.Remark}}{{p.Remark}}{{end}}">
                 {{if canDelete}}<td class="col-check"><input type="checkbox" name="ids" value="{{p.ID}}" data-check-item aria-label="{{ .["t"]("admin.common.bulk.selectRow", "选择该行") }}"></td>{{end}}
                 <td class="text-mute">{{p.PermissionCode}}</td>
-                <td>{{p.PermissionName}}</td>
+                <td>{{if isset(.PermSet["permission:update"])}}<button type="button" class="row-title-link" data-drawer-open="#tpl-perm-edit-{{p.ID}}" data-drawer-title="{{tr("admin.permissions.edit.title", "编辑权限点：")}}{{p.PermissionName}}">{{p.PermissionName}}</button>{{else}}{{p.PermissionName}}{{end}}</td>
                 <td>{{p.Module}}</td>
                 <td class="text-mute">{{p.APIPath}}</td>
                 <td><span class="badge badge-mute">{{p.APIMethod}}</span></td>

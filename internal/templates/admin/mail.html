@@ -89,7 +89,7 @@
       {{range _, a := .Accounts}}
       <tr>
         <td class="col-check"><input type="checkbox" name="ids" value="{{a.ID}}" data-check-item aria-label="{{ .["t"]("admin.common.bulk.selectRow", "选择该行") }}"></td>
-        <td>{{a.Name}}{{if a.IsDefault}} <span class="badge badge-mute">{{tr("admin.mail.accounts.default_badge", "默认")}}</span>{{end}}</td>
+        <td>{{if canSaveAccount}}<button type="button" class="row-title-link" data-drawer-open="#tpl-account-edit-{{a.ID}}" data-drawer-title="{{tr("admin.mail.accounts.action.edit_full", "编辑发信账号：")}}{{a.Name}}">{{a.Name}}</button>{{else}}{{a.Name}}{{end}}{{if a.IsDefault}} <span class="badge badge-mute">{{tr("admin.mail.accounts.default_badge", "默认")}}</span>{{end}}</td>
         <td>{{a.Purpose}}</td>
         <td>{{a.FromEmail}}</td>
         <td class="text-mute text-sm">{{a.Host}}:{{a.Port}} ({{a.Encryption}})</td>
@@ -151,7 +151,7 @@
         <td class="col-check"><input type="checkbox" name="ids" value="{{tp.ID}}" data-check-item aria-label="{{ .["t"]("admin.common.bulk.selectRow", "选择该行") }}"></td>
         <td><code>{{tp.TemplateKey}}</code></td>
         <td>{{if tp.Locale == ""}}{{tr("admin.mail.templates.locale_common", "通用")}}{{else}}{{tp.Locale}}{{end}}</td>
-        <td>{{tp.Name}}</td>
+        <td>{{if canSaveTemplate}}<button type="button" class="row-title-link" data-drawer-open="#tpl-template-edit-{{tp.ID}}" data-drawer-title="{{tr("admin.mail.templates.action.edit_full", "编辑模板：")}}{{tp.TemplateKey}}">{{tp.Name}}</button>{{else}}{{tp.Name}}{{end}}</td>
         <td>{{tp.Subject}}</td>
         <td>{{if len(tp.Variables) == 0}}<span class="text-mute">—</span>{{else}}{{range _, v := tp.Variables}}<span class="badge badge-mute">{{v}}</span> {{end}}{{end}}</td>
         <td class="col-actions">

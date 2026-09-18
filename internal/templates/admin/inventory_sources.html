@@ -141,7 +141,7 @@
                 <td class="col-check">
                     <input type="checkbox" name="ids" value="{{s.ID}}" data-check-item aria-label="{{ .["t"]("admin.common.bulk.selectRow", "选择该行") }}">
                 </td>
-                <td data-label="{{ .["t"]("admin.inventory_sources.col.name", "名称") }}"><strong>{{s.Name}}</strong></td>
+                <td data-label="{{ .["t"]("admin.inventory_sources.col.name", "名称") }}">{{if isset(.PermSet["inventory:source_update"])}}<button type="button" class="row-title-link" data-drawer-open="#tpl-source-edit-{{s.ID}}" data-drawer-title="{{ .["t"]("admin.common.action.edit", "编辑") }}"><strong>{{s.Name}}</strong></button>{{else}}<strong>{{s.Name}}</strong>{{end}}</td>
                 <td data-label="{{ .["t"]("admin.inventory_sources.col.code", "编码") }}"><code>{{s.Code}}</code></td>
                 <td data-label="{{ .["t"]("admin.inventory_sources.stats.col.type", "类型") }}"><span class="badge badge-mute">{{s.TypeLabel}}</span></td>
                 <td data-label="{{ .["t"]("admin.inventory_sources.stats.col.related", "关联方") }}">

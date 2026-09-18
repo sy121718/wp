@@ -148,7 +148,7 @@
                         <input type="checkbox" name="ids" value="{{r.ID}}" data-check-item aria-label="{{ .["t"]("admin.common.bulk.selectRow", "选择该行") }}">
                     </td>
                     <td data-label="{{tr("admin.customers.col.customer", "客户")}}">
-                    <a href="{{r.DetailURL}}">{{r.DisplayLabel}}</a>
+                    <a class="row-title-link" href="{{r.DetailURL}}">{{r.DisplayLabel}}</a>
                     <div class="hint">{{tr("admin.customers.field.username", "登录名")}} {{r.Username}}</div>
                 </td>
                 <td data-label="{{tr("admin.customers.col.email", "邮箱")}}">
@@ -173,7 +173,6 @@
                     <div class="hint">{{r.RegisterIP}}{{if r.RegisterLocation}} · {{r.RegisterLocation}}{{end}}</div>
                 </td>
                 <td class="col-actions" data-label="{{tr("admin.customers.col.actions", "操作")}}">
-                    <a class="btn btn-sm" href="{{r.DetailURL}}">{{tr("admin.customers.action.detail", "详情")}}</a>
                     {{if r.Actionable}}
                     <button type="submit" form="customer-status-{{r.ID}}" class="btn btn-sm">{{r.StatusActionLabel}}</button>
                     {{end}}

@@ -114,8 +114,10 @@ func TestGroupDProductsPageRenders(t *testing.T) {
 		"Products":         []map[string]any{groupDProductRow()},
 	})
 	// 拆页后列表页只有商品表：变体表 / 评分表与它们的入口、四个商品级表单全部移出。
+	// 完整性锚点用**稳定存在**的文案：详情入口已由名称列承担、详情页模板移出操作列，
+	// 不再拿它们当判据（按钮一改就红，而那不是渲染中断）。
 	out := assertGroupDPage(t, "products", data,
-		"商品列表", "价格区间", "分类", "品牌", "标签", "预览详情页", "详情页模板")
+		"商品列表", "价格区间", "分类", "品牌", "标签", "预览详情页", "多语言")
 	// 标签列放的是标签名本身（数据里的名字），不是「手工 N · 自动 N」这种来源分解。
 	if !strings.Contains(out, "新品、热销") {
 		t.Fatalf("标签列应显示标签名，实际输出未见 %q", "新品、热销")
@@ -502,7 +504,7 @@ func TestGroupDEnglishSwitch(t *testing.T) {
 	}
 	for _, want := range []string{
 		"EN[admin.products.title]", "EN[admin.products.row.translations]",
-		"EN[admin.products.row.detail]", "EN[admin.products.col.categories]",
+		"EN[admin.products.col.categories]",
 		"EN[admin.products.col.brand]", "EN[admin.products.col.priceRange]",
 		"EN[admin.products.hint.attrLead]", "EN[admin.products.rating.label]",
 	} {

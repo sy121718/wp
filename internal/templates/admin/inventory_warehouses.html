@@ -96,7 +96,7 @@
                     <input type="checkbox" name="ids" value="{{w.ID}}" data-check-item aria-label="{{ .["t"]("admin.common.bulk.selectRow", "选择该行") }}">
                 </td>
                 <td data-label="{{ .["t"]("admin.inventory.label.name", "仓库名称") }}">
-                    {{w.Name}}
+                    {{if isset(.PermSet["inventory:warehouse_update"])}}<button type="button" class="row-title-link" data-drawer-open="#tpl-warehouse-edit-{{w.ID}}" data-drawer-title="{{ .["t"]("admin.common.action.edit", "编辑") }}">{{w.Name}}</button>{{else}}{{w.Name}}{{end}}
                     {{if w.IsDefault}}<span class="badge badge-info">{{ .["t"]("admin.inventory.defaultWarehouse", "默认仓") }}</span>{{end}}
                 </td>
                 <td data-label="{{ .["t"]("admin.inventory.label.code", "短码") }}"><code>{{w.Code}}</code></td>

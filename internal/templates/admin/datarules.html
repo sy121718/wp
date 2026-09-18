@@ -63,7 +63,7 @@
                 {{range _, r := .Rows}}
                 <tr data-filter-text="{{r.RuleName}} {{r.Domain}} {{r.Remark}}">
                 {{if canDelete}}<td class="col-check"><input type="checkbox" name="ids" value="{{r.ID}}" data-check-item aria-label="{{ .["t"]("admin.common.bulk.selectRow", "选择该行") }}"></td>{{end}}
-                <td>{{r.RuleName}}</td>
+                <td>{{if isset(.PermSet["datarule:update"])}}<button type="button" class="row-title-link" data-drawer-open="#tpl-rule-edit-{{r.ID}}" data-drawer-title="{{tr("admin.datarules.edit.title", "编辑规则：")}}{{r.RuleName}}">{{r.RuleName}}</button>{{else}}{{r.RuleName}}{{end}}</td>
                 <td class="text-mute">{{r.Domain}}</td>
                 <td>{{if r.Status == 1}}<span class="badge badge-success">{{tr("admin.datarules.status.enabled", "启用")}}</span>{{else}}<span class="badge badge-mute">{{tr("admin.datarules.status.disabled", "禁用")}}</span>{{end}}</td>
                 <td>{{if r.Remark}}{{r.Remark}}{{end}}</td>

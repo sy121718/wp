@@ -104,8 +104,9 @@
                     <td class="col-check">
                         <input type="checkbox" name="ids" value="{{p.ID}}" data-check-item aria-label="{{ .["t"]("admin.common.bulk.selectRow", "选择该行") }}">
                     </td>
-                    {* 名称列只回答「叫什么」：属性引用是商品结构（属于详情），不放这一列。 *}
-                    <td><strong>{{p.Name}}</strong></td>
+                    {* 名称列只回答「叫什么」：属性引用是商品结构（属于详情），不放这一列。
+                       名称本身就是进详情的入口 —— 操作列不再重复一个「详情」按钮。 *}
+                    <td><a class="row-title-link" href="/admin/products/detail?project={{selectedProject}}&amp;product={{p.ID}}"><strong>{{p.Name}}</strong></a></td>
                     <td>{{if p.Slug != ""}}<code>/{{p.Slug}}</code>{{else}}<span class="text-mute">—</span>{{end}}</td>
                     <td><span class="badge">{{p.Status}}</span></td>
                     <td>{{p.VariantCount}}</td>
@@ -119,10 +120,10 @@
                     <td>{{if isset(p.TagLabel)}}{{if p.TagLabel != ""}}{{p.TagLabel}}{{else}}<span class="text-mute">—</span>{{end}}{{else}}<span class="text-mute">—</span>{{end}}</td>
                     {* 列表只给汇总值（平均分 · 条数）；明细与补录在「详情」里。空值是 —，不写「暂无」。 *}
                     <td>{{if p.HasRating}}{{p.RatingAvg}}{{ .["t"]("admin.products.rating.sep", " · ") }}{{p.RatingCount}}{{ .["t"]("admin.products.rating.countTail", " 条") }}{{else}}<span class="text-mute">—</span>{{end}}</td>
+                    {* 操作列只留在这一行才做的事：详情已由名称承担，「详情页模板」是工程级
+                       配置（侧栏「商品详情模板」是它的入口，同一维度不给两个入口）。 *}
                     <td class="col-actions">
-                        <a class="btn btn-sm" href="/admin/products/detail?project={{selectedProject}}&amp;product={{p.ID}}">{{ .["t"]("admin.products.row.detail", "详情") }}</a>
                         <a class="btn btn-sm" href="/admin/products/translations?project={{selectedProject}}&amp;product={{p.ID}}">{{ .["t"]("admin.products.row.translations", "多语言") }}</a>
-                        <a class="btn btn-sm" href="/admin/products/template?project={{selectedProject}}&amp;product={{p.ID}}">{{ .["t"]("admin.products.row.detailTemplate", "详情页模板") }}</a>
                         <button type="submit" form="product-preview-{{p.ID}}" class="btn btn-sm">{{ .["t"]("admin.products.row.previewDetail", "预览详情页") }}</button>
                         <button type="submit" form="product-del-{{p.ID}}" class="btn btn-sm btn-danger">{{ .["t"]("admin.common.action.delete", "删除") }}</button>
                     </td>

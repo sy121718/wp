@@ -147,7 +147,7 @@
                     <td class="col-check">
                         <input type="checkbox" name="ids" value="{{r.ID}}" data-check-item aria-label="{{ .["t"]("admin.common.bulk.selectRow", "选择该行") }}">
                     </td>
-                    <td style="padding-left:{{r.Indent}}">{{if r.Depth > 0}}↳ {{end}}{{r.Title}}</td>
+                    <td style="padding-left:{{r.Indent}}">{{if canUpdate}}<button type="button" class="row-title-link" data-drawer-open="#tpl-nav-edit-{{r.ID}}" data-drawer-title="{{ .["t"]("admin.common.action.edit", "编辑") }}">{{if r.Depth > 0}}↳ {{end}}{{r.Title}}</button>{{else}}{{if r.Depth > 0}}↳ {{end}}{{r.Title}}{{end}}</td>
                     <td><code>{{r.Path}}</code></td>
                     <td>{{r.TargetLabel}}</td>
                     <td>

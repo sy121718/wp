@@ -134,7 +134,7 @@
             {{range _, o := rows}}
             <tr>
                 <td class="col-check" data-label="{{tr("admin.common.bulk.column", "选择")}}"><input type="checkbox" name="ids" value="{{o.ID}}" data-check-item aria-label="{{ .["t"]("admin.common.bulk.selectRow", "选择该行") }}"></td>
-                <td data-label="{{tr("admin.orders.col.order_no", "订单号")}}"><code>{{o.OrderNo}}</code></td>
+                <td data-label="{{tr("admin.orders.col.order_no", "订单号")}}"><a class="row-title-link" href="{{o.DetailURL}}"><code>{{o.OrderNo}}</code></a></td>
                 <td data-label="{{tr("admin.orders.col.status", "状态")}}"><span class="badge {{o.Badge}}">{{o.StatusLabel}}</span></td>
                 <td data-label="{{tr("admin.orders.col.customer", "客户")}}">{{o.CustomerName}} <span class="hint">{{o.CustomerEmail}}</span></td>
                 <td data-label="{{tr("admin.orders.col.amount", "金额")}}"><strong>{{o.TotalLabel}}</strong></td>

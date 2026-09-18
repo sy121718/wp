@@ -437,7 +437,7 @@ table.data-table { width: 100%; border-collapse: collapse; font-size: 14px; }
 .data-table-wide { min-width: min(100%, 480px); }
 .data-table thead th {
     padding: var(--ui-sp-sm) var(--ui-sp-lg);
-    text-align: left;
+    text-align: center;
     font-weight: 500;
     font-size: 12px;
     text-transform: uppercase;
@@ -451,6 +451,9 @@ table.data-table { width: 100%; border-collapse: collapse; font-size: 14px; }
     padding: var(--ui-sp-md) var(--ui-sp-lg);
     border-bottom: 1px solid var(--sky-c-border, #e5e7eb);
     color: var(--sky-c-text, #1a1d21);
+    /* 表头与内容统一居中：表格是横向比对用的，居中的列边界更整齐，
+       短值（状态 / 计数 / 价格区间）不会各自贴着左边留下参差的空白。 */
+    text-align: center;
     /* 默认不折行：中文在窄列里会被逐字竖排（「联调测试商品」变成一列竖字），
        比横向滚动难读得多。列多放不下时由 .table-scroll 横向滚动承担 ——
        表格的价值本来就是横向比对，压成竖排反而失去意义。
@@ -458,6 +461,20 @@ table.data-table { width: 100%; border-collapse: collapse; font-size: 14px; }
     white-space: nowrap;
 }
 .data-table tbody td.cell-wrap { white-space: normal; }
+/* 列表页的名称列：名称本身就是进详情的入口（操作列不再重复一个「详情」按钮）。
+   默认与正文同色、无下划线 —— 整列都是链接色会让表格花掉；靠 hover 变色 + 下划线
+   表达可点，键盘走 :focus-visible。文字本身多半已包 <strong>，这里不重复加粗。 */
+.data-table .row-title-link { color: inherit; text-decoration: none; }
+/* 名称列也可能是 <button>（点开编辑抽屉）：脱去原生外观，长得与正文链接一致 ——
+   用户看到的是「名称可以点」，而不是「这里有个按钮」。 */
+button.row-title-link {
+    border: 0; background: none; padding: 0; margin: 0;
+    font: inherit; color: inherit; cursor: pointer; text-align: inherit;
+}
+@media (hover: hover) {
+.data-table .row-title-link:hover { color: var(--sky-c-primary, #3d444f); text-decoration: underline; }
+}
+.data-table .row-title-link:focus-visible { outline: 2px solid var(--sky-c-primary, #3d444f); outline-offset: 2px; }
 .data-table tbody tr:last-child td { border-bottom: none; }
 .data-table tbody tr { transition: background var(--ui-tr-fast); }
 @media (hover: hover) {
@@ -466,16 +483,27 @@ table.data-table { width: 100%; border-collapse: collapse; font-size: 14px; }
 /* 操作列固定在右侧：列多的表格横向滚动时，操作列不跟着滚出视野。
    表头同样吸顶，所以表头的操作列要压在普通表头之上（z-index 更高）。
    必须给不透明背景，否则横向滚动时下面的单元格会从它背后透出来。 */
-.data-table .col-actions { text-align: right; white-space: nowrap; }
+.data-table .col-actions { text-align: center; white-space: nowrap; }
+/* sticky 列的边界：只靠一条 inset 1px 线时，浅底表格上几乎看不出这一列是「浮」在
+   正文之上的（滚动时更像一次渲染错位）。改成「实线 + 向外柔和投影」两件套，
+   投影往左投（负 x 偏移），让滚动中被遮住的单元格有落下去的感觉。 */
 .data-table td.col-actions {
     position: sticky; right: 0; z-index: 1;
     background: var(--sky-c-surface, #fff);
-    box-shadow: inset 1px 0 0 var(--sky-c-border, #e5e7eb);
+    box-shadow: inset 1px 0 0 var(--sky-c-border, #e5e7eb),
+                -12px 0 22px -10px rgba(16, 20, 26, .30);
 }
 .data-table thead th.col-actions {
     position: sticky; right: 0; z-index: 3;
     background: var(--sky-c-bg-soft, #f4f5f6);
-    box-shadow: inset 1px 0 0 var(--sky-c-border, #e5e7eb);
+    box-shadow: inset 1px 0 0 var(--sky-c-border, #e5e7eb),
+                -12px 0 22px -10px rgba(16, 20, 26, .30);
+}
+/* 行悬停时 sticky 列必须自己也变色：它有独立的不透明背景，不会跟随 tr:hover，
+   否则整行只剩操作列「断了一截」不变色。写在 is-selected 之前 —— 两者选择器
+   同权重，靠后的一条生效，选中态要压过悬停态。 */
+@media (hover: hover) {
+.data-table tbody tr:hover td.col-actions { background: var(--sky-c-bg-hover, rgba(16, 20, 26, .04)); }
 }
 .data-table tbody tr.is-selected td.col-actions { background: var(--sky-c-bg-active, #eceff2); }
 

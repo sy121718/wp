@@ -66,7 +66,7 @@
                 <tr data-filter-text="{{a.ID}} {{a.Username}} {{if a.Name}}{{a.Name}}{{end}} {{if a.Email}}{{a.Email}}{{end}} {{if a.Phone}}{{a.Phone}}{{end}}">
                 {{if canDelete}}<td class="col-check"><input type="checkbox" name="ids" value="{{a.ID}}" data-check-item aria-label="{{ .["t"]("admin.common.bulk.selectRow", "选择该行") }}"></td>{{end}}
                 <td class="text-mute">{{a.ID}}</td>
-                <td>{{a.Username}}</td>
+                <td>{{if isset(.PermSet["admin:edit"])}}<button type="button" class="row-title-link" data-drawer-open="#tpl-admin-edit-{{a.ID}}" data-drawer-title="{{tr("admin.admins.edit.title", "编辑管理员：")}}{{a.Username}}">{{a.Username}}</button>{{else}}{{a.Username}}{{end}}</td>
                 <td>{{if a.Name}}{{a.Name}}{{end}}</td>
                 <td>{{if a.Email}}{{a.Email}}{{end}}</td>
                 <td>{{if a.Phone}}{{a.Phone}}{{end}}</td>
