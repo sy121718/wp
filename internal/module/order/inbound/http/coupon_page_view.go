@@ -58,6 +58,9 @@ func couponRowView(cp *orderdto.CouponResp, filter couponFilter, projectID strin
 			"StartsAt":      couponFormTime(cp.StartsAt.TimePtr()),
 			"EndsAt":        couponFormTime(cp.EndsAt.TimePtr()),
 			"Remark":        cp.Remark,
+			// 编辑抽屉要回显当前状态（ToggleStatus 是「切换后」的目标值，不能拿来当初始值，
+			// 否则打开抽屉随手保存就会把券的状态反转）。
+			"StatusValue": strconv.Itoa(cp.Status),
 		},
 		"Back": couponBackQuery(projectID, filter, page, limit, filter.CouponID),
 	}
