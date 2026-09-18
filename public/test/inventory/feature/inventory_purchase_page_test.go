@@ -19,6 +19,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"go_wp/internal/web/shell"
+
 	productdto "go_wp/internal/module/product/dto"
 	inventorydto "go_wp/internal/module/product/inventory/dto"
 	inventoryenums "go_wp/internal/module/product/inventory/enums"
@@ -39,6 +41,11 @@ func newPurchasePageEngine(t *testing.T) (*gin.Engine, *invFixture) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(templateRoot(), true)
+	// 新建采购单进右侧抽屉后，表单与写入口都按权限渲染（shell.Prepare 读 PermSetKey）；
+	// 这条链路不走鉴权中间件，注入一份权限，让断言「页面里存在原生表单写入口」保持有效。
+	engine.Use(func(c *gin.Context) {
+		c.Set(shell.PermSetKey, map[string]bool{"inventory:purchase_create": true})
+	})
 	handle := inventoryhttp.NewInventoryPurchasePageHandle(f.inventory, f.projects, f.products)
 	engine.GET("/admin/inventory/purchases", handle.InventoryPurchasesPage)
 	engine.POST("/admin/inventory/purchases/create", handle.InventoryPurchaseCreate)

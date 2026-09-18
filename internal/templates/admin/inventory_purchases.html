@@ -44,42 +44,9 @@
             {{ .["t"]("admin.inventory_purchases.noSources.tail", "建一个（外部供应商或集团内关联公司），采购单的来源就是它。") }}
         </p>
         {{else}}
-        <form method="post" action="/admin/inventory/purchases/create" class="form-stack">
-            <input type="hidden" name="csrf_token" value="{{csrf}}">
-            <input type="hidden" name="projectId" value="{{selectedProject}}">
-            <div class="form-inline">
-                <input type="text" class="form-input" name="code" placeholder="{{ .["t"]("admin.inventory_purchases.ph.code", "采购单号（如 PO-20260101-001）") }}" required autocomplete="off">
-                <select class="form-select" name="sourceId" required>
-                    <option value="">{{ .["t"]("admin.inventory_purchases.create.optionSource", "（来源：选择货源）") }}</option>
-                    {{range _, s := .Sources}}
-                    <option value="{{s.ID}}">{{s.Label}}</option>
-                    {{end}}
-                </select>
-                <select class="form-select" name="warehouseId">
-                    <option value="">{{ .["t"]("admin.inventory_purchases.create.optionWarehouse", "（收货仓：默认仓）") }}</option>
-                    {{range _, w := .Warehouses}}
-                    <option value="{{w.ID}}">{{w.Label}}</option>
-                    {{end}}
-                </select>
-                <input type="text" class="form-input" name="remark" placeholder="{{ .["t"]("admin.inventory_purchases.ph.remark", "备注（如 合同号 / 到货批次）") }}" autocomplete="off">
-            </div>
-            <p class="hint">{{ .["t"]("admin.inventory_purchases.create.linesHint", "采购行（每行一个 SKU；空行会被忽略；同一张单里同一个 SKU 只能出现一次）：") }}</p>
-            {{range _, row := .DraftLines}}
-            <div class="form-inline">
-                <select class="form-select" name="lineVariantId">
-                    <option value="">{{ .["t"]("admin.inventory_purchases.create.optionSku", "（选择 SKU）") }}</option>
-                    {{range _, o := .VariantOptions}}
-                    <option value="{{o.VariantID}}">{{o.Label}}</option>
-                    {{end}}
-                </select>
-                <input type="number" class="form-input" name="lineQuantity" placeholder="{{ .["t"]("admin.inventory_purchases.ph.lineQty", "采购数量") }}" inputmode="numeric" step="1" min="1">
-                <input type="number" class="form-input" name="lineUnitPrice" placeholder="{{ .["t"]("admin.inventory_purchases.ph.lineUnitPrice", "采购单价") }}" inputmode="decimal" step="0.01" min="0.01">
-            </div>
-            {{end}}
-            <div class="action-row">
-                <button type="submit" class="btn btn-primary">{{ .["t"]("admin.inventory_purchases.create.submit", "新建采购单") }}</button>
-            </div>
-        </form>
+        {{if isset(.PermSet["inventory:purchase_create"])}}
+        <button type="button" class="btn btn-primary" data-drawer-open="#tpl-purchase-create" data-drawer-title="{{ .["t"]("admin.inventory_purchases.create.submit", "新建采购单") }}">＋ {{ .["t"]("admin.inventory_purchases.create.submit", "新建采购单") }}</button>
+        {{end}}
         {{end}}
     </section>
 
@@ -257,5 +224,47 @@
         </div>
         {{end}}
     </section>
+
+    {{if isset(.PermSet["inventory:purchase_create"])}}
+    <template id="tpl-purchase-create">
+        <form method="post" action="/admin/inventory/purchases/create" class="form-stack">
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <input type="hidden" name="projectId" value="{{selectedProject}}">
+            <div class="form-inline">
+                <input type="text" class="form-input" name="code" placeholder="{{ .["t"]("admin.inventory_purchases.ph.code", "采购单号（如 PO-20260101-001）") }}" required autocomplete="off">
+                <select class="form-select" name="sourceId" required>
+                    <option value="">{{ .["t"]("admin.inventory_purchases.create.optionSource", "（来源：选择货源）") }}</option>
+                    {{range _, s := .Sources}}
+                    <option value="{{s.ID}}">{{s.Label}}</option>
+                    {{end}}
+                </select>
+                <select class="form-select" name="warehouseId">
+                    <option value="">{{ .["t"]("admin.inventory_purchases.create.optionWarehouse", "（收货仓：默认仓）") }}</option>
+                    {{range _, w := .Warehouses}}
+                    <option value="{{w.ID}}">{{w.Label}}</option>
+                    {{end}}
+                </select>
+                <input type="text" class="form-input" name="remark" placeholder="{{ .["t"]("admin.inventory_purchases.ph.remark", "备注（如 合同号 / 到货批次）") }}" autocomplete="off">
+            </div>
+            <p class="hint">{{ .["t"]("admin.inventory_purchases.create.linesHint", "采购行（每行一个 SKU；空行会被忽略；同一张单里同一个 SKU 只能出现一次）：") }}</p>
+            {{range _, row := .DraftLines}}
+            <div class="form-inline">
+                <select class="form-select" name="lineVariantId">
+                    <option value="">{{ .["t"]("admin.inventory_purchases.create.optionSku", "（选择 SKU）") }}</option>
+                    {{range _, o := .VariantOptions}}
+                    <option value="{{o.VariantID}}">{{o.Label}}</option>
+                    {{end}}
+                </select>
+                <input type="number" class="form-input" name="lineQuantity" placeholder="{{ .["t"]("admin.inventory_purchases.ph.lineQty", "采购数量") }}" inputmode="numeric" step="1" min="1">
+                <input type="number" class="form-input" name="lineUnitPrice" placeholder="{{ .["t"]("admin.inventory_purchases.ph.lineUnitPrice", "采购单价") }}" inputmode="decimal" step="0.01" min="0.01">
+            </div>
+            {{end}}
+            <div class="action-row">
+            <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button>
+                <button type="submit" class="btn btn-primary">{{ .["t"]("admin.inventory_purchases.create.submit", "新建采购单") }}</button>
+            </div>
+        </form>
+    </template>
+    {{end}}
 </div>
 {{end}}
