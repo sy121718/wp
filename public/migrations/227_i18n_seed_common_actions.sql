@@ -10,6 +10,8 @@
 INSERT INTO sys_i18n (item_key, lang, item_value, http_code, category, remark, status, create_time, update_time)
 VALUES
 ('admin.common.action.cancel', 'en-US', 'Cancel', 200, 'admin', 'internal/module/admin/enums', 1, now(), now()),
+('admin.common.action.create', 'en-US', 'New', 200, 'admin', 'internal/module/admin/enums', 1, now(), now()),
+('admin.common.action.create', 'zh-CN', '新建', 200, 'admin', 'internal/module/admin/enums', 1, now(), now()),
 ('admin.common.action.edit', 'en-US', 'Edit', 200, 'admin', 'internal/module/admin/enums', 1, now(), now()),
 ('admin.common.action.edit', 'zh-CN', '编辑', 200, 'admin', 'internal/module/admin/enums', 1, now(), now()),
 ('admin.common.action.cancel', 'zh-CN', '取消', 200, 'admin', 'internal/module/admin/enums', 1, now(), now()),

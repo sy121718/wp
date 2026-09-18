@@ -46,15 +46,20 @@ var (
 )
 
 // Entry 一条词条（key × lang）。
+// Entry 一条词条。
+//
+// 必须显式写 gorm 列名：sys_i18n 的键与值是 item_key / item_value，而 gorm 默认按字段名
+// 推导出 key / value —— 缺映射时 Find 出来的这两列恒为零值，表现为「后台词条页的 key 与
+// 内容两列一片空白」，而 Lang / Category / UpdateTime 看着正常（它们的推导名恰好等于列名）。
 type Entry struct {
-	ID         int64  `json:"id"`
-	Key        string `json:"key"`
-	Lang       string `json:"lang"`
-	Value      string `json:"value"`
-	Category   string `json:"category"`
-	Remark     string `json:"remark"`
-	Status     int16  `json:"status"`
-	UpdateTime string `json:"updateTime"`
+	ID         int64  `gorm:"column:id" json:"id"`
+	Key        string `gorm:"column:item_key" json:"key"`
+	Lang       string `gorm:"column:lang" json:"lang"`
+	Value      string `gorm:"column:item_value" json:"value"`
+	Category   string `gorm:"column:category" json:"category"`
+	Remark     string `gorm:"column:remark" json:"remark"`
+	Status     int16  `gorm:"column:status" json:"status"`
+	UpdateTime string `gorm:"column:update_time" json:"updateTime"`
 }
 
 // EntryFilter 列表筛选。

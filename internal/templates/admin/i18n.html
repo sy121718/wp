@@ -46,7 +46,7 @@
                 <tr><th>key</th><th>{{ .["t"]("admin.i18n.label.lang", "语言") }}</th><th>{{ .["t"]("admin.i18n.label.value", "内容") }}</th><th>{{ .["t"]("admin.i18n.label.category", "分类") }}</th><th>{{ .["t"]("admin.i18n.label.updated_at", "更新时间") }}</th><th></th></tr>
             </thead>
             <tbody>
-                {{range _, e := entries}}
+                {{range i, e := entries}}
                 <tr>
                     <td><code>{{e.Key}}</code></td>
                     <td>{{e.Lang}}</td>
@@ -54,10 +54,11 @@
                     <td>{{e.Category}}</td>
                     <td>{{e.UpdateTime}}</td>
                     <td>
-                        <button type="button" class="btn btn-ghost"
-                                data-i18n-edit
-                                data-key="{{e.Key}}" data-lang="{{e.Lang}}"
-                                data-value="{{e.Value}}" data-category="{{e.Category}}" data-remark="{{e.Remark}}">{{tr("admin.i18n.action.edit", "编辑")}}</button>
+                        {* 编辑进右侧抽屉：每行一份 <template>（id 用行号），值由服务端回显 ——
+                           原来靠下面那段内联 JS 把 data-* 填进顶部表单，现在不需要了。 *}
+                        {{if isset(.PermSet["i18n:manage"])}}
+                        <button type="button" class="btn btn-ghost" data-drawer-open="#tpl-i18n-edit-{{i}}" data-drawer-title="{{tr("admin.i18n.action.edit", "编辑")}} {{e.Key}}">{{tr("admin.i18n.action.edit", "编辑")}}</button>
+                        {{end}}
                         <form method="post" action="/admin/i18n/delete" style="display:inline">
                             <input type="hidden" name="csrf_token" value="{{csrf}}">
                             <input type="hidden" name="key" value="{{e.Key}}">
@@ -68,6 +69,44 @@
                             <button type="submit" class="btn btn-ghost">{{tr("admin.i18n.action.delete", "删除")}}</button>
                         </form>
                     </td>
+                    <template id="tpl-i18n-edit-{{i}}">
+                        <form method="post" action="/admin/i18n/save">
+                            <input type="hidden" name="csrf_token" value="{{csrf}}">
+                            <input type="hidden" name="_keyword" value="{{.Keyword}}">
+                            <input type="hidden" name="_lang" value="{{.LangFilter}}">
+                            <input type="hidden" name="_category" value="{{.CatFilter}}">
+                            <input type="hidden" name="key" value="{{e.Key}}">
+                            <input type="hidden" name="lang" value="{{e.Lang}}">
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label class="form-label">key</label>
+                                    <input type="text" class="form-input" value="{{e.Key}}" readonly>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">{{ .["t"]("admin.i18n.label.lang", "语言") }}</label>
+                                    <input type="text" class="form-input" value="{{e.Lang}}" readonly>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">{{ .["t"]("admin.i18n.label.value", "内容") }}</label>
+                                <textarea name="value" class="form-textarea" rows="3" required>{{e.Value}}</textarea>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label class="form-label">{{ .["t"]("admin.i18n.label.category", "分类") }}</label>
+                                    <input type="text" class="form-input" name="category" value="{{e.Category}}">
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">{{ .["t"]("admin.i18n.label.remark", "备注") }}</label>
+                                    <input type="text" class="form-input" name="remark" value="{{e.Remark}}">
+                                </div>
+                            </div>
+                            <div class="action-row">
+                                <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button>
+                                <button type="submit" class="btn btn-primary">{{ .["t"]("admin.i18n.action.save", "保存") }}</button>
+                            </div>
+                        </form>
+                    </template>
                 </tr>
                 {{end}}
             </tbody>
@@ -76,44 +115,48 @@
 
     <section class="card card-body">
         <h2>{{ .["t"]("admin.i18n.form.title", "新增 / 编辑") }}</h2>
-        <p class="hint">{{ .["t"]("admin.i18n.form.hint", "点上方「编辑」会把该条填进来。同 key + 语言已存在时是更新，不存在时是新增。") }}</p>
-        <form method="post" action="/admin/i18n/save">
-            <input type="hidden" name="csrf_token" value="{{csrf}}">
-            <input type="hidden" name="_keyword" value="{{.Keyword}}">
-            <input type="hidden" name="_lang" value="{{.LangFilter}}">
-            <input type="hidden" name="_category" value="{{.CatFilter}}">
-            <label>key<input type="text" name="key" id="i18n-key" required placeholder="site.component.gallery.prev"></label>
-            <label>{{ .["t"]("admin.i18n.label.lang", "语言") }}
-                <select name="lang" id="i18n-lang">
-                    <option value="zh-CN">zh-CN</option>
-                    <option value="en-US">en-US</option>
-                </select>
-            </label>
-            <label>{{ .["t"]("admin.i18n.label.value", "内容") }}<textarea name="value" id="i18n-value" rows="3" required></textarea></label>
-            <label>{{ .["t"]("admin.i18n.label.category", "分类") }}<input type="text" name="category" id="i18n-category" placeholder="ui / shell / enums …"></label>
-            <label>{{ .["t"]("admin.i18n.label.remark", "备注") }}<input type="text" name="remark" id="i18n-remark" placeholder="{{ .["t"]("admin.i18n.ph.remark", "来源或修改原因") }}"></label>
-            <button type="submit" class="btn">{{ .["t"]("admin.i18n.action.save", "保存") }}</button>
-        </form>
+        {{if isset(.PermSet["i18n:manage"])}}
+        <button type="button" class="btn btn-primary" data-drawer-open="#tpl-i18n-create" data-drawer-title="{{ .["t"]("admin.common.action.create", "新建") }}">{{ .["t"]("admin.common.action.create", "新建") }}</button>
+        {{end}}
+        <template id="tpl-i18n-create">
+            <form method="post" action="/admin/i18n/save">
+                <input type="hidden" name="csrf_token" value="{{csrf}}">
+                <input type="hidden" name="_keyword" value="{{.Keyword}}">
+                <input type="hidden" name="_lang" value="{{.LangFilter}}">
+                <input type="hidden" name="_category" value="{{.CatFilter}}">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">key</label>
+                        <input type="text" class="form-input" name="key" required placeholder="site.component.gallery.prev">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">{{ .["t"]("admin.i18n.label.lang", "语言") }}</label>
+                        <select name="lang" class="form-select">
+                            <option value="zh-CN">zh-CN</option>
+                            <option value="en-US">en-US</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">{{ .["t"]("admin.i18n.label.value", "内容") }}</label>
+                    <textarea name="value" class="form-textarea" rows="3" required></textarea>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">{{ .["t"]("admin.i18n.label.category", "分类") }}</label>
+                        <input type="text" class="form-input" name="category" placeholder="ui / shell / enums …">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">{{ .["t"]("admin.i18n.label.remark", "备注") }}</label>
+                        <input type="text" class="form-input" name="remark" placeholder="{{ .["t"]("admin.i18n.ph.remark", "来源或修改原因") }}">
+                    </div>
+                </div>
+                <div class="action-row">
+                    <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button>
+                    <button type="submit" class="btn btn-primary">{{ .["t"]("admin.i18n.action.save", "保存") }}</button>
+                </div>
+            </form>
+        </template>
     </section>
 </div>
-<script>
-// 编辑按钮把该行填进表单 —— 页面只有这一处交互，不引入前端状态机。
-(function () {
-    document.addEventListener('click', function (ev) {
-        var btn = ev.target && ev.target.closest ? ev.target.closest('[data-i18n-edit]') : null;
-        if (!btn) { return; }
-        var pick = function (id, value) {
-            var el = document.getElementById(id);
-            if (el) { el.value = value || ''; }
-        };
-        pick('i18n-key', btn.getAttribute('data-key'));
-        pick('i18n-lang', btn.getAttribute('data-lang'));
-        pick('i18n-value', btn.getAttribute('data-value'));
-        pick('i18n-category', btn.getAttribute('data-category'));
-        pick('i18n-remark', btn.getAttribute('data-remark'));
-        var form = document.getElementById('i18n-value');
-        if (form) { form.focus(); }
-    });
-})();
-</script>
 {{end}}

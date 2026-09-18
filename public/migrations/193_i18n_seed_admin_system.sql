@@ -440,8 +440,6 @@ VALUES
     ('admin.i18n.action.filter', 'en-US', 'Filter', 200, 'admin', 'admin/i18n.html', 1, now(), now()),
     ('admin.i18n.action.save', 'zh-CN', '保存', 200, 'admin', 'admin/i18n.html', 1, now(), now()),
     ('admin.i18n.action.save', 'en-US', 'Save', 200, 'admin', 'admin/i18n.html', 1, now(), now()),
-    ('admin.i18n.form.hint', 'zh-CN', '点上方「编辑」会把该条填进来。同 key + 语言已存在时是更新，不存在时是新增。', 200, 'admin', 'admin/i18n.html', 1, now(), now()),
-    ('admin.i18n.form.hint', 'en-US', 'Click "Edit" on a row above to load it here. Saving an existing key + language updates it; saving a new one creates it.', 200, 'admin', 'admin/i18n.html', 1, now(), now()),
     ('admin.i18n.form.title', 'zh-CN', '新增 / 编辑', 200, 'admin', 'admin/i18n.html', 1, now(), now()),
     ('admin.i18n.form.title', 'en-US', 'Create / edit', 200, 'admin', 'admin/i18n.html', 1, now(), now()),
     ('admin.i18n.intro', 'zh-CN', '后台外壳、组件固定文案都从这张表取词。此前它们只能靠迁移 seed 修改 —— 改一句错别字要写迁移文件、重跑迁移、重新部署，所以实际能改文案的人只有写代码的人。', 200, 'admin', 'admin/i18n.html', 1, now(), now()),
